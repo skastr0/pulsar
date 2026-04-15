@@ -1,0 +1,8 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/codec-core" },
+    { "path": "./packages/codec-ts-pack" },
+    { "path": "./packages/codec-cli" }
+  ]
+}

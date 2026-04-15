@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.agents/traces/
+.turbo/
+tsconfig.tsbuildinfo
+
+.DS_Store

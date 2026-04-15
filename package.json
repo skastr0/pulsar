@@ -1,0 +1,27 @@
+{
+  "name": "taste-codec",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Taste Codec — a library of provable preference signals with deterministic scoring for LLM-aligned decision-making",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "clean": "turbo run clean"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "turbo": "^2.3.0",
+    "typescript": "^5.8.0"
+  },
+  "packageManager": "bun@1.2.0",
+  "engines": {
+    "bun": ">=1.2.0"
+  }
+}
