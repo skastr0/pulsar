@@ -1,0 +1,25 @@
+import { Schema } from "effect"
+
+export const Severity = Schema.Literal("info", "warn", "block")
+export type Severity = typeof Severity.Type
+
+/**
+ * A single actionable finding emitted by a signal's `diagnose` pass.
+ *
+ * Diagnostics are structured data, not strings. Downstream consumers
+ * (review routing, bisect reports, the opencode plugin UI) render them
+ * differently but should share the same underlying shape.
+ */
+export const Diagnostic = Schema.Struct({
+  severity: Severity,
+  message: Schema.String,
+  location: Schema.optional(
+    Schema.Struct({
+      file: Schema.String,
+      line: Schema.optional(Schema.Number),
+      column: Schema.optional(Schema.Number),
+    }),
+  ),
+  data: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.Unknown })),
+})
+export type Diagnostic = typeof Diagnostic.Type
