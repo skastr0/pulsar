@@ -1,0 +1,41 @@
+{
+  "name": "opencode-effect-plugin-template",
+  "version": "0.1.0",
+  "description": "Template for authoring opencode server and TUI plugins with Effect — learning reference within the taste-codec workspace",
+  "type": "module",
+  "main": "./dist/server.js",
+  "exports": {
+    "./server": "./dist/server.js",
+    "./tui": "./dist/tui.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "bun build ./src/server.ts ./src/tui.ts --outdir ./dist --target bun --format esm --external @opencode-ai/plugin --external @opencode-ai/plugin/tui",
+    "check:imports": "bun -e \"await import('./dist/server.js'); await import('./dist/tui.js')\"",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist",
+    "verify": "bun run typecheck && bun test && bun run build && bun run check:imports"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "effect"
+  ],
+  "peerDependencies": {
+    "@opencode-ai/plugin": ">=1.4.0"
+  },
+  "dependencies": {
+    "effect": "^3.0.0"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "^1.4.0",
+    "typescript": "^5.8.0"
+  },
+  "engines": {
+    "opencode": ">=1.4.0 <2.0.0"
+  }
+}
