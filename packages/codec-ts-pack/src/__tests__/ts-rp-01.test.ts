@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { buildRegistry, runSignal } from "@taste-codec/core"
+import { buildRegistry, runSignal, summarize } from "@taste-codec/core"
 import { Effect } from "effect"
 import { TsRp01 } from "../signals/ts-rp-01-hotspots.js"
 import type { SharedChurn01Output } from "../signals/shared-churn-01.js"
@@ -8,21 +8,22 @@ import type { TsLd01Output } from "../signals/ts-ld-01-complexity.js"
 const mockComplexityOut: TsLd01Output = {
   functions: [],
   byFile: new Map([
-    ["/repo/a.ts", 5],
-    ["/repo/b.ts", 25],
-    ["/repo/c.ts", 15],
-    ["/repo/d.ts", 30],
+    ["/repo/a.ts", summarize([5])],
+    ["/repo/b.ts", summarize([25])],
+    ["/repo/c.ts", summarize([15])],
+    ["/repo/d.ts", summarize([30])],
   ]),
   overThresholdCount: 2,
   totalFunctions: 4,
 }
 
+// Churn now emits absolute paths — aligned with ts-morph at produce time.
 const mockChurnOut: SharedChurn01Output = {
   byFile: new Map([
-    ["a.ts", 10],
-    ["b.ts", 3],
-    ["c.ts", 20],
-    ["d.ts", 25],
+    ["/repo/a.ts", 10],
+    ["/repo/b.ts", 3],
+    ["/repo/c.ts", 20],
+    ["/repo/d.ts", 25],
   ]),
   windowDays: 90,
   totalCommits: 58,

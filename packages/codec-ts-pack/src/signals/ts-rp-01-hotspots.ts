@@ -73,10 +73,14 @@ export const TsRp01: Signal<TsRp01Config, TsRp01Output, never> = {
         }
       }
 
+      // churn.byFile and complexity.byFile are both keyed by absolute
+      // path — no suffix alignment needed. TS-RP-01 uses the per-file
+      // max complexity so that a single high-complexity function inside
+      // a file of small helpers still surfaces as a hotspot.
       const files = new Map<string, { churn: number; complexity: number }>()
-      const normalizedChurn = normalizeChurnPaths(churn.byFile, complexity.byFile)
-      for (const [file, cplx] of complexity.byFile) {
-        const c = normalizedChurn.get(file) ?? 0
+      for (const [file, summary] of complexity.byFile) {
+        const cplx = summary.max
+        const c = churn.byFile.get(file) ?? 0
         if (c < config.min_churn || cplx < config.min_complexity) continue
         files.set(file, { churn: c, complexity: cplx })
       }
@@ -146,21 +150,4 @@ const classifyQuadrant = (
   if (highChurn && !highComplexity) return "top-left"
   if (!highChurn && highComplexity) return "bottom-right"
   return "bottom-left"
-}
-
-/**
- * Churn keys are repo-relative paths from git; complexity keys are
- * absolute paths from ts-morph. Align them by suffix match.
- */
-const normalizeChurnPaths = (
-  churn: ReadonlyMap<string, number>,
-  complexity: ReadonlyMap<string, number>,
-): ReadonlyMap<string, number> => {
-  const aligned = new Map<string, number>()
-  const complexityPaths = Array.from(complexity.keys())
-  for (const [churnPath, count] of churn) {
-    const match = complexityPaths.find((p) => p.endsWith(churnPath))
-    if (match !== undefined) aligned.set(match, count)
-  }
-  return aligned
 }

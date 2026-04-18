@@ -4,6 +4,7 @@ import {
   type Signal,
 } from "@taste-codec/core"
 import { Effect, Schema } from "effect"
+import { join } from "node:path"
 import { simpleGit } from "simple-git"
 
 export const SharedChurn01Config = Schema.Struct({
@@ -59,6 +60,9 @@ export const SharedChurn01: Signal<SharedChurn01Config, SharedChurn01Output, Sig
           }),
       })
 
+      // Emit absolute paths keyed the same way ts-morph emits them.
+      // This removes the previous suffix-match alignment in TS-RP-01,
+      // which was fragile on monorepos with duplicated filenames.
       const byFile = new Map<string, number>()
       let totalCommits = 0
       for (const line of raw.split("\n")) {
@@ -70,7 +74,8 @@ export const SharedChurn01: Signal<SharedChurn01Config, SharedChurn01Output, Sig
         }
         if (!hasIncludedExtension(trimmed, config.include_extensions)) continue
         if (isExcluded(trimmed, config.exclude_paths)) continue
-        byFile.set(trimmed, (byFile.get(trimmed) ?? 0) + 1)
+        const absolute = join(ctx.worktreePath, trimmed)
+        byFile.set(absolute, (byFile.get(absolute) ?? 0) + 1)
       }
 
       return { byFile, windowDays: config.window_days, totalCommits }

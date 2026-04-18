@@ -1,7 +1,9 @@
 import {
   type Diagnostic,
+  type DistributionalSummary,
   type Signal,
   SignalComputeError,
+  summarize,
 } from "@taste-codec/core"
 import { Effect, Schema } from "effect"
 import {
@@ -43,7 +45,7 @@ export interface FunctionComplexity {
 
 export interface TsLd01Output {
   readonly functions: ReadonlyArray<FunctionComplexity>
-  readonly byFile: ReadonlyMap<string, number>
+  readonly byFile: ReadonlyMap<string, DistributionalSummary>
   readonly overThresholdCount: number
   readonly totalFunctions: number
 }
@@ -135,7 +137,7 @@ export const TsLd01: Signal<TsLd01Config, TsLd01Output, TsProjectTag> = {
       const result = yield* Effect.try({
         try: (): TsLd01Output => {
           const functions: Array<FunctionComplexity> = []
-          const byFileRunning = new Map<string, { sum: number; count: number }>()
+          const perFileValues = new Map<string, Array<number>>()
 
           for (const sf of project.getSourceFiles()) {
             const path = sf.getFilePath()
@@ -149,16 +151,15 @@ export const TsLd01: Signal<TsLd01Config, TsLd01Output, TsProjectTag> = {
                 line: fn.getStartLineNumber(),
                 complexity,
               })
-              const running = byFileRunning.get(path) ?? { sum: 0, count: 0 }
-              running.sum += complexity
-              running.count += 1
-              byFileRunning.set(path, running)
+              const bucket = perFileValues.get(path) ?? []
+              bucket.push(complexity)
+              perFileValues.set(path, bucket)
             }
           }
 
-          const byFile = new Map<string, number>()
-          for (const [path, { sum, count }] of byFileRunning) {
-            byFile.set(path, sum / count)
+          const byFile = new Map<string, DistributionalSummary>()
+          for (const [path, values] of perFileValues) {
+            byFile.set(path, summarize(values))
           }
 
           const overThresholdCount = functions.filter(
