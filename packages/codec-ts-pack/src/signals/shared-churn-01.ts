@@ -41,13 +41,32 @@ export const SharedChurn01: Signal<SharedChurn01Config, SharedChurn01Output, Sig
     Effect.gen(function* () {
       const ctx = yield* SignalContextTag
       const git = simpleGit(ctx.worktreePath)
-      const since = `${config.window_days} days ago`
+
+      // Anchor the window to the commit's authored date, not wall-clock.
+      // Without this, historical commits always report zero churn — the
+      // `--since=N days ago` clause resolves relative to now, not the SHA
+      // under test, so any repo whose active-development window predates
+      // the scoring run trivially passes review-pain signals.
+      const headIsoRaw = yield* Effect.tryPromise({
+        try: () => git.raw(["log", "-1", "--format=%cI", "HEAD"]),
+        catch: (cause) =>
+          new SignalComputeError({
+            signalId: "SHARED-CHURN-01",
+            message: `git log for HEAD date failed: ${String(cause)}`,
+            cause,
+          }),
+      })
+      const headDate = new Date(headIsoRaw.trim())
+      const sinceDate = new Date(
+        headDate.getTime() - config.window_days * 24 * 3600 * 1000,
+      )
 
       const raw = yield* Effect.tryPromise({
         try: () =>
           git.raw([
             "log",
-            `--since=${since}`,
+            `--since=${sinceDate.toISOString()}`,
+            `--until=${headDate.toISOString()}`,
             "--name-only",
             "--pretty=format:__commit__",
             "--no-renames",
