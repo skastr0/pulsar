@@ -57,6 +57,42 @@ export class SignalComputeError extends Schema.TaggedError<SignalComputeError>()
   },
 ) {}
 
+export class WorktreeCreateFailed extends Schema.TaggedError<WorktreeCreateFailed>()(
+  "WorktreeCreateFailed",
+  {
+    repoPath: Schema.String,
+    sha: Schema.String,
+    message: Schema.String,
+  },
+) {}
+
+export class WorktreeRemoveFailed extends Schema.TaggedError<WorktreeRemoveFailed>()(
+  "WorktreeRemoveFailed",
+  {
+    worktreePath: Schema.String,
+    message: Schema.String,
+  },
+) {}
+
+export class CommitNotFound extends Schema.TaggedError<CommitNotFound>()(
+  "CommitNotFound",
+  {
+    repoPath: Schema.String,
+    sha: Schema.String,
+    message: Schema.String,
+  },
+) {}
+
+export class GitRevListFailed extends Schema.TaggedError<GitRevListFailed>()(
+  "GitRevListFailed",
+  {
+    repoPath: Schema.String,
+    fromSha: Schema.String,
+    toSha: Schema.String,
+    message: Schema.String,
+  },
+) {}
+
 export type RegistryError =
   | DuplicateSignalIdError
   | MissingDependencyError
@@ -68,3 +104,9 @@ export type SignalError =
   | ConfigValidationError
   | ReferenceDataMissingError
   | SignalComputeError
+
+export type ScoringEngineError =
+  | WorktreeCreateFailed
+  | WorktreeRemoveFailed
+  | CommitNotFound
+  | GitRevListFailed
