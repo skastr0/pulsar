@@ -1,10 +1,28 @@
 import { describe, expect, test } from "bun:test"
+import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join, resolve } from "node:path"
 import { spawnSync } from "node:child_process"
-import { resolve } from "node:path"
-import { Effect } from "effect"
-import { findCulprits, runBisectCommand, type CommitScore } from "../bisect.js"
+import { CATEGORIES, createTimeSeriesServices } from "@taste-codec/core"
+import { Effect, Exit } from "effect"
+import {
+  chooseAdaptiveMidpoint,
+  findCulprits,
+  findDriftCulprits,
+  initialAdaptiveIndexes,
+  resolveSamplingPlan,
+  runBisectCommand,
+  selectMergeOnlyIndexes,
+  type CommitScore,
+} from "../bisect.js"
+import { buildCodecRegistry } from "../runtime.js"
 
 const repoRoot = resolve(import.meta.dir, "../../../..")
+
+const activeRegistrySignalIds = async (): Promise<ReadonlyArray<string>> => {
+  const registry = await Effect.runPromise(buildCodecRegistry(repoRoot))
+  return registry.sorted.map((signal) => signal.id)
+}
 
 const headSha = (): string => {
   const out = spawnSync("git", ["rev-parse", "HEAD"], {
@@ -28,6 +46,36 @@ const makeCommit = (sha: string, score: number): CommitScore => ({
   diagnosticsCount: 0,
   firstDiagnostic: undefined,
 })
+
+const capturePrintedOutput = async (
+  effect: Effect.Effect<void, unknown, never>,
+): Promise<string> => {
+  const spy = { printed: [] as Array<string> }
+  const origLog = console.log
+  console.log = (...args: Array<unknown>) => {
+    spy.printed.push(args.map(String).join(" "))
+  }
+  try {
+    await Effect.runPromise(effect)
+  } finally {
+    console.log = origLog
+  }
+  return spy.printed.join("\n")
+}
+
+const withTempVectorFile = async <A>(
+  contents: Record<string, unknown>,
+  run: (vectorPath: string) => Promise<A>,
+): Promise<A> => {
+  const dir = await mkdtemp(join(tmpdir(), "taste-bisect-vector-"))
+  const vectorPath = join(dir, "vector.json")
+  await writeFile(vectorPath, JSON.stringify(contents, null, 2), "utf8")
+  try {
+    return await run(vectorPath)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+}
 
 describe("findCulprits", () => {
   test("ranks adjacent drops by magnitude and ignores improvements", () => {
@@ -68,6 +116,74 @@ describe("findCulprits", () => {
   })
 })
 
+describe("findDriftCulprits", () => {
+  test("matches the step culprit when a regression never recovers", () => {
+    const trajectory = [makeCommit("a", 1.0), makeCommit("b", 0.5), makeCommit("c", 0.5)]
+    const out = findDriftCulprits(trajectory, 5)
+    expect(out.map((culprit) => culprit.sha)).toEqual(["b"])
+    expect(out[0]?.drop).toBeCloseTo(1.0)
+  })
+
+  test("surfaces gradual drift even when no single drop dominates", () => {
+    const trajectory = [
+      makeCommit("a", 1.0),
+      makeCommit("b", 0.92),
+      makeCommit("c", 0.88),
+      makeCommit("d", 0.84),
+    ]
+    const out = findDriftCulprits(trajectory, 5)
+    expect(out.map((culprit) => culprit.sha)).toEqual(["d", "c", "b"])
+    expect(out[0]?.drop).toBeGreaterThan(out[1]?.drop ?? 0)
+  })
+
+  test("drops recovered segments once the running max is reached again", () => {
+    const trajectory = [
+      makeCommit("a", 1.0),
+      makeCommit("b", 0.6),
+      makeCommit("c", 1.0),
+      makeCommit("d", 0.8),
+    ]
+    const out = findDriftCulprits(trajectory, 5)
+    expect(out.map((culprit) => culprit.sha)).toEqual(["d"])
+  })
+})
+
+describe("bisect sampling helpers", () => {
+  test("auto keeps full scoring for small ranges and switches to adaptive for large ones", () => {
+    const small = Array.from({ length: 50 }, (_, index) => ({
+      sha: `small-${index}`,
+      parentCount: 1,
+    }))
+    const large = Array.from({ length: 800 }, (_, index) => ({
+      sha: `large-${index}`,
+      parentCount: 1,
+    }))
+
+    expect(resolveSamplingPlan(small, "auto").applied).toBe("full")
+    expect(resolveSamplingPlan(large, "auto").applied).toBe("adaptive-delta")
+  })
+
+  test("merge-only includes endpoints plus merge commits", () => {
+    const commits = [
+      { sha: "a", parentCount: 1 },
+      { sha: "b", parentCount: 2 },
+      { sha: "c", parentCount: 1 },
+      { sha: "d", parentCount: 3 },
+      { sha: "e", parentCount: 1 },
+    ]
+    expect(selectMergeOnlyIndexes(commits)).toEqual([0, 1, 3, 4])
+  })
+
+  test("adaptive helpers spread initial samples and refine wide or steep intervals", () => {
+    expect(initialAdaptiveIndexes(5)).toEqual([0, 1, 2, 3, 4])
+    expect(initialAdaptiveIndexes(100)[0]).toBe(0)
+    expect(initialAdaptiveIndexes(100).at(-1)).toBe(99)
+    expect(chooseAdaptiveMidpoint(0, 80, 0.9, 0.9)).toBe(40)
+    expect(chooseAdaptiveMidpoint(0, 10, 1.0, 0.85)).toBe(5)
+    expect(chooseAdaptiveMidpoint(0, 10, 1.0, 0.97)).toBeUndefined()
+  })
+})
+
 describe("taste bisect (integration)", () => {
   test("replays a 3-commit range and produces a trajectory", async () => {
     const from = nthParent(3)
@@ -75,28 +191,19 @@ describe("taste bisect (integration)", () => {
     expect(from.length).toBe(40)
     expect(to.length).toBe(40)
 
-    const spy = { printed: [] as Array<string> }
-    const origLog = console.log
-    console.log = (...args: Array<unknown>) => {
-      spy.printed.push(args.map(String).join(" "))
-    }
-    try {
-      await Effect.runPromise(
-        runBisectCommand({
-          signalId: "TS-RP-01",
-          fromSha: from,
-          toSha: to,
-          repoPath: repoRoot,
-          concurrency: 2,
-          topCulprits: 3,
-          json: true,
-        }),
-      )
-    } finally {
-      console.log = origLog
-    }
+    const out = await capturePrintedOutput(
+      runBisectCommand({
+        signalId: "TS-RP-01",
+        fromSha: from,
+        toSha: to,
+        repoPath: repoRoot,
+        concurrency: 2,
+        topCulprits: 3,
+        sampling: "full",
+        json: true,
+      }),
+    )
 
-    const out = spy.printed.join("\n")
     const parsed = JSON.parse(out)
     expect(parsed.signalId).toBe("TS-RP-01")
     expect(parsed.trajectory.length).toBe(3)
@@ -108,6 +215,165 @@ describe("taste bisect (integration)", () => {
       expect(entry.score).toBeLessThanOrEqual(1)
     }
     expect(Array.isArray(parsed.culprits)).toBe(true)
+    expect(Array.isArray(parsed.driftCulprits)).toBe(true)
+    expect(parsed.sampling.applied).toBe("full")
     expect(parsed.minScore).toBeLessThanOrEqual(parsed.maxScore)
+  }, 60_000)
+
+  test("replays a 5-commit range in observer mode with per-category trajectories", async () => {
+    const from = nthParent(5)
+    const to = headSha()
+
+    const out = await capturePrintedOutput(
+      runBisectCommand({
+        observer: true,
+        fromSha: from,
+        toSha: to,
+        repoPath: repoRoot,
+        concurrency: 2,
+        topCulprits: 3,
+        sampling: "full",
+        json: true,
+      }),
+    )
+
+    const parsed = JSON.parse(out)
+    const entries = await Effect.runPromise(
+      createTimeSeriesServices(repoRoot).reader.entries(),
+    )
+    expect(parsed.vectorName).toBeNull()
+    expect(parsed.trajectory.length).toBe(5)
+    expect(entries.length).toBeGreaterThanOrEqual(5)
+    expect(Object.keys(parsed.perCategory).sort()).toEqual([...CATEGORIES].sort())
+    expect(Object.keys(parsed.perCategoryCulprits).sort()).toEqual([...CATEGORIES].sort())
+    expect(Object.keys(parsed.perCategoryDriftCulprits).sort()).toEqual([...CATEGORIES].sort())
+    expect(Array.isArray(parsed.weightedMeanDriftCulprits)).toBe(true)
+    expect(parsed.sampling.applied).toBe("full")
+    expect(typeof parsed.finalWeightedMean).toBe("number")
+    expect(parsed.minWeightedMean).toBeLessThanOrEqual(parsed.maxWeightedMean)
+    expect(["pass", "fail"]).toContain(parsed.hardGateStatusAtFinal)
+
+    for (const entry of parsed.trajectory) {
+      expect(typeof entry.sha).toBe("string")
+      expect(entry.sha.length).toBe(40)
+      expect(typeof entry.weightedMean).toBe("number")
+      expect(Object.keys(entry.categories).sort()).toEqual([...CATEGORIES].sort())
+      expect(entry.observer).toBeDefined()
+      expect(entry.observer.weighted_mean).toBeCloseTo(entry.weightedMean)
+      expect(["pass", "fail"]).toContain(entry.hardGateStatus)
+    }
+
+    for (const category of CATEGORIES) {
+      expect(parsed.perCategory[category].scores.length).toBe(parsed.trajectory.length)
+      expect(Array.isArray(parsed.perCategoryCulprits[category])).toBe(true)
+    }
+  }, 120_000)
+
+  test("threads an optional vector through observer mode", async () => {
+    const from = nthParent(1)
+    const to = headSha()
+
+    const out = await withTempVectorFile(
+      {
+        id: "observer-test-vector",
+        domain: "typescript",
+        signal_overrides: {
+          "TS-AB-01": { active: false },
+        },
+      },
+      async (vectorPath) =>
+        capturePrintedOutput(
+          runBisectCommand({
+            observer: true,
+            vectorPath,
+            fromSha: from,
+            toSha: to,
+            repoPath: repoRoot,
+            concurrency: 1,
+            topCulprits: 1,
+            sampling: "full",
+            json: true,
+          }),
+        ),
+    )
+
+    const parsed = JSON.parse(out)
+    expect(parsed.vectorName).toBe("observer-test-vector")
+    expect(parsed.trajectory).toHaveLength(1)
+    expect(parsed.trajectory[0].observer.categories["abstraction-bloat"].signals["TS-AB-01"]).toBeUndefined()
+    expect(parsed.trajectory[0].observer.categories["abstraction-bloat"].signals["TS-AB-03"]).toBeDefined()
+    expect(parsed.trajectory[0].observer.categories["abstraction-bloat"].signals["TS-AB-05"]).toBeDefined()
+    expect(parsed.trajectory[0].categories["abstraction-bloat"]).toBeGreaterThan(0)
+    expect(parsed.trajectory[0].categories["abstraction-bloat"]).toBeLessThanOrEqual(1)
+  }, 60_000)
+
+  test("fails loud when the vector references an unknown signal id", async () => {
+    const from = nthParent(1)
+    const to = headSha()
+
+    const exit = await withTempVectorFile(
+      {
+        id: "bad-vector",
+        domain: "typescript",
+        signal_overrides: {
+          "DOES-NOT-EXIST": { active: true },
+        },
+      },
+      (vectorPath) =>
+        Effect.runPromiseExit(
+          runBisectCommand({
+            observer: true,
+            vectorPath,
+            fromSha: from,
+            toSha: to,
+            repoPath: repoRoot,
+            concurrency: 1,
+            topCulprits: 1,
+            sampling: "full",
+            json: true,
+          }),
+        ),
+    )
+
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) {
+      const err = exit.cause._tag === "Fail" ? exit.cause.error : null
+      expect((err as { _tag?: string } | null)?._tag).toBe("UnknownSignalIdError")
+    }
+  }, 60_000)
+
+  test("fails loud when observer mode has no active signals", async () => {
+    const from = nthParent(1)
+    const to = headSha()
+    const signalIds = await activeRegistrySignalIds()
+
+    const exit = await withTempVectorFile(
+      {
+        id: "inactive-vector",
+        domain: "typescript",
+        signal_overrides: Object.fromEntries(signalIds.map((id) => [id, { active: false }])),
+      },
+      (vectorPath) =>
+        Effect.runPromiseExit(
+          runBisectCommand({
+            observer: true,
+            vectorPath,
+            fromSha: from,
+            toSha: to,
+            repoPath: repoRoot,
+            concurrency: 1,
+            topCulprits: 1,
+            sampling: "full",
+            json: true,
+          }),
+        ),
+    )
+
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) {
+      const err = exit.cause._tag === "Fail" ? exit.cause.error : null
+      expect(err).toBeInstanceOf(Error)
+      expect((err as Error).message).toContain("Observer mode has no active signals")
+    }
   }, 60_000)
 })
