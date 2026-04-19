@@ -235,6 +235,7 @@ Function bodies that are `throw new Error("not implemented")`, empty blocks, TOD
 
 **TS-RP-01: Churn × complexity hotspots**
 Files that change frequently AND have high complexity. The single best-validated compound metric in the literature. Plot the top N hotspots monthly. Files in the top-right quadrant of churn × complexity are highest-priority refactoring targets.
+Small-repo calibration lever: keep `min_churn` and `min_complexity`, but apply them through soft threshold weighting (`threshold_softness`) and continuous top-right pressure (`peer_percentile_floor`) instead of a hard binary cliff.
 *Tier*: 1.5 (derived from git history + complexity)
 *Enforcement*: Trend metric. Dashboard. Input to review routing.
 

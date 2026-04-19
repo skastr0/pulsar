@@ -1,0 +1,236 @@
+{
+  "schema_id": "taste-codec/polyglot-normalization-corpus/v1",
+  "generated_at": "2026-04-19",
+  "scoring_command": "bun run \"./packages/codec-cli/src/bin.ts\" score --json <repo>",
+  "comparison_basis": [
+    "categories[*].signals filtered by TS-/RS- prefix",
+    "categories[*].normalization.groups.typescript.score",
+    "categories[*].normalization.groups.rust.score"
+  ],
+  "repos": [
+    {
+      "name": "fractals-agent",
+      "origin": "git@github.com:skastr0/fractals-agent.git",
+      "head_sha": "4c742a494b649443a30fb3b8255dc8b15651e94f",
+      "history": {
+        "total_commits": 126,
+        "ts_commits": 11,
+        "rs_commits": 57,
+        "ts_files": 130,
+        "rs_files": 90
+      },
+      "weighted_mean": 0.715,
+      "categories": {
+        "architectural-drift": {
+          "typescript": { "n": 3, "mean": 1, "median": 1, "min": 1, "max": 1 },
+          "rust": { "n": 3, "mean": 1, "median": 1, "min": 1, "max": 1 },
+          "typescript_group_score": 1,
+          "rust_group_score": 1,
+          "group_gap_ts_minus_rs": 0
+        },
+        "dependency-entropy": {
+          "typescript": { "n": 5, "mean": 0.589, "median": 0.9521, "min": 0, "max": 1 },
+          "rust": { "n": 4, "mean": 0.581, "median": 0.662, "min": 0, "max": 1 },
+          "typescript_group_score": 0.589,
+          "rust_group_score": 0.581,
+          "group_gap_ts_minus_rs": 0.0081
+        },
+        "abstraction-bloat": {
+          "typescript": { "n": 5, "mean": 0.9388, "median": 1, "min": 0.711, "max": 1 },
+          "rust": { "n": 4, "mean": 0.6952, "median": 0.8557, "min": 0.0693, "max": 1 },
+          "typescript_group_score": 0.9388,
+          "rust_group_score": 0.6952,
+          "group_gap_ts_minus_rs": 0.2436
+        },
+        "legibility-decay": {
+          "typescript": { "n": 6, "mean": 0.975, "median": 0.9792, "min": 0.9441, "max": 1 },
+          "rust": { "n": 6, "mean": 0.8874, "median": 0.9687, "min": 0.4659, "max": 1 },
+          "typescript_group_score": 0.975,
+          "rust_group_score": 0.8874,
+          "group_gap_ts_minus_rs": 0.0876
+        },
+        "generated-slop": {
+          "typescript": { "n": 4, "mean": 0.45, "median": 0.4, "min": 0, "max": 1 },
+          "rust": { "n": 4, "mean": 0, "median": 0, "min": 0, "max": 0 },
+          "typescript_group_score": 0.45,
+          "rust_group_score": 0,
+          "group_gap_ts_minus_rs": 0.45
+        },
+        "review-pain": {
+          "typescript": { "n": 2, "mean": 0.8816, "median": 0.8816, "min": 0.7632, "max": 1 },
+          "rust": { "n": 3, "mean": 0.875, "median": 1, "min": 0.625, "max": 1 },
+          "typescript_group_score": 0.8816,
+          "rust_group_score": 0.875,
+          "group_gap_ts_minus_rs": 0.0066
+        }
+      }
+    },
+    {
+      "name": "agent-browser",
+      "origin": "https://github.com/vercel-labs/agent-browser",
+      "head_sha": "fa043a496f7579680c78b22d0a5015f48dc99a4d",
+      "history": {
+        "total_commits": 545,
+        "ts_commits": 157,
+        "rs_commits": 239,
+        "ts_files": 116,
+        "rs_files": 53
+      },
+      "weighted_mean": 0.6702,
+      "categories": {
+        "architectural-drift": {
+          "typescript": { "n": 3, "mean": 1, "median": 1, "min": 1, "max": 1 },
+          "rust": { "n": 3, "mean": 1, "median": 1, "min": 1, "max": 1 },
+          "typescript_group_score": 1,
+          "rust_group_score": 1,
+          "group_gap_ts_minus_rs": 0
+        },
+        "dependency-entropy": {
+          "typescript": { "n": 5, "mean": 0.6, "median": 1, "min": 0, "max": 1 },
+          "rust": { "n": 4, "mean": 0.8333, "median": 1, "min": 0.3333, "max": 1 },
+          "typescript_group_score": 0.6,
+          "rust_group_score": 0.8333,
+          "group_gap_ts_minus_rs": -0.2333
+        },
+        "abstraction-bloat": {
+          "typescript": { "n": 5, "mean": 0.8304, "median": 1, "min": 0.1522, "max": 1 },
+          "rust": { "n": 4, "mean": 0.732, "median": 0.964, "min": 0, "max": 1 },
+          "typescript_group_score": 0.8304,
+          "rust_group_score": 0.732,
+          "group_gap_ts_minus_rs": 0.0985
+        },
+        "legibility-decay": {
+          "typescript": { "n": 6, "mean": 0.9077, "median": 0.985, "min": 0.5147, "max": 1 },
+          "rust": { "n": 6, "mean": 0.7075, "median": 0.9242, "min": 0.0061, "max": 1 },
+          "typescript_group_score": 0.9077,
+          "rust_group_score": 0.7075,
+          "group_gap_ts_minus_rs": 0.2002
+        },
+        "generated-slop": {
+          "typescript": { "n": 4, "mean": 0, "median": 0, "min": 0, "max": 0 },
+          "rust": { "n": 4, "mean": 0, "median": 0, "min": 0, "max": 0 },
+          "typescript_group_score": 0,
+          "rust_group_score": 0,
+          "group_gap_ts_minus_rs": 0
+        },
+        "review-pain": {
+          "typescript": { "n": 2, "mean": 0.8007, "median": 0.8007, "min": 0.6014, "max": 1 },
+          "rust": { "n": 3, "mean": 0.8378, "median": 1, "min": 0.5135, "max": 1 },
+          "typescript_group_score": 0.8007,
+          "rust_group_score": 0.8378,
+          "group_gap_ts_minus_rs": -0.0371
+        }
+      }
+    },
+    {
+      "name": "entele-forge-tauri",
+      "origin": "git@github.com:castrotechstudio/entele-forge.git",
+      "head_sha": "c3e50d2afad673f58ce980fc20ef9ac528b8404a",
+      "history": {
+        "total_commits": 467,
+        "ts_commits": 390,
+        "rs_commits": 34,
+        "ts_files": 310,
+        "rs_files": 16
+      },
+      "weighted_mean": 0.6947,
+      "categories": {
+        "architectural-drift": {
+          "typescript": { "n": 3, "mean": 0.7833, "median": 1, "min": 0.35, "max": 1 },
+          "rust": { "n": 3, "mean": 0.8763, "median": 1, "min": 0.629, "max": 1 },
+          "typescript_group_score": 0.7833,
+          "rust_group_score": 0.8763,
+          "group_gap_ts_minus_rs": -0.093
+        },
+        "dependency-entropy": {
+          "typescript": { "n": 5, "mean": 0.5871, "median": 0.9457, "min": 0, "max": 1 },
+          "rust": { "n": 4, "mean": 0.7813, "median": 1, "min": 0.125, "max": 1 },
+          "typescript_group_score": 0.5871,
+          "rust_group_score": 0.7813,
+          "group_gap_ts_minus_rs": -0.1942
+        },
+        "abstraction-bloat": {
+          "typescript": { "n": 5, "mean": 0.9632, "median": 1, "min": 0.8337, "max": 1 },
+          "rust": { "n": 4, "mean": 0.5536, "median": 0.6071, "min": 0, "max": 1 },
+          "typescript_group_score": 0.9632,
+          "rust_group_score": 0.5536,
+          "group_gap_ts_minus_rs": 0.4097
+        },
+        "legibility-decay": {
+          "typescript": { "n": 6, "mean": 0.9232, "median": 0.9905, "min": 0.5982, "max": 1 },
+          "rust": { "n": 6, "mean": 0.7418, "median": 0.9667, "min": 0, "max": 1 },
+          "typescript_group_score": 0.9232,
+          "rust_group_score": 0.7418,
+          "group_gap_ts_minus_rs": 0.1814
+        },
+        "generated-slop": {
+          "typescript": { "n": 4, "mean": 0.25, "median": 0, "min": 0, "max": 1 },
+          "rust": { "n": 4, "mean": 0.655, "median": 0.685, "min": 0.25, "max": 1 },
+          "typescript_group_score": 0.25,
+          "rust_group_score": 0.655,
+          "group_gap_ts_minus_rs": -0.405
+        },
+        "review-pain": {
+          "typescript": { "n": 2, "mean": 0.8214, "median": 0.8214, "min": 0.6429, "max": 1 },
+          "rust": { "n": 3, "mean": 0.8, "median": 1, "min": 0.4, "max": 1 },
+          "typescript_group_score": 0.8214,
+          "rust_group_score": 0.8,
+          "group_gap_ts_minus_rs": 0.0214
+        }
+      }
+    }
+  ],
+  "overall_pooled_signal_means": {
+    "typescript": 0.7405,
+    "rust": 0.6877
+  },
+  "pooled_categories": {
+    "architectural-drift": {
+      "typescript_group": { "n": 3, "mean": 0.9278, "median": 1, "min": 0.7833, "max": 1 },
+      "rust_group": { "n": 3, "mean": 0.9588, "median": 1, "min": 0.8763, "max": 1 },
+      "gap_ts_minus_rs": { "n": 3, "mean": -0.031, "median": 0, "min": -0.093, "max": 0 }
+    },
+    "dependency-entropy": {
+      "typescript_group": { "n": 3, "mean": 0.592, "median": 0.589, "min": 0.5871, "max": 0.6 },
+      "rust_group": { "n": 3, "mean": 0.7319, "median": 0.7813, "min": 0.581, "max": 0.8333 },
+      "gap_ts_minus_rs": { "n": 3, "mean": -0.1398, "median": -0.1942, "min": -0.2333, "max": 0.0081 }
+    },
+    "abstraction-bloat": {
+      "typescript_group": { "n": 3, "mean": 0.9108, "median": 0.9388, "min": 0.8304, "max": 0.9632 },
+      "rust_group": { "n": 3, "mean": 0.6603, "median": 0.6952, "min": 0.5536, "max": 0.732 },
+      "gap_ts_minus_rs": { "n": 3, "mean": 0.2506, "median": 0.2436, "min": 0.0985, "max": 0.4097 }
+    },
+    "legibility-decay": {
+      "typescript_group": { "n": 3, "mean": 0.9353, "median": 0.9232, "min": 0.9077, "max": 0.975 },
+      "rust_group": { "n": 3, "mean": 0.7789, "median": 0.7418, "min": 0.7075, "max": 0.8874 },
+      "gap_ts_minus_rs": { "n": 3, "mean": 0.1564, "median": 0.1814, "min": 0.0876, "max": 0.2002 }
+    },
+    "generated-slop": {
+      "typescript_group": { "n": 3, "mean": 0.2333, "median": 0.25, "min": 0, "max": 0.45 },
+      "rust_group": { "n": 3, "mean": 0.2183, "median": 0, "min": 0, "max": 0.655 },
+      "gap_ts_minus_rs": { "n": 3, "mean": 0.015, "median": 0, "min": -0.405, "max": 0.45 }
+    },
+    "review-pain": {
+      "typescript_group": { "n": 3, "mean": 0.8346, "median": 0.8214, "min": 0.8007, "max": 0.8816 },
+      "rust_group": { "n": 3, "mean": 0.8376, "median": 0.8378, "min": 0.8, "max": 0.875 },
+      "gap_ts_minus_rs": { "n": 3, "mean": -0.003, "median": 0.0066, "min": -0.0371, "max": 0.0214 }
+    }
+  },
+  "recommendation": {
+    "percentile_calibration": "reject",
+    "anchor_calibration": "reject",
+    "default_strategy": "language-group-mean",
+    "rationale": [
+      "category gap direction is not stable across the corpus",
+      "several distributions are ceilinged or zero-inflated",
+      "the corpus is too small to defend a durable transfer function",
+      "global pooled means look close only because opposite category gaps cancel out"
+    ]
+  },
+  "limitations": [
+    "three repos only",
+    "head-snapshot scoring rather than longitudinal replay",
+    "analogous categories are not strict one-to-one signal mappings",
+    "fractals-agent has asymmetric TS vs Rust change history"
+  ]
+}
