@@ -100,6 +100,70 @@ describe("TS-RP-01 (compound)", () => {
     expect(a.hotspots.length).toBe(b.hotspots.length)
   })
 
+  test("soft threshold pressure creates multiple score levels near small-repo cutoffs", async () => {
+    const thresholdComplexity: TsLd01Output = {
+      functions: [],
+      byFile: new Map([
+        ["/repo/a.ts", summarize([4])],
+        ["/repo/b.ts", summarize([5])],
+        ["/repo/c.ts", summarize([6])],
+        ["/repo/d.ts", summarize([7])],
+      ]),
+      overThresholdCount: 2,
+      totalFunctions: 4,
+    }
+
+    const variants: ReadonlyArray<SharedChurn01Output> = [
+      {
+        byFile: new Map([
+          ["/repo/a.ts", 1],
+          ["/repo/b.ts", 1],
+          ["/repo/c.ts", 2],
+          ["/repo/d.ts", 2],
+        ]),
+        windowDays: 90,
+        totalCommits: 20,
+      },
+      {
+        byFile: new Map([
+          ["/repo/a.ts", 1],
+          ["/repo/b.ts", 1],
+          ["/repo/c.ts", 2],
+          ["/repo/d.ts", 3],
+        ]),
+        windowDays: 90,
+        totalCommits: 21,
+      },
+      {
+        byFile: new Map([
+          ["/repo/a.ts", 1],
+          ["/repo/b.ts", 2],
+          ["/repo/c.ts", 3],
+          ["/repo/d.ts", 4],
+        ]),
+        windowDays: 90,
+        totalCommits: 22,
+      },
+    ]
+
+    const scores = await Promise.all(
+      variants.map(async (variant) => {
+        const out = await Effect.runPromise(
+          TsRp01.compute(
+            TsRp01.defaultConfig,
+            new Map<string, unknown>([
+              ["TS-LD-01", thresholdComplexity],
+              ["SHARED-CHURN-01", variant],
+            ]),
+          ),
+        )
+        return TsRp01.score(out)
+      }),
+    )
+
+    expect(new Set(scores.map((score) => score.toFixed(6))).size).toBeGreaterThan(2)
+  })
+
   test("composition via registry: compound sees its inputs after topological sort", async () => {
     const fakeLeaf = {
       ...TsRp01,

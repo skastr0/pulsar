@@ -1,12 +1,23 @@
-import { readdir } from "node:fs/promises"
+import { readFile, readdir } from "node:fs/promises"
 import { dirname, join, relative } from "node:path"
 import { Effect } from "effect"
 import { simpleGit } from "simple-git"
+
+export interface PackageManifest {
+  readonly name: string | undefined
+  readonly version: string | undefined
+  readonly dependencies: Readonly<Record<string, string>>
+  readonly devDependencies: Readonly<Record<string, string>>
+  readonly peerDependencies: Readonly<Record<string, string>>
+  readonly optionalDependencies: Readonly<Record<string, string>>
+}
 
 export interface PackageInfo {
   readonly name: string
   readonly path: string
   readonly tsconfigPath: string
+  readonly packageJsonPath: string | undefined
+  readonly manifest: PackageManifest | undefined
 }
 
 const IGNORE_DIRS: ReadonlySet<string> = new Set([
@@ -25,21 +36,64 @@ const IGNORE_DIRS: ReadonlySet<string> = new Set([
 export const discoverPackages = (rootDir: string): Effect.Effect<ReadonlyArray<PackageInfo>> =>
   Effect.gen(function* () {
     const tsconfigs = yield* findTsconfigs(rootDir)
-    const packages = tsconfigs.map((tsconfigPath) => {
-      const packageDir = dirname(tsconfigPath)
-      const rel = relative(rootDir, packageDir)
-      return {
-        name: rel === "" ? "(root)" : rel,
-        path: packageDir,
-        tsconfigPath,
-      }
-    })
+    const packages = yield* Effect.forEach(tsconfigs, (tsconfigPath) =>
+      Effect.promise(() => toPackageInfo(rootDir, tsconfigPath)),
+    )
     return packages.slice().sort((a, b) => {
       if (a.name === "(root)") return -1
       if (b.name === "(root)") return 1
       return a.name.localeCompare(b.name)
     })
   })
+
+const toPackageInfo = async (rootDir: string, tsconfigPath: string): Promise<PackageInfo> => {
+  const packageDir = dirname(tsconfigPath)
+  const rel = relative(rootDir, packageDir)
+  const packageJsonPath = join(packageDir, "package.json")
+  const manifest = await readPackageManifest(packageJsonPath)
+
+  return {
+    name: rel === "" ? "(root)" : rel,
+    path: packageDir,
+    tsconfigPath,
+    packageJsonPath: manifest === undefined ? undefined : packageJsonPath,
+    manifest,
+  }
+}
+
+const readPackageManifest = async (
+  packageJsonPath: string,
+): Promise<PackageManifest | undefined> => {
+  try {
+    const raw = await readFile(packageJsonPath, "utf8")
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    return {
+      name: asOptionalString(parsed.name),
+      version: asOptionalString(parsed.version),
+      dependencies: asDependencyRecord(parsed.dependencies),
+      devDependencies: asDependencyRecord(parsed.devDependencies),
+      peerDependencies: asDependencyRecord(parsed.peerDependencies),
+      optionalDependencies: asDependencyRecord(parsed.optionalDependencies),
+    }
+  } catch {
+    return undefined
+  }
+}
+
+const asOptionalString = (value: unknown): string | undefined =>
+  typeof value === "string" && value.length > 0 ? value : undefined
+
+const asDependencyRecord = (value: unknown): Readonly<Record<string, string>> => {
+  if (value === null || typeof value !== "object") {
+    return {}
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter((entry): entry is [string, string] => typeof entry[1] === "string")
+      .sort(([left], [right]) => left.localeCompare(right)),
+  )
+}
 
 const findTsconfigs = (rootDir: string): Effect.Effect<ReadonlyArray<string>> =>
   Effect.gen(function* () {

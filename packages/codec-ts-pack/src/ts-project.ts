@@ -80,8 +80,13 @@ const addWorktreeGlob = (project: Project, worktreePath: string): void => {
   ])
 }
 
-export const TsProjectLayer = (worktreePath: string): Layer.Layer<TsProjectTag> =>
-  Layer.effect(TsProjectTag, makeTsProject(worktreePath))
+export const TsProjectLayer = (
+  worktreePath: string,
+): Layer.Layer<TsProjectTag | TsPackageInfoTag> =>
+  Layer.mergeAll(
+    Layer.effect(TsProjectTag, makeTsProject(worktreePath)),
+    TsPackageInfoLayer(worktreePath),
+  )
 
 export const TsPackageInfoLayer = (
   worktreePath: string,

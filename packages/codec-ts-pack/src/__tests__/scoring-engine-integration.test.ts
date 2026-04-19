@@ -6,6 +6,7 @@ import {
   ScoringEngineTag,
   buildRegistry,
 } from "@taste-codec/core"
+import { SHARED_SIGNALS } from "@taste-codec/shared-signals"
 import { TsProjectLayer } from "../ts-project.js"
 import { TS_PACK_SIGNALS } from "../pack.js"
 
@@ -39,7 +40,7 @@ describe("ScoringEngine + TS pack integration", () => {
 
       const head = revParse("HEAD")
       const program = Effect.gen(function* () {
-        const registry = yield* buildRegistry(TS_PACK_SIGNALS)
+        const registry = yield* buildRegistry([...SHARED_SIGNALS, ...TS_PACK_SIGNALS])
         const EngineLayer = ScoringEngineLayer(
           registry,
           (worktreePath) => TsProjectLayer(worktreePath),
@@ -87,7 +88,7 @@ describe("ScoringEngine + TS pack integration", () => {
       }
 
       const program = Effect.gen(function* () {
-        const registry = yield* buildRegistry(TS_PACK_SIGNALS)
+        const registry = yield* buildRegistry([...SHARED_SIGNALS, ...TS_PACK_SIGNALS])
         const EngineLayer = ScoringEngineLayer(
           registry,
           (worktreePath) => TsProjectLayer(worktreePath),
@@ -124,7 +125,7 @@ describe("ScoringEngine + TS pack integration", () => {
     async () => {
       const head = revParse("HEAD")
       const program = Effect.gen(function* () {
-        const registry = yield* buildRegistry(TS_PACK_SIGNALS)
+        const registry = yield* buildRegistry([...SHARED_SIGNALS, ...TS_PACK_SIGNALS])
         const EngineLayer = ScoringEngineLayer(
           registry,
           (worktreePath) => TsProjectLayer(worktreePath),
