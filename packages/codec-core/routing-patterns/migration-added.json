@@ -1,0 +1,13 @@
+{
+  "id": "migration-added",
+  "displayName": "Migration added",
+  "triggerKind": "file-path",
+  "condition": {
+    "kind": "file-path",
+    "globs": [
+      "**/migrations/**"
+    ]
+  },
+  "reviewerRole": "data-model-reviewer",
+  "contextPayload": []
+}

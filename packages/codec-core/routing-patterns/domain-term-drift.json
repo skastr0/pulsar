@@ -1,0 +1,17 @@
+{
+  "id": "domain-term-drift",
+  "displayName": "Domain term drift detected",
+  "triggerKind": "signal-threshold",
+  "condition": {
+    "kind": "signal-threshold",
+    "signalId": "TS-LD-05",
+    "below": 0.6
+  },
+  "reviewerRole": "domain-reviewer",
+  "contextPayload": [
+    {
+      "signalId": "TS-LD-05",
+      "include": "all"
+    }
+  ]
+}

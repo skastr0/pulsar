@@ -3,13 +3,15 @@ import { spawn } from "node:child_process"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { Context, Effect, Layer, Option } from "effect"
+import { Context, Effect, Layer } from "effect"
 import {
   InMemoryCacheLayer,
   SignalCacheTag,
   cacheKeyString,
   type CacheKey,
+  type CacheConfig,
 } from "./cache.js"
+import { DiskBackedCacheLayer } from "./cache-disk.js"
 import {
   ReferenceDataTag,
   SignalContextTag,
@@ -23,8 +25,11 @@ import {
   type ScoringEngineError,
   type SignalError,
 } from "./errors.js"
+import { observe, type ObserverOutput } from "./observer.js"
+import { loadCanonicalReferenceDataEntries } from "./reference-data-loader.js"
 import type { Registry } from "./registry.js"
 import { runSignal, type SignalRunResult } from "./runner.js"
+import { type TimeSeriesWriter } from "./time-series.js"
 import { resolvedConfig as vectorResolvedConfig, type TasteVector } from "./vector.js"
 
 /**
@@ -63,6 +68,20 @@ export class ScoringEngineTag extends Context.Tag("@taste-codec/core/ScoringEngi
       SignalError | ScoringEngineError,
       never
     >
+    readonly observeCommit: (
+      repoPath: string,
+      sha: string,
+    ) => Effect.Effect<ObserverOutput, ScoringEngineError, never>
+    readonly observeRange: (
+      repoPath: string,
+      fromSha: string,
+      toSha: string,
+      options?: { concurrency?: number },
+    ) => Effect.Effect<
+      ReadonlyArray<{ sha: string; result: ObserverOutput }>,
+      ScoringEngineError,
+      never
+    >
   }
 >() {}
 
@@ -79,8 +98,8 @@ export type PackLayerFactory = (worktreePath: string) => Layer.Layer<never, neve
 
 /**
  * SHA-256 over the sorted list of per-file (blob SHA, path) pairs at a
- * given commit, filtered to TypeScript source files. Deterministic for
- * a given tree — two commits with identical `.ts`/`.tsx` content share
+ * given commit, filtered to language-pack source files. Deterministic for
+ * a given tree — two commits with identical tracked TS / Rust content share
  * a hash regardless of the commit message or parents.
  */
 export const computeContentHash = Effect.fn("ScoringEngine.computeContentHash")(
@@ -98,7 +117,7 @@ export const computeContentHash = Effect.fn("ScoringEngine.computeContentHash")(
       if (tabIdx === -1) continue
       const meta = line.slice(0, tabIdx)
       const path = line.slice(tabIdx + 1)
-      if (!isTsSource(path)) continue
+      if (!isCodecSource(path)) continue
       const parts = meta.split(" ")
       const blobSha = parts[2]
       if (blobSha === undefined) continue
@@ -111,8 +130,12 @@ export const computeContentHash = Effect.fn("ScoringEngine.computeContentHash")(
   },
 )
 
-const isTsSource = (path: string): boolean =>
-  path.endsWith(".ts") || path.endsWith(".tsx")
+const isCodecSource = (path: string): boolean =>
+  path.endsWith(".ts") ||
+  path.endsWith(".tsx") ||
+  path.endsWith(".rs") ||
+  path.endsWith("Cargo.toml") ||
+  path.endsWith("Cargo.lock")
 
 /**
  * SHA-256 over the stable JSON encoding of a signal's resolved config.
@@ -148,6 +171,47 @@ const stableStringify = (value: unknown): string => {
   return `{${parts.join(",")}}`
 }
 
+const computeReferenceVersionHash = (referenceEntries: ReadonlyMap<string, unknown>): string => {
+  const hash = createHash("sha256")
+  const normalized = [...referenceEntries.entries()].sort(([left], [right]) =>
+    left.localeCompare(right),
+  )
+  hash.update(stableStringify(normalized))
+  return hash.digest("hex")
+}
+
+const mergeCachedResultMetadata = (
+  result: SignalRunResult,
+  cached: {
+    readonly status: "hit" | "miss" | "stale"
+    readonly effectiveConfidence?: number
+    readonly entry?: {
+      readonly tier: number
+      readonly baseConfidence: number
+      readonly computedAt: string
+    }
+  },
+): SignalRunResult => {
+  if (
+    cached.effectiveConfidence === undefined ||
+    cached.entry === undefined ||
+    cached.entry.tier !== 3
+  ) {
+    return result
+  }
+
+  return {
+    ...result,
+    metadata: {
+      ...(result.metadata ?? {}),
+      effectiveConfidence: cached.effectiveConfidence,
+      baseConfidence: cached.entry.baseConfidence,
+      computedAt: cached.entry.computedAt,
+      stale: cached.status === "stale",
+    },
+  }
+}
+
 /**
  * Build the scoring engine layer. The registry is frozen at layer
  * construction; the cache is created once and shared across every
@@ -157,11 +221,18 @@ export const ScoringEngineLayer = (
   registry: Registry,
   packLayerFactory: PackLayerFactory,
   vector?: TasteVector,
+  options?: {
+    readonly timeSeriesWriter?: TimeSeriesWriter
+    readonly cacheConfig?: CacheConfig
+  },
 ): Layer.Layer<ScoringEngineTag> =>
   Layer.effect(
     ScoringEngineTag,
     Effect.gen(function* () {
-      const cacheLayer = InMemoryCacheLayer
+      const cacheLayer =
+        options?.cacheConfig !== undefined
+          ? DiskBackedCacheLayer(options.cacheConfig)
+          : InMemoryCacheLayer
       // Materialize a single cache instance that persists across calls.
       const cacheRef = yield* Effect.provide(
         Effect.gen(function* () {
@@ -171,57 +242,92 @@ export const ScoringEngineLayer = (
         cacheLayer,
       )
 
+      const withCommitEnvironment = <A, E>(
+        repoPath: string,
+        sha: string,
+        runInWorktree: (
+          envLayer: Layer.Layer<any, any, never>,
+          referenceEntries: ReadonlyMap<string, unknown>,
+        ) => Effect.Effect<A, E, never>,
+      ): Effect.Effect<A, E | ScoringEngineError, never> =>
+        Effect.scoped(
+          Effect.gen(function* () {
+            const worktreePath = yield* acquireWorktree(repoPath, sha)
+            yield* Effect.annotateCurrentSpan("worktreePath", worktreePath)
+            const referenceEntries = yield* loadCanonicalReferenceDataEntries(worktreePath)
+
+            const ContextLayer = Layer.succeed(SignalContextTag, {
+              gitSha: sha,
+              worktreePath,
+              changedHunks: [],
+            })
+            const ReferenceLayer = Layer.succeed(
+              ReferenceDataTag,
+              makeReferenceData(referenceEntries),
+            )
+            const CacheShareLayer = Layer.succeed(SignalCacheTag, cacheRef)
+            const PackLayer = packLayerFactory(worktreePath)
+            const EnvLayer = Layer.mergeAll(
+              ContextLayer,
+              ReferenceLayer,
+              CacheShareLayer,
+              PackLayer,
+            )
+
+            return yield* runInWorktree(EnvLayer, referenceEntries)
+          }),
+        )
+
       const scoreCommit = Effect.fn("ScoringEngine.scoreCommit")(
         function* (repoPath: string, sha: string, signalId: string) {
           yield* Effect.annotateCurrentSpan("sha", sha)
           yield* Effect.annotateCurrentSpan("signalId", signalId)
 
+          const signal = registry.byId.get(signalId)
           const contentHash = yield* computeContentHash(repoPath, sha)
           const configHash = computeConfigHash(signalId, registry, vector)
           const key: CacheKey = { signalId, contentHash, configHash }
 
-          const cached = yield* cacheRef.get<SignalRunResult>(key)
-          if (Option.isSome(cached)) {
-            yield* Effect.annotateCurrentSpan("cacheKey", cacheKeyString(key))
-            yield* Effect.annotateCurrentSpan("cacheHit", true)
-            return cached.value
+          if (signal === undefined || signal.tier === 1 || signal.tier === 1.5) {
+            const cached = yield* cacheRef.getTiered<SignalRunResult>(key, {
+              ...(signal !== undefined ? { tier: signal.tier } : {}),
+            })
+            if (cached.status === "hit" || cached.status === "stale") {
+              yield* Effect.annotateCurrentSpan("cacheKey", cacheKeyString(key))
+              yield* Effect.annotateCurrentSpan("cacheHit", true)
+              return mergeCachedResultMetadata(cached.value!, cached)
+            }
           }
 
-          const result = yield* Effect.scoped(
+          const result = yield* withCommitEnvironment(repoPath, sha, (EnvLayer, referenceEntries) =>
             Effect.gen(function* () {
-              const worktreePath = yield* acquireWorktree(repoPath, sha)
-              yield* Effect.annotateCurrentSpan("worktreePath", worktreePath)
-
-              const ContextLayer = Layer.succeed(SignalContextTag, {
-                gitSha: sha,
-                worktreePath,
-                changedHunks: [],
+              const tieredCached = yield* cacheRef.getTiered<SignalRunResult>(key, {
+                ...(signal !== undefined ? { tier: signal.tier } : {}),
+                ...(signal?.tier === 2
+                  ? { refVersionHash: computeReferenceVersionHash(referenceEntries) }
+                  : {}),
               })
-              const ReferenceLayer = Layer.succeed(
-                ReferenceDataTag,
-                makeReferenceData(new Map()),
-              )
-              const CacheShareLayer = Layer.succeed(SignalCacheTag, cacheRef)
-              const PackLayer = packLayerFactory(worktreePath)
-              const EnvLayer = Layer.mergeAll(
-                ContextLayer,
-                ReferenceLayer,
-                CacheShareLayer,
-                PackLayer,
-              )
+              if (tieredCached.status === "hit" || tieredCached.status === "stale") {
+                yield* Effect.annotateCurrentSpan("cacheKey", cacheKeyString(key))
+                yield* Effect.annotateCurrentSpan("cacheHit", true)
+                return mergeCachedResultMetadata(tieredCached.value!, tieredCached)
+              }
 
-              const ran = yield* (
-                Effect.provide(runSignal(registry, signalId, vector), EnvLayer) as Effect.Effect<
-                  SignalRunResult,
-                  SignalError,
-                  never
-                >
-              )
-              return ran
+              const fresh = yield* (Effect.provide(
+                runSignal(registry, signalId, vector),
+                EnvLayer,
+              ) as Effect.Effect<SignalRunResult, SignalError, never>)
+
+              yield* cacheRef.setTiered(key, fresh, {
+                ...(signal !== undefined ? { tier: signal.tier } : {}),
+                ...(signal?.tier === 2
+                  ? { refVersionHash: computeReferenceVersionHash(referenceEntries) }
+                  : {}),
+              })
+              return fresh
             }),
           )
 
-          yield* cacheRef.set(key, result)
           yield* Effect.annotateCurrentSpan("cacheHit", false)
           return result
         },
@@ -254,7 +360,49 @@ export const ScoringEngineLayer = (
         },
       )
 
-      return ScoringEngineTag.of({ scoreCommit, scoreRange })
+      const observeCommit = Effect.fn("ScoringEngine.observeCommit")(
+        function* (repoPath: string, sha: string) {
+          yield* Effect.annotateCurrentSpan("sha", sha)
+          const result = yield* withCommitEnvironment(repoPath, sha, (EnvLayer) =>
+            Effect.provide(observe(registry, vector), EnvLayer) as Effect.Effect<
+              ObserverOutput,
+              never,
+              never
+            >,
+          )
+          if (options?.timeSeriesWriter !== undefined) {
+            yield* options.timeSeriesWriter.appendObservation(sha, result)
+          }
+          return result
+        },
+      )
+
+      const observeRange = Effect.fn("ScoringEngine.observeRange")(
+        function* (
+          repoPath: string,
+          fromSha: string,
+          toSha: string,
+          options?: { concurrency?: number },
+        ) {
+          yield* Effect.annotateCurrentSpan("fromSha", fromSha)
+          yield* Effect.annotateCurrentSpan("toSha", toSha)
+
+          const shas = yield* resolveRange(repoPath, fromSha, toSha)
+          yield* Effect.annotateCurrentSpan("commitCount", shas.length)
+
+          const concurrency = options?.concurrency ?? 4
+          return yield* Effect.forEach(
+            shas,
+            (sha) =>
+              observeCommit(repoPath, sha).pipe(
+                Effect.map((result) => ({ sha, result })),
+              ),
+            { concurrency },
+          )
+        },
+      )
+
+      return ScoringEngineTag.of({ scoreCommit, scoreRange, observeCommit, observeRange })
     }),
   )
 
@@ -293,6 +441,14 @@ const acquireWorktree = (
             message: `prep cleanup failed: ${String(cause)}`,
           }),
       })
+      yield* runGit(repoPath, ["worktree", "prune"], {
+        onFail: (msg) =>
+          new WorktreeCreateFailed({
+            repoPath,
+            sha,
+            message: `git worktree prune failed: ${msg}`,
+          }),
+      })
       yield* runGit(
         repoPath,
         ["worktree", "add", "--detach", "--force", dir, sha],
@@ -321,6 +477,15 @@ const acquireWorktree = (
           // (e.g. the worktree directory is gone already).
           yield* Effect.promise(() => rm(dir, { recursive: true, force: true }))
         }
+        yield* Effect.either(
+          runGit(repoPath, ["worktree", "prune"], {
+            onFail: (msg) =>
+              new WorktreeRemoveFailed({
+                worktreePath: dir,
+                message: `git worktree prune failed: ${msg}`,
+              }),
+          }),
+        )
       }),
   )
 

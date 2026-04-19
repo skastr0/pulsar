@@ -2,7 +2,11 @@ import { Effect } from "effect"
 import type { Diagnostic } from "./diagnostic.js"
 import { UnknownSignalIdError, type SignalError } from "./errors.js"
 import type { Registry } from "./registry.js"
-import type { InputOutputs, ResolvedSignal } from "./signal.js"
+import type {
+  InputOutputs,
+  ResolvedSignal,
+  SignalOutputMetadata,
+} from "./signal.js"
 import {
   isActive as vectorIsActive,
   resolvedConfig as vectorResolvedConfig,
@@ -14,6 +18,7 @@ export interface SignalRunResult {
   readonly score: number
   readonly output: unknown
   readonly diagnostics: ReadonlyArray<Diagnostic>
+  readonly metadata?: SignalOutputMetadata
 }
 
 /**
@@ -58,11 +63,13 @@ export const runSignal = (
         ],
       }
     }
+    const metadata = target.outputMetadata?.(out)
     return {
       signalId: target.id,
       score: target.score(out),
       output: out,
       diagnostics: target.diagnose(out),
+      ...(metadata !== undefined ? { metadata } : {}),
     }
   })
 

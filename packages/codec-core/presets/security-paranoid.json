@@ -1,0 +1,20 @@
+{
+  "id": "security-paranoid",
+  "domain": "typescript",
+  "description": "Treat suppressions, production stubs, and dependency duplication as early warning signals rather than background noise. Best for teams operating in regulated or sensitive environments where hidden risk is more expensive than a slower review lane.",
+  "signal_overrides": {
+    "TS-SL-03": { "weight": 1.7 },
+    "TS-SL-04": { "weight": 1.65 },
+    "TS-DE-05": { "weight": 1.45 },
+    "TS-DE-04": { "weight": 1.25 },
+    "TS-AD-01": { "weight": 1.1 },
+    "TS-AD-02": { "weight": 1.15 },
+    "TS-RP-02": { "weight": 0.75 }
+  },
+  "review_routing": {
+    "score_thresholds": {
+      "consolidation-reviewer": 0.8,
+      "supply-chain-reviewer": 0.8
+    }
+  }
+}

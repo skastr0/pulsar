@@ -1,0 +1,17 @@
+{
+  "id": "unsafe-added",
+  "displayName": "Rust unsafe block added",
+  "triggerKind": "ast-match",
+  "condition": {
+    "kind": "ast-match",
+    "signalId": "RS-LD-01",
+    "outputKey": "new-unsafe-block"
+  },
+  "reviewerRole": "safety-reviewer",
+  "contextPayload": [
+    {
+      "signalId": "RS-LD-01",
+      "include": "all"
+    }
+  ]
+}

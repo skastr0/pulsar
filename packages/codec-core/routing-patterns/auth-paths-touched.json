@@ -1,0 +1,16 @@
+{
+  "id": "auth-paths-touched",
+  "displayName": "Auth paths touched",
+  "triggerKind": "file-path",
+  "condition": {
+    "kind": "file-path",
+    "globs": [
+      "**/auth/**",
+      "**/*auth*.ts",
+      "**/*auth*.tsx",
+      "**/*auth*.rs"
+    ]
+  },
+  "reviewerRole": "security-reviewer",
+  "contextPayload": []
+}

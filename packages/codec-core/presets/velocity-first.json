@@ -1,0 +1,32 @@
+{
+  "id": "velocity-first",
+  "domain": "typescript",
+  "description": "Keep gates open unless the repo is actually becoming unbuildable or structurally unsafe. Best for teams doing rapid discovery work who still want hard failures when dependency health or severe structural debt would stop delivery entirely.",
+  "signal_overrides": {
+    "TS-LD-01": { "weight": 0.45 },
+    "TS-LD-02": { "weight": 0.45 },
+    "TS-LD-03": { "weight": 0.4 },
+    "TS-LD-04": { "weight": 0.45 },
+    "TS-LD-05": { "weight": 0.5 },
+    "TS-LD-06": { "weight": 0.45 },
+    "TS-AD-01": { "weight": 0.55 },
+    "TS-AD-02": { "weight": 0.55 },
+    "TS-AD-03": { "weight": 0.5 },
+    "TS-DE-01": { "weight": 0.5 },
+    "TS-DE-02": { "weight": 0.45 },
+    "TS-DE-03": { "weight": 0.45 },
+    "TS-DE-04": { "weight": 1.6 },
+    "TS-DE-05": { "weight": 0.65 },
+    "TS-AB-01": { "weight": 0.45 },
+    "TS-AB-02": { "weight": 0.45 },
+    "TS-AB-03": { "weight": 0.4 },
+    "TS-AB-04": { "weight": 0.45 },
+    "TS-AB-05": { "weight": 0.4 },
+    "TS-RP-01": { "weight": 0.55 },
+    "TS-RP-02": { "weight": 0.55 },
+    "TS-SL-01": { "weight": 0.55 },
+    "TS-SL-02": { "weight": 0.55 },
+    "TS-SL-03": { "weight": 0.65 },
+    "TS-SL-04": { "weight": 0.7 }
+  }
+}

@@ -4,15 +4,150 @@ import { UnknownSignalIdError } from "./errors.js"
 
 export const SignalOverride = Schema.Struct({
   active: Schema.optional(Schema.Boolean),
-  weight: Schema.optional(Schema.Number.pipe(Schema.between(0, 1))),
+  weight: Schema.optional(Schema.Number.pipe(Schema.between(0, 2))),
   config: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.Unknown })),
 })
 export type SignalOverride = typeof SignalOverride.Type
 
+export const ReviewRoutingConfig = Schema.Struct({
+  score_thresholds: Schema.optionalWith(
+    Schema.Record({
+      key: Schema.String,
+      value: Schema.Number.pipe(Schema.between(0, 1)),
+    }),
+    { default: () => ({}) },
+  ),
+})
+export type ReviewRoutingConfig = typeof ReviewRoutingConfig.Type
+
+export const ObserverConfig = Schema.Struct({
+  diffTimeIntegration: Schema.optionalWith(Schema.Boolean, {
+    default: () => true,
+  }),
+  timeSeries: Schema.optional(
+    Schema.Struct({
+      enabled: Schema.optionalWith(Schema.Boolean, {
+        default: () => false,
+      }),
+      compaction_threshold: Schema.optionalWith(Schema.Number, {
+        default: () => 10_000,
+      }),
+      raw_retention_days: Schema.optionalWith(Schema.Number, {
+        default: () => 90,
+      }),
+    }),
+  ),
+})
+export type ObserverConfig = typeof ObserverConfig.Type
+
+export const GoodhartConfig = Schema.Struct({
+  holdout_ratio: Schema.optionalWith(Schema.Number.pipe(Schema.between(0, 1)), {
+    default: () => 0.2,
+  }),
+  rotation_period_days: Schema.optionalWith(Schema.Number, {
+    default: () => 7,
+  }),
+  max_visible_holdout_gap: Schema.optionalWith(
+    Schema.Number.pipe(Schema.between(0, 1)),
+    {
+      default: () => 0.08,
+    },
+  ),
+  max_velocity_excess: Schema.optionalWith(Schema.Number.pipe(Schema.between(0, 1)), {
+    default: () => 0.12,
+  }),
+  min_history_points: Schema.optionalWith(Schema.Number, {
+    default: () => 4,
+  }),
+})
+export type GoodhartConfig = typeof GoodhartConfig.Type
+
+export const BackpressureThresholdConfig = Schema.Struct({
+  green_min_score: Schema.optionalWith(Schema.Number.pipe(Schema.between(0, 1)), {
+    default: () => 0.85,
+  }),
+  yellow_min_score: Schema.optionalWith(Schema.Number.pipe(Schema.between(0, 1)), {
+    default: () => 0.6,
+  }),
+  red_min_dimension: Schema.optionalWith(Schema.Number.pipe(Schema.between(0, 1)), {
+    default: () => 0.4,
+  }),
+  degrading_window_drop: Schema.optionalWith(Schema.Number.pipe(Schema.between(0, 1)), {
+    default: () => 0.1,
+  }),
+})
+export type BackpressureThresholdConfig = typeof BackpressureThresholdConfig.Type
+
+export const BackpressureConfig = Schema.Struct({
+  trajectory_days: Schema.optionalWith(Schema.Number, {
+    default: () => 14,
+  }),
+  empty_series_level: Schema.optionalWith(Schema.Literal("green", "yellow", "red"), {
+    default: () => "yellow",
+  }),
+  thresholds: Schema.optionalWith(BackpressureThresholdConfig, {
+    default: () => ({
+      green_min_score: 0.85,
+      yellow_min_score: 0.6,
+      red_min_dimension: 0.4,
+      degrading_window_drop: 0.1,
+    }),
+  }),
+  goodhart: Schema.optionalWith(GoodhartConfig, {
+    default: () => ({
+      holdout_ratio: 0.2,
+      rotation_period_days: 7,
+      max_visible_holdout_gap: 0.08,
+      max_velocity_excess: 0.12,
+      min_history_points: 4,
+    }),
+  }),
+})
+export type BackpressureConfig = typeof BackpressureConfig.Type
+
+export const TasteVectorEvidence = Schema.Struct({
+  kind: Schema.Literal("preset", "quiz", "observation", "score-delta", "proposal"),
+  summary: Schema.String,
+  signal_ids: Schema.optional(Schema.Array(Schema.String)),
+  artifact_path: Schema.optional(Schema.String),
+  metadata: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.Unknown })),
+})
+export type TasteVectorEvidence = typeof TasteVectorEvidence.Type
+
+export const TasteVectorProvenanceEntry = Schema.Struct({
+  source: Schema.Literal(
+    "manual",
+    "preset",
+    "quiz",
+    "revealed-preference",
+    "passive-extraction",
+    "ai-assisted-detection",
+  ),
+  recorded_at: Schema.String,
+  summary: Schema.String,
+  preset_id: Schema.optional(Schema.String),
+  artifact_path: Schema.optional(Schema.String),
+  evidence: Schema.optional(Schema.Array(TasteVectorEvidence)),
+})
+export type TasteVectorProvenanceEntry = typeof TasteVectorProvenanceEntry.Type
+
+export const TasteVectorModes = Schema.Struct({
+  ai_assisted: Schema.optionalWith(Schema.Boolean, {
+    default: () => false,
+  }),
+})
+export type TasteVectorModes = typeof TasteVectorModes.Type
+
 export const TasteVector = Schema.Struct({
   id: Schema.String,
   domain: Schema.String,
+  description: Schema.optional(Schema.String),
   signal_overrides: Schema.Record({ key: Schema.String, value: SignalOverride }),
+  review_routing: Schema.optional(ReviewRoutingConfig),
+  observer: Schema.optional(ObserverConfig),
+  backpressure: Schema.optional(BackpressureConfig),
+  provenance: Schema.optional(Schema.Array(TasteVectorProvenanceEntry)),
+  modes: Schema.optional(TasteVectorModes),
 })
 export type TasteVector = typeof TasteVector.Type
 
@@ -59,3 +194,114 @@ export const weightOf = (signalId: string, vector: TasteVector | undefined): num
   const override = vector.signal_overrides[signalId]
   return override?.weight ?? 1
 }
+
+export const reviewThresholdOf = (
+  reviewerRole: string,
+  vector: TasteVector | undefined,
+  fallback = 0.6,
+): number => vector?.review_routing?.score_thresholds[reviewerRole] ?? fallback
+
+export const diffTimeIntegrationEnabled = (
+  vector: TasteVector | undefined,
+): boolean => vector?.observer?.diffTimeIntegration ?? true
+
+export const aiAssistedModeEnabled = (vector: TasteVector | undefined): boolean =>
+  vector?.modes?.ai_assisted ?? false
+
+export interface AiAssistedModeExplanation {
+  readonly active: boolean
+  readonly source: "inactive" | "preset" | "proposal" | "manual"
+  readonly summary: string
+  readonly overrideHint: string
+}
+
+export const explainAiAssistedMode = (
+  vector: TasteVector | undefined,
+): AiAssistedModeExplanation => {
+  if (!aiAssistedModeEnabled(vector)) {
+    return {
+      active: false,
+      source: "inactive",
+      summary: "inactive — AI-assisted thresholds are off for this run.",
+      overrideHint:
+        "The codec never hides this switch: enable modes.ai_assisted or accept an AI-mode proposal if you want the tighter thresholds.",
+    }
+  }
+
+  const latestRelevant = [...(vector?.provenance ?? [])]
+    .reverse()
+    .find(
+      (entry) =>
+        entry.source === "ai-assisted-detection" ||
+        entry.source === "preset" ||
+        entry.summary.toLowerCase().includes("ai-assisted"),
+    )
+
+  if (latestRelevant?.source === "ai-assisted-detection") {
+    return {
+      active: true,
+      source: "proposal",
+      summary: `active via accepted AI-assisted detection proposal — ${latestRelevant.summary}`,
+      overrideHint:
+        "This remains explicit in vector.modes.ai_assisted; edit the vector or reject future proposals to stay on manual thresholds.",
+    }
+  }
+
+  if (latestRelevant?.source === "preset") {
+    return {
+      active: true,
+      source: "preset",
+      summary:
+        latestRelevant.preset_id !== undefined
+          ? `active via preset ${latestRelevant.preset_id}`
+          : `active via preset provenance — ${latestRelevant.summary}`,
+      overrideHint:
+        "This remains explicit in vector.modes.ai_assisted; switch presets or set the mode to false to return to manual thresholds.",
+    }
+  }
+
+  return {
+    active: true,
+    source: "manual",
+    summary: "active because vector.modes.ai_assisted is true.",
+    overrideHint:
+      "This remains explicit in the vector; set modes.ai_assisted to false to disable the tighter thresholds.",
+  }
+}
+
+export const timeSeriesConfigOf = (vector: TasteVector | undefined): NonNullable<
+  NonNullable<TasteVector["observer"]>["timeSeries"]
+> => ({
+  enabled: vector?.observer?.timeSeries?.enabled ?? false,
+  compaction_threshold: vector?.observer?.timeSeries?.compaction_threshold ?? 10_000,
+  raw_retention_days: vector?.observer?.timeSeries?.raw_retention_days ?? 90,
+})
+
+export const backpressureConfigOf = (
+  vector: TasteVector | undefined,
+): BackpressureConfig => ({
+  trajectory_days: vector?.backpressure?.trajectory_days ?? 14,
+  empty_series_level: vector?.backpressure?.empty_series_level ?? "yellow",
+  thresholds: {
+    green_min_score: vector?.backpressure?.thresholds?.green_min_score ?? 0.85,
+    yellow_min_score: vector?.backpressure?.thresholds?.yellow_min_score ?? 0.6,
+    red_min_dimension: vector?.backpressure?.thresholds?.red_min_dimension ?? 0.4,
+    degrading_window_drop: vector?.backpressure?.thresholds?.degrading_window_drop ?? 0.1,
+  },
+  goodhart: {
+    holdout_ratio: vector?.backpressure?.goodhart?.holdout_ratio ?? 0.2,
+    rotation_period_days: vector?.backpressure?.goodhart?.rotation_period_days ?? 7,
+    max_visible_holdout_gap:
+      vector?.backpressure?.goodhart?.max_visible_holdout_gap ?? 0.08,
+    max_velocity_excess: vector?.backpressure?.goodhart?.max_velocity_excess ?? 0.12,
+    min_history_points: vector?.backpressure?.goodhart?.min_history_points ?? 4,
+  },
+})
+
+export const appendVectorProvenance = (
+  vector: TasteVector,
+  entry: TasteVectorProvenanceEntry,
+): TasteVector => ({
+  ...vector,
+  provenance: [...(vector.provenance ?? []), entry],
+})

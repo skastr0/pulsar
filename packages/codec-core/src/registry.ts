@@ -33,6 +33,25 @@ const validateNoDuplicates = (
     }
   })
 
+const normalizeSignals = (
+  signals: ReadonlyArray<AnySignal>,
+): Effect.Effect<ReadonlyArray<AnySignal>, DuplicateSignalIdError> =>
+  Effect.gen(function* () {
+    const canonicalById = new Map<string, AnySignal>()
+    const normalized: Array<AnySignal> = []
+    for (const signal of signals) {
+      const existing = canonicalById.get(signal.id)
+      if (existing === undefined) {
+        canonicalById.set(signal.id, signal)
+        normalized.push(signal)
+        continue
+      }
+      if (existing === signal) continue
+      return yield* new DuplicateSignalIdError({ id: signal.id })
+    }
+    return normalized
+  })
+
 const validateDependenciesExist = (
   signals: ReadonlyArray<AnySignal>,
 ): Effect.Effect<void, MissingDependencyError> =>
@@ -40,7 +59,7 @@ const validateDependenciesExist = (
     const ids = new Set(signals.map((s) => s.id))
     for (const s of signals) {
       for (const input of s.inputs) {
-        if (!ids.has(input.id)) {
+        if (!ids.has(input.id) && input.optional !== true) {
           return yield* new MissingDependencyError({
             signalId: s.id,
             missingInputId: input.id,
@@ -63,8 +82,12 @@ const topologicalSort = (
     const dependents = new Map<string, Array<string>>()
 
     for (const s of signals) {
-      indegree.set(s.id, s.inputs.length)
+      indegree.set(
+        s.id,
+        s.inputs.filter((input) => byId.has(input.id)).length,
+      )
       for (const input of s.inputs) {
+        if (!byId.has(input.id)) continue
         const list = dependents.get(input.id) ?? []
         list.push(s.id)
         dependents.set(input.id, list)
@@ -105,6 +128,7 @@ const validateCompositionDepth = (
       }
       let maxInputDepth = 0
       for (const input of s.inputs) {
+        if (!depths.has(input.id)) continue
         const d = depths.get(input.id) ?? 1
         if (d > maxInputDepth) maxInputDepth = d
       }
@@ -125,9 +149,10 @@ export const buildRegistry = (
   signals: ReadonlyArray<AnySignal>,
 ): Effect.Effect<Registry, RegistryError> =>
   Effect.gen(function* () {
-    yield* validateNoDuplicates(signals)
-    yield* validateDependenciesExist(signals)
-    const sorted = yield* topologicalSort(signals)
+    const normalized = yield* normalizeSignals(signals)
+    yield* validateNoDuplicates(normalized)
+    yield* validateDependenciesExist(normalized)
+    const sorted = yield* topologicalSort(normalized)
     yield* validateCompositionDepth(sorted)
 
     const resolved: Array<ResolvedSignal> = sorted.map((s) => ({

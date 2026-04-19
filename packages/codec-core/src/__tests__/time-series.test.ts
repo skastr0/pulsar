@@ -1,0 +1,132 @@
+import { describe, expect, test } from "bun:test"
+import { mkdtemp, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { Effect, Option } from "effect"
+import { createTimeSeriesServices, type TimeSeriesEntry } from "../time-series.js"
+
+const makeEntry = (
+  sha: string,
+  timestamp: string,
+  score: number,
+): TimeSeriesEntry => ({
+  sha,
+  timestamp,
+  source: "raw" as const,
+  observerOutput: {
+    categories: {
+      "architectural-drift": { score, signals: { A: score } },
+      "dependency-entropy": { score: 1, signals: {} },
+      "abstraction-bloat": { score: 1, signals: {} },
+      "legibility-decay": { score: 1, signals: {} },
+      "generated-slop": { score: 1, signals: {} },
+      "review-pain": { score: 1, signals: {} },
+    },
+    minimum: { signal: "A", category: "architectural-drift", score, detail: "detail" },
+    weighted_mean: score,
+    hard_gate_status: score < 0.5 ? ("fail" as const) : ("pass" as const),
+    hard_gate_violations: [],
+  },
+  signalDiagnostics: {
+    A: [{ severity: "warn" as const, message: `score ${score}` }],
+  },
+  inactiveSignals: [],
+})
+
+describe("time series persistence", () => {
+  test("writes then reads entries and keeps same-sha writes idempotent", async () => {
+    const repoPath = await mkdtemp(join(tmpdir(), "taste-ts-series-"))
+    try {
+      const services = createTimeSeriesServices(repoPath)
+      await Effect.runPromise(
+        services.writer.append(makeEntry("abc123", "2026-04-15T10:00:00.000Z", 0.9)),
+      )
+      const duplicate = await Effect.runPromise(
+        services.writer.append(makeEntry("abc123", "2026-04-15T10:00:00.000Z", 0.7)),
+      )
+      const entries = await Effect.runPromise(services.reader.entries())
+      const latest = await Effect.runPromise(services.reader.latest)
+
+      expect(duplicate.status).toBe("duplicate")
+      expect(entries).toHaveLength(1)
+      expect(entries[0]?.sha).toBe("abc123")
+      expect(Option.isSome(latest)).toBe(true)
+      if (Option.isSome(latest)) {
+        expect(latest.value.observerOutput.weighted_mean).toBe(0.9)
+      }
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("compacts older raw entries into weekly averages while preserving recent raw data", async () => {
+    const repoPath = await mkdtemp(join(tmpdir(), "taste-ts-compact-"))
+    try {
+      const services = createTimeSeriesServices(repoPath, {
+        compactionThreshold: 5,
+        rawRetentionDays: 30,
+      })
+
+      const older = [
+        makeEntry("a1", "2026-01-01T10:00:00.000Z", 0.7),
+        makeEntry("a2", "2026-01-02T10:00:00.000Z", 0.9),
+        makeEntry("a3", "2026-01-08T10:00:00.000Z", 0.8),
+        makeEntry("a4", "2026-01-09T10:00:00.000Z", 0.6),
+      ]
+      const recent = [
+        makeEntry("b1", "2026-04-10T10:00:00.000Z", 0.95),
+        makeEntry("b2", "2026-04-15T10:00:00.000Z", 0.96),
+      ]
+
+      for (const entry of [...older, ...recent]) {
+        await Effect.runPromise(services.writer.append(entry))
+      }
+
+      const entries = await Effect.runPromise(services.reader.entries())
+      expect(entries.length).toBeLessThan(6)
+      expect(entries.some((entry) => entry.source === "weekly-average")).toBe(true)
+      expect(entries.some((entry) => entry.sha === "b1")).toBe(true)
+      expect(entries.some((entry) => entry.sha === "b2")).toBe(true)
+      const compacted = entries.find((entry) => entry.source === "weekly-average")
+      expect(compacted?.aggregate?.commit_shas.includes("a1")).toBe(true)
+      const resolved = await Effect.runPromise(services.reader.atSha("a2"))
+      expect(Option.isSome(resolved)).toBe(true)
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("serializes concurrent writers with a lock", async () => {
+    const repoPath = await mkdtemp(join(tmpdir(), "taste-ts-lock-"))
+    try {
+      const services = createTimeSeriesServices(repoPath)
+      await Promise.all(
+        Array.from({ length: 8 }, (_, index) =>
+          Effect.runPromise(
+            services.writer.append(
+              makeEntry(
+                `sha-${index}`,
+                `2026-04-${String(index + 1).padStart(2, "0")}T10:00:00.000Z`,
+                0.9,
+              ),
+            ),
+          ),
+        ),
+      )
+      const entries = await Effect.runPromise(services.reader.entries())
+      expect(entries).toHaveLength(8)
+      expect(entries.map((entry) => entry.sha)).toEqual([
+        "sha-0",
+        "sha-1",
+        "sha-2",
+        "sha-3",
+        "sha-4",
+        "sha-5",
+        "sha-6",
+        "sha-7",
+      ])
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+})

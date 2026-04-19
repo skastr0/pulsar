@@ -64,6 +64,12 @@ describe("Registry", () => {
     expect(registry.sorted.map((s) => s.id)).toEqual(["MOCK-01", "MOCK-02"])
   })
 
+  test("coalesces repeated registration of the same signal instance", async () => {
+    const registry = await Effect.runPromise(buildRegistry([MockLeaf, MockLeaf]))
+    expect(registry.byId.size).toBe(1)
+    expect(registry.sorted.map((signal) => signal.id)).toEqual(["MOCK-01"])
+  })
+
   test("rejects duplicate ids", async () => {
     const exit = await Effect.runPromiseExit(
       buildRegistry([MockLeaf, { ...MockLeaf }] as ReadonlyArray<AnySignal>),
@@ -82,6 +88,17 @@ describe("Registry", () => {
       const err = exit.cause._tag === "Fail" ? exit.cause.error : null
       expect((err as any)?._tag).toBe("MissingDependencyError")
     }
+  })
+
+  test("allows optional dependencies to be absent", async () => {
+    const OptionalCompound: AnySignal = {
+      ...MockCompound,
+      id: "MOCK-OPTIONAL",
+      inputs: [{ id: "DOES-NOT-EXIST", optional: true }],
+    }
+
+    const registry = await Effect.runPromise(buildRegistry([OptionalCompound]))
+    expect(registry.sorted.map((signal) => signal.id)).toEqual(["MOCK-OPTIONAL"])
   })
 
   test("rejects cycles", async () => {

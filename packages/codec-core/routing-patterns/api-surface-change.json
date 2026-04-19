@@ -1,0 +1,17 @@
+{
+  "id": "api-surface-change",
+  "displayName": "API surface change",
+  "triggerKind": "signal-threshold",
+  "condition": {
+    "kind": "signal-threshold",
+    "signalId": "TS-AB-01",
+    "changeRatioAbove": 0.1
+  },
+  "reviewerRole": "api-design-reviewer",
+  "contextPayload": [
+    {
+      "signalId": "TS-AB-01",
+      "include": "all"
+    }
+  ]
+}

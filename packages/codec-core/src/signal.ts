@@ -16,6 +16,16 @@ import type { SignalKind, Tier } from "./tier.js"
  */
 export interface SignalInputRef {
   readonly id: string
+  readonly optional?: boolean
+}
+
+export type ConfigDirection = "higher-is-stricter" | "higher-is-looser"
+
+export interface SignalOutputMetadata {
+  readonly effectiveConfidence?: number
+  readonly baseConfidence?: number
+  readonly computedAt?: string
+  readonly stale?: boolean
 }
 
 /**
@@ -41,6 +51,7 @@ export interface Signal<Config, Output, R = SignalRequirements> {
   readonly tier: Tier
   readonly category: Category
   readonly kind: SignalKind
+  readonly normalizationGroup?: string
 
   /**
    * Schema that decodes raw JSON config from the taste vector into a
@@ -52,6 +63,8 @@ export interface Signal<Config, Output, R = SignalRequirements> {
    * Default config when the taste vector does not override this signal.
    */
   readonly defaultConfig: Config
+
+  readonly configDirections?: Partial<Record<keyof Config, ConfigDirection>>
 
   readonly inputs: ReadonlyArray<SignalInputRef>
 
@@ -75,6 +88,8 @@ export interface Signal<Config, Output, R = SignalRequirements> {
   readonly score: (output: Output) => number
 
   readonly diagnose: (output: Output) => ReadonlyArray<Diagnostic>
+
+  readonly outputMetadata?: (output: Output) => SignalOutputMetadata | undefined
 }
 
 /**

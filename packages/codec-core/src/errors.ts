@@ -1,4 +1,9 @@
 import { Schema } from "effect"
+import type {
+  TimeSeriesLockFailed,
+  TimeSeriesReadFailed,
+  TimeSeriesWriteFailed,
+} from "./time-series.js"
 
 export class DuplicateSignalIdError extends Schema.TaggedError<DuplicateSignalIdError>()(
   "DuplicateSignalIdError",
@@ -45,6 +50,24 @@ export class ReferenceDataMissingError extends Schema.TaggedError<ReferenceDataM
   {
     signalId: Schema.String,
     key: Schema.String,
+  },
+) {}
+
+export class ReferenceDataLoadFailed extends Schema.TaggedError<ReferenceDataLoadFailed>()(
+  "ReferenceDataLoadFailed",
+  {
+    repoPath: Schema.String,
+    path: Schema.String,
+    message: Schema.String,
+  },
+) {}
+
+export class RoutingPatternLoadFailed extends Schema.TaggedError<RoutingPatternLoadFailed>()(
+  "RoutingPatternLoadFailed",
+  {
+    repoPath: Schema.String,
+    path: Schema.String,
+    message: Schema.String,
   },
 ) {}
 
@@ -110,3 +133,7 @@ export type ScoringEngineError =
   | WorktreeRemoveFailed
   | CommitNotFound
   | GitRevListFailed
+  | ReferenceDataLoadFailed
+  | TimeSeriesReadFailed
+  | TimeSeriesWriteFailed
+  | TimeSeriesLockFailed

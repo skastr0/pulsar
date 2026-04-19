@@ -1,0 +1,21 @@
+{
+  "id": "crypto-import-added",
+  "displayName": "Crypto-sensitive import added",
+  "triggerKind": "import-added",
+  "condition": {
+    "kind": "import-added",
+    "specifiers": [
+      "crypto",
+      "jsonwebtoken",
+      "bcrypt",
+      "@sentry/*"
+    ]
+  },
+  "reviewerRole": "security-reviewer",
+  "contextPayload": [
+    {
+      "signalId": "TS-DE-04",
+      "include": "all"
+    }
+  ]
+}
