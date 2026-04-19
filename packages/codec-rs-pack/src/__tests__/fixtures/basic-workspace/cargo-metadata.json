@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "workspace_root": "/fixture/basic-workspace",
+  "target_directory": "/fixture/basic-workspace/target",
+  "workspace_members": [
+    "path+file:///fixture/basic-workspace#fixture-crate@0.1.0"
+  ],
+  "packages": [
+    {
+      "id": "path+file:///fixture/basic-workspace#fixture-crate@0.1.0",
+      "name": "fixture-crate",
+      "version": "0.1.0",
+      "edition": "2021",
+      "manifest_path": "/fixture/basic-workspace/Cargo.toml",
+      "dependencies": [
+        {
+          "name": "serde",
+          "req": "^1",
+          "kind": null,
+          "rename": null,
+          "optional": false,
+          "uses_default_features": true,
+          "features": ["derive"],
+          "path": null,
+          "target": null
+        }
+      ],
+      "features": {
+        "default": []
+      },
+      "targets": [
+        {
+          "name": "fixture_crate",
+          "kind": ["lib"],
+          "crate_types": ["lib"],
+          "src_path": "/fixture/basic-workspace/src/lib.rs",
+          "edition": "2021"
+        }
+      ]
+    },
+    {
+      "id": "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.210",
+      "name": "serde",
+      "version": "1.0.210",
+      "edition": "2021",
+      "manifest_path": "/cargo/registry/src/serde/Cargo.toml",
+      "dependencies": [],
+      "features": {
+        "default": [],
+        "derive": []
+      },
+      "targets": [
+        {
+          "name": "serde",
+          "kind": ["lib"],
+          "crate_types": ["lib"],
+          "src_path": "/cargo/registry/src/serde/src/lib.rs",
+          "edition": "2021"
+        }
+      ]
+    }
+  ],
+  "resolve": {
+    "root": "path+file:///fixture/basic-workspace#fixture-crate@0.1.0",
+    "nodes": [
+      {
+        "id": "path+file:///fixture/basic-workspace#fixture-crate@0.1.0",
+        "dependencies": [
+          "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.210"
+        ],
+        "deps": [
+          {
+            "name": "serde",
+            "pkg": "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.210",
+            "dep_kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ]
+          }
+        ],
+        "features": ["default"]
+      }
+    ]
+  }
+}
