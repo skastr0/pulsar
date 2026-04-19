@@ -2,6 +2,8 @@
   "files": [],
   "references": [
     { "path": "./packages/codec-core" },
+    { "path": "./packages/codec-rs-pack" },
+    { "path": "./packages/codec-shared-signals" },
     { "path": "./packages/codec-ts-pack" },
     { "path": "./packages/codec-cli" }
   ]

@@ -14,6 +14,10 @@
       "name": "opencode-effect-plugin-template",
       "version": "0.1.0",
       "dependencies": {
+        "@taste-codec/core": "workspace:*",
+        "@taste-codec/rs-pack": "workspace:*",
+        "@taste-codec/shared-signals": "workspace:*",
+        "@taste-codec/ts-pack": "workspace:*",
         "effect": "^3.0.0",
       },
       "devDependencies": {
@@ -32,6 +36,8 @@
       },
       "dependencies": {
         "@taste-codec/core": "workspace:*",
+        "@taste-codec/rs-pack": "workspace:*",
+        "@taste-codec/shared-signals": "workspace:*",
         "@taste-codec/ts-pack": "workspace:*",
         "effect": "^3.0.0",
         "simple-git": "^3.25.0",
@@ -50,11 +56,39 @@
         "typescript": "^5.8.0",
       },
     },
+    "packages/codec-rs-pack": {
+      "name": "@taste-codec/rs-pack",
+      "version": "0.0.0",
+      "dependencies": {
+        "@taste-codec/core": "workspace:*",
+        "@taste-codec/shared-signals": "workspace:*",
+        "effect": "^3.0.0",
+        "simple-git": "^3.25.0",
+        "tree-sitter-rust": "^0.24.0",
+        "web-tree-sitter": "^0.25.0",
+      },
+      "devDependencies": {
+        "@taste-codec/ts-pack": "workspace:*",
+        "typescript": "^5.8.0",
+      },
+    },
+    "packages/codec-shared-signals": {
+      "name": "@taste-codec/shared-signals",
+      "version": "0.0.0",
+      "dependencies": {
+        "@taste-codec/core": "workspace:*",
+        "effect": "^3.0.0",
+      },
+      "devDependencies": {
+        "typescript": "^5.8.0",
+      },
+    },
     "packages/codec-ts-pack": {
       "name": "@taste-codec/ts-pack",
       "version": "0.0.0",
       "dependencies": {
         "@taste-codec/core": "workspace:*",
+        "@taste-codec/shared-signals": "workspace:*",
         "effect": "^3.0.0",
         "simple-git": "^3.25.0",
         "ts-morph": "^24.0.0",
@@ -94,6 +128,10 @@
     "@taste-codec/cli": ["@taste-codec/cli@workspace:packages/codec-cli"],
 
     "@taste-codec/core": ["@taste-codec/core@workspace:packages/codec-core"],
+
+    "@taste-codec/rs-pack": ["@taste-codec/rs-pack@workspace:packages/codec-rs-pack"],
+
+    "@taste-codec/shared-signals": ["@taste-codec/shared-signals@workspace:packages/codec-shared-signals"],
 
     "@taste-codec/ts-pack": ["@taste-codec/ts-pack@workspace:packages/codec-ts-pack"],
 
@@ -153,6 +191,10 @@
 
     "multipasta": ["multipasta@0.2.7", "", {}, "sha512-KPA58d68KgGil15oDqXjkUBEBYc00XvbPj5/X+dyzeo/lWm9Nc25pQRlf1D+gv4OpK7NM0J1odrbu9JNNGvynA=="],
 
+    "node-addon-api": ["node-addon-api@8.7.0", "", {}, "sha512-9MdFxmkKaOYVTV+XVRG8ArDwwQ77XIgIPyKASB1k3JPq3M8fGQQQE3YpMOrKm6g//Ktx8ivZr8xo1Qmtqub+GA=="],
+
+    "node-gyp-build": ["node-gyp-build@4.8.4", "", { "bin": { "node-gyp-build": "bin.js", "node-gyp-build-optional": "optional.js", "node-gyp-build-test": "build-test.js" } }, "sha512-LA4ZjwlnUblHVgq0oBF3Jl/6h/Nvs5fzBLwdEF4nuxnFdsfajde4WfxtJr3CaiH+F6ewcIB/q4jQ4UzPyid+CQ=="],
+
     "node-gyp-build-optional-packages": ["node-gyp-build-optional-packages@5.2.2", "", { "dependencies": { "detect-libc": "^2.0.1" }, "bin": { "node-gyp-build-optional-packages": "bin.js", "node-gyp-build-optional-packages-optional": "optional.js", "node-gyp-build-optional-packages-test": "build-test.js" } }, "sha512-s+w+rBWnpTMwSFbaE0UXsRlg7hU4FjekKU4eyAih5T8nJuNZT1nNsskXpxmeqSK9UzkBl6UgRlnKc8hz8IEqOw=="],
 
     "opencode-effect-plugin-template": ["opencode-effect-plugin-template@workspace:apps/opencode-plugin"],
@@ -175,6 +217,8 @@
 
     "toml": ["toml@4.1.1", "", {}, "sha512-EBJnVBr3dTXdA89WVFoAIPUqkBjxPMwRqsfuo1r240tKFHXv3zgca4+NJib/h6TyvGF7vOawz0jGuryJCdNHrw=="],
 
+    "tree-sitter-rust": ["tree-sitter-rust@0.24.0", "", { "dependencies": { "node-addon-api": "^8.2.2", "node-gyp-build": "^4.8.4" }, "peerDependencies": { "tree-sitter": "^0.22.1" }, "optionalPeers": ["tree-sitter"] }, "sha512-NWemUDf629Tfc90Y0Z55zuwPCAHkLxWnMf2RznYu4iBkkrQl2o/CHGB7Cr52TyN5F1DAx8FmUnDtCy9iUkXZEQ=="],
+
     "ts-morph": ["ts-morph@24.0.0", "", { "dependencies": { "@ts-morph/common": "~0.25.0", "code-block-writer": "^13.0.3" } }, "sha512-2OAOg/Ob5yx9Et7ZX4CvTCc0UFoZHwLEJ+dpDPSUi5TgwwlTlX47w+iFRrEwzUZwYACjq83cgjS/Da50Ga37uw=="],
 
     "turbo": ["turbo@2.9.6", "", { "optionalDependencies": { "@turbo/darwin-64": "2.9.6", "@turbo/darwin-arm64": "2.9.6", "@turbo/linux-64": "2.9.6", "@turbo/linux-arm64": "2.9.6", "@turbo/windows-64": "2.9.6", "@turbo/windows-arm64": "2.9.6" }, "bin": { "turbo": "bin/turbo" } }, "sha512-+v2QJey7ZUeUiuigkU+uFfklvNUyPI2VO2vBpMYJA+a1hKFLFiKtUYlRHdb3P9CrAvMzi0upbjI4WT+zKtqkBg=="],
@@ -184,6 +228,8 @@
     "undici-types": ["undici-types@7.19.2", "", {}, "sha512-qYVnV5OEm2AW8cJMCpdV20CDyaN3g0AjDlOGf1OW4iaDEx8MwdtChUp4zu4H0VP3nDRF/8RKWH+IPp9uW0YGZg=="],
 
     "uuid": ["uuid@13.0.0", "", { "bin": { "uuid": "dist-node/bin/uuid" } }, "sha512-XQegIaBTVUjSHliKqcnFqYypAd4S+WCYt5NIeRs6w/UAry7z8Y9j5ZwRRL4kzq9U3sD6v+85er9FvkEaBpji2w=="],
+
+    "web-tree-sitter": ["web-tree-sitter@0.25.10", "", { "peerDependencies": { "@types/emscripten": "^1.40.0" }, "optionalPeers": ["@types/emscripten"] }, "sha512-Y09sF44/13XvgVKgO2cNDw5rGk6s26MgoZPXLESvMXeefBf7i6/73eFurre0IsTW6E14Y0ArIzhUMmjoc7xyzA=="],
 
     "which": ["which@2.0.2", "", { "dependencies": { "isexe": "^2.0.0" }, "bin": { "node-which": "./bin/node-which" } }, "sha512-BLI3Tl1TW3Pvl70l3yq3Y64i+awpwXqsGBYWkkqMtnbXgrMD+yj7rhW0kuEDxzJaYXGjEW5ogapKNMEKNMjibA=="],
 

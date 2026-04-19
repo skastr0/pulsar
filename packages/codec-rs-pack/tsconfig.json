@@ -9,7 +9,6 @@
   "include": ["src/**/*.ts"],
   "references": [
     { "path": "../codec-core" },
-    { "path": "../codec-rs-pack" },
     { "path": "../codec-shared-signals" },
     { "path": "../codec-ts-pack" }
   ]

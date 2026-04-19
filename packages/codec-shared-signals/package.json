@@ -1,9 +1,9 @@
 {
-  "name": "@taste-codec/ts-pack",
+  "name": "@taste-codec/shared-signals",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "TypeScript signal pack for Taste Codec",
+  "description": "Language-agnostic shared signals for Taste Codec",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -23,10 +23,7 @@
   },
   "dependencies": {
     "@taste-codec/core": "workspace:*",
-    "@taste-codec/shared-signals": "workspace:*",
-    "effect": "^3.0.0",
-    "simple-git": "^3.25.0",
-    "ts-morph": "^24.0.0"
+    "effect": "^3.0.0"
   },
   "devDependencies": {
     "typescript": "^5.8.0"

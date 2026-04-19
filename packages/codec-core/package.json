@@ -13,7 +13,10 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "routing-patterns",
+    "presets",
+    "quiz-items"
   ],
   "scripts": {
     "build": "tsc -b",

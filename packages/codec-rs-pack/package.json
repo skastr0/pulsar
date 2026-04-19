@@ -1,9 +1,9 @@
 {
-  "name": "@taste-codec/ts-pack",
+  "name": "@taste-codec/rs-pack",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "TypeScript signal pack for Taste Codec",
+  "description": "Rust signal pack scaffold for Taste Codec",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -18,7 +18,7 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -b",
-    "test": "bun test",
+    "test": "bun test ./src",
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
@@ -26,9 +26,11 @@
     "@taste-codec/shared-signals": "workspace:*",
     "effect": "^3.0.0",
     "simple-git": "^3.25.0",
-    "ts-morph": "^24.0.0"
+    "tree-sitter-rust": "^0.24.0",
+    "web-tree-sitter": "^0.25.0"
   },
   "devDependencies": {
+    "@taste-codec/ts-pack": "workspace:*",
     "typescript": "^5.8.0"
   }
 }

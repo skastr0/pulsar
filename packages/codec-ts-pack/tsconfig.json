@@ -8,6 +8,7 @@
   },
   "include": ["src/**/*.ts"],
   "references": [
-    { "path": "../codec-core" }
+    { "path": "../codec-core" },
+    { "path": "../codec-shared-signals" }
   ]
 }
