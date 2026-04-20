@@ -3,5 +3,6 @@ dist/
 .agents/traces/
 .turbo/
 tsconfig.tsbuildinfo
+.taste-codec/
 
 .DS_Store
