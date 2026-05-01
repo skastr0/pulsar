@@ -90,6 +90,11 @@ export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalCon
                 continue
               }
 
+              // Skip abstract methods — they intentionally have no body
+              if (isAbstractMethod(fn)) {
+                continue
+              }
+
               totalFunctions++
 
               const body = getFunctionBody(fn)
@@ -184,6 +189,10 @@ const getFunctionBody = (fn: FnLike): string | undefined => {
     return body?.getText()
   }
   return undefined
+}
+
+const isAbstractMethod = (fn: FnLike): boolean => {
+  return Node.isMethodDeclaration(fn) && fn.isAbstract()
 }
 
 const getFunctionName = (fn: FnLike): string => {
