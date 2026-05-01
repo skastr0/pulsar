@@ -69,6 +69,7 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
           const functions: Array<{
             exactHash: string
             structuralHash: string
+            structuralEligible: boolean
             tokenCount: number
             member: CloneGroupMember
           }> = []
@@ -101,6 +102,7 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
               functions.push({
                 exactHash: hashTokens(exactTokens),
                 structuralHash: hashTokens(structuralTokens),
+                structuralEligible: isStructuralCloneEligible(fn),
                 tokenCount: structuralTokens.length,
                 member,
               })
@@ -225,6 +227,23 @@ const getFunctionName = (fn: FnLike): string => {
   return "<anonymous>"
 }
 
+const isStructuralCloneEligible = (fn: FnLike): boolean => {
+  if (Node.isArrowFunction(fn) || Node.isFunctionExpression(fn)) {
+    const parent = fn.getParent()
+    if ((Node.isCallExpression(parent) || Node.isPropertyAssignment(parent)) && hasSingleOperationalStatement(fn)) {
+      return false
+    }
+  }
+
+  return true
+}
+
+const hasSingleOperationalStatement = (fn: ArrowFunction | FunctionExpression): boolean => {
+  const body = fn.getBody()
+  if (!Node.isBlock(body)) return true
+  return body.getStatements().length === 1
+}
+
 const lineRangeOverlapsHunks = (
   filePath: string,
   fn: FnLike,
@@ -273,20 +292,47 @@ const tokenizeStructural = (source: string): ReadonlyArray<string> => {
     .replace(/\/\/.*$/gm, "")
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/`[\s\S]*?`/g, "TMPL")
-    .replace(/"(?:[^"\\]|\\.)*"/g, "STR")
-    .replace(/'(?:[^'\\]|\\.)*'/g, "STR")
     .replace(/\b\d+(?:_\d+)*(?:\.\d+)?(?:[eE][+-]?\d+)?\b/g, "NUM")
     .replace(/\b0[xX][0-9a-fA-F]+\b/g, "NUM")
     .replace(/\b0[oO][0-7]+\b/g, "NUM")
     .replace(/\b0[bB][01]+\b/g, "NUM")
 
   const rawTokens = stripped.match(
-    /[A-Za-z_$][A-Za-z0-9_$]*|=>|===|!==|==|!=|<=|>=|\*\*|\+\+|--|&&|\|\||<<|>>|>>>|\.\.\.|[{}()[\],;:.<>+\-*\/%&|!?=]/g,
+    /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[A-Za-z_$][A-Za-z0-9_$]*|=>|===|!==|==|!=|<=|>=|\*\*|\+\+|--|&&|\|\||<<|>>|>>>|\.\.\.|[{}()[\],;:.<>+\-*\/%&|!?=]/g,
   ) ?? []
 
-  return rawTokens.map((token) =>
-    /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(token) && !TS_KEYWORDS.has(token) ? "ID" : token,
-  )
+  const structuralTokens = rawTokens.map((token, index) => {
+    if (isStringLiteralToken(token)) {
+      return isObjectPropertyValue(rawTokens, index) ? `STR:${token}` : "STR"
+    }
+
+    if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(token) && !TS_KEYWORDS.has(token)) {
+      return rawTokens[index + 1] === ":" ? `KEY:${token}` : "ID"
+    }
+
+    return token
+  })
+
+  return structuralTokens
+}
+
+const isStringLiteralToken = (token: string): boolean =>
+  (token.startsWith("\"") && token.endsWith("\"")) || (token.startsWith("'") && token.endsWith("'"))
+
+const isObjectPropertyValue = (tokens: ReadonlyArray<string>, index: number): boolean => {
+  const colonIndex = index - 1
+  if (tokens[colonIndex] !== ":" || isTernaryColon(tokens, colonIndex)) return false
+  const key = tokens[index - 2]
+  return key !== undefined && (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key) || isStringLiteralToken(key))
+}
+
+const isTernaryColon = (tokens: ReadonlyArray<string>, colonIndex: number): boolean => {
+  for (let index = colonIndex - 1; index >= 0; index--) {
+    const token = tokens[index]
+    if (token === undefined || token === ";" || token === "," || token === "{" || token === "}") return false
+    if (token === "?") return true
+  }
+  return false
 }
 
 const hashTokens = (tokens: ReadonlyArray<string>): string => {
@@ -307,6 +353,7 @@ const buildGroups = (
   functions: ReadonlyArray<{
     exactHash: string
     structuralHash: string
+    structuralEligible: boolean
     tokenCount: number
     member: CloneGroupMember
   }>,
@@ -315,6 +362,7 @@ const buildGroups = (
 ): ReadonlyArray<{ hash: string; tokenCount: number; members: ReadonlyArray<CloneGroupMember> }> => {
   const grouped = new Map<string, Array<(typeof functions)[number]>>()
   for (const fn of functions) {
+    if (kind === "structural" && !fn.structuralEligible) continue
     const key = kind === "exact" ? fn.exactHash : fn.structuralHash
     const bucket = grouped.get(key) ?? []
     bucket.push(fn)

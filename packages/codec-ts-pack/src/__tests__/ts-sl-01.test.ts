@@ -62,6 +62,117 @@ export function handleOrder(orderId: string) {
     expect(structuralGroups.length).toBeGreaterThan(0)
   })
 
+  test("does not collapse service request wrappers distinguished by object-literal anchors", async () => {
+    await repo.write(
+      "client.ts",
+      `
+const PROTOCOL_VERSION = 1;
+const buildOptions = (onEvent?: unknown) => ({ onEvent });
+const sendUserCreate = (options: unknown, request: unknown) => ({ result: request });
+const sendOrderCancel = (options: unknown, request: unknown) => ({ result: request });
+const randomUUID = () => "id";
+
+export const client = {
+  createUser: ({ userId, email, onEvent }: { userId: string; email: string; onEvent?: unknown }) => {
+    const options = buildOptions(onEvent);
+    const response = sendUserCreate(options, {
+      kind: "request",
+      protocolVersion: PROTOCOL_VERSION,
+      requestId: randomUUID(),
+      method: "user.create",
+      params: {
+        userId,
+        email,
+      },
+    });
+
+    return response.result;
+  },
+  cancelOrder: ({ orderId, reason, onEvent }: { orderId: string; reason: string; onEvent?: unknown }) => {
+    const options = buildOptions(onEvent);
+    const response = sendOrderCancel(options, {
+      kind: "request",
+      protocolVersion: PROTOCOL_VERSION,
+      requestId: randomUUID(),
+      method: "order.cancel",
+      params: {
+        orderId,
+        reason,
+      },
+    });
+
+    return response.result;
+  },
+};
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl01, TsSl01.defaultConfig)
+    const structuralGroups = out.groups.filter((g) => g.kind === "structural")
+    expect(structuralGroups).toHaveLength(0)
+  })
+
+  test("does not collapse repeated error object adapters with distinct literal codes", async () => {
+    await repo.write(
+      "errors.ts",
+      `
+class EnvironmentError extends Error {
+  constructor(readonly options: { code: string; reason: string; nextStep: string; details: ReadonlyArray<string> }) {
+    super(options.reason);
+  }
+}
+
+export const start = (error: unknown) =>
+  new EnvironmentError({
+    code: "server-start",
+    reason: error instanceof Error ? error.message : String(error),
+    nextStep: "Check socket permissions and retry serving.",
+    details: [],
+  });
+
+export const stop = (error: unknown) =>
+  new EnvironmentError({
+    code: "server-stop",
+    reason: error instanceof Error ? error.message : String(error),
+    nextStep: "Inspect daemon output and retry shutdown.",
+    details: [],
+  });
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl01, TsSl01.defaultConfig)
+    const structuralGroups = out.groups.filter((g) => g.kind === "structural")
+    expect(structuralGroups).toHaveLength(0)
+  })
+
+  test("still detects duplicated imperative branches that only rename domain identifiers", async () => {
+    await repo.write(
+      "processors.ts",
+      `
+export function processUser(userId: string) {
+  const user = loadUser(userId);
+  if (!user.ready) {
+    auditUser(userId);
+    return retryUser(userId);
+  }
+  return finishUser(user);
+}
+
+export function processOrder(orderId: string) {
+  const order = loadOrder(orderId);
+  if (!order.ready) {
+    auditOrder(orderId);
+    return retryOrder(orderId);
+  }
+  return finishOrder(order);
+}
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl01, TsSl01.defaultConfig)
+    expect(out.groups.some((g) => g.kind === "structural")).toBe(true)
+  })
+
   test("excludes test files", async () => {
     await repo.write(
       "utils.test.ts",
@@ -172,5 +283,27 @@ export function dup4(x: number): number {
     const score = TsSl01.score(out)
     expect(score).toBeLessThan(1)
     expect(score).toBeGreaterThanOrEqual(0)
+  })
+
+  test("normalizes string literals in ternary branches instead of treating them as object anchors", async () => {
+    await repo.write(
+      "ternary.ts",
+      `
+export function describeUser(enabled: boolean, userId: string) {
+  const label = enabled ? "active user" : "inactive user";
+  const status = enabled ? "green" : "gray";
+  return formatUser(label, status, userId);
+}
+
+export function describeOrder(enabled: boolean, orderId: string) {
+  const label = enabled ? "active order" : "inactive order";
+  const status = enabled ? "ready" : "blocked";
+  return formatOrder(label, status, orderId);
+}
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl01, TsSl01.defaultConfig)
+    expect(out.groups.some((g) => g.kind === "structural")).toBe(true)
   })
 })
