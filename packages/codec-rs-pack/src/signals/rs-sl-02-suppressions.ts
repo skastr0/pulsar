@@ -28,15 +28,20 @@ export interface RustSuppression {
   readonly module: string
   readonly line: number
   readonly lints: ReadonlyArray<string>
+  readonly ordinaryLints: ReadonlyArray<string>
   readonly justification: "active" | "expired" | "missing"
+  readonly classification: "requires-governance"
 }
 
 export interface RsSl02Output {
   readonly suppressions: ReadonlyArray<RustSuppression>
+  readonly ordinaryAllowAttributeCount: number
+  readonly ordinaryAllowLintCount: number
+  readonly governedAllowAttributeCount: number
   readonly missingJustificationCount: number
   readonly expiredJustificationCount: number
   readonly scopeMode: "whole-tree" | "changed-hunks"
-  readonly analysisMode: "allow-attributes-with-taste-allow-attachment"
+  readonly analysisMode: "allow-attributes-with-rust-lint-governance"
 }
 
 export const RsSl02: Signal<RsSl02Config, RsSl02Output, RustProjectTag | SignalContextTag> = {
@@ -57,6 +62,8 @@ export const RsSl02: Signal<RsSl02Config, RsSl02Output, RustProjectTag | SignalC
       return yield* Effect.tryPromise({
         try: async (): Promise<RsSl02Output> => {
           const suppressions: Array<RustSuppression> = []
+          let ordinaryAllowAttributeCount = 0
+          let ordinaryAllowLintCount = 0
           for (const file of project.sourceFiles) {
             if (isExcluded(file, config.exclude_globs)) continue
             const source = await readFile(file, "utf8")
@@ -68,6 +75,12 @@ export const RsSl02: Signal<RsSl02Config, RsSl02Output, RustProjectTag | SignalC
               for (const attribute of attachedAttributes) {
                 const lints = extractAllowLints(attribute.text)
                 if (lints.length === 0) continue
+                const classified = classifyAllowLints(lints)
+                ordinaryAllowLintCount += classified.ordinary.length
+                if (classified.governed.length === 0) {
+                  ordinaryAllowAttributeCount += 1
+                  continue
+                }
                 const line = attribute.startPosition.row + 1
                 if (
                   !lineRangeOverlapsChangedHunks(
@@ -87,9 +100,11 @@ export const RsSl02: Signal<RsSl02Config, RsSl02Output, RustProjectTag | SignalC
                   file,
                   module: modulePath,
                   line,
-                  lints,
+                  lints: classified.governed,
+                  ordinaryLints: classified.ordinary,
                   justification:
                     attachedBypass === undefined ? "missing" : attachedBypass.status,
+                  classification: "requires-governance",
                 })
               }
               void node
@@ -98,6 +113,9 @@ export const RsSl02: Signal<RsSl02Config, RsSl02Output, RustProjectTag | SignalC
 
           return {
             suppressions: suppressions.sort((left, right) => left.file.localeCompare(right.file) || left.line - right.line),
+            ordinaryAllowAttributeCount,
+            ordinaryAllowLintCount,
+            governedAllowAttributeCount: suppressions.length,
             missingJustificationCount: suppressions.filter(
               (suppression) => suppression.justification === "missing",
             ).length,
@@ -105,7 +123,7 @@ export const RsSl02: Signal<RsSl02Config, RsSl02Output, RustProjectTag | SignalC
               (suppression) => suppression.justification === "expired",
             ).length,
             scopeMode: context.changedHunks.length > 0 ? "changed-hunks" : "whole-tree",
-            analysisMode: "allow-attributes-with-taste-allow-attachment",
+            analysisMode: "allow-attributes-with-rust-lint-governance",
           }
         },
         catch: (cause) =>
@@ -123,12 +141,15 @@ export const RsSl02: Signal<RsSl02Config, RsSl02Output, RustProjectTag | SignalC
         suppression.justification === "active"
           ? ("info" as const)
           : ("block" as const),
-      message: `Allow suppression for ${suppression.lints.join(", ")} is ${suppression.justification}`,
+      message: `Governed allow suppression for ${suppression.lints.join(", ")} is ${suppression.justification}`,
       location: { file: suppression.file, line: suppression.line },
       data: {
         module: suppression.module,
         lints: suppression.lints,
+        ordinaryLints: suppression.ordinaryLints,
         justification: suppression.justification,
+        classification: suppression.classification,
+        requiresJustification: true,
         scopeMode: out.scopeMode,
         analysisMode: out.analysisMode,
       },
@@ -136,10 +157,77 @@ export const RsSl02: Signal<RsSl02Config, RsSl02Output, RustProjectTag | SignalC
 }
 
 const extractAllowLints = (text: string): ReadonlyArray<string> => {
-  const match = /#\s*\[\s*allow\s*\(([^\)]*)\)\s*\]/.exec(text)
+  const match = /#\s*!?\s*\[\s*allow\s*\(([^\)]*)\)\s*\]/.exec(text)
   if (match === null) return []
   return match[1]!
     .split(",")
     .map((value) => value.trim())
     .filter((value) => value.length > 0)
+}
+
+interface ClassifiedAllowLints {
+  readonly ordinary: ReadonlyArray<string>
+  readonly governed: ReadonlyArray<string>
+}
+
+const classifyAllowLints = (lints: ReadonlyArray<string>): ClassifiedAllowLints => {
+  const ordinary: Array<string> = []
+  const governed: Array<string> = []
+
+  for (const lint of lints) {
+    if (requiresTasteAllow(lint)) {
+      governed.push(lint)
+    } else {
+      ordinary.push(lint)
+    }
+  }
+
+  return { ordinary, governed }
+}
+
+const broadlyScopedLintNames = new Set([
+  "warnings",
+  "unused",
+  "future_incompatible",
+  "keyword_idents",
+  "nonstandard_style",
+  "rust_2018_idioms",
+  "rust_2021_compatibility",
+  "clippy::all",
+  "clippy::cargo",
+  "clippy::complexity",
+  "clippy::correctness",
+  "clippy::nursery",
+  "clippy::pedantic",
+  "clippy::perf",
+  "clippy::restriction",
+  "clippy::style",
+  "clippy::suspicious",
+])
+
+const slopHidingLintNames = new Set([
+  "unsafe_code",
+  "unreachable_code",
+  "unused_must_use",
+  "clippy::allow_attributes",
+  "clippy::allow_attributes_without_reason",
+  "clippy::dbg_macro",
+  "clippy::expect_used",
+  "clippy::indexing_slicing",
+  "clippy::panic",
+  "clippy::print_stderr",
+  "clippy::print_stdout",
+  "clippy::todo",
+  "clippy::unimplemented",
+  "clippy::unreachable",
+  "clippy::unwrap_in_result",
+  "clippy::unwrap_used",
+])
+
+const requiresTasteAllow = (lint: string): boolean => {
+  const normalized = lint.replace(/\s+/g, "")
+  if (broadlyScopedLintNames.has(normalized)) return true
+  if (slopHidingLintNames.has(normalized)) return true
+  if (normalized.startsWith("unused_") && normalized !== "unused_imports") return true
+  return false
 }

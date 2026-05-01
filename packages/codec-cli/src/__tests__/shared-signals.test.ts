@@ -83,7 +83,7 @@ describe("polyglot shared signals", () => {
       await writeFile(
         join(repo, "crates/api/src/lib.rs"),
         [
-          "#[allow(dead_code)]",
+          "#[allow(clippy::unwrap_used)]",
           "pub fn render() -> &'static str {",
           "    use fixture_core::ping;",
           "    ping()",

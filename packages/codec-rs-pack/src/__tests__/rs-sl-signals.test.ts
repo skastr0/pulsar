@@ -36,7 +36,7 @@ describe("RS-SL-* signals", () => {
     }
   })
 
-  test("RS-SL-02 enforces taste-allow governance on allow attributes", async () => {
+  test("RS-SL-02 enforces taste-allow governance on suspicious allow attributes", async () => {
     const repo = await createRustWorkspace("taste-codec-rs-sl02-", {
       "Cargo.toml": [
         "[package]",
@@ -47,10 +47,10 @@ describe("RS-SL-* signals", () => {
       ].join("\n"),
       "src/lib.rs": [
         "// taste-allow ENG-123 until:2099-01-01 tracked lint debt",
-        "#[allow(dead_code, clippy::too_many_arguments)]",
-        "pub fn guarded(_a: u32, _b: u32, _c: u32, _d: u32, _e: u32, _f: u32, _g: u32) {}",
+        "#[allow(dead_code, clippy::unwrap_used)]",
+        "pub fn guarded(value: Option<u32>) -> u32 { value.unwrap() }",
         "",
-        "#[allow(dead_code)]",
+        "#[allow(warnings)]",
         "pub fn unguarded() {}",
         "",
       ].join("\n"),
@@ -58,8 +58,51 @@ describe("RS-SL-* signals", () => {
 
     try {
       const out = await runSignalCompute(RsSl02, repo, RsSl02.defaultConfig)
+      expect(out.governedAllowAttributeCount).toBe(2)
+      expect(out.ordinaryAllowAttributeCount).toBe(0)
+      expect(out.ordinaryAllowLintCount).toBe(1)
       expect(out.missingJustificationCount).toBe(1)
       expect(out.expiredJustificationCount).toBe(0)
+      expect(out.suppressions.map((suppression) => suppression.lints)).toEqual([
+        ["clippy::unwrap_used"],
+        ["warnings"],
+      ])
+      expect(out.suppressions[0]?.ordinaryLints).toEqual(["dead_code"])
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-SL-02 treats narrow ordinary Rust allow attributes as non-governed", async () => {
+    const repo = await createRustWorkspace("taste-codec-rs-sl02-ordinary-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "ordinary-allow-fixture"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "#[allow(dead_code)]",
+        "const RESERVED_PROTOCOL_VERSION: u32 = 1;",
+        "",
+        "#[allow(clippy::too_many_arguments)]",
+        "pub fn api_shape(_a: u32, _b: u32, _c: u32, _d: u32, _e: u32, _f: u32, _g: u32) -> u32 { 1 }",
+        "",
+        "#[allow(clippy::large_enum_variant)]",
+        "pub enum WireEvent { Small(u8), Large([u8; 512]) }",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const out = await runSignalCompute(RsSl02, repo, RsSl02.defaultConfig)
+      expect(out.suppressions).toEqual([])
+      expect(out.governedAllowAttributeCount).toBe(0)
+      expect(out.ordinaryAllowAttributeCount).toBe(3)
+      expect(out.ordinaryAllowLintCount).toBe(3)
+      expect(RsSl02.score(out)).toBe(1)
+      expect(RsSl02.diagnose(out)).toEqual([])
     } finally {
       await cleanupWorkspace(repo)
     }
