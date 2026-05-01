@@ -42,7 +42,11 @@ export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalCon
   kind: "structural",
   configSchema: TsSl03Config,
   defaultConfig: {
-    exclude_globs: ["**/node_modules/**", "**/dist/**", "**/.turbo/**"],
+    exclude_globs: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/.turbo/**",
+    ],
     test_globs: ["**/*.test.ts", "**/*.spec.ts", "**/__tests__/**"],
     top_n_diagnostics: 20,
   },
@@ -152,10 +156,13 @@ const extractSuppression = (line: string): { kind: "ts-ignore" | "ts-expect-erro
     return { kind: "ts-expect-error", rule: undefined }
   }
 
-  const eslintDisableMatch = /eslint-disable(?:-next-line)?(?:-line)?\s*(.*)?/.exec(trimmed)
+  // Require comment syntax to avoid matching "eslint-disable" inside strings/test descriptions
+  // Match: // eslint-disable or /* eslint-disable */ at start of trimmed line (after optional whitespace)
+  const eslintDisableMatch = /^\s*(?:\/\/\s*|\/\*\s*)eslint-disable(?:-next-line)?(?:-line)?\s*([^\s*\/]*)/.exec(trimmed)
   if (eslintDisableMatch) {
     const rulePart = eslintDisableMatch[1]?.trim()
-    const rule = rulePart && rulePart.length > 0 ? rulePart : undefined
+    // Clean up any trailing comment closure for block comments (e.g., "rule-name */")
+    const rule = rulePart && rulePart.length > 0 ? rulePart.replace(/\s*\*\/.*$/, "") : undefined
     return { kind: "eslint-disable", rule }
   }
 
