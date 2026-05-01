@@ -181,7 +181,7 @@ export function newStub() {
     expect(out.stubs.length).toBeGreaterThanOrEqual(0)
   })
 
-  test("detects mock-return patterns with literal objects", async () => {
+  test("detects mock-return patterns with placeholder literals", async () => {
     await repo.write(
       "utils.ts",
       `
@@ -190,14 +190,124 @@ export function getMockData() {
 }
 
 export function getMockConfig() {
-  return 123;
+  return "mock config";
 }
 `,
     )
 
     const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
-    // These are simple returns but won't be flagged because they look like legitimate getters
-    expect(out.stubs.length).toBeGreaterThanOrEqual(0)
+    expect(out.stubs.filter((s) => s.kind === "mock-return")).toHaveLength(2)
+  })
+
+  test("does not classify ordinary literal-return content surfaces as mock returns", async () => {
+    await repo.write(
+      "content.ts",
+      `
+export function getDurationLabel() {
+  return "2 minutes";
+}
+
+export function isFeatureAvailable() {
+  return false;
+}
+
+export function getEmptyItems() {
+  return [];
+}
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
+    expect(out.stubs).toHaveLength(0)
+  })
+
+  test("does not classify ambient declaration signatures as empty implementations", async () => {
+    await repo.write(
+      "contracts.d.ts",
+      `
+export declare function readConfig(): string;
+export interface Adapter {
+  start(): void;
+}
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
+    expect(out.stubs).toHaveLength(0)
+  })
+
+  test("does not classify explicit no-op handlers as suspicious empty implementations", async () => {
+    await repo.write(
+      "handlers.ts",
+      `
+const noop = () => {};
+export const noopCallback = () => {};
+export function noOpHandler() {}
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
+    expect(out.stubs).toHaveLength(0)
+  })
+
+  test("does not classify promise swallow handlers as empty implementations", async () => {
+    await repo.write(
+      "promises.ts",
+      `
+export function ignoreFailure(task: Promise<void>) {
+  return task.catch(() => {});
+}
+
+export function ignoreCleanup(task: Promise<void>) {
+  return task.finally(function () {});
+}
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
+    expect(out.stubs).toHaveLength(0)
+  })
+
+  test("does not classify explicit noop implementation files as suspicious stubs", async () => {
+    await repo.write(
+      "adapter.noop.ts",
+      `
+export function start() {}
+export function isAvailable() {
+  return false;
+}
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
+    expect(out.stubs).toHaveLength(0)
+  })
+
+  test("still detects suspicious empty implementations outside no-op contexts", async () => {
+    await repo.write(
+      "suspicious.ts",
+      `
+export function saveUser() {}
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
+    expect(out.stubs).toHaveLength(1)
+    expect(out.stubs[0]?.name).toBe("saveUser")
+    expect(out.stubs[0]?.kind).toBe("empty-body")
+  })
+
+  test("tsx test files are test paths, not production stub paths", async () => {
+    await repo.write(
+      "flow.test.tsx",
+      `
+test("flow", () => {});
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
+    expect(out.testStubs).toHaveLength(1)
+    expect(out.productionStubs).toHaveLength(0)
   })
 
   test("handles async functions with empty body", async () => {

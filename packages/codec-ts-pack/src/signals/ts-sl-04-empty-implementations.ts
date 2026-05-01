@@ -16,7 +16,6 @@ import {
   type SetAccessorDeclaration,
   Node,
   type SourceFile,
-  SyntaxKind,
 } from "ts-morph"
 import { TsProjectTag } from "../ts-project.js"
 import { isExcluded, matchesAnyGlob } from "./shared-globs.js"
@@ -65,7 +64,14 @@ export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalCon
   configSchema: TsSl04Config,
   defaultConfig: {
     exclude_globs: ["**/node_modules/**", "**/dist/**", "**/.turbo/**"],
-    test_globs: ["**/*.test.ts", "**/*.spec.ts", "**/__tests__/**"],
+    test_globs: [
+      "**/*.test.ts",
+      "**/*.test.tsx",
+      "**/*.spec.ts",
+      "**/*.spec.tsx",
+      "**/__tests__/**",
+      "**/tests/**",
+    ],
     top_n_diagnostics: 20,
     hard_gate_production: true,
   },
@@ -99,7 +105,10 @@ export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalCon
 
               const body = getFunctionBody(fn)
               if (body === undefined) {
-                stubs.push(createStub(path, fn, "empty-body", undefined, isTestPath))
+                continue
+              }
+
+              if (isIntentionalNoop(path, fn, body)) {
                 continue
               }
 
@@ -230,6 +239,48 @@ const createStub = (
   message,
 })
 
+const isIntentionalNoop = (filePath: string, fn: FnLike, bodyText: string): boolean => {
+  if (!isEmptyBodyText(bodyText) && !isNoopImplementationFile(filePath)) {
+    return false
+  }
+
+  if (isNoopImplementationFile(filePath)) {
+    return true
+  }
+
+  if (isPromiseSwallowHandler(fn)) {
+    return true
+  }
+
+  return hasNoopName(getFunctionName(fn))
+}
+
+const isEmptyBodyText = (bodyText: string): boolean => {
+  const normalized = bodyText.replace(/\s+/g, " ").trim()
+  return normalized === "{}" || normalized === "{ }" || normalized === "{  }"
+}
+
+const isNoopImplementationFile = (filePath: string): boolean => {
+  const fileName = filePath.split(/[\\/]/).at(-1) ?? filePath
+  return /(?:^|[._-])noop(?:[._-]|$)/i.test(fileName)
+}
+
+const hasNoopName = (name: string): boolean => /(?:^|[^a-z0-9])no[-_]?op(?:$|[^a-z0-9]|[A-Z])/i.test(name)
+
+const isPromiseSwallowHandler = (fn: FnLike): boolean => {
+  if (!Node.isArrowFunction(fn) && !Node.isFunctionExpression(fn)) {
+    return false
+  }
+
+  const parent = fn.getParent()
+  if (!Node.isCallExpression(parent)) {
+    return false
+  }
+
+  const expression = parent.getExpression()
+  return Node.isPropertyAccessExpression(expression) && ["catch", "finally"].includes(expression.getName())
+}
+
 const classifyStub = (bodyText: string): { kind: StubKind; message: string } | undefined => {
   const normalized = bodyText.replace(/\s+/g, " ").trim()
 
@@ -243,7 +294,7 @@ const classifyStub = (bodyText: string): { kind: StubKind; message: string } | u
     }
   }
 
-  if (normalized === "{}" || normalized === "{ }" || normalized === "{  }") {
+  if (isEmptyBodyText(bodyText)) {
     return { kind: "empty-body", message: "Empty implementation" }
   }
 
@@ -255,11 +306,14 @@ const classifyStub = (bodyText: string): { kind: StubKind; message: string } | u
     }
   }
 
-  const returnLiteralMatch = /^\{\s*return\s+(?:"[^"]*"|'[^']*'|`[^`]*`|\d+|true|false|null|undefined|\[\s*\]|\{\s*\})\s*;?\s*\}$/.exec(
+  const returnLiteralMatch = /^\{\s*return\s+(?:"([^"]*)"|'([^']*)'|`([^`]*)`|\d+|true|false|null|undefined|\[\s*\]|\{\s*\})\s*;?\s*\}$/.exec(
     normalized,
   )
   if (returnLiteralMatch) {
-    return { kind: "mock-return", message: "Returns literal value" }
+    const returnedText = (returnLiteralMatch[1] ?? returnLiteralMatch[2] ?? returnLiteralMatch[3] ?? "").toLowerCase()
+    if (/placeholder|mock|todo|fixme|not\s*implemented|stub/.test(returnedText)) {
+      return { kind: "mock-return", message: "Returns placeholder literal" }
+    }
   }
 
   return undefined
