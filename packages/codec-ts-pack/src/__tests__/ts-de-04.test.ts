@@ -60,6 +60,31 @@ describe("TS-DE-04 (package dependency health)", () => {
     expect(TsDe04.score(out)).toBe(0)
   })
 
+  test("normalizes package subpath imports to declared dependencies", async () => {
+    await writePackage("app", "@repo/app", {
+      dependencies: {
+        "@org/package": "^1.0.0",
+        "plain-package": "^2.0.0",
+      },
+    })
+    await repo.write("node_modules/@org/package/subpath.d.ts", "export declare const shallow: string\n")
+    await repo.write("node_modules/@org/package/deep/nested.d.ts", "export declare const deep: string\n")
+    await repo.write("node_modules/plain-package/subpath.d.ts", "export declare const plain: string\n")
+    await repo.write(
+      "packages/app/src/index.ts",
+      [
+        "import { shallow } from '@org/package/subpath'",
+        "import { deep } from '@org/package/deep/nested'",
+        "import { plain } from 'plain-package/subpath'",
+        "export const value = [shallow, deep, plain]",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+    expect(out.packages[0]?.importedButNotDeclared).toEqual([])
+    expect(out.packages[0]?.declaredButUnused).toEqual([])
+  })
+
   test("reports transitive direct usage separately from missing deps", async () => {
     await writePackage("app", "@repo/app", {
       dependencies: {
@@ -121,6 +146,96 @@ describe("TS-DE-04 (package dependency health)", () => {
     await repo.write("packages/b/src/index.ts", "export const value = 1\n")
 
     const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
-    expect(out.packages.find((pkg) => pkg.packageName === "@repo/a")?.importedButNotDeclared).toEqual([])
+    const appHealth = out.packages.find((pkg) => pkg.packageName === "@repo/a")
+    expect(appHealth?.importedButNotDeclared).toEqual([])
+    expect(appHealth?.declaredButUnused).toEqual([])
+  })
+
+  test("ignores direct tsconfig path aliases that resolve to local source", async () => {
+    await writePackage("app", "@repo/app", {})
+    await repo.writeJson("packages/app/tsconfig.json", {
+      compilerOptions: {
+        target: "ES2022",
+        module: "ESNext",
+        moduleResolution: "Bundler",
+        paths: {
+          "@/*": ["./src/*"],
+        },
+      },
+      include: ["src/**/*.ts"],
+    })
+    await repo.write(
+      "packages/app/src/index.ts",
+      "import { Button } from '@/components/Button'\nexport const value = Button\n",
+    )
+    await repo.write("packages/app/src/components/Button.ts", "export const Button = 'button'\n")
+
+    const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+    const appHealth = out.packages.find((pkg) => pkg.packageName === "@repo/app")
+    expect(appHealth?.importedButNotDeclared).toEqual([])
+  })
+
+  test("ignores tsconfig path aliases inherited through extends", async () => {
+    await writePackage("app", "@repo/app", {})
+    await repo.writeJson("tsconfig.base.json", {
+      compilerOptions: {
+        target: "ES2022",
+        module: "ESNext",
+        moduleResolution: "Bundler",
+        baseUrl: ".",
+        paths: {
+          "@/*": ["packages/app/src/*"],
+        },
+      },
+    })
+    await repo.writeJson("packages/app/tsconfig.json", {
+      extends: "../../tsconfig.base.json",
+      include: ["src/**/*.ts"],
+    })
+    await repo.write(
+      "packages/app/src/index.ts",
+      "import { Button } from '@/components/Button'\nexport const value = Button\n",
+    )
+    await repo.write("packages/app/src/components/Button.ts", "export const Button = 'button'\n")
+
+    const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+    const appHealth = out.packages.find((pkg) => pkg.packageName === "@repo/app")
+    expect(appHealth?.importedButNotDeclared).toEqual([])
+  })
+
+  test("separates local path aliases from real workspace package imports", async () => {
+    await writePackage("app", "@repo/app", {
+      dependencies: {
+        "@repo/lib": "workspace:*",
+      },
+    })
+    await repo.writeJson("packages/app/tsconfig.json", {
+      compilerOptions: {
+        target: "ES2022",
+        module: "ESNext",
+        moduleResolution: "Bundler",
+        paths: {
+          "@/*": ["./src/*"],
+          "@repo/lib": ["../lib/src/index.ts"],
+        },
+      },
+      include: ["src/**/*.ts"],
+    })
+    await writePackage("lib", "@repo/lib", {})
+    await repo.write(
+      "packages/app/src/index.ts",
+      [
+        "import { Button } from '@/components/Button'",
+        "import { value } from '@repo/lib'",
+        "export const result = [Button, value]",
+      ].join("\n"),
+    )
+    await repo.write("packages/app/src/components/Button.ts", "export const Button = 'button'\n")
+    await repo.write("packages/lib/src/index.ts", "export const value = 1\n")
+
+    const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+    const appHealth = out.packages.find((pkg) => pkg.packageName === "@repo/app")
+    expect(appHealth?.importedButNotDeclared).toEqual([])
+    expect(appHealth?.declaredButUnused).toEqual([])
   })
 })

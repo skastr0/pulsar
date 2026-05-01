@@ -1,4 +1,5 @@
-import { join } from "node:path"
+import { readFile } from "node:fs/promises"
+import { dirname, join, resolve } from "node:path"
 import {
   SignalContextTag,
   computeDiagnosticHash,
@@ -19,7 +20,6 @@ import {
   packageForFile,
   workspacePackageNames,
 } from "./shared-workspace.js"
-
 export const TsDe04Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   test_globs: Schema.Array(Schema.String),
@@ -57,6 +57,17 @@ type UsageBucket = {
   readonly prodFiles: Set<string>
 }
 
+type TsconfigPathAlias = {
+  readonly pattern: string
+  readonly replacements: ReadonlyArray<string>
+  readonly baseDir: string
+}
+
+type TsconfigAliasConfig = {
+  readonly aliases: ReadonlyArray<TsconfigPathAlias>
+  readonly baseDir: string
+}
+
 export const TsDe04: Signal<
   TsDe04Config,
   TsDe04Output,
@@ -82,6 +93,7 @@ export const TsDe04: Signal<
       const result = yield* Effect.tryPromise({
         try: async (): Promise<TsDe04Output> => {
           const resolvedPackageNames = await readResolvedPackageNames(context.worktreePath)
+          const pathAliasesByPackage = await readPathAliasesByPackage(packages)
           const workspaceNames = workspacePackageNames(packages)
           const sourceFiles = project
             .getSourceFiles()
@@ -99,12 +111,28 @@ export const TsDe04: Signal<
               ...sourceFile.getImportDeclarations(),
               ...sourceFile.getExportDeclarations(),
             ]) {
-              const target = declaration.getModuleSpecifierSourceFile()?.getFilePath()
-              if (target !== undefined) continue
               const moduleSpecifier = declaration.getModuleSpecifierValue()
               if (moduleSpecifier === undefined) continue
               const packageName = normalizePackageSpecifier(moduleSpecifier)
               if (packageName === undefined || isBuiltinModuleName(packageName)) continue
+
+              const target = declaration.getModuleSpecifierSourceFile()?.getFilePath()
+              if (target !== undefined && !target.includes("/node_modules/")) {
+                const targetPackage = packageForFile(target, packages)
+                if (targetPackage?.path === owningPackage.path) continue
+              }
+              if (
+                isLocalPathAliasUsage(
+                  moduleSpecifier,
+                  packageName,
+                  owningPackage,
+                  pathAliasesByPackage.get(owningPackage.path),
+                  workspaceNames,
+                  context.worktreePath,
+                )
+              ) {
+                continue
+              }
 
               const usage = bucket.get(packageName) ?? { files: new Set<string>(), prodFiles: new Set<string>() }
               usage.files.add(sourceFile.getFilePath())
@@ -227,6 +255,157 @@ const readResolvedPackageNames = async (worktreePath: string): Promise<ReadonlyS
     return new Set<string>()
   }
 }
+
+const readPathAliasesByPackage = async (
+  packages: ReadonlyArray<PackageInfo>,
+): Promise<ReadonlyMap<string, ReadonlyArray<TsconfigPathAlias>>> => {
+  const entries = await Promise.all(
+    packages.map(async (pkg): Promise<[string, ReadonlyArray<TsconfigPathAlias>]> => [
+      pkg.path,
+      await readPathAliases(pkg.tsconfigPath),
+    ]),
+  )
+  return new Map(entries)
+}
+
+const readPathAliases = async (tsconfigPath: string): Promise<ReadonlyArray<TsconfigPathAlias>> => {
+  const config = await readPathAliasConfig(tsconfigPath, new Set<string>())
+  return config.aliases
+}
+
+const readPathAliasConfig = async (
+  tsconfigPath: string,
+  visited: Set<string>,
+): Promise<TsconfigAliasConfig> => {
+  const loaded = await readTsconfig(tsconfigPath)
+  if (loaded === undefined) return { aliases: [], baseDir: dirname(tsconfigPath) }
+
+  const normalizedPath = resolve(loaded.path)
+  if (visited.has(normalizedPath)) return { aliases: [], baseDir: dirname(normalizedPath) }
+  visited.add(normalizedPath)
+
+  const inherited = await readInheritedAliasConfig(loaded.config, normalizedPath, visited)
+  const compilerOptions = asRecord(loaded.config.compilerOptions)
+  const baseUrl = asString(compilerOptions?.baseUrl)
+  const baseDir = baseUrl === undefined ? inherited.baseDir : resolve(dirname(normalizedPath), baseUrl)
+  const paths = asRecord(compilerOptions?.paths)
+
+  if (paths === undefined) return { aliases: inherited.aliases, baseDir }
+
+  return {
+    aliases: pathAliasesFromCompilerOptions(paths, baseDir),
+    baseDir,
+  }
+}
+
+const readInheritedAliasConfig = async (
+  config: Record<string, unknown>,
+  tsconfigPath: string,
+  visited: Set<string>,
+): Promise<TsconfigAliasConfig> => {
+  const extendedConfigs = asStringArray(config.extends)
+  let inherited: TsconfigAliasConfig = { aliases: [], baseDir: dirname(tsconfigPath) }
+
+  for (const extendedConfig of extendedConfigs) {
+    const extendedPath = resolveTsconfigExtendsPath(extendedConfig, tsconfigPath)
+    inherited = await readPathAliasConfig(extendedPath, visited)
+  }
+
+  return inherited
+}
+
+const readTsconfig = async (
+  tsconfigPath: string,
+): Promise<{ readonly path: string; readonly config: Record<string, unknown> } | undefined> => {
+  for (const candidate of tsconfigCandidates(tsconfigPath)) {
+    try {
+      const parsed = asRecord(JSON.parse(await readFile(candidate, "utf8")))
+      if (parsed !== undefined) return { path: candidate, config: parsed }
+    } catch {
+      continue
+    }
+  }
+  return undefined
+}
+
+const tsconfigCandidates = (tsconfigPath: string): ReadonlyArray<string> => {
+  if (tsconfigPath.endsWith(".json")) return [tsconfigPath]
+  return [tsconfigPath, `${tsconfigPath}.json`, join(tsconfigPath, "tsconfig.json")]
+}
+
+const resolveTsconfigExtendsPath = (extendedConfig: string, tsconfigPath: string): string => {
+  if (extendedConfig.startsWith(".") || extendedConfig.startsWith("/")) {
+    return resolve(dirname(tsconfigPath), extendedConfig)
+  }
+  return resolve(dirname(tsconfigPath), extendedConfig)
+}
+
+const pathAliasesFromCompilerOptions = (
+  paths: Record<string, unknown>,
+  baseDir: string,
+): ReadonlyArray<TsconfigPathAlias> =>
+  Object.entries(paths).flatMap(([pattern, rawReplacements]) => {
+    const replacements = asStringArray(rawReplacements)
+    return replacements.length > 0 ? [{ pattern, replacements, baseDir }] : []
+  })
+
+const isLocalPathAliasUsage = (
+  moduleSpecifier: string,
+  packageName: string,
+  owningPackage: PackageInfo,
+  aliases: ReadonlyArray<TsconfigPathAlias> | undefined,
+  workspaceNames: ReadonlySet<string>,
+  worktreePath: string,
+): boolean => {
+  if (aliases === undefined || aliases.length === 0) return false
+  if (workspaceNames.has(packageName)) return false
+
+  return aliases.some((alias) =>
+    resolvePathAliasTargets(alias, moduleSpecifier).some(
+      (target) =>
+        !target.includes("/node_modules/") &&
+        (target === owningPackage.path ||
+          target.startsWith(`${owningPackage.path}/`) ||
+          target.startsWith(`${worktreePath}/`)),
+    ),
+  )
+}
+
+const resolvePathAliasTargets = (
+  alias: TsconfigPathAlias,
+  moduleSpecifier: string,
+): ReadonlyArray<string> => {
+  const starIndex = alias.pattern.indexOf("*")
+  if (starIndex === -1) {
+    if (moduleSpecifier !== alias.pattern) return []
+    return alias.replacements.map((replacement) => resolve(alias.baseDir, replacement))
+  }
+
+  const prefix = alias.pattern.slice(0, starIndex)
+  const suffix = alias.pattern.slice(starIndex + 1)
+  if (!moduleSpecifier.startsWith(prefix) || !moduleSpecifier.endsWith(suffix)) return []
+
+  const matched = moduleSpecifier.slice(prefix.length, moduleSpecifier.length - suffix.length)
+  return alias.replacements.map((replacement) =>
+    resolve(alias.baseDir, replacement.replace("*", matched)),
+  )
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value)
+
+const asRecord = (value: unknown): Record<string, unknown> | undefined =>
+  isRecord(value) ? value : undefined
+
+const asString = (value: unknown): string | undefined =>
+  typeof value === "string" && value.length > 0 ? value : undefined
+
+const asStringArray = (value: unknown): ReadonlyArray<string> =>
+  typeof value === "string"
+    ? [value]
+    : Array.isArray(value)
+      ? value.filter((entry): entry is string => typeof entry === "string")
+      : []
 
 const analyzePackageHealth = (
   pkg: PackageInfo & { manifest: PackageManifest },
