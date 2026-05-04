@@ -75,6 +75,32 @@ export function copied(value: number): number {
     expect(TsSl01.score(out)).toBeLessThan(1)
   })
 
+  test("deweights exact clones across parallel package implementations", async () => {
+    const duplicate = `
+export function onTextPart(value: string): string {
+  const normalized = value.trim().toLowerCase();
+  if (normalized.length === 0) {
+    return "empty";
+  }
+  return normalized.replaceAll(" ", "-");
+}
+`
+    await repo.write("packages/react/src/use-assistant.ts", duplicate)
+    await repo.write("packages/solid/src/use-assistant.ts", duplicate)
+
+    const parallelOut = await runSignal(repo.root, TsSl01, TsSl01.defaultConfig)
+
+    await repo.write("packages/solid/src/use-assistant.ts", "export const unrelated = 1\n")
+    await repo.write("src/first.ts", duplicate)
+    await repo.write("src/second.ts", duplicate)
+
+    const localOut = await runSignal(repo.root, TsSl01, TsSl01.defaultConfig)
+
+    expect(parallelOut.groups.length).toBeGreaterThan(0)
+    expect(localOut.groups.length).toBeGreaterThan(0)
+    expect(TsSl01.score(parallelOut)).toBeGreaterThan(TsSl01.score(localOut))
+  })
+
   test("detects structural near-duplicates", async () => {
     await repo.write(
       "handlers.ts",

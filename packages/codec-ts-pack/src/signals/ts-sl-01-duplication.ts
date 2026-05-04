@@ -67,7 +67,7 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
   tier: 1,
   category: "generated-slop",
   kind: "legibility",
-  cacheVersion: "changed-aware-generated-openapi-v1",
+  cacheVersion: "parallel-package-family-impact-v1",
   configSchema: TsSl01Config,
   defaultConfig: {
     exclude_globs: [
@@ -335,7 +335,9 @@ const cloneGroupImpact = (
     const memberPressure = scopeMode === "whole-tree" && group.tokenCount < 50
       ? Math.log2(group.members.length) * 0.5
       : extraMembers
-    return memberPressure * 1.2 * Math.min(3, Math.max(0.3, group.tokenCount / 30))
+    const familyWeight =
+      scopeMode === "whole-tree" && isParallelPackageFamilyClone(group.members) ? 0.35 : 1
+    return memberPressure * 1.2 * Math.min(3, Math.max(0.3, group.tokenCount / 30)) * familyWeight
   }
 
   if (scopeMode === "changed-hunks") {
@@ -344,6 +346,42 @@ const cloneGroupImpact = (
 
   if (group.tokenCount < 30) return 0
   return extraMembers * Math.min(0.35, (group.tokenCount - 30) / 120)
+}
+
+const isParallelPackageFamilyClone = (
+  members: ReadonlyArray<CloneGroupMember>,
+): boolean => {
+  if (members.length < 2) return false
+  const descriptors = members.map(parallelPackageDescriptor)
+  if (descriptors.some((descriptor) => descriptor === undefined)) return false
+
+  const packages = new Set(descriptors.map((descriptor) => descriptor!.packageName))
+  if (packages.size < 2) return false
+
+  const functionNames = new Set(members.map((member) => member.name))
+  const relativeTails = new Set(descriptors.map((descriptor) => descriptor!.relativeTail))
+  const basenames = new Set(descriptors.map((descriptor) => descriptor!.basename))
+  return functionNames.size === 1 && (relativeTails.size === 1 || basenames.size === 1)
+}
+
+const parallelPackageDescriptor = (
+  member: CloneGroupMember,
+):
+  | {
+      readonly packageName: string
+      readonly relativeTail: string
+      readonly basename: string
+    }
+  | undefined => {
+  const parts = member.file.replace(/\\/g, "/").split("/")
+  const packagesIndex = parts.lastIndexOf("packages")
+  if (packagesIndex === -1 || packagesIndex + 2 >= parts.length) return undefined
+  const packageName = parts[packagesIndex + 1]
+  if (packageName === undefined || packageName.length === 0) return undefined
+  const tail = parts.slice(packagesIndex + 2).join("/")
+  const basename = parts[parts.length - 1]
+  if (tail.length === 0 || basename === undefined) return undefined
+  return { packageName, relativeTail: tail, basename }
 }
 
 const cloneGroupSeverity = (
