@@ -157,7 +157,7 @@ export function onTextPart(value: string): string {
     expect(parallelScore).toBeGreaterThan(localScore)
   })
 
-  test("deweights exact clones across sibling single-file service adapters", () => {
+  test("does not infer service-adapter intent from single-file sibling paths", () => {
     const baseGroup = {
       groupId: "exact-0",
       kind: "exact" as const,
@@ -203,7 +203,7 @@ export function onTextPart(value: string): string {
       scopeMode: "whole-tree",
     })
 
-    expect(adapterScore).toBeGreaterThan(localScore)
+    expect(adapterScore).toBe(localScore)
   })
 
   test("does not deweight arbitrary same-tail sibling files as service adapters", () => {

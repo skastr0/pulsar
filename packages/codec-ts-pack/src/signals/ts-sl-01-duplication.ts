@@ -67,7 +67,7 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
   tier: 1,
   category: "generated-slop",
   kind: "legibility",
-  cacheVersion: "implementation-family-impact-v1",
+  cacheVersion: "historical-migration-impact-v1",
   configSchema: TsSl01Config,
   defaultConfig: {
     exclude_globs: [
@@ -392,7 +392,7 @@ const isSiblingImplementationVariantClone = (
     member.file.replace(/\\/g, "/").split("/").filter((part) => part.length > 0),
   )
   const minLength = Math.min(...pathParts.map((parts) => parts.length))
-  for (let familyIndex = 0; familyIndex < minLength - 2; familyIndex++) {
+  for (let familyIndex = 0; familyIndex < minLength - 3; familyIndex++) {
     const familyName = pathParts[0]?.[familyIndex]
     if (familyName === undefined) continue
     if (pathParts.some((parts) => parts[familyIndex] !== familyName)) continue
@@ -401,55 +401,12 @@ const isSiblingImplementationVariantClone = (
     if (variants.size < 2 || variants.has(undefined)) continue
 
     const tails = pathParts.map((parts) => parts.slice(familyIndex + 2).join("/"))
-    if (
-      tails.some((tail) => tail.split("/").length < 2) &&
-      !(
-        isImplementationFamilyDirectory(familyName) &&
-        tails.every(isRecognizedSingleFileAdapterTail)
-      )
-    ) {
-      continue
-    }
+    if (tails.some((tail) => tail.split("/").length < 2)) continue
     if (new Set(tails).size === 1) return true
   }
 
   return false
 }
-
-const IMPLEMENTATION_FAMILY_DIRECTORIES = new Set([
-  "adapters",
-  "clients",
-  "connectors",
-  "drivers",
-  "integrations",
-  "providers",
-  "runtimes",
-  "services",
-  "transports",
-])
-
-const SINGLE_FILE_ADAPTER_TAILS = new Set([
-  "adapter.ts",
-  "adapter.tsx",
-  "client.ts",
-  "client.tsx",
-  "driver.ts",
-  "driver.tsx",
-  "layer.ts",
-  "layer.tsx",
-  "provider.ts",
-  "provider.tsx",
-  "runtime.ts",
-  "runtime.tsx",
-  "transport.ts",
-  "transport.tsx",
-])
-
-const isImplementationFamilyDirectory = (segment: string): boolean =>
-  IMPLEMENTATION_FAMILY_DIRECTORIES.has(segment)
-
-const isRecognizedSingleFileAdapterTail = (tail: string): boolean =>
-  SINGLE_FILE_ADAPTER_TAILS.has(tail)
 
 const parallelPackageDescriptor = (
   member: CloneGroupMember,
