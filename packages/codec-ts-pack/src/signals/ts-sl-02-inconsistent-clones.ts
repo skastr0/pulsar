@@ -39,7 +39,7 @@ export interface DivergentClone {
   readonly tokenCount?: number
   readonly members: ReadonlyArray<CloneMember>
   readonly confidence?: "high" | "medium"
-  readonly evidenceKind?: "clone-drift" | "parallel-family"
+  readonly evidenceKind?: "clone-drift" | "parallel-family" | "paired-variant"
   readonly sampledMemberCount?: number
   readonly totalMemberCount?: number
   readonly divergenceScore: number
@@ -217,12 +217,12 @@ export const TsSl02: Signal<TsSl02Config, TsSl02Output, SignalContextTag> = {
     const worstPenalty =
       ((maxDivergence - ACTIONABLE_DIVERGENCE_THRESHOLD) /
         (1 - ACTIONABLE_DIVERGENCE_THRESHOLD)) *
-      0.35
+      0.25
     const weightedBreadth = actionableGroups.reduce(
       (sum, group) => sum + confidenceWeight(group),
       0,
     )
-    const breadthPenalty = Math.min(0.4, Math.log2(weightedBreadth + 1) * 0.16)
+    const breadthPenalty = Math.min(0.3, Math.log2(weightedBreadth + 1) * 0.12)
     return 1 - Math.min(0.75, worstPenalty + breadthPenalty)
   },
   diagnose: (out): ReadonlyArray<Diagnostic> =>
@@ -287,9 +287,15 @@ const confidenceWeight = (group: DivergentClone): number =>
 
 const classifyCloneEvidence = (
   members: ReadonlyArray<CloneMember>,
-): { readonly confidence: "high" | "medium"; readonly kind: "clone-drift" | "parallel-family" } => {
+): {
+  readonly confidence: "high" | "medium"
+  readonly kind: "clone-drift" | "parallel-family" | "paired-variant"
+} => {
   if (isParallelFamilyClone(members)) {
     return { confidence: "medium", kind: "parallel-family" }
+  }
+  if (isPairedVariantClone(members)) {
+    return { confidence: "medium", kind: "paired-variant" }
   }
   return { confidence: "high", kind: "clone-drift" }
 }
@@ -301,6 +307,41 @@ const isParallelFamilyClone = (members: ReadonlyArray<CloneMember>): boolean => 
   const names = new Set(members.map((member) => member.name).filter((name): name is string => name !== undefined))
   if (names.size !== 1) return false
   return new Set(members.map((member) => parentDirectory(member.file))).size === members.length
+}
+
+const isPairedVariantClone = (members: ReadonlyArray<CloneMember>): boolean => {
+  if (members.length !== 2) return false
+  const names = members.map((member) => member.name).filter((name): name is string => name !== undefined)
+  if (names.length !== 2 || names[0] === names[1]) return false
+  const left = identifierTokens(names[0]!)
+  const right = identifierTokens(names[1]!)
+  if (left.length < 2 || right.length < 2) return false
+  const sharedTokenCount = commonOuterTokenCount(left, right)
+  return sharedTokenCount >= 2 && sharedTokenCount / Math.max(left.length, right.length) >= 0.4
+}
+
+const identifierTokens = (name: string): ReadonlyArray<string> =>
+  (name.match(/[A-Z]?[a-z]+|[A-Z]+(?![a-z])|\d+/g) ?? [name]).map((token) =>
+    token.toLowerCase(),
+  )
+
+const commonOuterTokenCount = (
+  left: ReadonlyArray<string>,
+  right: ReadonlyArray<string>,
+): number => {
+  let prefix = 0
+  while (left[prefix] !== undefined && left[prefix] === right[prefix]) prefix++
+
+  let suffix = 0
+  while (
+    suffix < left.length - prefix &&
+    suffix < right.length - prefix &&
+    left[left.length - 1 - suffix] === right[right.length - 1 - suffix]
+  ) {
+    suffix++
+  }
+
+  return prefix + suffix
 }
 
 const parentDirectory = (file: string): string => {

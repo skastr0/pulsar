@@ -632,8 +632,8 @@ describe("TS-SL-02 Inconsistent clone detection", () => {
       divergenceDistribution: { min: 1, max: 1, mean: 1, median: 1 },
     })
 
-    expect(score).toBeGreaterThan(0.45)
-    expect(score).toBeLessThan(0.6)
+    expect(score).toBeGreaterThan(0.6)
+    expect(score).toBeLessThan(0.7)
   })
 
   test("medium-confidence parallel families create less pressure and info diagnostics", () => {
@@ -689,13 +689,61 @@ describe("TS-SL-02 Inconsistent clone detection", () => {
     const score = TsSl02.score(output)
     const diagnostics = TsSl02.diagnose(output)
 
-    expect(score).toBeGreaterThan(0.5)
-    expect(score).toBeLessThan(0.65)
+    expect(score).toBeGreaterThan(0.65)
+    expect(score).toBeLessThan(0.8)
     expect(diagnostics).toHaveLength(1)
     expect(diagnostics[0]?.severity).toBe("info")
     expect(diagnostics[0]?.message).toContain("confidence=medium")
     expect(diagnostics[0]?.message).toContain("evidence=parallel-family")
     expect(diagnostics[0]?.data?.confidence).toBe("medium")
+  })
+
+  test("two-member parallel variants create medium-confidence drift evidence", async () => {
+    const cloneGroups = [
+      {
+        groupId: "walker-pair",
+        kind: "structural" as const,
+        tokenCount: 109,
+        members: [
+          { file: join(repo, "cargo.ts"), name: "walkForCargoTomls", startLine: 1, endLine: 10 },
+          { file: join(repo, "tsconfig.ts"), name: "walkForTsconfigs", startLine: 1, endLine: 10 },
+        ],
+        structuralHash: "walker",
+      },
+    ]
+
+    const inputs = new Map<string, unknown>([
+      [
+        "TS-SL-01",
+        {
+          groups: cloneGroups,
+          totalFunctionsAnalyzed: 2,
+          scoreBudgetFunctions: 2,
+          scopeMode: "whole-tree",
+        } as TsSl01Output,
+      ],
+    ])
+
+    makeCommit(repo, "cargo.ts", "export function walkForCargoTomls() {\n  return []\n}\n", "2024-06-01T00:00:00Z")
+    makeCommit(repo, "tsconfig.ts", "export function walkForTsconfigs() {\n  return []\n}\n", "2024-06-20T00:00:00Z")
+
+    const out = await Effect.runPromise(
+      TsSl02.compute(TsSl02.defaultConfig, inputs).pipe(
+        Effect.provide(
+          Layer.succeed(SignalContextTag, {
+            gitSha: "HEAD",
+            worktreePath: repo,
+            changedHunks: [],
+          }),
+        ),
+      ),
+    )
+    const diagnostics = TsSl02.diagnose(out)
+
+    expect(out.divergentGroups[0]?.confidence).toBe("medium")
+    expect(out.divergentGroups[0]?.evidenceKind).toBe("paired-variant")
+    expect(diagnostics[0]?.severity).toBe("info")
+    expect(diagnostics[0]?.message).toContain("evidence=paired-variant")
   })
 
   test("score is not diluted when vector config analyzes more groups", () => {
@@ -729,7 +777,8 @@ describe("TS-SL-02 Inconsistent clone detection", () => {
     })
 
     expect(broadScore).toBe(narrowScore)
-    expect(broadScore).toBeLessThan(0.45)
+    expect(broadScore).toBeGreaterThan(0.5)
+    expect(broadScore).toBeLessThan(0.65)
   })
 
   test("additional actionable divergent groups increase pressure", () => {
