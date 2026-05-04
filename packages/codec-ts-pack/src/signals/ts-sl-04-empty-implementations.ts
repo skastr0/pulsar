@@ -280,22 +280,30 @@ interface StubCandidateCollection {
   readonly totalFunctions: number
 }
 
+interface ChangedHunk {
+  readonly file: string
+  readonly oldStart: number
+  readonly oldLines: number
+  readonly newStart: number
+  readonly newLines: number
+}
+
+interface HunkLineRange {
+  readonly start: number
+  readonly end: number
+}
+
 const collectStubCandidates = (
   project: Project,
   context: {
     readonly worktreePath: string
-    readonly changedHunks: ReadonlyArray<{
-      readonly file: string
-      readonly oldStart: number
-      readonly oldLines: number
-      readonly newStart: number
-      readonly newLines: number
-    }>
+    readonly changedHunks: ReadonlyArray<ChangedHunk>
   },
   config: TsSl04Config,
 ): StubCandidateCollection => {
   const candidates: Array<StubCandidate> = []
   let totalFunctions = 0
+  const hunkIndex = buildChangedHunkIndex(context.worktreePath, context.changedHunks)
 
   for (const { path, fn } of getFunctionLikeIndex(project)) {
     if (isExcluded(path, config.exclude_globs)) continue
@@ -303,7 +311,7 @@ const collectStubCandidates = (
     const isTestPath = matchesAnyGlob(path, config.test_globs)
     if (isTestPath && !config.include_test_stubs) continue
 
-    if (!lineRangeOverlapsHunks(path, fn, context.worktreePath, context.changedHunks)) {
+    if (!lineRangeOverlapsHunkIndex(path, fn, context.worktreePath, hunkIndex)) {
       continue
     }
 
@@ -1364,28 +1372,47 @@ const commentOnlyBodyText = (bodyText: string): string | undefined => {
   return comments.join(" ").replace(/\s+/g, " ").trim()
 }
 
-const lineRangeOverlapsHunks = (
+const buildChangedHunkIndex = (
+  worktreePath: string,
+  hunks: ReadonlyArray<ChangedHunk>,
+): ReadonlyMap<string, ReadonlyArray<HunkLineRange>> | undefined => {
+  if (hunks.length === 0) return undefined
+  const byFile = new Map<string, Array<HunkLineRange>>()
+
+  for (const hunk of hunks) {
+    const absoluteFile = absoluteHunkFilePath(worktreePath, hunk.file)
+    const ranges = byFile.get(absoluteFile) ?? []
+    ranges.push({
+      start: hunk.newStart,
+      end: hunk.newStart + hunk.newLines,
+    })
+    byFile.set(absoluteFile, ranges)
+  }
+
+  return byFile
+}
+
+const lineRangeOverlapsHunkIndex = (
   filePath: string,
   fn: FnLike,
   worktreePath: string,
-  hunks: ReadonlyArray<{ file: string; oldStart: number; oldLines: number; newStart: number; newLines: number }>,
+  hunkIndex: ReadonlyMap<string, ReadonlyArray<HunkLineRange>> | undefined,
 ): boolean => {
-  if (hunks.length === 0) return true
-  const absoluteFile = filePath.startsWith(worktreePath) ? filePath : `${worktreePath}/${filePath}`
+  if (hunkIndex === undefined) return true
+  const absoluteFile = absoluteHunkFilePath(worktreePath, filePath)
+  const ranges = hunkIndex.get(absoluteFile)
+  if (ranges === undefined) return false
+
   const startLine = fn.getStartLineNumber()
   const endLine = fn.getEndLineNumber()
-
-  for (const hunk of hunks) {
-    const hunkFileAbsolute = hunk.file.startsWith(worktreePath) ? hunk.file : `${worktreePath}/${hunk.file}`
-    if (hunkFileAbsolute !== absoluteFile) continue
-
-    const hunkStart = hunk.newStart
-    const hunkEnd = hunk.newStart + hunk.newLines
-
-    if (startLine < hunkEnd && endLine >= hunkStart) {
+  for (const range of ranges) {
+    if (startLine < range.end && endLine >= range.start) {
       return true
     }
   }
 
   return false
 }
+
+const absoluteHunkFilePath = (worktreePath: string, filePath: string): string =>
+  filePath.startsWith(worktreePath) ? filePath : `${worktreePath}/${filePath}`

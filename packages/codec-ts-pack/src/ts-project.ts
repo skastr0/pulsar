@@ -188,31 +188,45 @@ const hasIgnoredPathSegment = (filePath: string): boolean =>
 const listProductionTypeScriptFiles = (
   worktreePath: string,
 ): Effect.Effect<ReadonlyArray<string>, CalibrationProcessorError> =>
-  Effect.tryPromise({
-    try: async () => {
-      const raw = await simpleGit(worktreePath).raw([
-        "ls-files",
-        "--cached",
-        "--others",
-        "--exclude-standard",
-      ])
-      return raw
-        .split("\n")
-        .map((file) => file.trim())
-        .filter((file) => file.length > 0)
-    },
-    catch: (cause) => new Error(String(cause)),
-  }).pipe(
-    Effect.orElseSucceed(() => []),
-    Effect.flatMap((files) =>
-      Effect.filter(
-        files.filter(isProductionTypeScriptFile),
-        (file) =>
-          isProductionSourcePath(file, { sourceExtensions: [".ts", ".tsx"] }),
+  Effect.gen(function* () {
+    const files = yield* Effect.tryPromise({
+      try: async () => {
+        const raw = await simpleGit(worktreePath).raw([
+          "ls-files",
+          "--cached",
+          "--others",
+          "--exclude-standard",
+        ])
+        return raw
+          .split("\n")
+          .map((file) => file.trim())
+          .filter((file) => file.length > 0)
+      },
+      catch: (cause) => new Error(String(cause)),
+    }).pipe(Effect.orElseSucceed(() => []))
+    const isProductionSource = makeProductionSourcePathClassifier()
+    const productionFiles = yield* Effect.filter(
+      files.filter(isProductionTypeScriptFile),
+      isProductionSource,
+    )
+    return productionFiles.map((file) => `${worktreePath}/${file}`)
+  })
+
+const makeProductionSourcePathClassifier = (): ((
+  file: string,
+) => Effect.Effect<boolean, CalibrationProcessorError, never>) => {
+  const cache = new Map<string, boolean>()
+  return (file) => {
+    if (cache.has(file)) return Effect.succeed(cache.get(file)!)
+    return isProductionSourcePath(file, { sourceExtensions: [".ts", ".tsx"] }).pipe(
+      Effect.tap((isProduction) =>
+        Effect.sync(() => {
+          cache.set(file, isProduction)
+        }),
       ),
-    ),
-    Effect.map((files) => files.map((file) => `${worktreePath}/${file}`)),
-  )
+    )
+  }
+}
 
 const isProductionTypeScriptFile = (file: string): boolean => {
   if (!(file.endsWith(".ts") || file.endsWith(".tsx"))) return false

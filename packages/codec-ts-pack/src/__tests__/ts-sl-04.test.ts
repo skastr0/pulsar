@@ -598,6 +598,10 @@ export function stub${index}() {
       "utils.ts",
       `
 const unchanged = 1;
+export function oldStub() {
+  throw new Error("Not implemented");
+}
+
 export function newStub() {
   throw new Error("Not implemented");
 }
@@ -616,7 +620,7 @@ export function newStub() {
               gitSha: "TEST",
               worktreePath: repo.root,
               changedHunks: [
-                { file: "utils.ts", oldStart: 2, oldLines: 0, newStart: 2, newLines: 4 },
+                { file: "utils.ts", oldStart: 6, oldLines: 0, newStart: 6, newLines: 3 },
               ],
             }),
           ),
@@ -624,7 +628,7 @@ export function newStub() {
       ),
     )
 
-    expect(out.stubs.length).toBeGreaterThanOrEqual(0)
+    expect(out.stubs.map((stub) => stub.name)).toEqual(["newStub"])
   })
 
   test("detects mock-return patterns with placeholder literals", async () => {
