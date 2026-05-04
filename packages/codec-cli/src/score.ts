@@ -1,6 +1,7 @@
 import {
   CATEGORIES,
   compareToBaseline,
+  computeObserverConfigHash,
   explainAiAssistedMode,
   timeSeriesConfigOf,
   toObserverJson,
@@ -35,9 +36,13 @@ export interface ScoreOptions {
 }
 
 interface CiAssessment {
-  readonly mode: "disabled" | "missing-baseline" | "ratcheted"
+  readonly mode: "disabled" | "missing-baseline" | "vector-mismatch" | "ratcheted"
   readonly effectiveStatus: "pass" | "fail"
   readonly baselineSha?: string
+  readonly baselineVectorId?: string
+  readonly currentVectorId?: string
+  readonly baselineObserverConfigHash?: string
+  readonly currentObserverConfigHash?: string
   readonly comparison?: BaselineComparison
   readonly baselinePath?: string
 }
@@ -92,8 +97,16 @@ export const runScoreCommand = (opts: ScoreOptions) =>
       return yield* Effect.fail(new Error("Observer mode has no active signals."))
     }
 
-    const ciAssessment = yield* assessCiMode(opts, repoRoot, result)
-    const paidDebt = ciAssessment.comparison?.paidDebt ?? []
+    const ciAssessment = yield* assessCiMode(
+      opts,
+      repoRoot,
+      result,
+      registry,
+      observerVector,
+    )
+    const paidDebt = ciAssessment.mode === "ratcheted"
+      ? ciAssessment.comparison?.paidDebt ?? []
+      : []
     if (!opts.json && paidDebt.length > 0) {
       printPaidDebt(paidDebt)
     }
@@ -289,6 +302,8 @@ const assessCiMode = (
   opts: ScoreOptions,
   repoRoot: string,
   output: ObserverOutput,
+  registry: Registry,
+  vector: TasteVector,
 ) =>
   Effect.gen(function* () {
     if (opts.ci !== true) {
@@ -307,11 +322,29 @@ const assessCiMode = (
       } satisfies CiAssessment
     }
 
+    const currentObserverConfigHash = computeObserverConfigHash(registry, vector)
+    if (
+      baseline.observer_config_hash !== undefined &&
+      baseline.observer_config_hash !== currentObserverConfigHash
+    ) {
+      return {
+        mode: "vector-mismatch",
+        effectiveStatus: "fail",
+        baselineSha: baseline.baseline_sha,
+        ...(baseline.vector_id !== undefined ? { baselineVectorId: baseline.vector_id } : {}),
+        currentVectorId: vector.id,
+        baselineObserverConfigHash: baseline.observer_config_hash,
+        currentObserverConfigHash,
+      } satisfies CiAssessment
+    }
+
     const comparison = compareToBaseline(baseline, output.hard_gate_violations)
     return {
       mode: "ratcheted",
       effectiveStatus: comparison.newViolations.length > 0 ? "fail" : "pass",
       baselineSha: baseline.baseline_sha,
+      ...(baseline.vector_id !== undefined ? { baselineVectorId: baseline.vector_id } : {}),
+      currentVectorId: vector.id,
       comparison,
     } satisfies CiAssessment
   })
@@ -873,6 +906,16 @@ const printCiSummary = (opts: {
     return
   }
 
+  if (opts.ciAssessment.mode === "vector-mismatch") {
+    console.error(
+      `taste-ci status=fail baseline=${opts.ciAssessment.baselineSha} sha=${opts.gitSha} reason=vector-mismatch baseline_vector=${opts.ciAssessment.baselineVectorId ?? "unknown"} current_vector=${opts.ciAssessment.currentVectorId ?? "unknown"}`,
+    )
+    console.error(
+      `taste-ci warning=baseline-vector-mismatch action="taste baseline refresh"`,
+    )
+    return
+  }
+
   if (opts.ciAssessment.mode !== "ratcheted") {
     console.error(
       `taste-ci status=${opts.ciAssessment.effectiveStatus} sha=${opts.gitSha} current=${opts.output.hard_gate_violations.length}`,
@@ -904,6 +947,9 @@ const formatCiBaselineLine = (
   if (assessment.mode === "disabled") return undefined
   if (assessment.mode === "missing-baseline") {
     return `missing (${output.hard_gate_violations.length} current violation${output.hard_gate_violations.length === 1 ? "" : "s"}; run taste baseline set)`
+  }
+  if (assessment.mode === "vector-mismatch") {
+    return `${assessment.baselineSha} (vector mismatch: ${assessment.baselineVectorId ?? "unknown"} -> ${assessment.currentVectorId ?? "unknown"}; run taste baseline refresh)`
   }
 
   const comparison = assessment.comparison!

@@ -1,5 +1,6 @@
 import {
   baselineViolationCount,
+  computeObserverConfigHash,
   createBaseline,
 } from "@taste-codec/core"
 import { Effect } from "effect"
@@ -29,6 +30,8 @@ export const runBaselineCommand = (opts: BaselineCommandOptions) =>
     const headSha = yield* readHeadSha(repoRoot)
     const baseline = createBaseline({
       baselineSha: headSha,
+      vectorId: vectorSelection.label,
+      observerConfigHash: computeObserverConfigHash(registry, vectorSelection.vector),
       violations: result.hard_gate_violations,
     })
     const baselinePath = yield* writeBaselineFile(repoRoot, baseline)
@@ -64,6 +67,9 @@ const runShowCommand = (repoPath: string) =>
     console.log(`  Repo:          ${repoRoot}`)
     console.log(`  Baseline SHA:  ${baseline.baseline_sha}`)
     console.log(`  Created:       ${baseline.created_at}`)
+    if (baseline.vector_id !== undefined) {
+      console.log(`  Vector:        ${baseline.vector_id}`)
+    }
     console.log(`  Age:           ${ageInDays(baseline.created_at)} days`)
     console.log(`  Tolerated:     ${baselineViolationCount(baseline)}`)
     console.log("")

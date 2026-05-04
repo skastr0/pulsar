@@ -15,6 +15,8 @@ export const Baseline = Schema.Struct({
   schema_version: Schema.Literal(1),
   baseline_sha: Schema.String,
   created_at: Schema.String,
+  vector_id: Schema.optional(Schema.String),
+  observer_config_hash: Schema.optional(Schema.String),
   violations: Schema.Record({ key: Schema.String, value: Schema.Array(BaselineViolation) }),
 })
 export type Baseline = typeof Baseline.Type
@@ -42,6 +44,8 @@ export interface BaselineComparison {
 export const createBaseline = (opts: {
   readonly baselineSha: string
   readonly createdAt?: string
+  readonly vectorId?: string
+  readonly observerConfigHash?: string
   readonly violations: ReadonlyArray<HardGateViolation>
 }): Baseline => {
   const grouped: Record<string, Array<BaselineViolation>> = {}
@@ -58,6 +62,10 @@ export const createBaseline = (opts: {
     schema_version: 1,
     baseline_sha: opts.baselineSha,
     created_at: opts.createdAt ?? new Date().toISOString(),
+    ...(opts.vectorId !== undefined ? { vector_id: opts.vectorId } : {}),
+    ...(opts.observerConfigHash !== undefined
+      ? { observer_config_hash: opts.observerConfigHash }
+      : {}),
     violations: grouped,
   })
 }

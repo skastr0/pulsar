@@ -652,10 +652,13 @@ export function stubF() { throw new Error("Not implemented") }
         await readFile(join(repoPath, ".taste-codec", "baseline.json"), "utf8"),
       )
       expect(Object.keys(baselineJson.violations)).toContain("TS-AD-02")
+      expect(baselineJson.vector_id).toBe("all-defaults")
+      expect(typeof baselineJson.observer_config_hash).toBe("string")
 
       const baselineShow = runCli(repoPath, ["baseline", "show", "."])
       expect(baselineShow.status).toBe(0)
       expect(baselineShow.stdout).toContain("Baseline SHA")
+      expect(baselineShow.stdout).toContain("Vector:        all-defaults")
       expect(baselineShow.stdout).toContain("TS-AD-02")
 
       const ratchetedPass = runCli(repoPath, ["score", "--ci", "."])
@@ -678,6 +681,48 @@ export function stubF() { throw new Error("Not implemented") }
       expect(ratchetedFail.status).toBe(2)
       expect(ratchetedFail.stderr).toContain("status=fail")
       expect(ratchetedFail.stderr).toContain("new=")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
+  test("score --ci fails loudly when the active vector differs from the baseline vector", async () => {
+    const repoPath = await initRepo([
+      {
+        path: "src/session.ts",
+        content: "export function createSession() { throw new Error('Not implemented') }\n",
+      },
+    ])
+    try {
+      const baselineSet = runCli(repoPath, ["baseline", "set", "."])
+      expect(baselineSet.status).toBe(0)
+
+      await writeRepoFile(
+        repoPath,
+        ".taste-codec/vector.json",
+        JSON.stringify(
+          {
+            id: "protocol-stub-tolerant",
+            domain: "typescript",
+            signal_overrides: {
+              "TS-SL-04": {
+                config: {
+                  hard_gate_production: false,
+                },
+              },
+            },
+          },
+          null,
+          2,
+        ),
+      )
+
+      const ci = runCli(repoPath, ["score", "--ci", "."])
+      expect(ci.status).toBe(2)
+      expect(ci.stderr).toContain("reason=vector-mismatch")
+      expect(ci.stderr).toContain("baseline_vector=all-defaults")
+      expect(ci.stderr).toContain("current_vector=protocol-stub-tolerant")
+      expect(ci.stderr).toContain("taste baseline refresh")
     } finally {
       await rm(repoPath, { recursive: true, force: true })
     }
