@@ -7,6 +7,10 @@ import { ObserverOutput as ObserverOutputSchema, createTimeSeriesServices } from
 import { Effect, Schema } from "effect"
 
 const binPath = resolve(import.meta.dir, "../../src/bin.ts")
+const aiSlopDefensePresetPath = resolve(
+  import.meta.dir,
+  "../../../codec-core/presets/ai-slop-defense.json",
+)
 
 const sh = (cmd: string, args: ReadonlyArray<string>, cwd: string): void => {
   const result = spawnSync(cmd, args as Array<string>, { cwd, encoding: "utf8" })
@@ -224,6 +228,33 @@ describe("taste score", () => {
       expect(out.stdout).toContain("formula   0.65 * aggregate + 0.35 * lowest")
       expect(out.stdout).toContain("weights")
       expect(out.stdout).toContain("TS-SL-01=")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
+  test("ai-slop-defense vector stays quiet on a clean simple repo", async () => {
+    const repoPath = await initRepo(simpleRepoFiles())
+    try {
+      const out = runCli(repoPath, [
+        "score",
+        "--category",
+        "generated-slop",
+        "--vector",
+        aiSlopDefensePresetPath,
+        ".",
+      ])
+      expect(out.status).toBe(0)
+      expect(out.stdout).toContain("Vector:   ai-slop-defense")
+      expect(out.stdout).toContain("AI Mode:  active")
+      expect(out.stdout).toContain("Generated Slop         1.00")
+      expect(out.stdout).not.toContain("Top Findings")
+
+      const jsonOut = runCli(repoPath, ["score", "--json", "--vector", aiSlopDefensePresetPath, "."])
+      expect(jsonOut.status).toBe(0)
+      const parsed = JSON.parse(String(jsonOut.stdout))
+      expect(parsed.categories["generated-slop"].score).toBeGreaterThanOrEqual(0.99)
+      expect(parsed.hard_gate_status).toBe("pass")
     } finally {
       await rm(repoPath, { recursive: true, force: true })
     }
