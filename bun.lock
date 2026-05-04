@@ -36,6 +36,7 @@
       },
       "dependencies": {
         "@taste-codec/core": "workspace:*",
+        "@taste-codec/project-module-sdk": "workspace:*",
         "@taste-codec/rs-pack": "workspace:*",
         "@taste-codec/shared-signals": "workspace:*",
         "@taste-codec/ts-pack": "workspace:*",

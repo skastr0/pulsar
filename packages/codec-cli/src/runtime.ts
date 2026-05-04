@@ -12,17 +12,26 @@ import {
   collectWorktreeChangedHunks,
   createTimeSeriesServices,
   decodeTasteVector,
+  makeResolvedCalibrationContext,
   loadCanonicalReferenceDataEntries,
   makeReferenceData,
   observe,
   runSignal,
   validateVectorAgainstRegistry,
+  CalibrationContextTag,
   isActive as vectorIsActive,
   type ObserverOutput,
   type Registry,
+  type RepoFacts,
+  type ResolvedCalibrationContext,
   type SignalRunResult,
   type TasteVector,
 } from "@taste-codec/core"
+import {
+  decodeProjectModuleManifest,
+  fingerprintProjectModuleManifest,
+  loadEnabledProjectModules,
+} from "@taste-codec/project-module-sdk"
 import { RS_PACK_SIGNALS, RustProjectLayer } from "@taste-codec/rs-pack"
 import { SHARED_SIGNALS } from "@taste-codec/shared-signals"
 import { TS_PACK_SIGNALS, TsProjectLayer } from "@taste-codec/ts-pack"
@@ -185,6 +194,7 @@ export const makeCodecRuntime = (
       options?.timeSeries?.enabled === true
         ? createTimeSeriesServices(repoRoot)
         : undefined
+    const calibrationContext = yield* loadProjectModuleCalibrationContext(repoRoot)
 
     const activePacks = collectActiveLanguagePacks(registry, vector)
     const EngineLayer = ScoringEngineLayer(
@@ -201,10 +211,51 @@ export const makeCodecRuntime = (
         ...(timeSeries === undefined ? {} : { timeSeriesWriter: timeSeries.writer }),
         cacheConfig: { cacheDir: join(repoRoot, ".taste-codec", "cache") },
         ...(options?.observer?.profile === true ? { observerProfile: true } : {}),
+        ...(calibrationContext === undefined ? {} : { calibrationContext }),
       },
     )
     const engine = yield* Effect.provide(ScoringEngineTag, EngineLayer)
-    return { registry, engine, timeSeries }
+    return { registry, engine, timeSeries, calibrationContext }
+  })
+
+export const loadProjectModuleCalibrationContext = (
+  repoRoot: string,
+): Effect.Effect<ResolvedCalibrationContext | undefined, unknown, never> =>
+  Effect.gen(function* () {
+    const manifestPath = join(repoRoot, ".taste-codec", "project-modules.json")
+    if (!existsSync(manifestPath)) return undefined
+
+    const raw = yield* Effect.tryPromise({
+      try: () => readFile(manifestPath, "utf8"),
+      catch: (cause) =>
+        new Error(`Failed to read project module manifest at ${manifestPath}: ${String(cause)}`),
+    })
+    const parsed = yield* Effect.try({
+      try: () => JSON.parse(raw),
+      catch: (cause) =>
+        new Error(`Failed to parse project module manifest JSON at ${manifestPath}: ${String(cause)}`),
+    })
+    const manifest = yield* decodeProjectModuleManifest(parsed)
+    const loadedModules = yield* loadEnabledProjectModules(manifest, { repoRoot })
+    const manifestFingerprint = fingerprintProjectModuleManifest(manifest)
+    const repoFacts: RepoFacts = {
+      repoRoot,
+      fingerprint: `project-modules:${manifestFingerprint}`,
+      detectedTechnologies: [],
+      sourceExtensions: [],
+      metadata: {
+        manifestPath,
+        manifestFingerprint,
+        declaredModuleCount: manifest.modules.length,
+        activeModuleCount: loadedModules.length,
+      },
+    }
+
+    return makeResolvedCalibrationContext({
+      repoFacts,
+      activeModules: loadedModules.map((module) => module.activeModule),
+      processors: loadedModules.flatMap((module) => module.processors),
+    })
   })
 
 const collectActiveLanguagePacks = (
@@ -225,6 +276,7 @@ const buildWorktreeEnvLayer = (repoRoot: string, gitSha: string, signalId: strin
   Effect.gen(function* () {
     const referenceEntries = yield* loadCanonicalReferenceDataEntries(repoRoot)
     const changedHunks = yield* collectWorktreeChangedHunks(repoRoot)
+    const calibrationContext = yield* loadProjectModuleCalibrationContext(repoRoot)
     const ContextLayer = Layer.succeed(SignalContextTag, {
       gitSha,
       worktreePath: repoRoot,
@@ -234,11 +286,16 @@ const buildWorktreeEnvLayer = (repoRoot: string, gitSha: string, signalId: strin
       ReferenceDataTag,
       makeReferenceData(referenceEntries),
     )
+    const CalibrationLayer =
+      calibrationContext === undefined
+        ? Layer.empty
+        : Layer.succeed(CalibrationContextTag, calibrationContext)
 
     return Layer.mergeAll(
       ContextLayer,
       ReferenceLayer,
       InMemoryCacheLayer,
+      CalibrationLayer,
       signalId.startsWith("TS-")
         ? TsProjectLayer(repoRoot, { productionOnly: true })
         : Layer.empty,
