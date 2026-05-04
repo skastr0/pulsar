@@ -68,6 +68,132 @@ describe("TS-DE-04 (package dependency health)", () => {
     expect(TsDe04.score(out)).toBeLessThan(0.6)
   })
 
+  test("nonstandard private manifest markers still avoid published-runtime severity", async () => {
+    await writePackage("app", "@repo/app", {
+      private: "true",
+    })
+    await writePackage("tool", "@repo/tool", {
+      public: false,
+    })
+    await repo.write(
+      "packages/app/src/index.ts",
+      "import { uniq } from 'lodash'\nexport const value = uniq([1, 1, 2])\n",
+    )
+    await repo.write(
+      "packages/tool/src/index.ts",
+      "import { uniq } from 'lodash'\nexport const value = uniq([1, 1, 2])\n",
+    )
+
+    const diagnostics = TsDe04.diagnose(await runSignal(repo.root, TsDe04, TsDe04.defaultConfig))
+
+    expect(diagnostics).toHaveLength(2)
+    expect(diagnostics.every((diagnostic) => diagnostic.severity === "warn")).toBe(true)
+    expect(diagnostics.every((diagnostic) => diagnostic.data?.severityReason === "private-runtime-missing-dependency")).toBe(true)
+  })
+
+  test("does not flag package imports that are bundled by explicit tsup config", async () => {
+    await writePackage("plugin", "@repo/plugin", {
+      scripts: {
+        build: "tsup",
+      },
+      devDependencies: {
+        "inline-runtime": "^1.0.0",
+        "external-runtime": "^1.0.0",
+        tsup: "^8.0.0",
+      },
+    })
+    await repo.write(
+      "packages/plugin/tsup.config.ts",
+      [
+        "import { defineConfig } from 'tsup'",
+        "export default defineConfig({",
+        "  entry: ['./src/index.ts'],",
+        "  bundle: true,",
+        "  external: ['external-runtime'],",
+        "})",
+      ].join("\n"),
+    )
+    await repo.write(
+      "packages/plugin/src/index.ts",
+      [
+        "import { inline } from 'inline-runtime'",
+        "import { external } from 'external-runtime'",
+        "export const value = [inline, external]",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+
+    expect(out.packages[0]?.importedButNotDeclared).toEqual([])
+    expect(out.packages[0]?.devInProd).toEqual([
+      {
+        dependencyName: "external-runtime",
+        files: [`${repo.root}/packages/plugin/src/index.ts`],
+      },
+    ])
+  })
+
+  test("does not flag workspace package names resolved through tsconfig path aliases", async () => {
+    await writePackage("app", "@repo/app", {})
+    await writePackage("shared", "shared", {
+      private: true,
+    })
+    await repo.writeJson("packages/app/tsconfig.json", {
+      compilerOptions: {
+        target: "ES2022",
+        module: "ESNext",
+        moduleResolution: "Bundler",
+        baseUrl: ".",
+        paths: {
+          "shared/*": ["../shared/src/*"],
+        },
+      },
+      include: ["src/**/*.ts"],
+    })
+    await repo.write("packages/shared/src/value.ts", "export const shared = 1\n")
+    await repo.write(
+      "packages/app/src/index.ts",
+      "import { shared } from 'shared/value'\nexport const value = shared\n",
+    )
+
+    const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+    const appHealth = out.packages.find((pkg) => pkg.packageName === "@repo/app")
+
+    expect(appHealth?.importedButNotDeclared).toEqual([])
+  })
+
+  test("reads tsconfig path aliases from JSONC files with comments and trailing commas", async () => {
+    await writePackage("app", "@repo/app", {})
+    await repo.write(
+      "packages/app/tsconfig.json",
+      [
+        "{",
+        "  // Local aliases are common in hand-written tsconfig files.",
+        '  "compilerOptions": {',
+        '    "target": "ES2022",',
+        '    "module": "ESNext",',
+        '    "moduleResolution": "Bundler",',
+        '    "baseUrl": ".",',
+        '    "paths": {',
+        '      "@/*": ["./src/*"],',
+        "    },",
+        "  },",
+        '  "include": ["src/**/*.ts"],',
+        "}",
+      ].join("\n"),
+    )
+    await repo.write(
+      "packages/app/src/index.ts",
+      "import { value } from '@/value'\nexport const result = value\n",
+    )
+    await repo.write("packages/app/src/value.ts", "export const value = 1\n")
+
+    const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+    const appHealth = out.packages.find((pkg) => pkg.packageName === "@repo/app")
+
+    expect(appHealth?.importedButNotDeclared).toEqual([])
+  })
+
   test("package-local release scripts with missing dependencies warn", async () => {
     await writePackage("plugin", "@repo/plugin", {
       exports: {

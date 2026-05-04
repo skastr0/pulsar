@@ -107,7 +107,7 @@ const readPackageManifest = async (
     return {
       name: asOptionalString(parsed.name),
       version: asOptionalString(parsed.version),
-      private: parsed.private === true,
+      private: isPrivateManifest(parsed),
       scripts: asStringRecord(parsed.scripts),
       bin: asBinRecord(parsed.bin),
       dependencies: asDependencyRecord(parsed.dependencies),
@@ -123,6 +123,9 @@ const readPackageManifest = async (
 
 const asOptionalString = (value: unknown): string | undefined =>
   typeof value === "string" && value.length > 0 ? value : undefined
+
+const isPrivateManifest = (manifest: Record<string, unknown>): boolean =>
+  manifest.private === true || manifest.private === "true" || manifest.public === false
 
 const asDependencyRecord = (value: unknown): Readonly<Record<string, string>> => {
   return asStringRecord(value)

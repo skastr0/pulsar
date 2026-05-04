@@ -66,6 +66,8 @@ type UsageBucket = {
   readonly prodFiles: Set<string>
   readonly toolingFiles: Set<string>
   readonly typeOnlyFiles: Set<string>
+  readonly bundledFiles: Set<string>
+  readonly bundledProdFiles: Set<string>
   readonly specifiers: Set<string>
 }
 
@@ -78,6 +80,11 @@ type TsconfigPathAlias = {
 type TsconfigAliasConfig = {
   readonly aliases: ReadonlyArray<TsconfigPathAlias>
   readonly baseDir: string
+}
+
+type BundledPackageInfo = {
+  readonly bundlesSource: boolean
+  readonly externalPackageNames: ReadonlySet<string>
 }
 
 type ModuleSpecifierUsage = {
@@ -156,7 +163,7 @@ export const TsDe04: Signal<
   tier: 1,
   category: "dependency-entropy",
   kind: "structural",
-  cacheVersion: "docusaurus-virtual-modules-v1",
+  cacheVersion: "private-jsonc-bundled-path-aliases-v1",
   configSchema: TsDe04Config,
   defaultConfig: {
     exclude_globs: [
@@ -240,6 +247,7 @@ export const TsDe04: Signal<
           const resolvedPackageNames = await readResolvedPackageNames(context.worktreePath)
           const activePackages = packages.filter((pkg) => !isExcluded(pkg.path, config.exclude_globs))
           const pathAliasesByPackage = await readPathAliasesByPackage(activePackages)
+          const bundledInfoByPackage = await readBundledInfoByPackage(activePackages)
           const workspaceNames = workspacePackageNames(activePackages)
           const sourceFiles = await dependencySourceFiles(project, activePackages, config.exclude_globs)
           const packageForPath = createPackagePathMatcher(packages)
@@ -300,12 +308,14 @@ export const TsDe04: Signal<
                   packageName,
                   owningPackage,
                   pathAliasesByPackage.get(owningPackage.path),
-                  workspaceNames,
                   context.worktreePath,
                 )
                 localPathAliasUsageCache.set(localPathAliasUsageCacheKey, localPathAliasUsage)
               }
-              if (localPathAliasUsage) {
+              if (
+                localPathAliasUsage &&
+                !manifestDeclaresDependency(owningPackage.manifest, packageName)
+              ) {
                 continue
               }
 
@@ -314,10 +324,25 @@ export const TsDe04: Signal<
                 prodFiles: new Set<string>(),
                 toolingFiles: new Set<string>(),
                 typeOnlyFiles: new Set<string>(),
+                bundledFiles: new Set<string>(),
+                bundledProdFiles: new Set<string>(),
                 specifiers: new Set<string>(),
               }
               usage.files.add(sourceFile.getFilePath())
               usage.specifiers.add(moduleSpecifier)
+              if (
+                isBundledPackageSourceUsage(
+                  owningPackage,
+                  sourceFile.getFilePath(),
+                  packageName,
+                  bundledInfoByPackage.get(owningPackage.path),
+                )
+              ) {
+                usage.bundledFiles.add(sourceFile.getFilePath())
+                if (isProdFile && !moduleUsage.typeOnly) {
+                  usage.bundledProdFiles.add(sourceFile.getFilePath())
+                }
+              }
               if (moduleUsage.typeOnly) {
                 usage.typeOnlyFiles.add(sourceFile.getFilePath())
               }
@@ -1015,7 +1040,7 @@ const readTsconfig = async (
 ): Promise<{ readonly path: string; readonly config: Record<string, unknown> } | undefined> => {
   for (const candidate of tsconfigCandidates(tsconfigPath)) {
     try {
-      const parsed = asRecord(JSON.parse(await readFile(candidate, "utf8")))
+      const parsed = asRecord(parseJsonc(await readFile(candidate, "utf8")))
       if (parsed !== undefined) return { path: candidate, config: parsed }
     } catch {
       continue
@@ -1028,6 +1053,68 @@ const tsconfigCandidates = (tsconfigPath: string): ReadonlyArray<string> => {
   if (tsconfigPath.endsWith(".json")) return [tsconfigPath]
   return [tsconfigPath, `${tsconfigPath}.json`, join(tsconfigPath, "tsconfig.json")]
 }
+
+const parseJsonc = (text: string): unknown => JSON.parse(stripTrailingCommas(stripJsonComments(text)))
+
+const stripJsonComments = (text: string): string => {
+  let result = ""
+  let inString = false
+  let quote: "\"" | "'" | undefined
+  let escaped = false
+
+  for (let index = 0; index < text.length; index++) {
+    const char = text[index]!
+    const next = text[index + 1]
+
+    if (inString) {
+      result += char
+      if (escaped) {
+        escaped = false
+        continue
+      }
+      if (char === "\\") {
+        escaped = true
+        continue
+      }
+      if (char === quote) {
+        inString = false
+        quote = undefined
+      }
+      continue
+    }
+
+    if (char === "\"" || char === "'") {
+      inString = true
+      quote = char
+      result += char
+      continue
+    }
+
+    if (char === "/" && next === "/") {
+      index += 2
+      while (index < text.length && text[index] !== "\n") index++
+      result += "\n"
+      continue
+    }
+
+    if (char === "/" && next === "*") {
+      index += 2
+      while (index < text.length && !(text[index] === "*" && text[index + 1] === "/")) {
+        result += text[index] === "\n" ? "\n" : " "
+        index++
+      }
+      index++
+      continue
+    }
+
+    result += char
+  }
+
+  return result
+}
+
+const stripTrailingCommas = (text: string): string =>
+  text.replace(/,\s*([}\]])/g, "$1")
 
 const resolveTsconfigExtendsPath = (extendedConfig: string, tsconfigPath: string): string => {
   if (extendedConfig.startsWith(".") || extendedConfig.startsWith("/")) {
@@ -1050,11 +1137,9 @@ const isLocalPathAliasUsage = (
   packageName: string,
   owningPackage: PackageInfo,
   aliases: ReadonlyArray<TsconfigPathAlias> | undefined,
-  workspaceNames: ReadonlySet<string>,
   worktreePath: string,
 ): boolean => {
   if (aliases === undefined || aliases.length === 0) return false
-  if (workspaceNames.has(packageName)) return false
 
   return aliases.some((alias) =>
     resolvePathAliasTargets(alias, moduleSpecifier).some(
@@ -1065,6 +1150,90 @@ const isLocalPathAliasUsage = (
           target.startsWith(`${worktreePath}/`)),
     ),
   )
+}
+
+const manifestDeclaresDependency = (
+  manifest: PackageManifest,
+  dependencyName: string,
+): boolean =>
+  dependencyNamesOf(manifest, [
+    "dependencies",
+    "devDependencies",
+    "optionalDependencies",
+    "peerDependencies",
+  ]).has(dependencyName)
+
+const readBundledInfoByPackage = async (
+  packages: ReadonlyArray<PackageInfo>,
+): Promise<ReadonlyMap<string, BundledPackageInfo>> => {
+  const entries = await Promise.all(
+    packages.map(async (pkg): Promise<[string, BundledPackageInfo]> => [
+      pkg.path,
+      await readBundledPackageInfo(pkg.path),
+    ]),
+  )
+  return new Map(entries)
+}
+
+const readBundledPackageInfo = async (packagePath: string): Promise<BundledPackageInfo> => {
+  const configText = await readFirstExistingText([
+    join(packagePath, "tsup.config.ts"),
+    join(packagePath, "tsup.config.mts"),
+    join(packagePath, "tsup.config.cts"),
+    join(packagePath, "tsup.config.js"),
+    join(packagePath, "tsup.config.mjs"),
+    join(packagePath, "tsup.config.cjs"),
+  ])
+
+  if (configText === undefined || !/\bbundle\s*:\s*true\b/.test(configText)) {
+    return { bundlesSource: false, externalPackageNames: new Set() }
+  }
+
+  return {
+    bundlesSource: true,
+    externalPackageNames: parseBundlerExternalPackageNames(configText),
+  }
+}
+
+const readFirstExistingText = async (
+  paths: ReadonlyArray<string>,
+): Promise<string | undefined> => {
+  for (const path of paths) {
+    try {
+      return await readFile(path, "utf8")
+    } catch {
+      continue
+    }
+  }
+  return undefined
+}
+
+const parseBundlerExternalPackageNames = (configText: string): ReadonlySet<string> => {
+  const externalNames = new Set<string>()
+  const externalMatch = /\bexternal\s*:\s*\[([\s\S]*?)\]/m.exec(configText)
+  if (externalMatch === null) return externalNames
+
+  for (const match of externalMatch[1]!.matchAll(/["']([^"']+)["']/g)) {
+    const dependencyName = normalizePackageSpecifier(match[1]!)
+    if (dependencyName !== undefined) {
+      externalNames.add(dependencyName)
+    }
+  }
+
+  return externalNames
+}
+
+const isBundledPackageSourceUsage = (
+  owningPackage: PackageInfo,
+  file: string,
+  dependencyName: string,
+  bundledInfo: BundledPackageInfo | undefined,
+): boolean => {
+  if (bundledInfo?.bundlesSource !== true) return false
+  if (bundledInfo.externalPackageNames.has(dependencyName)) return false
+
+  const rel = relative(owningPackage.path, file).split(sep).join("/")
+  return rel.startsWith("src/")
 }
 
 const resolvePathAliasTargets = (
@@ -1154,12 +1323,14 @@ const analyzePackageHealth = (
         ? aliasedName
         : dependencyName
     usedDeclaredNames.add(effectiveDependencyName)
+    const bundledOnlyUsage = isBundledOnlyUsage(usageBucket)
 
     if (productionDeclared.has(effectiveDependencyName)) continue
 
     if (devDeclared.has(effectiveDependencyName)) {
       if (
         usageBucket.prodFiles.size > 0 &&
+        !isBundledOnlyProdUsage(usageBucket) &&
         effectiveDependencyName !== inferredHostFacadeAlias &&
         !bundledAppDevDependenciesAllowed &&
         !allowDevDependencyInProd.has(dependencyName) &&
@@ -1170,6 +1341,10 @@ const analyzePackageHealth = (
           files: [...usageBucket.prodFiles].sort((left, right) => left.localeCompare(right)),
         })
       }
+      continue
+    }
+
+    if (bundledOnlyUsage) {
       continue
     }
 
@@ -1214,6 +1389,12 @@ const isToolingOnlyUsage = (usage: UsageBucket): boolean =>
 
 const isTypeOnlyUsage = (usage: UsageBucket): boolean =>
   usage.files.size > 0 && usage.files.size === usage.typeOnlyFiles.size
+
+const isBundledOnlyUsage = (usage: UsageBucket): boolean =>
+  usage.files.size > 0 && usage.files.size === usage.bundledFiles.size
+
+const isBundledOnlyProdUsage = (usage: UsageBucket): boolean =>
+  usage.prodFiles.size > 0 && usage.prodFiles.size === usage.bundledProdFiles.size
 
 const allowsBundledAppDevDependencies = (manifest: PackageManifest): boolean => {
   if (!manifest.private) return false
