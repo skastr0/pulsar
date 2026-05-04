@@ -53,7 +53,10 @@ export const Shared05Suppression: Signal<Shared05SuppressionConfig, Shared05Supp
       const rs = inputs.get("RS-SL-02") as RsSuppressionLike | undefined
       const rustUnjustified =
         (rs?.missingJustificationCount ?? 0) + (rs?.expiredJustificationCount ?? 0)
-      const languageCount = [ts, rs].filter((value) => value !== undefined).length
+      const languageCount = [
+        ts !== undefined && ts.suppressions.length > 0,
+        rs !== undefined && rs.suppressions.length > 0,
+      ].filter(Boolean).length
 
       return {
         totalSuppressions: (ts?.suppressions.length ?? 0) + (rs?.suppressions.length ?? 0),
