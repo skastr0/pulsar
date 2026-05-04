@@ -324,6 +324,10 @@ const runBootstrapAction = (opts: ElicitCommandOptions) =>
     const priorWeights = collectPriorWeights(baseVector)
     const usePriorAdjusted =
       events.length < MINIMUM_REVEALED_PREFERENCE_SAMPLES && Object.keys(priorWeights).length > 0
+    const baseVectorSourceLabel =
+      discovered.vector !== undefined || preset === undefined
+        ? discovered.sourceLabel
+        : "preset fallback"
 
     const result = usePriorAdjusted
       ? inferRevealedPreferencePriorAdjusted(events, priorWeights)
@@ -381,6 +385,7 @@ const runBootstrapAction = (opts: ElicitCommandOptions) =>
     printBootstrapReport({
       repoRoot,
       baseVectorLabel,
+      baseVectorSourceLabel,
       report,
       proposal,
       proposalPath: relative(repoRoot, pendingPath),
@@ -877,6 +882,7 @@ const collectPriorWeights = (vector: TasteVector | undefined): Readonly<Record<s
 const printBootstrapReport = (input: {
   readonly repoRoot: string
   readonly baseVectorLabel: string
+  readonly baseVectorSourceLabel: string
   readonly report: RevealedPreferenceBootstrapReport
   readonly proposal: TasteVectorProposal
   readonly proposalPath: string
@@ -889,6 +895,7 @@ const printBootstrapReport = (input: {
   console.log(`  Repo:            ${input.repoRoot}`)
   console.log(`  Head:            ${input.report.head_sha}`)
   console.log(`  Base vector:     ${input.baseVectorLabel}`)
+  console.log(`  Vector Source:   ${input.baseVectorSourceLabel}`)
   console.log(`  Algorithm:       ${input.report.algorithm}`)
   console.log(`  Labeled events:  ${input.report.sample_count}/${input.report.minimum_sample_count} ${dataSufficiencyLabel(input.report.sample_count, input.report.minimum_sample_count)}`)
   console.log(

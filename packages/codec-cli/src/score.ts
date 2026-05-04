@@ -298,24 +298,27 @@ const runSingleSignalMode = (opts: ScoreOptions) =>
       return yield* Effect.fail(new Error(`Unknown signal id: ${opts.signalId}`))
     }
 
-    const vector =
-      opts.vectorPath === undefined
-        ? undefined
-        : (
-            yield* discoverTasteVector({
-              repoPath: opts.repoPath,
-              explicitPath: opts.vectorPath,
-              registry,
-            })
-          ).vector
+    const vectorSelection = yield* discoverTasteVector({
+      repoPath: opts.repoPath,
+      ...(opts.vectorPath !== undefined ? { explicitPath: opts.vectorPath } : {}),
+      registry,
+    })
 
     const { repoRoot, gitSha, result } = yield* runSignalInWorktree(
       opts.repoPath,
       opts.signalId!,
-      vector,
+      vectorSelection.vector,
     )
 
-    printSignalResult(result.signalId, result.score, result.diagnostics, result.output, repoRoot, gitSha)
+    printSignalResult(
+      result.signalId,
+      result.score,
+      result.diagnostics,
+      result.output,
+      repoRoot,
+      gitSha,
+      vectorSelection.sourceLabel,
+    )
     return 0
   })
 
@@ -794,11 +797,13 @@ const printSignalResult = (
   output: unknown,
   repoPath: string,
   sha: string,
+  vectorSourceLabel: string,
 ): void => {
   const scoreBar = renderScoreBar(score)
   console.log("")
   console.log(`  Repo:   ${repoPath}`)
   console.log(`  SHA:    ${sha}`)
+  console.log(`  Vector Source: ${vectorSourceLabel}`)
   console.log(`  Signal: ${signalId}`)
   console.log(`  Score:  ${score.toFixed(3)}  ${scoreBar}`)
   console.log("")

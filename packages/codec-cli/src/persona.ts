@@ -111,8 +111,9 @@ export const runPersonaCommand = (opts: PersonaCommandOptions) =>
     const diff = summarizeVectorDiff(current.vector, preset)
 
     console.log("")
-    console.log(`Current vector: ${current.label}`)
-    console.log(`Preset:         ${preset.id}`)
+    console.log(`Current vector:        ${current.label}`)
+    console.log(`Current vector source: ${current.sourceLabel}`)
+    console.log(`Preset:                ${preset.id}`)
     console.log("")
     for (const line of renderVectorDiff(diff)) {
       console.log(line)

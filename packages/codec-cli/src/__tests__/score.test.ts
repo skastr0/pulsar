@@ -319,6 +319,7 @@ describe("taste score", () => {
     try {
       const signalOut = runCli(repoPath, ["score", "--signal", "TS-DE-01", "."])
       expect(signalOut.status).toBe(0)
+      expect(signalOut.stdout).toContain("Vector Source: built-in defaults")
       expect(signalOut.stdout).toContain("Score:  1.000")
       expect(signalOut.stdout).toContain("(no diagnostics)")
 
@@ -758,6 +759,13 @@ export function stubF() { throw new Error("Not implemented") }
       expect(organizationOut.status).toBe(0)
       expect(organizationOut.stdout).toContain("Vector: organization-default")
       expect(organizationOut.stdout).toContain(
+        "Vector Source: organization fallback ~/.config/taste-codec/vector.json",
+      )
+      const organizationSignalOut = runCli(repoPath, ["score", "--signal", "TS-AB-01", "."], {
+        HOME: homePath,
+      })
+      expect(organizationSignalOut.status).toBe(0)
+      expect(organizationSignalOut.stdout).toContain(
         "Vector Source: organization fallback ~/.config/taste-codec/vector.json",
       )
       const organizationJson = runCli(repoPath, ["score", "--json", "."], { HOME: homePath })

@@ -47,14 +47,137 @@ const initRepo = async (): Promise<string> => {
   return repoPath
 }
 
-const runCli = (cwd: string, args: ReadonlyArray<string>) =>
+const runCli = (
+  cwd: string,
+  args: ReadonlyArray<string>,
+  env?: NodeJS.ProcessEnv,
+) =>
   spawnSync("bun", [binPath, ...args], {
     cwd,
     encoding: "utf8",
+    env: { ...process.env, ...env },
   })
 
 describe("taste elicit", () => {
   test("bootstrap writes a pending revealed-preference proposal from synthetic git history", async () => {
+    const repoPath = await initRepo()
+    const homePath = await mkdtemp(join(tmpdir(), "taste-elicit-home-"))
+    try {
+      await writeRepoFile(
+        homePath,
+        ".config/taste-codec/vector.json",
+        JSON.stringify(
+          {
+            id: "organization-default",
+            domain: "typescript",
+            signal_overrides: { "TS-LD-01": { weight: 0.5 } },
+          },
+          null,
+          2,
+        ),
+      )
+      await writeRepoFile(repoPath, "src/math.ts", "export const sum = (a: number, b: number) => a + b\n")
+      sh("git", ["add", "."], repoPath)
+      sh("git", ["commit", "-q", "-m", "add math helper"], repoPath)
+
+      await writeRepoFile(
+        repoPath,
+        "src/math.ts",
+        "export const sum = (a: number, b: number, c = 0) => {\n  if (a > 0) {\n    if (b > 0) {\n      if (c > 0) {\n        return a + b + c\n      }\n    }\n  }\n  return a + b + c\n}\n",
+      )
+      sh("git", ["add", "."], repoPath)
+      sh("git", ["commit", "-q", "-m", "expand branching in math helper"], repoPath)
+
+      await writeRepoFile(repoPath, "src/math.ts", "export const sum = (a: number, b: number) => a + b\n")
+      sh("git", ["add", "."], repoPath)
+      sh("git", ["commit", "-q", "-m", "cleanup branching in math helper"], repoPath)
+
+      await writeRepoFile(
+        repoPath,
+        "src/suppress.ts",
+        "// @ts-ignore\nexport const risky: string = 42 as never\n",
+      )
+      sh("git", ["add", "."], repoPath)
+      sh("git", ["commit", "-q", "-m", "add suppression example"], repoPath)
+      sh("git", ["revert", "--no-edit", "HEAD"], repoPath)
+
+      const out = runCli(
+        repoPath,
+        [
+          "elicit",
+          "bootstrap",
+          "--commits",
+          "6",
+          "--preset",
+          "ai-slop-defense",
+          ".",
+        ],
+        { HOME: homePath },
+      )
+
+      expect(out.status).toBe(0)
+      expect(out.stdout).toContain("Revealed-preference bootstrap")
+      expect(out.stdout).toContain("Base vector:     organization-default")
+      expect(out.stdout).toContain(
+        "Vector Source:   organization fallback ~/.config/taste-codec/vector.json",
+      )
+      expect(out.stdout).toContain("accepted")
+      expect(out.stdout).toContain("revised")
+      expect(out.stdout).toContain("reverted")
+
+      const pendingDir = join(repoPath, ".taste-codec", "proposals", "pending")
+      const files = await (await import("node:fs/promises")).readdir(pendingDir)
+      const proposalPath = join(pendingDir, files.find((entry) => entry.includes("proposal-revealed-"))!)
+      const proposal = JSON.parse(await readFile(proposalPath, "utf8"))
+      expect(proposal.source).toBe("revealed-preference")
+      expect(proposal.confidence).toBeGreaterThan(0)
+      expect(Array.isArray(proposal.deltas)).toBe(true)
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+      await rm(homePath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
+  test("bootstrap labels built-in defaults when no vector or preset is used", async () => {
+    const repoPath = await initRepo()
+    try {
+      await writeRepoFile(repoPath, "src/math.ts", "export const sum = (a: number, b: number) => a + b\n")
+      sh("git", ["add", "."], repoPath)
+      sh("git", ["commit", "-q", "-m", "add math helper"], repoPath)
+
+      await writeRepoFile(
+        repoPath,
+        "src/math.ts",
+        "export const sum = (a: number, b: number, c = 0) => {\n  if (a > 0) {\n    if (b > 0) {\n      if (c > 0) {\n        return a + b + c\n      }\n    }\n  }\n  return a + b + c\n}\n",
+      )
+      sh("git", ["add", "."], repoPath)
+      sh("git", ["commit", "-q", "-m", "expand branching in math helper"], repoPath)
+
+      await writeRepoFile(repoPath, "src/math.ts", "export const sum = (a: number, b: number) => a + b\n")
+      sh("git", ["add", "."], repoPath)
+      sh("git", ["commit", "-q", "-m", "cleanup branching in math helper"], repoPath)
+
+      await writeRepoFile(
+        repoPath,
+        "src/suppress.ts",
+        "// @ts-ignore\nexport const risky: string = 42 as never\n",
+      )
+      sh("git", ["add", "."], repoPath)
+      sh("git", ["commit", "-q", "-m", "add suppression example"], repoPath)
+      sh("git", ["revert", "--no-edit", "HEAD"], repoPath)
+
+      const out = runCli(repoPath, ["elicit", "bootstrap", "--commits", "6", "."])
+
+      expect(out.status).toBe(0)
+      expect(out.stdout).toContain("Base vector:     all-defaults")
+      expect(out.stdout).toContain("Vector Source:   built-in defaults")
+      expect(out.stdout).not.toContain("preset fallback")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
+  test("bootstrap labels preset fallback when a preset supplies the base vector", async () => {
     const repoPath = await initRepo()
     try {
       await writeRepoFile(repoPath, "src/math.ts", "export const sum = (a: number, b: number) => a + b\n")
@@ -93,18 +216,8 @@ describe("taste elicit", () => {
       ])
 
       expect(out.status).toBe(0)
-      expect(out.stdout).toContain("Revealed-preference bootstrap")
-      expect(out.stdout).toContain("accepted")
-      expect(out.stdout).toContain("revised")
-      expect(out.stdout).toContain("reverted")
-
-      const pendingDir = join(repoPath, ".taste-codec", "proposals", "pending")
-      const files = await (await import("node:fs/promises")).readdir(pendingDir)
-      const proposalPath = join(pendingDir, files.find((entry) => entry.includes("proposal-revealed-"))!)
-      const proposal = JSON.parse(await readFile(proposalPath, "utf8"))
-      expect(proposal.source).toBe("revealed-preference")
-      expect(proposal.confidence).toBeGreaterThan(0)
-      expect(Array.isArray(proposal.deltas)).toBe(true)
+      expect(out.stdout).toContain("Base vector:     ai-slop-defense")
+      expect(out.stdout).toContain("Vector Source:   preset fallback")
     } finally {
       await rm(repoPath, { recursive: true, force: true })
     }

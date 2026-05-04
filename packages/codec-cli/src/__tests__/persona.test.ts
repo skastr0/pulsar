@@ -49,10 +49,15 @@ const initRepo = async (): Promise<string> => {
   return repoPath
 }
 
-const runCli = (cwd: string, args: ReadonlyArray<string>) =>
+const runCli = (
+  cwd: string,
+  args: ReadonlyArray<string>,
+  env?: NodeJS.ProcessEnv,
+) =>
   spawnSync("bun", [binPath, ...args], {
     cwd,
     encoding: "utf8",
+    env: { ...process.env, ...env },
   })
 
 const duplicateHeavySource = (): string => {
@@ -121,11 +126,44 @@ describe("taste persona", () => {
 
       const diff = runCli(repoPath, ["persona", "diff", "ai-slop-defense", repoPath])
       expect(diff.status).toBe(0)
+      expect(diff.stdout).toContain("Current vector source: repo-local .taste-codec/vector.json")
       expect(diff.stdout).toContain("Weight deltas:")
       expect(diff.stdout).toContain("Mode deltas:")
       expect(diff.stdout).toContain("ai_assisted false -> true")
     } finally {
       await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
+  test("diff labels organization fallback vector provenance", async () => {
+    const repoPath = await initRepo()
+    const homePath = await mkdtemp(join(tmpdir(), "taste-persona-home-"))
+    try {
+      await writeRepoFile(
+        homePath,
+        ".config/taste-codec/vector.json",
+        JSON.stringify(
+          {
+            id: "organization-default",
+            domain: "typescript",
+            signal_overrides: { "TS-LD-01": { weight: 0.5 } },
+          },
+          null,
+          2,
+        ),
+      )
+
+      const diff = runCli(repoPath, ["persona", "diff", "ai-slop-defense", repoPath], {
+        HOME: homePath,
+      })
+      expect(diff.status).toBe(0)
+      expect(diff.stdout).toContain("Current vector:        organization-default")
+      expect(diff.stdout).toContain(
+        "Current vector source: organization fallback ~/.config/taste-codec/vector.json",
+      )
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+      await rm(homePath, { recursive: true, force: true })
     }
   }, 120_000)
 
