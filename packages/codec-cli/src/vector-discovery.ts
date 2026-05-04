@@ -11,7 +11,7 @@ import { loadTasteVectorFromPath, resolveRepoRoot } from "./runtime.js"
 
 export interface DiscoveredTasteVector {
   readonly vector: TasteVector | undefined
-  readonly source: "explicit" | "worktree" | "personal" | "fallback"
+  readonly source: "explicit" | "worktree" | "organization" | "fallback"
   readonly path: string | undefined
   readonly label: string
 }
@@ -35,10 +35,10 @@ export const discoverTasteVector = (opts: {
       return toDiscovery("worktree", worktreePath, vector)
     }
 
-    const personalPath = join(homedir(), ".config", "taste-codec", "vector.json")
-    if (existsSync(personalPath)) {
-      const vector = yield* loadAndValidateVector(personalPath, opts.registry)
-      return toDiscovery("personal", personalPath, vector)
+    const organizationPath = join(homedir(), ".config", "taste-codec", "vector.json")
+    if (existsSync(organizationPath)) {
+      const vector = yield* loadAndValidateVector(organizationPath, opts.registry)
+      return toDiscovery("organization", organizationPath, vector)
     }
 
     return {

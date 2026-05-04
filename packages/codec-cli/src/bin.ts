@@ -10,7 +10,6 @@ import { runGlossaryCommand } from "./glossary.js"
 import { CLI_VERSION } from "./index.js"
 import { runPersonaCommand } from "./persona.js"
 import { runScoreCommand } from "./score.js"
-import { runTeamCommand } from "./team.js"
 
 const argv = process.argv.slice(2)
 
@@ -26,7 +25,6 @@ Usage:
   taste bisect --observer --range <from>..<to> [--vector <path>] [<repo-path>]
   taste bisect --range <from>..<to> [--vector <path>] [<repo-path>]
   taste persona <list|show|apply|diff> [args]
-  taste team <aggregate|variance> --members <paths...> [--out <path>]
   taste elicit <quiz|bootstrap|review|accept|reject> [args]
   taste glossary extract --sha <ref> [--no-parameters] [<repo-path>]
   taste glossary confirm [<repo-path>]
@@ -40,7 +38,6 @@ Commands:
   backpressure Evaluate the score history as green/yellow/red pressure.
   bisect       Replay a commit range through one signal or the full Observer.
   persona      List, show, apply, or diff curated taste presets.
-  team         Aggregate team vectors and surface disagreement.
   elicit       Run quiz, bootstrap, and proposal review workflows.
   glossary     Extract a draft glossary and confirm canonical terms.
   conventions  Extract a draft schema-conventions file and confirm it.
@@ -80,12 +77,6 @@ Persona options:
   --force              Overwrite an existing output file.
   --vector <path>      Compare against an explicit vector instead of discovery.
 
-Team options:
-  aggregate            Write or print an aggregated team vector.
-  variance             Show per-signal disagreement across members.
-  --members <paths...> One or more vector JSON files (shell globs supported).
-  --out <path>         Output path for aggregate mode.
-
 Elicit options:
   quiz                 Run the pairwise tradeoff quiz.
   bootstrap            Infer a pending proposal from recent repo history.
@@ -109,7 +100,7 @@ Conventions options:
 
 Vector discovery order (score + baseline when --vector is omitted):
   1. .taste-codec/vector.json at the worktree root
-  2. ~/.config/taste-codec/vector.json
+  2. ~/.config/taste-codec/vector.json as an organization-standard fallback
   3. Fallback: detected language-pack/shared signals active with default config and weight 1
 
 Examples:
@@ -129,8 +120,6 @@ Examples:
   taste persona show security-paranoid
   taste persona apply strict-type-safety --to ./.taste-codec/vector.json
   taste persona diff ai-slop-defense
-  taste team aggregate --members ./team-vectors/*.json --out ./team-vector.json
-  taste team variance --members ./team-vectors/*.json
   taste elicit quiz --items 15 .
   taste elicit bootstrap --commits 80 --preset strict-type-safety .
   taste elicit review .
@@ -361,20 +350,6 @@ if (command === "bisect") {
     ),
   )
   process.exit(0)
-}
-
-if (command === "team") {
-  const exitCode = await Effect.runPromise(
-    runTeamCommand(commandArgs).pipe(
-      Effect.catchAll((err) =>
-        Effect.sync(() => {
-          console.error(`taste team failed: ${formatCliError(err)}`)
-          process.exit(1)
-        }),
-      ),
-    ),
-  )
-  process.exit(exitCode)
 }
 
 if (command === "glossary") {

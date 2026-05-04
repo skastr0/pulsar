@@ -11,7 +11,7 @@ describe("codec-cli", () => {
     expect(typeof CLI_VERSION).toBe("string")
   })
 
-  test("documents score, baseline, backpressure, bisect, persona, team, elicit, glossary, and conventions help text", () => {
+  test("documents score, baseline, backpressure, bisect, persona, elicit, glossary, and conventions help text", () => {
     const out = spawnSync("bun", [binPath, "--help"], {
       encoding: "utf-8",
     })
@@ -20,7 +20,6 @@ describe("codec-cli", () => {
     expect(out.stdout).toContain("taste baseline <set|refresh|show>")
     expect(out.stdout).toContain("taste backpressure [--trend] [--vector <path>]")
     expect(out.stdout).toContain("taste persona <list|show|apply|diff>")
-    expect(out.stdout).toContain("taste team <aggregate|variance>")
     expect(out.stdout).toContain("taste elicit <quiz|bootstrap|review|accept|reject>")
     expect(out.stdout).toContain("taste elicit bootstrap --commits 80 --preset strict-type-safety .")
     expect(out.stdout).toContain("taste elicit accept proposal-ai-assisted-mode .")
@@ -33,7 +32,6 @@ describe("codec-cli", () => {
     expect(out.stdout).toContain("--resume <path>")
     expect(out.stdout).toContain("--commits <count>")
     expect(out.stdout).toContain("--preset <name>")
-    expect(out.stdout).toContain("--members <paths...>")
     expect(out.stdout).toContain("--no-parameters")
     expect(out.stdout).toContain("taste bisect --range <from>..<to>")
   })

@@ -599,7 +599,7 @@ export function stubF() { throw new Error("Not implemented") }
     }
   }, 120_000)
 
-  test("default vector discovery prefers worktree then personal config", async () => {
+  test("default vector discovery prefers worktree then organization config", async () => {
     const repoPath = await initRepo(simpleRepoFiles())
     const homePath = await mkdtemp(join(tmpdir(), "taste-score-home-"))
     try {
@@ -621,7 +621,7 @@ export function stubF() { throw new Error("Not implemented") }
         ".config/taste-codec/vector.json",
         JSON.stringify(
           {
-            id: "personal-default",
+            id: "organization-default",
             domain: "typescript",
             signal_overrides: { "TS-LD-01": { active: false } },
           },
@@ -635,9 +635,9 @@ export function stubF() { throw new Error("Not implemented") }
       expect(worktreeOut.stdout).toContain("Vector: worktree-default")
 
       await rm(join(repoPath, ".taste-codec"), { recursive: true, force: true })
-      const personalOut = runCli(repoPath, ["score", "."], { HOME: homePath })
-      expect(personalOut.status).toBe(0)
-      expect(personalOut.stdout).toContain("Vector: personal-default")
+      const organizationOut = runCli(repoPath, ["score", "."], { HOME: homePath })
+      expect(organizationOut.status).toBe(0)
+      expect(organizationOut.stdout).toContain("Vector: organization-default")
     } finally {
       await rm(repoPath, { recursive: true, force: true })
       await rm(homePath, { recursive: true, force: true })

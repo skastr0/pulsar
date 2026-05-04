@@ -13,12 +13,12 @@ Taste is an encoded n-dimensional decision function. It feels automatic and subc
 Three separable components:
 
 - **Signals**: a growing library of grounded, verifiable checks organized by what they measure. Pure functions: artifact in, number out. Language-specific packs exploit each ecosystem's unique structural surface.
-- **Taste Vector**: your configuration — which signals are active, how much each matters, what thresholds apply. Portable, inspectable, diffable JSON.
+- **Taste Vector**: the repository or organization's shared configuration — which signals are active, how much each matters, what thresholds apply. Inspectable, diffable JSON. Presets are portable templates; active taste is shared by everyone evaluating the repo.
 - **Observer**: the runtime that computes scores, routes reviews, tracks backpressure over time, and triggers agent constraints.
 
 Two design rules govern the system:
 
-1. **Provability determines enforcement, not preference.** A boundary violation is a hard CI gate regardless of its weight in your taste vector. A naming inconsistency is a soft warning regardless of how much you care about naming. The provability tier sets the ceiling on enforcement policy. Your taste vector adjusts sensitivity within that ceiling.
+1. **Provability determines enforcement, not preference.** A boundary violation is a hard CI gate regardless of its weight in the repo's taste vector. A naming inconsistency is a soft warning regardless of how much the repo weights naming. The provability tier sets the ceiling on enforcement policy. The effective repo/org taste vector adjusts sensitivity within that ceiling.
 
 2. **Combinations beat individual metrics.** The strongest predictive signals in the research literature are compound: churn × complexity, duplication × inconsistency, coupling + boundary violations. Single metrics in isolation are weak predictors. The signal library formalizes compound signals as first-class.
 
@@ -556,19 +556,24 @@ The moment agent autonomy depends on scores, agents optimize scores. Defenses:
 
 Signals not listed inherit default activation and weight. Weight adjusts sensitivity (how much a signal contributes to category score). It does **not** override enforcement policy — a Tier 1 structural signal remains a hard gate even at weight 0.1.
 
-### Hierarchy and Conflict Resolution
+### Resolution and Precedence
 
-- **Personal vector**: Global taste defaults.
-- **Project vector**: Overrides for this project. **Project narrows or disables. It cannot loosen what the personal vector enforces.**
-- **Task vector**: Temporary overrides. **Can only tighten, not loosen.** Task-level loosening requires editing the project vector.
+Taste is repo-level, always. Everyone and every agent evaluating a repository uses one effective vector.
 
-Unspecified values inherit from parent level.
+Resolution order:
+
+1. Explicit `--vector` path for controlled runs.
+2. Repo-local `.taste-codec/vector.json`.
+3. Organization-standard fallback at `~/.config/taste-codec/vector.json`.
+4. Built-in defaults.
+
+The home-directory fallback is a transport location for an organization-standard vector shared across repos. It is not personal taste. A repo-local vector always overrides it.
 
 ### Elicitation
 
 **Default path**: Revealed preference bootstrap — score last N commits, infer weights from merge/revise/reject patterns.
 
-**Fast path**: Persona presets — "strict type safety" / "domain purist" / "velocity-first" / "security-paranoid."
+**Fast path**: Presets — "strict type safety" / "domain purist" / "velocity-first" / "security-paranoid." Presets are starting templates for repo/org vectors, not active personal taste.
 
 **Explicit path**: Pairwise tradeoff quiz — ~15-20 targeted comparisons. Past that, noise dominates.
 
@@ -596,7 +601,7 @@ Category scores feed as gauges and counters. Backpressure thresholds surface thr
 
 ### Agent Hierarchy → Codec
 
-Vector hierarchy (personal → project → task) maps to agent hierarchy (direct reports → project agents → task agents). Per-agent scoring feeds Metrix for accountability.
+Agents operating in the same repository share the same effective repo/org vector. Per-agent scoring can feed Metrix for accountability, but per-agent taste cannot change how the repository is scored.
 
 ---
 
