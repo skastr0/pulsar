@@ -53,6 +53,7 @@ const DEFAULT_SCORE_BUDGET_MIN_TOKENS = 12
 type CloneCandidate = {
   readonly fn: FnLike
   readonly path: string
+  readonly body: string
   readonly exactHash: string
   readonly structuralHash: string
   readonly changed: boolean
@@ -64,7 +65,7 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
   tier: 1,
   category: "generated-slop",
   kind: "legibility",
-  cacheVersion: "generated-header-and-sample-scope-v1",
+  cacheVersion: "declaration-skip-and-hotpath-v1",
   configSchema: TsSl01Config,
   defaultConfig: {
     exclude_globs: [
@@ -152,10 +153,12 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
           >()
 
           for (const sourceFile of project.getSourceFiles()) {
+            if (sourceFile.isDeclarationFile()) continue
+
             const path = sourceFile.getFilePath()
             const relativePath = relative(context.worktreePath, path).replace(/\\/g, "/")
             if (matchesSourcePath(path, relativePath, config.exclude_globs)) continue
-            if (isGeneratedSourceFile(sourceFile.getFullText())) continue
+            if (isGeneratedSourceFileHeader(sourceFile.compilerNode.text.slice(0, 2048))) continue
             if (matchesSourcePath(path, relativePath, config.test_globs)) continue
 
             for (const { fn, path: functionPath } of getFunctionLikeEntriesForSourceFile(sourceFile)) {
@@ -183,6 +186,7 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
               functions.push({
                 fn,
                 path: functionPath,
+                body,
                 exactHash,
                 structuralHash: structuralAnalysis.structuralHash,
                 changed,
@@ -192,15 +196,14 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
           }
 
           const exactGroups = buildExactGroups(functions, config)
-          const structuralGroups = buildStructuralGroups(functions, config).filter((group) => {
-            const exactVariants = new Set(group.members.map((member) => member.exactHash))
-            return exactVariants.size > 1
-          })
-          const changedMemberKeys = new Set(
-            functions.filter((fn) => fn.changed).map(memberKeyOfCandidate),
-          )
+          const structuralGroups = buildStructuralGroups(functions, config)
+          const changedMemberKeys =
+            hunkMap === undefined
+              ? undefined
+              : new Set(functions.filter((fn) => fn.changed).map(memberKeyOfCandidate))
           const filterForScope = (group: CloneGroup): boolean =>
-            hunkMap === undefined || group.members.some((member) => changedMemberKeys.has(memberKey(member)))
+            changedMemberKeys === undefined ||
+            group.members.some((member) => changedMemberKeys.has(memberKey(member)))
 
           const groups: Array<CloneGroup> = []
           let groupIndex = 0
@@ -302,8 +305,7 @@ const matchesSourcePath = (
   globs: ReadonlyArray<string>,
 ): boolean => isExcluded(absolutePath, globs) || matchesAnyGlob(relativePath, globs)
 
-const isGeneratedSourceFile = (sourceText: string): boolean => {
-  const header = sourceText.slice(0, 2048)
+const isGeneratedSourceFileHeader = (header: string): boolean => {
   return (
     /\bcode generated\b[\s\S]{0,160}\bdo not edit\b/i.test(header) ||
     /\bauto-generated\b[\s\S]{0,160}\bdo not edit\b/i.test(header) ||
@@ -525,21 +527,30 @@ const TS_KEYWORDS = new Set([
   "with", "yield",
 ])
 
+const LINE_COMMENT_PATTERN = /\/\/.*$/gm
+const BLOCK_COMMENT_PATTERN = /\/\*[\s\S]*?\*\//g
+const TEMPLATE_LITERAL_PATTERN = /`[\s\S]*?`/g
+const DECIMAL_NUMBER_PATTERN = /\b\d+(?:_\d+)*(?:\.\d+)?(?:[eE][+-]?\d+)?\b/g
+const HEX_NUMBER_PATTERN = /\b0[xX][0-9a-fA-F]+\b/g
+const OCTAL_NUMBER_PATTERN = /\b0[oO][0-7]+\b/g
+const BINARY_NUMBER_PATTERN = /\b0[bB][01]+\b/g
+const STRUCTURAL_TOKEN_PATTERN =
+  /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[A-Za-z_$][A-Za-z0-9_$]*|=>|===|!==|==|!=|<=|>=|\*\*|\+\+|--|&&|\|\||<<|>>|>>>|\.\.\.|[{}()[\],;:.<>+\-*\/%&|!?=]/g
+const IDENTIFIER_PATTERN = /^[A-Za-z_$][A-Za-z0-9_$]*$/
+
 const analyzeStructuralSource = (
   source: string,
 ): { readonly tokenCount: number; readonly structuralHash: string } => {
   const stripped = source
-    .replace(/\/\/.*$/gm, "")
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/`[\s\S]*?`/g, "TMPL")
-    .replace(/\b\d+(?:_\d+)*(?:\.\d+)?(?:[eE][+-]?\d+)?\b/g, "NUM")
-    .replace(/\b0[xX][0-9a-fA-F]+\b/g, "NUM")
-    .replace(/\b0[oO][0-7]+\b/g, "NUM")
-    .replace(/\b0[bB][01]+\b/g, "NUM")
+    .replace(LINE_COMMENT_PATTERN, "")
+    .replace(BLOCK_COMMENT_PATTERN, "")
+    .replace(TEMPLATE_LITERAL_PATTERN, "TMPL")
+    .replace(DECIMAL_NUMBER_PATTERN, "NUM")
+    .replace(HEX_NUMBER_PATTERN, "NUM")
+    .replace(OCTAL_NUMBER_PATTERN, "NUM")
+    .replace(BINARY_NUMBER_PATTERN, "NUM")
 
-  const rawTokens = stripped.match(
-    /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[A-Za-z_$][A-Za-z0-9_$]*|=>|===|!==|==|!=|<=|>=|\*\*|\+\+|--|&&|\|\||<<|>>|>>>|\.\.\.|[{}()[\],;:.<>+\-*\/%&|!?=]/g,
-  ) ?? []
+  const rawTokens = stripped.match(STRUCTURAL_TOKEN_PATTERN) ?? []
   const ternaryColonIndexes = findTernaryColonIndexes(rawTokens)
 
   let hash = 0
@@ -565,7 +576,7 @@ const structuralTokenFor = (
       return isObjectPropertyValue(rawTokens, index, ternaryColonIndexes) ? `STR:${token}` : "STR"
     }
 
-    if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(token) && !TS_KEYWORDS.has(token)) {
+    if (IDENTIFIER_PATTERN.test(token) && !TS_KEYWORDS.has(token)) {
       return rawTokens[index + 1] === ":" ? `KEY:${token}` : "ID"
     }
 
@@ -640,7 +651,7 @@ const isObjectPropertyValue = (
   const colonIndex = index - 1
   if (tokens[colonIndex] !== ":" || ternaryColonIndexes.has(colonIndex)) return false
   const key = tokens[index - 2]
-  return key !== undefined && (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key) || isStringLiteralToken(key))
+  return key !== undefined && (IDENTIFIER_PATTERN.test(key) || isStringLiteralToken(key))
 }
 
 const findTernaryColonIndexes = (tokens: ReadonlyArray<string>): ReadonlySet<number> => {
@@ -703,7 +714,7 @@ const buildExactGroups = (
     .filter((bucket) => bucket.length > 1)
     .map((bucket) =>
       bucket.filter((candidate) =>
-        isExactCloneEligible(candidate.fn, countExactTokens(getFunctionBody(candidate.fn) ?? "")),
+        isExactCloneEligible(candidate.fn, countExactTokens(candidate.body)),
       ),
     )
     .filter((bucket) => bucket.length > 1)
@@ -730,6 +741,7 @@ const buildStructuralGroups = (
     .filter((bucket) => bucket.length > 1)
     .map((bucket) => bucket.filter((candidate) => isStructuralCloneEligible(candidate.fn)))
     .filter((bucket) => bucket.length > 1)
+    .filter((bucket) => new Set(bucket.map((candidate) => candidate.exactHash)).size > 1)
     .map((bucket) => ({
       hash: bucket[0]!.structuralHash,
       tokenCount: bucket[0]!.tokenCount,

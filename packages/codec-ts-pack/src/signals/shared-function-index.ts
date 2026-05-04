@@ -29,6 +29,7 @@ export interface TsFunctionIndexEntry {
 const indexByProject = new WeakMap<Project, ReadonlyArray<TsFunctionIndexEntry>>()
 const indexBySourceFile = new WeakMap<SourceFile, ReadonlyArray<TsFunctionIndexEntry>>()
 const bodyByFunction = new WeakMap<TsFunctionLike, string | undefined>()
+const nameByFunction = new WeakMap<TsFunctionLike, string>()
 
 export const getFunctionLikeIndex = (
   project: Project,
@@ -94,6 +95,15 @@ const fastNodeText = (owner: TsFunctionLike, node: Node): string => {
 }
 
 export const getFunctionName = (fn: TsFunctionLike): string => {
+  const cached = nameByFunction.get(fn)
+  if (cached !== undefined) return cached
+
+  const name = computeFunctionName(fn)
+  nameByFunction.set(fn, name)
+  return name
+}
+
+const computeFunctionName = (fn: TsFunctionLike): string => {
   if (
     Node.isFunctionDeclaration(fn) ||
     Node.isMethodDeclaration(fn) ||

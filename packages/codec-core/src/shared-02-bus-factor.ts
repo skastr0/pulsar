@@ -166,9 +166,17 @@ export const Shared02BusFactor: Signal<
           const repoAuthors = new Set<string>()
           let touchedLoc = 0
 
-          for (const [relativePath, authors] of authorsByFile) {
-            const absolutePath = join(ctx.worktreePath, relativePath)
-            const loc = await countFileLoc(absolutePath).catch(() => 0)
+          const touchedFiles = await mapWithConcurrency(
+            [...authorsByFile.entries()],
+            16,
+            async ([relativePath, authors]) => {
+              const absolutePath = join(ctx.worktreePath, relativePath)
+              const loc = await countFileLoc(absolutePath).catch(() => 0)
+              return { absolutePath, authors, loc }
+            },
+          )
+
+          for (const { absolutePath, authors, loc } of touchedFiles) {
             if (loc < config.min_loc) continue
             touchedLoc += loc
 
@@ -261,4 +269,26 @@ export const Shared02BusFactor: Signal<
       data: { author: entry.author, windowDays: out.windowDays, loc: entry.loc },
     }))
   },
+}
+
+const mapWithConcurrency = async <A, B>(
+  items: ReadonlyArray<A>,
+  concurrency: number,
+  fn: (item: A) => Promise<B>,
+): Promise<Array<B>> => {
+  const results = new Array<B>(items.length)
+  let nextIndex = 0
+  const workerCount = Math.min(concurrency, items.length)
+
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (true) {
+        const index = nextIndex++
+        if (index >= items.length) return
+        results[index] = await fn(items[index]!)
+      }
+    }),
+  )
+
+  return results
 }
