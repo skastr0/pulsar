@@ -146,8 +146,10 @@ describe("TS-AD-02 (circular dependencies)", () => {
     expect(out.cycleCount).toBe(1)
     expect(out.largestCycleSize).toBe(4)
     expect(out.cycles[0]?.modules).toHaveLength(4)
-    // Larger cycle should score worse than a 2-node cycle.
-    expect(TsAd02.score(out)).toBeLessThan(0.7)
+    // Larger local cycles should score worse than a 2-node cycle without
+    // collapsing like repo-scale architectural tangles.
+    expect(TsAd02.score(out)).toBeGreaterThanOrEqual(0.7)
+    expect(TsAd02.score(out)).toBeLessThan(0.85)
   })
 
   test("a handful of small cycles scores as moderate architectural pressure", async () => {
@@ -164,8 +166,8 @@ describe("TS-AD-02 (circular dependencies)", () => {
     const out = await runCompute()
     expect(out.cycleCount).toBe(4)
     expect(out.largestCycleSize).toBe(2)
-    expect(TsAd02.score(out)).toBeGreaterThanOrEqual(0.65)
-    expect(TsAd02.score(out)).toBeLessThan(0.75)
+    expect(TsAd02.score(out)).toBeGreaterThanOrEqual(0.7)
+    expect(TsAd02.score(out)).toBeLessThan(0.82)
     expect(TsAd02.diagnose(out).every((diagnostic) => diagnostic.severity === "warn")).toBe(true)
   })
 

@@ -184,11 +184,8 @@ export const TsAd02: Signal<TsAd02Config, TsAd02Output, TsProjectTag> = {
     // size grows logarithmically so small local cycles stay actionable
     // without being scored like repo-wide tangles. Huge SCCs still collapse
     // toward the floor.
-    const countPenalty = Math.min(0.45, out.cycleCount * 0.08)
-    const sizePenalty = Math.min(
-      0.9,
-      Math.log2(Math.max(1, out.largestCycleSize - 1)) * 0.18,
-    )
+    const countPenalty = Math.min(0.45, out.cycleCount * 0.06)
+    const sizePenalty = cycleSizePenalty(out.largestCycleSize)
     return Math.max(0.05, 1 - countPenalty - sizePenalty)
   },
   diagnose: (out): ReadonlyArray<Diagnostic> => {
@@ -237,6 +234,11 @@ const cycleSeverity = (
   if (cycle.modules.length >= 8) return "block"
   if (out.cycleCount >= 10) return "block"
   return "warn"
+}
+
+const cycleSizePenalty = (largestCycleSize: number): number => {
+  const scale = Math.log2(Math.max(1, largestCycleSize - 1))
+  return largestCycleSize >= 8 ? Math.min(0.9, scale * 0.18) : scale * 0.12
 }
 
 /* ------------------------------------------------------------------ */
