@@ -1,4 +1,4 @@
-import { access, readFile } from "node:fs/promises"
+import { readFile, readdir } from "node:fs/promises"
 import { dirname, join, relative, resolve, sep } from "node:path"
 import {
   SignalContextTag,
@@ -18,7 +18,6 @@ import {
   isBuiltinModuleName,
   normalizePackageSpecifier,
   packageDisplayName,
-  packageForFile,
   workspacePackageNames,
 } from "./shared-workspace.js"
 export const TsDe04Config = Schema.Struct({
@@ -224,6 +223,7 @@ export const TsDe04: Signal<
           const pathAliasesByPackage = await readPathAliasesByPackage(activePackages)
           const workspaceNames = workspacePackageNames(activePackages)
           const sourceFiles = await dependencySourceFiles(project, activePackages, config.exclude_globs)
+          const packageForPath = createPackagePathMatcher(packages)
           const usageByPackage = new Map<string, Map<string, UsageBucket>>()
           const rootManifest = packages.find((pkg) => pkg.name === "(root)")?.manifest
           const rootDevDependencyNames = dependencyNamesOf(rootManifest, ["devDependencies"])
@@ -235,7 +235,7 @@ export const TsDe04: Signal<
           const rootToolingUsedDependencyNames = new Set<string>()
 
           for (const sourceFile of sourceFiles) {
-            const owningPackage = packageForFile(sourceFile.getFilePath(), packages)
+            const owningPackage = packageForPath(sourceFile.getFilePath())
             if (owningPackage?.manifest === undefined) continue
             const packageKey = owningPackage.path
             const isToolingFile = isPackageToolingFile(owningPackage.path, sourceFile.getFilePath())
@@ -554,6 +554,11 @@ const formatRelativeFile = (packagePath: string, file: string): string => {
 
 const externalModuleSpecifiers = (sourceFile: SourceFile): ReadonlyArray<ModuleSpecifierUsage> => {
   const specifiers = new Map<string, ModuleSpecifierUsage>()
+  let identifierUsage: ReadonlyMap<string, "type-only" | "value"> | undefined
+  const getIdentifierUsage = (): ReadonlyMap<string, "type-only" | "value"> => {
+    identifierUsage ??= localIdentifierUsageByName(sourceFile)
+    return identifierUsage
+  }
 
   for (const declaration of [
     ...sourceFile.getImportDeclarations(),
@@ -563,7 +568,7 @@ const externalModuleSpecifiers = (sourceFile: SourceFile): ReadonlyArray<ModuleS
     if (moduleSpecifier !== undefined) {
       mergeModuleSpecifierUsage(specifiers, {
         specifier: moduleSpecifier,
-        typeOnly: isTypeOnlyModuleDeclaration(declaration),
+        typeOnly: isTypeOnlyModuleDeclaration(declaration, getIdentifierUsage),
       })
     }
   }
@@ -596,10 +601,11 @@ const mergeModuleSpecifierUsage = (
 
 const isTypeOnlyModuleDeclaration = (
   declaration: import("ts-morph").ImportDeclaration | import("ts-morph").ExportDeclaration,
+  getIdentifierUsage: () => ReadonlyMap<string, "type-only" | "value">,
 ): boolean => {
   if (declaration.isTypeOnly()) return true
   if (Node.isImportDeclaration(declaration)) {
-    return isTypeOnlyImportDeclaration(declaration)
+    return isTypeOnlyImportDeclaration(declaration, getIdentifierUsage)
   }
 
   if (declaration.getNamespaceExport() !== undefined) return false
@@ -607,7 +613,10 @@ const isTypeOnlyModuleDeclaration = (
   return namedExports.length > 0 && namedExports.every((specifier) => specifier.isTypeOnly())
 }
 
-const isTypeOnlyImportDeclaration = (declaration: import("ts-morph").ImportDeclaration): boolean => {
+const isTypeOnlyImportDeclaration = (
+  declaration: import("ts-morph").ImportDeclaration,
+  getIdentifierUsage: () => ReadonlyMap<string, "type-only" | "value">,
+): boolean => {
   const clause = declaration.getImportClause()
   if (clause === undefined) return false
   if (clause.isTypeOnly()) return true
@@ -636,27 +645,21 @@ const isTypeOnlyImportDeclaration = (declaration: import("ts-morph").ImportDecla
 
   if (valueBindings.size === 0) return typeOnlyBindings.size > 0
 
-  const usage = localIdentifierUsage(declaration.getSourceFile(), declaration, valueBindings)
+  const identifierUsage = getIdentifierUsage()
   for (const bindingName of valueBindings) {
-    if (usage.get(bindingName) !== "type-only") return false
+    if (identifierUsage.get(bindingName) !== "type-only") return false
   }
   return true
 }
 
-const localIdentifierUsage = (
+const localIdentifierUsageByName = (
   sourceFile: SourceFile,
-  declaration: import("ts-morph").ImportDeclaration,
-  bindingNames: ReadonlySet<string>,
 ): ReadonlyMap<string, "type-only" | "value"> => {
   const usage = new Map<string, "type-only" | "value">()
-  const importStart = declaration.getStart()
-  const importEnd = declaration.getEnd()
 
   for (const identifier of sourceFile.getDescendantsOfKind(SyntaxKind.Identifier)) {
     const name = identifier.getText()
-    if (!bindingNames.has(name)) continue
-    const start = identifier.getStart()
-    if (start >= importStart && start <= importEnd) continue
+    if (isWithinImportDeclaration(identifier)) continue
     if (!isIdentifierInTypePosition(identifier)) {
       usage.set(name, "value")
       continue
@@ -668,6 +671,9 @@ const localIdentifierUsage = (
 
   return usage
 }
+
+const isWithinImportDeclaration = (identifier: Identifier): boolean =>
+  identifier.getAncestors().some(Node.isImportDeclaration)
 
 const isIdentifierInTypePosition = (identifier: Identifier): boolean => {
   for (const ancestor of identifier.getAncestors()) {
@@ -713,21 +719,21 @@ const packageRootDependencyFiles = async (
   excludeGlobs: ReadonlyArray<string>,
   existingPaths: ReadonlySet<string>,
 ): Promise<ReadonlyArray<string>> => {
-  const candidates = new Set<string>()
-  for (const pkg of activePackages) {
-    for (const filename of PACKAGE_ROOT_DEPENDENCY_FILES) {
-      candidates.add(join(pkg.path, filename))
-    }
-  }
-
+  const dependencyFilenames = new Set<string>(PACKAGE_ROOT_DEPENDENCY_FILES)
   const existing = await Promise.all(
-    [...candidates].sort((left, right) => left.localeCompare(right)).map(async (filePath) =>
-      existingPaths.has(filePath) || isExcluded(filePath, excludeGlobs) || !(await exists(filePath))
-        ? undefined
-        : filePath,
-    ),
+    activePackages.map(async (pkg) => {
+      try {
+        const entries = await readdir(pkg.path, { withFileTypes: true })
+        return entries
+          .filter((entry) => entry.isFile() && dependencyFilenames.has(entry.name))
+          .map((entry) => join(pkg.path, entry.name))
+          .filter((filePath) => !existingPaths.has(filePath) && !isExcluded(filePath, excludeGlobs))
+      } catch {
+        return []
+      }
+    }),
   )
-  return existing.filter((filePath): filePath is string => filePath !== undefined)
+  return existing.flat().sort((left, right) => left.localeCompare(right))
 }
 
 const isExternalLoaderCall = (
@@ -893,15 +899,6 @@ const readTsconfig = async (
     }
   }
   return undefined
-}
-
-const exists = async (path: string): Promise<boolean> => {
-  try {
-    await access(path)
-    return true
-  } catch {
-    return false
-  }
 }
 
 const tsconfigCandidates = (tsconfigPath: string): ReadonlyArray<string> => {
@@ -1098,6 +1095,14 @@ const allowsBundledAppDevDependencies = (manifest: PackageManifest): boolean => 
   if (!manifest.private) return false
   const scriptText = Object.values(manifest.scripts).join("\n")
   return /\b(electron-vite|vite|tauri|next|nuxt|astro|svelte-kit)\b/.test(scriptText)
+}
+
+const createPackagePathMatcher = (
+  packages: ReadonlyArray<PackageInfo>,
+): ((filePath: string) => PackageInfo | undefined) => {
+  const sortedPackages = [...packages].sort((left, right) => right.path.length - left.path.length)
+  return (filePath: string): PackageInfo | undefined =>
+    sortedPackages.find((pkg) => filePath === pkg.path || filePath.startsWith(`${pkg.path}/`))
 }
 
 const inferHostFacadeAlias = (
