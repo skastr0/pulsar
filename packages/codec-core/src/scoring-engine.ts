@@ -142,12 +142,79 @@ export const computeContentHash = Effect.fn("ScoringEngine.computeContentHash")(
 
 export const computeWorktreeContentHash = Effect.fn("ScoringEngine.computeWorktreeContentHash")(
   function* (repoPath: string) {
-    const out = yield* runGit(
+    const baseOut = yield* runGit(repoPath, ["ls-tree", "-r", "HEAD"], {
+      onFail: (msg) =>
+        new CommitNotFound({
+          repoPath,
+          sha: "HEAD",
+          message: `git ls-tree HEAD failed: ${msg}`,
+        }),
+    })
+    const entriesByPath = new Map<string, string>()
+    for (const line of baseOut.split("\n")) {
+      if (line.length === 0) continue
+      const tabIdx = line.indexOf("\t")
+      if (tabIdx === -1) continue
+      const meta = line.slice(0, tabIdx)
+      const path = line.slice(tabIdx + 1)
+      if (!isCodecSource(path)) continue
+      const blobSha = meta.split(" ")[2]
+      if (blobSha === undefined) continue
+      entriesByPath.set(path, blobSha)
+    }
+
+    const changedPaths = yield* collectDirtyCodecPaths(repoPath)
+    for (const path of changedPaths) {
+      const content = yield* Effect.either(
+        Effect.tryPromise({
+          try: () => readFile(join(repoPath, path)),
+          catch: (cause) => cause,
+        }),
+      )
+      if (content._tag === "Left") {
+        entriesByPath.delete(path)
+        continue
+      }
+      entriesByPath.set(path, `worktree:${createHash("sha256").update(content.right).digest("hex")}`)
+    }
+
+    const entries = [...entriesByPath.entries()]
+      .map(([path, contentId]) => `${contentId}\t${path}`)
+      .sort((left, right) => left.localeCompare(right))
+    const hash = createHash("sha256")
+    hash.update(entries.join("\n"))
+    return hash.digest("hex")
+  },
+)
+
+const collectDirtyCodecPaths = Effect.fn("ScoringEngine.collectDirtyCodecPaths")(
+  function* (repoPath: string) {
+    const changed = yield* runGit(
+      repoPath,
+      [
+        "diff",
+        "--name-only",
+        "-z",
+        "--no-ext-diff",
+        "HEAD",
+        "--",
+        ".",
+        ":!.taste-codec/cache",
+      ],
+      {
+        onFail: (msg) =>
+          new CommitNotFound({
+            repoPath,
+            sha: "WORKTREE",
+            message: `git diff --name-only HEAD failed: ${msg}`,
+          }),
+      },
+    )
+    const untracked = yield* runGit(
       repoPath,
       [
         "ls-files",
         "-z",
-        "--cached",
         "--others",
         "--exclude-standard",
         "--",
@@ -159,35 +226,19 @@ export const computeWorktreeContentHash = Effect.fn("ScoringEngine.computeWorktr
           new CommitNotFound({
             repoPath,
             sha: "WORKTREE",
-            message: `git ls-files failed: ${msg}`,
+            message: `git ls-files --others failed: ${msg}`,
           }),
       },
     )
-    const paths = [
+
+    return [
       ...new Set(
-        out
+        `${changed}\0${untracked}`
           .split("\0")
           .map((path) => path.trim())
           .filter((path) => path.length > 0 && isCodecSource(path)),
       ),
     ].sort((left, right) => left.localeCompare(right))
-
-    const entries: Array<string> = []
-    for (const path of paths) {
-      const content = yield* Effect.either(
-        Effect.tryPromise({
-          try: () => readFile(join(repoPath, path)),
-          catch: (cause) => cause,
-        }),
-      )
-      if (content._tag === "Left") continue
-      const fileHash = createHash("sha256").update(content.right).digest("hex")
-      entries.push(`${fileHash}\t${path}`)
-    }
-
-    const hash = createHash("sha256")
-    hash.update(entries.join("\n"))
-    return hash.digest("hex")
   },
 )
 
