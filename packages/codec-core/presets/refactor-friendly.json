@@ -11,6 +11,8 @@
     "TS-AD-03": { "weight": 1.2 },
     "TS-DE-01": { "weight": 1.15 },
     "TS-DE-03": { "weight": 1.15 },
-    "TS-LD-01": { "weight": 1.1 }
+    "TS-LD-01": { "weight": 1.1 },
+    "SHARED-02": { "weight": 1.1 },
+    "SHARED-03": { "weight": 1.2 }
   }
 }

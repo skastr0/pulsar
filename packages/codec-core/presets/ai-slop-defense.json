@@ -16,7 +16,8 @@
     "TS-RP-01": {
       "weight": 1.2,
       "config": { "min_churn": 1, "min_complexity": 4, "threshold_softness": 0.35 }
-    }
+    },
+    "SHARED-03": { "weight": 1.15 }
   },
   "review_routing": {
     "score_thresholds": {

@@ -173,6 +173,7 @@ describe("taste persona", () => {
       const written = JSON.parse(await readFile(join(repoPath, ".taste-codec/vector.json"), "utf8"))
       expect(written.id).toBe("ai-slop-defense")
       expect(written.modes.ai_assisted).toBe(true)
+      expect(written.signal_overrides["SHARED-03"].weight).toBeGreaterThan(1)
       expect(written.provenance[0].source).toBe("preset")
 
       const vectorScore = runCli(repoPath, ["score", "--category", "generated-slop", "."])
@@ -256,6 +257,8 @@ describe("taste persona", () => {
       const written = JSON.parse(await readFile(join(repoPath, ".taste-codec/vector.json"), "utf8"))
       expect(written.id).toBe("refactor-friendly")
       expect(written.signal_overrides["TS-AD-02"].weight).toBeGreaterThan(1)
+      expect(written.signal_overrides["SHARED-02"].weight).toBeGreaterThan(1)
+      expect(written.signal_overrides["SHARED-03"].weight).toBeGreaterThan(1)
       expect(written.provenance[0].source).toBe("preset")
 
       const vectorScore = runCli(repoPath, ["score", "--json", "."])
