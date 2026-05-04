@@ -196,6 +196,100 @@ describe("TS-DE-04 (package dependency health)", () => {
     expect(TsDe04.score(out)).toBeGreaterThan(0.65)
   })
 
+  test("type-only dependency usage does not count as production runtime usage", async () => {
+    await writePackage("app", "@repo/app", {
+      devDependencies: {
+        "@types/external": "^1.0.0",
+      },
+    })
+    await repo.write(
+      "packages/app/src/index.ts",
+      [
+        "import type { ExternalShape } from '@types/external'",
+        "export type LocalShape = ExternalShape & { readonly id: string }",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+
+    expect(out.packages[0]?.devInProd).toEqual([])
+    expect(out.packages[0]?.declaredButUnused).toEqual([])
+    expect(TsDe04.score(out)).toBe(1)
+  })
+
+  test("value imports used only in type positions do not count as production runtime usage", async () => {
+    await writePackage("app", "@repo/app", {
+      devDependencies: {
+        "external-types": "^1.0.0",
+      },
+    })
+    await repo.write(
+      "packages/app/src/index.ts",
+      [
+        "import { components } from 'external-types'",
+        "export type LocalShape = components['schemas']['release']",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+
+    expect(out.packages[0]?.devInProd).toEqual([])
+    expect(out.packages[0]?.declaredButUnused).toEqual([])
+    expect(TsDe04.score(out)).toBe(1)
+  })
+
+  test("mixed value and type imports still count as production runtime usage", async () => {
+    await writePackage("app", "@repo/app", {
+      devDependencies: {
+        "external-tool": "^1.0.0",
+      },
+    })
+    await repo.write(
+      "packages/app/src/index.ts",
+      [
+        "import { createTool, ToolShape } from 'external-tool'",
+        "export type LocalShape = ToolShape & { readonly id: string }",
+        "export const tool = createTool()",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+
+    expect(out.packages[0]?.devInProd).toEqual([
+      {
+        dependencyName: "external-tool",
+        files: [`${repo.root}/packages/app/src/index.ts`],
+      },
+    ])
+    expect(TsDe04.score(out)).toBeLessThan(1)
+  })
+
+  test("type-only missing dependencies warn without hard-gating", async () => {
+    await writePackage("app", "@repo/app", {})
+    await repo.write(
+      "packages/app/src/index.ts",
+      [
+        "import type { ExternalShape } from 'external-types'",
+        "export type LocalShape = ExternalShape & { readonly id: string }",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+    const diagnostic = TsDe04.diagnose(out)[0]
+
+    expect(out.packages[0]?.importedButNotDeclared).toEqual([
+      {
+        dependencyName: "external-types",
+        files: [`${repo.root}/packages/app/src/index.ts`],
+        usageKind: "type-only",
+      },
+    ])
+    expect(diagnostic?.severity).toBe("warn")
+    expect(diagnostic?.data?.severityReason).toBe("type-only-missing-dependency")
+    expect(diagnostic?.data?.usageKind).toBe("type-only")
+    expect(TsDe04.score(out)).toBeGreaterThan(0.65)
+  })
+
   test("private runtime missing dependencies sort before package-local tooling warnings", async () => {
     await writePackage("plugin", "@repo/a-plugin", {
       exports: {

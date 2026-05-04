@@ -8,7 +8,7 @@ import {
   SignalComputeError,
 } from "@taste-codec/core"
 import { Effect, Schema } from "effect"
-import { Node, Project, SyntaxKind, type SourceFile } from "ts-morph"
+import { Node, Project, SyntaxKind, type Identifier, type SourceFile } from "ts-morph"
 import type { PackageInfo, PackageManifest } from "../discovery.js"
 import { readBunLockFile } from "../lockfiles/bun-lock.js"
 import { TsPackageInfoTag, TsProjectTag } from "../ts-project.js"
@@ -33,6 +33,7 @@ export type TsDe04Config = typeof TsDe04Config.Type
 export interface DependencyMismatch {
   readonly dependencyName: string
   readonly files: ReadonlyArray<string>
+  readonly usageKind?: "type-only"
 }
 
 export interface UnusedDeclaredDependency {
@@ -60,6 +61,7 @@ type UsageBucket = {
   readonly files: Set<string>
   readonly prodFiles: Set<string>
   readonly toolingFiles: Set<string>
+  readonly typeOnlyFiles: Set<string>
   readonly specifiers: Set<string>
 }
 
@@ -76,6 +78,7 @@ type TsconfigAliasConfig = {
 
 type ModuleSpecifierUsage = {
   readonly specifier: string
+  readonly typeOnly: boolean
 }
 
 const PACKAGE_ROOT_DEPENDENCY_FILES = [
@@ -266,11 +269,15 @@ export const TsDe04: Signal<
                 files: new Set<string>(),
                 prodFiles: new Set<string>(),
                 toolingFiles: new Set<string>(),
+                typeOnlyFiles: new Set<string>(),
                 specifiers: new Set<string>(),
               }
               usage.files.add(sourceFile.getFilePath())
               usage.specifiers.add(moduleSpecifier)
-              if (isProdFile) {
+              if (moduleUsage.typeOnly) {
+                usage.typeOnlyFiles.add(sourceFile.getFilePath())
+              }
+              if (isProdFile && !moduleUsage.typeOnly) {
                 usage.prodFiles.add(sourceFile.getFilePath())
               }
               if (isToolingFile) {
@@ -360,6 +367,7 @@ export const TsDe04: Signal<
             packageName: pkg.packageName,
             packagePrivate: pkg.private,
             dependencyName: mismatch.dependencyName,
+            usageKind: mismatch.usageKind,
             fileCount: mismatch.files.length,
             files: mismatch.files.slice(),
             severityReason,
@@ -462,8 +470,10 @@ const missingDependencyRank = (diagnostic: Diagnostic): number => {
       return 1
     case "tooling-only-missing-dependency":
       return 2
-    default:
+    case "type-only-missing-dependency":
       return 3
+    default:
+      return 4
   }
 }
 
@@ -482,6 +492,7 @@ const missingDependencyPenaltyWeight = (
   mismatch: DependencyMismatch,
 ): number => {
   if (isToolingOnlyMissingDependency(pkg, mismatch)) return 0.2
+  if (mismatch.usageKind === "type-only") return 0.2
   if (pkg.private) return 0.45
   return 1
 }
@@ -491,6 +502,7 @@ const missingDependencySeverityReason = (
   mismatch: DependencyMismatch,
 ): string => {
   if (isToolingOnlyMissingDependency(pkg, mismatch)) return "tooling-only-missing-dependency"
+  if (mismatch.usageKind === "type-only") return "type-only-missing-dependency"
   if (pkg.private) return "private-runtime-missing-dependency"
   return "published-runtime-missing-dependency"
 }
@@ -549,8 +561,9 @@ const externalModuleSpecifiers = (sourceFile: SourceFile): ReadonlyArray<ModuleS
   ]) {
     const moduleSpecifier = declaration.getModuleSpecifierValue()
     if (moduleSpecifier !== undefined) {
-      specifiers.set(moduleSpecifier, {
+      mergeModuleSpecifierUsage(specifiers, {
         specifier: moduleSpecifier,
+        typeOnly: isTypeOnlyModuleDeclaration(declaration),
       })
     }
   }
@@ -561,13 +574,108 @@ const externalModuleSpecifiers = (sourceFile: SourceFile): ReadonlyArray<ModuleS
     if (!Node.isStringLiteral(firstArg)) continue
     if (isExternalLoaderCall(requireLikeNames, call.getExpression().getText())) {
       const specifier = firstArg.getLiteralText()
-      specifiers.set(specifier, { specifier })
+      mergeModuleSpecifierUsage(specifiers, { specifier, typeOnly: false })
     }
   }
 
   return [...specifiers.values()].sort((left, right) =>
     left.specifier.localeCompare(right.specifier),
   )
+}
+
+const mergeModuleSpecifierUsage = (
+  specifiers: Map<string, ModuleSpecifierUsage>,
+  usage: ModuleSpecifierUsage,
+): void => {
+  const existing = specifiers.get(usage.specifier)
+  specifiers.set(usage.specifier, {
+    specifier: usage.specifier,
+    typeOnly: existing === undefined ? usage.typeOnly : existing.typeOnly && usage.typeOnly,
+  })
+}
+
+const isTypeOnlyModuleDeclaration = (
+  declaration: import("ts-morph").ImportDeclaration | import("ts-morph").ExportDeclaration,
+): boolean => {
+  if (declaration.isTypeOnly()) return true
+  if (Node.isImportDeclaration(declaration)) {
+    return isTypeOnlyImportDeclaration(declaration)
+  }
+
+  if (declaration.getNamespaceExport() !== undefined) return false
+  const namedExports = declaration.getNamedExports()
+  return namedExports.length > 0 && namedExports.every((specifier) => specifier.isTypeOnly())
+}
+
+const isTypeOnlyImportDeclaration = (declaration: import("ts-morph").ImportDeclaration): boolean => {
+  const clause = declaration.getImportClause()
+  if (clause === undefined) return false
+  if (clause.isTypeOnly()) return true
+
+  const typeOnlyBindings = new Set<string>()
+  const valueBindings = new Set<string>()
+
+  const defaultImport = clause.getDefaultImport()
+  if (defaultImport !== undefined) {
+    valueBindings.add(defaultImport.getText())
+  }
+
+  const namespaceImport = clause.getNamespaceImport()
+  if (namespaceImport !== undefined) {
+    valueBindings.add(namespaceImport.getText())
+  }
+
+  for (const specifier of clause.getNamedImports()) {
+    const localName = specifier.getAliasNode()?.getText() ?? specifier.getName()
+    if (specifier.isTypeOnly()) {
+      typeOnlyBindings.add(localName)
+    } else {
+      valueBindings.add(localName)
+    }
+  }
+
+  if (valueBindings.size === 0) return typeOnlyBindings.size > 0
+
+  const usage = localIdentifierUsage(declaration.getSourceFile(), declaration, valueBindings)
+  for (const bindingName of valueBindings) {
+    if (usage.get(bindingName) !== "type-only") return false
+  }
+  return true
+}
+
+const localIdentifierUsage = (
+  sourceFile: SourceFile,
+  declaration: import("ts-morph").ImportDeclaration,
+  bindingNames: ReadonlySet<string>,
+): ReadonlyMap<string, "type-only" | "value"> => {
+  const usage = new Map<string, "type-only" | "value">()
+  const importStart = declaration.getStart()
+  const importEnd = declaration.getEnd()
+
+  for (const identifier of sourceFile.getDescendantsOfKind(SyntaxKind.Identifier)) {
+    const name = identifier.getText()
+    if (!bindingNames.has(name)) continue
+    const start = identifier.getStart()
+    if (start >= importStart && start <= importEnd) continue
+    if (!isIdentifierInTypePosition(identifier)) {
+      usage.set(name, "value")
+      continue
+    }
+    if (usage.get(name) !== "value") {
+      usage.set(name, "type-only")
+    }
+  }
+
+  return usage
+}
+
+const isIdentifierInTypePosition = (identifier: Identifier): boolean => {
+  for (const ancestor of identifier.getAncestors()) {
+    if (Node.isImportDeclaration(ancestor)) return false
+    if (Node.isTypeNode(ancestor)) return true
+    if (Node.isExpression(ancestor) || Node.isStatement(ancestor)) return false
+  }
+  return false
 }
 
 const dependencySourceFiles = async (
@@ -953,7 +1061,11 @@ const analyzePackageHealth = (
     }
 
     if (workspaceNames.has(dependencyName) || !resolvedPackageNames.has(dependencyName)) {
-      importedButNotDeclared.push({ dependencyName, files })
+      importedButNotDeclared.push({
+        dependencyName,
+        files,
+        ...(isTypeOnlyUsage(usageBucket) ? { usageKind: "type-only" as const } : {}),
+      })
       continue
     }
 
@@ -978,6 +1090,9 @@ const analyzePackageHealth = (
 
 const isToolingOnlyUsage = (usage: UsageBucket): boolean =>
   usage.files.size > 0 && usage.files.size === usage.toolingFiles.size
+
+const isTypeOnlyUsage = (usage: UsageBucket): boolean =>
+  usage.files.size > 0 && usage.files.size === usage.typeOnlyFiles.size
 
 const allowsBundledAppDevDependencies = (manifest: PackageManifest): boolean => {
   if (!manifest.private) return false
