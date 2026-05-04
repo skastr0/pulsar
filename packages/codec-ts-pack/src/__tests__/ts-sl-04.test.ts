@@ -196,6 +196,21 @@ export const like = mutation({
     expect(TsSl04.score(out)).toBe(1)
   })
 
+  test("ignores prototype spec files by default", async () => {
+    await repo.write(
+      "specs/v2/api.ts",
+      `
+export const tool = {
+  execute(input: unknown, ctx: unknown) {},
+}
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
+    expect(out.stubs).toEqual([])
+    expect(TsSl04.score(out)).toBe(1)
+  })
+
   test("does not classify TODO comments above real code as TODO-only implementations", async () => {
     await repo.write(
       "utils.ts",
@@ -1014,6 +1029,31 @@ export const hooks = {
   onReasoningEnd: true ? () => {} : undefined,
   onStreamComplete: () => {},
 }
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
+    expect(out.stubs).toHaveLength(0)
+  })
+
+  test("does not classify ignored SyncEvent delta projections as unfinished stubs", async () => {
+    await repo.write(
+      "projectors.ts",
+      `
+export const SyncEvent = {
+  project(_event: unknown, _handler: unknown) {
+    return _handler
+  },
+}
+export const SessionEvent = {
+  Text: { Delta: { Sync: "text.delta" } },
+  Tool: { Input: { Delta: { Sync: "tool.input.delta" } } },
+}
+
+export default [
+  SyncEvent.project(SessionEvent.Text.Delta.Sync, () => {}),
+  SyncEvent.project(SessionEvent.Tool.Input.Delta.Sync, function () {}),
+]
 `,
     )
 

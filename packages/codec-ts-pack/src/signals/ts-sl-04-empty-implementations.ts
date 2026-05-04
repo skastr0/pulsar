@@ -53,7 +53,7 @@ export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalCon
   tier: 1,
   category: "generated-slop",
   kind: "structural",
-  cacheVersion: "contract-noops-v2",
+  cacheVersion: "event-projection-noops-v1",
   configSchema: TsSl04Config,
   defaultConfig: {
     exclude_globs: [
@@ -86,6 +86,10 @@ export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalCon
       "**/sample/**",
       "samples/**",
       "**/samples/**",
+      "spec/**",
+      "**/spec/**",
+      "specs/**",
+      "**/specs/**",
       "sdk-samples/**",
       "**/sdk-samples/**",
       "template/**",
@@ -399,6 +403,10 @@ const isIntentionalNoop = (filePath: string, fn: FnLike, bodyText: string): bool
   }
 
   if (isTerminalLifecycleCallback(fn)) {
+    return true
+  }
+
+  if (isEventDeltaProjectionNoop(fn)) {
     return true
   }
 
@@ -728,6 +736,16 @@ const isTerminalLifecycleCallback = (fn: FnLike): boolean => {
   const property = nearestPropertyAssignment(fn)
   if (property === undefined) return false
   return /^on(?=[A-Z])(?=.*(?:End|Settled|Complete|Close)$)/.test(propertyNameOf(property))
+}
+
+const isEventDeltaProjectionNoop = (fn: FnLike): boolean => {
+  if (!Node.isArrowFunction(fn) && !Node.isFunctionExpression(fn)) return false
+  if (fn.getParameters().length > 0) return false
+  const parent = fn.getParent()
+  if (!Node.isCallExpression(parent)) return false
+  if (parent.getExpression().getText() !== "SyncEvent.project") return false
+  if (parent.getArguments()[1] !== fn) return false
+  return /\.Delta\.Sync$/.test(parent.getArguments()[0]?.getText() ?? "")
 }
 
 const isFallbackLoggerNoop = (fn: FnLike): boolean => {
