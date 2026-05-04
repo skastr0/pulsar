@@ -49,6 +49,15 @@ export interface TsSl01Output {
 
 const DEFAULT_SCORE_BUDGET_MIN_TOKENS = 12
 
+type CloneCandidate = {
+  readonly fn: FnLike
+  readonly path: string
+  readonly exactHash: string
+  readonly structuralHash: string
+  readonly changed: boolean
+  readonly tokenCount: number
+}
+
 export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalContextTag> = {
   id: "TS-SL-01",
   tier: 1,
@@ -110,15 +119,7 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
       const context = yield* SignalContextTag
       return yield* Effect.try({
         try: (): TsSl01Output => {
-          const functions: Array<{
-            exactHash: string
-            structuralHash: string
-            exactEligible: boolean
-            structuralEligible: boolean
-            changed: boolean
-            tokenCount: number
-            member: CloneGroupMember
-          }> = []
+          const functions: Array<CloneCandidate> = []
           let scoreBudgetFunctions = 0
           let totalFunctionsAnalyzed = 0
           const hunkMap = buildHunkMap(context.worktreePath, context.changedHunks)
@@ -132,7 +133,7 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
             if (isExcluded(path, config.exclude_globs)) continue
             if (matchesAnyGlob(path, config.test_globs)) continue
 
-            for (const { fn } of getFunctionLikeEntriesForSourceFile(sourceFile)) {
+            for (const { fn, path: functionPath } of getFunctionLikeEntriesForSourceFile(sourceFile)) {
               const changed =
                 hunkMap === undefined || lineRangeOverlapsHunkRanges(fn, hunkMap.get(path) ?? [])
 
@@ -153,37 +154,25 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
               if (changed) {
                 totalFunctionsAnalyzed += 1
               }
-              const exactTokenCount = countExactTokens(body)
-
-              const member: CloneGroupMember = {
-                file: path,
-                name: getFunctionName(fn),
-                startLine: fn.getStartLineNumber(),
-                endLine: fn.getEndLineNumber(),
-              }
 
               functions.push({
+                fn,
+                path: functionPath,
                 exactHash,
                 structuralHash: structuralAnalysis.structuralHash,
-                exactEligible: isExactCloneEligible(fn, exactTokenCount),
-                structuralEligible: isStructuralCloneEligible(fn),
                 changed,
                 tokenCount: structuralAnalysis.tokenCount,
-                member,
               })
             }
           }
 
-          const exactGroups = buildGroups(functions, "exact", config)
-          const exactHashByMember = new Map(
-            functions.map((fn) => [memberKey(fn.member), fn.exactHash] as const),
-          )
-          const structuralGroups = buildGroups(functions, "structural", config).filter((group) => {
-            const exactVariants = new Set(group.members.map((member) => exactHashByMember.get(memberKey(member))))
+          const exactGroups = buildExactGroups(functions, config)
+          const structuralGroups = buildStructuralGroups(functions, config).filter((group) => {
+            const exactVariants = new Set(group.members.map((member) => member.exactHash))
             return exactVariants.size > 1
           })
           const changedMemberKeys = new Set(
-            functions.filter((fn) => fn.changed).map((fn) => memberKey(fn.member)),
+            functions.filter((fn) => fn.changed).map(memberKeyOfCandidate),
           )
           const filterForScope = (group: CloneGroup): boolean =>
             hunkMap === undefined || group.members.some((member) => changedMemberKeys.has(memberKey(member)))
@@ -196,7 +185,7 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
               groupId: `exact-${groupIndex++}`,
               kind: "exact",
               tokenCount: g.tokenCount,
-              members: g.members,
+              members: g.members.map((member) => member.member),
               structuralHash: g.hash,
             })
           }
@@ -206,7 +195,7 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
               groupId: `structural-${groupIndex++}`,
               kind: "structural",
               tokenCount: g.tokenCount,
-              members: g.members,
+              members: g.members.map((member) => member.member),
               structuralHash: g.hash,
             })
           }
@@ -641,24 +630,30 @@ const findTernaryColonIndexes = (tokens: ReadonlyArray<string>): ReadonlySet<num
 const memberKey = (member: CloneGroupMember): string =>
   `${member.file}:${member.startLine}`
 
-const buildGroups = (
-  functions: ReadonlyArray<{
-    exactHash: string
-    structuralHash: string
-    exactEligible: boolean
-    structuralEligible: boolean
-    changed: boolean
-    tokenCount: number
-    member: CloneGroupMember
-  }>,
-  kind: "exact" | "structural",
+const memberKeyOfCandidate = (candidate: CloneCandidate): string =>
+  `${candidate.path}:${candidate.fn.getStartLineNumber()}`
+
+type MaterializedCloneCandidate = CloneCandidate & {
+  readonly member: CloneGroupMember
+}
+
+const materializeCloneCandidate = (candidate: CloneCandidate): MaterializedCloneCandidate => ({
+  ...candidate,
+  member: {
+    file: candidate.path,
+    name: getFunctionName(candidate.fn),
+    startLine: candidate.fn.getStartLineNumber(),
+    endLine: candidate.fn.getEndLineNumber(),
+  },
+})
+
+const buildExactGroups = (
+  functions: ReadonlyArray<CloneCandidate>,
   _config: TsSl01Config,
-): ReadonlyArray<{ hash: string; tokenCount: number; members: ReadonlyArray<CloneGroupMember> }> => {
+): ReadonlyArray<{ hash: string; tokenCount: number; members: ReadonlyArray<MaterializedCloneCandidate> }> => {
   const grouped = new Map<string, Array<(typeof functions)[number]>>()
   for (const fn of functions) {
-    if (kind === "exact" && !fn.exactEligible) continue
-    if (kind === "structural" && !fn.structuralEligible) continue
-    const key = kind === "exact" ? fn.exactHash : fn.structuralHash
+    const key = fn.exactHash
     const bucket = grouped.get(key) ?? []
     bucket.push(fn)
     grouped.set(key, bucket)
@@ -666,9 +661,38 @@ const buildGroups = (
 
   return [...grouped.values()]
     .filter((bucket) => bucket.length > 1)
+    .map((bucket) =>
+      bucket.filter((candidate) =>
+        isExactCloneEligible(candidate.fn, countExactTokens(getFunctionBody(candidate.fn) ?? "")),
+      ),
+    )
+    .filter((bucket) => bucket.length > 1)
     .map((bucket) => ({
-      hash: kind === "exact" ? bucket[0]!.exactHash : bucket[0]!.structuralHash,
+      hash: bucket[0]!.exactHash,
       tokenCount: bucket[0]!.tokenCount,
-      members: bucket.map((entry) => entry.member),
+      members: bucket.map(materializeCloneCandidate),
+    }))
+}
+
+const buildStructuralGroups = (
+  functions: ReadonlyArray<CloneCandidate>,
+  _config: TsSl01Config,
+): ReadonlyArray<{ hash: string; tokenCount: number; members: ReadonlyArray<MaterializedCloneCandidate> }> => {
+  const grouped = new Map<string, Array<(typeof functions)[number]>>()
+  for (const fn of functions) {
+    const key = fn.structuralHash
+    const bucket = grouped.get(key) ?? []
+    bucket.push(fn)
+    grouped.set(key, bucket)
+  }
+
+  return [...grouped.values()]
+    .filter((bucket) => bucket.length > 1)
+    .map((bucket) => bucket.filter((candidate) => isStructuralCloneEligible(candidate.fn)))
+    .filter((bucket) => bucket.length > 1)
+    .map((bucket) => ({
+      hash: bucket[0]!.structuralHash,
+      tokenCount: bucket[0]!.tokenCount,
+      members: bucket.map(materializeCloneCandidate),
     }))
 }
