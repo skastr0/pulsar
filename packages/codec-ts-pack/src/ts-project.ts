@@ -148,8 +148,11 @@ const addWorktreeGlob = (project: Project, worktreePath: string, options?: TsPro
       `!${worktreePath}/**/test/**`,
       `!${worktreePath}/**/tests/**`,
       `!${worktreePath}/**/test-support/**`,
+      `!${worktreePath}/**/test-utils/**`,
       `!${worktreePath}/**/*test-support.ts`,
       `!${worktreePath}/**/*test-support.tsx`,
+      `!${worktreePath}/**/*test-utils.ts`,
+      `!${worktreePath}/**/*test-utils.tsx`,
       `!${worktreePath}/**/*test-helpers.ts`,
       `!${worktreePath}/**/*test-helpers.tsx`,
       `!${worktreePath}/**/*test-mocks.ts`,
@@ -218,6 +221,8 @@ const isProductionTypeScriptFile = (file: string): boolean => {
     file.endsWith(".stories.tsx") ||
     file.endsWith("test-support.ts") ||
     file.endsWith("test-support.tsx") ||
+    file.endsWith("test-utils.ts") ||
+    file.endsWith("test-utils.tsx") ||
     file.endsWith("test-helpers.ts") ||
     file.endsWith("test-helpers.tsx") ||
     file.endsWith("test-mocks.ts") ||
@@ -244,6 +249,7 @@ const isProductionTypeScriptFile = (file: string): boolean => {
     "test",
     "tests",
     "test-support",
+    "test-utils",
   ].some((segment) => file.split("/").includes(segment)) ||
   file.split("/").some(isHiddenPathSegment)
 }

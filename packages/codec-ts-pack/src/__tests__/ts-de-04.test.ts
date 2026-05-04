@@ -1075,6 +1075,29 @@ describe("TS-DE-04 (package dependency health)", () => {
     expect(out.packages[0]?.importedButNotDeclared).toEqual([])
   })
 
+  test("allows root dev dependencies from package test utility files", async () => {
+    await repo.writeJson("package.json", {
+      name: "temp-workspace",
+      private: true,
+      devDependencies: {
+        vitest: "^4.0.0",
+      },
+    })
+    await writePackage("app", "@repo/app", {})
+    await repo.write(
+      "packages/app/src/test-utils/render.tsx",
+      "import { vi } from 'vitest'\nexport const mock = vi.fn()\n",
+    )
+    await repo.write(
+      "packages/app/src/render.test-utils.ts",
+      "import { expect } from 'vitest'\nexport const assert = expect\n",
+    )
+
+    const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+    expect(out.packages[0]?.devInProd).toEqual([])
+    expect(out.packages[0]?.importedButNotDeclared).toEqual([])
+  })
+
   test("warns when root dev dependencies are used from production files", async () => {
     await repo.writeJson("package.json", {
       name: "temp-workspace",

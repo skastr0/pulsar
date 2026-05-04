@@ -37,6 +37,23 @@ describe("TS-DE-03 (propagation cost)", () => {
     expect(left?.reverseReach).toBe(1)
   })
 
+  test("type-only imports do not increase propagation reach", async () => {
+    await repo.write("src/types.ts", "export interface User { readonly id: string }\n")
+    await repo.write(
+      "src/view.ts",
+      "import { User } from './types'\nexport interface View { readonly user: User }\n",
+    )
+    await repo.write(
+      "src/consumer.ts",
+      "import { View } from './view'\nexport interface Consumer { readonly view: View }\n",
+    )
+
+    const out = await runSignal(repo.root, TsDe03, TsDe03.defaultConfig)
+    expect(out.byModule.get(`${repo.root}/src/types.ts`)?.reverseReach).toBe(0)
+    expect(out.byModule.get(`${repo.root}/src/view.ts`)?.reverseReach).toBe(0)
+    expect(out.propagationCost).toBe(0)
+  })
+
   test("cycles count peers inside the strongly connected component", async () => {
     await repo.write("src/a.ts", "import { b } from './b'\nexport const a = b\n")
     await repo.write("src/b.ts", "import { a } from './a'\nexport const b = a\n")

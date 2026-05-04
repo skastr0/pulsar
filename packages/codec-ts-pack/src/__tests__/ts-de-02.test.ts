@@ -65,6 +65,23 @@ describe("TS-DE-02 (fan-in / fan-out)", () => {
     expect(TsDe02.score(out)).toBe(1)
   })
 
+  test("type-only imports and exports do not count as fan edges", async () => {
+    const types = await writeTs("types.ts", "export interface User { readonly id: string }\n")
+    const consumer = await writeTs(
+      "consumer.ts",
+      "import { User } from './types'\nexport interface View { readonly user: User }\n",
+    )
+    const barrel = await writeTs(
+      "barrel.ts",
+      "export type { User } from './types'\nexport const runtime = 1\n",
+    )
+
+    const out = await runCompute()
+    expect(out.byModule.get(types)?.fanIn).toBe(0)
+    expect(out.byModule.get(consumer)?.fanOut).toBe(0)
+    expect(out.byModule.get(barrel)?.fanOut).toBe(0)
+  })
+
   test("hub detection: file above both thresholds is flagged", async () => {
     // One hub imported by many, importing several.
     const hub = await writeTs("hub.ts", [

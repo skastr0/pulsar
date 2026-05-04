@@ -16,6 +16,11 @@ import {
   stripKnownExtension,
   stripRuntimeExtension,
 } from "../signals/shared-path-extensions.js"
+import {
+  isTypeOnlyModuleDeclaration,
+  localIdentifierUsageByName,
+  valueImportBindingNames,
+} from "../signals/shared-module-usage.js"
 
 export interface ModuleGraphOptions {
   readonly excludeGlobs: ReadonlyArray<string>
@@ -77,8 +82,16 @@ const collectTargets = (
 ): Set<string> => {
   const sourcePath = sourceFile.getFilePath()
   const targets = new Set<string>()
+  const importDeclarations = sourceFile.getImportDeclarations()
+  const valueBindingNames = valueImportBindingNames(importDeclarations)
+  let identifierUsage: ReturnType<typeof localIdentifierUsageByName> | undefined
+  const getIdentifierUsage = (): ReturnType<typeof localIdentifierUsageByName> => {
+    identifierUsage ??= localIdentifierUsageByName(sourceFile, valueBindingNames)
+    return identifierUsage
+  }
 
-  for (const declaration of sourceFile.getImportDeclarations()) {
+  for (const declaration of importDeclarations) {
+    if (isTypeOnlyModuleDeclaration(declaration, getIdentifierUsage)) continue
     const targetPath = resolver.resolve(sourcePath, declaration)
     if (targetPath === undefined || targetPath === sourcePath) continue
     targets.add(targetPath)
@@ -86,6 +99,7 @@ const collectTargets = (
 
   if (includeExportEdges) {
     for (const declaration of sourceFile.getExportDeclarations()) {
+      if (isTypeOnlyModuleDeclaration(declaration, getIdentifierUsage)) continue
       const targetPath = resolver.resolve(sourcePath, declaration)
       if (targetPath === undefined || targetPath === sourcePath) continue
       targets.add(targetPath)
