@@ -278,6 +278,14 @@ describe("SHARED-03 churn rate", () => {
           },
         ],
         [
+          join(root, "stable.ts"),
+          {
+            introduced: 100,
+            churned: 0,
+            rate: 0,
+          },
+        ],
+        [
           join(root, "large.ts"),
           {
             introduced: 30,

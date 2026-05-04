@@ -283,6 +283,7 @@ export const Shared03ChurnRate: Signal<
 
     const churnRatePercent = formatPercent(out.churnRate)
     const noisiestFiles = [...out.byFile.entries()]
+      .filter(([, entry]) => entry.churned > 0)
       .sort(
         (a, b) =>
           b[1].churned - a[1].churned ||
