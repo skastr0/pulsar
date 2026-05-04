@@ -31,22 +31,38 @@ export interface TraitCouplingDetail {
   readonly traitLocal: boolean
   readonly typeLocal: boolean
   readonly orphanWorkaroundCandidate: boolean
+  readonly family: TraitCouplingFamily
+  readonly concerning: boolean
 }
+
+export type TraitCouplingFamily =
+  | "standard-library-ergonomic"
+  | "serialization"
+  | "framework-adapter"
+  | "application-external"
 
 export interface TraitCouplingModuleSummary {
   readonly module: string
   readonly file: string
   readonly foreignTraitImpls: number
+  readonly concerningForeignTraitImpls: number
+  readonly ordinaryForeignTraitImpls: number
   readonly details: ReadonlyArray<TraitCouplingDetail>
 }
 
 export interface RsDe01Output {
   readonly byModule: ReadonlyMap<
     string,
-    { readonly foreignTraitImpls: number; readonly details: ReadonlyArray<TraitCouplingDetail> }
+    {
+      readonly foreignTraitImpls: number
+      readonly concerningForeignTraitImpls: number
+      readonly ordinaryForeignTraitImpls: number
+      readonly details: ReadonlyArray<TraitCouplingDetail>
+    }
   >
   readonly modules: ReadonlyArray<TraitCouplingModuleSummary>
   readonly totalForeignTraitImpls: number
+  readonly totalConcerningForeignTraitImpls: number
   readonly analysisMode: "syntax-and-local-name-resolution"
 }
 
@@ -124,6 +140,7 @@ export const RsDe01: Signal<RsDe01Config, RsDe01Output, RustProjectTag> = {
                 crateRootNames.get(scope.crateName) ?? new Set(),
               )
               const { modulePath } = modulePathForAncestors(scope, ancestors)
+              const family = classifyForeignTrait(traitNode.text)
               const detail: TraitCouplingDetail = {
                 trait: traitNode.text,
                 type: typeNode.text,
@@ -132,6 +149,9 @@ export const RsDe01: Signal<RsDe01Config, RsDe01Output, RustProjectTag> = {
                 traitLocal,
                 typeLocal,
                 orphanWorkaroundCandidate: !traitLocal && !typeLocal,
+                family,
+                concerning:
+                  family === "application-external" || (!traitLocal && !typeLocal),
               }
               const current = grouped.get(modulePath)
               const nextDetails = [...(current?.details ?? []), detail].sort(
@@ -141,6 +161,8 @@ export const RsDe01: Signal<RsDe01Config, RsDe01Output, RustProjectTag> = {
                 module: modulePath,
                 file,
                 foreignTraitImpls: nextDetails.length,
+                concerningForeignTraitImpls: nextDetails.filter((entry) => entry.concerning).length,
+                ordinaryForeignTraitImpls: nextDetails.filter((entry) => !entry.concerning).length,
                 details: nextDetails,
               })
             })
@@ -148,7 +170,9 @@ export const RsDe01: Signal<RsDe01Config, RsDe01Output, RustProjectTag> = {
 
           const modules = [...grouped.values()].sort(
             (left, right) =>
-              right.foreignTraitImpls - left.foreignTraitImpls || left.module.localeCompare(right.module),
+              right.concerningForeignTraitImpls - left.concerningForeignTraitImpls ||
+              right.foreignTraitImpls - left.foreignTraitImpls ||
+              left.module.localeCompare(right.module),
           )
           return {
             byModule: new Map(
@@ -156,6 +180,8 @@ export const RsDe01: Signal<RsDe01Config, RsDe01Output, RustProjectTag> = {
                 module.module,
                 {
                   foreignTraitImpls: module.foreignTraitImpls,
+                  concerningForeignTraitImpls: module.concerningForeignTraitImpls,
+                  ordinaryForeignTraitImpls: module.ordinaryForeignTraitImpls,
                   details: module.details,
                 },
               ]),
@@ -163,6 +189,10 @@ export const RsDe01: Signal<RsDe01Config, RsDe01Output, RustProjectTag> = {
             modules,
             totalForeignTraitImpls: modules.reduce(
               (sum, module) => sum + module.foreignTraitImpls,
+              0,
+            ),
+            totalConcerningForeignTraitImpls: modules.reduce(
+              (sum, module) => sum + module.concerningForeignTraitImpls,
               0,
             ),
             analysisMode: "syntax-and-local-name-resolution",
@@ -174,25 +204,74 @@ export const RsDe01: Signal<RsDe01Config, RsDe01Output, RustProjectTag> = {
     }),
   score: (out) => {
     if (out.modules.length === 0) return 1
-    const average = out.totalForeignTraitImpls / out.modules.length
+    const average = out.totalConcerningForeignTraitImpls / out.modules.length
     return Math.max(0, 1 - Math.min(1, average / 2))
   },
   diagnose: (out): ReadonlyArray<Diagnostic> =>
-    out.modules.slice(0, 10).map((module) => ({
-      severity: module.details.some((detail) => detail.orphanWorkaroundCandidate)
+    out.modules.filter((module) => module.concerningForeignTraitImpls > 0).slice(0, 10).map((module) => ({
+      severity: module.details.some((detail) => detail.concerning && detail.orphanWorkaroundCandidate)
         ? ("warn" as const)
         : ("info" as const),
-      message: `Module ${module.module} implements ${module.foreignTraitImpls} foreign traits`,
+      message: `Module ${module.module} implements ${module.concerningForeignTraitImpls} concerning foreign traits (${module.ordinaryForeignTraitImpls} ordinary)`,
       location: { file: module.file },
       data: {
         module: module.module,
         foreignTraitImpls: module.foreignTraitImpls,
+        concerningForeignTraitImpls: module.concerningForeignTraitImpls,
+        ordinaryForeignTraitImpls: module.ordinaryForeignTraitImpls,
         orphanWorkaroundCandidates: module.details.filter(
-          (detail) => detail.orphanWorkaroundCandidate,
+          (detail) => detail.concerning && detail.orphanWorkaroundCandidate,
         ).length,
         analysisMode: out.analysisMode,
       },
     })),
+}
+
+const STANDARD_ERGONOMIC_TRAITS = new Set([
+  "AsMut",
+  "AsRef",
+  "Clone",
+  "Copy",
+  "Debug",
+  "Default",
+  "Deref",
+  "DerefMut",
+  "Display",
+  "Drop",
+  "Eq",
+  "Error",
+  "Extend",
+  "From",
+  "FromIterator",
+  "FromStr",
+  "Hash",
+  "Index",
+  "IndexMut",
+  "Into",
+  "IntoIterator",
+  "Iterator",
+  "Ord",
+  "PartialEq",
+  "PartialOrd",
+  "ToString",
+  "TryFrom",
+  "TryInto",
+])
+
+const SERIALIZATION_TRAITS = new Set(["Deserialize", "Serialize"])
+const FRAMEWORK_ADAPTER_TRAITS = new Set(["IntoResponse"])
+
+const classifyForeignTrait = (traitName: string): TraitCouplingFamily => {
+  const segment = finalTraitSegment(traitName)
+  if (STANDARD_ERGONOMIC_TRAITS.has(segment)) return "standard-library-ergonomic"
+  if (SERIALIZATION_TRAITS.has(segment)) return "serialization"
+  if (FRAMEWORK_ADAPTER_TRAITS.has(segment)) return "framework-adapter"
+  return "application-external"
+}
+
+const finalTraitSegment = (traitName: string): string => {
+  const withoutGenerics = traitName.replace(/<.*$/, "")
+  return withoutGenerics.split("::").at(-1)?.trim() ?? withoutGenerics.trim()
 }
 
 const isLocalPath = (

@@ -10,7 +10,7 @@ import {
 } from "./helpers.js"
 
 describe("RS-DE-* signals", () => {
-  test("RS-DE-01 counts foreign trait implementations per module", async () => {
+  test("RS-DE-01 classifies ordinary and concerning foreign trait implementations", async () => {
     const repo = await createRustWorkspace("taste-codec-rs-de01-", {
       "Cargo.toml": [
         "[package]",
@@ -37,13 +37,47 @@ describe("RS-DE-* signals", () => {
         "    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { Ok(()) }",
         "}",
         "",
+        "impl serde::Serialize for LocalType {",
+        "    fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>",
+        "    where",
+        "        S: serde::Serializer,",
+        "    {",
+        "        unimplemented!()",
+        "    }",
+        "}",
+        "",
+        "impl axum::response::IntoResponse for LocalType {",
+        "    fn into_response(self) -> axum::response::Response {",
+        "        unimplemented!()",
+        "    }",
+        "}",
+        "",
+        "impl external_crate::ExternalTrait for LocalType {",
+        "    fn external(&self) {}",
+        "}",
+        "",
       ].join("\n"),
     })
 
     try {
       const out = await runSignalCompute(RsDe01, repo, RsDe01.defaultConfig)
-      expect(out.totalForeignTraitImpls).toBeGreaterThanOrEqual(1)
-      expect(out.byModule.get("de-trait-fixture::crate")?.foreignTraitImpls).toBeGreaterThanOrEqual(1)
+      const module = out.byModule.get("de-trait-fixture::crate")
+      expect(out.totalForeignTraitImpls).toBeGreaterThanOrEqual(4)
+      expect(out.totalConcerningForeignTraitImpls).toBe(1)
+      expect(module?.ordinaryForeignTraitImpls).toBeGreaterThanOrEqual(3)
+      expect(module?.concerningForeignTraitImpls).toBe(1)
+      expect(module?.details.find((detail) => detail.trait === "std::fmt::Debug")?.family).toBe(
+        "standard-library-ergonomic",
+      )
+      expect(module?.details.find((detail) => detail.trait === "serde::Serialize")?.family).toBe(
+        "serialization",
+      )
+      expect(module?.details.find((detail) => detail.trait === "axum::response::IntoResponse")?.family).toBe(
+        "framework-adapter",
+      )
+      expect(module?.details.find((detail) => detail.trait === "external_crate::ExternalTrait")?.family).toBe(
+        "application-external",
+      )
       expect(out.analysisMode).toBe("syntax-and-local-name-resolution")
     } finally {
       await cleanupWorkspace(repo)
