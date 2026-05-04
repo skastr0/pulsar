@@ -595,6 +595,9 @@ export function stubF() { throw new Error("Not implemented") }
       expect(after.status).toBe(0)
       expect(after.stdout).toContain("Score:  1.000")
       expect(after.stdout).toContain("(no diagnostics)")
+      expect(after.stdout).toContain("Calibration Decisions (1)")
+      expect(after.stdout).toContain("repo.project-contract-noops/project-contract-noops")
+      expect(after.stdout).toContain("classify-intentional-noop")
       expect(after.stdout).not.toContain("empty-body")
     } finally {
       await rm(repoPath, { recursive: true, force: true })

@@ -7,6 +7,7 @@ import {
   toObserverJson,
   type AiAssistedModeExplanation,
   type BaselineComparison,
+  type CalibrationDecision,
   type Category,
   type Diagnostic,
   type ObserverOutput,
@@ -285,7 +286,7 @@ const runSingleSignalMode = (opts: ScoreOptions) =>
       vector,
     )
 
-    printSignalResult(result.signalId, result.score, result.diagnostics, repoRoot, gitSha)
+    printSignalResult(result.signalId, result.score, result.diagnostics, result.output, repoRoot, gitSha)
     return 0
   })
 
@@ -737,6 +738,7 @@ const printSignalResult = (
   signalId: string,
   score: number,
   diagnostics: ReadonlyArray<Diagnostic>,
+  output: unknown,
   repoPath: string,
   sha: string,
 ): void => {
@@ -749,20 +751,65 @@ const printSignalResult = (
   console.log("")
   if (diagnostics.length === 0) {
     console.log("  (no diagnostics)")
-    return
-  }
-  console.log(`  Diagnostics (${diagnostics.length}):`)
-  for (const diagnostic of diagnostics) {
-    console.log(`    ${severityLabel(diagnostic).padEnd(5, " ")} ${diagnosticMessage(repoPath, diagnostic)}`)
-    const loc = diagnosticLocation(repoPath, diagnostic)
-    if (loc !== undefined) {
-      console.log(`      at ${loc}`)
+  } else {
+    console.log(`  Diagnostics (${diagnostics.length}):`)
+    for (const diagnostic of diagnostics) {
+      console.log(`    ${severityLabel(diagnostic).padEnd(5, " ")} ${diagnosticMessage(repoPath, diagnostic)}`)
+      const loc = diagnosticLocation(repoPath, diagnostic)
+      if (loc !== undefined) {
+        console.log(`      at ${loc}`)
+      }
+      for (const detail of diagnosticDetailLines(repoPath, diagnostic)) {
+        console.log(`      ${detail}`)
+      }
     }
-    for (const detail of diagnosticDetailLines(repoPath, diagnostic)) {
-      console.log(`      ${detail}`)
+  }
+
+  const calibrationDecisions = calibrationDecisionsFromOutput(output)
+  if (calibrationDecisions.length > 0) {
+    console.log("")
+    console.log(`  Calibration Decisions (${calibrationDecisions.length}):`)
+    for (const decision of calibrationDecisions) {
+      console.log(
+        `    ${decision.confidence.toUpperCase().padEnd(6, " ")} ${decision.moduleId}/${decision.processorId} ${decision.action}`,
+      )
+      console.log(`      ${decision.reason}`)
+      if (decision.ruleId !== undefined) {
+        console.log(`      rule: ${decision.ruleId}`)
+      }
+      for (const evidence of decision.evidence.slice(0, 3)) {
+        console.log(`      evidence: ${evidence.kind}=${compactDecisionEvidence(repoPath, evidence.value)}`)
+      }
     }
   }
   console.log("")
+}
+
+const calibrationDecisionsFromOutput = (output: unknown): ReadonlyArray<CalibrationDecision> => {
+  if (output === null || typeof output !== "object") return []
+  const decisions = (output as { readonly calibrationDecisions?: unknown }).calibrationDecisions
+  return Array.isArray(decisions) ? decisions.filter(isCalibrationDecisionLike) : []
+}
+
+const isCalibrationDecisionLike = (value: unknown): value is CalibrationDecision => {
+  if (value === null || typeof value !== "object") return false
+  const decision = value as Partial<CalibrationDecision>
+  return (
+    typeof decision.moduleId === "string" &&
+    typeof decision.processorId === "string" &&
+    typeof decision.action === "string" &&
+    typeof decision.confidence === "string" &&
+    typeof decision.reason === "string" &&
+    Array.isArray(decision.evidence)
+  )
+}
+
+const compactDecisionEvidence = (repoPath: string, value: string): string => {
+  const repoPrefix = repoPath.replace(/\\/g, "/").replace(/\/$/, "")
+  return value
+    .replaceAll("\\", "/")
+    .replaceAll(`${repoPrefix}/`, "")
+    .replaceAll(repoPrefix, ".")
 }
 
 const severityLabel = (diagnostic: Diagnostic): "BLOCK" | "WARN" | "INFO" =>
