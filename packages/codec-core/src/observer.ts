@@ -1,13 +1,10 @@
 import { Effect, Schema } from "effect"
 import { CATEGORIES, Category as CategorySchema, type Category } from "./category.js"
 import { Diagnostic as DiagnosticSchema, type Diagnostic } from "./diagnostic.js"
+import { buildInputOutputs } from "./input-outputs.js"
 import type { SignalRunResult } from "./runner.js"
 import type { Registry } from "./registry.js"
-import type {
-  InputOutputs,
-  ResolvedSignal,
-  SignalOutputMetadata,
-} from "./signal.js"
+import type { ResolvedSignal, SignalOutputMetadata } from "./signal.js"
 import {
   isActive as vectorIsActive,
   resolvedConfig as vectorResolvedConfig,
@@ -392,7 +389,7 @@ const runOneSignal = (
   vector: TasteVector | undefined,
 ): Effect.Effect<SignalRunResult, never, any> =>
   Effect.gen(function* () {
-    const inputOutputs: InputOutputs = buildInputOutputs(signal, outputs)
+    const inputOutputs = buildInputOutputs(signal, outputs)
     const config = vectorResolvedConfig(signal.id, signal.defaultConfig, vector)
 
     const either = yield* Effect.either(signal.compute(config, inputOutputs))
@@ -421,18 +418,6 @@ const runOneSignal = (
       ...(metadata !== undefined ? { metadata } : {}),
     }
   })
-
-const buildInputOutputs = (
-  signal: ResolvedSignal,
-  outputs: ReadonlyMap<string, unknown>,
-): InputOutputs => {
-  const map = new Map<string, unknown>()
-  for (const input of signal.inputs) {
-    const value = outputs.get(input.id)
-    if (value !== undefined) map.set(input.id, value)
-  }
-  return map
-}
 
 /**
  * Category score = taste-weighted mean of active signals in that category.
