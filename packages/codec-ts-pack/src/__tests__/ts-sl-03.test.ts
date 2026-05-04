@@ -225,6 +225,28 @@ const x = 1;
     expect(largeRepoScore).toBeGreaterThan(0.9)
   })
 
+  test("whole-tree suppression score keeps debt informative instead of collapsing to zero", () => {
+    const suppressions = Array.from({ length: 200 }, (_, index) => ({
+      file: `src/file-${index}.ts`,
+      line: 1,
+      kind: "eslint-disable" as const,
+      rule: "no-explicit-any",
+      justification: "missing" as const,
+      justificationSource: undefined,
+      bypassTicket: undefined,
+    }))
+
+    expect(TsSl03.score({
+      suppressions,
+      unjustifiedCount: 200,
+      expiredCount: 0,
+      missingJustificationCount: 200,
+      diagnosticLimit: 20,
+      scopeMode: "whole-tree",
+      analyzedFileCount: 200,
+    })).toBeGreaterThanOrEqual(0.35)
+  })
+
   test("changed-hunk suppression scoring stays strict", () => {
     const suppressions = [
       {
@@ -297,6 +319,20 @@ const generated: string = 1;
 const demo: string = 1;
 `,
     )
+    await repo.write(
+      "apps/docs/src/page.tsx",
+      `
+// @ts-expect-error
+const docsOnly: string = 1;
+`,
+    )
+    await repo.write(
+      "src/ambient.d.ts",
+      `
+/* eslint-disable import/no-default-export */
+export default interface Ambient {}
+`,
+    )
 
     const out = await runSignal(repo.root, TsSl03, TsSl03.defaultConfig)
     expect(out.suppressions).toEqual([])
@@ -314,6 +350,23 @@ const production: string = 1;
 
     const out = await runSignal(repo.root, TsSl03, TsSl03.defaultConfig)
     expect(out.suppressions).toHaveLength(1)
+    expect(out.missingJustificationCount).toBe(1)
+  })
+
+  test("does not double-count ban-ts-comment bridge suppressions before TypeScript directives", async () => {
+    await repo.write(
+      "src/index.ts",
+      `
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+const production: string = 1;
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl03, TsSl03.defaultConfig)
+
+    expect(out.suppressions).toHaveLength(1)
+    expect(out.suppressions[0]?.kind).toBe("ts-ignore")
     expect(out.missingJustificationCount).toBe(1)
   })
 

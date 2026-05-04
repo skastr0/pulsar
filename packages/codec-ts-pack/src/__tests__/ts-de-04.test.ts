@@ -1116,6 +1116,35 @@ describe("TS-DE-04 (package dependency health)", () => {
     expect(out.unusedCount).toBe(0)
   })
 
+  test("ignores Docusaurus virtual module imports while preserving real missing dependencies", async () => {
+    await writePackage("docs", "docs", {
+      private: true,
+      scripts: {
+        build: "docusaurus build",
+      },
+      dependencies: {
+        "@docusaurus/core": "^3.0.0",
+      },
+    })
+    await repo.write(
+      "packages/docs/src/page.tsx",
+      [
+        "import Link from '@docusaurus/Link'",
+        "import Layout from '@theme/Layout'",
+        "import { uniq } from 'lodash'",
+        "export const Page = () => Link && Layout && uniq([1])",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+    const docsHealth = out.packages.find((pkg) => pkg.packageName === "docs")
+
+    expect(docsHealth?.importedButNotDeclared).toEqual([
+      { dependencyName: "lodash", files: [`${repo.root}/packages/docs/src/page.tsx`] },
+    ])
+  })
+
   test("does not hard-gate dependencies in example package paths by default", async () => {
     await writePackage("app", "@repo/app", {})
     await repo.write("packages/app/src/index.ts", "export const value = 1\n")

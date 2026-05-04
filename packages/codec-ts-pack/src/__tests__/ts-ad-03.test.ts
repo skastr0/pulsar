@@ -66,6 +66,24 @@ describe("TS-AD-03 (re-export depth)", () => {
     expect(data?.displayHops?.[0]).toBe("src/index.ts")
   })
 
+  test("directory index barrel relays are discounted in score but still diagnosed", async () => {
+    await repo.write("src/index.ts", "export * from './l1'\n")
+    await repo.write("src/l1/index.ts", "export * from './l2'\n")
+    await repo.write("src/l1/l2/index.ts", "export * from './l3'\n")
+    await repo.write("src/l1/l2/l3/index.ts", "export * from './l4'\n")
+    await repo.write("src/l1/l2/l3/l4/index.ts", "export * from './value'\n")
+    await repo.write("src/l1/l2/l3/l4/value.ts", "export const value = 1\n")
+
+    const out = await runSignal(repo.root, TsAd03, TsAd03.defaultConfig)
+    const diagnostic = TsAd03.diagnose(out)[0]
+    const data = diagnostic?.data as { readonly effectiveDepth?: number } | undefined
+
+    expect(out.stats.max).toBe(5)
+    expect(data?.effectiveDepth).toBe(3)
+    expect(TsAd03.score(out)).toBe(1)
+    expect(diagnostic?.message).toContain("depth 5")
+  })
+
   test("deduplicates identical chains from repeated re-export declarations", async () => {
     await repo.write("src/index.ts", "export * from './lib'\nexport { value } from './lib'\n")
     await repo.write("src/lib/index.ts", "export { value } from './value'\n")

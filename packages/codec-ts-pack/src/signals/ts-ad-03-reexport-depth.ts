@@ -157,7 +157,9 @@ export const TsAd03: Signal<TsAd03Config, TsAd03Output, TsProjectTag | SignalCon
       return result
     }),
   score: (out) => {
-    const penalty = (out.stats.max - out.threshold) / Math.max(1, out.scoreScale)
+    if (out.chainsOverThreshold.length === 0) return 1
+    const maxEffectiveDepth = Math.max(...out.chainsOverThreshold.map(effectiveChainDepth))
+    const penalty = (maxEffectiveDepth - out.threshold) / Math.max(1, out.scoreScale)
     return Math.max(0, 1 - Math.min(1, Math.max(0, penalty)))
   },
   diagnose: (out): ReadonlyArray<Diagnostic> =>
@@ -171,6 +173,7 @@ export const TsAd03: Signal<TsAd03Config, TsAd03Output, TsProjectTag | SignalCon
         start: chain.start,
         end: chain.end,
         depth: chain.depth,
+        effectiveDepth: effectiveChainDepth(chain),
         hops: chain.hops.slice(),
         displayHops: chain.hops.map((hop) => formatDiagnosticPath(hop, out.worktreePath)),
         cycle: chain.cycle,
@@ -186,6 +189,17 @@ const formatDiagnosticPath = (filePath: string, worktreePath: string | undefined
   const rel = relative(worktreePath, filePath)
   return rel.length > 0 && !rel.startsWith("..") ? rel : filePath
 }
+
+const effectiveChainDepth = (chain: ReExportChain): number => {
+  if (chain.cycle) return chain.depth
+
+  const relayHops = chain.hops.slice(1, -1)
+  const indexRelayCount = relayHops.filter(isDirectoryIndexFile).length
+  return Math.max(1, chain.depth - Math.min(2, indexRelayCount))
+}
+
+const isDirectoryIndexFile = (filePath: string): boolean =>
+  /(?:^|[\\/])index\.tsx?$/.test(filePath)
 
 const walkReExportChains = (
   start: string,

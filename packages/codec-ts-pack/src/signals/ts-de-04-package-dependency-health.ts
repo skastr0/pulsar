@@ -156,7 +156,7 @@ export const TsDe04: Signal<
   tier: 1,
   category: "dependency-entropy",
   kind: "structural",
-  cacheVersion: "workspace-facade-and-example-scope-v1",
+  cacheVersion: "docusaurus-virtual-modules-v1",
   configSchema: TsDe04Config,
   defaultConfig: {
     exclude_globs: [
@@ -267,6 +267,7 @@ export const TsDe04: Signal<
               const packageName = normalizePackageSpecifier(moduleSpecifier)
               if (packageName === undefined || isBuiltinModuleName(packageName)) continue
               if (isGeneratedVirtualModuleSpecifier(moduleSpecifier)) continue
+              if (isFrameworkVirtualModuleSpecifier(moduleSpecifier, owningPackage.manifest)) continue
               if (
                 isWorkspaceSelfOrFacadeImport(
                   packageName,
@@ -550,6 +551,33 @@ const isToolingOnlyMissingDependency = (
 
 const isGeneratedVirtualModuleSpecifier = (specifier: string): boolean =>
   /^[^./#][^:]*\.(?:gen|generated)\.(?:cjs|cts|js|jsx|mjs|mts|ts|tsx)$/.test(specifier)
+
+const isFrameworkVirtualModuleSpecifier = (
+  specifier: string,
+  manifest: PackageManifest,
+): boolean => {
+  if (isDocusaurusApp(manifest)) {
+    return (
+      specifier.startsWith("@theme/") ||
+      specifier.startsWith("@site/") ||
+      specifier.startsWith("@generated/") ||
+      specifier === "@docusaurus/Link" ||
+      specifier === "@docusaurus/useDocusaurusContext" ||
+      specifier === "@docusaurus/theme-common" ||
+      specifier.startsWith("@docusaurus/theme-common/")
+    )
+  }
+
+  return false
+}
+
+const isDocusaurusApp = (manifest: PackageManifest): boolean => {
+  const dependencyNames = dependencyNamesOf(manifest, ["dependencies", "devDependencies"])
+  if (dependencyNames.has("@docusaurus/core") || dependencyNames.has("@docusaurus/preset-classic")) {
+    return true
+  }
+  return Object.values(manifest.scripts).some((script) => /\bdocusaurus\b/.test(script))
+}
 
 const isWorkspaceSelfOrFacadeImport = (
   dependencyName: string,

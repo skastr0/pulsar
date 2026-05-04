@@ -43,7 +43,7 @@ export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalCon
   tier: 1,
   category: "generated-slop",
   kind: "structural",
-  cacheVersion: "generated-and-example-scope-v1",
+  cacheVersion: "docs-declarations-and-bridge-scope-v1",
   configSchema: TsSl03Config,
   defaultConfig: {
     exclude_globs: [
@@ -59,7 +59,10 @@ export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalCon
       "**/Generated.ts",
       "**/Generated.tsx",
       "**/generated/**",
+      "**/*.d.ts",
       "**/sst-env.d.ts",
+      "docs/**",
+      "**/docs/**",
       "example/**",
       "**/example/**",
       "examples/**",
@@ -143,6 +146,7 @@ export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalCon
 
               const suppression = extractSuppression(line)
               if (suppression === undefined) continue
+              if (isBanTsCommentBridge(suppression, lines[i + 1])) continue
 
               if (
                 !lineOverlapsHunks(
@@ -208,7 +212,8 @@ export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalCon
       out.scopeMode === "changed-hunks"
         ? 25
         : Math.max(100, (out.analyzedFileCount ?? out.suppressions.length) * 0.25)
-    return Math.max(0, 1 - penalty / denominator)
+    const maxPenalty = out.scopeMode === "changed-hunks" ? 1 : 0.65
+    return Math.max(0, 1 - Math.min(maxPenalty, penalty / denominator))
   },
   diagnose: (out): ReadonlyArray<Diagnostic> =>
     out.suppressions.slice(0, out.diagnosticLimit).map((suppression) => {
@@ -243,6 +248,15 @@ const matchesSourcePath = (
   relativePath: string,
   globs: ReadonlyArray<string>,
 ): boolean => isExcluded(absolutePath, globs) || matchesAnyGlob(relativePath, globs)
+
+const isBanTsCommentBridge = (
+  suppression: { readonly kind: Suppression["kind"]; readonly rule: string | undefined },
+  nextLine: string | undefined,
+): boolean =>
+  suppression.kind === "eslint-disable" &&
+  suppression.rule === "@typescript-eslint/ban-ts-comment" &&
+  nextLine !== undefined &&
+  /@ts-(?:ignore|expect-error)\b/.test(nextLine)
 
 const suppressionPriority = (suppression: Suppression): number => {
   if (suppression.justification === "missing") return 0
