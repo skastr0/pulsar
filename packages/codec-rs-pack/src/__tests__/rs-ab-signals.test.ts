@@ -10,11 +10,11 @@ import {
 } from "./helpers.js"
 
 describe("RS-AB-* signals", () => {
-  test("RS-AB-01 finds dead public items across workspace crates", async () => {
+  test("RS-AB-01 distinguishes exported API from internal over-public items", async () => {
     const repo = await createRustWorkspace("taste-codec-rs-ab01-", {
       "Cargo.toml": [
         "[workspace]",
-        'members = ["crates/core", "crates/app"]',
+        'members = ["crates/core", "crates/app", "crates/tool"]',
         'resolver = "2"',
         "",
       ].join("\n"),
@@ -27,10 +27,21 @@ describe("RS-AB-* signals", () => {
       ].join("\n"),
       "crates/core/src/lib.rs": [
         "pub struct Used;",
-        "pub struct ReExported;",
-        "pub struct Dead;",
-        "pub mod api { pub struct ApiUsed; }",
-        "pub use ReExported as ExportedAlias;",
+        "pub struct PublicApi;",
+        "pub(crate) struct CrateOnly;",
+        "mod internal {",
+        "    pub struct Hidden;",
+        "    pub struct ReExported;",
+        "}",
+        "pub mod api {",
+        "    pub struct ApiUsed;",
+        "    pub struct ExternalApi;",
+        "}",
+        "pub use internal::ReExported as ExportedAlias;",
+        "",
+      ].join("\n"),
+      "crates/core/src/main.rs": [
+        "pub fn binary_helper() {}",
         "",
       ].join("\n"),
       "crates/app/Cargo.toml": [
@@ -49,12 +60,39 @@ describe("RS-AB-* signals", () => {
         "pub fn use_items(_: Used, _: ApiUsed) {}",
         "",
       ].join("\n"),
+      "crates/tool/Cargo.toml": [
+        "[package]",
+        'name = "tool_bin"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "crates/tool/src/main.rs": [
+        "mod cli;",
+        "fn main() {}",
+        "",
+      ].join("\n"),
+      "crates/tool/src/cli.rs": [
+        "pub struct CliOnly;",
+        "",
+      ].join("\n"),
     })
 
     try {
       const out = await runSignalCompute(RsAb01, repo, RsAb01.defaultConfig)
-      expect(out.deadPublicItems.some((item) => item.name === "Dead")).toBe(true)
+      expect(out.deadPublicItems.find((item) => item.name === "Hidden")?.surface).toBe(
+        "internal-overpublic",
+      )
+      expect(out.deadPublicItems.some((item) => item.name === "PublicApi")).toBe(false)
+      expect(out.deadPublicItems.some((item) => item.name === "ExternalApi")).toBe(false)
       expect(out.deadPublicItems.some((item) => item.name === "ReExported")).toBe(false)
+      expect(out.deadPublicItems.some((item) => item.name === "CrateOnly")).toBe(false)
+      expect(out.deadPublicItems.some((item) => item.name === "binary_helper")).toBe(false)
+      expect(out.deadPublicItems.some((item) => item.name === "CliOnly")).toBe(false)
+      expect(out.exportedApiItems.some((item) => item.name === "PublicApi")).toBe(true)
+      expect(out.exportedApiItems.some((item) => item.name === "ExternalApi")).toBe(true)
+      expect(out.nonLibraryPublicItems.some((item) => item.name === "binary_helper")).toBe(true)
+      expect(out.nonLibraryPublicItems.some((item) => item.name === "CliOnly")).toBe(true)
     } finally {
       await cleanupWorkspace(repo)
     }

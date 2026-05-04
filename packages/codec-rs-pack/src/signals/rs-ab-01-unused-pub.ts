@@ -28,10 +28,13 @@ export interface UnusedPublicItem {
   readonly line: number
   readonly reexported: boolean
   readonly crossCrateUses: number
+  readonly surface: "exported-api" | "internal-overpublic" | "non-library"
 }
 
 export interface RsAb01Output {
   readonly deadPublicItems: ReadonlyArray<UnusedPublicItem>
+  readonly exportedApiItems: ReadonlyArray<UnusedPublicItem>
+  readonly nonLibraryPublicItems: ReadonlyArray<UnusedPublicItem>
   readonly publicItemCount: number
   readonly analysisMode: "explicit-use-and-reexport-resolution"
 }
@@ -41,6 +44,7 @@ export const RsAb01: Signal<RsAb01Config, RsAb01Output, RustProjectTag> = {
   tier: 1,
   category: "abstraction-bloat",
   kind: "structural",
+  cacheVersion: "rs-ab-01-public-surface-v2",
   configSchema: RsAb01Config,
   defaultConfig: {
     exclude_globs: [...DEFAULT_RUST_EXCLUDE_GLOBS],
@@ -58,6 +62,12 @@ export const RsAb01: Signal<RsAb01Config, RsAb01Output, RustProjectTag> = {
               .map((manifest) => manifest.packageName)
               .filter((name): name is string => name !== undefined),
           )
+          const libraryCrates = new Set(
+            project.cargoMetadata?.packages
+              .filter((pkg) => workspaceCrates.has(pkg.name))
+              .filter((pkg) => pkg.targets.some((target) => target.kind.includes("lib")))
+              .map((pkg) => pkg.name) ?? [],
+          )
           const rootNamesByCrate = new Map<string, Set<string>>()
           for (const module of facts.modules) {
             const bucket = rootNamesByCrate.get(module.crateName) ?? new Set<string>()
@@ -71,6 +81,19 @@ export const RsAb01: Signal<RsAb01Config, RsAb01Output, RustProjectTag> = {
             const bucket = rootNamesByCrate.get(item.crateName) ?? new Set<string>()
             bucket.add(item.name)
             rootNamesByCrate.set(item.crateName, bucket)
+          }
+          const exportedRootModules = new Map<string, Set<string>>()
+          for (const item of facts.items) {
+            if (
+              item.kind !== "mod" ||
+              item.relativeModulePath !== "crate" ||
+              item.visibility.kind !== "pub"
+            ) {
+              continue
+            }
+            const bucket = exportedRootModules.get(item.crateName) ?? new Set<string>()
+            bucket.add(item.name)
+            exportedRootModules.set(item.crateName, bucket)
           }
 
           const publicItems = facts.items.filter(
@@ -107,22 +130,38 @@ export const RsAb01: Signal<RsAb01Config, RsAb01Output, RustProjectTag> = {
             }
           }
 
+          const publicSummaries = publicItems.map((item) => {
+            const key = `${item.modulePath}::${item.name}`
+            return {
+              crate: item.crateName,
+              module: item.modulePath,
+              name: item.name,
+              kind: item.kind,
+              file: item.file,
+              line: item.line,
+              reexported: reexports.has(key),
+              crossCrateUses: crossCrateUses.get(key) ?? 0,
+              surface: classifyPublicSurface(
+                item,
+                libraryCrates,
+                exportedRootModules.get(item.crateName) ?? new Set<string>(),
+              ),
+            } satisfies UnusedPublicItem
+          })
+
           return {
-            deadPublicItems: publicItems
-              .map((item) => {
-                const key = `${item.modulePath}::${item.name}`
-                return {
-                  crate: item.crateName,
-                  module: item.modulePath,
-                  name: item.name,
-                  kind: item.kind,
-                  file: item.file,
-                  line: item.line,
-                  reexported: reexports.has(key),
-                  crossCrateUses: crossCrateUses.get(key) ?? 0,
-                } satisfies UnusedPublicItem
-              })
-              .filter((item) => item.crossCrateUses === 0 && !item.reexported)
+            deadPublicItems: publicSummaries
+              .filter((item) =>
+                item.surface === "internal-overpublic" &&
+                item.crossCrateUses === 0 &&
+                !item.reexported,
+              )
+              .sort((left, right) => left.file.localeCompare(right.file) || left.line - right.line),
+            exportedApiItems: publicSummaries
+              .filter((item) => item.surface === "exported-api")
+              .sort((left, right) => left.file.localeCompare(right.file) || left.line - right.line),
+            nonLibraryPublicItems: publicSummaries
+              .filter((item) => item.surface === "non-library")
               .sort((left, right) => left.file.localeCompare(right.file) || left.line - right.line),
             publicItemCount: publicItems.length,
             analysisMode: "explicit-use-and-reexport-resolution",
@@ -146,7 +185,21 @@ export const RsAb01: Signal<RsAb01Config, RsAb01Output, RustProjectTag> = {
         module: item.module,
         name: item.name,
         kind: item.kind,
+        surface: item.surface,
         analysisMode: out.analysisMode,
       },
     })),
+}
+
+const classifyPublicSurface = (
+  item: { readonly crateName: string; readonly relativeModulePath: string },
+  libraryCrates: ReadonlySet<string>,
+  exportedRootModules: ReadonlySet<string>,
+): UnusedPublicItem["surface"] => {
+  if (!libraryCrates.has(item.crateName)) return "non-library"
+  const segments = item.relativeModulePath.split("::")
+  if (segments[0] !== "crate") return "non-library"
+  const root = segments[1]
+  if (root === undefined) return "exported-api"
+  return exportedRootModules.has(root) ? "exported-api" : "internal-overpublic"
 }
