@@ -43,7 +43,7 @@ export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalCon
   tier: 1,
   category: "generated-slop",
   kind: "structural",
-  cacheVersion: "pulumi-metadata-context-v1",
+  cacheVersion: "type-test-excludes-v1",
   configSchema: TsSl03Config,
   defaultConfig: {
     exclude_globs: [
@@ -100,9 +100,12 @@ export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalCon
       "**/*.spec.tsx",
       "**/*.stories.ts",
       "**/*.stories.tsx",
+      "**/*.tst.ts",
+      "**/*.tst.tsx",
       "**/__tests__/**",
       "**/test/**",
       "**/tests/**",
+      "**/dtslint/**",
       "**/test-support/**",
       "**/*test-support.ts",
       "**/*test-support.tsx",

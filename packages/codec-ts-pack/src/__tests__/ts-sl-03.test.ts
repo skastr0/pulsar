@@ -360,6 +360,27 @@ export function send(debug = false) {
     expect(TsSl03.score(out)).toBe(1)
   })
 
+  test("ignores dtslint and tst type-test suppressions by default", async () => {
+    await repo.write(
+      "packages/effect/dtslint/Data.tst.ts",
+      `
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+import { pipe } from "../src/Function"
+`,
+    )
+    await repo.write(
+      "src/types/tuple.tst.ts",
+      `
+// @ts-expect-error negative type assertion
+const value: string = 123
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl03, TsSl03.defaultConfig)
+    expect(out.suppressions).toEqual([])
+    expect(TsSl03.score(out)).toBe(1)
+  })
+
   test("ignores generated and example suppressions by default", async () => {
     await repo.write(
       "packages/api/src/Generated.ts",
