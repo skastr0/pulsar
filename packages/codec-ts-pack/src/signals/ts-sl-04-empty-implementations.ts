@@ -53,7 +53,7 @@ export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalCon
   tier: 1,
   category: "generated-slop",
   kind: "structural",
-  cacheVersion: "event-projection-noops-v1",
+  cacheVersion: "projection-adapter-noops-v1",
   configSchema: TsSl04Config,
   defaultConfig: {
     exclude_globs: [
@@ -410,6 +410,14 @@ const isIntentionalNoop = (filePath: string, fn: FnLike, bodyText: string): bool
     return true
   }
 
+  if (isEventMatchNoopBranch(fn)) {
+    return true
+  }
+
+  if (isProjectionAdapterFinishNoop(fn)) {
+    return true
+  }
+
   if (isFallbackLoggerNoop(fn)) {
     return true
   }
@@ -746,6 +754,32 @@ const isEventDeltaProjectionNoop = (fn: FnLike): boolean => {
   if (parent.getExpression().getText() !== "SyncEvent.project") return false
   if (parent.getArguments()[1] !== fn) return false
   return /\.Delta\.Sync$/.test(parent.getArguments()[0]?.getText() ?? "")
+}
+
+const isEventMatchNoopBranch = (fn: FnLike): boolean => {
+  if (!Node.isArrowFunction(fn) && !Node.isFunctionExpression(fn)) return false
+  if (fn.getParameters().length > 0) return false
+  const property = nearestPropertyAssignment(fn)
+  if (property === undefined) return false
+  const object = property.getParent()
+  if (!Node.isObjectLiteralExpression(object)) return false
+  const call = object.getParent()
+  if (!Node.isCallExpression(call)) return false
+  if (!/Event\.All\.match$/.test(call.getExpression().getText())) return false
+  return /\.(?:delta|retried)$/.test(propertyNameOf(property))
+}
+
+const isProjectionAdapterFinishNoop = (fn: FnLike): boolean => {
+  if (!Node.isMethodDeclaration(fn) || fn.getName() !== "finish") return false
+  const object = fn.getParent()
+  if (!Node.isObjectLiteralExpression(object)) return false
+  const siblingNames = objectMemberNames(object)
+  return (
+    siblingNames.has("appendMessage") &&
+    (siblingNames.has("updateAssistant") ||
+      siblingNames.has("updateCompaction") ||
+      siblingNames.has("updateShell"))
+  )
 }
 
 const isFallbackLoggerNoop = (fn: FnLike): boolean => {

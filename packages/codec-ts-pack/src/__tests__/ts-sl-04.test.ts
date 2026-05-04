@@ -1061,6 +1061,45 @@ export default [
     expect(out.stubs).toHaveLength(0)
   })
 
+  test("does not classify projection adapter terminal no-ops as unfinished stubs", async () => {
+    await repo.write(
+      "session-message-updater.ts",
+      `
+export const SessionEvent = {
+  All: {
+    match(_event: unknown, _handlers: unknown) {
+      return _handlers
+    },
+  },
+}
+
+export function sqlite() {
+  return {
+    getCurrentAssistant() {
+      return undefined
+    },
+    updateAssistant(_assistant: unknown) {
+      return _assistant
+    },
+    appendMessage(_message: unknown) {
+      return _message
+    },
+    finish() {},
+  }
+}
+
+export function update(event: unknown) {
+  return SessionEvent.All.match(event, {
+    "session.next.retried": () => {},
+  })
+}
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
+    expect(out.stubs).toHaveLength(0)
+  })
+
   test("does not classify absent-capability contract stubs as unfinished implementations", async () => {
     await repo.write(
       "secret-contract-api.ts",
