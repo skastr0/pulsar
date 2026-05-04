@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process"
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
+import { pathToFileURL } from "node:url"
 import { ObserverOutput as ObserverOutputSchema, createTimeSeriesServices } from "@taste-codec/core"
 import { Effect, Schema } from "effect"
 
@@ -502,6 +503,99 @@ export function stubF() { throw new Error("Not implemented") }
       expect(out.stdout).toContain("TS-SL-04 BLOCK")
       expect(out.stdout).toContain("TS-SL-03 WARN")
       expect(out.stdout).toContain("ts-ignore is missing justification")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
+  test("repo-local project modules calibrate single-signal scoring", async () => {
+    const repoPath = await initRepo([
+      {
+        path: "src/contracts.ts",
+        content: "export function projectContract() {}\n",
+      },
+    ])
+    try {
+      const before = runCli(repoPath, ["score", "--signal", "TS-SL-04", "."])
+      expect(before.status).toBe(0)
+      expect(before.stdout).toContain("empty-body")
+      expect(before.stdout).not.toContain("(no diagnostics)")
+
+      const effectModuleUrl = pathToFileURL(
+        resolve(import.meta.dir, "../../node_modules/effect/dist/esm/index.js"),
+      ).href
+      await writeRepoFile(
+        repoPath,
+        ".taste-codec/modules/project-contract-noops.mjs",
+        [
+          `import { Effect } from ${JSON.stringify(effectModuleUrl)}`,
+          "",
+          "export default {",
+          "  id: 'repo.project-contract-noops',",
+          "  version: '1.0.0',",
+          "  scope: 'repository',",
+          "  processors: [",
+          "    {",
+          "      id: 'project-contract-noops',",
+          "      slot: 'typescript.noop-classifier',",
+          "      role: 'normalizer',",
+          "      priority: 10,",
+          "      fingerprint: 'project-contract-noops-v1',",
+          "      process: (current) => Effect.sync(() => {",
+          "        if (!current.value.file.endsWith('src/contracts.ts')) return current",
+          "        return {",
+          "          value: {",
+          "            ...current.value,",
+          "            classification: 'intentional_noop',",
+          "            confidence: 'high',",
+          "          },",
+          "          decisions: [",
+          "            ...current.decisions,",
+          "            {",
+          "              moduleId: 'repo.project-contract-noops',",
+          "              processorId: 'project-contract-noops',",
+          "              slot: 'typescript.noop-classifier',",
+          "              action: 'classify-intentional-noop',",
+          "              confidence: 'high',",
+          "              reason: 'Project contract hook is intentionally empty until host runtime binds it.',",
+          "              evidence: [",
+          "                { kind: 'path', value: current.value.file },",
+          "                { kind: 'symbol', value: current.value.name },",
+          "              ],",
+          "            },",
+          "          ],",
+          "        }",
+          "      }),",
+          "    },",
+          "  ],",
+          "}",
+        ].join("\n"),
+      )
+      await writeRepoFile(
+        repoPath,
+        ".taste-codec/project-modules.json",
+        JSON.stringify(
+          {
+            modules: [
+              {
+                id: "repo.project-contract-noops",
+                kind: "repo-local",
+                path: ".taste-codec/modules/project-contract-noops.mjs",
+              },
+            ],
+          },
+          null,
+          2,
+        ),
+      )
+      sh("git", ["add", ".taste-codec"], repoPath)
+      sh("git", ["commit", "-q", "-m", "add project module"], repoPath)
+
+      const after = runCli(repoPath, ["score", "--signal", "TS-SL-04", "."])
+      expect(after.status).toBe(0)
+      expect(after.stdout).toContain("Score:  1.000")
+      expect(after.stdout).toContain("(no diagnostics)")
+      expect(after.stdout).not.toContain("empty-body")
     } finally {
       await rm(repoPath, { recursive: true, force: true })
     }
