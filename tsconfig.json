@@ -5,6 +5,7 @@
     { "path": "./packages/codec-rs-pack" },
     { "path": "./packages/codec-shared-signals" },
     { "path": "./packages/codec-ts-pack" },
+    { "path": "./packages/project-module-convex" },
     { "path": "./packages/project-module-sdk" },
     { "path": "./packages/codec-cli" }
   ]
