@@ -1,4 +1,5 @@
 import {
+  SignalContextTag,
   type Diagnostic,
   type DistributionalSummary,
   type Signal,
@@ -6,7 +7,7 @@ import {
   summarize,
 } from "@taste-codec/core"
 import { Effect, Schema } from "effect"
-import { basename } from "node:path"
+import { basename, relative } from "node:path"
 import { Node, type SourceFile } from "ts-morph"
 import { createModuleResolver } from "../graph/module-graph.js"
 import { TsProjectTag } from "../ts-project.js"
@@ -44,9 +45,10 @@ export interface TsAd03Output {
   readonly threshold: number
   readonly scoreScale: number
   readonly diagnosticLimit: number
+  readonly worktreePath?: string
 }
 
-export const TsAd03: Signal<TsAd03Config, TsAd03Output, TsProjectTag> = {
+export const TsAd03: Signal<TsAd03Config, TsAd03Output, TsProjectTag | SignalContextTag> = {
   id: "TS-AD-03",
   tier: 1,
   category: "architectural-drift",
@@ -70,6 +72,7 @@ export const TsAd03: Signal<TsAd03Config, TsAd03Output, TsProjectTag> = {
   compute: (config) =>
     Effect.gen(function* () {
       const project = yield* TsProjectTag
+      const context = yield* SignalContextTag
       const result = yield* Effect.try({
         try: (): TsAd03Output => {
           const sourceFiles = project
@@ -141,6 +144,7 @@ export const TsAd03: Signal<TsAd03Config, TsAd03Output, TsProjectTag> = {
             threshold: config.chain_threshold,
             scoreScale: config.score_scale,
             diagnosticLimit: config.top_n_diagnostics,
+            worktreePath: context.worktreePath,
           }
         },
         catch: (cause) =>
@@ -161,16 +165,26 @@ export const TsAd03: Signal<TsAd03Config, TsAd03Output, TsProjectTag> = {
       severity: "warn" as const,
       message:
         `${chain.cycle ? "Re-export cycle" : "Deep re-export chain"} ` +
-        `(depth ${chain.depth}): ${chain.hops.join(" -> ")}`,
+        `(depth ${chain.depth}): ${formatHopChain(chain.hops, out.worktreePath)}`,
       location: { file: chain.start },
       data: {
         start: chain.start,
         end: chain.end,
         depth: chain.depth,
         hops: chain.hops.slice(),
+        displayHops: chain.hops.map((hop) => formatDiagnosticPath(hop, out.worktreePath)),
         cycle: chain.cycle,
       },
     })),
+}
+
+const formatHopChain = (hops: ReadonlyArray<string>, worktreePath: string | undefined): string =>
+  hops.map((hop) => formatDiagnosticPath(hop, worktreePath)).join(" -> ")
+
+const formatDiagnosticPath = (filePath: string, worktreePath: string | undefined): string => {
+  if (worktreePath === undefined) return filePath
+  const rel = relative(worktreePath, filePath)
+  return rel.length > 0 && !rel.startsWith("..") ? rel : filePath
 }
 
 const walkReExportChains = (

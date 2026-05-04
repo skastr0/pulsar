@@ -55,7 +55,15 @@ describe("TS-AD-03 (re-export depth)", () => {
 
     const out = await runSignal(repo.root, TsAd03, TsAd03.defaultConfig)
     expect(out.stats.max).toBe(6)
-    expect(TsAd03.diagnose(out)[0]?.message).toContain("depth 6")
+    const diagnostic = TsAd03.diagnose(out)[0]
+    expect(diagnostic?.message).toContain("depth 6")
+    expect(diagnostic?.message).toContain("src/index.ts")
+    expect(diagnostic?.message).not.toContain(repo.root)
+    const data = diagnostic?.data as
+      | { readonly hops?: ReadonlyArray<string>; readonly displayHops?: ReadonlyArray<string> }
+      | undefined
+    expect(data?.hops?.[0]).toContain(repo.root)
+    expect(data?.displayHops?.[0]).toBe("src/index.ts")
   })
 
   test("deduplicates identical chains from repeated re-export declarations", async () => {
