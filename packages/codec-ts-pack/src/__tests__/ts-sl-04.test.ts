@@ -122,6 +122,27 @@ export function createCacheFromMLDev() {
     expect(TsSl04.score(out)).toBe(1)
   })
 
+  test("ignores not-implemented stubs in example roots", async () => {
+    await repo.write(
+      "examples/ai-core/src/e2e/feature-test-suite.ts",
+      `
+export function createFeatureTestSuite(customAssertions: { errorValidator?: () => void }) {
+  const errorValidator =
+    customAssertions.errorValidator ||
+    (() => {
+      throw new Error("errorValidator not implemented");
+    });
+
+  return errorValidator
+}
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
+    expect(out.stubs).toEqual([])
+    expect(TsSl04.score(out)).toBe(1)
+  })
+
   test("does not classify TODO comments above real code as TODO-only implementations", async () => {
     await repo.write(
       "utils.ts",
