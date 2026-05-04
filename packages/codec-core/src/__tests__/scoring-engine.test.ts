@@ -4,6 +4,11 @@ import { join } from "node:path"
 import { spawnSync } from "node:child_process"
 import { describe, expect, test } from "bun:test"
 import { Effect, Layer, Ref, Schema } from "effect"
+import {
+  CalibrationContextTag,
+  makeResolvedCalibrationContext,
+  type RepoFacts,
+} from "../calibration.js"
 import { buildRegistry } from "../registry.js"
 import {
   ScoringEngineLayer,
@@ -123,6 +128,34 @@ const makeFileContentSignal = (): Signal<
     }),
   score: (out) => (out.content.includes("999") ? 0.42 : 1),
   diagnose: () => [],
+})
+
+const makeCalibrationFingerprintSignal = (): Signal<
+  {},
+  { readonly fingerprint: string },
+  CalibrationContextTag
+> => ({
+  id: "MOCK-CALIBRATION-FINGERPRINT",
+  tier: 1,
+  category: "legibility-decay",
+  kind: "legibility",
+  configSchema: Schema.Struct({}),
+  defaultConfig: {},
+  inputs: [],
+  compute: () =>
+    Effect.gen(function* () {
+      const calibration = yield* CalibrationContextTag
+      return { fingerprint: calibration.fingerprint }
+    }),
+  score: () => 1,
+  diagnose: () => [],
+})
+
+const mockRepoFacts = (fingerprint: string): RepoFacts => ({
+  repoRoot: "/repo",
+  fingerprint,
+  detectedTechnologies: ["typescript"],
+  sourceExtensions: [".ts"],
 })
 
 const makeChangedHunksSignal = (): Signal<
@@ -773,6 +806,100 @@ describe("ScoringEngine — cache semantics", () => {
     expect(configured).not.toBe(base)
     expect(inactive).not.toBe(base)
     expect(weighted).not.toBe(base)
+  })
+
+  test("cache config hashes include calibration fingerprint only when supplied", async () => {
+    const program = Effect.gen(function* () {
+      const counter = yield* Ref.make(0)
+      const signal = makeCountingSignal(counter)
+      const registry = yield* buildRegistry([signal])
+      const signalBase = computeConfigHash("MOCK-ENG-01", registry, undefined)
+      const signalExplicitUndefined = computeConfigHash(
+        "MOCK-ENG-01",
+        registry,
+        undefined,
+        undefined,
+      )
+      const signalCalibrationA = computeConfigHash(
+        "MOCK-ENG-01",
+        registry,
+        undefined,
+        "calibration-a",
+      )
+      const signalCalibrationB = computeConfigHash(
+        "MOCK-ENG-01",
+        registry,
+        undefined,
+        "calibration-b",
+      )
+      const observerBase = computeObserverConfigHash(registry, undefined)
+      const observerExplicitUndefined = computeObserverConfigHash(
+        registry,
+        undefined,
+        undefined,
+      )
+      const observerCalibrationA = computeObserverConfigHash(
+        registry,
+        undefined,
+        "calibration-a",
+      )
+      const observerCalibrationB = computeObserverConfigHash(
+        registry,
+        undefined,
+        "calibration-b",
+      )
+      return {
+        signalBase,
+        signalExplicitUndefined,
+        signalCalibrationA,
+        signalCalibrationB,
+        observerBase,
+        observerExplicitUndefined,
+        observerCalibrationA,
+        observerCalibrationB,
+      }
+    })
+
+    const result = await Effect.runPromise(program)
+    expect(result.signalExplicitUndefined).toBe(result.signalBase)
+    expect(result.signalCalibrationA).not.toBe(result.signalBase)
+    expect(result.signalCalibrationA).not.toBe(result.signalCalibrationB)
+    expect(result.observerExplicitUndefined).toBe(result.observerBase)
+    expect(result.observerCalibrationA).not.toBe(result.observerBase)
+    expect(result.observerCalibrationA).not.toBe(result.observerCalibrationB)
+  })
+
+  test("scoreCommit provides calibration context to signals when supplied", async () => {
+    const { repoPath, sha } = await initRepo([
+      { path: "a.ts", content: "export const x = 1\n" },
+    ])
+    try {
+      const calibrationContext = makeResolvedCalibrationContext({
+        repoFacts: mockRepoFacts("calibration-runtime-v1"),
+      })
+      const program = Effect.gen(function* () {
+        const registry = yield* buildRegistry([makeCalibrationFingerprintSignal()])
+        const EngineLayer = ScoringEngineLayer(
+          registry,
+          () => Layer.empty,
+          undefined,
+          { calibrationContext },
+        )
+        const engine = yield* ScoringEngineTag.pipe(
+          Effect.provide(EngineLayer),
+        ) as Effect.Effect<typeof ScoringEngineTag.Service, never, never>
+        return yield* engine.scoreCommit(
+          repoPath,
+          sha,
+          "MOCK-CALIBRATION-FINGERPRINT",
+        )
+      })
+
+      const result = await Effect.runPromise(program)
+      expect(result.output).toEqual({ fingerprint: calibrationContext.fingerprint })
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
   })
 
   test("observer and signal cache config hashes change with signal cache version", async () => {
