@@ -183,7 +183,9 @@ export const TsRp01: Signal<TsRp01Config, TsRp01Output, never> = {
       .sort(compareDiagnosticHotspots)
     return top.map((h, index) => ({
       severity: h.quadrant === "top-right" ? ("warn" as const) : ("info" as const),
-      message: `Hotspot #${index + 1}: ${h.file} (churn=${h.churn}, complexity=${h.complexity.toFixed(1)}, ${h.quadrant})`,
+      message:
+        `Hotspot #${index + 1}: ${formatHotspotPath(h.file)} ` +
+        `(churn=${h.churn}, complexity=${h.complexity.toFixed(1)}, ${h.quadrant})`,
       location: { file: h.file },
       data: {
         churn: h.churn,
@@ -192,9 +194,28 @@ export const TsRp01: Signal<TsRp01Config, TsRp01Output, never> = {
         quadrant: h.quadrant,
         rank: h.rank,
         diagnosticRank: index + 1,
+        displayFile: formatHotspotPath(h.file),
       },
     }))
   },
+}
+
+const HOTSPOT_PATH_MARKERS = [
+  "/packages/",
+  "/extensions/",
+  "/apps/",
+  "/src/",
+  "/ui/",
+  "/server/",
+  "/cli/",
+] as const
+
+const formatHotspotPath = (file: string): string => {
+  for (const marker of HOTSPOT_PATH_MARKERS) {
+    const index = file.indexOf(marker)
+    if (index !== -1) return file.slice(index + 1)
+  }
+  return file
 }
 
 const compareDiagnosticHotspots = (left: Hotspot, right: Hotspot): number => {

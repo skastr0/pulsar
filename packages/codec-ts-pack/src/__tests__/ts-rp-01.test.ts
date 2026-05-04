@@ -251,4 +251,37 @@ describe("TS-RP-01 (compound)", () => {
     expect(diagnostics[1]?.data?.rank).toBe(3)
     expect(diagnostics[1]?.data?.diagnosticRank).toBe(2)
   })
+
+  test("diagnostic messages use compact display paths but keep absolute locations", () => {
+    const absoluteFile = "/tmp/work/repo/packages/app/src/provider/provider.ts"
+    const diagnostics = TsRp01.diagnose({
+      hotspots: [
+        {
+          file: absoluteFile,
+          churn: 10,
+          complexity: 30,
+          hotspotScore: 300,
+          quadrant: "top-right",
+          rank: 1,
+        },
+      ],
+      diagnosticLimit: 1,
+      totalFilesConsidered: 1,
+      topRightShare: 1,
+      topRightPressure: 0,
+      medianChurn: 10,
+      medianComplexity: 30,
+      legacyFilesConsidered: 1,
+      legacyTopRightShare: 1,
+      softFilesConsidered: 1,
+      softTopRightShare: 1,
+      softTopRightPressure: 0,
+      stabilizationWeight: 0,
+    })
+
+    expect(diagnostics[0]?.message).toContain("packages/app/src/provider/provider.ts")
+    expect(diagnostics[0]?.message).not.toContain("/tmp/work/repo")
+    expect(diagnostics[0]?.location?.file).toBe(absoluteFile)
+    expect(diagnostics[0]?.data?.displayFile).toBe("packages/app/src/provider/provider.ts")
+  })
 })
