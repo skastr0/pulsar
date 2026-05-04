@@ -107,6 +107,10 @@ It should not become a dumping ground for personal preferences or opaque code.
 
 Calibration packs can be data-only or code-backed. Config-only rules are enough for many cases, but the current heuristics prove that some processors need real code. Code-backed packs are acceptable if they obey the same slot contracts and fingerprint rules.
 
+Project-owned code-backed modules are first-class. **Project modules** are TypeScript modules, often Effect-based, that contribute processors through the same SDK as published calibration packs. This is the escape hatch for private frameworks, bespoke project layout, organization-owned technology, and patterns that will never justify a public pack.
+
+This is deliberately more powerful than a config DSL. The trust boundary is the project/repository or organization: running a repo-local project module is like running repo-owned tests, linters, or build scripts. The result still must be deterministic, fingerprinted, and attributable.
+
 ```typescript
 interface CalibrationPack {
   readonly id: string;
@@ -129,6 +133,8 @@ Activation can be explicit or evidence-based:
 - Explicit repo/org activation is always allowed.
 - Auto-activation requires repository evidence, such as dependency names, scripts, config files, imports, or framework markers.
 - Auto-activation must be visible in the resolved calibration report and overrideable by repo/org config.
+
+Repo-local project modules should be referenced explicitly from repo/org calibration artifacts. They may live under `.taste-codec/modules/`, in a workspace package, or in a private package. Local TypeScript source modules need source-content hashes in the resolved calibration fingerprint because they may not have package versions.
 
 ## Processor Contract
 
