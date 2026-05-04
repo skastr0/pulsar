@@ -304,13 +304,22 @@ export const TsDe04: Signal<
     }),
   score: (out) => {
     const packageCount = Math.max(1, out.packages.length)
+    const missingPenaltyWeight = out.packages.reduce(
+      (sum, pkg) =>
+        sum +
+        pkg.importedButNotDeclared.reduce(
+          (pkgSum, mismatch) => pkgSum + missingDependencyPenaltyWeight(pkg, mismatch),
+          0,
+        ),
+      0,
+    )
     const softViolations = out.packages.reduce(
       (sum, pkg) => sum + pkg.transitiveUsedDirectly.length + pkg.devInProd.length,
       0,
     )
     const dependencyBearingPackageCount = Math.max(1, packageCount - 1)
     const penalty =
-      (out.missingCount / dependencyBearingPackageCount) * 1.25 +
+      (missingPenaltyWeight / dependencyBearingPackageCount) * 1.25 +
       out.unusedCount / (packageCount * 50) +
       softViolations / (packageCount * 20)
     return Math.max(0, 1 - Math.min(1, penalty))
@@ -434,14 +443,26 @@ const missingDependencySeverity = (
   pkg: PackageDependencyHealth,
   mismatch: DependencyMismatch,
 ): Diagnostic["severity"] => {
-  if (pkg.private) return "warn"
-  if (
+  return missingDependencyPenaltyWeight(pkg, mismatch) < 1 ? "warn" : "block"
+}
+
+const missingDependencyPenaltyWeight = (
+  pkg: PackageDependencyHealth,
+  mismatch: DependencyMismatch,
+): number => {
+  if (pkg.private) return 0.2
+  if (isToolingOnlyMissingDependency(pkg, mismatch)) return 0.25
+  return 1
+}
+
+const isToolingOnlyMissingDependency = (
+  pkg: PackageDependencyHealth,
+  mismatch: DependencyMismatch,
+): boolean => {
+  return (
     mismatch.files.length > 0 &&
     mismatch.files.every((file) => isPackageToolingFile(pkg.packagePath, file))
-  ) {
-    return "warn"
-  }
-  return "block"
+  )
 }
 
 const isPackageToolingFile = (packagePath: string, file: string): boolean => {

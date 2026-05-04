@@ -62,6 +62,7 @@ describe("TS-DE-04 (package dependency health)", () => {
       { dependencyName: "lodash", files: [`${repo.root}/packages/app/src/index.ts`] },
     ])
     expect(TsDe04.diagnose(out)[0]?.severity).toBe("warn")
+    expect(TsDe04.score(out)).toBeGreaterThan(0.7)
   })
 
   test("package-local release scripts with missing dependencies warn", async () => {
@@ -92,6 +93,38 @@ describe("TS-DE-04 (package dependency health)", () => {
       },
     ])
     expect(TsDe04.diagnose(out)[0]?.severity).toBe("warn")
+    expect(TsDe04.score(out)).toBeGreaterThan(0.65)
+  })
+
+  test("package-root config missing dependencies warn without collapsing the score", async () => {
+    await writePackage("plugin", "@repo/plugin", {
+      exports: {
+        ".": "./src/index.ts",
+      },
+    })
+    await repo.writeJson("packages/plugin/tsconfig.json", {
+      compilerOptions: {
+        target: "ES2022",
+        module: "ESNext",
+        moduleResolution: "Bundler",
+      },
+      include: ["src/**/*.ts", "*.config.ts"],
+    })
+    await repo.write("packages/plugin/src/index.ts", "export const value = 1\n")
+    await repo.write(
+      "packages/plugin/vitest.config.ts",
+      "import { defineConfig } from 'vitest/config'\nexport default defineConfig({})\n",
+    )
+
+    const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+    expect(out.packages[0]?.importedButNotDeclared).toEqual([
+      {
+        dependencyName: "vitest",
+        files: [`${repo.root}/packages/plugin/vitest.config.ts`],
+      },
+    ])
+    expect(TsDe04.diagnose(out)[0]?.severity).toBe("warn")
+    expect(TsDe04.score(out)).toBeGreaterThan(0.65)
   })
 
   test("missing dependency warnings are listed before unused dependency clusters", async () => {
