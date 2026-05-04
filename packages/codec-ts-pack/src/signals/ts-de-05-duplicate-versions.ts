@@ -17,7 +17,10 @@ export type TsDe05Config = typeof TsDe05Config.Type
 export interface DuplicateGroup {
   readonly name: string
   readonly versions: ReadonlyArray<string>
+  readonly directVersions: ReadonlyArray<string>
   readonly instanceCount: number
+  readonly directInstanceCount: number
+  readonly evidenceKind: "direct-workspace-duplicate" | "transitive-lockfile-duplicate"
   readonly pullInChains: ReadonlyArray<{ version: string; chain: ReadonlyArray<string> }>
 }
 
@@ -95,9 +98,29 @@ export const TsDe05: Signal<TsDe05Config, TsDe05Output, SignalContextTag> = {
     }),
   score: (out) => {
     if (out.totalPackages === 0) return 1
-    const duplicateGroupRatio = out.duplicates.length / out.totalPackages
-    const duplicateInstanceRatio = out.totalDuplicateInstances / out.totalPackages
-    const penalty = duplicateGroupRatio * 2 + duplicateInstanceRatio * 0.15
+    const directGroups = out.duplicates.filter(
+      (group) => group.evidenceKind === "direct-workspace-duplicate",
+    )
+    const transitiveGroups = out.duplicates.filter(
+      (group) => group.evidenceKind === "transitive-lockfile-duplicate",
+    )
+    const directInstanceCount = directGroups.reduce(
+      (sum, group) => sum + group.directInstanceCount,
+      0,
+    )
+    const transitiveInstanceCount = transitiveGroups.reduce(
+      (sum, group) => sum + group.instanceCount,
+      0,
+    )
+    const directGroupRatio = directGroups.length / out.totalPackages
+    const directInstanceRatio = directInstanceCount / out.totalPackages
+    const transitiveGroupRatio = transitiveGroups.length / out.totalPackages
+    const transitiveInstanceRatio = transitiveInstanceCount / out.totalPackages
+    const penalty =
+      directGroupRatio * 2 +
+      directInstanceRatio * 0.15 +
+      transitiveGroupRatio * 0.35 +
+      transitiveInstanceRatio * 0.03
     return Math.max(0, 1 - Math.min(1, penalty))
   },
   diagnose: (out): ReadonlyArray<Diagnostic> => {
@@ -116,14 +139,21 @@ export const TsDe05: Signal<TsDe05Config, TsDe05Output, SignalContextTag> = {
     }
 
     return out.duplicates.slice(0, out.diagnosticLimit).map((group) => ({
-      severity: "warn" as const,
+      severity: group.evidenceKind === "direct-workspace-duplicate" ? "warn" as const : "info" as const,
       message:
-        `Duplicate dependency versions for ${group.name}: ` +
-        `${group.versions.join(", ")} (${group.instanceCount} instances)`,
+        group.evidenceKind === "direct-workspace-duplicate"
+          ? `Duplicate direct dependency versions for ${group.name}: ` +
+            `${group.directVersions.join(", ")} (${group.directInstanceCount} direct instances; ` +
+            `${group.instanceCount} total instances)`
+          : `Duplicate transitive dependency versions for ${group.name}: ` +
+            `${group.versions.join(", ")} (${group.instanceCount} lockfile instances)`,
       data: {
         name: group.name,
         versions: group.versions.slice(),
+        directVersions: group.directVersions.slice(),
         instanceCount: group.instanceCount,
+        directInstanceCount: group.directInstanceCount,
+        evidenceKind: group.evidenceKind,
         pullInChains: group.pullInChains.map((chain) => ({
           version: chain.version,
           chain: chain.chain.slice(),
@@ -187,6 +217,12 @@ const toDuplicateGroup = (
   const versions = [...new Set(packages.map((pkg) => pkg.version))].sort((left, right) =>
     left.localeCompare(right),
   )
+  const directPackages = packages.filter((pkg) =>
+    isDirectWorkspacePackageRequest(pkg, workspaces),
+  )
+  const directVersions = [...new Set(directPackages.map((pkg) => pkg.version))].sort(
+    (left, right) => left.localeCompare(right),
+  )
   const pullInChains = packages
     .flatMap((pkg) => workspaceChainsForPackage(pkg, workspaces))
     .filter((entry, index, entries) => {
@@ -202,9 +238,38 @@ const toDuplicateGroup = (
   return {
     name,
     versions,
+    directVersions,
     instanceCount: packages.length,
+    directInstanceCount: directPackages.length,
+    evidenceKind:
+      directVersions.length > 1
+        ? "direct-workspace-duplicate"
+        : "transitive-lockfile-duplicate",
     pullInChains,
   }
+}
+
+const isDirectWorkspacePackageRequest = (
+  pkg: BunResolvedPackage,
+  workspaces: ReadonlyArray<{
+    path: string
+    name: string | undefined
+    dependencies: Readonly<Record<string, string>>
+    devDependencies: Readonly<Record<string, string>>
+    peerDependencies: Readonly<Record<string, string>>
+    optionalDependencies: Readonly<Record<string, string>>
+  }>,
+): boolean => {
+  const root = pkg.chain[0] ?? pkg.lockKey
+  if (root !== pkg.name && !root.startsWith(`${pkg.name}@`)) return false
+  return workspaces.some((workspace) =>
+    [
+      workspace.dependencies,
+      workspace.devDependencies,
+      workspace.peerDependencies,
+      workspace.optionalDependencies,
+    ].some((group) => group[pkg.name] !== undefined),
+  )
 }
 
 const workspaceChainsForPackage = (
@@ -239,6 +304,15 @@ const workspaceChainsForPackage = (
 }
 
 const compareDuplicateGroups = (left: DuplicateGroup, right: DuplicateGroup): number => {
+  if (left.evidenceKind !== right.evidenceKind) {
+    return left.evidenceKind === "direct-workspace-duplicate" ? -1 : 1
+  }
+  if (right.directVersions.length !== left.directVersions.length) {
+    return right.directVersions.length - left.directVersions.length
+  }
+  if (right.directInstanceCount !== left.directInstanceCount) {
+    return right.directInstanceCount - left.directInstanceCount
+  }
   if (right.versions.length !== left.versions.length) {
     return right.versions.length - left.versions.length
   }

@@ -72,11 +72,51 @@ describe("TS-DE-05 (duplicate dependency versions)", () => {
     expect(out.duplicates).toHaveLength(1)
     expect(out.duplicates[0]?.name).toBe("alpha")
     expect(out.duplicates[0]?.versions).toEqual(["1.0.0", "2.0.0"])
+    expect(out.duplicates[0]?.directVersions).toEqual(["1.0.0"])
+    expect(out.duplicates[0]?.evidenceKind).toBe("transitive-lockfile-duplicate")
     expect(out.duplicates[0]?.pullInChains).toContainEqual({
       version: "2.0.0",
       chain: ["@repo/app", "wrapper", "alpha"],
     })
     expect(TsDe05.score(out)).toBeLessThan(1)
+    expect(TsDe05.score(out)).toBeGreaterThan(0.85)
+    expect(TsDe05.diagnose(out)[0]?.severity).toBe("info")
+    expect(TsDe05.diagnose(out)[0]?.message).toContain("Duplicate transitive")
+  })
+
+  test("warns more strongly for direct workspace duplicate versions", async () => {
+    await repo.write(
+      "bun.lock",
+      [
+        "{",
+        '  "lockfileVersion": 1,',
+        '  "workspaces": {',
+        '    "packages/app": {',
+        '      "name": "@repo/app",',
+        '      "dependencies": { "alpha": "1.0.0" }',
+        "    },",
+        '    "packages/worker": {',
+        '      "name": "@repo/worker",',
+        '      "dependencies": { "alpha": "2.0.0" }',
+        "    }",
+        "  },",
+        '  "packages": {',
+        '    "alpha": ["alpha@1.0.0", "", {}, "hash"],',
+        '    "alpha@2": ["alpha@2.0.0", "", {}, "hash"]',
+        "  }",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await runCompute()
+    expect(out.duplicates).toHaveLength(1)
+    expect(out.duplicates[0]?.name).toBe("alpha")
+    expect(out.duplicates[0]?.directVersions).toEqual(["1.0.0", "2.0.0"])
+    expect(out.duplicates[0]?.directInstanceCount).toBe(2)
+    expect(out.duplicates[0]?.evidenceKind).toBe("direct-workspace-duplicate")
+    expect(TsDe05.score(out)).toBeLessThan(0.8)
+    expect(TsDe05.diagnose(out)[0]?.severity).toBe("warn")
+    expect(TsDe05.diagnose(out)[0]?.message).toContain("Duplicate direct")
   })
 
   test("unsupported lockfiles skip duplicate-version analysis without failing", async () => {
