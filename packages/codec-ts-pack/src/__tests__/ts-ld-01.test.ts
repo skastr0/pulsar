@@ -37,6 +37,33 @@ export function outer(items: Array<number>) {
     expect(callback?.complexity).toBe(3)
   })
 
+  test("names object-property callbacks with callsite context", async () => {
+    await repo.write(
+      "src/index.ts",
+      `
+const Effect = {
+  tryPromise: (options: { try: () => unknown; catch: (error: unknown) => unknown }) => options,
+}
+
+export const result = Effect.tryPromise({
+  try: () => {
+    if (enabled() && ready()) {
+      return run()
+    }
+    return fallback()
+  },
+  catch: (error) => error,
+})
+`,
+    )
+
+    const out = await runSignal(repo.root, TsLd01, TsLd01.defaultConfig)
+    const callback = out.functions.find((fn) => fn.name === "result/Effect.tryPromise/try")
+
+    expect(callback?.complexity).toBe(3)
+    expect(out.functions.some((fn) => fn.name === "try")).toBe(false)
+  })
+
   test("counts branches and boolean operators in one function", async () => {
     await repo.write(
       "src/index.ts",

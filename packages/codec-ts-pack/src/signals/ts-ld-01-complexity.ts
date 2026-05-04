@@ -64,6 +64,7 @@ export const TsLd01: Signal<TsLd01Config, TsLd01Output, TsProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
+  cacheVersion: "contextual-callback-names-v1",
   configSchema: TsLd01Config,
   defaultConfig: {
     max_complexity: 20,
@@ -186,10 +187,69 @@ const functionName = (fn: CompilerFunctionLike): string => {
     return parent.name.text
   }
   if (ts.isPropertyAssignment(parent)) {
-    return propertyNameText(parent.name)
+    return contextualObjectPropertyCallbackName(parent) ?? propertyNameText(parent.name)
   }
   if (ts.isExportAssignment(parent)) {
     return "<default export>"
   }
   return "<anonymous>"
+}
+
+const contextualObjectPropertyCallbackName = (
+  property: ts.PropertyAssignment,
+): string | undefined => {
+  const objectLiteral = property.parent
+  if (!ts.isObjectLiteralExpression(objectLiteral)) return undefined
+
+  const call = objectLiteral.parent
+  if (!ts.isCallExpression(call)) return undefined
+
+  const propertyName = propertyNameText(property.name)
+  const callee = callExpressionName(call)
+  const owner = nearestCallbackOwnerName(call)
+
+  if (owner !== undefined && callee !== undefined) return `${owner}/${callee}/${propertyName}`
+  if (owner !== undefined) return `${owner}/${propertyName}`
+  if (callee !== undefined) return `${callee}/${propertyName}`
+  return undefined
+}
+
+const nearestCallbackOwnerName = (node: ts.Node): string | undefined => {
+  let current: ts.Node | undefined = node.parent
+  while (current !== undefined && !ts.isSourceFile(current)) {
+    if (ts.isVariableDeclaration(current) && ts.isIdentifier(current.name)) {
+      return current.name.text
+    }
+    if (ts.isPropertyAssignment(current)) {
+      return propertyNameText(current.name)
+    }
+    if (
+      (ts.isFunctionDeclaration(current) ||
+        ts.isMethodDeclaration(current) ||
+        ts.isFunctionExpression(current)) &&
+      current.name !== undefined
+    ) {
+      return propertyNameText(current.name)
+    }
+    current = current.parent
+  }
+  return undefined
+}
+
+const callExpressionName = (call: ts.CallExpression): string | undefined => {
+  const expression = call.expression
+  if (ts.isIdentifier(expression)) return expression.text
+  if (ts.isPropertyAccessExpression(expression)) return propertyAccessName(expression)
+  return undefined
+}
+
+const propertyAccessName = (node: ts.PropertyAccessExpression): string => {
+  const parts: Array<string> = [node.name.text]
+  let expression = node.expression
+  while (ts.isPropertyAccessExpression(expression)) {
+    parts.unshift(expression.name.text)
+    expression = expression.expression
+  }
+  if (ts.isIdentifier(expression)) parts.unshift(expression.text)
+  return parts.join(".")
 }
