@@ -104,8 +104,12 @@ export const getFunctionName = (fn: TsFunctionLike): string => {
   }
   if (Node.isArrowFunction(fn) || Node.isFunctionExpression(fn)) {
     const parent = fn.getParent()
-    if (Node.isVariableDeclaration(parent) || Node.isPropertyAssignment(parent)) {
+    if (Node.isVariableDeclaration(parent)) {
       return parent.getName()
+    }
+    if (Node.isPropertyAssignment(parent)) {
+      const contextualName = contextualObjectPropertyCallbackName(parent)
+      return contextualName ?? parent.getName()
     }
     if (Node.isExportAssignment(parent)) {
       return "<default export>"
@@ -150,6 +154,25 @@ const nearestCallbackOwnerName = (node: import("ts-morph").Node): string | undef
     }
     current = current.getParent()
   }
+  return undefined
+}
+
+const contextualObjectPropertyCallbackName = (
+  property: import("ts-morph").PropertyAssignment,
+): string | undefined => {
+  const objectLiteral = property.getParent()
+  if (!Node.isObjectLiteralExpression(objectLiteral)) return undefined
+
+  const call = objectLiteral.getParent()
+  if (!Node.isCallExpression(call)) return undefined
+
+  const propertyName = property.getName()
+  const callee = callExpressionName(call)
+  const owner = nearestCallbackOwnerName(call)
+
+  if (owner !== undefined && callee !== undefined) return `${owner}/${callee}/${propertyName}`
+  if (owner !== undefined) return `${owner}/${propertyName}`
+  if (callee !== undefined) return `${callee}/${propertyName}`
   return undefined
 }
 
