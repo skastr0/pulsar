@@ -128,7 +128,7 @@ describe("taste score", () => {
     }
   }, 120_000)
 
-  test("default full observer uses the TypeScript domain in mixed-language repos", async () => {
+  test("default full observer uses detected language packs in mixed-language repos", async () => {
     const repoPath = await initRepo([
       ...simpleRepoFiles(),
       {
@@ -142,7 +142,7 @@ describe("taste score", () => {
       expect(out.status).toBe(0)
       expect(out.stdout).toContain("Vector: all-defaults")
       expect(out.stdout).toContain("TS-")
-      expect(out.stdout).not.toContain("RS-")
+      expect(out.stdout).toContain("RS-")
 
       const jsonOut = runCli(repoPath, ["score", "--json", "."])
       expect(jsonOut.status).toBe(0)
@@ -151,7 +151,28 @@ describe("taste score", () => {
         Object.keys(category.signals ?? {}),
       )
       expect(signalIds.some((id) => id.startsWith("TS-"))).toBe(true)
-      expect(signalIds.some((id) => id.startsWith("RS-"))).toBe(false)
+      expect(signalIds.some((id) => id.startsWith("RS-"))).toBe(true)
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
+  test("default category observer uses Rust signals in Rust-only repos", async () => {
+    const repoPath = await initRepo([
+      {
+        path: "Cargo.toml",
+        content: "[package]\nname = \"rust-only\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+      },
+      { path: "src/lib.rs", content: "pub fn rust_api() { let _ = Some(1).unwrap(); }\n" },
+    ])
+    try {
+      sh("git", ["rm", "tsconfig.json", "-q"], repoPath)
+      sh("git", ["commit", "-q", "-m", "remove tsconfig"], repoPath)
+      const out = runCli(repoPath, ["score", "--category", "generated-slop", "."])
+      expect(out.status).toBe(0)
+      expect(out.stdout).toContain("Vector:   all-defaults")
+      expect(out.stdout).toContain("RS-SL-")
+      expect(out.stdout).not.toContain("TS-SL-")
     } finally {
       await rm(repoPath, { recursive: true, force: true })
     }

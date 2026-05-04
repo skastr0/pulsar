@@ -74,10 +74,11 @@ export const runScoreCommand = (opts: ScoreOptions) =>
       registry,
       ...(opts.vectorPath !== undefined ? { explicitPath: opts.vectorPath } : {}),
     })
+    const fallbackDomain = inferFallbackDomain(registry)
     const observerVector =
       opts.category === undefined
-        ? narrowVectorToDomain(registry, vectorSelection.vector)
-        : narrowVectorToCategory(registry, vectorSelection.vector, opts.category)
+        ? narrowVectorToDomain(registry, vectorSelection.vector, fallbackDomain)
+        : narrowVectorToCategory(registry, vectorSelection.vector, opts.category, fallbackDomain)
     const timeSeriesEnabled = opts.ci === true || timeSeriesConfigOf(observerVector).enabled
     const { repoRoot, gitSha, result } = yield* observeWorktree(
       opts.repoPath,
@@ -153,8 +154,9 @@ const narrowVectorToCategory = (
   registry: Registry,
   vector: TasteVector | undefined,
   category: Category,
+  fallbackDomain: string,
 ): TasteVector => {
-  const activeSignalIds = collectCategorySignalClosure(registry, category, vector)
+  const activeSignalIds = collectCategorySignalClosure(registry, category, vector, fallbackDomain)
   const signal_overrides: Record<string, TasteVector["signal_overrides"][string]> = {
     ...(vector?.signal_overrides ?? {}),
   }
@@ -169,7 +171,7 @@ const narrowVectorToCategory = (
 
   return {
     id: vector?.id ?? `category-${category}`,
-    domain: vector?.domain ?? "typescript",
+    domain: vector?.domain ?? fallbackDomain,
     ...(vector?.description !== undefined ? { description: vector.description } : {}),
     signal_overrides,
     ...(vector?.review_routing !== undefined ? { review_routing: vector.review_routing } : {}),
@@ -183,8 +185,9 @@ const narrowVectorToCategory = (
 const narrowVectorToDomain = (
   registry: Registry,
   vector: TasteVector | undefined,
+  fallbackDomain: string,
 ): TasteVector => {
-  const domain = vector?.domain ?? "typescript"
+  const domain = vector?.domain ?? fallbackDomain
   const signal_overrides: Record<string, TasteVector["signal_overrides"][string]> = {
     ...(vector?.signal_overrides ?? {}),
   }
@@ -214,9 +217,10 @@ const collectCategorySignalClosure = (
   registry: Registry,
   category: Category,
   vector: TasteVector | undefined,
+  fallbackDomain: string,
 ): ReadonlySet<string> => {
   const activeSignalIds = new Set<string>()
-  const domain = vector?.domain ?? "typescript"
+  const domain = vector?.domain ?? fallbackDomain
 
   const visit = (signalId: string): void => {
     if (activeSignalIds.has(signalId)) return
@@ -243,6 +247,14 @@ const signalMatchesDomain = (signalId: string, domain: string | undefined): bool
   if (domain === "typescript" && signalId.startsWith("RS-")) return false
   if (domain === "rust" && signalId.startsWith("TS-")) return false
   return true
+}
+
+const inferFallbackDomain = (registry: Registry): "typescript" | "rust" | "polyglot" => {
+  const hasTypeScript = registry.sorted.some((signal) => signal.id.startsWith("TS-"))
+  const hasRust = registry.sorted.some((signal) => signal.id.startsWith("RS-"))
+  if (hasTypeScript && hasRust) return "polyglot"
+  if (hasRust) return "rust"
+  return "typescript"
 }
 
 const runSingleSignalMode = (opts: ScoreOptions) =>

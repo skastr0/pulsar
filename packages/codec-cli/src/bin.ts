@@ -110,7 +110,7 @@ Conventions options:
 Vector discovery order (score + baseline when --vector is omitted):
   1. .taste-codec/vector.json at the worktree root
   2. ~/.config/taste-codec/vector.json
-  3. Fallback: TypeScript/shared signals active with default config and weight 1
+  3. Fallback: detected language-pack/shared signals active with default config and weight 1
 
 Examples:
   taste score .
