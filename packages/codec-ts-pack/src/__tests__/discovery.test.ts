@@ -72,6 +72,16 @@ describe("discoverPackages", () => {
     expect(pkgs.map((p) => p.name)).toEqual(["(root)"])
   })
 
+  test("ignores package and tsconfig metadata under .agents", async () => {
+    await writeTsconfig(tmp)
+    await writeTsconfig(join(tmp, ".agents", "shadow"))
+    await writePackageJson(join(tmp, ".agents", "shadow"), { name: "@repo/shadow" })
+    await writeFile(join(tmp, ".agents", "shadow", "index.ts"), "export const shadow = true\n")
+
+    const pkgs = await Effect.runPromise(discoverPackages(tmp))
+    expect(pkgs.map((p) => p.name)).toEqual(["(root)"])
+  })
+
   test("empty dir returns no packages", async () => {
     const pkgs = await Effect.runPromise(discoverPackages(tmp))
     expect(pkgs.length).toBe(0)

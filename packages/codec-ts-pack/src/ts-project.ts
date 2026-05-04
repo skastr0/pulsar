@@ -81,6 +81,7 @@ const buildMergedProject = (
   if (project.getSourceFiles().length === 0) {
     addWorktreeGlob(project, worktreePath, options)
   }
+  removeIgnoredSourceFiles(project)
   return project
 }
 
@@ -116,6 +117,7 @@ const addSourceFiles = (
 const addWorktreeGlob = (project: Project, worktreePath: string, options?: TsProjectOptions): void => {
   const globs = [
     `${worktreePath}/**/*.{ts,tsx}`,
+    `!${worktreePath}/**/.agents/**`,
     `!${worktreePath}/**/node_modules/**`,
     `!${worktreePath}/**/dist/**`,
     `!${worktreePath}/**/build/**`,
@@ -159,7 +161,19 @@ const addWorktreeGlob = (project: Project, worktreePath: string, options?: TsPro
   }
 
   project.addSourceFilesAtPaths(globs)
+  removeIgnoredSourceFiles(project)
 }
+
+const removeIgnoredSourceFiles = (project: Project): void => {
+  for (const sourceFile of project.getSourceFiles()) {
+    if (hasIgnoredPathSegment(sourceFile.getFilePath())) {
+      project.removeSourceFile(sourceFile)
+    }
+  }
+}
+
+const hasIgnoredPathSegment = (filePath: string): boolean =>
+  filePath.split(/[\\/]+/).includes(".agents")
 
 const listProductionTypeScriptFiles = (
   worktreePath: string,
@@ -224,6 +238,7 @@ const isProductionTypeScriptFile = (file: string): boolean => {
     "coverage",
     ".turbo",
     ".cache",
+    ".agents",
     "vendor",
     "gen",
     "__tests__",

@@ -25,6 +25,7 @@ export interface PackageInfo {
 }
 
 const IGNORE_DIRS: ReadonlySet<string> = new Set([
+  ".agents",
   "node_modules",
   ".git",
   "dist",
