@@ -19,6 +19,7 @@ import {
 
 export const Shared02BusFactorConfig = Schema.Struct({
   window_days: Schema.Number,
+  max_commits: Schema.Number,
   include_extensions: Schema.Array(Schema.String),
   exclude_globs: Schema.Array(Schema.String),
   min_loc: Schema.Number,
@@ -38,6 +39,7 @@ export interface Shared02BusFactorOutput {
   readonly siloed: ReadonlyArray<{ file: string; author: string; loc: number }>
   readonly distribution: DistributionalSummary
   readonly windowDays: number
+  readonly maxCommits: number
   readonly touchedFileCount: number
   readonly touchedLoc: number
   readonly repoAuthors: ReadonlyArray<string>
@@ -57,9 +59,11 @@ export const Shared02BusFactor: Signal<
   tier: 1.5,
   category: "review-pain",
   kind: "legibility",
+  cacheVersion: "bounded-history-v1",
   configSchema: Shared02BusFactorConfig,
   defaultConfig: {
     window_days: 180,
+    max_commits: 5000,
     include_extensions: [".ts", ".tsx", ".js", ".jsx", ".rs"],
     exclude_globs: [
       "**/node_modules/**",
@@ -158,6 +162,7 @@ export const Shared02BusFactor: Signal<
             {
               includeExtensions: config.include_extensions,
               excludeGlobs: config.exclude_globs,
+              maxCommits: config.max_commits,
             },
           )
 
@@ -220,6 +225,7 @@ export const Shared02BusFactor: Signal<
             siloed: siloed.sort((a, b) => b.loc - a.loc || a.file.localeCompare(b.file)),
             distribution: summarize([...byFile.values()].map((info) => info.busFactor)),
             windowDays: config.window_days,
+            maxCommits: config.max_commits,
             touchedFileCount: byFile.size,
             touchedLoc,
             repoAuthors: [...repoAuthors].sort((a, b) => a.localeCompare(b)),

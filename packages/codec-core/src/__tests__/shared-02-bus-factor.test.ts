@@ -55,6 +55,7 @@ describe("SHARED-02 bus factor", () => {
         loc: 61,
       })
       expect(output.repoAuthors).toEqual(["Alice"])
+      expect(output.maxCommits).toBe(Shared02BusFactor.defaultConfig.max_commits)
       expect(output.siloed).toEqual([{ file: soloPath, author: "Alice", loc: 61 }])
       expect(output.touchedLoc).toBe(61)
       expect(Shared02BusFactor.score(output)).toBe(1)
@@ -97,6 +98,49 @@ describe("SHARED-02 bus factor", () => {
       )
 
       expect([...output.byFile.keys()]).toEqual([join(repo.root, "src/production.ts")])
+    } finally {
+      await repo.cleanup()
+    }
+  })
+
+  test("can cap the sampled recent history for very high-volume repos", async () => {
+    const repo = await createGitTestRepo("taste-codec-shared-02-max-commits-")
+    try {
+      await repo.write("src/owned.ts", longFile("owned"))
+      await repo.commitAll({
+        message: "alice owns file",
+        authorName: "Alice",
+        authorEmail: "alice@example.com",
+        dateIso: "2024-01-01T00:00:00Z",
+      })
+
+      await repo.write("src/owned.ts", longFile("owned") + "export const bob = 1\n")
+      await repo.commitAll({
+        message: "bob latest change",
+        authorName: "Bob",
+        authorEmail: "bob@example.com",
+        dateIso: "2024-02-01T00:00:00Z",
+      })
+
+      const output = await Effect.runPromise(
+        Shared02BusFactor.compute(
+          { ...Shared02BusFactor.defaultConfig, max_commits: 1 },
+          new Map(),
+        ).pipe(
+          Effect.provide(
+            Layer.succeed(SignalContextTag, {
+              gitSha: repo.revParse("HEAD"),
+              worktreePath: repo.root,
+              changedHunks: [],
+            }),
+          ),
+        ) as Effect.Effect<any, any, never>,
+      )
+
+      const info = output.byFile.get(join(repo.root, "src/owned.ts"))
+      expect(output.maxCommits).toBe(1)
+      expect(info?.authors).toEqual(["Bob"])
+      expect(output.repoAuthors).toEqual(["Bob"])
     } finally {
       await repo.cleanup()
     }

@@ -10,6 +10,7 @@ const execFileAsync = promisify(execFile)
 export interface SharedHistoryFilterConfig {
   readonly includeExtensions: ReadonlyArray<string>
   readonly excludeGlobs: ReadonlyArray<string>
+  readonly maxCommits?: number
 }
 
 export const clamp01 = (value: number): number => Math.max(0, Math.min(1, value))
@@ -46,6 +47,9 @@ export const listAuthorsByTouchedFileInWindow = async (
   const raw = await execGit(repoPath, [
     "log",
     "--use-mailmap",
+    ...(config.maxCommits !== undefined && config.maxCommits > 0
+      ? [`--max-count=${Math.floor(config.maxCommits)}`]
+      : []),
     `--since=${sinceIso}`,
     `--until=${untilIso}`,
     "--name-only",
