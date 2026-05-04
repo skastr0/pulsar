@@ -1113,6 +1113,39 @@ describe("TS-DE-04 (package dependency health)", () => {
     expect(out.packages[0]?.importedButNotDeclared).toEqual([])
   })
 
+  test("ignores SvelteKit virtual modules only in SvelteKit apps", async () => {
+    await writePackage("svelte-app", "svelte-app", {
+      devDependencies: {
+        "@sveltejs/kit": "^2.0.0",
+      },
+    })
+    await repo.write(
+      "packages/svelte-app/src/routes/+page.ts",
+      [
+        'import { dev } from "$app/environment"',
+        'import { env } from "$env/dynamic/private"',
+        'import { local } from "$lib/local"',
+        'import "$service-worker"',
+        "export const value = [dev, env, local]",
+      ].join("\n"),
+    )
+
+    await writePackage("plain-app", "plain-app", {})
+    await repo.write(
+      "packages/plain-app/src/index.ts",
+      'import { dev } from "$app/environment"\nexport const value = dev\n',
+    )
+
+    const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+    const svelteHealth = out.packages.find((pkg) => pkg.packageName === "svelte-app")
+    const plainHealth = out.packages.find((pkg) => pkg.packageName === "plain-app")
+
+    expect(svelteHealth?.importedButNotDeclared).toEqual([])
+    expect(plainHealth?.importedButNotDeclared).toEqual([
+      { dependencyName: "$app", files: [`${repo.root}/packages/plain-app/src/index.ts`] },
+    ])
+  })
+
   test("workspace internal dependencies declared with workspace:* do not false-positive", async () => {
     await writePackage("a", "@repo/a", {
       dependencies: {

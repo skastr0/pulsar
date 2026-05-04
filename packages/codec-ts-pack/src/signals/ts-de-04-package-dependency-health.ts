@@ -165,7 +165,7 @@ export const TsDe04: Signal<
   tier: 1,
   category: "dependency-entropy",
   kind: "structural",
-  cacheVersion: "dynamic-private-jsonc-bundled-path-aliases-v1",
+  cacheVersion: "sveltekit-virtual-modules-v1",
   configSchema: TsDe04Config,
   defaultConfig: {
     exclude_globs: [
@@ -614,6 +614,15 @@ const isFrameworkVirtualModuleSpecifier = (
       specifier.startsWith("@docusaurus/theme-common/")
     )
   }
+  if (isSvelteKitApp(manifest)) {
+    return (
+      specifier.startsWith("$app/") ||
+      specifier.startsWith("$env/") ||
+      specifier === "$lib" ||
+      specifier.startsWith("$lib/") ||
+      specifier === "$service-worker"
+    )
+  }
 
   return false
 }
@@ -624,6 +633,12 @@ const isDocusaurusApp = (manifest: PackageManifest): boolean => {
     return true
   }
   return Object.values(manifest.scripts).some((script) => /\bdocusaurus\b/.test(script))
+}
+
+const isSvelteKitApp = (manifest: PackageManifest): boolean => {
+  const dependencyNames = dependencyNamesOf(manifest, ["dependencies", "devDependencies"])
+  if (dependencyNames.has("@sveltejs/kit")) return true
+  return Object.values(manifest.scripts).some((script) => /\bsvelte-kit\b/.test(script))
 }
 
 const isWorkspaceSelfOrFacadeImport = (
