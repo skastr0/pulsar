@@ -65,7 +65,7 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
   tier: 1,
   category: "generated-slop",
   kind: "legibility",
-  cacheVersion: "declaration-skip-and-hotpath-v1",
+  cacheVersion: "single-pass-tokenizer-v1",
   configSchema: TsSl01Config,
   defaultConfig: {
     exclude_globs: [
@@ -527,30 +527,28 @@ const TS_KEYWORDS = new Set([
   "with", "yield",
 ])
 
-const LINE_COMMENT_PATTERN = /\/\/.*$/gm
-const BLOCK_COMMENT_PATTERN = /\/\*[\s\S]*?\*\//g
-const TEMPLATE_LITERAL_PATTERN = /`[\s\S]*?`/g
-const DECIMAL_NUMBER_PATTERN = /\b\d+(?:_\d+)*(?:\.\d+)?(?:[eE][+-]?\d+)?\b/g
-const HEX_NUMBER_PATTERN = /\b0[xX][0-9a-fA-F]+\b/g
-const OCTAL_NUMBER_PATTERN = /\b0[oO][0-7]+\b/g
-const BINARY_NUMBER_PATTERN = /\b0[bB][01]+\b/g
-const STRUCTURAL_TOKEN_PATTERN =
-  /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[A-Za-z_$][A-Za-z0-9_$]*|=>|===|!==|==|!=|<=|>=|\*\*|\+\+|--|&&|\|\||<<|>>|>>>|\.\.\.|[{}()[\],;:.<>+\-*\/%&|!?=]/g
 const IDENTIFIER_PATTERN = /^[A-Za-z_$][A-Za-z0-9_$]*$/
+const PUNCTUATION_TOKENS = new Set("{}()[],;:.<>+-*/%&|!?=".split(""))
+const THREE_CHAR_OPERATORS = new Set(["!==", "===", ">>>", "..."])
+const TWO_CHAR_OPERATORS = new Set([
+  "=>",
+  "==",
+  "!=",
+  "<=",
+  ">=",
+  "**",
+  "++",
+  "--",
+  "&&",
+  "||",
+  "<<",
+  ">>",
+])
 
 const analyzeStructuralSource = (
   source: string,
 ): { readonly tokenCount: number; readonly structuralHash: string } => {
-  const stripped = source
-    .replace(LINE_COMMENT_PATTERN, "")
-    .replace(BLOCK_COMMENT_PATTERN, "")
-    .replace(TEMPLATE_LITERAL_PATTERN, "TMPL")
-    .replace(DECIMAL_NUMBER_PATTERN, "NUM")
-    .replace(HEX_NUMBER_PATTERN, "NUM")
-    .replace(OCTAL_NUMBER_PATTERN, "NUM")
-    .replace(BINARY_NUMBER_PATTERN, "NUM")
-
-  const rawTokens = stripped.match(STRUCTURAL_TOKEN_PATTERN) ?? []
+  const rawTokens = tokenizeStructuralSource(source)
   const ternaryColonIndexes = findTernaryColonIndexes(rawTokens)
 
   let hash = 0
@@ -564,6 +562,182 @@ const analyzeStructuralSource = (
     tokenCount: rawTokens.length,
     structuralHash: Math.abs(hash).toString(36),
   }
+}
+
+const tokenizeStructuralSource = (source: string): ReadonlyArray<string> => {
+  const tokens: Array<string> = []
+  let index = 0
+
+  while (index < source.length) {
+    const char = source[index]!
+    const charCode = source.charCodeAt(index)
+
+    if (isWhitespaceCharCode(charCode)) {
+      index++
+      continue
+    }
+
+    if (char === "/" && source[index + 1] === "/") {
+      index = skipLineComment(source, index + 2)
+      continue
+    }
+
+    if (char === "/" && source[index + 1] === "*") {
+      index = skipBlockComment(source, index + 2)
+      continue
+    }
+
+    if (char === "\"" || char === "'") {
+      const end = skipQuotedString(source, index, char)
+      tokens.push(source.slice(index, end))
+      index = end
+      continue
+    }
+
+    if (char === "`") {
+      index = skipTemplateLiteral(source, index + 1)
+      tokens.push("TMPL")
+      continue
+    }
+
+    if (isIdentifierStartCharCode(charCode)) {
+      const end = scanIdentifierEnd(source, index + 1)
+      tokens.push(source.slice(index, end))
+      index = end
+      continue
+    }
+
+    if (isDigitCharCode(charCode)) {
+      index = scanNumberEnd(source, index)
+      tokens.push("NUM")
+      continue
+    }
+
+    const three = source.slice(index, index + 3)
+    if (THREE_CHAR_OPERATORS.has(three)) {
+      tokens.push(three)
+      index += 3
+      continue
+    }
+
+    const two = source.slice(index, index + 2)
+    if (TWO_CHAR_OPERATORS.has(two)) {
+      tokens.push(two)
+      index += 2
+      continue
+    }
+
+    if (PUNCTUATION_TOKENS.has(char)) {
+      tokens.push(char)
+    }
+    index++
+  }
+
+  return tokens
+}
+
+const isWhitespaceCharCode = (charCode: number): boolean =>
+  charCode === 9 ||
+  charCode === 10 ||
+  charCode === 11 ||
+  charCode === 12 ||
+  charCode === 13 ||
+  charCode === 32
+
+const isIdentifierStartCharCode = (charCode: number): boolean =>
+  (charCode >= 65 && charCode <= 90) ||
+  (charCode >= 97 && charCode <= 122) ||
+  charCode === 36 ||
+  charCode === 95
+
+const isIdentifierPartCharCode = (charCode: number): boolean =>
+  isIdentifierStartCharCode(charCode) || isDigitCharCode(charCode)
+
+const isDigitCharCode = (charCode: number): boolean =>
+  charCode >= 48 && charCode <= 57
+
+const skipLineComment = (source: string, index: number): number => {
+  let cursor = index
+  while (cursor < source.length && source[cursor] !== "\n") cursor++
+  return cursor
+}
+
+const skipBlockComment = (source: string, index: number): number => {
+  let cursor = index
+  while (cursor < source.length) {
+    if (source[cursor] === "*" && source[cursor + 1] === "/") return cursor + 2
+    cursor++
+  }
+  return source.length
+}
+
+const skipQuotedString = (source: string, index: number, quote: "\"" | "'"): number => {
+  let cursor = index + 1
+  while (cursor < source.length) {
+    const char = source[cursor]
+    if (char === "\\") {
+      cursor += 2
+      continue
+    }
+    cursor++
+    if (char === quote) return cursor
+  }
+  return source.length
+}
+
+const skipTemplateLiteral = (source: string, index: number): number => {
+  let cursor = index
+  while (cursor < source.length) {
+    const char = source[cursor]
+    if (char === "\\") {
+      cursor += 2
+      continue
+    }
+    cursor++
+    if (char === "`") return cursor
+  }
+  return source.length
+}
+
+const scanIdentifierEnd = (source: string, index: number): number => {
+  let cursor = index
+  while (cursor < source.length && isIdentifierPartCharCode(source.charCodeAt(cursor))) {
+    cursor++
+  }
+  return cursor
+}
+
+const scanNumberEnd = (source: string, index: number): number => {
+  let cursor = index + 1
+  while (cursor < source.length) {
+    const charCode = source.charCodeAt(cursor)
+    const char = source[cursor]!
+    if (isDigitCharCode(charCode) || char === "_") {
+      cursor++
+      continue
+    }
+    if (char === "." && source[cursor + 1] !== ".") {
+      cursor++
+      continue
+    }
+    if (char === "x" || char === "X" || char === "o" || char === "O" || char === "b" || char === "B") {
+      cursor++
+      continue
+    }
+    if ((charCode >= 65 && charCode <= 70) || (charCode >= 97 && charCode <= 102)) {
+      cursor++
+      continue
+    }
+    if (
+      (char === "+" || char === "-") &&
+      (source[cursor - 1] === "e" || source[cursor - 1] === "E")
+    ) {
+      cursor++
+      continue
+    }
+    return cursor
+  }
+  return cursor
 }
 
 const structuralTokenFor = (
