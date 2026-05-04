@@ -4,7 +4,8 @@ import { join } from "node:path"
 import { describe, expect, test } from "bun:test"
 import { Effect, Exit } from "effect"
 import {
-  appendCalibrationDecision,
+  addSourceCategory,
+  classifyTypeScriptNoop,
   decodeProjectModuleManifest,
   defineProcessor,
   defineProjectModule,
@@ -76,22 +77,15 @@ describe("project module sdk", () => {
           slot: "taxonomy.file-classifier",
           role: "filter",
           fingerprint: "taxonomy-v1",
-          process: (current) =>
+          process: (current, _context, runtime) =>
             Effect.sync(() =>
-              appendCalibrationDecision(
+              addSourceCategory(
                 current,
+                runtime,
+                "generated",
                 {
-                  moduleId: "acme.convex",
-                  processorId: "convex-generated-taxonomy",
-                  slot: "taxonomy.file-classifier",
-                  action: "classify-generated",
-                  confidence: "high",
                   reason: "Convex generated API path",
                   evidence: [{ kind: "path", value: current.value.path }],
-                },
-                {
-                  ...current.value,
-                  categories: [...current.value.categories, "generated"],
                 },
               ),
             ),
@@ -111,9 +105,66 @@ describe("project module sdk", () => {
       }),
     )
 
-    expect(result.value.categories).toEqual(["unknown", "generated"])
+    expect(result.value.categories).toEqual(["generated", "unknown"])
     expect(result.decisions[0]?.moduleId).toBe("acme.convex")
     expect(result.decisions[0]?.processorId).toBe("convex-generated-taxonomy")
+  })
+
+  test("processor runtime helpers classify TypeScript noops with attribution", async () => {
+    const module = defineProjectModule({
+      id: "acme.project",
+      version: "1.0.0",
+      scope: "repository",
+      processors: [
+        defineProcessor({
+          id: "contract-noops",
+          slot: "typescript.noop-classifier",
+          role: "normalizer",
+          fingerprint: "contract-noops-v1",
+          process: (current, _context, runtime) =>
+            Effect.sync(() => {
+              expect(runtime).toMatchObject({
+                moduleId: "acme.project",
+                moduleVersion: "1.0.0",
+                processorId: "contract-noops",
+                slot: "typescript.noop-classifier",
+              })
+              return classifyTypeScriptNoop(current, runtime, {
+                classification: "intentional_noop",
+                confidence: "high",
+                reason: "Project contract hook",
+                evidence: [{ kind: "symbol", value: current.value.name }],
+                metadata: { contract: true },
+              })
+            }),
+        }),
+      ],
+    })
+    const context = makeResolvedCalibrationContext({
+      repoFacts,
+      activeModules: [module.activeModule],
+      processors: module.processors,
+    })
+
+    const result = await Effect.runPromise(
+      context.runSlot("typescript.noop-classifier", {
+        file: "/repo/src/contracts.ts",
+        name: "projectContract",
+        line: 1,
+        nodeKind: "FunctionDeclaration",
+        classification: "stub",
+      }),
+    )
+
+    expect(result.value.classification).toBe("intentional_noop")
+    expect(result.value.metadata).toMatchObject({ contract: true })
+    expect(result.decisions[0]).toMatchObject({
+      moduleId: "acme.project",
+      processorId: "contract-noops",
+      slot: "typescript.noop-classifier",
+      action: "classify-intentional_noop",
+      confidence: "high",
+    })
   })
 
   test("decodes project module manifests with repo-local, workspace, and package refs", async () => {

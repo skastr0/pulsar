@@ -52,9 +52,9 @@ The SDK should make the simple path small while allowing full Effect programs wh
 
 ```typescript
 import {
+  addSourceCategory,
   defineProjectModule,
   defineProcessor,
-  classification,
 } from "@taste-codec/project-module-sdk";
 import { Effect } from "effect";
 
@@ -66,17 +66,15 @@ export default defineProjectModule({
     defineProcessor({
       id: "convex-generated-api-taxonomy",
       slot: "taxonomy.file-classifier",
-      process: Effect.fn("convex-generated-api-taxonomy")(function* (input, context) {
-        if (!input.path.includes("/convex/_generated/")) return input;
+      role: "filter",
+      fingerprint: "convex-generated-api-taxonomy-v1",
+      process: Effect.fn("convex-generated-api-taxonomy")(function* (current, context, runtime) {
+        if (!current.value.path.includes("/convex/_generated/")) return current;
 
-        return input.addClassification(
-          classification({
-            category: "generated",
-            confidence: "high",
-            reason: "Convex generated API output",
-            evidence: [{ kind: "path", value: input.path }],
-          }),
-        );
+        return addSourceCategory(current, runtime, "generated", {
+          reason: "Convex generated API output",
+          evidence: [{ kind: "path", value: current.value.path }],
+        });
       }),
     }),
   ],
