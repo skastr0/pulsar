@@ -265,4 +265,34 @@ describe("TS-LD-02 (function / file size distribution)", () => {
     expect(diags.some((d) => d.message.includes("File outlier"))).toBe(true)
     expect(diags.every((d) => !d.message.includes("Large "))).toBe(true)
   })
+
+  test("large callbacks are named from their owning declaration and callee", async () => {
+    const body = Array.from({ length: 8 }, (_, index) => `    const value${index} = ${index}`)
+    await writeTs(
+      "service.ts",
+      [
+        "declare const Layer: { effect: (...args: unknown[]) => unknown }",
+        "declare const Effect: { gen: (...args: unknown[]) => unknown }",
+        "declare const Service: unique symbol",
+        ...Array.from({ length: 20 }, (_, index) => `export function tiny${index}() { return ${index} }`),
+        "export const SessionRegistryLive = Layer.effect(",
+        "  Service,",
+        "  Effect.gen(function* () {",
+        ...body,
+        "    return { ok: true }",
+        "  }),",
+        ")",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runCompute({
+      ...TsLd02.defaultConfig,
+      max_function_loc: 2,
+      max_file_loc: 100,
+    })
+
+    expect(out.outlierFunctions[0]?.name).toBe("SessionRegistryLive/Effect.gen")
+    expect(TsLd02.diagnose(out)[0]?.message).toContain("SessionRegistryLive/Effect.gen")
+  })
 })

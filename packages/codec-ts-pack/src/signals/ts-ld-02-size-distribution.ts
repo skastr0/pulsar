@@ -380,9 +380,47 @@ const functionName = (fn: CompilerFunctionLike): string => {
     if (ts.isPropertyAssignment(parent)) {
       return propertyNameText(parent.name)
     }
+    const callbackName = contextualCallbackName(fn)
+    if (callbackName !== undefined) return callbackName
   }
   if (ts.isConstructorDeclaration(fn)) return "<constructor>"
   if (ts.isGetAccessorDeclaration(fn)) return `<get ${propertyNameText(fn.name)}>`
   if (ts.isSetAccessorDeclaration(fn)) return `<set ${propertyNameText(fn.name)}>`
   return "<anonymous>"
+}
+
+const contextualCallbackName = (
+  fn: ts.ArrowFunction | ts.FunctionExpression,
+): string | undefined => {
+  if (!ts.isCallExpression(fn.parent)) return undefined
+  const callee = expressionName(fn.parent.expression)
+  const owner = nearestCallbackOwnerName(fn.parent)
+
+  if (owner !== undefined && callee !== undefined) return `${owner}/${callee}`
+  if (owner !== undefined) return `${owner} callback`
+  if (callee !== undefined) return `${callee} callback`
+  return undefined
+}
+
+const nearestCallbackOwnerName = (node: ts.Node): string | undefined => {
+  let current: ts.Node | undefined = node.parent
+  while (current !== undefined) {
+    if (ts.isVariableDeclaration(current) && ts.isIdentifier(current.name)) {
+      return current.name.text
+    }
+    if (ts.isPropertyAssignment(current)) {
+      return propertyNameText(current.name)
+    }
+    current = current.parent
+  }
+  return undefined
+}
+
+const expressionName = (expression: ts.Expression): string | undefined => {
+  if (ts.isIdentifier(expression)) return expression.text
+  if (ts.isPropertyAccessExpression(expression)) {
+    const left = expressionName(expression.expression)
+    return left === undefined ? expression.name.text : `${left}.${expression.name.text}`
+  }
+  return undefined
 }
