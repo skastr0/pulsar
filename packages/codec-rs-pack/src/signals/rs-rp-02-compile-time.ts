@@ -8,12 +8,13 @@ import {
   SignalComputeError,
 } from "@taste-codec/core"
 import { Effect, Schema } from "effect"
-import { RustProjectTag } from "../project.js"
+import { RustProjectTag, type RustManifestInfo } from "../project.js"
 
 const execFileAsync = promisify(execFile)
 
 export const RsRp02Config = Schema.Struct({
   top_n_diagnostics: Schema.Number,
+  measure_live_builds: Schema.Boolean,
 })
 export type RsRp02Config = typeof RsRp02Config.Type
 
@@ -52,9 +53,10 @@ export const RsRp02: Signal<RsRp02Config, RsRp02Output, RustProjectTag> = {
   configSchema: RsRp02Config,
   defaultConfig: {
     top_n_diagnostics: 10,
+    measure_live_builds: false,
   },
   inputs: [],
-  compute: () =>
+  compute: (config) =>
     Effect.gen(function* () {
       const project = yield* RustProjectTag
       return yield* Effect.tryPromise({
@@ -63,17 +65,27 @@ export const RsRp02: Signal<RsRp02Config, RsRp02Output, RustProjectTag> = {
             return emptyCompileOutput("unavailable")
           }
 
+          const existingUnits = await readTimingUnits(project.worktreePath)
+          if (!config.measure_live_builds) {
+            if (existingUnits === undefined) return emptyCompileOutput("unavailable")
+            return {
+              crates: summarizeCrates(existingUnits, workspaceCrateNames(project.manifests), new Set()),
+              totalUnits: existingUnits.length,
+              buildStatus: "measured",
+              timingSource: "cargo-timings-html",
+              cacheProbeMode: "unavailable",
+            }
+          }
+
           const firstBuild = await runCargoBuildWithTimings(project.worktreePath)
-          const firstUnits = firstBuild === undefined ? [] : await readTimingUnits(project.worktreePath)
-          if (firstBuild === undefined || firstUnits === undefined) {
+          const firstUnits = firstBuild ? await readTimingUnits(project.worktreePath) : existingUnits
+          if (firstUnits === undefined) {
             return emptyCompileOutput("unavailable")
           }
 
           const secondBuild = await runCargoBuildWithTimings(project.worktreePath)
-          const secondUnits = secondBuild === undefined ? undefined : await readTimingUnits(project.worktreePath)
-          const workspaceCrates = project.manifests
-            .map((manifest) => manifest.packageName)
-            .filter((name): name is string => name !== undefined)
+          const secondUnits = !secondBuild ? undefined : await readTimingUnits(project.worktreePath)
+          const workspaceCrates = workspaceCrateNames(project.manifests)
           const secondCrates = new Set((secondUnits ?? []).map((unit) => unit.name))
 
           const crates = summarizeCrates(firstUnits, workspaceCrates, secondCrates)
@@ -134,6 +146,13 @@ const runCargoBuildWithTimings = async (cwd: string): Promise<boolean> => {
     return false
   }
 }
+
+const workspaceCrateNames = (
+  manifests: ReadonlyArray<RustManifestInfo>,
+): ReadonlyArray<string> =>
+  manifests
+    .map((manifest) => manifest.packageName)
+    .filter((name): name is string => name !== undefined)
 
 const readTimingUnits = async (cwd: string): Promise<ReadonlyArray<CargoTimingUnit> | undefined> => {
   const reportPath = join(cwd, "target", "cargo-timings", "cargo-timing.html")

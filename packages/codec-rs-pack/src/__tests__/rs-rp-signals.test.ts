@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
-import { writeFile } from "node:fs/promises"
+import { mkdir, writeFile } from "node:fs/promises"
 import { describe, expect, test } from "bun:test"
 import {
   buildRegistry,
@@ -59,7 +59,7 @@ describe("RS-RP-* signals", () => {
     expect(out.hotspots[0]?.hotspotScore).toBeGreaterThanOrEqual(out.hotspots[1]?.hotspotScore ?? 0)
   })
 
-  test("RS-RP-02 parses cargo build timing output", async () => {
+  test("RS-RP-02 parses existing cargo timing output without live builds", async () => {
     const repo = await createRustWorkspace("taste-codec-rs-rp02-", {
       "Cargo.toml": [
         "[package]",
@@ -75,13 +75,23 @@ describe("RS-RP-* signals", () => {
     })
 
     try {
+      await mkdir(`${repo}/target/cargo-timings`, { recursive: true })
+      await writeFile(
+        `${repo}/target/cargo-timings/cargo-timing.html`,
+        [
+          "<script>",
+          'const UNIT_DATA = [{"i":0,"name":"compile-fixture","duration":0.42,"unblocked_units":[],"unblocked_rmeta_units":[]}];',
+          "</script>",
+        ].join("\n"),
+      )
       const out = await runSignalCompute(RsRp02, repo, RsRp02.defaultConfig)
       expect(out.buildStatus).toBe("measured")
       expect(out.crates.some((entry) => entry.crate === "compile-fixture")).toBe(true)
+      expect(out.cacheProbeMode).toBe("unavailable")
     } finally {
       await cleanupWorkspace(repo)
     }
-  }, 120_000)
+  })
 
   test("RS-RP-03 counts diff size and new cross-crate import edges", async () => {
     const repo = await createRustWorkspace("taste-codec-rs-rp03-", {
