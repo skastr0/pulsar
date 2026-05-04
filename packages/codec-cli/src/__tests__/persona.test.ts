@@ -187,6 +187,88 @@ describe("taste persona", () => {
     }
   }, 120_000)
 
+  test("applied ai-slop-defense vector separates dirty copied diffs from clean alternatives", async () => {
+    const seedRepo = async (): Promise<string> => {
+      const repoPath = await initRepo()
+      const smallDuplicateBody = `
+  const out = value + 1
+  return out
+`
+      await writeRepoFile(
+        repoPath,
+        "src/existing.ts",
+        `export function existingTiny(value: number): number {${smallDuplicateBody}}\n`,
+      )
+      await writeRepoFile(
+        repoPath,
+        "src/existing-two.ts",
+        `export function existingTinyTwo(value: number): number {${smallDuplicateBody}}\n`,
+      )
+      sh("git", ["add", "src/existing.ts", "src/existing-two.ts"], repoPath)
+      sh("git", ["commit", "-q", "-m", "seed tiny helpers"], repoPath)
+      return repoPath
+    }
+
+    const dirtyRepoPath = await seedRepo()
+    const cleanRepoPath = await seedRepo()
+    try {
+      const copiedBody = `
+  const out = value + 1
+  return out
+`
+      await writeRepoFile(
+        dirtyRepoPath,
+        "src/changed.ts",
+        `export function copiedTiny(value: number): number {${copiedBody}}\n`,
+      )
+
+      const defaultDirty = runCli(dirtyRepoPath, ["score", "--json", "."])
+      expect(defaultDirty.status).toBe(0)
+      const defaultDirtyScore = JSON.parse(defaultDirty.stdout).categories["generated-slop"].score
+
+      for (const repoPath of [dirtyRepoPath, cleanRepoPath]) {
+        const apply = runCli(repoPath, [
+          "persona",
+          "apply",
+          "ai-slop-defense",
+          "--to",
+          ".taste-codec/vector.json",
+        ])
+        expect(apply.status).toBe(0)
+        sh("git", ["add", ".taste-codec/vector.json"], repoPath)
+        sh("git", ["commit", "-q", "-m", "apply ai slop defense vector"], repoPath)
+      }
+
+      await writeRepoFile(
+        cleanRepoPath,
+        "src/changed.ts",
+        `
+export function formattedTiny(value: number): number {
+  const incremented = value + 1
+  return Number.isFinite(incremented) ? incremented : value
+}
+`,
+      )
+
+      const dirtyVector = runCli(dirtyRepoPath, ["score", "--json", "."])
+      const cleanVector = runCli(cleanRepoPath, ["score", "--json", "."])
+      expect(dirtyVector.status).toBe(0)
+      expect(cleanVector.status).toBe(0)
+
+      const dirtyGeneratedSlop = JSON.parse(dirtyVector.stdout).categories["generated-slop"]
+      const cleanGeneratedSlop = JSON.parse(cleanVector.stdout).categories["generated-slop"]
+
+      expect(dirtyGeneratedSlop.score).toBeLessThan(defaultDirtyScore)
+      expect(dirtyGeneratedSlop.score).toBeLessThan(cleanGeneratedSlop.score)
+      expect(dirtyGeneratedSlop.signals["TS-SL-01"]).toBeLessThan(1)
+      expect(cleanGeneratedSlop.signals["TS-SL-01"]).toBe(1)
+      expect(cleanGeneratedSlop.score).toBeGreaterThanOrEqual(0.99)
+    } finally {
+      await rm(dirtyRepoPath, { recursive: true, force: true })
+      await rm(cleanRepoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
   test("created ai-slop-defense vector changes generated-slop scoring", async () => {
     const repoPath = await initRepo()
     try {
