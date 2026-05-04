@@ -73,4 +73,54 @@ describe("codec runtime project modules", () => {
       await rm(repoPath, { recursive: true, force: true })
     }
   })
+
+  test("repo-local project module source changes update calibration fingerprints", async () => {
+    const repoPath = await mkdtemp(join(tmpdir(), "taste-runtime-project-modules-"))
+    try {
+      const writeModule = (marker: string) =>
+        writeRepoFile(
+          repoPath,
+          ".taste-codec/modules/local.mjs",
+          [
+            `// ${marker}`,
+            "export default {",
+            "  id: 'repo.local-module',",
+            "  version: '1.0.0',",
+            "  scope: 'repository',",
+            "  processors: []",
+            "}",
+          ].join("\n"),
+        )
+
+      await writeModule("first")
+      await writeRepoFile(
+        repoPath,
+        ".taste-codec/project-modules.json",
+        JSON.stringify(
+          {
+            modules: [
+              {
+                id: "repo.local-module",
+                kind: "repo-local",
+                path: ".taste-codec/modules/local.mjs",
+              },
+            ],
+          },
+          null,
+          2,
+        ),
+      )
+
+      const first = await Effect.runPromise(loadProjectModuleCalibrationContext(repoPath))
+      await writeModule("second")
+      const second = await Effect.runPromise(loadProjectModuleCalibrationContext(repoPath))
+
+      expect(first?.fingerprint).not.toBe(second?.fingerprint)
+      expect(first?.activeModules[0]?.sourceFingerprint).not.toBe(
+        second?.activeModules[0]?.sourceFingerprint,
+      )
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
 })

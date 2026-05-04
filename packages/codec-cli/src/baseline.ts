@@ -26,12 +26,19 @@ export const runBaselineCommand = (opts: BaselineCommandOptions) =>
       registry,
       ...(opts.vectorPath !== undefined ? { explicitPath: opts.vectorPath } : {}),
     })
-    const { repoRoot, result } = yield* observeWorktree(opts.repoPath, vectorSelection.vector)
+    const { repoRoot, result, calibrationContext } = yield* observeWorktree(
+      opts.repoPath,
+      vectorSelection.vector,
+    )
     const headSha = yield* readHeadSha(repoRoot)
     const baseline = createBaseline({
       baselineSha: headSha,
       vectorId: vectorSelection.label,
-      observerConfigHash: computeObserverConfigHash(registry, vectorSelection.vector),
+      observerConfigHash: computeObserverConfigHash(
+        registry,
+        vectorSelection.vector,
+        calibrationContext?.fingerprint,
+      ),
       violations: result.hard_gate_violations,
     })
     const baselinePath = yield* writeBaselineFile(repoRoot, baseline)

@@ -1,4 +1,5 @@
-import { realpath } from "node:fs/promises"
+import { createHash } from "node:crypto"
+import { readFile, realpath } from "node:fs/promises"
 import { createRequire } from "node:module"
 import { isAbsolute, relative, resolve } from "node:path"
 import { pathToFileURL } from "node:url"
@@ -132,6 +133,18 @@ export interface DefinedProjectModule {
   readonly descriptor: ProjectModuleDescriptor
   readonly activeModule: ActiveProjectModule
   readonly processors: ReadonlyArray<AnyCalibrationProcessor>
+}
+
+interface ResolvedProjectModuleTarget {
+  readonly target: string
+  readonly source: ProjectModuleDescriptor["source"]
+  readonly sourceRef: string
+  readonly sourceFingerprint: string
+}
+
+interface ProjectModuleSourceFile {
+  readonly sourceRef: string
+  readonly path: string
 }
 
 export class ProjectModuleLoadError extends Schema.TaggedError<ProjectModuleLoadError>()(
@@ -270,7 +283,13 @@ export const classifyTypeScriptNoop = (
 export const projectModuleRefTarget = (
   ref: ProjectModuleRef,
   options: ProjectModuleLoadOptions,
-): Effect.Effect<string, ProjectModuleLoadError> => {
+): Effect.Effect<string, ProjectModuleLoadError> =>
+  Effect.map(resolveProjectModuleRefTarget(ref, options), (target) => target.target)
+
+const resolveProjectModuleRefTarget = (
+  ref: ProjectModuleRef,
+  options: ProjectModuleLoadOptions,
+): Effect.Effect<ResolvedProjectModuleTarget, ProjectModuleLoadError> => {
   switch (ref.kind) {
     case "repo-local":
       return resolveRepoLocalProjectModuleTarget(ref, options)
@@ -283,7 +302,7 @@ export const projectModuleRefTarget = (
 const resolveRepoLocalProjectModuleTarget = (
   ref: ProjectModuleRef & { readonly kind: "repo-local" },
   options: ProjectModuleLoadOptions,
-): Effect.Effect<string, ProjectModuleLoadError> =>
+): Effect.Effect<ResolvedProjectModuleTarget, ProjectModuleLoadError> =>
   Effect.gen(function* () {
     if (isAbsolute(ref.path)) {
       return yield* new ProjectModuleLoadError({
@@ -323,13 +342,21 @@ const resolveRepoLocalProjectModuleTarget = (
       })
     }
 
-    return pathToFileURL(target).href
+    const sourceFingerprint = yield* hashProjectModuleSource(ref, target, [
+      { sourceRef: ref.path, path: target },
+    ])
+    return {
+      target: withSourceFingerprintQuery(pathToFileURL(target).href, sourceFingerprint),
+      source: "repo-local",
+      sourceRef: ref.path,
+      sourceFingerprint,
+    }
   })
 
 const resolvePackageProjectModuleTarget = (
   ref: ProjectModuleRef & { readonly kind: "workspace" | "package" },
   repoRoot: string,
-): Effect.Effect<string, ProjectModuleLoadError> =>
+): Effect.Effect<ResolvedProjectModuleTarget, ProjectModuleLoadError> =>
   Effect.gen(function* () {
     const packageName = ref.packageName
     if (!isPackageName(packageName)) {
@@ -351,7 +378,25 @@ const resolvePackageProjectModuleTarget = (
         }),
     })
 
-    return pathToFileURL(packagePath).href
+    const target = yield* Effect.tryPromise({
+      try: () => realpath(packagePath),
+      catch: (cause) =>
+        new ProjectModuleLoadError({
+          refId: ref.id,
+          target: packagePath,
+          message: `Failed to resolve project module package artifact ${packageName}`,
+          cause,
+        }),
+    })
+    const sourceFingerprint = yield* hashProjectModuleSource(ref, target, [
+      { sourceRef: packageName, path: target },
+    ])
+    return {
+      target: withSourceFingerprintQuery(pathToFileURL(target).href, sourceFingerprint),
+      source: ref.kind,
+      sourceRef: packageName,
+      sourceFingerprint,
+    }
   })
 
 export const loadProjectModuleRef = (
@@ -359,7 +404,8 @@ export const loadProjectModuleRef = (
   options: ProjectModuleLoadOptions,
 ): Effect.Effect<DefinedProjectModule, ProjectModuleLoadError> =>
   Effect.gen(function* () {
-    const target = yield* projectModuleRefTarget(ref, options)
+    const resolvedTarget = yield* resolveProjectModuleRefTarget(ref, options)
+    const target = resolvedTarget.target
     const imported = yield* Effect.tryPromise({
       try: () => import(target) as Promise<Record<string, unknown>>,
       catch: (cause) =>
@@ -394,7 +440,8 @@ export const loadProjectModuleRef = (
           })
         : exported
 
-    return yield* normalizeLoadedProjectModule(ref, target, value)
+    const module = yield* normalizeLoadedProjectModule(ref, target, value)
+    return withLoadedProjectModuleSourceIdentity(module, resolvedTarget)
   })
 
 export const loadEnabledProjectModules = (
@@ -420,6 +467,23 @@ const normalizeLoadedProjectModule = (
     target,
     message: `Project module ${ref.id} must export a DefinedProjectModule or ProjectModuleDefinitionInput`,
   }))
+}
+
+const withLoadedProjectModuleSourceIdentity = (
+  module: DefinedProjectModule,
+  target: ResolvedProjectModuleTarget,
+): DefinedProjectModule => {
+  const descriptor: ProjectModuleDescriptor = {
+    ...module.descriptor,
+    source: target.source,
+    sourceRef: target.sourceRef,
+    sourceFingerprint: target.sourceFingerprint,
+  }
+  return {
+    descriptor,
+    activeModule: activateProjectModule(descriptor),
+    processors: module.processors,
+  }
 }
 
 const makeProjectModuleProcessorRuntime = <Slot extends CalibrationSlotId>(
@@ -472,3 +536,37 @@ const isPathInside = (parent: string, child: string): boolean => {
 
 const isPackageName = (value: string): boolean =>
   /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/.test(value)
+
+const hashProjectModuleSource = (
+  ref: ProjectModuleRef,
+  target: string,
+  files: ReadonlyArray<ProjectModuleSourceFile>,
+): Effect.Effect<string, ProjectModuleLoadError> =>
+  Effect.gen(function* () {
+    const hash = createHash("sha256")
+    for (const file of [...files].sort((left, right) =>
+      left.sourceRef.localeCompare(right.sourceRef),
+    )) {
+      const content = yield* Effect.tryPromise({
+        try: () => readFile(file.path),
+        catch: (cause) =>
+          new ProjectModuleLoadError({
+            refId: ref.id,
+            target,
+            message: `Failed to hash project module source ${file.sourceRef}`,
+            cause,
+          }),
+      })
+      hash.update(file.sourceRef)
+      hash.update("\0")
+      hash.update(content)
+      hash.update("\0")
+    }
+    return `sha256:${hash.digest("hex")}`
+  })
+
+const withSourceFingerprintQuery = (url: string, sourceFingerprint: string): string => {
+  const parsed = new URL(url)
+  parsed.searchParams.set("tasteModuleSource", sourceFingerprint)
+  return parsed.href
+}

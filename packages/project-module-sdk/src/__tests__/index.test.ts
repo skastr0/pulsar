@@ -295,6 +295,8 @@ describe("project module sdk", () => {
       )
 
       expect(loaded.descriptor.id).toBe("loaded.definition")
+      expect(loaded.descriptor.sourceRef).toBe("module.mjs")
+      expect(loaded.descriptor.sourceFingerprint).toMatch(/^sha256:/)
       expect(loaded.activeModule.fingerprint).toBe(
         fingerprintProjectModule(loaded.descriptor),
       )
@@ -356,7 +358,58 @@ describe("project module sdk", () => {
 
       expect(loaded).toHaveLength(1)
       expect(loaded[0]?.descriptor.id).toBe("loaded.defined")
-      expect(loaded[0]?.activeModule.fingerprint).toBe("defined-fingerprint")
+      expect(loaded[0]?.descriptor.sourceFingerprint).toMatch(/^sha256:/)
+      expect(loaded[0]?.activeModule.fingerprint).toBe(
+        fingerprintProjectModule(loaded[0]!.descriptor),
+      )
+      expect(loaded[0]?.activeModule.fingerprint).not.toBe("defined-fingerprint")
+    } finally {
+      await rm(repoRoot, { recursive: true, force: true })
+    }
+  })
+
+  test("repo-local source content changes invalidate loaded module fingerprints", async () => {
+    const repoRoot = await mkdtemp(join(tmpdir(), "taste-project-module-"))
+    try {
+      const writeModule = (marker: string) =>
+        writeFile(
+          join(repoRoot, "module.mjs"),
+          [
+            `// ${marker}`,
+            "export default {",
+            "  id: 'loaded.definition',",
+            "  version: '1.0.0',",
+            "  scope: 'repository',",
+            "  processors: []",
+            "}",
+          ].join("\n"),
+          "utf8",
+        )
+      const manifest = await Effect.runPromise(
+        decodeProjectModuleManifest({
+          modules: [
+            {
+              id: "loaded.definition",
+              kind: "repo-local",
+              path: "module.mjs",
+            },
+          ],
+        }),
+      )
+
+      await writeModule("first")
+      const first = await Effect.runPromise(
+        loadProjectModuleRef(manifest.modules[0]!, { repoRoot }),
+      )
+      await writeModule("second")
+      const second = await Effect.runPromise(
+        loadProjectModuleRef(manifest.modules[0]!, { repoRoot }),
+      )
+
+      expect(first.descriptor.sourceFingerprint).not.toBe(
+        second.descriptor.sourceFingerprint,
+      )
+      expect(first.activeModule.fingerprint).not.toBe(second.activeModule.fingerprint)
     } finally {
       await rm(repoRoot, { recursive: true, force: true })
     }
@@ -410,7 +463,9 @@ describe("project module sdk", () => {
         id: "@acme/taste-module",
         scope: "organization",
         source: "package",
+        sourceRef: "@acme/taste-module",
       })
+      expect(loaded.descriptor.sourceFingerprint).toMatch(/^sha256:/)
     } finally {
       await rm(repoRoot, { recursive: true, force: true })
     }

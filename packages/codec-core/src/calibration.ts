@@ -205,6 +205,7 @@ export interface ProjectModuleDescriptor {
   readonly scope: ProjectModuleScope
   readonly source: "builtin" | "package" | "workspace" | "repo-local"
   readonly sourceRef?: string
+  readonly sourceFingerprint?: string
   readonly configHash?: string
   readonly contributions: ReadonlyArray<ProjectModuleContribution>
 }
@@ -276,6 +277,7 @@ export const fingerprintProjectModule = (
     scope: module.scope,
     source: module.source,
     sourceRef: module.sourceRef ?? null,
+    sourceFingerprint: module.sourceFingerprint ?? null,
     configHash: module.configHash ?? null,
     contributions: normalizeContributions(module.contributions),
   })

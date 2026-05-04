@@ -103,6 +103,34 @@ describe("calibration contracts", () => {
     expect(left).toBe(right)
   })
 
+  test("project module fingerprints include loader-observed source fingerprints", () => {
+    const base = {
+      id: "acme.project",
+      version: "1.0.0",
+      scope: "repository" as const,
+      source: "repo-local" as const,
+      sourceRef: ".taste-codec/modules/acme.ts",
+      contributions: [
+        {
+          slot: "typescript.noop-classifier" as const,
+          processorId: "noop",
+          role: "normalizer" as const,
+          priority: 20,
+          fingerprint: "noop-v1",
+        },
+      ],
+    }
+
+    expect(fingerprintProjectModule(base)).not.toBe(
+      fingerprintProjectModule({ ...base, sourceFingerprint: "sha256:module-a" }),
+    )
+    expect(
+      fingerprintProjectModule({ ...base, sourceFingerprint: "sha256:module-a" }),
+    ).not.toBe(
+      fingerprintProjectModule({ ...base, sourceFingerprint: "sha256:module-b" }),
+    )
+  })
+
   test("resolved calibration fingerprints are stable across module and processor order", () => {
     const firstProcessor = defineCalibrationProcessor({
       id: "first",
@@ -233,4 +261,3 @@ describe("calibration contracts", () => {
     expect(result.decisions[0]?.moduleId).toBe("acme.project")
   })
 })
-

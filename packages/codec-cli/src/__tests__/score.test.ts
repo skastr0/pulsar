@@ -869,9 +869,69 @@ export function stubF() { throw new Error("Not implemented") }
 
       const ci = runCli(repoPath, ["score", "--ci", "."])
       expect(ci.status).toBe(2)
-      expect(ci.stderr).toContain("reason=vector-mismatch")
+      expect(ci.stderr).toContain("reason=observer-config-mismatch")
       expect(ci.stderr).toContain("baseline_vector=all-defaults")
       expect(ci.stderr).toContain("current_vector=protocol-stub-tolerant")
+      expect(ci.stderr).toContain("taste baseline refresh")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
+  test("score --ci fails when project module source differs from the baseline", async () => {
+    const repoPath = await initRepo(simpleRepoFiles())
+    try {
+      const writeProjectModule = (marker: string) =>
+        writeRepoFile(
+          repoPath,
+          ".taste-codec/modules/local.mjs",
+          [
+            `// ${marker}`,
+            "export default {",
+            "  id: 'repo.local-module',",
+            "  version: '1.0.0',",
+            "  scope: 'repository',",
+            "  processors: []",
+            "}",
+          ].join("\n"),
+        )
+
+      await writeProjectModule("baseline")
+      await writeRepoFile(
+        repoPath,
+        ".taste-codec/project-modules.json",
+        JSON.stringify(
+          {
+            modules: [
+              {
+                id: "repo.local-module",
+                kind: "repo-local",
+                path: ".taste-codec/modules/local.mjs",
+              },
+            ],
+          },
+          null,
+          2,
+        ),
+      )
+      sh("git", ["add", ".taste-codec"], repoPath)
+      sh("git", ["commit", "-q", "-m", "add project module"], repoPath)
+
+      const baselineSet = runCli(repoPath, ["baseline", "set", "."])
+      expect(baselineSet.status).toBe(0)
+      const baselineJson = JSON.parse(
+        await readFile(join(repoPath, ".taste-codec", "baseline.json"), "utf8"),
+      )
+      expect(typeof baselineJson.observer_config_hash).toBe("string")
+
+      await writeProjectModule("changed")
+      const ci = runCli(repoPath, ["score", "--ci", "."])
+
+      expect(ci.status).toBe(2)
+      expect(ci.stderr).toContain("reason=observer-config-mismatch")
+      expect(ci.stderr).toContain("baseline_vector=all-defaults")
+      expect(ci.stderr).toContain("current_vector=all-defaults")
+      expect(ci.stderr).toContain(`baseline_config=${baselineJson.observer_config_hash}`)
       expect(ci.stderr).toContain("taste baseline refresh")
     } finally {
       await rm(repoPath, { recursive: true, force: true })

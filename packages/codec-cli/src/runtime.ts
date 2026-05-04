@@ -168,14 +168,14 @@ export const observeWorktree = (
   Effect.gen(function* () {
     const repoRoot = yield* resolveRepoRoot(repoPath)
     const gitSha = yield* readHeadSha(repoRoot)
-    const { registry, engine, timeSeries } = yield* makeCodecRuntime(
+    const { registry, engine, timeSeries, calibrationContext } = yield* makeCodecRuntime(
       repoRoot,
       vector,
       options,
     )
     const result = yield* engine.observeWorktree(repoRoot, gitSha)
 
-    return { repoRoot, gitSha, registry, result, timeSeries }
+    return { repoRoot, gitSha, registry, result, timeSeries, calibrationContext }
   })
 
 export const makeCodecRuntime = (
