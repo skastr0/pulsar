@@ -61,6 +61,25 @@ export function layer(Effect: { gen: (body: () => unknown) => unknown }) {
     expect(out.stubs.map((stub) => stub.name).sort()).toEqual(["create", "prompt"])
   })
 
+  test("uses Effect.fn labels for not-implemented operation stubs", async () => {
+    await repo.write(
+      "session.ts",
+      `
+const Effect = {
+  fn: (_label: string) => (body: unknown) => body,
+}
+
+export const create = Effect.fn("Session.create")(function* (_input: unknown) {
+  throw new Error("Not implemented")
+})
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
+    expect(out.stubs.map((stub) => stub.name)).toEqual(["Session.create"])
+    expect(TsSl04.diagnose(out)[0]?.message).toContain("Session.create")
+  })
+
   test("detects empty function bodies", async () => {
     await repo.write(
       "utils.ts",
