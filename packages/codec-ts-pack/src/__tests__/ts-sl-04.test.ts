@@ -93,6 +93,40 @@ export function empty() {}
     expect(out.stubs.find((s) => s.kind === "empty-body")?.confidence).toBe("low")
   })
 
+  test("ignores server reactive lifecycle no-ops but keeps app stubs", async () => {
+    await repo.write(
+      "src/server/reactive.ts",
+      `
+export function createEffect<T>(fn: (v?: T) => T, value?: T): void {}
+export function onMount(fn: () => void) {}
+export function requestCallback(fn: () => void) {
+  return { id: 0, fn: () => {}, startTime: 0, expirationTime: 0 };
+}
+export function cancelCallback(task: unknown) {}
+export function enableExternalSource(factory: unknown) {}
+`,
+    )
+    await repo.write(
+      "src/server/rendering.ts",
+      `
+export function resetErrorBoundaries() {}
+export function ErrorBoundary(props: { fallback: (err: unknown, reset: () => void) => string }) {
+  const f = props.fallback;
+  return f(new Error("boom"), () => {});
+}
+`,
+    )
+    await repo.write(
+      "src/app.ts",
+      `
+export function createEffect<T>(fn: (v?: T) => T, value?: T): void {}
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
+    expect(out.stubs.map((stub) => stub.file)).toEqual([`${repo.root}/src/app.ts`])
+  })
+
   test("detects TODO-only implementations", async () => {
     await repo.write(
       "utils.ts",

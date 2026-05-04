@@ -53,7 +53,7 @@ export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalCon
   tier: 1,
   category: "generated-slop",
   kind: "structural",
-  cacheVersion: "framework-contract-unsupported-hooks-v1",
+  cacheVersion: "server-framework-contract-noops-v1",
   configSchema: TsSl04Config,
   defaultConfig: {
     exclude_globs: [
@@ -430,6 +430,10 @@ const isIntentionalNoop = (filePath: string, fn: FnLike, bodyText: string): bool
     return true
   }
 
+  if (isServerReactiveContractNoop(filePath, fn)) {
+    return true
+  }
+
   return hasNoopName(getFunctionName(fn))
 }
 
@@ -772,6 +776,26 @@ const isUnavailableCapabilitySetterNoop = (fn: FnLike): boolean => {
   })
 }
 
+const SERVER_REACTIVE_EMPTY_CONTRACT_NAMES = new Set([
+  "cancelCallback",
+  "createEffect",
+  "enableExternalSource",
+  "fn",
+  "onMount",
+])
+
+const isServerReactiveContractNoop = (filePath: string, fn: FnLike): boolean => {
+  if (/(?:^|[\\/])server[\\/]reactive\.tsx?$/.test(filePath)) {
+    return SERVER_REACTIVE_EMPTY_CONTRACT_NAMES.has(objectMemberNameForFunction(fn))
+  }
+
+  if (/(?:^|[\\/])server[\\/]rendering\.tsx?$/.test(filePath)) {
+    return ["f callback", "resetErrorBoundaries"].includes(getFunctionName(fn))
+  }
+
+  return false
+}
+
 const COMMON_EMPTY_CONTRACT_CALLBACKS = new Set([
   "ack",
   "acknowledge",
@@ -792,6 +816,7 @@ const COMMON_EMPTY_CONTRACT_CALLBACKS = new Set([
   "startTypingLoop",
   "startTypingOnText",
   "stop",
+  "unsubscribe",
   "[Symbol.asyncIterator]",
 ])
 
