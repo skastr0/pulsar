@@ -187,10 +187,10 @@ export const TsAd02: Signal<TsAd02Config, TsAd02Output, TsProjectTag> = {
   score: (out) => {
     if (out.cycleCount === 0) return 1
     // Two-part penalty: cycle count drives broad pressure, while cycle
-    // size grows logarithmically so small local cycles stay actionable
-    // without being scored like repo-wide tangles. Huge SCCs still collapse
+    // size grows logarithmically so local and subsystem cycles stay
+    // distinguishable from repo-scale tangles. Huge SCCs still collapse
     // toward the floor.
-    const countPenalty = Math.min(0.45, out.cycleCount * 0.06)
+    const countPenalty = Math.min(0.45, out.cycleCount * 0.05)
     const sizePenalty = cycleSizePenalty(out.largestCycleSize)
     return Math.max(0.05, 1 - countPenalty - sizePenalty)
   },
@@ -237,14 +237,17 @@ const cycleSeverity = (
   cycle: Cycle,
   out: TsAd02Output,
 ): Diagnostic["severity"] => {
-  if (cycle.modules.length >= 8) return "block"
+  if (cycle.modules.length >= 20) return "block"
   if (out.cycleCount >= 10) return "block"
   return "warn"
 }
 
 const cycleSizePenalty = (largestCycleSize: number): number => {
   const scale = Math.log2(Math.max(1, largestCycleSize - 1))
-  return largestCycleSize >= 8 ? Math.min(0.9, scale * 0.18) : scale * 0.12
+  if (largestCycleSize >= 75) return 0.9
+  if (largestCycleSize >= 20) return Math.min(0.7, scale * 0.1)
+  if (largestCycleSize >= 8) return scale * 0.09
+  return scale * 0.12
 }
 
 /* ------------------------------------------------------------------ */

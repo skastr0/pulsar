@@ -187,7 +187,7 @@ describe("TS-AD-02 (circular dependencies)", () => {
   })
 
   test("repo-scale cycles collapse toward the score floor", async () => {
-    const count = 40
+    const count = 100
     for (let index = 0; index < count; index++) {
       const next = (index + 1) % count
       await writeTs(
@@ -200,6 +200,24 @@ describe("TS-AD-02 (circular dependencies)", () => {
     expect(out.cycleCount).toBe(1)
     expect(out.largestCycleSize).toBe(count)
     expect(TsAd02.score(out)).toBe(0.05)
+    expect(TsAd02.diagnose(out)[0]?.severity).toBe("block")
+  })
+
+  test("large subsystem cycles block without collapsing like repo-scale tangles", async () => {
+    const count = 26
+    for (let index = 0; index < count; index++) {
+      const next = (index + 1) % count
+      await writeTs(
+        `m${index}.ts`,
+        `import { m${next} } from './m${next}'\nexport const m${index} = m${next} + 1\n`,
+      )
+    }
+
+    const out = await runCompute()
+    expect(out.cycleCount).toBe(1)
+    expect(out.largestCycleSize).toBe(count)
+    expect(TsAd02.score(out)).toBeGreaterThanOrEqual(0.45)
+    expect(TsAd02.score(out)).toBeLessThan(0.55)
     expect(TsAd02.diagnose(out)[0]?.severity).toBe("block")
   })
 
