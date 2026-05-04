@@ -213,7 +213,6 @@ const isImportedFactoryCall = (
 
 const isConvexRuntimeFactoryModule = (specifier: string): boolean =>
   specifier === CONVEX_GENERATED_SERVER_MODULE ||
-  specifier === CONVEX_SERVER_MODULE ||
   specifier.endsWith("/_generated/server")
 
 export default convexProjectModule

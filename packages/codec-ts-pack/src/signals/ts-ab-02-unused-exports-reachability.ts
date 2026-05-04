@@ -417,7 +417,8 @@ const importBindingFacts = (sourceFile: SourceFile): ReadonlyArray<TypeScriptImp
   })
 
 const localBindingFacts = (sourceFile: SourceFile): ReadonlyArray<TypeScriptLocalBindingFact> =>
-  sourceFile.getVariableDeclarations()
+  sourceFile.getVariableStatements()
+    .flatMap((statement) => statement.getDeclarations())
     .map((declaration): TypeScriptLocalBindingFact | undefined => {
       const localName = identifierName(declaration.getNameNode())
       if (localName === undefined) return undefined
