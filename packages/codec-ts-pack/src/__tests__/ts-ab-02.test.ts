@@ -216,7 +216,10 @@ describe("TS-AB-02 (unused exports reachability)", () => {
   test("project modules can mark Convex runtime exports as public entrypoints", async () => {
     await repo.write(
       "convex/lifecycle.ts",
-      "export const syncLifecycle = mutation({ handler: async () => null })\n",
+      [
+        "const syncLifecycle = mutation({ handler: async () => null })",
+        "export { syncLifecycle as syncLifecyclePublic }",
+      ].join("\n"),
     )
     await repo.write("src/internal.ts", "export const ordinaryUnused = true\n")
     const calibrationContext = makeResolvedCalibrationContext({
@@ -237,7 +240,18 @@ describe("TS-AB-02 (unused exports reachability)", () => {
           fingerprint: "convex-public-entrypoints-v1",
           process: (current) =>
             Effect.sync(() => {
-              if (!current.value.exportFile.includes("/convex/")) return current
+              const localName = current.value.sourceExportSpecifiers?.find((specifier) =>
+                specifier.exportedName === current.value.exportName
+              )?.localName ?? current.value.exportName
+              const localCall = current.value.sourceLocalBindings?.find((binding) =>
+                binding.localName === localName
+              )?.initializerCall
+              if (
+                !current.value.exportFile.includes("/convex/") ||
+                localCall?.calleeName !== "mutation"
+              ) {
+                return current
+              }
               return appendCalibrationDecision(
                 current,
                 {
@@ -274,7 +288,7 @@ describe("TS-AB-02 (unused exports reachability)", () => {
     )
     const byName = new Map(out.exports.map((entry) => [entry.exportName, entry]))
 
-    expect(byName.get("syncLifecycle")?.classification).toBe("cross-package")
+    expect(byName.get("syncLifecyclePublic")?.classification).toBe("cross-package")
     expect(byName.get("ordinaryUnused")?.classification).toBe("unused")
     expect(out.calibrationDecisions).toHaveLength(1)
     expect(out.calibrationDecisions[0]?.slot).toBe("typescript.export-reachability")

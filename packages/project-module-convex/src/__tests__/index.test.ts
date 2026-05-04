@@ -68,7 +68,22 @@ describe("convex project module", () => {
       exportName: "listProjects",
       declarationFiles: ["/repo/convex/lifecycle.ts"],
       declarationKinds: ["VariableDeclaration"],
-      declarationTexts: ["export const listProjects = query({ handler: async () => [] })"],
+      declarations: [
+        {
+          declarationKind: "VariableDeclaration",
+          exportName: "listProjects",
+          localName: "listProjects",
+          initializerCall: { calleeText: "query", calleeName: "query" },
+        },
+      ],
+      sourceImports: [
+        {
+          moduleSpecifier: "./_generated/server",
+          importKind: "named",
+          importedName: "query",
+          localName: "query",
+        },
+      ],
       isPublicEntrypoint: false,
     })).toBe(true)
     expect(isConvexPublicEntrypointExport({
@@ -76,7 +91,21 @@ describe("convex project module", () => {
       exportName: "default",
       declarationFiles: ["/repo/convex/schema.ts"],
       declarationKinds: ["ExportAssignment"],
-      declarationTexts: ["export default defineSchema({})"],
+      declarations: [
+        {
+          declarationKind: "ExportAssignment",
+          exportName: "default",
+          expressionCall: { calleeText: "defineSchema", calleeName: "defineSchema" },
+        },
+      ],
+      sourceImports: [
+        {
+          moduleSpecifier: "convex/server",
+          importKind: "named",
+          importedName: "defineSchema",
+          localName: "defineSchema",
+        },
+      ],
       isPublicEntrypoint: false,
     })).toBe(true)
     expect(isConvexPublicEntrypointExport({
@@ -84,7 +113,88 @@ describe("convex project module", () => {
       exportName: "LifecycleRoot",
       declarationFiles: ["/repo/convex/domain.ts"],
       declarationKinds: ["TypeAliasDeclaration"],
-      declarationTexts: ["export type LifecycleRoot = 'sdlc'"],
+      declarations: [
+        {
+          declarationKind: "TypeAliasDeclaration",
+          exportName: "LifecycleRoot",
+          localName: "LifecycleRoot",
+        },
+      ],
+      isPublicEntrypoint: false,
+    })).toBe(false)
+  })
+
+  test("resolves Convex factory aliases and local export specifiers structurally", () => {
+    expect(isConvexPublicEntrypointExport({
+      exportFile: "/repo/convex/lifecycle.ts",
+      exportName: "visibleList",
+      declarationFiles: ["/repo/convex/lifecycle.ts"],
+      declarationKinds: [],
+      sourceImports: [
+        {
+          moduleSpecifier: "./_generated/server",
+          importKind: "named",
+          importedName: "query",
+          localName: "convexQuery",
+        },
+      ],
+      sourceLocalBindings: [
+        {
+          localName: "listProjects",
+          initializerCall: { calleeText: "convexQuery", calleeName: "convexQuery" },
+        },
+      ],
+      sourceExportSpecifiers: [
+        {
+          exportedName: "visibleList",
+          localName: "listProjects",
+        },
+      ],
+      isPublicEntrypoint: false,
+    })).toBe(true)
+  })
+
+  test("does not treat incidental Convex-looking text or local helpers as public", () => {
+    expect(isConvexPublicEntrypointExport({
+      exportFile: "/repo/convex/helpers.ts",
+      exportName: "looksLikeQuery",
+      declarationFiles: ["/repo/convex/helpers.ts"],
+      declarationKinds: ["VariableDeclaration"],
+      declarations: [
+        {
+          declarationKind: "VariableDeclaration",
+          exportName: "looksLikeQuery",
+          localName: "looksLikeQuery",
+          initializerCall: { calleeText: "localQuery", calleeName: "localQuery" },
+        },
+      ],
+      sourceImports: [
+        {
+          moduleSpecifier: "./local",
+          importKind: "named",
+          importedName: "query",
+          localName: "localQuery",
+        },
+      ],
+      isPublicEntrypoint: false,
+    })).toBe(false)
+    expect(isConvexPublicEntrypointExport({
+      exportFile: "/repo/convex/schema.ts",
+      exportName: "default",
+      declarationFiles: ["/repo/convex/schema.ts"],
+      declarationKinds: ["ExportAssignment"],
+      declarations: [
+        {
+          declarationKind: "ExportAssignment",
+          exportName: "default",
+          expressionIdentifier: "schema",
+        },
+      ],
+      sourceLocalBindings: [
+        {
+          localName: "schema",
+        },
+      ],
       isPublicEntrypoint: false,
     })).toBe(false)
   })
@@ -128,8 +238,21 @@ describe("convex project module", () => {
         exportName: "syncLifecycle",
         declarationFiles: ["/repo/convex/lifecycle.ts"],
         declarationKinds: ["VariableDeclaration"],
-        declarationTexts: [
-          "export const syncLifecycle = internalMutation({ handler: async () => null })",
+        declarations: [
+          {
+            declarationKind: "VariableDeclaration",
+            exportName: "syncLifecycle",
+            localName: "syncLifecycle",
+            initializerCall: { calleeText: "internalMutation", calleeName: "internalMutation" },
+          },
+        ],
+        sourceImports: [
+          {
+            moduleSpecifier: "./_generated/server",
+            importKind: "named",
+            importedName: "internalMutation",
+            localName: "internalMutation",
+          },
         ],
         isPublicEntrypoint: false,
       }),

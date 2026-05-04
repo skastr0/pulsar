@@ -8,7 +8,12 @@ import {
   type ResolvedCalibrationContext,
   type Signal,
   SignalComputeError,
+  type TypeScriptCallExpressionFact,
+  type TypeScriptExportDeclarationFact,
   type TypeScriptExportReachabilityValue,
+  type TypeScriptExportSpecifierFact,
+  type TypeScriptImportBindingFact,
+  type TypeScriptLocalBindingFact,
 } from "@taste-codec/core"
 import { Effect, Option, Schema } from "effect"
 import { normalize, resolve } from "node:path"
@@ -78,6 +83,13 @@ interface ReachabilityAnalysis {
   readonly consumerLookup: ReadonlyMap<string, ConsumerLookup>
   readonly packageNameByFile: ReadonlyMap<string, string | undefined>
   readonly publicEntryFiles: ReadonlySet<string>
+  readonly sourceFactsByFile: ReadonlyMap<string, TypeScriptSourceExportFacts>
+}
+
+interface TypeScriptSourceExportFacts {
+  readonly imports: ReadonlyArray<TypeScriptImportBindingFact>
+  readonly localBindings: ReadonlyArray<TypeScriptLocalBindingFact>
+  readonly exportSpecifiers: ReadonlyArray<TypeScriptExportSpecifierFact>
 }
 
 export const TsAb02: Signal<TsAb02Config, TsAb02Output, TsProjectTag | TsPackageInfoTag> = {
@@ -186,6 +198,7 @@ export const TsAb02: Signal<TsAb02Config, TsAb02Output, TsProjectTag | TsPackage
           binding,
           defaultPublicEntrypoint,
           exportReachabilityCalibration,
+          analysis.sourceFactsByFile.get(binding.exportFile),
         ).pipe(Effect.mapError(toSignalComputeError))
         calibrationDecisions.push(...reachability.decisions)
         entries.push(classifyExport(
@@ -304,6 +317,10 @@ const buildReachabilityAnalysis = (
     consumerLookup,
     packageNameByFile,
     publicEntryFiles,
+    sourceFactsByFile: new Map(sourceFiles.map((sourceFile) => [
+      sourceFile.getFilePath(),
+      collectSourceExportFacts(sourceFile),
+    ])),
   }
 }
 
@@ -311,6 +328,7 @@ const calibrateExportReachability = (
   binding: ExportBinding,
   isPublicEntrypoint: boolean,
   calibration: ResolvedCalibrationContext | undefined,
+  sourceFacts: TypeScriptSourceExportFacts | undefined,
 ): Effect.Effect<
   CalibrationSlotOutput<"typescript.export-reachability">,
   CalibrationProcessorError,
@@ -321,10 +339,16 @@ const calibrateExportReachability = (
     exportName: binding.exportName,
     declarationFiles: binding.declarationFiles,
     declarationKinds: binding.localDeclarations.map((declaration) => declaration.getKindName()),
-    declarationTexts: binding.localDeclarations.map((declaration) => declaration.getText()),
-    ...(binding.localDeclarations[0]?.getSourceFile() === undefined
+    declarations: binding.localDeclarations.map((declaration) =>
+      declarationFactForExport(binding.exportName, declaration)
+    ),
+    ...(sourceFacts === undefined
       ? {}
-      : { sourceText: binding.localDeclarations[0]!.getSourceFile().getFullText() }),
+      : {
+          sourceImports: sourceFacts.imports,
+          sourceLocalBindings: sourceFacts.localBindings,
+          sourceExportSpecifiers: sourceFacts.exportSpecifiers,
+        }),
     isPublicEntrypoint,
   }
   if (calibration === undefined) {
@@ -339,6 +363,143 @@ const toSignalComputeError = (cause: unknown): SignalComputeError =>
     message: String(cause),
     cause,
   })
+
+const SOURCE_EXPORT_FACT_CACHE = new WeakMap<SourceFile, TypeScriptSourceExportFacts>()
+
+const collectSourceExportFacts = (
+  sourceFile: SourceFile,
+): TypeScriptSourceExportFacts => {
+  const cached = SOURCE_EXPORT_FACT_CACHE.get(sourceFile)
+  if (cached !== undefined) return cached
+
+  const facts: TypeScriptSourceExportFacts = {
+    imports: importBindingFacts(sourceFile),
+    localBindings: localBindingFacts(sourceFile),
+    exportSpecifiers: exportSpecifierFacts(sourceFile),
+  }
+  SOURCE_EXPORT_FACT_CACHE.set(sourceFile, facts)
+  return facts
+}
+
+const importBindingFacts = (sourceFile: SourceFile): ReadonlyArray<TypeScriptImportBindingFact> =>
+  sourceFile.getImportDeclarations().flatMap((declaration) => {
+    const moduleSpecifier = declaration.getModuleSpecifierValue()
+    const bindings: Array<TypeScriptImportBindingFact> = []
+    const defaultImport = declaration.getDefaultImport()
+    if (defaultImport !== undefined) {
+      bindings.push({
+        moduleSpecifier,
+        importKind: "default",
+        importedName: "default",
+        localName: defaultImport.getText(),
+      })
+    }
+
+    const namespaceImport = declaration.getNamespaceImport()
+    if (namespaceImport !== undefined) {
+      bindings.push({
+        moduleSpecifier,
+        importKind: "namespace",
+        importedName: "*",
+        localName: namespaceImport.getText(),
+      })
+    }
+
+    for (const namedImport of declaration.getNamedImports()) {
+      bindings.push({
+        moduleSpecifier,
+        importKind: "named",
+        importedName: namedImport.getNameNode().getText(),
+        localName: namedImport.getAliasNode()?.getText() ?? namedImport.getNameNode().getText(),
+      })
+    }
+    return bindings
+  })
+
+const localBindingFacts = (sourceFile: SourceFile): ReadonlyArray<TypeScriptLocalBindingFact> =>
+  sourceFile.getVariableDeclarations()
+    .map((declaration): TypeScriptLocalBindingFact | undefined => {
+      const localName = identifierName(declaration.getNameNode())
+      if (localName === undefined) return undefined
+      const initializerCall = callFact(declaration.getInitializer())
+      return {
+        localName,
+        ...(initializerCall === undefined ? {} : { initializerCall }),
+      }
+    })
+    .filter((fact): fact is TypeScriptLocalBindingFact => fact !== undefined)
+
+const exportSpecifierFacts = (
+  sourceFile: SourceFile,
+): ReadonlyArray<TypeScriptExportSpecifierFact> =>
+  sourceFile.getExportDeclarations().flatMap((declaration) => {
+    if (!declaration.hasNamedExports()) return []
+    const moduleSpecifier = declaration.getModuleSpecifierValue()
+    return declaration.getNamedExports().map((specifier) => ({
+      exportedName: specifier.getAliasNode()?.getText() ?? specifier.getNameNode().getText(),
+      localName: specifier.getNameNode().getText(),
+      ...(moduleSpecifier === undefined ? {} : { moduleSpecifier }),
+    }))
+  })
+
+const declarationFactForExport = (
+  exportName: string,
+  declaration: Node,
+): TypeScriptExportDeclarationFact => {
+  const base = {
+    declarationKind: declaration.getKindName(),
+    exportName,
+  }
+
+  if (Node.isVariableDeclaration(declaration)) {
+    const localName = identifierName(declaration.getNameNode())
+    const initializerCall = callFact(declaration.getInitializer())
+    return {
+      ...base,
+      ...(localName === undefined ? {} : { localName }),
+      ...(initializerCall === undefined ? {} : { initializerCall }),
+    }
+  }
+
+  if (Node.isExportAssignment(declaration)) {
+    const expression = declaration.getExpression()
+    const expressionIdentifier = identifierName(expression)
+    const expressionCall = callFact(expression)
+    return {
+      ...base,
+      ...(expressionIdentifier === undefined ? {} : { expressionIdentifier }),
+      ...(expressionCall === undefined ? {} : { expressionCall }),
+    }
+  }
+
+  const named = declaration as { getNameNode?: () => Node; getName?: () => string | undefined }
+  const localName = named.getNameNode !== undefined
+    ? identifierName(named.getNameNode())
+    : named.getName?.()
+  return {
+    ...base,
+    ...(localName === undefined ? {} : { localName }),
+  }
+}
+
+const callFact = (node: Node | undefined): TypeScriptCallExpressionFact | undefined => {
+  if (node === undefined || !Node.isCallExpression(node)) return undefined
+  const callee = node.getExpression()
+  const calleeName = callCalleeName(callee)
+  return {
+    calleeText: callee.getText(),
+    ...(calleeName === undefined ? {} : { calleeName }),
+  }
+}
+
+const callCalleeName = (node: Node): string | undefined => {
+  if (Node.isIdentifier(node)) return node.getText()
+  if (Node.isPropertyAccessExpression(node)) return node.getNameNode().getText()
+  return undefined
+}
+
+const identifierName = (node: Node): string | undefined =>
+  Node.isIdentifier(node) ? node.getText() : undefined
 
 const classifyExport = (
   binding: ExportBinding,

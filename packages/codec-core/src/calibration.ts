@@ -157,13 +157,47 @@ export interface TypeScriptCallbackContextNameValue {
   readonly metadata?: Readonly<Record<string, unknown>>
 }
 
+export interface TypeScriptCallExpressionFact {
+  readonly calleeText: string
+  readonly calleeName?: string
+}
+
+export interface TypeScriptImportBindingFact {
+  readonly moduleSpecifier: string
+  readonly importKind: "default" | "named" | "namespace"
+  readonly importedName: string
+  readonly localName: string
+}
+
+export interface TypeScriptLocalBindingFact {
+  readonly localName: string
+  readonly initializerCall?: TypeScriptCallExpressionFact
+}
+
+export interface TypeScriptExportSpecifierFact {
+  readonly exportedName: string
+  readonly localName: string
+  readonly moduleSpecifier?: string
+}
+
+export interface TypeScriptExportDeclarationFact {
+  readonly declarationKind: string
+  readonly exportName: string
+  readonly localName?: string
+  readonly initializerCall?: TypeScriptCallExpressionFact
+  readonly expressionIdentifier?: string
+  readonly expressionCall?: TypeScriptCallExpressionFact
+}
+
 export interface TypeScriptExportReachabilityValue {
   readonly exportFile: string
   readonly exportName: string
   readonly declarationFiles: ReadonlyArray<string>
   readonly declarationKinds: ReadonlyArray<string>
-  readonly declarationTexts?: ReadonlyArray<string>
-  readonly sourceText?: string
+  readonly declarations?: ReadonlyArray<TypeScriptExportDeclarationFact>
+  readonly sourceImports?: ReadonlyArray<TypeScriptImportBindingFact>
+  readonly sourceLocalBindings?: ReadonlyArray<TypeScriptLocalBindingFact>
+  readonly sourceExportSpecifiers?: ReadonlyArray<TypeScriptExportSpecifierFact>
   readonly isPublicEntrypoint: boolean
   readonly metadata?: Readonly<Record<string, unknown>>
 }

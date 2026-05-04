@@ -4,7 +4,10 @@ import {
   defineProcessor,
   defineProjectModule,
   markTypeScriptExportPublicEntrypoint,
+  type TypeScriptCallExpressionFact,
   type TypeScriptExportReachabilityValue,
+  type TypeScriptImportBindingFact,
+  type TypeScriptLocalBindingFact,
 } from "@taste-codec/project-module-sdk"
 
 export const CONVEX_PROJECT_MODULE_ID = "@taste-codec/project-module-convex" as const
@@ -67,15 +70,14 @@ export const isConvexGeneratedPath = (filePath: string): boolean => {
 export const isConvexPublicEntrypointExport = (
   value: TypeScriptExportReachabilityValue,
 ): boolean => {
-  const declarationText = (value.declarationTexts ?? []).join("\n")
-  const sourceText = value.sourceText ?? declarationText
-  if (isConvexSchemaEntrypoint(value.exportFile, value.exportName, sourceText)) return true
+  const imports = value.sourceImports ?? []
+  const localBindings = value.sourceLocalBindings ?? []
+  if (isConvexSchemaEntrypoint(value, imports, localBindings)) return true
   if (!isConvexRuntimeEntrypointPath(value.exportFile)) return false
-  if (isConvexHttpEntrypoint(value.exportFile, value.exportName, declarationText, sourceText)) {
+  if (isConvexHttpEntrypoint(value, imports, localBindings)) {
     return true
   }
-  return /\b(?:query|mutation|action|internalQuery|internalMutation|internalAction|httpAction)\s*\(/u
-    .test(declarationText)
+  return exportCallsConvexFactory(value, imports, localBindings, CONVEX_RUNTIME_FACTORIES)
 }
 
 export const isConvexRuntimeEntrypointPath = (filePath: string): boolean => {
@@ -99,23 +101,119 @@ export const isConvexRuntimeEntrypointPath = (filePath: string): boolean => {
     fileName !== "schema.cts"
 }
 
+const CONVEX_SERVER_MODULE = "convex/server"
+const CONVEX_GENERATED_SERVER_MODULE = "./_generated/server"
+const CONVEX_RUNTIME_FACTORIES = new Set([
+  "query",
+  "mutation",
+  "action",
+  "internalQuery",
+  "internalMutation",
+  "internalAction",
+  "httpAction",
+])
+
 const isConvexSchemaEntrypoint = (
-  filePath: string,
-  exportName: string,
-  sourceText: string,
+  value: TypeScriptExportReachabilityValue,
+  imports: ReadonlyArray<TypeScriptImportBindingFact>,
+  localBindings: ReadonlyArray<TypeScriptLocalBindingFact>,
 ): boolean =>
-  exportName === "default" &&
-  /(?:^|\/)convex\/schema\.[cm]?tsx?$/u.test(filePath.replaceAll("\\", "/")) &&
-  /\bdefineSchema\s*\(/u.test(sourceText)
+  value.exportName === "default" &&
+  /(?:^|\/)convex\/schema\.[cm]?tsx?$/u.test(value.exportFile.replaceAll("\\", "/")) &&
+  exportCallsImportedFactory(value, imports, localBindings, new Set(["defineSchema"]), (specifier) =>
+    specifier === CONVEX_SERVER_MODULE
+  )
 
 const isConvexHttpEntrypoint = (
-  filePath: string,
-  exportName: string,
-  declarationText: string,
-  sourceText: string,
+  value: TypeScriptExportReachabilityValue,
+  imports: ReadonlyArray<TypeScriptImportBindingFact>,
+  localBindings: ReadonlyArray<TypeScriptLocalBindingFact>,
 ): boolean =>
-  exportName === "default" &&
-  /(?:^|\/)convex\/http\.[cm]?tsx?$/u.test(filePath.replaceAll("\\", "/")) &&
-  (/\bhttpRouter\s*\(/u.test(declarationText) || /\bhttpRouter\s*\(/u.test(sourceText))
+  value.exportName === "default" &&
+  /(?:^|\/)convex\/http\.[cm]?tsx?$/u.test(value.exportFile.replaceAll("\\", "/")) &&
+  exportCallsImportedFactory(value, imports, localBindings, new Set(["httpRouter"]), (specifier) =>
+    specifier === CONVEX_SERVER_MODULE
+  )
+
+const exportCallsConvexFactory = (
+  value: TypeScriptExportReachabilityValue,
+  imports: ReadonlyArray<TypeScriptImportBindingFact>,
+  localBindings: ReadonlyArray<TypeScriptLocalBindingFact>,
+  factoryNames: ReadonlySet<string>,
+): boolean =>
+  exportCallsImportedFactory(value, imports, localBindings, factoryNames, isConvexRuntimeFactoryModule)
+
+const exportCallsImportedFactory = (
+  value: TypeScriptExportReachabilityValue,
+  imports: ReadonlyArray<TypeScriptImportBindingFact>,
+  localBindings: ReadonlyArray<TypeScriptLocalBindingFact>,
+  factoryNames: ReadonlySet<string>,
+  acceptsModule: (specifier: string) => boolean,
+): boolean =>
+  exportCallFacts(value, localBindings).some((call) =>
+    isImportedFactoryCall(call, imports, factoryNames, acceptsModule)
+  )
+
+const exportCallFacts = (
+  value: TypeScriptExportReachabilityValue,
+  localBindings: ReadonlyArray<TypeScriptLocalBindingFact>,
+): ReadonlyArray<TypeScriptCallExpressionFact> => {
+  const calls: Array<TypeScriptCallExpressionFact> = []
+  for (const declaration of value.declarations ?? []) {
+    if (declaration.initializerCall !== undefined) {
+      calls.push(declaration.initializerCall)
+    }
+    if (declaration.expressionCall !== undefined) {
+      calls.push(declaration.expressionCall)
+    }
+    if (declaration.expressionIdentifier !== undefined) {
+      const localCall = localInitializerCall(localBindings, declaration.expressionIdentifier)
+      if (localCall !== undefined) calls.push(localCall)
+    }
+  }
+
+  const localExportName = localNameForExport(value) ?? value.exportName
+  const localCall = localInitializerCall(localBindings, localExportName)
+  if (localCall !== undefined) calls.push(localCall)
+  return calls
+}
+
+const localNameForExport = (value: TypeScriptExportReachabilityValue): string | undefined =>
+  (value.sourceExportSpecifiers ?? [])
+    .find((specifier) =>
+      specifier.exportedName === value.exportName &&
+      specifier.moduleSpecifier === undefined
+    )
+    ?.localName
+
+const localInitializerCall = (
+  localBindings: ReadonlyArray<TypeScriptLocalBindingFact>,
+  localName: string,
+): TypeScriptCallExpressionFact | undefined =>
+  localBindings.find((binding) => binding.localName === localName)?.initializerCall
+
+const isImportedFactoryCall = (
+  call: TypeScriptCallExpressionFact,
+  imports: ReadonlyArray<TypeScriptImportBindingFact>,
+  factoryNames: ReadonlySet<string>,
+  acceptsModule: (specifier: string) => boolean,
+): boolean =>
+  imports.some((binding) => {
+    if (!acceptsModule(binding.moduleSpecifier)) return false
+    if (binding.importKind === "named") {
+      return factoryNames.has(binding.importedName) && call.calleeName === binding.localName
+    }
+    if (binding.importKind === "namespace") {
+      return [...factoryNames].some((factoryName) =>
+        call.calleeText === `${binding.localName}.${factoryName}`
+      )
+    }
+    return false
+  })
+
+const isConvexRuntimeFactoryModule = (specifier: string): boolean =>
+  specifier === CONVEX_GENERATED_SERVER_MODULE ||
+  specifier === CONVEX_SERVER_MODULE ||
+  specifier.endsWith("/_generated/server")
 
 export default convexProjectModule
