@@ -97,7 +97,7 @@ export const TsAb02: Signal<TsAb02Config, TsAb02Output, TsProjectTag | TsPackage
   tier: 1,
   category: "abstraction-bloat",
   kind: "structural",
-  cacheVersion: "calibrated-export-reachability-v1",
+  cacheVersion: "calibrated-export-reachability-v2",
   configSchema: TsAb02Config,
   defaultConfig: {
     exclude_globs: [
