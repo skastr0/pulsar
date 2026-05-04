@@ -101,6 +101,62 @@ export function onTextPart(value: string): string {
     expect(TsSl01.score(parallelOut)).toBeGreaterThan(TsSl01.score(localOut))
   })
 
+  test("deweights exact clones across sibling implementation variants", () => {
+    const baseGroup = {
+      groupId: "exact-0",
+      kind: "exact" as const,
+      tokenCount: 120,
+      structuralHash: "hash",
+    }
+    const parallelScore = TsSl01.score({
+      groups: [
+        {
+          ...baseGroup,
+          members: [
+            {
+              file: "/repo/vercel-examples/flags-sdk/provider-a/components/shopping-cart/order-summary-section.tsx",
+              name: "OrderSummaryContent",
+              startLine: 1,
+              endLine: 20,
+            },
+            {
+              file: "/repo/vercel-examples/flags-sdk/provider-b/components/shopping-cart/order-summary-section.tsx",
+              name: "OrderSummaryContent",
+              startLine: 1,
+              endLine: 20,
+            },
+            {
+              file: "/repo/vercel-examples/flags-sdk/provider-c/components/shopping-cart/order-summary-section.tsx",
+              name: "OrderSummaryContent",
+              startLine: 1,
+              endLine: 20,
+            },
+          ],
+        },
+      ],
+      totalFunctionsAnalyzed: 3,
+      scoreBudgetFunctions: 3,
+      scopeMode: "whole-tree",
+    })
+    const localScore = TsSl01.score({
+      groups: [
+        {
+          ...baseGroup,
+          members: [
+            { file: "src/first.ts", name: "OrderSummaryContent", startLine: 1, endLine: 20 },
+            { file: "src/second.ts", name: "OrderSummaryContent", startLine: 1, endLine: 20 },
+            { file: "src/third.ts", name: "OrderSummaryContent", startLine: 1, endLine: 20 },
+          ],
+        },
+      ],
+      totalFunctionsAnalyzed: 3,
+      scoreBudgetFunctions: 3,
+      scopeMode: "whole-tree",
+    })
+
+    expect(parallelScore).toBeGreaterThan(localScore)
+  })
+
   test("detects structural near-duplicates", async () => {
     await repo.write(
       "handlers.ts",
