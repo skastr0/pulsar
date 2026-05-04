@@ -29,22 +29,30 @@ export const runBackpressureCommand = (opts: BackpressureCommandOptions) =>
     const output = evaluateBackpressure(entries, vectorSelection.vector)
 
     if (opts.trend === true) {
-      printTrendView(repoRoot, vectorSelection.label, output, evaluateBackpressureTrend(entries, vectorSelection.vector))
+      printTrendView(
+        repoRoot,
+        vectorSelection.label,
+        vectorSelection.sourceLabel,
+        output,
+        evaluateBackpressureTrend(entries, vectorSelection.vector),
+      )
       return 0
     }
 
-    printBackpressureView(repoRoot, vectorSelection.label, output)
+    printBackpressureView(repoRoot, vectorSelection.label, vectorSelection.sourceLabel, output)
     return 0
   })
 
 const printBackpressureView = (
   repoRoot: string,
   vectorLabel: string,
+  vectorSourceLabel: string,
   output: BackpressureOutput,
 ): void => {
   console.log("")
   console.log(`  Repo:            ${repoRoot}`)
   console.log(`  Vector:          ${vectorLabel}`)
+  console.log(`  Vector Source:   ${vectorSourceLabel}`)
   console.log(`  Overall:         ${output.overall}`)
   console.log(`  Trend Window:    ${output.trajectoryDays} days`)
   console.log("")
@@ -71,10 +79,11 @@ const printBackpressureView = (
 const printTrendView = (
   repoRoot: string,
   vectorLabel: string,
+  vectorSourceLabel: string,
   output: BackpressureOutput,
   trend: ReturnType<typeof evaluateBackpressureTrend>,
 ): void => {
-  printBackpressureView(repoRoot, vectorLabel, output)
+  printBackpressureView(repoRoot, vectorLabel, vectorSourceLabel, output)
   console.log("  Trend:")
   if (trend.length === 0) {
     console.log("    (no persisted observations yet)")

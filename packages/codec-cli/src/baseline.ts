@@ -34,6 +34,8 @@ export const runBaselineCommand = (opts: BaselineCommandOptions) =>
     const baseline = createBaseline({
       baselineSha: headSha,
       vectorId: vectorSelection.label,
+      vectorSource: vectorSelection.sourceLabel,
+      vectorTrustBoundary: vectorSelection.trustBoundary,
       observerConfigHash: computeObserverConfigHash(
         registry,
         vectorSelection.vector,
@@ -51,6 +53,7 @@ export const runBaselineCommand = (opts: BaselineCommandOptions) =>
     console.log(`  Repo:     ${repoRoot}`)
     console.log(`  SHA:      ${baseline.baseline_sha}`)
     console.log(`  Vector:   ${vectorSelection.label}`)
+    console.log(`  Vector Source: ${vectorSelection.sourceLabel}`)
     console.log(`  File:     ${baselinePath}`)
     console.log("")
     return 0
@@ -76,6 +79,9 @@ const runShowCommand = (repoPath: string) =>
     console.log(`  Created:       ${baseline.created_at}`)
     if (baseline.vector_id !== undefined) {
       console.log(`  Vector:        ${baseline.vector_id}`)
+    }
+    if (baseline.vector_source !== undefined) {
+      console.log(`  Vector Source: ${baseline.vector_source}`)
     }
     console.log(`  Age:           ${ageInDays(baseline.created_at)} days`)
     console.log(`  Tolerated:     ${baselineViolationCount(baseline)}`)

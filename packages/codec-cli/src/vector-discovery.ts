@@ -12,8 +12,14 @@ import { loadTasteVectorFromPath, resolveRepoRoot } from "./runtime.js"
 export interface DiscoveredTasteVector {
   readonly vector: TasteVector | undefined
   readonly source: "explicit" | "worktree" | "organization" | "fallback"
+  readonly trustBoundary:
+    | "explicit-path"
+    | "repo-local"
+    | "organization-standard-fallback"
+    | "built-in-defaults"
   readonly path: string | undefined
   readonly label: string
+  readonly sourceLabel: string
 }
 
 export const discoverTasteVector = (opts: {
@@ -44,8 +50,10 @@ export const discoverTasteVector = (opts: {
     return {
       vector: undefined,
       source: "fallback",
+      trustBoundary: "built-in-defaults",
       path: undefined,
       label: "all-defaults",
+      sourceLabel: "built-in defaults",
     } satisfies DiscoveredTasteVector
   })
 
@@ -70,9 +78,43 @@ const toDiscovery = (
   source: DiscoveredTasteVector["source"],
   path: string,
   vector: TasteVector,
-): DiscoveredTasteVector => ({
-  vector,
-  source,
-  path,
-  label: vector.id,
-})
+): DiscoveredTasteVector => {
+  switch (source) {
+    case "explicit":
+      return {
+        vector,
+        source,
+        trustBoundary: "explicit-path",
+        path,
+        label: vector.id,
+        sourceLabel: `explicit --vector (${path})`,
+      }
+    case "worktree":
+      return {
+        vector,
+        source,
+        trustBoundary: "repo-local",
+        path,
+        label: vector.id,
+        sourceLabel: "repo-local .taste-codec/vector.json",
+      }
+    case "organization":
+      return {
+        vector,
+        source,
+        trustBoundary: "organization-standard-fallback",
+        path,
+        label: vector.id,
+        sourceLabel: "organization fallback ~/.config/taste-codec/vector.json",
+      }
+    case "fallback":
+      return {
+        vector,
+        source,
+        trustBoundary: "built-in-defaults",
+        path,
+        label: vector.id,
+        sourceLabel: "built-in defaults",
+      }
+  }
+}

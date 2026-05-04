@@ -148,6 +148,12 @@ describe("taste score", () => {
       const jsonOut = runCli(repoPath, ["score", "--json", "."])
       expect(jsonOut.status).toBe(0)
       const parsed = JSON.parse(String(jsonOut.stdout))
+      expect(parsed.vector).toMatchObject({
+        id: "all-defaults",
+        source: "fallback",
+        trust_boundary: "built-in-defaults",
+        source_label: "built-in defaults",
+      })
       const signalIds = Object.values(parsed.categories).flatMap((category: any) =>
         Object.keys(category.signals ?? {}),
       )
@@ -179,13 +185,19 @@ describe("taste score", () => {
     }
   }, 120_000)
 
-  test("--json emits ObserverOutput JSON", async () => {
+  test("--json emits ObserverOutput JSON with vector source metadata", async () => {
     const repoPath = await initRepo(simpleRepoFiles())
     try {
       const out = runCli(repoPath, ["score", "--json", "."])
       expect(out.status).toBe(0)
       const parsed = JSON.parse(String(out.stdout))
       const decoded = Schema.decodeUnknownSync(ObserverOutputSchema)(parsed)
+      expect(parsed.vector).toMatchObject({
+        id: "all-defaults",
+        source: "fallback",
+        trust_boundary: "built-in-defaults",
+        source_label: "built-in defaults",
+      })
       expect(decoded.hard_gate_status === "pass" || decoded.hard_gate_status === "fail").toBe(
         true,
       )
@@ -216,6 +228,7 @@ describe("taste score", () => {
       expect(out.status).toBe(0)
       const parsed = JSON.parse(String(out.stdout))
       const decoded = Schema.decodeUnknownSync(ObserverOutputSchema)(parsed)
+      expect(parsed.vector.trust_boundary).toBe("built-in-defaults")
       expect(decoded.runtime_profile?.total_ms).toBeGreaterThanOrEqual(0)
       expect(decoded.runtime_profile?.stages?.["environment-setup"]?.duration_ms).toBeGreaterThanOrEqual(0)
       expect(Object.keys(decoded.runtime_profile?.signals ?? {}).length).toBeGreaterThan(0)
@@ -275,6 +288,11 @@ describe("taste score", () => {
       const jsonOut = runCli(repoPath, ["score", "--json", "--vector", aiSlopDefensePresetPath, "."])
       expect(jsonOut.status).toBe(0)
       const parsed = JSON.parse(String(jsonOut.stdout))
+      expect(parsed.vector).toMatchObject({
+        id: "ai-slop-defense",
+        source: "explicit",
+        trust_boundary: "explicit-path",
+      })
       expect(parsed.categories["generated-slop"].score).toBeGreaterThanOrEqual(0.99)
       expect(parsed.hard_gate_status).toBe("pass")
     } finally {
@@ -730,11 +748,47 @@ export function stubF() { throw new Error("Not implemented") }
       const worktreeOut = runCli(repoPath, ["score", "."], { HOME: homePath })
       expect(worktreeOut.status).toBe(0)
       expect(worktreeOut.stdout).toContain("Vector: worktree-default")
+      expect(worktreeOut.stdout).toContain(
+        "Vector Source: repo-local .taste-codec/vector.json",
+      )
+      expect(worktreeOut.stdout).not.toContain("organization fallback")
 
       await rm(join(repoPath, ".taste-codec"), { recursive: true, force: true })
       const organizationOut = runCli(repoPath, ["score", "."], { HOME: homePath })
       expect(organizationOut.status).toBe(0)
       expect(organizationOut.stdout).toContain("Vector: organization-default")
+      expect(organizationOut.stdout).toContain(
+        "Vector Source: organization fallback ~/.config/taste-codec/vector.json",
+      )
+      const organizationJson = runCli(repoPath, ["score", "--json", "."], { HOME: homePath })
+      expect(organizationJson.status).toBe(0)
+      const organizationJsonBody = JSON.parse(String(organizationJson.stdout))
+      expect(organizationJsonBody.vector).toMatchObject({
+        id: "organization-default",
+        source: "organization",
+        trust_boundary: "organization-standard-fallback",
+        source_label: "organization fallback ~/.config/taste-codec/vector.json",
+      })
+
+      const baselineOut = runCli(repoPath, ["baseline", "set", "."], { HOME: homePath })
+      expect(baselineOut.status).toBe(0)
+      expect(baselineOut.stdout).toContain("Vector:   organization-default")
+      expect(baselineOut.stdout).toContain(
+        "Vector Source: organization fallback ~/.config/taste-codec/vector.json",
+      )
+      const baseline = JSON.parse(
+        await readFile(join(repoPath, ".taste-codec", "baseline.json"), "utf8"),
+      )
+      expect(baseline.vector_source).toBe(
+        "organization fallback ~/.config/taste-codec/vector.json",
+      )
+      expect(baseline.vector_trust_boundary).toBe("organization-standard-fallback")
+
+      const baselineShow = runCli(repoPath, ["baseline", "show", "."], { HOME: homePath })
+      expect(baselineShow.status).toBe(0)
+      expect(baselineShow.stdout).toContain(
+        "Vector Source: organization fallback ~/.config/taste-codec/vector.json",
+      )
     } finally {
       await rm(repoPath, { recursive: true, force: true })
       await rm(homePath, { recursive: true, force: true })

@@ -24,7 +24,7 @@ import {
   observeWorktree,
   runSignalInWorktree,
 } from "./runtime.js"
-import { discoverTasteVector } from "./vector-discovery.js"
+import { discoverTasteVector, type DiscoveredTasteVector } from "./vector-discovery.js"
 
 export interface ScoreOptions {
   readonly repoPath: string
@@ -119,7 +119,7 @@ export const runScoreCommand = (opts: ScoreOptions) =>
     }
 
     if (opts.json) {
-      console.log(JSON.stringify(toObserverJson(result), null, 2))
+      console.log(JSON.stringify(toScoreJson(result, vectorSelection), null, 2))
     } else if (opts.category !== undefined) {
       printCategoryView({
         repoRoot,
@@ -127,6 +127,7 @@ export const runScoreCommand = (opts: ScoreOptions) =>
         category: opts.category,
         output: result,
         vectorLabel: vectorSelection.label,
+        vectorSourceLabel: vectorSelection.sourceLabel,
         aiMode: explainAiAssistedMode(vectorSelection.vector),
         profile: opts.profile === true,
       })
@@ -136,6 +137,7 @@ export const runScoreCommand = (opts: ScoreOptions) =>
         gitSha,
         output: result,
         vectorLabel: vectorSelection.label,
+        vectorSourceLabel: vectorSelection.sourceLabel,
         aiMode: explainAiAssistedMode(vectorSelection.vector),
         ciAssessment,
         colorize: process.stdout.isTTY === true && opts.ci !== true,
@@ -263,6 +265,28 @@ const inferFallbackDomain = (registry: Registry): "typescript" | "rust" | "polyg
   return "typescript"
 }
 
+const toScoreJson = (
+  output: ObserverOutput,
+  vectorSelection: DiscoveredTasteVector,
+): ReturnType<typeof toObserverJson> & {
+  readonly vector: {
+    readonly id: string
+    readonly source: DiscoveredTasteVector["source"]
+    readonly trust_boundary: DiscoveredTasteVector["trustBoundary"]
+    readonly source_label: string
+    readonly path?: string
+  }
+} => ({
+  ...toObserverJson(output),
+  vector: {
+    id: vectorSelection.label,
+    source: vectorSelection.source,
+    trust_boundary: vectorSelection.trustBoundary,
+    source_label: vectorSelection.sourceLabel,
+    ...(vectorSelection.path !== undefined ? { path: vectorSelection.path } : {}),
+  },
+})
+
 const runSingleSignalMode = (opts: ScoreOptions) =>
   Effect.gen(function* () {
     const registry = yield* buildCodecRegistry(opts.repoPath)
@@ -379,6 +403,7 @@ const printObserverView = (opts: {
   readonly gitSha: string
   readonly output: ObserverOutput
   readonly vectorLabel: string
+  readonly vectorSourceLabel: string
   readonly aiMode: AiAssistedModeExplanation
   readonly ciAssessment: CiAssessment
   readonly colorize: boolean
@@ -389,6 +414,7 @@ const printObserverView = (opts: {
   lines.push(`  Repo:   ${opts.repoRoot}`)
   lines.push(`  SHA:    ${opts.gitSha}`)
   lines.push(`  Vector: ${opts.vectorLabel}`)
+  lines.push(`  Vector Source: ${opts.vectorSourceLabel}`)
   lines.push(`  AI Mode:${opts.aiMode.active ? " active" : " inactive"}`)
   lines.push(`          ${opts.aiMode.summary}`)
   if (opts.aiMode.active) {
@@ -439,6 +465,7 @@ const printCategoryView = (opts: {
   readonly category: Category
   readonly output: ObserverOutput
   readonly vectorLabel: string
+  readonly vectorSourceLabel: string
   readonly aiMode: AiAssistedModeExplanation
   readonly profile: boolean
 }): void => {
@@ -451,6 +478,7 @@ const printCategoryView = (opts: {
   console.log(`  Repo:     ${opts.repoRoot}`)
   console.log(`  SHA:      ${opts.gitSha}`)
   console.log(`  Vector:   ${opts.vectorLabel}`)
+  console.log(`  Vector Source: ${opts.vectorSourceLabel}`)
   console.log(`  AI Mode:  ${opts.aiMode.active ? "active" : "inactive"}`)
   console.log(`            ${opts.aiMode.summary}`)
   const calibrationLine = formatCalibrationLine(opts.output)

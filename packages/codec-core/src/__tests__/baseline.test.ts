@@ -29,6 +29,8 @@ describe("baseline", () => {
       baselineSha: "abc123",
       createdAt: "2026-04-15T10:00:00Z",
       vectorId: "all-defaults",
+      vectorSource: "built-in defaults",
+      vectorTrustBoundary: "built-in-defaults",
       observerConfigHash: "observer-config",
       violations: [
         makeViolation({ signalId: "TS-AD-02", hash: "h1", file: "src/a.ts" }),
@@ -39,6 +41,8 @@ describe("baseline", () => {
     const roundTripped = decodeBaselineSync(JSON.parse(JSON.stringify(baseline)))
     expect(roundTripped).toEqual(baseline)
     expect(roundTripped.vector_id).toBe("all-defaults")
+    expect(roundTripped.vector_source).toBe("built-in defaults")
+    expect(roundTripped.vector_trust_boundary).toBe("built-in-defaults")
     expect(roundTripped.observer_config_hash).toBe("observer-config")
     expect(baselineViolationCount(roundTripped)).toBe(2)
   })

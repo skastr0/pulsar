@@ -16,6 +16,13 @@ export const Baseline = Schema.Struct({
   baseline_sha: Schema.String,
   created_at: Schema.String,
   vector_id: Schema.optional(Schema.String),
+  vector_source: Schema.optional(Schema.String),
+  vector_trust_boundary: Schema.optional(Schema.Literal(
+    "explicit-path",
+    "repo-local",
+    "organization-standard-fallback",
+    "built-in-defaults",
+  )),
   observer_config_hash: Schema.optional(Schema.String),
   violations: Schema.Record({ key: Schema.String, value: Schema.Array(BaselineViolation) }),
 })
@@ -45,6 +52,12 @@ export const createBaseline = (opts: {
   readonly baselineSha: string
   readonly createdAt?: string
   readonly vectorId?: string
+  readonly vectorSource?: string
+  readonly vectorTrustBoundary?:
+    | "explicit-path"
+    | "repo-local"
+    | "organization-standard-fallback"
+    | "built-in-defaults"
   readonly observerConfigHash?: string
   readonly violations: ReadonlyArray<HardGateViolation>
 }): Baseline => {
@@ -63,6 +76,10 @@ export const createBaseline = (opts: {
     baseline_sha: opts.baselineSha,
     created_at: opts.createdAt ?? new Date().toISOString(),
     ...(opts.vectorId !== undefined ? { vector_id: opts.vectorId } : {}),
+    ...(opts.vectorSource !== undefined ? { vector_source: opts.vectorSource } : {}),
+    ...(opts.vectorTrustBoundary !== undefined
+      ? { vector_trust_boundary: opts.vectorTrustBoundary }
+      : {}),
     ...(opts.observerConfigHash !== undefined
       ? { observer_config_hash: opts.observerConfigHash }
       : {}),

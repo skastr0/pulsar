@@ -11,6 +11,7 @@ Taste is repository-level, always.
 - The effective taste vector belongs to the repository or organization being scored, regardless of where the file is transported from.
 - A repo-local `.taste-codec/vector.json` always overrides a home or organization-level vector.
 - A home-directory vector may be valid only as an organization-standard fallback shared across repos. It is not personal preference.
+- CLI output that uses a home-directory vector must identify it as an organization fallback so it cannot be mistaken for repo-local taste.
 - There is no personal taste vector or portable per-agent taste for scoring a repo.
 - Anyone working in a repo shares that repo's taste. Divergent per-person scoring makes the system theater.
 - Presets are templates for creating or updating a repo vector. A preset is not active taste until it is applied to the repo.

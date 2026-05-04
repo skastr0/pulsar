@@ -45,7 +45,7 @@ Commands:
 Score options:
   --signal <id>        Single-signal mode (existing TC-003 path).
   --vector <path>      Load a specific taste vector JSON.
-  --json               Emit raw ObserverOutput JSON.
+  --json               Emit ObserverOutput JSON plus CLI vector source metadata.
   --category <name>    Human output for one category only.
   --ci                 Apply baseline ratcheting and exit 2 on new violations.
   --profile            Include runtime attribution and bypass observer cache.
@@ -102,6 +102,11 @@ Vector discovery order (score + baseline when --vector is omitted):
   1. .taste-codec/vector.json at the worktree root
   2. ~/.config/taste-codec/vector.json as an organization-standard fallback
   3. Fallback: detected language-pack/shared signals active with default config and weight 1
+
+Trust boundary:
+  Taste is repo- or organization-owned. The home fallback is only a transport
+  location for an organization-standard vector; it is not personal taste.
+  Repo-local .taste-codec/vector.json always overrides the home fallback.
 
 Examples:
   taste score .
