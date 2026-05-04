@@ -15,10 +15,15 @@ import {
   type TasteAllowBypass,
 } from "@taste-codec/core"
 import { Effect, Schema } from "effect"
-import type { ExportDeclaration, ImportDeclaration, SourceFile } from "ts-morph"
+import type { SourceFile } from "ts-morph"
 import { createModuleResolver } from "../graph/module-graph.js"
 import { TsProjectTag } from "../ts-project.js"
 import { isExcluded } from "./shared-globs.js"
+import {
+  isTypeOnlyModuleDeclaration,
+  localIdentifierUsageByName,
+  valueImportBindingNames,
+} from "./shared-module-usage.js"
 
 export const TsAd02Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
@@ -78,6 +83,7 @@ export const TsAd02: Signal<TsAd02Config, TsAd02Output, TsProjectTag> = {
   tier: 1,
   category: "architectural-drift",
   kind: "structural",
+  cacheVersion: "semantic-type-only-imports-v1",
   configSchema: TsAd02Config,
   defaultConfig: {
     // Rationale: cycles inside test scaffolding or generated output are
@@ -254,15 +260,23 @@ const buildImportGraph = (
   for (const sf of sourceFiles) {
     const path = sf.getFilePath()
     const targets = new Set<string>()
-    for (const decl of sf.getImportDeclarations()) {
-      if (isTypeOnlyImport(decl)) continue
+    const importDeclarations = sf.getImportDeclarations()
+    const valueBindingNames = valueImportBindingNames(importDeclarations)
+    let identifierUsage: ReadonlyMap<string, "type-only" | "value"> | undefined
+    const getIdentifierUsage = (): ReadonlyMap<string, "type-only" | "value"> => {
+      identifierUsage ??= localIdentifierUsageByName(sf, valueBindingNames)
+      return identifierUsage
+    }
+
+    for (const decl of importDeclarations) {
+      if (isTypeOnlyModuleDeclaration(decl, getIdentifierUsage)) continue
       const targetPath = resolver.resolve(path, decl)
       if (targetPath === undefined) continue
       if (!fileSet.has(targetPath)) continue
       targets.add(targetPath)
     }
     for (const decl of sf.getExportDeclarations()) {
-      if (isTypeOnlyExport(decl)) continue
+      if (isTypeOnlyModuleDeclaration(decl, getIdentifierUsage)) continue
       const targetPath = resolver.resolve(path, decl)
       if (targetPath === undefined) continue
       if (!fileSet.has(targetPath)) continue
@@ -272,27 +286,6 @@ const buildImportGraph = (
     graph.set(path, targets)
   }
   return graph
-}
-
-const isTypeOnlyImport = (declaration: ImportDeclaration): boolean => {
-  if (declaration.isTypeOnly()) return true
-
-  const clause = declaration.getImportClause()
-  if (clause === undefined) return false
-  if (clause.isTypeOnly()) return true
-  if (clause.getDefaultImport() !== undefined) return false
-  if (clause.getNamespaceImport() !== undefined) return false
-
-  const namedImports = clause.getNamedImports()
-  return namedImports.length > 0 && namedImports.every((specifier) => specifier.isTypeOnly())
-}
-
-const isTypeOnlyExport = (declaration: ExportDeclaration): boolean => {
-  if (declaration.isTypeOnly()) return true
-  if (declaration.getNamespaceExport() !== undefined) return false
-
-  const namedExports = declaration.getNamedExports()
-  return namedExports.length > 0 && namedExports.every((specifier) => specifier.isTypeOnly())
 }
 
 const formatCycleSpan = (cycle: Cycle): string => {

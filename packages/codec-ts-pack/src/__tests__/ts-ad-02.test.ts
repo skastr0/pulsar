@@ -93,6 +93,21 @@ describe("TS-AD-02 (circular dependencies)", () => {
     expect(TsAd02.score(out)).toBe(1)
   })
 
+  test("imports used only in type positions do not create runtime cycle edges", async () => {
+    await writeTs(
+      "a.ts",
+      "import { B } from './b'\nexport interface A { b?: B }\n",
+    )
+    await writeTs(
+      "b.ts",
+      "import { A } from './a'\nexport interface B { a?: A }\n",
+    )
+
+    const out = await runCompute()
+    expect(out.cycleCount).toBe(0)
+    expect(TsAd02.score(out)).toBe(1)
+  })
+
   test("generated source cycles are ignored by default", async () => {
     await writeTs(
       "sdk/types.gen.ts",

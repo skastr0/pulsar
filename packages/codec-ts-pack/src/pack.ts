@@ -26,11 +26,14 @@ import { TsSl04 } from "./signals/ts-sl-04-empty-implementations.js"
 import { TsRp02 } from "./signals/ts-rp-02-pr-size.js"
 
 const TS_PACK_CACHE_VERSION =
-  "ts-pack-2026-05-04-compact-diagnostics-1"
+  "ts-pack-2026-05-04-semantic-type-imports-1"
 
 const withTsPackCacheVersion = <S extends AnySignal>(signal: S): S => ({
   ...signal,
-  cacheVersion: TS_PACK_CACHE_VERSION,
+  cacheVersion:
+    signal.cacheVersion === undefined
+      ? TS_PACK_CACHE_VERSION
+      : `${TS_PACK_CACHE_VERSION}:${signal.cacheVersion}`,
 })
 
 /**
