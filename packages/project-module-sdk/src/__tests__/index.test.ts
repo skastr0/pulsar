@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { describe, expect, test } from "bun:test"
 import { Effect, Exit } from "effect"
 import {
@@ -7,6 +10,8 @@ import {
   defineProjectModule,
   fingerprintProjectModuleManifest,
   fingerprintProjectModule,
+  loadEnabledProjectModules,
+  loadProjectModuleRef,
   makeResolvedCalibrationContext,
   type RepoFacts,
 } from "../index.js"
@@ -205,5 +210,135 @@ describe("project module sdk", () => {
     expect(fingerprintProjectModuleManifest(left)).toBe(
       fingerprintProjectModuleManifest(right),
     )
+  })
+
+  test("loads repo-local project module definition exports", async () => {
+    const repoRoot = await mkdtemp(join(tmpdir(), "taste-project-module-"))
+    try {
+      await writeFile(
+        join(repoRoot, "module.mjs"),
+        [
+          "export default {",
+          "  id: 'loaded.definition',",
+          "  version: '1.0.0',",
+          "  scope: 'repository',",
+          "  processors: []",
+          "}",
+        ].join("\n"),
+        "utf8",
+      )
+      const manifest = await Effect.runPromise(
+        decodeProjectModuleManifest({
+          modules: [
+            {
+              id: "loaded.definition",
+              kind: "repo-local",
+              path: "module.mjs",
+            },
+          ],
+        }),
+      )
+
+      const loaded = await Effect.runPromise(
+        loadProjectModuleRef(manifest.modules[0]!, { repoRoot }),
+      )
+
+      expect(loaded.descriptor.id).toBe("loaded.definition")
+      expect(loaded.activeModule.fingerprint).toBe(
+        fingerprintProjectModule(loaded.descriptor),
+      )
+      expect(loaded.processors).toEqual([])
+    } finally {
+      await rm(repoRoot, { recursive: true, force: true })
+    }
+  })
+
+  test("loads named DefinedProjectModule exports and skips disabled manifest refs", async () => {
+    const repoRoot = await mkdtemp(join(tmpdir(), "taste-project-module-"))
+    try {
+      await writeFile(
+        join(repoRoot, "defined.mjs"),
+        [
+          "export const named = {",
+          "  descriptor: {",
+          "    id: 'loaded.defined',",
+          "    version: '1.0.0',",
+          "    scope: 'repository',",
+          "    source: 'repo-local',",
+          "    contributions: []",
+          "  },",
+          "  activeModule: {",
+          "    id: 'loaded.defined',",
+          "    version: '1.0.0',",
+          "    scope: 'repository',",
+          "    source: 'repo-local',",
+          "    contributions: [],",
+          "    fingerprint: 'defined-fingerprint'",
+          "  },",
+          "  processors: []",
+          "}",
+        ].join("\n"),
+        "utf8",
+      )
+      const manifest = await Effect.runPromise(
+        decodeProjectModuleManifest({
+          modules: [
+            {
+              id: "loaded.defined",
+              kind: "repo-local",
+              path: "defined.mjs",
+              exportName: "named",
+            },
+            {
+              id: "disabled",
+              kind: "repo-local",
+              path: "missing.mjs",
+              enabled: false,
+            },
+          ],
+        }),
+      )
+
+      const loaded = await Effect.runPromise(
+        loadEnabledProjectModules(manifest, { repoRoot }),
+      )
+
+      expect(loaded).toHaveLength(1)
+      expect(loaded[0]?.descriptor.id).toBe("loaded.defined")
+      expect(loaded[0]?.activeModule.fingerprint).toBe("defined-fingerprint")
+    } finally {
+      await rm(repoRoot, { recursive: true, force: true })
+    }
+  })
+
+  test("reports typed load errors for missing exports", async () => {
+    const repoRoot = await mkdtemp(join(tmpdir(), "taste-project-module-"))
+    try {
+      await writeFile(join(repoRoot, "empty.mjs"), "export const nope = {}\n", "utf8")
+      const manifest = await Effect.runPromise(
+        decodeProjectModuleManifest({
+          modules: [
+            {
+              id: "bad-export",
+              kind: "repo-local",
+              path: "empty.mjs",
+              exportName: "missing",
+            },
+          ],
+        }),
+      )
+
+      const exit = await Effect.runPromiseExit(
+        loadProjectModuleRef(manifest.modules[0]!, { repoRoot }),
+      )
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        const err = exit.cause._tag === "Fail" ? exit.cause.error : null
+        expect((err as { _tag?: string } | null)?._tag).toBe("ProjectModuleLoadError")
+      }
+    } finally {
+      await rm(repoRoot, { recursive: true, force: true })
+    }
   })
 })
