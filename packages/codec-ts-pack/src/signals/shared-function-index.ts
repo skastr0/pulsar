@@ -28,6 +28,7 @@ export interface TsFunctionIndexEntry {
 
 const indexByProject = new WeakMap<Project, ReadonlyArray<TsFunctionIndexEntry>>()
 const indexBySourceFile = new WeakMap<SourceFile, ReadonlyArray<TsFunctionIndexEntry>>()
+const bodyByFunction = new WeakMap<TsFunctionLike, string | undefined>()
 
 export const getFunctionLikeIndex = (
   project: Project,
@@ -71,15 +72,25 @@ export const getFunctionLikeEntriesForSourceFile = (
 }
 
 export const getFunctionBody = (fn: TsFunctionLike): string | undefined => {
+  if (bodyByFunction.has(fn)) return bodyByFunction.get(fn)
+
+  let bodyText: string | undefined
   if (Node.isArrowFunction(fn)) {
     const body = fn.getBody()
-    return body?.getText()
-  }
-  if ("getBody" in fn && typeof fn.getBody === "function") {
+    bodyText = body === undefined ? undefined : fastNodeText(fn, body)
+  } else if ("getBody" in fn && typeof fn.getBody === "function") {
     const body = fn.getBody()
-    return body?.getText()
+    bodyText = body === undefined ? undefined : fastNodeText(fn, body)
   }
-  return undefined
+
+  bodyByFunction.set(fn, bodyText)
+  return bodyText
+}
+
+const fastNodeText = (owner: TsFunctionLike, node: Node): string => {
+  const sourceFile = owner.getSourceFile().compilerNode
+  const compilerNode = node.compilerNode
+  return sourceFile.text.slice(compilerNode.getStart(sourceFile), compilerNode.end)
 }
 
 export const getFunctionName = (fn: TsFunctionLike): string => {
