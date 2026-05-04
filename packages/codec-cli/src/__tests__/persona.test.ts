@@ -357,4 +357,75 @@ export function formattedTiny(value: number): number {
       await rm(repoPath, { recursive: true, force: true })
     }
   }, 120_000)
+
+  test("applied refactor-friendly vector separates circular diffs from clean dependency direction", async () => {
+    const seedRepo = async (): Promise<string> => {
+      const repoPath = await initRepo()
+      await writeRepoFile(
+        repoPath,
+        "src/domain.ts",
+        "export type DomainRecord = { readonly id: string }\nexport const makeRecord = (id: string): DomainRecord => ({ id })\n",
+      )
+      await writeRepoFile(
+        repoPath,
+        "src/service.ts",
+        "import { makeRecord } from './domain'\nexport const loadRecord = (id: string) => makeRecord(id)\n",
+      )
+      sh("git", ["add", "src/domain.ts", "src/service.ts"], repoPath)
+      sh("git", ["commit", "-q", "-m", "seed clean dependency direction"], repoPath)
+      return repoPath
+    }
+
+    const dirtyRepoPath = await seedRepo()
+    const cleanRepoPath = await seedRepo()
+    try {
+      await writeRepoFile(
+        dirtyRepoPath,
+        "src/domain.ts",
+        "import { loadRecord } from './service'\nexport type DomainRecord = { readonly id: string }\nexport const makeRecord = (id: string): DomainRecord => ({ id })\nexport const hydrateRecord = (id: string) => loadRecord(id)\n",
+      )
+
+      const defaultDirty = runCli(dirtyRepoPath, ["score", "--json", "."])
+      expect(defaultDirty.status).toBe(0)
+      const defaultArchitecture = JSON.parse(defaultDirty.stdout).categories["architectural-drift"]
+      expect(defaultArchitecture.signals["TS-AD-02"]).toBeLessThan(1)
+
+      for (const repoPath of [dirtyRepoPath, cleanRepoPath]) {
+        const apply = runCli(repoPath, [
+          "persona",
+          "apply",
+          "refactor-friendly",
+          "--to",
+          ".taste-codec/vector.json",
+        ])
+        expect(apply.status).toBe(0)
+        sh("git", ["add", ".taste-codec/vector.json"], repoPath)
+        sh("git", ["commit", "-q", "-m", "apply refactor vector"], repoPath)
+      }
+
+      await writeRepoFile(
+        cleanRepoPath,
+        "src/use-case.ts",
+        "import { loadRecord } from './service'\nexport const runUseCase = (id: string) => loadRecord(id)\n",
+      )
+
+      const dirtyVector = runCli(dirtyRepoPath, ["score", "--json", "."])
+      const cleanVector = runCli(cleanRepoPath, ["score", "--json", "."])
+      expect(dirtyVector.status).toBe(0)
+      expect(cleanVector.status).toBe(0)
+
+      const dirtyArchitecture = JSON.parse(dirtyVector.stdout).categories["architectural-drift"]
+      const cleanArchitecture = JSON.parse(cleanVector.stdout).categories["architectural-drift"]
+
+      expect(dirtyArchitecture.aggregation.weights["TS-AD-02"]).toBeGreaterThan(1)
+      expect(dirtyArchitecture.score).toBeLessThan(defaultArchitecture.score)
+      expect(dirtyArchitecture.score).toBeLessThan(cleanArchitecture.score)
+      expect(dirtyArchitecture.signals["TS-AD-02"]).toBeLessThan(1)
+      expect(cleanArchitecture.signals["TS-AD-02"]).toBe(1)
+      expect(cleanArchitecture.score).toBe(1)
+    } finally {
+      await rm(dirtyRepoPath, { recursive: true, force: true })
+      await rm(cleanRepoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
 })
