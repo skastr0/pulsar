@@ -34,6 +34,7 @@ export interface TsSl03Output {
   readonly missingJustificationCount: number
   readonly diagnosticLimit: number
   readonly scopeMode: "whole-tree" | "changed-hunks"
+  readonly analyzedFileCount: number
 }
 
 export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalContextTag> = {
@@ -98,10 +99,15 @@ export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalCon
         try: async (): Promise<TsSl03Output> => {
           const suppressions: Array<Suppression> = []
 
-          for (const sourceFile of project.getSourceFiles()) {
+          const sourceFiles = project
+            .getSourceFiles()
+            .filter((sourceFile) => {
+              const path = sourceFile.getFilePath()
+              return !isExcluded(path, config.exclude_globs) && !matchesAnyGlob(path, config.test_globs)
+            })
+
+          for (const sourceFile of sourceFiles) {
             const path = sourceFile.getFilePath()
-            if (isExcluded(path, config.exclude_globs)) continue
-            if (matchesAnyGlob(path, config.test_globs)) continue
 
             const sourceText = sourceFile.getFullText()
             const bypasses = parseBypasses(sourceText)
@@ -161,6 +167,7 @@ export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalCon
             missingJustificationCount: suppressions.filter((s) => s.justification === "missing").length,
             diagnosticLimit: config.top_n_diagnostics,
             scopeMode: context.changedHunks.length > 0 ? "changed-hunks" : "whole-tree",
+            analyzedFileCount: sourceFiles.length,
           }
         },
         catch: (cause) =>
@@ -173,7 +180,11 @@ export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalCon
       out.expiredCount * 4 +
       out.missingJustificationCount +
       (out.suppressions.length - out.unjustifiedCount) * 0.25
-    return Math.max(0, 1 - penalty / 100)
+    const denominator =
+      out.scopeMode === "changed-hunks"
+        ? 25
+        : Math.max(100, (out.analyzedFileCount ?? out.suppressions.length) * 0.25)
+    return Math.max(0, 1 - penalty / denominator)
   },
   diagnose: (out): ReadonlyArray<Diagnostic> =>
     out.suppressions.slice(0, out.diagnosticLimit).map((suppression) => {

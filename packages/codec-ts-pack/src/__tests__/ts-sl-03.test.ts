@@ -31,6 +31,7 @@ const x: string = 123;
     expect(out.suppressions[0]?.kind).toBe("ts-ignore")
     expect(out.suppressions[0]?.justification).toBe("missing")
     expect(out.missingJustificationCount).toBe(1)
+    expect(out.analyzedFileCount).toBe(1)
   })
 
   test("detects @ts-expect-error without justification", async () => {
@@ -189,6 +190,63 @@ const x = 1;
     const out = await runSignal(repo.root, TsSl03, TsSl03.defaultConfig)
     expect(TsSl03.score(out)).toBeLessThan(1)
     expect(TsSl03.score(out)).toBeGreaterThan(0)
+  })
+
+  test("whole-tree suppression score is density-aware for large repos", () => {
+    const suppressions = Array.from({ length: 20 }, (_, index) => ({
+      file: `src/file-${index}.ts`,
+      line: 1,
+      kind: "ts-ignore" as const,
+      rule: undefined,
+      justification: "missing" as const,
+      justificationSource: undefined,
+      bypassTicket: undefined,
+    }))
+    const smallRepoScore = TsSl03.score({
+      suppressions,
+      unjustifiedCount: 20,
+      expiredCount: 0,
+      missingJustificationCount: 20,
+      diagnosticLimit: 20,
+      scopeMode: "whole-tree",
+      analyzedFileCount: 20,
+    })
+    const largeRepoScore = TsSl03.score({
+      suppressions,
+      unjustifiedCount: 20,
+      expiredCount: 0,
+      missingJustificationCount: 20,
+      diagnosticLimit: 20,
+      scopeMode: "whole-tree",
+      analyzedFileCount: 1_000,
+    })
+
+    expect(largeRepoScore).toBeGreaterThan(smallRepoScore)
+    expect(largeRepoScore).toBeGreaterThan(0.9)
+  })
+
+  test("changed-hunk suppression scoring stays strict", () => {
+    const suppressions = [
+      {
+        file: "src/changed.ts",
+        line: 1,
+        kind: "ts-ignore" as const,
+        rule: undefined,
+        justification: "missing" as const,
+        justificationSource: undefined,
+        bypassTicket: undefined,
+      },
+    ]
+
+    expect(TsSl03.score({
+      suppressions,
+      unjustifiedCount: 1,
+      expiredCount: 0,
+      missingJustificationCount: 1,
+      diagnosticLimit: 20,
+      scopeMode: "changed-hunks",
+      analyzedFileCount: 1_000,
+    })).toBeLessThan(0.98)
   })
 
   test("score is 1 when no suppressions", async () => {
