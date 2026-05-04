@@ -217,6 +217,30 @@ describe("TS-DE-04 (package dependency health)", () => {
     expect(TsDe04.score(out)).toBe(1)
   })
 
+  test("type-only host imports may be satisfied by declared DefinitelyTyped packages", async () => {
+    await writePackage("app", "@repo/app", {
+      devDependencies: {
+        "@types/aws-lambda": "^8.10.0",
+        "@types/foo__bar": "^1.0.0",
+      },
+    })
+    await repo.write(
+      "packages/app/src/index.ts",
+      [
+        "import type { Handler } from 'aws-lambda'",
+        "import type { Widget } from '@foo/bar'",
+        "export type App = Handler & Widget",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+
+    expect(out.packages[0]?.importedButNotDeclared).toEqual([])
+    expect(out.packages[0]?.devInProd).toEqual([])
+    expect(out.packages[0]?.declaredButUnused).toEqual([])
+    expect(TsDe04.score(out)).toBe(1)
+  })
+
   test("value imports used only in type positions do not count as production runtime usage", async () => {
     await writePackage("app", "@repo/app", {
       devDependencies: {
@@ -760,6 +784,35 @@ describe("TS-DE-04 (package dependency health)", () => {
     const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
     expect(out.packages[0]?.devInProd).toEqual([])
     expect(out.packages[0]?.importedButNotDeclared).toEqual([])
+  })
+
+  test("allows package dev dependencies from package script entrypoints", async () => {
+    await writePackage("docs", "docs", {
+      scripts: {
+        generate: "bun ./generate.ts",
+      },
+      devDependencies: {
+        typedoc: "^0.25.0",
+      },
+    })
+    await repo.writeJson("packages/docs/tsconfig.json", {
+      compilerOptions: {
+        target: "ES2022",
+        module: "ESNext",
+        moduleResolution: "Bundler",
+      },
+      include: ["src/**/*.ts", "generate.ts"],
+    })
+    await repo.write("packages/docs/src/index.ts", "export const value = 1\n")
+    await repo.write(
+      "packages/docs/generate.ts",
+      "import * as TypeDoc from 'typedoc'\nexport const generate = TypeDoc.Application\n",
+    )
+
+    const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+    expect(out.packages[0]?.devInProd).toEqual([])
+    expect(out.packages[0]?.importedButNotDeclared).toEqual([])
+    expect(out.packages[0]?.declaredButUnused).toEqual([])
   })
 
   test("allows dev dependencies from bundled CLI source folders", async () => {

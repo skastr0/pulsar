@@ -260,6 +260,11 @@ export const TsDe04: Signal<
             const packageKey = owningPackage.path
             const isToolingFile =
               isPackageToolingFile(owningPackage.path, sourceFile.getFilePath()) ||
+              isPackageScriptEntrypoint(
+                owningPackage.manifest,
+                owningPackage.path,
+                sourceFile.getFilePath(),
+              ) ||
               isBundledCliSourceFile(
                 owningPackage.manifest,
                 owningPackage.path,
@@ -600,6 +605,26 @@ const isPackageToolingFile = (packagePath: string, file: string): boolean => {
   const rel = relative(packagePath, file).split(sep).join("/")
   if (rel.startsWith("script/") || rel.startsWith("scripts/")) return true
   return /\.(?:config|conf)\.(?:cjs|cts|js|mjs|mts|ts|tsx)$/.test(rel)
+}
+
+const isPackageScriptEntrypoint = (
+  manifest: PackageManifest,
+  packagePath: string,
+  file: string,
+): boolean => {
+  const rel = relative(packagePath, file).split(sep).join("/")
+  if (rel.startsWith("..") || rel.startsWith("/")) return false
+  const relPattern = escapeRegExp(rel)
+  const optionalDotSlashRelPattern = `(?:\\./)?${relPattern}`
+  const scriptEntrypointPattern = new RegExp(
+    `(?:^|[\\s;&|()])(?:bun|node|tsx|ts-node)\\s+${optionalDotSlashRelPattern}(?=$|[\\s;&|()])`,
+  )
+  const directExecutablePattern = new RegExp(
+    `(?:^|[\\s;&|()])${optionalDotSlashRelPattern}(?=$|[\\s;&|()])`,
+  )
+  return Object.values(manifest.scripts).some(
+    (script) => scriptEntrypointPattern.test(script) || directExecutablePattern.test(script),
+  )
 }
 
 const isBundledCliSourceFile = (
@@ -1120,6 +1145,7 @@ const analyzePackageHealth = (
       usageBucket.specifiers,
       productionDeclared,
       devDeclared,
+      isTypeOnlyUsage(usageBucket),
     )
     const aliasedName = dependencyAliases[dependencyName] ?? inferredHostFacadeAlias
     const effectiveDependencyName =
@@ -1208,9 +1234,19 @@ const inferHostFacadeAlias = (
   specifiers: ReadonlySet<string>,
   productionDeclared: ReadonlySet<string>,
   devDeclared: ReadonlySet<string>,
+  typeOnlyUsage: boolean,
 ): string | undefined => {
   if (hostPackageName === "vscode" && devDeclared.has("@types/vscode")) {
     return "@types/vscode"
+  }
+  if (typeOnlyUsage) {
+    const definitelyTypedPackage = definitelyTypedPackageNameFor(hostPackageName)
+    if (
+      definitelyTypedPackage !== undefined &&
+      (productionDeclared.has(definitelyTypedPackage) || devDeclared.has(definitelyTypedPackage))
+    ) {
+      return definitelyTypedPackage
+    }
   }
   if (specifiers.size === 0) return undefined
 
@@ -1226,3 +1262,14 @@ const inferHostFacadeAlias = (
 
   return declaredPluginSdkPackages.length === 1 ? declaredPluginSdkPackages[0] : undefined
 }
+
+const definitelyTypedPackageNameFor = (packageName: string): string | undefined => {
+  if (packageName.startsWith("@types/")) return undefined
+  if (packageName.startsWith("@")) {
+    const [scope, name] = packageName.slice(1).split("/")
+    return scope !== undefined && name !== undefined ? `@types/${scope}__${name}` : undefined
+  }
+  return `@types/${packageName}`
+}
+
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
