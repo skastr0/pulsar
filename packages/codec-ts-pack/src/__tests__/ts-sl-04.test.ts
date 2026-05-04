@@ -179,6 +179,21 @@ export function notImplemented() {
     expect(diagnostics[0]?.data?.confidence).toBe("high")
   })
 
+  test("does not classify explicit unsupported runtime capabilities as unfinished stubs", async () => {
+    await repo.write(
+      "lambda-context.ts",
+      `
+export function done() {
+  throw new Error("\`done\` on lambda Context is not implemented by Local Runtime.");
+}
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
+    expect(out.stubs).toHaveLength(0)
+    expect(TsSl04.score(out)).toBe(1)
+  })
+
   test("production empty bodies emit warn severity as lower-confidence evidence", async () => {
     await repo.write(
       "utils.ts",

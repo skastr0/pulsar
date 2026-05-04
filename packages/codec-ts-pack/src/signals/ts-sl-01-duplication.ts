@@ -5,6 +5,7 @@ import {
   SignalComputeError,
 } from "@taste-codec/core"
 import { Effect, Schema } from "effect"
+import { relative } from "node:path"
 import { type ArrowFunction, type FunctionExpression, Node, SyntaxKind } from "ts-morph"
 import { TsProjectTag } from "../ts-project.js"
 import {
@@ -63,6 +64,7 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
   tier: 1,
   category: "generated-slop",
   kind: "legibility",
+  cacheVersion: "example-roots-excluded-v1",
   configSchema: TsSl01Config,
   defaultConfig: {
     exclude_globs: [
@@ -76,6 +78,21 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
       "**/*.generated.ts",
       "**/*.generated.tsx",
       "**/sst-env.d.ts",
+      "example/**",
+      "**/example/**",
+      "examples/**",
+      "**/examples/**",
+      "fixture/**",
+      "**/fixture/**",
+      "fixtures/**",
+      "**/fixtures/**",
+      "playground/**",
+      "playground-*/**",
+      "playgrounds/**",
+      "template/**",
+      "**/template/**",
+      "templates/**",
+      "**/templates/**",
     ],
     test_globs: [
       "**/*.test.ts",
@@ -130,8 +147,9 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
 
           for (const sourceFile of project.getSourceFiles()) {
             const path = sourceFile.getFilePath()
-            if (isExcluded(path, config.exclude_globs)) continue
-            if (matchesAnyGlob(path, config.test_globs)) continue
+            const relativePath = relative(context.worktreePath, path).replace(/\\/g, "/")
+            if (matchesSourcePath(path, relativePath, config.exclude_globs)) continue
+            if (matchesSourcePath(path, relativePath, config.test_globs)) continue
 
             for (const { fn, path: functionPath } of getFunctionLikeEntriesForSourceFile(sourceFile)) {
               const changed =
@@ -270,6 +288,12 @@ const analyzeStructuralBody = (
   cache.set(cacheKey, analysis)
   return analysis
 }
+
+const matchesSourcePath = (
+  absolutePath: string,
+  relativePath: string,
+  globs: ReadonlyArray<string>,
+): boolean => isExcluded(absolutePath, globs) || matchesAnyGlob(relativePath, globs)
 
 const cloneMemberSummary = (members: ReadonlyArray<CloneGroupMember>): string => {
   const visible = members

@@ -156,7 +156,7 @@ export const TsDe04: Signal<
   tier: 1,
   category: "dependency-entropy",
   kind: "structural",
-  cacheVersion: "bundled-cli-and-lockfile-usage-v1",
+  cacheVersion: "bundled-cli-lockfile-and-example-scope-v1",
   configSchema: TsDe04Config,
   defaultConfig: {
     exclude_globs: [
@@ -170,6 +170,12 @@ export const TsDe04: Signal<
       "**/*.generated.ts",
       "**/*.generated.tsx",
       "**/sst-env.d.ts",
+      "**/example/**",
+      "**/examples/**",
+      "**/fixture/**",
+      "**/fixtures/**",
+      "**/template/**",
+      "**/templates/**",
     ],
     test_globs: [
       "**/*.test.ts",

@@ -1067,4 +1067,32 @@ describe("TS-DE-04 (package dependency health)", () => {
     expect(out.packages.some((pkg) => pkg.packageName === "@vendor/copied")).toBe(false)
     expect(out.unusedCount).toBe(0)
   })
+
+  test("does not hard-gate dependencies in example package paths by default", async () => {
+    await writePackage("app", "@repo/app", {})
+    await repo.write("packages/app/src/index.ts", "export const value = 1\n")
+    await repo.writeJson("examples/internal/benchmark/tsconfig.json", {
+      compilerOptions: {
+        target: "ES2022",
+        module: "ESNext",
+        moduleResolution: "Bundler",
+      },
+      include: ["src/**/*.ts"],
+    })
+    await repo.writeJson("examples/internal/benchmark/package.json", {
+      name: "benchmark",
+      version: "0.0.0",
+      dependencies: {},
+    })
+    await repo.write(
+      "examples/internal/benchmark/src/index.ts",
+      "import { shell } from 'sst'\nexport const run = shell\n",
+    )
+
+    const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+    expect(out.packages.some((pkg) => pkg.packageName === "benchmark")).toBe(false)
+    expect(TsDe04.diagnose(out).some((diagnostic) =>
+      diagnostic.message.includes("benchmark"),
+    )).toBe(false)
+  })
 })

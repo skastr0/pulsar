@@ -39,6 +39,42 @@ export function helper2(x: number): number {
     expect(out.scopeMode).toBe("whole-tree")
   })
 
+  test("ignores duplicates in example and playground roots by default", async () => {
+    const duplicate = `
+export function copied(value: number): number {
+  const doubled = value * 2;
+  if (doubled > 10) {
+    return doubled - 1;
+  }
+  return doubled + 1;
+}
+`
+    await repo.write("examples/one.ts", duplicate)
+    await repo.write("playground/two.ts", duplicate)
+
+    const out = await runSignal(repo.root, TsSl01, TsSl01.defaultConfig)
+    expect(out.groups).toEqual([])
+    expect(TsSl01.score(out)).toBe(1)
+  })
+
+  test("still detects production duplicates outside excluded roots", async () => {
+    const duplicate = `
+export function copied(value: number): number {
+  const doubled = value * 2;
+  if (doubled > 10) {
+    return doubled - 1;
+  }
+  return doubled + 1;
+}
+`
+    await repo.write("src/one.ts", duplicate)
+    await repo.write("src/two.ts", duplicate)
+
+    const out = await runSignal(repo.root, TsSl01, TsSl01.defaultConfig)
+    expect(out.groups.length).toBeGreaterThan(0)
+    expect(TsSl01.score(out)).toBeLessThan(1)
+  })
+
   test("detects structural near-duplicates", async () => {
     await repo.write(
       "handlers.ts",
