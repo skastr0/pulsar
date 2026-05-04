@@ -282,6 +282,41 @@ HTMLCanvasElement.prototype.getContext = () => ({});
     expect(TsSl03.score(out)).toBe(1)
   })
 
+  test("ignores generated and example suppressions by default", async () => {
+    await repo.write(
+      "packages/api/src/Generated.ts",
+      `
+// @ts-expect-error
+const generated: string = 1;
+`,
+    )
+    await repo.write(
+      "examples/demo/src/page.tsx",
+      `
+// @ts-expect-error
+const demo: string = 1;
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl03, TsSl03.defaultConfig)
+    expect(out.suppressions).toEqual([])
+    expect(TsSl03.score(out)).toBe(1)
+  })
+
+  test("still detects production suppressions outside excluded roots", async () => {
+    await repo.write(
+      "src/index.ts",
+      `
+// @ts-expect-error
+const production: string = 1;
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl03, TsSl03.defaultConfig)
+    expect(out.suppressions).toHaveLength(1)
+    expect(out.missingJustificationCount).toBe(1)
+  })
+
   test("diagnostics include hash for ratcheting", async () => {
     await repo.write(
       "utils.ts",

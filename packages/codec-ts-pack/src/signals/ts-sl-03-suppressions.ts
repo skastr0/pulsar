@@ -7,6 +7,7 @@ import {
   SignalComputeError,
 } from "@taste-codec/core"
 import { Effect, Schema } from "effect"
+import { relative } from "node:path"
 import { TsProjectTag } from "../ts-project.js"
 import { isExcluded, matchesAnyGlob } from "./shared-globs.js"
 
@@ -42,6 +43,7 @@ export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalCon
   tier: 1,
   category: "generated-slop",
   kind: "structural",
+  cacheVersion: "generated-and-example-scope-v1",
   configSchema: TsSl03Config,
   defaultConfig: {
     exclude_globs: [
@@ -54,7 +56,25 @@ export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalCon
       "**/*.gen.tsx",
       "**/*.generated.ts",
       "**/*.generated.tsx",
+      "**/Generated.ts",
+      "**/Generated.tsx",
+      "**/generated/**",
       "**/sst-env.d.ts",
+      "example/**",
+      "**/example/**",
+      "examples/**",
+      "**/examples/**",
+      "fixture/**",
+      "**/fixture/**",
+      "fixtures/**",
+      "**/fixtures/**",
+      "playground/**",
+      "playground-*/**",
+      "playgrounds/**",
+      "template/**",
+      "**/template/**",
+      "templates/**",
+      "**/templates/**",
     ],
     test_globs: [
       "**/*.test.ts",
@@ -103,7 +123,11 @@ export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalCon
             .getSourceFiles()
             .filter((sourceFile) => {
               const path = sourceFile.getFilePath()
-              return !isExcluded(path, config.exclude_globs) && !matchesAnyGlob(path, config.test_globs)
+              const relativePath = relative(context.worktreePath, path).replace(/\\/g, "/")
+              return (
+                !matchesSourcePath(path, relativePath, config.exclude_globs) &&
+                !matchesSourcePath(path, relativePath, config.test_globs)
+              )
             })
 
           for (const sourceFile of sourceFiles) {
@@ -213,6 +237,12 @@ const compareSuppressions = (a: Suppression, b: Suppression): number =>
   suppressionPriority(a) - suppressionPriority(b) ||
   a.file.localeCompare(b.file) ||
   a.line - b.line
+
+const matchesSourcePath = (
+  absolutePath: string,
+  relativePath: string,
+  globs: ReadonlyArray<string>,
+): boolean => isExcluded(absolutePath, globs) || matchesAnyGlob(relativePath, globs)
 
 const suppressionPriority = (suppression: Suppression): number => {
   if (suppression.justification === "missing") return 0
