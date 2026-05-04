@@ -26,7 +26,7 @@ import { TsSl04 } from "./signals/ts-sl-04-empty-implementations.js"
 import { TsRp02 } from "./signals/ts-rp-02-pr-size.js"
 
 const TS_PACK_CACHE_VERSION =
-  "ts-pack-2026-05-03-ld06-de04-ad02-severity-calibration-3"
+  "ts-pack-2026-05-04-rp01-diagnostic-ordering-1"
 
 const withTsPackCacheVersion = <S extends AnySignal>(signal: S): S => ({
   ...signal,

@@ -98,6 +98,7 @@ describe("TS-RP-01 (compound)", () => {
       TsRp01.compute({ ...TsRp01.defaultConfig, top_n: 3 }, inputs),
     )
     expect(a.hotspots.length).toBe(b.hotspots.length)
+    expect(TsRp01.diagnose(b)).toHaveLength(3)
   })
 
   test("soft threshold pressure creates multiple score levels near small-repo cutoffs", async () => {
@@ -193,5 +194,61 @@ describe("TS-RP-01 (compound)", () => {
     )
     expect(result.signalId).toBe("TS-RP-01")
     expect((result.output as any).totalFilesConsidered).toBe(4)
+  })
+
+  test("diagnostic hotspot labels stay contiguous when info hotspots are interleaved", () => {
+    const diagnostics = TsRp01.diagnose({
+      hotspots: [
+        {
+          file: "/repo/first.ts",
+          churn: 10,
+          complexity: 30,
+          hotspotScore: 300,
+          quadrant: "top-right",
+          rank: 1,
+        },
+        {
+          file: "/repo/info.ts",
+          churn: 10,
+          complexity: 2,
+          hotspotScore: 200,
+          quadrant: "top-left",
+          rank: 2,
+        },
+        {
+          file: "/repo/second.ts",
+          churn: 8,
+          complexity: 25,
+          hotspotScore: 180,
+          quadrant: "top-right",
+          rank: 3,
+        },
+      ],
+      diagnosticLimit: 3,
+      totalFilesConsidered: 3,
+      topRightShare: 2 / 3,
+      topRightPressure: 0,
+      medianChurn: 10,
+      medianComplexity: 25,
+      legacyFilesConsidered: 3,
+      legacyTopRightShare: 2 / 3,
+      softFilesConsidered: 3,
+      softTopRightShare: 2 / 3,
+      softTopRightPressure: 0,
+      stabilizationWeight: 0,
+    })
+
+    expect(diagnostics.map((diagnostic) => diagnostic.message.split(":")[0])).toEqual([
+      "Hotspot #1",
+      "Hotspot #2",
+      "Hotspot #3",
+    ])
+    expect(diagnostics.map((diagnostic) => diagnostic.location?.file)).toEqual([
+      "/repo/first.ts",
+      "/repo/second.ts",
+      "/repo/info.ts",
+    ])
+    expect(diagnostics[1]?.data?.rank).toBe(3)
+    expect(diagnostics[1]?.data?.diagnosticRank).toBe(2)
   })
 })

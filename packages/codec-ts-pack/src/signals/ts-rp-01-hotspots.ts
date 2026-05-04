@@ -25,6 +25,7 @@ export interface Hotspot {
 
 export interface TsRp01Output {
   readonly hotspots: ReadonlyArray<Hotspot>
+  readonly diagnosticLimit?: number
   readonly totalFilesConsidered: number
   readonly topRightShare: number
   readonly topRightPressure: number
@@ -103,6 +104,7 @@ export const TsRp01: Signal<TsRp01Config, TsRp01Output, never> = {
           softTopRightShare: 0,
           softTopRightPressure: 0,
           stabilizationWeight: 0,
+          diagnosticLimit: config.top_n,
         }
       }
 
@@ -146,6 +148,7 @@ export const TsRp01: Signal<TsRp01Config, TsRp01Output, never> = {
 
       return {
         hotspots: chosen.ranked,
+        diagnosticLimit: config.top_n,
         totalFilesConsidered: chosen.ranked.length,
         topRightShare: chosen.topRightShare,
         topRightPressure: useSoftShape ? softTopRightPressure : 0,
@@ -175,10 +178,12 @@ export const TsRp01: Signal<TsRp01Config, TsRp01Output, never> = {
     )
   },
   diagnose: (out): ReadonlyArray<Diagnostic> => {
-    const top = out.hotspots.slice(0, 10)
-    return top.map((h) => ({
+    const top = out.hotspots
+      .slice(0, out.diagnosticLimit ?? 10)
+      .sort(compareDiagnosticHotspots)
+    return top.map((h, index) => ({
       severity: h.quadrant === "top-right" ? ("warn" as const) : ("info" as const),
-      message: `Hotspot #${h.rank}: ${h.file} (churn=${h.churn}, complexity=${h.complexity.toFixed(1)}, ${h.quadrant})`,
+      message: `Hotspot #${index + 1}: ${h.file} (churn=${h.churn}, complexity=${h.complexity.toFixed(1)}, ${h.quadrant})`,
       location: { file: h.file },
       data: {
         churn: h.churn,
@@ -186,10 +191,20 @@ export const TsRp01: Signal<TsRp01Config, TsRp01Output, never> = {
         hotspotScore: h.hotspotScore,
         quadrant: h.quadrant,
         rank: h.rank,
+        diagnosticRank: index + 1,
       },
     }))
   },
 }
+
+const compareDiagnosticHotspots = (left: Hotspot, right: Hotspot): number => {
+  const severityDelta = hotspotSeverityRank(left) - hotspotSeverityRank(right)
+  if (severityDelta !== 0) return severityDelta
+  return left.rank - right.rank
+}
+
+const hotspotSeverityRank = (hotspot: Hotspot): number =>
+  hotspot.quadrant === "top-right" ? 0 : 1
 
 const classifyQuadrant = (
   churn: number,
