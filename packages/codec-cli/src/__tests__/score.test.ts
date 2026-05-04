@@ -496,6 +496,56 @@ export function stubF() { throw new Error("Not implemented") }
     }
   }, 120_000)
 
+  test("worktree vector can relax a default hard gate explicitly", async () => {
+    const repoPath = await initRepo([
+      {
+        path: "src/session.ts",
+        content: "export function createSession() { throw new Error('Not implemented') }\n",
+      },
+    ])
+    try {
+      const defaultOut = runCli(repoPath, ["score", "--category", "generated-slop", "."])
+      expect(defaultOut.status).toBe(0)
+      expect(defaultOut.stdout).toContain("Vector:   all-defaults")
+      expect(defaultOut.stdout).toContain("TS-SL-04 BLOCK")
+
+      await writeRepoFile(
+        repoPath,
+        ".taste-codec/vector.json",
+        JSON.stringify(
+          {
+            id: "protocol-stub-tolerant",
+            domain: "typescript",
+            signal_overrides: {
+              "TS-SL-04": {
+                config: {
+                  hard_gate_production: false,
+                },
+              },
+            },
+            provenance: [
+              {
+                source: "manual",
+                recorded_at: "2026-05-03T00:00:00.000Z",
+                summary: "This project accepts explicit protocol stubs during integration.",
+              },
+            ],
+          },
+          null,
+          2,
+        ),
+      )
+
+      const vectorOut = runCli(repoPath, ["score", "--category", "generated-slop", "."])
+      expect(vectorOut.status).toBe(0)
+      expect(vectorOut.stdout).toContain("Vector:   protocol-stub-tolerant")
+      expect(vectorOut.stdout).toContain("TS-SL-04 WARN")
+      expect(vectorOut.stdout).not.toContain("TS-SL-04 BLOCK")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
   test("default vector discovery prefers worktree then personal config", async () => {
     const repoPath = await initRepo(simpleRepoFiles())
     const homePath = await mkdtemp(join(tmpdir(), "taste-score-home-"))
