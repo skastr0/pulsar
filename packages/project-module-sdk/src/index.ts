@@ -1,5 +1,6 @@
+import { realpath } from "node:fs/promises"
 import { createRequire } from "node:module"
-import { resolve } from "node:path"
+import { isAbsolute, relative, resolve } from "node:path"
 import { pathToFileURL } from "node:url"
 import { Effect, Schema } from "effect"
 import {
@@ -269,33 +270,96 @@ export const classifyTypeScriptNoop = (
 export const projectModuleRefTarget = (
   ref: ProjectModuleRef,
   options: ProjectModuleLoadOptions,
-): string => {
+): Effect.Effect<string, ProjectModuleLoadError> => {
   switch (ref.kind) {
     case "repo-local":
-      return pathToFileURL(resolve(options.repoRoot, ref.path)).href
+      return resolveRepoLocalProjectModuleTarget(ref, options)
     case "workspace":
     case "package":
-      return resolvePackageProjectModuleTarget(ref.packageName, options.repoRoot)
+      return resolvePackageProjectModuleTarget(ref, options.repoRoot)
   }
 }
 
+const resolveRepoLocalProjectModuleTarget = (
+  ref: ProjectModuleRef & { readonly kind: "repo-local" },
+  options: ProjectModuleLoadOptions,
+): Effect.Effect<string, ProjectModuleLoadError> =>
+  Effect.gen(function* () {
+    if (isAbsolute(ref.path)) {
+      return yield* new ProjectModuleLoadError({
+        refId: ref.id,
+        target: ref.path,
+        message: `Repo-local project module ${ref.id} must use a relative path`,
+      })
+    }
+
+    const repoRoot = yield* Effect.tryPromise({
+      try: () => realpath(options.repoRoot),
+      catch: (cause) =>
+        new ProjectModuleLoadError({
+          refId: ref.id,
+          target: options.repoRoot,
+          message: `Failed to resolve repository root for project module ${ref.id}`,
+          cause,
+        }),
+    })
+    const targetPath = resolve(repoRoot, ref.path)
+    const target = yield* Effect.tryPromise({
+      try: () => realpath(targetPath),
+      catch: (cause) =>
+        new ProjectModuleLoadError({
+          refId: ref.id,
+          target: targetPath,
+          message: `Failed to resolve repo-local project module ${ref.id}`,
+          cause,
+        }),
+    })
+
+    if (!isPathInside(repoRoot, target)) {
+      return yield* new ProjectModuleLoadError({
+        refId: ref.id,
+        target,
+        message: `Repo-local project module ${ref.id} resolves outside the repository root`,
+      })
+    }
+
+    return pathToFileURL(target).href
+  })
+
 const resolvePackageProjectModuleTarget = (
-  packageName: string,
+  ref: ProjectModuleRef & { readonly kind: "workspace" | "package" },
   repoRoot: string,
-): string => {
-  try {
-    return pathToFileURL(createRequire(resolve(repoRoot, "package.json")).resolve(packageName)).href
-  } catch {
-    return packageName
-  }
-}
+): Effect.Effect<string, ProjectModuleLoadError> =>
+  Effect.gen(function* () {
+    const packageName = ref.packageName
+    if (!isPackageName(packageName)) {
+      return yield* new ProjectModuleLoadError({
+        refId: ref.id,
+        target: packageName,
+        message: `Project module package ref ${packageName} is not a valid package name`,
+      })
+    }
+
+    const packagePath = yield* Effect.try({
+      try: () => createRequire(resolve(repoRoot, "package.json")).resolve(packageName),
+      catch: (cause) =>
+        new ProjectModuleLoadError({
+          refId: ref.id,
+          target: packageName,
+          message: `Failed to resolve project module package ${packageName} from repository root`,
+          cause,
+        }),
+    })
+
+    return pathToFileURL(packagePath).href
+  })
 
 export const loadProjectModuleRef = (
   ref: ProjectModuleRef,
   options: ProjectModuleLoadOptions,
 ): Effect.Effect<DefinedProjectModule, ProjectModuleLoadError> =>
   Effect.gen(function* () {
-    const target = projectModuleRefTarget(ref, options)
+    const target = yield* projectModuleRefTarget(ref, options)
     const imported = yield* Effect.tryPromise({
       try: () => import(target) as Promise<Record<string, unknown>>,
       catch: (cause) =>
@@ -400,3 +464,11 @@ const isProjectModuleDefinitionInput = (
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object"
+
+const isPathInside = (parent: string, child: string): boolean => {
+  const path = relative(parent, child)
+  return path === "" || (!path.startsWith("..") && !isAbsolute(path))
+}
+
+const isPackageName = (value: string): boolean =>
+  /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/.test(value)

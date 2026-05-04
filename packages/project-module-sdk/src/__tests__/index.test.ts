@@ -416,6 +416,79 @@ describe("project module sdk", () => {
     }
   })
 
+  test("rejects repo-local project module refs that escape the repo root", async () => {
+    const root = await mkdtemp(join(tmpdir(), "taste-project-module-"))
+    const repoRoot = join(root, "repo")
+    try {
+      await mkdir(repoRoot, { recursive: true })
+      await writeFile(
+        join(root, "outside.mjs"),
+        "export default { id: 'outside', version: '1.0.0', scope: 'repository', processors: [] }\n",
+        "utf8",
+      )
+      const manifest = await Effect.runPromise(
+        decodeProjectModuleManifest({
+          modules: [
+            {
+              id: "outside",
+              kind: "repo-local",
+              path: "../outside.mjs",
+            },
+          ],
+        }),
+      )
+
+      const exit = await Effect.runPromiseExit(
+        loadProjectModuleRef(manifest.modules[0]!, { repoRoot }),
+      )
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        const err = exit.cause._tag === "Fail" ? exit.cause.error : null
+        expect((err as { _tag?: string } | null)?._tag).toBe("ProjectModuleLoadError")
+        expect((err as { message?: string } | null)?.message).toContain(
+          "outside the repository root",
+        )
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("rejects package project module refs that are import specifiers", async () => {
+    const repoRoot = await mkdtemp(join(tmpdir(), "taste-project-module-"))
+    try {
+      const manifest = await Effect.runPromise(
+        decodeProjectModuleManifest({
+          modules: [
+            {
+              id: "data-ref",
+              kind: "package",
+              packageName:
+                "data:text/javascript,export default { id: 'data', version: '1.0.0', scope: 'repository', processors: [] }",
+            },
+          ],
+        }),
+      )
+
+      const exit = await Effect.runPromiseExit(
+        loadProjectModuleRef(manifest.modules[0]!, { repoRoot }),
+      )
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        const err = exit.cause._tag === "Fail" ? exit.cause.error : null
+        expect((err as { _tag?: string } | null)?._tag).toBe("ProjectModuleLoadError")
+        expect((err as { refId?: string } | null)?.refId).toBe("data-ref")
+        expect((err as { message?: string } | null)?.message).toContain(
+          "not a valid package name",
+        )
+      }
+    } finally {
+      await rm(repoRoot, { recursive: true, force: true })
+    }
+  })
+
   test("reports typed load errors for missing exports", async () => {
     const repoRoot = await mkdtemp(join(tmpdir(), "taste-project-module-"))
     try {
