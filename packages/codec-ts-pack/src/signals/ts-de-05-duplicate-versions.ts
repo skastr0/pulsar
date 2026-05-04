@@ -8,6 +8,8 @@ import {
 } from "@taste-codec/core"
 import { Effect, Schema } from "effect"
 import { readBunLockFile, type BunResolvedPackage } from "../lockfiles/bun-lock.js"
+import { readNpmLockFile, type NpmResolvedPackage } from "../lockfiles/npm-lock.js"
+import { readPnpmLockFile, type PnpmResolvedPackage } from "../lockfiles/pnpm-lock.js"
 
 export const TsDe05Config = Schema.Struct({
   top_n_diagnostics: Schema.Number,
@@ -29,11 +31,11 @@ export interface TsDe05Output {
   readonly totalPackages: number
   readonly totalDuplicateInstances: number
   readonly diagnosticLimit: number
-  readonly lockfileStatus: "bun" | "unsupported" | "missing"
+  readonly lockfileStatus: "bun" | "npm" | "pnpm" | "unsupported" | "missing"
   readonly lockfileFiles: ReadonlyArray<string>
 }
 
-const UNSUPPORTED_LOCKFILES = ["package-lock.json", "pnpm-lock.yaml", "yarn.lock"] as const
+const UNSUPPORTED_LOCKFILES = ["yarn.lock"] as const
 
 export const TsDe05: Signal<TsDe05Config, TsDe05Output, SignalContextTag> = {
   id: "TS-DE-05",
@@ -51,7 +53,7 @@ export const TsDe05: Signal<TsDe05Config, TsDe05Output, SignalContextTag> = {
       const result = yield* Effect.tryPromise({
         try: async (): Promise<TsDe05Output> => {
           const lockfile = await resolveLockfile(context.worktreePath)
-          if (lockfile.kind !== "bun") {
+          if (lockfile.kind === "missing" || lockfile.kind === "unsupported") {
             return {
               duplicates: [],
               totalPackages: 0,
@@ -62,11 +64,15 @@ export const TsDe05: Signal<TsDe05Config, TsDe05Output, SignalContextTag> = {
             }
           }
 
-          const parsed = await readBunLockFile(lockfile.path)
+          const parsed = lockfile.kind === "bun"
+            ? await readBunLockFile(lockfile.path)
+            : lockfile.kind === "npm"
+              ? await readNpmLockFile(lockfile.path)
+              : await readPnpmLockFile(lockfile.path)
           const resolvedPackages = parsed.packages.filter(
             (pkg) => !pkg.version.startsWith("workspace:"),
           )
-          const byName = new Map<string, Array<BunResolvedPackage>>()
+          const byName = new Map<string, Array<ResolvedLockPackage>>()
           for (const pkg of resolvedPackages) {
             const bucket = byName.get(pkg.name) ?? []
             bucket.push(pkg)
@@ -83,7 +89,7 @@ export const TsDe05: Signal<TsDe05Config, TsDe05Output, SignalContextTag> = {
             totalPackages: resolvedPackages.length,
             totalDuplicateInstances: duplicates.reduce((sum, group) => sum + group.instanceCount, 0),
             diagnosticLimit: config.top_n_diagnostics,
-            lockfileStatus: "bun",
+            lockfileStatus: lockfile.kind,
             lockfileFiles: [lockfile.path],
           }
         },
@@ -124,7 +130,7 @@ export const TsDe05: Signal<TsDe05Config, TsDe05Output, SignalContextTag> = {
     return Math.max(0, 1 - Math.min(1, penalty))
   },
   diagnose: (out): ReadonlyArray<Diagnostic> => {
-    if (out.lockfileStatus !== "bun") {
+    if (out.lockfileStatus === "missing" || out.lockfileStatus === "unsupported") {
       return [{
         severity: "info" as const,
         message:
@@ -167,12 +173,24 @@ const resolveLockfile = async (
   worktreePath: string,
 ): Promise<
   | { readonly kind: "bun"; readonly path: string }
+  | { readonly kind: "npm"; readonly path: string }
+  | { readonly kind: "pnpm"; readonly path: string }
   | { readonly kind: "unsupported"; readonly files: ReadonlyArray<string> }
   | { readonly kind: "missing"; readonly files: ReadonlyArray<string> }
 > => {
   const bunLockPath = join(worktreePath, "bun.lock")
   if (await exists(bunLockPath)) {
     return { kind: "bun", path: bunLockPath }
+  }
+
+  const npmLockPath = join(worktreePath, "package-lock.json")
+  if (await exists(npmLockPath)) {
+    return { kind: "npm", path: npmLockPath }
+  }
+
+  const pnpmLockPath = join(worktreePath, "pnpm-lock.yaml")
+  if (await exists(pnpmLockPath)) {
+    return { kind: "pnpm", path: pnpmLockPath }
   }
 
   const unsupported = (
@@ -202,17 +220,21 @@ const exists = async (path: string): Promise<boolean> => {
   }
 }
 
+type ResolvedLockPackage = BunResolvedPackage | NpmResolvedPackage | PnpmResolvedPackage
+
+interface LockWorkspace {
+  readonly path: string
+  readonly name: string | undefined
+  readonly dependencies: Readonly<Record<string, string>>
+  readonly devDependencies: Readonly<Record<string, string>>
+  readonly peerDependencies: Readonly<Record<string, string>>
+  readonly optionalDependencies: Readonly<Record<string, string>>
+}
+
 const toDuplicateGroup = (
   name: string,
-  packages: ReadonlyArray<BunResolvedPackage>,
-  workspaces: ReadonlyArray<{
-    path: string
-    name: string | undefined
-    dependencies: Readonly<Record<string, string>>
-    devDependencies: Readonly<Record<string, string>>
-    peerDependencies: Readonly<Record<string, string>>
-    optionalDependencies: Readonly<Record<string, string>>
-  }>,
+  packages: ReadonlyArray<ResolvedLockPackage>,
+  workspaces: ReadonlyArray<LockWorkspace>,
 ): DuplicateGroup => {
   const versions = [...new Set(packages.map((pkg) => pkg.version))].sort((left, right) =>
     left.localeCompare(right),
@@ -250,16 +272,10 @@ const toDuplicateGroup = (
 }
 
 const isDirectWorkspacePackageRequest = (
-  pkg: BunResolvedPackage,
-  workspaces: ReadonlyArray<{
-    path: string
-    name: string | undefined
-    dependencies: Readonly<Record<string, string>>
-    devDependencies: Readonly<Record<string, string>>
-    peerDependencies: Readonly<Record<string, string>>
-    optionalDependencies: Readonly<Record<string, string>>
-  }>,
+  pkg: ResolvedLockPackage,
+  workspaces: ReadonlyArray<LockWorkspace>,
 ): boolean => {
+  if ("direct" in pkg) return pkg.direct
   const root = pkg.chain[0] ?? pkg.lockKey
   if (root !== pkg.name && !root.startsWith(`${pkg.name}@`)) return false
   return workspaces.some((workspace) =>
@@ -273,15 +289,8 @@ const isDirectWorkspacePackageRequest = (
 }
 
 const workspaceChainsForPackage = (
-  pkg: BunResolvedPackage,
-  workspaces: ReadonlyArray<{
-    path: string
-    name: string | undefined
-    dependencies: Readonly<Record<string, string>>
-    devDependencies: Readonly<Record<string, string>>
-    peerDependencies: Readonly<Record<string, string>>
-    optionalDependencies: Readonly<Record<string, string>>
-  }>,
+  pkg: ResolvedLockPackage,
+  workspaces: ReadonlyArray<LockWorkspace>,
 ): ReadonlyArray<{ version: string; chain: ReadonlyArray<string> }> => {
   const root = pkg.chain[0]
   const matchingWorkspaces = workspaces.filter((workspace) =>
