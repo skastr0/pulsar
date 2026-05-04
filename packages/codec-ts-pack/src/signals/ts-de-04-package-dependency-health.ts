@@ -59,6 +59,7 @@ export interface TsDe04Output {
 type UsageBucket = {
   readonly files: Set<string>
   readonly prodFiles: Set<string>
+  readonly toolingFiles: Set<string>
   readonly specifiers: Set<string>
 }
 
@@ -221,12 +222,22 @@ export const TsDe04: Signal<
           const workspaceNames = workspacePackageNames(activePackages)
           const sourceFiles = await dependencySourceFiles(project, activePackages, config.exclude_globs)
           const usageByPackage = new Map<string, Map<string, UsageBucket>>()
+          const rootManifest = packages.find((pkg) => pkg.name === "(root)")?.manifest
+          const rootDevDependencyNames = dependencyNamesOf(rootManifest, ["devDependencies"])
+          const rootToolingDependencyNames = dependencyNamesOf(rootManifest, [
+            "dependencies",
+            "devDependencies",
+            "optionalDependencies",
+          ])
+          const rootToolingUsedDependencyNames = new Set<string>()
 
           for (const sourceFile of sourceFiles) {
             const owningPackage = packageForFile(sourceFile.getFilePath(), packages)
             if (owningPackage?.manifest === undefined) continue
             const packageKey = owningPackage.path
-            const isProdFile = !matchesAnyGlob(sourceFile.getFilePath(), config.test_globs)
+            const isToolingFile = isPackageToolingFile(owningPackage.path, sourceFile.getFilePath())
+            const isProdFile =
+              !isToolingFile && !matchesAnyGlob(sourceFile.getFilePath(), config.test_globs)
             const bucket = usageByPackage.get(packageKey) ?? new Map<string, UsageBucket>()
 
             for (const moduleUsage of externalModuleSpecifiers(sourceFile)) {
@@ -235,6 +246,9 @@ export const TsDe04: Signal<
               if (packageName === undefined || isBuiltinModuleName(packageName)) continue
               if (isGeneratedVirtualModuleSpecifier(moduleSpecifier)) continue
               if (packageName === owningPackage.manifest.name) continue
+              if (isToolingFile && rootToolingDependencyNames.has(packageName)) {
+                rootToolingUsedDependencyNames.add(packageName)
+              }
               if (
                 isLocalPathAliasUsage(
                   moduleSpecifier,
@@ -251,6 +265,7 @@ export const TsDe04: Signal<
               const usage = bucket.get(packageName) ?? {
                 files: new Set<string>(),
                 prodFiles: new Set<string>(),
+                toolingFiles: new Set<string>(),
                 specifiers: new Set<string>(),
               }
               usage.files.add(sourceFile.getFilePath())
@@ -258,16 +273,15 @@ export const TsDe04: Signal<
               if (isProdFile) {
                 usage.prodFiles.add(sourceFile.getFilePath())
               }
+              if (isToolingFile) {
+                usage.toolingFiles.add(sourceFile.getFilePath())
+              }
               bucket.set(packageName, usage)
             }
 
             usageByPackage.set(packageKey, bucket)
           }
 
-          const rootDevDependencyNames = dependencyNamesOf(
-            packages.find((pkg) => pkg.name === "(root)")?.manifest,
-            ["devDependencies"],
-          )
           const packageHealth = activePackages
             .filter((pkg): pkg is PackageInfo & { manifest: PackageManifest } => pkg.manifest !== undefined)
             .map((pkg) =>
@@ -277,6 +291,8 @@ export const TsDe04: Signal<
                 workspaceNames,
                 resolvedPackageNames,
                 rootDevDependencyNames,
+                rootToolingDependencyNames,
+                rootToolingUsedDependencyNames,
                 config.dependency_aliases,
                 new Set(config.allow_dev_dependency_in_prod),
               ),
@@ -865,6 +881,8 @@ const analyzePackageHealth = (
   workspaceNames: ReadonlySet<string>,
   resolvedPackageNames: ReadonlySet<string>,
   rootDevDependencyNames: ReadonlySet<string>,
+  rootToolingDependencyNames: ReadonlySet<string>,
+  rootToolingUsedDependencyNames: ReadonlySet<string>,
   dependencyAliases: Readonly<Record<string, string>>,
   allowDevDependencyInProd: ReadonlySet<string>,
 ): PackageDependencyHealth => {
@@ -884,6 +902,11 @@ const analyzePackageHealth = (
   const transitiveUsedDirectly: Array<DependencyMismatch> = []
   const devInProd: Array<DependencyMismatch> = []
   const usedDeclaredNames = new Set<string>()
+  if (pkg.name === "(root)") {
+    for (const dependencyName of rootToolingUsedDependencyNames) {
+      usedDeclaredNames.add(dependencyName)
+    }
+  }
 
   for (const dependencyName of [...(usage?.keys() ?? [])].sort((left, right) => left.localeCompare(right))) {
     const usageBucket = usage?.get(dependencyName)
@@ -921,6 +944,14 @@ const analyzePackageHealth = (
       continue
     }
 
+    if (
+      rootToolingDependencyNames.has(effectiveDependencyName) &&
+      isToolingOnlyUsage(usageBucket)
+    ) {
+      usedDeclaredNames.add(effectiveDependencyName)
+      continue
+    }
+
     if (workspaceNames.has(dependencyName) || !resolvedPackageNames.has(dependencyName)) {
       importedButNotDeclared.push({ dependencyName, files })
       continue
@@ -944,6 +975,9 @@ const analyzePackageHealth = (
     devInProd,
   }
 }
+
+const isToolingOnlyUsage = (usage: UsageBucket): boolean =>
+  usage.files.size > 0 && usage.files.size === usage.toolingFiles.size
 
 const allowsBundledAppDevDependencies = (manifest: PackageManifest): boolean => {
   if (!manifest.private) return false

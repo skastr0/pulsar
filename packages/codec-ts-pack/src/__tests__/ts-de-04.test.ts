@@ -101,6 +101,68 @@ describe("TS-DE-04 (package dependency health)", () => {
     expect(TsDe04.score(out)).toBeGreaterThan(0.65)
   })
 
+  test("package-local tooling imports may be satisfied by root workspace tooling dependencies", async () => {
+    await repo.writeJson("package.json", {
+      private: true,
+      dependencies: {
+        "@repo/release-script": "workspace:*",
+      },
+      workspaces: ["packages/*"],
+    })
+    await writePackage("plugin", "@repo/plugin", {
+      exports: {
+        ".": "./src/index.ts",
+      },
+    })
+    await repo.writeJson("packages/plugin/tsconfig.json", {
+      compilerOptions: {
+        target: "ES2022",
+        module: "ESNext",
+        moduleResolution: "Bundler",
+      },
+      include: ["src/**/*.ts", "script/**/*.ts"],
+    })
+    await repo.write("packages/plugin/src/index.ts", "export const value = 1\n")
+    await repo.write(
+      "packages/plugin/script/publish.ts",
+      "import { release } from '@repo/release-script'\nexport const run = release\n",
+    )
+
+    const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+    expect(out.packages[0]?.importedButNotDeclared).toEqual([])
+    expect(out.packages[0]?.devInProd).toEqual([])
+    expect(TsDe04.score(out)).toBe(1)
+  })
+
+  test("package-local tooling imports from devDependencies are not production imports", async () => {
+    await writePackage("plugin", "@repo/plugin", {
+      devDependencies: {
+        "@repo/release-script": "workspace:*",
+      },
+      exports: {
+        ".": "./src/index.ts",
+      },
+    })
+    await repo.writeJson("packages/plugin/tsconfig.json", {
+      compilerOptions: {
+        target: "ES2022",
+        module: "ESNext",
+        moduleResolution: "Bundler",
+      },
+      include: ["src/**/*.ts", "script/**/*.ts"],
+    })
+    await repo.write("packages/plugin/src/index.ts", "export const value = 1\n")
+    await repo.write(
+      "packages/plugin/script/publish.ts",
+      "import { release } from '@repo/release-script'\nexport const run = release\n",
+    )
+
+    const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+    expect(out.packages[0]?.importedButNotDeclared).toEqual([])
+    expect(out.packages[0]?.devInProd).toEqual([])
+    expect(TsDe04.score(out)).toBe(1)
+  })
+
   test("package-root config missing dependencies warn without collapsing the score", async () => {
     await writePackage("plugin", "@repo/plugin", {
       exports: {
