@@ -233,6 +233,7 @@ export const TsDe04: Signal<
               const moduleSpecifier = moduleUsage.specifier
               const packageName = normalizePackageSpecifier(moduleSpecifier)
               if (packageName === undefined || isBuiltinModuleName(packageName)) continue
+              if (isGeneratedVirtualModuleSpecifier(moduleSpecifier)) continue
               if (packageName === owningPackage.manifest.name) continue
               if (
                 isLocalPathAliasUsage(
@@ -330,6 +331,7 @@ export const TsDe04: Signal<
     for (const pkg of out.packages) {
       for (const mismatch of pkg.importedButNotDeclared) {
         const severity = missingDependencySeverity(pkg, mismatch)
+        const severityReason = missingDependencySeverityReason(pkg, mismatch)
         diagnostics.push({
           severity,
           message:
@@ -344,10 +346,7 @@ export const TsDe04: Signal<
             dependencyName: mismatch.dependencyName,
             fileCount: mismatch.files.length,
             files: mismatch.files.slice(),
-            severityReason:
-              severity === "block"
-                ? "published-runtime-missing-dependency"
-                : "private-or-tooling-missing-dependency",
+            severityReason,
           },
         })
       }
@@ -414,6 +413,8 @@ export const TsDe04: Signal<
 const compareDependencyDiagnostics = (left: Diagnostic, right: Diagnostic): number => {
   const kindDelta = issueKindRank(left) - issueKindRank(right)
   if (kindDelta !== 0) return kindDelta
+  const missingDependencyDelta = missingDependencyRank(left) - missingDependencyRank(right)
+  if (missingDependencyDelta !== 0) return missingDependencyDelta
   const leftPackage = packageNameOf(left)
   const rightPackage = packageNameOf(right)
   const packageDelta = leftPackage.localeCompare(rightPackage)
@@ -436,6 +437,20 @@ const issueKindRank = (diagnostic: Diagnostic): number => {
   }
 }
 
+const missingDependencyRank = (diagnostic: Diagnostic): number => {
+  if (diagnostic.data?.issueKind !== "missing-dependency") return 0
+  switch (diagnostic.data.severityReason) {
+    case "published-runtime-missing-dependency":
+      return 0
+    case "private-runtime-missing-dependency":
+      return 1
+    case "tooling-only-missing-dependency":
+      return 2
+    default:
+      return 3
+  }
+}
+
 const packageNameOf = (diagnostic: Diagnostic): string =>
   typeof diagnostic.data?.packageName === "string" ? diagnostic.data.packageName : ""
 
@@ -450,9 +465,18 @@ const missingDependencyPenaltyWeight = (
   pkg: PackageDependencyHealth,
   mismatch: DependencyMismatch,
 ): number => {
-  if (pkg.private) return 0.2
-  if (isToolingOnlyMissingDependency(pkg, mismatch)) return 0.25
+  if (isToolingOnlyMissingDependency(pkg, mismatch)) return 0.2
+  if (pkg.private) return 0.45
   return 1
+}
+
+const missingDependencySeverityReason = (
+  pkg: PackageDependencyHealth,
+  mismatch: DependencyMismatch,
+): string => {
+  if (isToolingOnlyMissingDependency(pkg, mismatch)) return "tooling-only-missing-dependency"
+  if (pkg.private) return "private-runtime-missing-dependency"
+  return "published-runtime-missing-dependency"
 }
 
 const isToolingOnlyMissingDependency = (
@@ -464,6 +488,9 @@ const isToolingOnlyMissingDependency = (
     mismatch.files.every((file) => isPackageToolingFile(pkg.packagePath, file))
   )
 }
+
+const isGeneratedVirtualModuleSpecifier = (specifier: string): boolean =>
+  /^[^./#][^:]*\.(?:gen|generated)\.(?:cjs|cts|js|jsx|mjs|mts|ts|tsx)$/.test(specifier)
 
 const isPackageToolingFile = (packagePath: string, file: string): boolean => {
   const rel = relative(packagePath, file).split(sep).join("/")
