@@ -43,7 +43,7 @@ export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalCon
   tier: 1,
   category: "generated-slop",
   kind: "structural",
-  cacheVersion: "type-test-excludes-v1",
+  cacheVersion: "repeated-contextual-suppressions-v1",
   configSchema: TsSl03Config,
   defaultConfig: {
     exclude_globs: [
@@ -159,6 +159,7 @@ export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalCon
 
             const sourceText = sourceFile.getFullText()
             const bypasses = parseBypasses(sourceText)
+            const recentJustifications = new Map<string, { readonly line: number; readonly text: string }>()
 
             const lines = sourceText.split("\n")
             for (let i = 0; i < lines.length; i++) {
@@ -183,7 +184,9 @@ export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalCon
               const attachedBypass = bypasses.find((bypass) =>
                 Math.abs(bypass.line - lineNum) <= 1,
               )
-              const contextualJustification = contextualSuppressionJustification(lines, i)
+              const contextualJustification =
+                contextualSuppressionJustification(lines, i, suppression) ??
+                inheritedRecentJustification(recentJustifications, suppression, lineNum)
 
               const justification: "active" | "expired" | "missing" =
                 attachedBypass?.status ??
@@ -206,6 +209,17 @@ export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalCon
                 justificationSource,
                 bypassTicket: attachedBypass?.ticket,
               })
+
+              if (justification === "active") {
+                recentJustifications.set(suppressionKey(suppression), {
+                  line: lineNum,
+                  text:
+                    suppression.inlineJustification ??
+                    contextualJustification ??
+                    attachedBypass?.reason ??
+                    "active suppression justification",
+                })
+              }
             }
           }
 
@@ -382,9 +396,16 @@ const isMeaningfulInlineJustification = (text: string): boolean => {
   return /[A-Za-z]{3,}/.test(text)
 }
 
-const contextualSuppressionJustification = (lines: ReadonlyArray<string>, suppressionIndex: number): string | undefined => {
+const contextualSuppressionJustification = (
+  lines: ReadonlyArray<string>,
+  suppressionIndex: number,
+  suppression: { readonly kind: Suppression["kind"]; readonly rule: string | undefined },
+): string | undefined => {
   const frameworkMetadataJustification = frameworkMetadataSuppressionJustification(lines, suppressionIndex)
   if (frameworkMetadataJustification !== undefined) return frameworkMetadataJustification
+
+  const traceLoggingJustification = traceLoggingSuppressionJustification(lines, suppressionIndex, suppression)
+  if (traceLoggingJustification !== undefined) return traceLoggingJustification
 
   const previous = lines[suppressionIndex - 1]
   if (previous === undefined || previous.trim() === "") return undefined
@@ -394,6 +415,36 @@ const contextualSuppressionJustification = (lines: ReadonlyArray<string>, suppre
 
   const blockComment = precedingBlockCommentText(lines, suppressionIndex - 1)
   return blockComment
+}
+
+const inheritedRecentJustification = (
+  recentJustifications: ReadonlyMap<string, { readonly line: number; readonly text: string }>,
+  suppression: { readonly kind: Suppression["kind"]; readonly rule: string | undefined },
+  line: number,
+): string | undefined => {
+  const recent = recentJustifications.get(suppressionKey(suppression))
+  if (recent === undefined) return undefined
+  return line - recent.line <= 20 ? recent.text : undefined
+}
+
+const suppressionKey = (
+  suppression: { readonly kind: Suppression["kind"]; readonly rule: string | undefined },
+): string => `${suppression.kind}:${suppression.rule ?? ""}`
+
+const traceLoggingSuppressionJustification = (
+  lines: ReadonlyArray<string>,
+  suppressionIndex: number,
+  suppression: { readonly kind: Suppression["kind"]; readonly rule: string | undefined },
+): string | undefined => {
+  if (suppression.kind !== "eslint-disable" || suppression.rule !== "no-console") return undefined
+
+  const context = lines
+    .slice(Math.max(0, suppressionIndex - 3), Math.min(lines.length, suppressionIndex + 4))
+    .join("\n")
+
+  return /\b(?:trace|debug|verbose)(?:Events?|Logging|Mode)?\b/i.test(context)
+    ? "Debug/trace logging branch"
+    : undefined
 }
 
 const frameworkMetadataSuppressionJustification = (

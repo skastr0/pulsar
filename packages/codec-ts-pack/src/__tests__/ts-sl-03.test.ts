@@ -147,6 +147,48 @@ const value: any = input;
     )
   })
 
+  test("inherits nearby same-rule justification for repeated warning blocks", async () => {
+    await repo.write(
+      "logger.ts",
+      `
+export function warnCrossFilesystem() {
+  // logMessage would create a circular dependency here, so write directly.
+  // eslint-disable-next-line no-console
+  console.warn("first line")
+  // eslint-disable-next-line no-console
+  console.warn("second line")
+  // eslint-disable-next-line no-console
+  console.warn("third line")
+}
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl03, TsSl03.defaultConfig)
+    expect(out.suppressions).toHaveLength(3)
+    expect(out.suppressions.every((suppression) => suppression.justification === "active")).toBe(true)
+    expect(out.missingJustificationCount).toBe(0)
+  })
+
+  test("accepts trace-gated console suppressions as contextual justification", async () => {
+    await repo.write(
+      "trace.ts",
+      `
+export function record(traceEvents: boolean) {
+  if (traceEvents) {
+    // eslint-disable-next-line no-console
+    console.log("Invalidating due to directory children mismatch")
+  }
+}
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl03, TsSl03.defaultConfig)
+    expect(out.suppressions).toHaveLength(1)
+    expect(out.suppressions[0]?.justification).toBe("active")
+    expect(out.suppressions[0]?.justificationSource).toBe("contextual")
+    expect(out.missingJustificationCount).toBe(0)
+  })
+
   test("accepts adjacent JSDoc as contextual justification", async () => {
     await repo.write(
       "utils.ts",
