@@ -106,7 +106,8 @@ describe("TS-LD-06 (type annotation coverage)", () => {
     expect(out.boundaryCoverage.annotatedReturns).toBe(0)
     expect(out.boundaryCoverage.coverage).toBe(0.5)
     expect(out.internalCoverage.coverage).toBe(0)
-    expect(TsLd06.score(out)).toBe(0.5)
+    expect(TsLd06.score(out)).toBe(0.8)
+    expect(TsLd06.diagnose(out)[0]?.severity).toBe("info")
   })
 
   test("typed exported function variables count as annotated boundary contracts", async () => {
@@ -149,6 +150,37 @@ describe("TS-LD-06 (type annotation coverage)", () => {
         missingKind: "return",
       },
     ])
+    expect(TsLd06.score(out)).toBeCloseTo(12 / 13)
+    expect(TsLd06.diagnose(out)).toEqual([
+      {
+        severity: "info",
+        message: "Boundary function `clamp` is missing explicit return annotations",
+        location: { file: join(repo, "src/defaults.ts"), line: 1 },
+        data: {
+          file: join(repo, "src/defaults.ts"),
+          name: "clamp",
+          line: 1,
+          missingKind: "return",
+        },
+      },
+    ])
+  })
+
+  test("missing boundary parameter annotations stay warning-level baseline signal", async () => {
+    await writeTs(
+      "src/params.ts",
+      [
+        "export function parse(value): string {",
+        "  return String(value)",
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runCompute()
+    expect(out.boundaryCoverage.coverage).toBe(0.5)
+    expect(TsLd06.score(out)).toBe(0.2)
+    expect(TsLd06.diagnose(out)[0]?.severity).toBe("warn")
   })
 
   test("component-typed exported functions do not require duplicate return annotations", async () => {
@@ -247,6 +279,29 @@ describe("TS-LD-06 (type annotation coverage)", () => {
     const out = await runCompute()
     expect(out.uncoveredBoundary.map((fn) => fn.name)).toContain("Service.run")
     expect(out.uncoveredBoundary.map((fn) => fn.name)).not.toContain("Service.hidden")
+  })
+
+  test("framework-owned method contracts count as contextually typed", async () => {
+    await writeTs(
+      "src/sync-server.ts",
+      [
+        "type Env = {}",
+        "declare class DurableObject<TEnv> {}",
+        "export class SyncServer extends DurableObject<Env> {",
+        "  async webSocketMessage(_ws, _message) {}",
+        "  async webSocketClose(ws, code, _reason, _wasClean) {",
+        "    ws.close(code)",
+        "  }",
+        "  run(value) {",
+        "    return value",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runCompute()
+    expect(out.uncoveredBoundary.map((fn) => fn.name)).toEqual(["SyncServer.run"])
   })
 
   test("object literal methods inside exported classes are not boundary methods", async () => {

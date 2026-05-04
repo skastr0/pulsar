@@ -134,7 +134,9 @@ export const TsLd06: Signal<TsLd06Config, TsLd06Output, TsProjectTag> = {
               const target = tracked.boundary ? fileBoundary : fileInternal
               const totals = tracked.boundary ? boundaryTotals : internalTotals
               const paramCount = tracked.fn.parameters.length
-              const contextuallyTyped = hasContextualFunctionTypeAnnotation(tracked.fn)
+              const contextuallyTyped =
+                hasContextualFunctionTypeAnnotation(tracked.fn) ||
+                hasFrameworkMethodContract(tracked.fn)
               const annotatedParams = contextuallyTyped
                 ? paramCount
                 : tracked.fn.parameters.filter(hasCoveredParameterType).length
@@ -196,11 +198,11 @@ export const TsLd06: Signal<TsLd06Config, TsLd06Output, TsProjectTag> = {
           }),
       })
       return result
-    }),
-  score: (out) => out.boundaryCoverage.coverage,
+  }),
+  score: (out) => weightedBoundaryCoverage(out.boundaryCoverage),
   diagnose: (out): ReadonlyArray<Diagnostic> =>
     out.uncoveredBoundary.slice(0, out.diagnosticLimit).map((fn) => ({
-      severity: "warn" as const,
+      severity: fn.missingKind === "return" ? "info" : "warn",
       message: `Boundary function \`${fn.name}\` is missing explicit ${fn.missingKind} annotations`,
       location: { file: fn.file, line: fn.line },
       data: { ...fn },
@@ -212,6 +214,19 @@ type MutableCoverage = {
   annotatedParams: number
   totalReturns: number
   annotatedReturns: number
+}
+
+const PARAMETER_COVERAGE_WEIGHT = 4
+const RETURN_COVERAGE_WEIGHT = 1
+
+const weightedBoundaryCoverage = (coverage: CoverageSummary): number => {
+  const denominator =
+    coverage.totalParams * PARAMETER_COVERAGE_WEIGHT +
+    coverage.totalReturns * RETURN_COVERAGE_WEIGHT
+  const numerator =
+    coverage.annotatedParams * PARAMETER_COVERAGE_WEIGHT +
+    coverage.annotatedReturns * RETURN_COVERAGE_WEIGHT
+  return denominator === 0 ? 1 : numerator / denominator
 }
 
 const collectTrackedFunctions = (sourceFile: SourceFile): ReadonlyArray<TrackedFunction> => {
@@ -304,6 +319,35 @@ const hasContextualFunctionTypeAnnotation = (node: CompilerFunctionLike): boolea
   const parent = node.parent
   if (!ts.isVariableDeclaration(parent)) return false
   return parent.type !== undefined
+}
+
+const DURABLE_OBJECT_METHOD_CONTRACTS = new Set([
+  "alarm",
+  "fetch",
+  "webSocketClose",
+  "webSocketError",
+  "webSocketMessage",
+])
+
+const hasFrameworkMethodContract = (node: CompilerFunctionLike): boolean => {
+  if (!ts.isMethodDeclaration(node)) return false
+  if (!ts.isClassDeclaration(node.parent)) return false
+  const name = propertyNameText(node.name)
+  if (!DURABLE_OBJECT_METHOD_CONTRACTS.has(name)) return false
+  return classExtendsIdentifier(node.parent, "DurableObject")
+}
+
+const classExtendsIdentifier = (node: ts.ClassDeclaration, name: string): boolean =>
+  node.heritageClauses?.some(
+    (clause) =>
+      clause.token === ts.SyntaxKind.ExtendsKeyword &&
+      clause.types.some((heritage) => expressionMatchesIdentifier(heritage.expression, name)),
+  ) ?? false
+
+const expressionMatchesIdentifier = (expression: ts.Expression, name: string): boolean => {
+  if (ts.isIdentifier(expression)) return expression.text === name
+  if (ts.isPropertyAccessExpression(expression)) return expression.name.text === name
+  return false
 }
 
 const hasCoveredParameterType = (parameter: ts.ParameterDeclaration): boolean =>
