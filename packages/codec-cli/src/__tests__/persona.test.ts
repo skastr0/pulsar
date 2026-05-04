@@ -129,6 +129,63 @@ describe("taste persona", () => {
     }
   }, 120_000)
 
+  test("applied ai-slop-defense vector tightens small diff clone signal after baseline", async () => {
+    const repoPath = await initRepo()
+    const smallDuplicateBody = `
+  const out = value + 1
+  return out
+`
+    try {
+      await writeRepoFile(
+        repoPath,
+        "src/existing.ts",
+        `export function existingTiny(value: number): number {${smallDuplicateBody}}\n`,
+      )
+      await writeRepoFile(
+        repoPath,
+        "src/existing-two.ts",
+        `export function existingTinyTwo(value: number): number {${smallDuplicateBody}}\n`,
+      )
+      sh("git", ["add", "src/existing.ts", "src/existing-two.ts"], repoPath)
+      sh("git", ["commit", "-q", "-m", "seed tiny helpers"], repoPath)
+
+      await writeRepoFile(
+        repoPath,
+        "src/changed.ts",
+        `export function copiedTiny(value: number): number {${smallDuplicateBody}}\n`,
+      )
+
+      const baseline = runCli(repoPath, ["score", "--category", "generated-slop", "."])
+      expect(baseline.status).toBe(0)
+      expect(baseline.stdout).toContain("Vector:   all-defaults")
+      expect(baseline.stdout).not.toContain("existingTiny")
+      expect(baseline.stdout).not.toContain("copiedTiny")
+
+      const apply = runCli(repoPath, [
+        "persona",
+        "apply",
+        "ai-slop-defense",
+        "--to",
+        ".taste-codec/vector.json",
+      ])
+      expect(apply.status).toBe(0)
+
+      const written = JSON.parse(await readFile(join(repoPath, ".taste-codec/vector.json"), "utf8"))
+      expect(written.id).toBe("ai-slop-defense")
+      expect(written.modes.ai_assisted).toBe(true)
+      expect(written.provenance[0].source).toBe("preset")
+
+      const vectorScore = runCli(repoPath, ["score", "--category", "generated-slop", "."])
+      expect(vectorScore.status).toBe(0)
+      expect(vectorScore.stdout).toContain("Vector:   ai-slop-defense")
+      expect(vectorScore.stdout).toContain("AI Mode:  active")
+      expect(vectorScore.stdout).toContain("existingTiny")
+      expect(vectorScore.stdout).toContain("copiedTiny")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
   test("created ai-slop-defense vector changes generated-slop scoring", async () => {
     const repoPath = await initRepo()
     try {

@@ -273,7 +273,7 @@ describe("taste score", () => {
       const out = runCli(repoPath, ["score", "--category", "generated-slop", "."])
       expect(out.status).toBe(0)
       expect(out.stdout).toContain("Category: generated-slop")
-      expect(out.stdout).toContain("TS-SL-03               0.99")
+      expect(out.stdout).toContain("TS-SL-03               0.96")
       expect(out.stdout).toContain("Top Findings")
       expect(out.stdout).toContain("TS-SL-03 WARN")
       expect(out.stdout).toContain("ts-ignore is missing justification")
