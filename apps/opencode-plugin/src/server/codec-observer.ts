@@ -85,7 +85,9 @@ const loadRuntime = (
         registry,
         (worktreePath) =>
           Layer.mergeAll(
-            activePacks.typescript ? TsProjectLayer(worktreePath) : Layer.empty,
+            activePacks.typescript
+              ? TsProjectLayer(worktreePath, { productionOnly: true })
+              : Layer.empty,
             activePacks.rust ? RustProjectLayer(worktreePath) : Layer.empty,
           ) as Layer.Layer<any, any, never>,
         vector,
