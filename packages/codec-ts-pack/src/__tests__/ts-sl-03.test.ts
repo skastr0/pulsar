@@ -353,6 +353,20 @@ const demo: string = 1;
 `,
     )
     await repo.write(
+      "sdk-samples/live_client_content.ts",
+      `
+// eslint-disable-next-line no-constant-condition
+while (true) {}
+`,
+    )
+    await repo.write(
+      "private-demos/snippets/tour.ts",
+      `
+// @ts-ignore
+const snippet: string = 1;
+`,
+    )
+    await repo.write(
       "apps/docs/src/page.tsx",
       `
 // @ts-expect-error
