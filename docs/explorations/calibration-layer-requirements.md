@@ -2,18 +2,20 @@
 
 > **Context:** The last 98 commits included many "fix: ignore X" and "fix: deweight Y" patches that encoded project-shaped, framework-shaped, and tooling-shaped assumptions directly into signal source code. This document treats those patches not as throwaway code, but as **extensive leads** for what a proper calibration layer must support. The hardcoded heuristics represent real patterns that exist in the wild—they just need to be properly layered.
 
+> **Update:** The architecture has since settled on **project modules** as the primary abstraction: project-owned TypeScript/Effect modules that contribute typed calibration processors. Data-only rules and JSON helpers are still useful convenience APIs, but they are not the foundation. Where this document says "config" or "rule," read it as a requirement that may be implemented by a code-backed project module, a reusable technology/framework module, or a helper that compiles data into a processor.
+
 ---
 
 ## 1. The Core Insight: Signal Poisoning as Requirements Elicitation
 
-When we hardcode `isServerReactiveContractNoop` (SolidJS) or `isDocusaurusApp` (Docusaurus) into signal logic, we're not writing bad code—we're **discovering calibration requirements in the wrong layer**. Each hardcoded heuristic is a prototype of a calibration rule that should be:
+When we hardcode `isServerReactiveContractNoop` (SolidJS) or `isDocusaurusApp` (Docusaurus) into signal logic, we're not writing bad code—we're **discovering calibration requirements in the wrong layer**. Each hardcoded heuristic is a prototype of a calibration processor or helper-backed rule that should be:
 
-1. **Expressible in config** (not source code)
+1. **Expressible outside generic signal source code** (usually as a code-backed project module or reusable calibration module)
 2. **Overridable per repository or organization** (via the effective repo/org vector and calibration artifacts)
 3. **Sharable as packs** (framework addons, ecosystem packs)
 4. **Versioned independently** (so framework pack updates don't require signal cache bumps)
 
-The 98 commits show this pattern repeatedly: we encounter a false positive, write a hardcoded carve-out, and move on. The correct pattern is: encounter a false positive, **express it as a calibration rule**, and ship it in the appropriate pack.
+The 98 commits show this pattern repeatedly: we encounter a false positive, write a hardcoded carve-out, and move on. The correct pattern is: encounter a false positive, **express it as a typed calibration processor**, and ship it in the appropriate project, organization, technology, or framework module.
 
 ---
 

@@ -10,7 +10,7 @@ Taste is repository-level, always.
 
 - The effective taste vector belongs to the repository or organization being scored, regardless of where the file is transported from.
 - A repo-local `.taste-codec/vector.json` always overrides a home or organization-level vector.
-- A home-directory vector may be valid only as an organization/team-standard fallback shared across repos. It is not personal preference.
+- A home-directory vector may be valid only as an organization-standard fallback shared across repos. It is not personal preference.
 - There is no personal taste vector or portable per-agent taste for scoring a repo.
 - Anyone working in a repo shares that repo's taste. Divergent per-person scoring makes the system theater.
 - Presets are templates for creating or updating a repo vector. A preset is not active taste until it is applied to the repo.
@@ -27,6 +27,7 @@ Taste is repository-level, always.
 - Signals compute grounded evidence.
 - A taste vector configures how this repository interprets and weights that evidence.
 - Calibration adapts signal interpretation to repo layout, framework conventions, and technology contracts.
+- Project modules are project-owned TypeScript/Effect modules that contribute typed calibration processors. Data-only JSON helpers may exist, but they are convenience APIs, not the foundation.
 - Repo- and organization-level taste and calibration must be diffable, hashable, attributable, and explainable.
 
 ## Workflow Conventions
@@ -46,5 +47,7 @@ Taste is repository-level, always.
   - Instead, describe presets as portable starting templates and repo vectors as the source of truth.
 - Do not smuggle project facts into generic signal source code.
   - Instead, express them as repo calibration or pack calibration with rule attribution.
+- Do not reduce calibration to a closed JSON DSL when the heuristic requires executable signal processing.
+  - Instead, use project modules that attach code-backed processors to typed slots.
 - Do not make score-affecting calibration invisible.
   - Instead, expose rule IDs, sources, activation evidence, and fingerprints.
