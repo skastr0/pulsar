@@ -8,7 +8,7 @@ import {
   SignalComputeError,
 } from "@taste-codec/core"
 import { Effect, Schema } from "effect"
-import { Node, Project, SyntaxKind, type Identifier, type SourceFile } from "ts-morph"
+import { Node, Project, SyntaxKind, ts, type SourceFile } from "ts-morph"
 import type { PackageInfo, PackageManifest } from "../discovery.js"
 import { readBunLockFile } from "../lockfiles/bun-lock.js"
 import { TsPackageInfoTag, TsProjectTag } from "../ts-project.js"
@@ -233,6 +233,7 @@ export const TsDe04: Signal<
             "optionalDependencies",
           ])
           const rootToolingUsedDependencyNames = new Set<string>()
+          const localPathAliasUsageCache = new Map<string, boolean>()
 
           for (const sourceFile of sourceFiles) {
             const owningPackage = packageForPath(sourceFile.getFilePath())
@@ -252,8 +253,10 @@ export const TsDe04: Signal<
               if (isToolingFile && rootToolingDependencyNames.has(packageName)) {
                 rootToolingUsedDependencyNames.add(packageName)
               }
-              if (
-                isLocalPathAliasUsage(
+              const localPathAliasUsageCacheKey = `${owningPackage.path}\0${packageName}\0${moduleSpecifier}`
+              let localPathAliasUsage = localPathAliasUsageCache.get(localPathAliasUsageCacheKey)
+              if (localPathAliasUsage === undefined) {
+                localPathAliasUsage = isLocalPathAliasUsage(
                   moduleSpecifier,
                   packageName,
                   owningPackage,
@@ -261,7 +264,9 @@ export const TsDe04: Signal<
                   workspaceNames,
                   context.worktreePath,
                 )
-              ) {
+                localPathAliasUsageCache.set(localPathAliasUsageCacheKey, localPathAliasUsage)
+              }
+              if (localPathAliasUsage) {
                 continue
               }
 
@@ -575,13 +580,15 @@ const externalModuleSpecifiers = (sourceFile: SourceFile): ReadonlyArray<ModuleS
     }
   }
 
-  const requireLikeNames = requireLikeIdentifiers(sourceFile)
-  for (const call of sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-    const firstArg = call.getArguments()[0]
-    if (!Node.isStringLiteral(firstArg)) continue
-    if (isExternalLoaderCall(requireLikeNames, call.getExpression().getText())) {
-      const specifier = firstArg.getLiteralText()
-      mergeModuleSpecifierUsage(specifiers, { specifier, typeOnly: false })
+  if (hasRuntimeLoaderSyntax(sourceFile)) {
+    const requireLikeNames = requireLikeIdentifiers(sourceFile)
+    for (const call of sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+      const firstArg = call.getArguments()[0]
+      if (!Node.isStringLiteral(firstArg)) continue
+      if (isExternalLoaderCall(requireLikeNames, call.getExpression().getText())) {
+        const specifier = firstArg.getLiteralText()
+        mergeModuleSpecifierUsage(specifiers, { specifier, typeOnly: false })
+      }
     }
   }
 
@@ -659,19 +666,32 @@ const localIdentifierUsageByName = (
   bindingNames: ReadonlySet<string>,
 ): ReadonlyMap<string, "type-only" | "value"> => {
   const usage = new Map<string, "type-only" | "value">()
+  const valueNames = new Set<string>()
+  const compilerSourceFile = sourceFile.compilerNode
 
-  for (const identifier of sourceFile.getDescendantsOfKind(SyntaxKind.Identifier)) {
-    const name = identifier.getText()
-    if (!bindingNames.has(name)) continue
-    if (isWithinImportDeclaration(identifier)) continue
-    if (!isIdentifierInTypePosition(identifier)) {
-      usage.set(name, "value")
-      continue
+  const visit = (node: ts.Node, inTypePosition: boolean): void => {
+    if (valueNames.size === bindingNames.size) return
+    if (ts.isImportDeclaration(node)) return
+
+    const nextInTypePosition = inTypePosition || ts.isTypeNode(node)
+    if (ts.isIdentifier(node)) {
+      const name = node.text
+      if (!bindingNames.has(name)) return
+      if (!nextInTypePosition) {
+        usage.set(name, "value")
+        valueNames.add(name)
+        return
+      }
+      if (usage.get(name) !== "value") {
+        usage.set(name, "type-only")
+      }
+      return
     }
-    if (usage.get(name) !== "value") {
-      usage.set(name, "type-only")
-    }
+
+    ts.forEachChild(node, (child) => visit(child, nextInTypePosition))
   }
+
+  visit(compilerSourceFile, false)
 
   return usage
 }
@@ -701,18 +721,6 @@ const valueImportBindingNames = (
     }
   }
   return names
-}
-
-const isWithinImportDeclaration = (identifier: Identifier): boolean =>
-  identifier.getAncestors().some(Node.isImportDeclaration)
-
-const isIdentifierInTypePosition = (identifier: Identifier): boolean => {
-  for (const ancestor of identifier.getAncestors()) {
-    if (Node.isImportDeclaration(ancestor)) return false
-    if (Node.isTypeNode(ancestor)) return true
-    if (Node.isExpression(ancestor) || Node.isStatement(ancestor)) return false
-  }
-  return false
 }
 
 const dependencySourceFiles = async (
@@ -766,6 +774,9 @@ const packageRootDependencyFiles = async (
   )
   return existing.flat().sort((left, right) => left.localeCompare(right))
 }
+
+const hasRuntimeLoaderSyntax = (sourceFile: SourceFile): boolean =>
+  /\b(?:require|createRequire)\b|import\s*\(/.test(sourceFile.getFullText())
 
 const isExternalLoaderCall = (
   requireLikeNames: ReadonlySet<string>,
