@@ -174,7 +174,7 @@ const addWorktreeGlob = (project: Project, worktreePath: string, options?: TsPro
 
 const removeIgnoredSourceFiles = (project: Project): void => {
   for (const sourceFile of project.getSourceFiles()) {
-    if (hasIgnoredPathSegment(sourceFile.getFilePath())) {
+    if (hasIgnoredPathSegment(sourceFile.getFilePath()) && !isHiddenToolEntrypoint(sourceFile.getFilePath())) {
       project.removeSourceFile(sourceFile)
     }
   }
@@ -286,6 +286,13 @@ const isProductionTypeScriptFile = (file: string): boolean => {
 
 const isHiddenPathSegment = (segment: string): boolean =>
   segment.startsWith(".") && segment.length > 1
+
+const isHiddenToolEntrypoint = (path: string): boolean => {
+  const normalized = path.replace(/\\/g, "/")
+  return /\/\.opencode\/tools?\/[^/]+\.[cm]?tsx?$/u.test(normalized) ||
+    /\/\.opencode\/plugins\/[^/]+\.[cm]?tsx?$/u.test(normalized) ||
+    /\/\.pi\/extensions\/[^/]+\.[cm]?tsx?$/u.test(normalized)
+}
 
 export const TsProjectLayer = (
   worktreePath: string,
