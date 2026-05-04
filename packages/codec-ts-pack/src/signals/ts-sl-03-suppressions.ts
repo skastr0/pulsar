@@ -43,7 +43,7 @@ export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalCon
   tier: 1,
   category: "generated-slop",
   kind: "structural",
-  cacheVersion: "repeated-contextual-suppressions-v1",
+  cacheVersion: "nearby-contextual-suppressions-v1",
   configSchema: TsSl03Config,
   defaultConfig: {
     exclude_globs: [
@@ -404,8 +404,14 @@ const contextualSuppressionJustification = (
   const frameworkMetadataJustification = frameworkMetadataSuppressionJustification(lines, suppressionIndex)
   if (frameworkMetadataJustification !== undefined) return frameworkMetadataJustification
 
+  const frameworkMetadataAccessJustification = frameworkMetadataAccessSuppressionJustification(lines, suppressionIndex)
+  if (frameworkMetadataAccessJustification !== undefined) return frameworkMetadataAccessJustification
+
   const traceLoggingJustification = traceLoggingSuppressionJustification(lines, suppressionIndex, suppression)
   if (traceLoggingJustification !== undefined) return traceLoggingJustification
+
+  const nearbyComment = nearbyPrecedingCommentJustification(lines, suppressionIndex)
+  if (nearbyComment !== undefined) return nearbyComment
 
   const previous = lines[suppressionIndex - 1]
   if (previous === undefined || previous.trim() === "") return undefined
@@ -416,6 +422,49 @@ const contextualSuppressionJustification = (
   const blockComment = precedingBlockCommentText(lines, suppressionIndex - 1)
   return blockComment
 }
+
+const nearbyPrecedingCommentJustification = (
+  lines: ReadonlyArray<string>,
+  suppressionIndex: number,
+): string | undefined => {
+  for (let index = suppressionIndex - 1; index >= Math.max(0, suppressionIndex - 4); index--) {
+    const trimmed = lines[index]?.trim()
+    if (trimmed === undefined || trimmed.length === 0) return undefined
+    if (trimmed.startsWith("//")) {
+      if (extractSuppression(trimmed) !== undefined || trimmed.includes("taste-allow")) return undefined
+      const text = contiguousLineCommentText(lines, index)
+      return text !== undefined && interveningLinesAreExpressionScaffold(lines, index + 1, suppressionIndex - 1)
+        ? text
+        : undefined
+    }
+    if (trimmed.endsWith("*/")) {
+      const text = precedingBlockCommentText(lines, index)
+      return text !== undefined && interveningLinesAreExpressionScaffold(lines, index + 1, suppressionIndex - 1)
+        ? text
+        : undefined
+    }
+    if (!isExpressionScaffoldLine(trimmed)) return undefined
+  }
+
+  return undefined
+}
+
+const interveningLinesAreExpressionScaffold = (
+  lines: ReadonlyArray<string>,
+  startIndex: number,
+  endIndex: number,
+): boolean => {
+  for (let index = startIndex; index <= endIndex; index++) {
+    const trimmed = lines[index]?.trim()
+    if (trimmed === undefined || trimmed.length === 0) return false
+    if (!isExpressionScaffoldLine(trimmed)) return false
+  }
+  return true
+}
+
+const isExpressionScaffoldLine = (line: string): boolean =>
+  /^[A-Za-z_$][\w$.'"\[\]!?:<>= ]*(?:&&|\|\||[({:,])$/.test(line) ||
+  /^(?:if|return|const|let|var)\b.*[({:,]$/.test(line)
 
 const inheritedRecentJustification = (
   recentJustifications: ReadonlyMap<string, { readonly line: number; readonly text: string }>,
@@ -470,6 +519,18 @@ const frameworkMetadataSuppressionJustification = (
   }
 
   return undefined
+}
+
+const frameworkMetadataAccessSuppressionJustification = (
+  lines: ReadonlyArray<string>,
+  suppressionIndex: number,
+): string | undefined => {
+  const context = lines
+    .slice(suppressionIndex + 1, Math.min(lines.length, suppressionIndex + 3))
+    .join("\n")
+  return /\.__pulumiType\b/.test(context)
+    ? "Pulumi runtime type metadata access"
+    : undefined
 }
 
 const contiguousLineCommentText = (lines: ReadonlyArray<string>, endIndex: number): string | undefined => {

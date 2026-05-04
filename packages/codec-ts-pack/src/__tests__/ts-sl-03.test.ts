@@ -147,6 +147,49 @@ const value: any = input;
     )
   })
 
+  test("accepts nearby comments separated by expression scaffolding as contextual justification", async () => {
+    await repo.write(
+      "component.ts",
+      `
+export function validate(args: { readonly type: string; readonly name: string; readonly opts: { readonly parent?: { readonly __name: string } } }) {
+  // Ensure child logical names are prefixed with the parent name.
+  if (
+    args.type !== "root" &&
+    // @ts-expect-error
+    !args.name.startsWith(args.opts.parent!.__name)
+  ) {
+    throw new Error("invalid")
+  }
+}
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl03, TsSl03.defaultConfig)
+    expect(out.suppressions).toHaveLength(1)
+    expect(out.suppressions[0]?.justification).toBe("active")
+    expect(out.suppressions[0]?.justificationSource).toBe("contextual")
+    expect(out.missingJustificationCount).toBe(0)
+  })
+
+  test("does not use distant ordinary comments to justify unrelated suppressions", async () => {
+    await repo.write(
+      "component.ts",
+      `
+export function readSecret(Resource: Record<string, unknown>) {
+  // Resolve the deployment resource bag.
+  const key = "AUTH_PRIVATE_KEY"
+  // @ts-expect-error
+  return Resource[key].value
+}
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl03, TsSl03.defaultConfig)
+    expect(out.suppressions).toHaveLength(1)
+    expect(out.suppressions[0]?.justification).toBe("missing")
+    expect(out.missingJustificationCount).toBe(1)
+  })
+
   test("inherits nearby same-rule justification for repeated warning blocks", async () => {
     await repo.write(
       "logger.ts",
@@ -224,6 +267,34 @@ Queue.__pulumiType = pulumiType;
 
     const out = await runSignal(repo.root, TsSl03, TsSl03.defaultConfig)
     expect(out.suppressions.length).toBe(2)
+    expect(out.suppressions.every((suppression) => suppression.justification === "active")).toBe(true)
+    expect(out.suppressions.every((suppression) => suppression.justificationSource === "contextual")).toBe(true)
+    expect(out.missingJustificationCount).toBe(0)
+  })
+
+  test("accepts Pulumi runtime metadata reads as contextual justification", async () => {
+    await repo.write(
+      "component.ts",
+      `
+export function register(resource: { readonly __pulumiType: string }) {
+  // @ts-expect-error
+  const type = resource.__pulumiType
+  return type
+}
+
+export class Linkable {
+  static wrappedResources = new Set<string>()
+
+  static wrap(cls: { readonly __pulumiType: string }) {
+    // @ts-expect-error
+    this.wrappedResources.add(cls.__pulumiType)
+  }
+}
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl03, TsSl03.defaultConfig)
+    expect(out.suppressions).toHaveLength(2)
     expect(out.suppressions.every((suppression) => suppression.justification === "active")).toBe(true)
     expect(out.suppressions.every((suppression) => suppression.justificationSource === "contextual")).toBe(true)
     expect(out.missingJustificationCount).toBe(0)
