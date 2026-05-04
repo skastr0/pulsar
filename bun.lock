@@ -97,6 +97,17 @@
         "typescript": "^5.8.0",
       },
     },
+    "packages/project-module-sdk": {
+      "name": "@taste-codec/project-module-sdk",
+      "version": "0.0.0",
+      "dependencies": {
+        "@taste-codec/core": "workspace:*",
+        "effect": "^3.0.0",
+      },
+      "devDependencies": {
+        "typescript": "^5.8.0",
+      },
+    },
   },
   "packages": {
     "@kwsites/file-exists": ["@kwsites/file-exists@1.1.1", "", { "dependencies": { "debug": "^4.1.1" } }, "sha512-m9/5YGR18lIwxSFDwfE3oA7bWuq9kdau6ugN4H2rJeyhFQZcG9AgSHkQtSD15a8WvTgfz9aikZMrKPHvbpqFiw=="],
@@ -128,6 +139,8 @@
     "@taste-codec/cli": ["@taste-codec/cli@workspace:packages/codec-cli"],
 
     "@taste-codec/core": ["@taste-codec/core@workspace:packages/codec-core"],
+
+    "@taste-codec/project-module-sdk": ["@taste-codec/project-module-sdk@workspace:packages/project-module-sdk"],
 
     "@taste-codec/rs-pack": ["@taste-codec/rs-pack@workspace:packages/codec-rs-pack"],
 
