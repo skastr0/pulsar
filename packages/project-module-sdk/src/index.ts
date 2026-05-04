@@ -1,3 +1,4 @@
+import { createRequire } from "node:module"
 import { resolve } from "node:path"
 import { pathToFileURL } from "node:url"
 import { Effect, Schema } from "effect"
@@ -274,7 +275,18 @@ export const projectModuleRefTarget = (
       return pathToFileURL(resolve(options.repoRoot, ref.path)).href
     case "workspace":
     case "package":
-      return ref.packageName
+      return resolvePackageProjectModuleTarget(ref.packageName, options.repoRoot)
+  }
+}
+
+const resolvePackageProjectModuleTarget = (
+  packageName: string,
+  repoRoot: string,
+): string => {
+  try {
+    return pathToFileURL(createRequire(resolve(repoRoot, "package.json")).resolve(packageName)).href
+  } catch {
+    return packageName
   }
 }
 

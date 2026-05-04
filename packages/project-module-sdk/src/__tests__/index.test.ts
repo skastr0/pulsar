@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, test } from "bun:test"
@@ -357,6 +357,60 @@ describe("project module sdk", () => {
       expect(loaded).toHaveLength(1)
       expect(loaded[0]?.descriptor.id).toBe("loaded.defined")
       expect(loaded[0]?.activeModule.fingerprint).toBe("defined-fingerprint")
+    } finally {
+      await rm(repoRoot, { recursive: true, force: true })
+    }
+  })
+
+  test("loads package project modules relative to the target repo root", async () => {
+    const repoRoot = await mkdtemp(join(tmpdir(), "taste-project-module-"))
+    try {
+      const packageRoot = join(repoRoot, "node_modules", "@acme", "taste-module")
+      await mkdir(packageRoot, { recursive: true })
+      await writeFile(
+        join(packageRoot, "package.json"),
+        JSON.stringify({
+          name: "@acme/taste-module",
+          version: "1.0.0",
+          type: "module",
+          exports: "./index.mjs",
+        }),
+        "utf8",
+      )
+      await writeFile(
+        join(packageRoot, "index.mjs"),
+        [
+          "export default {",
+          "  id: '@acme/taste-module',",
+          "  version: '1.0.0',",
+          "  scope: 'organization',",
+          "  source: 'package',",
+          "  processors: []",
+          "}",
+        ].join("\n"),
+        "utf8",
+      )
+      const manifest = await Effect.runPromise(
+        decodeProjectModuleManifest({
+          modules: [
+            {
+              id: "@acme/taste-module",
+              kind: "package",
+              packageName: "@acme/taste-module",
+            },
+          ],
+        }),
+      )
+
+      const loaded = await Effect.runPromise(
+        loadProjectModuleRef(manifest.modules[0]!, { repoRoot }),
+      )
+
+      expect(loaded.descriptor).toMatchObject({
+        id: "@acme/taste-module",
+        scope: "organization",
+        source: "package",
+      })
     } finally {
       await rm(repoRoot, { recursive: true, force: true })
     }
