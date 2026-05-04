@@ -148,20 +148,20 @@ export const TsSl02: Signal<TsSl02Config, TsSl02Output, SignalContextTag> = {
 
           for (const group of groupsToAnalyze) {
             const membersWithHistory = membersByGroup.get(group.groupId) ?? []
+            const membersWithKnownHistory = membersWithHistory.filter((member) => member.historyStatus === "ok")
 
-            const distinctShas = new Set(membersWithHistory.map((m) => m.lastModifiedSha))
+            const distinctShas = new Set(membersWithKnownHistory.map((m) => m.lastModifiedSha))
             const divergenceScore =
-              membersWithHistory.length <= 1
+              membersWithKnownHistory.length <= 1
                 ? 0
-                : (distinctShas.size - 1) / (membersWithHistory.length - 1)
+                : (distinctShas.size - 1) / (membersWithKnownHistory.length - 1)
 
-            const timestamps = membersWithHistory.map((m) => m.timestamp).sort((a, b) => a - b)
+            const timestamps = membersWithKnownHistory.map((m) => m.timestamp).sort((a, b) => a - b)
             const lastModifiedWindow =
               timestamps.length > 1 ? (timestamps[timestamps.length - 1]! - timestamps[0]!) / (1000 * 60 * 60 * 24) : 0
 
-            const hasRecentModification = membersWithHistory.some(
+            const hasRecentModification = membersWithKnownHistory.some(
               (m) =>
-                m.historyStatus === "ok" &&
                 referenceTime - m.timestamp < config.min_window_days * 24 * 60 * 60 * 1000,
             )
 

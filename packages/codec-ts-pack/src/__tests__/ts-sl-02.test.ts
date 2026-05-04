@@ -271,6 +271,52 @@ describe("TS-SL-02 Inconsistent clone detection", () => {
     expect(TsSl02.score(out)).toBeLessThan(1)
   })
 
+  test("does not treat unknown blame history as divergent clone evidence", async () => {
+    const cloneGroups = [
+      {
+        groupId: "partial-history",
+        kind: "structural" as const,
+        tokenCount: 60,
+        members: [
+          { file: join(repo, "handler-a.ts"), name: "handleA", startLine: 1, endLine: 3 },
+          { file: join(repo, "missing-handler.ts"), name: "handleB", startLine: 1, endLine: 3 },
+        ],
+        structuralHash: "hash123",
+      },
+    ]
+
+    const inputs = new Map<string, unknown>([
+      [
+        "TS-SL-01",
+        {
+          groups: cloneGroups,
+          totalFunctionsAnalyzed: 2,
+          scoreBudgetFunctions: 2,
+          scopeMode: "whole-tree",
+        } as TsSl01Output,
+      ],
+    ])
+
+    makeCommit(repo, "handler-a.ts", "export function handleA() {\n  return 1\n}\n", new Date().toISOString())
+
+    const out = await Effect.runPromise(
+      TsSl02.compute(TsSl02.defaultConfig, inputs).pipe(
+        Effect.provide(
+          Layer.succeed(SignalContextTag, {
+            gitSha: "HEAD",
+            worktreePath: repo,
+            changedHunks: [],
+          }),
+        ),
+      ),
+    )
+
+    expect(out.totalGroups).toBe(1)
+    expect(out.analyzedGroups).toBe(1)
+    expect(out.divergentGroups).toEqual([])
+    expect(TsSl02.score(out)).toBe(1)
+  })
+
   test("ignores tiny structural clone groups even when AI vectors lower TS-SL-01 token floor", async () => {
     const cloneGroups = [
       {
