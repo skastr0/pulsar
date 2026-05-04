@@ -1,16 +1,14 @@
 import { execFile } from "node:child_process"
 import { readFile } from "node:fs/promises"
+import { join } from "node:path"
 import { promisify } from "node:util"
 import {
-  InMemoryCacheLayer,
-  ReferenceDataTag,
-  SignalContextTag,
+  ScoringEngineLayer,
+  ScoringEngineTag,
   buildRegistry,
   createTimeSeriesServices,
   decodeTasteVector,
-  loadCanonicalReferenceDataEntries,
-  makeReferenceData,
-  observe,
+  isActive as vectorIsActive,
   timeSeriesConfigOf,
   validateVectorAgainstRegistry,
   type ObserverOutput,
@@ -25,6 +23,11 @@ import { Effect, Layer } from "effect"
 
 const execFileAsync = promisify(execFile)
 const ALL_SIGNALS = [...SHARED_SIGNALS, ...TS_PACK_SIGNALS, ...RS_PACK_SIGNALS]
+type RuntimeEntry = {
+  readonly registry: Registry
+  readonly engine: typeof ScoringEngineTag.Service
+}
+const runtimePool = new Map<string, Promise<RuntimeEntry>>()
 
 const loadCodecRegistry = async (): Promise<Registry> => {
   return Effect.runPromise(buildRegistry(ALL_SIGNALS))
@@ -59,6 +62,57 @@ const readHeadSha = async (worktree: string): Promise<string> => {
   }
 }
 
+const runtimePoolKey = (worktree: string, vector: TasteVector | undefined): string =>
+  `${worktree}\0${stableStringify(vector ?? null)}`
+
+const loadRuntime = (
+  worktree: string,
+  vector: TasteVector | undefined,
+): Promise<RuntimeEntry> => {
+  const key = runtimePoolKey(worktree, vector)
+  const existing = runtimePool.get(key)
+  if (existing !== undefined) return existing
+
+  const created = Effect.runPromise(
+    Effect.gen(function* () {
+      const registry = (yield* buildRegistry(ALL_SIGNALS)) as Registry
+      const activePacks = collectActiveLanguagePacks(registry, vector)
+      const EngineLayer = ScoringEngineLayer(
+        registry,
+        (worktreePath) =>
+          Layer.mergeAll(
+            activePacks.typescript ? TsProjectLayer(worktreePath) : Layer.empty,
+            activePacks.rust ? RustProjectLayer(worktreePath) : Layer.empty,
+          ) as Layer.Layer<any, any, never>,
+        vector,
+        { cacheConfig: { cacheDir: join(worktree, ".taste-codec", "cache") } },
+      )
+      const engine = yield* Effect.provide(ScoringEngineTag, EngineLayer)
+      return { registry, engine }
+    }) as Effect.Effect<RuntimeEntry, never, never>,
+  ).catch((error) => {
+    runtimePool.delete(key)
+    throw error
+  })
+
+  runtimePool.set(key, created)
+  return created
+}
+
+const collectActiveLanguagePacks = (
+  registry: Registry,
+  vector: TasteVector | undefined,
+): { readonly typescript: boolean; readonly rust: boolean } => {
+  let typescript = false
+  let rust = false
+  for (const signal of registry.sorted) {
+    if (!vectorIsActive(signal.id, vector)) continue
+    if (signal.id.startsWith("TS-")) typescript = true
+    if (signal.id.startsWith("RS-")) rust = true
+  }
+  return { typescript, rust }
+}
+
 export const observeCurrentWorktree = async (input: {
   readonly worktree: string
   readonly vector: TasteVector | undefined
@@ -69,30 +123,12 @@ export const observeCurrentWorktree = async (input: {
   readonly registry: Registry
   readonly observerOutput: ObserverOutput
 }> => {
-  const registry = await loadCodecRegistry()
-  const referenceEntries = await Effect.runPromise(
-    loadCanonicalReferenceDataEntries(input.worktree),
-  )
+  const { registry, engine } = await loadRuntime(input.worktree, input.vector)
   const sha = await readHeadSha(input.worktree)
-
-  const envLayer = Layer.mergeAll(
-    Layer.succeed(SignalContextTag, {
-      gitSha: sha,
-      worktreePath: input.worktree,
+  const observerOutput = await Effect.runPromise(
+    engine.observeWorktree(input.worktree, sha, {
       changedHunks: input.changedHunks ?? [],
     }),
-    Layer.succeed(ReferenceDataTag, makeReferenceData(referenceEntries)),
-    InMemoryCacheLayer,
-    TsProjectLayer(input.worktree),
-    RustProjectLayer(input.worktree),
-  )
-
-  const observerOutput = await Effect.runPromise(
-    Effect.provide(observe(registry, input.vector), envLayer) as Effect.Effect<
-      ObserverOutput,
-      never,
-      never
-    >,
   )
 
   const timeSeriesConfig = timeSeriesConfigOf(input.vector)
@@ -105,6 +141,16 @@ export const observeCurrentWorktree = async (input: {
   }
 
   return { sha, registry, observerOutput }
+}
+
+const stableStringify = (value: unknown): string => {
+  if (value === null || typeof value !== "object") return JSON.stringify(value)
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`
+  const record = value as Record<string, unknown>
+  return `{${Object.keys(record)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`)
+    .join(",")}}`
 }
 
 const errorCodeOf = (error: unknown): string | undefined =>

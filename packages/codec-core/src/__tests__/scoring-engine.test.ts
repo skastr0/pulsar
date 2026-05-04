@@ -341,6 +341,37 @@ describe("ScoringEngine — cache semantics", () => {
     }
   })
 
+  test("observeWorktree can use caller-provided changed hunks", async () => {
+    const { repoPath, sha } = await initRepo([
+      { path: "a.ts", content: "export const x = 1\n" },
+    ])
+    try {
+      await writeFile(join(repoPath, "a.ts"), "export const x = 2\n")
+
+      const program = Effect.gen(function* () {
+        const registry = yield* buildRegistry([makeChangedHunksSignal()])
+        const EngineLayer = ScoringEngineLayer(registry, () => Layer.empty)
+        const engine = yield* ScoringEngineTag.pipe(
+          Effect.provide(EngineLayer),
+        ) as Effect.Effect<typeof ScoringEngineTag.Service, never, never>
+
+        return yield* engine.observeWorktree(repoPath, sha, {
+          changedHunks: [
+            { file: "manual.ts", oldStart: 1, oldLines: 0, newStart: 4, newLines: 2 },
+          ],
+        })
+      })
+
+      const output = await Effect.runPromise(program)
+      expect(output.signalResults.get("MOCK-HUNKS")?.output).toEqual({
+        count: 1,
+        files: ["manual.ts"],
+      })
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
   test("different signals on the same sha miss each other's cache entries", async () => {
     const { repoPath, sha } = await initRepo([
       { path: "a.ts", content: "export const x = 1\n" },

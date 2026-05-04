@@ -80,6 +80,7 @@ export class ScoringEngineTag extends Context.Tag("@taste-codec/core/ScoringEngi
     readonly observeWorktree: (
       repoPath: string,
       headSha: string,
+      options?: { readonly changedHunks?: ReadonlyArray<ChangedHunk> },
     ) => Effect.Effect<ObserverOutput, ScoringEngineError, never>
     readonly observeRange: (
       repoPath: string,
@@ -745,14 +746,19 @@ export const ScoringEngineLayer = (
       )
 
       const observeWorktree = Effect.fn("ScoringEngine.observeWorktree")(
-        function* (repoPath: string, headSha: string) {
+        function* (
+          repoPath: string,
+          headSha: string,
+          worktreeOptions?: { readonly changedHunks?: ReadonlyArray<ChangedHunk> },
+        ) {
           yield* Effect.annotateCurrentSpan("sha", headSha)
           const cleanHead = yield* canUseCurrentWorktreeForCommit(repoPath, headSha)
           if (cleanHead) {
             return yield* observeCommit(repoPath, headSha)
           }
 
-          const changedHunks = yield* collectWorktreeChangedHunks(repoPath)
+          const changedHunks =
+            worktreeOptions?.changedHunks ?? (yield* collectWorktreeChangedHunks(repoPath))
           const contentHash = `${yield* computeWorktreeContentHash(repoPath)}:${hashChangedHunks(changedHunks)}`
           const configHash = computeObserverConfigHash(registry, vector)
           const key: CacheKey = {
