@@ -928,6 +928,54 @@ describe("TS-DE-04 (package dependency health)", () => {
     expect(appHealth?.declaredButUnused).toEqual([])
   })
 
+  test("workspace subpath packages may import their root facade package", async () => {
+    await writePackage("solid", "solid-js", {})
+    await writePackage("solid/h", "solid-js/h", {})
+    await repo.write("packages/solid/src/web.ts", "export const createComponent = () => null\n")
+    await repo.write(
+      "packages/solid/h/src/index.ts",
+      "import { createComponent } from 'solid-js/web'\nexport const h = createComponent\n",
+    )
+
+    const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+    const subpathHealth = out.packages.find((pkg) => pkg.packageName === "solid-js/h")
+    expect(subpathHealth?.importedButNotDeclared).toEqual([])
+  })
+
+  test("nested package manifest without tsconfig owns dependency health for included source", async () => {
+    await repo.writeJson("packages/tui/package.json", {
+      name: "hermes-tui",
+      private: true,
+      dependencies: {},
+    })
+    await repo.writeJson("packages/tui/tsconfig.json", {
+      compilerOptions: {
+        target: "ES2022",
+        module: "ESNext",
+        moduleResolution: "Bundler",
+      },
+      include: ["src/**/*.ts", "packages/**/*.ts"],
+    })
+    await repo.writeJson("packages/tui/packages/ink/package.json", {
+      name: "@hermes/ink",
+      private: true,
+      dependencies: {
+        "ansi-tokenize": "^1.0.0",
+      },
+    })
+    await repo.write(
+      "packages/tui/packages/ink/src/output.ts",
+      "import { tokenize } from 'ansi-tokenize'\nexport const output = tokenize\n",
+    )
+
+    const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+    const parentHealth = out.packages.find((pkg) => pkg.packageName === "hermes-tui")
+    const nestedHealth = out.packages.find((pkg) => pkg.packageName === "@hermes/ink")
+    expect(parentHealth?.importedButNotDeclared).toEqual([])
+    expect(nestedHealth?.importedButNotDeclared).toEqual([])
+    expect(nestedHealth?.declaredButUnused).toEqual([])
+  })
+
   test("ignores direct tsconfig path aliases that resolve to local source", async () => {
     await writePackage("app", "@repo/app", {})
     await repo.writeJson("packages/app/tsconfig.json", {

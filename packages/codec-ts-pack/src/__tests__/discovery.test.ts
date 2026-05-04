@@ -23,6 +23,11 @@ const writeTsconfig = async (dir: string): Promise<void> => {
   )
 }
 
+const writePackageJson = async (dir: string, value: Record<string, unknown>): Promise<void> => {
+  await mkdir(dir, { recursive: true })
+  await writeFile(join(dir, "package.json"), JSON.stringify(value))
+}
+
 describe("discoverPackages", () => {
   test("finds a single root tsconfig", async () => {
     await writeTsconfig(tmp)
@@ -47,6 +52,17 @@ describe("discoverPackages", () => {
     await writeTsconfig(join(tmp, "packages", "a"))
     const pkgs = await Effect.runPromise(discoverPackages(tmp))
     expect(pkgs[0]?.name).toBe("(root)")
+  })
+
+  test("finds nested package manifests without their own tsconfig when they contain TS source", async () => {
+    await writeTsconfig(tmp)
+    await writePackageJson(join(tmp, "packages", "runtime"), { name: "@repo/runtime" })
+    await writeFile(join(tmp, "packages", "runtime", "index.ts"), "export const value = 1\n")
+
+    const pkgs = await Effect.runPromise(discoverPackages(tmp))
+    const runtime = pkgs.find((pkg) => pkg.name === "packages/runtime")
+    expect(runtime?.manifest?.name).toBe("@repo/runtime")
+    expect(runtime?.tsconfigPath).toBe(join(tmp, "tsconfig.json"))
   })
 
   test("ignores tsconfig.json under node_modules", async () => {

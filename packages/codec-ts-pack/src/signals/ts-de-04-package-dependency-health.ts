@@ -156,7 +156,7 @@ export const TsDe04: Signal<
   tier: 1,
   category: "dependency-entropy",
   kind: "structural",
-  cacheVersion: "bundled-cli-lockfile-and-example-scope-v1",
+  cacheVersion: "workspace-facade-and-example-scope-v1",
   configSchema: TsDe04Config,
   defaultConfig: {
     exclude_globs: [
@@ -267,7 +267,15 @@ export const TsDe04: Signal<
               const packageName = normalizePackageSpecifier(moduleSpecifier)
               if (packageName === undefined || isBuiltinModuleName(packageName)) continue
               if (isGeneratedVirtualModuleSpecifier(moduleSpecifier)) continue
-              if (packageName === owningPackage.manifest.name) continue
+              if (
+                isWorkspaceSelfOrFacadeImport(
+                  packageName,
+                  owningPackage.manifest.name,
+                  workspaceNames,
+                )
+              ) {
+                continue
+              }
               if (isToolingFile && rootToolingDependencyNames.has(packageName)) {
                 rootToolingUsedDependencyNames.add(packageName)
               }
@@ -542,6 +550,16 @@ const isToolingOnlyMissingDependency = (
 
 const isGeneratedVirtualModuleSpecifier = (specifier: string): boolean =>
   /^[^./#][^:]*\.(?:gen|generated)\.(?:cjs|cts|js|jsx|mjs|mts|ts|tsx)$/.test(specifier)
+
+const isWorkspaceSelfOrFacadeImport = (
+  dependencyName: string,
+  packageName: string | undefined,
+  workspaceNames: ReadonlySet<string>,
+): boolean => {
+  if (packageName === undefined) return false
+  if (dependencyName === packageName) return true
+  return workspaceNames.has(dependencyName) && packageName.startsWith(`${dependencyName}/`)
+}
 
 const isPackageToolingFile = (packagePath: string, file: string): boolean => {
   const rel = relative(packagePath, file).split(sep).join("/")

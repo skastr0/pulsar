@@ -39,18 +39,32 @@ const IGNORE_DIRS: ReadonlySet<string> = new Set([
 
 export const discoverPackages = (rootDir: string): Effect.Effect<ReadonlyArray<PackageInfo>> =>
   Effect.gen(function* () {
-    const tsconfigs = yield* findTsconfigs(rootDir)
-    const packages = yield* Effect.forEach(tsconfigs, (tsconfigPath) =>
-      Effect.promise(() => toPackageInfo(rootDir, tsconfigPath)),
+    const files = yield* getDiscoverableFiles(rootDir)
+    const tsconfigs = files.length > 0
+      ? files
+        .filter((f) => f.endsWith("tsconfig.json") && !isIgnoredPath(f))
+        .map((f) => join(rootDir, f))
+      : yield* Effect.promise(() => walkForTsconfigs(rootDir))
+    const tsconfigPackages = yield* Effect.forEach(tsconfigs, (tsconfigPath) =>
+      Effect.promise(() => toTsconfigPackageInfo(rootDir, tsconfigPath)),
     )
-    return packages.slice().sort((a, b) => {
+    const tsconfigPackagePaths = new Set(tsconfigPackages.map((pkg) => pkg.path))
+    const packageJsonOnlyPackages = yield* Effect.forEach(
+      manifestOnlyPackageJsons(rootDir, files, tsconfigPackages, tsconfigPackagePaths),
+      ({ packageJsonPath, inheritedTsconfigPath }) =>
+        Effect.promise(() =>
+          toManifestOnlyPackageInfo(rootDir, packageJsonPath, inheritedTsconfigPath),
+        ),
+    )
+
+    return [...tsconfigPackages, ...packageJsonOnlyPackages].sort((a, b) => {
       if (a.name === "(root)") return -1
       if (b.name === "(root)") return 1
       return a.name.localeCompare(b.name)
     })
   })
 
-const toPackageInfo = async (rootDir: string, tsconfigPath: string): Promise<PackageInfo> => {
+const toTsconfigPackageInfo = async (rootDir: string, tsconfigPath: string): Promise<PackageInfo> => {
   const packageDir = dirname(tsconfigPath)
   const rel = relative(rootDir, packageDir)
   const packageJsonPath = join(packageDir, "package.json")
@@ -60,6 +74,24 @@ const toPackageInfo = async (rootDir: string, tsconfigPath: string): Promise<Pac
     name: rel === "" ? "(root)" : rel,
     path: packageDir,
     tsconfigPath,
+    packageJsonPath: manifest === undefined ? undefined : packageJsonPath,
+    manifest,
+  }
+}
+
+const toManifestOnlyPackageInfo = async (
+  rootDir: string,
+  packageJsonPath: string,
+  inheritedTsconfigPath: string,
+): Promise<PackageInfo> => {
+  const packageDir = dirname(packageJsonPath)
+  const rel = relative(rootDir, packageDir)
+  const manifest = await readPackageManifest(packageJsonPath)
+
+  return {
+    name: rel === "" ? "(root)" : rel,
+    path: packageDir,
+    tsconfigPath: inheritedTsconfigPath,
     packageJsonPath: manifest === undefined ? undefined : packageJsonPath,
     manifest,
   }
@@ -142,15 +174,11 @@ const addEntrypoint = (entrypoints: Set<string>, value: unknown): void => {
   }
 }
 
-const findTsconfigs = (rootDir: string): Effect.Effect<ReadonlyArray<string>> =>
+const getDiscoverableFiles = (rootDir: string): Effect.Effect<ReadonlyArray<string>> =>
   Effect.gen(function* () {
     const gitFiles = yield* getGitTrackedFiles(rootDir)
-    if (gitFiles.length > 0) {
-      return gitFiles
-        .filter((f) => f.endsWith("tsconfig.json") && !f.includes("node_modules"))
-        .map((f) => join(rootDir, f))
-    }
-    return yield* Effect.promise(() => walkForTsconfigs(rootDir))
+    if (gitFiles.length > 0) return gitFiles
+    return yield* Effect.promise(() => walkForDiscoverableFiles(rootDir, rootDir))
   })
 
 const getGitTrackedFiles = (rootDir: string): Effect.Effect<ReadonlyArray<string>> =>
@@ -171,6 +199,70 @@ const getGitTrackedFiles = (rootDir: string): Effect.Effect<ReadonlyArray<string
     catch: () => new Error("not a git repo"),
   }).pipe(Effect.orElseSucceed(() => [] as ReadonlyArray<string>))
 
+const manifestOnlyPackageJsons = (
+  rootDir: string,
+  files: ReadonlyArray<string>,
+  tsconfigPackages: ReadonlyArray<PackageInfo>,
+  tsconfigPackagePaths: ReadonlySet<string>,
+): ReadonlyArray<{ readonly packageJsonPath: string; readonly inheritedTsconfigPath: string }> => {
+  if (files.length === 0) return []
+
+  const packageJsonPaths = new Set(
+    files
+      .filter((file) => file.endsWith("package.json") && !isIgnoredPath(file))
+      .map((file) => join(rootDir, file)),
+  )
+  const hasTsSource = new Set<string>()
+  for (const file of files) {
+    if (isIgnoredPath(file)) continue
+    if (!/\.(?:cts|mts|ts|tsx)$/.test(file)) continue
+    const fullFile = join(rootDir, file)
+    const packagePath = nearestPackageJsonPath(rootDir, dirname(fullFile), packageJsonPaths)
+    if (packagePath !== undefined) {
+      hasTsSource.add(dirname(packagePath))
+    }
+  }
+
+  return [...packageJsonPaths]
+    .filter((packageJsonPath) => {
+      const packagePath = dirname(packageJsonPath)
+      return !tsconfigPackagePaths.has(packagePath) && hasTsSource.has(packagePath)
+    })
+    .flatMap((packageJsonPath) => {
+      const inherited = nearestTsconfigPackage(dirname(packageJsonPath), tsconfigPackages)
+      return inherited === undefined ? [] : [{ packageJsonPath, inheritedTsconfigPath: inherited.tsconfigPath }]
+    })
+    .sort((left, right) => left.packageJsonPath.localeCompare(right.packageJsonPath))
+}
+
+const nearestPackageJsonPath = (
+  rootDir: string,
+  fromDir: string,
+  packageJsons: ReadonlySet<string>,
+): string | undefined => {
+  let current = fromDir
+  while (current.startsWith(rootDir)) {
+    const candidate = join(current, "package.json")
+    if (packageJsons.has(candidate)) return candidate
+    const parent = dirname(current)
+    if (parent === current) return undefined
+    current = parent
+  }
+  return undefined
+}
+
+const nearestTsconfigPackage = (
+  packagePath: string,
+  tsconfigPackages: ReadonlyArray<PackageInfo>,
+): PackageInfo | undefined =>
+  tsconfigPackages
+    .slice()
+    .sort((left, right) => right.path.length - left.path.length)
+    .find((pkg) => packagePath === pkg.path || packagePath.startsWith(`${pkg.path}/`))
+
+const isIgnoredPath = (file: string): boolean =>
+  file.split(/[\\/]+/).some((part) => IGNORE_DIRS.has(part))
+
 const walkForTsconfigs = async (dir: string): Promise<Array<string>> => {
   const results: Array<string> = []
   try {
@@ -181,6 +273,29 @@ const walkForTsconfigs = async (dir: string): Promise<Array<string>> => {
         results.push(...(await walkForTsconfigs(join(dir, entry.name))))
       } else if (entry.name === "tsconfig.json") {
         results.push(join(dir, entry.name))
+      }
+    }
+  } catch {
+    // Ignore permission errors, etc.
+  }
+  return results
+}
+
+const walkForDiscoverableFiles = async (rootDir: string, dir: string): Promise<Array<string>> => {
+  const results: Array<string> = []
+  try {
+    const entries = await readdir(dir, { withFileTypes: true })
+    for (const entry of entries) {
+      const fullPath = join(dir, entry.name)
+      if (entry.isDirectory()) {
+        if (IGNORE_DIRS.has(entry.name)) continue
+        results.push(...(await walkForDiscoverableFiles(rootDir, fullPath)))
+      } else if (
+        entry.name === "package.json" ||
+        entry.name === "tsconfig.json" ||
+        /\.(?:cts|mts|ts|tsx)$/.test(entry.name)
+      ) {
+        results.push(relative(rootDir, fullPath))
       }
     }
   } catch {

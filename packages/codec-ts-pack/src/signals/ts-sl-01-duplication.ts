@@ -64,7 +64,7 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
   tier: 1,
   category: "generated-slop",
   kind: "legibility",
-  cacheVersion: "example-roots-excluded-v1",
+  cacheVersion: "generated-header-and-sample-scope-v1",
   configSchema: TsSl01Config,
   defaultConfig: {
     exclude_globs: [
@@ -86,6 +86,12 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
       "**/fixture/**",
       "fixtures/**",
       "**/fixtures/**",
+      "sample/**",
+      "**/sample/**",
+      "samples/**",
+      "**/samples/**",
+      "sdk-samples/**",
+      "**/sdk-samples/**",
       "playground/**",
       "playground-*/**",
       "playgrounds/**",
@@ -149,6 +155,7 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
             const path = sourceFile.getFilePath()
             const relativePath = relative(context.worktreePath, path).replace(/\\/g, "/")
             if (matchesSourcePath(path, relativePath, config.exclude_globs)) continue
+            if (isGeneratedSourceFile(sourceFile.getFullText())) continue
             if (matchesSourcePath(path, relativePath, config.test_globs)) continue
 
             for (const { fn, path: functionPath } of getFunctionLikeEntriesForSourceFile(sourceFile)) {
@@ -294,6 +301,15 @@ const matchesSourcePath = (
   relativePath: string,
   globs: ReadonlyArray<string>,
 ): boolean => isExcluded(absolutePath, globs) || matchesAnyGlob(relativePath, globs)
+
+const isGeneratedSourceFile = (sourceText: string): boolean => {
+  const header = sourceText.slice(0, 2048)
+  return (
+    /\bcode generated\b[\s\S]{0,160}\bdo not edit\b/i.test(header) ||
+    /\bauto-generated\b[\s\S]{0,160}\bdo not edit\b/i.test(header) ||
+    /@generated\b/i.test(header)
+  )
+}
 
 const cloneMemberSummary = (members: ReadonlyArray<CloneGroupMember>): string => {
   const visible = members

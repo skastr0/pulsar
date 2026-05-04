@@ -107,6 +107,21 @@ export function todoOnly() {
     expect(out.stubs.some((s) => s.kind === "todo-comment")).toBe(true)
   })
 
+  test("ignores TODO-only implementations in sample roots", async () => {
+    await repo.write(
+      "sdk-samples/caches.ts",
+      `
+export function createCacheFromMLDev() {
+  // TODO: b/377544962 - Add example after file upload is supported.
+}
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
+    expect(out.stubs).toEqual([])
+    expect(TsSl04.score(out)).toBe(1)
+  })
+
   test("does not classify TODO comments above real code as TODO-only implementations", async () => {
     await repo.write(
       "utils.ts",

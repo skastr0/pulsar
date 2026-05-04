@@ -53,7 +53,7 @@ export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalCon
   tier: 1,
   category: "generated-slop",
   kind: "structural",
-  cacheVersion: "unsupported-capability-throws-v1",
+  cacheVersion: "unsupported-capability-throws-and-sample-scope-v1",
   configSchema: TsSl04Config,
   defaultConfig: {
     exclude_globs: [
@@ -68,6 +68,12 @@ export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalCon
       "**/*.generated.tsx",
       "**/.storybook/**",
       "**/sst-env.d.ts",
+      "sample/**",
+      "**/sample/**",
+      "samples/**",
+      "**/samples/**",
+      "sdk-samples/**",
+      "**/sdk-samples/**",
     ],
     test_globs: [
       "**/*.test.ts",
