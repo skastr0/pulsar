@@ -58,6 +58,41 @@ describe("TS-AD-03 (re-export depth)", () => {
     expect(TsAd03.diagnose(out)[0]?.message).toContain("depth 6")
   })
 
+  test("deduplicates identical chains from repeated re-export declarations", async () => {
+    await repo.write("src/index.ts", "export * from './lib'\nexport { value } from './lib'\n")
+    await repo.write("src/lib/index.ts", "export { value } from './value'\n")
+    await repo.write("src/lib/value.ts", "export const value = 1\n")
+
+    const out = await runSignal(repo.root, TsAd03, {
+      ...TsAd03.defaultConfig,
+      chain_threshold: 0,
+    })
+
+    const messages = TsAd03.diagnose(out).map((diagnostic) => diagnostic.message)
+    expect(new Set(messages).size).toBe(messages.length)
+  })
+
+  test("diagnostics prefer representative starts before repeated branches", async () => {
+    const indexPath = await repo.write("src/index.ts", "export * from './a'\nexport * from './b'\n")
+    await repo.write("src/a/index.ts", "export { value as a } from './value'\n")
+    await repo.write("src/a/value.ts", "export const value = 1\n")
+    await repo.write("src/b/index.ts", "export { value as b } from './value'\n")
+    await repo.write("src/b/value.ts", "export const value = 1\n")
+    const otherPath = await repo.write("src/other.ts", "export * from './c'\n")
+    await repo.write("src/c/index.ts", "export { value as c } from './value'\n")
+    await repo.write("src/c/value.ts", "export const value = 1\n")
+
+    const out = await runSignal(repo.root, TsAd03, {
+      ...TsAd03.defaultConfig,
+      chain_threshold: 1,
+      top_n_diagnostics: 2,
+    })
+
+    const files = TsAd03.diagnose(out).map((diagnostic) => diagnostic.location?.file)
+    expect(files).toContain(indexPath)
+    expect(files).toContain(otherPath)
+  })
+
   test("circular re-exports are capped and diagnosed", async () => {
     await repo.write("src/a.ts", "export * from './b'\n")
     await repo.write("src/b.ts", "export * from './a'\n")

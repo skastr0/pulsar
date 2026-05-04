@@ -128,12 +128,38 @@ describe("TS-AB-03 (type indirection depth)", () => {
 
     const diagnostics = TsAb03.diagnose(out)
     expect(diagnostics.length).toBeGreaterThan(0)
+    expect(diagnostics[0]?.severity).toBe("warn")
     expect(diagnostics[0]?.message).toContain("→")
+  })
+
+  test("shallow local helper aliases are informational, not warning-level boundary findings", async () => {
+    await writeTs(
+      "src/local-helper.ts",
+      [
+        "type Source = { readonly value: string }",
+        "type LocalInput = NonNullable<Source['value']>",
+        "export const useInput = (input: LocalInput) => input",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runCompute({
+      ...TsAb03.defaultConfig,
+      max_depth: 3,
+    })
+
+    const localInput = out.declarations.find((entry) => entry.name === "LocalInput")
+    expect(localInput?.exported).toBe(false)
+
+    const diagnostic = TsAb03.diagnose(out).find((entry) =>
+      entry.message.includes("LocalInput"),
+    )
+    expect(diagnostic?.severity).toBe("info")
   })
 
   test("configSchema decodes defaults round-trip", () => {
     const decoded = Schema.decodeUnknownSync(TsAb03Config)(TsAb03.defaultConfig)
     expect(decoded.max_depth).toBe(4)
-    expect(decoded.max_traversal_steps).toBe(32)
+    expect(decoded.max_traversal_steps).toBe(16)
   })
 })

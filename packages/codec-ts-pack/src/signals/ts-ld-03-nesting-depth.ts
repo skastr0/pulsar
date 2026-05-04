@@ -7,27 +7,23 @@ import {
 } from "@taste-codec/core"
 import { Effect, Schema } from "effect"
 import {
-  type ArrowFunction,
-  type ConstructorDeclaration,
-  type FunctionDeclaration,
-  type FunctionExpression,
-  type GetAccessorDeclaration,
-  type MethodDeclaration,
-  Node,
-  type SetAccessorDeclaration,
   type SourceFile,
+  ts,
 } from "ts-morph"
 import { TsProjectTag } from "../ts-project.js"
+import {
+  compilerPropertyNameText as propertyNameText,
+  isCompilerFunctionLike,
+  type CompilerFunctionLike,
+} from "./shared-compiler-functions.js"
 import { isExcluded } from "./shared-globs.js"
 
-type FunctionLike =
-  | FunctionDeclaration
-  | MethodDeclaration
-  | ArrowFunction
-  | FunctionExpression
-  | ConstructorDeclaration
-  | GetAccessorDeclaration
-  | SetAccessorDeclaration
+type MutableFunctionNesting = {
+  file: string
+  name: string
+  line: number
+  maxNesting: number
+}
 
 export const TsLd03Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
@@ -61,10 +57,47 @@ export const TsLd03: Signal<TsLd03Config, TsLd03Output, TsProjectTag> = {
   defaultConfig: {
     exclude_globs: [
       "**/*.test.ts",
+      "**/*.test.tsx",
       "**/*.spec.ts",
+      "**/*.spec.tsx",
+      "**/*.stories.ts",
+      "**/*.stories.tsx",
+      "**/*.d.ts",
       "**/node_modules/**",
       "**/dist/**",
       "**/.turbo/**",
+      "**/vendor/**",
+      "**/gen/**",
+      "**/generated/**",
+      "**/*.gen.ts",
+      "**/*.gen.tsx",
+      "**/*.generated.ts",
+      "**/*.generated.tsx",
+      "**/sst-env.d.ts",
+      "**/__tests__/**",
+      "**/test/**",
+      "**/tests/**",
+      "**/test-support/**",
+      "**/*test-support.ts",
+      "**/*test-support.tsx",
+      "**/*.test-support.ts",
+      "**/*.test-support.tsx",
+      "**/test-helpers.ts",
+      "**/*test-helpers.ts",
+      "**/*test-helpers.tsx",
+      "**/*.test-helpers.ts",
+      "**/*.test-helpers.tsx",
+      "**/test-mocks.ts",
+      "**/*test-mocks.ts",
+      "**/*test-mocks.tsx",
+      "**/*.test-mocks.ts",
+      "**/*.test-mocks.tsx",
+      "**/test-harness.ts",
+      "**/*test-harness.ts",
+      "**/*test-harness.tsx",
+      "**/*.test-harness.ts",
+      "**/*.test-harness.tsx",
+      "**/happydom.ts",
     ],
     max_nesting: 4,
     top_n_diagnostics: 10,
@@ -83,15 +116,9 @@ export const TsLd03: Signal<TsLd03Config, TsLd03Output, TsProjectTag> = {
             if (isExcluded(file, config.exclude_globs)) continue
 
             const values = byFileValues.get(file) ?? []
-            for (const fn of collectFunctions(sourceFile)) {
-              const maxNesting = nestingDepth(fn)
-              byFunction.push({
-                file,
-                name: functionName(fn),
-                line: fn.getStartLineNumber(),
-                maxNesting,
-              })
-              values.push(maxNesting)
+            for (const fn of collectFunctionNestings(sourceFile)) {
+              byFunction.push(fn)
+              values.push(fn.maxNesting)
             }
             byFileValues.set(file, values)
           }
@@ -136,85 +163,70 @@ export const TsLd03: Signal<TsLd03Config, TsLd03Output, TsProjectTag> = {
     })),
 }
 
-const collectFunctions = (sourceFile: SourceFile): ReadonlyArray<FunctionLike> => {
-  const results: Array<FunctionLike> = []
-  sourceFile.forEachDescendant((node) => {
-    if (
-      Node.isFunctionDeclaration(node) ||
-      Node.isMethodDeclaration(node) ||
-      Node.isArrowFunction(node) ||
-      Node.isFunctionExpression(node) ||
-      Node.isConstructorDeclaration(node) ||
-      Node.isGetAccessorDeclaration(node) ||
-      Node.isSetAccessorDeclaration(node)
-    ) {
-      results.push(node)
+const collectFunctionNestings = (sourceFile: SourceFile): ReadonlyArray<FunctionNesting> => {
+  const compilerSourceFile = sourceFile.compilerNode
+  const file = sourceFile.getFilePath()
+  const functions: Array<MutableFunctionNesting> = []
+
+  const visit = (
+    node: ts.Node,
+    currentFunction: MutableFunctionNesting | undefined,
+    depth: number,
+  ): void => {
+    if (isCompilerFunctionLike(node)) {
+      const start = node.getStart(compilerSourceFile)
+      const fn = {
+        file,
+        name: functionName(node),
+        line: compilerSourceFile.getLineAndCharacterOfPosition(start).line + 1,
+        maxNesting: 0,
+      }
+      functions.push(fn)
+      ts.forEachChild(node, (child) => visit(child, fn, 0))
+      return
     }
-  })
-  return results
-}
 
-const nestingDepth = (root: FunctionLike): number => {
-  const body = root.getBody()
-  if (body === undefined) return 0
+    const nextDepth =
+      currentFunction !== undefined && isControlFlowNode(node) ? depth + 1 : depth
+    if (currentFunction !== undefined && nextDepth > currentFunction.maxNesting) {
+      currentFunction.maxNesting = nextDepth
+    }
 
-  const walk = (node: Node, depth: number): number => {
-    let maxDepth = depth
-    node.forEachChild((child) => {
-      if (child !== root && isNestedFunction(child)) {
-        return
-      }
-
-      if (isControlFlowNode(child)) {
-        const childDepth = depth + 1
-        maxDepth = Math.max(maxDepth, childDepth, walk(child, childDepth))
-        return
-      }
-
-      maxDepth = Math.max(maxDepth, walk(child, depth))
-    })
-    return maxDepth
+    ts.forEachChild(node, (child) => visit(child, currentFunction, nextDepth))
   }
 
-  return walk(body, 0)
+  visit(compilerSourceFile, undefined, 0)
+  return functions
 }
 
-const isNestedFunction = (node: Node): boolean =>
-  Node.isFunctionDeclaration(node) ||
-  Node.isMethodDeclaration(node) ||
-  Node.isArrowFunction(node) ||
-  Node.isFunctionExpression(node) ||
-  Node.isConstructorDeclaration(node) ||
-  Node.isGetAccessorDeclaration(node) ||
-  Node.isSetAccessorDeclaration(node)
+const isControlFlowNode = (node: ts.Node): boolean =>
+  ts.isIfStatement(node) ||
+  ts.isForStatement(node) ||
+  ts.isForInStatement(node) ||
+  ts.isForOfStatement(node) ||
+  ts.isWhileStatement(node) ||
+  ts.isDoStatement(node) ||
+  ts.isSwitchStatement(node) ||
+  ts.isTryStatement(node) ||
+  ts.isCatchClause(node)
 
-const isControlFlowNode = (node: Node): boolean =>
-  Node.isIfStatement(node) ||
-  Node.isForStatement(node) ||
-  Node.isForInStatement(node) ||
-  Node.isForOfStatement(node) ||
-  Node.isWhileStatement(node) ||
-  Node.isDoStatement(node) ||
-  Node.isSwitchStatement(node) ||
-  Node.isTryStatement(node) ||
-  Node.isCatchClause(node)
-
-const functionName = (fn: FunctionLike): string => {
+const functionName = (fn: CompilerFunctionLike): string => {
   if (
-    Node.isFunctionDeclaration(fn) ||
-    Node.isMethodDeclaration(fn) ||
-    Node.isGetAccessorDeclaration(fn) ||
-    Node.isSetAccessorDeclaration(fn)
+    ts.isFunctionDeclaration(fn) ||
+    ts.isMethodDeclaration(fn) ||
+    ts.isGetAccessorDeclaration(fn) ||
+    ts.isSetAccessorDeclaration(fn)
   ) {
-    return fn.getName() ?? "<anonymous>"
+    return fn.name === undefined ? "<anonymous>" : propertyNameText(fn.name)
   }
-  if (Node.isConstructorDeclaration(fn)) {
-    return "constructor"
-  }
+  if (ts.isConstructorDeclaration(fn)) return "constructor"
 
-  const parent = fn.getParent()
-  if (Node.isVariableDeclaration(parent) || Node.isPropertyAssignment(parent)) {
-    return parent.getName()
+  const parent = fn.parent
+  if (ts.isVariableDeclaration(parent) && ts.isIdentifier(parent.name)) {
+    return parent.name.text
+  }
+  if (ts.isPropertyAssignment(parent)) {
+    return propertyNameText(parent.name)
   }
   return "<anonymous>"
 }

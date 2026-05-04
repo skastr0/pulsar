@@ -6,10 +6,10 @@ import {
 } from "@taste-codec/core"
 import { Effect } from "effect"
 
-export const BASELINE_RELATIVE_PATH = ".taste-codec/baseline.json" as const
+const BASELINE_RELATIVE_PATH = ".taste-codec/baseline.json" as const
 
 export const resolveBaselinePath = (repoRoot: string): string =>
-  join(repoRoot, ".taste-codec", "baseline.json")
+  join(repoRoot, BASELINE_RELATIVE_PATH)
 
 export const readBaselineFile = (repoRoot: string) =>
   Effect.gen(function* () {

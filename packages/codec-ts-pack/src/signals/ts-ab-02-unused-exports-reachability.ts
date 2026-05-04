@@ -5,12 +5,16 @@ import {
   SignalComputeError,
 } from "@taste-codec/core"
 import { Effect, Schema } from "effect"
+import { normalize, resolve } from "node:path"
+import { Node, type SourceFile } from "ts-morph"
 import { TsPackageInfoTag, TsProjectTag } from "../ts-project.js"
-import { isExcluded } from "./shared-globs.js"
+import type { PackageInfo } from "../discovery.js"
+import { isExcluded, matchesAnyGlob } from "./shared-globs.js"
 import {
   buildExportConsumerIndex,
   collectExportBindings,
-  collectSameFileReferences,
+  countSameFileReferences,
+  type ExportConsumer,
 } from "./shared-export-analysis.js"
 import {
   boundaryOfFile,
@@ -18,6 +22,10 @@ import {
   packageForFile,
   type BoundaryRule,
 } from "./shared-workspace.js"
+import {
+  stripKnownExtension,
+  stripRuntimeExtension,
+} from "./shared-path-extensions.js"
 
 const BoundaryRuleSchema = Schema.Struct({
   name: Schema.String,
@@ -26,18 +34,22 @@ const BoundaryRuleSchema = Schema.Struct({
 
 export const TsAb02Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
+  public_entry_globs: Schema.Array(Schema.String),
   boundary_rules: Schema.Array(BoundaryRuleSchema),
   top_n_diagnostics: Schema.Number,
 })
 export type TsAb02Config = typeof TsAb02Config.Type
 
 export type ExportClassification = "unused" | "internal-only" | "cross-module" | "cross-package"
+export type ExportEvidence = "runtime" | "type-only" | "test-hook"
 
 export interface ExportReachability {
   readonly exportFile: string
   readonly exportName: string
   readonly declarationFiles: ReadonlyArray<string>
   readonly classification: ExportClassification
+  readonly evidence: ExportEvidence
+  readonly penaltyWeight: number
   readonly viaReExport: boolean
   readonly referenceFiles: ReadonlyArray<string>
   readonly sameFileReferenceCount: number
@@ -61,10 +73,49 @@ export const TsAb02: Signal<TsAb02Config, TsAb02Output, TsProjectTag | TsPackage
   defaultConfig: {
     exclude_globs: [
       "**/*.test.ts",
+      "**/*.test.tsx",
       "**/*.spec.ts",
+      "**/*.spec.tsx",
+      "**/__tests__/**",
+      "**/test/**",
+      "**/tests/**",
+      "**/docs/**",
+      "**/examples/**",
+      "**/prototypes/**",
+      "**/explorations/**",
+      "**/test-support/**",
+      "**/*test-support.ts",
+      "**/*test-support.tsx",
+      "**/*.test-support.ts",
+      "**/*.test-support.tsx",
+      "**/test-helpers.ts",
+      "**/*test-helpers.ts",
+      "**/*test-helpers.tsx",
+      "**/*.test-helpers.ts",
+      "**/*.test-helpers.tsx",
+      "**/test-mocks.ts",
+      "**/*test-mocks.ts",
+      "**/*test-mocks.tsx",
+      "**/*.test-mocks.ts",
+      "**/*.test-mocks.tsx",
+      "**/test-harness.ts",
+      "**/*test-harness.ts",
+      "**/*test-harness.tsx",
+      "**/*.test-harness.ts",
+      "**/*.test-harness.tsx",
       "**/node_modules/**",
       "**/dist/**",
       "**/.turbo/**",
+    ],
+    public_entry_globs: [
+      "**/src/index.ts",
+      "**/index.ts",
+      "**/runtime-api.ts",
+      "**/setup-api.ts",
+      "**/*.config.ts",
+      "**/*.config.tsx",
+      "**/*.config.mts",
+      "**/*.config.cts",
     ],
     boundary_rules: [],
     top_n_diagnostics: 20,
@@ -80,9 +131,35 @@ export const TsAb02: Signal<TsAb02Config, TsAb02Output, TsProjectTag | TsPackage
             .getSourceFiles()
             .filter((sourceFile) => !isExcluded(sourceFile.getFilePath(), config.exclude_globs))
           const consumerIndex = buildExportConsumerIndex(sourceFiles, packages)
+          const consumerLookup = buildConsumerLookupByFile(consumerIndex)
+          const manifestEntrypointFiles = packageEntrypointSourceFiles(sourceFiles, packages)
+          const publicEntryFiles = publicEntrypointSourceFiles(
+            sourceFiles,
+            manifestEntrypointFiles,
+            config.public_entry_globs,
+          )
+          const packageNameByFile = new Map<string, string | undefined>(
+            sourceFiles.map((sourceFile) => [
+              sourceFile.getFilePath(),
+              packageDisplayName(packageForFile(sourceFile.getFilePath(), packages)),
+            ]),
+          )
           const entries = sourceFiles
             .flatMap((sourceFile) => collectExportBindings(sourceFile))
-            .map((binding) => classifyExport(binding, consumerIndex.get(binding.exportFile) ?? [], packages, config.boundary_rules))
+            .map((binding) => {
+              const consumers = matchingConsumers(
+                consumerLookup.get(binding.exportFile),
+                binding.exportName,
+              )
+              return classifyExport(
+                binding,
+                consumers,
+                packageNameByFile.get(binding.exportFile),
+                config.boundary_rules,
+                publicEntryFiles.has(binding.exportFile) ||
+                  isReExportedByPublicEntrypoint(consumers, publicEntryFiles),
+              )
+            })
             .sort(compareReachability)
 
           return {
@@ -113,7 +190,7 @@ export const TsAb02: Signal<TsAb02Config, TsAb02Output, TsProjectTag | TsPackage
     }),
   score: (out) => {
     if (out.exports.length === 0) return 1
-    const weightedUnused = out.counts.unused + out.counts["internal-only"] * 0.5
+    const weightedUnused = out.exports.reduce((sum, entry) => sum + reachabilityPenalty(entry), 0)
     return Math.max(0, 1 - weightedUnused / out.exports.length)
   },
   diagnose: (out): ReadonlyArray<Diagnostic> => {
@@ -137,29 +214,35 @@ export const TsAb02: Signal<TsAb02Config, TsAb02Output, TsProjectTag | TsPackage
     )
 
     diagnostics.push(
-      ...out.exports.map((entry) => ({
-        severity:
-          entry.classification === "unused"
-            ? ("warn" as const)
-            : entry.classification === "internal-only"
-              ? ("info" as const)
+      ...out.exports
+        .filter(
+          (entry) =>
+            entry.classification === "unused" ||
+            entry.classification === "internal-only",
+        )
+        .map((entry) => ({
+          severity:
+            reachabilityPenalty(entry) >= 1
+              ? ("warn" as const)
               : ("info" as const),
-        message:
-          `Export ${entry.exportName} in ${entry.exportFile}: ` +
-          `${entry.classification}`,
-        location: { file: entry.exportFile },
-        data: {
-          exportFile: entry.exportFile,
-          exportName: entry.exportName,
-          declarationFiles: entry.declarationFiles.slice(),
-          classification: entry.classification,
-          referenceFiles: entry.referenceFiles.slice(),
-          sameFileReferenceCount: entry.sameFileReferenceCount,
-          viaReExport: entry.viaReExport,
-          boundaryStatus: entry.boundaryStatus,
-          crossBoundaryFiles: entry.crossBoundaryFiles.slice(),
-        },
-      })),
+          message:
+            `Export ${entry.exportName} in ${entry.exportFile}: ` +
+            `${entry.classification}${entry.evidence !== "runtime" ? ` (${entry.evidence})` : ""}`,
+          location: { file: entry.exportFile },
+          data: {
+            exportFile: entry.exportFile,
+            exportName: entry.exportName,
+            declarationFiles: entry.declarationFiles.slice(),
+            classification: entry.classification,
+            evidence: entry.evidence,
+            penaltyWeight: entry.penaltyWeight,
+            referenceFiles: entry.referenceFiles.slice(),
+            sameFileReferenceCount: entry.sameFileReferenceCount,
+            viaReExport: entry.viaReExport,
+            boundaryStatus: entry.boundaryStatus,
+            crossBoundaryFiles: entry.crossBoundaryFiles.slice(),
+          },
+        })),
     )
 
     return diagnostics.slice(0, out.diagnosticLimit)
@@ -168,32 +251,36 @@ export const TsAb02: Signal<TsAb02Config, TsAb02Output, TsProjectTag | TsPackage
 
 const classifyExport = (
   binding: ReturnType<typeof collectExportBindings>[number],
-  consumers: ReadonlyArray<ReturnType<typeof buildExportConsumerIndex> extends ReadonlyMap<string, infer T> ? T extends ReadonlyArray<infer E> ? E : never : never>,
-  packages: ReadonlyArray<(typeof TsPackageInfoTag.Service)[number]>,
+  consumers: ReadonlyArray<ExportConsumer>,
+  ownPackage: string | undefined,
   boundaryRules: ReadonlyArray<BoundaryRule>,
+  isPublicEntrypoint: boolean,
 ): ExportReachability => {
-  const sameFileReferences = collectSameFileReferences(binding)
-  const ownPackage = packageDisplayName(packageForFile(binding.exportFile, packages))
   const referenceFiles = consumers
-    .filter((consumer) => consumerMatches(binding.exportName, consumer.exportName))
     .map((consumer) => consumer.consumerFile)
     .filter((value, index, values) => values.indexOf(value) === index)
     .sort((left, right) => left.localeCompare(right))
 
   const crossPackage = consumers.some(
     (consumer) =>
-      consumerMatches(binding.exportName, consumer.exportName) &&
       consumer.consumerPackage !== undefined &&
       ownPackage !== undefined &&
       consumer.consumerPackage !== ownPackage,
   )
 
+  const sameFileReferences =
+    isPublicEntrypoint || referenceFiles.length > 0
+      ? 0
+      : countSameFileReferences(binding)
+
   const classification: ExportClassification =
-    referenceFiles.length > 0
+    isPublicEntrypoint
+      ? "cross-package"
+      : referenceFiles.length > 0
       ? crossPackage
         ? "cross-package"
         : "cross-module"
-      : sameFileReferences.length > 0
+      : sameFileReferences > 0
         ? "internal-only"
         : "unused"
 
@@ -203,14 +290,18 @@ const classifyExport = (
     return exportBoundary !== undefined && consumerBoundary !== undefined && consumerBoundary !== exportBoundary
   })
 
+  const evidence = exportEvidence(binding)
+
   return {
     exportFile: binding.exportFile,
     exportName: binding.exportName,
     declarationFiles: binding.declarationFiles,
     classification,
+    evidence,
+    penaltyWeight: evidencePenaltyWeight(evidence),
     viaReExport: binding.viaReExport,
     referenceFiles,
-    sameFileReferenceCount: sameFileReferences.length,
+    sameFileReferenceCount: sameFileReferences,
     boundaryStatus:
       exportBoundary === undefined
         ? "unmapped"
@@ -221,8 +312,172 @@ const classifyExport = (
   }
 }
 
-const consumerMatches = (exportName: string, consumerName: string | "*"): boolean =>
-  consumerName === exportName || (consumerName === "*" && exportName !== "default")
+const reachabilityPenalty = (entry: ExportReachability): number => {
+  if (entry.classification === "unused") return entry.penaltyWeight
+  if (entry.classification === "internal-only") return entry.penaltyWeight * 0.5
+  return 0
+}
+
+const exportEvidence = (binding: ReturnType<typeof collectExportBindings>[number]): ExportEvidence => {
+  if (isTestHookExportName(binding.exportName)) return "test-hook"
+  if (binding.localDeclarations.length > 0 && binding.localDeclarations.every(isTypeOnlyDeclaration)) {
+    return "type-only"
+  }
+  return "runtime"
+}
+
+const isTestHookExportName = (name: string): boolean =>
+  /(?:ForTest|ForTesting|Test|Testing|Fixture|Mock)(?:$|[A-Z_])/u.test(name)
+
+const isTypeOnlyDeclaration = (node: Node): boolean =>
+  Node.isInterfaceDeclaration(node) || Node.isTypeAliasDeclaration(node)
+
+const evidencePenaltyWeight = (evidence: ExportEvidence): number => {
+  if (evidence === "runtime") return 1
+  if (evidence === "type-only") return 0.35
+  return 0.2
+}
+
+interface ConsumerLookup {
+  readonly named: ReadonlyMap<string, ReadonlyArray<ExportConsumer>>
+  readonly star: ReadonlyArray<ExportConsumer>
+}
+
+const buildConsumerLookupByFile = (
+  consumerIndex: ReadonlyMap<string, ReadonlyArray<ExportConsumer>>,
+): ReadonlyMap<string, ConsumerLookup> => {
+  const lookupByFile = new Map<string, ConsumerLookup>()
+
+  for (const [file, consumers] of consumerIndex) {
+    const named = new Map<string, Array<ExportConsumer>>()
+    const star: Array<ExportConsumer> = []
+
+    for (const consumer of consumers) {
+      if (consumer.exportName === "*") {
+        star.push(consumer)
+        continue
+      }
+
+      const bucket = named.get(consumer.exportName) ?? []
+      bucket.push(consumer)
+      named.set(consumer.exportName, bucket)
+    }
+
+    lookupByFile.set(file, { named, star })
+  }
+
+  return lookupByFile
+}
+
+const publicEntrypointSourceFiles = (
+  sourceFiles: ReadonlyArray<SourceFile>,
+  manifestEntrypointFiles: ReadonlySet<string>,
+  publicEntryGlobs: ReadonlyArray<string>,
+): ReadonlySet<string> => {
+  const publicFiles = new Set<string>(manifestEntrypointFiles)
+  for (const sourceFile of sourceFiles) {
+    const filePath = sourceFile.getFilePath()
+    if (matchesAnyGlob(filePath, publicEntryGlobs)) {
+      publicFiles.add(filePath)
+    }
+  }
+  return publicFiles
+}
+
+const isReExportedByPublicEntrypoint = (
+  consumers: ReadonlyArray<ExportConsumer>,
+  publicEntryFiles: ReadonlySet<string>,
+): boolean =>
+  consumers.some(
+    (consumer) =>
+      consumer.kind === "re-export" && publicEntryFiles.has(consumer.consumerFile),
+  )
+
+const matchingConsumers = (
+  lookup: ConsumerLookup | undefined,
+  exportName: string,
+): ReadonlyArray<ExportConsumer> => {
+  if (lookup === undefined) return []
+  const named = lookup.named.get(exportName) ?? []
+  if (exportName === "default") return named
+  if (named.length === 0) return lookup.star
+  if (lookup.star.length === 0) return named
+  return [...named, ...lookup.star]
+}
+
+const packageEntrypointSourceFiles = (
+  sourceFiles: ReadonlyArray<SourceFile>,
+  packages: ReadonlyArray<PackageInfo>,
+): ReadonlySet<string> => {
+  const sourcePathLookup = new Map<string, string>()
+  for (const sourceFile of sourceFiles) {
+    const filePath = normalizePath(sourceFile.getFilePath())
+    sourcePathLookup.set(filePath, filePath)
+    sourcePathLookup.set(stripKnownExtension(filePath), filePath)
+  }
+
+  const entrypointFiles = new Set<string>()
+  for (const sourceFile of sourceFiles) {
+    const filePath = normalizePath(sourceFile.getFilePath())
+    if (isAgentToolEntrypoint(filePath)) {
+      entrypointFiles.add(filePath)
+    }
+  }
+
+  for (const pkg of packages) {
+    for (const entrypoint of pkg.manifest?.entrypoints ?? []) {
+      const resolvedEntrypoint = resolveEntrypointSourceFile(pkg.path, entrypoint, sourcePathLookup)
+      if (resolvedEntrypoint !== undefined) {
+        entrypointFiles.add(resolvedEntrypoint)
+      }
+    }
+  }
+  return entrypointFiles
+}
+
+const resolveEntrypointSourceFile = (
+  packagePath: string,
+  entrypoint: string,
+  sourcePathLookup: ReadonlyMap<string, string>,
+): string | undefined => {
+  if (entrypoint.startsWith("#") || /^[a-z]+:/iu.test(entrypoint)) {
+    return undefined
+  }
+
+  const normalized = normalizePath(resolve(packagePath, entrypoint))
+  for (const candidate of entrypointSourceCandidates(normalized)) {
+    const resolved = sourcePathLookup.get(candidate) ?? sourcePathLookup.get(stripKnownExtension(candidate))
+    if (resolved !== undefined) return resolved
+  }
+  return undefined
+}
+
+const entrypointSourceCandidates = (entrypointPath: string): ReadonlyArray<string> => {
+  const candidates = new Set<string>([entrypointPath])
+  const withoutRuntimeExtension = stripRuntimeExtension(entrypointPath)
+  candidates.add(withoutRuntimeExtension)
+
+  for (const extension of [".ts", ".tsx", ".mts", ".cts"]) {
+    candidates.add(`${withoutRuntimeExtension}${extension}`)
+  }
+
+  const sourcePath = entrypointPath.replace(/\/dist\//u, "/src/")
+  candidates.add(sourcePath)
+  const sourceWithoutRuntimeExtension = stripRuntimeExtension(sourcePath)
+  candidates.add(sourceWithoutRuntimeExtension)
+  for (const extension of [".ts", ".tsx", ".mts", ".cts"]) {
+    candidates.add(`${sourceWithoutRuntimeExtension}${extension}`)
+  }
+
+  return [...candidates]
+}
+
+const isAgentToolEntrypoint = (path: string): boolean =>
+  /\/\.opencode\/tools?\/[^/]+\.[cm]?tsx?$/u.test(path) ||
+  /\/\.opencode\/plugins\/[^/]+\.[cm]?tsx?$/u.test(path) ||
+  /\/\.pi\/extensions\/[^/]+\.[cm]?tsx?$/u.test(path)
+
+const normalizePath = (path: string): string => normalize(path).replace(/\\/g, "/")
 
 const compareReachability = (left: ExportReachability, right: ExportReachability): number => {
   const rank = (entry: ExportReachability): number => {
@@ -240,6 +495,8 @@ const compareReachability = (left: ExportReachability, right: ExportReachability
 
   const rankCompare = rank(left) - rank(right)
   if (rankCompare !== 0) return rankCompare
+  const penaltyCompare = reachabilityPenalty(right) - reachabilityPenalty(left)
+  if (penaltyCompare !== 0) return penaltyCompare
   const fileCompare = left.exportFile.localeCompare(right.exportFile)
   if (fileCompare !== 0) return fileCompare
   return left.exportName.localeCompare(right.exportName)

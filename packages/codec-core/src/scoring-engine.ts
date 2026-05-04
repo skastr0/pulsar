@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { spawn } from "node:child_process"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Context, Effect, Layer } from "effect"
@@ -13,6 +13,7 @@ import {
 } from "./cache.js"
 import { DiskBackedCacheLayer } from "./cache-disk.js"
 import {
+  type ChangedHunk,
   ReferenceDataTag,
   SignalContextTag,
   makeReferenceData,
@@ -30,7 +31,11 @@ import { loadCanonicalReferenceDataEntries } from "./reference-data-loader.js"
 import type { Registry } from "./registry.js"
 import { runSignal, type SignalRunResult } from "./runner.js"
 import { type TimeSeriesWriter } from "./time-series.js"
-import { resolvedConfig as vectorResolvedConfig, type TasteVector } from "./vector.js"
+import {
+  isActive as vectorIsActive,
+  resolvedConfig as vectorResolvedConfig,
+  type TasteVector,
+} from "./vector.js"
 
 /**
  * TC-017 first cut: commit-level scoring engine with a content-hash cache
@@ -71,6 +76,10 @@ export class ScoringEngineTag extends Context.Tag("@taste-codec/core/ScoringEngi
     readonly observeCommit: (
       repoPath: string,
       sha: string,
+    ) => Effect.Effect<ObserverOutput, ScoringEngineError, never>
+    readonly observeWorktree: (
+      repoPath: string,
+      headSha: string,
     ) => Effect.Effect<ObserverOutput, ScoringEngineError, never>
     readonly observeRange: (
       repoPath: string,
@@ -130,12 +139,193 @@ export const computeContentHash = Effect.fn("ScoringEngine.computeContentHash")(
   },
 )
 
+export const computeWorktreeContentHash = Effect.fn("ScoringEngine.computeWorktreeContentHash")(
+  function* (repoPath: string) {
+    const out = yield* runGit(
+      repoPath,
+      [
+        "ls-files",
+        "-z",
+        "--cached",
+        "--others",
+        "--exclude-standard",
+        "--",
+        ".",
+        ":!.taste-codec/cache",
+      ],
+      {
+        onFail: (msg) =>
+          new CommitNotFound({
+            repoPath,
+            sha: "WORKTREE",
+            message: `git ls-files failed: ${msg}`,
+          }),
+      },
+    )
+    const paths = [
+      ...new Set(
+        out
+          .split("\0")
+          .map((path) => path.trim())
+          .filter((path) => path.length > 0 && isCodecSource(path)),
+      ),
+    ].sort((left, right) => left.localeCompare(right))
+
+    const entries: Array<string> = []
+    for (const path of paths) {
+      const content = yield* Effect.either(
+        Effect.tryPromise({
+          try: () => readFile(join(repoPath, path)),
+          catch: (cause) => cause,
+        }),
+      )
+      if (content._tag === "Left") continue
+      const fileHash = createHash("sha256").update(content.right).digest("hex")
+      entries.push(`${fileHash}\t${path}`)
+    }
+
+    const hash = createHash("sha256")
+    hash.update(entries.join("\n"))
+    return hash.digest("hex")
+  },
+)
+
+export const collectWorktreeChangedHunks = Effect.fn(
+  "ScoringEngine.collectWorktreeChangedHunks",
+)(function* (repoPath: string) {
+  const diff = yield* runGit(
+    repoPath,
+    [
+      "diff",
+      "--unified=0",
+      "--no-ext-diff",
+      "HEAD",
+      "--",
+      ".",
+      ":!.taste-codec/cache",
+    ],
+    {
+      onFail: (msg) =>
+        new CommitNotFound({
+          repoPath,
+          sha: "WORKTREE",
+          message: `git diff HEAD failed: ${msg}`,
+        }),
+    },
+  )
+  const trackedHunks = parseChangedHunksFromUnifiedDiff(diff).filter((hunk) =>
+    isCodecSource(hunk.file),
+  )
+
+  const untracked = yield* runGit(
+    repoPath,
+    [
+      "ls-files",
+      "-z",
+      "--others",
+      "--exclude-standard",
+      "--",
+      ".",
+      ":!.taste-codec/cache",
+    ],
+    {
+      onFail: (msg) =>
+        new CommitNotFound({
+          repoPath,
+          sha: "WORKTREE",
+          message: `git ls-files --others failed: ${msg}`,
+        }),
+    },
+  )
+  const untrackedHunks = yield* Effect.forEach(
+    [
+      ...new Set(
+        untracked
+          .split("\0")
+          .map((path) => path.trim())
+          .filter((path) => path.length > 0 && isCodecSource(path)),
+      ),
+    ].sort((left, right) => left.localeCompare(right)),
+    (file) =>
+      Effect.gen(function* () {
+        const content = yield* Effect.either(
+          Effect.tryPromise({
+            try: () => readFile(join(repoPath, file), "utf8"),
+            catch: (cause) => cause,
+          }),
+        )
+        if (content._tag === "Left") {
+          return undefined
+        }
+        return {
+          file,
+          oldStart: 0,
+          oldLines: 0,
+          newStart: 1,
+          newLines: countTextLines(content.right),
+        } satisfies ChangedHunk
+      }),
+    { concurrency: 8 },
+  )
+
+  return [
+    ...trackedHunks,
+    ...untrackedHunks.filter((hunk): hunk is ChangedHunk => hunk !== undefined),
+  ]
+})
+
 const isCodecSource = (path: string): boolean =>
   path.endsWith(".ts") ||
   path.endsWith(".tsx") ||
+  path.endsWith("package.json") ||
+  path.endsWith("tsconfig.json") ||
+  path.endsWith("tsconfig.base.json") ||
+  path.endsWith("bun.lock") ||
+  path.endsWith("bun.lockb") ||
+  path.endsWith("pnpm-lock.yaml") ||
+  path.endsWith("package-lock.json") ||
+  path.endsWith("yarn.lock") ||
   path.endsWith(".rs") ||
   path.endsWith("Cargo.toml") ||
   path.endsWith("Cargo.lock")
+
+const parseChangedHunksFromUnifiedDiff = (diff: string): ReadonlyArray<ChangedHunk> => {
+  const hunks: Array<ChangedHunk> = []
+  let currentFile: string | undefined
+
+  for (const line of diff.split("\n")) {
+    if (line.startsWith("+++ ")) {
+      currentFile = normalizeDiffTargetPath(line.slice(4).trim())
+      continue
+    }
+
+    if (!line.startsWith("@@ ") || currentFile === undefined) continue
+    const match = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(line)
+    if (match === null) continue
+    hunks.push({
+      file: currentFile,
+      oldStart: Number(match[1]),
+      oldLines: Number(match[2] ?? 1),
+      newStart: Number(match[3]),
+      newLines: Number(match[4] ?? 1),
+    })
+  }
+
+  return hunks
+}
+
+const normalizeDiffTargetPath = (target: string): string | undefined => {
+  if (target === "/dev/null") return undefined
+  if (target.startsWith("b/")) return target.slice(2)
+  if (target.startsWith("a/")) return target.slice(2)
+  return target
+}
+
+const countTextLines = (content: string): number => {
+  if (content.length === 0) return 0
+  const lines = content.split(/\r\n|\r|\n/)
+  return content.endsWith("\n") || content.endsWith("\r") ? lines.length - 1 : lines.length
+}
 
 /**
  * SHA-256 over the stable JSON encoding of a signal's resolved config.
@@ -152,9 +342,73 @@ export const computeConfigHash = (
     ? vectorResolvedConfig(signalId, signal.defaultConfig, vector)
     : undefined
   const hash = createHash("sha256")
-  hash.update(stableStringify(config ?? null))
+  hash.update(
+    stableStringify({
+      cacheVersion: signal?.cacheVersion ?? null,
+      config: config ?? null,
+    }),
+  )
   return hash.digest("hex")
 }
+
+const OBSERVER_CACHE_SIGNAL_ID = "__observer__"
+
+interface CachedObserverOutput {
+  readonly categories: ObserverOutput["categories"]
+  readonly minimum: ObserverOutput["minimum"]
+  readonly weighted_mean: ObserverOutput["weighted_mean"]
+  readonly hard_gate_status: ObserverOutput["hard_gate_status"]
+  readonly hard_gate_violations: ObserverOutput["hard_gate_violations"]
+  readonly inactiveSignals: ObserverOutput["inactiveSignals"]
+  readonly signalResults: ReadonlyArray<SignalRunResult>
+  readonly signalMetadata?: ObserverOutput["signalMetadata"]
+}
+
+/**
+ * Observer output depends on the full active signal set, each active
+ * signal's resolved config, and each active signal weight. Cache keys
+ * must therefore include more than one signal id's config hash.
+ */
+export const computeObserverConfigHash = (
+  registry: Registry,
+  vector: TasteVector | undefined,
+): string => {
+  const activeSignals = registry.sorted
+    .filter((signal) => vectorIsActive(signal.id, vector))
+    .map((signal) => [
+      signal.id,
+      {
+        config: vectorResolvedConfig(signal.id, signal.defaultConfig, vector),
+        cacheVersion: signal.cacheVersion ?? null,
+        weight: vector?.signal_overrides[signal.id]?.weight ?? 1,
+      },
+    ])
+  const hash = createHash("sha256")
+  hash.update(stableStringify(activeSignals))
+  return hash.digest("hex")
+}
+
+const toCachedObserverOutput = (result: ObserverOutput): CachedObserverOutput => ({
+  categories: result.categories,
+  minimum: result.minimum,
+  weighted_mean: result.weighted_mean,
+  hard_gate_status: result.hard_gate_status,
+  hard_gate_violations: result.hard_gate_violations,
+  inactiveSignals: result.inactiveSignals,
+  signalResults: [...result.signalResults.values()],
+  ...(result.signalMetadata !== undefined ? { signalMetadata: result.signalMetadata } : {}),
+})
+
+const fromCachedObserverOutput = (cached: CachedObserverOutput): ObserverOutput => ({
+  categories: cached.categories,
+  minimum: cached.minimum,
+  weighted_mean: cached.weighted_mean,
+  hard_gate_status: cached.hard_gate_status,
+  hard_gate_violations: cached.hard_gate_violations,
+  inactiveSignals: cached.inactiveSignals,
+  signalResults: new Map(cached.signalResults.map((result) => [result.signalId, result])),
+  ...(cached.signalMetadata !== undefined ? { signalMetadata: cached.signalMetadata } : {}),
+})
 
 /**
  * Deterministic JSON stringify — sorts object keys so logically equal
@@ -178,6 +432,15 @@ const computeReferenceVersionHash = (referenceEntries: ReadonlyMap<string, unkno
   )
   hash.update(stableStringify(normalized))
   return hash.digest("hex")
+}
+
+const hashChangedHunks = (changedHunks: ReadonlyArray<ChangedHunk>): string => {
+  const normalized = [...changedHunks].sort((left, right) =>
+    `${left.file}:${left.oldStart}:${left.newStart}`.localeCompare(
+      `${right.file}:${right.oldStart}:${right.newStart}`,
+    ),
+  )
+  return createHash("sha256").update(stableStringify(normalized)).digest("hex")
 }
 
 const mergeCachedResultMetadata = (
@@ -212,6 +475,36 @@ const mergeCachedResultMetadata = (
   }
 }
 
+const nowMs = (): number => {
+  if (typeof performance !== "undefined") return performance.now()
+  return Date.now()
+}
+
+const roundRuntimeMs = (value: number): number => Math.max(0, Number(value.toFixed(2)))
+
+const withRuntimeEnvironmentProfile = (
+  output: ObserverOutput,
+  environmentDurationMs: number,
+): ObserverOutput => {
+  if (output.runtimeProfile === undefined) return output
+
+  const totalMs = roundRuntimeMs(environmentDurationMs)
+  const observerMs = output.runtimeProfile.totalMs
+  const setupMs = roundRuntimeMs(totalMs - observerMs)
+  return {
+    ...output,
+    runtimeProfile: {
+      ...output.runtimeProfile,
+      totalMs,
+      stages: {
+        ...(output.runtimeProfile.stages ?? {}),
+        "environment-setup": { durationMs: setupMs },
+        observer: { durationMs: observerMs },
+      },
+    },
+  }
+}
+
 /**
  * Build the scoring engine layer. The registry is frozen at layer
  * construction; the cache is created once and shared across every
@@ -224,6 +517,7 @@ export const ScoringEngineLayer = (
   options?: {
     readonly timeSeriesWriter?: TimeSeriesWriter
     readonly cacheConfig?: CacheConfig
+    readonly observerProfile?: boolean
   },
 ): Layer.Layer<ScoringEngineTag> =>
   Layer.effect(
@@ -242,6 +536,47 @@ export const ScoringEngineLayer = (
         cacheLayer,
       )
 
+      const makeEnvLayer = (
+        worktreePath: string,
+        sha: string,
+        referenceEntries: ReadonlyMap<string, unknown>,
+        changedHunks: ReadonlyArray<ChangedHunk> = [],
+      ): Layer.Layer<any, any, never> => {
+        const ContextLayer = Layer.succeed(SignalContextTag, {
+          gitSha: sha,
+          worktreePath,
+          changedHunks,
+        })
+        const ReferenceLayer = Layer.succeed(
+          ReferenceDataTag,
+          makeReferenceData(referenceEntries),
+        )
+        const CacheShareLayer = Layer.succeed(SignalCacheTag, cacheRef)
+        const PackLayer = packLayerFactory(worktreePath)
+        return Layer.mergeAll(
+          ContextLayer,
+          ReferenceLayer,
+          CacheShareLayer,
+          PackLayer,
+        )
+      }
+
+      const runWithEnvironment = <A, E>(
+        worktreePath: string,
+        sha: string,
+        changedHunks: ReadonlyArray<ChangedHunk>,
+        runInWorktree: (
+          envLayer: Layer.Layer<any, any, never>,
+          referenceEntries: ReadonlyMap<string, unknown>,
+        ) => Effect.Effect<A, E, never>,
+      ): Effect.Effect<A, E | ScoringEngineError, never> =>
+        Effect.gen(function* () {
+          yield* Effect.annotateCurrentSpan("worktreePath", worktreePath)
+          const referenceEntries = yield* loadCanonicalReferenceDataEntries(worktreePath)
+          const EnvLayer = makeEnvLayer(worktreePath, sha, referenceEntries, changedHunks)
+          return yield* runInWorktree(EnvLayer, referenceEntries)
+        })
+
       const withCommitEnvironment = <A, E>(
         repoPath: string,
         sha: string,
@@ -250,33 +585,51 @@ export const ScoringEngineLayer = (
           referenceEntries: ReadonlyMap<string, unknown>,
         ) => Effect.Effect<A, E, never>,
       ): Effect.Effect<A, E | ScoringEngineError, never> =>
-        Effect.scoped(
-          Effect.gen(function* () {
-            const worktreePath = yield* acquireWorktree(repoPath, sha)
-            yield* Effect.annotateCurrentSpan("worktreePath", worktreePath)
-            const referenceEntries = yield* loadCanonicalReferenceDataEntries(worktreePath)
+        Effect.gen(function* () {
+          const useCurrentWorktree = yield* canUseCurrentWorktreeForCommit(repoPath, sha)
+          if (useCurrentWorktree) {
+            return yield* runWithEnvironment(repoPath, sha, [], runInWorktree)
+          }
 
-            const ContextLayer = Layer.succeed(SignalContextTag, {
-              gitSha: sha,
-              worktreePath,
-              changedHunks: [],
-            })
-            const ReferenceLayer = Layer.succeed(
-              ReferenceDataTag,
-              makeReferenceData(referenceEntries),
-            )
-            const CacheShareLayer = Layer.succeed(SignalCacheTag, cacheRef)
-            const PackLayer = packLayerFactory(worktreePath)
-            const EnvLayer = Layer.mergeAll(
-              ContextLayer,
-              ReferenceLayer,
-              CacheShareLayer,
-              PackLayer,
-            )
+          return yield* Effect.scoped(
+            Effect.gen(function* () {
+              const worktreePath = yield* acquireWorktree(repoPath, sha)
+              return yield* runWithEnvironment(worktreePath, sha, [], runInWorktree)
+            }),
+          )
+        })
 
-            return yield* runInWorktree(EnvLayer, referenceEntries)
-          }),
-        )
+      const observeWithCache = (
+        key: CacheKey,
+        runFresh: () => Effect.Effect<ObserverOutput, ScoringEngineError, never>,
+      ): Effect.Effect<
+        { readonly result: ObserverOutput; readonly cacheHit: boolean },
+        ScoringEngineError,
+        never
+      > =>
+        Effect.gen(function* () {
+          const cached = yield* cacheRef.getTiered<CachedObserverOutput>(key, { tier: 1 })
+          const profile = options?.observerProfile === true
+          const cacheHit = !profile && (cached.status === "hit" || cached.status === "stale")
+          if (cacheHit) {
+            return { result: fromCachedObserverOutput(cached.value!), cacheHit }
+          }
+
+          const runtimeStartedAt = nowMs()
+          const result = yield* runFresh().pipe(
+            Effect.map((fresh) =>
+              profile
+                ? withRuntimeEnvironmentProfile(fresh, nowMs() - runtimeStartedAt)
+                : fresh,
+            ),
+            Effect.tap((fresh) => {
+              if (profile) return Effect.void
+              return cacheRef.setTiered(key, toCachedObserverOutput(fresh), { tier: 1 })
+            }),
+          )
+
+          return { result, cacheHit }
+        })
 
       const scoreCommit = Effect.fn("ScoringEngine.scoreCommit")(
         function* (repoPath: string, sha: string, signalId: string) {
@@ -363,16 +716,64 @@ export const ScoringEngineLayer = (
       const observeCommit = Effect.fn("ScoringEngine.observeCommit")(
         function* (repoPath: string, sha: string) {
           yield* Effect.annotateCurrentSpan("sha", sha)
-          const result = yield* withCommitEnvironment(repoPath, sha, (EnvLayer) =>
-            Effect.provide(observe(registry, vector), EnvLayer) as Effect.Effect<
-              ObserverOutput,
-              never,
-              never
-            >,
+          const contentHash = yield* computeContentHash(repoPath, sha)
+          const configHash = computeObserverConfigHash(registry, vector)
+          const key: CacheKey = {
+            signalId: OBSERVER_CACHE_SIGNAL_ID,
+            contentHash,
+            configHash,
+          }
+
+          const profile = options?.observerProfile === true
+          const { result, cacheHit } = yield* observeWithCache(key, () =>
+            withCommitEnvironment(repoPath, sha, (EnvLayer) =>
+              Effect.provide(observe(registry, vector, { profile }), EnvLayer) as Effect.Effect<
+                ObserverOutput,
+                never,
+                never
+              >,
+            ),
           )
+
+          yield* Effect.annotateCurrentSpan("cacheKey", cacheKeyString(key))
+          yield* Effect.annotateCurrentSpan("cacheHit", cacheHit)
           if (options?.timeSeriesWriter !== undefined) {
             yield* options.timeSeriesWriter.appendObservation(sha, result)
           }
+          return result
+        },
+      )
+
+      const observeWorktree = Effect.fn("ScoringEngine.observeWorktree")(
+        function* (repoPath: string, headSha: string) {
+          yield* Effect.annotateCurrentSpan("sha", headSha)
+          const cleanHead = yield* canUseCurrentWorktreeForCommit(repoPath, headSha)
+          if (cleanHead) {
+            return yield* observeCommit(repoPath, headSha)
+          }
+
+          const changedHunks = yield* collectWorktreeChangedHunks(repoPath)
+          const contentHash = `${yield* computeWorktreeContentHash(repoPath)}:${hashChangedHunks(changedHunks)}`
+          const configHash = computeObserverConfigHash(registry, vector)
+          const key: CacheKey = {
+            signalId: OBSERVER_CACHE_SIGNAL_ID,
+            contentHash,
+            configHash,
+          }
+
+          const profile = options?.observerProfile === true
+          const { result, cacheHit } = yield* observeWithCache(key, () =>
+            runWithEnvironment(repoPath, headSha, changedHunks, (EnvLayer) =>
+              Effect.provide(observe(registry, vector, { profile }), EnvLayer) as Effect.Effect<
+                ObserverOutput,
+                never,
+                never
+              >,
+            ),
+          )
+
+          yield* Effect.annotateCurrentSpan("cacheKey", cacheKeyString(key))
+          yield* Effect.annotateCurrentSpan("cacheHit", cacheHit)
           return result
         },
       )
@@ -402,9 +803,48 @@ export const ScoringEngineLayer = (
         },
       )
 
-      return ScoringEngineTag.of({ scoreCommit, scoreRange, observeCommit, observeRange })
+      return ScoringEngineTag.of({
+        scoreCommit,
+        scoreRange,
+        observeCommit,
+        observeWorktree,
+        observeRange,
+      })
     }),
   )
+
+const canUseCurrentWorktreeForCommit = (
+  repoPath: string,
+  sha: string,
+): Effect.Effect<boolean> =>
+  Effect.gen(function* () {
+    const head = yield* Effect.either(
+      runGit(repoPath, ["rev-parse", "HEAD"], {
+        onFail: (message) => new Error(message),
+      }),
+    )
+    if (head._tag === "Left") return false
+    if (head.right.trim() !== sha) return false
+
+    const status = yield* Effect.either(
+      runGit(
+        repoPath,
+        [
+          "status",
+          "--porcelain=v1",
+          "--untracked-files=all",
+          "--",
+          ".",
+          ":!.taste-codec/cache",
+        ],
+        {
+          onFail: (message) => new Error(message),
+        },
+      ),
+    )
+    if (status._tag === "Left") return false
+    return status.right.trim().length === 0
+  })
 
 // ---------------------------------------------------------------------------
 // Worktree lifecycle

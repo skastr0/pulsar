@@ -3,6 +3,7 @@ import { access, readFile } from "node:fs/promises"
 import { constants } from "node:fs"
 import { join } from "node:path"
 import { promisify } from "node:util"
+import { matchesAnyGlob } from "./globs.js"
 
 const execFileAsync = promisify(execFile)
 
@@ -11,37 +12,7 @@ export interface SharedHistoryFilterConfig {
   readonly excludeGlobs: ReadonlyArray<string>
 }
 
-export interface FileHistoryEntry {
-  readonly sha: string
-  readonly date: Date
-  readonly pathAtCommit: string
-  readonly renameOnly: boolean
-}
-
 export const clamp01 = (value: number): number => Math.max(0, Math.min(1, value))
-
-export const matchesGlob = (path: string, glob: string): boolean => {
-  const regex = new RegExp(
-    "^" +
-      glob
-        .replace(/\./g, "\\.")
-        .replace(/\*\*/g, "§§")
-        .replace(/\*/g, "[^/]*")
-        .replace(/§§/g, ".*") +
-      "$",
-  )
-  return regex.test(path)
-}
-
-export const matchesAnyGlob = (
-  path: string,
-  globs: ReadonlyArray<string>,
-): boolean => {
-  for (const glob of globs) {
-    if (matchesGlob(path, glob)) return true
-  }
-  return false
-}
 
 export const hasIncludedExtension = (
   path: string,
@@ -66,28 +37,183 @@ export const listTrackedFiles = async (
     .filter((line) => !matchesAnyGlob(line, config.excludeGlobs))
 }
 
-export const listTouchedFilesInWindow = async (
+export const listAuthorsByTouchedFileInWindow = async (
   repoPath: string,
   sinceIso: string,
   untilIso: string,
   config: SharedHistoryFilterConfig,
-): Promise<ReadonlyArray<string>> => {
+): Promise<ReadonlyMap<string, ReadonlyArray<string>>> => {
   const raw = await execGit(repoPath, [
     "log",
+    "--use-mailmap",
     `--since=${sinceIso}`,
     `--until=${untilIso}`,
     "--name-only",
-    "--pretty=format:__commit__",
+    "--format=__commit__%x00%aN <%aE>",
   ])
-  const files = new Set<string>()
+
+  let currentAuthor: string | undefined
+  const byFile = new Map<string, Array<string>>()
+  const filesInCommit = new Set<string>()
+
+  const flushCommit = (): void => {
+    if (currentAuthor === undefined) return
+    for (const file of filesInCommit) {
+      const authors = byFile.get(file) ?? []
+      authors.push(currentAuthor)
+      byFile.set(file, authors)
+    }
+    filesInCommit.clear()
+  }
+
+  for (const line of raw.split("\n")) {
+    if (line.startsWith("__commit__\0")) {
+      flushCommit()
+      currentAuthor = line.slice("__commit__\0".length).trim()
+      continue
+    }
+
+    const trimmed = line.trim()
+    if (trimmed.length === 0) continue
+    if (!hasIncludedExtension(trimmed, config.includeExtensions)) continue
+    if (matchesAnyGlob(trimmed, config.excludeGlobs)) continue
+    filesInCommit.add(trimmed)
+  }
+
+  flushCommit()
+  return byFile
+}
+
+export const listAddedLinesByFileInMatureWindow = async (
+  repoPath: string,
+  introductionStartIso: string,
+  maturityCutoffIso: string,
+  horizonEndIso: string,
+  config: SharedHistoryFilterConfig,
+): Promise<ReadonlyMap<string, ReadonlyArray<string>>> => {
+  const pathspecs = sourcePathspecs(config.includeExtensions)
+  const raw = await execGit(repoPath, [
+    "log",
+    "--no-merges",
+    `--since=${introductionStartIso}`,
+    `--until=${horizonEndIso}`,
+    "--format=__commit__%x00%cI",
+    "--unified=0",
+    "--no-ext-diff",
+    "--find-renames=100%",
+    "-p",
+    ...(pathspecs.length > 0 ? ["--", ...pathspecs] : []),
+  ])
+
+  const maturityCutoffTime = new Date(maturityCutoffIso).getTime()
+  const addedByFile = new Map<string, Array<string>>()
+  const renameMap = new Map<string, string>()
+  let commitAddsEligible = false
+  let currentFile: string | undefined
+  let pendingRenameFrom: string | undefined
+
+  for (const line of raw.split("\n")) {
+    if (line.startsWith("__commit__\0")) {
+      const dateIso = line.slice("__commit__\0".length).trim()
+      commitAddsEligible = new Date(dateIso).getTime() <= maturityCutoffTime
+      currentFile = undefined
+      pendingRenameFrom = undefined
+      continue
+    }
+
+    if (line.startsWith("diff --git ")) {
+      currentFile = parseDiffTargetPath(line)
+      pendingRenameFrom = undefined
+      continue
+    }
+
+    if (line.startsWith("rename from ")) {
+      pendingRenameFrom = line.slice("rename from ".length).trim()
+      continue
+    }
+
+    if (line.startsWith("rename to ")) {
+      const renamedTo = line.slice("rename to ".length).trim()
+      if (pendingRenameFrom !== undefined && renamedTo.length > 0) {
+        renameMap.set(pendingRenameFrom, renamedTo)
+      }
+      pendingRenameFrom = undefined
+      continue
+    }
+
+    if (!commitAddsEligible) continue
+    if (currentFile === undefined) continue
+    if (!hasIncludedExtension(currentFile, config.includeExtensions)) continue
+    if (matchesAnyGlob(currentFile, config.excludeGlobs)) continue
+    if (!line.startsWith("+") || line.startsWith("+++")) continue
+
+    const content = line.slice(1)
+    if (content.trim().length === 0) continue
+    const lines = addedByFile.get(currentFile) ?? []
+    lines.push(content)
+    addedByFile.set(currentFile, lines)
+  }
+
+  const remapped = new Map<string, Array<string>>()
+  for (const [file, lines] of addedByFile) {
+    const currentFilePath = resolveRename(file, renameMap)
+    if (!hasIncludedExtension(currentFilePath, config.includeExtensions)) continue
+    if (matchesAnyGlob(currentFilePath, config.excludeGlobs)) continue
+    const existing = remapped.get(currentFilePath) ?? []
+    existing.push(...lines)
+    remapped.set(currentFilePath, existing)
+  }
+
+  return remapped
+}
+
+export const listAddedLineCountInWindow = async (
+  repoPath: string,
+  sinceIso: string,
+  untilIso: string,
+  config: SharedHistoryFilterConfig,
+): Promise<number> => {
+  const pathspecs = sourcePathspecs(config.includeExtensions)
+  const raw = await execGit(repoPath, [
+    "log",
+    "--no-merges",
+    `--since=${sinceIso}`,
+    `--until=${untilIso}`,
+    "--pretty=format:__commit__",
+    "--numstat",
+    ...(pathspecs.length > 0 ? ["--", ...pathspecs] : []),
+  ])
+
+  let total = 0
   for (const line of raw.split("\n")) {
     const trimmed = line.trim()
     if (trimmed.length === 0 || trimmed === "__commit__") continue
-    if (!hasIncludedExtension(trimmed, config.includeExtensions)) continue
-    if (matchesAnyGlob(trimmed, config.excludeGlobs)) continue
-    files.add(trimmed)
+    const [addedRaw, , file] = trimmed.split(/\s+/, 3)
+    if (addedRaw === undefined || file === undefined || addedRaw === "-") continue
+    if (!hasIncludedExtension(file, config.includeExtensions)) continue
+    if (matchesAnyGlob(file, config.excludeGlobs)) continue
+    const added = Number.parseInt(addedRaw, 10)
+    if (Number.isFinite(added)) total += added
   }
-  return [...files].sort()
+  return total
+}
+
+export const countCommitsInWindow = async (
+  repoPath: string,
+  sinceIso: string,
+  untilIso: string,
+): Promise<number> => {
+  const raw = await execGit(repoPath, [
+    "rev-list",
+    "--count",
+    "--no-merges",
+    `--since=${sinceIso}`,
+    `--until=${untilIso}`,
+    "HEAD",
+    "--",
+  ])
+  const count = Number.parseInt(raw.trim(), 10)
+  return Number.isFinite(count) ? count : 0
 }
 
 export const countFileLoc = async (absolutePath: string): Promise<number> => {
@@ -149,97 +275,6 @@ export const normalizeAuthor = (
   return nameOnly.length > 0 ? nameOnly : trimmed
 }
 
-export const listAuthorsForFileInWindow = async (
-  repoPath: string,
-  relativePath: string,
-  sinceIso: string,
-  untilIso: string,
-): Promise<ReadonlyArray<string>> => {
-  const raw = await execGit(repoPath, [
-    "log",
-    "--follow",
-    "--use-mailmap",
-    `--since=${sinceIso}`,
-    `--until=${untilIso}`,
-    "--format=%aN <%aE>",
-    "--",
-    relativePath,
-  ])
-
-  return raw
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-}
-
-export const readFileHistory = async (
-  repoPath: string,
-  currentRelativePath: string,
-): Promise<ReadonlyArray<FileHistoryEntry>> => {
-  const raw = await execGit(repoPath, [
-    "log",
-    "--follow",
-    "--no-merges",
-    "--format=__commit__%H\t%cI",
-    "--name-status",
-    "--",
-    currentRelativePath,
-  ])
-
-  let activePath = currentRelativePath
-  let currentSha: string | undefined
-  let currentDate: Date | undefined
-  let currentNameStatus: Array<string> = []
-  const entries: Array<FileHistoryEntry> = []
-
-  const finalizeCurrent = (): void => {
-    if (currentSha === undefined || currentDate === undefined) return
-    entries.push({
-      sha: currentSha,
-      date: currentDate,
-      pathAtCommit: activePath,
-      renameOnly: currentNameStatus.length === 1 && currentNameStatus[0]?.startsWith("R") === true,
-    })
-    const renamedFrom = findRenameSource(currentNameStatus, activePath)
-    if (renamedFrom !== undefined) {
-      activePath = renamedFrom
-    }
-  }
-
-  for (const line of raw.split("\n")) {
-    if (line.startsWith("__commit__")) {
-      finalizeCurrent()
-      const meta = line.slice("__commit__".length).split("\t")
-      currentSha = meta[0]?.trim()
-      currentDate = new Date(meta[1]?.trim() ?? "")
-      currentNameStatus = []
-      continue
-    }
-
-    const trimmed = line.trim()
-    if (trimmed.length === 0) continue
-    currentNameStatus.push(trimmed)
-  }
-
-  finalizeCurrent()
-  return entries.reverse()
-}
-
-export const latestHistoryEntryAtOrBefore = (
-  history: ReadonlyArray<FileHistoryEntry>,
-  cutoff: Date,
-): FileHistoryEntry | undefined => {
-  let chosen: FileHistoryEntry | undefined
-  for (const entry of history) {
-    if (entry.date.getTime() <= cutoff.getTime()) {
-      chosen = entry
-      continue
-    }
-    break
-  }
-  return chosen
-}
-
 export const readFileAtCommit = async (
   repoPath: string,
   sha: string,
@@ -252,56 +287,43 @@ export const readFileAtCommit = async (
   }
 }
 
-export const readAddedLinesForCommit = async (
-  repoPath: string,
-  sha: string,
-  relativePath: string,
-): Promise<ReadonlyArray<string>> => {
-  const raw = await execGit(repoPath, [
-    "show",
-    "--format=",
-    "--unified=0",
-    "--no-ext-diff",
-    "--find-renames=100%",
-    sha,
-    "--",
-    relativePath,
-  ])
-
-  if (raw.includes("Binary files")) {
-    return []
-  }
-
-  const added: Array<string> = []
-  for (const line of raw.split("\n")) {
-    if (!line.startsWith("+") || line.startsWith("+++")) continue
-    const content = line.slice(1)
-    if (content.trim().length === 0) continue
-    added.push(content)
-  }
-  return added
-}
-
 export const execGit = async (
   repoPath: string,
   args: ReadonlyArray<string>,
 ): Promise<string> => {
-  const result = await execFileAsync("git", [...args], { cwd: repoPath })
+  const result = await execFileAsync("git", [...args], {
+    cwd: repoPath,
+    maxBuffer: 256 * 1024 * 1024,
+  })
   return result.stdout
 }
 
-const findRenameSource = (
-  nameStatusLines: ReadonlyArray<string>,
-  currentPath: string,
-): string | undefined => {
-  for (const line of nameStatusLines) {
-    const parts = line.split("\t")
-    if (parts.length < 3) continue
-    if (!parts[0]?.startsWith("R")) continue
-    const from = parts[1]?.trim()
-    const to = parts[2]?.trim()
-    if (from === undefined || to === undefined) continue
-    if (to === currentPath) return from
-  }
-  return undefined
+const parseDiffTargetPath = (line: string): string | undefined => {
+  const match = /^diff --git a\/(.+) b\/(.+)$/.exec(line)
+  return match?.[2]
 }
+
+const resolveRename = (
+  file: string,
+  renameMap: ReadonlyMap<string, string>,
+): string => {
+  let current = file
+  const seen = new Set<string>()
+
+  while (!seen.has(current)) {
+    seen.add(current)
+    const next = renameMap.get(current)
+    if (next === undefined) return current
+    current = next
+  }
+
+  return current
+}
+
+const sourcePathspecs = (
+  includeExtensions: ReadonlyArray<string>,
+): ReadonlyArray<string> =>
+  includeExtensions.flatMap((extension) => [
+    `:(glob)*${extension}`,
+    `:(glob)**/*${extension}`,
+  ])

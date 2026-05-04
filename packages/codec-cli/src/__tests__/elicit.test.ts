@@ -88,7 +88,7 @@ describe("taste elicit", () => {
         "--commits",
         "6",
         "--preset",
-        "strict-type-safety",
+        "ai-slop-defense",
         ".",
       ])
 

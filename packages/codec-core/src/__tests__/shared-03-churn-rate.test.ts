@@ -88,6 +88,45 @@ describe("SHARED-03 churn rate", () => {
     }
   })
 
+  test("ignores uncommitted working-tree edits when measuring mature churn", async () => {
+    const repo = await createGitTestRepo("taste-codec-shared-03-dirty-")
+    try {
+      await repo.write("src/dirty.ts", "export const stable = 1\n")
+      await repo.commitAll({
+        message: "introduce stable line",
+        dateIso: "2024-01-01T00:00:00Z",
+      })
+
+      await repo.write("README.md", "noop\n")
+      await repo.commitAll({
+        message: "advance head",
+        dateIso: "2024-01-20T00:00:00Z",
+      })
+
+      await repo.write("src/dirty.ts", "")
+
+      const output = await Effect.runPromise(
+        Shared03ChurnRate.compute(Shared03ChurnRate.defaultConfig, new Map()).pipe(
+          Effect.provide(
+            Layer.succeed(SignalContextTag, {
+              gitSha: repo.revParse("HEAD"),
+              worktreePath: repo.root,
+              changedHunks: [],
+            }),
+          ),
+        ) as Effect.Effect<any, any, never>,
+      )
+
+      expect(output.byFile.get(join(repo.root, "src/dirty.ts"))).toEqual({
+        introduced: 1,
+        churned: 0,
+        rate: 0,
+      })
+    } finally {
+      await repo.cleanup()
+    }
+  })
+
   test("handles renames and partial churn with similarity matching", async () => {
     const repo = await createGitTestRepo("taste-codec-shared-03-rename-")
     try {
@@ -177,4 +216,102 @@ describe("SHARED-03 churn rate", () => {
       await repo.cleanup()
     }
   })
+
+  test("excludes tests and agent harness directories from default production churn pressure", async () => {
+    const repo = await createGitTestRepo("taste-codec-shared-03-excludes-")
+    try {
+      await repo.write("src/production.ts", churnLines("production"))
+      await repo.write("src/production.test.ts", churnLines("test"))
+      await repo.write(".opencode/tool/triage.ts", churnLines("tool"))
+      await repo.write(".pi/extensions/files.ts", churnLines("pi"))
+      await repo.write("src/happydom.ts", churnLines("dom"))
+      await repo.commitAll({
+        message: "introduce production and harness lines",
+        dateIso: "2024-01-01T00:00:00Z",
+      })
+
+      await repo.write("README.md", "noop\n")
+      await repo.commitAll({
+        message: "advance head",
+        dateIso: "2024-01-20T00:00:00Z",
+      })
+
+      const output = await Effect.runPromise(
+        Shared03ChurnRate.compute(Shared03ChurnRate.defaultConfig, new Map()).pipe(
+          Effect.provide(
+            Layer.succeed(SignalContextTag, {
+              gitSha: repo.revParse("HEAD"),
+              worktreePath: repo.root,
+              changedHunks: [],
+            }),
+          ),
+        ) as Effect.Effect<any, any, never>,
+      )
+
+      expect([...output.byFile.keys()]).toEqual([join(repo.root, "src/production.ts")])
+      expect(output.introducedLineCount).toBe(3)
+    } finally {
+      await repo.cleanup()
+    }
+  })
+
+  test("diagnostics rank by churned-line impact and include repo context", () => {
+    const root = "/repo"
+    const output = {
+      churnedLineCount: 15,
+      introducedLineCount: 40,
+      churnRate: 0.375,
+      windowDays: 14,
+      insufficientHistory: false,
+      byFile: new Map([
+        [
+          join(root, "tiny.ts"),
+          {
+            introduced: 1,
+            churned: 1,
+            rate: 1,
+          },
+        ],
+        [
+          join(root, "large.ts"),
+          {
+            introduced: 30,
+            churned: 10,
+            rate: 1 / 3,
+          },
+        ],
+        [
+          join(root, "medium.ts"),
+          {
+            introduced: 9,
+            churned: 4,
+            rate: 4 / 9,
+          },
+        ],
+      ]),
+    }
+
+    const diagnostics = Shared03ChurnRate.diagnose(output)
+
+    expect(diagnostics.map((diagnostic) => diagnostic.location?.file)).toEqual([
+      join(root, "large.ts"),
+      join(root, "medium.ts"),
+      join(root, "tiny.ts"),
+    ])
+    expect(diagnostics[0]?.message).toContain("33% file churn")
+    expect(diagnostics[0]?.message).toContain("38% repo churn")
+    expect(diagnostics[0]?.data).toMatchObject({
+      repoIntroduced: 40,
+      repoChurned: 15,
+      repoRate: 0.375,
+    })
+  })
 })
+
+const churnLines = (label: string): string =>
+  [
+    `export const ${label}A = 1`,
+    `export const ${label}B = 2`,
+    `export const ${label}C = 3`,
+    "",
+  ].join("\n")

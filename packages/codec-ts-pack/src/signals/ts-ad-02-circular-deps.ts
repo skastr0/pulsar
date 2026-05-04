@@ -1,4 +1,10 @@
 import {
+  dirname,
+  relative,
+  sep,
+  normalize as normalizePath,
+} from "node:path"
+import {
   computeDiagnosticHash,
   hasSuppressingBypass,
   parseBypasses,
@@ -9,8 +15,10 @@ import {
   type TasteAllowBypass,
 } from "@taste-codec/core"
 import { Effect, Schema } from "effect"
-import type { SourceFile } from "ts-morph"
+import type { ExportDeclaration, ImportDeclaration, SourceFile } from "ts-morph"
+import { createModuleResolver } from "../graph/module-graph.js"
 import { TsProjectTag } from "../ts-project.js"
+import { isExcluded } from "./shared-globs.js"
 
 export const TsAd02Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
@@ -47,6 +55,7 @@ export interface TsAd02Output {
   readonly cycleCount: number
   readonly largestCycleSize: number
   readonly expiredBypasses: ReadonlyArray<ExpiredBypassMatch>
+  readonly diagnosticLimit: number
 }
 
 /**
@@ -76,7 +85,15 @@ export const TsAd02: Signal<TsAd02Config, TsAd02Output, TsProjectTag> = {
     // (mocks) or artifacts of tooling.
     exclude_globs: [
       "**/*.test.ts",
+      "**/*.test.tsx",
       "**/*.spec.ts",
+      "**/*.spec.tsx",
+      "**/*.d.ts",
+      "**/*.gen.ts",
+      "**/*.gen.tsx",
+      "**/gen/**",
+      "**/generated/**",
+      "**/vendor/**",
       "**/node_modules/**",
       "**/dist/**",
       "**/.turbo/**",
@@ -149,6 +166,7 @@ export const TsAd02: Signal<TsAd02Config, TsAd02Output, TsProjectTag> = {
             cycleCount: cycles.length,
             largestCycleSize,
             expiredBypasses,
+            diagnosticLimit: config.top_n_diagnostics,
           }
         },
         catch: (cause) =>
@@ -162,12 +180,16 @@ export const TsAd02: Signal<TsAd02Config, TsAd02Output, TsProjectTag> = {
     }),
   score: (out) => {
     if (out.cycleCount === 0) return 1
-    // Two-part penalty: cycle count drives the base penalty, cycle
-    // size amplifies it. A handful of small utility cycles should
-    // land near 0.7; many large cycles should collapse toward 0.
-    const countPenalty = Math.min(1, out.cycleCount * 0.15)
-    const sizePenalty = Math.min(0.5, Math.max(0, out.largestCycleSize - 2) * 0.1)
-    return Math.max(0, 1 - countPenalty - sizePenalty)
+    // Two-part penalty: cycle count drives broad pressure, while cycle
+    // size grows logarithmically so small local cycles stay actionable
+    // without being scored like repo-wide tangles. Huge SCCs still collapse
+    // toward the floor.
+    const countPenalty = Math.min(0.45, out.cycleCount * 0.08)
+    const sizePenalty = Math.min(
+      0.9,
+      Math.log2(Math.max(1, out.largestCycleSize - 1)) * 0.18,
+    )
+    return Math.max(0.05, 1 - countPenalty - sizePenalty)
   },
   diagnose: (out): ReadonlyArray<Diagnostic> => {
     const expired = out.expiredBypasses.map(({ file, bypass }) =>
@@ -175,20 +197,21 @@ export const TsAd02: Signal<TsAd02Config, TsAd02Output, TsProjectTag> = {
     )
     const cycles = out.cycles
       .filter((cycle) => !hasSuppressingBypass(cycle.suppressingBypasses))
-      .slice(0, 10)
+      .slice(0, out.diagnosticLimit)
 
     return [
       ...expired,
       ...cycles.map((c) => {
-        const members = c.architecturalSpan
-        const breakHint =
-          c.minBreakEdge !== undefined
-            ? ` (suggested break: ${c.minBreakEdge.from} -> ${c.minBreakEdge.to})`
-            : ""
-        const location = c.modules[0]
+        const members = formatCycleSpan(c)
+        const breakEdge = formatBreakEdge(c)
+        const location = c.minBreakEdge?.from ?? c.modules[0]
+        const severity = cycleSeverity(c, out)
         return {
-          severity: "block" as const,
-          message: `Circular dependency (${c.modules.length} modules): ${members}${breakHint}`,
+          severity,
+          message:
+            `Circular dependency cluster (${c.modules.length} modules; ` +
+            (breakEdge === undefined ? "" : `candidate break ${breakEdge}; `) +
+            `sample ${members})`,
           ...(location !== undefined ? { location: { file: location } } : {}),
           data: {
             hash: c.identityHash,
@@ -196,11 +219,24 @@ export const TsAd02: Signal<TsAd02Config, TsAd02Output, TsProjectTag> = {
             modules: c.modules.slice(),
             architecturalSpan: c.architecturalSpan,
             minBreakEdge: c.minBreakEdge,
+            severityReason:
+              severity === "block"
+                ? "large-or-broad-runtime-cycle"
+                : "local-runtime-cycle",
           },
         }
       }),
     ]
   },
+}
+
+const cycleSeverity = (
+  cycle: Cycle,
+  out: TsAd02Output,
+): Diagnostic["severity"] => {
+  if (cycle.modules.length >= 8) return "block"
+  if (out.cycleCount >= 10) return "block"
+  return "warn"
 }
 
 /* ------------------------------------------------------------------ */
@@ -212,26 +248,103 @@ const buildImportGraph = (
   fileSet: ReadonlySet<string>,
 ): Map<string, Set<string>> => {
   const graph = new Map<string, Set<string>>()
+  const resolver = createModuleResolver(sourceFiles, [])
   for (const sf of sourceFiles) {
     const path = sf.getFilePath()
     const targets = new Set<string>()
     for (const decl of sf.getImportDeclarations()) {
-      const target = decl.getModuleSpecifierSourceFile()
-      if (target === undefined) continue
-      const targetPath = target.getFilePath()
+      if (isTypeOnlyImport(decl)) continue
+      const targetPath = resolver.resolve(path, decl)
+      if (targetPath === undefined) continue
       if (!fileSet.has(targetPath)) continue
       targets.add(targetPath)
     }
     for (const decl of sf.getExportDeclarations()) {
-      const target = decl.getModuleSpecifierSourceFile()
-      if (target === undefined) continue
-      const targetPath = target.getFilePath()
+      if (isTypeOnlyExport(decl)) continue
+      const targetPath = resolver.resolve(path, decl)
+      if (targetPath === undefined) continue
       if (!fileSet.has(targetPath)) continue
+      if (targetPath === path) continue
       targets.add(targetPath)
     }
     graph.set(path, targets)
   }
   return graph
+}
+
+const isTypeOnlyImport = (declaration: ImportDeclaration): boolean => {
+  if (declaration.isTypeOnly()) return true
+
+  const clause = declaration.getImportClause()
+  if (clause === undefined) return false
+  if (clause.isTypeOnly()) return true
+  if (clause.getDefaultImport() !== undefined) return false
+  if (clause.getNamespaceImport() !== undefined) return false
+
+  const namedImports = clause.getNamedImports()
+  return namedImports.length > 0 && namedImports.every((specifier) => specifier.isTypeOnly())
+}
+
+const isTypeOnlyExport = (declaration: ExportDeclaration): boolean => {
+  if (declaration.isTypeOnly()) return true
+  if (declaration.getNamespaceExport() !== undefined) return false
+
+  const namedExports = declaration.getNamedExports()
+  return namedExports.length > 0 && namedExports.every((specifier) => specifier.isTypeOnly())
+}
+
+const formatCycleSpan = (cycle: Cycle): string => {
+  const commonDir = commonDirectory(cycle.modules)
+  const prefix = compactDirectoryLabel(commonDir)
+  const compactSpan = cycle.architecturalSpan
+    .split("→")
+    .map((module) => compactModulePath(module, commonDir))
+    .join(" -> ")
+
+  return prefix.length > 0 ? `${prefix}: ${compactSpan}` : compactSpan
+}
+
+const formatBreakEdge = (cycle: Cycle): string | undefined => {
+  if (cycle.minBreakEdge === undefined) return undefined
+  const commonDir = commonDirectory([cycle.minBreakEdge.from, cycle.minBreakEdge.to])
+  return `${compactModulePath(cycle.minBreakEdge.from, commonDir)} -> ${compactModulePath(cycle.minBreakEdge.to, commonDir)}`
+}
+
+const commonDirectory = (paths: ReadonlyArray<string>): string => {
+  if (paths.length === 0) return ""
+  const directories = paths.map((path) => normalizePath(dirname(path)).split(sep))
+  const [first, ...rest] = directories
+  if (first === undefined) return ""
+
+  const common: Array<string> = []
+  for (let index = 0; index < first.length; index += 1) {
+    const part = first[index]
+    if (part === undefined) break
+    if (rest.every((directory) => directory[index] === part)) {
+      common.push(part)
+      continue
+    }
+    break
+  }
+
+  return common.join(sep)
+}
+
+const compactDirectoryLabel = (directory: string): string => {
+  if (directory.length === 0) return ""
+  return normalizePath(directory)
+    .split(sep)
+    .filter((part) => part.length > 0)
+    .slice(-3)
+    .join("/")
+}
+
+const compactModulePath = (module: string, commonDir: string): string => {
+  if (commonDir.length === 0) return compactDirectoryLabel(module)
+
+  const rel = relative(commonDir, module)
+  if (!rel.startsWith("..")) return normalizePath(rel).replace(/\\/g, "/")
+  return compactDirectoryLabel(module)
 }
 
 /* ------------------------------------------------------------------ */
@@ -426,28 +539,4 @@ const buildArchitecturalSpan = (
   }
 
   return [...modules, modules[0]!].join("→")
-}
-
-/* ------------------------------------------------------------------ */
-/* Glob matching                                                       */
-/* ------------------------------------------------------------------ */
-
-const isExcluded = (path: string, globs: ReadonlyArray<string>): boolean => {
-  for (const glob of globs) {
-    if (matchesGlob(path, glob)) return true
-  }
-  return false
-}
-
-const matchesGlob = (path: string, glob: string): boolean => {
-  const regex = new RegExp(
-    "^" +
-      glob
-        .replace(/\./g, "\\.")
-        .replace(/\*\*/g, "§§")
-        .replace(/\*/g, "[^/]*")
-        .replace(/§§/g, ".*") +
-      "$",
-  )
-  return regex.test(path)
 }

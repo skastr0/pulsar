@@ -7,27 +7,24 @@ import {
 } from "@taste-codec/core"
 import { Effect, Schema } from "effect"
 import {
-  type ArrowFunction,
-  type ConstructorDeclaration,
-  type FunctionDeclaration,
-  type FunctionExpression,
-  type GetAccessorDeclaration,
-  type MethodDeclaration,
-  Node,
-  type SetAccessorDeclaration,
   type SourceFile,
   SyntaxKind,
+  ts,
 } from "ts-morph"
 import { TsProjectTag } from "../ts-project.js"
+import {
+  compilerPropertyNameText as propertyNameText,
+  isCompilerFunctionLike,
+  type CompilerFunctionLike,
+} from "./shared-compiler-functions.js"
+import { isExcluded } from "./shared-globs.js"
 
-type FnLike =
-  | FunctionDeclaration
-  | MethodDeclaration
-  | ArrowFunction
-  | FunctionExpression
-  | ConstructorDeclaration
-  | GetAccessorDeclaration
-  | SetAccessorDeclaration
+type MutableFunctionComplexity = {
+  file: string
+  name: string
+  line: number
+  complexity: number
+}
 
 export const TsLd01Config = Schema.Struct({
   max_complexity: Schema.Number,
@@ -62,63 +59,6 @@ const BRANCHING_KINDS = new Set<SyntaxKind>([
   SyntaxKind.ConditionalExpression,
 ])
 
-const cyclomaticComplexity = (fn: FnLike): number => {
-  let complexity = 1
-  fn.forEachDescendant((node) => {
-    if (BRANCHING_KINDS.has(node.getKind())) {
-      complexity += 1
-      return
-    }
-    if (Node.isBinaryExpression(node)) {
-      const op = node.getOperatorToken().getKind()
-      if (
-        op === SyntaxKind.AmpersandAmpersandToken ||
-        op === SyntaxKind.BarBarToken ||
-        op === SyntaxKind.QuestionQuestionToken
-      ) {
-        complexity += 1
-      }
-    }
-  })
-  return complexity
-}
-
-const functionName = (fn: FnLike): string => {
-  if (
-    Node.isFunctionDeclaration(fn) ||
-    Node.isMethodDeclaration(fn) ||
-    Node.isFunctionExpression(fn)
-  ) {
-    const name = fn.getName?.()
-    if (name) return name
-  }
-  if (Node.isArrowFunction(fn) || Node.isFunctionExpression(fn)) {
-    const parent = fn.getParent()
-    if (Node.isVariableDeclaration(parent) || Node.isPropertyAssignment(parent)) {
-      return parent.getName()
-    }
-  }
-  return "<anonymous>"
-}
-
-const collectFunctions = (sourceFile: SourceFile): ReadonlyArray<FnLike> => {
-  const results: Array<FnLike> = []
-  sourceFile.forEachDescendant((node) => {
-    if (
-      Node.isFunctionDeclaration(node) ||
-      Node.isMethodDeclaration(node) ||
-      Node.isArrowFunction(node) ||
-      Node.isFunctionExpression(node) ||
-      Node.isConstructorDeclaration(node) ||
-      Node.isGetAccessorDeclaration(node) ||
-      Node.isSetAccessorDeclaration(node)
-    ) {
-      results.push(node as FnLike)
-    }
-  })
-  return results
-}
-
 export const TsLd01: Signal<TsLd01Config, TsLd01Output, TsProjectTag> = {
   id: "TS-LD-01",
   tier: 1,
@@ -142,17 +82,10 @@ export const TsLd01: Signal<TsLd01Config, TsLd01Output, TsProjectTag> = {
           for (const sf of project.getSourceFiles()) {
             const path = sf.getFilePath()
             if (isExcluded(path, config.exclude_globs)) continue
-            for (const fn of collectFunctions(sf)) {
-              const complexity = cyclomaticComplexity(fn)
-              const name = functionName(fn)
-              functions.push({
-                file: path,
-                name,
-                line: fn.getStartLineNumber(),
-                complexity,
-              })
+            for (const fn of collectFunctionComplexities(sf)) {
+              functions.push(fn)
               const bucket = perFileValues.get(path) ?? []
-              bucket.push(complexity)
+              bucket.push(fn.complexity)
               perFileValues.set(path, bucket)
             }
           }
@@ -195,22 +128,68 @@ export const TsLd01: Signal<TsLd01Config, TsLd01Output, TsProjectTag> = {
   },
 }
 
-const isExcluded = (path: string, globs: ReadonlyArray<string>): boolean => {
-  for (const glob of globs) {
-    if (matchesGlob(path, glob)) return true
+const collectFunctionComplexities = (sourceFile: SourceFile): ReadonlyArray<FunctionComplexity> => {
+  const compilerSourceFile = sourceFile.compilerNode
+  const file = sourceFile.getFilePath()
+  const functions: Array<MutableFunctionComplexity> = []
+
+  const visit = (node: ts.Node, currentFunction: MutableFunctionComplexity | undefined): void => {
+    if (isCompilerFunctionLike(node)) {
+      const start = node.getStart(compilerSourceFile)
+      const fn = {
+        file,
+        name: functionName(node),
+        line: compilerSourceFile.getLineAndCharacterOfPosition(start).line + 1,
+        complexity: 1,
+      }
+      functions.push(fn)
+      ts.forEachChild(node, (child) => visit(child, fn))
+      return
+    }
+
+    if (currentFunction !== undefined) {
+      if (BRANCHING_KINDS.has(node.kind)) {
+        currentFunction.complexity += 1
+      }
+      if (ts.isBinaryExpression(node) && isComplexityOperator(node.operatorToken.kind)) {
+        currentFunction.complexity += 1
+      }
+    }
+
+    ts.forEachChild(node, (child) => visit(child, currentFunction))
   }
-  return false
+
+  visit(compilerSourceFile, undefined)
+  return functions
 }
 
-const matchesGlob = (path: string, glob: string): boolean => {
-  const regex = new RegExp(
-    "^" +
-      glob
-        .replace(/\./g, "\\.")
-        .replace(/\*\*/g, "§§")
-        .replace(/\*/g, "[^/]*")
-        .replace(/§§/g, ".*") +
-      "$",
-  )
-  return regex.test(path)
+const isComplexityOperator = (kind: SyntaxKind): boolean =>
+  kind === SyntaxKind.AmpersandAmpersandToken ||
+  kind === SyntaxKind.BarBarToken ||
+  kind === SyntaxKind.QuestionQuestionToken
+
+const functionName = (fn: CompilerFunctionLike): string => {
+  if (
+    ts.isFunctionDeclaration(fn) ||
+    ts.isMethodDeclaration(fn) ||
+    ts.isFunctionExpression(fn)
+  ) {
+    const name = fn.name
+    if (name !== undefined) return propertyNameText(name)
+  }
+  if (ts.isConstructorDeclaration(fn)) return "constructor"
+  if (ts.isGetAccessorDeclaration(fn)) return `get ${propertyNameText(fn.name)}`
+  if (ts.isSetAccessorDeclaration(fn)) return `set ${propertyNameText(fn.name)}`
+
+  const parent = fn.parent
+  if (ts.isVariableDeclaration(parent) && ts.isIdentifier(parent.name)) {
+    return parent.name.text
+  }
+  if (ts.isPropertyAssignment(parent)) {
+    return propertyNameText(parent.name)
+  }
+  if (ts.isExportAssignment(parent)) {
+    return "<default export>"
+  }
+  return "<anonymous>"
 }

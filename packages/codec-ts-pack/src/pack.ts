@@ -25,6 +25,14 @@ import { TsSl03 } from "./signals/ts-sl-03-suppressions.js"
 import { TsSl04 } from "./signals/ts-sl-04-empty-implementations.js"
 import { TsRp02 } from "./signals/ts-rp-02-pr-size.js"
 
+const TS_PACK_CACHE_VERSION =
+  "ts-pack-2026-05-03-ld06-de04-ad02-severity-calibration-3"
+
+const withTsPackCacheVersion = <S extends AnySignal>(signal: S): S => ({
+  ...signal,
+  cacheVersion: TS_PACK_CACHE_VERSION,
+})
+
 /**
  * The TypeScript-only signal pack. Compose this with `SHARED_SIGNALS`
  * from @taste-codec/shared-signals so compound/shared ids are registered
@@ -56,7 +64,7 @@ export const TS_PACK_SIGNALS: ReadonlyArray<AnySignal> = [
   TsSl04,
   TsRp02,
   TsSl02,
-]
+].map(withTsPackCacheVersion)
 
 export { TsLd01 } from "./signals/ts-ld-01-complexity.js"
 export { TsLd02 } from "./signals/ts-ld-02-size-distribution.js"

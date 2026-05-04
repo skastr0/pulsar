@@ -28,20 +28,19 @@ Keep agent-facing codec feedback useful without turning the scoring system into 
 
 - agent prompt surfaces only qualitative diagnostics and policy reminders
 - numeric scores stay out of the agent-facing system prompt
-- the bridge payload for epistemology is qualitative for the same reason
+- agent-facing context is derived from Taste's own observer and backpressure
+  state, not external agent packet history
 
 ## Implemented seams
 
 - `packages/codec-core/src/goodhart.ts`
 - `packages/codec-core/src/backpressure.ts`
 - `apps/opencode-plugin/src/server/agent-constraints.ts`
-- `apps/opencode-plugin/src/server/epistemology-bridge.ts`
 
 ## Verification
 
 - `packages/codec-core/src/__tests__/backpressure.test.ts`
 - `apps/opencode-plugin/test/server.test.ts`
-- `apps/opencode-plugin/test/epistemology-bridge.test.ts`
 
 ## Design choice
 

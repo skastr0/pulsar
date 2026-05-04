@@ -81,6 +81,27 @@ describe("Observer — category aggregation", () => {
     })
   })
 
+  test("generated-slop score keeps the weakest active signal visible", async () => {
+    const a = makeLeaf({ id: "TS-SL-LOW", category: "generated-slop", score: 0.2 })
+    const b = makeLeaf({ id: "TS-SL-HIGH", category: "generated-slop", score: 1 })
+
+    const result = await run([a, b])
+
+    // Raw mean would be 0.6. Generated-slop blends the aggregate with
+    // the weakest active signal so a smoking-gun slop signal is not
+    // averaged away by unrelated clean checks.
+    expect(result.categories["generated-slop"].score).toBeCloseTo(0.46, 5)
+  })
+
+  test("dependency-entropy score keeps the weakest active signal visible", async () => {
+    const a = makeLeaf({ id: "TS-DE-LOW", category: "dependency-entropy", score: 0 })
+    const b = makeLeaf({ id: "TS-DE-HIGH", category: "dependency-entropy", score: 1 })
+
+    const result = await run([a, b])
+
+    expect(result.categories["dependency-entropy"].score).toBeCloseTo(0.325, 5)
+  })
+
   test("empty category scores 1 and is excluded from weightedMean (AC-3)", async () => {
     const a = makeLeaf({ id: "TEST-A", category: "legibility-decay", score: 0.8 })
     const b = makeLeaf({ id: "TEST-B", category: "generated-slop", score: 0.6 })
@@ -98,8 +119,9 @@ describe("Observer — category aggregation", () => {
       expect(result.categories[cat].signalCount).toBe(0)
       expect(result.categories[cat].activeSignalIds).toEqual([])
     }
+    // generated-slop has only one signal, so its shaped score is still 0.6.
     // weighted_mean should be the count-weighted average of ONLY the two
-    // populated categories (each count 1): (0.8 * 1 + 0.6 * 1) / 2 = 0.7
+    // populated categories (each count 1): (0.8 * 1 + 0.6 * 1) / 2 = 0.7.
     expect(result.weighted_mean).toBeCloseTo(0.7, 5)
   })
 
@@ -134,6 +156,24 @@ describe("Observer — category aggregation", () => {
     expect(
       result.categories["legibility-decay"].normalization?.groups.typescript?.score,
     ).toBeCloseTo(0.3, 5)
+  })
+
+  test("default and shared groups do not trigger language normalization alone", async () => {
+    const ts = makeLeaf({ id: "TS-SL-LOW", category: "generated-slop", score: 0.5 })
+    const defaultSignal = makeLeaf({
+      id: "PROJECT-POLICY",
+      category: "generated-slop",
+      score: 1,
+    })
+    const shared = makeLeaf({ id: "SHARED-05", category: "generated-slop", score: 1 })
+
+    const result = await run([ts, defaultSignal, shared])
+
+    const category = result.categories["generated-slop"]
+    expect(category.normalization).toBeUndefined()
+    expect(category.aggregation?.strategy).toBe("weighted-mean")
+    expect(category.aggregation?.rawScore).toBeCloseTo(5 / 6, 5)
+    expect(category.score).toBeCloseTo((5 / 6) * 0.65 + 0.5 * 0.35, 5)
   })
 })
 
@@ -436,7 +476,7 @@ describe("Observer — JSON output shape (AC-10)", () => {
     const decoded = Schema.decodeUnknownSync(ObserverOutputSchema)(roundTripJson)
 
     expect(decoded).toEqual(publicJson)
-    expect(decoded).toEqual({
+    expect(decoded).toMatchObject({
       categories: {
         "architectural-drift": { score: 1, signals: {} },
         "dependency-entropy": { score: 1, signals: {} },
@@ -444,6 +484,16 @@ describe("Observer — JSON output shape (AC-10)", () => {
         "legibility-decay": {
           score: 0.7,
           signals: { "TEST-A": 0.7 },
+          aggregation: {
+            strategy: "weighted-mean",
+            rawScore: 0.7,
+            aggregateScore: 0.7,
+            lowestSignalScore: 0.7,
+            finalScore: 0.7,
+            shapedByLowestSignal: false,
+            weightTotal: 1,
+            weights: { "TEST-A": 1 },
+          },
         },
         "generated-slop": { score: 1, signals: {} },
         "review-pain": { score: 1, signals: {} },
@@ -458,6 +508,25 @@ describe("Observer — JSON output shape (AC-10)", () => {
       hard_gate_status: "pass",
       hard_gate_violations: [],
     })
+    expect(decoded.categories["generated-slop"].aggregation?.shapedByLowestSignal).toBe(true)
+  })
+
+  test("optional runtime profile records per-signal attribution in public JSON", async () => {
+    const a = makeLeaf({ id: "TEST-A", category: "legibility-decay", score: 0.7 })
+    const b = makeLeaf({ id: "TEST-B", category: "generated-slop", score: 0.4 })
+
+    const program = Effect.gen(function* () {
+      const registry = yield* buildRegistry([a, b])
+      return yield* observe(registry, undefined, { profile: true })
+    })
+    const result = await Effect.runPromise(program as Effect.Effect<ObserverOutput, unknown, never>)
+    const publicJson = toObserverJson(result)
+    const decoded = Schema.decodeUnknownSync(ObserverOutputSchema)(publicJson)
+
+    expect(result.runtimeProfile?.totalMs).toBeGreaterThanOrEqual(0)
+    expect(result.runtimeProfile?.signals["TEST-A"]?.score).toBe(0.7)
+    expect(result.runtimeProfile?.signals["TEST-B"]?.diagnostics).toBe(0)
+    expect(decoded.runtime_profile?.signals["TEST-A"]?.duration_ms).toBeGreaterThanOrEqual(0)
   })
 })
 

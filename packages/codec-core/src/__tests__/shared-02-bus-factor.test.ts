@@ -52,8 +52,46 @@ describe("SHARED-02 bus factor", () => {
         primaryAuthor: "Alice",
         primaryShare: 1,
         authors: ["Alice"],
+        loc: 61,
       })
-      expect(output.siloed).toEqual([{ file: soloPath, author: "Alice" }])
+      expect(output.repoAuthors).toEqual(["Alice"])
+      expect(output.siloed).toEqual([{ file: soloPath, author: "Alice", loc: 61 }])
+      expect(output.touchedLoc).toBe(61)
+      expect(Shared02BusFactor.score(output)).toBe(1)
+      expect(Shared02BusFactor.diagnose(output)[0]?.message).toContain("single-author corpus")
+    } finally {
+      await repo.cleanup()
+    }
+  })
+
+  test("excludes tests and agent harness directories from default production bus-factor pressure", async () => {
+    const repo = await createGitTestRepo("taste-codec-shared-02-excludes-")
+    try {
+      await repo.write("src/production.ts", longFile("production"))
+      await repo.write("src/production.test.ts", longFile("test"))
+      await repo.write(".opencode/tool/triage.ts", longFile("tool"))
+      await repo.write(".pi/extensions/files.ts", longFile("pi"))
+      await repo.write("src/happydom.ts", longFile("dom"))
+      await repo.commitAll({
+        message: "touch production and harness files",
+        authorName: "Alice",
+        authorEmail: "alice@example.com",
+        dateIso: "2024-02-01T00:00:00Z",
+      })
+
+      const output = await Effect.runPromise(
+        Shared02BusFactor.compute(Shared02BusFactor.defaultConfig, new Map()).pipe(
+          Effect.provide(
+            Layer.succeed(SignalContextTag, {
+              gitSha: repo.revParse("HEAD"),
+              worktreePath: repo.root,
+              changedHunks: [],
+            }),
+          ),
+        ) as Effect.Effect<any, any, never>,
+      )
+
+      expect([...output.byFile.keys()]).toEqual([join(repo.root, "src/production.ts")])
     } finally {
       await repo.cleanup()
     }
@@ -96,6 +134,7 @@ describe("SHARED-02 bus factor", () => {
 
       const authors = output.byFile.get(join(repo.root, "src/shared.ts"))?.authors
       expect(authors).toEqual(["Alice Canonical", "Bob"])
+      expect(output.repoAuthors).toEqual(["Alice Canonical", "Bob"])
     } finally {
       await repo.cleanup()
     }
@@ -140,6 +179,65 @@ describe("SHARED-02 bus factor", () => {
       expect(info?.busFactor).toBe(1)
       expect(info?.primaryAuthor).toBe("Team Alice")
       expect(info?.authors).toEqual(["Team Alice"])
+    } finally {
+      await repo.cleanup()
+    }
+  })
+
+  test("scores and ranks siloed files by LOC impact instead of raw file count", async () => {
+    const repo = await createGitTestRepo("taste-codec-shared-02-weighted-")
+    try {
+      await repo.write("src/big.ts", longFile("big") + longFile("large") + longFile("wide") + longFile("deep"))
+      await repo.commitAll({
+        message: "big silo",
+        authorName: "Alice",
+        authorEmail: "alice@example.com",
+        dateIso: "2024-01-01T00:00:00Z",
+      })
+
+      await repo.write("src/small.ts", longFile("small"))
+      await repo.commitAll({
+        message: "small silo",
+        authorName: "Bob",
+        authorEmail: "bob@example.com",
+        dateIso: "2024-02-01T00:00:00Z",
+      })
+
+      await repo.write("src/shared.ts", longFile("shared") + longFile("owned"))
+      await repo.commitAll({
+        message: "shared alice",
+        authorName: "Alice",
+        authorEmail: "alice@example.com",
+        dateIso: "2024-03-01T00:00:00Z",
+      })
+      await repo.write("src/shared.ts", longFile("shared") + longFile("owned") + "export const bob = 1\n")
+      await repo.commitAll({
+        message: "shared bob",
+        authorName: "Bob",
+        authorEmail: "bob@example.com",
+        dateIso: "2024-04-01T00:00:00Z",
+      })
+
+      const output = await Effect.runPromise(
+        Shared02BusFactor.compute(Shared02BusFactor.defaultConfig, new Map()).pipe(
+          Effect.provide(
+            Layer.succeed(SignalContextTag, {
+              gitSha: repo.revParse("HEAD"),
+              worktreePath: repo.root,
+              changedHunks: [],
+            }),
+          ),
+        ) as Effect.Effect<any, any, never>,
+      )
+
+      expect(output.siloed[0]?.file).toBe(join(repo.root, "src/big.ts"))
+      expect(output.siloed[0]?.loc).toBeGreaterThan(output.siloed[1]?.loc ?? 0)
+      expect(Shared02BusFactor.score(output)).toBeLessThan(1)
+
+      const diagnostics = Shared02BusFactor.diagnose(output)
+      expect(diagnostics[0]?.message).toContain("src/big.ts")
+      expect(diagnostics[0]?.message).toContain("LOC")
+      expect(diagnostics[0]?.data?.loc).toBe(output.siloed[0]?.loc)
     } finally {
       await repo.cleanup()
     }

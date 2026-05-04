@@ -213,6 +213,7 @@ const defaultTasteCodecAnalyzer: TasteCodecAnalyzer = async ({
   const { registry, sha, observerOutput } = await observeCurrentWorktree({
     worktree,
     vector,
+    changedHunks: diff.changedHunks,
   })
 
   const detector = await Effect.runPromise(RoutingDetector.load({ repoRoot: worktree }))
@@ -381,6 +382,7 @@ const buildRoutingDiffFromToolArgs = (
   if (filePath === undefined) {
     return {
       changedFiles: [],
+      changedHunks: [],
       addedFiles: [],
       addedImports: [],
       astMatches: [],
@@ -398,6 +400,7 @@ const buildRoutingDiffFromToolArgs = (
 
   return {
     changedFiles: [filePath],
+    changedHunks: [buildWholeFileHunk(filePath)],
     addedFiles: [],
     addedImports,
     astMatches,
@@ -444,6 +447,7 @@ const parseApplyPatch = (patchText: string, worktree: string): RoutingDiff => {
 
   return {
     changedFiles: [...changedFiles],
+    changedHunks: [...changedFiles].map((file) => buildWholeFileHunk(file)),
     addedFiles: [...addedFiles],
     addedImports,
     astMatches,
@@ -457,6 +461,16 @@ const collectContentSnippets = (
   [args.code_edit, args.content, args.newString, args.replacement, args.text].filter(
     (value): value is string => typeof value === "string" && value.length > 0,
   )
+
+const buildWholeFileHunk = (
+  file: string,
+): RoutingDiff["changedHunks"][number] => ({
+  file,
+  oldStart: 1,
+  oldLines: Number.MAX_SAFE_INTEGER,
+  newStart: 1,
+  newLines: Number.MAX_SAFE_INTEGER,
+})
 
 const firstPathArg = (
   args: Readonly<Record<string, unknown>>,

@@ -9,14 +9,15 @@ import {
   ScoringEngineTag,
   SignalContextTag,
   buildRegistry,
+  collectWorktreeChangedHunks,
   createTimeSeriesServices,
   decodeTasteVector,
   loadCanonicalReferenceDataEntries,
-  loadEpistemologySignals,
   makeReferenceData,
   observe,
   runSignal,
   validateVectorAgainstRegistry,
+  isActive as vectorIsActive,
   type ObserverOutput,
   type Registry,
   type SignalRunResult,
@@ -44,15 +45,13 @@ export interface CodecRuntimeOptions {
   readonly timeSeries?: {
     readonly enabled?: boolean
   }
+  readonly tsProject?: {
+    readonly productionOnly?: boolean
+  }
+  readonly observer?: {
+    readonly profile?: boolean
+  }
 }
-
-/**
- * Build a ready-to-use scoring engine for the default codec registry.
- * Wires registry, pack layer, and an optional taste vector in one place
- * so callers (`score`, `bisect`, `baseline`) don't reassemble the same stack.
- */
-export const makeScoringEngine = (repoPath: string, vector?: TasteVector) =>
-  makeCodecRuntime(repoPath, vector).pipe(Effect.map(({ engine }) => engine))
 
 export const buildCodecRegistry = (repoPath?: string) =>
   Effect.gen(function* () {
@@ -62,8 +61,7 @@ export const buildCodecRegistry = (repoPath?: string) =>
 
     const repoRoot = yield* resolveRepoRoot(repoPath)
     const signals = yield* detectCodecSignals(repoRoot)
-    const epistSignals = yield* loadEpistemologySignals(repoRoot)
-    return (yield* buildRegistry([...CODEC_SHARED_SIGNALS, ...signals, ...epistSignals])) as Registry
+    return (yield* buildRegistry([...CODEC_SHARED_SIGNALS, ...signals])) as Registry
   })
 
 export const loadTasteVectorFromPath = (vectorPath: string | undefined) =>
@@ -166,7 +164,7 @@ export const observeWorktree = (
       vector,
       options,
     )
-    const result = yield* engine.observeCommit(repoRoot, gitSha)
+    const result = yield* engine.observeWorktree(repoRoot, gitSha)
 
     return { repoRoot, gitSha, registry, result, timeSeries }
   })
@@ -188,26 +186,49 @@ export const makeCodecRuntime = (
         ? createTimeSeriesServices(repoRoot)
         : undefined
 
+    const activePacks = collectActiveLanguagePacks(registry, vector)
     const EngineLayer = ScoringEngineLayer(
       registry,
-      (worktreePath) => Layer.mergeAll(TsProjectLayer(worktreePath), RustProjectLayer(worktreePath)),
+      (worktreePath): Layer.Layer<any, any, never> =>
+        Layer.mergeAll(
+          activePacks.typescript
+            ? TsProjectLayer(worktreePath, options?.tsProject)
+            : Layer.empty,
+          activePacks.rust ? RustProjectLayer(worktreePath) : Layer.empty,
+        ) as Layer.Layer<any, any, never>,
       vector,
       {
         ...(timeSeries === undefined ? {} : { timeSeriesWriter: timeSeries.writer }),
         cacheConfig: { cacheDir: join(repoRoot, ".taste-codec", "cache") },
+        ...(options?.observer?.profile === true ? { observerProfile: true } : {}),
       },
     )
     const engine = yield* Effect.provide(ScoringEngineTag, EngineLayer)
     return { registry, engine, timeSeries }
   })
 
+const collectActiveLanguagePacks = (
+  registry: Registry,
+  vector: TasteVector | undefined,
+): { readonly typescript: boolean; readonly rust: boolean } => {
+  let typescript = false
+  let rust = false
+  for (const signal of registry.sorted) {
+    if (!vectorIsActive(signal.id, vector)) continue
+    if (signal.id.startsWith("TS-")) typescript = true
+    if (signal.id.startsWith("RS-")) rust = true
+  }
+  return { typescript, rust }
+}
+
 const buildWorktreeEnvLayer = (repoRoot: string, gitSha: string) =>
   Effect.gen(function* () {
     const referenceEntries = yield* loadCanonicalReferenceDataEntries(repoRoot)
+    const changedHunks = yield* collectWorktreeChangedHunks(repoRoot)
     const ContextLayer = Layer.succeed(SignalContextTag, {
       gitSha,
       worktreePath: repoRoot,
-      changedHunks: [],
+      changedHunks,
     })
     const ReferenceLayer = Layer.succeed(
       ReferenceDataTag,
@@ -266,12 +287,9 @@ const validateVectorAgainstCodecSignals = (
   repoRoot?: string,
 ) =>
   Effect.gen(function* () {
-    const epistSignals =
-      repoRoot === undefined ? [] : yield* loadEpistemologySignals(repoRoot)
     const fullRegistry = yield* buildRegistry([
       ...CODEC_SHARED_SIGNALS,
       ...CODEC_SIGNALS,
-      ...epistSignals,
     ])
     yield* validateVectorAgainstRegistry(vector, fullRegistry)
   })

@@ -6,16 +6,17 @@ import { SignalComputeError } from "./errors.js"
 import type { Signal } from "./signal.js"
 import {
   clamp01,
-  latestHistoryEntryAtOrBefore,
+  countCommitsInWindow,
+  listAddedLinesByFileInMatureWindow,
+  listAddedLineCountInWindow,
   listTrackedFiles,
-  readAddedLinesForCommit,
-  readFileAtCommit,
-  readFileHistory,
   readHeadDate,
+  readFileAtCommit,
 } from "./shared-history.js"
 
 export const Shared03ChurnRateConfig = Schema.Struct({
   window_days: Schema.Number,
+  max_mature_commits: Schema.Number,
   similarity_threshold: Schema.Number,
   include_extensions: Schema.Array(Schema.String),
   exclude_globs: Schema.Array(Schema.String),
@@ -35,13 +36,14 @@ export interface Shared03ChurnRateOutput {
   readonly byFile: ReadonlyMap<string, Shared03FileRate>
   readonly windowDays: number
   readonly insufficientHistory: boolean
+  readonly skippedReason?: string
 }
 
 /**
  * SHARED-03 — line survival within a configurable revert window. The
- * initial implementation walks each tracked file's follow-history so
- * current TS and Rust packs can consume the same output without diverging
- * on git semantics.
+ * signal evaluates lines introduced in the most recent fully matured
+ * window, so runtime and output stay tied to current review pain instead of
+ * scanning all historical churn.
  */
 export const Shared03ChurnRate: Signal<
   Shared03ChurnRateConfig,
@@ -55,6 +57,7 @@ export const Shared03ChurnRate: Signal<
   configSchema: Shared03ChurnRateConfig,
   defaultConfig: {
     window_days: 14,
+    max_mature_commits: 500,
     similarity_threshold: 0.8,
     include_extensions: [".ts", ".tsx", ".js", ".jsx", ".rs"],
     exclude_globs: [
@@ -62,6 +65,38 @@ export const Shared03ChurnRate: Signal<
       "**/dist/**",
       "**/.turbo/**",
       "**/target/**",
+      ".opencode/**",
+      "**/.opencode/**",
+      ".pi/**",
+      "**/.pi/**",
+      "**/*.test.ts",
+      "**/*.test.tsx",
+      "**/*.spec.ts",
+      "**/*.spec.tsx",
+      "**/__tests__/**",
+      "**/test/**",
+      "**/tests/**",
+      "**/test-support/**",
+      "**/*test-support.ts",
+      "**/*test-support.tsx",
+      "**/*.test-support.ts",
+      "**/*.test-support.tsx",
+      "**/test-helpers.ts",
+      "**/*test-helpers.ts",
+      "**/*test-helpers.tsx",
+      "**/*.test-helpers.ts",
+      "**/*.test-helpers.tsx",
+      "**/test-mocks.ts",
+      "**/*test-mocks.ts",
+      "**/*test-mocks.tsx",
+      "**/*.test-mocks.ts",
+      "**/*.test-mocks.tsx",
+      "**/test-harness.ts",
+      "**/*test-harness.ts",
+      "**/*test-harness.tsx",
+      "**/*.test-harness.ts",
+      "**/*.test-harness.tsx",
+      "**/happydom.ts",
       "**/__snapshots__/**",
       "**/*.snap",
       "**/*.lock",
@@ -83,61 +118,80 @@ export const Shared03ChurnRate: Signal<
           const maturityCutoff = new Date(
             headDate.getTime() - config.window_days * 24 * 3600 * 1000,
           )
-          const files = await listTrackedFiles(ctx.worktreePath, {
+          const introductionStart = new Date(
+            headDate.getTime() - config.window_days * 2 * 24 * 3600 * 1000,
+          )
+          const historyFilter = {
             includeExtensions: config.include_extensions,
             excludeGlobs: config.exclude_globs,
-          })
-
+          }
+          const matureCommitCount = await countCommitsInWindow(
+            ctx.worktreePath,
+            introductionStart.toISOString(),
+            maturityCutoff.toISOString(),
+          )
+          if (matureCommitCount > config.max_mature_commits) {
+            return {
+              churnedLineCount: 0,
+              introducedLineCount: 0,
+              churnRate: 0,
+              byFile: new Map(),
+              windowDays: config.window_days,
+              insufficientHistory: true,
+              skippedReason:
+                `mature history window has ${matureCommitCount} commits; ` +
+                "skipping expensive line-survival matching",
+            }
+          }
+          const matureAddedLineCount = await listAddedLineCountInWindow(
+            ctx.worktreePath,
+            introductionStart.toISOString(),
+            maturityCutoff.toISOString(),
+            historyFilter,
+          )
+          if (matureAddedLineCount > 50_000) {
+            return {
+              churnedLineCount: 0,
+              introducedLineCount: matureAddedLineCount,
+              churnRate: 0,
+              byFile: new Map(),
+              windowDays: config.window_days,
+              insufficientHistory: true,
+              skippedReason:
+                `mature history window has ${matureAddedLineCount} added lines; ` +
+                "skipping expensive line-survival matching",
+            }
+          }
+          const trackedFiles = new Set(
+            await listTrackedFiles(ctx.worktreePath, historyFilter),
+          )
           const byFile = new Map<string, Shared03FileRate>()
           let introducedLineCount = 0
           let churnedLineCount = 0
-          let hasEligibleHistory = false
+          const introducedByFile = await listAddedLinesByFileInMatureWindow(
+            ctx.worktreePath,
+            introductionStart.toISOString(),
+            maturityCutoff.toISOString(),
+            headDate.toISOString(),
+            historyFilter,
+          )
 
-          for (const relativePath of files) {
-            const history = await readFileHistory(ctx.worktreePath, relativePath)
-            const eligibleEntries = history.filter(
-              (entry) => entry.date.getTime() <= maturityCutoff.getTime(),
+          for (const [relativePath, introducedLines] of introducedByFile) {
+            if (!trackedFiles.has(relativePath)) continue
+            if (introducedLines.length === 0) continue
+
+            const targetContent = (await readFileAtCommit(
+              ctx.worktreePath,
+              ctx.gitSha === "HEAD" ? "HEAD" : ctx.gitSha,
+              relativePath,
+            )) ?? ""
+            const retained = countRetainedLines(
+              introducedLines,
+              targetContent.split("\n"),
+              config.similarity_threshold,
             )
-            if (eligibleEntries.length > 0) {
-              hasEligibleHistory = true
-            }
-
-            let fileIntroduced = 0
-            let fileChurned = 0
-
-            for (const entry of eligibleEntries) {
-              if (entry.renameOnly) continue
-              const introducedLines = await readAddedLinesForCommit(
-                ctx.worktreePath,
-                entry.sha,
-                entry.pathAtCommit,
-              )
-              if (introducedLines.length === 0) continue
-
-              const cutoffEntry =
-                latestHistoryEntryAtOrBefore(
-                  history,
-                  new Date(
-                    entry.date.getTime() + config.window_days * 24 * 3600 * 1000,
-                  ),
-                ) ?? entry
-
-              const targetContent =
-                (await readFileAtCommit(
-                  ctx.worktreePath,
-                  cutoffEntry.sha,
-                  cutoffEntry.pathAtCommit,
-                )) ?? ""
-
-              const retained = countRetainedLines(
-                introducedLines,
-                targetContent.split("\n"),
-                config.similarity_threshold,
-              )
-
-              fileIntroduced += introducedLines.length
-              fileChurned += introducedLines.length - retained
-            }
+            const fileIntroduced = introducedLines.length
+            const fileChurned = introducedLines.length - retained
 
             if (fileIntroduced === 0) continue
 
@@ -151,7 +205,7 @@ export const Shared03ChurnRate: Signal<
             churnedLineCount += fileChurned
           }
 
-          const insufficientHistory = !hasEligibleHistory || introducedLineCount === 0
+          const insufficientHistory = introducedLineCount === 0
 
           return {
             churnedLineCount,
@@ -183,27 +237,43 @@ export const Shared03ChurnRate: Signal<
       return [
         {
           severity: "info",
-          message: `SHARED-03 has no fully-mature ${out.windowDays}-day history window yet; returning a neutral score`,
+          message:
+            out.skippedReason ??
+            `SHARED-03 has no fully-mature ${out.windowDays}-day history window yet; returning a neutral score`,
         },
       ]
     }
 
+    const churnRatePercent = formatPercent(out.churnRate)
     const noisiestFiles = [...out.byFile.entries()]
-      .sort((a, b) => b[1].rate - a[1].rate)
+      .sort(
+        (a, b) =>
+          b[1].churned - a[1].churned ||
+          b[1].rate - a[1].rate ||
+          b[1].introduced - a[1].introduced ||
+          a[0].localeCompare(b[0]),
+      )
       .slice(0, 10)
 
     return noisiestFiles.map(([file, entry]) => ({
       severity: entry.rate >= 0.3 ? ("warn" as const) : ("info" as const),
-      message: `Recent churn candidate: ${file} churned ${entry.churned}/${entry.introduced} introduced lines within ${out.windowDays} days`,
+      message:
+        `Recent churn candidate: ${file} churned ${entry.churned}/${entry.introduced} introduced lines ` +
+        `within ${out.windowDays} days (${formatPercent(entry.rate)} file churn; ${churnRatePercent} repo churn)`,
       location: { file },
       data: {
         introduced: entry.introduced,
         churned: entry.churned,
         rate: entry.rate,
+        repoIntroduced: out.introducedLineCount,
+        repoChurned: out.churnedLineCount,
+        repoRate: out.churnRate,
       },
     }))
   },
 }
+
+const formatPercent = (value: number): string => `${Math.round(value * 100)}%`
 
 const countRetainedLines = (
   introducedLines: ReadonlyArray<string>,
@@ -211,13 +281,15 @@ const countRetainedLines = (
   threshold: number,
 ): number => {
   const available = targetLines.map((line) => line.trimEnd())
+  const exactIndex = buildExactLineIndex(available)
+  const lengthIndex = buildLengthIndex(available)
   const used = new Set<number>()
   let retained = 0
 
   for (const line of introducedLines) {
-    const exactIndex = findExactLine(line, available, used)
-    if (exactIndex !== undefined) {
-      used.add(exactIndex)
+    const exactMatch = findExactLine(line, exactIndex, used)
+    if (exactMatch !== undefined) {
+      used.add(exactMatch)
       retained += 1
       continue
     }
@@ -226,11 +298,15 @@ const countRetainedLines = (
     let bestIndex: number | undefined
     let bestSimilarity = 0
 
-    for (let i = 0; i < available.length; i += 1) {
+    for (const i of candidateIndexesByLength(normalizedLine, lengthIndex, threshold)) {
       if (used.has(i)) continue
       const candidate = available[i]?.trim() ?? ""
-      if (!couldReachThreshold(normalizedLine, candidate, threshold)) continue
-      const similarity = similarityScore(normalizedLine, candidate)
+      const similarity = similarityScoreAtThreshold(
+        normalizedLine,
+        candidate,
+        threshold,
+      )
+      if (similarity === undefined) continue
       if (similarity > bestSimilarity) {
         bestSimilarity = similarity
         bestIndex = i
@@ -246,50 +322,104 @@ const countRetainedLines = (
   return retained
 }
 
+const buildExactLineIndex = (
+  available: ReadonlyArray<string>,
+): ReadonlyMap<string, ReadonlyArray<number>> => {
+  const exactIndex = new Map<string, Array<number>>()
+  for (let i = 0; i < available.length; i += 1) {
+    const line = available[i]
+    if (line === undefined) continue
+    const indexes = exactIndex.get(line) ?? []
+    indexes.push(i)
+    exactIndex.set(line, indexes)
+  }
+  return exactIndex
+}
+
+const buildLengthIndex = (
+  available: ReadonlyArray<string>,
+): ReadonlyMap<number, ReadonlyArray<number>> => {
+  const lengthIndex = new Map<number, Array<number>>()
+  for (let i = 0; i < available.length; i += 1) {
+    const length = available[i]?.trim().length
+    if (length === undefined) continue
+    const indexes = lengthIndex.get(length) ?? []
+    indexes.push(i)
+    lengthIndex.set(length, indexes)
+  }
+  return lengthIndex
+}
+
+const candidateIndexesByLength = (
+  line: string,
+  lengthIndex: ReadonlyMap<number, ReadonlyArray<number>>,
+  threshold: number,
+): ReadonlyArray<number> => {
+  const length = line.length
+  const minLength = Math.ceil(length * threshold)
+  const maxLength = Math.floor(length / threshold)
+  const indexes: Array<number> = []
+
+  for (let candidateLength = minLength; candidateLength <= maxLength; candidateLength += 1) {
+    indexes.push(...(lengthIndex.get(candidateLength) ?? []))
+  }
+
+  return indexes
+}
+
 const findExactLine = (
   line: string,
-  available: ReadonlyArray<string>,
+  exactIndex: ReadonlyMap<string, ReadonlyArray<number>>,
   used: ReadonlySet<number>,
 ): number | undefined => {
-  for (let i = 0; i < available.length; i += 1) {
-    if (used.has(i)) continue
-    if (available[i] === line) return i
+  const indexes = exactIndex.get(line)
+  if (indexes === undefined) return undefined
+
+  for (const index of indexes) {
+    if (!used.has(index)) return index
   }
   return undefined
 }
 
-const couldReachThreshold = (
+const similarityScoreAtThreshold = (
   left: string,
   right: string,
   threshold: number,
-): boolean => {
-  const maxLength = Math.max(left.length, right.length)
-  if (maxLength === 0) return true
-  return Math.min(left.length, right.length) / maxLength >= threshold
-}
-
-const similarityScore = (left: string, right: string): number => {
+): number | undefined => {
   if (left === right) return 1
   const maxLength = Math.max(left.length, right.length)
   if (maxLength === 0) return 1
-  const distance = levenshtein(left, right)
-  return 1 - distance / maxLength
+  const maxDistance = Math.floor(maxLength * (1 - threshold))
+  const distance = levenshteinAtMost(left, right, maxDistance)
+  if (distance === undefined) return undefined
+  const score = 1 - distance / maxLength
+  return score >= threshold ? score : undefined
 }
 
-const levenshtein = (left: string, right: string): number => {
+const levenshteinAtMost = (
+  left: string,
+  right: string,
+  maxDistance: number,
+): number | undefined => {
+  if (Math.abs(left.length - right.length) > maxDistance) return undefined
   if (left.length === 0) return right.length
   if (right.length === 0) return left.length
 
   let previous = Array.from({ length: right.length + 1 }, (_, index) => index)
   for (let i = 0; i < left.length; i += 1) {
     const current = [i + 1]
+    let rowMinimum = current[0] ?? 0
     for (let j = 0; j < right.length; j += 1) {
       const insert = (current[j] ?? 0) + 1
       const remove = (previous[j + 1] ?? 0) + 1
       const replace = (previous[j] ?? 0) + (left[i] === right[j] ? 0 : 1)
-      current[j + 1] = Math.min(insert, remove, replace)
+      const value = Math.min(insert, remove, replace)
+      current[j + 1] = value
+      rowMinimum = Math.min(rowMinimum, value)
     }
+    if (rowMinimum > maxDistance) return undefined
     previous = current
   }
-  return previous[right.length] ?? 0
+  const distance = previous[right.length] ?? 0
+  return distance <= maxDistance ? distance : undefined
 }

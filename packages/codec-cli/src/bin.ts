@@ -51,6 +51,7 @@ Score options:
   --json               Emit raw ObserverOutput JSON.
   --category <name>    Human output for one category only.
   --ci                 Apply baseline ratcheting and exit 2 on new violations.
+  --profile            Include runtime attribution and bypass observer cache.
 
 Baseline options:
   set                  Write .taste-codec/baseline.json from current hard-gate debt.
@@ -109,11 +110,12 @@ Conventions options:
 Vector discovery order (score + baseline when --vector is omitted):
   1. .taste-codec/vector.json at the worktree root
   2. ~/.config/taste-codec/vector.json
-  3. Fallback: all signals active with default config and weight 1
+  3. Fallback: TypeScript/shared signals active with default config and weight 1
 
 Examples:
   taste score .
   taste score --json .
+  taste score --profile --category generated-slop .
   taste score --category legibility-decay .
   taste score --ci .
   taste baseline set .
@@ -235,6 +237,7 @@ if (command === "score") {
     ...(category !== undefined ? { category } : {}),
     ...(commandArgs.includes("--json") ? { json: true } : {}),
     ...(commandArgs.includes("--ci") ? { ci: true } : {}),
+    ...(commandArgs.includes("--profile") ? { profile: true } : {}),
   } satisfies Parameters<typeof runScoreCommand>[0]
 
   const exitCode = await Effect.runPromise(

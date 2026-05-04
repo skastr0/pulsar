@@ -6,17 +6,9 @@ import {
   summarize,
 } from "@taste-codec/core"
 import { Effect, Schema } from "effect"
-import { Node, type TypeParameterDeclaration } from "ts-morph"
+import { ts, type SourceFile } from "ts-morph"
 import { TsProjectTag } from "../ts-project.js"
 import { isExcluded } from "./shared-globs.js"
-import {
-  collectGenericTrackedDeclarations,
-  declarationName,
-  type FunctionLikeDeclaration,
-  type GenericTrackedDeclaration,
-  typeParameterIsUsedInNodes,
-  typeSyntaxDepth,
-} from "./shared-type-analysis.js"
 
 export const TsAb05Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
@@ -51,10 +43,47 @@ export const TsAb05: Signal<TsAb05Config, TsAb05Output, TsProjectTag> = {
   defaultConfig: {
     exclude_globs: [
       "**/*.test.ts",
+      "**/*.test.tsx",
       "**/*.spec.ts",
+      "**/*.spec.tsx",
+      "**/*.stories.ts",
+      "**/*.stories.tsx",
+      "**/*.d.ts",
       "**/node_modules/**",
       "**/dist/**",
       "**/.turbo/**",
+      "**/vendor/**",
+      "**/gen/**",
+      "**/generated/**",
+      "**/*.gen.ts",
+      "**/*.gen.tsx",
+      "**/*.generated.ts",
+      "**/*.generated.tsx",
+      "**/sst-env.d.ts",
+      "**/__tests__/**",
+      "**/test/**",
+      "**/tests/**",
+      "**/test-support/**",
+      "**/*test-support.ts",
+      "**/*test-support.tsx",
+      "**/*.test-support.ts",
+      "**/*.test-support.tsx",
+      "**/test-helpers.ts",
+      "**/*test-helpers.ts",
+      "**/*test-helpers.tsx",
+      "**/*.test-helpers.ts",
+      "**/*.test-helpers.tsx",
+      "**/test-mocks.ts",
+      "**/*test-mocks.ts",
+      "**/*test-mocks.tsx",
+      "**/*.test-mocks.ts",
+      "**/*.test-mocks.tsx",
+      "**/test-harness.ts",
+      "**/*test-harness.ts",
+      "**/*test-harness.tsx",
+      "**/*.test-harness.ts",
+      "**/*.test-harness.tsx",
+      "**/happydom.ts",
     ],
     max_generic_parameters: 3,
     top_n_diagnostics: 10,
@@ -72,18 +101,10 @@ export const TsAb05: Signal<TsAb05Config, TsAb05Output, TsProjectTag> = {
             const file = sourceFile.getFilePath()
             if (isExcluded(file, config.exclude_globs)) continue
 
-            for (const declaration of collectGenericTrackedDeclarations(sourceFile)) {
-              const typeParameters = declaration.getTypeParameters()
+            for (const declaration of collectGenericAnalyses(sourceFile)) {
               const analysis: GenericAnalysis = {
                 file,
-                declarationName: declarationName(declaration),
-                line: declaration.getStartLineNumber(),
-                paramCount: typeParameters.length,
-                maxConstraintDepth: typeParameters.reduce(
-                  (max, typeParameter) => Math.max(max, typeSyntaxDepth(typeParameter.getConstraint())),
-                  0,
-                ),
-                returnOnlyParams: detectReturnOnlyParams(declaration, typeParameters),
+                ...declaration,
               }
               byDeclaration.push(analysis)
               paramCounts.push(analysis.paramCount)
@@ -131,29 +152,166 @@ export const TsAb05: Signal<TsAb05Config, TsAb05Output, TsProjectTag> = {
     })),
 }
 
-const detectReturnOnlyParams = (
-  declaration: GenericTrackedDeclaration,
-  typeParameters: ReadonlyArray<TypeParameterDeclaration>,
-): ReadonlyArray<string> => {
-  if (!isFunctionLikeDeclaration(declaration)) return []
+type CompilerGenericDeclaration =
+  | ts.FunctionDeclaration
+  | ts.MethodDeclaration
+  | ts.ArrowFunction
+  | ts.FunctionExpression
+  | ts.TypeAliasDeclaration
+  | ts.InterfaceDeclaration
+  | ts.ClassDeclaration
 
-  const parameterTypeNodes = declaration.getParameters().map((parameter) => parameter.getTypeNode())
-  const returnTypeNode = declaration.getReturnTypeNode()
+type CompilerFunctionLike =
+  | ts.FunctionDeclaration
+  | ts.MethodDeclaration
+  | ts.ArrowFunction
+  | ts.FunctionExpression
 
-  return typeParameters
-    .filter(
-      (typeParameter) =>
-        typeParameterIsUsedInNodes(typeParameter, [returnTypeNode]) &&
-        !typeParameterIsUsedInNodes(typeParameter, parameterTypeNodes),
-    )
-    .map((typeParameter) => typeParameter.getName())
+const collectGenericAnalyses = (
+  sourceFile: SourceFile,
+): ReadonlyArray<Omit<GenericAnalysis, "file">> => {
+  const compilerSourceFile = sourceFile.compilerNode
+  const analyses: Array<Omit<GenericAnalysis, "file">> = []
+
+  const visit = (node: ts.Node): void => {
+    if (isTrackedGenericDeclaration(node)) {
+      const typeParameters = node.typeParameters ?? []
+      analyses.push({
+        declarationName: compilerDeclarationName(node, compilerSourceFile),
+        line: compilerSourceFile.getLineAndCharacterOfPosition(node.getStart(compilerSourceFile)).line + 1,
+        paramCount: typeParameters.length,
+        maxConstraintDepth: typeParameters.reduce(
+          (max, typeParameter) => Math.max(max, compilerTypeSyntaxDepth(typeParameter.constraint)),
+          0,
+        ),
+        returnOnlyParams: detectCompilerReturnOnlyParams(node, typeParameters),
+      })
+    }
+
+    ts.forEachChild(node, visit)
+  }
+
+  visit(compilerSourceFile)
+  return analyses
 }
 
-const isFunctionLikeDeclaration = (value: GenericTrackedDeclaration): value is FunctionLikeDeclaration =>
-  Node.isFunctionDeclaration(value) ||
-  Node.isMethodDeclaration(value) ||
-  Node.isArrowFunction(value) ||
-  Node.isFunctionExpression(value)
+const isTrackedGenericDeclaration = (node: ts.Node): node is CompilerGenericDeclaration =>
+  ts.isFunctionDeclaration(node) ||
+  ts.isMethodDeclaration(node) ||
+  ts.isArrowFunction(node) ||
+  ts.isFunctionExpression(node) ||
+  ts.isTypeAliasDeclaration(node) ||
+  ts.isInterfaceDeclaration(node) ||
+  ts.isClassDeclaration(node)
+
+const compilerDeclarationName = (
+  node: CompilerGenericDeclaration,
+  sourceFile: ts.SourceFile,
+): string => {
+  if (
+    ts.isFunctionDeclaration(node) ||
+    ts.isMethodDeclaration(node) ||
+    ts.isFunctionExpression(node) ||
+    ts.isTypeAliasDeclaration(node) ||
+    ts.isInterfaceDeclaration(node) ||
+    ts.isClassDeclaration(node)
+  ) {
+    const name = node.name?.getText(sourceFile)
+    if (name !== undefined && name !== "") return name
+  }
+
+  if (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) {
+    const parent = node.parent
+    if (ts.isVariableDeclaration(parent) || ts.isPropertyAssignment(parent)) {
+      return parent.name.getText(sourceFile)
+    }
+    if (ts.isExportAssignment(parent)) {
+      return "<default export>"
+    }
+  }
+
+  return "<anonymous>"
+}
+
+const detectCompilerReturnOnlyParams = (
+  declaration: CompilerGenericDeclaration,
+  typeParameters: ReadonlyArray<ts.TypeParameterDeclaration>,
+): ReadonlyArray<string> => {
+  if (!isCompilerFunctionLikeDeclaration(declaration)) return []
+
+  const parameterTypeNodes = declaration.parameters.map((parameter) => parameter.type)
+  const returnTypeNode = declaration.type
+
+  return typeParameters
+    .map((typeParameter) => typeParameter.name.text)
+    .filter(
+      (name) =>
+        compilerNameIsUsedInNodes(name, [returnTypeNode]) &&
+        !compilerNameIsUsedInNodes(name, parameterTypeNodes),
+    )
+}
+
+const isCompilerFunctionLikeDeclaration = (
+  value: CompilerGenericDeclaration,
+): value is CompilerFunctionLike =>
+  ts.isFunctionDeclaration(value) ||
+  ts.isMethodDeclaration(value) ||
+  ts.isArrowFunction(value) ||
+  ts.isFunctionExpression(value)
+
+const compilerNameIsUsedInNodes = (
+  name: string,
+  nodes: ReadonlyArray<ts.Node | undefined>,
+): boolean => {
+  for (const root of nodes) {
+    if (root === undefined) continue
+    let found = false
+    const visit = (node: ts.Node): void => {
+      if (found) return
+      if (ts.isIdentifier(node) && node.text === name) {
+        found = true
+        return
+      }
+      ts.forEachChild(node, visit)
+    }
+    visit(root)
+    if (found) return true
+  }
+  return false
+}
+
+const compilerTypeSyntaxDepth = (node: ts.TypeNode | undefined): number => {
+  if (node === undefined) return 0
+  if (ts.isParenthesizedTypeNode(node)) {
+    return compilerTypeSyntaxDepth(node.type)
+  }
+
+  let childDepth = 0
+  node.forEachChild((child) => {
+    if (isCompilerTypeNode(child)) {
+      childDepth = Math.max(childDepth, compilerTypeSyntaxDepth(child))
+      return
+    }
+    if (ts.isExpressionWithTypeArguments(child)) {
+      childDepth = Math.max(childDepth, 1 + maxCompilerTypeArgumentDepth(child))
+    }
+  })
+
+  return 1 + childDepth
+}
+
+const isCompilerTypeNode = (node: ts.Node): node is ts.TypeNode =>
+  node.kind >= ts.SyntaxKind.FirstTypeNode && node.kind <= ts.SyntaxKind.LastTypeNode
+
+const maxCompilerTypeArgumentDepth = (
+  node: ts.ExpressionWithTypeArguments,
+): number => {
+  let max = 0
+  for (const typeArg of node.typeArguments ?? []) {
+    max = Math.max(max, compilerTypeSyntaxDepth(typeArg))
+  }
+  return max
+}
 
 const compareGenericAnalysis = (left: GenericAnalysis, right: GenericAnalysis): number => {
   if (right.paramCount !== left.paramCount) {

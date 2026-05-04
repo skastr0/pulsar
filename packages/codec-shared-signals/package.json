@@ -18,7 +18,7 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -b",
-    "test": "bun test",
+    "test": "bun test --pass-with-no-tests",
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {

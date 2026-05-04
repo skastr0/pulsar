@@ -5,10 +5,10 @@ import {
 } from "@taste-codec/core"
 import { Effect, Schema } from "effect"
 import { Node, type InterfaceDeclaration, type SourceFile } from "ts-morph"
+import { createModuleResolver, type ModuleResolver } from "../graph/module-graph.js"
 import { TsProjectTag } from "../ts-project.js"
 import { isExcluded, matchesAnyGlob } from "./shared-globs.js"
-import { buildPublicExportedDeclarationSet } from "./shared-export-analysis.js"
-import { declarationKey } from "./shared-type-analysis.js"
+import { hasExportModifier } from "./shared-ts-morph-modifiers.js"
 
 export const TsAb04Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
@@ -68,27 +68,25 @@ export const TsAb04: Signal<TsAb04Config, TsAb04Output, TsProjectTag> = {
           const testFiles = sourceFiles.filter((sourceFile) =>
             matchesAnyGlob(sourceFile.getFilePath(), config.test_globs),
           )
-          const publicDeclarations = buildPublicExportedDeclarationSet(
+          const publicInterfaces = buildPublicInterfaceKeySet(
             productionFiles,
             config.public_entry_globs,
           )
 
           const interfaces = productionFiles
             .flatMap((sourceFile) => sourceFile.getInterfaces())
-            .filter((iface) => !publicDeclarations.has(declarationKey(iface)))
+            .filter((iface) => !publicInterfaces.has(interfaceKey(iface)))
 
-          const prodClasses = productionFiles.flatMap((sourceFile) => sourceFile.getClasses())
-          const prodObjects = productionFiles.flatMap(collectObjectLiteralVariables)
-          const testClasses = testFiles.flatMap((sourceFile) => sourceFile.getClasses())
-          const testObjects = testFiles.flatMap(collectObjectLiteralVariables)
+          const prodImplementations = buildImplementationIndex(productionFiles)
+          const testImplementations = buildImplementationIndex(testFiles)
 
           const pairs: Array<SingleImplPair> = []
           const deadInterfaces: Array<DeadInterface> = []
 
           for (const iface of interfaces) {
-            const productionImplementations = collectImplementations(iface, prodClasses, prodObjects)
+            const productionImplementations = prodImplementations.get(iface.getName()) ?? []
             const hasTestSubstitute =
-              collectImplementations(iface, testClasses, testObjects).length > 0
+              (testImplementations.get(iface.getName()) ?? []).length > 0
 
             if (productionImplementations.length === 0) {
               deadInterfaces.push({
@@ -175,46 +173,117 @@ export const TsAb04: Signal<TsAb04Config, TsAb04Output, TsProjectTag> = {
 
 type ImplementationDescriptor = { readonly file: string; readonly name: string }
 
-const collectObjectLiteralVariables = (sourceFile: SourceFile) =>
-  sourceFile
-    .getVariableDeclarations()
-    .filter((declaration) => Node.isObjectLiteralExpression(declaration.getInitializer()))
+const buildPublicInterfaceKeySet = (
+  sourceFiles: ReadonlyArray<SourceFile>,
+  publicEntryGlobs: ReadonlyArray<string>,
+): ReadonlySet<string> => {
+  const sourceFileByPath = new Map(
+    sourceFiles.map((sourceFile) => [sourceFile.getFilePath(), sourceFile] as const),
+  )
+  const resolver = createModuleResolver(sourceFiles, [])
+  const publicKeys = new Set<string>()
+  const visited = new Set<string>()
 
-const collectImplementations = (
-  iface: InterfaceDeclaration,
-  classes: ReadonlyArray<ReturnType<SourceFile["getClasses"]>[number]>,
-  objectLiterals: ReadonlyArray<ReturnType<SourceFile["getVariableDeclarations"]>[number]>,
-): ReadonlyArray<ImplementationDescriptor> => {
-  const interfaceType = iface.getType()
-  const interfaceKey = declarationKey(iface)
-  const descriptors = new Map<string, ImplementationDescriptor>()
-
-  for (const classDeclaration of classes) {
-    const explicit = classDeclaration
-      .getImplements()
-      .flatMap((heritage) => heritage.getType().getSymbol()?.getDeclarations() ?? [])
-      .some((declaration) => declarationKey(declaration) === interfaceKey)
-    const structural = classDeclaration.getType().isAssignableTo(interfaceType)
-    if (!explicit && !structural) continue
-    const name = classDeclaration.getName() ?? "<anonymous-class>"
-    descriptors.set(`${classDeclaration.getSourceFile().getFilePath()}:${name}`, {
-      file: classDeclaration.getSourceFile().getFilePath(),
-      name,
-    })
+  for (const sourceFile of sourceFiles) {
+    if (!matchesAnyGlob(sourceFile.getFilePath(), publicEntryGlobs)) continue
+    collectPublicInterfacesFromExports(sourceFile, sourceFileByPath, resolver, publicKeys, visited)
   }
 
-  for (const declaration of objectLiterals) {
-    if (!declaration.getType().isAssignableTo(interfaceType)) continue
-    const name = declaration.getName()
-    descriptors.set(`${declaration.getSourceFile().getFilePath()}:${name}`, {
-      file: declaration.getSourceFile().getFilePath(),
-      name,
-    })
+  return publicKeys
+}
+
+const collectPublicInterfacesFromExports = (
+  sourceFile: SourceFile,
+  sourceFileByPath: ReadonlyMap<string, SourceFile>,
+  resolver: ModuleResolver,
+  publicKeys: Set<string>,
+  visited: Set<string>,
+): void => {
+  const file = sourceFile.getFilePath()
+  if (visited.has(file)) return
+  visited.add(file)
+
+  for (const iface of sourceFile.getInterfaces()) {
+    if (hasExportModifier(iface)) {
+      publicKeys.add(interfaceKey(iface))
+    }
   }
 
-  return [...descriptors.values()].sort((left, right) => {
-    const fileCompare = left.file.localeCompare(right.file)
-    if (fileCompare !== 0) return fileCompare
-    return left.name.localeCompare(right.name)
-  })
+  for (const declaration of sourceFile.getExportDeclarations()) {
+    const targetPath = resolver.resolve(file, declaration)
+    const targetFile = targetPath === undefined ? undefined : sourceFileByPath.get(targetPath)
+    const namedExports = declaration.getNamedExports()
+
+    if (targetFile === undefined) continue
+
+    if (namedExports.length > 0) {
+      for (const specifier of namedExports) {
+        const iface = targetFile.getInterface(specifier.getName())
+        if (iface !== undefined) {
+          publicKeys.add(interfaceKey(iface))
+        }
+      }
+      continue
+    }
+
+    collectPublicInterfacesFromExports(targetFile, sourceFileByPath, resolver, publicKeys, visited)
+  }
+}
+
+const interfaceKey = (iface: InterfaceDeclaration): string =>
+  `${iface.getSourceFile().getFilePath()}:${iface.getName()}`
+
+const buildImplementationIndex = (
+  sourceFiles: ReadonlyArray<SourceFile>,
+): ReadonlyMap<string, ReadonlyArray<ImplementationDescriptor>> => {
+  const byInterface = new Map<string, Map<string, ImplementationDescriptor>>()
+
+  const add = (interfaceName: string | undefined, descriptor: ImplementationDescriptor): void => {
+    if (interfaceName === undefined || interfaceName.length === 0) return
+    const bucket = byInterface.get(interfaceName) ?? new Map<string, ImplementationDescriptor>()
+    bucket.set(`${descriptor.file}:${descriptor.name}`, descriptor)
+    byInterface.set(interfaceName, bucket)
+  }
+
+  for (const sourceFile of sourceFiles) {
+    const file = sourceFile.getFilePath()
+
+    for (const classDeclaration of sourceFile.getClasses()) {
+      const name = classDeclaration.getName() ?? "<anonymous-class>"
+      for (const heritage of classDeclaration.getImplements()) {
+        add(rootReferenceName(heritage.getExpression().getText()), { file, name })
+      }
+    }
+
+    for (const declaration of sourceFile.getVariableDeclarations()) {
+      if (!Node.isObjectLiteralExpression(declaration.getInitializer())) continue
+      add(rootReferenceName(declaration.getTypeNode()?.getText()), {
+        file,
+        name: declaration.getName(),
+      })
+    }
+  }
+
+  return new Map(
+    [...byInterface.entries()].map(([interfaceName, descriptors]) => [
+      interfaceName,
+      [...descriptors.values()].sort(compareImplementationDescriptors),
+    ]),
+  )
+}
+
+const rootReferenceName = (text: string | undefined): string | undefined => {
+  const trimmed = text?.trim()
+  if (trimmed === undefined || trimmed.length === 0) return undefined
+  const match = /^[$A-Z_a-z][$\w]*/.exec(trimmed)
+  return match?.[0]
+}
+
+const compareImplementationDescriptors = (
+  left: ImplementationDescriptor,
+  right: ImplementationDescriptor,
+): number => {
+  const fileCompare = left.file.localeCompare(right.file)
+  if (fileCompare !== 0) return fileCompare
+  return left.name.localeCompare(right.name)
 }

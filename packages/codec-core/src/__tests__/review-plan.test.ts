@@ -58,25 +58,33 @@ describe("generateReviewPlan", () => {
   test("covers the score-threshold path with vector-based thresholds", () => {
     const observerOutput = makeObserverOutput({
       categoryScores: {
-        "abstraction-bloat": 0.52,
+        "generated-slop": 0.65,
       },
       signals: [
         {
-          id: "TS-AB-01",
-          category: "abstraction-bloat",
-          score: 0.52,
-          output: { totalPublicExports: 80 },
-          diagnostics: [{ severity: "warn", message: "Public surface is large" }],
+          id: "TS-SL-01",
+          category: "generated-slop",
+          score: 0.65,
+          output: { groups: [] },
+          diagnostics: [{ severity: "warn", message: "Generated-looking duplication" }],
         },
       ],
     })
+
+    const baseline = generateReviewPlan(observerOutput, { triggers: [] }, undefined, {
+      generatedAt: "2026-04-19T10:00:00.000Z",
+      sha: "abc123",
+    })
+    expect(baseline.reviewRequests).toEqual([])
+    expect(baseline.hardGateBlocking).toBe(false)
+
     const vector: TasteVector = {
       id: "v1",
       domain: "typescript",
       signal_overrides: {},
       review_routing: {
         score_thresholds: {
-          "api-design-reviewer": 0.6,
+          "consolidation-reviewer": 0.7,
         },
       },
     }
@@ -88,12 +96,13 @@ describe("generateReviewPlan", () => {
 
     expect(plan.reviewRequests).toHaveLength(1)
     expect(plan.reviewRequests[0]).toMatchObject({
-      reviewerRole: "api-design-reviewer",
+      reviewerRole: "consolidation-reviewer",
       priority: "required",
       trigger: {
         source: "score-threshold",
       },
     })
+    expect(plan.hardGateBlocking).toBe(false)
   })
 
   test("covers the structural-pattern path", () => {

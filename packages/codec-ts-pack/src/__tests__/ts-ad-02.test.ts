@@ -67,6 +67,62 @@ describe("TS-AD-02 (circular dependencies)", () => {
     expect(TsAd02.score(out)).toBeLessThan(1)
   })
 
+  test("same-file namespace re-export is not treated as a self-cycle", async () => {
+    await writeTs(
+      "self-export.ts",
+      "export const value = 1\nexport * as SelfExport from './self-export'\n",
+    )
+
+    const out = await runCompute()
+    expect(out.cycleCount).toBe(0)
+    expect(TsAd02.score(out)).toBe(1)
+  })
+
+  test("type-only import cycles are ignored", async () => {
+    await writeTs(
+      "a.ts",
+      "import { type B } from './b'\nexport type A = { b?: B }\n",
+    )
+    await writeTs(
+      "b.ts",
+      "import type { A } from './a'\nexport type B = { a?: A }\n",
+    )
+
+    const out = await runCompute()
+    expect(out.cycleCount).toBe(0)
+    expect(TsAd02.score(out)).toBe(1)
+  })
+
+  test("generated source cycles are ignored by default", async () => {
+    await writeTs(
+      "sdk/types.gen.ts",
+      "import { utility } from './utils.gen'\nexport const typeValue = utility\n",
+    )
+    await writeTs(
+      "sdk/utils.gen.ts",
+      "import { typeValue } from './types.gen'\nexport const utility = typeValue\n",
+    )
+
+    const out = await runCompute()
+    expect(out.cycleCount).toBe(0)
+    expect(TsAd02.score(out)).toBe(1)
+  })
+
+  test("vendored source cycles are ignored by default", async () => {
+    await writeTs(
+      "vendor/pkg/a.ts",
+      "import { b } from './b'\nexport const a = b\n",
+    )
+    await writeTs(
+      "vendor/pkg/b.ts",
+      "import { a } from './a'\nexport const b = a\n",
+    )
+
+    const out = await runCompute()
+    expect(out.cycleCount).toBe(0)
+    expect(TsAd02.score(out)).toBe(1)
+  })
+
   test("two-node cycle: detected with break edge and architectural span", async () => {
     const aPath = await writeTs("a.ts", "import { b } from './b'\nexport const a = b + 1\n")
     const bPath = await writeTs("b.ts", "import { a } from './a'\nexport const b = a + 1\n")
@@ -92,6 +148,60 @@ describe("TS-AD-02 (circular dependencies)", () => {
     expect(out.cycles[0]?.modules).toHaveLength(4)
     // Larger cycle should score worse than a 2-node cycle.
     expect(TsAd02.score(out)).toBeLessThan(0.7)
+  })
+
+  test("a handful of small cycles scores as moderate architectural pressure", async () => {
+    for (const [left, right] of [
+      ["a", "b"],
+      ["c", "d"],
+      ["e", "f"],
+      ["g", "h"],
+    ]) {
+      await writeTs(`${left}.ts`, `import { ${right} } from './${right}'\nexport const ${left} = ${right} + 1\n`)
+      await writeTs(`${right}.ts`, `import { ${left} } from './${left}'\nexport const ${right} = ${left} + 1\n`)
+    }
+
+    const out = await runCompute()
+    expect(out.cycleCount).toBe(4)
+    expect(out.largestCycleSize).toBe(2)
+    expect(TsAd02.score(out)).toBeGreaterThanOrEqual(0.65)
+    expect(TsAd02.score(out)).toBeLessThan(0.75)
+    expect(TsAd02.diagnose(out).every((diagnostic) => diagnostic.severity === "warn")).toBe(true)
+  })
+
+  test("repo-scale cycles collapse toward the score floor", async () => {
+    const count = 40
+    for (let index = 0; index < count; index++) {
+      const next = (index + 1) % count
+      await writeTs(
+        `m${index}.ts`,
+        `import { m${next} } from './m${next}'\nexport const m${index} = m${next} + 1\n`,
+      )
+    }
+
+    const out = await runCompute()
+    expect(out.cycleCount).toBe(1)
+    expect(out.largestCycleSize).toBe(count)
+    expect(TsAd02.score(out)).toBe(0.05)
+    expect(TsAd02.diagnose(out)[0]?.severity).toBe("block")
+  })
+
+  test("many scattered local cycles are blocking architectural pressure", async () => {
+    for (let index = 0; index < 10; index++) {
+      await writeTs(
+        `cycle-${index}/a.ts`,
+        `import { b } from './b'\nexport const a${index} = b + 1\n`,
+      )
+      await writeTs(
+        `cycle-${index}/b.ts`,
+        `import { a${index} } from './a'\nexport const b = a${index} + 1\n`,
+      )
+    }
+
+    const out = await runCompute()
+    expect(out.cycleCount).toBe(10)
+    expect(out.largestCycleSize).toBe(2)
+    expect(TsAd02.diagnose(out)[0]?.severity).toBe("block")
   })
 
   test("deterministic: same input, same output shape", async () => {
@@ -123,6 +233,37 @@ describe("TS-AD-02 (circular dependencies)", () => {
     expect(out.cycles[0]!.modules.length).toBeGreaterThanOrEqual(
       out.cycles[out.cycles.length - 1]!.modules.length,
     )
+  })
+
+  test("diagnose surfaces a candidate break edge in message and location", async () => {
+    const aPath = await writeTs("a.ts", "import { b } from './b'\nexport const a = b + 1\n")
+    const bPath = await writeTs("b.ts", "import { a } from './a'\nexport const b = a + 1\n")
+
+    const out = await runCompute()
+    const diagnostic = TsAd02.diagnose(out)[0]
+    const breakEdge = out.cycles[0]!.minBreakEdge!
+
+    expect(diagnostic?.message).toContain("candidate break")
+    expect(diagnostic?.location).toEqual({
+      file: breakEdge.from,
+    })
+    expect([aPath, bPath]).toContain(breakEdge.from)
+    expect([aPath, bPath]).toContain(breakEdge.to)
+  })
+
+  test("diagnose respects configured diagnostic limit", async () => {
+    await writeTs("a.ts", "import { b } from './b'\nexport const a = b + 1\n")
+    await writeTs("b.ts", "import { a } from './a'\nexport const b = a + 1\n")
+    await writeTs("x.ts", "import { y } from './y'\nexport const x = y + 1\n")
+    await writeTs("y.ts", "import { x } from './x'\nexport const y = x + 1\n")
+
+    const out = await runCompute({
+      ...TsAd02.defaultConfig,
+      top_n_diagnostics: 1,
+    })
+
+    expect(out.cycles.length).toBeGreaterThan(1)
+    expect(TsAd02.diagnose(out)).toHaveLength(1)
   })
 
   test("active taste-allow bypass silences the cycle diagnostic", async () => {

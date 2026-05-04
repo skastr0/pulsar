@@ -2,6 +2,7 @@ import type {
   RustAnalysis,
   RustItemFact,
   RustModuleFact,
+  RustUseFact,
 } from "../rust-analysis.js"
 
 export interface ResolvedRustPath {
@@ -54,4 +55,24 @@ export const resolveCrateRelativePath = (
   }
 
   return undefined
+}
+
+export const toLocalRelativeSegments = (
+  useFact: RustUseFact,
+  rootNames: ReadonlySet<string>,
+): ReadonlyArray<string> | undefined => {
+  const [head, ...rest] = useFact.segments
+  if (head === undefined) return undefined
+  const current = useFact.relativeModulePath.split("::")
+  switch (head) {
+    case useFact.crateName:
+    case "crate":
+      return rest
+    case "self":
+      return [...current.slice(1), ...rest]
+    case "super":
+      return [...current.slice(1, -1), ...rest]
+    default:
+      return rootNames.has(head) ? useFact.segments : undefined
+  }
 }

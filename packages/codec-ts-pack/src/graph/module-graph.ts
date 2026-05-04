@@ -12,6 +12,10 @@ import {
   normalizePackageSpecifier,
   packageForFile,
 } from "../signals/shared-workspace.js"
+import {
+  stripKnownExtension,
+  stripRuntimeExtension,
+} from "../signals/shared-path-extensions.js"
 
 export interface ModuleGraphOptions {
   readonly excludeGlobs: ReadonlyArray<string>
@@ -93,11 +97,11 @@ const collectTargets = (
 
 type ModuleDeclaration = ImportDeclaration | ExportDeclaration
 
-type ModuleResolver = {
+export type ModuleResolver = {
   readonly resolve: (sourcePath: string, declaration: ModuleDeclaration) => string | undefined
 }
 
-const createModuleResolver = (
+export const createModuleResolver = (
   sourceFiles: ReadonlyArray<SourceFile>,
   packages: ReadonlyArray<PackageInfo>,
 ): ModuleResolver => {
@@ -115,6 +119,16 @@ const createModuleResolver = (
       }
       if (specifier.startsWith(".") || specifier.startsWith("/")) {
         return resolveRelativeSpecifier(sourcePath, specifier, pathLookup)
+      }
+
+      const packageSrcAliasResolved = resolvePackageSrcAlias(
+        sourcePath,
+        specifier,
+        packages,
+        pathLookup,
+      )
+      if (packageSrcAliasResolved !== undefined) {
+        return packageSrcAliasResolved
       }
 
       const packageSpecifier = normalizePackageSpecifier(specifier)
@@ -135,6 +149,18 @@ const createModuleResolver = (
       return undefined
     },
   }
+}
+
+const resolvePackageSrcAlias = (
+  sourcePath: string,
+  specifier: string,
+  packages: ReadonlyArray<PackageInfo>,
+  pathLookup: ReadonlyMap<string, string>,
+): string | undefined => {
+  if (!specifier.startsWith("@/")) return undefined
+  const pkg = packageForFile(sourcePath, packages)
+  if (pkg === undefined) return undefined
+  return lookupResolvedPath(normalizePath(resolve(pkg.path, "src", specifier.slice(2))), pathLookup)
 }
 
 const buildPathLookup = (sourceFiles: ReadonlyArray<SourceFile>): ReadonlyMap<string, string> => {
@@ -199,11 +225,5 @@ const lookupResolvedPath = (
   candidate: string,
   pathLookup: ReadonlyMap<string, string>,
 ): string | undefined => pathLookup.get(candidate) ?? pathLookup.get(stripRuntimeExtension(candidate))
-
-const stripKnownExtension = (path: string): string =>
-  path.replace(/\.(?:[cm]?tsx?|[cm]?jsx?)$/u, "")
-
-const stripRuntimeExtension = (path: string): string =>
-  path.replace(/\.(?:[cm]?jsx?)$/u, "")
 
 const normalizePath = (path: string): string => normalize(path).replace(/\\/g, "/")

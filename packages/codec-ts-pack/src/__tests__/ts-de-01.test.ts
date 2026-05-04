@@ -73,6 +73,27 @@ describe("TS-DE-01 (type-level coupling)", () => {
     expect(byFile.get(a)?.typesReferencedExternally).toBe(1)
   })
 
+  test("large-project fast path counts imported type references syntactically", async () => {
+    const a = await writeTs("src/a.ts", "export interface A { value: string }\n")
+    const b = await writeTs(
+      "src/b.ts",
+      [
+        "import type { A } from './a'",
+        "export type B = A",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runCompute({
+      ...TsDe01.defaultConfig,
+      precise_module_limit: 1,
+    })
+    const byFile = new Map(out.modules.map((module) => [module.file, module]))
+
+    expect(byFile.get(b)?.externalTypesReferenced).toBe(1)
+    expect(byFile.get(a)?.typesReferencedExternally).toBe(1)
+  })
+
   test("re-exported imports resolve to the original type-defining module", async () => {
     const a = await writeTs("src/a.ts", "export interface A { value: string }\n")
     await writeTs("src/index.ts", "export type { A } from './a'\n")
@@ -98,15 +119,21 @@ describe("TS-DE-01 (type-level coupling)", () => {
   })
 
   test("diagnostics surface counterpart data for the most coupled module", async () => {
-    await writeTs(
-      "src/shared.ts",
-      ["export interface A {}", "export interface B {}", ""].join("\n"),
-    )
+    for (const file of ["a", "b", "c", "d", "e"]) {
+      await writeTs(`src/${file}.ts`, `export interface ${file.toUpperCase()} {}\n`)
+    }
+    for (const file of ["one", "two", "three", "four"]) {
+      await writeTs(`src/${file}.ts`, "export const value = 1\n")
+    }
     await writeTs(
       "src/hub.ts",
       [
-        "import type { A, B } from './shared'",
-        "export type Hub = A & B",
+        "import type { A } from './a'",
+        "import type { B } from './b'",
+        "import type { C } from './c'",
+        "import type { D } from './d'",
+        "import type { E } from './e'",
+        "export type Hub = A & B & C & D & E",
         "",
       ].join("\n"),
     )
@@ -115,8 +142,24 @@ describe("TS-DE-01 (type-level coupling)", () => {
     const diagnostics = TsDe01.diagnose(out)
     expect(diagnostics.length).toBeGreaterThan(0)
     expect(diagnostics[0]?.data).toMatchObject({
-      externalTypesReferenced: 2,
+      externalTypesReferenced: 5,
     })
+  })
+
+  test("does not diagnose ordinary coupling when the score remains perfect", async () => {
+    await writeTs("src/a.ts", "export interface A { value: string }\n")
+    await writeTs(
+      "src/b.ts",
+      [
+        "import type { A } from './a'",
+        "export type B = A",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runCompute()
+    expect(TsDe01.score(out)).toBe(1)
+    expect(TsDe01.diagnose(out)).toEqual([])
   })
 
   test("configSchema decodes defaults round-trip", () => {

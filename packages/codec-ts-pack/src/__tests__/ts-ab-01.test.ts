@@ -75,6 +75,7 @@ describe("TS-AB-01 (public export surface)", () => {
     expect(surface!.byKind.interface).toBe(1)
     expect(surface!.byKind.type).toBe(1)
     expect(surface!.byKind.const).toBe(1)
+    expect(surface!.weightedTotal).toBe(3.5)
     expect(TsAb01.score(out)).toBe(1) // below threshold
   })
 
@@ -107,6 +108,21 @@ describe("TS-AB-01 (public export surface)", () => {
     expect(TsAb01.score(lenientOut)).toBe(1)
   })
 
+  test("type-only exports carry less score pressure than runtime exports", async () => {
+    const lines = [
+      ...Array.from({ length: 80 }, (_, i) => `export interface Type${i} { value: ${i} }`),
+      ...Array.from({ length: 10 }, (_, i) => `export const runtime${i} = ${i}`),
+    ]
+    const idx = await writeTs("src/index.ts", lines.join("\n") + "\n")
+
+    const out = await runCompute()
+    const surface = out.byFile.get(idx)
+
+    expect(surface?.total).toBe(90)
+    expect(surface?.weightedTotal).toBe(30)
+    expect(TsAb01.score(out)).toBe(1)
+  })
+
   test("named re-exports count the resolved exported symbols", async () => {
     await writeTs("src/a.ts", "export const a = 1\n")
     await writeTs("src/b.ts", "export const b = 1\n")
@@ -135,6 +151,9 @@ describe("TS-AB-01 (public export surface)", () => {
     expect(surface?.total).toBe(2)
     expect(surface?.byKind.const).toBe(1)
     expect(surface?.byKind.interface).toBe(1)
+    expect(surface?.sourceFileCount).toBe(1)
+    expect(surface?.topSources[0]?.file).toContain("src/lib.ts")
+    expect(surface?.topSources[0]?.count).toBe(2)
   })
 
   test("default exports count as one public symbol", async () => {
@@ -167,6 +186,32 @@ describe("TS-AB-01 (public export surface)", () => {
     const out1 = await runCompute()
     const out2 = await runCompute()
     expect(TsAb01.score(out1)).toBe(TsAb01.score(out2))
+  })
+
+  test("excludes docs and prototype barrels from production public surface", async () => {
+    await writeTs("docs/explorations/prototypes/example/src/index.ts", "export const prototype = true\n")
+    const out = await runCompute()
+    expect(out.byFile.size).toBe(0)
+    expect(TsAb01.score(out)).toBe(1)
+  })
+
+  test("diagnostics explain runtime, type-only, weighted, and module surface", async () => {
+    await writeTs("src/runtime.ts", "export const runtime = true\n")
+    await writeTs("src/types.ts", "export interface Shape { value: string }\n")
+    await writeTs("src/index.ts", "export * from './runtime'\nexport * from './types'\n")
+
+    const out = await runCompute({
+      ...TsAb01.defaultConfig,
+      surface_threshold: 1,
+    })
+    const diagnostic = TsAb01.diagnose(out)[0]
+
+    expect(diagnostic?.severity).toBe("warn")
+    expect(diagnostic?.message).toContain("2 symbols")
+    expect(diagnostic?.message).toContain("weighted 1.3")
+    expect(diagnostic?.message).toContain("1 runtime")
+    expect(diagnostic?.message).toContain("1 type-only")
+    expect(diagnostic?.message).toContain("2 source modules")
   })
 
   test("configSchema decodes defaults round-trip", () => {

@@ -88,10 +88,10 @@ export const Shared06PrDepDelta: Signal<Shared06PrDepDeltaConfig, Shared06PrDepD
       }
     }),
   score: (out) => {
+    if (out.totalNewDependencyEdges === 0) return 1
     const edgePenalty =
       out.crossBoundaryEdges * 0.2 + out.crossPackageEdges * 0.1 + out.crossCrateEdges * 0.15
-    const sizePenalty = Math.min(0.5, (out.linesAdded + out.linesDeleted) / 2000)
-    return Math.max(0, 1 - edgePenalty - sizePenalty)
+    return Math.max(0, 1 - edgePenalty)
   },
   diagnose: (out): ReadonlyArray<Diagnostic> => [
     {

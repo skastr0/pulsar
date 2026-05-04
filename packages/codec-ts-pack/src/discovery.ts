@@ -6,10 +6,13 @@ import { simpleGit } from "simple-git"
 export interface PackageManifest {
   readonly name: string | undefined
   readonly version: string | undefined
+  readonly private: boolean
+  readonly scripts: Readonly<Record<string, string>>
   readonly dependencies: Readonly<Record<string, string>>
   readonly devDependencies: Readonly<Record<string, string>>
   readonly peerDependencies: Readonly<Record<string, string>>
   readonly optionalDependencies: Readonly<Record<string, string>>
+  readonly entrypoints: ReadonlyArray<string>
 }
 
 export interface PackageInfo {
@@ -70,10 +73,13 @@ const readPackageManifest = async (
     return {
       name: asOptionalString(parsed.name),
       version: asOptionalString(parsed.version),
+      private: parsed.private === true,
+      scripts: asStringRecord(parsed.scripts),
       dependencies: asDependencyRecord(parsed.dependencies),
       devDependencies: asDependencyRecord(parsed.devDependencies),
       peerDependencies: asDependencyRecord(parsed.peerDependencies),
       optionalDependencies: asDependencyRecord(parsed.optionalDependencies),
+      entrypoints: collectManifestEntrypoints(parsed),
     }
   } catch {
     return undefined
@@ -84,6 +90,10 @@ const asOptionalString = (value: unknown): string | undefined =>
   typeof value === "string" && value.length > 0 ? value : undefined
 
 const asDependencyRecord = (value: unknown): Readonly<Record<string, string>> => {
+  return asStringRecord(value)
+}
+
+const asStringRecord = (value: unknown): Readonly<Record<string, string>> => {
   if (value === null || typeof value !== "object") {
     return {}
   }
@@ -93,6 +103,34 @@ const asDependencyRecord = (value: unknown): Readonly<Record<string, string>> =>
       .filter((entry): entry is [string, string] => typeof entry[1] === "string")
       .sort(([left], [right]) => left.localeCompare(right)),
   )
+}
+
+const collectManifestEntrypoints = (manifest: Record<string, unknown>): ReadonlyArray<string> => {
+  const entrypoints = new Set<string>()
+  for (const key of ["main", "module", "types", "typings", "browser"]) {
+    addEntrypoint(entrypoints, manifest[key])
+  }
+  addEntrypoint(entrypoints, manifest.bin)
+  addEntrypoint(entrypoints, manifest.exports)
+  return [...entrypoints].sort((left, right) => left.localeCompare(right))
+}
+
+const addEntrypoint = (entrypoints: Set<string>, value: unknown): void => {
+  if (typeof value === "string") {
+    if (value.length > 0) entrypoints.add(value)
+    return
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      addEntrypoint(entrypoints, item)
+    }
+    return
+  }
+  if (value !== null && typeof value === "object") {
+    for (const item of Object.values(value)) {
+      addEntrypoint(entrypoints, item)
+    }
+  }
 }
 
 const findTsconfigs = (rootDir: string): Effect.Effect<ReadonlyArray<string>> =>

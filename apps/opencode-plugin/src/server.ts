@@ -8,11 +8,6 @@ import {
   renderAgentConstraintSystemPrompt,
 } from "./server/agent-constraints"
 import { loadTasteVectorForWorktree } from "./server/codec-observer"
-import {
-  createEpistemologyBridgeState,
-  observeEpistemologyBusEvent,
-  renderEpistemologyObserverContext,
-} from "./server/epistemology-bridge"
 import { chatParams, beforeToolExecute, onEvent } from "./server/hooks"
 import { makeServerLayer, type ServerRuntimeEnv } from "./server/layers"
 import { maybeHandleProbeSessionOpen } from "./server/probe-bridge"
@@ -25,7 +20,6 @@ const server: Plugin = async (input, rawOptions) => {
   )
   const runtime = ManagedRuntime.make(makeServerLayer({ input, options }))
   const tasteCodecState = createTasteCodecState()
-  const epistemologyBridgeState = createEpistemologyBridgeState()
 
   const run = <A>(
     name: string,
@@ -40,16 +34,6 @@ const server: Plugin = async (input, rawOptions) => {
   return {
     event: async (eventInput) => {
       await run("event", onEvent(eventInput))
-      await run(
-        "event.epistemology",
-        Effect.tryPromise(() =>
-          observeEpistemologyBusEvent({
-            event: eventInput.event,
-            worktree: input.worktree,
-            state: epistemologyBridgeState,
-          }),
-        ),
-      )
     },
     "tool.execute.before": async (hookInput, output) => {
       await run(
@@ -118,15 +102,6 @@ const server: Plugin = async (input, rawOptions) => {
       })
       if (constraintContext && !output.system.includes(constraintContext)) {
         output.system.push(constraintContext)
-      }
-
-      const epistemologyContext = await renderEpistemologyObserverContext({
-        worktree: input.worktree,
-        vector,
-        state: epistemologyBridgeState,
-      })
-      if (epistemologyContext && !output.system.includes(epistemologyContext)) {
-        output.system.push(epistemologyContext)
       }
     },
     tool: makeServerTools(run),

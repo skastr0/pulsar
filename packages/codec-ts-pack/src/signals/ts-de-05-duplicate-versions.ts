@@ -26,6 +26,8 @@ export interface TsDe05Output {
   readonly totalPackages: number
   readonly totalDuplicateInstances: number
   readonly diagnosticLimit: number
+  readonly lockfileStatus: "bun" | "unsupported" | "missing"
+  readonly lockfileFiles: ReadonlyArray<string>
 }
 
 const UNSUPPORTED_LOCKFILES = ["package-lock.json", "pnpm-lock.yaml", "yarn.lock"] as const
@@ -46,8 +48,15 @@ export const TsDe05: Signal<TsDe05Config, TsDe05Output, SignalContextTag> = {
       const result = yield* Effect.tryPromise({
         try: async (): Promise<TsDe05Output> => {
           const lockfile = await resolveLockfile(context.worktreePath)
-          if (lockfile.kind === "unsupported") {
-            throw new Error(`Lockfile format not yet supported: ${lockfile.files.join(", ")}`)
+          if (lockfile.kind !== "bun") {
+            return {
+              duplicates: [],
+              totalPackages: 0,
+              totalDuplicateInstances: 0,
+              diagnosticLimit: config.top_n_diagnostics,
+              lockfileStatus: lockfile.kind,
+              lockfileFiles: lockfile.files,
+            }
           }
 
           const parsed = await readBunLockFile(lockfile.path)
@@ -68,9 +77,11 @@ export const TsDe05: Signal<TsDe05Config, TsDe05Output, SignalContextTag> = {
 
           return {
             duplicates,
-            totalPackages: byName.size,
+            totalPackages: resolvedPackages.length,
             totalDuplicateInstances: duplicates.reduce((sum, group) => sum + group.instanceCount, 0),
             diagnosticLimit: config.top_n_diagnostics,
+            lockfileStatus: "bun",
+            lockfileFiles: [lockfile.path],
           }
         },
         catch: (cause) =>
@@ -84,11 +95,27 @@ export const TsDe05: Signal<TsDe05Config, TsDe05Output, SignalContextTag> = {
     }),
   score: (out) => {
     if (out.totalPackages === 0) return 1
-    const ratio = (out.duplicates.length / out.totalPackages) * 10
-    return Math.max(0, 1 - Math.min(1, ratio))
+    const duplicateGroupRatio = out.duplicates.length / out.totalPackages
+    const duplicateInstanceRatio = out.totalDuplicateInstances / out.totalPackages
+    const penalty = duplicateGroupRatio * 2 + duplicateInstanceRatio * 0.15
+    return Math.max(0, 1 - Math.min(1, penalty))
   },
-  diagnose: (out): ReadonlyArray<Diagnostic> =>
-    out.duplicates.slice(0, out.diagnosticLimit).map((group) => ({
+  diagnose: (out): ReadonlyArray<Diagnostic> => {
+    if (out.lockfileStatus !== "bun") {
+      return [{
+        severity: "info" as const,
+        message:
+          out.lockfileStatus === "missing"
+            ? "No supported lockfile found; duplicate-version analysis skipped"
+            : `Lockfile format not yet supported: ${out.lockfileFiles.join(", ")}`,
+        data: {
+          lockfileStatus: out.lockfileStatus,
+          files: out.lockfileFiles.slice(),
+        },
+      }]
+    }
+
+    return out.duplicates.slice(0, out.diagnosticLimit).map((group) => ({
       severity: "warn" as const,
       message:
         `Duplicate dependency versions for ${group.name}: ` +
@@ -102,7 +129,8 @@ export const TsDe05: Signal<TsDe05Config, TsDe05Output, SignalContextTag> = {
           chain: chain.chain.slice(),
         })),
       },
-    })),
+    }))
+  },
 }
 
 const resolveLockfile = async (
@@ -110,6 +138,7 @@ const resolveLockfile = async (
 ): Promise<
   | { readonly kind: "bun"; readonly path: string }
   | { readonly kind: "unsupported"; readonly files: ReadonlyArray<string> }
+  | { readonly kind: "missing"; readonly files: ReadonlyArray<string> }
 > => {
   const bunLockPath = join(worktreePath, "bun.lock")
   if (await exists(bunLockPath)) {
@@ -131,7 +160,7 @@ const resolveLockfile = async (
     return { kind: "unsupported", files: unsupported }
   }
 
-  return { kind: "unsupported", files: ["no supported lockfile found"] }
+  return { kind: "missing", files: [] }
 }
 
 const exists = async (path: string): Promise<boolean> => {

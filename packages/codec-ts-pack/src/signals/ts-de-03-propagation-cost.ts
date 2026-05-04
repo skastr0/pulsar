@@ -31,6 +31,8 @@ export interface TsDe03Output {
   readonly top10Propagators: ReadonlyArray<{ file: string; reverseReach: number }>
   readonly totalModules: number
   readonly reachabilityMode: "bitset" | "bloom"
+  readonly target: number
+  readonly scale: number
   readonly smallSampleThreshold: number
   readonly diagnosticLimit: number
 }
@@ -49,8 +51,8 @@ export const TsDe03: Signal<TsDe03Config, TsDe03Output, TsProjectTag> = {
       "**/dist/**",
       "**/.turbo/**",
     ],
-    target: 0.1,
-    scale: 0.3,
+    target: 0.3,
+    scale: 0.4,
     small_sample_threshold: 20,
     top_n_diagnostics: 10,
   },
@@ -123,6 +125,8 @@ export const TsDe03: Signal<TsDe03Config, TsDe03Output, TsProjectTag> = {
             top10Propagators,
             totalModules,
             reachabilityMode: reverseReach.mode,
+            target: config.target,
+            scale: config.scale,
             smallSampleThreshold: config.small_sample_threshold,
             diagnosticLimit: config.top_n_diagnostics,
           }
@@ -137,7 +141,7 @@ export const TsDe03: Signal<TsDe03Config, TsDe03Output, TsProjectTag> = {
       return result
     }),
   score: (out) => {
-    const penalty = (out.propagationCost - 0.1) / 0.3
+    const penalty = (out.propagationCost - out.target) / out.scale
     return Math.max(0, 1 - Math.min(1, Math.max(0, penalty)))
   },
   diagnose: (out): ReadonlyArray<Diagnostic> => {
@@ -153,6 +157,10 @@ export const TsDe03: Signal<TsDe03Config, TsDe03Output, TsProjectTag> = {
           threshold: out.smallSampleThreshold,
         },
       })
+    }
+
+    if (out.propagationCost <= out.target) {
+      return diagnostics
     }
 
     diagnostics.push(

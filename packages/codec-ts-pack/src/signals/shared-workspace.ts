@@ -14,10 +14,16 @@ export type DependencyGroupName =
   | "optionalDependencies"
 
 const NODE_BUILTINS = new Set(
-  builtinModules.flatMap((entry) => {
-    const bare = entry.startsWith("node:") ? entry.slice(5) : entry
-    return [bare, `node:${bare}`]
-  }),
+  [
+    ...builtinModules.flatMap((entry) => {
+      const bare = entry.startsWith("node:") ? entry.slice(5) : entry
+      return [bare, `node:${bare}`]
+    }),
+    "test",
+    "node:test",
+    "sqlite",
+    "node:sqlite",
+  ],
 )
 
 export const packageForFile = (
@@ -58,11 +64,13 @@ export const normalizePackageSpecifier = (specifier: string): string | undefined
   if (specifier.startsWith(".") || specifier.startsWith("/") || specifier.startsWith("#")) {
     return undefined
   }
+  if (specifier.startsWith("@/")) return undefined
   if (specifier.startsWith("bun:")) return specifier
   const withoutProtocol = specifier.startsWith("npm:") ? specifier.slice(4) : specifier
   if (withoutProtocol.startsWith("node:")) {
     return withoutProtocol
   }
+  if (withoutProtocol.includes(":")) return undefined
 
   const segments = withoutProtocol.split("/")
   if (withoutProtocol.startsWith("@")) {

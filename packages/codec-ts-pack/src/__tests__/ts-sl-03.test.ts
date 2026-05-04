@@ -75,6 +75,93 @@ const z: string = 123;
     expect(out.missingJustificationCount).toBe(0)
   })
 
+  test("accepts inline TypeScript directive explanations as justification", async () => {
+    await repo.write(
+      "utils.ts",
+      `
+// @ts-expect-error upstream package does not publish this internal API type
+import InternalConfig from "untyped-package/internal";
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl03, TsSl03.defaultConfig)
+    expect(out.suppressions.length).toBe(1)
+    expect(out.suppressions[0]?.justification).toBe("active")
+    expect(out.suppressions[0]?.justificationSource).toBe("inline")
+    expect(out.missingJustificationCount).toBe(0)
+    expect(TsSl03.diagnose(out)[0]?.message).toBe("ts-expect-error has inline justification")
+  })
+
+  test("accepts eslint disable comments with inline reason markers", async () => {
+    await repo.write(
+      "utils.ts",
+      `
+// eslint-disable-next-line no-console -- CLI command intentionally writes progress output
+console.log("building");
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl03, TsSl03.defaultConfig)
+    expect(out.suppressions.length).toBe(1)
+    expect(out.suppressions[0]?.justification).toBe("active")
+    expect(out.suppressions[0]?.justificationSource).toBe("inline")
+    expect(out.missingJustificationCount).toBe(0)
+  })
+
+  test("accepts adjacent explanatory comments as contextual justification", async () => {
+    await repo.write(
+      "utils.ts",
+      `
+// Upstream generated type requires any at this adapter boundary.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const value: any = input;
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl03, TsSl03.defaultConfig)
+    expect(out.suppressions.length).toBe(1)
+    expect(out.suppressions[0]?.justification).toBe("active")
+    expect(out.suppressions[0]?.justificationSource).toBe("contextual")
+    expect(out.suppressions[0]?.rule).toBe("@typescript-eslint/no-explicit-any")
+    expect(out.missingJustificationCount).toBe(0)
+    expect(TsSl03.diagnose(out)[0]?.message).toBe(
+      "eslint-disable (@typescript-eslint/no-explicit-any) has contextual justification",
+    )
+  })
+
+  test("accepts adjacent JSDoc as contextual justification", async () => {
+    await repo.write(
+      "utils.ts",
+      `
+/** Third-party package lacks declarations for this nested import. */
+// @ts-expect-error
+import InternalConfig from "untyped-package/internal";
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl03, TsSl03.defaultConfig)
+    expect(out.suppressions.length).toBe(1)
+    expect(out.suppressions[0]?.justification).toBe("active")
+    expect(out.suppressions[0]?.justificationSource).toBe("contextual")
+    expect(out.missingJustificationCount).toBe(0)
+  })
+
+  test("does not treat non-explanatory adjacent comments as justification", async () => {
+    await repo.write(
+      "utils.ts",
+      `
+// TODO
+// @ts-ignore
+const x: string = 123;
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl03, TsSl03.defaultConfig)
+    expect(out.suppressions.length).toBe(1)
+    expect(out.suppressions[0]?.justification).toBe("missing")
+    expect(out.missingJustificationCount).toBe(1)
+  })
+
   test("flags expired justifications", async () => {
     await repo.write(
       "utils.ts",
@@ -90,7 +177,7 @@ const w: string = 123;
     expect(out.expiredCount).toBe(1)
   })
 
-  test("score is 0 when unjustified suppressions exist", async () => {
+  test("score decreases when unjustified suppressions exist", async () => {
     await repo.write(
       "utils.ts",
       `
@@ -100,7 +187,8 @@ const x = 1;
     )
 
     const out = await runSignal(repo.root, TsSl03, TsSl03.defaultConfig)
-    expect(TsSl03.score(out)).toBe(0)
+    expect(TsSl03.score(out)).toBeLessThan(1)
+    expect(TsSl03.score(out)).toBeGreaterThan(0)
   })
 
   test("score is 1 when no suppressions", async () => {
@@ -112,6 +200,27 @@ const x = 1;
     )
 
     const out = await runSignal(repo.root, TsSl03, TsSl03.defaultConfig)
+    expect(TsSl03.score(out)).toBe(1)
+  })
+
+  test("ignores generated env declarations and runtime test setup suppressions", async () => {
+    await repo.write(
+      "src/sst-env.d.ts",
+      `
+/* eslint-disable */
+import "sst";
+`,
+    )
+    await repo.write(
+      "happydom.ts",
+      `
+// @ts-expect-error simplified canvas mock
+HTMLCanvasElement.prototype.getContext = () => ({});
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl03, TsSl03.defaultConfig)
+    expect(out.suppressions).toEqual([])
     expect(TsSl03.score(out)).toBe(1)
   })
 
@@ -129,6 +238,63 @@ const x = 1;
     expect(diagnostics.length).toBeGreaterThan(0)
     expect(diagnostics[0]?.data?.hash).toBeDefined()
     expect(typeof diagnostics[0]?.data?.hash).toBe("string")
+  })
+
+  test("diagnostics use precise suppression wording and respect diagnostic limit", async () => {
+    await repo.write(
+      "utils.ts",
+      `// @ts-ignore
+const a: string = 1;
+// taste-allow BUG-123 until:2020-01-01 expired suppression
+// @ts-expect-error
+const b: string = 2;
+// taste-allow BUG-456 until:2026-12-01 temporary upstream mismatch
+// eslint-disable-next-line no-console
+console.log(a, b);
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl03, {
+      ...TsSl03.defaultConfig,
+      top_n_diagnostics: 2,
+    })
+    const diagnostics = TsSl03.diagnose(out)
+
+    expect(out.suppressions.length).toBe(3)
+    expect(diagnostics.length).toBe(2)
+    expect(diagnostics.map((diagnostic) => diagnostic.message)).toEqual([
+      "ts-ignore is missing justification",
+      "ts-expect-error justification expired",
+    ])
+
+    const activeDiagnostics = TsSl03.diagnose({ ...out, diagnosticLimit: 3 })
+    expect(activeDiagnostics[2]?.message).toBe("eslint-disable (no-console) has active bypass BUG-456")
+  })
+
+  test("diagnostics prioritize missing justifications over justified suppressions", async () => {
+    await repo.write(
+      "a-inline.ts",
+      `
+// @ts-expect-error upstream package does not publish this internal API type
+import InternalConfig from "untyped-package/internal";
+`,
+    )
+    await repo.write(
+      "z-missing.ts",
+      `
+// @ts-ignore
+const x: string = 1;
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl03, {
+      ...TsSl03.defaultConfig,
+      top_n_diagnostics: 1,
+    })
+    const diagnostics = TsSl03.diagnose(out)
+
+    expect(diagnostics).toHaveLength(1)
+    expect(diagnostics[0]?.message).toBe("ts-ignore is missing justification")
   })
 
   test("diff-aware: only flags suppressions in changed hunks", async () => {

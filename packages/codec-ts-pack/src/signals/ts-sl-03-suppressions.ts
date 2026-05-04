@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises"
 import {
   SignalContextTag,
   parseBypasses,
@@ -24,6 +23,7 @@ export interface Suppression {
   readonly kind: "ts-ignore" | "ts-expect-error" | "eslint-disable"
   readonly rule: string | undefined
   readonly justification: "active" | "expired" | "missing"
+  readonly justificationSource: "bypass" | "inline" | "contextual" | undefined
   readonly bypassTicket: string | undefined
 }
 
@@ -32,6 +32,7 @@ export interface TsSl03Output {
   readonly unjustifiedCount: number
   readonly expiredCount: number
   readonly missingJustificationCount: number
+  readonly diagnosticLimit: number
   readonly scopeMode: "whole-tree" | "changed-hunks"
 }
 
@@ -46,8 +47,46 @@ export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalCon
       "**/node_modules/**",
       "**/dist/**",
       "**/.turbo/**",
+      "**/vendor/**",
+      "**/gen/**",
+      "**/*.gen.ts",
+      "**/*.gen.tsx",
+      "**/*.generated.ts",
+      "**/*.generated.tsx",
+      "**/sst-env.d.ts",
     ],
-    test_globs: ["**/*.test.ts", "**/*.spec.ts", "**/__tests__/**"],
+    test_globs: [
+      "**/*.test.ts",
+      "**/*.test.tsx",
+      "**/*.spec.ts",
+      "**/*.spec.tsx",
+      "**/*.stories.ts",
+      "**/*.stories.tsx",
+      "**/__tests__/**",
+      "**/test/**",
+      "**/tests/**",
+      "**/test-support/**",
+      "**/*test-support.ts",
+      "**/*test-support.tsx",
+      "**/*.test-support.ts",
+      "**/*.test-support.tsx",
+      "**/test-helpers.ts",
+      "**/*test-helpers.ts",
+      "**/*test-helpers.tsx",
+      "**/*.test-helpers.ts",
+      "**/*.test-helpers.tsx",
+      "**/test-mocks.ts",
+      "**/*test-mocks.ts",
+      "**/*test-mocks.tsx",
+      "**/*.test-mocks.ts",
+      "**/*.test-mocks.tsx",
+      "**/test-harness.ts",
+      "**/*test-harness.ts",
+      "**/*test-harness.tsx",
+      "**/*.test-harness.ts",
+      "**/*.test-harness.tsx",
+      "**/happydom.ts",
+    ],
     top_n_diagnostics: 20,
   },
   inputs: [],
@@ -62,8 +101,9 @@ export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalCon
           for (const sourceFile of project.getSourceFiles()) {
             const path = sourceFile.getFilePath()
             if (isExcluded(path, config.exclude_globs)) continue
+            if (matchesAnyGlob(path, config.test_globs)) continue
 
-            const sourceText = await readFile(path, "utf8")
+            const sourceText = sourceFile.getFullText()
             const bypasses = parseBypasses(sourceText)
 
             const lines = sourceText.split("\n")
@@ -85,13 +125,22 @@ export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalCon
                 continue
               }
 
-              const isTestFile = matchesAnyGlob(path, config.test_globs)
               const attachedBypass = bypasses.find((bypass) =>
                 Math.abs(bypass.line - lineNum) <= 1,
               )
+              const contextualJustification = contextualSuppressionJustification(lines, i)
 
               const justification: "active" | "expired" | "missing" =
-                attachedBypass?.status ?? "missing"
+                attachedBypass?.status ??
+                (suppression.inlineJustification !== undefined || contextualJustification !== undefined ? "active" : "missing")
+              const justificationSource =
+                attachedBypass !== undefined
+                  ? "bypass"
+                  : suppression.inlineJustification !== undefined
+                    ? "inline"
+                    : contextualJustification !== undefined
+                      ? "contextual"
+                      : undefined
 
               suppressions.push({
                 file: path,
@@ -99,20 +148,18 @@ export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalCon
                 kind: suppression.kind,
                 rule: suppression.rule,
                 justification,
+                justificationSource,
                 bypassTicket: attachedBypass?.ticket,
               })
-
-              if (isTestFile && justification === "missing") {
-                void null
-              }
             }
           }
 
           return {
-            suppressions: suppressions.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line),
+            suppressions: suppressions.sort(compareSuppressions),
             unjustifiedCount: suppressions.filter((s) => s.justification === "missing" || s.justification === "expired").length,
             expiredCount: suppressions.filter((s) => s.justification === "expired").length,
             missingJustificationCount: suppressions.filter((s) => s.justification === "missing").length,
+            diagnosticLimit: config.top_n_diagnostics,
             scopeMode: context.changedHunks.length > 0 ? "changed-hunks" : "whole-tree",
           }
         },
@@ -122,48 +169,183 @@ export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalCon
     }),
   score: (out) => {
     if (out.suppressions.length === 0) return 1
-    if (out.unjustifiedCount > 0) return 0
-    return Math.max(0, 1 - out.suppressions.length / 25)
+    const penalty =
+      out.expiredCount * 4 +
+      out.missingJustificationCount +
+      (out.suppressions.length - out.unjustifiedCount) * 0.25
+    return Math.max(0, 1 - penalty / 100)
   },
   diagnose: (out): ReadonlyArray<Diagnostic> =>
-    out.suppressions.slice(0, out.suppressions.length).map((suppression) => {
+    out.suppressions.slice(0, out.diagnosticLimit).map((suppression) => {
       const isUnjustified = suppression.justification === "missing" || suppression.justification === "expired"
       return {
-        severity: isUnjustified ? ("block" as const) : ("info" as const),
-        message: `${suppression.kind}${suppression.rule ? ` (${suppression.rule})` : ""} is ${suppression.justification}`,
+        severity: suppression.justification === "expired"
+          ? ("block" as const)
+          : isUnjustified
+            ? ("warn" as const)
+            : ("info" as const),
+        message: suppressionMessage(suppression),
         location: { file: suppression.file, line: suppression.line },
         data: {
           hash: computeDiagnosticHash(`${suppression.file}:${suppression.line}:${suppression.kind}`),
           kind: suppression.kind,
           rule: suppression.rule,
           justification: suppression.justification,
+          justificationSource: suppression.justificationSource,
           bypassTicket: suppression.bypassTicket,
         },
       }
     }),
 }
 
-const extractSuppression = (line: string): { kind: "ts-ignore" | "ts-expect-error" | "eslint-disable"; rule: string | undefined } | undefined => {
+const compareSuppressions = (a: Suppression, b: Suppression): number =>
+  suppressionPriority(a) - suppressionPriority(b) ||
+  a.file.localeCompare(b.file) ||
+  a.line - b.line
+
+const suppressionPriority = (suppression: Suppression): number => {
+  if (suppression.justification === "missing") return 0
+  if (suppression.justification === "expired") return 1
+  return 2
+}
+
+const suppressionMessage = (suppression: Suppression): string => {
+  const subject = `${suppression.kind}${suppression.rule ? ` (${suppression.rule})` : ""}`
+  if (suppression.justification === "missing") {
+    return `${subject} is missing justification`
+  }
+  if (suppression.justification === "expired") {
+    return `${subject} justification expired`
+  }
+  if (suppression.justificationSource === "inline") {
+    return `${subject} has inline justification`
+  }
+  if (suppression.justificationSource === "contextual") {
+    return `${subject} has contextual justification`
+  }
+  return `${subject} has active bypass${suppression.bypassTicket ? ` ${suppression.bypassTicket}` : ""}`
+}
+
+const extractSuppression = (
+  line: string,
+): {
+  kind: "ts-ignore" | "ts-expect-error" | "eslint-disable"
+  rule: string | undefined
+  inlineJustification: string | undefined
+} | undefined => {
   const trimmed = line.trim()
 
   const tsIgnoreMatch = /\B@ts-ignore\b/.exec(trimmed)
   if (tsIgnoreMatch) {
-    return { kind: "ts-ignore", rule: undefined }
+    return {
+      kind: "ts-ignore",
+      rule: undefined,
+      inlineJustification: inlineTextAfter(trimmed, tsIgnoreMatch.index + tsIgnoreMatch[0].length),
+    }
   }
 
   const tsExpectMatch = /\B@ts-expect-error\b/.exec(trimmed)
   if (tsExpectMatch) {
-    return { kind: "ts-expect-error", rule: undefined }
+    return {
+      kind: "ts-expect-error",
+      rule: undefined,
+      inlineJustification: inlineTextAfter(trimmed, tsExpectMatch.index + tsExpectMatch[0].length),
+    }
   }
 
-  // Require comment syntax to avoid matching "eslint-disable" inside strings/test descriptions
-  // Match: // eslint-disable or /* eslint-disable */ at start of trimmed line (after optional whitespace)
-  const eslintDisableMatch = /^\s*(?:\/\/\s*|\/\*\s*)eslint-disable(?:-next-line)?(?:-line)?\s*([^\s*\/]*)/.exec(trimmed)
+  // Require comment syntax to avoid matching "eslint-disable" inside strings/test descriptions.
+  const eslintDisableMatch = /^\s*(?:\/\/\s*|\/\*\s*)eslint-disable(?:-next-line|-line)?\b/.exec(trimmed)
   if (eslintDisableMatch) {
-    const rulePart = eslintDisableMatch[1]?.trim()
-    // Clean up any trailing comment closure for block comments (e.g., "rule-name */")
-    const rule = rulePart && rulePart.length > 0 ? rulePart.replace(/\s*\*\/.*$/, "") : undefined
-    return { kind: "eslint-disable", rule }
+    const rule = eslintRuleAfterMarker(trimmed, eslintDisableMatch[0].length)
+    return {
+      kind: "eslint-disable",
+      rule,
+      inlineJustification: inlineEslintJustification(trimmed),
+    }
+  }
+
+  return undefined
+}
+
+const eslintRuleAfterMarker = (line: string, markerEnd: number): string | undefined => {
+  const rest = line
+    .slice(markerEnd)
+    .replace(/\s*\*\/\s*$/, "")
+    .trim()
+  const reasonMarker = rest.indexOf("--")
+  const rule = (reasonMarker === -1 ? rest : rest.slice(0, reasonMarker))
+    .replace(/\s*\*\/.*$/, "")
+    .trim()
+  return rule.length > 0 ? rule : undefined
+}
+
+const inlineTextAfter = (line: string, index: number): string | undefined => {
+  const text = line
+    .slice(index)
+    .replace(/^\s*[:,-]?\s*/, "")
+    .replace(/\s*\*\/\s*$/, "")
+    .trim()
+  return isMeaningfulInlineJustification(text) ? text : undefined
+}
+
+const inlineEslintJustification = (line: string): string | undefined => {
+  const marker = line.indexOf("--")
+  if (marker === -1) return undefined
+  const text = line
+    .slice(marker + 2)
+    .replace(/\s*\*\/\s*$/, "")
+    .trim()
+  return isMeaningfulInlineJustification(text) ? text : undefined
+}
+
+const isMeaningfulInlineJustification = (text: string): boolean => {
+  if (text.length < 8) return false
+  return /[A-Za-z]{3,}/.test(text)
+}
+
+const contextualSuppressionJustification = (lines: ReadonlyArray<string>, suppressionIndex: number): string | undefined => {
+  const previous = lines[suppressionIndex - 1]
+  if (previous === undefined || previous.trim() === "") return undefined
+
+  const lineComment = contiguousLineCommentText(lines, suppressionIndex - 1)
+  if (lineComment !== undefined) return lineComment
+
+  const blockComment = precedingBlockCommentText(lines, suppressionIndex - 1)
+  return blockComment
+}
+
+const contiguousLineCommentText = (lines: ReadonlyArray<string>, endIndex: number): string | undefined => {
+  const comments: Array<string> = []
+  for (let i = endIndex; i >= 0; i--) {
+    const trimmed = lines[i]?.trim()
+    if (trimmed === undefined || !trimmed.startsWith("//")) break
+    if (extractSuppression(trimmed) !== undefined || trimmed.includes("taste-allow")) break
+    comments.unshift(trimmed.replace(/^\/\/\s?/, "").trim())
+  }
+
+  const text = comments.join(" ").trim()
+  return isMeaningfulInlineJustification(text) ? text : undefined
+}
+
+const precedingBlockCommentText = (lines: ReadonlyArray<string>, endIndex: number): string | undefined => {
+  const last = lines[endIndex]?.trim()
+  if (last === undefined || !last.endsWith("*/")) return undefined
+
+  const comments: Array<string> = []
+  for (let i = endIndex; i >= 0; i--) {
+    const trimmed = lines[i]?.trim()
+    if (trimmed === undefined) break
+    comments.unshift(
+      trimmed
+        .replace(/^\/\*\*?\s?/, "")
+        .replace(/\*\/$/, "")
+        .replace(/^\*\s?/, "")
+        .trim(),
+    )
+    if (trimmed.startsWith("/*")) {
+      const text = comments.join(" ").trim()
+      return isMeaningfulInlineJustification(text) ? text : undefined
+    }
   }
 
   return undefined

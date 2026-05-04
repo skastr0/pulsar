@@ -7,26 +7,16 @@ import {
 } from "@taste-codec/core"
 import { Effect, Schema } from "effect"
 import {
-  type ArrowFunction,
-  type ConstructorDeclaration,
-  type FunctionDeclaration,
-  type FunctionExpression,
-  type GetAccessorDeclaration,
-  type MethodDeclaration,
-  Node,
-  type SetAccessorDeclaration,
   type SourceFile,
+  ts,
 } from "ts-morph"
 import { TsProjectTag } from "../ts-project.js"
-
-type FnLike =
-  | FunctionDeclaration
-  | MethodDeclaration
-  | ArrowFunction
-  | FunctionExpression
-  | ConstructorDeclaration
-  | GetAccessorDeclaration
-  | SetAccessorDeclaration
+import {
+  compilerPropertyNameText as propertyNameText,
+  isCompilerFunctionLike,
+  type CompilerFunctionLike,
+} from "./shared-compiler-functions.js"
+import { isExcluded } from "./shared-globs.js"
 
 export const TsLd02Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
@@ -93,10 +83,47 @@ export const TsLd02: Signal<TsLd02Config, TsLd02Output, TsProjectTag> = {
   defaultConfig: {
     exclude_globs: [
       "**/*.test.ts",
+      "**/*.test.tsx",
       "**/*.spec.ts",
+      "**/*.spec.tsx",
+      "**/*.stories.ts",
+      "**/*.stories.tsx",
+      "**/*.d.ts",
       "**/node_modules/**",
       "**/dist/**",
       "**/.turbo/**",
+      "**/vendor/**",
+      "**/gen/**",
+      "**/generated/**",
+      "**/*.gen.ts",
+      "**/*.gen.tsx",
+      "**/*.generated.ts",
+      "**/*.generated.tsx",
+      "**/sst-env.d.ts",
+      "**/__tests__/**",
+      "**/test/**",
+      "**/tests/**",
+      "**/test-support/**",
+      "**/*test-support.ts",
+      "**/*test-support.tsx",
+      "**/*.test-support.ts",
+      "**/*.test-support.tsx",
+      "**/test-helpers.ts",
+      "**/*test-helpers.ts",
+      "**/*test-helpers.tsx",
+      "**/*.test-helpers.ts",
+      "**/*.test-helpers.tsx",
+      "**/test-mocks.ts",
+      "**/*test-mocks.ts",
+      "**/*test-mocks.tsx",
+      "**/*.test-mocks.ts",
+      "**/*.test-mocks.tsx",
+      "**/test-harness.ts",
+      "**/*test-harness.ts",
+      "**/*test-harness.tsx",
+      "**/*.test-harness.ts",
+      "**/*.test-harness.tsx",
+      "**/happydom.ts",
     ],
     max_function_loc: 50,
     max_file_loc: 300,
@@ -117,21 +144,17 @@ export const TsLd02: Signal<TsLd02Config, TsLd02Output, TsProjectTag> = {
           for (const sf of project.getSourceFiles()) {
             const path = sf.getFilePath()
             if (isExcluded(path, config.exclude_globs)) continue
-            const fileLoc = effectiveLoc(sf.getFullText())
+            const locCounter = buildEffectiveLineCounter(sf.getFullText())
+            const fileLoc = locCounter.total
             fileLocs.push(fileLoc)
             allFiles.push({ file: path, loc: fileLoc })
 
             const bucket: Array<number> = []
-            for (const fn of collectFunctions(sf)) {
-              const loc = functionLoc(fn)
+            for (const fn of collectFunctionSizes(sf, locCounter)) {
+              const loc = fn.loc
               bucket.push(loc)
               allFunctionLocs.push(loc)
-              allFunctions.push({
-                file: path,
-                name: functionName(fn),
-                line: fn.getStartLineNumber(),
-                loc,
-              })
+              allFunctions.push(fn)
             }
             perFileFunctionLocs.set(path, bucket)
           }
@@ -235,134 +258,131 @@ export const TsLd02: Signal<TsLd02Config, TsLd02Output, TsProjectTag> = {
  * state machine handles `//`, `/* ... *\/`, and template/string
  * boundaries that might contain comment markers.
  */
-const effectiveLoc = (text: string): number => {
-  let count = 0
+interface EffectiveLineCounter {
+  readonly total: number
+  readonly countInclusive: (startLine: number, endLine: number) => number
+}
+
+const buildEffectiveLineCounter = (text: string): EffectiveLineCounter => {
+  const prefixCounts: Array<number> = [0]
   let inBlockComment = false
+
   for (const rawLine of text.split(/\r?\n/)) {
     const line = rawLine.trim()
+    let countsAsCode = false
+
     if (inBlockComment) {
       const close = line.indexOf("*/")
       if (close === -1) {
-        // still comment — skip
+        prefixCounts.push(prefixCounts[prefixCounts.length - 1] ?? 0)
         continue
       }
-      // Exiting comment mid-line; check if anything after it counts.
       inBlockComment = false
       const after = line.slice(close + 2).trim()
-      if (after.length === 0 || after.startsWith("//")) continue
+      if (after.length === 0 || after.startsWith("//")) {
+        prefixCounts.push(prefixCounts[prefixCounts.length - 1] ?? 0)
+        continue
+      }
       if (after.startsWith("/*")) {
         const close2 = after.indexOf("*/", 2)
         if (close2 === -1) {
           inBlockComment = true
+          prefixCounts.push(prefixCounts[prefixCounts.length - 1] ?? 0)
           continue
         }
       }
-      count += 1
-      continue
-    }
-    if (line === "") continue
-    if (line.startsWith("//")) continue
-    if (line.startsWith("/*")) {
+      countsAsCode = true
+    } else if (line === "" || line.startsWith("//")) {
+      countsAsCode = false
+    } else if (line.startsWith("/*")) {
       const close = line.indexOf("*/", 2)
       if (close === -1) {
         inBlockComment = true
-        continue
+        countsAsCode = false
+      } else {
+        const after = line.slice(close + 2).trim()
+        countsAsCode = after.length > 0 && !after.startsWith("//")
       }
-      // single-line block comment; check for trailing code.
-      const after = line.slice(close + 2).trim()
-      if (after.length === 0 || after.startsWith("//")) continue
-      count += 1
-      continue
+    } else {
+      countsAsCode = true
     }
-    count += 1
+
+    const previous = prefixCounts[prefixCounts.length - 1] ?? 0
+    prefixCounts.push(previous + (countsAsCode ? 1 : 0))
   }
-  return count
+
+  return {
+    total: prefixCounts[prefixCounts.length - 1] ?? 0,
+    countInclusive: (startLine, endLine) => {
+      const start = Math.max(0, startLine)
+      const end = Math.min(prefixCounts.length - 2, endLine)
+      if (end < start) return 0
+      return (prefixCounts[end + 1] ?? 0) - (prefixCounts[start] ?? 0)
+    },
+  }
 }
 
-const functionLoc = (fn: FnLike): number => {
-  const body = getFunctionBodyText(fn)
+const collectFunctionSizes = (
+  sourceFile: SourceFile,
+  locCounter: EffectiveLineCounter,
+): ReadonlyArray<FunctionSize> => {
+  const compilerSourceFile = sourceFile.compilerNode
+  const file = sourceFile.getFilePath()
+  const functions: Array<FunctionSize> = []
+
+  const visit = (node: ts.Node): void => {
+    if (isCompilerFunctionLike(node)) {
+      const start = node.getStart(compilerSourceFile)
+      functions.push({
+        file,
+        name: functionName(node),
+        line: compilerSourceFile.getLineAndCharacterOfPosition(start).line + 1,
+        loc: functionLoc(node, compilerSourceFile, locCounter),
+      })
+    }
+
+    ts.forEachChild(node, visit)
+  }
+
+  visit(compilerSourceFile)
+  return functions
+}
+
+const functionLoc = (
+  fn: CompilerFunctionLike,
+  sourceFile: ts.SourceFile,
+  locCounter: EffectiveLineCounter,
+): number => {
+  const body = getFunctionBodyNode(fn)
   if (body === undefined) return 0
-  return effectiveLoc(body)
+  const startLine = sourceFile.getLineAndCharacterOfPosition(body.getStart(sourceFile)).line
+  const endLine = sourceFile.getLineAndCharacterOfPosition(body.getEnd()).line
+  return locCounter.countInclusive(startLine, endLine)
 }
 
-const getFunctionBodyText = (fn: FnLike): string | undefined => {
-  if (
-    Node.isFunctionDeclaration(fn) ||
-    Node.isMethodDeclaration(fn) ||
-    Node.isFunctionExpression(fn) ||
-    Node.isConstructorDeclaration(fn) ||
-    Node.isGetAccessorDeclaration(fn) ||
-    Node.isSetAccessorDeclaration(fn)
-  ) {
-    const body = fn.getBody()
-    return body?.getText()
-  }
-  if (Node.isArrowFunction(fn)) {
-    const body = fn.getBody()
-    return body.getText()
-  }
-  return undefined
-}
+const getFunctionBodyNode = (fn: CompilerFunctionLike): ts.Node | undefined =>
+  "body" in fn ? fn.body : undefined
 
-const functionName = (fn: FnLike): string => {
+const functionName = (fn: CompilerFunctionLike): string => {
   if (
-    Node.isFunctionDeclaration(fn) ||
-    Node.isMethodDeclaration(fn) ||
-    Node.isFunctionExpression(fn)
+    ts.isFunctionDeclaration(fn) ||
+    ts.isMethodDeclaration(fn) ||
+    ts.isFunctionExpression(fn)
   ) {
-    const name = fn.getName?.()
-    if (name !== undefined && name !== "") return name
+    const name = fn.name
+    if (name !== undefined) return propertyNameText(name)
   }
-  if (Node.isArrowFunction(fn) || Node.isFunctionExpression(fn)) {
-    const parent = fn.getParent()
-    if (Node.isVariableDeclaration(parent) || Node.isPropertyAssignment(parent)) {
-      return parent.getName()
+  if (ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)) {
+    const parent = fn.parent
+    if (ts.isVariableDeclaration(parent) && ts.isIdentifier(parent.name)) {
+      return parent.name.text
+    }
+    if (ts.isPropertyAssignment(parent)) {
+      return propertyNameText(parent.name)
     }
   }
-  if (Node.isConstructorDeclaration(fn)) return "<constructor>"
-  if (Node.isGetAccessorDeclaration(fn)) return `<get ${fn.getName()}>`
-  if (Node.isSetAccessorDeclaration(fn)) return `<set ${fn.getName()}>`
+  if (ts.isConstructorDeclaration(fn)) return "<constructor>"
+  if (ts.isGetAccessorDeclaration(fn)) return `<get ${propertyNameText(fn.name)}>`
+  if (ts.isSetAccessorDeclaration(fn)) return `<set ${propertyNameText(fn.name)}>`
   return "<anonymous>"
-}
-
-const collectFunctions = (sourceFile: SourceFile): ReadonlyArray<FnLike> => {
-  const results: Array<FnLike> = []
-  sourceFile.forEachDescendant((node) => {
-    if (
-      Node.isFunctionDeclaration(node) ||
-      Node.isMethodDeclaration(node) ||
-      Node.isArrowFunction(node) ||
-      Node.isFunctionExpression(node) ||
-      Node.isConstructorDeclaration(node) ||
-      Node.isGetAccessorDeclaration(node) ||
-      Node.isSetAccessorDeclaration(node)
-    ) {
-      results.push(node as FnLike)
-    }
-  })
-  return results
-}
-
-/* ------------------------------------------------------------------ */
-/* Glob matching                                                       */
-/* ------------------------------------------------------------------ */
-
-const isExcluded = (path: string, globs: ReadonlyArray<string>): boolean => {
-  for (const glob of globs) {
-    if (matchesGlob(path, glob)) return true
-  }
-  return false
-}
-
-const matchesGlob = (path: string, glob: string): boolean => {
-  const regex = new RegExp(
-    "^" +
-      glob
-        .replace(/\./g, "\\.")
-        .replace(/\*\*/g, "§§")
-        .replace(/\*/g, "[^/]*")
-        .replace(/§§/g, ".*") +
-      "$",
-  )
-  return regex.test(path)
 }

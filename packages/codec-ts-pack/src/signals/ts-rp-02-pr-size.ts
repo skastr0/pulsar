@@ -32,10 +32,18 @@ export interface ImportEdge {
   readonly toBoundary: string | undefined
 }
 
+export interface ChangedFileStat {
+  readonly file: string
+  readonly linesAdded: number
+  readonly linesDeleted: number
+  readonly totalLines: number
+}
+
 export interface TsRp02Output {
   readonly linesAdded: number
   readonly linesDeleted: number
   readonly filesChanged: ReadonlyArray<string>
+  readonly fileStats: ReadonlyArray<ChangedFileStat>
   readonly packagesTouched: ReadonlyArray<string>
   readonly newCrossPackageEdges: ReadonlyArray<ImportEdge>
   readonly newCrossBoundaryEdges: ReadonlyArray<ImportEdge>
@@ -76,7 +84,7 @@ export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackage
             "--numstat",
             "--no-renames",
             "--",
-            "*.{ts,tsx}",
+            ...TS_DIFF_PATHSPECS,
           ])
           if (workingNumstat.trim().length > 0) {
             const diff = await git.raw([
@@ -84,7 +92,7 @@ export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackage
               "--unified=0",
               "--no-renames",
               "--",
-              "*.{ts,tsx}",
+              ...TS_DIFF_PATHSPECS,
             ])
             return parseGitDiff(project, packages, context.worktreePath, workingNumstat, diff, "git-working-tree", config)
           }
@@ -97,7 +105,7 @@ export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackage
               "--no-renames",
               range,
               "--",
-              "*.{ts,tsx}",
+              ...TS_DIFF_PATHSPECS,
             ])
             if (rangeNumstat.trim().length === 0 && context.changedHunks.length > 0) {
               return fromChangedHunks(project, packages, context, config)
@@ -108,7 +116,7 @@ export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackage
               "--no-renames",
               range,
               "--",
-              "*.{ts,tsx}",
+              ...TS_DIFF_PATHSPECS,
             ])
             return parseGitDiff(project, packages, context.worktreePath, rangeNumstat, diff, "git-commit-range", config)
           } catch {
@@ -134,11 +142,14 @@ export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackage
 
     diagnostics.push({
       severity: out.sizeCategory === "oversized" ? ("warn" as const) : ("info" as const),
-      message: `PR surface: +${out.linesAdded} / -${out.linesDeleted} across ${out.filesChanged.length} files (${out.sizeCategory})`,
+      message:
+        `PR surface: +${out.linesAdded} / -${out.linesDeleted} across ${out.filesChanged.length} files ` +
+        `(${out.sizeCategory})${formatLargestFiles(out.fileStats)}`,
       data: {
         linesAdded: out.linesAdded,
         linesDeleted: out.linesDeleted,
         filesChanged: out.filesChanged,
+        largestFiles: out.fileStats.slice(0, 10),
         packagesTouched: out.packagesTouched,
         sizeCategory: out.sizeCategory,
         diffMode: out.diffMode,
@@ -172,21 +183,29 @@ const parseGitDiff = (
   diffMode: TsRp02Output["diffMode"],
   config: TsRp02Config,
 ): TsRp02Output => {
-  const filesChanged: Array<string> = []
+  const statsByFile = new Map<string, ChangedFileStat>()
   let linesAdded = 0
   let linesDeleted = 0
 
   for (const line of numstat.split("\n")) {
     const match = /^(\d+|-)\t(\d+|-)\t(.+)$/.exec(line.trim())
     if (match === null) continue
-    linesAdded += match[1] === "-" ? 0 : Number(match[1])
-    linesDeleted += match[2] === "-" ? 0 : Number(match[2])
-    filesChanged.push(join(worktreePath, match[3]!))
+    const file = join(worktreePath, match[3]!)
+    if (isExcluded(file, config.exclude_globs)) continue
+    const added = match[1] === "-" ? 0 : Number(match[1])
+    const deleted = match[2] === "-" ? 0 : Number(match[2])
+    linesAdded += added
+    linesDeleted += deleted
+    statsByFile.set(file, {
+      file,
+      linesAdded: added,
+      linesDeleted: deleted,
+      totalLines: added + deleted,
+    })
   }
 
-  const uniqueFiles = [...new Set(filesChanged)]
-    .filter((f) => !isExcluded(f, config.exclude_globs))
-    .sort()
+  const fileStats = sortFileStats([...statsByFile.values()])
+  const uniqueFiles = fileStats.map((stat) => stat.file).sort()
 
   const packagesTouched = touchedPackages(packages, uniqueFiles)
   const { crossPackageEdges, crossBoundaryEdges } = parseImportEdges(
@@ -206,6 +225,7 @@ const parseGitDiff = (
     linesAdded,
     linesDeleted,
     filesChanged: uniqueFiles,
+    fileStats,
     packagesTouched,
     newCrossPackageEdges: crossPackageEdges,
     newCrossBoundaryEdges: crossBoundaryEdges,
@@ -213,6 +233,13 @@ const parseGitDiff = (
     sizeCategory,
   }
 }
+
+const TS_DIFF_PATHSPECS = [
+  ":(glob)*.ts",
+  ":(glob)*.tsx",
+  ":(glob)**/*.ts",
+  ":(glob)**/*.tsx",
+]
 
 const fromChangedHunks = (
   project: import("ts-morph").Project,
@@ -225,6 +252,7 @@ const fromChangedHunks = (
       linesAdded: 0,
       linesDeleted: 0,
       filesChanged: [],
+      fileStats: [],
       packagesTouched: [],
       newCrossPackageEdges: [],
       newCrossBoundaryEdges: [],
@@ -236,15 +264,35 @@ const fromChangedHunks = (
   const filesChanged: Array<string> = [
     ...new Set(context.changedHunks.map((hunk) => resolveChangedHunkPath(context.worktreePath, hunk.file))),
   ].filter((f) => !isExcluded(f, config.exclude_globs))
+  const allowedFiles = new Set(filesChanged)
+  const statsByFile = new Map<string, ChangedFileStat>()
+  for (const hunk of context.changedHunks) {
+    const file = resolveChangedHunkPath(context.worktreePath, hunk.file)
+    if (!allowedFiles.has(file)) continue
+    const existing = statsByFile.get(file) ?? {
+      file,
+      linesAdded: 0,
+      linesDeleted: 0,
+      totalLines: 0,
+    }
+    statsByFile.set(file, {
+      file,
+      linesAdded: existing.linesAdded + hunk.newLines,
+      linesDeleted: existing.linesDeleted + hunk.oldLines,
+      totalLines: existing.totalLines + hunk.newLines + hunk.oldLines,
+    })
+  }
+  const fileStats = sortFileStats([...statsByFile.values()])
 
   const packagesTouched = touchedPackages(packages, filesChanged)
-  const totalLines = context.changedHunks.reduce((sum, hunk) => sum + hunk.newLines + hunk.oldLines, 0)
+  const totalLines = fileStats.reduce((sum, stat) => sum + stat.totalLines, 0)
   const sizeCategory = classifySizeCategory(totalLines, config)
 
   return {
-    linesAdded: context.changedHunks.reduce((sum, hunk) => sum + hunk.newLines, 0),
-    linesDeleted: context.changedHunks.reduce((sum, hunk) => sum + hunk.oldLines, 0),
+    linesAdded: fileStats.reduce((sum, stat) => sum + stat.linesAdded, 0),
+    linesDeleted: fileStats.reduce((sum, stat) => sum + stat.linesDeleted, 0),
     filesChanged,
+    fileStats,
     packagesTouched,
     newCrossPackageEdges: [],
     newCrossBoundaryEdges: [],
@@ -271,6 +319,29 @@ const classifySizeCategory = (
   }
   return "oversized"
 }
+
+const sortFileStats = (stats: ReadonlyArray<ChangedFileStat>): ReadonlyArray<ChangedFileStat> =>
+  [...stats].sort(
+    (left, right) =>
+      right.totalLines - left.totalLines ||
+      right.linesAdded - left.linesAdded ||
+      right.linesDeleted - left.linesDeleted ||
+      left.file.localeCompare(right.file),
+  )
+
+const formatLargestFiles = (
+  fileStats: ReadonlyArray<ChangedFileStat>,
+  maxExamples = 3,
+): string => {
+  const examples = fileStats.slice(0, maxExamples)
+  if (examples.length === 0) return ""
+  const remaining = Math.max(0, fileStats.length - examples.length)
+  const suffix = remaining > 0 ? ` (+${remaining} more)` : ""
+  return `; largest files: ${examples.map(formatFileStat).join(", ")}${suffix}`
+}
+
+const formatFileStat = (stat: ChangedFileStat): string =>
+  `${stat.file} (+${stat.linesAdded}/-${stat.linesDeleted})`
 
 const touchedPackages = (
   packages: ReadonlyArray<import("../discovery.js").PackageInfo>,

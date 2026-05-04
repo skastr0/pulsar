@@ -1,4 +1,3 @@
-import { existsSync } from "node:fs"
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { Effect } from "effect"
@@ -69,6 +68,3 @@ export const removeReferenceFile = (repoRoot: string, relativePath: string) =>
     catch: (cause) =>
       new Error(`Failed to remove reference data ${relativePath}: ${String(cause)}`),
   })
-
-export const referenceDataExists = (repoRoot: string, relativePath: string): boolean =>
-  existsSync(resolveReferenceDataPath(repoRoot, relativePath))

@@ -20,9 +20,7 @@ import { TsProjectTag } from "../ts-project.js"
 import { isExcluded } from "./shared-globs.js"
 import {
   STANDARD_UTILITY_TYPE_ALIASES,
-  buildExportedDeclarationSet,
   declarationKey,
-  resolveReferenceLikeDeclarations,
   resolveReferenceLikeName,
 } from "./shared-type-analysis.js"
 
@@ -39,6 +37,7 @@ export interface TypeIndirectionEntry {
   readonly name: string
   readonly line: number
   readonly depth: number
+  readonly exported: boolean
   readonly chain: ReadonlyArray<string>
   readonly cycle: boolean
   readonly truncated: boolean
@@ -64,6 +63,8 @@ type DepthResult = {
 type WalkContext = {
   readonly remainingSteps: number
   readonly aliasStack: ReadonlySet<string>
+  readonly localAliases: ReadonlyMap<string, TypeAliasDeclaration>
+  readonly aliasDepthCache: Map<string, DepthResult>
 }
 
 type TrackedDeclaration = TypeAliasDeclaration | InterfaceDeclaration | ClassDeclaration | EnumDeclaration
@@ -77,13 +78,50 @@ export const TsAb03: Signal<TsAb03Config, TsAb03Output, TsProjectTag> = {
   defaultConfig: {
     exclude_globs: [
       "**/*.test.ts",
+      "**/*.test.tsx",
       "**/*.spec.ts",
+      "**/*.spec.tsx",
+      "**/*.stories.ts",
+      "**/*.stories.tsx",
+      "**/*.d.ts",
       "**/node_modules/**",
       "**/dist/**",
       "**/.turbo/**",
+      "**/vendor/**",
+      "**/gen/**",
+      "**/generated/**",
+      "**/*.gen.ts",
+      "**/*.gen.tsx",
+      "**/*.generated.ts",
+      "**/*.generated.tsx",
+      "**/sst-env.d.ts",
+      "**/__tests__/**",
+      "**/test/**",
+      "**/tests/**",
+      "**/test-support/**",
+      "**/*test-support.ts",
+      "**/*test-support.tsx",
+      "**/*.test-support.ts",
+      "**/*.test-support.tsx",
+      "**/test-helpers.ts",
+      "**/*test-helpers.ts",
+      "**/*test-helpers.tsx",
+      "**/*.test-helpers.ts",
+      "**/*.test-helpers.tsx",
+      "**/test-mocks.ts",
+      "**/*test-mocks.ts",
+      "**/*test-mocks.tsx",
+      "**/*.test-mocks.ts",
+      "**/*.test-mocks.tsx",
+      "**/test-harness.ts",
+      "**/*test-harness.ts",
+      "**/*test-harness.tsx",
+      "**/*.test-harness.ts",
+      "**/*.test-harness.tsx",
+      "**/happydom.ts",
     ],
     max_depth: 4,
-    max_traversal_steps: 32,
+    max_traversal_steps: 16,
     top_n_diagnostics: 10,
   },
   inputs: [],
@@ -99,17 +137,21 @@ export const TsAb03: Signal<TsAb03Config, TsAb03Output, TsProjectTag> = {
             const file = sourceFile.getFilePath()
             if (isExcluded(file, config.exclude_globs)) continue
 
-            const exportedDeclarations = buildExportedDeclarationSet(sourceFile)
-            for (const declaration of collectTrackedDeclarations(sourceFile, exportedDeclarations)) {
+            const localAliases = buildLocalAliasMap(sourceFile)
+            const aliasDepthCache = new Map<string, DepthResult>()
+            for (const declaration of collectTrackedDeclarations(sourceFile)) {
               const result = measureDeclaration(declaration, {
                 remainingSteps: config.max_traversal_steps,
                 aliasStack: new Set<string>(),
+                localAliases,
+                aliasDepthCache,
               })
               declarations.push({
                 file,
                 name: declaration.getName() ?? "<anonymous>",
                 line: declaration.getStartLineNumber(),
                 depth: result.depth,
+                exported: isExportedDeclaration(declaration),
                 chain: result.chain,
                 cycle: result.cycle,
                 truncated: result.truncated,
@@ -153,7 +195,7 @@ export const TsAb03: Signal<TsAb03Config, TsAb03Output, TsProjectTag> = {
   },
   diagnose: (out): ReadonlyArray<Diagnostic> =>
     out.overThreshold.slice(0, out.diagnosticLimit).map((entry) => ({
-      severity: "warn" as const,
+      severity: typeIndirectionSeverity(entry, out.maxDepth),
       message:
         `Type indirection \`${entry.name}\` resolves through ${entry.depth} layers: ` +
         entry.chain.join(" → "),
@@ -168,34 +210,38 @@ export const TsAb03: Signal<TsAb03Config, TsAb03Output, TsProjectTag> = {
 
 const collectTrackedDeclarations = (
   sourceFile: SourceFile,
-  exportedDeclarations: ReadonlySet<string>,
 ): ReadonlyArray<TrackedDeclaration> => {
-  const seen = new Set<string>()
   const results: Array<TrackedDeclaration> = []
 
-  sourceFile.forEachDescendant((node) => {
-    if (Node.isTypeAliasDeclaration(node)) {
-      const key = declarationKey(node)
-      if (!seen.has(key)) {
-        seen.add(key)
-        results.push(node)
-      }
-      return
-    }
-    if (
-      (Node.isInterfaceDeclaration(node) || Node.isClassDeclaration(node) || Node.isEnumDeclaration(node)) &&
-      exportedDeclarations.has(declarationKey(node))
-    ) {
-      const key = declarationKey(node)
-      if (!seen.has(key)) {
-        seen.add(key)
-        results.push(node)
-      }
-    }
-  })
+  results.push(...sourceFile.getTypeAliases())
+  results.push(...sourceFile.getInterfaces().filter(hasExportModifier))
+  results.push(...sourceFile.getClasses().filter(hasExportModifier))
+  results.push(...sourceFile.getEnums().filter(hasExportModifier))
 
   return results
 }
+
+const buildLocalAliasMap = (sourceFile: SourceFile): ReadonlyMap<string, TypeAliasDeclaration> => {
+  const aliases = new Map<string, TypeAliasDeclaration>()
+  for (const declaration of sourceFile.getTypeAliases()) {
+    aliases.set(declaration.getName(), declaration)
+  }
+  return aliases
+}
+
+const hasExportModifier = (node: Node): boolean => {
+  const candidate = node as { getModifiers?: () => ReadonlyArray<{ getKindName: () => string }> }
+  return candidate.getModifiers?.().some((modifier) => modifier.getKindName() === "ExportKeyword") ?? false
+}
+
+const isExportedDeclaration = (node: TrackedDeclaration): boolean =>
+  !Node.isTypeAliasDeclaration(node) || hasExportModifier(node)
+
+const typeIndirectionSeverity = (
+  entry: TypeIndirectionEntry,
+  maxDepth: number,
+): "warn" | "info" =>
+  entry.exported || entry.depth >= maxDepth + 2 ? "warn" : "info"
 
 const measureDeclaration = (
   declaration: TrackedDeclaration,
@@ -233,26 +279,32 @@ const measureAliasDeclaration = (
       truncated: false,
     }
   }
+  const cached = context.aliasDepthCache.get(aliasId)
+  if (cached !== undefined) return cached
 
   const nextStack = new Set(context.aliasStack)
   nextStack.add(aliasId)
   const inner = measureTypeNode(declaration.getTypeNodeOrThrow(), {
     remainingSteps: context.remainingSteps - 1,
     aliasStack: nextStack,
+    localAliases: context.localAliases,
+    aliasDepthCache: context.aliasDepthCache,
   })
-  return {
+  const result = {
     depth: 1 + inner.depth,
     chain: [declaration.getName(), ...inner.chain],
     cycle: inner.cycle,
     truncated: inner.truncated,
   }
+  context.aliasDepthCache.set(aliasId, result)
+  return result
 }
 
 const measureHeritageType = (
   typeNode: ExpressionWithTypeArguments,
   context: WalkContext,
 ): DepthResult => {
-  const declaration = resolveReferenceLikeDeclarations(typeNode).find(Node.isTypeAliasDeclaration)
+  const declaration = context.localAliases.get(typeNode.getExpression().getText())
   if (declaration !== undefined) {
     return measureAliasDeclaration(declaration, context)
   }
@@ -318,12 +370,12 @@ const measureTypeReference = (
   node: import("ts-morph").TypeReferenceNode,
   context: WalkContext,
 ): DepthResult => {
-  const aliasDeclaration = resolveReferenceLikeDeclarations(node).find(Node.isTypeAliasDeclaration)
+  const name = resolveReferenceLikeName(node)
+  const aliasDeclaration = context.localAliases.get(name)
   if (aliasDeclaration !== undefined) {
     return measureAliasDeclaration(aliasDeclaration, stepContext(context))
   }
 
-  const name = resolveReferenceLikeName(node)
   const typeArgumentResults = node
     .getTypeArguments()
     .map((typeArg) => measureTypeNode(typeArg, stepContext(context)))
@@ -392,6 +444,8 @@ const truncatedDepth = (): DepthResult => ({
 const stepContext = (context: WalkContext): WalkContext => ({
   remainingSteps: context.remainingSteps - 1,
   aliasStack: context.aliasStack,
+  localAliases: context.localAliases,
+  aliasDepthCache: context.aliasDepthCache,
 })
 
 const compareIndirectionEntries = (

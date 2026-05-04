@@ -4,10 +4,13 @@ import {
   SignalComputeError,
 } from "@taste-codec/core"
 import { Effect, Schema } from "effect"
-import { collectRustProjectFacts, type RustUseFact } from "../rust-analysis.js"
+import { collectRustProjectFacts } from "../rust-analysis.js"
 import { RustProjectTag } from "../project.js"
 import { DEFAULT_RUST_EXCLUDE_GLOBS } from "./shared-rust-ast.js"
-import { resolveCrateRelativePath } from "./shared-rust-resolution.js"
+import {
+  resolveCrateRelativePath,
+  toLocalRelativeSegments,
+} from "./shared-rust-resolution.js"
 import { isExcluded } from "./shared-globs.js"
 
 export const RsAb01Config = Schema.Struct({
@@ -146,24 +149,4 @@ export const RsAb01: Signal<RsAb01Config, RsAb01Output, RustProjectTag> = {
         analysisMode: out.analysisMode,
       },
     })),
-}
-
-const toLocalRelativeSegments = (
-  useFact: RustUseFact,
-  rootNames: ReadonlySet<string>,
-): ReadonlyArray<string> | undefined => {
-  const [head, ...rest] = useFact.segments
-  if (head === undefined) return undefined
-  const current = useFact.relativeModulePath.split("::")
-  switch (head) {
-    case useFact.crateName:
-    case "crate":
-      return rest
-    case "self":
-      return [...current.slice(1), ...rest]
-    case "super":
-      return [...current.slice(1, -1), ...rest]
-    default:
-      return rootNames.has(head) ? useFact.segments : undefined
-  }
 }

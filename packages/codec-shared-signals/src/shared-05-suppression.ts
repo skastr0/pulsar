@@ -21,6 +21,7 @@ interface RsSuppressionLike {
 
 export interface Shared05SuppressionOutput {
   readonly totalSuppressions: number
+  readonly languageCount: number
   readonly unjustifiedCount: number
   readonly missingJustificationCount: number
   readonly expiredJustificationCount: number
@@ -52,9 +53,11 @@ export const Shared05Suppression: Signal<Shared05SuppressionConfig, Shared05Supp
       const rs = inputs.get("RS-SL-02") as RsSuppressionLike | undefined
       const rustUnjustified =
         (rs?.missingJustificationCount ?? 0) + (rs?.expiredJustificationCount ?? 0)
+      const languageCount = [ts, rs].filter((value) => value !== undefined).length
 
       return {
         totalSuppressions: (ts?.suppressions.length ?? 0) + (rs?.suppressions.length ?? 0),
+        languageCount,
         unjustifiedCount: (ts?.unjustifiedCount ?? 0) + rustUnjustified,
         missingJustificationCount:
           (ts?.missingJustificationCount ?? 0) + (rs?.missingJustificationCount ?? 0),
@@ -81,19 +84,22 @@ export const Shared05Suppression: Signal<Shared05SuppressionConfig, Shared05Supp
       }
     }),
   score: (out) => {
+    if (out.languageCount < 2) return 1
     if (out.totalSuppressions === 0) return 1
-    if (out.unjustifiedCount > 0) {
-      return Math.max(0, 1 - out.unjustifiedCount / 10)
-    }
-    return Math.max(0, 1 - out.totalSuppressions / 50)
+    const penalty =
+      out.expiredJustificationCount * 4 +
+      out.missingJustificationCount +
+      Math.max(0, out.totalSuppressions - out.unjustifiedCount) * 0.25
+    return Math.max(0, 1 - penalty / 100)
   },
   diagnose: (out): ReadonlyArray<Diagnostic> => {
     const diagnostics: Array<Diagnostic> = [
       {
-        severity: out.unjustifiedCount > 0 ? ("warn" as const) : ("info" as const),
+        severity: out.languageCount >= 2 && out.unjustifiedCount > 0 ? ("warn" as const) : ("info" as const),
         message: `Suppression governance: ${out.unjustifiedCount} unjustified suppressions across ${out.totalSuppressions} total suppressions`,
         data: {
           totalSuppressions: out.totalSuppressions,
+          languageCount: out.languageCount,
           unjustifiedCount: out.unjustifiedCount,
           missingJustificationCount: out.missingJustificationCount,
           expiredJustificationCount: out.expiredJustificationCount,

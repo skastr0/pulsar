@@ -39,6 +39,12 @@ describe("ScoringEngine + TS pack integration", () => {
       const { join } = await import("node:path")
 
       const head = revParse("HEAD")
+      const prefix = `taste-codec-worktree-${head.slice(0, 12)}-`
+      const preexisting = new Set(
+        readdirSync(tmpdir()).filter(
+          (name) => name.startsWith(prefix) && existsSync(join(tmpdir(), name)),
+        ),
+      )
       const program = Effect.gen(function* () {
         const registry = yield* buildRegistry([...SHARED_SIGNALS, ...TS_PACK_SIGNALS])
         const EngineLayer = ScoringEngineLayer(
@@ -64,10 +70,7 @@ describe("ScoringEngine + TS pack integration", () => {
       expect(Array.isArray(result.diagnostics)).toBe(true)
 
       // No worktree dirs should linger in tmpdir with our HEAD prefix.
-      const prefix = `taste-codec-worktree-${head.slice(0, 12)}-`
-      const lingering = readdirSync(tmpdir()).filter(
-        (name) => name.startsWith(prefix) && existsSync(join(tmpdir(), name)),
-      )
+      const lingering = await waitForNoNewWorktrees(prefix, preexisting)
       expect(lingering.length).toBe(0)
     },
     120_000,
@@ -159,3 +162,26 @@ describe("ScoringEngine + TS pack integration", () => {
     120_000,
   )
 })
+
+const waitForNoNewWorktrees = async (
+  prefix: string,
+  preexisting: ReadonlySet<string>,
+): Promise<ReadonlyArray<string>> => {
+  const { existsSync, readdirSync } = await import("node:fs")
+  const { tmpdir } = await import("node:os")
+  const { join } = await import("node:path")
+
+  let lingering: Array<string> = []
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    lingering = readdirSync(tmpdir()).filter(
+      (name) =>
+        name.startsWith(prefix) &&
+        !preexisting.has(name) &&
+        existsSync(join(tmpdir(), name)),
+    )
+    if (lingering.length === 0) return []
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+
+  return lingering
+}

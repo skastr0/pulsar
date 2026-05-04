@@ -4,13 +4,9 @@ import {
   inferCasingPattern,
   splitIdentifierTokens,
   type IdentifierPattern,
-  type RecognizedCasingPattern,
 } from "@taste-codec/ts-pack"
 import { Effect } from "effect"
 import { type PackageInfo, discoverPackages, makeTsProject } from "@taste-codec/ts-pack"
-
-export { inferCasingPattern, splitIdentifierTokens }
-export type { IdentifierPattern, RecognizedCasingPattern }
 
 export interface IdentifierOccurrence {
   readonly name: string

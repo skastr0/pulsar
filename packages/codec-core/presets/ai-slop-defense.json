@@ -7,7 +7,7 @@
   },
   "signal_overrides": {
     "TS-SL-01": { "weight": 1.7, "config": { "min_tokens": 8 } },
-    "TS-SL-02": { "weight": 1.55 },
+    "TS-SL-02": { "weight": 1.55, "config": { "max_groups_analyzed": 8 } },
     "TS-SL-03": { "weight": 1.5 },
     "TS-SL-04": { "weight": 1.7, "config": { "hard_gate_production": true } },
     "TS-LD-01": { "weight": 1.4, "config": { "max_complexity": 15 } },

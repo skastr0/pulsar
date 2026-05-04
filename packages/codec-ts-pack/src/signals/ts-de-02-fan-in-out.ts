@@ -4,6 +4,7 @@ import {
   SignalComputeError,
 } from "@taste-codec/core"
 import { Effect, Schema } from "effect"
+import { buildModuleGraph } from "../graph/module-graph.js"
 import { TsProjectTag } from "../ts-project.js"
 
 export const TsDe02Config = Schema.Struct({
@@ -71,49 +72,16 @@ export const TsDe02: Signal<TsDe02Config, TsDe02Output, TsProjectTag> = {
       const project = yield* TsProjectTag
       const result = yield* Effect.try({
         try: (): TsDe02Output => {
-          const sourceFiles = project
-            .getSourceFiles()
-            .filter((sf) => !isExcluded(sf.getFilePath(), config.exclude_globs))
-          const fileSet = new Set(sourceFiles.map((sf) => sf.getFilePath()))
-
-          // Accumulate fan-out per source and fan-in per target.
-          const fanOut = new Map<string, number>()
-          const fanIn = new Map<string, number>()
-          for (const path of fileSet) {
-            fanOut.set(path, 0)
-            fanIn.set(path, 0)
-          }
-
-          for (const sf of sourceFiles) {
-            const src = sf.getFilePath()
-            const targets = new Set<string>()
-            for (const decl of sf.getImportDeclarations()) {
-              const t = decl.getModuleSpecifierSourceFile()
-              if (t === undefined) continue
-              const tp = t.getFilePath()
-              if (!fileSet.has(tp)) continue
-              if (tp === src) continue
-              targets.add(tp)
-            }
-            for (const decl of sf.getExportDeclarations()) {
-              const t = decl.getModuleSpecifierSourceFile()
-              if (t === undefined) continue
-              const tp = t.getFilePath()
-              if (!fileSet.has(tp)) continue
-              if (tp === src) continue
-              targets.add(tp)
-            }
-            fanOut.set(src, targets.size)
-            for (const tp of targets) {
-              fanIn.set(tp, (fanIn.get(tp) ?? 0) + 1)
-            }
-          }
+          const graph = buildModuleGraph(project, {
+            excludeGlobs: config.exclude_globs,
+            includeExportEdges: true,
+          })
 
           const byModule = new Map<string, ModuleFan>()
-          for (const path of fileSet) {
+          for (const path of graph.fileSet) {
             byModule.set(path, {
-              fanIn: fanIn.get(path) ?? 0,
-              fanOut: fanOut.get(path) ?? 0,
+              fanIn: graph.reverseDependencies.get(path)?.size ?? 0,
+              fanOut: graph.dependencies.get(path)?.size ?? 0,
             })
           }
 
@@ -138,7 +106,7 @@ export const TsDe02: Signal<TsDe02Config, TsDe02Output, TsProjectTag> = {
           return {
             byModule,
             hubs,
-            totalModules: fileSet.size,
+            totalModules: graph.fileSet.size,
           }
         },
         catch: (cause) =>
@@ -172,24 +140,4 @@ export const TsDe02: Signal<TsDe02Config, TsDe02Output, TsProjectTag> = {
       },
     }))
   },
-}
-
-const isExcluded = (path: string, globs: ReadonlyArray<string>): boolean => {
-  for (const glob of globs) {
-    if (matchesGlob(path, glob)) return true
-  }
-  return false
-}
-
-const matchesGlob = (path: string, glob: string): boolean => {
-  const regex = new RegExp(
-    "^" +
-      glob
-        .replace(/\./g, "\\.")
-        .replace(/\*\*/g, "§§")
-        .replace(/\*/g, "[^/]*")
-        .replace(/§§/g, ".*") +
-      "$",
-  )
-  return regex.test(path)
 }

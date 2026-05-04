@@ -54,6 +54,13 @@ export interface Signal<Config, Output, R = SignalRequirements> {
   readonly normalizationGroup?: string
 
   /**
+   * Included in score/observer cache keys. Packs should bump this whenever
+   * signal implementation or scoring semantics change without a corresponding
+   * default-config change.
+   */
+  readonly cacheVersion?: string
+
+  /**
    * Schema that decodes raw JSON config from the taste vector into a
    * typed `Config`. Validation happens at vector load time.
    */

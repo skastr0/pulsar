@@ -1,12 +1,10 @@
-import { Node, type SourceFile } from "ts-morph"
+import { Node, SyntaxKind, type Node as TsMorphNode, type SourceFile, ts } from "ts-morph"
 import type { PackageInfo } from "../discovery.js"
-import { matchesAnyGlob } from "./shared-globs.js"
+import { createModuleResolver } from "../graph/module-graph.js"
 import {
-  type BoundaryRule,
   packageDisplayName,
   packageForFile,
 } from "./shared-workspace.js"
-import { declarationKey } from "./shared-type-analysis.js"
 
 export interface ExportBinding {
   readonly exportFile: string
@@ -20,44 +18,51 @@ export interface ExportConsumer {
   readonly consumerFile: string
   readonly consumerPackage: string | undefined
   readonly exportName: string | "*"
-}
-
-export interface SameFileReference {
-  readonly file: string
-  readonly line: number
-  readonly column: number
-}
-
-type ReferenceEntry = {
-  readonly isDefinition: () => boolean
-  readonly getNode: () => Node
-  readonly getTextSpan: () => { readonly getStart: () => number; readonly getLength: () => number }
-}
-
-type ReferencedSymbolLike = {
-  readonly getReferences: () => ReadonlyArray<ReferenceEntry>
-}
-
-type ReferenceFindableNode = Node & {
-  readonly findReferences: () => ReadonlyArray<ReferencedSymbolLike>
+  readonly kind: "import" | "dynamic-import" | "re-export"
 }
 
 export const collectExportBindings = (sourceFile: SourceFile): ReadonlyArray<ExportBinding> => {
   const bindings: Array<ExportBinding> = []
-  for (const [exportName, declarations] of sourceFile.getExportedDeclarations()) {
-    const localDeclarations = declarations.filter(
-      (declaration) => declaration.getSourceFile() === sourceFile && !Node.isSourceFile(declaration),
-    )
-    bindings.push({
-      exportFile: sourceFile.getFilePath(),
-      exportName,
-      declarationFiles: declarations
-        .map((declaration) => declaration.getSourceFile().getFilePath())
-        .filter((value, index, values) => values.indexOf(value) === index)
-        .sort((left, right) => left.localeCompare(right)),
-      localDeclarations,
-      viaReExport: declarations.some((declaration) => declaration.getSourceFile() !== sourceFile),
-    })
+
+  for (const statement of sourceFile.getVariableStatements()) {
+    if (!hasExportModifier(statement)) continue
+    for (const declaration of statement.getDeclarations()) {
+      for (const exportName of bindingNames(declaration.getNameNode())) {
+        bindings.push(localBinding(sourceFile, exportName, declaration))
+      }
+    }
+  }
+
+  for (const declaration of [
+    ...sourceFile.getFunctions(),
+    ...sourceFile.getClasses(),
+    ...sourceFile.getInterfaces(),
+    ...sourceFile.getTypeAliases(),
+    ...sourceFile.getEnums(),
+  ]) {
+    if (!hasExportModifier(declaration)) continue
+    const name = declaration.getName()
+    bindings.push(localBinding(sourceFile, hasDefaultModifier(declaration) ? "default" : name ?? "default", declaration))
+  }
+
+  for (const assignment of sourceFile.getExportAssignments()) {
+    bindings.push(localBinding(sourceFile, "default", assignment))
+  }
+
+  for (const declaration of sourceFile.getExportDeclarations()) {
+    if (declaration.isNamespaceExport() || !declaration.hasNamedExports()) {
+      bindings.push(reExportBinding(sourceFile, "*"))
+      continue
+    }
+
+    for (const specifier of declaration.getNamedExports()) {
+      bindings.push(
+        reExportBinding(
+          sourceFile,
+          specifier.getAliasNode()?.getText() ?? specifier.getNameNode().getText(),
+        ),
+      )
+    }
   }
 
   return bindings.sort((left, right) => {
@@ -67,59 +72,129 @@ export const collectExportBindings = (sourceFile: SourceFile): ReadonlyArray<Exp
   })
 }
 
+const localBinding = (
+  sourceFile: SourceFile,
+  exportName: string,
+  declaration: TsMorphNode,
+): ExportBinding => ({
+  exportFile: sourceFile.getFilePath(),
+  exportName,
+  declarationFiles: [sourceFile.getFilePath()],
+  localDeclarations: [declaration],
+  viaReExport: false,
+})
+
+const reExportBinding = (
+  sourceFile: SourceFile,
+  exportName: string,
+): ExportBinding => ({
+  exportFile: sourceFile.getFilePath(),
+  exportName,
+  declarationFiles: [sourceFile.getFilePath()],
+  localDeclarations: [],
+  viaReExport: true,
+})
+
+const hasExportModifier = (node: TsMorphNode): boolean => {
+  const candidate = node as { getModifiers?: () => ReadonlyArray<{ getKind: () => SyntaxKind }> }
+  return candidate.getModifiers?.().some((modifier) => modifier.getKind() === SyntaxKind.ExportKeyword) ?? false
+}
+
+const hasDefaultModifier = (node: TsMorphNode): boolean => {
+  const candidate = node as { getModifiers?: () => ReadonlyArray<{ getKind: () => SyntaxKind }> }
+  return candidate.getModifiers?.().some((modifier) => modifier.getKind() === SyntaxKind.DefaultKeyword) ?? false
+}
+
+const bindingNames = (node: Node): ReadonlyArray<string> => {
+  if (Node.isIdentifier(node)) return [node.getText()]
+  if (Node.isObjectBindingPattern(node) || Node.isArrayBindingPattern(node)) {
+    return node.getElements().flatMap((element) =>
+      Node.isBindingElement(element) ? bindingNames(element.getNameNode()) : [],
+    )
+  }
+  return []
+}
+
 export const buildExportConsumerIndex = (
   sourceFiles: ReadonlyArray<SourceFile>,
   packages: ReadonlyArray<PackageInfo>,
 ): ReadonlyMap<string, ReadonlyArray<ExportConsumer>> => {
-  const fileSet = new Set(sourceFiles.map((sourceFile) => sourceFile.getFilePath()))
+  const fileSet = new Set<string>(sourceFiles.map((sourceFile) => sourceFile.getFilePath()))
   const index = new Map<string, Array<ExportConsumer>>()
+  const resolver = createModuleResolver(sourceFiles, packages)
 
   const addConsumer = (
     targetFile: string,
     exportName: string | "*",
     consumerFile: string,
+    consumerPackage: string | undefined,
+    kind: ExportConsumer["kind"],
   ): void => {
     const bucket = index.get(targetFile) ?? []
     bucket.push({
       consumerFile,
-      consumerPackage: packageDisplayName(packageForFile(consumerFile, packages)),
+      consumerPackage,
       exportName,
+      kind,
     })
     index.set(targetFile, bucket)
   }
 
   for (const sourceFile of sourceFiles) {
     const consumerFile = sourceFile.getFilePath()
+    const consumerPackage = packageDisplayName(packageForFile(consumerFile, packages))
+    const compilerSourceFile = sourceFile.compilerNode
 
-    for (const declaration of sourceFile.getImportDeclarations()) {
-      const targetFile = declaration.getModuleSpecifierSourceFile()?.getFilePath()
+    for (const statement of compilerSourceFile.statements) {
+      if (!ts.isImportDeclaration(statement)) continue
+      const specifier = moduleSpecifierText(statement.moduleSpecifier)
+      if (specifier === undefined) continue
+      const targetFile = resolveModuleSpecifier(resolver, consumerFile, specifier)
       if (targetFile === undefined || !fileSet.has(targetFile)) continue
 
-      const defaultImport = declaration.getDefaultImport()
-      if (defaultImport !== undefined) {
-        addConsumer(targetFile, "default", consumerFile)
+      const importClause = statement.importClause
+      if (importClause?.name !== undefined) {
+        addConsumer(targetFile, "default", consumerFile, consumerPackage, "import")
       }
 
-      if (declaration.getNamespaceImport() !== undefined) {
-        addConsumer(targetFile, "*", consumerFile)
-      }
-
-      for (const specifier of declaration.getNamedImports()) {
-        addConsumer(targetFile, specifier.getNameNode().getText(), consumerFile)
+      const namedBindings = importClause?.namedBindings
+      if (namedBindings !== undefined) {
+        if (ts.isNamespaceImport(namedBindings)) {
+          addConsumer(targetFile, "*", consumerFile, consumerPackage, "import")
+        } else {
+          for (const element of namedBindings.elements) {
+            addConsumer(targetFile, (element.propertyName ?? element.name).text, consumerFile, consumerPackage, "import")
+          }
+        }
       }
     }
 
-    for (const declaration of sourceFile.getExportDeclarations()) {
-      const targetFile = declaration.getModuleSpecifierSourceFile()?.getFilePath()
+    forEachCompilerNode(compilerSourceFile, (node) => {
+      if (!ts.isCallExpression(node)) return
+      if (node.expression.kind !== ts.SyntaxKind.ImportKeyword) return
+      const specifier = node.arguments[0]
+      if (specifier === undefined || !ts.isStringLiteral(specifier)) return
+
+      const targetFile = resolveModuleSpecifier(resolver, consumerFile, specifier.text)
+      if (targetFile === undefined || !fileSet.has(targetFile)) return
+      addConsumer(targetFile, "*", consumerFile, consumerPackage, "dynamic-import")
+    })
+
+    for (const statement of compilerSourceFile.statements) {
+      if (!ts.isExportDeclaration(statement)) continue
+      const specifier = moduleSpecifierText(statement.moduleSpecifier)
+      if (specifier === undefined) continue
+      const targetFile = resolveModuleSpecifier(resolver, consumerFile, specifier)
       if (targetFile === undefined || !fileSet.has(targetFile)) continue
 
-      if (declaration.isNamespaceExport() || !declaration.hasNamedExports()) {
-        addConsumer(targetFile, "*", consumerFile)
+      const exportClause = statement.exportClause
+      if (exportClause === undefined || ts.isNamespaceExport(exportClause)) {
+        addConsumer(targetFile, "*", consumerFile, consumerPackage, "re-export")
         continue
       }
 
-      for (const specifier of declaration.getNamedExports()) {
-        addConsumer(targetFile, specifier.getNameNode().getText(), consumerFile)
+      for (const specifier of exportClause.elements) {
+        addConsumer(targetFile, (specifier.propertyName ?? specifier.name).text, consumerFile, consumerPackage, "re-export")
       }
     }
   }
@@ -127,70 +202,96 @@ export const buildExportConsumerIndex = (
   return index
 }
 
-export const collectSameFileReferences = (
-  binding: ExportBinding,
-): ReadonlyArray<SameFileReference> => {
-  const seen = new Set<string>()
-  const references: Array<SameFileReference> = []
+const moduleSpecifierText = (node: ts.Expression | undefined): string | undefined =>
+  node !== undefined && ts.isStringLiteralLike(node) ? node.text : undefined
 
-  for (const declaration of binding.localDeclarations) {
-    if (!isReferenceFindableNode(declaration)) continue
-    for (const referencedSymbol of declaration.findReferences()) {
-      for (const reference of referencedSymbol.getReferences()) {
-        if (reference.isDefinition()) continue
-        const node = reference.getNode()
-        if (node.getSourceFile().getFilePath() !== binding.exportFile) continue
-        if (isInsideExportSyntax(node)) continue
-        const span = reference.getTextSpan()
-        const key = `${binding.exportFile}:${span.getStart()}:${span.getLength()}`
-        if (seen.has(key)) continue
-        seen.add(key)
-        references.push({
-          file: binding.exportFile,
-          line: node.getStartLineNumber(),
-          column: node.getNonWhitespaceStart() - node.getStartLinePos() + 1,
-        })
-      }
-    }
+const resolveModuleSpecifier = (
+  resolver: ReturnType<typeof createModuleResolver>,
+  sourcePath: string,
+  specifier: string,
+): string | undefined =>
+  resolver.resolve(sourcePath, {
+    getModuleSpecifierValue: () => specifier,
+  } as Parameters<typeof resolver.resolve>[1])
+
+const forEachCompilerNode = (root: ts.Node, visit: (node: ts.Node) => void): void => {
+  const walk = (node: ts.Node): void => {
+    visit(node)
+    ts.forEachChild(node, walk)
   }
+  walk(root)
+}
 
-  return references.sort((left, right) => {
-    if (left.line !== right.line) return left.line - right.line
-    return left.column - right.column
+export const countSameFileReferences = (binding: ExportBinding): number => {
+  if (binding.exportName === "default") return 0
+
+  const sourceFile = binding.localDeclarations[0]?.getSourceFile()
+  if (sourceFile === undefined) return 0
+
+  return countIdentifierReferences(sourceFile, binding.exportName)
+}
+
+const COUNT_REFERENCE_INDEX = new WeakMap<SourceFile, Map<string, number>>()
+
+const countIdentifierReferences = (sourceFile: SourceFile, name: string): number => {
+  const cached = COUNT_REFERENCE_INDEX.get(sourceFile)?.get(name)
+  if (cached !== undefined) return cached
+
+  let count = 0
+  forEachCompilerNode(sourceFile.compilerNode, (node) => {
+    if (!ts.isIdentifier(node)) return
+    if (node.text !== name) return
+    if (isCompilerIdentifierInsideExportSyntax(node)) return
+    if (isCompilerDeclarationName(node)) return
+    count += 1
   })
+
+  const fileCache = COUNT_REFERENCE_INDEX.get(sourceFile) ?? new Map<string, number>()
+  fileCache.set(name, count)
+  COUNT_REFERENCE_INDEX.set(sourceFile, fileCache)
+  return count
 }
 
-export const buildPublicExportedDeclarationSet = (
-  sourceFiles: ReadonlyArray<SourceFile>,
-  publicEntryGlobs: ReadonlyArray<string>,
-): ReadonlySet<string> => {
-  const declarations = new Set<string>()
-  for (const sourceFile of sourceFiles) {
-    if (!matchesAnyGlob(sourceFile.getFilePath(), publicEntryGlobs)) continue
-    for (const exportedDeclarations of sourceFile.getExportedDeclarations().values()) {
-      for (const declaration of exportedDeclarations) {
-        if (Node.isSourceFile(declaration)) continue
-        declarations.add(declarationKey(declaration))
-      }
+const isCompilerIdentifierInsideExportSyntax = (node: ts.Identifier): boolean => {
+  let current: ts.Node | undefined = node.parent
+  while (current !== undefined) {
+    if (
+      ts.isExportDeclaration(current) ||
+      ts.isExportSpecifier(current) ||
+      ts.isExportAssignment(current)
+    ) {
+      return true
     }
+    current = current.parent
   }
-  return declarations
+  return false
 }
 
-export const boundaryRule = (
-  filePath: string,
-  rules: ReadonlyArray<BoundaryRule>,
-): string | undefined => rules.find((rule) => matchesAnyGlob(filePath, rule.globs))?.name
+const isCompilerDeclarationName = (node: ts.Identifier): boolean => {
+  const parent = node.parent
+  if (parent === undefined) return false
 
-const isInsideExportSyntax = (node: Node): boolean =>
-  node.getAncestors().some(
-    (ancestor) =>
-      Node.isExportDeclaration(ancestor) ||
-      Node.isExportSpecifier(ancestor) ||
-      Node.isExportAssignment(ancestor),
-  )
+  if (
+    ts.isVariableDeclaration(parent) ||
+    ts.isParameter(parent) ||
+    ts.isFunctionDeclaration(parent) ||
+    ts.isClassDeclaration(parent) ||
+    ts.isInterfaceDeclaration(parent) ||
+    ts.isTypeAliasDeclaration(parent) ||
+    ts.isEnumDeclaration(parent) ||
+    ts.isImportSpecifier(parent) ||
+    ts.isExportSpecifier(parent) ||
+    ts.isPropertyAssignment(parent) ||
+    ts.isPropertySignature(parent) ||
+    ts.isMethodDeclaration(parent) ||
+    ts.isBindingElement(parent)
+  ) {
+    return parent.name === node
+  }
 
-const isReferenceFindableNode = (node: Node): node is ReferenceFindableNode => {
-  const candidate = node as { readonly findReferences?: unknown }
-  return typeof candidate.findReferences === "function"
+  if (ts.isShorthandPropertyAssignment(parent)) {
+    return parent.name === node
+  }
+
+  return false
 }

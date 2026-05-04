@@ -124,4 +124,46 @@ describe("TS-LD-03 (nesting depth)", () => {
     })
     expect(out.overThreshold).toHaveLength(1)
   })
+
+  test("generated, vendored, and test helper files are excluded by default", async () => {
+    await repo.write("src/index.ts", "export function real() { return 1 }\n")
+    await repo.write(
+      "src/generated.generated.ts",
+      [
+        "export function generated(flag: boolean) {",
+        "  if (flag) {",
+        "    while (flag) {",
+        "      return 1",
+        "    }",
+        "  }",
+        "  return 0",
+        "}",
+      ].join("\n"),
+    )
+    await repo.write(
+      "src/monitor.test-helpers.ts",
+      [
+        "export function helper(flag: boolean) {",
+        "  if (flag) {",
+        "    return 1",
+        "  }",
+        "  return 0",
+        "}",
+      ].join("\n"),
+    )
+    await repo.write(
+      "vendor/copied.ts",
+      [
+        "export function vendored(flag: boolean) {",
+        "  if (flag) {",
+        "    return 1",
+        "  }",
+        "  return 0",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsLd03, TsLd03.defaultConfig)
+    expect(out.byFunction.map((entry) => entry.name)).toEqual(["real"])
+  })
 })

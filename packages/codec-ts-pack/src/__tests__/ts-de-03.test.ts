@@ -60,6 +60,41 @@ describe("TS-DE-03 (propagation cost)", () => {
     expect(out.top10Propagators[0]?.reverseReach).toBe(5)
   })
 
+  test("does not diagnose top propagators when propagation cost is under target", async () => {
+    await repo.write("src/core.ts", "export const core = 1\n")
+    for (let index = 0; index < 5; index += 1) {
+      await repo.write(
+        `src/consumer-${index}.ts`,
+        `import { core } from './core'\nexport const value${index} = core + ${index}\n`,
+      )
+    }
+
+    const out = await runSignal(repo.root, TsDe03, {
+      ...TsDe03.defaultConfig,
+      small_sample_threshold: 0,
+    })
+    expect(TsDe03.score(out)).toBe(1)
+    expect(TsDe03.diagnose(out)).toHaveLength(0)
+  })
+
+  test("diagnoses top propagators when propagation cost exceeds target", async () => {
+    await repo.write("src/base.ts", "export const value0 = 0\n")
+    for (let index = 1; index <= 5; index += 1) {
+      await repo.write(
+        `src/level-${index}.ts`,
+        `import { value${index - 1} } from './${index === 1 ? "base" : `level-${index - 1}`}'\n` +
+          `export const value${index} = value${index - 1} + 1\n`,
+      )
+    }
+
+    const out = await runSignal(repo.root, TsDe03, {
+      ...TsDe03.defaultConfig,
+      small_sample_threshold: 0,
+    })
+    expect(TsDe03.score(out)).toBeLessThan(1)
+    expect(TsDe03.diagnose(out)[0]?.message).toContain("High propagation cost module")
+  })
+
   test("small sample warning appears below the configured threshold", async () => {
     await repo.write("src/a.ts", "export const a = 1\n")
     await repo.write("src/b.ts", "import { a } from './a'\nexport const b = a\n")

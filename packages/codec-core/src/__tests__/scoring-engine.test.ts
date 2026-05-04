@@ -8,9 +8,15 @@ import { buildRegistry } from "../registry.js"
 import {
   ScoringEngineLayer,
   ScoringEngineTag,
+  computeConfigHash,
   computeContentHash,
+  computeObserverConfigHash,
+  computeWorktreeContentHash,
+  collectWorktreeChangedHunks,
 } from "../scoring-engine.js"
+import { SignalContextTag } from "../context.js"
 import type { Signal } from "../signal.js"
+import type { TasteVector } from "../vector.js"
 
 /**
  * Initialize a tiny git repo with one commit containing `files`.
@@ -73,8 +79,11 @@ const sh = (cmd: string, args: ReadonlyArray<string>, cwd: string): void => {
  * Build a counter-backed mock signal. Each compute invocation bumps the
  * counter so cache hit/miss is observable.
  */
-const makeCountingSignal = (counter: Ref.Ref<number>): Signal<{}, { readonly n: number }, never> => ({
-  id: "MOCK-ENG-01",
+const makeCountingSignal = (
+  counter: Ref.Ref<number>,
+  id = "MOCK-ENG-01",
+): Signal<{}, { readonly n: number }, never> => ({
+  id,
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
@@ -88,6 +97,55 @@ const makeCountingSignal = (counter: Ref.Ref<number>): Signal<{}, { readonly n: 
       return { n }
     }),
   score: (out) => 1 - out.n * 0.01,
+  diagnose: () => [],
+})
+
+const makeFileContentSignal = (): Signal<
+  {},
+  { readonly content: string },
+  SignalContextTag
+> => ({
+  id: "MOCK-FILE-CONTENT",
+  tier: 1,
+  category: "legibility-decay",
+  kind: "legibility",
+  configSchema: Schema.Struct({}),
+  defaultConfig: {},
+  inputs: [],
+  compute: () =>
+    Effect.gen(function* () {
+      const context = yield* SignalContextTag
+      const content = require("node:fs").readFileSync(
+        join(context.worktreePath, "a.ts"),
+        "utf8",
+      ) as string
+      return { content }
+    }),
+  score: (out) => (out.content.includes("999") ? 0.42 : 1),
+  diagnose: () => [],
+})
+
+const makeChangedHunksSignal = (): Signal<
+  {},
+  { readonly count: number; readonly files: ReadonlyArray<string> },
+  SignalContextTag
+> => ({
+  id: "MOCK-HUNKS",
+  tier: 1,
+  category: "generated-slop",
+  kind: "legibility",
+  configSchema: Schema.Struct({}),
+  defaultConfig: {},
+  inputs: [],
+  compute: () =>
+    Effect.gen(function* () {
+      const context = yield* SignalContextTag
+      return {
+        count: context.changedHunks.length,
+        files: context.changedHunks.map((hunk) => hunk.file),
+      }
+    }),
+  score: (out) => (out.count > 0 ? 0.5 : 1),
   diagnose: () => [],
 })
 
@@ -148,6 +206,76 @@ describe("ScoringEngine — content hash", () => {
       await rm(repoPath, { recursive: true, force: true })
     }
   })
+
+  test("hash changes when package metadata changes", async () => {
+    const { repoPath, sha: sha1 } = await initRepo([
+      { path: "a.ts", content: "export const x = 1\n" },
+      { path: "package.json", content: "{\"dependencies\":{}}\n" },
+    ])
+    try {
+      const sha2 = addCommit(
+        repoPath,
+        "package.json",
+        "{\"dependencies\":{\"left-pad\":\"1.3.0\"}}\n",
+        "deps",
+      )
+      const program = Effect.gen(function* () {
+        const h1 = yield* computeContentHash(repoPath, sha1)
+        const h2 = yield* computeContentHash(repoPath, sha2)
+        return { h1, h2 }
+      })
+      const { h1, h2 } = await Effect.runPromise(program)
+      expect(h1).not.toBe(h2)
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("worktree hash changes for uncommitted tracked and untracked codec files", async () => {
+    const { repoPath } = await initRepo([
+      { path: "a.ts", content: "export const x = 1\n" },
+    ])
+    try {
+      const clean = await Effect.runPromise(computeWorktreeContentHash(repoPath))
+      await writeFile(join(repoPath, "a.ts"), "export const x = 2\n")
+      const trackedDirty = await Effect.runPromise(computeWorktreeContentHash(repoPath))
+      await writeFile(join(repoPath, "new.ts"), "export const y = 3\n")
+      const untrackedDirty = await Effect.runPromise(computeWorktreeContentHash(repoPath))
+
+      expect(trackedDirty).not.toBe(clean)
+      expect(untrackedDirty).not.toBe(trackedDirty)
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("collects changed hunks for dirty tracked and untracked worktree files", async () => {
+    const { repoPath } = await initRepo([
+      { path: "a.ts", content: "export const x = 1\n" },
+    ])
+    try {
+      await writeFile(join(repoPath, "a.ts"), "export const x = 2\n")
+      await writeFile(join(repoPath, "new.ts"), "export const y = 3\n")
+
+      const hunks = await Effect.runPromise(collectWorktreeChangedHunks(repoPath))
+
+      expect(hunks.map((hunk) => hunk.file).sort()).toEqual(["a.ts", "new.ts"])
+      expect(hunks.find((hunk) => hunk.file === "a.ts")).toMatchObject({
+        oldStart: 1,
+        oldLines: 1,
+        newStart: 1,
+        newLines: 1,
+      })
+      expect(hunks.find((hunk) => hunk.file === "new.ts")).toMatchObject({
+        oldStart: 0,
+        oldLines: 0,
+        newStart: 1,
+        newLines: 1,
+      })
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
 })
 
 describe("ScoringEngine — cache semantics", () => {
@@ -179,6 +307,35 @@ describe("ScoringEngine — cache semantics", () => {
       expect((r1.output as { n: number }).n).toBe(
         (r2.output as { n: number }).n,
       )
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("observeWorktree provides changed hunks to dirty worktree signals", async () => {
+    const { repoPath, sha } = await initRepo([
+      { path: "a.ts", content: "export const x = 1\n" },
+    ])
+    try {
+      await writeFile(join(repoPath, "a.ts"), "export const x = 2\n")
+      await writeFile(join(repoPath, "new.ts"), "export const y = 3\n")
+
+      const program = Effect.gen(function* () {
+        const registry = yield* buildRegistry([makeChangedHunksSignal()])
+        const EngineLayer = ScoringEngineLayer(registry, () => Layer.empty)
+        const engine = yield* ScoringEngineTag.pipe(
+          Effect.provide(EngineLayer),
+        ) as Effect.Effect<typeof ScoringEngineTag.Service, never, never>
+
+        return yield* engine.observeWorktree(repoPath, sha)
+      })
+
+      const output = await Effect.runPromise(program)
+      const result = output.signalResults.get("MOCK-HUNKS")
+      expect(result?.output).toEqual({
+        count: 2,
+        files: ["a.ts", "new.ts"],
+      })
     } finally {
       await rm(repoPath, { recursive: true, force: true })
     }
@@ -287,5 +444,327 @@ describe("ScoringEngine — cache semantics", () => {
     } finally {
       await rm(repoPath, { recursive: true, force: true })
     }
+  })
+
+  test("repeat observeCommit with same sha hits observer cache; compute runs once", async () => {
+    const { repoPath, sha } = await initRepo([
+      { path: "a.ts", content: "export const x = 1\n" },
+    ])
+    try {
+      const program = Effect.gen(function* () {
+        const counter = yield* Ref.make(0)
+        const signal = makeCountingSignal(counter)
+        const registry = yield* buildRegistry([signal])
+        const EngineLayer = ScoringEngineLayer(registry, () => Layer.empty)
+        const engine = yield* ScoringEngineTag.pipe(
+          Effect.provide(EngineLayer),
+        ) as Effect.Effect<typeof ScoringEngineTag.Service, never, never>
+
+        const r1 = yield* engine.observeCommit(repoPath, sha)
+        const c1 = yield* Ref.get(counter)
+        const r2 = yield* engine.observeCommit(repoPath, sha)
+        const c2 = yield* Ref.get(counter)
+
+        return { r1, r2, c1, c2 }
+      })
+      const { r1, r2, c1, c2 } = await Effect.runPromise(program)
+      expect(c1).toBe(1)
+      expect(c2).toBe(1)
+      expect(r1.weighted_mean).toBe(r2.weighted_mean)
+      expect(r2.signalResults.get("MOCK-ENG-01")?.score).toBe(
+        r1.signalResults.get("MOCK-ENG-01")?.score,
+      )
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("observeCommit uses the current checkout for clean HEAD", async () => {
+    const { repoPath, sha } = await initRepo([
+      { path: "a.ts", content: "export const x = 1\n" },
+    ])
+    try {
+      const program = Effect.gen(function* () {
+        const counter = yield* Ref.make(0)
+        const signal = makeCountingSignal(counter)
+        const registry = yield* buildRegistry([signal])
+        const worktreePaths: Array<string> = []
+        const EngineLayer = ScoringEngineLayer(registry, (worktreePath) => {
+          worktreePaths.push(worktreePath)
+          return Layer.empty
+        })
+        const engine = yield* ScoringEngineTag.pipe(
+          Effect.provide(EngineLayer),
+        ) as Effect.Effect<typeof ScoringEngineTag.Service, never, never>
+
+        yield* engine.observeCommit(repoPath, sha)
+        return worktreePaths
+      })
+
+      const paths = await Effect.runPromise(program)
+      expect(paths).toEqual([repoPath])
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("observeCommit falls back to a detached worktree when tracked TS files are dirty", async () => {
+    const { repoPath, sha } = await initRepo([
+      { path: "a.ts", content: "export const x = 1\n" },
+    ])
+    try {
+      await writeFile(join(repoPath, "a.ts"), "export const x = 2\n")
+      const program = Effect.gen(function* () {
+        const counter = yield* Ref.make(0)
+        const signal = makeCountingSignal(counter)
+        const registry = yield* buildRegistry([signal])
+        const worktreePaths: Array<string> = []
+        const EngineLayer = ScoringEngineLayer(registry, (worktreePath) => {
+          worktreePaths.push(worktreePath)
+          return Layer.empty
+        })
+        const engine = yield* ScoringEngineTag.pipe(
+          Effect.provide(EngineLayer),
+        ) as Effect.Effect<typeof ScoringEngineTag.Service, never, never>
+
+        yield* engine.observeCommit(repoPath, sha)
+        return worktreePaths
+      })
+
+      const paths = await Effect.runPromise(program)
+      expect(paths.length).toBe(1)
+      expect(paths[0]).not.toBe(repoPath)
+      expect(paths[0]).toContain("taste-codec-worktree-")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("observeCommit falls back to a detached worktree when untracked TS files exist", async () => {
+    const { repoPath, sha } = await initRepo([
+      { path: "a.ts", content: "export const x = 1\n" },
+    ])
+    try {
+      await writeFile(join(repoPath, "new.ts"), "export const y = 2\n")
+      const program = Effect.gen(function* () {
+        const counter = yield* Ref.make(0)
+        const signal = makeCountingSignal(counter)
+        const registry = yield* buildRegistry([signal])
+        const worktreePaths: Array<string> = []
+        const EngineLayer = ScoringEngineLayer(registry, (worktreePath) => {
+          worktreePaths.push(worktreePath)
+          return Layer.empty
+        })
+        const engine = yield* ScoringEngineTag.pipe(
+          Effect.provide(EngineLayer),
+        ) as Effect.Effect<typeof ScoringEngineTag.Service, never, never>
+
+        yield* engine.observeCommit(repoPath, sha)
+        return worktreePaths
+      })
+
+      const paths = await Effect.runPromise(program)
+      expect(paths.length).toBe(1)
+      expect(paths[0]).not.toBe(repoPath)
+      expect(paths[0]).toContain("taste-codec-worktree-")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("observeWorktree scores dirty tracked files from the current checkout", async () => {
+    const { repoPath, sha } = await initRepo([
+      { path: "a.ts", content: "export const x = 1\n" },
+    ])
+    try {
+      await writeFile(join(repoPath, "a.ts"), "export const x = 999\n")
+      const program = Effect.gen(function* () {
+        const signal = makeFileContentSignal()
+        const registry = yield* buildRegistry([signal])
+        const worktreePaths: Array<string> = []
+        const EngineLayer = ScoringEngineLayer(registry, (worktreePath) => {
+          worktreePaths.push(worktreePath)
+          return Layer.empty
+        })
+        const engine = yield* ScoringEngineTag.pipe(
+          Effect.provide(EngineLayer),
+        ) as Effect.Effect<typeof ScoringEngineTag.Service, never, never>
+
+        const result = yield* engine.observeWorktree(repoPath, sha)
+        return { result, worktreePaths }
+      })
+
+      const { result, worktreePaths } = await Effect.runPromise(program)
+      expect(worktreePaths).toEqual([repoPath])
+      expect(result.signalResults.get("MOCK-FILE-CONTENT")?.score).toBe(0.42)
+      expect(
+        (result.signalResults.get("MOCK-FILE-CONTENT")?.output as { content: string }).content,
+      ).toContain("999")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("repeat observeWorktree hits cache until dirty content changes", async () => {
+    const { repoPath, sha } = await initRepo([
+      { path: "a.ts", content: "export const x = 1\n" },
+    ])
+    try {
+      await writeFile(join(repoPath, "a.ts"), "export const x = 999\n")
+      const program = Effect.gen(function* () {
+        const counter = yield* Ref.make(0)
+        const signal = makeCountingSignal(counter)
+        const registry = yield* buildRegistry([signal])
+        const EngineLayer = ScoringEngineLayer(registry, () => Layer.empty)
+        const engine = yield* ScoringEngineTag.pipe(
+          Effect.provide(EngineLayer),
+        ) as Effect.Effect<typeof ScoringEngineTag.Service, never, never>
+
+        yield* engine.observeWorktree(repoPath, sha)
+        const afterFirst = yield* Ref.get(counter)
+        yield* engine.observeWorktree(repoPath, sha)
+        const afterSecond = yield* Ref.get(counter)
+        yield* Effect.promise(() => writeFile(join(repoPath, "a.ts"), "export const x = 1000\n"))
+        yield* engine.observeWorktree(repoPath, sha)
+        const afterChange = yield* Ref.get(counter)
+
+        return { afterFirst, afterSecond, afterChange }
+      })
+
+      const counts = await Effect.runPromise(program)
+      expect(counts.afterFirst).toBe(1)
+      expect(counts.afterSecond).toBe(1)
+      expect(counts.afterChange).toBe(2)
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("observer profile includes environment setup attribution", async () => {
+    const { repoPath, sha } = await initRepo([
+      { path: "a.ts", content: "export const x = 1\n" },
+    ])
+    try {
+      const program = Effect.gen(function* () {
+        const counter = yield* Ref.make(0)
+        const signal = makeCountingSignal(counter)
+        const registry = yield* buildRegistry([signal])
+        const EngineLayer = ScoringEngineLayer(registry, () => Layer.empty, undefined, {
+          observerProfile: true,
+        })
+        const engine = yield* ScoringEngineTag.pipe(
+          Effect.provide(EngineLayer),
+        ) as Effect.Effect<typeof ScoringEngineTag.Service, never, never>
+
+        return yield* engine.observeWorktree(repoPath, sha)
+      })
+
+      const result = await Effect.runPromise(program)
+      expect(result.runtimeProfile?.totalMs).toBeGreaterThanOrEqual(0)
+      expect(result.runtimeProfile?.stages?.["environment-setup"]?.durationMs).toBeGreaterThanOrEqual(0)
+      expect(result.runtimeProfile?.stages?.observer?.durationMs).toBeGreaterThanOrEqual(0)
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("observeCommit disk cache round-trips signalResults as a Map", async () => {
+    const { repoPath, sha } = await initRepo([
+      { path: "a.ts", content: "export const x = 1\n" },
+    ])
+    const cacheDir = await mkdtemp(join(tmpdir(), "taste-codec-observer-cache-"))
+    try {
+      const program = Effect.gen(function* () {
+        const counter = yield* Ref.make(0)
+        const signal = makeCountingSignal(counter)
+        const registry = yield* buildRegistry([signal])
+
+        const FirstEngineLayer = ScoringEngineLayer(registry, () => Layer.empty, undefined, {
+          cacheConfig: { cacheDir },
+        })
+        const first = yield* ScoringEngineTag.pipe(
+          Effect.provide(FirstEngineLayer),
+        ) as Effect.Effect<typeof ScoringEngineTag.Service, never, never>
+        yield* first.observeCommit(repoPath, sha)
+
+        const SecondEngineLayer = ScoringEngineLayer(registry, () => Layer.empty, undefined, {
+          cacheConfig: { cacheDir },
+        })
+        const second = yield* ScoringEngineTag.pipe(
+          Effect.provide(SecondEngineLayer),
+        ) as Effect.Effect<typeof ScoringEngineTag.Service, never, never>
+        const cached = yield* second.observeCommit(repoPath, sha)
+
+        return { cached, count: yield* Ref.get(counter) }
+      })
+
+      const { cached, count } = await Effect.runPromise(program)
+      expect(count).toBe(1)
+      expect(cached.signalResults).toBeInstanceOf(Map)
+      expect(cached.signalResults.get("MOCK-ENG-01")?.output).toEqual({ n: 1 })
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+      await rm(cacheDir, { recursive: true, force: true })
+    }
+  })
+
+  test("observer cache config hash changes with active vector config", async () => {
+    const program = Effect.gen(function* () {
+      const counter = yield* Ref.make(0)
+      const signal = makeCountingSignal(counter)
+      const registry = yield* buildRegistry([signal])
+      const base = computeObserverConfigHash(registry, undefined)
+      const configured = computeObserverConfigHash(registry, {
+        id: "strict",
+        domain: "typescript",
+        signal_overrides: {
+          "MOCK-ENG-01": { config: { target: 0.8 } },
+        },
+      } satisfies TasteVector)
+      const inactive = computeObserverConfigHash(registry, {
+        id: "inactive",
+        domain: "typescript",
+        signal_overrides: {
+          "MOCK-ENG-01": { active: false },
+        },
+      } satisfies TasteVector)
+      const weighted = computeObserverConfigHash(registry, {
+        id: "weighted",
+        domain: "typescript",
+        signal_overrides: {
+          "MOCK-ENG-01": { weight: 1.5 },
+        },
+      } satisfies TasteVector)
+      return { base, configured, inactive, weighted }
+    })
+
+    const { base, configured, inactive, weighted } = await Effect.runPromise(program)
+    expect(configured).not.toBe(base)
+    expect(inactive).not.toBe(base)
+    expect(weighted).not.toBe(base)
+  })
+
+  test("observer and signal cache config hashes change with signal cache version", async () => {
+    const program = Effect.gen(function* () {
+      const counter = yield* Ref.make(0)
+      const baseSignal = makeCountingSignal(counter)
+      const versionedSignal = {
+        ...baseSignal,
+        cacheVersion: "mock-signal-v2",
+      } satisfies Signal<{}, { readonly n: number }, never>
+      const baseRegistry = yield* buildRegistry([baseSignal])
+      const versionedRegistry = yield* buildRegistry([versionedSignal])
+
+      return {
+        observerBase: computeObserverConfigHash(baseRegistry, undefined),
+        observerVersioned: computeObserverConfigHash(versionedRegistry, undefined),
+        signalBase: computeConfigHash("MOCK-ENG-01", baseRegistry, undefined),
+        signalVersioned: computeConfigHash("MOCK-ENG-01", versionedRegistry, undefined),
+      }
+    })
+
+    const result = await Effect.runPromise(program)
+    expect(result.observerVersioned).not.toBe(result.observerBase)
+    expect(result.signalVersioned).not.toBe(result.signalBase)
   })
 })

@@ -145,6 +145,190 @@ export const stop = (error: unknown) =>
     expect(structuralGroups).toHaveLength(0)
   })
 
+  test("does not flag repeated tiny schema-builder callbacks as exact clones", async () => {
+    await repo.write(
+      "schemas.ts",
+      `
+const withStatics = (fn: unknown) => fn;
+const zod = (schema: unknown) => schema;
+const User = Schema.Struct({ id: Schema.String }).pipe(withStatics((s) => ({ zod: zod(s) })));
+const Account = Schema.Struct({ id: Schema.String }).pipe(withStatics((s) => ({ zod: zod(s) })));
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl01, {
+      ...TsSl01.defaultConfig,
+      min_tokens: 8,
+    })
+    expect(out.groups.some((g) => g.kind === "exact")).toBe(false)
+  })
+
+  test("does not flag small Effect.gen service callbacks as structural clones", async () => {
+    await repo.write(
+      "effects.ts",
+      `
+const runA = Effect.gen(function* () {
+  const service = yield* Plugin.Service
+  return yield* service.list()
+})
+
+const runB = Effect.gen(function* () {
+  const service = yield* User.Service
+  return yield* service.list()
+})
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl01, {
+      ...TsSl01.defaultConfig,
+      min_tokens: 8,
+    })
+    expect(out.groups).toEqual([])
+  })
+
+  test("does not treat AST predicate union guards as structural clones", async () => {
+    await repo.write(
+      "guards.ts",
+      `
+const ts = {
+  isFunctionDeclaration: (node: unknown) => Boolean(node),
+  isMethodDeclaration: (node: unknown) => Boolean(node),
+  isArrowFunction: (node: unknown) => Boolean(node),
+  isFunctionExpression: (node: unknown) => Boolean(node),
+  isTypeAliasDeclaration: (node: unknown) => Boolean(node),
+  isInterfaceDeclaration: (node: unknown) => Boolean(node),
+  isClassDeclaration: (node: unknown) => Boolean(node),
+}
+
+export const isCompilerFunctionLike = (node: unknown) =>
+  ts.isFunctionDeclaration(node) ||
+  ts.isMethodDeclaration(node) ||
+  ts.isArrowFunction(node) ||
+  ts.isFunctionExpression(node)
+
+export const isTrackedGenericDeclaration = (node: unknown) =>
+  ts.isFunctionDeclaration(node) ||
+  ts.isMethodDeclaration(node) ||
+  ts.isArrowFunction(node) ||
+  ts.isFunctionExpression(node) ||
+  ts.isTypeAliasDeclaration(node) ||
+  ts.isInterfaceDeclaration(node) ||
+  ts.isClassDeclaration(node)
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl01, TsSl01.defaultConfig)
+    expect(out.groups.filter((group) => group.kind === "structural")).toEqual([])
+  })
+
+  test("does not rank JSX component adapter wrappers as structural clones", async () => {
+    await repo.writeJson("tsconfig.json", {
+      compilerOptions: {
+        target: "ES2022",
+        module: "ESNext",
+        moduleResolution: "Bundler",
+        jsx: "preserve",
+      },
+      include: ["**/*.ts", "**/*.tsx"],
+    })
+    await repo.write(
+      "components.tsx",
+      `
+const splitProps = <T,>(props: T, keys: ReadonlyArray<string>) => [props, props] as const
+const Primitive = {
+  Header: (props: unknown) => <header {...props} />,
+  Trigger: (props: unknown) => <button {...props} />,
+  Content: (props: unknown) => <section {...props} />,
+}
+
+function Header(props: { class?: string; classList?: Record<string, boolean>; children?: unknown }) {
+  const [local, rest] = splitProps(props, ["class", "classList", "children"])
+  return (
+    <Primitive.Header
+      {...rest}
+      data-slot="header"
+      classList={{
+        ...local.classList,
+        [local.class ?? ""]: !!local.class,
+      }}
+    >
+      {local.children}
+    </Primitive.Header>
+  )
+}
+
+function Trigger(props: { class?: string; classList?: Record<string, boolean>; children?: unknown }) {
+  const [local, rest] = splitProps(props, ["class", "classList", "children"])
+  return (
+    <Primitive.Trigger
+      {...rest}
+      data-slot="trigger"
+      classList={{
+        ...local.classList,
+        [local.class ?? ""]: !!local.class,
+      }}
+    >
+      {local.children}
+    </Primitive.Trigger>
+  )
+}
+
+function Content(props: { class?: string; classList?: Record<string, boolean>; children?: unknown }) {
+  const [local, rest] = splitProps(props, ["class", "classList", "children"])
+  return (
+    <Primitive.Content
+      {...rest}
+      data-slot="content"
+      classList={{
+        ...local.classList,
+        [local.class ?? ""]: !!local.class,
+      }}
+    >
+      {local.children}
+    </Primitive.Content>
+  )
+}
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl01, TsSl01.defaultConfig)
+    expect(out.groups.filter((group) => group.kind === "structural")).toEqual([])
+  })
+
+  test("does not flag small JSX render callbacks as exact clones", async () => {
+    await repo.writeJson("tsconfig.json", {
+      compilerOptions: {
+        target: "ES2022",
+        module: "ESNext",
+        moduleResolution: "Bundler",
+        jsx: "preserve",
+      },
+      include: ["**/*.ts", "**/*.tsx"],
+    })
+    await repo.write(
+      "render-callbacks.tsx",
+      `
+const Show = (props: { children: (value: () => string) => unknown }) => props.children(() => "error")
+const localizeError = (value: string) => value
+
+export function First() {
+  return <Show>{(err) => <div data-slot="form-error">{localizeError(err())}</div>}</Show>
+}
+
+export function Second() {
+  return <Show>{(err) => <div data-slot="form-error">{localizeError(err())}</div>}</Show>
+}
+
+export function Third() {
+  return <Show>{(err) => <div data-slot="form-error">{localizeError(err())}</div>}</Show>
+}
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl01, TsSl01.defaultConfig)
+    expect(out.groups.filter((group) => group.kind === "exact")).toEqual([])
+  })
+
   test("still detects duplicated imperative branches that only rename domain identifiers", async () => {
     await repo.write(
       "processors.ts",
@@ -194,6 +378,32 @@ function testHelper2(x: number): number {
     expect(out.totalFunctionsAnalyzed).toBe(0)
   })
 
+  test("excludes generated and story files", async () => {
+    await repo.write(
+      "src/v2/gen/sdk.gen.ts",
+      `
+export function readUser(input: string) {
+  const params = { input };
+  return client.get("/user", params);
+}
+export function readOrder(input: string) {
+  const params = { input };
+  return client.get("/order", params);
+}
+`,
+    )
+    await repo.write(
+      "components/button.stories.tsx",
+      `
+export const Primary = () => ({ kind: "primary" });
+export const Secondary = () => ({ kind: "secondary" });
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl01, TsSl01.defaultConfig)
+    expect(out.totalFunctionsAnalyzed).toBe(0)
+  })
+
   test("diff-aware: only flags duplicates in changed hunks", async () => {
     await repo.write(
       "utils.ts",
@@ -225,6 +435,190 @@ function dup2(x: number): number { return x * 2; }
     )
 
     expect(out.scopeMode).toBe("changed-hunks")
+  })
+
+  test("diff-aware: compares changed functions against unchanged whole-tree counterparts", async () => {
+    await repo.write(
+      "existing.ts",
+      `
+export function existingHandler(value: number): number {
+  const doubled = value * 2;
+  if (doubled > 10) {
+    return doubled - 1;
+  }
+  return doubled + 1;
+}
+`,
+    )
+    await repo.write(
+      "changed.ts",
+      `
+export function copiedHandler(value: number): number {
+  const doubled = value * 2;
+  if (doubled > 10) {
+    return doubled - 1;
+  }
+  return doubled + 1;
+}
+`,
+    )
+
+    const out = await Effect.runPromise(
+      TsSl01.compute(
+        TsSl01.defaultConfig,
+        new Map(),
+      ).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            TsProjectLayer(repo.root),
+            Layer.succeed(SignalContextTag, {
+              gitSha: "TEST",
+              worktreePath: repo.root,
+              changedHunks: [
+                { file: "changed.ts", oldStart: 2, oldLines: 0, newStart: 2, newLines: 7 },
+              ],
+            }),
+          ),
+        ),
+      ),
+    )
+
+    expect(out.scopeMode).toBe("changed-hunks")
+    expect(out.totalFunctionsAnalyzed).toBe(1)
+    expect(out.groups).toHaveLength(1)
+    expect(out.groups[0]?.members.map((member) => member.file).sort()).toEqual([
+      `${repo.root}/changed.ts`,
+      `${repo.root}/existing.ts`,
+    ])
+    expect(TsSl01.score(out)).toBeLessThan(1)
+  })
+
+  test("diff-aware: default scoring ignores helper-scale exact clones", async () => {
+    const helperBody = `
+  const next = value + 1;
+  return next;
+`
+    await repo.write(
+      "existing.ts",
+      `export function existingTiny(value: number): number {${helperBody}}\n`,
+    )
+    await repo.write(
+      "changed.ts",
+      `export function copiedTiny(value: number): number {${helperBody}}\n`,
+    )
+
+    const out = await Effect.runPromise(
+      TsSl01.compute(
+        TsSl01.defaultConfig,
+        new Map(),
+      ).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            TsProjectLayer(repo.root),
+            Layer.succeed(SignalContextTag, {
+              gitSha: "TEST",
+              worktreePath: repo.root,
+              changedHunks: [
+                { file: "changed.ts", oldStart: 2, oldLines: 0, newStart: 2, newLines: 4 },
+              ],
+            }),
+          ),
+        ),
+      ),
+    )
+
+    expect(out.scopeMode).toBe("changed-hunks")
+    expect(out.groups).toHaveLength(1)
+    expect(TsSl01.score(out)).toBe(1)
+    expect(TsSl01.diagnose(out)).toEqual([])
+  })
+
+  test("diff-aware: ai-assisted vector sensitivity still reports helper-scale exact clones", async () => {
+    const helperBody = `
+  const next = value + 1;
+  return next;
+`
+    await repo.write(
+      "existing.ts",
+      `export function existingTiny(value: number): number {${helperBody}}\n`,
+    )
+    await repo.write(
+      "changed.ts",
+      `export function copiedTiny(value: number): number {${helperBody}}\n`,
+    )
+
+    const out = await Effect.runPromise(
+      TsSl01.compute(
+        {
+          ...TsSl01.defaultConfig,
+          min_tokens: 8,
+        },
+        new Map(),
+      ).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            TsProjectLayer(repo.root),
+            Layer.succeed(SignalContextTag, {
+              gitSha: "TEST",
+              worktreePath: repo.root,
+              changedHunks: [
+                { file: "changed.ts", oldStart: 2, oldLines: 0, newStart: 2, newLines: 4 },
+              ],
+            }),
+          ),
+        ),
+      ),
+    )
+
+    expect(out.scopeMode).toBe("changed-hunks")
+    expect(TsSl01.score(out)).toBeLessThan(1)
+    expect(TsSl01.diagnose(out)[0]?.message).toContain("copiedTiny")
+  })
+
+  test("diff-aware: skips duplicates outside changed files", async () => {
+    await repo.write(
+      "unchanged.ts",
+      `
+function dup1(x: number): number { return x * 2; }
+function dup2(x: number): number { return x * 2; }
+`,
+    )
+    await repo.write(
+      "changed.ts",
+      `
+function unique(x: number): number { return x + 1; }
+`,
+    )
+
+    const out = await Effect.runPromise(
+      TsSl01.compute(
+        TsSl01.defaultConfig,
+        new Map(),
+      ).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            TsProjectLayer(repo.root),
+            Layer.succeed(SignalContextTag, {
+              gitSha: "TEST",
+              worktreePath: repo.root,
+              changedHunks: [
+                {
+                  file: `${repo.root}/changed.ts`,
+                  oldStart: 2,
+                  oldLines: 0,
+                  newStart: 2,
+                  newLines: 1,
+                },
+              ],
+            }),
+          ),
+        ),
+      ),
+    )
+
+    expect(out.scopeMode).toBe("changed-hunks")
+    expect(out.groups).toEqual([])
+    expect(out.totalFunctionsAnalyzed).toBe(0)
   })
 
   test("score is 1 when no duplicates", async () => {
@@ -283,6 +677,162 @@ export function dup4(x: number): number {
     const score = TsSl01.score(out)
     expect(score).toBeLessThan(1)
     expect(score).toBeGreaterThanOrEqual(0)
+  })
+
+  test("small exact helper swarms score sublinearly while larger implementation clones stay strong", () => {
+    const smallHelperGroup = {
+      groupId: "small-helper-swarm",
+      kind: "exact" as const,
+      tokenCount: 31,
+      structuralHash: "small",
+      members: Array.from({ length: 12 }, (_, index) => ({
+        file: `helper-${index}.ts`,
+        name: `asRecord${index}`,
+        startLine: 1,
+        endLine: 5,
+      })),
+    }
+    const largerImplementationGroup = {
+      groupId: "larger-implementation",
+      kind: "exact" as const,
+      tokenCount: 176,
+      structuralHash: "large",
+      members: [
+        { file: "real-device.ts", name: "findNewestFileInDirectory", startLine: 1, endLine: 30 },
+        { file: "simulator.ts", name: "findNewestFileInDirectory", startLine: 1, endLine: 30 },
+      ],
+    }
+
+    const smallOnlyScore = TsSl01.score({
+      groups: [smallHelperGroup],
+      totalFunctionsAnalyzed: 12,
+      scoreBudgetFunctions: 12,
+      scopeMode: "whole-tree",
+    })
+    const largerOnlyScore = TsSl01.score({
+      groups: [largerImplementationGroup],
+      totalFunctionsAnalyzed: 2,
+      scoreBudgetFunctions: 2,
+      scopeMode: "whole-tree",
+    })
+
+    expect(smallOnlyScore).toBeLessThan(1)
+    expect(smallOnlyScore).toBeGreaterThan(largerOnlyScore)
+  })
+
+  test("helper-scale exact clones are informational in whole-tree diagnostics", () => {
+    const diagnostics = TsSl01.diagnose({
+      groups: [
+        {
+          groupId: "tiny-helper",
+          kind: "exact",
+          tokenCount: 24,
+          structuralHash: "tiny",
+          members: [
+            { file: "a.ts", name: "uniqueSorted", startLine: 1, endLine: 3 },
+            { file: "b.ts", name: "uniqueSorted", startLine: 1, endLine: 3 },
+          ],
+        },
+        {
+          groupId: "larger-helper",
+          kind: "exact",
+          tokenCount: 40,
+          structuralHash: "larger",
+          members: [
+            { file: "c.ts", name: "copyA", startLine: 1, endLine: 8 },
+            { file: "d.ts", name: "copyB", startLine: 1, endLine: 8 },
+          ],
+        },
+      ],
+      totalFunctionsAnalyzed: 4,
+      scoreBudgetFunctions: 4,
+      scopeMode: "whole-tree",
+    })
+
+    expect(diagnostics.find((diagnostic) => diagnostic.data?.groupId === "tiny-helper")?.severity).toBe("info")
+    expect(diagnostics.find((diagnostic) => diagnostic.data?.groupId === "larger-helper")?.severity).toBe("warn")
+  })
+
+  test("lowering min_tokens cannot improve score through denominator inflation", () => {
+    const duplicatedGroup = {
+      groupId: "exact-0",
+      kind: "exact" as const,
+      tokenCount: 80,
+      structuralHash: "hash",
+      members: [
+        { file: "a.ts", name: "duplicateA", startLine: 1, endLine: 8 },
+        { file: "b.ts", name: "duplicateB", startLine: 1, endLine: 8 },
+      ],
+    }
+
+    const baselineScore = TsSl01.score({
+      groups: [duplicatedGroup],
+      totalFunctionsAnalyzed: 20,
+      scoreBudgetFunctions: 20,
+      scopeMode: "whole-tree",
+    })
+    const stricterDetectionScore = TsSl01.score({
+      groups: [duplicatedGroup],
+      totalFunctionsAnalyzed: 800,
+      scoreBudgetFunctions: 20,
+      scopeMode: "whole-tree",
+    })
+
+    expect(stricterDetectionScore).toBe(baselineScore)
+  })
+
+  test("diagnostics include clone counterpart locations", async () => {
+    await repo.write(
+      "helpers.ts",
+      `
+export function duplicateOne(value: number): number {
+  const doubled = value * 2;
+  if (doubled > 10) {
+    return doubled - 1;
+  }
+  return doubled + 1;
+}
+
+export function duplicateTwo(value: number): number {
+  const doubled = value * 2;
+  if (doubled > 10) {
+    return doubled - 1;
+  }
+  return doubled + 1;
+}
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl01, TsSl01.defaultConfig)
+    const diagnostic = TsSl01.diagnose(out)[0]
+
+    expect(diagnostic?.message).toContain("duplicateOne")
+    expect(diagnostic?.message).toContain("duplicateTwo")
+    expect(diagnostic?.message).toContain(`${repo.root}/helpers.ts`)
+  })
+
+  test("diagnostics honor configured top_n_diagnostics", () => {
+    const groups = Array.from({ length: 3 }, (_, index) => ({
+      groupId: `exact-${index}`,
+      kind: "exact" as const,
+      tokenCount: 80,
+      structuralHash: `hash-${index}`,
+      members: [
+        { file: `a-${index}.ts`, name: `duplicateA${index}`, startLine: 1, endLine: 8 },
+        { file: `b-${index}.ts`, name: `duplicateB${index}`, startLine: 1, endLine: 8 },
+      ],
+    }))
+
+    const diagnostics = TsSl01.diagnose({
+      groups,
+      totalFunctionsAnalyzed: 6,
+      scoreBudgetFunctions: 6,
+      scopeMode: "whole-tree",
+      diagnosticLimit: 2,
+    })
+
+    expect(diagnostics).toHaveLength(2)
+    expect(diagnostics.map((diagnostic) => diagnostic.data?.groupId)).toEqual(["exact-0", "exact-1"])
   })
 
   test("normalizes string literals in ternary branches instead of treating them as object anchors", async () => {

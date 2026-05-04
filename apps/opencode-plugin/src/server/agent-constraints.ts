@@ -93,7 +93,7 @@ export const renderAgentConstraintSystemPrompt = async (input: {
   return lines.join("\n")
 }
 
-export const loadConstraintContext = async (
+const loadConstraintContext = async (
   worktree: string,
   vector: TasteVector | undefined,
 ): Promise<ConstraintContext> => {

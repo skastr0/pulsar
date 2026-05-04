@@ -7,9 +7,11 @@ import { SignalContextTag } from "./context.js"
 import type { Signal } from "./signal.js"
 
 const execFileAsync = promisify(execFile)
+const GIT_MAX_BUFFER_BYTES = 256 * 1024 * 1024
 
 export const SharedChurn01Config = Schema.Struct({
   window_days: Schema.Number,
+  max_commits: Schema.Number,
   include_extensions: Schema.Array(Schema.String),
   exclude_paths: Schema.Array(Schema.String),
 })
@@ -19,6 +21,8 @@ export interface SharedChurn01Output {
   readonly byFile: ReadonlyMap<string, number>
   readonly windowDays: number
   readonly totalCommits: number
+  readonly maxCommits?: number
+  readonly sampled?: boolean
 }
 
 /**
@@ -34,6 +38,7 @@ export const SharedChurn01: Signal<SharedChurn01Config, SharedChurn01Output, Sig
   configSchema: SharedChurn01Config,
   defaultConfig: {
     window_days: 90,
+    max_commits: 500,
     include_extensions: [".ts", ".tsx", ".js", ".jsx", ".rs"],
     exclude_paths: ["node_modules/", "dist/", ".turbo/", "target/"],
   },
@@ -47,7 +52,7 @@ export const SharedChurn01: Signal<SharedChurn01Config, SharedChurn01Output, Sig
           const result = await execFileAsync(
             "git",
             ["log", "-1", "--format=%cI", "HEAD"],
-            { cwd: ctx.worktreePath },
+            { cwd: ctx.worktreePath, maxBuffer: GIT_MAX_BUFFER_BYTES },
           )
           return result.stdout
         },
@@ -65,17 +70,20 @@ export const SharedChurn01: Signal<SharedChurn01Config, SharedChurn01Output, Sig
 
       const raw = yield* Effect.tryPromise({
         try: async (): Promise<string> => {
+          const pathspecs = sourcePathspecs(config.include_extensions)
           const result = await execFileAsync(
             "git",
             [
               "log",
+              `--max-count=${Math.max(1, Math.floor(config.max_commits))}`,
               `--since=${sinceDate.toISOString()}`,
               `--until=${headDate.toISOString()}`,
               "--name-only",
               "--pretty=format:__commit__",
               "--no-renames",
+              ...(pathspecs.length > 0 ? ["--", ...pathspecs] : []),
             ],
-            { cwd: ctx.worktreePath },
+            { cwd: ctx.worktreePath, maxBuffer: GIT_MAX_BUFFER_BYTES },
           )
           return result.stdout
         },
@@ -106,6 +114,8 @@ export const SharedChurn01: Signal<SharedChurn01Config, SharedChurn01Output, Sig
         byFile,
         windowDays: config.window_days,
         totalCommits,
+        maxCommits: config.max_commits,
+        sampled: totalCommits >= config.max_commits,
       }
     }),
   score: () => 1,
@@ -117,3 +127,11 @@ const hasIncludedExtension = (path: string, extensions: ReadonlyArray<string>): 
 
 const isExcluded = (path: string, excludes: ReadonlyArray<string>): boolean =>
   excludes.some((prefix) => path.includes(prefix))
+
+const sourcePathspecs = (
+  includeExtensions: ReadonlyArray<string>,
+): ReadonlyArray<string> =>
+  includeExtensions.flatMap((extension) => [
+    `:(glob)*${extension}`,
+    `:(glob)**/*${extension}`,
+  ])

@@ -6,7 +6,10 @@ import {
 import { Effect, Schema } from "effect"
 import { collectRustProjectFacts, type RustUseFact } from "../rust-analysis.js"
 import { RustProjectTag } from "../project.js"
-import { resolveCrateRelativePath } from "./shared-rust-resolution.js"
+import {
+  resolveCrateRelativePath,
+  toLocalRelativeSegments,
+} from "./shared-rust-resolution.js"
 import { DEFAULT_RUST_EXCLUDE_GLOBS } from "./shared-rust-ast.js"
 import { isExcluded } from "./shared-globs.js"
 
@@ -131,28 +134,11 @@ const resolveLocalUseTarget = (
   facts: Awaited<ReturnType<typeof collectRustProjectFacts>>,
   rootNamesByCrate: ReadonlyMap<string, ReadonlySet<string>>,
 ): string | undefined => {
-  const relativeSegments = toRelativeSegments(useFact, rootNamesByCrate.get(useFact.crateName) ?? new Set())
+  const relativeSegments = toLocalRelativeSegments(
+    useFact,
+    rootNamesByCrate.get(useFact.crateName) ?? new Set(),
+  )
   if (relativeSegments === undefined) return undefined
   const resolved = resolveCrateRelativePath(useFact.crateName, relativeSegments, facts)
   return resolved?.item?.modulePath ?? resolved?.module?.modulePath
-}
-
-const toRelativeSegments = (
-  useFact: RustUseFact,
-  rootNames: ReadonlySet<string>,
-): ReadonlyArray<string> | undefined => {
-  const [head, ...rest] = useFact.segments
-  if (head === undefined) return undefined
-  const current = useFact.relativeModulePath.split("::")
-  switch (head) {
-    case useFact.crateName:
-    case "crate":
-      return rest
-    case "self":
-      return [...current.slice(1), ...rest]
-    case "super":
-      return [...current.slice(1, -1), ...rest]
-    default:
-      return rootNames.has(head) ? useFact.segments : undefined
-  }
 }

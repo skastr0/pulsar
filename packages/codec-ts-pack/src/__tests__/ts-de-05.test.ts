@@ -43,6 +43,7 @@ describe("TS-DE-05 (duplicate dependency versions)", () => {
 
     const out = await runCompute()
     expect(out.duplicates).toHaveLength(0)
+    expect(out.lockfileStatus).toBe("bun")
     expect(TsDe05.score(out)).toBe(1)
   })
 
@@ -75,10 +76,23 @@ describe("TS-DE-05 (duplicate dependency versions)", () => {
       version: "2.0.0",
       chain: ["@repo/app", "wrapper", "alpha"],
     })
+    expect(TsDe05.score(out)).toBeLessThan(1)
   })
 
-  test("unsupported lockfiles surface a not-yet-supported error", async () => {
+  test("unsupported lockfiles skip duplicate-version analysis without failing", async () => {
     await repo.write("package-lock.json", "{}")
-    await expect(runCompute()).rejects.toThrow(/not yet supported/i)
+    const out = await runCompute()
+    expect(out.lockfileStatus).toBe("unsupported")
+    expect(out.lockfileFiles).toEqual(["package-lock.json"])
+    expect(out.duplicates).toEqual([])
+    expect(TsDe05.score(out)).toBe(1)
+    expect(TsDe05.diagnose(out)[0]?.severity).toBe("info")
+  })
+
+  test("missing lockfiles skip duplicate-version analysis without failing", async () => {
+    const out = await runCompute()
+    expect(out.lockfileStatus).toBe("missing")
+    expect(out.duplicates).toEqual([])
+    expect(TsDe05.score(out)).toBe(1)
   })
 })

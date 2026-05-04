@@ -290,6 +290,7 @@ describe("RoutingDetector", () => {
 
 const makeDiff = (partial: Partial<RoutingDiff>): RoutingDiff => ({
   changedFiles: partial.changedFiles ?? [],
+  changedHunks: partial.changedHunks ?? [],
   addedFiles: partial.addedFiles ?? [],
   addedImports: partial.addedImports ?? [],
   astMatches: partial.astMatches ?? [],

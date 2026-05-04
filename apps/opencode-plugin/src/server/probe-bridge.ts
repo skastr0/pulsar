@@ -17,7 +17,7 @@ export interface ProbeCodecMetadata {
   readonly backpressure?: ReturnType<typeof evaluateBackpressure>
 }
 
-export const isProbeSessionOpenCommand = (command: string): boolean =>
+const isProbeSessionOpenCommand = (command: string): boolean =>
   /(?:^|\s)(?:probe\s+session\s+open|bun\s+run\s+probe\s+--\s+session\s+open)(?:\s|$)/.test(
     command,
   )
@@ -49,7 +49,7 @@ export const maybeHandleProbeSessionOpen = async (input: {
   return metadata
 }
 
-export const computeProbeCodecMetadata = async (input: {
+const computeProbeCodecMetadata = async (input: {
   readonly worktree: string
   readonly vector: TasteVector | undefined
 }): Promise<ProbeCodecMetadata> => {
@@ -78,7 +78,7 @@ export const computeProbeCodecMetadata = async (input: {
   }
 }
 
-export const attachProbeSessionMetadata = async (input: {
+const attachProbeSessionMetadata = async (input: {
   readonly sessionId: string
   readonly metadata: ProbeCodecMetadata
   readonly probeHome?: string

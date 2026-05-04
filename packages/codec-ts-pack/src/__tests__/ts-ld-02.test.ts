@@ -170,6 +170,41 @@ describe("TS-LD-02 (function / file size distribution)", () => {
     expect(out.functionSizes.max).toBeLessThanOrEqual(3)
   })
 
+  test("generated, vendored, and test helper files are excluded by default", async () => {
+    await writeTs("src/index.ts", "export function real() { return 1 }\n")
+    await writeTs(
+      "src/schema.generated.ts",
+      [
+        "export function generated(value) {",
+        "  return value",
+        "}",
+        "",
+      ].join("\n"),
+    )
+    await writeTs(
+      "vendor/copied.ts",
+      [
+        "export function vendored(value) {",
+        "  return value",
+        "}",
+        "",
+      ].join("\n"),
+    )
+    await writeTs(
+      "src/monitor.test-helpers.ts",
+      [
+        "export function helper(value) {",
+        "  return value",
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runCompute()
+    expect(out.totalFiles).toBe(1)
+    expect(out.totalFunctions).toBe(1)
+  })
+
   test("distribution summaries are populated", async () => {
     await writeTs("a.ts", "export const a = 1\nexport const a2 = 2\n")
     await writeTs(

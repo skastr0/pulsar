@@ -7,6 +7,8 @@ import {
 } from "@taste-codec/core"
 import { Effect, Schema } from "effect"
 import { basename } from "node:path"
+import { Node, type SourceFile } from "ts-morph"
+import { createModuleResolver } from "../graph/module-graph.js"
 import { TsProjectTag } from "../ts-project.js"
 import { isExcluded } from "./shared-globs.js"
 
@@ -73,35 +75,34 @@ export const TsAd03: Signal<TsAd03Config, TsAd03Output, TsProjectTag> = {
           const sourceFiles = project
             .getSourceFiles()
             .filter((sourceFile) => !isExcluded(sourceFile.getFilePath(), config.exclude_globs))
-          const fileSet = new Set(sourceFiles.map((sourceFile) => sourceFile.getFilePath()))
+          const fileSet: ReadonlySet<string> = new Set(
+            sourceFiles.map((sourceFile): string => sourceFile.getFilePath()),
+          )
+          const resolver = createModuleResolver(sourceFiles, [])
           const reExportTargets = new Map<string, ReadonlyArray<string>>()
           const analysisByFile = new Map<string, ReExportAnalysis>()
 
           for (const sourceFile of sourceFiles) {
-            const file = sourceFile.getFilePath()
-            const targets = sourceFile
-              .getExportDeclarations()
-              .map((declaration) => declaration.getModuleSpecifierSourceFile()?.getFilePath())
-              .reduce<Array<string>>((acc, value) => {
+            const file: string = sourceFile.getFilePath()
+            const targets = uniqueSorted(
+              sourceFile.getExportDeclarations().reduce<Array<string>>((acc, declaration) => {
+                const value = resolver.resolve(file, declaration)
                 if (value !== undefined && fileSet.has(value)) {
                   acc.push(value)
                 }
                 return acc
-              }, [])
+              }, []),
+            )
             reExportTargets.set(file, targets)
 
-            const exportedDeclarations = sourceFile.getExportedDeclarations()
-            const totalExports = exportedDeclarations.size
-            const reExportedCount = [...exportedDeclarations.values()].filter((declarations) =>
-              declarations.some((declaration) => declaration.getSourceFile() !== sourceFile),
-            ).length
             const directReExports = targets.length
+            const totalExports = directReExports + countLocalExportSurfaces(sourceFile)
             const barrelRatio =
               totalExports === 0
                 ? directReExports > 0
                   ? 1
                   : 0
-                : reExportedCount / totalExports
+                : directReExports / totalExports
             const isBarrel =
               barrelRatio >= config.barrel_ratio_threshold ||
               (basename(file) === "index.ts" && directReExports >= config.index_reexport_threshold)
@@ -129,7 +130,7 @@ export const TsAd03: Signal<TsAd03Config, TsAd03Output, TsProjectTag> = {
             }
           }
 
-          const chainsOverThreshold = allChains
+          const chainsOverThreshold = uniqueChains(allChains)
             .filter((chain) => chain.depth > config.chain_threshold || chain.cycle)
             .sort(compareChains)
 
@@ -156,7 +157,7 @@ export const TsAd03: Signal<TsAd03Config, TsAd03Output, TsProjectTag> = {
     return Math.max(0, 1 - Math.min(1, Math.max(0, penalty)))
   },
   diagnose: (out): ReadonlyArray<Diagnostic> =>
-    out.chainsOverThreshold.slice(0, out.diagnosticLimit).map((chain) => ({
+    selectDiagnosticChains(out.chainsOverThreshold, out.diagnosticLimit).map((chain) => ({
       severity: "warn" as const,
       message:
         `${chain.cycle ? "Re-export cycle" : "Deep re-export chain"} ` +
@@ -220,3 +221,79 @@ const compareChains = (left: ReExportChain, right: ReExportChain): number => {
   }
   return left.start.localeCompare(right.start)
 }
+
+const uniqueSorted = (values: ReadonlyArray<string>): ReadonlyArray<string> =>
+  [...new Set(values)].sort((left, right) => left.localeCompare(right))
+
+const uniqueChains = (chains: ReadonlyArray<ReExportChain>): ReadonlyArray<ReExportChain> => {
+  const byKey = new Map<string, ReExportChain>()
+  for (const chain of chains) {
+    byKey.set(`${chain.cycle ? "cycle" : "chain"}|${chain.hops.join("\0")}`, chain)
+  }
+  return [...byKey.values()]
+}
+
+const selectDiagnosticChains = (
+  chains: ReadonlyArray<ReExportChain>,
+  limit: number,
+): ReadonlyArray<ReExportChain> => {
+  const selected: Array<ReExportChain> = []
+  const seenStarts = new Set<string>()
+
+  for (const chain of chains) {
+    if (!seenStarts.has(chain.start)) {
+      selected.push(chain)
+      seenStarts.add(chain.start)
+    }
+    if (selected.length >= limit) return selected
+  }
+
+  return selected
+}
+
+const countLocalExportSurfaces = (sourceFile: SourceFile): number => {
+  let count = 0
+
+  for (const statement of sourceFile.getStatements()) {
+    if (Node.isExportDeclaration(statement)) {
+      if (statement.getModuleSpecifierValue() !== undefined) continue
+      count += Math.max(1, statement.getNamedExports().length)
+      continue
+    }
+
+    if (Node.isExportAssignment(statement)) {
+      count += 1
+      continue
+    }
+
+    if (Node.isVariableStatement(statement)) {
+      if (!hasExportModifier(statement)) continue
+      count += Math.max(1, statement.getDeclarations().length)
+      continue
+    }
+
+    if (
+      Node.isFunctionDeclaration(statement) ||
+      Node.isClassDeclaration(statement) ||
+      Node.isInterfaceDeclaration(statement) ||
+      Node.isTypeAliasDeclaration(statement) ||
+      Node.isEnumDeclaration(statement) ||
+      Node.isModuleDeclaration(statement)
+    ) {
+      if (hasExportModifier(statement)) count += 1
+    }
+  }
+
+  return count
+}
+
+const hasExportModifier = (
+  node:
+    | import("ts-morph").VariableStatement
+    | import("ts-morph").FunctionDeclaration
+    | import("ts-morph").ClassDeclaration
+    | import("ts-morph").InterfaceDeclaration
+    | import("ts-morph").TypeAliasDeclaration
+    | import("ts-morph").EnumDeclaration
+    | import("ts-morph").ModuleDeclaration,
+): boolean => node.getModifiers().some((modifier) => modifier.getText() === "export")

@@ -30,6 +30,16 @@ export interface CategoryOutput {
   readonly signals: Record<string, number>
   readonly signalCount: number
   readonly activeSignalIds: ReadonlyArray<string>
+  readonly aggregation?: {
+    readonly strategy: "weighted-mean" | "language-group-mean"
+    readonly rawScore: number
+    readonly aggregateScore: number
+    readonly lowestSignalScore: number
+    readonly finalScore: number
+    readonly shapedByLowestSignal: boolean
+    readonly weightTotal: number
+    readonly weights: Record<string, number>
+  }
   readonly normalization?: {
     readonly strategy: "language-group-mean"
     readonly groups: Record<
@@ -56,9 +66,48 @@ export interface HardGateViolation {
   readonly diagnostic: Diagnostic
 }
 
+export interface ObserverRuntimeProfile {
+  readonly totalMs: number
+  readonly stages?: Record<
+    string,
+    {
+      readonly durationMs: number
+    }
+  >
+  readonly signals: Record<
+    string,
+    {
+      readonly durationMs: number
+      readonly score: number
+      readonly diagnostics: number
+    }
+  >
+}
+
+interface ObserverOptions {
+  readonly profile?: boolean
+}
+
+const DEFAULT_OBSERVER_SIGNAL_CONCURRENCY = 1
+
 const ObserverCategorySnapshot = Schema.Struct({
   score: Schema.Number,
   signals: Schema.Record({ key: Schema.String, value: Schema.Number }),
+  aggregation: Schema.optional(
+    Schema.Struct({
+      strategy: Schema.Union(
+        Schema.Literal("weighted-mean"),
+        Schema.Literal("language-group-mean"),
+      ),
+      rawScore: Schema.Number,
+      aggregateScore: Schema.Number,
+      lowestSignalScore: Schema.Number,
+      finalScore: Schema.Number,
+      shapedByLowestSignal: Schema.Boolean,
+      weightTotal: Schema.Number,
+      weights: Schema.Record({ key: Schema.String, value: Schema.Number }),
+    }),
+  ),
   normalization: Schema.optional(
     Schema.Struct({
       strategy: Schema.Literal("language-group-mean"),
@@ -103,6 +152,26 @@ const ObserverSignalMetadataSnapshot = Schema.Struct({
   stale: Schema.optional(Schema.Boolean),
 })
 
+const ObserverRuntimeProfileSnapshot = Schema.Struct({
+  total_ms: Schema.Number,
+  stages: Schema.optional(
+    Schema.Record({
+      key: Schema.String,
+      value: Schema.Struct({
+        duration_ms: Schema.Number,
+      }),
+    }),
+  ),
+  signals: Schema.Record({
+    key: Schema.String,
+    value: Schema.Struct({
+      duration_ms: Schema.Number,
+      score: Schema.Number,
+      diagnostics: Schema.Number,
+    }),
+  }),
+})
+
 export const ObserverOutput = Schema.Struct({
   categories: ObserverCategories,
   minimum: Schema.Union(MinimumDimensionSnapshot, Schema.Undefined),
@@ -112,6 +181,7 @@ export const ObserverOutput = Schema.Struct({
   signal_metadata: Schema.optional(
     Schema.Record({ key: Schema.String, value: ObserverSignalMetadataSnapshot }),
   ),
+  runtime_profile: Schema.optional(ObserverRuntimeProfileSnapshot),
 })
 
 type ObserverOutputPublic = typeof ObserverOutput.Type
@@ -122,6 +192,7 @@ export type ObserverOutput = ObserverOutputPublic & {
   readonly inactiveSignals: ReadonlyArray<string>
   readonly signalResults: ReadonlyMap<string, SignalRunResult>
   readonly signalMetadata?: Record<string, SignalOutputMetadata>
+  readonly runtimeProfile?: ObserverRuntimeProfile
 }
 
 export const toObserverJson = (output: ObserverOutput): ObserverOutputPublic => ({
@@ -150,6 +221,33 @@ export const toObserverJson = (output: ObserverOutput): ObserverOutputPublic => 
   ...(output.signalMetadata !== undefined && Object.keys(output.signalMetadata).length > 0
     ? { signal_metadata: output.signalMetadata }
     : {}),
+  ...(output.runtimeProfile !== undefined
+    ? {
+        runtime_profile: {
+          total_ms: output.runtimeProfile.totalMs,
+          ...(output.runtimeProfile.stages !== undefined
+            ? {
+                stages: Object.fromEntries(
+                  Object.entries(output.runtimeProfile.stages).map(([stageId, profile]) => [
+                    stageId,
+                    { duration_ms: profile.durationMs },
+                  ]),
+                ),
+              }
+            : {}),
+          signals: Object.fromEntries(
+            Object.entries(output.runtimeProfile.signals).map(([signalId, profile]) => [
+              signalId,
+              {
+                duration_ms: profile.durationMs,
+                score: profile.score,
+                diagnostics: profile.diagnostics,
+              },
+            ]),
+          ),
+        },
+      }
+    : {}),
 })
 
 const toObserverCategorySnapshot = (
@@ -157,6 +255,9 @@ const toObserverCategorySnapshot = (
 ): typeof ObserverCategorySnapshot.Type => ({
   score: category.score,
   signals: category.signals,
+  ...(category.aggregation !== undefined
+    ? { aggregation: category.aggregation }
+    : {}),
   ...(category.normalization !== undefined
     ? { normalization: category.normalization }
     : {}),
@@ -178,29 +279,72 @@ const toObserverCategorySnapshot = (
 export const observe = (
   registry: Registry,
   vector: TasteVector | undefined,
+  options?: ObserverOptions,
 ): Effect.Effect<ObserverOutput, never, any> =>
   Effect.gen(function* () {
+    const observerStartedAt = nowMs()
     const outputs = new Map<string, unknown>()
     const signalResults = new Map<string, SignalRunResult>()
     const inactiveSignals: Array<string> = []
     const signalMetadata: Record<string, SignalOutputMetadata> = {}
+    const signalProfiles: ObserverRuntimeProfile["signals"] = {}
 
-    // Walk the already-topologically-sorted registry once. Dependency
-    // outputs are in `outputs` by the time a compound signal runs.
+    const processedSignals = new Set<string>()
+    const registryIds = new Set(registry.sorted.map((signal) => signal.id))
+    let pendingSignals: Array<ResolvedSignal> = []
+
     for (const signal of registry.sorted) {
       if (!vectorIsActive(signal.id, vector)) {
         inactiveSignals.push(signal.id)
+        processedSignals.add(signal.id)
         continue
       }
 
-      const result = yield* runOneSignal(signal, outputs, vector)
-      if (result.output !== undefined) {
-        outputs.set(signal.id, result.output)
+      pendingSignals.push(signal)
+    }
+
+    while (pendingSignals.length > 0) {
+      const readySignals = pendingSignals.filter((signal) =>
+        signal.inputs.every((input) => processedSignals.has(input.id) || !registryIds.has(input.id)),
+      )
+
+      const batch = readySignals.length > 0 ? readySignals : [pendingSignals[0]!]
+      const batchIds = new Set(batch.map((signal) => signal.id))
+      pendingSignals = pendingSignals.filter((signal) => !batchIds.has(signal.id))
+
+      const outputSnapshot = new Map(outputs)
+      const batchResults = yield* Effect.forEach(
+        batch,
+        (signal) =>
+          Effect.gen(function* () {
+            const startedAt = nowMs()
+            const result = yield* runOneSignal(signal, outputSnapshot, vector)
+            return {
+              signal,
+              result,
+              durationMs: roundRuntimeMs(nowMs() - startedAt),
+            }
+          }),
+        { concurrency: DEFAULT_OBSERVER_SIGNAL_CONCURRENCY },
+      )
+
+      for (const { signal, result, durationMs } of batchResults) {
+        if (options?.profile === true) {
+          signalProfiles[signal.id] = {
+            durationMs,
+            score: result.score,
+            diagnostics: result.diagnostics.length,
+          }
+        }
+        if (result.output !== undefined) {
+          outputs.set(signal.id, result.output)
+        }
+        if (result.metadata !== undefined) {
+          signalMetadata[signal.id] = result.metadata
+        }
+        signalResults.set(signal.id, result)
+        processedSignals.add(signal.id)
       }
-      if (result.metadata !== undefined) {
-        signalMetadata[signal.id] = result.metadata
-      }
-      signalResults.set(signal.id, result)
     }
 
     const categories = aggregateCategories(registry, signalResults, vector)
@@ -219,8 +363,23 @@ export const observe = (
       inactiveSignals,
       signalResults,
       ...(Object.keys(signalMetadata).length > 0 ? { signalMetadata } : {}),
+      ...(options?.profile === true
+        ? {
+            runtimeProfile: {
+              totalMs: roundRuntimeMs(nowMs() - observerStartedAt),
+              signals: signalProfiles,
+            },
+          }
+        : {}),
     }
   })
+
+const nowMs = (): number => {
+  if (typeof performance !== "undefined") return performance.now()
+  return Date.now()
+}
+
+const roundRuntimeMs = (value: number): number => Math.max(0, Number(value.toFixed(2)))
 
 /**
  * Run a single signal against the shared outputs map. Compute failures
@@ -296,6 +455,7 @@ const aggregateCategories = (
     )
 
     const signalsRecord: Record<string, number> = {}
+    const weightsRecord: Record<string, number> = {}
     const activeIds: Array<string> = []
     let weightedSum = 0
     let weightTotal = 0
@@ -313,6 +473,7 @@ const aggregateCategories = (
       if (result === undefined) continue
       const weight = vectorWeightOf(s.id, vector)
       signalsRecord[s.id] = result.score
+      weightsRecord[s.id] = weight
       activeIds.push(s.id)
       weightedSum += weight * result.score
       weightTotal += weight
@@ -327,22 +488,41 @@ const aggregateCategories = (
       bucket.weightTotal += weight
       bucket.signalIds.push(s.id)
       groups.set(normalizationGroup, bucket)
-      if (normalizationGroup !== "shared") {
+      if (isLanguageNormalizationGroup(normalizationGroup)) {
         languageLocalGroups.add(normalizationGroup)
       }
     }
 
     const rawScore = weightTotal === 0 ? 1 : weightedSum / weightTotal
+    const lowestSignalScore = Math.min(
+      ...Object.values(signalsRecord),
+    )
     const normalization =
       languageLocalGroups.size > 1
         ? buildCategoryNormalization(groups)
         : undefined
-    const score = normalization?.score ?? rawScore
+    const normalizedScore = normalization?.score ?? rawScore
+    const shapedByLowestSignal = shouldShapeCategoryScore(category)
+    const score = shapeCategoryScore(
+      category,
+      normalizedScore,
+      Number.isFinite(lowestSignalScore) ? lowestSignalScore : 1,
+    )
     out[category] = {
       score,
       signals: signalsRecord,
       signalCount: signalsInCategory.length,
       activeSignalIds: activeIds,
+      aggregation: {
+        strategy: normalization === undefined ? "weighted-mean" : "language-group-mean",
+        rawScore,
+        aggregateScore: normalizedScore,
+        lowestSignalScore: Number.isFinite(lowestSignalScore) ? lowestSignalScore : 1,
+        finalScore: score,
+        shapedByLowestSignal,
+        weightTotal,
+        weights: weightsRecord,
+      },
       ...(normalization !== undefined
         ? { normalization: normalization.snapshot }
         : {}),
@@ -350,6 +530,18 @@ const aggregateCategories = (
   }
   return out as Record<Category, CategoryOutput>
 }
+
+const shapeCategoryScore = (
+  category: Category,
+  score: number,
+  lowestSignalScore: number,
+): number => {
+  if (!shouldShapeCategoryScore(category)) return score
+  return (score * 0.65) + (lowestSignalScore * 0.35)
+}
+
+const shouldShapeCategoryScore = (category: Category): boolean =>
+  category === "dependency-entropy" || category === "generated-slop"
 
 const buildCategoryNormalization = (
   groups: ReadonlyMap<
@@ -395,6 +587,9 @@ const normalizationGroupOfSignal = (signal: ResolvedSignal): string => {
   if (signal.id.startsWith("SHARED-")) return "shared"
   return "default"
 }
+
+const isLanguageNormalizationGroup = (group: string): boolean =>
+  group === "typescript" || group === "rust"
 
 /**
  * Count-weighted mean across categories: categories with more active

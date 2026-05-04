@@ -2,8 +2,10 @@ import { readdir, readFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { Effect, Schema } from "effect"
+import { ChangedHunk } from "./context.js"
 import type { Diagnostic } from "./diagnostic.js"
 import { RoutingPatternLoadFailed } from "./errors.js"
+import { matchesGlob } from "./globs.js"
 import type { ObserverOutput } from "./observer.js"
 import type { SignalRunResult } from "./runner.js"
 
@@ -95,6 +97,7 @@ export type SignalChange = typeof SignalChange.Type
 
 export const RoutingDiff = Schema.Struct({
   changedFiles: Schema.Array(Schema.String),
+  changedHunks: Schema.optionalWith(Schema.Array(ChangedHunk), { default: () => [] }),
   addedFiles: Schema.optionalWith(Schema.Array(Schema.String), { default: () => [] }),
   addedImports: Schema.optionalWith(Schema.Array(ImportAddition), { default: () => [] }),
   astMatches: Schema.optionalWith(Schema.Array(AstMatch), { default: () => [] }),
@@ -296,19 +299,6 @@ const selectSignalPayload = (
         output: toSerializable(result.output),
       }
   }
-}
-
-const matchesGlob = (path: string, glob: string): boolean => {
-  const regex = new RegExp(
-    "^" +
-      glob
-        .replace(/\./g, "\\.")
-        .replace(/\*\*/g, "§§")
-        .replace(/\*/g, "[^/]*")
-        .replace(/§§/g, ".*") +
-      "$",
-  )
-  return regex.test(path)
 }
 
 const matchesSpecifierPattern = (specifier: string, pattern: string): boolean => {

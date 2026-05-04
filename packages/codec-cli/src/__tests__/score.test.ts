@@ -86,6 +86,29 @@ const cycleRepoFiles = (): ReadonlyArray<{ path: string; content: string }> => [
   },
 ]
 
+const broadCycleRepoFiles = (): ReadonlyArray<{ path: string; content: string }> =>
+  Array.from({ length: 10 }, (_, index) => [
+    {
+      path: `src/cycle-${index}/a.ts`,
+      content: `import { b } from './b'\nexport const a${index} = b + 1\n`,
+    },
+    {
+      path: `src/cycle-${index}/b.ts`,
+      content: `import { a${index} } from './a'\nexport const b = a${index} + 1\n`,
+    },
+  ]).flat()
+
+const healthyCoupledRepoFiles = (): ReadonlyArray<{ path: string; content: string }> => [
+  {
+    path: "src/types.ts",
+    content: "export interface User { readonly id: string }\n",
+  },
+  {
+    path: "src/use-user.ts",
+    content: "import type { User } from './types'\nexport const idOf = (user: User) => user.id\n",
+  },
+]
+
 describe("taste score", () => {
   test("full observer mode prints the category table, minimum, and gate", async () => {
     const repoPath = await initRepo(simpleRepoFiles())
@@ -101,6 +124,35 @@ describe("taste score", () => {
     }
   }, 120_000)
 
+  test("default full observer uses the TypeScript domain in mixed-language repos", async () => {
+    const repoPath = await initRepo([
+      ...simpleRepoFiles(),
+      {
+        path: "Cargo.toml",
+        content: "[package]\nname = \"mixed\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+      },
+      { path: "src/lib.rs", content: "pub fn rust_api() {}\n" },
+    ])
+    try {
+      const out = runCli(repoPath, ["score", "."])
+      expect(out.status).toBe(0)
+      expect(out.stdout).toContain("Vector: all-defaults")
+      expect(out.stdout).toContain("TS-")
+      expect(out.stdout).not.toContain("RS-")
+
+      const jsonOut = runCli(repoPath, ["score", "--json", "."])
+      expect(jsonOut.status).toBe(0)
+      const parsed = JSON.parse(String(jsonOut.stdout))
+      const signalIds = Object.values(parsed.categories).flatMap((category: any) =>
+        Object.keys(category.signals ?? {}),
+      )
+      expect(signalIds.some((id) => id.startsWith("TS-"))).toBe(true)
+      expect(signalIds.some((id) => id.startsWith("RS-"))).toBe(false)
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
   test("--json emits ObserverOutput JSON", async () => {
     const repoPath = await initRepo(simpleRepoFiles())
     try {
@@ -111,6 +163,36 @@ describe("taste score", () => {
       expect(decoded.hard_gate_status === "pass" || decoded.hard_gate_status === "fail").toBe(
         true,
       )
+      expect(typeof decoded.categories["generated-slop"].aggregation?.aggregateScore).toBe("number")
+      expect(decoded.categories["generated-slop"].aggregation?.weights).toBeDefined()
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
+  test("--profile emits runtime attribution for observer runs", async () => {
+    const repoPath = await initRepo(simpleRepoFiles())
+    try {
+      const out = runCli(repoPath, ["score", "--profile", "--category", "generated-slop", "."])
+      expect(out.status).toBe(0)
+      expect(out.stdout).toContain("Runtime")
+      expect(out.stdout).toContain("Environment Setup")
+      expect(out.stdout).toContain("diagnostics=")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
+  test("--json --profile includes runtime_profile", async () => {
+    const repoPath = await initRepo(simpleRepoFiles())
+    try {
+      const out = runCli(repoPath, ["score", "--json", "--profile", "."])
+      expect(out.status).toBe(0)
+      const parsed = JSON.parse(String(out.stdout))
+      const decoded = Schema.decodeUnknownSync(ObserverOutputSchema)(parsed)
+      expect(decoded.runtime_profile?.total_ms).toBeGreaterThanOrEqual(0)
+      expect(decoded.runtime_profile?.stages?.["environment-setup"]?.duration_ms).toBeGreaterThanOrEqual(0)
+      expect(Object.keys(decoded.runtime_profile?.signals ?? {}).length).toBeGreaterThan(0)
     } finally {
       await rm(repoPath, { recursive: true, force: true })
     }
@@ -123,8 +205,292 @@ describe("taste score", () => {
       expect(out.status).toBe(0)
       expect(out.stdout).toContain("Category: abstraction-bloat")
       expect(out.stdout).toContain("TS-AB-01")
+      expect(out.stdout).not.toContain("RS-")
       expect(out.stdout).not.toContain("Weighted Mean")
       expect(out.stdout).not.toContain("Hard Gate")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
+  test("category output explains score math and signal weights", async () => {
+    const repoPath = await initRepo(simpleRepoFiles())
+    try {
+      const out = runCli(repoPath, ["score", "--category", "generated-slop", "."])
+      expect(out.status).toBe(0)
+      expect(out.stdout).toContain("Score Math")
+      expect(out.stdout).toContain("aggregate")
+      expect(out.stdout).toContain("lowest")
+      expect(out.stdout).toContain("formula   0.65 * aggregate + 0.35 * lowest")
+      expect(out.stdout).toContain("weights")
+      expect(out.stdout).toContain("TS-SL-01=")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
+  test("category top findings compact repo-root paths in messages", async () => {
+    const repoPath = await initRepo(cycleRepoFiles())
+    try {
+      const out = runCli(repoPath, ["score", "--category", "architectural-drift", "."])
+      expect(out.status).toBe(0)
+      expect(out.stdout).toContain("Top Findings")
+      expect(out.stdout).toContain("TS-AD-02 WARN")
+      const findings = out.stdout.slice(out.stdout.indexOf("Top Findings"))
+      expect(findings).not.toContain(repoPath)
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
+  test("category top findings omit healthy non-blocking diagnostics", async () => {
+    const repoPath = await initRepo(healthyCoupledRepoFiles())
+    try {
+      const signalOut = runCli(repoPath, ["score", "--signal", "TS-DE-01", "."])
+      expect(signalOut.status).toBe(0)
+      expect(signalOut.stdout).toContain("Score:  1.000")
+      expect(signalOut.stdout).toContain("(no diagnostics)")
+
+      const categoryOut = runCli(repoPath, ["score", "--category", "dependency-entropy", "."])
+      expect(categoryOut.status).toBe(0)
+      expect(categoryOut.stdout).toContain("Dependency Entropy     1.00")
+      expect(categoryOut.stdout).not.toContain("Top Findings")
+      expect(categoryOut.stdout).not.toContain("Type coupling")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
+  test("full observer mode scores uncommitted current worktree content", async () => {
+    const repoPath = await initRepo(simpleRepoFiles())
+    try {
+      await writeRepoFile(
+        repoPath,
+        "src/dirty-suppression.ts",
+        "// @ts-ignore\nexport const risky: string = 42 as never\n",
+      )
+
+      const out = runCli(repoPath, ["score", "--category", "generated-slop", "."])
+      expect(out.status).toBe(0)
+      expect(out.stdout).toContain("Category: generated-slop")
+      expect(out.stdout).toContain("TS-SL-03               0.99")
+      expect(out.stdout).toContain("Top Findings")
+      expect(out.stdout).toContain("TS-SL-03 WARN")
+      expect(out.stdout).toContain("ts-ignore is missing justification")
+      expect(out.stdout).toContain("at src/dirty-suppression.ts:1")
+
+      const fullOut = runCli(repoPath, ["score", "."])
+      expect(fullOut.status).toBe(0)
+      expect(fullOut.stdout).toContain("Top Findings")
+      expect(fullOut.stdout).toContain("TS-SL-03 WARN")
+      expect(fullOut.stdout).toContain("at src/dirty-suppression.ts:1")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
+  test("review-pain output shows largest files for PR surface", async () => {
+    const repoPath = await initRepo(simpleRepoFiles())
+    try {
+      await writeRepoFile(
+        repoPath,
+        "src/large.ts",
+        Array.from({ length: 90 }, (_, index) => `export const large${index} = ${index}`).join("\n"),
+      )
+      await writeRepoFile(
+        repoPath,
+        "src/medium.ts",
+        Array.from({ length: 30 }, (_, index) => `export const medium${index} = ${index}`).join("\n"),
+      )
+
+      const out = runCli(repoPath, ["score", "--category", "review-pain", "."])
+
+      expect(out.status).toBe(0)
+      expect(out.stdout).toContain("TS-RP-02")
+      expect(out.stdout).toContain("largest files src/large.ts")
+      expect(out.stdout).toContain("src/medium.ts")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
+  test("generated-slop scoring surfaces changed code copied from unchanged files", async () => {
+    const duplicateBody = `
+  const doubled = value * 2
+  if (doubled > 10) {
+    return doubled - 1
+  }
+  return doubled + 1
+`
+    const repoPath = await initRepo([
+      {
+        path: "src/existing.ts",
+        content: `export function existingHandler(value: number): number {${duplicateBody}}\n`,
+      },
+    ])
+    try {
+      await writeRepoFile(
+        repoPath,
+        "src/changed.ts",
+        `export function copiedHandler(value: number): number {${duplicateBody}}\n`,
+      )
+
+      const out = runCli(repoPath, ["score", "--category", "generated-slop", "."])
+      expect(out.status).toBe(0)
+      expect(out.stdout).toContain("TS-SL-01")
+      expect(out.stdout).toContain("existingHandler")
+      expect(out.stdout).toContain("copiedHandler")
+      expect(out.stdout).toContain("members src/changed.ts:1 copiedHandler; src/existing.ts:1 existingHandler")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
+  test("explicit taste vector can tighten diff scoring for small copied edits", async () => {
+    const smallDuplicateBody = `
+  const out = value + 1
+  return out
+`
+    const repoPath = await initRepo([
+      {
+        path: "src/existing.ts",
+        content: `export function existingTiny(value: number): number {${smallDuplicateBody}}\n`,
+      },
+      {
+        path: "src/existing-two.ts",
+        content: `export function existingTinyTwo(value: number): number {${smallDuplicateBody}}\n`,
+      },
+    ])
+    try {
+      await writeRepoFile(
+        repoPath,
+        "src/changed.ts",
+        `export function copiedTiny(value: number): number {${smallDuplicateBody}}\n`,
+      )
+      await writeRepoFile(
+        repoPath,
+        ".taste-codec/micro-copy-defense.json",
+        JSON.stringify(
+          {
+            id: "micro-copy-defense",
+            domain: "typescript",
+            signal_overrides: {
+              "TS-SL-01": {
+                config: {
+                  min_tokens: 8,
+                },
+              },
+            },
+            modes: {
+              ai_assisted: true,
+            },
+            provenance: [
+              {
+                source: "manual",
+                recorded_at: "2026-05-03T00:00:00.000Z",
+                summary: "Tighten duplicate detection for small AI-assisted edits.",
+              },
+            ],
+          },
+          null,
+          2,
+        ),
+      )
+
+      const defaultOut = runCli(repoPath, ["score", "--category", "generated-slop", "."])
+      expect(defaultOut.status).toBe(0)
+      expect(defaultOut.stdout).not.toContain("existingTiny")
+      expect(defaultOut.stdout).not.toContain("copiedTiny")
+
+      const vectorOut = runCli(repoPath, [
+        "score",
+        "--category",
+        "generated-slop",
+        "--vector",
+        ".taste-codec/micro-copy-defense.json",
+        ".",
+      ])
+      expect(vectorOut.status).toBe(0)
+      expect(vectorOut.stdout).toContain("Vector:   micro-copy-defense")
+      expect(vectorOut.stdout).toContain("existingTiny")
+      expect(vectorOut.stdout).toContain("copiedTiny")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
+  test("category top findings include the weakest actionable signal", async () => {
+    const repoPath = await initRepo(simpleRepoFiles())
+    try {
+      await writeRepoFile(
+        repoPath,
+        "src/stubs.ts",
+        `
+export function stubA() { throw new Error("Not implemented") }
+export function stubB() { throw new Error("Not implemented") }
+export function stubC() { throw new Error("Not implemented") }
+export function stubD() { throw new Error("Not implemented") }
+export function stubE() { throw new Error("Not implemented") }
+export function stubF() { throw new Error("Not implemented") }
+`,
+      )
+      await writeRepoFile(
+        repoPath,
+        "src/suppression.ts",
+        Array.from(
+          { length: 70 },
+          (_, index) => `// @ts-ignore\nexport const risky${index}: string = 42 as never\n`,
+        ).join("\n"),
+      )
+
+      const out = runCli(repoPath, ["score", "--category", "generated-slop", "."])
+      expect(out.status).toBe(0)
+      expect(out.stdout).toContain("Top Findings")
+      expect(out.stdout).toContain("TS-SL-04 BLOCK")
+      expect(out.stdout).toContain("TS-SL-03 WARN")
+      expect(out.stdout).toContain("ts-ignore is missing justification")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
+  test("explicit TypeScript vector can drive category scoring", async () => {
+    const repoPath = await initRepo(simpleRepoFiles())
+    try {
+      await writeRepoFile(
+        repoPath,
+        ".taste-codec/ts-dependency-vector.json",
+        JSON.stringify(
+          {
+            id: "ts-dependency-baseline",
+            domain: "typescript",
+            signal_overrides: {},
+            provenance: [
+              {
+                source: "manual",
+                recorded_at: "2026-05-03T00:00:00.000Z",
+                summary: "Control vector for TypeScript dependency-entropy scoring.",
+              },
+            ],
+          },
+          null,
+          2,
+        ),
+      )
+
+      const out = runCli(repoPath, [
+        "score",
+        "--category",
+        "dependency-entropy",
+        "--vector",
+        ".taste-codec/ts-dependency-vector.json",
+        ".",
+      ])
+      expect(out.status).toBe(0)
+      expect(out.stdout).toContain("Vector:   ts-dependency-baseline")
+      expect(out.stdout).toContain("Category: dependency-entropy")
+      expect(out.stdout).toContain("TS-DE-04")
+      expect(out.stdout).not.toContain("RS-DE-")
     } finally {
       await rm(repoPath, { recursive: true, force: true })
     }
@@ -226,8 +592,8 @@ describe("taste score", () => {
     }
   }, 120_000)
 
-  test("baseline set/show and --ci keeps passing when no new hard-gate identities surface", async () => {
-    const repoPath = await initRepo(cycleRepoFiles())
+  test("baseline set/show and --ci ratchets new current-worktree hard-gate identities", async () => {
+    const repoPath = await initRepo(broadCycleRepoFiles())
     try {
       const baselineSet = runCli(repoPath, ["baseline", "set", "."])
       expect(baselineSet.status).toBe(0)
@@ -259,8 +625,9 @@ describe("taste score", () => {
       )
 
       const ratchetedFail = runCli(repoPath, ["score", "--ci", "."])
-      expect(ratchetedFail.status).toBe(0)
-      expect(ratchetedFail.stderr).toContain("status=pass")
+      expect(ratchetedFail.status).toBe(2)
+      expect(ratchetedFail.stderr).toContain("status=fail")
+      expect(ratchetedFail.stderr).toContain("new=")
     } finally {
       await rm(repoPath, { recursive: true, force: true })
     }
@@ -293,7 +660,7 @@ describe("taste score", () => {
 
       const show = runCli(repoPath, ["baseline", "show", "."])
       expect(show.status).toBe(0)
-      expect(show.stdout).toContain("Tolerated:     1")
+      expect(show.stdout).toContain("Tolerated:     0")
 
       const ci = runCli(repoPath, ["score", "--ci", "."])
       expect(ci.status).toBe(0)
@@ -311,6 +678,24 @@ describe("taste score", () => {
       expect(out.status).toBe(0)
       expect(out.stdout).toContain("Signal: TS-LD-01")
       expect(out.stdout).toContain("Score:")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
+  test("single-signal diagnostics render readable repo-relative locations", async () => {
+    const repoPath = await initRepo([
+      {
+        path: "src/problem.ts",
+        content: "// @ts-ignore\nexport const risky: string = 42 as never\n",
+      },
+    ])
+    try {
+      const out = runCli(repoPath, ["score", "--signal", "TS-SL-03", "."])
+      expect(out.status).toBe(0)
+      expect(out.stdout).toContain("WARN  ts-ignore is missing justification")
+      expect(out.stdout).toContain("      at src/problem.ts:1")
+      expect(out.stdout).not.toContain(`${repoPath}/src/problem.ts`)
     } finally {
       await rm(repoPath, { recursive: true, force: true })
     }

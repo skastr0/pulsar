@@ -5,18 +5,15 @@ import {
   SignalComputeError,
 } from "@taste-codec/core"
 import { Effect, Schema } from "effect"
-import { type FunctionDeclaration, type MethodDeclaration, type ArrowFunction, type FunctionExpression, type ConstructorDeclaration, type GetAccessorDeclaration, type SetAccessorDeclaration, Node, type SourceFile } from "ts-morph"
+import { type ArrowFunction, type FunctionExpression, Node, SyntaxKind } from "ts-morph"
 import { TsProjectTag } from "../ts-project.js"
+import {
+  getFunctionBody,
+  getFunctionLikeEntriesForSourceFile,
+  getFunctionName,
+  type TsFunctionLike as FnLike,
+} from "./shared-function-index.js"
 import { isExcluded, matchesAnyGlob } from "./shared-globs.js"
-
-type FnLike =
-  | FunctionDeclaration
-  | MethodDeclaration
-  | ArrowFunction
-  | FunctionExpression
-  | ConstructorDeclaration
-  | GetAccessorDeclaration
-  | SetAccessorDeclaration
 
 export const TsSl01Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
@@ -44,8 +41,13 @@ export interface CloneGroup {
 export interface TsSl01Output {
   readonly groups: ReadonlyArray<CloneGroup>
   readonly totalFunctionsAnalyzed: number
+  readonly scoreBudgetFunctions: number
   readonly scopeMode: "whole-tree" | "changed-hunks"
+  readonly detectionMinTokens?: number
+  readonly diagnosticLimit?: number
 }
+
+const DEFAULT_SCORE_BUDGET_MIN_TOKENS = 12
 
 export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalContextTag> = {
   id: "TS-SL-01",
@@ -54,8 +56,50 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
   kind: "legibility",
   configSchema: TsSl01Config,
   defaultConfig: {
-    exclude_globs: ["**/node_modules/**", "**/dist/**", "**/.turbo/**"],
-    test_globs: ["**/*.test.ts", "**/*.spec.ts", "**/__tests__/**"],
+    exclude_globs: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/.turbo/**",
+      "**/vendor/**",
+      "**/gen/**",
+      "**/*.gen.ts",
+      "**/*.gen.tsx",
+      "**/*.generated.ts",
+      "**/*.generated.tsx",
+      "**/sst-env.d.ts",
+    ],
+    test_globs: [
+      "**/*.test.ts",
+      "**/*.test.tsx",
+      "**/*.spec.ts",
+      "**/*.spec.tsx",
+      "**/*.stories.ts",
+      "**/*.stories.tsx",
+      "**/__tests__/**",
+      "**/test/**",
+      "**/tests/**",
+      "**/test-support/**",
+      "**/*test-support.ts",
+      "**/*test-support.tsx",
+      "**/*.test-support.ts",
+      "**/*.test-support.tsx",
+      "**/test-helpers.ts",
+      "**/*test-helpers.ts",
+      "**/*test-helpers.tsx",
+      "**/*.test-helpers.ts",
+      "**/*.test-helpers.tsx",
+      "**/test-mocks.ts",
+      "**/*test-mocks.ts",
+      "**/*test-mocks.tsx",
+      "**/*.test-mocks.ts",
+      "**/*.test-mocks.tsx",
+      "**/test-harness.ts",
+      "**/*test-harness.ts",
+      "**/*test-harness.tsx",
+      "**/*.test-harness.ts",
+      "**/*.test-harness.tsx",
+      "**/happydom.ts",
+    ],
     min_tokens: 12,
     top_n_diagnostics: 10,
   },
@@ -69,28 +113,47 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
           const functions: Array<{
             exactHash: string
             structuralHash: string
+            exactEligible: boolean
             structuralEligible: boolean
+            changed: boolean
             tokenCount: number
             member: CloneGroupMember
           }> = []
+          let scoreBudgetFunctions = 0
+          let totalFunctionsAnalyzed = 0
+          const hunkMap = buildHunkMap(context.worktreePath, context.changedHunks)
+          const structuralAnalysisCache = new Map<
+            string,
+            { readonly tokenCount: number; readonly structuralHash: string }
+          >()
 
           for (const sourceFile of project.getSourceFiles()) {
             const path = sourceFile.getFilePath()
             if (isExcluded(path, config.exclude_globs)) continue
             if (matchesAnyGlob(path, config.test_globs)) continue
 
-            for (const fn of collectFunctionLike(sourceFile)) {
-              if (!lineRangeOverlapsHunks(path, fn, context.worktreePath, context.changedHunks)) {
-                continue
-              }
+            for (const { fn } of getFunctionLikeEntriesForSourceFile(sourceFile)) {
+              const changed =
+                hunkMap === undefined || lineRangeOverlapsHunkRanges(fn, hunkMap.get(path) ?? [])
 
               const body = getFunctionBody(fn)
               if (body === undefined) continue
 
-              const exactTokens = tokenizeExact(body)
-              const structuralTokens = tokenizeStructural(body)
+              const exactHash = hashExactSource(body)
+              const cacheKey = `${exactHash}:${body.length}`
+              const structuralAnalysis =
+                structuralAnalysisCache.get(cacheKey) ??
+                analyzeStructuralBody(body, structuralAnalysisCache, cacheKey)
 
-              if (structuralTokens.length < config.min_tokens) continue
+              if (changed && structuralAnalysis.tokenCount >= DEFAULT_SCORE_BUDGET_MIN_TOKENS) {
+                scoreBudgetFunctions += 1
+              }
+
+              if (structuralAnalysis.tokenCount < config.min_tokens) continue
+              if (changed) {
+                totalFunctionsAnalyzed += 1
+              }
+              const exactTokenCount = countExactTokens(body)
 
               const member: CloneGroupMember = {
                 file: path,
@@ -100,26 +163,30 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
               }
 
               functions.push({
-                exactHash: hashTokens(exactTokens),
-                structuralHash: hashTokens(structuralTokens),
+                exactHash,
+                structuralHash: structuralAnalysis.structuralHash,
+                exactEligible: isExactCloneEligible(fn, exactTokenCount),
                 structuralEligible: isStructuralCloneEligible(fn),
-                tokenCount: structuralTokens.length,
+                changed,
+                tokenCount: structuralAnalysis.tokenCount,
                 member,
               })
             }
           }
 
           const exactGroups = buildGroups(functions, "exact", config)
+          const exactHashByMember = new Map(
+            functions.map((fn) => [memberKey(fn.member), fn.exactHash] as const),
+          )
           const structuralGroups = buildGroups(functions, "structural", config).filter((group) => {
-            const exactVariants = new Set(
-              group.members.map((member) =>
-                functions.find((fn) =>
-                  fn.member.file === member.file && fn.member.startLine === member.startLine,
-                )?.exactHash,
-              ),
-            )
+            const exactVariants = new Set(group.members.map((member) => exactHashByMember.get(memberKey(member))))
             return exactVariants.size > 1
           })
+          const changedMemberKeys = new Set(
+            functions.filter((fn) => fn.changed).map((fn) => memberKey(fn.member)),
+          )
+          const filterForScope = (group: CloneGroup): boolean =>
+            hunkMap === undefined || group.members.some((member) => changedMemberKeys.has(memberKey(member)))
 
           const groups: Array<CloneGroup> = []
           let groupIndex = 0
@@ -143,11 +210,21 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
               structuralHash: g.hash,
             })
           }
+          const scopeMode = context.changedHunks.length > 0 ? "changed-hunks" : "whole-tree"
 
           return {
-            groups: groups.sort((a, b) => b.members.length - a.members.length || b.tokenCount - a.tokenCount),
-            totalFunctionsAnalyzed: functions.length,
-            scopeMode: context.changedHunks.length > 0 ? "changed-hunks" : "whole-tree",
+            groups: groups
+              .filter(filterForScope)
+              .sort((a, b) =>
+                cloneGroupImpact(b, scopeMode, config.min_tokens) - cloneGroupImpact(a, scopeMode, config.min_tokens) ||
+                b.members.length - a.members.length ||
+                b.tokenCount - a.tokenCount,
+              ),
+            totalFunctionsAnalyzed,
+            scoreBudgetFunctions,
+            scopeMode,
+            detectionMinTokens: config.min_tokens,
+            diagnosticLimit: config.top_n_diagnostics,
           }
         },
         catch: (cause) =>
@@ -155,14 +232,32 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
       })
     }),
   score: (out) => {
-    const cloneMembers = out.groups.reduce((sum, group) => sum + group.members.length, 0)
-    if (cloneMembers === 0) return 1
-    return Math.max(0, 1 - Math.min(1, cloneMembers / 20))
+    const minTokens = out.detectionMinTokens ?? TsSl01.defaultConfig.min_tokens
+    const penalty = out.groups.reduce(
+      (sum, group) => sum + cloneGroupImpact(group, out.scopeMode, minTokens),
+      0,
+    )
+    if (penalty === 0) return 1
+    const expectedCleanBudget = Math.max(80, out.scoreBudgetFunctions * 0.12)
+    return Math.max(0, 1 - Math.min(1, penalty / expectedCleanBudget))
   },
   diagnose: (out): ReadonlyArray<Diagnostic> =>
-    out.groups.slice(0, 10).map((group) => ({
-      severity: group.kind === "exact" ? ("warn" as const) : ("info" as const),
-      message: `${group.kind} clone group with ${group.members.length} members (${group.tokenCount} tokens)`,
+    out.groups
+      .filter((group) => cloneGroupImpact(
+        group,
+        out.scopeMode,
+        out.detectionMinTokens ?? TsSl01.defaultConfig.min_tokens,
+      ) > 0)
+      .slice(0, out.diagnosticLimit ?? 10)
+      .map((group) => ({
+      severity: cloneGroupSeverity(
+        group,
+        out.scopeMode,
+        out.detectionMinTokens ?? TsSl01.defaultConfig.min_tokens,
+      ),
+      message:
+        `${group.kind} clone group with ${group.members.length} members (${group.tokenCount} tokens): ` +
+        cloneMemberSummary(group.members),
       location: {
         file: group.members[0]?.file ?? "unknown",
         line: group.members[0]?.startLine,
@@ -177,65 +272,164 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
     })),
 }
 
-const collectFunctionLike = (sourceFile: SourceFile): ReadonlyArray<FnLike> => {
-  const results: Array<FnLike> = []
-  sourceFile.forEachDescendant((node) => {
-    if (
-      Node.isFunctionDeclaration(node) ||
-      Node.isMethodDeclaration(node) ||
-      Node.isArrowFunction(node) ||
-      Node.isFunctionExpression(node) ||
-      Node.isConstructorDeclaration(node) ||
-      Node.isGetAccessorDeclaration(node) ||
-      Node.isSetAccessorDeclaration(node)
-    ) {
-      results.push(node as FnLike)
-    }
-  })
-  return results
+const analyzeStructuralBody = (
+  body: string,
+  cache: Map<string, { readonly tokenCount: number; readonly structuralHash: string }>,
+  cacheKey: string,
+): { readonly tokenCount: number; readonly structuralHash: string } => {
+  const analysis = analyzeStructuralSource(body)
+  cache.set(cacheKey, analysis)
+  return analysis
 }
 
-const getFunctionBody = (fn: FnLike): string | undefined => {
-  if (Node.isArrowFunction(fn)) {
-    const body = fn.getBody()
-    return body?.getText()
-  }
-  if ("getBody" in fn && typeof fn.getBody === "function") {
-    const body = fn.getBody()
-    return body?.getText()
-  }
-  return undefined
+const cloneMemberSummary = (members: ReadonlyArray<CloneGroupMember>): string => {
+  const visible = members
+    .slice(0, 3)
+    .map((member) => `${member.file}:${member.startLine} ${member.name}`)
+  const hidden = members.length - visible.length
+  return hidden > 0 ? `${visible.join(", ")} (+${hidden} more)` : visible.join(", ")
 }
 
-const getFunctionName = (fn: FnLike): string => {
-  if (Node.isFunctionDeclaration(fn) || Node.isMethodDeclaration(fn) || Node.isFunctionExpression(fn)) {
-    const name = fn.getName?.()
-    if (name) return name
+const cloneGroupImpact = (
+  group: CloneGroup,
+  scopeMode: TsSl01Output["scopeMode"],
+  minTokens: number,
+): number => {
+  const extraMembers = Math.max(0, group.members.length - 1)
+  if (extraMembers === 0) return 0
+
+  if (group.kind === "exact") {
+    if (group.tokenCount < 20 && minTokens >= DEFAULT_SCORE_BUDGET_MIN_TOKENS) return 0
+    if (scopeMode === "whole-tree" && group.tokenCount < 20) return 0
+    const memberPressure = scopeMode === "whole-tree" && group.tokenCount < 50
+      ? Math.log2(group.members.length) * 0.5
+      : extraMembers
+    return memberPressure * 1.2 * Math.min(3, Math.max(0.3, group.tokenCount / 30))
   }
-  if (Node.isArrowFunction(fn) || Node.isFunctionExpression(fn)) {
-    const parent = fn.getParent()
-    if (Node.isVariableDeclaration(parent) || Node.isPropertyAssignment(parent)) {
-      return parent.getName()
-    }
-    if (Node.isExportAssignment(parent)) {
-      return "<default export>"
-    }
+
+  if (scopeMode === "changed-hunks") {
+    return extraMembers * Math.min(1.5, Math.max(0.1, group.tokenCount / 60))
   }
-  if (Node.isConstructorDeclaration(fn)) return "constructor"
-  if (Node.isGetAccessorDeclaration(fn)) return `get ${fn.getName()}`
-  if (Node.isSetAccessorDeclaration(fn)) return `set ${fn.getName()}`
-  return "<anonymous>"
+
+  if (group.tokenCount < 30) return 0
+  return extraMembers * Math.min(0.35, (group.tokenCount - 30) / 120)
+}
+
+const cloneGroupSeverity = (
+  group: CloneGroup,
+  scopeMode: TsSl01Output["scopeMode"],
+  minTokens: number,
+): Diagnostic["severity"] => {
+  if (group.kind === "exact") return group.tokenCount < 30 ? "info" : "warn"
+  return cloneGroupImpact(group, scopeMode, minTokens) >= 5 ? "warn" : "info"
 }
 
 const isStructuralCloneEligible = (fn: FnLike): boolean => {
+  if (isAstPredicateUnionGuard(fn)) {
+    return false
+  }
+
+  if (isJsxComponentAdapter(fn)) {
+    return false
+  }
+
   if (Node.isArrowFunction(fn) || Node.isFunctionExpression(fn)) {
     const parent = fn.getParent()
     if ((Node.isCallExpression(parent) || Node.isPropertyAssignment(parent)) && hasSingleOperationalStatement(fn)) {
       return false
     }
+    if (isSmallEffectGenCallback(fn)) {
+      return false
+    }
   }
 
   return true
+}
+
+const isAstPredicateUnionGuard = (fn: FnLike): boolean => {
+  const name = getFunctionName(fn)
+  if (!/^is[A-Z]/.test(name)) return false
+  if (!("getBody" in fn) || typeof fn.getBody !== "function") return false
+  const body = fn.getBody()
+  if (body === undefined) return false
+
+  if (Node.isBlock(body)) {
+    const statements = body.getStatements()
+    if (statements.length !== 1) return false
+    const statement = statements[0]
+    if (!Node.isReturnStatement(statement)) return false
+    const expression = statement.getExpression()
+    return expression !== undefined && isAstPredicateUnionExpression(expression)
+  }
+
+  return isAstPredicateUnionExpression(body)
+}
+
+const isAstPredicateUnionExpression = (node: Node): boolean => {
+  if (Node.isParenthesizedExpression(node)) {
+    return isAstPredicateUnionExpression(node.getExpression())
+  }
+  if (Node.isBinaryExpression(node) && node.getOperatorToken().getKind() === SyntaxKind.BarBarToken) {
+    return (
+      isAstPredicateUnionExpression(node.getLeft()) &&
+      isAstPredicateUnionExpression(node.getRight())
+    )
+  }
+  if (!Node.isCallExpression(node)) return false
+  const callee = node.getExpression().getText()
+  return /^ts\.is[A-Z]/.test(callee) || /^Node\.is[A-Z]/.test(callee)
+}
+
+const isJsxComponentAdapter = (fn: FnLike): boolean => {
+  if (!("getBody" in fn) || typeof fn.getBody !== "function") return false
+  const body = fn.getBody()
+  if (!Node.isBlock(body)) return false
+  const statements = body.getStatements()
+  if (statements.length !== 2) return false
+
+  const setup = statements[0]?.getText() ?? ""
+  const returned = statements[1]?.getText() ?? ""
+  return (
+    /\bsplitProps\s*\(/.test(setup) &&
+    /^return\s*\(?\s*</s.test(returned) &&
+    returned.includes("{...") &&
+    returned.includes("classList")
+  )
+}
+
+const isExactCloneEligible = (fn: FnLike, tokenCount: number): boolean => {
+  if (tokenCount <= 40 && (isJsxRenderCallback(fn) || isSmallJsxReturnFunction(fn))) {
+    return false
+  }
+
+  if (Node.isArrowFunction(fn) || Node.isFunctionExpression(fn)) {
+    const parent = fn.getParent()
+    if (Node.isCallExpression(parent) && hasSingleOperationalStatement(fn)) {
+      return false
+    }
+  }
+
+  return true
+}
+
+const isJsxRenderCallback = (fn: FnLike): boolean => {
+  if (!Node.isArrowFunction(fn) && !Node.isFunctionExpression(fn)) return false
+
+  let current: Node | undefined = fn.getParent()
+  while (current !== undefined && !Node.isSourceFile(current)) {
+    if (Node.isJsxExpression(current)) return true
+    current = current.getParent()
+  }
+  return false
+}
+
+const isSmallJsxReturnFunction = (fn: FnLike): boolean => {
+  if (!("getBody" in fn) || typeof fn.getBody !== "function") return false
+  const body = fn.getBody()
+  if (!Node.isBlock(body)) return false
+  const statements = body.getStatements()
+  if (statements.length !== 1) return false
+  return /^return\s*\(?\s*</s.test(statements[0]?.getText() ?? "")
 }
 
 const hasSingleOperationalStatement = (fn: ArrowFunction | FunctionExpression): boolean => {
@@ -244,35 +438,50 @@ const hasSingleOperationalStatement = (fn: ArrowFunction | FunctionExpression): 
   return body.getStatements().length === 1
 }
 
-const lineRangeOverlapsHunks = (
-  filePath: string,
-  fn: FnLike,
+const isSmallEffectGenCallback = (fn: ArrowFunction | FunctionExpression): boolean => {
+  const parent = fn.getParent()
+  if (!Node.isCallExpression(parent)) return false
+  if (parent.getExpression().getText() !== "Effect.gen") return false
+
+  const body = fn.getBody()
+  if (!Node.isBlock(body)) return true
+  return body.getStatements().length <= 3
+}
+
+const buildHunkMap = (
   worktreePath: string,
   hunks: ReadonlyArray<{ file: string; oldStart: number; oldLines: number; newStart: number; newLines: number }>,
+): Map<string, ReadonlyArray<{ start: number; end: number }>> | undefined => {
+  if (hunks.length === 0) return undefined
+
+  const map = new Map<string, Array<{ start: number; end: number }>>()
+  for (const hunk of hunks) {
+    const file = hunk.file.startsWith(worktreePath) ? hunk.file : `${worktreePath}/${hunk.file}`
+    const ranges = map.get(file) ?? []
+    ranges.push({
+      start: hunk.newStart,
+      end: hunk.newStart + hunk.newLines,
+    })
+    map.set(file, ranges)
+  }
+  return map
+}
+
+const lineRangeOverlapsHunkRanges = (
+  fn: FnLike,
+  ranges: ReadonlyArray<{ start: number; end: number }>,
 ): boolean => {
-  if (hunks.length === 0) return true
-  const absoluteFile = filePath.startsWith(worktreePath) ? filePath : `${worktreePath}/${filePath}`
+  if (ranges.length === 0) return false
   const startLine = fn.getStartLineNumber()
   const endLine = fn.getEndLineNumber()
 
-  for (const hunk of hunks) {
-    const hunkFileAbsolute = hunk.file.startsWith(worktreePath) ? hunk.file : `${worktreePath}/${hunk.file}`
-    if (hunkFileAbsolute !== absoluteFile) continue
-
-    const hunkStart = hunk.newStart
-    const hunkEnd = hunk.newStart + hunk.newLines
-
-    if (startLine < hunkEnd && endLine >= hunkStart) {
+  for (const range of ranges) {
+    if (startLine < range.end && endLine >= range.start) {
       return true
     }
   }
 
   return false
-}
-
-const tokenizeExact = (source: string): ReadonlyArray<string> => {
-  const normalized = source.replace(/\s+/g, " ").trim()
-  return normalized.split(/\s+/)
 }
 
 const TS_KEYWORDS = new Set([
@@ -287,7 +496,9 @@ const TS_KEYWORDS = new Set([
   "with", "yield",
 ])
 
-const tokenizeStructural = (source: string): ReadonlyArray<string> => {
+const analyzeStructuralSource = (
+  source: string,
+): { readonly tokenCount: number; readonly structuralHash: string } => {
   const stripped = source
     .replace(/\/\/.*$/gm, "")
     .replace(/\/\*[\s\S]*?\*\//g, "")
@@ -300,10 +511,29 @@ const tokenizeStructural = (source: string): ReadonlyArray<string> => {
   const rawTokens = stripped.match(
     /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[A-Za-z_$][A-Za-z0-9_$]*|=>|===|!==|==|!=|<=|>=|\*\*|\+\+|--|&&|\|\||<<|>>|>>>|\.\.\.|[{}()[\],;:.<>+\-*\/%&|!?=]/g,
   ) ?? []
+  const ternaryColonIndexes = findTernaryColonIndexes(rawTokens)
 
-  const structuralTokens = rawTokens.map((token, index) => {
+  let hash = 0
+  for (let index = 0; index < rawTokens.length; index++) {
+    const token = rawTokens[index]!
+    const structuralToken = structuralTokenFor(rawTokens, index, ternaryColonIndexes)
+    hash = appendTokenHash(hash, structuralToken)
+  }
+
+  return {
+    tokenCount: rawTokens.length,
+    structuralHash: Math.abs(hash).toString(36),
+  }
+}
+
+const structuralTokenFor = (
+  rawTokens: ReadonlyArray<string>,
+  index: number,
+  ternaryColonIndexes: ReadonlySet<number>,
+): string => {
+  const token = rawTokens[index]!
     if (isStringLiteralToken(token)) {
-      return isObjectPropertyValue(rawTokens, index) ? `STR:${token}` : "STR"
+      return isObjectPropertyValue(rawTokens, index, ternaryColonIndexes) ? `STR:${token}` : "STR"
     }
 
     if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(token) && !TS_KEYWORDS.has(token)) {
@@ -311,49 +541,113 @@ const tokenizeStructural = (source: string): ReadonlyArray<string> => {
     }
 
     return token
-  })
+}
 
-  return structuralTokens
+const appendTokenHash = (hash: number, token: string): number => {
+  let next = hash
+  for (let index = 0; index < token.length; index++) {
+    const charCode = token.charCodeAt(index)
+    next = ((next << 5) - next) + charCode
+    next = next & next
+  }
+  return next
+}
+
+const countExactTokens = (source: string): number => {
+  let count = 0
+  let inToken = false
+
+  for (let index = 0; index < source.length; index++) {
+    const charCode = source.charCodeAt(index)
+    const isWhitespace =
+      charCode === 9 ||
+      charCode === 10 ||
+      charCode === 11 ||
+      charCode === 12 ||
+      charCode === 13 ||
+      charCode === 32
+    if (isWhitespace) {
+      inToken = false
+      continue
+    }
+
+    if (!inToken) {
+      count++
+      inToken = true
+    }
+  }
+
+  return count
+}
+
+const hashExactSource = (source: string): string => {
+  let hash = 0
+  for (let index = 0; index < source.length; index++) {
+    const charCode = source.charCodeAt(index)
+    if (
+      charCode === 9 ||
+      charCode === 10 ||
+      charCode === 11 ||
+      charCode === 12 ||
+      charCode === 13 ||
+      charCode === 32
+    ) {
+      continue
+    }
+    hash = ((hash << 5) - hash) + charCode
+    hash = hash & hash
+  }
+  return Math.abs(hash).toString(36)
 }
 
 const isStringLiteralToken = (token: string): boolean =>
   (token.startsWith("\"") && token.endsWith("\"")) || (token.startsWith("'") && token.endsWith("'"))
 
-const isObjectPropertyValue = (tokens: ReadonlyArray<string>, index: number): boolean => {
+const isObjectPropertyValue = (
+  tokens: ReadonlyArray<string>,
+  index: number,
+  ternaryColonIndexes: ReadonlySet<number>,
+): boolean => {
   const colonIndex = index - 1
-  if (tokens[colonIndex] !== ":" || isTernaryColon(tokens, colonIndex)) return false
+  if (tokens[colonIndex] !== ":" || ternaryColonIndexes.has(colonIndex)) return false
   const key = tokens[index - 2]
   return key !== undefined && (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key) || isStringLiteralToken(key))
 }
 
-const isTernaryColon = (tokens: ReadonlyArray<string>, colonIndex: number): boolean => {
-  for (let index = colonIndex - 1; index >= 0; index--) {
-    const token = tokens[index]
-    if (token === undefined || token === ";" || token === "," || token === "{" || token === "}") return false
-    if (token === "?") return true
-  }
-  return false
-}
+const findTernaryColonIndexes = (tokens: ReadonlyArray<string>): ReadonlySet<number> => {
+  const ternaryColons = new Set<number>()
+  let segmentHasQuestion = false
 
-const hashTokens = (tokens: ReadonlyArray<string>): string => {
-  let hash = 0
-  for (let i = 0; i < tokens.length; i++) {
-    const token = tokens[i]
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index]
     if (token === undefined) continue
-    for (let j = 0; j < token.length; j++) {
-      const charCode = token.charCodeAt(j)
-      hash = ((hash << 5) - hash) + charCode
-      hash = hash & hash
+    if (token === ";" || token === "," || token === "{" || token === "}") {
+      segmentHasQuestion = false
+      continue
+    }
+    if (token === "?") {
+      segmentHasQuestion = true
+      continue
+    }
+    if (token === ":" && segmentHasQuestion) {
+      ternaryColons.add(index)
+      segmentHasQuestion = false
     }
   }
-  return Math.abs(hash).toString(36)
+
+  return ternaryColons
 }
+
+const memberKey = (member: CloneGroupMember): string =>
+  `${member.file}:${member.startLine}`
 
 const buildGroups = (
   functions: ReadonlyArray<{
     exactHash: string
     structuralHash: string
+    exactEligible: boolean
     structuralEligible: boolean
+    changed: boolean
     tokenCount: number
     member: CloneGroupMember
   }>,
@@ -362,6 +656,7 @@ const buildGroups = (
 ): ReadonlyArray<{ hash: string; tokenCount: number; members: ReadonlyArray<CloneGroupMember> }> => {
   const grouped = new Map<string, Array<(typeof functions)[number]>>()
   for (const fn of functions) {
+    if (kind === "exact" && !fn.exactEligible) continue
     if (kind === "structural" && !fn.structuralEligible) continue
     const key = kind === "exact" ? fn.exactHash : fn.structuralHash
     const bucket = grouped.get(key) ?? []

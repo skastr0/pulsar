@@ -182,6 +182,70 @@ export function useHelper(): string { return helper(); }
     expect(out.linesAdded).toBe(10)
   })
 
+  test("reads committed TypeScript range diff with git pathspecs", async () => {
+    await repo.write(
+      "src/range.ts",
+      `
+export function before(): string {
+  return "before"
+}
+`,
+    )
+    let git = simpleGit(repo.root)
+    await git.add(["."])
+    await git.commit("Add range file")
+
+    await repo.write(
+      "src/range.ts",
+      `
+export function after(value: string): string {
+  const normalized = value.trim()
+  if (normalized.length === 0) {
+    return "missing"
+  }
+  return normalized
+}
+`,
+    )
+    await repo.write(
+      "src/range.tsx",
+      `
+export function View(): unknown {
+  return null
+}
+`,
+    )
+    git = simpleGit(repo.root)
+    await git.add(["."])
+    await git.commit("Change TypeScript range")
+
+    const out = await Effect.runPromise(
+      TsRp02.compute(
+        TsRp02.defaultConfig,
+        new Map(),
+      ).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            TsProjectLayer(repo.root),
+            Layer.succeed(SignalContextTag, {
+              gitSha: "HEAD",
+              worktreePath: repo.root,
+              changedHunks: [],
+            }),
+          ),
+        ),
+      ),
+    )
+
+    expect(out.diffMode).toBe("git-commit-range")
+    expect(out.filesChanged.map((file) => file.replace(repo.root, ""))).toEqual([
+      "/src/range.ts",
+      "/src/range.tsx",
+    ])
+    expect(out.linesAdded).toBeGreaterThan(0)
+    expect(out.linesDeleted).toBeGreaterThan(0)
+  })
+
   test("diagnostics include PR summary", async () => {
     const out = await Effect.runPromise(
       TsRp02.compute(
@@ -206,5 +270,52 @@ export function useHelper(): string { return helper(); }
     const diagnostics = TsRp02.diagnose(out)
     expect(diagnostics.length).toBeGreaterThan(0)
     expect(diagnostics[0]?.message).toContain("PR surface")
+  })
+
+  test("PR summary includes largest changed files", async () => {
+    const out = await Effect.runPromise(
+      TsRp02.compute(
+        TsRp02.defaultConfig,
+        new Map(),
+      ).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            TsProjectLayer(repo.root),
+            Layer.succeed(SignalContextTag, {
+              gitSha: "TEST",
+              worktreePath: repo.root,
+              changedHunks: [
+                { file: "small.ts", oldStart: 1, oldLines: 1, newStart: 1, newLines: 2 },
+                { file: "large.ts", oldStart: 1, oldLines: 10, newStart: 1, newLines: 80 },
+                { file: "medium.ts", oldStart: 1, oldLines: 5, newStart: 1, newLines: 20 },
+              ],
+            }),
+          ),
+        ),
+      ),
+    )
+
+    expect(out.fileStats.map((stat) => stat.file.replace(repo.root, ""))).toEqual([
+      "/large.ts",
+      "/medium.ts",
+      "/small.ts",
+    ])
+    expect(out.fileStats[0]).toMatchObject({
+      linesAdded: 80,
+      linesDeleted: 10,
+      totalLines: 90,
+    })
+
+    const diagnostic = TsRp02.diagnose(out)[0]
+    expect(diagnostic?.message).toContain("largest files")
+    expect(diagnostic?.message).toContain("large.ts (+80/-10)")
+    expect(diagnostic?.message).toContain("medium.ts (+20/-5)")
+    const largestFiles = (diagnostic?.data as { largestFiles?: ReadonlyArray<unknown> } | undefined)?.largestFiles
+    expect(largestFiles?.[0]).toMatchObject({
+      file: `${repo.root}/large.ts`,
+      linesAdded: 80,
+      linesDeleted: 10,
+      totalLines: 90,
+    })
   })
 })
