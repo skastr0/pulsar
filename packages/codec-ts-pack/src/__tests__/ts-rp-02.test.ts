@@ -272,6 +272,29 @@ export function View(): unknown {
     expect(diagnostics[0]?.message).toContain("PR surface")
   })
 
+  test("large PR surfaces emit warning diagnostics", async () => {
+    const diagnostics = TsRp02.diagnose({
+      linesAdded: 260,
+      linesDeleted: 120,
+      filesChanged: ["src/large.ts"],
+      fileStats: [
+        {
+          file: "src/large.ts",
+          linesAdded: 260,
+          linesDeleted: 120,
+          totalLines: 380,
+        },
+      ],
+      packagesTouched: [],
+      newCrossPackageEdges: [],
+      newCrossBoundaryEdges: [],
+      diffMode: "changed-hunks-fallback",
+      sizeCategory: "large",
+    })
+
+    expect(diagnostics[0]?.severity).toBe("warn")
+  })
+
   test("PR summary includes largest changed files", async () => {
     const out = await Effect.runPromise(
       TsRp02.compute(
@@ -317,5 +340,41 @@ export function View(): unknown {
       linesDeleted: 10,
       totalLines: 90,
     })
+  })
+
+  test("generated changed files do not dominate PR surface", async () => {
+    const out = await Effect.runPromise(
+      TsRp02.compute(
+        TsRp02.defaultConfig,
+        new Map(),
+      ).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            TsProjectLayer(repo.root),
+            Layer.succeed(SignalContextTag, {
+              gitSha: "TEST",
+              worktreePath: repo.root,
+              changedHunks: [
+                {
+                  file: "src/routeTree.gen.ts",
+                  oldStart: 1,
+                  oldLines: 0,
+                  newStart: 1,
+                  newLines: 900,
+                },
+                { file: "src/feature.ts", oldStart: 1, oldLines: 3, newStart: 1, newLines: 20 },
+              ],
+            }),
+          ),
+        ),
+      ),
+    )
+
+    expect(out.filesChanged.map((file) => file.replace(repo.root, ""))).toEqual([
+      "/src/feature.ts",
+    ])
+    expect(out.linesAdded).toBe(20)
+    expect(out.linesDeleted).toBe(3)
+    expect(TsRp02.diagnose(out)[0]?.message).not.toContain("routeTree.gen.ts")
   })
 })

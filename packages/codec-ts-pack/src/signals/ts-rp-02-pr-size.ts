@@ -58,7 +58,17 @@ export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackage
   kind: "structural",
   configSchema: TsRp02Config,
   defaultConfig: {
-    exclude_globs: ["**/node_modules/**", "**/dist/**", "**/.turbo/**"],
+    exclude_globs: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/.turbo/**",
+      "**/gen/**",
+      "**/generated/**",
+      "**/*.gen.ts",
+      "**/*.gen.tsx",
+      "**/*.generated.ts",
+      "**/*.generated.tsx",
+    ],
     test_globs: ["**/*.test.ts", "**/*.spec.ts", "**/__tests__/**"],
     top_n_diagnostics: 10,
     small_pr_budget: 100,
@@ -141,7 +151,10 @@ export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackage
     const diagnostics: Array<Diagnostic> = []
 
     diagnostics.push({
-      severity: out.sizeCategory === "oversized" ? ("warn" as const) : ("info" as const),
+      severity:
+        out.sizeCategory === "large" || out.sizeCategory === "oversized"
+          ? ("warn" as const)
+          : ("info" as const),
       message:
         `PR surface: +${out.linesAdded} / -${out.linesDeleted} across ${out.filesChanged.length} files ` +
         `(${out.sizeCategory})${formatLargestFiles(out.fileStats)}`,

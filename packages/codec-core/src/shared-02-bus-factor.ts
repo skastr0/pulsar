@@ -200,7 +200,7 @@ export const Shared02BusFactor: Signal<
     if (out.repoAuthors.length < 2) return 1
     if (out.touchedLoc === 0) return 1
     const siloedLoc = out.siloed.reduce((sum, entry) => sum + entry.loc, 0)
-    return 1 - clamp01((siloedLoc / out.touchedLoc) * 1.75)
+    return 1 - Math.min(0.35, clamp01(siloedLoc / out.touchedLoc) * 0.45)
   },
   diagnose: (out): ReadonlyArray<Diagnostic> => {
     if (out.touchedFileCount === 0) {

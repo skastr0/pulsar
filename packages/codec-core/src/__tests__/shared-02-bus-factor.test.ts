@@ -242,4 +242,45 @@ describe("SHARED-02 bus factor", () => {
       await repo.cleanup()
     }
   })
+
+  test("ownership concentration stays moderate instead of collapsing default score", async () => {
+    const repo = await createGitTestRepo("taste-codec-shared-02-moderate-")
+    try {
+      await repo.write("src/alice.ts", longFile("alice") + longFile("owned"))
+      await repo.commitAll({
+        message: "alice owns file",
+        authorName: "Alice",
+        authorEmail: "alice@example.com",
+        dateIso: "2024-01-01T00:00:00Z",
+      })
+
+      await repo.write("src/bob.ts", longFile("bob") + longFile("owned"))
+      await repo.commitAll({
+        message: "bob owns file",
+        authorName: "Bob",
+        authorEmail: "bob@example.com",
+        dateIso: "2024-02-01T00:00:00Z",
+      })
+
+      const output = await Effect.runPromise(
+        Shared02BusFactor.compute(Shared02BusFactor.defaultConfig, new Map()).pipe(
+          Effect.provide(
+            Layer.succeed(SignalContextTag, {
+              gitSha: repo.revParse("HEAD"),
+              worktreePath: repo.root,
+              changedHunks: [],
+            }),
+          ),
+        ) as Effect.Effect<any, any, never>,
+      )
+
+      expect(output.repoAuthors).toEqual(["Alice", "Bob"])
+      expect(output.siloed).toHaveLength(2)
+      expect(Shared02BusFactor.score(output)).toBeGreaterThanOrEqual(0.65)
+      expect(Shared02BusFactor.score(output)).toBeLessThan(1)
+      expect(Shared02BusFactor.diagnose(output)[0]?.severity).toBe("info")
+    } finally {
+      await repo.cleanup()
+    }
+  })
 })
