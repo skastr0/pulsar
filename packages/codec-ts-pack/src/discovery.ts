@@ -8,6 +8,7 @@ export interface PackageManifest {
   readonly version: string | undefined
   readonly private: boolean
   readonly scripts: Readonly<Record<string, string>>
+  readonly bin: Readonly<Record<string, string>>
   readonly dependencies: Readonly<Record<string, string>>
   readonly devDependencies: Readonly<Record<string, string>>
   readonly peerDependencies: Readonly<Record<string, string>>
@@ -75,6 +76,7 @@ const readPackageManifest = async (
       version: asOptionalString(parsed.version),
       private: parsed.private === true,
       scripts: asStringRecord(parsed.scripts),
+      bin: asBinRecord(parsed.bin),
       dependencies: asDependencyRecord(parsed.dependencies),
       devDependencies: asDependencyRecord(parsed.devDependencies),
       peerDependencies: asDependencyRecord(parsed.peerDependencies),
@@ -103,6 +105,13 @@ const asStringRecord = (value: unknown): Readonly<Record<string, string>> => {
       .filter((entry): entry is [string, string] => typeof entry[1] === "string")
       .sort(([left], [right]) => left.localeCompare(right)),
   )
+}
+
+const asBinRecord = (value: unknown): Readonly<Record<string, string>> => {
+  if (typeof value === "string" && value.length > 0) {
+    return { "(default)": value }
+  }
+  return asStringRecord(value)
 }
 
 const collectManifestEntrypoints = (manifest: Record<string, unknown>): ReadonlyArray<string> => {

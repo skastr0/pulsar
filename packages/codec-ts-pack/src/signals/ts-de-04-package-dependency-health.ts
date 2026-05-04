@@ -239,7 +239,13 @@ export const TsDe04: Signal<
             const owningPackage = packageForPath(sourceFile.getFilePath())
             if (owningPackage?.manifest === undefined) continue
             const packageKey = owningPackage.path
-            const isToolingFile = isPackageToolingFile(owningPackage.path, sourceFile.getFilePath())
+            const isToolingFile =
+              isPackageToolingFile(owningPackage.path, sourceFile.getFilePath()) ||
+              isBundledCliSourceFile(
+                owningPackage.manifest,
+                owningPackage.path,
+                sourceFile.getFilePath(),
+              )
             const isProdFile =
               !isToolingFile && !matchesAnyGlob(sourceFile.getFilePath(), config.test_globs)
             const bucket = usageByPackage.get(packageKey) ?? new Map<string, UsageBucket>()
@@ -529,6 +535,34 @@ const isPackageToolingFile = (packagePath: string, file: string): boolean => {
   const rel = relative(packagePath, file).split(sep).join("/")
   if (rel.startsWith("script/") || rel.startsWith("scripts/")) return true
   return /\.(?:config|conf)\.(?:cjs|cts|js|mjs|mts|ts|tsx)$/.test(rel)
+}
+
+const isBundledCliSourceFile = (
+  manifest: PackageManifest,
+  packagePath: string,
+  file: string,
+): boolean => {
+  if (Object.keys(manifest.bin ?? {}).length === 0) return false
+  if (!hasBundledCliBuildPipeline(manifest)) return false
+
+  const rel = relative(packagePath, file).split(sep).join("/")
+  return (
+    rel.startsWith("src/cli/") ||
+    rel.startsWith("src/bundler/") ||
+    rel.startsWith("cli/") ||
+    rel.startsWith("bundler/")
+  )
+}
+
+const hasBundledCliBuildPipeline = (manifest: PackageManifest): boolean => {
+  const scriptText = Object.values(manifest.scripts).join("\n")
+  const devDependencyNames = dependencyNamesOf(manifest, ["devDependencies"])
+  return (
+    /\b(?:build|bundle|prepack|pack)\b/.test(scriptText) &&
+    ["@vercel/ncc", "bun", "esbuild", "rollup", "tsup", "webpack"].some((dependencyName) =>
+      devDependencyNames.has(dependencyName),
+    )
+  )
 }
 
 const formatDependencyExamples = (

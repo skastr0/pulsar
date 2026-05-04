@@ -736,6 +736,41 @@ describe("TS-DE-04 (package dependency health)", () => {
     expect(out.packages[0]?.importedButNotDeclared).toEqual([])
   })
 
+  test("allows dev dependencies from bundled CLI source folders", async () => {
+    await writePackage("cli", "published-cli", {
+      bin: {
+        "published-cli": "bin/main.js",
+      },
+      scripts: {
+        build: "node scripts/build.cjs",
+        prepack: "npm run build",
+      },
+      devDependencies: {
+        "@commander-js/extra-typings": "^11.0.0",
+        esbuild: "^0.25.0",
+      },
+    })
+    await repo.writeJson("packages/cli/tsconfig.json", {
+      compilerOptions: {
+        target: "ES2022",
+        module: "ESNext",
+        moduleResolution: "Bundler",
+      },
+      include: ["src/**/*.ts"],
+    })
+    await repo.write(
+      "packages/cli/src/cli/index.ts",
+      [
+        "import { Command } from '@commander-js/extra-typings'",
+        "export const program = new Command()",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+    expect(out.packages[0]?.devInProd).toEqual([])
+    expect(out.packages[0]?.importedButNotDeclared).toEqual([])
+  })
+
   test("allows root dev dependencies from package tests", async () => {
     await repo.writeJson("package.json", {
       name: "temp-workspace",
