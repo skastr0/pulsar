@@ -554,16 +554,18 @@ const formatRelativeFile = (packagePath: string, file: string): string => {
 
 const externalModuleSpecifiers = (sourceFile: SourceFile): ReadonlyArray<ModuleSpecifierUsage> => {
   const specifiers = new Map<string, ModuleSpecifierUsage>()
+  const importDeclarations = sourceFile.getImportDeclarations()
+  const exportDeclarations = sourceFile.getExportDeclarations()
   let identifierUsage: ReadonlyMap<string, "type-only" | "value"> | undefined
   const getIdentifierUsage = (): ReadonlyMap<string, "type-only" | "value"> => {
-    identifierUsage ??= localIdentifierUsageByName(sourceFile)
+    identifierUsage ??= localIdentifierUsageByName(
+      sourceFile,
+      valueImportBindingNames(importDeclarations),
+    )
     return identifierUsage
   }
 
-  for (const declaration of [
-    ...sourceFile.getImportDeclarations(),
-    ...sourceFile.getExportDeclarations(),
-  ]) {
+  for (const declaration of [...importDeclarations, ...exportDeclarations]) {
     const moduleSpecifier = declaration.getModuleSpecifierValue()
     if (moduleSpecifier !== undefined) {
       mergeModuleSpecifierUsage(specifiers, {
@@ -654,11 +656,13 @@ const isTypeOnlyImportDeclaration = (
 
 const localIdentifierUsageByName = (
   sourceFile: SourceFile,
+  bindingNames: ReadonlySet<string>,
 ): ReadonlyMap<string, "type-only" | "value"> => {
   const usage = new Map<string, "type-only" | "value">()
 
   for (const identifier of sourceFile.getDescendantsOfKind(SyntaxKind.Identifier)) {
     const name = identifier.getText()
+    if (!bindingNames.has(name)) continue
     if (isWithinImportDeclaration(identifier)) continue
     if (!isIdentifierInTypePosition(identifier)) {
       usage.set(name, "value")
@@ -670,6 +674,33 @@ const localIdentifierUsageByName = (
   }
 
   return usage
+}
+
+const valueImportBindingNames = (
+  declarations: ReadonlyArray<import("ts-morph").ImportDeclaration>,
+): ReadonlySet<string> => {
+  const names = new Set<string>()
+  for (const declaration of declarations) {
+    const clause = declaration.getImportClause()
+    if (clause === undefined || clause.isTypeOnly()) continue
+
+    const defaultImport = clause.getDefaultImport()
+    if (defaultImport !== undefined) {
+      names.add(defaultImport.getText())
+    }
+
+    const namespaceImport = clause.getNamespaceImport()
+    if (namespaceImport !== undefined) {
+      names.add(namespaceImport.getText())
+    }
+
+    for (const specifier of clause.getNamedImports()) {
+      if (!specifier.isTypeOnly()) {
+        names.add(specifier.getAliasNode()?.getText() ?? specifier.getName())
+      }
+    }
+  }
+  return names
 }
 
 const isWithinImportDeclaration = (identifier: Identifier): boolean =>

@@ -166,8 +166,6 @@ export const Shared03ChurnRate: Signal<
             await listTrackedFiles(ctx.worktreePath, historyFilter),
           )
           const byFile = new Map<string, Shared03FileRate>()
-          let introducedLineCount = 0
-          let churnedLineCount = 0
           const introducedByFile = await listAddedLinesByFileInMatureWindow(
             ctx.worktreePath,
             introductionStart.toISOString(),
@@ -176,33 +174,46 @@ export const Shared03ChurnRate: Signal<
             historyFilter,
           )
 
-          for (const [relativePath, introducedLines] of introducedByFile) {
-            if (!trackedFiles.has(relativePath)) continue
-            if (introducedLines.length === 0) continue
+          const fileRates = await mapWithConcurrency(
+            [...introducedByFile.entries()]
+              .filter(([relativePath, introducedLines]) =>
+                trackedFiles.has(relativePath) && introducedLines.length > 0,
+              ),
+            8,
+            async ([relativePath, introducedLines]) => {
+              const targetContent = (await readFileAtCommit(
+                ctx.worktreePath,
+                ctx.gitSha === "HEAD" ? "HEAD" : ctx.gitSha,
+                relativePath,
+              )) ?? ""
+              const retained = countRetainedLines(
+                introducedLines,
+                targetContent.split("\n"),
+                config.similarity_threshold,
+              )
+              const fileIntroduced = introducedLines.length
+              const fileChurned = introducedLines.length - retained
 
-            const targetContent = (await readFileAtCommit(
-              ctx.worktreePath,
-              ctx.gitSha === "HEAD" ? "HEAD" : ctx.gitSha,
-              relativePath,
-            )) ?? ""
-            const retained = countRetainedLines(
-              introducedLines,
-              targetContent.split("\n"),
-              config.similarity_threshold,
-            )
-            const fileIntroduced = introducedLines.length
-            const fileChurned = introducedLines.length - retained
+              return {
+                absolutePath: join(ctx.worktreePath, relativePath),
+                introduced: fileIntroduced,
+                churned: fileChurned,
+                rate: fileIntroduced === 0 ? 0 : fileChurned / fileIntroduced,
+              }
+            },
+          )
 
-            if (fileIntroduced === 0) continue
-
-            const absolutePath = join(ctx.worktreePath, relativePath)
-            byFile.set(absolutePath, {
-              introduced: fileIntroduced,
-              churned: fileChurned,
-              rate: fileChurned / fileIntroduced,
+          let introducedLineCount = 0
+          let churnedLineCount = 0
+          for (const fileRate of fileRates) {
+            if (fileRate.introduced === 0) continue
+            byFile.set(fileRate.absolutePath, {
+              introduced: fileRate.introduced,
+              churned: fileRate.churned,
+              rate: fileRate.rate,
             })
-            introducedLineCount += fileIntroduced
-            churnedLineCount += fileChurned
+            introducedLineCount += fileRate.introduced
+            churnedLineCount += fileRate.churned
           }
 
           const insufficientHistory = introducedLineCount === 0
@@ -274,6 +285,28 @@ export const Shared03ChurnRate: Signal<
 }
 
 const formatPercent = (value: number): string => `${Math.round(value * 100)}%`
+
+const mapWithConcurrency = async <A, B>(
+  items: ReadonlyArray<A>,
+  concurrency: number,
+  fn: (item: A) => Promise<B>,
+): Promise<Array<B>> => {
+  const results = new Array<B>(items.length)
+  let nextIndex = 0
+  const workerCount = Math.min(concurrency, items.length)
+
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (true) {
+        const index = nextIndex++
+        if (index >= items.length) return
+        results[index] = await fn(items[index]!)
+      }
+    }),
+  )
+
+  return results
+}
 
 const countRetainedLines = (
   introducedLines: ReadonlyArray<string>,
