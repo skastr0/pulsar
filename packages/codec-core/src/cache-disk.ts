@@ -45,42 +45,43 @@ const toLoadedRecord = (record: PersistedCacheRecord): LoadedCacheRecord => ({
   bytes: Buffer.byteLength(`${serializeRecord(record)}\n`, "utf8"),
 })
 
-const loadBuckets = async (cacheDir: string): Promise<Map<string, LoadedSignalBucket>> => {
+const loadKnownSignalIds = async (cacheDir: string): Promise<Set<string>> => {
   await mkdir(cacheDir, { recursive: true })
   const dirEntries = await readdir(cacheDir, { withFileTypes: true })
-  const buckets = new Map<string, LoadedSignalBucket>()
+  return new Set(
+    dirEntries
+      .filter((dirEntry) => dirEntry.isDirectory())
+      .map((dirEntry) => dirEntry.name),
+  )
+}
 
-  for (const dirEntry of dirEntries) {
-    if (!dirEntry.isDirectory()) continue
-    const signalId = dirEntry.name
-    const path = recordPathFor(cacheDir, signalId)
-    let raw = ""
-    try {
-      raw = await readFile(path, "utf8")
-    } catch {
-      buckets.set(signalId, { signalId, records: new Map() })
-      continue
-    }
-
-    const records = new Map<string, LoadedCacheRecord>()
-    for (const line of raw.split("\n")) {
-      const trimmed = line.trim()
-      if (trimmed.length === 0) continue
-      try {
-        const parsed = JSON.parse(trimmed) as PersistedCacheRecord
-        const keyString = cacheKeyString(parsed.key)
-        if (!records.has(keyString)) {
-          records.set(keyString, toLoadedRecord(parsed))
-        }
-      } catch {
-        // Ignore malformed lines rather than failing the entire cache.
-      }
-    }
-
-    buckets.set(signalId, { signalId, records })
+const loadBucket = async (
+  cacheDir: string,
+  signalId: string,
+): Promise<LoadedSignalBucket> => {
+  const path = recordPathFor(cacheDir, signalId)
+  let raw = ""
+  try {
+    raw = await readFile(path, "utf8")
+  } catch {
+    return { signalId, records: new Map() }
   }
 
-  return buckets
+  const records = new Map<string, LoadedCacheRecord>()
+  for (const line of raw.split("\n")) {
+    const trimmed = line.trim()
+    if (trimmed.length === 0) continue
+    try {
+      const parsed = JSON.parse(trimmed) as PersistedCacheRecord
+      const keyString = cacheKeyString(parsed.key)
+      if (!records.has(keyString)) {
+        records.set(keyString, toLoadedRecord(parsed))
+      }
+    } catch {
+      // Ignore malformed lines rather than failing the entire cache.
+    }
+  }
+  return { signalId, records }
 }
 
 const bucketBytes = (bucket: LoadedSignalBucket): number =>
@@ -138,8 +139,11 @@ export const makeDiskBackedCache = (config?: CacheConfig): Effect.Effect<SignalC
   Effect.tryPromise(async () => {
     const cacheDir = config?.cacheDir ?? join(process.cwd(), ".taste-codec", "cache")
     const maxSizeBytes = config?.maxSizeBytes ?? DEFAULT_CACHE_MAX_SIZE_BYTES
-    const buckets = await loadBuckets(cacheDir)
-    let totalBytes = totalBytesOf(buckets)
+    const knownSignalIds = await loadKnownSignalIds(cacheDir)
+    const buckets = new Map<string, LoadedSignalBucket>()
+    const loadingBuckets = new Map<string, Promise<LoadedSignalBucket>>()
+    let totalBytes = 0
+    let totalBytesKnown = false
     let writeQueue = Promise.resolve()
 
     const withWriteQueue = async <T>(operation: () => Promise<T>): Promise<T> => {
@@ -156,29 +160,55 @@ export const makeDiskBackedCache = (config?: CacheConfig): Effect.Effect<SignalC
       }
     }
 
-    const ensureBucket = (signalId: string): LoadedSignalBucket => {
+    const ensureBucket = async (signalId: string): Promise<LoadedSignalBucket> => {
       const existing = buckets.get(signalId)
       if (existing !== undefined) return existing
-      const created: LoadedSignalBucket = { signalId, records: new Map() }
-      buckets.set(signalId, created)
+
+      const inFlight = loadingBuckets.get(signalId)
+      if (inFlight !== undefined) return inFlight
+
+      const load = (async () => {
+        const created = knownSignalIds.has(signalId)
+          ? await loadBucket(cacheDir, signalId)
+          : { signalId, records: new Map() }
+        buckets.set(signalId, created)
+        knownSignalIds.add(signalId)
+        if (!totalBytesKnown) {
+          totalBytes += bucketBytes(created)
+        }
+        return created
+      })()
+      loadingBuckets.set(signalId, load)
+      const created = await load
+      loadingBuckets.delete(signalId)
       return created
+    }
+
+    const ensureFullIndex = async (): Promise<void> => {
+      if (totalBytesKnown) return
+      for (const signalId of knownSignalIds) {
+        await ensureBucket(signalId)
+      }
+      totalBytes = totalBytesOf(buckets)
+      totalBytesKnown = true
     }
 
     return {
       get: <A>(key: CacheKey) =>
-        Effect.sync(() => {
-          const bucket = buckets.get(key.signalId)
+        Effect.tryPromise(async () => {
+          const bucket = await ensureBucket(key.signalId)
           const entry = bucket?.records.get(cacheKeyString(key))
           if (entry === undefined) return Option.none<A>()
           const next = updateRecordTimestamp(entry, new Date().toISOString())
-          bucket!.records.set(cacheKeyString(key), next)
+          bucket.records.set(cacheKeyString(key), next)
           return Option.some(next.entry.value as A)
-        }),
+        }).pipe(Effect.catchAllCause((cause) => Effect.die(cause))),
       set: <A>(key: CacheKey, value: A) =>
         Effect.tryPromise(() =>
           withWriteQueue(async () => {
+            await ensureFullIndex()
             const now = new Date().toISOString()
-            const bucket = ensureBucket(key.signalId)
+            const bucket = await ensureBucket(key.signalId)
             const keyString = cacheKeyString(key)
             const existing = bucket.records.get(keyString)
             if (existing !== undefined) {
@@ -196,8 +226,8 @@ export const makeDiskBackedCache = (config?: CacheConfig): Effect.Effect<SignalC
           }),
         ).pipe(Effect.catchAllCause((cause) => Effect.die(cause))),
       getTiered: <A>(key: CacheKey, options?: CacheReadOptions) =>
-        Effect.sync(() => {
-          const bucket = buckets.get(key.signalId)
+        Effect.tryPromise(async () => {
+          const bucket = await ensureBucket(key.signalId)
           const record = bucket?.records.get(cacheKeyString(key))
           if (record === undefined) {
             return evaluateTieredCacheEntry<A>(undefined, options)
@@ -211,11 +241,12 @@ export const makeDiskBackedCache = (config?: CacheConfig): Effect.Effect<SignalC
             updateRecordTimestamp(record, new Date().toISOString()),
           )
           return evaluated
-        }),
+        }).pipe(Effect.catchAllCause((cause) => Effect.die(cause))),
       setTiered: <A>(key: CacheKey, value: A, options?: CacheWriteOptions) =>
         Effect.tryPromise(() =>
           withWriteQueue(async () => {
-            const bucket = ensureBucket(key.signalId)
+            await ensureFullIndex()
+            const bucket = await ensureBucket(key.signalId)
             const keyString = cacheKeyString(key)
             const existing = bucket.records.get(keyString)
             if (existing !== undefined) {
@@ -243,14 +274,20 @@ export const makeDiskBackedCache = (config?: CacheConfig): Effect.Effect<SignalC
             }
 
             await Promise.all(
-              [...dirtyBuckets].map((signalId) => flushBucket(cacheDir, ensureBucket(signalId))),
+              [...dirtyBuckets].map(async (signalId) =>
+                flushBucket(cacheDir, await ensureBucket(signalId)),
+              ),
             )
           }),
         ).pipe(Effect.catchAllCause((cause) => Effect.die(cause))),
-      size: Effect.sync(() =>
-        [...buckets.values()].reduce((sum, bucket) => sum + bucket.records.size, 0),
-      ),
-      totalBytes: Effect.sync(() => totalBytes),
+      size: Effect.tryPromise(async () => {
+        await ensureFullIndex()
+        return [...buckets.values()].reduce((sum, bucket) => sum + bucket.records.size, 0)
+      }).pipe(Effect.catchAllCause((cause) => Effect.die(cause))),
+      totalBytes: Effect.tryPromise(async () => {
+        await ensureFullIndex()
+        return totalBytes
+      }).pipe(Effect.catchAllCause((cause) => Effect.die(cause))),
     }
   }).pipe(Effect.catchAllCause((cause) => Effect.die(cause)))
 
