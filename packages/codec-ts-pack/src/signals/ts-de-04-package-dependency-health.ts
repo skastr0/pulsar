@@ -1336,7 +1336,9 @@ const analyzePackageHealth = (
     "optionalDependencies",
     "peerDependencies",
   ])
-  const unusedEligible = dependencyNamesOf(pkg.manifest, ["dependencies", "optionalDependencies"])
+  const unusedEligible = isLowSignalUnusedDependencyPackage(pkg)
+    ? new Set<string>()
+    : dependencyNamesOf(pkg.manifest, ["dependencies", "optionalDependencies"])
   const devDeclared = new Set([
     ...dependencyNamesOf(pkg.manifest, ["devDependencies"]),
     ...rootDevDependencyNames,
@@ -1430,6 +1432,18 @@ const analyzePackageHealth = (
     transitiveUsedDirectly,
     devInProd,
   }
+}
+
+const isLowSignalUnusedDependencyPackage = (
+  pkg: PackageInfo & { manifest: PackageManifest },
+): boolean => {
+  const packageName = packageDisplayName(pkg) ?? pkg.name
+  const pathSegments = pkg.path.split(/[\\/]+/)
+  return (
+    ["docs", "documentation", "example", "examples", "demo", "demos", "sample", "samples", "sdk-samples", "google_samples"]
+      .some((segment) => pathSegments.includes(segment)) ||
+    /^(?:docs|documentation|example|demo|sample)s?(?:$|[-_/])/.test(packageName)
+  )
 }
 
 const isToolingOnlyUsage = (usage: UsageBucket): boolean =>

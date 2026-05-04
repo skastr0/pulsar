@@ -1447,6 +1447,7 @@ describe("TS-DE-04 (package dependency health)", () => {
       },
       dependencies: {
         "@docusaurus/core": "^3.0.0",
+        "@docusaurus/preset-classic": "^3.0.0",
       },
     })
     await repo.write(
@@ -1466,6 +1467,33 @@ describe("TS-DE-04 (package dependency health)", () => {
     expect(docsHealth?.importedButNotDeclared).toEqual([
       { dependencyName: "lodash", files: [`${repo.root}/packages/docs/src/page.tsx`] },
     ])
+    expect(docsHealth?.declaredButUnused).toEqual([])
+  })
+
+  test("suppresses unused dependency sweeps in example packages", async () => {
+    await writePackage("example", "example", {
+      dependencies: {
+        react: "^19.0.0",
+      },
+    })
+    await repo.writeJson("packages/example/tsconfig.json", {
+      compilerOptions: {
+        target: "ES2022",
+        module: "ESNext",
+        moduleResolution: "Bundler",
+      },
+      include: ["src/**/*.ts"],
+    })
+    await repo.write(
+      "packages/example/src/page.ts",
+      "import { uniq } from 'lodash'\nexport const value = uniq([1])\n",
+    )
+
+    const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+    const exampleHealth = out.packages.find((pkg) => pkg.packageName === "example")
+
+    expect(exampleHealth?.declaredButUnused).toEqual([])
+    expect(exampleHealth?.importedButNotDeclared).toEqual([])
   })
 
   test("does not hard-gate dependencies in example package paths by default", async () => {
