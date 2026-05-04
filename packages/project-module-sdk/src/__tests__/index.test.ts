@@ -507,6 +507,121 @@ describe("project module sdk", () => {
     }
   })
 
+  test("repo-local helper source changes invalidate loaded module fingerprints", async () => {
+    const repoRoot = await mkdtemp(join(tmpdir(), "taste-project-module-"))
+    try {
+      await writeFile(
+        join(repoRoot, "module.mjs"),
+        [
+          "import { marker } from './helper.mjs'",
+          "export default {",
+          "  id: 'loaded.definition',",
+          "  version: '1.0.0',",
+          "  scope: 'repository',",
+          "  configHash: marker,",
+          "  processors: []",
+          "}",
+        ].join("\n"),
+        "utf8",
+      )
+      const writeHelper = (marker: string) =>
+        writeFile(
+          join(repoRoot, "helper.mjs"),
+          `export const marker = '${marker}'\n`,
+          "utf8",
+        )
+      const manifest = await Effect.runPromise(
+        decodeProjectModuleManifest({
+          modules: [
+            {
+              id: "loaded.definition",
+              kind: "repo-local",
+              path: "module.mjs",
+            },
+          ],
+        }),
+      )
+
+      await writeHelper("first")
+      const first = await Effect.runPromise(
+        loadProjectModuleRef(manifest.modules[0]!, { repoRoot }),
+      )
+      await writeHelper("second")
+      const second = await Effect.runPromise(
+        loadProjectModuleRef(manifest.modules[0]!, { repoRoot }),
+      )
+
+      expect(first.descriptor.configHash).toBe("first")
+      expect(second.descriptor.configHash).toBe("second")
+      expect(first.descriptor.sourceFingerprint).not.toBe(
+        second.descriptor.sourceFingerprint,
+      )
+      expect(first.activeModule.fingerprint).not.toBe(second.activeModule.fingerprint)
+    } finally {
+      await rm(repoRoot, { recursive: true, force: true })
+    }
+  })
+
+  test("transitive helper source changes invalidate loaded module behavior", async () => {
+    const repoRoot = await mkdtemp(join(tmpdir(), "taste-project-module-"))
+    try {
+      await writeFile(
+        join(repoRoot, "module.mjs"),
+        [
+          "import { marker } from './helper.mjs'",
+          "export default {",
+          "  id: 'loaded.definition',",
+          "  version: '1.0.0',",
+          "  scope: 'repository',",
+          "  configHash: marker,",
+          "  processors: []",
+          "}",
+        ].join("\n"),
+        "utf8",
+      )
+      await writeFile(
+        join(repoRoot, "helper.mjs"),
+        "export { marker } from './leaf.mjs'\n",
+        "utf8",
+      )
+      const writeLeaf = (marker: string) =>
+        writeFile(
+          join(repoRoot, "leaf.mjs"),
+          `export const marker = '${marker}'\n`,
+          "utf8",
+        )
+      const manifest = await Effect.runPromise(
+        decodeProjectModuleManifest({
+          modules: [
+            {
+              id: "loaded.definition",
+              kind: "repo-local",
+              path: "module.mjs",
+            },
+          ],
+        }),
+      )
+
+      await writeLeaf("first")
+      const first = await Effect.runPromise(
+        loadProjectModuleRef(manifest.modules[0]!, { repoRoot }),
+      )
+      await writeLeaf("second")
+      const second = await Effect.runPromise(
+        loadProjectModuleRef(manifest.modules[0]!, { repoRoot }),
+      )
+
+      expect(first.descriptor.configHash).toBe("first")
+      expect(second.descriptor.configHash).toBe("second")
+      expect(first.descriptor.sourceFingerprint).not.toBe(
+        second.descriptor.sourceFingerprint,
+      )
+      expect(first.activeModule.fingerprint).not.toBe(second.activeModule.fingerprint)
+    } finally {
+      await rm(repoRoot, { recursive: true, force: true })
+    }
+  })
+
   test("loads package project modules relative to the target repo root", async () => {
     const repoRoot = await mkdtemp(join(tmpdir(), "taste-project-module-"))
     try {
@@ -560,6 +675,256 @@ describe("project module sdk", () => {
       expect(loaded.descriptor.sourceFingerprint).toMatch(/^sha256:/)
     } finally {
       await rm(repoRoot, { recursive: true, force: true })
+    }
+  })
+
+  test("loads package project modules from an in-repo package root", async () => {
+    const repoRoot = await mkdtemp(join(tmpdir(), "taste-project-module-"))
+    try {
+      await writeFile(
+        join(repoRoot, "package.json"),
+        JSON.stringify({
+          name: "@acme/taste-module",
+          version: "1.0.0",
+          type: "module",
+          exports: "./index.mjs",
+        }),
+        "utf8",
+      )
+      await writeFile(
+        join(repoRoot, "index.mjs"),
+        [
+          "export default {",
+          "  id: '@acme/taste-module',",
+          "  version: '1.0.0',",
+          "  scope: 'organization',",
+          "  source: 'package',",
+          "  processors: []",
+          "}",
+        ].join("\n"),
+        "utf8",
+      )
+      const manifest = await Effect.runPromise(
+        decodeProjectModuleManifest({
+          modules: [
+            {
+              id: "@acme/taste-module",
+              kind: "package",
+              packageName: "@acme/taste-module",
+            },
+          ],
+        }),
+      )
+
+      const loaded = await Effect.runPromise(
+        loadProjectModuleRef(manifest.modules[0]!, { repoRoot }),
+      )
+
+      expect(loaded.descriptor).toMatchObject({
+        id: "@acme/taste-module",
+        scope: "organization",
+        source: "package",
+        sourceRef: "@acme/taste-module",
+      })
+      expect(loaded.descriptor.sourceFingerprint).toMatch(/^sha256:/)
+    } finally {
+      await rm(repoRoot, { recursive: true, force: true })
+    }
+  })
+
+  test("package self and imports helpers invalidate loaded module behavior", async () => {
+    const repoRoot = await mkdtemp(join(tmpdir(), "taste-project-module-"))
+    try {
+      const packageRoot = join(repoRoot, "node_modules", "@acme", "taste-module")
+      await mkdir(packageRoot, { recursive: true })
+      await writeFile(
+        join(packageRoot, "package.json"),
+        JSON.stringify({
+          name: "@acme/taste-module",
+          version: "1.0.0",
+          type: "module",
+          exports: {
+            ".": "./index.mjs",
+            "./helper": "./helper.mjs",
+          },
+          imports: {
+            "#suffix": "./suffix.mjs",
+          },
+        }),
+        "utf8",
+      )
+      await writeFile(
+        join(packageRoot, "index.mjs"),
+        [
+          "import { marker } from '@acme/taste-module/helper'",
+          "import { suffix } from '#suffix'",
+          "export default {",
+          "  id: '@acme/taste-module',",
+          "  version: '1.0.0',",
+          "  scope: 'organization',",
+          "  source: 'package',",
+          "  configHash: `${marker}:${suffix}`,",
+          "  processors: []",
+          "}",
+        ].join("\n"),
+        "utf8",
+      )
+      await writeFile(
+        join(packageRoot, "suffix.mjs"),
+        "export const suffix = 'stable'\n",
+        "utf8",
+      )
+      const writeHelper = (marker: string) =>
+        writeFile(
+          join(packageRoot, "helper.mjs"),
+          `export const marker = '${marker}'\n`,
+          "utf8",
+        )
+      const manifest = await Effect.runPromise(
+        decodeProjectModuleManifest({
+          modules: [
+            {
+              id: "@acme/taste-module",
+              kind: "package",
+              packageName: "@acme/taste-module",
+            },
+          ],
+        }),
+      )
+
+      await writeHelper("first")
+      const first = await Effect.runPromise(
+        loadProjectModuleRef(manifest.modules[0]!, { repoRoot }),
+      )
+      await writeHelper("second")
+      const second = await Effect.runPromise(
+        loadProjectModuleRef(manifest.modules[0]!, { repoRoot }),
+      )
+
+      expect(first.descriptor.configHash).toBe("first:stable")
+      expect(second.descriptor.configHash).toBe("second:stable")
+      expect(first.descriptor.sourceFingerprint).not.toBe(
+        second.descriptor.sourceFingerprint,
+      )
+      expect(first.activeModule.fingerprint).not.toBe(second.activeModule.fingerprint)
+    } finally {
+      await rm(repoRoot, { recursive: true, force: true })
+    }
+  })
+
+  test("rejects package project module refs resolved from ambient parent node_modules", async () => {
+    const root = await mkdtemp(join(tmpdir(), "taste-project-module-"))
+    const repoRoot = join(root, "repo")
+    try {
+      const packageRoot = join(root, "node_modules", "@acme", "taste-module")
+      await mkdir(packageRoot, { recursive: true })
+      await mkdir(repoRoot, { recursive: true })
+      await writeFile(
+        join(packageRoot, "package.json"),
+        JSON.stringify({
+          name: "@acme/taste-module",
+          version: "1.0.0",
+          type: "module",
+          exports: "./index.mjs",
+        }),
+        "utf8",
+      )
+      await writeFile(
+        join(packageRoot, "index.mjs"),
+        [
+          "export default {",
+          "  id: '@acme/taste-module',",
+          "  version: '1.0.0',",
+          "  scope: 'organization',",
+          "  processors: []",
+          "}",
+        ].join("\n"),
+        "utf8",
+      )
+      const manifest = await Effect.runPromise(
+        decodeProjectModuleManifest({
+          modules: [
+            {
+              id: "@acme/taste-module",
+              kind: "package",
+              packageName: "@acme/taste-module",
+            },
+          ],
+        }),
+      )
+
+      const exit = await Effect.runPromiseExit(
+        loadProjectModuleRef(manifest.modules[0]!, { repoRoot }),
+      )
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        const err = exit.cause._tag === "Fail" ? exit.cause.error : null
+        expect((err as { _tag?: string } | null)?._tag).toBe("ProjectModuleLoadError")
+        expect((err as { message?: string } | null)?.message).toContain(
+          "repository package graph",
+        )
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("rejects workspace project module refs resolved from ambient parent node_modules", async () => {
+    const root = await mkdtemp(join(tmpdir(), "taste-project-module-"))
+    const repoRoot = join(root, "repo")
+    try {
+      const packageRoot = join(root, "node_modules", "@acme", "taste-module")
+      await mkdir(packageRoot, { recursive: true })
+      await mkdir(repoRoot, { recursive: true })
+      await writeFile(
+        join(packageRoot, "package.json"),
+        JSON.stringify({
+          name: "@acme/taste-module",
+          version: "1.0.0",
+          type: "module",
+          exports: "./index.mjs",
+        }),
+        "utf8",
+      )
+      await writeFile(
+        join(packageRoot, "index.mjs"),
+        [
+          "export default {",
+          "  id: '@acme/taste-module',",
+          "  version: '1.0.0',",
+          "  scope: 'organization',",
+          "  processors: []",
+          "}",
+        ].join("\n"),
+        "utf8",
+      )
+      const manifest = await Effect.runPromise(
+        decodeProjectModuleManifest({
+          modules: [
+            {
+              id: "@acme/taste-module",
+              kind: "workspace",
+              packageName: "@acme/taste-module",
+            },
+          ],
+        }),
+      )
+
+      const exit = await Effect.runPromiseExit(
+        loadProjectModuleRef(manifest.modules[0]!, { repoRoot }),
+      )
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        const err = exit.cause._tag === "Fail" ? exit.cause.error : null
+        expect((err as { _tag?: string } | null)?._tag).toBe("ProjectModuleLoadError")
+        expect((err as { message?: string } | null)?.message).toContain(
+          "inside the repository root",
+        )
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true })
     }
   })
 

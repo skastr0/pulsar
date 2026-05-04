@@ -126,8 +126,6 @@
       "dependencies": {
         "@taste-codec/core": "workspace:*",
         "effect": "^3.0.0",
-      },
-      "devDependencies": {
         "typescript": "^5.8.0",
       },
     },
