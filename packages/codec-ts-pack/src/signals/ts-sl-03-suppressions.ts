@@ -43,7 +43,7 @@ export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalCon
   tier: 1,
   category: "generated-slop",
   kind: "structural",
-  cacheVersion: "docs-declarations-and-bridge-scope-v1",
+  cacheVersion: "inline-block-reasons-and-test-helpers-v1",
   configSchema: TsSl03Config,
   defaultConfig: {
     exclude_globs: [
@@ -99,6 +99,10 @@ export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalCon
       "**/*test-helpers.tsx",
       "**/*.test-helpers.ts",
       "**/*.test-helpers.tsx",
+      "**/*test_helpers.ts",
+      "**/*test_helpers.tsx",
+      "**/*.test_helpers.ts",
+      "**/*.test_helpers.tsx",
       "**/test-mocks.ts",
       "**/*test-mocks.ts",
       "**/*test-mocks.tsx",
@@ -345,11 +349,14 @@ const inlineTextAfter = (line: string, index: number): string | undefined => {
 
 const inlineEslintJustification = (line: string): string | undefined => {
   const marker = line.indexOf("--")
-  if (marker === -1) return undefined
-  const text = line
-    .slice(marker + 2)
-    .replace(/\s*\*\/\s*$/, "")
-    .trim()
+  const trailingBlockCommentMarker = line.indexOf("*/")
+  const trailingLineCommentMarker =
+    trailingBlockCommentMarker === -1
+      ? -1
+      : line.indexOf("//", trailingBlockCommentMarker + 2)
+  if (marker === -1 && trailingLineCommentMarker === -1) return undefined
+  const start = marker === -1 ? trailingLineCommentMarker + 2 : marker + 2
+  const text = line.slice(start).replace(/\s*\*\/\s*$/, "").trim()
   return isMeaningfulInlineJustification(text) ? text : undefined
 }
 

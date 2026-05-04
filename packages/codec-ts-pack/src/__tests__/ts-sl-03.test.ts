@@ -109,6 +109,23 @@ console.log("building");
     expect(out.missingJustificationCount).toBe(0)
   })
 
+  test("accepts trailing comments after block eslint disables as inline justification", async () => {
+    await repo.write(
+      "utils.ts",
+      `
+/* eslint-disable no-console */ // Default logger intentionally writes to the developer console.
+console.log("ready");
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl03, TsSl03.defaultConfig)
+    expect(out.suppressions.length).toBe(1)
+    expect(out.suppressions[0]?.rule).toBe("no-console")
+    expect(out.suppressions[0]?.justification).toBe("active")
+    expect(out.suppressions[0]?.justificationSource).toBe("inline")
+    expect(out.missingJustificationCount).toBe(0)
+  })
+
   test("accepts adjacent explanatory comments as contextual justification", async () => {
     await repo.write(
       "utils.ts",
@@ -296,6 +313,22 @@ import "sst";
       `
 // @ts-expect-error simplified canvas mock
 HTMLCanvasElement.prototype.getContext = () => ({});
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl03, TsSl03.defaultConfig)
+    expect(out.suppressions).toEqual([])
+    expect(TsSl03.score(out)).toBe(1)
+  })
+
+  test("ignores underscore-named test helper files by default", async () => {
+    await repo.write(
+      "src/browser/sync/client_node_test_helpers.ts",
+      `
+export function send(debug = false) {
+  // eslint-disable-next-line no-console
+  if (debug) console.debug("client sent event")
+}
 `,
     )
 
