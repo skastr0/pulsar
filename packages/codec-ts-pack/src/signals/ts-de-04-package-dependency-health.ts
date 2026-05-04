@@ -37,7 +37,7 @@ export type TsDe04Config = typeof TsDe04Config.Type
 export interface DependencyMismatch {
   readonly dependencyName: string
   readonly files: ReadonlyArray<string>
-  readonly usageKind?: "type-only"
+  readonly usageKind?: "type-only" | "dynamic"
 }
 
 export interface UnusedDeclaredDependency {
@@ -66,6 +66,7 @@ type UsageBucket = {
   readonly prodFiles: Set<string>
   readonly toolingFiles: Set<string>
   readonly typeOnlyFiles: Set<string>
+  readonly dynamicFiles: Set<string>
   readonly bundledFiles: Set<string>
   readonly bundledProdFiles: Set<string>
   readonly specifiers: Set<string>
@@ -90,6 +91,7 @@ type BundledPackageInfo = {
 type ModuleSpecifierUsage = {
   readonly specifier: string
   readonly typeOnly: boolean
+  readonly dynamic: boolean
 }
 
 const PACKAGE_ROOT_DEPENDENCY_FILES = [
@@ -163,7 +165,7 @@ export const TsDe04: Signal<
   tier: 1,
   category: "dependency-entropy",
   kind: "structural",
-  cacheVersion: "private-jsonc-bundled-path-aliases-v1",
+  cacheVersion: "dynamic-private-jsonc-bundled-path-aliases-v1",
   configSchema: TsDe04Config,
   defaultConfig: {
     exclude_globs: [
@@ -324,6 +326,7 @@ export const TsDe04: Signal<
                 prodFiles: new Set<string>(),
                 toolingFiles: new Set<string>(),
                 typeOnlyFiles: new Set<string>(),
+                dynamicFiles: new Set<string>(),
                 bundledFiles: new Set<string>(),
                 bundledProdFiles: new Set<string>(),
                 specifiers: new Set<string>(),
@@ -345,6 +348,9 @@ export const TsDe04: Signal<
               }
               if (moduleUsage.typeOnly) {
                 usage.typeOnlyFiles.add(sourceFile.getFilePath())
+              }
+              if (moduleUsage.dynamic) {
+                usage.dynamicFiles.add(sourceFile.getFilePath())
               }
               if (isProdFile && !moduleUsage.typeOnly) {
                 usage.prodFiles.add(sourceFile.getFilePath())
@@ -539,10 +545,12 @@ const missingDependencyRank = (diagnostic: Diagnostic): number => {
       return 1
     case "tooling-only-missing-dependency":
       return 2
-    case "type-only-missing-dependency":
+    case "dynamic-missing-dependency":
       return 3
-    default:
+    case "type-only-missing-dependency":
       return 4
+    default:
+      return 5
   }
 }
 
@@ -561,6 +569,7 @@ const missingDependencyPenaltyWeight = (
   mismatch: DependencyMismatch,
 ): number => {
   if (isToolingOnlyMissingDependency(pkg, mismatch)) return 0.2
+  if (mismatch.usageKind === "dynamic") return 0.45
   if (mismatch.usageKind === "type-only") return 0.2
   if (pkg.private) return 0.45
   return 1
@@ -571,6 +580,7 @@ const missingDependencySeverityReason = (
   mismatch: DependencyMismatch,
 ): string => {
   if (isToolingOnlyMissingDependency(pkg, mismatch)) return "tooling-only-missing-dependency"
+  if (mismatch.usageKind === "dynamic") return "dynamic-missing-dependency"
   if (mismatch.usageKind === "type-only") return "type-only-missing-dependency"
   if (pkg.private) return "private-runtime-missing-dependency"
   return "published-runtime-missing-dependency"
@@ -725,6 +735,7 @@ const externalModuleSpecifiers = (sourceFile: SourceFile): ReadonlyArray<ModuleS
       mergeModuleSpecifierUsage(specifiers, {
         specifier: moduleSpecifier,
         typeOnly: isTypeOnlyModuleDeclaration(declaration, getIdentifierUsage),
+        dynamic: false,
       })
     }
   }
@@ -736,7 +747,11 @@ const externalModuleSpecifiers = (sourceFile: SourceFile): ReadonlyArray<ModuleS
       if (!Node.isStringLiteral(firstArg)) continue
       if (isExternalLoaderCall(requireLikeNames, call.getExpression().getText())) {
         const specifier = firstArg.getLiteralText()
-        mergeModuleSpecifierUsage(specifiers, { specifier, typeOnly: false })
+        mergeModuleSpecifierUsage(specifiers, {
+          specifier,
+          typeOnly: false,
+          dynamic: call.getExpression().getText() === "import",
+        })
       }
     }
   }
@@ -754,6 +769,7 @@ const mergeModuleSpecifierUsage = (
   specifiers.set(usage.specifier, {
     specifier: usage.specifier,
     typeOnly: existing === undefined ? usage.typeOnly : existing.typeOnly && usage.typeOnly,
+    dynamic: existing === undefined ? usage.dynamic : existing.dynamic && usage.dynamic,
   })
 }
 
@@ -1360,7 +1376,7 @@ const analyzePackageHealth = (
       importedButNotDeclared.push({
         dependencyName,
         files,
-        ...(isTypeOnlyUsage(usageBucket) ? { usageKind: "type-only" as const } : {}),
+        ...dependencyMismatchUsageKind(usageBucket),
       })
       continue
     }
@@ -1389,6 +1405,18 @@ const isToolingOnlyUsage = (usage: UsageBucket): boolean =>
 
 const isTypeOnlyUsage = (usage: UsageBucket): boolean =>
   usage.files.size > 0 && usage.files.size === usage.typeOnlyFiles.size
+
+const isDynamicOnlyUsage = (usage: UsageBucket): boolean =>
+  usage.files.size > 0 && usage.files.size === usage.dynamicFiles.size
+
+const dependencyMismatchUsageKind = (
+  usage: UsageBucket,
+): Pick<DependencyMismatch, "usageKind"> =>
+  isTypeOnlyUsage(usage)
+    ? { usageKind: "type-only" }
+    : isDynamicOnlyUsage(usage)
+      ? { usageKind: "dynamic" }
+      : {}
 
 const isBundledOnlyUsage = (usage: UsageBucket): boolean =>
   usage.files.size > 0 && usage.files.size === usage.bundledFiles.size

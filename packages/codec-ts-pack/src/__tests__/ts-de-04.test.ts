@@ -721,6 +721,31 @@ describe("TS-DE-04 (package dependency health)", () => {
     expect(out.packages[0]?.declaredButUnused).toEqual([])
   })
 
+  test("missing dependencies reached only by dynamic import are warning-level leads", async () => {
+    await writePackage("app", "@repo/app", {})
+    await repo.write(
+      "packages/app/src/index.ts",
+      [
+        "export async function loadOptional() {",
+        "  return import('optional-host-plugin')",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+    const diagnostic = TsDe04.diagnose(out)[0]
+
+    expect(out.packages[0]?.importedButNotDeclared).toEqual([
+      {
+        dependencyName: "optional-host-plugin",
+        files: [`${repo.root}/packages/app/src/index.ts`],
+        usageKind: "dynamic",
+      },
+    ])
+    expect(diagnostic?.severity).toBe("warn")
+    expect(diagnostic?.data?.severityReason).toBe("dynamic-missing-dependency")
+  })
+
   test("ignores bare generated virtual module imports", async () => {
     await writePackage("app", "@repo/app", {})
     await repo.write(
