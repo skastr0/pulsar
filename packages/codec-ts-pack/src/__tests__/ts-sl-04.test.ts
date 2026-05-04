@@ -313,6 +313,24 @@ export const throwNotImplementedOnRNWeb = <T>(): T => {
     expect(TsSl04.score(out)).toBe(1)
   })
 
+  test("does not classify fixture entrypoint placeholders as production stubs", async () => {
+    await repo.write(
+      "src/sprout/evaluator.ts",
+      `
+(globalThis as any).placeholderFn = function (..._args: Array<any>) {
+  throw new Error("Fixture not implemented!");
+};
+
+export function actualRuntimeStub() {
+  throw new Error("TODO: implement runtime path");
+}
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
+    expect(out.stubs.map((stub) => stub.name)).toEqual(["actualRuntimeStub"])
+  })
+
   test("does not classify unsupported React host config contract hooks as unfinished stubs", async () => {
     await repo.write(
       "HostConfig.ts",

@@ -1035,6 +1035,7 @@ const classifyStub = (fn: FnLike, bodyText: string): { kind: StubKind; message: 
     if (throwStubMessage !== undefined) {
       if (isExplicitUnsupportedCapabilityMessage(throwStubMessage)) return undefined
       if (isFrameworkContractUnsupportedHook(fn, throwStubMessage)) return undefined
+      if (isFixtureEntrypointPlaceholder(fn, throwStubMessage)) return undefined
       const message = throwStubMessage.toLowerCase()
       if (/not\s*implemented|todo|fixme|stub/i.test(message)) {
         return { kind: "throw-not-implemented", message: throwStubMessage }
@@ -1072,6 +1073,26 @@ const MAYBE_PLACEHOLDER_RETURN_PATTERN = /\breturn\b[\s\S]*(?:placeholder|mock|t
 const isExplicitUnsupportedCapabilityMessage = (message: string): boolean =>
   /`[^`]+`\s+on\s+.+\s+is\s+not\s+implemented\s+by\s+[^.]+\./i.test(message) ||
   /^not\s+implemented\s+on\s+.+/i.test(message)
+
+const isFixtureEntrypointPlaceholder = (fn: FnLike, message: string): boolean => {
+  if (!/^fixture\s+not\s+implemented!?$/i.test(message.trim())) return false
+  if (/placeholder/i.test(getFunctionName(fn))) return true
+
+  let current: Node | undefined = fn.getParent()
+  while (current !== undefined && !Node.isSourceFile(current)) {
+    if (Node.isBinaryExpression(current) && /placeholder/i.test(current.getLeft().getText())) {
+      return true
+    }
+    if (Node.isVariableDeclaration(current) && /placeholder/i.test(current.getName())) {
+      return true
+    }
+    if (Node.isPropertyAssignment(current) && /placeholder/i.test(propertyNameOf(current))) {
+      return true
+    }
+    current = current.getParent()
+  }
+  return false
+}
 
 const isFrameworkContractUnsupportedHook = (fn: FnLike, message: string): boolean => {
   if (!/^(?:function\s+)?not\s+(?:yet\s+)?implemented\.?$/i.test(message)) {
