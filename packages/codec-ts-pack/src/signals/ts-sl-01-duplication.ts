@@ -67,7 +67,7 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
   tier: 1,
   category: "generated-slop",
   kind: "legibility",
-  cacheVersion: "parallel-implementation-family-impact-v1",
+  cacheVersion: "compatibility-mirror-impact-v1",
   configSchema: TsSl01Config,
   defaultConfig: {
     exclude_globs: [
@@ -334,12 +334,14 @@ const cloneGroupImpact = (
     if (scopeMode === "whole-tree" && group.tokenCount < 20) return 0
     const isParallelImplementationFamily =
       scopeMode === "whole-tree" && isParallelImplementationFamilyClone(group.members)
+    const isCompatibilityMirror =
+      scopeMode === "whole-tree" && isCompatibilityMirrorClone(group.members)
     const memberPressure = isParallelImplementationFamily
       ? Math.log2(group.members.length)
       : scopeMode === "whole-tree" && group.tokenCount < 50
       ? Math.log2(group.members.length) * 0.5
       : extraMembers
-    const familyWeight = isParallelImplementationFamily ? 0.35 : 1
+    const familyWeight = isCompatibilityMirror ? 0.15 : isParallelImplementationFamily ? 0.35 : 1
     return memberPressure * 1.2 * Math.min(3, Math.max(0.3, group.tokenCount / 30)) * familyWeight
   }
 
@@ -426,8 +428,75 @@ const cloneGroupSeverity = (
   scopeMode: TsSl01Output["scopeMode"],
   minTokens: number,
 ): Diagnostic["severity"] => {
+  if (scopeMode === "whole-tree" && isCompatibilityMirrorClone(group.members)) return "info"
   if (group.kind === "exact") return group.tokenCount < 30 ? "info" : "warn"
   return cloneGroupImpact(group, scopeMode, minTokens) >= 5 ? "warn" : "info"
+}
+
+const isCompatibilityMirrorClone = (
+  members: ReadonlyArray<CloneGroupMember>,
+): boolean => {
+  if (members.length < 2) return false
+  if (isVersionedSiblingFileClone(members)) return true
+  return isCacheApiMirrorClone(members)
+}
+
+const isVersionedSiblingFileClone = (
+  members: ReadonlyArray<CloneGroupMember>,
+): boolean => {
+  const functionNames = new Set(members.map((member) => member.name))
+  if (functionNames.size !== 1) return false
+
+  const parsed = members.map((member) => {
+    const normalized = member.file.replace(/\\/g, "/")
+    const slash = normalized.lastIndexOf("/")
+    const dirname = slash === -1 ? "" : normalized.slice(0, slash)
+    const filename = slash === -1 ? normalized : normalized.slice(slash + 1)
+    const match = /^(.+?)(?:v?\d+)(\.[^.]+)$/.exec(filename)
+    return match === null
+      ? undefined
+      : { dirname, filename, stem: `${match[1]}${match[2]}` }
+  })
+
+  if (parsed.some((entry) => entry === undefined)) return false
+  return (
+    new Set(parsed.map((entry) => entry!.filename)).size > 1 &&
+    new Set(parsed.map((entry) => entry!.dirname)).size === 1 &&
+    new Set(parsed.map((entry) => entry!.stem)).size === 1
+  )
+}
+
+const isCacheApiMirrorClone = (
+  members: ReadonlyArray<CloneGroupMember>,
+): boolean => {
+  if (members.length !== 2) return false
+  const descriptors = members.map(packageTailDescriptor)
+  if (descriptors.some((descriptor) => descriptor === undefined)) return false
+  if (new Set(descriptors.map((descriptor) => descriptor!.packageRoot)).size !== 1) return false
+
+  const [a, b] = descriptors as [
+    { readonly packageRoot: string; readonly tail: string },
+    { readonly packageRoot: string; readonly tail: string },
+  ]
+  return isCacheMirrorTail(a.tail, b.tail) || isCacheMirrorTail(b.tail, a.tail)
+}
+
+const isCacheMirrorTail = (rootTail: string, cacheTail: string): boolean => {
+  const rootMatch = /^([^/]+)\.tsx?$/.exec(rootTail)
+  if (rootMatch === null) return false
+  return cacheTail.startsWith(`${rootMatch[1]}/cache/`)
+}
+
+const packageTailDescriptor = (
+  member: CloneGroupMember,
+): { readonly packageRoot: string; readonly tail: string } | undefined => {
+  const parts = member.file.replace(/\\/g, "/").split("/")
+  const packagesIndex = parts.lastIndexOf("packages")
+  if (packagesIndex === -1 || packagesIndex + 2 >= parts.length) return undefined
+  return {
+    packageRoot: parts.slice(0, packagesIndex + 2).join("/"),
+    tail: parts.slice(packagesIndex + 2).join("/"),
+  }
 }
 
 const isStructuralCloneEligible = (fn: FnLike): boolean => {

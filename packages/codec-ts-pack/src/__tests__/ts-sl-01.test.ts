@@ -157,6 +157,95 @@ export function onTextPart(value: string): string {
     expect(parallelScore).toBeGreaterThan(localScore)
   })
 
+  test("deweights exact clones across explicit compatibility mirrors", () => {
+    const baseGroup = {
+      groupId: "exact-0",
+      kind: "exact" as const,
+      tokenCount: 160,
+      structuralHash: "hash",
+    }
+    const compatibilityScore = TsSl01.score({
+      groups: [
+        {
+          ...baseGroup,
+          members: [
+            {
+              file: "/repo/packages/convex-helpers/server/zod3.ts",
+              name: "convexToZodFields",
+              startLine: 1,
+              endLine: 20,
+            },
+            {
+              file: "/repo/packages/convex-helpers/server/zod4.ts",
+              name: "convexToZodFields",
+              startLine: 1,
+              endLine: 20,
+            },
+          ],
+        },
+        {
+          ...baseGroup,
+          groupId: "exact-1",
+          members: [
+            {
+              file: "/repo/packages/convex-helpers/react.ts",
+              name: "<anonymous>",
+              startLine: 1,
+              endLine: 20,
+            },
+            {
+              file: "/repo/packages/convex-helpers/react/cache/hooks.ts",
+              name: "<anonymous>",
+              startLine: 1,
+              endLine: 20,
+            },
+          ],
+        },
+      ],
+      totalFunctionsAnalyzed: 4,
+      scoreBudgetFunctions: 4,
+      scopeMode: "whole-tree",
+    })
+    const localScore = TsSl01.score({
+      groups: [
+        {
+          ...baseGroup,
+          members: [
+            { file: "src/first.ts", name: "convexToZodFields", startLine: 1, endLine: 20 },
+            { file: "src/second.ts", name: "convexToZodFields", startLine: 1, endLine: 20 },
+          ],
+        },
+      ],
+      totalFunctionsAnalyzed: 2,
+      scoreBudgetFunctions: 2,
+      scopeMode: "whole-tree",
+    })
+
+    expect(compatibilityScore).toBeGreaterThan(localScore)
+  })
+
+  test("does not deweight same-file local duplication as a compatibility mirror", () => {
+    const mirroredNameScore = TsSl01.score({
+      groups: [
+        {
+          groupId: "exact-0",
+          kind: "exact",
+          tokenCount: 80,
+          structuralHash: "hash",
+          members: [
+            { file: "/repo/packages/convex-helpers/server/zod3.ts", name: "ensureStringOrId", startLine: 1, endLine: 20 },
+            { file: "/repo/packages/convex-helpers/server/zod3.ts", name: "ensureStringOrId", startLine: 40, endLine: 60 },
+          ],
+        },
+      ],
+      totalFunctionsAnalyzed: 2,
+      scoreBudgetFunctions: 2,
+      scopeMode: "whole-tree",
+    })
+
+    expect(mirroredNameScore).toBeLessThan(0.98)
+  })
+
   test("detects structural near-duplicates", async () => {
     await repo.write(
       "handlers.ts",
