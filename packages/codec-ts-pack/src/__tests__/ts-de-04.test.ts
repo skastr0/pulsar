@@ -1000,6 +1000,36 @@ describe("TS-DE-04 (package dependency health)", () => {
     expect(appHealth?.importedButNotDeclared).toEqual([])
   })
 
+  test("ignores bare imports resolved through tsconfig baseUrl local source", async () => {
+    await writePackage("app", "@repo/app", {})
+    await repo.writeJson("packages/app/tsconfig.json", {
+      compilerOptions: {
+        target: "ES2022",
+        module: "ESNext",
+        moduleResolution: "Bundler",
+        baseUrl: "src",
+      },
+      include: ["src/**/*.ts"],
+    })
+    await repo.write(
+      "packages/app/src/index.ts",
+      [
+        "import { client } from 'api/client'",
+        "import { useThing } from 'hooks/useThing'",
+        "import { Generated } from 'generatedApi'",
+        "export const value = [client, useThing, Generated]",
+        "",
+      ].join("\n"),
+    )
+    await repo.write("packages/app/src/api/client.ts", "export const client = 'client'\n")
+    await repo.write("packages/app/src/hooks/useThing.ts", "export const useThing = 'hook'\n")
+    await repo.write("packages/app/src/generatedApi.ts", "export const Generated = 'generated'\n")
+
+    const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+    const appHealth = out.packages.find((pkg) => pkg.packageName === "@repo/app")
+    expect(appHealth?.importedButNotDeclared).toEqual([])
+  })
+
   test("ignores tsconfig path aliases inherited through extends", async () => {
     await writePackage("app", "@repo/app", {})
     await repo.writeJson("tsconfig.base.json", {
@@ -1198,6 +1228,34 @@ describe("TS-DE-04 (package dependency health)", () => {
     expect(out.packages.some((pkg) => pkg.packageName === "angular-sample")).toBe(false)
     expect(TsDe04.diagnose(out).some((diagnostic) =>
       diagnostic.message.includes("@angular/core"),
+    )).toBe(false)
+  })
+
+  test("does not hard-gate dependencies in demo package paths by default", async () => {
+    await writePackage("app", "@repo/app", {})
+    await repo.write("packages/app/src/index.ts", "export const value = 1\n")
+    await repo.writeJson("private-demos/snippets/package.json", {
+      name: "demo-snippets",
+      version: "0.0.0",
+      dependencies: {},
+    })
+    await repo.writeJson("private-demos/snippets/tsconfig.json", {
+      compilerOptions: {
+        target: "ES2022",
+        module: "ESNext",
+        moduleResolution: "Bundler",
+      },
+      include: ["**/*.ts"],
+    })
+    await repo.write(
+      "private-demos/snippets/tour.ts",
+      "import { mutation } from 'convex/server'\nexport const like = mutation\n",
+    )
+
+    const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+    expect(out.packages.some((pkg) => pkg.packageName === "demo-snippets")).toBe(false)
+    expect(TsDe04.diagnose(out).some((diagnostic) =>
+      diagnostic.message.includes("convex/server"),
     )).toBe(false)
   })
 })

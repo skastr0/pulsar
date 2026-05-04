@@ -155,6 +155,14 @@ describe("TS-AD-02 (circular dependencies)", () => {
       "google_samples/angular/b.ts",
       "import { a } from './a'\nexport const b = a + 1\n",
     )
+    await writeTs(
+      "private-demos/snippets/a.ts",
+      "import { b } from './b'\nexport const a = b + 1\n",
+    )
+    await writeTs(
+      "private-demos/snippets/b.ts",
+      "import { a } from './a'\nexport const b = a + 1\n",
+    )
 
     const out = await runCompute()
     expect(out.cycleCount).toBe(0)

@@ -177,6 +177,23 @@ export function createFeatureTestSuite(customAssertions: { errorValidator?: () =
     expect(TsSl04.score(out)).toBe(1)
   })
 
+  test("ignores TODO snippets in demo roots", async () => {
+    await repo.write(
+      "private-demos/snippets/convex/tour2Messages.ts",
+      `
+export const like = mutation({
+  handler: async () => {
+    // TODO
+  },
+})
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
+    expect(out.stubs).toEqual([])
+    expect(TsSl04.score(out)).toBe(1)
+  })
+
   test("does not classify TODO comments above real code as TODO-only implementations", async () => {
     await repo.write(
       "utils.ts",
@@ -1108,6 +1125,31 @@ export const hooks = {
       "src/agents/test-helpers/fast-tools.ts",
       `
 export function setDepsForTest() {}
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
+    expect(out.stubs).toEqual([])
+  })
+
+  test("skips prefix-named mock support files by default", async () => {
+    await repo.write(
+      "src/lib/mockConvexReactClient.ts",
+      `
+export function mockConvexReactClient() {
+  return {
+    setAuth() {
+      throw new Error("Auth is not implemented")
+    },
+    watchQuery() {
+      return {
+        localQueryLogs: () => {
+          throw new Error("not implemented")
+        },
+      }
+    },
+  }
+}
 `,
     )
 

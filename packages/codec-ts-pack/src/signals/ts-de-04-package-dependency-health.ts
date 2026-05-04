@@ -172,6 +172,9 @@ export const TsDe04: Signal<
       "**/sst-env.d.ts",
       "**/example/**",
       "**/examples/**",
+      "**/demo/**",
+      "**/demos/**",
+      "**/private-demos/**",
       "**/sample/**",
       "**/samples/**",
       "**/sdk-samples/**",
@@ -933,11 +936,36 @@ const readPathAliasConfig = async (
   const baseDir = baseUrl === undefined ? inherited.baseDir : resolve(dirname(normalizedPath), baseUrl)
   const paths = asRecord(compilerOptions?.paths)
 
-  if (paths === undefined) return { aliases: inherited.aliases, baseDir }
+  const baseUrlAliases = baseUrl === undefined ? [] : await implicitBaseUrlAliases(baseDir)
+
+  if (paths === undefined) return { aliases: [...inherited.aliases, ...baseUrlAliases], baseDir }
 
   return {
-    aliases: pathAliasesFromCompilerOptions(paths, baseDir),
+    aliases: [...pathAliasesFromCompilerOptions(paths, baseDir), ...baseUrlAliases],
     baseDir,
+  }
+}
+
+const implicitBaseUrlAliases = async (
+  baseDir: string,
+): Promise<ReadonlyArray<TsconfigPathAlias>> => {
+  try {
+    const entries = await readdir(baseDir, { withFileTypes: true })
+    return entries.flatMap((entry): ReadonlyArray<TsconfigPathAlias> => {
+      if (entry.name.startsWith(".")) return []
+      if (entry.isDirectory()) {
+        return [
+          { pattern: entry.name, replacements: [entry.name], baseDir },
+          { pattern: `${entry.name}/*`, replacements: [`${entry.name}/*`], baseDir },
+        ]
+      }
+      if (!entry.isFile()) return []
+      const stem = entry.name.replace(/\.(?:c|m)?(?:t|j)sx?$/, "")
+      if (stem === entry.name || stem.length === 0) return []
+      return [{ pattern: stem, replacements: [entry.name], baseDir }]
+    })
+  } catch {
+    return []
   }
 }
 
