@@ -43,7 +43,7 @@ export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalCon
   tier: 1,
   category: "generated-slop",
   kind: "structural",
-  cacheVersion: "nearby-contextual-suppressions-v1",
+  cacheVersion: "generated-root-exclusions-v1",
   configSchema: TsSl03Config,
   defaultConfig: {
     exclude_globs: [
@@ -52,6 +52,7 @@ export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalCon
       "**/.turbo/**",
       "**/vendor/**",
       "**/gen/**",
+      "**/_generated/**",
       "**/*.gen.ts",
       "**/*.gen.tsx",
       "**/*.generated.ts",

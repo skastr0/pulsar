@@ -129,6 +129,7 @@ const addWorktreeGlob = (project: Project, worktreePath: string, options?: TsPro
     `!${worktreePath}/**/.cache/**`,
     `!${worktreePath}/**/vendor/**`,
     `!${worktreePath}/**/gen/**`,
+    `!${worktreePath}/**/_generated/**`,
     `!${worktreePath}/**/*.gen.ts`,
     `!${worktreePath}/**/*.gen.tsx`,
     `!${worktreePath}/**/*.generated.ts`,
@@ -176,7 +177,9 @@ const removeIgnoredSourceFiles = (project: Project): void => {
 }
 
 const hasIgnoredPathSegment = (filePath: string): boolean =>
-  filePath.split(/[\\/]+/).some(isHiddenPathSegment)
+  filePath.split(/[\\/]+/).some((segment) =>
+    isHiddenPathSegment(segment) || segment === "_generated"
+  )
 
 const listProductionTypeScriptFiles = (
   worktreePath: string,
@@ -233,7 +236,7 @@ const isProductionTypeScriptFile = (file: string): boolean => {
     return false
   }
 
-  return ![
+  return !([
     "node_modules",
     "dist",
     "build",
@@ -245,13 +248,14 @@ const isProductionTypeScriptFile = (file: string): boolean => {
     ".cache",
     "vendor",
     "gen",
+    "_generated",
     "__tests__",
     "test",
     "tests",
     "test-support",
     "test-utils",
   ].some((segment) => file.split("/").includes(segment)) ||
-  file.split("/").some(isHiddenPathSegment)
+  file.split("/").some(isHiddenPathSegment))
 }
 
 const isHiddenPathSegment = (segment: string): boolean =>

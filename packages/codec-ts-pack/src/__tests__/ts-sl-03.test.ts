@@ -496,6 +496,13 @@ const value: string = 123
 
   test("ignores generated and example suppressions by default", async () => {
     await repo.write(
+      "src/_generated/api.ts",
+      `
+// @ts-expect-error
+const generatedApi: string = 1;
+`,
+    )
+    await repo.write(
       "packages/api/src/Generated.ts",
       `
 // @ts-expect-error

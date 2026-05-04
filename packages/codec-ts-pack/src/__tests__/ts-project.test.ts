@@ -35,12 +35,14 @@ describe("TsProject", () => {
     )
     await write("src/index.ts", "export const product = true\n")
     await write(".metadata/policy.ts", "export const ambientMetadata = true\n")
+    await write("src/_generated/api.ts", "export const generatedApi = true\n")
 
     const project = await Effect.runPromise(makeTsProject(tmp))
     const files = project.getSourceFiles().map((sourceFile) => sourceFile.getFilePath())
 
     expect(files.some((file) => file.endsWith("src/index.ts"))).toBe(true)
     expect(files.some((file) => file.includes("/.metadata/"))).toBe(false)
+    expect(files.some((file) => file.includes("/_generated/"))).toBe(false)
   })
 
   test("production-only file discovery also skips hidden metadata files", async () => {
@@ -58,6 +60,7 @@ describe("TsProject", () => {
     await write("src/index.ts", "export const product = true\n")
     await write("src/test-utils/render.tsx", "export const renderForTest = true\n")
     await write("src/render.test-utils.ts", "export const renderForTest = true\n")
+    await write("src/_generated/api.ts", "export const generatedApi = true\n")
 
     const project = await Effect.runPromise(makeTsProjectWithOptions(tmp, { productionOnly: true }))
     const files = project.getSourceFiles().map((sourceFile) => sourceFile.getFilePath())
@@ -65,5 +68,6 @@ describe("TsProject", () => {
     expect(files.some((file) => file.endsWith("src/index.ts"))).toBe(true)
     expect(files.some((file) => file.includes("/test-utils/"))).toBe(false)
     expect(files.some((file) => file.endsWith("render.test-utils.ts"))).toBe(false)
+    expect(files.some((file) => file.includes("/_generated/"))).toBe(false)
   })
 })
