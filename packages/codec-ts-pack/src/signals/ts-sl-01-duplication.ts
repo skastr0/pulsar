@@ -65,7 +65,7 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
   tier: 1,
   category: "generated-slop",
   kind: "legibility",
-  cacheVersion: "single-pass-tokenizer-v1",
+  cacheVersion: "single-pass-structural-hash-v1",
   configSchema: TsSl01Config,
   defaultConfig: {
     exclude_globs: [
@@ -548,24 +548,43 @@ const TWO_CHAR_OPERATORS = new Set([
 const analyzeStructuralSource = (
   source: string,
 ): { readonly tokenCount: number; readonly structuralHash: string } => {
-  const rawTokens = tokenizeStructuralSource(source)
-  const ternaryColonIndexes = findTernaryColonIndexes(rawTokens)
-
-  let hash = 0
-  for (let index = 0; index < rawTokens.length; index++) {
-    const token = rawTokens[index]!
-    const structuralToken = structuralTokenFor(rawTokens, index, ternaryColonIndexes)
-    hash = appendTokenHash(hash, structuralToken)
+  const state: StructuralScanState = {
+    hash: 0,
+    tokenCount: 0,
+    segmentHasQuestion: false,
+    pending: undefined,
+    pendingColonWasTernary: false,
+    pendingPrev: undefined,
+    pendingPrevColonWasTernary: false,
+    pendingPrevPrev: undefined,
   }
 
+  scanStructuralSource(source, (token) => {
+    acceptStructuralToken(state, token)
+  })
+  flushPendingStructuralToken(state, undefined)
+
   return {
-    tokenCount: rawTokens.length,
-    structuralHash: Math.abs(hash).toString(36),
+    tokenCount: state.tokenCount,
+    structuralHash: Math.abs(state.hash).toString(36),
   }
 }
 
-const tokenizeStructuralSource = (source: string): ReadonlyArray<string> => {
-  const tokens: Array<string> = []
+type StructuralScanState = {
+  hash: number
+  tokenCount: number
+  segmentHasQuestion: boolean
+  pending: string | undefined
+  pendingColonWasTernary: boolean
+  pendingPrev: string | undefined
+  pendingPrevColonWasTernary: boolean
+  pendingPrevPrev: string | undefined
+}
+
+const scanStructuralSource = (
+  source: string,
+  accept: (token: string) => void,
+): void => {
   let index = 0
 
   while (index < source.length) {
@@ -589,51 +608,49 @@ const tokenizeStructuralSource = (source: string): ReadonlyArray<string> => {
 
     if (char === "\"" || char === "'") {
       const end = skipQuotedString(source, index, char)
-      tokens.push(source.slice(index, end))
+      accept(source.slice(index, end))
       index = end
       continue
     }
 
     if (char === "`") {
       index = skipTemplateLiteral(source, index + 1)
-      tokens.push("TMPL")
+      accept("TMPL")
       continue
     }
 
     if (isIdentifierStartCharCode(charCode)) {
       const end = scanIdentifierEnd(source, index + 1)
-      tokens.push(source.slice(index, end))
+      accept(source.slice(index, end))
       index = end
       continue
     }
 
     if (isDigitCharCode(charCode)) {
       index = scanNumberEnd(source, index)
-      tokens.push("NUM")
+      accept("NUM")
       continue
     }
 
     const three = source.slice(index, index + 3)
     if (THREE_CHAR_OPERATORS.has(three)) {
-      tokens.push(three)
+      accept(three)
       index += 3
       continue
     }
 
     const two = source.slice(index, index + 2)
     if (TWO_CHAR_OPERATORS.has(two)) {
-      tokens.push(two)
+      accept(two)
       index += 2
       continue
     }
 
     if (PUNCTUATION_TOKENS.has(char)) {
-      tokens.push(char)
+      accept(char)
     }
     index++
   }
-
-  return tokens
 }
 
 const isWhitespaceCharCode = (charCode: number): boolean =>
@@ -740,21 +757,78 @@ const scanNumberEnd = (source: string, index: number): number => {
   return cursor
 }
 
+const acceptStructuralToken = (
+  state: StructuralScanState,
+  token: string,
+): void => {
+  const colonWasTernary = structuralTokenColonWasTernary(state, token)
+  state.tokenCount += 1
+  flushPendingStructuralToken(state, token)
+  state.pendingPrevPrev = state.pendingPrev
+  state.pendingPrev = state.pending
+  state.pendingPrevColonWasTernary = state.pendingColonWasTernary
+  state.pending = token
+  state.pendingColonWasTernary = colonWasTernary
+}
+
+const structuralTokenColonWasTernary = (
+  state: StructuralScanState,
+  token: string,
+): boolean => {
+  if (token === ";" || token === "," || token === "{" || token === "}") {
+    state.segmentHasQuestion = false
+    return false
+  }
+  if (token === "?") {
+    state.segmentHasQuestion = true
+    return false
+  }
+  if (token === ":" && state.segmentHasQuestion) {
+    state.segmentHasQuestion = false
+    return true
+  }
+  return false
+}
+
+const flushPendingStructuralToken = (
+  state: StructuralScanState,
+  nextToken: string | undefined,
+): void => {
+  const token = state.pending
+  if (token === undefined) return
+
+  state.hash = appendTokenHash(
+    state.hash,
+    structuralTokenFor(
+      token,
+      nextToken,
+      state.pendingPrev,
+      state.pendingPrevColonWasTernary,
+      state.pendingPrevPrev,
+    ),
+  )
+}
+
 const structuralTokenFor = (
-  rawTokens: ReadonlyArray<string>,
-  index: number,
-  ternaryColonIndexes: ReadonlySet<number>,
+  token: string,
+  nextToken: string | undefined,
+  previousToken: string | undefined,
+  previousColonWasTernary: boolean,
+  previousPreviousToken: string | undefined,
 ): string => {
-  const token = rawTokens[index]!
-    if (isStringLiteralToken(token)) {
-      return isObjectPropertyValue(rawTokens, index, ternaryColonIndexes) ? `STR:${token}` : "STR"
-    }
+  if (isStringLiteralToken(token)) {
+    return isObjectPropertyValue(
+      previousToken,
+      previousColonWasTernary,
+      previousPreviousToken,
+    ) ? `STR:${token}` : "STR"
+  }
 
-    if (IDENTIFIER_PATTERN.test(token) && !TS_KEYWORDS.has(token)) {
-      return rawTokens[index + 1] === ":" ? `KEY:${token}` : "ID"
-    }
+  if (IDENTIFIER_PATTERN.test(token) && !TS_KEYWORDS.has(token)) {
+    return nextToken === ":" ? `KEY:${token}` : "ID"
+  }
 
-    return token
+  return token
 }
 
 const appendTokenHash = (hash: number, token: string): number => {
@@ -818,38 +892,13 @@ const isStringLiteralToken = (token: string): boolean =>
   (token.startsWith("\"") && token.endsWith("\"")) || (token.startsWith("'") && token.endsWith("'"))
 
 const isObjectPropertyValue = (
-  tokens: ReadonlyArray<string>,
-  index: number,
-  ternaryColonIndexes: ReadonlySet<number>,
+  previousToken: string | undefined,
+  previousColonWasTernary: boolean,
+  previousPreviousToken: string | undefined,
 ): boolean => {
-  const colonIndex = index - 1
-  if (tokens[colonIndex] !== ":" || ternaryColonIndexes.has(colonIndex)) return false
-  const key = tokens[index - 2]
-  return key !== undefined && (IDENTIFIER_PATTERN.test(key) || isStringLiteralToken(key))
-}
-
-const findTernaryColonIndexes = (tokens: ReadonlyArray<string>): ReadonlySet<number> => {
-  const ternaryColons = new Set<number>()
-  let segmentHasQuestion = false
-
-  for (let index = 0; index < tokens.length; index++) {
-    const token = tokens[index]
-    if (token === undefined) continue
-    if (token === ";" || token === "," || token === "{" || token === "}") {
-      segmentHasQuestion = false
-      continue
-    }
-    if (token === "?") {
-      segmentHasQuestion = true
-      continue
-    }
-    if (token === ":" && segmentHasQuestion) {
-      ternaryColons.add(index)
-      segmentHasQuestion = false
-    }
-  }
-
-  return ternaryColons
+  if (previousToken !== ":" || previousColonWasTernary) return false
+  return previousPreviousToken !== undefined &&
+    (IDENTIFIER_PATTERN.test(previousPreviousToken) || isStringLiteralToken(previousPreviousToken))
 }
 
 const memberKey = (member: CloneGroupMember): string =>
