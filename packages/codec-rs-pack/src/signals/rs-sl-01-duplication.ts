@@ -48,6 +48,7 @@ export const RsSl01: Signal<RsSl01Config, RsSl01Output, RustProjectTag | SignalC
   tier: 1,
   category: "generated-slop",
   kind: "legibility",
+  cacheVersion: "advisory-rust-duplication-v1",
   configSchema: RsSl01Config,
   defaultConfig: {
     exclude_globs: [...DEFAULT_RUST_EXCLUDE_GLOBS],
@@ -130,9 +131,14 @@ export const RsSl01: Signal<RsSl01Config, RsSl01Output, RustProjectTag | SignalC
       })
     }),
   score: (out) => {
-    const duplicateMembers = out.groups.reduce((sum, group) => sum + group.members.length, 0)
-    if (duplicateMembers === 0) return 1
-    return Math.max(0, 1 - Math.min(1, duplicateMembers / 20))
+    const exactDuplicateMembers = out.groups
+      .filter((group) => group.kind === "exact" && group.tokenCount >= 30)
+      .reduce((sum, group) => sum + group.members.length, 0)
+    const structuralGroupCount = out.groups.filter((group) => group.kind === "structural").length
+    if (exactDuplicateMembers === 0 && structuralGroupCount === 0) return 1
+    const exactPenalty = Math.min(0.35, exactDuplicateMembers / 200)
+    const structuralPenalty = Math.min(0.15, structuralGroupCount / 250)
+    return Math.max(0, 1 - Math.min(0.5, exactPenalty + structuralPenalty))
   },
   diagnose: (out): ReadonlyArray<Diagnostic> =>
     out.groups.slice(0, 10).map((group) => ({

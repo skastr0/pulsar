@@ -36,6 +36,40 @@ describe("RS-SL-* signals", () => {
     }
   })
 
+  test("RS-SL-01 does not let structural-only boilerplate collapse whole-tree score", () => {
+    const score = RsSl01.score({
+      groups: Array.from({ length: 50 }, (_, index) => ({
+        kind: "structural" as const,
+        tokenCount: 12,
+        members: [
+          { file: "src/lib.rs", module: "crate", name: `getter_${index}`, line: index + 1 },
+          { file: "src/lib.rs", module: "crate", name: `accessor_${index}`, line: index + 101 },
+        ],
+      })),
+      scopeMode: "whole-tree",
+      analysisMode: "function-body-normalization",
+    })
+
+    expect(score).toBeGreaterThan(0.8)
+  })
+
+  test("RS-SL-01 treats helper-scale exact clones as low whole-tree pressure", () => {
+    const score = RsSl01.score({
+      groups: Array.from({ length: 25 }, (_, index) => ({
+        kind: "exact" as const,
+        tokenCount: 12,
+        members: [
+          { file: "src/lib.rs", module: "crate", name: `helper_${index}`, line: index + 1 },
+          { file: "src/lib.rs", module: "crate", name: `helper_copy_${index}`, line: index + 101 },
+        ],
+      })),
+      scopeMode: "whole-tree",
+      analysisMode: "function-body-normalization",
+    })
+
+    expect(score).toBe(1)
+  })
+
   test("RS-SL-02 enforces taste-allow governance on suspicious allow attributes", async () => {
     const repo = await createRustWorkspace("taste-codec-rs-sl02-", {
       "Cargo.toml": [
@@ -92,6 +126,12 @@ describe("RS-SL-* signals", () => {
         "#[allow(clippy::large_enum_variant)]",
         "pub enum WireEvent { Small(u8), Large([u8; 512]) }",
         "",
+        "#[allow(unused)]",
+        "pub fn future_hook() {}",
+        "",
+        "#[allow(unused_variables)]",
+        "pub fn platform_hook(data: u32) {}",
+        "",
       ].join("\n"),
     })
 
@@ -99,8 +139,8 @@ describe("RS-SL-* signals", () => {
       const out = await runSignalCompute(RsSl02, repo, RsSl02.defaultConfig)
       expect(out.suppressions).toEqual([])
       expect(out.governedAllowAttributeCount).toBe(0)
-      expect(out.ordinaryAllowAttributeCount).toBe(3)
-      expect(out.ordinaryAllowLintCount).toBe(3)
+      expect(out.ordinaryAllowAttributeCount).toBe(5)
+      expect(out.ordinaryAllowLintCount).toBe(5)
       expect(RsSl02.score(out)).toBe(1)
       expect(RsSl02.diagnose(out)).toEqual([])
     } finally {
@@ -138,6 +178,21 @@ describe("RS-SL-* signals", () => {
     }
   })
 
+  test("RS-SL-03 scales repo-wide unwrap pressure without automatic zero score", () => {
+    const score = RsSl03.score({
+      modules: Array.from({ length: 10 }, (_, index) => ({
+        module: `crate::module_${index}`,
+        file: "src/lib.rs",
+        unwrapExpectCalls: 5,
+        density: 0.5,
+      })),
+      totalCalls: 50,
+      analysisMode: "call-expression-field-scan",
+    })
+
+    expect(score).toBeGreaterThan(0.7)
+  })
+
   test("RS-SL-04 highlights syntax-likely expensive clone patterns", async () => {
     const repo = await createRustWorkspace("taste-codec-rs-sl04-", {
       "Cargo.toml": [
@@ -164,5 +219,34 @@ describe("RS-SL-* signals", () => {
     } finally {
       await cleanupWorkspace(repo)
     }
+  })
+
+  test("RS-SL-04 scores likely expensive clones, not every clone call", () => {
+    const cheapOnly = RsSl04.score({
+      modules: [
+        {
+          module: "crate::shared",
+          file: "src/lib.rs",
+          cloneCalls: 100,
+          likelyExpensiveClones: 0,
+        },
+      ],
+      totalCloneCalls: 100,
+      analysisMode: "syntax-heuristic-clone-scan",
+    })
+
+    expect(cheapOnly).toBe(1)
+    expect(RsSl04.diagnose({
+      modules: [
+        {
+          module: "crate::shared",
+          file: "src/lib.rs",
+          cloneCalls: 100,
+          likelyExpensiveClones: 0,
+        },
+      ],
+      totalCloneCalls: 100,
+      analysisMode: "syntax-heuristic-clone-scan",
+    })).toEqual([])
   })
 })

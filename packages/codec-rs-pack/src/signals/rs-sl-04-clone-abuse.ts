@@ -40,6 +40,7 @@ export const RsSl04: Signal<RsSl04Config, RsSl04Output, RustProjectTag> = {
   tier: 1,
   category: "generated-slop",
   kind: "legibility",
+  cacheVersion: "likely-expensive-score-v1",
   configSchema: RsSl04Config,
   defaultConfig: {
     exclude_globs: [...DEFAULT_RUST_EXCLUDE_GLOBS],
@@ -107,11 +108,15 @@ export const RsSl04: Signal<RsSl04Config, RsSl04Output, RustProjectTag> = {
       })
     }),
   score: (out) => {
-    if (out.totalCloneCalls === 0) return 1
-    return Math.max(0, 1 - Math.min(1, out.totalCloneCalls / 25))
+    const likelyExpensiveClones = out.modules.reduce(
+      (sum, module) => sum + module.likelyExpensiveClones,
+      0,
+    )
+    if (likelyExpensiveClones === 0) return 1
+    return Math.max(0, 1 - Math.min(0.8, likelyExpensiveClones / 25))
   },
   diagnose: (out): ReadonlyArray<Diagnostic> =>
-    out.modules.slice(0, 10).map((module) => ({
+    out.modules.filter((module) => module.likelyExpensiveClones > 0).slice(0, 10).map((module) => ({
       severity: module.likelyExpensiveClones > 0 ? ("warn" as const) : ("info" as const),
       message: `${module.module} contains ${module.cloneCalls} clone() calls`,
       location: { file: module.file },

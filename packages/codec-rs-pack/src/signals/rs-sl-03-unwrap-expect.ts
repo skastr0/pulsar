@@ -40,6 +40,7 @@ export const RsSl03: Signal<RsSl03Config, RsSl03Output, RustProjectTag> = {
   tier: 1,
   category: "generated-slop",
   kind: "legibility",
+  cacheVersion: "advisory-density-scaled-v1",
   configSchema: RsSl03Config,
   defaultConfig: {
     exclude_globs: [...DEFAULT_RUST_EXCLUDE_GLOBS],
@@ -97,7 +98,9 @@ export const RsSl03: Signal<RsSl03Config, RsSl03Output, RustProjectTag> = {
     }),
   score: (out) => {
     if (out.totalCalls === 0) return 1
-    return Math.max(0, 1 - Math.min(1, out.totalCalls / 20))
+    const riskyModules = out.modules.filter((module) => module.density >= 1).length
+    const penalty = riskyModules * 0.05 + out.totalCalls * 0.001
+    return Math.max(0, 1 - Math.min(0.5, penalty))
   },
   diagnose: (out): ReadonlyArray<Diagnostic> =>
     out.modules.slice(0, 10).map((module) => ({

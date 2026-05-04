@@ -49,6 +49,7 @@ export const RsSl02: Signal<RsSl02Config, RsSl02Output, RustProjectTag | SignalC
   tier: 1,
   category: "generated-slop",
   kind: "structural",
+  cacheVersion: "unused-allows-ordinary-v1",
   configSchema: RsSl02Config,
   defaultConfig: {
     exclude_globs: ["**/target/**"],
@@ -187,7 +188,6 @@ const classifyAllowLints = (lints: ReadonlyArray<string>): ClassifiedAllowLints 
 
 const broadlyScopedLintNames = new Set([
   "warnings",
-  "unused",
   "future_incompatible",
   "keyword_idents",
   "nonstandard_style",
@@ -228,6 +228,5 @@ const requiresTasteAllow = (lint: string): boolean => {
   const normalized = lint.replace(/\s+/g, "")
   if (broadlyScopedLintNames.has(normalized)) return true
   if (slopHidingLintNames.has(normalized)) return true
-  if (normalized.startsWith("unused_") && normalized !== "unused_imports") return true
   return false
 }
