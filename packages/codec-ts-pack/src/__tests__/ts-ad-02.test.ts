@@ -138,6 +138,29 @@ describe("TS-AD-02 (circular dependencies)", () => {
     expect(TsAd02.score(out)).toBe(1)
   })
 
+  test("example and sample source cycles are ignored by default", async () => {
+    await writeTs(
+      "example/convex/a.ts",
+      "import { b } from './b'\nexport const a = b + 1\n",
+    )
+    await writeTs(
+      "example/convex/b.ts",
+      "import { a } from './a'\nexport const b = a + 1\n",
+    )
+    await writeTs(
+      "google_samples/angular/a.ts",
+      "import { b } from './b'\nexport const a = b + 1\n",
+    )
+    await writeTs(
+      "google_samples/angular/b.ts",
+      "import { a } from './a'\nexport const b = a + 1\n",
+    )
+
+    const out = await runCompute()
+    expect(out.cycleCount).toBe(0)
+    expect(TsAd02.score(out)).toBe(1)
+  })
+
   test("two-node cycle: detected with break edge and architectural span", async () => {
     const aPath = await writeTs("a.ts", "import { b } from './b'\nexport const a = b + 1\n")
     const bPath = await writeTs("b.ts", "import { a } from './a'\nexport const b = a + 1\n")
