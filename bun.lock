@@ -109,6 +109,17 @@
         "typescript": "^5.8.0",
       },
     },
+    "packages/project-module-effect": {
+      "name": "@taste-codec/project-module-effect",
+      "version": "0.0.0",
+      "dependencies": {
+        "@taste-codec/project-module-sdk": "workspace:*",
+        "effect": "^3.0.0",
+      },
+      "devDependencies": {
+        "typescript": "^5.8.0",
+      },
+    },
     "packages/project-module-sdk": {
       "name": "@taste-codec/project-module-sdk",
       "version": "0.0.0",
@@ -153,6 +164,8 @@
     "@taste-codec/core": ["@taste-codec/core@workspace:packages/codec-core"],
 
     "@taste-codec/project-module-convex": ["@taste-codec/project-module-convex@workspace:packages/project-module-convex"],
+
+    "@taste-codec/project-module-effect": ["@taste-codec/project-module-effect@workspace:packages/project-module-effect"],
 
     "@taste-codec/project-module-sdk": ["@taste-codec/project-module-sdk@workspace:packages/project-module-sdk"],
 

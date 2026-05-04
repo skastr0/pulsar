@@ -104,6 +104,7 @@ export interface TypeScriptNoopClassificationValue {
   readonly bodyText?: string
   readonly functionText?: string
   readonly parentKind?: string
+  readonly parentText?: string
   readonly ancestorKinds?: ReadonlyArray<string>
   readonly candidateKind?:
     | "throw-not-implemented"

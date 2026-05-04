@@ -268,6 +268,7 @@ interface StubCandidate {
   readonly bodyText: string
   readonly functionText: string
   readonly parentKind: string
+  readonly parentText: string
   readonly ancestorKinds: ReadonlyArray<string>
   readonly isTestPath: boolean
   readonly builtinIntentionalNoop: boolean
@@ -332,6 +333,7 @@ const collectStubCandidates = (
       bodyText,
       functionText: fn.getText(),
       parentKind: syntaxKindName(fn.getParent().getKind()),
+      parentText: fn.getParent().getText(),
       ancestorKinds: fn
         .getAncestors()
         .slice(-8)
@@ -362,6 +364,7 @@ const classifyNoopCandidate = (
       bodyText: candidate.bodyText,
       functionText: candidate.functionText,
       parentKind: candidate.parentKind,
+      parentText: candidate.parentText,
       ancestorKinds: candidate.ancestorKinds,
       candidateKind: candidate.stubKind?.kind ?? "unknown",
       inTestPath: candidate.isTestPath,
