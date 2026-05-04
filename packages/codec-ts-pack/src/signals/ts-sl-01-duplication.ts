@@ -67,7 +67,7 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
   tier: 1,
   category: "generated-slop",
   kind: "legibility",
-  cacheVersion: "changed-aware-clone-buckets-v1",
+  cacheVersion: "changed-aware-ignore-svg-icons-v1",
   configSchema: TsSl01Config,
   defaultConfig: {
     exclude_globs: [
@@ -363,6 +363,10 @@ const isStructuralCloneEligible = (fn: FnLike): boolean => {
     return false
   }
 
+  if (isSvgIconComponent(fn)) {
+    return false
+  }
+
   if (Node.isArrowFunction(fn) || Node.isFunctionExpression(fn)) {
     const parent = fn.getParent()
     if ((Node.isCallExpression(parent) || Node.isPropertyAssignment(parent)) && hasSingleOperationalStatement(fn)) {
@@ -425,6 +429,21 @@ const isJsxComponentAdapter = (fn: FnLike): boolean => {
     returned.includes("{...") &&
     returned.includes("classList")
   )
+}
+
+const isSvgIconComponent = (fn: FnLike): boolean => {
+  if (!Node.isFunctionDeclaration(fn)) return false
+  if (!/^Icon[A-Z]/.test(getFunctionName(fn))) return false
+  const parameters = fn.getParameters()
+  if (parameters.length > 1) return false
+  const body = fn.getBody()
+  if (!Node.isBlock(body)) return false
+  const statements = body.getStatements()
+  if (statements.length !== 1) return false
+  const statement = statements[0]
+  if (!Node.isReturnStatement(statement)) return false
+  const returned = statement.getExpression()?.getText() ?? ""
+  return /^(\(\s*)?<svg\b/s.test(returned) && /\{\s*\.\.\.\s*props\s*\}/.test(returned)
 }
 
 const isExactCloneEligible = (fn: FnLike, tokenCount: number): boolean => {

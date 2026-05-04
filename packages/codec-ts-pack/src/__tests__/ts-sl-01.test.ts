@@ -331,6 +331,51 @@ function Content(props: { class?: string; classList?: Record<string, boolean>; c
     expect(out.groups.filter((group) => group.kind === "structural")).toEqual([])
   })
 
+  test("does not rank SVG icon wrappers as structural clones", async () => {
+    await repo.writeJson("tsconfig.json", {
+      compilerOptions: {
+        target: "ES2022",
+        module: "ESNext",
+        moduleResolution: "Bundler",
+        jsx: "preserve",
+      },
+      include: ["**/*.ts", "**/*.tsx"],
+    })
+    await repo.write(
+      "icons.tsx",
+      `
+type SvgProps = { class?: string }
+
+export function IconAcademicCap(props: SvgProps) {
+  return (
+    <svg {...props} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M1 4L12 1L23 4L12 8L1 4Z" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  )
+}
+
+export function IconAdjustmentsHorizontal(props: SvgProps) {
+  return (
+    <svg {...props} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M2 6H8M16 6H22M2 18H12M20 18H22" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  )
+}
+
+export function IconAdjustmentsVertical(props: SvgProps) {
+  return (
+    <svg {...props} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M6 2V8M6 16V22M18 2V12M18 20V22" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  )
+}
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl01, TsSl01.defaultConfig)
+    expect(out.groups.filter((group) => group.kind === "structural")).toEqual([])
+  })
+
   test("does not flag small JSX render callbacks as exact clones", async () => {
     await repo.writeJson("tsconfig.json", {
       compilerOptions: {
