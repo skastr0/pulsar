@@ -164,6 +164,29 @@ import InternalConfig from "untyped-package/internal";
     expect(out.missingJustificationCount).toBe(0)
   })
 
+  test("accepts Pulumi runtime metadata assignments as contextual justification", async () => {
+    await repo.write(
+      "component.ts",
+      `
+export class Bucket {}
+
+const __pulumiType = "sst:aws:Bucket";
+// @ts-expect-error
+Bucket.__pulumiType = __pulumiType;
+
+const pulumiType = "sst:aws:Queue";
+// @ts-expect-error
+Queue.__pulumiType = pulumiType;
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl03, TsSl03.defaultConfig)
+    expect(out.suppressions.length).toBe(2)
+    expect(out.suppressions.every((suppression) => suppression.justification === "active")).toBe(true)
+    expect(out.suppressions.every((suppression) => suppression.justificationSource === "contextual")).toBe(true)
+    expect(out.missingJustificationCount).toBe(0)
+  })
+
   test("does not treat non-explanatory adjacent comments as justification", async () => {
     await repo.write(
       "utils.ts",

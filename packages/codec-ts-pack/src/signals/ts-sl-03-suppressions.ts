@@ -43,7 +43,7 @@ export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalCon
   tier: 1,
   category: "generated-slop",
   kind: "structural",
-  cacheVersion: "inline-block-reasons-and-test-helpers-v1",
+  cacheVersion: "pulumi-metadata-context-v1",
   configSchema: TsSl03Config,
   defaultConfig: {
     exclude_globs: [
@@ -380,6 +380,9 @@ const isMeaningfulInlineJustification = (text: string): boolean => {
 }
 
 const contextualSuppressionJustification = (lines: ReadonlyArray<string>, suppressionIndex: number): string | undefined => {
+  const frameworkMetadataJustification = frameworkMetadataSuppressionJustification(lines, suppressionIndex)
+  if (frameworkMetadataJustification !== undefined) return frameworkMetadataJustification
+
   const previous = lines[suppressionIndex - 1]
   if (previous === undefined || previous.trim() === "") return undefined
 
@@ -388,6 +391,31 @@ const contextualSuppressionJustification = (lines: ReadonlyArray<string>, suppre
 
   const blockComment = precedingBlockCommentText(lines, suppressionIndex - 1)
   return blockComment
+}
+
+const frameworkMetadataSuppressionJustification = (
+  lines: ReadonlyArray<string>,
+  suppressionIndex: number,
+): string | undefined => {
+  const next = lines[suppressionIndex + 1]?.trim()
+  const assignment = next === undefined
+    ? undefined
+    : /^[A-Za-z_$][\w$]*\.__pulumiType\s*=\s*([A-Za-z_$][\w$]*)\s*;?$/.exec(next)
+  const pulumiTypeIdentifier = assignment?.[1]
+  if (pulumiTypeIdentifier === undefined) {
+    return undefined
+  }
+
+  for (let index = suppressionIndex - 1; index >= Math.max(0, suppressionIndex - 3); index--) {
+    const previous = lines[index]?.trim()
+    if (previous === undefined || previous.length === 0) continue
+    const declaration = new RegExp(`^const\\s+${escapeRegExp(pulumiTypeIdentifier)}\\s*=`).exec(previous)
+    if (declaration !== null) {
+      return "Pulumi runtime type metadata assignment"
+    }
+  }
+
+  return undefined
 }
 
 const contiguousLineCommentText = (lines: ReadonlyArray<string>, endIndex: number): string | undefined => {
@@ -450,3 +478,5 @@ const lineOverlapsHunks = (
 
   return false
 }
+
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
