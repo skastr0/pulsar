@@ -1,6 +1,13 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test"
 import { Effect, Layer } from "effect"
-import { SignalContextTag } from "@taste-codec/core"
+import {
+  CalibrationContextTag,
+  SignalContextTag,
+  appendCalibrationDecision,
+  defineCalibrationProcessor,
+  makeResolvedCalibrationContext,
+  type RepoFacts,
+} from "@taste-codec/core"
 import { createTempRepo, runSignal } from "./test-repo.js"
 import { TsSl04 } from "../signals/ts-sl-04-empty-implementations.js"
 import { TsProjectLayer } from "../ts-project.js"
@@ -91,6 +98,78 @@ export function empty() {}
     const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
     expect(out.stubs.some((s) => s.kind === "empty-body")).toBe(true)
     expect(out.stubs.find((s) => s.kind === "empty-body")?.confidence).toBe("low")
+  })
+
+  test("project modules can classify suspicious empty implementations as intentional no-ops", async () => {
+    await repo.write(
+      "src/contracts.ts",
+      `
+export function projectContract() {}
+`,
+    )
+    const processor = defineCalibrationProcessor({
+      id: "project-contract-noops",
+      moduleId: "acme.project",
+      moduleVersion: "1.0.0",
+      slot: "typescript.noop-classifier",
+      role: "normalizer",
+      priority: 10,
+      fingerprint: "project-contract-noops-v1",
+      process: (current) =>
+        Effect.sync(() => {
+          if (!current.value.file.endsWith("src/contracts.ts")) return current
+          return appendCalibrationDecision(
+            current,
+            {
+              moduleId: "acme.project",
+              processorId: "project-contract-noops",
+              slot: "typescript.noop-classifier",
+              action: "classify-intentional-noop",
+              confidence: "high",
+              reason: "Project contract hook is intentionally empty until implemented by host runtime",
+              evidence: [
+                { kind: "path", value: current.value.file },
+                { kind: "symbol", value: current.value.name },
+              ],
+            },
+            {
+              ...current.value,
+              classification: "intentional_noop",
+              confidence: "high",
+            },
+          )
+        }),
+    })
+    const repoFacts: RepoFacts = {
+      repoRoot: repo.root,
+      fingerprint: "repo-facts-v1",
+      detectedTechnologies: ["typescript"],
+      sourceExtensions: [".ts"],
+    }
+    const calibrationContext = makeResolvedCalibrationContext({
+      repoFacts,
+      processors: [processor],
+    })
+
+    const out = await Effect.runPromise(
+      TsSl04.compute(TsSl04.defaultConfig, new Map()).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            TsProjectLayer(repo.root),
+            Layer.succeed(SignalContextTag, {
+              gitSha: "TEST",
+              worktreePath: repo.root,
+              changedHunks: [],
+            }),
+            Layer.succeed(CalibrationContextTag, calibrationContext),
+          ),
+        ),
+      ),
+    )
+
+    expect(out.stubs).toHaveLength(0)
+    expect(out.calibrationDecisions).toHaveLength(1)
+    expect(out.calibrationDecisions[0]?.processorId).toBe("project-contract-noops")
   })
 
   test("ignores server reactive lifecycle no-ops but keeps app stubs", async () => {
@@ -473,6 +552,7 @@ export function stub3() {
           message: "Authentication not implemented",
         },
       ],
+      calibrationDecisions: [],
       byKind: new Map([["throw-not-implemented", 1]]),
       productionStubs: [
         {

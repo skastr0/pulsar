@@ -1,12 +1,18 @@
 import {
+  CalibrationContextTag,
   SignalContextTag,
   computeDiagnosticHash,
+  type CalibrationDecision,
+  type CalibrationProcessorError,
+  type CalibrationSlotOutput,
   type Diagnostic,
+  type ResolvedCalibrationContext,
   type Signal,
   SignalComputeError,
+  type TypeScriptNoopClassificationValue,
 } from "@taste-codec/core"
-import { Effect, Schema } from "effect"
-import { Node, SyntaxKind } from "ts-morph"
+import { Effect, Option, Schema } from "effect"
+import { Node, SyntaxKind, type Project } from "ts-morph"
 import { TsProjectTag } from "../ts-project.js"
 import {
   getFunctionBody,
@@ -41,6 +47,7 @@ export interface Stub {
 
 export interface TsSl04Output {
   readonly stubs: ReadonlyArray<Stub>
+  readonly calibrationDecisions: ReadonlyArray<CalibrationDecision>
   readonly byKind: ReadonlyMap<StubKind, number>
   readonly productionStubs: ReadonlyArray<Stub>
   readonly testStubs: ReadonlyArray<Stub>
@@ -54,7 +61,7 @@ export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalCon
   tier: 1,
   category: "generated-slop",
   kind: "structural",
-  cacheVersion: "react-host-config-noops-v1",
+  cacheVersion: "calibrated-noop-classifier-v1",
   configSchema: TsSl04Config,
   defaultConfig: {
     exclude_globs: [
@@ -159,61 +166,45 @@ export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalCon
     Effect.gen(function* () {
       const project = yield* TsProjectTag
       const context = yield* SignalContextTag
-      return yield* Effect.try({
-        try: (): TsSl04Output => {
-          const stubs: Array<Stub> = []
-          let totalFunctions = 0
-
-          for (const { path, fn } of getFunctionLikeIndex(project)) {
-            if (isExcluded(path, config.exclude_globs)) continue
-
-            const isTestPath = matchesAnyGlob(path, config.test_globs)
-            if (isTestPath && !config.include_test_stubs) continue
-
-            if (!lineRangeOverlapsHunks(path, fn, context.worktreePath, context.changedHunks)) {
-              continue
-            }
-
-            // Skip abstract methods — they intentionally have no body
-            if (isAbstractMethod(fn)) {
-              continue
-            }
-
-            totalFunctions++
-
-            const body = getFunctionBody(fn)
-            if (body === undefined) {
-              continue
-            }
-
-            if (isIntentionalNoop(path, fn, body)) {
-              continue
-            }
-
-            const stubKind = classifyStub(fn, body)
-            if (stubKind !== undefined) {
-              stubs.push(createStub(path, fn, stubKind.kind, stubKind.message, isTestPath))
-            }
-          }
-
-          const byKind = new Map<StubKind, number>()
-          for (const stub of stubs) {
-            byKind.set(stub.kind, (byKind.get(stub.kind) ?? 0) + 1)
-          }
-
-          return {
-            stubs: stubs.sort(compareStubs),
-            byKind,
-            productionStubs: stubs.filter((s) => !s.inTestPath),
-            testStubs: stubs.filter((s) => s.inTestPath),
-            totalFunctions,
-            hardGateProduction: config.hard_gate_production,
-            diagnosticLimit: config.top_n_diagnostics,
-          }
-        },
-        catch: (cause) =>
-          new SignalComputeError({ signalId: "TS-SL-04", message: String(cause), cause }),
+      const calibration = yield* Effect.serviceOption(CalibrationContextTag)
+      const { candidates, totalFunctions } = yield* Effect.try({
+        try: () => collectStubCandidates(project, context, config),
+        catch: toSignalComputeError,
       })
+      const stubs: Array<Stub> = []
+      const calibrationDecisions: Array<CalibrationDecision> = []
+
+      for (const candidate of candidates) {
+        const classified = yield* classifyNoopCandidate(candidate, calibration).pipe(
+          Effect.mapError(toSignalComputeError),
+        )
+        calibrationDecisions.push(...classified.decisions)
+
+        if (classified.value.classification === "intentional_noop") {
+          continue
+        }
+
+        const stubKind = stubKindForClassifiedCandidate(candidate, classified.value)
+        if (stubKind !== undefined) {
+          stubs.push(createStub(candidate, stubKind.kind, stubKind.message))
+        }
+      }
+
+      const byKind = new Map<StubKind, number>()
+      for (const stub of stubs) {
+        byKind.set(stub.kind, (byKind.get(stub.kind) ?? 0) + 1)
+      }
+
+      return {
+        stubs: stubs.sort(compareStubs),
+        calibrationDecisions,
+        byKind,
+        productionStubs: stubs.filter((s) => !s.inTestPath),
+        testStubs: stubs.filter((s) => s.inTestPath),
+        totalFunctions,
+        hardGateProduction: config.hard_gate_production,
+        diagnosticLimit: config.top_n_diagnostics,
+      }
     }),
   score: (out) => {
     if (out.totalFunctions === 0) return 1
@@ -269,20 +260,172 @@ const isAbstractMethod = (fn: FnLike): boolean => {
   return Node.isMethodDeclaration(fn) && fn.isAbstract()
 }
 
+interface StubCandidate {
+  readonly path: string
+  readonly name: string
+  readonly line: number
+  readonly nodeKind: string
+  readonly bodyText: string
+  readonly functionText: string
+  readonly parentKind: string
+  readonly ancestorKinds: ReadonlyArray<string>
+  readonly isTestPath: boolean
+  readonly builtinIntentionalNoop: boolean
+  readonly stubKind: { readonly kind: StubKind; readonly message: string } | undefined
+}
+
+interface StubCandidateCollection {
+  readonly candidates: ReadonlyArray<StubCandidate>
+  readonly totalFunctions: number
+}
+
+const collectStubCandidates = (
+  project: Project,
+  context: {
+    readonly worktreePath: string
+    readonly changedHunks: ReadonlyArray<{
+      readonly file: string
+      readonly oldStart: number
+      readonly oldLines: number
+      readonly newStart: number
+      readonly newLines: number
+    }>
+  },
+  config: TsSl04Config,
+): StubCandidateCollection => {
+  const candidates: Array<StubCandidate> = []
+  let totalFunctions = 0
+
+  for (const { path, fn } of getFunctionLikeIndex(project)) {
+    if (isExcluded(path, config.exclude_globs)) continue
+
+    const isTestPath = matchesAnyGlob(path, config.test_globs)
+    if (isTestPath && !config.include_test_stubs) continue
+
+    if (!lineRangeOverlapsHunks(path, fn, context.worktreePath, context.changedHunks)) {
+      continue
+    }
+
+    // Skip abstract methods — they intentionally have no body.
+    if (isAbstractMethod(fn)) {
+      continue
+    }
+
+    totalFunctions++
+
+    const bodyText = getFunctionBody(fn)
+    if (bodyText === undefined) {
+      continue
+    }
+
+    const builtinIntentionalNoop = isIntentionalNoop(path, fn, bodyText)
+    const stubKind = builtinIntentionalNoop ? undefined : classifyStub(fn, bodyText)
+    if (!builtinIntentionalNoop && stubKind === undefined) {
+      continue
+    }
+
+    candidates.push({
+      path,
+      name: getFunctionName(fn),
+      line: fn.getStartLineNumber(),
+      nodeKind: syntaxKindName(fn.getKind()),
+      bodyText,
+      functionText: fn.getText(),
+      parentKind: syntaxKindName(fn.getParent().getKind()),
+      ancestorKinds: fn
+        .getAncestors()
+        .slice(-8)
+        .map((ancestor) => syntaxKindName(ancestor.getKind())),
+      isTestPath,
+      builtinIntentionalNoop,
+      stubKind,
+    })
+  }
+
+  return { candidates, totalFunctions }
+}
+
+const classifyNoopCandidate = (
+  candidate: StubCandidate,
+  calibration: Option.Option<ResolvedCalibrationContext>,
+): Effect.Effect<
+  CalibrationSlotOutput<"typescript.noop-classifier">,
+  CalibrationProcessorError,
+  never
+> =>
+  Effect.gen(function* () {
+    const input: TypeScriptNoopClassificationValue = {
+      file: candidate.path,
+      name: candidate.name,
+      line: candidate.line,
+      nodeKind: candidate.nodeKind,
+      bodyText: candidate.bodyText,
+      functionText: candidate.functionText,
+      parentKind: candidate.parentKind,
+      ancestorKinds: candidate.ancestorKinds,
+      candidateKind: candidate.stubKind?.kind ?? "unknown",
+      inTestPath: candidate.isTestPath,
+      classification: candidate.builtinIntentionalNoop ? "intentional_noop" : "stub",
+      confidence: candidate.stubKind === undefined
+        ? "high"
+        : confidenceForStubKind(candidate.stubKind.kind),
+      metadata: {
+        builtinIntentionalNoop: candidate.builtinIntentionalNoop,
+        ...(candidate.stubKind?.message !== undefined ? { message: candidate.stubKind.message } : {}),
+      },
+    }
+    if (Option.isNone(calibration)) {
+      return { value: input, decisions: [] }
+    }
+    return yield* calibration.value.runSlot("typescript.noop-classifier", input)
+  })
+
+const stubKindForClassifiedCandidate = (
+  candidate: StubCandidate,
+  classified: TypeScriptNoopClassificationValue,
+): { readonly kind: StubKind; readonly message: string } | undefined => {
+  if (classified.classification !== "stub") return undefined
+
+  const metadata = classified.metadata
+  const metadataKind = stubKindFromMetadata(metadata?.stubKind)
+  const metadataMessage = typeof metadata?.message === "string" ? metadata.message : undefined
+  return {
+    kind: metadataKind ?? candidate.stubKind?.kind ?? "empty-body",
+    message: metadataMessage ?? candidate.stubKind?.message ?? "Empty implementation",
+  }
+}
+
+const stubKindFromMetadata = (value: unknown): StubKind | undefined =>
+  typeof value === "string" && STUB_KINDS.has(value as StubKind)
+    ? (value as StubKind)
+    : undefined
+
+const STUB_KINDS = new Set<StubKind>([
+  "throw-not-implemented",
+  "empty-body",
+  "todo-comment",
+  "mock-return",
+])
+
+const syntaxKindName = (kind: SyntaxKind): string => SyntaxKind[kind] ?? String(kind)
+
+const toSignalComputeError = (cause: unknown): SignalComputeError =>
+  cause instanceof SignalComputeError
+    ? cause
+    : new SignalComputeError({ signalId: "TS-SL-04", message: String(cause), cause })
+
 const createStub = (
-  file: string,
-  fn: FnLike,
+  candidate: StubCandidate,
   kind: StubKind,
   message: string | undefined,
-  inTestPath: boolean,
 ): Stub => ({
-  file,
-  name: getFunctionName(fn),
-  line: fn.getStartLineNumber(),
+  file: candidate.path,
+  name: candidate.name,
+  line: candidate.line,
   kind,
   confidence: confidenceForStubKind(kind),
   penaltyWeight: penaltyWeightForStubKind(kind),
-  inTestPath,
+  inTestPath: candidate.isTestPath,
   message,
 })
 

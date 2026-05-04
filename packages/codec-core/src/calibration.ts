@@ -101,6 +101,17 @@ export interface TypeScriptNoopClassificationValue {
   readonly name: string
   readonly line?: number
   readonly nodeKind: string
+  readonly bodyText?: string
+  readonly functionText?: string
+  readonly parentKind?: string
+  readonly ancestorKinds?: ReadonlyArray<string>
+  readonly candidateKind?:
+    | "throw-not-implemented"
+    | "empty-body"
+    | "todo-comment"
+    | "mock-return"
+    | "unknown"
+  readonly inTestPath?: boolean
   readonly classification: "unknown" | "intentional_noop" | "stub"
   readonly confidence?: CalibrationConfidence
   readonly metadata?: Readonly<Record<string, unknown>>
