@@ -9,6 +9,7 @@ import {
   type Project,
   type SetAccessorDeclaration,
   type SourceFile,
+  SyntaxKind,
 } from "ts-morph"
 
 export type TsFunctionLike =
@@ -30,6 +31,11 @@ const indexByProject = new WeakMap<Project, ReadonlyArray<TsFunctionIndexEntry>>
 const indexBySourceFile = new WeakMap<SourceFile, ReadonlyArray<TsFunctionIndexEntry>>()
 const bodyByFunction = new WeakMap<TsFunctionLike, string | undefined>()
 const nameByFunction = new WeakMap<TsFunctionLike, string>()
+
+type CompilerNodeLike = {
+  readonly kind: SyntaxKind
+  forEachChild: (cb: (node: CompilerNodeLike) => void) => void
+}
 
 export const getFunctionLikeIndex = (
   project: Project,
@@ -54,23 +60,32 @@ export const getFunctionLikeEntriesForSourceFile = (
 
   const path = sourceFile.getFilePath()
   const entries: Array<TsFunctionIndexEntry> = []
-  sourceFile.forEachDescendant((node) => {
-    if (
-      Node.isFunctionDeclaration(node) ||
-      Node.isMethodDeclaration(node) ||
-      Node.isArrowFunction(node) ||
-      Node.isFunctionExpression(node) ||
-      Node.isConstructorDeclaration(node) ||
-      Node.isGetAccessorDeclaration(node) ||
-      Node.isSetAccessorDeclaration(node)
-    ) {
-      entries.push({ sourceFile, path, fn: node as TsFunctionLike })
+  const wrapCompilerNode = (
+    sourceFile as unknown as {
+      _getNodeFromCompilerNode: (compilerNode: unknown) => Node
     }
-  })
+  )._getNodeFromCompilerNode.bind(sourceFile)
+  const visit = (compilerNode: CompilerNodeLike): void => {
+    if (isFunctionLikeSyntaxKind(compilerNode.kind)) {
+      entries.push({ sourceFile, path, fn: wrapCompilerNode(compilerNode) as TsFunctionLike })
+    }
+    compilerNode.forEachChild(visit)
+  }
+
+  sourceFile.compilerNode.forEachChild((node) => visit(node as CompilerNodeLike))
 
   indexBySourceFile.set(sourceFile, entries)
   return entries
 }
+
+const isFunctionLikeSyntaxKind = (kind: SyntaxKind): boolean =>
+  kind === SyntaxKind.FunctionDeclaration ||
+  kind === SyntaxKind.MethodDeclaration ||
+  kind === SyntaxKind.ArrowFunction ||
+  kind === SyntaxKind.FunctionExpression ||
+  kind === SyntaxKind.Constructor ||
+  kind === SyntaxKind.GetAccessor ||
+  kind === SyntaxKind.SetAccessor
 
 export const getFunctionBody = (fn: TsFunctionLike): string | undefined => {
   if (bodyByFunction.has(fn)) return bodyByFunction.get(fn)
