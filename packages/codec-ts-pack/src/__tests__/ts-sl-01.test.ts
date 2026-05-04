@@ -157,6 +157,144 @@ export function onTextPart(value: string): string {
     expect(parallelScore).toBeGreaterThan(localScore)
   })
 
+  test("deweights exact clones across sibling single-file service adapters", () => {
+    const baseGroup = {
+      groupId: "exact-0",
+      kind: "exact" as const,
+      tokenCount: 96,
+      structuralHash: "hash",
+    }
+    const adapterScore = TsSl01.score({
+      groups: [
+        {
+          ...baseGroup,
+          members: [
+            {
+              file: "/repo/src/services/ffmpeg/layer.ts",
+              name: "run",
+              startLine: 1,
+              endLine: 20,
+            },
+            {
+              file: "/repo/src/services/local-tools/layer.ts",
+              name: "run",
+              startLine: 1,
+              endLine: 20,
+            },
+          ],
+        },
+      ],
+      totalFunctionsAnalyzed: 2,
+      scoreBudgetFunctions: 2,
+      scopeMode: "whole-tree",
+    })
+    const localScore = TsSl01.score({
+      groups: [
+        {
+          ...baseGroup,
+          members: [
+            { file: "src/first.ts", name: "run", startLine: 1, endLine: 20 },
+            { file: "src/second.ts", name: "run", startLine: 1, endLine: 20 },
+          ],
+        },
+      ],
+      totalFunctionsAnalyzed: 2,
+      scoreBudgetFunctions: 2,
+      scopeMode: "whole-tree",
+    })
+
+    expect(adapterScore).toBeGreaterThan(localScore)
+  })
+
+  test("does not deweight arbitrary same-tail sibling files as service adapters", () => {
+    const baseGroup = {
+      groupId: "exact-0",
+      kind: "exact" as const,
+      tokenCount: 96,
+      structuralHash: "hash",
+    }
+    const arbitrarySiblingScore = TsSl01.score({
+      groups: [
+        {
+          ...baseGroup,
+          members: [
+            { file: "/repo/src/features/user/utils.ts", name: "normalize", startLine: 1, endLine: 20 },
+            { file: "/repo/src/features/order/utils.ts", name: "normalize", startLine: 1, endLine: 20 },
+          ],
+        },
+      ],
+      totalFunctionsAnalyzed: 2,
+      scoreBudgetFunctions: 2,
+      scopeMode: "whole-tree",
+    })
+    const localScore = TsSl01.score({
+      groups: [
+        {
+          ...baseGroup,
+          members: [
+            { file: "src/first.ts", name: "normalize", startLine: 1, endLine: 20 },
+            { file: "src/second.ts", name: "normalize", startLine: 1, endLine: 20 },
+          ],
+        },
+      ],
+      totalFunctionsAnalyzed: 2,
+      scoreBudgetFunctions: 2,
+      scopeMode: "whole-tree",
+    })
+
+    expect(arbitrarySiblingScore).toBe(localScore)
+  })
+
+  test("deweights repeated historical migration helpers in whole-tree scoring", () => {
+    const baseGroup = {
+      groupId: "exact-0",
+      kind: "exact" as const,
+      tokenCount: 80,
+      structuralHash: "hash",
+    }
+    const migrationOut = {
+      groups: [
+        {
+          ...baseGroup,
+          members: [
+            {
+              file: "/repo/src/db/migrations/001-add-runs.ts",
+              name: "tableHasColumn",
+              startLine: 1,
+              endLine: 20,
+            },
+            {
+              file: "/repo/src/db/migrations/002-add-events.ts",
+              name: "tableHasColumn",
+              startLine: 1,
+              endLine: 20,
+            },
+          ],
+        },
+      ],
+      totalFunctionsAnalyzed: 2,
+      scoreBudgetFunctions: 2,
+      scopeMode: "whole-tree" as const,
+    }
+    const localScore = TsSl01.score({
+      groups: [
+        {
+          ...baseGroup,
+          members: [
+            { file: "src/first.ts", name: "tableHasColumn", startLine: 1, endLine: 20 },
+            { file: "src/second.ts", name: "tableHasColumn", startLine: 1, endLine: 20 },
+          ],
+        },
+      ],
+      totalFunctionsAnalyzed: 2,
+      scoreBudgetFunctions: 2,
+      scopeMode: "whole-tree",
+    })
+
+    expect(TsSl01.score(migrationOut)).toBeGreaterThan(localScore)
+    expect(TsSl01.diagnose(migrationOut)[0]?.severity).toBe("info")
+  })
+
   test("deweights exact clones across explicit compatibility mirrors", () => {
     const baseGroup = {
       groupId: "exact-0",

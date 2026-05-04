@@ -67,7 +67,7 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
   tier: 1,
   category: "generated-slop",
   kind: "legibility",
-  cacheVersion: "compatibility-mirror-impact-v1",
+  cacheVersion: "implementation-family-impact-v1",
   configSchema: TsSl01Config,
   defaultConfig: {
     exclude_globs: [
@@ -336,12 +336,20 @@ const cloneGroupImpact = (
       scopeMode === "whole-tree" && isParallelImplementationFamilyClone(group.members)
     const isCompatibilityMirror =
       scopeMode === "whole-tree" && isCompatibilityMirrorClone(group.members)
+    const isHistoricalMigration =
+      scopeMode === "whole-tree" && isHistoricalMigrationClone(group.members)
     const memberPressure = isParallelImplementationFamily
       ? Math.log2(group.members.length)
       : scopeMode === "whole-tree" && group.tokenCount < 50
       ? Math.log2(group.members.length) * 0.5
       : extraMembers
-    const familyWeight = isCompatibilityMirror ? 0.15 : isParallelImplementationFamily ? 0.35 : 1
+    const familyWeight = isCompatibilityMirror
+      ? 0.15
+      : isHistoricalMigration
+      ? 0.2
+      : isParallelImplementationFamily
+      ? 0.35
+      : 1
     return memberPressure * 1.2 * Math.min(3, Math.max(0.3, group.tokenCount / 30)) * familyWeight
   }
 
@@ -384,7 +392,7 @@ const isSiblingImplementationVariantClone = (
     member.file.replace(/\\/g, "/").split("/").filter((part) => part.length > 0),
   )
   const minLength = Math.min(...pathParts.map((parts) => parts.length))
-  for (let familyIndex = 0; familyIndex < minLength - 3; familyIndex++) {
+  for (let familyIndex = 0; familyIndex < minLength - 2; familyIndex++) {
     const familyName = pathParts[0]?.[familyIndex]
     if (familyName === undefined) continue
     if (pathParts.some((parts) => parts[familyIndex] !== familyName)) continue
@@ -393,12 +401,55 @@ const isSiblingImplementationVariantClone = (
     if (variants.size < 2 || variants.has(undefined)) continue
 
     const tails = pathParts.map((parts) => parts.slice(familyIndex + 2).join("/"))
-    if (tails.some((tail) => tail.split("/").length < 2)) continue
+    if (
+      tails.some((tail) => tail.split("/").length < 2) &&
+      !(
+        isImplementationFamilyDirectory(familyName) &&
+        tails.every(isRecognizedSingleFileAdapterTail)
+      )
+    ) {
+      continue
+    }
     if (new Set(tails).size === 1) return true
   }
 
   return false
 }
+
+const IMPLEMENTATION_FAMILY_DIRECTORIES = new Set([
+  "adapters",
+  "clients",
+  "connectors",
+  "drivers",
+  "integrations",
+  "providers",
+  "runtimes",
+  "services",
+  "transports",
+])
+
+const SINGLE_FILE_ADAPTER_TAILS = new Set([
+  "adapter.ts",
+  "adapter.tsx",
+  "client.ts",
+  "client.tsx",
+  "driver.ts",
+  "driver.tsx",
+  "layer.ts",
+  "layer.tsx",
+  "provider.ts",
+  "provider.tsx",
+  "runtime.ts",
+  "runtime.tsx",
+  "transport.ts",
+  "transport.tsx",
+])
+
+const isImplementationFamilyDirectory = (segment: string): boolean =>
+  IMPLEMENTATION_FAMILY_DIRECTORIES.has(segment)
+
+const isRecognizedSingleFileAdapterTail = (tail: string): boolean =>
+  SINGLE_FILE_ADAPTER_TAILS.has(tail)
 
 const parallelPackageDescriptor = (
   member: CloneGroupMember,
@@ -429,9 +480,25 @@ const cloneGroupSeverity = (
   minTokens: number,
 ): Diagnostic["severity"] => {
   if (scopeMode === "whole-tree" && isCompatibilityMirrorClone(group.members)) return "info"
+  if (scopeMode === "whole-tree" && isHistoricalMigrationClone(group.members)) return "info"
   if (group.kind === "exact") return group.tokenCount < 30 ? "info" : "warn"
   return cloneGroupImpact(group, scopeMode, minTokens) >= 5 ? "warn" : "info"
 }
+
+const isHistoricalMigrationClone = (
+  members: ReadonlyArray<CloneGroupMember>,
+): boolean => {
+  if (members.length < 2) return false
+  const functionNames = new Set(members.map((member) => member.name))
+  if (functionNames.size !== 1) return false
+  return members.every((member) => isMigrationPath(member.file))
+}
+
+const isMigrationPath = (file: string): boolean =>
+  file
+    .replace(/\\/g, "/")
+    .split("/")
+    .some((part) => /^(?:migrations?|db-migrations?|schema-migrations?)$/i.test(part))
 
 const isCompatibilityMirrorClone = (
   members: ReadonlyArray<CloneGroupMember>,
