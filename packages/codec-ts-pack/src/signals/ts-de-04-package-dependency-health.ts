@@ -165,7 +165,7 @@ export const TsDe04: Signal<
   tier: 1,
   category: "dependency-entropy",
   kind: "structural",
-  cacheVersion: "sveltekit-virtual-modules-v1",
+  cacheVersion: "esbuild-bundled-source-v1",
   configSchema: TsDe04Config,
   defaultConfig: {
     exclude_globs: [
@@ -1214,6 +1214,18 @@ const readBundledPackageInfo = async (packagePath: string): Promise<BundledPacka
     join(packagePath, "tsup.config.js"),
     join(packagePath, "tsup.config.mjs"),
     join(packagePath, "tsup.config.cjs"),
+    join(packagePath, "esbuild.config.ts"),
+    join(packagePath, "esbuild.config.mts"),
+    join(packagePath, "esbuild.config.cts"),
+    join(packagePath, "esbuild.config.js"),
+    join(packagePath, "esbuild.config.mjs"),
+    join(packagePath, "esbuild.config.cjs"),
+    join(packagePath, "esbuild.ts"),
+    join(packagePath, "esbuild.mts"),
+    join(packagePath, "esbuild.cts"),
+    join(packagePath, "esbuild.js"),
+    join(packagePath, "esbuild.mjs"),
+    join(packagePath, "esbuild.cjs"),
   ])
 
   if (configText === undefined || !/\bbundle\s*:\s*true\b/.test(configText)) {

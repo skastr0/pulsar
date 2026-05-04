@@ -133,6 +133,39 @@ describe("TS-DE-04 (package dependency health)", () => {
     ])
   })
 
+  test("does not flag source imports bundled by explicit esbuild config", async () => {
+    await writePackage("extension", "@repo/extension", {})
+    await repo.write(
+      "packages/extension/esbuild.js",
+      [
+        "import esbuild from 'esbuild'",
+        "await esbuild.build({",
+        "  entryPoints: ['src/extension.ts'],",
+        "  bundle: true,",
+        "  external: ['left-pad'],",
+        "  outfile: 'dist/extension.cjs',",
+        "})",
+      ].join("\n"),
+    )
+    await repo.write(
+      "packages/extension/src/extension.ts",
+      [
+        "import { core } from '@repo/core'",
+        "import leftPad from 'left-pad'",
+        "export const value = leftPad(core, 3)",
+      ].join("\n"),
+    )
+    await writePackage("core", "@repo/core", {})
+    await repo.write("packages/core/src/index.ts", "export const core = 'x'\n")
+
+    const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+    const extensionHealth = out.packages.find((pkg) => pkg.packageName === "@repo/extension")
+
+    expect(extensionHealth?.importedButNotDeclared).toEqual([
+      { dependencyName: "left-pad", files: [`${repo.root}/packages/extension/src/extension.ts`] },
+    ])
+  })
+
   test("does not flag workspace package names resolved through tsconfig path aliases", async () => {
     await writePackage("app", "@repo/app", {})
     await writePackage("shared", "shared", {
