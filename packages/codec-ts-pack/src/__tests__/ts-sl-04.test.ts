@@ -335,6 +335,14 @@ export const sksgHostConfig = {
   cloneHiddenInstance() {
     throw new Error("Not yet implemented.");
   },
+  beforeActiveInstanceBlur: () => {},
+  afterActiveInstanceBlur: () => {},
+  detachDeletedInstance: (_node: unknown) => {},
+  trackSchedulerEvent: () => {},
+  requestPostPaintCallback() {},
+  startSuspendingCommit() {},
+  suspendInstance() {},
+  resetFormInstance() {},
 };
 `,
     )

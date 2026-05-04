@@ -53,7 +53,7 @@ export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalCon
   tier: 1,
   category: "generated-slop",
   kind: "structural",
-  cacheVersion: "projection-adapter-noops-v1",
+  cacheVersion: "react-host-config-noops-v1",
   configSchema: TsSl04Config,
   defaultConfig: {
     exclude_globs: [
@@ -343,6 +343,10 @@ const isIntentionalNoop = (filePath: string, fn: FnLike, bodyText: string): bool
   }
 
   if (isFrameworkLifecycleNoop(filePath, fn)) {
+    return true
+  }
+
+  if (isReactHostConfigOptionalNoop(fn)) {
     return true
   }
 
@@ -1076,18 +1080,29 @@ const isFrameworkContractUnsupportedHook = (fn: FnLike, message: string): boolea
 
   const object = objectLiteralParentOfFunctionMember(fn)
   if (object === undefined) return false
+  if (!looksLikeReactHostConfigObject(object)) return false
 
+  return REACT_HOST_CONFIG_OPTIONAL_UNSUPPORTED_HOOKS.has(objectMemberNameForFunction(fn))
+}
+
+const isReactHostConfigOptionalNoop = (fn: FnLike): boolean => {
+  const object = objectLiteralParentOfFunctionMember(fn)
+  if (object === undefined) return false
+  if (!looksLikeReactHostConfigObject(object)) return false
+  return REACT_HOST_CONFIG_OPTIONAL_NOOP_HOOKS.has(objectMemberNameForFunction(fn))
+}
+
+const looksLikeReactHostConfigObject = (
+  object: import("ts-morph").ObjectLiteralExpression,
+): boolean => {
   const memberNames = objectMemberNames(object)
-  const looksLikeReactHostConfig =
+  return (
     (memberNames.has("supportsMutation") ||
       memberNames.has("supportsPersistence") ||
       memberNames.has("supportsHydration")) &&
     memberNames.has("getRootHostContext") &&
     memberNames.has("createInstance")
-
-  if (!looksLikeReactHostConfig) return false
-
-  return REACT_HOST_CONFIG_OPTIONAL_UNSUPPORTED_HOOKS.has(objectMemberNameForFunction(fn))
+  )
 }
 
 const REACT_HOST_CONFIG_OPTIONAL_UNSUPPORTED_HOOKS = new Set([
@@ -1096,6 +1111,17 @@ const REACT_HOST_CONFIG_OPTIONAL_UNSUPPORTED_HOOKS = new Set([
   "getInstanceFromNode",
   "getInstanceFromScope",
   "prepareScopeUpdate",
+])
+
+const REACT_HOST_CONFIG_OPTIONAL_NOOP_HOOKS = new Set([
+  "afterActiveInstanceBlur",
+  "beforeActiveInstanceBlur",
+  "detachDeletedInstance",
+  "requestPostPaintCallback",
+  "resetFormInstance",
+  "startSuspendingCommit",
+  "suspendInstance",
+  "trackSchedulerEvent",
 ])
 
 const directStubThrowMessage = (fn: FnLike): string | undefined => {
