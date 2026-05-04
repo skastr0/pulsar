@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test"
-import { Effect, Schema } from "effect"
+import { Effect, Layer, Schema } from "effect"
 import { buildRegistry } from "../registry.js"
 import { observe, ObserverOutput as ObserverOutputSchema, toObserverJson, type ObserverOutput } from "../observer.js"
+import {
+  CalibrationContextTag,
+  activateProjectModule,
+  makeResolvedCalibrationContext,
+} from "../calibration.js"
 import type { Category } from "../category.js"
 import type { Diagnostic } from "../diagnostic.js"
 import {
@@ -509,6 +514,50 @@ describe("Observer — JSON output shape (AC-10)", () => {
       hard_gate_violations: [],
     })
     expect(decoded.categories["generated-slop"].aggregation?.shapedByLowestSignal).toBe(true)
+  })
+
+  test("public JSON includes active calibration attribution", async () => {
+    const a = makeLeaf({ id: "TEST-A", category: "legibility-decay", score: 0.7 })
+    const calibrationContext = makeResolvedCalibrationContext({
+      repoFacts: {
+        repoRoot: "/repo",
+        fingerprint: "repo-facts-v1",
+        detectedTechnologies: ["typescript"],
+        sourceExtensions: [".ts"],
+      },
+      activeModules: [
+        activateProjectModule({
+          id: "repo.local-module",
+          version: "1.0.0",
+          scope: "repository",
+          source: "repo-local",
+          sourceRef: ".taste-codec/modules/local.mjs",
+          sourceFingerprint: "sha256:local",
+          contributions: [],
+        }),
+      ],
+    })
+
+    const program = Effect.gen(function* () {
+      const registry = yield* buildRegistry([a])
+      return yield* observe(registry, undefined)
+    }).pipe(Effect.provide(Layer.succeed(CalibrationContextTag, calibrationContext)))
+
+    const result = await Effect.runPromise(
+      program as Effect.Effect<ObserverOutput, unknown, never>,
+    )
+    const publicJson = toObserverJson(result)
+    const decoded = Schema.decodeUnknownSync(ObserverOutputSchema)(publicJson)
+
+    expect(decoded.calibration?.fingerprint).toBe(calibrationContext.fingerprint)
+    expect(decoded.calibration?.active_modules[0]).toMatchObject({
+      id: "repo.local-module",
+      version: "1.0.0",
+      scope: "repository",
+      source: "repo-local",
+      source_ref: ".taste-codec/modules/local.mjs",
+      source_fingerprint: "sha256:local",
+    })
   })
 
   test("optional runtime profile records per-signal attribution in public JSON", async () => {

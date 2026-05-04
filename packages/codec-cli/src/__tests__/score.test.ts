@@ -917,6 +917,19 @@ export function stubF() { throw new Error("Not implemented") }
       sh("git", ["add", ".taste-codec"], repoPath)
       sh("git", ["commit", "-q", "-m", "add project module"], repoPath)
 
+      const human = runCli(repoPath, ["score", "."])
+      expect(human.status).toBe(0)
+      expect(human.stdout).toContain("Calibration: 1 module")
+
+      const json = runCli(repoPath, ["score", "--json", "."])
+      expect(json.status).toBe(0)
+      const observerJson = JSON.parse(String(json.stdout))
+      expect(observerJson.calibration.active_modules[0]).toMatchObject({
+        id: "repo.local-module",
+        source: "repo-local",
+        source_ref: ".taste-codec/modules/local.mjs",
+      })
+
       const baselineSet = runCli(repoPath, ["baseline", "set", "."])
       expect(baselineSet.status).toBe(0)
       const baselineJson = JSON.parse(

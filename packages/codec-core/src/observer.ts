@@ -1,5 +1,10 @@
-import { Effect, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 import { CATEGORIES, Category as CategorySchema, type Category } from "./category.js"
+import {
+  CalibrationContextTag,
+  ProjectModuleScope,
+  type ResolvedCalibrationContext,
+} from "./calibration.js"
 import { Diagnostic as DiagnosticSchema, type Diagnostic } from "./diagnostic.js"
 import { buildInputOutputs } from "./input-outputs.js"
 import type { SignalRunResult } from "./runner.js"
@@ -79,6 +84,21 @@ export interface ObserverRuntimeProfile {
       readonly diagnostics: number
     }
   >
+}
+
+export interface ObserverCalibrationModuleSummary {
+  readonly id: string
+  readonly version: string
+  readonly scope: typeof ProjectModuleScope.Type
+  readonly source: "builtin" | "package" | "workspace" | "repo-local"
+  readonly source_ref?: string
+  readonly source_fingerprint?: string
+  readonly fingerprint: string
+}
+
+export interface ObserverCalibrationSummary {
+  readonly fingerprint: string
+  readonly active_modules: ReadonlyArray<ObserverCalibrationModuleSummary>
 }
 
 interface ObserverOptions {
@@ -169,6 +189,21 @@ const ObserverRuntimeProfileSnapshot = Schema.Struct({
   }),
 })
 
+const ObserverCalibrationSnapshot = Schema.Struct({
+  fingerprint: Schema.String,
+  active_modules: Schema.Array(
+    Schema.Struct({
+      id: Schema.String,
+      version: Schema.String,
+      scope: ProjectModuleScope,
+      source: Schema.Literal("builtin", "package", "workspace", "repo-local"),
+      source_ref: Schema.optional(Schema.String),
+      source_fingerprint: Schema.optional(Schema.String),
+      fingerprint: Schema.String,
+    }),
+  ),
+})
+
 export const ObserverOutput = Schema.Struct({
   categories: ObserverCategories,
   minimum: Schema.Union(MinimumDimensionSnapshot, Schema.Undefined),
@@ -179,6 +214,7 @@ export const ObserverOutput = Schema.Struct({
     Schema.Record({ key: Schema.String, value: ObserverSignalMetadataSnapshot }),
   ),
   runtime_profile: Schema.optional(ObserverRuntimeProfileSnapshot),
+  calibration: Schema.optional(ObserverCalibrationSnapshot),
 })
 
 type ObserverOutputPublic = typeof ObserverOutput.Type
@@ -190,6 +226,7 @@ export type ObserverOutput = ObserverOutputPublic & {
   readonly signalResults: ReadonlyMap<string, SignalRunResult>
   readonly signalMetadata?: Record<string, SignalOutputMetadata>
   readonly runtimeProfile?: ObserverRuntimeProfile
+  readonly calibration?: ObserverCalibrationSummary
 }
 
 export const toObserverJson = (output: ObserverOutput): ObserverOutputPublic => ({
@@ -215,6 +252,7 @@ export const toObserverJson = (output: ObserverOutput): ObserverOutputPublic => 
   weighted_mean: output.weighted_mean,
   hard_gate_status: output.hard_gate_status,
   hard_gate_violations: output.hard_gate_violations,
+  ...(output.calibration !== undefined ? { calibration: output.calibration } : {}),
   ...(output.signalMetadata !== undefined && Object.keys(output.signalMetadata).length > 0
     ? { signal_metadata: output.signalMetadata }
     : {}),
@@ -350,6 +388,10 @@ export const observe = (
     const hard_gate_violations = collectHardGateViolations(registry, signalResults)
     const hard_gate_status: "pass" | "fail" =
       hard_gate_violations.length > 0 ? "fail" : "pass"
+    const calibration = yield* Effect.serviceOption(CalibrationContextTag)
+    const calibrationSummary = Option.isSome(calibration)
+      ? summarizeCalibration(calibration.value)
+      : undefined
 
     return {
       categories,
@@ -359,6 +401,7 @@ export const observe = (
       hard_gate_violations,
       inactiveSignals,
       signalResults,
+      ...(calibrationSummary !== undefined ? { calibration: calibrationSummary } : {}),
       ...(Object.keys(signalMetadata).length > 0 ? { signalMetadata } : {}),
       ...(options?.profile === true
         ? {
@@ -370,6 +413,25 @@ export const observe = (
         : {}),
     }
   })
+
+const summarizeCalibration = (
+  calibration: ResolvedCalibrationContext,
+): ObserverCalibrationSummary => ({
+  fingerprint: calibration.fingerprint,
+  active_modules: calibration.activeModules
+    .map((module) => ({
+      id: module.id,
+      version: module.version,
+      scope: module.scope,
+      source: module.source,
+      ...(module.sourceRef !== undefined ? { source_ref: module.sourceRef } : {}),
+      ...(module.sourceFingerprint !== undefined
+        ? { source_fingerprint: module.sourceFingerprint }
+        : {}),
+      fingerprint: module.fingerprint,
+    }))
+    .sort((left, right) => left.id.localeCompare(right.id) || left.version.localeCompare(right.version)),
+})
 
 const nowMs = (): number => {
   if (typeof performance !== "undefined") return performance.now()

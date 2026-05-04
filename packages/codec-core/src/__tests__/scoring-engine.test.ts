@@ -6,6 +6,7 @@ import { describe, expect, test } from "bun:test"
 import { Effect, Layer, Ref, Schema } from "effect"
 import {
   CalibrationContextTag,
+  activateProjectModule,
   makeResolvedCalibrationContext,
   type RepoFacts,
 } from "../calibration.js"
@@ -742,9 +743,24 @@ describe("ScoringEngine — cache semantics", () => {
         const counter = yield* Ref.make(0)
         const signal = makeCountingSignal(counter)
         const registry = yield* buildRegistry([signal])
+        const calibrationContext = makeResolvedCalibrationContext({
+          repoFacts: mockRepoFacts("observer-cache-calibration-v1"),
+          activeModules: [
+            activateProjectModule({
+              id: "repo.module",
+              version: "1.0.0",
+              scope: "repository",
+              source: "repo-local",
+              sourceRef: ".taste-codec/modules/local.mjs",
+              sourceFingerprint: "sha256:local",
+              contributions: [],
+            }),
+          ],
+        })
 
         const FirstEngineLayer = ScoringEngineLayer(registry, () => Layer.empty, undefined, {
           cacheConfig: { cacheDir },
+          calibrationContext,
         })
         const first = yield* ScoringEngineTag.pipe(
           Effect.provide(FirstEngineLayer),
@@ -753,6 +769,7 @@ describe("ScoringEngine — cache semantics", () => {
 
         const SecondEngineLayer = ScoringEngineLayer(registry, () => Layer.empty, undefined, {
           cacheConfig: { cacheDir },
+          calibrationContext,
         })
         const second = yield* ScoringEngineTag.pipe(
           Effect.provide(SecondEngineLayer),
@@ -766,6 +783,8 @@ describe("ScoringEngine — cache semantics", () => {
       expect(count).toBe(1)
       expect(cached.signalResults).toBeInstanceOf(Map)
       expect(cached.signalResults.get("MOCK-ENG-01")?.output).toEqual({ n: 1 })
+      expect(cached.calibration?.fingerprint).toBeDefined()
+      expect(cached.calibration?.active_modules[0]?.id).toBe("repo.module")
     } finally {
       await rm(repoPath, { recursive: true, force: true })
       await rm(cacheDir, { recursive: true, force: true })

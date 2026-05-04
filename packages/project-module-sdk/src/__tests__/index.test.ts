@@ -167,6 +167,48 @@ describe("project module sdk", () => {
     })
   })
 
+  test("TypeScript noop helper decision confidence follows slot confidence by default", async () => {
+    const module = defineProjectModule({
+      id: "acme.project",
+      version: "1.0.0",
+      scope: "repository",
+      processors: [
+        defineProcessor({
+          id: "contract-noops",
+          slot: "typescript.noop-classifier",
+          role: "normalizer",
+          fingerprint: "contract-noops-v1",
+          process: (current, _context, runtime) =>
+            Effect.sync(() =>
+              classifyTypeScriptNoop(current, runtime, {
+                classification: "intentional_noop",
+                reason: "Project contract hook",
+              }),
+            ),
+        }),
+      ],
+    })
+    const context = makeResolvedCalibrationContext({
+      repoFacts,
+      activeModules: [module.activeModule],
+      processors: module.processors,
+    })
+
+    const result = await Effect.runPromise(
+      context.runSlot("typescript.noop-classifier", {
+        file: "/repo/src/contracts.ts",
+        name: "projectContract",
+        line: 1,
+        nodeKind: "FunctionDeclaration",
+        classification: "stub",
+        confidence: "medium",
+      }),
+    )
+
+    expect(result.value.confidence).toBe("medium")
+    expect(result.decisions[0]?.confidence).toBe("medium")
+  })
+
   test("decodes project module manifests with repo-local, workspace, and package refs", async () => {
     const manifest = await Effect.runPromise(
       decodeProjectModuleManifest({

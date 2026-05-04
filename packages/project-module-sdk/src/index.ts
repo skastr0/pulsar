@@ -266,7 +266,7 @@ export const classifyTypeScriptNoop = (
     runtime,
     {
       action: options.action ?? `classify-${options.classification}`,
-      confidence: options.confidence ?? "high",
+      confidence: confidence ?? "high",
       reason: options.reason,
       ...(options.ruleId !== undefined ? { ruleId: options.ruleId } : {}),
       ...(options.evidence !== undefined ? { evidence: options.evidence } : {}),

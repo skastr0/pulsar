@@ -426,6 +426,7 @@ interface CachedObserverOutput {
   readonly inactiveSignals: ObserverOutput["inactiveSignals"]
   readonly signalResults: ReadonlyArray<SignalRunResult>
   readonly signalMetadata?: ObserverOutput["signalMetadata"]
+  readonly calibration?: ObserverOutput["calibration"]
 }
 
 /**
@@ -466,6 +467,7 @@ const toCachedObserverOutput = (result: ObserverOutput): CachedObserverOutput =>
   inactiveSignals: result.inactiveSignals,
   signalResults: [...result.signalResults.values()],
   ...(result.signalMetadata !== undefined ? { signalMetadata: result.signalMetadata } : {}),
+  ...(result.calibration !== undefined ? { calibration: result.calibration } : {}),
 })
 
 const fromCachedObserverOutput = (cached: CachedObserverOutput): ObserverOutput => ({
@@ -477,6 +479,7 @@ const fromCachedObserverOutput = (cached: CachedObserverOutput): ObserverOutput 
   inactiveSignals: cached.inactiveSignals,
   signalResults: new Map(cached.signalResults.map((result) => [result.signalId, result])),
   ...(cached.signalMetadata !== undefined ? { signalMetadata: cached.signalMetadata } : {}),
+  ...(cached.calibration !== undefined ? { calibration: cached.calibration } : {}),
 })
 
 /**

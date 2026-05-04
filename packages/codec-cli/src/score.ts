@@ -394,6 +394,10 @@ const printObserverView = (opts: {
   if (opts.aiMode.active) {
     lines.push(`          ${opts.aiMode.overrideHint}`)
   }
+  const calibrationLine = formatCalibrationLine(opts.output)
+  if (calibrationLine !== undefined) {
+    lines.push(`  Calibration: ${calibrationLine}`)
+  }
   lines.push("")
 
   for (const category of CATEGORIES) {
@@ -449,6 +453,10 @@ const printCategoryView = (opts: {
   console.log(`  Vector:   ${opts.vectorLabel}`)
   console.log(`  AI Mode:  ${opts.aiMode.active ? "active" : "inactive"}`)
   console.log(`            ${opts.aiMode.summary}`)
+  const calibrationLine = formatCalibrationLine(opts.output)
+  if (calibrationLine !== undefined) {
+    console.log(`  Calibration: ${calibrationLine}`)
+  }
   console.log(`  Category: ${opts.category}`)
   console.log("")
   console.log(
@@ -539,6 +547,13 @@ const printTopDiagnostics = (
   for (const line of topDiagnosticLines(repoRoot, output, signalIds, limit)) {
     console.log(line)
   }
+}
+
+const formatCalibrationLine = (output: ObserverOutput): string | undefined => {
+  if (output.calibration === undefined) return undefined
+  const count = output.calibration.active_modules.length
+  const noun = count === 1 ? "module" : "modules"
+  return `${count} ${noun} / ${output.calibration.fingerprint.slice(0, 12)}`
 }
 
 const topDiagnosticLines = (
