@@ -591,6 +591,9 @@ export const ScoringEngineLayer = (
     readonly cacheConfig?: CacheConfig
     readonly observerProfile?: boolean
     readonly calibrationContext?: ResolvedCalibrationContext
+    readonly calibrationContextForWorktree?: (
+      worktreePath: string,
+    ) => Effect.Effect<ResolvedCalibrationContext | undefined, unknown, never>
   },
 ): Layer.Layer<ScoringEngineTag> =>
   Layer.effect(
@@ -609,10 +612,33 @@ export const ScoringEngineLayer = (
         cacheLayer,
       )
 
+      const calibrationContextCache = new Map<string, ResolvedCalibrationContext | undefined>()
+      const resolveCalibrationContext = (
+        worktreePath: string,
+      ): Effect.Effect<ResolvedCalibrationContext | undefined, never, never> =>
+        Effect.gen(function* () {
+          const factory = options?.calibrationContextForWorktree
+          if (factory === undefined) return options?.calibrationContext
+
+          if (calibrationContextCache.has(worktreePath)) {
+            return calibrationContextCache.get(worktreePath)
+          }
+
+          const resolved = yield* factory(worktreePath).pipe(
+            Effect.orDieWith(
+              (cause) =>
+                new Error(`Failed to resolve calibration context for ${worktreePath}: ${String(cause)}`),
+            ),
+          )
+          calibrationContextCache.set(worktreePath, resolved)
+          return resolved
+        })
+
       const makeEnvLayer = (
         worktreePath: string,
         sha: string,
         referenceEntries: ReadonlyMap<string, unknown>,
+        calibrationContext: ResolvedCalibrationContext | undefined,
         changedHunks: ReadonlyArray<ChangedHunk> = [],
       ): Layer.Layer<any, any, never> => {
         const ContextLayer = Layer.succeed(SignalContextTag, {
@@ -626,9 +652,9 @@ export const ScoringEngineLayer = (
         )
         const CacheShareLayer = Layer.succeed(SignalCacheTag, cacheRef)
         const CalibrationLayer =
-          options?.calibrationContext === undefined
+          calibrationContext === undefined
             ? Layer.empty
-            : Layer.succeed(CalibrationContextTag, options.calibrationContext)
+            : Layer.succeed(CalibrationContextTag, calibrationContext)
         const PackLayer = packLayerFactory(worktreePath)
         return Layer.mergeAll(
           ContextLayer,
@@ -643,6 +669,7 @@ export const ScoringEngineLayer = (
         worktreePath: string,
         sha: string,
         changedHunks: ReadonlyArray<ChangedHunk>,
+        calibrationContext: ResolvedCalibrationContext | undefined,
         runInWorktree: (
           envLayer: Layer.Layer<any, any, never>,
           referenceEntries: ReadonlyMap<string, unknown>,
@@ -651,28 +678,31 @@ export const ScoringEngineLayer = (
         Effect.gen(function* () {
           yield* Effect.annotateCurrentSpan("worktreePath", worktreePath)
           const referenceEntries = yield* loadCanonicalReferenceDataEntries(worktreePath)
-          const EnvLayer = makeEnvLayer(worktreePath, sha, referenceEntries, changedHunks)
+          const EnvLayer = makeEnvLayer(
+            worktreePath,
+            sha,
+            referenceEntries,
+            calibrationContext,
+            changedHunks,
+          )
           return yield* runInWorktree(EnvLayer, referenceEntries)
         })
 
-      const withCommitEnvironment = <A, E>(
+      const withCommitWorktree = <A, E>(
         repoPath: string,
         sha: string,
-        runInWorktree: (
-          envLayer: Layer.Layer<any, any, never>,
-          referenceEntries: ReadonlyMap<string, unknown>,
-        ) => Effect.Effect<A, E, never>,
+        runInWorktree: (worktreePath: string) => Effect.Effect<A, E, never>,
       ): Effect.Effect<A, E | ScoringEngineError, never> =>
         Effect.gen(function* () {
           const useCurrentWorktree = yield* canUseCurrentWorktreeForCommit(repoPath, sha)
           if (useCurrentWorktree) {
-            return yield* runWithEnvironment(repoPath, sha, [], runInWorktree)
+            return yield* runInWorktree(repoPath)
           }
 
           return yield* Effect.scoped(
             Effect.gen(function* () {
               const worktreePath = yield* acquireWorktree(repoPath, sha)
-              return yield* runWithEnvironment(worktreePath, sha, [], runInWorktree)
+              return yield* runInWorktree(worktreePath)
             }),
           )
         })
@@ -716,51 +746,64 @@ export const ScoringEngineLayer = (
 
           const signal = registry.byId.get(signalId)
           const contentHash = yield* computeContentHash(repoPath, sha)
-          const configHash = computeConfigHash(
-            signalId,
-            registry,
-            vector,
-            options?.calibrationContext?.fingerprint,
-          )
-          const key: CacheKey = { signalId, contentHash, configHash }
-
-          if (signal === undefined || signal.tier === 1 || signal.tier === 1.5) {
-            const cached = yield* cacheRef.getTiered<SignalRunResult>(key, {
-              ...(signal !== undefined ? { tier: signal.tier } : {}),
-            })
-            if (cached.status === "hit" || cached.status === "stale") {
-              yield* Effect.annotateCurrentSpan("cacheKey", cacheKeyString(key))
-              yield* Effect.annotateCurrentSpan("cacheHit", true)
-              return mergeCachedResultMetadata(cached.value!, cached)
-            }
-          }
-
-          const result = yield* withCommitEnvironment(repoPath, sha, (EnvLayer, referenceEntries) =>
+          const result = yield* withCommitWorktree(repoPath, sha, (worktreePath) =>
             Effect.gen(function* () {
-              const tieredCached = yield* cacheRef.getTiered<SignalRunResult>(key, {
-                ...(signal !== undefined ? { tier: signal.tier } : {}),
-                ...(signal?.tier === 2
-                  ? { refVersionHash: computeReferenceVersionHash(referenceEntries) }
-                  : {}),
-              })
-              if (tieredCached.status === "hit" || tieredCached.status === "stale") {
-                yield* Effect.annotateCurrentSpan("cacheKey", cacheKeyString(key))
-                yield* Effect.annotateCurrentSpan("cacheHit", true)
-                return mergeCachedResultMetadata(tieredCached.value!, tieredCached)
+              const calibrationContext = yield* resolveCalibrationContext(worktreePath)
+              const configHash = computeConfigHash(
+                signalId,
+                registry,
+                vector,
+                calibrationContext?.fingerprint,
+              )
+              const key: CacheKey = { signalId, contentHash, configHash }
+
+              if (signal === undefined || signal.tier === 1 || signal.tier === 1.5) {
+                const cached = yield* cacheRef.getTiered<SignalRunResult>(key, {
+                  ...(signal !== undefined ? { tier: signal.tier } : {}),
+                })
+                if (cached.status === "hit" || cached.status === "stale") {
+                  yield* Effect.annotateCurrentSpan("cacheKey", cacheKeyString(key))
+                  yield* Effect.annotateCurrentSpan("cacheHit", true)
+                  return mergeCachedResultMetadata(cached.value!, cached)
+                }
               }
 
-              const fresh = yield* (Effect.provide(
-                runSignal(registry, signalId, vector),
-                EnvLayer,
-              ) as Effect.Effect<SignalRunResult, SignalError, never>)
+              const result = yield* runWithEnvironment(
+                worktreePath,
+                sha,
+                [],
+                calibrationContext,
+                (EnvLayer, referenceEntries) =>
+                  Effect.gen(function* () {
+                    const tieredCached = yield* cacheRef.getTiered<SignalRunResult>(key, {
+                      ...(signal !== undefined ? { tier: signal.tier } : {}),
+                      ...(signal?.tier === 2
+                        ? { refVersionHash: computeReferenceVersionHash(referenceEntries) }
+                        : {}),
+                    })
+                    if (tieredCached.status === "hit" || tieredCached.status === "stale") {
+                      yield* Effect.annotateCurrentSpan("cacheKey", cacheKeyString(key))
+                      yield* Effect.annotateCurrentSpan("cacheHit", true)
+                      return mergeCachedResultMetadata(tieredCached.value!, tieredCached)
+                    }
 
-              yield* cacheRef.setTiered(key, fresh, {
-                ...(signal !== undefined ? { tier: signal.tier } : {}),
-                ...(signal?.tier === 2
-                  ? { refVersionHash: computeReferenceVersionHash(referenceEntries) }
-                  : {}),
-              })
-              return fresh
+                    const fresh = yield* (Effect.provide(
+                      runSignal(registry, signalId, vector),
+                      EnvLayer,
+                    ) as Effect.Effect<SignalRunResult, SignalError, never>)
+
+                    yield* cacheRef.setTiered(key, fresh, {
+                      ...(signal !== undefined ? { tier: signal.tier } : {}),
+                      ...(signal?.tier === 2
+                        ? { refVersionHash: computeReferenceVersionHash(referenceEntries) }
+                        : {}),
+                    })
+                    return fresh
+                  }),
+              )
+
+              yield* Effect.annotateCurrentSpan("cacheKey", cacheKeyString(key))
+              return result
             }),
           )
 
@@ -800,26 +843,37 @@ export const ScoringEngineLayer = (
         function* (repoPath: string, sha: string) {
           yield* Effect.annotateCurrentSpan("sha", sha)
           const contentHash = yield* computeContentHash(repoPath, sha)
-          const configHash = computeObserverConfigHash(
-            registry,
-            vector,
-            options?.calibrationContext?.fingerprint,
-          )
-          const key: CacheKey = {
-            signalId: OBSERVER_CACHE_SIGNAL_ID,
-            contentHash,
-            configHash,
-          }
+          const { result, cacheHit, key } = yield* withCommitWorktree(repoPath, sha, (worktreePath) =>
+            Effect.gen(function* () {
+              const calibrationContext = yield* resolveCalibrationContext(worktreePath)
+              const configHash = computeObserverConfigHash(
+                registry,
+                vector,
+                calibrationContext?.fingerprint,
+              )
+              const key: CacheKey = {
+                signalId: OBSERVER_CACHE_SIGNAL_ID,
+                contentHash,
+                configHash,
+              }
 
-          const profile = options?.observerProfile === true
-          const { result, cacheHit } = yield* observeWithCache(key, () =>
-            withCommitEnvironment(repoPath, sha, (EnvLayer) =>
-              Effect.provide(observe(registry, vector, { profile }), EnvLayer) as Effect.Effect<
-                ObserverOutput,
-                never,
-                never
-              >,
-            ),
+              const profile = options?.observerProfile === true
+              const observed = yield* observeWithCache(key, () =>
+                runWithEnvironment(
+                  worktreePath,
+                  sha,
+                  [],
+                  calibrationContext,
+                  (EnvLayer) =>
+                    Effect.provide(observe(registry, vector, { profile }), EnvLayer) as Effect.Effect<
+                      ObserverOutput,
+                      never,
+                      never
+                    >,
+                ),
+              )
+              return { ...observed, key }
+            }),
           )
 
           yield* Effect.annotateCurrentSpan("cacheKey", cacheKeyString(key))
@@ -846,10 +900,11 @@ export const ScoringEngineLayer = (
           const changedHunks =
             worktreeOptions?.changedHunks ?? (yield* collectWorktreeChangedHunks(repoPath))
           const contentHash = `${yield* computeWorktreeContentHash(repoPath)}:${hashChangedHunks(changedHunks)}`
+          const calibrationContext = yield* resolveCalibrationContext(repoPath)
           const configHash = computeObserverConfigHash(
             registry,
             vector,
-            options?.calibrationContext?.fingerprint,
+            calibrationContext?.fingerprint,
           )
           const key: CacheKey = {
             signalId: OBSERVER_CACHE_SIGNAL_ID,
@@ -859,7 +914,7 @@ export const ScoringEngineLayer = (
 
           const profile = options?.observerProfile === true
           const { result, cacheHit } = yield* observeWithCache(key, () =>
-            runWithEnvironment(repoPath, headSha, changedHunks, (EnvLayer) =>
+            runWithEnvironment(repoPath, headSha, changedHunks, calibrationContext, (EnvLayer) =>
               Effect.provide(observe(registry, vector, { profile }), EnvLayer) as Effect.Effect<
                 ObserverOutput,
                 never,

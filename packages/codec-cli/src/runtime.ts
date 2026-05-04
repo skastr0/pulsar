@@ -212,6 +212,7 @@ export const makeCodecRuntime = (
         cacheConfig: { cacheDir: join(repoRoot, ".taste-codec", "cache") },
         ...(options?.observer?.profile === true ? { observerProfile: true } : {}),
         ...(calibrationContext === undefined ? {} : { calibrationContext }),
+        calibrationContextForWorktree: loadProjectModuleCalibrationContext,
       },
     )
     const engine = yield* Effect.provide(ScoringEngineTag, EngineLayer)

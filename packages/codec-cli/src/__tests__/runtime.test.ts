@@ -1,14 +1,27 @@
 import { describe, expect, test } from "bun:test"
+import { spawnSync } from "node:child_process"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Effect } from "effect"
-import { loadProjectModuleCalibrationContext } from "../runtime.js"
+import {
+  loadProjectModuleCalibrationContext,
+  makeCodecRuntime,
+  withDetachedWorktreeAtRef,
+} from "../runtime.js"
 
 const writeRepoFile = async (repoPath: string, relPath: string, content: string): Promise<void> => {
   const full = join(repoPath, relPath)
   await mkdir(join(full, ".."), { recursive: true })
   await writeFile(full, content, "utf8")
+}
+
+const sh = (cmd: string, args: ReadonlyArray<string>, cwd: string): string => {
+  const result = spawnSync(cmd, args as Array<string>, { cwd, encoding: "utf8" })
+  if (result.status !== 0) {
+    throw new Error(`${cmd} ${args.join(" ")} failed: ${result.stderr || result.stdout}`)
+  }
+  return result.stdout.trim()
 }
 
 describe("codec runtime project modules", () => {
@@ -123,4 +136,96 @@ describe("codec runtime project modules", () => {
       await rm(repoPath, { recursive: true, force: true })
     }
   })
+
+  test("commit observation resolves project module calibration from each target worktree", async () => {
+    const repoPath = await mkdtemp(join(tmpdir(), "taste-runtime-project-modules-"))
+    try {
+      sh("git", ["init", "-q", "-b", "main"], repoPath)
+      sh("git", ["config", "user.email", "test@test.test"], repoPath)
+      sh("git", ["config", "user.name", "test"], repoPath)
+      sh("git", ["config", "commit.gpgsign", "false"], repoPath)
+      await writeRepoFile(
+        repoPath,
+        "tsconfig.json",
+        JSON.stringify(
+          {
+            compilerOptions: {
+              target: "ES2022",
+              module: "ESNext",
+              moduleResolution: "Bundler",
+            },
+            include: ["src/**/*.ts"],
+          },
+          null,
+          2,
+        ),
+      )
+      await writeRepoFile(repoPath, "src/index.ts", "export const ready = true\n")
+      sh("git", ["add", "."], repoPath)
+      sh("git", ["commit", "-q", "-m", "initial"], repoPath)
+
+      const writeModule = (marker: string) =>
+        writeRepoFile(
+          repoPath,
+          ".taste-codec/modules/local.mjs",
+          [
+            `// ${marker}`,
+            "export default {",
+            "  id: 'repo.local-module',",
+            "  version: '1.0.0',",
+            "  scope: 'repository',",
+            "  processors: []",
+            "}",
+          ].join("\n"),
+        )
+
+      await writeModule("first")
+      await writeRepoFile(
+        repoPath,
+        ".taste-codec/project-modules.json",
+        JSON.stringify(
+          {
+            modules: [
+              {
+                id: "repo.local-module",
+                kind: "repo-local",
+                path: ".taste-codec/modules/local.mjs",
+              },
+            ],
+          },
+          null,
+          2,
+        ),
+      )
+      sh("git", ["add", ".taste-codec"], repoPath)
+      sh("git", ["commit", "-q", "-m", "add first project module"], repoPath)
+      const firstSha = sh("git", ["rev-parse", "HEAD"], repoPath)
+
+      await writeModule("second")
+      sh("git", ["add", ".taste-codec/modules/local.mjs"], repoPath)
+      sh("git", ["commit", "-q", "-m", "update project module source"], repoPath)
+      const secondSha = sh("git", ["rev-parse", "HEAD"], repoPath)
+
+      const firstDetachedContext = await Effect.runPromise(
+        withDetachedWorktreeAtRef(repoPath, firstSha, ({ worktreePath }) =>
+          loadProjectModuleCalibrationContext(worktreePath),
+        ),
+      )
+      const secondContext = await Effect.runPromise(loadProjectModuleCalibrationContext(repoPath))
+      expect(firstDetachedContext?.fingerprint).not.toBe(secondContext?.fingerprint)
+
+      const { engine } = await Effect.runPromise(makeCodecRuntime(repoPath))
+      const first = await Effect.runPromise(engine.observeCommit(repoPath, firstSha))
+      const second = await Effect.runPromise(engine.observeCommit(repoPath, secondSha))
+
+      expect(first.calibration?.fingerprint).toBeDefined()
+      expect(second.calibration?.fingerprint).toBeDefined()
+      expect(first.calibration?.fingerprint).not.toBe(second.calibration?.fingerprint)
+      expect(first.calibration?.active_modules[0]?.source_fingerprint).not.toBe(
+        second.calibration?.active_modules[0]?.source_fingerprint,
+      )
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
 })
