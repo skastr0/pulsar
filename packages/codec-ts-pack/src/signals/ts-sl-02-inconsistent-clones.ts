@@ -213,17 +213,24 @@ export const TsSl02: Signal<TsSl02Config, TsSl02Output, SignalContextTag> = {
       (group) => group.divergenceScore > ACTIONABLE_DIVERGENCE_THRESHOLD,
     )
     if (actionableGroups.length === 0) return 1
-    const maxDivergence = Math.max(...actionableGroups.map((group) => group.divergenceScore))
-    const worstPenalty =
-      ((maxDivergence - ACTIONABLE_DIVERGENCE_THRESHOLD) /
-        (1 - ACTIONABLE_DIVERGENCE_THRESHOLD)) *
-      0.25
-    const weightedBreadth = actionableGroups.reduce(
-      (sum, group) => sum + confidenceWeight(group),
-      0,
+    const highConfidenceGroups = actionableGroups.filter(
+      (group) => (group.confidence ?? "high") === "high",
     )
-    const breadthPenalty = Math.min(0.3, Math.log2(weightedBreadth + 1) * 0.12)
-    return 1 - Math.min(0.75, worstPenalty + breadthPenalty)
+    const mediumConfidenceGroups = actionableGroups.filter(
+      (group) => group.confidence === "medium",
+    )
+    const worstPenalty =
+      divergentClonePenalty(highConfidenceGroups, {
+        maxDivergencePenalty: 0.25,
+        breadthScale: 0.12,
+        maxBreadthPenalty: 0.3,
+      }) +
+      divergentClonePenalty(mediumConfidenceGroups, {
+        maxDivergencePenalty: 0.04,
+        breadthScale: 0.03,
+        maxBreadthPenalty: 0.06,
+      })
+    return 1 - Math.min(0.75, worstPenalty)
   },
   diagnose: (out): ReadonlyArray<Diagnostic> =>
     out.divergentGroups.slice(0, out.diagnosticLimit ?? 10).map((group) => ({
@@ -259,6 +266,28 @@ export const TsSl02: Signal<TsSl02Config, TsSl02Output, SignalContextTag> = {
 
 const isInconsistentCloneCandidate = (group: CloneGroup): boolean =>
   group.kind === "structural" && group.tokenCount >= MIN_STRUCTURAL_DIVERGENCE_TOKENS
+
+const divergentClonePenalty = (
+  groups: ReadonlyArray<DivergentClone>,
+  opts: {
+    readonly maxDivergencePenalty: number
+    readonly breadthScale: number
+    readonly maxBreadthPenalty: number
+  },
+): number => {
+  if (groups.length === 0) return 0
+  const maxDivergence = Math.max(...groups.map((group) => group.divergenceScore))
+  const worstPenalty =
+    ((maxDivergence - ACTIONABLE_DIVERGENCE_THRESHOLD) /
+      (1 - ACTIONABLE_DIVERGENCE_THRESHOLD)) *
+    opts.maxDivergencePenalty
+  const weightedBreadth = groups.reduce((sum, group) => sum + confidenceWeight(group), 0)
+  const breadthPenalty = Math.min(
+    opts.maxBreadthPenalty,
+    Math.log2(weightedBreadth + 1) * opts.breadthScale,
+  )
+  return worstPenalty + breadthPenalty
+}
 
 const selectNonOverlappingCandidateGroups = (
   groups: ReadonlyArray<CloneGroup>,

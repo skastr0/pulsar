@@ -689,8 +689,8 @@ describe("TS-SL-02 Inconsistent clone detection", () => {
     const score = TsSl02.score(output)
     const diagnostics = TsSl02.diagnose(output)
 
-    expect(score).toBeGreaterThan(0.65)
-    expect(score).toBeLessThan(0.8)
+    expect(score).toBeGreaterThan(0.9)
+    expect(score).toBeLessThan(0.95)
     expect(diagnostics).toHaveLength(1)
     expect(diagnostics[0]?.severity).toBe("info")
     expect(diagnostics[0]?.message).toContain("confidence=medium")
