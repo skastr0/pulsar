@@ -1,6 +1,10 @@
 import { Context, Effect, Layer } from "effect"
 import { simpleGit } from "simple-git"
 import { Project } from "ts-morph"
+import {
+  isProductionSourcePath,
+  type CalibrationProcessorError,
+} from "@taste-codec/core"
 import { discoverPackages, type PackageInfo } from "./discovery.js"
 
 export interface TsProjectOptions {
@@ -43,7 +47,7 @@ export const makeTsProject = (worktreePath: string): Effect.Effect<Project> =>
 export const makeTsProjectWithOptions = (
   worktreePath: string,
   options?: TsProjectOptions,
-): Effect.Effect<Project> =>
+): Effect.Effect<Project, CalibrationProcessorError> =>
   Effect.gen(function* () {
     const packages = yield* discoverPackages(worktreePath)
     const currentSourceFiles =
@@ -183,7 +187,7 @@ const hasIgnoredPathSegment = (filePath: string): boolean =>
 
 const listProductionTypeScriptFiles = (
   worktreePath: string,
-): Effect.Effect<ReadonlyArray<string>> =>
+): Effect.Effect<ReadonlyArray<string>, CalibrationProcessorError> =>
   Effect.tryPromise({
     try: async () => {
       const raw = await simpleGit(worktreePath).raw([
@@ -196,11 +200,19 @@ const listProductionTypeScriptFiles = (
         .split("\n")
         .map((file) => file.trim())
         .filter((file) => file.length > 0)
-        .filter(isProductionTypeScriptFile)
-        .map((file) => `${worktreePath}/${file}`)
     },
     catch: (cause) => new Error(String(cause)),
-  }).pipe(Effect.orElseSucceed(() => []))
+  }).pipe(
+    Effect.orElseSucceed(() => []),
+    Effect.flatMap((files) =>
+      Effect.filter(
+        files.filter(isProductionTypeScriptFile),
+        (file) =>
+          isProductionSourcePath(file, { sourceExtensions: [".ts", ".tsx"] }),
+      ),
+    ),
+    Effect.map((files) => files.map((file) => `${worktreePath}/${file}`)),
+  )
 
 const isProductionTypeScriptFile = (file: string): boolean => {
   if (!(file.endsWith(".ts") || file.endsWith(".tsx"))) return false
@@ -264,7 +276,7 @@ const isHiddenPathSegment = (segment: string): boolean =>
 export const TsProjectLayer = (
   worktreePath: string,
   options?: TsProjectOptions,
-): Layer.Layer<TsProjectTag | TsPackageInfoTag> =>
+): Layer.Layer<TsProjectTag | TsPackageInfoTag, CalibrationProcessorError> =>
   Layer.unwrapEffect(
     Effect.gen(function* () {
       const packages = yield* discoverPackages(worktreePath)
