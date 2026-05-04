@@ -10,6 +10,8 @@ import {
   type ProjectModuleScope,
 } from "@taste-codec/core"
 
+export * from "./manifest.js"
+
 export {
   CalibrationContextTag,
   CalibrationProcessorError,

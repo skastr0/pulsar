@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import { Effect } from "effect"
+import { Effect, Exit } from "effect"
 import {
   appendCalibrationDecision,
+  decodeProjectModuleManifest,
   defineProcessor,
   defineProjectModule,
+  fingerprintProjectModuleManifest,
   fingerprintProjectModule,
   makeResolvedCalibrationContext,
   type RepoFacts,
@@ -108,5 +110,100 @@ describe("project module sdk", () => {
     expect(result.decisions[0]?.moduleId).toBe("acme.convex")
     expect(result.decisions[0]?.processorId).toBe("convex-generated-taxonomy")
   })
-})
 
+  test("decodes project module manifests with repo-local, workspace, and package refs", async () => {
+    const manifest = await Effect.runPromise(
+      decodeProjectModuleManifest({
+        modules: [
+          {
+            id: "repo-convex",
+            kind: "repo-local",
+            path: ".taste-codec/modules/convex.ts",
+          },
+          {
+            id: "org-effect",
+            kind: "workspace",
+            packageName: "@acme/taste-effect-module",
+            exportName: "default",
+            config: { strict: true },
+          },
+          {
+            id: "published-react",
+            kind: "package",
+            packageName: "@taste-codec/project-module-react",
+            version: "1.0.0",
+            enabled: false,
+          },
+        ],
+      }),
+    )
+
+    expect(manifest.schema).toBe("taste/project-modules/v1")
+    expect(manifest.modules[0]).toMatchObject({
+      id: "repo-convex",
+      enabled: true,
+    })
+    expect(manifest.modules[1]).toMatchObject({
+      id: "org-effect",
+      config: { strict: true },
+    })
+    expect(manifest.modules[2]).toMatchObject({
+      id: "published-react",
+      enabled: false,
+    })
+  })
+
+  test("rejects invalid project module refs", async () => {
+    const exit = await Effect.runPromiseExit(
+      decodeProjectModuleManifest({
+        modules: [
+          {
+            id: "missing-target",
+            kind: "repo-local",
+          },
+        ],
+      }),
+    )
+
+    expect(Exit.isFailure(exit)).toBe(true)
+  })
+
+  test("project module manifest fingerprints are deterministic across module order", async () => {
+    const left = await Effect.runPromise(
+      decodeProjectModuleManifest({
+        modules: [
+          {
+            id: "b",
+            kind: "package",
+            packageName: "@taste-codec/project-module-effect",
+          },
+          {
+            id: "a",
+            kind: "repo-local",
+            path: ".taste-codec/modules/acme.ts",
+          },
+        ],
+      }),
+    )
+    const right = await Effect.runPromise(
+      decodeProjectModuleManifest({
+        modules: [
+          {
+            id: "a",
+            kind: "repo-local",
+            path: ".taste-codec/modules/acme.ts",
+          },
+          {
+            id: "b",
+            kind: "package",
+            packageName: "@taste-codec/project-module-effect",
+          },
+        ],
+      }),
+    )
+
+    expect(fingerprintProjectModuleManifest(left)).toBe(
+      fingerprintProjectModuleManifest(right),
+    )
+  })
+})
