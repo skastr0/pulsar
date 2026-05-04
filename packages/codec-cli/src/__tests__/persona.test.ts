@@ -227,4 +227,49 @@ describe("taste persona", () => {
       await rm(repoPath, { recursive: true, force: true })
     }
   }, 120_000)
+
+  test("applied refactor-friendly vector tightens architecture scoring after baseline", async () => {
+    const repoPath = await initRepo()
+    try {
+      await writeRepoFile(repoPath, "src/a.ts", "import { b } from './b'\nexport const a = b + 1\n")
+      await writeRepoFile(repoPath, "src/b.ts", "import { c } from './c'\nexport const b = c + 1\n")
+      await writeRepoFile(repoPath, "src/c.ts", "import { d } from './d'\nexport const c = d + 1\n")
+      await writeRepoFile(repoPath, "src/d.ts", "import { a } from './a'\nexport const d = a + 1\n")
+      sh("git", ["add", "src/a.ts", "src/b.ts", "src/c.ts", "src/d.ts"], repoPath)
+      sh("git", ["commit", "-q", "-m", "seed runtime cycle"], repoPath)
+
+      const baseline = runCli(repoPath, ["score", "--json", "."])
+      expect(baseline.status).toBe(0)
+      const baselineArchitecture = JSON.parse(baseline.stdout).categories["architectural-drift"]
+      expect(baselineArchitecture.aggregation.weights["TS-AD-02"]).toBe(1)
+      expect(baselineArchitecture.signals["TS-AD-02"]).toBeLessThan(1)
+
+      const apply = runCli(repoPath, [
+        "persona",
+        "apply",
+        "refactor-friendly",
+        "--to",
+        ".taste-codec/vector.json",
+      ])
+      expect(apply.status).toBe(0)
+
+      const written = JSON.parse(await readFile(join(repoPath, ".taste-codec/vector.json"), "utf8"))
+      expect(written.id).toBe("refactor-friendly")
+      expect(written.signal_overrides["TS-AD-02"].weight).toBeGreaterThan(1)
+      expect(written.provenance[0].source).toBe("preset")
+
+      const vectorScore = runCli(repoPath, ["score", "--json", "."])
+      expect(vectorScore.status).toBe(0)
+      const vectorArchitecture = JSON.parse(vectorScore.stdout).categories["architectural-drift"]
+      expect(vectorArchitecture.aggregation.weights["TS-AD-02"]).toBeGreaterThan(1)
+      expect(vectorArchitecture.score).toBeLessThan(baselineArchitecture.score)
+
+      const human = runCli(repoPath, ["score", "--category", "architectural-drift", "."])
+      expect(human.status).toBe(0)
+      expect(human.stdout).toContain("Vector:   refactor-friendly")
+      expect(human.stdout).toContain("TS-AD-02")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
 })
