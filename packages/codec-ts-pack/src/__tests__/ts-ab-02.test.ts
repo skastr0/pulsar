@@ -1,6 +1,15 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { Effect, Layer } from "effect"
+import {
+  CalibrationContextTag,
+  appendCalibrationDecision,
+  defineCalibrationProcessor,
+  makeResolvedCalibrationContext,
+  type RepoFacts,
+} from "@taste-codec/core"
 import { TsAb02 } from "../signals/ts-ab-02-unused-exports-reachability.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
+import { TsProjectLayer } from "../ts-project.js"
 
 let repo: TempRepo
 
@@ -187,6 +196,88 @@ describe("TS-AB-02 (unused exports reachability)", () => {
     const entry = out.exports.find((item) => item.exportName === "RuntimeHandle")
 
     expect(entry?.classification).toBe("cross-package")
+  })
+
+  test("reports Convex runtime exports as unused without calibration", async () => {
+    await repo.write(
+      "convex/lifecycle.ts",
+      "export const syncLifecycle = mutation({ handler: async () => null })\n",
+    )
+    await repo.write("src/internal.ts", "export const ordinaryUnused = true\n")
+
+    const out = await runSignal(repo.root, TsAb02, TsAb02.defaultConfig)
+    const byName = new Map(out.exports.map((entry) => [entry.exportName, entry]))
+
+    expect(byName.get("syncLifecycle")?.classification).toBe("unused")
+    expect(byName.get("ordinaryUnused")?.classification).toBe("unused")
+    expect(out.calibrationDecisions).toEqual([])
+  })
+
+  test("project modules can mark Convex runtime exports as public entrypoints", async () => {
+    await repo.write(
+      "convex/lifecycle.ts",
+      "export const syncLifecycle = mutation({ handler: async () => null })\n",
+    )
+    await repo.write("src/internal.ts", "export const ordinaryUnused = true\n")
+    const calibrationContext = makeResolvedCalibrationContext({
+      repoFacts: {
+        repoRoot: repo.root,
+        fingerprint: "repo-facts-v1",
+        detectedTechnologies: ["convex", "typescript"],
+        sourceExtensions: [".ts"],
+      } satisfies RepoFacts,
+      processors: [
+        defineCalibrationProcessor<"typescript.export-reachability">({
+          id: "convex-public-entrypoints",
+          moduleId: "@taste-codec/project-module-convex",
+          moduleVersion: "0.0.0",
+          slot: "typescript.export-reachability",
+          role: "resolver",
+          priority: 20,
+          fingerprint: "convex-public-entrypoints-v1",
+          process: (current) =>
+            Effect.sync(() => {
+              if (!current.value.exportFile.includes("/convex/")) return current
+              return appendCalibrationDecision(
+                current,
+                {
+                  moduleId: "@taste-codec/project-module-convex",
+                  processorId: "convex-public-entrypoints",
+                  slot: "typescript.export-reachability",
+                  action: "mark-public-entrypoint",
+                  confidence: "high",
+                  reason: "Convex runtime module exports are invoked externally by the Convex runtime",
+                  evidence: [
+                    { kind: "path", value: current.value.exportFile },
+                    { kind: "symbol", value: current.value.exportName },
+                  ],
+                },
+                {
+                  ...current.value,
+                  isPublicEntrypoint: true,
+                },
+              )
+            }),
+        }),
+      ],
+    })
+
+    const out = await Effect.runPromise(
+      TsAb02.compute(TsAb02.defaultConfig, new Map()).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            TsProjectLayer(repo.root),
+            Layer.succeed(CalibrationContextTag, calibrationContext),
+          ),
+        ),
+      ),
+    )
+    const byName = new Map(out.exports.map((entry) => [entry.exportName, entry]))
+
+    expect(byName.get("syncLifecycle")?.classification).toBe("cross-package")
+    expect(byName.get("ordinaryUnused")?.classification).toBe("unused")
+    expect(out.calibrationDecisions).toHaveLength(1)
+    expect(out.calibrationDecisions[0]?.slot).toBe("typescript.export-reachability")
   })
 
   test("diagnostics omit healthy cross-module and cross-package exports", async () => {

@@ -9,6 +9,7 @@ export const CALIBRATION_SLOT_IDS = [
   "typescript.dependency-resolver",
   "typescript.suppression-justifier",
   "typescript.callback-context-namer",
+  "typescript.export-reachability",
   "mixer.category-policy",
 ] as const
 
@@ -156,6 +157,17 @@ export interface TypeScriptCallbackContextNameValue {
   readonly metadata?: Readonly<Record<string, unknown>>
 }
 
+export interface TypeScriptExportReachabilityValue {
+  readonly exportFile: string
+  readonly exportName: string
+  readonly declarationFiles: ReadonlyArray<string>
+  readonly declarationKinds: ReadonlyArray<string>
+  readonly declarationTexts?: ReadonlyArray<string>
+  readonly sourceText?: string
+  readonly isPublicEntrypoint: boolean
+  readonly metadata?: Readonly<Record<string, unknown>>
+}
+
 export interface MixerCategoryPolicyValue {
   readonly category: string
   readonly rawScore: number
@@ -171,6 +183,7 @@ export interface CalibrationSlots {
   readonly "typescript.dependency-resolver": TypeScriptDependencyResolutionValue
   readonly "typescript.suppression-justifier": TypeScriptSuppressionJustificationValue
   readonly "typescript.callback-context-namer": TypeScriptCallbackContextNameValue
+  readonly "typescript.export-reachability": TypeScriptExportReachabilityValue
   readonly "mixer.category-policy": MixerCategoryPolicyValue
 }
 

@@ -14,6 +14,7 @@ import {
   loadEnabledProjectModules,
   loadProjectModuleRef,
   makeResolvedCalibrationContext,
+  markTypeScriptExportPublicEntrypoint,
   type RepoFacts,
 } from "../index.js"
 
@@ -207,6 +208,55 @@ describe("project module sdk", () => {
 
     expect(result.value.confidence).toBe("medium")
     expect(result.decisions[0]?.confidence).toBe("medium")
+  })
+
+  test("processor runtime helpers mark TypeScript exports as public entrypoints", async () => {
+    const module = defineProjectModule({
+      id: "acme.project",
+      version: "1.0.0",
+      scope: "repository",
+      processors: [
+        defineProcessor({
+          id: "runtime-entrypoints",
+          slot: "typescript.export-reachability",
+          role: "resolver",
+          fingerprint: "runtime-entrypoints-v1",
+          process: (current, _context, runtime) =>
+            Effect.sync(() =>
+              markTypeScriptExportPublicEntrypoint(current, runtime, {
+                reason: "Project runtime invokes this export externally",
+                evidence: [{ kind: "path", value: current.value.exportFile }],
+                metadata: { runtime: "project" },
+              }),
+            ),
+        }),
+      ],
+    })
+    const context = makeResolvedCalibrationContext({
+      repoFacts,
+      activeModules: [module.activeModule],
+      processors: module.processors,
+    })
+
+    const result = await Effect.runPromise(
+      context.runSlot("typescript.export-reachability", {
+        exportFile: "/repo/src/runtime.ts",
+        exportName: "handler",
+        declarationFiles: ["/repo/src/runtime.ts"],
+        declarationKinds: ["VariableDeclaration"],
+        isPublicEntrypoint: false,
+      }),
+    )
+
+    expect(result.value.isPublicEntrypoint).toBe(true)
+    expect(result.value.metadata).toMatchObject({ runtime: "project" })
+    expect(result.decisions[0]).toMatchObject({
+      moduleId: "acme.project",
+      processorId: "runtime-entrypoints",
+      slot: "typescript.export-reachability",
+      action: "mark-public-entrypoint",
+      confidence: "high",
+    })
   })
 
   test("decodes project module manifests with repo-local, workspace, and package refs", async () => {

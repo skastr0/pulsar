@@ -1,10 +1,16 @@
 import {
+  CalibrationContextTag,
   computeDiagnosticHash,
+  type CalibrationDecision,
+  type CalibrationProcessorError,
+  type CalibrationSlotOutput,
   type Diagnostic,
+  type ResolvedCalibrationContext,
   type Signal,
   SignalComputeError,
+  type TypeScriptExportReachabilityValue,
 } from "@taste-codec/core"
-import { Effect, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 import { normalize, resolve } from "node:path"
 import { Node, type SourceFile } from "ts-morph"
 import { TsPackageInfoTag, TsProjectTag } from "../ts-project.js"
@@ -59,9 +65,19 @@ export interface ExportReachability {
 
 export interface TsAb02Output {
   readonly exports: ReadonlyArray<ExportReachability>
+  readonly calibrationDecisions: ReadonlyArray<CalibrationDecision>
   readonly counts: Readonly<Record<ExportClassification, number>>
   readonly boundaryConfined: ReadonlyArray<ExportReachability>
   readonly diagnosticLimit: number
+}
+
+type ExportBinding = ReturnType<typeof collectExportBindings>[number]
+
+interface ReachabilityAnalysis {
+  readonly bindings: ReadonlyArray<ExportBinding>
+  readonly consumerLookup: ReadonlyMap<string, ConsumerLookup>
+  readonly packageNameByFile: ReadonlyMap<string, string | undefined>
+  readonly publicEntryFiles: ReadonlySet<string>
 }
 
 export const TsAb02: Signal<TsAb02Config, TsAb02Output, TsProjectTag | TsPackageInfoTag> = {
@@ -69,6 +85,7 @@ export const TsAb02: Signal<TsAb02Config, TsAb02Output, TsProjectTag | TsPackage
   tier: 1,
   category: "abstraction-bloat",
   kind: "structural",
+  cacheVersion: "calibrated-export-reachability-v1",
   configSchema: TsAb02Config,
   defaultConfig: {
     exclude_globs: [
@@ -142,68 +159,62 @@ export const TsAb02: Signal<TsAb02Config, TsAb02Output, TsProjectTag | TsPackage
     Effect.gen(function* () {
       const project = yield* TsProjectTag
       const packages = yield* TsPackageInfoTag
-      const result = yield* Effect.try({
-        try: (): TsAb02Output => {
-          const sourceFiles = project
-            .getSourceFiles()
-            .filter((sourceFile) => !isExcluded(sourceFile.getFilePath(), config.exclude_globs))
-          const consumerIndex = buildExportConsumerIndex(sourceFiles, packages)
-          const consumerLookup = buildConsumerLookupByFile(consumerIndex)
-          const manifestEntrypointFiles = packageEntrypointSourceFiles(sourceFiles, packages)
-          const publicEntryFiles = publicEntrypointSourceFiles(
-            sourceFiles,
-            manifestEntrypointFiles,
-            config.public_entry_globs,
-          )
-          const packageNameByFile = new Map<string, string | undefined>(
-            sourceFiles.map((sourceFile) => [
-              sourceFile.getFilePath(),
-              packageDisplayName(packageForFile(sourceFile.getFilePath(), packages)),
-            ]),
-          )
-          const entries = sourceFiles
-            .flatMap((sourceFile) => collectExportBindings(sourceFile))
-            .map((binding) => {
-              const consumers = matchingConsumers(
-                consumerLookup.get(binding.exportFile),
-                binding.exportName,
-              )
-              return classifyExport(
-                binding,
-                consumers,
-                packageNameByFile.get(binding.exportFile),
-                config.boundary_rules,
-                publicEntryFiles.has(binding.exportFile) ||
-                  isReExportedByPublicEntrypoint(consumers, publicEntryFiles),
-              )
-            })
-            .sort(compareReachability)
-
-          return {
-            exports: entries,
-            counts: {
-              unused: entries.filter((entry) => entry.classification === "unused").length,
-              "internal-only": entries.filter((entry) => entry.classification === "internal-only").length,
-              "cross-module": entries.filter((entry) => entry.classification === "cross-module").length,
-              "cross-package": entries.filter((entry) => entry.classification === "cross-package").length,
-            },
-            boundaryConfined: entries.filter(
-              (entry) =>
-                config.boundary_rules.length > 0 &&
-                entry.boundaryStatus === "same-boundary" &&
-                entry.classification !== "cross-package",
-            ),
-            diagnosticLimit: config.top_n_diagnostics,
-          }
-        },
-        catch: (cause) =>
-          new SignalComputeError({
-            signalId: "TS-AB-02",
-            message: String(cause),
-            cause,
-          }),
+      const calibration = yield* Effect.serviceOption(CalibrationContextTag)
+      const exportReachabilityCalibration =
+        Option.isSome(calibration) &&
+        calibration.value.processors.some((processor) =>
+          processor.slot === "typescript.export-reachability"
+        )
+          ? calibration.value
+          : undefined
+      const analysis = yield* Effect.try({
+        try: () => buildReachabilityAnalysis(project.getSourceFiles(), packages, config),
+        catch: toSignalComputeError,
       })
-      return result
+      const entries: Array<ExportReachability> = []
+      const calibrationDecisions: Array<CalibrationDecision> = []
+
+      for (const binding of analysis.bindings) {
+        const consumers = matchingConsumers(
+          analysis.consumerLookup.get(binding.exportFile),
+          binding.exportName,
+        )
+        const defaultPublicEntrypoint =
+          analysis.publicEntryFiles.has(binding.exportFile) ||
+          isReExportedByPublicEntrypoint(consumers, analysis.publicEntryFiles)
+        const reachability = yield* calibrateExportReachability(
+          binding,
+          defaultPublicEntrypoint,
+          exportReachabilityCalibration,
+        ).pipe(Effect.mapError(toSignalComputeError))
+        calibrationDecisions.push(...reachability.decisions)
+        entries.push(classifyExport(
+          binding,
+          consumers,
+          analysis.packageNameByFile.get(binding.exportFile),
+          config.boundary_rules,
+          reachability.value.isPublicEntrypoint,
+        ))
+      }
+
+      const sortedEntries = entries.sort(compareReachability)
+      return {
+        exports: sortedEntries,
+        calibrationDecisions,
+        counts: {
+          unused: sortedEntries.filter((entry) => entry.classification === "unused").length,
+          "internal-only": sortedEntries.filter((entry) => entry.classification === "internal-only").length,
+          "cross-module": sortedEntries.filter((entry) => entry.classification === "cross-module").length,
+          "cross-package": sortedEntries.filter((entry) => entry.classification === "cross-package").length,
+        },
+        boundaryConfined: sortedEntries.filter(
+          (entry) =>
+            config.boundary_rules.length > 0 &&
+            entry.boundaryStatus === "same-boundary" &&
+            entry.classification !== "cross-package",
+        ),
+        diagnosticLimit: config.top_n_diagnostics,
+      }
     }),
   score: (out) => {
     if (out.exports.length === 0) return 1
@@ -266,8 +277,71 @@ export const TsAb02: Signal<TsAb02Config, TsAb02Output, TsProjectTag | TsPackage
   },
 }
 
+const buildReachabilityAnalysis = (
+  allSourceFiles: ReadonlyArray<SourceFile>,
+  packages: ReadonlyArray<PackageInfo>,
+  config: TsAb02Config,
+): ReachabilityAnalysis => {
+  const sourceFiles = allSourceFiles
+    .filter((sourceFile) => !isExcluded(sourceFile.getFilePath(), config.exclude_globs))
+  const consumerIndex = buildExportConsumerIndex(sourceFiles, packages)
+  const consumerLookup = buildConsumerLookupByFile(consumerIndex)
+  const manifestEntrypointFiles = packageEntrypointSourceFiles(sourceFiles, packages)
+  const publicEntryFiles = publicEntrypointSourceFiles(
+    sourceFiles,
+    manifestEntrypointFiles,
+    config.public_entry_globs,
+  )
+  const packageNameByFile = new Map<string, string | undefined>(
+    sourceFiles.map((sourceFile) => [
+      sourceFile.getFilePath(),
+      packageDisplayName(packageForFile(sourceFile.getFilePath(), packages)),
+    ]),
+  )
+
+  return {
+    bindings: sourceFiles.flatMap((sourceFile) => collectExportBindings(sourceFile)),
+    consumerLookup,
+    packageNameByFile,
+    publicEntryFiles,
+  }
+}
+
+const calibrateExportReachability = (
+  binding: ExportBinding,
+  isPublicEntrypoint: boolean,
+  calibration: ResolvedCalibrationContext | undefined,
+): Effect.Effect<
+  CalibrationSlotOutput<"typescript.export-reachability">,
+  CalibrationProcessorError,
+  never
+> => {
+  const input: TypeScriptExportReachabilityValue = {
+    exportFile: binding.exportFile,
+    exportName: binding.exportName,
+    declarationFiles: binding.declarationFiles,
+    declarationKinds: binding.localDeclarations.map((declaration) => declaration.getKindName()),
+    declarationTexts: binding.localDeclarations.map((declaration) => declaration.getText()),
+    ...(binding.localDeclarations[0]?.getSourceFile() === undefined
+      ? {}
+      : { sourceText: binding.localDeclarations[0]!.getSourceFile().getFullText() }),
+    isPublicEntrypoint,
+  }
+  if (calibration === undefined) {
+    return Effect.succeed({ value: input, decisions: [] })
+  }
+  return calibration.runSlot("typescript.export-reachability", input)
+}
+
+const toSignalComputeError = (cause: unknown): SignalComputeError =>
+  new SignalComputeError({
+    signalId: "TS-AB-02",
+    message: String(cause),
+    cause,
+  })
+
 const classifyExport = (
-  binding: ReturnType<typeof collectExportBindings>[number],
+  binding: ExportBinding,
   consumers: ReadonlyArray<ExportConsumer>,
   ownPackage: string | undefined,
   boundaryRules: ReadonlyArray<BoundaryRule>,

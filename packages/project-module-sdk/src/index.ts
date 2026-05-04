@@ -19,6 +19,7 @@ import {
   type CalibrationSlotOutput,
   type CalibrationSlotResult,
   type SourceCategory,
+  type TypeScriptExportReachabilityValue,
   type TypeScriptNoopClassificationValue,
   type ProjectModuleDescriptor,
   type ProjectModuleScope,
@@ -61,6 +62,7 @@ export {
   type TypeScriptCallbackContextNameValue,
   type TypeScriptCloneGroupPolicyValue,
   type TypeScriptDependencyResolutionValue,
+  type TypeScriptExportReachabilityValue,
   type TypeScriptNoopClassificationValue,
   type TypeScriptSuppressionJustificationValue,
 } from "@taste-codec/core"
@@ -108,6 +110,15 @@ export interface AddSourceCategoryOptions {
 
 export interface ClassifyTypeScriptNoopOptions {
   readonly classification: TypeScriptNoopClassificationValue["classification"]
+  readonly confidence?: CalibrationDecision["confidence"]
+  readonly action?: string
+  readonly reason: string
+  readonly ruleId?: string
+  readonly evidence?: ReadonlyArray<CalibrationEvidenceRef>
+  readonly metadata?: Readonly<Record<string, unknown>>
+}
+
+export interface MarkTypeScriptPublicEntrypointOptions {
   readonly confidence?: CalibrationDecision["confidence"]
   readonly action?: string
   readonly reason: string
@@ -277,6 +288,31 @@ export const classifyTypeScriptNoop = (
       ...(confidence !== undefined ? { confidence } : {}),
       ...(metadata !== undefined ? { metadata } : {}),
     },
+  )
+}
+
+export const markTypeScriptExportPublicEntrypoint = (
+  current: CalibrationSlotOutput<"typescript.export-reachability">,
+  runtime: ProjectModuleProcessorRuntime<"typescript.export-reachability">,
+  options: MarkTypeScriptPublicEntrypointOptions,
+): CalibrationSlotOutput<"typescript.export-reachability"> => {
+  const metadata = mergeMetadata(current.value.metadata, options.metadata)
+  const nextValue: TypeScriptExportReachabilityValue = {
+    ...current.value,
+    isPublicEntrypoint: true,
+    ...(metadata !== undefined ? { metadata } : {}),
+  }
+  return appendProjectModuleDecision(
+    current,
+    runtime,
+    {
+      action: options.action ?? "mark-public-entrypoint",
+      confidence: options.confidence ?? "high",
+      reason: options.reason,
+      ...(options.ruleId !== undefined ? { ruleId: options.ruleId } : {}),
+      ...(options.evidence !== undefined ? { evidence: options.evidence } : {}),
+    },
+    nextValue,
   )
 }
 
