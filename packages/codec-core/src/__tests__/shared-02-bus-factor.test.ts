@@ -69,6 +69,11 @@ describe("SHARED-02 bus factor", () => {
     try {
       await repo.write("src/production.ts", longFile("production"))
       await repo.write("src/production.test.ts", longFile("test"))
+      await repo.write("examples/demo.ts", longFile("example"))
+      await repo.write("fixtures/case.ts", longFile("fixture"))
+      await repo.write("playground/src/demo.ts", longFile("playground"))
+      await repo.write("src/_generated/api.d.ts", longFile("generated"))
+      await repo.write(".agents/messages/policy.ts", longFile("agent"))
       await repo.write(".opencode/tool/triage.ts", longFile("tool"))
       await repo.write(".pi/extensions/files.ts", longFile("pi"))
       await repo.write("src/happydom.ts", longFile("dom"))

@@ -329,6 +329,23 @@ describe("TS-AB-02 (unused exports reachability)", () => {
     expect(names).not.toContain("createFixture")
   })
 
+  test("excludes example and generated exports from production reachability diagnostics", async () => {
+    await repo.write("src/api.ts", "export const productionUnused = true\n")
+    await repo.write("example/convex/_generated/api.d.ts", "export const api: unknown\n")
+    await repo.write("examples/demo.ts", "export const demoOnly = true\n")
+    await repo.write("playground/src/components/ui/accordion.tsx", "export const Accordion = () => null\n")
+    await repo.write("src/generated/client.ts", "export const generatedClient = true\n")
+
+    const out = await runSignal(repo.root, TsAb02, TsAb02.defaultConfig)
+    const names = out.exports.map((entry) => entry.exportName)
+
+    expect(names).toContain("productionUnused")
+    expect(names).not.toContain("api")
+    expect(names).not.toContain("demoOnly")
+    expect(names).not.toContain("Accordion")
+    expect(names).not.toContain("generatedClient")
+  })
+
   test("expands exported destructuring patterns into real binding names", async () => {
     await repo.write(
       "src/context.ts",

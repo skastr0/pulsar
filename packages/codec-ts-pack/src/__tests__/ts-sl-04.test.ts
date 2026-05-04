@@ -230,6 +230,52 @@ export function done() {
     expect(TsSl04.score(out)).toBe(1)
   })
 
+  test("does not classify explicit unsupported platform throws as unfinished stubs", async () => {
+    await repo.write(
+      "web-host.ts",
+      `
+export const throwNotImplementedOnRNWeb = <T>(): T => {
+  throw new Error("Not implemented on React Native Web");
+}
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
+    expect(out.stubs).toHaveLength(0)
+    expect(TsSl04.score(out)).toBe(1)
+  })
+
+  test("does not classify unsupported React host config contract hooks as unfinished stubs", async () => {
+    await repo.write(
+      "HostConfig.ts",
+      `
+export const sksgHostConfig = {
+  supportsMutation: false,
+  supportsPersistence: true,
+  supportsHydration: false,
+  getRootHostContext: () => ({}),
+  createInstance: () => ({}),
+  getInstanceFromNode: function (_node: unknown) {
+    throw new Error("Function not implemented.");
+  },
+  prepareScopeUpdate: function (_scopeInstance: unknown, _instance: unknown): void {
+    throw new Error("Function not implemented.");
+  },
+  getInstanceFromScope: function (_scopeInstance: unknown) {
+    throw new Error("Function not implemented.");
+  },
+  cloneHiddenInstance() {
+    throw new Error("Not yet implemented.");
+  },
+};
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
+    expect(out.stubs).toHaveLength(0)
+    expect(TsSl04.score(out)).toBe(1)
+  })
+
   test("production empty bodies emit warn severity as lower-confidence evidence", async () => {
     await repo.write(
       "utils.ts",

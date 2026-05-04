@@ -222,6 +222,11 @@ describe("SHARED-03 churn rate", () => {
     try {
       await repo.write("src/production.ts", churnLines("production"))
       await repo.write("src/production.test.ts", churnLines("test"))
+      await repo.write("examples/demo.ts", churnLines("example"))
+      await repo.write("fixtures/case.ts", churnLines("fixture"))
+      await repo.write("playground/src/demo.ts", churnLines("playground"))
+      await repo.write("src/_generated/api.d.ts", churnLines("generated"))
+      await repo.write(".agents/messages/policy.ts", churnLines("agent"))
       await repo.write(".opencode/tool/triage.ts", churnLines("tool"))
       await repo.write(".pi/extensions/files.ts", churnLines("pi"))
       await repo.write("src/happydom.ts", churnLines("dom"))

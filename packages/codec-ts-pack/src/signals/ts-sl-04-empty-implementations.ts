@@ -53,7 +53,7 @@ export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalCon
   tier: 1,
   category: "generated-slop",
   kind: "structural",
-  cacheVersion: "unsupported-capability-throws-and-example-scope-v1",
+  cacheVersion: "framework-contract-unsupported-hooks-v1",
   configSchema: TsSl04Config,
   defaultConfig: {
     exclude_globs: [
@@ -907,6 +907,7 @@ const classifyStub = (fn: FnLike, bodyText: string): { kind: StubKind; message: 
     const throwStubMessage = directStubThrowMessage(fn)
     if (throwStubMessage !== undefined) {
       if (isExplicitUnsupportedCapabilityMessage(throwStubMessage)) return undefined
+      if (isFrameworkContractUnsupportedHook(fn, throwStubMessage)) return undefined
       const message = throwStubMessage.toLowerCase()
       if (/not\s*implemented|todo|fixme|stub/i.test(message)) {
         return { kind: "throw-not-implemented", message: throwStubMessage }
@@ -942,7 +943,37 @@ const MAYBE_TODO_COMMENT_PATTERN = /(?:\/\/|\/\*)[\s\S]*(?:todo|fixme|xxx)/i
 const MAYBE_PLACEHOLDER_RETURN_PATTERN = /\breturn\b[\s\S]*(?:placeholder|mock|todo|fixme|not\s*implemented|stub)/i
 
 const isExplicitUnsupportedCapabilityMessage = (message: string): boolean =>
-  /`[^`]+`\s+on\s+.+\s+is\s+not\s+implemented\s+by\s+[^.]+\./i.test(message)
+  /`[^`]+`\s+on\s+.+\s+is\s+not\s+implemented\s+by\s+[^.]+\./i.test(message) ||
+  /^not\s+implemented\s+on\s+.+/i.test(message)
+
+const isFrameworkContractUnsupportedHook = (fn: FnLike, message: string): boolean => {
+  if (!/^(?:function\s+)?not\s+(?:yet\s+)?implemented\.?$/i.test(message)) {
+    return false
+  }
+
+  const object = objectLiteralParentOfFunctionMember(fn)
+  if (object === undefined) return false
+
+  const memberNames = objectMemberNames(object)
+  const looksLikeReactHostConfig =
+    (memberNames.has("supportsMutation") ||
+      memberNames.has("supportsPersistence") ||
+      memberNames.has("supportsHydration")) &&
+    memberNames.has("getRootHostContext") &&
+    memberNames.has("createInstance")
+
+  if (!looksLikeReactHostConfig) return false
+
+  return REACT_HOST_CONFIG_OPTIONAL_UNSUPPORTED_HOOKS.has(objectMemberNameForFunction(fn))
+}
+
+const REACT_HOST_CONFIG_OPTIONAL_UNSUPPORTED_HOOKS = new Set([
+  "cloneHiddenInstance",
+  "cloneHiddenTextInstance",
+  "getInstanceFromNode",
+  "getInstanceFromScope",
+  "prepareScopeUpdate",
+])
 
 const directStubThrowMessage = (fn: FnLike): string | undefined => {
   const body = functionBodyNode(fn)
