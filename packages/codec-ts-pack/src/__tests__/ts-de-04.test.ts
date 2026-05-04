@@ -1172,4 +1172,32 @@ describe("TS-DE-04 (package dependency health)", () => {
       diagnostic.message.includes("benchmark"),
     )).toBe(false)
   })
+
+  test("does not hard-gate dependencies in SDK sample package paths by default", async () => {
+    await writePackage("app", "@repo/app", {})
+    await repo.write("packages/app/src/index.ts", "export const value = 1\n")
+    await repo.writeJson("google_samples/angular/package.json", {
+      name: "angular-sample",
+      version: "0.0.0",
+      dependencies: {},
+    })
+    await repo.writeJson("google_samples/angular/tsconfig.json", {
+      compilerOptions: {
+        target: "ES2022",
+        module: "ESNext",
+        moduleResolution: "Bundler",
+      },
+      include: ["**/*.ts"],
+    })
+    await repo.write(
+      "google_samples/angular/generate_content.ts",
+      "import { Component } from '@angular/core'\nexport const C = Component\n",
+    )
+
+    const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+    expect(out.packages.some((pkg) => pkg.packageName === "angular-sample")).toBe(false)
+    expect(TsDe04.diagnose(out).some((diagnostic) =>
+      diagnostic.message.includes("@angular/core"),
+    )).toBe(false)
+  })
 })
