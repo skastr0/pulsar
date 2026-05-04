@@ -75,7 +75,11 @@ const loadRuntime = (
 
   const created = Effect.runPromise(
     Effect.gen(function* () {
-      const registry = (yield* buildRegistry(ALL_SIGNALS)) as Registry
+      const signals = yield* Effect.tryPromise({
+        try: () => detectCodecSignals(worktree),
+        catch: (cause) => cause,
+      })
+      const registry = (yield* buildRegistry(signals)) as Registry
       const activePacks = collectActiveLanguagePacks(registry, vector)
       const EngineLayer = ScoringEngineLayer(
         registry,
@@ -97,6 +101,40 @@ const loadRuntime = (
 
   runtimePool.set(key, created)
   return created
+}
+
+const detectCodecSignals = async (worktree: string) => {
+  const result = await execFileAsync(
+    "git",
+    ["ls-files", "--cached", "--others", "--exclude-standard"],
+    { cwd: worktree },
+  )
+  const files = result.stdout
+    .split("\n")
+    .map((file) => file.trim())
+    .filter((file) => file.length > 0)
+  const hasTypeScript = files.some(
+    (file) => file.endsWith(".ts") || file.endsWith(".tsx") || file.endsWith("tsconfig.json"),
+  )
+  const hasRust = files.some(isRustSignalPath)
+
+  return [
+    ...(hasTypeScript || hasRust ? SHARED_SIGNALS : []),
+    ...(hasTypeScript ? TS_PACK_SIGNALS : []),
+    ...(hasRust ? RS_PACK_SIGNALS : []),
+  ]
+}
+
+const isRustSignalPath = (file: string): boolean => {
+  if (!(file.endsWith(".rs") || file.endsWith("Cargo.toml") || file.endsWith("Cargo.lock"))) {
+    return false
+  }
+  return !(
+    file.includes("/__tests__/fixtures/") ||
+    file.includes("/dist/") ||
+    file.includes("/target/") ||
+    file.includes("/node_modules/")
+  )
 }
 
 const collectActiveLanguagePacks = (
