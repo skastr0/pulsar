@@ -866,6 +866,15 @@ const readResolvedPackageNames = async (worktreePath: string): Promise<ReadonlyS
     // Missing/unsupported lockfiles should not make the signal fail.
   }
 
+  try {
+    const parsed = await readPackageLockPackageNames(join(worktreePath, "package-lock.json"))
+    for (const packageName of parsed) {
+      packageNames.add(packageName)
+    }
+  } catch {
+    // Missing/unsupported lockfiles should not make the signal fail.
+  }
+
   return packageNames
 }
 
@@ -903,6 +912,44 @@ const packageNameFromPnpmLockKey = (lockKey: string): string | undefined => {
 
   const versionSeparator = normalized.indexOf("@")
   return versionSeparator <= 0 ? undefined : normalized.slice(0, versionSeparator)
+}
+
+const readPackageLockPackageNames = async (filePath: string): Promise<ReadonlySet<string>> => {
+  const parsed = JSON.parse(await readFile(filePath, "utf8")) as Record<string, unknown>
+  const packageNames = new Set<string>()
+  const packages = asRecord(parsed.packages)
+  if (packages !== undefined) {
+    for (const key of Object.keys(packages)) {
+      const packageName = packageNameFromPackageLockPath(key)
+      if (packageName !== undefined) {
+        packageNames.add(packageName)
+      }
+    }
+  }
+
+  const dependencies = asRecord(parsed.dependencies)
+  if (dependencies !== undefined) {
+    for (const dependencyName of Object.keys(dependencies)) {
+      if (dependencyName.length > 0) {
+        packageNames.add(dependencyName)
+      }
+    }
+  }
+  return packageNames
+}
+
+const packageNameFromPackageLockPath = (lockPath: string): string | undefined => {
+  const marker = "node_modules/"
+  const index = lockPath.lastIndexOf(marker)
+  if (index === -1) return undefined
+
+  const rest = lockPath.slice(index + marker.length)
+  if (rest.length === 0) return undefined
+  const parts = rest.split("/")
+  if (parts[0]?.startsWith("@")) {
+    return parts[1] === undefined ? undefined : `${parts[0]}/${parts[1]}`
+  }
+  return parts[0]
 }
 
 const readPathAliasesByPackage = async (

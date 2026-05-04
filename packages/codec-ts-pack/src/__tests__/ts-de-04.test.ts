@@ -675,6 +675,32 @@ describe("TS-DE-04 (package dependency health)", () => {
     ])
   })
 
+  test("uses npm package-lock files to separate transitive usage from missing deps", async () => {
+    await writePackage("app", "@repo/app", {})
+    await repo.write(
+      "packages/app/src/index.ts",
+      "import ansiEscapes from 'ansi-escapes'\nexport const value = ansiEscapes.cursorHide\n",
+    )
+    await repo.writeJson("package-lock.json", {
+      lockfileVersion: 3,
+      packages: {
+        "": {
+          workspaces: ["packages/app"],
+        },
+        "node_modules/ansi-escapes": {
+          version: "7.1.0",
+        },
+      },
+    })
+
+    const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+
+    expect(out.packages[0]?.importedButNotDeclared).toEqual([])
+    expect(out.packages[0]?.transitiveUsedDirectly).toEqual([
+      { dependencyName: "ansi-escapes", files: [`${repo.root}/packages/app/src/index.ts`] },
+    ])
+  })
+
   test("flags dev dependencies imported from production files", async () => {
     await writePackage("app", "@repo/app", {
       devDependencies: {
