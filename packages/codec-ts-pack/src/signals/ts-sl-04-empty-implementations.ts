@@ -46,6 +46,7 @@ export interface TsSl04Output {
   readonly testStubs: ReadonlyArray<Stub>
   readonly totalFunctions: number
   readonly hardGateProduction: boolean
+  readonly diagnosticLimit: number
 }
 
 export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalContextTag> = {
@@ -207,6 +208,7 @@ export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalCon
             testStubs: stubs.filter((s) => s.inTestPath),
             totalFunctions,
             hardGateProduction: config.hard_gate_production,
+            diagnosticLimit: config.top_n_diagnostics,
           }
         },
         catch: (cause) =>
@@ -221,11 +223,18 @@ export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalCon
       (sum, stub) => sum + stub.penaltyWeight,
       0,
     )
-    return Math.max(0, 1 - Math.min(1, weightedProductionStubs / expectedCleanBudget))
+    const baseScore = Math.max(0, 1 - Math.min(1, weightedProductionStubs / expectedCleanBudget))
+    const highConfidenceProductionStubs = out.productionStubs.filter(
+      (stub) => stub.confidence === "high",
+    ).length
+    if (highConfidenceProductionStubs > 0) {
+      return Math.min(baseScore, 0.8)
+    }
+    return baseScore
   },
   diagnose: (out): ReadonlyArray<Diagnostic> => {
     const diagnostics: Array<Diagnostic> = []
-    const topN = out.stubs.slice(0, 20)
+    const topN = out.stubs.slice(0, out.diagnosticLimit)
 
     for (const stub of topN) {
       const severity =

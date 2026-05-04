@@ -459,6 +459,60 @@ export function stub3() {
     expect(score).toBeGreaterThanOrEqual(0)
   })
 
+  test("high-confidence production stubs cap the score even in large repos", () => {
+    const score = TsSl04.score({
+      stubs: [
+        {
+          file: "/repo/src/auth.ts",
+          name: "authenticate",
+          line: 10,
+          kind: "throw-not-implemented",
+          confidence: "high",
+          penaltyWeight: 1,
+          inTestPath: false,
+          message: "Authentication not implemented",
+        },
+      ],
+      byKind: new Map([["throw-not-implemented", 1]]),
+      productionStubs: [
+        {
+          file: "/repo/src/auth.ts",
+          name: "authenticate",
+          line: 10,
+          kind: "throw-not-implemented",
+          confidence: "high",
+          penaltyWeight: 1,
+          inTestPath: false,
+          message: "Authentication not implemented",
+        },
+      ],
+      testStubs: [],
+      totalFunctions: 10_000,
+      hardGateProduction: true,
+      diagnosticLimit: 20,
+    })
+
+    expect(score).toBe(0.8)
+  })
+
+  test("diagnostics honor configured top_n_diagnostics", async () => {
+    await repo.write(
+      "utils.ts",
+      Array.from({ length: 3 }, (_, index) => `
+export function stub${index}() {
+  throw new Error("Not implemented");
+}
+`).join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsSl04, {
+      ...TsSl04.defaultConfig,
+      top_n_diagnostics: 2,
+    })
+
+    expect(TsSl04.diagnose(out)).toHaveLength(2)
+  })
+
   test("diff-aware: only flags stubs in changed hunks", async () => {
     await repo.write(
       "utils.ts",
