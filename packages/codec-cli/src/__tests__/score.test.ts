@@ -830,6 +830,22 @@ export function stubF() { throw new Error("Not implemented") }
     }
   }, 120_000)
 
+  test("invalid single-signal option combinations print clean CLI errors", async () => {
+    const repoPath = await initRepo(simpleRepoFiles())
+    try {
+      const out = runCli(repoPath, ["score", "--signal", "TS-AD-02", "--profile", "."])
+
+      expect(out.status).toBe(1)
+      expect(out.stderr).toContain(
+        "taste score failed: taste score --profile is only supported in full Observer mode",
+      )
+      expect(out.stderr).not.toContain("FiberFailure")
+      expect(out.stderr).not.toContain("validateScoreOptions")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
   test("single-signal diagnostics render readable repo-relative locations", async () => {
     const repoPath = await initRepo([
       {

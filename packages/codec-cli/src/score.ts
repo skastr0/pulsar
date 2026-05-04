@@ -62,7 +62,7 @@ const DIAGNOSTIC_DETAIL_MAX_LENGTH = 220
 
 export const runScoreCommand = (opts: ScoreOptions) =>
   Effect.gen(function* () {
-    validateScoreOptions(opts)
+    yield* validateScoreOptions(opts)
 
     if (opts.signalId !== undefined) {
       return yield* runSingleSignalMode(opts)
@@ -289,25 +289,27 @@ const runSingleSignalMode = (opts: ScoreOptions) =>
     return 0
   })
 
-const validateScoreOptions = (opts: ScoreOptions): void => {
+const validateScoreOptions = (opts: ScoreOptions): Effect.Effect<void, Error> => {
   if (opts.signalId !== undefined) {
     if (opts.json === true) {
-      throw new Error("taste score --json is only supported in full Observer mode")
+      return Effect.fail(new Error("taste score --json is only supported in full Observer mode"))
     }
     if (opts.category !== undefined) {
-      throw new Error("taste score --category is only supported in full Observer mode")
+      return Effect.fail(new Error("taste score --category is only supported in full Observer mode"))
     }
     if (opts.ci === true) {
-      throw new Error("taste score --ci is only supported in full Observer mode")
+      return Effect.fail(new Error("taste score --ci is only supported in full Observer mode"))
     }
     if (opts.profile === true) {
-      throw new Error("taste score --profile is only supported in full Observer mode")
+      return Effect.fail(new Error("taste score --profile is only supported in full Observer mode"))
     }
   }
 
   if (opts.category !== undefined && (opts.json === true || opts.ci === true)) {
-    throw new Error("--category cannot be combined with --json or --ci")
+    return Effect.fail(new Error("--category cannot be combined with --json or --ci"))
   }
+
+  return Effect.void
 }
 
 const assessCiMode = (
