@@ -443,6 +443,9 @@ const printCategoryView = (opts: {
   console.log(
     `  ${CATEGORY_LABELS[opts.category].padEnd(22, " ")} ${entry.score.toFixed(2)}  ${renderScoreBar(entry.score)}`,
   )
+  if (opts.output.hard_gate_status === "fail") {
+    console.log(`  Hard Gate             ${renderGateStatus(opts.output.hard_gate_status, false)}`)
+  }
   printCategoryScoreMath(entry)
   if (signalEntries.length === 0) {
     console.log("")

@@ -223,7 +223,7 @@ describe("taste score", () => {
     }
   }, 120_000)
 
-  test("--category narrows human output and omits weighted mean + gate", async () => {
+  test("--category narrows human output and omits weighted mean plus passing gate", async () => {
     const repoPath = await initRepo(simpleRepoFiles())
     try {
       const out = runCli(repoPath, ["score", "--category", "abstraction-bloat", "."])
@@ -498,6 +498,7 @@ export function stubF() { throw new Error("Not implemented") }
       const out = runCli(repoPath, ["score", "--category", "generated-slop", "."])
       expect(out.status).toBe(0)
       expect(out.stdout).toContain("Top Findings")
+      expect(out.stdout).toContain("Hard Gate             FAIL")
       expect(out.stdout).toContain("TS-SL-04 BLOCK")
       expect(out.stdout).toContain("TS-SL-03 WARN")
       expect(out.stdout).toContain("ts-ignore is missing justification")
