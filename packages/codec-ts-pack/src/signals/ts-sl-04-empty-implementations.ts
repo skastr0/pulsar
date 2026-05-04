@@ -53,7 +53,7 @@ export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalCon
   tier: 1,
   category: "generated-slop",
   kind: "structural",
-  cacheVersion: "server-framework-contract-noops-v1",
+  cacheVersion: "contract-noops-v2",
   configSchema: TsSl04Config,
   defaultConfig: {
     exclude_globs: [
@@ -366,6 +366,10 @@ const isIntentionalNoop = (filePath: string, fn: FnLike, bodyText: string): bool
     return true
   }
 
+  if (isOptionalProtectedFrameworkHookNoop(fn)) {
+    return true
+  }
+
   if (isYargsParentCommandHandler(fn)) {
     return true
   }
@@ -403,6 +407,10 @@ const isIntentionalNoop = (filePath: string, fn: FnLike, bodyText: string): bool
   }
 
   if (isFallbackCallbackInitializer(fn)) {
+    return true
+  }
+
+  if (isConsoleMethodSilencingNoop(fn)) {
     return true
   }
 
@@ -590,6 +598,19 @@ const isProtectedHookNoop = (fn: FnLike): boolean => {
   return fn.getParameters().every((parameter) => parameter.getName().startsWith("_"))
 }
 
+const OPTIONAL_PROTECTED_FRAMEWORK_HOOK_NAMES = new Set([
+  "buildWrangler",
+  "normalizeBuildCommand",
+  "validate",
+])
+
+const isOptionalProtectedFrameworkHookNoop = (fn: FnLike): boolean => {
+  if (!Node.isMethodDeclaration(fn)) return false
+  if (!/\bprotected\b/.test(fn.getText())) return false
+  if (!OPTIONAL_PROTECTED_FRAMEWORK_HOOK_NAMES.has(fn.getName())) return false
+  return fn.getParameters().every((parameter) => parameter.getName().startsWith("_"))
+}
+
 const isYargsParentCommandHandler = (fn: FnLike): boolean => {
   const parent = fn.getParent()
   let object: import("ts-morph").ObjectLiteralExpression | undefined
@@ -737,6 +758,17 @@ const isFallbackCallbackInitializer = (fn: FnLike): boolean => {
   return /^(?:log|logger|debug|trace|warn|error|noop|fallback)/i.test(declaration.getName())
 }
 
+const isConsoleMethodSilencingNoop = (fn: FnLike): boolean => {
+  if (!Node.isArrowFunction(fn) && !Node.isFunctionExpression(fn)) return false
+  const parent = fn.getParent()
+  if (!Node.isBinaryExpression(parent) || parent.getOperatorToken().getText() !== "=") return false
+  if (parent.getRight() !== fn) return false
+  const left = parent.getLeft()
+  if (!Node.isPropertyAccessExpression(left)) return false
+  if (left.getExpression().getText() !== "console") return false
+  return ["debug", "error", "info", "log", "trace", "warn"].includes(left.getName())
+}
+
 const isExpressionBodyReturnedNoop = (fn: FnLike): boolean => {
   if (!Node.isArrowFunction(fn) && !Node.isFunctionExpression(fn)) return false
   const parent = fn.getParent()
@@ -798,7 +830,12 @@ const isServerReactiveContractNoop = (filePath: string, fn: FnLike): boolean => 
   }
 
   if (/(?:^|[\\/])server[\\/]rendering\.tsx?$/.test(filePath)) {
-    return ["f callback", "resetErrorBoundaries"].includes(getFunctionName(fn))
+    return [
+      "enableHydration",
+      "enableScheduling",
+      "f callback",
+      "resetErrorBoundaries",
+    ].includes(getFunctionName(fn))
   }
 
   return false
@@ -820,6 +857,7 @@ const COMMON_EMPTY_CONTRACT_CALLBACKS = new Set([
   "prepareProviderDynamicModel",
   "refreshTypingTtl",
   "release",
+  "releaseRetryTokens",
   "sendPairingReply",
   "startTypingLoop",
   "startTypingOnText",

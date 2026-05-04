@@ -110,6 +110,8 @@ export function enableExternalSource(factory: unknown) {}
       "src/server/rendering.ts",
       `
 export function resetErrorBoundaries() {}
+export function enableScheduling() {}
+export function enableHydration() {}
 export function ErrorBoundary(props: { fallback: (err: unknown, reset: () => void) => string }) {
   const f = props.fallback;
   return f(new Error("boom"), () => {});
@@ -547,6 +549,25 @@ abstract class BaseHandler {
     expect(out.stubs).toHaveLength(0)
   })
 
+  test("does not classify optional protected framework hook no-ops as unfinished stubs", async () => {
+    await repo.write(
+      "site.ts",
+      `
+abstract class Site {
+  protected validate(_sitePath: string): void {}
+  protected buildWrangler(_sitePath: string): undefined {}
+}
+
+class Remix extends Site {
+  protected normalizeBuildCommand() {}
+}
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
+    expect(out.stubs).toHaveLength(0)
+  })
+
   test("does not classify yargs parent command handlers as unfinished stubs", async () => {
     await repo.write(
       "command.ts",
@@ -917,6 +938,10 @@ export function run(opts: { log?: () => void }) {
   const log = opts.log ?? (() => {})
   log()
 }
+
+export function configureLogger() {
+  console.debug = () => {}
+}
 `,
     )
 
@@ -1190,6 +1215,7 @@ export const responder = {
   markRunComplete: () => {},
   notifyStarted: () => {},
   release: () => {},
+  releaseRetryTokens: () => {},
   stop: () => {},
   async *[Symbol.asyncIterator]() {},
 }
