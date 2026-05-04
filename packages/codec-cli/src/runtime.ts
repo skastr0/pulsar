@@ -142,7 +142,7 @@ export const runSignalInWorktree = (
       yield* validateVectorAgainstCodecSignals(vector, repoRoot)
     }
 
-    const EnvLayer = yield* buildWorktreeEnvLayer(repoRoot, gitSha)
+    const EnvLayer = yield* buildWorktreeEnvLayer(repoRoot, gitSha, signalId)
     const result = yield* (Effect.provide(
       runSignal(registry, signalId, vector),
       EnvLayer,
@@ -221,7 +221,7 @@ const collectActiveLanguagePacks = (
   return { typescript, rust }
 }
 
-const buildWorktreeEnvLayer = (repoRoot: string, gitSha: string) =>
+const buildWorktreeEnvLayer = (repoRoot: string, gitSha: string, signalId: string) =>
   Effect.gen(function* () {
     const referenceEntries = yield* loadCanonicalReferenceDataEntries(repoRoot)
     const changedHunks = yield* collectWorktreeChangedHunks(repoRoot)
@@ -239,8 +239,10 @@ const buildWorktreeEnvLayer = (repoRoot: string, gitSha: string) =>
       ContextLayer,
       ReferenceLayer,
       InMemoryCacheLayer,
-      TsProjectLayer(repoRoot),
-      RustProjectLayer(repoRoot),
+      signalId.startsWith("TS-")
+        ? TsProjectLayer(repoRoot, { productionOnly: true })
+        : Layer.empty,
+      signalId.startsWith("RS-") ? RustProjectLayer(repoRoot) : Layer.empty,
     )
   })
 
