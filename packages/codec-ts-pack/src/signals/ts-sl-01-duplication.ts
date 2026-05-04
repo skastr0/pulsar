@@ -67,7 +67,7 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
   tier: 1,
   category: "generated-slop",
   kind: "legibility",
-  cacheVersion: "changed-aware-ignore-svg-icons-v1",
+  cacheVersion: "changed-aware-generated-openapi-v1",
   configSchema: TsSl01Config,
   defaultConfig: {
     exclude_globs: [
@@ -308,6 +308,7 @@ const isGeneratedSourceFileHeader = (header: string): boolean => {
   return (
     /\bcode generated\b[\s\S]{0,160}\bdo not edit\b/i.test(header) ||
     /\bauto-generated\b[\s\S]{0,160}\bdo not edit\b/i.test(header) ||
+    /\bfile generated from\b[\s\S]{0,160}\bopenapi spec\b/i.test(header) ||
     /@generated\b/i.test(header)
   )
 }

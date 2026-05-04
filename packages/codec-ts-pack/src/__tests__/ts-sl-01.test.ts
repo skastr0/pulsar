@@ -512,6 +512,30 @@ export function readOrder(input: string) {
     expect(out.groups).toEqual([])
   })
 
+  test("excludes OpenAPI-generated SDK files with Stainless headers", async () => {
+    const generated = `
+/**
+ * @license
+ * Copyright 2025 Example
+ */
+
+// File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
+
+export class Users {
+  delete(id: string, params: { api_version?: string } | null | undefined = {}) {
+    const { api_version = "v1" } = params ?? {}
+    return this.client.delete(\`/\${api_version}/users/\${id}\`)
+  }
+}
+`
+    await repo.write("src/resources/users.ts", generated)
+    await repo.write("src/resources/projects.ts", generated.replaceAll("Users", "Projects").replaceAll("users", "projects"))
+
+    const out = await runSignal(repo.root, TsSl01, TsSl01.defaultConfig)
+    expect(out.totalFunctionsAnalyzed).toBe(0)
+    expect(out.groups).toEqual([])
+  })
+
   test("diff-aware: only flags duplicates in changed hunks", async () => {
     await repo.write(
       "utils.ts",
