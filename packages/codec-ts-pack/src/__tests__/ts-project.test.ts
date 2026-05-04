@@ -22,7 +22,7 @@ const write = async (relPath: string, content: string): Promise<void> => {
 }
 
 describe("TsProject", () => {
-  test("does not include .agents files from broad tsconfig globs", async () => {
+  test("does not include hidden metadata files from broad tsconfig globs", async () => {
     await write(
       "tsconfig.json",
       JSON.stringify({
@@ -34,23 +34,23 @@ describe("TsProject", () => {
       }),
     )
     await write("src/index.ts", "export const product = true\n")
-    await write(".agents/policy.ts", "export const ambientAgentData = true\n")
+    await write(".metadata/policy.ts", "export const ambientMetadata = true\n")
 
     const project = await Effect.runPromise(makeTsProject(tmp))
     const files = project.getSourceFiles().map((sourceFile) => sourceFile.getFilePath())
 
     expect(files.some((file) => file.endsWith("src/index.ts"))).toBe(true)
-    expect(files.some((file) => file.includes("/.agents/"))).toBe(false)
+    expect(files.some((file) => file.includes("/.metadata/"))).toBe(false)
   })
 
-  test("production-only file discovery also skips .agents files", async () => {
+  test("production-only file discovery also skips hidden metadata files", async () => {
     await write("src/index.ts", "export const product = true\n")
-    await write(".agents/policy.ts", "export const ambientAgentData = true\n")
+    await write(".metadata/policy.ts", "export const ambientMetadata = true\n")
 
     const project = await Effect.runPromise(makeTsProjectWithOptions(tmp, { productionOnly: true }))
     const files = project.getSourceFiles().map((sourceFile) => sourceFile.getFilePath())
 
     expect(files.some((file) => file.endsWith("src/index.ts"))).toBe(true)
-    expect(files.some((file) => file.includes("/.agents/"))).toBe(false)
+    expect(files.some((file) => file.includes("/.metadata/"))).toBe(false)
   })
 })

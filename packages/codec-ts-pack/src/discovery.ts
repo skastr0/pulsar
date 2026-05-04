@@ -25,17 +25,10 @@ export interface PackageInfo {
 }
 
 const IGNORE_DIRS: ReadonlySet<string> = new Set([
-  ".agents",
   "node_modules",
-  ".git",
   "dist",
   "build",
-  ".next",
-  ".nuxt",
-  ".output",
   "coverage",
-  ".turbo",
-  ".cache",
 ])
 
 export const discoverPackages = (rootDir: string): Effect.Effect<ReadonlyArray<PackageInfo>> =>
@@ -265,7 +258,13 @@ const nearestTsconfigPackage = (
     .find((pkg) => packagePath === pkg.path || packagePath.startsWith(`${pkg.path}/`))
 
 const isIgnoredPath = (file: string): boolean =>
-  file.split(/[\\/]+/).some((part) => IGNORE_DIRS.has(part))
+  file.split(/[\\/]+/).some((part) => IGNORE_DIRS.has(part) || isHiddenDirectoryName(part))
+
+const isIgnoredDirectoryName = (name: string): boolean =>
+  IGNORE_DIRS.has(name) || isHiddenDirectoryName(name)
+
+const isHiddenDirectoryName = (name: string): boolean =>
+  name.startsWith(".") && name.length > 1
 
 const walkForTsconfigs = async (dir: string): Promise<Array<string>> => {
   const results: Array<string> = []
@@ -273,7 +272,7 @@ const walkForTsconfigs = async (dir: string): Promise<Array<string>> => {
     const entries = await readdir(dir, { withFileTypes: true })
     for (const entry of entries) {
       if (entry.isDirectory()) {
-        if (IGNORE_DIRS.has(entry.name)) continue
+        if (isIgnoredDirectoryName(entry.name)) continue
         results.push(...(await walkForTsconfigs(join(dir, entry.name))))
       } else if (entry.name === "tsconfig.json") {
         results.push(join(dir, entry.name))
@@ -292,7 +291,7 @@ const walkForDiscoverableFiles = async (rootDir: string, dir: string): Promise<A
     for (const entry of entries) {
       const fullPath = join(dir, entry.name)
       if (entry.isDirectory()) {
-        if (IGNORE_DIRS.has(entry.name)) continue
+        if (isIgnoredDirectoryName(entry.name)) continue
         results.push(...(await walkForDiscoverableFiles(rootDir, fullPath)))
       } else if (
         entry.name === "package.json" ||

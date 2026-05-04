@@ -217,7 +217,7 @@ describe("SHARED-03 churn rate", () => {
     }
   })
 
-  test("excludes tests and agent harness directories from default production churn pressure", async () => {
+  test("excludes tests and hidden metadata directories from default production churn pressure", async () => {
     const repo = await createGitTestRepo("taste-codec-shared-03-excludes-")
     try {
       await repo.write("src/production.ts", churnLines("production"))
@@ -226,9 +226,9 @@ describe("SHARED-03 churn rate", () => {
       await repo.write("fixtures/case.ts", churnLines("fixture"))
       await repo.write("playground/src/demo.ts", churnLines("playground"))
       await repo.write("src/_generated/api.d.ts", churnLines("generated"))
-      await repo.write(".agents/messages/policy.ts", churnLines("agent"))
-      await repo.write(".opencode/tool/triage.ts", churnLines("tool"))
-      await repo.write(".pi/extensions/files.ts", churnLines("pi"))
+      await repo.write(".metadata/messages/policy.ts", churnLines("metadata"))
+      await repo.write(".tooling/tool/triage.ts", churnLines("tool"))
+      await repo.write(".cache-runtime/extensions/files.ts", churnLines("runtime"))
       await repo.write("src/happydom.ts", churnLines("dom"))
       await repo.commitAll({
         message: "introduce production and harness lines",

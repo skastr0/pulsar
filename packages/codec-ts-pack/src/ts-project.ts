@@ -117,7 +117,7 @@ const addSourceFiles = (
 const addWorktreeGlob = (project: Project, worktreePath: string, options?: TsProjectOptions): void => {
   const globs = [
     `${worktreePath}/**/*.{ts,tsx}`,
-    `!${worktreePath}/**/.agents/**`,
+    `!${worktreePath}/**/.*/**`,
     `!${worktreePath}/**/node_modules/**`,
     `!${worktreePath}/**/dist/**`,
     `!${worktreePath}/**/build/**`,
@@ -173,7 +173,7 @@ const removeIgnoredSourceFiles = (project: Project): void => {
 }
 
 const hasIgnoredPathSegment = (filePath: string): boolean =>
-  filePath.split(/[\\/]+/).includes(".agents")
+  filePath.split(/[\\/]+/).some(isHiddenPathSegment)
 
 const listProductionTypeScriptFiles = (
   worktreePath: string,
@@ -238,15 +238,18 @@ const isProductionTypeScriptFile = (file: string): boolean => {
     "coverage",
     ".turbo",
     ".cache",
-    ".agents",
     "vendor",
     "gen",
     "__tests__",
     "test",
     "tests",
     "test-support",
-  ].some((segment) => file.split("/").includes(segment))
+  ].some((segment) => file.split("/").includes(segment)) ||
+  file.split("/").some(isHiddenPathSegment)
 }
+
+const isHiddenPathSegment = (segment: string): boolean =>
+  segment.startsWith(".") && segment.length > 1
 
 export const TsProjectLayer = (
   worktreePath: string,

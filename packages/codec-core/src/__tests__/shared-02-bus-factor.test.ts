@@ -65,7 +65,7 @@ describe("SHARED-02 bus factor", () => {
     }
   })
 
-  test("excludes tests and agent harness directories from default production bus-factor pressure", async () => {
+  test("excludes tests and hidden metadata directories from default production bus-factor pressure", async () => {
     const repo = await createGitTestRepo("taste-codec-shared-02-excludes-")
     try {
       await repo.write("src/production.ts", longFile("production"))
@@ -74,9 +74,9 @@ describe("SHARED-02 bus factor", () => {
       await repo.write("fixtures/case.ts", longFile("fixture"))
       await repo.write("playground/src/demo.ts", longFile("playground"))
       await repo.write("src/_generated/api.d.ts", longFile("generated"))
-      await repo.write(".agents/messages/policy.ts", longFile("agent"))
-      await repo.write(".opencode/tool/triage.ts", longFile("tool"))
-      await repo.write(".pi/extensions/files.ts", longFile("pi"))
+      await repo.write(".metadata/messages/policy.ts", longFile("metadata"))
+      await repo.write(".tooling/tool/triage.ts", longFile("tool"))
+      await repo.write(".cache-runtime/extensions/files.ts", longFile("runtime"))
       await repo.write("src/happydom.ts", longFile("dom"))
       await repo.commitAll({
         message: "touch production and harness files",
