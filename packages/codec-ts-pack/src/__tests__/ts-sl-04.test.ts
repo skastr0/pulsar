@@ -983,6 +983,61 @@ class BorrowedManager implements Manager {
     expect(out.stubs).toEqual([])
   })
 
+  test("does not classify common empty contract callbacks as unfinished stubs", async () => {
+    await repo.write(
+      "contracts.ts",
+      `
+export const responder = {
+  ack: async () => {},
+  acknowledge: async () => {},
+  close: async () => {},
+  dispose: () => {},
+  cleanup: async () => {},
+  log: () => {},
+  markDispatchIdle: () => {},
+  markRunComplete: () => {},
+  notifyStarted: () => {},
+  release: () => {},
+  stop: () => {},
+  async *[Symbol.asyncIterator]() {},
+}
+
+const clearProviderRuntimeHookCache = () => {}
+export function clearSetupPromotionRuntimeModuleCache() {}
+const prepareProviderDynamicModel = async () => {}
+export const hooks = {
+  clearProviderRuntimeHookCache,
+  prepareProviderDynamicModel,
+}
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
+    expect(out.stubs).toEqual([])
+  })
+
+  test("does not classify keepalive timer and registration marker callbacks as unfinished stubs", async () => {
+    await repo.write(
+      "callbacks.ts",
+      `
+const interval = setInterval(() => {}, 1_000)
+setTimeout(function () {}, 1_000)
+
+const api = {
+  registerCli(callback: () => void, _opts: unknown) {
+    return callback
+  },
+}
+
+api.registerCli(() => {}, { commands: ["demo"] })
+export const value = interval
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
+    expect(out.stubs).toEqual([])
+  })
+
   test("handles async functions with empty body", async () => {
     await repo.write(
       "utils.ts",

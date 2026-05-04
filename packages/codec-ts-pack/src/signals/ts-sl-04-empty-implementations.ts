@@ -391,6 +391,18 @@ const isIntentionalNoop = (filePath: string, fn: FnLike, bodyText: string): bool
     return true
   }
 
+  if (isCommonEmptyContractCallback(fn)) {
+    return true
+  }
+
+  if (isTimerKeepAliveNoop(fn)) {
+    return true
+  }
+
+  if (isRegistrationMarkerNoop(fn)) {
+    return true
+  }
+
   if (isConditionalNoopBranch(fn)) {
     return true
   }
@@ -739,6 +751,62 @@ const isUnavailableCapabilitySetterNoop = (fn: FnLike): boolean => {
       (name === "credentialPath" && /^["']{2}$/.test(value ?? ""))
     )
   })
+}
+
+const COMMON_EMPTY_CONTRACT_CALLBACKS = new Set([
+  "ack",
+  "acknowledge",
+  "cleanup",
+  "clearSetupPromotionRuntimeModuleCache",
+  "clearProviderRuntimeHookCache",
+  "close",
+  "dispose",
+  "log",
+  "markDispatchIdle",
+  "markRunComplete",
+  "notifyStarted",
+  "onReplyStart",
+  "prepareProviderDynamicModel",
+  "refreshTypingTtl",
+  "release",
+  "sendPairingReply",
+  "startTypingLoop",
+  "startTypingOnText",
+  "stop",
+  "[Symbol.asyncIterator]",
+])
+
+const isCommonEmptyContractCallback = (fn: FnLike): boolean => {
+  if (
+    !Node.isArrowFunction(fn) &&
+    !Node.isFunctionExpression(fn) &&
+    !Node.isFunctionDeclaration(fn) &&
+    !Node.isMethodDeclaration(fn)
+  ) {
+    return false
+  }
+  if (fn.getParameters().length > 0) return false
+  if (Node.isMethodDeclaration(fn) && !Node.isObjectLiteralExpression(fn.getParent())) return false
+  return COMMON_EMPTY_CONTRACT_CALLBACKS.has(objectMemberNameForFunction(fn))
+}
+
+const isTimerKeepAliveNoop = (fn: FnLike): boolean => {
+  if (!Node.isArrowFunction(fn) && !Node.isFunctionExpression(fn)) return false
+  if (fn.getParameters().length > 0) return false
+  const parent = fn.getParent()
+  if (!Node.isCallExpression(parent)) return false
+  const expression = parent.getExpression().getText()
+  return expression === "setInterval" || expression === "setTimeout"
+}
+
+const isRegistrationMarkerNoop = (fn: FnLike): boolean => {
+  if (!Node.isArrowFunction(fn) && !Node.isFunctionExpression(fn)) return false
+  if (fn.getParameters().length > 0) return false
+  const parent = fn.getParent()
+  if (!Node.isCallExpression(parent)) return false
+  const firstArg = parent.getArguments()[0]
+  if (firstArg !== fn) return false
+  return /\.register[A-Z]/.test(parent.getExpression().getText())
 }
 
 const nearestPropertyAssignment = (
