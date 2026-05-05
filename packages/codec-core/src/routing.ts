@@ -1,6 +1,5 @@
 import { readdir, readFile } from "node:fs/promises"
-import { dirname, join } from "node:path"
-import { fileURLToPath } from "node:url"
+import { join } from "node:path"
 import { Effect, Schema } from "effect"
 import { ChangedHunk } from "./context.js"
 import type { Diagnostic } from "./diagnostic.js"
@@ -8,6 +7,12 @@ import { RoutingPatternLoadFailed } from "./errors.js"
 import { matchesGlob } from "./globs.js"
 import type { ObserverOutput } from "./observer.js"
 import type { SignalRunResult } from "./runner.js"
+import apiSurfaceChangePattern from "../routing-patterns/api-surface-change.json" with { type: "json" }
+import authPathsTouchedPattern from "../routing-patterns/auth-paths-touched.json" with { type: "json" }
+import cryptoImportAddedPattern from "../routing-patterns/crypto-import-added.json" with { type: "json" }
+import domainTermDriftPattern from "../routing-patterns/domain-term-drift.json" with { type: "json" }
+import migrationAddedPattern from "../routing-patterns/migration-added.json" with { type: "json" }
+import unsafeAddedPattern from "../routing-patterns/unsafe-added.json" with { type: "json" }
 
 export const Location = Schema.Struct({
   file: Schema.String,
@@ -123,11 +128,14 @@ export type RoutingOutput = typeof RoutingOutput.Type
 
 const RoutingPatternFile = Schema.Union(RoutingPattern, Schema.Array(RoutingPattern))
 
-const SHIPPED_ROUTING_PATTERNS_DIR = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "..",
-  "routing-patterns",
-)
+const SHIPPED_ROUTING_PATTERNS = [
+  apiSurfaceChangePattern,
+  authPathsTouchedPattern,
+  cryptoImportAddedPattern,
+  domainTermDriftPattern,
+  migrationAddedPattern,
+  unsafeAddedPattern,
+] as const
 
 export class RoutingDetector {
   constructor(
@@ -156,11 +164,8 @@ export class RoutingDetector {
 
   static load(options?: { readonly repoRoot?: string }) {
     return Effect.gen(function* () {
-      const shipped = yield* loadPatternsFromDirectory({
-        repoRoot: options?.repoRoot ?? process.cwd(),
-        directory: SHIPPED_ROUTING_PATTERNS_DIR,
-        optional: false,
-      })
+      const repoRoot = options?.repoRoot ?? process.cwd()
+      const shipped = yield* decodeShippedRoutingPatterns(repoRoot)
       const custom =
         options?.repoRoot === undefined
           ? []
@@ -405,6 +410,22 @@ const loadPatternsFromDirectory = (opts: {
       }),
     ).pipe(Effect.map((groups) => groups.flat()))
   })
+
+const decodeShippedRoutingPatterns = (repoRoot: string) =>
+  Effect.forEach(SHIPPED_ROUTING_PATTERNS, (pattern, index) =>
+    Schema.decodeUnknown(RoutingPatternFile)(pattern).pipe(
+      Effect.mapError(
+        (cause) =>
+          new RoutingPatternLoadFailed({
+            repoPath: repoRoot,
+            path: `shipped-routing-pattern:${index}`,
+            message: `Failed to decode shipped routing pattern: ${String(cause)}`,
+          }),
+      ),
+      Effect.flatMap(validateRoutingPatternFile(`shipped-routing-pattern:${index}`, repoRoot)),
+      Effect.map((decoded) => (Array.isArray(decoded) ? decoded : [decoded])),
+    ),
+  ).pipe(Effect.map((groups) => groups.flat()))
 
 const validateRoutingPatternFile = (path: string, repoRoot: string) =>
   (value: RoutingPattern | ReadonlyArray<RoutingPattern>) =>

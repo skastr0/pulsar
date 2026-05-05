@@ -1,8 +1,20 @@
-import { readdir, readFile } from "node:fs/promises"
 import { Effect } from "effect"
 import { decodeTasteVector, type TasteVector } from "./vector.js"
+import aiSlopDefensePreset from "../presets/ai-slop-defense.json" with { type: "json" }
+import domainPuristPreset from "../presets/domain-purist.json" with { type: "json" }
+import refactorFriendlyPreset from "../presets/refactor-friendly.json" with { type: "json" }
+import securityParanoidPreset from "../presets/security-paranoid.json" with { type: "json" }
+import strictTypeSafetyPreset from "../presets/strict-type-safety.json" with { type: "json" }
+import velocityFirstPreset from "../presets/velocity-first.json" with { type: "json" }
 
-const PRESET_DIRECTORY = new URL("../presets/", import.meta.url)
+const SHIPPED_PRESETS = [
+  aiSlopDefensePreset,
+  domainPuristPreset,
+  refactorFriendlyPreset,
+  securityParanoidPreset,
+  strictTypeSafetyPreset,
+  velocityFirstPreset,
+] as const
 
 export interface TasteVectorPresetSummary {
   readonly id: string
@@ -11,20 +23,8 @@ export interface TasteVectorPresetSummary {
 
 export const loadTasteVectorPresets = () =>
   Effect.gen(function* () {
-    const files = yield* readJsonDirectory(PRESET_DIRECTORY)
-    const presets = yield* Effect.forEach(files, (file) =>
-      Effect.gen(function* () {
-        const raw = yield* Effect.tryPromise({
-          try: () => readFile(new URL(file, PRESET_DIRECTORY), "utf8"),
-          catch: (cause) =>
-            new Error(`Failed to read preset ${file}: ${String(cause)}`),
-        })
-        const parsed = yield* Effect.try({
-          try: () => JSON.parse(raw),
-          catch: (cause) => new Error(`Failed to parse preset ${file}: ${String(cause)}`),
-        })
-        return yield* decodeTasteVector(parsed)
-      }),
+    const presets = yield* Effect.forEach(SHIPPED_PRESETS, (preset) =>
+      decodeTasteVector(preset),
     )
 
     const seen = new Set<string>()
@@ -65,13 +65,3 @@ export const oneLineDescription = (vector: TasteVector): string => {
   if (line === undefined || line.length === 0) return trimmed
   return line
 }
-
-const readJsonDirectory = (directory: URL) =>
-  Effect.gen(function* () {
-    const entries = yield* Effect.tryPromise({
-      try: () => readdir(directory),
-      catch: (cause) =>
-        new Error(`Failed to read preset directory ${directory.pathname}: ${String(cause)}`),
-    })
-    return entries.filter((entry) => entry.endsWith(".json")).sort((left, right) => left.localeCompare(right))
-  })

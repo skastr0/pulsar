@@ -1,4 +1,3 @@
-import { readdir, readFile } from "node:fs/promises"
 import { Effect, Schema } from "effect"
 import {
   appendVectorProvenance,
@@ -7,6 +6,7 @@ import {
   type SignalOverride,
   type TasteVector,
 } from "../vector.js"
+import typescriptQuizItems from "../../quiz-items/typescript.json" with { type: "json" }
 
 export const QuizSignalScores = Schema.Record({
   key: Schema.String,
@@ -66,30 +66,9 @@ export interface QuizInference {
   readonly bySignal: Readonly<Record<string, QuizSignalPreference>>
 }
 
-const QUIZ_ITEM_DIRECTORY = new URL("../../quiz-items/", import.meta.url)
-
 export const loadQuizItems = (domain = "typescript") =>
   Effect.gen(function* () {
-    const files = yield* readJsonDirectory(QUIZ_ITEM_DIRECTORY)
-    const decoded = yield* Effect.forEach(files, (file) =>
-      Effect.gen(function* () {
-        const raw = yield* Effect.tryPromise({
-          try: () => readFile(new URL(file, QUIZ_ITEM_DIRECTORY), "utf8"),
-          catch: (cause) => new Error(`Failed to read quiz item file ${file}: ${String(cause)}`),
-        })
-        const parsed = yield* Effect.try({
-          try: () => JSON.parse(raw),
-          catch: (cause) => new Error(`Failed to parse quiz item file ${file}: ${String(cause)}`),
-        })
-
-        if (Array.isArray(parsed)) {
-          return yield* Effect.forEach(parsed, (item) => Schema.decodeUnknown(QuizItem)(item))
-        }
-
-        const item = yield* Schema.decodeUnknown(QuizItem)(parsed)
-        return [item]
-      }),
-    )
+    const decoded = yield* decodeQuizItemFile(typescriptQuizItems)
 
     const flattened = decoded
       .flat()
@@ -105,6 +84,11 @@ export const loadQuizItems = (domain = "typescript") =>
 
     return flattened
   })
+
+const decodeQuizItemFile = (parsed: unknown) =>
+  Array.isArray(parsed)
+    ? Effect.forEach(parsed, (item) => Schema.decodeUnknown(QuizItem)(item))
+    : Effect.map(Schema.decodeUnknown(QuizItem)(parsed), (item) => [item])
 
 export const accumulateQuizInference = (
   items: ReadonlyArray<QuizItem>,
@@ -272,14 +256,5 @@ const quizSignalDeltas = (item: QuizItem) => {
   }))
 }
 
-const readJsonDirectory = (directory: URL) =>
-  Effect.gen(function* () {
-    const entries = yield* Effect.tryPromise({
-      try: () => readdir(directory),
-      catch: (cause) =>
-        new Error(`Failed to read quiz item directory ${directory.pathname}: ${String(cause)}`),
-    })
-    return entries.filter((entry) => entry.endsWith(".json")).sort((left, right) => left.localeCompare(right))
-  })
 
 const clampWeight = (value: number): number => Number(Math.max(0, Math.min(2, value)).toFixed(2))

@@ -1,5 +1,4 @@
 import { readFile } from "node:fs/promises"
-import { createRequire } from "node:module"
 import {
   Language,
   Node,
@@ -7,16 +6,14 @@ import {
   type Point,
   type Tree,
 } from "web-tree-sitter"
+import treeSitterWasmPath from "web-tree-sitter/tree-sitter.wasm" with { type: "file" }
+import treeSitterRustWasmPath from "tree-sitter-rust/tree-sitter-rust.wasm" with { type: "file" }
 
 /**
  * The file name stays `syn-walker` from the original ticket sketch, but the
  * implementation deliberately uses tree-sitter Rust. That's the smallest
  * reversible AST choice that keeps TypeScript-side parsing toolchain-free.
  */
-
-const require = createRequire(import.meta.url)
-const TREE_SITTER_WASM_PATH = require.resolve("web-tree-sitter/tree-sitter.wasm")
-const TREE_SITTER_RUST_WASM_PATH = require.resolve("tree-sitter-rust/tree-sitter-rust.wasm")
 
 export class RustSyntaxParserError extends Error {
   constructor(message: string) {
@@ -118,12 +115,12 @@ const loadRustLanguage = async (): Promise<Language> => {
       await Parser.init({
         locateFile: (scriptName: string) => {
           if (scriptName === "tree-sitter.wasm") {
-            return TREE_SITTER_WASM_PATH
+            return treeSitterWasmPath
           }
           return scriptName
         },
       })
-      return Language.load(TREE_SITTER_RUST_WASM_PATH)
+      return Language.load(treeSitterRustWasmPath)
     })()
   }
 

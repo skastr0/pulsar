@@ -9,7 +9,10 @@
     "apps/*"
   ],
   "scripts": {
+    "dev": "bun packages/codec-cli/src/bin.ts",
     "build": "turbo run build",
+    "build:cli": "bun scripts/build-cli.ts",
+    "install:local": "bun scripts/install.ts",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
