@@ -9,6 +9,7 @@ import { runElicitCommand } from "./elicit.js"
 import { runGlossaryCommand } from "./glossary.js"
 import { CLI_VERSION } from "./index.js"
 import { runPersonaCommand } from "./persona.js"
+import { withCliProgress } from "./progress.js"
 import { runScoreCommand } from "./score.js"
 
 const argv = process.argv.slice(2)
@@ -41,6 +42,9 @@ Commands:
   elicit       Run quiz, bootstrap, and proposal review workflows.
   glossary     Extract a draft glossary and confirm canonical terms.
   conventions  Extract a draft schema-conventions file and confirm it.
+
+Global options:
+  --no-progress        Disable the terminal loading indicator.
 
 Score options:
   --signal <id>        Single-signal mode (existing TC-003 path).
@@ -205,6 +209,22 @@ const formatCliError = (err: unknown): string => {
   return String(err)
 }
 
+const progressEnabled = (name: string, args: ReadonlyArray<string>): boolean =>
+  !(name === "elicit" && args[0] === "quiz") &&
+  !args.includes("--no-progress") && !args.includes("--json")
+
+const commandProgressLabel = (name: string): string => `taste ${name} running`
+
+const runWithProgress = async <A>(
+  name: string,
+  args: ReadonlyArray<string>,
+  run: () => Promise<A>,
+): Promise<A> =>
+  await withCliProgress(run, {
+    label: commandProgressLabel(name),
+    enabled: progressEnabled(name, args),
+  })
+
 if (argv.length === 0 || argv.includes("--help") || argv.includes("-h")) {
   help()
   process.exit(0)
@@ -234,13 +254,15 @@ if (command === "score") {
     ...(commandArgs.includes("--profile") ? { profile: true } : {}),
   } satisfies Parameters<typeof runScoreCommand>[0]
 
-  const exitCode = await Effect.runPromise(
-    runScoreCommand(scoreOptions).pipe(
-      Effect.catchAll((err) =>
-        Effect.sync(() => {
-          console.error(`taste score failed: ${formatCliError(err)}`)
-          process.exit(1)
-        }),
+  const exitCode = await runWithProgress("score", commandArgs, () =>
+    Effect.runPromise(
+      runScoreCommand(scoreOptions).pipe(
+        Effect.catchAll((err) =>
+          Effect.sync(() => {
+            console.error(`taste score failed: ${formatCliError(err)}`)
+            process.exit(1)
+          }),
+        ),
       ),
     ),
   )
@@ -268,13 +290,15 @@ if (command === "baseline") {
     ...(vectorPath !== undefined ? { vectorPath } : {}),
   } satisfies Parameters<typeof runBaselineCommand>[0]
 
-  const exitCode = await Effect.runPromise(
-    runBaselineCommand(baselineOptions).pipe(
-      Effect.catchAll((err) =>
-        Effect.sync(() => {
-          console.error(`taste baseline failed: ${formatCliError(err)}`)
-          process.exit(1)
-        }),
+  const exitCode = await runWithProgress("baseline", commandArgs, () =>
+    Effect.runPromise(
+      runBaselineCommand(baselineOptions).pipe(
+        Effect.catchAll((err) =>
+          Effect.sync(() => {
+            console.error(`taste baseline failed: ${formatCliError(err)}`)
+            process.exit(1)
+          }),
+        ),
       ),
     ),
   )
@@ -285,17 +309,19 @@ if (command === "backpressure") {
   const flagsWithValues = new Set(["--vector"])
   const repoPath = collectPositional(commandArgs, flagsWithValues)[0] ?? "."
   const vectorPath = parseArg(commandArgs, "--vector")
-  const exitCode = await Effect.runPromise(
-    runBackpressureCommand({
-      repoPath,
-      ...(vectorPath !== undefined ? { vectorPath } : {}),
-      ...(commandArgs.includes("--trend") ? { trend: true } : {}),
-    }).pipe(
-      Effect.catchAll((err) =>
-        Effect.sync(() => {
-          console.error(`taste backpressure failed: ${formatCliError(err)}`)
-          process.exit(1)
-        }),
+  const exitCode = await runWithProgress("backpressure", commandArgs, () =>
+    Effect.runPromise(
+      runBackpressureCommand({
+        repoPath,
+        ...(vectorPath !== undefined ? { vectorPath } : {}),
+        ...(commandArgs.includes("--trend") ? { trend: true } : {}),
+      }).pipe(
+        Effect.catchAll((err) =>
+          Effect.sync(() => {
+            console.error(`taste backpressure failed: ${formatCliError(err)}`)
+            process.exit(1)
+          }),
+        ),
       ),
     ),
   )
@@ -331,26 +357,28 @@ if (command === "bisect") {
   ])
   const repoPath = collectPositional(commandArgs, flagsWithValues)[0] ?? "."
 
-  await Effect.runPromise(
-    runBisectCommand({
-      ...(signalId !== undefined ? { signalId } : {}),
-      ...(observer ? { observer: true } : {}),
-      ...(parseArg(commandArgs, "--vector") !== undefined
-        ? { vectorPath: parseArg(commandArgs, "--vector")! }
-        : {}),
-      fromSha,
-      toSha,
-      repoPath,
-      concurrency,
-      topCulprits,
-      sampling,
-      json: commandArgs.includes("--json"),
-    }).pipe(
-      Effect.catchAll((err) =>
-        Effect.sync(() => {
-          console.error(`taste bisect failed: ${formatCliError(err)}`)
-          process.exit(1)
-        }),
+  await runWithProgress("bisect", commandArgs, () =>
+    Effect.runPromise(
+      runBisectCommand({
+        ...(signalId !== undefined ? { signalId } : {}),
+        ...(observer ? { observer: true } : {}),
+        ...(parseArg(commandArgs, "--vector") !== undefined
+          ? { vectorPath: parseArg(commandArgs, "--vector")! }
+          : {}),
+        fromSha,
+        toSha,
+        repoPath,
+        concurrency,
+        topCulprits,
+        sampling,
+        json: commandArgs.includes("--json"),
+      }).pipe(
+        Effect.catchAll((err) =>
+          Effect.sync(() => {
+            console.error(`taste bisect failed: ${formatCliError(err)}`)
+            process.exit(1)
+          }),
+        ),
       ),
     ),
   )
@@ -375,13 +403,15 @@ if (command === "glossary") {
     ...(actionArgs.includes("--no-parameters") ? { includeParameters: false } : {}),
   } satisfies Parameters<typeof runGlossaryCommand>[0]
 
-  const exitCode = await Effect.runPromise(
-    runGlossaryCommand(glossaryOptions).pipe(
-      Effect.catchAll((err) =>
-        Effect.sync(() => {
-          console.error(`taste glossary failed: ${formatCliError(err)}`)
-          process.exit(1)
-        }),
+  const exitCode = await runWithProgress("glossary", commandArgs, () =>
+    Effect.runPromise(
+      runGlossaryCommand(glossaryOptions).pipe(
+        Effect.catchAll((err) =>
+          Effect.sync(() => {
+            console.error(`taste glossary failed: ${formatCliError(err)}`)
+            process.exit(1)
+          }),
+        ),
       ),
     ),
   )
@@ -405,13 +435,15 @@ if (command === "conventions") {
     ...(sha !== undefined ? { sha } : {}),
   } satisfies Parameters<typeof runConventionsCommand>[0]
 
-  const exitCode = await Effect.runPromise(
-    runConventionsCommand(conventionsOptions).pipe(
-      Effect.catchAll((err) =>
-        Effect.sync(() => {
-          console.error(`taste conventions failed: ${formatCliError(err)}`)
-          process.exit(1)
-        }),
+  const exitCode = await runWithProgress("conventions", commandArgs, () =>
+    Effect.runPromise(
+      runConventionsCommand(conventionsOptions).pipe(
+        Effect.catchAll((err) =>
+          Effect.sync(() => {
+            console.error(`taste conventions failed: ${formatCliError(err)}`)
+            process.exit(1)
+          }),
+        ),
       ),
     ),
   )
@@ -440,13 +472,15 @@ if (command === "persona") {
     ...(commandArgs.includes("--force") ? { force: true } : {}),
   } satisfies Parameters<typeof runPersonaCommand>[0]
 
-  const exitCode = await Effect.runPromise(
-    runPersonaCommand(personaOptions).pipe(
-      Effect.catchAll((err) =>
-        Effect.sync(() => {
-          console.error(`taste persona failed: ${formatCliError(err)}`)
-          process.exit(1)
-        }),
+  const exitCode = await runWithProgress("persona", commandArgs, () =>
+    Effect.runPromise(
+      runPersonaCommand(personaOptions).pipe(
+        Effect.catchAll((err) =>
+          Effect.sync(() => {
+            console.error(`taste persona failed: ${formatCliError(err)}`)
+            process.exit(1)
+          }),
+        ),
       ),
     ),
   )
@@ -527,13 +561,15 @@ if (command === "elicit") {
     } satisfies Parameters<typeof runElicitCommand>[0]
   })()
 
-  const exitCode = await Effect.runPromise(
-    runElicitCommand(elicitOptions).pipe(
-      Effect.catchAll((err) =>
-        Effect.sync(() => {
-          console.error(`taste elicit failed: ${formatCliError(err)}`)
-          process.exit(1)
-        }),
+  const exitCode = await runWithProgress("elicit", commandArgs, () =>
+    Effect.runPromise(
+      runElicitCommand(elicitOptions).pipe(
+        Effect.catchAll((err) =>
+          Effect.sync(() => {
+            console.error(`taste elicit failed: ${formatCliError(err)}`)
+            process.exit(1)
+          }),
+        ),
       ),
     ),
   )
