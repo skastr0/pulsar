@@ -22,6 +22,7 @@ export interface GlossaryCommandOptions {
   readonly repoPath: string
   readonly sha?: string
   readonly includeParameters?: boolean
+  readonly autoAcceptAboveFrequency?: number
 }
 
 interface WorkingTerm {
@@ -48,7 +49,7 @@ export const runGlossaryCommand = (opts: GlossaryCommandOptions) =>
       return yield* runGlossaryExtract(opts.repoPath, opts.sha, opts.includeParameters ?? true)
     }
 
-    return yield* runGlossaryConfirm(opts.repoPath)
+    return yield* runGlossaryConfirm(opts.repoPath, opts.autoAcceptAboveFrequency)
   })
 
 const runGlossaryExtract = (repoPath: string, sha: string, includeParameters: boolean) =>
@@ -72,12 +73,13 @@ const runGlossaryExtract = (repoPath: string, sha: string, includeParameters: bo
       console.log(`  SHA:                  ${resolvedSha}`)
       console.log(`  Candidate terms:      ${draft.candidate_terms.length}`)
       console.log(`  Synonym candidates:   ${draft.candidate_synonyms.length}`)
+      printDraftSummary(draft)
       console.log("")
       return 0
     }),
   )
 
-const runGlossaryConfirm = (repoPath: string) =>
+const runGlossaryConfirm = (repoPath: string, autoAcceptAboveFrequency?: number) =>
   Effect.gen(function* () {
     const repoRoot = yield* resolveRepoRoot(repoPath)
     const rawDraft = yield* readReferenceJson(repoRoot, GLOSSARY_DRAFT_RELATIVE_PATH)
@@ -89,7 +91,12 @@ const runGlossaryConfirm = (repoPath: string) =>
         ),
     })
 
-    const glossary = buildCanonicalGlossary(draft)
+    const draftForConfirmation =
+      autoAcceptAboveFrequency === undefined
+        ? draft
+        : applyAutoDecisions(draft, autoAcceptAboveFrequency)
+    yield* validateGlossaryDraftDecisions(draftForConfirmation)
+    const glossary = buildCanonicalGlossary(draftForConfirmation)
     const glossaryPath = yield* writeReferenceJson(repoRoot, CANONICAL_GLOSSARY_RELATIVE_PATH, glossary)
     yield* removeReferenceFile(repoRoot, GLOSSARY_DRAFT_RELATIVE_PATH)
 
@@ -97,9 +104,38 @@ const runGlossaryConfirm = (repoPath: string) =>
     console.log(`  Glossary confirmed: ${glossaryPath}`)
     console.log(`  Canonical terms:    ${glossary.terms.length}`)
     console.log(`  Rejected terms:     ${glossary.rejected_terms.length}`)
+    if (autoAcceptAboveFrequency !== undefined) {
+      console.log(`  Auto decisions:     accepted >= ${autoAcceptAboveFrequency}, rejected below`)
+    }
     console.log("")
     return 0
   })
+
+const printDraftSummary = (draft: GlossaryDraft): void => {
+  const topTerms = draft.candidate_terms.slice(0, 10)
+  if (topTerms.length > 0) {
+    console.log("")
+    console.log("  Top candidate terms:")
+    for (const term of topTerms) {
+      const examples = term.provenance
+        .slice(0, 2)
+        .map((entry) => entry.identifier)
+        .join(", ")
+      console.log(`    ${term.term} (${term.frequency})${examples === "" ? "" : ` - ${examples}`}`)
+    }
+  }
+
+  const topSynonyms = draft.candidate_synonyms.slice(0, 5)
+  if (topSynonyms.length > 0) {
+    console.log("")
+    console.log("  Top synonym candidates:")
+    for (const synonym of topSynonyms) {
+      console.log(
+        `    ${synonym.terms.join(" <-> ")} (score ${synonym.score}, context: ${synonym.shared_context_terms.slice(0, 4).join(", ")})`,
+      )
+    }
+  }
+}
 
 const buildCandidateTerms = (identifiers: ReadonlyArray<IdentifierOccurrence>) => {
   const termMap = new Map<string, WorkingTerm>()
@@ -193,7 +229,13 @@ const buildCanonicalGlossary = (draft: GlossaryDraft) => {
   for (const candidate of draft.candidate_terms) {
     const decision = candidate.decision
     if (decision === undefined) {
-      throw new Error(`Candidate term '${candidate.term}' is missing a decision.`)
+      throw new Error(
+        [
+          `Glossary draft still has undecided terms; first missing decision: '${candidate.term}'.`,
+          `Edit ${GLOSSARY_DRAFT_RELATIVE_PATH} and set decision.action to accept, reject, or merge.`,
+          "For deterministic bulk confirmation, rerun with --auto-accept-above-frequency <n>.",
+        ].join(" "),
+      )
     }
 
     if (decision.action === "accept") {
@@ -237,6 +279,54 @@ const buildCanonicalGlossary = (draft: GlossaryDraft) => {
     rejected_terms: [...rejectedTerms].sort((a, b) => a.localeCompare(b)),
   })
 }
+
+const validateGlossaryDraftDecisions = (draft: GlossaryDraft) =>
+  Effect.gen(function* () {
+    for (const candidate of draft.candidate_terms) {
+      const decision = candidate.decision
+      if (decision === undefined) {
+        return yield* Effect.fail(
+          new Error(
+            [
+              `Glossary draft still has undecided terms; first missing decision: '${candidate.term}'.`,
+              `Edit ${GLOSSARY_DRAFT_RELATIVE_PATH} and set decision.action to accept, reject, or merge.`,
+              "For deterministic bulk confirmation, rerun with --auto-accept-above-frequency <n>.",
+            ].join(" "),
+          ),
+        )
+      }
+
+      if (decision.action !== "merge") continue
+      const target = decision.merge_into?.trim()
+      if (target === undefined || target.length === 0) {
+        return yield* Effect.fail(
+          new Error(
+            `Candidate term '${candidate.term}' must set decision.merge_into. Edit ${GLOSSARY_DRAFT_RELATIVE_PATH} or rerun confirm with --auto-accept-above-frequency <n>.`,
+          ),
+        )
+      }
+      if (target === candidate.term) {
+        return yield* Effect.fail(
+          new Error(
+            `Candidate term '${candidate.term}' cannot merge into itself. Choose a different merge_into target in ${GLOSSARY_DRAFT_RELATIVE_PATH}.`,
+          ),
+        )
+      }
+    }
+  })
+
+const applyAutoDecisions = (draft: GlossaryDraft, autoAcceptAboveFrequency: number): GlossaryDraft =>
+  decodeGlossaryDraftSync({
+    ...draft,
+    candidate_terms: draft.candidate_terms.map((candidate) => ({
+      ...candidate,
+      decision:
+        candidate.decision ??
+        (candidate.frequency >= autoAcceptAboveFrequency
+          ? { action: "accept" as const }
+          : { action: "reject" as const }),
+    })),
+  })
 
 const getOrCreateCanonicalTerm = (
   canonicalTerms: Map<string, WorkingCanonicalTerm>,

@@ -28,7 +28,7 @@ Usage:
   taste persona <list|show|apply|diff> [args]
   taste elicit <quiz|bootstrap|review|accept|reject> [args]
   taste glossary extract --sha <ref> [--no-parameters] [<repo-path>]
-  taste glossary confirm [<repo-path>]
+  taste glossary confirm [--auto-accept-above-frequency <n>] [<repo-path>]
   taste conventions extract --sha <ref> [<repo-path>]
   taste conventions confirm [<repo-path>]
   taste --version
@@ -98,6 +98,9 @@ Elicit options:
 Glossary options:
   --sha <ref>          Commit or ref to inspect in a detached worktree.
   --no-parameters      Exclude parameter names from glossary extraction.
+  --auto-accept-above-frequency <n>
+                       On confirm, accept undecided terms with frequency >= n
+                       and reject lower-frequency undecided terms.
 
 Conventions options:
   --sha <ref>          Commit or ref to inspect in a detached worktree.
@@ -135,6 +138,7 @@ Examples:
   taste elicit accept proposal-ai-assisted-mode .
   taste elicit reject proposal-abc123def456 .
   taste glossary extract --sha HEAD .
+  taste glossary confirm --auto-accept-above-frequency 3 .
   taste glossary confirm .
   taste conventions extract --sha HEAD .
   taste conventions confirm .
@@ -150,6 +154,24 @@ const parseArg = (args: ReadonlyArray<string>, flag: string): string | undefined
   const i = args.indexOf(flag)
   if (i === -1) return undefined
   return args[i + 1]
+}
+
+const flagNameOf = (arg: string): string | undefined => {
+  if (!arg.startsWith("--")) return undefined
+  const equalsIndex = arg.indexOf("=")
+  return equalsIndex === -1 ? arg : arg.slice(0, equalsIndex)
+}
+
+const rejectUnknownFlags = (
+  commandName: string,
+  args: ReadonlyArray<string>,
+  allowedFlags: ReadonlySet<string>,
+): void => {
+  for (const arg of args) {
+    const flagName = flagNameOf(arg)
+    if (flagName === undefined || allowedFlags.has(flagName)) continue
+    fail(`${commandName} does not accept ${flagName}`)
+  }
 }
 
 const collectPositional = (
@@ -393,14 +415,32 @@ if (command === "glossary") {
   const action = actionArg as "extract" | "confirm"
 
   const actionArgs = commandArgs.slice(1)
-  const flagsWithValues = new Set(["--sha"])
+  const flagsWithValues = new Set(["--sha", "--auto-accept-above-frequency"])
+  rejectUnknownFlags(
+    "glossary",
+    actionArgs,
+    new Set([...flagsWithValues, "--no-parameters", "--no-progress"]),
+  )
   const repoPath = collectPositional(actionArgs, flagsWithValues)[0] ?? "."
   const sha = parseArg(actionArgs, "--sha")
+  const autoAcceptAboveFrequencyRaw =
+    action === "confirm" ? parseArg(actionArgs, "--auto-accept-above-frequency") : undefined
+  const autoAcceptAboveFrequency =
+    autoAcceptAboveFrequencyRaw === undefined
+      ? undefined
+      : parsePositiveInt(
+          autoAcceptAboveFrequencyRaw,
+          1,
+          "--auto-accept-above-frequency",
+        )
   const glossaryOptions = {
     action,
     repoPath,
     ...(sha !== undefined ? { sha } : {}),
     ...(actionArgs.includes("--no-parameters") ? { includeParameters: false } : {}),
+    ...(autoAcceptAboveFrequency !== undefined
+      ? { autoAcceptAboveFrequency }
+      : {}),
   } satisfies Parameters<typeof runGlossaryCommand>[0]
 
   const exitCode = await runWithProgress("glossary", commandArgs, () =>

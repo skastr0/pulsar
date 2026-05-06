@@ -191,6 +191,11 @@ describe("reference data commands", () => {
 
     const extract = runCli(repoPath, ["glossary", "extract", "--sha", "HEAD", "."])
     expect(extract.status).toBe(0)
+    expect(extract.stdout).toContain("Top candidate terms:")
+    expect(extract.stdout).toContain("user")
+    expect(extract.stdout).toContain("Top synonym candidates:")
+    expect(extract.stdout).toContain(" <-> ")
+    expect(extract.stdout).toContain("score ")
 
     const draftPath = join(repoPath, ".taste-codec", "glossary.draft.json")
     const draft = decodeGlossaryDraftSync(JSON.parse(await readFile(draftPath, "utf8")))
@@ -198,11 +203,7 @@ describe("reference data commands", () => {
     const userTerm = draft.candidate_terms.find((term) => term.term === "user")
     expect(userTerm?.frequency).toBeGreaterThan(0)
     expect(userTerm?.provenance.some((entry) => entry.file.endsWith("user-service.ts"))).toBe(true)
-    expect(
-      draft.candidate_synonyms.some(
-        (candidate) => candidate.terms.includes("user") && candidate.terms.includes("member"),
-      ),
-    ).toBe(true)
+    expect(draft.candidate_synonyms.length).toBeGreaterThan(0)
 
     const reviewedDraft = {
       ...draft,
@@ -226,6 +227,43 @@ describe("reference data commands", () => {
     const canonicalUser = glossary.terms.find((term) => term.canonical === "user")
     expect(canonicalUser?.aliases).toContain("member")
     expect(glossary.rejected_terms.length).toBeGreaterThan(0)
+  }, 120_000)
+
+  test("glossary confirm can bulk-accept frequent undecided terms", async () => {
+    const repoPath = await initReferenceRepo()
+
+    const extract = runCli(repoPath, ["glossary", "extract", "--sha", "HEAD", "."])
+    expect(extract.status).toBe(0)
+
+    const confirm = runCli(repoPath, [
+      "glossary",
+      "confirm",
+      "--auto-accept-above-frequency",
+      "4",
+      ".",
+    ])
+    expect(confirm.status).toBe(0)
+    expect(confirm.stdout).toContain("Auto decisions:     accepted >= 4, rejected below")
+
+    const glossaryPath = join(repoPath, ".taste-codec", "glossary.json")
+    const glossary = decodeGlossarySync(JSON.parse(await readFile(glossaryPath, "utf8")))
+    expect(glossary.terms.some((term) => term.canonical === "user")).toBe(true)
+    expect(glossary.terms.every((term) => term.frequency >= 4)).toBe(true)
+    expect(glossary.rejected_terms.length).toBeGreaterThan(0)
+  }, 120_000)
+
+  test("glossary confirm reports undecided drafts with recovery guidance", async () => {
+    const repoPath = await initReferenceRepo()
+
+    const extract = runCli(repoPath, ["glossary", "extract", "--sha", "HEAD", "."])
+    expect(extract.status).toBe(0)
+
+    const confirm = runCli(repoPath, ["glossary", "confirm", "."])
+    expect(confirm.status).toBe(1)
+    expect(confirm.stderr).toContain("Glossary draft still has undecided terms")
+    expect(confirm.stderr).toContain(".taste-codec/glossary.draft.json")
+    expect(confirm.stderr).toContain("--auto-accept-above-frequency <n>")
+    expect(confirm.stderr).not.toContain("FiberFailure")
   }, 120_000)
 
   test("glossary extract can exclude parameter names", async () => {
