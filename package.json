@@ -14,6 +14,7 @@
     "build:cli": "bun scripts/build-cli.ts",
     "install:local": "bun scripts/install.ts",
     "test": "turbo run test",
+    "benchmark:score-honesty": "bun docs/explorations/default-score-honesty-benchmark-harness.ts",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
     "clean": "turbo run clean"

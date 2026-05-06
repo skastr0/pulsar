@@ -92,8 +92,12 @@ const printTrendView = (
   }
 
   for (const entry of trend) {
+    const readiness =
+      entry.readinessPressure !== undefined
+        ? ` readiness_pressure=${entry.readinessPressure.toFixed(2)}`
+        : ""
     console.log(
-      `    ${entry.timestamp} ${entry.sha.slice(0, 12).padEnd(12, " ")} ${entry.overall.padEnd(6, " ")} weighted=${entry.weightedMean.toFixed(2)} gate=${entry.hardGateStatus}`,
+      `    ${entry.timestamp} ${entry.sha.slice(0, 12).padEnd(12, " ")} ${entry.overall.padEnd(6, " ")} weighted=${entry.weightedMean.toFixed(2)}${readiness} gate=${entry.hardGateStatus}`,
     )
   }
   console.log("")

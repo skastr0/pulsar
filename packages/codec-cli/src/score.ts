@@ -436,7 +436,12 @@ const printObserverView = (opts: {
   }
 
   lines.push("  ───────────────────────────────────────────────")
-  lines.push(`  Weighted Mean         ${opts.output.weighted_mean.toFixed(2)}`)
+  if (opts.output.readiness !== undefined) {
+    lines.push(
+      `  Readiness             ${opts.output.readiness.score.toFixed(2)}  ${renderScoreBar(opts.output.readiness.score)}  ${opts.output.readiness.status} / pressure=${opts.output.readiness.pressure.toFixed(2)}`,
+    )
+  }
+  lines.push(`  Evidence Mean         ${opts.output.weighted_mean.toFixed(2)}`)
   if (opts.output.minimum !== undefined) {
     lines.push(
       `  Minimum               ${opts.output.minimum.signal} / ${opts.output.minimum.category} / ${opts.output.minimum.score.toFixed(2)}`,
@@ -496,7 +501,7 @@ const printCategoryView = (opts: {
   if (opts.output.hard_gate_status === "fail") {
     console.log(`  Hard Gate             ${renderGateStatus(opts.output.hard_gate_status, false)}`)
   }
-  printCategoryScoreMath(entry)
+  printCategoryScoreMath(entry, opts.output.signalMetadata)
   if (signalEntries.length === 0) {
     console.log("")
     console.log("  (no active signals in this category)")
@@ -515,14 +520,19 @@ const printCategoryView = (opts: {
 
 const printCategoryScoreMath = (
   entry: ObserverOutput["categories"][Category],
+  signalMetadata: ObserverOutput["signalMetadata"] | undefined,
 ): void => {
   if (entry.aggregation === undefined) return
 
-  const lowestSignal = lowestSignalEntry(entry.signals)
+  const lowestSignal = lowestApplicableSignalEntry(entry.signals, signalMetadata)
   console.log("")
   console.log("  Score Math")
   console.log(
     `    aggregate ${entry.aggregation.aggregateScore.toFixed(3)} (${entry.aggregation.strategy})`,
+  )
+  console.log(
+    `    pressure  ${entry.aggregation.pressure.finalPressure.toFixed(3)} ` +
+      `(${entry.aggregation.pressure.strategy}, p=${entry.aggregation.pressure.p})`,
   )
   if (entry.aggregation.strategy === "language-group-mean") {
     console.log(`    raw mean  ${entry.aggregation.rawScore.toFixed(3)}`)
@@ -530,16 +540,20 @@ const printCategoryScoreMath = (
   if (lowestSignal !== undefined) {
     console.log(`    lowest    ${lowestSignal.signalId} ${lowestSignal.score.toFixed(3)}`)
   }
-  if (entry.aggregation.shapedByLowestSignal) {
-    console.log("    formula   0.65 * aggregate + 0.35 * lowest")
+  if (entry.aggregation.shapedByPressure) {
+    console.log("    formula   min(aggregate, 1 - pressure)")
   }
   console.log(`    weights   ${formatSignalWeights(entry.aggregation.weights)}`)
 }
 
-const lowestSignalEntry = (
+const lowestApplicableSignalEntry = (
   signals: Record<string, number>,
+  signalMetadata: ObserverOutput["signalMetadata"] | undefined,
 ): { readonly signalId: string; readonly score: number } | undefined => {
-  const entries = Object.entries(signals)
+  const entries = Object.entries(signals).filter(([signalId]) => {
+    const applicability = signalMetadata?.[signalId]?.applicability
+    return applicability === undefined || applicability === "applicable"
+  })
   if (entries.length === 0) return undefined
   const [signalId, score] = entries.sort(
     (a, b) => a[1] - b[1] || a[0].localeCompare(b[0]),

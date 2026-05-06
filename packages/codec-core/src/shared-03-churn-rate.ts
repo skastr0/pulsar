@@ -54,6 +54,7 @@ export const Shared03ChurnRate: Signal<
   tier: 1.5,
   category: "review-pain",
   kind: "legibility",
+  cacheVersion: "applicability-v1",
   configSchema: Shared03ChurnRateConfig,
   defaultConfig: {
     window_days: 14,
@@ -269,6 +270,10 @@ export const Shared03ChurnRate: Signal<
     if (out.insufficientHistory) return 1
     return 1 - clamp01(out.churnRate / 0.3)
   },
+  outputMetadata: (out) =>
+    out.insufficientHistory
+      ? { applicability: "insufficient_evidence" as const }
+      : undefined,
   diagnose: (out): ReadonlyArray<Diagnostic> => {
     if (out.insufficientHistory) {
       return [

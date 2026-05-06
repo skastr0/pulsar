@@ -70,6 +70,7 @@ export const TsAd01: Signal<
   tier: 2,
   category: "architectural-drift",
   kind: "structural",
+  cacheVersion: "reference-data-applicability-v1",
   configSchema: TsAd01Config,
   defaultConfig: {
     exclude_globs: [
@@ -170,6 +171,10 @@ export const TsAd01: Signal<
     if (out.referenceDataStatus === "missing" || out.totalImports === 0) return 1
     return Math.max(0, 1 - out.violations.length / out.totalImports)
   },
+  outputMetadata: (out) =>
+    out.referenceDataStatus === "missing"
+      ? { applicability: "insufficient_evidence" as const }
+      : undefined,
   diagnose: (out): ReadonlyArray<Diagnostic> => {
     if (out.referenceDataStatus === "missing") {
       return [{ severity: "warn", message: "no conventions configured" }]

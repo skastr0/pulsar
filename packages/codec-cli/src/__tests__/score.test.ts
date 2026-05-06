@@ -121,7 +121,8 @@ describe("taste score", () => {
       const out = runCli(repoPath, ["score", "."])
       expect(out.status).toBe(0)
       expect(out.stdout).toContain("Architectural Drift")
-      expect(out.stdout).toContain("Weighted Mean")
+      expect(out.stdout).toContain("Readiness")
+      expect(out.stdout).toContain("Evidence Mean")
       expect(out.stdout).toContain("Minimum")
       expect(out.stdout).toContain("Hard Gate")
     } finally {
@@ -208,6 +209,17 @@ describe("taste score", () => {
     }
   }, 120_000)
 
+  test("score rejects unknown flags instead of silently ignoring them", async () => {
+    const repoPath = await initRepo(simpleRepoFiles())
+    try {
+      const out = runCli(repoPath, ["score", ".", "--format", "json"])
+      expect(out.status).toBe(1)
+      expect(out.stderr).toContain("score does not accept --format")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
   test("--profile emits runtime attribution for observer runs", async () => {
     const repoPath = await initRepo(simpleRepoFiles())
     try {
@@ -237,7 +249,7 @@ describe("taste score", () => {
     }
   }, 120_000)
 
-  test("--category narrows human output and omits weighted mean plus passing gate", async () => {
+  test("--category narrows human output and omits aggregate summary plus passing gate", async () => {
     const repoPath = await initRepo(simpleRepoFiles())
     try {
       const out = runCli(repoPath, ["score", "--category", "abstraction-bloat", "."])
@@ -245,7 +257,8 @@ describe("taste score", () => {
       expect(out.stdout).toContain("Category: abstraction-bloat")
       expect(out.stdout).toContain("TS-AB-01")
       expect(out.stdout).not.toContain("RS-")
-      expect(out.stdout).not.toContain("Weighted Mean")
+      expect(out.stdout).not.toContain("Readiness")
+      expect(out.stdout).not.toContain("Evidence Mean")
       expect(out.stdout).not.toContain("Hard Gate")
     } finally {
       await rm(repoPath, { recursive: true, force: true })
@@ -259,8 +272,8 @@ describe("taste score", () => {
       expect(out.status).toBe(0)
       expect(out.stdout).toContain("Score Math")
       expect(out.stdout).toContain("aggregate")
+      expect(out.stdout).toContain("pressure")
       expect(out.stdout).toContain("lowest")
-      expect(out.stdout).toContain("formula   0.65 * aggregate + 0.35 * lowest")
       expect(out.stdout).toContain("weights")
       expect(out.stdout).toContain("TS-SL-01=")
     } finally {

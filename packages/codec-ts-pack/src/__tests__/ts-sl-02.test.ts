@@ -662,6 +662,18 @@ describe("TS-SL-02 Inconsistent clone detection", () => {
     expect(score).toBe(1)
   })
 
+  test("analysis limit hit caps an otherwise clean clone-drift score", () => {
+    const score = TsSl02.score({
+      totalGroups: 12,
+      analyzedGroups: 2,
+      analysisLimitHit: true,
+      divergentGroups: [],
+      divergenceDistribution: { min: 0, max: 0, mean: 0, median: 0 },
+    })
+
+    expect(score).toBe(0.95)
+  })
+
   test("single severe divergent clone creates drag without collapsing the signal", () => {
     const score = TsSl02.score({
       totalGroups: 12,

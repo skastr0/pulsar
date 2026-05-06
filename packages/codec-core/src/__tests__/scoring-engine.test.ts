@@ -733,6 +733,40 @@ describe("ScoringEngine — cache semantics", () => {
     }
   })
 
+  test("observer profile bypasses warm observer cache", async () => {
+    const { repoPath, sha } = await initRepo([
+      { path: "a.ts", content: "export const x = 1\n" },
+    ])
+    try {
+      const program = Effect.gen(function* () {
+        const counter = yield* Ref.make(0)
+        const signal = makeCountingSignal(counter)
+        const registry = yield* buildRegistry([signal])
+
+        const ProfileEngineLayer = ScoringEngineLayer(registry, () => Layer.empty, undefined, {
+          observerProfile: true,
+        })
+        const profileEngine = yield* ScoringEngineTag.pipe(
+          Effect.provide(ProfileEngineLayer),
+        ) as Effect.Effect<typeof ScoringEngineTag.Service, never, never>
+
+        yield* profileEngine.observeWorktree(repoPath, sha)
+        const afterFirstProfile = yield* Ref.get(counter)
+        const profiled = yield* profileEngine.observeWorktree(repoPath, sha)
+        const afterSecondProfile = yield* Ref.get(counter)
+
+        return { afterFirstProfile, afterSecondProfile, profiled }
+      })
+
+      const { afterFirstProfile, afterSecondProfile, profiled } = await Effect.runPromise(program)
+      expect(afterFirstProfile).toBe(1)
+      expect(afterSecondProfile).toBe(2)
+      expect(profiled.runtimeProfile?.signals["MOCK-ENG-01"]?.durationMs).toBeGreaterThanOrEqual(0)
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
   test("observeCommit disk cache round-trips signalResults as a Map", async () => {
     const { repoPath, sha } = await initRepo([
       { path: "a.ts", content: "export const x = 1\n" },
@@ -818,13 +852,33 @@ describe("ScoringEngine — cache semantics", () => {
           "MOCK-ENG-01": { weight: 1.5 },
         },
       } satisfies TasteVector)
-      return { base, configured, inactive, weighted }
+      const readinessConfigured = computeObserverConfigHash(registry, {
+        id: "readiness-configured",
+        domain: "typescript",
+        signal_overrides: {},
+        observer: {
+          diffTimeIntegration: true,
+          readiness: {
+            p_norm: 8,
+            local_warning_threshold: 0.4,
+            local_poison_threshold: 0.75,
+            local_warning_gain: 0.75,
+            hard_gate_score_cap: 0.2,
+            green_max_pressure: 0.15,
+            red_min_pressure: 0.4,
+            top_pressures: 10,
+          },
+        },
+      } satisfies TasteVector)
+      return { base, configured, inactive, weighted, readinessConfigured }
     })
 
-    const { base, configured, inactive, weighted } = await Effect.runPromise(program)
+    const { base, configured, inactive, weighted, readinessConfigured } =
+      await Effect.runPromise(program)
     expect(configured).not.toBe(base)
     expect(inactive).not.toBe(base)
     expect(weighted).not.toBe(base)
+    expect(readinessConfigured).not.toBe(base)
   })
 
   test("cache config hashes include calibration fingerprint only when supplied", async () => {

@@ -45,6 +45,7 @@ export const Shared06PrDepDelta: Signal<Shared06PrDepDeltaConfig, Shared06PrDepD
   tier: 1.5,
   category: "review-pain",
   kind: "compound",
+  cacheVersion: "empty-diff-applicability-v1",
   configSchema: Shared06PrDepDeltaConfig,
   defaultConfig: {
     top_n_diagnostics: 10,
@@ -93,6 +94,10 @@ export const Shared06PrDepDelta: Signal<Shared06PrDepDeltaConfig, Shared06PrDepD
       out.crossBoundaryEdges * 0.2 + out.crossPackageEdges * 0.1 + out.crossCrateEdges * 0.15
     return Math.max(0, 1 - edgePenalty)
   },
+  outputMetadata: (out) =>
+    out.totalNewDependencyEdges === 0 && out.linesAdded === 0 && out.linesDeleted === 0
+      ? { applicability: "not_applicable" as const }
+      : undefined,
   diagnose: (out): ReadonlyArray<Diagnostic> => [
     {
       severity: out.totalNewDependencyEdges > 0 ? ("warn" as const) : ("info" as const),

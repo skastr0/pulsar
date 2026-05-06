@@ -35,6 +35,7 @@ export const SharedChurn01: Signal<SharedChurn01Config, SharedChurn01Output, Sig
   tier: 1,
   category: "review-pain",
   kind: "legibility",
+  cacheVersion: "provider-not-applicable-v1",
   configSchema: SharedChurn01Config,
   defaultConfig: {
     window_days: 90,
@@ -117,9 +118,10 @@ export const SharedChurn01: Signal<SharedChurn01Config, SharedChurn01Output, Sig
         maxCommits: config.max_commits,
         sampled: totalCommits >= config.max_commits,
       }
-    }),
+  }),
   score: () => 1,
   diagnose: () => [],
+  outputMetadata: () => ({ applicability: "not_applicable" as const }),
 }
 
 const hasIncludedExtension = (path: string, extensions: ReadonlyArray<string>): boolean =>

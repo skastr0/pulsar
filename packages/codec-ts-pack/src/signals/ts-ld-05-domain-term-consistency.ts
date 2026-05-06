@@ -70,6 +70,7 @@ export const TsLd05: Signal<TsLd05Config, TsLd05Output, TsProjectTag | Reference
   tier: 2,
   category: "legibility-decay",
   kind: "legibility",
+  cacheVersion: "reference-data-applicability-v1",
   configSchema: TsLd05Config,
   defaultConfig: {
     exclude_globs: [
@@ -139,6 +140,10 @@ export const TsLd05: Signal<TsLd05Config, TsLd05Output, TsProjectTag | Reference
     const penalty = out.conflictCount * 0.9 + out.duplicateCount * 0.5 + out.newUniqueCount * 0.15
     return Math.max(0, 1 - penalty / out.totalIdentifiers)
   },
+  outputMetadata: (out) =>
+    out.referenceDataStatus === "missing"
+      ? { applicability: "insufficient_evidence" as const }
+      : undefined,
   diagnose: (out): ReadonlyArray<Diagnostic> => {
     if (out.referenceDataStatus === "missing") {
       return [{ severity: "info", message: "no glossary configured" }]

@@ -57,6 +57,9 @@ export interface TsLd02Output {
   readonly outlierFunctions: ReadonlyArray<FunctionSize>
   /** Top-N true file outliers, sorted largest-first. */
   readonly outlierFiles: ReadonlyArray<FileSize>
+  readonly ratioPressure: number
+  readonly maxFunctionPressure: number
+  readonly maxFilePressure: number
 }
 
 /**
@@ -79,6 +82,7 @@ export const TsLd02: Signal<TsLd02Config, TsLd02Output, TsProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
+  cacheVersion: "local-max-pressure-v1",
   configSchema: TsLd02Config,
   defaultConfig: {
     exclude_globs: [
@@ -184,6 +188,20 @@ export const TsLd02: Signal<TsLd02Config, TsLd02Output, TsProjectTag> = {
             .slice()
             .sort((a, b) => b.loc - a.loc)
             .slice(0, config.top_n_diagnostics)
+          const totalEntities = allFunctions.length + allFiles.length
+          const oversize = outlierFunctionsAll.length + outlierFilesAll.length
+          const ratioPressure =
+            totalEntities === 0 ? 0 : Math.min(1, (oversize / totalEntities) * 2)
+          const maxFunctionLoc = functionSizes.max
+          const maxFileLoc = fileSizes.max
+          const maxFunctionPressure =
+            maxFunctionLoc <= config.max_function_loc || maxFunctionLoc === 0
+              ? 0
+              : (maxFunctionLoc - config.max_function_loc) / maxFunctionLoc
+          const maxFilePressure =
+            maxFileLoc <= config.max_file_loc || maxFileLoc === 0
+              ? 0
+              : (maxFileLoc - config.max_file_loc) / maxFileLoc
 
           return {
             byFile,
@@ -197,6 +215,9 @@ export const TsLd02: Signal<TsLd02Config, TsLd02Output, TsProjectTag> = {
             fileOutlierCutoff,
             outlierFunctions,
             outlierFiles,
+            ratioPressure,
+            maxFunctionPressure,
+            maxFilePressure,
           }
         },
         catch: (cause) =>
@@ -211,13 +232,17 @@ export const TsLd02: Signal<TsLd02Config, TsLd02Output, TsProjectTag> = {
   score: (out) => {
     const totalEntities = out.totalFunctions + out.totalFiles
     if (totalEntities === 0) return 1
-    const oversize = out.outlierFunctionCount + out.outlierFileCount
-    // A repo where 5% of entities are true outliers lands around 0.9;
-    // 25% outliers sinks to 0.5; 50% goes to zero. The 2x multiplier
-    // matches TS-LD-01's ratio sensitivity for consistency.
-    const ratio = oversize / totalEntities
-    return Math.max(0, 1 - ratio * 2)
+    const pressure = Math.max(
+      out.ratioPressure,
+      out.maxFunctionPressure,
+      out.maxFilePressure,
+    )
+    return Math.max(0, 1 - pressure)
   },
+  outputMetadata: (out) =>
+    out.totalFunctions + out.totalFiles === 0
+      ? { applicability: "not_applicable" as const }
+      : undefined,
   diagnose: (out): ReadonlyArray<Diagnostic> => {
     const fnDiags: Array<Diagnostic> = out.outlierFunctions.map((f) => ({
       severity: "warn" as const,
@@ -229,6 +254,9 @@ export const TsLd02: Signal<TsLd02Config, TsLd02Output, TsProjectTag> = {
         loc: f.loc,
         cutoff: out.functionOutlierCutoff,
         p95: out.functionSizes.p95,
+        ratioPressure: out.ratioPressure,
+        maxFunctionPressure: out.maxFunctionPressure,
+        maxFilePressure: out.maxFilePressure,
       },
     }))
     const fileDiags: Array<Diagnostic> = out.outlierFiles.map((f) => ({
@@ -240,6 +268,9 @@ export const TsLd02: Signal<TsLd02Config, TsLd02Output, TsProjectTag> = {
         loc: f.loc,
         cutoff: out.fileOutlierCutoff,
         p95: out.fileSizes.p95,
+        ratioPressure: out.ratioPressure,
+        maxFunctionPressure: out.maxFunctionPressure,
+        maxFilePressure: out.maxFilePressure,
       },
     }))
     return [...fnDiags, ...fileDiags]

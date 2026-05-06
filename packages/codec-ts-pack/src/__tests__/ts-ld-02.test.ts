@@ -51,6 +51,7 @@ describe("TS-LD-02 (function / file size distribution)", () => {
     expect(out.totalFiles).toBe(0)
     expect(out.totalFunctions).toBe(0)
     expect(TsLd02.score(out)).toBe(1)
+    expect(TsLd02.outputMetadata?.(out)?.applicability).toBe("not_applicable")
   })
 
   test("small functions and files: score stays 1", async () => {
@@ -101,6 +102,33 @@ describe("TS-LD-02 (function / file size distribution)", () => {
     expect(out.outlierFunctions[0]?.name).toBe("big")
     expect(out.outlierFunctions[0]?.loc).toBeGreaterThan(out.functionOutlierCutoff)
     expect(TsLd02.score(out)).toBeLessThan(1)
+  })
+
+  test("single extreme file or function creates local max pressure", async () => {
+    for (let i = 0; i < 80; i += 1) {
+      await writeTs(`small-${i}.ts`, `export function small${i}() { return ${i} }\n`)
+    }
+    await writeTs(
+      "huge.ts",
+      [
+        "export function huge() {",
+        ...Array.from({ length: 40 }, (_, index) => `  const value${index} = ${index}`),
+        "  return 1",
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runCompute({
+      ...TsLd02.defaultConfig,
+      max_function_loc: 10,
+      max_file_loc: 12,
+    })
+
+    expect(out.outlierFunctionCount + out.outlierFileCount).toBeGreaterThan(0)
+    expect(out.maxFunctionPressure).toBeGreaterThan(out.ratioPressure)
+    expect(out.maxFilePressure).toBeGreaterThan(out.ratioPressure)
+    expect(TsLd02.score(out)).toBeLessThan(0.4)
   })
 
   test("functions above the raw threshold but below p95 + threshold are not outliers", async () => {

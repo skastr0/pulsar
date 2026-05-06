@@ -304,6 +304,11 @@ const commandArgs = argv.slice(1)
 
 if (command === "score") {
   const flagsWithValues = new Set(["--signal", "--vector", "--category"])
+  rejectUnknownFlags(
+    "score",
+    commandArgs,
+    new Set([...flagsWithValues, "--json", "--ci", "--profile", "--no-progress"]),
+  )
   const repoPath = collectPositional(commandArgs, flagsWithValues)[0] ?? "."
   const signalId = parseArg(commandArgs, "--signal")
   const vectorPath = parseArg(commandArgs, "--vector")

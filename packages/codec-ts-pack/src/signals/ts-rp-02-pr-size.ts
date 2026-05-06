@@ -56,6 +56,7 @@ export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackage
   tier: 1,
   category: "review-pain",
   kind: "structural",
+  cacheVersion: "diff-applicability-v1",
   configSchema: TsRp02Config,
   defaultConfig: {
     exclude_globs: [
@@ -142,6 +143,12 @@ export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackage
     const edgePenalty = out.newCrossBoundaryEdges.length * 0.2 + out.newCrossPackageEdges.length * 0.1
     const sizePenalty = Math.min(0.6, changedLines / 1000)
     return Math.max(0, 1 - sizePenalty - edgePenalty)
+  },
+  outputMetadata: (out) => {
+    if (out.diffMode === "missing") return { applicability: "insufficient_evidence" as const }
+    return out.filesChanged.length === 0
+      ? { applicability: "not_applicable" as const }
+      : undefined
   },
   diagnose: (out): ReadonlyArray<Diagnostic> => {
     if (out.diffMode === "missing") {

@@ -42,6 +42,7 @@ export const Shared05Suppression: Signal<Shared05SuppressionConfig, Shared05Supp
   tier: 1.5,
   category: "generated-slop",
   kind: "compound",
+  cacheVersion: "single-language-applicability-v1",
   configSchema: Shared05SuppressionConfig,
   defaultConfig: {
     top_n_diagnostics: 10,
@@ -95,6 +96,10 @@ export const Shared05Suppression: Signal<Shared05SuppressionConfig, Shared05Supp
       Math.max(0, out.totalSuppressions - out.unjustifiedCount) * 0.25
     return Math.max(0, 1 - penalty / 100)
   },
+  outputMetadata: (out) =>
+    out.languageCount < 2
+      ? { applicability: "not_applicable" as const }
+      : undefined,
   diagnose: (out): ReadonlyArray<Diagnostic> => {
     const diagnostics: Array<Diagnostic> = [
       {

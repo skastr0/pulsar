@@ -95,6 +95,7 @@ describe("Observer + TS pack integration", () => {
         "TS-LD-04",
         "TS-LD-05",
         "TS-LD-06",
+        "TS-LD-07",
         "TS-RP-01",
         "TS-RP-02",
         "TS-SL-01",

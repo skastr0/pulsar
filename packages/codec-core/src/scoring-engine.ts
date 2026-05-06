@@ -36,7 +36,9 @@ import type { Registry } from "./registry.js"
 import { runSignal, type SignalRunResult } from "./runner.js"
 import { type TimeSeriesWriter } from "./time-series.js"
 import {
+  categoryAggregationConfigOf,
   isActive as vectorIsActive,
+  readinessConfigOf,
   resolvedConfig as vectorResolvedConfig,
   type TasteVector,
 } from "./vector.js"
@@ -421,6 +423,7 @@ interface CachedObserverOutput {
   readonly categories: ObserverOutput["categories"]
   readonly minimum: ObserverOutput["minimum"]
   readonly weighted_mean: ObserverOutput["weighted_mean"]
+  readonly readiness?: ObserverOutput["readiness"]
   readonly hard_gate_status: ObserverOutput["hard_gate_status"]
   readonly hard_gate_violations: ObserverOutput["hard_gate_violations"]
   readonly inactiveSignals: ObserverOutput["inactiveSignals"]
@@ -428,6 +431,9 @@ interface CachedObserverOutput {
   readonly signalMetadata?: ObserverOutput["signalMetadata"]
   readonly calibration?: ObserverOutput["calibration"]
 }
+
+const OBSERVER_AGGREGATION_CACHE_VERSION =
+  "observer-aggregation-v4-category-pressure-applicability"
 
 /**
  * Observer output depends on the full active signal set, each active
@@ -444,16 +450,35 @@ export const computeObserverConfigHash = (
     .map((signal) => [
       signal.id,
       {
+        category: signal.category,
         config: vectorResolvedConfig(signal.id, signal.defaultConfig, vector),
         cacheVersion: signal.cacheVersion ?? null,
+        enforcement: signal.enforcement,
+        kind: signal.kind,
+        normalizationGroup: signal.normalizationGroup ?? null,
+        tier: signal.tier,
         weight: vector?.signal_overrides[signal.id]?.weight ?? 1,
       },
     ])
+  const observerConfig = {
+    diffTimeIntegration: vector?.observer?.diffTimeIntegration ?? true,
+    categoryAggregation: categoryAggregationConfigOf(vector),
+    readiness: readinessConfigOf(vector),
+  }
   const hash = createHash("sha256")
   hash.update(
     calibrationFingerprint === undefined
-      ? stableStringify(activeSignals)
-      : stableStringify({ activeSignals, calibrationFingerprint }),
+      ? stableStringify({
+          activeSignals,
+          observerAggregationVersion: OBSERVER_AGGREGATION_CACHE_VERSION,
+          observerConfig,
+        })
+      : stableStringify({
+          activeSignals,
+          calibrationFingerprint,
+          observerAggregationVersion: OBSERVER_AGGREGATION_CACHE_VERSION,
+          observerConfig,
+        }),
   )
   return hash.digest("hex")
 }
@@ -462,6 +487,7 @@ const toCachedObserverOutput = (result: ObserverOutput): CachedObserverOutput =>
   categories: result.categories,
   minimum: result.minimum,
   weighted_mean: result.weighted_mean,
+  ...(result.readiness !== undefined ? { readiness: result.readiness } : {}),
   hard_gate_status: result.hard_gate_status,
   hard_gate_violations: result.hard_gate_violations,
   inactiveSignals: result.inactiveSignals,
@@ -474,6 +500,7 @@ const fromCachedObserverOutput = (cached: CachedObserverOutput): ObserverOutput 
   categories: cached.categories,
   minimum: cached.minimum,
   weighted_mean: cached.weighted_mean,
+  ...(cached.readiness !== undefined ? { readiness: cached.readiness } : {}),
   hard_gate_status: cached.hard_gate_status,
   hard_gate_violations: cached.hard_gate_violations,
   inactiveSignals: cached.inactiveSignals,

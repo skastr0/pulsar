@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { evaluateBackpressure } from "../backpressure.js"
+import type { ReadinessOutput } from "../observer.js"
 import type { TimeSeriesEntry } from "../time-series.js"
 
 const meanScore = (scores: Partial<Record<string, number>>): number => {
@@ -10,7 +11,37 @@ const meanScore = (scores: Partial<Record<string, number>>): number => {
   return values.reduce((sum, value) => sum + value, 0) / values.length
 }
 
-const makeEntry = (timestamp: string, scores: Partial<Record<string, number>>): TimeSeriesEntry => ({
+const makeReadiness = (
+  status: ReadinessOutput["status"],
+  pressure: number,
+): ReadinessOutput => ({
+  score: 1 - pressure,
+  pressure,
+  status,
+  aggregation: {
+    strategy: "pressure-pnorm-local-max",
+    p: 12,
+    mean_pressure: pressure,
+    pnorm_pressure: pressure,
+    max_local_pressure: pressure,
+    failed_signal_pressure: status === "failed" ? 1 : 0,
+    hard_gate_pressure: status === "blocked" ? 0.8 : 0,
+    hard_gate_score_cap: 0.2,
+    local_warning_threshold: 0.4,
+    local_poison_threshold: 0.75,
+    local_warning_gain: 0.75,
+    applicable_signal_count: 1,
+    ignored_signal_count: 0,
+    failed_signal_count: 0,
+  },
+  top_pressures: [],
+})
+
+const makeEntry = (
+  timestamp: string,
+  scores: Partial<Record<string, number>>,
+  readiness?: ReadinessOutput,
+): TimeSeriesEntry => ({
   sha: timestamp,
   timestamp,
   source: "raw",
@@ -33,6 +64,7 @@ const makeEntry = (timestamp: string, scores: Partial<Record<string, number>>): 
       detail: "detail",
     },
     weighted_mean: meanScore(scores),
+    ...(readiness !== undefined ? { readiness } : {}),
     hard_gate_status: "pass",
     hard_gate_violations: [],
   },
@@ -73,6 +105,72 @@ describe("backpressure thresholds", () => {
     const output = evaluateBackpressure(entries, undefined)
     expect(output.overall).toBe("red")
     expect(output.byCategory["architectural-drift"].level).toBe("red")
+  })
+
+  test("returns red when readiness reports blocking pressure even if category means are high", () => {
+    const entries = [
+      makeEntry("2026-04-01T10:00:00.000Z", {
+        "architectural-drift": 0.95,
+        "generated-slop": 0.94,
+      }),
+      makeEntry(
+        "2026-04-10T10:00:00.000Z",
+        {
+          "architectural-drift": 0.96,
+          "generated-slop": 0.95,
+        },
+        makeReadiness("red", 0.9),
+      ),
+    ]
+
+    const output = evaluateBackpressure(entries, undefined)
+
+    expect(output.overall).toBe("red")
+    expect(output.rationale.some((line) => line.includes("Readiness pressure is 0.90 (red)"))).toBe(true)
+  })
+
+  test("does not downgrade repo health for zero-pressure unknown readiness", () => {
+    const entries = [
+      makeEntry("2026-04-01T10:00:00.000Z", {
+        "architectural-drift": 0.95,
+        "generated-slop": 0.94,
+      }),
+      makeEntry(
+        "2026-04-10T10:00:00.000Z",
+        {
+          "architectural-drift": 0.96,
+          "generated-slop": 0.95,
+        },
+        makeReadiness("unknown", 0),
+      ),
+    ]
+
+    const output = evaluateBackpressure(entries, undefined)
+
+    expect(output.overall).toBe("green")
+    expect(output.rationale.some((line) => line.includes("Readiness pressure is 0.00 (unknown)"))).toBe(false)
+  })
+
+  test("returns red when readiness reports signal execution failure", () => {
+    const entries = [
+      makeEntry("2026-04-01T10:00:00.000Z", {
+        "architectural-drift": 0.95,
+        "generated-slop": 0.94,
+      }),
+      makeEntry(
+        "2026-04-10T10:00:00.000Z",
+        {
+          "architectural-drift": 0.96,
+          "generated-slop": 0.95,
+        },
+        makeReadiness("failed", 1),
+      ),
+    ]
+
+    const output = evaluateBackpressure(entries, undefined)
+
+    expect(output.overall).toBe("red")
+    expect(output.rationale.some((line) => line.includes("Readiness pressure is 1.00 (failed)"))).toBe(true)
   })
 
   test("uses cautious defaults for an empty series", () => {

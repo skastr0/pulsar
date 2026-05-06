@@ -90,6 +90,8 @@ describe("TS-AB-04 (interface to implementation ratio)", () => {
 
     const out = await runSignal(repo.root, TsAb04, TsAb04.defaultConfig)
     expect(out.deadInterfaces[0]?.interfaceName).toBe("IDead")
+    expect(out.deadInterfaceRatio).toBe(1)
+    expect(TsAb04.score(out)).toBe(0.75)
   })
 
   test("test-only interfaces are excluded from the ratio", async () => {
@@ -104,5 +106,6 @@ describe("TS-AB-04 (interface to implementation ratio)", () => {
 
     const out = await runSignal(repo.root, TsAb04, TsAb04.defaultConfig)
     expect(out.totalInterfaces).toBe(0)
+    expect(TsAb04.outputMetadata?.(out)?.applicability).toBe("not_applicable")
   })
 })

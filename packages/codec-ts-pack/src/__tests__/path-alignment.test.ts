@@ -27,6 +27,9 @@ describe("TS-RP-01 path alignment", () => {
       ]),
       overThresholdCount: 1,
       totalFunctions: 2,
+      maxComplexity: 30,
+      ratioPressure: 1,
+      maxComplexityPressure: 1 / 3,
     }
 
     const churn: SharedChurn01Output = {
@@ -66,6 +69,9 @@ describe("TS-RP-01 path alignment", () => {
       ]),
       overThresholdCount: 1,
       totalFunctions: 41,
+      maxComplexity: 119,
+      ratioPressure: 2 / 41,
+      maxComplexityPressure: 99 / 119,
     }
 
     const churn: SharedChurn01Output = {

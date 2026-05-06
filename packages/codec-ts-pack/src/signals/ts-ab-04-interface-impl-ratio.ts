@@ -38,6 +38,9 @@ export interface TsAb04Output {
   readonly totalInterfaces: number
   readonly ratio: number
   readonly deadInterfaces: ReadonlyArray<DeadInterface>
+  readonly deadInterfaceRatio: number
+  readonly singleImplementationPressure: number
+  readonly deadInterfacePressure: number
   readonly diagnosticLimit: number
 }
 
@@ -46,6 +49,7 @@ export const TsAb04: Signal<TsAb04Config, TsAb04Output, TsProjectTag> = {
   tier: 1,
   category: "abstraction-bloat",
   kind: "legibility",
+  cacheVersion: "dead-interface-pressure-v2",
   configSchema: TsAb04Config,
   defaultConfig: {
     exclude_globs: ["**/node_modules/**", "**/dist/**", "**/.turbo/**"],
@@ -117,16 +121,25 @@ export const TsAb04: Signal<TsAb04Config, TsAb04Output, TsProjectTag> = {
               return left.interfaceName.localeCompare(right.interfaceName)
             })
 
+          const ratio = interfaces.length === 0 ? 0 : flaggedPairs.length / interfaces.length
+          const deadInterfaceRatio =
+            interfaces.length === 0 ? 0 : deadInterfaces.length / interfaces.length
+          const singleImplementationPressure = Math.min(1, ratio / 0.5)
+          const deadInterfacePressure = Math.min(0.25, deadInterfaceRatio * 0.25)
+
           return {
             pairs,
             flaggedPairs,
             totalInterfaces: interfaces.length,
-            ratio: interfaces.length === 0 ? 0 : flaggedPairs.length / interfaces.length,
+            ratio,
             deadInterfaces: deadInterfaces.sort((left, right) => {
               const fileCompare = left.interfaceFile.localeCompare(right.interfaceFile)
               if (fileCompare !== 0) return fileCompare
               return left.interfaceName.localeCompare(right.interfaceName)
             }),
+            deadInterfaceRatio,
+            singleImplementationPressure,
+            deadInterfacePressure,
             diagnosticLimit: config.top_n_diagnostics,
           }
         },
@@ -139,7 +152,13 @@ export const TsAb04: Signal<TsAb04Config, TsAb04Output, TsProjectTag> = {
       })
       return result
     }),
-  score: (out) => Math.max(0, 1 - Math.min(1, out.ratio / 0.5)),
+  score: (out) =>
+    Math.max(
+      0,
+      1 - Math.max(out.singleImplementationPressure, out.deadInterfacePressure),
+    ),
+  outputMetadata: (out) =>
+    out.totalInterfaces === 0 ? { applicability: "not_applicable" as const } : undefined,
   diagnose: (out): ReadonlyArray<Diagnostic> => {
     const diagnostics: Array<Diagnostic> = []
     diagnostics.push(

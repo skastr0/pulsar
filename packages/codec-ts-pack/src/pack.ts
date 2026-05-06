@@ -18,6 +18,7 @@ import { TsLd03 } from "./signals/ts-ld-03-nesting-depth.js"
 import { TsLd04 } from "./signals/ts-ld-04-naming-conventions.js"
 import { TsLd05 } from "./signals/ts-ld-05-domain-term-consistency.js"
 import { TsLd06 } from "./signals/ts-ld-06-annotation-coverage.js"
+import { TsLd07 } from "./signals/ts-ld-07-unsafe-type-erosion.js"
 import { TsRp01 } from "./signals/ts-rp-01-hotspots.js"
 import { TsSl01 } from "./signals/ts-sl-01-duplication.js"
 import { TsSl02 } from "./signals/ts-sl-02-inconsistent-clones.js"
@@ -26,7 +27,7 @@ import { TsSl04 } from "./signals/ts-sl-04-empty-implementations.js"
 import { TsRp02 } from "./signals/ts-rp-02-pr-size.js"
 
 const TS_PACK_CACHE_VERSION =
-  "ts-pack-2026-05-04-semantic-type-imports-1"
+  "ts-pack-2026-05-06-local-pressure-1"
 
 const withTsPackCacheVersion = <S extends AnySignal>(signal: S): S => ({
   ...signal,
@@ -61,6 +62,7 @@ export const TS_PACK_SIGNALS: ReadonlyArray<AnySignal> = [
   TsAb04,
   TsAb05,
   TsLd06,
+  TsLd07,
   TsRp01,
   TsSl01,
   TsSl03,
@@ -88,6 +90,7 @@ export { TsAb03 } from "./signals/ts-ab-03-type-indirection-depth.js"
 export { TsAb04 } from "./signals/ts-ab-04-interface-impl-ratio.js"
 export { TsAb05 } from "./signals/ts-ab-05-generic-proliferation.js"
 export { TsLd06 } from "./signals/ts-ld-06-annotation-coverage.js"
+export { TsLd07 } from "./signals/ts-ld-07-unsafe-type-erosion.js"
 export { SharedChurn01 } from "./signals/shared-churn-01.js"
 export { Shared02BusFactor } from "./signals/shared-02-bus-factor.js"
 export { Shared03ChurnRate } from "./signals/shared-03-churn-rate.js"

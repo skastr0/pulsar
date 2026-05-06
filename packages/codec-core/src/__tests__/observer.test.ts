@@ -13,7 +13,7 @@ import {
   SignalComputeError,
   type SignalError,
 } from "../errors.js"
-import type { AnySignal, Signal } from "../signal.js"
+import type { AnySignal, Signal, SignalApplicability } from "../signal.js"
 
 /**
  * Tiny leaf-signal factory. Every test builds its own tree of signals
@@ -32,6 +32,7 @@ interface LeafOpts {
     readonly baseConfidence?: number
     readonly computedAt?: string
     readonly stale?: boolean
+    readonly applicability?: SignalApplicability
   }
 }
 
@@ -64,7 +65,7 @@ const makeLeaf = (opts: LeafOpts): Signal<{}, { readonly n: number }, never> => 
 })
 
 describe("Observer — category aggregation", () => {
-  test("taste-weighted mean of two signals in one category (AC-2)", async () => {
+  test("category score preserves local pressure while retaining weighted mean metadata", async () => {
     const a = makeLeaf({ id: "TEST-A", category: "legibility-decay", score: 0.9 })
     const b = makeLeaf({ id: "TEST-B", category: "legibility-decay", score: 0.6 })
 
@@ -77,34 +78,41 @@ describe("Observer — category aggregation", () => {
       },
     })
 
-    // (1 * 0.9 + 0.5 * 0.6) / (1 + 0.5) = 1.2 / 1.5 = 0.8
-    expect(result.categories["legibility-decay"].score).toBeCloseTo(0.8, 5)
-    expect(result.categories["legibility-decay"].signalCount).toBe(2)
-    expect(result.categories["legibility-decay"].signals).toEqual({
+    const category = result.categories["legibility-decay"]
+
+    // Weighted mean remains visible as the evidence average:
+    // (1 * 0.9 + 0.5 * 0.6) / (1 + 0.5) = 0.8.
+    expect(category.aggregation?.aggregateScore).toBeCloseTo(0.8, 5)
+    // Public category health is pressure-shaped so the 0.6 local signal is not averaged away.
+    expect(category.score).toBeCloseTo(0.6349940944697947, 5)
+    expect(category.aggregation?.shapedByPressure).toBe(true)
+    expect(category.signalCount).toBe(2)
+    expect(category.signals).toEqual({
       "TEST-A": 0.9,
       "TEST-B": 0.6,
     })
   })
 
-  test("generated-slop score keeps the weakest active signal visible", async () => {
+  test("generated-slop score keeps the weakest active signal visible through generic pressure", async () => {
     const a = makeLeaf({ id: "TS-SL-LOW", category: "generated-slop", score: 0.2 })
     const b = makeLeaf({ id: "TS-SL-HIGH", category: "generated-slop", score: 1 })
 
     const result = await run([a, b])
 
-    // Raw mean would be 0.6. Generated-slop blends the aggregate with
-    // the weakest active signal so a smoking-gun slop signal is not
-    // averaged away by unrelated clean checks.
-    expect(result.categories["generated-slop"].score).toBeCloseTo(0.46, 5)
+    // Raw mean would be 0.6. Generic local-poison pressure keeps the
+    // smoking-gun slop signal visible instead of averaging it away.
+    expect(result.categories["generated-slop"].aggregation?.aggregateScore).toBeCloseTo(0.6, 5)
+    expect(result.categories["generated-slop"].score).toBeCloseTo(0.2, 5)
   })
 
-  test("dependency-entropy score keeps the weakest active signal visible", async () => {
+  test("dependency-entropy score keeps the weakest active signal visible through generic pressure", async () => {
     const a = makeLeaf({ id: "TS-DE-LOW", category: "dependency-entropy", score: 0 })
     const b = makeLeaf({ id: "TS-DE-HIGH", category: "dependency-entropy", score: 1 })
 
     const result = await run([a, b])
 
-    expect(result.categories["dependency-entropy"].score).toBeCloseTo(0.325, 5)
+    expect(result.categories["dependency-entropy"].aggregation?.aggregateScore).toBeCloseTo(0.5, 5)
+    expect(result.categories["dependency-entropy"].score).toBe(0)
   })
 
   test("empty category scores 1 and is excluded from weightedMean (AC-3)", async () => {
@@ -149,7 +157,11 @@ describe("Observer — category aggregation", () => {
     const rs = makeLeaf({ id: "RS-HIGH", category: "legibility-decay", score: 1 })
 
     const result = await run([tsA, tsB, rs])
-    expect(result.categories["legibility-decay"].score).toBeCloseTo(0.65, 5)
+    expect(result.categories["legibility-decay"].score).toBeCloseTo(0.2, 5)
+    expect(result.categories["legibility-decay"].aggregation?.aggregateScore).toBeCloseTo(0.65, 5)
+    expect(
+      result.categories["legibility-decay"].aggregation?.pressure.maxLocalPressure,
+    ).toBeCloseTo(0.8, 5)
     expect(result.categories["legibility-decay"].normalization?.strategy).toBe(
       "language-group-mean",
     )
@@ -178,7 +190,58 @@ describe("Observer — category aggregation", () => {
     expect(category.normalization).toBeUndefined()
     expect(category.aggregation?.strategy).toBe("weighted-mean")
     expect(category.aggregation?.rawScore).toBeCloseTo(5 / 6, 5)
-    expect(category.score).toBeCloseTo((5 / 6) * 0.65 + 0.5 * 0.35, 5)
+    expect(category.score).toBeCloseTo(0.543742622619753, 5)
+    expect(category.aggregation?.shapedByPressure).toBe(true)
+  })
+
+  test("polyglot category pressure keeps per-signal local failures visible", async () => {
+    const tsBad = makeLeaf({
+      id: "TS-BAD",
+      category: "legibility-decay",
+      score: 0.1,
+    })
+    const tsClean = makeLeaf({
+      id: "TS-CLEAN",
+      category: "legibility-decay",
+      score: 1,
+    })
+    const rsClean = makeLeaf({
+      id: "RS-CLEAN",
+      category: "legibility-decay",
+      score: 1,
+    })
+
+    const result = await run([tsBad, tsClean, rsClean])
+    const category = result.categories["legibility-decay"]
+
+    expect(category.normalization?.strategy).toBe("language-group-mean")
+    expect(category.aggregation?.aggregateScore).toBeCloseTo(0.775, 5)
+    expect(category.aggregation?.pressure.maxLocalPressure).toBeCloseTo(0.9, 5)
+    expect(category.score).toBeCloseTo(0.1, 5)
+  })
+
+  test("category pressure honors low-confidence applicable signals", async () => {
+    const exploratory = makeLeaf({
+      id: "LLM-LOW",
+      tier: 3,
+      category: "legibility-decay",
+      score: 0.1,
+      metadata: { applicability: "applicable", effectiveConfidence: 0.2 },
+    })
+    const deterministic = makeLeaf({
+      id: "TS-HIGH",
+      tier: 1,
+      category: "legibility-decay",
+      score: 1,
+    })
+
+    const result = await run([exploratory, deterministic])
+    const category = result.categories["legibility-decay"]
+
+    expect(category.signals["LLM-LOW"]).toBe(0.1)
+    expect(category.aggregation?.aggregateScore).toBeCloseTo(0.91, 5)
+    expect(category.aggregation?.pressure.maxLocalPressure).toBeCloseTo(0.18, 5)
+    expect(category.score).toBeGreaterThan(0.8)
   })
 })
 
@@ -360,6 +423,163 @@ describe("Observer — hard gate routing (AC-6)", () => {
   })
 })
 
+describe("Observer — readiness pressure", () => {
+  test("keeps serious applicable defects visible beside weighted_mean", async () => {
+    const poison = makeLeaf({
+      id: "TEST-POISON",
+      category: "abstraction-bloat",
+      score: 0.1,
+    })
+    const cleanSignals = Array.from({ length: 9 }, (_, index) =>
+      makeLeaf({
+        id: `TEST-CLEAN-${index}`,
+        category: "legibility-decay",
+        score: 1,
+      }),
+    )
+
+    const result = await run([poison, ...cleanSignals])
+
+    expect(result.weighted_mean).toBeCloseTo(0.91, 5)
+    expect(result.readiness?.score).toBeCloseTo(0.1, 5)
+    expect(result.readiness?.status).toBe("red")
+    expect(result.readiness?.top_pressures[0]).toMatchObject({
+      signal_id: "TEST-POISON",
+      category: "abstraction-bloat",
+      raw_pressure: 0.9,
+      effective_pressure: 0.9,
+      applicability: "applicable",
+    })
+  })
+
+  test("hard-gate failures cap readiness independently of vector weight", async () => {
+    const structural = makeLeaf({
+      id: "TEST-STRUCT",
+      category: "architectural-drift",
+      kind: "structural",
+      tier: 1,
+      score: 0.9,
+      diagnostics: [{ severity: "block", message: "boundary violated" }],
+    })
+
+    const result = await run([structural], {
+      id: "v1",
+      domain: "typescript",
+      signal_overrides: { "TEST-STRUCT": { active: true, weight: 0.1 } },
+    })
+
+    expect(result.hard_gate_status).toBe("fail")
+    expect(result.readiness?.status).toBe("blocked")
+    expect(result.readiness?.score).toBeLessThanOrEqual(0.2)
+    expect(result.readiness?.aggregation.hard_gate_pressure).toBeCloseTo(0.8, 5)
+  })
+
+  test("compute failures are visible as execution failure but not category evidence", async () => {
+    const bad = makeLeaf({
+      id: "TEST-BAD",
+      category: "legibility-decay",
+      score: 0.5,
+      fail: true,
+    })
+
+    const result = await run([bad])
+
+    expect(result.signalResults.get("TEST-BAD")?.score).toBe(0)
+    expect(result.categories["legibility-decay"].applicableSignalCount).toBe(0)
+    expect(result.categories["legibility-decay"].score).toBe(1)
+    expect(result.minimum).toBeUndefined()
+    expect(result.readiness?.score).toBe(0)
+    expect(result.readiness?.status).toBe("failed")
+    expect(result.readiness?.aggregation.failed_signal_pressure).toBe(1)
+    expect(result.readiness?.aggregation.failed_signal_count).toBe(1)
+    expect(result.readiness?.top_pressures[0]).toMatchObject({
+      signal_id: "TEST-BAD",
+      raw_pressure: 1,
+      effective_pressure: 0,
+      applicability: "failed",
+    })
+  })
+
+  test("compute failures force failed readiness even beside clean evidence", async () => {
+    const ok = makeLeaf({ id: "TEST-OK", category: "legibility-decay", score: 1 })
+    const bad = makeLeaf({
+      id: "TEST-BAD",
+      category: "legibility-decay",
+      score: 0.5,
+      fail: true,
+    })
+
+    const result = await run([ok, bad])
+
+    expect(result.readiness?.score).toBe(0)
+    expect(result.readiness?.status).toBe("failed")
+    expect(result.readiness?.aggregation.applicable_signal_count).toBe(1)
+    expect(result.readiness?.aggregation.failed_signal_count).toBe(1)
+    expect(result.readiness?.aggregation.failed_signal_pressure).toBe(1)
+    expect(result.readiness?.top_pressures[0]).toMatchObject({
+      signal_id: "TEST-BAD",
+      raw_pressure: 1,
+      effective_pressure: 0,
+      applicability: "failed",
+    })
+  })
+
+  test("non-applicable and insufficient-evidence signals are visible but ignored by aggregate pressure", async () => {
+    const applicable = makeLeaf({
+      id: "TEST-APPLICABLE",
+      category: "legibility-decay",
+      score: 0.8,
+    })
+    const notApplicable = makeLeaf({
+      id: "TEST-NOT-APPLICABLE",
+      category: "legibility-decay",
+      score: 0,
+      metadata: { applicability: "not_applicable" },
+    })
+    const insufficient = makeLeaf({
+      id: "TEST-INSUFFICIENT",
+      category: "generated-slop",
+      score: 0,
+      metadata: { applicability: "insufficient_evidence" },
+    })
+
+    const result = await run([applicable, notApplicable, insufficient])
+
+    expect(result.categories["legibility-decay"].signalCount).toBe(2)
+    expect(result.categories["legibility-decay"].applicableSignalCount).toBe(1)
+    expect(result.categories["legibility-decay"].score).toBeCloseTo(0.8, 5)
+    expect(result.categories["generated-slop"].signalCount).toBe(1)
+    expect(result.categories["generated-slop"].applicableSignalCount).toBe(0)
+    expect(result.categories["generated-slop"].score).toBe(1)
+    expect(result.weighted_mean).toBeCloseTo(0.8, 5)
+    expect(result.minimum?.signal).toBe("TEST-APPLICABLE")
+    expect(result.readiness?.aggregation.applicable_signal_count).toBe(1)
+    expect(result.readiness?.aggregation.ignored_signal_count).toBe(2)
+    expect(result.readiness?.aggregation.failed_signal_count).toBe(0)
+    expect(result.readiness?.score).toBeCloseTo(0.8, 5)
+
+    const notApplicablePressure = result.readiness?.top_pressures.find(
+      (pressure) => pressure.signal_id === "TEST-NOT-APPLICABLE",
+    )
+    expect(notApplicablePressure).toMatchObject({
+      raw_pressure: 1,
+      effective_pressure: 0,
+      confidence: 0,
+      applicability: "not_applicable",
+    })
+
+    const insufficientPressure = result.readiness?.top_pressures.find(
+      (pressure) => pressure.signal_id === "TEST-INSUFFICIENT",
+    )
+    expect(insufficientPressure).toMatchObject({
+      raw_pressure: 1,
+      effective_pressure: 0,
+      confidence: 0,
+      applicability: "insufficient_evidence",
+    })
+  })
+})
+
 describe("Observer — inactive signal handling (AC-7)", () => {
   test("inactive signals are excluded from aggregation but listed", async () => {
     const active = makeLeaf({
@@ -413,9 +633,10 @@ describe("Observer — compute failure isolation (AC-8)", () => {
     // OK signal still ran.
     expect(result.signalResults.get("TEST-OK")?.score).toBe(0.9)
 
-    // Category score is the weighted mean of (0.9, 0.0) = 0.45 with
-    // default weight 1 for both.
-    expect(result.categories["legibility-decay"].score).toBeCloseTo(0.45, 5)
+    // The failed signal stays visible in diagnostics and signal results,
+    // but it is not evidence about the repo's code quality.
+    expect(result.categories["legibility-decay"].score).toBeCloseTo(0.9, 5)
+    expect(result.categories["legibility-decay"].applicableSignalCount).toBe(1)
   })
 })
 
@@ -495,7 +716,16 @@ describe("Observer — JSON output shape (AC-10)", () => {
             aggregateScore: 0.7,
             lowestSignalScore: 0.7,
             finalScore: 0.7,
-            shapedByLowestSignal: false,
+            shapedByPressure: false,
+            pressure: {
+              strategy: "pressure-pnorm-local-max",
+              p: 12,
+              meanPressure: 0.3,
+              pnormPressure: 0.3,
+              maxLocalPressure: 0.3,
+              localPressure: 0,
+              finalPressure: 0.3,
+            },
             weightTotal: 1,
             weights: { "TEST-A": 1 },
           },
@@ -510,10 +740,41 @@ describe("Observer — JSON output shape (AC-10)", () => {
         detail: "stable naming",
       },
       weighted_mean: 0.7,
+      readiness: {
+        score: 0.7,
+        pressure: 0.3,
+        status: "yellow",
+      },
       hard_gate_status: "pass",
       hard_gate_violations: [],
     })
-    expect(decoded.categories["generated-slop"].aggregation?.shapedByLowestSignal).toBe(true)
+    expect(decoded.categories["generated-slop"].aggregation?.shapedByPressure).toBe(false)
+  })
+
+  test("public JSON preserves signal applicability metadata", async () => {
+    const notApplicable = makeLeaf({
+      id: "TEST-NOT-APPLICABLE",
+      category: "generated-slop",
+      score: 0,
+      metadata: { applicability: "not_applicable" },
+    })
+    const insufficient = makeLeaf({
+      id: "TEST-INSUFFICIENT",
+      category: "legibility-decay",
+      score: 0,
+      metadata: { applicability: "insufficient_evidence" },
+    })
+
+    const result = await run([notApplicable, insufficient])
+    const publicJson = toObserverJson(result)
+    const decoded = Schema.decodeUnknownSync(ObserverOutputSchema)(publicJson)
+
+    expect(decoded.signal_metadata?.["TEST-NOT-APPLICABLE"]?.applicability).toBe(
+      "not_applicable",
+    )
+    expect(decoded.signal_metadata?.["TEST-INSUFFICIENT"]?.applicability).toBe(
+      "insufficient_evidence",
+    )
   })
 
   test("public JSON includes active calibration attribution", async () => {

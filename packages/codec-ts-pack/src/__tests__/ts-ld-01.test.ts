@@ -13,6 +13,16 @@ describe("TS-LD-01 (cyclomatic complexity)", () => {
     await repo.cleanup()
   })
 
+  test("empty inspected source is not applicable evidence", async () => {
+    await repo.write("src/index.ts", "export const ready = true\n")
+
+    const out = await runSignal(repo.root, TsLd01, TsLd01.defaultConfig)
+
+    expect(out.totalFunctions).toBe(0)
+    expect(TsLd01.score(out)).toBe(1)
+    expect(TsLd01.outputMetadata?.(out)?.applicability).toBe("not_applicable")
+  })
+
   test("nested callbacks do not inflate outer function complexity", async () => {
     await repo.write(
       "src/index.ts",
@@ -80,5 +90,36 @@ export function classify(a: boolean, b: boolean, c: boolean) {
     const classify = out.functions.find((fn) => fn.name === "classify")
 
     expect(classify?.complexity).toBe(5)
+  })
+
+  test("single extreme function creates local max pressure", async () => {
+    const branches = Array.from(
+      { length: 12 },
+      (_, index) => `  if (value === ${index}) return ${index}`,
+    )
+    await repo.write(
+      "src/index.ts",
+      [
+        ...Array.from(
+          { length: 80 },
+          (_, index) => `export function tiny${index}() { return ${index} }`,
+        ),
+        "export function tangled(value: number) {",
+        ...branches,
+        "  return -1",
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsLd01, {
+      ...TsLd01.defaultConfig,
+      max_complexity: 4,
+    })
+
+    expect(out.overThresholdCount).toBe(1)
+    expect(out.maxComplexity).toBeGreaterThan(4)
+    expect(out.maxComplexityPressure).toBeGreaterThan(out.ratioPressure)
+    expect(TsLd01.score(out)).toBeLessThan(0.4)
   })
 })

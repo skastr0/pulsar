@@ -15,6 +15,9 @@ const mockComplexityOut: TsLd01Output = {
   ]),
   overThresholdCount: 2,
   totalFunctions: 4,
+  maxComplexity: 30,
+  ratioPressure: 1,
+  maxComplexityPressure: 1 / 3,
 }
 
 // Churn now emits absolute paths — aligned with ts-morph at produce time.
@@ -62,6 +65,9 @@ describe("TS-RP-01 (compound)", () => {
           byFile: new Map(),
           overThresholdCount: 0,
           totalFunctions: 0,
+          maxComplexity: 0,
+          ratioPressure: 0,
+          maxComplexityPressure: 0,
         } satisfies TsLd01Output,
       ],
       [
@@ -112,6 +118,9 @@ describe("TS-RP-01 (compound)", () => {
       ]),
       overThresholdCount: 2,
       totalFunctions: 4,
+      maxComplexity: 7,
+      ratioPressure: 1,
+      maxComplexityPressure: 3 / 7,
     }
 
     const variants: ReadonlyArray<SharedChurn01Output> = [

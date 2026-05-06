@@ -60,24 +60,6 @@ const runCli = (
     env: { ...process.env, ...env },
   })
 
-const duplicateHeavySource = (): string => {
-  const body = `
-  const normalized = value.trim().toLowerCase()
-  if (normalized.length === 0) {
-    return "missing"
-  }
-  if (normalized.includes("@")) {
-    return normalized
-  }
-  return normalized.replaceAll(" ", "-")
-`
-  return Array.from({ length: 40 }, (_, index) => `
-export function normalize${index}(value: string): string {
-${body}
-}
-`).join("\n")
-}
-
 describe("taste persona", () => {
   test("shipped presets and quiz items reference known registry signals", async () => {
     const registry = await Effect.runPromise(buildCodecRegistry())
@@ -309,8 +291,28 @@ export function formattedTiny(value: number): number {
 
   test("created ai-slop-defense vector changes generated-slop scoring", async () => {
     const repoPath = await initRepo()
+    const smallDuplicateBody = `
+  const out = value + 1
+  return out
+`
     try {
-      await writeRepoFile(repoPath, "src/duplicates.ts", duplicateHeavySource())
+      await writeRepoFile(
+        repoPath,
+        "src/existing.ts",
+        `export function existingTiny(value: number): number {${smallDuplicateBody}}\n`,
+      )
+      await writeRepoFile(
+        repoPath,
+        "src/existing-two.ts",
+        `export function existingTinyTwo(value: number): number {${smallDuplicateBody}}\n`,
+      )
+      sh("git", ["add", "src/existing.ts", "src/existing-two.ts"], repoPath)
+      sh("git", ["commit", "-q", "-m", "seed tiny helpers"], repoPath)
+      await writeRepoFile(
+        repoPath,
+        "src/changed.ts",
+        `export function copiedTiny(value: number): number {${smallDuplicateBody}}\n`,
+      )
 
       const baseline = runCli(repoPath, [
         "score",
@@ -318,7 +320,8 @@ export function formattedTiny(value: number): number {
         ".",
       ])
       expect(baseline.status).toBe(0)
-      const baselineScore = JSON.parse(baseline.stdout).categories["generated-slop"].score
+      const baselineGeneratedSlop = JSON.parse(baseline.stdout).categories["generated-slop"]
+      const baselineCloneScore = baselineGeneratedSlop.signals["TS-SL-01"]
 
       const apply = runCli(repoPath, [
         "persona",
@@ -336,7 +339,8 @@ export function formattedTiny(value: number): number {
       ])
       expect(vectorScore.status).toBe(0)
       const generatedSlop = JSON.parse(vectorScore.stdout).categories["generated-slop"]
-      expect(generatedSlop.score).toBeLessThan(baselineScore)
+      expect(generatedSlop.score).toBeLessThan(baselineGeneratedSlop.score)
+      expect(generatedSlop.signals["TS-SL-01"]).toBeLessThan(baselineCloneScore)
       expect(generatedSlop.signals["TS-SL-01"]).toBeLessThan(1)
 
       const human = runCli(repoPath, ["score", "--category", "generated-slop", "."])

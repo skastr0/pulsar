@@ -21,11 +21,18 @@ export interface SignalInputRef {
 
 export type ConfigDirection = "higher-is-stricter" | "higher-is-looser"
 
+export type SignalApplicability =
+  | "applicable"
+  | "not_applicable"
+  | "insufficient_evidence"
+  | "failed"
+
 export interface SignalOutputMetadata {
   readonly effectiveConfidence?: number
   readonly baseConfidence?: number
   readonly computedAt?: string
   readonly stale?: boolean
+  readonly applicability?: SignalApplicability
 }
 
 /**

@@ -5,10 +5,12 @@ import type { Signal } from "../signal.js"
 import {
   aiAssistedModeEnabled,
   backpressureConfigOf,
+  categoryAggregationConfigOf,
   decodeTasteVector,
   diffTimeIntegrationEnabled,
   explainAiAssistedMode,
   isActive,
+  readinessConfigOf,
   reviewThresholdOf,
   resolvedConfig,
   timeSeriesConfigOf,
@@ -48,6 +50,14 @@ describe("TasteVector", () => {
       },
       observer: {
         diffTimeIntegration: false,
+        readiness: {
+          p_norm: 8,
+          local_poison_threshold: 0.7,
+        },
+        category_aggregation: {
+          p_norm: 6,
+          local_warning_threshold: 0.35,
+        },
         timeSeries: {
           enabled: true,
           compaction_threshold: 2048,
@@ -95,6 +105,10 @@ describe("TasteVector", () => {
     expect(vector.signal_overrides["MOCK-01"]?.weight).toBe(1.4)
     expect(vector.review_routing?.score_thresholds["api-design-reviewer"]).toBe(0.7)
     expect(vector.observer?.diffTimeIntegration).toBe(false)
+    expect(vector.observer?.readiness?.p_norm).toBe(8)
+    expect(readinessConfigOf(vector).local_poison_threshold).toBe(0.7)
+    expect(categoryAggregationConfigOf(vector).p_norm).toBe(6)
+    expect(categoryAggregationConfigOf(vector).local_warning_threshold).toBe(0.35)
     expect(vector.observer?.timeSeries?.enabled).toBe(true)
     expect(vector.backpressure?.trajectory_days).toBe(21)
     expect(vector.modes?.ai_assisted).toBe(true)
@@ -185,6 +199,28 @@ describe("TasteVector", () => {
         observer: { diffTimeIntegration: false },
       }),
     ).toBe(false)
+  })
+
+  test("readinessConfigOf returns explicit operational defaults", () => {
+    expect(readinessConfigOf(undefined)).toEqual({
+      p_norm: 12,
+      local_warning_threshold: 0.4,
+      local_poison_threshold: 0.75,
+      local_warning_gain: 0.75,
+      hard_gate_score_cap: 0.2,
+      green_max_pressure: 0.15,
+      red_min_pressure: 0.4,
+      top_pressures: 10,
+    })
+  })
+
+  test("categoryAggregationConfigOf returns explicit mixer defaults", () => {
+    expect(categoryAggregationConfigOf(undefined)).toEqual({
+      p_norm: 12,
+      local_warning_threshold: 0.4,
+      local_poison_threshold: 0.75,
+      local_warning_gain: 0.75,
+    })
   })
 
   test("timeSeriesConfigOf merges time-series defaults", () => {

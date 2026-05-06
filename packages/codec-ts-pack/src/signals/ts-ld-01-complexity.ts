@@ -45,6 +45,9 @@ export interface TsLd01Output {
   readonly byFile: ReadonlyMap<string, DistributionalSummary>
   readonly overThresholdCount: number
   readonly totalFunctions: number
+  readonly maxComplexity: number
+  readonly ratioPressure: number
+  readonly maxComplexityPressure: number
 }
 
 const BRANCHING_KINDS = new Set<SyntaxKind>([
@@ -64,7 +67,7 @@ export const TsLd01: Signal<TsLd01Config, TsLd01Output, TsProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "contextual-callback-names-v1",
+  cacheVersion: "local-max-pressure-v1",
   configSchema: TsLd01Config,
   defaultConfig: {
     max_complexity: 20,
@@ -99,12 +102,26 @@ export const TsLd01: Signal<TsLd01Config, TsLd01Output, TsProjectTag> = {
           const overThresholdCount = functions.filter(
             (f) => f.complexity > config.max_complexity,
           ).length
+          const maxComplexity = functions.reduce(
+            (max, f) => Math.max(max, f.complexity),
+            0,
+          )
+          const ratio =
+            functions.length === 0 ? 0 : overThresholdCount / functions.length
+          const ratioPressure = Math.min(1, ratio * 2)
+          const maxComplexityPressure =
+            maxComplexity <= config.max_complexity || maxComplexity === 0
+              ? 0
+              : (maxComplexity - config.max_complexity) / maxComplexity
 
           return {
             functions,
             byFile,
             overThresholdCount,
             totalFunctions: functions.length,
+            maxComplexity,
+            ratioPressure,
+            maxComplexityPressure,
           }
         },
         catch: (cause) =>
@@ -114,9 +131,11 @@ export const TsLd01: Signal<TsLd01Config, TsLd01Output, TsProjectTag> = {
     }),
   score: (out) => {
     if (out.totalFunctions === 0) return 1
-    const ratio = out.overThresholdCount / out.totalFunctions
-    return Math.max(0, 1 - ratio * 2)
+    const pressure = Math.max(out.ratioPressure, out.maxComplexityPressure)
+    return Math.max(0, 1 - pressure)
   },
+  outputMetadata: (out) =>
+    out.totalFunctions === 0 ? { applicability: "not_applicable" as const } : undefined,
   diagnose: (out): ReadonlyArray<Diagnostic> => {
     const sorted = [...out.functions].sort((a, b) => b.complexity - a.complexity)
     const top = sorted.slice(0, 10)
@@ -124,7 +143,13 @@ export const TsLd01: Signal<TsLd01Config, TsLd01Output, TsProjectTag> = {
       severity: "warn" as const,
       message: `Function \`${f.name}\` has cyclomatic complexity ${f.complexity}`,
       location: { file: f.file, line: f.line },
-      data: { complexity: f.complexity, name: f.name },
+      data: {
+        complexity: f.complexity,
+        name: f.name,
+        maxComplexity: out.maxComplexity,
+        ratioPressure: out.ratioPressure,
+        maxComplexityPressure: out.maxComplexityPressure,
+      },
     }))
   },
 }

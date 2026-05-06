@@ -25,6 +25,8 @@ export interface BackpressureTrendEntry {
   readonly timestamp: string
   readonly overall: BackpressureLevel
   readonly weightedMean: number
+  readonly readinessScore?: number
+  readonly readinessPressure?: number
   readonly hardGateStatus: "pass" | "fail"
 }
 
@@ -123,6 +125,19 @@ export const evaluateBackpressure = (
   const rationale: Array<string> = []
   let overall = worstLevel(CATEGORIES.map((category) => byCategory[category].level))
 
+  if (latest.observerOutput.readiness !== undefined) {
+    const readinessLevel = backpressureLevelFromReadiness(
+      latest.observerOutput.readiness.status,
+      latest.observerOutput.readiness.pressure,
+    )
+    overall = worstLevel([overall, readinessLevel])
+    if (readinessLevel !== "green") {
+      rationale.push(
+        `Readiness pressure is ${latest.observerOutput.readiness.pressure.toFixed(2)} (${latest.observerOutput.readiness.status}).`,
+      )
+    }
+  }
+
   if (latest.observerOutput.hard_gate_status === "fail") {
     overall = "red"
     rationale.push("Hard-gate violations are present in the latest observation.")
@@ -179,9 +194,26 @@ export const evaluateBackpressureTrend = (
       timestamp: entry.timestamp,
       overall: output.overall,
       weightedMean: entry.observerOutput.weighted_mean,
+      ...(entry.observerOutput.readiness !== undefined
+        ? {
+            readinessScore: entry.observerOutput.readiness.score,
+            readinessPressure: entry.observerOutput.readiness.pressure,
+          }
+        : {}),
       hardGateStatus: entry.observerOutput.hard_gate_status,
     }
   })
+
+const backpressureLevelFromReadiness = (
+  readinessStatus: NonNullable<TimeSeriesEntry["observerOutput"]["readiness"]>["status"],
+  pressure: number,
+): BackpressureLevel => {
+  if (readinessStatus === "green") return "green"
+  if (readinessStatus === "unknown") return pressure > 0 ? "yellow" : "green"
+  if (readinessStatus === "yellow") return "yellow"
+  if (readinessStatus === "failed") return "red"
+  return "red"
+}
 
 const emptyCategoryOutput = (
   level: BackpressureLevel,

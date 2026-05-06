@@ -36,6 +36,9 @@ describe("SHARED-05 suppression governance", () => {
     expect(out.languageCount).toBe(1)
     expect(out.unjustifiedCount).toBe(1)
     expect(Shared05Suppression.score(out)).toBe(1)
+    expect(Shared05Suppression.outputMetadata?.(out)?.applicability).toBe(
+      "not_applicable",
+    )
     expect(Shared05Suppression.diagnose(out)[0]?.severity).toBe("info")
   })
 
@@ -69,6 +72,7 @@ describe("SHARED-05 suppression governance", () => {
 
     expect(out.languageCount).toBe(2)
     expect(out.unjustifiedCount).toBe(2)
+    expect(Shared05Suppression.outputMetadata?.(out)).toBeUndefined()
     expect(Shared05Suppression.score(out)).toBeLessThan(1)
     expect(Shared05Suppression.diagnose(out)[0]?.severity).toBe("warn")
   })

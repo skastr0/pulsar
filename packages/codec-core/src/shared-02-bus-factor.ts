@@ -59,7 +59,7 @@ export const Shared02BusFactor: Signal<
   tier: 1.5,
   category: "review-pain",
   kind: "legibility",
-  cacheVersion: "bounded-history-v1",
+  cacheVersion: "bounded-history-v3-single-author-pressure",
   configSchema: Shared02BusFactorConfig,
   defaultConfig: {
     window_days: 180,
@@ -237,10 +237,15 @@ export const Shared02BusFactor: Signal<
     }),
   score: (out) => {
     if (out.touchedFileCount === 0) return 1
-    if (out.repoAuthors.length < 2) return 1
     if (out.touchedLoc === 0) return 1
     const siloedLoc = out.siloed.reduce((sum, entry) => sum + entry.loc, 0)
     return 1 - Math.min(0.35, clamp01(siloedLoc / out.touchedLoc) * 0.45)
+  },
+  outputMetadata: (out) => {
+    if (out.touchedFileCount === 0 || out.touchedLoc === 0) {
+      return { applicability: "insufficient_evidence" as const }
+    }
+    return undefined
   },
   diagnose: (out): ReadonlyArray<Diagnostic> => {
     if (out.touchedFileCount === 0) {
@@ -258,7 +263,7 @@ export const Shared02BusFactor: Signal<
           severity: "info",
           message:
             `SHARED-02 found a single-author corpus in the last ${out.windowDays} days; ` +
-            "bus-factor pressure is score-neutral until multiple authors are present",
+            "treating touched production LOC as concentrated ownership",
           data: { authors: out.repoAuthors, windowDays: out.windowDays },
         },
       ]

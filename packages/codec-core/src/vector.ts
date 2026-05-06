@@ -24,6 +24,65 @@ export const ObserverConfig = Schema.Struct({
   diffTimeIntegration: Schema.optionalWith(Schema.Boolean, {
     default: () => true,
   }),
+  readiness: Schema.optional(
+    Schema.Struct({
+      p_norm: Schema.optionalWith(Schema.Number.pipe(Schema.between(1, 32)), {
+        default: () => 12,
+      }),
+      local_warning_threshold: Schema.optionalWith(
+        Schema.Number.pipe(Schema.between(0, 1)),
+        {
+          default: () => 0.4,
+        },
+      ),
+      local_poison_threshold: Schema.optionalWith(
+        Schema.Number.pipe(Schema.between(0, 1)),
+        {
+          default: () => 0.75,
+        },
+      ),
+      local_warning_gain: Schema.optionalWith(Schema.Number.pipe(Schema.between(0, 1)), {
+        default: () => 0.75,
+      }),
+      hard_gate_score_cap: Schema.optionalWith(
+        Schema.Number.pipe(Schema.between(0, 1)),
+        {
+          default: () => 0.2,
+        },
+      ),
+      green_max_pressure: Schema.optionalWith(Schema.Number.pipe(Schema.between(0, 1)), {
+        default: () => 0.15,
+      }),
+      red_min_pressure: Schema.optionalWith(Schema.Number.pipe(Schema.between(0, 1)), {
+        default: () => 0.4,
+      }),
+      top_pressures: Schema.optionalWith(Schema.Number.pipe(Schema.between(1, 1000)), {
+        default: () => 10,
+      }),
+    }),
+  ),
+  category_aggregation: Schema.optional(
+    Schema.Struct({
+      p_norm: Schema.optionalWith(Schema.Number.pipe(Schema.between(1, 32)), {
+        default: () => 12,
+      }),
+      local_warning_threshold: Schema.optionalWith(
+        Schema.Number.pipe(Schema.between(0, 1)),
+        {
+          default: () => 0.4,
+        },
+      ),
+      local_poison_threshold: Schema.optionalWith(
+        Schema.Number.pipe(Schema.between(0, 1)),
+        {
+          default: () => 0.75,
+        },
+      ),
+      local_warning_gain: Schema.optionalWith(Schema.Number.pipe(Schema.between(0, 1)), {
+        default: () => 0.75,
+      }),
+    }),
+  ),
   timeSeries: Schema.optional(
     Schema.Struct({
       enabled: Schema.optionalWith(Schema.Boolean, {
@@ -39,6 +98,24 @@ export const ObserverConfig = Schema.Struct({
   ),
 })
 export type ObserverConfig = typeof ObserverConfig.Type
+
+export interface ReadinessObserverConfig {
+  readonly p_norm: number
+  readonly local_warning_threshold: number
+  readonly local_poison_threshold: number
+  readonly local_warning_gain: number
+  readonly hard_gate_score_cap: number
+  readonly green_max_pressure: number
+  readonly red_min_pressure: number
+  readonly top_pressures: number
+}
+
+export interface CategoryAggregationObserverConfig {
+  readonly p_norm: number
+  readonly local_warning_threshold: number
+  readonly local_poison_threshold: number
+  readonly local_warning_gain: number
+}
 
 export const GoodhartConfig = Schema.Struct({
   holdout_ratio: Schema.optionalWith(Schema.Number.pipe(Schema.between(0, 1)), {
@@ -204,6 +281,31 @@ export const reviewThresholdOf = (
 export const diffTimeIntegrationEnabled = (
   vector: TasteVector | undefined,
 ): boolean => vector?.observer?.diffTimeIntegration ?? true
+
+export const readinessConfigOf = (
+  vector: TasteVector | undefined,
+): ReadinessObserverConfig => ({
+  p_norm: vector?.observer?.readiness?.p_norm ?? 12,
+  local_warning_threshold: vector?.observer?.readiness?.local_warning_threshold ?? 0.4,
+  local_poison_threshold: vector?.observer?.readiness?.local_poison_threshold ?? 0.75,
+  local_warning_gain: vector?.observer?.readiness?.local_warning_gain ?? 0.75,
+  hard_gate_score_cap: vector?.observer?.readiness?.hard_gate_score_cap ?? 0.2,
+  green_max_pressure: vector?.observer?.readiness?.green_max_pressure ?? 0.15,
+  red_min_pressure: vector?.observer?.readiness?.red_min_pressure ?? 0.4,
+  top_pressures: vector?.observer?.readiness?.top_pressures ?? 10,
+})
+
+export const categoryAggregationConfigOf = (
+  vector: TasteVector | undefined,
+): CategoryAggregationObserverConfig => ({
+  p_norm: vector?.observer?.category_aggregation?.p_norm ?? 12,
+  local_warning_threshold:
+    vector?.observer?.category_aggregation?.local_warning_threshold ?? 0.4,
+  local_poison_threshold:
+    vector?.observer?.category_aggregation?.local_poison_threshold ?? 0.75,
+  local_warning_gain:
+    vector?.observer?.category_aggregation?.local_warning_gain ?? 0.75,
+})
 
 export const aiAssistedModeEnabled = (vector: TasteVector | undefined): boolean =>
   vector?.modes?.ai_assisted ?? false

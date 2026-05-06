@@ -68,6 +68,7 @@ export const TsSl02: Signal<TsSl02Config, TsSl02Output, SignalContextTag> = {
   tier: 1.5,
   category: "generated-slop",
   kind: "compound",
+  cacheVersion: "analysis-limit-uncertainty-v1",
   configSchema: TsSl02Config,
   defaultConfig: {
     divergence_threshold: 0.5,
@@ -212,7 +213,7 @@ export const TsSl02: Signal<TsSl02Config, TsSl02Output, SignalContextTag> = {
     const actionableGroups = out.divergentGroups.filter(
       (group) => group.divergenceScore > ACTIONABLE_DIVERGENCE_THRESHOLD,
     )
-    if (actionableGroups.length === 0) return 1
+    if (actionableGroups.length === 0) return analysisLimitScoreCap(out)
     const highConfidenceGroups = actionableGroups.filter(
       (group) => (group.confidence ?? "high") === "high",
     )
@@ -230,7 +231,7 @@ export const TsSl02: Signal<TsSl02Config, TsSl02Output, SignalContextTag> = {
         breadthScale: 0.03,
         maxBreadthPenalty: 0.06,
       })
-    return 1 - Math.min(0.75, worstPenalty)
+    return Math.min(analysisLimitScoreCap(out), 1 - Math.min(0.75, worstPenalty))
   },
   diagnose: (out): ReadonlyArray<Diagnostic> =>
     out.divergentGroups.slice(0, out.diagnosticLimit ?? 10).map((group) => ({
@@ -263,6 +264,9 @@ export const TsSl02: Signal<TsSl02Config, TsSl02Output, SignalContextTag> = {
       },
     })),
 }
+
+const analysisLimitScoreCap = (out: TsSl02Output): number =>
+  out.analysisLimitHit ? 0.95 : 1
 
 const isInconsistentCloneCandidate = (group: CloneGroup): boolean =>
   group.kind === "structural" && group.tokenCount >= MIN_STRUCTURAL_DIVERGENCE_TOKENS

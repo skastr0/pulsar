@@ -9,10 +9,14 @@ import { Diagnostic as DiagnosticSchema, type Diagnostic } from "./diagnostic.js
 import { buildInputOutputs } from "./input-outputs.js"
 import type { SignalRunResult } from "./runner.js"
 import type { Registry } from "./registry.js"
-import type { ResolvedSignal, SignalOutputMetadata } from "./signal.js"
+import type { ResolvedSignal, SignalApplicability, SignalOutputMetadata } from "./signal.js"
 import {
+  categoryAggregationConfigOf,
   isActive as vectorIsActive,
+  readinessConfigOf,
+  type CategoryAggregationObserverConfig,
   resolvedConfig as vectorResolvedConfig,
+  type ReadinessObserverConfig,
   type TasteVector,
   weightOf as vectorWeightOf,
 } from "./vector.js"
@@ -31,6 +35,7 @@ export interface CategoryOutput {
   readonly score: number
   readonly signals: Record<string, number>
   readonly signalCount: number
+  readonly applicableSignalCount?: number
   readonly activeSignalIds: ReadonlyArray<string>
   readonly aggregation?: {
     readonly strategy: "weighted-mean" | "language-group-mean"
@@ -38,7 +43,16 @@ export interface CategoryOutput {
     readonly aggregateScore: number
     readonly lowestSignalScore: number
     readonly finalScore: number
-    readonly shapedByLowestSignal: boolean
+    readonly shapedByPressure: boolean
+    readonly pressure: {
+      readonly strategy: "pressure-pnorm-local-max"
+      readonly p: number
+      readonly meanPressure: number
+      readonly pnormPressure: number
+      readonly maxLocalPressure: number
+      readonly localPressure: number
+      readonly finalPressure: number
+    }
     readonly weightTotal: number
     readonly weights: Record<string, number>
   }
@@ -66,6 +80,40 @@ export interface HardGateViolation {
   readonly signalId: string
   readonly category: Category
   readonly diagnostic: Diagnostic
+}
+
+export interface ReadinessPressure {
+  readonly signal_id: string
+  readonly category: Category
+  readonly score: number
+  readonly raw_pressure: number
+  readonly effective_pressure: number
+  readonly weight: number
+  readonly confidence: number
+  readonly applicability: SignalApplicability
+}
+
+export interface ReadinessOutput {
+  readonly score: number
+  readonly pressure: number
+  readonly status: "green" | "yellow" | "red" | "blocked" | "unknown" | "failed"
+  readonly aggregation: {
+    readonly strategy: "pressure-pnorm-local-max"
+    readonly p: number
+    readonly mean_pressure: number
+    readonly pnorm_pressure: number
+    readonly max_local_pressure: number
+    readonly failed_signal_pressure: number
+    readonly hard_gate_pressure: number
+    readonly hard_gate_score_cap: number
+    readonly local_warning_threshold: number
+    readonly local_poison_threshold: number
+    readonly local_warning_gain: number
+    readonly applicable_signal_count: number
+    readonly ignored_signal_count: number
+    readonly failed_signal_count: number
+  }
+  readonly top_pressures: ReadonlyArray<ReadinessPressure>
 }
 
 export interface ObserverRuntimeProfile {
@@ -110,6 +158,9 @@ const DEFAULT_OBSERVER_SIGNAL_CONCURRENCY = 1
 const ObserverCategorySnapshot = Schema.Struct({
   score: Schema.Number,
   signals: Schema.Record({ key: Schema.String, value: Schema.Number }),
+  signalCount: Schema.optional(Schema.Number),
+  applicableSignalCount: Schema.optional(Schema.Number),
+  activeSignalIds: Schema.optional(Schema.Array(Schema.String)),
   aggregation: Schema.optional(
     Schema.Struct({
       strategy: Schema.Union(
@@ -120,7 +171,16 @@ const ObserverCategorySnapshot = Schema.Struct({
       aggregateScore: Schema.Number,
       lowestSignalScore: Schema.Number,
       finalScore: Schema.Number,
-      shapedByLowestSignal: Schema.Boolean,
+      shapedByPressure: Schema.Boolean,
+      pressure: Schema.Struct({
+        strategy: Schema.Literal("pressure-pnorm-local-max"),
+        p: Schema.Number,
+        meanPressure: Schema.Number,
+        pnormPressure: Schema.Number,
+        maxLocalPressure: Schema.Number,
+        localPressure: Schema.Number,
+        finalPressure: Schema.Number,
+      }),
       weightTotal: Schema.Number,
       weights: Schema.Record({ key: Schema.String, value: Schema.Number }),
     }),
@@ -162,11 +222,65 @@ const HardGateViolationSnapshot = Schema.Struct({
   diagnostic: DiagnosticSchema,
 })
 
+const ReadinessPressureSnapshot = Schema.Struct({
+  signal_id: Schema.String,
+  category: CategorySchema,
+  score: Schema.Number,
+  raw_pressure: Schema.Number,
+  effective_pressure: Schema.Number,
+  weight: Schema.Number,
+  confidence: Schema.Number,
+  applicability: Schema.Union(
+    Schema.Literal("applicable"),
+    Schema.Literal("not_applicable"),
+    Schema.Literal("insufficient_evidence"),
+    Schema.Literal("failed"),
+  ),
+})
+
+const ReadinessSnapshot = Schema.Struct({
+  score: Schema.Number,
+  pressure: Schema.Number,
+  status: Schema.Union(
+    Schema.Literal("green"),
+    Schema.Literal("yellow"),
+    Schema.Literal("red"),
+    Schema.Literal("blocked"),
+    Schema.Literal("unknown"),
+    Schema.Literal("failed"),
+  ),
+  aggregation: Schema.Struct({
+    strategy: Schema.Literal("pressure-pnorm-local-max"),
+    p: Schema.Number,
+    mean_pressure: Schema.Number,
+    pnorm_pressure: Schema.Number,
+    max_local_pressure: Schema.Number,
+    failed_signal_pressure: Schema.Number,
+    hard_gate_pressure: Schema.Number,
+    hard_gate_score_cap: Schema.Number,
+    local_warning_threshold: Schema.Number,
+    local_poison_threshold: Schema.Number,
+    local_warning_gain: Schema.Number,
+    applicable_signal_count: Schema.Number,
+    ignored_signal_count: Schema.Number,
+    failed_signal_count: Schema.optional(Schema.Number),
+  }),
+  top_pressures: Schema.Array(ReadinessPressureSnapshot),
+})
+
 const ObserverSignalMetadataSnapshot = Schema.Struct({
   effectiveConfidence: Schema.optional(Schema.Number),
   baseConfidence: Schema.optional(Schema.Number),
   computedAt: Schema.optional(Schema.String),
   stale: Schema.optional(Schema.Boolean),
+  applicability: Schema.optional(
+    Schema.Union(
+      Schema.Literal("applicable"),
+      Schema.Literal("not_applicable"),
+      Schema.Literal("insufficient_evidence"),
+      Schema.Literal("failed"),
+    ),
+  ),
 })
 
 const ObserverRuntimeProfileSnapshot = Schema.Struct({
@@ -208,6 +322,7 @@ export const ObserverOutput = Schema.Struct({
   categories: ObserverCategories,
   minimum: Schema.Union(MinimumDimensionSnapshot, Schema.Undefined),
   weighted_mean: Schema.Number,
+  readiness: Schema.optional(ReadinessSnapshot),
   hard_gate_status: Schema.Literal("pass", "fail"),
   hard_gate_violations: Schema.Array(HardGateViolationSnapshot),
   signal_metadata: Schema.optional(
@@ -222,6 +337,7 @@ type ObserverOutputPublic = typeof ObserverOutput.Type
 export type ObserverOutput = ObserverOutputPublic & {
   readonly categories: Record<Category, CategoryOutput>
   readonly minimum: MinimumDimension | undefined
+  readonly readiness?: ReadinessOutput
   readonly inactiveSignals: ReadonlyArray<string>
   readonly signalResults: ReadonlyMap<string, SignalRunResult>
   readonly signalMetadata?: Record<string, SignalOutputMetadata>
@@ -250,6 +366,7 @@ export const toObserverJson = (output: ObserverOutput): ObserverOutputPublic => 
   },
   minimum: output.minimum,
   weighted_mean: output.weighted_mean,
+  ...(output.readiness !== undefined ? { readiness: output.readiness } : {}),
   hard_gate_status: output.hard_gate_status,
   hard_gate_violations: output.hard_gate_violations,
   ...(output.calibration !== undefined ? { calibration: output.calibration } : {}),
@@ -290,6 +407,9 @@ const toObserverCategorySnapshot = (
 ): typeof ObserverCategorySnapshot.Type => ({
   score: category.score,
   signals: category.signals,
+  signalCount: category.signalCount,
+  applicableSignalCount: category.applicableSignalCount ?? category.signalCount,
+  activeSignalIds: [...category.activeSignalIds],
   ...(category.aggregation !== undefined
     ? { aggregation: category.aggregation }
     : {}),
@@ -388,6 +508,7 @@ export const observe = (
     const hard_gate_violations = collectHardGateViolations(registry, signalResults)
     const hard_gate_status: "pass" | "fail" =
       hard_gate_violations.length > 0 ? "fail" : "pass"
+    const readiness = computeReadiness(registry, signalResults, vector, hard_gate_status)
     const calibration = yield* Effect.serviceOption(CalibrationContextTag)
     const calibrationSummary = Option.isSome(calibration)
       ? summarizeCalibration(calibration.value)
@@ -397,6 +518,7 @@ export const observe = (
       categories,
       minimum,
       weighted_mean,
+      readiness,
       hard_gate_status,
       hard_gate_violations,
       inactiveSignals,
@@ -467,6 +589,7 @@ const runOneSignal = (
         score: 0,
         output: undefined,
         diagnostics: [failureDiagnostic],
+        metadata: { applicability: "failed" },
       }
     }
 
@@ -482,13 +605,21 @@ const runOneSignal = (
   })
 
 /**
- * Category score = taste-weighted mean of active signals in that category.
+ * Category score = pressure-shaped score of active signals that produced
+ * applicable repo-quality evidence in that category.
  *
- *     categoryScore = sum(weight_i * score_i) / sum(weight_i)
+ * The taste-weighted mean stays in aggregation metadata because it is useful
+ * as an evidence average. The public category score is mixed from pressure:
+ * a weak local signal should not disappear behind unrelated clean checks in
+ * the same category.
  *
- * A category with no active signals scores 1 (neutral) and is excluded
- * from the overall weighted mean's denominator — so empty categories
- * neither drag the score up nor skew it down.
+ * Non-applicable, insufficient-evidence, and failed runs stay visible in
+ * per-signal output/metadata, but they are not evidence about the repo's
+ * quality. They therefore do not pull the evidence mean up or down.
+ *
+ * A category with no applicable evidence scores 1 (neutral) and is excluded
+ * from the overall weighted mean's denominator — so missing evidence neither
+ * drags the score down nor inflates it.
  */
 const aggregateCategories = (
   registry: Registry,
@@ -504,6 +635,7 @@ const aggregateCategories = (
     const signalsRecord: Record<string, number> = {}
     const weightsRecord: Record<string, number> = {}
     const activeIds: Array<string> = []
+    let applicableSignalCount = 0
     let weightedSum = 0
     let weightTotal = 0
     const groups = new Map<
@@ -515,6 +647,7 @@ const aggregateCategories = (
       }
     >()
     const languageLocalGroups = new Set<string>()
+    const pressureInputs: Array<{ score: number; weight: number; confidence: number }> = []
     for (const s of signalsInCategory) {
       const result = signalResults.get(s.id)
       if (result === undefined) continue
@@ -522,8 +655,15 @@ const aggregateCategories = (
       signalsRecord[s.id] = result.score
       weightsRecord[s.id] = weight
       activeIds.push(s.id)
-      weightedSum += weight * result.score
+
+      if (signalApplicabilityOf(result) !== "applicable") continue
+
+      const confidence = confidenceForSignal(s, result)
+      const effectiveScore = confidenceAdjustedScore(result.score, confidence)
+      applicableSignalCount += 1
+      weightedSum += weight * effectiveScore
       weightTotal += weight
+      pressureInputs.push({ score: result.score, weight, confidence })
 
       const normalizationGroup = normalizationGroupOfSignal(s)
       const bucket = groups.get(normalizationGroup) ?? {
@@ -531,7 +671,7 @@ const aggregateCategories = (
         weightTotal: 0,
         signalIds: [],
       }
-      bucket.weightedSum += weight * result.score
+      bucket.weightedSum += weight * effectiveScore
       bucket.weightTotal += weight
       bucket.signalIds.push(s.id)
       groups.set(normalizationGroup, bucket)
@@ -541,24 +681,30 @@ const aggregateCategories = (
     }
 
     const rawScore = weightTotal === 0 ? 1 : weightedSum / weightTotal
-    const lowestSignalScore = Math.min(
-      ...Object.values(signalsRecord),
-    )
+    const applicableScores = signalsInCategory.flatMap((s) => {
+      const result = signalResults.get(s.id)
+      if (result === undefined || signalApplicabilityOf(result) !== "applicable") return []
+      return [result.score]
+    })
+    const lowestSignalScore = Math.min(...applicableScores)
     const normalization =
       languageLocalGroups.size > 1
         ? buildCategoryNormalization(groups)
         : undefined
     const normalizedScore = normalization?.score ?? rawScore
-    const shapedByLowestSignal = shouldShapeCategoryScore(category)
-    const score = shapeCategoryScore(
-      category,
-      normalizedScore,
-      Number.isFinite(lowestSignalScore) ? lowestSignalScore : 1,
+    const pressure = aggregateCategoryPressure(
+      pressureInputs,
+      categoryAggregationConfigOf(vector),
+      pressureInputs,
     )
+    const pressureScore = clamp01(1 - pressure.finalPressure)
+    const score = roundScore(Math.min(normalizedScore, pressureScore))
+    const shapedByPressure = score < normalizedScore
     out[category] = {
       score,
       signals: signalsRecord,
       signalCount: signalsInCategory.length,
+      applicableSignalCount,
       activeSignalIds: activeIds,
       aggregation: {
         strategy: normalization === undefined ? "weighted-mean" : "language-group-mean",
@@ -566,7 +712,8 @@ const aggregateCategories = (
         aggregateScore: normalizedScore,
         lowestSignalScore: Number.isFinite(lowestSignalScore) ? lowestSignalScore : 1,
         finalScore: score,
-        shapedByLowestSignal,
+        shapedByPressure,
+        pressure,
         weightTotal,
         weights: weightsRecord,
       },
@@ -577,18 +724,6 @@ const aggregateCategories = (
   }
   return out as Record<Category, CategoryOutput>
 }
-
-const shapeCategoryScore = (
-  category: Category,
-  score: number,
-  lowestSignalScore: number,
-): number => {
-  if (!shouldShapeCategoryScore(category)) return score
-  return (score * 0.65) + (lowestSignalScore * 0.35)
-}
-
-const shouldShapeCategoryScore = (category: Category): boolean =>
-  category === "dependency-entropy" || category === "generated-slop"
 
 const buildCategoryNormalization = (
   groups: ReadonlyMap<
@@ -638,11 +773,79 @@ const normalizationGroupOfSignal = (signal: ResolvedSignal): string => {
 const isLanguageNormalizationGroup = (group: string): boolean =>
   group === "typescript" || group === "rust"
 
+const aggregateCategoryPressure = (
+  inputs: ReadonlyArray<{
+    readonly score: number
+    readonly weight: number
+    readonly confidence: number
+  }>,
+  config: CategoryAggregationObserverConfig,
+  localInputs: ReadonlyArray<{
+    readonly score: number
+    readonly weight: number
+    readonly confidence: number
+  }> = inputs,
+): NonNullable<CategoryOutput["aggregation"]>["pressure"] => {
+  let weightedPressureSum = 0
+  let weightedPnormSum = 0
+  let weightTotal = 0
+
+  for (const input of inputs) {
+    const weight = input.weight
+    const pressure = confidenceAdjustedPressure(input.score, input.confidence)
+    weightedPressureSum += weight * pressure
+    weightedPnormSum += weight * Math.pow(pressure, config.p_norm)
+    weightTotal += weight
+  }
+
+  let maxLocalPressure = 0
+  for (const input of localInputs) {
+    maxLocalPressure = Math.max(
+      maxLocalPressure,
+      confidenceAdjustedPressure(input.score, input.confidence),
+    )
+  }
+
+  const meanPressure = weightTotal === 0 ? 0 : weightedPressureSum / weightTotal
+  const pnormPressure =
+    weightTotal === 0
+      ? 0
+      : Math.pow(weightedPnormSum / weightTotal, 1 / config.p_norm)
+  const localPressure = categoryLocalPressure(maxLocalPressure, config)
+  const finalPressure = clamp01(Math.max(pnormPressure, localPressure))
+
+  return {
+    strategy: "pressure-pnorm-local-max",
+    p: config.p_norm,
+    meanPressure: roundScore(meanPressure),
+    pnormPressure: roundScore(pnormPressure),
+    maxLocalPressure: roundScore(maxLocalPressure),
+    localPressure: roundScore(localPressure),
+    finalPressure: roundScore(finalPressure),
+  }
+}
+
+const confidenceAdjustedScore = (score: number, confidence: number): number =>
+  clamp01(1 - confidenceAdjustedPressure(score, confidence))
+
+const confidenceAdjustedPressure = (score: number, confidence: number): number =>
+  clamp01(1 - score) * confidence
+
+const categoryLocalPressure = (
+  maxLocalPressure: number,
+  config: CategoryAggregationObserverConfig,
+): number => {
+  if (maxLocalPressure >= config.local_poison_threshold) return maxLocalPressure
+  if (maxLocalPressure >= config.local_warning_threshold) {
+    return maxLocalPressure * config.local_warning_gain
+  }
+  return 0
+}
+
 /**
- * Count-weighted mean across categories: categories with more active
- * signals carry proportionally more weight. Empty categories (no active
- * signals) are excluded from both numerator and denominator — their
- * neutral `1` score does not inflate the overall number.
+ * Count-weighted mean across categories: categories with more applicable
+ * evidence signals carry proportionally more weight. Categories without
+ * applicable evidence are excluded from both numerator and denominator.
  *
  * Design choice: flat vs count-weighted vs vector-metadata-weighted.
  * Default is count-weighted so the aggregate tracks signal density.
@@ -657,22 +860,181 @@ const computeWeightedMean = (
   let totalCount = 0
   for (const category of CATEGORIES) {
     const entry = categories[category]
-    if (entry.signalCount === 0) continue
-    weightedSum += entry.score * entry.signalCount
-    totalCount += entry.signalCount
+    const count = entry.applicableSignalCount ?? entry.signalCount
+    if (count === 0) continue
+    weightedSum += entry.score * count
+    totalCount += count
   }
   if (totalCount === 0) return 1
   return weightedSum / totalCount
 }
 
+const computeReadiness = (
+  registry: Registry,
+  signalResults: ReadonlyMap<string, SignalRunResult>,
+  vector: TasteVector | undefined,
+  hardGateStatus: "pass" | "fail",
+): ReadinessOutput => {
+  const config = readinessConfigOf(vector)
+  const pressures: Array<ReadinessPressure> = []
+  let weightedPressureSum = 0
+  let weightedPnormSum = 0
+  let weightTotal = 0
+  let maxLocalPressure = 0
+  let applicableSignalCount = 0
+  let ignoredSignalCount = 0
+  let failedSignalCount = 0
+
+  for (const signal of registry.sorted) {
+    const result = signalResults.get(signal.id)
+    if (result === undefined) continue
+
+    const applicability = signalApplicabilityOf(result)
+    const ignored = applicability !== "applicable"
+    const confidence = ignored ? 0 : confidenceForSignal(signal, result)
+    const weight = vectorWeightOf(signal.id, vector)
+    const rawPressure = clamp01(1 - result.score)
+    const effectivePressure = rawPressure * confidence
+
+    pressures.push({
+      signal_id: signal.id,
+      category: signal.category,
+      score: result.score,
+      raw_pressure: roundScore(rawPressure),
+      effective_pressure: roundScore(effectivePressure),
+      weight,
+      confidence: roundScore(confidence),
+      applicability,
+    })
+
+    if (ignored) {
+      ignoredSignalCount += 1
+      if (applicability === "failed") {
+        failedSignalCount += 1
+      }
+      continue
+    }
+
+    applicableSignalCount += 1
+    weightedPressureSum += weight * effectivePressure
+    weightedPnormSum += weight * Math.pow(effectivePressure, config.p_norm)
+    weightTotal += weight
+    maxLocalPressure = Math.max(maxLocalPressure, effectivePressure)
+  }
+
+  const meanPressure = weightTotal === 0 ? 0 : weightedPressureSum / weightTotal
+  const pnormPressure =
+    weightTotal === 0
+      ? 0
+      : Math.pow(weightedPnormSum / weightTotal, 1 / config.p_norm)
+  const localPressure = localPoisonPressure(maxLocalPressure, config)
+  const failedSignalPressure = failedSignalCount > 0 ? 1 : 0
+  const hardGatePressure =
+    hardGateStatus === "fail" ? 1 - config.hard_gate_score_cap : 0
+  const pressure = roundScore(
+    clamp01(Math.max(pnormPressure, localPressure, failedSignalPressure, hardGatePressure)),
+  )
+  const score = roundScore(clamp01(1 - pressure))
+
+  return {
+    score,
+    pressure,
+    status: readinessStatus(
+      pressure,
+      hardGateStatus,
+      config,
+      applicableSignalCount,
+      failedSignalCount,
+    ),
+    aggregation: {
+      strategy: "pressure-pnorm-local-max",
+      p: config.p_norm,
+      mean_pressure: roundScore(meanPressure),
+      pnorm_pressure: roundScore(pnormPressure),
+      max_local_pressure: roundScore(maxLocalPressure),
+      failed_signal_pressure: roundScore(failedSignalPressure),
+      hard_gate_pressure: roundScore(hardGatePressure),
+      hard_gate_score_cap: config.hard_gate_score_cap,
+      local_warning_threshold: config.local_warning_threshold,
+      local_poison_threshold: config.local_poison_threshold,
+      local_warning_gain: config.local_warning_gain,
+      applicable_signal_count: applicableSignalCount,
+      ignored_signal_count: ignoredSignalCount,
+      failed_signal_count: failedSignalCount,
+    },
+    top_pressures: pressures
+      .sort((left, right) =>
+        right.effective_pressure - left.effective_pressure ||
+        right.raw_pressure - left.raw_pressure ||
+        compareAscii(left.signal_id, right.signal_id),
+      )
+      .slice(0, config.top_pressures),
+  }
+}
+
+const confidenceForSignal = (
+  signal: ResolvedSignal,
+  result: SignalRunResult,
+): number =>
+  clamp01(
+    result.metadata?.effectiveConfidence ??
+      result.metadata?.baseConfidence ??
+      defaultConfidenceForTier(signal.tier),
+  )
+
+const signalApplicabilityOf = (result: SignalRunResult): SignalApplicability =>
+  result.metadata?.applicability ?? (result.output === undefined ? "failed" : "applicable")
+
+const defaultConfidenceForTier = (tier: ResolvedSignal["tier"]): number => {
+  if (tier === 1) return 1
+  if (tier === 1.5) return 0.95
+  if (tier === 2) return 0.85
+  return 0.5
+}
+
+const localPoisonPressure = (
+  maxLocalPressure: number,
+  config: ReadinessObserverConfig,
+): number => {
+  if (maxLocalPressure >= config.local_poison_threshold) return maxLocalPressure
+  if (maxLocalPressure >= config.local_warning_threshold) {
+    return maxLocalPressure * config.local_warning_gain
+  }
+  return 0
+}
+
+const readinessStatus = (
+  pressure: number,
+  hardGateStatus: "pass" | "fail",
+  config: ReadinessObserverConfig,
+  applicableSignalCount: number,
+  failedSignalCount: number,
+): ReadinessOutput["status"] => {
+  if (hardGateStatus === "fail") return "blocked"
+  if (failedSignalCount > 0) return "failed"
+  if (applicableSignalCount === 0) return "unknown"
+  if (pressure < config.green_max_pressure) return "green"
+  if (pressure < config.red_min_pressure) return "yellow"
+  return "red"
+}
+
+const clamp01 = (value: number): number => Math.min(1, Math.max(0, value))
+
+const roundScore = (value: number): number => Number(value.toFixed(12))
+
+const compareAscii = (left: string, right: string): number =>
+  left < right ? -1 : left > right ? 1 : 0
+
 /**
- * Lowest-score signal across all categories. Ties resolve by the
+ * Lowest applicable repo-quality signal across all categories. Ties resolve by the
  * CATEGORIES constant order (architectural-drift < dependency-entropy
  * < abstraction-bloat < legibility-decay < generated-slop < review-pain),
  * then by signal id alphabetically as a final tiebreak.
  *
- * Returns undefined when no signals produced a result (empty registry
- * or every signal inactive).
+ * Failed, non-applicable, and insufficient-evidence signals are surfaced
+ * through readiness metadata, not as quality dimensions.
+ *
+ * Returns undefined when no applicable signals produced a result.
  */
 const findMinimum = (
   registry: Registry,
@@ -688,6 +1050,7 @@ const findMinimum = (
   for (const signal of registry.sorted) {
     const result = signalResults.get(signal.id)
     if (result === undefined) continue
+    if (signalApplicabilityOf(result) !== "applicable") continue
     if (best === undefined) {
       best = { signal, result }
       continue
