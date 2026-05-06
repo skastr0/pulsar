@@ -255,7 +255,7 @@ const ReadinessSnapshot = Schema.Struct({
     mean_pressure: Schema.Number,
     pnorm_pressure: Schema.Number,
     max_local_pressure: Schema.Number,
-    failed_signal_pressure: Schema.Number,
+    failed_signal_pressure: Schema.optional(Schema.Number),
     hard_gate_pressure: Schema.Number,
     hard_gate_score_cap: Schema.Number,
     local_warning_threshold: Schema.Number,

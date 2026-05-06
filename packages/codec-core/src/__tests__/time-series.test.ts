@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Effect, Option } from "effect"
@@ -125,6 +125,54 @@ describe("time series persistence", () => {
         "sha-6",
         "sha-7",
       ])
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("reads readiness snapshots written before failed-signal pressure metadata", async () => {
+    const repoPath = await mkdtemp(join(tmpdir(), "taste-ts-legacy-"))
+    try {
+      const services = createTimeSeriesServices(repoPath)
+      const baseLegacyEntry = makeEntry("legacy", "2026-04-10T10:00:00.000Z", 0.8)
+      const legacyEntry = {
+        ...baseLegacyEntry,
+        observerOutput: {
+          ...baseLegacyEntry.observerOutput,
+          readiness: {
+            score: 0.8,
+            pressure: 0.2,
+            status: "yellow",
+            aggregation: {
+              strategy: "pressure-pnorm-local-max",
+              p: 12,
+              mean_pressure: 0.2,
+              pnorm_pressure: 0.2,
+              max_local_pressure: 0.2,
+              hard_gate_pressure: 0,
+              hard_gate_score_cap: 0.2,
+              local_warning_threshold: 0.4,
+              local_poison_threshold: 0.75,
+              local_warning_gain: 0.75,
+              applicable_signal_count: 1,
+              ignored_signal_count: 0,
+              failed_signal_count: 0,
+            },
+            top_pressures: [],
+          },
+        },
+      }
+
+      await mkdir(join(repoPath, ".taste-codec", "time-series"), { recursive: true })
+      await writeFile(services.filePath, `${JSON.stringify(legacyEntry)}\n`, "utf8")
+
+      await Effect.runPromise(
+        services.writer.append(makeEntry("current", "2026-04-11T10:00:00.000Z", 0.9)),
+      )
+      const entries = await Effect.runPromise(services.reader.entries())
+
+      expect(entries.map((entry) => entry.sha)).toEqual(["legacy", "current"])
+      expect(entries[0]?.observerOutput.readiness?.aggregation.failed_signal_pressure).toBeUndefined()
     } finally {
       await rm(repoPath, { recursive: true, force: true })
     }

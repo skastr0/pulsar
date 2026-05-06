@@ -140,6 +140,7 @@ describe("taste elicit", () => {
 
   test("bootstrap labels built-in defaults when no vector or preset is used", async () => {
     const repoPath = await initRepo()
+    const homePath = await mkdtemp(join(tmpdir(), "taste-elicit-home-"))
     try {
       await writeRepoFile(repoPath, "src/math.ts", "export const sum = (a: number, b: number) => a + b\n")
       sh("git", ["add", "."], repoPath)
@@ -166,7 +167,9 @@ describe("taste elicit", () => {
       sh("git", ["commit", "-q", "-m", "add suppression example"], repoPath)
       sh("git", ["revert", "--no-edit", "HEAD"], repoPath)
 
-      const out = runCli(repoPath, ["elicit", "bootstrap", "--commits", "6", "."])
+      const out = runCli(repoPath, ["elicit", "bootstrap", "--commits", "6", "."], {
+        HOME: homePath,
+      })
 
       expect(out.status).toBe(0)
       expect(out.stdout).toContain("Base vector:     all-defaults")
@@ -174,11 +177,13 @@ describe("taste elicit", () => {
       expect(out.stdout).not.toContain("preset fallback")
     } finally {
       await rm(repoPath, { recursive: true, force: true })
+      await rm(homePath, { recursive: true, force: true })
     }
   }, 120_000)
 
   test("bootstrap labels preset fallback when a preset supplies the base vector", async () => {
     const repoPath = await initRepo()
+    const homePath = await mkdtemp(join(tmpdir(), "taste-elicit-home-"))
     try {
       await writeRepoFile(repoPath, "src/math.ts", "export const sum = (a: number, b: number) => a + b\n")
       sh("git", ["add", "."], repoPath)
@@ -205,21 +210,26 @@ describe("taste elicit", () => {
       sh("git", ["commit", "-q", "-m", "add suppression example"], repoPath)
       sh("git", ["revert", "--no-edit", "HEAD"], repoPath)
 
-      const out = runCli(repoPath, [
-        "elicit",
-        "bootstrap",
-        "--commits",
-        "6",
-        "--preset",
-        "ai-slop-defense",
-        ".",
-      ])
+      const out = runCli(
+        repoPath,
+        [
+          "elicit",
+          "bootstrap",
+          "--commits",
+          "6",
+          "--preset",
+          "ai-slop-defense",
+          ".",
+        ],
+        { HOME: homePath },
+      )
 
       expect(out.status).toBe(0)
       expect(out.stdout).toContain("Base vector:     ai-slop-defense")
       expect(out.stdout).toContain("Vector Source:   preset fallback")
     } finally {
       await rm(repoPath, { recursive: true, force: true })
+      await rm(homePath, { recursive: true, force: true })
     }
   }, 120_000)
 
