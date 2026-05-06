@@ -4,6 +4,7 @@ import { Effect } from "effect"
 import { runBackpressureCommand } from "./backpressure.js"
 import { runBaselineCommand } from "./baseline.js"
 import { runBisectCommand, type FirstCrossingQuery } from "./bisect.js"
+import { runCalibrateCommand } from "./calibrate.js"
 import { runConventionsCommand } from "./conventions.js"
 import { runElicitCommand } from "./elicit.js"
 import { runGlossaryCommand } from "./glossary.js"
@@ -25,6 +26,7 @@ Usage:
   taste bisect --signal <id> --range <from>..<to> [<repo-path>]
   taste bisect --observer --range <from>..<to> [--vector <path>] [<repo-path>]
   taste bisect --range <from>..<to> [--vector <path>] [<repo-path>]
+  taste calibrate suggest [--write] [--json] [<repo-path>]
   taste persona <list|show|apply|diff> [args]
   taste elicit <quiz|bootstrap|review|accept|reject> [args]
   taste glossary extract --sha <ref> [--no-parameters] [<repo-path>]
@@ -38,6 +40,7 @@ Commands:
   baseline     Record or inspect tolerated hard-gate debt for ratcheting.
   backpressure Evaluate the score history as green/yellow/red pressure.
   bisect       Replay a commit range into compact signal/category score curves.
+  calibrate    Suggest repo-owned calibration/reference-data onboarding steps.
   persona      List, show, apply, or diff curated taste presets.
   elicit       Run quiz, bootstrap, and proposal review workflows.
   glossary     Extract a draft glossary and confirm canonical terms.
@@ -76,6 +79,11 @@ Bisect options:
   --first-crossing <expr>
                        First commit where a metric crosses a threshold, e.g. TS-LD-02<0.5.
   --json               Emit JSON instead of human-readable output.
+
+Calibrate options:
+  suggest              Print deterministic repo-owned calibration suggestions.
+  --write              Write .taste-codec/calibration-suggestions.json.
+  --json               Emit the suggestion report as JSON.
 
 Persona options:
   list                 Enumerate available presets.
@@ -133,6 +141,8 @@ Examples:
   taste bisect --signal TS-RP-01 --range HEAD~50..HEAD
   taste bisect --observer --range HEAD~50..HEAD
   taste bisect --range HEAD~50..HEAD --vector ./taste-vector.json --json /path/to/repo
+  taste calibrate suggest .
+  taste calibrate suggest --write .
   taste persona list
   taste persona show security-paranoid
   taste persona apply strict-type-safety --to ./.taste-codec/vector.json
@@ -466,6 +476,39 @@ if (command === "bisect") {
     ),
   )
   process.exit(0)
+}
+
+if (command === "calibrate") {
+  const actionArg = commandArgs[0]
+  if (actionArg !== "suggest") {
+    fail("calibrate requires one of: suggest")
+  }
+  const actionArgs = commandArgs.slice(1)
+  const flagsWithValues = new Set<string>()
+  rejectUnknownFlags(
+    "calibrate",
+    actionArgs,
+    new Set(["--write", "--json", "--no-progress"]),
+  )
+  const repoPath = collectPositional(actionArgs, flagsWithValues)[0] ?? "."
+  const exitCode = await runWithProgress("calibrate", commandArgs, () =>
+    Effect.runPromise(
+      runCalibrateCommand({
+        action: "suggest",
+        repoPath,
+        ...(actionArgs.includes("--json") ? { json: true } : {}),
+        ...(actionArgs.includes("--write") ? { write: true } : {}),
+      }).pipe(
+        Effect.catchAll((err) =>
+          Effect.sync(() => {
+            console.error(`taste calibrate failed: ${formatCliError(err)}`)
+            process.exit(1)
+          }),
+        ),
+      ),
+    ),
+  )
+  process.exit(exitCode)
 }
 
 if (command === "glossary") {
