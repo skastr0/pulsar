@@ -55,7 +55,10 @@ export const runGlossaryCommand = (opts: GlossaryCommandOptions) =>
 const runGlossaryExtract = (repoPath: string, sha: string, includeParameters: boolean) =>
   withDetachedWorktreeAtRef(repoPath, sha, ({ repoRoot, resolvedSha, worktreePath }) =>
     Effect.gen(function* () {
-      const identifiers = yield* collectIdentifiers(worktreePath, { includeParameters })
+      const identifiers = yield* collectIdentifiers(worktreePath, {
+        includeParameters,
+        includeLocalConstants: false,
+      })
       const candidateTerms = buildCandidateTerms(identifiers)
       const candidateSynonyms = buildSynonymCandidates(candidateTerms)
       const draft = decodeGlossaryDraftSync({

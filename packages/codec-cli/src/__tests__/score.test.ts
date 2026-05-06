@@ -227,7 +227,11 @@ describe("taste score", () => {
       expect(out.status).toBe(0)
       expect(out.stdout).toContain("Runtime")
       expect(out.stdout).toContain("Environment Setup")
+      expect(out.stdout).toContain("Observer")
       expect(out.stdout).toContain("diagnostics=")
+      expect(out.stdout.indexOf("Runtime")).toBeLessThan(out.stdout.indexOf("Environment Setup"))
+      expect(out.stdout.indexOf("Runtime")).toBeLessThan(out.stdout.indexOf("Observer"))
+      expect(out.stdout.indexOf("Observer")).toBeLessThan(out.stdout.indexOf("diagnostics="))
     } finally {
       await rm(repoPath, { recursive: true, force: true })
     }
@@ -240,9 +244,11 @@ describe("taste score", () => {
       expect(out.status).toBe(0)
       const parsed = JSON.parse(String(out.stdout))
       const decoded = Schema.decodeUnknownSync(ObserverOutputSchema)(parsed)
+      expect(decoded.observer_semantics).toBe("applicability-aware-readiness-v1")
       expect(parsed.vector.trust_boundary).toBe("built-in-defaults")
       expect(decoded.runtime_profile?.total_ms).toBeGreaterThanOrEqual(0)
       expect(decoded.runtime_profile?.stages?.["environment-setup"]?.duration_ms).toBeGreaterThanOrEqual(0)
+      expect(decoded.runtime_profile?.stages?.observer?.duration_ms).toBeGreaterThanOrEqual(0)
       expect(Object.keys(decoded.runtime_profile?.signals ?? {}).length).toBeGreaterThan(0)
     } finally {
       await rm(repoPath, { recursive: true, force: true })

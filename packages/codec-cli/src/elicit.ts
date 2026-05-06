@@ -748,7 +748,7 @@ const scoreCommitHistory = (
           })),
           Effect.mapError((cause) => new Error(`Failed to score ${commit.sha}: ${String(cause)}`)),
         ),
-      { concurrency: 4 },
+      { concurrency: 1 },
     )
   })
 

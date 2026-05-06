@@ -285,8 +285,13 @@ describe("reference data commands", () => {
       "packages/api/src/contextual-consts.ts",
       [
         "export const UserSchema = { id: 'string' } as const",
+        "export const AccountSchema = Schema.Struct({ id: Schema.String })",
         "export function buildContextualUser() {",
         "  const localSessionToken = 'user-token'",
+        "  if (localSessionToken.length > 0) {",
+        "    const BLOCK_SCOPED_LIMIT = 3",
+        "    return String(BLOCK_SCOPED_LIMIT)",
+        "  }",
         "  return localSessionToken",
         "}",
         "",
@@ -303,6 +308,7 @@ describe("reference data commands", () => {
     expect(draft.naming_conventions.function).toBe("camelCase")
     expect(draft.naming_conventions.class).toBe("PascalCase")
     expect(draft.naming_conventions.const).toBe("camelCase | PascalCase | UPPER_SNAKE_CASE")
+    expect(draft.naming_conventions.const).toContain("PascalCase")
     expect(draft.boundaries["packages/api"]?.visibility).toBe("public-api")
     expect(draft.boundaries["packages/api"]?.allowed_imports).toEqual(["effect"])
     expect(draft.boundaries["packages/shared"]?.visibility).toBe("public-api")

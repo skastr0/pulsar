@@ -30,7 +30,11 @@ import {
   type ScoringEngineError,
   type SignalError,
 } from "./errors.js"
-import { observe, type ObserverOutput } from "./observer.js"
+import {
+  OBSERVER_OUTPUT_SEMANTICS,
+  observe,
+  type ObserverOutput,
+} from "./observer.js"
 import { loadCanonicalReferenceDataEntries } from "./reference-data-loader.js"
 import type { Registry } from "./registry.js"
 import { runSignal, type SignalRunResult } from "./runner.js"
@@ -420,6 +424,7 @@ export const computeConfigHash = (
 const OBSERVER_CACHE_SIGNAL_ID = "__observer__"
 
 interface CachedObserverOutput {
+  readonly observer_semantics?: ObserverOutput["observer_semantics"]
   readonly categories: ObserverOutput["categories"]
   readonly minimum: ObserverOutput["minimum"]
   readonly weighted_mean: ObserverOutput["weighted_mean"]
@@ -484,6 +489,7 @@ export const computeObserverConfigHash = (
 }
 
 const toCachedObserverOutput = (result: ObserverOutput): CachedObserverOutput => ({
+  observer_semantics: result.observer_semantics,
   categories: result.categories,
   minimum: result.minimum,
   weighted_mean: result.weighted_mean,
@@ -497,6 +503,7 @@ const toCachedObserverOutput = (result: ObserverOutput): CachedObserverOutput =>
 })
 
 const fromCachedObserverOutput = (cached: CachedObserverOutput): ObserverOutput => ({
+  observer_semantics: cached.observer_semantics ?? OBSERVER_OUTPUT_SEMANTICS,
   categories: cached.categories,
   minimum: cached.minimum,
   weighted_mean: cached.weighted_mean,

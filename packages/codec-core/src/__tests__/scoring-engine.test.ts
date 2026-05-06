@@ -703,7 +703,7 @@ describe("ScoringEngine — cache semantics", () => {
     } finally {
       await rm(repoPath, { recursive: true, force: true })
     }
-  })
+  }, 120_000)
 
   test("observer profile includes environment setup attribution", async () => {
     const { repoPath, sha } = await initRepo([

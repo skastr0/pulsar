@@ -33,6 +33,73 @@ const makeEntry = (
   inactiveSignals: [],
 })
 
+const makeReadinessEntry = (
+  sha: string,
+  timestamp: string,
+  score: number,
+): TimeSeriesEntry => {
+  const base = makeEntry(sha, timestamp, score)
+
+  return {
+    ...base,
+    observerOutput: {
+      ...base.observerOutput,
+      categories: Object.fromEntries(
+        Object.entries(base.observerOutput.categories).map(([category, snapshot]) => [
+          category,
+          {
+            ...snapshot,
+            signalCount: category === "architectural-drift" ? 1 : 0,
+            applicableSignalCount: category === "architectural-drift" ? 1 : 0,
+            activeSignalIds: category === "architectural-drift" ? ["A"] : [],
+          },
+        ]),
+      ) as unknown as TimeSeriesEntry["observerOutput"]["categories"],
+      readiness: {
+        score,
+        pressure: 1 - score,
+        status: score >= 0.85 ? "green" : "yellow",
+        aggregation: {
+          strategy: "pressure-pnorm-local-max",
+          p: 12,
+          mean_pressure: 1 - score,
+          pnorm_pressure: 1 - score,
+          max_local_pressure: 1 - score,
+          failed_signal_pressure: 0,
+          hard_gate_pressure: 0,
+          hard_gate_score_cap: 0.2,
+          local_warning_threshold: 0.4,
+          local_poison_threshold: 0.75,
+          local_warning_gain: 0.75,
+          applicable_signal_count: 1,
+          ignored_signal_count: 0,
+          failed_signal_count: 0,
+        },
+        top_pressures: [
+          {
+            signal_id: "A",
+            category: "architectural-drift",
+            score,
+            raw_pressure: 1 - score,
+            effective_pressure: 1 - score,
+            weight: 1,
+            confidence: 1,
+            applicability: "applicable",
+          },
+        ],
+      },
+      signal_metadata: {
+        A: {
+          applicability: "applicable",
+          effectiveConfidence: 1,
+          baseConfidence: 1,
+          computedAt: timestamp,
+        },
+      },
+    },
+  }
+}
+
 describe("time series persistence", () => {
   test("writes then reads entries and keeps same-sha writes idempotent", async () => {
     const repoPath = await mkdtemp(join(tmpdir(), "taste-ts-series-"))
@@ -89,8 +156,91 @@ describe("time series persistence", () => {
       expect(entries.some((entry) => entry.sha === "b2")).toBe(true)
       const compacted = entries.find((entry) => entry.source === "weekly-average")
       expect(compacted?.aggregate?.commit_shas.includes("a1")).toBe(true)
+      expect(compacted?.aggregate?.observer_semantics).toBe("legacy-compatibility")
+      expect(compacted?.aggregate?.compatibility_reason).toBe(
+        "source rows predate readiness/applicability metadata",
+      )
+      expect(compacted?.observerOutput.readiness).toBeUndefined()
       const resolved = await Effect.runPromise(services.reader.atSha("a2"))
       expect(Option.isSome(resolved)).toBe(true)
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("compaction preserves readiness and applicability metadata for readiness-aware buckets", async () => {
+    const repoPath = await mkdtemp(join(tmpdir(), "taste-ts-readiness-compact-"))
+    try {
+      const services = createTimeSeriesServices(repoPath, {
+        compactionThreshold: 5,
+        rawRetentionDays: 30,
+      })
+
+      for (const entry of [
+        makeReadinessEntry("a1", "2026-01-01T10:00:00.000Z", 0.7),
+        makeReadinessEntry("a2", "2026-01-02T10:00:00.000Z", 0.9),
+        makeReadinessEntry("a3", "2026-01-08T10:00:00.000Z", 0.8),
+        makeReadinessEntry("a4", "2026-01-09T10:00:00.000Z", 0.6),
+        makeReadinessEntry("b1", "2026-04-10T10:00:00.000Z", 0.95),
+        makeReadinessEntry("b2", "2026-04-15T10:00:00.000Z", 0.96),
+      ]) {
+        await Effect.runPromise(services.writer.append(entry))
+      }
+
+      const compacted = (await Effect.runPromise(services.reader.entries())).find(
+        (entry) => entry.source === "weekly-average",
+      )
+
+      expect(compacted?.aggregate?.observer_semantics).toBe("readiness-aware")
+      expect(compacted?.aggregate?.readiness_sample_count).toBe(2)
+      expect(compacted?.observerOutput.observer_semantics).toBe(
+        "applicability-aware-readiness-v1",
+      )
+      expect(compacted?.observerOutput.readiness?.score).toBeCloseTo(0.8, 5)
+      expect(compacted?.observerOutput.readiness?.top_pressures[0]).toMatchObject({
+        signal_id: "A",
+        applicability: "applicable",
+      })
+      expect(compacted?.observerOutput.signal_metadata?.A?.applicability).toBe(
+        "applicable",
+      )
+      expect(
+        compacted?.observerOutput.categories["architectural-drift"].applicableSignalCount,
+      ).toBe(1)
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("compaction marks mixed readiness and legacy buckets as compatibility output", async () => {
+    const repoPath = await mkdtemp(join(tmpdir(), "taste-ts-mixed-compact-"))
+    try {
+      const services = createTimeSeriesServices(repoPath, {
+        compactionThreshold: 5,
+        rawRetentionDays: 30,
+      })
+
+      for (const entry of [
+        makeReadinessEntry("a1", "2026-01-01T10:00:00.000Z", 0.7),
+        makeEntry("a2", "2026-01-02T10:00:00.000Z", 0.9),
+        makeReadinessEntry("a3", "2026-01-08T10:00:00.000Z", 0.8),
+        makeEntry("a4", "2026-01-09T10:00:00.000Z", 0.6),
+        makeReadinessEntry("b1", "2026-04-10T10:00:00.000Z", 0.95),
+        makeReadinessEntry("b2", "2026-04-15T10:00:00.000Z", 0.96),
+      ]) {
+        await Effect.runPromise(services.writer.append(entry))
+      }
+
+      const compacted = (await Effect.runPromise(services.reader.entries())).find(
+        (entry) => entry.source === "weekly-average",
+      )
+
+      expect(compacted?.aggregate?.observer_semantics).toBe("legacy-compatibility")
+      expect(compacted?.aggregate?.readiness_sample_count).toBe(1)
+      expect(compacted?.aggregate?.compatibility_reason).toBe(
+        "source rows mix readiness-aware and legacy observer semantics",
+      )
+      expect(compacted?.observerOutput.readiness).toBeUndefined()
     } finally {
       await rm(repoPath, { recursive: true, force: true })
     }

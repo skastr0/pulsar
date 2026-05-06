@@ -15,7 +15,7 @@
   "scripts": {
     "build": "bun build ./src/server.ts ./src/tui.ts --outdir ./dist --target bun --format esm --external @opencode-ai/plugin --external @opencode-ai/plugin/tui --external @taste-codec/core --external @taste-codec/rs-pack --external @taste-codec/shared-signals --external @taste-codec/ts-pack",
     "check:imports": "bun -e \"await import('./dist/server.js'); await import('./dist/tui.js')\"",
-    "test": "bun test",
+    "test": "bun test ./test",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",
     "verify": "bun run typecheck && bun test && bun run build && bun run check:imports"

@@ -703,6 +703,7 @@ describe("Observer — JSON output shape (AC-10)", () => {
 
     expect(decoded).toEqual(publicJson)
     expect(decoded).toMatchObject({
+      observer_semantics: "applicability-aware-readiness-v1",
       categories: {
         "architectural-drift": { score: 1, signals: {} },
         "dependency-entropy": { score: 1, signals: {} },

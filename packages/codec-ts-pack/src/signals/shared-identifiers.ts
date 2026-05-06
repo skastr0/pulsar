@@ -1,4 +1,4 @@
-import { Node, SyntaxKind, type Project, type SourceFile, type VariableDeclaration } from "ts-morph"
+import { Node, type Project, type SourceFile, type VariableDeclaration } from "ts-morph"
 import {
   inferCasingPattern,
   splitIdentifierTokens,
@@ -102,17 +102,41 @@ const collectNamedDeclarations = (
     )
   }
 
-  for (const declaration of sourceFile.getDescendantsOfKind(SyntaxKind.VariableDeclaration)) {
-    if (declaration.getVariableStatement()?.getDeclarationKind() !== "const") continue
-    pushIdentifierDeclaration(
-      identifiers,
-      sourceFile,
-      declaration.getName(),
-      "const",
-      declaration,
-      classifyConstContext(declaration),
-    )
+  collectConstDeclarations(identifiers, sourceFile)
+}
+
+const collectConstDeclarations = (
+  identifiers: Array<IdentifierDeclaration>,
+  sourceFile: SourceFile,
+): void => {
+  for (const statement of sourceFile.getVariableStatements()) {
+    if (statement.getDeclarationKind() !== "const") continue
+    for (const declaration of statement.getDeclarations()) {
+      pushConstDeclaration(identifiers, sourceFile, declaration)
+    }
   }
+
+  sourceFile.forEachDescendant((node) => {
+    if (!Node.isVariableDeclaration(node)) return
+    if (isDirectSourceFileConstDeclaration(node)) return
+    if (node.getVariableStatement()?.getDeclarationKind() !== "const") return
+    pushConstDeclaration(identifiers, sourceFile, node)
+  })
+}
+
+const pushConstDeclaration = (
+  identifiers: Array<IdentifierDeclaration>,
+  sourceFile: SourceFile,
+  declaration: VariableDeclaration,
+): void => {
+  pushIdentifierDeclaration(
+    identifiers,
+    sourceFile,
+    declaration.getName(),
+    "const",
+    declaration,
+    classifyConstContext(declaration),
+  )
 }
 
 const pushIdentifierDeclaration = (
@@ -144,31 +168,19 @@ const pushIdentifierDeclaration = (
 }
 
 const classifyConstContext = (declaration: VariableDeclaration): ConstIdentifierContext => {
-  if (!isTopLevelDeclaration(declaration)) return "local"
+  if (!isDirectSourceFileConstDeclaration(declaration)) return "local"
 
   const initializer = declaration.getInitializer()
   if (isSchemaOrTypeObjectConst(declaration.getName(), initializer)) return "schema-type-object"
   return inferCasingPattern(declaration.getName()) === "UPPER_SNAKE_CASE" ? "module-constant" : "local"
 }
 
-const isTopLevelDeclaration = (declaration: VariableDeclaration): boolean => {
-  let node: Node | undefined = declaration.getParent()
-  while (node !== undefined) {
-    if (Node.isSourceFile(node)) return true
-    if (
-      Node.isFunctionDeclaration(node) ||
-      Node.isFunctionExpression(node) ||
-      Node.isArrowFunction(node) ||
-      Node.isMethodDeclaration(node) ||
-      Node.isConstructorDeclaration(node) ||
-      Node.isGetAccessorDeclaration(node) ||
-      Node.isSetAccessorDeclaration(node)
-    ) {
-      return false
-    }
-    node = node.getParent()
-  }
-  return true
+const isDirectSourceFileConstDeclaration = (declaration: VariableDeclaration): boolean => {
+  const declarationList = declaration.getParent()
+  if (!Node.isVariableDeclarationList(declarationList)) return false
+  const statement = declarationList.getParent()
+  if (!Node.isVariableStatement(statement)) return false
+  return Node.isSourceFile(statement.getParent())
 }
 
 const isSchemaOrTypeObjectConst = (
@@ -177,7 +189,6 @@ const isSchemaOrTypeObjectConst = (
 ): boolean => {
   const unwrappedInitializer = unwrapConstInitializer(initializer)
   if (inferCasingPattern(name) !== "PascalCase" || unwrappedInitializer === undefined) return false
-  if (Node.isObjectLiteralExpression(unwrappedInitializer)) return true
   if (!Node.isCallExpression(unwrappedInitializer)) return false
 
   const expressionText = unwrappedInitializer.getExpression().getText()

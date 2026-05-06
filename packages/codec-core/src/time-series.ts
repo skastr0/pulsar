@@ -9,7 +9,14 @@ import {
   Diagnostic as DiagnosticSchema,
   type Diagnostic,
 } from "./diagnostic.js"
-import { ObserverOutput as ObserverOutputSchema, toObserverJson, type ObserverOutput } from "./observer.js"
+import {
+  ObserverOutput as ObserverOutputSchema,
+  OBSERVER_OUTPUT_SEMANTICS,
+  toObserverJson,
+  type ObserverOutput,
+  type ReadinessOutput,
+  type ReadinessPressure,
+} from "./observer.js"
 
 const execFileAsync = promisify(execFile)
 
@@ -58,6 +65,11 @@ export const TimeSeriesAggregate = Schema.Struct({
   to: Schema.String,
   sample_count: Schema.Number,
   commit_shas: Schema.Array(Schema.String),
+  observer_semantics: Schema.optional(
+    Schema.Literal("readiness-aware", "legacy-compatibility"),
+  ),
+  readiness_sample_count: Schema.optional(Schema.Number),
+  compatibility_reason: Schema.optional(Schema.String),
 })
 export type TimeSeriesAggregate = typeof TimeSeriesAggregate.Type
 
@@ -420,6 +432,11 @@ const aggregateWeek = (entries: ReadonlyArray<TimeSeriesEntry>): TimeSeriesEntry
   const earliest = entries[0]?.timestamp ?? new Date(0).toISOString()
   const latest = entries.at(-1)?.timestamp ?? earliest
   const signalAverages = new Map<string, { category: Category; total: number }>()
+  const readiness = aggregateReadiness(weightedEntries, totalWeight)
+  const signalMetadata = aggregateSignalMetadata(weightedEntries)
+  const readinessSampleCount = weightedEntries
+    .filter(({ entry }) => entry.observerOutput.readiness !== undefined)
+    .reduce((sum, item) => sum + item.weight, 0)
 
   const categories = Object.fromEntries(
     CATEGORIES.map((category) => {
@@ -447,6 +464,7 @@ const aggregateWeek = (entries: ReadonlyArray<TimeSeriesEntry>): TimeSeriesEntry
         {
           score: categorySum / totalWeight,
           signals,
+          ...aggregateCategoryMetadata(weightedEntries, category, totalWeight),
         },
       ]
     }),
@@ -479,16 +497,331 @@ const aggregateWeek = (entries: ReadonlyArray<TimeSeriesEntry>): TimeSeriesEntry
       to: weekEnd.toISOString(),
       sample_count: commitShas.length,
       commit_shas: commitShas,
+      observer_semantics:
+        readiness === undefined ? "legacy-compatibility" : "readiness-aware",
+      readiness_sample_count: readinessSampleCount,
+      ...(readiness === undefined
+        ? {
+            compatibility_reason:
+              readinessSampleCount === 0
+                ? "source rows predate readiness/applicability metadata"
+                : "source rows mix readiness-aware and legacy observer semantics",
+          }
+        : {}),
     },
     observerOutput: {
+      observer_semantics: OBSERVER_OUTPUT_SEMANTICS,
       categories,
       minimum,
       weighted_mean: weightedMean,
+      ...(readiness !== undefined ? { readiness } : {}),
       hard_gate_status: hardGateStatus,
       hard_gate_violations: [],
+      ...(signalMetadata !== undefined ? { signal_metadata: signalMetadata } : {}),
     },
     inactiveSignals: [],
   }
+}
+
+type WeightedEntry = {
+  readonly entry: TimeSeriesEntry
+  readonly weight: number
+}
+
+const aggregateCategoryMetadata = (
+  weightedEntries: ReadonlyArray<WeightedEntry>,
+  category: Category,
+  totalWeight: number,
+): Partial<ReturnType<typeof toObserverJson>["categories"][Category]> => {
+  const snapshots = weightedEntries.map(({ entry }) => entry.observerOutput.categories[category])
+  const withSignalCount = snapshots.every((snapshot) => snapshot.signalCount !== undefined)
+  const withApplicableSignalCount = snapshots.every(
+    (snapshot) => snapshot.applicableSignalCount !== undefined,
+  )
+  const withActiveSignalIds = snapshots.every(
+    (snapshot) => snapshot.activeSignalIds !== undefined,
+  )
+
+  return {
+    ...(withSignalCount
+      ? {
+          signalCount:
+            weightedEntries.reduce(
+              (sum, { entry, weight }) =>
+                sum + (entry.observerOutput.categories[category].signalCount ?? 0) * weight,
+              0,
+            ) / totalWeight,
+        }
+      : {}),
+    ...(withApplicableSignalCount
+      ? {
+          applicableSignalCount:
+            weightedEntries.reduce(
+              (sum, { entry, weight }) =>
+                sum +
+                (entry.observerOutput.categories[category].applicableSignalCount ?? 0) *
+                  weight,
+              0,
+            ) / totalWeight,
+        }
+      : {}),
+    ...(withActiveSignalIds
+      ? {
+          activeSignalIds: [
+            ...new Set(snapshots.flatMap((snapshot) => snapshot.activeSignalIds ?? [])),
+          ].sort(),
+        }
+      : {}),
+  }
+}
+
+const aggregateReadiness = (
+  weightedEntries: ReadonlyArray<WeightedEntry>,
+  totalWeight: number,
+): ReadinessOutput | undefined => {
+  if (
+    weightedEntries.length === 0 ||
+    weightedEntries.some(({ entry }) => entry.observerOutput.readiness === undefined)
+  ) {
+    return undefined
+  }
+
+  const readinessEntries = weightedEntries.map(({ entry, weight }) => ({
+    readiness: entry.observerOutput.readiness as ReadinessOutput,
+    weight,
+  }))
+  const maxPressureCount = Math.max(
+    ...readinessEntries.map(({ readiness }) => readiness.top_pressures.length),
+    0,
+  )
+
+  return {
+    score: weightedAverage(readinessEntries, ({ readiness }) => readiness.score, totalWeight),
+    pressure: weightedAverage(
+      readinessEntries,
+      ({ readiness }) => readiness.pressure,
+      totalWeight,
+    ),
+    status: worstReadinessStatus(readinessEntries.map(({ readiness }) => readiness.status)),
+    aggregation: {
+      strategy: "pressure-pnorm-local-max",
+      p: weightedAverage(readinessEntries, ({ readiness }) => readiness.aggregation.p, totalWeight),
+      mean_pressure: weightedAverage(
+        readinessEntries,
+        ({ readiness }) => readiness.aggregation.mean_pressure,
+        totalWeight,
+      ),
+      pnorm_pressure: weightedAverage(
+        readinessEntries,
+        ({ readiness }) => readiness.aggregation.pnorm_pressure,
+        totalWeight,
+      ),
+      max_local_pressure: Math.max(
+        ...readinessEntries.map(({ readiness }) => readiness.aggregation.max_local_pressure),
+      ),
+      failed_signal_pressure: Math.max(
+        ...readinessEntries.map(
+          ({ readiness }) => readiness.aggregation.failed_signal_pressure ?? 0,
+        ),
+      ),
+      hard_gate_pressure: Math.max(
+        ...readinessEntries.map(({ readiness }) => readiness.aggregation.hard_gate_pressure),
+      ),
+      hard_gate_score_cap: weightedAverage(
+        readinessEntries,
+        ({ readiness }) => readiness.aggregation.hard_gate_score_cap,
+        totalWeight,
+      ),
+      local_warning_threshold: weightedAverage(
+        readinessEntries,
+        ({ readiness }) => readiness.aggregation.local_warning_threshold,
+        totalWeight,
+      ),
+      local_poison_threshold: weightedAverage(
+        readinessEntries,
+        ({ readiness }) => readiness.aggregation.local_poison_threshold,
+        totalWeight,
+      ),
+      local_warning_gain: weightedAverage(
+        readinessEntries,
+        ({ readiness }) => readiness.aggregation.local_warning_gain,
+        totalWeight,
+      ),
+      applicable_signal_count: weightedAverage(
+        readinessEntries,
+        ({ readiness }) => readiness.aggregation.applicable_signal_count,
+        totalWeight,
+      ),
+      ignored_signal_count: weightedAverage(
+        readinessEntries,
+        ({ readiness }) => readiness.aggregation.ignored_signal_count,
+        totalWeight,
+      ),
+      failed_signal_count: weightedAverage(
+        readinessEntries,
+        ({ readiness }) => readiness.aggregation.failed_signal_count ?? 0,
+        totalWeight,
+      ),
+    },
+    top_pressures: aggregateTopPressures(readinessEntries, maxPressureCount),
+  }
+}
+
+const aggregateTopPressures = (
+  readinessEntries: ReadonlyArray<{
+    readonly readiness: ReadinessOutput
+    readonly weight: number
+  }>,
+  limit: number,
+): ReadonlyArray<ReadinessPressure> => {
+  const grouped = new Map<
+    string,
+    {
+      pressure: ReadinessPressure
+      totalWeight: number
+      score: number
+      rawPressure: number
+      effectivePressure: number
+      weight: number
+      confidence: number
+    }
+  >()
+
+  for (const { readiness, weight } of readinessEntries) {
+    for (const pressure of readiness.top_pressures) {
+      const key = [
+        pressure.signal_id,
+        pressure.category,
+        pressure.applicability,
+      ].join("\u0000")
+      const existing = grouped.get(key) ?? {
+        pressure,
+        totalWeight: 0,
+        score: 0,
+        rawPressure: 0,
+        effectivePressure: 0,
+        weight: 0,
+        confidence: 0,
+      }
+      existing.totalWeight += weight
+      existing.score += pressure.score * weight
+      existing.rawPressure += pressure.raw_pressure * weight
+      existing.effectivePressure += pressure.effective_pressure * weight
+      existing.weight += pressure.weight * weight
+      existing.confidence += pressure.confidence * weight
+      grouped.set(key, existing)
+    }
+  }
+
+  return [...grouped.values()]
+    .map((item) => ({
+      ...item.pressure,
+      score: item.score / item.totalWeight,
+      raw_pressure: item.rawPressure / item.totalWeight,
+      effective_pressure: item.effectivePressure / item.totalWeight,
+      weight: item.weight / item.totalWeight,
+      confidence: item.confidence / item.totalWeight,
+    }))
+    .sort(
+      (left, right) =>
+        right.effective_pressure - left.effective_pressure ||
+        left.signal_id.localeCompare(right.signal_id),
+    )
+    .slice(0, limit)
+}
+
+const aggregateSignalMetadata = (
+  weightedEntries: ReadonlyArray<WeightedEntry>,
+): ObserverOutput["signal_metadata"] | undefined => {
+  if (
+    weightedEntries.length === 0 ||
+    weightedEntries.some(({ entry }) => entry.observerOutput.signal_metadata === undefined)
+  ) {
+    return undefined
+  }
+
+  const signalIds = [
+    ...new Set(
+      weightedEntries.flatMap(({ entry }) =>
+        Object.keys(entry.observerOutput.signal_metadata ?? {}),
+      ),
+    ),
+  ].sort()
+
+  return Object.fromEntries(
+    signalIds.map((signalId) => {
+      const metadata = weightedEntries.flatMap(({ entry, weight }) => {
+        const item = entry.observerOutput.signal_metadata?.[signalId]
+        return item === undefined ? [] : [{ item, weight }]
+      })
+      const hasMetadataForEverySource = metadata.length === weightedEntries.length
+      const applicabilityValues = new Set(
+        metadata.map(({ item }) => item.applicability).filter((value) => value !== undefined),
+      )
+      const computedAt = metadata
+        .map(({ item }) => item.computedAt)
+        .filter((value) => value !== undefined)
+        .sort()
+        .at(-1)
+      const effectiveConfidence = averageOptional(
+        metadata,
+        ({ item }) => item.effectiveConfidence,
+      )
+      const baseConfidence = averageOptional(metadata, ({ item }) => item.baseConfidence)
+
+      return [
+        signalId,
+        {
+          ...(effectiveConfidence !== undefined ? { effectiveConfidence } : {}),
+          ...(baseConfidence !== undefined ? { baseConfidence } : {}),
+          ...(computedAt !== undefined ? { computedAt } : {}),
+          ...(metadata.some(({ item }) => item.stale === true) ? { stale: true } : {}),
+          ...(hasMetadataForEverySource && applicabilityValues.size === 1
+            ? { applicability: [...applicabilityValues][0] }
+            : {}),
+        },
+      ]
+    }),
+  )
+}
+
+const weightedAverage = <A>(
+  entries: ReadonlyArray<{ readonly weight: number } & A>,
+  value: (entry: A) => number,
+  totalWeight: number,
+): number =>
+  entries.reduce((sum, entry) => sum + value(entry) * entry.weight, 0) / totalWeight
+
+const averageOptional = <A>(
+  entries: ReadonlyArray<{ readonly weight: number } & A>,
+  value: (entry: A) => number | undefined,
+): number | undefined => {
+  let total = 0
+  let weight = 0
+  for (const entry of entries) {
+    const item = value(entry)
+    if (item === undefined) continue
+    total += item * entry.weight
+    weight += entry.weight
+  }
+  return weight === 0 ? undefined : total / weight
+}
+
+const worstReadinessStatus = (
+  statuses: ReadonlyArray<ReadinessOutput["status"]>,
+): ReadinessOutput["status"] => {
+  const rank: Record<ReadinessOutput["status"], number> = {
+    green: 0,
+    unknown: 1,
+    yellow: 2,
+    red: 3,
+    blocked: 4,
+    failed: 5,
+  }
+  return statuses.reduce<ReadinessOutput["status"]>(
+    (worst, status) => (rank[status] > rank[worst] ? status : worst),
+    "green",
+  )
 }
 
 const computeAggregateMinimum = (

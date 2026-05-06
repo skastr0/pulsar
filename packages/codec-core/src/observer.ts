@@ -21,6 +21,9 @@ import {
   weightOf as vectorWeightOf,
 } from "./vector.js"
 
+export const OBSERVER_OUTPUT_SEMANTICS = "applicability-aware-readiness-v1" as const
+export type ObserverOutputSemantics = typeof OBSERVER_OUTPUT_SEMANTICS
+
 /**
  * The top-level scoring output — a dimension vector grouped by taxonomy
  * category, the minimum dimension, a weighted mean, and hard-gate status.
@@ -319,6 +322,7 @@ const ObserverCalibrationSnapshot = Schema.Struct({
 })
 
 export const ObserverOutput = Schema.Struct({
+  observer_semantics: Schema.optional(Schema.Literal(OBSERVER_OUTPUT_SEMANTICS)),
   categories: ObserverCategories,
   minimum: Schema.Union(MinimumDimensionSnapshot, Schema.Undefined),
   weighted_mean: Schema.Number,
@@ -335,6 +339,7 @@ export const ObserverOutput = Schema.Struct({
 type ObserverOutputPublic = typeof ObserverOutput.Type
 
 export type ObserverOutput = ObserverOutputPublic & {
+  readonly observer_semantics?: ObserverOutputSemantics
   readonly categories: Record<Category, CategoryOutput>
   readonly minimum: MinimumDimension | undefined
   readonly readiness?: ReadinessOutput
@@ -346,6 +351,7 @@ export type ObserverOutput = ObserverOutputPublic & {
 }
 
 export const toObserverJson = (output: ObserverOutput): ObserverOutputPublic => ({
+  observer_semantics: OBSERVER_OUTPUT_SEMANTICS,
   categories: {
     "architectural-drift": toObserverCategorySnapshot(
       output.categories["architectural-drift"],
@@ -515,6 +521,7 @@ export const observe = (
       : undefined
 
     return {
+      observer_semantics: OBSERVER_OUTPUT_SEMANTICS,
       categories,
       minimum,
       weighted_mean,

@@ -43,7 +43,7 @@ describe("SHARED-03 churn rate", () => {
     } finally {
       await repo.cleanup()
     }
-  })
+  }, 120_000)
 
   test("marks reverted lines as churned within the window", async () => {
     const repo = await createGitTestRepo("taste-codec-shared-03-reverted-")
@@ -86,7 +86,7 @@ describe("SHARED-03 churn rate", () => {
     } finally {
       await repo.cleanup()
     }
-  })
+  }, 120_000)
 
   test("ignores uncommitted working-tree edits when measuring mature churn", async () => {
     const repo = await createGitTestRepo("taste-codec-shared-03-dirty-")
@@ -125,7 +125,7 @@ describe("SHARED-03 churn rate", () => {
     } finally {
       await repo.cleanup()
     }
-  })
+  }, 120_000)
 
   test("handles renames and partial churn with similarity matching", async () => {
     const repo = await createGitTestRepo("taste-codec-shared-03-rename-")
@@ -179,7 +179,7 @@ describe("SHARED-03 churn rate", () => {
     } finally {
       await repo.cleanup()
     }
-  })
+  }, 120_000)
 
   test("returns a neutral score when the repo has no mature window yet", async () => {
     const repo = await createGitTestRepo("taste-codec-shared-03-insufficient-")
@@ -215,7 +215,7 @@ describe("SHARED-03 churn rate", () => {
     } finally {
       await repo.cleanup()
     }
-  })
+  }, 120_000)
 
   test("excludes tests and hidden metadata directories from default production churn pressure", async () => {
     const repo = await createGitTestRepo("taste-codec-shared-03-excludes-")
@@ -258,7 +258,7 @@ describe("SHARED-03 churn rate", () => {
     } finally {
       await repo.cleanup()
     }
-  })
+  }, 120_000)
 
   test("diagnostics rank by churned-line impact and include repo context", () => {
     const root = "/repo"

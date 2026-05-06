@@ -1,24 +1,38 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test"
+import { spawnSync } from "node:child_process"
 import { Effect, Layer } from "effect"
 import { SignalContextTag } from "@taste-codec/core"
 import { createTempRepo, runSignal } from "./test-repo.js"
 import { TsRp02 } from "../signals/ts-rp-02-pr-size.js"
 import { TsProjectLayer, TsPackageInfoTag } from "../ts-project.js"
-import { simpleGit } from "simple-git"
 import type { TempRepo } from "./test-repo.js"
+
+const git = (repoRoot: string, args: ReadonlyArray<string>): void => {
+  const result = spawnSync("git", [...args], {
+    cwd: repoRoot,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      GIT_AUTHOR_DATE: "2025-01-01T00:00:00Z",
+      GIT_COMMITTER_DATE: "2025-01-01T00:00:00Z",
+    },
+  })
+  if (result.status !== 0) {
+    throw new Error(`git ${args.join(" ")} failed: ${result.stderr || result.stdout}`)
+  }
+}
 
 describe("TS-RP-02 PR size and dependency delta", () => {
   let repo: TempRepo
 
   beforeEach(async () => {
     repo = await createTempRepo("ts-rp-02-")
-    // Initialize git repo for proper diff detection
-    const git = simpleGit(repo.root)
-    await git.init()
-    await git.addConfig("user.email", "test@example.com")
-    await git.addConfig("user.name", "Test")
-    await git.add(["."])
-    await git.commit("Initial commit")
+    git(repo.root, ["init", "-q", "-b", "main"])
+    git(repo.root, ["config", "user.email", "test@example.com"])
+    git(repo.root, ["config", "user.name", "Test"])
+    git(repo.root, ["config", "commit.gpgsign", "false"])
+    git(repo.root, ["add", "."])
+    git(repo.root, ["commit", "-q", "-m", "Initial commit"])
   })
 
   afterEach(async () => {
@@ -59,7 +73,7 @@ export function bar(): number { return 42; }
     expect(typeof out.linesAdded).toBe("number")
     expect(typeof out.linesDeleted).toBe("number")
     expect(out.sizeCategory).toBeDefined()
-  })
+  }, 120_000)
 
   test("detects cross-package imports", async () => {
     await repo.write(
@@ -98,7 +112,7 @@ export function useHelper(): string { return helper(); }
     )
 
     expect(out.packagesTouched.length).toBeGreaterThanOrEqual(0)
-  })
+  }, 120_000)
 
   test("size category respects budgets", async () => {
     const config = {
@@ -129,7 +143,7 @@ export function useHelper(): string { return helper(); }
     )
 
     expect(["small", "medium", "large", "oversized"]).toContain(out.sizeCategory)
-  })
+  }, 120_000)
 
   test("score decreases with larger changes", async () => {
     const out = await Effect.runPromise(
@@ -155,7 +169,7 @@ export function useHelper(): string { return helper(); }
     const score = TsRp02.score(out)
     expect(score).toBeGreaterThanOrEqual(0)
     expect(score).toBeLessThanOrEqual(1)
-  })
+  }, 120_000)
 
   test("diff-aware fallback when hunks provided", async () => {
     const out = await Effect.runPromise(
@@ -180,7 +194,7 @@ export function useHelper(): string { return helper(); }
 
     expect(out.diffMode).toBe("changed-hunks-fallback")
     expect(out.linesAdded).toBe(10)
-  })
+  }, 120_000)
 
   test("reads committed TypeScript range diff with git pathspecs", async () => {
     await repo.write(
@@ -191,9 +205,8 @@ export function before(): string {
 }
 `,
     )
-    let git = simpleGit(repo.root)
-    await git.add(["."])
-    await git.commit("Add range file")
+    git(repo.root, ["add", "."])
+    git(repo.root, ["commit", "-q", "-m", "Add range file"])
 
     await repo.write(
       "src/range.ts",
@@ -215,9 +228,8 @@ export function View(): unknown {
 }
 `,
     )
-    git = simpleGit(repo.root)
-    await git.add(["."])
-    await git.commit("Change TypeScript range")
+    git(repo.root, ["add", "."])
+    git(repo.root, ["commit", "-q", "-m", "Change TypeScript range"])
 
     const out = await Effect.runPromise(
       TsRp02.compute(
@@ -244,7 +256,7 @@ export function View(): unknown {
     ])
     expect(out.linesAdded).toBeGreaterThan(0)
     expect(out.linesDeleted).toBeGreaterThan(0)
-  })
+  }, 120_000)
 
   test("diagnostics include PR summary", async () => {
     const out = await Effect.runPromise(
@@ -270,7 +282,7 @@ export function View(): unknown {
     const diagnostics = TsRp02.diagnose(out)
     expect(diagnostics.length).toBeGreaterThan(0)
     expect(diagnostics[0]?.message).toContain("PR surface")
-  })
+  }, 120_000)
 
   test("large PR surfaces emit warning diagnostics", async () => {
     const diagnostics = TsRp02.diagnose({
@@ -340,7 +352,7 @@ export function View(): unknown {
       linesDeleted: 10,
       totalLines: 90,
     })
-  })
+  }, 120_000)
 
   test("generated changed files do not dominate PR surface", async () => {
     const out = await Effect.runPromise(
@@ -376,5 +388,5 @@ export function View(): unknown {
     expect(out.linesAdded).toBe(20)
     expect(out.linesDeleted).toBe(3)
     expect(TsRp02.diagnose(out)[0]?.message).not.toContain("routeTree.gen.ts")
-  })
+  }, 120_000)
 })

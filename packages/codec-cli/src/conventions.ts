@@ -53,7 +53,10 @@ const runConventionsExtract = (repoPath: string, sha: string) =>
   withDetachedWorktreeAtRef(repoPath, sha, ({ repoRoot, resolvedSha, worktreePath }) =>
     Effect.gen(function* () {
       const [identifiers, packages] = yield* Effect.all([
-        collectIdentifiers(worktreePath, { includeParameters: false }),
+        collectIdentifiers(worktreePath, {
+          includeParameters: false,
+          includeLocalConstants: true,
+        }),
         discoverPackages(worktreePath),
       ])
       const boundaries = yield* inferBoundaries(worktreePath, packages)
@@ -158,20 +161,8 @@ const chooseConstConvention = (
 ): NamingConventions["const"] => {
   const patterns = new Set<string>()
 
-  if (identifiers.some((identifier) => identifier.constContext === "local")) {
-    patterns.add("camelCase")
-  }
-  if (identifiers.some((identifier) => identifier.constContext === "module-constant")) {
-    patterns.add("UPPER_SNAKE_CASE")
-  }
-  if (identifiers.some((identifier) => identifier.constContext === "schema-type-object")) {
-    patterns.add("PascalCase")
-  }
-
-  if (patterns.size === 0) {
-    for (const identifier of identifiers) {
-      if (identifier.pattern !== "unrecognized") patterns.add(identifier.pattern)
-    }
+  for (const identifier of identifiers) {
+    if (identifier.pattern !== "unrecognized") patterns.add(identifier.pattern)
   }
 
   const orderedPatterns = [

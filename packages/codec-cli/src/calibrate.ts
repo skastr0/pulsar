@@ -52,6 +52,39 @@ const RELATIVE_BASELINE_PATH = ".taste-codec/baseline.json"
 const RELATIVE_PROJECT_MODULES_PATH = ".taste-codec/project-modules.json"
 const RELATIVE_SUGGESTIONS_PATH = ".taste-codec/calibration-suggestions.json"
 
+const PACKAGE_JSON_SCAN_SKIP_DIRECTORIES = new Set([
+  ".cache",
+  ".git",
+  ".next",
+  ".nuxt",
+  ".output",
+  ".parcel-cache",
+  ".svelte-kit",
+  ".taste-codec",
+  ".turbo",
+  ".vercel",
+  "build",
+  "coverage",
+  "dist",
+  "gen",
+  "generated",
+  "node_modules",
+  "out",
+  "target",
+  "vendor",
+])
+
+const PROJECT_MODULE_SUGGESTION_CATALOG = [
+  {
+    dependencyName: "convex",
+    packageName: "@taste-codec/project-module-convex",
+  },
+  {
+    dependencyName: "effect",
+    packageName: "@taste-codec/project-module-effect",
+  },
+] as const
+
 export const runCalibrateCommand = (opts: CalibrateCommandOptions) =>
   Effect.gen(function* () {
     if (opts.action !== "suggest") {
@@ -256,13 +289,7 @@ const findPackageJsonPaths = (
   })
 
 const shouldSkipDirectory = (name: string): boolean =>
-  name === ".git" ||
-  name === "node_modules" ||
-  name === "dist" ||
-  name === "build" ||
-  name === "coverage" ||
-  name === ".turbo" ||
-  name === ".taste-codec"
+  PACKAGE_JSON_SCAN_SKIP_DIRECTORIES.has(name)
 
 const readPackageJsonInfo = (repoRoot: string, path: string) =>
   Effect.gen(function* () {
@@ -298,28 +325,18 @@ const collectDependencyNames = (packageJson: Record<string, unknown>): ReadonlyS
 const suggestProjectModules = (
   packageJsons: ReadonlyArray<PackageJsonInfo>,
 ): ReadonlyArray<SuggestedProjectModule> => {
-  const suggestions: Array<SuggestedProjectModule> = []
-  const effectEvidence = dependencyEvidence(packageJsons, "effect")
-  if (effectEvidence.length > 0) {
-    suggestions.push({
-      id: "@taste-codec/project-module-effect",
-      kind: "package",
-      packageName: "@taste-codec/project-module-effect",
-      evidence: effectEvidence,
-    })
-  }
-
-  const convexEvidence = dependencyEvidence(packageJsons, "convex")
-  if (convexEvidence.length > 0) {
-    suggestions.push({
-      id: "@taste-codec/project-module-convex",
-      kind: "package",
-      packageName: "@taste-codec/project-module-convex",
-      evidence: convexEvidence,
-    })
-  }
-
-  return suggestions.sort((left, right) => left.id.localeCompare(right.id))
+  return PROJECT_MODULE_SUGGESTION_CATALOG.flatMap((module) => {
+    const evidence = dependencyEvidence(packageJsons, module.dependencyName)
+    if (evidence.length === 0) return []
+    return [
+      {
+        id: module.packageName,
+        kind: "package",
+        packageName: module.packageName,
+        evidence,
+      } satisfies SuggestedProjectModule,
+    ]
+  }).sort((left, right) => left.id.localeCompare(right.id))
 }
 
 const dependencyEvidence = (

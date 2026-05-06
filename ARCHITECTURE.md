@@ -430,6 +430,7 @@ The primary output is a **dimension vector grouped by taxonomy category**, plus 
 
 ```json
 {
+  "observer_semantics": "applicability-aware-readiness-v1",
   "categories": {
     "architectural-drift": { "score": 0.92, "signals": { "TS-AD-01": 1.0, "TS-AD-02": 0.85 } },
     "dependency-entropy": { "score": 0.71, "signals": { "TS-DE-01": 0.65, "TS-DE-02": 0.78 } },
@@ -446,7 +447,7 @@ The primary output is a **dimension vector grouped by taxonomy category**, plus 
 }
 ```
 
-The minimum signal is often more actionable than any aggregate. Hard gate status is computed separately from the taste-weighted score — structural violations fail the gate regardless of weight.
+`observer_semantics` is part of the public contract. `applicability-aware-readiness-v1` means `weighted_mean` and `minimum` are computed from applicable evidence instead of treating missing or failed evidence as healthy scalar data; readiness pressure carries the severe local and failed-signal backpressure. The minimum signal is often more actionable than any aggregate. Hard gate status is computed separately from the taste-weighted score — structural violations fail the gate regardless of weight.
 
 ---
 

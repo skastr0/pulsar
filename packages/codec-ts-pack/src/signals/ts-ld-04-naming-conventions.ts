@@ -13,7 +13,6 @@ import { TsProjectTag } from "../ts-project.js"
 import {
   collectIdentifierDeclarations,
   type ConstIdentifierContext,
-  type IdentifierDeclaration,
   type IdentifierDeclarationKind,
 } from "./shared-identifiers.js"
 
@@ -94,7 +93,7 @@ export const TsLd04: Signal<TsLd04Config, TsLd04Output, TsProjectTag | Reference
 
           const namingConventions = rawConventions.value.naming_conventions
           const violations = identifiers.flatMap((identifier) => {
-            const expectedPatterns = expectedPatternsForIdentifier(namingConventions, identifier)
+            const expectedPatterns = expectedPatternsForKind(namingConventions, identifier.kind)
             const violation = {
               file: identifier.file,
               line: identifier.line,
@@ -179,36 +178,6 @@ const expectedPatternsForKind = (
       return parseCasingPatternAlternatives(namingConventions.enum)
     case "const":
       return parseCasingPatternAlternatives(namingConventions.const)
-  }
-}
-
-const expectedPatternsForIdentifier = (
-  namingConventions: NamingConventions,
-  identifier: IdentifierDeclaration,
-): ReadonlyArray<RecognizedCasingPattern> => {
-  const patterns = expectedPatternsForKind(namingConventions, identifier.kind)
-  if (identifier.kind !== "const") return patterns
-
-  const contextualPattern = expectedConstPattern(identifier.constContext)
-  if (contextualPattern !== undefined && patterns.includes(contextualPattern)) {
-    return [contextualPattern]
-  }
-
-  return patterns
-}
-
-const expectedConstPattern = (
-  context: ConstIdentifierContext | undefined,
-): RecognizedCasingPattern | undefined => {
-  switch (context) {
-    case "local":
-      return "camelCase"
-    case "module-constant":
-      return "UPPER_SNAKE_CASE"
-    case "schema-type-object":
-      return "PascalCase"
-    case undefined:
-      return undefined
   }
 }
 

@@ -216,6 +216,7 @@ export const runBisectCommand = (opts: BisectOptions) =>
       const sampled = yield* sampleObserverTrajectory(
         commits,
         opts.sampling,
+        opts.firstCrossing !== undefined,
         opts.concurrency,
         (sha) => engine.observeCommit(repoPath, sha),
       )
@@ -245,6 +246,7 @@ export const runBisectCommand = (opts: BisectOptions) =>
     const sampled = yield* sampleSignalTrajectory(
       commits,
       opts.sampling,
+      opts.firstCrossing !== undefined,
       opts.concurrency,
       (sha) => engine.scoreCommit(repoPath, sha, opts.signalId!),
     )
@@ -737,6 +739,7 @@ const resolveBisectCommits = (
 const sampleSignalTrajectory = (
   commits: ReadonlyArray<RangeCommit>,
   requested: BisectSamplingMode,
+  hasFirstCrossing: boolean,
   concurrency: number,
   scoreCommit: (sha: string) => Effect.Effect<any, unknown, never>,
 ): Effect.Effect<
@@ -747,6 +750,7 @@ const sampleSignalTrajectory = (
   sampleTrajectory(
     commits,
     requested,
+    hasFirstCrossing,
     concurrency,
     scoreCommit,
     (sha, result) => ({
@@ -755,12 +759,14 @@ const sampleSignalTrajectory = (
       diagnosticsCount: result.diagnostics.length,
       firstDiagnostic: result.diagnostics[0]?.message,
     }),
-    (entry) => entry.score,
+    (leftIndex, rightIndex, leftEntry, rightEntry) =>
+      chooseAdaptiveMidpoint(leftIndex, rightIndex, leftEntry.score, rightEntry.score),
   )
 
 const sampleObserverTrajectory = (
   commits: ReadonlyArray<RangeCommit>,
   requested: BisectSamplingMode,
+  hasFirstCrossing: boolean,
   concurrency: number,
   observeCommit: (sha: string) => Effect.Effect<ObserverOutput, unknown, never>,
 ): Effect.Effect<
@@ -774,31 +780,33 @@ const sampleObserverTrajectory = (
   sampleTrajectory(
     commits,
     requested,
+    hasFirstCrossing,
     concurrency,
     observeCommit,
     toObserverCurveSample,
-    observerSamplingScore,
+    chooseObserverAdaptiveMidpoint,
   )
-
-const observerSamplingScore = (entry: ObserverCurveSample): number =>
-  entry.readinessScore === undefined
-    ? entry.weightedMean
-    : (entry.readinessScore + entry.weightedMean) / 2
 
 const sampleTrajectory = <Result, Entry extends { readonly sha: string }>(
   commits: ReadonlyArray<RangeCommit>,
   requested: BisectSamplingMode,
+  hasFirstCrossing: boolean,
   concurrency: number,
   scoreCommit: (sha: string) => Effect.Effect<Result, unknown, never>,
   toEntry: (sha: string, result: Result) => Entry,
-  getScore: (entry: Entry) => number,
+  chooseMidpoint: (
+    leftIndex: number,
+    rightIndex: number,
+    leftEntry: Entry,
+    rightEntry: Entry,
+  ) => number | undefined,
 ): Effect.Effect<
   { readonly trajectory: ReadonlyArray<Entry>; readonly sampling: BisectSamplingSummary },
   unknown,
   never
 > =>
   Effect.gen(function* () {
-    const plan = resolveSamplingPlan(commits, requested)
+    const plan = resolveSamplingPlan(commits, requested, { hasFirstCrossing })
     if (plan.applied === "full") {
       const trajectory = yield* scoreTrajectoryIndexes(
         allIndexes(commits.length),
@@ -864,12 +872,7 @@ const sampleTrajectory = <Result, Entry extends { readonly sha: string }>(
         const rightIndex = orderedIndexes[i]!
         const leftEntry = scored.get(leftIndex)!
         const rightEntry = scored.get(rightIndex)!
-        const midpoint = chooseAdaptiveMidpoint(
-          leftIndex,
-          rightIndex,
-          getScore(leftEntry),
-          getScore(rightEntry),
-        )
+        const midpoint = chooseMidpoint(leftIndex, rightIndex, leftEntry, rightEntry)
         if (midpoint === undefined || scored.has(midpoint)) continue
         if (scored.size + next.size >= ADAPTIVE_MAX_SCORED_COMMITS) {
           capped = true
@@ -926,12 +929,21 @@ const scoreTrajectoryIndexes = <Result, Entry extends { readonly sha: string }>(
 export const resolveSamplingPlan = (
   commits: ReadonlyArray<RangeCommit>,
   requested: BisectSamplingMode,
+  opts: { readonly hasFirstCrossing?: boolean } = {},
 ): { readonly applied: Exclude<BisectSamplingMode, "auto">; readonly diagnostics: ReadonlyArray<string> } => {
   if (requested === "full") {
     return { applied: "full", diagnostics: [] }
   }
 
   if (requested === "auto") {
+    if (opts.hasFirstCrossing === true) {
+      return {
+        applied: "full",
+        diagnostics: [
+          "auto sampling chose full because first-crossing queries require exact commit order",
+        ],
+      }
+    }
     if (commits.length <= AUTO_FULL_RANGE_THRESHOLD) {
       return { applied: "full", diagnostics: [] }
     }
@@ -960,6 +972,9 @@ export const resolveSamplingPlan = (
       diagnostics: [
         "merge-only includes the range endpoints plus merge commits only",
         "non-merge culprit commits can be skipped; rerun with --sample full to confirm an exact culprit",
+        ...(opts.hasFirstCrossing === true
+          ? ["first-crossing under merge-only sampling is approximate; rerun with --sample full for exact crossing"]
+          : []),
       ],
     }
   }
@@ -969,6 +984,9 @@ export const resolveSamplingPlan = (
     diagnostics: [
       `adaptive-delta started from ${ADAPTIVE_INITIAL_SAMPLES} evenly spaced samples`,
       "adaptive-delta refines only where sampled deltas stay large or commit gaps stay wide",
+      ...(opts.hasFirstCrossing === true
+        ? ["first-crossing under adaptive-delta sampling is approximate; rerun with --sample full for exact crossing"]
+        : []),
     ],
   }
 }
@@ -1009,6 +1027,30 @@ export const chooseAdaptiveMidpoint = (
   if (gap <= 1) return undefined
   const delta = Math.abs(leftScore - rightScore)
   if (gap <= ADAPTIVE_MAX_GAP && delta < ADAPTIVE_DELTA_THRESHOLD) {
+    return undefined
+  }
+  return leftIndex + Math.floor(gap / 2)
+}
+
+export const chooseObserverAdaptiveMidpoint = (
+  leftIndex: number,
+  rightIndex: number,
+  leftEntry: { readonly weightedMean: number; readonly readinessScore: number | undefined },
+  rightEntry: { readonly weightedMean: number; readonly readinessScore: number | undefined },
+): number | undefined => {
+  const gap = rightIndex - leftIndex
+  if (gap <= 1) return undefined
+  if (gap > ADAPTIVE_MAX_GAP) return leftIndex + Math.floor(gap / 2)
+
+  const weightedMeanDelta = Math.abs(leftEntry.weightedMean - rightEntry.weightedMean)
+  const readinessDelta =
+    leftEntry.readinessScore === undefined || rightEntry.readinessScore === undefined
+      ? undefined
+      : Math.abs(leftEntry.readinessScore - rightEntry.readinessScore)
+  if (
+    weightedMeanDelta < ADAPTIVE_DELTA_THRESHOLD &&
+    (readinessDelta === undefined || readinessDelta < ADAPTIVE_DELTA_THRESHOLD)
+  ) {
     return undefined
   }
   return leftIndex + Math.floor(gap / 2)

@@ -14,7 +14,12 @@ const sh = (cmd: string, args: ReadonlyArray<string>, cwd: string): void => {
   }
 }
 
-const initRepo = async (): Promise<string> => {
+const initRepo = async (
+  dependencies: Record<string, string> = {
+    effect: "^3.0.0",
+    convex: "^1.0.0",
+  },
+): Promise<string> => {
   const repoPath = await mkdtemp(join(tmpdir(), "taste-calibrate-cli-"))
   sh("git", ["init", "-q", "-b", "main"], repoPath)
   sh("git", ["config", "user.email", "test@test.test"], repoPath)
@@ -25,10 +30,7 @@ const initRepo = async (): Promise<string> => {
     JSON.stringify(
       {
         name: "calibrate-fixture",
-        dependencies: {
-          effect: "^3.0.0",
-          convex: "^1.0.0",
-        },
+        dependencies,
       },
       null,
       2,
@@ -95,6 +97,50 @@ describe("taste calibrate", () => {
       expect(JSON.parse(await readFile(parsed.write_path, "utf8"))).toEqual(parsed)
       expect(existsSync(join(repoPath, ".taste-codec", "vector.json"))).toBe(false)
       expect(existsSync(join(repoPath, ".taste-codec", "project-modules.json"))).toBe(false)
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
+  test("suggest ignores package manifests under generated and cache directories", async () => {
+    const repoPath = await initRepo({})
+    try {
+      const skippedDirs = [
+        ".next",
+        ".nuxt",
+        ".output",
+        ".cache",
+        "target",
+        "vendor",
+        "gen",
+        "generated",
+      ]
+      for (const dir of skippedDirs) {
+        await mkdir(join(repoPath, dir), { recursive: true })
+        await writeFile(
+          join(repoPath, dir, "package.json"),
+          JSON.stringify(
+            {
+              name: `${dir.replaceAll(".", "")}-fixture`,
+              dependencies: {
+                effect: "^3.0.0",
+                convex: "^1.0.0",
+              },
+            },
+            null,
+            2,
+          ),
+        )
+      }
+
+      const out = runCli(repoPath, ["calibrate", "suggest", "--json", "."])
+
+      expect(out.status).toBe(0)
+      const parsed = JSON.parse(String(out.stdout))
+      expect(parsed.suggested_project_modules).toEqual([])
+      expect(parsed.suggestions.map((item: { id: string }) => item.id)).not.toContain(
+        "project-modules.manifest",
+      )
     } finally {
       await rm(repoPath, { recursive: true, force: true })
     }

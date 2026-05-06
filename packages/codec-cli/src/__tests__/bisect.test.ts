@@ -7,6 +7,7 @@ import { CATEGORIES, createTimeSeriesServices } from "@taste-codec/core"
 import { Effect, Exit } from "effect"
 import {
   chooseAdaptiveMidpoint,
+  chooseObserverAdaptiveMidpoint,
   countFinalApplicableSignalsByCategory,
   findCulprits,
   findDriftCulprits,
@@ -177,6 +178,32 @@ describe("bisect sampling helpers", () => {
     expect(resolveSamplingPlan(large, "auto").applied).toBe("adaptive-delta")
   })
 
+  test("auto uses full scoring when first-crossing must be exact", () => {
+    const large = Array.from({ length: 800 }, (_, index) => ({
+      sha: `large-${index}`,
+      parentCount: 1,
+    }))
+
+    const plan = resolveSamplingPlan(large, "auto", { hasFirstCrossing: true })
+    expect(plan.applied).toBe("full")
+    expect(plan.diagnostics).toEqual([
+      "auto sampling chose full because first-crossing queries require exact commit order",
+    ])
+  })
+
+  test("explicit adaptive sampling keeps first-crossing approximate and says so", () => {
+    const commits = Array.from({ length: 800 }, (_, index) => ({
+      sha: `large-${index}`,
+      parentCount: 1,
+    }))
+
+    const plan = resolveSamplingPlan(commits, "adaptive-delta", { hasFirstCrossing: true })
+    expect(plan.applied).toBe("adaptive-delta")
+    expect(plan.diagnostics).toContain(
+      "first-crossing under adaptive-delta sampling is approximate; rerun with --sample full for exact crossing",
+    )
+  })
+
   test("merge-only includes endpoints plus merge commits", () => {
     const commits = [
       { sha: "a", parentCount: 1 },
@@ -195,6 +222,25 @@ describe("bisect sampling helpers", () => {
     expect(chooseAdaptiveMidpoint(0, 80, 0.9, 0.9)).toBe(40)
     expect(chooseAdaptiveMidpoint(0, 10, 1.0, 0.85)).toBe(5)
     expect(chooseAdaptiveMidpoint(0, 10, 1.0, 0.97)).toBeUndefined()
+  })
+
+  test("observer adaptive refinement responds to readiness drops independently", () => {
+    expect(
+      chooseObserverAdaptiveMidpoint(
+        0,
+        10,
+        { weightedMean: 0.8, readinessScore: 1 },
+        { weightedMean: 0.82, readinessScore: 0.9 },
+      ),
+    ).toBe(5)
+    expect(
+      chooseObserverAdaptiveMidpoint(
+        0,
+        10,
+        { weightedMean: 0.8, readinessScore: 1 },
+        { weightedMean: 0.82, readinessScore: 0.97 },
+      ),
+    ).toBeUndefined()
   })
 })
 
@@ -389,6 +435,17 @@ describe("taste bisect (integration)", () => {
     expect(Object.keys(parsed.curves.categories)).toEqual(["legibility-decay"])
     expect(Object.keys(parsed.trajectory[0].signals)).toEqual(["TS-LD-02"])
     expect(Object.keys(parsed.trajectory[0].categories)).toEqual(["legibility-decay"])
+    expect(parsed.curves.signals["TS-LD-02"]).toEqual(
+      parsed.trajectory.map((entry: { signals: Record<string, number> }) => entry.signals["TS-LD-02"]),
+    )
+    expect(parsed.curves.categories["legibility-decay"]).toEqual(
+      parsed.trajectory.map(
+        (entry: { categories: Record<string, number> }) => entry.categories["legibility-decay"],
+      ),
+    )
+    expect(parsed.firstCrossing?.sha).toBe(parsed.trajectory[0].sha)
+    expect(parsed.firstCrossing?.previousSha).toBeUndefined()
+    expect(parsed.firstCrossing?.score).toBe(parsed.curves.signals["TS-LD-02"][0])
   }, 120_000)
 
   test("threads an optional vector through observer mode", async () => {

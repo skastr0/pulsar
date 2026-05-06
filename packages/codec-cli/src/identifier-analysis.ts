@@ -23,10 +23,20 @@ export type ConstIdentifierContext = "local" | "module-constant" | "schema-type-
 
 export interface IdentifierCollectionOptions {
   readonly includeParameters: boolean
+  readonly includeLocalConstants?: boolean
 }
 
 interface NamedDeclarationLike {
   readonly getStartLineNumber: () => number
+}
+
+interface DescendantLike {
+  readonly getKindName: () => string
+  readonly getName?: () => string
+  readonly getStartLineNumber: () => number
+  readonly getInitializer?: () => NodeLike | undefined
+  readonly getParent?: () => NodeLike | undefined
+  readonly getVariableStatement?: () => { getDeclarationKind: () => string } | undefined
 }
 
 interface SourceFileLike {
@@ -46,14 +56,8 @@ interface SourceFileLike {
       getVariableStatement?: () => { getDeclarationKind: () => string } | undefined
     }>
   }>
-  readonly getDescendants: () => Array<{
-    getKindName: () => string
-    getName?: () => string
-    getStartLineNumber: () => number
-    getInitializer?: () => NodeLike | undefined
-    getParent?: () => NodeLike | undefined
-    getVariableStatement?: () => { getDeclarationKind: () => string } | undefined
-  }>
+  readonly forEachDescendant?: (visit: (node: DescendantLike) => void) => void
+  readonly getDescendants?: () => Array<DescendantLike>
   readonly getExportedDeclarations: () => Map<string, Array<NamedDeclarationLike>>
   readonly getFilePath: () => string
   readonly getBaseName: () => string
@@ -79,7 +83,7 @@ export const collectIdentifiers = (
     const occurrences: Array<IdentifierOccurrence> = []
     for (const sourceFile of project.getSourceFiles() as Array<any>) {
       if (sourceFile.isDeclarationFile()) continue
-      collectNamedDeclarations(occurrences, sourceFile, packages, worktreePath)
+      collectNamedDeclarations(occurrences, sourceFile, packages, worktreePath, opts)
       if (opts.includeParameters) {
         collectParameters(occurrences, sourceFile, packages, worktreePath)
       }
@@ -94,6 +98,7 @@ const collectNamedDeclarations = (
   sourceFile: SourceFileLike,
   packages: ReadonlyArray<PackageInfo>,
   worktreePath: string,
+  opts: IdentifierCollectionOptions,
 ): void => {
   for (const declaration of sourceFile.getFunctions()) {
     pushOccurrence(occurrences, packages, worktreePath, sourceFile, declaration.getName(), "function", declaration)
@@ -115,26 +120,62 @@ const collectNamedDeclarations = (
     pushOccurrence(occurrences, packages, worktreePath, sourceFile, declaration.getName(), "enum", declaration)
   }
 
-  for (const declaration of sourceFile.getDescendants()) {
-    if (declaration.getKindName() !== "VariableDeclaration") continue
-    if (declaration.getVariableStatement?.()?.getDeclarationKind() !== "const") continue
-    const name = typeof declaration.getName === "function" ? declaration.getName() : undefined
-    if (name === undefined) continue
-    pushOccurrence(
-      occurrences,
-      packages,
-      worktreePath,
-      sourceFile,
-      name,
-      "const",
-      declaration,
-      classifyConstContext(declaration as {
-        getName: () => string
-        getInitializer?: () => NodeLike | undefined
-        getParent?: () => NodeLike | undefined
-      }),
-    )
+  collectConstOccurrences(occurrences, sourceFile, packages, worktreePath, opts)
+}
+
+const collectConstOccurrences = (
+  occurrences: Array<IdentifierOccurrence>,
+  sourceFile: SourceFileLike,
+  packages: ReadonlyArray<PackageInfo>,
+  worktreePath: string,
+  opts: IdentifierCollectionOptions,
+): void => {
+  for (const statement of sourceFile.getVariableStatements()) {
+    if (statement.getDeclarationKind() !== "const") continue
+    for (const declaration of statement.getDeclarations()) {
+      pushConstOccurrence(occurrences, sourceFile, packages, worktreePath, declaration)
+    }
   }
+
+  if (opts.includeLocalConstants !== true) return
+
+  forEachSourceDescendant(sourceFile, (declaration) => {
+    if (declaration.getKindName() !== "VariableDeclaration") return
+    if (isDirectSourceFileConstDeclaration(declaration)) return
+    if (declaration.getVariableStatement?.()?.getDeclarationKind() !== "const") return
+    const name = typeof declaration.getName === "function" ? declaration.getName() : undefined
+    if (name === undefined) return
+    pushConstOccurrence(occurrences, sourceFile, packages, worktreePath, {
+      getName: () => name,
+      getStartLineNumber: () => declaration.getStartLineNumber(),
+      getInitializer: () => declaration.getInitializer?.(),
+      getParent: () => declaration.getParent?.(),
+    })
+  })
+}
+
+const pushConstOccurrence = (
+  occurrences: Array<IdentifierOccurrence>,
+  sourceFile: SourceFileLike,
+  packages: ReadonlyArray<PackageInfo>,
+  worktreePath: string,
+  declaration: {
+    readonly getName: () => string
+    readonly getStartLineNumber: () => number
+    readonly getInitializer?: () => NodeLike | undefined
+    readonly getParent?: () => NodeLike | undefined
+  },
+): void => {
+  pushOccurrence(
+    occurrences,
+    packages,
+    worktreePath,
+    sourceFile,
+    declaration.getName(),
+    "const",
+    declaration,
+    classifyConstContext(declaration),
+  )
 }
 
 const collectParameters = (
@@ -143,11 +184,25 @@ const collectParameters = (
   packages: ReadonlyArray<PackageInfo>,
   worktreePath: string,
 ): void => {
-  for (const parameter of sourceFile.getDescendants()) {
-    if (parameter.getKindName() !== "Parameter") continue
+  forEachSourceDescendant(sourceFile, (parameter) => {
+    if (parameter.getKindName() !== "Parameter") return
     const name = typeof parameter.getName === "function" ? parameter.getName() : undefined
-    if (name === undefined || !IDENTIFIER_NAME_PATTERN.test(name)) continue
+    if (name === undefined || !IDENTIFIER_NAME_PATTERN.test(name)) return
     pushOccurrence(occurrences, packages, worktreePath, sourceFile, name, "parameter", parameter)
+  })
+}
+
+const forEachSourceDescendant = (
+  sourceFile: SourceFileLike,
+  visit: (node: DescendantLike) => void,
+): void => {
+  if (sourceFile.forEachDescendant !== undefined) {
+    sourceFile.forEachDescendant(visit)
+    return
+  }
+
+  for (const node of sourceFile.getDescendants?.() ?? []) {
+    visit(node)
   }
 }
 
@@ -199,25 +254,21 @@ const classifyConstContext = (declaration: {
   readonly getInitializer?: () => NodeLike | undefined
   readonly getParent?: () => NodeLike | undefined
 }): ConstIdentifierContext => {
-  if (!isTopLevelDeclaration(declaration)) return "local"
+  if (!isDirectSourceFileConstDeclaration(declaration)) return "local"
 
   const initializer = declaration.getInitializer?.()
   if (isSchemaOrTypeObjectConst(declaration.getName(), initializer)) return "schema-type-object"
   return inferCasingPattern(declaration.getName()) === "UPPER_SNAKE_CASE" ? "module-constant" : "local"
 }
 
-const isTopLevelDeclaration = (declaration: { readonly getParent?: () => NodeLike | undefined }): boolean => {
-  let node = declaration.getParent?.()
-  while (node !== undefined) {
-    const kind = node.getKindName?.()
-    if (kind === "SourceFile") return true
-    if (kind === "FunctionDeclaration" || kind === "FunctionExpression" || kind === "ArrowFunction") return false
-    if (kind === "MethodDeclaration" || kind === "Constructor" || kind === "GetAccessor" || kind === "SetAccessor") {
-      return false
-    }
-    node = node.getParent?.()
-  }
-  return true
+const isDirectSourceFileConstDeclaration = (
+  declaration: { readonly getParent?: () => NodeLike | undefined },
+): boolean => {
+  const declarationList = declaration.getParent?.()
+  if (declarationList?.getKindName?.() !== "VariableDeclarationList") return false
+  const statement = declarationList.getParent?.()
+  if (statement?.getKindName?.() !== "VariableStatement") return false
+  return statement.getParent?.()?.getKindName?.() === "SourceFile"
 }
 
 const isSchemaOrTypeObjectConst = (name: string, initializer: NodeLike | undefined): boolean => {
@@ -225,7 +276,6 @@ const isSchemaOrTypeObjectConst = (name: string, initializer: NodeLike | undefin
   if (inferCasingPattern(name) !== "PascalCase" || unwrappedInitializer === undefined) return false
 
   const kind = unwrappedInitializer.getKindName?.()
-  if (kind === "ObjectLiteralExpression") return true
   if (kind !== "CallExpression") return false
 
   const expression = unwrappedInitializer.getExpression?.()
