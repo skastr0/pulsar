@@ -7,8 +7,10 @@ import { CATEGORIES, createTimeSeriesServices } from "@taste-codec/core"
 import { Effect, Exit } from "effect"
 import {
   chooseAdaptiveMidpoint,
+  countFinalApplicableSignalsByCategory,
   findCulprits,
   findDriftCulprits,
+  findFirstCrossing,
   initialAdaptiveIndexes,
   resolveSamplingPlan,
   runBisectCommand,
@@ -148,6 +150,18 @@ describe("findDriftCulprits", () => {
   })
 })
 
+describe("findFirstCrossing", () => {
+  test("returns the first point matching a threshold query", () => {
+    const out = findFirstCrossing(
+      [makeCommit("a", 0.9), makeCommit("b", 0.6), makeCommit("c", 0.4)],
+      { target: "TS-LD-02", op: "<", threshold: 0.5 },
+    )
+    expect(out?.sha).toBe("c")
+    expect(out?.previousSha).toBe("b")
+    expect(out?.score).toBe(0.4)
+  })
+})
+
 describe("bisect sampling helpers", () => {
   test("auto keeps full scoring for small ranges and switches to adaptive for large ones", () => {
     const small = Array.from({ length: 50 }, (_, index) => ({
@@ -184,6 +198,42 @@ describe("bisect sampling helpers", () => {
   })
 })
 
+describe("observer bisect report helpers", () => {
+  test("HEAD category applicable signal counts use the final commit", () => {
+    const finalEntry = {
+      sha: "abc",
+      weightedMean: 0.9,
+      readinessScore: 0.9,
+      readinessPressure: 0.1,
+      readinessStatus: "green",
+      categories: Object.fromEntries(CATEGORIES.map((category) => [category, 1])) as Record<
+        (typeof CATEGORIES)[number],
+        number
+      >,
+      categorySignalCounts: Object.fromEntries(
+        CATEGORIES.map((category) => [category, category === "generated-slop" ? 2 : 0]),
+      ) as Record<(typeof CATEGORIES)[number], number>,
+      categoryApplicableSignalCounts: Object.fromEntries(
+        CATEGORIES.map((category) => [category, category === "generated-slop" ? 1 : 0]),
+      ) as Record<(typeof CATEGORIES)[number], number>,
+      applicableSignalCount: 1,
+      signals: {
+        "TS-LIVE": 0.9,
+      },
+      minimum: undefined,
+      hardGateStatus: "pass",
+      hardGateViolationCount: 0,
+    } as const
+
+    expect(
+      countFinalApplicableSignalsByCategory(
+        finalEntry,
+        "generated-slop",
+      ),
+    ).toBe(1)
+  })
+})
+
 describe("taste bisect (integration)", () => {
   test("replays a 3-commit range and produces a trajectory", async () => {
     const from = nthParent(3)
@@ -205,6 +255,7 @@ describe("taste bisect (integration)", () => {
     )
 
     const parsed = JSON.parse(out)
+    expect(parsed.schemaVersion).toBe("signal-bisect/v2")
     expect(parsed.signalId).toBe("TS-RP-01")
     expect(parsed.trajectory.length).toBe(3)
     for (const entry of parsed.trajectory) {
@@ -242,24 +293,61 @@ describe("taste bisect (integration)", () => {
       createTimeSeriesServices(repoRoot).reader.entries(),
     )
     expect(parsed.vectorName).toBeNull()
+    expect(parsed.schemaVersion).toBe("observer-bisect/v2")
     expect(parsed.trajectory.length).toBe(5)
+    expect(parsed.commits.length).toBe(5)
+    expect(parsed.curves.weightedMean.length).toBe(5)
+    expect(parsed.curves.readiness.length).toBe(5)
     expect(entries.length).toBeGreaterThanOrEqual(5)
     expect(Object.keys(parsed.perCategory).sort()).toEqual([...CATEGORIES].sort())
     expect(Object.keys(parsed.perCategoryCulprits).sort()).toEqual([...CATEGORIES].sort())
     expect(Object.keys(parsed.perCategoryDriftCulprits).sort()).toEqual([...CATEGORIES].sort())
     expect(Array.isArray(parsed.weightedMeanDriftCulprits)).toBe(true)
+    expect(Array.isArray(parsed.readinessCulprits)).toBe(true)
+    expect(Array.isArray(parsed.readinessDriftCulprits)).toBe(true)
     expect(parsed.sampling.applied).toBe("full")
     expect(typeof parsed.finalWeightedMean).toBe("number")
     expect(parsed.minWeightedMean).toBeLessThanOrEqual(parsed.maxWeightedMean)
+    expect(typeof parsed.finalReadinessScore).toBe("number")
+    expect(typeof parsed.finalApplicableSignalCount).toBe("number")
+    expect(parsed.finalApplicableSignalCount).toBeGreaterThan(0)
+    expect(parsed.minReadinessScore).toBeLessThanOrEqual(parsed.maxReadinessScore)
     expect(["pass", "fail"]).toContain(parsed.hardGateStatusAtFinal)
+    expect(Object.keys(parsed.signalCategories).length).toBeGreaterThan(0)
+    expect(Object.keys(parsed.perSignal).sort()).toEqual(
+      Object.keys(parsed.signalCategories).sort(),
+    )
+    expect(Object.keys(parsed.perSignalCulprits).sort()).toEqual(
+      Object.keys(parsed.signalCategories).sort(),
+    )
+    expect(Object.keys(parsed.perSignalDriftCulprits).sort()).toEqual(
+      Object.keys(parsed.signalCategories).sort(),
+    )
 
     for (const entry of parsed.trajectory) {
       expect(typeof entry.sha).toBe("string")
       expect(entry.sha.length).toBe(40)
       expect(typeof entry.weightedMean).toBe("number")
+      expect(typeof entry.readinessScore).toBe("number")
+      expect(typeof entry.readinessPressure).toBe("number")
+      expect(["green", "yellow", "red", "blocked", "unknown"]).toContain(entry.readinessStatus)
       expect(Object.keys(entry.categories).sort()).toEqual([...CATEGORIES].sort())
-      expect(entry.observer).toBeDefined()
-      expect(entry.observer.weighted_mean).toBeCloseTo(entry.weightedMean)
+      expect(Object.keys(entry.categorySignalCounts).sort()).toEqual([...CATEGORIES].sort())
+      expect(Object.keys(entry.categoryApplicableSignalCounts).sort()).toEqual(
+        [...CATEGORIES].sort(),
+      )
+      expect(typeof entry.applicableSignalCount).toBe("number")
+      expect(entry.applicableSignalCount).toBeGreaterThan(0)
+      expect(entry.observer).toBeUndefined()
+      expect(typeof entry.signals).toBe("object")
+      expect(Object.keys(entry.signals).length).toBeGreaterThan(0)
+      for (const [signalId, score] of Object.entries(entry.signals)) {
+        expect(parsed.signalCategories[signalId]).toBeDefined()
+        expect(typeof score).toBe("number")
+        expect(score as number).toBeGreaterThanOrEqual(0)
+        expect(score as number).toBeLessThanOrEqual(1)
+      }
+      expect(typeof entry.hardGateViolationCount).toBe("number")
       expect(["pass", "fail"]).toContain(entry.hardGateStatus)
     }
 
@@ -267,6 +355,40 @@ describe("taste bisect (integration)", () => {
       expect(parsed.perCategory[category].scores.length).toBe(parsed.trajectory.length)
       expect(Array.isArray(parsed.perCategoryCulprits[category])).toBe(true)
     }
+    for (const signalId of Object.keys(parsed.signalCategories)) {
+      expect(parsed.perSignal[signalId].scores.length).toBe(parsed.trajectory.length)
+      expect(parsed.perSignal[signalId].category).toBe(parsed.signalCategories[signalId])
+    }
+  }, 120_000)
+
+  test("supports first-crossing queries and selected signal/category scope", async () => {
+    const from = nthParent(3)
+    const to = headSha()
+
+    const out = await capturePrintedOutput(
+      runBisectCommand({
+        observer: true,
+        selectedSignals: ["TS-LD-02"],
+        selectedCategories: ["legibility-decay"],
+        firstCrossing: { target: "TS-LD-02", op: "<=", threshold: 1 },
+        fromSha: from,
+        toSha: to,
+        repoPath: repoRoot,
+        concurrency: 2,
+        topCulprits: 2,
+        sampling: "full",
+        json: true,
+      }),
+    )
+
+    const parsed = JSON.parse(out)
+    expect(parsed.firstCrossing?.target).toBe("TS-LD-02")
+    expect(parsed.firstCrossing?.sha.length).toBe(40)
+    expect(Object.keys(parsed.curves.signals)).toEqual(["TS-LD-02"])
+    expect(Object.keys(parsed.signalCategories)).toEqual(["TS-LD-02"])
+    expect(Object.keys(parsed.curves.categories)).toEqual(["legibility-decay"])
+    expect(Object.keys(parsed.trajectory[0].signals)).toEqual(["TS-LD-02"])
+    expect(Object.keys(parsed.trajectory[0].categories)).toEqual(["legibility-decay"])
   }, 120_000)
 
   test("threads an optional vector through observer mode", async () => {
@@ -300,9 +422,12 @@ describe("taste bisect (integration)", () => {
     const parsed = JSON.parse(out)
     expect(parsed.vectorName).toBe("observer-test-vector")
     expect(parsed.trajectory).toHaveLength(1)
-    expect(parsed.trajectory[0].observer.categories["abstraction-bloat"].signals["TS-AB-01"]).toBeUndefined()
-    expect(parsed.trajectory[0].observer.categories["abstraction-bloat"].signals["TS-AB-03"]).toBeDefined()
-    expect(parsed.trajectory[0].observer.categories["abstraction-bloat"].signals["TS-AB-05"]).toBeDefined()
+    expect(parsed.signalCategories["TS-AB-01"]).toBeUndefined()
+    expect(parsed.trajectory[0].signals["TS-AB-01"]).toBeUndefined()
+    expect(parsed.signalCategories["TS-AB-03"]).toBe("abstraction-bloat")
+    expect(parsed.signalCategories["TS-AB-05"]).toBe("abstraction-bloat")
+    expect(parsed.trajectory[0].signals["TS-AB-03"]).toBeDefined()
+    expect(parsed.trajectory[0].signals["TS-AB-05"]).toBeDefined()
     expect(parsed.trajectory[0].categories["abstraction-bloat"]).toBeGreaterThan(0)
     expect(parsed.trajectory[0].categories["abstraction-bloat"]).toBeLessThanOrEqual(1)
   }, 60_000)

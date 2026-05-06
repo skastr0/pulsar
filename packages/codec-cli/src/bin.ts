@@ -3,7 +3,7 @@ import { CATEGORIES, type Category } from "@taste-codec/core"
 import { Effect } from "effect"
 import { runBackpressureCommand } from "./backpressure.js"
 import { runBaselineCommand } from "./baseline.js"
-import { runBisectCommand } from "./bisect.js"
+import { runBisectCommand, type FirstCrossingQuery } from "./bisect.js"
 import { runConventionsCommand } from "./conventions.js"
 import { runElicitCommand } from "./elicit.js"
 import { runGlossaryCommand } from "./glossary.js"
@@ -37,7 +37,7 @@ Commands:
   score        Run one signal or the full Observer against a repo.
   baseline     Record or inspect tolerated hard-gate debt for ratcheting.
   backpressure Evaluate the score history as green/yellow/red pressure.
-  bisect       Replay a commit range through one signal or the full Observer.
+  bisect       Replay a commit range into compact signal/category score curves.
   persona      List, show, apply, or diff curated taste presets.
   elicit       Run quiz, bootstrap, and proposal review workflows.
   glossary     Extract a draft glossary and confirm canonical terms.
@@ -69,7 +69,12 @@ Bisect options:
   --vector <path>      Optional taste vector JSON.
   --range <a>..<b>     Commit range, oldest..newest.
   --concurrency <n>    Parallel worktrees (default 4).
+  --sample <mode>      auto, full, merge-only, or adaptive-delta.
   --top <n>            Number of culprit commits (default 5).
+  --category <name>    Restrict observer curves/output to one category (repeatable).
+  --scope <id>         Restrict observer signal curves/output to one signal (repeatable).
+  --first-crossing <expr>
+                       First commit where a metric crosses a threshold, e.g. TS-LD-02<0.5.
   --json               Emit JSON instead of human-readable output.
 
 Persona options:
@@ -217,6 +222,43 @@ const parseCategory = (raw: string | undefined): Category | undefined => {
   fail(`--category must be one of: ${CATEGORIES.join(", ")}`)
 }
 
+const parseRepeatedArgs = (
+  args: ReadonlyArray<string>,
+  flag: string,
+): ReadonlyArray<string> => {
+  const values: Array<string> = []
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] !== flag) continue
+    const value = args[index + 1]
+    if (value === undefined || value.startsWith("--")) {
+      fail(`${flag} requires a value`)
+    }
+    values.push(value as string)
+  }
+  return values
+}
+
+const parseRepeatedCategories = (args: ReadonlyArray<string>): ReadonlyArray<Category> =>
+  parseRepeatedArgs(args, "--category").map((raw) => {
+    const category = parseCategory(raw)
+    if (category === undefined) throw new Error("unreachable")
+    return category
+  })
+
+const parseFirstCrossing = (raw: string | undefined): FirstCrossingQuery | undefined => {
+  if (raw === undefined) return undefined
+  const match = /^([A-Za-z0-9_.:-]+)\s*(<=|>=|<|>)\s*(0(?:\.\d+)?|1(?:\.0+)?|\.\d+)$/.exec(raw)
+  if (match === null) {
+    fail("--first-crossing must look like TS-LD-02<0.5, readiness>=0.8, or generated-slop<=0.7")
+  }
+  const checkedMatch = match as RegExpExecArray
+  return {
+    target: checkedMatch[1]!,
+    op: checkedMatch[2]! as FirstCrossingQuery["op"],
+    threshold: Number(checkedMatch[3]!),
+  }
+}
+
 const formatCliError = (err: unknown): string => {
   if (err instanceof Error) return err.message
   if (typeof err === "object" && err !== null) {
@@ -351,6 +393,22 @@ if (command === "backpressure") {
 }
 
 if (command === "bisect") {
+  const flagsWithValues = new Set([
+    "--signal",
+    "--vector",
+    "--range",
+    "--concurrency",
+    "--top",
+    "--sample",
+    "--category",
+    "--scope",
+    "--first-crossing",
+  ])
+  rejectUnknownFlags(
+    "bisect",
+    commandArgs,
+    new Set([...flagsWithValues, "--observer", "--json", "--no-progress"]),
+  )
   const signalId = parseArg(commandArgs, "--signal")
   const observer = commandArgs.includes("--observer")
   if (signalId !== undefined && observer) {
@@ -369,14 +427,9 @@ if (command === "bisect") {
   const concurrency = parsePositiveInt(parseArg(commandArgs, "--concurrency"), 4, "--concurrency")
   const topCulprits = parsePositiveInt(parseArg(commandArgs, "--top"), 5, "--top")
   const sampling = parseSamplingMode(parseArg(commandArgs, "--sample"))
-  const flagsWithValues = new Set([
-    "--signal",
-    "--vector",
-    "--range",
-    "--concurrency",
-    "--top",
-    "--sample",
-  ])
+  const firstCrossing = parseFirstCrossing(parseArg(commandArgs, "--first-crossing"))
+  const selectedCategories = parseRepeatedCategories(commandArgs)
+  const selectedSignals = parseRepeatedArgs(commandArgs, "--scope")
   const repoPath = collectPositional(commandArgs, flagsWithValues)[0] ?? "."
 
   await runWithProgress("bisect", commandArgs, () =>
@@ -387,6 +440,9 @@ if (command === "bisect") {
         ...(parseArg(commandArgs, "--vector") !== undefined
           ? { vectorPath: parseArg(commandArgs, "--vector")! }
           : {}),
+        ...(selectedSignals.length > 0 ? { selectedSignals } : {}),
+        ...(selectedCategories.length > 0 ? { selectedCategories } : {}),
+        ...(firstCrossing !== undefined ? { firstCrossing } : {}),
         fromSha,
         toSha,
         repoPath,

@@ -6,7 +6,6 @@ import {
   CATEGORIES,
   isActive as vectorIsActive,
   timeSeriesConfigOf,
-  toObserverJson,
   type Category,
   type MinimumDimension,
   type ObserverOutput,
@@ -20,6 +19,9 @@ export interface BisectOptions {
   readonly signalId?: string
   readonly observer?: boolean
   readonly vectorPath?: string
+  readonly selectedSignals?: ReadonlyArray<string>
+  readonly selectedCategories?: ReadonlyArray<Category>
+  readonly firstCrossing?: FirstCrossingQuery
   readonly fromSha: string
   readonly toSha: string
   readonly repoPath: string
@@ -48,6 +50,19 @@ interface ScorePoint {
   readonly score: number
 }
 
+export interface FirstCrossingQuery {
+  readonly target: string
+  readonly op: "<" | "<=" | ">" | ">="
+  readonly threshold: number
+}
+
+export interface FirstCrossingResult extends FirstCrossingQuery {
+  readonly sha: string
+  readonly previousSha: string | undefined
+  readonly previousScore: number | undefined
+  readonly score: number
+}
+
 export interface CommitScore extends ScorePoint {
   readonly diagnosticsCount: number
   readonly firstDiagnostic: string | undefined
@@ -62,6 +77,7 @@ export interface Culprit {
 }
 
 export interface BisectReport {
+  readonly schemaVersion: "signal-bisect/v2"
   readonly signalId: string
   readonly repoPath: string
   readonly fromSha: string
@@ -74,6 +90,7 @@ export interface BisectReport {
   readonly maxScore: number
   readonly finalScore: number
   readonly totalDrift: number
+  readonly firstCrossing: FirstCrossingResult | undefined
 }
 
 export interface ObserverCommitMinimum {
@@ -91,33 +108,81 @@ export interface CategoryTrajectory {
   readonly distinctLevels: number
 }
 
+export interface SignalTrajectory {
+  readonly category: Category
+  readonly scores: ReadonlyArray<number | null>
+  readonly observedCount: number
+  readonly min: number | undefined
+  readonly max: number | undefined
+  readonly final: number | undefined
+  readonly drift: number | undefined
+  readonly distinctLevels: number
+}
+
 export interface ObserverCommitEntry {
   readonly sha: string
   readonly weightedMean: number
+  readonly readinessScore: number | undefined
+  readonly readinessPressure: number | undefined
+  readonly readinessStatus:
+    | NonNullable<ObserverOutput["readiness"]>["status"]
+    | undefined
   readonly categories: Record<Category, number>
+  readonly categorySignalCounts: Record<Category, number>
+  readonly categoryApplicableSignalCounts: Record<Category, number>
+  readonly applicableSignalCount: number
+  readonly signals: Record<string, number>
   readonly minimum: ObserverCommitMinimum | undefined
   readonly hardGateStatus: "pass" | "fail"
-  readonly observer: ReturnType<typeof toObserverJson>
+  readonly hardGateViolationCount: number
+}
+
+interface ObserverCurveSample extends ObserverCommitEntry {
+  readonly signalCategories: Record<string, Category>
 }
 
 export interface ObserverBisectReport {
+  readonly schemaVersion: "observer-bisect/v2"
   readonly repoPath: string
   readonly fromSha: string
   readonly toSha: string
   readonly vectorName: string | null
   readonly trajectory: ReadonlyArray<ObserverCommitEntry>
+  readonly commits: ReadonlyArray<string>
+  readonly curves: ObserverCurveSet
+  readonly signalCategories: Record<string, Category>
   readonly perCategory: Record<Category, CategoryTrajectory>
+  readonly perSignal: Record<string, SignalTrajectory>
   readonly weightedMeanCulprits: ReadonlyArray<Culprit>
   readonly weightedMeanDriftCulprits: ReadonlyArray<Culprit>
   readonly perCategoryCulprits: Record<Category, ReadonlyArray<Culprit>>
   readonly perCategoryDriftCulprits: Record<Category, ReadonlyArray<Culprit>>
+  readonly perSignalCulprits: Record<string, ReadonlyArray<Culprit>>
+  readonly perSignalDriftCulprits: Record<string, ReadonlyArray<Culprit>>
+  readonly readinessCulprits: ReadonlyArray<Culprit>
+  readonly readinessDriftCulprits: ReadonlyArray<Culprit>
   readonly sampling: BisectSamplingSummary
+  readonly finalReadinessScore: number | undefined
+  readonly minReadinessScore: number | undefined
+  readonly maxReadinessScore: number | undefined
+  readonly readinessDrift: number | undefined
+  readonly finalApplicableSignalCount: number
   readonly finalWeightedMean: number
   readonly minWeightedMean: number
   readonly maxWeightedMean: number
   readonly totalDrift: number
-  readonly finalMinimumDimension: MinimumDimension | undefined
+  readonly finalMinimumDimension: ObserverCommitMinimum | undefined
   readonly hardGateStatusAtFinal: "pass" | "fail"
+  readonly firstCrossing: FirstCrossingResult | undefined
+  readonly selectedSignals: ReadonlyArray<string>
+  readonly selectedCategories: ReadonlyArray<Category>
+}
+
+export interface ObserverCurveSet {
+  readonly weightedMean: ReadonlyArray<number>
+  readonly readiness: ReadonlyArray<number | null>
+  readonly categories: Partial<Record<Category, ReadonlyArray<number>>>
+  readonly signals: Record<string, ReadonlyArray<number | null>>
 }
 
 export const runBisectCommand = (opts: BisectOptions) =>
@@ -162,14 +227,16 @@ export const runBisectCommand = (opts: BisectOptions) =>
         topCulprits: opts.topCulprits,
         vectorName: vector?.id ?? null,
         sampling: sampled.sampling,
+        selectedSignals: opts.selectedSignals ?? [],
+        selectedCategories: opts.selectedCategories ?? [],
+        firstCrossing: opts.firstCrossing,
       })
-
       if (opts.json) {
         console.log(JSON.stringify(report, null, 2))
         return
       }
 
-      printObserverHumanReport(report, elapsedMs, activeSignalIds.length)
+      printObserverHumanReport(report, elapsedMs, report.finalApplicableSignalCount)
       return
     }
 
@@ -188,6 +255,7 @@ export const runBisectCommand = (opts: BisectOptions) =>
     const scores = summarizeScores(sampled.trajectory.map((t) => t.score))
 
     const report: BisectReport = {
+      schemaVersion: "signal-bisect/v2",
       signalId: opts.signalId,
       repoPath,
       fromSha: opts.fromSha,
@@ -200,6 +268,10 @@ export const runBisectCommand = (opts: BisectOptions) =>
       maxScore: scores.max,
       finalScore: scores.final,
       totalDrift: scores.drift,
+      firstCrossing:
+        opts.firstCrossing === undefined
+          ? undefined
+          : findFirstCrossing(sampled.trajectory, opts.firstCrossing),
     }
 
     if (opts.json) {
@@ -211,7 +283,7 @@ export const runBisectCommand = (opts: BisectOptions) =>
   })
 
 const buildObserverReport = (
-  results: ReadonlyArray<{ sha: string; result: ObserverOutput }>,
+  results: ReadonlyArray<ObserverCurveSample>,
   opts: {
     readonly repoPath: string
     readonly fromSha: string
@@ -219,21 +291,33 @@ const buildObserverReport = (
     readonly topCulprits: number
     readonly vectorName: string | null
     readonly sampling: BisectSamplingSummary
+    readonly selectedSignals: ReadonlyArray<string>
+    readonly selectedCategories: ReadonlyArray<Category>
+    readonly firstCrossing: FirstCrossingQuery | undefined
   },
 ): ObserverBisectReport => {
-  const trajectory = results.map(({ sha, result }) => {
-    const observer = toObserverJson(result)
-    return {
-      sha,
-      weightedMean: result.weighted_mean,
-      categories: toCategoryScores(result),
-      minimum: toObserverCommitMinimum(result.minimum),
-      hardGateStatus: result.hard_gate_status,
-      observer,
-    }
-  })
+  const signalCategories = mergeSignalCategories(results)
+  const selectedCategories =
+    opts.selectedCategories.length === 0 ? [...CATEGORIES] : opts.selectedCategories
+  const selectedSignalSet = selectedSignalsForReport(
+    signalCategories,
+    opts.selectedSignals,
+    selectedCategories,
+  )
+  const trajectory = results.map(({ signalCategories: _signalCategories, ...entry }) => entry)
 
   const weightedMeanScores = summarizeScores(trajectory.map((entry) => entry.weightedMean))
+  const readinessTrajectory = trajectory.flatMap((entry) =>
+    entry.readinessScore === undefined
+      ? []
+      : [{ sha: entry.sha, score: entry.readinessScore }],
+  )
+  const readinessScores =
+    readinessTrajectory.length === 0
+      ? undefined
+      : summarizeScores(readinessTrajectory.map((entry) => entry.score))
+  const readinessCulprits = findCulprits(readinessTrajectory, opts.topCulprits)
+  const readinessDriftCulprits = findDriftCulprits(readinessTrajectory, opts.topCulprits)
   const weightedMeanCulprits = findCulprits(
     trajectory.map((entry) => ({ sha: entry.sha, score: entry.weightedMean })),
     opts.topCulprits,
@@ -244,7 +328,7 @@ const buildObserverReport = (
   )
 
   const perCategory = Object.fromEntries(
-    CATEGORIES.map((category) => [
+    selectedCategories.map((category) => [
       category,
       summarizeCategoryTrajectory(
         trajectory.map((entry) => entry.categories[category]),
@@ -253,7 +337,7 @@ const buildObserverReport = (
   ) as Record<Category, CategoryTrajectory>
 
   const perCategoryCulprits = Object.fromEntries(
-    CATEGORIES.map((category) => [
+    selectedCategories.map((category) => [
       category,
       findCulprits(
         trajectory.map((entry) => ({ sha: entry.sha, score: entry.categories[category] })),
@@ -262,7 +346,7 @@ const buildObserverReport = (
     ]),
   ) as Record<Category, ReadonlyArray<Culprit>>
   const perCategoryDriftCulprits = Object.fromEntries(
-    CATEGORIES.map((category) => [
+    selectedCategories.map((category) => [
       category,
       findDriftCulprits(
         trajectory.map((entry) => ({ sha: entry.sha, score: entry.categories[category] })),
@@ -271,26 +355,100 @@ const buildObserverReport = (
     ]),
   ) as Record<Category, ReadonlyArray<Culprit>>
 
-  const finalObserver = results[results.length - 1]?.result
+  const perSignal = Object.fromEntries(
+    Object.entries(signalCategories)
+      .filter(([signalId]) => selectedSignalSet.has(signalId))
+      .map(([signalId, category]) => [
+      signalId,
+      summarizeSignalTrajectory(category, nullableSignalScores(trajectory, signalId)),
+    ]),
+  )
+  const perSignalCulprits = Object.fromEntries(
+    [...selectedSignalSet].map((signalId) => [
+      signalId,
+      findCulprits(signalScorePoints(trajectory, signalId), opts.topCulprits),
+    ]),
+  )
+  const perSignalDriftCulprits = Object.fromEntries(
+    [...selectedSignalSet].map((signalId) => [
+      signalId,
+      findDriftCulprits(signalScorePoints(trajectory, signalId), opts.topCulprits),
+    ]),
+  )
+
+  const finalEntry = trajectory[trajectory.length - 1]
 
   return {
+    schemaVersion: "observer-bisect/v2",
     repoPath: opts.repoPath,
     fromSha: opts.fromSha,
     toSha: opts.toSha,
     vectorName: opts.vectorName,
-    trajectory,
+    trajectory: compactObserverTrajectory(trajectory, selectedCategories, selectedSignalSet),
+    commits: trajectory.map((entry) => entry.sha),
+    curves: buildObserverCurves(trajectory, selectedCategories, selectedSignalSet),
+    signalCategories: Object.fromEntries(
+      Object.entries(signalCategories).filter(([signalId]) => selectedSignalSet.has(signalId)),
+    ),
     perCategory,
+    perSignal,
     weightedMeanCulprits,
     weightedMeanDriftCulprits,
     perCategoryCulprits,
     perCategoryDriftCulprits,
+    perSignalCulprits,
+    perSignalDriftCulprits,
+    readinessCulprits,
+    readinessDriftCulprits,
     sampling: opts.sampling,
+    finalReadinessScore: readinessScores?.final,
+    minReadinessScore: readinessScores?.min,
+    maxReadinessScore: readinessScores?.max,
+    readinessDrift: readinessScores?.drift,
+    finalApplicableSignalCount: finalEntry?.applicableSignalCount ?? 0,
     finalWeightedMean: weightedMeanScores.final,
     minWeightedMean: weightedMeanScores.min,
     maxWeightedMean: weightedMeanScores.max,
     totalDrift: weightedMeanScores.drift,
-    finalMinimumDimension: finalObserver?.minimum,
-    hardGateStatusAtFinal: finalObserver?.hard_gate_status ?? "pass",
+    finalMinimumDimension: finalEntry?.minimum,
+    hardGateStatusAtFinal: finalEntry?.hardGateStatus ?? "pass",
+    firstCrossing:
+      opts.firstCrossing === undefined
+        ? undefined
+        : findFirstCrossing(resolveCrossingPoints(trajectory, opts.firstCrossing.target), opts.firstCrossing),
+    selectedSignals: [...selectedSignalSet],
+    selectedCategories,
+  }
+}
+
+const toObserverCurveSample = (
+  sha: string,
+  result: ObserverOutput,
+): ObserverCurveSample => {
+  const { signalScores, signalCategories } = toSignalCurve(result)
+  const categorySignalCounts = toCategorySignalCounts(result, "signalCount")
+  const categoryApplicableSignalCounts = toCategorySignalCounts(
+    result,
+    "applicableSignalCount",
+  )
+  return {
+    sha,
+    weightedMean: result.weighted_mean,
+    readinessScore: result.readiness?.score,
+    readinessPressure: result.readiness?.pressure,
+    readinessStatus: result.readiness?.status,
+    categories: toCategoryScores(result),
+    categorySignalCounts,
+    categoryApplicableSignalCounts,
+    applicableSignalCount: CATEGORIES.reduce(
+      (sum, category) => sum + categoryApplicableSignalCounts[category],
+      0,
+    ),
+    signals: signalScores,
+    signalCategories,
+    minimum: toObserverCommitMinimum(result.minimum),
+    hardGateStatus: result.hard_gate_status,
+    hardGateViolationCount: result.hard_gate_violations.length,
   }
 }
 
@@ -298,6 +456,40 @@ const toCategoryScores = (output: ObserverOutput): Record<Category, number> =>
   Object.fromEntries(
     CATEGORIES.map((category) => [category, output.categories[category].score]),
   ) as Record<Category, number>
+
+const toCategorySignalCounts = (
+  output: ObserverOutput,
+  field: "signalCount" | "applicableSignalCount",
+): Record<Category, number> =>
+  Object.fromEntries(
+    CATEGORIES.map((category) => [
+      category,
+      field === "signalCount"
+        ? output.categories[category].signalCount
+        : (output.categories[category].applicableSignalCount ??
+            output.categories[category].signalCount),
+    ]),
+  ) as Record<Category, number>
+
+const toSignalCurve = (
+  output: ObserverOutput,
+): {
+  readonly signalScores: Record<string, number>
+  readonly signalCategories: Record<string, Category>
+} => {
+  const signalScores: Record<string, number> = {}
+  const signalCategories: Record<string, Category> = {}
+  for (const category of CATEGORIES) {
+    const signals = output.categories[category].signals
+    for (const signalId of Object.keys(signals).sort()) {
+      const score = signals[signalId]
+      if (score === undefined) continue
+      signalScores[signalId] = score
+      signalCategories[signalId] = category
+    }
+  }
+  return { signalScores, signalCategories }
+}
 
 const toObserverCommitMinimum = (
   minimum: MinimumDimension | undefined,
@@ -321,6 +513,186 @@ const summarizeCategoryTrajectory = (
     final: summary.final,
     drift: summary.drift,
     distinctLevels: summary.distinctLevels,
+  }
+}
+
+const summarizeSignalTrajectory = (
+  category: Category,
+  scores: ReadonlyArray<number | null>,
+): SignalTrajectory => {
+  const observed = scores.filter((score): score is number => score !== null)
+  if (observed.length === 0) {
+    return {
+      category,
+      scores,
+      observedCount: 0,
+      min: undefined,
+      max: undefined,
+      final: undefined,
+      drift: undefined,
+      distinctLevels: 0,
+    }
+  }
+  const summary = summarizeCategoryTrajectory(observed)
+  return {
+    category,
+    scores,
+    observedCount: observed.length,
+    min: summary.min,
+    max: summary.max,
+    final: summary.final,
+    drift: summary.drift,
+    distinctLevels: summary.distinctLevels,
+  }
+}
+
+const nullableSignalScores = (
+  trajectory: ReadonlyArray<ObserverCommitEntry>,
+  signalId: string,
+): ReadonlyArray<number | null> =>
+  trajectory.map((entry) => entry.signals[signalId] ?? null)
+
+const signalScorePoints = (
+  trajectory: ReadonlyArray<ObserverCommitEntry>,
+  signalId: string,
+): ReadonlyArray<ScorePoint> =>
+  trajectory.flatMap((entry) => {
+    const score = entry.signals[signalId]
+    return score === undefined ? [] : [{ sha: entry.sha, score }]
+  })
+
+const mergeSignalCategories = (
+  results: ReadonlyArray<ObserverCurveSample>,
+): Record<string, Category> => {
+  const entries = new Map<string, Category>()
+  for (const result of results) {
+    for (const [signalId, category] of Object.entries(result.signalCategories)) {
+      entries.set(signalId, category)
+    }
+  }
+  return Object.fromEntries(
+    [...entries.entries()].sort(([left], [right]) => left.localeCompare(right)),
+  )
+}
+
+const selectedSignalsForReport = (
+  signalCategories: Record<string, Category>,
+  requestedSignals: ReadonlyArray<string>,
+  selectedCategories: ReadonlyArray<Category>,
+): ReadonlySet<string> => {
+  const selectedCategorySet = new Set<Category>(selectedCategories)
+  const requested = new Set(requestedSignals)
+  const entries = Object.entries(signalCategories)
+    .filter(([signalId, category]) => {
+      if (requested.size > 0) return requested.has(signalId)
+      return selectedCategorySet.has(category)
+    })
+    .map(([signalId]) => signalId)
+    .sort((left, right) => left.localeCompare(right))
+  return new Set(entries)
+}
+
+const compactObserverTrajectory = (
+  trajectory: ReadonlyArray<ObserverCommitEntry>,
+  selectedCategories: ReadonlyArray<Category>,
+  selectedSignalSet: ReadonlySet<string>,
+): ReadonlyArray<ObserverCommitEntry> => {
+  const categorySet = new Set<Category>(selectedCategories)
+  return trajectory.map((entry) => ({
+    ...entry,
+    categories: filterCategoryRecord(entry.categories, categorySet),
+    categorySignalCounts: filterCategoryRecord(entry.categorySignalCounts, categorySet),
+    categoryApplicableSignalCounts: filterCategoryRecord(
+      entry.categoryApplicableSignalCounts,
+      categorySet,
+    ),
+    signals: Object.fromEntries(
+      Object.entries(entry.signals).filter(([signalId]) => selectedSignalSet.has(signalId)),
+    ),
+  }))
+}
+
+const filterCategoryRecord = <Value>(
+  record: Record<Category, Value>,
+  categories: ReadonlySet<Category>,
+): Record<Category, Value> =>
+  Object.fromEntries(
+    Object.entries(record).filter(([category]) => categories.has(category as Category)),
+  ) as Record<Category, Value>
+
+const buildObserverCurves = (
+  trajectory: ReadonlyArray<ObserverCommitEntry>,
+  selectedCategories: ReadonlyArray<Category>,
+  selectedSignalSet: ReadonlySet<string>,
+): ObserverCurveSet => ({
+  weightedMean: trajectory.map((entry) => entry.weightedMean),
+  readiness: trajectory.map((entry) => entry.readinessScore ?? null),
+  categories: Object.fromEntries(
+    selectedCategories.map((category) => [
+      category,
+      trajectory.map((entry) => entry.categories[category]),
+    ]),
+  ),
+  signals: Object.fromEntries(
+    [...selectedSignalSet].map((signalId) => [
+      signalId,
+      nullableSignalScores(trajectory, signalId),
+    ]),
+  ),
+})
+
+const resolveCrossingPoints = (
+  trajectory: ReadonlyArray<ObserverCommitEntry>,
+  target: string,
+): ReadonlyArray<ScorePoint> => {
+  if (target === "weightedMean" || target === "weighted_mean") {
+    return trajectory.map((entry) => ({ sha: entry.sha, score: entry.weightedMean }))
+  }
+  if (target === "readiness" || target === "readinessScore") {
+    return trajectory.flatMap((entry) =>
+      entry.readinessScore === undefined ? [] : [{ sha: entry.sha, score: entry.readinessScore }],
+    )
+  }
+  if ((CATEGORIES as ReadonlyArray<string>).includes(target)) {
+    const category = target as Category
+    return trajectory.map((entry) => ({ sha: entry.sha, score: entry.categories[category] }))
+  }
+  return signalScorePoints(trajectory, target)
+}
+
+export const findFirstCrossing = <T extends ScorePoint>(
+  trajectory: ReadonlyArray<T>,
+  query: FirstCrossingQuery,
+): FirstCrossingResult | undefined => {
+  for (let index = 0; index < trajectory.length; index += 1) {
+    const point = trajectory[index]!
+    if (!matchesCrossing(point.score, query.op, query.threshold)) continue
+    const previous = trajectory[index - 1]
+    return {
+      ...query,
+      sha: point.sha,
+      previousSha: previous?.sha,
+      previousScore: previous?.score,
+      score: point.score,
+    }
+  }
+  return undefined
+}
+
+const matchesCrossing = (
+  score: number,
+  op: FirstCrossingQuery["op"],
+  threshold: number,
+): boolean => {
+  switch (op) {
+    case "<":
+      return score < threshold
+    case "<=":
+      return score <= threshold
+    case ">":
+      return score > threshold
+    case ">=":
+      return score >= threshold
   }
 }
 
@@ -393,7 +765,7 @@ const sampleObserverTrajectory = (
   observeCommit: (sha: string) => Effect.Effect<ObserverOutput, unknown, never>,
 ): Effect.Effect<
   {
-    readonly trajectory: ReadonlyArray<{ sha: string; result: ObserverOutput }>
+    readonly trajectory: ReadonlyArray<ObserverCurveSample>
     readonly sampling: BisectSamplingSummary
   },
   unknown,
@@ -404,9 +776,14 @@ const sampleObserverTrajectory = (
     requested,
     concurrency,
     observeCommit,
-    (sha, result) => ({ sha, result }),
-    (entry) => entry.result.weighted_mean,
+    toObserverCurveSample,
+    observerSamplingScore,
   )
+
+const observerSamplingScore = (entry: ObserverCurveSample): number =>
+  entry.readinessScore === undefined
+    ? entry.weightedMean
+    : (entry.readinessScore + entry.weightedMean) / 2
 
 const sampleTrajectory = <Result, Entry extends { readonly sha: string }>(
   commits: ReadonlyArray<RangeCommit>,
@@ -758,6 +1135,11 @@ const printHumanReport = (report: BisectReport, elapsedMs: number): void => {
   lines.push(
     `  Scores:  min ${report.minScore.toFixed(3)}   max ${report.maxScore.toFixed(3)}   final ${report.finalScore.toFixed(3)}   drift ${report.totalDrift.toFixed(3)}`,
   )
+  if (report.firstCrossing !== undefined) {
+    lines.push(
+      `  First crossing: ${report.firstCrossing.target} ${report.firstCrossing.op} ${report.firstCrossing.threshold} at ${report.firstCrossing.sha.slice(0, 8)} (${report.firstCrossing.score.toFixed(3)})`,
+    )
+  }
   lines.push("")
   lines.push("  Trajectory (oldest → newest):")
   for (const t of report.trajectory) {
@@ -791,7 +1173,7 @@ const printHumanReport = (report: BisectReport, elapsedMs: number): void => {
 const printObserverHumanReport = (
   report: ObserverBisectReport,
   elapsedMs: number,
-  activeSignalCount: number,
+  applicableSignalCount: number,
 ): void => {
   const lines: Array<string> = []
   const finalEntry = report.trajectory[report.trajectory.length - 1]
@@ -809,13 +1191,18 @@ const printObserverHumanReport = (
       `  Sample:  ${report.sampling.applied} (${report.sampling.scoredCommits}/${report.sampling.totalCommits} commits scored)`,
     )
   }
-  lines.push(`  Active:  ${activeSignalCount} signals`)
+  lines.push(`  Evidence: ${applicableSignalCount} applicable signals`)
   for (const diagnostic of report.sampling.diagnostics) {
     lines.push(`  Note:    ${diagnostic}`)
   }
   lines.push("")
+  if (report.finalReadinessScore !== undefined) {
+    lines.push(
+      `  Readiness: min ${report.minReadinessScore?.toFixed(3) ?? "n/a"}   max ${report.maxReadinessScore?.toFixed(3) ?? "n/a"}   final ${report.finalReadinessScore.toFixed(3)}   drift ${report.readinessDrift?.toFixed(3) ?? "n/a"}   pressure ${finalEntry?.readinessPressure?.toFixed(3) ?? "n/a"} ${finalEntry?.readinessStatus ?? ""}`,
+    )
+  }
   lines.push(
-    `  Weighted mean: min ${report.minWeightedMean.toFixed(3)}   max ${report.maxWeightedMean.toFixed(3)}   final ${report.finalWeightedMean.toFixed(3)}   drift ${report.totalDrift.toFixed(3)}`,
+    `  Evidence mean: min ${report.minWeightedMean.toFixed(3)}   max ${report.maxWeightedMean.toFixed(3)}   final ${report.finalWeightedMean.toFixed(3)}   drift ${report.totalDrift.toFixed(3)}`,
   )
   lines.push(`  Final hard gate: ${report.hardGateStatusAtFinal}`)
   if (report.finalMinimumDimension !== undefined) {
@@ -825,28 +1212,46 @@ const printObserverHumanReport = (
   }
   lines.push("")
   lines.push("  HEAD category scores:")
-  for (const category of CATEGORIES) {
+  for (const category of report.selectedCategories) {
     const score = finalEntry?.categories[category] ?? 1
-    const signalCount = finalEntry
-      ? Object.keys(finalEntry.observer.categories[category].signals).length
-      : 0
+    const signalCount = countFinalApplicableSignalsByCategory(finalEntry, category)
     lines.push(
-      `    ${padCategory(category)}  ${score.toFixed(3)}  ${renderScoreBar(score)}  (${signalCount} signals)`,
+      `    ${padCategory(category)}  ${score.toFixed(3)}  ${renderScoreBar(score)}  (${signalCount} applicable)`,
     )
   }
   lines.push("")
   lines.push("  Category trajectory summary:")
-  for (const category of CATEGORIES) {
+  for (const category of report.selectedCategories) {
     const summary = report.perCategory[category]
     lines.push(
       `    ${padCategory(category)}  min ${summary.min.toFixed(3)}   max ${summary.max.toFixed(3)}   final ${summary.final.toFixed(3)}   drift ${summary.drift.toFixed(3)}   levels ${summary.distinctLevels}`,
     )
   }
   lines.push("")
-  if (report.weightedMeanCulprits.length === 0) {
-    lines.push("  No weighted-mean degrading commits in range.")
+  if (report.readinessCulprits.length === 0) {
+    lines.push("  No readiness degrading commits in range.")
   } else {
-    lines.push(`  Top ${report.weightedMeanCulprits.length} weighted-mean culprit commits:`)
+    lines.push(`  Top ${report.readinessCulprits.length} readiness culprit commits:`)
+    for (const culprit of report.readinessCulprits) {
+      lines.push(
+        `    ${culprit.sha.slice(0, 8)}  drop ${culprit.drop.toFixed(3)}   ${culprit.prevScore.toFixed(3)} → ${culprit.newScore.toFixed(3)}  (from ${culprit.prevSha.slice(0, 8)})`,
+      )
+    }
+  }
+  if (shouldPrintDriftCulprits(report.readinessCulprits, report.readinessDriftCulprits)) {
+    lines.push("")
+    lines.push(`  Top ${report.readinessDriftCulprits.length} readiness drift culprits:`)
+    for (const culprit of report.readinessDriftCulprits) {
+      lines.push(
+        `    ${culprit.sha.slice(0, 8)}  drift ${culprit.drop.toFixed(3)}   ${culprit.prevScore.toFixed(3)} → ${culprit.newScore.toFixed(3)}  (from ${culprit.prevSha.slice(0, 8)})`,
+      )
+    }
+  }
+  lines.push("")
+  if (report.weightedMeanCulprits.length === 0) {
+    lines.push("  No evidence-mean degrading commits in range.")
+  } else {
+    lines.push(`  Top ${report.weightedMeanCulprits.length} evidence-mean culprit commits:`)
     for (const culprit of report.weightedMeanCulprits) {
       lines.push(
         `    ${culprit.sha.slice(0, 8)}  drop ${culprit.drop.toFixed(3)}   ${culprit.prevScore.toFixed(3)} → ${culprit.newScore.toFixed(3)}  (from ${culprit.prevSha.slice(0, 8)})`,
@@ -856,7 +1261,7 @@ const printObserverHumanReport = (
   if (shouldPrintDriftCulprits(report.weightedMeanCulprits, report.weightedMeanDriftCulprits)) {
     lines.push("")
     lines.push(
-      `  Top ${report.weightedMeanDriftCulprits.length} weighted-mean drift culprits:`,
+      `  Top ${report.weightedMeanDriftCulprits.length} evidence-mean drift culprits:`,
     )
     for (const culprit of report.weightedMeanDriftCulprits) {
       lines.push(
@@ -866,7 +1271,7 @@ const printObserverHumanReport = (
   }
   lines.push("")
   lines.push("  Per-category culprit leaders:")
-  for (const category of CATEGORIES) {
+  for (const category of report.selectedCategories) {
     const culprit = report.perCategoryCulprits[category][0]
     if (culprit === undefined) {
       lines.push(`    ${padCategory(category)}  none`)
@@ -876,11 +1281,42 @@ const printObserverHumanReport = (
       `    ${padCategory(category)}  ${culprit.sha.slice(0, 8)}  drop ${culprit.drop.toFixed(3)}  (${culprit.prevScore.toFixed(3)} → ${culprit.newScore.toFixed(3)})`,
     )
   }
+  const signalLeaders = Object.entries(report.perSignalCulprits)
+    .map(([signalId, culprits]) => ({ signalId, culprit: culprits[0] }))
+    .filter(
+      (entry): entry is { signalId: string; culprit: Culprit } =>
+        entry.culprit !== undefined,
+    )
+    .sort((a, b) => b.culprit.drop - a.culprit.drop)
+    .slice(0, 5)
+  if (signalLeaders.length > 0) {
+    lines.push("")
+    lines.push(`  Top ${signalLeaders.length} signal culprit leaders:`)
+    for (const { signalId, culprit } of signalLeaders) {
+      lines.push(
+        `    ${signalId.padEnd(10, " ")}  ${culprit.sha.slice(0, 8)}  drop ${culprit.drop.toFixed(3)}  (${culprit.prevScore.toFixed(3)} → ${culprit.newScore.toFixed(3)})`,
+      )
+    }
+  }
+  if (report.firstCrossing !== undefined) {
+    lines.push("")
+    lines.push(
+      `  First crossing: ${report.firstCrossing.target} ${report.firstCrossing.op} ${report.firstCrossing.threshold} at ${report.firstCrossing.sha.slice(0, 8)} (${report.firstCrossing.score.toFixed(3)})`,
+    )
+  }
   lines.push("")
   for (const line of lines) console.log(line)
 }
 
 const padCategory = (category: Category): string => category.padEnd(20, " ")
+
+export const countFinalApplicableSignalsByCategory = (
+  finalEntry: ObserverCommitEntry | undefined,
+  category: Category,
+): number => {
+  if (finalEntry === undefined) return 0
+  return finalEntry.categoryApplicableSignalCounts[category]
+}
 
 const shouldPrintDriftCulprits = (
   adjacent: ReadonlyArray<Culprit>,
