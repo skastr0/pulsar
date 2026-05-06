@@ -11,12 +11,15 @@ import { type PackageInfo, discoverPackages, makeTsProject } from "@taste-codec/
 export interface IdentifierOccurrence {
   readonly name: string
   readonly kind: GlossaryIdentifierKind
+  readonly constContext?: ConstIdentifierContext
   readonly package: string
   readonly file: string
   readonly line?: number
   readonly tokens: ReadonlyArray<string>
   readonly pattern: IdentifierPattern
 }
+
+export type ConstIdentifierContext = "local" | "module-constant" | "schema-type-object"
 
 export interface IdentifierCollectionOptions {
   readonly includeParameters: boolean
@@ -35,16 +38,32 @@ interface SourceFileLike {
   readonly getEnums: () => Array<{ getName: () => string; getStartLineNumber: () => number }>
   readonly getVariableStatements: () => Array<{
     getDeclarationKind: () => string
-    getDeclarations: () => Array<{ getName: () => string; getStartLineNumber: () => number }>
+    getDeclarations: () => Array<{
+      getName: () => string
+      getStartLineNumber: () => number
+      getInitializer?: () => NodeLike | undefined
+      getParent?: () => NodeLike | undefined
+      getVariableStatement?: () => { getDeclarationKind: () => string } | undefined
+    }>
   }>
   readonly getDescendants: () => Array<{
     getKindName: () => string
     getName?: () => string
     getStartLineNumber: () => number
+    getInitializer?: () => NodeLike | undefined
+    getParent?: () => NodeLike | undefined
+    getVariableStatement?: () => { getDeclarationKind: () => string } | undefined
   }>
   readonly getExportedDeclarations: () => Map<string, Array<NamedDeclarationLike>>
   readonly getFilePath: () => string
   readonly getBaseName: () => string
+}
+
+interface NodeLike {
+  readonly getKindName?: () => string
+  readonly getParent?: () => NodeLike | undefined
+  readonly getExpression?: () => NodeLike | undefined
+  readonly getText?: () => string
 }
 
 export const collectIdentifiers = (
@@ -96,11 +115,25 @@ const collectNamedDeclarations = (
     pushOccurrence(occurrences, packages, worktreePath, sourceFile, declaration.getName(), "enum", declaration)
   }
 
-  for (const statement of sourceFile.getVariableStatements()) {
-    if (statement.getDeclarationKind() !== "const") continue
-    for (const declaration of statement.getDeclarations()) {
-      pushOccurrence(occurrences, packages, worktreePath, sourceFile, declaration.getName(), "const", declaration)
-    }
+  for (const declaration of sourceFile.getDescendants()) {
+    if (declaration.getKindName() !== "VariableDeclaration") continue
+    if (declaration.getVariableStatement?.()?.getDeclarationKind() !== "const") continue
+    const name = typeof declaration.getName === "function" ? declaration.getName() : undefined
+    if (name === undefined) continue
+    pushOccurrence(
+      occurrences,
+      packages,
+      worktreePath,
+      sourceFile,
+      name,
+      "const",
+      declaration,
+      classifyConstContext(declaration as {
+        getName: () => string
+        getInitializer?: () => NodeLike | undefined
+        getParent?: () => NodeLike | undefined
+      }),
+    )
   }
 }
 
@@ -138,10 +171,11 @@ const pushOccurrence = (
   name: string | undefined,
   kind: GlossaryIdentifierKind,
   node: NamedDeclarationLike,
+  constContext?: ConstIdentifierContext,
 ): void => {
   if (name === undefined || name.length === 0) return
 
-  occurrences.push({
+  const occurrence: IdentifierOccurrence = {
     name,
     kind,
     package: locatePackageForFile(packages, sourceFile.getFilePath(), worktreePath),
@@ -149,7 +183,64 @@ const pushOccurrence = (
     line: node.getStartLineNumber(),
     tokens: splitIdentifierTokens(name),
     pattern: inferCasingPattern(name),
-  })
+  }
+  occurrences.push(
+    constContext === undefined
+      ? occurrence
+      : {
+          ...occurrence,
+          constContext,
+        },
+  )
+}
+
+const classifyConstContext = (declaration: {
+  readonly getName: () => string
+  readonly getInitializer?: () => NodeLike | undefined
+  readonly getParent?: () => NodeLike | undefined
+}): ConstIdentifierContext => {
+  if (!isTopLevelDeclaration(declaration)) return "local"
+
+  const initializer = declaration.getInitializer?.()
+  if (isSchemaOrTypeObjectConst(declaration.getName(), initializer)) return "schema-type-object"
+  return inferCasingPattern(declaration.getName()) === "UPPER_SNAKE_CASE" ? "module-constant" : "local"
+}
+
+const isTopLevelDeclaration = (declaration: { readonly getParent?: () => NodeLike | undefined }): boolean => {
+  let node = declaration.getParent?.()
+  while (node !== undefined) {
+    const kind = node.getKindName?.()
+    if (kind === "SourceFile") return true
+    if (kind === "FunctionDeclaration" || kind === "FunctionExpression" || kind === "ArrowFunction") return false
+    if (kind === "MethodDeclaration" || kind === "Constructor" || kind === "GetAccessor" || kind === "SetAccessor") {
+      return false
+    }
+    node = node.getParent?.()
+  }
+  return true
+}
+
+const isSchemaOrTypeObjectConst = (name: string, initializer: NodeLike | undefined): boolean => {
+  const unwrappedInitializer = unwrapConstInitializer(initializer)
+  if (inferCasingPattern(name) !== "PascalCase" || unwrappedInitializer === undefined) return false
+
+  const kind = unwrappedInitializer.getKindName?.()
+  if (kind === "ObjectLiteralExpression") return true
+  if (kind !== "CallExpression") return false
+
+  const expression = unwrappedInitializer.getExpression?.()
+  const expressionText = expression?.getText?.() ?? ""
+  return /(^|\.)(object|schema|type|struct|record|union|literal|enum)$/i.test(expressionText)
+}
+
+const unwrapConstInitializer = (initializer: NodeLike | undefined): NodeLike | undefined => {
+  let current = initializer
+  while (current !== undefined) {
+    const kind = current.getKindName?.()
+    if (kind !== "AsExpression" && kind !== "SatisfiesExpression" && kind !== "TypeAssertion") return current
+    current = current.getExpression?.()
+  }
+  return current
 }
 
 const locatePackageForFile = (

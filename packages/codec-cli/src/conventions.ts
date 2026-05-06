@@ -146,20 +146,43 @@ const chooseConvention = (
   }
 
   if (kind === "const") {
-    const camelCaseCount = counts.get("camelCase") ?? 0
-    const upperSnakeCount = counts.get("UPPER_SNAKE_CASE") ?? 0
-    const recognizedKinds = [...counts.keys()]
-    if (
-      camelCaseCount > 0 &&
-      upperSnakeCount > 0 &&
-      recognizedKinds.every((pattern) => pattern === "camelCase" || pattern === "UPPER_SNAKE_CASE")
-    ) {
-      return "camelCase | UPPER_SNAKE_CASE"
-    }
+    return chooseConstConvention(identifiers)
   }
 
   const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
   return (ranked[0]?.[0] as NamingConventions[NamingKind] | undefined) ?? DEFAULT_NAMING_CONVENTIONS[kind]
+}
+
+const chooseConstConvention = (
+  identifiers: ReadonlyArray<IdentifierOccurrence>,
+): NamingConventions["const"] => {
+  const patterns = new Set<string>()
+
+  if (identifiers.some((identifier) => identifier.constContext === "local")) {
+    patterns.add("camelCase")
+  }
+  if (identifiers.some((identifier) => identifier.constContext === "module-constant")) {
+    patterns.add("UPPER_SNAKE_CASE")
+  }
+  if (identifiers.some((identifier) => identifier.constContext === "schema-type-object")) {
+    patterns.add("PascalCase")
+  }
+
+  if (patterns.size === 0) {
+    for (const identifier of identifiers) {
+      if (identifier.pattern !== "unrecognized") patterns.add(identifier.pattern)
+    }
+  }
+
+  const orderedPatterns = [
+    "camelCase",
+    "PascalCase",
+    "UPPER_SNAKE_CASE",
+    "snake_case",
+    "kebab-case",
+  ].filter((pattern) => patterns.has(pattern))
+
+  return (orderedPatterns.join(" | ") as NamingConventions["const"]) || DEFAULT_NAMING_CONVENTIONS.const
 }
 
 const inferBoundaries = (

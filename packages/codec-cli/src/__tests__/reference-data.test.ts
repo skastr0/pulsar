@@ -280,6 +280,20 @@ describe("reference data commands", () => {
 
   test("conventions extract infers defaults and confirm loads canonical reference data", async () => {
     const repoPath = await initReferenceRepo()
+    await writeRepoFile(
+      repoPath,
+      "packages/api/src/contextual-consts.ts",
+      [
+        "export const UserSchema = { id: 'string' } as const",
+        "export function buildContextualUser() {",
+        "  const localSessionToken = 'user-token'",
+        "  return localSessionToken",
+        "}",
+        "",
+      ].join("\n"),
+    )
+    sh("git", ["add", "."], repoPath)
+    sh("git", ["commit", "-q", "-m", "contextual consts"], repoPath)
 
     const extract = runCli(repoPath, ["conventions", "extract", "--sha", "HEAD", "."])
     expect(extract.status).toBe(0)
@@ -288,7 +302,7 @@ describe("reference data commands", () => {
     const draft = decodeSchemaConventionsSync(JSON.parse(await readFile(draftPath, "utf8")))
     expect(draft.naming_conventions.function).toBe("camelCase")
     expect(draft.naming_conventions.class).toBe("PascalCase")
-    expect(draft.naming_conventions.const).toBe("camelCase | UPPER_SNAKE_CASE")
+    expect(draft.naming_conventions.const).toBe("camelCase | PascalCase | UPPER_SNAKE_CASE")
     expect(draft.boundaries["packages/api"]?.visibility).toBe("public-api")
     expect(draft.boundaries["packages/api"]?.allowed_imports).toEqual(["effect"])
     expect(draft.boundaries["packages/shared"]?.visibility).toBe("public-api")

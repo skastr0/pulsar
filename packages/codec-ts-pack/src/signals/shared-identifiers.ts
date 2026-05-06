@@ -1,4 +1,4 @@
-import type { Project, SourceFile } from "ts-morph"
+import { Node, SyntaxKind, type Project, type SourceFile, type VariableDeclaration } from "ts-morph"
 import {
   inferCasingPattern,
   splitIdentifierTokens,
@@ -14,10 +14,13 @@ export type IdentifierDeclarationKind =
   | "enum"
   | "const"
 
+export type ConstIdentifierContext = "local" | "module-constant" | "schema-type-object"
+
 export interface IdentifierDeclaration {
   readonly file: string
   readonly line: number
   readonly kind: IdentifierDeclarationKind
+  readonly constContext?: ConstIdentifierContext
   readonly name: string
   readonly tokens: ReadonlyArray<string>
   readonly pattern: IdentifierPattern
@@ -99,18 +102,16 @@ const collectNamedDeclarations = (
     )
   }
 
-  for (const statement of sourceFile.getVariableStatements()) {
-    if (statement.getDeclarationKind() !== "const") continue
-
-    for (const declaration of statement.getDeclarations()) {
-      pushIdentifierDeclaration(
-        identifiers,
-        sourceFile,
-        declaration.getName(),
-        "const",
-        declaration,
-      )
-    }
+  for (const declaration of sourceFile.getDescendantsOfKind(SyntaxKind.VariableDeclaration)) {
+    if (declaration.getVariableStatement()?.getDeclarationKind() !== "const") continue
+    pushIdentifierDeclaration(
+      identifiers,
+      sourceFile,
+      declaration.getName(),
+      "const",
+      declaration,
+      classifyConstContext(declaration),
+    )
   }
 }
 
@@ -120,17 +121,82 @@ const pushIdentifierDeclaration = (
   name: string | undefined,
   kind: IdentifierDeclarationKind,
   declaration: NamedDeclarationLike,
+  constContext?: ConstIdentifierContext,
 ): void => {
   if (name === undefined || !IDENTIFIER_NAME_PATTERN.test(name)) return
 
-  identifiers.push({
+  const identifier: IdentifierDeclaration = {
     file: sourceFile.getFilePath(),
     line: declaration.getStartLineNumber(),
     kind,
     name,
     tokens: splitIdentifierTokens(name),
     pattern: inferCasingPattern(name),
-  })
+  }
+  identifiers.push(
+    constContext === undefined
+      ? identifier
+      : {
+          ...identifier,
+          constContext,
+        },
+  )
+}
+
+const classifyConstContext = (declaration: VariableDeclaration): ConstIdentifierContext => {
+  if (!isTopLevelDeclaration(declaration)) return "local"
+
+  const initializer = declaration.getInitializer()
+  if (isSchemaOrTypeObjectConst(declaration.getName(), initializer)) return "schema-type-object"
+  return inferCasingPattern(declaration.getName()) === "UPPER_SNAKE_CASE" ? "module-constant" : "local"
+}
+
+const isTopLevelDeclaration = (declaration: VariableDeclaration): boolean => {
+  let node: Node | undefined = declaration.getParent()
+  while (node !== undefined) {
+    if (Node.isSourceFile(node)) return true
+    if (
+      Node.isFunctionDeclaration(node) ||
+      Node.isFunctionExpression(node) ||
+      Node.isArrowFunction(node) ||
+      Node.isMethodDeclaration(node) ||
+      Node.isConstructorDeclaration(node) ||
+      Node.isGetAccessorDeclaration(node) ||
+      Node.isSetAccessorDeclaration(node)
+    ) {
+      return false
+    }
+    node = node.getParent()
+  }
+  return true
+}
+
+const isSchemaOrTypeObjectConst = (
+  name: string,
+  initializer: Node | undefined,
+): boolean => {
+  const unwrappedInitializer = unwrapConstInitializer(initializer)
+  if (inferCasingPattern(name) !== "PascalCase" || unwrappedInitializer === undefined) return false
+  if (Node.isObjectLiteralExpression(unwrappedInitializer)) return true
+  if (!Node.isCallExpression(unwrappedInitializer)) return false
+
+  const expressionText = unwrappedInitializer.getExpression().getText()
+  return /(^|\.)(object|schema|type|struct|record|union|literal|enum)$/i.test(expressionText)
+}
+
+const unwrapConstInitializer = (initializer: Node | undefined): Node | undefined => {
+  let current = initializer
+  while (current !== undefined) {
+    if (
+      !Node.isAsExpression(current) &&
+      !Node.isSatisfiesExpression(current) &&
+      !Node.isTypeAssertion(current)
+    ) {
+      return current
+    }
+    current = current.getExpression()
+  }
+  return current
 }
 
 const compareIdentifierDeclarations = (

@@ -1,6 +1,17 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import {
+  InMemoryCacheLayer,
+  ReferenceDataTag,
+  SignalContextTag,
+  buildRegistry,
+  makeReferenceData,
+  observe,
+  type ObserverOutput,
+} from "@taste-codec/core"
+import { Effect, Layer } from "effect"
 import { inferCasingPattern } from "../casing.js"
 import { TsLd04 } from "../signals/ts-ld-04-naming-conventions.js"
+import { TsProjectLayer } from "../ts-project.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
 
 let repo: TempRepo
@@ -63,6 +74,56 @@ describe("TS-LD-04 (naming convention consistency)", () => {
     expect(out.byKind.get("const")).toEqual({ total: 2, violating: 0 })
   })
 
+  test("honors context-aware const conventions", async () => {
+    await repo.write(
+      "src/contextual.ts",
+      [
+        "export const MAX_RETRIES = 3",
+        "export const UserSchema = { id: 'string' } as const",
+        "export function buildUser() {",
+        "  const retryBudget = MAX_RETRIES",
+        "  return { retryBudget }",
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsLd04, TsLd04.defaultConfig, {
+      "schema-conventions": {
+        ...NAMING_CONVENTIONS,
+        naming_conventions: {
+          ...NAMING_CONVENTIONS.naming_conventions,
+          const: "camelCase | PascalCase | UPPER_SNAKE_CASE",
+        },
+      },
+    })
+
+    expect(out.violations).toEqual([])
+    expect(out.byKind.get("const")).toEqual({ total: 3, violating: 0 })
+  })
+
+  test("uses the same applicability in single-signal and observer paths", async () => {
+    await repo.write(
+      "src/consistent.ts",
+      [
+        "export const MAX_RETRIES = 3",
+        "export function buildUser() {",
+        "  const retryBudget = MAX_RETRIES",
+        "  return retryBudget",
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const referenceEntries = { "schema-conventions": NAMING_CONVENTIONS }
+    const single = await runSignal(repo.root, TsLd04, TsLd04.defaultConfig, referenceEntries)
+    const observer = await runObserverTsLd04(repo.root, referenceEntries)
+    const observerResult = observer.signalResults.get("TS-LD-04")
+
+    expect(TsLd04.outputMetadata?.(single)?.applicability ?? "applicable").toBe("applicable")
+    expect(observerResult?.metadata?.applicability ?? "applicable").toBe("applicable")
+  })
+
   test("flags one violation per identifier kind and includes diagnostic hashes", async () => {
     await repo.write(
       "src/inconsistent.ts",
@@ -120,3 +181,34 @@ describe("TS-LD-04 (naming convention consistency)", () => {
     ])
   })
 })
+
+const runObserverTsLd04 = async (
+  repoRoot: string,
+  referenceEntries: Readonly<Record<string, unknown>>,
+) => {
+  const program = Effect.gen(function* () {
+    const registry = yield* buildRegistry([TsLd04])
+    const EnvLayer = Layer.mergeAll(
+      TsProjectLayer(repoRoot),
+      InMemoryCacheLayer,
+      Layer.succeed(SignalContextTag, {
+        gitSha: "TEST",
+        worktreePath: repoRoot,
+        changedHunks: [],
+      }),
+      Layer.succeed(
+        ReferenceDataTag,
+        makeReferenceData(new Map(Object.entries(referenceEntries))),
+      ),
+    )
+    return yield* (
+      Effect.provide(observe(registry, undefined), EnvLayer) as Effect.Effect<
+        ObserverOutput,
+        unknown,
+        never
+      >
+    )
+  })
+
+  return Effect.runPromise(program)
+}
