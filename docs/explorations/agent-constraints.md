@@ -2,7 +2,7 @@
 
 ## Question
 
-How should green/yellow/red backpressure states change agent behavior without turning soft taste weights into hidden hard policy?
+How should green/yellow/red backpressure states change agent behavior without turning soft pulsar weights into hidden hard policy?
 
 ## Prototypes
 

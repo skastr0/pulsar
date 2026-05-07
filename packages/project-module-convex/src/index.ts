@@ -8,9 +8,9 @@ import {
   type TypeScriptExportReachabilityValue,
   type TypeScriptImportBindingFact,
   type TypeScriptLocalBindingFact,
-} from "@taste-codec/project-module-sdk"
+} from "@skastr0/pulsar-project-module-sdk"
 
-export const CONVEX_PROJECT_MODULE_ID = "@taste-codec/project-module-convex" as const
+export const CONVEX_PROJECT_MODULE_ID = "@skastr0/pulsar-project-module-convex" as const
 export const CONVEX_GENERATED_TAXONOMY_RULE_ID = "convex.generated-artifact.v1" as const
 export const CONVEX_PUBLIC_ENTRYPOINT_RULE_ID = "convex.public-entrypoint.v1" as const
 

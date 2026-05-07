@@ -1,5 +1,5 @@
 import { isAbsolute, relative } from "node:path"
-import type { Diagnostic, ObserverOutput, ReviewPlan, RoutingDiff } from "@taste-codec/core"
+import type { Diagnostic, ObserverOutput, ReviewPlan, RoutingDiff } from "@skastr0/pulsar-core"
 
 export interface ScoreDelta {
   readonly category: string
@@ -15,7 +15,7 @@ export interface SurfacedDiagnostic {
   readonly line?: number
 }
 
-export interface TasteCodecAnnotation {
+export interface PulsarAnnotation {
   readonly status: "pending" | "ready" | "error"
   readonly changedFiles: ReadonlyArray<string>
   readonly fingerprint: string
@@ -28,7 +28,7 @@ export interface TasteCodecAnnotation {
 export const createPendingAnnotation = (input: {
   readonly changedFiles: ReadonlyArray<string>
   readonly fingerprint: string
-}): TasteCodecAnnotation => ({
+}): PulsarAnnotation => ({
   status: "pending",
   changedFiles: input.changedFiles,
   fingerprint: input.fingerprint,
@@ -39,7 +39,7 @@ export const createErrorAnnotation = (input: {
   readonly changedFiles: ReadonlyArray<string>
   readonly fingerprint: string
   readonly message: string
-}): TasteCodecAnnotation => ({
+}): PulsarAnnotation => ({
   status: "error",
   changedFiles: input.changedFiles,
   fingerprint: input.fingerprint,
@@ -53,7 +53,7 @@ export const createReadyAnnotation = (input: {
   readonly observerOutput: ObserverOutput
   readonly reviewPlan: ReviewPlan
   readonly previousObserverOutput?: ObserverOutput
-}): TasteCodecAnnotation => ({
+}): PulsarAnnotation => ({
   status: "ready",
   changedFiles: input.diff.changedFiles,
   fingerprint: input.fingerprint,
@@ -70,27 +70,27 @@ export const createReadyAnnotation = (input: {
   reviewRequests: input.reviewPlan.reviewRequests,
 })
 
-export const appendTasteCodecAnnotation = (
+export const appendPulsarAnnotation = (
   output: { output: string; metadata: any },
-  annotation: TasteCodecAnnotation,
+  annotation: PulsarAnnotation,
 ): void => {
-  const rendered = renderTasteCodecAnnotation(annotation)
+  const rendered = renderPulsarAnnotation(annotation)
   output.output = output.output.length > 0 ? `${output.output}\n\n${rendered}` : rendered
 
   const metadata =
     typeof output.metadata === "object" && output.metadata !== null
       ? { ...(output.metadata as Record<string, unknown>) }
       : {}
-  metadata.tasteCodec = annotation
+  metadata.pulsar = annotation
   output.metadata = metadata
 }
 
-const renderTasteCodecAnnotation = (annotation: TasteCodecAnnotation): string => {
+const renderPulsarAnnotation = (annotation: PulsarAnnotation): string => {
   const changedFilesLabel = annotation.changedFiles.join(", ") || "current edit"
 
   if (annotation.status === "pending") {
     return [
-      `## Taste Codec — after edit to ${changedFilesLabel}`,
+      `## Pulsar — after edit to ${changedFilesLabel}`,
       "",
       `ℹ ${annotation.message ?? "Background analysis queued"}`,
     ].join("\n")
@@ -98,13 +98,13 @@ const renderTasteCodecAnnotation = (annotation: TasteCodecAnnotation): string =>
 
   if (annotation.status === "error") {
     return [
-      `## Taste Codec — after edit to ${changedFilesLabel}`,
+      `## Pulsar — after edit to ${changedFilesLabel}`,
       "",
-      `ℹ Codec analysis failed but the edit was preserved: ${annotation.message ?? "unknown error"}`,
+      `ℹ Pulsar analysis failed but the edit was preserved: ${annotation.message ?? "unknown error"}`,
     ].join("\n")
   }
 
-  const lines = [`## Taste Codec — after edit to ${changedFilesLabel}`, ""]
+  const lines = [`## Pulsar — after edit to ${changedFilesLabel}`, ""]
 
   for (const delta of annotation.scoreDeltas?.slice(0, 2) ?? []) {
     const direction = delta.current < delta.previous ? "⚠" : "ℹ"
@@ -134,7 +134,7 @@ const renderTasteCodecAnnotation = (annotation: TasteCodecAnnotation): string =>
     (annotation.reviewRequests?.length ?? 0) === 0 &&
     (annotation.scoreDeltas?.length ?? 0) === 0
   ) {
-    lines.push("ℹ No new codec evidence surfaced for the changed files.")
+    lines.push("ℹ No new pulsar evidence surfaced for the changed files.")
   }
 
   return lines.join("\n")

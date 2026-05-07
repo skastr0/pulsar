@@ -2,11 +2,11 @@
 
 ## Decision
 
-Calibration must support real project-owned TypeScript modules, including Effect code. A limited JSON or config DSL is useful for simple rules, but it cannot cover private frameworks, bespoke repository structure, organization-owned technology, or project-specific semantics that Taste Codec cannot know in advance.
+Calibration must support real project-owned TypeScript modules, including Effect code. A limited JSON or config DSL is useful for simple rules, but it cannot cover private frameworks, bespoke repository structure, organization-owned technology, or project-specific semantics that Pulsar cannot know in advance.
 
 The module system should therefore make code-backed calibration first-class.
 
-**Project modules** are project-owned code units that contribute typed calibration processors to Taste Codec. They can be committed directly in a repo, shared across an organization, or published as reusable technology/framework modules, but their semantic ownership remains project/repo/org scoped.
+**Project modules** are project-owned code units that contribute typed calibration processors to Pulsar. They can be committed directly in a repo, shared across an organization, or published as reusable technology/framework modules, but their semantic ownership remains project/repo/org scoped.
 
 ## Why A Code SDK
 
@@ -19,7 +19,7 @@ The hardcoded heuristics in source signals are not all scalar tweaks. Many are s
 - Explain generated or intentionally empty code.
 - Attach domain labels used by downstream diagnostics.
 
-Trying to express all of that as a config DSL would either become too weak or accidentally become a worse programming language. Real TypeScript modules give maintainers the flexibility to teach Taste Codec their technology directly.
+Trying to express all of that as a config DSL would either become too weak or accidentally become a worse programming language. Real TypeScript modules give maintainers the flexibility to teach Pulsar their technology directly.
 
 ## Trust Boundary
 
@@ -33,16 +33,16 @@ The architecture still needs guardrails:
 4. Every changed classification must carry module id, processor id, version, rule id when applicable, confidence, and evidence.
 5. A module can be powerful, but it cannot silently bypass the mixer and write final scores unless it implements an explicit mixer-policy slot.
 
-This preserves the key invariant: project maintainers can encode anything they need, but Taste Codec users can still see what code shaped the result.
+This preserves the key invariant: project maintainers can encode anything they need, but Pulsar users can still see what code shaped the result.
 
 ## Ownership Levels
 
 Project modules can live at several layers:
 
-- **Repo-local project modules:** committed inside the repository under `.taste-codec/modules/` or a configured path.
+- **Repo-local project modules:** committed inside the repository under `.pulsar/modules/` or a configured path.
 - **Org-private project modules:** shared packages for internal frameworks or company architecture.
 - **Published technology/framework project modules:** reusable packs for TypeScript tooling, Effect, Convex, React, Rust ecosystems, and similar public technologies.
-- **Core project modules:** built-in generic processors shipped with Taste Codec.
+- **Core project modules:** built-in generic processors shipped with Pulsar.
 
 The effective repo/org vector and calibration manifest resolve which modules are active. Repo-local configuration overrides org fallback configuration.
 
@@ -55,7 +55,7 @@ import {
   addSourceCategory,
   defineProjectModule,
   defineProcessor,
-} from "@taste-codec/project-module-sdk";
+} from "@skastr0/pulsar-project-module-sdk";
 import { Effect } from "effect";
 
 export default defineProjectModule({
@@ -203,4 +203,4 @@ Writing project modules is important enough to deserve a dedicated authoring gui
 7. How to avoid hidden scoring and signal poisoning.
 8. How repo-local modules, org modules, and published packs compose.
 
-The goal is not to restrict project maintainers. The goal is to give them full capability while keeping Taste Codec's results explainable and trustworthy.
+The goal is not to restrict project maintainers. The goal is to give them full capability while keeping Pulsar's results explainable and trustworthy.

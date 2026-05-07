@@ -385,13 +385,13 @@ interface ScoreCalibrationConfig {
 ### 4.1 Layer Hierarchy (outermost → innermost)
 
 ```
-Userland Taste Vector (.taste-codec/vector.json)
+Userland Pulsar Vector (.pulsar/vector.json)
     ↓ overrides
-Project Layout Conventions (.taste-codec/layout.json)
+Project Layout Conventions (.pulsar/layout.json)
     ↓ extends
-Ecosystem Calibration Pack (e.g., @taste-codec/calibration-js-tooling)
+Ecosystem Calibration Pack (e.g., @skastr0/pulsar-calibration-js-tooling)
     ↓ extends
-Framework Calibration Pack (e.g., @taste-codec/calibration-solid-js)
+Framework Calibration Pack (e.g., @skastr0/pulsar-calibration-solid-js)
     ↓ extends
 Core Signal Logic (generic engines only)
 ```
@@ -402,7 +402,7 @@ Core Signal Logic (generic engines only)
 2. **Framework packs** contribute framework-specific rules (SolidJS server contracts, React reconciler hooks, Effect-TS patterns). They are **only active** when the framework is detected in the repo.
 3. **Ecosystem packs** contribute tooling conventions (bundler configs, virtual modules, config filename lists). They are **always active** for the language pack.
 4. **Project layout conventions** override file taxonomy categories (test utility names, example directory names, monorepo root segments).
-5. **Taste vector** overrides any scalar config value (thresholds, weights, active flags).
+5. **Pulsar vector** overrides any scalar config value (thresholds, weights, active flags).
 
 ### 4.3 New Core Services
 
@@ -543,10 +543,10 @@ interface TsDe04Config {
 
 ### Phase 1: Extract Source Taxonomy (Week 1–2)
 
-1. Create `SourceTaxonomyService` in `codec-ts-pack`.
+1. Create `SourceTaxonomyService` in `ts-pack`.
 2. Define default categories with the union of all current exclude/test globs.
 3. Refactor `ts-project.ts` to use taxonomy for production filtering.
-4. Refactor `isCodecSource` in `scoring-engine.ts` to use taxonomy.
+4. Refactor `isPulsarSource` in `scoring-engine.ts` to use taxonomy.
 5. Migrate 2–3 signals to consume taxonomy instead of globs (e.g., TS-LD-01, TS-AD-02).
 6. **Preserve exact behavior:** The default taxonomy must reproduce every current exclusion.
 
@@ -614,7 +614,7 @@ Once rules move to packs, a pack update can change signal behavior without a sig
 
 - Signal cache version
 - Calibration pack IDs and versions
-- Taste vector hash
+- Pulsar vector hash
 - Source taxonomy hash
 
 This ensures calibration changes invalidate caches correctly.
@@ -649,7 +649,7 @@ These appear to be **custom patterns from the specific projects that built this 
 | `ts-de-04` lists 60+ config filenames | `calibration-js-tooling` pack — ecosystem-contributed conventions |
 | Docusaurus/SvelteKit virtual modules hardcoded | Framework packs — `framework_virtual_modules` config |
 | `.opencode/`, `.pi/`, `private-demos/` in generic pack | Project layout conventions — userland taxonomy overrides |
-| `isCodecSource` hardcodes `.ts`/`.tsx`/`.rs` | Pack-contributed source extensions via taxonomy |
+| `isPulsarSource` hardcodes `.ts`/`.tsx`/`.rs` | Pack-contributed source extensions via taxonomy |
 | Score formulas use magic constants (×2, ×3, /0.3) | `ScoreCalibrationConfig` — parameterized curves per signal |
 | Severity thresholds hardcoded (20 modules → block) | `severity_thresholds` — configurable per signal |
 | Every framework addition requires signal code change | Add a calibration pack — no signal code touched |

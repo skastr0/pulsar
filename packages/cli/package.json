@@ -1,0 +1,39 @@
+{
+  "name": "@skastr0/pulsar-cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Pulsar CLI — pulsar score, pulsar bisect",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "pulsar": "./dist/bin.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "test": "bun test ./src",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo"
+  },
+  "dependencies": {
+    "@skastr0/pulsar-core": "workspace:*",
+    "@skastr0/pulsar-project-module-sdk": "workspace:*",
+    "@skastr0/pulsar-rs-pack": "workspace:*",
+    "@skastr0/pulsar-shared-signals": "workspace:*",
+    "@skastr0/pulsar-ts-pack": "workspace:*",
+    "effect": "^3.0.0",
+    "simple-git": "^3.25.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0"
+  }
+}

@@ -2,7 +2,7 @@
 
 ## Goal
 
-Keep `taste bisect` deterministic and evidence-first when commit ranges get too large for full replay to stay practical.
+Keep `pulsar bisect` deterministic and evidence-first when commit ranges get too large for full replay to stay practical.
 
 ## Prototype strategies
 

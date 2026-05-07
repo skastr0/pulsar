@@ -31,7 +31,7 @@ describe("project module sdk", () => {
       id: "acme.project",
       version: "1.0.0",
       scope: "repository",
-      sourceRef: ".taste-codec/modules/acme.ts",
+      sourceRef: ".pulsar/modules/acme.ts",
       processors: [
         defineProcessor({
           id: "convex-generated-taxonomy",
@@ -49,7 +49,7 @@ describe("project module sdk", () => {
       version: "1.0.0",
       scope: "repository",
       source: "repo-local",
-      sourceRef: ".taste-codec/modules/acme.ts",
+      sourceRef: ".pulsar/modules/acme.ts",
       contributions: [
         {
           slot: "taxonomy.file-classifier",
@@ -266,19 +266,19 @@ describe("project module sdk", () => {
           {
             id: "repo-convex",
             kind: "repo-local",
-            path: ".taste-codec/modules/convex.ts",
+            path: ".pulsar/modules/convex.ts",
           },
           {
             id: "org-effect",
             kind: "workspace",
-            packageName: "@acme/taste-effect-module",
+            packageName: "@acme/pulsar-effect-module",
             exportName: "default",
             config: { strict: true },
           },
           {
             id: "published-react",
             kind: "package",
-            packageName: "@taste-codec/project-module-react",
+            packageName: "@skastr0/pulsar-project-module-react",
             version: "1.0.0",
             enabled: false,
           },
@@ -286,7 +286,7 @@ describe("project module sdk", () => {
       }),
     )
 
-    expect(manifest.schema).toBe("taste/project-modules/v1")
+    expect(manifest.schema).toBe("pulsar/project-modules/v1")
     expect(manifest.modules[0]).toMatchObject({
       id: "repo-convex",
       enabled: true,
@@ -323,12 +323,12 @@ describe("project module sdk", () => {
           {
             id: "b",
             kind: "package",
-            packageName: "@taste-codec/project-module-effect",
+            packageName: "@skastr0/pulsar-project-module-effect",
           },
           {
             id: "a",
             kind: "repo-local",
-            path: ".taste-codec/modules/acme.ts",
+            path: ".pulsar/modules/acme.ts",
           },
         ],
       }),
@@ -339,12 +339,12 @@ describe("project module sdk", () => {
           {
             id: "a",
             kind: "repo-local",
-            path: ".taste-codec/modules/acme.ts",
+            path: ".pulsar/modules/acme.ts",
           },
           {
             id: "b",
             kind: "package",
-            packageName: "@taste-codec/project-module-effect",
+            packageName: "@skastr0/pulsar-project-module-effect",
           },
         ],
       }),
@@ -356,7 +356,7 @@ describe("project module sdk", () => {
   })
 
   test("loads repo-local project module definition exports", async () => {
-    const repoRoot = await mkdtemp(join(tmpdir(), "taste-project-module-"))
+    const repoRoot = await mkdtemp(join(tmpdir(), "pulsar-project-module-"))
     try {
       await writeFile(
         join(repoRoot, "module.mjs"),
@@ -399,7 +399,7 @@ describe("project module sdk", () => {
   })
 
   test("loads named DefinedProjectModule exports and skips disabled manifest refs", async () => {
-    const repoRoot = await mkdtemp(join(tmpdir(), "taste-project-module-"))
+    const repoRoot = await mkdtemp(join(tmpdir(), "pulsar-project-module-"))
     try {
       await writeFile(
         join(repoRoot, "defined.mjs"),
@@ -461,7 +461,7 @@ describe("project module sdk", () => {
   })
 
   test("repo-local source content changes invalidate loaded module fingerprints", async () => {
-    const repoRoot = await mkdtemp(join(tmpdir(), "taste-project-module-"))
+    const repoRoot = await mkdtemp(join(tmpdir(), "pulsar-project-module-"))
     try {
       const writeModule = (marker: string) =>
         writeFile(
@@ -508,7 +508,7 @@ describe("project module sdk", () => {
   })
 
   test("repo-local helper source changes invalidate loaded module fingerprints", async () => {
-    const repoRoot = await mkdtemp(join(tmpdir(), "taste-project-module-"))
+    const repoRoot = await mkdtemp(join(tmpdir(), "pulsar-project-module-"))
     try {
       await writeFile(
         join(repoRoot, "module.mjs"),
@@ -563,7 +563,7 @@ describe("project module sdk", () => {
   })
 
   test("transitive helper source changes invalidate loaded module behavior", async () => {
-    const repoRoot = await mkdtemp(join(tmpdir(), "taste-project-module-"))
+    const repoRoot = await mkdtemp(join(tmpdir(), "pulsar-project-module-"))
     try {
       await writeFile(
         join(repoRoot, "module.mjs"),
@@ -623,14 +623,14 @@ describe("project module sdk", () => {
   })
 
   test("loads package project modules relative to the target repo root", async () => {
-    const repoRoot = await mkdtemp(join(tmpdir(), "taste-project-module-"))
+    const repoRoot = await mkdtemp(join(tmpdir(), "pulsar-project-module-"))
     try {
-      const packageRoot = join(repoRoot, "node_modules", "@acme", "taste-module")
+      const packageRoot = join(repoRoot, "node_modules", "@acme", "pulsar-module")
       await mkdir(packageRoot, { recursive: true })
       await writeFile(
         join(packageRoot, "package.json"),
         JSON.stringify({
-          name: "@acme/taste-module",
+          name: "@acme/pulsar-module",
           version: "1.0.0",
           type: "module",
           exports: "./index.mjs",
@@ -641,7 +641,7 @@ describe("project module sdk", () => {
         join(packageRoot, "index.mjs"),
         [
           "export default {",
-          "  id: '@acme/taste-module',",
+          "  id: '@acme/pulsar-module',",
           "  version: '1.0.0',",
           "  scope: 'organization',",
           "  source: 'package',",
@@ -654,9 +654,9 @@ describe("project module sdk", () => {
         decodeProjectModuleManifest({
           modules: [
             {
-              id: "@acme/taste-module",
+              id: "@acme/pulsar-module",
               kind: "package",
-              packageName: "@acme/taste-module",
+              packageName: "@acme/pulsar-module",
             },
           ],
         }),
@@ -667,10 +667,10 @@ describe("project module sdk", () => {
       )
 
       expect(loaded.descriptor).toMatchObject({
-        id: "@acme/taste-module",
+        id: "@acme/pulsar-module",
         scope: "organization",
         source: "package",
-        sourceRef: "@acme/taste-module",
+        sourceRef: "@acme/pulsar-module",
       })
       expect(loaded.descriptor.sourceFingerprint).toMatch(/^sha256:/)
     } finally {
@@ -679,12 +679,12 @@ describe("project module sdk", () => {
   })
 
   test("loads package project modules from an in-repo package root", async () => {
-    const repoRoot = await mkdtemp(join(tmpdir(), "taste-project-module-"))
+    const repoRoot = await mkdtemp(join(tmpdir(), "pulsar-project-module-"))
     try {
       await writeFile(
         join(repoRoot, "package.json"),
         JSON.stringify({
-          name: "@acme/taste-module",
+          name: "@acme/pulsar-module",
           version: "1.0.0",
           type: "module",
           exports: "./index.mjs",
@@ -695,7 +695,7 @@ describe("project module sdk", () => {
         join(repoRoot, "index.mjs"),
         [
           "export default {",
-          "  id: '@acme/taste-module',",
+          "  id: '@acme/pulsar-module',",
           "  version: '1.0.0',",
           "  scope: 'organization',",
           "  source: 'package',",
@@ -708,9 +708,9 @@ describe("project module sdk", () => {
         decodeProjectModuleManifest({
           modules: [
             {
-              id: "@acme/taste-module",
+              id: "@acme/pulsar-module",
               kind: "package",
-              packageName: "@acme/taste-module",
+              packageName: "@acme/pulsar-module",
             },
           ],
         }),
@@ -721,10 +721,10 @@ describe("project module sdk", () => {
       )
 
       expect(loaded.descriptor).toMatchObject({
-        id: "@acme/taste-module",
+        id: "@acme/pulsar-module",
         scope: "organization",
         source: "package",
-        sourceRef: "@acme/taste-module",
+        sourceRef: "@acme/pulsar-module",
       })
       expect(loaded.descriptor.sourceFingerprint).toMatch(/^sha256:/)
     } finally {
@@ -733,14 +733,14 @@ describe("project module sdk", () => {
   })
 
   test("package self and imports helpers invalidate loaded module behavior", async () => {
-    const repoRoot = await mkdtemp(join(tmpdir(), "taste-project-module-"))
+    const repoRoot = await mkdtemp(join(tmpdir(), "pulsar-project-module-"))
     try {
-      const packageRoot = join(repoRoot, "node_modules", "@acme", "taste-module")
+      const packageRoot = join(repoRoot, "node_modules", "@acme", "pulsar-module")
       await mkdir(packageRoot, { recursive: true })
       await writeFile(
         join(packageRoot, "package.json"),
         JSON.stringify({
-          name: "@acme/taste-module",
+          name: "@acme/pulsar-module",
           version: "1.0.0",
           type: "module",
           exports: {
@@ -756,10 +756,10 @@ describe("project module sdk", () => {
       await writeFile(
         join(packageRoot, "index.mjs"),
         [
-          "import { marker } from '@acme/taste-module/helper'",
+          "import { marker } from '@acme/pulsar-module/helper'",
           "import { suffix } from '#suffix'",
           "export default {",
-          "  id: '@acme/taste-module',",
+          "  id: '@acme/pulsar-module',",
           "  version: '1.0.0',",
           "  scope: 'organization',",
           "  source: 'package',",
@@ -784,9 +784,9 @@ describe("project module sdk", () => {
         decodeProjectModuleManifest({
           modules: [
             {
-              id: "@acme/taste-module",
+              id: "@acme/pulsar-module",
               kind: "package",
-              packageName: "@acme/taste-module",
+              packageName: "@acme/pulsar-module",
             },
           ],
         }),
@@ -813,16 +813,16 @@ describe("project module sdk", () => {
   })
 
   test("rejects package project module refs resolved from ambient parent node_modules", async () => {
-    const root = await mkdtemp(join(tmpdir(), "taste-project-module-"))
+    const root = await mkdtemp(join(tmpdir(), "pulsar-project-module-"))
     const repoRoot = join(root, "repo")
     try {
-      const packageRoot = join(root, "node_modules", "@acme", "taste-module")
+      const packageRoot = join(root, "node_modules", "@acme", "pulsar-module")
       await mkdir(packageRoot, { recursive: true })
       await mkdir(repoRoot, { recursive: true })
       await writeFile(
         join(packageRoot, "package.json"),
         JSON.stringify({
-          name: "@acme/taste-module",
+          name: "@acme/pulsar-module",
           version: "1.0.0",
           type: "module",
           exports: "./index.mjs",
@@ -833,7 +833,7 @@ describe("project module sdk", () => {
         join(packageRoot, "index.mjs"),
         [
           "export default {",
-          "  id: '@acme/taste-module',",
+          "  id: '@acme/pulsar-module',",
           "  version: '1.0.0',",
           "  scope: 'organization',",
           "  processors: []",
@@ -845,9 +845,9 @@ describe("project module sdk", () => {
         decodeProjectModuleManifest({
           modules: [
             {
-              id: "@acme/taste-module",
+              id: "@acme/pulsar-module",
               kind: "package",
-              packageName: "@acme/taste-module",
+              packageName: "@acme/pulsar-module",
             },
           ],
         }),
@@ -871,16 +871,16 @@ describe("project module sdk", () => {
   })
 
   test("rejects workspace project module refs resolved from ambient parent node_modules", async () => {
-    const root = await mkdtemp(join(tmpdir(), "taste-project-module-"))
+    const root = await mkdtemp(join(tmpdir(), "pulsar-project-module-"))
     const repoRoot = join(root, "repo")
     try {
-      const packageRoot = join(root, "node_modules", "@acme", "taste-module")
+      const packageRoot = join(root, "node_modules", "@acme", "pulsar-module")
       await mkdir(packageRoot, { recursive: true })
       await mkdir(repoRoot, { recursive: true })
       await writeFile(
         join(packageRoot, "package.json"),
         JSON.stringify({
-          name: "@acme/taste-module",
+          name: "@acme/pulsar-module",
           version: "1.0.0",
           type: "module",
           exports: "./index.mjs",
@@ -891,7 +891,7 @@ describe("project module sdk", () => {
         join(packageRoot, "index.mjs"),
         [
           "export default {",
-          "  id: '@acme/taste-module',",
+          "  id: '@acme/pulsar-module',",
           "  version: '1.0.0',",
           "  scope: 'organization',",
           "  processors: []",
@@ -903,9 +903,9 @@ describe("project module sdk", () => {
         decodeProjectModuleManifest({
           modules: [
             {
-              id: "@acme/taste-module",
+              id: "@acme/pulsar-module",
               kind: "workspace",
-              packageName: "@acme/taste-module",
+              packageName: "@acme/pulsar-module",
             },
           ],
         }),
@@ -929,7 +929,7 @@ describe("project module sdk", () => {
   })
 
   test("rejects repo-local project module refs that escape the repo root", async () => {
-    const root = await mkdtemp(join(tmpdir(), "taste-project-module-"))
+    const root = await mkdtemp(join(tmpdir(), "pulsar-project-module-"))
     const repoRoot = join(root, "repo")
     try {
       await mkdir(repoRoot, { recursive: true })
@@ -968,7 +968,7 @@ describe("project module sdk", () => {
   })
 
   test("rejects package project module refs that are import specifiers", async () => {
-    const repoRoot = await mkdtemp(join(tmpdir(), "taste-project-module-"))
+    const repoRoot = await mkdtemp(join(tmpdir(), "pulsar-project-module-"))
     try {
       const manifest = await Effect.runPromise(
         decodeProjectModuleManifest({
@@ -1002,7 +1002,7 @@ describe("project module sdk", () => {
   })
 
   test("reports typed load errors for missing exports", async () => {
-    const repoRoot = await mkdtemp(join(tmpdir(), "taste-project-module-"))
+    const repoRoot = await mkdtemp(join(tmpdir(), "pulsar-project-module-"))
     try {
       await writeFile(join(repoRoot, "empty.mjs"), "export const nope = {}\n", "utf8")
       const manifest = await Effect.runPromise(

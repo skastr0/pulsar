@@ -1,7 +1,7 @@
 {
-  "schema_id": "taste-codec/polyglot-normalization-corpus/v1",
+  "schema_id": "pulsar/polyglot-normalization-corpus/v1",
   "generated_at": "2026-04-19",
-  "scoring_command": "bun run \"./packages/codec-cli/src/bin.ts\" score --json <repo>",
+  "scoring_command": "bun run \"./packages/cli/src/bin.ts\" score --json <repo>",
   "comparison_basis": [
     "categories[*].signals filtered by TS-/RS- prefix",
     "categories[*].normalization.groups.typescript.score",

@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "taste-codec",
+      "name": "pulsar",
       "devDependencies": {
         "@types/bun": "latest",
         "turbo": "^2.3.0",
@@ -14,10 +14,10 @@
       "name": "opencode-effect-plugin-template",
       "version": "0.1.0",
       "dependencies": {
-        "@taste-codec/core": "workspace:*",
-        "@taste-codec/rs-pack": "workspace:*",
-        "@taste-codec/shared-signals": "workspace:*",
-        "@taste-codec/ts-pack": "workspace:*",
+        "@skastr0/pulsar-core": "workspace:*",
+        "@skastr0/pulsar-rs-pack": "workspace:*",
+        "@skastr0/pulsar-shared-signals": "workspace:*",
+        "@skastr0/pulsar-ts-pack": "workspace:*",
         "effect": "^3.0.0",
       },
       "devDependencies": {
@@ -28,18 +28,18 @@
         "@opencode-ai/plugin": ">=1.4.0",
       },
     },
-    "packages/codec-cli": {
-      "name": "@taste-codec/cli",
+    "packages/cli": {
+      "name": "@skastr0/pulsar-cli",
       "version": "0.0.0",
       "bin": {
-        "taste": "./dist/bin.js",
+        "pulsar": "./dist/bin.js",
       },
       "dependencies": {
-        "@taste-codec/core": "workspace:*",
-        "@taste-codec/project-module-sdk": "workspace:*",
-        "@taste-codec/rs-pack": "workspace:*",
-        "@taste-codec/shared-signals": "workspace:*",
-        "@taste-codec/ts-pack": "workspace:*",
+        "@skastr0/pulsar-core": "workspace:*",
+        "@skastr0/pulsar-project-module-sdk": "workspace:*",
+        "@skastr0/pulsar-rs-pack": "workspace:*",
+        "@skastr0/pulsar-shared-signals": "workspace:*",
+        "@skastr0/pulsar-ts-pack": "workspace:*",
         "effect": "^3.0.0",
         "simple-git": "^3.25.0",
       },
@@ -47,8 +47,8 @@
         "typescript": "^5.8.0",
       },
     },
-    "packages/codec-core": {
-      "name": "@taste-codec/core",
+    "packages/core": {
+      "name": "@skastr0/pulsar-core",
       "version": "0.0.0",
       "dependencies": {
         "effect": "^3.0.0",
@@ -57,39 +57,39 @@
         "typescript": "^5.8.0",
       },
     },
-    "packages/codec-rs-pack": {
-      "name": "@taste-codec/rs-pack",
+    "packages/rs-pack": {
+      "name": "@skastr0/pulsar-rs-pack",
       "version": "0.0.0",
       "dependencies": {
-        "@taste-codec/core": "workspace:*",
-        "@taste-codec/shared-signals": "workspace:*",
+        "@skastr0/pulsar-core": "workspace:*",
+        "@skastr0/pulsar-shared-signals": "workspace:*",
         "effect": "^3.0.0",
         "simple-git": "^3.25.0",
         "tree-sitter-rust": "^0.24.0",
         "web-tree-sitter": "^0.25.0",
       },
       "devDependencies": {
-        "@taste-codec/ts-pack": "workspace:*",
+        "@skastr0/pulsar-ts-pack": "workspace:*",
         "typescript": "^5.8.0",
       },
     },
-    "packages/codec-shared-signals": {
-      "name": "@taste-codec/shared-signals",
+    "packages/shared-signals": {
+      "name": "@skastr0/pulsar-shared-signals",
       "version": "0.0.0",
       "dependencies": {
-        "@taste-codec/core": "workspace:*",
+        "@skastr0/pulsar-core": "workspace:*",
         "effect": "^3.0.0",
       },
       "devDependencies": {
         "typescript": "^5.8.0",
       },
     },
-    "packages/codec-ts-pack": {
-      "name": "@taste-codec/ts-pack",
+    "packages/ts-pack": {
+      "name": "@skastr0/pulsar-ts-pack",
       "version": "0.0.0",
       "dependencies": {
-        "@taste-codec/core": "workspace:*",
-        "@taste-codec/shared-signals": "workspace:*",
+        "@skastr0/pulsar-core": "workspace:*",
+        "@skastr0/pulsar-shared-signals": "workspace:*",
         "effect": "^3.0.0",
         "simple-git": "^3.25.0",
         "ts-morph": "^24.0.0",
@@ -99,10 +99,10 @@
       },
     },
     "packages/project-module-convex": {
-      "name": "@taste-codec/project-module-convex",
+      "name": "@skastr0/pulsar-project-module-convex",
       "version": "0.0.0",
       "dependencies": {
-        "@taste-codec/project-module-sdk": "workspace:*",
+        "@skastr0/pulsar-project-module-sdk": "workspace:*",
         "effect": "^3.0.0",
       },
       "devDependencies": {
@@ -110,10 +110,10 @@
       },
     },
     "packages/project-module-effect": {
-      "name": "@taste-codec/project-module-effect",
+      "name": "@skastr0/pulsar-project-module-effect",
       "version": "0.0.0",
       "dependencies": {
-        "@taste-codec/project-module-sdk": "workspace:*",
+        "@skastr0/pulsar-project-module-sdk": "workspace:*",
         "effect": "^3.0.0",
       },
       "devDependencies": {
@@ -121,10 +121,10 @@
       },
     },
     "packages/project-module-sdk": {
-      "name": "@taste-codec/project-module-sdk",
+      "name": "@skastr0/pulsar-project-module-sdk",
       "version": "0.0.0",
       "dependencies": {
-        "@taste-codec/core": "workspace:*",
+        "@skastr0/pulsar-core": "workspace:*",
         "effect": "^3.0.0",
         "typescript": "^5.8.0",
       },
@@ -157,21 +157,21 @@
 
     "@standard-schema/spec": ["@standard-schema/spec@1.1.0", "", {}, "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w=="],
 
-    "@taste-codec/cli": ["@taste-codec/cli@workspace:packages/codec-cli"],
+    "@skastr0/pulsar-cli": ["@skastr0/pulsar-cli@workspace:packages/cli"],
 
-    "@taste-codec/core": ["@taste-codec/core@workspace:packages/codec-core"],
+    "@skastr0/pulsar-core": ["@skastr0/pulsar-core@workspace:packages/core"],
 
-    "@taste-codec/project-module-convex": ["@taste-codec/project-module-convex@workspace:packages/project-module-convex"],
+    "@skastr0/pulsar-project-module-convex": ["@skastr0/pulsar-project-module-convex@workspace:packages/project-module-convex"],
 
-    "@taste-codec/project-module-effect": ["@taste-codec/project-module-effect@workspace:packages/project-module-effect"],
+    "@skastr0/pulsar-project-module-effect": ["@skastr0/pulsar-project-module-effect@workspace:packages/project-module-effect"],
 
-    "@taste-codec/project-module-sdk": ["@taste-codec/project-module-sdk@workspace:packages/project-module-sdk"],
+    "@skastr0/pulsar-project-module-sdk": ["@skastr0/pulsar-project-module-sdk@workspace:packages/project-module-sdk"],
 
-    "@taste-codec/rs-pack": ["@taste-codec/rs-pack@workspace:packages/codec-rs-pack"],
+    "@skastr0/pulsar-rs-pack": ["@skastr0/pulsar-rs-pack@workspace:packages/rs-pack"],
 
-    "@taste-codec/shared-signals": ["@taste-codec/shared-signals@workspace:packages/codec-shared-signals"],
+    "@skastr0/pulsar-shared-signals": ["@skastr0/pulsar-shared-signals@workspace:packages/shared-signals"],
 
-    "@taste-codec/ts-pack": ["@taste-codec/ts-pack@workspace:packages/codec-ts-pack"],
+    "@skastr0/pulsar-ts-pack": ["@skastr0/pulsar-ts-pack@workspace:packages/ts-pack"],
 
     "@ts-morph/common": ["@ts-morph/common@0.25.0", "", { "dependencies": { "minimatch": "^9.0.4", "path-browserify": "^1.0.1", "tinyglobby": "^0.2.9" } }, "sha512-kMnZz+vGGHi4GoHnLmMhGNjm44kGtKUXGnOvrKmMwAuvNjM/PgKVGfUnL7IDvK7Jb2QQ82jq3Zmp04Gy+r3Dkg=="],
 

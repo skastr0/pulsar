@@ -4,9 +4,9 @@ import {
   defineProcessor,
   defineProjectModule,
   type TypeScriptNoopClassificationValue,
-} from "@taste-codec/project-module-sdk"
+} from "@skastr0/pulsar-project-module-sdk"
 
-export const EFFECT_PROJECT_MODULE_ID = "@taste-codec/project-module-effect" as const
+export const EFFECT_PROJECT_MODULE_ID = "@skastr0/pulsar-project-module-effect" as const
 export const EFFECT_OR_ELSE_SUCCEED_NOOP_RULE_ID = "effect.orElseSucceed.fallback-noop.v1" as const
 
 export const effectProjectModule = defineProjectModule({

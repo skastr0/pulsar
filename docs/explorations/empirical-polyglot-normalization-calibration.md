@@ -31,7 +31,7 @@ The honest default remains:
 All three repos were scored locally with:
 
 ```bash
-bun run "./packages/codec-cli/src/bin.ts" score --json <repo>
+bun run "./packages/cli/src/bin.ts" score --json <repo>
 ```
 
 | Repo | Origin | HEAD | TS commit-touches / files | RS commit-touches / files |
@@ -120,7 +120,7 @@ If a later ticket ever revisits it, require all of the following:
 
 1. **Per-category calibration only** — never one global TS↔Rust transfer function.
 2. **Versioned artifact** — one committed calibration artifact per category + language pair.
-3. **Corpus provenance** — origin URL, head SHA, scoring command, codec version, commit/file counts.
+3. **Corpus provenance** — origin URL, head SHA, scoring command, pulsar version, commit/file counts.
 4. **Observer audit output** — raw group scores must remain visible beside any calibrated value.
 5. **Fail-closed status** — `accepted`, `experimental`, or `rejected`; anything except `accepted` must leave the score on raw `language-group-mean`.
 
@@ -128,7 +128,7 @@ Suggested artifact envelope:
 
 ```json
 {
-  "schema_id": "taste-codec/polyglot-calibration/v1",
+  "schema_id": "pulsar/polyglot-calibration/v1",
   "artifact_id": "ts-rust-legibility-decay-2026-04-19",
   "decision": "rejected",
   "method": "percentile",

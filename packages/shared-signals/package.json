@@ -1,0 +1,31 @@
+{
+  "name": "@skastr0/pulsar-shared-signals",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Language-agnostic shared signals for Pulsar",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "test": "bun test ./src --pass-with-no-tests",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo"
+  },
+  "dependencies": {
+    "@skastr0/pulsar-core": "workspace:*",
+    "effect": "^3.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0"
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "name": "@skastr0/pulsar-core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Signal interface, registry, scoring engine, and pulsar vector for Pulsar",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "routing-patterns",
+    "presets",
+    "quiz-items"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "test": "bun test ./src",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo"
+  },
+  "dependencies": {
+    "effect": "^3.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0"
+  }
+}

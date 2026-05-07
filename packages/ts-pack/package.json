@@ -1,0 +1,34 @@
+{
+  "name": "@skastr0/pulsar-ts-pack",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "TypeScript signal pack for Pulsar",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "test": "bun test ./src",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo"
+  },
+  "dependencies": {
+    "@skastr0/pulsar-core": "workspace:*",
+    "@skastr0/pulsar-shared-signals": "workspace:*",
+    "effect": "^3.0.0",
+    "simple-git": "^3.25.0",
+    "ts-morph": "^24.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0"
+  }
+}

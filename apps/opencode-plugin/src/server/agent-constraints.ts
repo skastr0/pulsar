@@ -8,9 +8,9 @@ import {
   evaluateBackpressure,
   projectObserverForAgent,
   type BackpressureOutput,
-  type TasteVector,
+  type PulsarVector,
   type TimeSeriesEntry,
-} from "@taste-codec/core"
+} from "@skastr0/pulsar-core"
 
 export interface AgentConstraintDecision {
   readonly allowed: boolean
@@ -40,7 +40,7 @@ export const evaluateAgentConstraints = async (input: {
   readonly tool: string
   readonly args: Readonly<Record<string, unknown>>
   readonly worktree: string
-  readonly vector: TasteVector | undefined
+  readonly vector: PulsarVector | undefined
 }): Promise<AgentConstraintDecision> => {
   const context = await loadConstraintContext(input.worktree, input.vector)
   if (!MUTATING_TOOLS.has(input.tool)) {
@@ -56,7 +56,7 @@ export const evaluateAgentConstraints = async (input: {
     allowed: false,
     backpressure: context.backpressure,
     message: [
-      "Taste Codec backpressure is red, so structural changes are blocked.",
+      "Pulsar backpressure is red, so structural changes are blocked.",
       `Attempted structural change: ${change.reasons.join("; ") || "new structure detected"}.`,
       "Stay within existing files and patterns, or ask a human to approve the structural change.",
     ].join(" "),
@@ -65,11 +65,11 @@ export const evaluateAgentConstraints = async (input: {
 
 export const renderAgentConstraintSystemPrompt = async (input: {
   readonly worktree: string
-  readonly vector: TasteVector | undefined
+  readonly vector: PulsarVector | undefined
 }): Promise<string | undefined> => {
   const context = await loadConstraintContext(input.worktree, input.vector)
   const lines: Array<string> = [
-    '<taste-codec-agent-constraints schema="taste-codec/agent-constraints/v1">',
+    '<pulsar-agent-constraints schema="pulsar/agent-constraints/v1">',
     `backpressure: ${context.backpressure.overall}`,
     "guidance:",
     ...guidanceForLevel(context.backpressure.overall).map((line) => `- ${line}`),
@@ -89,13 +89,13 @@ export const renderAgentConstraintSystemPrompt = async (input: {
     lines.push("diagnostics:", ...diagnosticLines)
   }
 
-  lines.push("</taste-codec-agent-constraints>")
+  lines.push("</pulsar-agent-constraints>")
   return lines.join("\n")
 }
 
 const loadConstraintContext = async (
   worktree: string,
-  vector: TasteVector | undefined,
+  vector: PulsarVector | undefined,
 ): Promise<ConstraintContext> => {
   const services = createTimeSeriesServices(worktree)
   const entries = await Effect.runPromise(services.reader.entries())

@@ -1,9 +1,9 @@
 {
-  "name": "@taste-codec/project-module-sdk",
+  "name": "@skastr0/pulsar-project-module-sdk",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Project module authoring SDK for Taste Codec calibration processors",
+  "description": "Project module authoring SDK for Pulsar calibration processors",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -22,7 +22,7 @@
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
-    "@taste-codec/core": "workspace:*",
+    "@skastr0/pulsar-core": "workspace:*",
     "effect": "^3.0.0",
     "typescript": "^5.8.0"
   }

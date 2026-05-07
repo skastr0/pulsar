@@ -3,13 +3,13 @@ import { mkdir, readFile, readdir, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { extname, join } from "node:path"
 import { promisify } from "node:util"
-import { createTimeSeriesServices, evaluateBackpressure, toObserverJson, type TasteVector } from "@taste-codec/core"
-import { observeCurrentWorktree } from "./codec-observer"
+import { createTimeSeriesServices, evaluateBackpressure, toObserverJson, type PulsarVector } from "@skastr0/pulsar-core"
+import { observeCurrentWorktree } from "./pulsar-observer"
 import { Effect } from "effect"
 
 const execFileAsync = promisify(execFile)
 
-export interface ProbeCodecMetadata {
+export interface ProbePulsarMetadata {
   readonly supported: boolean
   readonly note: string
   readonly sha?: string
@@ -27,9 +27,9 @@ export const maybeHandleProbeSessionOpen = async (input: {
   readonly args: Readonly<Record<string, unknown>>
   readonly output: string
   readonly worktree: string
-  readonly vector: TasteVector | undefined
+  readonly vector: PulsarVector | undefined
   readonly probeHome?: string
-}): Promise<ProbeCodecMetadata | undefined> => {
+}): Promise<ProbePulsarMetadata | undefined> => {
   if (input.tool !== "bash") return undefined
   const command = typeof input.args.command === "string" ? input.args.command : undefined
   if (command === undefined || !isProbeSessionOpenCommand(command)) return undefined
@@ -37,7 +37,7 @@ export const maybeHandleProbeSessionOpen = async (input: {
   const parsed = parseProbeOpenOutput(input.output)
   if (parsed === undefined) return undefined
 
-  const metadata = await computeProbeCodecMetadata({
+  const metadata = await computeProbePulsarMetadata({
     worktree: input.worktree,
     vector: input.vector,
   })
@@ -49,15 +49,15 @@ export const maybeHandleProbeSessionOpen = async (input: {
   return metadata
 }
 
-const computeProbeCodecMetadata = async (input: {
+const computeProbePulsarMetadata = async (input: {
   readonly worktree: string
-  readonly vector: TasteVector | undefined
-}): Promise<ProbeCodecMetadata> => {
+  readonly vector: PulsarVector | undefined
+}): Promise<ProbePulsarMetadata> => {
   const supported = await detectSupportedTargetLanguage(input.worktree)
   if (!supported) {
     return {
       supported: false,
-      note: "Probe target language is not supported by the codec yet; only TypeScript and Rust targets are precomputed in phase 6.",
+      note: "Probe target language is not supported by the Pulsar yet; only TypeScript and Rust targets are precomputed in phase 6.",
     }
   }
 
@@ -71,7 +71,7 @@ const computeProbeCodecMetadata = async (input: {
   )
   return {
     supported: true,
-    note: "Probe session received a precomputed codec snapshot before planning.",
+    note: "Probe session received a precomputed pulsar snapshot before planning.",
     sha: snapshot.sha,
     observerOutput: toObserverJson(snapshot.observerOutput),
     backpressure: evaluateBackpressure(entries, input.vector),
@@ -80,7 +80,7 @@ const computeProbeCodecMetadata = async (input: {
 
 const attachProbeSessionMetadata = async (input: {
   readonly sessionId: string
-  readonly metadata: ProbeCodecMetadata
+  readonly metadata: ProbePulsarMetadata
   readonly probeHome?: string
 }): Promise<void> => {
   const probeHome = input.probeHome ?? join(homedir(), ".probe")
@@ -96,12 +96,12 @@ const attachProbeSessionMetadata = async (input: {
     ...manifest,
     extensions: {
       ...(isRecord(manifest.extensions) ? manifest.extensions : {}),
-      tasteCodec: input.metadata,
+      pulsar: input.metadata,
     },
   }
   await writeFile(manifestPath, `${JSON.stringify(nextManifest, null, 2)}\n`, "utf8")
 
-  const artifactPath = join(outputsDir, `${new Date().toISOString().replace(/[:.]/g, "-")}-taste-codec-snapshot.json`)
+  const artifactPath = join(outputsDir, `${new Date().toISOString().replace(/[:.]/g, "-")}-pulsar-snapshot.json`)
   await writeFile(artifactPath, `${JSON.stringify(input.metadata, null, 2)}\n`, "utf8")
 }
 

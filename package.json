@@ -1,15 +1,15 @@
 {
-  "name": "taste-codec",
+  "name": "@skastr0/pulsar",
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "Taste Codec — a library of provable preference signals with deterministic scoring for LLM-aligned decision-making",
+  "description": "Pulsar — a library of provable preference signals with deterministic scoring for LLM-aligned decision-making",
   "workspaces": [
     "packages/*",
     "apps/*"
   ],
   "scripts": {
-    "dev": "bun packages/codec-cli/src/bin.ts",
+    "dev": "bun packages/cli/src/bin.ts",
     "build": "turbo run build",
     "build:cli": "bun scripts/build-cli.ts",
     "install:local": "bun scripts/install.ts",

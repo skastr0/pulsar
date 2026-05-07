@@ -1,0 +1,18 @@
+{
+  "id": "refactor-friendly",
+  "domain": "typescript",
+  "description": "Bias toward changeability: hotspot control, cycle pressure, and keeping public surfaces narrow enough to reshape safely. Best when a team is about to do architectural work and wants the Pulsar to highlight where refactors will get trapped.",
+  "signal_overrides": {
+    "TS-RP-01": { "weight": 1.5 },
+    "TS-RP-02": { "weight": 1.1 },
+    "TS-AB-01": { "weight": 1.3 },
+    "TS-AB-02": { "weight": 1.1 },
+    "TS-AD-02": { "weight": 1.35 },
+    "TS-AD-03": { "weight": 1.2 },
+    "TS-DE-01": { "weight": 1.15 },
+    "TS-DE-03": { "weight": 1.15 },
+    "TS-LD-01": { "weight": 1.1 },
+    "SHARED-02": { "weight": 1.1 },
+    "SHARED-03": { "weight": 1.2 }
+  }
+}

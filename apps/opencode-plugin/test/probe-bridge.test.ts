@@ -13,7 +13,7 @@ const sh = (cmd: string, args: ReadonlyArray<string>, cwd: string): void => {
 }
 
 const initTsRepo = async (): Promise<string> => {
-  const repoPath = await mkdtemp(join(tmpdir(), "taste-probe-bridge-"))
+  const repoPath = await mkdtemp(join(tmpdir(), "pulsar-probe-bridge-"))
   sh("git", ["init", "-q", "-b", "main"], repoPath)
   sh("git", ["config", "user.email", "test@test.test"], repoPath)
   sh("git", ["config", "user.name", "test"], repoPath)
@@ -39,9 +39,9 @@ const initProbeSession = async (probeHome: string, sessionId: string): Promise<v
 }
 
 describe("probe bridge", () => {
-  test("attaches precomputed codec metadata to a Probe session manifest", async () => {
+  test("attaches precomputed pulsar metadata to a Probe session manifest", async () => {
     const repoPath = await initTsRepo()
-    const probeHome = await mkdtemp(join(tmpdir(), "taste-probe-home-"))
+    const probeHome = await mkdtemp(join(tmpdir(), "pulsar-probe-home-"))
     try {
       await initProbeSession(probeHome, "ses-123")
       const metadata = await maybeHandleProbeSessionOpen({
@@ -59,11 +59,11 @@ describe("probe bridge", () => {
           join(probeHome, "sessions", "ses-123", "meta", "session-manifest.json"),
           "utf8",
         ),
-      ) as { extensions?: { tasteCodec?: { supported?: boolean } } }
-      expect(manifest.extensions?.tasteCodec?.supported).toBe(true)
+      ) as { extensions?: { pulsar?: { supported?: boolean } } }
+      expect(manifest.extensions?.pulsar?.supported).toBe(true)
 
       const outputs = await readdir(join(probeHome, "sessions", "ses-123", "outputs"))
-      expect(outputs.some((file) => file.includes("taste-codec-snapshot"))).toBe(true)
+      expect(outputs.some((file) => file.includes("pulsar-snapshot"))).toBe(true)
     } finally {
       await rm(repoPath, { recursive: true, force: true })
       await rm(probeHome, { recursive: true, force: true })
@@ -71,8 +71,8 @@ describe("probe bridge", () => {
   }, 120_000)
 
   test("records an unsupported-language note when the target is outside TS/Rust", async () => {
-    const repoPath = await mkdtemp(join(tmpdir(), "taste-probe-unsupported-"))
-    const probeHome = await mkdtemp(join(tmpdir(), "taste-probe-home-"))
+    const repoPath = await mkdtemp(join(tmpdir(), "pulsar-probe-unsupported-"))
+    const probeHome = await mkdtemp(join(tmpdir(), "pulsar-probe-home-"))
     try {
       sh("git", ["init", "-q", "-b", "main"], repoPath)
       sh("git", ["config", "user.email", "test@test.test"], repoPath)

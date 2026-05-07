@@ -1,9 +1,9 @@
 {
-  "name": "@taste-codec/project-module-convex",
+  "name": "@skastr0/pulsar-project-module-convex",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Convex technology project module for Taste Codec calibration",
+  "description": "Convex technology project module for Pulsar calibration",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -22,7 +22,7 @@
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
-    "@taste-codec/project-module-sdk": "workspace:*",
+    "@skastr0/pulsar-project-module-sdk": "workspace:*",
     "effect": "^3.0.0"
   },
   "devDependencies": {

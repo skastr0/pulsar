@@ -32,7 +32,7 @@ That is now implemented as `language-group-mean` normalization in `ObserverOutpu
 Running:
 
 ```bash
-bun run "./packages/codec-cli/src/bin.ts" score --json .
+bun run "./packages/cli/src/bin.ts" score --json .
 ```
 
 showed that mixed-category aggregation already needs explanation even before full TS+Rust weighting. For example, `generated-slop` now reports an explicit breakdown instead of a silent blended mean:
@@ -45,7 +45,7 @@ This confirmed the core problem: **once multiple signal families coexist, a sing
 
 ### 2. Polyglot fixture validation
 
-`packages/codec-cli/src/__tests__/shared-signals.test.ts` builds a synthetic TS+Rust repo and verifies:
+`packages/cli/src/__tests__/shared-signals.test.ts` builds a synthetic TS+Rust repo and verifies:
 
 - shared signals register exactly once
 - TS and Rust suppression inputs both feed `SHARED-05`
@@ -123,7 +123,7 @@ It answers the operational need — "give me one category score for this mixed w
 
 ## Implementation hooks landed in this batch
 
-- `packages/codec-shared-signals/` now owns shared-pack composition
+- `packages/shared-signals/` now owns shared-pack composition
 - shared aggregates (`SHARED-05`, `SHARED-06`) compose once across packs
 - `SignalInputRef.optional` allows shared aggregates to work with TS-only, Rust-only, or mixed registries
 - `ObserverOutput` exposes category normalization metadata when cross-group aggregation occurs

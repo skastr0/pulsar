@@ -15,7 +15,7 @@ That is enough to justify a stricter preset prototype without pretending we alre
 
 ## Prototype implemented
 
-- Preset: `packages/codec-core/presets/ai-slop-defense.json`
+- Preset: `packages/core/presets/ai-slop-defense.json`
 - Explicit vector marker: `modes.ai_assisted: true`
 
 The prototype tightens thresholds through ordinary vector overrides:
@@ -43,7 +43,7 @@ Treat AI-assisted mode as a **named preset / mode combination**:
 
 1. visible in the vector via `modes.ai_assisted: true`
 2. selectable via persona flows
-3. diffable via `taste persona diff ai-slop-defense`
+3. diffable via `pulsar persona diff ai-slop-defense`
 
 This avoids the dark pattern of a hidden switch while still making the stricter posture easy to opt into.
 

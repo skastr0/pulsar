@@ -171,7 +171,7 @@ where
 ## Prototype metrics implementation
 
 ```typescript
-// illustrative extension sketch — not committed to packages/codec-rs-pack
+// illustrative extension sketch — not committed to packages/rs-pack
 
 interface BorrowComplexityMetrics {
   readonly lifetimeAnnotationCount: number

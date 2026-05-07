@@ -12,12 +12,12 @@ const packageJson = JSON.parse(readFileSync(join(REPO_ROOT, "package.json"), "ut
 const version = packageJson.version ?? "0.0.0"
 
 const packageBuildOrder = [
-  "packages/codec-core",
+  "packages/core",
   "packages/project-module-sdk",
-  "packages/codec-shared-signals",
-  "packages/codec-ts-pack",
-  "packages/codec-rs-pack",
-  "packages/codec-cli",
+  "packages/shared-signals",
+  "packages/ts-pack",
+  "packages/rs-pack",
+  "packages/cli",
 ] as const
 
 const binaryTargets = [
@@ -60,15 +60,15 @@ for (const packagePath of packageBuildOrder) {
   await cleanPackage(packagePath)
 }
 
-console.log("\nBuilding Taste Codec CLI package dependency chain...")
+console.log("\nBuilding Pulsar CLI package dependency chain...")
 for (const packagePath of packageBuildOrder) {
   await run(`Building ${packagePath}`, ["bun", "run", "build"], join(REPO_ROOT, packagePath))
 }
 
-console.log(`\nCompiling Taste Codec CLI v${version} binaries...`)
+console.log(`\nCompiling Pulsar CLI v${version} binaries...`)
 for (const { platform, arch } of binaryTargets) {
   const target = `${platform}-${arch}`
-  const outfile = join(DIST_DIR, `taste-${target}`)
+  const outfile = join(DIST_DIR, `pulsar-${target}`)
   console.log(`Compiling ${target}...`)
   const buildResult = await Bun.build({
     target: "bun",
@@ -76,7 +76,7 @@ for (const { platform, arch } of binaryTargets) {
       target: `bun-${platform}-${arch}`,
       outfile,
     },
-    entrypoints: [join(REPO_ROOT, "packages", "codec-cli", "src", "bin.ts")],
+    entrypoints: [join(REPO_ROOT, "packages", "cli", "src", "bin.ts")],
     minify: true,
   })
 

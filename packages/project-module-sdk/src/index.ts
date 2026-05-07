@@ -25,7 +25,7 @@ import {
   type ProjectModuleDescriptor,
   type ProjectModuleScope,
   type ResolvedCalibrationContext,
-} from "@taste-codec/core"
+} from "@skastr0/pulsar-core"
 import type { ProjectModuleManifest, ProjectModuleRef } from "./manifest.js"
 
 export * from "./manifest.js"
@@ -71,7 +71,7 @@ export {
   type TypeScriptLocalBindingFact,
   type TypeScriptNoopClassificationValue,
   type TypeScriptSuppressionJustificationValue,
-} from "@taste-codec/core"
+} from "@skastr0/pulsar-core"
 
 export interface ProjectModuleProcessorDefinition<Slot extends CalibrationSlotId> {
   readonly id: string
@@ -1002,7 +1002,7 @@ const materializeProjectModuleImportTarget = (
   Effect.gen(function* () {
     const shadowSourceRoot = resolve(
       repoRoot,
-      ".taste-codec",
+      ".pulsar",
       "cache",
       "project-modules",
       safeSourceFingerprintPath(sourceFingerprint),

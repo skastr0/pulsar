@@ -3,7 +3,7 @@ import { Effect } from "effect"
 import {
   makeResolvedCalibrationContext,
   type RepoFacts,
-} from "@taste-codec/project-module-sdk"
+} from "@skastr0/pulsar-project-module-sdk"
 import {
   EFFECT_OR_ELSE_SUCCEED_NOOP_RULE_ID,
   EFFECT_PROJECT_MODULE_ID,

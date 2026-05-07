@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { hashCalibrationValue } from "@taste-codec/core"
+import { hashCalibrationValue } from "@skastr0/pulsar-core"
 
 const NonEmptyString = Schema.String.pipe(Schema.pattern(/.+/))
 
@@ -52,8 +52,8 @@ export const ProjectModuleRef = Schema.Union(
 export type ProjectModuleRef = typeof ProjectModuleRef.Type
 
 export const ProjectModuleManifest = Schema.Struct({
-  schema: Schema.optionalWith(Schema.Literal("taste/project-modules/v1"), {
-    default: () => "taste/project-modules/v1" as const,
+  schema: Schema.optionalWith(Schema.Literal("pulsar/project-modules/v1"), {
+    default: () => "pulsar/project-modules/v1" as const,
   }),
   modules: Schema.Array(ProjectModuleRef),
 })

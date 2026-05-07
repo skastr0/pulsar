@@ -1,7 +1,7 @@
 {
   "name": "opencode-effect-plugin-template",
   "version": "0.1.0",
-  "description": "Template for authoring opencode server and TUI plugins with Effect — learning reference within the taste-codec workspace",
+  "description": "Template for authoring opencode server and TUI plugins with Effect — learning reference within the pulsar workspace",
   "type": "module",
   "main": "./dist/server.js",
   "exports": {
@@ -13,7 +13,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "bun build ./src/server.ts ./src/tui.ts --outdir ./dist --target bun --format esm --external @opencode-ai/plugin --external @opencode-ai/plugin/tui --external @taste-codec/core --external @taste-codec/rs-pack --external @taste-codec/shared-signals --external @taste-codec/ts-pack",
+    "build": "bun build ./src/server.ts ./src/tui.ts --outdir ./dist --target bun --format esm --external @opencode-ai/plugin --external @opencode-ai/plugin/tui --external @skastr0/pulsar-core --external @skastr0/pulsar-rs-pack --external @skastr0/pulsar-shared-signals --external @skastr0/pulsar-ts-pack",
     "check:imports": "bun -e \"await import('./dist/server.js'); await import('./dist/tui.js')\"",
     "test": "bun test ./test",
     "typecheck": "tsc --noEmit",
@@ -29,10 +29,10 @@
     "@opencode-ai/plugin": ">=1.4.0"
   },
   "dependencies": {
-    "@taste-codec/core": "workspace:*",
-    "@taste-codec/rs-pack": "workspace:*",
-    "@taste-codec/shared-signals": "workspace:*",
-    "@taste-codec/ts-pack": "workspace:*",
+    "@skastr0/pulsar-core": "workspace:*",
+    "@skastr0/pulsar-rs-pack": "workspace:*",
+    "@skastr0/pulsar-shared-signals": "workspace:*",
+    "@skastr0/pulsar-ts-pack": "workspace:*",
     "effect": "^3.0.0"
   },
   "devDependencies": {

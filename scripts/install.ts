@@ -6,7 +6,7 @@ import { join, resolve } from "node:path"
 
 const REPO_ROOT = resolve(import.meta.dir, "..")
 const INSTALL_DIR = process.env.INSTALL_DIR || join(homedir(), ".local", "bin")
-const BINARY_NAME = "taste"
+const BINARY_NAME = "pulsar"
 const DESTINATION = join(INSTALL_DIR, BINARY_NAME)
 
 const detectPlatform = (): string => {
@@ -46,7 +46,7 @@ const main = async (): Promise<void> => {
   const platformArch = detectPlatform()
   console.log(`Detected platform: ${platformArch}`)
 
-  const binaryPath = join(REPO_ROOT, "dist", `taste-${platformArch}`)
+  const binaryPath = join(REPO_ROOT, "dist", `pulsar-${platformArch}`)
   if (!existsSync(binaryPath)) {
     console.error(`Binary not found: ${binaryPath}`)
     console.error("Run 'bun run build:cli' first to build the local CLI binary.")

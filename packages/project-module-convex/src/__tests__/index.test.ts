@@ -3,7 +3,7 @@ import { Effect } from "effect"
 import {
   makeResolvedCalibrationContext,
   type RepoFacts,
-} from "@taste-codec/project-module-sdk"
+} from "@skastr0/pulsar-project-module-sdk"
 import {
   CONVEX_PUBLIC_ENTRYPOINT_RULE_ID,
   CONVEX_GENERATED_TAXONOMY_RULE_ID,

@@ -1,4 +1,4 @@
-# Taste Codec
+# Pulsar
 
 **A library of provable preference signals with deterministic scoring for LLM-aligned decision-making**
 
@@ -8,21 +8,21 @@
 
 ## Thesis
 
-Taste is an encoded n-dimensional decision function. It feels automatic and subconscious because the dimensions and weights are implicit. This system makes them explicit through **provable, computable signals**, not LLM vibes.
+Pulsar is an encoded n-dimensional decision function. It feels automatic and subconscious because the dimensions and weights are implicit. This system makes them explicit through **provable, computable signals**, not LLM vibes.
 
 Three separable components:
 
 - **Signals**: a growing library of grounded, verifiable checks organized by what they measure. Pure functions: artifact in, number out. Language-specific packs exploit each ecosystem's unique structural surface.
-- **Taste Vector**: the repository or organization's shared configuration — which signals are active, how much each matters, what thresholds apply. Inspectable, diffable JSON. Presets are portable templates; active taste is shared by everyone evaluating the repo.
+- **Pulsar Vector**: the repository or organization's shared configuration — which signals are active, how much each matters, what thresholds apply. Inspectable, diffable JSON. Presets are portable templates; active pulsar is shared by everyone evaluating the repo.
 - **Observer**: the runtime that computes scores, routes reviews, tracks backpressure over time, and triggers agent constraints.
 
 Two design rules govern the system:
 
-1. **Provability determines enforcement, not preference.** A boundary violation is a hard CI gate regardless of its weight in the repo's taste vector. A naming inconsistency is a soft warning regardless of how much the repo weights naming. The provability tier sets the ceiling on enforcement policy. The effective repo/org taste vector adjusts sensitivity within that ceiling.
+1. **Provability determines enforcement, not preference.** A boundary violation is a hard CI gate regardless of its weight in the repo's pulsar vector. A naming inconsistency is a soft warning regardless of how much the repo weights naming. The provability tier sets the ceiling on enforcement policy. The effective repo/org pulsar vector adjusts sensitivity within that ceiling.
 
 2. **Combinations beat individual metrics.** The strongest predictive signals in the research literature are compound: churn × complexity, duplication × inconsistency, coupling + boundary violations. Single metrics in isolation are weak predictors. The signal library formalizes compound signals as first-class.
 
-The primary validation: **taste bisect**. Score a repo's commit history against a frozen reference, isolate the commits that introduced rot on specific dimensions. If maintainers confirm the result, the thesis holds.
+The primary validation: **pulsar bisect**. Score a repo's commit history against a frozen reference, isolate the commits that introduced rot on specific dimensions. If maintainers confirm the result, the thesis holds.
 
 ---
 
@@ -58,7 +58,7 @@ The LLM has concrete reference material and performs comparison/classification. 
 
 **Excluded — Ungrounded LLM Judgment**
 
-"Rate the clarity." "Is this readable?" Not a codec input. Triggers downstream review that produces reasoning, not a float.
+"Rate the clarity." "Is this readable?" Not a pulsar input. Triggers downstream review that produces reasoning, not a float.
 
 ---
 
@@ -447,13 +447,13 @@ The primary output is a **dimension vector grouped by taxonomy category**, plus 
 }
 ```
 
-`observer_semantics` is part of the public contract. `applicability-aware-readiness-v1` means `weighted_mean` and `minimum` are computed from applicable evidence instead of treating missing or failed evidence as healthy scalar data; readiness pressure carries the severe local and failed-signal backpressure. The minimum signal is often more actionable than any aggregate. Hard gate status is computed separately from the taste-weighted score — structural violations fail the gate regardless of weight.
+`observer_semantics` is part of the public contract. `applicability-aware-readiness-v1` means `weighted_mean` and `minimum` are computed from applicable evidence instead of treating missing or failed evidence as healthy scalar data; readiness pressure carries the severe local and failed-signal backpressure. The minimum signal is often more actionable than any aggregate. Hard gate status is computed separately from the pulsar-weighted score — structural violations fail the gate regardless of weight.
 
 ---
 
 ## Enforcement Policy Matrix
 
-Provability tier and taxonomy category together determine the enforcement ceiling. Taste vector weights adjust sensitivity **within** the ceiling, never above it.
+Provability tier and taxonomy category together determine the enforcement ceiling. Pulsar vector weights adjust sensitivity **within** the ceiling, never above it.
 
 | Category | Structural signals (boundaries, cycles, deps) | Legibility signals (complexity, naming, size) | Compound signals (churn×complexity, clone inconsistency) |
 |---|---|---|---|
@@ -462,11 +462,11 @@ Provability tier and taxonomy category together determine the enforcement ceilin
 | Tier 2 | Hard gate (given reference data) | Soft warning + trend | Trend |
 | Tier 3 | n/a (structural signals are never Tier 3) | Soft warning only, ephemeral | n/a |
 
-The ratcheting pattern applies to all hard gates: record existing violations as baseline, only block new introductions. This is the same pattern as taste bisect's "freeze reference at a healthy commit."
+The ratcheting pattern applies to all hard gates: record existing violations as baseline, only block new introductions. This is the same pattern as pulsar bisect's "freeze reference at a healthy commit."
 
 ---
 
-## Taste Bisect
+## Pulsar Bisect
 
 Before building elicitation, routing, or agent constraints — validate the thesis.
 
@@ -481,7 +481,7 @@ Before building elicitation, routing, or agent constraints — validate the thes
 
 ### Multiple Anchors
 
-Pick several "healthy" commits across the project's history. The codec interpolates reference data between anchors. Drift between anchors is expected evolution. Drift away from the interpolated reference is rot.
+Pick several "healthy" commits across the project's history. The Pulsar interpolates reference data between anchors. Drift between anchors is expected evolution. Drift away from the interpolated reference is rot.
 
 ### Refactor Awareness
 
@@ -514,7 +514,7 @@ The Observer's diff-time output. Research shows that surfacing signals during re
 - Public API surface change → API design reviewer
 - New unsafe block (Rust) → safety reviewer
 
-Specialist reviewers receive pre-computed context from the signals that triggered routing. They focus on contextual judgment the codec can't provide.
+Specialist reviewers receive pre-computed context from the signals that triggered routing. They focus on contextual judgment the Pulsar can't provide.
 
 ---
 
@@ -539,7 +539,7 @@ The moment agent autonomy depends on scores, agents optimize scores. Defenses:
 
 ---
 
-## Taste Vector
+## Pulsar Vector
 
 ### Structure
 
@@ -559,22 +559,22 @@ Signals not listed inherit default activation and weight. Weight adjusts sensiti
 
 ### Resolution and Precedence
 
-Taste is repo-level, always. Everyone and every agent evaluating a repository uses one effective vector.
+Pulsar is repo-level, always. Everyone and every agent evaluating a repository uses one effective vector.
 
 Resolution order:
 
 1. Explicit `--vector` path for controlled runs.
-2. Repo-local `.taste-codec/vector.json`.
-3. Organization-standard fallback at `~/.config/taste-codec/vector.json`.
+2. Repo-local `.pulsar/vector.json`.
+3. Organization-standard fallback at `~/.config/pulsar/vector.json`.
 4. Built-in defaults.
 
-The home-directory fallback is a transport location for an organization-standard vector shared across repos. It is not personal taste. A repo-local vector always overrides it.
+The home-directory fallback is a transport location for an organization-standard vector shared across repos. It is not personal pulsar. A repo-local vector always overrides it.
 
 ### Elicitation
 
 **Default path**: Revealed preference bootstrap — score last N commits, infer weights from merge/revise/reject patterns.
 
-**Fast path**: Presets — "strict type safety" / "domain purist" / "velocity-first" / "security-paranoid." Presets are starting templates for repo/org vectors, not active personal taste.
+**Fast path**: Presets — "strict type safety" / "domain purist" / "velocity-first" / "security-paranoid." Presets are starting templates for repo/org vectors, not active personal pulsar.
 
 **Explicit path**: Pairwise tradeoff quiz — ~15-20 targeted comparisons. Past that, noise dominates.
 
@@ -584,25 +584,25 @@ The home-directory fallback is a transport location for an organization-standard
 
 ## Ecosystem Integration
 
-### Epistemology Framework → Codec
+### Epistemology Framework → Pulsar
 
-Epistemology hooks are binary, per-action guardrails (AST pattern match → guideline injection). The codec adds scored, aggregate steering using the same pattern-matching machinery. They coexist. Hook triggers are consumable as Tier 1 signal inputs.
+Epistemology hooks are binary, per-action guardrails (AST pattern match → guideline injection). The Pulsar adds scored, aggregate steering using the same pattern-matching machinery. They coexist. Hook triggers are consumable as Tier 1 signal inputs.
 
-### Probe → Codec
+### Probe → Pulsar
 
 Observer scores each code change during Probe sessions. Backpressure green/yellow/red maps to agent autonomy. Pre-computed codebase health snapshot shapes agent behavior before it writes anything.
 
-### TypeScript Compiler Tools → Codec
+### TypeScript Compiler Tools → Pulsar
 
 ts-morph type graph queries provide Tier 1 signal inputs: type-level coupling, unused exports with full reachability, type indirection depth, generic complexity. All deterministic compiler queries.
 
-### Metrix → Codec
+### Metrix → Pulsar
 
 Category scores feed as gauges and counters. Backpressure thresholds surface through the agent hierarchy channels alongside operational metrics.
 
-### Agent Hierarchy → Codec
+### Agent Hierarchy → Pulsar
 
-Agents operating in the same repository share the same effective repo/org vector. Per-agent scoring can feed Metrix for accountability, but per-agent taste cannot change how the repository is scored.
+Agents operating in the same repository share the same effective repo/org vector. Per-agent scoring can feed Metrix for accountability, but per-agent pulsar cannot change how the repository is scored.
 
 ---
 
@@ -610,15 +610,15 @@ Agents operating in the same repository share the same effective repo/org vector
 
 ### vs. Linters
 
-Linters are binary pass/fail on individual rules. The codec **aggregates signals too granular for individual linter rules** and adds compound signals (churn × complexity) that no linter computes. It operates between "too granular for a linter" and "too subjective for a deterministic tool."
+Linters are binary pass/fail on individual rules. The Pulsar **aggregates signals too granular for individual linter rules** and adds compound signals (churn × complexity) that no linter computes. It operates between "too granular for a linter" and "too subjective for a deterministic tool."
 
 ### vs. Reward Models
 
-A reward model captures nonlinear interactions in one forward pass. More expressive. The codec is interpretable, editable, composable, mostly zero-inference-cost, provides per-signal diagnostics, can bisect, can route reviews. Total cost of ownership is much lower.
+A reward model captures nonlinear interactions in one forward pass. More expressive. The Pulsar is interpretable, editable, composable, mostly zero-inference-cost, provides per-signal diagnostics, can bisect, can route reviews. Total cost of ownership is much lower.
 
 ### vs. SonarQube / CodeScene
 
-These are production systems that implement subsets of this taxonomy. SonarQube covers complexity, duplication, and some structural checks. CodeScene covers churn × complexity hotspots and Code Health scores. The codec differentiates by: taste-weighted scoring across the full taxonomy, language-specific signal packs exploiting type system depth, bisect across commit history, agent-aware backpressure, and portable preference vectors.
+These are production systems that implement subsets of this taxonomy. SonarQube covers complexity, duplication, and some structural checks. CodeScene covers churn × complexity hotspots and Code Health scores. The Pulsar differentiates by: pulsar-weighted scoring across the full taxonomy, language-specific signal packs exploiting type system depth, bisect across commit history, agent-aware backpressure, and portable preference vectors.
 
 ### The Honest Pitch
 
@@ -632,7 +632,7 @@ These are production systems that implement subsets of this taxonomy. SonarQube 
 **LLM-Rubric (Microsoft, ACL 2024)**: Multi-dimensional rubrics. Neural calibration, not inspectable.
 **Autorubric (2026)**: Weighted criteria scored independently. Static framework, no bisect/routing/backpressure.
 **VARS (2026)**: Preference vectors from feedback. Gradient-updated, not explicit deterministic weights.
-**CodeScene**: Churn × complexity hotspots, Code Health. Commercial, no taste vectors, no bisect, no agent backpressure.
+**CodeScene**: Churn × complexity hotspots, Code Health. Commercial, no pulsar vectors, no bisect, no agent backpressure.
 **SonarQube**: Complexity, duplication, some structural. No compound signals, no preference weighting, no bisect.
 **ArchUnit / Dependency Cruiser / Packwerk**: Boundary enforcement. Point tools, not unified taxonomy.
 
@@ -647,14 +647,14 @@ The gap: provable signals organized by rot taxonomy + type-system-exploiting lan
 1. ~15 Tier 1 signals from the TypeScript pack (TS-AD-02, TS-DE-01, TS-DE-02, TS-DE-04, TS-AB-01, TS-AB-02, TS-AB-03, TS-LD-01, TS-LD-02, TS-LD-05, TS-SL-01, TS-SL-03, TS-RP-01, TS-RP-02)
 2. Glossary auto-extraction from a given SHA
 3. Commit-level scoring engine with hunk-level incremental cache
-4. `taste bisect` CLI
+4. `pulsar bisect` CLI
 5. Run on a real repo. Show the trajectory to a maintainer. Does it match?
 
 ### Phase 2 — Scoring MVP
 
-6. Taste vector schema (signal activation + weights + config)
+6. Pulsar vector schema (signal activation + weights + config)
 7. Observer (category vector + minimum output + hard gate status)
-8. `taste score` CLI
+8. `pulsar score` CLI
 9. Effect TypeScript throughout
 
 ### Phase 3 — Domain Backend + Compound Signals
@@ -713,4 +713,4 @@ The gap: provable signals organized by rot taxonomy + type-system-exploiting lan
 
 5. **Bisect at scale**: For large monorepos with thousands of commits, full bisect may be impractical even with caching. Need a sampling strategy — bisect on merge commits only, or adaptive sampling based on score deltas.
 
-6. **Signal interaction with AI-specific patterns**: The CMU +41% complexity growth finding suggests AI-specific thresholds. Should the codec have an "AI-assisted mode" with tighter thresholds on duplication and complexity?
+6. **Signal interaction with AI-specific patterns**: The CMU +41% complexity growth finding suggests AI-specific thresholds. Should the Pulsar have an "AI-assisted mode" with tighter thresholds on duplication and complexity?

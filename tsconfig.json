@@ -1,13 +1,13 @@
 {
   "files": [],
   "references": [
-    { "path": "./packages/codec-core" },
-    { "path": "./packages/codec-rs-pack" },
-    { "path": "./packages/codec-shared-signals" },
-    { "path": "./packages/codec-ts-pack" },
+    { "path": "./packages/core" },
+    { "path": "./packages/rs-pack" },
+    { "path": "./packages/shared-signals" },
+    { "path": "./packages/ts-pack" },
     { "path": "./packages/project-module-convex" },
     { "path": "./packages/project-module-effect" },
     { "path": "./packages/project-module-sdk" },
-    { "path": "./packages/codec-cli" }
+    { "path": "./packages/cli" }
   ]
 }

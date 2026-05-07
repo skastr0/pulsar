@@ -2,13 +2,13 @@
 
 **Status**: Exploratory — Phase 8 work item TC-063  
 **Date**: 2026-04-19  
-**Scope**: Extend Taste Codec beyond code (writing, marketing, design)
+**Scope**: Extend Pulsar beyond code (writing, marketing, design)
 
 ---
 
 ## Context
 
-The architecture calls for extending the codec beyond software: "Multi-domain packs (writing, marketing, design)." The thesis — taste as an encoded n-dimensional decision function — applies to any artifact where preference can be revealed through decision patterns.
+The architecture calls for extending the Pulsar beyond software: "Multi-domain packs (writing, marketing, design)." The thesis — pulsar as an encoded n-dimensional decision function — applies to any artifact where preference can be revealed through decision patterns.
 
 ---
 
@@ -131,7 +131,7 @@ This is intentionally a design-level exploration artifact, not a production sign
 - `ProseCorpusTag` (reference documents)
 - `TextAnalysisTag` (NLP utilities)
 
-These can live in a new `@taste-codec/text-pack` package, mirroring `@taste-codec/ts-pack` structure.
+These can live in a new `@skastr0/pulsar-text-pack` package, mirroring `@skastr0/pulsar-ts-pack` structure.
 
 ---
 
@@ -139,7 +139,7 @@ These can live in a new `@taste-codec/text-pack` package, mirroring `@taste-code
 
 ### Option A: Extend current architecture in-place
 
-Add `@taste-codec/text-pack` as a peer to TS/Rust packs.
+Add `@skastr0/pulsar-text-pack` as a peer to TS/Rust packs.
 
 **Pros**:
 - Unified codebase
@@ -148,9 +148,9 @@ Add `@taste-codec/text-pack` as a peer to TS/Rust packs.
 
 **Cons**:
 - Core team becomes bottleneck for text signal maintenance
-- Risk of scope creep: "Taste Codec" becomes "Taste Everything"
+- Risk of scope creep: "Pulsar" becomes "Pulsar Everything"
 
-### Option B: Separate "Taste Codec: Writing" product line
+### Option B: Separate "Pulsar: Writing" product line
 
 Fork the architecture into a dedicated writing-focused tool.
 
@@ -166,7 +166,7 @@ Fork the architecture into a dedicated writing-focused tool.
 
 Extend the current architecture, but enforce boundaries:
 
-1. **Pack isolation**: Each domain is its own package (`@taste-codec/text-pack`, `@taste-codec/marketing-pack`)
+1. **Pack isolation**: Each domain is its own package (`@skastr0/pulsar-text-pack`, `@skastr0/pulsar-marketing-pack`)
 2. **Optional loading**: Like Rust/TS packs, text packs only activate when source evidence detected (markdown files, not .rs/.ts)
 3. **Signal ID prefixes**: `WR-*` for writing, `MK-*` for marketing (mirrors `TS-*`, `RS-*`)
 4. **Separate governance**: Text/marketing signals can have different maintainers, same core
@@ -191,7 +191,7 @@ This keeps the infrastructure unified while allowing domain-specific evolution.
 ## Proposed follow-up work
 
 ### Text-pack scaffold
-**Scope**: Create an exploratory `@taste-codec/text-pack` with minimal WR-LD-01 (vocabulary drift) and WR-LD-03 (Flesch-Kincaid) signals.
+**Scope**: Create an exploratory `@skastr0/pulsar-text-pack` with minimal WR-LD-01 (vocabulary drift) and WR-LD-03 (Flesch-Kincaid) signals.
 **Dependencies**: None.
 
 ### Prose context tags
@@ -199,7 +199,7 @@ This keeps the infrastructure unified while allowing domain-specific evolution.
 **Dependencies**: Much easier once a text-pack scaffold exists.
 
 ### Domain auto-detection refinement
-**Scope**: Update `detectCodecSignals` in runtime to also check for `.md`, `.txt`, and common prose patterns if text packs graduate beyond exploration.
+**Scope**: Update `detectPulsarSignals` in runtime to also check for `.md`, `.txt`, and common prose patterns if text packs graduate beyond exploration.
 **Dependencies**: Should wait until a text-pack shape is proven worthwhile.
 
 ---

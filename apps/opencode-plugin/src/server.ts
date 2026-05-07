@@ -7,11 +7,11 @@ import {
   evaluateAgentConstraints,
   renderAgentConstraintSystemPrompt,
 } from "./server/agent-constraints"
-import { loadTasteVectorForWorktree } from "./server/codec-observer"
+import { loadPulsarVectorForWorktree } from "./server/pulsar-observer"
 import { chatParams, beforeToolExecute, onEvent } from "./server/hooks"
 import { makeServerLayer, type ServerRuntimeEnv } from "./server/layers"
 import { maybeHandleProbeSessionOpen } from "./server/probe-bridge"
-import { createTasteCodecState, afterToolExecute } from "./server/taste-codec-hooks"
+import { createPulsarState, afterToolExecute } from "./server/pulsar-hooks"
 import { makeServerTools } from "./server/tools"
 
 const server: Plugin = async (input, rawOptions) => {
@@ -19,7 +19,7 @@ const server: Plugin = async (input, rawOptions) => {
     decodePluginOptions(rawOptions).pipe(Effect.mapError(toThrowable)),
   )
   const runtime = ManagedRuntime.make(makeServerLayer({ input, options }))
-  const tasteCodecState = createTasteCodecState()
+  const pulsarState = createPulsarState()
 
   const run = <A>(
     name: string,
@@ -44,7 +44,7 @@ const server: Plugin = async (input, rawOptions) => {
         "tool.execute.before.constraints",
         Effect.tryPromise({
           try: async () => {
-            const vector = await loadTasteVectorForWorktree(input.worktree)
+            const vector = await loadPulsarVectorForWorktree(input.worktree)
             const decision = await evaluateAgentConstraints({
               tool: hookInput.tool,
               args: toRecord(output.args),
@@ -56,7 +56,7 @@ const server: Plugin = async (input, rawOptions) => {
                 tool: hookInput.tool,
                 reason:
                   decision.message ??
-                  "Taste Codec backpressure blocked this structural change.",
+                  "Pulsar backpressure blocked this structural change.",
               })
             }
           },
@@ -71,14 +71,14 @@ const server: Plugin = async (input, rawOptions) => {
           input: hookInput,
           output,
           worktree: input.worktree,
-          state: tasteCodecState,
+          state: pulsarState,
         }),
       )
       await run(
         "tool.execute.after.probe",
         Effect.tryPromise({
           try: async () => {
-            const vector = await loadTasteVectorForWorktree(input.worktree)
+            const vector = await loadPulsarVectorForWorktree(input.worktree)
             await maybeHandleProbeSessionOpen({
               tool: hookInput.tool,
               args: toRecord(hookInput.args),
@@ -95,7 +95,7 @@ const server: Plugin = async (input, rawOptions) => {
       Object.assign(output, await run("chat.params", chatParams()))
     },
     "experimental.chat.system.transform": async (hookInput, output) => {
-      const vector = await loadTasteVectorForWorktree(input.worktree)
+      const vector = await loadPulsarVectorForWorktree(input.worktree)
       const constraintContext = await renderAgentConstraintSystemPrompt({
         worktree: input.worktree,
         vector,

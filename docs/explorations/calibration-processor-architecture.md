@@ -2,24 +2,24 @@
 
 ## Purpose
 
-Taste Codec needs to remove project-shaped and framework-shaped heuristics from source signal implementations without throwing away the knowledge those heuristics captured. The right layer is not "more vector numbers." Many current exceptions are executable signal processing: they classify evidence, resolve framework semantics, deweight clone groups, or change what counts as production source.
+Pulsar needs to remove project-shaped and framework-shaped heuristics from source signal implementations without throwing away the knowledge those heuristics captured. The right layer is not "more vector numbers." Many current exceptions are executable signal processing: they classify evidence, resolve framework semantics, deweight clone groups, or change what counts as production source.
 
 The architecture should therefore treat calibration as a deterministic processor layer between raw structural evidence and final scoring. The audio-unit metaphor is useful:
 
 - **Sources / sensors:** language signals extract structural evidence from the repository.
 - **Processors:** repo/org, ecosystem, technology, and framework modules transform or annotate evidence through typed slots.
-- **Mixer:** the repo/org taste vector, aggregation policy, and baseline/ratchet resolve final meaning.
+- **Mixer:** the repo/org pulsar vector, aggregation policy, and baseline/ratchet resolve final meaning.
 
 The mixer is the only place where the final song becomes meaningful. A processor can alter evidence interpretation, but it must not be an unbounded hidden scorer.
 
 ## Invariants
 
-1. **Taste remains repo/org-owned.** There is no personal, per-agent, or task-local taste layer. Home-directory vectors are only org-standard fallback transport.
+1. **Pulsar remains repo/org-owned.** There is no personal, per-agent, or task-local pulsar layer. Home-directory vectors are only org-standard fallback transport.
 2. **Source signals should become stable sensors.** Once a source signal extracts the right raw evidence, later framework/project adaptation should happen in calibration processors unless the signal has a bug.
 3. **Processors are typed audio units, not arbitrary patches.** Each processor attaches to a declared slot with declared input/output types.
 4. **Every calibration decision is attributable.** A changed classification must carry pack id, processor id, rule id, version, confidence, and supporting evidence.
 5. **Calibration participates in cache keys.** Changing active packs, processor rules, file taxonomy, or repo/org calibration must invalidate affected caches.
-6. **Repo/org configuration wins over fallbacks.** Repository `.taste-codec/*` artifacts override org fallback files. Private org packs and repo-local rules are valid for project-specific facts.
+6. **Repo/org configuration wins over fallbacks.** Repository `.pulsar/*` artifacts override org fallback files. Private org packs and repo-local rules are valid for project-specific facts.
 
 ## Pipeline
 
@@ -29,7 +29,7 @@ Repository files
   -> source signals / sensors
   -> typed calibration processor slots
   -> signal score + diagnostics
-  -> category mixer + repo/org taste vector
+  -> category mixer + repo/org pulsar vector
   -> baseline / ratchet comparison
 ```
 
@@ -45,7 +45,7 @@ Examples:
 - Source language activation and source file extensions.
 - Bundler and virtual-module conventions.
 
-Repo facts are not taste. They are claims about the repository with provenance and a fingerprint.
+Repo facts are not pulsar. They are claims about the repository with provenance and a fingerprint.
 
 ### 2. Source Signals
 
@@ -66,7 +66,7 @@ Initial slot families:
 
 | Slot | Processor Role | Current Hardcodes It Replaces |
 |---|---|---|
-| `taxonomy.file-classifier` | Classify files and paths once per run | Per-signal `exclude_globs`, `test_globs`, `isCodecSource`, `ts-project.ts` production filtering |
+| `taxonomy.file-classifier` | Classify files and paths once per run | Per-signal `exclude_globs`, `test_globs`, `isPulsarSource`, `ts-project.ts` production filtering |
 | `typescript.noop-classifier` | Classify empty function candidates as intentional noops or stubs | SolidJS, React host config, yargs, projection adapters, console silencing, lifecycle noops |
 | `typescript.clone-group-policy` | Exclude/deweight/keep clone groups | SolidJS adapters, Effect callbacks, AST predicate guards, migration/version families, cache mirrors |
 | `typescript.dependency-resolver` | Resolve imports, virtual modules, bundler externals, host facade aliases | Docusaurus/SvelteKit virtual modules, bundled package config detection, package root config filenames |
@@ -134,7 +134,7 @@ Activation can be explicit or evidence-based:
 - Auto-activation requires repository evidence, such as dependency names, scripts, config files, imports, or framework markers.
 - Auto-activation must be visible in the resolved calibration report and overrideable by repo/org config.
 
-Repo-local project modules should be referenced explicitly from repo/org calibration artifacts. They may live under `.taste-codec/modules/`, in a workspace package, or in a private package. Local TypeScript source modules need source-content hashes in the resolved calibration fingerprint because they may not have package versions.
+Repo-local project modules should be referenced explicitly from repo/org calibration artifacts. They may live under `.pulsar/modules/`, in a workspace package, or in a private package. Local TypeScript source modules need source-content hashes in the resolved calibration fingerprint because they may not have package versions.
 
 ## Processor Contract
 
@@ -170,7 +170,7 @@ This layer fits the existing Effect architecture well. Calibration should be pro
 
 ```typescript
 class CalibrationContextTag extends Context.Tag(
-  "@taste-codec/core/CalibrationContext",
+  "@skastr0/pulsar-core/CalibrationContext",
 )<CalibrationContextTag, ResolvedCalibrationContext>() {}
 
 interface ResolvedCalibrationContext {
@@ -193,7 +193,7 @@ The important implementation detail is that pack discovery, rule decoding, glob 
 ```typescript
 const CalibrationContextLayer = (
   repoRoot: string,
-  vector: TasteVector | undefined,
+  vector: PulsarVector | undefined,
 ): Layer.Layer<CalibrationContextTag, CalibrationConfigError> =>
   Layer.effect(
     CalibrationContextTag,
@@ -262,7 +262,7 @@ Precedence should be deterministic:
 3. Technology/framework processors, such as Effect, Convex, React, SolidJS.
 4. Private organization packs.
 5. Repo-local calibration artifacts.
-6. Repo/org taste vector mixer settings.
+6. Repo/org pulsar vector mixer settings.
 
 Higher-precedence layers can disable, replace, or refine lower-precedence rules by stable rule id. They should not silently mutate unrelated rules.
 
@@ -340,7 +340,7 @@ Rust should get the same treatment after the TypeScript path is proven. The firs
 
 ## Non-Goals
 
-- No personal or per-agent taste.
+- No personal or per-agent pulsar.
 - No processor that directly writes final signal scores without a typed slot and visible decision.
 - No framework-specific source-signal branches after the matching processor slot exists.
 - No attempt to make every possible AST predicate configurable before extracting the first useful layer.

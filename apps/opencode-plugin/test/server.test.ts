@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Effect } from "effect"
-import { createTimeSeriesServices, type TimeSeriesEntry } from "@taste-codec/core"
+import { createTimeSeriesServices, type TimeSeriesEntry } from "@skastr0/pulsar-core"
 import serverModule from "../src/server"
 
 const makeEntry = (score: number, message: string): TimeSeriesEntry => ({
@@ -125,7 +125,7 @@ describe("native server plugin", () => {
   })
 
   test("blocks structural edits when backpressure is red", async () => {
-    const worktree = await mkdtemp(join(tmpdir(), "taste-plugin-red-"))
+    const worktree = await mkdtemp(join(tmpdir(), "pulsar-plugin-red-"))
     try {
       await seedTimeSeries(
         worktree,
@@ -146,7 +146,7 @@ describe("native server plugin", () => {
   })
 
   test("injects qualitative backpressure guidance without exposing numeric scores", async () => {
-    const worktree = await mkdtemp(join(tmpdir(), "taste-plugin-guidance-"))
+    const worktree = await mkdtemp(join(tmpdir(), "pulsar-plugin-guidance-"))
     try {
       await seedTimeSeries(
         worktree,
@@ -159,7 +159,7 @@ describe("native server plugin", () => {
       await hooks["experimental.chat.system.transform"]?.({ model: {} } as never, output as never)
 
       const rendered = output.system.join("\n")
-      expect(rendered).toContain("taste-codec-agent-constraints")
+      expect(rendered).toContain("pulsar-agent-constraints")
       expect(rendered).toContain("backpressure: red")
       expect(rendered).toContain("UserAccount")
       expect(rendered).not.toContain("0.45")

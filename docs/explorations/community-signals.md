@@ -2,13 +2,13 @@
 
 **Status**: Exploratory — Phase 8 work item TC-062  
 **Date**: 2026-04-19  
-**Scope**: Design community extensibility for Taste Codec signals
+**Scope**: Design community extensibility for Pulsar signals
 
 ---
 
 ## Context
 
-The Taste Codec signal interface (`Signal<Config, Output, R>`) is designed for composability, but currently signals ship only through core-maintained packs (`@taste-codec/ts-pack`, `@taste-codec/rs-pack`). The architecture calls for third-party packages to extend coverage beyond what the core team maintains.
+The Pulsar signal interface (`Signal<Config, Output, R>`) is designed for composability, but currently signals ship only through core-maintained packs (`@skastr0/pulsar-ts-pack`, `@skastr0/pulsar-rs-pack`). The architecture calls for third-party packages to extend coverage beyond what the core team maintains.
 
 ---
 
@@ -40,7 +40,7 @@ Five open questions govern whether and how to enable community signals:
 
 **Versioning**: ESLint defines a [plugin API contract](https://eslint.org/docs/latest/extend/plugins) that's versioned independently. Plugins declare `peerDependency` on `eslint: ^8.x || ^9.x`.
 
-**Lessons for Taste Codec**:
+**Lessons for Pulsar**:
 - No-sandbox approach is the default in Node.js ecosystems
 - Trust must be explicit (peer dependencies, provenance attestation)
 - Discovery is a registry + curation problem, not a technical one
@@ -76,11 +76,11 @@ Five open questions govern whether and how to enable community signals:
 
 A community signal package exports a set of `Signal` values and a `Layer` for any custom service requirements.
 
-### Package: `taste-codec-signal-markdown` (hypothetical)
+### Package: `pulsar-signal-markdown` (hypothetical)
 
 ```typescript
 // src/index.ts
-import type { AnySignal } from "@taste-codec/core"
+import type { AnySignal } from "@skastr0/pulsar-core"
 import { MarkdownWordCount, MarkdownHeadingStructure } from "./signals/index.js"
 import { MarkdownProjectLayer } from "./project.js"
 
@@ -92,11 +92,11 @@ export const MARKDOWN_SIGNALS: ReadonlyArray<AnySignal> = [
 export { MarkdownProjectLayer }
 ```
 
-The consuming codec would load signals via `buildRegistry`:
+The consuming pulsar would load signals via `buildRegistry`:
 
 ```typescript
-import { buildRegistry } from "@taste-codec/core"
-import { MARKDOWN_SIGNALS } from "taste-codec-signal-markdown"
+import { buildRegistry } from "@skastr0/pulsar-core"
+import { MARKDOWN_SIGNALS } from "pulsar-signal-markdown"
 
 const registry = await Effect.runPromise(buildRegistry([
   ...TS_PACK_SIGNALS,
@@ -107,7 +107,7 @@ const registry = await Effect.runPromise(buildRegistry([
 This prototype suggests the current signal interface is sufficient for exploratory third-party packs without immediate core shape changes.
 
 > **Prototype status**
-> The package under `docs/explorations/prototypes/taste-codec-signal-markdown/` is an illustrative exploration artifact only. It is not wired into the main runtime, not part of the workspace build, and should not be read as production-ready packaging.
+> The package under `docs/explorations/prototypes/pulsar-signal-markdown/` is an illustrative exploration artifact only. It is not wired into the main runtime, not part of the workspace build, and should not be read as production-ready packaging.
 
 ---
 
@@ -115,7 +115,7 @@ This prototype suggests the current signal interface is sufficient for explorato
 
 ### Recommendation 1: Documented trust, not technical enforcement
 
-Taste Codec signals run in the same Node.js process as the Observer. True sandboxing (workers, wasm, separate process) adds latency incompatible with the bisect workflow's requirement for ~500 commits scored in minutes.
+Pulsar signals run in the same Node.js process as the Observer. True sandboxing (workers, wasm, separate process) adds latency incompatible with the bisect workflow's requirement for ~500 commits scored in minutes.
 
 **Adopt the ESLint/cargo model**: trust is explicit, verifiable, and audit-able, not enforced by runtime isolation.
 
@@ -123,33 +123,33 @@ Taste Codec signals run in the same Node.js process as the Observer. True sandbo
 
 Community signals MUST:
 - Ship via npm with `provenance: true` (attested build)
-- Declare `@taste-codec/core` as a peer dependency
-- Include `taste-codec-signal` keyword for discovery
+- Declare `@skastr0/pulsar-core` as a peer dependency
+- Include `pulsar-signal` keyword for discovery
 
 ### Recommendation 3: Graduated trust tiers
 
 | Tier | Verification | Discovery visibility |
 |------|-------------|---------------------|
-| **Core** | Core team authored, in `@taste-codec/*` packages | First-class, default-enabled |
-| **Verified** | Peer-reviewed by core team, published under `@taste-codec-community/*` | Listed, opt-in |
+| **Core** | Core team authored, in `@skastr0/pulsar-*` packages | First-class, default-enabled |
+| **Verified** | Peer-reviewed by core team, published under `@pulsar-community/*` | Listed, opt-in |
 | **Community** | Meets provenance requirements only | Searchable, explicit install required |
 
 ### Recommendation 4: No automatic execution
 
-Community signals are never auto-loaded. Users explicitly enable them in their taste vector:
+Community signals are never auto-loaded. Users explicitly enable them in their pulsar vector:
 
 ```json
 {
   "signal_overrides": {
     "COMMUNITY-MARKDOWN-01": {
       "active": true,
-      "source": "npm:taste-codec-signal-markdown@^1.0.0"
+      "source": "npm:pulsar-signal-markdown@^1.0.0"
     }
   }
 }
 ```
 
-The codec validates the package hash against a lockfile before execution.
+The Pulsar validates the package hash against a lockfile before execution.
 
 ---
 
@@ -157,14 +157,14 @@ The codec validates the package hash against a lockfile before execution.
 
 ### Interface contract
 
-The `Signal<Config, Output, R>` interface is the load-bearing contract. Changes that break this shape require a major version bump of `@taste-codec/core`.
+The `Signal<Config, Output, R>` interface is the load-bearing contract. Changes that break this shape require a major version bump of `@skastr0/pulsar-core`.
 
 **Current stability**: The interface is intentionally minimal (`id`, `tier`, `category`, `kind`, `configSchema`, `defaultConfig`, `inputs`, `compute`, `score`, `diagnose`). It's been stable through Phase 1-6 implementation.
 
 **Versioning policy**:
-- Community signals declare `peerDependencies: { "@taste-codec/core": "^1.0.0" }` (or appropriate range)
+- Community signals declare `peerDependencies: { "@skastr0/pulsar-core": "^1.0.0" }` (or appropriate range)
 - Core releases signal interface changes as breaking (major version bump)
-- The codec warns when a community signal's peer dependency range excludes the running core version
+- The Pulsar warns when a community signal's peer dependency range excludes the running core version
 
 ### Deprecation path
 
@@ -182,15 +182,15 @@ When a signal is deprecated:
 Community packages MUST include:
 ```json
 {
-  "keywords": ["taste-codec", "taste-codec-signal", "writing", "markdown"]
+  "keywords": ["pulsar", "pulsar-signal", "writing", "markdown"]
 }
 ```
 
-Users discover via `npm search taste-codec-signal`.
+Users discover via `npm search pulsar-signal`.
 
 ### Medium-term: Curated registry
 
-Maintain `taste-codec/community-signals` GitHub repo with:
+Maintain `pulsar/community-signals` GitHub repo with:
 - Curated list of verified signals
 - Automated CI testing of each signal against reference repos
 - Quality badges (test coverage, last release, reverse dependencies)
@@ -201,7 +201,7 @@ This avoids the "awesome list" pattern where curation becomes stale.
 
 ## Kill switch design
 
-When a signal crashes or times out during scoring, the codec must isolate the failure without aborting the entire run.
+When a signal crashes or times out during scoring, the Pulsar must isolate the failure without aborting the entire run.
 
 ### Isolation mechanism
 
@@ -236,7 +236,7 @@ Based on this exploration, the most likely next implementation slices are:
 **Dependencies**: None — can build against current core.
 
 ### Community signal registry manifest format
-**Scope**: Define a `taste-codec-community.json`-style manifest for third-party signals.
+**Scope**: Define a `pulsar-community.json`-style manifest for third-party signals.
 **Dependencies**: Ideally after quarantine semantics are settled.
 
 ### Verified community-signal CI lane

@@ -27,15 +27,15 @@ Extract preference evidence from natural editing activity without silently mutat
 
 Prototype code lives in:
 
-- `packages/codec-core/src/elicitation/proposals.ts`
-- `apps/opencode-plugin/src/server/taste-codec-hooks.ts`
+- `packages/core/src/elicitation/proposals.ts`
+- `apps/opencode-plugin/src/server/pulsar-hooks.ts`
 
 Current behavior:
 
 1. after each edit-time Observer run, compare previous vs current signal scores
 2. if a signal improves by `>= 0.20`, create a **pending proposal** instead of mutating the vector
-3. append an observation record to `.taste-codec/observations.log`
-4. write the structured proposal to `.taste-codec/proposals/pending/<id>.json`
+3. append an observation record to `.pulsar/observations.log`
+4. write the structured proposal to `.pulsar/proposals/pending/<id>.json`
 
 This keeps the prototype auditable and confirmation-first.
 
@@ -67,7 +67,7 @@ Proposed vector updates:
 - TS-LD-01 weight 1.00 -> 1.12
 
 Apply now? [y/N]
-Review artifact: .taste-codec/proposals/pending/proposal-abc123def456.json
+Review artifact: .pulsar/proposals/pending/proposal-abc123def456.json
 ```
 
 ## Recommendation

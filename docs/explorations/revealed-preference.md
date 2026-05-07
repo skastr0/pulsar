@@ -2,11 +2,11 @@
 
 ## Goal
 
-Infer a taste vector from evidence the repo already contains without hiding the inference path behind an opaque model.
+Infer a pulsar vector from evidence the repo already contains without hiding the inference path behind an opaque model.
 
 ## Prototype algorithms
 
-Prototype code lives in `packages/codec-core/src/elicitation/revealed-preference.ts`.
+Prototype code lives in `packages/core/src/elicitation/revealed-preference.ts`.
 
 ### 1. Pairwise comparisons
 
@@ -47,7 +47,7 @@ Prototype code lives in `packages/codec-core/src/elicitation/revealed-preference
 ## Integration shape
 
 - Keep the bootstrap **proposal-first**, not auto-apply
-- Write inferred deltas as a pending proposal under `.taste-codec/proposals/pending/`
+- Write inferred deltas as a pending proposal under `.pulsar/proposals/pending/`
 - Record supporting evidence in vector provenance if a proposal is later accepted
 - Cold start path:
   1. apply a preset
