@@ -1,0 +1,11 @@
+{
+  "name": "@skastr0/pulsar-opentui-prototype",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "split-footer": "bun ./split-footer-score.ts"
+  },
+  "dependencies": {
+    "@opentui/core": "^0.2.3"
+  }
+}
