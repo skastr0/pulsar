@@ -181,11 +181,6 @@ export const TsLd02: Signal<TsLd02Config, TsLd02Output, TsProjectTag> = {
         catch: toSignalComputeError,
       })
 
-      const { functions: allFunctions, calibrationDecisions } = yield* calibrateFunctionNames(
-        collected.allFunctions,
-        calibration,
-      ).pipe(Effect.mapError(toSignalComputeError))
-
       const byFile = new Map<string, DistributionalSummary>()
       for (const [file, values] of collected.perFileFunctionLocs) {
         byFile.set(file, summarize(values))
@@ -196,23 +191,27 @@ export const TsLd02: Signal<TsLd02Config, TsLd02Output, TsProjectTag> = {
       const functionOutlierCutoff = functionSizes.p95 + config.max_function_loc
       const fileOutlierCutoff = fileSizes.p95 + config.max_file_loc
 
-      const outlierFunctionsAll = allFunctions.filter(
+      const outlierFunctionCandidatesAll = collected.allFunctions.filter(
         (f) => f.loc > functionOutlierCutoff,
       )
       const outlierFilesAll = collected.allFiles.filter(
         (f) => f.loc > fileOutlierCutoff,
       )
 
-      const outlierFunctions = outlierFunctionsAll
+      const outlierFunctionCandidates = outlierFunctionCandidatesAll
         .slice()
         .sort((a, b) => b.loc - a.loc)
         .slice(0, config.top_n_diagnostics)
+      const { functions: outlierFunctions, calibrationDecisions } = yield* calibrateFunctionNames(
+        outlierFunctionCandidates,
+        calibration,
+      ).pipe(Effect.mapError(toSignalComputeError))
       const outlierFiles = outlierFilesAll
         .slice()
         .sort((a, b) => b.loc - a.loc)
         .slice(0, config.top_n_diagnostics)
-      const totalEntities = allFunctions.length + collected.allFiles.length
-      const oversize = outlierFunctionsAll.length + outlierFilesAll.length
+      const totalEntities = collected.allFunctions.length + collected.allFiles.length
+      const oversize = outlierFunctionCandidatesAll.length + outlierFilesAll.length
       const ratioPressure =
         totalEntities === 0 ? 0 : Math.min(1, (oversize / totalEntities) * 2)
       const maxFunctionLoc = functionSizes.max
@@ -230,9 +229,9 @@ export const TsLd02: Signal<TsLd02Config, TsLd02Output, TsProjectTag> = {
         byFile,
         fileSizes,
         functionSizes,
-        outlierFunctionCount: outlierFunctionsAll.length,
+        outlierFunctionCount: outlierFunctionCandidatesAll.length,
         outlierFileCount: outlierFilesAll.length,
-        totalFunctions: allFunctions.length,
+        totalFunctions: collected.allFunctions.length,
         totalFiles: collected.allFiles.length,
         functionOutlierCutoff,
         fileOutlierCutoff,
@@ -431,7 +430,10 @@ const calibrateFunctionNames = (
 > =>
   Effect.gen(function* () {
     if (Option.isNone(calibration)) {
-      return { functions: candidates, calibrationDecisions: [] }
+      return {
+        functions: candidates.map(stripFunctionNameCalibration),
+        calibrationDecisions: [],
+      }
     }
 
     const functions: Array<FunctionSize> = []

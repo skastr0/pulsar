@@ -2,13 +2,21 @@ import { describe, expect, test } from "bun:test"
 import { spawnSync } from "node:child_process"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
-import { Effect } from "effect"
+import { dirname, join } from "node:path"
+import { fileURLToPath, pathToFileURL } from "node:url"
+import { CalibrationContextTag } from "@skastr0/pulsar-core"
+import { TsLd01, TsProjectLayer } from "@skastr0/pulsar-ts-pack"
+import { Effect, Layer } from "effect"
 import {
   loadProjectModuleCalibrationContext,
   makePulsarRuntime,
   withDetachedWorktreeAtRef,
 } from "../runtime.js"
+
+const testDir = dirname(fileURLToPath(import.meta.url))
+const effectProjectModuleSource = pathToFileURL(
+  join(testDir, "../../../project-module-effect/src/index.ts"),
+).href
 
 const writeRepoFile = async (repoPath: string, relPath: string, content: string): Promise<void> => {
   const full = join(repoPath, relPath)
@@ -132,6 +140,114 @@ describe("pulsar runtime project modules", () => {
       expect(first?.activeModules[0]?.sourceFingerprint).not.toBe(
         second?.activeModules[0]?.sourceFingerprint,
       )
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("loads the Effect package module and calibrates TS signal callback names", async () => {
+    const repoPath = await mkdtemp(join(tmpdir(), "pulsar-runtime-project-modules-"))
+    try {
+      await writeRepoFile(
+        repoPath,
+        "package.json",
+        JSON.stringify({ name: "effect-callback-integration", private: true }, null, 2),
+      )
+      await writeRepoFile(
+        repoPath,
+        "tsconfig.json",
+        JSON.stringify(
+          {
+            compilerOptions: {
+              target: "ES2022",
+              module: "ESNext",
+              moduleResolution: "Bundler",
+              strict: true,
+            },
+            include: ["src/**/*.ts"],
+          },
+          null,
+          2,
+        ),
+      )
+      await writeRepoFile(
+        repoPath,
+        "node_modules/@skastr0/pulsar-project-module-effect/package.json",
+        JSON.stringify(
+          {
+            name: "@skastr0/pulsar-project-module-effect",
+            version: "0.0.0",
+            type: "module",
+            exports: "./index.mjs",
+          },
+          null,
+          2,
+        ),
+      )
+      await writeRepoFile(
+        repoPath,
+        "node_modules/@skastr0/pulsar-project-module-effect/index.mjs",
+        [
+          `export { default } from ${JSON.stringify(effectProjectModuleSource)}`,
+          `export * from ${JSON.stringify(effectProjectModuleSource)}`,
+        ].join("\n"),
+      )
+      await writeRepoFile(
+        repoPath,
+        ".pulsar/project-modules.json",
+        JSON.stringify(
+          {
+            modules: [
+              {
+                id: "@skastr0/pulsar-project-module-effect",
+                kind: "package",
+                packageName: "@skastr0/pulsar-project-module-effect",
+              },
+            ],
+          },
+          null,
+          2,
+        ),
+      )
+      await writeRepoFile(
+        repoPath,
+        "src/effect.ts",
+        `
+declare const Effect: {
+  fn: (label: string) => (body: unknown) => unknown
+}
+
+export const create = Effect.fn("Session.create")(function* (_input: unknown) {
+  if (ready() && enabled()) return yield* run()
+  return yield* fallback()
+})
+`,
+      )
+
+      const calibrationContext = await Effect.runPromise(
+        loadProjectModuleCalibrationContext(repoPath),
+      )
+      expect(calibrationContext?.activeModules[0]?.id).toBe(
+        "@skastr0/pulsar-project-module-effect",
+      )
+
+      const out = await Effect.runPromise(
+        TsLd01.compute(TsLd01.defaultConfig, new Map()).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              TsProjectLayer(repoPath),
+              Layer.succeed(CalibrationContextTag, calibrationContext!),
+            ),
+          ),
+        ),
+      )
+
+      expect(out.functions.find((fn) => fn.name === "Session.create")?.complexity).toBe(3)
+      expect(out.calibrationDecisions[0]).toMatchObject({
+        moduleId: "@skastr0/pulsar-project-module-effect",
+        processorId: "effect-callback-context-names",
+        ruleId: "effect.callback-context-name.v1",
+      })
     } finally {
       await rm(repoPath, { recursive: true, force: true })
     }

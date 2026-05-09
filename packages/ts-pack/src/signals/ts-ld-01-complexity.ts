@@ -239,7 +239,10 @@ const calibrateFunctionNames = (
 > =>
   Effect.gen(function* () {
     if (Option.isNone(calibration)) {
-      return { functions: candidates, calibrationDecisions: [] }
+      return {
+        functions: candidates.map(stripFunctionNameCalibration),
+        calibrationDecisions: [],
+      }
     }
 
     const functions: Array<FunctionComplexity> = []
