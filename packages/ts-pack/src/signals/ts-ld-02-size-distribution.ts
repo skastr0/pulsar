@@ -1,11 +1,16 @@
 import {
+  CalibrationContextTag,
+  type CalibrationDecision,
+  type CalibrationProcessorError,
   type Diagnostic,
   type DistributionalSummary,
+  type ResolvedCalibrationContext,
   type Signal,
   SignalComputeError,
   summarize,
+  type TypeScriptCallbackContextNameValue,
 } from "@skastr0/pulsar-core"
-import { Effect, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 import {
   type SourceFile,
   ts,
@@ -33,6 +38,12 @@ export interface FunctionSize {
   readonly loc: number
 }
 
+type FunctionNameCalibrationInput = Omit<TypeScriptCallbackContextNameValue, "file" | "line">
+
+type FunctionSizeCandidate = FunctionSize & {
+  readonly callbackContext?: FunctionNameCalibrationInput
+}
+
 export interface FileSize {
   readonly file: string
   readonly loc: number
@@ -57,6 +68,7 @@ export interface TsLd02Output {
   readonly outlierFunctions: ReadonlyArray<FunctionSize>
   /** Top-N true file outliers, sorted largest-first. */
   readonly outlierFiles: ReadonlyArray<FileSize>
+  readonly calibrationDecisions: ReadonlyArray<CalibrationDecision>
   readonly ratioPressure: number
   readonly maxFunctionPressure: number
   readonly maxFilePressure: number
@@ -82,7 +94,7 @@ export const TsLd02: Signal<TsLd02Config, TsLd02Output, TsProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "local-max-pressure-v1",
+  cacheVersion: "callback-context-calibration-v1",
   configSchema: TsLd02Config,
   defaultConfig: {
     exclude_globs: [
@@ -137,12 +149,13 @@ export const TsLd02: Signal<TsLd02Config, TsLd02Output, TsProjectTag> = {
   compute: (config) =>
     Effect.gen(function* () {
       const project = yield* TsProjectTag
-      const result = yield* Effect.try({
-        try: (): TsLd02Output => {
+      const calibration = yield* Effect.serviceOption(CalibrationContextTag)
+      const collected = yield* Effect.try({
+        try: () => {
           const perFileFunctionLocs = new Map<string, Array<number>>()
           const fileLocs: Array<number> = []
           const allFunctionLocs: Array<number> = []
-          const allFunctions: Array<FunctionSize> = []
+          const allFunctions: Array<FunctionSizeCandidate> = []
           const allFiles: Array<FileSize> = []
 
           for (const sf of project.getSourceFiles()) {
@@ -163,71 +176,73 @@ export const TsLd02: Signal<TsLd02Config, TsLd02Output, TsProjectTag> = {
             perFileFunctionLocs.set(path, bucket)
           }
 
-          const byFile = new Map<string, DistributionalSummary>()
-          for (const [file, values] of perFileFunctionLocs) {
-            byFile.set(file, summarize(values))
-          }
-
-          const fileSizes = summarize(fileLocs)
-          const functionSizes = summarize(allFunctionLocs)
-          const functionOutlierCutoff = functionSizes.p95 + config.max_function_loc
-          const fileOutlierCutoff = fileSizes.p95 + config.max_file_loc
-
-          const outlierFunctionsAll = allFunctions.filter(
-            (f) => f.loc > functionOutlierCutoff,
-          )
-          const outlierFilesAll = allFiles.filter(
-            (f) => f.loc > fileOutlierCutoff,
-          )
-
-          const outlierFunctions = outlierFunctionsAll
-            .slice()
-            .sort((a, b) => b.loc - a.loc)
-            .slice(0, config.top_n_diagnostics)
-          const outlierFiles = outlierFilesAll
-            .slice()
-            .sort((a, b) => b.loc - a.loc)
-            .slice(0, config.top_n_diagnostics)
-          const totalEntities = allFunctions.length + allFiles.length
-          const oversize = outlierFunctionsAll.length + outlierFilesAll.length
-          const ratioPressure =
-            totalEntities === 0 ? 0 : Math.min(1, (oversize / totalEntities) * 2)
-          const maxFunctionLoc = functionSizes.max
-          const maxFileLoc = fileSizes.max
-          const maxFunctionPressure =
-            maxFunctionLoc <= config.max_function_loc || maxFunctionLoc === 0
-              ? 0
-              : (maxFunctionLoc - config.max_function_loc) / maxFunctionLoc
-          const maxFilePressure =
-            maxFileLoc <= config.max_file_loc || maxFileLoc === 0
-              ? 0
-              : (maxFileLoc - config.max_file_loc) / maxFileLoc
-
-          return {
-            byFile,
-            fileSizes,
-            functionSizes,
-            outlierFunctionCount: outlierFunctionsAll.length,
-            outlierFileCount: outlierFilesAll.length,
-            totalFunctions: allFunctions.length,
-            totalFiles: allFiles.length,
-            functionOutlierCutoff,
-            fileOutlierCutoff,
-            outlierFunctions,
-            outlierFiles,
-            ratioPressure,
-            maxFunctionPressure,
-            maxFilePressure,
-          }
+          return { perFileFunctionLocs, fileLocs, allFunctionLocs, allFunctions, allFiles }
         },
-        catch: (cause) =>
-          new SignalComputeError({
-            signalId: "TS-LD-02",
-            message: String(cause),
-            cause,
-          }),
+        catch: toSignalComputeError,
       })
-      return result
+
+      const { functions: allFunctions, calibrationDecisions } = yield* calibrateFunctionNames(
+        collected.allFunctions,
+        calibration,
+      ).pipe(Effect.mapError(toSignalComputeError))
+
+      const byFile = new Map<string, DistributionalSummary>()
+      for (const [file, values] of collected.perFileFunctionLocs) {
+        byFile.set(file, summarize(values))
+      }
+
+      const fileSizes = summarize(collected.fileLocs)
+      const functionSizes = summarize(collected.allFunctionLocs)
+      const functionOutlierCutoff = functionSizes.p95 + config.max_function_loc
+      const fileOutlierCutoff = fileSizes.p95 + config.max_file_loc
+
+      const outlierFunctionsAll = allFunctions.filter(
+        (f) => f.loc > functionOutlierCutoff,
+      )
+      const outlierFilesAll = collected.allFiles.filter(
+        (f) => f.loc > fileOutlierCutoff,
+      )
+
+      const outlierFunctions = outlierFunctionsAll
+        .slice()
+        .sort((a, b) => b.loc - a.loc)
+        .slice(0, config.top_n_diagnostics)
+      const outlierFiles = outlierFilesAll
+        .slice()
+        .sort((a, b) => b.loc - a.loc)
+        .slice(0, config.top_n_diagnostics)
+      const totalEntities = allFunctions.length + collected.allFiles.length
+      const oversize = outlierFunctionsAll.length + outlierFilesAll.length
+      const ratioPressure =
+        totalEntities === 0 ? 0 : Math.min(1, (oversize / totalEntities) * 2)
+      const maxFunctionLoc = functionSizes.max
+      const maxFileLoc = fileSizes.max
+      const maxFunctionPressure =
+        maxFunctionLoc <= config.max_function_loc || maxFunctionLoc === 0
+          ? 0
+          : (maxFunctionLoc - config.max_function_loc) / maxFunctionLoc
+      const maxFilePressure =
+        maxFileLoc <= config.max_file_loc || maxFileLoc === 0
+          ? 0
+          : (maxFileLoc - config.max_file_loc) / maxFileLoc
+
+      return {
+        byFile,
+        fileSizes,
+        functionSizes,
+        outlierFunctionCount: outlierFunctionsAll.length,
+        outlierFileCount: outlierFilesAll.length,
+        totalFunctions: allFunctions.length,
+        totalFiles: collected.allFiles.length,
+        functionOutlierCutoff,
+        fileOutlierCutoff,
+        outlierFunctions,
+        outlierFiles,
+        calibrationDecisions,
+        ratioPressure,
+        maxFunctionPressure,
+        maxFilePressure,
+      }
     }),
   score: (out) => {
     const totalEntities = out.totalFunctions + out.totalFiles
@@ -356,19 +371,23 @@ const buildEffectiveLineCounter = (text: string): EffectiveLineCounter => {
 const collectFunctionSizes = (
   sourceFile: SourceFile,
   locCounter: EffectiveLineCounter,
-): ReadonlyArray<FunctionSize> => {
+): ReadonlyArray<FunctionSizeCandidate> => {
   const compilerSourceFile = sourceFile.compilerNode
   const file = sourceFile.getFilePath()
-  const functions: Array<FunctionSize> = []
+  const functions: Array<FunctionSizeCandidate> = []
 
   const visit = (node: ts.Node): void => {
     if (isCompilerFunctionLike(node)) {
       const start = node.getStart(compilerSourceFile)
+      const nameInfo = functionName(node)
       functions.push({
         file,
-        name: functionName(node),
+        name: nameInfo.name,
         line: compilerSourceFile.getLineAndCharacterOfPosition(start).line + 1,
         loc: functionLoc(node, compilerSourceFile, locCounter),
+        ...(nameInfo.callbackContext !== undefined
+          ? { callbackContext: nameInfo.callbackContext }
+          : {}),
       })
     }
 
@@ -394,52 +413,181 @@ const functionLoc = (
 const getFunctionBodyNode = (fn: CompilerFunctionLike): ts.Node | undefined =>
   "body" in fn ? fn.body : undefined
 
-const functionName = (fn: CompilerFunctionLike): string => {
+const toSignalComputeError = (cause: unknown): SignalComputeError =>
+  cause instanceof SignalComputeError
+    ? cause
+    : new SignalComputeError({ signalId: "TS-LD-02", message: String(cause), cause })
+
+const calibrateFunctionNames = (
+  candidates: ReadonlyArray<FunctionSizeCandidate>,
+  calibration: Option.Option<ResolvedCalibrationContext>,
+): Effect.Effect<
+  {
+    readonly functions: ReadonlyArray<FunctionSize>
+    readonly calibrationDecisions: ReadonlyArray<CalibrationDecision>
+  },
+  CalibrationProcessorError,
+  never
+> =>
+  Effect.gen(function* () {
+    if (Option.isNone(calibration)) {
+      return { functions: candidates, calibrationDecisions: [] }
+    }
+
+    const functions: Array<FunctionSize> = []
+    const calibrationDecisions: Array<CalibrationDecision> = []
+    for (const candidate of candidates) {
+      const callbackContext = candidate.callbackContext
+      if (callbackContext === undefined) {
+        functions.push(stripFunctionNameCalibration(candidate))
+        continue
+      }
+
+      const result = yield* calibration.value.runSlot("typescript.callback-context-namer", {
+        file: candidate.file,
+        line: candidate.line,
+        ...callbackContext,
+      })
+      calibrationDecisions.push(...result.decisions)
+      functions.push({
+        file: candidate.file,
+        line: candidate.line,
+        loc: candidate.loc,
+        name: result.value.resolvedName,
+      })
+    }
+
+    return { functions, calibrationDecisions }
+  })
+
+const stripFunctionNameCalibration = (
+  candidate: FunctionSizeCandidate,
+): FunctionSize => ({
+  file: candidate.file,
+  name: candidate.name,
+  line: candidate.line,
+  loc: candidate.loc,
+})
+
+const functionName = (fn: CompilerFunctionLike): {
+  readonly name: string
+  readonly callbackContext?: FunctionNameCalibrationInput
+} => {
   if (
     ts.isFunctionDeclaration(fn) ||
     ts.isMethodDeclaration(fn) ||
     ts.isFunctionExpression(fn)
   ) {
     const name = fn.name
-    if (name !== undefined) return propertyNameText(name)
+    if (name !== undefined) return { name: propertyNameText(name) }
   }
   if (ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)) {
     const parent = fn.parent
     if (ts.isVariableDeclaration(parent) && ts.isIdentifier(parent.name)) {
-      return parent.name.text
+      return { name: parent.name.text }
     }
     if (ts.isPropertyAssignment(parent)) {
-      return propertyNameText(parent.name)
+      return objectPropertyFunctionName(parent)
     }
-    const callbackName = contextualCallbackName(fn)
-    if (callbackName !== undefined) return callbackName
+    if (ts.isCallExpression(parent)) return callExpressionCallbackName(parent, fn)
   }
-  if (ts.isConstructorDeclaration(fn)) return "<constructor>"
-  if (ts.isGetAccessorDeclaration(fn)) return `<get ${propertyNameText(fn.name)}>`
-  if (ts.isSetAccessorDeclaration(fn)) return `<set ${propertyNameText(fn.name)}>`
-  return "<anonymous>"
+  if (ts.isConstructorDeclaration(fn)) return { name: "<constructor>" }
+  if (ts.isGetAccessorDeclaration(fn)) return { name: `<get ${propertyNameText(fn.name)}>` }
+  if (ts.isSetAccessorDeclaration(fn)) return { name: `<set ${propertyNameText(fn.name)}>` }
+  return { name: "<anonymous>" }
 }
 
-const contextualCallbackName = (
-  fn: ts.ArrowFunction | ts.FunctionExpression,
-): string | undefined => {
-  if (!ts.isCallExpression(fn.parent)) return undefined
-  const callee = expressionName(fn.parent.expression)
-  const owner = nearestCallbackOwnerName(fn.parent)
+const objectPropertyFunctionName = (
+  property: ts.PropertyAssignment,
+): {
+  readonly name: string
+  readonly callbackContext?: FunctionNameCalibrationInput
+} => {
+  const objectLiteral = property.parent
+  if (!ts.isObjectLiteralExpression(objectLiteral)) {
+    return { name: propertyNameText(property.name) }
+  }
 
-  if (owner !== undefined && callee !== undefined) return `${owner}/${callee}`
-  if (owner !== undefined) return `${owner} callback`
-  if (callee !== undefined) return `${callee} callback`
-  return undefined
+  const call = objectLiteral.parent
+  if (!ts.isCallExpression(call)) {
+    return { name: propertyNameText(property.name) }
+  }
+
+  const propertyName = propertyNameText(property.name)
+  const callee = expressionName(call.expression)
+  const owner = nearestCallbackOwnerName(call)
+  const resolvedName =
+    owner !== undefined && callee !== undefined
+      ? `${owner}/${callee}/${propertyName}`
+      : owner !== undefined
+      ? `${owner}/${propertyName}`
+      : callee !== undefined
+      ? `${callee}/${propertyName}`
+      : propertyName
+
+  return {
+    name: resolvedName,
+    callbackContext: {
+      fallbackName: propertyName,
+      resolvedName,
+      metadata: {
+        ...(callee !== undefined ? { calleeText: callee } : {}),
+        ...(owner !== undefined ? { ownerName: owner } : {}),
+        propertyName,
+      },
+    },
+  }
+}
+
+const callExpressionCallbackName = (
+  call: ts.CallExpression,
+  fn: ts.ArrowFunction | ts.FunctionExpression,
+): {
+  readonly name: string
+  readonly callbackContext?: FunctionNameCalibrationInput
+} => {
+  const callee = expressionName(call.expression)
+  const owner = nearestCallbackOwnerName(call)
+  const effectFnLabel = effectFnLabelFromOuterCall(call)
+  const resolvedName =
+    owner !== undefined && callee !== undefined
+      ? `${owner}/${callee}`
+      : owner !== undefined
+      ? `${owner} callback`
+      : callee !== undefined
+      ? `${callee} callback`
+      : "<anonymous>"
+
+  return {
+    name: resolvedName,
+    callbackContext: {
+      fallbackName: "<anonymous>",
+      resolvedName,
+      metadata: {
+        ...(callee !== undefined ? { calleeText: callee } : {}),
+        ...(owner !== undefined ? { ownerName: owner } : {}),
+        ...(effectFnLabel !== undefined ? { effectFnLabel } : {}),
+        argumentIndex: call.arguments.findIndex((arg) => arg === fn),
+      },
+    },
+  }
 }
 
 const nearestCallbackOwnerName = (node: ts.Node): string | undefined => {
   let current: ts.Node | undefined = node.parent
-  while (current !== undefined) {
+  while (current !== undefined && !ts.isSourceFile(current)) {
     if (ts.isVariableDeclaration(current) && ts.isIdentifier(current.name)) {
       return current.name.text
     }
     if (ts.isPropertyAssignment(current)) {
+      return propertyNameText(current.name)
+    }
+    if (
+      (ts.isFunctionDeclaration(current) ||
+        ts.isMethodDeclaration(current) ||
+        ts.isFunctionExpression(current)) &&
+      current.name !== undefined
+    ) {
       return propertyNameText(current.name)
     }
     current = current.parent
@@ -453,5 +601,14 @@ const expressionName = (expression: ts.Expression): string | undefined => {
     const left = expressionName(expression.expression)
     return left === undefined ? expression.name.text : `${left}.${expression.name.text}`
   }
+  if (ts.isCallExpression(expression)) return expressionName(expression.expression)
   return undefined
+}
+
+const effectFnLabelFromOuterCall = (call: ts.CallExpression): string | undefined => {
+  const expression = call.expression
+  if (!ts.isCallExpression(expression)) return undefined
+  if (expressionName(expression.expression) !== "Effect.fn") return undefined
+  const label = expression.arguments[0]
+  return label !== undefined && ts.isStringLiteral(label) ? label.text : undefined
 }

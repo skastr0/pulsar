@@ -1,6 +1,15 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
 import { TsLd01 } from "../signals/ts-ld-01-complexity.js"
+import { Effect, Layer } from "effect"
+import {
+  CalibrationContextTag,
+  defineCalibrationProcessor,
+  makeResolvedCalibrationContext,
+  appendCalibrationDecision,
+  type RepoFacts,
+} from "@skastr0/pulsar-core"
+import { TsProjectLayer } from "../ts-project.js"
 
 describe("TS-LD-01 (cyclomatic complexity)", () => {
   let repo: TempRepo
@@ -41,10 +50,86 @@ export function outer(items: Array<number>) {
 
     const out = await runSignal(repo.root, TsLd01, TsLd01.defaultConfig)
     const outer = out.functions.find((fn) => fn.name === "outer")
-    const callback = out.functions.find((fn) => fn.name === "<anonymous>")
+    const callback = out.functions.find((fn) => fn.name === "outer/items.map")
 
     expect(outer?.complexity).toBe(1)
     expect(callback?.complexity).toBe(3)
+  })
+
+  test("calibrates callback context names with attribution", async () => {
+    await repo.write(
+      "src/index.ts",
+      `
+const Effect = {
+  fn: (_label: string) => (body: unknown) => body,
+}
+
+export const create = Effect.fn("Session.create")(function* (_input: unknown) {
+  if (ready() && enabled()) return yield* run()
+  return yield* fallback()
+})
+`,
+    )
+
+    const processor = defineCalibrationProcessor({
+      id: "effect-callback-names",
+      moduleId: "acme.effect",
+      moduleVersion: "1.0.0",
+      slot: "typescript.callback-context-namer",
+      role: "enricher",
+      priority: 10,
+      fingerprint: "effect-callback-names-v1",
+      process: (current) =>
+        Effect.sync(() => {
+          const label = current.value.metadata?.effectFnLabel
+          if (label !== "Session.create") return current
+          return appendCalibrationDecision(
+            current,
+            {
+              moduleId: "acme.effect",
+              processorId: "effect-callback-names",
+              slot: "typescript.callback-context-namer",
+              action: "name-callback-context",
+              confidence: "high",
+              reason: "Effect.fn label provides the callback's operation name",
+              ruleId: "effect.callback-context-name.v1",
+              evidence: [{ kind: "symbol", value: label }],
+            },
+            {
+              ...current.value,
+              resolvedName: label,
+            },
+          )
+        }),
+    })
+    const repoFacts: RepoFacts = {
+      repoRoot: repo.root,
+      fingerprint: "repo-facts-v1",
+      detectedTechnologies: ["effect", "typescript"],
+      sourceExtensions: [".ts"],
+    }
+    const calibrationContext = makeResolvedCalibrationContext({
+      repoFacts,
+      processors: [processor],
+    })
+
+    const out = await Effect.runPromise(
+      TsLd01.compute(TsLd01.defaultConfig, new Map()).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            TsProjectLayer(repo.root),
+            Layer.succeed(CalibrationContextTag, calibrationContext),
+          ),
+        ),
+      ),
+    )
+
+    expect(out.functions.find((fn) => fn.name === "Session.create")?.complexity).toBe(3)
+    expect(out.calibrationDecisions[0]).toMatchObject({
+      moduleId: "acme.effect",
+      processorId: "effect-callback-names",
+      ruleId: "effect.callback-context-name.v1",
+    })
   })
 
   test("names object-property callbacks with callsite context", async () => {

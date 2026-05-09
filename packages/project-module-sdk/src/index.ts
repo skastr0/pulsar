@@ -20,6 +20,7 @@ import {
   type CalibrationSlotOutput,
   type CalibrationSlotResult,
   type SourceCategory,
+  type TypeScriptCallbackContextNameValue,
   type TypeScriptExportReachabilityValue,
   type TypeScriptNoopClassificationValue,
   type ProjectModuleDescriptor,
@@ -125,6 +126,16 @@ export interface ClassifyTypeScriptNoopOptions {
 }
 
 export interface MarkTypeScriptPublicEntrypointOptions {
+  readonly confidence?: CalibrationDecision["confidence"]
+  readonly action?: string
+  readonly reason: string
+  readonly ruleId?: string
+  readonly evidence?: ReadonlyArray<CalibrationEvidenceRef>
+  readonly metadata?: Readonly<Record<string, unknown>>
+}
+
+export interface NameTypeScriptCallbackContextOptions {
+  readonly resolvedName: string
   readonly confidence?: CalibrationDecision["confidence"]
   readonly action?: string
   readonly reason: string
@@ -318,6 +329,31 @@ export const markTypeScriptExportPublicEntrypoint = (
     runtime,
     {
       action: options.action ?? "mark-public-entrypoint",
+      confidence: options.confidence ?? "high",
+      reason: options.reason,
+      ...(options.ruleId !== undefined ? { ruleId: options.ruleId } : {}),
+      ...(options.evidence !== undefined ? { evidence: options.evidence } : {}),
+    },
+    nextValue,
+  )
+}
+
+export const nameTypeScriptCallbackContext = (
+  current: CalibrationSlotOutput<"typescript.callback-context-namer">,
+  runtime: ProjectModuleProcessorRuntime<"typescript.callback-context-namer">,
+  options: NameTypeScriptCallbackContextOptions,
+): CalibrationSlotOutput<"typescript.callback-context-namer"> => {
+  const metadata = mergeMetadata(current.value.metadata, options.metadata)
+  const nextValue: TypeScriptCallbackContextNameValue = {
+    ...current.value,
+    resolvedName: options.resolvedName,
+    ...(metadata !== undefined ? { metadata } : {}),
+  }
+  return appendProjectModuleDecision(
+    current,
+    runtime,
+    {
+      action: options.action ?? "name-callback-context",
       confidence: options.confidence ?? "high",
       reason: options.reason,
       ...(options.ruleId !== undefined ? { ruleId: options.ruleId } : {}),

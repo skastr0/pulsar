@@ -2,7 +2,14 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { Effect, Schema } from "effect"
+import { Effect, Layer, Schema } from "effect"
+import {
+  CalibrationContextTag,
+  appendCalibrationDecision,
+  defineCalibrationProcessor,
+  makeResolvedCalibrationContext,
+  type RepoFacts,
+} from "@skastr0/pulsar-core"
 import {
   TsLd02,
   TsLd02Config,
@@ -322,5 +329,85 @@ describe("TS-LD-02 (function / file size distribution)", () => {
 
     expect(out.outlierFunctions[0]?.name).toBe("SessionRegistryLive/Effect.gen")
     expect(TsLd02.diagnose(out)[0]?.message).toContain("SessionRegistryLive/Effect.gen")
+  })
+
+  test("calibrates outlier callback names with attribution", async () => {
+    const body = Array.from({ length: 8 }, (_, index) => `  const value${index} = ${index}`)
+    await writeTs(
+      "service.ts",
+      [
+        "declare const Effect: { fn: (label: string) => (body: unknown) => unknown }",
+        ...Array.from({ length: 20 }, (_, index) => `export function tiny${index}() { return ${index} }`),
+        "export const create = Effect.fn(\"Session.create\")(function* (_input: unknown) {",
+        ...body,
+        "  return yield* run()",
+        "})",
+        "",
+      ].join("\n"),
+    )
+
+    const processor = defineCalibrationProcessor({
+      id: "effect-callback-names",
+      moduleId: "acme.effect",
+      moduleVersion: "1.0.0",
+      slot: "typescript.callback-context-namer",
+      role: "enricher",
+      priority: 10,
+      fingerprint: "effect-callback-names-v1",
+      process: (current) =>
+        Effect.sync(() => {
+          const label = current.value.metadata?.effectFnLabel
+          if (label !== "Session.create") return current
+          return appendCalibrationDecision(
+            current,
+            {
+              moduleId: "acme.effect",
+              processorId: "effect-callback-names",
+              slot: "typescript.callback-context-namer",
+              action: "name-callback-context",
+              confidence: "high",
+              reason: "Effect.fn label provides the callback's operation name",
+              ruleId: "effect.callback-context-name.v1",
+              evidence: [{ kind: "symbol", value: label }],
+            },
+            {
+              ...current.value,
+              resolvedName: label,
+            },
+          )
+        }),
+    })
+    const repoFacts: RepoFacts = {
+      repoRoot: repo,
+      fingerprint: "repo-facts-v1",
+      detectedTechnologies: ["effect", "typescript"],
+      sourceExtensions: [".ts"],
+    }
+    const calibrationContext = makeResolvedCalibrationContext({
+      repoFacts,
+      processors: [processor],
+    })
+
+    const out = await Effect.runPromise(
+      TsLd02.compute({
+        ...TsLd02.defaultConfig,
+        max_function_loc: 2,
+        max_file_loc: 100,
+      }, new Map()).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            TsProjectLayer(repo),
+            Layer.succeed(CalibrationContextTag, calibrationContext),
+          ),
+        ),
+      ) as Effect.Effect<TsLd02Output, unknown, never>,
+    )
+
+    expect(out.outlierFunctions[0]?.name).toBe("Session.create")
+    expect(out.calibrationDecisions[0]).toMatchObject({
+      moduleId: "acme.effect",
+      processorId: "effect-callback-names",
+      ruleId: "effect.callback-context-name.v1",
+    })
   })
 })

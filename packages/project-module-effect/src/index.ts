@@ -3,11 +3,14 @@ import {
   classifyTypeScriptNoop,
   defineProcessor,
   defineProjectModule,
+  nameTypeScriptCallbackContext,
+  type TypeScriptCallbackContextNameValue,
   type TypeScriptNoopClassificationValue,
 } from "@skastr0/pulsar-project-module-sdk"
 
 export const EFFECT_PROJECT_MODULE_ID = "@skastr0/pulsar-project-module-effect" as const
 export const EFFECT_OR_ELSE_SUCCEED_NOOP_RULE_ID = "effect.orElseSucceed.fallback-noop.v1" as const
+export const EFFECT_CALLBACK_CONTEXT_NAME_RULE_ID = "effect.callback-context-name.v1" as const
 
 export const effectProjectModule = defineProjectModule({
   id: EFFECT_PROJECT_MODULE_ID,
@@ -37,6 +40,29 @@ export const effectProjectModule = defineProjectModule({
           })
         }),
     }),
+    defineProcessor({
+      id: "effect-callback-context-names",
+      slot: "typescript.callback-context-namer",
+      role: "enricher",
+      priority: 20,
+      fingerprint: "effect-callback-context-names-v1",
+      process: (current, _context, runtime) =>
+        Effect.sync(() => {
+          const resolvedName = resolveEffectCallbackContextName(current.value)
+          if (resolvedName === undefined || resolvedName === current.value.resolvedName) {
+            return current
+          }
+
+          return nameTypeScriptCallbackContext(current, runtime, {
+            resolvedName,
+            confidence: "high",
+            ruleId: EFFECT_CALLBACK_CONTEXT_NAME_RULE_ID,
+            reason: "Effect callback context provides a more precise operation name",
+            evidence: effectCallbackContextEvidence(current.value),
+            metadata: { technology: "effect" },
+          })
+        }),
+    }),
   ],
 })
 
@@ -53,5 +79,88 @@ const isEmptyFunctionText = (text: string | undefined): boolean => {
   return /^(?:async\s+)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>\s*\{\s*\}$/.test(text.trim()) ||
     /^function(?:\s+[A-Za-z_$][\w$]*)?\s*\([^)]*\)\s*\{\s*\}$/.test(text.trim())
 }
+
+export const resolveEffectCallbackContextName = (
+  value: TypeScriptCallbackContextNameValue,
+): string | undefined => {
+  const metadata = value.metadata ?? {}
+  const label = nonEmptyString(metadata.effectFnLabel)
+  if (label !== undefined) return label
+
+  const calleeText = nonEmptyString(metadata.calleeText)
+  if (calleeText === undefined || !isEffectCallee(calleeText)) return undefined
+
+  const ownerName = nonEmptyString(metadata.ownerName)
+  const propertyName = nonEmptyString(metadata.propertyName)
+  const argumentRole = effectArgumentRole(calleeText, numericMetadata(metadata.argumentIndex))
+
+  const tail = [normalizedEffectCallee(calleeText), propertyName ?? argumentRole]
+    .filter((part): part is string => part !== undefined)
+    .join("/")
+
+  if (tail.length === 0) return undefined
+  return ownerName === undefined ? tail : `${ownerName}/${tail}`
+}
+
+const effectCallbackContextEvidence = (
+  value: TypeScriptCallbackContextNameValue,
+) => {
+  const evidence = [
+    { kind: "path", value: value.file },
+    { kind: "line", value: String(value.line) },
+  ]
+  const calleeText = nonEmptyString(value.metadata?.calleeText)
+  if (calleeText !== undefined) {
+    evidence.push({ kind: "symbol", value: calleeText })
+  }
+  const label = nonEmptyString(value.metadata?.effectFnLabel)
+  if (label !== undefined) {
+    evidence.push({ kind: "symbol", value: label })
+  }
+  return evidence
+}
+
+const EFFECT_CALLEE_NAMES = new Set([
+  "Effect.acquireUseRelease",
+  "Effect.all",
+  "Effect.async",
+  "Effect.fn",
+  "Effect.forEach",
+  "Effect.gen",
+  "Effect.promise",
+  "Effect.sync",
+  "Effect.try",
+  "Effect.tryPromise",
+  "Layer.effect",
+  "Layer.scoped",
+  "Layer.sync",
+])
+
+const isEffectCallee = (calleeText: string): boolean =>
+  EFFECT_CALLEE_NAMES.has(normalizedEffectCallee(calleeText))
+
+const normalizedEffectCallee = (calleeText: string): string =>
+  calleeText.replace(/\s+/g, "")
+
+const effectArgumentRole = (
+  calleeText: string,
+  argumentIndex: number | undefined,
+): string | undefined => {
+  const callee = normalizedEffectCallee(calleeText)
+  if (callee === "Effect.forEach" && argumentIndex === 1) return "each"
+  if (callee === "Effect.acquireUseRelease") {
+    if (argumentIndex === 0) return "acquire"
+    if (argumentIndex === 1) return "use"
+    if (argumentIndex === 2) return "release"
+  }
+  if (callee === "Effect.async" || callee === "Effect.promise") return "register"
+  return undefined
+}
+
+const nonEmptyString = (value: unknown): string | undefined =>
+  typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined
+
+const numericMetadata = (value: unknown): number | undefined =>
+  typeof value === "number" && Number.isInteger(value) ? value : undefined
 
 export default effectProjectModule

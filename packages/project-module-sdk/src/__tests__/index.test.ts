@@ -15,6 +15,7 @@ import {
   loadProjectModuleRef,
   makeResolvedCalibrationContext,
   markTypeScriptExportPublicEntrypoint,
+  nameTypeScriptCallbackContext,
   type RepoFacts,
 } from "../index.js"
 
@@ -255,6 +256,57 @@ describe("project module sdk", () => {
       processorId: "runtime-entrypoints",
       slot: "typescript.export-reachability",
       action: "mark-public-entrypoint",
+      confidence: "high",
+    })
+  })
+
+  test("processor runtime helpers name TypeScript callback contexts", async () => {
+    const module = defineProjectModule({
+      id: "acme.effect",
+      version: "1.0.0",
+      scope: "technology",
+      processors: [
+        defineProcessor({
+          id: "effect-callback-names",
+          slot: "typescript.callback-context-namer",
+          role: "enricher",
+          fingerprint: "effect-callback-names-v1",
+          process: (current, _context, runtime) =>
+            Effect.sync(() =>
+              nameTypeScriptCallbackContext(current, runtime, {
+                resolvedName: "Session.create",
+                reason: "Effect.fn label provides the callback's operation name",
+                ruleId: "effect.callback-context-name.v1",
+                evidence: [{ kind: "symbol", value: "Session.create" }],
+                metadata: { technology: "effect" },
+              }),
+            ),
+        }),
+      ],
+    })
+    const context = makeResolvedCalibrationContext({
+      repoFacts,
+      activeModules: [module.activeModule],
+      processors: module.processors,
+    })
+
+    const result = await Effect.runPromise(
+      context.runSlot("typescript.callback-context-namer", {
+        file: "/repo/src/session.ts",
+        line: 12,
+        fallbackName: "<anonymous>",
+        resolvedName: "create/Effect.fn",
+      }),
+    )
+
+    expect(result.value.resolvedName).toBe("Session.create")
+    expect(result.value.metadata).toMatchObject({ technology: "effect" })
+    expect(result.decisions[0]).toMatchObject({
+      moduleId: "acme.effect",
+      processorId: "effect-callback-names",
+      slot: "typescript.callback-context-namer",
+      action: "name-callback-context",
+      ruleId: "effect.callback-context-name.v1",
       confidence: "high",
     })
   })

@@ -1,11 +1,16 @@
 import {
+  CalibrationContextTag,
+  type CalibrationDecision,
+  type CalibrationProcessorError,
   type Diagnostic,
   type DistributionalSummary,
+  type ResolvedCalibrationContext,
   type Signal,
   SignalComputeError,
   summarize,
+  type TypeScriptCallbackContextNameValue,
 } from "@skastr0/pulsar-core"
-import { Effect, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 import {
   type SourceFile,
   SyntaxKind,
@@ -26,6 +31,12 @@ type MutableFunctionComplexity = {
   complexity: number
 }
 
+type FunctionNameCalibrationInput = Omit<TypeScriptCallbackContextNameValue, "file" | "line">
+
+type FunctionComplexityCandidate = FunctionComplexity & {
+  readonly callbackContext?: FunctionNameCalibrationInput
+}
+
 export const TsLd01Config = Schema.Struct({
   max_complexity: Schema.Number,
   top_n_diagnostics: Schema.Number,
@@ -42,6 +53,7 @@ export interface FunctionComplexity {
 
 export interface TsLd01Output {
   readonly functions: ReadonlyArray<FunctionComplexity>
+  readonly calibrationDecisions: ReadonlyArray<CalibrationDecision>
   readonly byFile: ReadonlyMap<string, DistributionalSummary>
   readonly overThresholdCount: number
   readonly totalFunctions: number
@@ -67,7 +79,7 @@ export const TsLd01: Signal<TsLd01Config, TsLd01Output, TsProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "local-max-pressure-v1",
+  cacheVersion: "callback-context-calibration-v1",
   configSchema: TsLd01Config,
   defaultConfig: {
     max_complexity: 20,
@@ -78,56 +90,63 @@ export const TsLd01: Signal<TsLd01Config, TsLd01Output, TsProjectTag> = {
   compute: (config) =>
     Effect.gen(function* () {
       const project = yield* TsProjectTag
-      const result = yield* Effect.try({
-        try: (): TsLd01Output => {
-          const functions: Array<FunctionComplexity> = []
-          const perFileValues = new Map<string, Array<number>>()
+      const calibration = yield* Effect.serviceOption(CalibrationContextTag)
+      const candidates = yield* Effect.try({
+        try: (): ReadonlyArray<FunctionComplexityCandidate> => {
+          const functions: Array<FunctionComplexityCandidate> = []
 
           for (const sf of project.getSourceFiles()) {
             const path = sf.getFilePath()
             if (isExcluded(path, config.exclude_globs)) continue
-            for (const fn of collectFunctionComplexities(sf)) {
-              functions.push(fn)
-              const bucket = perFileValues.get(path) ?? []
-              bucket.push(fn.complexity)
-              perFileValues.set(path, bucket)
-            }
+            functions.push(...collectFunctionComplexities(sf))
           }
 
-          const byFile = new Map<string, DistributionalSummary>()
-          for (const [path, values] of perFileValues) {
-            byFile.set(path, summarize(values))
-          }
-
-          const overThresholdCount = functions.filter(
-            (f) => f.complexity > config.max_complexity,
-          ).length
-          const maxComplexity = functions.reduce(
-            (max, f) => Math.max(max, f.complexity),
-            0,
-          )
-          const ratio =
-            functions.length === 0 ? 0 : overThresholdCount / functions.length
-          const ratioPressure = Math.min(1, ratio * 2)
-          const maxComplexityPressure =
-            maxComplexity <= config.max_complexity || maxComplexity === 0
-              ? 0
-              : (maxComplexity - config.max_complexity) / maxComplexity
-
-          return {
-            functions,
-            byFile,
-            overThresholdCount,
-            totalFunctions: functions.length,
-            maxComplexity,
-            ratioPressure,
-            maxComplexityPressure,
-          }
+          return functions
         },
-        catch: (cause) =>
-          new SignalComputeError({ signalId: "TS-LD-01", message: String(cause), cause }),
+        catch: toSignalComputeError,
       })
-      return result
+      const { functions, calibrationDecisions } = yield* calibrateFunctionNames(
+        candidates,
+        calibration,
+      ).pipe(Effect.mapError(toSignalComputeError))
+
+      const perFileValues = new Map<string, Array<number>>()
+      for (const fn of functions) {
+        const bucket = perFileValues.get(fn.file) ?? []
+        bucket.push(fn.complexity)
+        perFileValues.set(fn.file, bucket)
+      }
+
+      const byFile = new Map<string, DistributionalSummary>()
+      for (const [path, values] of perFileValues) {
+        byFile.set(path, summarize(values))
+      }
+
+      const overThresholdCount = functions.filter(
+        (f) => f.complexity > config.max_complexity,
+      ).length
+      const maxComplexity = functions.reduce(
+        (max, f) => Math.max(max, f.complexity),
+        0,
+      )
+      const ratio =
+        functions.length === 0 ? 0 : overThresholdCount / functions.length
+      const ratioPressure = Math.min(1, ratio * 2)
+      const maxComplexityPressure =
+        maxComplexity <= config.max_complexity || maxComplexity === 0
+          ? 0
+          : (maxComplexity - config.max_complexity) / maxComplexity
+
+      return {
+        functions,
+        calibrationDecisions,
+        byFile,
+        overThresholdCount,
+        totalFunctions: functions.length,
+        maxComplexity,
+        ratioPressure,
+        maxComplexityPressure,
+      }
     }),
   score: (out) => {
     if (out.totalFunctions === 0) return 1
@@ -154,19 +173,27 @@ export const TsLd01: Signal<TsLd01Config, TsLd01Output, TsProjectTag> = {
   },
 }
 
-const collectFunctionComplexities = (sourceFile: SourceFile): ReadonlyArray<FunctionComplexity> => {
+const collectFunctionComplexities = (
+  sourceFile: SourceFile,
+): ReadonlyArray<FunctionComplexityCandidate> => {
   const compilerSourceFile = sourceFile.compilerNode
   const file = sourceFile.getFilePath()
-  const functions: Array<MutableFunctionComplexity> = []
+  const functions: Array<MutableFunctionComplexity & {
+    callbackContext?: FunctionNameCalibrationInput
+  }> = []
 
   const visit = (node: ts.Node, currentFunction: MutableFunctionComplexity | undefined): void => {
     if (isCompilerFunctionLike(node)) {
       const start = node.getStart(compilerSourceFile)
+      const nameInfo = functionName(node)
       const fn = {
         file,
-        name: functionName(node),
+        name: nameInfo.name,
         line: compilerSourceFile.getLineAndCharacterOfPosition(start).line + 1,
         complexity: 1,
+        ...(nameInfo.callbackContext !== undefined
+          ? { callbackContext: nameInfo.callbackContext }
+          : {}),
       }
       functions.push(fn)
       ts.forEachChild(node, (child) => visit(child, fn))
@@ -194,49 +221,168 @@ const isComplexityOperator = (kind: SyntaxKind): boolean =>
   kind === SyntaxKind.BarBarToken ||
   kind === SyntaxKind.QuestionQuestionToken
 
-const functionName = (fn: CompilerFunctionLike): string => {
+const toSignalComputeError = (cause: unknown): SignalComputeError =>
+  cause instanceof SignalComputeError
+    ? cause
+    : new SignalComputeError({ signalId: "TS-LD-01", message: String(cause), cause })
+
+const calibrateFunctionNames = (
+  candidates: ReadonlyArray<FunctionComplexityCandidate>,
+  calibration: Option.Option<ResolvedCalibrationContext>,
+): Effect.Effect<
+  {
+    readonly functions: ReadonlyArray<FunctionComplexity>
+    readonly calibrationDecisions: ReadonlyArray<CalibrationDecision>
+  },
+  CalibrationProcessorError,
+  never
+> =>
+  Effect.gen(function* () {
+    if (Option.isNone(calibration)) {
+      return { functions: candidates, calibrationDecisions: [] }
+    }
+
+    const functions: Array<FunctionComplexity> = []
+    const calibrationDecisions: Array<CalibrationDecision> = []
+    for (const candidate of candidates) {
+      const callbackContext = candidate.callbackContext
+      if (callbackContext === undefined) {
+        functions.push(stripFunctionNameCalibration(candidate))
+        continue
+      }
+
+      const result = yield* calibration.value.runSlot("typescript.callback-context-namer", {
+        file: candidate.file,
+        line: candidate.line,
+        ...callbackContext,
+      })
+      calibrationDecisions.push(...result.decisions)
+      functions.push({
+        file: candidate.file,
+        line: candidate.line,
+        complexity: candidate.complexity,
+        name: result.value.resolvedName,
+      })
+    }
+
+    return { functions, calibrationDecisions }
+  })
+
+const stripFunctionNameCalibration = (
+  candidate: FunctionComplexityCandidate,
+): FunctionComplexity => ({
+  file: candidate.file,
+  name: candidate.name,
+  line: candidate.line,
+  complexity: candidate.complexity,
+})
+
+const functionName = (fn: CompilerFunctionLike): {
+  readonly name: string
+  readonly callbackContext?: FunctionNameCalibrationInput
+} => {
   if (
     ts.isFunctionDeclaration(fn) ||
     ts.isMethodDeclaration(fn) ||
     ts.isFunctionExpression(fn)
   ) {
     const name = fn.name
-    if (name !== undefined) return propertyNameText(name)
+    if (name !== undefined) return { name: propertyNameText(name) }
   }
-  if (ts.isConstructorDeclaration(fn)) return "constructor"
-  if (ts.isGetAccessorDeclaration(fn)) return `get ${propertyNameText(fn.name)}`
-  if (ts.isSetAccessorDeclaration(fn)) return `set ${propertyNameText(fn.name)}`
+  if (ts.isConstructorDeclaration(fn)) return { name: "constructor" }
+  if (ts.isGetAccessorDeclaration(fn)) return { name: `get ${propertyNameText(fn.name)}` }
+  if (ts.isSetAccessorDeclaration(fn)) return { name: `set ${propertyNameText(fn.name)}` }
 
   const parent = fn.parent
   if (ts.isVariableDeclaration(parent) && ts.isIdentifier(parent.name)) {
-    return parent.name.text
+    return { name: parent.name.text }
   }
   if (ts.isPropertyAssignment(parent)) {
-    return contextualObjectPropertyCallbackName(parent) ?? propertyNameText(parent.name)
+    return objectPropertyFunctionName(parent)
   }
   if (ts.isExportAssignment(parent)) {
-    return "<default export>"
+    return { name: "<default export>" }
   }
-  return "<anonymous>"
+  if ((ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)) && ts.isCallExpression(parent)) {
+    return callExpressionCallbackName(parent, fn)
+  }
+  return { name: "<anonymous>" }
 }
 
-const contextualObjectPropertyCallbackName = (
+const objectPropertyFunctionName = (
   property: ts.PropertyAssignment,
-): string | undefined => {
+): {
+  readonly name: string
+  readonly callbackContext?: FunctionNameCalibrationInput
+} => {
   const objectLiteral = property.parent
-  if (!ts.isObjectLiteralExpression(objectLiteral)) return undefined
+  if (!ts.isObjectLiteralExpression(objectLiteral)) {
+    return { name: propertyNameText(property.name) }
+  }
 
   const call = objectLiteral.parent
-  if (!ts.isCallExpression(call)) return undefined
+  if (!ts.isCallExpression(call)) {
+    return { name: propertyNameText(property.name) }
+  }
 
   const propertyName = propertyNameText(property.name)
   const callee = callExpressionName(call)
   const owner = nearestCallbackOwnerName(call)
+  const resolvedName =
+    owner !== undefined && callee !== undefined
+      ? `${owner}/${callee}/${propertyName}`
+      : owner !== undefined
+      ? `${owner}/${propertyName}`
+      : callee !== undefined
+      ? `${callee}/${propertyName}`
+      : propertyName
 
-  if (owner !== undefined && callee !== undefined) return `${owner}/${callee}/${propertyName}`
-  if (owner !== undefined) return `${owner}/${propertyName}`
-  if (callee !== undefined) return `${callee}/${propertyName}`
-  return undefined
+  return {
+    name: resolvedName,
+    callbackContext: {
+      fallbackName: propertyName,
+      resolvedName,
+      metadata: {
+        ...(callee !== undefined ? { calleeText: callee } : {}),
+        ...(owner !== undefined ? { ownerName: owner } : {}),
+        propertyName,
+      },
+    },
+  }
+}
+
+const callExpressionCallbackName = (
+  call: ts.CallExpression,
+  fn: ts.ArrowFunction | ts.FunctionExpression,
+): {
+  readonly name: string
+  readonly callbackContext?: FunctionNameCalibrationInput
+} => {
+  const callee = callExpressionName(call)
+  const owner = nearestCallbackOwnerName(call)
+  const effectFnLabel = effectFnLabelFromOuterCall(call)
+  const resolvedName =
+    owner !== undefined && callee !== undefined
+      ? `${owner}/${callee}`
+      : owner !== undefined
+      ? `${owner} callback`
+      : callee !== undefined
+      ? `${callee} callback`
+      : "<anonymous>"
+
+  return {
+    name: resolvedName,
+    callbackContext: {
+      fallbackName: "<anonymous>",
+      resolvedName,
+      metadata: {
+        ...(callee !== undefined ? { calleeText: callee } : {}),
+        ...(owner !== undefined ? { ownerName: owner } : {}),
+        ...(effectFnLabel !== undefined ? { effectFnLabel } : {}),
+        argumentIndex: call.arguments.findIndex((arg) => arg === fn),
+      },
+    },
+  }
 }
 
 const nearestCallbackOwnerName = (node: ts.Node): string | undefined => {
@@ -265,7 +411,16 @@ const callExpressionName = (call: ts.CallExpression): string | undefined => {
   const expression = call.expression
   if (ts.isIdentifier(expression)) return expression.text
   if (ts.isPropertyAccessExpression(expression)) return propertyAccessName(expression)
+  if (ts.isCallExpression(expression)) return callExpressionName(expression)
   return undefined
+}
+
+const effectFnLabelFromOuterCall = (call: ts.CallExpression): string | undefined => {
+  const expression = call.expression
+  if (!ts.isCallExpression(expression)) return undefined
+  if (callExpressionName(expression) !== "Effect.fn") return undefined
+  const label = expression.arguments[0]
+  return label !== undefined && ts.isStringLiteral(label) ? label.text : undefined
 }
 
 const propertyAccessName = (node: ts.PropertyAccessExpression): string => {

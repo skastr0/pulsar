@@ -21,6 +21,7 @@ describe("TS-RP-01 path alignment", () => {
 
     const complexity: TsLd01Output = {
       functions: [],
+      calibrationDecisions: [],
       byFile: new Map([
         [aIndex, summarize([5])],
         [bIndex, summarize([30])],
@@ -63,6 +64,7 @@ describe("TS-RP-01 path alignment", () => {
     // avg-based would put flat ahead. max-based puts peak ahead.
     const complexity: TsLd01Output = {
       functions: [],
+      calibrationDecisions: [],
       byFile: new Map([
         [peakFile, summarize([...new Array(20).fill(1), 119])],
         [flatFile, summarize(new Array(20).fill(5))],

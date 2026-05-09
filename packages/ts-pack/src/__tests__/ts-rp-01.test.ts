@@ -7,6 +7,7 @@ import type { TsLd01Output } from "../signals/ts-ld-01-complexity.js"
 
 const mockComplexityOut: TsLd01Output = {
   functions: [],
+  calibrationDecisions: [],
   byFile: new Map([
     ["/repo/a.ts", summarize([5])],
     ["/repo/b.ts", summarize([25])],
@@ -62,6 +63,7 @@ describe("TS-RP-01 (compound)", () => {
         "TS-LD-01",
         {
           functions: [],
+          calibrationDecisions: [],
           byFile: new Map(),
           overThresholdCount: 0,
           totalFunctions: 0,
@@ -110,6 +112,7 @@ describe("TS-RP-01 (compound)", () => {
   test("soft threshold pressure creates multiple score levels near small-repo cutoffs", async () => {
     const thresholdComplexity: TsLd01Output = {
       functions: [],
+      calibrationDecisions: [],
       byFile: new Map([
         ["/repo/a.ts", summarize([4])],
         ["/repo/b.ts", summarize([5])],
