@@ -46,6 +46,6 @@ describe("cli", () => {
 
     expect(out.status).toBe(0)
     expect(out.stdout).toContain("not implemented yet")
-    expect(out.stdout).toContain("later Rust work item")
+    expect(out.stdout).toContain("later Rust glyph")
   }, 120_000)
 })

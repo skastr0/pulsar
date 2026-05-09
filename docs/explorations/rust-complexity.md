@@ -1,6 +1,6 @@
 # Rust-specific complexity metric exploration
 
-**Status**: Exploratory — Open Question Q3, work item TC-064  
+**Status**: Exploratory — Open Question Q3, glyph TC-064  
 **Date**: 2026-04-19  
 **Scope**: Research and prototype borrow-checker-aware complexity metrics
 

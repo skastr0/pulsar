@@ -48,7 +48,7 @@ export const PULSAR_SHARED_SIGNALS = SHARED_SIGNALS
 export const isReservedRustSignalId = (signalId: string): boolean => signalId.startsWith("RS-")
 
 export const formatReservedRustSignalMessage = (signalId: string): string =>
-  `Signal ${signalId} is not implemented yet. The Rust pack now supports RS-AD-* and RS-LD-* batch 1, but this signal still belongs to a later Rust work item.`
+  `Signal ${signalId} is not implemented yet. The Rust pack now supports RS-AD-* and RS-LD-* batch 1, but this signal still belongs to a later Rust glyph.`
 
 export interface PulsarRuntimeOptions {
   readonly timeSeries?: {

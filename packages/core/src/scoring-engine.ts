@@ -51,14 +51,14 @@ import {
  * TC-017 first cut: commit-level scoring engine with a content-hash cache
  * and ephemeral git worktrees.
  *
- * Scope (per the 2026-04-18 narrowing in the work item):
+ * Scope (per the 2026-04-18 narrowing in the glyph):
  *   - scoreCommit(repoPath, sha, signalId) => SignalRunResult
  *   - scoreRange(repoPath, fromSha, toSha, signalId, { concurrency })
  *   - In-memory cache keyed by (signalId, contentHash, configHash)
  *   - Parallel dispatch via Effect.forEach with configurable concurrency
  *   - Scope-bound worktree lifecycle (cleanup on interruption)
  *
- * Deferred (see work item):
+ * Deferred (see glyph):
  *   - Hunk-level incremental re-scoring (AC-3)
  *   - Persistent disk cache (AC-5)
  *   - 500-commit <5-min benchmark (AC-7)

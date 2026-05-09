@@ -29,7 +29,7 @@ Keep agent-facing pulsar feedback useful without turning the scoring system into
 - agent prompt surfaces only qualitative diagnostics and policy reminders
 - numeric scores stay out of the agent-facing system prompt
 - agent-facing context is derived from Pulsar's own observer and backpressure
-  state, not external agent packet history
+  state, not external agent dispatch history
 
 ## Implemented seams
 

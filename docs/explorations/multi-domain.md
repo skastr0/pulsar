@@ -1,6 +1,6 @@
 # Multi-domain packs exploration
 
-**Status**: Exploratory — Phase 8 work item TC-063  
+**Status**: Exploratory — Phase 8 glyph TC-063  
 **Date**: 2026-04-19  
 **Scope**: Extend Pulsar beyond code (writing, marketing, design)
 
