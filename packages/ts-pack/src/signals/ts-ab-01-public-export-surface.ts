@@ -61,7 +61,9 @@ export interface TsAb01Output {
  *   intentional curated API; log-scale penalty above that.
  */
 export const TsAb01: Signal<TsAb01Config, TsAb01Output, TsProjectTag> = {
-  id: "TS-AB-01",
+  id: "TS-AB-01-public-export-surface",
+  title: "Public export surface",
+  aliases: ["TS-AB-01"],
   tier: 1,
   category: "abstraction-bloat",
   kind: "legibility",
@@ -156,7 +158,7 @@ export const TsAb01: Signal<TsAb01Config, TsAb01Output, TsProjectTag> = {
         },
         catch: (cause) =>
           new SignalComputeError({
-            signalId: "TS-AB-01",
+            signalId: "TS-AB-01-public-export-surface",
             message: String(cause),
             cause,
           }),

@@ -93,7 +93,9 @@ interface TypeScriptSourceExportFacts {
 }
 
 export const TsAb02: Signal<TsAb02Config, TsAb02Output, TsProjectTag | TsPackageInfoTag> = {
-  id: "TS-AB-02",
+  id: "TS-AB-02-unused-exports",
+  title: "Unused exports",
+  aliases: ["TS-AB-02"],
   tier: 1,
   category: "abstraction-bloat",
   kind: "structural",
@@ -359,7 +361,7 @@ const calibrateExportReachability = (
 
 const toSignalComputeError = (cause: unknown): SignalComputeError =>
   new SignalComputeError({
-    signalId: "TS-AB-02",
+    signalId: "TS-AB-02-unused-exports",
     message: String(cause),
     cause,
   })

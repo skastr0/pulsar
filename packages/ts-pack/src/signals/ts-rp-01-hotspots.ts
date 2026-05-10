@@ -73,7 +73,9 @@ const median = (values: ReadonlyArray<number>): number => {
  * into a single threshold-crossing step function.
  */
 export const TsRp01: Signal<TsRp01Config, TsRp01Output, never> = {
-  id: "TS-RP-01",
+  id: "TS-RP-01-hotspots",
+  title: "Hotspots",
+  aliases: ["TS-RP-01"],
   tier: 1.5,
   category: "review-pain",
   kind: "compound",
@@ -85,10 +87,11 @@ export const TsRp01: Signal<TsRp01Config, TsRp01Output, never> = {
     threshold_softness: 0.5,
     peer_percentile_floor: 0.5,
   },
-  inputs: [{ id: "TS-LD-01" }, { id: "SHARED-CHURN-01" }],
+  inputs: [{ id: "TS-LD-01-cyclomatic-complexity" }, { id: "SHARED-CHURN-01" }],
   compute: (config, inputs) =>
     Effect.sync(() => {
-      const complexity = inputs.get("TS-LD-01") as TsLd01Output | undefined
+      const complexity = (inputs.get("TS-LD-01-cyclomatic-complexity") ??
+        inputs.get("TS-LD-01")) as TsLd01Output | undefined
       const churn = inputs.get("SHARED-CHURN-01") as SharedChurn01Output | undefined
       if (complexity === undefined || churn === undefined) {
         return {

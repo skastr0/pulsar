@@ -35,7 +35,9 @@ export interface TsAb05Output {
 }
 
 export const TsAb05: Signal<TsAb05Config, TsAb05Output, TsProjectTag> = {
-  id: "TS-AB-05",
+  id: "TS-AB-05-generic-proliferation",
+  title: "Generic proliferation",
+  aliases: ["TS-AB-05"],
   tier: 1,
   category: "abstraction-bloat",
   kind: "legibility",
@@ -125,7 +127,7 @@ export const TsAb05: Signal<TsAb05Config, TsAb05Output, TsProjectTag> = {
         },
         catch: (cause) =>
           new SignalComputeError({
-            signalId: "TS-AB-05",
+            signalId: "TS-AB-05-generic-proliferation",
             message: String(cause),
             cause,
           }),

@@ -66,7 +66,9 @@ export const TsAd01: Signal<
   TsAd01Output,
   TsProjectTag | SignalContextTag | ReferenceDataTag
 > = {
-  id: "TS-AD-01",
+  id: "TS-AD-01-boundary-violations",
+  title: "Module boundary violations",
+  aliases: ["TS-AD-01"],
   tier: 2,
   category: "architectural-drift",
   kind: "structural",
@@ -90,7 +92,7 @@ export const TsAd01: Signal<
       const referenceData = yield* ReferenceDataTag
       const packages = yield* Effect.mapError(discoverPackages(context.worktreePath), (cause) =>
         new SignalComputeError({
-          signalId: "TS-AD-01",
+          signalId: "TS-AD-01-boundary-violations",
           message: String(cause),
           cause,
         }),
@@ -161,7 +163,7 @@ export const TsAd01: Signal<
         },
         catch: (cause) =>
           new SignalComputeError({
-            signalId: "TS-AD-01",
+            signalId: "TS-AD-01-boundary-violations",
             message: String(cause),
             cause,
           }),

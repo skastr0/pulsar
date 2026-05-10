@@ -180,7 +180,8 @@ describe("TS-RP-01 (compound)", () => {
   test("composition via registry: compound sees its inputs after topological sort", async () => {
     const fakeLeaf = {
       ...TsRp01,
-      id: "TS-LD-01" as const,
+      id: "TS-LD-01-cyclomatic-complexity" as const,
+      aliases: ["TS-LD-01"],
       tier: 1 as const,
       kind: "legibility" as const,
       inputs: [],
@@ -191,6 +192,7 @@ describe("TS-RP-01 (compound)", () => {
     const fakeChurn = {
       ...TsRp01,
       id: "SHARED-CHURN-01" as const,
+      aliases: [],
       tier: 1 as const,
       kind: "legibility" as const,
       inputs: [],
@@ -204,7 +206,7 @@ describe("TS-RP-01 (compound)", () => {
     const result = await Effect.runPromise(
       runSignal(registry, "TS-RP-01") as Effect.Effect<any, any, never>,
     )
-    expect(result.signalId).toBe("TS-RP-01")
+    expect(result.signalId).toBe("TS-RP-01-hotspots")
     expect((result.output as any).totalFilesConsidered).toBe(4)
   })
 

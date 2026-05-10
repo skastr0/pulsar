@@ -49,7 +49,9 @@ export interface TsAd03Output {
 }
 
 export const TsAd03: Signal<TsAd03Config, TsAd03Output, TsProjectTag | SignalContextTag> = {
-  id: "TS-AD-03",
+  id: "TS-AD-03-reexport-depth",
+  title: "Re-export depth",
+  aliases: ["TS-AD-03"],
   tier: 1,
   category: "architectural-drift",
   kind: "structural",
@@ -149,7 +151,7 @@ export const TsAd03: Signal<TsAd03Config, TsAd03Output, TsProjectTag | SignalCon
         },
         catch: (cause) =>
           new SignalComputeError({
-            signalId: "TS-AD-03",
+            signalId: "TS-AD-03-reexport-depth",
             message: String(cause),
             cause,
           }),

@@ -38,7 +38,9 @@ export interface TsDe05Output {
 const UNSUPPORTED_LOCKFILES = ["yarn.lock"] as const
 
 export const TsDe05: Signal<TsDe05Config, TsDe05Output, SignalContextTag> = {
-  id: "TS-DE-05",
+  id: "TS-DE-05-duplicate-dependency-versions",
+  title: "Duplicate dependency versions",
+  aliases: ["TS-DE-05"],
   tier: 1,
   category: "dependency-entropy",
   kind: "structural",
@@ -95,7 +97,7 @@ export const TsDe05: Signal<TsDe05Config, TsDe05Output, SignalContextTag> = {
         },
         catch: (cause) =>
           new SignalComputeError({
-            signalId: "TS-DE-05",
+            signalId: "TS-DE-05-duplicate-dependency-versions",
             message: String(cause),
             cause,
           }),

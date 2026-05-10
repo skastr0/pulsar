@@ -45,7 +45,9 @@ export interface TsAb04Output {
 }
 
 export const TsAb04: Signal<TsAb04Config, TsAb04Output, TsProjectTag> = {
-  id: "TS-AB-04",
+  id: "TS-AB-04-interface-implementation-ratio",
+  title: "Interface implementation ratio",
+  aliases: ["TS-AB-04"],
   tier: 1,
   category: "abstraction-bloat",
   kind: "legibility",
@@ -145,7 +147,7 @@ export const TsAb04: Signal<TsAb04Config, TsAb04Output, TsProjectTag> = {
         },
         catch: (cause) =>
           new SignalComputeError({
-            signalId: "TS-AB-04",
+            signalId: "TS-AB-04-interface-implementation-ratio",
             message: String(cause),
             cause,
           }),

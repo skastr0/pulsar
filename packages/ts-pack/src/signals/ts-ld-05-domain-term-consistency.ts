@@ -66,7 +66,9 @@ interface ConflictCandidate {
 }
 
 export const TsLd05: Signal<TsLd05Config, TsLd05Output, TsProjectTag | ReferenceDataTag> = {
-  id: "TS-LD-05",
+  id: "TS-LD-05-domain-term-consistency",
+  title: "Domain term consistency",
+  aliases: ["TS-LD-05"],
   tier: 2,
   category: "legibility-decay",
   kind: "legibility",
@@ -128,7 +130,7 @@ export const TsLd05: Signal<TsLd05Config, TsLd05Output, TsProjectTag | Reference
         },
         catch: (cause) =>
           new SignalComputeError({
-            signalId: "TS-LD-05",
+            signalId: "TS-LD-05-domain-term-consistency",
             message: String(cause),
             cause,
           }),

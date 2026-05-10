@@ -57,7 +57,9 @@ export interface TsLd06Output {
 }
 
 export const TsLd06: Signal<TsLd06Config, TsLd06Output, TsProjectTag> = {
-  id: "TS-LD-06",
+  id: "TS-LD-06-annotation-coverage",
+  title: "Type annotation coverage",
+  aliases: ["TS-LD-06"],
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
@@ -192,7 +194,7 @@ export const TsLd06: Signal<TsLd06Config, TsLd06Output, TsProjectTag> = {
         },
         catch: (cause) =>
           new SignalComputeError({
-            signalId: "TS-LD-06",
+            signalId: "TS-LD-06-annotation-coverage",
             message: String(cause),
             cause,
           }),

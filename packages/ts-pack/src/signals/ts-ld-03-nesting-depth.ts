@@ -49,7 +49,9 @@ export interface TsLd03Output {
 }
 
 export const TsLd03: Signal<TsLd03Config, TsLd03Output, TsProjectTag> = {
-  id: "TS-LD-03",
+  id: "TS-LD-03-nesting-depth",
+  title: "Nesting depth",
+  aliases: ["TS-LD-03"],
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
@@ -140,7 +142,7 @@ export const TsLd03: Signal<TsLd03Config, TsLd03Output, TsProjectTag> = {
         },
         catch: (cause) =>
           new SignalComputeError({
-            signalId: "TS-LD-03",
+            signalId: "TS-LD-03-nesting-depth",
             message: String(cause),
             cause,
           }),

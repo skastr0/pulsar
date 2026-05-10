@@ -75,7 +75,9 @@ const BRANCHING_KINDS = new Set<SyntaxKind>([
 ])
 
 export const TsLd01: Signal<TsLd01Config, TsLd01Output, TsProjectTag> = {
-  id: "TS-LD-01",
+  id: "TS-LD-01-cyclomatic-complexity",
+  title: "Cyclomatic complexity",
+  aliases: ["TS-LD-01"],
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
@@ -224,7 +226,7 @@ const isComplexityOperator = (kind: SyntaxKind): boolean =>
 const toSignalComputeError = (cause: unknown): SignalComputeError =>
   cause instanceof SignalComputeError
     ? cause
-    : new SignalComputeError({ signalId: "TS-LD-01", message: String(cause), cause })
+    : new SignalComputeError({ signalId: "TS-LD-01-cyclomatic-complexity", message: String(cause), cause })
 
 const calibrateFunctionNames = (
   candidates: ReadonlyArray<FunctionComplexityCandidate>,

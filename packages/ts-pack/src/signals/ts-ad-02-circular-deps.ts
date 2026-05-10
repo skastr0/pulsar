@@ -79,7 +79,9 @@ export interface TsAd02Output {
  *   the full picture.
  */
 export const TsAd02: Signal<TsAd02Config, TsAd02Output, TsProjectTag> = {
-  id: "TS-AD-02",
+  id: "TS-AD-02-circular-dependencies",
+  title: "Circular dependencies",
+  aliases: ["TS-AD-02"],
   tier: 1,
   category: "architectural-drift",
   kind: "structural",
@@ -186,7 +188,7 @@ export const TsAd02: Signal<TsAd02Config, TsAd02Output, TsProjectTag> = {
         },
         catch: (cause) =>
           new SignalComputeError({
-            signalId: "TS-AD-02",
+            signalId: "TS-AD-02-circular-dependencies",
             message: String(cause),
             cause,
           }),

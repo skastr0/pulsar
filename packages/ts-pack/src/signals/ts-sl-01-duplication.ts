@@ -63,7 +63,9 @@ type CloneCandidate = {
 }
 
 export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalContextTag> = {
-  id: "TS-SL-01",
+  id: "TS-SL-01-duplication",
+  title: "Duplication",
+  aliases: ["TS-SL-01"],
   tier: 1,
   category: "generated-slop",
   kind: "legibility",
@@ -244,7 +246,7 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
           }
         },
         catch: (cause) =>
-          new SignalComputeError({ signalId: "TS-SL-01", message: String(cause), cause }),
+          new SignalComputeError({ signalId: "TS-SL-01-duplication", message: String(cause), cause }),
       })
     }),
   score: (out) => {

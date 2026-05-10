@@ -62,7 +62,9 @@ export interface TsLd07Output {
 }
 
 export const TsLd07: Signal<TsLd07Config, TsLd07Output, TsProjectTag> = {
-  id: "TS-LD-07",
+  id: "TS-LD-07-unsafe-type-erosion",
+  title: "Unsafe type erosion",
+  aliases: ["TS-LD-07"],
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
@@ -172,7 +174,7 @@ export const TsLd07: Signal<TsLd07Config, TsLd07Output, TsProjectTag> = {
         },
         catch: (cause) =>
           new SignalComputeError({
-            signalId: "TS-LD-07",
+            signalId: "TS-LD-07-unsafe-type-erosion",
             message: String(cause),
             cause,
           }),

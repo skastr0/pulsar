@@ -90,7 +90,9 @@ export interface TsLd02Output {
  *   metric first, hard gate later.
  */
 export const TsLd02: Signal<TsLd02Config, TsLd02Output, TsProjectTag> = {
-  id: "TS-LD-02",
+  id: "TS-LD-02-function-size-distribution",
+  title: "Function size distribution",
+  aliases: ["TS-LD-02"],
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
@@ -415,7 +417,7 @@ const getFunctionBodyNode = (fn: CompilerFunctionLike): ts.Node | undefined =>
 const toSignalComputeError = (cause: unknown): SignalComputeError =>
   cause instanceof SignalComputeError
     ? cause
-    : new SignalComputeError({ signalId: "TS-LD-02", message: String(cause), cause })
+    : new SignalComputeError({ signalId: "TS-LD-02-function-size-distribution", message: String(cause), cause })
 
 const calibrateFunctionNames = (
   candidates: ReadonlyArray<FunctionSizeCandidate>,

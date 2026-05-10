@@ -70,7 +70,9 @@ type WalkContext = {
 type TrackedDeclaration = TypeAliasDeclaration | InterfaceDeclaration | ClassDeclaration | EnumDeclaration
 
 export const TsAb03: Signal<TsAb03Config, TsAb03Output, TsProjectTag> = {
-  id: "TS-AB-03",
+  id: "TS-AB-03-type-indirection-depth",
+  title: "Type indirection depth",
+  aliases: ["TS-AB-03"],
   tier: 1,
   category: "abstraction-bloat",
   kind: "legibility",
@@ -181,7 +183,7 @@ export const TsAb03: Signal<TsAb03Config, TsAb03Output, TsProjectTag> = {
         },
         catch: (cause) =>
           new SignalComputeError({
-            signalId: "TS-AB-03",
+            signalId: "TS-AB-03-type-indirection-depth",
             message: String(cause),
             cause,
           }),

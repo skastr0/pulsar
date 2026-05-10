@@ -53,7 +53,9 @@ const IDENTIFIER_KINDS: ReadonlyArray<IdentifierDeclarationKind> = [
 ]
 
 export const TsLd04: Signal<TsLd04Config, TsLd04Output, TsProjectTag | ReferenceDataTag> = {
-  id: "TS-LD-04",
+  id: "TS-LD-04-naming-conventions",
+  title: "Naming convention consistency",
+  aliases: ["TS-LD-04"],
   tier: 2,
   category: "legibility-decay",
   kind: "legibility",
@@ -120,7 +122,7 @@ export const TsLd04: Signal<TsLd04Config, TsLd04Output, TsProjectTag | Reference
         },
         catch: (cause) =>
           new SignalComputeError({
-            signalId: "TS-LD-04",
+            signalId: "TS-LD-04-naming-conventions",
             message: String(cause),
             cause,
           }),

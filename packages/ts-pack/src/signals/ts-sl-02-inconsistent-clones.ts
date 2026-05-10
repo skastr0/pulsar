@@ -64,7 +64,9 @@ const ACTIONABLE_DIVERGENCE_THRESHOLD = 0.75
 const MIN_STRUCTURAL_DIVERGENCE_TOKENS = 30
 
 export const TsSl02: Signal<TsSl02Config, TsSl02Output, SignalContextTag> = {
-  id: "TS-SL-02",
+  id: "TS-SL-02-inconsistent-clones",
+  title: "Inconsistent clones",
+  aliases: ["TS-SL-02"],
   tier: 1.5,
   category: "generated-slop",
   kind: "compound",
@@ -77,11 +79,12 @@ export const TsSl02: Signal<TsSl02Config, TsSl02Output, SignalContextTag> = {
     max_groups_analyzed: 8,
     max_members_per_group: 16,
   },
-  inputs: [{ id: "TS-SL-01" }],
+  inputs: [{ id: "TS-SL-01-duplication" }],
   compute: (config, inputs) =>
     Effect.gen(function* () {
       const context = yield* SignalContextTag
-      const tsSl01Output = inputs.get("TS-SL-01") as TsSl01Output | undefined
+      const tsSl01Output = (inputs.get("TS-SL-01-duplication") ??
+        inputs.get("TS-SL-01")) as TsSl01Output | undefined
 
       if (tsSl01Output === undefined || tsSl01Output.groups.length === 0) {
         return {
@@ -205,7 +208,7 @@ export const TsSl02: Signal<TsSl02Config, TsSl02Output, SignalContextTag> = {
           }
         },
         catch: (cause) =>
-          new SignalComputeError({ signalId: "TS-SL-02", message: String(cause), cause }),
+          new SignalComputeError({ signalId: "TS-SL-02-inconsistent-clones", message: String(cause), cause }),
       })
     }),
   score: (out) => {

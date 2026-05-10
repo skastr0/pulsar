@@ -49,7 +49,9 @@ export interface TsDe02Output {
  *   the coupling-hub shape from the research literature.
  */
 export const TsDe02: Signal<TsDe02Config, TsDe02Output, TsProjectTag> = {
-  id: "TS-DE-02",
+  id: "TS-DE-02-fan-in-fan-out",
+  title: "Fan-in/fan-out",
+  aliases: ["TS-DE-02"],
   tier: 1,
   category: "dependency-entropy",
   kind: "structural",
@@ -111,7 +113,7 @@ export const TsDe02: Signal<TsDe02Config, TsDe02Output, TsProjectTag> = {
         },
         catch: (cause) =>
           new SignalComputeError({
-            signalId: "TS-DE-02",
+            signalId: "TS-DE-02-fan-in-fan-out",
             message: String(cause),
             cause,
           }),

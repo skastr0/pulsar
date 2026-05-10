@@ -57,7 +57,9 @@ export interface TsSl04Output {
 }
 
 export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalContextTag> = {
-  id: "TS-SL-04",
+  id: "TS-SL-04-unfinished-implementations",
+  title: "Unfinished implementations",
+  aliases: ["TS-SL-04"],
   tier: 1,
   category: "generated-slop",
   kind: "structural",
@@ -423,7 +425,7 @@ const syntaxKindName = (kind: SyntaxKind): string => SyntaxKind[kind] ?? String(
 const toSignalComputeError = (cause: unknown): SignalComputeError =>
   cause instanceof SignalComputeError
     ? cause
-    : new SignalComputeError({ signalId: "TS-SL-04", message: String(cause), cause })
+    : new SignalComputeError({ signalId: "TS-SL-04-unfinished-implementations", message: String(cause), cause })
 
 const createStub = (
   candidate: StubCandidate,

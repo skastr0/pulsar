@@ -38,7 +38,9 @@ export interface TsDe03Output {
 }
 
 export const TsDe03: Signal<TsDe03Config, TsDe03Output, TsProjectTag> = {
-  id: "TS-DE-03",
+  id: "TS-DE-03-propagation-cost",
+  title: "Propagation cost",
+  aliases: ["TS-DE-03"],
   tier: 1,
   category: "dependency-entropy",
   kind: "structural",
@@ -133,7 +135,7 @@ export const TsDe03: Signal<TsDe03Config, TsDe03Output, TsProjectTag> = {
         },
         catch: (cause) =>
           new SignalComputeError({
-            signalId: "TS-DE-03",
+            signalId: "TS-DE-03-propagation-cost",
             message: String(cause),
             cause,
           }),

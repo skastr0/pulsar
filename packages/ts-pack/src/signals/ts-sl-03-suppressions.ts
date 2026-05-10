@@ -39,7 +39,9 @@ export interface TsSl03Output {
 }
 
 export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalContextTag> = {
-  id: "TS-SL-03",
+  id: "TS-SL-03-suppressions",
+  title: "Suppressions",
+  aliases: ["TS-SL-03"],
   tier: 1,
   category: "generated-slop",
   kind: "structural",
@@ -235,7 +237,7 @@ export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalCon
           }
         },
         catch: (cause) =>
-          new SignalComputeError({ signalId: "TS-SL-03", message: String(cause), cause }),
+          new SignalComputeError({ signalId: "TS-SL-03-suppressions", message: String(cause), cause }),
       })
     }),
   score: (out) => {

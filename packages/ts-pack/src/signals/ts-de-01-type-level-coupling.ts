@@ -50,7 +50,9 @@ export interface TsDe01Output {
 }
 
 export const TsDe01: Signal<TsDe01Config, TsDe01Output, TsProjectTag> = {
-  id: "TS-DE-01",
+  id: "TS-DE-01-type-level-coupling",
+  title: "Type-level coupling",
+  aliases: ["TS-DE-01"],
   tier: 1,
   category: "dependency-entropy",
   kind: "legibility",
@@ -163,7 +165,7 @@ export const TsDe01: Signal<TsDe01Config, TsDe01Output, TsProjectTag> = {
         },
         catch: (cause) =>
           new SignalComputeError({
-            signalId: "TS-DE-01",
+            signalId: "TS-DE-01-type-level-coupling",
             message: String(cause),
             cause,
           }),

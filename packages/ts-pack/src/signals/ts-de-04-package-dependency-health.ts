@@ -161,7 +161,9 @@ export const TsDe04: Signal<
   TsDe04Output,
   TsProjectTag | TsPackageInfoTag | SignalContextTag
 > = {
-  id: "TS-DE-04",
+  id: "TS-DE-04-package-dependency-health",
+  title: "Package dependency health",
+  aliases: ["TS-DE-04"],
   tier: 1,
   category: "dependency-entropy",
   kind: "structural",
@@ -398,7 +400,7 @@ export const TsDe04: Signal<
         },
         catch: (cause) =>
           new SignalComputeError({
-            signalId: "TS-DE-04",
+            signalId: "TS-DE-04-package-dependency-health",
             message: String(cause),
             cause,
           }),

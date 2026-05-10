@@ -52,7 +52,9 @@ export interface TsRp02Output {
 }
 
 export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackageInfoTag | SignalContextTag> = {
-  id: "TS-RP-02",
+  id: "TS-RP-02-pr-size",
+  title: "PR size",
+  aliases: ["TS-RP-02"],
   tier: 1,
   category: "review-pain",
   kind: "structural",
@@ -135,7 +137,7 @@ export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackage
           }
         },
         catch: (cause) =>
-          new SignalComputeError({ signalId: "TS-RP-02", message: String(cause), cause }),
+          new SignalComputeError({ signalId: "TS-RP-02-pr-size", message: String(cause), cause }),
       })
     }),
   score: (out) => {
