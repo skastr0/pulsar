@@ -102,6 +102,31 @@ export interface RustAnalysis {
   readonly itemsByModuleAndName: ReadonlyMap<string, RustItemFact>
 }
 
+interface RustFactCollections {
+  readonly modules: Array<RustModuleFact>
+  readonly items: Array<RustItemFact>
+  readonly uses: Array<RustUseFact>
+  readonly functions: Array<RustFunctionFact>
+  readonly matches: Array<RustMatchFact>
+  readonly identifiers: Array<RustIdentifierFact>
+  readonly modulesByPath: Map<string, RustModuleFact>
+  readonly itemsByModuleAndName: Map<string, RustItemFact>
+}
+
+interface RustFileFactContext {
+  readonly manifest: RustManifestInfo | undefined
+  readonly crateName: string
+  readonly file: string
+  readonly baseModuleSegments: ReadonlyArray<string>
+}
+
+interface RustNodeFactContext {
+  readonly crateName: string
+  readonly file: string
+  readonly relativeModulePath: string
+  readonly modulePath: string
+}
+
 const ROOT_VISIBILITY: RustVisibility = { kind: "pub" }
 
 const SURFACE_ITEM_TYPES = new Set<RustItemFact["kind"]>([
@@ -466,185 +491,263 @@ export const collectRustProjectFacts = async (
   const manifests = project.manifests.filter(
     (manifest) => manifest.packageName !== undefined,
   )
-
-  const modules: Array<RustModuleFact> = []
-  const items: Array<RustItemFact> = []
-  const uses: Array<RustUseFact> = []
-  const functions: Array<RustFunctionFact> = []
-  const matches: Array<RustMatchFact> = []
-  const identifiers: Array<RustIdentifierFact> = []
-  const modulesByPath = new Map<string, RustModuleFact>()
-  const itemsByModuleAndName = new Map<string, RustItemFact>()
+  const collections = emptyRustFactCollections()
 
   for (const file of project.sourceFiles) {
-    const manifest = resolveManifestForFile(file, manifests)
-    const crateName = manifest?.packageName ?? manifest?.name ?? "crate"
-    const baseModuleSegments = moduleSegmentsFromFile(file, manifest)
-    const baseRelativeModulePath = baseModuleSegments.join("::")
-    const baseModulePath = toModulePath(crateName, baseRelativeModulePath)
-
-    if (!modulesByPath.has(baseModulePath)) {
-      const rootModule: RustModuleFact = {
-        crateName,
-        file,
-        line: 1,
-        relativeModulePath: baseRelativeModulePath,
-        modulePath: baseModulePath,
-        visibility: ROOT_VISIBILITY,
-      }
-      modules.push(rootModule)
-      modulesByPath.set(baseModulePath, rootModule)
-    }
-
-    const tree = await parseRustFile(file)
-    walkRustTree(tree, (node, ancestors) => {
-      const inlineSegments = collectInlineModuleSegments(ancestors)
-      const relativeModuleSegments = [...baseModuleSegments, ...inlineSegments]
-      const relativeModulePath = relativeModuleSegments.join("::")
-      const modulePath = toModulePath(crateName, relativeModulePath)
-
-        if (node.type === "use_declaration") {
-          const flattened = flattenUseSegments(node)
-            .map((segments) => segments.filter((segment) => segment !== "self"))
-            .filter((segments) => segments.length > 0)
-          const visibility = parseVisibility(node)
-          for (const segments of flattened) {
-            uses.push({
-              crateName,
-              file,
-              line: node.startPosition.row + 1,
-              relativeModulePath,
-              modulePath,
-              visibility,
-              path: segments.join("::"),
-              segments,
-            })
-          }
-        }
-
-      const kind = itemKind(node)
-      if (kind !== undefined) {
-        const name = itemName(node)
-        if (name !== undefined) {
-          const visibility = parseVisibility(node)
-          const item: RustItemFact = {
-            kind,
-            name,
-            visibility,
-            crateName,
-            file,
-            line: node.startPosition.row + 1,
-            relativeModulePath,
-            modulePath,
-          }
-          items.push(item)
-
-          if (SURFACE_ITEM_TYPES.has(kind)) {
-            itemsByModuleAndName.set(`${modulePath}::${name}`, item)
-          }
-
-          addIdentifier(identifiers, {
-            crateName,
-            file,
-            line: item.line,
-            relativeModulePath,
-            modulePath,
-            kind: kind === "fn" ? "function" : "item",
-            name,
-          })
-
-          if (kind === "mod") {
-            const childRelativeModulePath = [...relativeModuleSegments, name].join("::")
-            const childModulePath = toModulePath(crateName, childRelativeModulePath)
-            if (!modulesByPath.has(childModulePath)) {
-              const moduleFact: RustModuleFact = {
-                crateName,
-                file,
-                line: node.startPosition.row + 1,
-                relativeModulePath: childRelativeModulePath,
-                modulePath: childModulePath,
-                visibility,
-              }
-              modules.push(moduleFact)
-              modulesByPath.set(childModulePath, moduleFact)
-            }
-          }
-        }
-      }
-
-      if (node.type === "function_item") {
-        const name = itemName(node) ?? "<anonymous>"
-        const visibility = parseVisibility(node)
-        const returnType = returnTypeOfFunction(node)
-        const functionFact: RustFunctionFact = {
-          crateName,
-          file,
-          line: node.startPosition.row + 1,
-          relativeModulePath,
-          modulePath,
-          name,
-          visibility,
-          isUnsafeFn: (firstNamedChild(node, "function_modifiers")?.text ?? "").includes(
-            "unsafe",
-          ),
-          unsafeBlockCount: countUnsafeBlocks(node),
-          rawPointerParamCount: countRawPointerParams(node),
-          rawPointerReturn: walkAny(returnType ?? node, (current) => current.type === "pointer_type"),
-          lifetimeParamCount: allNamedChildren(
-            firstNamedChild(node, "type_parameters") ?? node,
-            "lifetime_parameter",
-          ).length,
-          lifetimeBoundCount:
-            allNamedChildren(firstNamedChild(node, "type_parameters") ?? node, "lifetime_parameter")
-              .map((lifetime) => lifetimeCountInNode(firstNamedChild(lifetime, "trait_bounds")))
-              .reduce((sum, count) => sum + count, 0) +
-            lifetimeCountInNode(firstNamedChild(node, "where_clause")),
-          lifetimeInputCount: lifetimeCountInNode(firstNamedChild(node, "parameters")),
-          lifetimeOutputCount: lifetimeCountInNode(returnType),
-          lifetimeConstraintCount: lifetimeCountInNode(firstNamedChild(node, "where_clause")),
-          returnTypeText: returnType?.text,
-          resultErrorType: resultErrorType(returnType),
-          complexity: cyclomaticComplexity(node),
-        }
-        functions.push(functionFact)
-
-        for (const parameterName of collectParameterIdentifiers(node)) {
-          addIdentifier(identifiers, {
-            crateName,
-            file,
-            line: node.startPosition.row + 1,
-            relativeModulePath,
-            modulePath,
-            kind: "parameter",
-            name: parameterName,
-          })
-        }
-
-        walkNode(node, (current) => {
-          if (current.type === "match_expression") {
-            matches.push(
-              matchFactFromNode(
-                current,
-                crateName,
-                file,
-                relativeModulePath,
-                name,
-              ),
-            )
-          }
-        })
-      }
-    })
+    await collectRustFileFacts(file, manifests, collections)
   }
 
   return {
-    modules,
-    items,
-    uses,
-    functions,
-    matches,
-    identifiers,
-    modulesByPath,
-    itemsByModuleAndName,
+    modules: collections.modules,
+    items: collections.items,
+    uses: collections.uses,
+    functions: collections.functions,
+    matches: collections.matches,
+    identifiers: collections.identifiers,
+    modulesByPath: collections.modulesByPath,
+    itemsByModuleAndName: collections.itemsByModuleAndName,
   }
+}
+
+const emptyRustFactCollections = (): RustFactCollections => ({
+  modules: [],
+  items: [],
+  uses: [],
+  functions: [],
+  matches: [],
+  identifiers: [],
+  modulesByPath: new Map(),
+  itemsByModuleAndName: new Map(),
+})
+
+const collectRustFileFacts = async (
+  file: string,
+  manifests: ReadonlyArray<RustManifestInfo>,
+  collections: RustFactCollections,
+): Promise<void> => {
+  const context = rustFileFactContext(file, manifests)
+  ensureRootModule(context, collections)
+  const tree = await parseRustFile(file)
+  walkRustTree(tree, (node, ancestors) =>
+    recordRustNodeFacts(node, rustNodeFactContext(context, ancestors), collections),
+  )
+}
+
+const rustFileFactContext = (
+  file: string,
+  manifests: ReadonlyArray<RustManifestInfo>,
+): RustFileFactContext => {
+  const manifest = resolveManifestForFile(file, manifests)
+  return {
+    manifest,
+    crateName: manifest?.packageName ?? manifest?.name ?? "crate",
+    file,
+    baseModuleSegments: moduleSegmentsFromFile(file, manifest),
+  }
+}
+
+const ensureRootModule = (
+  context: RustFileFactContext,
+  collections: RustFactCollections,
+): void => {
+  const relativeModulePath = context.baseModuleSegments.join("::")
+  const modulePath = toModulePath(context.crateName, relativeModulePath)
+  if (collections.modulesByPath.has(modulePath)) return
+  const rootModule: RustModuleFact = {
+    crateName: context.crateName,
+    file: context.file,
+    line: 1,
+    relativeModulePath,
+    modulePath,
+    visibility: ROOT_VISIBILITY,
+  }
+  collections.modules.push(rootModule)
+  collections.modulesByPath.set(modulePath, rootModule)
+}
+
+const rustNodeFactContext = (
+  fileContext: RustFileFactContext,
+  ancestors: ReadonlyArray<RustSyntaxNode>,
+): RustNodeFactContext => {
+  const relativeModuleSegments = [
+    ...fileContext.baseModuleSegments,
+    ...collectInlineModuleSegments(ancestors),
+  ]
+  const relativeModulePath = relativeModuleSegments.join("::")
+  return {
+    crateName: fileContext.crateName,
+    file: fileContext.file,
+    relativeModulePath,
+    modulePath: toModulePath(fileContext.crateName, relativeModulePath),
+  }
+}
+
+const recordRustNodeFacts = (
+  node: RustSyntaxNode,
+  context: RustNodeFactContext,
+  collections: RustFactCollections,
+): void => {
+  recordRustUseFacts(node, context, collections)
+  recordRustItemFact(node, context, collections)
+  recordRustFunctionFact(node, context, collections)
+}
+
+const recordRustUseFacts = (
+  node: RustSyntaxNode,
+  context: RustNodeFactContext,
+  collections: RustFactCollections,
+): void => {
+  if (node.type !== "use_declaration") return
+  const flattened = flattenUseSegments(node)
+    .map((segments) => segments.filter((segment) => segment !== "self"))
+    .filter((segments) => segments.length > 0)
+  const visibility = parseVisibility(node)
+  for (const segments of flattened) {
+    collections.uses.push({
+      ...context,
+      line: node.startPosition.row + 1,
+      visibility,
+      path: segments.join("::"),
+      segments,
+    })
+  }
+}
+
+const recordRustItemFact = (
+  node: RustSyntaxNode,
+  context: RustNodeFactContext,
+  collections: RustFactCollections,
+): void => {
+  const kind = itemKind(node)
+  const name = kind === undefined ? undefined : itemName(node)
+  if (kind === undefined || name === undefined) return
+
+  const visibility = parseVisibility(node)
+  const item: RustItemFact = {
+    ...context,
+    kind,
+    name,
+    visibility,
+    line: node.startPosition.row + 1,
+  }
+  collections.items.push(item)
+  if (SURFACE_ITEM_TYPES.has(kind)) {
+    collections.itemsByModuleAndName.set(`${context.modulePath}::${name}`, item)
+  }
+  addIdentifier(collections.identifiers, {
+    ...context,
+    line: item.line,
+    kind: kind === "fn" ? "function" : "item",
+    name,
+  })
+  if (kind === "mod") {
+    ensureInlineModule(node, context, name, visibility, collections)
+  }
+}
+
+const ensureInlineModule = (
+  node: RustSyntaxNode,
+  context: RustNodeFactContext,
+  name: string,
+  visibility: RustVisibility,
+  collections: RustFactCollections,
+): void => {
+  const relativeModulePath =
+    context.relativeModulePath.length === 0
+      ? name
+      : `${context.relativeModulePath}::${name}`
+  const modulePath = toModulePath(context.crateName, relativeModulePath)
+  if (collections.modulesByPath.has(modulePath)) return
+  const moduleFact: RustModuleFact = {
+    crateName: context.crateName,
+    file: context.file,
+    line: node.startPosition.row + 1,
+    relativeModulePath,
+    modulePath,
+    visibility,
+  }
+  collections.modules.push(moduleFact)
+  collections.modulesByPath.set(modulePath, moduleFact)
+}
+
+const recordRustFunctionFact = (
+  node: RustSyntaxNode,
+  context: RustNodeFactContext,
+  collections: RustFactCollections,
+): void => {
+  if (node.type !== "function_item") return
+  const name = itemName(node) ?? "<anonymous>"
+  collections.functions.push(rustFunctionFactFromNode(node, context, name))
+  recordFunctionParameterIdentifiers(node, context, collections)
+  recordFunctionMatchFacts(node, context, name, collections)
+}
+
+const rustFunctionFactFromNode = (
+  node: RustSyntaxNode,
+  context: RustNodeFactContext,
+  name: string,
+): RustFunctionFact => {
+  const returnType = returnTypeOfFunction(node)
+  return {
+    ...context,
+    name,
+    line: node.startPosition.row + 1,
+    visibility: parseVisibility(node),
+    isUnsafeFn: (firstNamedChild(node, "function_modifiers")?.text ?? "").includes("unsafe"),
+    unsafeBlockCount: countUnsafeBlocks(node),
+    rawPointerParamCount: countRawPointerParams(node),
+    rawPointerReturn: walkAny(returnType ?? node, (current) => current.type === "pointer_type"),
+    lifetimeParamCount: allNamedChildren(
+      firstNamedChild(node, "type_parameters") ?? node,
+      "lifetime_parameter",
+    ).length,
+    lifetimeBoundCount: lifetimeBoundCountOfFunction(node),
+    lifetimeInputCount: lifetimeCountInNode(firstNamedChild(node, "parameters")),
+    lifetimeOutputCount: lifetimeCountInNode(returnType),
+    lifetimeConstraintCount: lifetimeCountInNode(firstNamedChild(node, "where_clause")),
+    returnTypeText: returnType?.text,
+    resultErrorType: resultErrorType(returnType),
+    complexity: cyclomaticComplexity(node),
+  }
+}
+
+const lifetimeBoundCountOfFunction = (node: RustSyntaxNode): number =>
+  allNamedChildren(firstNamedChild(node, "type_parameters") ?? node, "lifetime_parameter")
+    .map((lifetime) => lifetimeCountInNode(firstNamedChild(lifetime, "trait_bounds")))
+    .reduce((sum, count) => sum + count, 0) +
+  lifetimeCountInNode(firstNamedChild(node, "where_clause"))
+
+const recordFunctionParameterIdentifiers = (
+  node: RustSyntaxNode,
+  context: RustNodeFactContext,
+  collections: RustFactCollections,
+): void => {
+  for (const parameterName of collectParameterIdentifiers(node)) {
+    addIdentifier(collections.identifiers, {
+      ...context,
+      line: node.startPosition.row + 1,
+      kind: "parameter",
+      name: parameterName,
+    })
+  }
+}
+
+const recordFunctionMatchFacts = (
+  node: RustSyntaxNode,
+  context: RustNodeFactContext,
+  functionName: string,
+  collections: RustFactCollections,
+): void => {
+  walkNode(node, (current) => {
+    if (current.type !== "match_expression") return
+    collections.matches.push(
+      matchFactFromNode(
+        current,
+        context.crateName,
+        context.file,
+        context.relativeModulePath,
+        functionName,
+      ),
+    )
+  })
 }
