@@ -4,7 +4,7 @@ import {
   SignalComputeError,
 } from "@skastr0/pulsar-core"
 import { Effect, Schema } from "effect"
-import { Node, type InterfaceDeclaration, type SourceFile } from "ts-morph"
+import { Node, SyntaxKind, type InterfaceDeclaration, type SourceFile } from "ts-morph"
 import { createModuleResolver, type ModuleResolver } from "../graph/module-graph.js"
 import { TsProjectTag } from "../ts-project.js"
 import { isExcluded, matchesAnyGlob } from "./shared-globs.js"
@@ -51,7 +51,7 @@ export const TsAb04: Signal<TsAb04Config, TsAb04Output, TsProjectTag> = {
   tier: 1,
   category: "abstraction-bloat",
   kind: "legibility",
-  cacheVersion: "dead-interface-pressure-v2",
+  cacheVersion: "structural-interface-usage-v1",
   configSchema: TsAb04Config,
   defaultConfig: {
     exclude_globs: ["**/node_modules/**", "**/dist/**", "**/.turbo/**"],
@@ -79,7 +79,7 @@ export const TsAb04: Signal<TsAb04Config, TsAb04Output, TsProjectTag> = {
             config.public_entry_globs,
           )
 
-          const interfaces = productionFiles
+          const candidateInterfaces = productionFiles
             .flatMap((sourceFile) => sourceFile.getInterfaces())
             .filter((iface) => !publicInterfaces.has(interfaceKey(iface)))
 
@@ -88,13 +88,18 @@ export const TsAb04: Signal<TsAb04Config, TsAb04Output, TsProjectTag> = {
 
           const pairs: Array<SingleImplPair> = []
           const deadInterfaces: Array<DeadInterface> = []
+          let totalInterfaces = 0
 
-          for (const iface of interfaces) {
+          for (const iface of candidateInterfaces) {
             const productionImplementations = prodImplementations.get(iface.getName()) ?? []
             const hasTestSubstitute =
               (testImplementations.get(iface.getName()) ?? []).length > 0
 
             if (productionImplementations.length === 0) {
+              if (hasStructuralTypeUsage(iface)) {
+                continue
+              }
+              totalInterfaces += 1
               deadInterfaces.push({
                 interfaceFile: iface.getSourceFile().getFilePath(),
                 interfaceName: iface.getName(),
@@ -103,6 +108,7 @@ export const TsAb04: Signal<TsAb04Config, TsAb04Output, TsProjectTag> = {
               continue
             }
 
+            totalInterfaces += 1
             if (productionImplementations.length === 1) {
               const implementation = productionImplementations[0]!
               pairs.push({
@@ -123,16 +129,16 @@ export const TsAb04: Signal<TsAb04Config, TsAb04Output, TsProjectTag> = {
               return left.interfaceName.localeCompare(right.interfaceName)
             })
 
-          const ratio = interfaces.length === 0 ? 0 : flaggedPairs.length / interfaces.length
+          const ratio = totalInterfaces === 0 ? 0 : flaggedPairs.length / totalInterfaces
           const deadInterfaceRatio =
-            interfaces.length === 0 ? 0 : deadInterfaces.length / interfaces.length
+            totalInterfaces === 0 ? 0 : deadInterfaces.length / totalInterfaces
           const singleImplementationPressure = Math.min(1, ratio / 0.5)
           const deadInterfacePressure = Math.min(0.25, deadInterfaceRatio * 0.25)
 
           return {
             pairs,
             flaggedPairs,
-            totalInterfaces: interfaces.length,
+            totalInterfaces,
             ratio,
             deadInterfaces: deadInterfaces.sort((left, right) => {
               const fileCompare = left.interfaceFile.localeCompare(right.interfaceFile)
@@ -253,6 +259,40 @@ const collectPublicInterfacesFromExports = (
 
 const interfaceKey = (iface: InterfaceDeclaration): string =>
   `${iface.getSourceFile().getFilePath()}:${iface.getName()}`
+
+const hasStructuralTypeUsage = (iface: InterfaceDeclaration): boolean => {
+  const nameNode = iface.getNameNode()
+  return iface.findReferencesAsNodes().some((reference) => {
+    if (
+      reference.getSourceFile().getFilePath() === iface.getSourceFile().getFilePath() &&
+      reference.getStart() === nameNode.getStart()
+    ) {
+      return false
+    }
+    return !isImplementationReference(reference)
+  })
+}
+
+const isImplementationReference = (reference: Node): boolean =>
+  isClassImplementsReference(reference) || isTypedObjectLiteralReference(reference)
+
+const isClassImplementsReference = (reference: Node): boolean => {
+  const heritageExpression = reference.getFirstAncestorByKind(
+    SyntaxKind.ExpressionWithTypeArguments,
+  )
+  const heritageClause = heritageExpression?.getParentIfKind(SyntaxKind.HeritageClause)
+  return heritageClause?.getToken() === SyntaxKind.ImplementsKeyword
+}
+
+const isTypedObjectLiteralReference = (reference: Node): boolean => {
+  const variableDeclaration = reference.getFirstAncestorByKind(SyntaxKind.VariableDeclaration)
+  if (variableDeclaration === undefined) return false
+  const initializer = variableDeclaration.getInitializer()
+  if (!Node.isObjectLiteralExpression(initializer)) return false
+  const typeNode = variableDeclaration.getTypeNode()
+  if (typeNode === undefined) return false
+  return reference.getStart() >= typeNode.getStart() && reference.getEnd() <= typeNode.getEnd()
+}
 
 const buildImplementationIndex = (
   sourceFiles: ReadonlyArray<SourceFile>,
