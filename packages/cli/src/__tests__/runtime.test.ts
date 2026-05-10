@@ -4,8 +4,8 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
-import { CalibrationContextTag } from "@skastr0/pulsar-core"
-import { TsLd01, TsProjectLayer } from "@skastr0/pulsar-ts-pack"
+import { CalibrationContextTag, SignalContextTag } from "@skastr0/pulsar-core"
+import { TsLd01, TsSl04, TsProjectLayer } from "@skastr0/pulsar-ts-pack"
 import { Effect, Layer } from "effect"
 import {
   loadProjectModuleCalibrationContext,
@@ -221,6 +221,10 @@ export const create = Effect.fn("Session.create")(function* (_input: unknown) {
   if (ready() && enabled()) return yield* run()
   return yield* fallback()
 })
+
+export function defaultEffect(EffectApi: { orElseSucceed: (fallback: () => void) => void }) {
+  return EffectApi.orElseSucceed(() => {})
+}
 `,
       )
 
@@ -247,6 +251,47 @@ export const create = Effect.fn("Session.create")(function* (_input: unknown) {
         moduleId: "@skastr0/pulsar-project-module-effect",
         processorId: "effect-callback-context-names",
         ruleId: "effect.callback-context-name.v1",
+      })
+
+      const pureTsNoops = await Effect.runPromise(
+        TsSl04.compute(TsSl04.defaultConfig, new Map()).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              TsProjectLayer(repoPath),
+              Layer.succeed(SignalContextTag, {
+                gitSha: "TEST",
+                worktreePath: repoPath,
+                changedHunks: [],
+              }),
+            ),
+          ),
+        ),
+      )
+      expect(pureTsNoops.stubs).toHaveLength(1)
+      expect(pureTsNoops.calibrationDecisions).toHaveLength(0)
+      expect(TsSl04.score(pureTsNoops)).toBeLessThan(1)
+
+      const effectCalibratedNoops = await Effect.runPromise(
+        TsSl04.compute(TsSl04.defaultConfig, new Map()).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              TsProjectLayer(repoPath),
+              Layer.succeed(SignalContextTag, {
+                gitSha: "TEST",
+                worktreePath: repoPath,
+                changedHunks: [],
+              }),
+              Layer.succeed(CalibrationContextTag, calibrationContext!),
+            ),
+          ),
+        ),
+      )
+      expect(effectCalibratedNoops.stubs).toHaveLength(0)
+      expect(TsSl04.score(effectCalibratedNoops)).toBe(1)
+      expect(effectCalibratedNoops.calibrationDecisions[0]).toMatchObject({
+        moduleId: "@skastr0/pulsar-project-module-effect",
+        processorId: "effect-or-else-succeed-noops",
+        ruleId: "effect.orElseSucceed.fallback-noop.v1",
       })
     } finally {
       await rm(repoPath, { recursive: true, force: true })

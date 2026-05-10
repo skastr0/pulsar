@@ -788,7 +788,17 @@ export function sequence(task: Promise<void>) {
 export async function keepRunning() {
   await new Promise(() => {})
 }
+`,
+    )
 
+    const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
+    expect(out.stubs).toHaveLength(0)
+  })
+
+  test("keeps Effect fallback no-op classification out of the generic TypeScript signal", async () => {
+    await repo.write(
+      "effect.ts",
+      `
 export function defaultEffect(Effect: { orElseSucceed: (fallback: () => void) => void }) {
   return Effect.orElseSucceed(() => {});
 }
@@ -796,7 +806,12 @@ export function defaultEffect(Effect: { orElseSucceed: (fallback: () => void) =>
     )
 
     const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
-    expect(out.stubs).toHaveLength(0)
+    expect(out.stubs).toHaveLength(1)
+    expect(out.stubs[0]).toMatchObject({
+      name: "Effect.orElseSucceed callback",
+      kind: "empty-body",
+      confidence: "low",
+    })
   })
 
   test("does not classify explicit UI placeholder callbacks as empty implementations", async () => {

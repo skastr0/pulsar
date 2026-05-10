@@ -481,10 +481,6 @@ const isIntentionalNoop = (filePath: string, fn: FnLike, bodyText: string): bool
     return true
   }
 
-  if (isEffectFallbackNoop(fn)) {
-    return true
-  }
-
   if (isReturnedNoop(fn)) {
     return true
   }
@@ -668,14 +664,6 @@ const isNeverSettlingPromiseExecutor = (fn: FnLike): boolean => {
   const parent = fn.getParent()
   if (!Node.isNewExpression(parent)) return false
   return parent.getExpression().getText() === "Promise"
-}
-
-const isEffectFallbackNoop = (fn: FnLike): boolean => {
-  if (!Node.isArrowFunction(fn) && !Node.isFunctionExpression(fn)) return false
-  const parent = fn.getParent()
-  if (!Node.isCallExpression(parent)) return false
-  const expression = parent.getExpression()
-  return Node.isPropertyAccessExpression(expression) && expression.getName() === "orElseSucceed"
 }
 
 const isReturnedNoop = (fn: FnLike): boolean => {
