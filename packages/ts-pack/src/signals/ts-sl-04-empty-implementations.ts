@@ -851,131 +851,10 @@ const isIntentionalNoop = (filePath: string, fn: FnLike, bodyText: string): bool
     return true
   }
 
-  if (isPromiseSwallowHandler(fn)) {
-    return true
-  }
-
-  if (isNeverSettlingPromiseExecutor(fn)) {
-    return true
-  }
-
-  if (isReturnedNoop(fn)) {
-    return true
-  }
-
-  if (isJsxEventNoop(fn)) {
-    return true
-  }
-
-  if (isUiPlaceholderCallback(fn)) {
-    return true
-  }
-
-  if (isEventTerminalNoop(fn)) {
-    return true
-  }
-
-  if (isDisposableNoop(fn)) {
-    return true
-  }
-
-  if (isDeferredResolverPlaceholder(fn)) {
-    return true
-  }
-
-  if (isMutablePlaceholderInitializer(fn)) {
-    return true
-  }
-
-  if (isEmptyObjectMemberOnEmptyConstant(fn)) {
-    return true
-  }
-
-  if (isIgnoredParameterInterfaceHook(fn)) {
-    return true
-  }
-
-  if (isParameterPropertyConstructor(fn)) {
-    return true
-  }
-
-  if (isProtectedHookNoop(fn)) {
-    return true
-  }
-
-  if (isInterfaceResetNoop(fn)) {
-    return true
-  }
-
-  if (isObjectLifecycleNoop(fn)) {
-    return true
-  }
-
-  if (isNullObjectLifecycleFallback(fn)) {
-    return true
-  }
-
-  if (isIgnoredErrorHandler(fn)) {
-    return true
-  }
-
-  if (isNoopFactoryObjectMember(fn)) {
-    return true
-  }
-
-  if (isExplicitNoopObjectMember(fn)) {
-    return true
-  }
-
-  if (isTerminalLifecycleCallback(fn)) {
-    return true
-  }
-
-  if (isFallbackLoggerNoop(fn)) {
-    return true
-  }
-
-  if (isFallbackCallbackInitializer(fn)) {
-    return true
-  }
-
-  if (isConsoleMethodSilencingNoop(fn)) {
-    return true
-  }
-
-  if (isExpressionBodyReturnedNoop(fn)) {
-    return true
-  }
-
-  if (isCapabilityAbsentContractStub(fn)) {
-    return true
-  }
-
-  if (isBorrowedResourceCloseNoop(fn)) {
-    return true
-  }
-
-  if (isCommonEmptyContractCallback(fn)) {
-    return true
-  }
-
-  if (isTimerKeepAliveNoop(fn)) {
-    return true
-  }
-
-  if (isRegistrationMarkerNoop(fn)) {
-    return true
-  }
-
-  if (isConditionalNoopBranch(fn)) {
-    return true
-  }
-
-  if (isUnavailableCapabilitySetterNoop(fn)) {
-    return true
-  }
-
-  return hasNoopName(getFunctionName(fn))
+  return (
+    hasBuiltinIntentionalNoopShape(fn) ||
+    hasNoopName(getFunctionName(fn))
+  )
 }
 
 const isEmptyBodyText = (bodyText: string): boolean => {
@@ -1288,6 +1167,43 @@ const isUnavailableCapabilitySetterNoop = (fn: FnLike): boolean => {
       (name === "credentialPath" && /^["']{2}$/.test(value ?? ""))
     )
   })
+}
+
+const hasBuiltinIntentionalNoopShape = (fn: FnLike): boolean => {
+  const predicates: ReadonlyArray<(fn: FnLike) => boolean> = [
+    isPromiseSwallowHandler,
+    isNeverSettlingPromiseExecutor,
+    isReturnedNoop,
+    isJsxEventNoop,
+    isUiPlaceholderCallback,
+    isEventTerminalNoop,
+    isDisposableNoop,
+    isDeferredResolverPlaceholder,
+    isMutablePlaceholderInitializer,
+    isEmptyObjectMemberOnEmptyConstant,
+    isIgnoredParameterInterfaceHook,
+    isParameterPropertyConstructor,
+    isProtectedHookNoop,
+    isInterfaceResetNoop,
+    isObjectLifecycleNoop,
+    isNullObjectLifecycleFallback,
+    isIgnoredErrorHandler,
+    isNoopFactoryObjectMember,
+    isExplicitNoopObjectMember,
+    isTerminalLifecycleCallback,
+    isFallbackLoggerNoop,
+    isFallbackCallbackInitializer,
+    isConsoleMethodSilencingNoop,
+    isExpressionBodyReturnedNoop,
+    isCapabilityAbsentContractStub,
+    isBorrowedResourceCloseNoop,
+    isCommonEmptyContractCallback,
+    isTimerKeepAliveNoop,
+    isRegistrationMarkerNoop,
+    isConditionalNoopBranch,
+    isUnavailableCapabilitySetterNoop,
+  ]
+  return predicates.some((predicate) => predicate(fn))
 }
 
 const COMMON_EMPTY_CONTRACT_CALLBACKS = new Set([
