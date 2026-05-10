@@ -8,9 +8,11 @@ import {
   EFFECT_CALLBACK_CONTEXT_NAME_RULE_ID,
   EFFECT_OR_ELSE_SUCCEED_NOOP_RULE_ID,
   EFFECT_PROJECT_MODULE_ID,
+  EFFECT_PROTOTYPE_FACTORY_NOOP_RULE_ID,
   EFFECT_SERVER_REACTIVE_CONTRACT_NOOP_RULE_ID,
   effectProjectModule,
   isEffectOrElseSucceedNoopCandidate,
+  isEffectPrototypeFactoryNoopCandidate,
   isEffectServerReactiveContractNoopCandidate,
   resolveEffectCallbackContextName,
 } from "../index.js"
@@ -44,6 +46,13 @@ describe("effect project module", () => {
           fingerprint: "effect-server-reactive-contract-noops-v1",
         },
         {
+          slot: "typescript.noop-classifier",
+          processorId: "effect-prototype-factory-noops",
+          role: "normalizer",
+          priority: 20,
+          fingerprint: "effect-prototype-factory-noops-v1",
+        },
+        {
           slot: "typescript.callback-context-namer",
           processorId: "effect-callback-context-names",
           role: "enricher",
@@ -71,6 +80,50 @@ describe("effect project module", () => {
       nodeKind: "ArrowFunction",
       functionText: "() => { return 1 }",
       parentText: "Effect.orElseSucceed(() => { return 1 })",
+      classification: "stub",
+    })).toBe(false)
+  })
+
+  test("detects Effect prototype factory empty shell candidates", () => {
+    expect(isEffectPrototypeFactoryNoopCandidate({
+      file: "/repo/packages/effect/src/internal/context.ts",
+      name: "TagClass",
+      line: 91,
+      nodeKind: "FunctionDeclaration",
+      bodyText: "{}",
+      functionText: "function TagClass() {}",
+      parentText: [
+        "function TagClass() {}",
+        "Object.setPrototypeOf(TagClass, TagProto)",
+        "TagClass.key = id",
+        "return TagClass as any",
+      ].join("\n"),
+      classification: "stub",
+    })).toBe(true)
+
+    expect(isEffectPrototypeFactoryNoopCandidate({
+      file: "/repo/packages/effect/src/Pipeable.ts",
+      name: "PipeableBase",
+      line: 547,
+      nodeKind: "FunctionDeclaration",
+      bodyText: "{}",
+      functionText: "function PipeableBase() {}",
+      parentText: [
+        "function PipeableBase() {}",
+        "PipeableBase.prototype = Prototype",
+        "return PipeableBase as any",
+      ].join("\n"),
+      classification: "stub",
+    })).toBe(true)
+
+    expect(isEffectPrototypeFactoryNoopCandidate({
+      file: "/repo/src/ordinary.ts",
+      name: "unfinished",
+      line: 1,
+      nodeKind: "FunctionDeclaration",
+      bodyText: "{}",
+      functionText: "function unfinished() {}",
+      parentText: "function unfinished() {}",
       classification: "stub",
     })).toBe(false)
   })
@@ -157,6 +210,43 @@ describe("effect project module", () => {
       slot: "typescript.noop-classifier",
       action: "classify-intentional_noop",
       ruleId: EFFECT_SERVER_REACTIVE_CONTRACT_NOOP_RULE_ID,
+      confidence: "high",
+    })
+  })
+
+  test("classifies Effect prototype factory empty shells with attribution", async () => {
+    const context = makeResolvedCalibrationContext({
+      repoFacts,
+      activeModules: [effectProjectModule.activeModule],
+      processors: effectProjectModule.processors,
+    })
+
+    const result = await Effect.runPromise(
+      context.runSlot("typescript.noop-classifier", {
+        file: "/repo/packages/platform/src/HttpApi.ts",
+        name: "HttpApi",
+        line: 243,
+        nodeKind: "FunctionDeclaration",
+        bodyText: "{}",
+        functionText: "function HttpApi() {}",
+        parentText: [
+          "function HttpApi() {}",
+          "Object.setPrototypeOf(HttpApi, Proto)",
+          "HttpApi.groups = options.groups",
+          "return HttpApi as any",
+        ].join("\n"),
+        classification: "stub",
+      }),
+    )
+
+    expect(result.value.classification).toBe("intentional_noop")
+    expect(result.value.metadata).toMatchObject({ technology: "effect", pattern: "prototype-factory" })
+    expect(result.decisions[0]).toMatchObject({
+      moduleId: EFFECT_PROJECT_MODULE_ID,
+      processorId: "effect-prototype-factory-noops",
+      slot: "typescript.noop-classifier",
+      action: "classify-intentional_noop",
+      ruleId: EFFECT_PROTOTYPE_FACTORY_NOOP_RULE_ID,
       confidence: "high",
     })
   })

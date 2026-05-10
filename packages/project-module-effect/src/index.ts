@@ -12,6 +12,7 @@ export const EFFECT_PROJECT_MODULE_ID = "@skastr0/pulsar-project-module-effect" 
 export const EFFECT_OR_ELSE_SUCCEED_NOOP_RULE_ID = "effect.orElseSucceed.fallback-noop.v1" as const
 export const EFFECT_CALLBACK_CONTEXT_NAME_RULE_ID = "effect.callback-context-name.v1" as const
 export const EFFECT_SERVER_REACTIVE_CONTRACT_NOOP_RULE_ID = "effect.server-reactive.contract-noop.v1" as const
+export const EFFECT_PROTOTYPE_FACTORY_NOOP_RULE_ID = "effect.prototype-factory.noop.v1" as const
 
 export const effectProjectModule = defineProjectModule({
   id: EFFECT_PROJECT_MODULE_ID,
@@ -60,6 +61,28 @@ export const effectProjectModule = defineProjectModule({
               { kind: "symbol", value: current.value.name },
             ],
             metadata: { technology: "effect", framework: "server-reactive" },
+          })
+        }),
+    }),
+    defineProcessor({
+      id: "effect-prototype-factory-noops",
+      slot: "typescript.noop-classifier",
+      role: "normalizer",
+      priority: 20,
+      fingerprint: "effect-prototype-factory-noops-v1",
+      process: (current, _context, runtime) =>
+        Effect.sync(() => {
+          if (!isEffectPrototypeFactoryNoopCandidate(current.value)) return current
+          return classifyTypeScriptNoop(current, runtime, {
+            classification: "intentional_noop",
+            confidence: "high",
+            ruleId: EFFECT_PROTOTYPE_FACTORY_NOOP_RULE_ID,
+            reason: "Effect prototype factory declares an empty callable shell and attaches runtime behavior immediately afterward",
+            evidence: [
+              { kind: "path", value: current.value.file },
+              { kind: "symbol", value: current.value.name },
+            ],
+            metadata: { technology: "effect", pattern: "prototype-factory" },
           })
         }),
     }),
@@ -113,6 +136,26 @@ export const isEffectServerReactiveContractNoopCandidate = (
   return false
 }
 
+export const isEffectPrototypeFactoryNoopCandidate = (
+  value: TypeScriptNoopClassificationValue,
+): boolean => {
+  if (value.classification === "intentional_noop") return false
+  if (!isEmptyNoopValue(value)) return false
+
+  const name = escapedRegExp(value.name)
+  const parentText = value.parentText ?? ""
+  if (name === undefined || parentText.length === 0) return false
+
+  return [
+    new RegExp(`Object\\.setPrototypeOf\\s*\\(\\s*${name}\\s*,`),
+    new RegExp(`${name}\\.prototype\\s*=`),
+    new RegExp(`Object\\.defineProperty\\s*\\(\\s*${name}\\s*,`),
+    new RegExp(`Object\\.assign\\s*\\(\\s*${name}\\s*,`),
+    new RegExp(`${name}\\s*\\[[^\\]]+\\]\\s*=`),
+    new RegExp(`${name}\\.[A-Za-z_$][\\w$]*\\s*=`),
+  ].some((pattern) => pattern.test(parentText))
+}
+
 const isEmptyFunctionText = (text: string | undefined): boolean => {
   if (text === undefined) return false
   return /^(?:async\s+)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>\s*\{\s*\}$/.test(text.trim()) ||
@@ -121,6 +164,11 @@ const isEmptyFunctionText = (text: string | undefined): boolean => {
 
 const isEmptyNoopValue = (value: TypeScriptNoopClassificationValue): boolean =>
   /^\{\s*\}$/.test((value.bodyText ?? "").trim()) || isEmptyFunctionText(value.functionText)
+
+const escapedRegExp = (value: string): string | undefined => {
+  if (!/^[A-Za-z_$][\w$]*$/.test(value)) return undefined
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
 
 const SERVER_REACTIVE_EMPTY_CONTRACT_NAMES = new Set([
   "cancelCallback",
