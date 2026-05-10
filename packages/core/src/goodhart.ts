@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto"
 import { CATEGORIES, type Category } from "./category.js"
 import { type TimeSeriesEntry } from "./time-series.js"
-import { backpressureConfigOf, type PulsarVector } from "./vector.js"
+import { backpressureConfigOf, type BackpressureConfig, type PulsarVector } from "./vector.js"
 
 export type GoodhartSuspicion = "low" | "elevated" | "high"
 
@@ -35,41 +35,76 @@ export const evaluateGoodhart = (
   entries: ReadonlyArray<TimeSeriesEntry>,
   vector: PulsarVector | undefined,
 ): GoodhartAssessment => {
+  const backpressureConfig = backpressureConfigOf(vector)
+  const config = backpressureConfig.goodhart
   const latest = entries.at(-1)
   if (latest === undefined) {
-    return {
-      suspicion: "low",
-      rationale: ["No score history exists yet."],
-      visibleSignalIds: [],
-      hiddenSignalIds: [],
-      visibleScore: undefined,
-      hiddenScore: undefined,
-      holdoutGap: undefined,
-      visibleTrend: 0,
-      hiddenTrend: 0,
-      velocityExcess: 0,
-      rotationWindowDays: backpressureConfigOf(vector).goodhart.rotation_period_days,
-    }
+    return emptyGoodhartAssessment("No score history exists yet.", config.rotation_period_days)
   }
 
-  const config = backpressureConfigOf(vector).goodhart
   const signalIds = extractSignalIds(latest)
   if (signalIds.length === 0) {
-    return {
-      suspicion: "low",
-      rationale: ["No active signals were present in the latest observation."],
-      visibleSignalIds: [],
-      hiddenSignalIds: [],
-      visibleScore: undefined,
-      hiddenScore: undefined,
-      holdoutGap: undefined,
-      visibleTrend: 0,
-      hiddenTrend: 0,
-      velocityExcess: 0,
-      rotationWindowDays: config.rotation_period_days,
-    }
+    return emptyGoodhartAssessment(
+      "No active signals were present in the latest observation.",
+      config.rotation_period_days,
+    )
   }
 
+  return buildGoodhartAssessment(
+    scoreGoodhartSlices(
+      entries,
+      latest,
+      signalIds,
+      backpressureConfig.trajectory_days,
+      config,
+    ),
+    config,
+  )
+}
+
+type GoodhartConfig = BackpressureConfig["goodhart"]
+
+interface GoodhartScoreSlices {
+  readonly visibleSignalIds: ReadonlyArray<string>
+  readonly hiddenSignalIds: ReadonlyArray<string>
+  readonly visibleScore: number | undefined
+  readonly hiddenScore: number | undefined
+  readonly holdoutGap: number | undefined
+  readonly visibleTrend: number
+  readonly hiddenTrend: number
+  readonly velocityExcess: number
+  readonly recentHistoryCount: number
+}
+
+interface GoodhartSuspicionResult {
+  readonly suspicion: GoodhartSuspicion
+  readonly rationale: ReadonlyArray<string>
+}
+
+const emptyGoodhartAssessment = (
+  rationale: string,
+  rotationWindowDays: number,
+): GoodhartAssessment => ({
+  suspicion: "low",
+  rationale: [rationale],
+  visibleSignalIds: [],
+  hiddenSignalIds: [],
+  visibleScore: undefined,
+  hiddenScore: undefined,
+  holdoutGap: undefined,
+  visibleTrend: 0,
+  hiddenTrend: 0,
+  velocityExcess: 0,
+  rotationWindowDays,
+})
+
+const scoreGoodhartSlices = (
+  entries: ReadonlyArray<TimeSeriesEntry>,
+  latest: TimeSeriesEntry,
+  signalIds: ReadonlyArray<string>,
+  trajectoryDays: number,
+  config: GoodhartConfig,
+): GoodhartScoreSlices => {
   const hiddenSignalIds = pickHiddenSignals(
     signalIds,
     latest.timestamp,
@@ -83,7 +118,7 @@ export const evaluateGoodhart = (
   const relevantEntries = filterRecentEntries(
     entries,
     latest.timestamp,
-    backpressureConfigOf(vector).trajectory_days,
+    trajectoryDays,
   )
   const visibleTrend = trendDelta(relevantEntries, visibleSignalIds)
   const hiddenTrend = trendDelta(relevantEntries, hiddenSignalIds)
@@ -93,35 +128,7 @@ export const evaluateGoodhart = (
       : undefined
   const velocityExcess = visibleTrend - hiddenTrend
 
-  const rationale: Array<string> = [
-    "Numeric score surfaces stay hidden from the agent; only concrete diagnostics are exposed.",
-  ]
-  if (hiddenSignalIds.length > 0) {
-    rationale.push(
-      `${hiddenSignalIds.length} holdout signal(s) are rotated every ${config.rotation_period_days} day(s).`,
-    )
-  }
-
-  let suspicion: GoodhartSuspicion = "low"
-  if (holdoutGap !== undefined && holdoutGap > config.max_visible_holdout_gap) {
-    suspicion = "elevated"
-    rationale.push(
-      `Visible signals are improving ${holdoutGap.toFixed(2)} faster than the holdout slice.`,
-    )
-  }
-  if (
-    relevantEntries.length >= config.min_history_points &&
-    velocityExcess > config.max_velocity_excess
-  ) {
-    suspicion = suspicion === "elevated" ? "high" : "elevated"
-    rationale.push(
-      `Visible-score velocity exceeds holdout velocity by ${velocityExcess.toFixed(2)} across the recent window.`,
-    )
-  }
-
   return {
-    suspicion,
-    rationale,
     visibleSignalIds,
     hiddenSignalIds,
     visibleScore: latestVisibleScore,
@@ -130,8 +137,64 @@ export const evaluateGoodhart = (
     visibleTrend,
     hiddenTrend,
     velocityExcess,
+    recentHistoryCount: relevantEntries.length,
+  }
+}
+
+const buildGoodhartAssessment = (
+  slices: GoodhartScoreSlices,
+  config: GoodhartConfig,
+): GoodhartAssessment => {
+  const result = classifyGoodhartSuspicion(slices, config)
+  return {
+    suspicion: result.suspicion,
+    rationale: result.rationale,
+    visibleSignalIds: slices.visibleSignalIds,
+    hiddenSignalIds: slices.hiddenSignalIds,
+    visibleScore: slices.visibleScore,
+    hiddenScore: slices.hiddenScore,
+    holdoutGap: slices.holdoutGap,
+    visibleTrend: slices.visibleTrend,
+    hiddenTrend: slices.hiddenTrend,
+    velocityExcess: slices.velocityExcess,
     rotationWindowDays: config.rotation_period_days,
   }
+}
+
+const classifyGoodhartSuspicion = (
+  slices: GoodhartScoreSlices,
+  config: GoodhartConfig,
+): GoodhartSuspicionResult => {
+  const rationale: Array<string> = [
+    "Numeric score surfaces stay hidden from the agent; only concrete diagnostics are exposed.",
+  ]
+  if (slices.hiddenSignalIds.length > 0) {
+    rationale.push(
+      `${slices.hiddenSignalIds.length} holdout signal(s) are rotated every ${config.rotation_period_days} day(s).`,
+    )
+  }
+
+  let suspicion: GoodhartSuspicion = "low"
+  if (
+    slices.holdoutGap !== undefined &&
+    slices.holdoutGap > config.max_visible_holdout_gap
+  ) {
+    suspicion = "elevated"
+    rationale.push(
+      `Visible signals are improving ${slices.holdoutGap.toFixed(2)} faster than the holdout slice.`,
+    )
+  }
+  if (
+    slices.recentHistoryCount >= config.min_history_points &&
+    slices.velocityExcess > config.max_velocity_excess
+  ) {
+    suspicion = suspicion === "elevated" ? "high" : "elevated"
+    rationale.push(
+      `Visible-score velocity exceeds holdout velocity by ${slices.velocityExcess.toFixed(2)} across the recent window.`,
+    )
+  }
+
+  return { suspicion, rationale }
 }
 
 export const projectObserverForAgent = (
