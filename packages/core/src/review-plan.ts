@@ -66,83 +66,11 @@ export const generateReviewPlan = (
   const generatedAt = options?.generatedAt ?? new Date().toISOString()
   const sha = options?.sha ?? "unknown"
   const contextLimitBytes = options?.contextLimitBytes ?? 20 * 1024
-  const requests: Array<ReviewRequest> = []
-
-  for (const violation of observerOutput.hard_gate_violations) {
-    const reviewerRole = DEFAULT_CATEGORY_REVIEWERS[violation.category]
-    requests.push({
-      reviewerRole,
-      reason: `Hard gate violation in ${humanizeCategory(violation.category)}`,
-      priority: "block",
-      trigger: {
-        source: "hard-gate",
-        detail: `${violation.signalId}: ${violation.diagnostic.message}`,
-      },
-      context: compactContext([
-        {
-          kind: "diagnostic",
-          content: serialize({
-            signalId: violation.signalId,
-            category: violation.category,
-            diagnostic: violation.diagnostic,
-          }),
-        },
-        signalContextItem(observerOutput, violation.signalId),
-      ]),
-    })
-  }
-
-  for (const category of CATEGORIES) {
-    const categoryOutput = observerOutput.categories[category]
-    const reviewerRole = DEFAULT_CATEGORY_REVIEWERS[category]
-    const threshold = reviewThresholdOf(reviewerRole, vector, 0.6)
-    if (categoryOutput.score >= threshold) continue
-
-    requests.push({
-      reviewerRole,
-      reason: `${humanizeCategory(category)} score fell below review threshold`,
-      priority: "required",
-      trigger: {
-        source: "score-threshold",
-        detail: `${category} scored ${categoryOutput.score.toFixed(2)} below threshold ${threshold.toFixed(2)}`,
-      },
-      context: compactContext([
-        {
-          kind: "diagnostic",
-          content: {
-            category,
-            score: categoryOutput.score,
-            threshold,
-            activeSignalIds: [...categoryOutput.activeSignalIds],
-          },
-        },
-        ...categoryContext(observerOutput, categoryOutput.activeSignalIds),
-      ]),
-    })
-  }
-
-  for (const trigger of routingOutput.triggers) {
-    requests.push({
-      reviewerRole: trigger.reviewerRole,
-      reason: humanizePatternId(trigger.patternId),
-      priority: "required",
-      trigger: {
-        source: "structural-pattern",
-        detail: `Matched structural pattern ${trigger.patternId}`,
-      },
-      context: compactContext([
-        {
-          kind: "signal-output",
-          content: serialize(trigger.contextPayload),
-        },
-        {
-          kind: "diff-hunk",
-          content: serialize({ sourceLocations: trigger.sourceLocations }),
-        },
-      ]),
-    })
-  }
-
+  const requests = [
+    ...hardGateReviewRequests(observerOutput),
+    ...scoreThresholdReviewRequests(observerOutput, vector),
+    ...structuralPatternReviewRequests(routingOutput),
+  ]
   const reviewRequests = [...mergeRequests(requests, contextLimitBytes)].sort(compareRequests)
 
   return {
@@ -153,6 +81,87 @@ export const generateReviewPlan = (
     hardGateBlocking: reviewRequests.some((request) => request.priority === "block"),
   }
 }
+
+const hardGateReviewRequests = (
+  observerOutput: ObserverOutput,
+): ReadonlyArray<ReviewRequest> =>
+  observerOutput.hard_gate_violations.map((violation) => ({
+    reviewerRole: DEFAULT_CATEGORY_REVIEWERS[violation.category],
+    reason: `Hard gate violation in ${humanizeCategory(violation.category)}`,
+    priority: "block",
+    trigger: {
+      source: "hard-gate",
+      detail: `${violation.signalId}: ${violation.diagnostic.message}`,
+    },
+    context: compactContext([
+      {
+        kind: "diagnostic",
+        content: serialize({
+          signalId: violation.signalId,
+          category: violation.category,
+          diagnostic: violation.diagnostic,
+        }),
+      },
+      signalContextItem(observerOutput, violation.signalId),
+    ]),
+  }))
+
+const scoreThresholdReviewRequests = (
+  observerOutput: ObserverOutput,
+  vector: PulsarVector | undefined,
+): ReadonlyArray<ReviewRequest> =>
+  CATEGORIES.flatMap((category) => {
+    const categoryOutput = observerOutput.categories[category]
+    const reviewerRole = DEFAULT_CATEGORY_REVIEWERS[category]
+    const threshold = reviewThresholdOf(reviewerRole, vector, 0.6)
+    if (categoryOutput.score >= threshold) return []
+    return [
+      {
+        reviewerRole,
+        reason: `${humanizeCategory(category)} score fell below review threshold`,
+        priority: "required",
+        trigger: {
+          source: "score-threshold",
+          detail: `${category} scored ${categoryOutput.score.toFixed(2)} below threshold ${threshold.toFixed(2)}`,
+        },
+        context: compactContext([
+          {
+            kind: "diagnostic",
+            content: {
+              category,
+              score: categoryOutput.score,
+              threshold,
+              activeSignalIds: [...categoryOutput.activeSignalIds],
+            },
+          },
+          ...categoryContext(observerOutput, categoryOutput.activeSignalIds),
+        ]),
+      },
+    ]
+  })
+
+const structuralPatternReviewRequests = (
+  routingOutput: RoutingOutput,
+): ReadonlyArray<ReviewRequest> =>
+  routingOutput.triggers.map((trigger) => ({
+    reviewerRole: trigger.reviewerRole,
+    reason: humanizePatternId(trigger.patternId),
+    priority: "required",
+    trigger: {
+      source: "structural-pattern",
+      detail: `Matched structural pattern ${trigger.patternId}`,
+    },
+    context: compactContext([
+      {
+        kind: "signal-output",
+        content: serialize(trigger.contextPayload),
+      },
+      {
+        kind: "diff-hunk",
+        content: serialize({ sourceLocations: trigger.sourceLocations }),
+      },
+    ]),
+  }))
 
 const mergeRequests = (
   requests: ReadonlyArray<ReviewRequest>,
