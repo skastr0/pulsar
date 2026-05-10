@@ -31,6 +31,7 @@ import {
   type TsFunctionLike as FnLike,
 } from "./shared-function-index.js"
 import { isExcluded, matchesAnyGlob } from "./shared-globs.js"
+import { isEmptyBodyText, isIntentionalNoop, propertyNameOf } from "./ts-sl-04-intentional-noops.js"
 
 export const TsSl04Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
@@ -275,95 +276,12 @@ export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalCon
       const context = yield* SignalContextTag
       const calibration = yield* Effect.serviceOption(CalibrationContextTag)
       const factorPolicy = yield* Effect.serviceOption(SignalFactorPolicyTag)
-      const { candidates, totalFunctions } = yield* Effect.try({
-        try: () => collectStubCandidates(project, context, config),
-        catch: toSignalComputeError,
+      return yield* computeTsSl04Output(config, {
+        project,
+        context,
+        calibration,
+        factorPolicy,
       })
-      const stubs: Array<Stub> = []
-      const calibrationDecisions: Array<CalibrationDecision> = []
-      const rawCandidates: Array<StubCandidateSummary> = []
-      const factorEntries: Array<SignalFactorLedgerEntry> = []
-
-      const factorOverrides = Option.isSome(factorPolicy)
-        ? factorPolicy.value.vectorOverrides
-        : {}
-      const expectedCleanFunctionRatio = numberFactorValue(
-        "budget.expected_clean_function_ratio",
-        0.01,
-        factorOverrides,
-      ) ?? 0.01
-      const expectedCleanMinFunctions = numberFactorValue(
-        "budget.expected_clean_min_functions",
-        10,
-        factorOverrides,
-      ) ?? 10
-      const expectedCleanBudget = Math.max(
-        expectedCleanMinFunctions,
-        totalFunctions * expectedCleanFunctionRatio,
-      )
-
-      for (const candidate of candidates) {
-        const classified = yield* classifyNoopCandidate(candidate, calibration).pipe(
-          Effect.mapError(toSignalComputeError),
-        )
-        calibrationDecisions.push(...classified.decisions)
-
-        if (classified.value.classification === "intentional_noop") {
-          rawCandidates.push(summarizeStubCandidate(candidate, "intentional-noop"))
-          continue
-        }
-
-        const stubKind = stubKindForClassifiedCandidate(candidate, classified.value)
-        if (stubKind !== undefined) {
-          rawCandidates.push(summarizeStubCandidate(candidate, stubKind.kind))
-          const policyResult = yield* tuneStubPolicy(
-            candidate,
-            stubKind.kind,
-            stubKind.message,
-            calibration,
-            config.hard_gate_production,
-          ).pipe(Effect.mapError(toSignalComputeError))
-          calibrationDecisions.push(...policyResult.decisions)
-          const effectivePolicy = finalizeStubPolicy(
-            applyVectorOverridesToStubPolicy(
-              policyResult.value,
-              factorOverrides,
-            ),
-            candidate,
-            config.hard_gate_production,
-            factorOverrides,
-          )
-          stubs.push(createStub(candidate, effectivePolicy, policyResult.decisions))
-          factorEntries.push(...factorEntriesForPolicy(policyResult, factorOverrides))
-        }
-      }
-
-      const byKind = new Map<StubKind, number>()
-      for (const stub of stubs) {
-        byKind.set(stub.kind, (byKind.get(stub.kind) ?? 0) + 1)
-      }
-
-      return {
-        rawCandidates: rawCandidates.sort(compareCandidateSummaries),
-        stubs: stubs.sort(compareStubs),
-        calibrationDecisions,
-        byKind,
-        productionStubs: stubs.filter((s) => !s.inTestPath),
-        testStubs: stubs.filter((s) => s.inTestPath),
-        totalFunctions,
-        expectedCleanBudget,
-        expectedCleanFunctionRatio,
-        expectedCleanMinFunctions,
-        hardGateProduction: config.hard_gate_production,
-        diagnosticLimit: config.top_n_diagnostics,
-        factorLedger: makeFactorLedger("TS-SL-04-unfinished-implementations", applyFactorOverrides([
-          ...factorEntries,
-          makeFactorEntry(factorDefinitionByPath("budget.expected_clean_function_ratio"), expectedCleanFunctionRatio),
-          makeFactorEntry(factorDefinitionByPath("budget.expected_clean_min_functions"), expectedCleanMinFunctions),
-          makeFactorEntry(factorDefinitionByPath("filtering.include_test_stubs"), config.include_test_stubs),
-          makeFactorEntry(factorDefinitionByPath("filtering.production_only_score"), true),
-        ], factorOverrides)),
-      }
     }),
   score: (out) => {
     if (out.totalFunctions === 0) return 1
@@ -410,6 +328,234 @@ export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalCon
   },
   factorLedger: (out) => out.factorLedger,
 }
+
+const computeTsSl04Output = (
+  config: TsSl04Config,
+  deps: {
+    readonly project: Project
+    readonly context: {
+      readonly worktreePath: string
+      readonly changedHunks: ReadonlyArray<ChangedHunk>
+    }
+    readonly calibration: Option.Option<ResolvedCalibrationContext>
+    readonly factorPolicy: Option.Option<{
+      readonly vectorOverrides: Readonly<Record<string, SignalFactorValue>>
+    }>
+  },
+): Effect.Effect<TsSl04Output, SignalComputeError, never> =>
+  Effect.gen(function* () {
+    const collection = yield* Effect.try({
+      try: () => collectStubCandidates(deps.project, deps.context, config),
+      catch: toSignalComputeError,
+    })
+    const factorOverrides = Option.isSome(deps.factorPolicy)
+      ? deps.factorPolicy.value.vectorOverrides
+      : {}
+    const budget = resolveCleanBudget(collection.totalFunctions, factorOverrides)
+    const evaluated = yield* evaluateStubCandidates(
+      collection.candidates,
+      deps.calibration,
+      config,
+      factorOverrides,
+    )
+    return buildTsSl04Output(config, collection.totalFunctions, budget, evaluated, factorOverrides)
+  })
+
+interface CleanBudget {
+  readonly expectedCleanBudget: number
+  readonly expectedCleanFunctionRatio: number
+  readonly expectedCleanMinFunctions: number
+}
+
+interface EvaluatedStubCandidates {
+  readonly stubs: ReadonlyArray<Stub>
+  readonly calibrationDecisions: ReadonlyArray<CalibrationDecision>
+  readonly rawCandidates: ReadonlyArray<StubCandidateSummary>
+  readonly factorEntries: ReadonlyArray<SignalFactorLedgerEntry>
+}
+
+const resolveCleanBudget = (
+  totalFunctions: number,
+  factorOverrides: Readonly<Record<string, SignalFactorValue>>,
+): CleanBudget => {
+  const expectedCleanFunctionRatio = numberFactorValue(
+    "budget.expected_clean_function_ratio",
+    0.01,
+    factorOverrides,
+  ) ?? 0.01
+  const expectedCleanMinFunctions = numberFactorValue(
+    "budget.expected_clean_min_functions",
+    10,
+    factorOverrides,
+  ) ?? 10
+  return {
+    expectedCleanBudget: Math.max(
+      expectedCleanMinFunctions,
+      totalFunctions * expectedCleanFunctionRatio,
+    ),
+    expectedCleanFunctionRatio,
+    expectedCleanMinFunctions,
+  }
+}
+
+const evaluateStubCandidates = (
+  candidates: ReadonlyArray<StubCandidate>,
+  calibration: Option.Option<ResolvedCalibrationContext>,
+  config: TsSl04Config,
+  factorOverrides: Readonly<Record<string, SignalFactorValue>>,
+): Effect.Effect<EvaluatedStubCandidates, SignalComputeError, never> =>
+  Effect.gen(function* () {
+    const evaluated = emptyEvaluatedStubCandidates()
+    for (const candidate of candidates) {
+      const candidateResult = yield* evaluateStubCandidate(
+        candidate,
+        calibration,
+        config,
+        factorOverrides,
+      )
+      mergeEvaluatedStubCandidate(evaluated, candidateResult)
+    }
+    return evaluated
+  })
+
+const emptyEvaluatedStubCandidates = (): {
+  stubs: Array<Stub>
+  calibrationDecisions: Array<CalibrationDecision>
+  rawCandidates: Array<StubCandidateSummary>
+  factorEntries: Array<SignalFactorLedgerEntry>
+} => ({
+  stubs: [],
+  calibrationDecisions: [],
+  rawCandidates: [],
+  factorEntries: [],
+})
+
+const mergeEvaluatedStubCandidate = (
+  target: ReturnType<typeof emptyEvaluatedStubCandidates>,
+  source: EvaluatedStubCandidates,
+): void => {
+  target.stubs.push(...source.stubs)
+  target.calibrationDecisions.push(...source.calibrationDecisions)
+  target.rawCandidates.push(...source.rawCandidates)
+  target.factorEntries.push(...source.factorEntries)
+}
+
+const evaluateStubCandidate = (
+  candidate: StubCandidate,
+  calibration: Option.Option<ResolvedCalibrationContext>,
+  config: TsSl04Config,
+  factorOverrides: Readonly<Record<string, SignalFactorValue>>,
+): Effect.Effect<EvaluatedStubCandidates, SignalComputeError, never> =>
+  Effect.gen(function* () {
+    const classified = yield* classifyNoopCandidate(candidate, calibration).pipe(
+      Effect.mapError(toSignalComputeError),
+    )
+    if (classified.value.classification === "intentional_noop") {
+      return {
+        stubs: [],
+        calibrationDecisions: classified.decisions,
+        rawCandidates: [summarizeStubCandidate(candidate, "intentional-noop")],
+        factorEntries: [],
+      }
+    }
+    const stubKind = stubKindForClassifiedCandidate(candidate, classified.value)
+    if (stubKind === undefined) {
+      return {
+        stubs: [],
+        calibrationDecisions: classified.decisions,
+        rawCandidates: [],
+        factorEntries: [],
+      }
+    }
+    const policy = yield* evaluateStubPolicy(candidate, stubKind, calibration, config, factorOverrides)
+    return {
+      stubs: [policy.stub],
+      calibrationDecisions: [...classified.decisions, ...policy.decisions],
+      rawCandidates: [summarizeStubCandidate(candidate, stubKind.kind)],
+      factorEntries: policy.factorEntries,
+    }
+  })
+
+const evaluateStubPolicy = (
+  candidate: StubCandidate,
+  stubKind: { readonly kind: StubKind; readonly message: string },
+  calibration: Option.Option<ResolvedCalibrationContext>,
+  config: TsSl04Config,
+  factorOverrides: Readonly<Record<string, SignalFactorValue>>,
+): Effect.Effect<
+  {
+    readonly stub: Stub
+    readonly decisions: ReadonlyArray<CalibrationDecision>
+    readonly factorEntries: ReadonlyArray<SignalFactorLedgerEntry>
+  },
+  SignalComputeError,
+  never
+> =>
+  Effect.gen(function* () {
+    const policyResult = yield* tuneStubPolicy(
+      candidate,
+      stubKind.kind,
+      stubKind.message,
+      calibration,
+      config.hard_gate_production,
+    ).pipe(Effect.mapError(toSignalComputeError))
+    const effectivePolicy = finalizeStubPolicy(
+      applyVectorOverridesToStubPolicy(policyResult.value, factorOverrides),
+      candidate,
+      config.hard_gate_production,
+      factorOverrides,
+    )
+    return {
+      stub: createStub(candidate, effectivePolicy, policyResult.decisions),
+      decisions: policyResult.decisions,
+      factorEntries: factorEntriesForPolicy(policyResult, factorOverrides),
+    }
+  })
+
+const buildTsSl04Output = (
+  config: TsSl04Config,
+  totalFunctions: number,
+  budget: CleanBudget,
+  evaluated: EvaluatedStubCandidates,
+  factorOverrides: Readonly<Record<string, SignalFactorValue>>,
+): TsSl04Output => {
+  const stubs = [...evaluated.stubs].sort(compareStubs)
+  return {
+    rawCandidates: [...evaluated.rawCandidates].sort(compareCandidateSummaries),
+    stubs,
+    calibrationDecisions: evaluated.calibrationDecisions,
+    byKind: countStubsByKind(stubs),
+    productionStubs: stubs.filter((s) => !s.inTestPath),
+    testStubs: stubs.filter((s) => s.inTestPath),
+    totalFunctions,
+    ...budget,
+    hardGateProduction: config.hard_gate_production,
+    diagnosticLimit: config.top_n_diagnostics,
+    factorLedger: buildTsSl04FactorLedger(config, budget, evaluated, factorOverrides),
+  }
+}
+
+const countStubsByKind = (stubs: ReadonlyArray<Stub>): ReadonlyMap<StubKind, number> => {
+  const byKind = new Map<StubKind, number>()
+  for (const stub of stubs) {
+    byKind.set(stub.kind, (byKind.get(stub.kind) ?? 0) + 1)
+  }
+  return byKind
+}
+
+const buildTsSl04FactorLedger = (
+  config: TsSl04Config,
+  budget: CleanBudget,
+  evaluated: EvaluatedStubCandidates,
+  factorOverrides: Readonly<Record<string, SignalFactorValue>>,
+): SignalFactorLedger =>
+  makeFactorLedger("TS-SL-04-unfinished-implementations", applyFactorOverrides([
+    ...evaluated.factorEntries,
+    makeFactorEntry(factorDefinitionByPath("budget.expected_clean_function_ratio"), budget.expectedCleanFunctionRatio),
+    makeFactorEntry(factorDefinitionByPath("budget.expected_clean_min_functions"), budget.expectedCleanMinFunctions),
+    makeFactorEntry(factorDefinitionByPath("filtering.include_test_stubs"), config.include_test_stubs),
+    makeFactorEntry(factorDefinitionByPath("filtering.production_only_score"), true),
+  ], factorOverrides))
 
 const isAbstractMethod = (fn: FnLike): boolean => {
   return Node.isMethodDeclaration(fn) && fn.isAbstract()
@@ -840,498 +986,6 @@ const booleanFactorValue = (
 ): boolean => {
   const value = overriddenFactorValue(path, defaultValue, overrides)
   return typeof value === "boolean" ? value : defaultValue
-}
-
-const isIntentionalNoop = (filePath: string, fn: FnLike, bodyText: string): boolean => {
-  if (!isEmptyBodyText(bodyText) && !isNoopImplementationFile(filePath)) {
-    return false
-  }
-
-  if (isNoopImplementationFile(filePath)) {
-    return true
-  }
-
-  return (
-    hasBuiltinIntentionalNoopShape(fn) ||
-    hasNoopName(getFunctionName(fn))
-  )
-}
-
-const isEmptyBodyText = (bodyText: string): boolean => {
-  const normalized = bodyText.replace(/\s+/g, " ").trim()
-  return normalized === "{}" || normalized === "{ }" || normalized === "{  }"
-}
-
-const isNoopImplementationFile = (filePath: string): boolean => {
-  const fileName = filePath.split(/[\\/]/).at(-1) ?? filePath
-  return /(?:^|[._-])noop(?:[._-]|$)/i.test(fileName)
-}
-
-const hasNoopName = (name: string): boolean => /(?:^|[^a-z0-9])no[-_]?op(?:$|[^a-z0-9]|[A-Z])/i.test(name)
-
-const isPromiseSwallowHandler = (fn: FnLike): boolean => {
-  if (!Node.isArrowFunction(fn) && !Node.isFunctionExpression(fn)) {
-    return false
-  }
-
-  const parent = fn.getParent()
-  if (!Node.isCallExpression(parent)) {
-    return false
-  }
-
-  const expression = parent.getExpression()
-  return Node.isPropertyAccessExpression(expression) && ["catch", "finally", "then"].includes(expression.getName())
-}
-
-const isNeverSettlingPromiseExecutor = (fn: FnLike): boolean => {
-  if (!Node.isArrowFunction(fn) && !Node.isFunctionExpression(fn)) return false
-  if (fn.getParameters().length > 0) return false
-  const parent = fn.getParent()
-  if (!Node.isNewExpression(parent)) return false
-  return parent.getExpression().getText() === "Promise"
-}
-
-const isReturnedNoop = (fn: FnLike): boolean => {
-  if (!Node.isArrowFunction(fn) && !Node.isFunctionExpression(fn)) return false
-  return Node.isReturnStatement(fn.getParent())
-}
-
-const isJsxEventNoop = (fn: FnLike): boolean => {
-  if (!Node.isArrowFunction(fn) && !Node.isFunctionExpression(fn)) return false
-  const parent = fn.getParent()
-  if (!Node.isJsxExpression(parent)) return false
-  const attribute = parent.getParent()
-  if (!Node.isJsxAttribute(attribute)) return false
-  return /^on[A-Z]/.test(attribute.getNameNode().getText())
-}
-
-const isUiPlaceholderCallback = (fn: FnLike): boolean => {
-  if (!Node.isArrowFunction(fn) && !Node.isFunctionExpression(fn)) return false
-  const parent = fn.getParent()
-  if (!Node.isPropertyAssignment(parent)) return false
-  const propertyName = propertyNameOf(parent)
-  return [
-    "onClose",
-    "onDispose",
-    "onDragMove",
-    "onDragReset",
-    "onDragStart",
-    "onFlush",
-    "onRedirect",
-    "onSelect",
-    "onSuccess",
-  ].includes(propertyName)
-}
-
-const isEventTerminalNoop = (fn: FnLike): boolean => {
-  if (!Node.isArrowFunction(fn) && !Node.isFunctionExpression(fn)) return false
-  const parent = fn.getParent()
-  if (!Node.isPropertyAssignment(parent)) return false
-  return propertyNameOf(parent).endsWith(".ended")
-}
-
-const isDisposableNoop = (fn: FnLike): boolean => {
-  if (Node.isMethodDeclaration(fn) && fn.getNameNode().getText().includes("Symbol.dispose")) {
-    return true
-  }
-  if (!Node.isArrowFunction(fn) && !Node.isFunctionExpression(fn)) return false
-  const parent = fn.getParent()
-  return Node.isPropertyAssignment(parent) && propertyNameOf(parent).includes("Symbol.dispose")
-}
-
-const isDeferredResolverPlaceholder = (fn: FnLike): boolean => {
-  if (!Node.isArrowFunction(fn) && !Node.isFunctionExpression(fn)) return false
-  const parent = fn.getParent()
-  if (!Node.isPropertyAssignment(parent)) return false
-  if (!["resolve", "reject"].includes(propertyNameOf(parent))) return false
-  return hasOnlyIgnoredParameters(fn)
-}
-
-const isMutablePlaceholderInitializer = (fn: FnLike): boolean => {
-  if (!Node.isArrowFunction(fn) && !Node.isFunctionExpression(fn)) return false
-  const parent = fn.getParent()
-  if (!Node.isVariableDeclaration(parent)) return false
-  const declarationList = parent.getParent()
-  return Node.isVariableDeclarationList(declarationList) && declarationList.getText().trimStart().startsWith("let ")
-}
-
-const isEmptyObjectMemberOnEmptyConstant = (fn: FnLike): boolean => {
-  if (!Node.isArrowFunction(fn) && !Node.isFunctionExpression(fn)) return false
-  const property = fn.getParent()
-  if (!Node.isPropertyAssignment(property)) return false
-  const object = property.getParent()
-  if (!Node.isObjectLiteralExpression(object)) return false
-  const declaration = object.getParent()
-  if (!Node.isVariableDeclaration(declaration)) return false
-  return /^EMPTY(?:_|[A-Z])/.test(declaration.getName())
-}
-
-const isIgnoredParameterInterfaceHook = (fn: FnLike): boolean => {
-  if (!Node.isMethodDeclaration(fn) && !Node.isFunctionDeclaration(fn) && !Node.isArrowFunction(fn)) {
-    return false
-  }
-  if (!hasOnlyIgnoredParameters(fn)) return false
-  return /^(?:webSocket|on[A-Z])/.test(getFunctionName(fn))
-}
-
-const isParameterPropertyConstructor = (fn: FnLike): boolean => {
-  if (!Node.isConstructorDeclaration(fn)) return false
-  return fn.getParameters().some((parameter) =>
-    /\b(?:public|private|protected|readonly)\b/.test(parameter.getText()),
-  )
-}
-
-const isProtectedHookNoop = (fn: FnLike): boolean => {
-  if (!Node.isMethodDeclaration(fn)) return false
-  const name = fn.getName()
-  if (!name.startsWith("_")) return false
-  if (!/\b(?:protected|private)\b/.test(fn.getText())) return false
-  return fn.getParameters().every((parameter) => parameter.getName().startsWith("_"))
-}
-
-const isInterfaceResetNoop = (fn: FnLike): boolean => {
-  if (!Node.isMethodDeclaration(fn) || fn.getName() !== "reset") return false
-  const parent = fn.getParent()
-  if (!Node.isClassDeclaration(parent)) return false
-  return parent.getImplements().length > 0
-}
-
-const isObjectLifecycleNoop = (fn: FnLike): boolean => {
-  if (!Node.isMethodDeclaration(fn)) return false
-  if (!["remove", "dispose", "destroy", "cleanup", "stop"].includes(fn.getName())) return false
-  if (!hasOnlyIgnoredParameters(fn)) return false
-
-  const parent = fn.getParent()
-  if (!Node.isObjectLiteralExpression(parent)) return false
-
-  const siblingNames = objectMemberNames(parent)
-
-  return ["create", "configure", "setup", "start", "target"].some((name) =>
-    siblingNames.has(name),
-  )
-}
-
-const isNullObjectLifecycleFallback = (fn: FnLike): boolean => {
-  const object = objectLiteralParentOfFunctionMember(fn)
-  if (object === undefined) return false
-
-  const propertyName = objectMemberNameForFunction(fn)
-  if (
-    ![
-      "attachLifecycle",
-      "detachLifecycle",
-      "dispose",
-      "remove",
-      "cleanup",
-      "stop",
-      "destroy",
-      "shutdown",
-    ].includes(propertyName)
-  ) {
-    return false
-  }
-
-  const siblingNames = objectMemberNames(object)
-
-  const hasNullObjectShape =
-    siblingNames.has("emitter") ||
-    siblingNames.has("app") ||
-    siblingNames.has("signal") ||
-    siblingNames.has("drainPending") ||
-    siblingNames.has("isAvailable") ||
-    siblingNames.has("available") ||
-    siblingNames.has("enabled")
-  if (!hasNullObjectShape) return false
-
-  return hasFallbackAncestor(object)
-}
-
-const isIgnoredErrorHandler = (fn: FnLike): boolean => {
-  const name = getFunctionName(fn)
-  return /^ignore[A-Z].*Error$/.test(name)
-}
-
-const isNoopFactoryObjectMember = (fn: FnLike): boolean => {
-  const object = objectLiteralParentOfFunctionMember(fn)
-  if (object === undefined) return false
-
-  for (const ancestor of object.getAncestors()) {
-    if (Node.isFunctionDeclaration(ancestor) || Node.isFunctionExpression(ancestor)) {
-      return hasNoopFactoryName(ancestor.getName() ?? "")
-    }
-    if (Node.isArrowFunction(ancestor) || Node.isSourceFile(ancestor)) {
-      return false
-    }
-  }
-
-  return false
-}
-
-const hasNoopFactoryName = (name: string): boolean => /(?:^|[^a-z0-9]|[a-z])no[-_]?op/i.test(name)
-
-const isExplicitNoopObjectMember = (fn: FnLike): boolean => {
-  const object = objectLiteralParentOfFunctionMember(fn)
-  if (object === undefined) return false
-  const declaration = object.getParent()
-  return Node.isVariableDeclaration(declaration) && hasNoopFactoryName(declaration.getName())
-}
-
-const isTerminalLifecycleCallback = (fn: FnLike): boolean => {
-  if (!Node.isArrowFunction(fn) && !Node.isFunctionExpression(fn)) return false
-  const property = nearestPropertyAssignment(fn)
-  if (property === undefined) return false
-  return /^on(?=[A-Z])(?=.*(?:End|Settled|Complete|Close)$)/.test(propertyNameOf(property))
-}
-
-const isFallbackLoggerNoop = (fn: FnLike): boolean => {
-  const object = objectLiteralParentOfFunctionMember(fn)
-  if (object === undefined) return false
-  const loggerMethods = new Set(["debug", "trace", "info", "warn", "error"])
-  const propertyName = objectMemberNameForFunction(fn)
-  if (!loggerMethods.has(propertyName)) return false
-
-  const memberNames = object.getProperties().flatMap((property) => {
-    if (Node.isMethodDeclaration(property)) return [property.getName()]
-    if (Node.isPropertyAssignment(property)) return [propertyNameOf(property)]
-    return []
-  })
-  if (memberNames.length === 0 || memberNames.some((name) => !loggerMethods.has(name))) {
-    return false
-  }
-
-  return hasFallbackAncestor(object)
-}
-
-const isFallbackCallbackInitializer = (fn: FnLike): boolean => {
-  if (!Node.isArrowFunction(fn) && !Node.isFunctionExpression(fn)) return false
-  const binary = fn.getAncestors().find(Node.isBinaryExpression)
-  if (binary === undefined || binary.getOperatorToken().getText() !== "??") return false
-  const declaration = binary.getAncestors().find(Node.isVariableDeclaration)
-  if (declaration === undefined) return false
-  return /^(?:log|logger|debug|trace|warn|error|noop|fallback)/i.test(declaration.getName())
-}
-
-const isConsoleMethodSilencingNoop = (fn: FnLike): boolean => {
-  if (!Node.isArrowFunction(fn) && !Node.isFunctionExpression(fn)) return false
-  const parent = fn.getParent()
-  if (!Node.isBinaryExpression(parent) || parent.getOperatorToken().getText() !== "=") return false
-  if (parent.getRight() !== fn) return false
-  const left = parent.getLeft()
-  if (!Node.isPropertyAccessExpression(left)) return false
-  if (left.getExpression().getText() !== "console") return false
-  return ["debug", "error", "info", "log", "trace", "warn"].includes(left.getName())
-}
-
-const isExpressionBodyReturnedNoop = (fn: FnLike): boolean => {
-  if (!Node.isArrowFunction(fn) && !Node.isFunctionExpression(fn)) return false
-  const parent = fn.getParent()
-  if (!Node.isArrowFunction(parent)) return false
-  return parent.getBody() === fn
-}
-
-const isCapabilityAbsentContractStub = (fn: FnLike): boolean => {
-  if (!Node.isFunctionDeclaration(fn) && !Node.isMethodDeclaration(fn)) return false
-  const sourceFile = fn.getSourceFile()
-  const beforeFunction = sourceFile.getFullText().slice(0, fn.getStart()).slice(-400)
-  return /(?:does not expose|no .*surfaces|without .*surfaces)/i.test(beforeFunction)
-}
-
-const isBorrowedResourceCloseNoop = (fn: FnLike): boolean => {
-  if (!Node.isMethodDeclaration(fn) || fn.getName() !== "close") return false
-  const classDeclaration = fn.getFirstAncestorByKind(SyntaxKind.ClassDeclaration)
-  return classDeclaration?.getName()?.startsWith("Borrowed") === true
-}
-
-const isConditionalNoopBranch = (fn: FnLike): boolean => {
-  if (!Node.isArrowFunction(fn) && !Node.isFunctionExpression(fn)) return false
-  const parent = fn.getParent()
-  if (!Node.isConditionalExpression(parent)) return false
-  const otherBranch =
-    parent.getWhenTrue() === fn ? parent.getWhenFalse() : parent.getWhenTrue()
-  return !isEmptyBodyText(otherBranch.getText())
-}
-
-const isUnavailableCapabilitySetterNoop = (fn: FnLike): boolean => {
-  const object = objectLiteralParentOfFunctionMember(fn)
-  if (object === undefined) return false
-
-  const propertyName = objectMemberNameForFunction(fn)
-  if (!/^set[A-Z].*Value$/.test(propertyName)) return false
-
-  return object.getProperties().some((property) => {
-    if (!Node.isPropertyAssignment(property)) return false
-    const name = propertyNameOf(property)
-    const value = property.getInitializer()?.getText().trim()
-    return (
-      (name === "requiresCredential" && value === "false") ||
-      (name === "credentialPath" && /^["']{2}$/.test(value ?? ""))
-    )
-  })
-}
-
-const hasBuiltinIntentionalNoopShape = (fn: FnLike): boolean => {
-  const predicates: ReadonlyArray<(fn: FnLike) => boolean> = [
-    isPromiseSwallowHandler,
-    isNeverSettlingPromiseExecutor,
-    isReturnedNoop,
-    isJsxEventNoop,
-    isUiPlaceholderCallback,
-    isEventTerminalNoop,
-    isDisposableNoop,
-    isDeferredResolverPlaceholder,
-    isMutablePlaceholderInitializer,
-    isEmptyObjectMemberOnEmptyConstant,
-    isIgnoredParameterInterfaceHook,
-    isParameterPropertyConstructor,
-    isProtectedHookNoop,
-    isInterfaceResetNoop,
-    isObjectLifecycleNoop,
-    isNullObjectLifecycleFallback,
-    isIgnoredErrorHandler,
-    isNoopFactoryObjectMember,
-    isExplicitNoopObjectMember,
-    isTerminalLifecycleCallback,
-    isFallbackLoggerNoop,
-    isFallbackCallbackInitializer,
-    isConsoleMethodSilencingNoop,
-    isExpressionBodyReturnedNoop,
-    isCapabilityAbsentContractStub,
-    isBorrowedResourceCloseNoop,
-    isCommonEmptyContractCallback,
-    isTimerKeepAliveNoop,
-    isRegistrationMarkerNoop,
-    isConditionalNoopBranch,
-    isUnavailableCapabilitySetterNoop,
-  ]
-  return predicates.some((predicate) => predicate(fn))
-}
-
-const COMMON_EMPTY_CONTRACT_CALLBACKS = new Set([
-  "ack",
-  "acknowledge",
-  "cleanup",
-  "clearSetupPromotionRuntimeModuleCache",
-  "clearProviderRuntimeHookCache",
-  "close",
-  "dispose",
-  "log",
-  "markDispatchIdle",
-  "markRunComplete",
-  "notifyStarted",
-  "onReplyStart",
-  "prepareProviderDynamicModel",
-  "refreshTypingTtl",
-  "release",
-  "releaseRetryTokens",
-  "sendPairingReply",
-  "startTypingLoop",
-  "startTypingOnText",
-  "stop",
-  "unsubscribe",
-  "[Symbol.asyncIterator]",
-])
-
-const isCommonEmptyContractCallback = (fn: FnLike): boolean => {
-  if (
-    !Node.isArrowFunction(fn) &&
-    !Node.isFunctionExpression(fn) &&
-    !Node.isFunctionDeclaration(fn) &&
-    !Node.isMethodDeclaration(fn)
-  ) {
-    return false
-  }
-  if (fn.getParameters().length > 0) return false
-  if (Node.isMethodDeclaration(fn) && !Node.isObjectLiteralExpression(fn.getParent())) return false
-  return COMMON_EMPTY_CONTRACT_CALLBACKS.has(objectMemberNameForFunction(fn))
-}
-
-const isTimerKeepAliveNoop = (fn: FnLike): boolean => {
-  if (!Node.isArrowFunction(fn) && !Node.isFunctionExpression(fn)) return false
-  if (fn.getParameters().length > 0) return false
-  const parent = fn.getParent()
-  if (!Node.isCallExpression(parent)) return false
-  const expression = parent.getExpression().getText()
-  return expression === "setInterval" || expression === "setTimeout"
-}
-
-const isRegistrationMarkerNoop = (fn: FnLike): boolean => {
-  if (!Node.isArrowFunction(fn) && !Node.isFunctionExpression(fn)) return false
-  if (fn.getParameters().length > 0) return false
-  const parent = fn.getParent()
-  if (!Node.isCallExpression(parent)) return false
-  const firstArg = parent.getArguments()[0]
-  if (firstArg !== fn) return false
-  return /\.register[A-Z]/.test(parent.getExpression().getText())
-}
-
-const nearestPropertyAssignment = (
-  node: Node,
-): import("ts-morph").PropertyAssignment | undefined => {
-  for (const ancestor of [node, ...node.getAncestors()]) {
-    if (Node.isPropertyAssignment(ancestor)) return ancestor
-    if (Node.isSourceFile(ancestor)) return undefined
-  }
-  return undefined
-}
-
-const objectLiteralParentOfFunctionMember = (
-  fn: FnLike,
-): import("ts-morph").ObjectLiteralExpression | undefined => {
-  if (Node.isMethodDeclaration(fn)) {
-    const parent = fn.getParent()
-    return Node.isObjectLiteralExpression(parent) ? parent : undefined
-  }
-
-  if (!Node.isArrowFunction(fn) && !Node.isFunctionExpression(fn)) return undefined
-  const parent = fn.getParent()
-  if (!Node.isPropertyAssignment(parent)) return undefined
-  const object = parent.getParent()
-  return Node.isObjectLiteralExpression(object) ? object : undefined
-}
-
-const objectMemberNameForFunction = (fn: FnLike): string => {
-  if (Node.isMethodDeclaration(fn)) return fn.getName()
-  const parent = fn.getParent()
-  return Node.isPropertyAssignment(parent) ? propertyNameOf(parent) : getFunctionName(fn)
-}
-
-const objectMemberNames = (
-  object: import("ts-morph").ObjectLiteralExpression,
-): ReadonlySet<string> =>
-  new Set(
-    object.getProperties().flatMap((property) => {
-      if (Node.isMethodDeclaration(property)) return [property.getName()]
-      if (Node.isPropertyAssignment(property)) return [propertyNameOf(property)]
-      if (Node.isShorthandPropertyAssignment(property)) return [property.getName()]
-      return []
-    }),
-  )
-
-const hasFallbackAncestor = (node: Node): boolean => {
-  for (const ancestor of node.getAncestors()) {
-    if (Node.isIfStatement(ancestor)) return true
-    if (Node.isConditionalExpression(ancestor)) return true
-    if (Node.isBinaryExpression(ancestor) && ancestor.getOperatorToken().getText() === "??") return true
-    if (
-      Node.isFunctionDeclaration(ancestor) ||
-      Node.isMethodDeclaration(ancestor) ||
-      Node.isArrowFunction(ancestor) ||
-      Node.isFunctionExpression(ancestor) ||
-      Node.isSourceFile(ancestor)
-    ) {
-      return false
-    }
-  }
-  return false
-}
-
-const propertyNameOf = (property: import("ts-morph").PropertyAssignment): string => {
-  return property.getNameNode().getText().replace(/^["']|["']$/g, "")
-}
-
-const hasOnlyIgnoredParameters = (fn: FnLike): boolean => {
-  const parameters = fn.getParameters()
-  return parameters.length > 0 && parameters.every((parameter) => parameter.getName().startsWith("_"))
 }
 
 const classifyStub = (fn: FnLike, bodyText: string): { kind: StubKind; message: string } | undefined => {
