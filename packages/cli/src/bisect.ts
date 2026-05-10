@@ -9,6 +9,7 @@ import {
   type Category,
   type MinimumDimension,
   type ObserverOutput,
+  type Registry,
   type SignalRunResult,
 } from "@skastr0/pulsar-core"
 import { Effect } from "effect"
@@ -222,6 +223,9 @@ export const runBisectCommand = (opts: BisectOptions) =>
         (sha) => engine.observeCommit(repoPath, sha),
       )
       const elapsedMs = Date.now() - started
+      const selectedSignals = (opts.selectedSignals ?? []).map(
+        (signalId) => registry.canonicalIdOf(signalId) ?? signalId,
+      )
       const report = buildObserverReport(sampled.trajectory, {
         repoPath,
         fromSha: opts.fromSha,
@@ -229,9 +233,9 @@ export const runBisectCommand = (opts: BisectOptions) =>
         topCulprits: opts.topCulprits,
         vectorName: vector?.id ?? null,
         sampling: sampled.sampling,
-        selectedSignals: opts.selectedSignals ?? [],
+        selectedSignals,
         selectedCategories: opts.selectedCategories ?? [],
-        firstCrossing: opts.firstCrossing,
+        firstCrossing: canonicalizeFirstCrossingQuery(opts.firstCrossing, registry),
       })
       if (opts.json) {
         console.log(JSON.stringify(report, null, 2))
@@ -563,6 +567,14 @@ const signalScorePoints = (
     const score = entry.signals[signalId]
     return score === undefined ? [] : [{ sha: entry.sha, score }]
   })
+
+const canonicalizeFirstCrossingQuery = (
+  query: FirstCrossingQuery | undefined,
+  registry: Registry,
+): FirstCrossingQuery | undefined => {
+  if (query === undefined) return undefined
+  return { ...query, target: registry.canonicalIdOf(query.target) ?? query.target }
+}
 
 const mergeSignalCategories = (
   results: ReadonlyArray<ObserverCurveSample>,
@@ -1218,112 +1230,146 @@ const printObserverHumanReport = (
   elapsedMs: number,
   applicableSignalCount: number,
 ): void => {
-  const lines: Array<string> = []
   const finalEntry = report.trajectory[report.trajectory.length - 1]
+  const lines = [
+    ...observerHeaderLines(report, elapsedMs, applicableSignalCount),
+    ...observerScoreSummaryLines(report, finalEntry),
+    ...observerCategoryScoreLines(report, finalEntry),
+    ...observerCategorySummaryLines(report),
+    ...culpritSectionLines(
+      "readiness",
+      report.readinessCulprits,
+      "No readiness degrading commits in range.",
+    ),
+    ...driftCulpritSectionLines(
+      "readiness",
+      report.readinessCulprits,
+      report.readinessDriftCulprits,
+    ),
+    ...culpritSectionLines(
+      "evidence-mean",
+      report.weightedMeanCulprits,
+      "No evidence-mean degrading commits in range.",
+    ),
+    ...driftCulpritSectionLines(
+      "evidence-mean",
+      report.weightedMeanCulprits,
+      report.weightedMeanDriftCulprits,
+    ),
+    ...perCategoryLeaderLines(report),
+    ...signalLeaderLines(report),
+    ...firstCrossingLines(report),
+    "",
+  ]
+  for (const line of lines) console.log(line)
+}
 
-  lines.push("")
-  lines.push(`  Repo:    ${report.repoPath}`)
-  lines.push("  Mode:    observer")
-  if (report.vectorName !== null) {
-    lines.push(`  Vector:  ${report.vectorName}`)
-  }
-  lines.push(`  Range:   ${report.fromSha}..${report.toSha}`)
-  lines.push(`  Commits: ${report.trajectory.length}  (${elapsedMs}ms)`)
+const observerHeaderLines = (
+  report: ObserverBisectReport,
+  elapsedMs: number,
+  applicableSignalCount: number,
+): ReadonlyArray<string> => {
+  const lines = [
+    "",
+    `  Repo:    ${report.repoPath}`,
+    "  Mode:    observer",
+    ...(report.vectorName === null ? [] : [`  Vector:  ${report.vectorName}`]),
+    `  Range:   ${report.fromSha}..${report.toSha}`,
+    `  Commits: ${report.trajectory.length}  (${elapsedMs}ms)`,
+  ]
   if (report.sampling.scoredCommits !== report.sampling.totalCommits) {
     lines.push(
       `  Sample:  ${report.sampling.applied} (${report.sampling.scoredCommits}/${report.sampling.totalCommits} commits scored)`,
     )
   }
   lines.push(`  Evidence: ${applicableSignalCount} applicable signals`)
-  for (const diagnostic of report.sampling.diagnostics) {
-    lines.push(`  Note:    ${diagnostic}`)
-  }
-  lines.push("")
-  if (report.finalReadinessScore !== undefined) {
-    lines.push(
-      `  Readiness: min ${report.minReadinessScore?.toFixed(3) ?? "n/a"}   max ${report.maxReadinessScore?.toFixed(3) ?? "n/a"}   final ${report.finalReadinessScore.toFixed(3)}   drift ${report.readinessDrift?.toFixed(3) ?? "n/a"}   pressure ${finalEntry?.readinessPressure?.toFixed(3) ?? "n/a"} ${finalEntry?.readinessStatus ?? ""}`,
-    )
-  }
-  lines.push(
-    `  Evidence mean: min ${report.minWeightedMean.toFixed(3)}   max ${report.maxWeightedMean.toFixed(3)}   final ${report.finalWeightedMean.toFixed(3)}   drift ${report.totalDrift.toFixed(3)}`,
-  )
-  lines.push(`  Final hard gate: ${report.hardGateStatusAtFinal}`)
-  if (report.finalMinimumDimension !== undefined) {
-    lines.push(
-      `  Final minimum dimension: ${report.finalMinimumDimension.signal} / ${report.finalMinimumDimension.category} @ ${report.finalMinimumDimension.score.toFixed(3)}`,
-    )
-  }
-  lines.push("")
-  lines.push("  HEAD category scores:")
-  for (const category of report.selectedCategories) {
+  lines.push(...report.sampling.diagnostics.map((diagnostic) => `  Note:    ${diagnostic}`))
+  return lines
+}
+
+const observerScoreSummaryLines = (
+  report: ObserverBisectReport,
+  finalEntry: ObserverCommitEntry | undefined,
+): ReadonlyArray<string> => [
+  "",
+  ...(report.finalReadinessScore === undefined
+    ? []
+    : [
+        `  Readiness: min ${report.minReadinessScore?.toFixed(3) ?? "n/a"}   max ${report.maxReadinessScore?.toFixed(3) ?? "n/a"}   final ${report.finalReadinessScore.toFixed(3)}   drift ${report.readinessDrift?.toFixed(3) ?? "n/a"}   pressure ${finalEntry?.readinessPressure?.toFixed(3) ?? "n/a"} ${finalEntry?.readinessStatus ?? ""}`,
+      ]),
+  `  Evidence mean: min ${report.minWeightedMean.toFixed(3)}   max ${report.maxWeightedMean.toFixed(3)}   final ${report.finalWeightedMean.toFixed(3)}   drift ${report.totalDrift.toFixed(3)}`,
+  `  Final hard gate: ${report.hardGateStatusAtFinal}`,
+  ...(report.finalMinimumDimension === undefined
+    ? []
+    : [
+        `  Final minimum dimension: ${report.finalMinimumDimension.signal} / ${report.finalMinimumDimension.category} @ ${report.finalMinimumDimension.score.toFixed(3)}`,
+      ]),
+]
+
+const observerCategoryScoreLines = (
+  report: ObserverBisectReport,
+  finalEntry: ObserverCommitEntry | undefined,
+): ReadonlyArray<string> => [
+  "",
+  "  HEAD category scores:",
+  ...report.selectedCategories.map((category) => {
     const score = finalEntry?.categories[category] ?? 1
     const signalCount = countFinalApplicableSignalsByCategory(finalEntry, category)
-    lines.push(
-      `    ${padCategory(category)}  ${score.toFixed(3)}  ${renderScoreBar(score)}  (${signalCount} applicable)`,
-    )
-  }
-  lines.push("")
-  lines.push("  Category trajectory summary:")
-  for (const category of report.selectedCategories) {
+    return `    ${padCategory(category)}  ${score.toFixed(3)}  ${renderScoreBar(score)}  (${signalCount} applicable)`
+  }),
+]
+
+const observerCategorySummaryLines = (
+  report: ObserverBisectReport,
+): ReadonlyArray<string> => [
+  "",
+  "  Category trajectory summary:",
+  ...report.selectedCategories.map((category) => {
     const summary = report.perCategory[category]
-    lines.push(
-      `    ${padCategory(category)}  min ${summary.min.toFixed(3)}   max ${summary.max.toFixed(3)}   final ${summary.final.toFixed(3)}   drift ${summary.drift.toFixed(3)}   levels ${summary.distinctLevels}`,
-    )
-  }
-  lines.push("")
-  if (report.readinessCulprits.length === 0) {
-    lines.push("  No readiness degrading commits in range.")
-  } else {
-    lines.push(`  Top ${report.readinessCulprits.length} readiness culprit commits:`)
-    for (const culprit of report.readinessCulprits) {
-      lines.push(
-        `    ${culprit.sha.slice(0, 8)}  drop ${culprit.drop.toFixed(3)}   ${culprit.prevScore.toFixed(3)} → ${culprit.newScore.toFixed(3)}  (from ${culprit.prevSha.slice(0, 8)})`,
-      )
-    }
-  }
-  if (shouldPrintDriftCulprits(report.readinessCulprits, report.readinessDriftCulprits)) {
-    lines.push("")
-    lines.push(`  Top ${report.readinessDriftCulprits.length} readiness drift culprits:`)
-    for (const culprit of report.readinessDriftCulprits) {
-      lines.push(
-        `    ${culprit.sha.slice(0, 8)}  drift ${culprit.drop.toFixed(3)}   ${culprit.prevScore.toFixed(3)} → ${culprit.newScore.toFixed(3)}  (from ${culprit.prevSha.slice(0, 8)})`,
-      )
-    }
-  }
-  lines.push("")
-  if (report.weightedMeanCulprits.length === 0) {
-    lines.push("  No evidence-mean degrading commits in range.")
-  } else {
-    lines.push(`  Top ${report.weightedMeanCulprits.length} evidence-mean culprit commits:`)
-    for (const culprit of report.weightedMeanCulprits) {
-      lines.push(
-        `    ${culprit.sha.slice(0, 8)}  drop ${culprit.drop.toFixed(3)}   ${culprit.prevScore.toFixed(3)} → ${culprit.newScore.toFixed(3)}  (from ${culprit.prevSha.slice(0, 8)})`,
-      )
-    }
-  }
-  if (shouldPrintDriftCulprits(report.weightedMeanCulprits, report.weightedMeanDriftCulprits)) {
-    lines.push("")
-    lines.push(
-      `  Top ${report.weightedMeanDriftCulprits.length} evidence-mean drift culprits:`,
-    )
-    for (const culprit of report.weightedMeanDriftCulprits) {
-      lines.push(
-        `    ${culprit.sha.slice(0, 8)}  drift ${culprit.drop.toFixed(3)}   ${culprit.prevScore.toFixed(3)} → ${culprit.newScore.toFixed(3)}  (from ${culprit.prevSha.slice(0, 8)})`,
-      )
-    }
-  }
-  lines.push("")
-  lines.push("  Per-category culprit leaders:")
-  for (const category of report.selectedCategories) {
+    return `    ${padCategory(category)}  min ${summary.min.toFixed(3)}   max ${summary.max.toFixed(3)}   final ${summary.final.toFixed(3)}   drift ${summary.drift.toFixed(3)}   levels ${summary.distinctLevels}`
+  }),
+  "",
+]
+
+const culpritSectionLines = (
+  label: string,
+  culprits: ReadonlyArray<Culprit>,
+  emptyMessage: string,
+): ReadonlyArray<string> =>
+  culprits.length === 0
+    ? [emptyMessage]
+    : [
+        `  Top ${culprits.length} ${label} culprit commits:`,
+        ...culprits.map((culprit) => `    ${formatCulprit(culprit, "drop")}`),
+      ]
+
+const driftCulpritSectionLines = (
+  label: string,
+  adjacent: ReadonlyArray<Culprit>,
+  drift: ReadonlyArray<Culprit>,
+): ReadonlyArray<string> =>
+  shouldPrintDriftCulprits(adjacent, drift)
+    ? [
+        "",
+        `  Top ${drift.length} ${label} drift culprits:`,
+        ...drift.map((culprit) => `    ${formatCulprit(culprit, "drift")}`),
+        "",
+      ]
+    : [""]
+
+const formatCulprit = (culprit: Culprit, label: "drop" | "drift"): string =>
+  `${culprit.sha.slice(0, 8)}  ${label} ${culprit.drop.toFixed(3)}   ${culprit.prevScore.toFixed(3)} → ${culprit.newScore.toFixed(3)}  (from ${culprit.prevSha.slice(0, 8)})`
+
+const perCategoryLeaderLines = (report: ObserverBisectReport): ReadonlyArray<string> => [
+  "  Per-category culprit leaders:",
+  ...report.selectedCategories.map((category) => {
     const culprit = report.perCategoryCulprits[category][0]
-    if (culprit === undefined) {
-      lines.push(`    ${padCategory(category)}  none`)
-      continue
-    }
-    lines.push(
-      `    ${padCategory(category)}  ${culprit.sha.slice(0, 8)}  drop ${culprit.drop.toFixed(3)}  (${culprit.prevScore.toFixed(3)} → ${culprit.newScore.toFixed(3)})`,
-    )
-  }
+    if (culprit === undefined) return `    ${padCategory(category)}  none`
+    return `    ${padCategory(category)}  ${culprit.sha.slice(0, 8)}  drop ${culprit.drop.toFixed(3)}  (${culprit.prevScore.toFixed(3)} → ${culprit.newScore.toFixed(3)})`
+  }),
+]
+
+const signalLeaderLines = (report: ObserverBisectReport): ReadonlyArray<string> => {
   const signalLeaders = Object.entries(report.perSignalCulprits)
     .map(([signalId, culprits]) => ({ signalId, culprit: culprits[0] }))
     .filter(
@@ -1332,24 +1378,24 @@ const printObserverHumanReport = (
     )
     .sort((a, b) => b.culprit.drop - a.culprit.drop)
     .slice(0, 5)
-  if (signalLeaders.length > 0) {
-    lines.push("")
-    lines.push(`  Top ${signalLeaders.length} signal culprit leaders:`)
-    for (const { signalId, culprit } of signalLeaders) {
-      lines.push(
+  if (signalLeaders.length === 0) return []
+  return [
+    "",
+    `  Top ${signalLeaders.length} signal culprit leaders:`,
+    ...signalLeaders.map(
+      ({ signalId, culprit }) =>
         `    ${signalId.padEnd(10, " ")}  ${culprit.sha.slice(0, 8)}  drop ${culprit.drop.toFixed(3)}  (${culprit.prevScore.toFixed(3)} → ${culprit.newScore.toFixed(3)})`,
-      )
-    }
-  }
-  if (report.firstCrossing !== undefined) {
-    lines.push("")
-    lines.push(
-      `  First crossing: ${report.firstCrossing.target} ${report.firstCrossing.op} ${report.firstCrossing.threshold} at ${report.firstCrossing.sha.slice(0, 8)} (${report.firstCrossing.score.toFixed(3)})`,
-    )
-  }
-  lines.push("")
-  for (const line of lines) console.log(line)
+    ),
+  ]
 }
+
+const firstCrossingLines = (report: ObserverBisectReport): ReadonlyArray<string> =>
+  report.firstCrossing === undefined
+    ? []
+    : [
+        "",
+        `  First crossing: ${report.firstCrossing.target} ${report.firstCrossing.op} ${report.firstCrossing.threshold} at ${report.firstCrossing.sha.slice(0, 8)} (${report.firstCrossing.score.toFixed(3)})`,
+      ]
 
 const padCategory = (category: Category): string => category.padEnd(20, " ")
 

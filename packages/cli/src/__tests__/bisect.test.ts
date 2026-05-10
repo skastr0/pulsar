@@ -428,15 +428,20 @@ describe("pulsar bisect (integration)", () => {
     )
 
     const parsed = JSON.parse(out)
-    expect(parsed.firstCrossing?.target).toBe("TS-LD-02")
+    expect(parsed.firstCrossing?.target).toBe("TS-LD-02-function-size-distribution")
     expect(parsed.firstCrossing?.sha.length).toBe(40)
-    expect(Object.keys(parsed.curves.signals)).toEqual(["TS-LD-02"])
-    expect(Object.keys(parsed.signalCategories)).toEqual(["TS-LD-02"])
+    expect(Object.keys(parsed.curves.signals)).toEqual(["TS-LD-02-function-size-distribution"])
+    expect(Object.keys(parsed.signalCategories)).toEqual(["TS-LD-02-function-size-distribution"])
     expect(Object.keys(parsed.curves.categories)).toEqual(["legibility-decay"])
-    expect(Object.keys(parsed.trajectory[0].signals)).toEqual(["TS-LD-02"])
+    expect(Object.keys(parsed.trajectory[0].signals)).toEqual([
+      "TS-LD-02-function-size-distribution",
+    ])
     expect(Object.keys(parsed.trajectory[0].categories)).toEqual(["legibility-decay"])
-    expect(parsed.curves.signals["TS-LD-02"]).toEqual(
-      parsed.trajectory.map((entry: { signals: Record<string, number> }) => entry.signals["TS-LD-02"]),
+    expect(parsed.curves.signals["TS-LD-02-function-size-distribution"]).toEqual(
+      parsed.trajectory.map(
+        (entry: { signals: Record<string, number> }) =>
+          entry.signals["TS-LD-02-function-size-distribution"],
+      ),
     )
     expect(parsed.curves.categories["legibility-decay"]).toEqual(
       parsed.trajectory.map(
@@ -445,7 +450,9 @@ describe("pulsar bisect (integration)", () => {
     )
     expect(parsed.firstCrossing?.sha).toBe(parsed.trajectory[0].sha)
     expect(parsed.firstCrossing?.previousSha).toBeUndefined()
-    expect(parsed.firstCrossing?.score).toBe(parsed.curves.signals["TS-LD-02"][0])
+    expect(parsed.firstCrossing?.score).toBe(
+      parsed.curves.signals["TS-LD-02-function-size-distribution"][0],
+    )
   }, 120_000)
 
   test("threads an optional vector through observer mode", async () => {
@@ -481,10 +488,10 @@ describe("pulsar bisect (integration)", () => {
     expect(parsed.trajectory).toHaveLength(1)
     expect(parsed.signalCategories["TS-AB-01"]).toBeUndefined()
     expect(parsed.trajectory[0].signals["TS-AB-01"]).toBeUndefined()
-    expect(parsed.signalCategories["TS-AB-03"]).toBe("abstraction-bloat")
-    expect(parsed.signalCategories["TS-AB-05"]).toBe("abstraction-bloat")
-    expect(parsed.trajectory[0].signals["TS-AB-03"]).toBeDefined()
-    expect(parsed.trajectory[0].signals["TS-AB-05"]).toBeDefined()
+    expect(parsed.signalCategories["TS-AB-03-type-indirection-depth"]).toBe("abstraction-bloat")
+    expect(parsed.signalCategories["TS-AB-05-generic-proliferation"]).toBe("abstraction-bloat")
+    expect(parsed.trajectory[0].signals["TS-AB-03-type-indirection-depth"]).toBeDefined()
+    expect(parsed.trajectory[0].signals["TS-AB-05-generic-proliferation"]).toBeDefined()
     expect(parsed.trajectory[0].categories["abstraction-bloat"]).toBeGreaterThan(0)
     expect(parsed.trajectory[0].categories["abstraction-bloat"]).toBeLessThanOrEqual(1)
   }, 60_000)
