@@ -23,9 +23,15 @@ import {
   dependencyNamesOf,
   isBuiltinModuleName,
   normalizePackageSpecifier,
-  packageDisplayName,
   workspacePackageNames,
 } from "./shared-workspace.js"
+import {
+  analyzePackageHealth,
+  type DependencyMismatch,
+  type PackageDependencyHealth,
+  type UnusedDeclaredDependency,
+  type UsageBucket,
+} from "./ts-de-04-package-health.js"
 import {
   isLocalPathAliasUsage,
   readPathAliasesByPackage,
@@ -40,42 +46,13 @@ export const TsDe04Config = Schema.Struct({
 })
 export type TsDe04Config = typeof TsDe04Config.Type
 
-export interface DependencyMismatch {
-  readonly dependencyName: string
-  readonly files: ReadonlyArray<string>
-  readonly usageKind?: "type-only" | "dynamic"
-}
-
-export interface UnusedDeclaredDependency {
-  readonly dependencyName: string
-}
-
-export interface PackageDependencyHealth {
-  readonly packagePath: string
-  readonly packageName: string
-  readonly private: boolean
-  readonly importedButNotDeclared: ReadonlyArray<DependencyMismatch>
-  readonly declaredButUnused: ReadonlyArray<UnusedDeclaredDependency>
-  readonly transitiveUsedDirectly: ReadonlyArray<DependencyMismatch>
-  readonly devInProd: ReadonlyArray<DependencyMismatch>
-}
+export type { DependencyMismatch, PackageDependencyHealth, UnusedDeclaredDependency }
 
 export interface TsDe04Output {
   readonly packages: ReadonlyArray<PackageDependencyHealth>
   readonly missingCount: number
   readonly unusedCount: number
   readonly diagnosticLimit: number
-}
-
-type UsageBucket = {
-  readonly files: Set<string>
-  readonly prodFiles: Set<string>
-  readonly toolingFiles: Set<string>
-  readonly typeOnlyFiles: Set<string>
-  readonly dynamicFiles: Set<string>
-  readonly bundledFiles: Set<string>
-  readonly bundledProdFiles: Set<string>
-  readonly specifiers: Set<string>
 }
 
 type BundledPackageInfo = {
@@ -1231,211 +1208,12 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const asRecord = (value: unknown): Record<string, unknown> | undefined =>
   isRecord(value) ? value : undefined
 
-const analyzePackageHealth = (
-  pkg: PackageInfo & { manifest: PackageManifest },
-  usage: ReadonlyMap<string, UsageBucket> | undefined,
-  workspaceNames: ReadonlySet<string>,
-  resolvedPackageNames: ReadonlySet<string>,
-  rootDevDependencyNames: ReadonlySet<string>,
-  rootToolingDependencyNames: ReadonlySet<string>,
-  rootToolingUsedDependencyNames: ReadonlySet<string>,
-  dependencyAliases: Readonly<Record<string, string>>,
-  allowDevDependencyInProd: ReadonlySet<string>,
-): PackageDependencyHealth => {
-  const productionDeclared = dependencyNamesOf(pkg.manifest, [
-    "dependencies",
-    "optionalDependencies",
-    "peerDependencies",
-  ])
-  const unusedEligible = isLowSignalUnusedDependencyPackage(pkg)
-    ? new Set<string>()
-    : dependencyNamesOf(pkg.manifest, ["dependencies", "optionalDependencies"])
-  const devDeclared = new Set([
-    ...dependencyNamesOf(pkg.manifest, ["devDependencies"]),
-    ...rootDevDependencyNames,
-  ])
-  const bundledAppDevDependenciesAllowed = allowsBundledAppDevDependencies(pkg.manifest)
-
-  const importedButNotDeclared: Array<DependencyMismatch> = []
-  const transitiveUsedDirectly: Array<DependencyMismatch> = []
-  const devInProd: Array<DependencyMismatch> = []
-  const usedDeclaredNames = new Set<string>()
-  if (pkg.name === "(root)") {
-    for (const dependencyName of rootToolingUsedDependencyNames) {
-      usedDeclaredNames.add(dependencyName)
-    }
-  }
-
-  for (const dependencyName of [...(usage?.keys() ?? [])].sort((left, right) => left.localeCompare(right))) {
-    const usageBucket = usage?.get(dependencyName)
-    if (usageBucket === undefined) continue
-    const files = [...usageBucket.files].sort((left, right) => left.localeCompare(right))
-    const inferredHostFacadeAlias = inferHostFacadeAlias(
-      dependencyName,
-      usageBucket.specifiers,
-      productionDeclared,
-      devDeclared,
-      isTypeOnlyUsage(usageBucket),
-    )
-    const aliasedName = dependencyAliases[dependencyName] ?? inferredHostFacadeAlias
-    const effectiveDependencyName =
-      aliasedName !== undefined &&
-      (productionDeclared.has(aliasedName) || devDeclared.has(aliasedName))
-        ? aliasedName
-        : dependencyName
-    usedDeclaredNames.add(effectiveDependencyName)
-    const bundledOnlyUsage = isBundledOnlyUsage(usageBucket)
-
-    if (productionDeclared.has(effectiveDependencyName)) continue
-
-    if (devDeclared.has(effectiveDependencyName)) {
-      if (
-        usageBucket.prodFiles.size > 0 &&
-        !isBundledOnlyProdUsage(usageBucket) &&
-        effectiveDependencyName !== inferredHostFacadeAlias &&
-        !bundledAppDevDependenciesAllowed &&
-        !allowDevDependencyInProd.has(dependencyName) &&
-        !allowDevDependencyInProd.has(effectiveDependencyName)
-      ) {
-        devInProd.push({
-          dependencyName: effectiveDependencyName,
-          files: [...usageBucket.prodFiles].sort((left, right) => left.localeCompare(right)),
-        })
-      }
-      continue
-    }
-
-    if (bundledOnlyUsage) {
-      continue
-    }
-
-    if (
-      rootToolingDependencyNames.has(effectiveDependencyName) &&
-      isToolingOnlyUsage(usageBucket)
-    ) {
-      usedDeclaredNames.add(effectiveDependencyName)
-      continue
-    }
-
-    if (workspaceNames.has(dependencyName) || !resolvedPackageNames.has(dependencyName)) {
-      importedButNotDeclared.push({
-        dependencyName,
-        files,
-        ...dependencyMismatchUsageKind(usageBucket),
-      })
-      continue
-    }
-
-    transitiveUsedDirectly.push({ dependencyName, files })
-  }
-
-  const declaredButUnused = [...unusedEligible]
-    .filter((dependencyName) => !usedDeclaredNames.has(dependencyName))
-    .sort((left, right) => left.localeCompare(right))
-    .map((dependencyName) => ({ dependencyName }))
-
-  return {
-    packagePath: pkg.path,
-    packageName: packageDisplayName(pkg) ?? pkg.name,
-    private: pkg.manifest.private,
-    importedButNotDeclared,
-    declaredButUnused,
-    transitiveUsedDirectly,
-    devInProd,
-  }
-}
-
-const isLowSignalUnusedDependencyPackage = (
-  pkg: PackageInfo & { manifest: PackageManifest },
-): boolean => {
-  const packageName = packageDisplayName(pkg) ?? pkg.name
-  const pathSegments = pkg.path.split(/[\\/]+/)
-  return (
-    ["docs", "documentation", "example", "examples", "demo", "demos", "sample", "samples", "sdk-samples", "google_samples"]
-      .some((segment) => pathSegments.includes(segment)) ||
-    /^(?:docs|documentation|example|demo|sample)s?(?:$|[-_/])/.test(packageName)
-  )
-}
-
-const isToolingOnlyUsage = (usage: UsageBucket): boolean =>
-  usage.files.size > 0 && usage.files.size === usage.toolingFiles.size
-
-const isTypeOnlyUsage = (usage: UsageBucket): boolean =>
-  usage.files.size > 0 && usage.files.size === usage.typeOnlyFiles.size
-
-const isDynamicOnlyUsage = (usage: UsageBucket): boolean =>
-  usage.files.size > 0 && usage.files.size === usage.dynamicFiles.size
-
-const dependencyMismatchUsageKind = (
-  usage: UsageBucket,
-): Pick<DependencyMismatch, "usageKind"> =>
-  isTypeOnlyUsage(usage)
-    ? { usageKind: "type-only" }
-    : isDynamicOnlyUsage(usage)
-      ? { usageKind: "dynamic" }
-      : {}
-
-const isBundledOnlyUsage = (usage: UsageBucket): boolean =>
-  usage.files.size > 0 && usage.files.size === usage.bundledFiles.size
-
-const isBundledOnlyProdUsage = (usage: UsageBucket): boolean =>
-  usage.prodFiles.size > 0 && usage.prodFiles.size === usage.bundledProdFiles.size
-
-const allowsBundledAppDevDependencies = (manifest: PackageManifest): boolean => {
-  if (!manifest.private) return false
-  const scriptText = Object.values(manifest.scripts).join("\n")
-  return /\b(electron-vite|vite|tauri|next|nuxt|astro|svelte-kit)\b/.test(scriptText)
-}
-
 const createPackagePathMatcher = (
   packages: ReadonlyArray<PackageInfo>,
 ): ((filePath: string) => PackageInfo | undefined) => {
   const sortedPackages = [...packages].sort((left, right) => right.path.length - left.path.length)
   return (filePath: string): PackageInfo | undefined =>
     sortedPackages.find((pkg) => filePath === pkg.path || filePath.startsWith(`${pkg.path}/`))
-}
-
-const inferHostFacadeAlias = (
-  hostPackageName: string,
-  specifiers: ReadonlySet<string>,
-  productionDeclared: ReadonlySet<string>,
-  devDeclared: ReadonlySet<string>,
-  typeOnlyUsage: boolean,
-): string | undefined => {
-  if (hostPackageName === "vscode" && devDeclared.has("@types/vscode")) {
-    return "@types/vscode"
-  }
-  if (typeOnlyUsage) {
-    const definitelyTypedPackage = definitelyTypedPackageNameFor(hostPackageName)
-    if (
-      definitelyTypedPackage !== undefined &&
-      (productionDeclared.has(definitelyTypedPackage) || devDeclared.has(definitelyTypedPackage))
-    ) {
-      return definitelyTypedPackage
-    }
-  }
-  if (specifiers.size === 0) return undefined
-
-  const pluginSdkPrefix = `${hostPackageName}/plugin-sdk`
-  const allSpecifiersUsePluginSdkFacade = [...specifiers].every(
-    (specifier) => specifier === pluginSdkPrefix || specifier.startsWith(`${pluginSdkPrefix}/`),
-  )
-  if (!allSpecifiersUsePluginSdkFacade) return undefined
-
-  const declaredPluginSdkPackages = [...productionDeclared, ...devDeclared]
-    .filter((dependencyName) => dependencyName.endsWith("/plugin-sdk"))
-    .sort((left, right) => left.localeCompare(right))
-
-  return declaredPluginSdkPackages.length === 1 ? declaredPluginSdkPackages[0] : undefined
-}
-
-const definitelyTypedPackageNameFor = (packageName: string): string | undefined => {
-  if (packageName.startsWith("@types/")) return undefined
-  if (packageName.startsWith("@")) {
-    const [scope, name] = packageName.slice(1).split("/")
-    return scope !== undefined && name !== undefined ? `@types/${scope}__${name}` : undefined
-  }
-  return `@types/${packageName}`
 }
 
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
