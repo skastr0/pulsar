@@ -14,6 +14,27 @@ import {
 } from "@skastr0/pulsar-core"
 import { Effect } from "effect"
 import { loadPulsarVectorFromPath, makePulsarRuntime } from "./runtime.js"
+import {
+  chooseAdaptiveMidpoint,
+  chooseObserverAdaptiveMidpoint,
+  sampleTrajectory,
+  type BisectSamplingMode,
+  type BisectSamplingSummary,
+  type RangeCommit,
+} from "./bisect-sampling.js"
+
+export {
+  chooseAdaptiveMidpoint,
+  chooseObserverAdaptiveMidpoint,
+  initialAdaptiveIndexes,
+  resolveSamplingPlan,
+  selectMergeOnlyIndexes,
+} from "./bisect-sampling.js"
+export type {
+  BisectSamplingMode,
+  BisectSamplingSummary,
+  RangeCommit,
+} from "./bisect-sampling.js"
 
 const execFileAsync = promisify(execFile)
 
@@ -31,20 +52,6 @@ export interface BisectOptions {
   readonly topCulprits: number
   readonly sampling: BisectSamplingMode
   readonly json: boolean
-}
-
-export type BisectSamplingMode =
-  | "auto"
-  | "full"
-  | "merge-only"
-  | "adaptive-delta"
-
-export interface BisectSamplingSummary {
-  readonly requested: BisectSamplingMode
-  readonly applied: Exclude<BisectSamplingMode, "auto">
-  readonly totalCommits: number
-  readonly scoredCommits: number
-  readonly diagnostics: ReadonlyArray<string>
 }
 
 interface ScorePoint {
@@ -711,17 +718,6 @@ const matchesCrossing = (
   }
 }
 
-interface RangeCommit {
-  readonly sha: string
-  readonly parentCount: number
-}
-
-const AUTO_FULL_RANGE_THRESHOLD = 500
-const ADAPTIVE_INITIAL_SAMPLES = 17
-const ADAPTIVE_MAX_GAP = 64
-const ADAPTIVE_DELTA_THRESHOLD = 0.08
-const ADAPTIVE_MAX_SCORED_COMMITS = 1025
-
 const resolveBisectCommits = (
   repoPath: string,
   fromSha: string,
@@ -799,275 +795,6 @@ const sampleObserverTrajectory = (
     toObserverCurveSample,
     chooseObserverAdaptiveMidpoint,
   )
-
-const sampleTrajectory = <Result, Entry extends { readonly sha: string }>(
-  commits: ReadonlyArray<RangeCommit>,
-  requested: BisectSamplingMode,
-  hasFirstCrossing: boolean,
-  concurrency: number,
-  scoreCommit: (sha: string) => Effect.Effect<Result, unknown, never>,
-  toEntry: (sha: string, result: Result) => Entry,
-  chooseMidpoint: (
-    leftIndex: number,
-    rightIndex: number,
-    leftEntry: Entry,
-    rightEntry: Entry,
-  ) => number | undefined,
-): Effect.Effect<
-  { readonly trajectory: ReadonlyArray<Entry>; readonly sampling: BisectSamplingSummary },
-  unknown,
-  never
-> =>
-  Effect.gen(function* () {
-    const plan = resolveSamplingPlan(commits, requested, { hasFirstCrossing })
-    if (plan.applied === "full") {
-      const trajectory = yield* scoreTrajectoryIndexes(
-        allIndexes(commits.length),
-        commits,
-        concurrency,
-        scoreCommit,
-        toEntry,
-      )
-      return {
-        trajectory,
-        sampling: {
-          requested,
-          applied: "full",
-          totalCommits: commits.length,
-          scoredCommits: trajectory.length,
-          diagnostics: plan.diagnostics,
-        },
-      }
-    }
-
-    if (plan.applied === "merge-only") {
-      const indexes = selectMergeOnlyIndexes(commits)
-      const trajectory = yield* scoreTrajectoryIndexes(
-        indexes,
-        commits,
-        concurrency,
-        scoreCommit,
-        toEntry,
-      )
-      return {
-        trajectory,
-        sampling: {
-          requested,
-          applied: "merge-only",
-          totalCommits: commits.length,
-          scoredCommits: trajectory.length,
-          diagnostics: plan.diagnostics,
-        },
-      }
-    }
-
-    const scored = new Map<number, Entry>()
-    let pending = new Set(initialAdaptiveIndexes(commits.length))
-    let capped = false
-
-    while (pending.size > 0) {
-      const batch = yield* scoreTrajectoryIndexes(
-        [...pending],
-        commits,
-        concurrency,
-        scoreCommit,
-        toEntry,
-      )
-      for (const entry of batch) {
-        const index = commits.findIndex((commit) => commit.sha === entry.sha)
-        if (index >= 0) scored.set(index, entry)
-      }
-
-      const next = new Set<number>()
-      const orderedIndexes = [...scored.keys()].sort((a, b) => a - b)
-      for (let i = 1; i < orderedIndexes.length; i += 1) {
-        const leftIndex = orderedIndexes[i - 1]!
-        const rightIndex = orderedIndexes[i]!
-        const leftEntry = scored.get(leftIndex)!
-        const rightEntry = scored.get(rightIndex)!
-        const midpoint = chooseMidpoint(leftIndex, rightIndex, leftEntry, rightEntry)
-        if (midpoint === undefined || scored.has(midpoint)) continue
-        if (scored.size + next.size >= ADAPTIVE_MAX_SCORED_COMMITS) {
-          capped = true
-          break
-        }
-        next.add(midpoint)
-      }
-
-      pending = next
-      if (capped) break
-    }
-
-    const trajectory = [...scored.entries()]
-      .sort((a, b) => a[0] - b[0])
-      .map(([, entry]) => entry)
-
-    return {
-      trajectory,
-      sampling: {
-        requested,
-        applied: "adaptive-delta",
-        totalCommits: commits.length,
-        scoredCommits: trajectory.length,
-        diagnostics: capped
-          ? [...plan.diagnostics, `adaptive-delta stopped at ${ADAPTIVE_MAX_SCORED_COMMITS} sampled commits`] 
-          : plan.diagnostics,
-      },
-    }
-  })
-
-const scoreTrajectoryIndexes = <Result, Entry extends { readonly sha: string }>(
-  indexes: ReadonlyArray<number>,
-  commits: ReadonlyArray<RangeCommit>,
-  concurrency: number,
-  scoreCommit: (sha: string) => Effect.Effect<Result, unknown, never>,
-  toEntry: (sha: string, result: Result) => Entry,
-): Effect.Effect<ReadonlyArray<Entry>, unknown, never> => {
-  const uniqueIndexes = [...new Set(indexes)].sort((a, b) => a - b)
-  return Effect.forEach(
-    uniqueIndexes,
-    (index) => {
-      const commit = commits[index]
-      if (commit === undefined) {
-        return Effect.die(new Error(`Missing commit metadata for index ${index}`))
-      }
-      return scoreCommit(commit.sha).pipe(
-        Effect.map((result) => toEntry(commit.sha, result)),
-      )
-    },
-    { concurrency },
-  )
-}
-
-export const resolveSamplingPlan = (
-  commits: ReadonlyArray<RangeCommit>,
-  requested: BisectSamplingMode,
-  opts: { readonly hasFirstCrossing?: boolean } = {},
-): { readonly applied: Exclude<BisectSamplingMode, "auto">; readonly diagnostics: ReadonlyArray<string> } => {
-  if (requested === "full") {
-    return { applied: "full", diagnostics: [] }
-  }
-
-  if (requested === "auto") {
-    if (opts.hasFirstCrossing === true) {
-      return {
-        applied: "full",
-        diagnostics: [
-          "auto sampling chose full because first-crossing queries require exact commit order",
-        ],
-      }
-    }
-    if (commits.length <= AUTO_FULL_RANGE_THRESHOLD) {
-      return { applied: "full", diagnostics: [] }
-    }
-    return {
-      applied: "adaptive-delta",
-      diagnostics: [
-        `auto sampling chose adaptive-delta because the range has ${commits.length} commits`,
-        "adaptive-delta can miss smaller local drops; rerun with --sample full to confirm an exact culprit",
-      ],
-    }
-  }
-
-  if (requested === "merge-only") {
-    const indexes = selectMergeOnlyIndexes(commits)
-    if (indexes.length >= Math.max(2, commits.length)) {
-      return { applied: "full", diagnostics: ["merge-only matched the full range; using full sampling instead"] }
-    }
-    if (indexes.length < 2) {
-      return {
-        applied: "full",
-        diagnostics: ["merge-only found too few merge commits; using full sampling instead"],
-      }
-    }
-    return {
-      applied: "merge-only",
-      diagnostics: [
-        "merge-only includes the range endpoints plus merge commits only",
-        "non-merge culprit commits can be skipped; rerun with --sample full to confirm an exact culprit",
-        ...(opts.hasFirstCrossing === true
-          ? ["first-crossing under merge-only sampling is approximate; rerun with --sample full for exact crossing"]
-          : []),
-      ],
-    }
-  }
-
-  return {
-    applied: "adaptive-delta",
-    diagnostics: [
-      `adaptive-delta started from ${ADAPTIVE_INITIAL_SAMPLES} evenly spaced samples`,
-      "adaptive-delta refines only where sampled deltas stay large or commit gaps stay wide",
-      ...(opts.hasFirstCrossing === true
-        ? ["first-crossing under adaptive-delta sampling is approximate; rerun with --sample full for exact crossing"]
-        : []),
-    ],
-  }
-}
-
-const allIndexes = (length: number): ReadonlyArray<number> =>
-  Array.from({ length }, (_, index) => index)
-
-export const selectMergeOnlyIndexes = (
-  commits: ReadonlyArray<RangeCommit>,
-): ReadonlyArray<number> => {
-  if (commits.length === 0) return []
-  const indexes = new Set<number>([0, commits.length - 1])
-  for (let index = 0; index < commits.length; index += 1) {
-    if ((commits[index]?.parentCount ?? 0) > 1) {
-      indexes.add(index)
-    }
-  }
-  return [...indexes].sort((a, b) => a - b)
-}
-
-export const initialAdaptiveIndexes = (length: number): ReadonlyArray<number> => {
-  if (length <= ADAPTIVE_INITIAL_SAMPLES) return allIndexes(length)
-  const indexes = new Set<number>([0, length - 1])
-  for (let step = 1; step < ADAPTIVE_INITIAL_SAMPLES - 1; step += 1) {
-    const ratio = step / (ADAPTIVE_INITIAL_SAMPLES - 1)
-    indexes.add(Math.round((length - 1) * ratio))
-  }
-  return [...indexes].sort((a, b) => a - b)
-}
-
-export const chooseAdaptiveMidpoint = (
-  leftIndex: number,
-  rightIndex: number,
-  leftScore: number,
-  rightScore: number,
-): number | undefined => {
-  const gap = rightIndex - leftIndex
-  if (gap <= 1) return undefined
-  const delta = Math.abs(leftScore - rightScore)
-  if (gap <= ADAPTIVE_MAX_GAP && delta < ADAPTIVE_DELTA_THRESHOLD) {
-    return undefined
-  }
-  return leftIndex + Math.floor(gap / 2)
-}
-
-export const chooseObserverAdaptiveMidpoint = (
-  leftIndex: number,
-  rightIndex: number,
-  leftEntry: { readonly weightedMean: number; readonly readinessScore: number | undefined },
-  rightEntry: { readonly weightedMean: number; readonly readinessScore: number | undefined },
-): number | undefined => {
-  const gap = rightIndex - leftIndex
-  if (gap <= 1) return undefined
-  if (gap > ADAPTIVE_MAX_GAP) return leftIndex + Math.floor(gap / 2)
-
-  const weightedMeanDelta = Math.abs(leftEntry.weightedMean - rightEntry.weightedMean)
-  const readinessDelta =
-    leftEntry.readinessScore === undefined || rightEntry.readinessScore === undefined
-      ? undefined
-      : Math.abs(leftEntry.readinessScore - rightEntry.readinessScore)
-  if (
-    weightedMeanDelta < ADAPTIVE_DELTA_THRESHOLD &&
-    (readinessDelta === undefined || readinessDelta < ADAPTIVE_DELTA_THRESHOLD)
-  ) {
-    return undefined
-  }
-  return leftIndex + Math.floor(gap / 2)
-}
 
 const summarizeScores = (
   scores: ReadonlyArray<number>,
