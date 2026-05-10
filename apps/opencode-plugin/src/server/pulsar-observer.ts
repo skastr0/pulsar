@@ -89,7 +89,7 @@ const loadRuntime = (
               ? TsProjectLayer(worktreePath, { productionOnly: true })
               : Layer.empty,
             activePacks.rust ? RustProjectLayer(worktreePath) : Layer.empty,
-          ) as Layer.Layer<any, any, never>,
+          ) as Layer.Layer<any, unknown, never>,
         vector,
         { cacheConfig: { cacheDir: join(worktree, ".pulsar", "cache") } },
       )

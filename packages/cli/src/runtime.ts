@@ -199,13 +199,13 @@ export const makePulsarRuntime = (
     const activePacks = collectActiveLanguagePacks(registry, vector)
     const EngineLayer = ScoringEngineLayer(
       registry,
-      (worktreePath): Layer.Layer<any, any, never> =>
+      (worktreePath): Layer.Layer<any, unknown, never> =>
         Layer.mergeAll(
           activePacks.typescript
             ? TsProjectLayer(worktreePath, options?.tsProject)
             : Layer.empty,
           activePacks.rust ? RustProjectLayer(worktreePath) : Layer.empty,
-        ) as Layer.Layer<any, any, never>,
+        ) as Layer.Layer<any, unknown, never>,
       vector,
       {
         ...(timeSeries === undefined ? {} : { timeSeriesWriter: timeSeries.writer }),

@@ -9,17 +9,19 @@ export type LogEntry = {
   readonly extra?: unknown
 }
 
+type AppLogClient<LogRequest> = {
+  readonly app?: {
+    readonly log?: (request?: LogRequest) => unknown
+  }
+}
+
 export class PluginLogger extends Context.Tag(
   "@opencode-effect-template/PluginLogger",
 )<PluginLogger, {
   readonly log: (entry: LogEntry) => Effect.Effect<void, OpencodeClientError>
 }>() {}
 
-export const makeServerLoggerLayer = (client: {
-  readonly app?: {
-    readonly log?: (request?: any) => unknown
-  }
-}) =>
+export const makeServerLoggerLayer = <LogRequest>(client: AppLogClient<LogRequest>) =>
   Layer.succeed(PluginLogger, {
     log: (entry) =>
       Effect.tryPromise({
@@ -32,7 +34,7 @@ export const makeServerLoggerLayer = (client: {
                 message: entry.message,
                 extra: entry.extra,
               },
-            }),
+            } as LogRequest),
           )
         },
         catch: (cause) =>
@@ -44,7 +46,7 @@ export const makeServerLoggerLayer = (client: {
       }),
   })
 
-export const makeTuiLoggerLayer = (api: {
+export const makeTuiLoggerLayer = <LogRequest>(api: {
   readonly ui?: {
     readonly toast?: (input: {
       message: string
@@ -52,9 +54,7 @@ export const makeTuiLoggerLayer = (api: {
     }) => void
   }
   readonly client?: {
-    readonly app?: {
-      readonly log?: (request?: any) => unknown
-    }
+    readonly app?: AppLogClient<LogRequest>["app"]
   }
 }) =>
   Layer.succeed(PluginLogger, {
@@ -77,7 +77,7 @@ export const makeTuiLoggerLayer = (api: {
                   message: entry.message,
                   extra: entry.extra,
                 },
-              }),
+              } as LogRequest),
             )
           },
           catch: (cause) =>

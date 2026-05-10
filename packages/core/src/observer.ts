@@ -14,7 +14,12 @@ import {
 import { buildInputOutputs } from "./input-outputs.js"
 import type { SignalRunResult } from "./runner.js"
 import type { Registry } from "./registry.js"
-import type { ResolvedSignal, SignalApplicability, SignalOutputMetadata } from "./signal.js"
+import type {
+  ResolvedSignal,
+  SignalApplicability,
+  SignalOutputMetadata,
+  SignalRequirements,
+} from "./signal.js"
 import {
   categoryAggregationConfigOf,
   isActive as vectorIsActive,
@@ -484,7 +489,7 @@ export const observe = (
   registry: Registry,
   vector: PulsarVector | undefined,
   options?: ObserverOptions,
-): Effect.Effect<ObserverOutput, never, any> =>
+): Effect.Effect<ObserverOutput, never, SignalRequirements> =>
   Effect.gen(function* () {
     const observerStartedAt = nowMs()
     const outputs = new Map<string, unknown>()
@@ -621,7 +626,7 @@ const runOneSignal = (
   signal: ResolvedSignal,
   outputs: ReadonlyMap<string, unknown>,
   vector: PulsarVector | undefined,
-): Effect.Effect<SignalRunResult, never, any> =>
+): Effect.Effect<SignalRunResult, never, SignalRequirements> =>
   Effect.gen(function* () {
     const inputOutputs = buildInputOutputs(signal, outputs)
     const config = vectorResolvedConfig(signal, signal.defaultConfig, vector)

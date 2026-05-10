@@ -71,7 +71,7 @@ export const createReadyAnnotation = (input: {
 })
 
 export const appendPulsarAnnotation = (
-  output: { output: string; metadata: any },
+  output: { output: string; metadata: unknown },
   annotation: PulsarAnnotation,
 ): void => {
   const rendered = renderPulsarAnnotation(annotation)

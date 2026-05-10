@@ -12,6 +12,7 @@ import type {
   ResolvedSignal,
   SignalFactorLedger,
   SignalOutputMetadata,
+  SignalRequirements,
 } from "./signal.js"
 import {
   isActive as vectorIsActive,
@@ -40,7 +41,7 @@ export const runSignal = (
   registry: Registry,
   signalId: string,
   vector?: PulsarVector,
-): Effect.Effect<SignalRunResult, SignalError, any> =>
+): Effect.Effect<SignalRunResult, SignalError, SignalRequirements> =>
   Effect.gen(function* () {
     const target = registry.byId.get(signalId)
     if (target === undefined) return yield* new UnknownSignalIdError({ id: signalId })

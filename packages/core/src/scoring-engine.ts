@@ -120,7 +120,9 @@ export class ScoringEngineTag extends Context.Tag("@skastr0/pulsar-core/ScoringE
  * defect today. Packs that need typed failures can wire them through
  * `Layer.catchAll` before passing the factory.
  */
-export type PackLayerFactory = (worktreePath: string) => Layer.Layer<never, never, never> | Layer.Layer<any, any, never>
+export type PackLayerFactory = (
+  worktreePath: string,
+) => Layer.Layer<never, never, never> | Layer.Layer<any, unknown, never>
 
 /**
  * SHA-256 over the sorted list of per-file (blob SHA, path) pairs at a
@@ -687,7 +689,7 @@ export const ScoringEngineLayer = (
         referenceEntries: ReadonlyMap<string, unknown>,
         calibrationContext: ResolvedCalibrationContext | undefined,
         changedHunks: ReadonlyArray<ChangedHunk> = [],
-      ): Layer.Layer<any, any, never> => {
+      ): Layer.Layer<any, unknown, never> => {
         const ContextLayer = Layer.succeed(SignalContextTag, {
           gitSha: sha,
           worktreePath,
@@ -718,7 +720,7 @@ export const ScoringEngineLayer = (
         changedHunks: ReadonlyArray<ChangedHunk>,
         calibrationContext: ResolvedCalibrationContext | undefined,
         runInWorktree: (
-          envLayer: Layer.Layer<any, any, never>,
+          envLayer: Layer.Layer<any, unknown, never>,
           referenceEntries: ReadonlyMap<string, unknown>,
         ) => Effect.Effect<A, E, never>,
       ): Effect.Effect<A, E | ScoringEngineError, never> =>

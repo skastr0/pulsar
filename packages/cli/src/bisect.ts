@@ -9,6 +9,7 @@ import {
   type Category,
   type MinimumDimension,
   type ObserverOutput,
+  type SignalRunResult,
 } from "@skastr0/pulsar-core"
 import { Effect } from "effect"
 import { loadPulsarVectorFromPath, makePulsarRuntime } from "./runtime.js"
@@ -741,7 +742,7 @@ const sampleSignalTrajectory = (
   requested: BisectSamplingMode,
   hasFirstCrossing: boolean,
   concurrency: number,
-  scoreCommit: (sha: string) => Effect.Effect<any, unknown, never>,
+  scoreCommit: (sha: string) => Effect.Effect<SignalRunResult, unknown, never>,
 ): Effect.Effect<
   { readonly trajectory: ReadonlyArray<CommitScore>; readonly sampling: BisectSamplingSummary },
   unknown,
