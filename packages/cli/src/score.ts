@@ -393,7 +393,9 @@ const assessCiMode = (
       } satisfies CiAssessment
     }
 
-    const comparison = compareToBaseline(baseline, output.hard_gate_violations)
+    const comparison = compareToBaseline(baseline, output.hard_gate_violations, {
+      canonicalSignalId: registry.canonicalIdOf,
+    })
     return {
       mode: "ratcheted",
       effectiveStatus: comparison.newViolations.length > 0 ? "fail" : "pass",
@@ -780,16 +782,7 @@ const formatRuntimeStageLabel = (stageId: string): string =>
     .join(" ")
 
 const fixedWidthLabel = (value: string, width: number): string =>
-  value.length > width
-    ? compactMiddle(value, width)
-    : value.padEnd(width, " ")
-
-const compactMiddle = (value: string, width: number): string => {
-  if (width <= 3) return value.slice(0, width)
-  const suffixLength = Math.min(12, Math.max(1, width - 4))
-  const prefixLength = Math.max(1, width - suffixLength - 3)
-  return `${value.slice(0, prefixLength)}...${value.slice(-suffixLength)}`
-}
+  value.length > width ? value : value.padEnd(width, " ")
 
 const slowestRuntimeSignals = (
   output: ObserverOutput,

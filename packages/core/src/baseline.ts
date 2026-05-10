@@ -48,6 +48,10 @@ export interface BaselineComparison {
   readonly paidDebt: ReadonlyArray<PaidDebtViolation>
 }
 
+export interface BaselineSignalIdentityOptions {
+  readonly canonicalSignalId?: (signalId: string) => string | undefined
+}
+
 export const createBaseline = (opts: {
   readonly baselineSha: string
   readonly createdAt?: string
@@ -60,11 +64,12 @@ export const createBaseline = (opts: {
     | "built-in-defaults"
   readonly observerConfigHash?: string
   readonly violations: ReadonlyArray<HardGateViolation>
-}): Baseline => {
+} & BaselineSignalIdentityOptions): Baseline => {
   const grouped: Record<string, Array<BaselineViolation>> = {}
   for (const violation of dedupeCurrentViolations(opts.violations)) {
-    grouped[violation.signalId] ??= []
-    grouped[violation.signalId]!.push(toBaselineViolation(violation))
+    const signalId = canonicalBaselineSignalId(violation.signalId, opts)
+    grouped[signalId] ??= []
+    grouped[signalId]!.push(toBaselineViolation(violation))
   }
 
   for (const signalId of Object.keys(grouped)) {
@@ -90,9 +95,10 @@ export const createBaseline = (opts: {
 export const compareToBaseline = (
   baseline: Baseline,
   violations: ReadonlyArray<HardGateViolation>,
+  options?: BaselineSignalIdentityOptions,
 ): BaselineComparison => {
-  const current = dedupeCurrentViolations(violations)
-  const baselineEntries = flattenBaseline(baseline)
+  const current = dedupeCurrentViolations(violations, options)
+  const baselineEntries = flattenBaseline(baseline, options)
   const baselineKeys = new Set(baselineEntries.map(baselineKeyOf))
   const currentKeys = new Set(current.map(currentKeyOf))
 
@@ -109,11 +115,12 @@ export const baselineViolationCount = (baseline: Baseline): number =>
 
 const dedupeCurrentViolations = (
   violations: ReadonlyArray<HardGateViolation>,
+  options?: BaselineSignalIdentityOptions,
 ): ReadonlyArray<CurrentViolationSnapshot> => {
   const seen = new Set<string>()
   const snapshots: Array<CurrentViolationSnapshot> = []
   for (const violation of violations) {
-    const snapshot = snapshotViolation(violation)
+    const snapshot = snapshotViolation(violation, options)
     const key = currentKeyOf(snapshot)
     if (seen.has(key)) continue
     seen.add(key)
@@ -122,7 +129,10 @@ const dedupeCurrentViolations = (
   return sortCurrentViolations(snapshots)
 }
 
-const snapshotViolation = (violation: HardGateViolation): CurrentViolationSnapshot => {
+const snapshotViolation = (
+  violation: HardGateViolation,
+  options?: BaselineSignalIdentityOptions,
+): CurrentViolationSnapshot => {
   const hash = diagnosticHashOf(violation.diagnostic)
   if (hash === undefined) {
     throw new Error(
@@ -138,7 +148,7 @@ const snapshotViolation = (violation: HardGateViolation): CurrentViolationSnapsh
   }
 
   return {
-    signalId: violation.signalId,
+    signalId: canonicalBaselineSignalId(violation.signalId, options),
     category: violation.category,
     diagnostic: violation.diagnostic,
     file,
@@ -157,12 +167,23 @@ const diagnosticFileOf = (diagnostic: Diagnostic): string | undefined => {
   return typeof dataFile === "string" ? dataFile : undefined
 }
 
-const flattenBaseline = (baseline: Baseline): ReadonlyArray<PaidDebtViolation> =>
+const flattenBaseline = (
+  baseline: Baseline,
+  options?: BaselineSignalIdentityOptions,
+): ReadonlyArray<PaidDebtViolation> =>
   Object.entries(baseline.violations)
     .flatMap(([signalId, violations]) =>
-      violations.map((violation) => ({ signalId, ...violation })),
+      violations.map((violation) => ({
+        signalId: canonicalBaselineSignalId(signalId, options),
+        ...violation,
+      })),
     )
     .sort((a, b) => compareViolationTuple(tupleOfBaseline(a), tupleOfBaseline(b)))
+
+const canonicalBaselineSignalId = (
+  signalId: string,
+  options?: BaselineSignalIdentityOptions,
+): string => options?.canonicalSignalId?.(signalId) ?? signalId
 
 const toBaselineViolation = (violation: CurrentViolationSnapshot): BaselineViolation => ({
   file: violation.file,

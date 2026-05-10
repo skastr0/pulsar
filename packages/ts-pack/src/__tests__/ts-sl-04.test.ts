@@ -216,6 +216,88 @@ export function fallback() {}
     expect(TsSl04.score(out)).toBeGreaterThan(0.8)
   })
 
+  test("vector-added score caps appear in the factor ledger", async () => {
+    await repo.write(
+      "src/fallback.ts",
+      `
+export function fallback() {}
+`,
+    )
+
+    const out = await Effect.runPromise(
+      TsSl04.compute(TsSl04.defaultConfig, new Map()).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            TsProjectLayer(repo.root),
+            Layer.succeed(SignalContextTag, {
+              gitSha: "TEST",
+              worktreePath: repo.root,
+              changedHunks: [],
+            }),
+            Layer.succeed(SignalFactorPolicyTag, {
+              signalId: "TS-SL-04-unfinished-implementations",
+              precedence: SIGNAL_FACTOR_POLICY_PRECEDENCE,
+              vectorOverrides: {
+                "stub_kinds.empty-body.score_cap_participation": true,
+                "stub_kinds.empty-body.score_cap": 0.6,
+              },
+            }),
+          ),
+        ),
+      ),
+    )
+
+    expect(TsSl04.score(out)).toBe(0.6)
+    expect(out.factorLedger.entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: "stub_kinds.empty-body.score_cap",
+          value: 0.6,
+          source: "vector",
+        }),
+      ]),
+    )
+  })
+
+  test("confidence vector overrides recompute derived severity", async () => {
+    await repo.write(
+      "src/auth.ts",
+      `
+export function authenticate() {
+  throw new Error("Authentication not implemented")
+}
+`,
+    )
+
+    const out = await Effect.runPromise(
+      TsSl04.compute(TsSl04.defaultConfig, new Map()).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            TsProjectLayer(repo.root),
+            Layer.succeed(SignalContextTag, {
+              gitSha: "TEST",
+              worktreePath: repo.root,
+              changedHunks: [],
+            }),
+            Layer.succeed(SignalFactorPolicyTag, {
+              signalId: "TS-SL-04-unfinished-implementations",
+              precedence: SIGNAL_FACTOR_POLICY_PRECEDENCE,
+              vectorOverrides: {
+                "stub_kinds.throw-not-implemented.confidence": "low",
+              },
+            }),
+          ),
+        ),
+      ),
+    )
+
+    expect(out.stubs[0]).toMatchObject({
+      kind: "throw-not-implemented",
+      confidence: "low",
+      severity: "warn",
+    })
+  })
+
   test("project modules can keep findings visible while reducing score pressure", async () => {
     await repo.write(
       "src/auth.ts",

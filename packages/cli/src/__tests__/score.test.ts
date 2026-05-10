@@ -281,7 +281,7 @@ describe("pulsar score", () => {
       expect(out.stdout).toContain("pressure")
       expect(out.stdout).toContain("lowest")
       expect(out.stdout).toContain("weights")
-      expect(out.stdout).toContain("TS-SL-01=")
+      expect(out.stdout).toContain("TS-SL-01-duplication=")
     } finally {
       await rm(repoPath, { recursive: true, force: true })
     }
@@ -325,7 +325,7 @@ describe("pulsar score", () => {
       const out = runCli(repoPath, ["score", "--category", "architectural-drift", "."])
       expect(out.status).toBe(0)
       expect(out.stdout).toContain("Top Findings")
-      expect(out.stdout).toContain("TS-AD-02 WARN")
+      expect(out.stdout).toContain("TS-AD-02-circular-dependencies WARN")
       const findings = out.stdout.slice(out.stdout.indexOf("Top Findings"))
       expect(findings).not.toContain(repoPath)
     } finally {
@@ -364,16 +364,16 @@ describe("pulsar score", () => {
       const out = runCli(repoPath, ["score", "--category", "generated-slop", "."])
       expect(out.status).toBe(0)
       expect(out.stdout).toContain("Category: generated-slop")
-      expect(out.stdout).toContain("TS-SL-03               0.96")
+      expect(out.stdout).toContain("TS-SL-03-suppressions")
       expect(out.stdout).toContain("Top Findings")
-      expect(out.stdout).toContain("TS-SL-03 WARN")
+      expect(out.stdout).toContain("TS-SL-03-suppressions WARN")
       expect(out.stdout).toContain("ts-ignore is missing justification")
       expect(out.stdout).toContain("at src/dirty-suppression.ts:1")
 
       const fullOut = runCli(repoPath, ["score", "."])
       expect(fullOut.status).toBe(0)
       expect(fullOut.stdout).toContain("Top Findings")
-      expect(fullOut.stdout).toContain("TS-SL-03 WARN")
+      expect(fullOut.stdout).toContain("TS-SL-03-suppressions WARN")
       expect(fullOut.stdout).toContain("at src/dirty-suppression.ts:1")
     } finally {
       await rm(repoPath, { recursive: true, force: true })
@@ -538,8 +538,8 @@ export function stubF() { throw new Error("Not implemented") }
       expect(out.status).toBe(0)
       expect(out.stdout).toContain("Top Findings")
       expect(out.stdout).toContain("Hard Gate             FAIL")
-      expect(out.stdout).toContain("TS-SL-04 BLOCK")
-      expect(out.stdout).toContain("TS-SL-03 WARN")
+      expect(out.stdout).toContain("TS-SL-04-unfinished-implementations BLOCK")
+      expect(out.stdout).toContain("TS-SL-03-suppressions WARN")
       expect(out.stdout).toContain("ts-ignore is missing justification")
     } finally {
       await rm(repoPath, { recursive: true, force: true })
@@ -695,7 +695,7 @@ export function stubF() { throw new Error("Not implemented") }
       const defaultOut = runCli(repoPath, ["score", "--category", "generated-slop", "."])
       expect(defaultOut.status).toBe(0)
       expect(defaultOut.stdout).toContain("Vector:   all-defaults")
-      expect(defaultOut.stdout).toContain("TS-SL-04 BLOCK")
+      expect(defaultOut.stdout).toContain("TS-SL-04-unfinished-implementations BLOCK")
 
       await writeRepoFile(
         repoPath,
@@ -727,7 +727,7 @@ export function stubF() { throw new Error("Not implemented") }
       const vectorOut = runCli(repoPath, ["score", "--category", "generated-slop", "."])
       expect(vectorOut.status).toBe(0)
       expect(vectorOut.stdout).toContain("Vector:   protocol-stub-tolerant")
-      expect(vectorOut.stdout).toContain("TS-SL-04 WARN")
+      expect(vectorOut.stdout).toContain("TS-SL-04-unfinished-implementations WARN")
       expect(vectorOut.stdout).not.toContain("TS-SL-04 BLOCK")
     } finally {
       await rm(repoPath, { recursive: true, force: true })
@@ -882,7 +882,7 @@ export function stubF() { throw new Error("Not implemented") }
       const baselineJson = JSON.parse(
         await readFile(join(repoPath, ".pulsar", "baseline.json"), "utf8"),
       )
-      expect(Object.keys(baselineJson.violations)).toContain("TS-AD-02")
+      expect(Object.keys(baselineJson.violations)).toContain("TS-AD-02-circular-dependencies")
       expect(baselineJson.vector_id).toBe("all-defaults")
       expect(typeof baselineJson.observer_config_hash).toBe("string")
 
@@ -890,7 +890,7 @@ export function stubF() { throw new Error("Not implemented") }
       expect(baselineShow.status).toBe(0)
       expect(baselineShow.stdout).toContain("Baseline SHA")
       expect(baselineShow.stdout).toContain("Vector:        all-defaults")
-      expect(baselineShow.stdout).toContain("TS-AD-02")
+      expect(baselineShow.stdout).toContain("TS-AD-02-circular-dependencies")
 
       const ratchetedPass = runCli(repoPath, ["score", "--ci", "."])
       expect(ratchetedPass.status).toBe(0)

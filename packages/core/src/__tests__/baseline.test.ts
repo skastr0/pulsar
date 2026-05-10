@@ -80,4 +80,46 @@ describe("baseline", () => {
     expect(compared.paidDebt.map((violation) => violation.hash)).toEqual(["h2"])
     expect(compared.paidDebt[0]?.file).toBe("src/legacy.ts")
   })
+
+  test("canonicalizes legacy signal aliases when comparing baselines", () => {
+    const canonicalSignalId = (signalId: string) =>
+      signalId === "TS-AD-02" ? "TS-AD-02-circular-dependencies" : signalId
+    const baseline = decodeBaselineSync({
+      schema_version: 1,
+      baseline_sha: "abc123",
+      created_at: "2026-04-15T10:00:00Z",
+      violations: {
+        "TS-AD-02": [
+          {
+            file: "src/a.ts",
+            hash: "h1",
+            detail: "Legacy circular dependency violation",
+          },
+        ],
+      },
+    })
+
+    const compared = compareToBaseline(
+      baseline,
+      [makeViolation({ signalId: "TS-AD-02-circular-dependencies", hash: "h1" })],
+      { canonicalSignalId },
+    )
+
+    expect(compared.tolerated.map((violation) => violation.signalId)).toEqual([
+      "TS-AD-02-circular-dependencies",
+    ])
+    expect(compared.newViolations).toEqual([])
+    expect(compared.paidDebt).toEqual([])
+  })
+
+  test("stores canonical signal ids when creating baselines", () => {
+    const baseline = createBaseline({
+      baselineSha: "abc123",
+      canonicalSignalId: (signalId) =>
+        signalId === "TS-AD-02" ? "TS-AD-02-circular-dependencies" : signalId,
+      violations: [makeViolation({ signalId: "TS-AD-02", hash: "h1" })],
+    })
+
+    expect(Object.keys(baseline.violations)).toEqual(["TS-AD-02-circular-dependencies"])
+  })
 })

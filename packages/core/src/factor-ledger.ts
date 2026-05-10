@@ -217,6 +217,9 @@ export const applyFactorOverrides = (
   entries.map((entry) => {
     if (!Object.hasOwn(overrides, entry.path)) return entry
     const nextValue = overrides[entry.path] ?? null
+    if (entry.source === "vector" && Object.is(entry.value, nextValue)) {
+      return entry
+    }
     const ruleId = options?.ruleId ?? "vector.factor-override"
     const mutation: SignalFactorPolicyMutation = {
       path: entry.path,

@@ -2,6 +2,7 @@ import {
   CalibrationContextTag,
   SignalContextTag,
   SignalFactorPolicyTag,
+  applyFactorOverrides,
   makeFactorEntry,
   makeFactorLedger,
   overriddenFactorValue,
@@ -323,12 +324,17 @@ export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalCon
             config.hard_gate_production,
           ).pipe(Effect.mapError(toSignalComputeError))
           calibrationDecisions.push(...policyResult.decisions)
-          const effectivePolicy = applyVectorOverridesToStubPolicy(
-            policyResult.value,
+          const effectivePolicy = finalizeStubPolicy(
+            applyVectorOverridesToStubPolicy(
+              policyResult.value,
+              factorOverrides,
+            ),
+            candidate,
+            config.hard_gate_production,
             factorOverrides,
           )
           stubs.push(createStub(candidate, effectivePolicy, policyResult.decisions))
-          factorEntries.push(...factorEntriesForPolicy(policyResult))
+          factorEntries.push(...factorEntriesForPolicy(policyResult, factorOverrides))
         }
       }
 
@@ -350,13 +356,13 @@ export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalCon
         expectedCleanMinFunctions,
         hardGateProduction: config.hard_gate_production,
         diagnosticLimit: config.top_n_diagnostics,
-        factorLedger: makeFactorLedger("TS-SL-04-unfinished-implementations", [
+        factorLedger: makeFactorLedger("TS-SL-04-unfinished-implementations", applyFactorOverrides([
           ...factorEntries,
           makeFactorEntry(factorDefinitionByPath("budget.expected_clean_function_ratio"), expectedCleanFunctionRatio),
           makeFactorEntry(factorDefinitionByPath("budget.expected_clean_min_functions"), expectedCleanMinFunctions),
           makeFactorEntry(factorDefinitionByPath("filtering.include_test_stubs"), config.include_test_stubs),
           makeFactorEntry(factorDefinitionByPath("filtering.production_only_score"), true),
-        ]),
+        ], factorOverrides)),
       }
     }),
   score: (out) => {
@@ -625,6 +631,30 @@ const applyVectorOverridesToStubPolicy = (
   }
 }
 
+const finalizeStubPolicy = (
+  policy: TypeScriptUnfinishedImplementationPolicyValue,
+  candidate: StubCandidate,
+  hardGateProduction: boolean,
+  overrides: Readonly<Record<string, SignalFactorValue>>,
+): TypeScriptUnfinishedImplementationPolicyValue => {
+  const confidence = toStubConfidence(policy.confidence)
+  const confidencePath = `${policy.factorPathPrefix}.confidence`
+  const defaultSeverity = severityForStub(
+    candidate.isTestPath,
+    confidenceForStubKind(toStubKind(policy.stubKind)),
+    hardGateProduction,
+  )
+  const shouldRecomputeSeverity =
+    Object.hasOwn(overrides, confidencePath) || policy.severity === defaultSeverity
+  return {
+    ...policy,
+    confidence,
+    severity: shouldRecomputeSeverity
+      ? severityForStub(candidate.isTestPath, confidence, hardGateProduction)
+      : policy.severity,
+  }
+}
+
 const createStub = (
   candidate: StubCandidate,
   policy: TypeScriptUnfinishedImplementationPolicyValue,
@@ -647,8 +677,10 @@ const createStub = (
 
 const factorEntriesForPolicy = (
   policyResult: CalibrationSlotOutput<"typescript.unfinished-implementation-policy">,
+  overrides: Readonly<Record<string, SignalFactorValue>>,
 ): ReadonlyArray<SignalFactorLedgerEntry> => {
   const policy = policyResult.value
+  const scoreCapPath = `${policy.factorPathPrefix}.score_cap`
   return [
     factorEntryForPolicyValue(policyResult, `${policy.factorPathPrefix}.confidence`, policy.confidence),
     factorEntryForPolicyValue(policyResult, `${policy.factorPathPrefix}.penalty_weight`, policy.penaltyWeight),
@@ -657,7 +689,7 @@ const factorEntriesForPolicy = (
       `${policy.factorPathPrefix}.score_cap_participation`,
       policy.scoreCapParticipation,
     ),
-    ...(policy.scoreCap !== undefined
+    ...(policy.scoreCap !== undefined || Object.hasOwn(overrides, scoreCapPath)
       ? [factorEntryForPolicyValue(policyResult, `${policy.factorPathPrefix}.score_cap`, policy.scoreCap)]
       : []),
   ]
@@ -666,12 +698,12 @@ const factorEntriesForPolicy = (
 const factorEntryForPolicyValue = (
   policyResult: CalibrationSlotOutput<"typescript.unfinished-implementation-policy">,
   path: string,
-  value: SignalFactorValue,
+  value: SignalFactorValue | undefined,
 ): SignalFactorLedgerEntry => {
   const decision = [...policyResult.decisions]
     .reverse()
     .find((item) => item.factorPaths?.includes(path))
-  return makeFactorEntry(factorDefinitionByPath(path), value, {
+  return makeFactorEntry(factorDefinitionByPath(path), value ?? null, {
     source: decision === undefined ? "computed" : "module",
     ...(decision !== undefined
       ? {

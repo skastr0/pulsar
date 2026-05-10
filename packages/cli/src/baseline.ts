@@ -41,6 +41,7 @@ export const runBaselineCommand = (opts: BaselineCommandOptions) =>
         vectorSelection.vector,
         calibrationContext?.fingerprint,
       ),
+      canonicalSignalId: registry.canonicalIdOf,
       violations: result.hard_gate_violations,
     })
     const baselinePath = yield* writeBaselineFile(repoRoot, baseline)
