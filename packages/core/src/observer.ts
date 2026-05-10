@@ -691,104 +691,159 @@ const aggregateCategories = (
   registry: Registry,
   signalResults: ReadonlyMap<string, SignalRunResult>,
   vector: PulsarVector | undefined,
-): Record<Category, CategoryOutput> => {
-  const out: Record<string, CategoryOutput> = {}
-  for (const category of CATEGORIES) {
-    const signalsInCategory = registry.sorted.filter(
-      (s) => s.category === category && signalResults.has(s.id),
-    )
+): Record<Category, CategoryOutput> =>
+  Object.fromEntries(
+    CATEGORIES.map((category) => [
+      category,
+      aggregateOneCategory(category, registry, signalResults, vector),
+    ]),
+  ) as Record<Category, CategoryOutput>
 
-    const signalsRecord: Record<string, number> = {}
-    const weightsRecord: Record<string, number> = {}
-    const activeIds: Array<string> = []
-    let applicableSignalCount = 0
-    let weightedSum = 0
-    let weightTotal = 0
-    const groups = new Map<
-      string,
-      {
-        weightedSum: number
-        weightTotal: number
-        signalIds: Array<string>
-      }
-    >()
-    const languageLocalGroups = new Set<string>()
-    const pressureInputs: Array<{ score: number; weight: number; confidence: number }> = []
-    for (const s of signalsInCategory) {
-      const result = signalResults.get(s.id)
-      if (result === undefined) continue
-      const weight = vectorWeightOf(s, vector)
-      signalsRecord[s.id] = result.score
-      weightsRecord[s.id] = weight
-      activeIds.push(s.id)
+type CategoryGroupBucket = {
+  weightedSum: number
+  weightTotal: number
+  signalIds: Array<string>
+}
 
-      if (signalApplicabilityOf(result) !== "applicable") continue
+interface CategoryAggregationInputs {
+  readonly signalsInCategory: ReadonlyArray<ResolvedSignal>
+  readonly signalsRecord: Record<string, number>
+  readonly weightsRecord: Record<string, number>
+  activeIds: Array<string>
+  applicableSignalCount: number
+  weightedSum: number
+  weightTotal: number
+  groups: Map<string, CategoryGroupBucket>
+  languageLocalGroups: Set<string>
+  pressureInputs: Array<PressureInput>
+  applicableScores: Array<number>
+}
 
-      const confidence = confidenceForSignal(s, result)
-      const effectiveScore = confidenceAdjustedScore(result.score, confidence)
-      applicableSignalCount += 1
-      weightedSum += weight * effectiveScore
-      weightTotal += weight
-      pressureInputs.push({ score: result.score, weight, confidence })
+type PressureInput = {
+  readonly score: number
+  readonly weight: number
+  readonly confidence: number
+}
 
-      const normalizationGroup = normalizationGroupOfSignal(s)
-      const bucket = groups.get(normalizationGroup) ?? {
-        weightedSum: 0,
-        weightTotal: 0,
-        signalIds: [],
-      }
-      bucket.weightedSum += weight * effectiveScore
-      bucket.weightTotal += weight
-      bucket.signalIds.push(s.id)
-      groups.set(normalizationGroup, bucket)
-      if (isLanguageNormalizationGroup(normalizationGroup)) {
-        languageLocalGroups.add(normalizationGroup)
-      }
-    }
-
-    const rawScore = weightTotal === 0 ? 1 : weightedSum / weightTotal
-    const applicableScores = signalsInCategory.flatMap((s) => {
-      const result = signalResults.get(s.id)
-      if (result === undefined || signalApplicabilityOf(result) !== "applicable") return []
-      return [result.score]
-    })
-    const lowestSignalScore = Math.min(...applicableScores)
-    const normalization =
-      languageLocalGroups.size > 1
-        ? buildCategoryNormalization(groups)
-        : undefined
-    const normalizedScore = normalization?.score ?? rawScore
-    const pressure = aggregateCategoryPressure(
-      pressureInputs,
-      categoryAggregationConfigOf(vector),
-      pressureInputs,
-    )
-    const pressureScore = clamp01(1 - pressure.finalPressure)
-    const score = roundScore(Math.min(normalizedScore, pressureScore))
-    const shapedByPressure = score < normalizedScore
-    out[category] = {
-      score,
-      signals: signalsRecord,
-      signalCount: signalsInCategory.length,
-      applicableSignalCount,
-      activeSignalIds: activeIds,
-      aggregation: {
-        strategy: normalization === undefined ? "weighted-mean" : "language-group-mean",
-        rawScore,
-        aggregateScore: normalizedScore,
-        lowestSignalScore: Number.isFinite(lowestSignalScore) ? lowestSignalScore : 1,
-        finalScore: score,
-        shapedByPressure,
-        pressure,
-        weightTotal,
-        weights: weightsRecord,
-      },
-      ...(normalization !== undefined
-        ? { normalization: normalization.snapshot }
-        : {}),
-    }
+const aggregateOneCategory = (
+  category: Category,
+  registry: Registry,
+  signalResults: ReadonlyMap<string, SignalRunResult>,
+  vector: PulsarVector | undefined,
+): CategoryOutput => {
+  const inputs = collectCategoryAggregationInputs(category, registry, signalResults, vector)
+  const rawScore = inputs.weightTotal === 0 ? 1 : inputs.weightedSum / inputs.weightTotal
+  const lowestSignalScore = Math.min(...inputs.applicableScores)
+  const normalization =
+    inputs.languageLocalGroups.size > 1
+      ? buildCategoryNormalization(inputs.groups)
+      : undefined
+  const normalizedScore = normalization?.score ?? rawScore
+  const pressure = aggregateCategoryPressure(
+    inputs.pressureInputs,
+    categoryAggregationConfigOf(vector),
+    inputs.pressureInputs,
+  )
+  const pressureScore = clamp01(1 - pressure.finalPressure)
+  const score = roundScore(Math.min(normalizedScore, pressureScore))
+  return {
+    score,
+    signals: inputs.signalsRecord,
+    signalCount: inputs.signalsInCategory.length,
+    applicableSignalCount: inputs.applicableSignalCount,
+    activeSignalIds: inputs.activeIds,
+    aggregation: {
+      strategy: normalization === undefined ? "weighted-mean" : "language-group-mean",
+      rawScore,
+      aggregateScore: normalizedScore,
+      lowestSignalScore: Number.isFinite(lowestSignalScore) ? lowestSignalScore : 1,
+      finalScore: score,
+      shapedByPressure: score < normalizedScore,
+      pressure,
+      weightTotal: inputs.weightTotal,
+      weights: inputs.weightsRecord,
+    },
+    ...(normalization !== undefined ? { normalization: normalization.snapshot } : {}),
   }
-  return out as Record<Category, CategoryOutput>
+}
+
+const collectCategoryAggregationInputs = (
+  category: Category,
+  registry: Registry,
+  signalResults: ReadonlyMap<string, SignalRunResult>,
+  vector: PulsarVector | undefined,
+): CategoryAggregationInputs => {
+  const signalsInCategory = registry.sorted.filter(
+    (signal) => signal.category === category && signalResults.has(signal.id),
+  )
+  const inputs = makeEmptyCategoryAggregationInputs(signalsInCategory)
+  for (const signal of signalsInCategory) {
+    addCategorySignalInput(signal, signalResults.get(signal.id), vector, inputs)
+  }
+  return inputs
+}
+
+const makeEmptyCategoryAggregationInputs = (
+  signalsInCategory: ReadonlyArray<ResolvedSignal>,
+): CategoryAggregationInputs => ({
+  signalsInCategory,
+  signalsRecord: {},
+  weightsRecord: {},
+  activeIds: [],
+  applicableSignalCount: 0,
+  weightedSum: 0,
+  weightTotal: 0,
+  groups: new Map(),
+  languageLocalGroups: new Set(),
+  pressureInputs: [],
+  applicableScores: [],
+})
+
+const addCategorySignalInput = (
+  signal: ResolvedSignal,
+  result: SignalRunResult | undefined,
+  vector: PulsarVector | undefined,
+  inputs: CategoryAggregationInputs,
+): void => {
+  if (result === undefined) return
+  const weight = vectorWeightOf(signal, vector)
+  inputs.signalsRecord[signal.id] = result.score
+  inputs.weightsRecord[signal.id] = weight
+  inputs.activeIds.push(signal.id)
+  if (signalApplicabilityOf(result) !== "applicable") return
+
+  const confidence = confidenceForSignal(signal, result)
+  const effectiveScore = confidenceAdjustedScore(result.score, confidence)
+  inputs.applicableSignalCount += 1
+  inputs.weightedSum += weight * effectiveScore
+  inputs.weightTotal += weight
+  inputs.pressureInputs.push({ score: result.score, weight, confidence })
+  inputs.applicableScores.push(result.score)
+  addCategoryNormalizationInput(signal, weight, effectiveScore, inputs)
+}
+
+const addCategoryNormalizationInput = (
+  signal: ResolvedSignal,
+  weight: number,
+  effectiveScore: number,
+  inputs: {
+    readonly groups: Map<string, CategoryGroupBucket>
+    readonly languageLocalGroups: Set<string>
+  },
+): void => {
+  const normalizationGroup = normalizationGroupOfSignal(signal)
+  const bucket = inputs.groups.get(normalizationGroup) ?? {
+    weightedSum: 0,
+    weightTotal: 0,
+    signalIds: [],
+  }
+  bucket.weightedSum += weight * effectiveScore
+  bucket.weightTotal += weight
+  bucket.signalIds.push(signal.id)
+  inputs.groups.set(normalizationGroup, bucket)
+  if (isLanguageNormalizationGroup(normalizationGroup)) {
+    inputs.languageLocalGroups.add(normalizationGroup)
+  }
 }
 
 const buildCategoryNormalization = (
