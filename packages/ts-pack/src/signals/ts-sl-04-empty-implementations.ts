@@ -1,6 +1,10 @@
 import {
   CalibrationContextTag,
   SignalContextTag,
+  SignalFactorPolicyTag,
+  makeFactorEntry,
+  makeFactorLedger,
+  overriddenFactorValue,
   computeDiagnosticHash,
   type CalibrationDecision,
   type CalibrationProcessorError,
@@ -8,7 +12,12 @@ import {
   type Diagnostic,
   type ResolvedCalibrationContext,
   type Signal,
+  type SignalFactorDefinition,
+  type SignalFactorLedger,
+  type SignalFactorLedgerEntry,
+  type SignalFactorValue,
   SignalComputeError,
+  type TypeScriptUnfinishedImplementationPolicyValue,
   type TypeScriptNoopClassificationValue,
 } from "@skastr0/pulsar-core"
 import { Effect, Option, Schema } from "effect"
@@ -33,28 +42,122 @@ export type TsSl04Config = typeof TsSl04Config.Type
 
 type StubKind = "throw-not-implemented" | "empty-body" | "todo-comment" | "mock-return"
 type StubConfidence = "high" | "medium" | "low"
+type StubSeverity = "info" | "warn" | "block"
 
 export interface Stub {
   readonly file: string
   readonly name: string
   readonly line: number
   readonly kind: StubKind
+  readonly visible: boolean
+  readonly severity: StubSeverity
   readonly confidence: StubConfidence
   readonly penaltyWeight: number
+  readonly scoreCapParticipation: boolean
+  readonly scoreCap: number | undefined
   readonly inTestPath: boolean
   readonly message: string | undefined
+  readonly policyDecisions: ReadonlyArray<CalibrationDecision>
 }
 
 export interface TsSl04Output {
+  readonly rawCandidates: ReadonlyArray<StubCandidateSummary>
   readonly stubs: ReadonlyArray<Stub>
   readonly calibrationDecisions: ReadonlyArray<CalibrationDecision>
   readonly byKind: ReadonlyMap<StubKind, number>
   readonly productionStubs: ReadonlyArray<Stub>
   readonly testStubs: ReadonlyArray<Stub>
   readonly totalFunctions: number
+  readonly expectedCleanBudget: number
+  readonly expectedCleanFunctionRatio: number
+  readonly expectedCleanMinFunctions: number
   readonly hardGateProduction: boolean
   readonly diagnosticLimit: number
+  readonly factorLedger: SignalFactorLedger
 }
+
+export interface StubCandidateSummary {
+  readonly file: string
+  readonly name: string
+  readonly line: number
+  readonly kind: StubKind | "intentional-noop" | "unknown"
+  readonly inTestPath: boolean
+}
+
+const STUB_KIND_FACTOR_PREFIX = "stub_kinds" as const
+
+const stubKindFactorPath = (kind: StubKind, factor: string): string =>
+  `${STUB_KIND_FACTOR_PREFIX}.${kind}.${factor}`
+
+const stubKindFactorDefinitions = (
+  kind: StubKind,
+): ReadonlyArray<SignalFactorDefinition> => {
+  const scoreCap = scoreCapForStubKind(kind)
+  return [
+    {
+      path: stubKindFactorPath(kind, "confidence"),
+      title: `${kind} confidence`,
+      valueKind: "string",
+      scoreRole: "confidence",
+      defaultValue: confidenceForStubKind(kind),
+    },
+    {
+      path: stubKindFactorPath(kind, "penalty_weight"),
+      title: `${kind} penalty weight`,
+      valueKind: "number",
+      scoreRole: "penalty",
+      defaultValue: penaltyWeightForStubKind(kind),
+    },
+    {
+      path: stubKindFactorPath(kind, "score_cap_participation"),
+      title: `${kind} score cap participation`,
+      valueKind: "boolean",
+      scoreRole: "score-cap",
+      defaultValue: scoreCapParticipationForStubKind(kind),
+    },
+    {
+      path: stubKindFactorPath(kind, "score_cap"),
+      title: `${kind} score cap`,
+      valueKind: "number",
+      scoreRole: "score-cap",
+      ...(scoreCap !== undefined ? { defaultValue: scoreCap } : {}),
+    },
+  ]
+}
+
+const TsSl04FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
+  ...stubKindFactorDefinitions("throw-not-implemented"),
+  ...stubKindFactorDefinitions("empty-body"),
+  ...stubKindFactorDefinitions("todo-comment"),
+  ...stubKindFactorDefinitions("mock-return"),
+  {
+    path: "budget.expected_clean_function_ratio",
+    title: "Expected clean function ratio",
+    valueKind: "number",
+    scoreRole: "threshold",
+    defaultValue: 0.01,
+  },
+  {
+    path: "budget.expected_clean_min_functions",
+    title: "Expected clean minimum functions",
+    valueKind: "number",
+    scoreRole: "threshold",
+    defaultValue: 10,
+  },
+  {
+    path: "filtering.include_test_stubs",
+    title: "Include test stubs",
+    valueKind: "boolean",
+    scoreRole: "metadata",
+  },
+  {
+    path: "filtering.production_only_score",
+    title: "Production-only score pressure",
+    valueKind: "boolean",
+    scoreRole: "metadata",
+    defaultValue: true,
+  },
+]
 
 export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalContextTag> = {
   id: "TS-SL-04-unfinished-implementations",
@@ -63,7 +166,7 @@ export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalCon
   tier: 1,
   category: "generated-slop",
   kind: "structural",
-  cacheVersion: "calibrated-noop-classifier-v1",
+  cacheVersion: "factor-policy-v1",
   configSchema: TsSl04Config,
   defaultConfig: {
     exclude_globs: [
@@ -163,18 +266,40 @@ export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalCon
     hard_gate_production: true,
     include_test_stubs: false,
   },
+  factorDefinitions: TsSl04FactorDefinitions,
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
       const project = yield* TsProjectTag
       const context = yield* SignalContextTag
       const calibration = yield* Effect.serviceOption(CalibrationContextTag)
+      const factorPolicy = yield* Effect.serviceOption(SignalFactorPolicyTag)
       const { candidates, totalFunctions } = yield* Effect.try({
         try: () => collectStubCandidates(project, context, config),
         catch: toSignalComputeError,
       })
       const stubs: Array<Stub> = []
       const calibrationDecisions: Array<CalibrationDecision> = []
+      const rawCandidates: Array<StubCandidateSummary> = []
+      const factorEntries: Array<SignalFactorLedgerEntry> = []
+
+      const factorOverrides = Option.isSome(factorPolicy)
+        ? factorPolicy.value.vectorOverrides
+        : {}
+      const expectedCleanFunctionRatio = numberFactorValue(
+        "budget.expected_clean_function_ratio",
+        0.01,
+        factorOverrides,
+      ) ?? 0.01
+      const expectedCleanMinFunctions = numberFactorValue(
+        "budget.expected_clean_min_functions",
+        10,
+        factorOverrides,
+      ) ?? 10
+      const expectedCleanBudget = Math.max(
+        expectedCleanMinFunctions,
+        totalFunctions * expectedCleanFunctionRatio,
+      )
 
       for (const candidate of candidates) {
         const classified = yield* classifyNoopCandidate(candidate, calibration).pipe(
@@ -183,12 +308,27 @@ export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalCon
         calibrationDecisions.push(...classified.decisions)
 
         if (classified.value.classification === "intentional_noop") {
+          rawCandidates.push(summarizeStubCandidate(candidate, "intentional-noop"))
           continue
         }
 
         const stubKind = stubKindForClassifiedCandidate(candidate, classified.value)
         if (stubKind !== undefined) {
-          stubs.push(createStub(candidate, stubKind.kind, stubKind.message))
+          rawCandidates.push(summarizeStubCandidate(candidate, stubKind.kind))
+          const policyResult = yield* tuneStubPolicy(
+            candidate,
+            stubKind.kind,
+            stubKind.message,
+            calibration,
+            config.hard_gate_production,
+          ).pipe(Effect.mapError(toSignalComputeError))
+          calibrationDecisions.push(...policyResult.decisions)
+          const effectivePolicy = applyVectorOverridesToStubPolicy(
+            policyResult.value,
+            factorOverrides,
+          )
+          stubs.push(createStub(candidate, effectivePolicy, policyResult.decisions))
+          factorEntries.push(...factorEntriesForPolicy(policyResult))
         }
       }
 
@@ -198,49 +338,47 @@ export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalCon
       }
 
       return {
+        rawCandidates: rawCandidates.sort(compareCandidateSummaries),
         stubs: stubs.sort(compareStubs),
         calibrationDecisions,
         byKind,
         productionStubs: stubs.filter((s) => !s.inTestPath),
         testStubs: stubs.filter((s) => s.inTestPath),
         totalFunctions,
+        expectedCleanBudget,
+        expectedCleanFunctionRatio,
+        expectedCleanMinFunctions,
         hardGateProduction: config.hard_gate_production,
         diagnosticLimit: config.top_n_diagnostics,
+        factorLedger: makeFactorLedger("TS-SL-04-unfinished-implementations", [
+          ...factorEntries,
+          makeFactorEntry(factorDefinitionByPath("budget.expected_clean_function_ratio"), expectedCleanFunctionRatio),
+          makeFactorEntry(factorDefinitionByPath("budget.expected_clean_min_functions"), expectedCleanMinFunctions),
+          makeFactorEntry(factorDefinitionByPath("filtering.include_test_stubs"), config.include_test_stubs),
+          makeFactorEntry(factorDefinitionByPath("filtering.production_only_score"), true),
+        ]),
       }
     }),
   score: (out) => {
     if (out.totalFunctions === 0) return 1
     if (out.productionStubs.length === 0) return 1
-    const expectedCleanBudget = Math.max(10, out.totalFunctions * 0.01)
     const weightedProductionStubs = out.productionStubs.reduce(
       (sum, stub) => sum + stub.penaltyWeight,
       0,
     )
-    const baseScore = Math.max(0, 1 - Math.min(1, weightedProductionStubs / expectedCleanBudget))
-    const highConfidenceProductionStubs = out.productionStubs.filter(
-      (stub) => stub.confidence === "high",
-    ).length
-    if (highConfidenceProductionStubs > 0) {
-      return Math.min(baseScore, 0.8)
-    }
-    return baseScore
+    const baseScore = Math.max(0, 1 - Math.min(1, weightedProductionStubs / out.expectedCleanBudget))
+    const scoreCaps = out.productionStubs.flatMap((stub) =>
+      stub.scoreCapParticipation && stub.scoreCap !== undefined ? [stub.scoreCap] : [],
+    )
+    return scoreCaps.length > 0 ? Math.min(baseScore, ...scoreCaps) : baseScore
   },
   diagnose: (out): ReadonlyArray<Diagnostic> => {
     const diagnostics: Array<Diagnostic> = []
-    const topN = out.stubs.slice(0, out.diagnosticLimit)
+    const topN = out.stubs.filter((stub) => stub.visible).slice(0, out.diagnosticLimit)
 
     for (const stub of topN) {
-      const severity =
-        out.hardGateProduction && !stub.inTestPath && stub.confidence === "high"
-          ? ("block" as const)
-          : !stub.inTestPath
-            ? ("warn" as const)
-          : stub.inTestPath
-            ? ("info" as const)
-            : ("info" as const)
-
       diagnostics.push({
-        severity,
+        severity: stub.severity,
         message: `${stub.name}: ${stub.kind} (${stub.confidence} confidence)${stub.message ? ` — "${stub.message}"` : ""}`,
         location: { file: stub.file, line: stub.line },
         data: {
@@ -256,6 +394,7 @@ export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalCon
 
     return diagnostics
   },
+  factorLedger: (out) => out.factorLedger,
 }
 
 const isAbstractMethod = (fn: FnLike): boolean => {
@@ -408,6 +547,137 @@ const stubKindForClassifiedCandidate = (
   }
 }
 
+const tuneStubPolicy = (
+  candidate: StubCandidate,
+  kind: StubKind,
+  message: string | undefined,
+  calibration: Option.Option<ResolvedCalibrationContext>,
+  hardGateProduction: boolean,
+): Effect.Effect<
+  CalibrationSlotOutput<"typescript.unfinished-implementation-policy">,
+  CalibrationProcessorError,
+  never
+> =>
+  Effect.gen(function* () {
+    const input = defaultStubPolicy(candidate, kind, message, hardGateProduction)
+    if (Option.isNone(calibration)) {
+      return { value: input, decisions: [] }
+    }
+    return yield* calibration.value.runSlot("typescript.unfinished-implementation-policy", input)
+  })
+
+const defaultStubPolicy = (
+  candidate: StubCandidate,
+  kind: StubKind,
+  message: string | undefined,
+  hardGateProduction: boolean,
+): TypeScriptUnfinishedImplementationPolicyValue => {
+  const confidence = confidenceForStubKind(kind)
+  const scoreCap = scoreCapForStubKind(kind)
+  return {
+    signalId: "TS-SL-04-unfinished-implementations",
+    findingId: `${candidate.path}:${candidate.line}:${candidate.name}:${kind}`,
+    file: candidate.path,
+    name: candidate.name,
+    line: candidate.line,
+    stubKind: kind,
+    message: message ?? "Empty implementation",
+    visible: true,
+    severity: severityForStub(candidate.isTestPath, confidence, hardGateProduction),
+    confidence,
+    penaltyWeight: penaltyWeightForStubKind(kind),
+    scoreCapParticipation: scoreCapParticipationForStubKind(kind),
+    ...(scoreCap !== undefined ? { scoreCap } : {}),
+    factorPathPrefix: `${STUB_KIND_FACTOR_PREFIX}.${kind}`,
+    metadata: {
+      inTestPath: candidate.isTestPath,
+    },
+  }
+}
+
+const applyVectorOverridesToStubPolicy = (
+  policy: TypeScriptUnfinishedImplementationPolicyValue,
+  overrides: Readonly<Record<string, SignalFactorValue>>,
+): TypeScriptUnfinishedImplementationPolicyValue => {
+  const prefix = policy.factorPathPrefix
+  const confidence = stringFactorValue(`${prefix}.confidence`, policy.confidence, overrides)
+  const scoreCap = numberFactorValue(`${prefix}.score_cap`, policy.scoreCap, overrides)
+  return {
+    ...policy,
+    confidence: toStubConfidence(confidence),
+    penaltyWeight:
+      numberFactorValue(`${prefix}.penalty_weight`, policy.penaltyWeight, overrides) ??
+      policy.penaltyWeight,
+    scoreCapParticipation: booleanFactorValue(
+      `${prefix}.score_cap_participation`,
+      policy.scoreCapParticipation,
+      overrides,
+    ),
+    ...(scoreCap !== undefined ? { scoreCap } : {}),
+  }
+}
+
+const createStub = (
+  candidate: StubCandidate,
+  policy: TypeScriptUnfinishedImplementationPolicyValue,
+  policyDecisions: ReadonlyArray<CalibrationDecision>,
+): Stub => ({
+  file: candidate.path,
+  name: candidate.name,
+  line: candidate.line,
+  kind: toStubKind(policy.stubKind),
+  visible: policy.visible,
+  severity: policy.severity,
+  confidence: toStubConfidence(policy.confidence),
+  penaltyWeight: policy.penaltyWeight,
+  scoreCapParticipation: policy.scoreCapParticipation,
+  scoreCap: policy.scoreCap,
+  inTestPath: candidate.isTestPath,
+  message: policy.message,
+  policyDecisions,
+})
+
+const factorEntriesForPolicy = (
+  policyResult: CalibrationSlotOutput<"typescript.unfinished-implementation-policy">,
+): ReadonlyArray<SignalFactorLedgerEntry> => {
+  const policy = policyResult.value
+  return [
+    factorEntryForPolicyValue(policyResult, `${policy.factorPathPrefix}.confidence`, policy.confidence),
+    factorEntryForPolicyValue(policyResult, `${policy.factorPathPrefix}.penalty_weight`, policy.penaltyWeight),
+    factorEntryForPolicyValue(
+      policyResult,
+      `${policy.factorPathPrefix}.score_cap_participation`,
+      policy.scoreCapParticipation,
+    ),
+    ...(policy.scoreCap !== undefined
+      ? [factorEntryForPolicyValue(policyResult, `${policy.factorPathPrefix}.score_cap`, policy.scoreCap)]
+      : []),
+  ]
+}
+
+const factorEntryForPolicyValue = (
+  policyResult: CalibrationSlotOutput<"typescript.unfinished-implementation-policy">,
+  path: string,
+  value: SignalFactorValue,
+): SignalFactorLedgerEntry => {
+  const decision = [...policyResult.decisions]
+    .reverse()
+    .find((item) => item.factorPaths?.includes(path))
+  return makeFactorEntry(factorDefinitionByPath(path), value, {
+    source: decision === undefined ? "computed" : "module",
+    ...(decision !== undefined
+      ? {
+          attribution: {
+            moduleId: decision.moduleId,
+            processorId: decision.processorId,
+            ...(decision.ruleId !== undefined ? { ruleId: decision.ruleId } : {}),
+            evidence: decision.evidence,
+          },
+        }
+      : {}),
+  })
+}
+
 const stubKindFromMetadata = (value: unknown): StubKind | undefined =>
   typeof value === "string" && STUB_KINDS.has(value as StubKind)
     ? (value as StubKind)
@@ -427,21 +697,6 @@ const toSignalComputeError = (cause: unknown): SignalComputeError =>
     ? cause
     : new SignalComputeError({ signalId: "TS-SL-04-unfinished-implementations", message: String(cause), cause })
 
-const createStub = (
-  candidate: StubCandidate,
-  kind: StubKind,
-  message: string | undefined,
-): Stub => ({
-  file: candidate.path,
-  name: candidate.name,
-  line: candidate.line,
-  kind,
-  confidence: confidenceForStubKind(kind),
-  penaltyWeight: penaltyWeightForStubKind(kind),
-  inTestPath: candidate.isTestPath,
-  message,
-})
-
 const compareStubs = (a: Stub, b: Stub): number =>
   confidencePriority(a.confidence) - confidencePriority(b.confidence) ||
   b.penaltyWeight - a.penaltyWeight ||
@@ -454,16 +709,97 @@ const confidencePriority = (confidence: StubConfidence): number => {
   return 2
 }
 
-const confidenceForStubKind = (kind: StubKind): StubConfidence => {
+function confidenceForStubKind(kind: StubKind): StubConfidence {
   if (kind === "throw-not-implemented" || kind === "todo-comment") return "high"
   if (kind === "mock-return") return "medium"
   return "low"
 }
 
-const penaltyWeightForStubKind = (kind: StubKind): number => {
+const toStubConfidence = (value: string): StubConfidence =>
+  value === "high" || value === "medium" || value === "low" ? value : "medium"
+
+const toStubKind = (value: TypeScriptUnfinishedImplementationPolicyValue["stubKind"]): StubKind =>
+  value === "throw-not-implemented" ||
+  value === "empty-body" ||
+  value === "todo-comment" ||
+  value === "mock-return"
+    ? value
+    : "empty-body"
+
+function penaltyWeightForStubKind(kind: StubKind): number {
   if (kind === "throw-not-implemented" || kind === "todo-comment") return 1
   if (kind === "mock-return") return 0.6
   return 0.25
+}
+
+function scoreCapParticipationForStubKind(kind: StubKind): boolean {
+  return kind === "throw-not-implemented" || kind === "todo-comment"
+}
+
+function scoreCapForStubKind(kind: StubKind): number | undefined {
+  return scoreCapParticipationForStubKind(kind) ? 0.8 : undefined
+}
+
+const severityForStub = (
+  inTestPath: boolean,
+  confidence: StubConfidence,
+  hardGateProduction: boolean,
+): StubSeverity =>
+  hardGateProduction && !inTestPath && confidence === "high"
+    ? "block"
+    : !inTestPath
+      ? "warn"
+      : "info"
+
+const summarizeStubCandidate = (
+  candidate: StubCandidate,
+  kind: StubCandidateSummary["kind"],
+): StubCandidateSummary => ({
+  file: candidate.path,
+  name: candidate.name,
+  line: candidate.line,
+  kind,
+  inTestPath: candidate.isTestPath,
+})
+
+const compareCandidateSummaries = (
+  a: StubCandidateSummary,
+  b: StubCandidateSummary,
+): number => a.file.localeCompare(b.file) || a.line - b.line || a.name.localeCompare(b.name)
+
+const factorDefinitionByPath = (path: string): SignalFactorDefinition => {
+  const definition = TsSl04FactorDefinitions.find((item) => item.path === path)
+  if (definition === undefined) {
+    throw new Error(`Unknown TS-SL-04 factor path: ${path}`)
+  }
+  return definition
+}
+
+const numberFactorValue = (
+  path: string,
+  defaultValue: number | undefined,
+  overrides: Readonly<Record<string, SignalFactorValue>>,
+): number | undefined => {
+  const value = overriddenFactorValue(path, defaultValue ?? null, overrides)
+  return typeof value === "number" ? value : defaultValue
+}
+
+const stringFactorValue = (
+  path: string,
+  defaultValue: string,
+  overrides: Readonly<Record<string, SignalFactorValue>>,
+): string => {
+  const value = overriddenFactorValue(path, defaultValue, overrides)
+  return typeof value === "string" ? value : defaultValue
+}
+
+const booleanFactorValue = (
+  path: string,
+  defaultValue: boolean,
+  overrides: Readonly<Record<string, SignalFactorValue>>,
+): boolean => {
+  const value = overriddenFactorValue(path, defaultValue, overrides)
+  return typeof value === "boolean" ? value : defaultValue
 }
 
 const isIntentionalNoop = (filePath: string, fn: FnLike, bodyText: string): boolean => {

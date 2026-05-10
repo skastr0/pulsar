@@ -66,8 +66,13 @@ const loadAndValidateVector = (path: string, registry: Registry) =>
 
     const validated = yield* Effect.either(validateVectorAgainstRegistry(vector, registry))
     if (validated._tag === "Left") {
+      const issue = validated.left
+      const message =
+        issue._tag === "UnknownSignalFactorError"
+          ? `Unknown signal factor in pulsar vector ${path}: ${issue.signalId}.${issue.factorPath}`
+          : `Unknown signal id in pulsar vector ${path}: ${issue.id}`
       return yield* Effect.fail(
-        new Error(`Unknown signal id in pulsar vector ${path}: ${validated.left.id}`),
+        new Error(message),
       )
     }
 

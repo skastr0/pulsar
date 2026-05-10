@@ -2,7 +2,9 @@ import { describe, expect, test, beforeEach, afterEach } from "bun:test"
 import { Effect, Layer } from "effect"
 import {
   CalibrationContextTag,
+  SIGNAL_FACTOR_POLICY_PRECEDENCE,
   SignalContextTag,
+  SignalFactorPolicyTag,
   appendCalibrationDecision,
   defineCalibrationProcessor,
   makeResolvedCalibrationContext,
@@ -170,6 +172,148 @@ export function projectContract() {}
     expect(out.stubs).toHaveLength(0)
     expect(out.calibrationDecisions).toHaveLength(1)
     expect(out.calibrationDecisions[0]?.processorId).toBe("project-contract-noops")
+  })
+
+  test("vector factors can tune throw-not-implemented caps without disabling empty-body detection", async () => {
+    await repo.write(
+      "src/auth.ts",
+      `
+export function authenticate() {
+  throw new Error("Authentication not implemented")
+}
+
+export function fallback() {}
+`,
+    )
+
+    const out = await Effect.runPromise(
+      TsSl04.compute(TsSl04.defaultConfig, new Map()).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            TsProjectLayer(repo.root),
+            Layer.succeed(SignalContextTag, {
+              gitSha: "TEST",
+              worktreePath: repo.root,
+              changedHunks: [],
+            }),
+            Layer.succeed(SignalFactorPolicyTag, {
+              signalId: "TS-SL-04-unfinished-implementations",
+              precedence: SIGNAL_FACTOR_POLICY_PRECEDENCE,
+              vectorOverrides: {
+                "stub_kinds.throw-not-implemented.score_cap_participation": false,
+              },
+            }),
+          ),
+        ),
+      ),
+    )
+
+    expect(out.stubs.map((stub) => stub.kind).sort()).toEqual([
+      "empty-body",
+      "throw-not-implemented",
+    ])
+    expect(out.stubs.find((stub) => stub.kind === "throw-not-implemented")?.scoreCapParticipation).toBe(false)
+    expect(TsSl04.score(out)).toBeGreaterThan(0.8)
+  })
+
+  test("project modules can keep findings visible while reducing score pressure", async () => {
+    await repo.write(
+      "src/auth.ts",
+      `
+export function authenticate() {
+  throw new Error("Authentication not implemented")
+}
+`,
+    )
+    const processor = defineCalibrationProcessor({
+      id: "accepted-auth-placeholder",
+      moduleId: "acme.project",
+      moduleVersion: "1.0.0",
+      slot: "typescript.unfinished-implementation-policy",
+      role: "factor-policy",
+      priority: 10,
+      fingerprint: "accepted-auth-placeholder-v1",
+      process: (current) =>
+        Effect.sync(() => {
+          if (current.value.name !== "authenticate") return current
+          return appendCalibrationDecision(
+            current,
+            {
+              moduleId: "acme.project",
+              processorId: "accepted-auth-placeholder",
+              slot: "typescript.unfinished-implementation-policy",
+              action: "deweight-visible-placeholder",
+              confidence: "high",
+              reason: "Authentication placeholder is visible tracked debt for this repo",
+              ruleId: "acme.auth.tracked-placeholder.v1",
+              factorPaths: [
+                "stub_kinds.throw-not-implemented.penalty_weight",
+                "stub_kinds.throw-not-implemented.score_cap_participation",
+              ],
+              before: {
+                penaltyWeight: current.value.penaltyWeight,
+                scoreCapParticipation: current.value.scoreCapParticipation,
+              },
+              after: {
+                penaltyWeight: 0.2,
+                scoreCapParticipation: false,
+              },
+              evidence: [{ kind: "symbol", value: current.value.name }],
+            },
+            {
+              ...current.value,
+              visible: true,
+              penaltyWeight: 0.2,
+              scoreCapParticipation: false,
+            },
+          )
+        }),
+    })
+    const calibrationContext = makeResolvedCalibrationContext({
+      repoFacts: {
+        repoRoot: repo.root,
+        fingerprint: "repo-facts-v1",
+        detectedTechnologies: ["typescript"],
+        sourceExtensions: [".ts"],
+      },
+      processors: [processor],
+    })
+
+    const out = await Effect.runPromise(
+      TsSl04.compute(TsSl04.defaultConfig, new Map()).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            TsProjectLayer(repo.root),
+            Layer.succeed(SignalContextTag, {
+              gitSha: "TEST",
+              worktreePath: repo.root,
+              changedHunks: [],
+            }),
+            Layer.succeed(CalibrationContextTag, calibrationContext),
+          ),
+        ),
+      ),
+    )
+
+    expect(out.stubs[0]?.visible).toBe(true)
+    expect(out.stubs[0]?.penaltyWeight).toBe(0.2)
+    expect(out.stubs[0]?.scoreCapParticipation).toBe(false)
+    expect(TsSl04.diagnose(out)).toHaveLength(1)
+    expect(TsSl04.score(out)).toBeGreaterThan(0.9)
+    expect(out.factorLedger.entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: "stub_kinds.throw-not-implemented.penalty_weight",
+          value: 0.2,
+          source: "module",
+          attribution: expect.objectContaining({
+            moduleId: "acme.project",
+            processorId: "accepted-auth-placeholder",
+            ruleId: "acme.auth.tracked-placeholder.v1",
+          }),
+        }),
+      ]),
+    )
   })
 
   test("ignores server reactive lifecycle no-ops but keeps app stubs", async () => {
@@ -540,16 +684,22 @@ export function stub3() {
 
   test("high-confidence production stubs cap the score even in large repos", () => {
     const score = TsSl04.score({
+      rawCandidates: [],
       stubs: [
         {
           file: "/repo/src/auth.ts",
           name: "authenticate",
           line: 10,
           kind: "throw-not-implemented",
+          visible: true,
+          severity: "block",
           confidence: "high",
           penaltyWeight: 1,
+          scoreCapParticipation: true,
+          scoreCap: 0.8,
           inTestPath: false,
           message: "Authentication not implemented",
+          policyDecisions: [],
         },
       ],
       calibrationDecisions: [],
@@ -560,16 +710,28 @@ export function stub3() {
           name: "authenticate",
           line: 10,
           kind: "throw-not-implemented",
+          visible: true,
+          severity: "block",
           confidence: "high",
           penaltyWeight: 1,
+          scoreCapParticipation: true,
+          scoreCap: 0.8,
           inTestPath: false,
           message: "Authentication not implemented",
+          policyDecisions: [],
         },
       ],
       testStubs: [],
       totalFunctions: 10_000,
+      expectedCleanBudget: 100,
+      expectedCleanFunctionRatio: 0.01,
+      expectedCleanMinFunctions: 10,
       hardGateProduction: true,
       diagnosticLimit: 20,
+      factorLedger: {
+        signalId: "TS-SL-04-unfinished-implementations",
+        entries: [],
+      },
     })
 
     expect(score).toBe(0.8)
