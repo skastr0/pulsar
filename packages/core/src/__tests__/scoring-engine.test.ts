@@ -20,7 +20,8 @@ import {
   computeWorktreeContentHash,
   collectWorktreeChangedHunks,
 } from "../scoring-engine.js"
-import { SignalContextTag } from "../context.js"
+import { ReferenceDataTag, SignalContextTag } from "../context.js"
+import type { Glossary } from "../glossary.js"
 import type { Signal } from "../signal.js"
 import type { PulsarVector } from "../vector.js"
 
@@ -151,6 +152,44 @@ const makeCalibrationFingerprintSignal = (): Signal<
   score: () => 1,
   diagnose: () => [],
 })
+
+const makeReferenceDataSignal = (): Signal<
+  {},
+  { readonly glossaryTerms: number },
+  ReferenceDataTag
+> => ({
+  id: "MOCK-REFERENCE-DATA",
+  tier: 2,
+  category: "architectural-drift",
+  kind: "structural",
+  configSchema: Schema.Struct({}),
+  defaultConfig: {},
+  inputs: [],
+  compute: () =>
+    Effect.gen(function* () {
+      const referenceData = yield* ReferenceDataTag
+      const glossary = yield* referenceData.require<Glossary>(
+        "MOCK-REFERENCE-DATA",
+        "glossary",
+      )
+      return { glossaryTerms: glossary.terms.length }
+    }),
+  score: (out) => (out.glossaryTerms > 0 ? 1 : 0.5),
+  diagnose: () => [],
+})
+
+const glossaryJson = (terms: Glossary["terms"]): string =>
+  `${JSON.stringify(
+    {
+      schema_version: 1,
+      extracted_at_sha: "abc123",
+      confirmed_at: "2026-05-10T00:00:00.000Z",
+      terms,
+      rejected_terms: [],
+    },
+    null,
+    2,
+  )}\n`
 
 const mockRepoFacts = (fingerprint: string): RepoFacts => ({
   repoRoot: "/repo",
@@ -705,6 +744,59 @@ describe("ScoringEngine — cache semantics", () => {
     }
   }, 120_000)
 
+  test("observeWorktree cache invalidates when canonical reference data changes", async () => {
+    const { repoPath, sha } = await initRepo([
+      { path: "a.ts", content: "export const x = 1\n" },
+      { path: ".pulsar/glossary.json", content: glossaryJson([]) },
+    ])
+    try {
+      const program = Effect.gen(function* () {
+        const signal = makeReferenceDataSignal()
+        const registry = yield* buildRegistry([signal])
+        const EngineLayer = ScoringEngineLayer(registry, () => Layer.empty)
+        const engine = yield* ScoringEngineTag.pipe(
+          Effect.provide(EngineLayer),
+        ) as Effect.Effect<typeof ScoringEngineTag.Service, never, never>
+
+        const first = yield* engine.observeWorktree(repoPath, sha)
+        const second = yield* engine.observeWorktree(repoPath, sha)
+        yield* Effect.promise(() =>
+          writeFile(
+            join(repoPath, ".pulsar", "glossary.json"),
+            glossaryJson([
+              {
+                canonical: "Pulsar",
+                aliases: [],
+                frequency: 1,
+                provenance: [
+                  {
+                    package: "@skastr0/pulsar-core",
+                    file: "a.ts",
+                    identifier: "Pulsar",
+                    identifier_kind: "const",
+                  },
+                ],
+              },
+            ]),
+          ),
+        )
+        const afterReferenceChange = yield* engine.observeWorktree(repoPath, sha)
+
+        return { first, second, afterReferenceChange }
+      })
+
+      const { first, second, afterReferenceChange } = await Effect.runPromise(program)
+      expect(first.signalResults.get("MOCK-REFERENCE-DATA")?.score).toBe(0.5)
+      expect(second.signalResults.get("MOCK-REFERENCE-DATA")?.score).toBe(0.5)
+      expect(afterReferenceChange.signalResults.get("MOCK-REFERENCE-DATA")?.score).toBe(1)
+      expect(afterReferenceChange.signalResults.get("MOCK-REFERENCE-DATA")?.output).toEqual({
+        glossaryTerms: 1,
+      })
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
   test("observer profile includes environment setup attribution", async () => {
     const { repoPath, sha } = await initRepo([
       { path: "a.ts", content: "export const x = 1\n" },
@@ -921,6 +1013,18 @@ describe("ScoringEngine — cache semantics", () => {
         undefined,
         "calibration-b",
       )
+      const observerReferenceA = computeObserverConfigHash(
+        registry,
+        undefined,
+        undefined,
+        "reference-a",
+      )
+      const observerReferenceB = computeObserverConfigHash(
+        registry,
+        undefined,
+        undefined,
+        "reference-b",
+      )
       return {
         signalBase,
         signalExplicitUndefined,
@@ -930,6 +1034,8 @@ describe("ScoringEngine — cache semantics", () => {
         observerExplicitUndefined,
         observerCalibrationA,
         observerCalibrationB,
+        observerReferenceA,
+        observerReferenceB,
       }
     })
 
@@ -940,6 +1046,8 @@ describe("ScoringEngine — cache semantics", () => {
     expect(result.observerExplicitUndefined).toBe(result.observerBase)
     expect(result.observerCalibrationA).not.toBe(result.observerBase)
     expect(result.observerCalibrationA).not.toBe(result.observerCalibrationB)
+    expect(result.observerReferenceA).not.toBe(result.observerBase)
+    expect(result.observerReferenceA).not.toBe(result.observerReferenceB)
   })
 
   test("scoreCommit provides calibration context to signals when supplied", async () => {

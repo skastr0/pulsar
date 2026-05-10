@@ -2,6 +2,8 @@ node_modules/
 dist/
 .turbo/
 tsconfig.tsbuildinfo
-.pulsar/
+.pulsar/*
+!.pulsar/conventions.json
+!.pulsar/glossary.json
 
 .DS_Store

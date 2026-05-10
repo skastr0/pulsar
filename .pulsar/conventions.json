@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "extracted_at_sha": "a08f30d7877ffe281e4522b3e8abd05495e2c1aa",
+  "boundaries": {
+    ".": {
+      "visibility": "internal",
+      "allowed_imports": []
+    },
+    "apps/opencode-plugin": {
+      "visibility": "public-api",
+      "allowed_imports": [
+        "@opencode-ai/plugin",
+        "@skastr0/pulsar-core",
+        "@skastr0/pulsar-rs-pack",
+        "@skastr0/pulsar-shared-signals",
+        "@skastr0/pulsar-ts-pack",
+        "effect"
+      ]
+    },
+    "docs/explorations/prototypes/pulsar-signal-markdown": {
+      "visibility": "public-api",
+      "allowed_imports": [
+        "@skastr0/pulsar-core",
+        "effect"
+      ]
+    },
+    "packages/cli": {
+      "visibility": "public-api",
+      "allowed_imports": [
+        "@skastr0/pulsar-core",
+        "@skastr0/pulsar-project-module-sdk",
+        "@skastr0/pulsar-rs-pack",
+        "@skastr0/pulsar-shared-signals",
+        "@skastr0/pulsar-ts-pack",
+        "effect",
+        "simple-git"
+      ]
+    },
+    "packages/core": {
+      "visibility": "public-api",
+      "allowed_imports": [
+        "effect"
+      ]
+    },
+    "packages/rs-pack": {
+      "visibility": "public-api",
+      "allowed_imports": [
+        "@skastr0/pulsar-core",
+        "@skastr0/pulsar-shared-signals",
+        "effect",
+        "simple-git",
+        "tree-sitter-rust",
+        "web-tree-sitter"
+      ]
+    },
+    "packages/shared-signals": {
+      "visibility": "public-api",
+      "allowed_imports": [
+        "@skastr0/pulsar-core",
+        "effect"
+      ]
+    },
+    "packages/ts-pack": {
+      "visibility": "public-api",
+      "allowed_imports": [
+        "@skastr0/pulsar-core",
+        "@skastr0/pulsar-shared-signals",
+        "effect",
+        "simple-git",
+        "ts-morph"
+      ]
+    },
+    "packages/project-module-convex": {
+      "visibility": "public-api",
+      "allowed_imports": [
+        "@skastr0/pulsar-project-module-sdk",
+        "effect"
+      ]
+    },
+    "packages/project-module-effect": {
+      "visibility": "public-api",
+      "allowed_imports": [
+        "@skastr0/pulsar-project-module-sdk",
+        "effect"
+      ]
+    },
+    "packages/project-module-sdk": {
+      "visibility": "public-api",
+      "allowed_imports": [
+        "@skastr0/pulsar-core",
+        "effect",
+        "typescript"
+      ]
+    }
+  },
+  "naming_conventions": {
+    "function": "camelCase",
+    "class": "PascalCase",
+    "interface": "PascalCase",
+    "type": "PascalCase",
+    "const": "camelCase",
+    "enum": "PascalCase"
+  },
+  "architectural_rules": []
+}

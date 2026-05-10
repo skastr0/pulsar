@@ -35,7 +35,11 @@ import {
   observe,
   type ObserverOutput,
 } from "./observer.js"
-import { loadCanonicalReferenceDataEntries } from "./reference-data-loader.js"
+import {
+  CANONICAL_CONVENTIONS_RELATIVE_PATH,
+  CANONICAL_GLOSSARY_RELATIVE_PATH,
+  loadCanonicalReferenceDataEntries,
+} from "./reference-data-loader.js"
 import type { Registry } from "./registry.js"
 import { runSignal, type SignalRunResult } from "./runner.js"
 import { type TimeSeriesWriter } from "./time-series.js"
@@ -339,6 +343,8 @@ export const collectWorktreeChangedHunks = Effect.fn(
 })
 
 const isPulsarSource = (path: string): boolean =>
+  path === CANONICAL_CONVENTIONS_RELATIVE_PATH ||
+  path === CANONICAL_GLOSSARY_RELATIVE_PATH ||
   path.endsWith(".ts") ||
   path.endsWith(".tsx") ||
   path.endsWith("package.json") ||
@@ -455,6 +461,7 @@ export const computeObserverConfigHash = (
   registry: Registry,
   vector: PulsarVector | undefined,
   calibrationFingerprint?: string,
+  referenceVersionHash?: string,
 ): string => {
   const activeSignals = registry.sorted
     .filter((signal) => vectorIsActive(signal, vector))
@@ -478,20 +485,18 @@ export const computeObserverConfigHash = (
     categoryAggregation: categoryAggregationConfigOf(vector),
     readiness: readinessConfigOf(vector),
   }
+  const optionalFingerprints = {
+    ...(calibrationFingerprint !== undefined ? { calibrationFingerprint } : {}),
+    ...(referenceVersionHash !== undefined ? { referenceVersionHash } : {}),
+  }
   const hash = createHash("sha256")
   hash.update(
-    calibrationFingerprint === undefined
-      ? stableStringify({
-          activeSignals,
-          observerAggregationVersion: OBSERVER_AGGREGATION_CACHE_VERSION,
-          observerConfig,
-        })
-      : stableStringify({
-          activeSignals,
-          calibrationFingerprint,
-          observerAggregationVersion: OBSERVER_AGGREGATION_CACHE_VERSION,
-          observerConfig,
-        }),
+    stableStringify({
+      activeSignals,
+      ...optionalFingerprints,
+      observerAggregationVersion: OBSERVER_AGGREGATION_CACHE_VERSION,
+      observerConfig,
+    }),
   )
   return hash.digest("hex")
 }
@@ -889,10 +894,12 @@ export const ScoringEngineLayer = (
           const { result, cacheHit, key } = yield* withCommitWorktree(repoPath, sha, (worktreePath) =>
             Effect.gen(function* () {
               const calibrationContext = yield* resolveCalibrationContext(worktreePath)
+              const referenceEntries = yield* loadCanonicalReferenceDataEntries(worktreePath)
               const configHash = computeObserverConfigHash(
                 registry,
                 vector,
                 calibrationContext?.fingerprint,
+                computeReferenceVersionHash(referenceEntries),
               )
               const key: CacheKey = {
                 signalId: OBSERVER_CACHE_SIGNAL_ID,
@@ -902,17 +909,12 @@ export const ScoringEngineLayer = (
 
               const profile = options?.observerProfile === true
               const observed = yield* observeWithCache(key, () =>
-                runWithEnvironment(
-                  worktreePath,
-                  sha,
-                  [],
-                  calibrationContext,
-                  (EnvLayer) =>
-                    Effect.provide(observe(registry, vector, { profile }), EnvLayer) as Effect.Effect<
-                      ObserverOutput,
-                      never,
-                      never
-                    >,
+                runWithEnvironment(worktreePath, sha, [], calibrationContext, (EnvLayer) =>
+                  Effect.provide(observe(registry, vector, { profile }), EnvLayer) as Effect.Effect<
+                    ObserverOutput,
+                    never,
+                    never
+                  >,
                 ),
               )
               return { ...observed, key }
@@ -944,10 +946,12 @@ export const ScoringEngineLayer = (
             worktreeOptions?.changedHunks ?? (yield* collectWorktreeChangedHunks(repoPath))
           const contentHash = `${yield* computeWorktreeContentHash(repoPath)}:${hashChangedHunks(changedHunks)}`
           const calibrationContext = yield* resolveCalibrationContext(repoPath)
+          const referenceEntries = yield* loadCanonicalReferenceDataEntries(repoPath)
           const configHash = computeObserverConfigHash(
             registry,
             vector,
             calibrationContext?.fingerprint,
+            computeReferenceVersionHash(referenceEntries),
           )
           const key: CacheKey = {
             signalId: OBSERVER_CACHE_SIGNAL_ID,
