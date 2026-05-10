@@ -9,4 +9,10 @@ describe("RS pack signal identity", () => {
       expect(signal.title).toBeTruthy()
     }
   })
+
+  test("all Rust signals expose config factor definitions", () => {
+    for (const signal of RS_PACK_SIGNALS) {
+      expect(signal.factorDefinitions?.some((factor) => factor.path.startsWith("config."))).toBe(true)
+    }
+  })
 })

@@ -1,4 +1,4 @@
-import type { AnySignal } from "@skastr0/pulsar-core"
+import { withConfigFactorLedger, type AnySignal } from "@skastr0/pulsar-core"
 import { RsAd01 } from "./signals/rs-ad-01-visibility-surface.js"
 import { RsAd02 } from "./signals/rs-ad-02-crate-boundaries.js"
 import { RsAd03 } from "./signals/rs-ad-03-circular-crate-deps.js"
@@ -52,4 +52,4 @@ export const RS_PACK_SIGNALS: ReadonlyArray<AnySignal> = [
   RsRp01,
   RsRp02,
   RsRp03,
-]
+].map(withConfigFactorLedger)

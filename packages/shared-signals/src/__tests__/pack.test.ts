@@ -9,4 +9,10 @@ describe("shared signal identity", () => {
       expect(signal.title).toBeTruthy()
     }
   })
+
+  test("all shared signals expose config factor definitions", () => {
+    for (const signal of SHARED_SIGNALS) {
+      expect(signal.factorDefinitions?.some((factor) => factor.path.startsWith("config."))).toBe(true)
+    }
+  })
 })

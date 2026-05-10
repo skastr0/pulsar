@@ -2,6 +2,7 @@ import {
   Shared02BusFactor,
   Shared03ChurnRate,
   SharedChurn01,
+  withConfigFactorLedger,
   type AnySignal,
 } from "@skastr0/pulsar-core"
 import { Shared05Suppression } from "./shared-05-suppression.js"
@@ -25,3 +26,4 @@ export const SHARED_SIGNALS: ReadonlyArray<AnySignal> = [
   Shared05Suppression,
   Shared06PrDepDelta,
 ].map(withSharedPackCacheVersion)
+  .map(withConfigFactorLedger)
