@@ -1,7 +1,7 @@
 import { CATEGORIES, type Category } from "./category.js"
 import { evaluateGoodhart, type GoodhartAssessment } from "./goodhart.js"
 import { type TimeSeriesEntry } from "./time-series.js"
-import { backpressureConfigOf, type PulsarVector } from "./vector.js"
+import { backpressureConfigOf, type BackpressureConfig, type PulsarVector } from "./vector.js"
 
 export type BackpressureLevel = "green" | "yellow" | "red"
 
@@ -52,77 +52,8 @@ export const evaluateBackpressure = (
   }
 
   const windowEntries = selectWindow(entries, latest.timestamp, config.trajectory_days)
-  const slopeThreshold = -config.thresholds.degrading_window_drop / config.trajectory_days
-  const byCategory = CATEGORIES.reduce<Record<Category, CategoryBackpressure>>(
-    (acc, category) => {
-      const currentScore = latest.observerOutput.categories[category].score
-      const trajectorySlope = computeTrajectorySlope(windowEntries, category)
-      const triggers: Array<string> = []
-      let level: BackpressureLevel = "green"
-
-      if (currentScore < config.thresholds.yellow_min_score) {
-        level = "red"
-        triggers.push(
-          `${category} score ${currentScore.toFixed(2)} is below ${config.thresholds.yellow_min_score.toFixed(2)}`,
-        )
-      } else if (currentScore < config.thresholds.green_min_score) {
-        level = "yellow"
-        triggers.push(
-          `${category} score ${currentScore.toFixed(2)} is below the green floor ${config.thresholds.green_min_score.toFixed(2)}`,
-        )
-      }
-
-      if (trajectorySlope <= slopeThreshold) {
-        if (level === "green") level = "yellow"
-        triggers.push(
-          `${category} slope ${trajectorySlope.toFixed(3)} / day is degrading faster than the allowed trend`,
-        )
-      }
-
-      acc[category] = { level, currentScore, trajectorySlope, triggers }
-      return acc
-    },
-    {
-      "architectural-drift": {
-        level: "green",
-        currentScore: 1,
-        trajectorySlope: 0,
-        triggers: [],
-      },
-      "dependency-entropy": {
-        level: "green",
-        currentScore: 1,
-        trajectorySlope: 0,
-        triggers: [],
-      },
-      "abstraction-bloat": {
-        level: "green",
-        currentScore: 1,
-        trajectorySlope: 0,
-        triggers: [],
-      },
-      "legibility-decay": {
-        level: "green",
-        currentScore: 1,
-        trajectorySlope: 0,
-        triggers: [],
-      },
-      "generated-slop": {
-        level: "green",
-        currentScore: 1,
-        trajectorySlope: 0,
-        triggers: [],
-      },
-      "review-pain": {
-        level: "green",
-        currentScore: 1,
-        trajectorySlope: 0,
-        triggers: [],
-      },
-    },
-  )
-
-  const rationale: Array<string> = []
+  const byCategory = evaluateCategoryBackpressure(latest, windowEntries, config)
+  const rationale = buildBackpressureRationale(latest, windowEntries, byCategory, config, goodhart)
   let overall = worstLevel(CATEGORIES.map((category) => byCategory[category].level))
 
   if (latest.observerOutput.readiness !== undefined) {
@@ -131,16 +62,10 @@ export const evaluateBackpressure = (
       latest.observerOutput.readiness.pressure,
     )
     overall = worstLevel([overall, readinessLevel])
-    if (readinessLevel !== "green") {
-      rationale.push(
-        `Readiness pressure is ${latest.observerOutput.readiness.pressure.toFixed(2)} (${latest.observerOutput.readiness.status}).`,
-      )
-    }
   }
 
   if (latest.observerOutput.hard_gate_status === "fail") {
     overall = "red"
-    rationale.push("Hard-gate violations are present in the latest observation.")
   }
 
   if (
@@ -148,29 +73,12 @@ export const evaluateBackpressure = (
     latest.observerOutput.minimum.score < config.thresholds.red_min_dimension
   ) {
     overall = "red"
-    rationale.push(
-      `Minimum dimension ${latest.observerOutput.minimum.signal} fell to ${latest.observerOutput.minimum.score.toFixed(2)}.`,
-    )
-  }
-
-  if (windowEntries.length < 2) {
-    rationale.push(
-      `Only ${windowEntries.length} observation(s) fall inside the ${config.trajectory_days}-day trend window.`,
-    )
-  }
-
-  for (const category of CATEGORIES) {
-    for (const trigger of byCategory[category].triggers) {
-      rationale.push(trigger)
-    }
   }
 
   if (goodhart.suspicion === "high") {
     overall = "red"
-    rationale.push(...goodhart.rationale)
   } else if (goodhart.suspicion === "elevated") {
     overall = overall === "green" ? "yellow" : overall
-    rationale.push(...goodhart.rationale)
   }
 
   return {
@@ -181,6 +89,121 @@ export const evaluateBackpressure = (
     goodhart,
   }
 }
+
+const evaluateCategoryBackpressure = (
+  latest: TimeSeriesEntry,
+  windowEntries: ReadonlyArray<TimeSeriesEntry>,
+  config: BackpressureConfig,
+): Record<Category, CategoryBackpressure> =>
+  Object.fromEntries(
+    CATEGORIES.map((category) => [
+      category,
+      evaluateOneCategoryBackpressure(latest, windowEntries, category, config),
+    ]),
+  ) as Record<Category, CategoryBackpressure>
+
+const evaluateOneCategoryBackpressure = (
+  latest: TimeSeriesEntry,
+  windowEntries: ReadonlyArray<TimeSeriesEntry>,
+  category: Category,
+  config: BackpressureConfig,
+): CategoryBackpressure => {
+  const currentScore = latest.observerOutput.categories[category].score
+  const trajectorySlope = computeTrajectorySlope(windowEntries, category)
+  const triggers = categoryScoreTriggers(category, currentScore, trajectorySlope, config)
+  return {
+    level: levelFromTriggers(currentScore, trajectorySlope, config),
+    currentScore,
+    trajectorySlope,
+    triggers,
+  }
+}
+
+const categoryScoreTriggers = (
+  category: Category,
+  currentScore: number,
+  trajectorySlope: number,
+  config: BackpressureConfig,
+): ReadonlyArray<string> => {
+  const triggers: Array<string> = []
+  if (currentScore < config.thresholds.yellow_min_score) {
+    triggers.push(
+      `${category} score ${currentScore.toFixed(2)} is below ${config.thresholds.yellow_min_score.toFixed(2)}`,
+    )
+  } else if (currentScore < config.thresholds.green_min_score) {
+    triggers.push(
+      `${category} score ${currentScore.toFixed(2)} is below the green floor ${config.thresholds.green_min_score.toFixed(2)}`,
+    )
+  }
+  if (trajectorySlope <= slopeThreshold(config)) {
+    triggers.push(
+      `${category} slope ${trajectorySlope.toFixed(3)} / day is degrading faster than the allowed trend`,
+    )
+  }
+  return triggers
+}
+
+const levelFromTriggers = (
+  currentScore: number,
+  trajectorySlope: number,
+  config: BackpressureConfig,
+): BackpressureLevel => {
+  if (currentScore < config.thresholds.yellow_min_score) return "red"
+  if (currentScore < config.thresholds.green_min_score) return "yellow"
+  return trajectorySlope <= slopeThreshold(config) ? "yellow" : "green"
+}
+
+const slopeThreshold = (config: BackpressureConfig): number =>
+  -config.thresholds.degrading_window_drop / config.trajectory_days
+
+const buildBackpressureRationale = (
+  latest: TimeSeriesEntry,
+  windowEntries: ReadonlyArray<TimeSeriesEntry>,
+  byCategory: Record<Category, CategoryBackpressure>,
+  config: BackpressureConfig,
+  goodhart: GoodhartAssessment,
+): ReadonlyArray<string> => [
+  ...readinessRationale(latest),
+  ...hardGateRationale(latest),
+  ...minimumDimensionRationale(latest, config),
+  ...trendWindowRationale(windowEntries, config),
+  ...CATEGORIES.flatMap((category) => byCategory[category].triggers),
+  ...(goodhart.suspicion === "low" ? [] : goodhart.rationale),
+]
+
+const readinessRationale = (latest: TimeSeriesEntry): ReadonlyArray<string> => {
+  const readiness = latest.observerOutput.readiness
+  if (readiness === undefined) return []
+  const level = backpressureLevelFromReadiness(readiness.status, readiness.pressure)
+  return level === "green"
+    ? []
+    : [`Readiness pressure is ${readiness.pressure.toFixed(2)} (${readiness.status}).`]
+}
+
+const hardGateRationale = (latest: TimeSeriesEntry): ReadonlyArray<string> =>
+  latest.observerOutput.hard_gate_status === "fail"
+    ? ["Hard-gate violations are present in the latest observation."]
+    : []
+
+const minimumDimensionRationale = (
+  latest: TimeSeriesEntry,
+  config: BackpressureConfig,
+): ReadonlyArray<string> => {
+  const minimum = latest.observerOutput.minimum
+  return minimum !== undefined && minimum.score < config.thresholds.red_min_dimension
+    ? [`Minimum dimension ${minimum.signal} fell to ${minimum.score.toFixed(2)}.`]
+    : []
+}
+
+const trendWindowRationale = (
+  windowEntries: ReadonlyArray<TimeSeriesEntry>,
+  config: BackpressureConfig,
+): ReadonlyArray<string> =>
+  windowEntries.length < 2
+    ? [
+        `Only ${windowEntries.length} observation(s) fall inside the ${config.trajectory_days}-day trend window.`,
+      ]
+    : []
 
 export const evaluateBackpressureTrend = (
   entries: ReadonlyArray<TimeSeriesEntry>,
