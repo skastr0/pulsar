@@ -9,6 +9,7 @@ import {
   type Category,
   type MinimumDimension,
   type ObserverOutput,
+  type PulsarVector,
   type Registry,
   type SignalRunResult,
 } from "@skastr0/pulsar-core"
@@ -209,92 +210,139 @@ export const runBisectCommand = (opts: BisectOptions) =>
     })
     const observerMode = opts.observer === true || opts.signalId === undefined
 
-    if (observerMode) {
-      const activeSignalIds = registry.sorted
-        .filter((signal) => vectorIsActive(signal, vector))
-        .map((signal) => signal.id)
-      if (activeSignalIds.length === 0) {
-        const vectorSuffix = vector?.id ? ` for vector ${vector.id}` : ""
-        return yield* Effect.fail(
-          new Error(`Observer mode has no active signals${vectorSuffix}.`),
-        )
-      }
+    const runtime = { engine, registry, vector, repoPath }
+    return observerMode
+      ? yield* runObserverBisect(opts, runtime)
+      : yield* runSignalBisect({ ...opts, signalId: opts.signalId! }, runtime)
+  })
 
-      const started = Date.now()
-      const commits = yield* resolveBisectCommits(repoPath, opts.fromSha, opts.toSha)
-      const sampled = yield* sampleObserverTrajectory(
-        commits,
-        opts.sampling,
-        opts.firstCrossing !== undefined,
-        opts.concurrency,
-        (sha) => engine.observeCommit(repoPath, sha),
-      )
-      const elapsedMs = Date.now() - started
-      const selectedSignals = (opts.selectedSignals ?? []).map(
-        (signalId) => registry.canonicalIdOf(signalId) ?? signalId,
-      )
-      const report = buildObserverReport(sampled.trajectory, {
-        repoPath,
-        fromSha: opts.fromSha,
-        toSha: opts.toSha,
-        topCulprits: opts.topCulprits,
-        vectorName: vector?.id ?? null,
-        sampling: sampled.sampling,
-        selectedSignals,
-        selectedCategories: opts.selectedCategories ?? [],
-        firstCrossing: canonicalizeFirstCrossingQuery(opts.firstCrossing, registry),
-      })
-      if (opts.json) {
-        console.log(JSON.stringify(report, null, 2))
-        return
-      }
+interface BisectCommandRuntime {
+  readonly engine: {
+    readonly observeCommit: (
+      repoPath: string,
+      sha: string,
+    ) => Effect.Effect<ObserverOutput, unknown, never>
+    readonly scoreCommit: (
+      repoPath: string,
+      sha: string,
+      signalId: string,
+    ) => Effect.Effect<SignalRunResult, unknown, never>
+  }
+  readonly registry: Registry
+  readonly vector: PulsarVector | undefined
+  readonly repoPath: string
+}
 
-      printObserverHumanReport(report, elapsedMs, report.finalApplicableSignalCount)
-      return
-    }
+type SignalBisectOptions = BisectOptions & { readonly signalId: string }
 
+const runObserverBisect = (
+  opts: BisectOptions,
+  runtime: BisectCommandRuntime,
+): Effect.Effect<void, unknown, never> =>
+  Effect.gen(function* () {
+    yield* ensureObserverHasActiveSignals(runtime.registry, runtime.vector)
     const started = Date.now()
-    const commits = yield* resolveBisectCommits(repoPath, opts.fromSha, opts.toSha)
+    const commits = yield* resolveBisectCommits(runtime.repoPath, opts.fromSha, opts.toSha)
+    const sampled = yield* sampleObserverTrajectory(
+      commits,
+      opts.sampling,
+      opts.firstCrossing !== undefined,
+      opts.concurrency,
+      (sha) => runtime.engine.observeCommit(runtime.repoPath, sha),
+    )
+    const report = buildObserverReport(sampled.trajectory, observerReportOptions(opts, runtime, sampled.sampling))
+    if (opts.json) return printJsonReport(report)
+    printObserverHumanReport(report, Date.now() - started, report.finalApplicableSignalCount)
+  })
+
+const ensureObserverHasActiveSignals = (
+  registry: Registry,
+  vector: PulsarVector | undefined,
+): Effect.Effect<void, Error, never> =>
+  Effect.sync(() =>
+    registry.sorted.filter((signal) => vectorIsActive(signal, vector)).map((signal) => signal.id),
+  ).pipe(
+    Effect.flatMap((activeSignalIds) =>
+      activeSignalIds.length > 0
+        ? Effect.void
+        : Effect.fail(
+            new Error(
+              `Observer mode has no active signals${vector?.id ? ` for vector ${vector.id}` : ""}.`,
+            ),
+          ),
+    ),
+  )
+
+const observerReportOptions = (
+  opts: BisectOptions,
+  runtime: BisectCommandRuntime,
+  sampling: BisectSamplingSummary,
+): Parameters<typeof buildObserverReport>[1] => ({
+  repoPath: runtime.repoPath,
+  fromSha: opts.fromSha,
+  toSha: opts.toSha,
+  topCulprits: opts.topCulprits,
+  vectorName: runtime.vector?.id ?? null,
+  sampling,
+  selectedSignals: (opts.selectedSignals ?? []).map(
+    (signalId) => runtime.registry.canonicalIdOf(signalId) ?? signalId,
+  ),
+  selectedCategories: opts.selectedCategories ?? [],
+  firstCrossing: canonicalizeFirstCrossingQuery(opts.firstCrossing, runtime.registry),
+})
+
+const runSignalBisect = (
+  opts: SignalBisectOptions,
+  runtime: BisectCommandRuntime,
+): Effect.Effect<void, unknown, never> =>
+  Effect.gen(function* () {
+    const started = Date.now()
+    const commits = yield* resolveBisectCommits(runtime.repoPath, opts.fromSha, opts.toSha)
     const sampled = yield* sampleSignalTrajectory(
       commits,
       opts.sampling,
       opts.firstCrossing !== undefined,
       opts.concurrency,
-      (sha) => engine.scoreCommit(repoPath, sha, opts.signalId!),
+      (sha) => runtime.engine.scoreCommit(runtime.repoPath, sha, opts.signalId),
     )
-    const elapsedMs = Date.now() - started
-
-    const culprits = findCulprits(sampled.trajectory, opts.topCulprits)
-    const driftCulprits = findDriftCulprits(sampled.trajectory, opts.topCulprits)
-    const scores = summarizeScores(sampled.trajectory.map((t) => t.score))
-
-    const report: BisectReport = {
-      schemaVersion: "signal-bisect/v2",
-      signalId: opts.signalId,
-      repoPath,
-      fromSha: opts.fromSha,
-      toSha: opts.toSha,
-      trajectory: sampled.trajectory,
-      culprits,
-      driftCulprits,
-      sampling: sampled.sampling,
-      minScore: scores.min,
-      maxScore: scores.max,
-      finalScore: scores.final,
-      totalDrift: scores.drift,
-      firstCrossing:
-        opts.firstCrossing === undefined
-          ? undefined
-          : findFirstCrossing(sampled.trajectory, opts.firstCrossing),
-    }
-
-    if (opts.json) {
-      console.log(JSON.stringify(report, null, 2))
-      return
-    }
-
-    printHumanReport(report, elapsedMs)
+    const report = buildSignalBisectReport(opts, runtime.repoPath, sampled)
+    if (opts.json) return printJsonReport(report)
+    printHumanReport(report, Date.now() - started)
   })
+
+const buildSignalBisectReport = (
+  opts: SignalBisectOptions,
+  repoPath: string,
+  sampled: {
+    readonly trajectory: ReadonlyArray<CommitScore>
+    readonly sampling: BisectSamplingSummary
+  },
+): BisectReport => {
+  const scores = summarizeScores(sampled.trajectory.map((t) => t.score))
+  return {
+    schemaVersion: "signal-bisect/v2",
+    signalId: opts.signalId,
+    repoPath,
+    fromSha: opts.fromSha,
+    toSha: opts.toSha,
+    trajectory: sampled.trajectory,
+    culprits: findCulprits(sampled.trajectory, opts.topCulprits),
+    driftCulprits: findDriftCulprits(sampled.trajectory, opts.topCulprits),
+    sampling: sampled.sampling,
+    minScore: scores.min,
+    maxScore: scores.max,
+    finalScore: scores.final,
+    totalDrift: scores.drift,
+    firstCrossing:
+      opts.firstCrossing === undefined
+        ? undefined
+        : findFirstCrossing(sampled.trajectory, opts.firstCrossing),
+  }
+}
+
+const printJsonReport = (report: BisectReport | ObserverBisectReport): void => {
+  console.log(JSON.stringify(report, null, 2))
+}
 
 const buildObserverReport = (
   results: ReadonlyArray<ObserverCurveSample>,
