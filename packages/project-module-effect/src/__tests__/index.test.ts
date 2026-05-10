@@ -117,6 +117,17 @@ describe("effect project module", () => {
     })).toBe(true)
 
     expect(isEffectPrototypeFactoryNoopCandidate({
+      file: "/repo/packages/ai/ai/src/Toolkit.ts",
+      name: "makeProto/Object.assign",
+      line: 382,
+      nodeKind: "FunctionExpression",
+      bodyText: "{}",
+      functionText: "function() {}",
+      parentText: "Object.assign(function() {}, Proto, { tools }) as any",
+      classification: "stub",
+    })).toBe(true)
+
+    expect(isEffectPrototypeFactoryNoopCandidate({
       file: "/repo/src/ordinary.ts",
       name: "unfinished",
       line: 1,
@@ -124,6 +135,17 @@ describe("effect project module", () => {
       bodyText: "{}",
       functionText: "function unfinished() {}",
       parentText: "function unfinished() {}",
+      classification: "stub",
+    })).toBe(false)
+
+    expect(isEffectPrototypeFactoryNoopCandidate({
+      file: "/repo/src/ordinary.ts",
+      name: "Array.map callback",
+      line: 1,
+      nodeKind: "FunctionExpression",
+      bodyText: "{}",
+      functionText: "function() {}",
+      parentText: "items.map(function() {})",
       classification: "stub",
     })).toBe(false)
   })

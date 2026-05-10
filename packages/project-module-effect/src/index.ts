@@ -142,6 +142,8 @@ export const isEffectPrototypeFactoryNoopCandidate = (
   if (value.classification === "intentional_noop") return false
   if (!isEmptyNoopValue(value)) return false
 
+  if (isAnonymousObjectAssignPrototypeShell(value)) return true
+
   const name = escapedRegExp(value.name)
   const parentText = value.parentText ?? ""
   if (name === undefined || parentText.length === 0) return false
@@ -154,6 +156,17 @@ export const isEffectPrototypeFactoryNoopCandidate = (
     new RegExp(`${name}\\s*\\[[^\\]]+\\]\\s*=`),
     new RegExp(`${name}\\.[A-Za-z_$][\\w$]*\\s*=`),
   ].some((pattern) => pattern.test(parentText))
+}
+
+const isAnonymousObjectAssignPrototypeShell = (
+  value: TypeScriptNoopClassificationValue,
+): boolean => {
+  const text = value.parentText ?? ""
+  if (!/Object\.assign\s*\(\s*function(?:\s+[A-Za-z_$][\w$]*)?\s*\([^)]*\)\s*\{\s*\}\s*,/.test(text)) {
+    return false
+  }
+  return /,\s*(?:Proto|Prototype|[A-Za-z_$][\w$]*Proto|[A-Za-z_$][\w$]*Prototype)\b/.test(text) ||
+    /,\s*\{[^}]*[A-Za-z_$][\w$]*\s*[:=]/s.test(text)
 }
 
 const isEmptyFunctionText = (text: string | undefined): boolean => {
