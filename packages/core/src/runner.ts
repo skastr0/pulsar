@@ -3,7 +3,11 @@ import type { Diagnostic } from "./diagnostic.js"
 import { UnknownSignalIdError, type SignalError } from "./errors.js"
 import { buildInputOutputs } from "./input-outputs.js"
 import type { Registry } from "./registry.js"
-import type { ResolvedSignal, SignalOutputMetadata } from "./signal.js"
+import type {
+  ResolvedSignal,
+  SignalFactorLedger,
+  SignalOutputMetadata,
+} from "./signal.js"
 import {
   isActive as vectorIsActive,
   resolvedConfig as vectorResolvedConfig,
@@ -16,6 +20,7 @@ export interface SignalRunResult {
   readonly output: unknown
   readonly diagnostics: ReadonlyArray<Diagnostic>
   readonly metadata?: SignalOutputMetadata
+  readonly factorLedger?: SignalFactorLedger
 }
 
 /**
@@ -61,12 +66,14 @@ export const runSignal = (
       }
     }
     const metadata = target.outputMetadata?.(out)
+    const factorLedger = target.factorLedger?.(out)
     return {
       signalId: target.id,
       score: target.score(out),
       output: out,
       diagnostics: target.diagnose(out),
       ...(metadata !== undefined ? { metadata } : {}),
+      ...(factorLedger !== undefined ? { factorLedger } : {}),
     }
   })
 

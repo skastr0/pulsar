@@ -35,6 +35,64 @@ export interface SignalOutputMetadata {
   readonly applicability?: SignalApplicability
 }
 
+export type SignalFactorValue =
+  | string
+  | number
+  | boolean
+  | null
+  | ReadonlyArray<SignalFactorValue>
+  | { readonly [key: string]: SignalFactorValue }
+
+export type SignalFactorValueKind =
+  | "string"
+  | "number"
+  | "boolean"
+  | "null"
+  | "array"
+  | "object"
+
+export type SignalFactorScoreRole =
+  | "evidence"
+  | "threshold"
+  | "penalty"
+  | "weight"
+  | "confidence"
+  | "score-cap"
+  | "metadata"
+
+export interface SignalFactorDefinition {
+  readonly path: string
+  readonly title: string
+  readonly valueKind: SignalFactorValueKind
+  readonly scoreRole: SignalFactorScoreRole
+  readonly description?: string
+  readonly defaultValue?: SignalFactorValue
+}
+
+export type SignalFactorSource =
+  | "signal-default"
+  | "computed"
+  | "vector"
+  | "module"
+
+export interface SignalFactorLedgerEntry {
+  readonly path: string
+  readonly value: SignalFactorValue
+  readonly source: SignalFactorSource
+  readonly affectsScore: boolean
+  readonly title?: string
+  readonly scoreRole?: SignalFactorScoreRole
+  readonly attribution?: {
+    readonly ruleId?: string
+    readonly sourceRef?: string
+  }
+}
+
+export interface SignalFactorLedger {
+  readonly signalId: string
+  readonly entries: ReadonlyArray<SignalFactorLedgerEntry>
+}
+
 /**
  * The runtime services a signal's `compute` has access to.
  *
@@ -101,6 +159,8 @@ export interface Signal<Config, Output, R = SignalRequirements> {
 
   readonly configDirections?: Partial<Record<keyof Config, ConfigDirection>>
 
+  readonly factorDefinitions?: ReadonlyArray<SignalFactorDefinition>
+
   readonly inputs: ReadonlyArray<SignalInputRef>
 
   /**
@@ -125,6 +185,8 @@ export interface Signal<Config, Output, R = SignalRequirements> {
   readonly diagnose: (output: Output) => ReadonlyArray<Diagnostic>
 
   readonly outputMetadata?: (output: Output) => SignalOutputMetadata | undefined
+
+  readonly factorLedger?: (output: Output) => SignalFactorLedger | undefined
 }
 
 /**

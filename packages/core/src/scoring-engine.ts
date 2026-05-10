@@ -408,10 +408,12 @@ export const computeConfigHash = (
   const payload: {
     readonly cacheVersion: string | null
     readonly config: unknown
+    readonly factorDefinitions: unknown
     readonly calibrationFingerprint?: string
   } = {
     cacheVersion: signal?.cacheVersion ?? null,
     config: config ?? null,
+    factorDefinitions: signal?.factorDefinitions ?? [],
   }
   const hash = createHash("sha256")
   if (calibrationFingerprint !== undefined) {
@@ -460,6 +462,7 @@ export const computeObserverConfigHash = (
         config: vectorResolvedConfig(signal, signal.defaultConfig, vector),
         cacheVersion: signal.cacheVersion ?? null,
         enforcement: signal.enforcement,
+        factorDefinitions: signal.factorDefinitions ?? [],
         kind: signal.kind,
         normalizationGroup: signal.normalizationGroup ?? null,
         tier: signal.tier,
