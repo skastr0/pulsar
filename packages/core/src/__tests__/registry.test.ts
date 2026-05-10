@@ -53,6 +53,46 @@ describe("Registry", () => {
     expect(registry.sorted[0]?.id).toBe("MOCK-01")
   })
 
+  test("resolves aliases to the canonical signal", async () => {
+    const signal: AnySignal = {
+      ...MockLeaf,
+      id: "MOCK-01-semantic-name",
+      aliases: ["MOCK-01"],
+      title: "Mock semantic signal",
+    }
+
+    const registry = await Effect.runPromise(buildRegistry([signal]))
+
+    expect(registry.has("MOCK-01-semantic-name")).toBe(true)
+    expect(registry.has("MOCK-01")).toBe(true)
+    expect(registry.byId.get("MOCK-01")).toBe(registry.byId.get("MOCK-01-semantic-name"))
+    expect(registry.canonicalIdOf("MOCK-01")).toBe("MOCK-01-semantic-name")
+    expect(registry.aliasesOf("MOCK-01-semantic-name")).toEqual(["MOCK-01"])
+    expect(registry.sorted.map((s) => s.id)).toEqual(["MOCK-01-semantic-name"])
+  })
+
+  test("canonicalizes input aliases before execution planning", async () => {
+    const leaf: AnySignal = {
+      ...MockLeaf,
+      id: "MOCK-01-semantic-name",
+      aliases: ["MOCK-01"],
+    }
+    const compound: AnySignal = {
+      ...MockCompound,
+      inputs: [{ id: "MOCK-01" }],
+    }
+
+    const registry = await Effect.runPromise(buildRegistry([compound, leaf]))
+
+    expect(registry.sorted.map((s) => s.id)).toEqual([
+      "MOCK-01-semantic-name",
+      "MOCK-02",
+    ])
+    expect(registry.byId.get("MOCK-02")?.inputs).toEqual([
+      { id: "MOCK-01-semantic-name" },
+    ])
+  })
+
   test("derives enforcement from tier and kind", async () => {
     const registry = await Effect.runPromise(buildRegistry([MockLeaf]))
     const resolved = registry.byId.get("MOCK-01")
@@ -78,6 +118,21 @@ describe("Registry", () => {
     if (Exit.isFailure(exit)) {
       const err = exit.cause._tag === "Fail" ? exit.cause.error : null
       expect((err as any)?._tag).toBe("DuplicateSignalIdError")
+    }
+  })
+
+  test("rejects alias collisions", async () => {
+    const exit = await Effect.runPromiseExit(
+      buildRegistry([
+        { ...MockLeaf, id: "MOCK-A", aliases: ["MOCK-LEGACY"] },
+        { ...MockLeaf, id: "MOCK-B", aliases: ["MOCK-LEGACY"] },
+      ] as ReadonlyArray<AnySignal>),
+    )
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) {
+      const err = exit.cause._tag === "Fail" ? exit.cause.error : null
+      expect((err as any)?._tag).toBe("DuplicateSignalIdError")
+      expect((err as any)?.id).toBe("MOCK-LEGACY")
     }
   })
 

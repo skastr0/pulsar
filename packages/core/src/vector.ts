@@ -1,5 +1,6 @@
 import { Effect, Schema } from "effect"
 import type { Registry } from "./registry.js"
+import type { SignalIdentity } from "./signal.js"
 import { UnknownSignalIdError } from "./errors.js"
 
 export const SignalOverride = Schema.Struct({
@@ -250,27 +251,50 @@ export const validateVectorAgainstRegistry = (
  * provided.
  */
 export const resolvedConfig = <Config>(
-  signalId: string,
+  signal: string | SignalIdentity,
   defaultConfig: Config,
   vector: PulsarVector | undefined,
 ): Config => {
   if (vector === undefined) return defaultConfig
-  const override = vector.signal_overrides[signalId]
+  const override = signalOverrideOf(signal, vector)
   if (override === undefined || override.config === undefined) return defaultConfig
   return { ...defaultConfig, ...(override.config as Partial<Config>) }
 }
 
-export const isActive = (signalId: string, vector: PulsarVector | undefined): boolean => {
+export const isActive = (
+  signal: string | SignalIdentity,
+  vector: PulsarVector | undefined,
+): boolean => {
   if (vector === undefined) return true
-  const override = vector.signal_overrides[signalId]
+  const override = signalOverrideOf(signal, vector)
   return override?.active ?? true
 }
 
-export const weightOf = (signalId: string, vector: PulsarVector | undefined): number => {
+export const weightOf = (
+  signal: string | SignalIdentity,
+  vector: PulsarVector | undefined,
+): number => {
   if (vector === undefined) return 1
-  const override = vector.signal_overrides[signalId]
+  const override = signalOverrideOf(signal, vector)
   return override?.weight ?? 1
 }
+
+export const signalOverrideOf = (
+  signal: string | SignalIdentity,
+  vector: PulsarVector | undefined,
+): SignalOverride | undefined => {
+  if (vector === undefined) return undefined
+  for (const id of signalIdsForOverrideLookup(signal)) {
+    const override = vector.signal_overrides[id]
+    if (override !== undefined) return override
+  }
+  return undefined
+}
+
+const signalIdsForOverrideLookup = (
+  signal: string | SignalIdentity,
+): ReadonlyArray<string> =>
+  typeof signal === "string" ? [signal] : [signal.id, ...(signal.aliases ?? [])]
 
 export const reviewThresholdOf = (
   reviewerRole: string,

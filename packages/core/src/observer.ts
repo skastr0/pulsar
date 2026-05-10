@@ -455,7 +455,7 @@ export const observe = (
     let pendingSignals: Array<ResolvedSignal> = []
 
     for (const signal of registry.sorted) {
-      if (!vectorIsActive(signal.id, vector)) {
+      if (!vectorIsActive(signal, vector)) {
         inactiveSignals.push(signal.id)
         processedSignals.add(signal.id)
         continue
@@ -581,7 +581,7 @@ const runOneSignal = (
 ): Effect.Effect<SignalRunResult, never, any> =>
   Effect.gen(function* () {
     const inputOutputs = buildInputOutputs(signal, outputs)
-    const config = vectorResolvedConfig(signal.id, signal.defaultConfig, vector)
+    const config = vectorResolvedConfig(signal, signal.defaultConfig, vector)
 
     const either = yield* Effect.either(signal.compute(config, inputOutputs))
     if (either._tag === "Left") {
@@ -658,7 +658,7 @@ const aggregateCategories = (
     for (const s of signalsInCategory) {
       const result = signalResults.get(s.id)
       if (result === undefined) continue
-      const weight = vectorWeightOf(s.id, vector)
+      const weight = vectorWeightOf(s, vector)
       signalsRecord[s.id] = result.score
       weightsRecord[s.id] = weight
       activeIds.push(s.id)
@@ -899,7 +899,7 @@ const computeReadiness = (
     const applicability = signalApplicabilityOf(result)
     const ignored = applicability !== "applicable"
     const confidence = ignored ? 0 : confidenceForSignal(signal, result)
-    const weight = vectorWeightOf(signal.id, vector)
+    const weight = vectorWeightOf(signal, vector)
     const rawPressure = clamp01(1 - result.score)
     const effectivePressure = rawPressure * confidence
 

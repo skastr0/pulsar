@@ -140,6 +140,19 @@ describe("PulsarVector", () => {
     }
   })
 
+  test("validateVectorAgainstRegistry accepts aliases", async () => {
+    const registry = await Effect.runPromise(
+      buildRegistry([{ ...Leaf, id: "MOCK-01-semantic-name", aliases: ["MOCK-01"] }]),
+    )
+    const vector = {
+      id: "v1",
+      domain: "typescript",
+      signal_overrides: { "MOCK-01": {} },
+    }
+
+    await Effect.runPromise(validateVectorAgainstRegistry(vector, registry))
+  })
+
   test("resolvedConfig merges overrides into defaultConfig", () => {
     const vector = {
       id: "v1",
@@ -149,6 +162,17 @@ describe("PulsarVector", () => {
     expect(resolvedConfig("MOCK-01", Leaf.defaultConfig, vector)).toEqual({ threshold: 50 })
     expect(resolvedConfig("MOCK-01", Leaf.defaultConfig, undefined)).toEqual({ threshold: 10 })
     expect(resolvedConfig("MOCK-02", Leaf.defaultConfig, vector)).toEqual({ threshold: 10 })
+  })
+
+  test("resolvedConfig can find overrides through signal aliases", () => {
+    const signal = { ...Leaf, id: "MOCK-01-semantic-name", aliases: ["MOCK-01"] }
+    const vector = {
+      id: "v1",
+      domain: "typescript",
+      signal_overrides: { "MOCK-01": { config: { threshold: 50 } } },
+    }
+
+    expect(resolvedConfig(signal, Leaf.defaultConfig, vector)).toEqual({ threshold: 50 })
   })
 
   test("isActive defaults to true when not overridden", () => {
@@ -162,6 +186,17 @@ describe("PulsarVector", () => {
     expect(isActive("OTHER", vector)).toBe(true)
   })
 
+  test("isActive can find overrides through signal aliases", () => {
+    const signal = { ...Leaf, id: "MOCK-01-semantic-name", aliases: ["MOCK-01"] }
+    const vector = {
+      id: "v1",
+      domain: "typescript",
+      signal_overrides: { "MOCK-01": { active: false } },
+    }
+
+    expect(isActive(signal, vector)).toBe(false)
+  })
+
   test("weightOf defaults to 1 and supports stronger-than-default emphasis", () => {
     expect(weightOf("MOCK-01", undefined)).toBe(1)
     const vector = {
@@ -170,6 +205,17 @@ describe("PulsarVector", () => {
       signal_overrides: { "MOCK-01": { weight: 1.3 } },
     }
     expect(weightOf("MOCK-01", vector)).toBe(1.3)
+  })
+
+  test("weightOf can find overrides through signal aliases", () => {
+    const signal = { ...Leaf, id: "MOCK-01-semantic-name", aliases: ["MOCK-01"] }
+    const vector = {
+      id: "v1",
+      domain: "typescript",
+      signal_overrides: { "MOCK-01": { weight: 1.3 } },
+    }
+
+    expect(weightOf(signal, vector)).toBe(1.3)
   })
 
   test("reviewThresholdOf falls back to defaults when unspecified", () => {

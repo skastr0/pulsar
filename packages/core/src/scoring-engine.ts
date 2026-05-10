@@ -44,6 +44,7 @@ import {
   isActive as vectorIsActive,
   readinessConfigOf,
   resolvedConfig as vectorResolvedConfig,
+  weightOf as vectorWeightOf,
   type PulsarVector,
 } from "./vector.js"
 
@@ -402,7 +403,7 @@ export const computeConfigHash = (
 ): string => {
   const signal = registry.byId.get(signalId)
   const config = signal
-    ? vectorResolvedConfig(signalId, signal.defaultConfig, vector)
+    ? vectorResolvedConfig(signal, signal.defaultConfig, vector)
     : undefined
   const payload: {
     readonly cacheVersion: string | null
@@ -451,18 +452,18 @@ export const computeObserverConfigHash = (
   calibrationFingerprint?: string,
 ): string => {
   const activeSignals = registry.sorted
-    .filter((signal) => vectorIsActive(signal.id, vector))
+    .filter((signal) => vectorIsActive(signal, vector))
     .map((signal) => [
       signal.id,
       {
         category: signal.category,
-        config: vectorResolvedConfig(signal.id, signal.defaultConfig, vector),
+        config: vectorResolvedConfig(signal, signal.defaultConfig, vector),
         cacheVersion: signal.cacheVersion ?? null,
         enforcement: signal.enforcement,
         kind: signal.kind,
         normalizationGroup: signal.normalizationGroup ?? null,
         tier: signal.tier,
-        weight: vector?.signal_overrides[signal.id]?.weight ?? 1,
+        weight: vectorWeightOf(signal, vector),
       },
     ])
   const observerConfig = {
@@ -779,17 +780,18 @@ export const ScoringEngineLayer = (
           yield* Effect.annotateCurrentSpan("signalId", signalId)
 
           const signal = registry.byId.get(signalId)
+          const canonicalSignalId = signal?.id ?? signalId
           const contentHash = yield* computeContentHash(repoPath, sha)
           const result = yield* withCommitWorktree(repoPath, sha, (worktreePath) =>
             Effect.gen(function* () {
               const calibrationContext = yield* resolveCalibrationContext(worktreePath)
               const configHash = computeConfigHash(
-                signalId,
+                canonicalSignalId,
                 registry,
                 vector,
                 calibrationContext?.fingerprint,
               )
-              const key: CacheKey = { signalId, contentHash, configHash }
+              const key: CacheKey = { signalId: canonicalSignalId, contentHash, configHash }
 
               if (signal === undefined || signal.tier === 1 || signal.tier === 1.5) {
                 const cached = yield* cacheRef.getTiered<SignalRunResult>(key, {

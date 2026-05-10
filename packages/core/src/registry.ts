@@ -7,14 +7,20 @@ import {
   MissingDependencyError,
   type RegistryError,
 } from "./errors.js"
-import type { AnySignal, ResolvedSignal } from "./signal.js"
+import type { AnySignal, ResolvedSignal, SignalInputRef } from "./signal.js"
 
 export const MAX_COMPOSITION_DEPTH = 2
 
 export interface Registry {
+  /**
+   * Lookup table for canonical IDs and accepted aliases. Iteration over
+   * executable signals should use `sorted`, which contains each signal once.
+   */
   readonly byId: ReadonlyMap<string, ResolvedSignal>
   readonly sorted: ReadonlyArray<ResolvedSignal>
   readonly has: (id: string) => boolean
+  readonly canonicalIdOf: (id: string) => string | undefined
+  readonly aliasesOf: (id: string) => ReadonlyArray<string>
 }
 
 export class RegistryTag extends Context.Tag("@skastr0/pulsar-core/Registry")<
@@ -26,10 +32,15 @@ const validateNoDuplicates = (
   signals: ReadonlyArray<AnySignal>,
 ): Effect.Effect<void, DuplicateSignalIdError> =>
   Effect.gen(function* () {
-    const seen = new Set<string>()
+    const seen = new Map<string, AnySignal>()
     for (const s of signals) {
-      if (seen.has(s.id)) return yield* new DuplicateSignalIdError({ id: s.id })
-      seen.add(s.id)
+      for (const id of signalIdentifiers(s)) {
+        const existing = seen.get(id)
+        if (existing !== undefined && existing !== s) {
+          return yield* new DuplicateSignalIdError({ id })
+        }
+        seen.set(id, s)
+      }
     }
   })
 
@@ -38,10 +49,18 @@ const normalizeSignals = (
 ): Effect.Effect<ReadonlyArray<AnySignal>, DuplicateSignalIdError> =>
   Effect.gen(function* () {
     const canonicalById = new Map<string, AnySignal>()
+    const ownerByIdentifier = new Map<string, AnySignal>()
     const normalized: Array<AnySignal> = []
     for (const signal of signals) {
       const existing = canonicalById.get(signal.id)
       if (existing === undefined) {
+        for (const id of signalIdentifiers(signal)) {
+          const owner = ownerByIdentifier.get(id)
+          if (owner !== undefined && owner !== signal) {
+            return yield* new DuplicateSignalIdError({ id })
+          }
+          ownerByIdentifier.set(id, signal)
+        }
         canonicalById.set(signal.id, signal)
         normalized.push(signal)
         continue
@@ -56,7 +75,7 @@ const validateDependenciesExist = (
   signals: ReadonlyArray<AnySignal>,
 ): Effect.Effect<void, MissingDependencyError> =>
   Effect.gen(function* () {
-    const ids = new Set(signals.map((s) => s.id))
+    const ids = new Set(signals.flatMap(signalIdentifiers))
     for (const s of signals) {
       for (const input of s.inputs) {
         if (!ids.has(input.id) && input.optional !== true) {
@@ -78,19 +97,22 @@ const topologicalSort = (
 ): Effect.Effect<ReadonlyArray<AnySignal>, CycleDetectedError> =>
   Effect.gen(function* () {
     const byId = new Map(signals.map((s) => [s.id, s] as const))
+    const canonicalByIdentifier = buildCanonicalIdentifierMap(signals)
     const indegree = new Map<string, number>()
     const dependents = new Map<string, Array<string>>()
 
     for (const s of signals) {
+      const presentInputs = s.inputs
+        .map((input) => canonicalByIdentifier.get(input.id))
+        .filter((id): id is string => id !== undefined)
       indegree.set(
         s.id,
-        s.inputs.filter((input) => byId.has(input.id)).length,
+        presentInputs.length,
       )
-      for (const input of s.inputs) {
-        if (!byId.has(input.id)) continue
-        const list = dependents.get(input.id) ?? []
+      for (const inputId of presentInputs) {
+        const list = dependents.get(inputId) ?? []
         list.push(s.id)
-        dependents.set(input.id, list)
+        dependents.set(inputId, list)
       }
     }
 
@@ -121,6 +143,7 @@ const validateCompositionDepth = (
 ): Effect.Effect<ReadonlyMap<string, number>, CompositionTooDeepError> =>
   Effect.gen(function* () {
     const depths = new Map<string, number>()
+    const canonicalByIdentifier = buildCanonicalIdentifierMap(sorted)
     for (const s of sorted) {
       if (s.inputs.length === 0) {
         depths.set(s.id, 1)
@@ -128,8 +151,9 @@ const validateCompositionDepth = (
       }
       let maxInputDepth = 0
       for (const input of s.inputs) {
-        if (!depths.has(input.id)) continue
-        const d = depths.get(input.id) ?? 1
+        const inputId = canonicalByIdentifier.get(input.id)
+        if (inputId === undefined || !depths.has(inputId)) continue
+        const d = depths.get(inputId) ?? 1
         if (d > maxInputDepth) maxInputDepth = d
       }
       const depth = 1 + maxInputDepth
@@ -155,17 +179,57 @@ export const buildRegistry = (
     const sorted = yield* topologicalSort(normalized)
     yield* validateCompositionDepth(sorted)
 
+    const canonicalByIdentifier = buildCanonicalIdentifierMap(sorted)
     const resolved: Array<ResolvedSignal> = sorted.map((s) => ({
       ...s,
+      inputs: normalizeInputs(s.inputs, canonicalByIdentifier),
       enforcement: deriveEnforcement(s.tier, s.kind),
     }))
-    const byId = new Map(resolved.map((s) => [s.id, s] as const))
+    const byId = new Map<string, ResolvedSignal>()
+    for (const signal of resolved) {
+      for (const id of signalIdentifiers(signal)) {
+        byId.set(id, signal)
+      }
+    }
+    const aliasesByCanonical = new Map(
+      resolved.map((signal) => [signal.id, [...new Set(signal.aliases ?? [])]] as const),
+    )
 
     return {
       byId,
       sorted: resolved,
       has: (id: string) => byId.has(id),
+      canonicalIdOf: (id: string) => byId.get(id)?.id,
+      aliasesOf: (id: string) => {
+        const canonical = byId.get(id)?.id ?? id
+        return aliasesByCanonical.get(canonical) ?? []
+      },
     }
+  })
+
+const signalIdentifiers = (signal: Pick<AnySignal, "id" | "aliases">): ReadonlyArray<string> =>
+  [signal.id, ...(signal.aliases ?? [])]
+
+const buildCanonicalIdentifierMap = (
+  signals: ReadonlyArray<Pick<AnySignal, "id" | "aliases">>,
+): ReadonlyMap<string, string> => {
+  const map = new Map<string, string>()
+  for (const signal of signals) {
+    for (const id of signalIdentifiers(signal)) {
+      map.set(id, signal.id)
+    }
+  }
+  return map
+}
+
+const normalizeInputs = (
+  inputs: ReadonlyArray<SignalInputRef>,
+  canonicalByIdentifier: ReadonlyMap<string, string>,
+): ReadonlyArray<SignalInputRef> =>
+  inputs.map((input) => {
+    const canonical = canonicalByIdentifier.get(input.id)
+    if (canonical === undefined || canonical === input.id) return input
+    return { ...input, id: canonical }
   })
 
 /**

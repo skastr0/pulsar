@@ -202,7 +202,7 @@ export const runBisectCommand = (opts: BisectOptions) =>
 
     if (observerMode) {
       const activeSignalIds = registry.sorted
-        .filter((signal) => vectorIsActive(signal.id, vector))
+        .filter((signal) => vectorIsActive(signal, vector))
         .map((signal) => signal.id)
       if (activeSignalIds.length === 0) {
         const vectorSuffix = vector?.id ? ` for vector ${vector.id}` : ""

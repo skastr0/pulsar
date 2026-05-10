@@ -53,8 +53,29 @@ export type SignalRequirements = SignalContextTag | ReferenceDataTag | SignalCac
  */
 export type InputOutputs = ReadonlyMap<string, unknown>
 
+export interface SignalIdentity {
+  /**
+   * Canonical, emitted signal identifier. New signal IDs should be stable and
+   * semantic, e.g. TS-SL-04-unfinished-implementations.
+   */
+  readonly id: string
+
+  /**
+   * Human-readable display title for CLI, JSON explain output, and docs.
+   */
+  readonly title?: string
+
+  /**
+   * Legacy or alternate IDs accepted at input boundaries. Aliases are never
+   * emitted as canonical IDs for new output.
+   */
+  readonly aliases?: ReadonlyArray<string>
+}
+
 export interface Signal<Config, Output, R = SignalRequirements> {
   readonly id: string
+  readonly title?: string
+  readonly aliases?: ReadonlyArray<string>
   readonly tier: Tier
   readonly category: Category
   readonly kind: SignalKind

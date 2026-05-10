@@ -266,7 +266,7 @@ const collectActiveLanguagePacks = (
   let typescript = false
   let rust = false
   for (const signal of registry.sorted) {
-    if (!vectorIsActive(signal.id, vector)) continue
+    if (!vectorIsActive(signal, vector)) continue
     if (signal.id.startsWith("TS-")) typescript = true
     if (signal.id.startsWith("RS-")) rust = true
   }

@@ -39,9 +39,9 @@ export const runSignal = (
     const outputs = new Map<string, unknown>()
 
     for (const s of needed) {
-      if (!vectorIsActive(s.id, vector)) continue
+      if (!vectorIsActive(s, vector)) continue
       const inputOutputs = buildInputOutputs(s, outputs)
-      const config = vectorResolvedConfig(s.id, s.defaultConfig, vector)
+      const config = vectorResolvedConfig(s, s.defaultConfig, vector)
       const result = yield* s.compute(config, inputOutputs)
       outputs.set(s.id, result)
     }
