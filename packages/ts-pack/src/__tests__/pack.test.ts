@@ -25,4 +25,10 @@ describe("TS pack cache versions", () => {
       expect(signal.title).toBeTruthy()
     }
   })
+
+  test("all TypeScript signals expose config factor definitions", () => {
+    for (const signal of TS_PACK_SIGNALS.filter((signal) => signal.id.startsWith("TS-"))) {
+      expect(signal.factorDefinitions?.some((factor) => factor.path.startsWith("config."))).toBe(true)
+    }
+  })
 })

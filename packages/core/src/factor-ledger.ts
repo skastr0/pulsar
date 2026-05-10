@@ -45,6 +45,101 @@ export const makeSignalFactorPolicyContext = (
     : {}),
 })
 
+export const withConfigFactorLedger = <S extends AnySignal>(signal: S): S => {
+  const configDefinitions = configFactorDefinitions(signal)
+  if (configDefinitions.length === 0) return signal
+  const existingDefinitions = signal.factorDefinitions ?? []
+  const existingPaths = new Set(existingDefinitions.map((definition) => definition.path))
+  const extraDefinitions = configDefinitions.filter((definition) => !existingPaths.has(definition.path))
+  if (extraDefinitions.length === 0) return signal
+
+  return {
+    ...signal,
+    factorDefinitions: [...existingDefinitions, ...extraDefinitions],
+    factorLedger: (output: unknown) => {
+      const existingLedger = signal.factorLedger?.(output)
+      return makeFactorLedger(signal.id, [
+        ...(existingLedger?.entries ?? []),
+        ...extraDefinitions.map((definition) =>
+          makeFactorEntry(definition, definition.defaultValue ?? null, {
+            source: "signal-default",
+          }),
+        ),
+      ])
+    },
+  }
+}
+
+const configFactorDefinitions = (signal: AnySignal): ReadonlyArray<SignalFactorDefinition> => {
+  const config = signal.defaultConfig
+  if (config === null || typeof config !== "object" || Array.isArray(config)) return []
+  return Object.entries(config as Record<string, unknown>)
+    .flatMap(([key, value]) => {
+      const factorValue = toSignalFactorValue(value)
+      if (factorValue === undefined) return []
+      return [{
+        path: `config.${normalizeFactorPathSegment(key)}`,
+        title: `Config ${key.replaceAll("_", " ")}`,
+        valueKind: signalFactorValueKind(factorValue),
+        scoreRole: configScoreRole(key, factorValue),
+        defaultValue: factorValue,
+      } satisfies SignalFactorDefinition]
+    })
+}
+
+const normalizeFactorPathSegment = (value: string): string =>
+  value
+    .replace(/[A-Z]/g, (match) => `_${match.toLowerCase()}`)
+    .replace(/[^a-zA-Z0-9._-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toLowerCase()
+
+const configScoreRole = (
+  key: string,
+  value: SignalFactorValue,
+): SignalFactorDefinition["scoreRole"] => {
+  if (typeof value === "number") return key.includes("weight") ? "weight" : "threshold"
+  if (typeof value === "boolean") return "threshold"
+  return "metadata"
+}
+
+const signalFactorValueKind = (
+  value: SignalFactorValue,
+): SignalFactorDefinition["valueKind"] => {
+  if (value === null) return "null"
+  if (Array.isArray(value)) return "array"
+  if (typeof value === "object") return "object"
+  if (typeof value === "string") return "string"
+  if (typeof value === "number") return "number"
+  return "boolean"
+}
+
+const toSignalFactorValue = (value: unknown): SignalFactorValue | undefined => {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return value
+  }
+  if (Array.isArray(value)) {
+    const items = value.map(toSignalFactorValue)
+    return items.every((item): item is SignalFactorValue => item !== undefined)
+      ? items
+      : undefined
+  }
+  if (typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .map(([key, item]) => [key, toSignalFactorValue(item)] as const)
+    if (!entries.every((entry): entry is readonly [string, SignalFactorValue] => entry[1] !== undefined)) {
+      return undefined
+    }
+    return Object.fromEntries(entries)
+  }
+  return undefined
+}
+
 export interface FactorDefinitionValidationIssue {
   readonly path: string
   readonly message: string

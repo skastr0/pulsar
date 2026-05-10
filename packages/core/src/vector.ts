@@ -270,8 +270,12 @@ export const resolvedConfig = <Config>(
 ): Config => {
   if (vector === undefined) return defaultConfig
   const override = signalOverrideOf(signal, vector)
-  if (override === undefined || override.config === undefined) return defaultConfig
-  return { ...defaultConfig, ...(override.config as Partial<Config>) }
+  if (override === undefined) return defaultConfig
+  return {
+    ...defaultConfig,
+    ...((override.config ?? {}) as Partial<Config>),
+    ...configPatchFromFactorOverrides<Config>(override.factors),
+  }
 }
 
 export const isActive = (
@@ -310,6 +314,18 @@ export const factorOverridesOf = (
 ): SignalFactorOverrideMap => {
   const factors = signalOverrideOf(signal, vector)?.factors
   return factors === undefined ? {} : (factors as SignalFactorOverrideMap)
+}
+
+const configPatchFromFactorOverrides = <Config>(
+  factors: SignalOverride["factors"] | undefined,
+): Partial<Config> => {
+  if (factors === undefined) return {}
+  const patch: Record<string, SignalFactorValue> = {}
+  for (const [path, value] of Object.entries(factors)) {
+    if (!path.startsWith("config.")) continue
+    patch[path.slice("config.".length)] = (value ?? null) as SignalFactorValue
+  }
+  return patch as Partial<Config>
 }
 
 const signalIdsForOverrideLookup = (

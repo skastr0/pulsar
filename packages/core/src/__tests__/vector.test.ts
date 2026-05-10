@@ -36,6 +36,13 @@ const Leaf: Signal<LeafConfig, { count: number }> = {
       scoreRole: "threshold",
       defaultValue: 10,
     },
+    {
+      path: "config.threshold",
+      title: "Config threshold",
+      valueKind: "number",
+      scoreRole: "threshold",
+      defaultValue: 10,
+    },
   ],
   configSchema: LeafConfig,
   defaultConfig: { threshold: 10 },
@@ -266,6 +273,16 @@ describe("PulsarVector", () => {
     }
 
     expect(factorOverridesOf(Leaf, vector)).toEqual({ "thresholds.max_count": 50 })
+  })
+
+  test("config factor overrides participate in resolved config", () => {
+    expect(
+      resolvedConfig(Leaf, Leaf.defaultConfig, {
+        id: "v1",
+        domain: "typescript",
+        signal_overrides: { "MOCK-01": { factors: { "config.threshold": 4 } } },
+      }),
+    ).toEqual({ threshold: 4 })
   })
 
   test("reviewThresholdOf falls back to defaults when unspecified", () => {

@@ -1,4 +1,4 @@
-import type { AnySignal } from "@skastr0/pulsar-core"
+import { withConfigFactorLedger, type AnySignal } from "@skastr0/pulsar-core"
 import { TsAb01 } from "./signals/ts-ab-01-public-export-surface.js"
 import { TsAb02 } from "./signals/ts-ab-02-unused-exports-reachability.js"
 import { TsAb03 } from "./signals/ts-ab-03-type-indirection-depth.js"
@@ -70,6 +70,7 @@ export const TS_PACK_SIGNALS: ReadonlyArray<AnySignal> = [
   TsRp02,
   TsSl02,
 ].map(withTsPackCacheVersion)
+  .map(withConfigFactorLedger)
 
 export { TsLd01 } from "./signals/ts-ld-01-complexity.js"
 export { TsLd02 } from "./signals/ts-ld-02-size-distribution.js"
