@@ -260,4 +260,104 @@ describe("calibration contracts", () => {
     ])
     expect(result.decisions[0]?.moduleId).toBe("acme.project")
   })
+
+  test("factor policy processors can tune unfinished implementation factors with attribution", async () => {
+    const module = activateProjectModule({
+      id: "acme.effect",
+      version: "1.0.0",
+      scope: "technology",
+      source: "package",
+      sourceRef: "@acme/pulsar-effect-module",
+      contributions: [
+        {
+          slot: "typescript.unfinished-implementation-policy",
+          processorId: "effect-unfinished-policy",
+          role: "factor-policy",
+          priority: 10,
+          fingerprint: "effect-unfinished-policy-v1",
+        },
+      ],
+    })
+    const processor = defineCalibrationProcessor({
+      id: "effect-unfinished-policy",
+      moduleId: module.id,
+      moduleVersion: module.version,
+      slot: "typescript.unfinished-implementation-policy",
+      role: "factor-policy",
+      priority: 10,
+      fingerprint: "effect-unfinished-policy-v1",
+      process: (current) =>
+        Effect.succeed(
+          appendCalibrationDecision(
+            current,
+            {
+              moduleId: module.id,
+              processorId: "effect-unfinished-policy",
+              slot: "typescript.unfinished-implementation-policy",
+              action: "deweight-accepted-effect-stub",
+              confidence: "high",
+              reason: "Effect package explicitly accepts this placeholder while ratcheting",
+              ruleId: "effect.unfinished.accepted-placeholder.v1",
+              factorPaths: [
+                "stub_kinds.throw-not-implemented.penalty_weight",
+                "stub_kinds.throw-not-implemented.score_cap_participation",
+              ],
+              before: {
+                penaltyWeight: current.value.penaltyWeight,
+                scoreCapParticipation: current.value.scoreCapParticipation,
+              },
+              after: {
+                penaltyWeight: 0.25,
+                scoreCapParticipation: false,
+              },
+              evidence: [{ kind: "symbol", value: current.value.name }],
+            },
+            {
+              ...current.value,
+              penaltyWeight: 0.25,
+              scoreCapParticipation: false,
+            },
+          ),
+        ),
+    })
+    const context = makeResolvedCalibrationContext({
+      repoFacts,
+      activeModules: [module],
+      processors: [processor],
+    })
+
+    const result = await Effect.runPromise(
+      context.runSlot("typescript.unfinished-implementation-policy", {
+        signalId: "TS-SL-04-unfinished-implementations",
+        findingId: "src/program.ts:10:main",
+        file: "/repo/src/program.ts",
+        name: "main",
+        line: 10,
+        stubKind: "throw-not-implemented",
+        message: "Function throws not implemented",
+        visible: true,
+        severity: "block",
+        confidence: "high",
+        penaltyWeight: 1,
+        scoreCapParticipation: true,
+        scoreCap: 0.8,
+        factorPathPrefix: "stub_kinds.throw-not-implemented",
+      }),
+    )
+
+    expect(result.value.visible).toBe(true)
+    expect(result.value.penaltyWeight).toBe(0.25)
+    expect(result.value.scoreCapParticipation).toBe(false)
+    expect(result.decisions[0]).toMatchObject({
+      moduleId: "acme.effect",
+      processorId: "effect-unfinished-policy",
+      slot: "typescript.unfinished-implementation-policy",
+      action: "deweight-accepted-effect-stub",
+      ruleId: "effect.unfinished.accepted-placeholder.v1",
+      factorPaths: [
+        "stub_kinds.throw-not-implemented.penalty_weight",
+        "stub_kinds.throw-not-implemented.score_cap_participation",
+      ],
+    })
+  })
 })

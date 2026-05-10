@@ -10,6 +10,7 @@ export const CALIBRATION_SLOT_IDS = [
   "typescript.suppression-justifier",
   "typescript.callback-context-namer",
   "typescript.export-reachability",
+  "typescript.unfinished-implementation-policy",
   "mixer.category-policy",
 ] as const
 
@@ -22,6 +23,7 @@ export const CalibrationProcessorRole = Schema.Literal(
   "normalizer",
   "compressor",
   "enricher",
+  "factor-policy",
   "mixer-policy",
 )
 export type CalibrationProcessorRole = typeof CalibrationProcessorRole.Type
@@ -60,6 +62,9 @@ export interface CalibrationDecision {
   readonly confidence: CalibrationConfidence
   readonly reason: string
   readonly ruleId?: string
+  readonly factorPaths?: ReadonlyArray<string>
+  readonly before?: unknown
+  readonly after?: unknown
   readonly evidence: ReadonlyArray<CalibrationEvidenceRef>
 }
 
@@ -202,6 +207,29 @@ export interface TypeScriptExportReachabilityValue {
   readonly metadata?: Readonly<Record<string, unknown>>
 }
 
+export interface TypeScriptUnfinishedImplementationPolicyValue {
+  readonly signalId: string
+  readonly findingId: string
+  readonly file: string
+  readonly name: string
+  readonly line?: number
+  readonly stubKind:
+    | "throw-not-implemented"
+    | "empty-body"
+    | "todo-comment"
+    | "mock-return"
+    | "unknown"
+  readonly message: string
+  readonly visible: boolean
+  readonly severity: "info" | "warn" | "block"
+  readonly confidence: CalibrationConfidence
+  readonly penaltyWeight: number
+  readonly scoreCapParticipation: boolean
+  readonly scoreCap?: number
+  readonly factorPathPrefix: string
+  readonly metadata?: Readonly<Record<string, unknown>>
+}
+
 export interface MixerCategoryPolicyValue {
   readonly category: string
   readonly rawScore: number
@@ -218,6 +246,7 @@ export interface CalibrationSlots {
   readonly "typescript.suppression-justifier": TypeScriptSuppressionJustificationValue
   readonly "typescript.callback-context-namer": TypeScriptCallbackContextNameValue
   readonly "typescript.export-reachability": TypeScriptExportReachabilityValue
+  readonly "typescript.unfinished-implementation-policy": TypeScriptUnfinishedImplementationPolicyValue
   readonly "mixer.category-policy": MixerCategoryPolicyValue
 }
 

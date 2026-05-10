@@ -23,6 +23,7 @@ import {
   type TypeScriptCallbackContextNameValue,
   type TypeScriptExportReachabilityValue,
   type TypeScriptNoopClassificationValue,
+  type TypeScriptUnfinishedImplementationPolicyValue,
   type ProjectModuleDescriptor,
   type ProjectModuleScope,
   type ResolvedCalibrationContext,
@@ -72,6 +73,7 @@ export {
   type TypeScriptLocalBindingFact,
   type TypeScriptNoopClassificationValue,
   type TypeScriptSuppressionJustificationValue,
+  type TypeScriptUnfinishedImplementationPolicyValue,
 } from "@skastr0/pulsar-core"
 
 export interface ProjectModuleProcessorDefinition<Slot extends CalibrationSlotId> {
@@ -97,6 +99,9 @@ export interface ProjectModuleDecisionInput {
   readonly confidence: CalibrationDecision["confidence"]
   readonly reason: string
   readonly ruleId?: string
+  readonly factorPaths?: ReadonlyArray<string>
+  readonly before?: unknown
+  readonly after?: unknown
   readonly evidence?: ReadonlyArray<CalibrationEvidenceRef>
 }
 
@@ -137,6 +142,21 @@ export interface MarkTypeScriptPublicEntrypointOptions {
 export interface NameTypeScriptCallbackContextOptions {
   readonly resolvedName: string
   readonly confidence?: CalibrationDecision["confidence"]
+  readonly action?: string
+  readonly reason: string
+  readonly ruleId?: string
+  readonly evidence?: ReadonlyArray<CalibrationEvidenceRef>
+  readonly metadata?: Readonly<Record<string, unknown>>
+}
+
+export interface TuneTypeScriptUnfinishedImplementationOptions {
+  readonly visible?: boolean
+  readonly severity?: TypeScriptUnfinishedImplementationPolicyValue["severity"]
+  readonly message?: string
+  readonly confidence?: CalibrationDecision["confidence"]
+  readonly penaltyWeight?: number
+  readonly scoreCapParticipation?: boolean
+  readonly scoreCap?: number
   readonly action?: string
   readonly reason: string
   readonly ruleId?: string
@@ -247,6 +267,9 @@ export const makeProjectModuleDecision = <Slot extends CalibrationSlotId>(
   confidence: input.confidence,
   reason: input.reason,
   ...(input.ruleId !== undefined ? { ruleId: input.ruleId } : {}),
+  ...(input.factorPaths !== undefined ? { factorPaths: input.factorPaths } : {}),
+  ...(input.before !== undefined ? { before: input.before } : {}),
+  ...(input.after !== undefined ? { after: input.after } : {}),
   evidence: input.evidence ?? [],
 })
 
@@ -357,6 +380,53 @@ export const nameTypeScriptCallbackContext = (
       confidence: options.confidence ?? "high",
       reason: options.reason,
       ...(options.ruleId !== undefined ? { ruleId: options.ruleId } : {}),
+      ...(options.evidence !== undefined ? { evidence: options.evidence } : {}),
+    },
+    nextValue,
+  )
+}
+
+export const tuneTypeScriptUnfinishedImplementation = (
+  current: CalibrationSlotOutput<"typescript.unfinished-implementation-policy">,
+  runtime: ProjectModuleProcessorRuntime<"typescript.unfinished-implementation-policy">,
+  options: TuneTypeScriptUnfinishedImplementationOptions,
+): CalibrationSlotOutput<"typescript.unfinished-implementation-policy"> => {
+  const metadata = mergeMetadata(current.value.metadata, options.metadata)
+  const nextValue: TypeScriptUnfinishedImplementationPolicyValue = {
+    ...current.value,
+    ...(options.visible !== undefined ? { visible: options.visible } : {}),
+    ...(options.severity !== undefined ? { severity: options.severity } : {}),
+    ...(options.message !== undefined ? { message: options.message } : {}),
+    ...(options.confidence !== undefined ? { confidence: options.confidence } : {}),
+    ...(options.penaltyWeight !== undefined ? { penaltyWeight: options.penaltyWeight } : {}),
+    ...(options.scoreCapParticipation !== undefined
+      ? { scoreCapParticipation: options.scoreCapParticipation }
+      : {}),
+    ...(options.scoreCap !== undefined ? { scoreCap: options.scoreCap } : {}),
+    ...(metadata !== undefined ? { metadata } : {}),
+  }
+  const factorPaths = [
+    ...(options.confidence !== undefined ? [`${current.value.factorPathPrefix}.confidence`] : []),
+    ...(options.penaltyWeight !== undefined
+      ? [`${current.value.factorPathPrefix}.penalty_weight`]
+      : []),
+    ...(options.scoreCapParticipation !== undefined
+      ? [`${current.value.factorPathPrefix}.score_cap_participation`]
+      : []),
+    ...(options.scoreCap !== undefined ? [`${current.value.factorPathPrefix}.score_cap`] : []),
+  ]
+
+  return appendProjectModuleDecision(
+    current,
+    runtime,
+    {
+      action: options.action ?? "tune-unfinished-implementation",
+      confidence: options.confidence ?? current.value.confidence,
+      reason: options.reason,
+      ...(options.ruleId !== undefined ? { ruleId: options.ruleId } : {}),
+      ...(factorPaths.length > 0 ? { factorPaths } : {}),
+      before: current.value,
+      after: nextValue,
       ...(options.evidence !== undefined ? { evidence: options.evidence } : {}),
     },
     nextValue,

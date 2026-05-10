@@ -17,6 +17,7 @@ import {
   markTypeScriptExportPublicEntrypoint,
   nameTypeScriptCallbackContext,
   type RepoFacts,
+  tuneTypeScriptUnfinishedImplementation,
 } from "../index.js"
 
 const repoFacts: RepoFacts = {
@@ -308,6 +309,82 @@ describe("project module sdk", () => {
       action: "name-callback-context",
       ruleId: "effect.callback-context-name.v1",
       confidence: "high",
+    })
+  })
+
+  test("processor runtime helpers tune unfinished implementation factors", async () => {
+    const module = defineProjectModule({
+      id: "acme.effect",
+      version: "1.0.0",
+      scope: "technology",
+      processors: [
+        defineProcessor({
+          id: "effect-unfinished-policy",
+          slot: "typescript.unfinished-implementation-policy",
+          role: "factor-policy",
+          fingerprint: "effect-unfinished-policy-v1",
+          process: (current, _context, runtime) =>
+            Effect.sync(() =>
+              tuneTypeScriptUnfinishedImplementation(current, runtime, {
+                penaltyWeight: 0.2,
+                scoreCapParticipation: false,
+                reason: "Effect workflow treats this placeholder as tracked debt",
+                ruleId: "effect.unfinished.tracked-debt.v1",
+                evidence: [{ kind: "symbol", value: current.value.name }],
+                metadata: { technology: "effect" },
+              }),
+            ),
+        }),
+      ],
+    })
+    const context = makeResolvedCalibrationContext({
+      repoFacts,
+      activeModules: [module.activeModule],
+      processors: module.processors,
+    })
+
+    const result = await Effect.runPromise(
+      context.runSlot("typescript.unfinished-implementation-policy", {
+        signalId: "TS-SL-04-unfinished-implementations",
+        findingId: "src/program.ts:10:main",
+        file: "/repo/src/program.ts",
+        name: "main",
+        line: 10,
+        stubKind: "throw-not-implemented",
+        message: "Function throws not implemented",
+        visible: true,
+        severity: "block",
+        confidence: "high",
+        penaltyWeight: 1,
+        scoreCapParticipation: true,
+        scoreCap: 0.8,
+        factorPathPrefix: "stub_kinds.throw-not-implemented",
+      }),
+    )
+
+    expect(result.value.visible).toBe(true)
+    expect(result.value.penaltyWeight).toBe(0.2)
+    expect(result.value.scoreCapParticipation).toBe(false)
+    expect(result.value.metadata).toMatchObject({ technology: "effect" })
+    expect(result.decisions[0]).toMatchObject({
+      moduleId: "acme.effect",
+      processorId: "effect-unfinished-policy",
+      slot: "typescript.unfinished-implementation-policy",
+      action: "tune-unfinished-implementation",
+      confidence: "high",
+      ruleId: "effect.unfinished.tracked-debt.v1",
+      factorPaths: [
+        "stub_kinds.throw-not-implemented.penalty_weight",
+        "stub_kinds.throw-not-implemented.score_cap_participation",
+      ],
+    })
+    expect(result.decisions[0]?.before).toMatchObject({
+      penaltyWeight: 1,
+      scoreCapParticipation: true,
+    })
+    expect(result.decisions[0]?.after).toMatchObject({
+      penaltyWeight: 0.2,
+      scoreCapParticipation: false,
     })
   })
 
