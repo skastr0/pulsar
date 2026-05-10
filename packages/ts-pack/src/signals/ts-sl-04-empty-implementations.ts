@@ -971,10 +971,6 @@ const isIntentionalNoop = (filePath: string, fn: FnLike, bodyText: string): bool
     return true
   }
 
-  if (isServerReactiveContractNoop(filePath, fn)) {
-    return true
-  }
-
   return hasNoopName(getFunctionName(fn))
 }
 
@@ -1367,31 +1363,6 @@ const isUnavailableCapabilitySetterNoop = (fn: FnLike): boolean => {
       (name === "credentialPath" && /^["']{2}$/.test(value ?? ""))
     )
   })
-}
-
-const SERVER_REACTIVE_EMPTY_CONTRACT_NAMES = new Set([
-  "cancelCallback",
-  "createEffect",
-  "enableExternalSource",
-  "fn",
-  "onMount",
-])
-
-const isServerReactiveContractNoop = (filePath: string, fn: FnLike): boolean => {
-  if (/(?:^|[\\/])server[\\/]reactive\.tsx?$/.test(filePath)) {
-    return SERVER_REACTIVE_EMPTY_CONTRACT_NAMES.has(objectMemberNameForFunction(fn))
-  }
-
-  if (/(?:^|[\\/])server[\\/]rendering\.tsx?$/.test(filePath)) {
-    return [
-      "enableHydration",
-      "enableScheduling",
-      "f callback",
-      "resetErrorBoundaries",
-    ].includes(getFunctionName(fn))
-  }
-
-  return false
 }
 
 const COMMON_EMPTY_CONTRACT_CALLBACKS = new Set([

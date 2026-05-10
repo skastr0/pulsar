@@ -316,7 +316,7 @@ export function authenticate() {
     )
   })
 
-  test("ignores server reactive lifecycle no-ops but keeps app stubs", async () => {
+  test("server reactive lifecycle no-ops require module calibration", async () => {
     await repo.write(
       "src/server/reactive.ts",
       `
@@ -348,8 +348,89 @@ export function createEffect<T>(fn: (v?: T) => T, value?: T): void {}
 `,
     )
 
-    const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
+    const genericOut = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
+    expect(genericOut.stubs.map((stub) => stub.file)).toEqual(
+      expect.arrayContaining([
+        `${repo.root}/src/server/reactive.ts`,
+        `${repo.root}/src/server/rendering.ts`,
+        `${repo.root}/src/app.ts`,
+      ]),
+    )
+
+    const processor = defineCalibrationProcessor({
+      id: "server-reactive-contract-noops",
+      moduleId: "acme.server-reactive",
+      moduleVersion: "1.0.0",
+      slot: "typescript.noop-classifier",
+      role: "normalizer",
+      priority: 10,
+      fingerprint: "server-reactive-contract-noops-v1",
+      process: (current) =>
+        Effect.sync(() => {
+          const file = current.value.file.replace(/\\/g, "/")
+          const isServerReactiveNoop =
+            /(?:^|\/)server\/reactive\.tsx?$/.test(file) &&
+            ["cancelCallback", "createEffect", "enableExternalSource", "fn", "onMount"].includes(current.value.name)
+          const isServerRenderingNoop =
+            /(?:^|\/)server\/rendering\.tsx?$/.test(file) &&
+            ["enableHydration", "enableScheduling", "f callback", "resetErrorBoundaries"].includes(
+              current.value.name,
+            )
+          if (!isServerReactiveNoop && !isServerRenderingNoop) return current
+          return appendCalibrationDecision(
+            current,
+            {
+              moduleId: "acme.server-reactive",
+              processorId: "server-reactive-contract-noops",
+              slot: "typescript.noop-classifier",
+              action: "classify-intentional-noop",
+              confidence: "high",
+              ruleId: "acme.server-reactive.contract-noop.v1",
+              reason: "Server reactive lifecycle hook is intentionally empty in the activated module contract",
+              evidence: [
+                { kind: "path", value: current.value.file },
+                { kind: "symbol", value: current.value.name },
+              ],
+            },
+            {
+              ...current.value,
+              classification: "intentional_noop",
+              confidence: "high",
+            },
+          )
+        }),
+    })
+    const repoFacts: RepoFacts = {
+      repoRoot: repo.root,
+      fingerprint: "repo-facts-v1",
+      detectedTechnologies: ["server-reactive", "typescript"],
+      sourceExtensions: [".ts"],
+    }
+    const calibrationContext = makeResolvedCalibrationContext({
+      repoFacts,
+      processors: [processor],
+    })
+
+    const out = await Effect.runPromise(
+      TsSl04.compute(TsSl04.defaultConfig, new Map()).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            TsProjectLayer(repo.root),
+            Layer.succeed(SignalContextTag, {
+              gitSha: "TEST",
+              worktreePath: repo.root,
+              changedHunks: [],
+            }),
+            Layer.succeed(CalibrationContextTag, calibrationContext),
+          ),
+        ),
+      ),
+    )
+
     expect(out.stubs.map((stub) => stub.file)).toEqual([`${repo.root}/src/app.ts`])
+    expect(out.calibrationDecisions.map((decision) => decision.processorId)).toContain(
+      "server-reactive-contract-noops",
+    )
   })
 
   test("detects TODO-only implementations", async () => {

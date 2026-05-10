@@ -8,8 +8,10 @@ import {
   EFFECT_CALLBACK_CONTEXT_NAME_RULE_ID,
   EFFECT_OR_ELSE_SUCCEED_NOOP_RULE_ID,
   EFFECT_PROJECT_MODULE_ID,
+  EFFECT_SERVER_REACTIVE_CONTRACT_NOOP_RULE_ID,
   effectProjectModule,
   isEffectOrElseSucceedNoopCandidate,
+  isEffectServerReactiveContractNoopCandidate,
   resolveEffectCallbackContextName,
 } from "../index.js"
 
@@ -33,6 +35,13 @@ describe("effect project module", () => {
           role: "normalizer",
           priority: 20,
           fingerprint: "effect-or-else-succeed-noops-v1",
+        },
+        {
+          slot: "typescript.noop-classifier",
+          processorId: "effect-server-reactive-contract-noops",
+          role: "normalizer",
+          priority: 20,
+          fingerprint: "effect-server-reactive-contract-noops-v1",
         },
         {
           slot: "typescript.callback-context-namer",
@@ -66,6 +75,29 @@ describe("effect project module", () => {
     })).toBe(false)
   })
 
+  test("detects Effect server reactive empty contract candidates", () => {
+    expect(isEffectServerReactiveContractNoopCandidate({
+      file: "/repo/src/server/reactive.ts",
+      name: "createEffect",
+      line: 1,
+      nodeKind: "FunctionDeclaration",
+      bodyText: "{}",
+      functionText: "export function createEffect<T>(fn: (value?: T) => T): void {}",
+      parentText: "export function createEffect<T>(fn: (value?: T) => T): void {}",
+      classification: "stub",
+    })).toBe(true)
+    expect(isEffectServerReactiveContractNoopCandidate({
+      file: "/repo/src/app.ts",
+      name: "createEffect",
+      line: 1,
+      nodeKind: "FunctionDeclaration",
+      bodyText: "{}",
+      functionText: "export function createEffect<T>(fn: (value?: T) => T): void {}",
+      parentText: "export function createEffect<T>(fn: (value?: T) => T): void {}",
+      classification: "stub",
+    })).toBe(false)
+  })
+
   test("classifies Effect.orElseSucceed empty fallback callbacks with attribution", async () => {
     const context = makeResolvedCalibrationContext({
       repoFacts,
@@ -93,6 +125,38 @@ describe("effect project module", () => {
       slot: "typescript.noop-classifier",
       action: "classify-intentional_noop",
       ruleId: EFFECT_OR_ELSE_SUCCEED_NOOP_RULE_ID,
+      confidence: "high",
+    })
+  })
+
+  test("classifies Effect server reactive empty contracts with attribution", async () => {
+    const context = makeResolvedCalibrationContext({
+      repoFacts,
+      activeModules: [effectProjectModule.activeModule],
+      processors: effectProjectModule.processors,
+    })
+
+    const result = await Effect.runPromise(
+      context.runSlot("typescript.noop-classifier", {
+        file: "/repo/src/server/reactive.ts",
+        name: "onMount",
+        line: 1,
+        nodeKind: "FunctionDeclaration",
+        bodyText: "{}",
+        functionText: "export function onMount(fn: () => void) {}",
+        parentText: "export function onMount(fn: () => void) {}",
+        classification: "stub",
+      }),
+    )
+
+    expect(result.value.classification).toBe("intentional_noop")
+    expect(result.value.metadata).toMatchObject({ technology: "effect", framework: "server-reactive" })
+    expect(result.decisions[0]).toMatchObject({
+      moduleId: EFFECT_PROJECT_MODULE_ID,
+      processorId: "effect-server-reactive-contract-noops",
+      slot: "typescript.noop-classifier",
+      action: "classify-intentional_noop",
+      ruleId: EFFECT_SERVER_REACTIVE_CONTRACT_NOOP_RULE_ID,
       confidence: "high",
     })
   })

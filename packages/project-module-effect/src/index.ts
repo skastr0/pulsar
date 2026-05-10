@@ -11,6 +11,7 @@ import {
 export const EFFECT_PROJECT_MODULE_ID = "@skastr0/pulsar-project-module-effect" as const
 export const EFFECT_OR_ELSE_SUCCEED_NOOP_RULE_ID = "effect.orElseSucceed.fallback-noop.v1" as const
 export const EFFECT_CALLBACK_CONTEXT_NAME_RULE_ID = "effect.callback-context-name.v1" as const
+export const EFFECT_SERVER_REACTIVE_CONTRACT_NOOP_RULE_ID = "effect.server-reactive.contract-noop.v1" as const
 
 export const effectProjectModule = defineProjectModule({
   id: EFFECT_PROJECT_MODULE_ID,
@@ -37,6 +38,28 @@ export const effectProjectModule = defineProjectModule({
               { kind: "symbol", value: current.value.name },
             ],
             metadata: { technology: "effect" },
+          })
+        }),
+    }),
+    defineProcessor({
+      id: "effect-server-reactive-contract-noops",
+      slot: "typescript.noop-classifier",
+      role: "normalizer",
+      priority: 20,
+      fingerprint: "effect-server-reactive-contract-noops-v1",
+      process: (current, _context, runtime) =>
+        Effect.sync(() => {
+          if (!isEffectServerReactiveContractNoopCandidate(current.value)) return current
+          return classifyTypeScriptNoop(current, runtime, {
+            classification: "intentional_noop",
+            confidence: "high",
+            ruleId: EFFECT_SERVER_REACTIVE_CONTRACT_NOOP_RULE_ID,
+            reason: "Effect server reactive contract exposes intentionally empty server-side lifecycle hooks",
+            evidence: [
+              { kind: "path", value: current.value.file },
+              { kind: "symbol", value: current.value.name },
+            ],
+            metadata: { technology: "effect", framework: "server-reactive" },
           })
         }),
     }),
@@ -74,11 +97,45 @@ export const isEffectOrElseSucceedNoopCandidate = (
   return /(?:^|[.\s])orElseSucceed\s*\(/.test(value.parentText ?? "")
 }
 
+export const isEffectServerReactiveContractNoopCandidate = (
+  value: TypeScriptNoopClassificationValue,
+): boolean => {
+  if (value.classification === "intentional_noop") return false
+  if (!isEmptyNoopValue(value)) return false
+
+  const file = value.file.replace(/\\/g, "/")
+  if (/(?:^|\/)server\/reactive\.tsx?$/.test(file)) {
+    return SERVER_REACTIVE_EMPTY_CONTRACT_NAMES.has(value.name)
+  }
+  if (/(?:^|\/)server\/rendering\.tsx?$/.test(file)) {
+    return SERVER_RENDERING_EMPTY_CONTRACT_NAMES.has(value.name)
+  }
+  return false
+}
+
 const isEmptyFunctionText = (text: string | undefined): boolean => {
   if (text === undefined) return false
   return /^(?:async\s+)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>\s*\{\s*\}$/.test(text.trim()) ||
     /^function(?:\s+[A-Za-z_$][\w$]*)?\s*\([^)]*\)\s*\{\s*\}$/.test(text.trim())
 }
+
+const isEmptyNoopValue = (value: TypeScriptNoopClassificationValue): boolean =>
+  /^\{\s*\}$/.test((value.bodyText ?? "").trim()) || isEmptyFunctionText(value.functionText)
+
+const SERVER_REACTIVE_EMPTY_CONTRACT_NAMES = new Set([
+  "cancelCallback",
+  "createEffect",
+  "enableExternalSource",
+  "fn",
+  "onMount",
+])
+
+const SERVER_RENDERING_EMPTY_CONTRACT_NAMES = new Set([
+  "enableHydration",
+  "enableScheduling",
+  "f callback",
+  "resetErrorBoundaries",
+])
 
 export const resolveEffectCallbackContextName = (
   value: TypeScriptCallbackContextNameValue,
