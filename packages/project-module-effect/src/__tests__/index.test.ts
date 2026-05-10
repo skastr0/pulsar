@@ -139,6 +139,22 @@ describe("effect project module", () => {
     })).toBe(false)
 
     expect(isEffectPrototypeFactoryNoopCandidate({
+      file: "/repo/packages/effect/src/internal/context.ts",
+      name: "TagClass",
+      line: 91,
+      nodeKind: "FunctionDeclaration",
+      bodyText: "{ return tag }",
+      functionText: "function TagClass() { return tag }",
+      parentText: [
+        "function TagClass() { return tag }",
+        "Object.setPrototypeOf(TagClass, TagProto)",
+        "TagClass.key = id",
+        "return TagClass as any",
+      ].join("\n"),
+      classification: "stub",
+    })).toBe(false)
+
+    expect(isEffectPrototypeFactoryNoopCandidate({
       file: "/repo/src/ordinary.ts",
       name: "Array.map callback",
       line: 1,
@@ -268,6 +284,26 @@ describe("effect project module", () => {
       processorId: "effect-prototype-factory-noops",
       slot: "typescript.noop-classifier",
       action: "classify-intentional_noop",
+      ruleId: EFFECT_PROTOTYPE_FACTORY_NOOP_RULE_ID,
+      confidence: "high",
+    })
+
+    const objectAssignResult = await Effect.runPromise(
+      context.runSlot("typescript.noop-classifier", {
+        file: "/repo/packages/ai/ai/src/Toolkit.ts",
+        name: "makeProto/Object.assign",
+        line: 382,
+        nodeKind: "FunctionExpression",
+        bodyText: "{}",
+        functionText: "function() {}",
+        parentText: "Object.assign(function() {}, Proto, { tools }) as any",
+        classification: "stub",
+      }),
+    )
+
+    expect(objectAssignResult.value.classification).toBe("intentional_noop")
+    expect(objectAssignResult.decisions[0]).toMatchObject({
+      processorId: "effect-prototype-factory-noops",
       ruleId: EFFECT_PROTOTYPE_FACTORY_NOOP_RULE_ID,
       confidence: "high",
     })
