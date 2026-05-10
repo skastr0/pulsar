@@ -2,11 +2,16 @@
 
 This inventory separates generic signal logic from framework, technology, repo-layout, and project facts. Generic signal code may keep language-level behavior, but project or framework facts should move to project modules or repo/org vector policy with explicit rule IDs and fingerprints.
 
-## Migrated in TC-149
+## Removed from Generic TypeScript Signals
 
 | Area | Previous location | Classification | New owner | Notes |
 | --- | --- | --- | --- | --- |
 | Effect server reactive empty lifecycle contracts in `server/reactive.ts` and `server/rendering.ts` | `packages/ts-pack/src/signals/ts-sl-04-empty-implementations.ts` | Technology/project-module behavior | `@skastr0/pulsar-project-module-effect` processor `effect-server-reactive-contract-noops` | Removed from generic TS-SL-04. The module now classifies those empty hooks as intentional no-ops with rule `effect.server-reactive.contract-noop.v1`, source evidence, and processor fingerprint participation. |
+| VS Code-style `extension.ts` `deactivate` no-op | `packages/ts-pack/src/signals/ts-sl-04-empty-implementations.ts` | Framework/project-module behavior | Candidate for a VS Code/extension module or repo vector | Generic TS-SL-04 now flags this without module calibration. |
+| React reconciler host config optional hooks and unsupported optional hooks | `packages/ts-pack/src/signals/ts-sl-04-empty-implementations.ts` | Framework calibration | Candidate for React host-config module | Generic TS-SL-04 now flags these without module calibration. |
+| Protected optional hooks named `buildWrangler`, `normalizeBuildCommand`, `validate` | `packages/ts-pack/src/signals/ts-sl-04-empty-implementations.ts` | Framework/project-module behavior | Candidate for framework-specific modules or repo vector policy | Generic TS-SL-04 now flags these without module calibration. |
+| Yargs parent command handlers with `builder` siblings | `packages/ts-pack/src/signals/ts-sl-04-empty-implementations.ts` | Library calibration | Candidate for yargs module | Generic TS-SL-04 now flags these without module calibration. |
+| `SyncEvent.project`, `Event.All.match`, projection adapter terminal no-ops | `packages/ts-pack/src/signals/ts-sl-04-empty-implementations.ts` | Project/domain behavior | Candidate for repo/project module | Generic TS-SL-04 now flags these without module calibration. |
 
 ## Remaining Classified Heuristics
 
@@ -14,12 +19,7 @@ This inventory separates generic signal logic from framework, technology, repo-l
 | --- | --- | --- | --- |
 | `Effect.orElseSucceed(() => {})` fallback no-ops | `packages/project-module-effect/src/index.ts` | Technology calibration | Already module-owned by rule `effect.orElseSucceed.fallback-noop.v1`. |
 | Effect callback context naming for `Effect.fn`, `Effect.gen`, `Effect.forEach`, and related constructors | `packages/project-module-effect/src/index.ts`; structural metadata emitted by `packages/ts-pack/src/signals/shared-function-index.ts` | Technology calibration | Module-owned naming; generic TS code may continue emitting structural call metadata. |
-| VS Code-style `extension.ts` `deactivate` no-op | `packages/ts-pack/src/signals/ts-sl-04-empty-implementations.ts` | Framework/project-module behavior | Candidate for a VS Code/extension module or repo vector. |
-| React reconciler host config optional hooks and unsupported optional hooks | `packages/ts-pack/src/signals/ts-sl-04-empty-implementations.ts` | Framework calibration | Candidate for React host-config module. |
-| Protected optional hooks named `buildWrangler`, `normalizeBuildCommand`, `validate` | `packages/ts-pack/src/signals/ts-sl-04-empty-implementations.ts` | Framework/project-module behavior | Candidate for framework-specific modules or repo vector policy. |
-| Yargs parent command handlers with `builder` siblings | `packages/ts-pack/src/signals/ts-sl-04-empty-implementations.ts` | Library calibration | Candidate for yargs module. |
 | JSX event callbacks and common UI placeholder callbacks | `packages/ts-pack/src/signals/ts-sl-04-empty-implementations.ts` | Broad TypeScript/UI convention | Can remain generic while evidence stays structural and conservative; consider vector thresholds if noisy. |
-| `SyncEvent.project`, `Event.All.match`, projection adapter terminal no-ops | `packages/ts-pack/src/signals/ts-sl-04-empty-implementations.ts` | Project/domain behavior | Candidate for repo/project module. |
 | Capability-absent comments, null-object fallback methods, explicit noop files/factories | `packages/ts-pack/src/signals/ts-sl-04-empty-implementations.ts` | Generic structural intent | Reasonable generic fallback when naming or surrounding structure states no-op intent. |
 | Framework virtual import specifiers such as Vite/Next/Svelte/Astro virtual modules | `packages/ts-pack/src/signals/ts-de-04-package-dependency-health.ts` | Framework calibration | Candidate for framework modules or repo vector allowlists. |
 | Framework method contracts exempted from annotation coverage | `packages/ts-pack/src/signals/ts-ld-06-annotation-coverage.ts` | Framework calibration | Candidate for framework modules when callback-context/factor slots exist for annotation coverage. |

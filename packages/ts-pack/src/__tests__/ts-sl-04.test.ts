@@ -717,7 +717,7 @@ export function actualRuntimeStub() {
     expect(out.stubs.map((stub) => stub.name)).toEqual(["actualRuntimeStub"])
   })
 
-  test("does not classify unsupported React host config contract hooks as unfinished stubs", async () => {
+  test("generic TypeScript signal flags React host config contract hooks without module calibration", async () => {
     await repo.write(
       "HostConfig.ts",
       `
@@ -752,8 +752,20 @@ export const sksgHostConfig = {
     )
 
     const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
-    expect(out.stubs).toHaveLength(0)
-    expect(TsSl04.score(out)).toBe(1)
+    expect(out.stubs.map((stub) => stub.name).sort()).toEqual([
+      "afterActiveInstanceBlur",
+      "beforeActiveInstanceBlur",
+      "detachDeletedInstance",
+      "getInstanceFromNode",
+      "getInstanceFromScope",
+      "prepareScopeUpdate",
+      "requestPostPaintCallback",
+      "resetFormInstance",
+      "startSuspendingCommit",
+      "suspendInstance",
+      "trackSchedulerEvent",
+    ].sort())
+    expect(TsSl04.score(out)).toBeLessThan(1)
   })
 
   test("production empty bodies emit warn severity as lower-confidence evidence", async () => {
@@ -1053,7 +1065,7 @@ abstract class BaseHandler {
     expect(out.stubs).toHaveLength(0)
   })
 
-  test("does not classify optional protected framework hook no-ops as unfinished stubs", async () => {
+  test("generic TypeScript signal flags optional protected framework hook no-ops without module calibration", async () => {
     await repo.write(
       "site.ts",
       `
@@ -1069,10 +1081,14 @@ class Remix extends Site {
     )
 
     const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
-    expect(out.stubs).toHaveLength(0)
+    expect(out.stubs.map((stub) => stub.name).sort()).toEqual([
+      "buildWrangler",
+      "normalizeBuildCommand",
+      "validate",
+    ].sort())
   })
 
-  test("does not classify yargs parent command handlers as unfinished stubs", async () => {
+  test("generic TypeScript signal flags yargs parent command handlers without module calibration", async () => {
     await repo.write(
       "command.ts",
       `
@@ -1091,7 +1107,7 @@ export const DbCommand = {
     )
 
     const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
-    expect(out.stubs).toHaveLength(0)
+    expect(out.stubs.map((stub) => stub.name)).toEqual(["handler", "handler"])
   })
 
   test("does not classify promise swallow handlers as empty implementations", async () => {
@@ -1201,7 +1217,7 @@ export function group() {
     expect(out.stubs).toHaveLength(0)
   })
 
-  test("does not classify empty VS Code deactivate hooks as unfinished stubs", async () => {
+  test("generic TypeScript signal flags empty VS Code deactivate hooks without module calibration", async () => {
     await repo.write(
       "src/extension.ts",
       `
@@ -1210,7 +1226,7 @@ export function deactivate() {}
     )
 
     const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
-    expect(out.stubs).toHaveLength(0)
+    expect(out.stubs.map((stub) => stub.name)).toEqual(["deactivate"])
   })
 
   test("does not classify deferred resolver and mutable placeholder initializers as unfinished stubs", async () => {
@@ -1540,7 +1556,7 @@ export const hooks = {
     expect(out.stubs).toHaveLength(0)
   })
 
-  test("does not classify ignored SyncEvent delta projections as unfinished stubs", async () => {
+  test("generic TypeScript signal flags project-specific SyncEvent delta projections without module calibration", async () => {
     await repo.write(
       "projectors.ts",
       `
@@ -1562,10 +1578,13 @@ export default [
     )
 
     const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
-    expect(out.stubs).toHaveLength(0)
+    expect(out.stubs.map((stub) => stub.name)).toEqual([
+      "SyncEvent.project callback",
+      "SyncEvent.project callback",
+    ])
   })
 
-  test("does not classify projection adapter terminal no-ops as unfinished stubs", async () => {
+  test("generic TypeScript signal flags projection adapter terminal no-ops without module calibration", async () => {
     await repo.write(
       "session-message-updater.ts",
       `
@@ -1601,7 +1620,10 @@ export function update(event: unknown) {
     )
 
     const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
-    expect(out.stubs).toHaveLength(0)
+    expect(out.stubs.map((stub) => stub.name).sort()).toEqual([
+      "finish",
+      "SessionEvent.All.match/\"session.next.retried\"",
+    ].sort())
   })
 
   test("does not classify absent-capability contract stubs as unfinished implementations", async () => {

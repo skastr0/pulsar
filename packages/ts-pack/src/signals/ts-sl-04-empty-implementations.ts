@@ -879,14 +879,6 @@ const isIntentionalNoop = (filePath: string, fn: FnLike, bodyText: string): bool
     return true
   }
 
-  if (isFrameworkLifecycleNoop(filePath, fn)) {
-    return true
-  }
-
-  if (isReactHostConfigOptionalNoop(fn)) {
-    return true
-  }
-
   if (isDeferredResolverPlaceholder(fn)) {
     return true
   }
@@ -908,14 +900,6 @@ const isIntentionalNoop = (filePath: string, fn: FnLike, bodyText: string): bool
   }
 
   if (isProtectedHookNoop(fn)) {
-    return true
-  }
-
-  if (isOptionalProtectedFrameworkHookNoop(fn)) {
-    return true
-  }
-
-  if (isYargsParentCommandHandler(fn)) {
     return true
   }
 
@@ -944,18 +928,6 @@ const isIntentionalNoop = (filePath: string, fn: FnLike, bodyText: string): bool
   }
 
   if (isTerminalLifecycleCallback(fn)) {
-    return true
-  }
-
-  if (isEventDeltaProjectionNoop(fn)) {
-    return true
-  }
-
-  if (isEventMatchNoopBranch(fn)) {
-    return true
-  }
-
-  if (isProjectionAdapterFinishNoop(fn)) {
     return true
   }
 
@@ -1088,11 +1060,6 @@ const isDisposableNoop = (fn: FnLike): boolean => {
   return Node.isPropertyAssignment(parent) && propertyNameOf(parent).includes("Symbol.dispose")
 }
 
-const isFrameworkLifecycleNoop = (filePath: string, fn: FnLike): boolean => {
-  if (getFunctionName(fn) !== "deactivate") return false
-  return /(?:^|[\\/])extension\.tsx?$/.test(filePath)
-}
-
 const isDeferredResolverPlaceholder = (fn: FnLike): boolean => {
   if (!Node.isArrowFunction(fn) && !Node.isFunctionExpression(fn)) return false
   const parent = fn.getParent()
@@ -1141,44 +1108,6 @@ const isProtectedHookNoop = (fn: FnLike): boolean => {
   if (!name.startsWith("_")) return false
   if (!/\b(?:protected|private)\b/.test(fn.getText())) return false
   return fn.getParameters().every((parameter) => parameter.getName().startsWith("_"))
-}
-
-const OPTIONAL_PROTECTED_FRAMEWORK_HOOK_NAMES = new Set([
-  "buildWrangler",
-  "normalizeBuildCommand",
-  "validate",
-])
-
-const isOptionalProtectedFrameworkHookNoop = (fn: FnLike): boolean => {
-  if (!Node.isMethodDeclaration(fn)) return false
-  if (!/\bprotected\b/.test(fn.getText())) return false
-  if (!OPTIONAL_PROTECTED_FRAMEWORK_HOOK_NAMES.has(fn.getName())) return false
-  return fn.getParameters().every((parameter) => parameter.getName().startsWith("_"))
-}
-
-const isYargsParentCommandHandler = (fn: FnLike): boolean => {
-  const parent = fn.getParent()
-  let object: import("ts-morph").ObjectLiteralExpression | undefined
-
-  if (Node.isMethodDeclaration(fn) && fn.getName() === "handler") {
-    const methodParent = fn.getParent()
-    if (Node.isObjectLiteralExpression(methodParent)) object = methodParent
-  }
-
-  if ((Node.isArrowFunction(fn) || Node.isFunctionExpression(fn)) && Node.isPropertyAssignment(parent)) {
-    if (propertyNameOf(parent) !== "handler") return false
-    const propertyParent = parent.getParent()
-    if (Node.isObjectLiteralExpression(propertyParent)) object = propertyParent
-  }
-
-  if (object === undefined) return false
-
-  return object.getProperties().some((property) => {
-    if (Node.isShorthandPropertyAssignment(property)) return property.getName() === "builder"
-    if (!Node.isPropertyAssignment(property)) return false
-    const name = property.getNameNode().getText().replace(/^["']|["']$/g, "")
-    return name === "builder"
-  })
 }
 
 const isInterfaceResetNoop = (fn: FnLike): boolean => {
@@ -1273,42 +1202,6 @@ const isTerminalLifecycleCallback = (fn: FnLike): boolean => {
   const property = nearestPropertyAssignment(fn)
   if (property === undefined) return false
   return /^on(?=[A-Z])(?=.*(?:End|Settled|Complete|Close)$)/.test(propertyNameOf(property))
-}
-
-const isEventDeltaProjectionNoop = (fn: FnLike): boolean => {
-  if (!Node.isArrowFunction(fn) && !Node.isFunctionExpression(fn)) return false
-  if (fn.getParameters().length > 0) return false
-  const parent = fn.getParent()
-  if (!Node.isCallExpression(parent)) return false
-  if (parent.getExpression().getText() !== "SyncEvent.project") return false
-  if (parent.getArguments()[1] !== fn) return false
-  return /\.Delta\.Sync$/.test(parent.getArguments()[0]?.getText() ?? "")
-}
-
-const isEventMatchNoopBranch = (fn: FnLike): boolean => {
-  if (!Node.isArrowFunction(fn) && !Node.isFunctionExpression(fn)) return false
-  if (fn.getParameters().length > 0) return false
-  const property = nearestPropertyAssignment(fn)
-  if (property === undefined) return false
-  const object = property.getParent()
-  if (!Node.isObjectLiteralExpression(object)) return false
-  const call = object.getParent()
-  if (!Node.isCallExpression(call)) return false
-  if (!/Event\.All\.match$/.test(call.getExpression().getText())) return false
-  return /\.(?:delta|retried)$/.test(propertyNameOf(property))
-}
-
-const isProjectionAdapterFinishNoop = (fn: FnLike): boolean => {
-  if (!Node.isMethodDeclaration(fn) || fn.getName() !== "finish") return false
-  const object = fn.getParent()
-  if (!Node.isObjectLiteralExpression(object)) return false
-  const siblingNames = objectMemberNames(object)
-  return (
-    siblingNames.has("appendMessage") &&
-    (siblingNames.has("updateAssistant") ||
-      siblingNames.has("updateCompaction") ||
-      siblingNames.has("updateShell"))
-  )
 }
 
 const isFallbackLoggerNoop = (fn: FnLike): boolean => {
@@ -1534,7 +1427,6 @@ const classifyStub = (fn: FnLike, bodyText: string): { kind: StubKind; message: 
     const throwStubMessage = directStubThrowMessage(fn)
     if (throwStubMessage !== undefined) {
       if (isExplicitUnsupportedCapabilityMessage(throwStubMessage)) return undefined
-      if (isFrameworkContractUnsupportedHook(fn, throwStubMessage)) return undefined
       if (isFixtureEntrypointPlaceholder(fn, throwStubMessage)) return undefined
       const message = throwStubMessage.toLowerCase()
       if (/not\s*implemented|todo|fixme|stub/i.test(message)) {
@@ -1593,57 +1485,6 @@ const isFixtureEntrypointPlaceholder = (fn: FnLike, message: string): boolean =>
   }
   return false
 }
-
-const isFrameworkContractUnsupportedHook = (fn: FnLike, message: string): boolean => {
-  if (!/^(?:function\s+)?not\s+(?:yet\s+)?implemented\.?$/i.test(message)) {
-    return false
-  }
-
-  const object = objectLiteralParentOfFunctionMember(fn)
-  if (object === undefined) return false
-  if (!looksLikeReactHostConfigObject(object)) return false
-
-  return REACT_HOST_CONFIG_OPTIONAL_UNSUPPORTED_HOOKS.has(objectMemberNameForFunction(fn))
-}
-
-const isReactHostConfigOptionalNoop = (fn: FnLike): boolean => {
-  const object = objectLiteralParentOfFunctionMember(fn)
-  if (object === undefined) return false
-  if (!looksLikeReactHostConfigObject(object)) return false
-  return REACT_HOST_CONFIG_OPTIONAL_NOOP_HOOKS.has(objectMemberNameForFunction(fn))
-}
-
-const looksLikeReactHostConfigObject = (
-  object: import("ts-morph").ObjectLiteralExpression,
-): boolean => {
-  const memberNames = objectMemberNames(object)
-  return (
-    (memberNames.has("supportsMutation") ||
-      memberNames.has("supportsPersistence") ||
-      memberNames.has("supportsHydration")) &&
-    memberNames.has("getRootHostContext") &&
-    memberNames.has("createInstance")
-  )
-}
-
-const REACT_HOST_CONFIG_OPTIONAL_UNSUPPORTED_HOOKS = new Set([
-  "cloneHiddenInstance",
-  "cloneHiddenTextInstance",
-  "getInstanceFromNode",
-  "getInstanceFromScope",
-  "prepareScopeUpdate",
-])
-
-const REACT_HOST_CONFIG_OPTIONAL_NOOP_HOOKS = new Set([
-  "afterActiveInstanceBlur",
-  "beforeActiveInstanceBlur",
-  "detachDeletedInstance",
-  "requestPostPaintCallback",
-  "resetFormInstance",
-  "startSuspendingCommit",
-  "suspendInstance",
-  "trackSchedulerEvent",
-])
 
 const directStubThrowMessage = (fn: FnLike): string | undefined => {
   const body = functionBodyNode(fn)
