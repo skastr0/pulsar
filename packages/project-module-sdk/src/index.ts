@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { mkdir, stat, readFile, realpath, writeFile } from "node:fs/promises"
+import { mkdir, stat, readFile, realpath, symlink, writeFile } from "node:fs/promises"
 import { createRequire } from "node:module"
 import { dirname, extname, isAbsolute, relative, resolve, sep } from "node:path"
 import { pathToFileURL } from "node:url"
@@ -1163,8 +1163,109 @@ const materializeProjectModuleImportTarget = (
       })
     }
 
+    if (ref.kind === "package" || ref.kind === "workspace") {
+      yield* linkMaterializedPackageDependencies(ref, sourceRoot, shadowSourceRoot)
+    }
+
     return resolve(shadowSourceRoot, relative(sourceRoot, target))
   })
+
+const linkMaterializedPackageDependencies = (
+  ref: ProjectModuleRef,
+  sourceRoot: string,
+  shadowSourceRoot: string,
+): Effect.Effect<void, ProjectModuleLoadError> =>
+  Effect.gen(function* () {
+    const packageJsonPath = resolve(sourceRoot, "package.json")
+    const raw = yield* Effect.tryPromise({
+      try: () => readFile(packageJsonPath, "utf8"),
+      catch: (cause) =>
+        new ProjectModuleLoadError({
+          refId: ref.id,
+          target: packageJsonPath,
+          message: `Failed to read project module package manifest while linking dependencies`,
+          cause,
+        }),
+    })
+    const parsed = yield* Effect.try({
+      try: () => JSON.parse(raw) as unknown,
+      catch: (cause) =>
+        new ProjectModuleLoadError({
+          refId: ref.id,
+          target: packageJsonPath,
+          message: `Failed to parse project module package manifest while linking dependencies`,
+          cause,
+        }),
+    })
+    const dependencies = dependencyNamesOfPackageJson(parsed)
+    if (dependencies.length === 0) return
+
+    const nodeModulesRoot = nearestNodeModulesRoot(shadowSourceRoot)
+    if (nodeModulesRoot === undefined) return
+    const sourceRequire = createRequire(packageJsonPath)
+    for (const dependency of dependencies) {
+      if (dependency === ref.id) continue
+      let packageJson: string | undefined
+      try {
+        packageJson = sourceRequire.resolve(`${dependency}/package.json`)
+      } catch {
+        packageJson = undefined
+      }
+      if (packageJson === undefined) continue
+      const dependencyRoot = yield* Effect.tryPromise({
+        try: () => realpath(dirname(packageJson)),
+        catch: (cause) =>
+          new ProjectModuleLoadError({
+            refId: ref.id,
+            target: dependency,
+            message: `Failed to resolve project module dependency ${dependency}`,
+            cause,
+          }),
+      })
+      const destination = resolve(nodeModulesRoot, ...dependency.split("/"))
+      if (yield* isFile(resolve(destination, "package.json"))) continue
+      yield* Effect.tryPromise({
+        try: () => mkdir(dirname(destination), { recursive: true }),
+        catch: (cause) =>
+          new ProjectModuleLoadError({
+            refId: ref.id,
+            target: destination,
+            message: `Failed to create materialized dependency directory for ${dependency}`,
+            cause,
+          }),
+      })
+      yield* Effect.tryPromise({
+        try: () => symlink(dependencyRoot, destination, "dir"),
+        catch: (cause) =>
+          new ProjectModuleLoadError({
+            refId: ref.id,
+            target: destination,
+            message: `Failed to link project module dependency ${dependency} into materialized module cache`,
+            cause,
+          }),
+      })
+    }
+  })
+
+const dependencyNamesOfPackageJson = (value: unknown): ReadonlyArray<string> => {
+  if (!isRecord(value)) return []
+  const names = new Set<string>()
+  for (const field of ["dependencies", "peerDependencies", "optionalDependencies"]) {
+    const dependencies = value[field]
+    if (!isRecord(dependencies)) continue
+    for (const name of Object.keys(dependencies)) {
+      if (isPackageName(name)) names.add(name)
+    }
+  }
+  return [...names].sort()
+}
+
+const nearestNodeModulesRoot = (path: string): string | undefined => {
+  const parts = path.split(sep)
+  const index = parts.lastIndexOf("node_modules")
+  if (index < 0) return undefined
+  return parts.slice(0, index + 1).join(sep) || sep
+}
 
 const safeSourceFingerprintPath = (sourceFingerprint: string): string =>
   sourceFingerprint.replace(/[^a-zA-Z0-9._-]/g, "-")

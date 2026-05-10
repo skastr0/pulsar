@@ -861,6 +861,79 @@ describe("project module sdk", () => {
     }
   })
 
+  test("materialized package modules can import package dependencies", async () => {
+    const repoRoot = await mkdtemp(join(tmpdir(), "pulsar-project-module-"))
+    try {
+      const moduleRoot = join(repoRoot, "node_modules", "@acme", "pulsar-module")
+      const helperRoot = join(repoRoot, "node_modules", "@acme", "module-helper")
+      await mkdir(moduleRoot, { recursive: true })
+      await mkdir(helperRoot, { recursive: true })
+      await writeFile(
+        join(helperRoot, "package.json"),
+        JSON.stringify({
+          name: "@acme/module-helper",
+          version: "1.0.0",
+          type: "module",
+          exports: "./index.mjs",
+        }),
+        "utf8",
+      )
+      await writeFile(
+        join(helperRoot, "index.mjs"),
+        "export const marker = 'dependency-loaded'\n",
+        "utf8",
+      )
+      await writeFile(
+        join(moduleRoot, "package.json"),
+        JSON.stringify({
+          name: "@acme/pulsar-module",
+          version: "1.0.0",
+          type: "module",
+          exports: "./index.mjs",
+          dependencies: {
+            "@acme/module-helper": "1.0.0",
+          },
+        }),
+        "utf8",
+      )
+      await writeFile(
+        join(moduleRoot, "index.mjs"),
+        [
+          "import { marker } from '@acme/module-helper'",
+          "export default {",
+          "  id: '@acme/pulsar-module',",
+          "  version: '1.0.0',",
+          "  scope: 'organization',",
+          "  source: 'package',",
+          "  configHash: marker,",
+          "  processors: []",
+          "}",
+        ].join("\n"),
+        "utf8",
+      )
+      const manifest = await Effect.runPromise(
+        decodeProjectModuleManifest({
+          modules: [
+            {
+              id: "@acme/pulsar-module",
+              kind: "package",
+              packageName: "@acme/pulsar-module",
+            },
+          ],
+        }),
+      )
+
+      const loaded = await Effect.runPromise(
+        loadProjectModuleRef(manifest.modules[0]!, { repoRoot }),
+      )
+
+      expect(loaded.descriptor.configHash).toBe("dependency-loaded")
+      expect(loaded.descriptor.sourceFingerprint).toMatch(/^sha256:/)
+    } finally {
+      await rm(repoRoot, { recursive: true, force: true })
+    }
+  })
+
   test("package self and imports helpers invalidate loaded module behavior", async () => {
     const repoRoot = await mkdtemp(join(tmpdir(), "pulsar-project-module-"))
     try {
