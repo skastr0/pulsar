@@ -121,6 +121,13 @@ interface RevealedPreferenceBootstrapReport {
   readonly events: ReadonlyArray<RevealedPreferenceCommitEvent>
 }
 
+interface QuizActionContext {
+  readonly sessionPath: string
+  readonly outputPath: string
+  readonly quizItems: ReadonlyArray<QuizItem>
+  readonly session: MutableQuizSession
+}
+
 const GREEN = "\u001b[32m"
 const CYAN = "\u001b[36m"
 const BOLD = "\u001b[1m"
@@ -158,53 +165,8 @@ export const runElicitCommand = (opts: ElicitCommandOptions) =>
 
 const runQuizAction = (opts: ElicitCommandOptions) =>
   Effect.gen(function* () {
-    const registry = yield* buildPulsarRegistry()
-    const repoRoot = yield* resolveRepoRoot(opts.repoPath)
-    const quizItems = yield* loadQuizItems("typescript")
-    validateQuizItemsAgainstRegistry(quizItems, registry)
-
-    const sessionPath =
-      opts.resumePath !== undefined
-        ? resolve(opts.resumePath)
-        : join(repoRoot, ".pulsar", "quiz-session.json")
-    const outputPath =
-      opts.outputPath !== undefined
-        ? resolve(opts.outputPath)
-        : join(repoRoot, ".pulsar", "vector.json")
-    const current = yield* discoverPulsarVector({
-      repoPath: repoRoot,
-      ...(opts.vectorPath !== undefined ? { explicitPath: opts.vectorPath } : {}),
-      registry,
-    })
-
-    const existingSession = yield* readQuizSessionIfPresent(sessionPath)
-    if (existingSession === undefined && existsSync(outputPath) && !opts.force) {
-      return yield* Effect.fail(
-        new Error(`Refusing to overwrite existing vector at ${outputPath}; pass --force to replace it.`),
-      )
-    }
-
-    const session: MutableQuizSession =
-      existingSession !== undefined
-        ? toMutableQuizSession(existingSession)
-        : {
-            schema_version: 1,
-            session_id: `quiz-${Date.now().toString(36)}`,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            domain: "typescript",
-            item_target: Math.min(Math.max(opts.items ?? 15, 1), 20),
-            output_path: outputPath,
-            base_vector:
-              current.vector ?? {
-                id: "all-defaults",
-                domain: "typescript",
-                signal_overrides: {},
-              },
-            asked_item_ids: [],
-            responses: [],
-            completed: false,
-          }
+    const context = yield* prepareQuizAction(opts)
+    const { sessionPath, outputPath, quizItems, session } = context
 
     yield* writeQuizSession(sessionPath, session)
 
@@ -229,63 +191,162 @@ const runQuizAction = (opts: ElicitCommandOptions) =>
     process.once("SIGINT", handleSigint)
 
     try {
-      while (session.responses.length < session.item_target) {
-        const nextItem = selectNextQuizItem({
-          items: quizItems,
-          responses: session.responses,
-        })
-        if (nextItem === undefined) break
-
-        const questionNumber = session.responses.length + 1
-        renderQuizItem(questionNumber, session.item_target, nextItem)
-        const answer = yield* promptForQuizAnswer(rl)
-        const response = Schema.decodeUnknownSync(QuizResponse)({
-          item_id: nextItem.id,
-          answer,
-          answered_at: new Date().toISOString(),
-        })
-        session.responses.push(response)
-        session.asked_item_ids.push(nextItem.id)
-        session.updated_at = new Date().toISOString()
-        yield* writeQuizSession(sessionPath, session)
-
-        if (answer === "skip") {
-          console.log(`${DIM}Skipped without changing signal weights.${RESET}`)
-        } else if (answer === "equal") {
-          console.log(`${DIM}Marked equal — evidence stays neutral for this tradeoff.${RESET}`)
-        } else {
-          console.log(`${DIM}${summarizeQuizTradeoff(nextItem)}${RESET}`)
-        }
-        console.log("")
-      }
-
-      const nextVector = inferPulsarVectorFromQuiz({
-        baseVector: session.base_vector,
-        responses: session.responses,
-        items: quizItems,
-        vectorId: `${session.base_vector.id}-quiz`,
-        outputPath,
-      })
-      yield* writeJsonFile(outputPath, nextVector)
-      yield* Effect.tryPromise({
-        try: () => rm(sessionPath, { force: true }),
-        catch: (cause) =>
-          new Error(`Failed to remove quiz session at ${sessionPath}: ${String(cause)}`),
-      })
-
-      console.log("")
-      console.log(`${BOLD}Final vector saved to ${outputPath}${RESET}`)
-      console.log("")
-      for (const line of renderVectorDiff(summarizeVectorDiff(session.base_vector, nextVector))) {
-        console.log(line)
-      }
-      console.log("")
+      yield* runQuizPromptLoop(context, rl)
+      yield* finalizeQuizAction(context)
       return 0
     } finally {
       process.off("SIGINT", handleSigint)
       rl.close()
     }
   })
+
+const prepareQuizAction = (
+  opts: ElicitCommandOptions,
+): Effect.Effect<QuizActionContext, Error, never> =>
+  Effect.gen(function* () {
+    const registry = yield* buildPulsarRegistry()
+    const repoRoot = yield* resolveRepoRoot(opts.repoPath)
+    const quizItems = yield* loadQuizItems("typescript")
+    validateQuizItemsAgainstRegistry(quizItems, registry)
+    const sessionPath = quizSessionPath(repoRoot, opts)
+    const outputPath = quizOutputPath(repoRoot, opts)
+    const current = yield* discoverPulsarVector({
+      repoPath: repoRoot,
+      ...(opts.vectorPath !== undefined ? { explicitPath: opts.vectorPath } : {}),
+      registry,
+    })
+    const existingSession = yield* readQuizSessionIfPresent(sessionPath)
+    if (existingSession === undefined && existsSync(outputPath) && !opts.force) {
+      return yield* Effect.fail(
+        new Error(`Refusing to overwrite existing vector at ${outputPath}; pass --force to replace it.`),
+      )
+    }
+    return {
+      sessionPath,
+      outputPath,
+      quizItems,
+      session: quizSessionForAction(opts, outputPath, existingSession, current.vector),
+    }
+  })
+
+const quizSessionPath = (repoRoot: string, opts: ElicitCommandOptions): string =>
+  opts.resumePath !== undefined
+    ? resolve(opts.resumePath)
+    : join(repoRoot, ".pulsar", "quiz-session.json")
+
+const quizOutputPath = (repoRoot: string, opts: ElicitCommandOptions): string =>
+  opts.outputPath !== undefined ? resolve(opts.outputPath) : join(repoRoot, ".pulsar", "vector.json")
+
+const quizSessionForAction = (
+  opts: ElicitCommandOptions,
+  outputPath: string,
+  existingSession: QuizSession | undefined,
+  currentVector: PulsarVector | undefined,
+): MutableQuizSession =>
+  existingSession !== undefined
+    ? toMutableQuizSession(existingSession)
+    : {
+        schema_version: 1,
+        session_id: `quiz-${Date.now().toString(36)}`,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        domain: "typescript",
+        item_target: Math.min(Math.max(opts.items ?? 15, 1), 20),
+        output_path: outputPath,
+        base_vector:
+          currentVector ?? {
+            id: "all-defaults",
+            domain: "typescript",
+            signal_overrides: {},
+          },
+        asked_item_ids: [],
+        responses: [],
+        completed: false,
+      }
+
+const runQuizPromptLoop = (
+  context: QuizActionContext,
+  rl: ReadlineInterface,
+): Effect.Effect<void, Error, never> =>
+  Effect.gen(function* () {
+    const { session, quizItems, sessionPath } = context
+    while (session.responses.length < session.item_target) {
+      const nextItem = selectNextQuizItem({ items: quizItems, responses: session.responses })
+      if (nextItem === undefined) break
+      yield* askQuizItem(session, sessionPath, nextItem, rl)
+    }
+  })
+
+const askQuizItem = (
+  session: MutableQuizSession,
+  sessionPath: string,
+  nextItem: QuizItem,
+  rl: ReadlineInterface,
+): Effect.Effect<void, Error, never> =>
+  Effect.gen(function* () {
+    renderQuizItem(session.responses.length + 1, session.item_target, nextItem)
+    const answer = yield* promptForQuizAnswer(rl)
+    session.responses.push(
+      Schema.decodeUnknownSync(QuizResponse)({
+        item_id: nextItem.id,
+        answer,
+        answered_at: new Date().toISOString(),
+      }),
+    )
+    session.asked_item_ids.push(nextItem.id)
+    session.updated_at = new Date().toISOString()
+    yield* writeQuizSession(sessionPath, session)
+    printQuizAnswerSummary(answer, nextItem)
+  })
+
+const printQuizAnswerSummary = (
+  answer: (typeof QuizResponse.Type)["answer"],
+  nextItem: QuizItem,
+): void => {
+  if (answer === "skip") {
+    console.log(`${DIM}Skipped without changing signal weights.${RESET}`)
+  } else if (answer === "equal") {
+    console.log(`${DIM}Marked equal — evidence stays neutral for this tradeoff.${RESET}`)
+  } else {
+    console.log(`${DIM}${summarizeQuizTradeoff(nextItem)}${RESET}`)
+  }
+  console.log("")
+}
+
+const finalizeQuizAction = (
+  context: QuizActionContext,
+): Effect.Effect<void, Error, never> =>
+  Effect.gen(function* () {
+    const { outputPath, quizItems, session, sessionPath } = context
+    const nextVector = inferPulsarVectorFromQuiz({
+      baseVector: session.base_vector,
+      responses: session.responses,
+      items: quizItems,
+      vectorId: `${session.base_vector.id}-quiz`,
+      outputPath,
+    })
+    yield* writeJsonFile(outputPath, nextVector)
+    yield* Effect.tryPromise({
+      try: () => rm(sessionPath, { force: true }),
+      catch: (cause) =>
+        new Error(`Failed to remove quiz session at ${sessionPath}: ${String(cause)}`),
+    })
+    printFinalQuizVector(outputPath, session.base_vector, nextVector)
+  })
+
+const printFinalQuizVector = (
+  outputPath: string,
+  baseVector: PulsarVector,
+  nextVector: PulsarVector,
+): void => {
+  console.log("")
+  console.log(`${BOLD}Final vector saved to ${outputPath}${RESET}`)
+  console.log("")
+  for (const line of renderVectorDiff(summarizeVectorDiff(baseVector, nextVector))) {
+    console.log(line)
+  }
+  console.log("")
+}
 
 const runBootstrapAction = (opts: ElicitCommandOptions) =>
   Effect.gen(function* () {
