@@ -1,10 +1,11 @@
 import { readFile, readdir } from "node:fs/promises"
-import { dirname, join, relative, resolve, sep } from "node:path"
+import { join, relative, sep } from "node:path"
 import {
   SignalContextTag,
   computeDiagnosticHash,
   type Diagnostic,
   type Signal,
+  type SignalContext,
   SignalComputeError,
 } from "@skastr0/pulsar-core"
 import { Effect, Schema } from "effect"
@@ -25,6 +26,11 @@ import {
   packageDisplayName,
   workspacePackageNames,
 } from "./shared-workspace.js"
+import {
+  isLocalPathAliasUsage,
+  readPathAliasesByPackage,
+  type TsconfigPathAlias,
+} from "./ts-de-04-path-aliases.js"
 export const TsDe04Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   test_globs: Schema.Array(Schema.String),
@@ -70,17 +76,6 @@ type UsageBucket = {
   readonly bundledFiles: Set<string>
   readonly bundledProdFiles: Set<string>
   readonly specifiers: Set<string>
-}
-
-type TsconfigPathAlias = {
-  readonly pattern: string
-  readonly replacements: ReadonlyArray<string>
-  readonly baseDir: string
-}
-
-type TsconfigAliasConfig = {
-  readonly aliases: ReadonlyArray<TsconfigPathAlias>
-  readonly baseDir: string
 }
 
 type BundledPackageInfo = {
@@ -252,152 +247,7 @@ export const TsDe04: Signal<
       const context = yield* SignalContextTag
 
       const result = yield* Effect.tryPromise({
-        try: async (): Promise<TsDe04Output> => {
-          const resolvedPackageNames = await readResolvedPackageNames(context.worktreePath)
-          const activePackages = packages.filter((pkg) => !isExcluded(pkg.path, config.exclude_globs))
-          const pathAliasesByPackage = await readPathAliasesByPackage(activePackages)
-          const bundledInfoByPackage = await readBundledInfoByPackage(activePackages)
-          const workspaceNames = workspacePackageNames(activePackages)
-          const sourceFiles = await dependencySourceFiles(project, activePackages, config.exclude_globs)
-          const packageForPath = createPackagePathMatcher(packages)
-          const usageByPackage = new Map<string, Map<string, UsageBucket>>()
-          const rootManifest = packages.find((pkg) => pkg.name === "(root)")?.manifest
-          const rootDevDependencyNames = dependencyNamesOf(rootManifest, ["devDependencies"])
-          const rootToolingDependencyNames = dependencyNamesOf(rootManifest, [
-            "dependencies",
-            "devDependencies",
-            "optionalDependencies",
-          ])
-          const rootToolingUsedDependencyNames = new Set<string>()
-          const localPathAliasUsageCache = new Map<string, boolean>()
-
-          for (const sourceFile of sourceFiles) {
-            const owningPackage = packageForPath(sourceFile.getFilePath())
-            if (owningPackage?.manifest === undefined) continue
-            const packageKey = owningPackage.path
-            const isToolingFile =
-              isPackageToolingFile(owningPackage.path, sourceFile.getFilePath()) ||
-              isPackageScriptEntrypoint(
-                owningPackage.manifest,
-                owningPackage.path,
-                sourceFile.getFilePath(),
-              ) ||
-              isBundledCliSourceFile(
-                owningPackage.manifest,
-                owningPackage.path,
-                sourceFile.getFilePath(),
-              )
-            const isProdFile =
-              !isToolingFile && !matchesAnyGlob(sourceFile.getFilePath(), config.test_globs)
-            const bucket = usageByPackage.get(packageKey) ?? new Map<string, UsageBucket>()
-
-            for (const moduleUsage of externalModuleSpecifiers(sourceFile)) {
-              const moduleSpecifier = moduleUsage.specifier
-              const packageName = normalizePackageSpecifier(moduleSpecifier)
-              if (packageName === undefined || isBuiltinModuleName(packageName)) continue
-              if (isGeneratedVirtualModuleSpecifier(moduleSpecifier)) continue
-              if (isFrameworkVirtualModuleSpecifier(moduleSpecifier, owningPackage.manifest)) continue
-              if (
-                isWorkspaceSelfOrFacadeImport(
-                  packageName,
-                  owningPackage.manifest.name,
-                  workspaceNames,
-                )
-              ) {
-                continue
-              }
-              if (isToolingFile && rootToolingDependencyNames.has(packageName)) {
-                rootToolingUsedDependencyNames.add(packageName)
-              }
-              const localPathAliasUsageCacheKey = `${owningPackage.path}\0${packageName}\0${moduleSpecifier}`
-              let localPathAliasUsage = localPathAliasUsageCache.get(localPathAliasUsageCacheKey)
-              if (localPathAliasUsage === undefined) {
-                localPathAliasUsage = isLocalPathAliasUsage(
-                  moduleSpecifier,
-                  packageName,
-                  owningPackage,
-                  pathAliasesByPackage.get(owningPackage.path),
-                  context.worktreePath,
-                )
-                localPathAliasUsageCache.set(localPathAliasUsageCacheKey, localPathAliasUsage)
-              }
-              if (
-                localPathAliasUsage &&
-                !manifestDeclaresDependency(owningPackage.manifest, packageName)
-              ) {
-                continue
-              }
-
-              const usage = bucket.get(packageName) ?? {
-                files: new Set<string>(),
-                prodFiles: new Set<string>(),
-                toolingFiles: new Set<string>(),
-                typeOnlyFiles: new Set<string>(),
-                dynamicFiles: new Set<string>(),
-                bundledFiles: new Set<string>(),
-                bundledProdFiles: new Set<string>(),
-                specifiers: new Set<string>(),
-              }
-              usage.files.add(sourceFile.getFilePath())
-              usage.specifiers.add(moduleSpecifier)
-              if (
-                isBundledPackageSourceUsage(
-                  owningPackage,
-                  sourceFile.getFilePath(),
-                  packageName,
-                  bundledInfoByPackage.get(owningPackage.path),
-                )
-              ) {
-                usage.bundledFiles.add(sourceFile.getFilePath())
-                if (isProdFile && !moduleUsage.typeOnly) {
-                  usage.bundledProdFiles.add(sourceFile.getFilePath())
-                }
-              }
-              if (moduleUsage.typeOnly) {
-                usage.typeOnlyFiles.add(sourceFile.getFilePath())
-              }
-              if (moduleUsage.dynamic) {
-                usage.dynamicFiles.add(sourceFile.getFilePath())
-              }
-              if (isProdFile && !moduleUsage.typeOnly) {
-                usage.prodFiles.add(sourceFile.getFilePath())
-              }
-              if (isToolingFile) {
-                usage.toolingFiles.add(sourceFile.getFilePath())
-              }
-              bucket.set(packageName, usage)
-            }
-
-            usageByPackage.set(packageKey, bucket)
-          }
-
-          const packageHealth = activePackages
-            .filter((pkg): pkg is PackageInfo & { manifest: PackageManifest } => pkg.manifest !== undefined)
-            .map((pkg) =>
-              analyzePackageHealth(
-                pkg,
-                usageByPackage.get(pkg.path),
-                workspaceNames,
-                resolvedPackageNames,
-                rootDevDependencyNames,
-                rootToolingDependencyNames,
-                rootToolingUsedDependencyNames,
-                config.dependency_aliases,
-                new Set(config.allow_dev_dependency_in_prod),
-              ),
-            )
-            .sort((left, right) => left.packageName.localeCompare(right.packageName))
-
-          return {
-            packages: packageHealth,
-            missingCount: packageHealth.reduce(
-              (sum, pkg) => sum + pkg.importedButNotDeclared.length,
-              0,
-            ),
-            unusedCount: packageHealth.reduce((sum, pkg) => sum + pkg.declaredButUnused.length, 0),
-            diagnosticLimit: config.top_n_diagnostics,
-          }
-        },
+        try: () => computePackageDependencyHealth(project, packages, context, config),
         catch: (cause) =>
           new SignalComputeError({
             signalId: "TS-DE-04-package-dependency-health",
@@ -515,6 +365,295 @@ export const TsDe04: Signal<
       .slice(0, out.diagnosticLimit)
   },
 }
+
+type PackagePathMatcher = (filePath: string) => PackageInfo | undefined
+type UsageByPackage = Map<string, Map<string, UsageBucket>>
+
+type DependencyAnalysisFacts = {
+  readonly resolvedPackageNames: ReadonlySet<string>
+  readonly activePackages: ReadonlyArray<PackageInfo>
+  readonly pathAliasesByPackage: ReadonlyMap<string, ReadonlyArray<TsconfigPathAlias>>
+  readonly bundledInfoByPackage: ReadonlyMap<string, BundledPackageInfo>
+  readonly workspaceNames: ReadonlySet<string>
+  readonly sourceFiles: ReadonlyArray<SourceFile>
+  readonly packageForPath: PackagePathMatcher
+  readonly rootDevDependencyNames: ReadonlySet<string>
+  readonly rootToolingDependencyNames: ReadonlySet<string>
+}
+
+type DependencyUsageSummary = {
+  readonly usageByPackage: UsageByPackage
+  readonly rootToolingUsedDependencyNames: ReadonlySet<string>
+}
+
+const computePackageDependencyHealth = async (
+  project: Project,
+  packages: ReadonlyArray<PackageInfo>,
+  context: SignalContext,
+  config: TsDe04Config,
+): Promise<TsDe04Output> => {
+  const facts = await loadDependencyAnalysisFacts(project, packages, context, config)
+  const usage = collectDependencyUsage(facts, context, config)
+  const packageHealth = summarizePackageHealth(facts, usage, config)
+  return {
+    packages: packageHealth,
+    missingCount: packageHealth.reduce(
+      (sum, pkg) => sum + pkg.importedButNotDeclared.length,
+      0,
+    ),
+    unusedCount: packageHealth.reduce((sum, pkg) => sum + pkg.declaredButUnused.length, 0),
+    diagnosticLimit: config.top_n_diagnostics,
+  }
+}
+
+const loadDependencyAnalysisFacts = async (
+  project: Project,
+  packages: ReadonlyArray<PackageInfo>,
+  context: SignalContext,
+  config: TsDe04Config,
+): Promise<DependencyAnalysisFacts> => {
+  const activePackages = packages.filter((pkg) => !isExcluded(pkg.path, config.exclude_globs))
+  const rootManifest = packages.find((pkg) => pkg.name === "(root)")?.manifest
+  return {
+    resolvedPackageNames: await readResolvedPackageNames(context.worktreePath),
+    activePackages,
+    pathAliasesByPackage: await readPathAliasesByPackage(activePackages),
+    bundledInfoByPackage: await readBundledInfoByPackage(activePackages),
+    workspaceNames: workspacePackageNames(activePackages),
+    sourceFiles: await dependencySourceFiles(project, activePackages, config.exclude_globs),
+    packageForPath: createPackagePathMatcher(packages),
+    rootDevDependencyNames: dependencyNamesOf(rootManifest, ["devDependencies"]),
+    rootToolingDependencyNames: dependencyNamesOf(rootManifest, [
+      "dependencies",
+      "devDependencies",
+      "optionalDependencies",
+    ]),
+  }
+}
+
+const collectDependencyUsage = (
+  facts: DependencyAnalysisFacts,
+  context: SignalContext,
+  config: TsDe04Config,
+): DependencyUsageSummary => {
+  const usageByPackage: UsageByPackage = new Map()
+  const rootToolingUsedDependencyNames = new Set<string>()
+  const localPathAliasUsageCache = new Map<string, boolean>()
+  for (const sourceFile of facts.sourceFiles) {
+    recordSourceFileDependencyUsage(
+      sourceFile,
+      facts,
+      context,
+      config,
+      usageByPackage,
+      rootToolingUsedDependencyNames,
+      localPathAliasUsageCache,
+    )
+  }
+  return { usageByPackage, rootToolingUsedDependencyNames }
+}
+
+const recordSourceFileDependencyUsage = (
+  sourceFile: SourceFile,
+  facts: DependencyAnalysisFacts,
+  context: SignalContext,
+  config: TsDe04Config,
+  usageByPackage: UsageByPackage,
+  rootToolingUsedDependencyNames: Set<string>,
+  localPathAliasUsageCache: Map<string, boolean>,
+): void => {
+  const owningPackage = facts.packageForPath(sourceFile.getFilePath())
+  if (!hasPackageManifest(owningPackage)) return
+  const filePath = sourceFile.getFilePath()
+  const usageContext = dependencyUsageContext(owningPackage, filePath, config)
+  const bucket = usageByPackage.get(owningPackage.path) ?? new Map<string, UsageBucket>()
+  for (const moduleUsage of externalModuleSpecifiers(sourceFile)) {
+    recordModuleSpecifierUsage(
+      moduleUsage,
+      owningPackage,
+      usageContext,
+      facts,
+      context,
+      bucket,
+      rootToolingUsedDependencyNames,
+      localPathAliasUsageCache,
+    )
+  }
+  usageByPackage.set(owningPackage.path, bucket)
+}
+
+const hasPackageManifest = (
+  pkg: PackageInfo | undefined,
+): pkg is PackageInfo & { manifest: PackageManifest } => pkg?.manifest !== undefined
+
+const dependencyUsageContext = (
+  owningPackage: PackageInfo & { manifest: PackageManifest },
+  filePath: string,
+  config: TsDe04Config,
+): {
+  readonly filePath: string
+  readonly isToolingFile: boolean
+  readonly isProdFile: boolean
+} => {
+  const isToolingFile =
+    isPackageToolingFile(owningPackage.path, filePath) ||
+    isPackageScriptEntrypoint(owningPackage.manifest, owningPackage.path, filePath) ||
+    isBundledCliSourceFile(owningPackage.manifest, owningPackage.path, filePath)
+  return {
+    filePath,
+    isToolingFile,
+    isProdFile: !isToolingFile && !matchesAnyGlob(filePath, config.test_globs),
+  }
+}
+
+const recordModuleSpecifierUsage = (
+  moduleUsage: ModuleSpecifierUsage,
+  owningPackage: PackageInfo & { manifest: PackageManifest },
+  usageContext: ReturnType<typeof dependencyUsageContext>,
+  facts: DependencyAnalysisFacts,
+  context: SignalContext,
+  bucket: Map<string, UsageBucket>,
+  rootToolingUsedDependencyNames: Set<string>,
+  localPathAliasUsageCache: Map<string, boolean>,
+): void => {
+  const packageName = packageNameForRecordedUsage(moduleUsage, owningPackage, facts)
+  if (packageName === undefined) return
+  if (usageContext.isToolingFile && facts.rootToolingDependencyNames.has(packageName)) {
+    rootToolingUsedDependencyNames.add(packageName)
+  }
+  if (
+    isUndeclaredLocalPathAliasUsage(
+      moduleUsage,
+      packageName,
+      owningPackage,
+      facts,
+      context,
+      localPathAliasUsageCache,
+    )
+  ) {
+    return
+  }
+  addUsageBucketEntry(moduleUsage, packageName, owningPackage, usageContext, facts, bucket)
+}
+
+const packageNameForRecordedUsage = (
+  moduleUsage: ModuleSpecifierUsage,
+  owningPackage: PackageInfo & { manifest: PackageManifest },
+  facts: DependencyAnalysisFacts,
+): string | undefined => {
+  const moduleSpecifier = moduleUsage.specifier
+  const packageName = normalizePackageSpecifier(moduleSpecifier)
+  if (packageName === undefined || isBuiltinModuleName(packageName)) return undefined
+  if (isGeneratedVirtualModuleSpecifier(moduleSpecifier)) return undefined
+  if (isFrameworkVirtualModuleSpecifier(moduleSpecifier, owningPackage.manifest)) return undefined
+  return isWorkspaceSelfOrFacadeImport(
+    packageName,
+    owningPackage.manifest.name,
+    facts.workspaceNames,
+  )
+    ? undefined
+    : packageName
+}
+
+const isUndeclaredLocalPathAliasUsage = (
+  moduleUsage: ModuleSpecifierUsage,
+  packageName: string,
+  owningPackage: PackageInfo & { manifest: PackageManifest },
+  facts: DependencyAnalysisFacts,
+  context: SignalContext,
+  cache: Map<string, boolean>,
+): boolean => {
+  const cacheKey = `${owningPackage.path}\0${packageName}\0${moduleUsage.specifier}`
+  const cached = cache.get(cacheKey)
+  if (cached !== undefined) {
+    return cached && !manifestDeclaresDependency(owningPackage.manifest, packageName)
+  }
+  const isLocal = isLocalPathAliasUsage(
+    moduleUsage.specifier,
+    packageName,
+    owningPackage,
+    facts.pathAliasesByPackage.get(owningPackage.path),
+    context.worktreePath,
+  )
+  cache.set(cacheKey, isLocal)
+  return isLocal && !manifestDeclaresDependency(owningPackage.manifest, packageName)
+}
+
+const addUsageBucketEntry = (
+  moduleUsage: ModuleSpecifierUsage,
+  packageName: string,
+  owningPackage: PackageInfo & { manifest: PackageManifest },
+  usageContext: ReturnType<typeof dependencyUsageContext>,
+  facts: DependencyAnalysisFacts,
+  bucket: Map<string, UsageBucket>,
+): void => {
+  const usage = bucket.get(packageName) ?? emptyUsageBucket()
+  usage.files.add(usageContext.filePath)
+  usage.specifiers.add(moduleUsage.specifier)
+  recordBundledUsage(usage, moduleUsage, packageName, owningPackage, usageContext, facts)
+  if (moduleUsage.typeOnly) usage.typeOnlyFiles.add(usageContext.filePath)
+  if (moduleUsage.dynamic) usage.dynamicFiles.add(usageContext.filePath)
+  if (usageContext.isProdFile && !moduleUsage.typeOnly) usage.prodFiles.add(usageContext.filePath)
+  if (usageContext.isToolingFile) usage.toolingFiles.add(usageContext.filePath)
+  bucket.set(packageName, usage)
+}
+
+const emptyUsageBucket = (): UsageBucket => ({
+  files: new Set<string>(),
+  prodFiles: new Set<string>(),
+  toolingFiles: new Set<string>(),
+  typeOnlyFiles: new Set<string>(),
+  dynamicFiles: new Set<string>(),
+  bundledFiles: new Set<string>(),
+  bundledProdFiles: new Set<string>(),
+  specifiers: new Set<string>(),
+})
+
+const recordBundledUsage = (
+  usage: UsageBucket,
+  moduleUsage: ModuleSpecifierUsage,
+  packageName: string,
+  owningPackage: PackageInfo,
+  usageContext: ReturnType<typeof dependencyUsageContext>,
+  facts: DependencyAnalysisFacts,
+): void => {
+  if (
+    !isBundledPackageSourceUsage(
+      owningPackage,
+      usageContext.filePath,
+      packageName,
+      facts.bundledInfoByPackage.get(owningPackage.path),
+    )
+  ) {
+    return
+  }
+  usage.bundledFiles.add(usageContext.filePath)
+  if (usageContext.isProdFile && !moduleUsage.typeOnly) {
+    usage.bundledProdFiles.add(usageContext.filePath)
+  }
+}
+
+const summarizePackageHealth = (
+  facts: DependencyAnalysisFacts,
+  usage: DependencyUsageSummary,
+  config: TsDe04Config,
+): ReadonlyArray<PackageDependencyHealth> =>
+  facts.activePackages
+    .filter((pkg): pkg is PackageInfo & { manifest: PackageManifest } => pkg.manifest !== undefined)
+    .map((pkg) =>
+      analyzePackageHealth(
+        pkg,
+        usage.usageByPackage.get(pkg.path),
+        facts.workspaceNames,
+        facts.resolvedPackageNames,
+        facts.rootDevDependencyNames,
+        facts.rootToolingDependencyNames,
+        usage.rootToolingUsedDependencyNames,
+        config.dependency_aliases,
+        new Set(config.allow_dev_dependency_in_prod),
+      ),
+    )
+    .sort((left, right) => left.packageName.localeCompare(right.packageName))
 
 const compareDependencyDiagnostics = (left: Diagnostic, right: Diagnostic): number => {
   const kindDelta = issueKindRank(left) - issueKindRank(right)
@@ -990,206 +1129,6 @@ const packageNameFromPackageLockPath = (lockPath: string): string | undefined =>
   return parts[0]
 }
 
-const readPathAliasesByPackage = async (
-  packages: ReadonlyArray<PackageInfo>,
-): Promise<ReadonlyMap<string, ReadonlyArray<TsconfigPathAlias>>> => {
-  const entries = await Promise.all(
-    packages.map(async (pkg): Promise<[string, ReadonlyArray<TsconfigPathAlias>]> => [
-      pkg.path,
-      await readPathAliases(pkg.tsconfigPath),
-    ]),
-  )
-  return new Map(entries)
-}
-
-const readPathAliases = async (tsconfigPath: string): Promise<ReadonlyArray<TsconfigPathAlias>> => {
-  const config = await readPathAliasConfig(tsconfigPath, new Set<string>())
-  return config.aliases
-}
-
-const readPathAliasConfig = async (
-  tsconfigPath: string,
-  visited: Set<string>,
-): Promise<TsconfigAliasConfig> => {
-  const loaded = await readTsconfig(tsconfigPath)
-  if (loaded === undefined) return { aliases: [], baseDir: dirname(tsconfigPath) }
-
-  const normalizedPath = resolve(loaded.path)
-  if (visited.has(normalizedPath)) return { aliases: [], baseDir: dirname(normalizedPath) }
-  visited.add(normalizedPath)
-
-  const inherited = await readInheritedAliasConfig(loaded.config, normalizedPath, visited)
-  const compilerOptions = asRecord(loaded.config.compilerOptions)
-  const baseUrl = asString(compilerOptions?.baseUrl)
-  const baseDir = baseUrl === undefined ? inherited.baseDir : resolve(dirname(normalizedPath), baseUrl)
-  const paths = asRecord(compilerOptions?.paths)
-
-  const baseUrlAliases = baseUrl === undefined ? [] : await implicitBaseUrlAliases(baseDir)
-
-  if (paths === undefined) return { aliases: [...inherited.aliases, ...baseUrlAliases], baseDir }
-
-  return {
-    aliases: [...pathAliasesFromCompilerOptions(paths, baseDir), ...baseUrlAliases],
-    baseDir,
-  }
-}
-
-const implicitBaseUrlAliases = async (
-  baseDir: string,
-): Promise<ReadonlyArray<TsconfigPathAlias>> => {
-  try {
-    const entries = await readdir(baseDir, { withFileTypes: true })
-    return entries.flatMap((entry): ReadonlyArray<TsconfigPathAlias> => {
-      if (entry.name.startsWith(".")) return []
-      if (entry.isDirectory()) {
-        return [
-          { pattern: entry.name, replacements: [entry.name], baseDir },
-          { pattern: `${entry.name}/*`, replacements: [`${entry.name}/*`], baseDir },
-        ]
-      }
-      if (!entry.isFile()) return []
-      const stem = entry.name.replace(/\.(?:c|m)?(?:t|j)sx?$/, "")
-      if (stem === entry.name || stem.length === 0) return []
-      return [{ pattern: stem, replacements: [entry.name], baseDir }]
-    })
-  } catch {
-    return []
-  }
-}
-
-const readInheritedAliasConfig = async (
-  config: Record<string, unknown>,
-  tsconfigPath: string,
-  visited: Set<string>,
-): Promise<TsconfigAliasConfig> => {
-  const extendedConfigs = asStringArray(config.extends)
-  let inherited: TsconfigAliasConfig = { aliases: [], baseDir: dirname(tsconfigPath) }
-
-  for (const extendedConfig of extendedConfigs) {
-    const extendedPath = resolveTsconfigExtendsPath(extendedConfig, tsconfigPath)
-    inherited = await readPathAliasConfig(extendedPath, visited)
-  }
-
-  return inherited
-}
-
-const readTsconfig = async (
-  tsconfigPath: string,
-): Promise<{ readonly path: string; readonly config: Record<string, unknown> } | undefined> => {
-  for (const candidate of tsconfigCandidates(tsconfigPath)) {
-    try {
-      const parsed = asRecord(parseJsonc(await readFile(candidate, "utf8")))
-      if (parsed !== undefined) return { path: candidate, config: parsed }
-    } catch {
-      continue
-    }
-  }
-  return undefined
-}
-
-const tsconfigCandidates = (tsconfigPath: string): ReadonlyArray<string> => {
-  if (tsconfigPath.endsWith(".json")) return [tsconfigPath]
-  return [tsconfigPath, `${tsconfigPath}.json`, join(tsconfigPath, "tsconfig.json")]
-}
-
-const parseJsonc = (text: string): unknown => JSON.parse(stripTrailingCommas(stripJsonComments(text)))
-
-const stripJsonComments = (text: string): string => {
-  let result = ""
-  let inString = false
-  let quote: "\"" | "'" | undefined
-  let escaped = false
-
-  for (let index = 0; index < text.length; index++) {
-    const char = text[index]!
-    const next = text[index + 1]
-
-    if (inString) {
-      result += char
-      if (escaped) {
-        escaped = false
-        continue
-      }
-      if (char === "\\") {
-        escaped = true
-        continue
-      }
-      if (char === quote) {
-        inString = false
-        quote = undefined
-      }
-      continue
-    }
-
-    if (char === "\"" || char === "'") {
-      inString = true
-      quote = char
-      result += char
-      continue
-    }
-
-    if (char === "/" && next === "/") {
-      index += 2
-      while (index < text.length && text[index] !== "\n") index++
-      result += "\n"
-      continue
-    }
-
-    if (char === "/" && next === "*") {
-      index += 2
-      while (index < text.length && !(text[index] === "*" && text[index + 1] === "/")) {
-        result += text[index] === "\n" ? "\n" : " "
-        index++
-      }
-      index++
-      continue
-    }
-
-    result += char
-  }
-
-  return result
-}
-
-const stripTrailingCommas = (text: string): string =>
-  text.replace(/,\s*([}\]])/g, "$1")
-
-const resolveTsconfigExtendsPath = (extendedConfig: string, tsconfigPath: string): string => {
-  if (extendedConfig.startsWith(".") || extendedConfig.startsWith("/")) {
-    return resolve(dirname(tsconfigPath), extendedConfig)
-  }
-  return resolve(dirname(tsconfigPath), extendedConfig)
-}
-
-const pathAliasesFromCompilerOptions = (
-  paths: Record<string, unknown>,
-  baseDir: string,
-): ReadonlyArray<TsconfigPathAlias> =>
-  Object.entries(paths).flatMap(([pattern, rawReplacements]) => {
-    const replacements = asStringArray(rawReplacements)
-    return replacements.length > 0 ? [{ pattern, replacements, baseDir }] : []
-  })
-
-const isLocalPathAliasUsage = (
-  moduleSpecifier: string,
-  packageName: string,
-  owningPackage: PackageInfo,
-  aliases: ReadonlyArray<TsconfigPathAlias> | undefined,
-  worktreePath: string,
-): boolean => {
-  if (aliases === undefined || aliases.length === 0) return false
-
-  return aliases.some((alias) =>
-    resolvePathAliasTargets(alias, moduleSpecifier).some(
-      (target) =>
-        !target.includes("/node_modules/") &&
-        (target === owningPackage.path ||
-          target.startsWith(`${owningPackage.path}/`) ||
-          target.startsWith(`${worktreePath}/`)),
-    ),
-  )
-}
-
 const manifestDeclaresDependency = (
   manifest: PackageManifest,
   dependencyName: string,
@@ -1286,41 +1225,11 @@ const isBundledPackageSourceUsage = (
   return rel.startsWith("src/")
 }
 
-const resolvePathAliasTargets = (
-  alias: TsconfigPathAlias,
-  moduleSpecifier: string,
-): ReadonlyArray<string> => {
-  const starIndex = alias.pattern.indexOf("*")
-  if (starIndex === -1) {
-    if (moduleSpecifier !== alias.pattern) return []
-    return alias.replacements.map((replacement) => resolve(alias.baseDir, replacement))
-  }
-
-  const prefix = alias.pattern.slice(0, starIndex)
-  const suffix = alias.pattern.slice(starIndex + 1)
-  if (!moduleSpecifier.startsWith(prefix) || !moduleSpecifier.endsWith(suffix)) return []
-
-  const matched = moduleSpecifier.slice(prefix.length, moduleSpecifier.length - suffix.length)
-  return alias.replacements.map((replacement) =>
-    resolve(alias.baseDir, replacement.replace("*", matched)),
-  )
-}
-
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value)
 
 const asRecord = (value: unknown): Record<string, unknown> | undefined =>
   isRecord(value) ? value : undefined
-
-const asString = (value: unknown): string | undefined =>
-  typeof value === "string" && value.length > 0 ? value : undefined
-
-const asStringArray = (value: unknown): ReadonlyArray<string> =>
-  typeof value === "string"
-    ? [value]
-    : Array.isArray(value)
-      ? value.filter((entry): entry is string => typeof entry === "string")
-      : []
 
 const analyzePackageHealth = (
   pkg: PackageInfo & { manifest: PackageManifest },
