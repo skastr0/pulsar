@@ -7,6 +7,7 @@ import {
   computeConfigHash,
   makeFactorEntry,
   makeFactorLedger,
+  SignalFactorPolicyTag,
   overriddenFactorValue,
   runSignal,
   validateFactorDefinitions,
@@ -27,7 +28,11 @@ const scoreCapDefinition: SignalFactorDefinition = {
 
 const makeSignal = (
   factorDefinitions: ReadonlyArray<SignalFactorDefinition>,
-): Signal<FactorConfig, { readonly count: number }> => ({
+): Signal<
+  FactorConfig,
+  { readonly count: number; readonly visibleVectorOverrideCount?: number },
+  any
+> => ({
   id: "TEST-FACTORS",
   title: "Factor test signal",
   tier: 1,
@@ -37,7 +42,20 @@ const makeSignal = (
   defaultConfig: {},
   factorDefinitions,
   inputs: [],
-  compute: () => Effect.succeed({ count: 1 }),
+  compute: () =>
+    Effect.gen(function* () {
+      const factorPolicy = yield* Effect.serviceOption(SignalFactorPolicyTag)
+      return {
+        count: 1,
+        ...(factorPolicy._tag === "Some"
+          ? {
+              visibleVectorOverrideCount: Object.keys(
+                factorPolicy.value.vectorOverrides,
+              ).length,
+            }
+          : {}),
+      }
+    }),
   score: () => 0.8,
   diagnose: () => [],
   factorLedger: () =>
@@ -92,7 +110,7 @@ describe("factor ledger", () => {
       applyFactorOverrides(entries, {
         "stub_kinds.throw-not-implemented.score_cap": 0.6,
       }),
-    ).toEqual([
+    ).toMatchObject([
       {
         path: "stub_kinds.throw-not-implemented.score_cap",
         title: "Throw-not-implemented score cap",
@@ -100,6 +118,19 @@ describe("factor ledger", () => {
         value: 0.6,
         source: "vector",
         affectsScore: true,
+        attribution: {
+          ruleId: "vector.factor-override",
+        },
+        mutations: [
+          {
+            path: "stub_kinds.throw-not-implemented.score_cap",
+            source: "vector",
+            action: "override-factor",
+            before: 0.8,
+            after: 0.6,
+            ruleId: "vector.factor-override",
+          },
+        ],
       },
     ])
     expect(
@@ -139,5 +170,75 @@ describe("factor ledger", () => {
     expect(computeConfigHash("TEST-FACTORS", registry, undefined)).not.toBe(
       computeConfigHash("TEST-FACTORS", registry, vector),
     )
+  })
+
+  test("vector factor overrides win over module ledger entries with visible provenance", async () => {
+    const moduleEntrySignal = makeSignal([scoreCapDefinition])
+    const registry = await Effect.runPromise(buildRegistry([moduleEntrySignal]))
+    const vector = {
+      id: "v1",
+      domain: "typescript",
+      signal_overrides: {
+        "TEST-FACTORS": {
+          factors: { "stub_kinds.throw-not-implemented.score_cap": 0.6 },
+        },
+      },
+    }
+
+    const result = await Effect.runPromise(
+      runSignal(registry, "TEST-FACTORS", vector) as Effect.Effect<any, any, never>,
+    )
+
+    expect(result.output.visibleVectorOverrideCount).toBe(1)
+    expect(result.factorLedger?.entries[0]).toMatchObject({
+      path: "stub_kinds.throw-not-implemented.score_cap",
+      value: 0.6,
+      source: "vector",
+      mutations: [
+        {
+          action: "override-factor",
+          before: 0.8,
+          after: 0.6,
+          ruleId: "vector.factor-override",
+        },
+      ],
+    })
+  })
+
+  test("vector overrides deterministically supersede module factor mutations", () => {
+    const entries = [
+      makeFactorEntry(scoreCapDefinition, 0.7, {
+        source: "module",
+        attribution: {
+          moduleId: "acme.effect",
+          processorId: "effect-unfinished-policy",
+          ruleId: "effect.unfinished.accepted-placeholder.v1",
+        },
+      }),
+    ]
+
+    expect(
+      applyFactorOverrides(entries, {
+        "stub_kinds.throw-not-implemented.score_cap": 0.6,
+      }),
+    ).toMatchObject([
+      {
+        path: "stub_kinds.throw-not-implemented.score_cap",
+        value: 0.6,
+        source: "vector",
+        attribution: {
+          moduleId: "acme.effect",
+          processorId: "effect-unfinished-policy",
+          ruleId: "vector.factor-override",
+        },
+        mutations: [
+          {
+            action: "override-module-factor",
+            before: 0.7,
+            after: 0.6,
+          },
+        ],
+      },
+    ])
   })
 })

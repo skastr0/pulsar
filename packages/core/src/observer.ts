@@ -6,6 +6,11 @@ import {
   type ResolvedCalibrationContext,
 } from "./calibration.js"
 import { Diagnostic as DiagnosticSchema, type Diagnostic } from "./diagnostic.js"
+import {
+  applySignalFactorPolicy,
+  makeSignalFactorPolicyContext,
+  SignalFactorPolicyTag,
+} from "./factor-ledger.js"
 import { buildInputOutputs } from "./input-outputs.js"
 import type { SignalRunResult } from "./runner.js"
 import type { Registry } from "./registry.js"
@@ -582,8 +587,13 @@ const runOneSignal = (
   Effect.gen(function* () {
     const inputOutputs = buildInputOutputs(signal, outputs)
     const config = vectorResolvedConfig(signal, signal.defaultConfig, vector)
+    const factorPolicy = makeSignalFactorPolicyContext(signal, vector)
 
-    const either = yield* Effect.either(signal.compute(config, inputOutputs))
+    const either = yield* Effect.either(
+      signal.compute(config, inputOutputs).pipe(
+        Effect.provideService(SignalFactorPolicyTag, factorPolicy),
+      ),
+    )
     if (either._tag === "Left") {
       const err = either.left
       const message = (err as { message?: string }).message ?? String(err)
@@ -602,12 +612,18 @@ const runOneSignal = (
 
     const out = either.right
     const metadata = signal.outputMetadata?.(out)
+    const rawFactorLedger = signal.factorLedger?.(out)
+    const factorLedger =
+      rawFactorLedger === undefined
+        ? undefined
+        : applySignalFactorPolicy(rawFactorLedger, factorPolicy)
     return {
       signalId: signal.id,
       score: signal.score(out),
       output: out,
       diagnostics: signal.diagnose(out),
       ...(metadata !== undefined ? { metadata } : {}),
+      ...(factorLedger !== undefined ? { factorLedger } : {}),
     }
   })
 

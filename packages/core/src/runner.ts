@@ -1,6 +1,11 @@
 import { Effect } from "effect"
 import type { Diagnostic } from "./diagnostic.js"
 import { UnknownSignalIdError, type SignalError } from "./errors.js"
+import {
+  applySignalFactorPolicy,
+  makeSignalFactorPolicyContext,
+  SignalFactorPolicyTag,
+} from "./factor-ledger.js"
 import { buildInputOutputs } from "./input-outputs.js"
 import type { Registry } from "./registry.js"
 import type {
@@ -47,7 +52,10 @@ export const runSignal = (
       if (!vectorIsActive(s, vector)) continue
       const inputOutputs = buildInputOutputs(s, outputs)
       const config = vectorResolvedConfig(s, s.defaultConfig, vector)
-      const result = yield* s.compute(config, inputOutputs)
+      const factorPolicy = makeSignalFactorPolicyContext(s, vector)
+      const result = yield* s.compute(config, inputOutputs).pipe(
+        Effect.provideService(SignalFactorPolicyTag, factorPolicy),
+      )
       outputs.set(s.id, result)
     }
 
@@ -66,7 +74,14 @@ export const runSignal = (
       }
     }
     const metadata = target.outputMetadata?.(out)
-    const factorLedger = target.factorLedger?.(out)
+    const rawFactorLedger = target.factorLedger?.(out)
+    const factorLedger =
+      rawFactorLedger === undefined
+        ? undefined
+        : applySignalFactorPolicy(
+            rawFactorLedger,
+            makeSignalFactorPolicyContext(target, vector),
+          )
     return {
       signalId: target.id,
       score: target.score(out),

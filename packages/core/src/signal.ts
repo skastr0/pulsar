@@ -85,12 +85,37 @@ export interface SignalFactorLedgerEntry {
   readonly attribution?: {
     readonly ruleId?: string
     readonly sourceRef?: string
+    readonly moduleId?: string
+    readonly processorId?: string
+    readonly evidence?: ReadonlyArray<{
+      readonly kind: string
+      readonly value: string
+      readonly metadata?: Readonly<Record<string, unknown>>
+    }>
   }
+  readonly mutations?: ReadonlyArray<SignalFactorPolicyMutation>
 }
 
 export interface SignalFactorLedger {
   readonly signalId: string
   readonly entries: ReadonlyArray<SignalFactorLedgerEntry>
+}
+
+export interface SignalFactorPolicyMutation {
+  readonly path: string
+  readonly source: SignalFactorSource
+  readonly action: string
+  readonly before?: SignalFactorValue
+  readonly after: SignalFactorValue
+  readonly ruleId?: string
+  readonly sourceRef?: string
+  readonly moduleId?: string
+  readonly processorId?: string
+  readonly evidence?: ReadonlyArray<{
+    readonly kind: string
+    readonly value: string
+    readonly metadata?: Readonly<Record<string, unknown>>
+  }>
 }
 
 /**
