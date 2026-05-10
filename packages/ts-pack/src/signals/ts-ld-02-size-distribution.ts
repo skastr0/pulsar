@@ -96,7 +96,7 @@ export const TsLd02: Signal<TsLd02Config, TsLd02Output, TsProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "callback-context-calibration-v1",
+  cacheVersion: "exclusive-function-loc-v1",
   configSchema: TsLd02Config,
   defaultConfig: {
     exclude_globs: [
@@ -408,11 +408,57 @@ const functionLoc = (
   if (body === undefined) return 0
   const startLine = sourceFile.getLineAndCharacterOfPosition(body.getStart(sourceFile)).line
   const endLine = sourceFile.getLineAndCharacterOfPosition(body.getEnd()).line
-  return locCounter.countInclusive(startLine, endLine)
+  const nestedLoc = collectNestedFunctionBodyLineIntervals(body, sourceFile)
+    .map(([nestedStart, nestedEnd]) => locCounter.countInclusive(nestedStart, nestedEnd))
+    .reduce((sum, loc) => sum + loc, 0)
+  return Math.max(0, locCounter.countInclusive(startLine, endLine) - nestedLoc)
 }
 
 const getFunctionBodyNode = (fn: CompilerFunctionLike): ts.Node | undefined =>
   "body" in fn ? fn.body : undefined
+
+const collectNestedFunctionBodyLineIntervals = (
+  body: ts.Node,
+  sourceFile: ts.SourceFile,
+): ReadonlyArray<readonly [number, number]> => {
+  const intervals: Array<readonly [number, number]> = []
+
+  const visit = (node: ts.Node): void => {
+    if (isCompilerFunctionLike(node)) {
+      const nestedBody = getFunctionBodyNode(node)
+      if (nestedBody !== undefined) {
+        intervals.push([
+          sourceFile.getLineAndCharacterOfPosition(nestedBody.getStart(sourceFile)).line,
+          sourceFile.getLineAndCharacterOfPosition(nestedBody.getEnd()).line,
+        ])
+      }
+      return
+    }
+    ts.forEachChild(node, visit)
+  }
+
+  ts.forEachChild(body, visit)
+  return mergeLineIntervals(intervals)
+}
+
+const mergeLineIntervals = (
+  intervals: ReadonlyArray<readonly [number, number]>,
+): ReadonlyArray<readonly [number, number]> => {
+  const sorted = [...intervals].sort(
+    ([leftStart, leftEnd], [rightStart, rightEnd]) =>
+      leftStart - rightStart || leftEnd - rightEnd,
+  )
+  const merged: Array<readonly [number, number]> = []
+  for (const [start, end] of sorted) {
+    const previous = merged[merged.length - 1]
+    if (previous === undefined || start > previous[1] + 1) {
+      merged.push([start, end])
+      continue
+    }
+    merged[merged.length - 1] = [previous[0], Math.max(previous[1], end)]
+  }
+  return merged
+}
 
 const toSignalComputeError = (cause: unknown): SignalComputeError =>
   cause instanceof SignalComputeError

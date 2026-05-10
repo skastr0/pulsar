@@ -163,6 +163,37 @@ describe("TS-LD-02 (function / file size distribution)", () => {
     expect(out.outlierFunctions).toEqual([])
   })
 
+  test("parent function LOC excludes nested function bodies", async () => {
+    const tinyFns = Array.from(
+      { length: 20 },
+      (_, i) => `export function tiny${i}() { return ${i} }`,
+    )
+    const nestedBody = Array.from({ length: 8 }, (_, i) => `    const x${i} = ${i}`)
+    await writeTs(
+      "nested.ts",
+      [
+        ...tinyFns,
+        "export function outer() {",
+        "  const inner = () => {",
+        ...nestedBody,
+        "    return 0",
+        "  }",
+        "  return inner()",
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runCompute({
+      ...TsLd02.defaultConfig,
+      max_function_loc: 4,
+      max_file_loc: 100,
+    })
+
+    expect(out.outlierFunctions.some((fn) => fn.name === "outer")).toBe(false)
+    expect(out.outlierFunctions.some((fn) => fn.name === "inner")).toBe(true)
+  })
+
   test("files above the raw threshold but below p95 + threshold are not outliers", async () => {
     for (let i = 0; i < 20; i += 1) {
       await writeTs(`small-${i}.ts`, `export const v${i} = ${i}\n`)
