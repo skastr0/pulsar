@@ -2,10 +2,12 @@ import { describe, expect, test } from "bun:test"
 import { Effect, Schema } from "effect"
 import {
   assertValidFactorDefinitions,
+  applyFactorOverrides,
   buildRegistry,
   computeConfigHash,
   makeFactorEntry,
   makeFactorLedger,
+  overriddenFactorValue,
   runSignal,
   validateFactorDefinitions,
   type Signal,
@@ -81,6 +83,32 @@ describe("factor ledger", () => {
     expect(JSON.parse(JSON.stringify(result.factorLedger))).toEqual(result.factorLedger)
   })
 
+  test("applies vector factor overrides while preserving ledger paths", () => {
+    const entries = [
+      makeFactorEntry(scoreCapDefinition, 0.8, { source: "signal-default" }),
+    ]
+
+    expect(
+      applyFactorOverrides(entries, {
+        "stub_kinds.throw-not-implemented.score_cap": 0.6,
+      }),
+    ).toEqual([
+      {
+        path: "stub_kinds.throw-not-implemented.score_cap",
+        title: "Throw-not-implemented score cap",
+        scoreRole: "score-cap",
+        value: 0.6,
+        source: "vector",
+        affectsScore: true,
+      },
+    ])
+    expect(
+      overriddenFactorValue("stub_kinds.throw-not-implemented.score_cap", 0.8, {
+        "stub_kinds.throw-not-implemented.score_cap": 0.6,
+      }),
+    ).toBe(0.6)
+  })
+
   test("includes factor definitions in config cache hashes", async () => {
     const first = await Effect.runPromise(buildRegistry([makeSignal([scoreCapDefinition])]))
     const second = await Effect.runPromise(
@@ -93,6 +121,23 @@ describe("factor ledger", () => {
 
     expect(computeConfigHash("TEST-FACTORS", first, undefined)).not.toBe(
       computeConfigHash("TEST-FACTORS", second, undefined),
+    )
+  })
+
+  test("includes vector factor overrides in config cache hashes", async () => {
+    const registry = await Effect.runPromise(buildRegistry([makeSignal([scoreCapDefinition])]))
+    const vector = {
+      id: "v1",
+      domain: "typescript",
+      signal_overrides: {
+        "TEST-FACTORS": {
+          factors: { "stub_kinds.throw-not-implemented.score_cap": 0.6 },
+        },
+      },
+    }
+
+    expect(computeConfigHash("TEST-FACTORS", registry, undefined)).not.toBe(
+      computeConfigHash("TEST-FACTORS", registry, vector),
     )
   })
 })

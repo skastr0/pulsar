@@ -3,6 +3,7 @@ import { Effect, Exit, Schema } from "effect"
 import { buildRegistry } from "../registry.js"
 import type { Signal } from "../signal.js"
 import {
+  factorOverridesOf,
   aiAssistedModeEnabled,
   backpressureConfigOf,
   categoryAggregationConfigOf,
@@ -23,9 +24,19 @@ type LeafConfig = typeof LeafConfig.Type
 
 const Leaf: Signal<LeafConfig, { count: number }> = {
   id: "MOCK-01",
+  aliases: ["MOCK-LEGACY"],
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
+  factorDefinitions: [
+    {
+      path: "thresholds.max_count",
+      title: "Max count",
+      valueKind: "number",
+      scoreRole: "threshold",
+      defaultValue: 10,
+    },
+  ],
   configSchema: LeafConfig,
   defaultConfig: { threshold: 10 },
   inputs: [],
@@ -153,6 +164,35 @@ describe("PulsarVector", () => {
     await Effect.runPromise(validateVectorAgainstRegistry(vector, registry))
   })
 
+  test("validateVectorAgainstRegistry rejects unknown factor override paths", async () => {
+    const registry = await Effect.runPromise(buildRegistry([Leaf]))
+    const vector = {
+      id: "v1",
+      domain: "typescript",
+      signal_overrides: { "MOCK-01": { factors: { "thresholds.missing": 50 } } },
+    }
+
+    const exit = await Effect.runPromiseExit(validateVectorAgainstRegistry(vector, registry))
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) {
+      const err = exit.cause._tag === "Fail" ? exit.cause.error : null
+      expect((err as any)?._tag).toBe("UnknownSignalFactorError")
+      expect((err as any)?.signalId).toBe("MOCK-01")
+      expect((err as any)?.factorPath).toBe("thresholds.missing")
+    }
+  })
+
+  test("validateVectorAgainstRegistry accepts known factor overrides through aliases", async () => {
+    const registry = await Effect.runPromise(buildRegistry([Leaf]))
+    const vector = {
+      id: "v1",
+      domain: "typescript",
+      signal_overrides: { "MOCK-LEGACY": { factors: { "thresholds.max_count": 50 } } },
+    }
+
+    await Effect.runPromise(validateVectorAgainstRegistry(vector, registry))
+  })
+
   test("resolvedConfig merges overrides into defaultConfig", () => {
     const vector = {
       id: "v1",
@@ -216,6 +256,16 @@ describe("PulsarVector", () => {
     }
 
     expect(weightOf(signal, vector)).toBe(1.3)
+  })
+
+  test("factorOverridesOf returns factor overrides through aliases", () => {
+    const vector = {
+      id: "v1",
+      domain: "typescript",
+      signal_overrides: { "MOCK-LEGACY": { factors: { "thresholds.max_count": 50 } } },
+    }
+
+    expect(factorOverridesOf(Leaf, vector)).toEqual({ "thresholds.max_count": 50 })
   })
 
   test("reviewThresholdOf falls back to defaults when unspecified", () => {

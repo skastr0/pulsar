@@ -37,6 +37,14 @@ export class UnknownSignalIdError extends Schema.TaggedError<UnknownSignalIdErro
   { id: Schema.String },
 ) {}
 
+export class UnknownSignalFactorError extends Schema.TaggedError<UnknownSignalFactorError>()(
+  "UnknownSignalFactorError",
+  {
+    signalId: Schema.String,
+    factorPath: Schema.String,
+  },
+) {}
+
 export class ConfigValidationError extends Schema.TaggedError<ConfigValidationError>()(
   "ConfigValidationError",
   {
@@ -124,6 +132,7 @@ export type RegistryError =
 
 export type SignalError =
   | UnknownSignalIdError
+  | UnknownSignalFactorError
   | ConfigValidationError
   | ReferenceDataMissingError
   | SignalComputeError

@@ -4,6 +4,7 @@ import type {
   SignalFactorLedgerEntry,
   SignalFactorValue,
 } from "./signal.js"
+import type { SignalFactorOverrideMap } from "./vector.js"
 
 const FACTOR_PATH_PATTERN = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/
 
@@ -72,3 +73,23 @@ export const makeFactorLedger = (
   signalId,
   entries: [...entries].sort((left, right) => left.path.localeCompare(right.path)),
 })
+
+export const applyFactorOverrides = (
+  entries: ReadonlyArray<SignalFactorLedgerEntry>,
+  overrides: SignalFactorOverrideMap,
+): ReadonlyArray<SignalFactorLedgerEntry> =>
+  entries.map((entry) => {
+    if (!Object.hasOwn(overrides, entry.path)) return entry
+    return {
+      ...entry,
+      value: overrides[entry.path] ?? null,
+      source: "vector",
+    }
+  })
+
+export const overriddenFactorValue = <Value extends SignalFactorValue>(
+  path: string,
+  defaultValue: Value,
+  overrides: SignalFactorOverrideMap,
+): Value | SignalFactorValue =>
+  Object.hasOwn(overrides, path) ? (overrides[path] ?? null) : defaultValue

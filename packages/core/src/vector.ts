@@ -1,14 +1,16 @@
 import { Effect, Schema } from "effect"
 import type { Registry } from "./registry.js"
-import type { SignalIdentity } from "./signal.js"
-import { UnknownSignalIdError } from "./errors.js"
+import type { SignalFactorValue, SignalIdentity } from "./signal.js"
+import { UnknownSignalFactorError, UnknownSignalIdError } from "./errors.js"
 
 export const SignalOverride = Schema.Struct({
   active: Schema.optional(Schema.Boolean),
   weight: Schema.optional(Schema.Number.pipe(Schema.between(0, 2))),
   config: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.Unknown })),
+  factors: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.Unknown })),
 })
 export type SignalOverride = typeof SignalOverride.Type
+export type SignalFactorOverrideMap = Readonly<Record<string, SignalFactorValue>>
 
 export const ReviewRoutingConfig = Schema.Struct({
   score_thresholds: Schema.optionalWith(
@@ -238,10 +240,21 @@ export const decodePulsarVector = Schema.decodeUnknown(PulsarVector)
 export const validateVectorAgainstRegistry = (
   vector: PulsarVector,
   registry: Registry,
-): Effect.Effect<void, UnknownSignalIdError> =>
+): Effect.Effect<void, UnknownSignalIdError | UnknownSignalFactorError> =>
   Effect.gen(function* () {
     for (const id of Object.keys(vector.signal_overrides)) {
-      if (!registry.has(id)) return yield* new UnknownSignalIdError({ id })
+      const signal = registry.byId.get(id)
+      if (signal === undefined) return yield* new UnknownSignalIdError({ id })
+
+      const factorPaths = new Set((signal.factorDefinitions ?? []).map((factor) => factor.path))
+      for (const factorPath of Object.keys(vector.signal_overrides[id]?.factors ?? {})) {
+        if (!factorPaths.has(factorPath)) {
+          return yield* new UnknownSignalFactorError({
+            signalId: signal.id,
+            factorPath,
+          })
+        }
+      }
     }
   })
 
@@ -289,6 +302,14 @@ export const signalOverrideOf = (
     if (override !== undefined) return override
   }
   return undefined
+}
+
+export const factorOverridesOf = (
+  signal: string | SignalIdentity,
+  vector: PulsarVector | undefined,
+): SignalFactorOverrideMap => {
+  const factors = signalOverrideOf(signal, vector)?.factors
+  return factors === undefined ? {} : (factors as SignalFactorOverrideMap)
 }
 
 const signalIdsForOverrideLookup = (

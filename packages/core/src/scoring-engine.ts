@@ -41,6 +41,7 @@ import { runSignal, type SignalRunResult } from "./runner.js"
 import { type TimeSeriesWriter } from "./time-series.js"
 import {
   categoryAggregationConfigOf,
+  factorOverridesOf,
   isActive as vectorIsActive,
   readinessConfigOf,
   resolvedConfig as vectorResolvedConfig,
@@ -409,11 +410,13 @@ export const computeConfigHash = (
     readonly cacheVersion: string | null
     readonly config: unknown
     readonly factorDefinitions: unknown
+    readonly factorOverrides: unknown
     readonly calibrationFingerprint?: string
   } = {
     cacheVersion: signal?.cacheVersion ?? null,
     config: config ?? null,
     factorDefinitions: signal?.factorDefinitions ?? [],
+    factorOverrides: signal === undefined ? {} : factorOverridesOf(signal, vector),
   }
   const hash = createHash("sha256")
   if (calibrationFingerprint !== undefined) {
@@ -463,6 +466,7 @@ export const computeObserverConfigHash = (
         cacheVersion: signal.cacheVersion ?? null,
         enforcement: signal.enforcement,
         factorDefinitions: signal.factorDefinitions ?? [],
+        factorOverrides: factorOverridesOf(signal, vector),
         kind: signal.kind,
         normalizationGroup: signal.normalizationGroup ?? null,
         tier: signal.tier,
