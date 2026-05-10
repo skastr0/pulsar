@@ -40,7 +40,9 @@ export interface RsAd03Output {
 }
 
 export const RsAd03: Signal<RsAd03Config, RsAd03Output, RustProjectTag> = {
-  id: "RS-AD-03",
+  id: "RS-AD-03-circular-crate-dependencies",
+  title: "Circular crate dependencies",
+  aliases: ["RS-AD-03"],
   tier: 1,
   category: "architectural-drift",
   kind: "structural",
@@ -98,7 +100,7 @@ export const RsAd03: Signal<RsAd03Config, RsAd03Output, RustProjectTag> = {
           }
         },
         catch: (cause) =>
-          new SignalComputeError({ signalId: "RS-AD-03", message: String(cause), cause }),
+          new SignalComputeError({ signalId: "RS-AD-03-circular-crate-dependencies", message: String(cause), cause }),
       })
     }),
   score: (out) => {

@@ -36,7 +36,9 @@ export interface RsDe04Output {
 }
 
 export const RsDe04: Signal<RsDe04Config, RsDe04Output, RustProjectTag> = {
-  id: "RS-DE-04",
+  id: "RS-DE-04-fan-in-fan-out",
+  title: "Fan-in/fan-out",
+  aliases: ["RS-DE-04"],
   tier: 1,
   category: "dependency-entropy",
   kind: "structural",
@@ -108,7 +110,7 @@ export const RsDe04: Signal<RsDe04Config, RsDe04Output, RustProjectTag> = {
           }
         },
         catch: (cause) =>
-          new SignalComputeError({ signalId: "RS-DE-04", message: String(cause), cause }),
+          new SignalComputeError({ signalId: "RS-DE-04-fan-in-fan-out", message: String(cause), cause }),
       })
     }),
   score: (out) => {

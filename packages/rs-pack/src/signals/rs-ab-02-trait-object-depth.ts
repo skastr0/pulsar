@@ -40,7 +40,9 @@ export interface RsAb02Output {
 }
 
 export const RsAb02: Signal<RsAb02Config, RsAb02Output, RustProjectTag> = {
-  id: "RS-AB-02",
+  id: "RS-AB-02-trait-object-depth",
+  title: "Trait object depth",
+  aliases: ["RS-AB-02"],
   tier: 1,
   category: "abstraction-bloat",
   kind: "legibility",
@@ -114,7 +116,7 @@ export const RsAb02: Signal<RsAb02Config, RsAb02Output, RustProjectTag> = {
           }
         },
         catch: (cause) =>
-          new SignalComputeError({ signalId: "RS-AB-02", message: String(cause), cause }),
+          new SignalComputeError({ signalId: "RS-AB-02-trait-object-depth", message: String(cause), cause }),
       })
     }),
   score: (out) => {

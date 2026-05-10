@@ -36,7 +36,9 @@ export interface RsSl03Output {
 }
 
 export const RsSl03: Signal<RsSl03Config, RsSl03Output, RustProjectTag> = {
-  id: "RS-SL-03",
+  id: "RS-SL-03-unwrap-expect",
+  title: "Unwrap/expect usage",
+  aliases: ["RS-SL-03"],
   tier: 1,
   category: "generated-slop",
   kind: "legibility",
@@ -93,7 +95,7 @@ export const RsSl03: Signal<RsSl03Config, RsSl03Output, RustProjectTag> = {
           }
         },
         catch: (cause) =>
-          new SignalComputeError({ signalId: "RS-SL-03", message: String(cause), cause }),
+          new SignalComputeError({ signalId: "RS-SL-03-unwrap-expect", message: String(cause), cause }),
       })
     }),
   score: (out) => {

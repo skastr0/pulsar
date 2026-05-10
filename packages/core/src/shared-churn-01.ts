@@ -31,7 +31,9 @@ export interface SharedChurn01Output {
  * and Rust sources.
  */
 export const SharedChurn01: Signal<SharedChurn01Config, SharedChurn01Output, SignalContextTag> = {
-  id: "SHARED-CHURN-01",
+  id: "SHARED-CHURN-01-recent-churn",
+  title: "Recent churn",
+  aliases: ["SHARED-CHURN-01"],
   tier: 1,
   category: "review-pain",
   kind: "legibility",
@@ -59,7 +61,7 @@ export const SharedChurn01: Signal<SharedChurn01Config, SharedChurn01Output, Sig
         },
         catch: (cause) =>
           new SignalComputeError({
-            signalId: "SHARED-CHURN-01",
+            signalId: "SHARED-CHURN-01-recent-churn",
             message: `git log for HEAD date failed: ${String(cause)}`,
             cause,
           }),
@@ -90,7 +92,7 @@ export const SharedChurn01: Signal<SharedChurn01Config, SharedChurn01Output, Sig
         },
         catch: (cause) =>
           new SignalComputeError({
-            signalId: "SHARED-CHURN-01",
+            signalId: "SHARED-CHURN-01-recent-churn",
             message: `git log failed: ${String(cause)}`,
             cause,
           }),

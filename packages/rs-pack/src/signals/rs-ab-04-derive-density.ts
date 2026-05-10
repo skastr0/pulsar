@@ -52,7 +52,9 @@ const STANDARD_DERIVES = new Set([
 ])
 
 export const RsAb04: Signal<RsAb04Config, RsAb04Output, RustProjectTag> = {
-  id: "RS-AB-04",
+  id: "RS-AB-04-derive-density",
+  title: "Derive density",
+  aliases: ["RS-AB-04"],
   tier: 1,
   category: "abstraction-bloat",
   kind: "legibility",
@@ -97,7 +99,7 @@ export const RsAb04: Signal<RsAb04Config, RsAb04Output, RustProjectTag> = {
           }
         },
         catch: (cause) =>
-          new SignalComputeError({ signalId: "RS-AB-04", message: String(cause), cause }),
+          new SignalComputeError({ signalId: "RS-AB-04-derive-density", message: String(cause), cause }),
       })
     }),
   score: (out) => {

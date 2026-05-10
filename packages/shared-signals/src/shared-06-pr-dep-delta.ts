@@ -41,7 +41,9 @@ export interface Shared06PrDepDeltaOutput {
 }
 
 export const Shared06PrDepDelta: Signal<Shared06PrDepDeltaConfig, Shared06PrDepDeltaOutput> = {
-  id: "SHARED-06",
+  id: "SHARED-06-pr-dependency-delta",
+  title: "PR dependency delta",
+  aliases: ["SHARED-06"],
   tier: 1.5,
   category: "review-pain",
   kind: "compound",
@@ -50,11 +52,16 @@ export const Shared06PrDepDelta: Signal<Shared06PrDepDeltaConfig, Shared06PrDepD
   defaultConfig: {
     top_n_diagnostics: 10,
   },
-  inputs: [{ id: "TS-RP-02", optional: true }, { id: "RS-RP-03", optional: true }],
+  inputs: [
+    { id: "TS-RP-02-pr-size", optional: true },
+    { id: "RS-RP-03-pr-size", optional: true },
+  ],
   compute: (_config, inputs) =>
     Effect.sync(() => {
-      const ts = inputs.get("TS-RP-02") as TsPrDeltaLike | undefined
-      const rs = inputs.get("RS-RP-03") as RsPrDeltaLike | undefined
+      const ts = (inputs.get("TS-RP-02-pr-size") ??
+        inputs.get("TS-RP-02")) as TsPrDeltaLike | undefined
+      const rs = (inputs.get("RS-RP-03-pr-size") ??
+        inputs.get("RS-RP-03")) as RsPrDeltaLike | undefined
       const tsDependencyEdges =
         (ts?.newCrossPackageEdges.length ?? 0) + (ts?.newCrossBoundaryEdges.length ?? 0)
       const rsDependencyEdges = rs?.newCrossCrateEdges.length ?? 0

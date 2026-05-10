@@ -38,7 +38,9 @@ export interface Shared05SuppressionOutput {
 }
 
 export const Shared05Suppression: Signal<Shared05SuppressionConfig, Shared05SuppressionOutput> = {
-  id: "SHARED-05",
+  id: "SHARED-05-suppression-governance",
+  title: "Suppression governance",
+  aliases: ["SHARED-05"],
   tier: 1.5,
   category: "generated-slop",
   kind: "compound",
@@ -47,11 +49,16 @@ export const Shared05Suppression: Signal<Shared05SuppressionConfig, Shared05Supp
   defaultConfig: {
     top_n_diagnostics: 10,
   },
-  inputs: [{ id: "TS-SL-03", optional: true }, { id: "RS-SL-02", optional: true }],
+  inputs: [
+    { id: "TS-SL-03-suppressions", optional: true },
+    { id: "RS-SL-02-suppressions", optional: true },
+  ],
   compute: (_config, inputs) =>
     Effect.sync(() => {
-      const ts = inputs.get("TS-SL-03") as TsSuppressionLike | undefined
-      const rs = inputs.get("RS-SL-02") as RsSuppressionLike | undefined
+      const ts = (inputs.get("TS-SL-03-suppressions") ??
+        inputs.get("TS-SL-03")) as TsSuppressionLike | undefined
+      const rs = (inputs.get("RS-SL-02-suppressions") ??
+        inputs.get("RS-SL-02")) as RsSuppressionLike | undefined
       const rustUnjustified =
         (rs?.missingJustificationCount ?? 0) + (rs?.expiredJustificationCount ?? 0)
       const languageCount = [

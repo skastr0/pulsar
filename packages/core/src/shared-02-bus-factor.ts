@@ -55,7 +55,9 @@ export const Shared02BusFactor: Signal<
   Shared02BusFactorOutput,
   SignalContextTag
 > = {
-  id: "SHARED-02",
+  id: "SHARED-02-bus-factor",
+  title: "Bus factor",
+  aliases: ["SHARED-02"],
   tier: 1.5,
   category: "review-pain",
   kind: "legibility",
@@ -229,7 +231,7 @@ export const Shared02BusFactor: Signal<
         },
         catch: (cause) =>
           new SignalComputeError({
-            signalId: "SHARED-02",
+            signalId: "SHARED-02-bus-factor",
             message: `Failed to compute bus factor: ${String(cause)}`,
             cause,
           }),

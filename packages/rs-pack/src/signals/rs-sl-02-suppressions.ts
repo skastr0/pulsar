@@ -45,7 +45,9 @@ export interface RsSl02Output {
 }
 
 export const RsSl02: Signal<RsSl02Config, RsSl02Output, RustProjectTag | SignalContextTag> = {
-  id: "RS-SL-02",
+  id: "RS-SL-02-suppressions",
+  title: "Suppressions",
+  aliases: ["RS-SL-02"],
   tier: 1,
   category: "generated-slop",
   kind: "structural",
@@ -128,7 +130,7 @@ export const RsSl02: Signal<RsSl02Config, RsSl02Output, RustProjectTag | SignalC
           }
         },
         catch: (cause) =>
-          new SignalComputeError({ signalId: "RS-SL-02", message: String(cause), cause }),
+          new SignalComputeError({ signalId: "RS-SL-02-suppressions", message: String(cause), cause }),
       })
     }),
   score: (out) => {

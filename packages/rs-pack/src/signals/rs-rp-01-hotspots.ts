@@ -30,7 +30,9 @@ export interface RsRp01Output {
 }
 
 export const RsRp01: Signal<RsRp01Config, RsRp01Output, never> = {
-  id: "RS-RP-01",
+  id: "RS-RP-01-hotspots",
+  title: "Hotspots",
+  aliases: ["RS-RP-01"],
   tier: 1.5,
   category: "review-pain",
   kind: "compound",
@@ -40,11 +42,16 @@ export const RsRp01: Signal<RsRp01Config, RsRp01Output, never> = {
     min_churn: 2,
     min_complexity: 5,
   },
-  inputs: [{ id: "RS-LD-05" }, { id: "SHARED-CHURN-01" }],
+  inputs: [
+    { id: "RS-LD-05-cyclomatic-complexity" },
+    { id: "SHARED-CHURN-01-recent-churn" },
+  ],
   compute: (config, inputs) =>
     Effect.sync(() => {
-      const complexity = inputs.get("RS-LD-05") as RsLd05Output | undefined
-      const churn = inputs.get("SHARED-CHURN-01") as SharedChurn01Output | undefined
+      const complexity = (inputs.get("RS-LD-05-cyclomatic-complexity") ??
+        inputs.get("RS-LD-05")) as RsLd05Output | undefined
+      const churn = (inputs.get("SHARED-CHURN-01-recent-churn") ??
+        inputs.get("SHARED-CHURN-01")) as SharedChurn01Output | undefined
       if (complexity === undefined || churn === undefined) {
         return {
           hotspots: [],

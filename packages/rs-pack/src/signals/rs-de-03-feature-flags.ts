@@ -41,7 +41,9 @@ export interface RsDe03Output {
 }
 
 export const RsDe03: Signal<RsDe03Config, RsDe03Output, RustProjectTag> = {
-  id: "RS-DE-03",
+  id: "RS-DE-03-feature-flags",
+  title: "Feature flag complexity",
+  aliases: ["RS-DE-03"],
   tier: 1,
   category: "dependency-entropy",
   kind: "structural",
@@ -123,7 +125,7 @@ export const RsDe03: Signal<RsDe03Config, RsDe03Output, RustProjectTag> = {
           }
         },
         catch: (cause) =>
-          new SignalComputeError({ signalId: "RS-DE-03", message: String(cause), cause }),
+          new SignalComputeError({ signalId: "RS-DE-03-feature-flags", message: String(cause), cause }),
       })
     }),
   score: (out) => {

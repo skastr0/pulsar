@@ -34,7 +34,9 @@ export interface RsLd05Output {
 }
 
 export const RsLd05: Signal<RsLd05Config, RsLd05Output, RustProjectTag> = {
-  id: "RS-LD-05",
+  id: "RS-LD-05-cyclomatic-complexity",
+  title: "Cyclomatic complexity",
+  aliases: ["RS-LD-05"],
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
@@ -82,7 +84,7 @@ export const RsLd05: Signal<RsLd05Config, RsLd05Output, RustProjectTag> = {
           }
         },
         catch: (cause) =>
-          new SignalComputeError({ signalId: "RS-LD-05", message: String(cause), cause }),
+          new SignalComputeError({ signalId: "RS-LD-05-cyclomatic-complexity", message: String(cause), cause }),
       })
     }),
   score: (out) => {

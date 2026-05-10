@@ -31,7 +31,9 @@ export interface RsLd04Output {
 }
 
 export const RsLd04: Signal<RsLd04Config, RsLd04Output, RustProjectTag> = {
-  id: "RS-LD-04",
+  id: "RS-LD-04-error-granularity",
+  title: "Error granularity",
+  aliases: ["RS-LD-04"],
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
@@ -69,7 +71,7 @@ export const RsLd04: Signal<RsLd04Config, RsLd04Output, RustProjectTag> = {
           }
         },
         catch: (cause) =>
-          new SignalComputeError({ signalId: "RS-LD-04", message: String(cause), cause }),
+          new SignalComputeError({ signalId: "RS-LD-04-error-granularity", message: String(cause), cause }),
       })
     }),
   score: (out) => {

@@ -50,7 +50,9 @@ export const Shared03ChurnRate: Signal<
   Shared03ChurnRateOutput,
   SignalContextTag
 > = {
-  id: "SHARED-03",
+  id: "SHARED-03-churn-rate",
+  title: "Churn rate",
+  aliases: ["SHARED-03"],
   tier: 1.5,
   category: "review-pain",
   kind: "legibility",
@@ -260,7 +262,7 @@ export const Shared03ChurnRate: Signal<
         },
         catch: (cause) =>
           new SignalComputeError({
-            signalId: "SHARED-03",
+            signalId: "SHARED-03-churn-rate",
             message: `Failed to compute churn rate: ${String(cause)}`,
             cause,
           }),

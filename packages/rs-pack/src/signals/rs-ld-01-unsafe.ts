@@ -34,7 +34,9 @@ export interface RsLd01Output {
 }
 
 export const RsLd01: Signal<RsLd01Config, RsLd01Output, RustProjectTag> = {
-  id: "RS-LD-01",
+  id: "RS-LD-01-unsafe-code",
+  title: "Unsafe code",
+  aliases: ["RS-LD-01"],
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
@@ -102,7 +104,7 @@ export const RsLd01: Signal<RsLd01Config, RsLd01Output, RustProjectTag> = {
           }
         },
         catch: (cause) =>
-          new SignalComputeError({ signalId: "RS-LD-01", message: String(cause), cause }),
+          new SignalComputeError({ signalId: "RS-LD-01-unsafe-code", message: String(cause), cause }),
       })
     }),
   score: (out) => {

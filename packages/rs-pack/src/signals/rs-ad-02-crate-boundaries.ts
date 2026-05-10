@@ -52,7 +52,9 @@ export interface RsAd02Output {
 }
 
 export const RsAd02: Signal<RsAd02Config, RsAd02Output, RustProjectTag | ReferenceDataTag> = {
-  id: "RS-AD-02",
+  id: "RS-AD-02-crate-boundaries",
+  title: "Crate boundary violations",
+  aliases: ["RS-AD-02"],
   tier: 2,
   category: "architectural-drift",
   kind: "structural",
@@ -169,7 +171,7 @@ export const RsAd02: Signal<RsAd02Config, RsAd02Output, RustProjectTag | Referen
           }
         },
         catch: (cause) =>
-          new SignalComputeError({ signalId: "RS-AD-02", message: String(cause), cause }),
+          new SignalComputeError({ signalId: "RS-AD-02-crate-boundaries", message: String(cause), cause }),
       })
     }),
   score: (out) => {

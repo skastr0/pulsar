@@ -67,7 +67,9 @@ export interface RsDe01Output {
 }
 
 export const RsDe01: Signal<RsDe01Config, RsDe01Output, RustProjectTag> = {
-  id: "RS-DE-01",
+  id: "RS-DE-01-trait-coupling",
+  title: "Trait coupling",
+  aliases: ["RS-DE-01"],
   tier: 1,
   category: "dependency-entropy",
   kind: "structural",
@@ -199,7 +201,7 @@ export const RsDe01: Signal<RsDe01Config, RsDe01Output, RustProjectTag> = {
           }
         },
         catch: (cause) =>
-          new SignalComputeError({ signalId: "RS-DE-01", message: String(cause), cause }),
+          new SignalComputeError({ signalId: "RS-DE-01-trait-coupling", message: String(cause), cause }),
       })
     }),
   score: (out) => {

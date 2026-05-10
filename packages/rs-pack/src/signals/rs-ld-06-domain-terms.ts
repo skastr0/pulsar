@@ -50,7 +50,9 @@ interface GlossaryEntry {
 }
 
 export const RsLd06: Signal<RsLd06Config, RsLd06Output, RustProjectTag | ReferenceDataTag> = {
-  id: "RS-LD-06",
+  id: "RS-LD-06-domain-term-consistency",
+  title: "Domain term consistency",
+  aliases: ["RS-LD-06"],
   tier: 2,
   category: "legibility-decay",
   kind: "legibility",
@@ -99,7 +101,7 @@ export const RsLd06: Signal<RsLd06Config, RsLd06Output, RustProjectTag | Referen
           }
         },
         catch: (cause) =>
-          new SignalComputeError({ signalId: "RS-LD-06", message: String(cause), cause }),
+          new SignalComputeError({ signalId: "RS-LD-06-domain-term-consistency", message: String(cause), cause }),
       })
     }),
   score: (out) => {

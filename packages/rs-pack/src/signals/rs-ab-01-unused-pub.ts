@@ -40,7 +40,9 @@ export interface RsAb01Output {
 }
 
 export const RsAb01: Signal<RsAb01Config, RsAb01Output, RustProjectTag> = {
-  id: "RS-AB-01",
+  id: "RS-AB-01-unused-public-items",
+  title: "Unused public items",
+  aliases: ["RS-AB-01"],
   tier: 1,
   category: "abstraction-bloat",
   kind: "structural",
@@ -168,7 +170,7 @@ export const RsAb01: Signal<RsAb01Config, RsAb01Output, RustProjectTag> = {
           }
         },
         catch: (cause) =>
-          new SignalComputeError({ signalId: "RS-AB-01", message: String(cause), cause }),
+          new SignalComputeError({ signalId: "RS-AB-01-unused-public-items", message: String(cause), cause }),
       })
     }),
   score: (out) => {

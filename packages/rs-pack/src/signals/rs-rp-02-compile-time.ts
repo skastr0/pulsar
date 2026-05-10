@@ -46,7 +46,9 @@ export interface RsRp02Output {
 }
 
 export const RsRp02: Signal<RsRp02Config, RsRp02Output, RustProjectTag> = {
-  id: "RS-RP-02",
+  id: "RS-RP-02-compile-time",
+  title: "Compile time",
+  aliases: ["RS-RP-02"],
   tier: 1,
   category: "review-pain",
   kind: "structural",
@@ -98,7 +100,7 @@ export const RsRp02: Signal<RsRp02Config, RsRp02Output, RustProjectTag> = {
           }
         },
         catch: (cause) =>
-          new SignalComputeError({ signalId: "RS-RP-02", message: String(cause), cause }),
+          new SignalComputeError({ signalId: "RS-RP-02-compile-time", message: String(cause), cause }),
       })
     }),
   score: (out) => {

@@ -36,7 +36,9 @@ export interface RsSl04Output {
 }
 
 export const RsSl04: Signal<RsSl04Config, RsSl04Output, RustProjectTag> = {
-  id: "RS-SL-04",
+  id: "RS-SL-04-clone-abuse",
+  title: "Clone abuse",
+  aliases: ["RS-SL-04"],
   tier: 1,
   category: "generated-slop",
   kind: "legibility",
@@ -104,7 +106,7 @@ export const RsSl04: Signal<RsSl04Config, RsSl04Output, RustProjectTag> = {
           }
         },
         catch: (cause) =>
-          new SignalComputeError({ signalId: "RS-SL-04", message: String(cause), cause }),
+          new SignalComputeError({ signalId: "RS-SL-04-clone-abuse", message: String(cause), cause }),
       })
     }),
   score: (out) => {

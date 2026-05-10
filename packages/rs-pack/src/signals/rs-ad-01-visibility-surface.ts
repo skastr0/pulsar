@@ -37,7 +37,9 @@ export interface RsAd01Output {
 }
 
 export const RsAd01: Signal<RsAd01Config, RsAd01Output, RustProjectTag> = {
-  id: "RS-AD-01",
+  id: "RS-AD-01-visibility-surface",
+  title: "Visibility surface",
+  aliases: ["RS-AD-01"],
   tier: 1,
   category: "architectural-drift",
   kind: "structural",
@@ -130,7 +132,7 @@ export const RsAd01: Signal<RsAd01Config, RsAd01Output, RustProjectTag> = {
         },
         catch: (cause) =>
           new SignalComputeError({
-            signalId: "RS-AD-01",
+            signalId: "RS-AD-01-visibility-surface",
             message: String(cause),
             cause,
           }),

@@ -32,7 +32,9 @@ export interface RsRp03Output {
 }
 
 export const RsRp03: Signal<RsRp03Config, RsRp03Output, RustProjectTag | SignalContextTag> = {
-  id: "RS-RP-03",
+  id: "RS-RP-03-pr-size",
+  title: "PR size",
+  aliases: ["RS-RP-03"],
   tier: 1,
   category: "review-pain",
   kind: "structural",
@@ -69,7 +71,7 @@ export const RsRp03: Signal<RsRp03Config, RsRp03Output, RustProjectTag | SignalC
           }
         },
         catch: (cause) =>
-          new SignalComputeError({ signalId: "RS-RP-03", message: String(cause), cause }),
+          new SignalComputeError({ signalId: "RS-RP-03-pr-size", message: String(cause), cause }),
       })
     }),
   score: (out) => {

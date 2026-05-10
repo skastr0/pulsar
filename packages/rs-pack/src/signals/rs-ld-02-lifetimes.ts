@@ -38,7 +38,9 @@ export interface RsLd02Output {
 }
 
 export const RsLd02: Signal<RsLd02Config, RsLd02Output, RustProjectTag> = {
-  id: "RS-LD-02",
+  id: "RS-LD-02-lifetime-complexity",
+  title: "Lifetime complexity",
+  aliases: ["RS-LD-02"],
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
@@ -98,7 +100,7 @@ export const RsLd02: Signal<RsLd02Config, RsLd02Output, RustProjectTag> = {
           }
         },
         catch: (cause) =>
-          new SignalComputeError({ signalId: "RS-LD-02", message: String(cause), cause }),
+          new SignalComputeError({ signalId: "RS-LD-02-lifetime-complexity", message: String(cause), cause }),
       })
     }),
   score: (out) => {

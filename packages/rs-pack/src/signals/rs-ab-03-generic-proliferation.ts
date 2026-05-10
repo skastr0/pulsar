@@ -45,7 +45,9 @@ export interface RsAb03Output {
 }
 
 export const RsAb03: Signal<RsAb03Config, RsAb03Output, RustProjectTag> = {
-  id: "RS-AB-03",
+  id: "RS-AB-03-generic-proliferation",
+  title: "Generic proliferation",
+  aliases: ["RS-AB-03"],
   tier: 1,
   category: "abstraction-bloat",
   kind: "legibility",
@@ -99,7 +101,7 @@ export const RsAb03: Signal<RsAb03Config, RsAb03Output, RustProjectTag> = {
           }
         },
         catch: (cause) =>
-          new SignalComputeError({ signalId: "RS-AB-03", message: String(cause), cause }),
+          new SignalComputeError({ signalId: "RS-AB-03-generic-proliferation", message: String(cause), cause }),
       })
     }),
   score: (out) => {

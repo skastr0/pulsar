@@ -32,7 +32,9 @@ export interface RsLd03Output {
 }
 
 export const RsLd03: Signal<RsLd03Config, RsLd03Output, RustProjectTag> = {
-  id: "RS-LD-03",
+  id: "RS-LD-03-match-catch-all",
+  title: "Match catch-all usage",
+  aliases: ["RS-LD-03"],
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
@@ -74,7 +76,7 @@ export const RsLd03: Signal<RsLd03Config, RsLd03Output, RustProjectTag> = {
           }
         },
         catch: (cause) =>
-          new SignalComputeError({ signalId: "RS-LD-03", message: String(cause), cause }),
+          new SignalComputeError({ signalId: "RS-LD-03-match-catch-all", message: String(cause), cause }),
       })
     }),
   score: (out) => {

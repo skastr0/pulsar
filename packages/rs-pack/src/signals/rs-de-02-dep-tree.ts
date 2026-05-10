@@ -38,7 +38,9 @@ export interface RsDe02Output {
 }
 
 export const RsDe02: Signal<RsDe02Config, RsDe02Output, RustProjectTag> = {
-  id: "RS-DE-02",
+  id: "RS-DE-02-dependency-tree",
+  title: "Dependency tree",
+  aliases: ["RS-DE-02"],
   tier: 1,
   category: "dependency-entropy",
   kind: "structural",
@@ -107,7 +109,7 @@ export const RsDe02: Signal<RsDe02Config, RsDe02Output, RustProjectTag> = {
           }
         },
         catch: (cause) =>
-          new SignalComputeError({ signalId: "RS-DE-02", message: String(cause), cause }),
+          new SignalComputeError({ signalId: "RS-DE-02-dependency-tree", message: String(cause), cause }),
       })
     }),
   score: (out) => {
