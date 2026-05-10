@@ -326,6 +326,27 @@ const ObserverCalibrationSnapshot = Schema.Struct({
   ),
 })
 
+const SignalFactorLedgerEntrySnapshot = Schema.Struct({
+  path: Schema.String,
+  value: Schema.Unknown,
+  source: Schema.Literal("signal-default", "computed", "vector", "module"),
+  affectsScore: Schema.Boolean,
+  title: Schema.optional(Schema.String),
+  scoreRole: Schema.optional(
+    Schema.Literal(
+      "evidence",
+      "threshold",
+      "penalty",
+      "weight",
+      "confidence",
+      "score-cap",
+      "metadata",
+    ),
+  ),
+  attribution: Schema.optional(Schema.Unknown),
+  mutations: Schema.optional(Schema.Array(Schema.Unknown)),
+})
+
 export const ObserverOutput = Schema.Struct({
   observer_semantics: Schema.optional(Schema.Literal(OBSERVER_OUTPUT_SEMANTICS)),
   categories: ObserverCategories,
@@ -339,6 +360,9 @@ export const ObserverOutput = Schema.Struct({
   ),
   runtime_profile: Schema.optional(ObserverRuntimeProfileSnapshot),
   calibration: Schema.optional(ObserverCalibrationSnapshot),
+  signal_factors: Schema.optional(
+    Schema.Record({ key: Schema.String, value: Schema.Array(SignalFactorLedgerEntrySnapshot) }),
+  ),
 })
 
 type ObserverOutputPublic = typeof ObserverOutput.Type
@@ -411,7 +435,21 @@ export const toObserverJson = (output: ObserverOutput): ObserverOutputPublic => 
         },
       }
     : {}),
+  ...(signalFactorsJson(output).length > 0
+    ? { signal_factors: Object.fromEntries(signalFactorsJson(output)) }
+    : {}),
 })
+
+const signalFactorsJson = (
+  output: ObserverOutput,
+): ReadonlyArray<readonly [string, ReadonlyArray<typeof SignalFactorLedgerEntrySnapshot.Type>]> =>
+  [...output.signalResults.entries()]
+    .flatMap(([signalId, result]) =>
+      result.factorLedger === undefined
+        ? []
+        : [[signalId, result.factorLedger.entries] as const],
+    )
+    .sort(([left], [right]) => left.localeCompare(right))
 
 const toObserverCategorySnapshot = (
   category: CategoryOutput,

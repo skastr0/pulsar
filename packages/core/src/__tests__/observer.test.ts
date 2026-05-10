@@ -13,7 +13,7 @@ import {
   SignalComputeError,
   type SignalError,
 } from "../errors.js"
-import type { AnySignal, Signal, SignalApplicability } from "../signal.js"
+import type { AnySignal, Signal, SignalApplicability, SignalFactorLedger } from "../signal.js"
 
 /**
  * Tiny leaf-signal factory. Every test builds its own tree of signals
@@ -34,6 +34,7 @@ interface LeafOpts {
     readonly stale?: boolean
     readonly applicability?: SignalApplicability
   }
+  readonly factorLedger?: SignalFactorLedger
 }
 
 const makeLeaf = (opts: LeafOpts): Signal<{}, { readonly n: number }, never> => ({
@@ -57,6 +58,11 @@ const makeLeaf = (opts: LeafOpts): Signal<{}, { readonly n: number }, never> => 
   },
   score: () => opts.score,
   diagnose: () => opts.diagnostics ?? [],
+  ...(opts.factorLedger !== undefined
+    ? {
+        factorLedger: () => opts.factorLedger,
+      }
+    : {}),
   ...(opts.metadata !== undefined
     ? {
         outputMetadata: () => opts.metadata,
@@ -819,6 +825,39 @@ describe("Observer — JSON output shape (AC-10)", () => {
       source: "repo-local",
       source_ref: ".pulsar/modules/local.mjs",
       source_fingerprint: "sha256:local",
+    })
+  })
+
+  test("public JSON includes signal factor ledger entries", async () => {
+    const a = makeLeaf({
+      id: "TEST-A",
+      category: "generated-slop",
+      score: 0.8,
+      factorLedger: {
+        signalId: "TEST-A",
+        entries: [
+          {
+            path: "stub_kinds.throw-not-implemented.score_cap",
+            value: 0.8,
+            source: "computed",
+            affectsScore: true,
+            scoreRole: "score-cap",
+            title: "Throw-not-implemented score cap",
+          },
+        ],
+      },
+    })
+
+    const result = await run([a])
+    const publicJson = toObserverJson(result)
+    const decoded = Schema.decodeUnknownSync(ObserverOutputSchema)(publicJson)
+
+    expect(decoded.signal_factors?.["TEST-A"]?.[0]).toMatchObject({
+      path: "stub_kinds.throw-not-implemented.score_cap",
+      value: 0.8,
+      source: "computed",
+      affectsScore: true,
+      scoreRole: "score-cap",
     })
   })
 

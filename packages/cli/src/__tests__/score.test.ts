@@ -1082,6 +1082,29 @@ export function stubF() { throw new Error("Not implemented") }
     }
   }, 120_000)
 
+  test("single-signal mode summarizes score-bearing factor audit details", async () => {
+    const repoPath = await initRepo([
+      {
+        path: "src/auth.ts",
+        content: "export function authenticate() { throw new Error('Not implemented') }\n",
+      },
+    ])
+    try {
+      const out = runCli(repoPath, [
+        "score",
+        "--signal",
+        "TS-SL-04-unfinished-implementations",
+        ".",
+      ])
+      expect(out.status).toBe(0)
+      expect(out.stdout).toContain("Factor Audit")
+      expect(out.stdout).toContain("stub_kinds.throw-not-implemented.score_cap=0.8")
+      expect(out.stdout).toContain("score-cap")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
   test("invalid single-signal option combinations print clean CLI errors", async () => {
     const repoPath = await initRepo(simpleRepoFiles())
     try {

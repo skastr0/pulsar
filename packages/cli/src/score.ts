@@ -13,6 +13,8 @@ import {
   type ObserverOutput,
   type Registry,
   type PulsarVector,
+  type SignalFactorLedger,
+  type SignalFactorLedgerEntry,
 } from "@skastr0/pulsar-core"
 import { Effect } from "effect"
 import { isAbsolute, relative } from "node:path"
@@ -315,6 +317,7 @@ const runSingleSignalMode = (opts: ScoreOptions) =>
       result.score,
       result.diagnostics,
       result.output,
+      result.factorLedger,
       repoRoot,
       gitSha,
       vectorSelection.sourceLabel,
@@ -809,6 +812,7 @@ const printSignalResult = (
   score: number,
   diagnostics: ReadonlyArray<Diagnostic>,
   output: unknown,
+  factorLedger: SignalFactorLedger | undefined,
   repoPath: string,
   sha: string,
   vectorSourceLabel: string,
@@ -854,7 +858,58 @@ const printSignalResult = (
       }
     }
   }
+  printFactorAudit(factorLedger)
   console.log("")
+}
+
+const printFactorAudit = (factorLedger: SignalFactorLedger | undefined): void => {
+  if (factorLedger === undefined) return
+  const scoreBearing = factorLedger.entries.filter((entry) => entry.affectsScore)
+  if (scoreBearing.length === 0) return
+
+  console.log("")
+  console.log(`  Factor Audit (${scoreBearing.length} score-bearing):`)
+  for (const entry of topFactorEntries(scoreBearing, 8)) {
+    const role = entry.scoreRole === undefined ? "" : ` ${entry.scoreRole}`
+    console.log(`    ${entry.source.padEnd(8, " ")} ${entry.path}=${formatFactorValue(entry.value)}${role}`)
+    const attribution = entry.attribution
+    if (attribution?.ruleId !== undefined) {
+      console.log(`      rule: ${attribution.ruleId}`)
+    }
+    for (const mutation of entry.mutations ?? []) {
+      console.log(
+        `      ${mutation.action}: ${formatFactorValue(mutation.before ?? null)} -> ${formatFactorValue(mutation.after)}${mutation.ruleId !== undefined ? ` (${mutation.ruleId})` : ""}`,
+      )
+    }
+  }
+  if (scoreBearing.length > 8) {
+    console.log(`    ... ${scoreBearing.length - 8} more score-bearing factors`)
+  }
+}
+
+const topFactorEntries = (
+  entries: ReadonlyArray<SignalFactorLedgerEntry>,
+  limit: number,
+): ReadonlyArray<SignalFactorLedgerEntry> =>
+  [...entries]
+    .sort((left, right) => factorRoleRank(left) - factorRoleRank(right) || left.path.localeCompare(right.path))
+    .slice(0, limit)
+
+const factorRoleRank = (entry: SignalFactorLedgerEntry): number => {
+  if (entry.source === "vector") return 0
+  if (entry.source === "module") return 1
+  if (entry.scoreRole === "score-cap") return 2
+  if (entry.scoreRole === "penalty") return 3
+  if (entry.scoreRole === "threshold") return 4
+  return 5
+}
+
+const formatFactorValue = (value: unknown): string => {
+  if (typeof value === "string") return JSON.stringify(value)
+  if (typeof value === "number" || typeof value === "boolean" || value === null) {
+    return String(value)
+  }
+  return JSON.stringify(value)
 }
 
 const calibrationDecisionsFromOutput = (output: unknown): ReadonlyArray<CalibrationDecision> => {
