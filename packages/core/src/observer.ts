@@ -997,7 +997,65 @@ const computeReadiness = (
   hardGateStatus: "pass" | "fail",
 ): ReadinessOutput => {
   const config = readinessConfigOf(vector)
-  const pressures: Array<ReadinessPressure> = []
+  const collected = collectReadinessPressures(registry, signalResults, vector, config)
+  const summary = summarizeReadinessPressure(collected, config, hardGateStatus)
+  return {
+    score: summary.score,
+    pressure: summary.pressure,
+    status: readinessStatus(
+      summary.pressure,
+      hardGateStatus,
+      config,
+      collected.applicableSignalCount,
+      collected.failedSignalCount,
+    ),
+    aggregation: {
+      strategy: "pressure-pnorm-local-max",
+      p: config.p_norm,
+      mean_pressure: roundScore(summary.meanPressure),
+      pnorm_pressure: roundScore(summary.pnormPressure),
+      max_local_pressure: roundScore(collected.maxLocalPressure),
+      failed_signal_pressure: roundScore(summary.failedSignalPressure),
+      hard_gate_pressure: roundScore(summary.hardGatePressure),
+      hard_gate_score_cap: config.hard_gate_score_cap,
+      local_warning_threshold: config.local_warning_threshold,
+      local_poison_threshold: config.local_poison_threshold,
+      local_warning_gain: config.local_warning_gain,
+      applicable_signal_count: collected.applicableSignalCount,
+      ignored_signal_count: collected.ignoredSignalCount,
+      failed_signal_count: collected.failedSignalCount,
+    },
+    top_pressures: topReadinessPressures(collected.pressures, config),
+  }
+}
+
+interface ReadinessPressureCollection {
+  readonly pressures: ReadonlyArray<ReadinessPressure>
+  readonly weightedPressureSum: number
+  readonly weightedPnormSum: number
+  readonly weightTotal: number
+  readonly maxLocalPressure: number
+  readonly applicableSignalCount: number
+  readonly ignoredSignalCount: number
+  readonly failedSignalCount: number
+}
+
+interface ReadinessPressureSummary {
+  readonly score: number
+  readonly pressure: number
+  readonly meanPressure: number
+  readonly pnormPressure: number
+  readonly failedSignalPressure: number
+  readonly hardGatePressure: number
+}
+
+const collectReadinessPressures = (
+  registry: Registry,
+  signalResults: ReadonlyMap<string, SignalRunResult>,
+  vector: PulsarVector | undefined,
+  config: ReadinessObserverConfig,
+): ReadinessPressureCollection => {
+  const pressures: ReadinessPressure[] = []
   let weightedPressureSum = 0
   let weightedPnormSum = 0
   let weightTotal = 0
@@ -1043,55 +1101,57 @@ const computeReadiness = (
     maxLocalPressure = Math.max(maxLocalPressure, effectivePressure)
   }
 
-  const meanPressure = weightTotal === 0 ? 0 : weightedPressureSum / weightTotal
+  return {
+    pressures,
+    weightedPressureSum,
+    weightedPnormSum,
+    weightTotal,
+    maxLocalPressure,
+    applicableSignalCount,
+    ignoredSignalCount,
+    failedSignalCount,
+  }
+}
+
+const summarizeReadinessPressure = (
+  collection: ReadinessPressureCollection,
+  config: ReadinessObserverConfig,
+  hardGateStatus: "pass" | "fail",
+): ReadinessPressureSummary => {
+  const { weightTotal } = collection
+  const meanPressure = weightTotal === 0 ? 0 : collection.weightedPressureSum / weightTotal
   const pnormPressure =
     weightTotal === 0
       ? 0
-      : Math.pow(weightedPnormSum / weightTotal, 1 / config.p_norm)
-  const localPressure = localPoisonPressure(maxLocalPressure, config)
-  const failedSignalPressure = failedSignalCount > 0 ? 1 : 0
+      : Math.pow(collection.weightedPnormSum / weightTotal, 1 / config.p_norm)
+  const localPressure = localPoisonPressure(collection.maxLocalPressure, config)
+  const failedSignalPressure = collection.failedSignalCount > 0 ? 1 : 0
   const hardGatePressure =
     hardGateStatus === "fail" ? 1 - config.hard_gate_score_cap : 0
   const pressure = roundScore(
     clamp01(Math.max(pnormPressure, localPressure, failedSignalPressure, hardGatePressure)),
   )
-  const score = roundScore(clamp01(1 - pressure))
-
   return {
-    score,
+    score: roundScore(clamp01(1 - pressure)),
     pressure,
-    status: readinessStatus(
-      pressure,
-      hardGateStatus,
-      config,
-      applicableSignalCount,
-      failedSignalCount,
-    ),
-    aggregation: {
-      strategy: "pressure-pnorm-local-max",
-      p: config.p_norm,
-      mean_pressure: roundScore(meanPressure),
-      pnorm_pressure: roundScore(pnormPressure),
-      max_local_pressure: roundScore(maxLocalPressure),
-      failed_signal_pressure: roundScore(failedSignalPressure),
-      hard_gate_pressure: roundScore(hardGatePressure),
-      hard_gate_score_cap: config.hard_gate_score_cap,
-      local_warning_threshold: config.local_warning_threshold,
-      local_poison_threshold: config.local_poison_threshold,
-      local_warning_gain: config.local_warning_gain,
-      applicable_signal_count: applicableSignalCount,
-      ignored_signal_count: ignoredSignalCount,
-      failed_signal_count: failedSignalCount,
-    },
-    top_pressures: pressures
-      .sort((left, right) =>
-        right.effective_pressure - left.effective_pressure ||
-        right.raw_pressure - left.raw_pressure ||
-        compareAscii(left.signal_id, right.signal_id),
-      )
-      .slice(0, config.top_pressures),
+    meanPressure,
+    pnormPressure,
+    failedSignalPressure,
+    hardGatePressure,
   }
 }
+
+const topReadinessPressures = (
+  pressures: ReadonlyArray<ReadinessPressure>,
+  config: ReadinessObserverConfig,
+): ReadonlyArray<ReadinessPressure> =>
+  [...pressures]
+    .sort((left, right) =>
+      right.effective_pressure - left.effective_pressure ||
+      right.raw_pressure - left.raw_pressure ||
+      compareAscii(left.signal_id, right.signal_id),
+    )
+    .slice(0, config.top_pressures)
 
 const confidenceForSignal = (
   signal: ResolvedSignal,
