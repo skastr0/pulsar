@@ -1,4 +1,4 @@
-import { CATEGORIES, type Category } from "./category.js"
+import { CATEGORIES, type Category, categoryRecord } from "./category.js"
 import { evaluateGoodhart, type GoodhartAssessment } from "./goodhart.js"
 import { type TimeSeriesEntry } from "./time-series.js"
 import { backpressureConfigOf, type BackpressureConfig, type PulsarVector } from "./vector.js"
@@ -97,12 +97,9 @@ const evaluateCategoryBackpressure = (
   windowEntries: ReadonlyArray<TimeSeriesEntry>,
   config: BackpressureConfig,
 ): Record<Category, CategoryBackpressure> =>
-  Object.fromEntries(
-    CATEGORIES.map((category) => [
-      category,
-      evaluateOneCategoryBackpressure(latest, windowEntries, category, config),
-    ]),
-  ) as Record<Category, CategoryBackpressure>
+  categoryRecord((category) =>
+    evaluateOneCategoryBackpressure(latest, windowEntries, category, config),
+  )
 
 const evaluateOneCategoryBackpressure = (
   latest: TimeSeriesEntry,

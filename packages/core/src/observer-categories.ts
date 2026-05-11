@@ -1,4 +1,4 @@
-import { CATEGORIES, type Category } from "./category.js"
+import { type Category, categoryRecord } from "./category.js"
 import type { Registry } from "./registry.js"
 import type { SignalRunResult } from "./runner.js"
 import type { ResolvedSignal } from "./signal.js"
@@ -11,12 +11,7 @@ export const aggregateCategories = (
   signalResults: ReadonlyMap<string, SignalRunResult>,
   vector: PulsarVector | undefined,
 ): Record<Category, CategoryOutput> =>
-  Object.fromEntries(
-    CATEGORIES.map((category) => [
-      category,
-      aggregateOneCategory(category, registry, signalResults, vector),
-    ]),
-  ) as Record<Category, CategoryOutput>
+  categoryRecord((category) => aggregateOneCategory(category, registry, signalResults, vector))
 
 type CategoryGroupBucket = {
   weightedSum: number

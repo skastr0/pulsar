@@ -11,3 +11,10 @@ export const CATEGORIES = [
 
 export const Category = Schema.Literal(...CATEGORIES)
 export type Category = typeof Category.Type
+
+export const categoryRecord = <Value>(
+  valueOf: (category: Category) => Value,
+): Record<Category, Value> =>
+  Object.fromEntries(
+    CATEGORIES.map((category) => [category, valueOf(category)]),
+  ) as Record<Category, Value>
