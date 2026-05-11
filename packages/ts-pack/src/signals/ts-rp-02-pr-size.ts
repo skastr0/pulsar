@@ -55,7 +55,7 @@ export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackage
   tier: 1,
   category: "review-pain",
   kind: "structural",
-  cacheVersion: "diff-applicability-v1",
+  cacheVersion: "branch-range-v1",
   configSchema: TsRp02Config,
   defaultConfig: {
     exclude_globs: [
