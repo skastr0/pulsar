@@ -5,7 +5,6 @@ import {
   applyFactorOverrides,
   makeFactorEntry,
   makeFactorLedger,
-  overriddenFactorValue,
   computeDiagnosticHash,
   type CalibrationDecision,
   type CalibrationProcessorError,
@@ -13,7 +12,6 @@ import {
   type Diagnostic,
   type ResolvedCalibrationContext,
   type Signal,
-  type SignalFactorDefinition,
   type SignalFactorLedger,
   type SignalFactorLedgerEntry,
   type SignalFactorValue,
@@ -21,7 +19,7 @@ import {
   type TypeScriptUnfinishedImplementationPolicyValue,
   type TypeScriptNoopClassificationValue,
 } from "@skastr0/pulsar-core"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option } from "effect"
 import { Node, SyntaxKind, type Project } from "ts-morph"
 import { TsProjectTag } from "../ts-project.js"
 import {
@@ -31,20 +29,33 @@ import {
   type TsFunctionLike as FnLike,
 } from "./shared-function-index.js"
 import { isExcluded, matchesAnyGlob } from "./shared-globs.js"
-import { isEmptyBodyText, isIntentionalNoop, propertyNameOf } from "./ts-sl-04-intentional-noops.js"
+import { isIntentionalNoop } from "./ts-sl-04-intentional-noops.js"
+import { classifyStub } from "./ts-sl-04-classify.js"
+import { defaultTsSl04Config, TsSl04Config as TsSl04ConfigSchema } from "./ts-sl-04-config.js"
+import type { TsSl04Config as TsSl04ConfigShape } from "./ts-sl-04-config.js"
+import {
+  STUB_KIND_FACTOR_PREFIX,
+  TsSl04FactorDefinitions,
+  booleanFactorValue,
+  confidenceForStubKind,
+  factorDefinitionByPath,
+  numberFactorValue,
+  penaltyWeightForStubKind,
+  scoreCapForStubKind,
+  scoreCapParticipationForStubKind,
+  severityForStub,
+  stringFactorValue,
+  stubKindFactorPath,
+  stubKindFromMetadata,
+  toStubConfidence,
+  toStubKind,
+  type StubConfidence,
+  type StubKind,
+  type StubSeverity,
+} from "./ts-sl-04-factors.js"
 
-export const TsSl04Config = Schema.Struct({
-  exclude_globs: Schema.Array(Schema.String),
-  test_globs: Schema.Array(Schema.String),
-  top_n_diagnostics: Schema.Number,
-  hard_gate_production: Schema.Boolean,
-  include_test_stubs: Schema.Boolean,
-})
-export type TsSl04Config = typeof TsSl04Config.Type
-
-type StubKind = "throw-not-implemented" | "empty-body" | "todo-comment" | "mock-return"
-type StubConfidence = "high" | "medium" | "low"
-type StubSeverity = "info" | "warn" | "block"
+export const TsSl04Config = TsSl04ConfigSchema
+export type TsSl04Config = TsSl04ConfigShape
 
 export interface Stub {
   readonly file: string
@@ -86,81 +97,6 @@ export interface StubCandidateSummary {
   readonly inTestPath: boolean
 }
 
-const STUB_KIND_FACTOR_PREFIX = "stub_kinds" as const
-
-const stubKindFactorPath = (kind: StubKind, factor: string): string =>
-  `${STUB_KIND_FACTOR_PREFIX}.${kind}.${factor}`
-
-const stubKindFactorDefinitions = (
-  kind: StubKind,
-): ReadonlyArray<SignalFactorDefinition> => {
-  const scoreCap = scoreCapForStubKind(kind)
-  return [
-    {
-      path: stubKindFactorPath(kind, "confidence"),
-      title: `${kind} confidence`,
-      valueKind: "string",
-      scoreRole: "confidence",
-      defaultValue: confidenceForStubKind(kind),
-    },
-    {
-      path: stubKindFactorPath(kind, "penalty_weight"),
-      title: `${kind} penalty weight`,
-      valueKind: "number",
-      scoreRole: "penalty",
-      defaultValue: penaltyWeightForStubKind(kind),
-    },
-    {
-      path: stubKindFactorPath(kind, "score_cap_participation"),
-      title: `${kind} score cap participation`,
-      valueKind: "boolean",
-      scoreRole: "score-cap",
-      defaultValue: scoreCapParticipationForStubKind(kind),
-    },
-    {
-      path: stubKindFactorPath(kind, "score_cap"),
-      title: `${kind} score cap`,
-      valueKind: "number",
-      scoreRole: "score-cap",
-      ...(scoreCap !== undefined ? { defaultValue: scoreCap } : {}),
-    },
-  ]
-}
-
-const TsSl04FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
-  ...stubKindFactorDefinitions("throw-not-implemented"),
-  ...stubKindFactorDefinitions("empty-body"),
-  ...stubKindFactorDefinitions("todo-comment"),
-  ...stubKindFactorDefinitions("mock-return"),
-  {
-    path: "budget.expected_clean_function_ratio",
-    title: "Expected clean function ratio",
-    valueKind: "number",
-    scoreRole: "threshold",
-    defaultValue: 0.01,
-  },
-  {
-    path: "budget.expected_clean_min_functions",
-    title: "Expected clean minimum functions",
-    valueKind: "number",
-    scoreRole: "threshold",
-    defaultValue: 10,
-  },
-  {
-    path: "filtering.include_test_stubs",
-    title: "Include test stubs",
-    valueKind: "boolean",
-    scoreRole: "metadata",
-  },
-  {
-    path: "filtering.production_only_score",
-    title: "Production-only score pressure",
-    valueKind: "boolean",
-    scoreRole: "metadata",
-    defaultValue: true,
-  },
-]
-
 export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalContextTag> = {
   id: "TS-SL-04-unfinished-implementations",
   title: "Unfinished implementations",
@@ -170,104 +106,7 @@ export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalCon
   kind: "structural",
   cacheVersion: "factor-policy-v1",
   configSchema: TsSl04Config,
-  defaultConfig: {
-    exclude_globs: [
-      "**/node_modules/**",
-      "**/dist/**",
-      "**/.turbo/**",
-      "**/vendor/**",
-      "**/gen/**",
-      "**/*.gen.ts",
-      "**/*.gen.tsx",
-      "**/*.generated.ts",
-      "**/*.generated.tsx",
-      "**/.storybook/**",
-      "**/sst-env.d.ts",
-      "example/**",
-      "**/example/**",
-      "examples/**",
-      "**/examples/**",
-      "demo/**",
-      "**/demo/**",
-      "demos/**",
-      "**/demos/**",
-      "private-demos/**",
-      "**/private-demos/**",
-      "fixture/**",
-      "**/fixture/**",
-      "fixtures/**",
-      "**/fixtures/**",
-      "sample/**",
-      "**/sample/**",
-      "samples/**",
-      "**/samples/**",
-      "spec/**",
-      "**/spec/**",
-      "specs/**",
-      "**/specs/**",
-      "sdk-samples/**",
-      "**/sdk-samples/**",
-      "template/**",
-      "**/template/**",
-      "templates/**",
-      "**/templates/**",
-    ],
-    test_globs: [
-      "**/*.test.ts",
-      "**/*.test.tsx",
-      "**/*.spec.ts",
-      "**/*.spec.tsx",
-      "**/*.stories.ts",
-      "**/*.stories.tsx",
-      "**/__tests__/**",
-      "**/test/**",
-      "**/tests/**",
-      "**/test-support/**",
-      "**/test-helpers/**",
-      "**/test-mocks/**",
-      "**/test-harness/**",
-      "**/*test-support.ts",
-      "**/*test-support.tsx",
-      "**/*.test-support.ts",
-      "**/*.test-support.tsx",
-      "**/test-helpers.ts",
-      "**/*test-helpers.ts",
-      "**/*test-helpers.tsx",
-      "**/*.test-helpers.ts",
-      "**/*.test-helpers.tsx",
-      "**/test-mocks.ts",
-      "**/*mock.ts",
-      "**/*mock.tsx",
-      "**/mock*.ts",
-      "**/mock*.tsx",
-      "**/*test-mocks.ts",
-      "**/*test-mocks.tsx",
-      "**/*mocks.ts",
-      "**/*mocks.tsx",
-      "**/*.test-mocks.ts",
-      "**/*.test-mocks.tsx",
-      "**/test-harness.ts",
-      "**/*harness.ts",
-      "**/*harness.tsx",
-      "**/*test-harness.ts",
-      "**/*test-harness.tsx",
-      "**/*.harness.ts",
-      "**/*.harness.tsx",
-      "**/*.test-harness.ts",
-      "**/*.test-harness.tsx",
-      "**/test-runtime.ts",
-      "**/*test-runtime.ts",
-      "**/*test-runtime.tsx",
-      "**/*.test-runtime.ts",
-      "**/*.test-runtime.tsx",
-      "**/*test-runtime*.ts",
-      "**/*test-runtime*.tsx",
-      "**/happydom.ts",
-    ],
-    top_n_diagnostics: 20,
-    hard_gate_production: true,
-    include_test_stubs: false,
-  },
+  defaultConfig: defaultTsSl04Config,
   factorDefinitions: TsSl04FactorDefinitions,
   inputs: [],
   compute: (config) =>
@@ -864,18 +703,6 @@ const factorEntryForPolicyValue = (
   })
 }
 
-const stubKindFromMetadata = (value: unknown): StubKind | undefined =>
-  typeof value === "string" && STUB_KINDS.has(value as StubKind)
-    ? (value as StubKind)
-    : undefined
-
-const STUB_KINDS = new Set<StubKind>([
-  "throw-not-implemented",
-  "empty-body",
-  "todo-comment",
-  "mock-return",
-])
-
 const syntaxKindName = (kind: SyntaxKind): string => SyntaxKind[kind] ?? String(kind)
 
 const toSignalComputeError = (cause: unknown): SignalComputeError =>
@@ -895,48 +722,6 @@ const confidencePriority = (confidence: StubConfidence): number => {
   return 2
 }
 
-function confidenceForStubKind(kind: StubKind): StubConfidence {
-  if (kind === "throw-not-implemented" || kind === "todo-comment") return "high"
-  if (kind === "mock-return") return "medium"
-  return "low"
-}
-
-const toStubConfidence = (value: string): StubConfidence =>
-  value === "high" || value === "medium" || value === "low" ? value : "medium"
-
-const toStubKind = (value: TypeScriptUnfinishedImplementationPolicyValue["stubKind"]): StubKind =>
-  value === "throw-not-implemented" ||
-  value === "empty-body" ||
-  value === "todo-comment" ||
-  value === "mock-return"
-    ? value
-    : "empty-body"
-
-function penaltyWeightForStubKind(kind: StubKind): number {
-  if (kind === "throw-not-implemented" || kind === "todo-comment") return 1
-  if (kind === "mock-return") return 0.6
-  return 0.25
-}
-
-function scoreCapParticipationForStubKind(kind: StubKind): boolean {
-  return kind === "throw-not-implemented" || kind === "todo-comment"
-}
-
-function scoreCapForStubKind(kind: StubKind): number | undefined {
-  return scoreCapParticipationForStubKind(kind) ? 0.8 : undefined
-}
-
-const severityForStub = (
-  inTestPath: boolean,
-  confidence: StubConfidence,
-  hardGateProduction: boolean,
-): StubSeverity =>
-  hardGateProduction && !inTestPath && confidence === "high"
-    ? "block"
-    : !inTestPath
-      ? "warn"
-      : "info"
-
 const summarizeStubCandidate = (
   candidate: StubCandidate,
   kind: StubCandidateSummary["kind"],
@@ -952,173 +737,6 @@ const compareCandidateSummaries = (
   a: StubCandidateSummary,
   b: StubCandidateSummary,
 ): number => a.file.localeCompare(b.file) || a.line - b.line || a.name.localeCompare(b.name)
-
-const factorDefinitionByPath = (path: string): SignalFactorDefinition => {
-  const definition = TsSl04FactorDefinitions.find((item) => item.path === path)
-  if (definition === undefined) {
-    throw new Error(`Unknown TS-SL-04 factor path: ${path}`)
-  }
-  return definition
-}
-
-const numberFactorValue = (
-  path: string,
-  defaultValue: number | undefined,
-  overrides: Readonly<Record<string, SignalFactorValue>>,
-): number | undefined => {
-  const value = overriddenFactorValue(path, defaultValue ?? null, overrides)
-  return typeof value === "number" ? value : defaultValue
-}
-
-const stringFactorValue = (
-  path: string,
-  defaultValue: string,
-  overrides: Readonly<Record<string, SignalFactorValue>>,
-): string => {
-  const value = overriddenFactorValue(path, defaultValue, overrides)
-  return typeof value === "string" ? value : defaultValue
-}
-
-const booleanFactorValue = (
-  path: string,
-  defaultValue: boolean,
-  overrides: Readonly<Record<string, SignalFactorValue>>,
-): boolean => {
-  const value = overriddenFactorValue(path, defaultValue, overrides)
-  return typeof value === "boolean" ? value : defaultValue
-}
-
-const classifyStub = (fn: FnLike, bodyText: string): { kind: StubKind; message: string } | undefined => {
-  if (isEmptyBodyText(bodyText)) {
-    return { kind: "empty-body", message: "Empty implementation" }
-  }
-
-  if (MAYBE_THROW_STUB_PATTERN.test(bodyText)) {
-    const throwStubMessage = directStubThrowMessage(fn)
-    if (throwStubMessage !== undefined) {
-      if (isExplicitUnsupportedCapabilityMessage(throwStubMessage)) return undefined
-      if (isFixtureEntrypointPlaceholder(fn, throwStubMessage)) return undefined
-      const message = throwStubMessage.toLowerCase()
-      if (/not\s*implemented|todo|fixme|stub/i.test(message)) {
-        return { kind: "throw-not-implemented", message: throwStubMessage }
-      }
-    }
-  }
-
-  if (MAYBE_TODO_COMMENT_PATTERN.test(bodyText)) {
-    const commentText = commentOnlyBodyText(bodyText)
-    if (commentText !== undefined && /todo|fixme|xxx/i.test(commentText)) {
-      return { kind: "todo-comment", message: commentText }
-    }
-  }
-
-  if (!MAYBE_PLACEHOLDER_RETURN_PATTERN.test(bodyText)) return undefined
-
-  const normalized = bodyText.replace(/\s+/g, " ").trim()
-  const returnLiteralMatch = /^\{\s*return\s+(?:"([^"]*)"|'([^']*)'|`([^`]*)`|\d+|true|false|null|undefined|\[\s*\]|\{\s*\})\s*;?\s*\}$/.exec(
-    normalized,
-  )
-  if (returnLiteralMatch) {
-    const returnedText = (returnLiteralMatch[1] ?? returnLiteralMatch[2] ?? returnLiteralMatch[3] ?? "").toLowerCase()
-    if (/placeholder|mock|todo|fixme|not\s*implemented|stub/.test(returnedText)) {
-      return { kind: "mock-return", message: "Returns placeholder literal" }
-    }
-  }
-
-  return undefined
-}
-
-const MAYBE_THROW_STUB_PATTERN = /\bthrow\b[\s\S]*(?:not\s*implemented|todo|fixme|stub)/i
-const MAYBE_TODO_COMMENT_PATTERN = /(?:\/\/|\/\*)[\s\S]*(?:todo|fixme|xxx)/i
-const MAYBE_PLACEHOLDER_RETURN_PATTERN = /\breturn\b[\s\S]*(?:placeholder|mock|todo|fixme|not\s*implemented|stub)/i
-
-const isExplicitUnsupportedCapabilityMessage = (message: string): boolean =>
-  /`[^`]+`\s+on\s+.+\s+is\s+not\s+implemented\s+by\s+[^.]+\./i.test(message) ||
-  /^not\s+implemented\s+on\s+.+/i.test(message)
-
-const isFixtureEntrypointPlaceholder = (fn: FnLike, message: string): boolean => {
-  if (!/^fixture\s+not\s+implemented!?$/i.test(message.trim())) return false
-  if (/placeholder/i.test(getFunctionName(fn))) return true
-
-  let current: Node | undefined = fn.getParent()
-  while (current !== undefined && !Node.isSourceFile(current)) {
-    if (Node.isBinaryExpression(current) && /placeholder/i.test(current.getLeft().getText())) {
-      return true
-    }
-    if (Node.isVariableDeclaration(current) && /placeholder/i.test(current.getName())) {
-      return true
-    }
-    if (Node.isPropertyAssignment(current) && /placeholder/i.test(propertyNameOf(current))) {
-      return true
-    }
-    current = current.getParent()
-  }
-  return false
-}
-
-const directStubThrowMessage = (fn: FnLike): string | undefined => {
-  const body = functionBodyNode(fn)
-  if (body === undefined) return undefined
-
-  const throwStatement = body
-    .getDescendantsOfKind(SyntaxKind.ThrowStatement)
-    .find((statement) => nearestFunctionLikeAncestor(statement) === fn)
-  if (throwStatement === undefined) return undefined
-
-  const expression = throwStatement.getExpression()
-  if (!Node.isNewExpression(expression)) return undefined
-  const thrownType = expression.getExpression().getText()
-  if (!["Error", "TypeError", "RangeError"].includes(thrownType)) return undefined
-
-  const [messageArg] = expression.getArguments()
-  if (
-    !Node.isStringLiteral(messageArg) &&
-    !Node.isNoSubstitutionTemplateLiteral(messageArg)
-  ) {
-    return undefined
-  }
-
-  return messageArg.getLiteralText()
-}
-
-const functionBodyNode = (fn: FnLike): Node | undefined => {
-  if (Node.isArrowFunction(fn)) return fn.getBody()
-  if ("getBody" in fn && typeof fn.getBody === "function") return fn.getBody()
-  return undefined
-}
-
-const nearestFunctionLikeAncestor = (node: Node): FnLike | undefined =>
-  node.getFirstAncestor((ancestor): ancestor is FnLike =>
-    Node.isFunctionDeclaration(ancestor) ||
-    Node.isMethodDeclaration(ancestor) ||
-    Node.isArrowFunction(ancestor) ||
-    Node.isFunctionExpression(ancestor) ||
-    Node.isConstructorDeclaration(ancestor) ||
-    Node.isGetAccessorDeclaration(ancestor) ||
-    Node.isSetAccessorDeclaration(ancestor),
-  )
-
-const commentOnlyBodyText = (bodyText: string): string | undefined => {
-  const trimmed = bodyText.trim()
-  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return undefined
-
-  const body = trimmed.slice(1, -1)
-  const comments: Array<string> = []
-  const withoutBlockComments = body.replace(/\/\*[\s\S]*?\*\//g, (comment) => {
-    comments.push(comment.replace(/^\/\*+/, "").replace(/\*+\/$/, "").trim())
-    return ""
-  })
-  const withoutLineComments = withoutBlockComments.replace(/(^|\n)\s*\/\/([^\n]*)/g, (_match, prefix, comment) => {
-    comments.push(String(comment).trim())
-    return prefix
-  })
-
-  if (withoutLineComments.trim().length > 0 || comments.length === 0) {
-    return undefined
-  }
-
-  return comments.join(" ").replace(/\s+/g, " ").trim()
-}
 
 const buildChangedHunkIndex = (
   worktreePath: string,
