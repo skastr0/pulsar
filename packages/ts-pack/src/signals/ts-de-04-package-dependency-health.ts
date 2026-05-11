@@ -258,90 +258,104 @@ export const TsDe04: Signal<
     return Math.max(0, 1 - Math.min(1, penalty))
   },
   diagnose: (out): ReadonlyArray<Diagnostic> => {
-    const diagnostics: Array<Diagnostic> = []
-
-    for (const pkg of out.packages) {
-      for (const mismatch of pkg.importedButNotDeclared) {
-        const severity = missingDependencySeverity(pkg, mismatch)
-        const severityReason = missingDependencySeverityReason(pkg, mismatch)
-        diagnostics.push({
-          severity,
-          message:
-            `Missing dependency in ${pkg.packageName}: ${mismatch.dependencyName} ` +
-            `imported in ${formatFileExamples(pkg.packagePath, mismatch.files)}`,
-          location: { file: mismatch.files[0] ?? pkg.packagePath },
-          data: {
-            hash: computeDiagnosticHash(`${pkg.packageName}|missing|${mismatch.dependencyName}`),
-            issueKind: "missing-dependency",
-            packageName: pkg.packageName,
-            packagePrivate: pkg.private,
-            dependencyName: mismatch.dependencyName,
-            usageKind: mismatch.usageKind,
-            fileCount: mismatch.files.length,
-            files: mismatch.files.slice(),
-            severityReason,
-          },
-        })
-      }
-
-      if (pkg.declaredButUnused.length > 0) {
-        const dependencyNames = pkg.declaredButUnused.map((unused) => unused.dependencyName)
-        diagnostics.push({
-          severity: "warn" as const,
-          message:
-            `Unused declared dependencies in ${pkg.packageName}: ` +
-            formatDependencyExamples(dependencyNames),
-          location: { file: join(pkg.packagePath, "package.json") },
-          data: {
-            hash: computeDiagnosticHash(`${pkg.packageName}|unused|${dependencyNames.join(",")}`),
-            issueKind: "unused-dependencies",
-            packageName: pkg.packageName,
-            dependencyNames,
-            dependencyCount: dependencyNames.length,
-          },
-        })
-      }
-
-      for (const mismatch of pkg.transitiveUsedDirectly) {
-        diagnostics.push({
-          severity: "warn" as const,
-          message:
-            `Transitive dependency used directly in ${pkg.packageName}: ` +
-            `${mismatch.dependencyName} via ${formatFileExamples(pkg.packagePath, mismatch.files)}`,
-          location: { file: mismatch.files[0] ?? pkg.packagePath },
-          data: {
-            issueKind: "transitive-direct-usage",
-            packageName: pkg.packageName,
-            dependencyName: mismatch.dependencyName,
-            fileCount: mismatch.files.length,
-            files: mismatch.files.slice(),
-          },
-        })
-      }
-
-      for (const mismatch of pkg.devInProd) {
-        diagnostics.push({
-          severity: "warn" as const,
-          message:
-            `Production code imports devDependency in ${pkg.packageName}: ` +
-            `${mismatch.dependencyName} via ${formatFileExamples(pkg.packagePath, mismatch.files)}`,
-          location: { file: mismatch.files[0] ?? pkg.packagePath },
-          data: {
-            issueKind: "dev-dependency-in-production",
-            packageName: pkg.packageName,
-            dependencyName: mismatch.dependencyName,
-            fileCount: mismatch.files.length,
-            files: mismatch.files.slice(),
-          },
-        })
-      }
-    }
-
-    return diagnostics
+    return [...packageDependencyDiagnostics(out.packages)]
       .sort(compareDependencyDiagnostics)
       .slice(0, out.diagnosticLimit)
   },
 }
+
+const packageDependencyDiagnostics = (
+  packages: ReadonlyArray<PackageDependencyHealth>,
+): ReadonlyArray<Diagnostic> =>
+  packages.flatMap((pkg) => [
+    ...missingDependencyDiagnostics(pkg),
+    ...unusedDependencyDiagnostics(pkg),
+    ...transitiveDirectUsageDiagnostics(pkg),
+    ...devDependencyInProductionDiagnostics(pkg),
+  ])
+
+const missingDependencyDiagnostics = (
+  pkg: PackageDependencyHealth,
+): ReadonlyArray<Diagnostic> =>
+  pkg.importedButNotDeclared.map((mismatch) => {
+    const severity = missingDependencySeverity(pkg, mismatch)
+    const severityReason = missingDependencySeverityReason(pkg, mismatch)
+    return {
+      severity,
+      message:
+        `Missing dependency in ${pkg.packageName}: ${mismatch.dependencyName} ` +
+        `imported in ${formatFileExamples(pkg.packagePath, mismatch.files)}`,
+      location: { file: mismatch.files[0] ?? pkg.packagePath },
+      data: {
+        hash: computeDiagnosticHash(`${pkg.packageName}|missing|${mismatch.dependencyName}`),
+        issueKind: "missing-dependency",
+        packageName: pkg.packageName,
+        packagePrivate: pkg.private,
+        dependencyName: mismatch.dependencyName,
+        usageKind: mismatch.usageKind,
+        fileCount: mismatch.files.length,
+        files: mismatch.files.slice(),
+        severityReason,
+      },
+    }
+  })
+
+const unusedDependencyDiagnostics = (
+  pkg: PackageDependencyHealth,
+): ReadonlyArray<Diagnostic> => {
+  if (pkg.declaredButUnused.length === 0) return []
+  const dependencyNames = pkg.declaredButUnused.map((unused) => unused.dependencyName)
+  return [{
+    severity: "warn",
+    message:
+      `Unused declared dependencies in ${pkg.packageName}: ` +
+      formatDependencyExamples(dependencyNames),
+    location: { file: join(pkg.packagePath, "package.json") },
+    data: {
+      hash: computeDiagnosticHash(`${pkg.packageName}|unused|${dependencyNames.join(",")}`),
+      issueKind: "unused-dependencies",
+      packageName: pkg.packageName,
+      dependencyNames,
+      dependencyCount: dependencyNames.length,
+    },
+  }]
+}
+
+const transitiveDirectUsageDiagnostics = (
+  pkg: PackageDependencyHealth,
+): ReadonlyArray<Diagnostic> =>
+  pkg.transitiveUsedDirectly.map((mismatch) => ({
+    severity: "warn",
+    message:
+      `Transitive dependency used directly in ${pkg.packageName}: ` +
+      `${mismatch.dependencyName} via ${formatFileExamples(pkg.packagePath, mismatch.files)}`,
+    location: { file: mismatch.files[0] ?? pkg.packagePath },
+    data: {
+      issueKind: "transitive-direct-usage",
+      packageName: pkg.packageName,
+      dependencyName: mismatch.dependencyName,
+      fileCount: mismatch.files.length,
+      files: mismatch.files.slice(),
+    },
+  }))
+
+const devDependencyInProductionDiagnostics = (
+  pkg: PackageDependencyHealth,
+): ReadonlyArray<Diagnostic> =>
+  pkg.devInProd.map((mismatch) => ({
+    severity: "warn",
+    message:
+      `Production code imports devDependency in ${pkg.packageName}: ` +
+      `${mismatch.dependencyName} via ${formatFileExamples(pkg.packagePath, mismatch.files)}`,
+    location: { file: mismatch.files[0] ?? pkg.packagePath },
+    data: {
+      issueKind: "dev-dependency-in-production",
+      packageName: pkg.packageName,
+      dependencyName: mismatch.dependencyName,
+      fileCount: mismatch.files.length,
+      files: mismatch.files.slice(),
+    },
+  }))
 
 type PackagePathMatcher = (filePath: string) => PackageInfo | undefined
 type UsageByPackage = Map<string, Map<string, UsageBucket>>
