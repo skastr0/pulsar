@@ -61,6 +61,17 @@ interface TargetResolution {
   readonly builtin: boolean
 }
 
+interface BoundaryViolationContext {
+  readonly declaration: ImportLikeDeclaration
+  readonly sourceFile: SourceFile
+  readonly sourcePackage: PackageInfo | undefined
+  readonly sourceRule: BoundaryConvention | undefined
+  readonly target: TargetResolution
+  readonly targetRule: BoundaryConvention | undefined
+  readonly fromPackageName: string
+  readonly samePackage: boolean
+}
+
 export const TsAd01: Signal<
   TsAd01Config,
   TsAd01Output,
@@ -227,58 +238,77 @@ const classifyBoundaryViolation = ({
   const fromPackageName = packageDisplayName(sourcePackage) ?? sourceFile.getFilePath()
   const targetRule =
     target.targetPackage === undefined ? undefined : lookupBoundaryRule(lookup, target.targetPackage)
-  const samePackage =
+  const context = {
+    declaration,
+    sourceFile,
+    sourcePackage,
+    sourceRule,
+    target,
+    targetRule,
+    fromPackageName,
+    samePackage: isSamePackage(sourcePackage, target.targetPackage),
+  } satisfies BoundaryViolationContext
+
+  return (
+    classifyBlockedTargetViolation(context) ??
+    classifyDeepReachViolation(context) ??
+    classifyAllowlistViolation(context)
+  )
+}
+
+const classifyBlockedTargetViolation = (
+  context: BoundaryViolationContext,
+): BoundaryViolation | undefined => {
+  if (context.samePackage || context.sourceRule === undefined) return undefined
+  if (!matchesRuleEntry(context.sourceRule.blocked_imports, context.target)) return undefined
+  return boundaryViolation(context, "blocked-target")
+}
+
+const classifyDeepReachViolation = (
+  context: BoundaryViolationContext,
+): BoundaryViolation | undefined => {
+  if (context.samePackage) return undefined
+  if (context.sourcePackage === undefined || context.target.targetPackage === undefined) {
+    return undefined
+  }
+  if (context.targetRule?.visibility !== "public-api") return undefined
+  if (!isDeepReach(context.target.specifier, context.sourcePackage, context.target.targetPackage)) {
+    return undefined
+  }
+  return boundaryViolation(context, "deep-reach")
+}
+
+const classifyAllowlistViolation = (
+  context: BoundaryViolationContext,
+): BoundaryViolation | undefined => {
+  if (context.samePackage || context.sourceRule === undefined) return undefined
+  if (context.sourceRule.allowed_imports.length === 0) return undefined
+  if (context.target.candidateKeys.size === 0 || context.target.builtin) return undefined
+  if (matchesRuleEntry(context.sourceRule.allowed_imports, context.target)) return undefined
+  return boundaryViolation(context, "not-in-allowlist")
+}
+
+const boundaryViolation = (
+  context: BoundaryViolationContext,
+  kind: BoundaryViolation["kind"],
+): BoundaryViolation => ({
+  fromFile: context.sourceFile.getFilePath(),
+  fromPackage: context.fromPackageName,
+  toPackage: context.target.targetName,
+  specifier: context.target.specifier,
+  kind,
+  line: context.declaration.getStartLineNumber(),
+})
+
+const isSamePackage = (
+  sourcePackage: PackageInfo | undefined,
+  targetPackage: PackageInfo | undefined,
+): boolean => {
+  return (
     sourcePackage !== undefined &&
-    target.targetPackage !== undefined &&
-    sourcePackage.path === target.targetPackage.path
-
-  if (!samePackage && sourceRule !== undefined && matchesRuleEntry(sourceRule.blocked_imports, target)) {
-    return {
-      fromFile: sourceFile.getFilePath(),
-      fromPackage: fromPackageName,
-      toPackage: target.targetName,
-      specifier,
-      kind: "blocked-target",
-      line: declaration.getStartLineNumber(),
-    }
-  }
-
-  if (
-    !samePackage &&
-    sourcePackage !== undefined &&
-    target.targetPackage !== undefined &&
-    targetRule?.visibility === "public-api" &&
-    isDeepReach(specifier, sourcePackage, target.targetPackage)
-  ) {
-    return {
-      fromFile: sourceFile.getFilePath(),
-      fromPackage: fromPackageName,
-      toPackage: target.targetName,
-      specifier,
-      kind: "deep-reach",
-      line: declaration.getStartLineNumber(),
-    }
-  }
-
-  if (
-    !samePackage &&
-    sourceRule !== undefined &&
-    sourceRule.allowed_imports.length > 0 &&
-    target.candidateKeys.size > 0 &&
-    !target.builtin &&
-    !matchesRuleEntry(sourceRule.allowed_imports, target)
-  ) {
-    return {
-      fromFile: sourceFile.getFilePath(),
-      fromPackage: fromPackageName,
-      toPackage: target.targetName,
-      specifier,
-      kind: "not-in-allowlist",
-      line: declaration.getStartLineNumber(),
-    }
-  }
-
-  return undefined
+    targetPackage !== undefined &&
+    sourcePackage.path === targetPackage.path
+  )
 }
 
 const buildBoundaryLookup = (
