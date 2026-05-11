@@ -1,76 +1,32 @@
-import { createHash } from "node:crypto"
-import { existsSync } from "node:fs"
-import { appendFile, mkdir, writeFile } from "node:fs/promises"
-import { isAbsolute, join, relative } from "node:path"
-import type { Hooks } from "@opencode-ai/plugin"
 import {
-  RoutingDetector,
-  deriveAiAssistedModeProposal,
-  derivePassiveVectorProposal,
   diffTimeIntegrationEnabled,
-  generateReviewPlan,
-  type ObserverOutput,
-  type ReviewPlan,
-  type RoutingDiff,
-  type RoutingOutput,
-  type SignalChange,
   type PulsarVector,
+  type RoutingDiff,
 } from "@skastr0/pulsar-core"
 import { Effect } from "effect"
+import { loadPulsarVectorForWorktree } from "./pulsar-observer"
+import { defaultPulsarAnalyzer } from "./pulsar-hook-analyzer"
 import {
-  loadPulsarVectorForWorktree,
-  observeCurrentWorktree,
-} from "./pulsar-observer"
+  EDIT_TOOLS,
+  buildRoutingDiffFromToolArgs,
+  fingerprintOf,
+  recordFromUnknown,
+} from "./pulsar-hook-diff"
+import type {
+  HookAnalysisRequest,
+  PulsarAnalysis,
+  PulsarAnalyzer,
+  PulsarState,
+  SettledAnalysis,
+  ToolAfterInput,
+  ToolAfterOutput,
+} from "./pulsar-hook-types"
 import {
   appendPulsarAnnotation,
   createErrorAnnotation,
   createPendingAnnotation,
-  createReadyAnnotation,
-  type PulsarAnnotation,
 } from "./review-surfacing"
-
-type ToolAfterInput = Parameters<NonNullable<Hooks["tool.execute.after"]>>[0]
-type ToolAfterOutput = Parameters<NonNullable<Hooks["tool.execute.after"]>>[1]
-
-export interface PulsarAnalysis {
-  readonly fingerprint: string
-  readonly diff: RoutingDiff
-  readonly observerOutput: ObserverOutput
-  readonly routingOutput: RoutingOutput
-  readonly reviewPlan: ReviewPlan
-  readonly annotation: PulsarAnnotation
-}
-
-export type PulsarAnalyzer = (input: {
-  readonly fingerprint: string
-  readonly toolName: string
-  readonly worktree: string
-  readonly diff: RoutingDiff
-  readonly vector: PulsarVector | undefined
-  readonly previous?: PulsarAnalysis
-}) => Promise<PulsarAnalysis>
-
-type SettledAnalysis =
-  | { readonly status: "ready"; readonly analysis: PulsarAnalysis }
-  | { readonly status: "error"; readonly message: string }
-
-interface HookAnalysisRequest {
-  readonly fingerprint: string
-  readonly toolName: string
-  readonly sessionID: string
-  readonly diff: RoutingDiff
-}
-
-export interface PulsarState {
-  readonly analyzer: PulsarAnalyzer
-  readonly inlineWaitMs: number
-  readonly inFlight: Map<string, Promise<SettledAnalysis>>
-  readonly completed: Map<string, PulsarAnalysis>
-  readonly lastCompletedBySession: Map<string, PulsarAnalysis>
-  readonly lastSurfacedFingerprintBySession: Map<string, string>
-}
-
-const EDIT_TOOLS = new Set(["write", "edit", "apply_patch", "morph-mcp_edit_file"])
+export type { PulsarAnalysis, PulsarAnalyzer, PulsarState } from "./pulsar-hook-types"
 
 export const createPulsarState = (options?: {
   readonly analyzer?: PulsarAnalyzer
@@ -253,156 +209,6 @@ const ensureAnalysis = (
   return pending
 }
 
-const defaultPulsarAnalyzer: PulsarAnalyzer = async ({
-  fingerprint,
-  toolName,
-  worktree,
-  diff,
-  vector,
-  previous,
-}) => {
-  const { registry, sha, observerOutput } = await observeCurrentWorktree({
-    worktree,
-    vector,
-    changedHunks: diff.changedHunks,
-  })
-
-  const detector = await Effect.runPromise(RoutingDetector.load({ repoRoot: worktree }))
-
-  const routedDiff: RoutingDiff = {
-    ...diff,
-    signalChanges: {
-      ...diff.signalChanges,
-      ...buildSignalChanges(previous?.observerOutput, observerOutput),
-    },
-  }
-  const routingOutput = detector.detect(observerOutput, routedDiff)
-  const reviewPlan = generateReviewPlan(observerOutput, routingOutput, vector, {
-    sha,
-  })
-  const annotation = createReadyAnnotation({
-    worktree,
-    fingerprint,
-    diff: routedDiff,
-    observerOutput,
-    reviewPlan,
-    previousObserverOutput: previous?.observerOutput,
-  })
-
-  await persistPassiveElicitationArtifacts({
-    worktree,
-    fingerprint,
-    toolName,
-    diff: routedDiff,
-    vector,
-    previousObserverOutput: previous?.observerOutput,
-    observerOutput,
-  }).catch(() => undefined)
-
-  return {
-    fingerprint,
-    diff: routedDiff,
-    observerOutput,
-    routingOutput,
-    reviewPlan,
-    annotation,
-  }
-}
-
-const buildSignalChanges = (
-  previous: ObserverOutput | undefined,
-  current: ObserverOutput,
-): Record<string, SignalChange> => {
-  const changes: Record<string, SignalChange> = {}
-
-  for (const [signalId, result] of current.signalResults.entries()) {
-    const previousScore = previous?.signalResults.get(signalId)?.score
-    const absoluteDelta =
-      previousScore === undefined ? 0 : Math.abs(result.score - previousScore)
-    const relativeDelta =
-      previousScore === undefined || previousScore === 0
-        ? undefined
-        : absoluteDelta / Math.abs(previousScore)
-
-    changes[signalId] = {
-      ...(previousScore !== undefined ? { previousScore } : {}),
-      currentScore: result.score,
-      absoluteDelta,
-      ...(relativeDelta !== undefined ? { relativeDelta } : {}),
-      sourceLocations: result.diagnostics.flatMap((diagnostic) =>
-        diagnostic.location === undefined ? [] : [diagnostic.location],
-      ),
-    }
-  }
-
-  return changes
-}
-
-const persistPassiveElicitationArtifacts = async (input: {
-  readonly worktree: string
-  readonly fingerprint: string
-  readonly toolName: string
-  readonly diff: RoutingDiff
-  readonly vector: PulsarVector | undefined
-  readonly previousObserverOutput: ObserverOutput | undefined
-  readonly observerOutput: ObserverOutput
-}): Promise<void> => {
-  const pulsarDir = join(input.worktree, ".pulsar")
-  const proposalDir = join(pulsarDir, "proposals", "pending")
-  await mkdir(proposalDir, { recursive: true })
-
-  const proposal = derivePassiveVectorProposal({
-    fingerprint: input.fingerprint,
-    changedFiles: input.diff.changedFiles,
-    vector: input.vector,
-    previous: input.previousObserverOutput,
-    current: input.observerOutput,
-  })
-  if (proposal !== undefined) {
-    const proposalPath = join(proposalDir, `${proposal.id}.json`)
-    await writeFile(proposalPath, `${JSON.stringify(proposal, null, 2)}\n`, "utf8")
-    await appendObservation(pulsarDir, {
-      schema_version: 1,
-      observed_at: proposal.created_at,
-      kind: "passive-proposal",
-      fingerprint: input.fingerprint,
-      changed_files: input.diff.changedFiles,
-      summary: proposal.summary,
-      signal_ids: proposal.deltas.map((delta) => delta.signal_id),
-      proposal_path: relative(input.worktree, proposalPath),
-    })
-  }
-
-  const aiProposal = deriveAiAssistedModeProposal({
-    changedFiles: input.diff.changedFiles,
-    toolName: input.toolName,
-    vector: input.vector,
-  })
-  if (aiProposal === undefined) return
-  if (proposalAlreadyTracked(pulsarDir, aiProposal.id)) return
-
-  const aiProposalPath = join(proposalDir, `${aiProposal.id}.json`)
-  await writeFile(aiProposalPath, `${JSON.stringify(aiProposal, null, 2)}\n`, "utf8")
-  await appendObservation(pulsarDir, {
-    schema_version: 1,
-    observed_at: aiProposal.created_at,
-    kind: "ai-assisted-mode-proposal",
-    fingerprint: input.fingerprint,
-    changed_files: input.diff.changedFiles,
-    summary: aiProposal.summary,
-    signal_ids: [],
-    proposal_path: relative(input.worktree, aiProposalPath),
-  })
-}
-
-const appendObservation = async (pulsarDir: string, observation: unknown): Promise<void> => {
-  await appendFile(join(pulsarDir, "observations.log"), `${JSON.stringify(observation)}\n`, "utf8")
-}
-
-const proposalAlreadyTracked = (pulsarDir: string, proposalId: string): boolean =>
-  ["pending", "accepted", "rejected"].some((status) =>
-    existsSync(join(pulsarDir, "proposals", status, `${proposalId}.json`)),
-  )
 
 const settleWithin = async (
   promise: Promise<SettledAnalysis>,
@@ -413,193 +219,6 @@ const settleWithin = async (
     new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), timeoutMs)),
   ])
 
-const fingerprintOf = (value: unknown): string => {
-  const hash = createHash("sha256")
-  hash.update(JSON.stringify(value))
-  return hash.digest("hex")
-}
-
-const buildRoutingDiffFromToolArgs = (
-  tool: string,
-  args: Readonly<Record<string, unknown>>,
-  worktree: string,
-): RoutingDiff => {
-  const patchText = args.patchText
-  if (tool === "apply_patch" && typeof patchText === "string") {
-    return parseApplyPatch(patchText, worktree)
-  }
-
-  const filePath = firstPathArg(args, worktree)
-  if (filePath === undefined) {
-    return {
-      changedFiles: [],
-      changedHunks: [],
-      addedFiles: [],
-      addedImports: [],
-      astMatches: [],
-      signalChanges: {},
-    }
-  }
-
-  const snippets = collectContentSnippets(args)
-  const addedImports = snippets.flatMap((snippet, index) =>
-    parseImportsFromSnippet(filePath, snippet, index === 0 ? 1 : undefined),
-  )
-  const astMatches = snippets.flatMap((snippet) =>
-    parseAstMatchesFromSnippet(filePath, snippet),
-  )
-
-  return {
-    changedFiles: [filePath],
-    changedHunks: [buildWholeFileHunk(filePath)],
-    addedFiles: [],
-    addedImports,
-    astMatches,
-    signalChanges: {},
-  }
-}
-
-const parseApplyPatch = (patchText: string, worktree: string): RoutingDiff => {
-  const changedFiles = new Set<string>()
-  const addedFiles = new Set<string>()
-  const addedImports: Array<RoutingDiff["addedImports"][number]> = []
-  const astMatches: Array<RoutingDiff["astMatches"][number]> = []
-  let currentFile: string | undefined
-  let currentLine = 1
-
-  for (const rawLine of patchText.split(/\r?\n/)) {
-    if (rawLine.startsWith("*** Add File: ")) {
-      currentFile = normalizePath(worktree, rawLine.slice("*** Add File: ".length))
-      changedFiles.add(currentFile)
-      addedFiles.add(currentFile)
-      currentLine = 1
-      continue
-    }
-    if (rawLine.startsWith("*** Update File: ")) {
-      currentFile = normalizePath(worktree, rawLine.slice("*** Update File: ".length))
-      changedFiles.add(currentFile)
-      currentLine = 1
-      continue
-    }
-    if (rawLine.startsWith("*** Delete File: ")) {
-      currentFile = normalizePath(worktree, rawLine.slice("*** Delete File: ".length))
-      changedFiles.add(currentFile)
-      currentLine = 1
-      continue
-    }
-    if (!rawLine.startsWith("+") || rawLine.startsWith("+++")) continue
-    if (currentFile === undefined) continue
-
-    const line = rawLine.slice(1)
-    addedImports.push(...parseImportsFromSnippet(currentFile, line, currentLine))
-    astMatches.push(...parseAstMatchesFromSnippet(currentFile, line, currentLine))
-    currentLine += 1
-  }
-
-  return {
-    changedFiles: [...changedFiles],
-    changedHunks: [...changedFiles].map((file) => buildWholeFileHunk(file)),
-    addedFiles: [...addedFiles],
-    addedImports,
-    astMatches,
-    signalChanges: {},
-  }
-}
-
-const collectContentSnippets = (
-  args: Readonly<Record<string, unknown>>,
-): ReadonlyArray<string> =>
-  [args.code_edit, args.content, args.newString, args.replacement, args.text].filter(
-    (value): value is string => typeof value === "string" && value.length > 0,
-  )
-
-const buildWholeFileHunk = (
-  file: string,
-): RoutingDiff["changedHunks"][number] => ({
-  file,
-  oldStart: 1,
-  oldLines: Number.MAX_SAFE_INTEGER,
-  newStart: 1,
-  newLines: Number.MAX_SAFE_INTEGER,
-})
-
-const firstPathArg = (
-  args: Readonly<Record<string, unknown>>,
-  worktree: string,
-): string | undefined => {
-  for (const candidate of [args.path, args.filePath]) {
-    if (typeof candidate !== "string" || candidate.length === 0) continue
-    return normalizePath(worktree, candidate)
-  }
-  return undefined
-}
-
-const parseImportsFromSnippet = (
-  file: string,
-  snippet: string,
-  lineOffset?: number,
-): ReadonlyArray<RoutingDiff["addedImports"][number]> => {
-  const matches: Array<RoutingDiff["addedImports"][number]> = []
-  const regexes = [
-    /(?:import|export)\s+[^\n]*?from\s+["']([^"']+)["']/g,
-    /import\s+["']([^"']+)["']/g,
-    /require\(\s*["']([^"']+)["']\s*\)/g,
-  ]
-
-  for (const [index, line] of snippet.split(/\r?\n/).entries()) {
-    for (const regex of regexes) {
-      for (const match of line.matchAll(regex)) {
-        const specifier = match[1]
-        if (specifier === undefined) continue
-        const base = { file, specifier }
-        matches.push(
-          lineOffset === undefined ? base : { ...base, line: lineOffset + index },
-        )
-      }
-    }
-  }
-
-  return matches
-}
-
-const parseAstMatchesFromSnippet = (
-  file: string,
-  snippet: string,
-  lineOffset = 1,
-): ReadonlyArray<RoutingDiff["astMatches"][number]> => {
-  if (!file.endsWith(".rs")) return []
-
-  return snippet.split(/\r?\n/).flatMap((line, index) =>
-    /\bunsafe\b/.test(line)
-      ? [
-          {
-            signalId: "RS-LD-01",
-            outputKey: "new-unsafe-block",
-            location: { file, line: lineOffset + index },
-          },
-        ]
-      : [],
-  )
-}
-
-const normalizePath = (worktree: string, value: string): string => {
-  const normalized = value.replace(/\\/g, "/")
-  if (!isAbsolute(normalized)) return trimDotSlash(normalized)
-  return trimDotSlash(relative(worktree, normalized).replace(/\\/g, "/"))
-}
-
-const trimDotSlash = (value: string): string => value.replace(/^\.\//, "")
-
-const recordFromUnknown = (value: unknown): Record<string, unknown> => {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return {}
-  return Object.fromEntries(Object.entries(value))
-}
-
-const errorCodeOf = (error: unknown): string | undefined => {
-  if (typeof error !== "object" || error === null || !("code" in error)) return undefined
-  const code = error.code
-  return typeof code === "string" ? code : undefined
-}
 
 const readyResult = (analysis: PulsarAnalysis): SettledAnalysis => ({
   status: "ready",
