@@ -26,6 +26,23 @@ export interface ParsedPnpmLock {
 
 type DependencyKind = "dependencies" | "devDependencies" | "peerDependencies" | "optionalDependencies"
 
+type MutablePnpmWorkspace = {
+  path: string
+  dependencies: Record<string, string>
+  devDependencies: Record<string, string>
+  peerDependencies: Record<string, string>
+  optionalDependencies: Record<string, string>
+}
+
+interface ImporterParseState {
+  readonly workspaces: Array<MutablePnpmWorkspace>
+  inImporters: boolean
+  current: MutablePnpmWorkspace | undefined
+  dependencyKind: DependencyKind | undefined
+  pendingDependency: string | undefined
+  done: boolean
+}
+
 export const readPnpmLockFile = async (filePath: string): Promise<ParsedPnpmLock> => {
   const text = await readFile(filePath, "utf8")
   return parsePnpmLock(text)
@@ -42,76 +59,92 @@ export const parsePnpmLock = (text: string): ParsedPnpmLock => {
 }
 
 const parseImporters = (text: string): ReadonlyArray<PnpmLockWorkspace> => {
-  const workspaces: Array<{
-    path: string
-    dependencies: Record<string, string>
-    devDependencies: Record<string, string>
-    peerDependencies: Record<string, string>
-    optionalDependencies: Record<string, string>
-  }> = []
-  let inImporters = false
-  let current: (typeof workspaces)[number] | undefined
-  let dependencyKind: DependencyKind | undefined
-  let pendingDependency: string | undefined
-
+  const state: ImporterParseState = {
+    workspaces: [],
+    inImporters: false,
+    current: undefined,
+    dependencyKind: undefined,
+    pendingDependency: undefined,
+    done: false,
+  }
   for (const line of text.split("\n")) {
-    if (line === "importers:") {
-      inImporters = true
-      continue
-    }
-    if (!inImporters) continue
-    if (line === "packages:" || /^\S/.test(line)) break
-
-    const importer = /^  (\S.*):$/.exec(line)
-    if (importer !== null) {
-      current = {
-        path: unquote(importer[1] ?? ""),
-        dependencies: {},
-        devDependencies: {},
-        peerDependencies: {},
-        optionalDependencies: {},
-      }
-      workspaces.push(current)
-      dependencyKind = undefined
-      pendingDependency = undefined
-      continue
-    }
-
-    const dependencySection = /^    (dependencies|devDependencies|peerDependencies|optionalDependencies):$/.exec(line)
-    if (dependencySection !== null) {
-      dependencyKind = dependencySection[1] as DependencyKind
-      pendingDependency = undefined
-      continue
-    }
-    if (current === undefined || dependencyKind === undefined) continue
-
-    const dependency = /^      (\S.*):(?:\s*(.+))?$/.exec(line)
-    if (dependency !== null) {
-      pendingDependency = unquote(dependency[1] ?? "")
-      const inlineVersion = dependency[2]
-      if (inlineVersion !== undefined && inlineVersion.trim().length > 0) {
-        current[dependencyKind][pendingDependency] = cleanPnpmVersion(inlineVersion)
-      }
-      continue
-    }
-
-    const version = /^        version:\s*(.+)$/.exec(line)
-    if (version !== null && pendingDependency !== undefined) {
-      current[dependencyKind][pendingDependency] = cleanPnpmVersion(version[1] ?? "")
-    }
+    parseImporterLine(line, state)
+    if (state.done) break
   }
 
-  return workspaces
-    .map((workspace) => ({
-      path: workspace.path,
-      name: workspace.path === "." ? "workspace" : workspace.path,
-      dependencies: workspace.dependencies,
-      devDependencies: workspace.devDependencies,
-      peerDependencies: workspace.peerDependencies,
-      optionalDependencies: workspace.optionalDependencies,
-    }))
+  return state.workspaces
+    .map(finalizeWorkspaceImporter)
     .sort((left, right) => left.path.localeCompare(right.path))
 }
+
+const parseImporterLine = (line: string, state: ImporterParseState): void => {
+  if (line === "importers:") {
+    state.inImporters = true
+    return
+  }
+  if (!state.inImporters) return
+  if (line === "packages:" || /^\S/.test(line)) {
+    state.done = true
+    return
+  }
+
+  const importer = /^  (\S.*):$/.exec(line)
+  if (importer !== null) {
+    startWorkspaceImporter(importer[1] ?? "", state)
+    return
+  }
+  const dependencySection = /^    (dependencies|devDependencies|peerDependencies|optionalDependencies):$/.exec(line)
+  if (dependencySection !== null) {
+    state.dependencyKind = dependencySection[1] as DependencyKind
+    state.pendingDependency = undefined
+    return
+  }
+  parseImporterDependencyLine(line, state)
+}
+
+const startWorkspaceImporter = (
+  rawPath: string,
+  state: ImporterParseState,
+): void => {
+  state.current = {
+    path: unquote(rawPath),
+    dependencies: {},
+    devDependencies: {},
+    peerDependencies: {},
+    optionalDependencies: {},
+  }
+  state.workspaces.push(state.current)
+  state.dependencyKind = undefined
+  state.pendingDependency = undefined
+}
+
+const parseImporterDependencyLine = (line: string, state: ImporterParseState): void => {
+  if (state.current === undefined || state.dependencyKind === undefined) return
+
+  const dependency = /^      (\S.*):(?:\s*(.+))?$/.exec(line)
+  if (dependency !== null) {
+    state.pendingDependency = unquote(dependency[1] ?? "")
+    const inlineVersion = dependency[2]
+    if (inlineVersion !== undefined && inlineVersion.trim().length > 0) {
+      state.current[state.dependencyKind][state.pendingDependency] = cleanPnpmVersion(inlineVersion)
+    }
+    return
+  }
+
+  const version = /^        version:\s*(.+)$/.exec(line)
+  if (version !== null && state.pendingDependency !== undefined) {
+    state.current[state.dependencyKind][state.pendingDependency] = cleanPnpmVersion(version[1] ?? "")
+  }
+}
+
+const finalizeWorkspaceImporter = (workspace: MutablePnpmWorkspace): PnpmLockWorkspace => ({
+  path: workspace.path,
+  name: workspace.path === "." ? "workspace" : workspace.path,
+  dependencies: workspace.dependencies,
+  devDependencies: workspace.devDependencies,
+  peerDependencies: workspace.peerDependencies,
+  optionalDependencies: workspace.optionalDependencies,
+})
 
 const parsePackages = (
   text: string,
