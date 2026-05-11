@@ -26,7 +26,9 @@ export interface PersonaCommandOptions {
   readonly vectorPath?: string
 }
 
-export const runPersonaCommand = (opts: PersonaCommandOptions) =>
+export const runPersonaCommand = (
+  opts: PersonaCommandOptions,
+): Effect.Effect<number, unknown, never> =>
   Effect.gen(function* () {
     const { registry, presets } = yield* loadValidatedPersonaPresets()
 

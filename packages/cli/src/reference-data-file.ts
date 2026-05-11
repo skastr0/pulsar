@@ -8,14 +8,18 @@ export const CONVENTIONS_DRAFT_RELATIVE_PATH = ".pulsar/conventions.draft.json" 
 export const resolveReferenceDataPath = (repoRoot: string, relativePath: string): string =>
   join(repoRoot, relativePath)
 
-const ensureReferenceDataDir = (repoRoot: string) =>
+const ensureReferenceDataDir = (repoRoot: string): Effect.Effect<void, Error, never> =>
   Effect.tryPromise({
     try: () => mkdir(join(repoRoot, ".pulsar"), { recursive: true }),
     catch: (cause) =>
       new Error(`Failed to create .pulsar directory in ${repoRoot}: ${String(cause)}`),
   })
 
-export const writeReferenceJson = (repoRoot: string, relativePath: string, value: unknown) =>
+export const writeReferenceJson = (
+  repoRoot: string,
+  relativePath: string,
+  value: unknown,
+): Effect.Effect<string, Error, never> =>
   Effect.gen(function* () {
     yield* ensureReferenceDataDir(repoRoot)
     const absolutePath = resolveReferenceDataPath(repoRoot, relativePath)
@@ -27,7 +31,10 @@ export const writeReferenceJson = (repoRoot: string, relativePath: string, value
     return absolutePath
   })
 
-export const readReferenceJson = (repoRoot: string, relativePath: string) =>
+export const readReferenceJson = (
+  repoRoot: string,
+  relativePath: string,
+): Effect.Effect<unknown, Error, never> =>
   Effect.gen(function* () {
     const absolutePath = resolveReferenceDataPath(repoRoot, relativePath)
     const raw = yield* Effect.tryPromise({
@@ -47,7 +54,7 @@ export const promoteReferenceFile = (
   repoRoot: string,
   draftRelativePath: string,
   canonicalRelativePath: string,
-) =>
+): Effect.Effect<string, Error, never> =>
   Effect.gen(function* () {
     yield* ensureReferenceDataDir(repoRoot)
     const draftPath = resolveReferenceDataPath(repoRoot, draftRelativePath)
@@ -62,7 +69,10 @@ export const promoteReferenceFile = (
     return canonicalPath
   })
 
-export const removeReferenceFile = (repoRoot: string, relativePath: string) =>
+export const removeReferenceFile = (
+  repoRoot: string,
+  relativePath: string,
+): Effect.Effect<void, Error, never> =>
   Effect.tryPromise({
     try: () => rm(resolveReferenceDataPath(repoRoot, relativePath), { force: true }),
     catch: (cause) =>

@@ -5,7 +5,7 @@ import { join, resolve } from "node:path"
 import { Effect } from "effect"
 import { simpleGit } from "simple-git"
 
-export const resolveRepoRoot = (repoPath: string) =>
+export const resolveRepoRoot = (repoPath: string): Effect.Effect<string, Error, never> =>
   Effect.gen(function* () {
     const absolutePath = resolve(repoPath)
     if (!existsSync(absolutePath)) {
@@ -21,9 +21,10 @@ export const resolveRepoRoot = (repoPath: string) =>
     return root.trim()
   })
 
-export const readHeadSha = (repoRoot: string) => resolveGitRef(repoRoot, "HEAD")
+export const readHeadSha = (repoRoot: string): Effect.Effect<string, Error, never> =>
+  resolveGitRef(repoRoot, "HEAD")
 
-const resolveGitRef = (repoRoot: string, ref: string) =>
+const resolveGitRef = (repoRoot: string, ref: string): Effect.Effect<string, Error, never> =>
   Effect.gen(function* () {
     const git = simpleGit(repoRoot)
     const resolved = yield* Effect.tryPromise({

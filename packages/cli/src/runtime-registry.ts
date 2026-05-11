@@ -26,7 +26,7 @@ export const isReservedRustSignalId = (signalId: string): boolean => signalId.st
 export const formatReservedRustSignalMessage = (signalId: string): string =>
   `Signal ${signalId} is not implemented yet. The Rust pack now supports RS-AD-* and RS-LD-* batch 1, but this signal still belongs to a later Rust glyph.`
 
-export const buildPulsarRegistry = (repoPath?: string) =>
+export const buildPulsarRegistry = (repoPath?: string): Effect.Effect<Registry, Error, never> =>
   Effect.gen(function* () {
     if (repoPath === undefined) {
       return (yield* buildRegistry([...PULSAR_SHARED_SIGNALS, ...PULSAR_SIGNALS])) as Registry
@@ -54,7 +54,7 @@ export const collectActiveLanguagePacks = (
 export const validateVectorAgainstPulsarSignals = (
   vector: PulsarVector,
   repoRoot?: string,
-) =>
+): Effect.Effect<void, unknown, never> =>
   Effect.gen(function* () {
     const fullRegistry = yield* buildRegistry([
       ...PULSAR_SHARED_SIGNALS,
