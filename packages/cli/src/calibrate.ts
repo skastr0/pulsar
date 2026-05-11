@@ -3,8 +3,6 @@ import { printHumanReport } from "./calibrate-output.js"
 import { buildSuggestionReport, type CalibrateCommandOptions } from "./calibrate-suggestions.js"
 import { writeSuggestionReport } from "./calibrate-write.js"
 
-export type { CalibrateCommandOptions } from "./calibrate-suggestions.js"
-
 export const runCalibrateCommand = (opts: CalibrateCommandOptions) =>
   Effect.gen(function* () {
     if (opts.action !== "suggest") {

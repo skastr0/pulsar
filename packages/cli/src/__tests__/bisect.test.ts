@@ -10,10 +10,12 @@ import { countFinalApplicableSignalsByCategory } from "../bisect-output.js"
 import {
   chooseAdaptiveMidpoint,
   chooseObserverAdaptiveMidpoint,
-  initialAdaptiveIndexes,
-  resolveSamplingPlan,
-  selectMergeOnlyIndexes,
 } from "../bisect-sampling.js"
+import {
+  initialAdaptiveIndexes,
+  selectMergeOnlyIndexes,
+} from "../bisect-sampling-indexes.js"
+import { resolveSamplingPlan } from "../bisect-sampling-plan.js"
 import {
   findCulprits,
   findDriftCulprits,

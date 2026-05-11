@@ -17,11 +17,8 @@ export type { RangeCommit } from "./bisect-sampling-indexes.js"
 export {
   chooseAdaptiveMidpoint,
   chooseObserverAdaptiveMidpoint,
-  initialAdaptiveIndexes,
-  selectMergeOnlyIndexes,
 } from "./bisect-sampling-indexes.js"
 export type { BisectSamplingMode, BisectSamplingSummary } from "./bisect-sampling-plan.js"
-export { resolveSamplingPlan } from "./bisect-sampling-plan.js"
 
 export const sampleTrajectory = <Result, Entry extends { readonly sha: string }>(
   commits: ReadonlyArray<RangeCommit>,
