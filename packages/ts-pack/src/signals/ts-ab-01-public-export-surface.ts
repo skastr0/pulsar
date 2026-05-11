@@ -4,7 +4,14 @@ import {
   SignalComputeError,
 } from "@skastr0/pulsar-core"
 import { Effect, Schema } from "effect"
-import { Node, type SourceFile } from "ts-morph"
+import {
+  Node,
+  type ClassDeclaration,
+  type FunctionDeclaration,
+  type SourceFile,
+  type Statement,
+  type VariableStatement,
+} from "ts-morph"
 import { createModuleResolver, type ModuleResolver } from "../graph/module-graph.js"
 import { TsProjectTag } from "../ts-project.js"
 import { isExcluded, matchesAnyGlob } from "./shared-globs.js"
@@ -238,74 +245,100 @@ class ExportSurfaceIndex {
     const importedSymbols = this.importedSymbolsFor(sourceFile)
 
     for (const statement of sourceFile.getStatements()) {
-      if (Node.isFunctionDeclaration(statement)) {
-        if (hasDefaultModifier(statement)) {
-          exports.set("default", { publicName: "default", kind: "default", sourceFile: sourcePath })
-        } else if (hasExportModifier(statement)) {
-          const name = statement.getName()
-          if (name !== undefined) {
-            exports.set(name, { publicName: name, kind: "function", sourceFile: sourcePath })
-          }
-        }
-        continue
-      }
-
-      if (Node.isClassDeclaration(statement)) {
-        if (hasDefaultModifier(statement)) {
-          exports.set("default", { publicName: "default", kind: "default", sourceFile: sourcePath })
-        } else if (hasExportModifier(statement)) {
-          const name = statement.getName()
-          if (name !== undefined) {
-            exports.set(name, { publicName: name, kind: "class", sourceFile: sourcePath })
-          }
-        }
-        continue
-      }
-
-      if (Node.isInterfaceDeclaration(statement) && hasExportModifier(statement)) {
-        const name = statement.getName()
-        exports.set(name, { publicName: name, kind: "interface", sourceFile: sourcePath })
-        continue
-      }
-
-      if (Node.isTypeAliasDeclaration(statement) && hasExportModifier(statement)) {
-        const name = statement.getName()
-        exports.set(name, { publicName: name, kind: "type", sourceFile: sourcePath })
-        continue
-      }
-
-      if (Node.isEnumDeclaration(statement) && hasExportModifier(statement)) {
-        const name = statement.getName()
-        exports.set(name, { publicName: name, kind: "enum", sourceFile: sourcePath })
-        continue
-      }
-
-      if (Node.isModuleDeclaration(statement) && hasExportModifier(statement)) {
-        const name = statement.getName()
-        exports.set(name, { publicName: name, kind: "namespace", sourceFile: sourcePath })
-        continue
-      }
-
-      if (Node.isVariableStatement(statement) && hasExportModifier(statement)) {
-        const kind = declarationKind(statement)
-        for (const declaration of statement.getDeclarations()) {
-          const name = declaration.getName()
-          exports.set(name, { publicName: name, kind, sourceFile: sourcePath })
-        }
-        continue
-      }
+      if (this.collectDeclarationExport(statement, sourcePath, exports)) continue
 
       if (Node.isExportDeclaration(statement)) {
         this.collectExportDeclaration(statement, sourceFile, exports, importedSymbols)
         continue
       }
-
-      if (Node.isExportAssignment(statement)) {
-        const kind = statement.isExportEquals() ? "export-equals" : "default"
-        const publicName = statement.isExportEquals() ? "export=" : "default"
-        exports.set(publicName, { publicName, kind, sourceFile: sourcePath })
-      }
     }
+  }
+
+  private collectDeclarationExport(
+    statement: Statement,
+    sourcePath: string,
+    exports: Map<string, ExportSymbolInfo>,
+  ): boolean {
+    if (Node.isFunctionDeclaration(statement)) {
+      this.collectNamedOrDefaultExport(statement, "function", sourcePath, exports)
+      return true
+    }
+    if (Node.isClassDeclaration(statement)) {
+      this.collectNamedOrDefaultExport(statement, "class", sourcePath, exports)
+      return true
+    }
+    if (Node.isInterfaceDeclaration(statement) && hasExportModifier(statement)) {
+      this.collectNamedExport(statement.getName(), "interface", sourcePath, exports)
+      return true
+    }
+    if (Node.isTypeAliasDeclaration(statement) && hasExportModifier(statement)) {
+      this.collectNamedExport(statement.getName(), "type", sourcePath, exports)
+      return true
+    }
+    if (Node.isEnumDeclaration(statement) && hasExportModifier(statement)) {
+      this.collectNamedExport(statement.getName(), "enum", sourcePath, exports)
+      return true
+    }
+    if (Node.isModuleDeclaration(statement) && hasExportModifier(statement)) {
+      this.collectNamedExport(statement.getName(), "namespace", sourcePath, exports)
+      return true
+    }
+    if (Node.isVariableStatement(statement) && hasExportModifier(statement)) {
+      this.collectVariableExports(statement, sourcePath, exports)
+      return true
+    }
+    if (Node.isExportAssignment(statement)) {
+      this.collectExportAssignment(statement, sourcePath, exports)
+      return true
+    }
+    return false
+  }
+
+  private collectNamedOrDefaultExport(
+    statement: FunctionDeclaration | ClassDeclaration,
+    kind: string,
+    sourcePath: string,
+    exports: Map<string, ExportSymbolInfo>,
+  ): void {
+    if (hasDefaultModifier(statement)) {
+      exports.set("default", { publicName: "default", kind: "default", sourceFile: sourcePath })
+      return
+    }
+    if (!hasExportModifier(statement)) return
+    this.collectNamedExport(statement.getName(), kind, sourcePath, exports)
+  }
+
+  private collectNamedExport(
+    name: string | undefined,
+    kind: string,
+    sourcePath: string,
+    exports: Map<string, ExportSymbolInfo>,
+  ): void {
+    if (name !== undefined) {
+      exports.set(name, { publicName: name, kind, sourceFile: sourcePath })
+    }
+  }
+
+  private collectVariableExports(
+    statement: VariableStatement,
+    sourcePath: string,
+    exports: Map<string, ExportSymbolInfo>,
+  ): void {
+    const kind = declarationKind(statement)
+    for (const declaration of statement.getDeclarations()) {
+      const name = declaration.getName()
+      exports.set(name, { publicName: name, kind, sourceFile: sourcePath })
+    }
+  }
+
+  private collectExportAssignment(
+    statement: import("ts-morph").ExportAssignment,
+    sourcePath: string,
+    exports: Map<string, ExportSymbolInfo>,
+  ): void {
+    const kind = statement.isExportEquals() ? "export-equals" : "default"
+    const publicName = statement.isExportEquals() ? "export=" : "default"
+    exports.set(publicName, { publicName, kind, sourceFile: sourcePath })
   }
 
   private collectExportDeclaration(
@@ -455,7 +488,7 @@ const typeOnlyExportCount = (surface: FileSurface): number =>
 const formatWeightedSurface = (value: number): string =>
   Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1)
 
-const declarationKind = (statement: import("ts-morph").VariableStatement): string => {
+const declarationKind = (statement: VariableStatement): string => {
   const kind = statement.getDeclarationKind()
   if (kind === "let") return "let"
   if (kind === "var") return "var"
