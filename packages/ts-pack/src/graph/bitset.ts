@@ -54,7 +54,7 @@ export class MutableBitSet {
   }
 }
 
-const popcount32 = (word: number): number => {
+export const popcount32 = (word: number): number => {
   let value = word >>> 0
   value -= (value >>> 1) & 0x55555555
   value = (value & 0x33333333) + ((value >>> 2) & 0x33333333)

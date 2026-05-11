@@ -1,4 +1,4 @@
-import { MutableBitSet } from "./bitset.js"
+import { MutableBitSet, popcount32 } from "./bitset.js"
 
 interface ReachabilityOptions {
   readonly probabilisticThresholdNodes?: number
@@ -184,11 +184,4 @@ const hashIndex = (value: number, seed: number): number => {
   hash = Math.imul(hash ^ (hash >>> 16), 0x85ebca6b)
   hash = Math.imul(hash ^ (hash >>> 13), 0xc2b2ae35)
   return (hash ^ (hash >>> 16)) >>> 0
-}
-
-const popcount32 = (word: number): number => {
-  let value = word >>> 0
-  value -= (value >>> 1) & 0x55555555
-  value = (value & 0x33333333) + ((value >>> 2) & 0x33333333)
-  return (((value + (value >>> 4)) & 0x0f0f0f0f) * 0x01010101) >>> 24
 }

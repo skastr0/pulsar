@@ -3,6 +3,7 @@ import { dirname, join, relative } from "node:path"
 import { Effect } from "effect"
 import { simpleGit } from "simple-git"
 import { nearestPackageForPath } from "./package-ownership.js"
+import { asStringRecord } from "./string-record.js"
 
 export interface PackageManifest {
   readonly name: string | undefined
@@ -125,18 +126,6 @@ const isPrivateManifest = (manifest: Record<string, unknown>): boolean =>
 
 const asDependencyRecord = (value: unknown): Readonly<Record<string, string>> => {
   return asStringRecord(value)
-}
-
-const asStringRecord = (value: unknown): Readonly<Record<string, string>> => {
-  if (value === null || typeof value !== "object") {
-    return {}
-  }
-
-  return Object.fromEntries(
-    Object.entries(value)
-      .filter((entry): entry is [string, string] => typeof entry[1] === "string")
-      .sort(([left], [right]) => left.localeCompare(right)),
-  )
 }
 
 const asBinRecord = (value: unknown): Readonly<Record<string, string>> => {

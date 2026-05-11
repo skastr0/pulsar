@@ -26,6 +26,18 @@ export class RustProjectTag extends Context.Tag("@skastr0/pulsar-rs-pack/RustPro
   RustProject
 >() {}
 
+export const isRustSignalPath = (file: string): boolean => {
+  if (!(file.endsWith(".rs") || file.endsWith("Cargo.toml") || file.endsWith("Cargo.lock"))) {
+    return false
+  }
+  return !(
+    file.includes("/__tests__/fixtures/") ||
+    file.includes("/dist/") ||
+    file.includes("/target/") ||
+    file.includes("/node_modules/")
+  )
+}
+
 const IGNORE_DIRS: ReadonlySet<string> = new Set([
   "node_modules",
   ".git",

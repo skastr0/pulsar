@@ -7,7 +7,7 @@ import {
   buildRegistry,
   type Registry,
 } from "@skastr0/pulsar-core/scoring"
-import { RS_PACK_SIGNALS } from "@skastr0/pulsar-rs-pack"
+import { RS_PACK_SIGNALS, isRustSignalPath } from "@skastr0/pulsar-rs-pack"
 import { SHARED_SIGNALS } from "@skastr0/pulsar-shared-signals"
 import { TS_PACK_SIGNALS } from "@skastr0/pulsar-ts-pack"
 import { Effect } from "effect"
@@ -80,7 +80,7 @@ const detectPulsarSignals = (repoRoot: string) =>
     const hasTypeScript = files.some(
       (file) => file.endsWith(".ts") || file.endsWith(".tsx") || file.endsWith("tsconfig.json"),
     )
-    const hasRust = files.some((file) => isRustSignalPath(file))
+    const hasRust = files.some(isRustSignalPath)
 
     return [
       ...(hasTypeScript || hasRust ? PULSAR_SHARED_SIGNALS : []),
@@ -88,15 +88,3 @@ const detectPulsarSignals = (repoRoot: string) =>
       ...(hasRust ? RS_PACK_SIGNALS : []),
     ]
   })
-
-const isRustSignalPath = (file: string): boolean => {
-  if (!(file.endsWith(".rs") || file.endsWith("Cargo.toml") || file.endsWith("Cargo.lock"))) {
-    return false
-  }
-  return !(
-    file.includes("/__tests__/fixtures/") ||
-    file.includes("/dist/") ||
-    file.includes("/target/") ||
-    file.includes("/node_modules/")
-  )
-}

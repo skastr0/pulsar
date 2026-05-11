@@ -18,7 +18,7 @@ import {
   validateVectorAgainstRegistry,
   type PulsarVector,
 } from "@skastr0/pulsar-core/vector"
-import { RS_PACK_SIGNALS, RustProjectLayer } from "@skastr0/pulsar-rs-pack"
+import { RS_PACK_SIGNALS, RustProjectLayer, isRustSignalPath } from "@skastr0/pulsar-rs-pack"
 import { SHARED_SIGNALS } from "@skastr0/pulsar-shared-signals"
 import { TS_PACK_SIGNALS, TsProjectLayer } from "@skastr0/pulsar-ts-pack"
 import { Effect, Layer } from "effect"
@@ -127,18 +127,6 @@ const detectPulsarSignals = async (worktree: string) => {
     ...(hasTypeScript ? TS_PACK_SIGNALS : []),
     ...(hasRust ? RS_PACK_SIGNALS : []),
   ]
-}
-
-const isRustSignalPath = (file: string): boolean => {
-  if (!(file.endsWith(".rs") || file.endsWith("Cargo.toml") || file.endsWith("Cargo.lock"))) {
-    return false
-  }
-  return !(
-    file.includes("/__tests__/fixtures/") ||
-    file.includes("/dist/") ||
-    file.includes("/target/") ||
-    file.includes("/node_modules/")
-  )
 }
 
 const collectActiveLanguagePacks = (

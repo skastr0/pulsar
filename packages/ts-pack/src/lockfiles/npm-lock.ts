@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises"
+import { asStringRecord } from "../string-record.js"
 
 interface NpmLockWorkspace {
   readonly path: string
@@ -123,15 +124,7 @@ const packageNamesFromPackageLockKey = (lockKey: string): ReadonlyArray<string> 
 }
 
 const asDependencyRecord = (value: unknown): Readonly<Record<string, string>> => {
-  if (value === null || typeof value !== "object") {
-    return {}
-  }
-
-  return Object.fromEntries(
-    Object.entries(value)
-      .filter((entry): entry is [string, string] => typeof entry[1] === "string")
-      .sort(([left], [right]) => left.localeCompare(right)),
-  )
+  return asStringRecord(value)
 }
 
 const asOptionalString = (value: unknown): string | undefined =>
