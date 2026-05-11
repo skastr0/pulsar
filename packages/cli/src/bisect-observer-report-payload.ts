@@ -11,6 +11,7 @@ import {
   buildObserverCurves,
   compactObserverTrajectory,
 } from "./bisect-observer-shape.js"
+import { signalScorePoints } from "./bisect-observer-score-points.js"
 import type {
   CategoryTrajectory,
   ObserverBisectReport,
@@ -254,15 +255,6 @@ const nullableSignalScores = (
   signalId: string,
 ): ReadonlyArray<number | null> =>
   trajectory.map((entry) => entry.signals[signalId] ?? null)
-
-const signalScorePoints = (
-  trajectory: ReadonlyArray<ObserverCommitEntry>,
-  signalId: string,
-): ReadonlyArray<ScorePoint> =>
-  trajectory.flatMap((entry) => {
-    const score = entry.signals[signalId]
-    return score === undefined ? [] : [{ sha: entry.sha, score }]
-  })
 
 const mergeSignalCategories = (
   results: ReadonlyArray<ObserverCurveSample>,

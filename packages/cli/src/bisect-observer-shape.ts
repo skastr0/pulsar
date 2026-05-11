@@ -7,6 +7,7 @@ import type {
   ObserverCurveSet,
 } from "./bisect-observer-types.js"
 import type { ScorePoint } from "./bisect-signal-types.js"
+import { signalScorePoints } from "./bisect-observer-score-points.js"
 
 export const compactObserverTrajectory = (
   trajectory: ReadonlyArray<ObserverCommitEntry>,
@@ -81,12 +82,3 @@ const nullableSignalScores = (
   signalId: string,
 ): ReadonlyArray<number | null> =>
   trajectory.map((entry) => entry.signals[signalId] ?? null)
-
-const signalScorePoints = (
-  trajectory: ReadonlyArray<ObserverCommitEntry>,
-  signalId: string,
-): ReadonlyArray<ScorePoint> =>
-  trajectory.flatMap((entry) => {
-    const score = entry.signals[signalId]
-    return score === undefined ? [] : [{ sha: entry.sha, score }]
-  })

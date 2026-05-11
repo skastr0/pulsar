@@ -4,6 +4,7 @@ import {
   hasOnlyIgnoredParameters,
   isEmptyBodyText,
   nearestPropertyAssignment,
+  objectMemberNameForFunction,
   propertyNameOf,
 } from "./ts-sl-04-noop-ast.js"
 import {
@@ -239,7 +240,7 @@ const isCommonEmptyContractCallback = (fn: FnLike): boolean => {
   }
   if (fn.getParameters().length > 0) return false
   if (Node.isMethodDeclaration(fn) && !Node.isObjectLiteralExpression(fn.getParent())) return false
-  return COMMON_EMPTY_CONTRACT_CALLBACKS.has(functionMemberName(fn))
+  return COMMON_EMPTY_CONTRACT_CALLBACKS.has(objectMemberNameForFunction(fn))
 }
 
 const isTimerKeepAliveNoop = (fn: FnLike): boolean => {
@@ -259,12 +260,6 @@ const isRegistrationMarkerNoop = (fn: FnLike): boolean => {
   const firstArg = parent.getArguments()[0]
   if (firstArg !== fn) return false
   return /\.register[A-Z]/.test(parent.getExpression().getText())
-}
-
-const functionMemberName = (fn: FnLike): string => {
-  if (Node.isMethodDeclaration(fn)) return fn.getName()
-  const parent = fn.getParent()
-  return Node.isPropertyAssignment(parent) ? propertyNameOf(parent) : getFunctionName(fn)
 }
 
 export const hasBuiltinIntentionalNoopShape = (fn: FnLike): boolean => {

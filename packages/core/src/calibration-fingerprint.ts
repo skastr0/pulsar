@@ -94,27 +94,22 @@ export const compareByIdThenVersion = (
 export const compareProcessor = (
   left: AnyCalibrationProcessor,
   right: AnyCalibrationProcessor,
-): number =>
+): number => compareProcessorOrder(left, right)
+
+type ProcessorOrderKey = {
+  readonly slot: string
+  readonly priority: number
+  readonly moduleId: string
+  readonly id: string
+}
+
+const compareProcessorOrder = (left: ProcessorOrderKey, right: ProcessorOrderKey): number =>
   left.slot.localeCompare(right.slot) ||
   left.priority - right.priority ||
   left.moduleId.localeCompare(right.moduleId) ||
   left.id.localeCompare(right.id)
 
 export const compareProcessorDescriptor = (
-  left: {
-    readonly slot: string
-    readonly priority: number
-    readonly moduleId: string
-    readonly id: string
-  },
-  right: {
-    readonly slot: string
-    readonly priority: number
-    readonly moduleId: string
-    readonly id: string
-  },
-): number =>
-  left.slot.localeCompare(right.slot) ||
-  left.priority - right.priority ||
-  left.moduleId.localeCompare(right.moduleId) ||
-  left.id.localeCompare(right.id)
+  left: ProcessorOrderKey,
+  right: ProcessorOrderKey,
+): number => compareProcessorOrder(left, right)
