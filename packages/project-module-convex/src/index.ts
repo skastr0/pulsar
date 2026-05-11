@@ -113,25 +113,43 @@ const CONVEX_RUNTIME_FACTORIES = new Set([
   "httpAction",
 ])
 
-const isConvexSchemaEntrypoint = (
-  value: TypeScriptExportReachabilityValue,
-  imports: ReadonlyArray<TypeScriptImportBindingFact>,
-  localBindings: ReadonlyArray<TypeScriptLocalBindingFact>,
-): boolean =>
-  value.exportName === "default" &&
-  /(?:^|\/)convex\/schema\.[cm]?tsx?$/u.test(value.exportFile.replaceAll("\\", "/")) &&
-  exportCallsImportedFactory(value, imports, localBindings, new Set(["defineSchema"]), (specifier) =>
-    specifier === CONVEX_SERVER_MODULE
-  )
+const isConvexSchemaEntrypoint = defineConvexServerDefaultEntrypointPredicate({
+  filePattern: /(?:^|\/)convex\/schema\.[cm]?tsx?$/u,
+  factoryNames: new Set(["defineSchema"]),
+})
 
-const isConvexHttpEntrypoint = (
+const isConvexHttpEntrypoint = defineConvexServerDefaultEntrypointPredicate({
+  filePattern: /(?:^|\/)convex\/http\.[cm]?tsx?$/u,
+  factoryNames: new Set(["httpRouter"]),
+})
+
+type ConvexServerDefaultEntrypointSpec = {
+  readonly filePattern: RegExp
+  readonly factoryNames: ReadonlySet<string>
+}
+
+type ConvexServerDefaultEntrypointPredicate = (
   value: TypeScriptExportReachabilityValue,
   imports: ReadonlyArray<TypeScriptImportBindingFact>,
   localBindings: ReadonlyArray<TypeScriptLocalBindingFact>,
+) => boolean
+
+function defineConvexServerDefaultEntrypointPredicate(
+  spec: ConvexServerDefaultEntrypointSpec,
+): ConvexServerDefaultEntrypointPredicate {
+  return (value, imports, localBindings) =>
+    isConvexServerDefaultEntrypoint(value, imports, localBindings, spec)
+}
+
+const isConvexServerDefaultEntrypoint = (
+  value: TypeScriptExportReachabilityValue,
+  imports: ReadonlyArray<TypeScriptImportBindingFact>,
+  localBindings: ReadonlyArray<TypeScriptLocalBindingFact>,
+  spec: ConvexServerDefaultEntrypointSpec,
 ): boolean =>
   value.exportName === "default" &&
-  /(?:^|\/)convex\/http\.[cm]?tsx?$/u.test(value.exportFile.replaceAll("\\", "/")) &&
-  exportCallsImportedFactory(value, imports, localBindings, new Set(["httpRouter"]), (specifier) =>
+  spec.filePattern.test(value.exportFile.replaceAll("\\", "/")) &&
+  exportCallsImportedFactory(value, imports, localBindings, spec.factoryNames, (specifier) =>
     specifier === CONVEX_SERVER_MODULE
   )
 

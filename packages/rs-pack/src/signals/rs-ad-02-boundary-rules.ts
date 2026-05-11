@@ -1,19 +1,15 @@
 import type { RustBoundaryRule } from "./rs-ad-02-types.js"
+import { asUnknownRecord } from "./shared-record-guards.js"
 
 const isStringArray = (value: unknown): value is ReadonlyArray<string> =>
   Array.isArray(value) && value.every((entry) => typeof entry === "string")
 
-const asRecord = (value: unknown): Record<string, unknown> | undefined =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined
-
 export const normalizeBoundaryRules = (raw: unknown): ReadonlyMap<string, RustBoundaryRule> => {
-  const record = asRecord(raw)
-  const boundaries = asRecord(record?.rust_crate_boundaries) ?? asRecord(record?.boundaries) ?? {}
+  const record = asUnknownRecord(raw)
+  const boundaries = asUnknownRecord(record?.rust_crate_boundaries) ?? asUnknownRecord(record?.boundaries) ?? {}
   return new Map(
     Object.entries(boundaries).flatMap(([key, value]) => {
-      const rule = asRecord(value)
+      const rule = asUnknownRecord(value)
       if (rule === undefined) return []
       return [
         [

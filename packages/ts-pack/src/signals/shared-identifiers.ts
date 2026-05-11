@@ -4,7 +4,10 @@ import {
   splitIdentifierTokens,
   type IdentifierPattern,
 } from "../casing.js"
-import { compareDiagnosticOrderKeys } from "./shared-diagnostic-order.js"
+import {
+  compareDiagnosticOrderProperties,
+  type DiagnosticOrderProperties,
+} from "./shared-diagnostic-order.js"
 import { isExcluded } from "./shared-globs.js"
 
 export type IdentifierDeclarationKind =
@@ -228,18 +231,11 @@ const unwrapConstInitializer = (initializer: Node | undefined): Node | undefined
 const compareIdentifierDeclarations = (
   left: IdentifierDeclaration,
   right: IdentifierDeclaration,
-): number =>
-  compareDiagnosticOrderKeys(
-    {
-      file: left.file,
-      line: left.line,
-      kind: left.kind,
-      label: left.name,
-    },
-    {
-      file: right.file,
-      line: right.line,
-      kind: right.kind,
-      label: right.name,
-    },
-  )
+): number => compareDiagnosticOrderProperties(left, right, IDENTIFIER_DECLARATION_ORDER)
+
+const IDENTIFIER_DECLARATION_ORDER = {
+  file: "file",
+  line: "line",
+  kind: "kind",
+  label: "name",
+} satisfies DiagnosticOrderProperties<IdentifierDeclaration>

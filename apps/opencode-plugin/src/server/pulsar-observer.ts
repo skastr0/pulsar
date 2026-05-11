@@ -44,7 +44,7 @@ export const loadPulsarVectorForWorktree = async (
   try {
     raw = await readFile(path, "utf8")
   } catch (error) {
-    if (errorCodeOf(error) === "ENOENT") return undefined
+    if (isFileNotFoundError(error)) return undefined
     throw error
   }
 
@@ -183,7 +183,8 @@ const stableStringify = (value: unknown): string => {
     .join(",")}}`
 }
 
-const errorCodeOf = (error: unknown): string | undefined =>
-  typeof error === "object" && error !== null && "code" in error
-    ? String((error as { code?: unknown }).code)
-    : undefined
+const isFileNotFoundError = (error: unknown): boolean =>
+  typeof error === "object" &&
+  error !== null &&
+  "code" in error &&
+  String((error as { code?: unknown }).code) === "ENOENT"

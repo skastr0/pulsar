@@ -178,7 +178,9 @@ const flattenBaseline = (
         ...violation,
       })),
     )
-    .sort((a, b) => compareViolationTuple(tupleOfBaseline(a), tupleOfBaseline(b)))
+    .sort((a, b) =>
+      compareViolationTuple(tupleOfIdentifiedViolation(a), tupleOfIdentifiedViolation(b)),
+    )
 
 const canonicalBaselineSignalId = (
   signalId: string,
@@ -198,15 +200,18 @@ const currentKeyOf = (violation: CurrentViolationSnapshot): string =>
 const baselineKeyOf = (violation: PaidDebtViolation): string =>
   `${violation.signalId}:${violation.hash}`
 
-const tupleOfCurrent = (violation: CurrentViolationSnapshot): [string, string, string, number] => [
+type IdentifiedViolation = Pick<CurrentViolationSnapshot, "signalId" | "hash" | "file" | "line">
+type ViolationSortTuple = [signalId: string, hash: string, file: string, line: number]
+
+const tupleOfIdentifiedViolation = (violation: IdentifiedViolation): ViolationSortTuple => [
   violation.signalId,
   violation.hash,
   violation.file,
   violation.line ?? -1,
 ]
 
-const tupleOfBaseline = (violation: PaidDebtViolation): [string, string, string, number] => [
-  violation.signalId,
+const tupleOfBaselineViolation = (violation: BaselineViolation): ViolationSortTuple => [
+  "",
   violation.hash,
   violation.file,
   violation.line ?? -1,
@@ -215,18 +220,22 @@ const tupleOfBaseline = (violation: PaidDebtViolation): [string, string, string,
 const sortCurrentViolations = (
   violations: ReadonlyArray<CurrentViolationSnapshot>,
 ): ReadonlyArray<CurrentViolationSnapshot> =>
-  [...violations].sort((a, b) => compareViolationTuple(tupleOfCurrent(a), tupleOfCurrent(b)))
+  sortViolations(violations, tupleOfIdentifiedViolation)
 
 const sortBaselineViolations = (
   violations: ReadonlyArray<BaselineViolation>,
 ): Array<BaselineViolation> =>
-  [...violations].sort((a, b) =>
-    compareViolationTuple(["", a.hash, a.file, a.line ?? -1], ["", b.hash, b.file, b.line ?? -1]),
-  )
+  sortViolations(violations, tupleOfBaselineViolation)
+
+const sortViolations = <Violation>(
+  violations: ReadonlyArray<Violation>,
+  sortTupleOf: (violation: Violation) => ViolationSortTuple,
+): Array<Violation> =>
+  [...violations].sort((a, b) => compareViolationTuple(sortTupleOf(a), sortTupleOf(b)))
 
 const compareViolationTuple = (
-  a: [string, string, string, number],
-  b: [string, string, string, number],
+  a: ViolationSortTuple,
+  b: ViolationSortTuple,
 ): number => {
   if (a[0] !== b[0]) return a[0] < b[0] ? -1 : 1
   if (a[1] !== b[1]) return a[1] < b[1] ? -1 : 1

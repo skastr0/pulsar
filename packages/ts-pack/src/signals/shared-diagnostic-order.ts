@@ -5,6 +5,13 @@ export interface DiagnosticOrderKey {
   readonly label: string
 }
 
+export interface DiagnosticOrderProperties<Item> {
+  readonly file: keyof Item
+  readonly line: keyof Item
+  readonly kind: keyof Item
+  readonly label: keyof Item
+}
+
 export const compareDiagnosticOrderKeys = (
   left: DiagnosticOrderKey,
   right: DiagnosticOrderKey,
@@ -14,3 +21,23 @@ export const compareDiagnosticOrderKeys = (
   if (left.kind !== right.kind) return left.kind.localeCompare(right.kind)
   return left.label.localeCompare(right.label)
 }
+
+export const compareDiagnosticOrderProperties = <Item extends object>(
+  left: Item,
+  right: Item,
+  properties: DiagnosticOrderProperties<Item>,
+): number =>
+  compareDiagnosticOrderKeys(
+    diagnosticOrderKeyFromProperties(left, properties),
+    diagnosticOrderKeyFromProperties(right, properties),
+  )
+
+const diagnosticOrderKeyFromProperties = <Item extends object>(
+  item: Item,
+  properties: DiagnosticOrderProperties<Item>,
+): DiagnosticOrderKey => ({
+  file: item[properties.file] as string,
+  line: item[properties.line] as number,
+  kind: item[properties.kind] as string,
+  label: item[properties.label] as string,
+})

@@ -3,7 +3,10 @@ import type { BoundaryConvention } from "@skastr0/pulsar-core/reference-data"
 import type { ExportDeclaration, ImportDeclaration, SourceFile } from "ts-morph"
 import type { PackageInfo } from "../discovery.js"
 import type { BoundaryViolation } from "./ts-ad-01-boundary-violations.js"
-import { compareDiagnosticOrderKeys } from "./shared-diagnostic-order.js"
+import {
+  compareDiagnosticOrderProperties,
+  type DiagnosticOrderProperties,
+} from "./shared-diagnostic-order.js"
 import {
   isBuiltinModuleName,
   normalizePackageSpecifier,
@@ -95,21 +98,14 @@ export const summarizeViolationsByPackage = (
 export const compareBoundaryViolations = (
   left: BoundaryViolation,
   right: BoundaryViolation,
-): number =>
-  compareDiagnosticOrderKeys(
-    {
-      file: left.fromFile,
-      line: left.line,
-      kind: left.kind,
-      label: left.specifier,
-    },
-    {
-      file: right.fromFile,
-      line: right.line,
-      kind: right.kind,
-      label: right.specifier,
-    },
-  )
+): number => compareDiagnosticOrderProperties(left, right, BOUNDARY_VIOLATION_ORDER)
+
+const BOUNDARY_VIOLATION_ORDER = {
+  file: "fromFile",
+  line: "line",
+  kind: "kind",
+  label: "specifier",
+} satisfies DiagnosticOrderProperties<BoundaryViolation>
 
 const classifyBoundaryViolation = ({
   declaration,

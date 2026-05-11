@@ -1,3 +1,4 @@
+import { escapeRegExp } from "./shared-regexp.js"
 import type { Suppression } from "./ts-sl-03-suppressions.js"
 
 export const suppressionMessage = (suppression: Suppression): string => {
@@ -269,5 +270,3 @@ const precedingBlockCommentText = (lines: ReadonlyArray<string>, endIndex: numbe
 
   return undefined
 }
-
-const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")

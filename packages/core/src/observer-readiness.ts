@@ -3,6 +3,7 @@ import type { SignalRunResult } from "./runner.js"
 import type { ResolvedSignal } from "./signal.js"
 import { readinessConfigOf, type PulsarVector, type ReadinessObserverConfig, weightOf as vectorWeightOf } from "./vector.js"
 import type { ReadinessOutput, ReadinessPressure } from "./observer-model.js"
+import { localSignalPressure } from "./observer-local-pressure.js"
 import { clamp01, compareAscii, confidenceForSignal, roundScore, signalApplicabilityOf } from "./observer-score-utils.js"
 
 export const computeReadiness = (
@@ -162,7 +163,7 @@ const summarizeReadinessPressure = (
     weightTotal === 0
       ? 0
       : Math.pow(collection.weightedPnormSum / weightTotal, 1 / config.p_norm)
-  const localPressure = localPoisonPressure(collection.maxLocalPressure, config)
+  const localPressure = localSignalPressure(collection.maxLocalPressure, config)
   const failedSignalPressure = collection.failedSignalCount > 0 ? 1 : 0
   const hardGatePressure =
     hardGateStatus === "fail" ? 1 - config.hard_gate_score_cap : 0
@@ -190,17 +191,6 @@ const topReadinessPressures = (
       compareAscii(left.signal_id, right.signal_id),
     )
     .slice(0, config.top_pressures)
-
-const localPoisonPressure = (
-  maxLocalPressure: number,
-  config: ReadinessObserverConfig,
-): number => {
-  if (maxLocalPressure >= config.local_poison_threshold) return maxLocalPressure
-  if (maxLocalPressure >= config.local_warning_threshold) {
-    return maxLocalPressure * config.local_warning_gain
-  }
-  return 0
-}
 
 const readinessStatus = (
   pressure: number,

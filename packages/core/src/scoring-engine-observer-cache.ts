@@ -4,6 +4,7 @@ import {
   OBSERVER_OUTPUT_SEMANTICS,
   type ObserverOutput,
 } from "./observer.js"
+import { roundRuntimeMs } from "./observer-time.js"
 import type { Registry } from "./registry.js"
 import type { SignalRunResult } from "./runner.js"
 import { stableStringify } from "./scoring-engine-contract.js"
@@ -18,6 +19,8 @@ import {
 } from "./vector.js"
 
 export const OBSERVER_CACHE_SIGNAL_ID = "__observer__"
+
+export { nowMs } from "./observer-time.js"
 
 export interface CachedObserverOutput {
   readonly observer_semantics?: ObserverOutput["observer_semantics"]
@@ -157,13 +160,6 @@ export const mergeCachedResultMetadata = (
     },
   }
 }
-
-export const nowMs = (): number => {
-  if (typeof performance !== "undefined") return performance.now()
-  return Date.now()
-}
-
-const roundRuntimeMs = (value: number): number => Math.max(0, Number(value.toFixed(2)))
 
 export const withRuntimeEnvironmentProfile = (
   output: ObserverOutput,

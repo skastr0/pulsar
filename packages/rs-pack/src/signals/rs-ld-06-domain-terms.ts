@@ -13,6 +13,7 @@ import {
 import { collectRustProjectFacts, tokenizeIdentifier } from "../rust-analysis.js"
 import { RustProjectTag } from "../project.js"
 import { isExcluded } from "./shared-globs.js"
+import { asUnknownRecord } from "./shared-record-guards.js"
 
 const RsLd06Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
@@ -132,16 +133,11 @@ export const RsLd06: Signal<RsLd06Config, RsLd06Output, RustProjectTag | Referen
   },
 }
 
-const asRecord = (value: unknown): Record<string, unknown> | undefined =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined
-
 const normalizeGlossary = (raw: unknown): ReadonlyArray<GlossaryEntry> => {
   if (Array.isArray(raw)) {
     return raw.flatMap((entry) => normalizeGlossaryEntry(entry))
   }
-  const record = asRecord(raw)
+  const record = asUnknownRecord(raw)
   if (record === undefined) return []
   if (Array.isArray(record.terms)) {
     return record.terms.flatMap((entry) => normalizeGlossaryEntry(entry))
@@ -158,7 +154,7 @@ const normalizeGlossaryEntry = (entry: unknown): ReadonlyArray<GlossaryEntry> =>
   if (typeof entry === "string") {
     return [{ canonical: entry, aliases: [] }]
   }
-  const record = asRecord(entry)
+  const record = asUnknownRecord(entry)
   if (record === undefined || typeof record.canonical !== "string") return []
   return [
     {

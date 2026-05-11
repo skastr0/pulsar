@@ -4,6 +4,7 @@ import type { SignalRunResult } from "./runner.js"
 import type { ResolvedSignal } from "./signal.js"
 import { categoryAggregationConfigOf, type CategoryAggregationObserverConfig, type PulsarVector, weightOf as vectorWeightOf } from "./vector.js"
 import type { CategoryOutput } from "./observer-model.js"
+import { localSignalPressure } from "./observer-local-pressure.js"
 import { clamp01, confidenceForSignal, roundScore, signalApplicabilityOf } from "./observer-score-utils.js"
 
 export const aggregateCategories = (
@@ -246,7 +247,7 @@ const aggregateCategoryPressure = (
     weightTotal === 0
       ? 0
       : Math.pow(weightedPnormSum / weightTotal, 1 / config.p_norm)
-  const localPressure = categoryLocalPressure(maxLocalPressure, config)
+  const localPressure = localSignalPressure(maxLocalPressure, config)
   const finalPressure = clamp01(Math.max(pnormPressure, localPressure))
 
   return {
@@ -265,14 +266,3 @@ const confidenceAdjustedScore = (score: number, confidence: number): number =>
 
 const confidenceAdjustedPressure = (score: number, confidence: number): number =>
   clamp01(1 - score) * confidence
-
-const categoryLocalPressure = (
-  maxLocalPressure: number,
-  config: CategoryAggregationObserverConfig,
-): number => {
-  if (maxLocalPressure >= config.local_poison_threshold) return maxLocalPressure
-  if (maxLocalPressure >= config.local_warning_threshold) {
-    return maxLocalPressure * config.local_warning_gain
-  }
-  return 0
-}

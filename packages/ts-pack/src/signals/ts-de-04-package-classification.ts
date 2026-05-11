@@ -2,6 +2,7 @@ import { relative, sep } from "node:path"
 import type { PackageInfo, PackageManifest } from "../discovery.js"
 import { dependencyNamesOf } from "./shared-workspace.js"
 import { matchesAnyGlob } from "./shared-globs.js"
+import { escapeRegExp } from "./shared-regexp.js"
 import { isBundledCliSourceFile } from "./ts-de-04-bundled-info.js"
 import type {
   DependencyUsageContext,
@@ -83,5 +84,3 @@ export const createPackagePathMatcher = (
   return (filePath: string): PackageInfo | undefined =>
     sortedPackages.find((pkg) => filePath === pkg.path || filePath.startsWith(`${pkg.path}/`))
 }
-
-const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
