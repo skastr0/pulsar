@@ -1,4 +1,4 @@
-export interface CliProgressOptions {
+interface CliProgressOptions {
   readonly label: string
   readonly enabled: boolean
   readonly stream?: NodeJS.WriteStream

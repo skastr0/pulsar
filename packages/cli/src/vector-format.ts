@@ -3,7 +3,7 @@ import {
   weightOf,
 } from "@skastr0/pulsar-core/vector"
 
-export interface VectorDiffSummary {
+interface VectorDiffSummary {
   readonly weightChanges: ReadonlyArray<string>
   readonly configChanges: ReadonlyArray<string>
   readonly modeChanges: ReadonlyArray<string>

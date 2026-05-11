@@ -66,14 +66,14 @@ export interface PulsarRuntimeOptions {
   }
 }
 
-export interface SignalWorktreeRun {
+interface SignalWorktreeRun {
   readonly repoRoot: string
   readonly gitSha: string
   readonly registry: Registry
   readonly result: SignalRunResult
 }
 
-export interface ObserverWorktreeRun {
+interface ObserverWorktreeRun {
   readonly repoRoot: string
   readonly gitSha: string
   readonly registry: Registry
@@ -82,7 +82,7 @@ export interface ObserverWorktreeRun {
   readonly calibrationContext: ResolvedCalibrationContext | undefined
 }
 
-export interface PulsarRuntime {
+interface PulsarRuntime {
   readonly registry: Registry
   readonly engine: typeof ScoringEngineTag.Service
   readonly timeSeries: TimeSeriesServices | undefined

@@ -17,7 +17,7 @@ import { buildPulsarRegistry } from "./runtime.js"
 import { discoverPulsarVector, type DiscoveredPulsarVector } from "./vector-discovery.js"
 import { renderVectorDiff, summarizeVectorDiff } from "./vector-format.js"
 
-export interface PersonaCommandOptions {
+interface PersonaCommandOptions {
   readonly action: "list" | "show" | "apply" | "diff"
   readonly presetId?: string
   readonly outputPath?: string

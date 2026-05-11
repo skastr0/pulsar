@@ -14,7 +14,7 @@ export interface CalibrateCommandOptions {
   readonly write?: boolean
 }
 
-export interface CalibrationSuggestion {
+interface CalibrationSuggestion {
   readonly id: string
   readonly title: string
   readonly reason: string
