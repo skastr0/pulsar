@@ -80,74 +80,7 @@ export const TsAd03: Signal<TsAd03Config, TsAd03Output, TsProjectTag | SignalCon
           const sourceFiles = project
             .getSourceFiles()
             .filter((sourceFile) => !isExcluded(sourceFile.getFilePath(), config.exclude_globs))
-          const fileSet: ReadonlySet<string> = new Set(
-            sourceFiles.map((sourceFile): string => sourceFile.getFilePath()),
-          )
-          const resolver = createModuleResolver(sourceFiles, [])
-          const reExportTargets = new Map<string, ReadonlyArray<string>>()
-          const analysisByFile = new Map<string, ReExportAnalysis>()
-
-          for (const sourceFile of sourceFiles) {
-            const file: string = sourceFile.getFilePath()
-            const targets = uniqueSorted(
-              sourceFile.getExportDeclarations().reduce<Array<string>>((acc, declaration) => {
-                const value = resolver.resolve(file, declaration)
-                if (value !== undefined && fileSet.has(value)) {
-                  acc.push(value)
-                }
-                return acc
-              }, []),
-            )
-            reExportTargets.set(file, targets)
-
-            const directReExports = targets.length
-            const totalExports = directReExports + countLocalExportSurfaces(sourceFile)
-            const barrelRatio =
-              totalExports === 0
-                ? directReExports > 0
-                  ? 1
-                  : 0
-                : directReExports / totalExports
-            const isBarrel =
-              barrelRatio >= config.barrel_ratio_threshold ||
-              (basename(file) === "index.ts" && directReExports >= config.index_reexport_threshold)
-
-            analysisByFile.set(file, {
-              isBarrel,
-              barrelRatio,
-              maxChainDepth: 0,
-              directReExports,
-            })
-          }
-
-          const allChains: Array<ReExportChain> = []
-          for (const [file, targets] of reExportTargets) {
-            const chains = targets.flatMap((target) =>
-              walkReExportChains(file, target, reExportTargets, analysisByFile, [file]),
-            )
-            allChains.push(...chains)
-            const current = analysisByFile.get(file)
-            if (current !== undefined) {
-              analysisByFile.set(file, {
-                ...current,
-                maxChainDepth: chains.reduce((max, chain) => Math.max(max, chain.depth), 0),
-              })
-            }
-          }
-
-          const chainsOverThreshold = uniqueChains(allChains)
-            .filter((chain) => chain.depth > config.chain_threshold || chain.cycle)
-            .sort(compareChains)
-
-          return {
-            byFile: analysisByFile,
-            chainsOverThreshold,
-            stats: summarize(allChains.map((chain) => chain.depth)),
-            threshold: config.chain_threshold,
-            scoreScale: config.score_scale,
-            diagnosticLimit: config.top_n_diagnostics,
-            worktreePath: context.worktreePath,
-          }
+          return computeReExportDepthOutput(sourceFiles, config, context.worktreePath)
         },
         catch: (cause) =>
           new SignalComputeError({
@@ -181,6 +114,120 @@ export const TsAd03: Signal<TsAd03Config, TsAd03Output, TsProjectTag | SignalCon
         cycle: chain.cycle,
       },
     })),
+}
+
+const computeReExportDepthOutput = (
+  sourceFiles: ReadonlyArray<SourceFile>,
+  config: TsAd03Config,
+  worktreePath: string,
+): TsAd03Output => {
+  const { reExportTargets, analysisByFile } = buildReExportAnalysis(sourceFiles, config)
+  const allChains = collectReExportChains(reExportTargets, analysisByFile)
+  const chainsOverThreshold = uniqueChains(allChains)
+    .filter((chain) => chain.depth > config.chain_threshold || chain.cycle)
+    .sort(compareChains)
+
+  return {
+    byFile: analysisByFile,
+    chainsOverThreshold,
+    stats: summarize(allChains.map((chain) => chain.depth)),
+    threshold: config.chain_threshold,
+    scoreScale: config.score_scale,
+    diagnosticLimit: config.top_n_diagnostics,
+    worktreePath,
+  }
+}
+
+const buildReExportAnalysis = (
+  sourceFiles: ReadonlyArray<SourceFile>,
+  config: TsAd03Config,
+): {
+  readonly reExportTargets: ReadonlyMap<string, ReadonlyArray<string>>
+  readonly analysisByFile: Map<string, ReExportAnalysis>
+} => {
+  const fileSet: ReadonlySet<string> = new Set(
+    sourceFiles.map((sourceFile): string => sourceFile.getFilePath()),
+  )
+  const resolver = createModuleResolver(sourceFiles, [])
+  const reExportTargets = new Map<string, ReadonlyArray<string>>()
+  const analysisByFile = new Map<string, ReExportAnalysis>()
+
+  for (const sourceFile of sourceFiles) {
+    const file = sourceFile.getFilePath()
+    const targets = collectReExportTargets(sourceFile, fileSet, resolver)
+    reExportTargets.set(file, targets)
+    analysisByFile.set(file, analyzeReExportFile(sourceFile, targets, config))
+  }
+
+  return { reExportTargets, analysisByFile }
+}
+
+const collectReExportTargets = (
+  sourceFile: SourceFile,
+  fileSet: ReadonlySet<string>,
+  resolver: ReturnType<typeof createModuleResolver>,
+): ReadonlyArray<string> => {
+  const file = sourceFile.getFilePath()
+  return uniqueSorted(
+    sourceFile.getExportDeclarations().reduce<Array<string>>((acc, declaration) => {
+      const value = resolver.resolve(file, declaration)
+      if (value !== undefined && fileSet.has(value)) {
+        acc.push(value)
+      }
+      return acc
+    }, []),
+  )
+}
+
+const analyzeReExportFile = (
+  sourceFile: SourceFile,
+  targets: ReadonlyArray<string>,
+  config: TsAd03Config,
+): ReExportAnalysis => {
+  const file = sourceFile.getFilePath()
+  const directReExports = targets.length
+  const totalExports = directReExports + countLocalExportSurfaces(sourceFile)
+  const barrelRatio = totalExports === 0 ? Number(directReExports > 0) : directReExports / totalExports
+  const isBarrel =
+    barrelRatio >= config.barrel_ratio_threshold ||
+    (basename(file) === "index.ts" && directReExports >= config.index_reexport_threshold)
+
+  return {
+    isBarrel,
+    barrelRatio,
+    maxChainDepth: 0,
+    directReExports,
+  }
+}
+
+const collectReExportChains = (
+  reExportTargets: ReadonlyMap<string, ReadonlyArray<string>>,
+  analysisByFile: Map<string, ReExportAnalysis>,
+): ReadonlyArray<ReExportChain> => {
+  const allChains: Array<ReExportChain> = []
+
+  for (const [file, targets] of reExportTargets) {
+    const chains = targets.flatMap((target) =>
+      walkReExportChains(file, target, reExportTargets, analysisByFile, [file]),
+    )
+    allChains.push(...chains)
+    updateMaxChainDepth(analysisByFile, file, chains)
+  }
+
+  return allChains
+}
+
+const updateMaxChainDepth = (
+  analysisByFile: Map<string, ReExportAnalysis>,
+  file: string,
+  chains: ReadonlyArray<ReExportChain>,
+): void => {
+  const current = analysisByFile.get(file)
+  if (current === undefined) return
+  analysisByFile.set(file, {
+    ...current,
+    maxChainDepth: chains.reduce((max, chain) => Math.max(max, chain.depth), 0),
+  })
 }
 
 const formatHopChain = (hops: ReadonlyArray<string>, worktreePath: string | undefined): string =>
