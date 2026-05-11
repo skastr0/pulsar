@@ -1,4 +1,4 @@
-import type { Diagnostic } from "@skastr0/pulsar-core"
+import type { Diagnostic } from "@skastr0/pulsar-core/signal"
 import type { CloneGroup, CloneGroupMember, TsSl01Output } from "./ts-sl-01-model.js"
 import { DEFAULT_SCORE_BUDGET_MIN_TOKENS } from "./ts-sl-01-model.js"
 

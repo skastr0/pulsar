@@ -1,4 +1,4 @@
-import type { Diagnostic } from "@skastr0/pulsar-core"
+import type { Diagnostic } from "@skastr0/pulsar-core/signal"
 import { exportKindWeight, type FileSurface } from "./ts-ab-01-export-collection.js"
 
 interface PublicExportDiagnosticsOutput {

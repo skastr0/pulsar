@@ -1,15 +1,9 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test"
 import { Effect, Layer } from "effect"
-import {
-  CalibrationContextTag,
-  SIGNAL_FACTOR_POLICY_PRECEDENCE,
-  SignalContextTag,
-  SignalFactorPolicyTag,
-  appendCalibrationDecision,
-  defineCalibrationProcessor,
-  makeResolvedCalibrationContext,
-  type RepoFacts,
-} from "@skastr0/pulsar-core"
+import { SignalContextTag } from "@skastr0/pulsar-core/signal"
+import { CalibrationContextTag, appendCalibrationDecision, defineCalibrationProcessor, makeResolvedCalibrationContext } from "@skastr0/pulsar-core/calibration"
+import type { RepoFacts } from "@skastr0/pulsar-core/calibration"
+import { SIGNAL_FACTOR_POLICY_PRECEDENCE, SignalFactorPolicyTag } from "@skastr0/pulsar-core/factors"
 import { createTempRepo, runSignal } from "./test-repo.js"
 import { TsSl04 } from "../signals/ts-sl-04-empty-implementations.js"
 import { TsProjectLayer } from "../ts-project.js"

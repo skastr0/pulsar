@@ -1,4 +1,5 @@
-import { withConfigFactorLedger, type AnySignal } from "@skastr0/pulsar-core"
+import type { AnySignal } from "@skastr0/pulsar-core/signal"
+import { withConfigFactorLedger } from "@skastr0/pulsar-core/factors"
 import { TsAb01 } from "./signals/ts-ab-01-public-export-surface.js"
 import { TsAb02 } from "./signals/ts-ab-02-unused-exports-reachability.js"
 import { TsAb03 } from "./signals/ts-ab-03-type-indirection-depth.js"

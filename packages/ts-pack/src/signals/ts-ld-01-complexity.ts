@@ -1,12 +1,7 @@
-import {
-  CalibrationContextTag,
-  type CalibrationDecision,
-  type Diagnostic,
-  type DistributionalSummary,
-  type Signal,
-  SignalComputeError,
-  summarize,
-} from "@skastr0/pulsar-core"
+import { SignalComputeError, summarize } from "@skastr0/pulsar-core/signal"
+import type { Diagnostic, DistributionalSummary, Signal } from "@skastr0/pulsar-core/signal"
+import { CalibrationContextTag } from "@skastr0/pulsar-core/calibration"
+import type { CalibrationDecision } from "@skastr0/pulsar-core/calibration"
 import { Effect, Schema } from "effect"
 import { TsProjectTag } from "../ts-project.js"
 import { isExcluded } from "./shared-globs.js"

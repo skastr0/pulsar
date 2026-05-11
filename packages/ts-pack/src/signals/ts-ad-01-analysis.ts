@@ -1,5 +1,5 @@
 import { relative } from "node:path"
-import type { BoundaryConvention } from "@skastr0/pulsar-core"
+import type { BoundaryConvention } from "@skastr0/pulsar-core/reference-data"
 import type { ExportDeclaration, ImportDeclaration, SourceFile } from "ts-morph"
 import type { PackageInfo } from "../discovery.js"
 import type { BoundaryViolation } from "./ts-ad-01-boundary-violations.js"

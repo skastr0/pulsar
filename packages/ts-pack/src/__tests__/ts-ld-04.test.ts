@@ -1,13 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import {
-  InMemoryCacheLayer,
-  ReferenceDataTag,
-  SignalContextTag,
-  buildRegistry,
-  makeReferenceData,
-  observe,
-  type ObserverOutput,
-} from "@skastr0/pulsar-core"
+import { InMemoryCacheLayer, ReferenceDataTag, SignalContextTag, makeReferenceData } from "@skastr0/pulsar-core/signal"
+import { observe } from "@skastr0/pulsar-core/observer"
+import type { ObserverOutput } from "@skastr0/pulsar-core/observer"
+import { buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { Effect, Layer } from "effect"
 import { inferCasingPattern } from "../casing.js"
 import { TsLd04 } from "../signals/ts-ld-04-naming-conventions.js"

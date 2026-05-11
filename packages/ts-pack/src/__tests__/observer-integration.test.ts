@@ -1,15 +1,10 @@
 import { spawnSync } from "node:child_process"
 import { describe, expect, test } from "bun:test"
 import { Effect, Layer } from "effect"
-import {
-  InMemoryCacheLayer,
-  ReferenceDataTag,
-  SignalContextTag,
-  buildRegistry,
-  makeReferenceData,
-  observe,
-  type ObserverOutput,
-} from "@skastr0/pulsar-core"
+import { InMemoryCacheLayer, ReferenceDataTag, SignalContextTag, makeReferenceData } from "@skastr0/pulsar-core/signal"
+import { observe } from "@skastr0/pulsar-core/observer"
+import type { ObserverOutput } from "@skastr0/pulsar-core/observer"
+import { buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { SHARED_SIGNALS } from "@skastr0/pulsar-shared-signals"
 import { TS_PACK_SIGNALS } from "../pack.js"
 import { TsProjectLayer } from "../ts-project.js"

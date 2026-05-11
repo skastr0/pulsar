@@ -1,10 +1,6 @@
-import {
-  type CalibrationDecision,
-  type CalibrationProcessorError,
-  type DistributionalSummary,
-  type ResolvedCalibrationContext,
-  summarize,
-} from "@skastr0/pulsar-core"
+import { summarize } from "@skastr0/pulsar-core/signal"
+import type { DistributionalSummary } from "@skastr0/pulsar-core/signal"
+import type { CalibrationDecision, CalibrationProcessorError, ResolvedCalibrationContext } from "@skastr0/pulsar-core/calibration"
 import { Effect, Option } from "effect"
 import type {
   CalibratedThresholdFunctions,

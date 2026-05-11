@@ -1,12 +1,6 @@
-import {
-  SignalContextTag,
-  computeDiagnosticHash,
-  type Diagnostic,
-  ReferenceDataTag,
-  type SchemaConventions,
-  type Signal,
-  SignalComputeError,
-} from "@skastr0/pulsar-core"
+import { SignalContextTag, computeDiagnosticHash, ReferenceDataTag, SignalComputeError } from "@skastr0/pulsar-core/signal"
+import type { Diagnostic, Signal } from "@skastr0/pulsar-core/signal"
+import type { SchemaConventions } from "@skastr0/pulsar-core/reference-data"
 import { Effect, Option, Schema } from "effect"
 import type { SourceFile } from "ts-morph"
 import { discoverPackages, type PackageInfo } from "../discovery.js"

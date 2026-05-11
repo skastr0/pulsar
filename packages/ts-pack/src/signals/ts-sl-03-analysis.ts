@@ -1,7 +1,4 @@
-import {
-  SignalContextTag,
-  parseBypasses,
-} from "@skastr0/pulsar-core"
+import { SignalContextTag, parseBypasses } from "@skastr0/pulsar-core/signal"
 import { relative } from "node:path"
 import type { Project, SourceFile } from "ts-morph"
 import { isExcluded, matchesAnyGlob } from "./shared-globs.js"

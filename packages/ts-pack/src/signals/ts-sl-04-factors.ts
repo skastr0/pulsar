@@ -1,8 +1,5 @@
-import {
-  overriddenFactorValue,
-  type SignalFactorDefinition,
-  type SignalFactorValue,
-} from "@skastr0/pulsar-core"
+import { overriddenFactorValue } from "@skastr0/pulsar-core/factors"
+import type { SignalFactorDefinition, SignalFactorValue } from "@skastr0/pulsar-core/signal"
 
 export type StubKind = "throw-not-implemented" | "empty-body" | "todo-comment" | "mock-return"
 export type StubConfidence = "high" | "medium" | "low"

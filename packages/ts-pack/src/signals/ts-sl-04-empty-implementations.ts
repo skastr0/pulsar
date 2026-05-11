@@ -1,11 +1,7 @@
-import {
-  CalibrationContextTag,
-  SignalContextTag,
-  SignalFactorPolicyTag,
-  computeDiagnosticHash,
-  type Diagnostic,
-  type Signal,
-} from "@skastr0/pulsar-core"
+import { SignalContextTag, computeDiagnosticHash } from "@skastr0/pulsar-core/signal"
+import type { Diagnostic, Signal } from "@skastr0/pulsar-core/signal"
+import { CalibrationContextTag } from "@skastr0/pulsar-core/calibration"
+import { SignalFactorPolicyTag } from "@skastr0/pulsar-core/factors"
 import { Effect } from "effect"
 import { TsProjectTag } from "../ts-project.js"
 import { defaultTsSl04Config, TsSl04Config as TsSl04ConfigSchema } from "./ts-sl-04-config.js"

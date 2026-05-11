@@ -1,10 +1,8 @@
 import { Context, Effect, Layer } from "effect"
 import { simpleGit } from "simple-git"
 import { Project } from "ts-morph"
-import {
-  isProductionSourcePath,
-  type CalibrationProcessorError,
-} from "@skastr0/pulsar-core"
+import { isProductionSourcePath } from "@skastr0/pulsar-core/signal"
+import type { CalibrationProcessorError } from "@skastr0/pulsar-core/calibration"
 import { discoverPackages, type PackageInfo } from "./discovery.js"
 
 export interface TsProjectOptions {

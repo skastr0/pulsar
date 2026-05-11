@@ -1,4 +1,4 @@
-import { type SignalContext } from "@skastr0/pulsar-core"
+import type { SignalContext } from "@skastr0/pulsar-core/signal"
 import { Project } from "ts-morph"
 import type { PackageInfo, PackageManifest } from "../discovery.js"
 import { dependencyNamesOf, workspacePackageNames } from "./shared-workspace.js"

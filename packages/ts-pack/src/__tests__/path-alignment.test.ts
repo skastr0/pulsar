@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { join } from "node:path"
-import { summarize } from "@skastr0/pulsar-core"
+import { summarize } from "@skastr0/pulsar-core/signal"
 import { Effect } from "effect"
 import { TsRp01 } from "../signals/ts-rp-01-hotspots.js"
 import type { SharedChurn01Output } from "../signals/shared-churn-01.js"

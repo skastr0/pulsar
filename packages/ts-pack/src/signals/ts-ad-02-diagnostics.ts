@@ -1,8 +1,5 @@
-import {
-  hasSuppressingBypass,
-  toExpiredBypassDiagnostic,
-  type Diagnostic,
-} from "@skastr0/pulsar-core"
+import { hasSuppressingBypass, toExpiredBypassDiagnostic } from "@skastr0/pulsar-core/signal"
+import type { Diagnostic } from "@skastr0/pulsar-core/signal"
 import {
   formatBreakEdge,
   formatCycleSpan,

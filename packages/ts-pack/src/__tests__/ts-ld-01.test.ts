@@ -2,13 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
 import { TsLd01 } from "../signals/ts-ld-01-complexity.js"
 import { Effect, Layer } from "effect"
-import {
-  CalibrationContextTag,
-  defineCalibrationProcessor,
-  makeResolvedCalibrationContext,
-  appendCalibrationDecision,
-  type RepoFacts,
-} from "@skastr0/pulsar-core"
+import { CalibrationContextTag, defineCalibrationProcessor, makeResolvedCalibrationContext, appendCalibrationDecision } from "@skastr0/pulsar-core/calibration"
+import type { RepoFacts } from "@skastr0/pulsar-core/calibration"
 import { TsProjectLayer } from "../ts-project.js"
 
 describe("TS-LD-01 (cyclomatic complexity)", () => {

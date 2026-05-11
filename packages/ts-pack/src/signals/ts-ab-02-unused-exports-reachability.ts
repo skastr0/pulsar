@@ -1,15 +1,7 @@
-import {
-  CalibrationContextTag,
-  computeDiagnosticHash,
-  type CalibrationDecision,
-  type CalibrationProcessorError,
-  type CalibrationSlotOutput,
-  type Diagnostic,
-  type ResolvedCalibrationContext,
-  type Signal,
-  SignalComputeError,
-  type TypeScriptExportReachabilityValue,
-} from "@skastr0/pulsar-core"
+import { computeDiagnosticHash, SignalComputeError } from "@skastr0/pulsar-core/signal"
+import type { Diagnostic, Signal } from "@skastr0/pulsar-core/signal"
+import { CalibrationContextTag } from "@skastr0/pulsar-core/calibration"
+import type { CalibrationDecision, CalibrationProcessorError, CalibrationSlotOutput, ResolvedCalibrationContext, TypeScriptExportReachabilityValue } from "@skastr0/pulsar-core/calibration"
 import { Effect, Option, Schema } from "effect"
 import { TsPackageInfoTag, TsProjectTag } from "../ts-project.js"
 import {

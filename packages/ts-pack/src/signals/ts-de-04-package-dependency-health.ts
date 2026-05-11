@@ -1,9 +1,5 @@
-import {
-  SignalContextTag,
-  type Diagnostic,
-  type Signal,
-  SignalComputeError,
-} from "@skastr0/pulsar-core"
+import { SignalContextTag, SignalComputeError } from "@skastr0/pulsar-core/signal"
+import type { Diagnostic, Signal } from "@skastr0/pulsar-core/signal"
 import { Effect } from "effect"
 import { TsPackageInfoTag, TsProjectTag } from "../ts-project.js"
 import { computePackageDependencyHealth } from "./ts-de-04-compute.js"

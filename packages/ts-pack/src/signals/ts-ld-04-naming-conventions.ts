@@ -1,12 +1,6 @@
-import {
-  computeDiagnosticHash,
-  type Diagnostic,
-  type NamingConventions,
-  ReferenceDataTag,
-  type SchemaConventions,
-  type Signal,
-  SignalComputeError,
-} from "@skastr0/pulsar-core"
+import { computeDiagnosticHash, ReferenceDataTag, SignalComputeError } from "@skastr0/pulsar-core/signal"
+import type { Diagnostic, Signal } from "@skastr0/pulsar-core/signal"
+import type { NamingConventions, SchemaConventions } from "@skastr0/pulsar-core/reference-data"
 import { Effect, Option, Schema } from "effect"
 import { type RecognizedCasingPattern, parseCasingPatternAlternatives } from "../casing.js"
 import { TsProjectTag } from "../ts-project.js"

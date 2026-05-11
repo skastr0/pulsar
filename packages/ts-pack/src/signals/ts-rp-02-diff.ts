@@ -1,5 +1,5 @@
 import { join } from "node:path"
-import type { SignalContext } from "@skastr0/pulsar-core"
+import type { SignalContext } from "@skastr0/pulsar-core/signal"
 import { isExcluded } from "./shared-globs.js"
 import { boundaryOfFile, packageForFile, type BoundaryRule } from "./shared-workspace.js"
 import type { ChangedFileStat, ImportEdge, TsRp02Config, TsRp02Output } from "./ts-rp-02-pr-size.js"

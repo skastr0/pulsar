@@ -1,7 +1,5 @@
-import {
-  type Signal,
-  SignalComputeError,
-} from "@skastr0/pulsar-core"
+import { SignalComputeError } from "@skastr0/pulsar-core/signal"
+import type { Signal } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
 import { TsProjectTag } from "../ts-project.js"
 import { isExcluded, matchesAnyGlob } from "./shared-globs.js"

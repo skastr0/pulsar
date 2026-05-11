@@ -1,8 +1,5 @@
-import type {
-  CalibrationDecision,
-  SignalFactorLedger,
-  SignalFactorLedgerEntry,
-} from "@skastr0/pulsar-core"
+import type { CalibrationDecision } from "@skastr0/pulsar-core/calibration"
+import type { SignalFactorLedger, SignalFactorLedgerEntry } from "@skastr0/pulsar-core/signal"
 import type { StubCandidate } from "./ts-sl-04-candidates.js"
 import type { StubConfidence, StubKind, StubSeverity } from "./ts-sl-04-factors.js"
 

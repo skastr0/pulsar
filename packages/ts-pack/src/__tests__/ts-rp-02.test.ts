@@ -1,7 +1,7 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test"
 import { spawnSync } from "node:child_process"
 import { Effect, Layer } from "effect"
-import { SignalContextTag } from "@skastr0/pulsar-core"
+import { SignalContextTag } from "@skastr0/pulsar-core/signal"
 import { createTempRepo, runSignal } from "./test-repo.js"
 import { TsRp02 } from "../signals/ts-rp-02-pr-size.js"
 import { TsProjectLayer, TsPackageInfoTag } from "../ts-project.js"

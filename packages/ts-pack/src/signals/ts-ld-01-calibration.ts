@@ -1,8 +1,4 @@
-import {
-  type CalibrationDecision,
-  type CalibrationProcessorError,
-  type ResolvedCalibrationContext,
-} from "@skastr0/pulsar-core"
+import type { CalibrationDecision, CalibrationProcessorError, ResolvedCalibrationContext } from "@skastr0/pulsar-core/calibration"
 import { Effect, Option } from "effect"
 import type { FunctionComplexity } from "./ts-ld-01-complexity.js"
 import type { FunctionComplexityCandidate } from "./ts-ld-01-collection.js"

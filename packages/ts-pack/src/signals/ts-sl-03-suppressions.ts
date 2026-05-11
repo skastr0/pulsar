@@ -1,10 +1,5 @@
-import {
-  SignalContextTag,
-  computeDiagnosticHash,
-  type Diagnostic,
-  type Signal,
-  SignalComputeError,
-} from "@skastr0/pulsar-core"
+import { SignalContextTag, computeDiagnosticHash, SignalComputeError } from "@skastr0/pulsar-core/signal"
+import type { Diagnostic, Signal } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
 import { TsProjectTag } from "../ts-project.js"
 import { computeSuppressions } from "./ts-sl-03-analysis.js"

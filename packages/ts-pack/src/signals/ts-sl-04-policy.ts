@@ -1,13 +1,6 @@
-import {
-  makeFactorEntry,
-  type CalibrationDecision,
-  type CalibrationProcessorError,
-  type CalibrationSlotOutput,
-  type ResolvedCalibrationContext,
-  type SignalFactorLedgerEntry,
-  type SignalFactorValue,
-  type TypeScriptUnfinishedImplementationPolicyValue,
-} from "@skastr0/pulsar-core"
+import type { CalibrationDecision, CalibrationProcessorError, CalibrationSlotOutput, ResolvedCalibrationContext, TypeScriptUnfinishedImplementationPolicyValue } from "@skastr0/pulsar-core/calibration"
+import type { SignalFactorLedgerEntry, SignalFactorValue } from "@skastr0/pulsar-core/signal"
+import { makeFactorEntry } from "@skastr0/pulsar-core/factors"
 import { Effect, Option } from "effect"
 import type { StubCandidate } from "./ts-sl-04-candidates.js"
 import {

@@ -1,12 +1,8 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import {
-  ReferenceDataTag,
-  SignalContextTag,
-  makeReferenceData,
-  type Signal,
-} from "@skastr0/pulsar-core"
+import { ReferenceDataTag, SignalContextTag, makeReferenceData } from "@skastr0/pulsar-core/signal"
+import type { Signal } from "@skastr0/pulsar-core/signal"
 import { Effect, Layer } from "effect"
 import { TsProjectLayer } from "../ts-project.js"
 

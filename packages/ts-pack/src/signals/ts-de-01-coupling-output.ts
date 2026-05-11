@@ -1,4 +1,5 @@
-import { type DistributionalSummary, summarize } from "@skastr0/pulsar-core"
+import { summarize } from "@skastr0/pulsar-core/signal"
+import type { DistributionalSummary } from "@skastr0/pulsar-core/signal"
 
 export interface CouplingCounterpart {
   readonly module: string

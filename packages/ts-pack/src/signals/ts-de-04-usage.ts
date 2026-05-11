@@ -1,4 +1,4 @@
-import { type SignalContext } from "@skastr0/pulsar-core"
+import type { SignalContext } from "@skastr0/pulsar-core/signal"
 import type { PackageInfo, PackageManifest } from "../discovery.js"
 import {
   dependencyNamesOf,

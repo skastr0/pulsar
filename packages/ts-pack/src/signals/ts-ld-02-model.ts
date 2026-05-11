@@ -1,8 +1,5 @@
-import {
-  type CalibrationDecision,
-  type DistributionalSummary,
-  type TypeScriptCallbackContextNameValue,
-} from "@skastr0/pulsar-core"
+import type { DistributionalSummary } from "@skastr0/pulsar-core/signal"
+import type { CalibrationDecision, TypeScriptCallbackContextNameValue } from "@skastr0/pulsar-core/calibration"
 import { Schema } from "effect"
 
 export const TsLd02Config = Schema.Struct({

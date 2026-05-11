@@ -3,13 +3,8 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Effect, Layer, Schema } from "effect"
-import {
-  CalibrationContextTag,
-  appendCalibrationDecision,
-  defineCalibrationProcessor,
-  makeResolvedCalibrationContext,
-  type RepoFacts,
-} from "@skastr0/pulsar-core"
+import { CalibrationContextTag, appendCalibrationDecision, defineCalibrationProcessor, makeResolvedCalibrationContext } from "@skastr0/pulsar-core/calibration"
+import type { RepoFacts } from "@skastr0/pulsar-core/calibration"
 import {
   TsLd02,
   TsLd02Config,

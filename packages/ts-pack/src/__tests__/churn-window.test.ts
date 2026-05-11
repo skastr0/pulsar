@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { SignalContextTag } from "@skastr0/pulsar-core"
+import { SignalContextTag } from "@skastr0/pulsar-core/signal"
 import { Effect, Layer } from "effect"
 import { SharedChurn01 } from "../signals/shared-churn-01.js"
 

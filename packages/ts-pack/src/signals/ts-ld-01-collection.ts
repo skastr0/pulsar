@@ -1,4 +1,4 @@
-import type { TypeScriptCallbackContextNameValue } from "@skastr0/pulsar-core"
+import type { TypeScriptCallbackContextNameValue } from "@skastr0/pulsar-core/calibration"
 import {
   type SourceFile,
   SyntaxKind,

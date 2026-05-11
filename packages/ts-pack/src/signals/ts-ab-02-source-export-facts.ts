@@ -1,10 +1,4 @@
-import {
-  type TypeScriptCallExpressionFact,
-  type TypeScriptExportDeclarationFact,
-  type TypeScriptExportSpecifierFact,
-  type TypeScriptImportBindingFact,
-  type TypeScriptLocalBindingFact,
-} from "@skastr0/pulsar-core"
+import type { TypeScriptCallExpressionFact, TypeScriptExportDeclarationFact, TypeScriptExportSpecifierFact, TypeScriptImportBindingFact, TypeScriptLocalBindingFact } from "@skastr0/pulsar-core/calibration"
 import { Node, type SourceFile } from "ts-morph"
 
 export interface TypeScriptSourceExportFacts {

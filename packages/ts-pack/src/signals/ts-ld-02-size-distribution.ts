@@ -1,8 +1,6 @@
-import {
-  CalibrationContextTag,
-  type Signal,
-  SignalComputeError,
-} from "@skastr0/pulsar-core"
+import { SignalComputeError } from "@skastr0/pulsar-core/signal"
+import type { Signal } from "@skastr0/pulsar-core/signal"
+import { CalibrationContextTag } from "@skastr0/pulsar-core/calibration"
 import { Effect } from "effect"
 import { TsProjectTag } from "../ts-project.js"
 import { collectProjectSizes } from "./ts-ld-02-counting.js"

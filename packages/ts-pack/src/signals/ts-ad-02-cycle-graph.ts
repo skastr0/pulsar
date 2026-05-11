@@ -4,11 +4,8 @@ import {
   sep,
   normalize as normalizePath,
 } from "node:path"
-import {
-  computeDiagnosticHash,
-  parseBypasses,
-  type PulsarAllowBypass,
-} from "@skastr0/pulsar-core"
+import { computeDiagnosticHash, parseBypasses } from "@skastr0/pulsar-core/signal"
+import type { PulsarAllowBypass } from "@skastr0/pulsar-core/signal"
 import type { SourceFile } from "ts-morph"
 import { createModuleResolver } from "../graph/module-graph.js"
 import { isExcluded } from "./shared-globs.js"

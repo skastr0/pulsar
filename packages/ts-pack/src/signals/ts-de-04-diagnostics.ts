@@ -1,7 +1,5 @@
-import {
-  computeDiagnosticHash,
-  type Diagnostic,
-} from "@skastr0/pulsar-core"
+import { computeDiagnosticHash } from "@skastr0/pulsar-core/signal"
+import type { Diagnostic } from "@skastr0/pulsar-core/signal"
 import { join, relative } from "node:path"
 import type { DependencyMismatch, PackageDependencyHealth } from "./ts-de-04-package-health.js"
 import { isPackageToolingFile } from "./ts-de-04-package-classification.js"

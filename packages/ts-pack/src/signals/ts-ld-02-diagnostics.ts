@@ -1,4 +1,4 @@
-import type { Diagnostic } from "@skastr0/pulsar-core"
+import type { Diagnostic } from "@skastr0/pulsar-core/signal"
 import type { FileSize, FunctionSize, TsLd02Output } from "./ts-ld-02-model.js"
 import { functionDiagnosticKey } from "./ts-ld-02-model.js"
 

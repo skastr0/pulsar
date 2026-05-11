@@ -1,10 +1,5 @@
-import {
-  type CalibrationProcessorError,
-  type CalibrationSlotOutput,
-  type ResolvedCalibrationContext,
-  type SignalFactorValue,
-  type TypeScriptNoopClassificationValue,
-} from "@skastr0/pulsar-core"
+import type { CalibrationProcessorError, CalibrationSlotOutput, ResolvedCalibrationContext, TypeScriptNoopClassificationValue } from "@skastr0/pulsar-core/calibration"
+import type { SignalFactorValue } from "@skastr0/pulsar-core/signal"
 import { Effect, Option } from "effect"
 import type { StubCandidate } from "./ts-sl-04-candidates.js"
 import {

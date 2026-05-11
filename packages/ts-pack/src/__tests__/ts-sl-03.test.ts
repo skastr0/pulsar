@@ -1,6 +1,6 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test"
 import { Effect, Layer } from "effect"
-import { SignalContextTag } from "@skastr0/pulsar-core"
+import { SignalContextTag } from "@skastr0/pulsar-core/signal"
 import { createTempRepo, runSignal } from "./test-repo.js"
 import { TsSl03 } from "../signals/ts-sl-03-suppressions.js"
 import { TsProjectLayer } from "../ts-project.js"

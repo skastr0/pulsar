@@ -1,11 +1,5 @@
-import {
-  SignalContextTag,
-  type Diagnostic,
-  type DistributionalSummary,
-  type Signal,
-  SignalComputeError,
-  summarize,
-} from "@skastr0/pulsar-core"
+import { SignalContextTag, SignalComputeError, summarize } from "@skastr0/pulsar-core/signal"
+import type { Diagnostic, DistributionalSummary, Signal } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
 import type { SourceFile } from "ts-morph"
 import { TsProjectTag } from "../ts-project.js"

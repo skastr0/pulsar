@@ -1,12 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Effect, Layer } from "effect"
-import {
-  CalibrationContextTag,
-  appendCalibrationDecision,
-  defineCalibrationProcessor,
-  makeResolvedCalibrationContext,
-  type RepoFacts,
-} from "@skastr0/pulsar-core"
+import { CalibrationContextTag, appendCalibrationDecision, defineCalibrationProcessor, makeResolvedCalibrationContext } from "@skastr0/pulsar-core/calibration"
+import type { RepoFacts } from "@skastr0/pulsar-core/calibration"
 import { TsAb02 } from "../signals/ts-ab-02-unused-exports-reachability.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
 import { TsProjectLayer } from "../ts-project.js"

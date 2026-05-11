@@ -1,11 +1,7 @@
 import { spawnSync } from "node:child_process"
 import { describe, expect, test } from "bun:test"
 import { Effect, Layer } from "effect"
-import {
-  ScoringEngineLayer,
-  ScoringEngineTag,
-  buildRegistry,
-} from "@skastr0/pulsar-core"
+import { ScoringEngineLayer, ScoringEngineTag, buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { SHARED_SIGNALS } from "@skastr0/pulsar-shared-signals"
 import { TsProjectLayer } from "../ts-project.js"
 import { TS_PACK_SIGNALS } from "../pack.js"

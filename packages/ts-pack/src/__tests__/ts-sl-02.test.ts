@@ -1,6 +1,6 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test"
 import { Effect, Layer } from "effect"
-import { SignalContextTag } from "@skastr0/pulsar-core"
+import { SignalContextTag } from "@skastr0/pulsar-core/signal"
 import { spawnSync } from "node:child_process"
 import { writeFileSync } from "node:fs"
 import { mkdtemp } from "node:fs/promises"

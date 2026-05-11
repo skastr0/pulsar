@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { SignalContextTag } from "@skastr0/pulsar-core"
+import { SignalContextTag } from "@skastr0/pulsar-core/signal"
 import { TsDe05 } from "../signals/ts-de-05-duplicate-versions.js"
 import { createTempRepo, type TempRepo } from "./test-repo.js"
 
