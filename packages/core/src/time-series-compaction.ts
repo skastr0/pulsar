@@ -53,45 +53,15 @@ const aggregateWeek = (entries: ReadonlyArray<TimeSeriesEntry>): TimeSeriesEntry
   const totalWeight = weightedEntries.reduce((sum, item) => sum + item.weight, 0)
   const earliest = entries[0]?.timestamp ?? new Date(0).toISOString()
   const latest = entries.at(-1)?.timestamp ?? earliest
-  const signalAverages = new Map<string, { category: Category; total: number }>()
   const readiness = aggregateReadiness(weightedEntries, totalWeight)
   const signalMetadata = aggregateSignalMetadata(weightedEntries)
   const readinessSampleCount = weightedEntries
     .filter(({ entry }) => entry.observerOutput.readiness !== undefined)
     .reduce((sum, item) => sum + item.weight, 0)
-
-  const categories = Object.fromEntries(
-    CATEGORIES.map((category) => {
-      let categorySum = 0
-      const signals: Record<string, number> = {}
-
-      for (const { entry, weight } of weightedEntries) {
-        const snapshot = entry.observerOutput.categories[category]
-        categorySum += snapshot.score * weight
-        for (const [signalId, score] of Object.entries(snapshot.signals)) {
-          const existing = signalAverages.get(signalId) ?? { category, total: 0 }
-          existing.total += score * weight
-          signalAverages.set(signalId, existing)
-        }
-      }
-
-      for (const [signalId, average] of signalAverages.entries()) {
-        if (average.category === category) {
-          signals[signalId] = average.total / totalWeight
-        }
-      }
-
-      return [
-        category,
-        {
-          score: categorySum / totalWeight,
-          signals,
-          ...aggregateCategoryMetadata(weightedEntries, category, totalWeight),
-        },
-      ]
-    }),
-  ) as ReturnType<typeof toObserverJson>["categories"]
-
+  const { categories, signalAverages } = aggregateWeeklyCategories(
+    weightedEntries,
+    totalWeight,
+  )
   const minimum = computeAggregateMinimum(signalAverages, totalWeight)
   const weightedMean =
     weightedEntries.reduce(
@@ -108,29 +78,19 @@ const aggregateWeek = (entries: ReadonlyArray<TimeSeriesEntry>): TimeSeriesEntry
   )
   const weekStart = startOfIsoWeek(new Date(earliest))
   const weekEnd = endOfIsoWeek(new Date(latest))
+  const aggregate = buildWeeklyAggregateMetadata({
+    weekStart,
+    weekEnd,
+    commitShas,
+    readiness,
+    readinessSampleCount,
+  })
 
   return {
     sha: `aggregate:${isoWeekKey(weekStart)}`,
     timestamp: weekEnd.toISOString(),
     source: "weekly-average",
-    aggregate: {
-      kind: "weekly-average",
-      from: weekStart.toISOString(),
-      to: weekEnd.toISOString(),
-      sample_count: commitShas.length,
-      commit_shas: commitShas,
-      observer_semantics:
-        readiness === undefined ? "legacy-compatibility" : "readiness-aware",
-      readiness_sample_count: readinessSampleCount,
-      ...(readiness === undefined
-        ? {
-            compatibility_reason:
-              readinessSampleCount === 0
-                ? "source rows predate readiness/applicability metadata"
-                : "source rows mix readiness-aware and legacy observer semantics",
-          }
-        : {}),
-    },
+    aggregate,
     observerOutput: {
       observer_semantics: OBSERVER_OUTPUT_SEMANTICS,
       categories,
@@ -142,6 +102,77 @@ const aggregateWeek = (entries: ReadonlyArray<TimeSeriesEntry>): TimeSeriesEntry
       ...(signalMetadata !== undefined ? { signal_metadata: signalMetadata } : {}),
     },
     inactiveSignals: [],
+  }
+}
+
+const buildWeeklyAggregateMetadata = (input: {
+  readonly weekStart: Date
+  readonly weekEnd: Date
+  readonly commitShas: ReadonlyArray<string>
+  readonly readiness: ReturnType<typeof aggregateReadiness>
+  readonly readinessSampleCount: number
+}): NonNullable<TimeSeriesEntry["aggregate"]> => ({
+  kind: "weekly-average",
+  from: input.weekStart.toISOString(),
+  to: input.weekEnd.toISOString(),
+  sample_count: input.commitShas.length,
+  commit_shas: input.commitShas,
+  observer_semantics: input.readiness === undefined ? "legacy-compatibility" : "readiness-aware",
+  readiness_sample_count: input.readinessSampleCount,
+  ...(input.readiness === undefined
+    ? { compatibility_reason: aggregateCompatibilityReason(input.readinessSampleCount) }
+    : {}),
+})
+
+const aggregateCompatibilityReason = (readinessSampleCount: number): string =>
+  readinessSampleCount === 0
+    ? "source rows predate readiness/applicability metadata"
+    : "source rows mix readiness-aware and legacy observer semantics"
+
+const aggregateWeeklyCategories = (
+  weightedEntries: ReadonlyArray<WeightedEntry>,
+  totalWeight: number,
+): {
+  readonly categories: ReturnType<typeof toObserverJson>["categories"]
+  readonly signalAverages: ReadonlyMap<string, { category: Category; total: number }>
+} => {
+  const signalAverages = new Map<string, { category: Category; total: number }>()
+  const categories = Object.fromEntries(
+    CATEGORIES.map((category) => [
+      category,
+      aggregateWeeklyCategory(category, weightedEntries, totalWeight, signalAverages),
+    ]),
+  ) as ReturnType<typeof toObserverJson>["categories"]
+  return { categories, signalAverages }
+}
+
+const aggregateWeeklyCategory = (
+  category: Category,
+  weightedEntries: ReadonlyArray<WeightedEntry>,
+  totalWeight: number,
+  signalAverages: Map<string, { category: Category; total: number }>,
+): ReturnType<typeof toObserverJson>["categories"][Category] => {
+  let categorySum = 0
+  const signals: Record<string, number> = {}
+
+  for (const { entry, weight } of weightedEntries) {
+    const snapshot = entry.observerOutput.categories[category]
+    categorySum += snapshot.score * weight
+    for (const [signalId, score] of Object.entries(snapshot.signals)) {
+      const existing = signalAverages.get(signalId) ?? { category, total: 0 }
+      existing.total += score * weight
+      signalAverages.set(signalId, existing)
+    }
+  }
+
+  for (const [signalId, average] of signalAverages.entries()) {
+    if (average.category === category) signals[signalId] = average.total / totalWeight
+  }
+
+  return {
+    score: categorySum / totalWeight,
+    signals,
+    ...aggregateCategoryMetadata(weightedEntries, category, totalWeight),
   }
 }
 
