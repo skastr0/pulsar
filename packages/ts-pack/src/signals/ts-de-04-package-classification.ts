@@ -65,6 +65,17 @@ export const isPackageScriptEntrypoint = (
   )
 }
 
+export const manifestDeclaresDependency = (
+  manifest: PackageManifest,
+  dependencyName: string,
+): boolean =>
+  dependencyNamesOf(manifest, [
+    "dependencies",
+    "devDependencies",
+    "optionalDependencies",
+    "peerDependencies",
+  ]).has(dependencyName)
+
 export const createPackagePathMatcher = (
   packages: ReadonlyArray<PackageInfo>,
 ): ((filePath: string) => PackageInfo | undefined) => {

@@ -1,23 +1,15 @@
 import type { SignalContext } from "@skastr0/pulsar-core/signal"
-import type { PackageInfo, PackageManifest } from "../discovery.js"
-import {
-  dependencyNamesOf,
-  isBuiltinModuleName,
-  normalizePackageSpecifier,
-} from "./shared-workspace.js"
+import type { PackageInfo } from "../discovery.js"
 import { isLocalPathAliasUsage } from "./ts-de-04-path-aliases.js"
-import {
-  hasBundledCliBuildPipeline,
-  isBundledPackageSourceUsage,
-} from "./ts-de-04-bundled-info.js"
+import { isBundledPackageSourceUsage } from "./ts-de-04-bundled-info.js"
 import {
   dependencyUsageContext,
-  isDocusaurusApp,
-  isPackageScriptEntrypoint,
-  isPackageToolingFile,
-  isSvelteKitApp,
+  manifestDeclaresDependency,
 } from "./ts-de-04-package-classification.js"
-import { externalModuleSpecifiers } from "./ts-de-04-module-specifiers.js"
+import {
+  externalModuleSpecifiers,
+  recordedDependencyNameForModuleUsage,
+} from "./ts-de-04-module-specifiers.js"
 import type {
   DependencyAnalysisFacts,
   DependencyUsageSummary,
@@ -94,7 +86,11 @@ const recordModuleSpecifierUsage = (
   rootToolingUsedDependencyNames: Set<string>,
   localPathAliasUsageCache: Map<string, boolean>,
 ): void => {
-  const packageName = packageNameForRecordedUsage(moduleUsage, owningPackage, facts)
+  const packageName = recordedDependencyNameForModuleUsage(
+    moduleUsage,
+    owningPackage,
+    facts.workspaceNames,
+  )
   if (packageName === undefined) return
   if (usageContext.isToolingFile && facts.rootToolingDependencyNames.has(packageName)) {
     rootToolingUsedDependencyNames.add(packageName)
@@ -112,25 +108,6 @@ const recordModuleSpecifierUsage = (
     return
   }
   addUsageBucketEntry(moduleUsage, packageName, owningPackage, usageContext, facts, bucket)
-}
-
-const packageNameForRecordedUsage = (
-  moduleUsage: ModuleSpecifierUsage,
-  owningPackage: ManifestPackageInfo,
-  facts: DependencyAnalysisFacts,
-): string | undefined => {
-  const moduleSpecifier = moduleUsage.specifier
-  const packageName = normalizePackageSpecifier(moduleSpecifier)
-  if (packageName === undefined || isBuiltinModuleName(packageName)) return undefined
-  if (isGeneratedVirtualModuleSpecifier(moduleSpecifier)) return undefined
-  if (isFrameworkVirtualModuleSpecifier(moduleSpecifier, owningPackage.manifest)) return undefined
-  return isWorkspaceSelfOrFacadeImport(
-    packageName,
-    owningPackage.manifest.name,
-    facts.workspaceNames,
-  )
-    ? undefined
-    : packageName
 }
 
 const isUndeclaredLocalPathAliasUsage = (
@@ -210,55 +187,3 @@ const recordBundledUsage = (
     usage.bundledProdFiles.add(usageContext.filePath)
   }
 }
-
-const isGeneratedVirtualModuleSpecifier = (specifier: string): boolean =>
-  /^[^./#][^:]*\.(?:gen|generated)\.(?:cjs|cts|js|jsx|mjs|mts|ts|tsx)$/.test(specifier)
-
-const isFrameworkVirtualModuleSpecifier = (
-  specifier: string,
-  manifest: PackageManifest,
-): boolean => {
-  if (isDocusaurusApp(manifest)) {
-    return (
-      specifier.startsWith("@theme/") ||
-      specifier.startsWith("@site/") ||
-      specifier.startsWith("@generated/") ||
-      specifier === "@docusaurus/Link" ||
-      specifier === "@docusaurus/useDocusaurusContext" ||
-      specifier === "@docusaurus/theme-common" ||
-      specifier.startsWith("@docusaurus/theme-common/")
-    )
-  }
-  if (isSvelteKitApp(manifest)) {
-    return (
-      specifier.startsWith("$app/") ||
-      specifier.startsWith("$env/") ||
-      specifier === "$lib" ||
-      specifier.startsWith("$lib/") ||
-      specifier === "$service-worker"
-    )
-  }
-
-  return false
-}
-
-const isWorkspaceSelfOrFacadeImport = (
-  dependencyName: string,
-  packageName: string | undefined,
-  workspaceNames: ReadonlySet<string>,
-): boolean => {
-  if (packageName === undefined) return false
-  if (dependencyName === packageName) return true
-  return workspaceNames.has(dependencyName) && packageName.startsWith(`${dependencyName}/`)
-}
-
-const manifestDeclaresDependency = (
-  manifest: PackageManifest,
-  dependencyName: string,
-): boolean =>
-  dependencyNamesOf(manifest, [
-    "dependencies",
-    "devDependencies",
-    "optionalDependencies",
-    "peerDependencies",
-  ]).has(dependencyName)

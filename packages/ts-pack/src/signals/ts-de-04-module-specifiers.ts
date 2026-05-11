@@ -4,7 +4,9 @@ import {
   localIdentifierUsageByName,
   valueImportBindingNames,
 } from "./shared-module-usage.js"
-import type { ModuleSpecifierUsage } from "./ts-de-04-model.js"
+import { isBuiltinModuleName, normalizePackageSpecifier } from "./shared-workspace.js"
+import { isDocusaurusApp, isSvelteKitApp } from "./ts-de-04-package-classification.js"
+import type { ManifestPackageInfo, ModuleSpecifierUsage } from "./ts-de-04-model.js"
 
 export const externalModuleSpecifiers = (
   sourceFile: SourceFile,
@@ -53,6 +55,21 @@ export const externalModuleSpecifiers = (
   )
 }
 
+export const recordedDependencyNameForModuleUsage = (
+  moduleUsage: ModuleSpecifierUsage,
+  owningPackage: ManifestPackageInfo,
+  workspaceNames: ReadonlySet<string>,
+): string | undefined => {
+  const moduleSpecifier = moduleUsage.specifier
+  const packageName = normalizePackageSpecifier(moduleSpecifier)
+  if (packageName === undefined || isBuiltinModuleName(packageName)) return undefined
+  if (isGeneratedVirtualModuleSpecifier(moduleSpecifier)) return undefined
+  if (isFrameworkVirtualModuleSpecifier(moduleSpecifier, owningPackage)) return undefined
+  return isWorkspaceSelfOrFacadeImport(packageName, owningPackage.manifest.name, workspaceNames)
+    ? undefined
+    : packageName
+}
+
 const mergeModuleSpecifierUsage = (
   specifiers: Map<string, ModuleSpecifierUsage>,
   usage: ModuleSpecifierUsage,
@@ -99,4 +116,45 @@ const splitPropertyAccess = (expressionText: string): readonly [string, string] 
   const lastDot = expressionText.lastIndexOf(".")
   if (lastDot === -1) return [expressionText, ""]
   return [expressionText.slice(0, lastDot), expressionText.slice(lastDot + 1)]
+}
+
+const isGeneratedVirtualModuleSpecifier = (specifier: string): boolean =>
+  /^[^./#][^:]*\.(?:gen|generated)\.(?:cjs|cts|js|jsx|mjs|mts|ts|tsx)$/.test(specifier)
+
+const isFrameworkVirtualModuleSpecifier = (
+  specifier: string,
+  owningPackage: ManifestPackageInfo,
+): boolean => {
+  if (isDocusaurusApp(owningPackage.manifest)) {
+    return (
+      specifier.startsWith("@theme/") ||
+      specifier.startsWith("@site/") ||
+      specifier.startsWith("@generated/") ||
+      specifier === "@docusaurus/Link" ||
+      specifier === "@docusaurus/useDocusaurusContext" ||
+      specifier === "@docusaurus/theme-common" ||
+      specifier.startsWith("@docusaurus/theme-common/")
+    )
+  }
+  if (isSvelteKitApp(owningPackage.manifest)) {
+    return (
+      specifier.startsWith("$app/") ||
+      specifier.startsWith("$env/") ||
+      specifier === "$lib" ||
+      specifier.startsWith("$lib/") ||
+      specifier === "$service-worker"
+    )
+  }
+
+  return false
+}
+
+const isWorkspaceSelfOrFacadeImport = (
+  dependencyName: string,
+  packageName: string | undefined,
+  workspaceNames: ReadonlySet<string>,
+): boolean => {
+  if (packageName === undefined) return false
+  if (dependencyName === packageName) return true
+  return workspaceNames.has(dependencyName) && packageName.startsWith(`${dependencyName}/`)
 }
