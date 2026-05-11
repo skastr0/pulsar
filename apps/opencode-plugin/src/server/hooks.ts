@@ -21,7 +21,7 @@ interface ToolBeforeOutput {
   readonly args: unknown
 }
 
-interface ChatParamsOutput {
+type ChatParamsOutput = {
   readonly temperature: number
   readonly topP: number
   readonly topK: number
