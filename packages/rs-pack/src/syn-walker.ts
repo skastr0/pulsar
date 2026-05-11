@@ -26,13 +26,6 @@ export type RustPoint = Point
 export type RustSyntaxNode = Node
 export type RustSyntaxTree = Tree
 
-export interface RustAstSummary {
-  readonly rootType: string
-  readonly nodeCounts: Readonly<Record<string, number>>
-  readonly functionNames: ReadonlyArray<string>
-  readonly unsafeBlockCount: number
-}
-
 let rustLanguagePromise: Promise<Language> | undefined
 
 export const parseRustSource = async (source: string): Promise<RustSyntaxTree> => {
@@ -74,40 +67,6 @@ export const walkRustTree = (
     }
   }
 }
-
-export const summarizeRustTree = (tree: RustSyntaxTree): RustAstSummary => {
-  const nodeCounts = new Map<string, number>()
-  const functionNames: Array<string> = []
-  let unsafeBlockCount = 0
-
-  walkRustTree(tree, (node) => {
-    nodeCounts.set(node.type, (nodeCounts.get(node.type) ?? 0) + 1)
-    if (node.type === "unsafe_block") unsafeBlockCount += 1
-    if (node.type === "function_item") {
-      const identifier = node.namedChildren.find(
-        (child): child is RustSyntaxNode => child !== null && child.type === "identifier",
-      )
-      if (identifier !== undefined) {
-        functionNames.push(identifier.text)
-      }
-    }
-  })
-
-  return {
-    rootType: tree.rootNode.type,
-    nodeCounts: Object.fromEntries(
-      [...nodeCounts.entries()].sort(([a], [b]) => a.localeCompare(b)),
-    ),
-    functionNames,
-    unsafeBlockCount,
-  }
-}
-
-export const summarizeRustSource = async (source: string): Promise<RustAstSummary> =>
-  summarizeRustTree(await parseRustSource(source))
-
-export const summarizeRustFile = async (filePath: string): Promise<RustAstSummary> =>
-  summarizeRustTree(await parseRustFile(filePath))
 
 const loadRustLanguage = async (): Promise<Language> => {
   if (rustLanguagePromise === undefined) {

@@ -3,7 +3,7 @@ import { join } from "node:path"
 import { summarize } from "@skastr0/pulsar-core/signal"
 import { Effect } from "effect"
 import { TsRp01 } from "../signals/ts-rp-01-hotspots.js"
-import type { SharedChurn01Output } from "../signals/shared-churn-01.js"
+import type { SharedChurn01Output } from "@skastr0/pulsar-shared-signals"
 import type { TsLd01Output } from "../signals/ts-ld-01-complexity.js"
 
 /**

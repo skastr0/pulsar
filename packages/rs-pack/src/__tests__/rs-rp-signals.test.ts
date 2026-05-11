@@ -5,13 +5,16 @@ import { promisify } from "node:util"
 import { mkdir, writeFile } from "node:fs/promises"
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { SHARED_SIGNALS } from "@skastr0/pulsar-shared-signals"
+import {
+  SHARED_SIGNALS,
+  SharedChurn01,
+  type SharedChurn01Output,
+} from "@skastr0/pulsar-shared-signals"
 import { TS_PACK_SIGNALS } from "@skastr0/pulsar-ts-pack"
 import { RS_PACK_SIGNALS } from "../pack.js"
 import { RsRp01 } from "../signals/rs-rp-01-hotspots.js"
 import { RsRp02 } from "../signals/rs-rp-02-compile-time.js"
 import { RsRp03 } from "../signals/rs-rp-03-pr-size.js"
-import { SharedChurn01, type SharedChurn01Output } from "../signals/shared-churn-01.js"
 import type { RsLd05Output } from "../signals/rs-ld-05-complexity.js"
 import {
   cleanupWorkspace,

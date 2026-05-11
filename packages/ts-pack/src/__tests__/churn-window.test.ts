@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { SignalContextTag } from "@skastr0/pulsar-core/signal"
 import { Effect, Layer } from "effect"
-import { SharedChurn01 } from "../signals/shared-churn-01.js"
+import { SharedChurn01 } from "@skastr0/pulsar-shared-signals"
 
 let repo: string
 

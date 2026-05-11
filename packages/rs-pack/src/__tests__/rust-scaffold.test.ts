@@ -9,7 +9,7 @@ import {
 } from "../cargo-metadata.js"
 import { findDuplicateCargoLockPackages, parseCargoLock } from "../lock-file.js"
 import { makeRustProject, type RustManifestInfo } from "../project.js"
-import { parseRustFile, summarizeRustFile } from "../syn-walker.js"
+import { parseRustFile, walkRustTree, type RustSyntaxNode } from "../syn-walker.js"
 
 const TEST_DIR = dirname(fileURLToPath(import.meta.url))
 const FIXTURE_ROOT = resolve(
@@ -52,12 +52,23 @@ describe("@skastr0/pulsar-rs-pack scaffold", () => {
 
   test("walks a fixture Rust AST with tree-sitter", async () => {
     const tree = await parseRustFile(`${FIXTURE_ROOT}/src/lib.rs`)
-    const summary = await summarizeRustFile(`${FIXTURE_ROOT}/src/lib.rs`)
+    const functionNames: Array<string> = []
+    const nodeCounts = new Map<string, number>()
+    let unsafeBlockCount = 0
+    walkRustTree(tree, (node) => {
+      nodeCounts.set(node.type, (nodeCounts.get(node.type) ?? 0) + 1)
+      if (node.type === "unsafe_block") unsafeBlockCount += 1
+      if (node.type !== "function_item") return
+      const identifier = node.namedChildren.find(
+        (child): child is RustSyntaxNode => child !== null && child.type === "identifier",
+      )
+      if (identifier !== undefined) functionNames.push(identifier.text)
+    })
 
     expect(tree.rootNode.type).toBe("source_file")
-    expect(summary.functionNames).toEqual(["greet", "raw_copy"])
-    expect(summary.unsafeBlockCount).toBe(1)
-    expect(summary.nodeCounts.function_item).toBe(2)
+    expect(functionNames).toEqual(["greet", "raw_copy"])
+    expect(unsafeBlockCount).toBe(1)
+    expect(nodeCounts.get("function_item")).toBe(2)
   }, 120_000)
 
   test("discovers a fixture Rust project", async () => {

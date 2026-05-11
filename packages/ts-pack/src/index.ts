@@ -30,4 +30,6 @@ export type { TsProjectOptions } from "./ts-project.js"
 export { discoverPackages } from "./discovery.js"
 export type { PackageInfo, PackageManifest } from "./discovery.js"
 
-export { TS_PACK_SIGNALS, TsLd01, TsSl04 } from "./pack.js"
+export { TS_PACK_SIGNALS } from "./pack.js"
+export { TsLd01 } from "./signals/ts-ld-01-complexity.js"
+export { TsSl04 } from "./signals/ts-sl-04-empty-implementations.js"

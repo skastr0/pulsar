@@ -1,4 +1,4 @@
-import type { SharedChurn01Output } from "./shared-churn-01.js"
+import type { SharedChurn01Output } from "@skastr0/pulsar-shared-signals"
 import type { TsLd01Output } from "./ts-ld-01-complexity.js"
 
 export interface HotspotConfig {

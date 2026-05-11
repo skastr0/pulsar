@@ -2,8 +2,8 @@ import {
   type Diagnostic,
   type Signal,
 } from "@skastr0/pulsar-core/signal"
+import type { SharedChurn01Output } from "@skastr0/pulsar-shared-signals"
 import { Effect, Schema } from "effect"
-import type { SharedChurn01Output } from "./shared-churn-01.js"
 import type { RsLd05Output } from "./rs-ld-05-complexity.js"
 
 export const RsRp01Config = Schema.Struct({
