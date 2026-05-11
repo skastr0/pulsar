@@ -175,7 +175,7 @@ export const inferPulsarVectorFromQuiz = (input: {
     signal_overrides: {},
   }
   const inference = accumulateQuizInference(input.items, input.responses)
-  const signal_overrides: Record<string, SignalOverride> = { ...baseVector.signal_overrides }
+  const signalOverrides: Record<string, SignalOverride> = { ...baseVector.signal_overrides }
 
   for (const [signalId, preference] of Object.entries(inference.bySignal)) {
     if (preference.seen === 0 || preference.magnitude === 0) continue
@@ -185,8 +185,8 @@ export const inferPulsarVectorFromQuiz = (input: {
     const adjustedWeight = clampWeight(baseWeight + normalized * confidence * 0.5)
     if (Math.abs(adjustedWeight - baseWeight) < 0.05) continue
 
-    signal_overrides[signalId] = {
-      ...signal_overrides[signalId],
+    signalOverrides[signalId] = {
+      ...signalOverrides[signalId],
       weight: adjustedWeight,
     }
   }
@@ -198,7 +198,7 @@ export const inferPulsarVectorFromQuiz = (input: {
       description:
         input.description ??
         `Pulsar vector elicited from ${inference.answeredCount} pairwise tradeoff answers.`,
-      signal_overrides,
+      signal_overrides: signalOverrides,
     },
     {
       source: "quiz",
@@ -222,10 +222,10 @@ export const inferPulsarVectorFromQuiz = (input: {
 export const decodeQuizSession = (value: unknown) =>
   Effect.gen(function* () {
     const decoded = yield* Schema.decodeUnknown(QuizSession)(value)
-    const base_vector = yield* decodePulsarVector(decoded.base_vector)
+    const baseVector = yield* decodePulsarVector(decoded.base_vector)
     return {
       ...decoded,
-      base_vector,
+      base_vector: baseVector,
     } satisfies QuizSession
   })
 

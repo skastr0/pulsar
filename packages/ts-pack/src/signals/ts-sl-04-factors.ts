@@ -46,7 +46,7 @@ const stubKindFactorDefinitions = (
   ]
 }
 
-export const TsSl04FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
+export const tsSl04FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
   ...stubKindFactorDefinitions("throw-not-implemented"),
   ...stubKindFactorDefinitions("empty-body"),
   ...stubKindFactorDefinitions("todo-comment"),
@@ -88,7 +88,7 @@ const STUB_KINDS = new Set<StubKind>([
 ])
 
 export const factorDefinitionByPath = (path: string): SignalFactorDefinition => {
-  const definition = TsSl04FactorDefinitions.find((item) => item.path === path)
+  const definition = tsSl04FactorDefinitions.find((item) => item.path === path)
   if (definition === undefined) {
     throw new Error(`Unknown TS-SL-04 factor path: ${path}`)
   }

@@ -1,7 +1,7 @@
 export const CASING_PATTERNS = {
   camelCase: /^[a-z][a-zA-Z0-9]*$/,
-  PascalCase: /^[A-Z][a-zA-Z0-9]*$/,
   UPPER_SNAKE_CASE: /^[A-Z][A-Z0-9_]*$/,
+  PascalCase: /^[A-Z][a-zA-Z0-9]*$/,
   snake_case: /^[a-z][a-z0-9_]*$/,
   "kebab-case": /^[a-z][a-z0-9-]*$/,
 } as const

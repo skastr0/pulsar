@@ -54,6 +54,7 @@ export const TsLd04: Signal<TsLd04Config, TsLd04Output, TsProjectTag | Reference
   tier: 2,
   category: "legibility-decay",
   kind: "legibility",
+  cacheVersion: "type-level-values-v1",
   configSchema: TsLd04Config,
   defaultConfig: {
     exclude_globs: [
@@ -191,6 +192,7 @@ const expectedPatternsForIdentifier = (
     case "local":
       return expectedPatterns.filter((pattern) => pattern !== "UPPER_SNAKE_CASE")
     case "schema-type-object":
+      return includePattern(expectedPatterns, "PascalCase")
     case undefined:
       return expectedPatterns
     default:

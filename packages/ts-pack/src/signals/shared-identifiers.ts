@@ -170,8 +170,7 @@ const pushIdentifierDeclaration = (
 const classifyConstContext = (declaration: VariableDeclaration): ConstIdentifierContext => {
   if (!isDirectSourceFileConstDeclaration(declaration)) return "local"
 
-  const initializer = declaration.getInitializer()
-  if (isSchemaOrTypeObjectConst(declaration.getName(), initializer)) return "schema-type-object"
+  if (isSchemaOrTypeObjectConst(declaration)) return "schema-type-object"
   return "module-constant"
 }
 
@@ -183,17 +182,29 @@ const isDirectSourceFileConstDeclaration = (declaration: VariableDeclaration): b
   return Node.isSourceFile(statement.getParent())
 }
 
-const isSchemaOrTypeObjectConst = (
-  name: string,
-  initializer: Node | undefined,
-): boolean => {
+const isSchemaOrTypeObjectConst = (declaration: VariableDeclaration): boolean => {
+  const name = declaration.getName()
+  const initializer = declaration.getInitializer()
   const unwrappedInitializer = unwrapConstInitializer(initializer)
   if (inferCasingPattern(name) !== "PascalCase" || unwrappedInitializer === undefined) return false
+  if (hasTypeLevelAnnotation(declaration)) return true
+  if (Node.isArrowFunction(unwrappedInitializer) && hasTypeLevelText(unwrappedInitializer.getReturnTypeNode()?.getText())) {
+    return true
+  }
   if (!Node.isCallExpression(unwrappedInitializer)) return false
 
   const expressionText = unwrappedInitializer.getExpression().getText()
-  return /(^|\.)(object|schema|type|struct|record|union|literal|enum)$/i.test(expressionText)
+  return (
+    /(^|\.)(array|effect|enum|extend|literal|object|pipe|record|schema|scoped|struct|succeed|type|union)$/i.test(expressionText) ||
+    (name.endsWith("Layer") && expressionText.startsWith("Layer."))
+  )
 }
+
+const hasTypeLevelAnnotation = (declaration: VariableDeclaration): boolean =>
+  hasTypeLevelText(declaration.getTypeNode()?.getText())
+
+const hasTypeLevelText = (text: string | undefined): boolean =>
+  text !== undefined && /\b(Signal|Schema\.Schema|Layer\.Layer)\b/.test(text)
 
 const unwrapConstInitializer = (initializer: Node | undefined): Node | undefined => {
   let current = initializer

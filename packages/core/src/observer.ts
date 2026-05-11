@@ -42,11 +42,11 @@ export const observe = (
     const executed = yield* executeObserverSignals(registry, vector, options?.profile === true)
     const categories = aggregateCategories(registry, executed.signalResults, vector)
     const minimum = findMinimum(registry, executed.signalResults)
-    const weighted_mean = computeWeightedMean(categories)
-    const hard_gate_violations = collectHardGateViolations(registry, executed.signalResults)
-    const hard_gate_status: "pass" | "fail" =
-      hard_gate_violations.length > 0 ? "fail" : "pass"
-    const readiness = computeReadiness(registry, executed.signalResults, vector, hard_gate_status)
+    const weightedMean = computeWeightedMean(categories)
+    const hardGateViolations = collectHardGateViolations(registry, executed.signalResults)
+    const hardGateStatus: "pass" | "fail" =
+      hardGateViolations.length > 0 ? "fail" : "pass"
+    const readiness = computeReadiness(registry, executed.signalResults, vector, hardGateStatus)
     const calibration = yield* Effect.serviceOption(CalibrationContextTag)
     const calibrationSummary = Option.isSome(calibration)
       ? summarizeCalibration(calibration.value)
@@ -56,10 +56,10 @@ export const observe = (
       observer_semantics: OBSERVER_OUTPUT_SEMANTICS,
       categories,
       minimum,
-      weighted_mean,
+      weighted_mean: weightedMean,
       readiness,
-      hard_gate_status,
-      hard_gate_violations,
+      hard_gate_status: hardGateStatus,
+      hard_gate_violations: hardGateViolations,
       inactiveSignals: executed.inactiveSignals,
       signalResults: executed.signalResults,
       ...(calibrationSummary !== undefined ? { calibration: calibrationSummary } : {}),

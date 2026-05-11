@@ -3,7 +3,7 @@ import { InMemoryCacheLayer, ReferenceDataTag, SignalContextTag, makeReferenceDa
 import { observe } from "@skastr0/pulsar-core/observer"
 import type { ObserverOutput } from "@skastr0/pulsar-core/observer"
 import { buildRegistry } from "@skastr0/pulsar-core/scoring"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Schema } from "effect"
 import { inferCasingPattern } from "../casing.js"
 import { TsLd04 } from "../signals/ts-ld-04-naming-conventions.js"
 import { TsProjectLayer } from "../ts-project.js"
@@ -38,6 +38,7 @@ describe("TS-LD-04 (naming convention consistency)", () => {
   test("classifies canonical casing examples", () => {
     expect(inferCasingPattern("buildUser")).toBe("camelCase")
     expect(inferCasingPattern("UserService")).toBe("PascalCase")
+    expect(inferCasingPattern("CATEGORIES")).toBe("UPPER_SNAKE_CASE")
     expect(inferCasingPattern("MAX_RETRIES")).toBe("UPPER_SNAKE_CASE")
     expect(inferCasingPattern("user_profile")).toBe("snake_case")
     expect(inferCasingPattern("user-profile")).toBe("kebab-case")
@@ -122,6 +123,32 @@ describe("TS-LD-04 (naming convention consistency)", () => {
 
     expect(out.violations).toEqual([])
     expect(out.byKind.get("const")).toEqual({ total: 2, violating: 0 })
+  })
+
+  test("allows PascalCase runtime schema and layer objects as type-level values", async () => {
+    await repo.write(
+      "src/type-level-values.ts",
+      [
+        "import { Context, Effect, Layer, Schema } from 'effect'",
+        "import type { Signal } from '@skastr0/pulsar-core/signal'",
+        "class ServiceTag extends Context.Tag('ServiceTag')<ServiceTag, {}>() {}",
+        "export const UserSchema = Schema.Struct({ id: Schema.String })",
+        "export const UsersSchema = Schema.Array(UserSchema)",
+        "export const UserRefSchema = Schema.extend(UserSchema, Schema.Struct({ ref: Schema.String }))",
+        "export const ServiceLayer = Layer.succeed(ServiceTag, {})",
+        "export const BuildLayer = (): Layer.Layer<ServiceTag> => Layer.succeed(ServiceTag, {})",
+        "export const UserSignal: Signal<{}, {}> = { id: 'USER-01', tier: 1, category: 'legibility-decay', kind: 'legibility', configSchema: Schema.Struct({}), defaultConfig: {}, inputs: [], compute: () => Effect.succeed({}), score: () => 1, diagnose: () => [] }",
+        "export const retryBudget = 3",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsLd04, TsLd04.defaultConfig, {
+      "schema-conventions": NAMING_CONVENTIONS,
+    })
+
+    expect(out.violations).toEqual([])
+    expect(out.byKind.get("const")).toEqual({ total: 7, violating: 0 })
   })
 
   test("flags upper snake case for local constants even when module constants allow it", async () => {

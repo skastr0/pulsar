@@ -16,7 +16,7 @@ export interface ProjectModuleSourceFile {
   readonly path: string
 }
 
-const ProjectModuleSourceExtensions = [
+const PROJECT_MODULE_SOURCE_EXTENSIONS = [
   ".js",
   ".mjs",
   ".cjs",
@@ -199,7 +199,7 @@ const readProjectModulePackageNameOption = (
 
 const localProjectModuleSourceCandidates = (requestedPath: string): ReadonlyArray<string> => {
   const candidates = new Set<string>([requestedPath])
-  for (const extension of ProjectModuleSourceExtensions) {
+  for (const extension of PROJECT_MODULE_SOURCE_EXTENSIONS) {
     candidates.add(`${requestedPath}${extension}`)
     candidates.add(resolve(requestedPath, `index${extension}`))
   }
@@ -207,8 +207,8 @@ const localProjectModuleSourceCandidates = (requestedPath: string): ReadonlyArra
 }
 
 const isJavaScriptLikeProjectModuleSource = (path: string): boolean =>
-  new Set(ProjectModuleSourceExtensions).has(
-    extname(path) as (typeof ProjectModuleSourceExtensions)[number],
+  new Set(PROJECT_MODULE_SOURCE_EXTENSIONS).has(
+    extname(path) as (typeof PROJECT_MODULE_SOURCE_EXTENSIONS)[number],
   ) && extname(path) !== ".json"
 
 const isRelativeModuleSpecifier = (specifier: string): boolean =>

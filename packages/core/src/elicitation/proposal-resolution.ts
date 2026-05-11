@@ -15,11 +15,11 @@ export const applyPulsarVectorProposal = (
     readonly artifactPath?: string
   },
 ): PulsarVector => {
-  const signal_overrides = { ...vector.signal_overrides }
+  const signalOverrides = { ...vector.signal_overrides }
 
   for (const delta of proposal.deltas) {
-    signal_overrides[delta.signal_id] = {
-      ...signal_overrides[delta.signal_id],
+    signalOverrides[delta.signal_id] = {
+      ...signalOverrides[delta.signal_id],
       weight: delta.proposed_weight,
     }
   }
@@ -45,7 +45,7 @@ export const applyPulsarVectorProposal = (
   return appendVectorProvenance(
     {
       ...vector,
-      signal_overrides,
+      signal_overrides: signalOverrides,
       ...(nextModes !== undefined ? { modes: nextModes } : {}),
     },
     {

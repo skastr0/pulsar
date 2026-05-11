@@ -124,14 +124,14 @@ export const makeRunWithEnvironment = (internals: EngineInternals) => <A, E>(
   Effect.gen(function* () {
     yield* Effect.annotateCurrentSpan("worktreePath", worktreePath)
     const referenceEntries = yield* loadCanonicalReferenceDataEntries(worktreePath)
-    const EnvLayer = internals.makeEnvLayer(
+    const envLayer = internals.makeEnvLayer(
       worktreePath,
       sha,
       referenceEntries,
       calibrationContext,
       changedHunks,
     )
-    return yield* runInWorktree(EnvLayer, referenceEntries)
+    return yield* runInWorktree(envLayer, referenceEntries)
   })
 
 export const makeWithCommitWorktree = () => <A, E>(

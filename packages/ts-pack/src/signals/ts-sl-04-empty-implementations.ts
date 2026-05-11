@@ -4,17 +4,14 @@ import { CalibrationContextTag } from "@skastr0/pulsar-core/calibration"
 import { SignalFactorPolicyTag } from "@skastr0/pulsar-core/factors"
 import { Effect } from "effect"
 import { TsProjectTag } from "../ts-project.js"
-import { defaultTsSl04Config, TsSl04Config as TsSl04ConfigSchema } from "./ts-sl-04-config.js"
-import type { TsSl04Config as TsSl04ConfigShape } from "./ts-sl-04-config.js"
+import { defaultTsSl04Config, TsSl04Config as tsSl04ConfigSchema } from "./ts-sl-04-config.js"
+import type { TsSl04Config } from "./ts-sl-04-config.js"
 import {
-  TsSl04FactorDefinitions,
+  tsSl04FactorDefinitions,
   stubKindFactorPath,
 } from "./ts-sl-04-factors.js"
 import type { TsSl04Output } from "./ts-sl-04-model.js"
 import { computeTsSl04Output } from "./ts-sl-04-output.js"
-
-const TsSl04Config = TsSl04ConfigSchema
-type TsSl04Config = TsSl04ConfigShape
 
 export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalContextTag> = {
   id: "TS-SL-04-unfinished-implementations",
@@ -24,9 +21,9 @@ export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalCon
   category: "generated-slop",
   kind: "structural",
   cacheVersion: "factor-policy-v1",
-  configSchema: TsSl04Config,
+  configSchema: tsSl04ConfigSchema,
   defaultConfig: defaultTsSl04Config,
-  factorDefinitions: TsSl04FactorDefinitions,
+  factorDefinitions: tsSl04FactorDefinitions,
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
