@@ -1,0 +1,118 @@
+import { readFile } from "node:fs/promises"
+import { join, relative, sep } from "node:path"
+import type { PackageInfo, PackageManifest } from "../discovery.js"
+import { dependencyNamesOf, normalizePackageSpecifier } from "./shared-workspace.js"
+import type { BundledPackageInfo } from "./ts-de-04-model.js"
+
+export const isBundledCliSourceFile = (
+  manifest: PackageManifest,
+  packagePath: string,
+  file: string,
+): boolean => {
+  if (Object.keys(manifest.bin ?? {}).length === 0) return false
+  if (!hasBundledCliBuildPipeline(manifest)) return false
+
+  const rel = relative(packagePath, file).split(sep).join("/")
+  return (
+    rel.startsWith("src/cli/") ||
+    rel.startsWith("src/bundler/") ||
+    rel.startsWith("cli/") ||
+    rel.startsWith("bundler/")
+  )
+}
+
+export const hasBundledCliBuildPipeline = (manifest: PackageManifest): boolean => {
+  const scriptText = Object.values(manifest.scripts).join("\n")
+  const devDependencyNames = dependencyNamesOf(manifest, ["devDependencies"])
+  return (
+    /\b(?:build|bundle|prepack|pack)\b/.test(scriptText) &&
+    ["@vercel/ncc", "bun", "esbuild", "rollup", "tsup", "webpack"].some((dependencyName) =>
+      devDependencyNames.has(dependencyName),
+    )
+  )
+}
+
+export const readBundledInfoByPackage = async (
+  packages: ReadonlyArray<PackageInfo>,
+): Promise<ReadonlyMap<string, BundledPackageInfo>> => {
+  const entries = await Promise.all(
+    packages.map(async (pkg): Promise<[string, BundledPackageInfo]> => [
+      pkg.path,
+      await readBundledPackageInfo(pkg.path),
+    ]),
+  )
+  return new Map(entries)
+}
+
+const readBundledPackageInfo = async (packagePath: string): Promise<BundledPackageInfo> => {
+  const configText = await readFirstExistingText([
+    join(packagePath, "tsup.config.ts"),
+    join(packagePath, "tsup.config.mts"),
+    join(packagePath, "tsup.config.cts"),
+    join(packagePath, "tsup.config.js"),
+    join(packagePath, "tsup.config.mjs"),
+    join(packagePath, "tsup.config.cjs"),
+    join(packagePath, "esbuild.config.ts"),
+    join(packagePath, "esbuild.config.mts"),
+    join(packagePath, "esbuild.config.cts"),
+    join(packagePath, "esbuild.config.js"),
+    join(packagePath, "esbuild.config.mjs"),
+    join(packagePath, "esbuild.config.cjs"),
+    join(packagePath, "esbuild.ts"),
+    join(packagePath, "esbuild.mts"),
+    join(packagePath, "esbuild.cts"),
+    join(packagePath, "esbuild.js"),
+    join(packagePath, "esbuild.mjs"),
+    join(packagePath, "esbuild.cjs"),
+  ])
+
+  if (configText === undefined || !/\bbundle\s*:\s*true\b/.test(configText)) {
+    return { bundlesSource: false, externalPackageNames: new Set() }
+  }
+
+  return {
+    bundlesSource: true,
+    externalPackageNames: parseBundlerExternalPackageNames(configText),
+  }
+}
+
+const readFirstExistingText = async (
+  paths: ReadonlyArray<string>,
+): Promise<string | undefined> => {
+  for (const path of paths) {
+    try {
+      return await readFile(path, "utf8")
+    } catch {
+      continue
+    }
+  }
+  return undefined
+}
+
+const parseBundlerExternalPackageNames = (configText: string): ReadonlySet<string> => {
+  const externalNames = new Set<string>()
+  const externalMatch = /\bexternal\s*:\s*\[([\s\S]*?)\]/m.exec(configText)
+  if (externalMatch === null) return externalNames
+
+  for (const match of externalMatch[1]!.matchAll(/["']([^"']+)["']/g)) {
+    const dependencyName = normalizePackageSpecifier(match[1]!)
+    if (dependencyName !== undefined) {
+      externalNames.add(dependencyName)
+    }
+  }
+
+  return externalNames
+}
+
+export const isBundledPackageSourceUsage = (
+  owningPackage: PackageInfo,
+  file: string,
+  dependencyName: string,
+  bundledInfo: BundledPackageInfo | undefined,
+): boolean => {
+  if (bundledInfo?.bundlesSource !== true) return false
+  if (bundledInfo.externalPackageNames.has(dependencyName)) return false
+
+  const rel = relative(owningPackage.path, file).split(sep).join("/")
+  return rel.startsWith("src/")
+}
