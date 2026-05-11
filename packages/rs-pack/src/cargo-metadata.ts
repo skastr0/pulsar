@@ -8,7 +8,7 @@ class CargoMetadataParseError extends Error {
   }
 }
 
-export interface CargoMetadataDependency {
+interface CargoMetadataDependency {
   readonly name: string
   readonly kind: string | null | undefined
   readonly rename: string | null | undefined
@@ -20,7 +20,7 @@ export interface CargoMetadataDependency {
   readonly req: string | undefined
 }
 
-export interface CargoMetadataTarget {
+interface CargoMetadataTarget {
   readonly name: string
   readonly kind: ReadonlyArray<string>
   readonly crateTypes: ReadonlyArray<string>
@@ -39,25 +39,25 @@ export interface CargoMetadataPackage {
   readonly targets: ReadonlyArray<CargoMetadataTarget>
 }
 
-export interface CargoMetadataResolveDepKind {
+interface CargoMetadataResolveDepKind {
   readonly kind: string | null | undefined
   readonly target: string | null | undefined
 }
 
-export interface CargoMetadataResolveDep {
+interface CargoMetadataResolveDep {
   readonly name: string
   readonly pkg: string
   readonly depKinds: ReadonlyArray<CargoMetadataResolveDepKind>
 }
 
-export interface CargoMetadataResolveNode {
+interface CargoMetadataResolveNode {
   readonly id: string
   readonly dependencies: ReadonlyArray<string>
   readonly deps: ReadonlyArray<CargoMetadataResolveDep>
   readonly features: ReadonlyArray<string>
 }
 
-export interface CargoMetadataResolve {
+interface CargoMetadataResolve {
   readonly root: string | null | undefined
   readonly nodes: ReadonlyArray<CargoMetadataResolveNode>
 }

@@ -19,7 +19,7 @@ const RsAb01Config = Schema.Struct({
 })
 type RsAb01Config = typeof RsAb01Config.Type
 
-export interface UnusedPublicItem {
+interface UnusedPublicItem {
   readonly crate: string
   readonly module: string
   readonly name: string
@@ -31,7 +31,7 @@ export interface UnusedPublicItem {
   readonly surface: "exported-api" | "internal-overpublic" | "non-library"
 }
 
-export interface RsAb01Output {
+interface RsAb01Output {
   readonly deadPublicItems: ReadonlyArray<UnusedPublicItem>
   readonly exportedApiItems: ReadonlyArray<UnusedPublicItem>
   readonly nonLibraryPublicItems: ReadonlyArray<UnusedPublicItem>

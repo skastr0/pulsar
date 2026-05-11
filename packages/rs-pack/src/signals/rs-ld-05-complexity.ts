@@ -17,7 +17,7 @@ const RsLd05Config = Schema.Struct({
 })
 type RsLd05Config = typeof RsLd05Config.Type
 
-export interface RustFunctionComplexity {
+interface RustFunctionComplexity {
   readonly file: string
   readonly module: string
   readonly name: string
@@ -25,7 +25,7 @@ export interface RustFunctionComplexity {
   readonly complexity: number
 }
 
-export interface RsLd05Output {
+interface RsLd05Output {
   readonly functions: ReadonlyArray<RustFunctionComplexity>
   readonly byFile: ReadonlyMap<string, DistributionalSummary>
   readonly overThresholdCount: number

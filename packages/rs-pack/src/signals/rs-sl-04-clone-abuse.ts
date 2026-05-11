@@ -22,14 +22,14 @@ const RsSl04Config = Schema.Struct({
 })
 type RsSl04Config = typeof RsSl04Config.Type
 
-export interface CloneAbuseModule {
+interface CloneAbuseModule {
   readonly module: string
   readonly file: string
   readonly cloneCalls: number
   readonly likelyExpensiveClones: number
 }
 
-export interface RsSl04Output {
+interface RsSl04Output {
   readonly modules: ReadonlyArray<CloneAbuseModule>
   readonly totalCloneCalls: number
   readonly analysisMode: "syntax-heuristic-clone-scan"

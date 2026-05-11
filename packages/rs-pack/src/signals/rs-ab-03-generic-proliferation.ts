@@ -26,7 +26,7 @@ const RsAb03Config = Schema.Struct({
 })
 type RsAb03Config = typeof RsAb03Config.Type
 
-export interface RustGenericAnalysis {
+interface RustGenericAnalysis {
   readonly file: string
   readonly module: string
   readonly declarationName: string
@@ -37,7 +37,7 @@ export interface RustGenericAnalysis {
   readonly complexity: number
 }
 
-export interface RsAb03Output {
+interface RsAb03Output {
   readonly declarations: ReadonlyArray<RustGenericAnalysis>
   readonly parameterDistribution: DistributionalSummary
   readonly overThreshold: ReadonlyArray<RustGenericAnalysis>

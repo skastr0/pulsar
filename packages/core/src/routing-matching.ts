@@ -10,7 +10,7 @@ import type {
   SignalRef,
 } from "./routing-schema.js"
 
-export type PatternMatch = {
+type PatternMatch = {
   readonly sourceLocations: ReadonlyArray<Location>
   readonly matchDetail: unknown
 }

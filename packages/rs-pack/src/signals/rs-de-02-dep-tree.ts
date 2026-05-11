@@ -16,20 +16,20 @@ const RsDe02Config = Schema.Struct({
 })
 type RsDe02Config = typeof RsDe02Config.Type
 
-export interface DependencyDuplicateGroup {
+interface DependencyDuplicateGroup {
   readonly name: string
   readonly versions: ReadonlyArray<string>
   readonly instanceCount: number
 }
 
-export interface TopLevelDependencyDepth {
+interface TopLevelDependencyDepth {
   readonly name: string
   readonly rootInstances: number
   readonly maxDepth: number
   readonly reachablePackages: number
 }
 
-export interface RsDe02Output {
+interface RsDe02Output {
   readonly duplicates: ReadonlyArray<DependencyDuplicateGroup>
   readonly topLevelDependencies: ReadonlyArray<TopLevelDependencyDepth>
   readonly duplicateCount: number

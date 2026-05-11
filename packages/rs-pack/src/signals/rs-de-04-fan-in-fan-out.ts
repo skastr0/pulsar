@@ -21,14 +21,14 @@ const RsDe04Config = Schema.Struct({
 })
 type RsDe04Config = typeof RsDe04Config.Type
 
-export interface RustModuleFan {
+interface RustModuleFan {
   readonly module: string
   readonly file: string
   readonly fanIn: number
   readonly fanOut: number
 }
 
-export interface RsDe04Output {
+interface RsDe04Output {
   readonly modules: ReadonlyArray<RustModuleFan>
   readonly byModule: ReadonlyMap<string, { readonly fanIn: number; readonly fanOut: number }>
   readonly hubs: ReadonlyArray<RustModuleFan>

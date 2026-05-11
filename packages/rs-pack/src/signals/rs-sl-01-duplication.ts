@@ -24,20 +24,20 @@ const RsSl01Config = Schema.Struct({
 })
 type RsSl01Config = typeof RsSl01Config.Type
 
-export interface DuplicateGroupMember {
+interface DuplicateGroupMember {
   readonly file: string
   readonly module: string
   readonly name: string
   readonly line: number
 }
 
-export interface DuplicateGroup {
+interface DuplicateGroup {
   readonly kind: "exact" | "structural"
   readonly tokenCount: number
   readonly members: ReadonlyArray<DuplicateGroupMember>
 }
 
-export interface RsSl01Output {
+interface RsSl01Output {
   readonly groups: ReadonlyArray<DuplicateGroup>
   readonly scopeMode: "whole-tree" | "changed-hunks"
   readonly analysisMode: "function-body-normalization"

@@ -24,7 +24,7 @@ interface CrateEdge {
   readonly featureDriven: boolean
 }
 
-export interface CrateCycle {
+interface CrateCycle {
   readonly crates: ReadonlyArray<string>
   readonly edges: ReadonlyArray<CrateEdge>
   readonly architecturalSpan: string
@@ -32,7 +32,7 @@ export interface CrateCycle {
   readonly manifestPaths: ReadonlyArray<string>
 }
 
-export interface RsAd03Output {
+interface RsAd03Output {
   readonly cycles: ReadonlyArray<CrateCycle>
   readonly cycleCount: number
   readonly largestCycleSize: number

@@ -23,7 +23,7 @@ const RsSl02Config = Schema.Struct({
 })
 type RsSl02Config = typeof RsSl02Config.Type
 
-export interface RustSuppression {
+interface RustSuppression {
   readonly file: string
   readonly module: string
   readonly line: number
@@ -33,7 +33,7 @@ export interface RustSuppression {
   readonly classification: "requires-governance"
 }
 
-export interface RsSl02Output {
+interface RsSl02Output {
   readonly suppressions: ReadonlyArray<RustSuppression>
   readonly ordinaryAllowAttributeCount: number
   readonly ordinaryAllowLintCount: number

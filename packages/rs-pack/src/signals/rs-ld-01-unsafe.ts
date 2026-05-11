@@ -15,7 +15,7 @@ const RsLd01Config = Schema.Struct({
 })
 type RsLd01Config = typeof RsLd01Config.Type
 
-export interface UnsafeModuleSummary {
+interface UnsafeModuleSummary {
   readonly module: string
   readonly file: string
   readonly totalFunctions: number
@@ -25,7 +25,7 @@ export interface UnsafeModuleSummary {
   readonly unsafeDensity: number
 }
 
-export interface RsLd01Output {
+interface RsLd01Output {
   readonly modules: ReadonlyArray<UnsafeModuleSummary>
   readonly totalUnsafeBlocks: number
   readonly totalUnsafeFunctions: number

@@ -16,13 +16,13 @@ const RsRp03Config = Schema.Struct({
 })
 type RsRp03Config = typeof RsRp03Config.Type
 
-export interface CrossCrateEdge {
+interface CrossCrateEdge {
   readonly file: string
   readonly fromCrate: string
   readonly toCrate: string
 }
 
-export interface RsRp03Output {
+interface RsRp03Output {
   readonly linesAdded: number
   readonly linesDeleted: number
   readonly filesChanged: ReadonlyArray<string>

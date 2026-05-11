@@ -11,7 +11,7 @@ export const DEFAULT_RUST_EXCLUDE_GLOBS = [
   "**/benches/**",
 ] as const
 
-export interface RustFileScope {
+interface RustFileScope {
   readonly file: string
   readonly crateName: string
   readonly manifest: RustManifestInfo | undefined
@@ -20,7 +20,7 @@ export interface RustFileScope {
   readonly modulePath: string
 }
 
-export interface AttributedNodeVisit {
+interface AttributedNodeVisit {
   readonly node: RustSyntaxNode
   readonly ancestors: ReadonlyArray<RustSyntaxNode>
   readonly attachedAttributes: ReadonlyArray<RustSyntaxNode>

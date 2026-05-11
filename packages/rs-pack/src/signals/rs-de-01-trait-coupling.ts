@@ -23,7 +23,7 @@ const RsDe01Config = Schema.Struct({
 })
 type RsDe01Config = typeof RsDe01Config.Type
 
-export interface TraitCouplingDetail {
+interface TraitCouplingDetail {
   readonly trait: string
   readonly type: string
   readonly file: string
@@ -35,13 +35,13 @@ export interface TraitCouplingDetail {
   readonly concerning: boolean
 }
 
-export type TraitCouplingFamily =
+type TraitCouplingFamily =
   | "standard-library-ergonomic"
   | "serialization"
   | "framework-adapter"
   | "application-external"
 
-export interface TraitCouplingModuleSummary {
+interface TraitCouplingModuleSummary {
   readonly module: string
   readonly file: string
   readonly foreignTraitImpls: number
@@ -50,7 +50,7 @@ export interface TraitCouplingModuleSummary {
   readonly details: ReadonlyArray<TraitCouplingDetail>
 }
 
-export interface RsDe01Output {
+interface RsDe01Output {
   readonly byModule: ReadonlyMap<
     string,
     {

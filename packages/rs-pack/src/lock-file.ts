@@ -18,7 +18,7 @@ export interface CargoLockfile {
   readonly packages: ReadonlyArray<CargoLockPackage>
 }
 
-export interface CargoLockDuplicate {
+interface CargoLockDuplicate {
   readonly name: string
   readonly versions: ReadonlyArray<string>
   readonly packages: ReadonlyArray<CargoLockPackage>

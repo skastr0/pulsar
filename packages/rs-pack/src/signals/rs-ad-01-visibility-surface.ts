@@ -17,7 +17,7 @@ const RsAd01Config = Schema.Struct({
 })
 type RsAd01Config = typeof RsAd01Config.Type
 
-export interface ModuleVisibilitySurface {
+interface ModuleVisibilitySurface {
   readonly module: string
   readonly file: string
   readonly pub: number
@@ -29,7 +29,7 @@ export interface ModuleVisibilitySurface {
   readonly pubRatio: number
 }
 
-export interface RsAd01Output {
+interface RsAd01Output {
   readonly modules: ReadonlyArray<ModuleVisibilitySurface>
   readonly byModule: ReadonlyMap<string, DistributionalSummary>
   readonly totalItems: number

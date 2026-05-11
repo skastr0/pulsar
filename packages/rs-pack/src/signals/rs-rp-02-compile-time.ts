@@ -32,7 +32,7 @@ interface CargoTimingUnit {
   readonly unblocked_rmeta_units?: ReadonlyArray<number>
 }
 
-export interface CompileTimingCrate {
+interface CompileTimingCrate {
   readonly crate: string
   readonly totalDurationMs: number
   readonly unitCount: number
@@ -40,7 +40,7 @@ export interface CompileTimingCrate {
   readonly incrementalCacheHitRate: number | undefined
 }
 
-export interface RsRp02Output {
+interface RsRp02Output {
   readonly crates: ReadonlyArray<CompileTimingCrate>
   readonly totalUnits: number
   readonly buildStatus: "measured" | "unavailable"

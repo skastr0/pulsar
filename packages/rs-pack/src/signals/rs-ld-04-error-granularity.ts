@@ -14,7 +14,7 @@ const RsLd04Config = Schema.Struct({
 })
 type RsLd04Config = typeof RsLd04Config.Type
 
-export interface BoundaryErrorSurface {
+interface BoundaryErrorSurface {
   readonly file: string
   readonly module: string
   readonly name: string
@@ -23,7 +23,7 @@ export interface BoundaryErrorSurface {
   readonly classification: "granular" | "collapsed"
 }
 
-export interface RsLd04Output {
+interface RsLd04Output {
   readonly boundaryFunctions: ReadonlyArray<BoundaryErrorSurface>
   readonly granularCount: number
   readonly collapsedCount: number

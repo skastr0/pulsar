@@ -15,7 +15,7 @@ const RsLd03Config = Schema.Struct({
 })
 type RsLd03Config = typeof RsLd03Config.Type
 
-export interface MatchCatchAllSite {
+interface MatchCatchAllSite {
   readonly file: string
   readonly module: string
   readonly functionName: string
@@ -24,7 +24,7 @@ export interface MatchCatchAllSite {
   readonly catchAllArmCount: number
 }
 
-export interface RsLd03Output {
+interface RsLd03Output {
   readonly matchSites: ReadonlyArray<MatchCatchAllSite>
   readonly totalMatches: number
   readonly matchesWithCatchAll: number

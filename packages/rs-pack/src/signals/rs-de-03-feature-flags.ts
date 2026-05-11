@@ -17,7 +17,7 @@ const RsDe03Config = Schema.Struct({
 })
 type RsDe03Config = typeof RsDe03Config.Type
 
-export interface FeaturePropagation {
+interface FeaturePropagation {
   readonly crate: string
   readonly feature: string
   readonly targetCrate: string
@@ -25,14 +25,14 @@ export interface FeaturePropagation {
   readonly optional: boolean
 }
 
-export interface FeatureCrateSummary {
+interface FeatureCrateSummary {
   readonly crate: string
   readonly featureCount: number
   readonly conditionalCompilationSites: number
   readonly propagatedFeatures: number
 }
 
-export interface RsDe03Output {
+interface RsDe03Output {
   readonly crates: ReadonlyArray<FeatureCrateSummary>
   readonly propagationByCrate: ReadonlyMap<string, ReadonlyArray<FeaturePropagation>>
   readonly totalConditionalCompilationSites: number

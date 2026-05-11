@@ -23,7 +23,7 @@ const RsAb04Config = Schema.Struct({
 })
 type RsAb04Config = typeof RsAb04Config.Type
 
-export interface DeriveDensityEntry {
+interface DeriveDensityEntry {
   readonly file: string
   readonly module: string
   readonly name: string
@@ -33,7 +33,7 @@ export interface DeriveDensityEntry {
   readonly customDerives: ReadonlyArray<string>
 }
 
-export interface RsAb04Output {
+interface RsAb04Output {
   readonly types: ReadonlyArray<DeriveDensityEntry>
   readonly distribution: DistributionalSummary
   readonly analysisMode: "attribute-attached-derive-count"

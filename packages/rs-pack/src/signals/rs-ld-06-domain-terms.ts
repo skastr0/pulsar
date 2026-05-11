@@ -26,7 +26,7 @@ type IdentifierClassification =
   | "duplicates-canonical"
   | "conflicts-with-canonical"
 
-export interface IdentifierGlossaryMatch {
+interface IdentifierGlossaryMatch {
   readonly file: string
   readonly module: string
   readonly name: string
@@ -35,7 +35,7 @@ export interface IdentifierGlossaryMatch {
   readonly suggestedCanonical: string | undefined
 }
 
-export interface RsLd06Output {
+interface RsLd06Output {
   readonly identifiers: ReadonlyArray<IdentifierGlossaryMatch>
   readonly matchCount: number
   readonly newUniqueCount: number

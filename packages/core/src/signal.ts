@@ -27,7 +27,7 @@ export type SignalApplicability =
   | "insufficient_evidence"
   | "failed"
 
-export type SignalCacheDependency = "git-revision-context"
+type SignalCacheDependency = "git-revision-context"
 
 export interface SignalOutputMetadata {
   readonly effectiveConfidence?: number
@@ -45,7 +45,7 @@ export type SignalFactorValue =
   | ReadonlyArray<SignalFactorValue>
   | { readonly [key: string]: SignalFactorValue }
 
-export type SignalFactorValueKind =
+type SignalFactorValueKind =
   | "string"
   | "number"
   | "boolean"
@@ -53,7 +53,7 @@ export type SignalFactorValueKind =
   | "array"
   | "object"
 
-export type SignalFactorScoreRole =
+type SignalFactorScoreRole =
   | "evidence"
   | "threshold"
   | "penalty"
@@ -71,7 +71,7 @@ export interface SignalFactorDefinition {
   readonly defaultValue?: SignalFactorValue
 }
 
-export type SignalFactorSource =
+type SignalFactorSource =
   | "signal-default"
   | "computed"
   | "vector"

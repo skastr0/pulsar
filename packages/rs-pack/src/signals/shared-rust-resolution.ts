@@ -5,7 +5,7 @@ import type {
   RustUseFact,
 } from "../rust-analysis.js"
 
-export interface ResolvedRustPath {
+interface ResolvedRustPath {
   readonly module: RustModuleFact | undefined
   readonly item: RustItemFact | undefined
   readonly key: string | undefined

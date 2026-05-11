@@ -15,7 +15,6 @@ import { RS_PACK_SIGNALS } from "../pack.js"
 import { RsRp01 } from "../signals/rs-rp-01-hotspots.js"
 import { RsRp02 } from "../signals/rs-rp-02-compile-time.js"
 import { RsRp03 } from "../signals/rs-rp-03-pr-size.js"
-import type { RsLd05Output } from "../signals/rs-ld-05-complexity.js"
 import {
   cleanupWorkspace,
   createRustWorkspace,
@@ -24,6 +23,10 @@ import {
 } from "./helpers.js"
 
 const execFileAsync = promisify(execFile)
+
+type ComplexityByFileFixture = Readonly<Record<string, unknown>> & {
+  readonly byFile: ReadonlyMap<string, { readonly max: number }>
+}
 
 describe("RS-RP-* signals", () => {
   test("RS-RP-01 combines churn and complexity into hotspots", async () => {
@@ -40,7 +43,7 @@ describe("RS-RP-* signals", () => {
           overThresholdCount: 2,
           totalFunctions: 3,
           analysisMode: "standard-cyclomatic",
-        } satisfies RsLd05Output,
+        } satisfies ComplexityByFileFixture,
       ],
       [
         "SHARED-CHURN-01",
@@ -243,7 +246,7 @@ describe("RS-RP-* signals", () => {
                 overThresholdCount: 0,
                 totalFunctions: 1,
                 analysisMode: "standard-cyclomatic",
-              } satisfies RsLd05Output,
+              } satisfies ComplexityByFileFixture,
             ],
             ["SHARED-CHURN-01", churn],
           ]),

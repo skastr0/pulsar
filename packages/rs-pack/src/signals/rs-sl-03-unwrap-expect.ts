@@ -22,14 +22,14 @@ const RsSl03Config = Schema.Struct({
 })
 type RsSl03Config = typeof RsSl03Config.Type
 
-export interface PanicDensityModule {
+interface PanicDensityModule {
   readonly module: string
   readonly file: string
   readonly unwrapExpectCalls: number
   readonly density: number
 }
 
-export interface RsSl03Output {
+interface RsSl03Output {
   readonly modules: ReadonlyArray<PanicDensityModule>
   readonly totalCalls: number
   readonly analysisMode: "call-expression-field-scan"

@@ -23,7 +23,7 @@ const RsAb02Config = Schema.Struct({
 })
 type RsAb02Config = typeof RsAb02Config.Type
 
-export interface TraitObjectChainEntry {
+interface TraitObjectChainEntry {
   readonly file: string
   readonly module: string
   readonly name: string
@@ -33,7 +33,7 @@ export interface TraitObjectChainEntry {
   readonly calleeNames: ReadonlyArray<string>
 }
 
-export interface RsAb02Output {
+interface RsAb02Output {
   readonly functions: ReadonlyArray<TraitObjectChainEntry>
   readonly overThreshold: ReadonlyArray<TraitObjectChainEntry>
   readonly analysisMode: "local-dyn-return-call-graph"

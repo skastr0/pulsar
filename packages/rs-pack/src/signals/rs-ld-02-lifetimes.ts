@@ -17,7 +17,7 @@ const RsLd02Config = Schema.Struct({
 })
 type RsLd02Config = typeof RsLd02Config.Type
 
-export interface LifetimeComplexityFact {
+interface LifetimeComplexityFact {
   readonly file: string
   readonly module: string
   readonly name: string
@@ -30,7 +30,7 @@ export interface LifetimeComplexityFact {
   readonly complexity: number
 }
 
-export interface RsLd02Output {
+interface RsLd02Output {
   readonly functions: ReadonlyArray<LifetimeComplexityFact>
   readonly byFile: ReadonlyMap<string, DistributionalSummary>
   readonly overThresholdCount: number

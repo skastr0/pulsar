@@ -4,7 +4,6 @@ import {
 } from "@skastr0/pulsar-core/signal"
 import type { SharedChurn01Output } from "@skastr0/pulsar-shared-signals"
 import { Effect, Schema } from "effect"
-import type { RsLd05Output } from "./rs-ld-05-complexity.js"
 
 const RsRp01Config = Schema.Struct({
   top_n: Schema.Number,
@@ -13,9 +12,9 @@ const RsRp01Config = Schema.Struct({
 })
 type RsRp01Config = typeof RsRp01Config.Type
 
-export type RustQuadrant = "top-right" | "top-left" | "bottom-right" | "bottom-left"
+type RustQuadrant = "top-right" | "top-left" | "bottom-right" | "bottom-left"
 
-export interface RustHotspot {
+interface RustHotspot {
   readonly file: string
   readonly churn: number
   readonly complexity: number
@@ -24,12 +23,16 @@ export interface RustHotspot {
   readonly rank: number
 }
 
-export type RsRp01Output = {
+type RsRp01Output = {
   readonly hotspots: ReadonlyArray<RustHotspot>
   readonly totalFilesConsidered: number
   readonly topRightShare: number
   readonly medianChurn: number
   readonly medianComplexity: number
+}
+
+interface ComplexityByFileInput {
+  readonly byFile: ReadonlyMap<string, { readonly max: number }>
 }
 
 export const RsRp01: Signal<RsRp01Config, RsRp01Output, never> = {
@@ -52,7 +55,7 @@ export const RsRp01: Signal<RsRp01Config, RsRp01Output, never> = {
   compute: (config, inputs) =>
     Effect.sync(() => {
       const complexity = (inputs.get("RS-LD-05-cyclomatic-complexity") ??
-        inputs.get("RS-LD-05")) as RsLd05Output | undefined
+        inputs.get("RS-LD-05")) as ComplexityByFileInput | undefined
       const churn = (inputs.get("SHARED-CHURN-01-recent-churn") ??
         inputs.get("SHARED-CHURN-01")) as SharedChurn01Output | undefined
       if (complexity === undefined || churn === undefined) {
