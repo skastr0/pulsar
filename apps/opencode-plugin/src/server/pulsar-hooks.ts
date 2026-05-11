@@ -28,7 +28,6 @@ import {
   createErrorAnnotation,
   createPendingAnnotation,
 } from "./review-surfacing"
-export type { PulsarAnalysis, PulsarAnalyzer, PulsarState } from "./pulsar-hook-types"
 
 export const createPulsarState = (options?: {
   readonly analyzer?: PulsarAnalyzer

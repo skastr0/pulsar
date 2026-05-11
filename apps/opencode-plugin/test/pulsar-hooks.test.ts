@@ -9,8 +9,8 @@ import type { PulsarVector } from "@skastr0/pulsar-core/vector"
 import {
   afterToolExecute,
   createPulsarState,
-  type PulsarAnalysis,
 } from "../src/server/pulsar-hooks"
+import type { PulsarAnalysis } from "../src/server/pulsar-hook-types"
 
 const repoRoot = resolve(import.meta.dir, "../../..")
 
