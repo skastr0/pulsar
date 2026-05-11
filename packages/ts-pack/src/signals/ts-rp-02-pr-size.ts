@@ -41,8 +41,9 @@ export interface TsRp02Output {
   readonly packagesTouched: ReadonlyArray<string>
   readonly newCrossPackageEdges: ReadonlyArray<ImportEdge>
   readonly newCrossBoundaryEdges: ReadonlyArray<ImportEdge>
-  readonly diffMode: "git-working-tree" | "git-commit-range" | "changed-hunks-fallback" | "missing"
+  readonly diffMode: "git-working-tree" | "git-branch-range" | "git-commit-range" | "changed-hunks-fallback" | "missing"
   readonly sizeCategory: "small" | "medium" | "large" | "oversized"
+  readonly sizePenalty: number
 }
 
 export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackageInfoTag | SignalContextTag> = {
@@ -104,6 +105,29 @@ export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackage
             return parseGitDiff(project, packages, context.worktreePath, workingNumstat, diff, "git-working-tree", config)
           }
 
+          const branchRange = await resolveBranchDiffRange(git)
+          if (branchRange !== undefined) {
+            const branchNumstat = await git.raw([
+              "diff",
+              "--numstat",
+              "--no-renames",
+              branchRange,
+              "--",
+              ...TS_DIFF_PATHSPECS,
+            ])
+            if (branchNumstat.trim().length > 0) {
+              const diff = await git.raw([
+                "diff",
+                "--unified=0",
+                "--no-renames",
+                branchRange,
+                "--",
+                ...TS_DIFF_PATHSPECS,
+              ])
+              return parseGitDiff(project, packages, context.worktreePath, branchNumstat, diff, "git-branch-range", config)
+            }
+          }
+
           const range = context.gitSha === "HEAD" ? "HEAD^!" : `${context.gitSha}^!`
           try {
             const rangeNumstat = await git.raw([
@@ -135,10 +159,8 @@ export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackage
       })
     }),
   score: (out) => {
-    const changedLines = out.linesAdded + out.linesDeleted
     const edgePenalty = out.newCrossBoundaryEdges.length * 0.2 + out.newCrossPackageEdges.length * 0.1
-    const sizePenalty = Math.min(0.6, changedLines / 1000)
-    return Math.max(0, 1 - sizePenalty - edgePenalty)
+    return Math.max(0, 1 - out.sizePenalty - edgePenalty)
   },
   outputMetadata: (out) => {
     if (out.diffMode === "missing") return { applicability: "insufficient_evidence" as const }
@@ -188,4 +210,31 @@ export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackage
 
     return diagnostics
   },
+}
+
+const resolveBranchDiffRange = async (
+  git: ReturnType<typeof simpleGit>,
+): Promise<string | undefined> => {
+  try {
+    const upstream = (await git.raw([
+      "rev-parse",
+      "--abbrev-ref",
+      "--symbolic-full-name",
+      "@{u}",
+    ])).trim()
+    if (upstream.length === 0) return undefined
+
+    const [head, mergeBase] = await Promise.all([
+      git.raw(["rev-parse", "HEAD"]),
+      git.raw(["merge-base", "HEAD", upstream]),
+    ])
+    const headSha = head.trim()
+    const mergeBaseSha = mergeBase.trim()
+    if (headSha.length === 0 || mergeBaseSha.length === 0 || headSha === mergeBaseSha) {
+      return undefined
+    }
+    return `${mergeBaseSha}..HEAD`
+  } catch {
+    return undefined
+  }
 }

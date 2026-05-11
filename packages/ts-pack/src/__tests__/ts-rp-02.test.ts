@@ -134,7 +134,7 @@ export function useHelper(): string { return helper(); }
               gitSha: "HEAD",
               worktreePath: repo.root,
               changedHunks: [
-                { file: "test.ts", oldStart: 1, oldLines: 0, newStart: 1, newLines: 75 },
+                { file: "test.ts", oldStart: 1, oldLines: 0, newStart: 1, newLines: 40 },
               ],
             }),
           ),
@@ -143,6 +143,7 @@ export function useHelper(): string { return helper(); }
     )
 
     expect(["small", "medium", "large", "oversized"]).toContain(out.sizeCategory)
+    expect(TsRp02.score(out)).toBe(1)
   }, 120_000)
 
   test("score decreases with larger changes", async () => {
@@ -258,6 +259,53 @@ export function View(): unknown {
     expect(out.linesDeleted).toBeGreaterThan(0)
   }, 120_000)
 
+  test("uses the upstream branch range instead of only the last commit", async () => {
+    git(repo.root, ["checkout", "-q", "-b", "feature"])
+    git(repo.root, ["branch", "--set-upstream-to", "main"])
+
+    await repo.write(
+      "src/first.ts",
+      `
+export const first = 1
+`,
+    )
+    git(repo.root, ["add", "."])
+    git(repo.root, ["commit", "-q", "-m", "Add first file"])
+
+    await repo.write(
+      "src/second.ts",
+      `
+export const second = 2
+`,
+    )
+    git(repo.root, ["add", "."])
+    git(repo.root, ["commit", "-q", "-m", "Add second file"])
+
+    const out = await Effect.runPromise(
+      TsRp02.compute(
+        TsRp02.defaultConfig,
+        new Map(),
+      ).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            TsProjectLayer(repo.root),
+            Layer.succeed(SignalContextTag, {
+              gitSha: "HEAD",
+              worktreePath: repo.root,
+              changedHunks: [],
+            }),
+          ),
+        ),
+      ),
+    )
+
+    expect(out.diffMode).toBe("git-branch-range")
+    expect(out.filesChanged.map((file) => file.replace(repo.root, ""))).toEqual([
+      "/src/first.ts",
+      "/src/second.ts",
+    ])
+  }, 120_000)
+
   test("diagnostics include PR summary", async () => {
     const out = await Effect.runPromise(
       TsRp02.compute(
@@ -302,6 +350,7 @@ export function View(): unknown {
       newCrossBoundaryEdges: [],
       diffMode: "changed-hunks-fallback",
       sizeCategory: "large",
+      sizePenalty: 0.28,
     })
 
     expect(diagnostics[0]?.severity).toBe("warn")

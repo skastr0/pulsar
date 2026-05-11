@@ -57,6 +57,7 @@ export const parseGitDiff = (
   const totalLines = linesAdded + linesDeleted
   let sizeCategory: TsRp02Output["sizeCategory"]
   sizeCategory = classifySizeCategory(totalLines, config)
+  const sizePenalty = prSizePenalty(totalLines, config)
 
   return {
     linesAdded,
@@ -68,6 +69,7 @@ export const parseGitDiff = (
     newCrossBoundaryEdges: crossBoundaryEdges,
     diffMode,
     sizeCategory,
+    sizePenalty,
   }
 }
 
@@ -88,6 +90,7 @@ export const fromChangedHunks = (
       newCrossBoundaryEdges: [],
       diffMode: "missing",
       sizeCategory: "small",
+      sizePenalty: 0,
     }
   }
 
@@ -117,6 +120,7 @@ export const fromChangedHunks = (
   const packagesTouched = touchedPackages(packages, filesChanged)
   const totalLines = fileStats.reduce((sum, stat) => sum + stat.totalLines, 0)
   const sizeCategory = classifySizeCategory(totalLines, config)
+  const sizePenalty = prSizePenalty(totalLines, config)
 
   return {
     linesAdded: fileStats.reduce((sum, stat) => sum + stat.linesAdded, 0),
@@ -128,6 +132,7 @@ export const fromChangedHunks = (
     newCrossBoundaryEdges: [],
     diffMode: "changed-hunks-fallback",
     sizeCategory,
+    sizePenalty,
   }
 }
 
@@ -148,6 +153,29 @@ const classifySizeCategory = (
     return "large"
   }
   return "oversized"
+}
+
+const prSizePenalty = (changedLines: number, config: TsRp02Config): number => {
+  if (changedLines <= config.small_pr_budget) return 0
+  if (changedLines <= config.medium_pr_budget) {
+    return scalePenalty(changedLines, config.small_pr_budget, config.medium_pr_budget, 0, 0.2)
+  }
+  if (changedLines <= config.large_pr_budget) {
+    return scalePenalty(changedLines, config.medium_pr_budget, config.large_pr_budget, 0.2, 0.4)
+  }
+  return Math.min(0.6, 0.4 + (changedLines - config.large_pr_budget) / 1000)
+}
+
+const scalePenalty = (
+  value: number,
+  from: number,
+  to: number,
+  minPenalty: number,
+  maxPenalty: number,
+): number => {
+  if (to <= from) return maxPenalty
+  const ratio = (value - from) / (to - from)
+  return minPenalty + ratio * (maxPenalty - minPenalty)
 }
 
 const sortFileStats = (stats: ReadonlyArray<ChangedFileStat>): ReadonlyArray<ChangedFileStat> =>
