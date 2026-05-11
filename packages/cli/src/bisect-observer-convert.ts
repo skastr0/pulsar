@@ -9,7 +9,7 @@ import {
 import type {
   ObserverCommitMinimum,
   ObserverCurveSample,
-} from "./bisect-types.js"
+} from "./bisect-observer-types.js"
 
 export const toObserverCurveSample = (
   sha: string,

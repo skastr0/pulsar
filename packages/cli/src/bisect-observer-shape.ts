@@ -5,8 +5,8 @@ import {
 import type {
   ObserverCommitEntry,
   ObserverCurveSet,
-  ScorePoint,
-} from "./bisect-types.js"
+} from "./bisect-observer-types.js"
+import type { ScorePoint } from "./bisect-signal-types.js"
 
 export const compactObserverTrajectory = (
   trajectory: ReadonlyArray<ObserverCommitEntry>,

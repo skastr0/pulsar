@@ -175,3 +175,17 @@ export interface MixerCategoryPolicyValue {
   readonly finalScore: number
   readonly metadata?: Readonly<Record<string, unknown>>
 }
+
+export interface CalibrationSlotValues {
+  readonly "taxonomy.file-classifier": FileClassificationValue
+  readonly "language-pack-activation": LanguagePackActivationValue
+  readonly "typescript.noop-classifier": TypeScriptNoopClassificationValue
+  readonly "typescript.clone-group-policy": TypeScriptCloneGroupPolicyValue
+  readonly "typescript.dependency-resolver": TypeScriptDependencyResolutionValue
+  readonly "typescript.suppression-justifier": TypeScriptSuppressionJustificationValue
+  readonly "typescript.callback-context-namer": TypeScriptCallbackContextNameValue
+  readonly "typescript.export-reachability": TypeScriptExportReachabilityValue
+  readonly "typescript.unfinished-implementation-policy": TypeScriptUnfinishedImplementationPolicyValue
+  readonly "typescript.unsafe-type-policy": TypeScriptUnsafeTypePolicyValue
+  readonly "mixer.category-policy": MixerCategoryPolicyValue
+}

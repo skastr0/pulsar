@@ -2,11 +2,11 @@ import type {
   BisectReport,
   CommitScore,
   Culprit,
-  FirstCrossingQuery,
   FirstCrossingResult,
   ScorePoint,
   SignalBisectOptions,
-} from "./bisect-types.js"
+} from "./bisect-signal-types.js"
+import type { FirstCrossingQuery } from "./bisect-types.js"
 import type { BisectSamplingSummary } from "./bisect-sampling.js"
 
 export const buildSignalBisectReport = (

@@ -7,7 +7,6 @@ import type {
   PatternCondition,
   RoutingDiff,
   RoutingPattern,
-  SignalRef,
 } from "./routing-schema.js"
 
 type PatternMatch = {
@@ -144,7 +143,7 @@ export const buildContextPayload = (
 
 const selectSignalPayload = (
   result: SignalRunResult,
-  include: SignalRef["include"],
+  include: RoutingPattern["contextPayload"][number]["include"],
 ): unknown => {
   switch (include) {
     case "score":

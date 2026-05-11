@@ -3,6 +3,7 @@ import {
   isExternallyVisible,
   type RustItemFact,
   type RustModuleFact,
+  type RustUseFact,
 } from "../rust-analysis.js"
 import type {
   RustManifestInfo,
@@ -15,7 +16,6 @@ import type {
 } from "./rs-ad-02-types.js"
 
 type RustProjectFacts = Awaited<ReturnType<typeof collectRustProjectFacts>>
-type RustUseFact = RustProjectFacts["uses"][number]
 
 export const collectCrossCrateImports = (
   facts: RustProjectFacts,

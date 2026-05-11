@@ -13,13 +13,15 @@ import {
 } from "./bisect-observer-shape.js"
 import type {
   CategoryTrajectory,
-  Culprit,
   ObserverBisectReport,
   ObserverCommitEntry,
   ObserverCurveSample,
-  ScorePoint,
   SignalTrajectory,
-} from "./bisect-types.js"
+} from "./bisect-observer-types.js"
+import type {
+  Culprit,
+  ScorePoint,
+} from "./bisect-signal-types.js"
 
 type ObserverReportScope = {
   readonly signalCategories: Record<string, Category>

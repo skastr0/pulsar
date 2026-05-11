@@ -16,10 +16,10 @@ import {
   summarizeReadinessTrajectory,
 } from "./bisect-observer-report-payload.js"
 import type {
-  FirstCrossingQuery,
   ObserverBisectReport,
   ObserverCurveSample,
-} from "./bisect-types.js"
+} from "./bisect-observer-types.js"
+import type { FirstCrossingQuery } from "./bisect-types.js"
 import type { BisectSamplingSummary } from "./bisect-sampling.js"
 
 type ObserverReportOptions = {

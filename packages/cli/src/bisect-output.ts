@@ -1,10 +1,12 @@
 import type { Category } from "@skastr0/pulsar-core/signal"
 import type {
-  BisectReport,
-  Culprit,
   ObserverBisectReport,
   ObserverCommitEntry,
-} from "./bisect-types.js"
+} from "./bisect-observer-types.js"
+import type {
+  BisectReport,
+  Culprit,
+} from "./bisect-signal-types.js"
 
 export const printJsonReport = (report: BisectReport | ObserverBisectReport): void => {
   console.log(JSON.stringify(report, null, 2))

@@ -3,11 +3,8 @@ import { UnknownSignalFactorError, UnknownSignalIdError } from "./errors.js"
 import type { Registry } from "./registry.js"
 import type { SignalFactorValue, SignalIdentity } from "./signal.js"
 import type {
-  BackpressureConfig,
-  CategoryAggregationObserverConfig,
   PulsarVector,
   PulsarVectorProvenanceEntry,
-  ReadinessObserverConfig,
   SignalFactorOverrideMap,
   SignalOverride,
 } from "./vector-schema.js"
@@ -124,7 +121,7 @@ export const diffTimeIntegrationEnabled = (
 
 export const readinessConfigOf = (
   vector: PulsarVector | undefined,
-): ReadinessObserverConfig => ({
+) => ({
   p_norm: vector?.observer?.readiness?.p_norm ?? 12,
   local_warning_threshold: vector?.observer?.readiness?.local_warning_threshold ?? 0.4,
   local_poison_threshold: vector?.observer?.readiness?.local_poison_threshold ?? 0.75,
@@ -137,7 +134,7 @@ export const readinessConfigOf = (
 
 export const categoryAggregationConfigOf = (
   vector: PulsarVector | undefined,
-): CategoryAggregationObserverConfig => ({
+) => ({
   p_norm: vector?.observer?.category_aggregation?.p_norm ?? 12,
   local_warning_threshold:
     vector?.observer?.category_aggregation?.local_warning_threshold ?? 0.4,
@@ -221,7 +218,7 @@ export const timeSeriesConfigOf = (vector: PulsarVector | undefined): NonNullabl
 
 export const backpressureConfigOf = (
   vector: PulsarVector | undefined,
-): BackpressureConfig => ({
+) => ({
   trajectory_days: vector?.backpressure?.trajectory_days ?? 14,
   empty_series_level: vector?.backpressure?.empty_series_level ?? "yellow",
   thresholds: {

@@ -12,10 +12,8 @@ import {
   type RangeCommit,
 } from "./bisect-sampling.js"
 import { toObserverCurveSample } from "./bisect-observer-convert.js"
-import type {
-  CommitScore,
-  ObserverCurveSample,
-} from "./bisect-types.js"
+import type { ObserverCurveSample } from "./bisect-observer-types.js"
+import type { CommitScore } from "./bisect-signal-types.js"
 
 const execFileAsync = promisify(execFile)
 

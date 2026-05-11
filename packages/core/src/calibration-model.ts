@@ -1,37 +1,8 @@
 import { Context, Effect, Schema } from "effect"
 
-import type {
-  FileClassificationValue,
-  LanguagePackActivationValue,
-  MixerCategoryPolicyValue,
-  TypeScriptCallbackContextNameValue,
-  TypeScriptCloneGroupPolicyValue,
-  TypeScriptDependencyResolutionValue,
-  TypeScriptExportReachabilityValue,
-  TypeScriptNoopClassificationValue,
-  TypeScriptSuppressionJustificationValue,
-  TypeScriptUnsafeTypePolicyValue,
-  TypeScriptUnfinishedImplementationPolicyValue,
-} from "./calibration-slot-values.js"
+import type { CalibrationSlotValues } from "./calibration-slot-values.js"
 
-export type {
-  FileClassificationValue,
-  LanguagePackActivationValue,
-  MixerCategoryPolicyValue,
-  TypeScriptCallbackContextNameValue,
-  TypeScriptCallExpressionFact,
-  TypeScriptCloneGroupPolicyValue,
-  TypeScriptDependencyResolutionValue,
-  TypeScriptExportDeclarationFact,
-  TypeScriptExportReachabilityValue,
-  TypeScriptExportSpecifierFact,
-  TypeScriptImportBindingFact,
-  TypeScriptLocalBindingFact,
-  TypeScriptNoopClassificationValue,
-  TypeScriptSuppressionJustificationValue,
-  TypeScriptUnsafeTypePolicyValue,
-  TypeScriptUnfinishedImplementationPolicyValue,
-} from "./calibration-slot-values.js"
+export type * from "./calibration-slot-values.js"
 
 export const CALIBRATION_SLOT_IDS = [
   "taxonomy.file-classifier",
@@ -122,19 +93,7 @@ export const appendCalibrationDecision = <Value>(
   decisions: [...result.decisions, decision],
 })
 
-export interface CalibrationSlots {
-  readonly "taxonomy.file-classifier": FileClassificationValue
-  readonly "language-pack-activation": LanguagePackActivationValue
-  readonly "typescript.noop-classifier": TypeScriptNoopClassificationValue
-  readonly "typescript.clone-group-policy": TypeScriptCloneGroupPolicyValue
-  readonly "typescript.dependency-resolver": TypeScriptDependencyResolutionValue
-  readonly "typescript.suppression-justifier": TypeScriptSuppressionJustificationValue
-  readonly "typescript.callback-context-namer": TypeScriptCallbackContextNameValue
-  readonly "typescript.export-reachability": TypeScriptExportReachabilityValue
-  readonly "typescript.unfinished-implementation-policy": TypeScriptUnfinishedImplementationPolicyValue
-  readonly "typescript.unsafe-type-policy": TypeScriptUnsafeTypePolicyValue
-  readonly "mixer.category-policy": MixerCategoryPolicyValue
-}
+export interface CalibrationSlots extends CalibrationSlotValues {}
 
 export type CalibrationSlotInput<Slot extends CalibrationSlotId> =
   CalibrationSlots[Slot]

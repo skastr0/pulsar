@@ -26,8 +26,8 @@ import { buildSignalBisectReport } from "./bisect-signal-report.js"
 import type {
   BisectCommandRuntime,
   BisectOptions,
-  SignalBisectOptions,
 } from "./bisect-types.js"
+import type { SignalBisectOptions } from "./bisect-signal-types.js"
 
 export const runBisectCommand = (opts: BisectOptions): Effect.Effect<void, unknown, never> =>
   Effect.gen(function* () {
