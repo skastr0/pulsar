@@ -5,9 +5,9 @@ import {
   loadQuizItems,
   selectNextQuizItem,
   summarizeQuizTradeoff,
-  weightOf,
   type QuizItem,
-} from "../vector.js"
+} from "../elicitation.js"
+import { weightOf } from "../vector.js"
 
 describe("pairwise quiz elicitation", () => {
   test("loads the shipped TypeScript item bank", async () => {

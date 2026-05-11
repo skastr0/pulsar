@@ -10,7 +10,7 @@ import {
 import {
   deriveAiAssistedModeProposal,
   derivePassiveVectorProposal,
-} from "@skastr0/pulsar-core/vector"
+} from "@skastr0/pulsar-core/elicitation"
 import type { ObserverOutput } from "@skastr0/pulsar-core/observer"
 import { Effect } from "effect"
 import { observeCurrentWorktree } from "./pulsar-observer"

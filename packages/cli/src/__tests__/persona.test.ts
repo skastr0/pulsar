@@ -6,6 +6,8 @@ import { join, resolve } from "node:path"
 import {
   loadPulsarVectorPresets,
   loadQuizItems,
+} from "@skastr0/pulsar-core/elicitation"
+import {
   validateVectorAgainstRegistry,
 } from "@skastr0/pulsar-core/vector"
 import { Effect } from "effect"

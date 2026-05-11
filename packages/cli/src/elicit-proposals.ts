@@ -5,6 +5,8 @@ import {
   applyPulsarVectorProposal,
   type PulsarVectorProposal,
   resolvePulsarVectorProposal,
+} from "@skastr0/pulsar-core/elicitation"
+import {
   validateVectorAgainstRegistry,
 } from "@skastr0/pulsar-core/vector"
 import { Effect } from "effect"

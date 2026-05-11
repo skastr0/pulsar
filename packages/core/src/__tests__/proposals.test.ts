@@ -5,7 +5,7 @@ import {
   derivePassiveVectorProposal,
   deriveRevealedPreferenceProposal,
   resolvePulsarVectorProposal,
-} from "../vector.js"
+} from "../elicitation.js"
 import {
   type ObserverOutput,
 } from "../observer.js"

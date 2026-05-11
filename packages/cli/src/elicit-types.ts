@@ -1,10 +1,12 @@
 import {
   type PulsarVector,
+} from "@skastr0/pulsar-core/vector"
+import {
   type QuizItem,
   QuizResponse,
   type QuizSession,
   type RevealedPreferenceSample,
-} from "@skastr0/pulsar-core/vector"
+} from "@skastr0/pulsar-core/elicitation"
 import { type ObserverOutput } from "@skastr0/pulsar-core/observer"
 
 export interface ElicitCommandOptions {

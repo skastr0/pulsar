@@ -3,10 +3,12 @@ import { mkdir, readFile, readdir, writeFile } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 import {
   decodeQuizSession,
-  type PulsarVector,
   PulsarVectorProposal,
   type PulsarVectorProposal as PulsarVectorProposalType,
   type QuizSession,
+} from "@skastr0/pulsar-core/elicitation"
+import {
+  type PulsarVector,
   validateVectorAgainstRegistry,
 } from "@skastr0/pulsar-core/vector"
 import { type Registry } from "@skastr0/pulsar-core/scoring"

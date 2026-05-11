@@ -29,7 +29,8 @@ export {
   SignalFactorPolicyTag,
   withConfigFactorLedger,
 } from "./factors.js"
-export { buildRegistry, runSignal, type Registry, type SignalRunResult } from "./scoring.js"
+export { buildRegistry, type Registry } from "./registry.js"
+export { runSignal, type SignalRunResult } from "./runner.js"
 export {
   PulsarVector,
   decodePulsarVector,

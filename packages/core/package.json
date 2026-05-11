@@ -23,6 +23,10 @@
       "types": "./dist/factors.d.ts",
       "default": "./dist/factors.js"
     },
+    "./elicitation": {
+      "types": "./dist/elicitation.d.ts",
+      "default": "./dist/elicitation.js"
+    },
     "./observer": {
       "types": "./dist/observer.d.ts",
       "default": "./dist/observer.js"

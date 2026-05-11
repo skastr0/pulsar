@@ -2,11 +2,13 @@ import { existsSync } from "node:fs"
 import { mkdir, writeFile } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
 import {
-  appendVectorProvenance,
   loadPulsarVectorPresetById,
   loadPulsarVectorPresets,
-  type PulsarVector,
   summarizePulsarVectorPresets,
+} from "@skastr0/pulsar-core/elicitation"
+import {
+  appendVectorProvenance,
+  type PulsarVector,
   validateVectorAgainstRegistry,
 } from "@skastr0/pulsar-core/vector"
 import { type Registry } from "@skastr0/pulsar-core/scoring"

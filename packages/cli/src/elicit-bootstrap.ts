@@ -5,8 +5,10 @@ import {
   inferRevealedPreferencePriorAdjusted,
   loadPulsarVectorPresetById,
   MINIMUM_REVEALED_PREFERENCE_SAMPLES,
-  type PulsarVector,
   type PulsarVectorProposal as PulsarVectorProposalType,
+} from "@skastr0/pulsar-core/elicitation"
+import {
+  type PulsarVector,
   validateVectorAgainstRegistry,
 } from "@skastr0/pulsar-core/vector"
 import { Effect } from "effect"

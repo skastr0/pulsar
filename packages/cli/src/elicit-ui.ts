@@ -1,8 +1,10 @@
 import {
   type PulsarVector,
+} from "@skastr0/pulsar-core/vector"
+import {
   type PulsarVectorProposal,
   type QuizItem,
-} from "@skastr0/pulsar-core/vector"
+} from "@skastr0/pulsar-core/elicitation"
 import { renderVectorDiff, summarizeVectorDiff } from "./vector-format.js"
 import type { RevealedPreferenceBootstrapReport } from "./elicit-types.js"
 

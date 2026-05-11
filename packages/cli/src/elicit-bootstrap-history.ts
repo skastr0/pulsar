@@ -2,8 +2,10 @@ import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import {
   type PulsarVector,
-  type RevealedPreferenceOutcome,
 } from "@skastr0/pulsar-core/vector"
+import type {
+  RevealedPreferenceOutcome,
+} from "@skastr0/pulsar-core/elicitation"
 import { type ObserverOutput } from "@skastr0/pulsar-core/observer"
 import { Effect } from "effect"
 import { makePulsarRuntime } from "./runtime.js"

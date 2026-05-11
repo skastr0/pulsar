@@ -6,13 +6,13 @@ import { join, resolve } from "node:path"
 import {
   inferPulsarVectorFromQuiz,
   loadQuizItems,
-  type PulsarVector,
   type QuizItem,
   QuizResponse,
   type QuizSession,
   selectNextQuizItem,
   summarizeQuizTradeoff,
-} from "@skastr0/pulsar-core/vector"
+} from "@skastr0/pulsar-core/elicitation"
+import { type PulsarVector } from "@skastr0/pulsar-core/vector"
 import { type Registry } from "@skastr0/pulsar-core/scoring"
 import { Effect, Schema } from "effect"
 import { buildPulsarRegistry, resolveRepoRoot } from "./runtime.js"
