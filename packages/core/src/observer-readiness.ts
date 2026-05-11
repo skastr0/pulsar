@@ -1,5 +1,6 @@
 import type { Registry } from "./registry.js"
 import type { SignalRunResult } from "./runner.js"
+import type { ResolvedSignal } from "./signal.js"
 import { readinessConfigOf, type PulsarVector, type ReadinessObserverConfig, weightOf as vectorWeightOf } from "./vector.js"
 import type { ReadinessOutput, ReadinessPressure } from "./observer-model.js"
 import { clamp01, compareAscii, confidenceForSignal, roundScore, signalApplicabilityOf } from "./observer-score-utils.js"
@@ -63,6 +64,14 @@ interface ReadinessPressureSummary {
   readonly hardGatePressure: number
 }
 
+interface ReadinessPressureContribution {
+  readonly pressure: ReadinessPressure
+  readonly ignored: boolean
+  readonly failed: boolean
+  readonly weight: number
+  readonly effectivePressure: number
+}
+
 const collectReadinessPressures = (
   registry: Registry,
   signalResults: ReadonlyMap<string, SignalRunResult>,
@@ -82,37 +91,22 @@ const collectReadinessPressures = (
     const result = signalResults.get(signal.id)
     if (result === undefined) continue
 
-    const applicability = signalApplicabilityOf(result)
-    const ignored = applicability !== "applicable"
-    const confidence = ignored ? 0 : confidenceForSignal(signal, result)
-    const weight = vectorWeightOf(signal, vector)
-    const rawPressure = clamp01(1 - result.score)
-    const effectivePressure = rawPressure * confidence
+    const contribution = readinessPressureContribution(signal, result, vector)
+    pressures.push(contribution.pressure)
 
-    pressures.push({
-      signal_id: signal.id,
-      category: signal.category,
-      score: result.score,
-      raw_pressure: roundScore(rawPressure),
-      effective_pressure: roundScore(effectivePressure),
-      weight,
-      confidence: roundScore(confidence),
-      applicability,
-    })
-
-    if (ignored) {
+    if (contribution.ignored) {
       ignoredSignalCount += 1
-      if (applicability === "failed") {
+      if (contribution.failed) {
         failedSignalCount += 1
       }
       continue
     }
 
     applicableSignalCount += 1
-    weightedPressureSum += weight * effectivePressure
-    weightedPnormSum += weight * Math.pow(effectivePressure, config.p_norm)
-    weightTotal += weight
-    maxLocalPressure = Math.max(maxLocalPressure, effectivePressure)
+    weightedPressureSum += contribution.weight * contribution.effectivePressure
+    weightedPnormSum += contribution.weight * Math.pow(contribution.effectivePressure, config.p_norm)
+    weightTotal += contribution.weight
+    maxLocalPressure = Math.max(maxLocalPressure, contribution.effectivePressure)
   }
 
   return {
@@ -124,6 +118,36 @@ const collectReadinessPressures = (
     applicableSignalCount,
     ignoredSignalCount,
     failedSignalCount,
+  }
+}
+
+const readinessPressureContribution = (
+  signal: ResolvedSignal,
+  result: SignalRunResult,
+  vector: PulsarVector | undefined,
+): ReadinessPressureContribution => {
+  const applicability = signalApplicabilityOf(result)
+  const ignored = applicability !== "applicable"
+  const confidence = ignored ? 0 : confidenceForSignal(signal, result)
+  const weight = vectorWeightOf(signal, vector)
+  const rawPressure = clamp01(1 - result.score)
+  const effectivePressure = rawPressure * confidence
+
+  return {
+    pressure: {
+      signal_id: signal.id,
+      category: signal.category,
+      score: result.score,
+      raw_pressure: roundScore(rawPressure),
+      effective_pressure: roundScore(effectivePressure),
+      weight,
+      confidence: roundScore(confidence),
+      applicability,
+    },
+    ignored,
+    failed: applicability === "failed",
+    weight,
+    effectivePressure,
   }
 }
 
