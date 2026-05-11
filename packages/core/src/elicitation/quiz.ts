@@ -66,9 +66,11 @@ export interface QuizInference {
   readonly bySignal: Readonly<Record<string, QuizSignalPreference>>
 }
 
-export const loadQuizItems = (domain = "typescript") =>
+export const loadQuizItems = (
+  domain = "typescript",
+): Effect.Effect<ReadonlyArray<QuizItem>, Error, never> =>
   Effect.gen(function* () {
-    const decoded = yield* decodeQuizItemFile(typescriptQuizItems)
+    const decoded = yield* decodeQuizItemFile(typescriptQuizItems).pipe(Effect.mapError(asError))
 
     const flattened = decoded
       .flat()
@@ -219,15 +221,18 @@ export const inferPulsarVectorFromQuiz = (input: {
   )
 }
 
-export const decodeQuizSession = (value: unknown) =>
+export const decodeQuizSession = (value: unknown): Effect.Effect<QuizSession, Error, never> =>
   Effect.gen(function* () {
-    const decoded = yield* Schema.decodeUnknown(QuizSession)(value)
-    const baseVector = yield* decodePulsarVector(decoded.base_vector)
+    const decoded = yield* Schema.decodeUnknown(QuizSession)(value).pipe(Effect.mapError(asError))
+    const baseVector = yield* decodePulsarVector(decoded.base_vector).pipe(Effect.mapError(asError))
     return {
       ...decoded,
       base_vector: baseVector,
     } satisfies QuizSession
   })
+
+const asError = (cause: unknown): Error =>
+  cause instanceof Error ? cause : new Error(String(cause))
 
 const scoreQuizItemInformationGain = (
   item: QuizItem,

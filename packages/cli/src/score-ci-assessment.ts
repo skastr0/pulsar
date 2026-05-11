@@ -33,7 +33,7 @@ export const assessCiMode = (
   registry: Registry,
   vector: PulsarVector,
   calibrationFingerprint: string | undefined,
-) =>
+): Effect.Effect<CiAssessment, Error, never> =>
   Effect.gen(function* () {
     if (opts.ci !== true) {
       return {

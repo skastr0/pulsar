@@ -22,7 +22,12 @@ import {
   ReferenceDataTag,
   SignalContextTag,
 } from "@skastr0/pulsar-core/signal"
-import { CalibrationContextTag } from "@skastr0/pulsar-core/calibration"
+import {
+  CalibrationContextTag,
+  type ResolvedCalibrationContext,
+} from "@skastr0/pulsar-core/calibration"
+import type { ObserverOutput } from "@skastr0/pulsar-core/observer"
+import type { TimeSeriesServices } from "@skastr0/pulsar-core/time-series"
 import { RustProjectLayer } from "@skastr0/pulsar-rs-pack"
 import { TsProjectLayer } from "@skastr0/pulsar-ts-pack"
 import { Effect, Layer } from "effect"
@@ -61,7 +66,32 @@ export interface PulsarRuntimeOptions {
   }
 }
 
-export const loadPulsarVectorFromPath = (vectorPath: string | undefined) =>
+export interface SignalWorktreeRun {
+  readonly repoRoot: string
+  readonly gitSha: string
+  readonly registry: Registry
+  readonly result: SignalRunResult
+}
+
+export interface ObserverWorktreeRun {
+  readonly repoRoot: string
+  readonly gitSha: string
+  readonly registry: Registry
+  readonly result: ObserverOutput
+  readonly timeSeries: TimeSeriesServices | undefined
+  readonly calibrationContext: ResolvedCalibrationContext | undefined
+}
+
+export interface PulsarRuntime {
+  readonly registry: Registry
+  readonly engine: typeof ScoringEngineTag.Service
+  readonly timeSeries: TimeSeriesServices | undefined
+  readonly calibrationContext: ResolvedCalibrationContext | undefined
+}
+
+export const loadPulsarVectorFromPath = (
+  vectorPath: string | undefined,
+): Effect.Effect<PulsarVector | undefined, Error, never> =>
   Effect.gen(function* () {
     if (vectorPath === undefined) return undefined
 
@@ -77,14 +107,17 @@ export const loadPulsarVectorFromPath = (vectorPath: string | undefined) =>
         new Error(`Failed to parse pulsar vector JSON at ${absolutePath}: ${String(cause)}`),
     })
 
-    return yield* decodePulsarVector(parsed)
+    return yield* decodePulsarVector(parsed).pipe(Effect.mapError(asError))
   })
+
+const asError = (cause: unknown): Error =>
+  cause instanceof Error ? cause : new Error(String(cause))
 
 export const runSignalInWorktree = (
   repoPath: string,
   signalId: string,
   vector?: PulsarVector,
-) =>
+): Effect.Effect<SignalWorktreeRun, unknown, never> =>
   Effect.gen(function* () {
     const repoRoot = yield* resolveRepoRoot(repoPath)
     const gitSha = yield* readHeadSha(repoRoot)
@@ -106,7 +139,7 @@ export const observeWorktree = (
   repoPath: string,
   vector?: PulsarVector,
   options?: PulsarRuntimeOptions,
-) =>
+): Effect.Effect<ObserverWorktreeRun, unknown, never> =>
   Effect.gen(function* () {
     const repoRoot = yield* resolveRepoRoot(repoPath)
     const gitSha = yield* readHeadSha(repoRoot)
@@ -124,7 +157,7 @@ export const makePulsarRuntime = (
   repoPath: string,
   vector?: PulsarVector,
   options?: PulsarRuntimeOptions,
-) =>
+): Effect.Effect<PulsarRuntime, unknown, never> =>
   Effect.gen(function* () {
     const repoRoot = yield* resolveRepoRoot(repoPath)
     const registry: Registry = yield* buildPulsarRegistry(repoRoot)

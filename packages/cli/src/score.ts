@@ -43,7 +43,7 @@ export interface ScoreOptions {
   readonly profile?: boolean
 }
 
-export const runScoreCommand = (opts: ScoreOptions) =>
+export const runScoreCommand = (opts: ScoreOptions): Effect.Effect<number, unknown, never> =>
   Effect.gen(function* () {
     yield* validateScoreOptions(opts)
 

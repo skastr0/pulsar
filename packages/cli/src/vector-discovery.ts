@@ -26,7 +26,7 @@ export const discoverPulsarVector = (opts: {
   readonly repoPath: string
   readonly explicitPath?: string
   readonly registry: Registry
-}) =>
+}): Effect.Effect<DiscoveredPulsarVector, Error, never> =>
   Effect.gen(function* () {
     if (opts.explicitPath !== undefined) {
       const path = resolve(opts.explicitPath)

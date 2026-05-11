@@ -21,10 +21,10 @@ export interface PulsarVectorPresetSummary {
   readonly description: string
 }
 
-export const loadPulsarVectorPresets = () =>
+export const loadPulsarVectorPresets = (): Effect.Effect<ReadonlyArray<PulsarVector>, Error, never> =>
   Effect.gen(function* () {
     const presets = yield* Effect.forEach(SHIPPED_PRESETS, (preset) =>
-      decodePulsarVector(preset),
+      decodePulsarVector(preset).pipe(Effect.mapError(asError)),
     )
 
     const seen = new Set<string>()
@@ -37,6 +37,9 @@ export const loadPulsarVectorPresets = () =>
 
     return [...presets].sort((left, right) => left.id.localeCompare(right.id))
   })
+
+const asError = (cause: unknown): Error =>
+  cause instanceof Error ? cause : new Error(String(cause))
 
 export const loadPulsarVectorPresetById = (presetId: string) =>
   Effect.gen(function* () {
