@@ -29,39 +29,6 @@ import type {
   SignalBisectOptions,
 } from "./bisect-types.js"
 
-export {
-  chooseAdaptiveMidpoint,
-  chooseObserverAdaptiveMidpoint,
-  initialAdaptiveIndexes,
-  resolveSamplingPlan,
-  selectMergeOnlyIndexes,
-} from "./bisect-sampling.js"
-export type {
-  BisectSamplingMode,
-  BisectSamplingSummary,
-  RangeCommit,
-} from "./bisect-sampling.js"
-export { countFinalApplicableSignalsByCategory } from "./bisect-output.js"
-export {
-  findCulprits,
-  findDriftCulprits,
-  findFirstCrossing,
-} from "./bisect-signal-report.js"
-export type {
-  BisectOptions,
-  BisectReport,
-  CategoryTrajectory,
-  CommitScore,
-  Culprit,
-  FirstCrossingQuery,
-  FirstCrossingResult,
-  ObserverBisectReport,
-  ObserverCommitEntry,
-  ObserverCommitMinimum,
-  ObserverCurveSet,
-  SignalTrajectory,
-} from "./bisect-types.js"
-
 export const runBisectCommand = (opts: BisectOptions) =>
   Effect.gen(function* () {
     const repoPath = resolve(opts.repoPath)

@@ -2,7 +2,7 @@ import {
   CATEGORIES,
   type Category,
 } from "@skastr0/pulsar-core/signal"
-import type { FirstCrossingQuery } from "./bisect.js"
+import type { FirstCrossingQuery } from "./bisect-types.js"
 import { withCliProgress } from "./progress.js"
 
 export const fail = (message: string, code = 1): never => {

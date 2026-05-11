@@ -4,7 +4,7 @@ import type {
   Culprit,
   ObserverBisectReport,
   ObserverCommitEntry,
-} from "./bisect.js"
+} from "./bisect-types.js"
 
 export const printJsonReport = (report: BisectReport | ObserverBisectReport): void => {
   console.log(JSON.stringify(report, null, 2))

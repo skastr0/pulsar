@@ -6,19 +6,21 @@ import { spawnSync } from "node:child_process"
 import { createTimeSeriesServices } from "@skastr0/pulsar-core/time-series"
 import { CATEGORIES } from "@skastr0/pulsar-core/signal"
 import { Effect, Exit } from "effect"
+import { countFinalApplicableSignalsByCategory } from "../bisect-output.js"
 import {
   chooseAdaptiveMidpoint,
   chooseObserverAdaptiveMidpoint,
-  countFinalApplicableSignalsByCategory,
+  initialAdaptiveIndexes,
+  resolveSamplingPlan,
+  selectMergeOnlyIndexes,
+} from "../bisect-sampling.js"
+import {
   findCulprits,
   findDriftCulprits,
   findFirstCrossing,
-  initialAdaptiveIndexes,
-  resolveSamplingPlan,
-  runBisectCommand,
-  selectMergeOnlyIndexes,
-  type CommitScore,
-} from "../bisect.js"
+} from "../bisect-signal-report.js"
+import { runBisectCommand } from "../bisect.js"
+import type { CommitScore } from "../bisect-types.js"
 import { buildPulsarRegistry } from "../runtime.js"
 
 const repoRoot = resolve(import.meta.dir, "../../../..")
