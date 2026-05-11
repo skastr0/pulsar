@@ -1,7 +1,7 @@
-import { isAbsolute, relative } from "node:path"
 import type { ObserverOutput } from "@skastr0/pulsar-core/observer"
 import type { ReviewPlan, RoutingDiff } from "@skastr0/pulsar-core/routing"
 import type { Diagnostic } from "@skastr0/pulsar-core/signal"
+import { normalizeWorktreeRelativePath } from "./path-utils"
 
 interface ScoreDelta {
   readonly category: string
@@ -284,13 +284,8 @@ const diagnosticKey = (
     diagnostic.location?.column ?? -1,
   ].join(":" )
 
-const displayFile = (worktree: string, file: string): string => {
-  const normalized = file.replace(/\\/g, "/")
-  if (!isAbsolute(normalized)) return trimDotSlash(normalized)
-  return trimDotSlash(relative(worktree, normalized).replace(/\\/g, "/"))
-}
-
-const trimDotSlash = (value: string): string => value.replace(/^\.\//, "")
+const displayFile = (worktree: string, file: string): string =>
+  normalizeWorktreeRelativePath(worktree, file)
 
 const formatLocation = (diagnostic: SurfacedDiagnostic): string => {
   if (diagnostic.file === undefined) return ""

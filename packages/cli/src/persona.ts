@@ -1,6 +1,5 @@
 import { existsSync } from "node:fs"
-import { mkdir, writeFile } from "node:fs/promises"
-import { dirname, resolve } from "node:path"
+import { resolve } from "node:path"
 import {
   loadPulsarVectorPresetById,
   loadPulsarVectorPresets,
@@ -13,6 +12,7 @@ import {
 } from "@skastr0/pulsar-core/vector"
 import { type Registry } from "@skastr0/pulsar-core/scoring"
 import { Effect } from "effect"
+import { writeJsonFile } from "./json-file.js"
 import { buildPulsarRegistry } from "./runtime.js"
 import { discoverPulsarVector, type DiscoveredPulsarVector } from "./vector-discovery.js"
 import { renderVectorDiff, summarizeVectorDiff } from "./vector-format.js"
@@ -116,7 +116,9 @@ const applyPersonaPreset = (
         },
       ],
     })
-    yield* writePersonaVector(absolutePath, applied)
+    yield* writeJsonFile(absolutePath, applied, {
+      writeErrorDescription: `vector at ${absolutePath}`,
+    })
     printPersonaApplyResult(preset, absolutePath)
     return 0
   })
@@ -135,21 +137,6 @@ const resolvePersonaOutputPath = (
       )
     }
     return absolutePath
-  })
-
-const writePersonaVector = (
-  absolutePath: string,
-  vector: PulsarVector,
-): Effect.Effect<void, Error, never> =>
-  Effect.gen(function* () {
-    yield* Effect.tryPromise({
-      try: () => mkdir(dirname(absolutePath), { recursive: true }),
-      catch: (cause) => new Error(`Failed to create directory for ${absolutePath}: ${String(cause)}`),
-    })
-    yield* Effect.tryPromise({
-      try: () => writeFile(absolutePath, `${JSON.stringify(vector, null, 2)}\n`, "utf8"),
-      catch: (cause) => new Error(`Failed to write vector at ${absolutePath}: ${String(cause)}`),
-    })
   })
 
 const printPersonaApplyResult = (preset: PulsarVector, absolutePath: string): void => {

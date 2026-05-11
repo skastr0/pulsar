@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
-import { isAbsolute, relative } from "node:path"
 import type { RoutingDiff } from "@skastr0/pulsar-core/routing"
+import { normalizeWorktreeRelativePath } from "./path-utils"
 
 export const EDIT_TOOLS = new Set(["write", "edit", "apply_patch", "morph-mcp_edit_file"])
 
@@ -65,20 +65,29 @@ const parseApplyPatch = (patchText: string, worktree: string): RoutingDiff => {
 
   for (const rawLine of patchText.split(/\r?\n/)) {
     if (rawLine.startsWith("*** Add File: ")) {
-      currentFile = normalizePath(worktree, rawLine.slice("*** Add File: ".length))
+      currentFile = normalizeWorktreeRelativePath(
+        worktree,
+        rawLine.slice("*** Add File: ".length),
+      )
       changedFiles.add(currentFile)
       addedFiles.add(currentFile)
       currentLine = 1
       continue
     }
     if (rawLine.startsWith("*** Update File: ")) {
-      currentFile = normalizePath(worktree, rawLine.slice("*** Update File: ".length))
+      currentFile = normalizeWorktreeRelativePath(
+        worktree,
+        rawLine.slice("*** Update File: ".length),
+      )
       changedFiles.add(currentFile)
       currentLine = 1
       continue
     }
     if (rawLine.startsWith("*** Delete File: ")) {
-      currentFile = normalizePath(worktree, rawLine.slice("*** Delete File: ".length))
+      currentFile = normalizeWorktreeRelativePath(
+        worktree,
+        rawLine.slice("*** Delete File: ".length),
+      )
       changedFiles.add(currentFile)
       currentLine = 1
       continue
@@ -125,7 +134,7 @@ const firstPathArg = (
 ): string | undefined => {
   for (const candidate of [args.path, args.filePath]) {
     if (typeof candidate !== "string" || candidate.length === 0) continue
-    return normalizePath(worktree, candidate)
+    return normalizeWorktreeRelativePath(worktree, candidate)
   }
   return undefined
 }
@@ -177,11 +186,3 @@ const parseAstMatchesFromSnippet = (
       : [],
   )
 }
-
-const normalizePath = (worktree: string, value: string): string => {
-  const normalized = value.replace(/\\/g, "/")
-  if (!isAbsolute(normalized)) return trimDotSlash(normalized)
-  return trimDotSlash(relative(worktree, normalized).replace(/\\/g, "/"))
-}
-
-const trimDotSlash = (value: string): string => value.replace(/^\.\//, "")

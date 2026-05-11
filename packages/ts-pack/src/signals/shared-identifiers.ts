@@ -4,6 +4,7 @@ import {
   splitIdentifierTokens,
   type IdentifierPattern,
 } from "../casing.js"
+import { compareDiagnosticOrderKeys } from "./shared-diagnostic-order.js"
 import { isExcluded } from "./shared-globs.js"
 
 export type IdentifierDeclarationKind =
@@ -227,9 +228,18 @@ const unwrapConstInitializer = (initializer: Node | undefined): Node | undefined
 const compareIdentifierDeclarations = (
   left: IdentifierDeclaration,
   right: IdentifierDeclaration,
-): number => {
-  if (left.file !== right.file) return left.file.localeCompare(right.file)
-  if (left.line !== right.line) return left.line - right.line
-  if (left.kind !== right.kind) return left.kind.localeCompare(right.kind)
-  return left.name.localeCompare(right.name)
-}
+): number =>
+  compareDiagnosticOrderKeys(
+    {
+      file: left.file,
+      line: left.line,
+      kind: left.kind,
+      label: left.name,
+    },
+    {
+      file: right.file,
+      line: right.line,
+      kind: right.kind,
+      label: right.name,
+    },
+  )

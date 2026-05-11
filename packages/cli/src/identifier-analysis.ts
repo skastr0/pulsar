@@ -7,6 +7,7 @@ import {
 } from "@skastr0/pulsar-ts-pack"
 import { Effect } from "effect"
 import { type PackageInfo, discoverPackages, makeTsProject } from "@skastr0/pulsar-ts-pack"
+import { compareSourceLocations } from "./source-location-order.js"
 
 export interface IdentifierOccurrence {
   readonly name: string
@@ -307,8 +308,8 @@ const locatePackageForFile = (
 }
 
 const compareIdentifierOccurrences = (a: IdentifierOccurrence, b: IdentifierOccurrence): number => {
-  if (a.file !== b.file) return a.file.localeCompare(b.file)
-  if ((a.line ?? -1) !== (b.line ?? -1)) return (a.line ?? -1) - (b.line ?? -1)
+  const locationOrder = compareSourceLocations(a, b)
+  if (locationOrder !== 0) return locationOrder
   if (a.kind !== b.kind) return a.kind.localeCompare(b.kind)
   return a.name.localeCompare(b.name)
 }

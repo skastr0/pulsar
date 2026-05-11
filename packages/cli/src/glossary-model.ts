@@ -8,6 +8,7 @@ import {
 import { Effect } from "effect"
 import type { IdentifierOccurrence } from "./identifier-analysis.js"
 import { GLOSSARY_DRAFT_RELATIVE_PATH } from "./reference-data-file.js"
+import { compareSourceLocations, sourceLineNumber } from "./source-location-order.js"
 
 interface WorkingTerm {
   readonly term: string
@@ -245,15 +246,15 @@ const sortAndDedupeProvenance = (
   const deduped: Array<GlossaryProvenance> = []
 
   for (const entry of provenance) {
-    const key = `${entry.package}:${entry.file}:${entry.line ?? -1}:${entry.identifier_kind}:${entry.identifier}`
+    const key = `${entry.package}:${entry.file}:${sourceLineNumber(entry)}:${entry.identifier_kind}:${entry.identifier}`
     if (seen.has(key)) continue
     seen.add(key)
     deduped.push(entry)
   }
 
   return deduped.sort((a, b) => {
-    if (a.file !== b.file) return a.file.localeCompare(b.file)
-    if ((a.line ?? -1) !== (b.line ?? -1)) return (a.line ?? -1) - (b.line ?? -1)
+    const locationOrder = compareSourceLocations(a, b)
+    if (locationOrder !== 0) return locationOrder
     if (a.identifier !== b.identifier) return a.identifier.localeCompare(b.identifier)
     return a.identifier_kind.localeCompare(b.identifier_kind)
   })

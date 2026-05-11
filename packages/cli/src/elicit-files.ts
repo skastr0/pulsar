@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs"
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises"
-import { dirname, join, resolve } from "node:path"
+import { mkdir, readFile, readdir } from "node:fs/promises"
+import { join, resolve } from "node:path"
 import {
   decodeQuizSession,
   PulsarVectorProposal,
@@ -16,6 +16,8 @@ import { Effect, Schema } from "effect"
 import { loadPulsarVectorFromPath } from "./runtime.js"
 import { discoverPulsarVector } from "./vector-discovery.js"
 import type { MutableQuizSession, ProposalPaths } from "./elicit-types.js"
+export { writeJsonFile } from "./json-file.js"
+import { writeJsonFile } from "./json-file.js"
 
 export const writeQuizSession = (
   sessionPath: string,
@@ -35,21 +37,6 @@ export const readQuizSessionIfPresent = (sessionPath: string): Effect.Effect<Qui
       catch: (cause) => new Error(`Failed to parse quiz session at ${sessionPath}: ${String(cause)}`),
     })
     return yield* decodeQuizSession(parsed)
-  })
-
-export const writeJsonFile = (
-  filePath: string,
-  value: unknown,
-): Effect.Effect<void, Error, never> =>
-  Effect.gen(function* () {
-    yield* Effect.tryPromise({
-      try: () => mkdir(dirname(filePath), { recursive: true }),
-      catch: (cause) => new Error(`Failed to create directory for ${filePath}: ${String(cause)}`),
-    })
-    yield* Effect.tryPromise({
-      try: () => writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8"),
-      catch: (cause) => new Error(`Failed to write ${filePath}: ${String(cause)}`),
-    })
   })
 
 export const proposalPaths = (repoRoot: string): ProposalPaths => ({
