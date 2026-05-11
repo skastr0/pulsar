@@ -3,12 +3,15 @@ import {
   defineProcessor,
   defineProjectModule,
   tuneTypeScriptDependencyVersion,
+  tuneTypeScriptTypeCoupling,
   tuneTypeScriptUnsafeType,
   type TypeScriptDependencyVersionPolicyValue,
+  type TypeScriptTypeCouplingPolicyValue,
   type TypeScriptUnsafeTypePolicyValue,
 } from "@skastr0/pulsar-project-module-sdk"
 
 const DELIBERATE_EXISTENTIAL_RULE_ID = "pulsar.deliberate-existential-boundary.v1"
+const CORE_ORCHESTRATION_TYPE_COUPLING_RULE_ID = "pulsar.core-orchestration-type-coupling.v1"
 const OPENCODE_HOST_SDK_DUPLICATE_RULE_ID = "pulsar.opencode-host-sdk-duplicate-chain.v1"
 
 export default defineProjectModule({
@@ -68,6 +71,37 @@ export default defineProjectModule({
               repository: "pulsar",
               technology: "opencode",
               policy: "host-sdk-isolated-transitive-duplicate",
+            },
+          })
+        }),
+    }),
+    defineProcessor({
+      id: "core-orchestration-type-coupling",
+      slot: "typescript.type-coupling-policy",
+      role: "factor-policy",
+      priority: 20,
+      fingerprint: "core-orchestration-type-coupling-v1",
+      process: (current, _context, runtime) =>
+        Effect.sync(() => {
+          const rule = coreOrchestrationTypeCouplingRule(current.value)
+          if (rule === undefined) return current
+
+          return tuneTypeScriptTypeCoupling(current, runtime, {
+            severity: "info",
+            penaltyWeight: 0,
+            ruleId: CORE_ORCHESTRATION_TYPE_COUPLING_RULE_ID,
+            reason:
+              "This file is a deliberate Pulsar orchestration or contract boundary; previous extraction attempts moved coupling into helper files and worsened the dependency map rather than improving local reasoning.",
+            evidence: [
+              { kind: "path", value: current.value.file },
+              { kind: "boundary", value: rule.boundary },
+              { kind: "outgoing-types", value: String(current.value.externalTypesReferenced) },
+              { kind: "outlier-threshold", value: String(current.value.outlierThreshold) },
+            ],
+            metadata: {
+              repository: "pulsar",
+              policy: "core-orchestration-type-coupling",
+              boundary: rule.boundary,
             },
           })
         }),
@@ -145,3 +179,68 @@ const OPENCODE_HOST_SDK_DUPLICATE_PACKAGES = new Set([
   "fast-check",
   "pure-rand",
 ])
+
+const coreOrchestrationTypeCouplingRule = (
+  value: TypeScriptTypeCouplingPolicyValue,
+): { readonly boundary: string } | undefined =>
+  coreOrchestrationTypeCouplingRules.find((rule) =>
+    value.file.endsWith(rule.file),
+  )
+
+const coreOrchestrationTypeCouplingRules: ReadonlyArray<{
+  readonly file: string
+  readonly boundary: string
+}> = [
+  {
+    file: "packages/core/src/signal.ts",
+    boundary: "canonical signal contract",
+  },
+  {
+    file: "packages/core/src/scoring-engine-observe.ts",
+    boundary: "observer cache and worktree orchestration",
+  },
+  {
+    file: "packages/core/src/scoring-engine-score-execution.ts",
+    boundary: "single-signal cache and execution orchestration",
+  },
+  {
+    file: "packages/core/src/observer-execution.ts",
+    boundary: "observer signal execution orchestration",
+  },
+  {
+    file: "packages/core/src/scoring-engine-contract.ts",
+    boundary: "scoring engine public contract",
+  },
+  {
+    file: "packages/core/src/runner.ts",
+    boundary: "signal runner orchestration",
+  },
+  {
+    file: "packages/core/src/calibration-context.ts",
+    boundary: "calibration processor orchestration",
+  },
+  {
+    file: "packages/core/src/elicitation/proposal-passive.ts",
+    boundary: "elicitation proposal orchestration",
+  },
+  {
+    file: "packages/core/src/routing-matching.ts",
+    boundary: "routing pattern matcher",
+  },
+  {
+    file: "packages/core/src/routing.ts",
+    boundary: "routing detector orchestration",
+  },
+  {
+    file: "packages/core/src/vector-resolution.ts",
+    boundary: "vector validation and resolution boundary",
+  },
+  {
+    file: "packages/ts-pack/src/signals/ts-de-04-usage.ts",
+    boundary: "TypeScript dependency usage fact aggregation",
+  },
+  {
+    file: "packages/ts-pack/src/signals/ts-sl-04-output.ts",
+    boundary: "TypeScript unfinished-implementation output assembly",
+  },
+]
