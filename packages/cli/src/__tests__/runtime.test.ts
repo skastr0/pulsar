@@ -8,8 +8,8 @@ import { SignalContextTag } from "@skastr0/pulsar-core/signal"
 import { CalibrationContextTag } from "@skastr0/pulsar-core/calibration"
 import { TsLd01, TsSl04, TsProjectLayer } from "@skastr0/pulsar-ts-pack"
 import { Effect, Layer } from "effect"
+import { loadProjectModuleCalibrationContext } from "../runtime-calibration.js"
 import {
-  loadProjectModuleCalibrationContext,
   makePulsarRuntime,
   withDetachedWorktreeAtRef,
 } from "../runtime.js"
@@ -141,6 +141,82 @@ describe("pulsar runtime project modules", () => {
       expect(first?.activeModules[0]?.sourceFingerprint).not.toBe(
         second?.activeModules[0]?.sourceFingerprint,
       )
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("repo-local project module dependencies resolve from the scored worktree", async () => {
+    const repoPath = await mkdtemp(join(tmpdir(), "pulsar-runtime-project-modules-"))
+    try {
+      await writeRepoFile(
+        repoPath,
+        "package.json",
+        JSON.stringify(
+          {
+            name: "repo-local-module-deps",
+            private: true,
+            dependencies: {
+              "@acme/module-helper": "workspace:*",
+            },
+          },
+          null,
+          2,
+        ),
+      )
+      await writeRepoFile(
+        repoPath,
+        "node_modules/@acme/module-helper/package.json",
+        JSON.stringify(
+          {
+            name: "@acme/module-helper",
+            version: "1.0.0",
+            type: "module",
+            exports: "./index.mjs",
+          },
+          null,
+          2,
+        ),
+      )
+      await writeRepoFile(
+        repoPath,
+        "node_modules/@acme/module-helper/index.mjs",
+        "export const moduleId = 'repo.local-with-deps'\n",
+      )
+      await writeRepoFile(
+        repoPath,
+        ".pulsar/modules/local.mjs",
+        [
+          "import { moduleId } from '@acme/module-helper'",
+          "export default {",
+          "  id: moduleId,",
+          "  version: '1.0.0',",
+          "  scope: 'repository',",
+          "  processors: []",
+          "}",
+        ].join("\n"),
+      )
+      await writeRepoFile(
+        repoPath,
+        ".pulsar/project-modules.json",
+        JSON.stringify(
+          {
+            modules: [
+              {
+                id: "repo.local-with-deps",
+                kind: "repo-local",
+                path: ".pulsar/modules/local.mjs",
+              },
+            ],
+          },
+          null,
+          2,
+        ),
+      )
+
+      const context = await Effect.runPromise(loadProjectModuleCalibrationContext(repoPath))
+
+      expect(context?.activeModules[0]?.id).toBe("repo.local-with-deps")
     } finally {
       await rm(repoPath, { recursive: true, force: true })
     }

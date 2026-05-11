@@ -47,9 +47,7 @@ export const materializeProjectModuleImportTarget = (
       yield* writeMaterializedFile(ref, file, destination, content)
     }
 
-    if (ref.kind === "package" || ref.kind === "workspace") {
-      yield* linkMaterializedPackageDependencies(ref, sourceRoot, shadowSourceRoot)
-    }
+    yield* linkMaterializedPackageDependencies(ref, sourceRoot, shadowSourceRoot)
 
     return resolve(shadowSourceRoot, relative(sourceRoot, target))
   })
