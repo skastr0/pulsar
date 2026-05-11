@@ -5,10 +5,9 @@ import {
   type RustModuleFact,
   type RustUseFact,
 } from "../rust-analysis.js"
-import type {
-  RustManifestInfo,
-} from "../project.js"
-import { isExcluded, normalizePath } from "./shared-globs.js"
+import type { RustManifestInfo } from "../project.js"
+import { resolveManifestForFile } from "../rust-analysis-modules.js"
+import { isExcluded } from "./shared-globs.js"
 import type {
   RsAd02Config,
   RsAd02Violation,
@@ -50,7 +49,7 @@ const violationForCrossCrateImport = (
 ): ReadonlyArray<RsAd02Violation> => {
   const targetCrate = crateByIdentifier.get(useFact.segments[0]!)
   if (targetCrate === undefined) return []
-  const fromCrate = manifestForFile(useFact.file, manifests)
+  const fromCrate = resolveManifestForFile(useFact.file, manifests)
   if (fromCrate === undefined) return []
   const rule = lookupBoundaryRule(rules, targetCrate)
   if (rule === undefined) return []
@@ -153,17 +152,6 @@ export const buildCrateIdentifierIndex = (
     }
   }
   return index
-}
-
-const manifestForFile = (
-  filePath: string,
-  manifests: ReadonlyArray<RustManifestInfo>,
-): RustManifestInfo | undefined => {
-  const normalizedFile = normalizePath(filePath)
-  return manifests
-    .slice()
-    .sort((a, b) => normalizePath(b.path).length - normalizePath(a.path).length)
-    .find((manifest) => normalizedFile.startsWith(`${normalizePath(manifest.path)}/`))
 }
 
 const lookupBoundaryRule = (

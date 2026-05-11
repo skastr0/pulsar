@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto"
 import { Schema } from "effect"
 import { CATEGORIES, type Category } from "./category.js"
+import { dedupeByKey } from "./dedupe-by-key.js"
 import type { ObserverOutput } from "./observer.js"
 import type { RoutingOutput } from "./routing.js"
 import { reviewThresholdOf, type PulsarVector } from "./vector.js"
@@ -257,17 +258,8 @@ const signalContextItem = (
   }
 }
 
-const dedupeContext = (items: ReadonlyArray<ContextItem>): ReadonlyArray<ContextItem> => {
-  const seen = new Set<string>()
-  const deduped: Array<ContextItem> = []
-  for (const item of items) {
-    const key = `${item.kind}:${JSON.stringify(item.content)}`
-    if (seen.has(key)) continue
-    seen.add(key)
-    deduped.push(item)
-  }
-  return deduped
-}
+const dedupeContext = (items: ReadonlyArray<ContextItem>): ReadonlyArray<ContextItem> =>
+  dedupeByKey(items, (item) => `${item.kind}:${JSON.stringify(item.content)}`)
 
 const compareRequests = (left: ReviewRequest, right: ReviewRequest): number => {
   if (PRIORITY_RANK[left.priority] !== PRIORITY_RANK[right.priority]) {

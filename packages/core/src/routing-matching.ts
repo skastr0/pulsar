@@ -1,3 +1,4 @@
+import { dedupeByKey } from "./dedupe-by-key.js"
 import { matchesGlob } from "./globs.js"
 import type { ObserverOutput } from "./observer.js"
 import type {
@@ -135,14 +136,8 @@ const locationsFromDiagnostics = (
 
 export const dedupeLocations = (
   locations: ReadonlyArray<Location>,
-): ReadonlyArray<Location> => {
-  const seen = new Set<string>()
-  const deduped: Array<Location> = []
-  for (const location of locations) {
-    const key = `${location.file}:${location.line ?? -1}:${location.column ?? -1}`
-    if (seen.has(key)) continue
-    seen.add(key)
-    deduped.push(location)
-  }
-  return deduped
-}
+): ReadonlyArray<Location> =>
+  dedupeByKey(
+    locations,
+    (location) => `${location.file}:${location.line ?? -1}:${location.column ?? -1}`,
+  )

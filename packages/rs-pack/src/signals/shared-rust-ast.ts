@@ -1,6 +1,11 @@
 import { relative } from "node:path"
 import type { ChangedHunk } from "@skastr0/pulsar-core/signal"
 import type { RustManifestInfo, RustProject } from "../project.js"
+import {
+  moduleSegmentsFromFile,
+  resolveManifestForFile,
+  toModulePath,
+} from "../rust-analysis-modules.js"
 import type { RustSyntaxNode } from "../syn-walker.js"
 import { normalizePath } from "./shared-globs.js"
 
@@ -39,60 +44,6 @@ export const allNamedChildren = (
   node: RustSyntaxNode,
   type: string,
 ): ReadonlyArray<RustSyntaxNode> => namedChildrenOf(node).filter((child) => child.type === type)
-
-const toModulePath = (crateName: string, relativeModulePath: string): string =>
-  `${crateName}::${relativeModulePath}`
-
-const splitModulePath = (relativePath: string): Array<string> => {
-  const withoutExtension = relativePath.replace(/\.rs$/, "")
-  if (withoutExtension.endsWith("/mod")) {
-    const parent = withoutExtension.slice(0, -"/mod".length)
-    return parent.length === 0 ? [] : parent.split("/")
-  }
-  return withoutExtension.length === 0 ? [] : withoutExtension.split("/")
-}
-
-const moduleSegmentsFromFile = (
-  filePath: string,
-  manifest: RustManifestInfo | undefined,
-): Array<string> => {
-  if (manifest === undefined) return []
-  const normalizedFile = normalizePath(filePath)
-  const normalizedRoot = normalizePath(manifest.path)
-  const relativePath = normalizedFile.startsWith(`${normalizedRoot}/`)
-    ? normalizedFile.slice(normalizedRoot.length + 1)
-    : normalizedFile
-
-  if (relativePath === "src/lib.rs") return ["crate"]
-  if (relativePath === "src/main.rs") return ["bin", manifest.packageName ?? manifest.name]
-  if (relativePath.startsWith("src/bin/")) {
-    return ["bin", ...splitModulePath(relativePath.slice("src/bin/".length))]
-  }
-  if (relativePath.startsWith("src/")) {
-    return ["crate", ...splitModulePath(relativePath.slice("src/".length))]
-  }
-  if (relativePath.startsWith("tests/")) {
-    return ["tests", ...splitModulePath(relativePath.slice("tests/".length))]
-  }
-  if (relativePath.startsWith("examples/")) {
-    return ["examples", ...splitModulePath(relativePath.slice("examples/".length))]
-  }
-  if (relativePath.startsWith("benches/")) {
-    return ["benches", ...splitModulePath(relativePath.slice("benches/".length))]
-  }
-  return ["crate", ...splitModulePath(relativePath)]
-}
-
-const resolveManifestForFile = (
-  filePath: string,
-  manifests: ReadonlyArray<RustManifestInfo>,
-): RustManifestInfo | undefined => {
-  const normalizedFile = normalizePath(filePath)
-  return manifests
-    .slice()
-    .sort((left, right) => normalizePath(right.path).length - normalizePath(left.path).length)
-    .find((manifest) => normalizedFile.startsWith(`${normalizePath(manifest.path)}/`))
-}
 
 export const resolveRustFileScope = (
   project: RustProject,
