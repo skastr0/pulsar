@@ -64,31 +64,11 @@ const parseApplyPatch = (patchText: string, worktree: string): RoutingDiff => {
   let currentLine = 1
 
   for (const rawLine of patchText.split(/\r?\n/)) {
-    if (rawLine.startsWith("*** Add File: ")) {
-      currentFile = normalizeWorktreeRelativePath(
-        worktree,
-        rawLine.slice("*** Add File: ".length),
-      )
-      changedFiles.add(currentFile)
-      addedFiles.add(currentFile)
-      currentLine = 1
-      continue
-    }
-    if (rawLine.startsWith("*** Update File: ")) {
-      currentFile = normalizeWorktreeRelativePath(
-        worktree,
-        rawLine.slice("*** Update File: ".length),
-      )
-      changedFiles.add(currentFile)
-      currentLine = 1
-      continue
-    }
-    if (rawLine.startsWith("*** Delete File: ")) {
-      currentFile = normalizeWorktreeRelativePath(
-        worktree,
-        rawLine.slice("*** Delete File: ".length),
-      )
-      changedFiles.add(currentFile)
+    const header = parseApplyPatchFileHeader(rawLine, worktree)
+    if (header !== undefined) {
+      currentFile = header.file
+      changedFiles.add(header.file)
+      if (header.added) addedFiles.add(header.file)
       currentLine = 1
       continue
     }
@@ -108,6 +88,23 @@ const parseApplyPatch = (patchText: string, worktree: string): RoutingDiff => {
     addedImports,
     astMatches,
     signalChanges: {},
+  }
+}
+
+const parseApplyPatchFileHeader = (
+  rawLine: string,
+  worktree: string,
+): { readonly file: string; readonly added: boolean } | undefined => {
+  const prefixes = [
+    { prefix: "*** Add File: ", added: true },
+    { prefix: "*** Update File: ", added: false },
+    { prefix: "*** Delete File: ", added: false },
+  ] as const
+  const matched = prefixes.find((entry) => rawLine.startsWith(entry.prefix))
+  if (matched === undefined) return undefined
+  return {
+    file: normalizeWorktreeRelativePath(worktree, rawLine.slice(matched.prefix.length)),
+    added: matched.added,
   }
 }
 
