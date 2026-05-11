@@ -25,7 +25,7 @@ export const makeTuiLayer = ({
   readonly api: Parameters<TuiPlugin>[0]
   readonly options: PluginOptions
   readonly meta: Parameters<TuiPlugin>[2]
-}) =>
+}): Layer.Layer<TuiRuntimeEnv> =>
   Layer.mergeAll(
     pluginConfigLayer(options),
     Layer.succeed(TuiHost, { api, meta }),

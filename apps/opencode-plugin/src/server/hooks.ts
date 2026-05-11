@@ -1,18 +1,33 @@
-import type { Hooks } from "@opencode-ai/plugin"
 import { Effect } from "effect"
 import { PluginLogger } from "../shared/logger"
 import { PluginConfig } from "../shared/options"
 import { ToolDenied } from "../shared/errors"
 import { ToolPolicy } from "../shared/policy"
 
-type EventInput = Parameters<NonNullable<Hooks["event"]>>[0]
-type ToolBeforeInput = Parameters<
-  NonNullable<Hooks["tool.execute.before"]>
->[0]
-type ToolBeforeOutput = Parameters<
-  NonNullable<Hooks["tool.execute.before"]>
->[1]
-type ChatParamsOutput = Parameters<NonNullable<Hooks["chat.params"]>>[1]
+interface EventInput {
+  readonly event: {
+    readonly type: string
+    readonly properties?: unknown
+  }
+}
+
+interface ToolBeforeInput {
+  readonly tool: string
+  readonly sessionID: string
+  readonly callID: string
+}
+
+interface ToolBeforeOutput {
+  readonly args: unknown
+}
+
+interface ChatParamsOutput {
+  readonly temperature: number
+  readonly topP: number
+  readonly topK: number
+  readonly maxOutputTokens: number | undefined
+  readonly options: Record<string, unknown>
+}
 
 export const onEvent = Effect.fn("ServerHooks.onEvent")(function* (
   input: EventInput,

@@ -6,7 +6,7 @@ import {
   type PluginOptions,
   pluginConfigLayer,
 } from "../shared/options"
-import { ToolPolicyLive } from "../shared/policy"
+import { toolPolicyLive } from "../shared/policy"
 import { PluginLogger } from "../shared/logger"
 import { ToolPolicy } from "../shared/policy"
 
@@ -18,12 +18,12 @@ export const makeServerLayer = ({
 }: {
   readonly input: PluginInput
   readonly options: PluginOptions
-}) => {
+}): Layer.Layer<ServerRuntimeEnv> => {
   const configLayer = pluginConfigLayer(options)
 
   return Layer.mergeAll(
     configLayer,
     makeServerLoggerLayer(input.client),
-    ToolPolicyLive.pipe(Layer.provide(configLayer)),
+    toolPolicyLive.pipe(Layer.provide(configLayer)),
   )
 }

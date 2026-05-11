@@ -83,7 +83,7 @@ const loadRuntime = (
       })
       const registry = (yield* buildRegistry(signals)) as Registry
       const activePacks = collectActiveLanguagePacks(registry, vector)
-      const EngineLayer = ScoringEngineLayer(
+      const engineLayer = ScoringEngineLayer(
         registry,
         (worktreePath) =>
           Layer.mergeAll(
@@ -95,7 +95,7 @@ const loadRuntime = (
         vector,
         { cacheConfig: { cacheDir: join(worktree, ".pulsar", "cache") } },
       )
-      const engine = yield* Effect.provide(ScoringEngineTag, EngineLayer)
+      const engine = yield* Effect.provide(ScoringEngineTag, engineLayer)
       return { registry, engine }
     }) as Effect.Effect<RuntimeEntry, never, never>,
   ).catch((error) => {

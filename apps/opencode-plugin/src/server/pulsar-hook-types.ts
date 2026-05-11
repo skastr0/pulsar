@@ -1,4 +1,3 @@
-import type { Hooks } from "@opencode-ai/plugin"
 import type {
   ObserverOutput,
 } from "@skastr0/pulsar-core/observer"
@@ -12,8 +11,18 @@ import type {
 } from "@skastr0/pulsar-core/routing"
 import type { PulsarAnnotation } from "./review-surfacing"
 
-export type ToolAfterInput = Parameters<NonNullable<Hooks["tool.execute.after"]>>[0]
-export type ToolAfterOutput = Parameters<NonNullable<Hooks["tool.execute.after"]>>[1]
+export interface ToolAfterInput {
+  readonly tool: string
+  readonly sessionID: string
+  readonly callID: string
+  readonly args: unknown
+}
+
+export interface ToolAfterOutput {
+  title: string
+  output: string
+  metadata: unknown
+}
 
 export interface PulsarAnalysis {
   readonly fingerprint: string

@@ -4,11 +4,11 @@ import { PluginConfig } from "./options"
 const BLOCKED_ENV_PATH = /(^|\/)\.env(\..+)?$/
 const BLOCKED_TOOLS = new Set(["read", "write", "edit", "apply_patch"])
 
-export const ToolInvocation = Schema.Struct({
+export const toolInvocationSchema = Schema.Struct({
   tool: Schema.String,
   filePath: Schema.optional(Schema.String),
 })
-export type ToolInvocation = typeof ToolInvocation.Type
+export type ToolInvocation = typeof toolInvocationSchema.Type
 
 export type ToolDecision =
   | {
@@ -53,7 +53,7 @@ export class ToolPolicy extends Context.Tag(
   ) => Effect.Effect<ToolDecision>
 }>() {}
 
-export const ToolPolicyLive = Layer.effect(
+export const toolPolicyLive = Layer.effect(
   ToolPolicy,
   Effect.gen(function* () {
     const config = yield* PluginConfig
@@ -62,7 +62,7 @@ export const ToolPolicyLive = Layer.effect(
       tool: string,
       args: unknown,
     ) {
-      const invocation = yield* Schema.decodeUnknown(ToolInvocation)({
+      const invocation = yield* Schema.decodeUnknown(toolInvocationSchema)({
         tool,
         filePath: extractFilePath(args),
       }).pipe(Effect.orDie)

@@ -21,7 +21,9 @@ export class PluginLogger extends Context.Tag(
   readonly log: (entry: LogEntry) => Effect.Effect<void, OpencodeClientError>
 }>() {}
 
-export const makeServerLoggerLayer = <LogRequest>(client: AppLogClient<LogRequest>) =>
+export const makeServerLoggerLayer = <LogRequest>(
+  client: AppLogClient<LogRequest>,
+): Layer.Layer<PluginLogger> =>
   Layer.succeed(PluginLogger, {
     log: (entry) =>
       Effect.tryPromise({
@@ -56,7 +58,7 @@ export const makeTuiLoggerLayer = <LogRequest>(api: {
   readonly client?: {
     readonly app?: AppLogClient<LogRequest>["app"]
   }
-}) =>
+}): Layer.Layer<PluginLogger> =>
   Layer.succeed(PluginLogger, {
     log: (entry) =>
       Effect.gen(function* () {
