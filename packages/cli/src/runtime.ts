@@ -29,31 +29,24 @@ import { Effect, Layer } from "effect"
 import { loadProjectModuleCalibrationContext } from "./runtime-calibration.js"
 import {
   readHeadSha,
-  resolveGitRef,
   resolveRepoRoot,
   withDetachedWorktreeAtRef,
 } from "./runtime-git.js"
 import {
   buildPulsarRegistry,
-  collectActiveLanguagePacks,
   formatReservedRustSignalMessage,
   isReservedRustSignalId,
-  PULSAR_SHARED_SIGNALS,
-  PULSAR_SIGNALS,
+  collectActiveLanguagePacks,
   validateVectorAgainstPulsarSignals,
 } from "./runtime-registry.js"
 
 export {
-  loadProjectModuleCalibrationContext,
   readHeadSha,
-  resolveGitRef,
   resolveRepoRoot,
   withDetachedWorktreeAtRef,
   buildPulsarRegistry,
   formatReservedRustSignalMessage,
   isReservedRustSignalId,
-  PULSAR_SHARED_SIGNALS,
-  PULSAR_SIGNALS,
 }
 
 export interface PulsarRuntimeOptions {
@@ -161,7 +154,8 @@ export const makePulsarRuntime = (
         cacheConfig: { cacheDir: join(repoRoot, ".pulsar", "cache") },
         ...(options?.observer?.profile === true ? { observerProfile: true } : {}),
         ...(calibrationContext === undefined ? {} : { calibrationContext }),
-        calibrationContextForWorktree: loadProjectModuleCalibrationContext,
+        calibrationContextForWorktree: (worktreePath) =>
+          loadProjectModuleCalibrationContext(worktreePath, { dependencyRoot: repoRoot }),
       },
     )
     const engine = yield* Effect.provide(ScoringEngineTag, EngineLayer)

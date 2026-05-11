@@ -12,4 +12,5 @@ export class ProjectModuleLoadError extends Schema.TaggedError<ProjectModuleLoad
 
 export interface ProjectModuleLoadOptions {
   readonly repoRoot: string
+  readonly dependencyRoot?: string
 }

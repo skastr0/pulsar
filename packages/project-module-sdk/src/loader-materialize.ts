@@ -20,6 +20,7 @@ export const materializeProjectModuleImportTarget = (
   target: string,
   sourceRoot: string,
   repoRoot: string,
+  dependencyRoot: string,
   sourceFingerprint: string,
   files: ReadonlyArray<ProjectModuleSourceFile>,
   shadowRootSegments: ReadonlyArray<string>,
@@ -47,7 +48,7 @@ export const materializeProjectModuleImportTarget = (
       yield* writeMaterializedFile(ref, file, destination, content)
     }
 
-    yield* linkMaterializedPackageDependencies(ref, sourceRoot, shadowSourceRoot)
+    yield* linkMaterializedPackageDependencies(ref, dependencyRoot, shadowSourceRoot)
 
     return resolve(shadowSourceRoot, relative(sourceRoot, target))
   })
@@ -78,6 +79,7 @@ const linkMaterializedPackageDependencies = (
 ): Effect.Effect<void, ProjectModuleLoadError> =>
   Effect.gen(function* () {
     const packageJsonPath = resolve(sourceRoot, "package.json")
+    if (!(yield* isFile(packageJsonPath))) return
     const raw = yield* readTextFile(
       ref,
       packageJsonPath,
@@ -96,19 +98,12 @@ const linkMaterializedPackageDependencies = (
     const dependencies = dependencyNamesOfPackageJson(parsed)
     if (dependencies.length === 0) return
 
-    const nodeModulesRoot = nearestNodeModulesRoot(shadowSourceRoot)
-    if (nodeModulesRoot === undefined) return
+    const nodeModulesRoot = nearestNodeModulesRoot(shadowSourceRoot) ?? resolve(shadowSourceRoot, "node_modules")
     const sourceRequire = createRequire(packageJsonPath)
     for (const dependency of dependencies) {
       if (dependency === ref.id) continue
-      let packageJson: string | undefined
-      try {
-        packageJson = sourceRequire.resolve(`${dependency}/package.json`)
-      } catch {
-        packageJson = undefined
-      }
-      if (packageJson === undefined) continue
-      const dependencyRoot = yield* realpathDependency(ref, dependency, dirname(packageJson))
+      const dependencyRoot = yield* resolveDependencyRoot(ref, sourceRoot, sourceRequire, dependency)
+      if (dependencyRoot === undefined) continue
       const destination = resolve(nodeModulesRoot, ...dependency.split("/"))
       if (yield* isFile(resolve(destination, "package.json"))) continue
       yield* mkdirForMaterializedFile(ref, dirname(destination))
@@ -143,6 +138,46 @@ const readFileBytes = (
         message: `Failed to read project module source ${file.sourceRef}`,
         cause,
       }),
+  })
+
+const resolveDependencyRoot = (
+  ref: ProjectModuleRef,
+  sourceRoot: string,
+  sourceRequire: NodeRequire,
+  dependency: string,
+): Effect.Effect<string | undefined, ProjectModuleLoadError> =>
+  Effect.gen(function* () {
+    const installedRoot = resolve(sourceRoot, "node_modules", ...dependency.split("/"))
+    if (yield* isFile(resolve(installedRoot, "package.json"))) {
+      return yield* realpathDependency(ref, dependency, installedRoot)
+    }
+
+    let entrypoint: string | undefined
+    try {
+      entrypoint = sourceRequire.resolve(dependency)
+    } catch {
+      entrypoint = undefined
+    }
+    if (entrypoint === undefined) return undefined
+
+    return yield* findDependencyPackageRoot(ref, dependency, entrypoint)
+  })
+
+const findDependencyPackageRoot = (
+  ref: ProjectModuleRef,
+  dependency: string,
+  entrypoint: string,
+): Effect.Effect<string | undefined, ProjectModuleLoadError> =>
+  Effect.gen(function* () {
+    let cursor = dirname(entrypoint)
+    while (true) {
+      if (yield* isFile(resolve(cursor, "package.json"))) {
+        return yield* realpathDependency(ref, dependency, cursor)
+      }
+      const parent = dirname(cursor)
+      if (parent === cursor) return undefined
+      cursor = parent
+    }
   })
 
 const readTextFile = (
