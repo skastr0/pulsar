@@ -10,7 +10,7 @@ export interface FileTaxonomyOptions {
   readonly sourceExtensions?: ReadonlyArray<string>
 }
 
-export const classifyFilePathDefault = (
+const classifyFilePathDefault = (
   filePath: string,
   options?: FileTaxonomyOptions,
 ): ReadonlyArray<SourceCategory> => {

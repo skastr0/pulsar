@@ -6,12 +6,12 @@ import type { SharedChurn01Output } from "@skastr0/pulsar-shared-signals"
 import { Effect, Schema } from "effect"
 import type { RsLd05Output } from "./rs-ld-05-complexity.js"
 
-export const RsRp01Config = Schema.Struct({
+const RsRp01Config = Schema.Struct({
   top_n: Schema.Number,
   min_churn: Schema.Number,
   min_complexity: Schema.Number,
 })
-export type RsRp01Config = typeof RsRp01Config.Type
+type RsRp01Config = typeof RsRp01Config.Type
 
 export type RustQuadrant = "top-right" | "top-left" | "bottom-right" | "bottom-left"
 

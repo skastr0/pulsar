@@ -21,7 +21,7 @@ import {
 } from "./reference-data-file.js"
 import { resolveRepoRoot, withDetachedWorktreeAtRef } from "./runtime.js"
 
-export interface GlossaryCommandOptions {
+interface GlossaryCommandOptions {
   readonly action: "extract" | "confirm"
   readonly repoPath: string
   readonly sha?: string

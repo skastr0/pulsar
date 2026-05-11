@@ -19,12 +19,12 @@ import {
 } from "./shared-rust-ast.js"
 import { isExcluded } from "./shared-globs.js"
 
-export const RsAb03Config = Schema.Struct({
+const RsAb03Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   max_generic_parameters: Schema.Number,
   top_n_diagnostics: Schema.Number,
 })
-export type RsAb03Config = typeof RsAb03Config.Type
+type RsAb03Config = typeof RsAb03Config.Type
 
 export interface RustGenericAnalysis {
   readonly file: string

@@ -10,12 +10,12 @@ import { collectRustProjectFacts } from "../rust-analysis.js"
 import { RustProjectTag } from "../project.js"
 import { isExcluded } from "./shared-globs.js"
 
-export const RsLd05Config = Schema.Struct({
+const RsLd05Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   max_complexity: Schema.Number,
   top_n_diagnostics: Schema.Number,
 })
-export type RsLd05Config = typeof RsLd05Config.Type
+type RsLd05Config = typeof RsLd05Config.Type
 
 export interface RustFunctionComplexity {
   readonly file: string

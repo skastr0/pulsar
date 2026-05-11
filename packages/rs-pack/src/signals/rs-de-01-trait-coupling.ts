@@ -17,11 +17,11 @@ import {
 } from "./shared-rust-ast.js"
 import { isExcluded } from "./shared-globs.js"
 
-export const RsDe01Config = Schema.Struct({
+const RsDe01Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   top_n_diagnostics: Schema.Number,
 })
-export type RsDe01Config = typeof RsDe01Config.Type
+type RsDe01Config = typeof RsDe01Config.Type
 
 export interface TraitCouplingDetail {
   readonly trait: string

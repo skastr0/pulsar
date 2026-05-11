@@ -5,29 +5,29 @@ import type { ObserverOutput } from "./observer.js"
 import type { RoutingOutput } from "./routing.js"
 import { reviewThresholdOf, type PulsarVector } from "./vector.js"
 
-export const ReviewPriority = Schema.Literal("block", "required", "informational")
-export type ReviewPriority = typeof ReviewPriority.Type
+const ReviewPriority = Schema.Literal("block", "required", "informational")
+type ReviewPriority = typeof ReviewPriority.Type
 
-export const ReviewTrigger = Schema.Struct({
+const ReviewTrigger = Schema.Struct({
   source: Schema.Literal("hard-gate", "score-threshold", "structural-pattern"),
   detail: Schema.String,
 })
-export type ReviewTrigger = typeof ReviewTrigger.Type
+type ReviewTrigger = typeof ReviewTrigger.Type
 
-export const ContextItem = Schema.Struct({
+const ContextItem = Schema.Struct({
   kind: Schema.Literal("signal-output", "file-excerpt", "diagnostic", "diff-hunk"),
   content: Schema.Unknown,
 })
-export type ContextItem = typeof ContextItem.Type
+type ContextItem = typeof ContextItem.Type
 
-export const ReviewRequest = Schema.Struct({
+const ReviewRequest = Schema.Struct({
   reviewerRole: Schema.String,
   reason: Schema.String,
   priority: ReviewPriority,
   trigger: ReviewTrigger,
   context: Schema.Array(ContextItem),
 })
-export type ReviewRequest = typeof ReviewRequest.Type
+type ReviewRequest = typeof ReviewRequest.Type
 
 export const ReviewPlan = Schema.Struct({
   planId: Schema.String,

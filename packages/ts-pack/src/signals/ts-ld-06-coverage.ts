@@ -27,8 +27,8 @@ type MutableCoverage = {
   annotatedReturns: number
 }
 
-export const PARAMETER_COVERAGE_WEIGHT = 4
-export const RETURN_COVERAGE_WEIGHT = 1
+const PARAMETER_COVERAGE_WEIGHT = 4
+const RETURN_COVERAGE_WEIGHT = 1
 
 export const computeAnnotationCoverage = (
   project: Project,

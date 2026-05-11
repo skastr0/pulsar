@@ -1,7 +1,7 @@
 import { SignalContextTag, SignalComputeError } from "@skastr0/pulsar-core/signal"
 import type { Diagnostic, Signal } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
-import type { TsSl01Output, CloneGroup } from "./ts-sl-01-duplication.js"
+import type { TsSl01Output, CloneGroup } from "./ts-sl-01-model.js"
 import {
   ACTIONABLE_DIVERGENCE_THRESHOLD,
   cloneMemberSummary,
@@ -11,7 +11,7 @@ import {
   analyzeInconsistentClones,
 } from "./ts-sl-02-analysis.js"
 
-export const TsSl02Config = Schema.Struct({
+const TsSl02Config = Schema.Struct({
   divergence_threshold: Schema.Number,
   min_window_days: Schema.Number,
   top_n_diagnostics: Schema.Number,

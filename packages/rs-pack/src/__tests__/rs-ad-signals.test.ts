@@ -8,7 +8,6 @@ import { describe, expect, test } from "bun:test"
 import { mkdir, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { Effect, Layer } from "effect"
-import { parseCargoMetadata } from "../cargo-metadata.js"
 import {
   RustProjectLayer,
   type RustProject,
@@ -214,11 +213,11 @@ describe("RS-AD-* signals", () => {
   })
 
   test("RS-AD-03 detects feature-induced workspace crate cycles from cargo metadata", async () => {
-    const metadata = parseCargoMetadata({
+    const metadata = {
       version: 1,
-      workspace_root: "/repo",
-      target_directory: "/repo/target",
-      workspace_members: [
+      workspaceRoot: "/repo",
+      targetDirectory: "/repo/target",
+      workspaceMembers: [
         "a 0.1.0 (path+file:///repo/crates/a)",
         "b 0.1.0 (path+file:///repo/crates/b)",
       ],
@@ -228,14 +227,14 @@ describe("RS-AD-* signals", () => {
           name: "a",
           version: "0.1.0",
           edition: "2021",
-          manifest_path: "/repo/crates/a/Cargo.toml",
+          manifestPath: "/repo/crates/a/Cargo.toml",
           dependencies: [
             {
               name: "b",
               kind: null,
               rename: null,
               optional: true,
-              uses_default_features: true,
+              usesDefaultFeatures: true,
               features: ["bridge"],
               path: "../b",
               target: null,
@@ -250,14 +249,14 @@ describe("RS-AD-* signals", () => {
           name: "b",
           version: "0.1.0",
           edition: "2021",
-          manifest_path: "/repo/crates/b/Cargo.toml",
+          manifestPath: "/repo/crates/b/Cargo.toml",
           dependencies: [
             {
               name: "a",
               kind: "dev",
               rename: null,
               optional: false,
-              uses_default_features: true,
+              usesDefaultFeatures: true,
               features: [],
               path: "../a",
               target: null,
@@ -268,8 +267,8 @@ describe("RS-AD-* signals", () => {
           targets: [],
         },
       ],
-      resolve: null,
-    })
+      resolve: undefined,
+    } satisfies RustProject["cargoMetadata"]
 
     const project: RustProject = {
       worktreePath: "/repo",

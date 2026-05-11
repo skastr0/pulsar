@@ -9,7 +9,7 @@ import {
 } from "./errors.js"
 import type { AnySignal, ResolvedSignal, SignalInputRef } from "./signal.js"
 
-export const MAX_COMPOSITION_DEPTH = 2
+const MAX_COMPOSITION_DEPTH = 2
 
 export interface Registry {
   /**
@@ -23,7 +23,7 @@ export interface Registry {
   readonly aliasesOf: (id: string) => ReadonlyArray<string>
 }
 
-export class RegistryTag extends Context.Tag("@skastr0/pulsar-core/Registry")<
+class RegistryTag extends Context.Tag("@skastr0/pulsar-core/Registry")<
   RegistryTag,
   Registry
 >() {}

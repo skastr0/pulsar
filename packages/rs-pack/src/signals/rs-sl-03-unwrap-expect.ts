@@ -16,11 +16,11 @@ import {
 } from "./shared-rust-ast.js"
 import { isExcluded } from "./shared-globs.js"
 
-export const RsSl03Config = Schema.Struct({
+const RsSl03Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   top_n_diagnostics: Schema.Number,
 })
-export type RsSl03Config = typeof RsSl03Config.Type
+type RsSl03Config = typeof RsSl03Config.Type
 
 export interface PanicDensityModule {
   readonly module: string

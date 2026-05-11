@@ -2,7 +2,7 @@ import type { RustManifestInfo } from "./project.js"
 import type { RustSyntaxNode } from "./syn-walker.js"
 import { firstNamedChild } from "./rust-analysis-syntax.js"
 
-export const normalizePath = (path: string): string => path.replaceAll("\\", "/")
+const normalizePath = (path: string): string => path.replaceAll("\\", "/")
 
 export const toModulePath = (crateName: string, relativeModulePath: string): string =>
   `${crateName}::${relativeModulePath}`

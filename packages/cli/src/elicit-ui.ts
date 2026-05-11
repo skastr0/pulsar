@@ -8,9 +8,9 @@ import {
 import { renderVectorDiff, summarizeVectorDiff } from "./vector-format.js"
 import type { RevealedPreferenceBootstrapReport } from "./elicit-types.js"
 
-export const greenAnsi = "\u001b[32m"
-export const cyanAnsi = "\u001b[36m"
-export const boldAnsi = "\u001b[1m"
+const greenAnsi = "\u001b[32m"
+const cyanAnsi = "\u001b[36m"
+const boldAnsi = "\u001b[1m"
 export const dimAnsi = "\u001b[2m"
 export const resetAnsi = "\u001b[0m"
 
@@ -125,10 +125,10 @@ export const renderProposalReview = (proposal: PulsarVectorProposal): void => {
   }
 }
 
-export const dataSufficiencyLabel = (sampleCount: number, minimumSampleCount: number): string =>
+const dataSufficiencyLabel = (sampleCount: number, minimumSampleCount: number): string =>
   sampleCount >= minimumSampleCount ? "(meets minimum)" : "(below minimum — kept pending)"
 
-export const formatSigned = (value: number): string => `${value >= 0 ? "+" : ""}${value.toFixed(2)}`
+const formatSigned = (value: number): string => `${value >= 0 ? "+" : ""}${value.toFixed(2)}`
 
 const colorizeCode = (code: string, color: string): string =>
   code

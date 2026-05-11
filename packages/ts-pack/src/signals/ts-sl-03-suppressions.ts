@@ -5,7 +5,7 @@ import { TsProjectTag } from "../ts-project.js"
 import { computeSuppressions } from "./ts-sl-03-analysis.js"
 import { suppressionMessage } from "./ts-sl-03-justifications.js"
 
-export const TsSl03Config = Schema.Struct({
+const TsSl03Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   test_globs: Schema.Array(Schema.String),
   top_n_diagnostics: Schema.Number,

@@ -11,14 +11,12 @@ import type {
   TsDe01Output,
 } from "./ts-de-01-coupling-output.js"
 
-export type { CouplingCounterpart, ModuleTypeCoupling, TsDe01Output }
-
-export const TsDe01Config = Schema.Struct({
+const TsDe01Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   top_n_diagnostics: Schema.Number,
   precise_module_limit: Schema.Number,
 })
-export type TsDe01Config = typeof TsDe01Config.Type
+type TsDe01Config = typeof TsDe01Config.Type
 
 export const TsDe01: Signal<TsDe01Config, TsDe01Output, TsProjectTag> = {
   id: "TS-DE-01-type-level-coupling",

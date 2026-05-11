@@ -11,7 +11,7 @@ import { CATEGORIES } from "@skastr0/pulsar-core/signal"
 import { createTimeSeriesServices, type TimeSeriesEntry } from "@skastr0/pulsar-core/time-series"
 import type { PulsarVector } from "@skastr0/pulsar-core/vector"
 
-export interface AgentConstraintDecision {
+interface AgentConstraintDecision {
   readonly allowed: boolean
   readonly message?: string
   readonly backpressure: BackpressureOutput

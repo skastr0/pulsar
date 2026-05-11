@@ -4,13 +4,13 @@ import { Effect, Schema } from "effect"
 import { buildModuleGraph } from "../graph/module-graph.js"
 import { TsProjectTag } from "../ts-project.js"
 
-export const TsDe02Config = Schema.Struct({
+const TsDe02Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   hub_fan_in_threshold: Schema.Number,
   hub_fan_out_threshold: Schema.Number,
   top_n_diagnostics: Schema.Number,
 })
-export type TsDe02Config = typeof TsDe02Config.Type
+type TsDe02Config = typeof TsDe02Config.Type
 
 export interface ModuleFan {
   readonly fanIn: number

@@ -247,7 +247,7 @@ const firstCrossingLines = (report: ObserverBisectReport): ReadonlyArray<string>
 
 const padCategory = (category: Category): string => category.padEnd(20, " ")
 
-export const countFinalApplicableSignalsByCategory = (
+const countFinalApplicableSignalsByCategory = (
   finalEntry: ObserverCommitEntry | undefined,
   category: Category,
 ): number => {

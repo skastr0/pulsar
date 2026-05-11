@@ -5,11 +5,10 @@ import { join } from "node:path"
 import { Effect, Layer, Schema } from "effect"
 import { CalibrationContextTag, appendCalibrationDecision, defineCalibrationProcessor, makeResolvedCalibrationContext } from "@skastr0/pulsar-core/calibration"
 import type { RepoFacts } from "@skastr0/pulsar-core/calibration"
+import { TsLd02 } from "../signals/ts-ld-02-size-distribution.js"
 import {
-  TsLd02,
-  TsLd02Config,
   type TsLd02Output,
-} from "../signals/ts-ld-02-size-distribution.js"
+} from "../signals/ts-ld-02-model.js"
 import { TsProjectLayer } from "../ts-project.js"
 
 let repo: string
@@ -325,7 +324,7 @@ describe("TS-LD-02 (function / file size distribution)", () => {
   })
 
   test("configSchema decodes defaults round-trip", () => {
-    const decoded = Schema.decodeUnknownSync(TsLd02Config)(TsLd02.defaultConfig)
+    const decoded = Schema.decodeUnknownSync(TsLd02.configSchema)(TsLd02.defaultConfig)
     expect(decoded.max_function_loc).toBe(50)
     expect(decoded.max_file_loc).toBe(300)
   })

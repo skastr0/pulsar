@@ -5,12 +5,12 @@ import { ts, type SourceFile } from "ts-morph"
 import { TsProjectTag } from "../ts-project.js"
 import { isExcluded } from "./shared-globs.js"
 
-export const TsAb05Config = Schema.Struct({
+const TsAb05Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   max_generic_parameters: Schema.Number,
   top_n_diagnostics: Schema.Number,
 })
-export type TsAb05Config = typeof TsAb05Config.Type
+type TsAb05Config = typeof TsAb05Config.Type
 
 export interface GenericAnalysis {
   readonly file: string

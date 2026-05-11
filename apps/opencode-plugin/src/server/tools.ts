@@ -8,12 +8,12 @@ type TemplateStatusArgs = {
   readonly includeOptions?: boolean
 }
 
-export type ServerEffectRunner = <A>(
+type ServerEffectRunner = <A>(
   name: string,
   effect: Effect.Effect<A, unknown, ServerRuntimeEnv>,
 ) => Promise<A>
 
-export const templateStatusExecute = Effect.fn(
+const templateStatusExecute = Effect.fn(
   "ServerTools.templateStatus.execute",
 )(function* ({
   args,

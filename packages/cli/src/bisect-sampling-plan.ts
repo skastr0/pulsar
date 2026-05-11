@@ -18,7 +18,7 @@ export interface BisectSamplingSummary {
   readonly diagnostics: ReadonlyArray<string>
 }
 
-export const AUTO_FULL_RANGE_THRESHOLD = 500
+const AUTO_FULL_RANGE_THRESHOLD = 500
 
 export const resolveSamplingPlan = (
   commits: ReadonlyArray<RangeCommit>,

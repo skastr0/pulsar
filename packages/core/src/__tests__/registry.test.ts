@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { Effect, Exit, Schema } from "effect"
 import type { AnySignal, Signal } from "../signal.js"
-import { buildRegistry, MAX_COMPOSITION_DEPTH } from "../registry.js"
+import { buildRegistry } from "../registry.js"
 
 /**
  * MOCK-01 — a trivial leaf signal used to prove the Signal interface
@@ -178,7 +178,7 @@ describe("Registry", () => {
     }
   })
 
-  test(`rejects composition deeper than ${MAX_COMPOSITION_DEPTH}`, async () => {
+  test("rejects composition deeper than the registry limit", async () => {
     const leaf: AnySignal = { ...MockLeaf, id: "L" }
     const mid: AnySignal = { ...MockCompound, id: "M", inputs: [{ id: "L" }] }
     const top: AnySignal = { ...MockCompound, id: "T", inputs: [{ id: "M" }] }

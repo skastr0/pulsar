@@ -29,7 +29,7 @@ export const readBunLockFile = async (filePath: string): Promise<ParsedBunLock> 
   return parseBunLock(text)
 }
 
-export const parseBunLock = (text: string): ParsedBunLock => {
+const parseBunLock = (text: string): ParsedBunLock => {
   const parsed = JSON.parse(stripTrailingCommas(text)) as {
     readonly workspaces?: Record<string, Record<string, unknown>>
     readonly packages?: Record<string, ReadonlyArray<unknown>>

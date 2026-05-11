@@ -11,7 +11,7 @@ const toGlobRegex = (glob: string): RegExp =>
 
 export const normalizePath = (path: string): string => path.replaceAll("\\", "/")
 
-export const matchesGlob = (path: string, glob: string): boolean =>
+const matchesGlob = (path: string, glob: string): boolean =>
   toGlobRegex(glob).test(normalizePath(path))
 
 export const matchesAnyGlob = (

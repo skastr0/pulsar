@@ -10,16 +10,14 @@ import {
 } from "./ts-ab-01-export-collection.js"
 import { scorePublicExportSurface } from "./ts-ab-01-scoring.js"
 
-export type { FileSurface } from "./ts-ab-01-export-collection.js"
-
-export const TsAb01Config = Schema.Struct({
+const TsAb01Config = Schema.Struct({
   public_export_globs: Schema.Array(Schema.String),
   exclude_globs: Schema.Array(Schema.String),
   // Threshold, in exports, beyond which a file's surface is penalized.
   surface_threshold: Schema.Number,
   top_n_diagnostics: Schema.Number,
 })
-export type TsAb01Config = typeof TsAb01Config.Type
+type TsAb01Config = typeof TsAb01Config.Type
 
 export interface TsAb01Output {
   readonly byFile: ReadonlyMap<string, FileSurface>

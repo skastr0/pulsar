@@ -11,10 +11,10 @@ import { simpleGit } from "simple-git"
 import { RustProjectTag, type RustProject } from "../project.js"
 import { normalizePath } from "./shared-globs.js"
 
-export const RsRp03Config = Schema.Struct({
+const RsRp03Config = Schema.Struct({
   top_n_diagnostics: Schema.Number,
 })
-export type RsRp03Config = typeof RsRp03Config.Type
+type RsRp03Config = typeof RsRp03Config.Type
 
 export interface CrossCrateEdge {
   readonly file: string

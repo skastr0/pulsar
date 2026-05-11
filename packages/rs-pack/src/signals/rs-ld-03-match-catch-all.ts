@@ -8,12 +8,12 @@ import { collectRustProjectFacts } from "../rust-analysis.js"
 import { RustProjectTag } from "../project.js"
 import { isExcluded, matchesAnyGlob } from "./shared-globs.js"
 
-export const RsLd03Config = Schema.Struct({
+const RsLd03Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   core_logic_globs: Schema.Array(Schema.String),
   top_n_diagnostics: Schema.Number,
 })
-export type RsLd03Config = typeof RsLd03Config.Type
+type RsLd03Config = typeof RsLd03Config.Type
 
 export interface MatchCatchAllSite {
   readonly file: string

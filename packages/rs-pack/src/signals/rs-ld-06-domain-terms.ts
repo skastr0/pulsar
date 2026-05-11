@@ -14,11 +14,11 @@ import { collectRustProjectFacts, tokenizeIdentifier } from "../rust-analysis.js
 import { RustProjectTag } from "../project.js"
 import { isExcluded } from "./shared-globs.js"
 
-export const RsLd06Config = Schema.Struct({
+const RsLd06Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   top_n_diagnostics: Schema.Number,
 })
-export type RsLd06Config = typeof RsLd06Config.Type
+type RsLd06Config = typeof RsLd06Config.Type
 
 type IdentifierClassification =
   | "matches-glossary"

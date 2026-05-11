@@ -4,12 +4,10 @@ import { Effect, Schema } from "effect"
 import { findDuplicateGroups, type DuplicateGroup } from "./ts-de-05-groups.js"
 import { readTsDe05Lockfile } from "./ts-de-05-lockfile.js"
 
-export const TsDe05Config = Schema.Struct({
+const TsDe05Config = Schema.Struct({
   top_n_diagnostics: Schema.Number,
 })
-export type TsDe05Config = typeof TsDe05Config.Type
-
-export type { DuplicateGroup } from "./ts-de-05-groups.js"
+type TsDe05Config = typeof TsDe05Config.Type
 
 export interface TsDe05Output {
   readonly duplicates: ReadonlyArray<DuplicateGroup>

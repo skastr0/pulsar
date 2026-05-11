@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import { readFile } from "node:fs/promises"
-import { dirname, resolve } from "node:path"
+import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { Effect } from "effect"
 import {
-  parseCargoMetadata,
+  loadCargoMetadata,
   workspacePackages,
 } from "../cargo-metadata.js"
 import { findDuplicateCargoLockPackages, parseCargoLock } from "../lock-file.js"
@@ -18,11 +19,29 @@ const FIXTURE_ROOT = resolve(
 )
 
 describe("@skastr0/pulsar-rs-pack scaffold", () => {
-  test("parses cargo metadata fixture JSON", async () => {
-    const raw = await readFile(`${FIXTURE_ROOT}/cargo-metadata.json`, "utf8")
-    const metadata = parseCargoMetadata(raw)
+  test("loads cargo metadata fixture JSON", async () => {
+    const fakeCargoBinDir = await mkdtemp(join(tmpdir(), "pulsar-rs-pack-cargo-"))
+    const fakeCargoPath = join(fakeCargoBinDir, "cargo")
+    await writeFile(
+      fakeCargoPath,
+      [
+        "#!/usr/bin/env sh",
+        `cat ${JSON.stringify(`${FIXTURE_ROOT}/cargo-metadata.json`)}`,
+        "",
+      ].join("\n"),
+      "utf8",
+    )
+    await chmod(fakeCargoPath, 0o755)
 
-    expect(metadata.workspaceRoot).toContain("basic-workspace")
+    const originalPath = process.env.PATH
+    process.env.PATH = `${fakeCargoBinDir}:${originalPath ?? ""}`
+    const metadata = await loadCargoMetadata(FIXTURE_ROOT).finally(() => {
+      process.env.PATH = originalPath
+    })
+
+    expect(metadata?.workspaceRoot).toContain("basic-workspace")
+    expect(metadata).toBeDefined()
+    if (metadata === undefined) throw new Error("expected fake cargo metadata to load")
     expect(workspacePackages(metadata).map((pkg) => pkg.name)).toEqual(["fixture-crate"])
     expect(metadata.packages[0]?.dependencies[0]?.name).toBe("serde")
     const workspaceNode = metadata.resolve?.nodes.find(

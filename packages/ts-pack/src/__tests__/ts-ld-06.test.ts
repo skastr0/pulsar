@@ -5,7 +5,6 @@ import { join } from "node:path"
 import { Effect, Schema } from "effect"
 import {
   TsLd06,
-  TsLd06Config,
   type TsLd06Output,
 } from "../signals/ts-ld-06-annotation-coverage.js"
 import { TsProjectLayer } from "../ts-project.js"
@@ -395,7 +394,7 @@ describe("TS-LD-06 (type annotation coverage)", () => {
   })
 
   test("configSchema decodes defaults round-trip", () => {
-    const decoded = Schema.decodeUnknownSync(TsLd06Config)(TsLd06.defaultConfig)
+    const decoded = Schema.decodeUnknownSync(TsLd06.configSchema)(TsLd06.defaultConfig)
     expect(decoded.top_n_diagnostics).toBe(10)
     expect(decoded.exclude_globs.length).toBeGreaterThan(0)
   })

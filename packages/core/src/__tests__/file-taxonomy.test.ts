@@ -9,7 +9,6 @@ import {
 } from "../calibration.js"
 import {
   classifyFilePath,
-  classifyFilePathDefault,
   isProductionSourcePath,
 } from "../file-taxonomy.js"
 
@@ -20,20 +19,30 @@ const repoFacts: RepoFacts = {
   sourceExtensions: [".ts"],
 }
 
+const classifyCategories = (
+  filePath: string,
+  options?: Parameters<typeof classifyFilePath>[1],
+): ReadonlyArray<string> =>
+  Effect.runSync(
+    classifyFilePath(filePath, options).pipe(
+      Effect.map((result) => result.value.categories),
+    ),
+  )
+
 describe("file taxonomy", () => {
   test("default classification identifies production, tests, generated, and examples", () => {
+    expect(classifyCategories("src/index.ts", { sourceExtensions: [".ts", ".tsx"] })).toEqual([
+      "production_source",
+    ])
     expect(
-      classifyFilePathDefault("src/index.ts", { sourceExtensions: [".ts", ".tsx"] }),
-    ).toEqual(["production_source"])
-    expect(
-      classifyFilePathDefault("src/index.test.ts", { sourceExtensions: [".ts", ".tsx"] }),
+      classifyCategories("src/index.test.ts", { sourceExtensions: [".ts", ".tsx"] }),
     ).toContain("test_code")
     expect(
-      classifyFilePathDefault("src/_generated/api.ts", { sourceExtensions: [".ts", ".tsx"] }),
+      classifyCategories("src/_generated/api.ts", { sourceExtensions: [".ts", ".tsx"] }),
     ).toContain("generated")
-    expect(
-      classifyFilePathDefault("examples/demo.ts", { sourceExtensions: [".ts", ".tsx"] }),
-    ).toContain("example")
+    expect(classifyCategories("examples/demo.ts", { sourceExtensions: [".ts", ".tsx"] })).toContain(
+      "example",
+    )
   })
 
   test("default classification preserves taxonomy rule behavior", () => {
@@ -54,7 +63,7 @@ describe("file taxonomy", () => {
     ] as const
 
     for (const [path, categories] of examples) {
-      expect(classifyFilePathDefault(path, sourceOptions)).toEqual(categories)
+      expect(classifyCategories(path, sourceOptions)).toEqual(categories)
     }
   })
 

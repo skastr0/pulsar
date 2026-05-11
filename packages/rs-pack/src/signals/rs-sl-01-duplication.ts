@@ -17,12 +17,12 @@ import {
 } from "./shared-rust-ast.js"
 import { isExcluded } from "./shared-globs.js"
 
-export const RsSl01Config = Schema.Struct({
+const RsSl01Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   min_tokens: Schema.Number,
   top_n_diagnostics: Schema.Number,
 })
-export type RsSl01Config = typeof RsSl01Config.Type
+type RsSl01Config = typeof RsSl01Config.Type
 
 export interface DuplicateGroupMember {
   readonly file: string

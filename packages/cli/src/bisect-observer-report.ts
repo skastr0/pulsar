@@ -22,7 +22,7 @@ import type {
 } from "./bisect-types.js"
 import type { BisectSamplingSummary } from "./bisect-sampling.js"
 
-export type ObserverReportOptions = {
+type ObserverReportOptions = {
   readonly repoPath: string
   readonly fromSha: string
   readonly toSha: string

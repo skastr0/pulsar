@@ -178,7 +178,7 @@ const HELP_SECTIONS: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [
   ],
 ]
 
-export const renderHelp = (): string =>
+const renderHelp = (): string =>
   [
     `pulsar — Pulsar CLI v${CLI_VERSION}`,
     "",

@@ -9,7 +9,7 @@ export const ProjectModuleRefConfig = Schema.Record({
 })
 export type ProjectModuleRefConfig = typeof ProjectModuleRefConfig.Type
 
-export const ProjectModuleRefBase = Schema.Struct({
+const ProjectModuleRefBase = Schema.Struct({
   id: NonEmptyString,
   enabled: Schema.optionalWith(Schema.Boolean, { default: () => true }),
   exportName: Schema.optional(NonEmptyString),
@@ -70,7 +70,7 @@ export const fingerprintProjectModuleManifest = (
     modules: normalizeProjectModuleRefs(manifest.modules),
   })
 
-export const normalizeProjectModuleRefs = (
+const normalizeProjectModuleRefs = (
   refs: ReadonlyArray<ProjectModuleRef>,
 ): ReadonlyArray<ProjectModuleRef> =>
   [...refs].sort((left, right) =>

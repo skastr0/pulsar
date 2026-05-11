@@ -5,7 +5,6 @@ import { join } from "node:path"
 import { Effect, Schema } from "effect"
 import {
   TsDe02,
-  TsDe02Config,
   type TsDe02Output,
 } from "../signals/ts-de-02-fan-in-out.js"
 import { TsProjectLayer } from "../ts-project.js"
@@ -145,7 +144,7 @@ describe("TS-DE-02 (fan-in / fan-out)", () => {
   })
 
   test("configSchema decodes defaults round-trip", () => {
-    const decoded = Schema.decodeUnknownSync(TsDe02Config)(TsDe02.defaultConfig)
+    const decoded = Schema.decodeUnknownSync(TsDe02.configSchema)(TsDe02.defaultConfig)
     expect(decoded.hub_fan_in_threshold).toBe(10)
     expect(decoded.hub_fan_out_threshold).toBe(5)
   })

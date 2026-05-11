@@ -1,4 +1,4 @@
-export class CargoLockParseError extends Error {
+class CargoLockParseError extends Error {
   constructor(message: string) {
     super(message)
     this.name = "CargoLockParseError"

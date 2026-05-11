@@ -80,7 +80,7 @@ export const TsSl04FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
   },
 ]
 
-export const STUB_KINDS = new Set<StubKind>([
+const STUB_KINDS = new Set<StubKind>([
   "throw-not-implemented",
   "empty-body",
   "todo-comment",

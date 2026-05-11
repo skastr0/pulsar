@@ -135,7 +135,7 @@ const updateRecordTimestamp = (
   lastAccessedAt: at,
 })
 
-export const makeDiskBackedCache = (config?: CacheConfig): Effect.Effect<SignalCache> =>
+const makeDiskBackedCache = (config?: CacheConfig): Effect.Effect<SignalCache> =>
   Effect.tryPromise(async () => {
     const cacheDir = config?.cacheDir ?? join(process.cwd(), ".pulsar", "cache")
     const maxSizeBytes = config?.maxSizeBytes ?? DEFAULT_CACHE_MAX_SIZE_BYTES

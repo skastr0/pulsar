@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto"
 import { Schema } from "effect"
 
-export const Severity = Schema.Literal("info", "warn", "block")
-export type Severity = typeof Severity.Type
+const Severity = Schema.Literal("info", "warn", "block")
+type Severity = typeof Severity.Type
 
 /**
  * A single actionable finding emitted by a signal's `diagnose` pass.

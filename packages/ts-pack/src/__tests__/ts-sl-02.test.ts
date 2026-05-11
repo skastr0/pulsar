@@ -8,7 +8,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { TsSl02 } from "../signals/ts-sl-02-inconsistent-clones.js"
 import { TsSl01 } from "../signals/ts-sl-01-duplication.js"
-import type { TsSl01Output } from "../signals/ts-sl-01-duplication.js"
+import type { TsSl01Output } from "../signals/ts-sl-01-model.js"
 
 const git = (repo: string, args: Array<string>, env?: Record<string, string>): void => {
   const result = spawnSync("git", args, {

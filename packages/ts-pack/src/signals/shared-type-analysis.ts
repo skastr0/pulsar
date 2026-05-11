@@ -85,7 +85,7 @@ export const resolveReferenceLikeName = (node: TypeReferenceLikeNode): string =>
   return node.getExprName().getText()
 }
 
-export const typeSyntaxDepth = (node: TypeNode | undefined): number => {
+const typeSyntaxDepth = (node: TypeNode | undefined): number => {
   if (node === undefined) return 0
   if (Node.isParenthesizedTypeNode(node)) {
     return typeSyntaxDepth(node.getTypeNode())

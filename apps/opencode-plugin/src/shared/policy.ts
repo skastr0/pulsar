@@ -4,13 +4,13 @@ import { PluginConfig } from "./options"
 const BLOCKED_ENV_PATH = /(^|\/)\.env(\..+)?$/
 const BLOCKED_TOOLS = new Set(["read", "write", "edit", "apply_patch"])
 
-export const toolInvocationSchema = Schema.Struct({
+const toolInvocationSchema = Schema.Struct({
   tool: Schema.String,
   filePath: Schema.optional(Schema.String),
 })
-export type ToolInvocation = typeof toolInvocationSchema.Type
+type ToolInvocation = typeof toolInvocationSchema.Type
 
-export type ToolDecision =
+type ToolDecision =
   | {
       readonly _tag: "Allow"
     }
@@ -27,7 +27,7 @@ const extractFilePath = (args: unknown): string | undefined => {
   return typeof args.filePath === "string" ? args.filePath : undefined
 }
 
-export const shouldDenyToolInvocation = (
+const shouldDenyToolInvocation = (
   invocation: ToolInvocation,
   blockEnvFiles: boolean,
 ): ToolDecision => {

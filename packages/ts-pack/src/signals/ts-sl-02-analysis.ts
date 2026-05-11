@@ -1,5 +1,5 @@
 import { simpleGit } from "simple-git"
-import type { TsSl01Output, CloneGroup } from "./ts-sl-01-duplication.js"
+import type { TsSl01Output, CloneGroup } from "./ts-sl-01-model.js"
 import { classifyCloneEvidence } from "./ts-sl-02-evidence.js"
 import {
   calculateDistribution,
@@ -135,5 +135,4 @@ const isNestedCloneGroup = (candidate: CloneGroup, existing: CloneGroup): boolea
     ),
   )
 }
-
 

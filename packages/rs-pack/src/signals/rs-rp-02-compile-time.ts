@@ -15,11 +15,11 @@ import { RustProjectTag, type RustManifestInfo } from "../project.js"
 
 const execFileAsync = promisify(execFile)
 
-export const RsRp02Config = Schema.Struct({
+const RsRp02Config = Schema.Struct({
   top_n_diagnostics: Schema.Number,
   measure_live_builds: Schema.Boolean,
 })
-export type RsRp02Config = typeof RsRp02Config.Type
+type RsRp02Config = typeof RsRp02Config.Type
 
 interface CargoTimingUnit {
   readonly i: number

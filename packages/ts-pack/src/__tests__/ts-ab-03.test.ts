@@ -5,7 +5,6 @@ import { join } from "node:path"
 import { Effect, Schema } from "effect"
 import {
   TsAb03,
-  TsAb03Config,
   type TsAb03Output,
 } from "../signals/ts-ab-03-type-indirection-depth.js"
 import { TsProjectLayer } from "../ts-project.js"
@@ -158,7 +157,7 @@ describe("TS-AB-03 (type indirection depth)", () => {
   })
 
   test("configSchema decodes defaults round-trip", () => {
-    const decoded = Schema.decodeUnknownSync(TsAb03Config)(TsAb03.defaultConfig)
+    const decoded = Schema.decodeUnknownSync(TsAb03.configSchema)(TsAb03.defaultConfig)
     expect(decoded.max_depth).toBe(4)
     expect(decoded.max_traversal_steps).toBe(16)
   })

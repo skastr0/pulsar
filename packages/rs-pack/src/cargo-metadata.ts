@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 
-export class CargoMetadataParseError extends Error {
+class CargoMetadataParseError extends Error {
   constructor(message: string) {
     super(message)
     this.name = "CargoMetadataParseError"
@@ -230,7 +230,7 @@ const parseJson = (input: string): unknown => {
   }
 }
 
-export const parseCargoMetadata = (input: string | unknown): CargoMetadata => {
+const parseCargoMetadata = (input: string | unknown): CargoMetadata => {
   const raw = typeof input === "string" ? parseJson(input) : input
   const record = asRecord(raw, "cargo metadata")
   return {

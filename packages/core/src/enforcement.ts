@@ -1,14 +1,14 @@
 import { Schema } from "effect"
 import type { SignalKind, Tier } from "./tier.js"
 
-export const EnforcementLevel = Schema.Literal(
+const EnforcementLevel = Schema.Literal(
   "hard-gate",
   "soft-warning",
   "trend",
   "dashboard",
   "review-routing",
 )
-export type EnforcementLevel = typeof EnforcementLevel.Type
+type EnforcementLevel = typeof EnforcementLevel.Type
 
 export const EnforcementCeiling = Schema.Array(EnforcementLevel)
 export type EnforcementCeiling = typeof EnforcementCeiling.Type

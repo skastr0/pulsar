@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process"
 import { createTimeSeriesServices } from "@skastr0/pulsar-core/time-series"
 import { CATEGORIES } from "@skastr0/pulsar-core/signal"
 import { Effect, Exit } from "effect"
-import { countFinalApplicableSignalsByCategory } from "../bisect-output.js"
+import { printObserverHumanReport } from "../bisect-output.js"
 import {
   chooseAdaptiveMidpoint,
   chooseObserverAdaptiveMidpoint,
@@ -22,7 +22,7 @@ import {
   findFirstCrossing,
 } from "../bisect-signal-report.js"
 import { runBisectCommand } from "../bisect.js"
-import type { CommitScore } from "../bisect-types.js"
+import type { CommitScore, ObserverBisectReport } from "../bisect-types.js"
 import { buildPulsarRegistry } from "../runtime.js"
 
 const repoRoot = resolve(import.meta.dir, "../../../..")
@@ -275,13 +275,91 @@ describe("observer bisect report helpers", () => {
       hardGateStatus: "pass",
       hardGateViolationCount: 0,
     } as const
+    const healthyCategory = {
+      scores: [1],
+      min: 1,
+      max: 1,
+      final: 1,
+      drift: 0,
+      distinctLevels: 1,
+    }
+    const categoryTrajectory: ObserverBisectReport["perCategory"] = {
+      "architectural-drift": healthyCategory,
+      "dependency-entropy": healthyCategory,
+      "abstraction-bloat": healthyCategory,
+      "legibility-decay": healthyCategory,
+      "generated-slop": healthyCategory,
+      "review-pain": healthyCategory,
+    }
+    const categoryCulprits: ObserverBisectReport["perCategoryCulprits"] = {
+      "architectural-drift": [],
+      "dependency-entropy": [],
+      "abstraction-bloat": [],
+      "legibility-decay": [],
+      "generated-slop": [],
+      "review-pain": [],
+    }
+    const report = {
+      schemaVersion: "observer-bisect/v2",
+      repoPath: repoRoot,
+      vectorName: null,
+      fromSha: "from",
+      toSha: "to",
+      trajectory: [finalEntry],
+      commits: ["abc"],
+      curves: {
+        weightedMean: [0.9],
+        readiness: [0.9],
+        categories: { "generated-slop": [1] },
+        signals: { "TS-LIVE": [0.9] },
+      },
+      signalCategories: { "TS-LIVE": "generated-slop" },
+      selectedSignals: [],
+      selectedCategories: ["generated-slop"],
+      sampling: {
+        requested: "full",
+        applied: "full",
+        totalCommits: 1,
+        scoredCommits: 1,
+        diagnostics: [],
+      },
+      finalReadinessScore: 0.9,
+      minReadinessScore: 0.9,
+      maxReadinessScore: 0.9,
+      readinessDrift: 0,
+      finalApplicableSignalCount: 1,
+      minWeightedMean: 0.9,
+      maxWeightedMean: 0.9,
+      finalWeightedMean: 0.9,
+      totalDrift: 0,
+      hardGateStatusAtFinal: "pass",
+      finalMinimumDimension: undefined,
+      perCategory: categoryTrajectory,
+      perSignal: {},
+      readinessCulprits: [],
+      readinessDriftCulprits: [],
+      weightedMeanCulprits: [],
+      weightedMeanDriftCulprits: [],
+      perCategoryCulprits: categoryCulprits,
+      perCategoryDriftCulprits: categoryCulprits,
+      perSignalCulprits: {},
+      perSignalDriftCulprits: {},
+      firstCrossing: undefined,
+    } satisfies ObserverBisectReport
 
-    expect(
-      countFinalApplicableSignalsByCategory(
-        finalEntry,
-        "generated-slop",
-      ),
-    ).toBe(1)
+    const printed: Array<string> = []
+    const originalLog = console.log
+    console.log = (...args: Array<unknown>) => {
+      printed.push(args.map(String).join(" "))
+    }
+    try {
+      printObserverHumanReport(report, 12, 1)
+    } finally {
+      console.log = originalLog
+    }
+
+    expect(printed.join("\n")).toContain("generated-slop")
+    expect(printed.join("\n")).toContain("(1 applicable)")
   })
 })
 

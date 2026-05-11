@@ -4,11 +4,19 @@ import { tmpdir } from "node:os"
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import {
-  DEFAULT_HALF_LIFE_DAYS,
-  computeEffectiveConfidence,
+  SignalCacheTag,
+  type CacheConfig,
   type CacheKey,
+  type SignalCache,
 } from "../cache.js"
-import { makeDiskBackedCache } from "../cache-disk.js"
+import { DiskBackedCacheLayer } from "../cache-disk.js"
+
+const makeDiskCache = (config?: CacheConfig): Promise<SignalCache> =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      return yield* SignalCacheTag
+    }).pipe(Effect.provide(DiskBackedCacheLayer(config))),
+  )
 
 describe("tiered disk cache", () => {
   test("round-trips tiered entries through JSONL persistence", async () => {
@@ -16,12 +24,12 @@ describe("tiered disk cache", () => {
     const key: CacheKey = { signalId: "TEST-T2", contentHash: "content", configHash: "config" }
 
     try {
-      const cache = await Effect.runPromise(makeDiskBackedCache({ cacheDir }))
+      const cache = await makeDiskCache({ cacheDir })
       await Effect.runPromise(
         cache.setTiered(key, { score: 0.8 }, { tier: 2, refVersionHash: "ref-v1" }),
       )
 
-      const reloaded = await Effect.runPromise(makeDiskBackedCache({ cacheDir }))
+      const reloaded = await makeDiskCache({ cacheDir })
       const hit = await Effect.runPromise(
         reloaded.getTiered<{ score: number }>(key, { tier: 2, refVersionHash: "ref-v1" }),
       )
@@ -39,7 +47,7 @@ describe("tiered disk cache", () => {
     const key: CacheKey = { signalId: "TEST-T2", contentHash: "content", configHash: "config" }
 
     try {
-      const cache = await Effect.runPromise(makeDiskBackedCache({ cacheDir }))
+      const cache = await makeDiskCache({ cacheDir })
       await Effect.runPromise(
         cache.setTiered(key, { score: 1 }, { tier: 2, refVersionHash: "ref-v1" }),
       )
@@ -59,7 +67,7 @@ describe("tiered disk cache", () => {
     const computedAt = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString()
 
     try {
-      const cache = await Effect.runPromise(makeDiskBackedCache({ cacheDir }))
+      const cache = await makeDiskCache({ cacheDir })
       await Effect.runPromise(
         cache.setTiered(
           key,
@@ -89,20 +97,6 @@ describe("tiered disk cache", () => {
         cache.getTiered(key, { tier: 3, modelId: "gpt-test-v2" }),
       )
       expect(modelMiss.status).toBe("miss")
-
-      const entryConfidence = computeEffectiveConfidence(
-        {
-          value: { score: 0.5 },
-          computedAt,
-          tier: 3,
-          refVersionHash: undefined,
-          modelId: "gpt-test-v1",
-          baseConfidence: 0.9,
-          halfLifeDays: DEFAULT_HALF_LIFE_DAYS,
-        },
-        new Date(),
-      )
-      expect(entryConfidence).toBeLessThan(0.5)
     } finally {
       await rm(cacheDir, { recursive: true, force: true })
     }
@@ -112,9 +106,7 @@ describe("tiered disk cache", () => {
     const cacheDir = await mkdtemp(join(tmpdir(), "pulsar-cache-lru-"))
 
     try {
-      const warmCache = await Effect.runPromise(
-        makeDiskBackedCache({ cacheDir, maxSizeBytes: 10_000_000 }),
-      )
+      const warmCache = await makeDiskCache({ cacheDir, maxSizeBytes: 10_000_000 })
       const makeKey = (name: string): CacheKey => ({
         signalId: "TEST-LRU",
         contentHash: name,
@@ -141,17 +133,12 @@ describe("tiered disk cache", () => {
         }),
       )
 
-      const threeEntryBytes = await Effect.runPromise(
-        makeDiskBackedCache({ cacheDir, maxSizeBytes: 10_000_000 }).pipe(
-          Effect.flatMap((cache) => cache.totalBytes),
-        ),
-      )
-      const constrainedCache = await Effect.runPromise(
-        makeDiskBackedCache({
-          cacheDir,
-          maxSizeBytes: Math.floor((twoEntryBytes + threeEntryBytes) / 2),
-        }),
-      )
+      const fullCache = await makeDiskCache({ cacheDir, maxSizeBytes: 10_000_000 })
+      const threeEntryBytes = await Effect.runPromise(fullCache.totalBytes)
+      const constrainedCache = await makeDiskCache({
+        cacheDir,
+        maxSizeBytes: Math.floor((twoEntryBytes + threeEntryBytes) / 2),
+      })
 
       await Effect.runPromise(
         constrainedCache.setTiered(makeKey("b"), { payload: "x".repeat(50) }, {
@@ -211,7 +198,7 @@ describe("tiered disk cache", () => {
       }
       await writeFile(filePath, lines.join("\n"))
 
-      const cache = await Effect.runPromise(makeDiskBackedCache({ cacheDir }))
+      const cache = await makeDiskCache({ cacheDir })
       const keys = Array.from({ length: 1000 }, (_, index) => ({
         signalId: "BENCH",
         contentHash: `content-${index}`,

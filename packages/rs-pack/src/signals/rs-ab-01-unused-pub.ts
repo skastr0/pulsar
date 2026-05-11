@@ -13,11 +13,11 @@ import {
 } from "./shared-rust-resolution.js"
 import { isExcluded } from "./shared-globs.js"
 
-export const RsAb01Config = Schema.Struct({
+const RsAb01Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   top_n_diagnostics: Schema.Number,
 })
-export type RsAb01Config = typeof RsAb01Config.Type
+type RsAb01Config = typeof RsAb01Config.Type
 
 export interface UnusedPublicItem {
   readonly crate: string

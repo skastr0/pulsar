@@ -21,13 +21,13 @@ export const GlossaryProvenance = Schema.Struct({
 })
 export type GlossaryProvenance = typeof GlossaryProvenance.Type
 
-export const GlossaryDecision = Schema.Struct({
+const GlossaryDecision = Schema.Struct({
   action: Schema.Literal("accept", "reject", "merge"),
   merge_into: Schema.optional(Schema.String),
 })
-export type GlossaryDecision = typeof GlossaryDecision.Type
+type GlossaryDecision = typeof GlossaryDecision.Type
 
-export const GlossaryCandidateTerm = Schema.Struct({
+const GlossaryCandidateTerm = Schema.Struct({
   term: Schema.String,
   normalized: Schema.String,
   frequency: Schema.Number,
@@ -35,14 +35,14 @@ export const GlossaryCandidateTerm = Schema.Struct({
   co_occurs_with: Schema.Array(Schema.String),
   decision: Schema.optional(GlossaryDecision),
 })
-export type GlossaryCandidateTerm = typeof GlossaryCandidateTerm.Type
+type GlossaryCandidateTerm = typeof GlossaryCandidateTerm.Type
 
-export const GlossarySynonymCandidate = Schema.Struct({
+const GlossarySynonymCandidate = Schema.Struct({
   terms: Schema.Array(Schema.String),
   score: Schema.Number,
   shared_context_terms: Schema.Array(Schema.String),
 })
-export type GlossarySynonymCandidate = typeof GlossarySynonymCandidate.Type
+type GlossarySynonymCandidate = typeof GlossarySynonymCandidate.Type
 
 export const GlossaryDraft = Schema.Struct({
   schema_version: Schema.Literal(1),

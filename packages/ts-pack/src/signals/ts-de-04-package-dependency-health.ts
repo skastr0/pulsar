@@ -15,10 +15,6 @@ import type {
   UnusedDeclaredDependency,
 } from "./ts-de-04-package-health.js"
 
-export { TsDe04Config } from "./ts-de-04-model.js"
-export type { TsDe04Output } from "./ts-de-04-model.js"
-export type { DependencyMismatch, PackageDependencyHealth, UnusedDeclaredDependency }
-
 export const TsDe04: Signal<
   TsDe04Config,
   TsDe04Output,

@@ -1,4 +1,3 @@
-import type { SignalContext } from "@skastr0/pulsar-core/signal"
 import { Schema } from "effect"
 import type { SourceFile } from "ts-morph"
 import type { PackageInfo, PackageManifest } from "../discovery.js"
@@ -59,5 +58,3 @@ export type DependencyUsageContext = {
 }
 
 export type ManifestPackageInfo = PackageInfo & { manifest: PackageManifest }
-
-export type De04SignalContext = SignalContext

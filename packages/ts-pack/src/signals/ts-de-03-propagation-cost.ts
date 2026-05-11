@@ -6,14 +6,14 @@ import { computeReachabilityCounts } from "../graph/reachability.js"
 import { condenseGraph, tarjanSccs } from "../graph/tarjan.js"
 import { TsProjectTag } from "../ts-project.js"
 
-export const TsDe03Config = Schema.Struct({
+const TsDe03Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   target: Schema.Number,
   scale: Schema.Number,
   small_sample_threshold: Schema.Number,
   top_n_diagnostics: Schema.Number,
 })
-export type TsDe03Config = typeof TsDe03Config.Type
+type TsDe03Config = typeof TsDe03Config.Type
 
 export interface PropagationInfo {
   readonly reverseReach: number

@@ -13,9 +13,8 @@ import {
 import type { TsSl04Output } from "./ts-sl-04-model.js"
 import { computeTsSl04Output } from "./ts-sl-04-output.js"
 
-export const TsSl04Config = TsSl04ConfigSchema
-export type TsSl04Config = TsSl04ConfigShape
-export type { Stub, StubCandidateSummary, TsSl04Output } from "./ts-sl-04-model.js"
+const TsSl04Config = TsSl04ConfigSchema
+type TsSl04Config = TsSl04ConfigShape
 
 export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalContextTag> = {
   id: "TS-SL-04-unfinished-implementations",

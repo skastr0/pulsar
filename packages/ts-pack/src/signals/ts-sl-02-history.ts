@@ -1,5 +1,5 @@
 import { simpleGit } from "simple-git"
-import type { CloneGroup } from "./ts-sl-01-duplication.js"
+import type { CloneGroup } from "./ts-sl-01-model.js"
 import type { CloneMember } from "./ts-sl-02-inconsistent-clones.js"
 
 type GitClient = ReturnType<typeof simpleGit>

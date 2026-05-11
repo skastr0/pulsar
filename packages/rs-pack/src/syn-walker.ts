@@ -3,7 +3,6 @@ import {
   Language,
   Node,
   Parser,
-  type Point,
   type Tree,
 } from "web-tree-sitter"
 import treeSitterWasmPath from "web-tree-sitter/tree-sitter.wasm" with { type: "file" }
@@ -15,20 +14,19 @@ import treeSitterRustWasmPath from "tree-sitter-rust/tree-sitter-rust.wasm" with
  * reversible AST choice that keeps TypeScript-side parsing toolchain-free.
  */
 
-export class RustSyntaxParserError extends Error {
+class RustSyntaxParserError extends Error {
   constructor(message: string) {
     super(message)
     this.name = "RustSyntaxParserError"
   }
 }
 
-export type RustPoint = Point
 export type RustSyntaxNode = Node
 export type RustSyntaxTree = Tree
 
 let rustLanguagePromise: Promise<Language> | undefined
 
-export const parseRustSource = async (source: string): Promise<RustSyntaxTree> => {
+const parseRustSource = async (source: string): Promise<RustSyntaxTree> => {
   const language = await loadRustLanguage()
   const parser = new Parser()
   parser.setLanguage(language)

@@ -18,8 +18,8 @@ import { resolveRepoRoot } from "./runtime-git.js"
  * The pulsar registry ships both TS and Rust packs, but each repo only
  * activates the packs that have local source evidence.
  */
-export const PULSAR_SIGNALS = [...TS_PACK_SIGNALS, ...RS_PACK_SIGNALS]
-export const PULSAR_SHARED_SIGNALS = SHARED_SIGNALS
+const PULSAR_SIGNALS = [...TS_PACK_SIGNALS, ...RS_PACK_SIGNALS]
+const PULSAR_SHARED_SIGNALS = SHARED_SIGNALS
 
 export const isReservedRustSignalId = (signalId: string): boolean => signalId.startsWith("RS-")
 

@@ -16,13 +16,6 @@ import {
   summarizeThresholds,
 } from "./ts-ld-02-thresholds.js"
 
-export {
-  TsLd02Config,
-  type FileSize,
-  type FunctionSize,
-  type TsLd02Output,
-} from "./ts-ld-02-model.js"
-
 /**
  * TS-LD-02 — function / file size distribution.
  *

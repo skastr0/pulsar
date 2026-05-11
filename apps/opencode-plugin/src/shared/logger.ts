@@ -3,7 +3,7 @@ import { OpencodeClientError } from "./errors"
 import { PLUGIN_SERVICE } from "./constants"
 import type { LogLevel } from "./options"
 
-export type LogEntry = {
+type LogEntry = {
   readonly level: LogLevel
   readonly message: string
   readonly extra?: unknown

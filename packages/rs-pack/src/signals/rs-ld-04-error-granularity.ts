@@ -8,11 +8,11 @@ import { collectRustProjectFacts } from "../rust-analysis.js"
 import { RustProjectTag } from "../project.js"
 import { isExcluded } from "./shared-globs.js"
 
-export const RsLd04Config = Schema.Struct({
+const RsLd04Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   top_n_diagnostics: Schema.Number,
 })
-export type RsLd04Config = typeof RsLd04Config.Type
+type RsLd04Config = typeof RsLd04Config.Type
 
 export interface BoundaryErrorSurface {
   readonly file: string

@@ -13,13 +13,6 @@ import {
   cloneMemberSummary,
 } from "./ts-sl-01-policy.js"
 
-export { TsSl01Config } from "./ts-sl-01-model.js"
-export type {
-  CloneGroup,
-  CloneGroupMember,
-  TsSl01Output,
-} from "./ts-sl-01-model.js"
-
 export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalContextTag> = {
   id: "TS-SL-01-duplication",
   title: "Duplication",

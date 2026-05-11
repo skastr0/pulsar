@@ -26,7 +26,7 @@ export class ToolDenied extends Schema.TaggedError<ToolDenied>()(
   },
 ) {}
 
-export const renderPluginError = (error: unknown): Error | undefined => {
+const renderPluginError = (error: unknown): Error | undefined => {
   if (error instanceof ToolDenied) {
     return new Error(error.reason)
   }

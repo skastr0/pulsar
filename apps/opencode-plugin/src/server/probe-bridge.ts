@@ -12,7 +12,7 @@ import { Effect } from "effect"
 
 const execFileAsync = promisify(execFile)
 
-export interface ProbePulsarMetadata {
+interface ProbePulsarMetadata {
   readonly supported: boolean
   readonly note: string
   readonly sha?: string

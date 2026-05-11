@@ -12,13 +12,13 @@ import {
   measureDeclaration,
 } from "./ts-ab-03-indirection-walker.js"
 
-export const TsAb03Config = Schema.Struct({
+const TsAb03Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   max_depth: Schema.Number,
   max_traversal_steps: Schema.Number,
   top_n_diagnostics: Schema.Number,
 })
-export type TsAb03Config = typeof TsAb03Config.Type
+type TsAb03Config = typeof TsAb03Config.Type
 
 export interface TypeIndirectionEntry {
   readonly file: string

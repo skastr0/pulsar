@@ -1,10 +1,10 @@
 import { Context, Effect, Layer, Schema } from "effect"
 import { PluginConfigError } from "./errors"
 
-export const logLevelSchema = Schema.Literal("debug", "info", "warn", "error")
+const logLevelSchema = Schema.Literal("debug", "info", "warn", "error")
 export type LogLevel = typeof logLevelSchema.Type
 
-export const pluginOptionsSchema = Schema.Struct({
+const pluginOptionsSchema = Schema.Struct({
   blockEnvFiles: Schema.optionalWith(Schema.Boolean, { default: () => true }),
   chatTemperature: Schema.optionalWith(
     Schema.Number.pipe(Schema.between(0, 2)),

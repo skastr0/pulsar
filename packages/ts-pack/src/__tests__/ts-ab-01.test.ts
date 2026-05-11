@@ -5,7 +5,6 @@ import { join } from "node:path"
 import { Effect, Schema } from "effect"
 import {
   TsAb01,
-  TsAb01Config,
   type TsAb01Output,
 } from "../signals/ts-ab-01-public-export-surface.js"
 import { TsProjectLayer } from "../ts-project.js"
@@ -215,7 +214,7 @@ describe("TS-AB-01 (public export surface)", () => {
   })
 
   test("configSchema decodes defaults round-trip", () => {
-    const decoded = Schema.decodeUnknownSync(TsAb01Config)(TsAb01.defaultConfig)
+    const decoded = Schema.decodeUnknownSync(TsAb01.configSchema)(TsAb01.defaultConfig)
     expect(decoded.surface_threshold).toBe(50)
     expect(decoded.public_export_globs.length).toBeGreaterThan(0)
   })

@@ -21,10 +21,7 @@ import {
   type ReExportAnalysis,
 } from "./ts-ad-03-reexport-analysis.js"
 
-export type { ReExportChain } from "./ts-ad-03-chains.js"
-export type { ReExportAnalysis } from "./ts-ad-03-reexport-analysis.js"
-
-export const TsAd03Config = Schema.Struct({
+const TsAd03Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   barrel_ratio_threshold: Schema.Number,
   index_reexport_threshold: Schema.Number,
@@ -32,7 +29,7 @@ export const TsAd03Config = Schema.Struct({
   score_scale: Schema.Number,
   top_n_diagnostics: Schema.Number,
 })
-export type TsAd03Config = typeof TsAd03Config.Type
+type TsAd03Config = typeof TsAd03Config.Type
 
 export interface TsAd03Output {
   readonly byFile: ReadonlyMap<string, ReExportAnalysis>

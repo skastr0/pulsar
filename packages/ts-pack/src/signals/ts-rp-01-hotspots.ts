@@ -7,16 +7,15 @@ import {
   type Quadrant,
 } from "./ts-rp-01-hotspot-model.js"
 
-export const TsRp01Config = Schema.Struct({
+const TsRp01Config = Schema.Struct({
   top_n: Schema.Number,
   min_churn: Schema.Number,
   min_complexity: Schema.Number,
   threshold_softness: Schema.Number,
   peer_percentile_floor: Schema.Number,
 })
-export type TsRp01Config = typeof TsRp01Config.Type
+type TsRp01Config = typeof TsRp01Config.Type
 
-export type { Hotspot, Quadrant }
 export type TsRp01Output = HotspotOutput
 
 /**

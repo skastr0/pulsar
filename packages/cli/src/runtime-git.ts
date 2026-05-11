@@ -23,7 +23,7 @@ export const resolveRepoRoot = (repoPath: string) =>
 
 export const readHeadSha = (repoRoot: string) => resolveGitRef(repoRoot, "HEAD")
 
-export const resolveGitRef = (repoRoot: string, ref: string) =>
+const resolveGitRef = (repoRoot: string, ref: string) =>
   Effect.gen(function* () {
     const git = simpleGit(repoRoot)
     const resolved = yield* Effect.tryPromise({

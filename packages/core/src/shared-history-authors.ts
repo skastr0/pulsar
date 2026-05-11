@@ -76,7 +76,7 @@ export const loadAuthorAliases = async (
   return aliases
 }
 
-export const normalizeAuthorKey = (value: string): string =>
+const normalizeAuthorKey = (value: string): string =>
   value.trim().replace(/\s+/g, " ").toLowerCase()
 
 export const normalizeAuthor = (

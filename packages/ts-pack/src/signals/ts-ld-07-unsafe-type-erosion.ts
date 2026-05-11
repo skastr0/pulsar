@@ -6,7 +6,7 @@ import { Effect, Schema } from "effect"
 import { TsProjectTag } from "../ts-project.js"
 import { computeUnsafeTypeErosionOutput } from "./ts-ld-07-analysis.js"
 
-export const TsLd07Config = Schema.Struct({
+const TsLd07Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   max_weighted_unsafe_per_kloc: Schema.Number,
   max_boundary_weighted_unsafe: Schema.Number,

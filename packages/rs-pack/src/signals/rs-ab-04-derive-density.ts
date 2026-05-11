@@ -17,11 +17,11 @@ import {
 } from "./shared-rust-ast.js"
 import { isExcluded } from "./shared-globs.js"
 
-export const RsAb04Config = Schema.Struct({
+const RsAb04Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   top_n_diagnostics: Schema.Number,
 })
-export type RsAb04Config = typeof RsAb04Config.Type
+type RsAb04Config = typeof RsAb04Config.Type
 
 export interface DeriveDensityEntry {
   readonly file: string

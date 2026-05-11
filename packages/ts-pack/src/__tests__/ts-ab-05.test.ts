@@ -5,7 +5,6 @@ import { join } from "node:path"
 import { Effect, Schema } from "effect"
 import {
   TsAb05,
-  TsAb05Config,
   type TsAb05Output,
 } from "../signals/ts-ab-05-generic-proliferation.js"
 import { TsProjectLayer } from "../ts-project.js"
@@ -125,7 +124,7 @@ describe("TS-AB-05 (generic parameter proliferation)", () => {
   })
 
   test("configSchema decodes defaults round-trip", () => {
-    const decoded = Schema.decodeUnknownSync(TsAb05Config)(TsAb05.defaultConfig)
+    const decoded = Schema.decodeUnknownSync(TsAb05.configSchema)(TsAb05.defaultConfig)
     expect(decoded.max_generic_parameters).toBe(3)
     expect(decoded.top_n_diagnostics).toBe(10)
   })

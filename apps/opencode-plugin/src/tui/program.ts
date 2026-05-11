@@ -4,7 +4,7 @@ import { PluginLogger } from "../shared/logger"
 import { PluginConfig } from "../shared/options"
 import { TuiHost, type TuiRuntimeEnv } from "./layers"
 
-export type EffectTuiCommand = Omit<TuiCommand, "onSelect"> & {
+type EffectTuiCommand = Omit<TuiCommand, "onSelect"> & {
   readonly onSelect?: Effect.Effect<void, unknown, TuiRuntimeEnv>
 }
 

@@ -8,7 +8,7 @@ import { readBaselineFile, resolveBaselinePath, writeBaselineFile } from "./base
 import { buildPulsarRegistry, observeWorktree, readHeadSha, resolveRepoRoot } from "./runtime.js"
 import { discoverPulsarVector } from "./vector-discovery.js"
 
-export interface BaselineCommandOptions {
+interface BaselineCommandOptions {
   readonly action: "set" | "refresh" | "show"
   readonly repoPath: string
   readonly vectorPath?: string

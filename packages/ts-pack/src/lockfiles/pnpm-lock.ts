@@ -48,7 +48,7 @@ export const readPnpmLockFile = async (filePath: string): Promise<ParsedPnpmLock
   return parsePnpmLock(text)
 }
 
-export const parsePnpmLock = (text: string): ParsedPnpmLock => {
+const parsePnpmLock = (text: string): ParsedPnpmLock => {
   const workspaces = parseImporters(text)
   const packages = parsePackages(text, workspaces)
   return {

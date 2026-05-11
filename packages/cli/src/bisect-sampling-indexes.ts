@@ -4,8 +4,8 @@ export interface RangeCommit {
 }
 
 export const ADAPTIVE_INITIAL_SAMPLES = 17
-export const ADAPTIVE_MAX_GAP = 64
-export const ADAPTIVE_DELTA_THRESHOLD = 0.08
+const ADAPTIVE_MAX_GAP = 64
+const ADAPTIVE_DELTA_THRESHOLD = 0.08
 export const ADAPTIVE_MAX_SCORED_COMMITS = 1025
 
 export const allIndexes = (length: number): ReadonlyArray<number> =>

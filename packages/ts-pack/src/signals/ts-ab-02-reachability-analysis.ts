@@ -9,8 +9,6 @@ import {
 import { packageDisplayName, packageForFile } from "./shared-workspace.js"
 import {
   buildConsumerLookupByFile,
-  isReExportedByPublicEntrypoint,
-  matchingConsumers,
   type ConsumerLookup,
 } from "./ts-ab-02-consumer-lookup.js"
 import { publicEntrypointSourceFiles } from "./ts-ab-02-public-entrypoints.js"
@@ -21,13 +19,7 @@ import {
 } from "./ts-ab-02-source-export-facts.js"
 
 export type ExportBinding = ReturnType<typeof collectExportBindings>[number]
-export type { ConsumerLookup } from "./ts-ab-02-consumer-lookup.js"
-export {
-  isReExportedByPublicEntrypoint,
-  matchingConsumers,
-} from "./ts-ab-02-consumer-lookup.js"
 export type { TypeScriptSourceExportFacts } from "./ts-ab-02-source-export-facts.js"
-export { declarationFactForExport } from "./ts-ab-02-source-export-facts.js"
 
 export interface ReachabilityAnalysis {
   readonly bindings: ReadonlyArray<ExportBinding>

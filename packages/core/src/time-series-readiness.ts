@@ -48,7 +48,7 @@ export const aggregateReadiness = (
   }
 }
 
-export const weightedAverage = <A>(
+const weightedAverage = <A>(
   entries: ReadonlyArray<{ readonly weight: number } & A>,
   value: (entry: A) => number,
   totalWeight: number,

@@ -11,10 +11,10 @@ import {
 } from "../cargo-metadata.js"
 import { RustProjectTag } from "../project.js"
 
-export const RsAd03Config = Schema.Struct({
+const RsAd03Config = Schema.Struct({
   top_n_diagnostics: Schema.Number,
 })
-export type RsAd03Config = typeof RsAd03Config.Type
+type RsAd03Config = typeof RsAd03Config.Type
 
 interface CrateEdge {
   readonly from: string

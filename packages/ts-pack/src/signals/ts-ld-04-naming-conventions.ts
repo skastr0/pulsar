@@ -11,11 +11,11 @@ import {
   type IdentifierDeclarationKind,
 } from "./shared-identifiers.js"
 
-export const TsLd04Config = Schema.Struct({
+const TsLd04Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   top_n_diagnostics: Schema.Number,
 })
-export type TsLd04Config = typeof TsLd04Config.Type
+type TsLd04Config = typeof TsLd04Config.Type
 
 export interface NamingViolation {
   readonly file: string

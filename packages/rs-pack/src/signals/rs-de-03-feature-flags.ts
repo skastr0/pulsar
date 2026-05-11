@@ -10,12 +10,12 @@ import { RustProjectTag } from "../project.js"
 import { DEFAULT_RUST_EXCLUDE_GLOBS } from "./shared-rust-ast.js"
 import { isExcluded, normalizePath } from "./shared-globs.js"
 
-export const RsDe03Config = Schema.Struct({
+const RsDe03Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   warn_feature_count: Schema.Number,
   top_n_diagnostics: Schema.Number,
 })
-export type RsDe03Config = typeof RsDe03Config.Type
+type RsDe03Config = typeof RsDe03Config.Type
 
 export interface FeaturePropagation {
   readonly crate: string

@@ -10,12 +10,12 @@ import { collectRustProjectFacts } from "../rust-analysis.js"
 import { RustProjectTag, type RustProject } from "../project.js"
 import { isExcluded } from "./shared-globs.js"
 
-export const RsAd01Config = Schema.Struct({
+const RsAd01Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   warn_pub_ratio: Schema.Number,
   top_n_diagnostics: Schema.Number,
 })
-export type RsAd01Config = typeof RsAd01Config.Type
+type RsAd01Config = typeof RsAd01Config.Type
 
 export interface ModuleVisibilitySurface {
   readonly module: string

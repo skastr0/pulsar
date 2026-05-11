@@ -11,12 +11,12 @@ import {
   type FunctionComplexityCandidate,
 } from "./ts-ld-01-collection.js"
 
-export const TsLd01Config = Schema.Struct({
+const TsLd01Config = Schema.Struct({
   max_complexity: Schema.Number,
   top_n_diagnostics: Schema.Number,
   exclude_globs: Schema.Array(Schema.String),
 })
-export type TsLd01Config = typeof TsLd01Config.Type
+type TsLd01Config = typeof TsLd01Config.Type
 
 export interface FunctionComplexity {
   readonly file: string

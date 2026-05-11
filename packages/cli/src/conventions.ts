@@ -20,7 +20,7 @@ import {
 } from "./reference-data-file.js"
 import { resolveRepoRoot, withDetachedWorktreeAtRef } from "./runtime.js"
 
-export interface ConventionsCommandOptions {
+interface ConventionsCommandOptions {
   readonly action: "extract" | "confirm"
   readonly repoPath: string
   readonly sha?: string

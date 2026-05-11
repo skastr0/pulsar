@@ -20,7 +20,7 @@ import type {
   SignalTrajectory,
 } from "./bisect-types.js"
 
-export type ObserverReportScope = {
+type ObserverReportScope = {
   readonly signalCategories: Record<string, Category>
   readonly selectedCategories: ReadonlyArray<Category>
   readonly selectedSignalSet: ReadonlySet<string>

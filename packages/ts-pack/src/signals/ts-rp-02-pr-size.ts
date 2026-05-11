@@ -6,7 +6,7 @@ import { TsProjectTag, TsPackageInfoTag } from "../ts-project.js"
 import { formatLargestFiles } from "./ts-rp-02-diagnostics.js"
 import { fromChangedHunks, parseGitDiff, TS_DIFF_PATHSPECS } from "./ts-rp-02-diff.js"
 
-export const TsRp02Config = Schema.Struct({
+const TsRp02Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   test_globs: Schema.Array(Schema.String),
   top_n_diagnostics: Schema.Number,

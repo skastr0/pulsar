@@ -3,11 +3,8 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Effect, Schema } from "effect"
-import {
-  TsDe01,
-  TsDe01Config,
-  type TsDe01Output,
-} from "../signals/ts-de-01-type-level-coupling.js"
+import { TsDe01 } from "../signals/ts-de-01-type-level-coupling.js"
+import type { TsDe01Output } from "../signals/ts-de-01-coupling-output.js"
 import { TsProjectLayer } from "../ts-project.js"
 
 let repo: string
@@ -163,7 +160,7 @@ describe("TS-DE-01 (type-level coupling)", () => {
   })
 
   test("configSchema decodes defaults round-trip", () => {
-    const decoded = Schema.decodeUnknownSync(TsDe01Config)(TsDe01.defaultConfig)
+    const decoded = Schema.decodeUnknownSync(TsDe01.configSchema)(TsDe01.defaultConfig)
     expect(decoded.top_n_diagnostics).toBe(10)
     expect(decoded.exclude_globs.length).toBeGreaterThan(0)
   })

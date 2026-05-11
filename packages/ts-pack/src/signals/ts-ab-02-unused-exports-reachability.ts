@@ -6,12 +6,13 @@ import { Effect, Option, Schema } from "effect"
 import { TsPackageInfoTag, TsProjectTag } from "../ts-project.js"
 import {
   buildReachabilityAnalysis,
-  declarationFactForExport,
-  isReExportedByPublicEntrypoint,
-  matchingConsumers,
   type ExportBinding,
   type TypeScriptSourceExportFacts,
 } from "./ts-ab-02-reachability-analysis.js"
+import {
+  isReExportedByPublicEntrypoint,
+  matchingConsumers,
+} from "./ts-ab-02-consumer-lookup.js"
 import {
   classifyExportReachability,
   compareReachability,
@@ -19,21 +20,20 @@ import {
   type ExportClassification,
   type ExportReachability,
 } from "./ts-ab-02-reachability-output.js"
+import { declarationFactForExport } from "./ts-ab-02-source-export-facts.js"
 
 const BoundaryRuleSchema = Schema.Struct({
   name: Schema.String,
   globs: Schema.Array(Schema.String),
 })
 
-export const TsAb02Config = Schema.Struct({
+const TsAb02Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   public_entry_globs: Schema.Array(Schema.String),
   boundary_rules: Schema.Array(BoundaryRuleSchema),
   top_n_diagnostics: Schema.Number,
 })
 export type TsAb02Config = typeof TsAb02Config.Type
-
-export type { ExportClassification, ExportEvidence, ExportReachability } from "./ts-ab-02-reachability-output.js"
 
 export type TsAb02Output = {
   readonly exports: ReadonlyArray<ExportReachability>

@@ -13,11 +13,11 @@ import {
   summarizeViolationsByPackage,
 } from "./ts-ad-01-analysis.js"
 
-export const TsAd01Config = Schema.Struct({
+const TsAd01Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   top_n_diagnostics: Schema.Number,
 })
-export type TsAd01Config = typeof TsAd01Config.Type
+type TsAd01Config = typeof TsAd01Config.Type
 
 export interface BoundaryViolation {
   readonly fromFile: string

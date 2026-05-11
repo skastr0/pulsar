@@ -13,13 +13,13 @@ import {
 import { DEFAULT_RUST_EXCLUDE_GLOBS } from "./shared-rust-ast.js"
 import { isExcluded } from "./shared-globs.js"
 
-export const RsDe04Config = Schema.Struct({
+const RsDe04Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   hub_fan_in_threshold: Schema.Number,
   hub_fan_out_threshold: Schema.Number,
   top_n_diagnostics: Schema.Number,
 })
-export type RsDe04Config = typeof RsDe04Config.Type
+type RsDe04Config = typeof RsDe04Config.Type
 
 export interface RustModuleFan {
   readonly module: string

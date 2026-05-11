@@ -16,7 +16,7 @@ export const walkNode = (
   }
 }
 
-export const typeChild = (node: RustSyntaxNode): RustSyntaxNode | undefined =>
+const typeChild = (node: RustSyntaxNode): RustSyntaxNode | undefined =>
   namedChildrenOf(node).find((child) =>
     [
       "primitive_type",

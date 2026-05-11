@@ -3,7 +3,7 @@ import type { Category } from "./category.js"
 import { diagnosticHashOf, type Diagnostic } from "./diagnostic.js"
 import type { HardGateViolation } from "./observer.js"
 
-export const baselineViolationSchema = Schema.Struct({
+const baselineViolationSchema = Schema.Struct({
   file: Schema.String,
   line: Schema.optional(Schema.Number),
   hash: Schema.String,
@@ -11,7 +11,7 @@ export const baselineViolationSchema = Schema.Struct({
 })
 export type BaselineViolation = typeof baselineViolationSchema.Type
 
-export const baselineSchema = Schema.Struct({
+const baselineSchema = Schema.Struct({
   schema_version: Schema.Literal(1),
   baseline_sha: Schema.String,
   created_at: Schema.String,

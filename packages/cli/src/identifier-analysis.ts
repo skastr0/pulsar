@@ -19,9 +19,9 @@ export interface IdentifierOccurrence {
   readonly pattern: IdentifierPattern
 }
 
-export type ConstIdentifierContext = "local" | "module-constant" | "schema-type-object"
+type ConstIdentifierContext = "local" | "module-constant" | "schema-type-object"
 
-export interface IdentifierCollectionOptions {
+interface IdentifierCollectionOptions {
   readonly includeParameters: boolean
   readonly includeLocalConstants?: boolean
 }

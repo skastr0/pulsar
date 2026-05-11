@@ -8,12 +8,12 @@ import { collectRustProjectFacts } from "../rust-analysis.js"
 import { RustProjectTag } from "../project.js"
 import { isExcluded } from "./shared-globs.js"
 
-export const RsLd01Config = Schema.Struct({
+const RsLd01Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   safe_only_modules: Schema.Array(Schema.String),
   top_n_diagnostics: Schema.Number,
 })
-export type RsLd01Config = typeof RsLd01Config.Type
+type RsLd01Config = typeof RsLd01Config.Type
 
 export interface UnsafeModuleSummary {
   readonly module: string

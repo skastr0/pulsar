@@ -20,12 +20,12 @@ type MutableFunctionNesting = {
   maxNesting: number
 }
 
-export const TsLd03Config = Schema.Struct({
+const TsLd03Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   max_nesting: Schema.Number,
   top_n_diagnostics: Schema.Number,
 })
-export type TsLd03Config = typeof TsLd03Config.Type
+type TsLd03Config = typeof TsLd03Config.Type
 
 export interface FunctionNesting {
   readonly file: string

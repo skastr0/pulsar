@@ -16,7 +16,7 @@ export const DistributionalSummary = Schema.Struct({
 })
 export type DistributionalSummary = typeof DistributionalSummary.Type
 
-export const emptySummary: DistributionalSummary = {
+const emptySummary: DistributionalSummary = {
   max: 0,
   p95: 0,
   avg: 0,

@@ -1,24 +1,24 @@
 import { Schema } from "effect"
 
-export const CasingPattern = Schema.Literal(
+const CasingPattern = Schema.Literal(
   "camelCase",
   "PascalCase",
   "UPPER_SNAKE_CASE",
   "snake_case",
   "kebab-case",
 )
-export type CasingPattern = typeof CasingPattern.Type
+type CasingPattern = typeof CasingPattern.Type
 
 const NAMING_CONVENTION_PATTERN =
   /^(camelCase|PascalCase|UPPER_SNAKE_CASE|snake_case|kebab-case)( \| (camelCase|PascalCase|UPPER_SNAKE_CASE|snake_case|kebab-case))*$/
 
-export const NamingConventionValue = Schema.String.pipe(
+const NamingConventionValue = Schema.String.pipe(
   Schema.pattern(NAMING_CONVENTION_PATTERN),
 )
-export type NamingConventionValue = typeof NamingConventionValue.Type
+type NamingConventionValue = typeof NamingConventionValue.Type
 
-export const BoundaryVisibility = Schema.Literal("public-api", "internal")
-export type BoundaryVisibility = typeof BoundaryVisibility.Type
+const BoundaryVisibility = Schema.Literal("public-api", "internal")
+type BoundaryVisibility = typeof BoundaryVisibility.Type
 
 export const BoundaryConvention = Schema.Struct({
   visibility: BoundaryVisibility,
@@ -27,12 +27,12 @@ export const BoundaryConvention = Schema.Struct({
 })
 export type BoundaryConvention = typeof BoundaryConvention.Type
 
-export const RustCrateBoundaryConvention = Schema.Struct({
+const RustCrateBoundaryConvention = Schema.Struct({
   visibility: BoundaryVisibility,
   allowed_dependents: Schema.optional(Schema.Array(Schema.String)),
   public_modules: Schema.optional(Schema.Array(Schema.String)),
 })
-export type RustCrateBoundaryConvention = typeof RustCrateBoundaryConvention.Type
+type RustCrateBoundaryConvention = typeof RustCrateBoundaryConvention.Type
 
 export const NamingConventions = Schema.Struct({
   function: NamingConventionValue,
@@ -44,13 +44,13 @@ export const NamingConventions = Schema.Struct({
 })
 export type NamingConventions = typeof NamingConventions.Type
 
-export const ArchitecturalRule = Schema.Struct({
+const ArchitecturalRule = Schema.Struct({
   from: Schema.String,
   to: Schema.String,
   allowed: Schema.Boolean,
   reason: Schema.String,
 })
-export type ArchitecturalRule = typeof ArchitecturalRule.Type
+type ArchitecturalRule = typeof ArchitecturalRule.Type
 
 export const SchemaConventions = Schema.Struct({
   schema_version: Schema.Literal(1),

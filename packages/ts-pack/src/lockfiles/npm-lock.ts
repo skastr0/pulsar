@@ -29,7 +29,7 @@ export const readNpmLockFile = async (filePath: string): Promise<ParsedNpmLock> 
   return parseNpmLock(text)
 }
 
-export const parseNpmLock = (text: string): ParsedNpmLock => {
+const parseNpmLock = (text: string): ParsedNpmLock => {
   const parsed = JSON.parse(text) as {
     readonly packages?: Record<string, Record<string, unknown>>
   }

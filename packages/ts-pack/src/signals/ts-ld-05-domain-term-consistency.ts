@@ -9,11 +9,11 @@ import {
   type IdentifierDeclarationKind,
 } from "./shared-identifiers.js"
 
-export const TsLd05Config = Schema.Struct({
+const TsLd05Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   top_n_diagnostics: Schema.Number,
 })
-export type TsLd05Config = typeof TsLd05Config.Type
+type TsLd05Config = typeof TsLd05Config.Type
 
 export type IdentifierClassification =
   | "matches-glossary"

@@ -19,7 +19,7 @@ export const parseArg = (
   return args[i + 1]
 }
 
-export const flagNameOf = (arg: string): string | undefined => {
+const flagNameOf = (arg: string): string | undefined => {
   if (!arg.startsWith("--")) return undefined
   const equalsIndex = arg.indexOf("=")
   return equalsIndex === -1 ? arg : arg.slice(0, equalsIndex)
@@ -139,14 +139,14 @@ export const formatCliError = (err: unknown): string => {
   return String(err)
 }
 
-export const progressEnabled = (
+const progressEnabled = (
   name: string,
   args: ReadonlyArray<string>,
 ): boolean =>
   !(name === "elicit" && args[0] === "quiz") &&
   !args.includes("--no-progress") && !args.includes("--json")
 
-export const commandProgressLabel = (name: string): string => `pulsar ${name} running`
+const commandProgressLabel = (name: string): string => `pulsar ${name} running`
 
 export const runWithProgress = async <A>(
   name: string,

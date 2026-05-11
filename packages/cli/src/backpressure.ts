@@ -9,7 +9,7 @@ import { Effect } from "effect"
 import { buildPulsarRegistry, resolveRepoRoot } from "./runtime.js"
 import { discoverPulsarVector } from "./vector-discovery.js"
 
-export interface BackpressureCommandOptions {
+interface BackpressureCommandOptions {
   readonly repoPath: string
   readonly vectorPath?: string
   readonly trend?: boolean

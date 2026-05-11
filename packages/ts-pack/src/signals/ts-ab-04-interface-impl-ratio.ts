@@ -9,19 +9,13 @@ import {
 } from "./ts-ab-04-analysis.js"
 import { TsProjectTag } from "../ts-project.js"
 
-export type {
-  DeadInterface,
-  SingleImplPair,
-  TsAb04Output,
-} from "./ts-ab-04-analysis.js"
-
-export const TsAb04Config = Schema.Struct({
+const TsAb04Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   test_globs: Schema.Array(Schema.String),
   public_entry_globs: Schema.Array(Schema.String),
   top_n_diagnostics: Schema.Number,
 })
-export type TsAb04Config = typeof TsAb04Config.Type
+type TsAb04Config = typeof TsAb04Config.Type
 
 export const TsAb04: Signal<TsAb04Config, TsAb04Output, TsProjectTag> = {
   id: "TS-AB-04-interface-implementation-ratio",

@@ -3,13 +3,13 @@ import type { ObserverOutput } from "@skastr0/pulsar-core/observer"
 import type { ReviewPlan, RoutingDiff } from "@skastr0/pulsar-core/routing"
 import type { Diagnostic } from "@skastr0/pulsar-core/signal"
 
-export interface ScoreDelta {
+interface ScoreDelta {
   readonly category: string
   readonly previous: number
   readonly current: number
 }
 
-export interface SurfacedDiagnostic {
+interface SurfacedDiagnostic {
   readonly signalId: string
   readonly severity: string
   readonly message: string

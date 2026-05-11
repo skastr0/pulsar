@@ -50,8 +50,8 @@ export interface CacheLookupResult<T> {
 }
 
 export const DEFAULT_CACHE_MAX_SIZE_BYTES = 500 * 1024 * 1024
-export const DEFAULT_CONFIDENCE_THRESHOLD = 0.5
-export const DEFAULT_HALF_LIFE_DAYS = 30
+const DEFAULT_CONFIDENCE_THRESHOLD = 0.5
+const DEFAULT_HALF_LIFE_DAYS = 30
 
 export const cacheKeyString = (key: CacheKey): string =>
   `${key.signalId}::${key.contentHash}::${key.configHash}`
@@ -73,7 +73,7 @@ export const buildTieredCacheEntry = <T>(
   }
 }
 
-export const computeEffectiveConfidence = <T>(
+const computeEffectiveConfidence = <T>(
   entry: TieredCacheEntry<T>,
   now = new Date(),
 ): number => {
@@ -151,7 +151,7 @@ export class SignalCacheTag extends Context.Tag("@skastr0/pulsar-core/SignalCach
 const entryByteSize = (entry: TieredCacheEntry<unknown>): number =>
   Buffer.byteLength(JSON.stringify(entry), "utf8")
 
-export const makeInMemoryCache: Effect.Effect<SignalCache> = Effect.gen(function* () {
+const makeInMemoryCache: Effect.Effect<SignalCache> = Effect.gen(function* () {
   const store = yield* Ref.make(new Map<string, TieredCacheEntry<unknown>>())
   return {
     get: <A>(key: CacheKey) =>

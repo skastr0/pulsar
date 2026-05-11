@@ -2,13 +2,12 @@ import { describe, expect, test } from "bun:test"
 import { Schema } from "effect"
 import {
   DistributionalSummary,
-  emptySummary,
   summarize,
 } from "../distribution.js"
 
 describe("DistributionalSummary", () => {
   test("summarize empty array returns neutral summary", () => {
-    expect(summarize([])).toEqual(emptySummary)
+    expect(summarize([])).toEqual({ max: 0, p95: 0, avg: 0, sum: 0, count: 0 })
   })
 
   test("summarize single value", () => {
