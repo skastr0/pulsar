@@ -71,7 +71,6 @@ export const Glossary = Schema.Struct({
 })
 export type Glossary = typeof Glossary.Type
 
-export const decodeGlossaryDraft = Schema.decodeUnknown(GlossaryDraft)
 export const decodeGlossaryDraftSync = Schema.decodeUnknownSync(GlossaryDraft)
 export const decodeGlossary = Schema.decodeUnknown(Glossary)
 export const decodeGlossarySync = Schema.decodeUnknownSync(Glossary)

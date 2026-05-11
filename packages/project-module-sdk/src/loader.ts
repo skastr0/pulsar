@@ -19,14 +19,6 @@ import {
   type ResolvedProjectModuleTarget,
 } from "./loader-resolution.js"
 
-export { ProjectModuleLoadError, type ProjectModuleLoadOptions } from "./loader-types.js"
-
-export const projectModuleRefTarget = (
-  ref: ProjectModuleRef,
-  options: ProjectModuleLoadOptions,
-): Effect.Effect<string, ProjectModuleLoadError> =>
-  Effect.map(resolveProjectModuleRefTarget(ref, options), (target) => target.target)
-
 export const loadProjectModuleRef = (
   ref: ProjectModuleRef,
   options: ProjectModuleLoadOptions,

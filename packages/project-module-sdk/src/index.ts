@@ -42,8 +42,8 @@ export {
 export {
   loadEnabledProjectModules,
   loadProjectModuleRef,
-  type ProjectModuleLoadOptions,
 } from "./loader.js"
+export type { ProjectModuleLoadOptions } from "./loader-types.js"
 
 export {
   fingerprintProjectModule,

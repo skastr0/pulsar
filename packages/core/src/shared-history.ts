@@ -1,11 +1,9 @@
 export {
   clamp01,
-  hasIncludedExtension,
   type SharedHistoryFilterConfig,
 } from "./shared-history-filter.js"
 export {
   countCommitsInWindow,
-  execGit,
   listTrackedFiles,
   readFileAtCommit,
   readHeadDate,
@@ -14,10 +12,9 @@ export {
   listAuthorsByTouchedFileInWindow,
   loadAuthorAliases,
   normalizeAuthor,
-  normalizeAuthorKey,
 } from "./shared-history-authors.js"
 export {
   listAddedLineCountInWindow,
   listAddedLinesByFileInMatureWindow,
 } from "./shared-history-lines.js"
-export { countFileLoc, fileExists } from "./shared-history-files.js"
+export { countFileLoc } from "./shared-history-files.js"

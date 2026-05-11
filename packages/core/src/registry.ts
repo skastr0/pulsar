@@ -1,4 +1,4 @@
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect } from "effect"
 import { deriveEnforcement } from "./enforcement.js"
 import {
   CompositionTooDeepError,
@@ -231,13 +231,3 @@ const normalizeInputs = (
     if (canonical === undefined || canonical === input.id) return input
     return { ...input, id: canonical }
   })
-
-/**
- * Build a Layer that provides the Registry given a static list of signals.
- * Packs export `Layer`s that collect their signals; the CLI composes them
- * with `Layer.merge` and then feeds the union into `registryLayer`.
- */
-export const registryLayer = (
-  signals: ReadonlyArray<AnySignal>,
-): Layer.Layer<RegistryTag, RegistryError> =>
-  Layer.effect(RegistryTag, buildRegistry(signals))

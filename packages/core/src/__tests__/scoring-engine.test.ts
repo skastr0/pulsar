@@ -15,11 +15,13 @@ import {
   ScoringEngineLayer,
   ScoringEngineTag,
   computeConfigHash,
-  computeContentHash,
   computeObserverConfigHash,
-  computeWorktreeContentHash,
   collectWorktreeChangedHunks,
 } from "../scoring-engine.js"
+import {
+  computeContentHash,
+  computeWorktreeContentHash,
+} from "../scoring-engine-git-content-hash.js"
 import { ReferenceDataTag, SignalContextTag } from "../context.js"
 import type { Glossary } from "../glossary.js"
 import type { Signal } from "../signal.js"
