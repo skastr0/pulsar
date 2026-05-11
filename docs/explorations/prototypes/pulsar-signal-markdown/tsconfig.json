@@ -18,7 +18,10 @@
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
     "paths": {
-      "@skastr0/pulsar-core": ["../../../packages/core/src"]
+      "@skastr0/pulsar-core": ["../../../../packages/core/dist/index.d.ts"],
+      "@skastr0/pulsar-core/signal": ["../../../../packages/core/dist/signal-api.d.ts"],
+      "effect": ["../../../../packages/core/node_modules/effect/dist/dts/index.d.ts"],
+      "effect/*": ["../../../../packages/core/node_modules/effect/dist/dts/*.d.ts"]
     }
   },
   "include": ["src/**/*"],

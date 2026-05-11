@@ -1,3 +1,4 @@
+import { SignalComputeError } from "@skastr0/pulsar-core/signal"
 import type { Diagnostic, Signal } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
 import { MarkdownProjectTag } from "../project.js"
@@ -124,7 +125,12 @@ export const MarkdownHeadingStructure: Signal<MdLd02Config, MdLd02Output, Markdo
             filesWithHierarchyIssues: files.filter(f => f.issues.length > 0).length,
           }
         },
-        catch: (cause) => new Error(`MD-LD-02 compute failed: ${String(cause)}`),
+        catch: (cause) =>
+          new SignalComputeError({
+            signalId: "MD-LD-02",
+            message: `MD-LD-02 compute failed: ${String(cause)}`,
+            cause,
+          }),
       })
     }),
   score: (out) => {

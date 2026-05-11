@@ -1,3 +1,4 @@
+import { SignalComputeError } from "@skastr0/pulsar-core/signal"
 import type { Diagnostic, DistributionalSummary, Signal } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
 import { MarkdownProjectTag } from "../project.js"
@@ -93,12 +94,11 @@ export const MarkdownWordCount: Signal<MdLd01Config, MdLd01Output, MarkdownProje
           for (const f of files) {
             byFile.set(f.file, {
               count: 1,
-              mean: f.wordCount,
-              median: f.wordCount,
+              avg: f.wordCount,
+              sum: f.wordCount,
               p95: f.wordCount,
-              min: f.wordCount,
               max: f.wordCount,
-            } as DistributionalSummary)
+            } satisfies DistributionalSummary)
           }
           
           return {
@@ -111,7 +111,12 @@ export const MarkdownWordCount: Signal<MdLd01Config, MdLd01Output, MarkdownProje
             analysisMode: "standard-word-count",
           }
         },
-        catch: (cause) => new Error(`MD-LD-01 compute failed: ${String(cause)}`),
+        catch: (cause) =>
+          new SignalComputeError({
+            signalId: "MD-LD-01",
+            message: `MD-LD-01 compute failed: ${String(cause)}`,
+            cause,
+          }),
       })
     }),
   score: (out) => {
