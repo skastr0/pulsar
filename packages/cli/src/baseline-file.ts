@@ -11,7 +11,9 @@ const BASELINE_RELATIVE_PATH = ".pulsar/baseline.json" as const
 export const resolveBaselinePath = (repoRoot: string): string =>
   join(repoRoot, BASELINE_RELATIVE_PATH)
 
-export const readBaselineFile = (repoRoot: string) =>
+export const readBaselineFile = (
+  repoRoot: string,
+): Effect.Effect<Baseline | undefined, Error, never> =>
   Effect.gen(function* () {
     const baselinePath = resolveBaselinePath(repoRoot)
     const raw = yield* Effect.either(
@@ -40,7 +42,10 @@ export const readBaselineFile = (repoRoot: string) =>
     )
   })
 
-export const writeBaselineFile = (repoRoot: string, baseline: Baseline) =>
+export const writeBaselineFile = (
+  repoRoot: string,
+  baseline: Baseline,
+): Effect.Effect<string, Error, never> =>
   Effect.gen(function* () {
     const baselinePath = resolveBaselinePath(repoRoot)
     yield* Effect.tryPromise({

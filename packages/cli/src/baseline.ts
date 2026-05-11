@@ -14,7 +14,9 @@ export interface BaselineCommandOptions {
   readonly vectorPath?: string
 }
 
-export const runBaselineCommand = (opts: BaselineCommandOptions) =>
+export const runBaselineCommand = (
+  opts: BaselineCommandOptions,
+): Effect.Effect<number, unknown, never> =>
   Effect.gen(function* () {
     if (opts.action === "show") {
       return yield* runShowCommand(opts.repoPath)

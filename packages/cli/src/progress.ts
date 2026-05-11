@@ -4,7 +4,7 @@ export interface CliProgressOptions {
   readonly stream?: NodeJS.WriteStream
 }
 
-const FRAMES = ["-", "\\", "|", "/"] as const
+const progressFrames = ["-", "\\", "|", "/"] as const
 
 export const withCliProgress = async <A>(
   run: () => Promise<A>,
@@ -25,7 +25,7 @@ export const withCliProgress = async <A>(
 
   const render = (): void => {
     const elapsedSeconds = Math.max(0, Math.floor((Date.now() - started) / 1000))
-    const text = `${FRAMES[frameIndex % FRAMES.length]} ${options.label} (${elapsedSeconds}s)`
+    const text = `${progressFrames[frameIndex % progressFrames.length]} ${options.label} (${elapsedSeconds}s)`
     frameIndex += 1
     lastLength = text.length
     stream.write(`\r${text}`)

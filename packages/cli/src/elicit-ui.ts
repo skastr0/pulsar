@@ -8,20 +8,20 @@ import {
 import { renderVectorDiff, summarizeVectorDiff } from "./vector-format.js"
 import type { RevealedPreferenceBootstrapReport } from "./elicit-types.js"
 
-export const GREEN = "\u001b[32m"
-export const CYAN = "\u001b[36m"
-export const BOLD = "\u001b[1m"
-export const DIM = "\u001b[2m"
-export const RESET = "\u001b[0m"
+export const greenAnsi = "\u001b[32m"
+export const cyanAnsi = "\u001b[36m"
+export const boldAnsi = "\u001b[1m"
+export const dimAnsi = "\u001b[2m"
+export const resetAnsi = "\u001b[0m"
 
 export const renderQuizItem = (questionNumber: number, totalQuestions: number, item: QuizItem): void => {
-  console.log(`${BOLD}Question ${questionNumber}/${totalQuestions} — ${item.prompt}${RESET}`)
+  console.log(`${boldAnsi}Question ${questionNumber}/${totalQuestions} — ${item.prompt}${resetAnsi}`)
   console.log("")
-  console.log(`${GREEN}[A] ${item.a_title}${RESET}`)
-  console.log(colorizeCode(item.a_code, GREEN))
+  console.log(`${greenAnsi}[A] ${item.a_title}${resetAnsi}`)
+  console.log(colorizeCode(item.a_code, greenAnsi))
   console.log("")
-  console.log(`${CYAN}[B] ${item.b_title}${RESET}`)
-  console.log(colorizeCode(item.b_code, CYAN))
+  console.log(`${cyanAnsi}[B] ${item.b_title}${resetAnsi}`)
+  console.log(colorizeCode(item.b_code, cyanAnsi))
   console.log("")
 }
 
@@ -31,7 +31,7 @@ export const printFinalQuizVector = (
   nextVector: PulsarVector,
 ): void => {
   console.log("")
-  console.log(`${BOLD}Final vector saved to ${outputPath}${RESET}`)
+  console.log(`${boldAnsi}Final vector saved to ${outputPath}${resetAnsi}`)
   console.log("")
   for (const line of renderVectorDiff(summarizeVectorDiff(baseVector, nextVector))) {
     console.log(line)
@@ -133,7 +133,7 @@ export const formatSigned = (value: number): string => `${value >= 0 ? "+" : ""}
 const colorizeCode = (code: string, color: string): string =>
   code
     .split("\n")
-    .map((line) => `${color}${line}${RESET}`)
+    .map((line) => `${color}${line}${resetAnsi}`)
     .join("\n")
 
 const extractBootstrapStats = (

@@ -23,10 +23,10 @@ import {
   writeQuizSession,
 } from "./elicit-files.js"
 import {
-  DIM,
-  RESET,
+  dimAnsi,
   printFinalQuizVector,
   renderQuizItem,
+  resetAnsi,
 } from "./elicit-ui.js"
 import type {
   ElicitCommandOptions,
@@ -175,11 +175,11 @@ const printQuizAnswerSummary = (
   nextItem: QuizItem,
 ): void => {
   if (answer === "skip") {
-    console.log(`${DIM}Skipped without changing signal weights.${RESET}`)
+    console.log(`${dimAnsi}Skipped without changing signal weights.${resetAnsi}`)
   } else if (answer === "equal") {
-    console.log(`${DIM}Marked equal — evidence stays neutral for this tradeoff.${RESET}`)
+    console.log(`${dimAnsi}Marked equal — evidence stays neutral for this tradeoff.${resetAnsi}`)
   } else {
-    console.log(`${DIM}${summarizeQuizTradeoff(nextItem)}${RESET}`)
+    console.log(`${dimAnsi}${summarizeQuizTradeoff(nextItem)}${resetAnsi}`)
   }
   console.log("")
 }

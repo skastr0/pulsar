@@ -93,10 +93,10 @@ export const runSignalInWorktree = (
       yield* validateVectorAgainstPulsarSignals(vector, repoRoot)
     }
 
-    const EnvLayer = yield* buildWorktreeEnvLayer(repoRoot, gitSha, signalId)
+    const worktreeEnvLayer = yield* buildWorktreeEnvLayer(repoRoot, gitSha, signalId)
     const result = yield* (Effect.provide(
       runSignal(registry, signalId, vector),
-      EnvLayer,
+      worktreeEnvLayer,
     ) as Effect.Effect<SignalRunResult, unknown, never>)
 
     return { repoRoot, gitSha, registry, result }
@@ -139,7 +139,7 @@ export const makePulsarRuntime = (
     const calibrationContext = yield* loadProjectModuleCalibrationContext(repoRoot)
 
     const activePacks = collectActiveLanguagePacks(registry, vector)
-    const EngineLayer = ScoringEngineLayer(
+    const scoringEngineLayer = ScoringEngineLayer(
       registry,
       (worktreePath): Layer.Layer<any, unknown, never> =>
         Layer.mergeAll(
@@ -158,7 +158,7 @@ export const makePulsarRuntime = (
           loadProjectModuleCalibrationContext(worktreePath, { dependencyRoot: repoRoot }),
       },
     )
-    const engine = yield* Effect.provide(ScoringEngineTag, EngineLayer)
+    const engine = yield* Effect.provide(ScoringEngineTag, scoringEngineLayer)
     return { registry, engine, timeSeries, calibrationContext }
   })
 
@@ -167,25 +167,25 @@ const buildWorktreeEnvLayer = (repoRoot: string, gitSha: string, signalId: strin
     const referenceEntries = yield* loadCanonicalReferenceDataEntries(repoRoot)
     const changedHunks = yield* collectWorktreeChangedHunks(repoRoot)
     const calibrationContext = yield* loadProjectModuleCalibrationContext(repoRoot)
-    const ContextLayer = Layer.succeed(SignalContextTag, {
+    const signalContextLayer = Layer.succeed(SignalContextTag, {
       gitSha,
       worktreePath: repoRoot,
       changedHunks,
     })
-    const ReferenceLayer = Layer.succeed(
+    const referenceDataLayer = Layer.succeed(
       ReferenceDataTag,
       makeReferenceData(referenceEntries),
     )
-    const CalibrationLayer =
+    const calibrationContextLayer =
       calibrationContext === undefined
         ? Layer.empty
         : Layer.succeed(CalibrationContextTag, calibrationContext)
 
     return Layer.mergeAll(
-      ContextLayer,
-      ReferenceLayer,
+      signalContextLayer,
+      referenceDataLayer,
       InMemoryCacheLayer,
-      CalibrationLayer,
+      calibrationContextLayer,
       signalId.startsWith("TS-")
         ? TsProjectLayer(repoRoot, { productionOnly: true })
         : Layer.empty,

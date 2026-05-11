@@ -9,14 +9,14 @@ export const narrowVectorToCategory = (
   fallbackDomain: string,
 ): PulsarVector => {
   const activeSignalIds = collectCategorySignalClosure(registry, category, vector, fallbackDomain)
-  const signal_overrides: Record<string, PulsarVector["signal_overrides"][string]> = {
+  const signalOverrides: Record<string, PulsarVector["signal_overrides"][string]> = {
     ...(vector?.signal_overrides ?? {}),
   }
 
   for (const signal of registry.sorted) {
     if (activeSignalIds.has(signal.id)) continue
-    signal_overrides[signal.id] = {
-      ...(signal_overrides[signal.id] ?? {}),
+    signalOverrides[signal.id] = {
+      ...(signalOverrides[signal.id] ?? {}),
       active: false,
     }
   }
@@ -25,7 +25,7 @@ export const narrowVectorToCategory = (
     id: vector?.id ?? `category-${category}`,
     domain: vector?.domain ?? fallbackDomain,
     ...(vector?.description !== undefined ? { description: vector.description } : {}),
-    signal_overrides,
+    signal_overrides: signalOverrides,
     ...(vector?.review_routing !== undefined ? { review_routing: vector.review_routing } : {}),
     ...(vector?.observer !== undefined ? { observer: vector.observer } : {}),
     ...(vector?.backpressure !== undefined ? { backpressure: vector.backpressure } : {}),
@@ -40,14 +40,14 @@ export const narrowVectorToDomain = (
   fallbackDomain: string,
 ): PulsarVector => {
   const domain = vector?.domain ?? fallbackDomain
-  const signal_overrides: Record<string, PulsarVector["signal_overrides"][string]> = {
+  const signalOverrides: Record<string, PulsarVector["signal_overrides"][string]> = {
     ...(vector?.signal_overrides ?? {}),
   }
 
   for (const signal of registry.sorted) {
     if (signalMatchesDomain(signal.id, domain)) continue
-    signal_overrides[signal.id] = {
-      ...(signal_overrides[signal.id] ?? {}),
+    signalOverrides[signal.id] = {
+      ...(signalOverrides[signal.id] ?? {}),
       active: false,
     }
   }
@@ -56,7 +56,7 @@ export const narrowVectorToDomain = (
     id: vector?.id ?? "all-defaults",
     domain,
     ...(vector?.description !== undefined ? { description: vector.description } : {}),
-    signal_overrides,
+    signal_overrides: signalOverrides,
     ...(vector?.review_routing !== undefined ? { review_routing: vector.review_routing } : {}),
     ...(vector?.observer !== undefined ? { observer: vector.observer } : {}),
     ...(vector?.backpressure !== undefined ? { backpressure: vector.backpressure } : {}),

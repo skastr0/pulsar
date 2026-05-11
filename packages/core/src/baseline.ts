@@ -3,15 +3,15 @@ import type { Category } from "./category.js"
 import { diagnosticHashOf, type Diagnostic } from "./diagnostic.js"
 import type { HardGateViolation } from "./observer.js"
 
-export const BaselineViolation = Schema.Struct({
+export const baselineViolationSchema = Schema.Struct({
   file: Schema.String,
   line: Schema.optional(Schema.Number),
   hash: Schema.String,
   detail: Schema.String,
 })
-export type BaselineViolation = typeof BaselineViolation.Type
+export type BaselineViolation = typeof baselineViolationSchema.Type
 
-export const Baseline = Schema.Struct({
+export const baselineSchema = Schema.Struct({
   schema_version: Schema.Literal(1),
   baseline_sha: Schema.String,
   created_at: Schema.String,
@@ -24,12 +24,12 @@ export const Baseline = Schema.Struct({
     "built-in-defaults",
   )),
   observer_config_hash: Schema.optional(Schema.String),
-  violations: Schema.Record({ key: Schema.String, value: Schema.Array(BaselineViolation) }),
+  violations: Schema.Record({ key: Schema.String, value: Schema.Array(baselineViolationSchema) }),
 })
-export type Baseline = typeof Baseline.Type
+export type Baseline = typeof baselineSchema.Type
 
-export const decodeBaseline = Schema.decodeUnknown(Baseline)
-export const decodeBaselineSync = Schema.decodeUnknownSync(Baseline)
+export const decodeBaseline = Schema.decodeUnknown(baselineSchema)
+export const decodeBaselineSync = Schema.decodeUnknownSync(baselineSchema)
 
 export interface CurrentViolationSnapshot extends BaselineViolation {
   readonly signalId: string

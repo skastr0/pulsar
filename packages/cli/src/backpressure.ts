@@ -15,7 +15,9 @@ export interface BackpressureCommandOptions {
   readonly trend?: boolean
 }
 
-export const runBackpressureCommand = (opts: BackpressureCommandOptions) =>
+export const runBackpressureCommand = (
+  opts: BackpressureCommandOptions,
+): Effect.Effect<number, unknown, never> =>
   Effect.gen(function* () {
     const repoRoot = yield* resolveRepoRoot(opts.repoPath)
     const registry = yield* buildPulsarRegistry(repoRoot)
