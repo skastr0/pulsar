@@ -11,6 +11,101 @@ export interface TsProjectOptions {
   readonly productionOnly?: boolean
 }
 
+const BASE_WORKTREE_GLOB_PATTERNS = [
+  "**/*.{ts,tsx}",
+  "!**/.*/**",
+  "!**/node_modules/**",
+  "!**/dist/**",
+  "!**/build/**",
+  "!**/.next/**",
+  "!**/.nuxt/**",
+  "!**/.output/**",
+  "!**/coverage/**",
+  "!**/.turbo/**",
+  "!**/.cache/**",
+  "!**/vendor/**",
+  "!**/gen/**",
+  "!**/_generated/**",
+  "!**/*.gen.ts",
+  "!**/*.gen.tsx",
+  "!**/*.generated.ts",
+  "!**/*.generated.tsx",
+  "!**/sst-env.d.ts",
+] as const
+
+const PRODUCTION_WORKTREE_GLOB_PATTERNS = [
+  "!**/*.test.ts",
+  "!**/*.test.tsx",
+  "!**/*.spec.ts",
+  "!**/*.spec.tsx",
+  "!**/*.stories.ts",
+  "!**/*.stories.tsx",
+  "!**/__tests__/**",
+  "!**/test/**",
+  "!**/tests/**",
+  "!**/test-support/**",
+  "!**/test-utils/**",
+  "!**/*test-support.ts",
+  "!**/*test-support.tsx",
+  "!**/*test-utils.ts",
+  "!**/*test-utils.tsx",
+  "!**/*test-helpers.ts",
+  "!**/*test-helpers.tsx",
+  "!**/*test-mocks.ts",
+  "!**/*test-mocks.tsx",
+  "!**/*test-harness.ts",
+  "!**/*test-harness.tsx",
+  "!**/happydom.ts",
+] as const
+
+const GENERATED_TYPE_SCRIPT_SUFFIXES = [
+  ".gen.ts",
+  ".gen.tsx",
+  ".generated.ts",
+  ".generated.tsx",
+  "sst-env.d.ts",
+  "happydom.ts",
+] as const
+
+const TEST_TYPE_SCRIPT_SUFFIXES = [
+  ".test.ts",
+  ".test.tsx",
+  ".spec.ts",
+  ".spec.tsx",
+  ".stories.ts",
+  ".stories.tsx",
+  "test-support.ts",
+  "test-support.tsx",
+  "test-utils.ts",
+  "test-utils.tsx",
+  "test-helpers.ts",
+  "test-helpers.tsx",
+  "test-mocks.ts",
+  "test-mocks.tsx",
+  "test-harness.ts",
+  "test-harness.tsx",
+] as const
+
+const NON_PRODUCTION_PATH_SEGMENTS = [
+  "node_modules",
+  "dist",
+  "build",
+  ".next",
+  ".nuxt",
+  ".output",
+  "coverage",
+  ".turbo",
+  ".cache",
+  "vendor",
+  "gen",
+  "_generated",
+  "__tests__",
+  "test",
+  "tests",
+  "test-support",
+  "test-utils",
+] as const
+
 /**
  * A shared ts-morph Project per scoring run. The compiler is expensive
  * to construct — signals that need AST access pull this service rather
@@ -119,58 +214,22 @@ const addSourceFiles = (
 }
 
 const addWorktreeGlob = (project: Project, worktreePath: string, options?: TsProjectOptions): void => {
-  const globs = [
-    `${worktreePath}/**/*.{ts,tsx}`,
-    `!${worktreePath}/**/.*/**`,
-    `!${worktreePath}/**/node_modules/**`,
-    `!${worktreePath}/**/dist/**`,
-    `!${worktreePath}/**/build/**`,
-    `!${worktreePath}/**/.next/**`,
-    `!${worktreePath}/**/.nuxt/**`,
-    `!${worktreePath}/**/.output/**`,
-    `!${worktreePath}/**/coverage/**`,
-    `!${worktreePath}/**/.turbo/**`,
-    `!${worktreePath}/**/.cache/**`,
-    `!${worktreePath}/**/vendor/**`,
-    `!${worktreePath}/**/gen/**`,
-    `!${worktreePath}/**/_generated/**`,
-    `!${worktreePath}/**/*.gen.ts`,
-    `!${worktreePath}/**/*.gen.tsx`,
-    `!${worktreePath}/**/*.generated.ts`,
-    `!${worktreePath}/**/*.generated.tsx`,
-    `!${worktreePath}/**/sst-env.d.ts`,
-  ]
-
-  if (options?.productionOnly === true) {
-    globs.push(
-      `!${worktreePath}/**/*.test.ts`,
-      `!${worktreePath}/**/*.test.tsx`,
-      `!${worktreePath}/**/*.spec.ts`,
-      `!${worktreePath}/**/*.spec.tsx`,
-      `!${worktreePath}/**/*.stories.ts`,
-      `!${worktreePath}/**/*.stories.tsx`,
-      `!${worktreePath}/**/__tests__/**`,
-      `!${worktreePath}/**/test/**`,
-      `!${worktreePath}/**/tests/**`,
-      `!${worktreePath}/**/test-support/**`,
-      `!${worktreePath}/**/test-utils/**`,
-      `!${worktreePath}/**/*test-support.ts`,
-      `!${worktreePath}/**/*test-support.tsx`,
-      `!${worktreePath}/**/*test-utils.ts`,
-      `!${worktreePath}/**/*test-utils.tsx`,
-      `!${worktreePath}/**/*test-helpers.ts`,
-      `!${worktreePath}/**/*test-helpers.tsx`,
-      `!${worktreePath}/**/*test-mocks.ts`,
-      `!${worktreePath}/**/*test-mocks.tsx`,
-      `!${worktreePath}/**/*test-harness.ts`,
-      `!${worktreePath}/**/*test-harness.tsx`,
-      `!${worktreePath}/**/happydom.ts`,
-    )
-  }
-
-  project.addSourceFilesAtPaths(globs)
+  project.addSourceFilesAtPaths(worktreeGlobPatterns(worktreePath, options?.productionOnly === true))
   removeIgnoredSourceFiles(project)
 }
+
+const worktreeGlobPatterns = (
+  worktreePath: string,
+  productionOnly: boolean,
+): ReadonlyArray<string> => [
+  ...BASE_WORKTREE_GLOB_PATTERNS.map((pattern) => withWorktreePrefix(worktreePath, pattern)),
+  ...(productionOnly
+    ? PRODUCTION_WORKTREE_GLOB_PATTERNS.map((pattern) => withWorktreePrefix(worktreePath, pattern))
+    : []),
+]
+
+const withWorktreePrefix = (worktreePath: string, pattern: string): string =>
+  pattern.startsWith("!") ? `!${worktreePath}/${pattern.slice(1)}` : `${worktreePath}/${pattern}`
 
 const removeIgnoredSourceFiles = (project: Project): void => {
   for (const sourceFile of project.getSourceFiles()) {
@@ -230,58 +289,20 @@ const makeProductionSourcePathClassifier = (): ((
 
 const isProductionTypeScriptFile = (file: string): boolean => {
   if (!(file.endsWith(".ts") || file.endsWith(".tsx"))) return false
-  if (
-    file.endsWith(".gen.ts") ||
-    file.endsWith(".gen.tsx") ||
-    file.endsWith(".generated.ts") ||
-    file.endsWith(".generated.tsx") ||
-    file.endsWith("sst-env.d.ts") ||
-    file.endsWith("happydom.ts")
-  ) {
-    return false
-  }
+  if (hasProductionExcludedSuffix(file)) return false
+  return !hasProductionExcludedPath(file)
+}
 
-  if (
-    file.endsWith(".test.ts") ||
-    file.endsWith(".test.tsx") ||
-    file.endsWith(".spec.ts") ||
-    file.endsWith(".spec.tsx") ||
-    file.endsWith(".stories.ts") ||
-    file.endsWith(".stories.tsx") ||
-    file.endsWith("test-support.ts") ||
-    file.endsWith("test-support.tsx") ||
-    file.endsWith("test-utils.ts") ||
-    file.endsWith("test-utils.tsx") ||
-    file.endsWith("test-helpers.ts") ||
-    file.endsWith("test-helpers.tsx") ||
-    file.endsWith("test-mocks.ts") ||
-    file.endsWith("test-mocks.tsx") ||
-    file.endsWith("test-harness.ts") ||
-    file.endsWith("test-harness.tsx")
-  ) {
-    return false
-  }
+const hasProductionExcludedSuffix = (file: string): boolean =>
+  GENERATED_TYPE_SCRIPT_SUFFIXES.some((suffix) => file.endsWith(suffix)) ||
+  TEST_TYPE_SCRIPT_SUFFIXES.some((suffix) => file.endsWith(suffix))
 
-  return !([
-    "node_modules",
-    "dist",
-    "build",
-    ".next",
-    ".nuxt",
-    ".output",
-    "coverage",
-    ".turbo",
-    ".cache",
-    "vendor",
-    "gen",
-    "_generated",
-    "__tests__",
-    "test",
-    "tests",
-    "test-support",
-    "test-utils",
-  ].some((segment) => file.split("/").includes(segment)) ||
-  file.split("/").some(isHiddenPathSegment))
+const hasProductionExcludedPath = (file: string): boolean => {
+  const segments = file.split("/")
+  return (
+    NON_PRODUCTION_PATH_SEGMENTS.some((segment) => segments.includes(segment)) ||
+    segments.some(isHiddenPathSegment)
+  )
 }
 
 const isHiddenPathSegment = (segment: string): boolean =>
