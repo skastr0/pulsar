@@ -58,7 +58,7 @@ interface SourceFileLike {
   }>
   readonly forEachDescendant?: (visit: (node: DescendantLike) => void) => void
   readonly getDescendants?: () => Array<DescendantLike>
-  readonly getExportedDeclarations: () => Map<string, Array<NamedDeclarationLike>>
+  readonly getExportedDeclarations: () => ReadonlyMap<string, ReadonlyArray<NamedDeclarationLike>>
   readonly getFilePath: () => string
   readonly getBaseName: () => string
 }
@@ -81,7 +81,7 @@ export const collectIdentifiers = (
     ])
 
     const occurrences: Array<IdentifierOccurrence> = []
-    for (const sourceFile of project.getSourceFiles() as Array<any>) {
+    for (const sourceFile of project.getSourceFiles() as Array<SourceFileLike>) {
       if (sourceFile.isDeclarationFile()) continue
       collectNamedDeclarations(occurrences, sourceFile, packages, worktreePath, opts)
       if (opts.includeParameters) {
