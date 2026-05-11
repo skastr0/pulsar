@@ -1,21 +1,24 @@
-import { join } from "node:path"
 import { Effect, Schema } from "effect"
 import { SignalContextTag } from "./context.js"
 import { type Diagnostic } from "./diagnostic.js"
-import { SignalComputeError } from "./errors.js"
 import {
-  DistributionalSummary,
-  summarize,
-} from "./distribution.js"
+  buildBusFactorOutput,
+  type Shared02BusFactorOutput,
+} from "./shared-02-aggregation.js"
+import { SignalComputeError } from "./errors.js"
 import type { Signal } from "./signal.js"
+import { loadTouchedFileHistory } from "./shared-02-history.js"
 import {
   clamp01,
-  countFileLoc,
   listAuthorsByTouchedFileInWindow,
   loadAuthorAliases,
-  normalizeAuthor,
   readHeadDate,
 } from "./shared-history.js"
+
+export type {
+  BusFactorInfo,
+  Shared02BusFactorOutput,
+} from "./shared-02-aggregation.js"
 
 export const Shared02BusFactorConfig = Schema.Struct({
   window_days: Schema.Number,
@@ -25,38 +28,6 @@ export const Shared02BusFactorConfig = Schema.Struct({
   min_loc: Schema.Number,
 })
 export type Shared02BusFactorConfig = typeof Shared02BusFactorConfig.Type
-
-export interface BusFactorInfo {
-  readonly busFactor: number
-  readonly primaryAuthor: string
-  readonly primaryShare: number
-  readonly authors: ReadonlyArray<string>
-  readonly loc: number
-}
-
-export interface Shared02BusFactorOutput {
-  readonly byFile: ReadonlyMap<string, BusFactorInfo>
-  readonly siloed: ReadonlyArray<{ file: string; author: string; loc: number }>
-  readonly distribution: DistributionalSummary
-  readonly windowDays: number
-  readonly maxCommits: number
-  readonly touchedFileCount: number
-  readonly touchedLoc: number
-  readonly repoAuthors: ReadonlyArray<string>
-}
-
-interface TouchedFileHistory {
-  readonly absolutePath: string
-  readonly authors: ReadonlyArray<string>
-  readonly loc: number
-}
-
-interface BusFactorAccumulator {
-  readonly byFile: Map<string, BusFactorInfo>
-  readonly siloed: Array<{ file: string; author: string; loc: number }>
-  readonly repoAuthors: Set<string>
-  touchedLoc: number
-}
 
 /**
  * SHARED-02 — language-agnostic knowledge concentration from git history.
@@ -231,113 +202,4 @@ const computeBusFactorOutput = async (
   )
   const touchedFiles = await loadTouchedFileHistory(worktreePath, authorsByFile)
   return buildBusFactorOutput(touchedFiles, aliasMap, config)
-}
-
-const loadTouchedFileHistory = (
-  worktreePath: string,
-  authorsByFile: ReadonlyMap<string, ReadonlyArray<string>>,
-): Promise<ReadonlyArray<TouchedFileHistory>> =>
-  mapWithConcurrency([...authorsByFile.entries()], 16, async ([relativePath, authors]) => {
-    const absolutePath = join(worktreePath, relativePath)
-    const loc = await countFileLoc(absolutePath).catch(() => 0)
-    return { absolutePath, authors, loc }
-  })
-
-const buildBusFactorOutput = (
-  touchedFiles: ReadonlyArray<TouchedFileHistory>,
-  aliasMap: ReadonlyMap<string, string>,
-  config: Shared02BusFactorConfig,
-): Shared02BusFactorOutput => {
-  const accumulator: BusFactorAccumulator = {
-    byFile: new Map(),
-    siloed: [],
-    repoAuthors: new Set(),
-    touchedLoc: 0,
-  }
-  for (const file of touchedFiles) {
-    addTouchedFileBusFactor(file, aliasMap, config.min_loc, accumulator)
-  }
-  return finalizeBusFactorOutput(accumulator, config)
-}
-
-const addTouchedFileBusFactor = (
-  file: TouchedFileHistory,
-  aliasMap: ReadonlyMap<string, string>,
-  minLoc: number,
-  accumulator: BusFactorAccumulator,
-): void => {
-  if (file.loc < minLoc) return
-  accumulator.touchedLoc += file.loc
-  if (file.authors.length === 0) return
-
-  const sortedAuthors = countCanonicalAuthors(file.authors, aliasMap)
-  const primary = sortedAuthors[0]
-  if (primary === undefined) return
-
-  const commitCount = sortedAuthors.reduce((sum, entry) => sum + entry[1], 0)
-  const authorNames = sortedAuthors.map(([author]) => author)
-  for (const author of authorNames) accumulator.repoAuthors.add(author)
-
-  const info: BusFactorInfo = {
-    busFactor: authorNames.length,
-    primaryAuthor: primary[0],
-    primaryShare: commitCount === 0 ? 0 : primary[1] / commitCount,
-    authors: authorNames,
-    loc: file.loc,
-  }
-  accumulator.byFile.set(file.absolutePath, info)
-  if (info.busFactor === 1) {
-    accumulator.siloed.push({ file: file.absolutePath, author: info.primaryAuthor, loc: file.loc })
-  }
-}
-
-const countCanonicalAuthors = (
-  authors: ReadonlyArray<string>,
-  aliasMap: ReadonlyMap<string, string>,
-): ReadonlyArray<readonly [string, number]> => {
-  const counts = new Map<string, number>()
-  for (const author of authors) {
-    const canonical = normalizeAuthor(author, aliasMap)
-    counts.set(canonical, (counts.get(canonical) ?? 0) + 1)
-  }
-  return [...counts.entries()].sort((a, b) => {
-    if (b[1] !== a[1]) return b[1] - a[1]
-    return a[0].localeCompare(b[0])
-  })
-}
-
-const finalizeBusFactorOutput = (
-  accumulator: BusFactorAccumulator,
-  config: Shared02BusFactorConfig,
-): Shared02BusFactorOutput => ({
-  byFile: accumulator.byFile,
-  siloed: accumulator.siloed.sort((a, b) => b.loc - a.loc || a.file.localeCompare(b.file)),
-  distribution: summarize([...accumulator.byFile.values()].map((info) => info.busFactor)),
-  windowDays: config.window_days,
-  maxCommits: config.max_commits,
-  touchedFileCount: accumulator.byFile.size,
-  touchedLoc: accumulator.touchedLoc,
-  repoAuthors: [...accumulator.repoAuthors].sort((a, b) => a.localeCompare(b)),
-})
-
-const mapWithConcurrency = async <A, B>(
-  items: ReadonlyArray<A>,
-  concurrency: number,
-  fn: (item: A) => Promise<B>,
-): Promise<Array<B>> => {
-  const results = new Array<B>(items.length)
-  let nextIndex = 0
-  const workerCount = Math.min(concurrency, items.length)
-
-  await Promise.all(
-    Array.from({ length: workerCount }, async () => {
-      while (true) {
-        const index = nextIndex++
-        if (index >= items.length) return
-        results[index] = await fn(items[index]!)
-      }
-    }),
-  )
-
-  return results
 }
