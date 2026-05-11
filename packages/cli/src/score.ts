@@ -75,6 +75,41 @@ export const runScoreCommand = (opts: ScoreOptions) =>
       return yield* runSingleSignalMode(opts)
     }
 
+    return yield* runObserverScoreMode(opts)
+  })
+
+interface ScoreVectorContext {
+  readonly registry: Registry
+  readonly vectorSelection: DiscoveredPulsarVector
+  readonly observerVector: PulsarVector
+}
+
+interface ObserverScoreRun {
+  readonly repoRoot: string
+  readonly gitSha: string
+  readonly output: ObserverOutput
+  readonly calibrationFingerprint: string | undefined
+}
+
+const runObserverScoreMode = (opts: ScoreOptions) =>
+  Effect.gen(function* () {
+    const vectorContext = yield* resolveScoreVectorContext(opts)
+    const run = yield* observeScoreWorktree(opts, vectorContext.observerVector)
+    yield* ensureObserverHasActiveSignals(run.output)
+    const ciAssessment = yield* assessCiMode(
+      opts,
+      run.repoRoot,
+      run.output,
+      vectorContext.registry,
+      vectorContext.observerVector,
+      run.calibrationFingerprint,
+    )
+    printScoreCommandOutput(opts, vectorContext, run, ciAssessment)
+    return scoreCommandExitCode(opts, run, ciAssessment)
+  })
+
+const resolveScoreVectorContext = (opts: ScoreOptions) =>
+  Effect.gen(function* () {
     const registry = yield* buildPulsarRegistry(opts.repoPath)
     const vectorSelection = yield* discoverPulsarVector({
       repoPath: opts.repoPath,
@@ -86,79 +121,95 @@ export const runScoreCommand = (opts: ScoreOptions) =>
       opts.category === undefined
         ? narrowVectorToDomain(registry, vectorSelection.vector, fallbackDomain)
         : narrowVectorToCategory(registry, vectorSelection.vector, opts.category, fallbackDomain)
-    const timeSeriesEnabled = opts.ci === true || timeSeriesConfigOf(observerVector).enabled
-    const { repoRoot, gitSha, result, calibrationContext } = yield* observeWorktree(
-      opts.repoPath,
-      observerVector,
-      {
-        ...(timeSeriesEnabled ? { timeSeries: { enabled: true } } : {}),
-        ...(opts.profile === true ? { observer: { profile: true } } : {}),
-        tsProject: { productionOnly: true },
-      },
-    )
-
-    const activeSignalCount = CATEGORIES.reduce(
-      (sum, category) => sum + result.categories[category].signalCount,
-      0,
-    )
-    if (activeSignalCount === 0) {
-      return yield* Effect.fail(new Error("Observer mode has no active signals."))
-    }
-
-    const ciAssessment = yield* assessCiMode(
-      opts,
-      repoRoot,
-      result,
-      registry,
-      observerVector,
-      calibrationContext?.fingerprint,
-    )
-    const paidDebt = ciAssessment.mode === "ratcheted"
-      ? ciAssessment.comparison?.paidDebt ?? []
-      : []
-    if (!opts.json && paidDebt.length > 0) {
-      printPaidDebt(paidDebt)
-    }
-
-    if (opts.json) {
-      console.log(JSON.stringify(toScoreJson(result, vectorSelection), null, 2))
-    } else if (opts.category !== undefined) {
-      printCategoryView({
-        repoRoot,
-        gitSha,
-        category: opts.category,
-        output: result,
-        vectorLabel: vectorSelection.label,
-        vectorSourceLabel: vectorSelection.sourceLabel,
-        aiMode: explainAiAssistedMode(vectorSelection.vector),
-        profile: opts.profile === true,
-      })
-    } else {
-      printObserverView({
-        repoRoot,
-        gitSha,
-        output: result,
-        vectorLabel: vectorSelection.label,
-        vectorSourceLabel: vectorSelection.sourceLabel,
-        aiMode: explainAiAssistedMode(vectorSelection.vector),
-        ciAssessment,
-        colorize: process.stdout.isTTY === true && opts.ci !== true,
-        profile: opts.profile === true,
-      })
-    }
-
-    if (opts.ci === true) {
-      printCiSummary({
-        repoRoot,
-        gitSha,
-        output: result,
-        ciAssessment,
-      })
-      return ciAssessment.effectiveStatus === "fail" ? 2 : 0
-    }
-
-    return 0
+    return { registry, vectorSelection, observerVector } satisfies ScoreVectorContext
   })
+
+const observeScoreWorktree = (
+  opts: ScoreOptions,
+  observerVector: PulsarVector,
+): Effect.Effect<ObserverScoreRun, unknown, never> =>
+  Effect.gen(function* () {
+    const timeSeriesEnabled = opts.ci === true || timeSeriesConfigOf(observerVector).enabled
+    const observed = yield* observeWorktree(opts.repoPath, observerVector, {
+      ...(timeSeriesEnabled ? { timeSeries: { enabled: true } } : {}),
+      ...(opts.profile === true ? { observer: { profile: true } } : {}),
+      tsProject: { productionOnly: true },
+    })
+    return {
+      repoRoot: observed.repoRoot,
+      gitSha: observed.gitSha,
+      output: observed.result,
+      calibrationFingerprint: observed.calibrationContext?.fingerprint,
+    }
+  })
+
+const ensureObserverHasActiveSignals = (
+  output: ObserverOutput,
+): Effect.Effect<void, Error, never> => {
+  const activeSignalCount = CATEGORIES.reduce(
+    (sum, category) => sum + output.categories[category].signalCount,
+    0,
+  )
+  return activeSignalCount === 0
+    ? Effect.fail(new Error("Observer mode has no active signals."))
+    : Effect.void
+}
+
+const printScoreCommandOutput = (
+  opts: ScoreOptions,
+  vectorContext: ScoreVectorContext,
+  run: ObserverScoreRun,
+  ciAssessment: CiAssessment,
+): void => {
+  const paidDebt = ciAssessment.mode === "ratcheted"
+    ? ciAssessment.comparison?.paidDebt ?? []
+    : []
+  if (!opts.json && paidDebt.length > 0) {
+    printPaidDebt(paidDebt)
+  }
+
+  if (opts.json) {
+    console.log(JSON.stringify(toScoreJson(run.output, vectorContext.vectorSelection), null, 2))
+  } else if (opts.category !== undefined) {
+    printCategoryView({
+      repoRoot: run.repoRoot,
+      gitSha: run.gitSha,
+      category: opts.category,
+      output: run.output,
+      vectorLabel: vectorContext.vectorSelection.label,
+      vectorSourceLabel: vectorContext.vectorSelection.sourceLabel,
+      aiMode: explainAiAssistedMode(vectorContext.vectorSelection.vector),
+      profile: opts.profile === true,
+    })
+  } else {
+    printObserverView({
+      repoRoot: run.repoRoot,
+      gitSha: run.gitSha,
+      output: run.output,
+      vectorLabel: vectorContext.vectorSelection.label,
+      vectorSourceLabel: vectorContext.vectorSelection.sourceLabel,
+      aiMode: explainAiAssistedMode(vectorContext.vectorSelection.vector),
+      ciAssessment,
+      colorize: process.stdout.isTTY === true && opts.ci !== true,
+      profile: opts.profile === true,
+    })
+  }
+}
+
+const scoreCommandExitCode = (
+  opts: ScoreOptions,
+  run: ObserverScoreRun,
+  ciAssessment: CiAssessment,
+): number => {
+  if (opts.ci !== true) return 0
+  printCiSummary({
+    repoRoot: run.repoRoot,
+    gitSha: run.gitSha,
+    output: run.output,
+    ciAssessment,
+  })
+  return ciAssessment.effectiveStatus === "fail" ? 2 : 0
+}
 
 const narrowVectorToCategory = (
   registry: Registry,
