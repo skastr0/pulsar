@@ -9,7 +9,7 @@ const TsDe05Config = Schema.Struct({
 })
 type TsDe05Config = typeof TsDe05Config.Type
 
-export interface TsDe05Output {
+interface TsDe05Output {
   readonly duplicates: ReadonlyArray<DuplicateGroup>
   readonly totalPackages: number
   readonly totalDuplicateInstances: number

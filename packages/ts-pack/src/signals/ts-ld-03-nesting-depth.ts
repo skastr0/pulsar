@@ -27,14 +27,14 @@ const TsLd03Config = Schema.Struct({
 })
 type TsLd03Config = typeof TsLd03Config.Type
 
-export interface FunctionNesting {
+interface FunctionNesting {
   readonly file: string
   readonly name: string
   readonly line: number
   readonly maxNesting: number
 }
 
-export interface TsLd03Output {
+interface TsLd03Output {
   readonly byFunction: ReadonlyArray<FunctionNesting>
   readonly byFile: ReadonlyMap<string, DistributionalSummary>
   readonly overThreshold: ReadonlyArray<FunctionNesting>

@@ -31,7 +31,7 @@ export type ModuleSpecifierUsage = {
   readonly dynamic: boolean
 }
 
-export type PackagePathMatcher = (filePath: string) => PackageInfo | undefined
+type PackagePathMatcher = (filePath: string) => PackageInfo | undefined
 export type UsageByPackage = Map<string, Map<string, UsageBucket>>
 
 export type DependencyAnalysisFacts = {

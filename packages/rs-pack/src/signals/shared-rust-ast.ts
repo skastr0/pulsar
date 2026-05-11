@@ -127,7 +127,7 @@ export const modulePathForAncestors = (
   }
 }
 
-export const isCfgTestAttribute = (value: RustSyntaxNode | string): boolean => {
+const isCfgTestAttribute = (value: RustSyntaxNode | string): boolean => {
   const text = typeof value === "string" ? value : value.text
   return /#\s*!?\[\s*cfg\s*\(\s*test\s*\)\s*\]/.test(text)
 }

@@ -26,7 +26,7 @@ export interface StubCandidate {
   readonly stubKind: { readonly kind: StubKind; readonly message: string } | undefined
 }
 
-export interface StubCandidateCollection {
+interface StubCandidateCollection {
   readonly candidates: ReadonlyArray<StubCandidate>
   readonly totalFunctions: number
 }

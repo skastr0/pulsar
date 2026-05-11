@@ -12,18 +12,18 @@ const TsDe02Config = Schema.Struct({
 })
 type TsDe02Config = typeof TsDe02Config.Type
 
-export interface ModuleFan {
+interface ModuleFan {
   readonly fanIn: number
   readonly fanOut: number
 }
 
-export interface HubEntry {
+interface HubEntry {
   readonly file: string
   readonly fanIn: number
   readonly fanOut: number
 }
 
-export interface TsDe02Output {
+interface TsDe02Output {
   readonly byModule: ReadonlyMap<string, ModuleFan>
   readonly hubs: ReadonlyArray<HubEntry>
   readonly totalModules: number

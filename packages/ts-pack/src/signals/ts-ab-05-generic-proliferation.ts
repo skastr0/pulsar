@@ -12,7 +12,7 @@ const TsAb05Config = Schema.Struct({
 })
 type TsAb05Config = typeof TsAb05Config.Type
 
-export interface GenericAnalysis {
+interface GenericAnalysis {
   readonly file: string
   readonly declarationName: string
   readonly line: number
@@ -21,7 +21,7 @@ export interface GenericAnalysis {
   readonly returnOnlyParams: ReadonlyArray<string>
 }
 
-export interface TsAb05Output {
+interface TsAb05Output {
   readonly byDeclaration: ReadonlyArray<GenericAnalysis>
   readonly distribution: DistributionalSummary
   readonly overThreshold: ReadonlyArray<GenericAnalysis>

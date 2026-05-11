@@ -15,13 +15,13 @@ const TsLd05Config = Schema.Struct({
 })
 type TsLd05Config = typeof TsLd05Config.Type
 
-export type IdentifierClassification =
+type IdentifierClassification =
   | "matches-glossary"
   | "new-unique"
   | "duplicates-canonical"
   | "conflicts-with-canonical"
 
-export interface IdentifierGlossaryMatch {
+interface IdentifierGlossaryMatch {
   readonly file: string
   readonly line: number
   readonly kind: IdentifierDeclarationKind
@@ -30,7 +30,7 @@ export interface IdentifierGlossaryMatch {
   readonly suggestedCanonical: string | undefined
 }
 
-export interface TsLd05Output {
+interface TsLd05Output {
   readonly identifiers: ReadonlyArray<IdentifierGlossaryMatch>
   readonly totalIdentifiers: number
   readonly matchCount: number

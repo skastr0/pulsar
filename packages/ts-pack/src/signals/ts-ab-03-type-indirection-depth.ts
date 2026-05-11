@@ -20,7 +20,7 @@ const TsAb03Config = Schema.Struct({
 })
 type TsAb03Config = typeof TsAb03Config.Type
 
-export interface TypeIndirectionEntry {
+interface TypeIndirectionEntry {
   readonly file: string
   readonly name: string
   readonly line: number
@@ -31,7 +31,7 @@ export interface TypeIndirectionEntry {
   readonly truncated: boolean
 }
 
-export interface TsAb03Output {
+interface TsAb03Output {
   readonly declarations: ReadonlyArray<TypeIndirectionEntry>
   readonly byFile: ReadonlyMap<string, DistributionalSummary>
   readonly repoDistribution: DistributionalSummary

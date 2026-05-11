@@ -17,7 +17,7 @@ const TsLd04Config = Schema.Struct({
 })
 type TsLd04Config = typeof TsLd04Config.Type
 
-export interface NamingViolation {
+interface NamingViolation {
   readonly file: string
   readonly line: number
   readonly kind: IdentifierDeclarationKind
@@ -27,7 +27,7 @@ export interface NamingViolation {
   readonly actualPattern: RecognizedCasingPattern | "unrecognized"
 }
 
-export interface TsLd04Output {
+interface TsLd04Output {
   readonly violations: ReadonlyArray<NamingViolation>
   readonly byKind: ReadonlyMap<
     IdentifierDeclarationKind,

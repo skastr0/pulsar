@@ -38,7 +38,7 @@ export interface ExpiredBypassMatch {
   readonly bypass: PulsarAllowBypass
 }
 
-export interface CycleAnalysis {
+interface CycleAnalysis {
   readonly cycles: ReadonlyArray<Cycle>
   readonly cycleCount: number
   readonly largestCycleSize: number

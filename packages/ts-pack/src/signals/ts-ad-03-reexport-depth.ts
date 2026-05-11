@@ -31,7 +31,7 @@ const TsAd03Config = Schema.Struct({
 })
 type TsAd03Config = typeof TsAd03Config.Type
 
-export interface TsAd03Output {
+interface TsAd03Output {
   readonly byFile: ReadonlyMap<string, ReExportAnalysis>
   readonly chainsOverThreshold: ReadonlyArray<ReExportChain>
   readonly stats: DistributionalSummary

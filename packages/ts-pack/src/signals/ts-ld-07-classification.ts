@@ -16,7 +16,7 @@ import type {
   UnsafeTypeOccurrence,
 } from "./ts-ld-07-unsafe-type-erosion.js"
 
-export type LocalUnsafeTypeOccurrence = Omit<UnsafeTypeOccurrence, "file">
+type LocalUnsafeTypeOccurrence = Omit<UnsafeTypeOccurrence, "file">
 
 const BASE_WEIGHT_BY_KIND: Record<UnsafeTypeKind, number> = {
   parameter: 3,

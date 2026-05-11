@@ -15,14 +15,14 @@ const TsDe03Config = Schema.Struct({
 })
 type TsDe03Config = typeof TsDe03Config.Type
 
-export interface PropagationInfo {
+interface PropagationInfo {
   readonly reverseReach: number
   readonly forwardReach: number
   readonly directDependents: number
   readonly directDependencies: number
 }
 
-export interface TsDe03Output {
+interface TsDe03Output {
   readonly byModule: ReadonlyMap<string, PropagationInfo>
   readonly propagationCost: number
   readonly top10Propagators: ReadonlyArray<{ file: string; reverseReach: number }>

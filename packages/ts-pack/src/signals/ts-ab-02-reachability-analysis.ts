@@ -19,9 +19,8 @@ import {
 } from "./ts-ab-02-source-export-facts.js"
 
 export type ExportBinding = ReturnType<typeof collectExportBindings>[number]
-export type { TypeScriptSourceExportFacts } from "./ts-ab-02-source-export-facts.js"
 
-export interface ReachabilityAnalysis {
+interface ReachabilityAnalysis {
   readonly bindings: ReadonlyArray<ExportBinding>
   readonly consumerLookup: ReadonlyMap<string, ConsumerLookup>
   readonly packageNameByFile: ReadonlyMap<string, string | undefined>

@@ -29,7 +29,7 @@ export interface TsAb04Output {
   readonly diagnosticLimit: number
 }
 
-export interface TsAb04AnalysisConfig {
+interface TsAb04AnalysisConfig {
   readonly exclude_globs: ReadonlyArray<string>
   readonly test_globs: ReadonlyArray<string>
   readonly public_entry_globs: ReadonlyArray<string>

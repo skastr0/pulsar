@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import { TsAd01, type TsAd01Output } from "../signals/ts-ad-01-boundary-violations.js"
+import { TsAd01 } from "../signals/ts-ad-01-boundary-violations.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
 
 let repo: TempRepo
+type TsAd01Result = Parameters<typeof TsAd01.score>[0]
 
 const NAMING_CONVENTIONS = {
   function: "camelCase",
@@ -278,7 +279,7 @@ describe("TS-AD-01 (module boundary violations)", () => {
   })
 
   test("scores violations as 1 - violations / totalImports", () => {
-    const output: TsAd01Output = {
+    const output: TsAd01Result = {
       violations: Array.from({ length: 5 }, (_, index) => ({
         fromFile: `src/file-${index}.ts`,
         fromPackage: "@repo/app",

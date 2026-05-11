@@ -3,13 +3,11 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Effect, Schema } from "effect"
-import {
-  TsDe02,
-  type TsDe02Output,
-} from "../signals/ts-de-02-fan-in-out.js"
+import { TsDe02 } from "../signals/ts-de-02-fan-in-out.js"
 import { TsProjectLayer } from "../ts-project.js"
 
 let repo: string
+type TsDe02Result = Parameters<typeof TsDe02.score>[0]
 
 const writeTs = async (relPath: string, content: string): Promise<string> => {
   const full = join(repo, relPath)
@@ -18,11 +16,11 @@ const writeTs = async (relPath: string, content: string): Promise<string> => {
   return full
 }
 
-const runCompute = async (config = TsDe02.defaultConfig): Promise<TsDe02Output> => {
+const runCompute = async (config = TsDe02.defaultConfig): Promise<TsDe02Result> => {
   const program = TsDe02.compute(config, new Map()).pipe(
     Effect.provide(TsProjectLayer(repo)),
   )
-  return Effect.runPromise(program as Effect.Effect<TsDe02Output, unknown, never>)
+  return Effect.runPromise(program as Effect.Effect<TsDe02Result, unknown, never>)
 }
 
 beforeEach(async () => {

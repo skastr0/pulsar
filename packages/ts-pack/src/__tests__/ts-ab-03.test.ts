@@ -3,13 +3,11 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Effect, Schema } from "effect"
-import {
-  TsAb03,
-  type TsAb03Output,
-} from "../signals/ts-ab-03-type-indirection-depth.js"
+import { TsAb03 } from "../signals/ts-ab-03-type-indirection-depth.js"
 import { TsProjectLayer } from "../ts-project.js"
 
 let repo: string
+type TsAb03Result = Parameters<typeof TsAb03.score>[0]
 
 const writeTs = async (relPath: string, content: string): Promise<string> => {
   const full = join(repo, relPath)
@@ -18,11 +16,11 @@ const writeTs = async (relPath: string, content: string): Promise<string> => {
   return full
 }
 
-const runCompute = async (config = TsAb03.defaultConfig): Promise<TsAb03Output> => {
+const runCompute = async (config = TsAb03.defaultConfig): Promise<TsAb03Result> => {
   const program = TsAb03.compute(config, new Map()).pipe(
     Effect.provide(TsProjectLayer(repo)),
   )
-  return Effect.runPromise(program as Effect.Effect<TsAb03Output, unknown, never>)
+  return Effect.runPromise(program as Effect.Effect<TsAb03Result, unknown, never>)
 }
 
 beforeEach(async () => {

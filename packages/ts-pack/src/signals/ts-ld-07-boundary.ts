@@ -7,7 +7,7 @@ type BoundaryDeclaration =
   | ts.TypeAliasDeclaration
   | ts.EnumDeclaration
 
-export type ReturnTypeOwner =
+type ReturnTypeOwner =
   | ts.FunctionDeclaration
   | ts.MethodDeclaration
   | ts.ArrowFunction

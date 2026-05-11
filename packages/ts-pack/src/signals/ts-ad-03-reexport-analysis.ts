@@ -9,7 +9,7 @@ export interface ReExportAnalysis {
   readonly directReExports: number
 }
 
-export interface ReExportAnalysisConfig {
+interface ReExportAnalysisConfig {
   readonly barrel_ratio_threshold: number
   readonly index_reexport_threshold: number
 }

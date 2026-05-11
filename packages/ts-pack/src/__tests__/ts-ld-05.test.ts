@@ -1,11 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import {
-  TsLd05,
-  type TsLd05Output,
-} from "../signals/ts-ld-05-domain-term-consistency.js"
+import { TsLd05 } from "../signals/ts-ld-05-domain-term-consistency.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
 
 let repo: TempRepo
+type TsLd05Result = Parameters<typeof TsLd05.score>[0]
 
 const GLOSSARY = {
   schema_version: 1,
@@ -63,7 +61,7 @@ describe("TS-LD-05 (domain term consistency)", () => {
   })
 
   test("weights conflicts more harshly than novel but unique terms", () => {
-    const conflictOutput: TsLd05Output = {
+    const conflictOutput: TsLd05Result = {
       identifiers: [
         {
           file: "src/terms.ts",
@@ -82,7 +80,7 @@ describe("TS-LD-05 (domain term consistency)", () => {
       referenceDataStatus: "loaded",
       diagnosticLimit: 10,
     }
-    const newUniqueOutput: TsLd05Output = {
+    const newUniqueOutput: TsLd05Result = {
       ...conflictOutput,
       identifiers: [
         {

@@ -1,7 +1,7 @@
 import type { SharedChurn01Output } from "@skastr0/pulsar-shared-signals"
 import type { TsLd01Output } from "./ts-ld-01-complexity.js"
 
-export interface HotspotConfig {
+interface HotspotConfig {
   readonly top_n: number
   readonly min_churn: number
   readonly min_complexity: number

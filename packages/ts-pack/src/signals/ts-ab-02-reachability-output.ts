@@ -7,7 +7,7 @@ import { boundaryOfFile, type BoundaryRule } from "./shared-workspace.js"
 import type { ExportBinding } from "./ts-ab-02-reachability-analysis.js"
 
 export type ExportClassification = "unused" | "internal-only" | "cross-module" | "cross-package"
-export type ExportEvidence = "runtime" | "type-only" | "test-hook"
+type ExportEvidence = "runtime" | "type-only" | "test-hook"
 
 export interface ExportReachability {
   readonly exportFile: string

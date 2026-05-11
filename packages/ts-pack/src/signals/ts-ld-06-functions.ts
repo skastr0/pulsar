@@ -8,7 +8,7 @@ type CompilerFunctionLike =
   | ts.ArrowFunction
   | ts.FunctionExpression
 
-export interface TrackedFunction {
+interface TrackedFunction {
   readonly fn: CompilerFunctionLike
   readonly boundary: boolean
   readonly name: string

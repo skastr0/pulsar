@@ -7,7 +7,6 @@ import { TsPackageInfoTag, TsProjectTag } from "../ts-project.js"
 import {
   buildReachabilityAnalysis,
   type ExportBinding,
-  type TypeScriptSourceExportFacts,
 } from "./ts-ab-02-reachability-analysis.js"
 import {
   isReExportedByPublicEntrypoint,
@@ -20,7 +19,10 @@ import {
   type ExportClassification,
   type ExportReachability,
 } from "./ts-ab-02-reachability-output.js"
-import { declarationFactForExport } from "./ts-ab-02-source-export-facts.js"
+import {
+  declarationFactForExport,
+  type TypeScriptSourceExportFacts,
+} from "./ts-ab-02-source-export-facts.js"
 
 const BoundaryRuleSchema = Schema.Struct({
   name: Schema.String,
@@ -35,7 +37,7 @@ const TsAb02Config = Schema.Struct({
 })
 export type TsAb02Config = typeof TsAb02Config.Type
 
-export type TsAb02Output = {
+type TsAb02Output = {
   readonly exports: ReadonlyArray<ExportReachability>
   readonly calibrationDecisions: ReadonlyArray<CalibrationDecision>
   readonly counts: Readonly<Record<ExportClassification, number>>

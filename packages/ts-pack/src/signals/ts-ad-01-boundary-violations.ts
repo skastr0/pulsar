@@ -28,7 +28,7 @@ export interface BoundaryViolation {
   readonly line: number
 }
 
-export interface TsAd01Output {
+interface TsAd01Output {
   readonly violations: ReadonlyArray<BoundaryViolation>
   readonly totalImports: number
   readonly violationsByPackage: ReadonlyMap<string, number>

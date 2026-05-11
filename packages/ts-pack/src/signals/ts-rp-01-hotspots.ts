@@ -16,7 +16,7 @@ const TsRp01Config = Schema.Struct({
 })
 type TsRp01Config = typeof TsRp01Config.Type
 
-export type TsRp01Output = HotspotOutput
+type TsRp01Output = HotspotOutput
 
 /**
  * TS-RP-01 — churn × complexity hotspots.

@@ -15,7 +15,7 @@ export interface LockWorkspace {
   readonly optionalDependencies: Readonly<Record<string, string>>
 }
 
-export type TsDe05Lockfile =
+type TsDe05Lockfile =
   | {
     readonly kind: "bun" | "npm" | "pnpm"
     readonly path: string
