@@ -1,0 +1,195 @@
+import {
+  CATEGORIES,
+  type AiAssistedModeExplanation,
+  type Category,
+  type ObserverOutput,
+} from "@skastr0/pulsar-core"
+import type { CiAssessment } from "./score.js"
+import { formatCiBaselineLine, renderGateStatus } from "./score-ci-output.js"
+import {
+  formatCalibrationLine,
+  printTopDiagnostics,
+  pushTopDiagnostics,
+  TOP_FINDINGS_LIMIT,
+} from "./score-diagnostics.js"
+import {
+  CATEGORY_LABELS,
+  fixedWidthLabel,
+  renderScoreBar,
+} from "./score-format.js"
+import {
+  printRuntimeProfile,
+  pushRuntimeProfile,
+} from "./score-runtime-profile.js"
+
+export const printObserverView = (opts: {
+  readonly repoRoot: string
+  readonly gitSha: string
+  readonly output: ObserverOutput
+  readonly vectorLabel: string
+  readonly vectorSourceLabel: string
+  readonly aiMode: AiAssistedModeExplanation
+  readonly ciAssessment: CiAssessment
+  readonly colorize: boolean
+  readonly profile: boolean
+}): void => {
+  const lines: Array<string> = []
+  lines.push("")
+  lines.push(`  Repo:   ${opts.repoRoot}`)
+  lines.push(`  SHA:    ${opts.gitSha}`)
+  lines.push(`  Vector: ${opts.vectorLabel}`)
+  lines.push(`  Vector Source: ${opts.vectorSourceLabel}`)
+  lines.push(`  AI Mode:${opts.aiMode.active ? " active" : " inactive"}`)
+  lines.push(`          ${opts.aiMode.summary}`)
+  if (opts.aiMode.active) {
+    lines.push(`          ${opts.aiMode.overrideHint}`)
+  }
+  const calibrationLine = formatCalibrationLine(opts.output)
+  if (calibrationLine !== undefined) {
+    lines.push(`  Calibration: ${calibrationLine}`)
+  }
+  lines.push("")
+
+  for (const category of CATEGORIES) {
+    const label = CATEGORY_LABELS[category].padEnd(22, " ")
+    const score = opts.output.categories[category].score
+    lines.push(`  ${label} ${score.toFixed(2)}  ${renderScoreBar(score)}`)
+  }
+
+  lines.push("  ───────────────────────────────────────────────")
+  if (opts.output.readiness !== undefined) {
+    lines.push(
+      `  Readiness             ${opts.output.readiness.score.toFixed(2)}  ${renderScoreBar(opts.output.readiness.score)}  ${opts.output.readiness.status} / pressure=${opts.output.readiness.pressure.toFixed(2)}`,
+    )
+  }
+  lines.push(`  Evidence Mean         ${opts.output.weighted_mean.toFixed(2)}`)
+  if (opts.output.minimum !== undefined) {
+    lines.push(
+      `  Minimum               ${opts.output.minimum.signal} / ${opts.output.minimum.category} / ${opts.output.minimum.score.toFixed(2)}`,
+    )
+    if (opts.output.minimum.detail !== "") {
+      lines.push(`                        ${JSON.stringify(opts.output.minimum.detail)}`)
+    }
+  } else {
+    lines.push("  Minimum               none")
+  }
+
+  lines.push(
+    `  Hard Gate             ${renderGateStatus(opts.ciAssessment.effectiveStatus, opts.colorize)}`,
+  )
+  const ciLine = formatCiBaselineLine(opts.ciAssessment, opts.output)
+  if (ciLine !== undefined) {
+    lines.push(`  CI Baseline           ${ciLine}`)
+  }
+  pushTopDiagnostics(lines, opts.repoRoot, opts.output, [...opts.output.signalResults.keys()], TOP_FINDINGS_LIMIT)
+  pushRuntimeProfile(lines, opts.output, opts.profile)
+  lines.push("")
+
+  for (const line of lines) console.log(line)
+}
+
+export const printCategoryView = (opts: {
+  readonly repoRoot: string
+  readonly gitSha: string
+  readonly category: Category
+  readonly output: ObserverOutput
+  readonly vectorLabel: string
+  readonly vectorSourceLabel: string
+  readonly aiMode: AiAssistedModeExplanation
+  readonly profile: boolean
+}): void => {
+  const entry = opts.output.categories[opts.category]
+  const signalEntries = Object.entries(entry.signals).sort(
+    (a, b) => a[1] - b[1] || a[0].localeCompare(b[0]),
+  )
+
+  console.log("")
+  console.log(`  Repo:     ${opts.repoRoot}`)
+  console.log(`  SHA:      ${opts.gitSha}`)
+  console.log(`  Vector:   ${opts.vectorLabel}`)
+  console.log(`  Vector Source: ${opts.vectorSourceLabel}`)
+  console.log(`  AI Mode:  ${opts.aiMode.active ? "active" : "inactive"}`)
+  console.log(`            ${opts.aiMode.summary}`)
+  const calibrationLine = formatCalibrationLine(opts.output)
+  if (calibrationLine !== undefined) {
+    console.log(`  Calibration: ${calibrationLine}`)
+  }
+  console.log(`  Category: ${opts.category}`)
+  console.log("")
+  console.log(
+    `  ${CATEGORY_LABELS[opts.category].padEnd(22, " ")} ${entry.score.toFixed(2)}  ${renderScoreBar(entry.score)}`,
+  )
+  if (opts.output.hard_gate_status === "fail") {
+    console.log(`  Hard Gate             ${renderGateStatus(opts.output.hard_gate_status, false)}`)
+  }
+  printCategoryScoreMath(entry, opts.output.signalMetadata)
+  if (signalEntries.length === 0) {
+    console.log("")
+    console.log("  (no active signals in this category)")
+    console.log("")
+    return
+  }
+
+  console.log("")
+  for (const [signalId, score] of signalEntries) {
+    console.log(`  ${fixedWidthLabel(signalId, 22)} ${score.toFixed(2)}  ${renderScoreBar(score)}`)
+  }
+  printTopDiagnostics(opts.repoRoot, opts.output, signalEntries.map(([signalId]) => signalId), TOP_FINDINGS_LIMIT)
+  printRuntimeProfile(opts.output, opts.profile)
+  console.log("")
+}
+
+const printCategoryScoreMath = (
+  entry: ObserverOutput["categories"][Category],
+  signalMetadata: ObserverOutput["signalMetadata"] | undefined,
+): void => {
+  if (entry.aggregation === undefined) return
+
+  const lowestSignal = lowestApplicableSignalEntry(entry.signals, signalMetadata)
+  console.log("")
+  console.log("  Score Math")
+  console.log(
+    `    aggregate ${entry.aggregation.aggregateScore.toFixed(3)} (${entry.aggregation.strategy})`,
+  )
+  console.log(
+    `    pressure  ${entry.aggregation.pressure.finalPressure.toFixed(3)} ` +
+      `(${entry.aggregation.pressure.strategy}, p=${entry.aggregation.pressure.p})`,
+  )
+  if (entry.aggregation.strategy === "language-group-mean") {
+    console.log(`    raw mean  ${entry.aggregation.rawScore.toFixed(3)}`)
+  }
+  if (lowestSignal !== undefined) {
+    console.log(`    lowest    ${lowestSignal.signalId} ${lowestSignal.score.toFixed(3)}`)
+  }
+  if (entry.aggregation.shapedByPressure) {
+    console.log("    formula   min(aggregate, 1 - pressure)")
+  }
+  console.log(`    weights   ${formatSignalWeights(entry.aggregation.weights)}`)
+}
+
+const lowestApplicableSignalEntry = (
+  signals: Record<string, number>,
+  signalMetadata: ObserverOutput["signalMetadata"] | undefined,
+): { readonly signalId: string; readonly score: number } | undefined => {
+  const entries = Object.entries(signals).filter(([signalId]) => {
+    const applicability = signalMetadata?.[signalId]?.applicability
+    return applicability === undefined || applicability === "applicable"
+  })
+  if (entries.length === 0) return undefined
+  const [signalId, score] = entries.sort(
+    (a, b) => a[1] - b[1] || a[0].localeCompare(b[0]),
+  )[0]!
+  return { signalId, score }
+}
+
+const formatSignalWeights = (weights: Record<string, number>): string => {
+  const entries = Object.entries(weights).sort(([left], [right]) => left.localeCompare(right))
+  const visible = entries
+    .slice(0, 6)
+    .map(([signalId, weight]) => `${signalId}=${formatWeight(weight)}`)
+  const hidden = entries.length - visible.length
+  return hidden > 0 ? `${visible.join(", ")} (+${hidden} more)` : visible.join(", ")
+}
+
+const formatWeight = (weight: number): string =>
+  Number.isInteger(weight) ? weight.toFixed(0) : weight.toFixed(2)
