@@ -1,5 +1,6 @@
 import {
   type Diagnostic,
+  scoreThresholdViolationShare,
   type Signal,
   SignalComputeError,
 } from "@skastr0/pulsar-core/signal"
@@ -120,8 +121,7 @@ export const RsAb02: Signal<RsAb02Config, RsAb02Output, RustProjectTag> = {
       })
     }),
   score: (out) => {
-    if (out.functions.length === 0) return 1
-    return Math.max(0, 1 - out.overThreshold.length / out.functions.length)
+    return scoreThresholdViolationShare(out.functions.length, out.overThreshold.length)
   },
   diagnose: (out): ReadonlyArray<Diagnostic> =>
     out.overThreshold.slice(0, 10).map((entry) => ({

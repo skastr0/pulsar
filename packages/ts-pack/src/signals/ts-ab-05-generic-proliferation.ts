@@ -1,10 +1,9 @@
-import { SignalComputeError, summarize } from "@skastr0/pulsar-core/signal"
+import { SignalComputeError, scoreThresholdViolationShare, summarize } from "@skastr0/pulsar-core/signal"
 import type { Diagnostic, DistributionalSummary, Signal } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
 import { ts, type SourceFile } from "ts-morph"
 import { TsProjectTag } from "../ts-project.js"
 import { isExcluded } from "./shared-globs.js"
-import { scoreThresholdViolationShare } from "./shared-threshold-score.js"
 
 const TsAb05Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),

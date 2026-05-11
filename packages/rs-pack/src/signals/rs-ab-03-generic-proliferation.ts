@@ -1,6 +1,7 @@
 import {
   type Diagnostic,
   type DistributionalSummary,
+  scoreThresholdViolationShare,
   type Signal,
   SignalComputeError,
   summarize,
@@ -105,8 +106,7 @@ export const RsAb03: Signal<RsAb03Config, RsAb03Output, RustProjectTag> = {
       })
     }),
   score: (out) => {
-    if (out.declarations.length === 0) return 1
-    return Math.max(0, 1 - out.overThreshold.length / out.declarations.length)
+    return scoreThresholdViolationShare(out.declarations.length, out.overThreshold.length)
   },
   diagnose: (out): ReadonlyArray<Diagnostic> =>
     out.overThreshold.slice(0, 10).map((entry) => ({

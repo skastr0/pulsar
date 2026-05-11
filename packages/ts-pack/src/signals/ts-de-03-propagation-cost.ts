@@ -5,6 +5,7 @@ import { buildModuleGraph } from "../graph/module-graph.js"
 import { computeReachabilityCounts } from "../graph/reachability.js"
 import { condenseGraph, tarjanSccs } from "../graph/tarjan.js"
 import { TsProjectTag } from "../ts-project.js"
+import { compareDescendingMetricByFile } from "./shared-rank-order.js"
 
 const TsDe03Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
@@ -207,10 +208,7 @@ const topPropagators = (
 ): ReadonlyArray<{ file: string; reverseReach: number }> =>
   [...byModule.entries()]
     .map(([file, info]) => ({ file, reverseReach: info.reverseReach }))
-    .sort((left, right) => {
-      if (right.reverseReach !== left.reverseReach) {
-        return right.reverseReach - left.reverseReach
-      }
-      return left.file.localeCompare(right.file)
-    })
+    .sort((left, right) =>
+      compareDescendingMetricByFile(left.reverseReach, right.reverseReach, left.file, right.file),
+    )
     .slice(0, 10)

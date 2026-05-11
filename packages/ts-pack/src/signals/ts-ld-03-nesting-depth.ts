@@ -1,4 +1,4 @@
-import { SignalComputeError, summarize } from "@skastr0/pulsar-core/signal"
+import { SignalComputeError, scoreThresholdViolationShare, summarize } from "@skastr0/pulsar-core/signal"
 import type { Diagnostic, DistributionalSummary, Signal } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
 import {
@@ -145,8 +145,7 @@ export const TsLd03: Signal<TsLd03Config, TsLd03Output, TsProjectTag> = {
       return result
     }),
   score: (out) => {
-    if (out.totalFunctions === 0) return 1
-    return Math.max(0, 1 - out.overThreshold.length / out.totalFunctions)
+    return scoreThresholdViolationShare(out.totalFunctions, out.overThreshold.length)
   },
   diagnose: (out): ReadonlyArray<Diagnostic> =>
     out.overThreshold.slice(0, out.diagnosticLimit).map((entry) => ({

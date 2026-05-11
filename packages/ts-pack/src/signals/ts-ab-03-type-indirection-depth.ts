@@ -1,10 +1,10 @@
 import { SignalComputeError, summarize } from "@skastr0/pulsar-core/signal"
 import type { Diagnostic, DistributionalSummary, Signal } from "@skastr0/pulsar-core/signal"
+import { scoreThresholdViolationShare } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
 import { Node, type SourceFile } from "ts-morph"
 import { TsProjectTag } from "../ts-project.js"
 import { isExcluded } from "./shared-globs.js"
-import { scoreThresholdViolationShare } from "./shared-threshold-score.js"
 import {
   type DepthResult,
   type TrackedDeclaration,

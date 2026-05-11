@@ -1,5 +1,6 @@
 import { summarize } from "@skastr0/pulsar-core/signal"
 import type { DistributionalSummary } from "@skastr0/pulsar-core/signal"
+import { compareDescendingMetricByFile } from "./shared-rank-order.js"
 
 export interface CouplingCounterpart {
   readonly module: string
@@ -131,8 +132,5 @@ const compareCounterparts = (left: CouplingCounterpart, right: CouplingCounterpa
 }
 
 const compareModules = (left: ModuleTypeCoupling, right: ModuleTypeCoupling): number => {
-  if (right.totalCoupling !== left.totalCoupling) {
-    return right.totalCoupling - left.totalCoupling
-  }
-  return left.file.localeCompare(right.file)
+  return compareDescendingMetricByFile(left.totalCoupling, right.totalCoupling, left.file, right.file)
 }
