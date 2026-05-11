@@ -84,7 +84,7 @@ const deliberateExistentialRules: ReadonlyArray<{
   {
     file: "packages/cli/src/runtime.ts",
     kind: "return",
-    target: "EngineLayer",
+    target: "scoringEngineLayer",
   },
   {
     file: "packages/cli/src/runtime.ts",
