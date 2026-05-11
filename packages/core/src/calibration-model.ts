@@ -17,6 +17,9 @@ export const CALIBRATION_SLOT_IDS = [
   "typescript.unsafe-type-policy",
   "typescript.type-coupling-policy",
   "typescript.dependency-version-policy",
+  "typescript.pr-size-policy",
+  "shared.bus-factor-policy",
+  "shared.churn-rate-policy",
   "mixer.category-policy",
 ] as const
 
@@ -183,6 +186,9 @@ export type AnyCalibrationProcessor =
   | CalibrationProcessor<"typescript.unsafe-type-policy">
   | CalibrationProcessor<"typescript.type-coupling-policy">
   | CalibrationProcessor<"typescript.dependency-version-policy">
+  | CalibrationProcessor<"typescript.pr-size-policy">
+  | CalibrationProcessor<"shared.bus-factor-policy">
+  | CalibrationProcessor<"shared.churn-rate-policy">
   | CalibrationProcessor<"mixer.category-policy">
 
 export interface ResolvedCalibrationContext {

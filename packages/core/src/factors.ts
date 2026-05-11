@@ -1,4 +1,10 @@
 export {
+  commonDirectoryPrefix,
+  factorEntryForPolicyDecision,
+  factorPathSegment,
+  relativeFactorPath,
+} from "./factor-policy-ledger.js"
+export {
   SIGNAL_FACTOR_POLICY_PRECEDENCE,
   SignalFactorPolicyTag,
   applyFactorOverrides,

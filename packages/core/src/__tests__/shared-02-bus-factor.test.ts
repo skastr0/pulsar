@@ -1,8 +1,17 @@
 import { describe, expect, test } from "bun:test"
 import { join } from "node:path"
 import { Effect, Layer } from "effect"
+import {
+  appendCalibrationDecision,
+  CalibrationContextTag,
+  defineCalibrationProcessor,
+} from "../calibration-model.js"
+import { makeResolvedCalibrationContext } from "../calibration-context.js"
 import { SignalContextTag } from "../context.js"
-import { Shared02BusFactor } from "../shared-02-bus-factor.js"
+import {
+  Shared02BusFactor,
+  type Shared02BusFactorOutput,
+} from "../shared-02-bus-factor.js"
 import { createGitTestRepo } from "./git-test-repo.js"
 
 const longFile = (label: string): string =>
@@ -329,6 +338,96 @@ describe("SHARED-02 bus factor", () => {
       expect(Shared02BusFactor.score(output)).toBeGreaterThanOrEqual(0.65)
       expect(Shared02BusFactor.score(output)).toBeLessThan(1)
       expect(Shared02BusFactor.diagnose(output)[0]?.severity).toBe("info")
+    } finally {
+      await repo.cleanup()
+    }
+  })
+
+  test("project modules can neutralize bus-factor pressure with factor provenance", async () => {
+    const repo = await createGitTestRepo("pulsar-shared-02-policy-")
+    try {
+      await repo.write("src/solo.ts", longFile("solo"))
+      await repo.commitAll({
+        message: "seed solo",
+        authorName: "Alice",
+        authorEmail: "alice@example.com",
+        dateIso: "2024-01-01T00:00:00Z",
+      })
+
+      const soloPath = join(repo.root, "src/solo.ts")
+      const processor = defineCalibrationProcessor({
+        id: "shared-ownership-policy",
+        moduleId: "acme.project",
+        moduleVersion: "1.0.0",
+        slot: "shared.bus-factor-policy",
+        role: "factor-policy",
+        priority: 10,
+        fingerprint: "shared-ownership-policy-v1",
+        process: (current) =>
+          Effect.succeed(
+            appendCalibrationDecision(
+              current,
+              {
+                moduleId: "acme.project",
+                processorId: "shared-ownership-policy",
+                slot: "shared.bus-factor-policy",
+                action: "accept-generated-ownership-boundary",
+                confidence: "high",
+                reason: "Project module marks this generated ownership boundary as non-actionable",
+                ruleId: "acme.shared.bus-factor.generated-boundary",
+                factorPaths: [
+                  `${current.value.factorPathPrefix}.penalty_weight`,
+                  `${current.value.factorPathPrefix}.severity`,
+                ],
+                before: current.value,
+                after: { ...current.value, penaltyWeight: 0, severity: "info" as const },
+                evidence: [{ kind: "path", value: current.value.file }],
+              },
+              { ...current.value, penaltyWeight: 0, severity: "info" },
+            ),
+          ),
+      })
+      const calibrationContext = makeResolvedCalibrationContext({
+        repoFacts: {
+          repoRoot: repo.root,
+          fingerprint: "repo-facts-v1",
+          detectedTechnologies: ["typescript"],
+          sourceExtensions: [".ts"],
+        },
+        processors: [processor],
+      })
+
+      const output: Shared02BusFactorOutput = await Effect.runPromise(
+        Shared02BusFactor.compute(Shared02BusFactor.defaultConfig, new Map()).pipe(
+          Effect.provide(Layer.succeed(CalibrationContextTag, calibrationContext)),
+          Effect.provide(
+            Layer.succeed(SignalContextTag, {
+              gitSha: repo.revParse("HEAD"),
+              worktreePath: repo.root,
+              changedHunks: [],
+            }),
+          ),
+        ) as Effect.Effect<Shared02BusFactorOutput, unknown, never>,
+      )
+
+      const effective = output.effectiveSiloed?.find((entry) => entry.file === soloPath)
+      expect(Shared02BusFactor.score(output)).toBe(1)
+      expect(effective?.penaltyWeight).toBe(0)
+      expect(effective?.severity).toBe("info")
+      expect(effective?.policyDecisions[0]?.ruleId).toBe(
+        "acme.shared.bus-factor.generated-boundary",
+      )
+      expect(output.factorLedger?.entries).toContainEqual(
+        expect.objectContaining({
+          path: `${effective?.factorPathPrefix}.penalty_weight`,
+          value: 0,
+          source: "module",
+          attribution: expect.objectContaining({
+            moduleId: "acme.project",
+            processorId: "shared-ownership-policy",
+          }),
+        }),
+      )
     } finally {
       await repo.cleanup()
     }

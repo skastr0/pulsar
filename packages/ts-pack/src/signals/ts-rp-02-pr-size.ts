@@ -1,5 +1,7 @@
 import { SignalContextTag, SignalComputeError } from "@skastr0/pulsar-core/signal"
-import type { Diagnostic, Signal, SignalContext } from "@skastr0/pulsar-core/signal"
+import type { Diagnostic, Signal, SignalContext, SignalFactorLedger } from "@skastr0/pulsar-core/signal"
+import type { CalibrationDecision } from "@skastr0/pulsar-core/calibration"
+import { CalibrationContextTag } from "@skastr0/pulsar-core/calibration"
 import { Effect, Schema } from "effect"
 import { simpleGit } from "simple-git"
 import type { Project } from "ts-morph"
@@ -7,6 +9,7 @@ import { TsProjectTag, TsPackageInfoTag } from "../ts-project.js"
 import type { PackageInfo } from "../discovery.js"
 import { formatLargestFiles } from "./ts-rp-02-diagnostics.js"
 import { fromChangedHunks, parseGitDiff, TS_DIFF_PATHSPECS } from "./ts-rp-02-diff.js"
+import { applyPrSizePolicy } from "./ts-rp-02-policy.js"
 
 const TsRp02Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
@@ -46,6 +49,11 @@ export interface TsRp02Output {
   readonly diffMode: "git-working-tree" | "git-branch-range" | "git-commit-range" | "changed-hunks-fallback" | "missing"
   readonly sizeCategory: "small" | "medium" | "large" | "oversized"
   readonly sizePenalty: number
+  readonly visible?: boolean
+  readonly severity?: "info" | "warn" | "block"
+  readonly factorPathPrefix?: string
+  readonly calibrationDecisions?: ReadonlyArray<CalibrationDecision>
+  readonly factorLedger?: SignalFactorLedger
 }
 
 export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackageInfoTag | SignalContextTag> = {
@@ -55,7 +63,7 @@ export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackage
   tier: 1,
   category: "review-pain",
   kind: "structural",
-  cacheVersion: "branch-range-v1",
+  cacheVersion: "branch-range-factor-policy-v1",
   cacheDependencies: ["git-revision-context"],
   configSchema: TsRp02Config,
   defaultConfig: {
@@ -82,17 +90,22 @@ export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackage
       const project = yield* TsProjectTag
       const packages = yield* TsPackageInfoTag
       const context = yield* SignalContextTag
-      return yield* Effect.tryPromise({
+      const calibration = yield* Effect.serviceOption(CalibrationContextTag)
+      const output = yield* Effect.tryPromise({
         try: async (): Promise<TsRp02Output> => {
           return await computeGitPrSizeOutput(project, packages, context, config)
         },
         catch: (cause) =>
           new SignalComputeError({ signalId: "TS-RP-02-pr-size", message: String(cause), cause }),
       })
+      return yield* applyPrSizePolicy(output, calibration).pipe(
+        Effect.mapError(toSignalComputeError),
+      )
     }),
   score: (out) => {
+    const sizePenalty = out.visible === false ? 0 : out.sizePenalty
     const edgePenalty = out.newCrossBoundaryEdges.length * 0.2 + out.newCrossPackageEdges.length * 0.1
-    return Math.max(0, 1 - out.sizePenalty - edgePenalty)
+    return Math.max(0, 1 - sizePenalty - edgePenalty)
   },
   outputMetadata: (out) => {
     if (out.diffMode === "missing") return { applicability: "insufficient_evidence" as const }
@@ -107,24 +120,29 @@ export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackage
 
     const diagnostics: Array<Diagnostic> = []
 
-    diagnostics.push({
-      severity:
-        out.sizeCategory === "large" || out.sizeCategory === "oversized"
-          ? ("warn" as const)
-          : ("info" as const),
-      message:
-        `PR surface: +${out.linesAdded} / -${out.linesDeleted} across ${out.filesChanged.length} files ` +
-        `(${out.sizeCategory})${formatLargestFiles(out.fileStats)}`,
-      data: {
-        linesAdded: out.linesAdded,
-        linesDeleted: out.linesDeleted,
-        filesChanged: out.filesChanged,
-        largestFiles: out.fileStats.slice(0, 10),
-        packagesTouched: out.packagesTouched,
-        sizeCategory: out.sizeCategory,
-        diffMode: out.diffMode,
-      },
-    })
+    if (out.visible !== false) {
+      diagnostics.push({
+        severity:
+          out.severity ??
+          (out.sizeCategory === "large" || out.sizeCategory === "oversized"
+            ? ("warn" as const)
+            : ("info" as const)),
+        message:
+          `PR surface: +${out.linesAdded} / -${out.linesDeleted} across ${out.filesChanged.length} files ` +
+          `(${out.sizeCategory})${formatLargestFiles(out.fileStats)}`,
+        data: {
+          linesAdded: out.linesAdded,
+          linesDeleted: out.linesDeleted,
+          filesChanged: out.filesChanged,
+          largestFiles: out.fileStats.slice(0, 10),
+          packagesTouched: out.packagesTouched,
+          sizeCategory: out.sizeCategory,
+          diffMode: out.diffMode,
+          sizePenalty: out.sizePenalty,
+          policyDecisions: out.calibrationDecisions ?? [],
+        },
+      })
+    }
 
     for (const edge of out.newCrossBoundaryEdges.slice(0, 10)) {
       diagnostics.push({
@@ -142,6 +160,7 @@ export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackage
 
     return diagnostics
   },
+  factorLedger: (out) => out.factorLedger,
 }
 
 type GitClient = ReturnType<typeof simpleGit>
@@ -229,3 +248,12 @@ const resolveBranchDiffRange = async (
     return undefined
   }
 }
+
+const toSignalComputeError = (cause: unknown): SignalComputeError =>
+  cause instanceof SignalComputeError
+    ? cause
+    : new SignalComputeError({
+        signalId: "TS-RP-02-pr-size",
+        message: String(cause),
+        cause,
+      })

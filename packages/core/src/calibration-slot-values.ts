@@ -201,6 +201,65 @@ export interface TypeScriptDependencyVersionPolicyValue {
   readonly metadata?: Readonly<Record<string, unknown>>
 }
 
+export interface TypeScriptPrSizePolicyValue {
+  readonly signalId: string
+  readonly findingId: string
+  readonly diffMode:
+    | "git-working-tree"
+    | "git-branch-range"
+    | "git-commit-range"
+    | "changed-hunks-fallback"
+    | "missing"
+  readonly linesAdded: number
+  readonly linesDeleted: number
+  readonly filesChanged: ReadonlyArray<string>
+  readonly sizeCategory: "small" | "medium" | "large" | "oversized"
+  readonly visible: boolean
+  readonly severity: "info" | "warn" | "block"
+  readonly penaltyWeight: number
+  readonly factorPathPrefix: string
+  readonly metadata?: Readonly<Record<string, unknown>>
+}
+
+export interface SharedBusFactorPolicyValue {
+  readonly signalId: string
+  readonly findingId: string
+  readonly file: string
+  readonly author: string
+  readonly loc: number
+  readonly windowDays: number
+  readonly maxCommits: number
+  readonly touchedFileCount: number
+  readonly touchedLoc: number
+  readonly repoAuthors: ReadonlyArray<string>
+  readonly visible: boolean
+  readonly severity: "info" | "warn" | "block"
+  readonly penaltyWeight: number
+  readonly factorPathPrefix: string
+  readonly metadata?: Readonly<Record<string, unknown>>
+}
+
+export interface SharedChurnRatePolicyValue {
+  readonly signalId: string
+  readonly findingId: string
+  readonly file: string
+  readonly windowDays: number
+  readonly introduced: number
+  readonly churned: number
+  readonly rate: number
+  readonly introducedLineCount: number
+  readonly churnedLineCount: number
+  readonly churnRate: number
+  readonly repoIntroduced: number
+  readonly repoChurned: number
+  readonly repoRate: number
+  readonly visible: boolean
+  readonly severity: "info" | "warn" | "block"
+  readonly penaltyWeight: number
+  readonly factorPathPrefix: string
+  readonly metadata?: Readonly<Record<string, unknown>>
+}
+
 export interface MixerCategoryPolicyValue {
   readonly category: string
   readonly rawScore: number
@@ -221,5 +280,8 @@ export interface CalibrationSlotValues {
   readonly "typescript.unsafe-type-policy": TypeScriptUnsafeTypePolicyValue
   readonly "typescript.type-coupling-policy": TypeScriptTypeCouplingPolicyValue
   readonly "typescript.dependency-version-policy": TypeScriptDependencyVersionPolicyValue
+  readonly "typescript.pr-size-policy": TypeScriptPrSizePolicyValue
+  readonly "shared.bus-factor-policy": SharedBusFactorPolicyValue
+  readonly "shared.churn-rate-policy": SharedChurnRatePolicyValue
   readonly "mixer.category-policy": MixerCategoryPolicyValue
 }

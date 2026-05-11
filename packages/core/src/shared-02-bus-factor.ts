@@ -1,13 +1,29 @@
-import { Effect, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
+import type {
+  CalibrationDecision,
+  CalibrationProcessorError,
+  ResolvedCalibrationContext,
+  SharedBusFactorPolicyValue,
+} from "./calibration-model.js"
+import { CalibrationContextTag } from "./calibration-model.js"
 import { SignalContextTag } from "./context.js"
 import { type Diagnostic } from "./diagnostic.js"
 import {
+  commonDirectoryPrefix,
+  factorEntryForPolicyDecision,
+  factorPathSegment,
+  relativeFactorPath,
+} from "./factor-policy-ledger.js"
+import { makeFactorLedger } from "./factor-ledger.js"
+import type { SignalFactorLedger, SignalFactorLedgerEntry } from "./signal-factor-model.js"
+import {
   buildBusFactorOutput,
-  type Shared02BusFactorOutput,
+  type Shared02BusFactorOutput as RawShared02BusFactorOutput,
 } from "./shared-02-aggregation.js"
 import { SignalComputeError } from "./errors.js"
 import type { Signal } from "./signal.js"
 import { loadTouchedFileHistory } from "./shared-02-history.js"
+import { SHARED_PRODUCTION_EXCLUDE_GLOBS } from "./shared-history-defaults.js"
 import {
   clamp01,
   listAuthorsByTouchedFileInWindow,
@@ -17,8 +33,24 @@ import {
 
 export type {
   BusFactorInfo,
-  Shared02BusFactorOutput,
 } from "./shared-02-aggregation.js"
+
+interface Shared02EffectiveSilo {
+  readonly file: string
+  readonly author: string
+  readonly loc: number
+  readonly visible: boolean
+  readonly severity: "info" | "warn" | "block"
+  readonly penaltyWeight: number
+  readonly factorPathPrefix: string
+  readonly policyDecisions: ReadonlyArray<CalibrationDecision>
+}
+
+export interface Shared02BusFactorOutput extends RawShared02BusFactorOutput {
+  readonly effectiveSiloed?: ReadonlyArray<Shared02EffectiveSilo>
+  readonly calibrationDecisions?: ReadonlyArray<CalibrationDecision>
+  readonly factorLedger?: SignalFactorLedger
+}
 
 export const Shared02BusFactorConfig = Schema.Struct({
   window_days: Schema.Number,
@@ -45,92 +77,22 @@ export const Shared02BusFactor: Signal<
   tier: 1.5,
   category: "review-pain",
   kind: "legibility",
-  cacheVersion: "bounded-history-v3-single-author-pressure",
+  cacheVersion: "bounded-history-v4-factor-policy",
   configSchema: Shared02BusFactorConfig,
   defaultConfig: {
     window_days: 180,
     max_commits: 5000,
     include_extensions: [".ts", ".tsx", ".js", ".jsx", ".rs"],
-    exclude_globs: [
-      "**/node_modules/**",
-      "**/dist/**",
-      "**/.turbo/**",
-      "**/target/**",
-      ".*/**",
-      "**/.*/**",
-      "example/**",
-      "**/example/**",
-      "examples/**",
-      "**/examples/**",
-      "fixture/**",
-      "**/fixture/**",
-      "fixtures/**",
-      "**/fixtures/**",
-      "sample/**",
-      "**/sample/**",
-      "samples/**",
-      "**/samples/**",
-      "playground/**",
-      "playground-*/**",
-      "playgrounds/**",
-      "**/playground/**",
-      "**/playground-*/**",
-      "**/playgrounds/**",
-      "template/**",
-      "**/template/**",
-      "templates/**",
-      "**/templates/**",
-      "**/_generated/**",
-      "**/generated/**",
-      "**/*.gen.ts",
-      "**/*.gen.tsx",
-      "**/*.generated.ts",
-      "**/*.generated.tsx",
-      "**/*.test.ts",
-      "**/*.test.tsx",
-      "**/*.spec.ts",
-      "**/*.spec.tsx",
-      "**/__tests__/**",
-      "**/test/**",
-      "**/tests/**",
-      "**/test-support/**",
-      "**/*test-support.ts",
-      "**/*test-support.tsx",
-      "**/*.test-support.ts",
-      "**/*.test-support.tsx",
-      "**/test-helpers.ts",
-      "**/*test-helpers.ts",
-      "**/*test-helpers.tsx",
-      "**/*.test-helpers.ts",
-      "**/*.test-helpers.tsx",
-      "**/test-mocks.ts",
-      "**/*test-mocks.ts",
-      "**/*test-mocks.tsx",
-      "**/*.test-mocks.ts",
-      "**/*.test-mocks.tsx",
-      "**/test-harness.ts",
-      "**/*test-harness.ts",
-      "**/*test-harness.tsx",
-      "**/*.test-harness.ts",
-      "**/*.test-harness.tsx",
-      "**/happydom.ts",
-      "**/__snapshots__/**",
-      "**/*.snap",
-      "**/*.lock",
-      "**/bun.lock",
-      "**/bun.lockb",
-      "**/package-lock.json",
-      "**/pnpm-lock.yaml",
-      "**/yarn.lock",
-    ],
+    exclude_globs: [...SHARED_PRODUCTION_EXCLUDE_GLOBS],
     min_loc: 50,
   },
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
       const ctx = yield* SignalContextTag
+      const calibration = yield* Effect.serviceOption(CalibrationContextTag)
 
-      return yield* Effect.tryPromise({
+      const output = yield* Effect.tryPromise({
         try: () => computeBusFactorOutput(ctx.worktreePath, config),
         catch: (cause) =>
           new SignalComputeError({
@@ -139,12 +101,19 @@ export const Shared02BusFactor: Signal<
             cause,
           }),
       })
+      return yield* applyBusFactorPolicy(output, calibration).pipe(
+        Effect.mapError(toSignalComputeError),
+      )
     }),
   score: (out) => {
     if (out.touchedFileCount === 0) return 1
     if (out.touchedLoc === 0) return 1
-    const siloedLoc = out.siloed.reduce((sum, entry) => sum + entry.loc, 0)
-    return 1 - Math.min(0.35, clamp01(siloedLoc / out.touchedLoc) * 0.45)
+    const penalty = effectiveSiloed(out).reduce(
+      (sum, entry) =>
+        entry.visible ? sum + Math.max(0, entry.penaltyWeight) : sum,
+      0,
+    )
+    return 1 - Math.min(0.35, penalty)
   },
   outputMetadata: (out) => {
     if (out.touchedFileCount === 0 || out.touchedLoc === 0) {
@@ -174,13 +143,23 @@ export const Shared02BusFactor: Signal<
       ]
     }
 
-    return out.siloed.slice(0, 10).map((entry) => ({
-      severity: entry.loc >= 200 ? ("warn" as const) : ("info" as const),
-      message: `Knowledge silo candidate: ${entry.file} is single-author in the last ${out.windowDays} days (${entry.author}, ${entry.loc} LOC)`,
-      location: { file: entry.file },
-      data: { author: entry.author, windowDays: out.windowDays, loc: entry.loc },
-    }))
+    return effectiveSiloed(out)
+      .filter((entry) => entry.visible && entry.penaltyWeight > 0)
+      .slice(0, 10)
+      .map((entry) => ({
+        severity: entry.severity,
+        message: `Knowledge silo candidate: ${entry.file} is single-author in the last ${out.windowDays} days (${entry.author}, ${entry.loc} LOC)`,
+        location: { file: entry.file },
+        data: {
+          author: entry.author,
+          windowDays: out.windowDays,
+          loc: entry.loc,
+          penaltyWeight: entry.penaltyWeight,
+          policyDecisions: entry.policyDecisions,
+        },
+      }))
   },
+  factorLedger: (out) => out.factorLedger,
 }
 
 const computeBusFactorOutput = async (
@@ -203,3 +182,119 @@ const computeBusFactorOutput = async (
   const touchedFiles = await loadTouchedFileHistory(worktreePath, authorsByFile)
   return buildBusFactorOutput(touchedFiles, aliasMap, config)
 }
+
+const applyBusFactorPolicy = (
+  output: RawShared02BusFactorOutput,
+  calibration: Option.Option<ResolvedCalibrationContext>,
+): Effect.Effect<Shared02BusFactorOutput, CalibrationProcessorError, never> => {
+  if (output.touchedFileCount === 0 || output.touchedLoc === 0 || output.siloed.length === 0) {
+    return Effect.succeed({
+      ...output,
+      effectiveSiloed: [],
+      calibrationDecisions: [],
+      factorLedger: makeFactorLedger("SHARED-02-bus-factor", []),
+    })
+  }
+
+  const factorPathRoot = commonDirectoryPrefix(output.siloed.map((entry) => entry.file))
+  return Effect.gen(function* () {
+    const effectiveSiloedEntries = yield* Effect.forEach(
+      output.siloed,
+      (entry) =>
+        Effect.gen(function* () {
+          const input = defaultBusFactorPolicy(entry, output, factorPathRoot)
+          if (Option.isNone(calibration)) return toEffectiveSilo(entry, input, [])
+          const policy = yield* calibration.value.runSlot("shared.bus-factor-policy", input)
+          return toEffectiveSilo(entry, policy.value, policy.decisions)
+        }),
+      { concurrency: 1 },
+    )
+
+    return {
+      ...output,
+      effectiveSiloed: effectiveSiloedEntries,
+      calibrationDecisions: effectiveSiloedEntries.flatMap((entry) => entry.policyDecisions),
+      factorLedger: makeShared02FactorLedger(effectiveSiloedEntries),
+    }
+  })
+}
+
+const defaultBusFactorPolicy = (
+  entry: RawShared02BusFactorOutput["siloed"][number],
+  output: RawShared02BusFactorOutput,
+  factorPathRoot: string,
+): SharedBusFactorPolicyValue => ({
+  signalId: "SHARED-02-bus-factor",
+  findingId: entry.file,
+  file: entry.file,
+  author: entry.author,
+  loc: entry.loc,
+  windowDays: output.windowDays,
+  maxCommits: output.maxCommits,
+  touchedFileCount: output.touchedFileCount,
+  touchedLoc: output.touchedLoc,
+  repoAuthors: output.repoAuthors,
+  visible: true,
+  severity: entry.loc >= 200 ? "warn" : "info",
+  penaltyWeight: defaultBusFactorPenaltyWeight(entry.loc, output.touchedLoc),
+  factorPathPrefix: `bus_factor.${factorPathSegment(relativeFactorPath(entry.file, factorPathRoot))}`,
+})
+
+const toEffectiveSilo = (
+  entry: RawShared02BusFactorOutput["siloed"][number],
+  policy: SharedBusFactorPolicyValue,
+  decisions: ReadonlyArray<CalibrationDecision>,
+): Shared02EffectiveSilo => ({
+  ...entry,
+  visible: policy.visible,
+  severity: policy.severity,
+  penaltyWeight: policy.penaltyWeight,
+  factorPathPrefix: policy.factorPathPrefix,
+  policyDecisions: decisions,
+})
+
+const effectiveSiloed = (
+  output: Shared02BusFactorOutput,
+): ReadonlyArray<Shared02EffectiveSilo> =>
+  output.effectiveSiloed ?? output.siloed.map((entry) =>
+    toEffectiveSilo(entry, defaultBusFactorPolicy(entry, output, ""), []),
+  )
+
+const defaultBusFactorPenaltyWeight = (loc: number, touchedLoc: number): number =>
+  touchedLoc === 0 ? 0 : clamp01(loc / touchedLoc) * 0.45
+
+const makeShared02FactorLedger = (
+  entries: ReadonlyArray<Shared02EffectiveSilo>,
+): SignalFactorLedger =>
+  makeFactorLedger(
+    "SHARED-02-bus-factor",
+    entries.flatMap((entry): ReadonlyArray<SignalFactorLedgerEntry> => [
+      factorEntryForPolicyDecision({
+        decisions: entry.policyDecisions,
+        path: `${entry.factorPathPrefix}.visible`,
+        title: "Bus factor visible",
+        value: entry.visible,
+      }),
+      factorEntryForPolicyDecision({
+        decisions: entry.policyDecisions,
+        path: `${entry.factorPathPrefix}.severity`,
+        title: "Bus factor severity",
+        value: entry.severity,
+      }),
+      factorEntryForPolicyDecision({
+        decisions: entry.policyDecisions,
+        path: `${entry.factorPathPrefix}.penalty_weight`,
+        title: "Bus factor penalty_weight",
+        value: entry.penaltyWeight,
+      }),
+    ]),
+  )
+
+const toSignalComputeError = (cause: unknown): SignalComputeError =>
+  cause instanceof SignalComputeError
+    ? cause
+    : new SignalComputeError({
+        signalId: "SHARED-02-bus-factor",
+        message: String(cause),
+        cause,
+      })

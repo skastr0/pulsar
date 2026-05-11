@@ -17,7 +17,7 @@ import {
   markTypeScriptExportPublicEntrypoint,
   nameTypeScriptCallbackContext,
   type RepoFacts,
-  tuneTypeScriptTypeCoupling,
+  tuneFactorPolicy,
   tuneTypeScriptUnfinishedImplementation,
 } from "../index.js"
 
@@ -402,7 +402,8 @@ describe("project module sdk", () => {
           fingerprint: "contract-type-coupling-v1",
           process: (current, _context, runtime) =>
             Effect.sync(() =>
-              tuneTypeScriptTypeCoupling(current, runtime, {
+              tuneFactorPolicy(current, runtime, {
+                action: "tune-type-coupling",
                 severity: "info",
                 penaltyWeight: 0,
                 reason: "Project contract file intentionally aggregates type dependencies",
@@ -449,6 +450,155 @@ describe("project module sdk", () => {
       factorPaths: [
         "type_coupling.src_contracts.ts.severity",
         "type_coupling.src_contracts.ts.penalty_weight",
+      ],
+    })
+  })
+
+  test("processor runtime helpers tune review-pain process factors", async () => {
+    const module = defineProjectModule({
+      id: "acme.project",
+      version: "1.0.0",
+      scope: "repository",
+      processors: [
+        defineProcessor({
+          id: "active-pr-size-policy",
+          slot: "typescript.pr-size-policy",
+          role: "factor-policy",
+          fingerprint: "active-pr-size-policy-v1",
+          process: (current, _context, runtime) =>
+            Effect.sync(() =>
+              tuneFactorPolicy(current, runtime, {
+                action: "tune-pr-size",
+                severity: "info",
+                penaltyWeight: 0,
+                reason: "Project marks this PR surface as an active consolidation sprint",
+                ruleId: "acme.pr-size.active-sprint.v1",
+                evidence: [{ kind: "diff-mode", value: current.value.diffMode }],
+                metadata: { process: "active-sprint" },
+              }),
+            ),
+        }),
+        defineProcessor({
+          id: "single-maintainer-policy",
+          slot: "shared.bus-factor-policy",
+          role: "factor-policy",
+          fingerprint: "single-maintainer-policy-v1",
+          process: (current, _context, runtime) =>
+            Effect.sync(() =>
+              tuneFactorPolicy(current, runtime, {
+                action: "tune-bus-factor",
+                severity: "info",
+                penaltyWeight: 0,
+                reason: "Project tracks single-maintainer authorship outside code health",
+                ruleId: "acme.bus-factor.single-maintainer.v1",
+                evidence: [{ kind: "repo-authors", value: current.value.repoAuthors.join(",") }],
+                metadata: { process: "single-maintainer" },
+              }),
+            ),
+        }),
+        defineProcessor({
+          id: "active-churn-policy",
+          slot: "shared.churn-rate-policy",
+          role: "factor-policy",
+          fingerprint: "active-churn-policy-v1",
+          process: (current, _context, runtime) =>
+            Effect.sync(() =>
+              tuneFactorPolicy(current, runtime, {
+                action: "tune-churn-rate",
+                severity: "info",
+                penaltyWeight: 0,
+                reason: "Project marks this churn as active cleanup",
+                ruleId: "acme.churn.active-cleanup.v1",
+                evidence: [{ kind: "churn-rate", value: String(current.value.churnRate) }],
+                metadata: { process: "active-cleanup" },
+              }),
+            ),
+        }),
+      ],
+    })
+    const context = makeResolvedCalibrationContext({
+      repoFacts,
+      activeModules: [module.activeModule],
+      processors: module.processors,
+    })
+
+    const prSize = await Effect.runPromise(
+      context.runSlot("typescript.pr-size-policy", {
+        signalId: "TS-RP-02-pr-size",
+        findingId: "pr-size",
+        diffMode: "git-branch-range",
+        linesAdded: 1_000,
+        linesDeleted: 200,
+        filesChanged: ["/repo/src/large.ts"],
+        sizeCategory: "oversized",
+        visible: true,
+        severity: "warn",
+        penaltyWeight: 0.6,
+        factorPathPrefix: "pr_size",
+      }),
+    )
+    const busFactor = await Effect.runPromise(
+      context.runSlot("shared.bus-factor-policy", {
+        signalId: "SHARED-02-bus-factor",
+        findingId: "/repo/src/owned.ts",
+        file: "/repo/src/owned.ts",
+        author: "Alice",
+        loc: 250,
+        windowDays: 180,
+        maxCommits: 5_000,
+        touchedFileCount: 1,
+        touchedLoc: 250,
+        repoAuthors: ["Alice"],
+        visible: true,
+        severity: "warn",
+        penaltyWeight: 0.35,
+        factorPathPrefix: "bus_factor.src_owned.ts",
+      }),
+    )
+    const churnRate = await Effect.runPromise(
+      context.runSlot("shared.churn-rate-policy", {
+        signalId: "SHARED-03-churn-rate",
+        findingId: "/repo/src/churn.ts",
+        file: "/repo/src/churn.ts",
+        windowDays: 14,
+        introduced: 10,
+        churned: 5,
+        rate: 0.5,
+        introducedLineCount: 10,
+        churnedLineCount: 5,
+        churnRate: 0.5,
+        repoIntroduced: 10,
+        repoChurned: 5,
+        repoRate: 0.5,
+        visible: true,
+        severity: "warn",
+        penaltyWeight: 1,
+        factorPathPrefix: "churn_rate.src_churn.ts",
+      }),
+    )
+
+    expect(prSize.value.penaltyWeight).toBe(0)
+    expect(prSize.decisions[0]).toMatchObject({
+      slot: "typescript.pr-size-policy",
+      action: "tune-pr-size",
+      factorPaths: ["pr_size.severity", "pr_size.penalty_weight"],
+    })
+    expect(busFactor.value.penaltyWeight).toBe(0)
+    expect(busFactor.decisions[0]).toMatchObject({
+      slot: "shared.bus-factor-policy",
+      action: "tune-bus-factor",
+      factorPaths: [
+        "bus_factor.src_owned.ts.severity",
+        "bus_factor.src_owned.ts.penalty_weight",
+      ],
+    })
+    expect(churnRate.value.penaltyWeight).toBe(0)
+    expect(churnRate.decisions[0]).toMatchObject({
+      slot: "shared.churn-rate-policy",
+      action: "tune-churn-rate",
+      factorPaths: [
+        "churn_rate.src_churn.ts.severity",
+        "churn_rate.src_churn.ts.penalty_weight",
       ],
     })
   })

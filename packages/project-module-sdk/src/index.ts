@@ -38,8 +38,7 @@ export {
 } from "./helpers.js"
 
 export {
-  tuneTypeScriptTypeCoupling,
-  tuneTypeScriptDependencyVersion,
+  tuneFactorPolicy,
 } from "./dependency-version-helper.js"
 
 export {

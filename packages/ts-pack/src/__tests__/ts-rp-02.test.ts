@@ -2,9 +2,14 @@ import { describe, expect, test, beforeEach, afterEach } from "bun:test"
 import { spawnSync } from "node:child_process"
 import { Effect, Layer } from "effect"
 import { SignalContextTag } from "@skastr0/pulsar-core/signal"
+import {
+  CalibrationContextTag,
+  defineCalibrationProcessor,
+  makeResolvedCalibrationContext,
+} from "@skastr0/pulsar-core/calibration"
 import { createTempRepo, runSignal } from "./test-repo.js"
 import { TsRp02 } from "../signals/ts-rp-02-pr-size.js"
-import { TsProjectLayer, TsPackageInfoTag } from "../ts-project.js"
+import { TsProjectLayer } from "../ts-project.js"
 import type { TempRepo } from "./test-repo.js"
 
 const git = (repoRoot: string, args: ReadonlyArray<string>): void => {
@@ -170,6 +175,100 @@ export function useHelper(): string { return helper(); }
     const score = TsRp02.score(out)
     expect(score).toBeGreaterThanOrEqual(0)
     expect(score).toBeLessThanOrEqual(1)
+  }, 120_000)
+
+  test("project modules can tune active consolidation PR size pressure with factor provenance", async () => {
+    const calibration = makeResolvedCalibrationContext({
+      repoFacts: {
+        repoRoot: repo.root,
+        fingerprint: "repo-facts-v1",
+        detectedTechnologies: ["typescript"],
+        sourceExtensions: [".ts"],
+      },
+      processors: [
+        defineCalibrationProcessor({
+          id: "active-consolidation-sprint",
+          moduleId: "repo-policy",
+          moduleVersion: "0.0.0",
+          slot: "typescript.pr-size-policy",
+          role: "factor-policy",
+          priority: 10,
+          fingerprint: "active-consolidation-sprint-v1",
+          process: (current) =>
+            Effect.succeed(
+              current.value.sizeCategory === "oversized"
+                ? {
+                    value: {
+                      ...current.value,
+                      severity: "info" as const,
+                      penaltyWeight: 0,
+                    },
+                    decisions: [{
+                      moduleId: "repo-policy",
+                      processorId: "active-consolidation-sprint",
+                      slot: "typescript.pr-size-policy",
+                      action: "tune-pr-size-pressure",
+                      confidence: "high",
+                      reason: "Active consolidation sprint is intentional process pressure",
+                      ruleId: "repo.active-consolidation-sprint.v1",
+                      factorPaths: [
+                        `${current.value.factorPathPrefix}.severity`,
+                        `${current.value.factorPathPrefix}.penalty_weight`,
+                      ],
+                      before: current.value,
+                      after: {
+                        ...current.value,
+                        severity: "info" as const,
+                        penaltyWeight: 0,
+                      },
+                      evidence: [{ kind: "repo-policy", value: "active consolidation sprint" }],
+                    }],
+                  }
+                : current,
+            ),
+        }),
+      ],
+    })
+
+    const out = await Effect.runPromise(
+      TsRp02.compute(
+        TsRp02.defaultConfig,
+        new Map(),
+      ).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            TsProjectLayer(repo.root),
+            Layer.succeed(CalibrationContextTag, calibration),
+            Layer.succeed(SignalContextTag, {
+              gitSha: "TEST",
+              worktreePath: repo.root,
+              changedHunks: [
+                { file: "large.ts", oldStart: 1, oldLines: 0, newStart: 1, newLines: 1_200 },
+              ],
+            }),
+          ),
+        ),
+      ),
+    )
+
+    expect(out.sizeCategory).toBe("oversized")
+    expect(out.sizePenalty).toBe(0)
+    expect(out.severity).toBe("info")
+    expect(TsRp02.score(out)).toBe(1)
+    expect(TsRp02.diagnose(out)[0]?.severity).toBe("info")
+    expect(out.calibrationDecisions?.[0]?.ruleId).toBe("repo.active-consolidation-sprint.v1")
+    expect(out.factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "pr_size.penalty_weight",
+        value: 0,
+        source: "module",
+        attribution: expect.objectContaining({
+          moduleId: "repo-policy",
+          processorId: "active-consolidation-sprint",
+          ruleId: "repo.active-consolidation-sprint.v1",
+        }),
+      }),
+    )
   }, 120_000)
 
   test("diff-aware fallback when hunks provided", async () => {

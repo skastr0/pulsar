@@ -2,7 +2,11 @@ import { SignalContextTag, SignalComputeError } from "@skastr0/pulsar-core/signa
 import type { Diagnostic, Signal, SignalFactorLedger, SignalFactorLedgerEntry } from "@skastr0/pulsar-core/signal"
 import type { CalibrationDecision, CalibrationProcessorError, ResolvedCalibrationContext, TypeScriptDependencyVersionPolicyValue } from "@skastr0/pulsar-core/calibration"
 import { CalibrationContextTag } from "@skastr0/pulsar-core/calibration"
-import { makeFactorEntry, makeFactorLedger } from "@skastr0/pulsar-core/factors"
+import {
+  factorEntryForPolicyDecision,
+  factorPathSegment,
+  makeFactorLedger,
+} from "@skastr0/pulsar-core/factors"
 import { Effect, Option, Schema } from "effect"
 import { findDuplicateGroups, type DuplicateGroup } from "./ts-de-05-groups.js"
 import { readTsDe05Lockfile } from "./ts-de-05-lockfile.js"
@@ -199,43 +203,27 @@ const makeTsDe05FactorLedger = (
     duplicates.flatMap((group): ReadonlyArray<SignalFactorLedgerEntry> => {
       const prefix = `duplicate_versions.${factorPathSegment(group.name)}`
       return [
-        factorEntryForGroupValue(group, `${prefix}.visible`, group.visible),
-        factorEntryForGroupValue(group, `${prefix}.severity`, group.severity),
-        factorEntryForGroupValue(group, `${prefix}.penalty_weight`, group.penaltyWeight),
+        factorEntryForPolicyDecision({
+          decisions: group.policyDecisions,
+          path: `${prefix}.visible`,
+          title: "Dependency version visible",
+          value: group.visible,
+        }),
+        factorEntryForPolicyDecision({
+          decisions: group.policyDecisions,
+          path: `${prefix}.severity`,
+          title: "Dependency version severity",
+          value: group.severity,
+        }),
+        factorEntryForPolicyDecision({
+          decisions: group.policyDecisions,
+          path: `${prefix}.penalty_weight`,
+          title: "Dependency version penalty_weight",
+          value: group.penaltyWeight,
+        }),
       ]
     }),
   )
-
-const factorEntryForGroupValue = (
-  group: EffectiveDuplicateGroup,
-  path: string,
-  value: string | number | boolean,
-): SignalFactorLedgerEntry => {
-  const decision = [...group.policyDecisions]
-    .reverse()
-    .find((item) => item.factorPaths?.includes(path))
-  return makeFactorEntry({
-    path,
-    title: `Dependency version ${path.split(".").at(-1) ?? "factor"}`,
-    valueKind: typeof value === "number" ? "number" : typeof value === "boolean" ? "boolean" : "string",
-    scoreRole: path.endsWith(".penalty_weight") ? "penalty" : "metadata",
-  }, value, {
-    source: decision === undefined ? "computed" : "module",
-    ...(decision !== undefined
-      ? {
-          attribution: {
-            moduleId: decision.moduleId,
-            processorId: decision.processorId,
-            ...(decision.ruleId !== undefined ? { ruleId: decision.ruleId } : {}),
-            evidence: decision.evidence,
-          },
-        }
-      : {}),
-  })
-}
-
-const factorPathSegment = (value: string): string =>
-  value.replace(/^@/, "").replace(/[^A-Za-z0-9._-]+/g, "_")
 
 const toSignalComputeError = (cause: unknown): SignalComputeError =>
   cause instanceof SignalComputeError

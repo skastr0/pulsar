@@ -1,8 +1,17 @@
 import { describe, expect, test } from "bun:test"
 import { join } from "node:path"
 import { Effect, Layer } from "effect"
+import {
+  appendCalibrationDecision,
+  CalibrationContextTag,
+  defineCalibrationProcessor,
+} from "../calibration-model.js"
+import { makeResolvedCalibrationContext } from "../calibration-context.js"
 import { SignalContextTag } from "../context.js"
-import { Shared03ChurnRate } from "../shared-03-churn-rate.js"
+import {
+  Shared03ChurnRate,
+  type Shared03ChurnRateOutput,
+} from "../shared-03-churn-rate.js"
 import { createGitTestRepo } from "./git-test-repo.js"
 
 describe("SHARED-03 churn rate", () => {
@@ -83,6 +92,108 @@ describe("SHARED-03 churn rate", () => {
         churned: 1,
         rate: 1,
       })
+    } finally {
+      await repo.cleanup()
+    }
+  }, 120_000)
+
+  test("project modules can neutralize churn pressure with factor provenance", async () => {
+    const repo = await createGitTestRepo("pulsar-shared-03-policy-")
+    try {
+      await repo.write("src/revert.ts", "export const doomed = 1\n")
+      await repo.commitAll({
+        message: "introduce doomed line",
+        dateIso: "2024-01-01T00:00:00Z",
+      })
+
+      await repo.write("src/revert.ts", "")
+      await repo.commitAll({
+        message: "remove doomed line",
+        dateIso: "2024-01-05T00:00:00Z",
+      })
+
+      await repo.write("README.md", "noop\n")
+      await repo.commitAll({
+        message: "advance head",
+        dateIso: "2024-01-20T00:00:00Z",
+      })
+
+      const processor = defineCalibrationProcessor({
+        id: "active-cleanup-churn",
+        moduleId: "acme.project",
+        moduleVersion: "1.0.0",
+        slot: "shared.churn-rate-policy",
+        role: "factor-policy",
+        priority: 10,
+        fingerprint: "active-cleanup-churn-v1",
+        process: (current) =>
+          Effect.succeed(
+            appendCalibrationDecision(
+              current,
+              {
+                moduleId: "acme.project",
+                processorId: "active-cleanup-churn",
+                slot: "shared.churn-rate-policy",
+                action: "tune-active-cleanup-churn",
+                confidence: "high",
+                reason: "Project module marks this churn as intentional cleanup pressure",
+                ruleId: "acme.shared.churn.active-cleanup",
+                factorPaths: [
+                  `${current.value.factorPathPrefix}.penalty_weight`,
+                  `${current.value.factorPathPrefix}.severity`,
+                ],
+                before: current.value,
+                after: { ...current.value, penaltyWeight: 0, severity: "info" as const },
+                evidence: [{ kind: "path", value: current.value.file }],
+              },
+              { ...current.value, penaltyWeight: 0, severity: "info" },
+            ),
+          ),
+      })
+      const calibrationContext = makeResolvedCalibrationContext({
+        repoFacts: {
+          repoRoot: repo.root,
+          fingerprint: "repo-facts-v1",
+          detectedTechnologies: ["typescript"],
+          sourceExtensions: [".ts"],
+        },
+        processors: [processor],
+      })
+
+      const output: Shared03ChurnRateOutput = await Effect.runPromise(
+        Shared03ChurnRate.compute(Shared03ChurnRate.defaultConfig, new Map()).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              Layer.succeed(CalibrationContextTag, calibrationContext),
+              Layer.succeed(SignalContextTag, {
+                gitSha: repo.revParse("HEAD"),
+                worktreePath: repo.root,
+                changedHunks: [],
+              }),
+            ),
+          ),
+        ) as Effect.Effect<Shared03ChurnRateOutput, unknown, never>,
+      )
+
+      const filePath = join(repo.root, "src/revert.ts")
+      const effective = output.effectiveFiles?.find((entry) => entry.file === filePath)
+      expect(Shared03ChurnRate.score(output)).toBe(1)
+      expect(Shared03ChurnRate.diagnose(output)).toEqual([])
+      expect(effective?.penaltyWeight).toBe(0)
+      expect(effective?.policyDecisions[0]?.ruleId).toBe(
+        "acme.shared.churn.active-cleanup",
+      )
+      expect(output.factorLedger?.entries).toContainEqual(
+        expect.objectContaining({
+          path: `${effective?.factorPathPrefix}.penalty_weight`,
+          value: 0,
+          source: "module",
+          attribution: expect.objectContaining({
+            moduleId: "acme.project",
+            processorId: "active-cleanup-churn",
+          }),
+        }),
+      )
     } finally {
       await repo.cleanup()
     }

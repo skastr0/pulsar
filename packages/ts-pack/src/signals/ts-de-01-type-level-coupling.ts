@@ -2,7 +2,13 @@ import { SignalComputeError } from "@skastr0/pulsar-core/signal"
 import type { Diagnostic, Signal, SignalFactorLedger, SignalFactorLedgerEntry } from "@skastr0/pulsar-core/signal"
 import type { CalibrationDecision, CalibrationProcessorError, ResolvedCalibrationContext, TypeScriptTypeCouplingPolicyValue } from "@skastr0/pulsar-core/calibration"
 import { CalibrationContextTag } from "@skastr0/pulsar-core/calibration"
-import { makeFactorEntry, makeFactorLedger } from "@skastr0/pulsar-core/factors"
+import {
+  commonDirectoryPrefix,
+  factorPathSegment,
+  makeFactorEntry,
+  makeFactorLedger,
+  relativeFactorPath,
+} from "@skastr0/pulsar-core/factors"
 import { Effect, Option, Schema } from "effect"
 import { TsProjectTag } from "../ts-project.js"
 import { isExcluded } from "./shared-globs.js"
@@ -235,29 +241,6 @@ const factorEntryForModuleValue = (
         }
       : {}),
   })
-}
-
-const factorPathSegment = (value: string): string =>
-  value.replace(/^@/, "").replace(/[^A-Za-z0-9._-]+/g, "_")
-
-const relativeFactorPath = (file: string, root: string): string =>
-  root.length > 0 && file.startsWith(root) ? file.slice(root.length) : file
-
-const commonDirectoryPrefix = (files: ReadonlyArray<string>): string => {
-  if (files.length === 0) return ""
-  const normalized = files.map((file) => file.replaceAll("\\", "/"))
-  const [first, ...rest] = normalized
-  const firstParts = first!.split("/")
-  let commonLength = firstParts.length - 1
-  for (const file of rest) {
-    const parts = file.split("/")
-    let index = 0
-    while (index < commonLength && firstParts[index] === parts[index]) {
-      index += 1
-    }
-    commonLength = index
-  }
-  return commonLength <= 0 ? "" : `${firstParts.slice(0, commonLength).join("/")}/`
 }
 
 const toSignalComputeError = (cause: unknown): SignalComputeError =>
