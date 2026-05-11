@@ -3,7 +3,9 @@ import { printHumanReport } from "./calibrate-output.js"
 import { buildSuggestionReport, type CalibrateCommandOptions } from "./calibrate-suggestions.js"
 import { writeSuggestionReport } from "./calibrate-write.js"
 
-export const runCalibrateCommand = (opts: CalibrateCommandOptions) =>
+export const runCalibrateCommand = (
+  opts: CalibrateCommandOptions,
+): Effect.Effect<number, Error, never> =>
   Effect.gen(function* () {
     if (opts.action !== "suggest") {
       return yield* Effect.fail(new Error("calibrate requires one of: suggest"))

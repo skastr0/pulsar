@@ -36,7 +36,9 @@ import type {
 
 const DEFAULT_BOOTSTRAP_COMMITS = 60
 
-export const runBootstrapAction = (opts: ElicitCommandOptions) =>
+export const runBootstrapAction = (
+  opts: ElicitCommandOptions,
+): Effect.Effect<number, Error, never> =>
   Effect.gen(function* () {
     const context = yield* prepareBootstrapAction(opts)
     const result = inferBootstrapPreferences(context)

@@ -5,7 +5,9 @@ import type { CalibrationSuggestionReport } from "./calibrate-suggestions.js"
 
 const RELATIVE_SUGGESTIONS_PATH = ".pulsar/calibration-suggestions.json"
 
-export const writeSuggestionReport = (report: CalibrationSuggestionReport) =>
+export const writeSuggestionReport = (
+  report: CalibrationSuggestionReport,
+): Effect.Effect<CalibrationSuggestionReport, Error, never> =>
   Effect.gen(function* () {
     const writePath = join(report.repo_root, RELATIVE_SUGGESTIONS_PATH)
     yield* Effect.tryPromise({

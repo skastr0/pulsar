@@ -14,6 +14,7 @@ import {
 import type {
   CategoryTrajectory,
   Culprit,
+  ObserverBisectReport,
   ObserverCommitEntry,
   ObserverCurveSample,
   ScorePoint,
@@ -26,6 +27,21 @@ type ObserverReportScope = {
   readonly selectedSignalSet: ReadonlySet<string>
   readonly trajectory: ReadonlyArray<ObserverCommitEntry>
 }
+
+type ObserverTrajectoryPayload = Pick<
+  ObserverBisectReport,
+  "trajectory" | "commits" | "curves" | "signalCategories" | "perCategory" | "perSignal"
+>
+
+type ObserverCulpritPayload = Pick<
+  ObserverBisectReport,
+  | "weightedMeanCulprits"
+  | "weightedMeanDriftCulprits"
+  | "perCategoryCulprits"
+  | "perCategoryDriftCulprits"
+  | "perSignalCulprits"
+  | "perSignalDriftCulprits"
+>
 
 export const resolveObserverReportScope = (
   results: ReadonlyArray<ObserverCurveSample>,
@@ -47,7 +63,9 @@ export const resolveObserverReportScope = (
   return { signalCategories, selectedCategories, selectedSignalSet, trajectory }
 }
 
-export const observerTrajectoryPayload = (scope: ObserverReportScope) => ({
+export const observerTrajectoryPayload = (
+  scope: ObserverReportScope,
+): ObserverTrajectoryPayload => ({
   trajectory: compactObserverTrajectory(
     scope.trajectory,
     scope.selectedCategories,
@@ -80,7 +98,7 @@ export const observerTrajectoryPayload = (scope: ObserverReportScope) => ({
 export const observerCulpritPayload = (
   scope: ObserverReportScope,
   topCulprits: number,
-) => ({
+): ObserverCulpritPayload => ({
   weightedMeanCulprits: findCulprits(scorePoints(scope.trajectory, "weightedMean"), topCulprits),
   weightedMeanDriftCulprits: findDriftCulprits(
     scorePoints(scope.trajectory, "weightedMean"),

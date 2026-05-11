@@ -29,7 +29,7 @@ import type {
   SignalBisectOptions,
 } from "./bisect-types.js"
 
-export const runBisectCommand = (opts: BisectOptions) =>
+export const runBisectCommand = (opts: BisectOptions): Effect.Effect<void, unknown, never> =>
   Effect.gen(function* () {
     const repoPath = resolve(opts.repoPath)
     if (!existsSync(repoPath)) {

@@ -47,7 +47,9 @@ const RELATIVE_GLOSSARY_DRAFT_PATH = ".pulsar/glossary.draft.json"
 const RELATIVE_BASELINE_PATH = ".pulsar/baseline.json"
 const RELATIVE_PROJECT_MODULES_PATH = ".pulsar/project-modules.json"
 
-export const buildSuggestionReport = (opts: CalibrateCommandOptions) =>
+export const buildSuggestionReport = (
+  opts: CalibrateCommandOptions,
+): Effect.Effect<CalibrationSuggestionReport, Error, never> =>
   Effect.gen(function* () {
     const repoRoot = yield* resolveRepoRoot(opts.repoPath)
     const headSha = yield* readHeadSha(repoRoot)

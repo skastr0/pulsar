@@ -37,7 +37,9 @@ const DEFAULT_NAMING_CONVENTIONS: NamingConventions = {
   enum: "PascalCase",
 }
 
-export const runConventionsCommand = (opts: ConventionsCommandOptions) =>
+export const runConventionsCommand = (
+  opts: ConventionsCommandOptions,
+): Effect.Effect<number, unknown, never> =>
   Effect.gen(function* () {
     if (opts.action === "extract") {
       if (opts.sha === undefined) {
