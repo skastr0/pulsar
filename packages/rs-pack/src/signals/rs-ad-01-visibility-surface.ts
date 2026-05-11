@@ -7,7 +7,7 @@ import {
 } from "@skastr0/pulsar-core"
 import { Effect, Schema } from "effect"
 import { collectRustProjectFacts } from "../rust-analysis.js"
-import { RustProjectTag } from "../project.js"
+import { RustProjectTag, type RustProject } from "../project.js"
 import { isExcluded } from "./shared-globs.js"
 
 export const RsAd01Config = Schema.Struct({
@@ -36,6 +36,28 @@ export interface RsAd01Output {
   readonly overallPubRatio: number
 }
 
+const emptyVisibilitySurfaceOutput = (): RsAd01Output => ({
+  modules: [],
+  byModule: new Map(),
+  totalItems: 0,
+  overallPubRatio: 0,
+})
+
+const emptyModuleVisibilitySurface = (
+  module: string,
+  file: string,
+): ModuleVisibilitySurface => ({
+  module,
+  file,
+  pub: 0,
+  pubCrate: 0,
+  pubSuper: 0,
+  pubInPath: 0,
+  private: 0,
+  total: 0,
+  pubRatio: 0,
+})
+
 export const RsAd01: Signal<RsAd01Config, RsAd01Output, RustProjectTag> = {
   id: "RS-AD-01-visibility-surface",
   title: "Visibility surface",
@@ -54,82 +76,7 @@ export const RsAd01: Signal<RsAd01Config, RsAd01Output, RustProjectTag> = {
     Effect.gen(function* () {
       const project = yield* RustProjectTag
       return yield* Effect.tryPromise({
-        try: async (): Promise<RsAd01Output> => {
-          if (project.sourceFiles.length === 0) {
-            return {
-              modules: [],
-              byModule: new Map(),
-              totalItems: 0,
-              overallPubRatio: 0,
-            }
-          }
-
-          const facts = await collectRustProjectFacts(project)
-          const grouped = new Map<string, ModuleVisibilitySurface>()
-
-          for (const item of facts.items) {
-            if (item.kind === "impl") continue
-            if (isExcluded(item.file, config.exclude_globs)) continue
-
-            const current = grouped.get(item.modulePath)
-            const existing =
-              current === undefined
-                ? {
-                    module: item.modulePath,
-                    file: item.file,
-                    pub: 0,
-                    pubCrate: 0,
-                    pubSuper: 0,
-                    pubInPath: 0,
-                    private: 0,
-                    total: 0,
-                    pubRatio: 0,
-                  }
-                : { ...current }
-
-            switch (item.visibility.kind) {
-              case "pub":
-                existing.pub += 1
-                break
-              case "pub-crate":
-                existing.pubCrate += 1
-                break
-              case "pub-super":
-                existing.pubSuper += 1
-                break
-              case "pub-in-path":
-                existing.pubInPath += 1
-                break
-              case "private":
-                existing.private += 1
-                break
-            }
-            existing.total += 1
-            grouped.set(item.modulePath, existing)
-          }
-
-          const modules = [...grouped.values()]
-            .map((entry) => ({
-              ...entry,
-              pubRatio: entry.total === 0 ? 0 : entry.pub / entry.total,
-            }))
-            .sort((a, b) => b.pubRatio - a.pubRatio || a.module.localeCompare(b.module))
-
-          const byModule = new Map<string, DistributionalSummary>()
-          for (const module of modules) {
-            byModule.set(module.module, summarize([module.pubRatio]))
-          }
-
-          const totalItems = modules.reduce((sum, module) => sum + module.total, 0)
-          const publicItems = modules.reduce((sum, module) => sum + module.pub, 0)
-
-          return {
-            modules,
-            byModule,
-            totalItems,
-            overallPubRatio: totalItems === 0 ? 0 : publicItems / totalItems,
-          }
-        },
+        try: () => computeVisibilitySurface(project, config),
         catch: (cause) =>
           new SignalComputeError({
             signalId: "RS-AD-01-visibility-surface",
@@ -162,3 +109,71 @@ export const RsAd01: Signal<RsAd01Config, RsAd01Output, RustProjectTag> = {
       },
     })),
 }
+
+const computeVisibilitySurface = async (
+  project: RustProject,
+  config: RsAd01Config,
+): Promise<RsAd01Output> => {
+  if (project.sourceFiles.length === 0) return emptyVisibilitySurfaceOutput()
+
+  const facts = await collectRustProjectFacts(project)
+  const grouped = new Map<string, ModuleVisibilitySurface>()
+  for (const item of facts.items) {
+    if (item.kind === "impl") continue
+    if (isExcluded(item.file, config.exclude_globs)) continue
+    recordVisibilityItem(grouped, item.modulePath, item.file, item.visibility.kind)
+  }
+
+  const modules = finalizeVisibilityModules(grouped)
+  const totalItems = modules.reduce((sum, module) => sum + module.total, 0)
+  const publicItems = modules.reduce((sum, module) => sum + module.pub, 0)
+  return {
+    modules,
+    byModule: summarizeVisibilityByModule(modules),
+    totalItems,
+    overallPubRatio: totalItems === 0 ? 0 : publicItems / totalItems,
+  }
+}
+
+const recordVisibilityItem = (
+  grouped: Map<string, ModuleVisibilitySurface>,
+  modulePath: string,
+  file: string,
+  visibilityKind: "pub" | "pub-crate" | "pub-super" | "pub-in-path" | "private",
+): void => {
+  const existing = { ...(grouped.get(modulePath) ?? emptyModuleVisibilitySurface(modulePath, file)) }
+  switch (visibilityKind) {
+    case "pub":
+      existing.pub += 1
+      break
+    case "pub-crate":
+      existing.pubCrate += 1
+      break
+    case "pub-super":
+      existing.pubSuper += 1
+      break
+    case "pub-in-path":
+      existing.pubInPath += 1
+      break
+    case "private":
+      existing.private += 1
+      break
+  }
+  existing.total += 1
+  grouped.set(modulePath, existing)
+}
+
+const finalizeVisibilityModules = (
+  grouped: ReadonlyMap<string, ModuleVisibilitySurface>,
+): ReadonlyArray<ModuleVisibilitySurface> =>
+  [...grouped.values()]
+    .map((entry) => ({
+      ...entry,
+      pubRatio: entry.total === 0 ? 0 : entry.pub / entry.total,
+    }))
+    .sort((a, b) => b.pubRatio - a.pubRatio || a.module.localeCompare(b.module))
+
+const summarizeVisibilityByModule = (
+  modules: ReadonlyArray<ModuleVisibilitySurface>,
+): ReadonlyMap<string, DistributionalSummary> =>
+  new Map(modules.map((module) => [module.module, summarize([module.pubRatio])]))
