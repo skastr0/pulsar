@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { SignalContextTag } from "@skastr0/pulsar-core/signal"
+import {
+  CalibrationContextTag,
+  defineCalibrationProcessor,
+  makeResolvedCalibrationContext,
+} from "@skastr0/pulsar-core/calibration"
 import { TsDe05 } from "../signals/ts-de-05-duplicate-versions.js"
 import { createTempRepo, type TempRepo } from "./test-repo.js"
 
@@ -14,15 +19,32 @@ afterEach(async () => {
   await repo.cleanup()
 })
 
-const runCompute = async () =>
+const runCompute = async (
+  calibration?: Parameters<typeof makeResolvedCalibrationContext>[0],
+) =>
   Effect.runPromise(
-    TsDe05.compute(TsDe05.defaultConfig, new Map()).pipe(
-      Effect.provideService(SignalContextTag, {
-        gitSha: "TEST",
-        worktreePath: repo.root,
-        changedHunks: [],
-      }),
-    ) as Effect.Effect<Awaited<ReturnType<typeof TsDe05.compute>> extends Effect.Effect<infer A, any, any> ? A : never, unknown, never>,
+    (calibration === undefined
+      ? TsDe05.compute(TsDe05.defaultConfig, new Map())
+      : TsDe05.compute(TsDe05.defaultConfig, new Map()).pipe(
+          Effect.provideService(
+            CalibrationContextTag,
+            makeResolvedCalibrationContext(calibration),
+          ),
+        )
+    ).pipe(
+      Effect.provideService(
+        SignalContextTag,
+        {
+          gitSha: "TEST",
+          worktreePath: repo.root,
+          changedHunks: [],
+        },
+      ),
+    ) as Effect.Effect<
+      Awaited<ReturnType<typeof TsDe05.compute>> extends Effect.Effect<infer A, any, any> ? A : never,
+      unknown,
+      never
+    >,
   )
 
 describe("TS-DE-05 (duplicate dependency versions)", () => {
@@ -117,6 +139,88 @@ describe("TS-DE-05 (duplicate dependency versions)", () => {
     expect(TsDe05.score(out)).toBeLessThan(0.8)
     expect(TsDe05.diagnose(out)[0]?.severity).toBe("warn")
     expect(TsDe05.diagnose(out)[0]?.message).toContain("Duplicate direct")
+  })
+
+  test("project modules can suppress legitimate transitive host SDK duplicates with attribution", async () => {
+    await repo.write(
+      "bun.lock",
+      [
+        "{",
+        '  "lockfileVersion": 1,',
+        '  "workspaces": {',
+        '    "apps/plugin": {',
+        '      "name": "@repo/plugin",',
+        '      "devDependencies": { "@host/sdk": "1.0.0" },',
+        '      "dependencies": { "effect": "^3.0.0" }',
+        "    }",
+        "  },",
+        '  "packages": {',
+        '    "effect": ["effect@3.0.0", "", {}, "hash"],',
+        '    "@host/sdk": ["@host/sdk@1.0.0", "", { "dependencies": { "effect": "4.0.0-beta.1" } }, "hash"],',
+        '    "@host/sdk/effect": ["effect@4.0.0-beta.1", "", {}, "hash"]',
+        "  }",
+        "}",
+      ].join("\n"),
+    )
+
+    const processor = defineCalibrationProcessor({
+      id: "host-sdk-duplicates",
+      moduleId: "repo-policy",
+      moduleVersion: "0.0.0",
+      slot: "typescript.dependency-version-policy",
+      role: "factor-policy",
+      priority: 10,
+      fingerprint: "host-sdk-duplicates-v1",
+      process: (current) =>
+        Effect.succeed(
+          current.value.packageName === "effect" &&
+            current.value.pullInChains.some((entry) =>
+              entry.chain.some((part) => part.startsWith("@host/sdk")),
+            )
+            ? {
+                value: {
+                  ...current.value,
+                  visible: false,
+                  penaltyWeight: 0,
+                },
+                decisions: [{
+                  moduleId: "repo-policy",
+                  processorId: "host-sdk-duplicates",
+                  slot: "typescript.dependency-version-policy",
+                  action: "suppress-host-sdk-duplicate",
+                  confidence: "high",
+                  reason: "host SDK owns an isolated incompatible dependency line",
+                  ruleId: "repo.host-sdk-duplicate.v1",
+                  factorPaths: [
+                    `${current.value.factorPathPrefix}.visible`,
+                    `${current.value.factorPathPrefix}.penalty_weight`,
+                  ],
+                  before: current.value,
+                  after: { ...current.value, visible: false, penaltyWeight: 0 },
+                  evidence: [{ kind: "package", value: current.value.packageName }],
+                }],
+              }
+            : current,
+        ),
+    })
+
+    const out = await runCompute({
+      repoFacts: {
+        repoRoot: repo.root,
+        fingerprint: "test",
+        detectedTechnologies: ["host-sdk"],
+        sourceExtensions: [".ts"],
+      },
+      activeModules: [],
+      processors: [processor],
+    })
+
+    expect(out.duplicates).toHaveLength(1)
+    expect(out.duplicates[0]?.visible).toBe(false)
+    expect(out.calibrationDecisions[0]?.ruleId).toBe("repo.host-sdk-duplicate.v1")
+    expect(out.factorLedger.entries.some((entry) => entry.source === "module")).toBe(true)
+    expect(TsDe05.score(out)).toBe(1)
+    expect(TsDe05.diagnose(out)).toEqual([])
   })
 
   test("groups duplicate versions from package-lock.json", async () => {

@@ -169,6 +169,23 @@ export interface TypeScriptUnsafeTypePolicyValue {
   readonly metadata?: Readonly<Record<string, unknown>>
 }
 
+export interface TypeScriptDependencyVersionPolicyValue {
+  readonly signalId: string
+  readonly findingId: string
+  readonly packageName: string
+  readonly versions: ReadonlyArray<string>
+  readonly evidenceKind: "direct-workspace-duplicate" | "transitive-lockfile-duplicate"
+  readonly pullInChains: ReadonlyArray<{
+    readonly version: string
+    readonly chain: ReadonlyArray<string>
+  }>
+  readonly visible: boolean
+  readonly severity: "info" | "warn" | "block"
+  readonly penaltyWeight: number
+  readonly factorPathPrefix: string
+  readonly metadata?: Readonly<Record<string, unknown>>
+}
+
 export interface MixerCategoryPolicyValue {
   readonly category: string
   readonly rawScore: number
@@ -187,5 +204,6 @@ export interface CalibrationSlotValues {
   readonly "typescript.export-reachability": TypeScriptExportReachabilityValue
   readonly "typescript.unfinished-implementation-policy": TypeScriptUnfinishedImplementationPolicyValue
   readonly "typescript.unsafe-type-policy": TypeScriptUnsafeTypePolicyValue
+  readonly "typescript.dependency-version-policy": TypeScriptDependencyVersionPolicyValue
   readonly "mixer.category-policy": MixerCategoryPolicyValue
 }

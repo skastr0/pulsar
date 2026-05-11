@@ -266,7 +266,7 @@ export const tuneTypeScriptUnsafeType = (
   )
 }
 
-const mergeMetadata = (
+export const mergeMetadata = (
   left: Readonly<Record<string, unknown>> | undefined,
   right: Readonly<Record<string, unknown>> | undefined,
 ): Readonly<Record<string, unknown>> | undefined => {

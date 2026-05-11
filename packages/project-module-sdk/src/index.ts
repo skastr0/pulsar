@@ -40,6 +40,11 @@ export {
 } from "./helpers.js"
 
 export {
+  tuneTypeScriptDependencyVersion,
+  type TuneTypeScriptDependencyVersionOptions,
+} from "./dependency-version-helper.js"
+
+export {
   loadEnabledProjectModules,
   loadProjectModuleRef,
 } from "./loader.js"
@@ -66,6 +71,7 @@ export {
   type SourceCategory,
   type TypeScriptCallbackContextNameValue,
   type TypeScriptCallExpressionFact,
+  type TypeScriptDependencyVersionPolicyValue,
   type TypeScriptExportDeclarationFact,
   type TypeScriptExportReachabilityValue,
   type TypeScriptExportSpecifierFact,
