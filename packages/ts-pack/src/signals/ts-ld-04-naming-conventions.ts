@@ -54,7 +54,7 @@ export const TsLd04: Signal<TsLd04Config, TsLd04Output, TsProjectTag | Reference
   tier: 2,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "type-level-values-v1",
+  cacheVersion: "type-level-values-v2",
   configSchema: TsLd04Config,
   defaultConfig: {
     exclude_globs: [
