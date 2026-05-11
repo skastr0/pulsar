@@ -111,66 +111,24 @@ export const TsAd01: Signal<
 
       return yield* Effect.try({
         try: (): TsAd01Output => {
-          const sourceFiles = project
-            .getSourceFiles()
-            .filter(
-              (sourceFile) =>
-                !sourceFile.isDeclarationFile() &&
-                !isExcluded(sourceFile.getFilePath(), config.exclude_globs),
-            )
-          const totalImports = sourceFiles.reduce(
-            (count, sourceFile) => count + collectImportLikeDeclarations(sourceFile).length,
-            0,
-          )
+          const sourceFiles = selectBoundarySourceFiles(project.getSourceFiles(), config)
+          const totalImports = countImportLikeDeclarations(sourceFiles)
           const rawConventions = Effect.runSync(
             referenceData.get<SchemaConventions>("schema-conventions"),
           )
 
           if (Option.isNone(rawConventions)) {
-            return {
-              violations: [],
-              totalImports,
-              violationsByPackage: new Map(),
-              referenceDataStatus: "missing",
-              diagnosticLimit: config.top_n_diagnostics,
-            }
+            return missingBoundaryOutput(totalImports, config.top_n_diagnostics)
           }
 
-          const lookup = buildBoundaryLookup(
-            rawConventions.value,
+          return computeBoundaryOutput({
+            conventions: rawConventions.value,
             packages,
-            context.worktreePath,
-          )
-          const violations: Array<BoundaryViolation> = []
-
-          for (const sourceFile of sourceFiles) {
-            const sourcePackage = packageForFile(sourceFile.getFilePath(), packages)
-            const sourceRule =
-              sourcePackage === undefined ? undefined : lookupBoundaryRule(lookup, sourcePackage)
-
-            for (const declaration of collectImportLikeDeclarations(sourceFile)) {
-              const violation = classifyBoundaryViolation({
-                declaration,
-                sourceFile,
-                sourcePackage,
-                sourceRule,
-                packages,
-                lookup,
-              })
-              if (violation !== undefined) {
-                violations.push(violation)
-              }
-            }
-          }
-
-          const sortedViolations = violations.sort(compareBoundaryViolations)
-          return {
-            violations: sortedViolations,
-            totalImports,
-            violationsByPackage: summarizeViolationsByPackage(sortedViolations),
-            referenceDataStatus: "loaded",
             diagnosticLimit: config.top_n_diagnostics,
-          }
+            sourceFiles,
+            totalImports,
+            worktreePath: context.worktreePath,
+          })
         },
         catch: (cause) =>
           new SignalComputeError({
@@ -214,6 +172,92 @@ export const TsAd01: Signal<
       },
     }))
   },
+}
+
+const selectBoundarySourceFiles = (
+  sourceFiles: ReadonlyArray<SourceFile>,
+  config: TsAd01Config,
+): ReadonlyArray<SourceFile> =>
+  sourceFiles.filter(
+    (sourceFile) =>
+      !sourceFile.isDeclarationFile() &&
+      !isExcluded(sourceFile.getFilePath(), config.exclude_globs),
+  )
+
+const countImportLikeDeclarations = (sourceFiles: ReadonlyArray<SourceFile>): number =>
+  sourceFiles.reduce(
+    (count, sourceFile) => count + collectImportLikeDeclarations(sourceFile).length,
+    0,
+  )
+
+const missingBoundaryOutput = (
+  totalImports: number,
+  diagnosticLimit: number,
+): TsAd01Output => ({
+  violations: [],
+  totalImports,
+  violationsByPackage: new Map(),
+  referenceDataStatus: "missing",
+  diagnosticLimit,
+})
+
+const computeBoundaryOutput = ({
+  conventions,
+  packages,
+  diagnosticLimit,
+  sourceFiles,
+  totalImports,
+  worktreePath,
+}: {
+  readonly conventions: SchemaConventions
+  readonly packages: ReadonlyArray<PackageInfo>
+  readonly diagnosticLimit: number
+  readonly sourceFiles: ReadonlyArray<SourceFile>
+  readonly totalImports: number
+  readonly worktreePath: string
+}): TsAd01Output => {
+  const lookup = buildBoundaryLookup(conventions, packages, worktreePath)
+  const sortedViolations = collectBoundaryViolations(sourceFiles, packages, lookup).sort(
+    compareBoundaryViolations,
+  )
+
+  return {
+    violations: sortedViolations,
+    totalImports,
+    violationsByPackage: summarizeViolationsByPackage(sortedViolations),
+    referenceDataStatus: "loaded",
+    diagnosticLimit,
+  }
+}
+
+const collectBoundaryViolations = (
+  sourceFiles: ReadonlyArray<SourceFile>,
+  packages: ReadonlyArray<PackageInfo>,
+  lookup: BoundaryLookup,
+): Array<BoundaryViolation> => {
+  const violations: Array<BoundaryViolation> = []
+
+  for (const sourceFile of sourceFiles) {
+    const sourcePackage = packageForFile(sourceFile.getFilePath(), packages)
+    const sourceRule =
+      sourcePackage === undefined ? undefined : lookupBoundaryRule(lookup, sourcePackage)
+
+    for (const declaration of collectImportLikeDeclarations(sourceFile)) {
+      const violation = classifyBoundaryViolation({
+        declaration,
+        sourceFile,
+        sourcePackage,
+        sourceRule,
+        packages,
+        lookup,
+      })
+      if (violation !== undefined) {
+        violations.push(violation)
+      }
+    }
+  }
+
+  return violations
 }
 
 const classifyBoundaryViolation = ({
