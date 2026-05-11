@@ -6,7 +6,7 @@ import {
   type SourceCategory,
 } from "./calibration.js"
 
-export interface FileTaxonomyOptions {
+interface FileTaxonomyOptions {
   readonly sourceExtensions?: ReadonlyArray<string>
 }
 

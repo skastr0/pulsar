@@ -21,7 +21,7 @@ export const SIGNAL_FACTOR_POLICY_PRECEDENCE = [
   "vector",
 ] as const
 
-export interface SignalFactorPolicyContext {
+interface SignalFactorPolicyContext {
   readonly signalId: string
   readonly precedence: typeof SIGNAL_FACTOR_POLICY_PRECEDENCE
   readonly vectorOverrides: SignalFactorOverrideMap
@@ -140,7 +140,7 @@ const toSignalFactorValue = (value: unknown): SignalFactorValue | undefined => {
   return undefined
 }
 
-export interface FactorDefinitionValidationIssue {
+interface FactorDefinitionValidationIssue {
   readonly path: string
   readonly message: string
 }

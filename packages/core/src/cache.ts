@@ -42,7 +42,7 @@ export interface TieredCacheEntry<T> {
   readonly halfLifeDays: number | undefined
 }
 
-export interface CacheLookupResult<T> {
+interface CacheLookupResult<T> {
   readonly status: "hit" | "miss" | "stale"
   readonly entry?: TieredCacheEntry<T>
   readonly value?: T
