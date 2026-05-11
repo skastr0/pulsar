@@ -36,6 +36,28 @@ describe("file taxonomy", () => {
     ).toContain("example")
   })
 
+  test("default classification preserves taxonomy rule behavior", () => {
+    const sourceOptions = { sourceExtensions: [".ts", ".tsx"] }
+    const examples = [
+      ["node_modules/pkg/index.ts", ["dependency"]],
+      ["dist/index.js", ["build_artifact"]],
+      ["src/service.generated.ts", ["generated"]],
+      ["docs/readme.md", ["documentation"]],
+      ["src/component.stories.tsx", ["stories"]],
+      ["src/types.d.ts", ["declaration"]],
+      ["vite.config.ts", ["config_tooling"]],
+      [".github/workflows/ci.yml", ["hidden_tooling"]],
+      ["src/test-utils.ts", ["test_utility"]],
+      ["src/unit.spec.ts", ["test_code"]],
+      ["src/fixture/example.test.ts", ["example", "test_code"]],
+      ["README.md", ["unknown"]],
+    ] as const
+
+    for (const [path, categories] of examples) {
+      expect(classifyFilePathDefault(path, sourceOptions)).toEqual(categories)
+    }
+  })
+
   test("classification runs project module taxonomy processors when provided", async () => {
     const processor = defineCalibrationProcessor({
       id: "scratch-taxonomy",

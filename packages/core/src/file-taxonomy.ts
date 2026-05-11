@@ -15,30 +15,12 @@ export const classifyFilePathDefault = (
   options?: FileTaxonomyOptions,
 ): ReadonlyArray<SourceCategory> => {
   const normalized = normalizePath(filePath)
-  const categories = new Set<SourceCategory>()
-
-  if (hasPathSegment(normalized, "node_modules")) categories.add("dependency")
-  if (hasAnyPathSegment(normalized, BUILD_ARTIFACT_SEGMENTS)) categories.add("build_artifact")
-  if (hasAnyPathSegment(normalized, GENERATED_SEGMENTS) || hasAnySuffix(normalized, GENERATED_SUFFIXES)) {
-    categories.add("generated")
-  }
-  if (hasAnyPathSegment(normalized, EXAMPLE_SEGMENTS)) categories.add("example")
-  if (hasAnyPathSegment(normalized, TEST_CODE_SEGMENTS) || hasAnySuffix(normalized, TEST_CODE_SUFFIXES)) {
-    categories.add("test_code")
-  }
-  if (
-    hasAnyPathSegment(normalized, TEST_UTILITY_SEGMENTS) ||
-    hasAnySuffix(normalized, TEST_UTILITY_SUFFIXES)
-  ) {
-    categories.add("test_utility")
-  }
-  if (hasAnySuffix(normalized, STORY_SUFFIXES) || hasPathSegment(normalized, ".storybook")) {
-    categories.add("stories")
-  }
-  if (hasAnySuffix(normalized, DECLARATION_SUFFIXES)) categories.add("declaration")
-  if (hasAnySuffix(normalized, TOOLING_SUFFIXES)) categories.add("config_tooling")
-  if (normalized.split("/").some(isHiddenPathSegment)) categories.add("hidden_tooling")
-  if (hasAnyPathSegment(normalized, DOCUMENTATION_SEGMENTS)) categories.add("documentation")
+  const pathSegments = normalized.split("/")
+  const categories = new Set(
+    DEFAULT_FILE_TAXONOMY_RULES.filter((rule) =>
+      rule.matches(normalized, pathSegments),
+    ).map((rule) => rule.category),
+  )
 
   if (
     options?.sourceExtensions !== undefined &&
@@ -93,13 +75,18 @@ export const isProductionSourcePath = (
 
 const normalizePath = (filePath: string): string => filePath.replaceAll("\\", "/")
 
-const hasPathSegment = (filePath: string, segment: string): boolean =>
-  filePath.split("/").includes(segment)
+type FileTaxonomyRule = {
+  readonly category: SourceCategory
+  readonly matches: (filePath: string, pathSegments: ReadonlyArray<string>) => boolean
+}
 
-const hasAnyPathSegment = (
-  filePath: string,
+const includesPathSegment = (pathSegments: ReadonlyArray<string>, segment: string): boolean =>
+  pathSegments.includes(segment)
+
+const includesAnyPathSegment = (
+  pathSegments: ReadonlyArray<string>,
   segments: ReadonlySet<string>,
-): boolean => filePath.split("/").some((segment) => segments.has(segment))
+): boolean => pathSegments.some((segment) => segments.has(segment))
 
 const hasAnySuffix = (filePath: string, suffixes: ReadonlyArray<string>): boolean =>
   suffixes.some((suffix) => filePath.endsWith(suffix))
@@ -114,6 +101,61 @@ const mergeCategories = (
 
 const isHiddenPathSegment = (segment: string): boolean =>
   segment.startsWith(".") && segment.length > 1
+
+const DEFAULT_FILE_TAXONOMY_RULES: ReadonlyArray<FileTaxonomyRule> = [
+  {
+    category: "dependency",
+    matches: (_filePath, pathSegments) => includesPathSegment(pathSegments, "node_modules"),
+  },
+  {
+    category: "build_artifact",
+    matches: (_filePath, pathSegments) =>
+      includesAnyPathSegment(pathSegments, BUILD_ARTIFACT_SEGMENTS),
+  },
+  {
+    category: "generated",
+    matches: (filePath, pathSegments) =>
+      includesAnyPathSegment(pathSegments, GENERATED_SEGMENTS) ||
+      hasAnySuffix(filePath, GENERATED_SUFFIXES),
+  },
+  {
+    category: "example",
+    matches: (_filePath, pathSegments) => includesAnyPathSegment(pathSegments, EXAMPLE_SEGMENTS),
+  },
+  {
+    category: "test_code",
+    matches: (filePath, pathSegments) =>
+      includesAnyPathSegment(pathSegments, TEST_CODE_SEGMENTS) ||
+      hasAnySuffix(filePath, TEST_CODE_SUFFIXES),
+  },
+  {
+    category: "test_utility",
+    matches: (filePath, pathSegments) =>
+      includesAnyPathSegment(pathSegments, TEST_UTILITY_SEGMENTS) ||
+      hasAnySuffix(filePath, TEST_UTILITY_SUFFIXES),
+  },
+  {
+    category: "stories",
+    matches: (filePath, pathSegments) =>
+      hasAnySuffix(filePath, STORY_SUFFIXES) || includesPathSegment(pathSegments, ".storybook"),
+  },
+  {
+    category: "declaration",
+    matches: (filePath) => hasAnySuffix(filePath, DECLARATION_SUFFIXES),
+  },
+  {
+    category: "config_tooling",
+    matches: (filePath) => hasAnySuffix(filePath, TOOLING_SUFFIXES),
+  },
+  {
+    category: "hidden_tooling",
+    matches: (_filePath, pathSegments) => pathSegments.some(isHiddenPathSegment),
+  },
+  {
+    category: "documentation",
+    matches: (_filePath, pathSegments) => includesAnyPathSegment(pathSegments, DOCUMENTATION_SEGMENTS),
+  },
+]
 
 const BUILD_ARTIFACT_SEGMENTS = new Set([
   "dist",
