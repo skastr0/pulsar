@@ -1,8 +1,5 @@
 import { Effect, Option, Schema } from "effect"
-import {
-  Diagnostic as DiagnosticSchema,
-  type Diagnostic,
-} from "./diagnostic.js"
+import { Diagnostic as DiagnosticSchema } from "./diagnostic.js"
 import {
   ObserverOutput as ObserverOutputSchema,
   type ObserverOutput,
@@ -62,6 +59,7 @@ const SignalDiagnostics = Schema.Record({
   key: Schema.String,
   value: Schema.Array(DiagnosticSchema),
 })
+type SignalDiagnostics = typeof SignalDiagnostics.Type
 
 export const TimeSeriesEntry = Schema.Struct({
   sha: Schema.String,
@@ -126,7 +124,7 @@ export interface TimeSeriesOptions {
 
 export const signalDiagnosticsFromObserver = (
   observerOutput: ObserverOutput,
-): Record<string, ReadonlyArray<Diagnostic>> =>
+): SignalDiagnostics =>
   Object.fromEntries(
     [...observerOutput.signalResults.entries()]
       .filter(([, result]) => result.diagnostics.length > 0)

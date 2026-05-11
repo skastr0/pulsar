@@ -1,9 +1,5 @@
 import { Schema } from "effect"
-import type {
-  TimeSeriesLockFailed,
-  TimeSeriesReadFailed,
-  TimeSeriesWriteFailed,
-} from "./time-series.js"
+import type { TimeSeriesError } from "./time-series.js"
 
 export class DuplicateSignalIdError extends Schema.TaggedError<DuplicateSignalIdError>()(
   "DuplicateSignalIdError",
@@ -143,6 +139,4 @@ export type ScoringEngineError =
   | CommitNotFound
   | GitRevListFailed
   | ReferenceDataLoadFailed
-  | TimeSeriesReadFailed
-  | TimeSeriesWriteFailed
-  | TimeSeriesLockFailed
+  | TimeSeriesError

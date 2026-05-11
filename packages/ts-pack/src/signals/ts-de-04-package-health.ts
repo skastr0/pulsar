@@ -1,37 +1,12 @@
 import type { PackageInfo, PackageManifest } from "../discovery.js"
 import { inferHostFacadeAlias } from "./ts-de-04-host-facade-aliases.js"
 import { dependencyNamesOf, packageDisplayName } from "./shared-workspace.js"
-
-export interface DependencyMismatch {
-  readonly dependencyName: string
-  readonly files: ReadonlyArray<string>
-  readonly usageKind?: "type-only" | "dynamic"
-}
-
-export interface UnusedDeclaredDependency {
-  readonly dependencyName: string
-}
-
-export interface PackageDependencyHealth {
-  readonly packagePath: string
-  readonly packageName: string
-  readonly private: boolean
-  readonly importedButNotDeclared: ReadonlyArray<DependencyMismatch>
-  readonly declaredButUnused: ReadonlyArray<UnusedDeclaredDependency>
-  readonly transitiveUsedDirectly: ReadonlyArray<DependencyMismatch>
-  readonly devInProd: ReadonlyArray<DependencyMismatch>
-}
-
-export type UsageBucket = {
-  readonly files: Set<string>
-  readonly prodFiles: Set<string>
-  readonly toolingFiles: Set<string>
-  readonly typeOnlyFiles: Set<string>
-  readonly dynamicFiles: Set<string>
-  readonly bundledFiles: Set<string>
-  readonly bundledProdFiles: Set<string>
-  readonly specifiers: Set<string>
-}
+import type {
+  DependencyMismatch,
+  PackageDependencyHealth,
+  UnusedDeclaredDependency,
+  UsageBucket,
+} from "./ts-de-04-model.js"
 
 export const analyzePackageHealth = (
   pkg: PackageInfo & { manifest: PackageManifest },

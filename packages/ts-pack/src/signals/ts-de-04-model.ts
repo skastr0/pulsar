@@ -1,7 +1,4 @@
 import { Schema } from "effect"
-import type { SourceFile } from "ts-morph"
-import type { PackageInfo, PackageManifest } from "../discovery.js"
-import type { UsageBucket } from "./ts-de-04-package-health.js"
 import type { TsconfigPathAlias } from "./ts-de-04-path-aliases.js"
 
 export const TsDe04Config = Schema.Struct({
@@ -13,8 +10,28 @@ export const TsDe04Config = Schema.Struct({
 })
 export type TsDe04Config = typeof TsDe04Config.Type
 
+export interface DependencyMismatch {
+  readonly dependencyName: string
+  readonly files: ReadonlyArray<string>
+  readonly usageKind?: "type-only" | "dynamic"
+}
+
+export interface UnusedDeclaredDependency {
+  readonly dependencyName: string
+}
+
+export interface PackageDependencyHealth {
+  readonly packagePath: string
+  readonly packageName: string
+  readonly private: boolean
+  readonly importedButNotDeclared: ReadonlyArray<DependencyMismatch>
+  readonly declaredButUnused: ReadonlyArray<UnusedDeclaredDependency>
+  readonly transitiveUsedDirectly: ReadonlyArray<DependencyMismatch>
+  readonly devInProd: ReadonlyArray<DependencyMismatch>
+}
+
 export interface TsDe04Output {
-  readonly packages: ReadonlyArray<import("./ts-de-04-package-health.js").PackageDependencyHealth>
+  readonly packages: ReadonlyArray<PackageDependencyHealth>
   readonly missingCount: number
   readonly unusedCount: number
   readonly diagnosticLimit: number
@@ -31,16 +48,49 @@ export type ModuleSpecifierUsage = {
   readonly dynamic: boolean
 }
 
-type PackagePathMatcher = (filePath: string) => PackageInfo | undefined
+export interface UsageBucket {
+  readonly files: Set<string>
+  readonly prodFiles: Set<string>
+  readonly toolingFiles: Set<string>
+  readonly typeOnlyFiles: Set<string>
+  readonly dynamicFiles: Set<string>
+  readonly bundledFiles: Set<string>
+  readonly bundledProdFiles: Set<string>
+  readonly specifiers: Set<string>
+}
+
+interface DependencyPackageManifest {
+  readonly name: string | undefined
+  readonly version: string | undefined
+  readonly private: boolean
+  readonly scripts: Readonly<Record<string, string>>
+  readonly bin: Readonly<Record<string, string>>
+  readonly dependencies: Readonly<Record<string, string>>
+  readonly devDependencies: Readonly<Record<string, string>>
+  readonly peerDependencies: Readonly<Record<string, string>>
+  readonly optionalDependencies: Readonly<Record<string, string>>
+  readonly entrypoints: ReadonlyArray<string>
+  readonly exportSubpaths: ReadonlyArray<string>
+}
+
+interface DependencyPackageInfo {
+  readonly name: string
+  readonly path: string
+  readonly tsconfigPath: string
+  readonly packageJsonPath: string | undefined
+  readonly manifest: DependencyPackageManifest | undefined
+}
+
+type PackagePathMatcher = (filePath: string) => DependencyPackageInfo | undefined
 export type UsageByPackage = Map<string, Map<string, UsageBucket>>
 
 export type DependencyAnalysisFacts = {
   readonly resolvedPackageNames: ReadonlySet<string>
-  readonly activePackages: ReadonlyArray<PackageInfo>
+  readonly activePackages: ReadonlyArray<DependencyPackageInfo>
   readonly pathAliasesByPackage: ReadonlyMap<string, ReadonlyArray<TsconfigPathAlias>>
   readonly bundledInfoByPackage: ReadonlyMap<string, BundledPackageInfo>
   readonly workspaceNames: ReadonlySet<string>
-  readonly sourceFiles: ReadonlyArray<SourceFile>
+  readonly sourceFiles: ReadonlyArray<import("ts-morph").SourceFile>
   readonly packageForPath: PackagePathMatcher
   readonly rootDevDependencyNames: ReadonlySet<string>
   readonly rootToolingDependencyNames: ReadonlySet<string>
@@ -57,4 +107,6 @@ export type DependencyUsageContext = {
   readonly isProdFile: boolean
 }
 
-export type ManifestPackageInfo = PackageInfo & { manifest: PackageManifest }
+export type ManifestPackageInfo = DependencyPackageInfo & {
+  readonly manifest: DependencyPackageManifest
+}

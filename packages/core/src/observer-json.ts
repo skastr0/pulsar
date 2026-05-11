@@ -2,7 +2,7 @@ import { Schema } from "effect"
 import { Category as CategorySchema } from "./category.js"
 import { ProjectModuleScope } from "./calibration.js"
 import { Diagnostic as DiagnosticSchema } from "./diagnostic.js"
-import { OBSERVER_OUTPUT_SEMANTICS, type CategoryOutput, type ObserverOutputSemantics } from "./observer-model.js"
+import { OBSERVER_OUTPUT_SEMANTICS, type ObserverRuntimeOutput } from "./observer-model.js"
 
 const ObserverCategorySnapshot = Schema.Struct({
   score: Schema.Number,
@@ -211,14 +211,4 @@ export const ObserverOutput = Schema.Struct({
 
 export type ObserverOutputPublic = typeof ObserverOutput.Type
 
-export type ObserverOutput = ObserverOutputPublic & {
-  readonly observer_semantics?: ObserverOutputSemantics
-  readonly categories: Record<import("./category.js").Category, CategoryOutput>
-  readonly minimum: import("./observer-model.js").MinimumDimension | undefined
-  readonly readiness?: import("./observer-model.js").ReadinessOutput
-  readonly inactiveSignals: ReadonlyArray<string>
-  readonly signalResults: ReadonlyMap<string, import("./runner.js").SignalRunResult>
-  readonly signalMetadata?: Record<string, import("./signal.js").SignalOutputMetadata>
-  readonly runtimeProfile?: import("./observer-model.js").ObserverRuntimeProfile
-  readonly calibration?: import("./observer-model.js").ObserverCalibrationSummary
-}
+export type ObserverOutput = ObserverOutputPublic & ObserverRuntimeOutput

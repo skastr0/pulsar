@@ -130,7 +130,7 @@ const observeCommitInWorktree = (args: {
   readonly options: ScoringEngineOptions | undefined
   readonly internals: EngineInternals
   readonly runWithEnvironment: RunWithEnvironment
-  readonly observeWithCache: ReturnType<typeof makeObserveWithCache>
+  readonly observeWithCache: ObserveWithCache
   readonly repoPath: string
   readonly sha: string
   readonly worktreePath: string

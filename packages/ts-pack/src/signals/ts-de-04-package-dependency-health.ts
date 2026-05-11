@@ -8,12 +8,13 @@ import {
   missingDependencyPenaltyWeight,
   packageDependencyDiagnostics,
 } from "./ts-de-04-diagnostics.js"
-import { TsDe04Config, type TsDe04Output } from "./ts-de-04-model.js"
 import type {
   DependencyMismatch,
   PackageDependencyHealth,
   UnusedDeclaredDependency,
-} from "./ts-de-04-package-health.js"
+  TsDe04Output,
+} from "./ts-de-04-model.js"
+import { TsDe04Config } from "./ts-de-04-model.js"
 
 export const TsDe04: Signal<
   TsDe04Config,

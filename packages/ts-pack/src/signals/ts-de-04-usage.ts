@@ -25,9 +25,9 @@ import type {
   ManifestPackageInfo,
   ModuleSpecifierUsage,
   TsDe04Config,
+  UsageBucket,
   UsageByPackage,
 } from "./ts-de-04-model.js"
-import type { UsageBucket } from "./ts-de-04-package-health.js"
 
 export const collectDependencyUsage = (
   facts: DependencyAnalysisFacts,

@@ -1,7 +1,7 @@
 import { computeDiagnosticHash } from "@skastr0/pulsar-core/signal"
 import type { Diagnostic } from "@skastr0/pulsar-core/signal"
 import { join, relative } from "node:path"
-import type { DependencyMismatch, PackageDependencyHealth } from "./ts-de-04-package-health.js"
+import type { DependencyMismatch, PackageDependencyHealth } from "./ts-de-04-model.js"
 import { isPackageToolingFile } from "./ts-de-04-package-classification.js"
 
 export const packageDependencyDiagnostics = (

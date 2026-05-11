@@ -134,3 +134,14 @@ export interface ObserverCalibrationSummary {
   readonly fingerprint: string
   readonly active_modules: ReadonlyArray<ObserverCalibrationModuleSummary>
 }
+
+export interface ObserverRuntimeOutput {
+  readonly categories: Record<Category, CategoryOutput>
+  readonly minimum: MinimumDimension | undefined
+  readonly readiness?: ReadinessOutput
+  readonly inactiveSignals: ReadonlyArray<string>
+  readonly signalResults: ReadonlyMap<string, SignalRunResult>
+  readonly signalMetadata?: Record<string, SignalOutputMetadata>
+  readonly runtimeProfile?: ObserverRuntimeProfile
+  readonly calibration?: ObserverCalibrationSummary
+}

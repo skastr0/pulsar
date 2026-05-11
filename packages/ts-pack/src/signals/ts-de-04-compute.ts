@@ -4,10 +4,7 @@ import type { PackageInfo, PackageManifest } from "../discovery.js"
 import { dependencyNamesOf, workspacePackageNames } from "./shared-workspace.js"
 import { readBundledInfoByPackage } from "./ts-de-04-bundled-info.js"
 import { createPackagePathMatcher } from "./ts-de-04-package-classification.js"
-import {
-  analyzePackageHealth,
-  type PackageDependencyHealth,
-} from "./ts-de-04-package-health.js"
+import { analyzePackageHealth } from "./ts-de-04-package-health.js"
 import {
   readPathAliasesByPackage,
 } from "./ts-de-04-path-aliases.js"
@@ -17,6 +14,7 @@ import { collectDependencyUsage } from "./ts-de-04-usage.js"
 import type {
   DependencyAnalysisFacts,
   DependencyUsageSummary,
+  PackageDependencyHealth,
   TsDe04Config,
   TsDe04Output,
 } from "./ts-de-04-model.js"

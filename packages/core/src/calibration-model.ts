@@ -168,9 +168,18 @@ export interface CalibrationProcessor<Slot extends CalibrationSlotId> {
   ) => Effect.Effect<CalibrationSlotOutput<Slot>, CalibrationProcessorError, never>
 }
 
-export type AnyCalibrationProcessor = {
-  readonly [Slot in CalibrationSlotId]: CalibrationProcessor<Slot>
-}[CalibrationSlotId]
+export type AnyCalibrationProcessor =
+  | CalibrationProcessor<"taxonomy.file-classifier">
+  | CalibrationProcessor<"language-pack-activation">
+  | CalibrationProcessor<"typescript.noop-classifier">
+  | CalibrationProcessor<"typescript.clone-group-policy">
+  | CalibrationProcessor<"typescript.dependency-resolver">
+  | CalibrationProcessor<"typescript.suppression-justifier">
+  | CalibrationProcessor<"typescript.callback-context-namer">
+  | CalibrationProcessor<"typescript.export-reachability">
+  | CalibrationProcessor<"typescript.unfinished-implementation-policy">
+  | CalibrationProcessor<"typescript.unsafe-type-policy">
+  | CalibrationProcessor<"mixer.category-policy">
 
 export interface ResolvedCalibrationContext {
   readonly fingerprint: string
