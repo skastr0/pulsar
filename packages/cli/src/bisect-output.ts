@@ -11,58 +11,67 @@ export const printJsonReport = (report: BisectReport | ObserverBisectReport): vo
 }
 
 export const printHumanReport = (report: BisectReport, elapsedMs: number): void => {
-  const lines: Array<string> = []
-  lines.push("")
-  lines.push(`  Repo:    ${report.repoPath}`)
-  lines.push(`  Signal:  ${report.signalId}`)
-  lines.push(`  Range:   ${report.fromSha}..${report.toSha}`)
-  lines.push(`  Commits: ${report.trajectory.length}  (${elapsedMs}ms)`)
-  if (report.sampling.scoredCommits !== report.sampling.totalCommits) {
-    lines.push(
-      `  Sample:  ${report.sampling.applied} (${report.sampling.scoredCommits}/${report.sampling.totalCommits} commits scored)`,
-    )
-  }
-  for (const diagnostic of report.sampling.diagnostics) {
-    lines.push(`  Note:    ${diagnostic}`)
-  }
-  lines.push("")
-  lines.push(
-    `  Scores:  min ${report.minScore.toFixed(3)}   max ${report.maxScore.toFixed(3)}   final ${report.finalScore.toFixed(3)}   drift ${report.totalDrift.toFixed(3)}`,
-  )
-  if (report.firstCrossing !== undefined) {
-    lines.push(
-      `  First crossing: ${report.firstCrossing.target} ${report.firstCrossing.op} ${report.firstCrossing.threshold} at ${report.firstCrossing.sha.slice(0, 8)} (${report.firstCrossing.score.toFixed(3)})`,
-    )
-  }
-  lines.push("")
-  lines.push("  Trajectory (oldest → newest):")
-  for (const t of report.trajectory) {
-    const bar = renderScoreBar(t.score)
-    lines.push(`    ${t.sha.slice(0, 8)}  ${t.score.toFixed(3)}  ${bar}  (${t.diagnosticsCount} diag)`)
-  }
-  lines.push("")
-  if (report.culprits.length === 0) {
-    lines.push("  No score-degrading commits in range.")
-  } else {
-    lines.push(`  Top ${report.culprits.length} culprit commits (largest score drops):`)
-    for (const c of report.culprits) {
-      lines.push(
-        `    ${c.sha.slice(0, 8)}  drop ${c.drop.toFixed(3)}   ${c.prevScore.toFixed(3)} → ${c.newScore.toFixed(3)}  (from ${c.prevSha.slice(0, 8)})`,
-      )
-    }
-  }
-  if (shouldPrintDriftCulprits(report.culprits, report.driftCulprits)) {
-    lines.push("")
-    lines.push(`  Top ${report.driftCulprits.length} drift culprits (sustained deficit):`)
-    for (const culprit of report.driftCulprits) {
-      lines.push(
-        `    ${culprit.sha.slice(0, 8)}  drift ${culprit.drop.toFixed(3)}   ${culprit.prevScore.toFixed(3)} → ${culprit.newScore.toFixed(3)}  (from ${culprit.prevSha.slice(0, 8)})`,
-      )
-    }
-  }
-  lines.push("")
+  const lines = [
+    ...signalHeaderLines(report, elapsedMs),
+    ...signalScoreSummaryLines(report),
+    ...signalTrajectoryLines(report),
+    ...signalCulpritLines(report),
+    ...signalDriftCulpritLines(report),
+    "",
+  ]
   for (const line of lines) console.log(line)
 }
+
+const signalHeaderLines = (report: BisectReport, elapsedMs: number): ReadonlyArray<string> => [
+  "",
+  `  Repo:    ${report.repoPath}`,
+  `  Signal:  ${report.signalId}`,
+  `  Range:   ${report.fromSha}..${report.toSha}`,
+  `  Commits: ${report.trajectory.length}  (${elapsedMs}ms)`,
+  ...(report.sampling.scoredCommits === report.sampling.totalCommits
+    ? []
+    : [
+        `  Sample:  ${report.sampling.applied} (${report.sampling.scoredCommits}/${report.sampling.totalCommits} commits scored)`,
+      ]),
+  ...report.sampling.diagnostics.map((diagnostic) => `  Note:    ${diagnostic}`),
+]
+
+const signalScoreSummaryLines = (report: BisectReport): ReadonlyArray<string> => [
+  "",
+  `  Scores:  min ${report.minScore.toFixed(3)}   max ${report.maxScore.toFixed(3)}   final ${report.finalScore.toFixed(3)}   drift ${report.totalDrift.toFixed(3)}`,
+  ...(report.firstCrossing === undefined
+    ? []
+    : [
+        `  First crossing: ${report.firstCrossing.target} ${report.firstCrossing.op} ${report.firstCrossing.threshold} at ${report.firstCrossing.sha.slice(0, 8)} (${report.firstCrossing.score.toFixed(3)})`,
+      ]),
+]
+
+const signalTrajectoryLines = (report: BisectReport): ReadonlyArray<string> => [
+  "",
+  "  Trajectory (oldest → newest):",
+  ...report.trajectory.map(
+    (entry) =>
+      `    ${entry.sha.slice(0, 8)}  ${entry.score.toFixed(3)}  ${renderScoreBar(entry.score)}  (${entry.diagnosticsCount} diag)`,
+  ),
+  "",
+]
+
+const signalCulpritLines = (report: BisectReport): ReadonlyArray<string> =>
+  report.culprits.length === 0
+    ? ["  No score-degrading commits in range."]
+    : [
+        `  Top ${report.culprits.length} culprit commits (largest score drops):`,
+        ...report.culprits.map((culprit) => `    ${formatCulprit(culprit, "drop")}`),
+      ]
+
+const signalDriftCulpritLines = (report: BisectReport): ReadonlyArray<string> =>
+  shouldPrintDriftCulprits(report.culprits, report.driftCulprits)
+    ? [
+        "",
+        `  Top ${report.driftCulprits.length} drift culprits (sustained deficit):`,
+        ...report.driftCulprits.map((culprit) => `    ${formatCulprit(culprit, "drift")}`),
+      ]
+    : []
 
 export const printObserverHumanReport = (
   report: ObserverBisectReport,
