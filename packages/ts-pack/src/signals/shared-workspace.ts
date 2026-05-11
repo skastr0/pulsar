@@ -1,5 +1,6 @@
 import { builtinModules } from "node:module"
 import type { PackageInfo, PackageManifest } from "../discovery.js"
+import { nearestPackageForPath } from "../package-ownership.js"
 import { matchesAnyGlob } from "./shared-globs.js"
 
 export interface BoundaryRule {
@@ -29,11 +30,7 @@ const NODE_BUILTINS = new Set(
 export const packageForFile = (
   filePath: string,
   packages: ReadonlyArray<PackageInfo>,
-): PackageInfo | undefined =>
-  packages
-    .slice()
-    .sort((left, right) => right.path.length - left.path.length)
-    .find((pkg) => filePath === pkg.path || filePath.startsWith(`${pkg.path}/`))
+): PackageInfo | undefined => nearestPackageForPath(filePath, packages)
 
 export const packageDisplayName = (pkg: PackageInfo | undefined): string | undefined =>
   pkg?.manifest?.name ?? pkg?.name

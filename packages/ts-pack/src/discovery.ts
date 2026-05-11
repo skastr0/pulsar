@@ -2,6 +2,7 @@ import { readFile, readdir } from "node:fs/promises"
 import { dirname, join, relative } from "node:path"
 import { Effect } from "effect"
 import { simpleGit } from "simple-git"
+import { nearestPackageForPath } from "./package-ownership.js"
 
 export interface PackageManifest {
   readonly name: string | undefined
@@ -254,7 +255,7 @@ const manifestOnlyPackageJsons = (
       return !tsconfigPackagePaths.has(packagePath) && hasTsSource.has(packagePath)
     })
     .flatMap((packageJsonPath) => {
-      const inherited = nearestTsconfigPackage(dirname(packageJsonPath), tsconfigPackages)
+      const inherited = nearestPackageForPath(dirname(packageJsonPath), tsconfigPackages)
       return inherited === undefined ? [] : [{ packageJsonPath, inheritedTsconfigPath: inherited.tsconfigPath }]
     })
     .sort((left, right) => left.packageJsonPath.localeCompare(right.packageJsonPath))
@@ -275,15 +276,6 @@ const nearestPackageJsonPath = (
   }
   return undefined
 }
-
-const nearestTsconfigPackage = (
-  packagePath: string,
-  tsconfigPackages: ReadonlyArray<PackageInfo>,
-): PackageInfo | undefined =>
-  tsconfigPackages
-    .slice()
-    .sort((left, right) => right.path.length - left.path.length)
-    .find((pkg) => packagePath === pkg.path || packagePath.startsWith(`${pkg.path}/`))
 
 const isIgnoredPath = (file: string): boolean =>
   file.split(/[\\/]+/).some((part) => IGNORE_DIRS.has(part) || isHiddenDirectoryName(part))
