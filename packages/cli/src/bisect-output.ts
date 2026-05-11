@@ -7,6 +7,7 @@ import type {
   BisectReport,
   Culprit,
 } from "./bisect-signal-types.js"
+import { renderScoreBar } from "./score-format.js"
 
 export const printJsonReport = (report: BisectReport | ObserverBisectReport): void => {
   console.log(JSON.stringify(report, null, 2))
@@ -264,10 +265,4 @@ const shouldPrintDriftCulprits = (
   if (drift.length === 0) return false
   if (adjacent.length !== drift.length) return true
   return adjacent.some((culprit, index) => culprit.sha !== drift[index]?.sha)
-}
-
-const renderScoreBar = (score: number): string => {
-  const width = 20
-  const filled = Math.max(0, Math.min(width, Math.round(score * width)))
-  return `[${"█".repeat(filled)}${"·".repeat(width - filled)}]`
 }

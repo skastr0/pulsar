@@ -1,5 +1,6 @@
 import { readFile, readdir } from "node:fs/promises"
 import { dirname, join, relative } from "node:path"
+import { ROOT_PACKAGE_NAME, sortRootFirstPackages } from "@skastr0/pulsar-shared-signals"
 import { Effect } from "effect"
 import { simpleGit } from "simple-git"
 import { nearestPackageForPath } from "./package-ownership.js"
@@ -54,11 +55,7 @@ export const discoverPackages = (rootDir: string): Effect.Effect<ReadonlyArray<P
         ),
     )
 
-    return [...tsconfigPackages, ...packageJsonOnlyPackages].sort((a, b) => {
-      if (a.name === "(root)") return -1
-      if (b.name === "(root)") return 1
-      return a.name.localeCompare(b.name)
-    })
+    return sortRootFirstPackages([...tsconfigPackages, ...packageJsonOnlyPackages])
   })
 
 const toTsconfigPackageInfo = async (rootDir: string, tsconfigPath: string): Promise<PackageInfo> => {
@@ -68,7 +65,7 @@ const toTsconfigPackageInfo = async (rootDir: string, tsconfigPath: string): Pro
   const manifest = await readPackageManifest(packageJsonPath)
 
   return {
-    name: rel === "" ? "(root)" : rel,
+    name: rel === "" ? ROOT_PACKAGE_NAME : rel,
     path: packageDir,
     tsconfigPath,
     packageJsonPath: manifest === undefined ? undefined : packageJsonPath,
@@ -86,7 +83,7 @@ const toManifestOnlyPackageInfo = async (
   const manifest = await readPackageManifest(packageJsonPath)
 
   return {
-    name: rel === "" ? "(root)" : rel,
+    name: rel === "" ? ROOT_PACKAGE_NAME : rel,
     path: packageDir,
     tsconfigPath: inheritedTsconfigPath,
     packageJsonPath: manifest === undefined ? undefined : packageJsonPath,

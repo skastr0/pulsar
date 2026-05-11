@@ -1,6 +1,7 @@
 import { type SourceFile, ts } from "ts-morph"
 import type { PackageInfo } from "../discovery.js"
 import { createModuleResolver } from "../graph/module-graph.js"
+import { forEachCompilerNode } from "./shared-compiler-node-traversal.js"
 import {
   packageDisplayName,
   packageForFile,
@@ -171,11 +172,3 @@ const resolveModuleSpecifier = (
   resolver.resolve(sourcePath, {
     getModuleSpecifierValue: () => specifier,
   } as Parameters<typeof resolver.resolve>[1])
-
-const forEachCompilerNode = (root: ts.Node, visit: (node: ts.Node) => void): void => {
-  const walk = (node: ts.Node): void => {
-    visit(node)
-    ts.forEachChild(node, walk)
-  }
-  walk(root)
-}

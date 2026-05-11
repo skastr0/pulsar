@@ -1,5 +1,6 @@
 import { readdir, readFile } from "node:fs/promises"
 import { dirname, join, relative } from "node:path"
+import { ROOT_PACKAGE_NAME, sortRootFirstPackages } from "@skastr0/pulsar-shared-signals"
 import { Context, Effect, Layer } from "effect"
 import { simpleGit } from "simple-git"
 import { loadCargoMetadata, type CargoMetadata } from "./cargo-metadata.js"
@@ -64,18 +65,14 @@ export const discoverRustManifests = (
         const packageDir = dirname(manifestPath)
         const rel = relative(rootDir, packageDir)
         return {
-          name: rel === "" ? "(root)" : rel,
+          name: rel === "" ? ROOT_PACKAGE_NAME : rel,
           path: packageDir,
           manifestPath,
           packageName: yield* readCargoPackageName(manifestPath),
         }
       }),
     )
-    return packages.slice().sort((a: RustManifestInfo, b: RustManifestInfo) => {
-      if (a.name === "(root)") return -1
-      if (b.name === "(root)") return 1
-      return a.name.localeCompare(b.name)
-    })
+    return sortRootFirstPackages(packages)
   })
 
 export const makeRustProject = (

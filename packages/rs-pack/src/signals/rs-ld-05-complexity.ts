@@ -9,6 +9,7 @@ import { Effect, Schema } from "effect"
 import { collectRustProjectFacts } from "../rust-analysis.js"
 import { RustProjectTag } from "../project.js"
 import { isExcluded } from "./shared-globs.js"
+import { scoreDoubleWeightedThresholdRatio } from "./shared-threshold-score.js"
 
 const RsLd05Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
@@ -87,10 +88,7 @@ export const RsLd05: Signal<RsLd05Config, RsLd05Output, RustProjectTag> = {
           new SignalComputeError({ signalId: "RS-LD-05-cyclomatic-complexity", message: String(cause), cause }),
       })
     }),
-  score: (out) => {
-    if (out.totalFunctions === 0) return 1
-    return Math.max(0, 1 - (out.overThresholdCount / out.totalFunctions) * 2)
-  },
+  score: (out) => scoreDoubleWeightedThresholdRatio(out.overThresholdCount, out.totalFunctions),
   diagnose: (out): ReadonlyArray<Diagnostic> =>
     out.functions.slice(0, 10).map((fn) => ({
       severity: fn.complexity > 10 ? ("warn" as const) : ("info" as const),

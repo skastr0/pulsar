@@ -1,4 +1,5 @@
 import { Node, SyntaxKind, type Node as TsMorphNode, type SourceFile, ts } from "ts-morph"
+import { forEachCompilerNode } from "./shared-compiler-node-traversal.js"
 export {
   buildExportConsumerIndex,
   type ExportConsumer,
@@ -134,14 +135,6 @@ const countIdentifierReferences = (sourceFile: SourceFile, name: string): number
   fileCache.set(name, count)
   COUNT_REFERENCE_INDEX.set(sourceFile, fileCache)
   return count
-}
-
-const forEachCompilerNode = (root: ts.Node, visit: (node: ts.Node) => void): void => {
-  const walk = (node: ts.Node): void => {
-    visit(node)
-    ts.forEachChild(node, walk)
-  }
-  walk(root)
 }
 
 const isCompilerIdentifierInsideExportSyntax = (node: ts.Identifier): boolean => {

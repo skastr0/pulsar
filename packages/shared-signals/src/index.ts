@@ -5,6 +5,12 @@
 export const SHARED_SIGNALS_VERSION = "0.0.0" as const
 
 export {
+  compareRootFirstPackageNames,
+  ROOT_PACKAGE_NAME,
+  sortRootFirstPackages,
+  type NamedPackage,
+} from "./package-order.js"
+export {
   Shared02BusFactor,
   Shared02BusFactorConfig,
   Shared03ChurnRate,
