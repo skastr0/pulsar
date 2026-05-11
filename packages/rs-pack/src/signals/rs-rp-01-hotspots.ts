@@ -24,7 +24,7 @@ export interface RustHotspot {
   readonly rank: number
 }
 
-export interface RsRp01Output {
+export type RsRp01Output = {
   readonly hotspots: ReadonlyArray<RustHotspot>
   readonly totalFilesConsidered: number
   readonly topRightShare: number

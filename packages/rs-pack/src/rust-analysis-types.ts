@@ -1,6 +1,6 @@
 import type { RustManifestInfo } from "./project.js"
 
-export interface RustVisibility {
+export type RustVisibility = {
   readonly kind: "pub" | "pub-crate" | "pub-super" | "pub-in-path" | "private"
   readonly path?: string
 }

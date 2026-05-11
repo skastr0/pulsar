@@ -35,7 +35,7 @@ export type TsAb02Config = typeof TsAb02Config.Type
 
 export type { ExportClassification, ExportEvidence, ExportReachability } from "./ts-ab-02-reachability-output.js"
 
-export interface TsAb02Output {
+export type TsAb02Output = {
   readonly exports: ReadonlyArray<ExportReachability>
   readonly calibrationDecisions: ReadonlyArray<CalibrationDecision>
   readonly counts: Readonly<Record<ExportClassification, number>>
