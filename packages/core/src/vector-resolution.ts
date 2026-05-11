@@ -119,9 +119,20 @@ export const diffTimeIntegrationEnabled = (
   vector: PulsarVector | undefined,
 ): boolean => vector?.observer?.diffTimeIntegration ?? true
 
+interface ResolvedReadinessObserverConfig {
+  readonly p_norm: number
+  readonly local_warning_threshold: number
+  readonly local_poison_threshold: number
+  readonly local_warning_gain: number
+  readonly hard_gate_score_cap: number
+  readonly green_max_pressure: number
+  readonly red_min_pressure: number
+  readonly top_pressures: number
+}
+
 export const readinessConfigOf = (
   vector: PulsarVector | undefined,
-) => ({
+): ResolvedReadinessObserverConfig => ({
   p_norm: vector?.observer?.readiness?.p_norm ?? 12,
   local_warning_threshold: vector?.observer?.readiness?.local_warning_threshold ?? 0.4,
   local_poison_threshold: vector?.observer?.readiness?.local_poison_threshold ?? 0.75,
@@ -132,9 +143,16 @@ export const readinessConfigOf = (
   top_pressures: vector?.observer?.readiness?.top_pressures ?? 10,
 })
 
+interface ResolvedCategoryAggregationObserverConfig {
+  readonly p_norm: number
+  readonly local_warning_threshold: number
+  readonly local_poison_threshold: number
+  readonly local_warning_gain: number
+}
+
 export const categoryAggregationConfigOf = (
   vector: PulsarVector | undefined,
-) => ({
+): ResolvedCategoryAggregationObserverConfig => ({
   p_norm: vector?.observer?.category_aggregation?.p_norm ?? 12,
   local_warning_threshold:
     vector?.observer?.category_aggregation?.local_warning_threshold ?? 0.4,
@@ -216,9 +234,27 @@ export const timeSeriesConfigOf = (vector: PulsarVector | undefined): NonNullabl
   raw_retention_days: vector?.observer?.timeSeries?.raw_retention_days ?? 90,
 })
 
+interface ResolvedBackpressureConfig {
+  readonly trajectory_days: number
+  readonly empty_series_level: "green" | "yellow" | "red"
+  readonly thresholds: {
+    readonly green_min_score: number
+    readonly yellow_min_score: number
+    readonly red_min_dimension: number
+    readonly degrading_window_drop: number
+  }
+  readonly goodhart: {
+    readonly holdout_ratio: number
+    readonly rotation_period_days: number
+    readonly max_visible_holdout_gap: number
+    readonly max_velocity_excess: number
+    readonly min_history_points: number
+  }
+}
+
 export const backpressureConfigOf = (
   vector: PulsarVector | undefined,
-) => ({
+): ResolvedBackpressureConfig => ({
   trajectory_days: vector?.backpressure?.trajectory_days ?? 14,
   empty_series_level: vector?.backpressure?.empty_series_level ?? "yellow",
   thresholds: {

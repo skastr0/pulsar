@@ -21,8 +21,9 @@ import {
   findDriftCulprits,
   findFirstCrossing,
 } from "../bisect-signal-report.js"
+import type { CommitScore } from "../bisect-signal-types.js"
+import type { ObserverBisectReport } from "../bisect-observer-types.js"
 import { runBisectCommand } from "../bisect.js"
-import type { CommitScore, ObserverBisectReport } from "../bisect-types.js"
 import { buildPulsarRegistry } from "../runtime.js"
 
 const repoRoot = resolve(import.meta.dir, "../../../..")

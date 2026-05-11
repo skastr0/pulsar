@@ -8,24 +8,6 @@ import type { Category } from "@skastr0/pulsar-core/signal"
 import type { Effect } from "effect"
 import type { BisectSamplingMode } from "./bisect-sampling.js"
 
-export type {
-  BisectReport,
-  CommitScore,
-  Culprit,
-  FirstCrossingResult,
-  ScorePoint,
-  SignalBisectOptions,
-} from "./bisect-signal-types.js"
-export type {
-  CategoryTrajectory,
-  ObserverBisectReport,
-  ObserverCommitEntry,
-  ObserverCommitMinimum,
-  ObserverCurveSample,
-  ObserverCurveSet,
-  SignalTrajectory,
-} from "./bisect-observer-types.js"
-
 export interface BisectOptions {
   readonly signalId?: string
   readonly observer?: boolean
