@@ -278,62 +278,8 @@ const classifyAnyKeyword = (
 ): Pick<LocalUnsafeTypeOccurrence, "kind" | "target" | "boundary"> => {
   let current: ts.Node | undefined = node.parent
   while (current !== undefined && current !== sourceFile) {
-    if (ts.isAsExpression(current) || ts.isTypeAssertionExpression(current)) {
-      return {
-        kind: "assertion",
-        target: assertionTargetName(current, sourceFile),
-        boundary: false,
-      }
-    }
-
-    if (ts.isParameter(current)) {
-      return {
-        kind: "parameter",
-        target: parameterName(current, sourceFile),
-        boundary: isBoundaryParameter(current, exportedNames),
-      }
-    }
-
-    if (isReturnTypeOwner(current) && current.type !== undefined && isAncestorOf(current.type, node)) {
-      return {
-        kind: "return",
-        target: functionLikeName(current, sourceFile),
-        boundary: isBoundaryFunctionOwner(current, exportedNames),
-      }
-    }
-
-    if (ts.isPropertySignature(current) || ts.isPropertyDeclaration(current)) {
-      return {
-        kind: "property",
-        target: propertyNameText(current.name),
-        boundary: isBoundaryProperty(current, exportedNames),
-      }
-    }
-
-    if (ts.isVariableDeclaration(current)) {
-      return {
-        kind: "variable",
-        target: current.name.getText(sourceFile),
-        boundary: isBoundaryVariable(current, exportedNames),
-      }
-    }
-
-    if (ts.isTypeAliasDeclaration(current)) {
-      return {
-        kind: "type-alias",
-        target: current.name.text,
-        boundary: isBoundaryDeclaration(current, exportedNames),
-      }
-    }
-
-    if (ts.isHeritageClause(current)) {
-      return {
-        kind: "heritage",
-        target: heritageOwnerName(current, sourceFile),
-        boundary: isWithinExportedTypeSurface(current, exportedNames),
-      }
-    }
-
+    const classified = classifyAnyKeywordAncestor(current, node, sourceFile, exportedNames)
+    if (classified !== undefined) return classified
     current = current.parent
   }
 
@@ -343,6 +289,109 @@ const classifyAnyKeyword = (
     boundary: false,
   }
 }
+
+const classifyAnyKeywordAncestor = (
+  current: ts.Node,
+  node: ts.Node,
+  sourceFile: ts.SourceFile,
+  exportedNames: ReadonlySet<string>,
+): Pick<LocalUnsafeTypeOccurrence, "kind" | "target" | "boundary"> | undefined =>
+  classifyAnyAssertion(current, sourceFile) ??
+  classifyAnyParameter(current, sourceFile, exportedNames) ??
+  classifyAnyReturn(current, node, sourceFile, exportedNames) ??
+  classifyAnyProperty(current, exportedNames) ??
+  classifyAnyVariable(current, sourceFile, exportedNames) ??
+  classifyAnyTypeAlias(current, exportedNames) ??
+  classifyAnyHeritage(current, sourceFile, exportedNames)
+
+const classifyAnyAssertion = (
+  current: ts.Node,
+  sourceFile: ts.SourceFile,
+): Pick<LocalUnsafeTypeOccurrence, "kind" | "target" | "boundary"> | undefined =>
+  ts.isAsExpression(current) || ts.isTypeAssertionExpression(current)
+    ? {
+        kind: "assertion",
+        target: assertionTargetName(current, sourceFile),
+        boundary: false,
+      }
+    : undefined
+
+const classifyAnyParameter = (
+  current: ts.Node,
+  sourceFile: ts.SourceFile,
+  exportedNames: ReadonlySet<string>,
+): Pick<LocalUnsafeTypeOccurrence, "kind" | "target" | "boundary"> | undefined =>
+  ts.isParameter(current)
+    ? {
+        kind: "parameter",
+        target: parameterName(current, sourceFile),
+        boundary: isBoundaryParameter(current, exportedNames),
+      }
+    : undefined
+
+const classifyAnyReturn = (
+  current: ts.Node,
+  node: ts.Node,
+  sourceFile: ts.SourceFile,
+  exportedNames: ReadonlySet<string>,
+): Pick<LocalUnsafeTypeOccurrence, "kind" | "target" | "boundary"> | undefined =>
+  isReturnTypeOwner(current) && current.type !== undefined && isAncestorOf(current.type, node)
+    ? {
+        kind: "return",
+        target: functionLikeName(current, sourceFile),
+        boundary: isBoundaryFunctionOwner(current, exportedNames),
+      }
+    : undefined
+
+const classifyAnyProperty = (
+  current: ts.Node,
+  exportedNames: ReadonlySet<string>,
+): Pick<LocalUnsafeTypeOccurrence, "kind" | "target" | "boundary"> | undefined =>
+  ts.isPropertySignature(current) || ts.isPropertyDeclaration(current)
+    ? {
+        kind: "property",
+        target: propertyNameText(current.name),
+        boundary: isBoundaryProperty(current, exportedNames),
+      }
+    : undefined
+
+const classifyAnyVariable = (
+  current: ts.Node,
+  sourceFile: ts.SourceFile,
+  exportedNames: ReadonlySet<string>,
+): Pick<LocalUnsafeTypeOccurrence, "kind" | "target" | "boundary"> | undefined =>
+  ts.isVariableDeclaration(current)
+    ? {
+        kind: "variable",
+        target: current.name.getText(sourceFile),
+        boundary: isBoundaryVariable(current, exportedNames),
+      }
+    : undefined
+
+const classifyAnyTypeAlias = (
+  current: ts.Node,
+  exportedNames: ReadonlySet<string>,
+): Pick<LocalUnsafeTypeOccurrence, "kind" | "target" | "boundary"> | undefined =>
+  ts.isTypeAliasDeclaration(current)
+    ? {
+        kind: "type-alias",
+        target: current.name.text,
+        boundary: isBoundaryDeclaration(current, exportedNames),
+      }
+    : undefined
+
+const classifyAnyHeritage = (
+  current: ts.Node,
+  sourceFile: ts.SourceFile,
+  exportedNames: ReadonlySet<string>,
+): Pick<LocalUnsafeTypeOccurrence, "kind" | "target" | "boundary"> | undefined =>
+  ts.isHeritageClause(current)
+    ? {
+        kind: "heritage",
+        target: heritageOwnerName(current, sourceFile),
+        boundary: isWithinExportedTypeSurface(current, exportedNames),
+      }
+    : undefined
 
 const collectLocalExportedNames = (sourceFile: ts.SourceFile): ReadonlySet<string> => {
   const names = new Set<string>()
