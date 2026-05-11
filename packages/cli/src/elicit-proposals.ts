@@ -5,6 +5,7 @@ import {
   applyPulsarVectorProposal,
   resolvePulsarVectorProposal,
   validateVectorAgainstRegistry,
+  type PulsarVectorProposal,
 } from "@skastr0/pulsar-core"
 import { Effect } from "effect"
 import { buildPulsarRegistry, resolveRepoRoot } from "./runtime.js"
@@ -19,7 +20,18 @@ import {
   writeJsonFile,
 } from "./elicit-files.js"
 import { renderProposalReview } from "./elicit-ui.js"
-import type { ElicitCommandOptions } from "./elicit-types.js"
+import type { ElicitCommandOptions, ProposalPaths } from "./elicit-types.js"
+
+type ProposalResolutionStatus = "accepted" | "rejected"
+
+interface ProposalResolutionContext {
+  readonly proposalId: string
+  readonly repoRoot: string
+  readonly paths: ProposalPaths
+  readonly pendingPath: string
+  readonly proposal: PulsarVectorProposal
+  readonly resolved: PulsarVectorProposal
+}
 
 export const runReviewAction = (opts: ElicitCommandOptions) =>
   Effect.gen(function* () {
@@ -47,12 +59,25 @@ export const runReviewAction = (opts: ElicitCommandOptions) =>
 
 export const runResolutionAction = (
   opts: ElicitCommandOptions,
-  status: "accepted" | "rejected",
+  status: ProposalResolutionStatus,
+) =>
+  Effect.gen(function* () {
+    const context = yield* loadResolutionContext(opts, status)
+    return status === "rejected"
+      ? yield* rejectProposal(context)
+      : yield* acceptProposal(opts, context)
+  })
+
+const loadResolutionContext = (
+  opts: ElicitCommandOptions,
+  status: ProposalResolutionStatus,
 ) =>
   Effect.gen(function* () {
     const proposalId = opts.proposalId
     if (proposalId === undefined) {
-      return yield* Effect.fail(new Error(`elicit ${status === "accepted" ? "accept" : "reject"} requires a proposal id`))
+      return yield* Effect.fail(
+        new Error(`elicit ${status === "accepted" ? "accept" : "reject"} requires a proposal id`),
+      )
     }
 
     const repoRoot = yield* resolveRepoRoot(opts.repoPath)
@@ -61,62 +86,90 @@ export const runResolutionAction = (
     if (!existsSync(pendingPath)) {
       return yield* Effect.fail(new Error(`Pending proposal not found: ${pendingPath}`))
     }
-
     const proposal = yield* readProposalFile(pendingPath)
-    const resolved = resolvePulsarVectorProposal({ proposal, status })
-
-    if (status === "rejected") {
-      const rejectedPath = join(paths.rejectedDir, `${proposalId}.json`)
-      yield* ensureProposalDirectories(paths)
-      yield* writeJsonFile(rejectedPath, resolved)
-      yield* Effect.tryPromise({
-        try: () => rm(pendingPath),
-        catch: (cause) => new Error(`Failed to remove pending proposal ${pendingPath}: ${String(cause)}`),
-      })
-      console.log("")
-      console.log(`Rejected proposal: ${proposalId}`)
-      console.log(`Archived at:       ${rejectedPath}`)
-      if (proposal.source === "ai-assisted-detection") {
-        console.log("")
-        console.log("AI-assisted mode remains manual. The pulsar will not silently tighten thresholds behind your back.")
-      }
-      console.log("")
-      return 0
-    }
-
-    const registry = yield* buildPulsarRegistry(repoRoot)
-    const vectorTarget = yield* resolveVectorTarget({
+    return {
+      proposalId,
       repoRoot,
+      paths,
+      pendingPath,
+      proposal,
+      resolved: resolvePulsarVectorProposal({ proposal, status }),
+    } satisfies ProposalResolutionContext
+  })
+
+const rejectProposal = (context: ProposalResolutionContext) =>
+  Effect.gen(function* () {
+    const rejectedPath = join(context.paths.rejectedDir, `${context.proposalId}.json`)
+    yield* ensureProposalDirectories(context.paths)
+    yield* writeJsonFile(rejectedPath, context.resolved)
+    yield* removePendingProposal(context.pendingPath)
+    printRejectedProposal(context, rejectedPath)
+    return 0
+  })
+
+const acceptProposal = (
+  opts: ElicitCommandOptions,
+  context: ProposalResolutionContext,
+) =>
+  Effect.gen(function* () {
+    const registry = yield* buildPulsarRegistry(context.repoRoot)
+    const vectorTarget = yield* resolveVectorTarget({
+      repoRoot: context.repoRoot,
       registry,
       ...(opts.vectorPath !== undefined ? { explicitPath: opts.vectorPath } : {}),
     })
-    const baseVector = vectorTarget.vector ?? defaultVector(proposal.domain)
-    const acceptedPath = join(paths.acceptedDir, `${proposalId}.json`)
-    const nextVector = applyPulsarVectorProposal(baseVector, resolved, {
-      artifactPath: relative(repoRoot, acceptedPath),
+    const acceptedPath = join(context.paths.acceptedDir, `${context.proposalId}.json`)
+    const baseVector = vectorTarget.vector ?? defaultVector(context.proposal.domain)
+    const nextVector = applyPulsarVectorProposal(baseVector, context.resolved, {
+      artifactPath: relative(context.repoRoot, acceptedPath),
     })
     yield* validateVectorAgainstRegistry(nextVector, registry)
 
-    yield* ensureProposalDirectories(paths)
-    yield* writeJsonFile(acceptedPath, resolved)
+    yield* ensureProposalDirectories(context.paths)
+    yield* writeJsonFile(acceptedPath, context.resolved)
     yield* writeJsonFile(vectorTarget.outputPath, nextVector)
-    yield* Effect.tryPromise({
-      try: () => rm(pendingPath),
-      catch: (cause) => new Error(`Failed to remove pending proposal ${pendingPath}: ${String(cause)}`),
-    })
-
-    console.log("")
-    console.log(`Accepted proposal: ${proposalId}`)
-    console.log(`Wrote vector:      ${vectorTarget.outputPath}`)
-    console.log(`Archived at:       ${acceptedPath}`)
-    console.log("")
-    for (const line of renderVectorDiff(summarizeVectorDiff(vectorTarget.vector, nextVector))) {
-      console.log(line)
-    }
-    if (proposal.source === "ai-assisted-detection") {
-      console.log("")
-      console.log("AI-assisted mode stays explicit in the vector. Edit modes.ai_assisted or reject future proposals to return to manual thresholds.")
-    }
-    console.log("")
+    yield* removePendingProposal(context.pendingPath)
+    printAcceptedProposal(context, acceptedPath, vectorTarget, nextVector)
     return 0
   })
+
+const removePendingProposal = (pendingPath: string) =>
+  Effect.tryPromise({
+    try: () => rm(pendingPath),
+    catch: (cause) => new Error(`Failed to remove pending proposal ${pendingPath}: ${String(cause)}`),
+  })
+
+const printRejectedProposal = (
+  context: ProposalResolutionContext,
+  rejectedPath: string,
+): void => {
+  console.log("")
+  console.log(`Rejected proposal: ${context.proposalId}`)
+  console.log(`Archived at:       ${rejectedPath}`)
+  if (context.proposal.source === "ai-assisted-detection") {
+    console.log("")
+    console.log("AI-assisted mode remains manual. The pulsar will not silently tighten thresholds behind your back.")
+  }
+  console.log("")
+}
+
+const printAcceptedProposal = (
+  context: ProposalResolutionContext,
+  acceptedPath: string,
+  vectorTarget: { readonly vector: Parameters<typeof summarizeVectorDiff>[0]; readonly outputPath: string },
+  nextVector: Parameters<typeof summarizeVectorDiff>[1],
+): void => {
+  console.log("")
+  console.log(`Accepted proposal: ${context.proposalId}`)
+  console.log(`Wrote vector:      ${vectorTarget.outputPath}`)
+  console.log(`Archived at:       ${acceptedPath}`)
+  console.log("")
+  for (const line of renderVectorDiff(summarizeVectorDiff(vectorTarget.vector, nextVector))) {
+    console.log(line)
+  }
+  if (context.proposal.source === "ai-assisted-detection") {
+    console.log("")
+    console.log("AI-assisted mode stays explicit in the vector. Edit modes.ai_assisted or reject future proposals to return to manual thresholds.")
+  }
+  console.log("")
+}
