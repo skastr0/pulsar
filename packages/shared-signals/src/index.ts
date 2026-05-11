@@ -19,6 +19,14 @@ export type {
   Shared03ChurnRateOutput,
   SharedChurn01Output,
 } from "@skastr0/pulsar-core/shared-signals"
-export * from "./pack.js"
-export * from "./shared-05-suppression.js"
-export * from "./shared-06-pr-dep-delta.js"
+export { SHARED_SIGNALS } from "./pack.js"
+export {
+  Shared05Suppression,
+  Shared05SuppressionConfig,
+  type Shared05SuppressionOutput,
+} from "./shared-05-suppression.js"
+export {
+  Shared06PrDepDelta,
+  Shared06PrDepDeltaConfig,
+  type Shared06PrDepDeltaOutput,
+} from "./shared-06-pr-dep-delta.js"

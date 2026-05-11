@@ -13,8 +13,6 @@ export {
   appendProjectModuleDecision,
   defineProcessor,
   defineProjectModule,
-  makeProjectModuleDecision,
-  makeProjectModuleProcessorRuntime,
   type AnyProjectModuleProcessorDefinition,
   type DefinedProjectModule,
   type ProjectModuleDecisionInput,
