@@ -5,7 +5,6 @@ import { fileURLToPath } from "node:url"
 import { Effect } from "effect"
 import {
   parseCargoMetadata,
-  resolveNodeIndex,
   workspacePackages,
 } from "../cargo-metadata.js"
 import { findDuplicateCargoLockPackages, parseCargoLock } from "../lock-file.js"
@@ -26,9 +25,10 @@ describe("@skastr0/pulsar-rs-pack scaffold", () => {
     expect(metadata.workspaceRoot).toContain("basic-workspace")
     expect(workspacePackages(metadata).map((pkg) => pkg.name)).toEqual(["fixture-crate"])
     expect(metadata.packages[0]?.dependencies[0]?.name).toBe("serde")
-    expect(
-      resolveNodeIndex(metadata).get(metadata.workspaceMembers[0] ?? "")?.deps[0]?.pkg,
-    ).toContain("serde@1.0.210")
+    const workspaceNode = metadata.resolve?.nodes.find(
+      (node) => node.id === metadata.workspaceMembers[0],
+    )
+    expect(workspaceNode?.deps[0]?.pkg).toContain("serde@1.0.210")
   })
 
   test("parses Cargo.lock and finds duplicate crate versions", async () => {

@@ -34,12 +34,6 @@ import {
   type RsAd02Violation,
 } from "./rs-ad-02-types.js"
 
-export {
-  RsAd02Config,
-  type RsAd02Output,
-  type RsAd02Violation,
-} from "./rs-ad-02-types.js"
-
 export const RsAd02: Signal<RsAd02ConfigType, RsAd02Output, RustProjectTag | ReferenceDataTag> = {
   id: "RS-AD-02-crate-boundaries",
   title: "Crate boundary violations",

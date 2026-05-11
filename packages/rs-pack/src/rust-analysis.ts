@@ -27,13 +27,9 @@ import type {
 } from "./rust-analysis-types.js"
 export type {
   RustAnalysis,
-  RustFunctionFact,
-  RustIdentifierFact,
   RustItemFact,
-  RustMatchFact,
   RustModuleFact,
   RustUseFact,
-  RustVisibility,
 } from "./rust-analysis-types.js"
 export { tokenizeIdentifier } from "./rust-analysis-syntax.js"
 

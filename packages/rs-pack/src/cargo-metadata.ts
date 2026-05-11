@@ -258,11 +258,6 @@ export const workspacePackages = (
   return metadata.packages.filter((pkg) => workspaceIds.has(pkg.id))
 }
 
-export const resolveNodeIndex = (
-  metadata: CargoMetadata,
-): ReadonlyMap<string, CargoMetadataResolveNode> =>
-  new Map((metadata.resolve?.nodes ?? []).map((node) => [node.id, node] as const))
-
 const execFileAsync = promisify(execFile)
 
 export const loadCargoMetadata = async (

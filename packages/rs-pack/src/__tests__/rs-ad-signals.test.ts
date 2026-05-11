@@ -16,8 +16,8 @@ import {
 import { RsAd01 } from "../signals/rs-ad-01-visibility-surface.js"
 import {
   RsAd02,
-  type RsAd02Output,
 } from "../signals/rs-ad-02-crate-boundaries.js"
+import type { RsAd02Output } from "../signals/rs-ad-02-types.js"
 import { RsAd03 } from "../signals/rs-ad-03-circular-crate-deps.js"
 import {
   cleanupWorkspace,
