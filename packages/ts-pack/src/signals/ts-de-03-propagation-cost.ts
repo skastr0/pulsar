@@ -68,70 +68,7 @@ export const TsDe03: Signal<TsDe03Config, TsDe03Output, TsProjectTag> = {
             excludeGlobs: config.exclude_globs,
             includeExportEdges: false,
           })
-          const moduleIndexByFile = new Map<string, number>(
-            moduleGraph.sourceFiles.map((sourceFile, index) => [sourceFile.getFilePath(), index] as const),
-          )
-          const sccs = tarjanSccs(moduleGraph.dependencies)
-          const condensed = condenseGraph(moduleGraph.dependencies, sccs)
-          const componentModules = condensed.components.map((component) =>
-            component
-              .map((file) => moduleIndexByFile.get(file))
-              .filter((index): index is number => index !== undefined),
-          )
-          const forwardReach = computeReachabilityCounts(
-            condensed.dag,
-            componentModules,
-            moduleGraph.sourceFiles.length,
-          )
-          const reverseReach = computeReachabilityCounts(
-            condensed.reverseDag,
-            componentModules,
-            moduleGraph.sourceFiles.length,
-          )
-
-          const byModule = new Map<string, PropagationInfo>()
-          for (const sourceFile of moduleGraph.sourceFiles) {
-            const file = sourceFile.getFilePath()
-            const componentIndex = condensed.nodeToComponent.get(file)
-            if (componentIndex === undefined) continue
-            const intraComponent = (condensed.components[componentIndex]?.length ?? 1) - 1
-            const directDependencies = moduleGraph.dependencies.get(file)?.size ?? 0
-            const directDependents = moduleGraph.reverseDependencies.get(file)?.size ?? 0
-            byModule.set(file, {
-              forwardReach: intraComponent + (forwardReach.counts[componentIndex] ?? 0),
-              reverseReach: intraComponent + (reverseReach.counts[componentIndex] ?? 0),
-              directDependencies,
-              directDependents,
-            })
-          }
-
-          const totalModules = byModule.size
-          const reverseReachTotal = [...byModule.values()].reduce(
-            (sum, info) => sum + info.reverseReach,
-            0,
-          )
-          const top10Propagators = [...byModule.entries()]
-            .map(([file, info]) => ({ file, reverseReach: info.reverseReach }))
-            .sort((left, right) => {
-              if (right.reverseReach !== left.reverseReach) {
-                return right.reverseReach - left.reverseReach
-              }
-              return left.file.localeCompare(right.file)
-            })
-            .slice(0, 10)
-
-          return {
-            byModule,
-            propagationCost:
-              totalModules === 0 ? 0 : reverseReachTotal / (totalModules * totalModules),
-            top10Propagators,
-            totalModules,
-            reachabilityMode: reverseReach.mode,
-            target: config.target,
-            scale: config.scale,
-            smallSampleThreshold: config.small_sample_threshold,
-            diagnosticLimit: config.top_n_diagnostics,
-          }
+          return computePropagationCost(moduleGraph, config)
         },
         catch: (cause) =>
           new SignalComputeError({
@@ -182,3 +119,101 @@ export const TsDe03: Signal<TsDe03Config, TsDe03Output, TsProjectTag> = {
     return diagnostics
   },
 }
+
+type ModuleGraph = ReturnType<typeof buildModuleGraph>
+type ReachabilityMode = TsDe03Output["reachabilityMode"]
+
+const computePropagationCost = (
+  moduleGraph: ModuleGraph,
+  config: TsDe03Config,
+): TsDe03Output => {
+  const moduleIndexByFile = indexModulesByFile(moduleGraph)
+  const sccs = tarjanSccs(moduleGraph.dependencies)
+  const condensed = condenseGraph(moduleGraph.dependencies, sccs)
+  const componentModules = condensed.components.map((component) =>
+    component
+      .map((file) => moduleIndexByFile.get(file))
+      .filter((index): index is number => index !== undefined),
+  )
+  const forwardReach = computeReachabilityCounts(
+    condensed.dag,
+    componentModules,
+    moduleGraph.sourceFiles.length,
+  )
+  const reverseReach = computeReachabilityCounts(
+    condensed.reverseDag,
+    componentModules,
+    moduleGraph.sourceFiles.length,
+  )
+  const byModule = buildPropagationInfo(
+    moduleGraph,
+    condensed,
+    forwardReach.counts,
+    reverseReach.counts,
+  )
+
+  return buildPropagationOutput(byModule, reverseReach.mode, config)
+}
+
+const indexModulesByFile = (moduleGraph: ModuleGraph): ReadonlyMap<string, number> =>
+  new Map<string, number>(
+    moduleGraph.sourceFiles.map((sourceFile, index) => [sourceFile.getFilePath(), index] as const),
+  )
+
+const buildPropagationInfo = (
+  moduleGraph: ModuleGraph,
+  condensed: ReturnType<typeof condenseGraph>,
+  forwardReach: ReadonlyArray<number>,
+  reverseReach: ReadonlyArray<number>,
+): ReadonlyMap<string, PropagationInfo> => {
+  const byModule = new Map<string, PropagationInfo>()
+
+  for (const sourceFile of moduleGraph.sourceFiles) {
+    const file = sourceFile.getFilePath()
+    const componentIndex = condensed.nodeToComponent.get(file)
+    if (componentIndex === undefined) continue
+    const intraComponent = (condensed.components[componentIndex]?.length ?? 1) - 1
+    byModule.set(file, {
+      forwardReach: intraComponent + (forwardReach[componentIndex] ?? 0),
+      reverseReach: intraComponent + (reverseReach[componentIndex] ?? 0),
+      directDependencies: moduleGraph.dependencies.get(file)?.size ?? 0,
+      directDependents: moduleGraph.reverseDependencies.get(file)?.size ?? 0,
+    })
+  }
+
+  return byModule
+}
+
+const buildPropagationOutput = (
+  byModule: ReadonlyMap<string, PropagationInfo>,
+  reachabilityMode: ReachabilityMode,
+  config: TsDe03Config,
+): TsDe03Output => {
+  const totalModules = byModule.size
+  const reverseReachTotal = [...byModule.values()].reduce((sum, info) => sum + info.reverseReach, 0)
+
+  return {
+    byModule,
+    propagationCost: totalModules === 0 ? 0 : reverseReachTotal / (totalModules * totalModules),
+    top10Propagators: topPropagators(byModule),
+    totalModules,
+    reachabilityMode,
+    target: config.target,
+    scale: config.scale,
+    smallSampleThreshold: config.small_sample_threshold,
+    diagnosticLimit: config.top_n_diagnostics,
+  }
+}
+
+const topPropagators = (
+  byModule: ReadonlyMap<string, PropagationInfo>,
+): ReadonlyArray<{ file: string; reverseReach: number }> =>
+  [...byModule.entries()]
+    .map(([file, info]) => ({ file, reverseReach: info.reverseReach }))
+    .sort((left, right) => {
+      if (right.reverseReach !== left.reverseReach) {
+        return right.reverseReach - left.reverseReach
+      }
+      return left.file.localeCompare(right.file)
+    })
+    .slice(0, 10)
