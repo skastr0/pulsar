@@ -492,77 +492,14 @@ export const observe = (
 ): Effect.Effect<ObserverOutput, never, SignalRequirements> =>
   Effect.gen(function* () {
     const observerStartedAt = nowMs()
-    const outputs = new Map<string, unknown>()
-    const signalResults = new Map<string, SignalRunResult>()
-    const inactiveSignals: Array<string> = []
-    const signalMetadata: Record<string, SignalOutputMetadata> = {}
-    const signalProfiles: ObserverRuntimeProfile["signals"] = {}
-
-    const processedSignals = new Set<string>()
-    const registryIds = new Set(registry.sorted.map((signal) => signal.id))
-    let pendingSignals: Array<ResolvedSignal> = []
-
-    for (const signal of registry.sorted) {
-      if (!vectorIsActive(signal, vector)) {
-        inactiveSignals.push(signal.id)
-        processedSignals.add(signal.id)
-        continue
-      }
-
-      pendingSignals.push(signal)
-    }
-
-    while (pendingSignals.length > 0) {
-      const readySignals = pendingSignals.filter((signal) =>
-        signal.inputs.every((input) => processedSignals.has(input.id) || !registryIds.has(input.id)),
-      )
-
-      const batch = readySignals.length > 0 ? readySignals : [pendingSignals[0]!]
-      const batchIds = new Set(batch.map((signal) => signal.id))
-      pendingSignals = pendingSignals.filter((signal) => !batchIds.has(signal.id))
-
-      const outputSnapshot = new Map(outputs)
-      const batchResults = yield* Effect.forEach(
-        batch,
-        (signal) =>
-          Effect.gen(function* () {
-            const startedAt = nowMs()
-            const result = yield* runOneSignal(signal, outputSnapshot, vector)
-            return {
-              signal,
-              result,
-              durationMs: roundRuntimeMs(nowMs() - startedAt),
-            }
-          }),
-        { concurrency: DEFAULT_OBSERVER_SIGNAL_CONCURRENCY },
-      )
-
-      for (const { signal, result, durationMs } of batchResults) {
-        if (options?.profile === true) {
-          signalProfiles[signal.id] = {
-            durationMs,
-            score: result.score,
-            diagnostics: result.diagnostics.length,
-          }
-        }
-        if (result.output !== undefined) {
-          outputs.set(signal.id, result.output)
-        }
-        if (result.metadata !== undefined) {
-          signalMetadata[signal.id] = result.metadata
-        }
-        signalResults.set(signal.id, result)
-        processedSignals.add(signal.id)
-      }
-    }
-
-    const categories = aggregateCategories(registry, signalResults, vector)
-    const minimum = findMinimum(registry, signalResults)
+    const executed = yield* executeObserverSignals(registry, vector, options?.profile === true)
+    const categories = aggregateCategories(registry, executed.signalResults, vector)
+    const minimum = findMinimum(registry, executed.signalResults)
     const weighted_mean = computeWeightedMean(categories)
-    const hard_gate_violations = collectHardGateViolations(registry, signalResults)
+    const hard_gate_violations = collectHardGateViolations(registry, executed.signalResults)
     const hard_gate_status: "pass" | "fail" =
       hard_gate_violations.length > 0 ? "fail" : "pass"
-    const readiness = computeReadiness(registry, signalResults, vector, hard_gate_status)
+    const readiness = computeReadiness(registry, executed.signalResults, vector, hard_gate_status)
     const calibration = yield* Effect.serviceOption(CalibrationContextTag)
     const calibrationSummary = Option.isSome(calibration)
       ? summarizeCalibration(calibration.value)
@@ -576,20 +513,133 @@ export const observe = (
       readiness,
       hard_gate_status,
       hard_gate_violations,
-      inactiveSignals,
-      signalResults,
+      inactiveSignals: executed.inactiveSignals,
+      signalResults: executed.signalResults,
       ...(calibrationSummary !== undefined ? { calibration: calibrationSummary } : {}),
-      ...(Object.keys(signalMetadata).length > 0 ? { signalMetadata } : {}),
+      ...(Object.keys(executed.signalMetadata).length > 0
+        ? { signalMetadata: executed.signalMetadata }
+        : {}),
       ...(options?.profile === true
         ? {
             runtimeProfile: {
               totalMs: roundRuntimeMs(nowMs() - observerStartedAt),
-              signals: signalProfiles,
+              signals: executed.signalProfiles,
             },
           }
         : {}),
     }
   })
+
+interface ObserverSignalExecution {
+  readonly outputs: Map<string, unknown>
+  readonly signalResults: Map<string, SignalRunResult>
+  readonly inactiveSignals: Array<string>
+  readonly signalMetadata: Record<string, SignalOutputMetadata>
+  readonly signalProfiles: ObserverRuntimeProfile["signals"]
+  readonly processedSignals: Set<string>
+  readonly registryIds: Set<string>
+  pendingSignals: Array<ResolvedSignal>
+}
+
+interface ObserverBatchResult {
+  readonly signal: ResolvedSignal
+  readonly result: SignalRunResult
+  readonly durationMs: number
+}
+
+const executeObserverSignals = (
+  registry: Registry,
+  vector: PulsarVector | undefined,
+  profile: boolean,
+): Effect.Effect<ObserverSignalExecution, never, SignalRequirements> =>
+  Effect.gen(function* () {
+    const execution = createObserverSignalExecution(registry, vector)
+    while (execution.pendingSignals.length > 0) {
+      const batch = takeNextObserverBatch(execution)
+      const batchResults = yield* runObserverSignalBatch(batch, execution.outputs, vector)
+      recordObserverBatchResults(execution, batchResults, profile)
+    }
+    return execution
+  })
+
+const createObserverSignalExecution = (
+  registry: Registry,
+  vector: PulsarVector | undefined,
+): ObserverSignalExecution => {
+  const execution: ObserverSignalExecution = {
+    outputs: new Map(),
+    signalResults: new Map(),
+    inactiveSignals: [],
+    signalMetadata: {},
+    signalProfiles: {},
+    processedSignals: new Set(),
+    registryIds: new Set(registry.sorted.map((signal) => signal.id)),
+    pendingSignals: [],
+  }
+  for (const signal of registry.sorted) {
+    if (vectorIsActive(signal, vector)) {
+      execution.pendingSignals.push(signal)
+    } else {
+      execution.inactiveSignals.push(signal.id)
+      execution.processedSignals.add(signal.id)
+    }
+  }
+  return execution
+}
+
+const takeNextObserverBatch = (
+  execution: ObserverSignalExecution,
+): ReadonlyArray<ResolvedSignal> => {
+  const readySignals = execution.pendingSignals.filter((signal) =>
+    signal.inputs.every((input) => execution.processedSignals.has(input.id) || !execution.registryIds.has(input.id)),
+  )
+  const batch = readySignals.length > 0 ? readySignals : [execution.pendingSignals[0]!]
+  const batchIds = new Set(batch.map((signal) => signal.id))
+  execution.pendingSignals = execution.pendingSignals.filter((signal) => !batchIds.has(signal.id))
+  return batch
+}
+
+const runObserverSignalBatch = (
+  batch: ReadonlyArray<ResolvedSignal>,
+  outputs: ReadonlyMap<string, unknown>,
+  vector: PulsarVector | undefined,
+): Effect.Effect<ReadonlyArray<ObserverBatchResult>, never, SignalRequirements> => {
+  const outputSnapshot = new Map(outputs)
+  return Effect.forEach(
+    batch,
+    (signal) =>
+      Effect.gen(function* () {
+        const startedAt = nowMs()
+        const result = yield* runOneSignal(signal, outputSnapshot, vector)
+        return {
+          signal,
+          result,
+          durationMs: roundRuntimeMs(nowMs() - startedAt),
+        }
+      }),
+    { concurrency: DEFAULT_OBSERVER_SIGNAL_CONCURRENCY },
+  )
+}
+
+const recordObserverBatchResults = (
+  execution: ObserverSignalExecution,
+  batchResults: ReadonlyArray<ObserverBatchResult>,
+  profile: boolean,
+): void => {
+  for (const { signal, result, durationMs } of batchResults) {
+    if (profile) {
+      execution.signalProfiles[signal.id] = {
+        durationMs,
+        score: result.score,
+        diagnostics: result.diagnostics.length,
+      }
+    }
+    if (result.output !== undefined) execution.outputs.set(signal.id, result.output)
+    if (result.metadata !== undefined) execution.signalMetadata[signal.id] = result.metadata
+    execution.signalResults.set(signal.id, result)
+    execution.processedSignals.add(signal.id)
+  }
+}
 
 const summarizeCalibration = (
   calibration: ResolvedCalibrationContext,
