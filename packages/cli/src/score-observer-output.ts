@@ -33,59 +33,87 @@ export const printObserverView = (opts: {
   readonly colorize: boolean
   readonly profile: boolean
 }): void => {
-  const lines: Array<string> = []
-  lines.push("")
-  lines.push(`  Repo:   ${opts.repoRoot}`)
-  lines.push(`  SHA:    ${opts.gitSha}`)
-  lines.push(`  Vector: ${opts.vectorLabel}`)
-  lines.push(`  Vector Source: ${opts.vectorSourceLabel}`)
-  lines.push(`  AI Mode:${opts.aiMode.active ? " active" : " inactive"}`)
-  lines.push(`          ${opts.aiMode.summary}`)
-  if (opts.aiMode.active) {
-    lines.push(`          ${opts.aiMode.overrideHint}`)
-  }
-  const calibrationLine = formatCalibrationLine(opts.output)
-  if (calibrationLine !== undefined) {
-    lines.push(`  Calibration: ${calibrationLine}`)
-  }
-  lines.push("")
-
-  for (const category of CATEGORIES) {
-    const label = CATEGORY_LABELS[category].padEnd(22, " ")
-    const score = opts.output.categories[category].score
-    lines.push(`  ${label} ${score.toFixed(2)}  ${renderScoreBar(score)}`)
-  }
-
-  lines.push("  ───────────────────────────────────────────────")
-  if (opts.output.readiness !== undefined) {
-    lines.push(
-      `  Readiness             ${opts.output.readiness.score.toFixed(2)}  ${renderScoreBar(opts.output.readiness.score)}  ${opts.output.readiness.status} / pressure=${opts.output.readiness.pressure.toFixed(2)}`,
-    )
-  }
-  lines.push(`  Evidence Mean         ${opts.output.weighted_mean.toFixed(2)}`)
-  if (opts.output.minimum !== undefined) {
-    lines.push(
-      `  Minimum               ${opts.output.minimum.signal} / ${opts.output.minimum.category} / ${opts.output.minimum.score.toFixed(2)}`,
-    )
-    if (opts.output.minimum.detail !== "") {
-      lines.push(`                        ${JSON.stringify(opts.output.minimum.detail)}`)
-    }
-  } else {
-    lines.push("  Minimum               none")
-  }
-
-  lines.push(
-    `  Hard Gate             ${renderGateStatus(opts.ciAssessment.effectiveStatus, opts.colorize)}`,
-  )
-  const ciLine = formatCiBaselineLine(opts.ciAssessment, opts.output)
-  if (ciLine !== undefined) {
-    lines.push(`  CI Baseline           ${ciLine}`)
-  }
+  const lines = [
+    ...observerViewHeaderLines(opts),
+    ...observerViewCategoryLines(opts.output),
+    ...observerViewSummaryLines(opts),
+  ]
   pushTopDiagnostics(lines, opts.repoRoot, opts.output, [...opts.output.signalResults.keys()], TOP_FINDINGS_LIMIT)
   pushRuntimeProfile(lines, opts.output, opts.profile)
   lines.push("")
 
   for (const line of lines) console.log(line)
+}
+
+const observerViewHeaderLines = (opts: {
+  readonly repoRoot: string
+  readonly gitSha: string
+  readonly output: ObserverOutput
+  readonly vectorLabel: string
+  readonly vectorSourceLabel: string
+  readonly aiMode: AiAssistedModeExplanation
+}): ReadonlyArray<string> => [
+  "",
+  `  Repo:   ${opts.repoRoot}`,
+  `  SHA:    ${opts.gitSha}`,
+  `  Vector: ${opts.vectorLabel}`,
+  `  Vector Source: ${opts.vectorSourceLabel}`,
+  `  AI Mode:${opts.aiMode.active ? " active" : " inactive"}`,
+  `          ${opts.aiMode.summary}`,
+  ...(opts.aiMode.active ? [`          ${opts.aiMode.overrideHint}`] : []),
+  ...calibrationLines(opts.output),
+  "",
+]
+
+const calibrationLines = (output: ObserverOutput): ReadonlyArray<string> => {
+  const calibrationLine = formatCalibrationLine(output)
+  return calibrationLine === undefined ? [] : [`  Calibration: ${calibrationLine}`]
+}
+
+const observerViewCategoryLines = (output: ObserverOutput): ReadonlyArray<string> => [
+  ...CATEGORIES.map((category) => {
+    const label = CATEGORY_LABELS[category].padEnd(22, " ")
+    const score = output.categories[category].score
+    return `  ${label} ${score.toFixed(2)}  ${renderScoreBar(score)}`
+  }),
+  "  ───────────────────────────────────────────────",
+]
+
+const observerViewSummaryLines = (opts: {
+  readonly output: ObserverOutput
+  readonly ciAssessment: CiAssessment
+  readonly colorize: boolean
+}): ReadonlyArray<string> => [
+  ...readinessSummaryLines(opts.output),
+  `  Evidence Mean         ${opts.output.weighted_mean.toFixed(2)}`,
+  ...minimumSummaryLines(opts.output),
+  `  Hard Gate             ${renderGateStatus(opts.ciAssessment.effectiveStatus, opts.colorize)}`,
+  ...ciBaselineLines(opts.ciAssessment, opts.output),
+]
+
+const readinessSummaryLines = (output: ObserverOutput): ReadonlyArray<string> =>
+  output.readiness === undefined
+    ? []
+    : [
+        `  Readiness             ${output.readiness.score.toFixed(2)}  ${renderScoreBar(output.readiness.score)}  ${output.readiness.status} / pressure=${output.readiness.pressure.toFixed(2)}`,
+      ]
+
+const minimumSummaryLines = (output: ObserverOutput): ReadonlyArray<string> => {
+  if (output.minimum === undefined) return ["  Minimum               none"]
+  return [
+    `  Minimum               ${output.minimum.signal} / ${output.minimum.category} / ${output.minimum.score.toFixed(2)}`,
+    ...(output.minimum.detail === ""
+      ? []
+      : [`                        ${JSON.stringify(output.minimum.detail)}`]),
+  ]
+}
+
+const ciBaselineLines = (
+  ciAssessment: CiAssessment,
+  output: ObserverOutput,
+): ReadonlyArray<string> => {
+  const ciLine = formatCiBaselineLine(ciAssessment, output)
+  return ciLine === undefined ? [] : [`  CI Baseline           ${ciLine}`]
 }
 
 export const printCategoryView = (opts: {
