@@ -1,14 +1,12 @@
 import { Effect } from "effect"
 import {
   type CacheKey,
-  SignalCacheTag,
+  type SignalCache,
   cacheKeyString,
 } from "./cache.js"
-import type { ResolvedCalibrationContext } from "./calibration.js"
 import type { ChangedHunk } from "./context.js"
 import type { ScoringEngineError } from "./errors.js"
-import { observe } from "./observer.js"
-import type { ObserverOutput } from "./observer-json.js"
+import { observe, type ObserverOutput } from "./observer.js"
 import { loadCanonicalReferenceDataEntries } from "./reference-data-loader.js"
 import type { Registry } from "./registry.js"
 import {
@@ -33,7 +31,6 @@ import {
 import type {
   EngineInternals,
   RunWithEnvironment,
-  ScoringEngineOptions,
   WithCommitWorktree,
 } from "./scoring-engine-runtime.js"
 import type { PulsarVector } from "./vector.js"
@@ -71,9 +68,19 @@ type ObserveRange = (
   never
 >
 
+interface ObserveEngineOptions {
+  readonly observerProfile?: boolean
+  readonly timeSeriesWriter?: {
+    readonly appendObservation: (
+      sha: string,
+      observerOutput: ObserverOutput,
+    ) => Effect.Effect<unknown, ScoringEngineError, never>
+  }
+}
+
 export const makeObserveWithCache = (
-  cacheRef: typeof SignalCacheTag.Service,
-  options?: ScoringEngineOptions,
+  cacheRef: SignalCache,
+  options?: ObserveEngineOptions,
 ): ObserveWithCache => (
   key: CacheKey,
   runFresh: () => Effect.Effect<ObserverOutput, ScoringEngineError, never>,
@@ -103,7 +110,7 @@ export const makeObserveWithCache = (
 export const makeObserveCommit = (args: {
   readonly registry: Registry
   readonly vector: PulsarVector | undefined
-  readonly options: ScoringEngineOptions | undefined
+  readonly options: ObserveEngineOptions | undefined
   readonly internals: EngineInternals
   readonly runWithEnvironment: RunWithEnvironment
   readonly withCommitWorktree: WithCommitWorktree
@@ -130,7 +137,7 @@ export const makeObserveCommit = (args: {
 const observeCommitInWorktree = (args: {
   readonly registry: Registry
   readonly vector: PulsarVector | undefined
-  readonly options: ScoringEngineOptions | undefined
+  readonly options: ObserveEngineOptions | undefined
   readonly internals: EngineInternals
   readonly runWithEnvironment: RunWithEnvironment
   readonly observeWithCache: ObserveWithCache
@@ -142,7 +149,7 @@ const observeCommitInWorktree = (args: {
   Effect.gen(function* () {
     const calibrationContext = yield* args.internals.resolveCalibrationContext(args.worktreePath)
     const referenceEntries = yield* loadCanonicalReferenceDataEntries(args.worktreePath)
-    const key = observerCacheKey(args, calibrationContext, referenceEntries)
+    const key = observerCacheKey(args, calibrationContext?.fingerprint, referenceEntries)
     const observed = yield* args.observeWithCache(key, () =>
       args.runWithEnvironment(args.worktreePath, args.sha, [], calibrationContext, (EnvLayer) =>
         Effect.provide(
@@ -160,7 +167,7 @@ const observerCacheKey = (
     readonly vector: PulsarVector | undefined
     readonly contentHash: string
   },
-  calibrationContext: ResolvedCalibrationContext | undefined,
+  calibrationFingerprint: string | undefined,
   referenceEntries: ReadonlyMap<string, unknown>,
 ): CacheKey => ({
   signalId: OBSERVER_CACHE_SIGNAL_ID,
@@ -168,7 +175,7 @@ const observerCacheKey = (
   configHash: computeObserverConfigHash(
     args.registry,
     args.vector,
-    calibrationContext?.fingerprint,
+    calibrationFingerprint,
     computeReferenceVersionHash(referenceEntries),
   ),
 })
@@ -176,7 +183,7 @@ const observerCacheKey = (
 export const makeObserveWorktree = (args: {
   readonly registry: Registry
   readonly vector: PulsarVector | undefined
-  readonly options: ScoringEngineOptions | undefined
+  readonly options: ObserveEngineOptions | undefined
   readonly internals: EngineInternals
   readonly runWithEnvironment: RunWithEnvironment
   readonly observeWithCache: ObserveWithCache
@@ -198,7 +205,11 @@ export const makeObserveWorktree = (args: {
       const contentHash = yield* appendObserverRevisionContext(args.registry, repoPath, baseContentHash)
       const calibrationContext = yield* args.internals.resolveCalibrationContext(repoPath)
       const referenceEntries = yield* loadCanonicalReferenceDataEntries(repoPath)
-      const key = observerCacheKey({ ...args, contentHash }, calibrationContext, referenceEntries)
+      const key = observerCacheKey(
+        { ...args, contentHash },
+        calibrationContext?.fingerprint,
+        referenceEntries,
+      )
       const { result, cacheHit } = yield* args.observeWithCache(key, () =>
         args.runWithEnvironment(repoPath, headSha, changedHunks, calibrationContext, (EnvLayer) =>
           Effect.provide(

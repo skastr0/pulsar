@@ -1,7 +1,5 @@
-import type { Diagnostic } from "./diagnostic.js"
 import { matchesGlob } from "./globs.js"
 import type { ObserverOutput } from "./observer.js"
-import type { SignalRunResult } from "./runner.js"
 import type {
   Location,
   PatternCondition,
@@ -116,52 +114,6 @@ const matchSignalThresholdCondition = (
   }
 }
 
-export const buildContextPayload = (
-  pattern: RoutingPattern,
-  observerOutput: ObserverOutput,
-  diff: RoutingDiff,
-  match: PatternMatch,
-): Record<string, unknown> => {
-  const payload: Record<string, unknown> = {
-    diff: toSerializable({
-      changedFiles: diff.changedFiles,
-      addedImports: diff.addedImports,
-      astMatches: diff.astMatches,
-      signalChanges: diff.signalChanges,
-      match: match.matchDetail,
-    }),
-  }
-
-  for (const signalRef of pattern.contextPayload) {
-    const result = observerOutput.signalResults.get(signalRef.signalId)
-    if (result === undefined) continue
-    payload[signalRef.signalId] = selectSignalPayload(result, signalRef.include)
-  }
-
-  return payload
-}
-
-const selectSignalPayload = (
-  result: SignalRunResult,
-  include: RoutingPattern["contextPayload"][number]["include"],
-): unknown => {
-  switch (include) {
-    case "score":
-      return { score: result.score }
-    case "diagnostics":
-      return { diagnostics: toSerializable(result.diagnostics) }
-    case "output":
-      return { output: toSerializable(result.output) }
-    case "all":
-    default:
-      return {
-        score: result.score,
-        diagnostics: toSerializable(result.diagnostics),
-        output: toSerializable(result.output),
-      }
-  }
-}
-
 const matchesSpecifierPattern = (specifier: string, pattern: string): boolean => {
   if (pattern.endsWith("/*")) {
     const prefix = pattern.slice(0, -1)
@@ -170,8 +122,12 @@ const matchesSpecifierPattern = (specifier: string, pattern: string): boolean =>
   return specifier === pattern
 }
 
+type LocatedDiagnostic = {
+  readonly location?: Location | undefined
+}
+
 const locationsFromDiagnostics = (
-  diagnostics: ReadonlyArray<Diagnostic>,
+  diagnostics: ReadonlyArray<LocatedDiagnostic>,
 ): ReadonlyArray<Location> =>
   diagnostics.flatMap((diagnostic) =>
     diagnostic.location === undefined ? [] : [diagnostic.location],
@@ -189,29 +145,4 @@ export const dedupeLocations = (
     deduped.push(location)
   }
   return deduped
-}
-
-const toSerializable = (value: unknown): unknown => {
-  if (value === null || value === undefined) return value
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-    return value
-  }
-  if (Array.isArray(value)) return value.map(toSerializable)
-  if (value instanceof Map) {
-    return Object.fromEntries(
-      [...value.entries()].map(([key, entry]) => [String(key), toSerializable(entry)]),
-    )
-  }
-  if (value instanceof Set) {
-    return [...value.values()].map(toSerializable)
-  }
-  if (typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
-        key,
-        toSerializable(entry),
-      ]),
-    )
-  }
-  return String(value)
 }

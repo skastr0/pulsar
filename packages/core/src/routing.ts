@@ -1,6 +1,7 @@
 import { Effect, Schema } from "effect"
 import type { ObserverOutput } from "./observer.js"
-import { buildContextPayload, dedupeLocations, matchPattern } from "./routing-matching.js"
+import { buildContextPayload } from "./routing-context-payload.js"
+import { dedupeLocations, matchPattern } from "./routing-matching.js"
 import { loadRoutingPatterns } from "./routing-pattern-catalog.js"
 import {
   RoutingDiff,

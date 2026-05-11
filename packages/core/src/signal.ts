@@ -1,15 +1,14 @@
 import type { Effect, Schema } from "effect"
 import type { Category } from "./category.js"
-import type { SignalContextTag, ReferenceDataTag } from "./context.js"
 import type { Diagnostic } from "./diagnostic.js"
 import type { EnforcementCeiling } from "./enforcement.js"
 import type { SignalError } from "./errors.js"
-import type { SignalCacheTag } from "./cache.js"
 import type { SignalKind, Tier } from "./tier.js"
 import type {
   SignalFactorDefinition,
   SignalFactorLedger,
 } from "./signal-factor-model.js"
+import type { SignalRequirements } from "./signal-runtime.js"
 
 export type {
   SignalFactorDefinition,
@@ -17,6 +16,9 @@ export type {
   SignalFactorLedgerEntry,
   SignalFactorValue,
 } from "./signal-factor-model.js"
+export type {
+  SignalRequirements,
+} from "./signal-runtime.js"
 
 /**
  * Declared input dependency for a compound (Tier 1.5) signal.
@@ -48,24 +50,6 @@ export interface SignalOutputMetadata {
   readonly applicability?: SignalApplicability
 }
 
-/**
- * The runtime services a signal's `compute` has access to.
- *
- * - `SignalContextTag`:  gitSha, worktreePath, changedHunks
- * - `ReferenceDataTag`:  glossary, boundary rules, etc.
- * - `SignalCacheTag`:    read-through cache (the scoring engine also
- *                        caches at the outer layer; signals can cache
- *                        sub-computations if they need)
- */
-export type SignalRequirements = SignalContextTag | ReferenceDataTag | SignalCacheTag
-
-/**
- * Map of dependency output values, keyed by the producing signal's id.
- * Passed to `compute` for Tier 1.5 signals. Leaf signals receive an
- * empty map.
- */
-export type InputOutputs = ReadonlyMap<string, unknown>
-
 export interface SignalIdentity {
   /**
    * Canonical, emitted signal identifier. New signal IDs should be stable and
@@ -84,6 +68,13 @@ export interface SignalIdentity {
    */
   readonly aliases?: ReadonlyArray<string>
 }
+
+/**
+ * Map of dependency output values, keyed by the producing signal's id.
+ * Passed to `compute` for Tier 1.5 signals. Leaf signals receive an
+ * empty map.
+ */
+export type InputOutputs = ReadonlyMap<string, unknown>
 
 export interface Signal<Config, Output, R = SignalRequirements> {
   readonly id: string
