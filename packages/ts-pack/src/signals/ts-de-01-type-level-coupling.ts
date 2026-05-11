@@ -90,78 +90,7 @@ export const TsDe01: Signal<TsDe01Config, TsDe01Output, TsProjectTag> = {
           if (sourceFiles.length > config.precise_module_limit) {
             return computeFastImportTypeCoupling(sourceFiles, config.top_n_diagnostics)
           }
-          const fileSet = new Set(sourceFiles.map((sourceFile) => sourceFile.getFilePath()))
-          const outgoing = new Map<string, Map<string, Set<string>>>()
-          const incoming = new Map<string, Map<string, Set<string>>>()
-
-          for (const file of fileSet) {
-            outgoing.set(file, new Map())
-            incoming.set(file, new Map())
-          }
-
-          for (const sourceFile of sourceFiles) {
-            const src = sourceFile.getFilePath()
-
-            for (const reference of collectTypeReferenceLikeNodes(sourceFile)) {
-              for (const declaration of resolveReferenceLikeDeclarations(reference)) {
-                const targetFile = declaration.getSourceFile().getFilePath()
-                if (!fileSet.has(targetFile) || targetFile === src) continue
-
-                ensureNestedSet(outgoing, src, targetFile).add(declarationKey(declaration))
-                ensureNestedSet(incoming, targetFile, src).add(declarationKey(declaration))
-              }
-            }
-          }
-
-          const byModule = new Map<string, DistributionalSummary>()
-          const modules: Array<ModuleTypeCoupling> = []
-
-          for (const file of fileSet) {
-            const outgoingByCounterpart = outgoing.get(file) ?? new Map()
-            const incomingByCounterpart = incoming.get(file) ?? new Map()
-            const counterpartPaths = new Set<string>([
-              ...outgoingByCounterpart.keys(),
-              ...incomingByCounterpart.keys(),
-            ])
-
-            const counterparts = [...counterpartPaths]
-              .map((counterpart): CouplingCounterpart => ({
-                module: counterpart,
-                outgoingTypes: outgoingByCounterpart.get(counterpart)?.size ?? 0,
-                incomingTypes: incomingByCounterpart.get(counterpart)?.size ?? 0,
-                totalTypes:
-                  (outgoingByCounterpart.get(counterpart)?.size ?? 0) +
-                  (incomingByCounterpart.get(counterpart)?.size ?? 0),
-              }))
-              .filter((counterpart) => counterpart.totalTypes > 0)
-              .sort(compareCounterparts)
-
-            const summary = summarize(counterparts.map((counterpart) => counterpart.totalTypes))
-            const externalTypesReferenced = uniqueSetSize(outgoingByCounterpart.values())
-            const typesReferencedExternally = uniqueSetSize(incomingByCounterpart.values())
-
-            modules.push({
-              file,
-              externalTypesReferenced,
-              typesReferencedExternally,
-              totalCoupling: externalTypesReferenced + typesReferencedExternally,
-              counterparts,
-            })
-            byModule.set(file, summary)
-          }
-
-          modules.sort(compareModules)
-
-          const repoDistribution = summarize(modules.map((module) => module.totalCoupling))
-
-          return {
-            modules,
-            byModule,
-            repoDistribution,
-            outlierThreshold: Math.max(repoDistribution.avg, repoDistribution.p95),
-            totalModules: modules.length,
-            diagnosticLimit: config.top_n_diagnostics,
-          }
+          return computePreciseTypeCoupling(sourceFiles, config.top_n_diagnostics)
         },
         catch: (cause) =>
           new SignalComputeError({
@@ -212,12 +141,26 @@ const ensureNestedSet = (
   return set
 }
 
-const computeFastImportTypeCoupling = (
+const computePreciseTypeCoupling = (
   sourceFiles: ReadonlyArray<SourceFile>,
   diagnosticLimit: number,
 ): TsDe01Output => {
-  const fileSet = new Set<string>(sourceFiles.map((sourceFile) => sourceFile.getFilePath()))
-  const resolver = createModuleResolver(sourceFiles, [])
+  const fileSet = new Set(sourceFiles.map((sourceFile) => sourceFile.getFilePath()))
+  const { outgoing, incoming } = createCouplingTables(fileSet)
+
+  for (const sourceFile of sourceFiles) {
+    recordPreciseTypeReferences(sourceFile, fileSet, outgoing, incoming)
+  }
+
+  return buildOutputFromTables(fileSet, outgoing, incoming, diagnosticLimit)
+}
+
+const createCouplingTables = (
+  fileSet: ReadonlySet<string>,
+): {
+  readonly outgoing: Map<string, Map<string, Set<string>>>
+  readonly incoming: Map<string, Map<string, Set<string>>>
+} => {
   const outgoing = new Map<string, Map<string, Set<string>>>()
   const incoming = new Map<string, Map<string, Set<string>>>()
 
@@ -225,6 +168,36 @@ const computeFastImportTypeCoupling = (
     outgoing.set(file, new Map())
     incoming.set(file, new Map())
   }
+
+  return { outgoing, incoming }
+}
+
+const recordPreciseTypeReferences = (
+  sourceFile: SourceFile,
+  fileSet: ReadonlySet<string>,
+  outgoing: Map<string, Map<string, Set<string>>>,
+  incoming: Map<string, Map<string, Set<string>>>,
+): void => {
+  const src = sourceFile.getFilePath()
+
+  for (const reference of collectTypeReferenceLikeNodes(sourceFile)) {
+    for (const declaration of resolveReferenceLikeDeclarations(reference)) {
+      const targetFile = declaration.getSourceFile().getFilePath()
+      if (!fileSet.has(targetFile) || targetFile === src) continue
+
+      ensureNestedSet(outgoing, src, targetFile).add(declarationKey(declaration))
+      ensureNestedSet(incoming, targetFile, src).add(declarationKey(declaration))
+    }
+  }
+}
+
+const computeFastImportTypeCoupling = (
+  sourceFiles: ReadonlyArray<SourceFile>,
+  diagnosticLimit: number,
+): TsDe01Output => {
+  const fileSet = new Set<string>(sourceFiles.map((sourceFile) => sourceFile.getFilePath()))
+  const resolver = createModuleResolver(sourceFiles, [])
+  const { outgoing, incoming } = createCouplingTables(fileSet)
 
   for (const sourceFile of sourceFiles) {
     const src = sourceFile.getFilePath()
