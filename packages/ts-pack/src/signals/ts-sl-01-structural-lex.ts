@@ -33,71 +33,85 @@ export const scanStructuralSource = (
   accept: (token: string) => void,
 ): void => {
   let index = 0
-
   while (index < source.length) {
-    const char = source[index]!
-    const charCode = source.charCodeAt(index)
-
-    if (isWhitespaceCharCode(charCode)) {
-      index++
-      continue
-    }
-
-    if (char === "/" && source[index + 1] === "/") {
-      index = skipLineComment(source, index + 2)
-      continue
-    }
-
-    if (char === "/" && source[index + 1] === "*") {
-      index = skipBlockComment(source, index + 2)
-      continue
-    }
-
-    if (char === "\"" || char === "'") {
-      const end = skipQuotedString(source, index, char)
-      accept(source.slice(index, end))
-      index = end
-      continue
-    }
-
-    if (char === "`") {
-      index = skipTemplateLiteral(source, index + 1)
-      accept("TMPL")
-      continue
-    }
-
-    if (isIdentifierStartCharCode(charCode)) {
-      const end = scanIdentifierEnd(source, index + 1)
-      accept(source.slice(index, end))
-      index = end
-      continue
-    }
-
-    if (isDigitCharCode(charCode)) {
-      index = scanNumberEnd(source, index)
-      accept("NUM")
-      continue
-    }
-
-    const three = source.slice(index, index + 3)
-    if (THREE_CHAR_OPERATORS.has(three)) {
-      accept(three)
-      index += 3
-      continue
-    }
-
-    const two = source.slice(index, index + 2)
-    if (TWO_CHAR_OPERATORS.has(two)) {
-      accept(two)
-      index += 2
-      continue
-    }
-
-    if (PUNCTUATION_TOKENS.has(char)) {
-      accept(char)
-    }
-    index++
+    index = scanStructuralToken(source, index, accept)
   }
+}
+
+const scanStructuralToken = (
+  source: string,
+  index: number,
+  accept: (token: string) => void,
+): number => {
+  const char = source[index]!
+  const charCode = source.charCodeAt(index)
+  if (isWhitespaceCharCode(charCode)) return index + 1
+  if (char === "/" && source[index + 1] === "/") return skipLineComment(source, index + 2)
+  if (char === "/" && source[index + 1] === "*") return skipBlockComment(source, index + 2)
+  if (char === "\"" || char === "'") return acceptQuotedString(source, index, char, accept)
+  if (char === "`") return acceptTemplateLiteral(source, index, accept)
+  if (isIdentifierStartCharCode(charCode)) return acceptIdentifier(source, index, accept)
+  if (isDigitCharCode(charCode)) return acceptNumber(source, index, accept)
+  return acceptOperatorOrPunctuation(source, index, char, accept)
+}
+
+const acceptQuotedString = (
+  source: string,
+  index: number,
+  quote: "\"" | "'",
+  accept: (token: string) => void,
+): number => {
+  const end = skipQuotedString(source, index, quote)
+  accept(source.slice(index, end))
+  return end
+}
+
+const acceptTemplateLiteral = (
+  source: string,
+  index: number,
+  accept: (token: string) => void,
+): number => {
+  accept("TMPL")
+  return skipTemplateLiteral(source, index + 1)
+}
+
+const acceptIdentifier = (
+  source: string,
+  index: number,
+  accept: (token: string) => void,
+): number => {
+  const end = scanIdentifierEnd(source, index + 1)
+  accept(source.slice(index, end))
+  return end
+}
+
+const acceptNumber = (
+  source: string,
+  index: number,
+  accept: (token: string) => void,
+): number => {
+  accept("NUM")
+  return scanNumberEnd(source, index)
+}
+
+const acceptOperatorOrPunctuation = (
+  source: string,
+  index: number,
+  char: string,
+  accept: (token: string) => void,
+): number => {
+  const three = source.slice(index, index + 3)
+  if (THREE_CHAR_OPERATORS.has(three)) {
+    accept(three)
+    return index + 3
+  }
+  const two = source.slice(index, index + 2)
+  if (TWO_CHAR_OPERATORS.has(two)) {
+    accept(two)
+    return index + 2
+  }
+  if (PUNCTUATION_TOKENS.has(char)) accept(char)
+  return index + 1
 }
 
 const isWhitespaceCharCode = (charCode: number): boolean =>
