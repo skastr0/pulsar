@@ -50,10 +50,12 @@ export const analyzeInconsistentClones = async (
   return {
     divergentGroups: sortedGroups,
     totalGroups: tsSl01Output.groups.length,
+    candidateGroups: candidateGroups.length,
     analyzedGroups: groupsToAnalyze.length,
     analysisLimitHit:
       candidateGroups.length > groupsToAnalyze.length ||
       groupsToAnalyze.some((group) => group.members.length > config.max_members_per_group),
+    analysisLimitScoreCap: config.analysis_limit_score_cap,
     diagnosticLimit: config.top_n_diagnostics,
     divergenceDistribution: calculateDistribution(sortedGroups.map((group) => group.divergenceScore)),
   }
@@ -135,4 +137,3 @@ const isNestedCloneGroup = (candidate: CloneGroup, existing: CloneGroup): boolea
     ),
   )
 }
-

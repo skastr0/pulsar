@@ -666,13 +666,55 @@ describe("TS-SL-02 Inconsistent clone detection", () => {
   test("analysis limit hit caps an otherwise clean clone-drift score", () => {
     const score = TsSl02.score({
       totalGroups: 12,
+      candidateGroups: 12,
       analyzedGroups: 2,
       analysisLimitHit: true,
+      analysisLimitScoreCap: 0.95,
       divergentGroups: [],
       divergenceDistribution: { min: 0, max: 0, mean: 0, median: 0 },
     })
 
     expect(score).toBe(0.95)
+  })
+
+  test("analysis limit cap is configurable and diagnosed when no divergent groups are found", () => {
+    const output = {
+      totalGroups: 20,
+      candidateGroups: 12,
+      analyzedGroups: 8,
+      analysisLimitHit: true,
+      analysisLimitScoreCap: 0.98,
+      divergentGroups: [],
+      divergenceDistribution: { min: 0, max: 0, mean: 0, median: 0 },
+    }
+
+    const diagnostics = TsSl02.diagnose(output)
+    const factorLedger = TsSl02.factorLedger?.(output)
+
+    expect(TsSl02.score(output)).toBe(0.98)
+    expect(diagnostics).toHaveLength(1)
+    expect(diagnostics[0]?.severity).toBe("info")
+    expect(diagnostics[0]?.message).toContain("analyzed 8/12 candidate groups")
+    expect(diagnostics[0]?.data).toMatchObject({
+      candidateGroups: 12,
+      analyzedGroups: 8,
+      analysisLimitScoreCap: 0.98,
+    })
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "analysis.limit_hit",
+        value: true,
+        scoreRole: "score-cap",
+        affectsScore: true,
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.analysis_limit_score_cap",
+        value: 0.98,
+        scoreRole: "score-cap",
+      }),
+    )
   })
 
   test("single severe divergent clone creates drag without collapsing the signal", () => {

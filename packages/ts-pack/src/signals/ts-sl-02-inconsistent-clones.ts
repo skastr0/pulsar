@@ -1,5 +1,5 @@
 import { SignalContextTag, SignalComputeError } from "@skastr0/pulsar-core/signal"
-import type { Diagnostic, Signal } from "@skastr0/pulsar-core/signal"
+import type { Diagnostic, Signal, SignalFactorLedger } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
 import type { TsSl01Output, CloneGroup } from "./ts-sl-01-model.js"
 import {
@@ -17,6 +17,7 @@ const TsSl02Config = Schema.Struct({
   top_n_diagnostics: Schema.Number,
   max_groups_analyzed: Schema.Number,
   max_members_per_group: Schema.Number,
+  analysis_limit_score_cap: Schema.Number,
 })
 export type TsSl02Config = typeof TsSl02Config.Type
 
@@ -46,8 +47,10 @@ export interface DivergentClone {
 export interface TsSl02Output {
   readonly divergentGroups: ReadonlyArray<DivergentClone>
   readonly totalGroups: number
+  readonly candidateGroups?: number
   readonly analyzedGroups: number
   readonly analysisLimitHit: boolean
+  readonly analysisLimitScoreCap?: number
   readonly diagnosticLimit?: number
   readonly divergenceDistribution: {
     readonly min: number
@@ -72,7 +75,22 @@ export const TsSl02: Signal<TsSl02Config, TsSl02Output, SignalContextTag> = {
     top_n_diagnostics: 10,
     max_groups_analyzed: 8,
     max_members_per_group: 16,
+    analysis_limit_score_cap: 0.95,
   },
+  configDirections: {
+    max_groups_analyzed: "higher-is-looser",
+    max_members_per_group: "higher-is-looser",
+    analysis_limit_score_cap: "higher-is-looser",
+  },
+  factorDefinitions: [
+    {
+      path: "config.analysis_limit_score_cap",
+      title: "Analysis limit score cap",
+      valueKind: "number",
+      scoreRole: "score-cap",
+      defaultValue: 0.95,
+    },
+  ],
   inputs: [{ id: "TS-SL-01-duplication" }],
   compute: (config, inputs) =>
     Effect.gen(function* () {
@@ -84,8 +102,10 @@ export const TsSl02: Signal<TsSl02Config, TsSl02Output, SignalContextTag> = {
         return {
           divergentGroups: [],
           totalGroups: 0,
+          candidateGroups: 0,
           analyzedGroups: 0,
           analysisLimitHit: false,
+          analysisLimitScoreCap: config.analysis_limit_score_cap,
           diagnosticLimit: config.top_n_diagnostics,
           divergenceDistribution: { min: 0, max: 0, mean: 0, median: 0 },
         }
@@ -129,37 +149,100 @@ export const TsSl02: Signal<TsSl02Config, TsSl02Output, SignalContextTag> = {
       })
     return Math.min(analysisLimitScoreCap(out), 1 - Math.min(0.75, worstPenalty))
   },
-  diagnose: (out): ReadonlyArray<Diagnostic> =>
-    out.divergentGroups.slice(0, out.diagnosticLimit ?? 10).map((group) => ({
-      severity:
-        group.divergenceScore > ACTIONABLE_DIVERGENCE_THRESHOLD &&
-        (group.confidence ?? "high") === "high"
-          ? ("warn" as const)
-          : ("info" as const),
-      message:
-        `Divergent ${group.kind ?? "structural"} clone group` +
-        `${group.tokenCount !== undefined ? ` (${group.tokenCount} tokens)` : ""}: ` +
-        `${group.sampledMemberCount ?? group.members.length}/${group.totalMemberCount ?? group.members.length} members, ` +
-        `divergence=${group.divergenceScore.toFixed(2)}, ` +
-        `confidence=${group.confidence ?? "high"}` +
-        `${group.evidenceKind !== undefined ? `, evidence=${group.evidenceKind}` : ""}` +
-        ` — ${cloneMemberSummary(group.members)}`,
-      location: {
-        file: group.members[0]?.file ?? "unknown",
-        line: group.members[0]?.startLine,
-      },
-      data: {
-        groupId: group.groupId,
-        kind: group.kind,
-        tokenCount: group.tokenCount,
-        divergenceScore: group.divergenceScore,
-        confidence: group.confidence ?? "high",
-        evidenceKind: group.evidenceKind ?? "clone-drift",
-        lastModifiedWindow: group.lastModifiedWindow,
-        members: group.members,
-      },
-    })),
+  diagnose: (out): ReadonlyArray<Diagnostic> => [
+    ...out.divergentGroups.slice(0, out.diagnosticLimit ?? 10).map(divergentCloneDiagnostic),
+    ...analysisLimitOnlyDiagnostics(out),
+  ],
+  factorLedger: tsSl02FactorLedger,
 }
 
 const analysisLimitScoreCap = (out: TsSl02Output): number =>
-  out.analysisLimitHit ? 0.95 : 1
+  out.analysisLimitHit ? out.analysisLimitScoreCap ?? 0.95 : 1
+
+const divergentCloneDiagnostic = (group: DivergentClone): Diagnostic => ({
+  severity:
+    group.divergenceScore > ACTIONABLE_DIVERGENCE_THRESHOLD &&
+    (group.confidence ?? "high") === "high"
+      ? ("warn" as const)
+      : ("info" as const),
+  message:
+    `Divergent ${group.kind ?? "structural"} clone group` +
+    `${group.tokenCount !== undefined ? ` (${group.tokenCount} tokens)` : ""}: ` +
+    `${group.sampledMemberCount ?? group.members.length}/${group.totalMemberCount ?? group.members.length} members, ` +
+    `divergence=${group.divergenceScore.toFixed(2)}, ` +
+    `confidence=${group.confidence ?? "high"}` +
+    `${group.evidenceKind !== undefined ? `, evidence=${group.evidenceKind}` : ""}` +
+    ` — ${cloneMemberSummary(group.members)}`,
+  location: {
+    file: group.members[0]?.file ?? "unknown",
+    line: group.members[0]?.startLine,
+  },
+  data: {
+    groupId: group.groupId,
+    kind: group.kind,
+    tokenCount: group.tokenCount,
+    divergenceScore: group.divergenceScore,
+    confidence: group.confidence ?? "high",
+    evidenceKind: group.evidenceKind ?? "clone-drift",
+    lastModifiedWindow: group.lastModifiedWindow,
+    members: group.members,
+  },
+})
+
+const analysisLimitOnlyDiagnostics = (out: TsSl02Output): ReadonlyArray<Diagnostic> => {
+  if (!out.analysisLimitHit || out.divergentGroups.length > 0) return []
+  const candidateGroups = out.candidateGroups ?? out.totalGroups
+  return [{
+    severity: "info",
+    message:
+      `Clone drift analysis reached its configured budget without actionable divergence: ` +
+      `analyzed ${out.analyzedGroups}/${candidateGroups} candidate groups; ` +
+      `score capped at ${analysisLimitScoreCap(out).toFixed(2)} until coverage is complete`,
+    data: {
+      totalGroups: out.totalGroups,
+      candidateGroups,
+      analyzedGroups: out.analyzedGroups,
+      analysisLimitScoreCap: analysisLimitScoreCap(out),
+    },
+  }]
+}
+
+function tsSl02FactorLedger(out: TsSl02Output): SignalFactorLedger {
+  return {
+    signalId: "TS-SL-02-inconsistent-clones",
+    entries: [
+      {
+        path: "analysis.limit_hit",
+        title: "Analysis limit hit",
+        value: out.analysisLimitHit,
+        source: "computed",
+        affectsScore: out.analysisLimitHit,
+        scoreRole: "score-cap",
+      },
+      {
+        path: "analysis.candidate_groups",
+        title: "Candidate groups",
+        value: out.candidateGroups ?? out.totalGroups,
+        source: "computed",
+        affectsScore: out.analysisLimitHit,
+        scoreRole: "evidence",
+      },
+      {
+        path: "analysis.analyzed_groups",
+        title: "Analyzed groups",
+        value: out.analyzedGroups,
+        source: "computed",
+        affectsScore: out.analysisLimitHit,
+        scoreRole: "evidence",
+      },
+      {
+        path: "config.analysis_limit_score_cap",
+        title: "Analysis limit score cap",
+        value: out.analysisLimitScoreCap ?? 0.95,
+        source: "signal-default",
+        affectsScore: true,
+        scoreRole: "score-cap",
+      },
+    ],
+  }
+}
