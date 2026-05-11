@@ -109,55 +109,123 @@ export const listAddedLinesByFileInMatureWindow = async (
     ...(pathspecs.length > 0 ? ["--", ...pathspecs] : []),
   ])
 
-  const maturityCutoffTime = new Date(maturityCutoffIso).getTime()
+  return parseMatureAddedLinesByFile(
+    raw,
+    new Date(maturityCutoffIso).getTime(),
+    config,
+  )
+}
+
+interface MaturePatchCursor {
+  commitAddsEligible: boolean
+  currentFile: string | undefined
+  pendingRenameFrom: string | undefined
+}
+
+const parseMatureAddedLinesByFile = (
+  rawPatchLog: string,
+  maturityCutoffTime: number,
+  config: SharedHistoryFilterConfig,
+): ReadonlyMap<string, ReadonlyArray<string>> => {
   const addedByFile = new Map<string, Array<string>>()
   const renameMap = new Map<string, string>()
-  let commitAddsEligible = false
-  let currentFile: string | undefined
-  let pendingRenameFrom: string | undefined
-
-  for (const line of raw.split("\n")) {
-    if (line.startsWith("__commit__\0")) {
-      const dateIso = line.slice("__commit__\0".length).trim()
-      commitAddsEligible = new Date(dateIso).getTime() <= maturityCutoffTime
-      currentFile = undefined
-      pendingRenameFrom = undefined
-      continue
-    }
-
-    if (line.startsWith("diff --git ")) {
-      currentFile = parseDiffTargetPath(line)
-      pendingRenameFrom = undefined
-      continue
-    }
-
-    if (line.startsWith("rename from ")) {
-      pendingRenameFrom = line.slice("rename from ".length).trim()
-      continue
-    }
-
-    if (line.startsWith("rename to ")) {
-      const renamedTo = line.slice("rename to ".length).trim()
-      if (pendingRenameFrom !== undefined && renamedTo.length > 0) {
-        renameMap.set(pendingRenameFrom, renamedTo)
-      }
-      pendingRenameFrom = undefined
-      continue
-    }
-
-    if (!commitAddsEligible) continue
-    if (currentFile === undefined) continue
-    if (!hasIncludedExtension(currentFile, config.includeExtensions)) continue
-    if (matchesAnyGlob(currentFile, config.excludeGlobs)) continue
-    if (!line.startsWith("+") || line.startsWith("+++")) continue
-
-    const content = line.slice(1)
-    if (content.trim().length === 0) continue
-    const lines = addedByFile.get(currentFile) ?? []
-    lines.push(content)
-    addedByFile.set(currentFile, lines)
+  const cursor: MaturePatchCursor = {
+    commitAddsEligible: false,
+    currentFile: undefined,
+    pendingRenameFrom: undefined,
   }
 
+  for (const line of rawPatchLog.split("\n")) {
+    consumeMaturePatchLine(line, cursor, maturityCutoffTime, config, addedByFile, renameMap)
+  }
+
+  return remapAddedLinesByCurrentPath(addedByFile, renameMap, config)
+}
+
+const consumeMaturePatchLine = (
+  line: string,
+  cursor: MaturePatchCursor,
+  maturityCutoffTime: number,
+  config: SharedHistoryFilterConfig,
+  addedByFile: Map<string, Array<string>>,
+  renameMap: Map<string, string>,
+): void => {
+  if (line.startsWith("__commit__\0")) {
+    startMaturePatchCommit(cursor, line, maturityCutoffTime)
+    return
+  }
+  if (line.startsWith("diff --git ")) {
+    cursor.currentFile = parseDiffTargetPath(line)
+    cursor.pendingRenameFrom = undefined
+    return
+  }
+  if (line.startsWith("rename from ")) {
+    cursor.pendingRenameFrom = line.slice("rename from ".length).trim()
+    return
+  }
+  if (line.startsWith("rename to ")) {
+    recordMaturePatchRename(cursor, line, renameMap)
+    return
+  }
+  recordMaturePatchAddedLine(line, cursor, config, addedByFile)
+}
+
+const startMaturePatchCommit = (
+  cursor: MaturePatchCursor,
+  line: string,
+  maturityCutoffTime: number,
+): void => {
+  const dateIso = line.slice("__commit__\0".length).trim()
+  cursor.commitAddsEligible = new Date(dateIso).getTime() <= maturityCutoffTime
+  cursor.currentFile = undefined
+  cursor.pendingRenameFrom = undefined
+}
+
+const recordMaturePatchRename = (
+  cursor: MaturePatchCursor,
+  line: string,
+  renameMap: Map<string, string>,
+): void => {
+  const renamedTo = line.slice("rename to ".length).trim()
+  if (cursor.pendingRenameFrom !== undefined && renamedTo.length > 0) {
+    renameMap.set(cursor.pendingRenameFrom, renamedTo)
+  }
+  cursor.pendingRenameFrom = undefined
+}
+
+const recordMaturePatchAddedLine = (
+  line: string,
+  cursor: MaturePatchCursor,
+  config: SharedHistoryFilterConfig,
+  addedByFile: Map<string, Array<string>>,
+): void => {
+  if (cursor.currentFile === undefined) return
+  if (!isEligibleMatureAddedLine(line, cursor, config)) return
+
+  const content = line.slice(1)
+  const lines = addedByFile.get(cursor.currentFile) ?? []
+  lines.push(content)
+  addedByFile.set(cursor.currentFile, lines)
+}
+
+const isEligibleMatureAddedLine = (
+  line: string,
+  cursor: MaturePatchCursor,
+  config: SharedHistoryFilterConfig,
+): boolean =>
+  cursor.commitAddsEligible &&
+  cursor.currentFile !== undefined &&
+  hasIncludedExtension(cursor.currentFile, config.includeExtensions) &&
+  !matchesAnyGlob(cursor.currentFile, config.excludeGlobs) &&
+  line.startsWith("+") &&
+  !line.startsWith("+++") &&
+  line.slice(1).trim().length > 0
+
+const remapAddedLinesByCurrentPath = (
+  addedByFile: ReadonlyMap<string, ReadonlyArray<string>>,
+  renameMap: ReadonlyMap<string, string>,
+  config: SharedHistoryFilterConfig,
+): ReadonlyMap<string, ReadonlyArray<string>> => {
   const remapped = new Map<string, Array<string>>()
   for (const [file, lines] of addedByFile) {
     const currentFilePath = resolveRename(file, renameMap)
@@ -167,7 +235,6 @@ export const listAddedLinesByFileInMatureWindow = async (
     existing.push(...lines)
     remapped.set(currentFilePath, existing)
   }
-
   return remapped
 }
 
