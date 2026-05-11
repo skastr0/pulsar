@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import type { TimeSeriesError } from "./time-series.js"
+import type { TimeSeriesError } from "./time-series-model.js"
 
 export class DuplicateSignalIdError extends Schema.TaggedError<DuplicateSignalIdError>()(
   "DuplicateSignalIdError",

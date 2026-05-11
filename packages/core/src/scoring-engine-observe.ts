@@ -7,7 +7,8 @@ import {
 import type { ResolvedCalibrationContext } from "./calibration.js"
 import type { ChangedHunk } from "./context.js"
 import type { ScoringEngineError } from "./errors.js"
-import { observe, type ObserverOutput } from "./observer.js"
+import { observe } from "./observer.js"
+import type { ObserverOutput } from "./observer-json.js"
 import { loadCanonicalReferenceDataEntries } from "./reference-data-loader.js"
 import type { Registry } from "./registry.js"
 import {
@@ -36,6 +37,8 @@ import type {
   WithCommitWorktree,
 } from "./scoring-engine-runtime.js"
 import type { PulsarVector } from "./vector.js"
+
+const GIT_REVISION_CONTEXT_CACHE_DEPENDENCY = "git-revision-context"
 
 type ObserveWithCache = (
   key: CacheKey,
@@ -228,11 +231,15 @@ const appendObserverRevisionContext = (
   contentHash: string,
 ): Effect.Effect<string, ScoringEngineError, never> =>
   Effect.gen(function* () {
-    if (!registry.sorted.some((signal) => signal.cacheDependencies?.includes("git-revision-context"))) {
+    if (
+      !registry.sorted.some((signal) =>
+        signal.cacheDependencies?.includes(GIT_REVISION_CONTEXT_CACHE_DEPENDENCY),
+      )
+    ) {
       return contentHash
     }
     const revisionContextHash = yield* computeGitRevisionContextHash(worktreePath)
-    return `${contentHash}:git-revision-context:${revisionContextHash}`
+    return `${contentHash}:${GIT_REVISION_CONTEXT_CACHE_DEPENDENCY}:${revisionContextHash}`
   })
 
 export const makeObserveRange = (

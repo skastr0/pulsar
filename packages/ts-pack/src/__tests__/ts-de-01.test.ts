@@ -159,6 +159,28 @@ describe("TS-DE-01 (type-level coupling)", () => {
     expect(TsDe01.diagnose(out)).toEqual([])
   })
 
+  test("scores outgoing dependencies rather than incoming model fan-in", async () => {
+    await writeTs("src/model.ts", "export interface SharedModel { value: string }\n")
+    for (const index of [1, 2, 3, 4, 5]) {
+      await writeTs(
+        `src/consumer-${index}.ts`,
+        [
+          "import type { SharedModel } from './model'",
+          `export type Consumer${index} = SharedModel`,
+          "",
+        ].join("\n"),
+      )
+    }
+
+    const out = await runCompute()
+    const model = out.modules.find((module) => module.file.endsWith("model.ts"))
+
+    expect(model?.externalTypesReferenced).toBe(0)
+    expect(model?.typesReferencedExternally).toBe(1)
+    expect(TsDe01.score(out)).toBe(1)
+    expect(TsDe01.diagnose(out)).toEqual([])
+  })
+
   test("configSchema decodes defaults round-trip", () => {
     const decoded = Schema.decodeUnknownSync(TsDe01.configSchema)(TsDe01.defaultConfig)
     expect(decoded.top_n_diagnostics).toBe(10)

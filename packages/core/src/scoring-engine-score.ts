@@ -29,6 +29,8 @@ import type {
 import type { Tier } from "./tier.js"
 import type { PulsarVector } from "./vector.js"
 
+const GIT_REVISION_CONTEXT_CACHE_DEPENDENCY = "git-revision-context"
+
 type ScoreCommit = (
   repoPath: string,
   sha: string,
@@ -46,6 +48,8 @@ type ScoreRange = (
   SignalError | ScoringEngineError,
   never
 >
+
+type SignalCacheDependencyCarrier = Pick<Registry["sorted"][number], "cacheDependencies">
 
 export const makeScoreCommit = (args: {
   readonly registry: Registry
@@ -99,15 +103,15 @@ const cacheContentHashForSignal = (
   repoPath: string,
   worktreePath: string,
   sha: string,
-  signal: { readonly cacheDependencies?: ReadonlyArray<string> } | undefined,
+  signal: SignalCacheDependencyCarrier | undefined,
 ): Effect.Effect<string, ScoringEngineError, never> =>
   Effect.gen(function* () {
     const contentHash = yield* computeContentHash(repoPath, sha)
-    if (!signal?.cacheDependencies?.includes("git-revision-context")) {
+    if (!signal?.cacheDependencies?.includes(GIT_REVISION_CONTEXT_CACHE_DEPENDENCY)) {
       return contentHash
     }
     const revisionContextHash = yield* computeGitRevisionContextHash(worktreePath)
-    return `${contentHash}:git-revision-context:${revisionContextHash}`
+    return `${contentHash}:${GIT_REVISION_CONTEXT_CACHE_DEPENDENCY}:${revisionContextHash}`
   })
 
 const readScoreCache = (

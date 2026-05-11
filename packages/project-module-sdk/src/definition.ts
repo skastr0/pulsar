@@ -124,7 +124,7 @@ const defineRuntimeCalibrationProcessor = (
   }) as unknown as AnyCalibrationProcessor
 }
 
-export const makeProjectModuleDecision = <Slot extends CalibrationSlotId>(
+const makeProjectModuleDecision = <Slot extends CalibrationSlotId>(
   runtime: ProjectModuleProcessorRuntime<Slot>,
   input: ProjectModuleDecisionInput,
 ): CalibrationDecision => ({
@@ -153,7 +153,7 @@ export const appendProjectModuleDecision = <Slot extends CalibrationSlotId>(
     nextValue,
   )
 
-export const makeProjectModuleProcessorRuntime = <Slot extends CalibrationSlotId>(
+const makeProjectModuleProcessorRuntime = <Slot extends CalibrationSlotId>(
   definition: ProjectModuleDefinitionInput,
   processor: ProjectModuleProcessorDefinition<Slot>,
 ): ProjectModuleProcessorRuntime<Slot> => ({

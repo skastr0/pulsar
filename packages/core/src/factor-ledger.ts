@@ -1,11 +1,13 @@
 import { Context } from "effect"
 import type {
-  AnySignal,
   SignalFactorDefinition,
   SignalFactorLedger,
   SignalFactorLedgerEntry,
   SignalFactorPolicyMutation,
   SignalFactorValue,
+} from "./signal-factor-model.js"
+import type {
+  AnySignal,
 } from "./signal.js"
 import {
   factorOverridesOf,

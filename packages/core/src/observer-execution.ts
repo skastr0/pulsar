@@ -5,18 +5,23 @@ import { applySignalFactorPolicy, makeSignalFactorPolicyContext, SignalFactorPol
 import { buildInputOutputs } from "./input-outputs.js"
 import type { Registry } from "./registry.js"
 import type { SignalRunResult } from "./runner.js"
-import type { ResolvedSignal, SignalOutputMetadata, SignalRequirements } from "./signal.js"
+import type { ResolvedSignal, SignalRequirements } from "./signal.js"
 import { isActive as vectorIsActive, resolvedConfig as vectorResolvedConfig, type PulsarVector } from "./vector.js"
-import type { ObserverCalibrationSummary, ObserverRuntimeProfile } from "./observer-model.js"
+import type {
+  ObserverCalibrationSummary,
+  ObserverRuntimeOutput,
+  ObserverRuntimeProfile,
+} from "./observer-model.js"
 import { nowMs, roundRuntimeMs } from "./observer-time.js"
 
 const DEFAULT_OBSERVER_SIGNAL_CONCURRENCY = 1
+type ObserverSignalMetadata = NonNullable<ObserverRuntimeOutput["signalMetadata"]>
 
 interface ObserverSignalExecution {
   readonly outputs: Map<string, unknown>
   readonly signalResults: Map<string, SignalRunResult>
   readonly inactiveSignals: Array<string>
-  readonly signalMetadata: Record<string, SignalOutputMetadata>
+  readonly signalMetadata: ObserverSignalMetadata
   readonly signalProfiles: ObserverRuntimeProfile["signals"]
   readonly processedSignals: Set<string>
   readonly registryIds: Set<string>

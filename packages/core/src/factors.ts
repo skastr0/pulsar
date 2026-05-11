@@ -10,8 +10,14 @@ export {
   withConfigFactorLedger,
 } from "./factor-ledger.js"
 export {
+  type SignalFactorAttribution,
+  type SignalFactorAttributionEvidence,
   type SignalFactorDefinition,
   type SignalFactorLedger,
   type SignalFactorLedgerEntry,
+  type SignalFactorPolicyMutation,
+  type SignalFactorScoreRole,
+  type SignalFactorSource,
   type SignalFactorValue,
-} from "./signal.js"
+  type SignalFactorValueKind,
+} from "./signal-factor-model.js"

@@ -75,15 +75,16 @@ export const TsDe01: Signal<TsDe01Config, TsDe01Output, TsProjectTag> = {
 
     const threshold = Math.max(1, out.outlierThreshold)
     const excess = out.modules.reduce((total, module) => {
-      if (module.totalCoupling <= out.outlierThreshold) return total
-      return total + (module.totalCoupling - threshold) / threshold
+      if (module.externalTypesReferenced <= out.outlierThreshold) return total
+      return total + (module.externalTypesReferenced - threshold) / threshold
     }, 0)
 
     return Math.max(0, 1 - excess / out.totalModules)
   },
-  diagnose: (out): ReadonlyArray<Diagnostic> =>
-    out.modules
-      .filter((module) => module.totalCoupling > out.outlierThreshold)
+  diagnose: (out): ReadonlyArray<Diagnostic> => {
+    const threshold = Math.max(1, out.outlierThreshold)
+    return out.modules
+      .filter((module) => module.externalTypesReferenced > threshold)
       .slice(0, out.diagnosticLimit)
       .map((module) => ({
         severity: "warn" as const,
@@ -95,5 +96,6 @@ export const TsDe01: Signal<TsDe01Config, TsDe01Output, TsProjectTag> = {
           ...module,
           outlierThreshold: out.outlierThreshold,
         },
-      })),
+      }))
+  },
 }

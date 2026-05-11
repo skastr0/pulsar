@@ -101,7 +101,7 @@ export const buildOutputFromTables = (
 
   modules.sort(compareModules)
 
-  const repoDistribution = summarize(modules.map((module) => module.totalCoupling))
+  const repoDistribution = summarize(modules.map((module) => module.externalTypesReferenced))
 
   return {
     modules,
