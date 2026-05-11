@@ -89,58 +89,102 @@ export const appendPulsarAnnotation = (
 
 const renderPulsarAnnotation = (annotation: PulsarAnnotation): string => {
   const changedFilesLabel = annotation.changedFiles.join(", ") || "current edit"
+  const title = renderAnnotationTitle(changedFilesLabel)
 
   if (annotation.status === "pending") {
-    return [
-      `## Pulsar — after edit to ${changedFilesLabel}`,
-      "",
-      `ℹ ${annotation.message ?? "Background analysis queued"}`,
-    ].join("\n")
+    return renderPendingAnnotation(title, annotation)
   }
 
   if (annotation.status === "error") {
-    return [
-      `## Pulsar — after edit to ${changedFilesLabel}`,
-      "",
-      `ℹ Pulsar analysis failed but the edit was preserved: ${annotation.message ?? "unknown error"}`,
-    ].join("\n")
+    return renderErrorAnnotation(title, annotation)
   }
 
-  const lines = [`## Pulsar — after edit to ${changedFilesLabel}`, ""]
+  return renderReadyAnnotation(title, annotation)
+}
 
-  for (const delta of annotation.scoreDeltas?.slice(0, 2) ?? []) {
-    const direction = delta.current < delta.previous ? "⚠" : "ℹ"
-    lines.push(
-      `${direction} ${delta.category} score ${delta.current.toFixed(2)} (was ${delta.previous.toFixed(2)})`,
-    )
-  }
+const renderAnnotationTitle = (changedFilesLabel: string): string =>
+  `## Pulsar — after edit to ${changedFilesLabel}`
 
-  if ((annotation.newDiagnostics?.length ?? 0) > 0) {
-    lines.push("")
-    for (const diagnostic of annotation.newDiagnostics!.slice(0, 5)) {
-      lines.push(`- [${diagnostic.signalId}] ${diagnostic.message}${formatLocation(diagnostic)}`)
-    }
-  }
+const renderPendingAnnotation = (
+  title: string,
+  annotation: PulsarAnnotation,
+): string =>
+  [
+    title,
+    "",
+    `ℹ ${annotation.message ?? "Background analysis queued"}`,
+  ].join("\n")
 
-  if ((annotation.reviewRequests?.length ?? 0) > 0) {
-    lines.push("", "Review recommendations:")
-    for (const request of annotation.reviewRequests!.slice(0, 4)) {
-      lines.push(
-        `- ${request.priority} ${request.reviewerRole} — ${request.trigger.detail}`,
-      )
-    }
-  }
+const renderErrorAnnotation = (
+  title: string,
+  annotation: PulsarAnnotation,
+): string =>
+  [
+    title,
+    "",
+    `ℹ Pulsar analysis failed but the edit was preserved: ${annotation.message ?? "unknown error"}`,
+  ].join("\n")
 
-  if (
-    (annotation.newDiagnostics?.length ?? 0) === 0 &&
-    (annotation.reviewRequests?.length ?? 0) === 0 &&
-    (annotation.scoreDeltas?.length ?? 0) === 0
-  ) {
+const renderReadyAnnotation = (
+  title: string,
+  annotation: PulsarAnnotation,
+): string => {
+  const lines = [title, ""]
+
+  lines.push(...renderScoreDeltaLines(annotation.scoreDeltas))
+  lines.push(...renderDiagnosticSection(annotation.newDiagnostics))
+  lines.push(...renderReviewRequestSection(annotation.reviewRequests))
+
+  if (!hasReadyEvidence(annotation)) {
     lines.push("ℹ No new pulsar evidence surfaced for the changed files.")
   }
 
   return lines.join("\n")
 }
+
+const renderScoreDeltaLines = (
+  scoreDeltas: PulsarAnnotation["scoreDeltas"],
+): ReadonlyArray<string> =>
+  scoreDeltas?.slice(0, 2).map((delta) => {
+    const direction = delta.current < delta.previous ? "⚠" : "ℹ"
+    return `${direction} ${delta.category} score ${delta.current.toFixed(2)} (was ${delta.previous.toFixed(2)})`
+  }) ?? []
+
+const renderDiagnosticSection = (
+  diagnostics: PulsarAnnotation["newDiagnostics"],
+): ReadonlyArray<string> => {
+  const surfacedDiagnostics = diagnostics ?? []
+  if (surfacedDiagnostics.length === 0) return []
+
+  return [
+    "",
+    ...surfacedDiagnostics.slice(0, 5).map(
+      (diagnostic) =>
+        `- [${diagnostic.signalId}] ${diagnostic.message}${formatLocation(diagnostic)}`,
+    ),
+  ]
+}
+
+const renderReviewRequestSection = (
+  reviewRequests: PulsarAnnotation["reviewRequests"],
+): ReadonlyArray<string> => {
+  const requests = reviewRequests ?? []
+  if (requests.length === 0) return []
+
+  return [
+    "",
+    "Review recommendations:",
+    ...requests.slice(0, 4).map(
+      (request) =>
+        `- ${request.priority} ${request.reviewerRole} — ${request.trigger.detail}`,
+    ),
+  ]
+}
+
+const hasReadyEvidence = (annotation: PulsarAnnotation): boolean =>
+  (annotation.newDiagnostics?.length ?? 0) > 0 ||
+  (annotation.reviewRequests?.length ?? 0) > 0 ||
+  (annotation.scoreDeltas?.length ?? 0) > 0
 
 const summarizeScoreDeltas = (
   current: ObserverOutput,
