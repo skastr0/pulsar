@@ -99,113 +99,12 @@ export const TsSl02: Signal<TsSl02Config, TsSl02Output, SignalContextTag> = {
 
       return yield* Effect.tryPromise({
         try: async (): Promise<TsSl02Output> => {
-          const git = simpleGit(context.worktreePath)
-          const divergentGroups: Array<DivergentClone> = []
-          const candidateGroups = selectNonOverlappingCandidateGroups(
-            tsSl01Output.groups.filter(isInconsistentCloneCandidate),
+          return analyzeInconsistentClones(
+            config,
+            tsSl01Output,
+            context.worktreePath,
+            context.gitSha,
           )
-          const groupsToAnalyze = candidateGroups.slice(0, config.max_groups_analyzed)
-          const referenceTime = await getReferenceTime(git, context.gitSha)
-          const analysisLimitHit =
-            candidateGroups.length > groupsToAnalyze.length ||
-            groupsToAnalyze.some((group) => group.members.length > config.max_members_per_group)
-          const historyCache = new Map<string, Promise<HistoryResult>>()
-          const jobs = groupsToAnalyze.flatMap((group) =>
-            group.members.slice(0, config.max_members_per_group).map((member) => ({
-              group,
-              member,
-            })),
-          )
-          const historyResults = await mapWithConcurrency(jobs, 4, async ({ group, member }) => {
-            const cacheKey = `${member.file}:${member.startLine}:${member.endLine}`
-            const history = await getOrCreate(historyCache, cacheKey, () =>
-              getLastModifiedForRange(
-                git,
-                member.file,
-                member.startLine,
-                member.endLine,
-                context.worktreePath,
-              ),
-            )
-
-            return {
-              groupId: group.groupId,
-              member: {
-                file: member.file,
-                ...(member.name !== undefined ? { name: member.name } : {}),
-                startLine: member.startLine,
-                endLine: member.endLine,
-                lastModifiedSha: history.sha,
-                lastModifiedAt: history.date,
-                historyStatus: history.status,
-                timestamp: new Date(history.date).getTime(),
-              },
-            }
-          })
-
-          const membersByGroup = new Map<string, Array<CloneMemberWithHistory>>()
-          for (const result of historyResults) {
-            const existing = membersByGroup.get(result.groupId) ?? []
-            existing.push(result.member)
-            membersByGroup.set(result.groupId, existing)
-          }
-
-          for (const group of groupsToAnalyze) {
-            const membersWithHistory = membersByGroup.get(group.groupId) ?? []
-            const membersWithKnownHistory = membersWithHistory.filter((member) => member.historyStatus === "ok")
-
-            const distinctShas = new Set(membersWithKnownHistory.map((m) => m.lastModifiedSha))
-            const divergenceScore =
-              membersWithKnownHistory.length <= 1
-                ? 0
-                : (distinctShas.size - 1) / (membersWithKnownHistory.length - 1)
-
-            const timestamps = membersWithKnownHistory.map((m) => m.timestamp).sort((a, b) => a - b)
-            const lastModifiedWindow =
-              timestamps.length > 1 ? (timestamps[timestamps.length - 1]! - timestamps[0]!) / (1000 * 60 * 60 * 24) : 0
-
-            const hasRecentModification = membersWithKnownHistory.some(
-              (m) =>
-                referenceTime - m.timestamp < config.min_window_days * 24 * 60 * 60 * 1000,
-            )
-
-            if (divergenceScore >= config.divergence_threshold && hasRecentModification) {
-              const members = membersWithHistory.map((m) => ({
-                file: m.file,
-                ...(m.name !== undefined ? { name: m.name } : {}),
-                startLine: m.startLine,
-                endLine: m.endLine,
-                lastModifiedSha: m.lastModifiedSha,
-                lastModifiedAt: m.lastModifiedAt,
-                historyStatus: m.historyStatus,
-              }))
-              const evidence = classifyCloneEvidence(members)
-              divergentGroups.push({
-                groupId: group.groupId,
-                kind: group.kind,
-                tokenCount: group.tokenCount,
-                members,
-                confidence: evidence.confidence,
-                evidenceKind: evidence.kind,
-                sampledMemberCount: membersWithHistory.length,
-                totalMemberCount: group.members.length,
-                divergenceScore,
-                lastModifiedWindow,
-              })
-            }
-          }
-
-          const scores = divergentGroups.map((g) => g.divergenceScore)
-          const distribution = calculateDistribution(scores)
-
-          return {
-            divergentGroups: divergentGroups.sort((a, b) => b.divergenceScore - a.divergenceScore),
-            totalGroups: tsSl01Output.groups.length,
-            analyzedGroups: groupsToAnalyze.length,
-            analysisLimitHit,
-            diagnosticLimit: config.top_n_diagnostics,
-            divergenceDistribution: distribution,
-          }
         },
         catch: (cause) =>
           new SignalComputeError({ signalId: "TS-SL-02-inconsistent-clones", message: String(cause), cause }),
@@ -270,6 +169,165 @@ export const TsSl02: Signal<TsSl02Config, TsSl02Output, SignalContextTag> = {
 
 const analysisLimitScoreCap = (out: TsSl02Output): number =>
   out.analysisLimitHit ? 0.95 : 1
+
+type GitClient = ReturnType<typeof simpleGit>
+type CloneHistoryJob = {
+  readonly group: CloneGroup
+  readonly member: CloneGroup["members"][number]
+}
+type CloneHistoryResult = {
+  readonly groupId: string
+  readonly member: CloneMemberWithHistory
+}
+
+const analyzeInconsistentClones = async (
+  config: TsSl02Config,
+  tsSl01Output: TsSl01Output,
+  worktreePath: string,
+  gitSha: string,
+): Promise<TsSl02Output> => {
+  const git = simpleGit(worktreePath)
+  const candidateGroups = selectNonOverlappingCandidateGroups(
+    tsSl01Output.groups.filter(isInconsistentCloneCandidate),
+  )
+  const groupsToAnalyze = candidateGroups.slice(0, config.max_groups_analyzed)
+  const referenceTime = await getReferenceTime(git, gitSha)
+  const historyResults = await loadCloneHistory(
+    git,
+    worktreePath,
+    groupsToAnalyze,
+    config.max_members_per_group,
+  )
+  const membersByGroup = groupCloneMembersByHistory(historyResults)
+  const divergentGroups: Array<DivergentClone> = []
+
+  for (const group of groupsToAnalyze) {
+    const divergentGroup = buildDivergentCloneGroup(
+      group,
+      membersByGroup.get(group.groupId) ?? [],
+      referenceTime,
+      config,
+    )
+    if (divergentGroup !== undefined) divergentGroups.push(divergentGroup)
+  }
+
+  const sortedGroups = divergentGroups.sort((a, b) => b.divergenceScore - a.divergenceScore)
+  return {
+    divergentGroups: sortedGroups,
+    totalGroups: tsSl01Output.groups.length,
+    analyzedGroups: groupsToAnalyze.length,
+    analysisLimitHit:
+      candidateGroups.length > groupsToAnalyze.length ||
+      groupsToAnalyze.some((group) => group.members.length > config.max_members_per_group),
+    diagnosticLimit: config.top_n_diagnostics,
+    divergenceDistribution: calculateDistribution(sortedGroups.map((group) => group.divergenceScore)),
+  }
+}
+
+const loadCloneHistory = async (
+  git: GitClient,
+  worktreePath: string,
+  groupsToAnalyze: ReadonlyArray<CloneGroup>,
+  memberLimit: number,
+): Promise<Array<CloneHistoryResult>> => {
+  const historyCache = new Map<string, Promise<HistoryResult>>()
+  const jobs = groupsToAnalyze.flatMap((group) =>
+    group.members.slice(0, memberLimit).map((member) => ({ group, member })),
+  )
+
+  return mapWithConcurrency(jobs, 4, (job) =>
+    loadCloneMemberHistory(git, worktreePath, historyCache, job),
+  )
+}
+
+const loadCloneMemberHistory = async (
+  git: GitClient,
+  worktreePath: string,
+  historyCache: Map<string, Promise<HistoryResult>>,
+  { group, member }: CloneHistoryJob,
+): Promise<CloneHistoryResult> => {
+  const cacheKey = `${member.file}:${member.startLine}:${member.endLine}`
+  const history = await getOrCreate(historyCache, cacheKey, () =>
+    getLastModifiedForRange(git, member.file, member.startLine, member.endLine, worktreePath),
+  )
+
+  return {
+    groupId: group.groupId,
+    member: {
+      file: member.file,
+      ...(member.name !== undefined ? { name: member.name } : {}),
+      startLine: member.startLine,
+      endLine: member.endLine,
+      lastModifiedSha: history.sha,
+      lastModifiedAt: history.date,
+      historyStatus: history.status,
+      timestamp: new Date(history.date).getTime(),
+    },
+  }
+}
+
+const groupCloneMembersByHistory = (
+  historyResults: ReadonlyArray<CloneHistoryResult>,
+): ReadonlyMap<string, ReadonlyArray<CloneMemberWithHistory>> => {
+  const membersByGroup = new Map<string, Array<CloneMemberWithHistory>>()
+  for (const result of historyResults) {
+    const existing = membersByGroup.get(result.groupId) ?? []
+    existing.push(result.member)
+    membersByGroup.set(result.groupId, existing)
+  }
+  return membersByGroup
+}
+
+const buildDivergentCloneGroup = (
+  group: CloneGroup,
+  membersWithHistory: ReadonlyArray<CloneMemberWithHistory>,
+  referenceTime: number,
+  config: TsSl02Config,
+): DivergentClone | undefined => {
+  const membersWithKnownHistory = membersWithHistory.filter((member) => member.historyStatus === "ok")
+  const divergenceScore = cloneDivergenceScore(membersWithKnownHistory)
+  const lastModifiedWindow = cloneLastModifiedWindow(membersWithKnownHistory)
+  const hasRecentModification = membersWithKnownHistory.some(
+    (member) => referenceTime - member.timestamp < config.min_window_days * 24 * 60 * 60 * 1000,
+  )
+  if (divergenceScore < config.divergence_threshold || !hasRecentModification) return undefined
+
+  const members = membersWithHistory.map(toCloneMember)
+  const evidence = classifyCloneEvidence(members)
+  return {
+    groupId: group.groupId,
+    kind: group.kind,
+    tokenCount: group.tokenCount,
+    members,
+    confidence: evidence.confidence,
+    evidenceKind: evidence.kind,
+    sampledMemberCount: membersWithHistory.length,
+    totalMemberCount: group.members.length,
+    divergenceScore,
+    lastModifiedWindow,
+  }
+}
+
+const cloneDivergenceScore = (members: ReadonlyArray<CloneMemberWithHistory>): number => {
+  const distinctShas = new Set(members.map((member) => member.lastModifiedSha))
+  return members.length <= 1 ? 0 : (distinctShas.size - 1) / (members.length - 1)
+}
+
+const cloneLastModifiedWindow = (members: ReadonlyArray<CloneMemberWithHistory>): number => {
+  const timestamps = members.map((member) => member.timestamp).sort((left, right) => left - right)
+  if (timestamps.length <= 1) return 0
+  return (timestamps[timestamps.length - 1]! - timestamps[0]!) / (1000 * 60 * 60 * 24)
+}
+
+const toCloneMember = (member: CloneMemberWithHistory): CloneMember => ({
+  file: member.file,
+  ...(member.name !== undefined ? { name: member.name } : {}),
+  startLine: member.startLine,
+  endLine: member.endLine,
+  lastModifiedSha: member.lastModifiedSha,
+  lastModifiedAt: member.lastModifiedAt,
+  historyStatus: member.historyStatus,
+})
 
 const isInconsistentCloneCandidate = (group: CloneGroup): boolean =>
   group.kind === "structural" && group.tokenCount >= MIN_STRUCTURAL_DIVERGENCE_TOKENS
