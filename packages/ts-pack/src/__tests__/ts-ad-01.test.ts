@@ -115,6 +115,88 @@ describe("TS-AD-01 (module boundary violations)", () => {
     expect(typeof TsAd01.diagnose(out)[0]?.data?.hash).toBe("string")
   })
 
+  test("allows package-name imports to manifest export subpaths", async () => {
+    await writePackage("core", "@repo/core")
+    await repo.writeJson("packages/core/package.json", {
+      name: "@repo/core",
+      version: "0.0.0",
+      private: true,
+      exports: {
+        ".": "./dist/index.js",
+        "./backpressure": "./dist/backpressure.js",
+        "./signals/*": "./dist/signals/*.js",
+      },
+    })
+    await writePackage("app", "@repo/app", { "@repo/core": "workspace:*" })
+    await repo.write("packages/core/src/index.ts", "export const coreValue = 1\n")
+    await repo.write("packages/core/src/backpressure.ts", "export const backpressure = 1\n")
+    await repo.write("packages/core/src/signals/public.ts", "export const signal = 1\n")
+    await repo.write(
+      "packages/app/src/index.ts",
+      [
+        "import { backpressure } from '@repo/core/backpressure'",
+        "import { signal } from '@repo/core/signals/public'",
+        "export const appValue = backpressure + signal",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsAd01, TsAd01.defaultConfig, {
+      "schema-conventions": conventions({
+        "packages/core": {
+          visibility: "public-api",
+          allowed_imports: ["effect"],
+        },
+        "packages/app": {
+          visibility: "internal",
+          allowed_imports: ["@repo/core"],
+        },
+      }),
+    })
+
+    expect(out.violations).toEqual([])
+    expect(out.totalImports).toBe(2)
+  })
+
+  test("flags package-name imports to unexported subpaths", async () => {
+    await writePackage("core", "@repo/core")
+    await repo.writeJson("packages/core/package.json", {
+      name: "@repo/core",
+      version: "0.0.0",
+      private: true,
+      exports: {
+        ".": "./dist/index.js",
+        "./backpressure": "./dist/backpressure.js",
+      },
+    })
+    await writePackage("app", "@repo/app", { "@repo/core": "workspace:*" })
+    await repo.write("packages/core/src/index.ts", "export const coreValue = 1\n")
+    await repo.write("packages/core/src/internal.ts", "export const internalValue = 1\n")
+    await repo.write(
+      "packages/app/src/index.ts",
+      "import { internalValue } from '@repo/core/internal'\nexport const appValue = internalValue\n",
+    )
+
+    const out = await runSignal(repo.root, TsAd01, TsAd01.defaultConfig, {
+      "schema-conventions": conventions({
+        "packages/core": {
+          visibility: "public-api",
+          allowed_imports: ["effect"],
+        },
+        "packages/app": {
+          visibility: "internal",
+          allowed_imports: ["@repo/core"],
+        },
+      }),
+    })
+
+    expect(out.violations).toMatchObject([
+      {
+        kind: "deep-reach",
+        specifier: "@repo/core/internal",
+      },
+    ])
+  })
+
   test("flags blocked targets explicitly", async () => {
     await writePackage("app", "@repo/app")
     await repo.write(

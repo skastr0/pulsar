@@ -14,6 +14,7 @@ export interface PackageManifest {
   readonly peerDependencies: Readonly<Record<string, string>>
   readonly optionalDependencies: Readonly<Record<string, string>>
   readonly entrypoints: ReadonlyArray<string>
+  readonly exportSubpaths: ReadonlyArray<string>
 }
 
 export interface PackageInfo {
@@ -108,6 +109,7 @@ const readPackageManifest = async (
       peerDependencies: asDependencyRecord(parsed.peerDependencies),
       optionalDependencies: asDependencyRecord(parsed.optionalDependencies),
       entrypoints: collectManifestEntrypoints(parsed),
+      exportSubpaths: collectManifestExportSubpaths(parsed.exports),
     }
   } catch {
     return undefined
@@ -169,6 +171,32 @@ const addEntrypoint = (entrypoints: Set<string>, value: unknown): void => {
       addEntrypoint(entrypoints, item)
     }
   }
+}
+
+const collectManifestExportSubpaths = (exportsValue: unknown): ReadonlyArray<string> => {
+  const subpaths = new Set<string>()
+  collectExportSubpathsInto(subpaths, exportsValue)
+  return [...subpaths].sort((left, right) => left.localeCompare(right))
+}
+
+const collectExportSubpathsInto = (subpaths: Set<string>, value: unknown): void => {
+  if (typeof value === "string" || Array.isArray(value)) {
+    subpaths.add(".")
+    return
+  }
+
+  if (value === null || typeof value !== "object") return
+
+  const entries = Object.entries(value)
+  const declaredSubpaths = entries.filter(([key]) => key === "." || key.startsWith("./"))
+  if (declaredSubpaths.length > 0) {
+    for (const [key] of declaredSubpaths) {
+      subpaths.add(key)
+    }
+    return
+  }
+
+  subpaths.add(".")
 }
 
 const getDiscoverableFiles = (rootDir: string): Effect.Effect<ReadonlyArray<string>> =>

@@ -276,10 +276,35 @@ const isDeepReach = (
 
   const manifestName = targetPackage.manifest?.name
   if (manifestName !== undefined) {
-    return specifier !== manifestName
+    if (specifier === manifestName) return false
+    return !isManifestExportedSubpath(specifier, manifestName, targetPackage)
   }
 
   return true
+}
+
+const isManifestExportedSubpath = (
+  specifier: string,
+  manifestName: string,
+  targetPackage: PackageInfo,
+): boolean => {
+  const exportSubpaths = targetPackage.manifest?.exportSubpaths ?? []
+  if (exportSubpaths.length === 0) return false
+  if (!specifier.startsWith(`${manifestName}/`)) return false
+
+  const subpath = `./${specifier.slice(manifestName.length + 1)}`
+  return exportSubpaths.some((declaredSubpath) =>
+    declaredSubpath === subpath || matchesExportPattern(declaredSubpath, subpath),
+  )
+}
+
+const matchesExportPattern = (pattern: string, subpath: string): boolean => {
+  const wildcardIndex = pattern.indexOf("*")
+  if (wildcardIndex === -1) return false
+
+  const prefix = pattern.slice(0, wildcardIndex)
+  const suffix = pattern.slice(wildcardIndex + 1)
+  return subpath.startsWith(prefix) && subpath.endsWith(suffix)
 }
 
 const normalizePath = (value: string): string => value.replaceAll("\\", "/")
