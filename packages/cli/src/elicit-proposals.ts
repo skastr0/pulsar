@@ -35,7 +35,9 @@ interface ProposalResolutionContext {
   readonly resolved: PulsarVectorProposal
 }
 
-export const runReviewAction = (opts: ElicitCommandOptions) =>
+export const runReviewAction = (
+  opts: ElicitCommandOptions,
+): Effect.Effect<number, Error, never> =>
   Effect.gen(function* () {
     const repoRoot = yield* resolveRepoRoot(opts.repoPath)
     const proposals = yield* loadPendingProposals(repoRoot)
@@ -62,7 +64,7 @@ export const runReviewAction = (opts: ElicitCommandOptions) =>
 export const runResolutionAction = (
   opts: ElicitCommandOptions,
   status: ProposalResolutionStatus,
-) =>
+): Effect.Effect<number, Error, never> =>
   Effect.gen(function* () {
     const context = yield* loadResolutionContext(opts, status)
     return status === "rejected"

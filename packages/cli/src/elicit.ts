@@ -4,7 +4,9 @@ import { runReviewAction, runResolutionAction } from "./elicit-proposals.js"
 import { runQuizAction } from "./elicit-quiz.js"
 import type { ElicitCommandOptions } from "./elicit-types.js"
 
-export const runElicitCommand = (opts: ElicitCommandOptions) =>
+export const runElicitCommand = (
+  opts: ElicitCommandOptions,
+): Effect.Effect<number, Error, never> =>
   Effect.gen(function* () {
     if (opts.action === "quiz") {
       return yield* runQuizAction(opts)

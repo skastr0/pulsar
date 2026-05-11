@@ -24,7 +24,9 @@ interface WorkingCanonicalTerm {
   readonly provenance: Array<GlossaryProvenance>
 }
 
-export const buildCandidateTerms = (identifiers: ReadonlyArray<IdentifierOccurrence>) => {
+export const buildCandidateTerms = (
+  identifiers: ReadonlyArray<IdentifierOccurrence>,
+): GlossaryDraft["candidate_terms"] => {
   const termMap = new Map<string, WorkingTerm>()
 
   for (const identifier of identifiers) {

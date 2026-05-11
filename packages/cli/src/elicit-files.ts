@@ -17,7 +17,10 @@ import { loadPulsarVectorFromPath } from "./runtime.js"
 import { discoverPulsarVector } from "./vector-discovery.js"
 import type { MutableQuizSession, ProposalPaths } from "./elicit-types.js"
 
-export const writeQuizSession = (sessionPath: string, session: MutableQuizSession) =>
+export const writeQuizSession = (
+  sessionPath: string,
+  session: MutableQuizSession,
+): Effect.Effect<void, Error, never> =>
   writeJsonFile(sessionPath, session)
 
 export const readQuizSessionIfPresent = (sessionPath: string): Effect.Effect<QuizSession | undefined, Error, never> =>
@@ -34,7 +37,10 @@ export const readQuizSessionIfPresent = (sessionPath: string): Effect.Effect<Qui
     return yield* decodeQuizSession(parsed)
   })
 
-export const writeJsonFile = (filePath: string, value: unknown) =>
+export const writeJsonFile = (
+  filePath: string,
+  value: unknown,
+): Effect.Effect<void, Error, never> =>
   Effect.gen(function* () {
     yield* Effect.tryPromise({
       try: () => mkdir(dirname(filePath), { recursive: true }),
@@ -55,7 +61,9 @@ export const proposalPaths = (repoRoot: string): ProposalPaths => ({
   worktreeVectorPath: join(repoRoot, ".pulsar", "vector.json"),
 })
 
-export const ensureProposalDirectories = (paths: ProposalPaths) =>
+export const ensureProposalDirectories = (
+  paths: ProposalPaths,
+): Effect.Effect<void, Error, never> =>
   Effect.tryPromise({
     try: () =>
       Promise.all([
@@ -99,7 +107,11 @@ export const resolveVectorTarget = (input: {
   readonly repoRoot: string
   readonly registry: Registry
   readonly explicitPath?: string
-}) =>
+}): Effect.Effect<
+  { readonly vector: PulsarVector | undefined; readonly outputPath: string },
+  Error,
+  never
+> =>
   Effect.gen(function* () {
     if (input.explicitPath !== undefined) {
       const outputPath = resolve(input.explicitPath)

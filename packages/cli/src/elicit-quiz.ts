@@ -34,7 +34,9 @@ import type {
   QuizActionContext,
 } from "./elicit-types.js"
 
-export const runQuizAction = (opts: ElicitCommandOptions) =>
+export const runQuizAction = (
+  opts: ElicitCommandOptions,
+): Effect.Effect<number, Error, never> =>
   Effect.gen(function* () {
     const context = yield* prepareQuizAction(opts)
     const { sessionPath, session } = context
