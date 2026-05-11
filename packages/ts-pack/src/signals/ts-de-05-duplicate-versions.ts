@@ -1,5 +1,3 @@
-import { access } from "node:fs/promises"
-import { join } from "node:path"
 import {
   SignalContextTag,
   type Diagnostic,
@@ -7,24 +5,15 @@ import {
   SignalComputeError,
 } from "@skastr0/pulsar-core"
 import { Effect, Schema } from "effect"
-import { readBunLockFile, type BunResolvedPackage } from "../lockfiles/bun-lock.js"
-import { readNpmLockFile, type NpmResolvedPackage } from "../lockfiles/npm-lock.js"
-import { readPnpmLockFile, type PnpmResolvedPackage } from "../lockfiles/pnpm-lock.js"
+import { findDuplicateGroups, type DuplicateGroup } from "./ts-de-05-groups.js"
+import { readTsDe05Lockfile } from "./ts-de-05-lockfile.js"
 
 export const TsDe05Config = Schema.Struct({
   top_n_diagnostics: Schema.Number,
 })
 export type TsDe05Config = typeof TsDe05Config.Type
 
-export interface DuplicateGroup {
-  readonly name: string
-  readonly versions: ReadonlyArray<string>
-  readonly directVersions: ReadonlyArray<string>
-  readonly instanceCount: number
-  readonly directInstanceCount: number
-  readonly evidenceKind: "direct-workspace-duplicate" | "transitive-lockfile-duplicate"
-  readonly pullInChains: ReadonlyArray<{ version: string; chain: ReadonlyArray<string> }>
-}
+export type { DuplicateGroup } from "./ts-de-05-groups.js"
 
 export interface TsDe05Output {
   readonly duplicates: ReadonlyArray<DuplicateGroup>
@@ -54,7 +43,7 @@ export const TsDe05: Signal<TsDe05Config, TsDe05Output, SignalContextTag> = {
       const context = yield* SignalContextTag
       const result = yield* Effect.tryPromise({
         try: async (): Promise<TsDe05Output> => {
-          const lockfile = await resolveLockfile(context.worktreePath)
+          const lockfile = await readTsDe05Lockfile(context.worktreePath)
           if (lockfile.kind === "missing" || lockfile.kind === "unsupported") {
             return {
               duplicates: [],
@@ -66,25 +55,10 @@ export const TsDe05: Signal<TsDe05Config, TsDe05Output, SignalContextTag> = {
             }
           }
 
-          const parsed = lockfile.kind === "bun"
-            ? await readBunLockFile(lockfile.path)
-            : lockfile.kind === "npm"
-              ? await readNpmLockFile(lockfile.path)
-              : await readPnpmLockFile(lockfile.path)
-          const resolvedPackages = parsed.packages.filter(
+          const resolvedPackages = lockfile.packages.filter(
             (pkg) => !pkg.version.startsWith("workspace:"),
           )
-          const byName = new Map<string, Array<ResolvedLockPackage>>()
-          for (const pkg of resolvedPackages) {
-            const bucket = byName.get(pkg.name) ?? []
-            bucket.push(pkg)
-            byName.set(pkg.name, bucket)
-          }
-
-          const duplicates = [...byName.entries()]
-            .map(([name, packages]) => toDuplicateGroup(name, packages, parsed.workspaces))
-            .filter((group) => group.versions.length > 1)
-            .sort(compareDuplicateGroups)
+          const duplicates = findDuplicateGroups(resolvedPackages, lockfile.workspaces)
 
           return {
             duplicates,
@@ -169,166 +143,4 @@ export const TsDe05: Signal<TsDe05Config, TsDe05Output, SignalContextTag> = {
       },
     }))
   },
-}
-
-const resolveLockfile = async (
-  worktreePath: string,
-): Promise<
-  | { readonly kind: "bun"; readonly path: string }
-  | { readonly kind: "npm"; readonly path: string }
-  | { readonly kind: "pnpm"; readonly path: string }
-  | { readonly kind: "unsupported"; readonly files: ReadonlyArray<string> }
-  | { readonly kind: "missing"; readonly files: ReadonlyArray<string> }
-> => {
-  const bunLockPath = join(worktreePath, "bun.lock")
-  if (await exists(bunLockPath)) {
-    return { kind: "bun", path: bunLockPath }
-  }
-
-  const npmLockPath = join(worktreePath, "package-lock.json")
-  if (await exists(npmLockPath)) {
-    return { kind: "npm", path: npmLockPath }
-  }
-
-  const pnpmLockPath = join(worktreePath, "pnpm-lock.yaml")
-  if (await exists(pnpmLockPath)) {
-    return { kind: "pnpm", path: pnpmLockPath }
-  }
-
-  const unsupported = (
-    await Promise.all(
-      UNSUPPORTED_LOCKFILES.map(async (filename) => ((await exists(join(worktreePath, filename))) ? filename : undefined)),
-    )
-  ).reduce<Array<string>>((acc, filename) => {
-    if (filename !== undefined) {
-      acc.push(filename)
-    }
-    return acc
-  }, [])
-
-  if (unsupported.length > 0) {
-    return { kind: "unsupported", files: unsupported }
-  }
-
-  return { kind: "missing", files: [] }
-}
-
-const exists = async (path: string): Promise<boolean> => {
-  try {
-    await access(path)
-    return true
-  } catch {
-    return false
-  }
-}
-
-type ResolvedLockPackage = BunResolvedPackage | NpmResolvedPackage | PnpmResolvedPackage
-
-interface LockWorkspace {
-  readonly path: string
-  readonly name: string | undefined
-  readonly dependencies: Readonly<Record<string, string>>
-  readonly devDependencies: Readonly<Record<string, string>>
-  readonly peerDependencies: Readonly<Record<string, string>>
-  readonly optionalDependencies: Readonly<Record<string, string>>
-}
-
-const toDuplicateGroup = (
-  name: string,
-  packages: ReadonlyArray<ResolvedLockPackage>,
-  workspaces: ReadonlyArray<LockWorkspace>,
-): DuplicateGroup => {
-  const versions = [...new Set(packages.map((pkg) => pkg.version))].sort((left, right) =>
-    left.localeCompare(right),
-  )
-  const directPackages = packages.filter((pkg) =>
-    isDirectWorkspacePackageRequest(pkg, workspaces),
-  )
-  const directVersions = [...new Set(directPackages.map((pkg) => pkg.version))].sort(
-    (left, right) => left.localeCompare(right),
-  )
-  const pullInChains = packages
-    .flatMap((pkg) => workspaceChainsForPackage(pkg, workspaces))
-    .filter((entry, index, entries) => {
-      const key = `${entry.version}:${entry.chain.join(">")}`
-      return entries.findIndex((candidate) => `${candidate.version}:${candidate.chain.join(">")}` === key) === index
-    })
-    .sort((left, right) => {
-      const versionCompare = left.version.localeCompare(right.version)
-      if (versionCompare !== 0) return versionCompare
-      return left.chain.join("/").localeCompare(right.chain.join("/"))
-    })
-
-  return {
-    name,
-    versions,
-    directVersions,
-    instanceCount: packages.length,
-    directInstanceCount: directPackages.length,
-    evidenceKind:
-      directVersions.length > 1
-        ? "direct-workspace-duplicate"
-        : "transitive-lockfile-duplicate",
-    pullInChains,
-  }
-}
-
-const isDirectWorkspacePackageRequest = (
-  pkg: ResolvedLockPackage,
-  workspaces: ReadonlyArray<LockWorkspace>,
-): boolean => {
-  if ("direct" in pkg) return pkg.direct
-  const root = pkg.chain[0] ?? pkg.lockKey
-  if (root !== pkg.name && !root.startsWith(`${pkg.name}@`)) return false
-  return workspaces.some((workspace) =>
-    [
-      workspace.dependencies,
-      workspace.devDependencies,
-      workspace.peerDependencies,
-      workspace.optionalDependencies,
-    ].some((group) => group[pkg.name] !== undefined),
-  )
-}
-
-const workspaceChainsForPackage = (
-  pkg: ResolvedLockPackage,
-  workspaces: ReadonlyArray<LockWorkspace>,
-): ReadonlyArray<{ version: string; chain: ReadonlyArray<string> }> => {
-  const root = pkg.chain[0]
-  const matchingWorkspaces = workspaces.filter((workspace) =>
-    [
-      workspace.dependencies,
-      workspace.devDependencies,
-      workspace.peerDependencies,
-      workspace.optionalDependencies,
-    ].some((group) => root !== undefined && group[root] !== undefined),
-  )
-
-  if (matchingWorkspaces.length === 0) {
-    return [{ version: pkg.version, chain: pkg.chain }]
-  }
-
-  return matchingWorkspaces.map((workspace) => ({
-    version: pkg.version,
-    chain: [workspace.name ?? workspace.path ?? "(root)", ...pkg.chain],
-  }))
-}
-
-const compareDuplicateGroups = (left: DuplicateGroup, right: DuplicateGroup): number => {
-  if (left.evidenceKind !== right.evidenceKind) {
-    return left.evidenceKind === "direct-workspace-duplicate" ? -1 : 1
-  }
-  if (right.directVersions.length !== left.directVersions.length) {
-    return right.directVersions.length - left.directVersions.length
-  }
-  if (right.directInstanceCount !== left.directInstanceCount) {
-    return right.directInstanceCount - left.directInstanceCount
-  }
-  if (right.versions.length !== left.versions.length) {
-    return right.versions.length - left.versions.length
-  }
-  if (right.instanceCount !== left.instanceCount) {
-    return right.instanceCount - left.instanceCount
-  }
-  return left.name.localeCompare(right.name)
 }
