@@ -9,7 +9,7 @@ const baselineViolationSchema = Schema.Struct({
   hash: Schema.String,
   detail: Schema.String,
 })
-export type BaselineViolation = typeof baselineViolationSchema.Type
+type BaselineViolation = typeof baselineViolationSchema.Type
 
 const baselineSchema = Schema.Struct({
   schema_version: Schema.Literal(1),
@@ -31,13 +31,13 @@ export type Baseline = typeof baselineSchema.Type
 export const decodeBaseline = Schema.decodeUnknown(baselineSchema)
 export const decodeBaselineSync = Schema.decodeUnknownSync(baselineSchema)
 
-export interface CurrentViolationSnapshot extends BaselineViolation {
+interface CurrentViolationSnapshot extends BaselineViolation {
   readonly signalId: string
   readonly category: Category
   readonly diagnostic: Diagnostic
 }
 
-export interface PaidDebtViolation extends BaselineViolation {
+interface PaidDebtViolation extends BaselineViolation {
   readonly signalId: string
 }
 
@@ -48,7 +48,7 @@ export interface BaselineComparison {
   readonly paidDebt: ReadonlyArray<PaidDebtViolation>
 }
 
-export interface BaselineSignalIdentityOptions {
+interface BaselineSignalIdentityOptions {
   readonly canonicalSignalId?: (signalId: string) => string | undefined
 }
 

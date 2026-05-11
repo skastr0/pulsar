@@ -29,13 +29,13 @@ import type {
 import type { Tier } from "./tier.js"
 import type { PulsarVector } from "./vector.js"
 
-export type ScoreCommit = (
+type ScoreCommit = (
   repoPath: string,
   sha: string,
   signalId: string,
 ) => Effect.Effect<SignalRunResult, SignalError | ScoringEngineError, never>
 
-export type ScoreRange = (
+type ScoreRange = (
   repoPath: string,
   fromSha: string,
   toSha: string,

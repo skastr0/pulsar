@@ -19,7 +19,7 @@ export interface SignalInputRef {
   readonly optional?: boolean
 }
 
-export type ConfigDirection = "higher-is-stricter" | "higher-is-looser"
+type ConfigDirection = "higher-is-stricter" | "higher-is-looser"
 
 export type SignalApplicability =
   | "applicable"

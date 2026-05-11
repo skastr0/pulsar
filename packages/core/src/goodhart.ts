@@ -3,7 +3,7 @@ import { CATEGORIES, type Category } from "./category.js"
 import { type TimeSeriesEntry } from "./time-series.js"
 import { backpressureConfigOf, type BackpressureConfig, type PulsarVector } from "./vector.js"
 
-export type GoodhartSuspicion = "low" | "elevated" | "high"
+type GoodhartSuspicion = "low" | "elevated" | "high"
 
 export interface GoodhartAssessment {
   readonly suspicion: GoodhartSuspicion
@@ -19,12 +19,12 @@ export interface GoodhartAssessment {
   readonly rotationWindowDays: number
 }
 
-export interface AgentFacingCategoryView {
+interface AgentFacingCategoryView {
   readonly diagnostics: ReadonlyArray<string>
   readonly hiddenSignalCount: number
 }
 
-export interface AgentFacingObserverView {
+interface AgentFacingObserverView {
   readonly categories: Record<Category, AgentFacingCategoryView>
   readonly reminders: ReadonlyArray<string>
   readonly visibleSignalIds: ReadonlyArray<string>

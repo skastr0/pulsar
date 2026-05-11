@@ -54,7 +54,7 @@ export {
   isReservedRustSignalId,
 }
 
-export interface PulsarRuntimeOptions {
+interface PulsarRuntimeOptions {
   readonly timeSeries?: {
     readonly enabled?: boolean
   }

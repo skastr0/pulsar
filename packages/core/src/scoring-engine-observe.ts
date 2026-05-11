@@ -37,7 +37,7 @@ import type {
 } from "./scoring-engine-runtime.js"
 import type { PulsarVector } from "./vector.js"
 
-export type ObserveWithCache = (
+type ObserveWithCache = (
   key: CacheKey,
   runFresh: () => Effect.Effect<ObserverOutput, ScoringEngineError, never>,
 ) => Effect.Effect<
@@ -46,18 +46,18 @@ export type ObserveWithCache = (
   never
 >
 
-export type ObserveCommit = (
+type ObserveCommit = (
   repoPath: string,
   sha: string,
 ) => Effect.Effect<ObserverOutput, ScoringEngineError, never>
 
-export type ObserveWorktree = (
+type ObserveWorktree = (
   repoPath: string,
   headSha: string,
   worktreeOptions?: { readonly changedHunks?: ReadonlyArray<ChangedHunk> },
 ) => Effect.Effect<ObserverOutput, ScoringEngineError, never>
 
-export type ObserveRange = (
+type ObserveRange = (
   repoPath: string,
   fromSha: string,
   toSha: string,
