@@ -26,7 +26,10 @@ export interface ProjectModuleProcessorDefinition<Slot extends CalibrationSlotId
   readonly process: ProjectModuleProcessor<Slot>
 }
 
-export type AnyProjectModuleProcessorDefinition = ProjectModuleProcessorDefinition<any>
+export type AnyProjectModuleProcessorDefinition =
+  {
+    readonly [Slot in CalibrationSlotId]: ProjectModuleProcessorDefinition<Slot>
+  }[CalibrationSlotId]
 
 export interface ProjectModuleProcessorRuntime<Slot extends CalibrationSlotId> {
   readonly moduleId: string
@@ -80,16 +83,9 @@ export const defineProjectModule = <
 >(
   definition: ProjectModuleDefinitionInput<Processors>,
 ): DefinedProjectModule => {
-  const processors = definition.processors.map((processor) => {
-    const runtime = makeProjectModuleProcessorRuntime(definition, processor)
-    return defineCalibrationProcessor({
-      ...processor,
-      moduleId: definition.id,
-      moduleVersion: definition.version,
-      priority: processor.priority ?? 0,
-      process: (current, context) => processor.process(current, context, runtime),
-    })
-  })
+  const processors = definition.processors.map((processor) =>
+    defineRuntimeCalibrationProcessor(definition, processor),
+  )
   const descriptor: ProjectModuleDescriptor = {
     id: definition.id,
     version: definition.version,
@@ -111,6 +107,21 @@ export const defineProjectModule = <
     activeModule: activateProjectModule(descriptor),
     processors,
   }
+}
+
+const defineRuntimeCalibrationProcessor = (
+  definition: ProjectModuleDefinitionInput,
+  processor: AnyProjectModuleProcessorDefinition,
+): AnyCalibrationProcessor => {
+  const typedProcessor = processor as unknown as ProjectModuleProcessorDefinition<CalibrationSlotId>
+  const runtime = makeProjectModuleProcessorRuntime(definition, typedProcessor)
+  return defineCalibrationProcessor({
+    ...typedProcessor,
+    moduleId: definition.id,
+    moduleVersion: definition.version,
+    priority: typedProcessor.priority ?? 0,
+    process: (current, context) => typedProcessor.process(current, context, runtime),
+  }) as unknown as AnyCalibrationProcessor
 }
 
 export const makeProjectModuleDecision = <Slot extends CalibrationSlotId>(

@@ -323,7 +323,9 @@ export interface CalibrationProcessor<Slot extends CalibrationSlotId> {
   ) => Effect.Effect<CalibrationSlotOutput<Slot>, CalibrationProcessorError, never>
 }
 
-export type AnyCalibrationProcessor = CalibrationProcessor<any>
+export type AnyCalibrationProcessor = {
+  readonly [Slot in CalibrationSlotId]: CalibrationProcessor<Slot>
+}[CalibrationSlotId]
 
 export interface ResolvedCalibrationContext {
   readonly fingerprint: string
@@ -429,8 +431,7 @@ export const makeResolvedCalibrationContext = (input: {
         let current: CalibrationSlotOutput<Slot> = unchangedCalibrationResult(slotInput)
         const slotProcessors = processorsBySlot.get(slot) ?? []
         for (const processor of slotProcessors) {
-          current = yield* processor
-            .process(current, context)
+          current = yield* runCalibrationProcessor(processor, current, context)
             .pipe(Effect.withSpan(`calibration.${slot}.${processor.moduleId}.${processor.id}`))
         }
         return current
@@ -438,6 +439,15 @@ export const makeResolvedCalibrationContext = (input: {
   }
 
   return context
+}
+
+const runCalibrationProcessor = <Slot extends CalibrationSlotId>(
+  processor: AnyCalibrationProcessor,
+  current: CalibrationSlotOutput<Slot>,
+  context: ResolvedCalibrationContext,
+): Effect.Effect<CalibrationSlotOutput<Slot>, CalibrationProcessorError, never> => {
+  const typedProcessor = processor as unknown as CalibrationProcessor<Slot>
+  return typedProcessor.process(current, context)
 }
 
 export const hashCalibrationValue = (value: unknown): string =>
