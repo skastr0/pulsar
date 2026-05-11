@@ -17,6 +17,7 @@ import {
   markTypeScriptExportPublicEntrypoint,
   nameTypeScriptCallbackContext,
   type RepoFacts,
+  tuneTypeScriptTypeCoupling,
   tuneTypeScriptUnfinishedImplementation,
 } from "../index.js"
 
@@ -385,6 +386,70 @@ describe("project module sdk", () => {
     expect(result.decisions[0]?.after).toMatchObject({
       penaltyWeight: 0.2,
       scoreCapParticipation: false,
+    })
+  })
+
+  test("processor runtime helpers tune TypeScript type-coupling factors", async () => {
+    const module = defineProjectModule({
+      id: "acme.project",
+      version: "1.0.0",
+      scope: "repository",
+      processors: [
+        defineProcessor({
+          id: "contract-type-coupling",
+          slot: "typescript.type-coupling-policy",
+          role: "factor-policy",
+          fingerprint: "contract-type-coupling-v1",
+          process: (current, _context, runtime) =>
+            Effect.sync(() =>
+              tuneTypeScriptTypeCoupling(current, runtime, {
+                severity: "info",
+                penaltyWeight: 0,
+                reason: "Project contract file intentionally aggregates type dependencies",
+                ruleId: "acme.type-coupling.contract.v1",
+                evidence: [{ kind: "path", value: current.value.file }],
+                metadata: { contract: true },
+              }),
+            ),
+        }),
+      ],
+    })
+    const context = makeResolvedCalibrationContext({
+      repoFacts,
+      activeModules: [module.activeModule],
+      processors: module.processors,
+    })
+
+    const result = await Effect.runPromise(
+      context.runSlot("typescript.type-coupling-policy", {
+        signalId: "TS-DE-01-type-level-coupling",
+        findingId: "/repo/src/contracts.ts",
+        file: "/repo/src/contracts.ts",
+        externalTypesReferenced: 12,
+        typesReferencedExternally: 2,
+        totalCoupling: 14,
+        outlierThreshold: 9,
+        visible: true,
+        severity: "warn",
+        penaltyWeight: 0.33,
+        factorPathPrefix: "type_coupling.src_contracts.ts",
+      }),
+    )
+
+    expect(result.value.severity).toBe("info")
+    expect(result.value.penaltyWeight).toBe(0)
+    expect(result.value.metadata).toMatchObject({ contract: true })
+    expect(result.decisions[0]).toMatchObject({
+      moduleId: "acme.project",
+      processorId: "contract-type-coupling",
+      slot: "typescript.type-coupling-policy",
+      action: "tune-type-coupling",
+      confidence: "high",
+      ruleId: "acme.type-coupling.contract.v1",
+      factorPaths: [
+        "type_coupling.src_contracts.ts.severity",
+        "type_coupling.src_contracts.ts.penalty_weight",
+      ],
     })
   })
 

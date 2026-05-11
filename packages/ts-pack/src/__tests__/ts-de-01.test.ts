@@ -3,6 +3,13 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Effect, Schema } from "effect"
+import {
+  appendCalibrationDecision,
+  CalibrationContextTag,
+  defineCalibrationProcessor,
+  makeResolvedCalibrationContext,
+  type ResolvedCalibrationContext,
+} from "@skastr0/pulsar-core/calibration"
 import { TsDe01 } from "../signals/ts-de-01-type-level-coupling.js"
 import type { TsDe01Output } from "../signals/ts-de-01-coupling-output.js"
 import { TsProjectLayer } from "../ts-project.js"
@@ -16,10 +23,15 @@ const writeTs = async (relPath: string, content: string): Promise<string> => {
   return full
 }
 
-const runCompute = async (config = TsDe01.defaultConfig): Promise<TsDe01Output> => {
-  const program = TsDe01.compute(config, new Map()).pipe(
-    Effect.provide(TsProjectLayer(repo)),
-  )
+const runCompute = async (
+  config = TsDe01.defaultConfig,
+  calibration?: ResolvedCalibrationContext,
+): Promise<TsDe01Output> => {
+  const base = TsDe01.compute(config, new Map()).pipe(Effect.provide(TsProjectLayer(repo)))
+  const program =
+    calibration === undefined
+      ? base
+      : base.pipe(Effect.provideService(CalibrationContextTag, calibration))
   return Effect.runPromise(program as Effect.Effect<TsDe01Output, unknown, never>)
 }
 
@@ -157,6 +169,81 @@ describe("TS-DE-01 (type-level coupling)", () => {
     const out = await runCompute()
     expect(TsDe01.score(out)).toBe(1)
     expect(TsDe01.diagnose(out)).toEqual([])
+  })
+
+  test("project modules can tune a specific module coupling finding with factor provenance", async () => {
+    for (const file of ["a", "b", "c", "d", "e"]) {
+      await writeTs(`src/${file}.ts`, `export interface ${file.toUpperCase()} {}\n`)
+    }
+    const hub = await writeTs(
+      "src/hub.ts",
+      [
+        "import type { A } from './a'",
+        "import type { B } from './b'",
+        "import type { C } from './c'",
+        "import type { D } from './d'",
+        "import type { E } from './e'",
+        "export type Hub = A & B & C & D & E",
+        "",
+      ].join("\n"),
+    )
+
+    const calibration = makeResolvedCalibrationContext({
+      repoFacts: {
+        repoRoot: repo,
+        fingerprint: "repo-facts-v1",
+        detectedTechnologies: ["typescript"],
+        sourceExtensions: [".ts"],
+      },
+      processors: [
+        defineCalibrationProcessor({
+          id: "contract-type-coupling",
+          moduleId: "acme.project",
+          moduleVersion: "1.0.0",
+          slot: "typescript.type-coupling-policy",
+          role: "factor-policy",
+          priority: 10,
+          fingerprint: "contract-type-coupling-v1",
+          process: (current) =>
+            Effect.succeed(
+              current.value.file === hub
+                ? appendCalibrationDecision(
+                    current,
+                    {
+                      moduleId: "acme.project",
+                      processorId: "contract-type-coupling",
+                      slot: "typescript.type-coupling-policy",
+                      action: "tune-type-coupling",
+                      confidence: "high",
+                      reason: "Fixture treats this hub as an intentional contract surface",
+                      ruleId: "acme.contract-type-coupling",
+                      factorPaths: [`${current.value.factorPathPrefix}.penalty_weight`],
+                      before: current.value,
+                      after: { ...current.value, penaltyWeight: 0, severity: "info" as const },
+                      evidence: [{ kind: "path", value: current.value.file }],
+                    },
+                    { ...current.value, penaltyWeight: 0, severity: "info" },
+                  )
+                : current,
+            ),
+        }),
+      ],
+    })
+
+    const out = await runCompute(TsDe01.defaultConfig, calibration)
+    const hubEntry = out.modules.find((module) => module.file === hub)
+
+    expect(hubEntry?.penaltyWeight).toBe(0)
+    expect(hubEntry?.policyDecisions?.[0]?.ruleId).toBe("acme.contract-type-coupling")
+    expect(TsDe01.score(out)).toBe(1)
+    expect(TsDe01.diagnose(out)).toEqual([])
+    expect(out.factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: `${hubEntry?.factorPathPrefix}.penalty_weight`,
+        value: 0,
+        source: "module",
+      }),
+    )
   })
 
   test("scores outgoing dependencies rather than incoming model fan-in", async () => {

@@ -38,8 +38,8 @@ export {
 } from "./helpers.js"
 
 export {
+  tuneTypeScriptTypeCoupling,
   tuneTypeScriptDependencyVersion,
-  type TuneTypeScriptDependencyVersionOptions,
 } from "./dependency-version-helper.js"
 
 export {
@@ -76,6 +76,7 @@ export {
   type TypeScriptImportBindingFact,
   type TypeScriptLocalBindingFact,
   type TypeScriptNoopClassificationValue,
+  type TypeScriptTypeCouplingPolicyValue,
   type TypeScriptUnsafeTypePolicyValue,
   type TypeScriptUnfinishedImplementationPolicyValue,
 } from "@skastr0/pulsar-core/calibration"

@@ -1,5 +1,6 @@
 import { summarize } from "@skastr0/pulsar-core/signal"
-import type { DistributionalSummary } from "@skastr0/pulsar-core/signal"
+import type { DistributionalSummary, SignalFactorLedger } from "@skastr0/pulsar-core/signal"
+import type { CalibrationDecision } from "@skastr0/pulsar-core/calibration"
 import { compareDescendingMetricByFile } from "./shared-rank-order.js"
 
 export interface CouplingCounterpart {
@@ -15,6 +16,11 @@ export interface ModuleTypeCoupling {
   readonly typesReferencedExternally: number
   readonly totalCoupling: number
   readonly counterparts: ReadonlyArray<CouplingCounterpart>
+  readonly visible?: boolean
+  readonly severity?: "info" | "warn" | "block"
+  readonly penaltyWeight?: number
+  readonly factorPathPrefix?: string
+  readonly policyDecisions?: ReadonlyArray<CalibrationDecision>
 }
 
 export interface TsDe01Output {
@@ -24,6 +30,8 @@ export interface TsDe01Output {
   readonly outlierThreshold: number
   readonly totalModules: number
   readonly diagnosticLimit: number
+  readonly calibrationDecisions?: ReadonlyArray<CalibrationDecision>
+  readonly factorLedger?: SignalFactorLedger
 }
 
 export type CouplingTable = Map<string, Map<string, Set<string>>>
