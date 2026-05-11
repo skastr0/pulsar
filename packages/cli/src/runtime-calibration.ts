@@ -5,7 +5,7 @@ import {
   makeResolvedCalibrationContext,
   type RepoFacts,
   type ResolvedCalibrationContext,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/calibration"
 import {
   decodeProjectModuleManifest,
   fingerprintProjectModuleManifest,

@@ -71,4 +71,4 @@ export {
   type TypeScriptLocalBindingFact,
   type TypeScriptNoopClassificationValue,
   type TypeScriptUnfinishedImplementationPolicyValue,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/calibration"

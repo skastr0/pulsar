@@ -3,7 +3,7 @@ import { dirname, isAbsolute, relative, resolve } from "node:path"
 import { readFile, realpath } from "node:fs/promises"
 import { pathToFileURL } from "node:url"
 import { Effect } from "effect"
-import type { ProjectModuleDescriptor } from "@skastr0/pulsar-core"
+import type { ProjectModuleDescriptor } from "@skastr0/pulsar-core/calibration"
 import {
   ProjectModuleLoadError,
   type ProjectModuleLoadOptions,

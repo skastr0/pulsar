@@ -10,6 +10,7 @@ import {
 } from "./routing-schema.js"
 
 export * from "./routing-schema.js"
+export { generateReviewPlan, type ReviewPlan } from "./review-plan.js"
 
 export class RoutingDetector {
   constructor(

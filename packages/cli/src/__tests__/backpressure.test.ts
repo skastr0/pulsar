@@ -4,7 +4,10 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { Effect } from "effect"
-import { createTimeSeriesServices, type TimeSeriesEntry } from "@skastr0/pulsar-core"
+import {
+  createTimeSeriesServices,
+  type TimeSeriesEntry,
+} from "@skastr0/pulsar-core/time-series"
 
 const binPath = resolve(import.meta.dir, "../../src/bin.ts")
 

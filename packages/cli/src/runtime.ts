@@ -1,22 +1,28 @@
 import { readFile } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import {
-  CalibrationContextTag,
-  InMemoryCacheLayer,
-  ReferenceDataTag,
+  decodePulsarVector,
+  type PulsarVector,
+} from "@skastr0/pulsar-core/vector"
+import {
+  collectWorktreeChangedHunks,
+  type Registry,
+  runSignal,
   ScoringEngineLayer,
   ScoringEngineTag,
-  SignalContextTag,
-  collectWorktreeChangedHunks,
-  createTimeSeriesServices,
-  decodePulsarVector,
+  type SignalRunResult,
+} from "@skastr0/pulsar-core/scoring"
+import { createTimeSeriesServices } from "@skastr0/pulsar-core/time-series"
+import {
   loadCanonicalReferenceDataEntries,
   makeReferenceData,
-  runSignal,
-  type Registry,
-  type SignalRunResult,
-  type PulsarVector,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/reference-data"
+import {
+  InMemoryCacheLayer,
+  ReferenceDataTag,
+  SignalContextTag,
+} from "@skastr0/pulsar-core/signal"
+import { CalibrationContextTag } from "@skastr0/pulsar-core/calibration"
 import { RustProjectLayer } from "@skastr0/pulsar-rs-pack"
 import { TsProjectLayer } from "@skastr0/pulsar-ts-pack"
 import { Effect, Layer } from "effect"

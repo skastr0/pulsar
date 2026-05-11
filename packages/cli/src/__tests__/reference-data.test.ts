@@ -9,7 +9,7 @@ import {
   decodeSchemaConventionsSync,
   loadCanonicalReferenceDataEntries,
   makeReferenceData,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/reference-data"
 import { Effect } from "effect"
 
 const binPath = resolve(import.meta.dir, "../../src/bin.ts")

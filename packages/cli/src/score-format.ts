@@ -1,4 +1,4 @@
-import type { Category } from "@skastr0/pulsar-core"
+import type { Category } from "@skastr0/pulsar-core/signal"
 
 export const CATEGORY_LABELS: Record<Category, string> = {
   "architectural-drift": "Architectural Drift",

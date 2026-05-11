@@ -3,17 +3,21 @@ import { Effect, Schema } from "effect"
 import {
   assertValidFactorDefinitions,
   applyFactorOverrides,
-  buildRegistry,
-  computeConfigHash,
   makeFactorEntry,
   makeFactorLedger,
   SignalFactorPolicyTag,
   overriddenFactorValue,
-  runSignal,
   validateFactorDefinitions,
+} from "../factors.js"
+import {
+  buildRegistry,
+  computeConfigHash,
+  runSignal,
+} from "../scoring.js"
+import {
   type Signal,
   type SignalFactorDefinition,
-} from "../index.js"
+} from "../signal-api.js"
 
 const FactorConfig = Schema.Struct({})
 type FactorConfig = typeof FactorConfig.Type

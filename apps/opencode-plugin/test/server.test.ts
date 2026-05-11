@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Effect } from "effect"
-import { createTimeSeriesServices, type TimeSeriesEntry } from "@skastr0/pulsar-core"
+import { createTimeSeriesServices, type TimeSeriesEntry } from "@skastr0/pulsar-core/time-series"
 import serverModule from "../src/server"
 
 const makeEntry = (score: number, message: string): TimeSeriesEntry => ({

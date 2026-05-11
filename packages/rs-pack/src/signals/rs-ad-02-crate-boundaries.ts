@@ -1,15 +1,19 @@
 import {
+  type Diagnostic,
+  type Signal,
+  SignalComputeError,
+} from "@skastr0/pulsar-core/signal"
+import {
+  type ReferenceData,
+  ReferenceDataTag,
+} from "@skastr0/pulsar-core/reference-data"
+import {
   Option,
   Effect,
 } from "effect"
 import {
   computeDiagnosticHash,
-  type Diagnostic,
-  type ReferenceData,
-  ReferenceDataTag,
-  type Signal,
-  SignalComputeError,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/reference-data"
 import {
   collectRustProjectFacts,
 } from "../rust-analysis.js"

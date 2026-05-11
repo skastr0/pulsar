@@ -1,12 +1,12 @@
-import { describe, expect, test } from "bun:test"
-import { mkdir, writeFile } from "node:fs/promises"
-import { join } from "node:path"
 import {
-  InMemoryCacheLayer,
   loadCanonicalReferenceDataEntries,
   makeReferenceData,
   ReferenceDataTag,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/reference-data"
+import { InMemoryCacheLayer } from "@skastr0/pulsar-core/signal"
+import { describe, expect, test } from "bun:test"
+import { mkdir, writeFile } from "node:fs/promises"
+import { join } from "node:path"
 import { Effect, Layer } from "effect"
 import { parseCargoMetadata } from "../cargo-metadata.js"
 import {

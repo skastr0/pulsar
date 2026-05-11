@@ -1,15 +1,15 @@
 import {
+  levenshteinDistance,
+  type Diagnostic,
+  type Signal,
+  SignalComputeError,
+} from "@skastr0/pulsar-core/signal"
+import { ReferenceDataTag } from "@skastr0/pulsar-core/reference-data"
+import {
   Option,
   Effect,
   Schema,
 } from "effect"
-import {
-  type Diagnostic,
-  levenshteinDistance,
-  ReferenceDataTag,
-  type Signal,
-  SignalComputeError,
-} from "@skastr0/pulsar-core"
 import { collectRustProjectFacts, tokenizeIdentifier } from "../rust-analysis.js"
 import { RustProjectTag } from "../project.js"
 import { isExcluded } from "./shared-globs.js"

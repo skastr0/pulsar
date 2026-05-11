@@ -1,9 +1,9 @@
 import type {
-  CalibrationDecision,
   Diagnostic,
   SignalFactorLedger,
   SignalFactorLedgerEntry,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/signal"
+import type { CalibrationDecision } from "@skastr0/pulsar-core/calibration"
 import {
   diagnosticDetailLines,
   diagnosticLocation,

@@ -3,7 +3,7 @@ import {
   type Diagnostic,
   type Signal,
   SignalComputeError,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
 import { RustProjectTag } from "../project.js"
 import { parseRustFile } from "../syn-walker.js"

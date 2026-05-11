@@ -1,12 +1,14 @@
 import {
-  CATEGORIES,
   explainAiAssistedMode,
-  timeSeriesConfigOf,
-  type Category,
-  type ObserverOutput,
-  type Registry,
   type PulsarVector,
-} from "@skastr0/pulsar-core"
+  timeSeriesConfigOf,
+} from "@skastr0/pulsar-core/vector"
+import { type ObserverOutput } from "@skastr0/pulsar-core/observer"
+import { type Registry } from "@skastr0/pulsar-core/scoring"
+import {
+  CATEGORIES,
+  type Category,
+} from "@skastr0/pulsar-core/signal"
 import { Effect } from "effect"
 import {
   buildPulsarRegistry,

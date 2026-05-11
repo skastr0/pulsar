@@ -1,5 +1,11 @@
-import { Effect, Schema } from "effect"
-import type { Diagnostic, Signal } from "@skastr0/pulsar-core"
+import {
+  type Diagnostic,
+  type Signal,
+} from "@skastr0/pulsar-core/signal"
+import {
+  Effect,
+  Schema,
+} from "effect"
 
 export const Shared06PrDepDeltaConfig = Schema.Struct({
   top_n_diagnostics: Schema.Number,

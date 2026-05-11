@@ -4,8 +4,10 @@ import {
   compareToBaseline,
   createBaseline,
   decodeBaselineSync,
+} from "../scoring.js"
+import {
   type HardGateViolation,
-} from "../index.js"
+} from "../observer.js"
 
 const makeViolation = (opts: {
   readonly signalId: string

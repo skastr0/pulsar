@@ -1,10 +1,10 @@
+import { createTimeSeriesServices } from "@skastr0/pulsar-core/time-series"
 import {
-  CATEGORIES,
-  createTimeSeriesServices,
+  type BackpressureOutput,
   evaluateBackpressure,
   evaluateBackpressureTrend,
-  type BackpressureOutput,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/backpressure"
+import { CATEGORIES } from "@skastr0/pulsar-core/signal"
 import { Effect } from "effect"
 import { buildPulsarRegistry, resolveRepoRoot } from "./runtime.js"
 import { discoverPulsarVector } from "./vector-discovery.js"

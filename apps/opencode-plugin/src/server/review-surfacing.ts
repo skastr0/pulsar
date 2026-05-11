@@ -1,5 +1,7 @@
 import { isAbsolute, relative } from "node:path"
-import type { Diagnostic, ObserverOutput, ReviewPlan, RoutingDiff } from "@skastr0/pulsar-core"
+import type { ObserverOutput } from "@skastr0/pulsar-core/observer"
+import type { ReviewPlan, RoutingDiff } from "@skastr0/pulsar-core/routing"
+import type { Diagnostic } from "@skastr0/pulsar-core/signal"
 
 export interface ScoreDelta {
   readonly category: string

@@ -2,7 +2,7 @@ import {
   type Diagnostic,
   type Signal,
   SignalComputeError,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
 import { collectRustProjectFacts, type RustAnalysis, type RustItemFact } from "../rust-analysis.js"
 import { RustProjectTag, type RustProject } from "../project.js"

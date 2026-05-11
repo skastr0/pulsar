@@ -1,11 +1,11 @@
+import { type PulsarVector } from "@skastr0/pulsar-core/vector"
+import { type ObserverOutput } from "@skastr0/pulsar-core/observer"
 import {
+  type BaselineComparison,
   compareToBaseline,
   computeObserverConfigHash,
-  type BaselineComparison,
-  type ObserverOutput,
-  type PulsarVector,
   type Registry,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/scoring"
 import { Effect } from "effect"
 import { readBaselineFile, resolveBaselinePath } from "./baseline-file.js"
 import type { ScoreOptions } from "./score.js"

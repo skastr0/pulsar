@@ -3,14 +3,13 @@ import { constants } from "node:fs"
 import { relative, resolve } from "node:path"
 import { Effect } from "effect"
 import {
-  CATEGORIES,
-  createTimeSeriesServices,
   evaluateBackpressure,
   projectObserverForAgent,
   type BackpressureOutput,
-  type PulsarVector,
-  type TimeSeriesEntry,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/backpressure"
+import { CATEGORIES } from "@skastr0/pulsar-core/signal"
+import { createTimeSeriesServices, type TimeSeriesEntry } from "@skastr0/pulsar-core/time-series"
+import type { PulsarVector } from "@skastr0/pulsar-core/vector"
 
 export interface AgentConstraintDecision {
   readonly allowed: boolean

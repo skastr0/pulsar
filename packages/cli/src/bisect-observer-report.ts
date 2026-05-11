@@ -1,7 +1,5 @@
-import {
-  type Category,
-  type Registry,
-} from "@skastr0/pulsar-core"
+import { type Registry } from "@skastr0/pulsar-core/scoring"
+import { type Category } from "@skastr0/pulsar-core/signal"
 import {
   findCulprits,
   findDriftCulprits,

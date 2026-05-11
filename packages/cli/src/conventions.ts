@@ -1,10 +1,10 @@
 import {
+  type BoundaryConvention,
   CANONICAL_CONVENTIONS_RELATIVE_PATH,
   decodeSchemaConventionsSync,
-  type BoundaryConvention,
   type NamingConventions,
   type SchemaConventions,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/reference-data"
 import { existsSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import { join, relative } from "node:path"

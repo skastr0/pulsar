@@ -1,11 +1,15 @@
 import type { Hooks } from "@opencode-ai/plugin"
 import type {
   ObserverOutput,
+} from "@skastr0/pulsar-core/observer"
+import type {
   PulsarVector,
+} from "@skastr0/pulsar-core/vector"
+import type {
   ReviewPlan,
   RoutingDiff,
   RoutingOutput,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/routing"
 import type { PulsarAnnotation } from "./review-surfacing"
 
 export type ToolAfterInput = Parameters<NonNullable<Hooks["tool.execute.after"]>>[0]

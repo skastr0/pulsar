@@ -1,4 +1,5 @@
-import { withConfigFactorLedger, type AnySignal } from "@skastr0/pulsar-core"
+import { type AnySignal } from "@skastr0/pulsar-core/signal"
+import { withConfigFactorLedger } from "@skastr0/pulsar-core/factors"
 import { RsAd01 } from "./signals/rs-ad-01-visibility-surface.js"
 import { RsAd02 } from "./signals/rs-ad-02-crate-boundaries.js"
 import { RsAd03 } from "./signals/rs-ad-03-circular-crate-deps.js"

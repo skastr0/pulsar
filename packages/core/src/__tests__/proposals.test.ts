@@ -5,9 +5,13 @@ import {
   derivePassiveVectorProposal,
   deriveRevealedPreferenceProposal,
   resolvePulsarVectorProposal,
+} from "../vector.js"
+import {
   type ObserverOutput,
+} from "../observer.js"
+import {
   type SignalRunResult,
-} from "../index.js"
+} from "../scoring.js"
 
 const emptyCategories = () => ({
   "architectural-drift": { score: 1, signals: {}, signalCount: 0, activeSignalIds: [] },

@@ -1,9 +1,9 @@
-import { readFile } from "node:fs/promises"
 import {
   type Diagnostic,
   type Signal,
   SignalComputeError,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/signal"
+import { readFile } from "node:fs/promises"
 import { Effect, Schema } from "effect"
 import {
   findDuplicateCargoLockPackages,

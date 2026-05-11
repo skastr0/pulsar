@@ -1,4 +1,4 @@
-import type { Diagnostic, DistributionalSummary, Signal } from "@skastr0/pulsar-core"
+import type { Diagnostic, DistributionalSummary, Signal } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
 import { MarkdownProjectTag } from "../project.js"
 

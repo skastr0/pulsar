@@ -1,9 +1,11 @@
 import {
-  CATEGORIES,
-  type Category,
   type MinimumDimension,
   type ObserverOutput,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/observer"
+import {
+  CATEGORIES,
+  type Category,
+} from "@skastr0/pulsar-core/signal"
 import type {
   ObserverCommitMinimum,
   ObserverCurveSample,

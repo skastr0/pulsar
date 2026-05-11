@@ -1,10 +1,10 @@
+import { type AnySignal } from "@skastr0/pulsar-core/signal"
 import {
   Shared02BusFactor,
   Shared03ChurnRate,
   SharedChurn01,
-  withConfigFactorLedger,
-  type AnySignal,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/shared-signals"
+import { withConfigFactorLedger } from "@skastr0/pulsar-core/factors"
 import { Shared05Suppression } from "./shared-05-suppression.js"
 import { Shared06PrDepDelta } from "./shared-06-pr-dep-delta.js"
 

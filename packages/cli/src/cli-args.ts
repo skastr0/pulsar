@@ -1,4 +1,7 @@
-import { CATEGORIES, type Category } from "@skastr0/pulsar-core"
+import {
+  CATEGORIES,
+  type Category,
+} from "@skastr0/pulsar-core/signal"
 import type { FirstCrossingQuery } from "./bisect.js"
 import { withCliProgress } from "./progress.js"
 

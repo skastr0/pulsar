@@ -10,6 +10,50 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./backpressure": {
+      "types": "./dist/backpressure.d.ts",
+      "default": "./dist/backpressure.js"
+    },
+    "./calibration": {
+      "types": "./dist/calibration.d.ts",
+      "default": "./dist/calibration.js"
+    },
+    "./factors": {
+      "types": "./dist/factors.d.ts",
+      "default": "./dist/factors.js"
+    },
+    "./observer": {
+      "types": "./dist/observer.d.ts",
+      "default": "./dist/observer.js"
+    },
+    "./reference-data": {
+      "types": "./dist/reference-data.d.ts",
+      "default": "./dist/reference-data.js"
+    },
+    "./routing": {
+      "types": "./dist/routing.d.ts",
+      "default": "./dist/routing.js"
+    },
+    "./scoring": {
+      "types": "./dist/scoring.d.ts",
+      "default": "./dist/scoring.js"
+    },
+    "./shared-signals": {
+      "types": "./dist/shared-signals.d.ts",
+      "default": "./dist/shared-signals.js"
+    },
+    "./signal": {
+      "types": "./dist/signal-api.d.ts",
+      "default": "./dist/signal-api.js"
+    },
+    "./time-series": {
+      "types": "./dist/time-series.d.ts",
+      "default": "./dist/time-series.js"
+    },
+    "./vector": {
+      "types": "./dist/vector.d.ts",
+      "default": "./dist/vector.js"
     }
   },
   "files": [

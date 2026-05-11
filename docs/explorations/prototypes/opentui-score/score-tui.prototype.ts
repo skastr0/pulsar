@@ -9,13 +9,15 @@
 
 import {
   CATEGORIES,
+  type Category,
+} from "@skastr0/pulsar-core/signal"
+import type { ObserverOutput } from "@skastr0/pulsar-core/observer"
+import type { Registry } from "@skastr0/pulsar-core/scoring"
+import {
   explainAiAssistedMode,
   timeSeriesConfigOf,
-  type Category,
-  type ObserverOutput,
   type PulsarVector,
-  type Registry,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/vector"
 import type * as OpenTui from "@opentui/core"
 import { Effect } from "effect"
 import { join, relative } from "node:path"

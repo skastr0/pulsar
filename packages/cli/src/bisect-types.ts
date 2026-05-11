@@ -1,10 +1,10 @@
+import type { PulsarVector } from "@skastr0/pulsar-core/vector"
+import type { ObserverOutput } from "@skastr0/pulsar-core/observer"
 import type {
-  Category,
-  ObserverOutput,
-  PulsarVector,
   Registry,
   SignalRunResult,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/scoring"
+import type { Category } from "@skastr0/pulsar-core/signal"
 import type { Effect } from "effect"
 import type {
   BisectSamplingMode,

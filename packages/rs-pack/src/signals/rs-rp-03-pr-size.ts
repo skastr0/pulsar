@@ -1,11 +1,11 @@
-import { join } from "node:path"
 import {
   SignalContextTag,
   type SignalContext,
   type Diagnostic,
   type Signal,
   SignalComputeError,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/signal"
+import { join } from "node:path"
 import { Effect, Schema } from "effect"
 import { simpleGit } from "simple-git"
 import { RustProjectTag, type RustProject } from "../project.js"

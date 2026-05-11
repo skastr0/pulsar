@@ -3,10 +3,10 @@ import { rm } from "node:fs/promises"
 import { join, relative } from "node:path"
 import {
   applyPulsarVectorProposal,
+  type PulsarVectorProposal,
   resolvePulsarVectorProposal,
   validateVectorAgainstRegistry,
-  type PulsarVectorProposal,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/vector"
 import { Effect } from "effect"
 import { buildPulsarRegistry, resolveRepoRoot } from "./runtime.js"
 import { renderVectorDiff, summarizeVectorDiff } from "./vector-format.js"

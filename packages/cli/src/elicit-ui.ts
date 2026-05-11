@@ -2,7 +2,7 @@ import {
   type PulsarVector,
   type PulsarVectorProposal,
   type QuizItem,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/vector"
 import { renderVectorDiff, summarizeVectorDiff } from "./vector-format.js"
 import type { RevealedPreferenceBootstrapReport } from "./elicit-types.js"
 

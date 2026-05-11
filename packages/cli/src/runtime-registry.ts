@@ -1,10 +1,12 @@
 import {
-  buildRegistry,
   isActive as vectorIsActive,
-  validateVectorAgainstRegistry,
   type PulsarVector,
+  validateVectorAgainstRegistry,
+} from "@skastr0/pulsar-core/vector"
+import {
+  buildRegistry,
   type Registry,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/scoring"
 import { RS_PACK_SIGNALS } from "@skastr0/pulsar-rs-pack"
 import { SHARED_SIGNALS } from "@skastr0/pulsar-shared-signals"
 import { TS_PACK_SIGNALS } from "@skastr0/pulsar-ts-pack"

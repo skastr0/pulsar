@@ -3,13 +3,15 @@ import { appendFile, mkdir, writeFile } from "node:fs/promises"
 import { join, relative } from "node:path"
 import {
   RoutingDetector,
-  deriveAiAssistedModeProposal,
-  derivePassiveVectorProposal,
   generateReviewPlan,
-  type ObserverOutput,
   type RoutingDiff,
   type SignalChange,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/routing"
+import {
+  deriveAiAssistedModeProposal,
+  derivePassiveVectorProposal,
+} from "@skastr0/pulsar-core/vector"
+import type { ObserverOutput } from "@skastr0/pulsar-core/observer"
 import { Effect } from "effect"
 import { observeCurrentWorktree } from "./pulsar-observer"
 import { createReadyAnnotation } from "./review-surfacing"

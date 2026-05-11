@@ -1,9 +1,9 @@
+import { type AiAssistedModeExplanation } from "@skastr0/pulsar-core/vector"
+import { type ObserverOutput } from "@skastr0/pulsar-core/observer"
 import {
   CATEGORIES,
-  type AiAssistedModeExplanation,
   type Category,
-  type ObserverOutput,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/signal"
 import type { CiAssessment } from "./score.js"
 import { formatCiBaselineLine, renderGateStatus } from "./score-ci-output.js"
 import {

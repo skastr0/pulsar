@@ -6,16 +6,18 @@ import {
   ScoringEngineLayer,
   ScoringEngineTag,
   buildRegistry,
-  createTimeSeriesServices,
+  type Registry,
+} from "@skastr0/pulsar-core/scoring"
+import type { ObserverOutput } from "@skastr0/pulsar-core/observer"
+import type { ChangedHunk } from "@skastr0/pulsar-core/signal"
+import { createTimeSeriesServices } from "@skastr0/pulsar-core/time-series"
+import {
   decodePulsarVector,
   isActive as vectorIsActive,
   timeSeriesConfigOf,
   validateVectorAgainstRegistry,
-  type ObserverOutput,
-  type Registry,
-  type ChangedHunk,
   type PulsarVector,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/vector"
 import { RS_PACK_SIGNALS, RustProjectLayer } from "@skastr0/pulsar-rs-pack"
 import { SHARED_SIGNALS } from "@skastr0/pulsar-shared-signals"
 import { TS_PACK_SIGNALS, TsProjectLayer } from "@skastr0/pulsar-ts-pack"

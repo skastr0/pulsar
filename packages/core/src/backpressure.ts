@@ -3,6 +3,8 @@ import { evaluateGoodhart, type GoodhartAssessment } from "./goodhart.js"
 import { type TimeSeriesEntry } from "./time-series.js"
 import { backpressureConfigOf, type BackpressureConfig, type PulsarVector } from "./vector.js"
 
+export { projectObserverForAgent } from "./goodhart.js"
+
 export type BackpressureLevel = "green" | "yellow" | "red"
 
 export interface CategoryBackpressure {

@@ -2,7 +2,7 @@ import {
   CANONICAL_GLOSSARY_RELATIVE_PATH,
   decodeGlossaryDraftSync,
   type GlossaryDraft,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/reference-data"
 import { Effect } from "effect"
 import {
   applyAutoDecisions,

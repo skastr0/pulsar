@@ -4,16 +4,16 @@ import { stdin as input, stdout as output } from "node:process"
 import { createInterface, type Interface as ReadlineInterface } from "node:readline/promises"
 import { join, resolve } from "node:path"
 import {
-  QuizResponse,
   inferPulsarVectorFromQuiz,
   loadQuizItems,
-  selectNextQuizItem,
-  summarizeQuizTradeoff,
   type PulsarVector,
   type QuizItem,
+  QuizResponse,
   type QuizSession,
-  type Registry,
-} from "@skastr0/pulsar-core"
+  selectNextQuizItem,
+  summarizeQuizTradeoff,
+} from "@skastr0/pulsar-core/vector"
+import { type Registry } from "@skastr0/pulsar-core/scoring"
 import { Effect, Schema } from "effect"
 import { buildPulsarRegistry, resolveRepoRoot } from "./runtime.js"
 import { discoverPulsarVector } from "./vector-discovery.js"

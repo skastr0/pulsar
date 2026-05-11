@@ -4,7 +4,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { pathToFileURL } from "node:url"
-import { ObserverOutput as ObserverOutputSchema, createTimeSeriesServices } from "@skastr0/pulsar-core"
+import { ObserverOutput as ObserverOutputSchema } from "@skastr0/pulsar-core/observer"
+import { createTimeSeriesServices } from "@skastr0/pulsar-core/time-series"
 import { Effect, Schema } from "effect"
 
 const binPath = resolve(import.meta.dir, "../../src/bin.ts")

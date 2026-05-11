@@ -1,5 +1,5 @@
 import { relative } from "node:path"
-import type { ChangedHunk } from "@skastr0/pulsar-core"
+import type { ChangedHunk } from "@skastr0/pulsar-core/signal"
 import type { RustManifestInfo, RustProject } from "../project.js"
 import type { RustSyntaxNode } from "../syn-walker.js"
 import { normalizePath } from "./shared-globs.js"

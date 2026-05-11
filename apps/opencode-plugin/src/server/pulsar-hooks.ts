@@ -1,8 +1,10 @@
 import {
   diffTimeIntegrationEnabled,
   type PulsarVector,
-  type RoutingDiff,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/vector"
+import type {
+  RoutingDiff,
+} from "@skastr0/pulsar-core/routing"
 import { Effect } from "effect"
 import { loadPulsarVectorForWorktree } from "./pulsar-observer"
 import { defaultPulsarAnalyzer } from "./pulsar-hook-analyzer"

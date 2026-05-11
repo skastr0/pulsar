@@ -1,5 +1,5 @@
 import { relative } from "node:path"
-import type { GlossaryIdentifierKind } from "@skastr0/pulsar-core"
+import type { GlossaryIdentifierKind } from "@skastr0/pulsar-core/reference-data"
 import {
   inferCasingPattern,
   splitIdentifierTokens,

@@ -1,7 +1,7 @@
 import {
   CATEGORIES,
   type Category,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/signal"
 import type {
   ObserverCommitEntry,
   ObserverCurveSet,

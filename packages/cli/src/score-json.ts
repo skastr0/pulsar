@@ -1,7 +1,7 @@
 import {
-  toObserverJson,
   type ObserverOutput,
-} from "@skastr0/pulsar-core"
+  toObserverJson,
+} from "@skastr0/pulsar-core/observer"
 import type { DiscoveredPulsarVector } from "./vector-discovery.js"
 
 export const toScoreJson = (

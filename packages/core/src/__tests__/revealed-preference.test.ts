@@ -5,7 +5,7 @@ import {
   inferRevealedPreferencePairwise,
   inferRevealedPreferencePriorAdjusted,
   type RevealedPreferenceSample,
-} from "../index.js"
+} from "../vector.js"
 
 describe("revealed preference bootstrap prototypes", () => {
   const samples: ReadonlyArray<RevealedPreferenceSample> = [

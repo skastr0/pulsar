@@ -3,7 +3,11 @@ import { spawnSync } from "node:child_process"
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { loadQuizItems, loadPulsarVectorPresets, validateVectorAgainstRegistry } from "@skastr0/pulsar-core"
+import {
+  loadPulsarVectorPresets,
+  loadQuizItems,
+  validateVectorAgainstRegistry,
+} from "@skastr0/pulsar-core/vector"
 import { Effect } from "effect"
 import { buildPulsarRegistry } from "../runtime.js"
 

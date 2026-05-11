@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { isAbsolute, relative } from "node:path"
-import type { RoutingDiff } from "@skastr0/pulsar-core"
+import type { RoutingDiff } from "@skastr0/pulsar-core/routing"
 
 export const EDIT_TOOLS = new Set(["write", "edit", "apply_patch", "morph-mcp_edit_file"])
 

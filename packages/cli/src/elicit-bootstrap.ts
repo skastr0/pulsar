@@ -1,14 +1,14 @@
 import { join, relative } from "node:path"
 import {
-  MINIMUM_REVEALED_PREFERENCE_SAMPLES,
   deriveRevealedPreferenceProposal,
   inferRevealedPreferencePairwise,
   inferRevealedPreferencePriorAdjusted,
   loadPulsarVectorPresetById,
-  validateVectorAgainstRegistry,
+  MINIMUM_REVEALED_PREFERENCE_SAMPLES,
   type PulsarVector,
   type PulsarVectorProposal as PulsarVectorProposalType,
-} from "@skastr0/pulsar-core"
+  validateVectorAgainstRegistry,
+} from "@skastr0/pulsar-core/vector"
 import { Effect } from "effect"
 import { buildPulsarRegistry, resolveRepoRoot } from "./runtime.js"
 import { discoverPulsarVector } from "./vector-discovery.js"

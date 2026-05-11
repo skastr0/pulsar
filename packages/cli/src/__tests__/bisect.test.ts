@@ -3,7 +3,8 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { spawnSync } from "node:child_process"
-import { CATEGORIES, createTimeSeriesServices } from "@skastr0/pulsar-core"
+import { createTimeSeriesServices } from "@skastr0/pulsar-core/time-series"
+import { CATEGORIES } from "@skastr0/pulsar-core/signal"
 import { Effect, Exit } from "effect"
 import {
   chooseAdaptiveMidpoint,

@@ -1,9 +1,9 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import {
-  decodeBaseline,
   type Baseline,
-} from "@skastr0/pulsar-core"
+  decodeBaseline,
+} from "@skastr0/pulsar-core/scoring"
 import { Effect } from "effect"
 
 const BASELINE_RELATIVE_PATH = ".pulsar/baseline.json" as const

@@ -3,7 +3,9 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { Effect } from "effect"
-import { generateReviewPlan, type ObserverOutput, type ReviewPlan, type RoutingDiff, type RoutingOutput, type PulsarVector } from "@skastr0/pulsar-core"
+import type { ObserverOutput } from "@skastr0/pulsar-core/observer"
+import { generateReviewPlan, type ReviewPlan, type RoutingDiff, type RoutingOutput } from "@skastr0/pulsar-core/routing"
+import type { PulsarVector } from "@skastr0/pulsar-core/vector"
 import {
   afterToolExecute,
   createPulsarState,

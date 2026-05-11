@@ -1,11 +1,11 @@
-import { readFile } from "node:fs/promises"
 import {
-  SignalContextTag,
   parseBypasses,
+  SignalContextTag,
   type Diagnostic,
   type Signal,
   SignalComputeError,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/signal"
+import { readFile } from "node:fs/promises"
 import { Effect, Schema } from "effect"
 import { RustProjectTag } from "../project.js"
 import { parseRustFile } from "../syn-walker.js"

@@ -1,4 +1,7 @@
-import { weightOf, type PulsarVector } from "@skastr0/pulsar-core"
+import {
+  type PulsarVector,
+  weightOf,
+} from "@skastr0/pulsar-core/vector"
 
 export interface VectorDiffSummary {
   readonly weightChanges: ReadonlyArray<string>

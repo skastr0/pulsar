@@ -2,14 +2,14 @@ import { existsSync } from "node:fs"
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 import {
-  PulsarVectorProposal,
   decodeQuizSession,
-  validateVectorAgainstRegistry,
   type PulsarVector,
+  PulsarVectorProposal,
   type PulsarVectorProposal as PulsarVectorProposalType,
   type QuizSession,
-  type Registry,
-} from "@skastr0/pulsar-core"
+  validateVectorAgainstRegistry,
+} from "@skastr0/pulsar-core/vector"
+import { type Registry } from "@skastr0/pulsar-core/scoring"
 import { Effect, Schema } from "effect"
 import { loadPulsarVectorFromPath } from "./runtime.js"
 import { discoverPulsarVector } from "./vector-discovery.js"

@@ -15,7 +15,7 @@ import {
   type ProjectModuleDescriptor,
   type ProjectModuleScope,
   type ResolvedCalibrationContext,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/calibration"
 
 export interface ProjectModuleProcessorDefinition<Slot extends CalibrationSlotId> {
   readonly id: string

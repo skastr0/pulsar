@@ -1,9 +1,9 @@
 import {
-  computeDiagnosticHash,
   type Diagnostic,
   type Signal,
   SignalComputeError,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/signal"
+import { computeDiagnosticHash } from "@skastr0/pulsar-core/reference-data"
 import { Effect, Schema } from "effect"
 import {
   type CargoMetadataPackage,

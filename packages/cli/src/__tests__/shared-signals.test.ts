@@ -4,14 +4,16 @@ import { join } from "node:path"
 import { spawnSync } from "node:child_process"
 import { describe, expect, test } from "bun:test"
 import {
+  observe,
+  type ObserverOutput,
+} from "@skastr0/pulsar-core/observer"
+import { buildRegistry } from "@skastr0/pulsar-core/scoring"
+import { makeReferenceData } from "@skastr0/pulsar-core/reference-data"
+import {
   InMemoryCacheLayer,
   ReferenceDataTag,
   SignalContextTag,
-  buildRegistry,
-  makeReferenceData,
-  observe,
-  type ObserverOutput,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/signal"
 import { RustProjectLayer, RS_PACK_SIGNALS } from "@skastr0/pulsar-rs-pack"
 import { SHARED_SIGNALS } from "@skastr0/pulsar-shared-signals"
 import { TsProjectLayer, TS_PACK_SIGNALS } from "@skastr0/pulsar-ts-pack"

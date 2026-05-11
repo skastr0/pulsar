@@ -1,12 +1,15 @@
-import { access, readFile } from "node:fs/promises"
-import { join } from "node:path"
-import { execFile } from "node:child_process"
-import { promisify } from "node:util"
 import {
   type Diagnostic,
   type Signal,
   SignalComputeError,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/signal"
+import {
+  access,
+  readFile,
+} from "node:fs/promises"
+import { join } from "node:path"
+import { execFile } from "node:child_process"
+import { promisify } from "node:util"
 import { Effect, Schema } from "effect"
 import { RustProjectTag, type RustManifestInfo } from "../project.js"
 

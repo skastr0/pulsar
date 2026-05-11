@@ -1,11 +1,9 @@
+import { summarize } from "@skastr0/pulsar-core/signal"
+import { buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { mkdir, writeFile } from "node:fs/promises"
 import { describe, expect, test } from "bun:test"
-import {
-  buildRegistry,
-  summarize,
-} from "@skastr0/pulsar-core"
 import { Effect } from "effect"
 import { SHARED_SIGNALS } from "@skastr0/pulsar-shared-signals"
 import { TS_PACK_SIGNALS } from "@skastr0/pulsar-ts-pack"

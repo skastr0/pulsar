@@ -1,11 +1,11 @@
 import {
-  QuizResponse,
-  type ObserverOutput,
+  type PulsarVector,
   type QuizItem,
+  QuizResponse,
   type QuizSession,
   type RevealedPreferenceSample,
-  type PulsarVector,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/vector"
+import { type ObserverOutput } from "@skastr0/pulsar-core/observer"
 
 export interface ElicitCommandOptions {
   readonly action: "quiz" | "bootstrap" | "review" | "accept" | "reject"

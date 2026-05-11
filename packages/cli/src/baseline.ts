@@ -2,7 +2,7 @@ import {
   baselineViolationCount,
   computeObserverConfigHash,
   createBaseline,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/scoring"
 import { Effect } from "effect"
 import { readBaselineFile, resolveBaselinePath, writeBaselineFile } from "./baseline-file.js"
 import { buildPulsarRegistry, observeWorktree, readHeadSha, resolveRepoRoot } from "./runtime.js"

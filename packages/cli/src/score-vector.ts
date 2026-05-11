@@ -1,8 +1,6 @@
-import {
-  type Category,
-  type PulsarVector,
-  type Registry,
-} from "@skastr0/pulsar-core"
+import { type PulsarVector } from "@skastr0/pulsar-core/vector"
+import { type Registry } from "@skastr0/pulsar-core/scoring"
+import { type Category } from "@skastr0/pulsar-core/signal"
 
 export const narrowVectorToCategory = (
   registry: Registry,

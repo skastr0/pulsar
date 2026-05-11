@@ -1,4 +1,4 @@
-import type { ObserverOutput } from "@skastr0/pulsar-core"
+import type { ObserverOutput } from "@skastr0/pulsar-core/observer"
 import { fixedWidthLabel, formatDuration } from "./score-format.js"
 
 export const pushRuntimeProfile = (

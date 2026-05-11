@@ -1,10 +1,10 @@
 import {
+  type CanonicalGlossaryTerm,
   decodeGlossaryDraftSync,
   decodeGlossarySync,
-  type CanonicalGlossaryTerm,
   type GlossaryDraft,
   type GlossaryProvenance,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/reference-data"
 import { Effect } from "effect"
 import type { IdentifierOccurrence } from "./identifier-analysis.js"
 import { GLOSSARY_DRAFT_RELATIVE_PATH } from "./reference-data-file.js"

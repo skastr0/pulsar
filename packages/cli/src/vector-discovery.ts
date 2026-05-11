@@ -2,10 +2,10 @@ import { existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { join, resolve } from "node:path"
 import {
-  validateVectorAgainstRegistry,
-  type Registry,
   type PulsarVector,
-} from "@skastr0/pulsar-core"
+  validateVectorAgainstRegistry,
+} from "@skastr0/pulsar-core/vector"
+import { type Registry } from "@skastr0/pulsar-core/scoring"
 import { Effect } from "effect"
 import { loadPulsarVectorFromPath, resolveRepoRoot } from "./runtime.js"
 

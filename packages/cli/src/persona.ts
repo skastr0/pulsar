@@ -5,11 +5,11 @@ import {
   appendVectorProvenance,
   loadPulsarVectorPresetById,
   loadPulsarVectorPresets,
+  type PulsarVector,
   summarizePulsarVectorPresets,
   validateVectorAgainstRegistry,
-  type PulsarVector,
-  type Registry,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/vector"
+import { type Registry } from "@skastr0/pulsar-core/scoring"
 import { Effect } from "effect"
 import { buildPulsarRegistry } from "./runtime.js"
 import { discoverPulsarVector, type DiscoveredPulsarVector } from "./vector-discovery.js"

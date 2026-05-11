@@ -1,4 +1,7 @@
-import type { Diagnostic, Signal } from "@skastr0/pulsar-core"
+import {
+  type Diagnostic,
+  type Signal,
+} from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
 import type { SharedChurn01Output } from "./shared-churn-01.js"
 import type { RsLd05Output } from "./rs-ld-05-complexity.js"

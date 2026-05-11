@@ -1,4 +1,4 @@
-import type { ObserverOutput } from "@skastr0/pulsar-core"
+import type { ObserverOutput } from "@skastr0/pulsar-core/observer"
 import { formatLocation } from "./score-format.js"
 import type { CiAssessment } from "./score.js"
 

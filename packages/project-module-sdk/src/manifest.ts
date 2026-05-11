@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { hashCalibrationValue } from "@skastr0/pulsar-core"
+import { hashCalibrationValue } from "@skastr0/pulsar-core/calibration"
 
 const NonEmptyString = Schema.String.pipe(Schema.pattern(/.+/))
 
@@ -88,4 +88,3 @@ const moduleRefTarget = (ref: ProjectModuleRef): string => {
       return ref.packageName
   }
 }
-

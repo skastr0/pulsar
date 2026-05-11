@@ -1,4 +1,4 @@
-import type { AnySignal } from "@skastr0/pulsar-core"
+import type { AnySignal } from "@skastr0/pulsar-core/signal"
 import { MarkdownWordCount } from "./signals/md-ld-01-word-count.js"
 import { MarkdownHeadingStructure } from "./signals/md-ld-02-heading-structure.js"
 
@@ -10,7 +10,7 @@ import { MarkdownHeadingStructure } from "./signals/md-ld-02-heading-structure.j
  * 
  * Usage in a pulsar runtime:
  * ```typescript
- * import { buildRegistry } from "@skastr0/pulsar-core"
+ * import { buildRegistry } from "@skastr0/pulsar-core/scoring"
  * import { TS_PACK_SIGNALS } from "@skastr0/pulsar-ts-pack"
  * import { MARKDOWN_SIGNALS } from "pulsar-signal-markdown"
  * 

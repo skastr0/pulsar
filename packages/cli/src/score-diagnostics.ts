@@ -1,4 +1,5 @@
-import type { Diagnostic, ObserverOutput } from "@skastr0/pulsar-core"
+import type { ObserverOutput } from "@skastr0/pulsar-core/observer"
+import type { Diagnostic } from "@skastr0/pulsar-core/signal"
 import { isAbsolute, relative } from "node:path"
 import { fixedWidthLabel } from "./score-format.js"
 

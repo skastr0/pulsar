@@ -2,7 +2,7 @@ import { Effect } from "effect"
 import {
   activateProjectModule,
   type ProjectModuleDescriptor,
-} from "@skastr0/pulsar-core"
+} from "@skastr0/pulsar-core/calibration"
 import {
   defineProjectModule,
   isDefinedProjectModule,

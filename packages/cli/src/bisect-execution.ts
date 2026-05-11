@@ -1,9 +1,7 @@
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
-import {
-  type ObserverOutput,
-  type SignalRunResult,
-} from "@skastr0/pulsar-core"
+import { type ObserverOutput } from "@skastr0/pulsar-core/observer"
+import { type SignalRunResult } from "@skastr0/pulsar-core/scoring"
 import { Effect } from "effect"
 import {
   chooseAdaptiveMidpoint,

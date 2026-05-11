@@ -2,10 +2,10 @@ import { existsSync } from "node:fs"
 import { resolve } from "node:path"
 import {
   isActive as vectorIsActive,
-  timeSeriesConfigOf,
   type PulsarVector,
-  type Registry,
-} from "@skastr0/pulsar-core"
+  timeSeriesConfigOf,
+} from "@skastr0/pulsar-core/vector"
+import { type Registry } from "@skastr0/pulsar-core/scoring"
 import { Effect } from "effect"
 import { loadPulsarVectorFromPath, makePulsarRuntime } from "./runtime.js"
 import {
