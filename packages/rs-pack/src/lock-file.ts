@@ -32,6 +32,12 @@ interface MutableCargoLockPackage {
   dependencies: Array<string>
 }
 
+interface CargoLockParseState {
+  current: MutableCargoLockPackage | undefined
+  lockfileVersion: number | undefined
+  packages: Array<CargoLockPackage>
+}
+
 const KEY_VALUE_PATTERN = /^([A-Za-z0-9_-]+)\s*=\s*(.+)$/
 
 const parseStringLiteral = (value: string, path: string): string => {
@@ -104,75 +110,88 @@ const finalizePackage = (
 
 export const parseCargoLock = (input: string): CargoLockfile => {
   const lines = input.split(/\r?\n/)
-  const packages: Array<CargoLockPackage> = []
-  let current: MutableCargoLockPackage | undefined
-  let lockfileVersion: number | undefined
+  const state: CargoLockParseState = {
+    current: undefined,
+    lockfileVersion: undefined,
+    packages: [],
+  }
   let index = 0
 
   while (index < lines.length) {
-    const rawLine = lines[index] ?? ""
-    const line = rawLine.trim()
-
-    if (line.length === 0 || line.startsWith("#")) {
-      index += 1
-      continue
-    }
-
-    if (line === "[[package]]") {
-      finalizePackage(current, packages)
-      current = { dependencies: [] }
-      index += 1
-      continue
-    }
-
-    const match = KEY_VALUE_PATTERN.exec(line)
-    if (match === null) {
-      index += 1
-      continue
-    }
-
-    const key = match[1]!
-    const rawValue = match[2]!
-    if (current === undefined) {
-      if (key === "version") {
-        lockfileVersion = parseNumberLiteral(rawValue, "Cargo.lock.version")
-      }
-      index += 1
-      continue
-    }
-
-    if (key === "dependencies") {
-      const { body, nextIndex } = collectArrayBody(lines, index, rawValue)
-      current.dependencies = [...parseStringArray(body, "Cargo.lock.dependencies")]
-      index = nextIndex
-      continue
-    }
-
-    switch (key) {
-      case "name":
-        current.name = parseStringLiteral(rawValue, "Cargo.lock.package.name")
-        break
-      case "version":
-        current.version = parseStringLiteral(rawValue, "Cargo.lock.package.version")
-        break
-      case "source":
-        current.source = parseStringLiteral(rawValue, "Cargo.lock.package.source")
-        break
-      case "checksum":
-        current.checksum = parseStringLiteral(rawValue, "Cargo.lock.package.checksum")
-        break
-      default:
-        break
-    }
-
-    index += 1
+    index = consumeCargoLockLine(lines, index, state)
   }
 
-  finalizePackage(current, packages)
+  finalizePackage(state.current, state.packages)
 
   return {
-    version: lockfileVersion,
-    packages,
+    version: state.lockfileVersion,
+    packages: state.packages,
+  }
+}
+
+const consumeCargoLockLine = (
+  lines: ReadonlyArray<string>,
+  index: number,
+  state: CargoLockParseState,
+): number => {
+  const line = (lines[index] ?? "").trim()
+  if (line.length === 0 || line.startsWith("#")) return index + 1
+
+  if (line === "[[package]]") {
+    finalizePackage(state.current, state.packages)
+    state.current = { dependencies: [] }
+    return index + 1
+  }
+
+  const match = KEY_VALUE_PATTERN.exec(line)
+  if (match === null) return index + 1
+  return consumeCargoLockKeyValue(lines, index, state, match[1]!, match[2]!)
+}
+
+const consumeCargoLockKeyValue = (
+  lines: ReadonlyArray<string>,
+  index: number,
+  state: CargoLockParseState,
+  key: string,
+  rawValue: string,
+): number => {
+  if (state.current === undefined) {
+    if (key === "version") {
+      state.lockfileVersion = parseNumberLiteral(rawValue, "Cargo.lock.version")
+    }
+    return index + 1
+  }
+
+  if (key === "dependencies") {
+    const { body, nextIndex } = collectArrayBody(lines, index, rawValue)
+    state.current.dependencies = [...parseStringArray(body, "Cargo.lock.dependencies")]
+    return nextIndex
+  }
+
+  assignCargoLockPackageField(state.current, key, rawValue)
+  return index + 1
+}
+
+const assignCargoLockPackageField = (
+  current: MutableCargoLockPackage,
+  key: string,
+  rawValue: string,
+): void => {
+  switch (key) {
+    case "name":
+      current.name = parseStringLiteral(rawValue, "Cargo.lock.package.name")
+      return
+    case "version":
+      current.version = parseStringLiteral(rawValue, "Cargo.lock.package.version")
+      return
+    case "source":
+      current.source = parseStringLiteral(rawValue, "Cargo.lock.package.source")
+      return
+    case "checksum":
+      current.checksum = parseStringLiteral(rawValue, "Cargo.lock.package.checksum")
+      return
+    default:
+      return
   }
 }
 
