@@ -1,4 +1,5 @@
 import type { runElicitCommand } from "./elicit.js"
+import { collectPositional, parseArg, parsePositiveInt } from "./cli-args.js"
 
 export type ElicitAction = "quiz" | "bootstrap" | "review" | "accept" | "reject"
 type ElicitOptions = Parameters<typeof runElicitCommand>[0]
@@ -85,34 +86,4 @@ const parseElicitResolutionOptions = (
       ? { vectorPath: parseArg(actionArgs, "--vector")! }
       : {}),
   } satisfies ElicitOptions
-}
-
-const parseArg = (args: ReadonlyArray<string>, flag: string): string | undefined => {
-  const i = args.indexOf(flag)
-  if (i === -1) return undefined
-  return args[i + 1]
-}
-
-const collectPositional = (
-  args: ReadonlyArray<string>,
-  flagsWithValues: ReadonlySet<string>,
-): ReadonlyArray<string> =>
-  args.filter((arg, index) => {
-    if (arg.startsWith("--")) return false
-    const prev = args[index - 1]
-    return prev === undefined || !flagsWithValues.has(prev)
-  })
-
-const parsePositiveInt = (
-  raw: string | undefined,
-  fallback: number,
-  flag: string,
-  fail: (message: string) => never,
-): number => {
-  if (raw === undefined) return fallback
-  const n = Number(raw)
-  if (!Number.isFinite(n) || n <= 0 || Math.floor(n) !== n) {
-    fail(`${flag} must be a positive integer, got: ${raw}`)
-  }
-  return n
 }

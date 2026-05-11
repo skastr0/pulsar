@@ -51,11 +51,12 @@ export const parsePositiveInt = (
   raw: string | undefined,
   fallback: number,
   flag: string,
+  failWith: (message: string) => never = fail,
 ): number => {
   if (raw === undefined) return fallback
   const n = Number(raw)
   if (!Number.isFinite(n) || n <= 0 || Math.floor(n) !== n) {
-    fail(`${flag} must be a positive integer, got: ${raw}`)
+    failWith(`${flag} must be a positive integer, got: ${raw}`)
   }
   return n
 }
