@@ -8,6 +8,8 @@ export interface CondensedGraph {
 export const tarjanSccs = (
   graph: ReadonlyMap<string, ReadonlySet<string>>,
 ): ReadonlyArray<ReadonlyArray<string>> => {
+  type Frame = { node: string; iter: Iterator<string> }
+
   let index = 0
   const indices = new Map<string, number>()
   const lowlinks = new Map<string, number>()
@@ -15,61 +17,71 @@ export const tarjanSccs = (
   const stack: Array<string> = []
   const sccs: Array<Array<string>> = []
 
-  const strongConnect = (root: string): void => {
-    type Frame = { node: string; iter: Iterator<string> }
-    const callStack: Array<Frame> = []
+  const enter = (callStack: Array<Frame>, node: string): void => {
+    indices.set(node, index)
+    lowlinks.set(node, index)
+    index += 1
+    stack.push(node)
+    onStack.add(node)
+    callStack.push({
+      node,
+      iter: (graph.get(node) ?? new Set<string>()).values(),
+    })
+  }
 
-    const enter = (node: string): void => {
-      indices.set(node, index)
-      lowlinks.set(node, index)
-      index += 1
-      stack.push(node)
-      onStack.add(node)
-      callStack.push({
-        node,
-        iter: (graph.get(node) ?? new Set<string>()).values(),
-      })
+  const updateLowlink = (node: string, candidate: number): void => {
+    const current = lowlinks.get(node) ?? 0
+    if (candidate < current) {
+      lowlinks.set(node, candidate)
     }
+  }
 
-    enter(root)
+  const popComponent = (root: string): Array<string> => {
+    const component: Array<string> = []
+    while (true) {
+      const popped = stack.pop()!
+      onStack.delete(popped)
+      component.push(popped)
+      if (popped === root) break
+    }
+    return component.sort((left, right) => left.localeCompare(right))
+  }
+
+  const finishFrame = (callStack: Array<Frame>, frame: Frame): void => {
+    if (lowlinks.get(frame.node) === indices.get(frame.node)) {
+      sccs.push(popComponent(frame.node))
+    }
+    callStack.pop()
+    const parent = callStack[callStack.length - 1]
+    if (parent === undefined) return
+    updateLowlink(parent.node, lowlinks.get(frame.node) ?? 0)
+  }
+
+  const visitNeighbor = (
+    callStack: Array<Frame>,
+    node: string,
+    neighbor: string,
+  ): void => {
+    if (!indices.has(neighbor)) {
+      enter(callStack, neighbor)
+      return
+    }
+    if (!onStack.has(neighbor)) return
+    updateLowlink(node, indices.get(neighbor) ?? 0)
+  }
+
+  const strongConnect = (root: string): void => {
+    const callStack: Array<Frame> = []
+    enter(callStack, root)
 
     while (callStack.length > 0) {
       const frame = callStack[callStack.length - 1]!
       const next = frame.iter.next()
       if (next.done === true) {
-        if (lowlinks.get(frame.node) === indices.get(frame.node)) {
-          const component: Array<string> = []
-          while (true) {
-            const popped = stack.pop()!
-            onStack.delete(popped)
-            component.push(popped)
-            if (popped === frame.node) break
-          }
-          component.sort((left, right) => left.localeCompare(right))
-          sccs.push(component)
-        }
-        callStack.pop()
-        if (callStack.length > 0) {
-          const parent = callStack[callStack.length - 1]!
-          const parentLow = lowlinks.get(parent.node) ?? 0
-          const childLow = lowlinks.get(frame.node) ?? 0
-          if (childLow < parentLow) {
-            lowlinks.set(parent.node, childLow)
-          }
-        }
+        finishFrame(callStack, frame)
         continue
       }
-
-      const neighbor = next.value
-      if (!indices.has(neighbor)) {
-        enter(neighbor)
-      } else if (onStack.has(neighbor)) {
-        const neighborIndex = indices.get(neighbor) ?? 0
-        const currentLow = lowlinks.get(frame.node) ?? 0
-        if (neighborIndex < currentLow) {
-          lowlinks.set(frame.node, neighborIndex)
-        }
-      }
+      visitNeighbor(callStack, frame.node, next.value)
     }
   }
 
