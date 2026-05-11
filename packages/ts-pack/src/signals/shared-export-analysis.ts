@@ -123,83 +123,143 @@ export const buildExportConsumerIndex = (
   const index = new Map<string, Array<ExportConsumer>>()
   const resolver = createModuleResolver(sourceFiles, packages)
 
-  const addConsumer = (
-    targetFile: string,
-    exportName: string | "*",
-    consumerFile: string,
-    consumerPackage: string | undefined,
-    kind: ExportConsumer["kind"],
-  ): void => {
-    const bucket = index.get(targetFile) ?? []
-    bucket.push({
-      consumerFile,
-      consumerPackage,
-      exportName,
-      kind,
-    })
-    index.set(targetFile, bucket)
-  }
-
   for (const sourceFile of sourceFiles) {
-    const consumerFile = sourceFile.getFilePath()
-    const consumerPackage = packageDisplayName(packageForFile(consumerFile, packages))
-    const compilerSourceFile = sourceFile.compilerNode
-
-    for (const statement of compilerSourceFile.statements) {
-      if (!ts.isImportDeclaration(statement)) continue
-      const specifier = moduleSpecifierText(statement.moduleSpecifier)
-      if (specifier === undefined) continue
-      const targetFile = resolveModuleSpecifier(resolver, consumerFile, specifier)
-      if (targetFile === undefined || !fileSet.has(targetFile)) continue
-
-      const importClause = statement.importClause
-      if (importClause?.name !== undefined) {
-        addConsumer(targetFile, "default", consumerFile, consumerPackage, "import")
-      }
-
-      const namedBindings = importClause?.namedBindings
-      if (namedBindings !== undefined) {
-        if (ts.isNamespaceImport(namedBindings)) {
-          addConsumer(targetFile, "*", consumerFile, consumerPackage, "import")
-        } else {
-          for (const element of namedBindings.elements) {
-            addConsumer(targetFile, (element.propertyName ?? element.name).text, consumerFile, consumerPackage, "import")
-          }
-        }
-      }
-    }
-
-    forEachCompilerNode(compilerSourceFile, (node) => {
-      if (!ts.isCallExpression(node)) return
-      if (node.expression.kind !== ts.SyntaxKind.ImportKeyword) return
-      const specifier = node.arguments[0]
-      if (specifier === undefined || !ts.isStringLiteral(specifier)) return
-
-      const targetFile = resolveModuleSpecifier(resolver, consumerFile, specifier.text)
-      if (targetFile === undefined || !fileSet.has(targetFile)) return
-      addConsumer(targetFile, "*", consumerFile, consumerPackage, "dynamic-import")
-    })
-
-    for (const statement of compilerSourceFile.statements) {
-      if (!ts.isExportDeclaration(statement)) continue
-      const specifier = moduleSpecifierText(statement.moduleSpecifier)
-      if (specifier === undefined) continue
-      const targetFile = resolveModuleSpecifier(resolver, consumerFile, specifier)
-      if (targetFile === undefined || !fileSet.has(targetFile)) continue
-
-      const exportClause = statement.exportClause
-      if (exportClause === undefined || ts.isNamespaceExport(exportClause)) {
-        addConsumer(targetFile, "*", consumerFile, consumerPackage, "re-export")
-        continue
-      }
-
-      for (const specifier of exportClause.elements) {
-        addConsumer(targetFile, (specifier.propertyName ?? specifier.name).text, consumerFile, consumerPackage, "re-export")
-      }
-    }
+    recordFileConsumers({ sourceFile, packages, fileSet, resolver, index })
   }
 
   return index
+}
+
+type ModuleResolver = ReturnType<typeof createModuleResolver>
+type ExportConsumerIndex = Map<string, Array<ExportConsumer>>
+
+interface ExportConsumerContext {
+  readonly sourceFile: SourceFile
+  readonly packages: ReadonlyArray<PackageInfo>
+  readonly fileSet: ReadonlySet<string>
+  readonly resolver: ModuleResolver
+  readonly index: ExportConsumerIndex
+}
+
+const recordFileConsumers = (context: ExportConsumerContext): void => {
+  recordStaticImportConsumers(context)
+  recordDynamicImportConsumers(context)
+  recordReExportConsumers(context)
+}
+
+const recordStaticImportConsumers = (context: ExportConsumerContext): void => {
+  const consumer = consumerIdentity(context)
+
+  for (const statement of context.sourceFile.compilerNode.statements) {
+    if (!ts.isImportDeclaration(statement)) continue
+    const targetFile = resolvedTargetFile(context, consumer.file, statement.moduleSpecifier)
+    if (targetFile === undefined) continue
+
+    const importClause = statement.importClause
+    if (importClause?.name !== undefined) {
+      addConsumer(context.index, targetFile, "default", consumer, "import")
+    }
+    recordNamedImportConsumers(context.index, targetFile, consumer, importClause?.namedBindings)
+  }
+}
+
+const recordNamedImportConsumers = (
+  index: ExportConsumerIndex,
+  targetFile: string,
+  consumer: ConsumerIdentity,
+  namedBindings: ts.NamedImportBindings | undefined,
+): void => {
+  if (namedBindings === undefined) return
+  if (ts.isNamespaceImport(namedBindings)) {
+    addConsumer(index, targetFile, "*", consumer, "import")
+    return
+  }
+  for (const element of namedBindings.elements) {
+    addConsumer(index, targetFile, (element.propertyName ?? element.name).text, consumer, "import")
+  }
+}
+
+const recordDynamicImportConsumers = (context: ExportConsumerContext): void => {
+  const consumer = consumerIdentity(context)
+
+  forEachCompilerNode(context.sourceFile.compilerNode, (node) => {
+    if (!ts.isCallExpression(node)) return
+    if (node.expression.kind !== ts.SyntaxKind.ImportKeyword) return
+    const specifier = node.arguments[0]
+    if (specifier === undefined || !ts.isStringLiteral(specifier)) return
+
+    const targetFile = resolvedTargetFile(context, consumer.file, specifier)
+    if (targetFile !== undefined) {
+      addConsumer(context.index, targetFile, "*", consumer, "dynamic-import")
+    }
+  })
+}
+
+const recordReExportConsumers = (context: ExportConsumerContext): void => {
+  const consumer = consumerIdentity(context)
+
+  for (const statement of context.sourceFile.compilerNode.statements) {
+    if (!ts.isExportDeclaration(statement)) continue
+    const targetFile = resolvedTargetFile(context, consumer.file, statement.moduleSpecifier)
+    if (targetFile === undefined) continue
+    recordExportClauseConsumers(context.index, targetFile, consumer, statement.exportClause)
+  }
+}
+
+const recordExportClauseConsumers = (
+  index: ExportConsumerIndex,
+  targetFile: string,
+  consumer: ConsumerIdentity,
+  exportClause: ts.ExportDeclaration["exportClause"],
+): void => {
+  if (exportClause === undefined || ts.isNamespaceExport(exportClause)) {
+    addConsumer(index, targetFile, "*", consumer, "re-export")
+    return
+  }
+  for (const specifier of exportClause.elements) {
+    addConsumer(index, targetFile, (specifier.propertyName ?? specifier.name).text, consumer, "re-export")
+  }
+}
+
+interface ConsumerIdentity {
+  readonly file: string
+  readonly package: string | undefined
+}
+
+const consumerIdentity = (context: ExportConsumerContext): ConsumerIdentity => {
+  const file = context.sourceFile.getFilePath()
+  return {
+    file,
+    package: packageDisplayName(packageForFile(file, context.packages)),
+  }
+}
+
+const resolvedTargetFile = (
+  context: ExportConsumerContext,
+  consumerFile: string,
+  specifierNode: ts.Expression | undefined,
+): string | undefined => {
+  const specifier = moduleSpecifierText(specifierNode)
+  if (specifier === undefined) return undefined
+  const targetFile = resolveModuleSpecifier(context.resolver, consumerFile, specifier)
+  return targetFile !== undefined && context.fileSet.has(targetFile) ? targetFile : undefined
+}
+
+const addConsumer = (
+  index: ExportConsumerIndex,
+  targetFile: string,
+  exportName: string | "*",
+  consumer: ConsumerIdentity,
+  kind: ExportConsumer["kind"],
+): void => {
+  const bucket = index.get(targetFile) ?? []
+  bucket.push({
+    consumerFile: consumer.file,
+    consumerPackage: consumer.package,
+    exportName,
+    kind,
+  })
+  index.set(targetFile, bucket)
 }
 
 const moduleSpecifierText = (node: ts.Expression | undefined): string | undefined =>
