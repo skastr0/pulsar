@@ -4,7 +4,7 @@ import {
   SignalComputeError,
 } from "@skastr0/pulsar-core"
 import { Effect, Schema } from "effect"
-import { type SourceFile, ts } from "ts-morph"
+import { type Project, type SourceFile, ts } from "ts-morph"
 import { TsProjectTag } from "../ts-project.js"
 import { compilerPropertyNameText as propertyNameText } from "./shared-compiler-functions.js"
 import { isExcluded } from "./shared-globs.js"
@@ -20,6 +20,13 @@ interface TrackedFunction {
   readonly boundary: boolean
   readonly name: string
   readonly line: number
+}
+
+interface FileCoverageAnalysis {
+  readonly fileCoverage: FileCoverage | undefined
+  readonly boundaryTotals: MutableCoverage
+  readonly internalTotals: MutableCoverage
+  readonly uncoveredBoundary: ReadonlyArray<UncoveredFn>
 }
 
 export const TsLd06Config = Schema.Struct({
@@ -118,80 +125,7 @@ export const TsLd06: Signal<TsLd06Config, TsLd06Output, TsProjectTag> = {
     Effect.gen(function* () {
       const project = yield* TsProjectTag
       const result = yield* Effect.try({
-        try: (): TsLd06Output => {
-          const byFile = new Map<string, FileCoverage>()
-          const uncoveredBoundary: Array<UncoveredFn> = []
-
-          const boundaryTotals = emptyMutableCoverage()
-          const internalTotals = emptyMutableCoverage()
-
-          for (const sourceFile of project.getSourceFiles()) {
-            const file = sourceFile.getFilePath()
-            if (isExcluded(file, config.exclude_globs)) continue
-
-            const fileBoundary = emptyMutableCoverage()
-            const fileInternal = emptyMutableCoverage()
-
-            for (const tracked of collectTrackedFunctions(sourceFile)) {
-              const target = tracked.boundary ? fileBoundary : fileInternal
-              const totals = tracked.boundary ? boundaryTotals : internalTotals
-              const paramCount = tracked.fn.parameters.length
-              const contextuallyTyped =
-                hasContextualFunctionTypeAnnotation(tracked.fn) ||
-                hasFrameworkMethodContract(tracked.fn)
-              const annotatedParams = contextuallyTyped
-                ? paramCount
-                : tracked.fn.parameters.filter(hasCoveredParameterType).length
-              const returnAnnotated =
-                contextuallyTyped ||
-                tracked.fn.type !== undefined ||
-                hasImplicitComponentReturnCoverage(tracked.fn, tracked.name, file)
-
-              target.totalParams += paramCount
-              target.annotatedParams += annotatedParams
-              target.totalReturns += 1
-              target.annotatedReturns += returnAnnotated ? 1 : 0
-
-              totals.totalParams += paramCount
-              totals.annotatedParams += annotatedParams
-              totals.totalReturns += 1
-              totals.annotatedReturns += returnAnnotated ? 1 : 0
-
-              if (!tracked.boundary) continue
-
-              const missingKind = classifyMissingKind(paramCount, annotatedParams, returnAnnotated)
-              if (missingKind === undefined) continue
-              uncoveredBoundary.push({
-                file,
-                name: tracked.name,
-                line: tracked.line,
-                missingKind,
-              })
-            }
-
-            if (
-              fileBoundary.totalParams > 0 ||
-              fileBoundary.totalReturns > 0 ||
-              fileInternal.totalParams > 0 ||
-              fileInternal.totalReturns > 0
-            ) {
-              byFile.set(file, {
-                boundary: finalizeCoverage(fileBoundary),
-                internal: finalizeCoverage(fileInternal),
-              })
-            }
-          }
-
-          uncoveredBoundary.sort(compareUncoveredBoundary)
-
-          return {
-            byFile,
-            boundaryCoverage: finalizeCoverage(boundaryTotals),
-            internalCoverage: finalizeCoverage(internalTotals),
-            uncoveredBoundary,
-            diagnosticLimit: config.top_n_diagnostics,
-          }
-        },
+        try: (): TsLd06Output => computeAnnotationCoverage(project, config),
         catch: (cause) =>
           new SignalComputeError({
             signalId: "TS-LD-06-annotation-coverage",
@@ -220,6 +154,127 @@ type MutableCoverage = {
 
 const PARAMETER_COVERAGE_WEIGHT = 4
 const RETURN_COVERAGE_WEIGHT = 1
+
+const computeAnnotationCoverage = (
+  project: Project,
+  config: TsLd06Config,
+): TsLd06Output => {
+  const byFile = new Map<string, FileCoverage>()
+  const uncoveredBoundary: Array<UncoveredFn> = []
+  const boundaryTotals = emptyMutableCoverage()
+  const internalTotals = emptyMutableCoverage()
+
+  for (const sourceFile of project.getSourceFiles()) {
+    const file = sourceFile.getFilePath()
+    if (isExcluded(file, config.exclude_globs)) continue
+    const analysis = analyzeAnnotationCoverageFile(sourceFile, file)
+    addCoverage(boundaryTotals, analysis.boundaryTotals)
+    addCoverage(internalTotals, analysis.internalTotals)
+    uncoveredBoundary.push(...analysis.uncoveredBoundary)
+    if (analysis.fileCoverage !== undefined) byFile.set(file, analysis.fileCoverage)
+  }
+
+  uncoveredBoundary.sort(compareUncoveredBoundary)
+  return {
+    byFile,
+    boundaryCoverage: finalizeCoverage(boundaryTotals),
+    internalCoverage: finalizeCoverage(internalTotals),
+    uncoveredBoundary,
+    diagnosticLimit: config.top_n_diagnostics,
+  }
+}
+
+const analyzeAnnotationCoverageFile = (
+  sourceFile: SourceFile,
+  file: string,
+): FileCoverageAnalysis => {
+  const boundaryTotals = emptyMutableCoverage()
+  const internalTotals = emptyMutableCoverage()
+  const uncoveredBoundary: Array<UncoveredFn> = []
+
+  for (const tracked of collectTrackedFunctions(sourceFile)) {
+    const target = tracked.boundary ? boundaryTotals : internalTotals
+    const measurement = measureTrackedFunctionCoverage(tracked, file)
+    addFunctionCoverage(target, measurement)
+    if (!tracked.boundary || measurement.missingKind === undefined) continue
+    uncoveredBoundary.push({
+      file,
+      name: tracked.name,
+      line: tracked.line,
+      missingKind: measurement.missingKind,
+    })
+  }
+
+  return {
+    fileCoverage: fileHasCoverage(boundaryTotals, internalTotals)
+      ? {
+          boundary: finalizeCoverage(boundaryTotals),
+          internal: finalizeCoverage(internalTotals),
+        }
+      : undefined,
+    boundaryTotals,
+    internalTotals,
+    uncoveredBoundary,
+  }
+}
+
+const measureTrackedFunctionCoverage = (
+  tracked: TrackedFunction,
+  file: string,
+): {
+  readonly paramCount: number
+  readonly annotatedParams: number
+  readonly returnAnnotated: boolean
+  readonly missingKind: UncoveredFn["missingKind"] | undefined
+} => {
+  const paramCount = tracked.fn.parameters.length
+  const contextuallyTyped =
+    hasContextualFunctionTypeAnnotation(tracked.fn) ||
+    hasFrameworkMethodContract(tracked.fn)
+  const annotatedParams = contextuallyTyped
+    ? paramCount
+    : tracked.fn.parameters.filter(hasCoveredParameterType).length
+  const returnAnnotated =
+    contextuallyTyped ||
+    tracked.fn.type !== undefined ||
+    hasImplicitComponentReturnCoverage(tracked.fn, tracked.name, file)
+  return {
+    paramCount,
+    annotatedParams,
+    returnAnnotated,
+    missingKind: classifyMissingKind(paramCount, annotatedParams, returnAnnotated),
+  }
+}
+
+const addFunctionCoverage = (
+  coverage: MutableCoverage,
+  measurement: {
+    readonly paramCount: number
+    readonly annotatedParams: number
+    readonly returnAnnotated: boolean
+  },
+): void => {
+  coverage.totalParams += measurement.paramCount
+  coverage.annotatedParams += measurement.annotatedParams
+  coverage.totalReturns += 1
+  coverage.annotatedReturns += measurement.returnAnnotated ? 1 : 0
+}
+
+const addCoverage = (target: MutableCoverage, source: MutableCoverage): void => {
+  target.totalParams += source.totalParams
+  target.annotatedParams += source.annotatedParams
+  target.totalReturns += source.totalReturns
+  target.annotatedReturns += source.annotatedReturns
+}
+
+const fileHasCoverage = (
+  boundary: MutableCoverage,
+  internal: MutableCoverage,
+): boolean =>
+  boundary.totalParams > 0 ||
+  boundary.totalReturns > 0 ||
+  internal.totalParams > 0 ||
+  internal.totalReturns > 0
 
 const weightedBoundaryCoverage = (coverage: CoverageSummary): number => {
   const denominator =
