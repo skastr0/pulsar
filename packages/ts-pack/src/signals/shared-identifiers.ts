@@ -172,7 +172,7 @@ const classifyConstContext = (declaration: VariableDeclaration): ConstIdentifier
 
   const initializer = declaration.getInitializer()
   if (isSchemaOrTypeObjectConst(declaration.getName(), initializer)) return "schema-type-object"
-  return inferCasingPattern(declaration.getName()) === "UPPER_SNAKE_CASE" ? "module-constant" : "local"
+  return "module-constant"
 }
 
 const isDirectSourceFileConstDeclaration = (declaration: VariableDeclaration): boolean => {

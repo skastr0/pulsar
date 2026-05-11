@@ -7,6 +7,7 @@ import { TsProjectTag } from "../ts-project.js"
 import {
   collectIdentifierDeclarations,
   type ConstIdentifierContext,
+  type IdentifierDeclaration,
   type IdentifierDeclarationKind,
 } from "./shared-identifiers.js"
 
@@ -89,7 +90,7 @@ export const TsLd04: Signal<TsLd04Config, TsLd04Output, TsProjectTag | Reference
 
           const namingConventions = rawConventions.value.naming_conventions
           const violations = identifiers.flatMap((identifier) => {
-            const expectedPatterns = expectedPatternsForKind(namingConventions, identifier.kind)
+            const expectedPatterns = expectedPatternsForIdentifier(namingConventions, identifier)
             const violation = {
               file: identifier.file,
               line: identifier.line,
@@ -176,6 +177,32 @@ const expectedPatternsForKind = (
       return parseCasingPatternAlternatives(namingConventions.const)
   }
 }
+
+const expectedPatternsForIdentifier = (
+  namingConventions: NamingConventions,
+  identifier: IdentifierDeclaration,
+): ReadonlyArray<RecognizedCasingPattern> => {
+  const expectedPatterns = expectedPatternsForKind(namingConventions, identifier.kind)
+  if (identifier.kind !== "const") return expectedPatterns
+
+  switch (identifier.constContext) {
+    case "module-constant":
+      return includePattern(expectedPatterns, "UPPER_SNAKE_CASE")
+    case "local":
+      return expectedPatterns.filter((pattern) => pattern !== "UPPER_SNAKE_CASE")
+    case "schema-type-object":
+    case undefined:
+      return expectedPatterns
+    default:
+      return expectedPatterns
+  }
+}
+
+const includePattern = (
+  patterns: ReadonlyArray<RecognizedCasingPattern>,
+  pattern: RecognizedCasingPattern,
+): ReadonlyArray<RecognizedCasingPattern> =>
+  patterns.includes(pattern) ? patterns : [...patterns, pattern]
 
 const summarizeByKind = (
   identifiers: ReadonlyArray<ReturnType<typeof collectIdentifierDeclarations>[number]>,

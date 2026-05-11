@@ -97,6 +97,61 @@ describe("TS-LD-04 (naming convention consistency)", () => {
     expect(out.byKind.get("const")).toEqual({ total: 3, violating: 0 })
   })
 
+  test("allows upper snake case for top-level module constants when local consts prefer camel case", async () => {
+    await repo.write(
+      "src/module-constants.ts",
+      [
+        "export const MAX_RETRIES = 3",
+        "export function buildUser() {",
+        "  const retryBudget = MAX_RETRIES",
+        "  return retryBudget",
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsLd04, TsLd04.defaultConfig, {
+      "schema-conventions": {
+        ...NAMING_CONVENTIONS,
+        naming_conventions: {
+          ...NAMING_CONVENTIONS.naming_conventions,
+          const: "camelCase",
+        },
+      },
+    })
+
+    expect(out.violations).toEqual([])
+    expect(out.byKind.get("const")).toEqual({ total: 2, violating: 0 })
+  })
+
+  test("flags upper snake case for local constants even when module constants allow it", async () => {
+    await repo.write(
+      "src/local-constants.ts",
+      [
+        "export const MAX_RETRIES = 3",
+        "export function buildUser() {",
+        "  const RETRY_BUDGET = MAX_RETRIES",
+        "  return RETRY_BUDGET",
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsLd04, TsLd04.defaultConfig, {
+      "schema-conventions": NAMING_CONVENTIONS,
+    })
+
+    expect(out.violations).toHaveLength(1)
+    expect(out.violations[0]).toMatchObject({
+      kind: "const",
+      constContext: "local",
+      name: "RETRY_BUDGET",
+      expectedPatterns: ["camelCase"],
+      actualPattern: "UPPER_SNAKE_CASE",
+    })
+    expect(out.byKind.get("const")).toEqual({ total: 2, violating: 1 })
+  })
+
   test("uses the same applicability in single-signal and observer paths", async () => {
     await repo.write(
       "src/consistent.ts",
