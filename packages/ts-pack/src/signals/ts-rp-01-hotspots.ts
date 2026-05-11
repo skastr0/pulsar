@@ -53,6 +53,11 @@ interface HotspotSummary {
   readonly medianComplexity: number
 }
 
+interface HotspotInputs {
+  readonly complexity: TsLd01Output | undefined
+  readonly churn: SharedChurn01Output | undefined
+}
+
 const median = (values: ReadonlyArray<number>): number => {
   if (values.length === 0) return 0
   const sorted = [...values].sort((a, b) => a - b)
@@ -89,82 +94,7 @@ export const TsRp01: Signal<TsRp01Config, TsRp01Output, never> = {
   },
   inputs: [{ id: "TS-LD-01-cyclomatic-complexity" }, { id: "SHARED-CHURN-01" }],
   compute: (config, inputs) =>
-    Effect.sync(() => {
-      const complexity = (inputs.get("TS-LD-01-cyclomatic-complexity") ??
-        inputs.get("TS-LD-01")) as TsLd01Output | undefined
-      const churn = inputs.get("SHARED-CHURN-01") as SharedChurn01Output | undefined
-      if (complexity === undefined || churn === undefined) {
-        return {
-          hotspots: [],
-          totalFilesConsidered: 0,
-          topRightShare: 0,
-          topRightPressure: 0,
-          medianChurn: 0,
-          medianComplexity: 0,
-          legacyFilesConsidered: 0,
-          legacyTopRightShare: 0,
-          softFilesConsidered: 0,
-          softTopRightShare: 0,
-          softTopRightPressure: 0,
-          stabilizationWeight: 0,
-          diagnosticLimit: config.top_n,
-        }
-      }
-
-      const files: Array<HotspotCandidate> = []
-
-      for (const [file, summary] of complexity.byFile) {
-        const cplx = summary.max
-        const c = churn.byFile.get(file) ?? 0
-        if (c <= 0) continue
-        const thresholdWeight =
-          softGate(c, config.min_churn, config.threshold_softness) *
-          softGate(cplx, config.min_complexity, config.threshold_softness)
-        files.push({ file, churn: c, complexity: cplx, thresholdWeight })
-      }
-
-      const legacyEntries = files.filter(
-        (entry) =>
-          entry.churn >= config.min_churn && entry.complexity >= config.min_complexity,
-      )
-      const softEntries = files.filter((entry) => entry.thresholdWeight > 0)
-
-      const legacy = summarizeHotspots(legacyEntries, (entry) => entry.churn * entry.complexity)
-      const soft = summarizeHotspots(
-        softEntries,
-        (entry) => entry.churn * entry.complexity * entry.thresholdWeight,
-      )
-      const softTopRightPressure = computeSoftTopRightPressure(
-        softEntries,
-        config.min_churn,
-        config.min_complexity,
-        config.threshold_softness,
-        config.peer_percentile_floor,
-      )
-      const legacyFilesConsidered = legacy.ranked.length
-      const softFilesConsidered = soft.ranked.length
-      const stabilizationWeight = stabilizationBlendWeight(
-        legacyFilesConsidered === 0 ? softFilesConsidered : legacyFilesConsidered,
-      )
-      const useSoftShape = stabilizationWeight >= 0.5
-      const chosen = useSoftShape ? soft : legacy
-
-      return {
-        hotspots: chosen.ranked,
-        diagnosticLimit: config.top_n,
-        totalFilesConsidered: chosen.ranked.length,
-        topRightShare: chosen.topRightShare,
-        topRightPressure: useSoftShape ? softTopRightPressure : 0,
-        medianChurn: chosen.medianChurn,
-        medianComplexity: chosen.medianComplexity,
-        legacyFilesConsidered,
-        legacyTopRightShare: legacy.topRightShare,
-        softFilesConsidered,
-        softTopRightShare: soft.topRightShare,
-        softTopRightPressure,
-        stabilizationWeight,
-      }
-    }),
+    Effect.sync(() => computeHotspotOutput(config, inputs)),
   score: (out) => {
     if (out.legacyFilesConsidered === 0 && out.softFilesConsidered === 0) return 1
     const legacyScore =
@@ -201,6 +131,109 @@ export const TsRp01: Signal<TsRp01Config, TsRp01Output, never> = {
       },
     }))
   },
+}
+
+const computeHotspotOutput = (
+  config: TsRp01Config,
+  inputs: ReadonlyMap<string, unknown>,
+): TsRp01Output => {
+  const { complexity, churn } = resolveHotspotInputs(inputs)
+  if (complexity === undefined || churn === undefined) {
+    return emptyHotspotOutput(config)
+  }
+
+  const files = buildHotspotCandidates(complexity, churn, config)
+  const legacyEntries = files.filter((entry) =>
+    entry.churn >= config.min_churn && entry.complexity >= config.min_complexity,
+  )
+  const softEntries = files.filter((entry) => entry.thresholdWeight > 0)
+  const legacy = summarizeHotspots(legacyEntries, (entry) => entry.churn * entry.complexity)
+  const soft = summarizeHotspots(
+    softEntries,
+    (entry) => entry.churn * entry.complexity * entry.thresholdWeight,
+  )
+  const softTopRightPressure = computeSoftTopRightPressure(
+    softEntries,
+    config.min_churn,
+    config.min_complexity,
+    config.threshold_softness,
+    config.peer_percentile_floor,
+  )
+
+  return assembleHotspotOutput(config, legacy, soft, softTopRightPressure)
+}
+
+const resolveHotspotInputs = (
+  inputs: ReadonlyMap<string, unknown>,
+): HotspotInputs => ({
+  complexity: (inputs.get("TS-LD-01-cyclomatic-complexity") ??
+    inputs.get("TS-LD-01")) as TsLd01Output | undefined,
+  churn: inputs.get("SHARED-CHURN-01") as SharedChurn01Output | undefined,
+})
+
+const emptyHotspotOutput = (config: TsRp01Config): TsRp01Output => ({
+  hotspots: [],
+  totalFilesConsidered: 0,
+  topRightShare: 0,
+  topRightPressure: 0,
+  medianChurn: 0,
+  medianComplexity: 0,
+  legacyFilesConsidered: 0,
+  legacyTopRightShare: 0,
+  softFilesConsidered: 0,
+  softTopRightShare: 0,
+  softTopRightPressure: 0,
+  stabilizationWeight: 0,
+  diagnosticLimit: config.top_n,
+})
+
+const buildHotspotCandidates = (
+  complexity: TsLd01Output,
+  churn: SharedChurn01Output,
+  config: TsRp01Config,
+): ReadonlyArray<HotspotCandidate> => {
+  const files: Array<HotspotCandidate> = []
+  for (const [file, summary] of complexity.byFile) {
+    const cplx = summary.max
+    const c = churn.byFile.get(file) ?? 0
+    if (c <= 0) continue
+    const thresholdWeight =
+      softGate(c, config.min_churn, config.threshold_softness) *
+      softGate(cplx, config.min_complexity, config.threshold_softness)
+    files.push({ file, churn: c, complexity: cplx, thresholdWeight })
+  }
+  return files
+}
+
+const assembleHotspotOutput = (
+  config: TsRp01Config,
+  legacy: HotspotSummary,
+  soft: HotspotSummary,
+  softTopRightPressure: number,
+): TsRp01Output => {
+  const legacyFilesConsidered = legacy.ranked.length
+  const softFilesConsidered = soft.ranked.length
+  const stabilizationWeight = stabilizationBlendWeight(
+    legacyFilesConsidered === 0 ? softFilesConsidered : legacyFilesConsidered,
+  )
+  const useSoftShape = stabilizationWeight >= 0.5
+  const chosen = useSoftShape ? soft : legacy
+
+  return {
+    hotspots: chosen.ranked,
+    diagnosticLimit: config.top_n,
+    totalFilesConsidered: chosen.ranked.length,
+    topRightShare: chosen.topRightShare,
+    topRightPressure: useSoftShape ? softTopRightPressure : 0,
+    medianChurn: chosen.medianChurn,
+    medianComplexity: chosen.medianComplexity,
+    legacyFilesConsidered,
+    legacyTopRightShare: legacy.topRightShare,
+    softFilesConsidered,
+    softTopRightShare: soft.topRightShare,
+    softTopRightPressure,
+    stabilizationWeight,
+  }
 }
 
 const HOTSPOT_PATH_MARKERS = [
