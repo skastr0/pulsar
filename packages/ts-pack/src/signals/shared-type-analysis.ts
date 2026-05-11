@@ -7,7 +7,7 @@ import {
   type TypeReferenceNode,
 } from "ts-morph"
 
-export type TypeReferenceLikeNode =
+type TypeReferenceLikeNode =
   | TypeReferenceNode
   | ExpressionWithTypeArguments
   | ImportTypeNode

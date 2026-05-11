@@ -1,6 +1,6 @@
 import { Node, ts, type ExportDeclaration, type ImportDeclaration, type SourceFile } from "ts-morph"
 
-export type IdentifierUsage = "type-only" | "value"
+type IdentifierUsage = "type-only" | "value"
 
 export const isTypeOnlyModuleDeclaration = (
   declaration: ImportDeclaration | ExportDeclaration,

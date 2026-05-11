@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises"
 
-export interface PnpmLockWorkspace {
+interface PnpmLockWorkspace {
   readonly path: string
   readonly name: string | undefined
   readonly dependencies: Readonly<Record<string, string>>
@@ -18,7 +18,7 @@ export interface PnpmResolvedPackage {
   readonly direct: boolean
 }
 
-export interface ParsedPnpmLock {
+interface ParsedPnpmLock {
   readonly workspaces: ReadonlyArray<PnpmLockWorkspace>
   readonly packages: ReadonlyArray<PnpmResolvedPackage>
   readonly packageNames: ReadonlySet<string>

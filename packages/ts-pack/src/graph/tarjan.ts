@@ -1,4 +1,4 @@
-export interface CondensedGraph {
+interface CondensedGraph {
   readonly components: ReadonlyArray<ReadonlyArray<string>>
   readonly nodeToComponent: ReadonlyMap<string, number>
   readonly dag: ReadonlyMap<number, ReadonlySet<number>>

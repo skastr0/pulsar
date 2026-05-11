@@ -22,7 +22,7 @@ class RustSyntaxParserError extends Error {
 }
 
 export type RustSyntaxNode = Node
-export type RustSyntaxTree = Tree
+type RustSyntaxTree = Tree
 
 let rustLanguagePromise: Promise<Language> | undefined
 

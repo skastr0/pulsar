@@ -19,7 +19,7 @@ const TsAb01Config = Schema.Struct({
 })
 type TsAb01Config = typeof TsAb01Config.Type
 
-export interface TsAb01Output {
+interface TsAb01Output {
   readonly byFile: ReadonlyMap<string, FileSurface>
   readonly totalPublicExports: number
   readonly largestSurface:

@@ -7,7 +7,7 @@ export interface BoundaryRule {
   readonly globs: ReadonlyArray<string>
 }
 
-export type DependencyGroupName =
+type DependencyGroupName =
   | "dependencies"
   | "devDependencies"
   | "peerDependencies"

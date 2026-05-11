@@ -17,7 +17,7 @@ export interface FileSurface {
   readonly topSources: ReadonlyArray<{ readonly file: string; readonly count: number }>
 }
 
-export interface PublicExportSurfaces {
+interface PublicExportSurfaces {
   readonly byFile: ReadonlyMap<string, FileSurface>
   readonly totalPublicExports: number
   readonly largestSurface:

@@ -4,7 +4,7 @@ export {
   type ExportConsumer,
 } from "./shared-export-consumers.js"
 
-export interface ExportBinding {
+interface ExportBinding {
   readonly exportFile: string
   readonly exportName: string
   readonly declarationFiles: ReadonlyArray<string>

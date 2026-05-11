@@ -22,13 +22,13 @@ import {
   valueImportBindingNames,
 } from "../signals/shared-module-usage.js"
 
-export interface ModuleGraphOptions {
+interface ModuleGraphOptions {
   readonly excludeGlobs: ReadonlyArray<string>
   readonly includeExportEdges?: boolean
   readonly packages?: ReadonlyArray<PackageInfo>
 }
 
-export interface ModuleGraph {
+interface ModuleGraph {
   readonly sourceFiles: ReadonlyArray<SourceFile>
   readonly fileSet: ReadonlySet<string>
   readonly dependencies: ReadonlyMap<string, ReadonlySet<string>>

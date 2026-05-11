@@ -21,7 +21,7 @@ export type TsFunctionLike =
   | GetAccessorDeclaration
   | SetAccessorDeclaration
 
-export interface TsFunctionIndexEntry {
+interface TsFunctionIndexEntry {
   readonly sourceFile: SourceFile
   readonly path: string
   readonly fn: TsFunctionLike

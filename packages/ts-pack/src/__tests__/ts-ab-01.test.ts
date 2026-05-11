@@ -3,13 +3,11 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Effect, Schema } from "effect"
-import {
-  TsAb01,
-  type TsAb01Output,
-} from "../signals/ts-ab-01-public-export-surface.js"
+import { TsAb01 } from "../signals/ts-ab-01-public-export-surface.js"
 import { TsProjectLayer } from "../ts-project.js"
 
 let repo: string
+type TsAb01Result = Parameters<typeof TsAb01.score>[0]
 
 const writeTs = async (relPath: string, content: string): Promise<string> => {
   const full = join(repo, relPath)
@@ -18,11 +16,11 @@ const writeTs = async (relPath: string, content: string): Promise<string> => {
   return full
 }
 
-const runCompute = async (config = TsAb01.defaultConfig): Promise<TsAb01Output> => {
+const runCompute = async (config = TsAb01.defaultConfig): Promise<TsAb01Result> => {
   const program = TsAb01.compute(config, new Map()).pipe(
     Effect.provide(TsProjectLayer(repo)),
   )
-  return Effect.runPromise(program as Effect.Effect<TsAb01Output, unknown, never>)
+  return Effect.runPromise(program as Effect.Effect<TsAb01Result, unknown, never>)
 }
 
 beforeEach(async () => {

@@ -1,14 +1,14 @@
 import { MutableBitSet } from "./bitset.js"
 
-export interface ReachabilityOptions {
+interface ReachabilityOptions {
   readonly probabilisticThresholdNodes?: number
   readonly bloomBitCount?: number
   readonly bloomHashCount?: number
 }
 
-export type ReachabilityMode = "bitset" | "bloom"
+type ReachabilityMode = "bitset" | "bloom"
 
-export interface ReachabilityResult {
+interface ReachabilityResult {
   readonly mode: ReachabilityMode
   readonly counts: ReadonlyArray<number>
 }

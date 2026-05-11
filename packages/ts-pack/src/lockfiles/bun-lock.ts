@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises"
 
-export interface BunLockWorkspace {
+interface BunLockWorkspace {
   readonly path: string
   readonly name: string | undefined
   readonly dependencies: Readonly<Record<string, string>>
@@ -18,7 +18,7 @@ export interface BunResolvedPackage {
   readonly chain: ReadonlyArray<string>
 }
 
-export interface ParsedBunLock {
+interface ParsedBunLock {
   readonly workspaces: ReadonlyArray<BunLockWorkspace>
   readonly packages: ReadonlyArray<BunResolvedPackage>
   readonly packageNames: ReadonlySet<string>
