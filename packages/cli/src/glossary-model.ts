@@ -61,7 +61,9 @@ export const buildCandidateTerms = (
     .sort((a, b) => b.frequency - a.frequency || a.term.localeCompare(b.term))
 }
 
-export const buildSynonymCandidates = (candidateTerms: GlossaryDraft["candidate_terms"]) => {
+export const buildSynonymCandidates = (
+  candidateTerms: GlossaryDraft["candidate_terms"],
+): GlossaryDraft["candidate_synonyms"] => {
   const pairs: Array<GlossaryDraft["candidate_synonyms"][number]> = []
 
   for (let index = 0; index < candidateTerms.length; index += 1) {
@@ -96,7 +98,7 @@ export const buildSynonymCandidates = (candidateTerms: GlossaryDraft["candidate_
   )
 }
 
-export const buildCanonicalGlossary = (draft: GlossaryDraft) => {
+export const buildCanonicalGlossary = (draft: GlossaryDraft): ReturnType<typeof decodeGlossarySync> => {
   const canonicalTerms = new Map<string, WorkingCanonicalTerm>()
   const rejectedTerms = new Set<string>()
 
@@ -154,7 +156,9 @@ export const buildCanonicalGlossary = (draft: GlossaryDraft) => {
   })
 }
 
-export const validateGlossaryDraftDecisions = (draft: GlossaryDraft) =>
+export const validateGlossaryDraftDecisions = (
+  draft: GlossaryDraft,
+): Effect.Effect<void, Error, never> =>
   Effect.gen(function* () {
     for (const candidate of draft.candidate_terms) {
       const decision = candidate.decision

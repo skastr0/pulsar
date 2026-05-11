@@ -29,7 +29,9 @@ interface GlossaryCommandOptions {
   readonly autoAcceptAboveFrequency?: number
 }
 
-export const runGlossaryCommand = (opts: GlossaryCommandOptions) =>
+export const runGlossaryCommand = (
+  opts: GlossaryCommandOptions,
+): Effect.Effect<number, Error, never> =>
   Effect.gen(function* () {
     if (opts.action === "extract") {
       if (opts.sha === undefined) {
