@@ -7,6 +7,7 @@ import { runBisectCommand, type FirstCrossingQuery } from "./bisect.js"
 import { runCalibrateCommand } from "./calibrate.js"
 import { runConventionsCommand } from "./conventions.js"
 import { runElicitCommand } from "./elicit.js"
+import { parseElicitOptions, type ElicitAction } from "./elicit-options.js"
 import { runGlossaryCommand } from "./glossary.js"
 import { CLI_VERSION } from "./index.js"
 import { runPersonaCommand } from "./persona.js"
@@ -687,67 +688,7 @@ if (command === "elicit") {
     fail("elicit requires one of: quiz, bootstrap, review, accept, reject")
   }
 
-  const actionArgs = commandArgs.slice(1)
-  const elicitOptions = (() => {
-    if (actionArg === "quiz") {
-      const flagsWithValues = new Set(["--items", "--resume", "--to", "--vector"])
-      const repoPath = collectPositional(actionArgs, flagsWithValues)[0] ?? "."
-      return {
-        action: "quiz",
-        repoPath,
-        ...(parseArg(actionArgs, "--items") !== undefined
-          ? { items: parsePositiveInt(parseArg(actionArgs, "--items"), 15, "--items") }
-          : {}),
-        ...(parseArg(actionArgs, "--resume") !== undefined
-          ? { resumePath: parseArg(actionArgs, "--resume")! }
-          : {}),
-        ...(parseArg(actionArgs, "--to") !== undefined ? { outputPath: parseArg(actionArgs, "--to")! } : {}),
-        ...(parseArg(actionArgs, "--vector") !== undefined
-          ? { vectorPath: parseArg(actionArgs, "--vector")! }
-          : {}),
-        ...(commandArgs.includes("--force") ? { force: true } : {}),
-      } satisfies Parameters<typeof runElicitCommand>[0]
-    }
-
-    if (actionArg === "bootstrap") {
-      const flagsWithValues = new Set(["--commits", "--preset", "--vector"])
-      const repoPath = collectPositional(actionArgs, flagsWithValues)[0] ?? "."
-      return {
-        action: "bootstrap",
-        repoPath,
-        ...(parseArg(actionArgs, "--commits") !== undefined
-          ? { commits: parsePositiveInt(parseArg(actionArgs, "--commits"), 60, "--commits") }
-          : {}),
-        ...(parseArg(actionArgs, "--preset") !== undefined
-          ? { presetId: parseArg(actionArgs, "--preset")! }
-          : {}),
-        ...(parseArg(actionArgs, "--vector") !== undefined
-          ? { vectorPath: parseArg(actionArgs, "--vector")! }
-          : {}),
-      } satisfies Parameters<typeof runElicitCommand>[0]
-    }
-
-    if (actionArg === "review") {
-      const repoPath = collectPositional(actionArgs, new Set())[0] ?? "."
-      return {
-        action: "review",
-        repoPath,
-      } satisfies Parameters<typeof runElicitCommand>[0]
-    }
-
-    const action = actionArg as "accept" | "reject"
-    const flagsWithValues = new Set(["--vector"])
-    const proposalId = collectPositional(actionArgs, flagsWithValues)[0] ?? fail(`elicit ${actionArg} requires a proposal id`)
-    const repoPath = collectPositional(actionArgs, flagsWithValues)[1] ?? "."
-    return {
-      action,
-      proposalId,
-      repoPath,
-      ...(parseArg(actionArgs, "--vector") !== undefined
-        ? { vectorPath: parseArg(actionArgs, "--vector")! }
-        : {}),
-    } satisfies Parameters<typeof runElicitCommand>[0]
-  })()
+  const elicitOptions = parseElicitOptions(actionArg as ElicitAction, commandArgs, fail)
 
   const exitCode = await runWithProgress("elicit", commandArgs, () =>
     Effect.runPromise(
