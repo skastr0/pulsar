@@ -48,8 +48,22 @@ export interface EngineInternals {
   ) => Layer.Layer<any, unknown, never>
 }
 
-export type RunWithEnvironment = ReturnType<typeof makeRunWithEnvironment>
-export type WithCommitWorktree = ReturnType<typeof makeWithCommitWorktree>
+export type RunWithEnvironment = <A, E>(
+  worktreePath: string,
+  sha: string,
+  changedHunks: ReadonlyArray<ChangedHunk>,
+  calibrationContext: ResolvedCalibrationContext | undefined,
+  runInWorktree: (
+    envLayer: Layer.Layer<any, unknown, never>,
+    referenceEntries: ReadonlyMap<string, unknown>,
+  ) => Effect.Effect<A, E, never>,
+) => Effect.Effect<A, E | ScoringEngineError, never>
+
+export type WithCommitWorktree = <A, E>(
+  repoPath: string,
+  sha: string,
+  runInWorktree: (worktreePath: string) => Effect.Effect<A, E, never>,
+) => Effect.Effect<A, E | ScoringEngineError, never>
 
 export const makeEngineInternals = (
   packLayerFactory: PackLayerFactory,
@@ -111,7 +125,7 @@ const makeEnvironmentLayerFactory = (
     packLayerFactory(worktreePath),
   )
 
-export const makeRunWithEnvironment = (internals: EngineInternals) => <A, E>(
+export const makeRunWithEnvironment = (internals: EngineInternals): RunWithEnvironment => <A, E>(
   worktreePath: string,
   sha: string,
   changedHunks: ReadonlyArray<ChangedHunk>,
@@ -134,7 +148,7 @@ export const makeRunWithEnvironment = (internals: EngineInternals) => <A, E>(
     return yield* runInWorktree(envLayer, referenceEntries)
   })
 
-export const makeWithCommitWorktree = () => <A, E>(
+export const makeWithCommitWorktree = (): WithCommitWorktree => <A, E>(
   repoPath: string,
   sha: string,
   runInWorktree: (worktreePath: string) => Effect.Effect<A, E, never>,

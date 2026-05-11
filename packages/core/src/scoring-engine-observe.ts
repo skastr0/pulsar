@@ -37,10 +37,41 @@ import type {
 } from "./scoring-engine-runtime.js"
 import type { PulsarVector } from "./vector.js"
 
+export type ObserveWithCache = (
+  key: CacheKey,
+  runFresh: () => Effect.Effect<ObserverOutput, ScoringEngineError, never>,
+) => Effect.Effect<
+  { readonly result: ObserverOutput; readonly cacheHit: boolean },
+  ScoringEngineError,
+  never
+>
+
+export type ObserveCommit = (
+  repoPath: string,
+  sha: string,
+) => Effect.Effect<ObserverOutput, ScoringEngineError, never>
+
+export type ObserveWorktree = (
+  repoPath: string,
+  headSha: string,
+  worktreeOptions?: { readonly changedHunks?: ReadonlyArray<ChangedHunk> },
+) => Effect.Effect<ObserverOutput, ScoringEngineError, never>
+
+export type ObserveRange = (
+  repoPath: string,
+  fromSha: string,
+  toSha: string,
+  options?: { concurrency?: number },
+) => Effect.Effect<
+  ReadonlyArray<{ readonly sha: string; readonly result: ObserverOutput }>,
+  ScoringEngineError,
+  never
+>
+
 export const makeObserveWithCache = (
   cacheRef: typeof SignalCacheTag.Service,
   options?: ScoringEngineOptions,
-) => (
+): ObserveWithCache => (
   key: CacheKey,
   runFresh: () => Effect.Effect<ObserverOutput, ScoringEngineError, never>,
 ): Effect.Effect<
@@ -73,8 +104,8 @@ export const makeObserveCommit = (args: {
   readonly internals: EngineInternals
   readonly runWithEnvironment: RunWithEnvironment
   readonly withCommitWorktree: WithCommitWorktree
-  readonly observeWithCache: ReturnType<typeof makeObserveWithCache>
-}) =>
+  readonly observeWithCache: ObserveWithCache
+}): ObserveCommit =>
   Effect.fn("ScoringEngine.observeCommit")(
     function* (repoPath: string, sha: string) {
       yield* Effect.annotateCurrentSpan("sha", sha)
@@ -145,9 +176,9 @@ export const makeObserveWorktree = (args: {
   readonly options: ScoringEngineOptions | undefined
   readonly internals: EngineInternals
   readonly runWithEnvironment: RunWithEnvironment
-  readonly observeWithCache: ReturnType<typeof makeObserveWithCache>
-  readonly observeCommit: ReturnType<typeof makeObserveCommit>
-}) =>
+  readonly observeWithCache: ObserveWithCache
+  readonly observeCommit: ObserveCommit
+}): ObserveWorktree =>
   Effect.fn("ScoringEngine.observeWorktree")(
     function* (
       repoPath: string,
@@ -205,8 +236,8 @@ const appendObserverRevisionContext = (
   })
 
 export const makeObserveRange = (
-  observeCommit: ReturnType<typeof makeObserveCommit>,
-) =>
+  observeCommit: ObserveCommit,
+): ObserveRange =>
   Effect.fn("ScoringEngine.observeRange")(
     function* (
       repoPath: string,

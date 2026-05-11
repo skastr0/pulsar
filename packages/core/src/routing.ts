@@ -37,7 +37,7 @@ export class RoutingDetector {
     return { triggers }
   }
 
-  static load(options?: { readonly repoRoot?: string }) {
+  static load(options?: { readonly repoRoot?: string }): Effect.Effect<RoutingDetector, unknown, never> {
     return loadRoutingPatterns(options).pipe(
       Effect.map((patterns) => new RoutingDetector(patterns)),
     )

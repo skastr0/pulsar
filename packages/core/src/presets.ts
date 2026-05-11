@@ -41,7 +41,9 @@ export const loadPulsarVectorPresets = (): Effect.Effect<ReadonlyArray<PulsarVec
 const asError = (cause: unknown): Error =>
   cause instanceof Error ? cause : new Error(String(cause))
 
-export const loadPulsarVectorPresetById = (presetId: string) =>
+export const loadPulsarVectorPresetById = (
+  presetId: string,
+): Effect.Effect<PulsarVector, Error, never> =>
   Effect.gen(function* () {
     const presets = yield* loadPulsarVectorPresets()
     const preset = presets.find((candidate) => candidate.id === presetId)

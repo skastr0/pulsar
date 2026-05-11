@@ -29,13 +29,31 @@ import type {
 import type { Tier } from "./tier.js"
 import type { PulsarVector } from "./vector.js"
 
+export type ScoreCommit = (
+  repoPath: string,
+  sha: string,
+  signalId: string,
+) => Effect.Effect<SignalRunResult, SignalError | ScoringEngineError, never>
+
+export type ScoreRange = (
+  repoPath: string,
+  fromSha: string,
+  toSha: string,
+  signalId: string,
+  options?: { concurrency?: number },
+) => Effect.Effect<
+  ReadonlyArray<{ readonly sha: string; readonly result: SignalRunResult }>,
+  SignalError | ScoringEngineError,
+  never
+>
+
 export const makeScoreCommit = (args: {
   readonly registry: Registry
   readonly vector: PulsarVector | undefined
   readonly internals: EngineInternals
   readonly runWithEnvironment: RunWithEnvironment
   readonly withCommitWorktree: WithCommitWorktree
-}) =>
+}): ScoreCommit =>
   Effect.fn("ScoringEngine.scoreCommit")(
     function* (repoPath: string, sha: string, signalId: string) {
       yield* Effect.annotateCurrentSpan("sha", sha)
@@ -150,8 +168,8 @@ const runSignalWithCache = (args: {
   ).pipe(Effect.tap(() => Effect.annotateCurrentSpan("cacheKey", cacheKeyString(args.key))))
 
 export const makeScoreRange = (
-  scoreCommit: ReturnType<typeof makeScoreCommit>,
-) =>
+  scoreCommit: ScoreCommit,
+): ScoreRange =>
   Effect.fn("ScoringEngine.scoreRange")(
     function* (
       repoPath: string,

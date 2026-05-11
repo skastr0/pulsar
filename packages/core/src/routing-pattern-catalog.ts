@@ -21,7 +21,9 @@ const SHIPPED_ROUTING_PATTERNS = [
 
 const RoutingPatternFile = Schema.Union(RoutingPattern, Schema.Array(RoutingPattern))
 
-export const loadRoutingPatterns = (options?: { readonly repoRoot?: string }) =>
+export const loadRoutingPatterns = (
+  options?: { readonly repoRoot?: string },
+): Effect.Effect<ReadonlyArray<RoutingPatternType>, RoutingPatternLoadFailed, never> =>
   Effect.gen(function* () {
     const repoRoot = options?.repoRoot ?? process.cwd()
     const shipped = yield* decodeShippedRoutingPatterns(repoRoot)

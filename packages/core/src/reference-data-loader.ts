@@ -26,7 +26,9 @@ const REFERENCE_DATA_SPECS: ReadonlyArray<{
   },
 ]
 
-export const loadCanonicalReferenceDataEntries = (repoRoot: string) =>
+export const loadCanonicalReferenceDataEntries = (
+  repoRoot: string,
+): Effect.Effect<ReadonlyMap<string, unknown>, ReferenceDataLoadFailed, never> =>
   Effect.gen(function* () {
     const entries = new Map<string, unknown>()
 
