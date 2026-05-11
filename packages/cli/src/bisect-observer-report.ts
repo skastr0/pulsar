@@ -41,47 +41,19 @@ export const buildObserverReport = (
     readonly firstCrossing: FirstCrossingQuery | undefined
   },
 ): ObserverBisectReport => {
-  const signalCategories = mergeSignalCategories(results)
-  const selectedCategories =
-    opts.selectedCategories.length === 0 ? [...CATEGORIES] : opts.selectedCategories
-  const selectedSignalSet = selectedSignalsForReport(
-    signalCategories,
-    opts.selectedSignals,
-    selectedCategories,
-  )
-  const trajectory = results.map(({ signalCategories: _signalCategories, ...entry }) => entry)
+  const scope = resolveObserverReportScope(results, opts)
+  const weightedMeanScores = summarizeScores(scope.trajectory.map((entry) => entry.weightedMean))
+  const readiness = summarizeReadinessTrajectory(scope.trajectory)
+  const finalEntry = scope.trajectory[scope.trajectory.length - 1]
 
-  const weightedMeanScores = summarizeScores(trajectory.map((entry) => entry.weightedMean))
-  const readiness = summarizeReadinessTrajectory(trajectory)
-
-  const perCategory = Object.fromEntries(
-    selectedCategories.map((category) => [
-      category,
-      summarizeCategoryTrajectory(trajectory.map((entry) => entry.categories[category])),
-    ]),
-  ) as Record<Category, CategoryTrajectory>
-
-  const finalEntry = trajectory[trajectory.length - 1]
   return {
     schemaVersion: "observer-bisect/v2",
     repoPath: opts.repoPath,
     fromSha: opts.fromSha,
     toSha: opts.toSha,
     vectorName: opts.vectorName,
-    trajectory: compactObserverTrajectory(trajectory, selectedCategories, selectedSignalSet),
-    commits: trajectory.map((entry) => entry.sha),
-    curves: buildObserverCurves(trajectory, selectedCategories, selectedSignalSet),
-    signalCategories: Object.fromEntries(
-      Object.entries(signalCategories).filter(([signalId]) => selectedSignalSet.has(signalId)),
-    ),
-    perCategory,
-    perSignal: perSignalTrajectories(trajectory, signalCategories, selectedSignalSet),
-    weightedMeanCulprits: findCulprits(scorePoints(trajectory, "weightedMean"), opts.topCulprits),
-    weightedMeanDriftCulprits: findDriftCulprits(scorePoints(trajectory, "weightedMean"), opts.topCulprits),
-    perCategoryCulprits: categoryCulprits(trajectory, selectedCategories, opts.topCulprits, findCulprits),
-    perCategoryDriftCulprits: categoryCulprits(trajectory, selectedCategories, opts.topCulprits, findDriftCulprits),
-    perSignalCulprits: signalCulprits(trajectory, selectedSignalSet, opts.topCulprits, findCulprits),
-    perSignalDriftCulprits: signalCulprits(trajectory, selectedSignalSet, opts.topCulprits, findDriftCulprits),
+    ...observerTrajectoryPayload(scope),
+    ...observerCulpritPayload(scope, opts.topCulprits),
     readinessCulprits: findCulprits(readiness.trajectory, opts.topCulprits),
     readinessDriftCulprits: findDriftCulprits(readiness.trajectory, opts.topCulprits),
     sampling: opts.sampling,
@@ -99,11 +71,97 @@ export const buildObserverReport = (
     firstCrossing:
       opts.firstCrossing === undefined
         ? undefined
-        : findFirstCrossing(resolveCrossingPoints(trajectory, opts.firstCrossing.target), opts.firstCrossing),
-    selectedSignals: [...selectedSignalSet],
-    selectedCategories,
+        : findFirstCrossing(resolveCrossingPoints(scope.trajectory, opts.firstCrossing.target), opts.firstCrossing),
+    selectedSignals: [...scope.selectedSignalSet],
+    selectedCategories: scope.selectedCategories,
   }
 }
+
+type ObserverReportScope = {
+  readonly signalCategories: Record<string, Category>
+  readonly selectedCategories: ReadonlyArray<Category>
+  readonly selectedSignalSet: ReadonlySet<string>
+  readonly trajectory: ReadonlyArray<ObserverCommitEntry>
+}
+
+const resolveObserverReportScope = (
+  results: ReadonlyArray<ObserverCurveSample>,
+  opts: Parameters<typeof buildObserverReport>[1],
+): ObserverReportScope => {
+  const signalCategories = mergeSignalCategories(results)
+  const selectedCategories =
+    opts.selectedCategories.length === 0 ? [...CATEGORIES] : opts.selectedCategories
+  const selectedSignalSet = selectedSignalsForReport(
+    signalCategories,
+    opts.selectedSignals,
+    selectedCategories,
+  )
+  const trajectory = results.map(({ signalCategories: _signalCategories, ...entry }) => entry)
+
+  return { signalCategories, selectedCategories, selectedSignalSet, trajectory }
+}
+
+const observerTrajectoryPayload = (scope: ObserverReportScope) => ({
+  trajectory: compactObserverTrajectory(
+    scope.trajectory,
+    scope.selectedCategories,
+    scope.selectedSignalSet,
+  ),
+  commits: scope.trajectory.map((entry) => entry.sha),
+  curves: buildObserverCurves(
+    scope.trajectory,
+    scope.selectedCategories,
+    scope.selectedSignalSet,
+  ),
+  signalCategories: Object.fromEntries(
+    Object.entries(scope.signalCategories).filter(([signalId]) =>
+      scope.selectedSignalSet.has(signalId),
+    ),
+  ),
+  perCategory: Object.fromEntries(
+    scope.selectedCategories.map((category) => [
+      category,
+      summarizeCategoryTrajectory(scope.trajectory.map((entry) => entry.categories[category])),
+    ]),
+  ) as Record<Category, CategoryTrajectory>,
+  perSignal: perSignalTrajectories(
+    scope.trajectory,
+    scope.signalCategories,
+    scope.selectedSignalSet,
+  ),
+})
+
+const observerCulpritPayload = (scope: ObserverReportScope, topCulprits: number) => ({
+  weightedMeanCulprits: findCulprits(scorePoints(scope.trajectory, "weightedMean"), topCulprits),
+  weightedMeanDriftCulprits: findDriftCulprits(
+    scorePoints(scope.trajectory, "weightedMean"),
+    topCulprits,
+  ),
+  perCategoryCulprits: categoryCulprits(
+    scope.trajectory,
+    scope.selectedCategories,
+    topCulprits,
+    findCulprits,
+  ),
+  perCategoryDriftCulprits: categoryCulprits(
+    scope.trajectory,
+    scope.selectedCategories,
+    topCulprits,
+    findDriftCulprits,
+  ),
+  perSignalCulprits: signalCulprits(
+    scope.trajectory,
+    scope.selectedSignalSet,
+    topCulprits,
+    findCulprits,
+  ),
+  perSignalDriftCulprits: signalCulprits(
+    scope.trajectory,
+    scope.selectedSignalSet,
+    topCulprits,
+    findDriftCulprits,
+  ),
+})
 
 export const observerReportOptions = (
   opts: {
