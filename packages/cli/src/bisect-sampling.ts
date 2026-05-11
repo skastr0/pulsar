@@ -1,29 +1,27 @@
 import { Effect } from "effect"
 
-export type BisectSamplingMode =
-  | "auto"
-  | "full"
-  | "merge-only"
-  | "adaptive-delta"
+import {
+  ADAPTIVE_MAX_SCORED_COMMITS,
+  allIndexes,
+  initialAdaptiveIndexes,
+  selectMergeOnlyIndexes,
+  type RangeCommit,
+} from "./bisect-sampling-indexes.js"
+import {
+  resolveSamplingPlan,
+  type BisectSamplingMode,
+  type BisectSamplingSummary,
+} from "./bisect-sampling-plan.js"
 
-export interface BisectSamplingSummary {
-  readonly requested: BisectSamplingMode
-  readonly applied: Exclude<BisectSamplingMode, "auto">
-  readonly totalCommits: number
-  readonly scoredCommits: number
-  readonly diagnostics: ReadonlyArray<string>
-}
-
-export interface RangeCommit {
-  readonly sha: string
-  readonly parentCount: number
-}
-
-const AUTO_FULL_RANGE_THRESHOLD = 500
-const ADAPTIVE_INITIAL_SAMPLES = 17
-const ADAPTIVE_MAX_GAP = 64
-const ADAPTIVE_DELTA_THRESHOLD = 0.08
-const ADAPTIVE_MAX_SCORED_COMMITS = 1025
+export type { RangeCommit } from "./bisect-sampling-indexes.js"
+export {
+  chooseAdaptiveMidpoint,
+  chooseObserverAdaptiveMidpoint,
+  initialAdaptiveIndexes,
+  selectMergeOnlyIndexes,
+} from "./bisect-sampling-indexes.js"
+export type { BisectSamplingMode, BisectSamplingSummary } from "./bisect-sampling-plan.js"
+export { resolveSamplingPlan } from "./bisect-sampling-plan.js"
 
 export const sampleTrajectory = <Result, Entry extends { readonly sha: string }>(
   commits: ReadonlyArray<RangeCommit>,
@@ -237,149 +235,4 @@ const scoreTrajectoryIndexes = <Result, Entry extends { readonly sha: string }>(
     },
     { concurrency },
   )
-}
-
-export const resolveSamplingPlan = (
-  commits: ReadonlyArray<RangeCommit>,
-  requested: BisectSamplingMode,
-  opts: { readonly hasFirstCrossing?: boolean } = {},
-): { readonly applied: Exclude<BisectSamplingMode, "auto">; readonly diagnostics: ReadonlyArray<string> } => {
-  if (requested === "full") {
-    return { applied: "full", diagnostics: [] }
-  }
-  if (requested === "auto") {
-    return resolveAutoSamplingPlan(commits, opts)
-  }
-  if (requested === "merge-only") {
-    return resolveMergeOnlySamplingPlan(commits, opts)
-  }
-  return resolveAdaptiveSamplingPlan(opts)
-}
-
-const resolveAutoSamplingPlan = (
-  commits: ReadonlyArray<RangeCommit>,
-  opts: { readonly hasFirstCrossing?: boolean },
-): { readonly applied: Exclude<BisectSamplingMode, "auto">; readonly diagnostics: ReadonlyArray<string> } => {
-  if (opts.hasFirstCrossing === true) {
-    return {
-      applied: "full",
-      diagnostics: [
-        "auto sampling chose full because first-crossing queries require exact commit order",
-      ],
-    }
-  }
-  if (commits.length <= AUTO_FULL_RANGE_THRESHOLD) {
-    return { applied: "full", diagnostics: [] }
-  }
-  return {
-    applied: "adaptive-delta",
-    diagnostics: [
-      `auto sampling chose adaptive-delta because the range has ${commits.length} commits`,
-      "adaptive-delta can miss smaller local drops; rerun with --sample full to confirm an exact culprit",
-    ],
-  }
-}
-
-const resolveMergeOnlySamplingPlan = (
-  commits: ReadonlyArray<RangeCommit>,
-  opts: { readonly hasFirstCrossing?: boolean },
-): { readonly applied: Exclude<BisectSamplingMode, "auto">; readonly diagnostics: ReadonlyArray<string> } => {
-  const indexes = selectMergeOnlyIndexes(commits)
-  if (indexes.length >= Math.max(2, commits.length)) {
-    return { applied: "full", diagnostics: ["merge-only matched the full range; using full sampling instead"] }
-  }
-  if (indexes.length < 2) {
-    return {
-      applied: "full",
-      diagnostics: ["merge-only found too few merge commits; using full sampling instead"],
-    }
-  }
-  return {
-    applied: "merge-only",
-    diagnostics: [
-      "merge-only includes the range endpoints plus merge commits only",
-      "non-merge culprit commits can be skipped; rerun with --sample full to confirm an exact culprit",
-      ...(opts.hasFirstCrossing === true
-        ? ["first-crossing under merge-only sampling is approximate; rerun with --sample full for exact crossing"]
-        : []),
-    ],
-  }
-}
-
-const resolveAdaptiveSamplingPlan = (
-  opts: { readonly hasFirstCrossing?: boolean },
-): { readonly applied: Exclude<BisectSamplingMode, "auto">; readonly diagnostics: ReadonlyArray<string> } => ({
-  applied: "adaptive-delta",
-  diagnostics: [
-    `adaptive-delta started from ${ADAPTIVE_INITIAL_SAMPLES} evenly spaced samples`,
-    "adaptive-delta refines only where sampled deltas stay large or commit gaps stay wide",
-    ...(opts.hasFirstCrossing === true
-      ? ["first-crossing under adaptive-delta sampling is approximate; rerun with --sample full for exact crossing"]
-      : []),
-  ],
-})
-
-const allIndexes = (length: number): ReadonlyArray<number> =>
-  Array.from({ length }, (_, index) => index)
-
-export const selectMergeOnlyIndexes = (
-  commits: ReadonlyArray<RangeCommit>,
-): ReadonlyArray<number> => {
-  if (commits.length === 0) return []
-  const indexes = new Set<number>([0, commits.length - 1])
-  for (let index = 0; index < commits.length; index += 1) {
-    if ((commits[index]?.parentCount ?? 0) > 1) {
-      indexes.add(index)
-    }
-  }
-  return [...indexes].sort((a, b) => a - b)
-}
-
-export const initialAdaptiveIndexes = (length: number): ReadonlyArray<number> => {
-  if (length <= ADAPTIVE_INITIAL_SAMPLES) return allIndexes(length)
-  const indexes = new Set<number>([0, length - 1])
-  for (let step = 1; step < ADAPTIVE_INITIAL_SAMPLES - 1; step += 1) {
-    const ratio = step / (ADAPTIVE_INITIAL_SAMPLES - 1)
-    indexes.add(Math.round((length - 1) * ratio))
-  }
-  return [...indexes].sort((a, b) => a - b)
-}
-
-export const chooseAdaptiveMidpoint = (
-  leftIndex: number,
-  rightIndex: number,
-  leftScore: number,
-  rightScore: number,
-): number | undefined => {
-  const gap = rightIndex - leftIndex
-  if (gap <= 1) return undefined
-  const delta = Math.abs(leftScore - rightScore)
-  if (gap <= ADAPTIVE_MAX_GAP && delta < ADAPTIVE_DELTA_THRESHOLD) {
-    return undefined
-  }
-  return leftIndex + Math.floor(gap / 2)
-}
-
-export const chooseObserverAdaptiveMidpoint = (
-  leftIndex: number,
-  rightIndex: number,
-  leftEntry: { readonly weightedMean: number; readonly readinessScore: number | undefined },
-  rightEntry: { readonly weightedMean: number; readonly readinessScore: number | undefined },
-): number | undefined => {
-  const gap = rightIndex - leftIndex
-  if (gap <= 1) return undefined
-  if (gap > ADAPTIVE_MAX_GAP) return leftIndex + Math.floor(gap / 2)
-
-  const weightedMeanDelta = Math.abs(leftEntry.weightedMean - rightEntry.weightedMean)
-  const readinessDelta =
-    leftEntry.readinessScore === undefined || rightEntry.readinessScore === undefined
-      ? undefined
-      : Math.abs(leftEntry.readinessScore - rightEntry.readinessScore)
-  if (
-    weightedMeanDelta < ADAPTIVE_DELTA_THRESHOLD &&
-    (readinessDelta === undefined || readinessDelta < ADAPTIVE_DELTA_THRESHOLD)
-  ) {
-    return undefined
-  }
-  return leftIndex + Math.floor(gap / 2)
 }
