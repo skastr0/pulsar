@@ -54,6 +54,13 @@ type SettledAnalysis =
   | { readonly status: "ready"; readonly analysis: PulsarAnalysis }
   | { readonly status: "error"; readonly message: string }
 
+interface HookAnalysisRequest {
+  readonly fingerprint: string
+  readonly toolName: string
+  readonly sessionID: string
+  readonly diff: RoutingDiff
+}
+
 export interface PulsarState {
   readonly analyzer: PulsarAnalyzer
   readonly inlineWaitMs: number
@@ -89,81 +96,125 @@ export const afterToolExecute = Effect.fn("PulsarHooks.afterToolExecute")(
     readonly worktree: string
     readonly state: PulsarState
   }) {
-    if (!EDIT_TOOLS.has(input.tool)) return
-
-    const args = recordFromUnknown(input.args)
-    const diff = buildRoutingDiffFromToolArgs(input.tool, args, worktree)
-    if (diff.changedFiles.length === 0) return
-
-    const fingerprint = fingerprintOf({ tool: input.tool, diff })
-    if (state.lastSurfacedFingerprintBySession.get(input.sessionID) === fingerprint) {
-      return
-    }
-
+    const routed = buildHookAnalysisRequest(input, worktree, state)
+    if (routed === undefined) return
     const vectorExit = yield* Effect.either(
       Effect.tryPromise(() => loadPulsarVectorForWorktree(worktree)),
     )
     if (vectorExit._tag === "Left") {
-      appendPulsarAnnotation(
-        output,
-        createErrorAnnotation({
-          changedFiles: diff.changedFiles,
-          fingerprint,
-          message: toMessage(vectorExit.left),
-        }),
-      )
-      state.lastSurfacedFingerprintBySession.set(input.sessionID, fingerprint)
+      surfaceVectorLoadFailure(output, state, routed, vectorExit.left)
       return
     }
-
     const vector = vectorExit.right
     if (!diffTimeIntegrationEnabled(vector)) return
 
-    const completed = state.completed.get(fingerprint)
-    if (completed !== undefined) {
-      appendPulsarAnnotation(output, completed.annotation)
-      state.lastSurfacedFingerprintBySession.set(input.sessionID, fingerprint)
-      return
-    }
-
+    if (surfaceCompletedAnalysis(output, state, routed)) return
     const pending = ensureAnalysis(state, {
-      fingerprint,
-      toolName: input.tool,
-      sessionID: input.sessionID,
+      fingerprint: routed.fingerprint,
+      toolName: routed.toolName,
+      sessionID: routed.sessionID,
       worktree,
-      diff,
+      diff: routed.diff,
       vector,
-      previous: state.lastCompletedBySession.get(input.sessionID),
+      previous: state.lastCompletedBySession.get(routed.sessionID),
     })
     const settled = yield* Effect.promise(() =>
       settleWithin(pending, state.inlineWaitMs),
     )
 
-    if (settled?.status === "ready") {
-      appendPulsarAnnotation(output, settled.analysis.annotation)
-      state.lastSurfacedFingerprintBySession.set(input.sessionID, fingerprint)
-      return
-    }
-
-    if (settled?.status === "error") {
-      appendPulsarAnnotation(
-        output,
-        createErrorAnnotation({
-          changedFiles: diff.changedFiles,
-          fingerprint,
-          message: settled.message,
-        }),
-      )
-      state.lastSurfacedFingerprintBySession.set(input.sessionID, fingerprint)
-      return
-    }
-
-    appendPulsarAnnotation(
-      output,
-      createPendingAnnotation({ changedFiles: diff.changedFiles, fingerprint }),
-    )
+    surfaceSettledAnalysis(output, state, routed, settled)
   },
 )
+
+const buildHookAnalysisRequest = (
+  input: ToolAfterInput,
+  worktree: string,
+  state: PulsarState,
+): HookAnalysisRequest | undefined => {
+  if (!EDIT_TOOLS.has(input.tool)) return undefined
+  const args = recordFromUnknown(input.args)
+  const diff = buildRoutingDiffFromToolArgs(input.tool, args, worktree)
+  if (diff.changedFiles.length === 0) return undefined
+
+  const fingerprint = fingerprintOf({ tool: input.tool, diff })
+  if (state.lastSurfacedFingerprintBySession.get(input.sessionID) === fingerprint) {
+    return undefined
+  }
+  return {
+    fingerprint,
+    toolName: input.tool,
+    sessionID: input.sessionID,
+    diff,
+  }
+}
+
+const surfaceVectorLoadFailure = (
+  output: ToolAfterOutput,
+  state: PulsarState,
+  request: HookAnalysisRequest,
+  cause: unknown,
+): void => {
+  appendPulsarAnnotation(
+    output,
+    createErrorAnnotation({
+      changedFiles: request.diff.changedFiles,
+      fingerprint: request.fingerprint,
+      message: toMessage(cause),
+    }),
+  )
+  markFingerprintSurfaced(state, request)
+}
+
+const surfaceCompletedAnalysis = (
+  output: ToolAfterOutput,
+  state: PulsarState,
+  request: HookAnalysisRequest,
+): boolean => {
+  const completed = state.completed.get(request.fingerprint)
+  if (completed === undefined) return false
+  appendPulsarAnnotation(output, completed.annotation)
+  markFingerprintSurfaced(state, request)
+  return true
+}
+
+const surfaceSettledAnalysis = (
+  output: ToolAfterOutput,
+  state: PulsarState,
+  request: HookAnalysisRequest,
+  settled: SettledAnalysis | undefined,
+): void => {
+  if (settled?.status === "ready") {
+    appendPulsarAnnotation(output, settled.analysis.annotation)
+    markFingerprintSurfaced(state, request)
+    return
+  }
+  if (settled?.status === "error") {
+    appendPulsarAnnotation(
+      output,
+      createErrorAnnotation({
+        changedFiles: request.diff.changedFiles,
+        fingerprint: request.fingerprint,
+        message: settled.message,
+      }),
+    )
+    markFingerprintSurfaced(state, request)
+    return
+  }
+  appendPulsarAnnotation(
+    output,
+    createPendingAnnotation({
+      changedFiles: request.diff.changedFiles,
+      fingerprint: request.fingerprint,
+    }),
+  )
+}
+
+const markFingerprintSurfaced = (
+  state: PulsarState,
+  request: HookAnalysisRequest,
+): void => {
+  state.lastSurfacedFingerprintBySession.set(request.sessionID, request.fingerprint)
+}
 
 const ensureAnalysis = (
   state: PulsarState,
