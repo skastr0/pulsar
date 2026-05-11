@@ -45,6 +45,19 @@ export interface Shared02BusFactorOutput {
   readonly repoAuthors: ReadonlyArray<string>
 }
 
+interface TouchedFileHistory {
+  readonly absolutePath: string
+  readonly authors: ReadonlyArray<string>
+  readonly loc: number
+}
+
+interface BusFactorAccumulator {
+  readonly byFile: Map<string, BusFactorInfo>
+  readonly siloed: Array<{ file: string; author: string; loc: number }>
+  readonly repoAuthors: Set<string>
+  touchedLoc: number
+}
+
 /**
  * SHARED-02 — language-agnostic knowledge concentration from git history.
  * This lives in core so both the TS and Rust packs can re-export the same
@@ -147,88 +160,7 @@ export const Shared02BusFactor: Signal<
       const ctx = yield* SignalContextTag
 
       return yield* Effect.tryPromise({
-        try: async (): Promise<Shared02BusFactorOutput> => {
-          const headDate = await readHeadDate(ctx.worktreePath)
-          const sinceDate = new Date(
-            headDate.getTime() - config.window_days * 24 * 3600 * 1000,
-          )
-          const aliasMap = await loadAuthorAliases(ctx.worktreePath)
-          const authorsByFile = await listAuthorsByTouchedFileInWindow(
-            ctx.worktreePath,
-            sinceDate.toISOString(),
-            headDate.toISOString(),
-            {
-              includeExtensions: config.include_extensions,
-              excludeGlobs: config.exclude_globs,
-              maxCommits: config.max_commits,
-            },
-          )
-
-          const byFile = new Map<string, BusFactorInfo>()
-          const siloed: Array<{ file: string; author: string; loc: number }> = []
-          const repoAuthors = new Set<string>()
-          let touchedLoc = 0
-
-          const touchedFiles = await mapWithConcurrency(
-            [...authorsByFile.entries()],
-            16,
-            async ([relativePath, authors]) => {
-              const absolutePath = join(ctx.worktreePath, relativePath)
-              const loc = await countFileLoc(absolutePath).catch(() => 0)
-              return { absolutePath, authors, loc }
-            },
-          )
-
-          for (const { absolutePath, authors, loc } of touchedFiles) {
-            if (loc < config.min_loc) continue
-            touchedLoc += loc
-
-            if (authors.length === 0) continue
-
-            const counts = new Map<string, number>()
-            for (const author of authors) {
-              const canonical = normalizeAuthor(author, aliasMap)
-              counts.set(canonical, (counts.get(canonical) ?? 0) + 1)
-            }
-
-            const sortedAuthors = [...counts.entries()].sort((a, b) => {
-              if (b[1] !== a[1]) return b[1] - a[1]
-              return a[0].localeCompare(b[0])
-            })
-
-            const primary = sortedAuthors[0]
-            if (primary === undefined) continue
-
-            const commitCount = sortedAuthors.reduce((sum, entry) => sum + entry[1], 0)
-            const authorNames = sortedAuthors.map(([author]) => author)
-            for (const author of authorNames) {
-              repoAuthors.add(author)
-            }
-            const info: BusFactorInfo = {
-              busFactor: authorNames.length,
-              primaryAuthor: primary[0],
-              primaryShare: commitCount === 0 ? 0 : primary[1] / commitCount,
-              authors: authorNames,
-              loc,
-            }
-            byFile.set(absolutePath, info)
-
-            if (info.busFactor === 1) {
-              siloed.push({ file: absolutePath, author: info.primaryAuthor, loc })
-            }
-          }
-
-          return {
-            byFile,
-            siloed: siloed.sort((a, b) => b.loc - a.loc || a.file.localeCompare(b.file)),
-            distribution: summarize([...byFile.values()].map((info) => info.busFactor)),
-            windowDays: config.window_days,
-            maxCommits: config.max_commits,
-            touchedFileCount: byFile.size,
-            touchedLoc,
-            repoAuthors: [...repoAuthors].sort((a, b) => a.localeCompare(b)),
-          }
-        },
+        try: () => computeBusFactorOutput(ctx.worktreePath, config),
         catch: (cause) =>
           new SignalComputeError({
             signalId: "SHARED-02-bus-factor",
@@ -279,6 +211,114 @@ export const Shared02BusFactor: Signal<
     }))
   },
 }
+
+const computeBusFactorOutput = async (
+  worktreePath: string,
+  config: Shared02BusFactorConfig,
+): Promise<Shared02BusFactorOutput> => {
+  const headDate = await readHeadDate(worktreePath)
+  const sinceDate = new Date(headDate.getTime() - config.window_days * 24 * 3600 * 1000)
+  const aliasMap = await loadAuthorAliases(worktreePath)
+  const authorsByFile = await listAuthorsByTouchedFileInWindow(
+    worktreePath,
+    sinceDate.toISOString(),
+    headDate.toISOString(),
+    {
+      includeExtensions: config.include_extensions,
+      excludeGlobs: config.exclude_globs,
+      maxCommits: config.max_commits,
+    },
+  )
+  const touchedFiles = await loadTouchedFileHistory(worktreePath, authorsByFile)
+  return buildBusFactorOutput(touchedFiles, aliasMap, config)
+}
+
+const loadTouchedFileHistory = (
+  worktreePath: string,
+  authorsByFile: ReadonlyMap<string, ReadonlyArray<string>>,
+): Promise<ReadonlyArray<TouchedFileHistory>> =>
+  mapWithConcurrency([...authorsByFile.entries()], 16, async ([relativePath, authors]) => {
+    const absolutePath = join(worktreePath, relativePath)
+    const loc = await countFileLoc(absolutePath).catch(() => 0)
+    return { absolutePath, authors, loc }
+  })
+
+const buildBusFactorOutput = (
+  touchedFiles: ReadonlyArray<TouchedFileHistory>,
+  aliasMap: ReadonlyMap<string, string>,
+  config: Shared02BusFactorConfig,
+): Shared02BusFactorOutput => {
+  const accumulator: BusFactorAccumulator = {
+    byFile: new Map(),
+    siloed: [],
+    repoAuthors: new Set(),
+    touchedLoc: 0,
+  }
+  for (const file of touchedFiles) {
+    addTouchedFileBusFactor(file, aliasMap, config.min_loc, accumulator)
+  }
+  return finalizeBusFactorOutput(accumulator, config)
+}
+
+const addTouchedFileBusFactor = (
+  file: TouchedFileHistory,
+  aliasMap: ReadonlyMap<string, string>,
+  minLoc: number,
+  accumulator: BusFactorAccumulator,
+): void => {
+  if (file.loc < minLoc) return
+  accumulator.touchedLoc += file.loc
+  if (file.authors.length === 0) return
+
+  const sortedAuthors = countCanonicalAuthors(file.authors, aliasMap)
+  const primary = sortedAuthors[0]
+  if (primary === undefined) return
+
+  const commitCount = sortedAuthors.reduce((sum, entry) => sum + entry[1], 0)
+  const authorNames = sortedAuthors.map(([author]) => author)
+  for (const author of authorNames) accumulator.repoAuthors.add(author)
+
+  const info: BusFactorInfo = {
+    busFactor: authorNames.length,
+    primaryAuthor: primary[0],
+    primaryShare: commitCount === 0 ? 0 : primary[1] / commitCount,
+    authors: authorNames,
+    loc: file.loc,
+  }
+  accumulator.byFile.set(file.absolutePath, info)
+  if (info.busFactor === 1) {
+    accumulator.siloed.push({ file: file.absolutePath, author: info.primaryAuthor, loc: file.loc })
+  }
+}
+
+const countCanonicalAuthors = (
+  authors: ReadonlyArray<string>,
+  aliasMap: ReadonlyMap<string, string>,
+): ReadonlyArray<readonly [string, number]> => {
+  const counts = new Map<string, number>()
+  for (const author of authors) {
+    const canonical = normalizeAuthor(author, aliasMap)
+    counts.set(canonical, (counts.get(canonical) ?? 0) + 1)
+  }
+  return [...counts.entries()].sort((a, b) => {
+    if (b[1] !== a[1]) return b[1] - a[1]
+    return a[0].localeCompare(b[0])
+  })
+}
+
+const finalizeBusFactorOutput = (
+  accumulator: BusFactorAccumulator,
+  config: Shared02BusFactorConfig,
+): Shared02BusFactorOutput => ({
+  byFile: accumulator.byFile,
+  siloed: accumulator.siloed.sort((a, b) => b.loc - a.loc || a.file.localeCompare(b.file)),
+  distribution: summarize([...accumulator.byFile.values()].map((info) => info.busFactor)),
+  windowDays: config.window_days,
+  maxCommits: config.max_commits,
+  touchedFileCount: accumulator.byFile.size,
+  touchedLoc: accumulator.touchedLoc,
+  repoAuthors: [...accumulator.repoAuthors].sort((a, b) => a.localeCompare(b)),
+})
 
 const mapWithConcurrency = async <A, B>(
   items: ReadonlyArray<A>,
