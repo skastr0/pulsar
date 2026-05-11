@@ -1,4 +1,5 @@
 import type { PackageInfo, PackageManifest } from "../discovery.js"
+import { inferHostFacadeAlias } from "./ts-de-04-host-facade-aliases.js"
 import { dependencyNamesOf, packageDisplayName } from "./shared-workspace.js"
 
 export interface DependencyMismatch {
@@ -305,45 +306,4 @@ const allowsBundledAppDevDependencies = (manifest: PackageManifest): boolean => 
   if (!manifest.private) return false
   const scriptText = Object.values(manifest.scripts).join("\n")
   return /\b(electron-vite|vite|tauri|next|nuxt|astro|svelte-kit)\b/.test(scriptText)
-}
-
-const inferHostFacadeAlias = (
-  hostPackageName: string,
-  specifiers: ReadonlySet<string>,
-  productionDeclared: ReadonlySet<string>,
-  devDeclared: ReadonlySet<string>,
-  typeOnlyUsage: boolean,
-): string | undefined => {
-  if (hostPackageName === "vscode" && devDeclared.has("@types/vscode")) return "@types/vscode"
-  if (typeOnlyUsage) {
-    const definitelyTypedPackage = definitelyTypedPackageNameFor(hostPackageName)
-    if (
-      definitelyTypedPackage !== undefined &&
-      (productionDeclared.has(definitelyTypedPackage) || devDeclared.has(definitelyTypedPackage))
-    ) {
-      return definitelyTypedPackage
-    }
-  }
-  const pluginSdkPrefix = `${hostPackageName}/plugin-sdk`
-  if (
-    specifiers.size === 0 ||
-    ![...specifiers].every(
-      (specifier) => specifier === pluginSdkPrefix || specifier.startsWith(`${pluginSdkPrefix}/`),
-    )
-  ) {
-    return undefined
-  }
-  const declaredPluginSdkPackages = [...productionDeclared, ...devDeclared]
-    .filter((dependencyName) => dependencyName.endsWith("/plugin-sdk"))
-    .sort((left, right) => left.localeCompare(right))
-  return declaredPluginSdkPackages.length === 1 ? declaredPluginSdkPackages[0] : undefined
-}
-
-const definitelyTypedPackageNameFor = (packageName: string): string | undefined => {
-  if (packageName.startsWith("@types/")) return undefined
-  if (packageName.startsWith("@")) {
-    const [scope, name] = packageName.slice(1).split("/")
-    return scope !== undefined && name !== undefined ? `@types/${scope}__${name}` : undefined
-  }
-  return `@types/${packageName}`
 }
