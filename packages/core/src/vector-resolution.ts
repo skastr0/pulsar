@@ -1,7 +1,8 @@
 import { Effect } from "effect"
 import { UnknownSignalFactorError, UnknownSignalIdError } from "./errors.js"
 import type { Registry } from "./registry.js"
-import type { SignalFactorValue, SignalIdentity } from "./signal.js"
+import type { SignalIdentity } from "./signal.js"
+import type { SignalFactorValue } from "./signal-factor-model.js"
 import type {
   PulsarVector,
   SignalFactorOverrideMap,

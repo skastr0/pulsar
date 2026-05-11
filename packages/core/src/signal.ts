@@ -10,16 +10,6 @@ import type {
 } from "./signal-factor-model.js"
 import type { SignalRequirements } from "./signal-runtime.js"
 
-export type {
-  SignalFactorDefinition,
-  SignalFactorLedger,
-  SignalFactorLedgerEntry,
-  SignalFactorValue,
-} from "./signal-factor-model.js"
-export type {
-  SignalRequirements,
-} from "./signal-runtime.js"
-
 /**
  * Declared input dependency for a compound (Tier 1.5) signal.
  *

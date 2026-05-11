@@ -30,6 +30,7 @@ export {
   type AnySignal,
   type Signal,
 } from "./signal.js"
+export type { SignalRequirements } from "./signal-runtime.js"
 export { scoreThresholdViolationShare } from "./signal-score-utils.js"
 export {
   type SignalFactorAttribution,

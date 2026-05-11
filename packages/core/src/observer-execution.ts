@@ -5,7 +5,8 @@ import { applySignalFactorPolicy, makeSignalFactorPolicyContext, SignalFactorPol
 import { buildInputOutputs } from "./input-outputs.js"
 import type { Registry } from "./registry.js"
 import type { SignalRunResult } from "./runner.js"
-import type { ResolvedSignal, SignalRequirements } from "./signal.js"
+import type { ResolvedSignal } from "./signal.js"
+import type { SignalRequirements } from "./signal-runtime.js"
 import { isActive as vectorIsActive, resolvedConfig as vectorResolvedConfig, type PulsarVector } from "./vector.js"
 import type {
   ObserverCalibrationSummary,

@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import type { SignalFactorValue } from "./signal.js"
+import type { SignalFactorValue } from "./signal-factor-model.js"
 
 export const SignalOverride = Schema.Struct({
   active: Schema.optional(Schema.Boolean),

@@ -13,7 +13,8 @@ import {
   SignalComputeError,
   type SignalError,
 } from "../errors.js"
-import type { AnySignal, Signal, SignalApplicability, SignalFactorLedger } from "../signal.js"
+import type { SignalFactorLedger } from "../signal-factor-model.js"
+import type { AnySignal, Signal, SignalApplicability } from "../signal.js"
 
 /**
  * Tiny leaf-signal factory. Every test builds its own tree of signals

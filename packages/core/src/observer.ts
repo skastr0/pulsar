@@ -1,7 +1,7 @@
 import { Effect, Option } from "effect"
 import { CalibrationContextTag } from "./calibration.js"
 import type { Registry } from "./registry.js"
-import type { SignalRequirements } from "./signal.js"
+import type { SignalRequirements } from "./signal-runtime.js"
 import type { PulsarVector } from "./vector.js"
 import { aggregateCategories } from "./observer-categories.js"
 import { executeObserverSignals, summarizeCalibration } from "./observer-execution.js"

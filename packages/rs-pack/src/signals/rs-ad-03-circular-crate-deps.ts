@@ -162,6 +162,8 @@ const toCycle = (
 const tarjan = (
   graph: ReadonlyMap<string, ReadonlyArray<CrateEdge>>,
 ): Array<Array<string>> => {
+  type Frame = { readonly node: string; readonly neighbors: ReadonlyArray<string>; cursor: number }
+
   let index = 0
   const indices = new Map<string, number>()
   const lowlinks = new Map<string, number>()
@@ -170,7 +172,6 @@ const tarjan = (
   const sccs: Array<Array<string>> = []
 
   const visit = (start: string): void => {
-    type Frame = { readonly node: string; readonly neighbors: ReadonlyArray<string>; cursor: number }
     const frames: Array<Frame> = []
 
     const enter = (node: string): void => {
@@ -186,42 +187,57 @@ const tarjan = (
       })
     }
 
-    enter(start)
-    while (frames.length > 0) {
-      const frame = frames[frames.length - 1]!
-      if (frame.cursor >= frame.neighbors.length) {
-        if (lowlinks.get(frame.node) === indices.get(frame.node)) {
-          const scc: Array<string> = []
-          while (true) {
-            const value = stack.pop()
-            if (value === undefined) break
-            onStack.delete(value)
-            scc.push(value)
-            if (value === frame.node) break
-          }
-          sccs.push(scc)
-        }
-        frames.pop()
-        if (frames.length > 0) {
-          const parent = frames[frames.length - 1]!
-          lowlinks.set(
-            parent.node,
-            Math.min(lowlinks.get(parent.node) ?? 0, lowlinks.get(frame.node) ?? 0),
-          )
-        }
-        continue
+    const popComponent = (root: string): Array<string> => {
+      const scc: Array<string> = []
+      while (true) {
+        const value = stack.pop()
+        if (value === undefined) break
+        onStack.delete(value)
+        scc.push(value)
+        if (value === root) break
       }
+      return scc
+    }
 
+    const propagateLowlinkToParent = (frame: Frame): void => {
+      const parent = frames[frames.length - 1]
+      if (parent === undefined) return
+      lowlinks.set(
+        parent.node,
+        Math.min(lowlinks.get(parent.node) ?? 0, lowlinks.get(frame.node) ?? 0),
+      )
+    }
+
+    const finishFrame = (frame: Frame): void => {
+      if (lowlinks.get(frame.node) === indices.get(frame.node)) {
+        sccs.push(popComponent(frame.node))
+      }
+      frames.pop()
+      propagateLowlinkToParent(frame)
+    }
+
+    const visitNeighbor = (frame: Frame): void => {
       const neighbor = frame.neighbors[frame.cursor]!
       frame.cursor += 1
       if (!indices.has(neighbor)) {
         enter(neighbor)
-      } else if (onStack.has(neighbor)) {
-        lowlinks.set(
-          frame.node,
-          Math.min(lowlinks.get(frame.node) ?? 0, indices.get(neighbor) ?? 0),
-        )
+        return
       }
+      if (!onStack.has(neighbor)) return
+      lowlinks.set(
+        frame.node,
+        Math.min(lowlinks.get(frame.node) ?? 0, indices.get(neighbor) ?? 0),
+      )
+    }
+
+    enter(start)
+    while (frames.length > 0) {
+      const frame = frames[frames.length - 1]!
+      if (frame.cursor >= frame.neighbors.length) {
+        finishFrame(frame)
+        continue
+      }
+      visitNeighbor(frame)
     }
   }
 

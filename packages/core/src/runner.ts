@@ -10,10 +10,10 @@ import { buildInputOutputs } from "./input-outputs.js"
 import type { Registry } from "./registry.js"
 import type {
   ResolvedSignal,
-  SignalFactorLedger,
   SignalOutputMetadata,
-  SignalRequirements,
 } from "./signal.js"
+import type { SignalFactorLedger } from "./signal-factor-model.js"
+import type { SignalRequirements } from "./signal-runtime.js"
 import {
   isActive as vectorIsActive,
   resolvedConfig as vectorResolvedConfig,
