@@ -145,6 +145,30 @@ export interface TypeScriptUnfinishedImplementationPolicyValue {
   readonly metadata?: Readonly<Record<string, unknown>>
 }
 
+export interface TypeScriptUnsafeTypePolicyValue {
+  readonly signalId: string
+  readonly findingId: string
+  readonly file: string
+  readonly line: number
+  readonly kind:
+    | "parameter"
+    | "return"
+    | "property"
+    | "variable"
+    | "type-alias"
+    | "assertion"
+    | "heritage"
+    | "unknown"
+  readonly target: string
+  readonly boundary: boolean
+  readonly visible: boolean
+  readonly severity: "info" | "warn" | "block"
+  readonly baseWeight: number
+  readonly weight: number
+  readonly factorPathPrefix: string
+  readonly metadata?: Readonly<Record<string, unknown>>
+}
+
 export interface MixerCategoryPolicyValue {
   readonly category: string
   readonly rawScore: number

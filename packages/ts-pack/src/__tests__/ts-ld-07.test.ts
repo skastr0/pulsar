@@ -1,7 +1,16 @@
 import { describe, expect, test } from "bun:test"
-import { Schema } from "effect"
+import {
+  appendCalibrationDecision,
+  CalibrationContextTag,
+  defineCalibrationProcessor,
+  makeResolvedCalibrationContext,
+} from "@skastr0/pulsar-core/calibration"
+import { ReferenceDataTag, SignalContextTag, makeReferenceData } from "@skastr0/pulsar-core/signal"
+import { Effect, Layer, Schema } from "effect"
+import { TsProjectLayer } from "../ts-project.js"
 import {
   TsLd07,
+  type TsLd07Output,
   TsLd07Config,
 } from "../signals/ts-ld-07-unsafe-type-erosion.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
@@ -132,6 +141,109 @@ describe("TS-LD-07 (unsafe type erosion)", () => {
       const out = await runSignal(repo.root, TsLd07, TsLd07.defaultConfig)
       expect(out.totalOccurrences).toBe(0)
       expect(TsLd07.score(out)).toBe(1)
+    } finally {
+      await cleanup()
+    }
+  })
+
+  test("project modules can deweight deliberate existential unsafe boundaries", async () => {
+    await setup()
+    try {
+      await repo.write(
+        "src/signal.ts",
+        [
+          "export interface Signal<Config, Output, Requirements> {",
+          "  readonly id: string",
+          "}",
+          "",
+          "export interface AnySignal extends Signal<any, any, any> {}",
+          "",
+        ].join("\n"),
+      )
+
+      const baseline = await runSignal(repo.root, TsLd07, TsLd07.defaultConfig)
+      expect(baseline.boundaryOccurrences).toBe(3)
+      expect(TsLd07.score(baseline)).toBeLessThan(1)
+
+      const processor = defineCalibrationProcessor({
+        id: "existential-signal-wrapper",
+        moduleId: "acme.project",
+        moduleVersion: "1.0.0",
+        slot: "typescript.unsafe-type-policy",
+        role: "factor-policy",
+        priority: 10,
+        fingerprint: "existential-signal-wrapper-v1",
+        process: (current) =>
+          Effect.sync(() => {
+            if (current.value.target !== "AnySignal" || current.value.kind !== "heritage") {
+              return current
+            }
+            return appendCalibrationDecision(
+              current,
+              {
+                moduleId: "acme.project",
+                processorId: "existential-signal-wrapper",
+                slot: "typescript.unsafe-type-policy",
+                action: "deweight-deliberate-existential",
+                confidence: "high",
+                reason: "AnySignal is an explicit existential wrapper around unknown signal generics",
+                ruleId: "acme.existential-signal-wrapper.v1",
+                factorPaths: [
+                  `${current.value.factorPathPrefix}.boundary`,
+                  `${current.value.factorPathPrefix}.severity`,
+                  `${current.value.factorPathPrefix}.weight`,
+                ],
+                before: current.value,
+                after: {
+                  boundary: false,
+                  severity: "info",
+                  weight: 0,
+                },
+                evidence: [{ kind: "symbol", value: current.value.target }],
+              },
+              {
+                ...current.value,
+                boundary: false,
+                severity: "info",
+                weight: 0,
+              },
+            )
+          }),
+      })
+      const calibrationContext = makeResolvedCalibrationContext({
+        repoFacts: {
+          repoRoot: repo.root,
+          fingerprint: "repo-facts-v1",
+          detectedTechnologies: ["typescript"],
+          sourceExtensions: [".ts"],
+        },
+        processors: [processor],
+      })
+
+      const out = await Effect.runPromise(
+        TsLd07.compute(TsLd07.defaultConfig, new Map()).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              TsProjectLayer(repo.root),
+              Layer.succeed(CalibrationContextTag, calibrationContext),
+              Layer.succeed(SignalContextTag, {
+                gitSha: "TEST",
+                worktreePath: repo.root,
+                changedHunks: [],
+              }),
+              Layer.succeed(ReferenceDataTag, makeReferenceData(new Map())),
+            ),
+          ),
+        ) as Effect.Effect<TsLd07Output, unknown, never>,
+      )
+
+      expect(out.calibrationDecisions).toHaveLength(3)
+      expect(out.boundaryOccurrences).toBe(0)
+      expect(out.weightedUnsafe).toBe(0)
+      expect(TsLd07.score(out)).toBe(1)
+      expect(TsLd07.diagnose(out).every((diagnostic) => diagnostic.severity === "info")).toBe(
+        true,
+      )
     } finally {
       await cleanup()
     }

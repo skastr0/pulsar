@@ -5,5 +5,8 @@ tsconfig.tsbuildinfo
 .pulsar/*
 !.pulsar/conventions.json
 !.pulsar/glossary.json
+!.pulsar/project-modules.json
+!.pulsar/modules/
+!.pulsar/modules/**
 
 .DS_Store

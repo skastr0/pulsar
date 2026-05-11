@@ -10,6 +10,7 @@ import type {
   TypeScriptExportReachabilityValue,
   TypeScriptNoopClassificationValue,
   TypeScriptSuppressionJustificationValue,
+  TypeScriptUnsafeTypePolicyValue,
   TypeScriptUnfinishedImplementationPolicyValue,
 } from "./calibration-slot-values.js"
 
@@ -28,6 +29,7 @@ export type {
   TypeScriptLocalBindingFact,
   TypeScriptNoopClassificationValue,
   TypeScriptSuppressionJustificationValue,
+  TypeScriptUnsafeTypePolicyValue,
   TypeScriptUnfinishedImplementationPolicyValue,
 } from "./calibration-slot-values.js"
 
@@ -41,6 +43,7 @@ export const CALIBRATION_SLOT_IDS = [
   "typescript.callback-context-namer",
   "typescript.export-reachability",
   "typescript.unfinished-implementation-policy",
+  "typescript.unsafe-type-policy",
   "mixer.category-policy",
 ] as const
 
@@ -129,6 +132,7 @@ export interface CalibrationSlots {
   readonly "typescript.callback-context-namer": TypeScriptCallbackContextNameValue
   readonly "typescript.export-reachability": TypeScriptExportReachabilityValue
   readonly "typescript.unfinished-implementation-policy": TypeScriptUnfinishedImplementationPolicyValue
+  readonly "typescript.unsafe-type-policy": TypeScriptUnsafeTypePolicyValue
   readonly "mixer.category-policy": MixerCategoryPolicyValue
 }
 

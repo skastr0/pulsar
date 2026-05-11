@@ -29,11 +29,13 @@ export {
   classifyTypeScriptNoop,
   markTypeScriptExportPublicEntrypoint,
   nameTypeScriptCallbackContext,
+  tuneTypeScriptUnsafeType,
   tuneTypeScriptUnfinishedImplementation,
   type AddSourceCategoryOptions,
   type ClassifyTypeScriptNoopOptions,
   type MarkTypeScriptPublicEntrypointOptions,
   type NameTypeScriptCallbackContextOptions,
+  type TuneTypeScriptUnsafeTypeOptions,
   type TuneTypeScriptUnfinishedImplementationOptions,
 } from "./helpers.js"
 
@@ -70,5 +72,6 @@ export {
   type TypeScriptImportBindingFact,
   type TypeScriptLocalBindingFact,
   type TypeScriptNoopClassificationValue,
+  type TypeScriptUnsafeTypePolicyValue,
   type TypeScriptUnfinishedImplementationPolicyValue,
 } from "@skastr0/pulsar-core/calibration"

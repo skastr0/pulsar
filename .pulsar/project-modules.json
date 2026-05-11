@@ -1,0 +1,10 @@
+{
+  "schema": "pulsar/project-modules/v1",
+  "modules": [
+    {
+      "id": "pulsar-self",
+      "kind": "repo-local",
+      "path": ".pulsar/modules/pulsar-self.ts"
+    }
+  ]
+}

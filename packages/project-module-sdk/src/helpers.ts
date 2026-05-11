@@ -6,6 +6,7 @@ import type {
   TypeScriptCallbackContextNameValue,
   TypeScriptExportReachabilityValue,
   TypeScriptNoopClassificationValue,
+  TypeScriptUnsafeTypePolicyValue,
   TypeScriptUnfinishedImplementationPolicyValue,
 } from "@skastr0/pulsar-core/calibration"
 import {
@@ -59,6 +60,19 @@ export interface TuneTypeScriptUnfinishedImplementationOptions {
   readonly penaltyWeight?: number
   readonly scoreCapParticipation?: boolean
   readonly scoreCap?: number
+  readonly action?: string
+  readonly reason: string
+  readonly ruleId?: string
+  readonly evidence?: ReadonlyArray<CalibrationEvidenceRef>
+  readonly metadata?: Readonly<Record<string, unknown>>
+}
+
+export interface TuneTypeScriptUnsafeTypeOptions {
+  readonly visible?: boolean
+  readonly severity?: TypeScriptUnsafeTypePolicyValue["severity"]
+  readonly boundary?: boolean
+  readonly weight?: number
+  readonly confidence?: CalibrationDecision["confidence"]
   readonly action?: string
   readonly reason: string
   readonly ruleId?: string
@@ -203,6 +217,44 @@ export const tuneTypeScriptUnfinishedImplementation = (
     {
       action: options.action ?? "tune-unfinished-implementation",
       confidence: options.confidence ?? current.value.confidence,
+      reason: options.reason,
+      ...(options.ruleId !== undefined ? { ruleId: options.ruleId } : {}),
+      ...(factorPaths.length > 0 ? { factorPaths } : {}),
+      before: current.value,
+      after: nextValue,
+      ...(options.evidence !== undefined ? { evidence: options.evidence } : {}),
+    },
+    nextValue,
+  )
+}
+
+export const tuneTypeScriptUnsafeType = (
+  current: CalibrationSlotOutput<"typescript.unsafe-type-policy">,
+  runtime: ProjectModuleProcessorRuntime<"typescript.unsafe-type-policy">,
+  options: TuneTypeScriptUnsafeTypeOptions,
+): CalibrationSlotOutput<"typescript.unsafe-type-policy"> => {
+  const metadata = mergeMetadata(current.value.metadata, options.metadata)
+  const nextValue: TypeScriptUnsafeTypePolicyValue = {
+    ...current.value,
+    ...(options.visible !== undefined ? { visible: options.visible } : {}),
+    ...(options.severity !== undefined ? { severity: options.severity } : {}),
+    ...(options.boundary !== undefined ? { boundary: options.boundary } : {}),
+    ...(options.weight !== undefined ? { weight: options.weight } : {}),
+    ...(metadata !== undefined ? { metadata } : {}),
+  }
+  const factorPaths = [
+    ...(options.visible !== undefined ? [`${current.value.factorPathPrefix}.visible`] : []),
+    ...(options.severity !== undefined ? [`${current.value.factorPathPrefix}.severity`] : []),
+    ...(options.boundary !== undefined ? [`${current.value.factorPathPrefix}.boundary`] : []),
+    ...(options.weight !== undefined ? [`${current.value.factorPathPrefix}.weight`] : []),
+  ]
+
+  return appendProjectModuleDecision(
+    current,
+    runtime,
+    {
+      action: options.action ?? "tune-unsafe-type",
+      confidence: options.confidence ?? "high",
       reason: options.reason,
       ...(options.ruleId !== undefined ? { ruleId: options.ruleId } : {}),
       ...(factorPaths.length > 0 ? { factorPaths } : {}),

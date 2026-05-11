@@ -1,5 +1,7 @@
 import { SignalComputeError } from "@skastr0/pulsar-core/signal"
 import type { Diagnostic, Signal } from "@skastr0/pulsar-core/signal"
+import { CalibrationContextTag } from "@skastr0/pulsar-core/calibration"
+import type { CalibrationDecision } from "@skastr0/pulsar-core/calibration"
 import { Effect, Schema } from "effect"
 import { TsProjectTag } from "../ts-project.js"
 import { computeUnsafeTypeErosionOutput } from "./ts-ld-07-analysis.js"
@@ -23,12 +25,17 @@ export type UnsafeTypeKind =
   | "unknown"
 
 export interface UnsafeTypeOccurrence {
+  readonly findingId: string
   readonly file: string
   readonly line: number
   readonly kind: UnsafeTypeKind
   readonly target: string
   readonly boundary: boolean
+  readonly severity: "info" | "warn" | "block"
+  readonly visible: boolean
+  readonly baseWeight: number
   readonly weight: number
+  readonly policyDecisions?: ReadonlyArray<CalibrationDecision>
 }
 
 export interface UnsafeTypeFileSummary {
@@ -42,6 +49,7 @@ export interface TsLd07Output {
   readonly byFile: ReadonlyMap<string, UnsafeTypeFileSummary>
   readonly occurrences: ReadonlyArray<UnsafeTypeOccurrence>
   readonly topOccurrences: ReadonlyArray<UnsafeTypeOccurrence>
+  readonly calibrationDecisions: ReadonlyArray<CalibrationDecision>
   readonly totalOccurrences: number
   readonly boundaryOccurrences: number
   readonly weightedUnsafe: number
@@ -101,8 +109,9 @@ export const TsLd07: Signal<TsLd07Config, TsLd07Output, TsProjectTag> = {
   compute: (config) =>
     Effect.gen(function* () {
       const project = yield* TsProjectTag
+      const calibration = yield* Effect.serviceOption(CalibrationContextTag)
       const result = yield* Effect.try({
-        try: (): TsLd07Output => computeUnsafeTypeErosionOutput(project.getSourceFiles(), config),
+        try: () => project.getSourceFiles(),
         catch: (cause) =>
           new SignalComputeError({
             signalId: "TS-LD-07-unsafe-type-erosion",
@@ -110,7 +119,17 @@ export const TsLd07: Signal<TsLd07Config, TsLd07Output, TsProjectTag> = {
             cause,
           }),
       })
-      return result
+      const output = yield* computeUnsafeTypeErosionOutput(result, config, calibration).pipe(
+        Effect.mapError(
+          (cause) =>
+            new SignalComputeError({
+              signalId: "TS-LD-07-unsafe-type-erosion",
+              message: String(cause),
+              cause,
+            }),
+        ),
+      )
+      return output
     }),
   score: (out) => {
     if (out.totalOccurrences === 0) return 1
@@ -119,7 +138,7 @@ export const TsLd07: Signal<TsLd07Config, TsLd07Output, TsProjectTag> = {
   },
   diagnose: (out): ReadonlyArray<Diagnostic> =>
     out.topOccurrences.map((occurrence) => ({
-      severity: occurrence.boundary ? "warn" as const : "info" as const,
+      severity: occurrence.severity,
       message:
         `Unsafe \`any\` in ${occurrence.boundary ? "boundary " : ""}` +
         `${unsafeKindLabel(occurrence.kind)} \`${occurrence.target}\``,

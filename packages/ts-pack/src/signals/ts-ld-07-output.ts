@@ -1,4 +1,5 @@
 import { type SourceFile } from "ts-morph"
+import type { CalibrationDecision } from "@skastr0/pulsar-core/calibration"
 import type {
   TsLd07Config,
   TsLd07Output,
@@ -12,6 +13,7 @@ export const buildUnsafeTypeOutput = (
   analyzedFiles: number,
   analyzedLines: number,
   config: TsLd07Config,
+  calibrationDecisions: ReadonlyArray<CalibrationDecision> = [],
 ): TsLd07Output => {
   const weightedUnsafe = occurrences.reduce((sum, occurrence) => sum + occurrence.weight, 0)
   const boundaryOccurrences = occurrences.filter((occurrence) => occurrence.boundary).length
@@ -26,6 +28,7 @@ export const buildUnsafeTypeOutput = (
     byFile,
     occurrences,
     topOccurrences: occurrences.slice(0, config.top_n_diagnostics),
+    calibrationDecisions,
     totalOccurrences: occurrences.length,
     boundaryOccurrences,
     weightedUnsafe,

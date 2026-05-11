@@ -41,13 +41,19 @@ export const collectUnsafeTypeOccurrences = (
   const visit = (node: ts.Node): void => {
     if (node.kind === ts.SyntaxKind.AnyKeyword) {
       const classified = classifyAnyKeyword(node, compilerSourceFile, exportedNames)
+      const line =
+        compilerSourceFile.getLineAndCharacterOfPosition(
+          node.getStart(compilerSourceFile),
+        ).line + 1
+      const baseWeight = unsafeTypeWeight(classified.kind, classified.boundary)
       occurrences.push({
         ...classified,
-        line:
-          compilerSourceFile.getLineAndCharacterOfPosition(
-            node.getStart(compilerSourceFile),
-          ).line + 1,
-        weight: unsafeTypeWeight(classified.kind, classified.boundary),
+        findingId: unsafeTypeFindingId(line, classified.kind, classified.target),
+        line,
+        severity: classified.boundary ? "warn" : "info",
+        visible: true,
+        baseWeight,
+        weight: baseWeight,
       })
     }
 
@@ -255,3 +261,9 @@ const unsafeTypeWeight = (kind: UnsafeTypeKind, boundary: boolean): number => {
   const base = BASE_WEIGHT_BY_KIND[kind]
   return boundary ? base * BOUNDARY_MULTIPLIER : base
 }
+
+const unsafeTypeFindingId = (
+  line: number,
+  kind: UnsafeTypeKind,
+  target: string,
+): string => `${line}:${kind}:${target}`
