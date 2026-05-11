@@ -4,36 +4,30 @@
 
 export const TS_PACK_VERSION = "0.0.0" as const
 
-export * from "./casing.js"
-export * from "./ts-project.js"
-export * from "./discovery.js"
-export * from "./pack.js"
-export * from "./signals/ts-ld-01-complexity.js"
-export * from "./signals/ts-ld-02-size-distribution.js"
-export * from "./signals/ts-ld-03-nesting-depth.js"
-export * from "./signals/ts-ld-04-naming-conventions.js"
-export * from "./signals/ts-ld-05-domain-term-consistency.js"
-export * from "./signals/ts-ld-06-annotation-coverage.js"
-export * from "./signals/ts-ld-07-unsafe-type-erosion.js"
-export * from "./signals/ts-ad-01-boundary-violations.js"
-export * from "./signals/ts-ad-02-circular-deps.js"
-export * from "./signals/ts-ad-03-reexport-depth.js"
-export * from "./signals/ts-de-01-type-level-coupling.js"
-export * from "./signals/ts-de-02-fan-in-out.js"
-export * from "./signals/ts-de-03-propagation-cost.js"
-export * from "./signals/ts-de-04-package-dependency-health.js"
-export * from "./signals/ts-de-05-duplicate-versions.js"
-export * from "./signals/ts-ab-01-public-export-surface.js"
-export * from "./signals/ts-ab-02-unused-exports-reachability.js"
-export * from "./signals/ts-ab-03-type-indirection-depth.js"
-export * from "./signals/ts-ab-04-interface-impl-ratio.js"
-export * from "./signals/ts-ab-05-generic-proliferation.js"
-export * from "./signals/shared-churn-01.js"
-export * from "./signals/shared-02-bus-factor.js"
-export * from "./signals/shared-03-churn-rate.js"
-export * from "./signals/ts-rp-01-hotspots.js"
-export * from "./signals/ts-sl-01-duplication.js"
-export * from "./signals/ts-sl-02-inconsistent-clones.js"
-export * from "./signals/ts-sl-03-suppressions.js"
-export * from "./signals/ts-sl-04-empty-implementations.js"
-export * from "./signals/ts-rp-02-pr-size.js"
+export {
+  CASING_PATTERNS,
+  inferCasingPattern,
+  isRecognizedCasingPattern,
+  matchesCasingPattern,
+  parseCasingPatternAlternatives,
+  splitIdentifierTokens,
+} from "./casing.js"
+export type {
+  IdentifierPattern,
+  RecognizedCasingPattern,
+} from "./casing.js"
+
+export {
+  TsPackageInfoLayer,
+  TsPackageInfoTag,
+  TsProjectLayer,
+  TsProjectTag,
+  makeTsProject,
+  makeTsProjectWithOptions,
+} from "./ts-project.js"
+export type { TsProjectOptions } from "./ts-project.js"
+
+export { discoverPackages } from "./discovery.js"
+export type { PackageInfo, PackageManifest } from "./discovery.js"
+
+export { TS_PACK_SIGNALS, TsLd01, TsSl04 } from "./pack.js"
