@@ -16,6 +16,8 @@ const OPENCODE_HOST_SDK_DUPLICATE_RULE_ID = "pulsar.opencode-host-sdk-duplicate-
 const SELF_HOSTING_BUS_FACTOR_RULE_ID = "pulsar.self-hosting-single-maintainer-bus-factor.v1"
 const ACTIVE_SELF_HOSTING_CLEANUP_CHURN_RULE_ID = "pulsar.active-self-hosting-cleanup-churn.v1"
 const ACTIVE_SELF_HOSTING_CLEANUP_PR_SIZE_RULE_ID = "pulsar.active-self-hosting-cleanup-pr-size.v1"
+const SELF_HOSTING_POLICY_OWNER = "Guilherme Castro"
+const TC_158_REVIEW_TRIGGER = "TC-158 accepted and self-hosting cleanup branch merged"
 
 export default defineProjectModule({
   id: "pulsar-self",
@@ -129,14 +131,18 @@ export default defineProjectModule({
             reason:
               "Pulsar is currently a single-maintainer self-hosted repository. That is a real process risk, but it is not a code-health defect in the max-score code-quality loop.",
             evidence: [
+              { kind: "path", value: current.value.file },
               { kind: "repo-authors", value: current.value.repoAuthors.join(",") },
               { kind: "window-days", value: String(current.value.windowDays) },
               { kind: "touched-loc", value: String(current.value.touchedLoc) },
-              { kind: "path", value: current.value.file },
             ],
             metadata: {
               repository: "pulsar",
               policy: "self-hosting-single-maintainer-process-risk",
+              owner: SELF_HOSTING_POLICY_OWNER,
+              retirementTrigger: "Pulsar gains additional regular maintainers",
+              reviewTrigger: "Pulsar gains additional regular maintainers",
+              reviewCadence: "quarterly",
             },
           })
         }),
@@ -157,18 +163,21 @@ export default defineProjectModule({
             penaltyWeight: 0,
             ruleId: ACTIVE_SELF_HOSTING_CLEANUP_CHURN_RULE_ID,
             reason:
-              "The current churn is from the active self-hosting consolidation/refactor sprint; this policy is temporary and should be removed when the cleanup is complete.",
+              "The current churn is from TC-158 active self-hosting consolidation; this temporary policy expires when TC-158 is accepted and the cleanup branch is merged.",
             evidence: [
+              { kind: "path", value: current.value.file },
+              { kind: "scope", value: "TC-158" },
               { kind: "window-days", value: String(current.value.windowDays) },
               { kind: "introduced-lines", value: String(current.value.introducedLineCount) },
               { kind: "churned-lines", value: String(current.value.churnedLineCount) },
               { kind: "churn-rate", value: String(current.value.churnRate) },
-              { kind: "path", value: current.value.file },
             ],
             metadata: {
               repository: "pulsar",
               policy: "active-self-hosting-cleanup",
-              removalTrigger: "self-hosting max-score cleanup complete",
+              owner: SELF_HOSTING_POLICY_OWNER,
+              scope: "TC-158",
+              removalTrigger: TC_158_REVIEW_TRIGGER,
             },
           })
         }),
@@ -189,8 +198,9 @@ export default defineProjectModule({
             penaltyWeight: 0,
             ruleId: ACTIVE_SELF_HOSTING_CLEANUP_PR_SIZE_RULE_ID,
             reason:
-              "The current branch diff is the active Pulsar self-hosting consolidation sprint; PR-size pressure should stay visible as process metadata without blocking the code-quality max-score check.",
+              "The current branch diff is TC-158 active self-hosting consolidation; this temporary policy expires when TC-158 is accepted and the cleanup branch is merged.",
             evidence: [
+              { kind: "scope", value: "TC-158" },
               { kind: "diff-mode", value: current.value.diffMode },
               { kind: "size-category", value: current.value.sizeCategory },
               { kind: "lines-added", value: String(current.value.linesAdded) },
@@ -200,7 +210,9 @@ export default defineProjectModule({
             metadata: {
               repository: "pulsar",
               policy: "active-self-hosting-cleanup",
-              removalTrigger: "self-hosting max-score cleanup complete",
+              owner: SELF_HOSTING_POLICY_OWNER,
+              scope: "TC-158",
+              removalTrigger: TC_158_REVIEW_TRIGGER,
             },
           })
         }),
@@ -354,15 +366,28 @@ const coreOrchestrationTypeCouplingRules: ReadonlyArray<{
 
 const isSelfHostingSingleMaintainerBusFactor = (
   value: SharedBusFactorPolicyValue,
-): boolean => value.repoAuthors.length <= 1
+): boolean =>
+  value.repoAuthors.length === 1 &&
+  value.repoAuthors[0] === SELF_HOSTING_POLICY_OWNER &&
+  value.windowDays === 180 &&
+  value.touchedLoc > 0
 
 const isActiveSelfHostingCleanupChurn = (
   value: SharedChurnRatePolicyValue,
-): boolean => value.churnedLineCount > 0
+): boolean =>
+  value.windowDays === 14 &&
+  value.introducedLineCount >= 5_000 &&
+  value.churnedLineCount >= 1_000 &&
+  value.churnRate >= 0.2
 
 const isActiveSelfHostingCleanupPrSize = (
   value: TypeScriptPrSizePolicyValue,
-): boolean => value.sizeCategory === "oversized" && value.filesChanged.length > 0
+): boolean =>
+  value.diffMode === "git-branch-range" &&
+  value.sizeCategory === "oversized" &&
+  value.linesAdded >= 30_000 &&
+  value.linesDeleted >= 20_000 &&
+  value.filesChanged.length >= 400
 
 type SharedBusFactorPolicyValue = CalibrationSlotInput<"shared.bus-factor-policy">
 type SharedChurnRatePolicyValue = CalibrationSlotInput<"shared.churn-rate-policy">

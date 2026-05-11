@@ -39,7 +39,7 @@ export {
 
 export {
   tuneFactorPolicy,
-} from "./dependency-version-helper.js"
+} from "./factor-policy-helper.js"
 
 export {
   loadEnabledProjectModules,

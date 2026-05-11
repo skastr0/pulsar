@@ -4,8 +4,8 @@ import type { CalibrationDecision, CalibrationProcessorError, ResolvedCalibratio
 import { CalibrationContextTag } from "@skastr0/pulsar-core/calibration"
 import {
   commonDirectoryPrefix,
+  factorEntryForPolicyDecision,
   factorPathSegment,
-  makeFactorEntry,
   makeFactorLedger,
   relativeFactorPath,
 } from "@skastr0/pulsar-core/factors"
@@ -34,6 +34,7 @@ export const TsDe01: Signal<TsDe01Config, TsDe01Output, TsProjectTag> = {
   tier: 1,
   category: "dependency-entropy",
   kind: "legibility",
+  cacheVersion: "factor-policy-v1",
   configSchema: TsDe01Config,
   defaultConfig: {
     exclude_globs: [
@@ -207,41 +208,29 @@ const makeTsDe01FactorLedger = (
         return []
       }
       const prefix = module.factorPathPrefix ?? `type_coupling.${factorPathSegment(module.file)}`
+      const decisions = module.policyDecisions ?? []
       return [
-        factorEntryForModuleValue(module, `${prefix}.visible`, module.visible ?? true),
-        factorEntryForModuleValue(module, `${prefix}.severity`, module.severity ?? "warn"),
-        factorEntryForModuleValue(module, `${prefix}.penalty_weight`, module.penaltyWeight ?? 0),
+        factorEntryForPolicyDecision({
+          decisions,
+          path: `${prefix}.visible`,
+          title: "Type coupling visible",
+          value: module.visible ?? true,
+        }),
+        factorEntryForPolicyDecision({
+          decisions,
+          path: `${prefix}.severity`,
+          title: "Type coupling severity",
+          value: module.severity ?? "warn",
+        }),
+        factorEntryForPolicyDecision({
+          decisions,
+          path: `${prefix}.penalty_weight`,
+          title: "Type coupling penalty_weight",
+          value: module.penaltyWeight ?? 0,
+        }),
       ]
     }),
   )
-
-const factorEntryForModuleValue = (
-  module: ModuleTypeCoupling,
-  path: string,
-  value: string | number | boolean,
-): SignalFactorLedgerEntry => {
-  const decision = [...(module.policyDecisions ?? [])]
-    .reverse()
-    .find((item) => item.factorPaths?.includes(path))
-  return makeFactorEntry({
-    path,
-    title: `Type coupling ${path.split(".").at(-1) ?? "factor"}`,
-    valueKind: typeof value === "number" ? "number" : typeof value === "boolean" ? "boolean" : "string",
-    scoreRole: path.endsWith(".penalty_weight") ? "penalty" : "metadata",
-  }, value, {
-    source: decision === undefined ? "computed" : "module",
-    ...(decision !== undefined
-      ? {
-          attribution: {
-            moduleId: decision.moduleId,
-            processorId: decision.processorId,
-            ...(decision.ruleId !== undefined ? { ruleId: decision.ruleId } : {}),
-            evidence: decision.evidence,
-          },
-        }
-      : {}),
-  })
-}
 
 const toSignalComputeError = (cause: unknown): SignalComputeError =>
   cause instanceof SignalComputeError
