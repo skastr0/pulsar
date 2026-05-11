@@ -1,8 +1,10 @@
 import { SignalContextTag, SignalComputeError } from "@skastr0/pulsar-core/signal"
-import type { Diagnostic, Signal } from "@skastr0/pulsar-core/signal"
+import type { Diagnostic, Signal, SignalContext } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
 import { simpleGit } from "simple-git"
+import type { Project } from "ts-morph"
 import { TsProjectTag, TsPackageInfoTag } from "../ts-project.js"
+import type { PackageInfo } from "../discovery.js"
 import { formatLargestFiles } from "./ts-rp-02-diagnostics.js"
 import { fromChangedHunks, parseGitDiff, TS_DIFF_PATHSPECS } from "./ts-rp-02-diff.js"
 
@@ -81,78 +83,7 @@ export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackage
       const context = yield* SignalContextTag
       return yield* Effect.tryPromise({
         try: async (): Promise<TsRp02Output> => {
-          const git = simpleGit(context.worktreePath)
-          const isRepo = await git.checkIsRepo()
-          if (!isRepo) {
-            return fromChangedHunks(project, packages, context, config)
-          }
-
-          const workingNumstat = await git.raw([
-            "diff",
-            "--numstat",
-            "--no-renames",
-            "--",
-            ...TS_DIFF_PATHSPECS,
-          ])
-          if (workingNumstat.trim().length > 0) {
-            const diff = await git.raw([
-              "diff",
-              "--unified=0",
-              "--no-renames",
-              "--",
-              ...TS_DIFF_PATHSPECS,
-            ])
-            return parseGitDiff(project, packages, context.worktreePath, workingNumstat, diff, "git-working-tree", config)
-          }
-
-          const branchRange = await resolveBranchDiffRange(git)
-          if (branchRange !== undefined) {
-            const branchNumstat = await git.raw([
-              "diff",
-              "--numstat",
-              "--no-renames",
-              branchRange,
-              "--",
-              ...TS_DIFF_PATHSPECS,
-            ])
-            if (branchNumstat.trim().length > 0) {
-              const diff = await git.raw([
-                "diff",
-                "--unified=0",
-                "--no-renames",
-                branchRange,
-                "--",
-                ...TS_DIFF_PATHSPECS,
-              ])
-              return parseGitDiff(project, packages, context.worktreePath, branchNumstat, diff, "git-branch-range", config)
-            }
-          }
-
-          const range = context.gitSha === "HEAD" ? "HEAD^!" : `${context.gitSha}^!`
-          try {
-            const rangeNumstat = await git.raw([
-              "diff",
-              "--numstat",
-              "--no-renames",
-              range,
-              "--",
-              ...TS_DIFF_PATHSPECS,
-            ])
-            if (rangeNumstat.trim().length === 0 && context.changedHunks.length > 0) {
-              return fromChangedHunks(project, packages, context, config)
-            }
-            const diff = await git.raw([
-              "diff",
-              "--unified=0",
-              "--no-renames",
-              range,
-              "--",
-              ...TS_DIFF_PATHSPECS,
-            ])
-            return parseGitDiff(project, packages, context.worktreePath, rangeNumstat, diff, "git-commit-range", config)
-          } catch {
-            return fromChangedHunks(project, packages, context, config)
-          }
+          return await computeGitPrSizeOutput(project, packages, context, config)
         },
         catch: (cause) =>
           new SignalComputeError({ signalId: "TS-RP-02-pr-size", message: String(cause), cause }),
@@ -212,8 +143,67 @@ export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackage
   },
 }
 
+type GitClient = ReturnType<typeof simpleGit>
+
+const computeGitPrSizeOutput = async (
+  project: Project,
+  packages: ReadonlyArray<PackageInfo>,
+  context: SignalContext,
+  config: TsRp02Config,
+): Promise<TsRp02Output> => {
+  const git = simpleGit(context.worktreePath)
+  if (!(await git.checkIsRepo())) {
+    return fromChangedHunks(project, packages, context, config)
+  }
+
+  const workingTree = await parseDiffRange(project, packages, context, config, git, undefined, "git-working-tree")
+  if (workingTree !== undefined && workingTree.filesChanged.length > 0) return workingTree
+
+  const branchRange = await resolveBranchDiffRange(git)
+  const branch = branchRange === undefined
+    ? undefined
+    : await parseDiffRange(project, packages, context, config, git, branchRange, "git-branch-range")
+  if (branch !== undefined && branch.filesChanged.length > 0) return branch
+
+  return await computeCommitRangeOutput(project, packages, context, config, git)
+}
+
+const computeCommitRangeOutput = async (
+  project: Project,
+  packages: ReadonlyArray<PackageInfo>,
+  context: SignalContext,
+  config: TsRp02Config,
+  git: GitClient,
+): Promise<TsRp02Output> => {
+  const range = context.gitSha === "HEAD" ? "HEAD^!" : `${context.gitSha}^!`
+  try {
+    const output = await parseDiffRange(project, packages, context, config, git, range, "git-commit-range")
+    if (output.filesChanged.length === 0 && context.changedHunks.length > 0) {
+      return fromChangedHunks(project, packages, context, config)
+    }
+    return output
+  } catch {
+    return fromChangedHunks(project, packages, context, config)
+  }
+}
+
+const parseDiffRange = async (
+  project: Project,
+  packages: ReadonlyArray<PackageInfo>,
+  context: SignalContext,
+  config: TsRp02Config,
+  git: GitClient,
+  range: string | undefined,
+  diffMode: TsRp02Output["diffMode"],
+): Promise<TsRp02Output> => {
+  const rangeArg = range === undefined ? [] : [range]
+  const numstat = await git.raw(["diff", "--numstat", "--no-renames", ...rangeArg, "--", ...TS_DIFF_PATHSPECS])
+  const diff = await git.raw(["diff", "--unified=0", "--no-renames", ...rangeArg, "--", ...TS_DIFF_PATHSPECS])
+  return parseGitDiff(project, packages, context.worktreePath, numstat, diff, diffMode, config)
+}
+
 const resolveBranchDiffRange = async (
-  git: ReturnType<typeof simpleGit>,
+  git: GitClient,
 ): Promise<string | undefined> => {
   try {
     const upstream = (await git.raw([
