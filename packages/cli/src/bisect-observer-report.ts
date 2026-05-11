@@ -52,15 +52,7 @@ export const buildObserverReport = (
   const trajectory = results.map(({ signalCategories: _signalCategories, ...entry }) => entry)
 
   const weightedMeanScores = summarizeScores(trajectory.map((entry) => entry.weightedMean))
-  const readinessTrajectory = trajectory.flatMap((entry) =>
-    entry.readinessScore === undefined
-      ? []
-      : [{ sha: entry.sha, score: entry.readinessScore }],
-  )
-  const readinessScores =
-    readinessTrajectory.length === 0
-      ? undefined
-      : summarizeScores(readinessTrajectory.map((entry) => entry.score))
+  const readiness = summarizeReadinessTrajectory(trajectory)
 
   const perCategory = Object.fromEntries(
     selectedCategories.map((category) => [
@@ -90,13 +82,13 @@ export const buildObserverReport = (
     perCategoryDriftCulprits: categoryCulprits(trajectory, selectedCategories, opts.topCulprits, findDriftCulprits),
     perSignalCulprits: signalCulprits(trajectory, selectedSignalSet, opts.topCulprits, findCulprits),
     perSignalDriftCulprits: signalCulprits(trajectory, selectedSignalSet, opts.topCulprits, findDriftCulprits),
-    readinessCulprits: findCulprits(readinessTrajectory, opts.topCulprits),
-    readinessDriftCulprits: findDriftCulprits(readinessTrajectory, opts.topCulprits),
+    readinessCulprits: findCulprits(readiness.trajectory, opts.topCulprits),
+    readinessDriftCulprits: findDriftCulprits(readiness.trajectory, opts.topCulprits),
     sampling: opts.sampling,
-    finalReadinessScore: readinessScores?.final,
-    minReadinessScore: readinessScores?.min,
-    maxReadinessScore: readinessScores?.max,
-    readinessDrift: readinessScores?.drift,
+    finalReadinessScore: readiness.scores?.final,
+    minReadinessScore: readiness.scores?.min,
+    maxReadinessScore: readiness.scores?.max,
+    readinessDrift: readiness.scores?.drift,
     finalApplicableSignalCount: finalEntry?.applicableSignalCount ?? 0,
     finalWeightedMean: weightedMeanScores.final,
     minWeightedMean: weightedMeanScores.min,
@@ -147,6 +139,26 @@ const scorePoints = (
   key: "weightedMean",
 ): ReadonlyArray<ScorePoint> =>
   trajectory.map((entry) => ({ sha: entry.sha, score: entry[key] }))
+
+const summarizeReadinessTrajectory = (
+  trajectory: ReadonlyArray<ObserverCommitEntry>,
+): {
+  readonly trajectory: ReadonlyArray<ScorePoint>
+  readonly scores: ReturnType<typeof summarizeScores> | undefined
+} => {
+  const readinessTrajectory = trajectory.flatMap((entry) =>
+    entry.readinessScore === undefined
+      ? []
+      : [{ sha: entry.sha, score: entry.readinessScore }],
+  )
+  return {
+    trajectory: readinessTrajectory,
+    scores:
+      readinessTrajectory.length === 0
+        ? undefined
+        : summarizeScores(readinessTrajectory.map((entry) => entry.score)),
+  }
+}
 
 const categoryCulprits = (
   trajectory: ReadonlyArray<ObserverCommitEntry>,
