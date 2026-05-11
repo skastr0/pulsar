@@ -906,6 +906,63 @@ describe("project module sdk", () => {
     }
   })
 
+  test("materialized repo-local modules can import package dependencies", async () => {
+    const repoRoot = await mkdtemp(join(tmpdir(), "pulsar-project-module-"))
+    try {
+      const helperRoot = join(repoRoot, "node_modules", "@acme", "module-helper")
+      await mkdir(helperRoot, { recursive: true })
+      await writeFile(
+        join(helperRoot, "package.json"),
+        JSON.stringify({
+          name: "@acme/module-helper",
+          version: "1.0.0",
+          type: "module",
+          exports: "./index.mjs",
+        }),
+        "utf8",
+      )
+      await writeFile(
+        join(helperRoot, "index.mjs"),
+        "export const marker = 'repo-local-dependency-loaded'\n",
+        "utf8",
+      )
+      await writeFile(
+        join(repoRoot, "module.ts"),
+        [
+          "import { marker } from '@acme/module-helper'",
+          "export default {",
+          "  id: 'loaded.definition',",
+          "  version: '1.0.0',",
+          "  scope: 'repository',",
+          "  configHash: marker,",
+          "  processors: []",
+          "}",
+        ].join("\n"),
+        "utf8",
+      )
+      const manifest = await Effect.runPromise(
+        decodeProjectModuleManifest({
+          modules: [
+            {
+              id: "loaded.definition",
+              kind: "repo-local",
+              path: "module.ts",
+            },
+          ],
+        }),
+      )
+
+      const loaded = await Effect.runPromise(
+        loadProjectModuleRef(manifest.modules[0]!, { repoRoot }),
+      )
+
+      expect(loaded.descriptor.configHash).toBe("repo-local-dependency-loaded")
+      expect(loaded.descriptor.sourceFingerprint).toMatch(/^sha256:/)
+    } finally {
+      await rm(repoRoot, { recursive: true, force: true })
+    }
+  })
+
   test("transitive helper source changes invalidate loaded module behavior", async () => {
     const repoRoot = await mkdtemp(join(tmpdir(), "pulsar-project-module-"))
     try {

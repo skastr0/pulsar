@@ -1,10 +1,12 @@
 import { createHash } from "node:crypto"
 import { createRequire } from "node:module"
-import { mkdir, readFile, symlink, writeFile } from "node:fs/promises"
+import { readFile, symlink, writeFile } from "node:fs/promises"
 import { dirname, relative, resolve } from "node:path"
 import { Effect } from "effect"
 import { ProjectModuleLoadError } from "./loader-types.js"
 import type { ProjectModuleRef } from "./manifest.js"
+import { bundleMaterializedProjectModule } from "./loader-bundle.js"
+import { mkdirForProjectModuleDirectory } from "./loader-fs.js"
 import type { ProjectModuleSourceFile } from "./loader-source-files.js"
 import { realpathOrProjectModuleLoadError } from "./loader-realpath.js"
 import {
@@ -25,6 +27,7 @@ export const materializeProjectModuleImportTarget = (
   sourceFingerprint: string,
   files: ReadonlyArray<ProjectModuleSourceFile>,
   shadowRootSegments: ReadonlyArray<string>,
+  bundleImportTarget: boolean,
 ): Effect.Effect<string, ProjectModuleLoadError> =>
   Effect.gen(function* () {
     const shadowSourceRoot = resolve(
@@ -45,13 +48,24 @@ export const materializeProjectModuleImportTarget = (
         return yield* escapedMaterializedRootError(ref, target)
       }
       const content = yield* readFileBytes(ref, target, file)
-      yield* mkdirForMaterializedFile(ref, dirname(destination))
+      yield* mkdirForProjectModuleDirectory(
+        ref,
+        dirname(destination),
+        `Failed to create materialized project module directory`,
+      )
       yield* writeMaterializedFile(ref, file, destination, content)
     }
 
     yield* linkMaterializedPackageDependencies(ref, dependencyRoot, shadowSourceRoot)
 
-    return resolve(shadowSourceRoot, relative(sourceRoot, target))
+    const importTarget = resolve(shadowSourceRoot, relative(sourceRoot, target))
+    if (!bundleImportTarget) return importTarget
+    return yield* bundleMaterializedProjectModule(
+      ref,
+      importTarget,
+      shadowSourceRoot,
+      sourceFingerprint,
+    )
   })
 
 export const hashProjectModuleSource = (
@@ -107,7 +121,11 @@ const linkMaterializedPackageDependencies = (
       if (dependencyRoot === undefined) continue
       const destination = resolve(nodeModulesRoot, ...dependency.split("/"))
       if (yield* isFile(resolve(destination, "package.json"))) continue
-      yield* mkdirForMaterializedFile(ref, dirname(destination))
+      yield* mkdirForProjectModuleDirectory(
+        ref,
+        dirname(destination),
+        `Failed to create materialized project module directory`,
+      )
       yield* symlinkDependency(ref, dependency, dependencyRoot, destination)
     }
   })
@@ -193,21 +211,6 @@ const readTextFile = (
         refId: ref.id,
         target,
         message,
-        cause,
-      }),
-  })
-
-const mkdirForMaterializedFile = (
-  ref: ProjectModuleRef,
-  target: string,
-): Effect.Effect<void, ProjectModuleLoadError> =>
-  Effect.tryPromise({
-    try: () => mkdir(target, { recursive: true }),
-    catch: (cause) =>
-      new ProjectModuleLoadError({
-        refId: ref.id,
-        target,
-        message: `Failed to create materialized project module directory`,
         cause,
       }),
   })

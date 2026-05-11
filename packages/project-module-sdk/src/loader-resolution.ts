@@ -98,6 +98,7 @@ const resolveRepoLocalProjectModuleTarget = (
       sourceFingerprint,
       files,
       ["repo"],
+      true,
     )
     return {
       target: withSourceFingerprintQuery(pathToFileURL(importTarget).href, sourceFingerprint),
@@ -156,6 +157,7 @@ const resolvePackageProjectModuleTarget = (
       sourceFingerprint,
       files,
       ["node_modules", ...packageName.split("/")],
+      false,
     )
     return {
       target: withSourceFingerprintQuery(
