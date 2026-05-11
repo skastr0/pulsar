@@ -10,6 +10,7 @@ import {
 } from "./loader-types.js"
 import type { ProjectModuleRef } from "./manifest.js"
 import { hashProjectModuleSource, materializeProjectModuleImportTarget } from "./loader-materialize.js"
+import { realpathOrProjectModuleLoadError } from "./loader-realpath.js"
 import { collectProjectModuleSourceFiles } from "./loader-source-files.js"
 import {
   isFile,
@@ -272,16 +273,12 @@ const realpathOrLoadError = (
   path: string,
   label: string,
 ): Effect.Effect<string, ProjectModuleLoadError> =>
-  Effect.tryPromise({
-    try: () => realpath(path),
-    catch: (cause) =>
-      new ProjectModuleLoadError({
-        refId: ref.id,
-        target: path,
-        message: `Failed to resolve ${label} for project module ${ref.id}`,
-        cause,
-      }),
-  })
+  realpathOrProjectModuleLoadError(
+    ref,
+    path,
+    path,
+    `Failed to resolve ${label} for project module ${ref.id}`,
+  )
 
 const readTextOrLoadError = (
   ref: ProjectModuleRef,

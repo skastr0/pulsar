@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+import { clampWeight } from "./proposal-utils.js"
 
 export const RevealedPreferenceOutcome = Schema.Literal("accepted", "revised", "reverted")
 export type RevealedPreferenceOutcome = typeof RevealedPreferenceOutcome.Type
@@ -100,7 +101,7 @@ export const inferRevealedPreferencePriorAdjusted = (
     Object.keys(pairwise.weights).map((signalId) => {
       const priorWeight = prior[signalId] ?? 1
       const observed = pairwise.weights[signalId] ?? 1
-      return [signalId, roundWeight(priorWeight + (observed - priorWeight) * blend)]
+      return [signalId, clampWeight(priorWeight + (observed - priorWeight) * blend)]
     }),
   )
 
@@ -129,11 +130,11 @@ const materializeWeights = (
       const entry = evidence.get(signalId)
       const priorWeight = prior[signalId] ?? 1
       if (entry === undefined || entry.magnitude === 0) {
-        return [signalId, roundWeight(priorWeight)]
+        return [signalId, clampWeight(priorWeight)]
       }
 
       const normalized = entry.signed / entry.magnitude
-      return [signalId, roundWeight(priorWeight + normalized * multiplier)]
+      return [signalId, clampWeight(priorWeight + normalized * multiplier)]
     }),
   )
 
@@ -153,5 +154,3 @@ const average = (values: ReadonlyArray<number>): number => {
   if (values.length === 0) return 0
   return values.reduce((sum, value) => sum + value, 0) / values.length
 }
-
-const roundWeight = (value: number): number => Number(Math.max(0, Math.min(2, value)).toFixed(2))

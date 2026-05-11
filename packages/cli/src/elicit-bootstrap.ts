@@ -11,6 +11,7 @@ import {
   type PulsarVector,
   validateVectorAgainstRegistry,
 } from "@skastr0/pulsar-core/vector"
+import { sortedUniqueFilePaths } from "@skastr0/pulsar-core/signal"
 import { Effect } from "effect"
 import { buildPulsarRegistry, resolveRepoRoot } from "./runtime.js"
 import { discoverPulsarVector } from "./vector-discovery.js"
@@ -185,7 +186,7 @@ const bootstrapProposal = (
     outcomeCounts: result.outcomeCounts,
     weights: result.weights,
     support: result.support,
-    changedFiles: uniqueSorted(context.events.flatMap((event) => event.changed_files)).slice(0, 25),
+    changedFiles: sortedUniqueFilePaths(context.events.flatMap((event) => event.changed_files)).slice(0, 25),
     reportPath: relative(context.repoRoot, reportPath),
   })
 
@@ -201,6 +202,3 @@ const collectPriorWeights = (vector: PulsarVector | undefined): Readonly<Record<
       .filter(([, override]) => override.weight !== undefined)
       .map(([signalId, override]) => [signalId, override.weight ?? 1]),
   )
-
-const uniqueSorted = (values: ReadonlyArray<string>): Array<string> =>
-  [...new Set(values)].sort((left, right) => left.localeCompare(right))

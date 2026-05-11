@@ -12,7 +12,7 @@ export { InMemoryCacheLayer } from "./cache.js"
 export { summarize, type DistributionalSummary } from "./distribution.js"
 export { levenshteinDistance } from "./edit-distance.js"
 export { matchesAnyGlob } from "./globs.js"
-export { classifyFilePath, isProductionSourcePath } from "./file-taxonomy.js"
+export { classifyFilePath, isProductionSourcePath, sortedUniqueFilePaths } from "./file-taxonomy.js"
 export { mapWithConcurrency } from "./concurrency.js"
 export {
   hasSuppressingBypass,

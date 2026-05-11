@@ -7,6 +7,7 @@ import {
   type PulsarVector,
 } from "../vector.js"
 import typescriptQuizItems from "../../quiz-items/typescript.json" with { type: "json" }
+import { clampWeight } from "./proposal-utils.js"
 
 export const QuizSignalScores = Schema.Record({
   key: Schema.String,
@@ -260,6 +261,3 @@ const quizSignalDeltas = (item: QuizItem) => {
     delta: (item.a_signals[signalId] ?? 0) - (item.b_signals[signalId] ?? 0),
   }))
 }
-
-
-const clampWeight = (value: number): number => Number(Math.max(0, Math.min(2, value)).toFixed(2))

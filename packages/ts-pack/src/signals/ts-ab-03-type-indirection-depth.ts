@@ -4,6 +4,7 @@ import { Effect, Schema } from "effect"
 import { Node, type SourceFile } from "ts-morph"
 import { TsProjectTag } from "../ts-project.js"
 import { isExcluded } from "./shared-globs.js"
+import { scoreThresholdViolationShare } from "./shared-threshold-score.js"
 import {
   type DepthResult,
   type TrackedDeclaration,
@@ -161,9 +162,7 @@ export const TsAb03: Signal<TsAb03Config, TsAb03Output, TsProjectTag> = {
       return result
     }),
   score: (out) => {
-    if (out.declarations.length === 0) return 1
-    const ratio = out.overThreshold.length / out.declarations.length
-    return Math.max(0, 1 - ratio)
+    return scoreThresholdViolationShare(out.declarations.length, out.overThreshold.length)
   },
   diagnose: (out): ReadonlyArray<Diagnostic> =>
     out.overThreshold.slice(0, out.diagnosticLimit).map((entry) => ({

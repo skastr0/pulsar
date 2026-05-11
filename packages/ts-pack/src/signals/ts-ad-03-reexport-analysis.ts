@@ -1,4 +1,5 @@
 import { basename } from "node:path"
+import { sortedUniqueFilePaths } from "@skastr0/pulsar-core/signal"
 import { Node, type SourceFile } from "ts-morph"
 import { createModuleResolver } from "../graph/module-graph.js"
 
@@ -44,7 +45,7 @@ const collectReExportTargets = (
   resolver: ReturnType<typeof createModuleResolver>,
 ): ReadonlyArray<string> => {
   const file = sourceFile.getFilePath()
-  return uniqueSorted(
+  return sortedUniqueFilePaths(
     sourceFile.getExportDeclarations().reduce<Array<string>>((acc, declaration) => {
       const value = resolver.resolve(file, declaration)
       if (value !== undefined && fileSet.has(value)) {
@@ -122,6 +123,3 @@ const hasExportModifier = (
     | import("ts-morph").EnumDeclaration
     | import("ts-morph").ModuleDeclaration,
 ): boolean => node.getModifiers().some((modifier) => modifier.getText() === "export")
-
-const uniqueSorted = (values: ReadonlyArray<string>): ReadonlyArray<string> =>
-  [...new Set(values)].sort((left, right) => left.localeCompare(right))

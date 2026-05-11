@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto"
 import { createRequire } from "node:module"
-import { mkdir, readFile, realpath, symlink, writeFile } from "node:fs/promises"
+import { mkdir, readFile, symlink, writeFile } from "node:fs/promises"
 import { dirname, relative, resolve } from "node:path"
 import { Effect } from "effect"
 import { ProjectModuleLoadError } from "./loader-types.js"
 import type { ProjectModuleRef } from "./manifest.js"
 import type { ProjectModuleSourceFile } from "./loader-source-files.js"
+import { realpathOrProjectModuleLoadError } from "./loader-realpath.js"
 import {
   isFile,
   isPackageName,
@@ -233,16 +234,12 @@ const realpathDependency = (
   dependency: string,
   target: string,
 ): Effect.Effect<string, ProjectModuleLoadError> =>
-  Effect.tryPromise({
-    try: () => realpath(target),
-    catch: (cause) =>
-      new ProjectModuleLoadError({
-        refId: ref.id,
-        target: dependency,
-        message: `Failed to resolve project module dependency ${dependency}`,
-        cause,
-      }),
-  })
+  realpathOrProjectModuleLoadError(
+    ref,
+    target,
+    dependency,
+    `Failed to resolve project module dependency ${dependency}`,
+  )
 
 const symlinkDependency = (
   ref: ProjectModuleRef,

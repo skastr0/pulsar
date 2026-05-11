@@ -73,7 +73,12 @@ export const isProductionSourcePath = (
     }),
   )
 
+export const sortedUniqueFilePaths = (filePaths: ReadonlyArray<string>): Array<string> =>
+  [...new Set(filePaths)].sort(compareFilePaths)
+
 const normalizePath = (filePath: string): string => filePath.replaceAll("\\", "/")
+
+const compareFilePaths = (left: string, right: string): number => left.localeCompare(right)
 
 type FileTaxonomyRule = {
   readonly category: SourceCategory

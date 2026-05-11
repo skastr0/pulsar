@@ -6,6 +6,7 @@ import type { SourceFile } from "ts-morph"
 import { discoverPackages, type PackageInfo } from "../discovery.js"
 import { TsProjectTag } from "../ts-project.js"
 import { isExcluded } from "./shared-globs.js"
+import { scoreReferenceBackedViolationRatio } from "./shared-violation-ratio-score.js"
 import {
   collectBoundaryViolations,
   collectImportLikeDeclarations,
@@ -102,10 +103,12 @@ export const TsAd01: Signal<
           }),
       })
     }),
-  score: (out) => {
-    if (out.referenceDataStatus === "missing" || out.totalImports === 0) return 1
-    return Math.max(0, 1 - out.violations.length / out.totalImports)
-  },
+  score: (out) =>
+    scoreReferenceBackedViolationRatio({
+      referenceDataStatus: out.referenceDataStatus,
+      violationCount: out.violations.length,
+      totalCount: out.totalImports,
+    }),
   outputMetadata: (out) =>
     out.referenceDataStatus === "missing"
       ? { applicability: "insufficient_evidence" as const }

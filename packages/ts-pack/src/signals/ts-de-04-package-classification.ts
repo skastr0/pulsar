@@ -46,7 +46,7 @@ export const isPackageToolingFile = (packagePath: string, file: string): boolean
   return /\.(?:config|conf)\.(?:cjs|cts|js|mjs|mts|ts|tsx)$/.test(rel)
 }
 
-export const isPackageScriptEntrypoint = (
+const isPackageScriptEntrypoint = (
   manifest: PackageManifest,
   packagePath: string,
   file: string,

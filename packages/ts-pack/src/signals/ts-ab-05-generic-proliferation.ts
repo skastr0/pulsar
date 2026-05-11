@@ -4,6 +4,7 @@ import { Effect, Schema } from "effect"
 import { ts, type SourceFile } from "ts-morph"
 import { TsProjectTag } from "../ts-project.js"
 import { isExcluded } from "./shared-globs.js"
+import { scoreThresholdViolationShare } from "./shared-threshold-score.js"
 
 const TsAb05Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
@@ -130,9 +131,7 @@ export const TsAb05: Signal<TsAb05Config, TsAb05Output, TsProjectTag> = {
       return result
     }),
   score: (out) => {
-    if (out.byDeclaration.length === 0) return 1
-    const ratio = out.overThreshold.length / out.byDeclaration.length
-    return Math.max(0, 1 - ratio)
+    return scoreThresholdViolationShare(out.byDeclaration.length, out.overThreshold.length)
   },
   diagnose: (out): ReadonlyArray<Diagnostic> =>
     out.overThreshold.slice(0, out.diagnosticLimit).map((analysis) => ({

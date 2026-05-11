@@ -1,5 +1,7 @@
+import { sortedUniqueFilePaths } from "../file-taxonomy.js"
+
 export const sortedUniqueFiles = (files: ReadonlyArray<string>): Array<string> =>
-  [...new Set(files)].sort((left, right) => left.localeCompare(right))
+  sortedUniqueFilePaths(files)
 
 export const clampWeight = (value: number): number => roundNumber(Math.max(0, Math.min(2, value)))
 

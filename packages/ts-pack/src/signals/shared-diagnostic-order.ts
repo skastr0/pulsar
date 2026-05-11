@@ -1,4 +1,4 @@
-export interface DiagnosticOrderKey {
+interface DiagnosticOrderKey {
   readonly file: string
   readonly line: number
   readonly kind: string
@@ -12,7 +12,7 @@ export interface DiagnosticOrderProperties<Item> {
   readonly label: keyof Item
 }
 
-export const compareDiagnosticOrderKeys = (
+const compareDiagnosticOrderKeys = (
   left: DiagnosticOrderKey,
   right: DiagnosticOrderKey,
 ): number => {

@@ -281,17 +281,15 @@ const createPlanId = (
   return `review-plan-${hash.digest("hex").slice(0, 12)}`
 }
 
-const humanizeCategory = (category: Category): string =>
-  category
+const humanizeDashWords = (value: string): string =>
+  value
     .split("-")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ")
 
-const humanizePatternId = (patternId: string): string =>
-  patternId
-    .split("-")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ")
+const humanizeCategory = (category: Category): string => humanizeDashWords(category)
+
+const humanizePatternId = (patternId: string): string => humanizeDashWords(patternId)
 
 const compactContext = (items: ReadonlyArray<ContextItem | undefined>): ReadonlyArray<ContextItem> =>
   items.filter((item): item is ContextItem => item !== undefined)

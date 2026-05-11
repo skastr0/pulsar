@@ -21,7 +21,7 @@ export const isBundledCliSourceFile = (
   )
 }
 
-export const hasBundledCliBuildPipeline = (manifest: PackageManifest): boolean => {
+const hasBundledCliBuildPipeline = (manifest: PackageManifest): boolean => {
   const scriptText = Object.values(manifest.scripts).join("\n")
   const devDependencyNames = dependencyNamesOf(manifest, ["devDependencies"])
   return (

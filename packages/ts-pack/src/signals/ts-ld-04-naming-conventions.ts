@@ -4,6 +4,7 @@ import type { NamingConventions, SchemaConventions } from "@skastr0/pulsar-core/
 import { Effect, Option, Schema } from "effect"
 import { type RecognizedCasingPattern, parseCasingPatternAlternatives } from "../casing.js"
 import { TsProjectTag } from "../ts-project.js"
+import { scoreReferenceBackedViolationRatio } from "./shared-violation-ratio-score.js"
 import {
   collectIdentifierDeclarations,
   type ConstIdentifierContext,
@@ -124,10 +125,12 @@ export const TsLd04: Signal<TsLd04Config, TsLd04Output, TsProjectTag | Reference
           }),
       })
     }),
-  score: (out) => {
-    if (out.referenceDataStatus === "missing" || out.totalIdentifiers === 0) return 1
-    return Math.max(0, 1 - out.violations.length / out.totalIdentifiers)
-  },
+  score: (out) =>
+    scoreReferenceBackedViolationRatio({
+      referenceDataStatus: out.referenceDataStatus,
+      violationCount: out.violations.length,
+      totalCount: out.totalIdentifiers,
+    }),
   outputMetadata: (out) =>
     out.referenceDataStatus === "missing"
       ? { applicability: "insufficient_evidence" as const }

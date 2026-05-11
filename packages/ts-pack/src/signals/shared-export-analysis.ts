@@ -87,15 +87,14 @@ const reExportBinding = (
   viaReExport: true,
 })
 
-const hasExportModifier = (node: TsMorphNode): boolean => {
+const hasModifier = (node: TsMorphNode, kind: SyntaxKind): boolean => {
   const candidate = node as { getModifiers?: () => ReadonlyArray<{ getKind: () => SyntaxKind }> }
-  return candidate.getModifiers?.().some((modifier) => modifier.getKind() === SyntaxKind.ExportKeyword) ?? false
+  return candidate.getModifiers?.().some((modifier) => modifier.getKind() === kind) ?? false
 }
 
-const hasDefaultModifier = (node: TsMorphNode): boolean => {
-  const candidate = node as { getModifiers?: () => ReadonlyArray<{ getKind: () => SyntaxKind }> }
-  return candidate.getModifiers?.().some((modifier) => modifier.getKind() === SyntaxKind.DefaultKeyword) ?? false
-}
+const hasExportModifier = (node: TsMorphNode): boolean => hasModifier(node, SyntaxKind.ExportKeyword)
+
+const hasDefaultModifier = (node: TsMorphNode): boolean => hasModifier(node, SyntaxKind.DefaultKeyword)
 
 const bindingNames = (node: Node): ReadonlyArray<string> => {
   if (Node.isIdentifier(node)) return [node.getText()]
