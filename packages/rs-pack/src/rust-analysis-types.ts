@@ -5,6 +5,9 @@ export type RustVisibility = {
   readonly path?: string
 }
 
+export const isExternallyVisible = (visibility: RustVisibility): boolean =>
+  visibility.kind === "pub"
+
 export interface RustModuleFact {
   readonly crateName: string
   readonly file: string
