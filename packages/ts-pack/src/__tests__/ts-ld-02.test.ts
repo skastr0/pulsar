@@ -214,6 +214,36 @@ describe("TS-LD-02 (function / file size distribution)", () => {
     expect(out.outlierFiles).toEqual([])
   })
 
+  test("absolute file threshold pressure is diagnostic even without p95 outliers", async () => {
+    await writeTs(
+      "large-but-common.ts",
+      [
+        "export const a = 1",
+        "export const b = 2",
+        "export const c = 3",
+        "export const d = 4",
+        "export const e = 5",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runCompute({
+      ...TsLd02.defaultConfig,
+      max_file_loc: 3,
+    })
+    const diagnostics = TsLd02.diagnose(out)
+
+    expect(out.outlierFileCount).toBe(0)
+    expect(out.oversizedFileCount).toBe(1)
+    expect(TsLd02.score(out)).toBeLessThan(1)
+    expect(diagnostics).toHaveLength(1)
+    expect(diagnostics[0]?.message).toContain("File exceeds max_file_loc")
+    expect(diagnostics[0]?.data).toMatchObject({
+      kind: "file-threshold",
+      threshold: 3,
+    })
+  })
+
   test("comments and blanks are excluded from LOC count", async () => {
     const text = [
       "// comment one",
