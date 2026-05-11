@@ -151,6 +151,29 @@ describe("TS-LD-04 (naming convention consistency)", () => {
     expect(out.byKind.get("const")).toEqual({ total: 7, violating: 0 })
   })
 
+  test("does not treat arbitrary PascalCase Effect values as type-level declarations", async () => {
+    await repo.write(
+      "src/runtime-values.ts",
+      [
+        "import { Effect } from 'effect'",
+        "export const RuntimeValue = Effect.succeed(1)",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsLd04, TsLd04.defaultConfig, {
+      "schema-conventions": NAMING_CONVENTIONS,
+    })
+
+    expect(out.violations).toContainEqual(
+      expect.objectContaining({
+        name: "RuntimeValue",
+        actualPattern: "PascalCase",
+        constContext: "module-constant",
+      }),
+    )
+  })
+
   test("flags upper snake case for local constants even when module constants allow it", async () => {
     await repo.write(
       "src/local-constants.ts",

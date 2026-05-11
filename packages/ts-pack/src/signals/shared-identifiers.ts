@@ -195,7 +195,10 @@ const isSchemaOrTypeObjectConst = (declaration: VariableDeclaration): boolean =>
 
   const expressionText = unwrappedInitializer.getExpression().getText()
   return (
-    /(^|\.)(array|effect|enum|extend|literal|object|pipe|record|schema|scoped|struct|succeed|type|union)$/i.test(expressionText) ||
+    expressionText === "Schema" ||
+    expressionText.startsWith("Schema.") ||
+    (name.endsWith("Schema") && /(^|\.)(array|enum|extend|literal|object|record|schema|struct|type|union)$/i.test(expressionText)) ||
+    (name.endsWith("Schema") && expressionText === "pipe") ||
     (name.endsWith("Layer") && expressionText.startsWith("Layer."))
   )
 }
