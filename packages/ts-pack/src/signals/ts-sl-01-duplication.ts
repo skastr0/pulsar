@@ -6,7 +6,7 @@ import {
 } from "@skastr0/pulsar-core"
 import { Effect, Schema } from "effect"
 import { relative } from "node:path"
-import { type ArrowFunction, type FunctionExpression, Node, SyntaxKind } from "ts-morph"
+import { type ArrowFunction, type FunctionExpression, Node, type SourceFile, SyntaxKind } from "ts-morph"
 import { TsProjectTag } from "../ts-project.js"
 import {
   getFunctionBody,
@@ -146,105 +146,7 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
       const project = yield* TsProjectTag
       const context = yield* SignalContextTag
       return yield* Effect.try({
-        try: (): TsSl01Output => {
-          const functions: Array<CloneCandidate> = []
-          let scoreBudgetFunctions = 0
-          let totalFunctionsAnalyzed = 0
-          const hunkMap = buildHunkMap(context.worktreePath, context.changedHunks)
-          const structuralAnalysisCache = new Map<
-            string,
-            { readonly tokenCount: number; readonly structuralHash: string }
-          >()
-
-          for (const sourceFile of project.getSourceFiles()) {
-            if (sourceFile.isDeclarationFile()) continue
-
-            const path = sourceFile.getFilePath()
-            const relativePath = relative(context.worktreePath, path).replace(/\\/g, "/")
-            if (matchesSourcePath(path, relativePath, config.exclude_globs)) continue
-            if (isGeneratedSourceFileHeader(sourceFile.compilerNode.text.slice(0, 2048))) continue
-            if (matchesSourcePath(path, relativePath, config.test_globs)) continue
-
-            for (const { fn, path: functionPath } of getFunctionLikeEntriesForSourceFile(sourceFile)) {
-              const startLine = fn.getStartLineNumber()
-              const endLine = fn.getEndLineNumber()
-              const changed =
-                hunkMap === undefined ||
-                lineRangeOverlapsHunkRanges(startLine, endLine, hunkMap.get(path) ?? [])
-
-              const body = getFunctionBody(fn)
-              if (body === undefined) continue
-
-              const exactHash = hashExactSource(body)
-              const cacheKey = `${exactHash}:${body.length}`
-              const structuralAnalysis =
-                structuralAnalysisCache.get(cacheKey) ??
-                analyzeStructuralBody(body, structuralAnalysisCache, cacheKey)
-
-              if (changed && structuralAnalysis.tokenCount >= DEFAULT_SCORE_BUDGET_MIN_TOKENS) {
-                scoreBudgetFunctions += 1
-              }
-
-              if (structuralAnalysis.tokenCount < config.min_tokens) continue
-              if (changed) {
-                totalFunctionsAnalyzed += 1
-              }
-
-              functions.push({
-                fn,
-                path: functionPath,
-                body,
-                startLine,
-                endLine,
-                exactHash,
-                structuralHash: structuralAnalysis.structuralHash,
-                changed,
-                tokenCount: structuralAnalysis.tokenCount,
-              })
-            }
-          }
-
-          const scopeMode = context.changedHunks.length > 0 ? "changed-hunks" : "whole-tree"
-          const exactGroups = buildExactGroups(functions, config, scopeMode)
-          const structuralGroups = buildStructuralGroups(functions, config, scopeMode)
-
-          const groups: Array<CloneGroup> = []
-          let groupIndex = 0
-
-          for (const g of exactGroups) {
-            groups.push({
-              groupId: `exact-${groupIndex++}`,
-              kind: "exact",
-              tokenCount: g.tokenCount,
-              members: g.members.map((member) => member.member),
-              structuralHash: g.hash,
-            })
-          }
-
-          for (const g of structuralGroups) {
-            groups.push({
-              groupId: `structural-${groupIndex++}`,
-              kind: "structural",
-              tokenCount: g.tokenCount,
-              members: g.members.map((member) => member.member),
-              structuralHash: g.hash,
-            })
-          }
-
-          return {
-            groups: groups
-              .sort((a, b) =>
-                cloneGroupImpact(b, scopeMode, config.min_tokens) - cloneGroupImpact(a, scopeMode, config.min_tokens) ||
-                b.members.length - a.members.length ||
-                b.tokenCount - a.tokenCount,
-              ),
-            totalFunctionsAnalyzed,
-            scoreBudgetFunctions,
-            scopeMode,
-            detectionMinTokens: config.min_tokens,
-            diagnosticLimit: config.top_n_diagnostics,
-          }
-        },
+        try: () => computeTsSl01Output(project, context, config),
         catch: (cause) =>
           new SignalComputeError({ signalId: "TS-SL-01-duplication", message: String(cause), cause }),
       })
@@ -289,6 +191,214 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
       },
     })),
 }
+
+interface CloneCandidateCollection {
+  readonly functions: ReadonlyArray<CloneCandidate>
+  readonly scoreBudgetFunctions: number
+  readonly totalFunctionsAnalyzed: number
+  readonly scopeMode: TsSl01Output["scopeMode"]
+}
+
+interface CloneSourceFileCollection {
+  readonly functions: ReadonlyArray<CloneCandidate>
+  readonly scoreBudgetFunctions: number
+  readonly totalFunctionsAnalyzed: number
+}
+
+type StructuralAnalysisCache = Map<
+  string,
+  { readonly tokenCount: number; readonly structuralHash: string }
+>
+
+const computeTsSl01Output = (
+  project: import("ts-morph").Project,
+  context: {
+    readonly worktreePath: string
+    readonly changedHunks: ReadonlyArray<{
+      file: string
+      oldStart: number
+      oldLines: number
+      newStart: number
+      newLines: number
+    }>
+  },
+  config: TsSl01Config,
+): TsSl01Output => {
+  const collection = collectCloneCandidates(project.getSourceFiles(), context, config)
+  const groups = buildCloneGroups(collection.functions, config, collection.scopeMode)
+  return {
+    groups: sortCloneGroups(groups, collection.scopeMode, config.min_tokens),
+    totalFunctionsAnalyzed: collection.totalFunctionsAnalyzed,
+    scoreBudgetFunctions: collection.scoreBudgetFunctions,
+    scopeMode: collection.scopeMode,
+    detectionMinTokens: config.min_tokens,
+    diagnosticLimit: config.top_n_diagnostics,
+  }
+}
+
+const collectCloneCandidates = (
+  sourceFiles: ReadonlyArray<SourceFile>,
+  context: Parameters<typeof computeTsSl01Output>[1],
+  config: TsSl01Config,
+): CloneCandidateCollection => {
+  const hunkMap = buildHunkMap(context.worktreePath, context.changedHunks)
+  const structuralAnalysisCache: StructuralAnalysisCache = new Map()
+  const collection = emptyCloneSourceFileCollection()
+
+  for (const sourceFile of sourceFiles) {
+    mergeCloneSourceFileCollection(
+      collection,
+      collectSourceFileCloneCandidates(sourceFile, context, config, hunkMap, structuralAnalysisCache),
+    )
+  }
+
+  return {
+    ...collection,
+    scopeMode: context.changedHunks.length > 0 ? "changed-hunks" : "whole-tree",
+  }
+}
+
+const collectSourceFileCloneCandidates = (
+  sourceFile: SourceFile,
+  context: Parameters<typeof computeTsSl01Output>[1],
+  config: TsSl01Config,
+  hunkMap: ReturnType<typeof buildHunkMap>,
+  structuralAnalysisCache: StructuralAnalysisCache,
+): CloneSourceFileCollection => {
+  if (shouldSkipSourceFile(sourceFile, context.worktreePath, config)) {
+    return emptyCloneSourceFileCollection()
+  }
+
+  const path = sourceFile.getFilePath()
+  const collection = emptyCloneSourceFileCollection()
+  for (const entry of getFunctionLikeEntriesForSourceFile(sourceFile)) {
+    const candidate = cloneCandidateForFunction(entry.fn, entry.path, path, hunkMap, structuralAnalysisCache)
+    if (candidate === undefined) continue
+    recordCloneCandidate(collection, candidate, config)
+  }
+  return collection
+}
+
+const shouldSkipSourceFile = (
+  sourceFile: SourceFile,
+  worktreePath: string,
+  config: TsSl01Config,
+): boolean => {
+  if (sourceFile.isDeclarationFile()) return true
+  const path = sourceFile.getFilePath()
+  const relativePath = relative(worktreePath, path).replace(/\\/g, "/")
+  return (
+    matchesSourcePath(path, relativePath, config.exclude_globs) ||
+    isGeneratedSourceFileHeader(sourceFile.compilerNode.text.slice(0, 2048)) ||
+    matchesSourcePath(path, relativePath, config.test_globs)
+  )
+}
+
+const cloneCandidateForFunction = (
+  fn: FnLike,
+  functionPath: string,
+  sourceFilePath: string,
+  hunkMap: ReturnType<typeof buildHunkMap>,
+  structuralAnalysisCache: StructuralAnalysisCache,
+): CloneCandidate | undefined => {
+  const body = getFunctionBody(fn)
+  if (body === undefined) return undefined
+  const exactHash = hashExactSource(body)
+  const cacheKey = `${exactHash}:${body.length}`
+  const structuralAnalysis =
+    structuralAnalysisCache.get(cacheKey) ??
+    analyzeStructuralBody(body, structuralAnalysisCache, cacheKey)
+  const startLine = fn.getStartLineNumber()
+  const endLine = fn.getEndLineNumber()
+  return {
+    fn,
+    path: functionPath,
+    body,
+    startLine,
+    endLine,
+    exactHash,
+    structuralHash: structuralAnalysis.structuralHash,
+    changed:
+      hunkMap === undefined ||
+      lineRangeOverlapsHunkRanges(startLine, endLine, hunkMap.get(sourceFilePath) ?? []),
+    tokenCount: structuralAnalysis.tokenCount,
+  }
+}
+
+const emptyCloneSourceFileCollection = (): {
+  functions: Array<CloneCandidate>
+  scoreBudgetFunctions: number
+  totalFunctionsAnalyzed: number
+} => ({
+  functions: [],
+  scoreBudgetFunctions: 0,
+  totalFunctionsAnalyzed: 0,
+})
+
+const recordCloneCandidate = (
+  collection: ReturnType<typeof emptyCloneSourceFileCollection>,
+  candidate: CloneCandidate,
+  config: TsSl01Config,
+): void => {
+  if (candidate.changed && candidate.tokenCount >= DEFAULT_SCORE_BUDGET_MIN_TOKENS) {
+    collection.scoreBudgetFunctions += 1
+  }
+  if (candidate.tokenCount < config.min_tokens) return
+  if (candidate.changed) collection.totalFunctionsAnalyzed += 1
+  collection.functions.push(candidate)
+}
+
+const mergeCloneSourceFileCollection = (
+  target: ReturnType<typeof emptyCloneSourceFileCollection>,
+  source: CloneSourceFileCollection,
+): void => {
+  target.functions.push(...source.functions)
+  target.scoreBudgetFunctions += source.scoreBudgetFunctions
+  target.totalFunctionsAnalyzed += source.totalFunctionsAnalyzed
+}
+
+const buildCloneGroups = (
+  functions: ReadonlyArray<CloneCandidate>,
+  config: TsSl01Config,
+  scopeMode: TsSl01Output["scopeMode"],
+): ReadonlyArray<CloneGroup> => {
+  const groups: Array<CloneGroup> = []
+  let groupIndex = 0
+  for (const group of buildExactGroups(functions, config, scopeMode)) {
+    groups.push(toCloneGroup(`exact-${groupIndex++}`, "exact", group))
+  }
+  for (const group of buildStructuralGroups(functions, config, scopeMode)) {
+    groups.push(toCloneGroup(`structural-${groupIndex++}`, "structural", group))
+  }
+  return groups
+}
+
+const toCloneGroup = (
+  groupId: string,
+  kind: CloneGroup["kind"],
+  group: {
+    readonly tokenCount: number
+    readonly members: ReadonlyArray<{ readonly member: CloneGroupMember }>
+    readonly hash: string
+  },
+): CloneGroup => ({
+  groupId,
+  kind,
+  tokenCount: group.tokenCount,
+  members: group.members.map((member) => member.member),
+  structuralHash: group.hash,
+})
+
+const sortCloneGroups = (
+  groups: ReadonlyArray<CloneGroup>,
+  scopeMode: TsSl01Output["scopeMode"],
+  minTokens: number,
+): ReadonlyArray<CloneGroup> =>
+  [...groups].sort((a, b) =>
+    cloneGroupImpact(b, scopeMode, minTokens) - cloneGroupImpact(a, scopeMode, minTokens) ||
+    b.members.length - a.members.length ||
+    b.tokenCount - a.tokenCount,
+  )
 
 const analyzeStructuralBody = (
   body: string,
