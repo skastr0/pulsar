@@ -4,7 +4,13 @@ import {
   SignalComputeError,
 } from "@skastr0/pulsar-core"
 import { Effect, Schema } from "effect"
-import { Node, SyntaxKind, type InterfaceDeclaration, type SourceFile } from "ts-morph"
+import {
+  Node,
+  type Project,
+  SyntaxKind,
+  type InterfaceDeclaration,
+  type SourceFile,
+} from "ts-morph"
 import { createModuleResolver, type ModuleResolver } from "../graph/module-graph.js"
 import { TsProjectTag } from "../ts-project.js"
 import { isExcluded, matchesAnyGlob } from "./shared-globs.js"
@@ -64,93 +70,7 @@ export const TsAb04: Signal<TsAb04Config, TsAb04Output, TsProjectTag> = {
     Effect.gen(function* () {
       const project = yield* TsProjectTag
       const result = yield* Effect.try({
-        try: (): TsAb04Output => {
-          const sourceFiles = project
-            .getSourceFiles()
-            .filter((sourceFile) => !isExcluded(sourceFile.getFilePath(), config.exclude_globs))
-          const productionFiles = sourceFiles.filter(
-            (sourceFile) => !matchesAnyGlob(sourceFile.getFilePath(), config.test_globs),
-          )
-          const testFiles = sourceFiles.filter((sourceFile) =>
-            matchesAnyGlob(sourceFile.getFilePath(), config.test_globs),
-          )
-          const publicInterfaces = buildPublicInterfaceKeySet(
-            productionFiles,
-            config.public_entry_globs,
-          )
-
-          const candidateInterfaces = productionFiles
-            .flatMap((sourceFile) => sourceFile.getInterfaces())
-            .filter((iface) => !publicInterfaces.has(interfaceKey(iface)))
-
-          const prodImplementations = buildImplementationIndex(productionFiles)
-          const testImplementations = buildImplementationIndex(testFiles)
-
-          const pairs: Array<SingleImplPair> = []
-          const deadInterfaces: Array<DeadInterface> = []
-          let totalInterfaces = 0
-
-          for (const iface of candidateInterfaces) {
-            const productionImplementations = prodImplementations.get(iface.getName()) ?? []
-            const hasTestSubstitute =
-              (testImplementations.get(iface.getName()) ?? []).length > 0
-
-            if (productionImplementations.length === 0) {
-              if (hasStructuralTypeUsage(iface)) {
-                continue
-              }
-              totalInterfaces += 1
-              deadInterfaces.push({
-                interfaceFile: iface.getSourceFile().getFilePath(),
-                interfaceName: iface.getName(),
-                line: iface.getStartLineNumber(),
-              })
-              continue
-            }
-
-            totalInterfaces += 1
-            if (productionImplementations.length === 1) {
-              const implementation = productionImplementations[0]!
-              pairs.push({
-                interfaceFile: iface.getSourceFile().getFilePath(),
-                interfaceName: iface.getName(),
-                implementationFile: implementation.file,
-                implementationName: implementation.name,
-                hasTestSubstitute,
-              })
-            }
-          }
-
-          const flaggedPairs = pairs
-            .filter((pair) => !pair.hasTestSubstitute)
-            .sort((left, right) => {
-              const interfaceCompare = left.interfaceFile.localeCompare(right.interfaceFile)
-              if (interfaceCompare !== 0) return interfaceCompare
-              return left.interfaceName.localeCompare(right.interfaceName)
-            })
-
-          const ratio = totalInterfaces === 0 ? 0 : flaggedPairs.length / totalInterfaces
-          const deadInterfaceRatio =
-            totalInterfaces === 0 ? 0 : deadInterfaces.length / totalInterfaces
-          const singleImplementationPressure = Math.min(1, ratio / 0.5)
-          const deadInterfacePressure = Math.min(0.25, deadInterfaceRatio * 0.25)
-
-          return {
-            pairs,
-            flaggedPairs,
-            totalInterfaces,
-            ratio,
-            deadInterfaces: deadInterfaces.sort((left, right) => {
-              const fileCompare = left.interfaceFile.localeCompare(right.interfaceFile)
-              if (fileCompare !== 0) return fileCompare
-              return left.interfaceName.localeCompare(right.interfaceName)
-            }),
-            deadInterfaceRatio,
-            singleImplementationPressure,
-            deadInterfacePressure,
-            diagnosticLimit: config.top_n_diagnostics,
-          }
-        },
+        try: (): TsAb04Output => computeInterfaceImplementationRatio(project, config),
         catch: (cause) =>
           new SignalComputeError({
             signalId: "TS-AB-04-interface-implementation-ratio",
@@ -199,6 +119,154 @@ export const TsAb04: Signal<TsAb04Config, TsAb04Output, TsProjectTag> = {
 }
 
 type ImplementationDescriptor = { readonly file: string; readonly name: string }
+
+interface SourceFileGroups {
+  readonly productionFiles: ReadonlyArray<SourceFile>
+  readonly testFiles: ReadonlyArray<SourceFile>
+}
+
+interface InterfaceImplementationAccumulator {
+  readonly pairs: Array<SingleImplPair>
+  readonly deadInterfaces: Array<DeadInterface>
+  totalInterfaces: number
+}
+
+const computeInterfaceImplementationRatio = (
+  project: Project,
+  config: TsAb04Config,
+): TsAb04Output => {
+  const { productionFiles, testFiles } = selectInterfaceAnalysisFiles(project, config)
+  const candidateInterfaces = collectCandidateInterfaces(productionFiles, config)
+  const prodImplementations = buildImplementationIndex(productionFiles)
+  const testImplementations = buildImplementationIndex(testFiles)
+  const accumulator = buildInterfaceImplementationAccumulator(
+    candidateInterfaces,
+    prodImplementations,
+    testImplementations,
+  )
+  return buildInterfaceImplementationOutput(accumulator, config.top_n_diagnostics)
+}
+
+const selectInterfaceAnalysisFiles = (
+  project: Project,
+  config: TsAb04Config,
+): SourceFileGroups => {
+  const sourceFiles = project
+    .getSourceFiles()
+    .filter((sourceFile) => !isExcluded(sourceFile.getFilePath(), config.exclude_globs))
+  return {
+    productionFiles: sourceFiles.filter(
+      (sourceFile) => !matchesAnyGlob(sourceFile.getFilePath(), config.test_globs),
+    ),
+    testFiles: sourceFiles.filter((sourceFile) =>
+      matchesAnyGlob(sourceFile.getFilePath(), config.test_globs),
+    ),
+  }
+}
+
+const collectCandidateInterfaces = (
+  productionFiles: ReadonlyArray<SourceFile>,
+  config: TsAb04Config,
+): ReadonlyArray<InterfaceDeclaration> => {
+  const publicInterfaces = buildPublicInterfaceKeySet(
+    productionFiles,
+    config.public_entry_globs,
+  )
+  return productionFiles
+    .flatMap((sourceFile) => sourceFile.getInterfaces())
+    .filter((iface) => !publicInterfaces.has(interfaceKey(iface)))
+}
+
+const buildInterfaceImplementationAccumulator = (
+  candidateInterfaces: ReadonlyArray<InterfaceDeclaration>,
+  prodImplementations: ReadonlyMap<string, ReadonlyArray<ImplementationDescriptor>>,
+  testImplementations: ReadonlyMap<string, ReadonlyArray<ImplementationDescriptor>>,
+): InterfaceImplementationAccumulator => {
+  const accumulator: InterfaceImplementationAccumulator = {
+    pairs: [],
+    deadInterfaces: [],
+    totalInterfaces: 0,
+  }
+  for (const iface of candidateInterfaces) {
+    addInterfaceImplementationFinding(iface, prodImplementations, testImplementations, accumulator)
+  }
+  return accumulator
+}
+
+const addInterfaceImplementationFinding = (
+  iface: InterfaceDeclaration,
+  prodImplementations: ReadonlyMap<string, ReadonlyArray<ImplementationDescriptor>>,
+  testImplementations: ReadonlyMap<string, ReadonlyArray<ImplementationDescriptor>>,
+  accumulator: InterfaceImplementationAccumulator,
+): void => {
+  const productionImplementations = prodImplementations.get(iface.getName()) ?? []
+  const hasTestSubstitute = (testImplementations.get(iface.getName()) ?? []).length > 0
+  if (productionImplementations.length === 0) {
+    addDeadInterfaceFinding(iface, accumulator)
+    return
+  }
+
+  accumulator.totalInterfaces += 1
+  if (productionImplementations.length !== 1) return
+  const implementation = productionImplementations[0]!
+  accumulator.pairs.push({
+    interfaceFile: iface.getSourceFile().getFilePath(),
+    interfaceName: iface.getName(),
+    implementationFile: implementation.file,
+    implementationName: implementation.name,
+    hasTestSubstitute,
+  })
+}
+
+const addDeadInterfaceFinding = (
+  iface: InterfaceDeclaration,
+  accumulator: InterfaceImplementationAccumulator,
+): void => {
+  if (hasStructuralTypeUsage(iface)) return
+  accumulator.totalInterfaces += 1
+  accumulator.deadInterfaces.push({
+    interfaceFile: iface.getSourceFile().getFilePath(),
+    interfaceName: iface.getName(),
+    line: iface.getStartLineNumber(),
+  })
+}
+
+const buildInterfaceImplementationOutput = (
+  accumulator: InterfaceImplementationAccumulator,
+  diagnosticLimit: number,
+): TsAb04Output => {
+  const flaggedPairs = accumulator.pairs
+    .filter((pair) => !pair.hasTestSubstitute)
+    .sort(compareSingleImplPairs)
+  const totalInterfaces = accumulator.totalInterfaces
+  const ratio = totalInterfaces === 0 ? 0 : flaggedPairs.length / totalInterfaces
+  const deadInterfaceRatio =
+    totalInterfaces === 0 ? 0 : accumulator.deadInterfaces.length / totalInterfaces
+
+  return {
+    pairs: accumulator.pairs,
+    flaggedPairs,
+    totalInterfaces,
+    ratio,
+    deadInterfaces: accumulator.deadInterfaces.sort(compareDeadInterfaces),
+    deadInterfaceRatio,
+    singleImplementationPressure: Math.min(1, ratio / 0.5),
+    deadInterfacePressure: Math.min(0.25, deadInterfaceRatio * 0.25),
+    diagnosticLimit,
+  }
+}
+
+const compareSingleImplPairs = (left: SingleImplPair, right: SingleImplPair): number => {
+  const interfaceCompare = left.interfaceFile.localeCompare(right.interfaceFile)
+  if (interfaceCompare !== 0) return interfaceCompare
+  return left.interfaceName.localeCompare(right.interfaceName)
+}
+
+const compareDeadInterfaces = (left: DeadInterface, right: DeadInterface): number => {
+  const fileCompare = left.interfaceFile.localeCompare(right.interfaceFile)
+  if (fileCompare !== 0) return fileCompare
+  return left.interfaceName.localeCompare(right.interfaceName)
+}
 
 const buildPublicInterfaceKeySet = (
   sourceFiles: ReadonlyArray<SourceFile>,
