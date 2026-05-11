@@ -5,7 +5,6 @@
     "": {
       "name": "pulsar",
       "dependencies": {
-        "@skastr0/pulsar-project-module-sdk": "workspace:*",
         "effect": "^3.0.0",
       },
       "devDependencies": {

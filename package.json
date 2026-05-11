@@ -26,7 +26,6 @@
   },
   "packageManager": "bun@1.2.0",
   "dependencies": {
-    "@skastr0/pulsar-project-module-sdk": "workspace:*",
     "effect": "^3.0.0"
   },
   "engines": {
