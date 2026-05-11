@@ -20,6 +20,7 @@ import {
 } from "../scoring-engine.js"
 import {
   computeContentHash,
+  computeGitRevisionContextHash,
   computeWorktreeContentHash,
 } from "../scoring-engine-git-content-hash.js"
 import { ReferenceDataTag, SignalContextTag } from "../context.js"
@@ -324,6 +325,30 @@ describe("ScoringEngine — content hash", () => {
     }
   })
 
+  test("git revision context hash changes when branch upstream changes", async () => {
+    const { repoPath, sha: baseSha } = await initRepo([
+      { path: "a.ts", content: "export const x = 1\n" },
+    ])
+    try {
+      const featureSha = addCommit(repoPath, "a.ts", "export const x = 2\n", "feature")
+      sh("git", ["branch", "upstream-one", baseSha], repoPath)
+      sh("git", ["checkout", "-q", "-b", "upstream-two", baseSha], repoPath)
+      addCommit(repoPath, "README.md", "# upstream two\n", "upstream two")
+
+      sh("git", ["checkout", "-q", "-B", "feature-one", featureSha], repoPath)
+      sh("git", ["branch", "--set-upstream-to", "upstream-one"], repoPath)
+      const first = await Effect.runPromise(computeGitRevisionContextHash(repoPath))
+
+      sh("git", ["checkout", "-q", "-B", "feature-two", featureSha], repoPath)
+      sh("git", ["branch", "--set-upstream-to", "upstream-two"], repoPath)
+      const second = await Effect.runPromise(computeGitRevisionContextHash(repoPath))
+
+      expect(first).not.toBe(second)
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
   test("collects changed hunks for dirty tracked and untracked worktree files", async () => {
     const { repoPath } = await initRepo([
       { path: "a.ts", content: "export const x = 1\n" },
@@ -516,6 +541,46 @@ describe("ScoringEngine — cache semantics", () => {
       // sha2 and sha3 share a content hash (same .ts trees) so compute
       // fires exactly once.
       expect(count).toBe(1)
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("scoreRange: git revision cache dependency does not reuse identical source trees", async () => {
+    const { repoPath, sha: sha1 } = await initRepo([
+      { path: "a.ts", content: "export const x = 1\n" },
+      { path: "README.md", content: "# one\n" },
+    ])
+    try {
+      const sha2 = addCommit(repoPath, "a.ts", "export const x = 42\n", "code")
+      const sha3 = addCommit(repoPath, "README.md", "# three\n", "docs")
+
+      const program = Effect.gen(function* () {
+        const counter = yield* Ref.make(0)
+        const signal: Signal<{}, { readonly n: number }, never> = {
+          ...makeCountingSignal(counter),
+          cacheDependencies: ["git-revision-context"],
+        }
+        const registry = yield* buildRegistry([signal])
+        const EngineLayer = ScoringEngineLayer(registry, () => Layer.empty)
+        const engine = yield* ScoringEngineTag.pipe(
+          Effect.provide(EngineLayer),
+        ) as Effect.Effect<typeof ScoringEngineTag.Service, never, never>
+
+        const results = yield* engine.scoreRange(
+          repoPath,
+          sha1,
+          sha3,
+          "MOCK-ENG-01",
+          { concurrency: 1 },
+        )
+        const count = yield* Ref.get(counter)
+        return { results, count }
+      })
+
+      const { results, count } = await Effect.runPromise(program)
+      expect(results.map((r) => r.sha)).toEqual([sha2, sha3])
+      expect(count).toBe(2)
     } finally {
       await rm(repoPath, { recursive: true, force: true })
     }

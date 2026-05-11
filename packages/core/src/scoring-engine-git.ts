@@ -1,5 +1,6 @@
 export {
   computeContentHash,
+  computeGitRevisionContextHash,
   computeWorktreeContentHash,
 } from "./scoring-engine-git-content-hash.js"
 export { collectWorktreeChangedHunks } from "./scoring-engine-git-diff.js"

@@ -14,6 +14,7 @@ import { runSignal, type SignalRunResult } from "./runner.js"
 import { computeConfigHash } from "./scoring-engine-contract.js"
 import {
   computeContentHash,
+  computeGitRevisionContextHash,
   resolveRange,
 } from "./scoring-engine-git.js"
 import {
@@ -42,9 +43,9 @@ export const makeScoreCommit = (args: {
 
       const signal = args.registry.byId.get(signalId)
       const canonicalSignalId = signal?.id ?? signalId
-      const contentHash = yield* computeContentHash(repoPath, sha)
       const result = yield* args.withCommitWorktree(repoPath, sha, (worktreePath) =>
         Effect.gen(function* () {
+          const contentHash = yield* cacheContentHashForSignal(repoPath, worktreePath, sha, signal)
           const calibrationContext = yield* args.internals.resolveCalibrationContext(worktreePath)
           const configHash = computeConfigHash(
             canonicalSignalId,
@@ -75,6 +76,21 @@ export const makeScoreCommit = (args: {
       return result
     },
   )
+
+const cacheContentHashForSignal = (
+  repoPath: string,
+  worktreePath: string,
+  sha: string,
+  signal: { readonly cacheDependencies?: ReadonlyArray<string> } | undefined,
+): Effect.Effect<string, ScoringEngineError, never> =>
+  Effect.gen(function* () {
+    const contentHash = yield* computeContentHash(repoPath, sha)
+    if (!signal?.cacheDependencies?.includes("git-revision-context")) {
+      return contentHash
+    }
+    const revisionContextHash = yield* computeGitRevisionContextHash(worktreePath)
+    return `${contentHash}:git-revision-context:${revisionContextHash}`
+  })
 
 const readScoreCache = (
   cacheRef: typeof SignalCacheTag.Service,

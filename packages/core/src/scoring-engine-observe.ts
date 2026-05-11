@@ -25,6 +25,7 @@ import {
   canUseCurrentWorktreeForCommit,
   collectWorktreeChangedHunks,
   computeContentHash,
+  computeGitRevisionContextHash,
   computeWorktreeContentHash,
   resolveRange,
 } from "./scoring-engine-git.js"
@@ -77,9 +78,11 @@ export const makeObserveCommit = (args: {
   Effect.fn("ScoringEngine.observeCommit")(
     function* (repoPath: string, sha: string) {
       yield* Effect.annotateCurrentSpan("sha", sha)
-      const contentHash = yield* computeContentHash(repoPath, sha)
       const { result, cacheHit, key } = yield* args.withCommitWorktree(repoPath, sha, (worktreePath) =>
-        observeCommitInWorktree({ ...args, repoPath, sha, worktreePath, contentHash }),
+        Effect.gen(function* () {
+          const contentHash = yield* observerContentHash(args.registry, repoPath, worktreePath, sha)
+          return yield* observeCommitInWorktree({ ...args, repoPath, sha, worktreePath, contentHash })
+        }),
       )
       yield* Effect.annotateCurrentSpan("cacheKey", cacheKeyString(key))
       yield* Effect.annotateCurrentSpan("cacheHit", cacheHit)
@@ -157,7 +160,8 @@ export const makeObserveWorktree = (args: {
 
       const changedHunks =
         worktreeOptions?.changedHunks ?? (yield* collectWorktreeChangedHunks(repoPath))
-      const contentHash = `${yield* computeWorktreeContentHash(repoPath)}:${hashChangedHunks(changedHunks)}`
+      const baseContentHash = `${yield* computeWorktreeContentHash(repoPath)}:${hashChangedHunks(changedHunks)}`
+      const contentHash = yield* appendObserverRevisionContext(args.registry, repoPath, baseContentHash)
       const calibrationContext = yield* args.internals.resolveCalibrationContext(repoPath)
       const referenceEntries = yield* loadCanonicalReferenceDataEntries(repoPath)
       const key = observerCacheKey({ ...args, contentHash }, calibrationContext, referenceEntries)
@@ -175,6 +179,30 @@ export const makeObserveWorktree = (args: {
       return result
     },
   )
+
+const observerContentHash = (
+  registry: Registry,
+  repoPath: string,
+  worktreePath: string,
+  sha: string,
+): Effect.Effect<string, ScoringEngineError, never> =>
+  Effect.gen(function* () {
+    const contentHash = yield* computeContentHash(repoPath, sha)
+    return yield* appendObserverRevisionContext(registry, worktreePath, contentHash)
+  })
+
+const appendObserverRevisionContext = (
+  registry: Registry,
+  worktreePath: string,
+  contentHash: string,
+): Effect.Effect<string, ScoringEngineError, never> =>
+  Effect.gen(function* () {
+    if (!registry.sorted.some((signal) => signal.cacheDependencies?.includes("git-revision-context"))) {
+      return contentHash
+    }
+    const revisionContextHash = yield* computeGitRevisionContextHash(worktreePath)
+    return `${contentHash}:git-revision-context:${revisionContextHash}`
+  })
 
 export const makeObserveRange = (
   observeCommit: ReturnType<typeof makeObserveCommit>,

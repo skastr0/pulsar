@@ -27,6 +27,8 @@ export type SignalApplicability =
   | "insufficient_evidence"
   | "failed"
 
+export type SignalCacheDependency = "git-revision-context"
+
 export interface SignalOutputMetadata {
   readonly effectiveConfidence?: number
   readonly baseConfidence?: number
@@ -170,6 +172,13 @@ export interface Signal<Config, Output, R = SignalRequirements> {
    * default-config change.
    */
   readonly cacheVersion?: string
+
+  /**
+   * Extra repository facts that affect the signal output beyond the tracked
+   * source tree and resolved config. Use this sparingly for signals whose
+   * evidence depends on git topology, branch upstreams, or commit identity.
+   */
+  readonly cacheDependencies?: ReadonlyArray<SignalCacheDependency>
 
   /**
    * Schema that decodes raw JSON config from the pulsar vector into a

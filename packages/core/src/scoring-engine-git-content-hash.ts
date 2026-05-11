@@ -87,6 +87,49 @@ export const computeWorktreeContentHash = Effect.fn(
   return hash.digest("hex")
 })
 
+export const computeGitRevisionContextHash = Effect.fn(
+  "ScoringEngine.computeGitRevisionContextHash",
+)(function* (repoPath: string) {
+  const facts: Array<string> = []
+  const head = yield* optionalGit(repoPath, ["rev-parse", "HEAD"])
+  facts.push(`head=${head ?? "missing"}`)
+
+  const branch = yield* optionalGit(repoPath, ["symbolic-ref", "--quiet", "--short", "HEAD"])
+  facts.push(`branch=${branch ?? "detached"}`)
+
+  const upstream = yield* optionalGit(repoPath, [
+    "rev-parse",
+    "--abbrev-ref",
+    "--symbolic-full-name",
+    "@{u}",
+  ])
+  facts.push(`upstream=${upstream ?? "none"}`)
+
+  if (upstream !== undefined) {
+    const upstreamSha = yield* optionalGit(repoPath, ["rev-parse", upstream])
+    const mergeBase = yield* optionalGit(repoPath, ["merge-base", "HEAD", upstream])
+    facts.push(`upstreamSha=${upstreamSha ?? "missing"}`)
+    facts.push(`mergeBase=${mergeBase ?? "missing"}`)
+  }
+
+  const hash = createHash("sha256")
+  hash.update(facts.join("\n"))
+  return hash.digest("hex")
+})
+
+const optionalGit = (
+  repoPath: string,
+  args: ReadonlyArray<string>,
+): Effect.Effect<string | undefined> =>
+  Effect.gen(function* () {
+    const result = yield* Effect.either(
+      runGit(repoPath, args, { onFail: (message) => new Error(message) }),
+    )
+    if (result._tag === "Left") return undefined
+    const value = result.right.trim()
+    return value.length === 0 ? undefined : value
+  })
+
 const collectDirtyPulsarPaths = Effect.fn("ScoringEngine.collectDirtyPulsarPaths")(
   function* (repoPath: string) {
     const changed = yield* runGit(
