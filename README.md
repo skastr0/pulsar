@@ -19,6 +19,7 @@ The current workspace includes:
 - `@skastr0/pulsar-project-module-sdk`: typed project-module authoring APIs for calibration processors
 - `@skastr0/pulsar-project-module-effect` and `@skastr0/pulsar-project-module-convex`: technology calibration modules
 - `@skastr0/pulsar-cli`: local CLI source and standalone binary release target
+- `@skastr0/pulsar`: npm runner package for `npx`, `bunx`, `pnpm dlx`, and `pnpx`
 
 ## Repository-Level Invariant
 
@@ -27,6 +28,14 @@ Pulsar is repository-level, always. A repo-local `.pulsar/vector.json` is the so
 Presets are templates for creating or updating a repo vector. A preset is not active pulsar until it is applied to the repo.
 
 ## Quick Start From Source
+
+After the first npm release, run Pulsar without cloning the repo:
+
+```bash
+npx @skastr0/pulsar score .
+bunx @skastr0/pulsar score .
+pnpm dlx @skastr0/pulsar score .
+```
 
 ```bash
 git clone https://github.com/skastr0/pulsar.git

@@ -1,5 +1,5 @@
 {
-  "name": "@skastr0/pulsar",
+  "name": "@skastr0/pulsar-workspace",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -21,19 +21,23 @@
     "ai-code-review"
   ],
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "packages/npm/*"
   ],
   "scripts": {
     "dev": "bun packages/cli/src/bin.ts",
     "build": "turbo run build",
     "build:cli": "bun scripts/build-cli.ts",
+    "build:npm-cli": "bun scripts/build-npm-cli-packages.ts",
     "install:local": "bun scripts/install.ts",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
     "clean": "turbo run clean",
     "verify": "bun run typecheck && bun run test && bun run build",
-    "pack:dry-run": "bun run build && npm pack --dry-run --workspace packages/core --workspace packages/project-module-sdk --workspace packages/shared-signals --workspace packages/ts-pack --workspace packages/rs-pack --workspace packages/project-module-effect --workspace packages/project-module-convex"
+    "pack:dry-run": "bun run build && npm pack --dry-run --workspace packages/core --workspace packages/project-module-sdk --workspace packages/shared-signals --workspace packages/ts-pack --workspace packages/rs-pack --workspace packages/project-module-effect --workspace packages/project-module-convex",
+    "pack:npm-cli:dry-run": "bun run build:npm-cli && npm pack --dry-run --workspace packages/npm/pulsar-darwin-arm64 --workspace packages/npm/pulsar-darwin-x64 --workspace packages/npm/pulsar-linux-arm64 --workspace packages/npm/pulsar-linux-x64 --workspace packages/npm/pulsar",
+    "smoke:npm-cli": "bun run build:npm-cli && node packages/npm/pulsar/bin/pulsar.js --version"
   },
   "devDependencies": {
     "@types/bun": "latest",

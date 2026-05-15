@@ -1,0 +1,43 @@
+{
+  "name": "@skastr0/pulsar",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Deterministic, inspectable repository health CLI for Pulsar.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/skastr0/pulsar.git",
+    "directory": "packages/npm/pulsar"
+  },
+  "homepage": "https://github.com/skastr0/pulsar#readme",
+  "bugs": {
+    "url": "https://github.com/skastr0/pulsar/issues"
+  },
+  "keywords": [
+    "pulsar",
+    "cli",
+    "repository-health",
+    "code-quality",
+    "static-analysis"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "bin": {
+    "pulsar": "./bin/pulsar.js"
+  },
+  "files": [
+    "bin",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "optionalDependencies": {
+    "@skastr0/pulsar-darwin-arm64": "0.1.0",
+    "@skastr0/pulsar-darwin-x64": "0.1.0",
+    "@skastr0/pulsar-linux-arm64": "0.1.0",
+    "@skastr0/pulsar-linux-x64": "0.1.0"
+  }
+}

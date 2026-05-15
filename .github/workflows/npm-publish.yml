@@ -30,6 +30,7 @@ jobs:
           registry-url: https://registry.npmjs.org
       - run: bun install --frozen-lockfile
       - run: bun run verify
+      - run: bun run build:npm-cli
       - name: Publish packages
         env:
           NPM_CONFIG_PROVENANCE: "true"
@@ -43,7 +44,12 @@ jobs:
             packages/ts-pack \
             packages/rs-pack \
             packages/project-module-effect \
-            packages/project-module-convex
+            packages/project-module-convex \
+            packages/npm/pulsar-darwin-arm64 \
+            packages/npm/pulsar-darwin-x64 \
+            packages/npm/pulsar-linux-arm64 \
+            packages/npm/pulsar-linux-x64 \
+            packages/npm/pulsar
           do
             echo "Publishing ${package_dir}"
             npm publish "${package_dir}" --access public
