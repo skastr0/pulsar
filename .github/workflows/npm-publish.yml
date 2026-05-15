@@ -55,5 +55,5 @@ jobs:
             packages/npm/pulsar
           do
             echo "Publishing ${package_dir}"
-            npm publish "${package_dir}" --access public
+            npm publish "./${package_dir}" --access public
           done
