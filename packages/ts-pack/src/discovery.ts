@@ -1,4 +1,4 @@
-import { readFile, readdir } from "node:fs/promises"
+import { access, readFile, readdir } from "node:fs/promises"
 import { dirname, join, relative } from "node:path"
 import { ROOT_PACKAGE_NAME, sortRootFirstPackages } from "@skastr0/pulsar-shared-signals"
 import { Effect } from "effect"
@@ -203,13 +203,29 @@ const getGitTrackedFiles = (rootDir: string): Effect.Effect<ReadonlyArray<string
         "--others",
         "--exclude-standard",
       ])
-      return raw
+      const files = raw
         .trim()
         .split("\n")
         .filter((f) => f.length > 0)
+      const existing = await Promise.all(
+        files.map(async (file) => ({
+          file,
+          exists: await fileExists(join(rootDir, file)),
+        })),
+      )
+      return existing.flatMap((entry) => entry.exists ? [entry.file] : [])
     },
     catch: () => new Error("not a git repo"),
   }).pipe(Effect.orElseSucceed(() => [] as ReadonlyArray<string>))
+
+const fileExists = async (path: string): Promise<boolean> => {
+  try {
+    await access(path)
+    return true
+  } catch {
+    return false
+  }
+}
 
 const manifestOnlyPackageJsons = (
   rootDir: string,

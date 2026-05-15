@@ -1,3 +1,4 @@
+import { access } from "node:fs/promises"
 import { Context, Effect, Layer } from "effect"
 import { simpleGit } from "simple-git"
 import { Project } from "ts-morph"
@@ -261,9 +262,12 @@ const listProductionTypeScriptFiles = (
       },
       catch: (cause) => new Error(String(cause)),
     }).pipe(Effect.orElseSucceed(() => []))
+    const existingFiles = yield* Effect.filter(files, (file) =>
+      Effect.promise(() => fileExists(`${worktreePath}/${file}`)),
+    )
     const isProductionSource = makeProductionSourcePathClassifier()
     const productionFiles = yield* Effect.filter(
-      files.filter(isProductionTypeScriptFile),
+      existingFiles.filter(isProductionTypeScriptFile),
       isProductionSource,
     )
     return productionFiles.map((file) => `${worktreePath}/${file}`)
@@ -289,6 +293,15 @@ const isProductionTypeScriptFile = (file: string): boolean => {
   if (!(file.endsWith(".ts") || file.endsWith(".tsx"))) return false
   if (hasProductionExcludedSuffix(file)) return false
   return !hasProductionExcludedPath(file)
+}
+
+const fileExists = async (path: string): Promise<boolean> => {
+  try {
+    await access(path)
+    return true
+  } catch {
+    return false
+  }
 }
 
 const hasProductionExcludedSuffix = (file: string): boolean =>
