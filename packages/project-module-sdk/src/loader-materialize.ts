@@ -3,6 +3,7 @@ import { createRequire } from "node:module"
 import { readFile, symlink, writeFile } from "node:fs/promises"
 import { dirname, relative, resolve } from "node:path"
 import { Effect } from "effect"
+import { resolvePulsarRepoStatePath } from "@skastr0/pulsar-core/scoring"
 import { ProjectModuleLoadError } from "./loader-types.js"
 import type { ProjectModuleRef } from "./manifest.js"
 import { bundleMaterializedProjectModule } from "./loader-bundle.js"
@@ -11,6 +12,7 @@ import type { ProjectModuleSourceFile } from "./loader-source-files.js"
 import { realpathOrProjectModuleLoadError } from "./loader-realpath.js"
 import {
   isFile,
+  isDirectory,
   isPackageName,
   isPathInside,
   isRecord,
@@ -31,9 +33,7 @@ export const materializeProjectModuleImportTarget = (
 ): Effect.Effect<string, ProjectModuleLoadError> =>
   Effect.gen(function* () {
     const shadowSourceRoot = resolve(
-      repoRoot,
-      ".pulsar",
-      "cache",
+      resolvePulsarRepoStatePath(repoRoot, "cache"),
       "project-modules",
       safeSourceFingerprintPath(sourceFingerprint),
       ...shadowRootSegments,
@@ -94,7 +94,10 @@ const linkMaterializedPackageDependencies = (
 ): Effect.Effect<void, ProjectModuleLoadError> =>
   Effect.gen(function* () {
     const packageJsonPath = resolve(sourceRoot, "package.json")
-    if (!(yield* isFile(packageJsonPath))) return
+    if (!(yield* isFile(packageJsonPath))) {
+      yield* linkMaterializedNodeModulesFallback(ref, sourceRoot, shadowSourceRoot)
+      return
+    }
     const raw = yield* readTextFile(
       ref,
       packageJsonPath,
@@ -142,6 +145,33 @@ const dependencyNamesOfPackageJson = (value: unknown): ReadonlyArray<string> => 
   }
   return [...names].sort()
 }
+
+const linkMaterializedNodeModulesFallback = (
+  ref: ProjectModuleRef,
+  sourceRoot: string,
+  shadowSourceRoot: string,
+): Effect.Effect<void, ProjectModuleLoadError> =>
+  Effect.gen(function* () {
+    const sourceNodeModules = resolve(sourceRoot, "node_modules")
+    if (!(yield* isDirectory(sourceNodeModules))) return
+
+    const nodeModulesRoot =
+      nearestNodeModulesRoot(shadowSourceRoot) ?? resolve(shadowSourceRoot, "node_modules")
+    if (yield* isDirectory(nodeModulesRoot)) return
+
+    const dependencyRoot = yield* realpathOrProjectModuleLoadError(
+      ref,
+      sourceNodeModules,
+      "node_modules",
+      `Failed to resolve project module dependency directory node_modules`,
+    )
+    yield* mkdirForProjectModuleDirectory(
+      ref,
+      dirname(nodeModulesRoot),
+      `Failed to create materialized project module directory`,
+    )
+    yield* symlinkDependency(ref, "node_modules", dependencyRoot, nodeModulesRoot)
+  })
 
 const readFileBytes = (
   ref: ProjectModuleRef,

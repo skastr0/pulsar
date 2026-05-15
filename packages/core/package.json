@@ -1,9 +1,28 @@
 {
   "name": "@skastr0/pulsar-core",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
   "type": "module",
   "description": "Signal interface, registry, scoring engine, and pulsar vector for Pulsar",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/skastr0/pulsar.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/skastr0/pulsar#readme",
+  "bugs": {
+    "url": "https://github.com/skastr0/pulsar/issues"
+  },
+  "keywords": [
+    "pulsar",
+    "repository-health",
+    "scoring",
+    "signals",
+    "static-analysis"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -43,6 +62,10 @@
       "types": "./dist/scoring.d.ts",
       "default": "./dist/scoring.js"
     },
+    "./state": {
+      "types": "./dist/state-paths.d.ts",
+      "default": "./dist/state-paths.js"
+    },
     "./shared-signals": {
       "types": "./dist/shared-signals.d.ts",
       "default": "./dist/shared-signals.js"
@@ -62,6 +85,8 @@
   },
   "files": [
     "dist",
+    "!dist/__tests__",
+    "!dist/__tests__/**",
     "routing-patterns",
     "presets",
     "quiz-items"

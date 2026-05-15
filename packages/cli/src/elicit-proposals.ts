@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs"
 import { rm } from "node:fs/promises"
-import { join, relative } from "node:path"
+import { join } from "node:path"
 import {
   applyPulsarVectorProposal,
   type PulsarVectorProposal,
@@ -19,6 +19,7 @@ import {
   proposalPaths,
   readProposalFile,
   resolveVectorTarget,
+  toPulsarStateRef,
   writeJsonFile,
 } from "./elicit-files.js"
 import { renderProposalReview } from "./elicit-ui.js"
@@ -125,7 +126,7 @@ const acceptProposal = (
     const acceptedPath = join(context.paths.acceptedDir, `${context.proposalId}.json`)
     const baseVector = vectorTarget.vector ?? defaultVector(context.proposal.domain)
     const nextVector = applyPulsarVectorProposal(baseVector, context.resolved, {
-      artifactPath: relative(context.repoRoot, acceptedPath),
+      artifactPath: toPulsarStateRef(context.repoRoot, acceptedPath),
     })
     yield* validateVectorAgainstRegistry(nextVector, registry)
 

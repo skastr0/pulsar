@@ -220,7 +220,7 @@ const truncateContext = (
     kind: "diagnostic",
     content: {
       note: "Context truncated to fit review-plan size budget",
-      fullArtifactPath: `.pulsar/review-plans/${request.reviewerRole}.full-context.json`,
+      fullArtifactPath: `pulsar-state:review-plans/${request.reviewerRole}.full-context.json`,
     },
   })
 

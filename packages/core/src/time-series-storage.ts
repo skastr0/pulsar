@@ -1,12 +1,11 @@
 import { appendFile, mkdir, open, readFile, rm, writeFile } from "node:fs/promises"
-import { join } from "node:path"
+import { dirname } from "node:path"
 import { Schema } from "effect"
 import { compactTimeSeriesEntries } from "./time-series-compaction.js"
 import {
   compareTimeSeriesEntries,
 } from "./time-series-dates.js"
 import {
-  TIME_SERIES_DIRECTORY,
   TimeSeriesEntry,
   TimeSeriesLockFailed,
   TimeSeriesReadFailed,
@@ -27,7 +26,7 @@ export const appendTimeSeriesEntry = async (args: {
   readonly lockTimeoutMs: number
   readonly lockRetryMs: number
 }): Promise<TimeSeriesAppendResult> => {
-  await mkdir(join(args.repoPath, TIME_SERIES_DIRECTORY), { recursive: true })
+  await mkdir(dirname(args.filePath), { recursive: true })
   return withTimeSeriesLock(
     args.repoPath,
     args.filePath,

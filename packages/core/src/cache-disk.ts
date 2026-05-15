@@ -14,6 +14,7 @@ import {
   type SignalCache,
   type TieredCacheEntry,
 } from "./cache.js"
+import { resolvePulsarRepoStatePath } from "./state-paths.js"
 
 interface PersistedCacheRecord {
   readonly key: CacheKey
@@ -137,7 +138,7 @@ const updateRecordTimestamp = (
 
 const makeDiskBackedCache = (config?: CacheConfig): Effect.Effect<SignalCache> =>
   Effect.tryPromise(async () => {
-    const cacheDir = config?.cacheDir ?? join(process.cwd(), ".pulsar", "cache")
+    const cacheDir = config?.cacheDir ?? resolvePulsarRepoStatePath(process.cwd(), "cache")
     const maxSizeBytes = config?.maxSizeBytes ?? DEFAULT_CACHE_MAX_SIZE_BYTES
     const knownSignalIds = await loadKnownSignalIds(cacheDir)
     const buckets = new Map<string, LoadedSignalBucket>()

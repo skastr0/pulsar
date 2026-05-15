@@ -5,7 +5,7 @@ import {
   type ObserverOutput,
 } from "./observer.js"
 
-export const TIME_SERIES_DIRECTORY = ".pulsar/time-series" as const
+export const TIME_SERIES_DIRECTORY = "time-series" as const
 export const DEFAULT_TIME_SERIES_COMPACTION_THRESHOLD = 10_000
 export const DEFAULT_TIME_SERIES_RAW_RETENTION_DAYS = 90
 

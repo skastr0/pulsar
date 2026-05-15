@@ -6,7 +6,7 @@ import {
 } from "@skastr0/pulsar-core/scoring"
 import { Effect } from "effect"
 
-const BASELINE_RELATIVE_PATH = ".pulsar/baseline.json" as const
+const BASELINE_RELATIVE_PATH = "pulsar-baseline.json" as const
 
 export const resolveBaselinePath = (repoRoot: string): string =>
   join(repoRoot, BASELINE_RELATIVE_PATH)
@@ -49,9 +49,9 @@ export const writeBaselineFile = (
   Effect.gen(function* () {
     const baselinePath = resolveBaselinePath(repoRoot)
     yield* Effect.tryPromise({
-      try: () => mkdir(join(repoRoot, ".pulsar"), { recursive: true }),
+      try: () => mkdir(join(baselinePath, ".."), { recursive: true }),
       catch: (cause) =>
-        new Error(`Failed to create .pulsar directory in ${repoRoot}: ${String(cause)}`),
+        new Error(`Failed to create baseline directory in ${repoRoot}: ${String(cause)}`),
     })
     yield* Effect.tryPromise({
       try: () => writeFile(baselinePath, `${JSON.stringify(baseline, null, 2)}\n`, "utf8"),

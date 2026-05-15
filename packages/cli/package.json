@@ -1,9 +1,25 @@
 {
   "name": "@skastr0/pulsar-cli",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "Pulsar CLI — pulsar score, pulsar bisect",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/skastr0/pulsar.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/skastr0/pulsar#readme",
+  "bugs": {
+    "url": "https://github.com/skastr0/pulsar/issues"
+  },
+  "keywords": [
+    "pulsar",
+    "cli",
+    "repository-health",
+    "code-quality"
+  ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {

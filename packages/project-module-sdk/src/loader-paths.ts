@@ -32,6 +32,15 @@ export const isFile = (path: string): Effect.Effect<boolean, never> =>
     }
   })
 
+export const isDirectory = (path: string): Effect.Effect<boolean, never> =>
+  Effect.promise(async () => {
+    try {
+      return (await stat(path)).isDirectory()
+    } catch {
+      return false
+    }
+  })
+
 export const realFileOption = (path: string): Effect.Effect<string | undefined, never> =>
   Effect.promise(async () => {
     try {

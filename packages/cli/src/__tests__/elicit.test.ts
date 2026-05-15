@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test"
 import { spawnSync } from "node:child_process"
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join, resolve } from "node:path"
+import { dirname, join, resolve } from "node:path"
+import { resolvePulsarRepoStatePath } from "@skastr0/pulsar-core/scoring"
 
 const binPath = resolve(import.meta.dir, "../../src/bin.ts")
 
@@ -17,6 +18,11 @@ const writeRepoFile = async (repoPath: string, relPath: string, content: string)
   const full = join(repoPath, relPath)
   await mkdir(join(full, ".."), { recursive: true })
   await writeFile(full, content, "utf8")
+}
+
+const writeAbsoluteFile = async (path: string, content: string): Promise<void> => {
+  await mkdir(dirname(path), { recursive: true })
+  await writeFile(path, content, "utf8")
 }
 
 const initRepo = async (): Promise<string> => {
@@ -125,7 +131,7 @@ describe("pulsar elicit", () => {
       expect(out.stdout).toContain("revised")
       expect(out.stdout).toContain("reverted")
 
-      const pendingDir = join(repoPath, ".pulsar", "proposals", "pending")
+      const pendingDir = resolvePulsarRepoStatePath(repoPath, "proposals", "pending")
       const files = await (await import("node:fs/promises")).readdir(pendingDir)
       const proposalPath = join(pendingDir, files.find((entry) => entry.includes("proposal-revealed-"))!)
       const proposal = JSON.parse(await readFile(proposalPath, "utf8"))
@@ -236,9 +242,8 @@ describe("pulsar elicit", () => {
   test("review, accept, and reject commands manage pending proposals deterministically", async () => {
     const repoPath = await initRepo()
     try {
-      await writeRepoFile(
-        repoPath,
-        ".pulsar/proposals/pending/proposal-passive.json",
+      await writeAbsoluteFile(
+        resolvePulsarRepoStatePath(repoPath, "proposals", "pending", "proposal-passive.json"),
         JSON.stringify(
           {
             schema_version: 1,
@@ -267,9 +272,13 @@ describe("pulsar elicit", () => {
           2,
         ),
       )
-      await writeRepoFile(
-        repoPath,
-        ".pulsar/proposals/pending/proposal-ai-assisted-mode.json",
+      await writeAbsoluteFile(
+        resolvePulsarRepoStatePath(
+          repoPath,
+          "proposals",
+          "pending",
+          "proposal-ai-assisted-mode.json",
+        ),
         JSON.stringify(
           {
             schema_version: 1,
@@ -318,11 +327,16 @@ describe("pulsar elicit", () => {
       expect(reject.stdout).toContain("will not silently tighten thresholds")
 
       const acceptedProposal = await readFile(
-        join(repoPath, ".pulsar/proposals/accepted/proposal-passive.json"),
+        resolvePulsarRepoStatePath(repoPath, "proposals", "accepted", "proposal-passive.json"),
         "utf8",
       )
       const rejectedProposal = await readFile(
-        join(repoPath, ".pulsar/proposals/rejected/proposal-ai-assisted-mode.json"),
+        resolvePulsarRepoStatePath(
+          repoPath,
+          "proposals",
+          "rejected",
+          "proposal-ai-assisted-mode.json",
+        ),
         "utf8",
       )
       expect(JSON.parse(acceptedProposal).status).toBe("accepted")

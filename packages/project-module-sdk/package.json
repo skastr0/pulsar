@@ -1,9 +1,27 @@
 {
   "name": "@skastr0/pulsar-project-module-sdk",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
   "type": "module",
   "description": "Project module authoring SDK for Pulsar calibration processors",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/skastr0/pulsar.git",
+    "directory": "packages/project-module-sdk"
+  },
+  "homepage": "https://github.com/skastr0/pulsar#readme",
+  "bugs": {
+    "url": "https://github.com/skastr0/pulsar/issues"
+  },
+  "keywords": [
+    "pulsar",
+    "calibration",
+    "project-module",
+    "sdk"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -13,7 +31,9 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "!dist/__tests__",
+    "!dist/__tests__/**"
   ],
   "scripts": {
     "build": "tsc -b",
@@ -22,7 +42,7 @@
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
-    "@skastr0/pulsar-core": "workspace:*",
+    "@skastr0/pulsar-core": "0.1.0",
     "effect": "^3.0.0",
     "typescript": "^5.8.0"
   }

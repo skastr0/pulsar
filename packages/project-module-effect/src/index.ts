@@ -16,7 +16,7 @@ export const EFFECT_PROTOTYPE_FACTORY_NOOP_RULE_ID = "effect.prototype-factory.n
 
 export const effectProjectModule = defineProjectModule({
   id: EFFECT_PROJECT_MODULE_ID,
-  version: "0.0.0",
+  version: "0.1.0",
   scope: "technology",
   source: "package",
   processors: [

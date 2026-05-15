@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import { Effect, Option } from "effect"
 import { createTimeSeriesServices, type TimeSeriesEntry } from "../time-series.js"
 
@@ -313,7 +313,7 @@ describe("time series persistence", () => {
         },
       }
 
-      await mkdir(join(repoPath, ".pulsar", "time-series"), { recursive: true })
+      await mkdir(dirname(services.filePath), { recursive: true })
       await writeFile(services.filePath, `${JSON.stringify(legacyEntry)}\n`, "utf8")
 
       await Effect.runPromise(

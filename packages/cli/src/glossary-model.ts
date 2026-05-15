@@ -7,7 +7,7 @@ import {
 } from "@skastr0/pulsar-core/reference-data"
 import { Effect } from "effect"
 import type { IdentifierOccurrence } from "./identifier-analysis.js"
-import { GLOSSARY_DRAFT_RELATIVE_PATH } from "./reference-data-file.js"
+import { GLOSSARY_DRAFT_STATE_PATH } from "./reference-data-file.js"
 import { compareSourceLocationThenFields } from "./source-location-field-order.js"
 import { sourceLineNumber } from "./source-location-order.js"
 
@@ -110,7 +110,7 @@ export const buildCanonicalGlossary = (draft: GlossaryDraft): ReturnType<typeof 
       throw new Error(
         [
           `Glossary draft still has undecided terms; first missing decision: '${candidate.term}'.`,
-          `Edit ${GLOSSARY_DRAFT_RELATIVE_PATH} and set decision.action to accept, reject, or merge.`,
+          `Edit the Pulsar state draft ${GLOSSARY_DRAFT_STATE_PATH} and set decision.action to accept, reject, or merge.`,
           "For deterministic bulk confirmation, rerun with --auto-accept-above-frequency <n>.",
         ].join(" "),
       )
@@ -169,7 +169,7 @@ export const validateGlossaryDraftDecisions = (
           new Error(
             [
               `Glossary draft still has undecided terms; first missing decision: '${candidate.term}'.`,
-              `Edit ${GLOSSARY_DRAFT_RELATIVE_PATH} and set decision.action to accept, reject, or merge.`,
+              `Edit the Pulsar state draft ${GLOSSARY_DRAFT_STATE_PATH} and set decision.action to accept, reject, or merge.`,
               "For deterministic bulk confirmation, rerun with --auto-accept-above-frequency <n>.",
             ].join(" "),
           ),
@@ -181,14 +181,14 @@ export const validateGlossaryDraftDecisions = (
       if (target === undefined || target.length === 0) {
         return yield* Effect.fail(
           new Error(
-            `Candidate term '${candidate.term}' must set decision.merge_into. Edit ${GLOSSARY_DRAFT_RELATIVE_PATH} or rerun confirm with --auto-accept-above-frequency <n>.`,
+            `Candidate term '${candidate.term}' must set decision.merge_into. Edit the Pulsar state draft ${GLOSSARY_DRAFT_STATE_PATH} or rerun confirm with --auto-accept-above-frequency <n>.`,
           ),
         )
       }
       if (target === candidate.term) {
         return yield* Effect.fail(
           new Error(
-            `Candidate term '${candidate.term}' cannot merge into itself. Choose a different merge_into target in ${GLOSSARY_DRAFT_RELATIVE_PATH}.`,
+            `Candidate term '${candidate.term}' cannot merge into itself. Choose a different merge_into target in the Pulsar state draft ${GLOSSARY_DRAFT_STATE_PATH}.`,
           ),
         )
       }

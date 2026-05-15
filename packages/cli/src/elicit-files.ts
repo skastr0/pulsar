@@ -1,6 +1,10 @@
 import { existsSync } from "node:fs"
 import { mkdir, readFile, readdir } from "node:fs/promises"
-import { join, resolve } from "node:path"
+import { join, relative, resolve } from "node:path"
+import {
+  resolvePulsarRepoStateDir,
+  resolvePulsarRepoStatePath,
+} from "@skastr0/pulsar-core/scoring"
 import {
   decodeQuizSession,
   PulsarVectorProposal,
@@ -41,10 +45,14 @@ export const readQuizSessionIfPresent = (sessionPath: string): Effect.Effect<Qui
 
 export const proposalPaths = (repoRoot: string): ProposalPaths => ({
   pulsarDir: join(repoRoot, ".pulsar"),
-  pendingDir: join(repoRoot, ".pulsar", "proposals", "pending"),
-  acceptedDir: join(repoRoot, ".pulsar", "proposals", "accepted"),
-  rejectedDir: join(repoRoot, ".pulsar", "proposals", "rejected"),
-  revealedPreferenceDir: join(repoRoot, ".pulsar", "elicitation", "revealed-preference"),
+  pendingDir: resolvePulsarRepoStatePath(repoRoot, "proposals", "pending"),
+  acceptedDir: resolvePulsarRepoStatePath(repoRoot, "proposals", "accepted"),
+  rejectedDir: resolvePulsarRepoStatePath(repoRoot, "proposals", "rejected"),
+  revealedPreferenceDir: resolvePulsarRepoStatePath(
+    repoRoot,
+    "elicitation",
+    "revealed-preference",
+  ),
   worktreeVectorPath: join(repoRoot, ".pulsar", "vector.json"),
 })
 
@@ -127,3 +135,8 @@ export const defaultVector = (domain: string): PulsarVector => ({
   domain,
   signal_overrides: {},
 })
+
+export const toPulsarStateRef = (repoRoot: string, absolutePath: string): string => {
+  const stateRoot = resolvePulsarRepoStateDir(repoRoot)
+  return `pulsar-state:${relative(stateRoot, absolutePath)}`
+}

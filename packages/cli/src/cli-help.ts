@@ -50,7 +50,7 @@ const HELP_SECTIONS: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [
   [
     "Baseline options",
     [
-      "  set                  Write .pulsar/baseline.json from current hard-gate debt.",
+      "  set                  Write pulsar-baseline.json from current hard-gate debt.",
       "  refresh              Replace the baseline with current state.",
       "  show                 Render tolerated counts per signal + baseline age.",
     ],
@@ -83,7 +83,7 @@ const HELP_SECTIONS: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [
     "Calibrate options",
     [
       "  suggest              Print deterministic repo-owned calibration suggestions.",
-      "  --write              Write .pulsar/calibration-suggestions.json.",
+      "  --write              Write a calibration suggestion report under ~/.config/pulsar.",
       "  --json               Emit the suggestion report as JSON.",
     ],
   ],

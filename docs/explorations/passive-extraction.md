@@ -32,8 +32,8 @@ Current behavior:
 
 1. after each edit-time Observer run, compare previous vs current signal scores
 2. if a signal improves by `>= 0.20`, create a **pending proposal** instead of mutating the vector
-3. append an observation record to `.pulsar/observations.log`
-4. write the structured proposal to `.pulsar/proposals/pending/<id>.json`
+3. append an observation record to local Pulsar state under `~/.config/pulsar/repos/<repo-id>/observations.log`
+4. write the structured proposal to local Pulsar state under `~/.config/pulsar/repos/<repo-id>/proposals/pending/<id>.json`
 
 This keeps the prototype auditable and confirmation-first.
 
@@ -65,7 +65,7 @@ Proposed vector updates:
 - TS-LD-01 weight 1.00 -> 1.12
 
 Apply now? [y/N]
-Review artifact: .pulsar/proposals/pending/proposal-abc123def456.json
+Review artifact: ~/.config/pulsar/repos/<repo-id>/proposals/pending/proposal-abc123def456.json
 ```
 
 ## Recommendation

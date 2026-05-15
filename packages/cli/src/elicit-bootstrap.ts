@@ -1,4 +1,4 @@
-import { join, relative } from "node:path"
+import { join } from "node:path"
 import {
   deriveRevealedPreferenceProposal,
   inferRevealedPreferencePairwise,
@@ -18,6 +18,7 @@ import { discoverPulsarVector } from "./vector-discovery.js"
 import {
   ensureProposalDirectories,
   proposalPaths,
+  toPulsarStateRef,
   writeJsonFile,
 } from "./elicit-files.js"
 import {
@@ -141,8 +142,8 @@ const persistBootstrapProposal = (
       baseVectorSourceLabel: context.baseVectorSourceLabel,
       report,
       proposal,
-      proposalPath: relative(context.repoRoot, pendingPath),
-      reportPath: relative(context.repoRoot, reportPath),
+      proposalPath: toPulsarStateRef(context.repoRoot, pendingPath),
+      reportPath: toPulsarStateRef(context.repoRoot, reportPath),
       ...(context.presetId !== undefined ? { usedPriorPreset: context.presetId } : {}),
     }
   })
@@ -187,7 +188,7 @@ const bootstrapProposal = (
     weights: result.weights,
     support: result.support,
     changedFiles: sortedUniqueFilePaths(context.events.flatMap((event) => event.changed_files)).slice(0, 25),
-    reportPath: relative(context.repoRoot, reportPath),
+    reportPath: toPulsarStateRef(context.repoRoot, reportPath),
   })
 
 const countOutcomes = (events: ReadonlyArray<RevealedPreferenceCommitEvent>): OutcomeCounts => ({

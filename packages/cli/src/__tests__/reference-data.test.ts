@@ -4,6 +4,9 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import {
+  resolvePulsarRepoStatePath,
+} from "@skastr0/pulsar-core/scoring"
+import {
   decodeGlossaryDraftSync,
   decodeGlossarySync,
   decodeSchemaConventionsSync,
@@ -197,7 +200,7 @@ describe("reference data commands", () => {
     expect(extract.stdout).toContain(" <-> ")
     expect(extract.stdout).toContain("score ")
 
-    const draftPath = join(repoPath, ".pulsar", "glossary.draft.json")
+    const draftPath = resolvePulsarRepoStatePath(repoPath, "drafts", "glossary.draft.json")
     const draft = decodeGlossaryDraftSync(JSON.parse(await readFile(draftPath, "utf8")))
 
     const userTerm = draft.candidate_terms.find((term) => term.term === "user")
@@ -261,7 +264,7 @@ describe("reference data commands", () => {
     const confirm = runCli(repoPath, ["glossary", "confirm", "."])
     expect(confirm.status).toBe(1)
     expect(confirm.stderr).toContain("Glossary draft still has undecided terms")
-    expect(confirm.stderr).toContain(".pulsar/glossary.draft.json")
+    expect(confirm.stderr).toContain("drafts/glossary.draft.json")
     expect(confirm.stderr).toContain("--auto-accept-above-frequency <n>")
     expect(confirm.stderr).not.toContain("FiberFailure")
   }, 120_000)
@@ -272,7 +275,7 @@ describe("reference data commands", () => {
     const extract = runCli(repoPath, ["glossary", "extract", "--sha", "HEAD", "--no-parameters", "."])
     expect(extract.status).toBe(0)
 
-    const draftPath = join(repoPath, ".pulsar", "glossary.draft.json")
+    const draftPath = resolvePulsarRepoStatePath(repoPath, "drafts", "glossary.draft.json")
     const draft = decodeGlossaryDraftSync(JSON.parse(await readFile(draftPath, "utf8")))
     expect(draft.candidate_terms.some((term) => term.term === "payload")).toBe(false)
     expect(draft.include_parameter_names).toBe(false)
@@ -303,7 +306,7 @@ describe("reference data commands", () => {
     const extract = runCli(repoPath, ["conventions", "extract", "--sha", "HEAD", "."])
     expect(extract.status).toBe(0)
 
-    const draftPath = join(repoPath, ".pulsar", "conventions.draft.json")
+    const draftPath = resolvePulsarRepoStatePath(repoPath, "drafts", "conventions.draft.json")
     const draft = decodeSchemaConventionsSync(JSON.parse(await readFile(draftPath, "utf8")))
     expect(draft.naming_conventions.function).toBe("camelCase")
     expect(draft.naming_conventions.class).toBe("PascalCase")

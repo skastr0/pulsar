@@ -3,10 +3,14 @@ dist/
 .turbo/
 tsconfig.tsbuildinfo
 .pulsar/*
+!.pulsar/vector.json
 !.pulsar/conventions.json
 !.pulsar/glossary.json
+!.pulsar/author-aliases.json
 !.pulsar/project-modules.json
 !.pulsar/modules/
 !.pulsar/modules/**
+!.pulsar/routing-patterns/
+!.pulsar/routing-patterns/**
 
 .DS_Store

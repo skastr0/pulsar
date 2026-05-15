@@ -12,11 +12,11 @@ import { Effect } from "effect"
 import { type PackageInfo, discoverPackages } from "@skastr0/pulsar-ts-pack"
 import { collectIdentifiers, type IdentifierOccurrence } from "./identifier-analysis.js"
 import {
-  CONVENTIONS_DRAFT_RELATIVE_PATH,
+  CONVENTIONS_DRAFT_STATE_PATH,
   promoteReferenceFile,
-  readReferenceJson,
-  resolveReferenceDataPath,
-  writeReferenceJson,
+  readReferenceStateJson,
+  resolveReferenceStatePath,
+  writeReferenceStateJson,
 } from "./reference-data-file.js"
 import { resolveRepoRoot, withDetachedWorktreeAtRef } from "./runtime.js"
 
@@ -71,9 +71,9 @@ const runConventionsExtract = (repoPath: string, sha: string) =>
         architectural_rules: [],
       })
 
-      const draftPath = yield* writeReferenceJson(
+      const draftPath = yield* writeReferenceStateJson(
         repoRoot,
-        CONVENTIONS_DRAFT_RELATIVE_PATH,
+        CONVENTIONS_DRAFT_STATE_PATH,
         draft,
       )
 
@@ -90,18 +90,18 @@ const runConventionsExtract = (repoPath: string, sha: string) =>
 const runConventionsConfirm = (repoPath: string) =>
   Effect.gen(function* () {
     const repoRoot = yield* resolveRepoRoot(repoPath)
-    const rawDraft = yield* readReferenceJson(repoRoot, CONVENTIONS_DRAFT_RELATIVE_PATH)
+    const rawDraft = yield* readReferenceStateJson(repoRoot, CONVENTIONS_DRAFT_STATE_PATH)
     yield* Effect.try({
       try: () => decodeSchemaConventionsSync(rawDraft),
       catch: (cause) =>
         new Error(
-          `Failed to decode conventions draft at ${resolveReferenceDataPath(repoRoot, CONVENTIONS_DRAFT_RELATIVE_PATH)}: ${String(cause)}`,
+          `Failed to decode conventions draft at ${resolveReferenceStatePath(repoRoot, CONVENTIONS_DRAFT_STATE_PATH)}: ${String(cause)}`,
         ),
     })
 
     const canonicalPath = yield* promoteReferenceFile(
       repoRoot,
-      CONVENTIONS_DRAFT_RELATIVE_PATH,
+      CONVENTIONS_DRAFT_STATE_PATH,
       CANONICAL_CONVENTIONS_RELATIVE_PATH,
     )
 

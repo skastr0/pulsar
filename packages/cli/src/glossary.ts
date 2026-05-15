@@ -13,11 +13,12 @@ import {
 } from "./glossary-model.js"
 import { collectIdentifiers } from "./identifier-analysis.js"
 import {
-  GLOSSARY_DRAFT_RELATIVE_PATH,
-  readReferenceJson,
-  removeReferenceFile,
-  resolveReferenceDataPath,
+  GLOSSARY_DRAFT_STATE_PATH,
+  readReferenceStateJson,
+  removeReferenceStateFile,
+  resolveReferenceStatePath,
   writeReferenceJson,
+  writeReferenceStateJson,
 } from "./reference-data-file.js"
 import { resolveRepoRoot, withDetachedWorktreeAtRef } from "./runtime.js"
 
@@ -61,7 +62,7 @@ const runGlossaryExtract = (repoPath: string, sha: string, includeParameters: bo
         candidate_synonyms: candidateSynonyms,
       })
 
-      const draftPath = yield* writeReferenceJson(repoRoot, GLOSSARY_DRAFT_RELATIVE_PATH, draft)
+      const draftPath = yield* writeReferenceStateJson(repoRoot, GLOSSARY_DRAFT_STATE_PATH, draft)
       console.log("")
       console.log(`  Glossary draft written: ${draftPath}`)
       console.log(`  SHA:                  ${resolvedSha}`)
@@ -76,12 +77,12 @@ const runGlossaryExtract = (repoPath: string, sha: string, includeParameters: bo
 const runGlossaryConfirm = (repoPath: string, autoAcceptAboveFrequency?: number) =>
   Effect.gen(function* () {
     const repoRoot = yield* resolveRepoRoot(repoPath)
-    const rawDraft = yield* readReferenceJson(repoRoot, GLOSSARY_DRAFT_RELATIVE_PATH)
+    const rawDraft = yield* readReferenceStateJson(repoRoot, GLOSSARY_DRAFT_STATE_PATH)
     const draft = yield* Effect.try({
       try: () => decodeGlossaryDraftSync(rawDraft),
       catch: (cause) =>
         new Error(
-          `Failed to decode glossary draft at ${resolveReferenceDataPath(repoRoot, GLOSSARY_DRAFT_RELATIVE_PATH)}: ${String(cause)}`,
+          `Failed to decode glossary draft at ${resolveReferenceStatePath(repoRoot, GLOSSARY_DRAFT_STATE_PATH)}: ${String(cause)}`,
         ),
     })
 
@@ -92,7 +93,7 @@ const runGlossaryConfirm = (repoPath: string, autoAcceptAboveFrequency?: number)
     yield* validateGlossaryDraftDecisions(draftForConfirmation)
     const glossary = buildCanonicalGlossary(draftForConfirmation)
     const glossaryPath = yield* writeReferenceJson(repoRoot, CANONICAL_GLOSSARY_RELATIVE_PATH, glossary)
-    yield* removeReferenceFile(repoRoot, GLOSSARY_DRAFT_RELATIVE_PATH)
+    yield* removeReferenceStateFile(repoRoot, GLOSSARY_DRAFT_STATE_PATH)
 
     console.log("")
     console.log(`  Glossary confirmed: ${glossaryPath}`)

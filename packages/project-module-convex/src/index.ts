@@ -16,7 +16,7 @@ export const CONVEX_PUBLIC_ENTRYPOINT_RULE_ID = "convex.public-entrypoint.v1" as
 
 export const convexProjectModule = defineProjectModule({
   id: CONVEX_PROJECT_MODULE_ID,
-  version: "0.0.0",
+  version: "0.1.0",
   scope: "technology",
   source: "package",
   processors: [

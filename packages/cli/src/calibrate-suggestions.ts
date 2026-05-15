@@ -1,10 +1,12 @@
 import { existsSync } from "node:fs"
 import { join } from "node:path"
+import { resolvePulsarRepoStatePath } from "@skastr0/pulsar-core/scoring"
 import { Effect } from "effect"
 import {
   suggestProjectModules,
   type SuggestedProjectModule,
 } from "./calibrate-project-modules.js"
+import { resolveBaselinePath } from "./baseline-file.js"
 import { readHeadSha, resolveRepoRoot } from "./runtime.js"
 
 export interface CalibrateCommandOptions {
@@ -41,10 +43,9 @@ export interface CalibrationSuggestionReport {
 
 const RELATIVE_VECTOR_PATH = ".pulsar/vector.json"
 const RELATIVE_CONVENTIONS_PATH = ".pulsar/conventions.json"
-const RELATIVE_CONVENTIONS_DRAFT_PATH = ".pulsar/conventions.draft.json"
+const RELATIVE_CONVENTIONS_DRAFT_PATH = "drafts/conventions.draft.json"
 const RELATIVE_GLOSSARY_PATH = ".pulsar/glossary.json"
-const RELATIVE_GLOSSARY_DRAFT_PATH = ".pulsar/glossary.draft.json"
-const RELATIVE_BASELINE_PATH = ".pulsar/baseline.json"
+const RELATIVE_GLOSSARY_DRAFT_PATH = "drafts/glossary.draft.json"
 const RELATIVE_PROJECT_MODULES_PATH = ".pulsar/project-modules.json"
 
 export const buildSuggestionReport = (
@@ -79,7 +80,7 @@ const detectCalibrationStatus = (
     RELATIVE_CONVENTIONS_DRAFT_PATH,
   ),
   glossary: referenceStatus(repoRoot, RELATIVE_GLOSSARY_PATH, RELATIVE_GLOSSARY_DRAFT_PATH),
-  baseline: existsSync(join(repoRoot, RELATIVE_BASELINE_PATH)) ? "present" : "missing",
+  baseline: existsSync(resolveBaselinePath(repoRoot)) ? "present" : "missing",
   project_modules: existsSync(join(repoRoot, RELATIVE_PROJECT_MODULES_PATH))
     ? "manifest"
     : "missing",
@@ -91,7 +92,7 @@ const referenceStatus = (
   draftPath: string,
 ): "canonical" | "draft" | "missing" => {
   if (existsSync(join(repoRoot, canonicalPath))) return "canonical"
-  if (existsSync(join(repoRoot, draftPath))) return "draft"
+  if (existsSync(resolvePulsarRepoStatePath(repoRoot, draftPath))) return "draft"
   return "missing"
 }
 

@@ -47,7 +47,7 @@ Prototype code lives in `packages/core/src/elicitation/revealed-preference.ts`.
 ## Integration shape
 
 - Keep the bootstrap **proposal-first**, not auto-apply
-- Write inferred deltas as a pending proposal under `.pulsar/proposals/pending/`
+- Write inferred deltas as a pending proposal under local Pulsar state (`~/.config/pulsar/repos/<repo-id>/proposals/pending/`)
 - Record supporting evidence in vector provenance if a proposal is later accepted
 - Cold start path:
   1. apply a preset

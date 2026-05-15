@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises"
-import { join, resolve } from "node:path"
+import { resolve } from "node:path"
 import {
   decodePulsarVector,
   type PulsarVector,
@@ -10,6 +10,7 @@ import {
   runSignal,
   ScoringEngineLayer,
   ScoringEngineTag,
+  resolvePulsarRepoStatePath,
   type SignalRunResult,
 } from "@skastr0/pulsar-core/scoring"
 import { createTimeSeriesServices } from "@skastr0/pulsar-core/time-series"
@@ -184,7 +185,7 @@ export const makePulsarRuntime = (
       vector,
       {
         ...(timeSeries === undefined ? {} : { timeSeriesWriter: timeSeries.writer }),
-        cacheConfig: { cacheDir: join(repoRoot, ".pulsar", "cache") },
+        cacheConfig: { cacheDir: resolvePulsarRepoStatePath(repoRoot, "cache") },
         ...(options?.observer?.profile === true ? { observerProfile: true } : {}),
         ...(calibrationContext === undefined ? {} : { calibrationContext }),
         calibrationContextForWorktree: (worktreePath) =>

@@ -3,6 +3,7 @@ import { rm } from "node:fs/promises"
 import { stdin as input, stdout as output } from "node:process"
 import { createInterface, type Interface as ReadlineInterface } from "node:readline/promises"
 import { join, resolve } from "node:path"
+import { resolvePulsarRepoStatePath } from "@skastr0/pulsar-core/scoring"
 import {
   inferPulsarVectorFromQuiz,
   loadQuizItems,
@@ -105,7 +106,7 @@ const prepareQuizAction = (
 const quizSessionPath = (repoRoot: string, opts: ElicitCommandOptions): string =>
   opts.resumePath !== undefined
     ? resolve(opts.resumePath)
-    : join(repoRoot, ".pulsar", "quiz-session.json")
+    : resolvePulsarRepoStatePath(repoRoot, "sessions", "quiz-session.json")
 
 const quizOutputPath = (repoRoot: string, opts: ElicitCommandOptions): string =>
   opts.outputPath !== undefined ? resolve(opts.outputPath) : join(repoRoot, ".pulsar", "vector.json")

@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process"
 import { realpathSync } from "node:fs"
-import { basename, join } from "node:path"
+import { basename } from "node:path"
 import { promisify } from "node:util"
 import { Effect, Option, Schema } from "effect"
 import { toObserverJson } from "./observer.js"
@@ -20,6 +20,7 @@ import {
 } from "./time-series-model.js"
 export * from "./time-series-model.js"
 import { applyTimeRange } from "./time-series-dates.js"
+import { resolvePulsarRepoStatePath } from "./state-paths.js"
 import {
   appendTimeSeriesEntry,
   DEFAULT_LOCK_RETRY_MS,
@@ -34,7 +35,7 @@ export const defaultTimeSeriesRepoId = (repoPath: string): string =>
   basename(repoPath).replace(/[^A-Za-z0-9._-]+/g, "-") || "repo"
 
 export const resolveTimeSeriesPath = (repoPath: string, repoId: string): string =>
-  join(repoPath, TIME_SERIES_DIRECTORY, `${repoId}.jsonl`)
+  resolvePulsarRepoStatePath(repoPath, TIME_SERIES_DIRECTORY, `${repoId}.jsonl`)
 
 export const createTimeSeriesServices = (
   repoPath: string,

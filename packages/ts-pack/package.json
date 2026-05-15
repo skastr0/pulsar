@@ -1,9 +1,27 @@
 {
   "name": "@skastr0/pulsar-ts-pack",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
   "type": "module",
   "description": "TypeScript signal pack for Pulsar",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/skastr0/pulsar.git",
+    "directory": "packages/ts-pack"
+  },
+  "homepage": "https://github.com/skastr0/pulsar#readme",
+  "bugs": {
+    "url": "https://github.com/skastr0/pulsar/issues"
+  },
+  "keywords": [
+    "pulsar",
+    "typescript",
+    "signals",
+    "static-analysis"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -13,7 +31,9 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "!dist/__tests__",
+    "!dist/__tests__/**"
   ],
   "scripts": {
     "build": "tsc -b",
@@ -22,8 +42,8 @@
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
-    "@skastr0/pulsar-core": "workspace:*",
-    "@skastr0/pulsar-shared-signals": "workspace:*",
+    "@skastr0/pulsar-core": "0.1.0",
+    "@skastr0/pulsar-shared-signals": "0.1.0",
     "effect": "^3.0.0",
     "simple-git": "^3.25.0",
     "ts-morph": "^24.0.0"

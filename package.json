@@ -1,9 +1,25 @@
 {
   "name": "@skastr0/pulsar",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
-  "description": "Pulsar — a library of provable preference signals with deterministic scoring for LLM-aligned decision-making",
+  "description": "Deterministic, inspectable repository health signals and scoring.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/skastr0/pulsar.git"
+  },
+  "homepage": "https://github.com/skastr0/pulsar#readme",
+  "bugs": {
+    "url": "https://github.com/skastr0/pulsar/issues"
+  },
+  "keywords": [
+    "pulsar",
+    "repository-health",
+    "code-quality",
+    "static-analysis",
+    "ai-code-review"
+  ],
   "workspaces": [
     "packages/*"
   ],
@@ -13,22 +29,23 @@
     "build:cli": "bun scripts/build-cli.ts",
     "install:local": "bun scripts/install.ts",
     "test": "turbo run test",
-    "benchmark:score-honesty": "bun docs/explorations/default-score-honesty-benchmark-harness.ts",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
-    "clean": "turbo run clean"
+    "clean": "turbo run clean",
+    "verify": "bun run typecheck && bun run test && bun run build",
+    "pack:dry-run": "bun run build && npm pack --dry-run --workspace packages/core --workspace packages/project-module-sdk --workspace packages/shared-signals --workspace packages/ts-pack --workspace packages/rs-pack --workspace packages/project-module-effect --workspace packages/project-module-convex"
   },
   "devDependencies": {
     "@types/bun": "latest",
     "turbo": "^2.3.0",
     "typescript": "^5.8.0"
   },
-  "packageManager": "bun@1.2.0",
+  "packageManager": "bun@1.3.14",
   "dependencies": {
     "@skastr0/pulsar-project-module-sdk": "workspace:*",
     "effect": "^3.0.0"
   },
   "engines": {
-    "bun": ">=1.2.0"
+    "bun": ">=1.3.0"
   }
 }

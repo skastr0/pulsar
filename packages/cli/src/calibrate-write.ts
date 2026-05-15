@@ -1,18 +1,19 @@
 import { mkdir, writeFile } from "node:fs/promises"
 import { join } from "node:path"
+import { resolvePulsarRepoStatePath } from "@skastr0/pulsar-core/scoring"
 import { Effect } from "effect"
 import type { CalibrationSuggestionReport } from "./calibrate-suggestions.js"
 
-const RELATIVE_SUGGESTIONS_PATH = ".pulsar/calibration-suggestions.json"
+const SUGGESTIONS_FILE = "calibration-suggestions.json"
 
 export const writeSuggestionReport = (
   report: CalibrationSuggestionReport,
 ): Effect.Effect<CalibrationSuggestionReport, Error, never> =>
   Effect.gen(function* () {
-    const writePath = join(report.repo_root, RELATIVE_SUGGESTIONS_PATH)
+    const writePath = resolvePulsarRepoStatePath(report.repo_root, "calibrate", SUGGESTIONS_FILE)
     yield* Effect.tryPromise({
       try: () => mkdir(join(writePath, ".."), { recursive: true }),
-      catch: (cause) => new Error(`Failed to create .pulsar directory: ${String(cause)}`),
+      catch: (cause) => new Error(`Failed to create calibration state directory: ${String(cause)}`),
     })
     const withWritePath = { ...report, write_path: writePath }
     yield* Effect.tryPromise({

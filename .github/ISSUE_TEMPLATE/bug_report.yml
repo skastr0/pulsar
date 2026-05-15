@@ -1,0 +1,47 @@
+name: Bug report
+description: Report a reproducible Pulsar bug.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please keep this focused on reproducible behavior. Remove secrets and private repository data before posting.
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Minimal steps, command, or repository shape needed to reproduce the issue.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Pulsar version or commit
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Bun version, package manager, and relevant repository details.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Redact secrets and private data before posting.
+      render: shell
+

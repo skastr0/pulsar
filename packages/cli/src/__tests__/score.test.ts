@@ -805,7 +805,7 @@ export function stubF() { throw new Error("Not implemented") }
         "Vector Source: organization fallback ~/.config/pulsar/vector.json",
       )
       const baseline = JSON.parse(
-        await readFile(join(repoPath, ".pulsar", "baseline.json"), "utf8"),
+        await readFile(join(repoPath, "pulsar-baseline.json"), "utf8"),
       )
       expect(baseline.vector_source).toBe(
         "organization fallback ~/.config/pulsar/vector.json",
@@ -881,7 +881,7 @@ export function stubF() { throw new Error("Not implemented") }
       expect(baselineSet.status).toBe(0)
 
       const baselineJson = JSON.parse(
-        await readFile(join(repoPath, ".pulsar", "baseline.json"), "utf8"),
+        await readFile(join(repoPath, "pulsar-baseline.json"), "utf8"),
       )
       expect(Object.keys(baselineJson.violations)).toContain("TS-AD-02-circular-dependencies")
       expect(baselineJson.vector_id).toBe("all-defaults")
@@ -1015,7 +1015,7 @@ export function stubF() { throw new Error("Not implemented") }
       const baselineSet = runCli(repoPath, ["baseline", "set", "."])
       expect(baselineSet.status).toBe(0)
       const baselineJson = JSON.parse(
-        await readFile(join(repoPath, ".pulsar", "baseline.json"), "utf8"),
+        await readFile(join(repoPath, "pulsar-baseline.json"), "utf8"),
       )
       expect(typeof baselineJson.observer_config_hash).toBe("string")
 

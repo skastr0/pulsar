@@ -108,7 +108,7 @@ describe("pulsar vector proposals", () => {
       weights: { "TS-LD-01": 1.4, "TS-RP-02": 0.7 },
       support: { "TS-LD-01": 0.82, "TS-RP-02": -0.64 },
       changedFiles: ["src/a.ts", "src/b.ts"],
-      reportPath: ".pulsar/elicitation/revealed-preference/proposal.json",
+      reportPath: "pulsar-state:elicitation/revealed-preference/proposal.json",
     })
 
     expect(proposal).toBeDefined()
@@ -159,7 +159,7 @@ describe("pulsar vector proposals", () => {
         signal_overrides: { "TS-SL-03": { weight: 1 } },
       },
       resolved,
-      { artifactPath: ".pulsar/proposals/accepted/proposal-ai-assisted-mode.json" },
+      { artifactPath: "pulsar-state:proposals/accepted/proposal-ai-assisted-mode.json" },
     )
 
     expect(next.signal_overrides["TS-SL-03"]?.weight).toBe(1.25)
