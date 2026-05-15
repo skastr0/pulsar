@@ -33,7 +33,7 @@ These vary by organization and should be configurable per-repo:
 | `fixture/`, `fixtures/`, `template/`, `templates/` | Specific fixture/template directory naming | `file_taxonomy.fixture_globs` |
 | `packages/` as monorepo root | Specific monorepo layout | `monorepo.root_segments` |
 | `src/cli/`, `src/bundler/`, `cli/`, `bundler/` | Specific CLI source layout | `bundled_cli.source_paths` |
-| `.opencode/`, `.pi/` | Organization-specific tooling paths | `file_taxonomy.hidden_tooling_globs` |
+| `.pi/` | Organization-specific tooling paths | `file_taxonomy.hidden_tooling_globs` |
 | `prototypes/`, `explorations/` | Organization-specific scratch directories | `file_taxonomy.prototype_globs` |
 | `Icon[A-Z]` naming for SVG components | Project-specific component naming | `clone_deweight.icon_family_patterns` |
 | `cache/` sibling mirroring | Project-specific caching architecture | `clone_deweight.mirror_patterns` |
@@ -648,7 +648,7 @@ These appear to be **custom patterns from the specific projects that built this 
 | `ts-sl-01` hardcodes SolidJS/Effect clone exemptions | `CloneDeweightEngine` — pattern-based evaluation |
 | `ts-de-04` lists 60+ config filenames | `calibration-js-tooling` pack — ecosystem-contributed conventions |
 | Docusaurus/SvelteKit virtual modules hardcoded | Framework packs — `framework_virtual_modules` config |
-| `.opencode/`, `.pi/`, `private-demos/` in generic pack | Project layout conventions — userland taxonomy overrides |
+| `.pi/`, `private-demos/` in generic pack | Project layout conventions — userland taxonomy overrides |
 | `isPulsarSource` hardcodes `.ts`/`.tsx`/`.rs` | Pack-contributed source extensions via taxonomy |
 | Score formulas use magic constants (×2, ×3, /0.3) | `ScoreCalibrationConfig` — parameterized curves per signal |
 | Severity thresholds hardcoded (20 modules → block) | `severity_thresholds` — configurable per signal |

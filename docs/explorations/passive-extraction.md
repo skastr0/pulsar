@@ -6,12 +6,11 @@ Extract preference evidence from natural editing activity without silently mutat
 
 ## Observable source inventory
 
-### 1. `tool.execute.after` in the opencode plugin
+### 1. Runtime edit hooks
 
-- **Available now**
-- Sees edit-tool activity plus the resulting Observer delta
-- Good enough for a prototype because it can log concrete signal improvements after a change
-- Limitation: this currently observes agent-mediated edits, not arbitrary IDE keystrokes
+- A host integration can observe edit-tool activity plus the resulting Observer delta.
+- Good enough for a prototype when it can log concrete signal improvements after a change.
+- Limitation: host-mediated edit hooks do not cover arbitrary IDE keystrokes.
 
 ### 2. Git history batch scans
 
@@ -25,10 +24,9 @@ Extract preference evidence from natural editing activity without silently mutat
 
 ## Prototype implemented
 
-Prototype code lives in:
+Prototype code lived in:
 
 - `packages/core/src/elicitation/proposals.ts`
-- `apps/opencode-plugin/src/server/pulsar-hooks.ts`
 
 Current behavior:
 

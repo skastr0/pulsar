@@ -360,7 +360,7 @@ describe("TS-LD-06 (type annotation coverage)", () => {
     expect(out.uncoveredBoundary.map((fn) => fn.name)).toEqual(["publicApi"])
   })
 
-  test("agent harness directory exports are ignored by default", async () => {
+  test("hidden extension directory exports are ignored by default", async () => {
     await writeTs(
       "src/api.ts",
       [
@@ -375,15 +375,6 @@ describe("TS-LD-06 (type annotation coverage)", () => {
       [
         "export default function (pi) {",
         "  return pi",
-        "}",
-        "",
-      ].join("\n"),
-    )
-    await writeTs(
-      ".opencode/tool.ts",
-      [
-        "export function register(tool) {",
-        "  return tool",
         "}",
         "",
       ].join("\n"),

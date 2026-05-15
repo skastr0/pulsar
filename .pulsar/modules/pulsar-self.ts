@@ -4,15 +4,12 @@ import {
   defineProjectModule,
   tuneFactorPolicy,
   tuneTypeScriptUnsafeType,
-  type CalibrationSlotInput,
-  type TypeScriptDependencyVersionPolicyValue,
   type TypeScriptTypeCouplingPolicyValue,
   type TypeScriptUnsafeTypePolicyValue,
 } from "@skastr0/pulsar-project-module-sdk"
 
 const DELIBERATE_EXISTENTIAL_RULE_ID = "pulsar.deliberate-existential-boundary.v1"
 const CORE_ORCHESTRATION_TYPE_COUPLING_RULE_ID = "pulsar.core-orchestration-type-coupling.v1"
-const OPENCODE_HOST_SDK_DUPLICATE_RULE_ID = "pulsar.opencode-host-sdk-duplicate-chain.v1"
 const SELF_HOSTING_BUS_FACTOR_RULE_ID = "pulsar.self-hosting-single-maintainer-bus-factor.v1"
 const ACTIVE_SELF_HOSTING_CLEANUP_CHURN_RULE_ID = "pulsar.active-self-hosting-cleanup-churn.v1"
 const ACTIVE_SELF_HOSTING_CLEANUP_PR_SIZE_RULE_ID = "pulsar.active-self-hosting-cleanup-pr-size.v1"
@@ -47,37 +44,6 @@ export default defineProjectModule({
               { kind: "unsafe-kind", value: current.value.kind },
             ],
             metadata: { repository: "pulsar", policy: "deliberate-existential-boundary" },
-          })
-        }),
-    }),
-    defineProcessor({
-      id: "opencode-host-sdk-duplicate-versions",
-      slot: "typescript.dependency-version-policy",
-      role: "factor-policy",
-      priority: 20,
-      fingerprint: "opencode-host-sdk-duplicate-versions-v1",
-      process: (current, _context, runtime) =>
-        Effect.sync(() => {
-          if (!isOpencodeHostSdkDuplicate(current.value)) return current
-
-          return tuneFactorPolicy(current, runtime, {
-            action: "tune-dependency-version",
-            visible: false,
-            severity: "info",
-            penaltyWeight: 0,
-            ruleId: OPENCODE_HOST_SDK_DUPLICATE_RULE_ID,
-            reason:
-              "The opencode plugin workspace depends on the real opencode host SDK for boundary types; that SDK currently carries an isolated Effect 4 beta dependency chain while Pulsar itself intentionally remains on Effect 3.",
-            evidence: [
-              { kind: "package", value: current.value.packageName },
-              { kind: "versions", value: current.value.versions.join(",") },
-              { kind: "host-sdk", value: "@opencode-ai/plugin" },
-            ],
-            metadata: {
-              repository: "pulsar",
-              technology: "opencode",
-              policy: "host-sdk-isolated-transitive-duplicate",
-            },
           })
         }),
     }),
@@ -269,27 +235,7 @@ const deliberateExistentialRules: ReadonlyArray<{
     kind: "assertion",
     target: "<expression>",
   },
-  {
-    file: "apps/opencode-plugin/src/server/pulsar-observer.ts",
-    kind: "assertion",
-    target: "<expression>",
-  },
 ]
-
-const isOpencodeHostSdkDuplicate = (
-  value: TypeScriptDependencyVersionPolicyValue,
-): boolean =>
-  value.evidenceKind === "transitive-lockfile-duplicate" &&
-  OPENCODE_HOST_SDK_DUPLICATE_PACKAGES.has(value.packageName) &&
-  value.pullInChains.some((entry) =>
-    entry.chain.some((part) => part.startsWith("@opencode-ai/plugin")),
-  )
-
-const OPENCODE_HOST_SDK_DUPLICATE_PACKAGES = new Set([
-  "effect",
-  "fast-check",
-  "pure-rand",
-])
 
 const coreOrchestrationTypeCouplingRule = (
   value: TypeScriptTypeCouplingPolicyValue,

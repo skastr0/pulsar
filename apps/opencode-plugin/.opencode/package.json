@@ -1,6 +1,0 @@
-{
-  "dependencies": {
-    "@opencode-ai/plugin": "^1.4.6",
-    "effect": "^3.21.0"
-  }
-}

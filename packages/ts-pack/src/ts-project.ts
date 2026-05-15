@@ -308,9 +308,7 @@ const isHiddenPathSegment = (segment: string): boolean =>
 
 const isHiddenToolEntrypoint = (path: string): boolean => {
   const normalized = path.replace(/\\/g, "/")
-  return /\/\.opencode\/tools?\/[^/]+\.[cm]?tsx?$/u.test(normalized) ||
-    /\/\.opencode\/plugins\/[^/]+\.[cm]?tsx?$/u.test(normalized) ||
-    /\/\.pi\/extensions\/[^/]+\.[cm]?tsx?$/u.test(normalized)
+  return /\/\.pi\/extensions\/[^/]+\.[cm]?tsx?$/u.test(normalized)
 }
 
 export const TsProjectLayer = (

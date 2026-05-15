@@ -5,8 +5,7 @@
   "type": "module",
   "description": "Pulsar — a library of provable preference signals with deterministic scoring for LLM-aligned decision-making",
   "workspaces": [
-    "packages/*",
-    "apps/*"
+    "packages/*"
   ],
   "scripts": {
     "dev": "bun packages/cli/src/bin.ts",
@@ -26,6 +25,7 @@
   },
   "packageManager": "bun@1.2.0",
   "dependencies": {
+    "@skastr0/pulsar-project-module-sdk": "workspace:*",
     "effect": "^3.0.0"
   },
   "engines": {

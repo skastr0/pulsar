@@ -8,7 +8,7 @@ type Severity = typeof Severity.Type
  * A single actionable finding emitted by a signal's `diagnose` pass.
  *
  * Diagnostics are structured data, not strings. Downstream consumers
- * (review routing, bisect reports, the opencode plugin UI) render them
+ * (review routing, bisect reports, harness adapters) render them
  * differently but should share the same underlying shape.
  *
  * `data` is optional structured metadata for downstream consumers.

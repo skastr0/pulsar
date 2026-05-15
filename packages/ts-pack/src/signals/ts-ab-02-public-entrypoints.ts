@@ -90,8 +90,6 @@ const entrypointSourceCandidates = (entrypointPath: string): ReadonlyArray<strin
 }
 
 const isAgentToolEntrypoint = (path: string): boolean =>
-  /\/\.opencode\/tools?\/[^/]+\.[cm]?tsx?$/u.test(path) ||
-  /\/\.opencode\/plugins\/[^/]+\.[cm]?tsx?$/u.test(path) ||
   /\/\.pi\/extensions\/[^/]+\.[cm]?tsx?$/u.test(path)
 
 const normalizePath = (path: string): string => normalize(path).replace(/\\/g, "/")

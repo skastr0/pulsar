@@ -61,7 +61,6 @@ export const TsLd06: Signal<TsLd06Config, TsLd06Output, TsProjectTag> = {
       "**/node_modules/**",
       "**/dist/**",
       "**/.turbo/**",
-      "**/.opencode/**",
       "**/.pi/**",
       "**/vendor/**",
       "**/gen/**",

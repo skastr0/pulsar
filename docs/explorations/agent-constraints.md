@@ -10,16 +10,6 @@ How should green/yellow/red backpressure states change agent behavior without tu
 2. **Tool-only** — blocked structural edits directly in mutating tool hooks.
 3. **Hybrid** — prompt guidance for all levels, plus hard veto only for red-state structural edits.
 
-## Measurement
-
-The implemented tests exercise the chosen seams:
-
-- `apps/opencode-plugin/test/server.test.ts`
-  - red-state structural edits are blocked
-  - system prompt guidance is qualitative and score-free
-- `apps/opencode-plugin/test/probe-bridge.test.ts`
-  - Probe session start gets a precomputed snapshot before planning
-
 ## Recommendation
 
 Use the **hybrid** mechanism.
@@ -37,14 +27,10 @@ This keeps the coercive path narrow and evidence-based.
 - keeps red-state hard stops concrete, inspectable, and reversible
 - preserves a single canonical seam for runtime enforcement: mutating tool hooks
 
-## Chosen implementation
+## Chosen implementation boundary
 
-- `apps/opencode-plugin/src/server/agent-constraints.ts`
-- wired in `apps/opencode-plugin/src/server.ts`
-
-## Residual follow-up
-
-The implementation landed inline in Wave 4B, so no separate build ticket is required for the committed mechanism.
+Runtime adapters should own prompt injection and mutating-tool enforcement.
+Pulsar should own backpressure state, policy contracts, and inspectable evidence.
 
 Remaining future tuning is operational, not architectural:
 

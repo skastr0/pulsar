@@ -6,17 +6,6 @@
       "visibility": "internal",
       "allowed_imports": []
     },
-    "apps/opencode-plugin": {
-      "visibility": "public-api",
-      "allowed_imports": [
-        "@opencode-ai/plugin",
-        "@skastr0/pulsar-core",
-        "@skastr0/pulsar-rs-pack",
-        "@skastr0/pulsar-shared-signals",
-        "@skastr0/pulsar-ts-pack",
-        "effect"
-      ]
-    },
     "docs/explorations/prototypes/pulsar-signal-markdown": {
       "visibility": "public-api",
       "allowed_imports": [

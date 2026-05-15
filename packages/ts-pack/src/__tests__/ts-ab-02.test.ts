@@ -349,51 +349,6 @@ describe("TS-AB-02 (unused exports reachability)", () => {
     )).toBe(true)
   })
 
-  test("treats opencode tool files as externally consumed entrypoints", async () => {
-    await repo.writeJson("packages/plugin/tsconfig.json", {
-      compilerOptions: { target: "ES2022", module: "ESNext", moduleResolution: "Bundler" },
-      include: ["src/**/*.ts", ".opencode/tools/**/*.ts"],
-    })
-    await repo.writeJson("packages/plugin/package.json", {
-      name: "@repo/plugin",
-      version: "0.0.0",
-    })
-    await repo.write(
-      "packages/plugin/.opencode/tools/effect-status.ts",
-      "export default { name: 'effect-status' }\n",
-    )
-    await repo.write("packages/plugin/src/internal.ts", "export default { name: 'internal' }\n")
-
-    const out = await runSignal(repo.root, TsAb02, TsAb02.defaultConfig)
-    const byFile = new Map(out.exports.map((entry) => [entry.exportFile, entry]))
-
-    expect(
-      byFile.get(`${repo.root}/packages/plugin/.opencode/tools/effect-status.ts`)?.classification,
-    ).toBe("cross-package")
-    expect(byFile.get(`${repo.root}/packages/plugin/src/internal.ts`)?.classification).toBe("unused")
-  })
-
-  test("treats singular opencode tool and plugin files as externally consumed entrypoints", async () => {
-    await repo.writeJson("tsconfig.json", {
-      compilerOptions: { target: "ES2022", module: "ESNext", moduleResolution: "Bundler", jsx: "preserve" },
-      include: [".opencode/**/*.ts", ".opencode/**/*.tsx"],
-    })
-    await repo.write(
-      ".opencode/tool/github-triage.ts",
-      "export default { name: 'github-triage' }\n",
-    )
-    await repo.write(
-      ".opencode/plugins/tui-smoke.tsx",
-      "export default { name: 'tui-smoke' }\n",
-    )
-
-    const out = await runSignal(repo.root, TsAb02, TsAb02.defaultConfig)
-    const byFile = new Map(out.exports.map((entry) => [entry.exportFile, entry]))
-
-    expect(byFile.get(`${repo.root}/.opencode/tool/github-triage.ts`)?.classification).toBe("cross-package")
-    expect(byFile.get(`${repo.root}/.opencode/plugins/tui-smoke.tsx`)?.classification).toBe("cross-package")
-  })
-
   test("treats pi extension files as externally consumed entrypoints", async () => {
     await repo.writeJson("tsconfig.json", {
       compilerOptions: { target: "ES2022", module: "ESNext", moduleResolution: "Bundler" },

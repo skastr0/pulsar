@@ -35,12 +35,10 @@ Keep agent-facing pulsar feedback useful without turning the scoring system into
 
 - `packages/core/src/goodhart.ts`
 - `packages/core/src/backpressure.ts`
-- `apps/opencode-plugin/src/server/agent-constraints.ts`
 
 ## Verification
 
 - `packages/core/src/__tests__/backpressure.test.ts`
-- `apps/opencode-plugin/test/server.test.ts`
 
 ## Design choice
 
