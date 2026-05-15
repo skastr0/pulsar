@@ -39,6 +39,9 @@ export {
 
 export {
   tuneFactorPolicy,
+  tuneTypeScriptDependencyVersion,
+  tuneTypeScriptTypeCoupling,
+  type TuneFactorPolicyOptions,
 } from "./factor-policy-helper.js"
 
 export {

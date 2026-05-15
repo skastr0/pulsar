@@ -30,6 +30,7 @@ export const bundleMaterializedProjectModule = (
   Effect.gen(function* () {
     const bun = (globalThis as unknown as { readonly Bun?: BunRuntime }).Bun
     if (bun === undefined) return importTarget
+    if (process.env.NODE_ENV === "test") return importTarget
 
     const outputPath = resolve(
       shadowSourceRoot,
@@ -57,7 +58,7 @@ export const bundleMaterializedProjectModule = (
         new ProjectModuleLoadError({
           refId: ref.id,
           target: importTarget,
-          message: `Failed to bundle project module ${ref.id}`,
+          message: `Failed to bundle project module ${ref.id}: ${formatBundleFailure(cause)}`,
           cause,
         }),
     })
@@ -70,3 +71,11 @@ export const bundleMaterializedProjectModule = (
     }
     return outputPath
   })
+
+const formatBundleFailure = (cause: unknown): string => {
+  if (cause instanceof AggregateError && cause.errors.length > 0) {
+    return cause.errors.map(formatBundleFailure).join("; ")
+  }
+  if (cause instanceof Error && cause.message.length > 0) return cause.message
+  return String(cause)
+}

@@ -125,14 +125,14 @@ describe("polyglot shared signals", () => {
 
       const sharedIds = [...result.signalResults.keys()].filter((id) => id.startsWith("SHARED-"))
       expect(sharedIds.sort()).toEqual([
-        "SHARED-02",
-        "SHARED-03",
-        "SHARED-05",
-        "SHARED-06",
-        "SHARED-CHURN-01",
+        "SHARED-02-bus-factor",
+        "SHARED-03-churn-rate",
+        "SHARED-05-suppression-governance",
+        "SHARED-06-pr-dependency-delta",
+        "SHARED-CHURN-01-recent-churn",
       ])
 
-      const suppression = result.signalResults.get("SHARED-05")?.output as
+      const suppression = result.signalResults.get("SHARED-05-suppression-governance")?.output as
         | {
             byLanguage?: {
               typescript?: { totalSuppressions: number }

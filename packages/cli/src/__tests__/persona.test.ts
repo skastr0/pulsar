@@ -14,6 +14,8 @@ import { Effect } from "effect"
 import { buildPulsarRegistry } from "../runtime.js"
 
 const binPath = resolve(import.meta.dir, "../../src/bin.ts")
+const TS_SL_01_SIGNAL_ID = "TS-SL-01-duplication"
+const TS_AD_02_SIGNAL_ID = "TS-AD-02-circular-dependencies"
 
 const sh = (cmd: string, args: ReadonlyArray<string>, cwd: string): void => {
   const result = spawnSync(cmd, args as Array<string>, { cwd, encoding: "utf8" })
@@ -286,8 +288,8 @@ export function formattedTiny(value: number): number {
 
       expect(dirtyGeneratedSlop.score).toBeLessThan(defaultDirtyScore)
       expect(dirtyGeneratedSlop.score).toBeLessThan(cleanGeneratedSlop.score)
-      expect(dirtyGeneratedSlop.signals["TS-SL-01"]).toBeLessThan(1)
-      expect(cleanGeneratedSlop.signals["TS-SL-01"]).toBe(1)
+      expect(dirtyGeneratedSlop.signals[TS_SL_01_SIGNAL_ID]).toBeLessThan(1)
+      expect(cleanGeneratedSlop.signals[TS_SL_01_SIGNAL_ID]).toBe(1)
       expect(cleanGeneratedSlop.score).toBeGreaterThanOrEqual(0.99)
     } finally {
       await rm(dirtyRepoPath, { recursive: true, force: true })
@@ -327,7 +329,7 @@ export function formattedTiny(value: number): number {
       ])
       expect(baseline.status).toBe(0)
       const baselineGeneratedSlop = JSON.parse(baseline.stdout).categories["generated-slop"]
-      const baselineCloneScore = baselineGeneratedSlop.signals["TS-SL-01"]
+      const baselineCloneScore = baselineGeneratedSlop.signals[TS_SL_01_SIGNAL_ID]
 
       const apply = runCli(repoPath, [
         "persona",
@@ -346,8 +348,8 @@ export function formattedTiny(value: number): number {
       expect(vectorScore.status).toBe(0)
       const generatedSlop = JSON.parse(vectorScore.stdout).categories["generated-slop"]
       expect(generatedSlop.score).toBeLessThan(baselineGeneratedSlop.score)
-      expect(generatedSlop.signals["TS-SL-01"]).toBeLessThan(baselineCloneScore)
-      expect(generatedSlop.signals["TS-SL-01"]).toBeLessThan(1)
+      expect(generatedSlop.signals[TS_SL_01_SIGNAL_ID]).toBeLessThan(baselineCloneScore)
+      expect(generatedSlop.signals[TS_SL_01_SIGNAL_ID]).toBeLessThan(1)
 
       const human = runCli(repoPath, ["score", "--category", "generated-slop", "."])
       expect(human.status).toBe(0)
@@ -372,8 +374,8 @@ export function formattedTiny(value: number): number {
       const baseline = runCli(repoPath, ["score", "--json", "."])
       expect(baseline.status).toBe(0)
       const baselineArchitecture = JSON.parse(baseline.stdout).categories["architectural-drift"]
-      expect(baselineArchitecture.aggregation.weights["TS-AD-02"]).toBe(1)
-      expect(baselineArchitecture.signals["TS-AD-02"]).toBeLessThan(1)
+      expect(baselineArchitecture.aggregation.weights[TS_AD_02_SIGNAL_ID]).toBe(1)
+      expect(baselineArchitecture.signals[TS_AD_02_SIGNAL_ID]).toBeLessThan(1)
 
       const apply = runCli(repoPath, [
         "persona",
@@ -394,7 +396,7 @@ export function formattedTiny(value: number): number {
       const vectorScore = runCli(repoPath, ["score", "--json", "."])
       expect(vectorScore.status).toBe(0)
       const vectorArchitecture = JSON.parse(vectorScore.stdout).categories["architectural-drift"]
-      expect(vectorArchitecture.aggregation.weights["TS-AD-02"]).toBeGreaterThan(1)
+      expect(vectorArchitecture.aggregation.weights[TS_AD_02_SIGNAL_ID]).toBeGreaterThan(1)
       expect(vectorArchitecture.score).toBeLessThan(baselineArchitecture.score)
 
       const human = runCli(repoPath, ["score", "--category", "architectural-drift", "."])
@@ -436,7 +438,7 @@ export function formattedTiny(value: number): number {
       const defaultDirty = runCli(dirtyRepoPath, ["score", "--json", "."])
       expect(defaultDirty.status).toBe(0)
       const defaultArchitecture = JSON.parse(defaultDirty.stdout).categories["architectural-drift"]
-      expect(defaultArchitecture.signals["TS-AD-02"]).toBeLessThan(1)
+      expect(defaultArchitecture.signals[TS_AD_02_SIGNAL_ID]).toBeLessThan(1)
 
       for (const repoPath of [dirtyRepoPath, cleanRepoPath]) {
         const apply = runCli(repoPath, [
@@ -465,11 +467,11 @@ export function formattedTiny(value: number): number {
       const dirtyArchitecture = JSON.parse(dirtyVector.stdout).categories["architectural-drift"]
       const cleanArchitecture = JSON.parse(cleanVector.stdout).categories["architectural-drift"]
 
-      expect(dirtyArchitecture.aggregation.weights["TS-AD-02"]).toBeGreaterThan(1)
+      expect(dirtyArchitecture.aggregation.weights[TS_AD_02_SIGNAL_ID]).toBeGreaterThan(1)
       expect(dirtyArchitecture.score).toBeLessThan(defaultArchitecture.score)
       expect(dirtyArchitecture.score).toBeLessThan(cleanArchitecture.score)
-      expect(dirtyArchitecture.signals["TS-AD-02"]).toBeLessThan(1)
-      expect(cleanArchitecture.signals["TS-AD-02"]).toBe(1)
+      expect(dirtyArchitecture.signals[TS_AD_02_SIGNAL_ID]).toBeLessThan(1)
+      expect(cleanArchitecture.signals[TS_AD_02_SIGNAL_ID]).toBe(1)
       expect(cleanArchitecture.score).toBe(1)
     } finally {
       await rm(dirtyRepoPath, { recursive: true, force: true })

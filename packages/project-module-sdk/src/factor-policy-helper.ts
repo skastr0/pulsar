@@ -24,7 +24,7 @@ interface TunableFactorPolicyValue {
   readonly metadata?: Readonly<Record<string, unknown>>
 }
 
-interface TuneFactorPolicyOptions {
+export interface TuneFactorPolicyOptions {
   readonly visible?: boolean
   readonly severity?: TunableFactorPolicyValue["severity"]
   readonly penaltyWeight?: number
@@ -71,6 +71,20 @@ export const tuneFactorPolicy = <
     nextValue,
   )
 }
+
+export const tuneTypeScriptDependencyVersion = (
+  current: CalibrationSlotOutput<"typescript.dependency-version-policy">,
+  runtime: ProjectModuleProcessorRuntime<"typescript.dependency-version-policy">,
+  options: TuneFactorPolicyOptions,
+): CalibrationSlotOutput<"typescript.dependency-version-policy"> =>
+  tuneFactorPolicy(current, runtime, options, "tune-dependency-version")
+
+export const tuneTypeScriptTypeCoupling = (
+  current: CalibrationSlotOutput<"typescript.type-coupling-policy">,
+  runtime: ProjectModuleProcessorRuntime<"typescript.type-coupling-policy">,
+  options: TuneFactorPolicyOptions,
+): CalibrationSlotOutput<"typescript.type-coupling-policy"> =>
+  tuneFactorPolicy(current, runtime, options, "tune-type-coupling")
 
 const factorPathInput = (
   prefix: string,

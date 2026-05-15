@@ -58,7 +58,7 @@ describe("ScoringEngine + TS pack integration", () => {
       })
 
       const result = await Effect.runPromise(program)
-      expect(result.signalId).toBe("TS-RP-01")
+      expect(result.signalId).toBe("TS-RP-01-hotspots")
       expect(typeof result.score).toBe("number")
       expect(result.score).toBeGreaterThanOrEqual(0)
       expect(result.score).toBeLessThanOrEqual(1)
@@ -112,7 +112,7 @@ describe("ScoringEngine + TS pack integration", () => {
       expect(results.length).toBe(5)
       for (const r of results) {
         expect(r.sha).toMatch(/^[0-9a-f]{7,}$/)
-        expect(r.result.signalId).toBe("TS-RP-01")
+        expect(r.result.signalId).toBe("TS-RP-01-hotspots")
         expect(typeof r.result.score).toBe("number")
       }
     },

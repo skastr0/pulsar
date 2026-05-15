@@ -66,11 +66,11 @@ describe("Observer + TS pack integration", () => {
       // set rather than just a count so adding/removing a signal is a
       // conscious update to this test.
       expect([...out.signalResults.keys()].sort()).toEqual([
-        "SHARED-02",
-        "SHARED-03",
-        "SHARED-05",
-        "SHARED-06",
-        "SHARED-CHURN-01",
+        "SHARED-02-bus-factor",
+        "SHARED-03-churn-rate",
+        "SHARED-05-suppression-governance",
+        "SHARED-06-pr-dependency-delta",
+        "SHARED-CHURN-01-recent-churn",
         "TS-AB-01-public-export-surface",
         "TS-AB-02-unused-exports",
         "TS-AB-03-type-indirection-depth",
