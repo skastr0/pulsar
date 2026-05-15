@@ -109,6 +109,7 @@ Before npm publishing:
 - use the protected `release` GitHub environment for publish workflows
 - confirm each scoped package publishes with public access
 - configure the trusted publisher for every package, including `@skastr0/pulsar` and the platform packages
+- if npm cannot configure trusted publishing before the first publish, create a temporary granular npm token as a `release` environment secret named `NPM_CONFIG_TOKEN`, publish once through CI, configure trusted publishing for the now-existing packages, then revoke the token
 
 ## First Release Sequence
 
