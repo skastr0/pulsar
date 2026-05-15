@@ -167,9 +167,7 @@ const tsconfigCandidates = (tsconfigPath: string): ReadonlyArray<string> => {
 }
 
 const resolveTsconfigExtendsPath = (extendedConfig: string, tsconfigPath: string): string =>
-  extendedConfig.startsWith(".") || extendedConfig.startsWith("/")
-    ? resolve(dirname(tsconfigPath), extendedConfig)
-    : resolve(dirname(tsconfigPath), extendedConfig)
+  resolve(dirname(tsconfigPath), extendedConfig)
 
 const parseJsonc = (text: string): unknown => JSON.parse(stripTrailingCommas(stripJsonComments(text)))
 
