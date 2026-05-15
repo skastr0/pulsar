@@ -14,8 +14,6 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     environment: release
-    env:
-      PULSAR_STATE_HOME: ${{ runner.temp }}/pulsar-state
     concurrency:
       group: npm-publish-${{ github.ref }}
       cancel-in-progress: false
@@ -28,6 +26,8 @@ jobs:
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
+      - name: Configure Pulsar state
+        run: echo "PULSAR_STATE_HOME=${RUNNER_TEMP}/pulsar-state" >> "$GITHUB_ENV"
       - run: bun install --frozen-lockfile
       - run: bun run verify
       - run: bun run build:npm-cli
