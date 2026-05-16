@@ -73,6 +73,22 @@ export type {
   ContractFreshnessFindingKind,
 } from "./contract-freshness.js"
 export {
+  CANONICAL_DOMAIN_CONSTRUCTION_RELATIVE_PATH,
+  DOMAIN_CONSTRUCTION_REFERENCE_DATA_KEY,
+  DomainConstructionManifest,
+  buildNotConfiguredDomainConstructionFacts,
+  buildUnknownDomainConstructionFacts,
+  decodeDomainConstructionManifestSync,
+  loadDomainConstructionFacts,
+} from "./domain-construction.js"
+export type {
+  DomainConstructionConstructFact,
+  DomainConstructionFactState,
+  DomainConstructionFacts,
+  DomainConstructionFinding,
+  DomainConstructionFindingKind,
+} from "./domain-construction.js"
+export {
   CANONICAL_CONVENTIONS_RELATIVE_PATH,
   CANONICAL_GLOSSARY_RELATIVE_PATH,
   loadCanonicalReferenceDataEntries,

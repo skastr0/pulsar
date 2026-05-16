@@ -16,6 +16,11 @@ import {
   CONTRACT_FRESHNESS_REFERENCE_DATA_KEY,
   loadContractFreshnessFacts,
 } from "./contract-freshness.js"
+import {
+  CANONICAL_DOMAIN_CONSTRUCTION_RELATIVE_PATH,
+  DOMAIN_CONSTRUCTION_REFERENCE_DATA_KEY,
+  loadDomainConstructionFacts,
+} from "./domain-construction.js"
 import { ReferenceDataLoadFailed } from "./errors.js"
 import { decodeGlossary } from "./glossary.js"
 
@@ -92,6 +97,10 @@ export const loadCanonicalReferenceDataEntries = (
       CONTRACT_FRESHNESS_REFERENCE_DATA_KEY,
       yield* loadContractFreshnessReferenceEntry(repoRoot),
     )
+    entries.set(
+      DOMAIN_CONSTRUCTION_REFERENCE_DATA_KEY,
+      yield* loadDomainConstructionReferenceEntry(repoRoot),
+    )
 
     return entries as ReadonlyMap<string, unknown>
   })
@@ -140,5 +149,18 @@ const loadContractFreshnessReferenceEntry = (
         repoPath: repoRoot,
         path: CANONICAL_CONTRACT_FRESHNESS_RELATIVE_PATH,
         message: `Failed to load contract freshness reference data: ${String(cause)}`,
+      }),
+  })
+
+const loadDomainConstructionReferenceEntry = (
+  repoRoot: string,
+): Effect.Effect<unknown, ReferenceDataLoadFailed, never> =>
+  Effect.tryPromise({
+    try: () => loadDomainConstructionFacts(repoRoot),
+    catch: (cause) =>
+      new ReferenceDataLoadFailed({
+        repoPath: repoRoot,
+        path: CANONICAL_DOMAIN_CONSTRUCTION_RELATIVE_PATH,
+        message: `Failed to load domain construction reference data: ${String(cause)}`,
       }),
   })

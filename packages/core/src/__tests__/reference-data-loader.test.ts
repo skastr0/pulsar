@@ -13,6 +13,10 @@ import {
   CONTRACT_FRESHNESS_REFERENCE_DATA_KEY,
   type ContractFreshnessFacts,
 } from "../contract-freshness.js"
+import {
+  DOMAIN_CONSTRUCTION_REFERENCE_DATA_KEY,
+  type DomainConstructionFacts,
+} from "../domain-construction.js"
 import { type SchemaConventions } from "../conventions.js"
 import { loadCanonicalReferenceDataEntries } from "../reference-data-loader.js"
 import { computeReferenceVersionHash } from "../scoring-engine-observer-cache.js"
@@ -181,6 +185,82 @@ describe("loadCanonicalReferenceDataEntries", () => {
     expect(afterReferenceHash).not.toBe(beforeReferenceHash)
     expect(afterFacts.state).toBe("present")
     expect(afterFacts.findings.map((finding) => finding.kind)).toContain("stale-artifact")
+  })
+
+  test("loads domain construction facts and changes reference hash with evidence content", async () => {
+    await mkdir(join(tmp, ".pulsar"), { recursive: true })
+    await mkdir(join(tmp, "src", "domain"), { recursive: true })
+    const declarationContent = [
+      "export class UserId {",
+      "  private constructor(readonly value: string) {}",
+      "}",
+      "",
+    ].join("\n")
+    const parserContent = [
+      "import { UserId } from './user-id'",
+      "export const parseUserId = (value: string): UserId => value as unknown as UserId",
+      "",
+    ].join("\n")
+    await writeFile(join(tmp, "src", "domain", "user-id.ts"), declarationContent, "utf8")
+    await writeFile(join(tmp, "src", "domain", "parse-user-id.ts"), parserContent, "utf8")
+    await writeFile(
+      join(tmp, ".pulsar", "domain-construction.json"),
+      `${JSON.stringify(
+        {
+          schema_version: 1,
+          constructs: [
+            {
+              id: "user-id",
+              symbol: "UserId",
+              kind: "value-object",
+              declaration_path: "src/domain/user-id.ts",
+              source_hashes: {
+                "src/domain/user-id.ts": sha256(declarationContent),
+                "src/domain/parse-user-id.ts": sha256(parserContent),
+              },
+              control: {
+                intent: "controlled",
+                parsers: [
+                  {
+                    path: "src/domain/parse-user-id.ts",
+                    symbol: "parseUserId",
+                  },
+                ],
+              },
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    )
+
+    const beforeEntries = await Effect.runPromise(loadCanonicalReferenceDataEntries(tmp))
+    const beforeFacts = beforeEntries.get(
+      DOMAIN_CONSTRUCTION_REFERENCE_DATA_KEY,
+    ) as DomainConstructionFacts
+    const beforeReferenceHash = computeReferenceVersionHash(beforeEntries)
+
+    expect(beforeFacts.state).toBe("zero")
+    expect(beforeFacts.constructs[0]?.sourceHashes["src/domain/parse-user-id.ts"]).toBe(
+      sha256(parserContent),
+    )
+
+    await writeFile(
+      join(tmp, "src", "domain", "parse-user-id.ts"),
+      parserContent.replace("value as unknown as UserId", "String(value) as unknown as UserId"),
+      "utf8",
+    )
+    const afterEntries = await Effect.runPromise(loadCanonicalReferenceDataEntries(tmp))
+    const afterFacts = afterEntries.get(
+      DOMAIN_CONSTRUCTION_REFERENCE_DATA_KEY,
+    ) as DomainConstructionFacts
+    const afterReferenceHash = computeReferenceVersionHash(afterEntries)
+
+    expect(afterReferenceHash).not.toBe(beforeReferenceHash)
+    expect(afterFacts.state).toBe("present")
+    expect(afterFacts.findings.map((finding) => finding.kind)).toContain("stale-source")
   })
 })
 

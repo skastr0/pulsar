@@ -89,7 +89,7 @@ describe("rs-pack integration", () => {
       expect(result.hard_gate_status).toBe("pass")
       expect(result.categories["architectural-drift"].signalCount).toBe(4)
       expect(result.categories["dependency-entropy"].signalCount).toBe(4)
-      expect(result.categories["abstraction-bloat"].signalCount).toBe(4)
+      expect(result.categories["abstraction-bloat"].signalCount).toBe(5)
       expect(result.categories["legibility-decay"].signalCount).toBe(6)
       expect(result.categories["generated-slop"].signalCount).toBe(5)
       expect(result.categories["review-pain"].signalCount).toBe(11)

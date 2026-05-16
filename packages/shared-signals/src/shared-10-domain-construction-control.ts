@@ -1,0 +1,244 @@
+import {
+  ReferenceDataTag,
+  type Diagnostic,
+  type Signal,
+} from "@skastr0/pulsar-core/signal"
+import {
+  CANONICAL_DOMAIN_CONSTRUCTION_RELATIVE_PATH,
+  DOMAIN_CONSTRUCTION_REFERENCE_DATA_KEY,
+  buildNotConfiguredDomainConstructionFacts,
+  type DomainConstructionFacts,
+  type DomainConstructionFinding,
+} from "@skastr0/pulsar-core/reference-data"
+import { Effect, Option, Schema } from "effect"
+
+export const Shared10DomainConstructionControlConfig = Schema.Struct({
+  top_n_diagnostics: Schema.Number,
+  max_weighted_findings: Schema.Number,
+  include_explicitly_open_diagnostics: Schema.Boolean,
+})
+export type Shared10DomainConstructionControlConfig =
+  typeof Shared10DomainConstructionControlConfig.Type
+
+export interface Shared10DomainConstructionControlOutput
+  extends DomainConstructionFacts {
+  readonly topFindings: ReadonlyArray<DomainConstructionFinding>
+  readonly scoreFindings: ReadonlyArray<DomainConstructionFinding>
+  readonly totalFindings: number
+  readonly weightedFindings: number
+  readonly scorePressure: number
+  readonly diagnosticLimit: number
+  readonly configuredConstructCount: number
+  readonly explicitlyOpenConstructCount: number
+  readonly controlledConstructCount: number
+  readonly compositeConsumers: ReadonlyArray<string>
+  readonly cacheContributors: ReadonlyArray<string>
+  readonly calibrationSurface: string
+  readonly evidenceClass: ReadonlyArray<string>
+  readonly claimLimit: string
+  readonly nonClaimLimit: string
+  readonly knownFailureModes: ReadonlyArray<string>
+  readonly enforcementCeiling: ReadonlyArray<string>
+}
+
+const notConfiguredDomainConstructionFacts = (): DomainConstructionFacts =>
+  buildNotConfiguredDomainConstructionFacts([
+    CANONICAL_DOMAIN_CONSTRUCTION_RELATIVE_PATH,
+  ])
+
+export const Shared10DomainConstructionControl: Signal<
+  Shared10DomainConstructionControlConfig,
+  Shared10DomainConstructionControlOutput,
+  ReferenceDataTag
+> = {
+  id: "SHARED-10-domain-construction-control",
+  title: "Domain construction control",
+  aliases: ["SHARED-10"],
+  tier: 2,
+  category: "abstraction-bloat",
+  kind: "legibility",
+  cacheVersion: "reference-data-v1",
+  configSchema: Shared10DomainConstructionControlConfig,
+  defaultConfig: {
+    top_n_diagnostics: 10,
+    max_weighted_findings: 8,
+    include_explicitly_open_diagnostics: true,
+  },
+  configDirections: {
+    top_n_diagnostics: "higher-is-looser",
+    max_weighted_findings: "higher-is-looser",
+  },
+  inputs: [],
+  compute: (config) =>
+    Effect.gen(function* () {
+      const referenceData = yield* ReferenceDataTag
+      const facts = yield* referenceData.get<DomainConstructionFacts>(
+        DOMAIN_CONSTRUCTION_REFERENCE_DATA_KEY,
+      )
+      return buildOutput(
+        Option.isSome(facts) ? facts.value : notConfiguredDomainConstructionFacts(),
+        config,
+      )
+    }),
+  score: (out) => {
+    if (out.weightedFindings === 0) return 1
+    return 1 / (1 + out.scorePressure)
+  },
+  diagnose: (out): ReadonlyArray<Diagnostic> => {
+    if (out.topFindings.length > 0) {
+      return out.topFindings.map((finding) => ({
+        severity: finding.severity,
+        message: `${domainConstructionKindLabel(finding.kind)} for ${finding.symbol}`,
+        location: { file: finding.file, line: 1 },
+        data: {
+          ...finding,
+          state: out.state,
+          sourceFingerprint: out.sourceFingerprint,
+          scorePressure: out.scorePressure,
+          compositeConsumers: out.compositeConsumers,
+          cacheContributors: out.cacheContributors,
+          calibrationSurface: out.calibrationSurface,
+          evidenceClass: out.evidenceClass,
+          claimLimit: out.claimLimit,
+          nonClaimLimit: out.nonClaimLimit,
+          knownFailureModes: out.knownFailureModes,
+          enforcementCeiling: out.enforcementCeiling,
+        },
+      }))
+    }
+
+    const severity: "info" | "warn" = out.state === "unknown" ? "warn" : "info"
+    return [
+      {
+        severity,
+        message: `Domain construction facts: ${out.state}`,
+        data: {
+          state: out.state,
+          sourcePath: out.sourcePath,
+          checkedPaths: out.checkedPaths,
+          message: out.message,
+          configuredConstructCount: out.configuredConstructCount,
+          controlledConstructCount: out.controlledConstructCount,
+          explicitlyOpenConstructCount: out.explicitlyOpenConstructCount,
+          compositeConsumers: out.compositeConsumers,
+          cacheContributors: out.cacheContributors,
+          calibrationSurface: out.calibrationSurface,
+          evidenceClass: out.evidenceClass,
+          claimLimit: out.claimLimit,
+          nonClaimLimit: out.nonClaimLimit,
+          knownFailureModes: out.knownFailureModes,
+          enforcementCeiling: out.enforcementCeiling,
+        },
+      },
+    ].slice(0, out.diagnosticLimit)
+  },
+  outputMetadata: (out) =>
+    out.state === "present" || out.state === "zero"
+      ? undefined
+      : {
+          applicability:
+            out.state === "not_applicable"
+              ? "not_applicable" as const
+              : "insufficient_evidence" as const,
+        },
+}
+
+const buildOutput = (
+  facts: DomainConstructionFacts,
+  config: Shared10DomainConstructionControlConfig,
+): Shared10DomainConstructionControlOutput => {
+  const diagnosticLimit = Math.max(0, Math.floor(config.top_n_diagnostics))
+  const maxWeightedFindings = Math.max(1, config.max_weighted_findings)
+  const topFindings = [...facts.findings]
+    .filter((finding) =>
+      config.include_explicitly_open_diagnostics ||
+      finding.kind !== "explicitly-open-construct",
+    )
+    .sort(compareFindings)
+    .slice(0, diagnosticLimit)
+  const scoreFindings = facts.findings.filter((finding) => finding.weight > 0)
+  const weightedFindings = scoreFindings.reduce(
+    (total, finding) => total + finding.weight,
+    0,
+  )
+  return {
+    ...facts,
+    topFindings,
+    scoreFindings,
+    totalFindings: facts.findings.length,
+    weightedFindings,
+    scorePressure: weightedFindings / maxWeightedFindings,
+    diagnosticLimit,
+    configuredConstructCount: facts.constructs.length,
+    explicitlyOpenConstructCount: facts.constructs.filter(
+      (construct) => construct.controlIntent === "intentionally_open",
+    ).length,
+    controlledConstructCount: facts.constructs.filter(
+      (construct) => construct.controlIntent === "controlled",
+    ).length,
+    compositeConsumers: [
+      "boundary trust breach",
+      "abstraction hazard",
+      "boundary integrity",
+      "theory encoding index",
+      "contract safety gap",
+    ],
+    cacheContributors: [
+      "reference-data.domain-construction",
+      ".pulsar/domain-construction.json",
+      "declared construct source hashes",
+      "declared parser/smart-constructor evidence hashes",
+      "config.top_n_diagnostics",
+      "config.max_weighted_findings",
+      "config.include_explicitly_open_diagnostics",
+    ],
+    calibrationSurface:
+      "repo-owned .pulsar/domain-construction.json; thresholds only affect diagnostic and pressure scaling",
+    evidenceClass: [
+      "repo-owned manifest",
+      "sha256 declaration content",
+      "sha256 parser/smart-constructor evidence content",
+      "syntax-level constructor/export evidence",
+    ],
+    claimLimit:
+      "declared domain constructs have recorded construction-control evidence and current source hashes",
+    nonClaimLimit:
+      "does not prove parser semantic correctness, invariant completeness, or all undeclared domain constructs",
+    knownFailureModes: [
+      "manifest omits a domain primitive",
+      "declared parser exists but does not enforce the intended invariant",
+      "factory naming differs from declared evidence symbols",
+    ],
+    enforcementCeiling: ["soft-warning", "review-routing", "composite-input"],
+  }
+}
+
+const domainConstructionKindLabel = (
+  kind: DomainConstructionFinding["kind"],
+): string => {
+  switch (kind) {
+    case "uncontrolled-constructor-export":
+      return "Uncontrolled constructor/export"
+    case "missing-construction-evidence":
+      return "Missing construction evidence"
+    case "stale-source":
+      return "Stale construction source evidence"
+    case "explicitly-open-construct":
+      return "Explicitly open construct"
+  }
+}
+
+const compareFindings = (
+  left: DomainConstructionFinding,
+  right: DomainConstructionFinding,
+): number => {
+  const bySeverity = severityRank(right.severity) - severityRank(left.severity)
+  if (bySeverity !== 0) return bySeverity
+  const byWeight = right.weight - left.weight
+  if (byWeight !== 0) return byWeight
+  if (left.file !== right.file) return left.file.localeCompare(right.file)
+  return left.kind.localeCompare(right.kind)
+}
+
+const severityRank = (severity: "info" | "warn"): number =>
+  severity === "warn" ? 1 : 0

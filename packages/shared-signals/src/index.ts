@@ -64,6 +64,11 @@ export {
   type Shared09ContractFreshnessOutput,
 } from "./shared-09-contract-freshness.js"
 export {
+  Shared10DomainConstructionControl,
+  Shared10DomainConstructionControlConfig,
+  type Shared10DomainConstructionControlOutput,
+} from "./shared-10-domain-construction-control.js"
+export {
   SharedCov01CoverageFacts,
   SharedCov01CoverageFactsConfig,
   type SharedCov01CoverageFactsOutput,
