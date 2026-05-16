@@ -29,7 +29,7 @@ const HELP_SECTIONS: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [
       "  backpressure Evaluate the score history as green/yellow/red pressure.",
       "  bisect       Replay a commit range into compact signal/category score curves.",
       "  calibrate    Suggest repo-owned calibration/reference-data onboarding steps.",
-      "  persona      List, show, apply, or diff curated pulsar presets.",
+      "  persona      List, show, apply, or diff opt-in vector profile templates.",
       "  elicit       Run quiz, bootstrap, and proposal review workflows.",
       "  glossary     Extract a draft glossary and confirm canonical terms.",
       "  conventions  Extract a draft schema-conventions file and confirm it.",
@@ -90,10 +90,10 @@ const HELP_SECTIONS: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [
   [
     "Persona options",
     [
-      "  list                 Enumerate available presets.",
-      "  show <name>          Print the full preset vector and rationale.",
-      "  apply <name>         Write the preset to --to <path> (refuses overwrite without --force).",
-      "  diff <name>          Show deltas between the current vector and the preset.",
+      "  list                 Enumerate opt-in vector profile templates.",
+      "  show <name>          Print the full profile template vector and rationale.",
+      "  apply <name>         Write the profile template to --to <path> as a repo vector.",
+      "  diff <name>          Show deltas between the current vector and the profile template.",
       "  --to <path>          Output path for persona apply.",
       "  --force              Overwrite an existing output file.",
       "  --vector <path>      Compare against an explicit vector instead of discovery.",
@@ -113,7 +113,7 @@ const HELP_SECTIONS: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [
       "  --vector <path>      Explicit vector path for quiz/bootstrap/accept flows.",
       "  --force              Overwrite an existing quiz output vector.",
       "  --commits <count>    Bootstrap over the most recent N commits (default 60).",
-      "  --preset <name>      Optional preset prior for low-sample bootstrap runs.",
+      "  --preset <name>      Optional opt-in preset prior for low-sample bootstrap runs.",
     ],
   ],
   [

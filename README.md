@@ -21,7 +21,7 @@ In practice:
 - defaults provide a conservative repository-health baseline;
 - vectors weight priorities for a repo or organization;
 - project modules encode score-affecting calibration with provenance;
-- presets are templates, not active scoring policy until applied;
+- presets are opt-in vector profile templates, not active scoring policy until applied;
 - opinionated distributions are valid opt-ins, not the neutral product contract.
 
 Pulsar's own repository may dogfood an opinionated self-calibration. That proves the customization model; it does not define the out-of-box ideal for every repo.
@@ -43,7 +43,7 @@ The current workspace includes:
 
 Pulsar is repository-level, always. A repo-local `.pulsar/vector.json` is the source of truth for scoring that repo. A home-directory vector is only an organization-standard fallback transport location; it is not a personal preference layer.
 
-Presets are templates for creating or updating a repo vector. A preset is not active pulsar until it is applied to the repo.
+Presets are opt-in vector profile templates for creating or updating a repo vector. A preset is not active pulsar until it is applied to the repo. Shipped presets carry `preset_profile` metadata such as `workflow-risk`, `technology-practice`, or `architecture-taste` so a team can tell whether it is applying a conventional risk posture, a technology practice, or stronger local taste.
 
 ## Quick Start From Source
 

@@ -1,7 +1,12 @@
 {
   "id": "security-paranoid",
   "domain": "typescript",
-  "description": "Treat suppressions, production stubs, and dependency duplication as early warning signals rather than background noise. Best for teams operating in regulated or sensitive environments where hidden risk is more expensive than a slower review lane.",
+  "description": "Opt-in workflow/risk profile template for repositories where hidden risk is more expensive than a slower review lane. It treats suppressions, production stubs, and dependency duplication as early warning signals rather than background noise. Best for teams operating in regulated or sensitive environments.",
+  "preset_profile": {
+    "kind": "workflow-risk",
+    "activation": "explicit-apply-only",
+    "summary": "Security-sensitive review posture; inactive until applied to a repository vector."
+  },
   "signal_overrides": {
     "TS-SL-03": { "weight": 1.7 },
     "TS-SL-04": { "weight": 1.65 },

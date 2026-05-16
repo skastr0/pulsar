@@ -216,10 +216,29 @@ export const PulsarVectorModes = Schema.Struct({
 })
 export type PulsarVectorModes = typeof PulsarVectorModes.Type
 
+export const PulsarVectorPresetProfileKind = Schema.Literal(
+  "architecture-taste",
+  "technology-practice",
+  "workflow-risk",
+)
+export type PulsarVectorPresetProfileKind = typeof PulsarVectorPresetProfileKind.Type
+
+export const PulsarVectorPresetProfileActivation = Schema.Literal("explicit-apply-only")
+export type PulsarVectorPresetProfileActivation =
+  typeof PulsarVectorPresetProfileActivation.Type
+
+export const PulsarVectorPresetProfile = Schema.Struct({
+  kind: PulsarVectorPresetProfileKind,
+  activation: PulsarVectorPresetProfileActivation,
+  summary: Schema.String,
+})
+export type PulsarVectorPresetProfile = typeof PulsarVectorPresetProfile.Type
+
 export const PulsarVector = Schema.Struct({
   id: Schema.String,
   domain: Schema.String,
   description: Schema.optional(Schema.String),
+  preset_profile: Schema.optional(PulsarVectorPresetProfile),
   signal_overrides: Schema.Record({ key: Schema.String, value: SignalOverride }),
   review_routing: Schema.optional(ReviewRoutingConfig),
   observer: Schema.optional(ObserverConfig),

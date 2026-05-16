@@ -1,7 +1,12 @@
 {
   "id": "domain-purist",
   "domain": "typescript",
-  "description": "Bias toward stable domain language, visible boundaries, and explicit architectural seams. Best for codebases that already maintain a glossary or conventions file and want the Pulsar to defend that language aggressively.",
+  "description": "Opt-in architecture-taste profile template for repositories that deliberately prioritize stable domain language, visible boundaries, and explicit architectural seams. Best for codebases that already maintain a glossary or conventions file and want Pulsar to defend that language aggressively.",
+  "preset_profile": {
+    "kind": "architecture-taste",
+    "activation": "explicit-apply-only",
+    "summary": "Domain-language and boundary-first architecture taste; inactive until applied to a repository vector."
+  },
   "signal_overrides": {
     "TS-LD-05": { "weight": 1.6 },
     "TS-LD-04": { "weight": 1.2 },

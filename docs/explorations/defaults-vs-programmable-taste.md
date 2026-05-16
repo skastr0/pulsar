@@ -73,6 +73,14 @@ Preset descriptions must say what kind of opinion they encode:
 
 An opinionated preset is valid, but it must be named and described as opinionated.
 
+Shipped preset vectors should also carry machine-readable `preset_profile` metadata:
+
+- `workflow-risk` for a temporary or enduring risk posture;
+- `technology-practice` for a technology-specific practice profile;
+- `architecture-taste` for an architecture-school preference that reasonable teams may dispute.
+
+All shipped preset profiles use `explicit-apply-only` activation. Listing, showing, diffing, or importing a preset must not change a repository's active scoring policy until a repo-owned vector is written or updated.
+
 ### Opinionated Packages
 
 Opinionated packages are valid opt-ins. They may encode strong preferences, including preferences most teams would dispute.

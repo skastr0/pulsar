@@ -19,6 +19,8 @@ const SHIPPED_PRESETS = [
 export interface PulsarVectorPresetSummary {
   readonly id: string
   readonly description: string
+  readonly presetProfileKind: string
+  readonly activation: string
 }
 
 export const loadPulsarVectorPresets = (): Effect.Effect<ReadonlyArray<PulsarVector>, Error, never> =>
@@ -48,7 +50,7 @@ export const loadPulsarVectorPresetById = (
     const presets = yield* loadPulsarVectorPresets()
     const preset = presets.find((candidate) => candidate.id === presetId)
     if (preset === undefined) {
-      return yield* Effect.fail(new Error(`Unknown persona preset: ${presetId}`))
+      return yield* Effect.fail(new Error(`Unknown vector profile template: ${presetId}`))
     }
     return preset
   })
@@ -60,6 +62,8 @@ export const summarizePulsarVectorPresets = (
     .map((preset) => ({
       id: preset.id,
       description: oneLineDescription(preset),
+      presetProfileKind: preset.preset_profile?.kind ?? "unclassified",
+      activation: preset.preset_profile?.activation ?? "unknown",
     }))
     .sort((left, right) => left.id.localeCompare(right.id))
 
@@ -69,4 +73,32 @@ export const oneLineDescription = (vector: PulsarVector): string => {
   const line = trimmed.split(/\r?\n/, 1)[0]?.trim()
   if (line === undefined || line.length === 0) return trimmed
   return line
+}
+
+export const formatPulsarVectorPresetProfileKind = (kind: string | undefined): string => {
+  switch (kind) {
+    case "architecture-taste":
+      return "architecture taste"
+    case "technology-practice":
+      return "technology practice"
+    case "workflow-risk":
+      return "workflow/risk"
+    case undefined:
+      return "unclassified"
+    default:
+      return kind.replaceAll("-", " ")
+  }
+}
+
+export const formatPulsarVectorPresetProfileActivation = (
+  activation: string | undefined,
+): string => {
+  switch (activation) {
+    case "explicit-apply-only":
+      return "explicit apply only"
+    case undefined:
+      return "unknown"
+    default:
+      return activation.replaceAll("-", " ")
+  }
 }

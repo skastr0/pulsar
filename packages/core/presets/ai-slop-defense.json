@@ -1,7 +1,12 @@
 {
   "id": "ai-slop-defense",
   "domain": "typescript",
-  "description": "Assume AI assistance is present and tighten the places where generative output most often drifts: duplication, complexity, generic bloat, and unfinished stubs. Best for teams that want AI-assisted mode to be explicit, visible in the vector, and enforced through normal preset mechanics rather than a hidden switch.",
+  "description": "Opt-in workflow/risk profile template for repositories using AI-assisted development. It tightens the places where generative output most often drifts: duplication, complexity, generic bloat, and unfinished stubs. Best for teams that want AI-assisted mode to be explicit, visible in the vector, and enforced through normal preset mechanics rather than a hidden switch.",
+  "preset_profile": {
+    "kind": "workflow-risk",
+    "activation": "explicit-apply-only",
+    "summary": "AI-assisted development risk posture; inactive until applied to a repository vector."
+  },
   "modes": {
     "ai_assisted": true
   },

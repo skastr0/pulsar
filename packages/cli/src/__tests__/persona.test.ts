@@ -8,6 +8,7 @@ import {
   loadQuizItems,
 } from "@skastr0/pulsar-core/elicitation"
 import {
+  type PulsarVectorPresetProfileKind,
   validateVectorAgainstRegistry,
 } from "@skastr0/pulsar-core/vector"
 import { Effect } from "effect"
@@ -72,8 +73,20 @@ describe("pulsar persona", () => {
   test("shipped presets and quiz items reference known registry signals", async () => {
     const registry = await Effect.runPromise(buildPulsarRegistry())
     const presets = await Effect.runPromise(loadPulsarVectorPresets())
+    const expectedProfileKinds = new Map<string, PulsarVectorPresetProfileKind>([
+      ["ai-slop-defense", "workflow-risk"],
+      ["domain-purist", "architecture-taste"],
+      ["refactor-friendly", "workflow-risk"],
+      ["security-paranoid", "workflow-risk"],
+      ["strict-type-safety", "technology-practice"],
+      ["velocity-first", "workflow-risk"],
+    ])
     for (const preset of presets) {
       await Effect.runPromise(validateVectorAgainstRegistry(preset, registry))
+      expect(preset.preset_profile?.kind).toBe(expectedProfileKinds.get(preset.id))
+      expect(preset.preset_profile?.activation).toBe("explicit-apply-only")
+      expect(preset.preset_profile?.summary).toContain("inactive until applied")
+      expect(preset.description).toContain("Opt-in")
     }
 
     const items = await Effect.runPromise(loadQuizItems("typescript"))
@@ -89,12 +102,18 @@ describe("pulsar persona", () => {
     try {
       const list = runCli(repoPath, ["persona", "list"])
       expect(list.status).toBe(0)
+      expect(list.stdout).toContain("Available vector profile templates (opt-in; inactive until applied):")
       expect(list.stdout).toContain("strict-type-safety")
       expect(list.stdout).toContain("ai-slop-defense")
+      expect(list.stdout).toContain("[technology practice]")
+      expect(list.stdout).not.toContain("Available persona presets")
 
       const show = runCli(repoPath, ["persona", "show", "security-paranoid"])
       expect(show.status).toBe(0)
       expect(show.stdout).toContain("security-paranoid")
+      expect(show.stdout).toContain("Preset profile kind: workflow/risk")
+      expect(show.stdout).toContain("Activation:          explicit apply only")
+      expect(show.stdout).toContain("Status:             inactive until applied to a repo-owned vector")
       expect(show.stdout).toContain("sensitive environments")
 
       const apply = runCli(repoPath, [
@@ -105,10 +124,18 @@ describe("pulsar persona", () => {
         ".pulsar/vector.json",
       ])
       expect(apply.status).toBe(0)
+      expect(apply.stdout).toContain("Applied profile template: strict-type-safety")
+      expect(apply.stdout).toContain("Wrote repo vector:")
 
       const written = JSON.parse(await readFile(join(repoPath, ".pulsar/vector.json"), "utf8"))
       expect(written.id).toBe("strict-type-safety")
+      expect(written.preset_profile.kind).toBe("technology-practice")
+      expect(written.preset_profile.activation).toBe("explicit-apply-only")
       expect(written.provenance[0].source).toBe("preset")
+      expect(written.provenance[0].summary).toBe("Applied profile template strict-type-safety")
+      expect(written.provenance[0].evidence[0].metadata.preset_profile_kind).toBe(
+        "technology-practice",
+      )
 
       const score = runCli(repoPath, ["score", "."])
       expect(score.status).toBe(0)
@@ -117,6 +144,8 @@ describe("pulsar persona", () => {
       const diff = runCli(repoPath, ["persona", "diff", "ai-slop-defense", repoPath])
       expect(diff.status).toBe(0)
       expect(diff.stdout).toContain("Current vector source: repo-local .pulsar/vector.json")
+      expect(diff.stdout).toContain("Profile template:      ai-slop-defense")
+      expect(diff.stdout).toContain("Template kind:         workflow/risk")
       expect(diff.stdout).toContain("Weight deltas:")
       expect(diff.stdout).toContain("Mode deltas:")
       expect(diff.stdout).toContain("ai_assisted false -> true")

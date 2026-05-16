@@ -1,7 +1,12 @@
 {
   "id": "velocity-first",
   "domain": "typescript",
-  "description": "Keep gates open unless the repo is actually becoming unbuildable or structurally unsafe. Best for teams doing rapid discovery work who still want hard failures when dependency health or severe structural debt would stop delivery entirely.",
+  "description": "Opt-in workflow/risk profile template for repositories doing rapid discovery work. It keeps gates open unless the repo is becoming unbuildable or structurally unsafe, while retaining hard failures when dependency health or severe structural debt would stop delivery entirely.",
+  "preset_profile": {
+    "kind": "workflow-risk",
+    "activation": "explicit-apply-only",
+    "summary": "Fast-discovery review posture with structural hard stops; inactive until applied to a repository vector."
+  },
   "signal_overrides": {
     "TS-LD-01": { "weight": 0.45 },
     "TS-LD-02": { "weight": 0.45 },

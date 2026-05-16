@@ -1,7 +1,12 @@
 {
   "id": "refactor-friendly",
   "domain": "typescript",
-  "description": "Bias toward changeability: hotspot control, cycle pressure, and keeping public surfaces narrow enough to reshape safely. Best when a team is about to do architectural work and wants the Pulsar to highlight where refactors will get trapped.",
+  "description": "Opt-in workflow/risk profile template for repositories entering refactor-heavy work. It emphasizes changeability: hotspot control, cycle pressure, and keeping public surfaces narrow enough to reshape safely. Best when a team wants Pulsar to highlight where refactors will get trapped.",
+  "preset_profile": {
+    "kind": "workflow-risk",
+    "activation": "explicit-apply-only",
+    "summary": "Refactor-risk posture for change-heavy periods; inactive until applied to a repository vector."
+  },
   "signal_overrides": {
     "TS-RP-01": { "weight": 1.5 },
     "TS-RP-02": { "weight": 1.1 },

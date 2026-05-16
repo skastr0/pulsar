@@ -1,6 +1,8 @@
 import { existsSync } from "node:fs"
 import { resolve } from "node:path"
 import {
+  formatPulsarVectorPresetProfileActivation,
+  formatPulsarVectorPresetProfileKind,
   loadPulsarVectorPresetById,
   loadPulsarVectorPresets,
   summarizePulsarVectorPresets,
@@ -65,9 +67,10 @@ const loadValidatedPersonaPresets = (): Effect.Effect<
 
 const printPersonaPresetList = (presets: ReadonlyArray<PulsarVector>): number => {
   console.log("")
-  console.log("Available persona presets:")
+  console.log("Available vector profile templates (opt-in; inactive until applied):")
   for (const preset of summarizePulsarVectorPresets(presets)) {
-    console.log(`  ${preset.id.padEnd(20)} ${preset.description}`)
+    const kind = formatPulsarVectorPresetProfileKind(preset.presetProfileKind)
+    console.log(`  ${preset.id.padEnd(20)} [${kind}] ${preset.description}`)
   }
   console.log("")
   return 0
@@ -79,7 +82,7 @@ const loadRequestedPersonaPreset = (
 ): Effect.Effect<PulsarVector, unknown, never> =>
   Effect.gen(function* () {
     if (opts.presetId === undefined) {
-      return yield* Effect.fail(new Error(`persona ${opts.action} requires a preset id`))
+      return yield* Effect.fail(new Error(`persona ${opts.action} requires a profile template id`))
     }
     const preset = yield* loadPulsarVectorPresetById(opts.presetId)
     yield* validateVectorAgainstRegistry(preset, registry)
@@ -89,6 +92,10 @@ const loadRequestedPersonaPreset = (
 const printPersonaPreset = (preset: PulsarVector): number => {
   console.log("")
   console.log(`${preset.id}`)
+  console.log("")
+  console.log(`Preset profile kind: ${formatPulsarVectorPresetProfileKind(preset.preset_profile?.kind)}`)
+  console.log(`Activation:          ${formatPulsarVectorPresetProfileActivation(preset.preset_profile?.activation)}`)
+  console.log(`Status:             inactive until applied to a repo-owned vector`)
   console.log("")
   console.log(preset.description ?? "No description provided.")
   console.log("")
@@ -106,13 +113,17 @@ const applyPersonaPreset = (
     const applied = appendVectorProvenance(preset, {
       source: "preset",
       recorded_at: new Date().toISOString(),
-      summary: `Applied preset ${preset.id}`,
+      summary: `Applied profile template ${preset.id}`,
       preset_id: preset.id,
       artifact_path: absolutePath,
       evidence: [
         {
           kind: "preset",
           summary: preset.description ?? `Preset ${preset.id}`,
+          metadata: {
+            preset_profile_kind: preset.preset_profile?.kind ?? "unclassified",
+            activation: preset.preset_profile?.activation ?? "unknown",
+          },
         },
       ],
     })
@@ -141,8 +152,9 @@ const resolvePersonaOutputPath = (
 
 const printPersonaApplyResult = (preset: PulsarVector, absolutePath: string): void => {
   console.log("")
-  console.log(`  Applied preset: ${preset.id}`)
-  console.log(`  Wrote vector:   ${absolutePath}`)
+  console.log(`  Applied profile template: ${preset.id}`)
+  console.log(`  Template activation:      ${formatPulsarVectorPresetProfileActivation(preset.preset_profile?.activation)}`)
+  console.log(`  Wrote repo vector:        ${absolutePath}`)
   console.log("")
 }
 
@@ -170,7 +182,8 @@ const printPersonaDiff = (
   console.log("")
   console.log(`Current vector:        ${current.label}`)
   console.log(`Current vector source: ${current.sourceLabel}`)
-  console.log(`Preset:                ${preset.id}`)
+  console.log(`Profile template:      ${preset.id}`)
+  console.log(`Template kind:         ${formatPulsarVectorPresetProfileKind(preset.preset_profile?.kind)}`)
   console.log("")
   for (const line of renderVectorDiff(diff)) {
     console.log(line)

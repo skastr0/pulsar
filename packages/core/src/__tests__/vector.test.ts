@@ -58,6 +58,11 @@ describe("PulsarVector", () => {
       id: "v1",
       domain: "typescript",
       description: "Explicitly favors annotations and explicit AI-assisted review pressure.",
+      preset_profile: {
+        kind: "technology-practice",
+        activation: "explicit-apply-only",
+        summary: "Strict TypeScript practice profile.",
+      },
       signal_overrides: {
         "MOCK-01": { active: true, weight: 1.4, config: { threshold: 20 } },
       },
@@ -120,6 +125,9 @@ describe("PulsarVector", () => {
     const vector = await Effect.runPromise(decodePulsarVector(raw))
     expect(vector.id).toBe("v1")
     expect(vector.description).toContain("Explicitly favors annotations")
+    expect(vector.preset_profile?.kind).toBe("technology-practice")
+    expect(vector.preset_profile?.activation).toBe("explicit-apply-only")
+    expect(vector.preset_profile?.summary).toContain("Strict TypeScript")
     expect(vector.signal_overrides["MOCK-01"]?.weight).toBe(1.4)
     expect(vector.review_routing?.score_thresholds["api-design-reviewer"]).toBe(0.7)
     expect(vector.observer?.diffTimeIntegration).toBe(false)
