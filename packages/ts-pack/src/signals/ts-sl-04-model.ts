@@ -1,6 +1,5 @@
 import type { CalibrationDecision } from "@skastr0/pulsar-core/calibration"
-import type { SignalFactorLedger, SignalFactorLedgerEntry } from "@skastr0/pulsar-core/signal"
-import type { StubCandidate } from "./ts-sl-04-candidates.js"
+import type { SignalFactorLedger } from "@skastr0/pulsar-core/signal"
 import type { StubConfidence, StubKind, StubSeverity } from "./ts-sl-04-factors.js"
 
 export interface Stub {
@@ -42,27 +41,3 @@ export interface StubCandidateSummary {
   readonly kind: StubKind | "intentional-noop" | "unknown"
   readonly inTestPath: boolean
 }
-
-export interface CleanBudget {
-  readonly expectedCleanBudget: number
-  readonly expectedCleanFunctionRatio: number
-  readonly expectedCleanMinFunctions: number
-}
-
-export interface EvaluatedStubCandidates {
-  readonly stubs: ReadonlyArray<Stub>
-  readonly calibrationDecisions: ReadonlyArray<CalibrationDecision>
-  readonly rawCandidates: ReadonlyArray<StubCandidateSummary>
-  readonly factorEntries: ReadonlyArray<SignalFactorLedgerEntry>
-}
-
-export const summarizeStubCandidate = (
-  candidate: StubCandidate,
-  kind: StubCandidateSummary["kind"],
-): StubCandidateSummary => ({
-  file: candidate.path,
-  name: candidate.name,
-  line: candidate.line,
-  kind,
-  inTestPath: candidate.isTestPath,
-})
