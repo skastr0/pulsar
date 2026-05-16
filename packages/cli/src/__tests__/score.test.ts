@@ -547,7 +547,7 @@ export function stubF() { throw new Error("Not implemented") }
     }
   }, 120_000)
 
-  test("repo-local project modules calibrate single-signal scoring", async () => {
+  test("repo-local alternate role calibration is opt-in and inspectable", async () => {
     const repoPath = await initRepo([
       {
         path: "src/contracts.ts",
@@ -559,45 +559,98 @@ export function stubF() { throw new Error("Not implemented") }
       expect(before.status).toBe(0)
       expect(before.stdout).toContain("empty-body")
       expect(before.stdout).not.toContain("(no diagnostics)")
+      expect(before.stdout).not.toContain("Calibration Decisions")
+      expect(before.stdout).not.toContain("domain-boundary")
 
       const effectModuleUrl = pathToFileURL(
         resolve(import.meta.dir, "../../node_modules/effect/dist/esm/index.js"),
       ).href
       await writeRepoFile(
         repoPath,
-        ".pulsar/modules/project-contract-noops.mjs",
+        ".pulsar/modules/domain-boundary-noops.mjs",
         [
           `import { Effect } from ${JSON.stringify(effectModuleUrl)}`,
           "",
+          "const targetRole = 'domain-boundary'",
+          "",
           "export default {",
-          "  id: 'repo.project-contract-noops',",
+          "  id: 'repo.domain-boundary-noops',",
           "  version: '1.0.0',",
           "  scope: 'repository',",
           "  processors: [",
           "    {",
-          "      id: 'project-contract-noops',",
-          "      slot: 'typescript.noop-classifier',",
+          "      id: 'domain-boundary-classifier',",
+          "      slot: 'taxonomy.file-classifier',",
           "      role: 'normalizer',",
           "      priority: 10,",
-          "      fingerprint: 'project-contract-noops-v1',",
+          "      fingerprint: 'domain-boundary-classifier-v1',",
           "      process: (current) => Effect.sync(() => {",
-          "        if (!current.value.file.endsWith('src/contracts.ts')) return current",
-          "        return {",
-          "          value: {",
-          "            ...current.value,",
-          "            classification: 'intentional_noop',",
-          "            confidence: 'high',",
+          "        if (!current.value.path.endsWith('src/contracts.ts')) return current",
+          "        const nextValue = {",
+          "          ...current.value,",
+          "          metadata: {",
+          "            ...(current.value.metadata ?? {}),",
+          "            architecture_role: targetRole,",
           "          },",
+          "        }",
+          "        return {",
+          "          value: nextValue,",
           "          decisions: [",
           "            ...current.decisions,",
           "            {",
-          "              moduleId: 'repo.project-contract-noops',",
-          "              processorId: 'project-contract-noops',",
-          "              slot: 'typescript.noop-classifier',",
-          "              action: 'classify-intentional-noop',",
+          "              moduleId: 'repo.domain-boundary-noops',",
+          "              processorId: 'domain-boundary-classifier',",
+          "              slot: 'taxonomy.file-classifier',",
+          "              action: 'classify-architecture-role',",
           "              confidence: 'high',",
-          "              reason: 'Project contract hook is intentionally empty until host runtime binds it.',",
+          "              reason: 'This repository treats src/contracts.ts as a domain boundary contract.',",
+          "              ruleId: 'repo.domain-boundary.role.v1',",
+          "              before: current.value,",
+          "              after: nextValue,",
           "              evidence: [",
+          "                { kind: 'path', value: current.value.path },",
+          "                { kind: 'architecture_role', value: targetRole },",
+          "              ],",
+          "            },",
+          "          ],",
+          "        }",
+          "      }),",
+          "    },",
+          "    {",
+          "      id: 'domain-boundary-noop-policy',",
+          "      slot: 'typescript.noop-classifier',",
+          "      role: 'normalizer',",
+          "      priority: 10,",
+          "      fingerprint: 'domain-boundary-noop-policy-v1',",
+          "      process: (current, context) => Effect.gen(function* () {",
+          "        if (!current.value.file.endsWith('src/contracts.ts')) return current",
+          "        const classified = yield* context.runSlot('taxonomy.file-classifier', {",
+          "          path: current.value.file,",
+          "          categories: [],",
+          "        })",
+          "        if (classified.value.metadata?.architecture_role !== targetRole) return current",
+          "        const nextValue = {",
+          "          ...current.value,",
+          "          classification: 'intentional_noop',",
+          "          confidence: 'high',",
+          "        }",
+          "        return {",
+          "          value: nextValue,",
+          "          decisions: [",
+          "            ...current.decisions,",
+          "            ...classified.decisions,",
+          "            {",
+          "              moduleId: 'repo.domain-boundary-noops',",
+          "              processorId: 'domain-boundary-noop-policy',",
+          "              slot: 'typescript.noop-classifier',",
+          "              action: 'classify-domain-boundary-noop',",
+          "              confidence: 'high',",
+          "              reason: 'Domain boundary contract hook is intentionally empty until the adapter runtime binds it.',",
+          "              ruleId: 'repo.domain-boundary.noop.v1',",
+          "              before: current.value,",
+          "              after: nextValue,",
+          "              evidence: [",
+          "                { kind: 'architecture_role', value: targetRole },",
           "                { kind: 'path', value: current.value.file },",
           "                { kind: 'symbol', value: current.value.name },",
           "              ],",
@@ -610,6 +663,13 @@ export function stubF() { throw new Error("Not implemented") }
           "}",
         ].join("\n"),
       )
+
+      const withoutManifest = runCli(repoPath, ["score", "--signal", "TS-SL-04", "."])
+      expect(withoutManifest.status).toBe(0)
+      expect(withoutManifest.stdout).toContain("empty-body")
+      expect(withoutManifest.stdout).not.toContain("Calibration Decisions")
+      expect(withoutManifest.stdout).not.toContain("domain-boundary")
+
       await writeRepoFile(
         repoPath,
         ".pulsar/project-modules.json",
@@ -617,9 +677,9 @@ export function stubF() { throw new Error("Not implemented") }
           {
             modules: [
               {
-                id: "repo.project-contract-noops",
+                id: "repo.domain-boundary-noops",
                 kind: "repo-local",
-                path: ".pulsar/modules/project-contract-noops.mjs",
+                path: ".pulsar/modules/domain-boundary-noops.mjs",
               },
             ],
           },
@@ -634,10 +694,27 @@ export function stubF() { throw new Error("Not implemented") }
       expect(after.status).toBe(0)
       expect(after.stdout).toContain("Score:  1.000")
       expect(after.stdout).toContain("(no diagnostics)")
-      expect(after.stdout).toContain("Calibration Decisions (1)")
-      expect(after.stdout).toContain("repo.project-contract-noops/project-contract-noops")
-      expect(after.stdout).toContain("classify-intentional-noop")
-      expect(after.stdout).not.toContain("empty-body")
+      expect(after.stdout).toContain("Calibration Decisions (2)")
+      expect(after.stdout).toContain("repo.domain-boundary-noops/domain-boundary-classifier")
+      expect(after.stdout).toContain("repo.domain-boundary-noops/domain-boundary-noop-policy")
+      expect(after.stdout).toContain("classify-architecture-role")
+      expect(after.stdout).toContain("classify-domain-boundary-noop")
+      expect(after.stdout).toContain(
+        "This repository treats src/contracts.ts as a domain boundary contract.",
+      )
+      expect(after.stdout).toContain(
+        "Domain boundary contract hook is intentionally empty until the adapter runtime binds it.",
+      )
+      expect(after.stdout).toContain("rule: repo.domain-boundary.role.v1")
+      expect(after.stdout).toContain("rule: repo.domain-boundary.noop.v1")
+      expect(after.stdout).toContain("evidence: path=src/contracts.ts")
+      expect(after.stdout).toContain("evidence: architecture_role=domain-boundary")
+      expect(after.stdout).toContain("delta:")
+      expect(after.stdout).toContain('"architecture_role":"domain-boundary"')
+      expect(after.stdout).toContain('"classification":"intentional_noop"')
+      expect(after.stdout).not.toContain("pure_utility")
+      expect(after.stdout).not.toContain("shared_contextual")
+      expect(after.stdout).not.toContain("integration")
     } finally {
       await rm(repoPath, { recursive: true, force: true })
     }

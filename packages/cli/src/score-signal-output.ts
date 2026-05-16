@@ -61,6 +61,11 @@ export const printSignalResult = (
       for (const evidence of decision.evidence.slice(0, 3)) {
         console.log(`      evidence: ${evidence.kind}=${compactDecisionEvidence(repoPath, evidence.value)}`)
       }
+      if (decision.before !== undefined || decision.after !== undefined) {
+        console.log(
+          `      delta: ${compactDecisionValue(repoPath, decision.before)} -> ${compactDecisionValue(repoPath, decision.after)}`,
+        )
+      }
     }
   }
   printFactorAudit(factorLedger)
@@ -143,3 +148,17 @@ const compactDecisionEvidence = (repoPath: string, value: string): string => {
     .replaceAll(`${repoPrefix}/`, "")
     .replaceAll(repoPrefix, ".")
 }
+
+const compactDecisionValue = (repoPath: string, value: unknown): string => {
+  if (value === undefined) return "undefined"
+  const rendered = JSON.stringify(value, (_key, nested) =>
+    typeof nested === "string"
+      ? compactString(compactDecisionEvidence(repoPath, nested), 120)
+      : nested,
+  )
+  if (rendered === undefined) return String(value)
+  return compactString(rendered, 800)
+}
+
+const compactString = (value: string, maxLength: number): string =>
+  value.length <= maxLength ? value : `${value.slice(0, maxLength - 3)}...`
