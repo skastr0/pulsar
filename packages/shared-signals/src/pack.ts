@@ -12,6 +12,7 @@ import { Shared06PrDepDelta } from "./shared-06-pr-dep-delta.js"
 import { Shared07MachineFeedbackCoverage } from "./shared-07-machine-feedback-coverage.js"
 import { Shared09ContractFreshness } from "./shared-09-contract-freshness.js"
 import { Shared10DomainConstructionControl } from "./shared-10-domain-construction-control.js"
+import { Shared11TheoryEncodingIndex } from "./shared-11-theory-encoding-index.js"
 import { SharedCov01CoverageFacts } from "./shared-cov-01-coverage-facts.js"
 
 const SHARED_PACK_CACHE_VERSION =
@@ -36,6 +37,7 @@ export const SHARED_SIGNALS: ReadonlyArray<AnySignal> = [
   Shared07MachineFeedbackCoverage,
   Shared09ContractFreshness,
   Shared10DomainConstructionControl,
+  Shared11TheoryEncodingIndex,
   SharedCov01CoverageFacts,
 ].map(withSharedPackCacheVersion)
   .map(withConfigFactorLedger)

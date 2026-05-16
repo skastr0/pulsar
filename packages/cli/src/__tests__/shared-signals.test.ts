@@ -132,6 +132,7 @@ describe("polyglot shared signals", () => {
         "SHARED-07-machine-feedback-coverage",
         "SHARED-09-contract-freshness",
         "SHARED-10-domain-construction-control",
+        "SHARED-11-theory-encoding-index",
         "SHARED-CHURN-01-recent-churn",
         "SHARED-CHURN-02-recency-weighted-churn",
         "SHARED-COCHANGE-01-logical-coupling",

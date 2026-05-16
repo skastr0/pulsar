@@ -361,7 +361,7 @@ export function formattedTiny(value: number): number {
     }
   }, 120_000)
 
-  test("applied refactor-friendly vector tightens architecture scoring after baseline", async () => {
+  test("applied refactor-friendly vector applies architecture weighting after baseline", async () => {
     const repoPath = await initRepo()
     try {
       await writeRepoFile(repoPath, "src/a.ts", "import { b } from './b'\nexport const a = b + 1\n")
@@ -397,7 +397,16 @@ export function formattedTiny(value: number): number {
       expect(vectorScore.status).toBe(0)
       const vectorArchitecture = JSON.parse(vectorScore.stdout).categories["architectural-drift"]
       expect(vectorArchitecture.aggregation.weights[TS_AD_02_SIGNAL_ID]).toBeGreaterThan(1)
-      expect(vectorArchitecture.score).toBeLessThan(baselineArchitecture.score)
+      expect(vectorArchitecture.signals[TS_AD_02_SIGNAL_ID]).toBe(
+        baselineArchitecture.signals[TS_AD_02_SIGNAL_ID],
+      )
+      expect(vectorArchitecture.aggregation.rawScore).not.toBe(
+        baselineArchitecture.aggregation.rawScore,
+      )
+      expect(vectorArchitecture.aggregation.pressure.finalPressure).not.toBe(
+        baselineArchitecture.aggregation.pressure.finalPressure,
+      )
+      expect(vectorArchitecture.score).toBeGreaterThan(baselineArchitecture.score)
 
       const human = runCli(repoPath, ["score", "--category", "architectural-drift", "."])
       expect(human.status).toBe(0)
@@ -468,11 +477,16 @@ export function formattedTiny(value: number): number {
       const cleanArchitecture = JSON.parse(cleanVector.stdout).categories["architectural-drift"]
 
       expect(dirtyArchitecture.aggregation.weights[TS_AD_02_SIGNAL_ID]).toBeGreaterThan(1)
-      expect(dirtyArchitecture.score).toBeLessThan(defaultArchitecture.score)
-      expect(dirtyArchitecture.score).toBeLessThan(cleanArchitecture.score)
+      expect(dirtyArchitecture.aggregation.rawScore).not.toBe(
+        defaultArchitecture.aggregation.rawScore,
+      )
+      expect(dirtyArchitecture.aggregation.pressure.finalPressure).not.toBe(
+        defaultArchitecture.aggregation.pressure.finalPressure,
+      )
+      expect(dirtyArchitecture.score).toBeGreaterThan(defaultArchitecture.score)
       expect(dirtyArchitecture.signals[TS_AD_02_SIGNAL_ID]).toBeLessThan(1)
       expect(cleanArchitecture.signals[TS_AD_02_SIGNAL_ID]).toBe(1)
-      expect(cleanArchitecture.score).toBe(1)
+      expect(cleanArchitecture.signals["SHARED-11-theory-encoding-index"]).toBeLessThan(1)
     } finally {
       await rm(dirtyRepoPath, { recursive: true, force: true })
       await rm(cleanRepoPath, { recursive: true, force: true })

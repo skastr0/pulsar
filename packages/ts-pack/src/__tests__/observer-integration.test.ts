@@ -73,6 +73,7 @@ describe("Observer + TS pack integration", () => {
         "SHARED-07-machine-feedback-coverage",
         "SHARED-09-contract-freshness",
         "SHARED-10-domain-construction-control",
+        "SHARED-11-theory-encoding-index",
         "SHARED-CHURN-01-recent-churn",
         "SHARED-CHURN-02-recency-weighted-churn",
         "SHARED-COCHANGE-01-logical-coupling",
@@ -137,6 +138,28 @@ describe("Observer + TS pack integration", () => {
       // A compound signal (TS-RP-01-hotspots) received its inputs in order.
       const tsRp = out.signalResults.get("TS-RP-01-hotspots")
       expect(tsRp?.output).toBeDefined()
+
+      // SHARED-11 is more than registration: the real observer path resolves
+      // its primitive inputs, preserves value-level explanation, and emits a
+      // diagnostic consistent with the measured output state.
+      const theory = out.signalResults.get("SHARED-11-theory-encoding-index")
+      expect(theory?.output).toMatchObject({
+        riskModel: "theory-encoding-index-v1",
+        inputFactStates: expect.objectContaining({
+          recencyWeightedChurn: expect.any(String),
+        }),
+        explanation: expect.objectContaining({
+          primitiveInputs: expect.arrayContaining([
+            expect.objectContaining({
+              id: "SHARED-CHURN-02-recency-weighted-churn",
+              rawValue: expect.objectContaining({
+                topChurnFiles: expect.any(Array),
+              }),
+            }),
+          ]),
+        }),
+      })
+      expect(theory?.diagnostics.length).toBeGreaterThan(0)
     },
     120_000,
   )

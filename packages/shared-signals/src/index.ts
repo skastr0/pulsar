@@ -69,6 +69,16 @@ export {
   type Shared10DomainConstructionControlOutput,
 } from "./shared-10-domain-construction-control.js"
 export {
+  Shared11TheoryEncodingIndex,
+  Shared11TheoryEncodingIndexConfig,
+  type Shared11TheoryEncodingIndexOutput,
+  type TheoryEncodingFactor,
+  type TheoryEncodingGap,
+  type TheoryEncodingIndexState,
+  type TheoryEncodingInputFactState,
+  type TheoryEncodingInputFactStates,
+} from "./shared-11-theory-encoding-index.js"
+export {
   SharedCov01CoverageFacts,
   SharedCov01CoverageFactsConfig,
   type SharedCov01CoverageFactsOutput,
