@@ -24,7 +24,7 @@
     "access": "public"
   },
   "bin": {
-    "pulsar": "./bin/pulsar.js"
+    "pulsar": "bin/pulsar.js"
   },
   "files": [
     "bin",
