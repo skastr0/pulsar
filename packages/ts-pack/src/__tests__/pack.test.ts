@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { TS_PACK_SIGNALS } from "../pack.js"
 import { TsAb02 } from "../signals/ts-ab-02-unused-exports-reachability.js"
 import { TsAd02 } from "../signals/ts-ad-02-circular-deps.js"
+import { TsAd04 } from "../signals/ts-ad-04-boundary-parser-coverage.js"
 import { TsDe04 } from "../signals/ts-de-04-package-dependency-health.js"
 import { TsLd01 } from "../signals/ts-ld-01-complexity.js"
 import { TsRp01 } from "../signals/ts-rp-01-hotspots.js"
@@ -12,6 +13,7 @@ import { TsSl04 } from "../signals/ts-sl-04-empty-implementations.js"
 describe("TS pack cache versions", () => {
   test("pack wrapper preserves signal-specific cache versions", () => {
     const ad02 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-AD-02"))
+    const ad04 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-AD-04"))
     const de04 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-DE-04"))
     const ld01 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-LD-01"))
     const rp01 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-RP-01"))
@@ -21,6 +23,7 @@ describe("TS pack cache versions", () => {
     const ab02 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-AB-02"))
 
     expect(ad02?.cacheVersion).toContain(TsAd02.cacheVersion)
+    expect(ad04?.cacheVersion).toContain(TsAd04.cacheVersion)
     expect(ab02?.cacheVersion).toContain(TsAb02.cacheVersion)
     expect(de04?.cacheVersion).toContain(TsDe04.cacheVersion)
     expect(ld01?.cacheVersion).toContain(TsLd01.cacheVersion)
