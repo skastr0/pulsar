@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+import type { CalibrationDecision, TypeScriptCloneGroupPolicyValue } from "@skastr0/pulsar-core/calibration"
 import type { TsFunctionLike as FnLike } from "./shared-function-index.js"
 
 export const TsSl01Config = Schema.Struct({
@@ -22,6 +23,10 @@ export interface CloneGroup {
   readonly tokenCount: number
   readonly members: ReadonlyArray<CloneGroupMember>
   readonly structuralHash: string
+  readonly policy?: Pick<
+    TypeScriptCloneGroupPolicyValue,
+    "action" | "factor" | "visible" | "severity" | "penaltyWeight" | "metadata"
+  >
 }
 
 export interface TsSl01Output {
@@ -31,6 +36,7 @@ export interface TsSl01Output {
   readonly scopeMode: "whole-tree" | "changed-hunks"
   readonly detectionMinTokens?: number
   readonly diagnosticLimit?: number
+  readonly calibrationDecisions?: ReadonlyArray<CalibrationDecision>
 }
 
 export const DEFAULT_SCORE_BUDGET_MIN_TOKENS = 12

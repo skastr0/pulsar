@@ -1,10 +1,13 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test"
 import { Effect, Layer } from "effect"
 import { SignalContextTag } from "@skastr0/pulsar-core/signal"
+import { CalibrationContextTag, appendCalibrationDecision, defineCalibrationProcessor, makeResolvedCalibrationContext } from "@skastr0/pulsar-core/calibration"
 import { createTempRepo, runSignal } from "./test-repo.js"
 import { TsSl01 } from "../signals/ts-sl-01-duplication.js"
 import { TsProjectLayer } from "../ts-project.js"
 import type { TempRepo } from "./test-repo.js"
+import type { TsSl01Output } from "../signals/ts-sl-01-model.js"
+import { makePulsarSelfCalibrationContext } from "./pulsar-self-calibration.js"
 
 describe("TS-SL-01 Duplication on new code", () => {
   let repo: TempRepo
@@ -73,6 +76,150 @@ export function copied(value: number): number {
     const out = await runSignal(repo.root, TsSl01, TsSl01.defaultConfig)
     expect(out.groups.length).toBeGreaterThan(0)
     expect(TsSl01.score(out)).toBeLessThan(1)
+  })
+
+  test("clone group policy can exclude integration clone groups from score pressure", async () => {
+    const duplicate = `
+export function copied(value: number): number {
+  const doubled = value * 2;
+  if (doubled > 10) {
+    return doubled - 1;
+  }
+  return doubled + 1;
+}
+`
+    await repo.write("src/one.ts", duplicate)
+    await repo.write("src/two.ts", duplicate)
+
+    const processor = defineCalibrationProcessor({
+      id: "integration-clones",
+      moduleId: "acme.project",
+      moduleVersion: "1.0.0",
+      slot: "typescript.clone-group-policy",
+      role: "factor-policy",
+      priority: 10,
+      fingerprint: "integration-clones-v1",
+      process: (current) =>
+        Effect.sync(() =>
+          appendCalibrationDecision(
+            current,
+            {
+              moduleId: "acme.project",
+              processorId: "integration-clones",
+              slot: "typescript.clone-group-policy",
+              action: "exclude-clone-group",
+              confidence: "high",
+              reason: "All members are deliberate integration mirrors",
+              ruleId: "acme.integration-clones.v1",
+              factorPaths: [
+                `${current.value.factorPathPrefix}.action`,
+                `${current.value.factorPathPrefix}.factor`,
+                `${current.value.factorPathPrefix}.penalty_weight`,
+              ],
+              before: current.value,
+              after: {
+                ...current.value,
+                action: "exclude",
+                factor: 0,
+                penaltyWeight: 0,
+                severity: "info",
+              },
+              evidence: [{ kind: "clone-group", value: current.value.groupId }],
+            },
+            {
+              ...current.value,
+              action: "exclude",
+              factor: 0,
+              penaltyWeight: 0,
+              severity: "info",
+            },
+          ),
+        ),
+    })
+    const calibrationContext = makeResolvedCalibrationContext({
+      repoFacts: {
+        repoRoot: repo.root,
+        fingerprint: "repo-facts-v1",
+        detectedTechnologies: ["typescript"],
+        sourceExtensions: [".ts"],
+      },
+      processors: [processor],
+    })
+    const layer = Layer.mergeAll(
+      TsProjectLayer(repo.root),
+      Layer.succeed(SignalContextTag, {
+        gitSha: "TEST",
+        worktreePath: repo.root,
+        changedHunks: [],
+      }),
+      Layer.succeed(CalibrationContextTag, calibrationContext),
+    )
+
+    const out = await Effect.runPromise(
+      TsSl01.compute(TsSl01.defaultConfig, new Map()).pipe(
+        Effect.provide(layer),
+      ) as Effect.Effect<TsSl01Output, unknown, never>,
+    )
+
+    expect(out.groups.length).toBeGreaterThan(0)
+    expect(out.groups[0]?.policy?.action).toBe("exclude")
+    expect(TsSl01.score(out)).toBe(1)
+    expect(out.calibrationDecisions?.[0]).toMatchObject({
+      moduleId: "acme.project",
+      processorId: "integration-clones",
+      ruleId: "acme.integration-clones.v1",
+    })
+    expect(out.calibrationDecisions?.[0]?.factorPaths?.some((path) =>
+      path.startsWith("clones.exact.") && !path.includes("exact-0"),
+    )).toBe(true)
+  })
+
+  test("pulsar-self tier classifier excludes all-integration clone groups", async () => {
+    const duplicate = `
+export function copiedIntegration(value: number): number {
+  const doubled = value * 2;
+  if (doubled > 10) {
+    return doubled - 1;
+  }
+  return doubled + 1;
+}
+`
+    const first = await repo.write("packages/ts-pack/src/signals/ts-sl-04-a.ts", duplicate)
+    await repo.write("packages/ts-pack/src/signals/ts-sl-04-b.ts", duplicate)
+    const calibrationContext = await makePulsarSelfCalibrationContext(repo.root)
+    const classification = await Effect.runPromise(
+      calibrationContext.runSlot("taxonomy.file-classifier", {
+        path: first,
+        categories: [],
+      }),
+    )
+    const layer = Layer.mergeAll(
+      TsProjectLayer(repo.root),
+      Layer.succeed(SignalContextTag, {
+        gitSha: "TEST",
+        worktreePath: repo.root,
+        changedHunks: [],
+      }),
+      Layer.succeed(CalibrationContextTag, calibrationContext),
+    )
+
+    const out = await Effect.runPromise(
+      TsSl01.compute(TsSl01.defaultConfig, new Map()).pipe(
+        Effect.provide(layer),
+      ) as Effect.Effect<TsSl01Output, unknown, never>,
+    )
+
+    expect(classification.value.metadata?.architectural_tier).toBe("integration")
+    expect(out.groups.length).toBeGreaterThan(0)
+    expect(out.groups.every((group) => group.policy?.action === "exclude")).toBe(true)
+    expect(TsSl01.score(out)).toBe(1)
+    expect(out.calibrationDecisions).toContainEqual(
+      expect.objectContaining({
+        moduleId: "pulsar-self",
+        processorId: "integration-clone-policy",
+        ruleId: "pulsar.integration-clone-policy.v1",
+      }),
+    )
   })
 
   test("deweights exact clones across parallel package implementations", async () => {

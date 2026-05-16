@@ -1,9 +1,18 @@
 import { summarize } from "@skastr0/pulsar-core/signal"
 import type { DistributionalSummary } from "@skastr0/pulsar-core/signal"
-import type { CalibrationDecision, CalibrationProcessorError, ResolvedCalibrationContext } from "@skastr0/pulsar-core/calibration"
+import {
+  factorPathSegment,
+  relativeFactorPath,
+} from "@skastr0/pulsar-core/factors"
+import type {
+  CalibrationDecision,
+  CalibrationProcessorError,
+  ResolvedCalibrationContext,
+  TypeScriptSizePolicyValue,
+} from "@skastr0/pulsar-core/calibration"
 import { Effect, Option } from "effect"
 import type {
-  CalibratedThresholdFunctions,
+  CalibratedThresholdSizes,
   CollectedSizes,
   FileSize,
   FunctionSize,
@@ -65,48 +74,109 @@ export const summarizeThresholds = (
 
 export const calibrateThresholdFunctions = (
   thresholds: ThresholdSummary,
+  collected: CollectedSizes,
+  config: TsLd02Config,
   calibration: Option.Option<ResolvedCalibrationContext>,
-): Effect.Effect<CalibratedThresholdFunctions, CalibrationProcessorError, never> =>
-  calibrateFunctionNames(thresholds.oversizedFunctionCandidates, calibration).pipe(
-    Effect.map(({ functions: oversizedFunctions, calibrationDecisions }) => {
-      const oversizedByKey = new Map(
-        oversizedFunctions.map((fn) => [functionDiagnosticKey(fn), fn]),
-      )
-      return {
-        outlierFunctions: thresholds.outlierFunctionCandidates.map((candidate) =>
-          oversizedByKey.get(functionDiagnosticKey(candidate)) ??
-          stripFunctionNameCalibration(candidate),
-        ),
-        oversizedFunctions,
-        calibrationDecisions,
-      }
-    }),
-  )
+): Effect.Effect<CalibratedThresholdSizes, CalibrationProcessorError, never> =>
+  Effect.gen(function* () {
+    const functionPolicies = yield* calibrateFunctionSizePolicies(
+      collected.allFunctions,
+      config,
+      calibration,
+    )
+    const filePolicies = yield* calibrateFileSizePolicies(
+      collected.allFiles,
+      config,
+      calibration,
+    )
+
+    const outlierFunctionCandidatesAll = functionPolicies.filter(({ candidate, policy }) =>
+      isSizePolicyActive(policy) &&
+      candidate.loc > thresholds.functionSizes.p95 + policy.maxLoc,
+    )
+    const oversizedFunctionCandidatesAll = functionPolicies.filter(({ candidate, policy }) =>
+      isSizePolicyActive(policy) && candidate.loc > policy.maxLoc,
+    )
+    const outlierFilePoliciesAll = filePolicies.filter(({ file, policy }) =>
+      isSizePolicyActive(policy) && file.loc > thresholds.fileSizes.p95 + policy.maxLoc,
+    )
+    const oversizedFilePoliciesAll = filePolicies.filter(({ file, policy }) =>
+      isSizePolicyActive(policy) && file.loc > policy.maxLoc,
+    )
+
+    const outlierFunctionNames = yield* calibrateFunctionNames(
+      topFunctionPolicies(
+        outlierFunctionCandidatesAll,
+        config.top_n_diagnostics,
+      ).map(({ candidate, policy }) => withFunctionSizePolicy(candidate, policy)),
+      calibration,
+    )
+    const oversizedFunctionNames = yield* calibrateFunctionNames(
+      topFunctionPolicies(
+        oversizedFunctionCandidatesAll,
+        config.top_n_diagnostics,
+      ).map(({ candidate, policy }) => withFunctionSizePolicy(candidate, policy)),
+      calibration,
+    )
+
+    const outlierFiles = topFilePolicies(
+      outlierFilePoliciesAll,
+      config.top_n_diagnostics,
+    ).map(({ file, policy }) => withFileSizePolicy(file, policy))
+    const oversizedFiles = topFilePolicies(
+      oversizedFilePoliciesAll,
+      config.top_n_diagnostics,
+    ).map(({ file, policy }) => withFileSizePolicy(file, policy))
+
+    return {
+      outlierFunctions: outlierFunctionNames.functions,
+      outlierFiles,
+      oversizedFunctions: oversizedFunctionNames.functions,
+      oversizedFiles,
+      outlierFunctionCount: outlierFunctionCandidatesAll.length,
+      outlierFileCount: outlierFilePoliciesAll.length,
+      oversizedFunctionCount: oversizedFunctionCandidatesAll.length,
+      oversizedFileCount: oversizedFilePoliciesAll.length,
+      ratioPressure: calibratedRatioPressure(
+        collected,
+        outlierFunctionCandidatesAll,
+        outlierFilePoliciesAll,
+      ),
+      maxFunctionPressure: maxCalibratedPressure(functionPolicies),
+      maxFilePressure: maxCalibratedPressure(filePolicies),
+      calibrationDecisions: [
+        ...functionPolicies.flatMap(({ decisions }) => decisions),
+        ...filePolicies.flatMap(({ decisions }) => decisions),
+        ...outlierFunctionNames.calibrationDecisions,
+        ...oversizedFunctionNames.calibrationDecisions,
+      ],
+    }
+  })
 
 export const buildTsLd02Output = (
   collected: CollectedSizes,
   thresholds: ThresholdSummary,
-  functions: CalibratedThresholdFunctions,
+  sizes: CalibratedThresholdSizes,
 ): TsLd02Output => ({
   byFile: thresholds.byFile,
   fileSizes: thresholds.fileSizes,
   functionSizes: thresholds.functionSizes,
-  outlierFunctionCount: thresholds.outlierFunctionCandidatesAll.length,
-  outlierFileCount: thresholds.outlierFilesAll.length,
-  oversizedFunctionCount: thresholds.oversizedFunctionCandidatesAll.length,
-  oversizedFileCount: thresholds.oversizedFilesAll.length,
+  outlierFunctionCount: sizes.outlierFunctionCount,
+  outlierFileCount: sizes.outlierFileCount,
+  oversizedFunctionCount: sizes.oversizedFunctionCount,
+  oversizedFileCount: sizes.oversizedFileCount,
   totalFunctions: collected.allFunctions.length,
   totalFiles: collected.allFiles.length,
   functionOutlierCutoff: thresholds.functionOutlierCutoff,
   fileOutlierCutoff: thresholds.fileOutlierCutoff,
-  outlierFunctions: functions.outlierFunctions,
-  outlierFiles: thresholds.outlierFiles,
-  oversizedFunctions: functions.oversizedFunctions,
-  oversizedFiles: thresholds.oversizedFiles,
-  calibrationDecisions: functions.calibrationDecisions,
-  ratioPressure: thresholds.ratioPressure,
-  maxFunctionPressure: thresholds.maxFunctionPressure,
-  maxFilePressure: thresholds.maxFilePressure,
+  outlierFunctions: sizes.outlierFunctions,
+  outlierFiles: sizes.outlierFiles,
+  oversizedFunctions: sizes.oversizedFunctions,
+  oversizedFiles: sizes.oversizedFiles,
+  calibrationDecisions: sizes.calibrationDecisions,
+  ratioPressure: sizes.ratioPressure,
+  maxFunctionPressure: sizes.maxFunctionPressure,
+  maxFilePressure: sizes.maxFilePressure,
 })
 
 const summarizeFunctionsByFile = (
@@ -161,6 +231,178 @@ const computeThresholdPressures = (
 const maxThresholdPressure = (observed: number, threshold: number): number =>
   observed <= threshold || observed === 0 ? 0 : (observed - threshold) / observed
 
+type FunctionSizePolicy = {
+  readonly candidate: FunctionSizeCandidate
+  readonly policy: TypeScriptSizePolicyValue
+  readonly decisions: ReadonlyArray<CalibrationDecision>
+}
+
+type FileSizePolicy = {
+  readonly file: FileSize
+  readonly policy: TypeScriptSizePolicyValue
+  readonly decisions: ReadonlyArray<CalibrationDecision>
+}
+
+const calibrateFunctionSizePolicies = (
+  candidates: ReadonlyArray<FunctionSizeCandidate>,
+  config: TsLd02Config,
+  calibration: Option.Option<ResolvedCalibrationContext>,
+): Effect.Effect<ReadonlyArray<FunctionSizePolicy>, CalibrationProcessorError, never> =>
+  Effect.gen(function* () {
+    const policies: Array<FunctionSizePolicy> = []
+    for (const candidate of candidates) {
+      const input = defaultSizePolicyForFunction(candidate, config, calibration)
+      const result = Option.isNone(calibration)
+        ? { value: input, decisions: [] }
+        : yield* calibration.value.runSlot("typescript.size-policy", input)
+      policies.push({ candidate, policy: result.value, decisions: result.decisions })
+    }
+    return policies
+  })
+
+const calibrateFileSizePolicies = (
+  files: ReadonlyArray<FileSize>,
+  config: TsLd02Config,
+  calibration: Option.Option<ResolvedCalibrationContext>,
+): Effect.Effect<ReadonlyArray<FileSizePolicy>, CalibrationProcessorError, never> =>
+  Effect.gen(function* () {
+    const policies: Array<FileSizePolicy> = []
+    for (const file of files) {
+      const input = defaultSizePolicyForFile(file, config, calibration)
+      const result = Option.isNone(calibration)
+        ? { value: input, decisions: [] }
+        : yield* calibration.value.runSlot("typescript.size-policy", input)
+      policies.push({ file, policy: result.value, decisions: result.decisions })
+    }
+    return policies
+  })
+
+const defaultSizePolicyForFunction = (
+  candidate: FunctionSizeCandidate,
+  config: TsLd02Config,
+  calibration: Option.Option<ResolvedCalibrationContext>,
+): TypeScriptSizePolicyValue => ({
+  signalId: "TS-LD-02-function-size-distribution",
+  findingId: sizeFindingId("function", candidate.file, candidate.line),
+  file: candidate.file,
+  kind: "function",
+  name: candidate.name,
+  line: candidate.line,
+  loc: candidate.loc,
+  defaultMaxLoc: config.max_function_loc,
+  maxLoc: config.max_function_loc,
+  visible: true,
+  severity: "warn",
+  penaltyWeight: 1,
+  factorPathPrefix: sizeFactorPathPrefix("function", candidate.file, calibration, candidate.line),
+})
+
+const defaultSizePolicyForFile = (
+  file: FileSize,
+  config: TsLd02Config,
+  calibration: Option.Option<ResolvedCalibrationContext>,
+): TypeScriptSizePolicyValue => ({
+  signalId: "TS-LD-02-function-size-distribution",
+  findingId: sizeFindingId("file", file.file),
+  file: file.file,
+  kind: "file",
+  loc: file.loc,
+  defaultMaxLoc: config.max_file_loc,
+  maxLoc: config.max_file_loc,
+  visible: true,
+  severity: "warn",
+  penaltyWeight: 1,
+  factorPathPrefix: sizeFactorPathPrefix("file", file.file, calibration),
+})
+
+const sizeFindingId = (kind: "function" | "file", file: string, line?: number): string =>
+  `${kind}:${file}${line === undefined ? "" : `:${line}`}`
+
+const sizeFactorPathPrefix = (
+  kind: "function" | "file",
+  file: string,
+  calibration: Option.Option<ResolvedCalibrationContext>,
+  line?: number,
+): string => {
+  const root = Option.isSome(calibration) ? calibration.value.repoFacts.repoRoot : ""
+  const relativeFile = relativeFactorPath(file, root)
+  return `size.${kind}.${factorPathSegment(relativeFile)}${line === undefined ? "" : `.${line}`}`
+}
+
+const isSizePolicyActive = (policy: TypeScriptSizePolicyValue): boolean =>
+  policy.visible && policy.penaltyWeight > 0
+
+const topFunctionPolicies = (
+  policies: ReadonlyArray<FunctionSizePolicy>,
+  limit: number,
+): ReadonlyArray<FunctionSizePolicy> =>
+  policies
+    .slice()
+    .sort((a, b) => b.candidate.loc - a.candidate.loc)
+    .slice(0, limit)
+
+const topFilePolicies = (
+  policies: ReadonlyArray<FileSizePolicy>,
+  limit: number,
+): ReadonlyArray<FileSizePolicy> =>
+  policies
+    .slice()
+    .sort((a, b) => b.file.loc - a.file.loc)
+    .slice(0, limit)
+
+const withFunctionSizePolicy = (
+  candidate: FunctionSizeCandidate,
+  policy: TypeScriptSizePolicyValue,
+): FunctionSizeCandidate => ({
+  ...candidate,
+  threshold: policy.maxLoc,
+  policy: policyMetadata(policy),
+})
+
+const withFileSizePolicy = (
+  file: FileSize,
+  policy: TypeScriptSizePolicyValue,
+): FileSize => ({
+  ...file,
+  threshold: policy.maxLoc,
+  policy: policyMetadata(policy),
+})
+
+const policyMetadata = (
+  policy: TypeScriptSizePolicyValue,
+): NonNullable<FunctionSize["policy"]> => ({
+  visible: policy.visible,
+  severity: policy.severity,
+  penaltyWeight: policy.penaltyWeight,
+  ...(policy.metadata !== undefined ? { metadata: policy.metadata } : {}),
+})
+
+const calibratedRatioPressure = (
+  collected: CollectedSizes,
+  functionPolicies: ReadonlyArray<FunctionSizePolicy>,
+  filePolicies: ReadonlyArray<FileSizePolicy>,
+): number => {
+  const totalEntities = collected.allFunctions.length + collected.allFiles.length
+  if (totalEntities === 0) return 0
+  const weightedOutliers =
+    functionPolicies.reduce((sum, entry) => sum + entry.policy.penaltyWeight, 0) +
+    filePolicies.reduce((sum, entry) => sum + entry.policy.penaltyWeight, 0)
+  return Math.min(1, (weightedOutliers / totalEntities) * 2)
+}
+
+const maxCalibratedPressure = (
+  policies: ReadonlyArray<FunctionSizePolicy | FileSizePolicy>,
+): number =>
+  policies.reduce((max, entry) => {
+    const loc = "candidate" in entry ? entry.candidate.loc : entry.file.loc
+    const policy = entry.policy
+    if (!isSizePolicyActive(policy)) return max
+    return Math.max(
+      max,
+      Math.min(1, maxThresholdPressure(loc, policy.maxLoc) * policy.penaltyWeight),
+    )
+  }, 0)
+
 const calibrateFunctionNames = (
   candidates: ReadonlyArray<FunctionSizeCandidate>,
   calibration: Option.Option<ResolvedCalibrationContext>,
@@ -200,6 +442,8 @@ const calibrateFunctionNames = (
         line: candidate.line,
         loc: candidate.loc,
         name: result.value.resolvedName,
+        ...(candidate.threshold !== undefined ? { threshold: candidate.threshold } : {}),
+        ...(candidate.policy !== undefined ? { policy: candidate.policy } : {}),
       })
     }
 
@@ -213,4 +457,6 @@ const stripFunctionNameCalibration = (
   name: candidate.name,
   line: candidate.line,
   loc: candidate.loc,
+  ...(candidate.threshold !== undefined ? { threshold: candidate.threshold } : {}),
+  ...(candidate.policy !== undefined ? { policy: candidate.policy } : {}),
 })

@@ -10,6 +10,7 @@ import {
   type TsLd02Output,
 } from "../signals/ts-ld-02-model.js"
 import { TsProjectLayer } from "../ts-project.js"
+import { makePulsarSelfCalibrationContext } from "./pulsar-self-calibration.js"
 
 let repo: string
 
@@ -23,6 +24,21 @@ const writeTs = async (relPath: string, content: string): Promise<string> => {
 const runCompute = async (config = TsLd02.defaultConfig): Promise<TsLd02Output> => {
   const program = TsLd02.compute(config, new Map()).pipe(
     Effect.provide(TsProjectLayer(repo)),
+  )
+  return Effect.runPromise(program as Effect.Effect<TsLd02Output, unknown, never>)
+}
+
+const runComputeWithCalibration = async (
+  calibration: ReturnType<typeof makeResolvedCalibrationContext>,
+  config = TsLd02.defaultConfig,
+): Promise<TsLd02Output> => {
+  const program = TsLd02.compute(config, new Map()).pipe(
+    Effect.provide(
+      Layer.mergeAll(
+        TsProjectLayer(repo),
+        Layer.succeed(CalibrationContextTag, calibration),
+      ),
+    ),
   )
   return Effect.runPromise(program as Effect.Effect<TsLd02Output, unknown, never>)
 }
@@ -130,6 +146,142 @@ describe("TS-LD-02 (function / file size distribution)", () => {
     expect(out.maxFunctionPressure).toBeGreaterThan(out.ratioPressure)
     expect(out.maxFilePressure).toBeGreaterThan(out.ratioPressure)
     expect(TsLd02.score(out)).toBeLessThan(0.4)
+  })
+
+  test("size policy calibration can relax integration-size pressure with provenance", async () => {
+    for (let i = 0; i < 20; i += 1) {
+      await writeTs(`small-${i}.ts`, `export function small${i}() { return ${i} }\n`)
+    }
+    await writeTs(
+      "integration.ts",
+      [
+        "export function orchestrate() {",
+        ...Array.from({ length: 40 }, (_, index) => `  const value${index} = ${index}`),
+        "  return 1",
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const processor = defineCalibrationProcessor({
+      id: "integration-size",
+      moduleId: "acme.project",
+      moduleVersion: "1.0.0",
+      slot: "typescript.size-policy",
+      role: "factor-policy",
+      priority: 10,
+      fingerprint: "integration-size-v1",
+      process: (current) =>
+        Effect.sync(() => {
+          if (!current.value.file.endsWith("integration.ts")) return current
+          return appendCalibrationDecision(
+            current,
+            {
+              moduleId: "acme.project",
+              processorId: "integration-size",
+              slot: "typescript.size-policy",
+              action: "tune-size-policy",
+              confidence: "high",
+              reason: "Integration file keeps orchestration local",
+              ruleId: "acme.integration-size.v1",
+              factorPaths: [
+                `${current.value.factorPathPrefix}.penalty_weight`,
+                `${current.value.factorPathPrefix}.max_loc`,
+              ],
+              before: current.value,
+              after: {
+                ...current.value,
+                penaltyWeight: 0,
+                maxLoc: 1_000,
+                severity: "info",
+              },
+              evidence: [{ kind: "path", value: current.value.file }],
+            },
+            {
+              ...current.value,
+              penaltyWeight: 0,
+              maxLoc: 1_000,
+              severity: "info",
+            },
+          )
+        }),
+    })
+    const calibrationContext = makeResolvedCalibrationContext({
+      repoFacts: {
+        repoRoot: repo,
+        fingerprint: "repo-facts-v1",
+        detectedTechnologies: ["typescript"],
+        sourceExtensions: [".ts"],
+      },
+      processors: [processor],
+    })
+
+    const baseline = await runCompute({
+      ...TsLd02.defaultConfig,
+      max_function_loc: 10,
+      max_file_loc: 12,
+    })
+    const calibrated = await runComputeWithCalibration(calibrationContext, {
+      ...TsLd02.defaultConfig,
+      max_function_loc: 10,
+      max_file_loc: 12,
+    })
+
+    expect(TsLd02.score(baseline)).toBeLessThan(1)
+    expect(TsLd02.score(calibrated)).toBe(1)
+    expect(calibrated.calibrationDecisions[0]).toMatchObject({
+      moduleId: "acme.project",
+      processorId: "integration-size",
+      ruleId: "acme.integration-size.v1",
+    })
+    expect(calibrated.calibrationDecisions[0]?.factorPaths?.some((path) =>
+      path.includes(".penalty_weight"),
+    )).toBe(true)
+  })
+
+  test("pulsar-self tier classifier drives integration size policy", async () => {
+    for (let i = 0; i < 20; i += 1) {
+      await writeTs(`small-${i}.ts`, `export function small${i}() { return ${i} }\n`)
+    }
+    const integrationFile = await writeTs(
+      "packages/ts-pack/src/signals/ts-ld-02-integration-story.ts",
+      [
+        "export function orchestrateSizeStory() {",
+        ...Array.from({ length: 40 }, (_, index) => `  const value${index} = ${index}`),
+        "  return 1",
+        "}",
+        "",
+      ].join("\n"),
+    )
+    const calibrationContext = await makePulsarSelfCalibrationContext(repo)
+
+    const classification = await Effect.runPromise(
+      calibrationContext.runSlot("taxonomy.file-classifier", {
+        path: integrationFile,
+        categories: [],
+      }),
+    )
+    const baseline = await runCompute({
+      ...TsLd02.defaultConfig,
+      max_function_loc: 10,
+      max_file_loc: 12,
+    })
+    const calibrated = await runComputeWithCalibration(calibrationContext, {
+      ...TsLd02.defaultConfig,
+      max_function_loc: 10,
+      max_file_loc: 12,
+    })
+
+    expect(classification.value.metadata?.architectural_tier).toBe("integration")
+    expect(TsLd02.score(baseline)).toBeLessThan(1)
+    expect(TsLd02.score(calibrated)).toBe(1)
+    expect(calibrated.calibrationDecisions).toContainEqual(
+      expect.objectContaining({
+        moduleId: "pulsar-self",
+        processorId: "integration-size-policy",
+        ruleId: "pulsar.integration-size-policy.v1",
+      }),
+    )
   })
 
   test("functions above the raw threshold but below p95 + threshold are not outliers", async () => {

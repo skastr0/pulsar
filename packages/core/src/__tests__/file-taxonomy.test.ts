@@ -5,7 +5,9 @@ import {
   appendCalibrationDecision,
   defineCalibrationProcessor,
   makeResolvedCalibrationContext,
+  readArchitecturalTier,
   type RepoFacts,
+  withArchitecturalTierMetadata,
 } from "../calibration.js"
 import {
   classifyFilePath,
@@ -116,5 +118,17 @@ describe("file taxonomy", () => {
     expect(classified.value.categories).toEqual(["generated", "production_source"])
     expect(classified.decisions[0]?.processorId).toBe("scratch-taxonomy")
     expect(isProduction).toBe(false)
+  })
+
+  test("architectural tier metadata helpers preserve canonical tier values", () => {
+    const classified = withArchitecturalTierMetadata(
+      { path: "src/adapter.ts", categories: ["production_source"] as const },
+      "integration",
+      { source: "test" },
+    )
+
+    expect(readArchitecturalTier(classified.metadata)).toBe("integration")
+    expect(classified.metadata?.source).toBe("test")
+    expect(readArchitecturalTier({ architectural_tier: "not-a-tier" })).toBeUndefined()
   })
 })

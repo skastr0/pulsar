@@ -1,16 +1,29 @@
 import { SignalContextTag, SignalComputeError } from "@skastr0/pulsar-core/signal"
 import type { Diagnostic, Signal } from "@skastr0/pulsar-core/signal"
-import { Effect } from "effect"
+import {
+  factorPathSegment,
+  relativeFactorPath,
+} from "@skastr0/pulsar-core/factors"
+import {
+  CalibrationContextTag,
+  type CalibrationDecision,
+  type ResolvedCalibrationContext,
+  type TypeScriptCloneGroupPolicyValue,
+} from "@skastr0/pulsar-core/calibration"
+import { Effect, Option } from "effect"
 import { TsProjectTag } from "../ts-project.js"
 import { computeTsSl01Output } from "./ts-sl-01-compute.js"
 import {
+  type CloneGroup,
   TsSl01Config,
   type TsSl01Output,
 } from "./ts-sl-01-model.js"
 import {
   cloneGroupImpact,
+  cloneGroupRepresentative,
   cloneGroupSeverity,
   cloneMemberSummary,
+  sortCloneMembers,
 } from "./ts-sl-01-policy.js"
 
 export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalContextTag> = {
@@ -96,11 +109,21 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
     Effect.gen(function* () {
       const project = yield* TsProjectTag
       const context = yield* SignalContextTag
-      return yield* Effect.try({
+      const calibration = yield* Effect.serviceOption(CalibrationContextTag)
+      const output = yield* Effect.try({
         try: () => computeTsSl01Output(project, context, config),
         catch: (cause) =>
           new SignalComputeError({ signalId: "TS-SL-01-duplication", message: String(cause), cause }),
       })
+      return yield* calibrateCloneOutput(output, calibration).pipe(
+        Effect.mapError((cause) =>
+          new SignalComputeError({
+            signalId: "TS-SL-01-duplication",
+            message: String(cause),
+            cause,
+          }),
+        ),
+      )
     }),
   score: (out) => {
     const minTokens = out.detectionMinTokens ?? TsSl01.defaultConfig.min_tokens
@@ -130,8 +153,8 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
         `${group.kind} clone group with ${group.members.length} members (${group.tokenCount} tokens): ` +
         cloneMemberSummary(group.members),
       location: {
-        file: group.members[0]?.file ?? "unknown",
-        line: group.members[0]?.startLine,
+        file: cloneGroupRepresentative(group)?.file ?? "unknown",
+        line: cloneGroupRepresentative(group)?.startLine,
       },
       data: {
         groupId: group.groupId,
@@ -142,3 +165,67 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
       },
     })),
 }
+
+const calibrateCloneOutput = (
+  output: TsSl01Output,
+  calibration: Option.Option<ResolvedCalibrationContext>,
+) =>
+  Effect.gen(function* () {
+    if (Option.isNone(calibration)) return output
+
+    const groups: Array<CloneGroup> = []
+    const decisions: Array<CalibrationDecision> = []
+    for (const group of output.groups) {
+      const result = yield* calibration.value.runSlot(
+        "typescript.clone-group-policy",
+        defaultCloneGroupPolicy(group, output, calibration.value),
+      )
+      decisions.push(...result.decisions)
+      groups.push(withCloneGroupPolicy(group, result.value))
+    }
+
+    return {
+      ...output,
+      groups,
+      calibrationDecisions: decisions,
+    }
+  })
+
+const defaultCloneGroupPolicy = (
+  group: CloneGroup,
+  output: TsSl01Output,
+  calibration: ResolvedCalibrationContext,
+): TypeScriptCloneGroupPolicyValue => ({
+  groupId: group.groupId,
+  action: "keep",
+  factor: 1,
+  visible: true,
+  severity: cloneGroupSeverity(
+    group,
+    output.scopeMode,
+    output.detectionMinTokens ?? TsSl01.defaultConfig.min_tokens,
+  ),
+  penaltyWeight: 1,
+  factorPathPrefix: `clones.${factorPathSegment(group.kind)}.${factorPathSegment(group.structuralHash)}.${factorPathSegment(
+    relativeFactorPath(cloneGroupRepresentative(group)?.file ?? "unknown", calibration.repoFacts.repoRoot),
+  )}`,
+  members: sortCloneMembers(group.members),
+  kind: group.kind,
+  tokenCount: group.tokenCount,
+})
+
+const withCloneGroupPolicy = (
+  group: CloneGroup,
+  policy: TypeScriptCloneGroupPolicyValue,
+): CloneGroup => ({
+  ...group,
+  members: sortCloneMembers(group.members),
+  policy: {
+    action: policy.action,
+    factor: policy.factor,
+    visible: policy.visible,
+    severity: policy.severity,
+    penaltyWeight: policy.penaltyWeight,
+    ...(policy.metadata !== undefined ? { metadata: policy.metadata } : {}),
+  },
+})

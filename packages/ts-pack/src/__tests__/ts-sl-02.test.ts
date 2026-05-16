@@ -160,6 +160,67 @@ describe("TS-SL-02 Inconsistent clone detection", () => {
     expect(TsSl02.score(out)).toBe(1)
   })
 
+  test("ignores clone groups excluded by TS-SL-01 policy", async () => {
+    const cloneGroups = [
+      {
+        groupId: "excluded-integration",
+        kind: "structural" as const,
+        tokenCount: 60,
+        members: [
+          { file: join(repo, "handler-a.ts"), name: "handleA", startLine: 1, endLine: 3 },
+          { file: join(repo, "handler-b.ts"), name: "handleB", startLine: 1, endLine: 3 },
+        ],
+        structuralHash: "hash123",
+        policy: {
+          action: "exclude" as const,
+          factor: 0,
+          visible: true,
+          severity: "info" as const,
+          penaltyWeight: 0,
+        },
+      },
+    ]
+
+    const inputs = new Map<string, unknown>([
+      [
+        "TS-SL-01",
+        {
+          groups: cloneGroups,
+          totalFunctionsAnalyzed: 2,
+          scoreBudgetFunctions: 2,
+          scopeMode: "whole-tree",
+        } as TsSl01Output,
+      ],
+    ])
+
+    makeCommitMany(
+      repo,
+      [
+        { path: "handler-a.ts", content: "export function handleA() {\n  return 1\n}\n" },
+        { path: "handler-b.ts", content: "export function handleB() {\n  return 2\n}\n" },
+      ],
+      "2024-06-01T00:00:00Z",
+    )
+
+    const out = await Effect.runPromise(
+      TsSl02.compute(TsSl02.defaultConfig, inputs).pipe(
+        Effect.provide(
+          Layer.succeed(SignalContextTag, {
+            gitSha: "HEAD",
+            worktreePath: repo,
+            changedHunks: [],
+          }),
+        ),
+      ),
+    )
+
+    expect(out.totalGroups).toBe(0)
+    expect(out.candidateGroups).toBe(0)
+    expect(out.analyzedGroups).toBe(0)
+    expect(out.divergentGroups).toEqual([])
+    expect(TsSl02.score(out)).toBe(1)
+  })
+
   test("does not treat exact clones with different blame history as inconsistent clones", async () => {
     const cloneGroups = [
       {

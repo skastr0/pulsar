@@ -9,6 +9,8 @@ export const CALIBRATION_SLOT_IDS = [
   "language-pack-activation",
   "typescript.noop-classifier",
   "typescript.clone-group-policy",
+  "typescript.size-policy",
+  "typescript.nesting-policy",
   "typescript.dependency-resolver",
   "typescript.suppression-justifier",
   "typescript.callback-context-namer",
@@ -178,6 +180,8 @@ export type AnyCalibrationProcessor =
   | CalibrationProcessor<"language-pack-activation">
   | CalibrationProcessor<"typescript.noop-classifier">
   | CalibrationProcessor<"typescript.clone-group-policy">
+  | CalibrationProcessor<"typescript.size-policy">
+  | CalibrationProcessor<"typescript.nesting-policy">
   | CalibrationProcessor<"typescript.dependency-resolver">
   | CalibrationProcessor<"typescript.suppression-justifier">
   | CalibrationProcessor<"typescript.callback-context-namer">

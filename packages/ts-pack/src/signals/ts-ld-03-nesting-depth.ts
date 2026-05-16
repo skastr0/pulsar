@@ -1,6 +1,16 @@
 import { SignalComputeError, scoreThresholdViolationShare, summarize } from "@skastr0/pulsar-core/signal"
 import type { Diagnostic, DistributionalSummary, Signal } from "@skastr0/pulsar-core/signal"
-import { Effect, Schema } from "effect"
+import {
+  factorPathSegment,
+  relativeFactorPath,
+} from "@skastr0/pulsar-core/factors"
+import {
+  CalibrationContextTag,
+  type CalibrationDecision,
+  type ResolvedCalibrationContext,
+  type TypeScriptNestingPolicyValue,
+} from "@skastr0/pulsar-core/calibration"
+import { Effect, Option, Schema } from "effect"
 import {
   type SourceFile,
   ts,
@@ -32,6 +42,11 @@ interface FunctionNesting {
   readonly name: string
   readonly line: number
   readonly maxNesting: number
+  readonly threshold?: number
+  readonly policy?: Pick<
+    TypeScriptNestingPolicyValue,
+    "visible" | "severity" | "penaltyWeight" | "metadata"
+  >
 }
 
 interface TsLd03Output {
@@ -41,6 +56,7 @@ interface TsLd03Output {
   readonly threshold: number
   readonly totalFunctions: number
   readonly diagnosticLimit: number
+  readonly calibrationDecisions: ReadonlyArray<CalibrationDecision>
 }
 
 export const TsLd03: Signal<TsLd03Config, TsLd03Output, TsProjectTag> = {
@@ -103,6 +119,7 @@ export const TsLd03: Signal<TsLd03Config, TsLd03Output, TsProjectTag> = {
   compute: (config) =>
     Effect.gen(function* () {
       const project = yield* TsProjectTag
+      const calibration = yield* Effect.serviceOption(CalibrationContextTag)
       const result = yield* Effect.try({
         try: (): TsLd03Output => {
           const byFunction: Array<FunctionNesting> = []
@@ -133,6 +150,7 @@ export const TsLd03: Signal<TsLd03Config, TsLd03Output, TsProjectTag> = {
             threshold: config.max_nesting,
             totalFunctions: sorted.length,
             diagnosticLimit: config.top_n_diagnostics,
+            calibrationDecisions: [],
           }
         },
         catch: (cause) =>
@@ -142,22 +160,101 @@ export const TsLd03: Signal<TsLd03Config, TsLd03Output, TsProjectTag> = {
             cause,
           }),
       })
-      return result
-    }),
+      return yield* calibrateNestingOutput(result, config, calibration).pipe(
+        Effect.mapError((cause) =>
+          new SignalComputeError({
+            signalId: "TS-LD-03-nesting-depth",
+            message: String(cause),
+            cause,
+          }),
+        ),
+      )
+  }),
   score: (out) => {
-    return scoreThresholdViolationShare(out.totalFunctions, out.overThreshold.length)
+    return scoreThresholdViolationShare(out.totalFunctions, weightedNestingViolationCount(out))
   },
   diagnose: (out): ReadonlyArray<Diagnostic> =>
     out.overThreshold.slice(0, out.diagnosticLimit).map((entry) => ({
-      severity: "warn" as const,
+      severity: entry.policy?.severity ?? "warn",
       message: `Function nesting depth \`${entry.name}\` reaches ${entry.maxNesting}`,
       location: { file: entry.file, line: entry.line },
       data: {
         ...entry,
-        threshold: out.threshold,
+        threshold: entry.threshold ?? out.threshold,
       },
     })),
 }
+
+const calibrateNestingOutput = (
+  output: TsLd03Output,
+  config: TsLd03Config,
+  calibration: Option.Option<ResolvedCalibrationContext>,
+) =>
+  Effect.gen(function* () {
+    if (Option.isNone(calibration)) return output
+
+    const byFunction: Array<FunctionNesting> = []
+    const decisions: Array<CalibrationDecision> = []
+    for (const entry of output.byFunction) {
+      const result = yield* calibration.value.runSlot(
+        "typescript.nesting-policy",
+        defaultNestingPolicy(entry, config, calibration.value),
+      )
+      decisions.push(...result.decisions)
+      byFunction.push(withNestingPolicy(entry, result.value))
+    }
+
+    const sorted = byFunction.slice().sort(compareNesting)
+    return {
+      ...output,
+      byFunction: sorted,
+      overThreshold: sorted.filter((entry) =>
+        entry.policy?.visible !== false &&
+        (entry.policy?.penaltyWeight ?? 1) > 0 &&
+        entry.maxNesting > (entry.threshold ?? output.threshold),
+      ),
+      calibrationDecisions: decisions,
+    }
+  })
+
+const defaultNestingPolicy = (
+  entry: FunctionNesting,
+  config: TsLd03Config,
+  calibration: ResolvedCalibrationContext,
+): TypeScriptNestingPolicyValue => ({
+  signalId: "TS-LD-03-nesting-depth",
+  findingId: `nesting:${entry.file}:${entry.line}`,
+  file: entry.file,
+  name: entry.name,
+  line: entry.line,
+  observedNesting: entry.maxNesting,
+  defaultThreshold: config.max_nesting,
+  threshold: config.max_nesting,
+  visible: true,
+  severity: "warn",
+  penaltyWeight: 1,
+  factorPathPrefix: `nesting.${factorPathSegment(relativeFactorPath(entry.file, calibration.repoFacts.repoRoot))}.${entry.line}`,
+})
+
+const weightedNestingViolationCount = (out: TsLd03Output): number =>
+  out.overThreshold.reduce(
+    (sum, entry) => sum + Math.max(0, entry.policy?.penaltyWeight ?? 1),
+    0,
+  )
+
+const withNestingPolicy = (
+  entry: FunctionNesting,
+  policy: TypeScriptNestingPolicyValue,
+): FunctionNesting => ({
+  ...entry,
+  threshold: policy.threshold,
+  policy: {
+    visible: policy.visible,
+    severity: policy.severity,
+    penaltyWeight: policy.penaltyWeight,
+    ...(policy.metadata !== undefined ? { metadata: policy.metadata } : {}),
+  },
+})
 
 const collectFunctionNestings = (sourceFile: SourceFile): ReadonlyArray<FunctionNesting> => {
   const compilerSourceFile = sourceFile.compilerNode

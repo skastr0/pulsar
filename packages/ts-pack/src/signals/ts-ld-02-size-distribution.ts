@@ -102,6 +102,8 @@ export const TsLd02: Signal<TsLd02ConfigType, TsLd02Output, TsProjectTag> = {
       const thresholds = summarizeThresholds(collected, config)
       const calibratedFunctions = yield* calibrateThresholdFunctions(
         thresholds,
+        collected,
+        config,
         calibration,
       ).pipe(Effect.mapError(toSignalComputeError))
       return buildTsLd02Output(collected, thresholds, calibratedFunctions)

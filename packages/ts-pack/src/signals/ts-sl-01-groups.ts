@@ -2,7 +2,7 @@ import { getFunctionName } from "./shared-function-index.js"
 import { isExactCloneEligible, isStructuralCloneEligible } from "./ts-sl-01-eligibility.js"
 import { countExactTokens } from "./ts-sl-01-hash.js"
 import type { CloneCandidate, CloneGroup, CloneGroupMember, TsSl01Config, TsSl01Output } from "./ts-sl-01-model.js"
-import { cloneGroupImpact } from "./ts-sl-01-policy.js"
+import { cloneGroupImpact, sortCloneMembers } from "./ts-sl-01-policy.js"
 
 export const buildCloneGroups = (
   functions: ReadonlyArray<CloneCandidate>,
@@ -32,7 +32,7 @@ const toCloneGroup = (
   groupId,
   kind,
   tokenCount: group.tokenCount,
-  members: group.members.map((member) => member.member),
+  members: sortCloneMembers(group.members.map((member) => member.member)),
   structuralHash: group.hash,
 })
 

@@ -1,4 +1,5 @@
 import type {
+  ArchitecturalTier,
   CalibrationDecision,
   CalibrationEvidenceRef,
   CalibrationSlotOutput,
@@ -10,11 +11,24 @@ import type {
   TypeScriptUnfinishedImplementationPolicyValue,
 } from "@skastr0/pulsar-core/calibration"
 import {
+  readArchitecturalTier,
+  withArchitecturalTierMetadata,
+} from "@skastr0/pulsar-core/calibration"
+import {
   appendProjectModuleDecision,
   type ProjectModuleProcessorRuntime,
 } from "./definition.js"
 
 export interface AddSourceCategoryOptions {
+  readonly action?: string
+  readonly confidence?: CalibrationDecision["confidence"]
+  readonly reason: string
+  readonly ruleId?: string
+  readonly evidence?: ReadonlyArray<CalibrationEvidenceRef>
+  readonly metadata?: Readonly<Record<string, unknown>>
+}
+
+export interface ClassifyArchitecturalTierOptions {
   readonly action?: string
   readonly confidence?: CalibrationDecision["confidence"]
   readonly reason: string
@@ -102,6 +116,30 @@ export const addSourceCategory = (
       categories: [...new Set([...current.value.categories, category])].sort(),
       ...(metadata !== undefined ? { metadata } : {}),
     },
+  )
+}
+
+export const classifyArchitecturalTier = (
+  current: CalibrationSlotOutput<"taxonomy.file-classifier">,
+  runtime: ProjectModuleProcessorRuntime<"taxonomy.file-classifier">,
+  tier: ArchitecturalTier,
+  options: ClassifyArchitecturalTierOptions,
+): CalibrationSlotOutput<"taxonomy.file-classifier"> => {
+  const existingTier = readArchitecturalTier(current.value.metadata)
+  const metadata = mergeMetadata(current.value.metadata, options.metadata)
+  return appendProjectModuleDecision(
+    current,
+    runtime,
+    {
+      action: options.action ?? "classify-architectural-tier",
+      confidence: options.confidence ?? "high",
+      reason: options.reason,
+      ...(options.ruleId !== undefined ? { ruleId: options.ruleId } : {}),
+      ...(options.evidence !== undefined ? { evidence: options.evidence } : {}),
+      before: existingTier,
+      after: tier,
+    },
+    withArchitecturalTierMetadata(current.value, tier, metadata),
   )
 }
 

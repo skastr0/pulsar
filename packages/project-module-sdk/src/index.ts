@@ -24,12 +24,14 @@ export {
 
 export {
   addSourceCategory,
+  classifyArchitecturalTier,
   classifyTypeScriptNoop,
   markTypeScriptExportPublicEntrypoint,
   nameTypeScriptCallbackContext,
   tuneTypeScriptUnsafeType,
   tuneTypeScriptUnfinishedImplementation,
   type AddSourceCategoryOptions,
+  type ClassifyArchitecturalTierOptions,
   type ClassifyTypeScriptNoopOptions,
   type MarkTypeScriptPublicEntrypointOptions,
   type NameTypeScriptCallbackContextOptions,
@@ -39,9 +41,15 @@ export {
 
 export {
   tuneFactorPolicy,
+  tuneTypeScriptCloneGroup,
   tuneTypeScriptDependencyVersion,
+  tuneTypeScriptNesting,
+  tuneTypeScriptSize,
   tuneTypeScriptTypeCoupling,
   type TuneFactorPolicyOptions,
+  type TuneTypeScriptCloneGroupOptions,
+  type TuneTypeScriptNestingOptions,
+  type TuneTypeScriptSizeOptions,
 } from "./factor-policy-helper.js"
 
 export {
@@ -51,9 +59,14 @@ export {
 export type { ProjectModuleLoadOptions } from "./loader-types.js"
 
 export {
+  ARCHITECTURAL_TIER_METADATA_KEY,
+  isArchitecturalTier,
+  readArchitecturalTier,
+  withArchitecturalTierMetadata,
   fingerprintProjectModule,
   makeResolvedCalibrationContext,
   type ActiveProjectModule,
+  type ArchitecturalTier,
   type AnyCalibrationProcessor,
   type CalibrationConfidence,
   type CalibrationDecision,
@@ -71,6 +84,7 @@ export {
   type SourceCategory,
   type TypeScriptCallbackContextNameValue,
   type TypeScriptCallExpressionFact,
+  type TypeScriptCloneGroupPolicyValue,
   type TypeScriptDependencyVersionPolicyValue,
   type TypeScriptExportDeclarationFact,
   type TypeScriptExportReachabilityValue,
@@ -78,6 +92,8 @@ export {
   type TypeScriptImportBindingFact,
   type TypeScriptLocalBindingFact,
   type TypeScriptNoopClassificationValue,
+  type TypeScriptNestingPolicyValue,
+  type TypeScriptSizePolicyValue,
   type TypeScriptTypeCouplingPolicyValue,
   type TypeScriptUnsafeTypePolicyValue,
   type TypeScriptUnfinishedImplementationPolicyValue,

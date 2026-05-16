@@ -2,6 +2,8 @@ import { SignalContextTag, SignalComputeError } from "@skastr0/pulsar-core/signa
 import type { Diagnostic, Signal, SignalFactorLedger } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
 import type { TsSl01Output, CloneGroup } from "./ts-sl-01-model.js"
+import { DEFAULT_SCORE_BUDGET_MIN_TOKENS } from "./ts-sl-01-model.js"
+import { cloneGroupImpact } from "./ts-sl-01-policy.js"
 import {
   ACTIONABLE_DIVERGENCE_THRESHOLD,
   cloneMemberSummary,
@@ -115,7 +117,7 @@ export const TsSl02: Signal<TsSl02Config, TsSl02Output, SignalContextTag> = {
         try: async (): Promise<TsSl02Output> => {
           return analyzeInconsistentClones(
             config,
-            tsSl01Output,
+            effectiveCloneOutput(tsSl01Output),
             context.worktreePath,
             context.gitSha,
           )
@@ -155,6 +157,17 @@ export const TsSl02: Signal<TsSl02Config, TsSl02Output, SignalContextTag> = {
   ],
   factorLedger: tsSl02FactorLedger,
 }
+
+const effectiveCloneOutput = (output: TsSl01Output): TsSl01Output => ({
+  ...output,
+  groups: output.groups.filter((group) =>
+    cloneGroupImpact(
+      group,
+      output.scopeMode,
+      output.detectionMinTokens ?? DEFAULT_SCORE_BUDGET_MIN_TOKENS,
+    ) > 0,
+  ),
+})
 
 const analysisLimitScoreCap = (out: TsSl02Output): number =>
   out.analysisLimitHit ? out.analysisLimitScoreCap ?? 0.95 : 1

@@ -1,5 +1,9 @@
 import type { DistributionalSummary } from "@skastr0/pulsar-core/signal"
-import type { CalibrationDecision, TypeScriptCallbackContextNameValue } from "@skastr0/pulsar-core/calibration"
+import type {
+  CalibrationDecision,
+  TypeScriptCallbackContextNameValue,
+  TypeScriptSizePolicyValue,
+} from "@skastr0/pulsar-core/calibration"
 import { Schema } from "effect"
 
 export const TsLd02Config = Schema.Struct({
@@ -15,6 +19,11 @@ export interface FunctionSize {
   readonly name: string
   readonly line: number
   readonly loc: number
+  readonly threshold?: number
+  readonly policy?: Pick<
+    TypeScriptSizePolicyValue,
+    "visible" | "severity" | "penaltyWeight" | "metadata"
+  >
 }
 
 export type FunctionNameCalibrationInput = Omit<
@@ -29,6 +38,11 @@ export type FunctionSizeCandidate = FunctionSize & {
 export interface FileSize {
   readonly file: string
   readonly loc: number
+  readonly threshold?: number
+  readonly policy?: Pick<
+    TypeScriptSizePolicyValue,
+    "visible" | "severity" | "penaltyWeight" | "metadata"
+  >
 }
 
 export interface TsLd02Output {
@@ -92,6 +106,21 @@ export interface ThresholdSummary {
 export interface CalibratedThresholdFunctions {
   readonly outlierFunctions: ReadonlyArray<FunctionSize>
   readonly oversizedFunctions: ReadonlyArray<FunctionSize>
+  readonly calibrationDecisions: ReadonlyArray<CalibrationDecision>
+}
+
+export interface CalibratedThresholdSizes {
+  readonly outlierFunctions: ReadonlyArray<FunctionSize>
+  readonly outlierFiles: ReadonlyArray<FileSize>
+  readonly oversizedFunctions: ReadonlyArray<FunctionSize>
+  readonly oversizedFiles: ReadonlyArray<FileSize>
+  readonly outlierFunctionCount: number
+  readonly outlierFileCount: number
+  readonly oversizedFunctionCount: number
+  readonly oversizedFileCount: number
+  readonly ratioPressure: number
+  readonly maxFunctionPressure: number
+  readonly maxFilePressure: number
   readonly calibrationDecisions: ReadonlyArray<CalibrationDecision>
 }
 

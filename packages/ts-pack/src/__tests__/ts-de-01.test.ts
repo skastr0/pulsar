@@ -13,6 +13,7 @@ import {
 import { TsDe01 } from "../signals/ts-de-01-type-level-coupling.js"
 import type { TsDe01Output } from "../signals/ts-de-01-coupling-output.js"
 import { TsProjectLayer } from "../ts-project.js"
+import { makePulsarSelfCalibrationContext } from "./pulsar-self-calibration.js"
 
 let repo: string
 
@@ -244,6 +245,47 @@ describe("TS-DE-01 (type-level coupling)", () => {
         source: "module",
       }),
     )
+  })
+
+  test("pulsar-self tier classifier drives integration type-coupling policy", async () => {
+    for (const file of ["a", "b", "c", "d", "e"]) {
+      await writeTs(`packages/ts-pack/src/signals/${file}.ts`, `export interface ${file.toUpperCase()} {}\n`)
+    }
+    const integrationHub = await writeTs(
+      "packages/ts-pack/src/signals/ts-ld-02-orchestration.ts",
+      [
+        "import type { A } from './a'",
+        "import type { B } from './b'",
+        "import type { C } from './c'",
+        "import type { D } from './d'",
+        "import type { E } from './e'",
+        "export type IntegrationHub = A & B & C & D & E",
+        "",
+      ].join("\n"),
+    )
+    const calibration = await makePulsarSelfCalibrationContext(repo)
+    const classification = await Effect.runPromise(
+      calibration.runSlot("taxonomy.file-classifier", {
+        path: integrationHub,
+        categories: [],
+      }),
+    )
+
+    const out = await runCompute(TsDe01.defaultConfig, calibration)
+    const hubEntry = out.modules.find((module) => module.file === integrationHub)
+
+    expect(classification.value.metadata?.architectural_tier).toBe("integration")
+    expect(hubEntry?.penaltyWeight).toBe(0)
+    expect(hubEntry?.policyDecisions).toContainEqual(
+      expect.objectContaining({
+        moduleId: "pulsar-self",
+        processorId: "integration-type-coupling-policy",
+        ruleId: "pulsar.integration-type-coupling-policy.v1",
+      }),
+    )
+    expect(hubEntry?.policyDecisions?.[0]?.factorPaths?.some((path) =>
+      path.endsWith(".penalty_weight"),
+    )).toBe(true)
   })
 
   test("scores outgoing dependencies rather than incoming model fan-in", async () => {

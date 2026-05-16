@@ -1,3 +1,4 @@
+import type { ArchitecturalTier } from "./architectural-tier.js"
 import type {
   CalibrationConfidence,
   CalibrationEvidenceRef,
@@ -7,7 +8,9 @@ import type {
 export interface FileClassificationValue {
   readonly path: string
   readonly categories: ReadonlyArray<SourceCategory>
-  readonly metadata?: Readonly<Record<string, unknown>>
+  readonly metadata?: Readonly<Record<string, unknown>> & {
+    readonly architectural_tier?: ArchitecturalTier
+  }
 }
 
 export interface LanguagePackActivationValue {
@@ -43,6 +46,51 @@ export interface TypeScriptCloneGroupPolicyValue {
   readonly groupId: string
   readonly action: "keep" | "deweight" | "exclude"
   readonly factor: number
+  readonly visible: boolean
+  readonly severity: "info" | "warn" | "block"
+  readonly penaltyWeight: number
+  readonly factorPathPrefix: string
+  readonly members: ReadonlyArray<{
+    readonly file: string
+    readonly name: string
+    readonly startLine: number
+    readonly endLine: number
+  }>
+  readonly kind: "exact" | "structural"
+  readonly tokenCount: number
+  readonly metadata?: Readonly<Record<string, unknown>>
+}
+
+export interface TypeScriptSizePolicyValue {
+  readonly signalId: string
+  readonly findingId: string
+  readonly file: string
+  readonly kind: "function" | "file"
+  readonly name?: string
+  readonly line?: number
+  readonly loc: number
+  readonly defaultMaxLoc: number
+  readonly maxLoc: number
+  readonly visible: boolean
+  readonly severity: "info" | "warn" | "block"
+  readonly penaltyWeight: number
+  readonly factorPathPrefix: string
+  readonly metadata?: Readonly<Record<string, unknown>>
+}
+
+export interface TypeScriptNestingPolicyValue {
+  readonly signalId: string
+  readonly findingId: string
+  readonly file: string
+  readonly name: string
+  readonly line: number
+  readonly observedNesting: number
+  readonly defaultThreshold: number
+  readonly threshold: number
+  readonly visible: boolean
+  readonly severity: "info" | "warn" | "block"
+  readonly penaltyWeight: number
+  readonly factorPathPrefix: string
   readonly metadata?: Readonly<Record<string, unknown>>
 }
 
@@ -272,6 +320,8 @@ export interface CalibrationSlotValues {
   readonly "language-pack-activation": LanguagePackActivationValue
   readonly "typescript.noop-classifier": TypeScriptNoopClassificationValue
   readonly "typescript.clone-group-policy": TypeScriptCloneGroupPolicyValue
+  readonly "typescript.size-policy": TypeScriptSizePolicyValue
+  readonly "typescript.nesting-policy": TypeScriptNestingPolicyValue
   readonly "typescript.dependency-resolver": TypeScriptDependencyResolutionValue
   readonly "typescript.suppression-justifier": TypeScriptSuppressionJustificationValue
   readonly "typescript.callback-context-namer": TypeScriptCallbackContextNameValue
