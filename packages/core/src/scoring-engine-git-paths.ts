@@ -6,6 +6,7 @@ import {
 export const isPulsarSource = (path: string): boolean =>
   path === CANONICAL_CONVENTIONS_RELATIVE_PATH ||
   path === CANONICAL_GLOSSARY_RELATIVE_PATH ||
+  path.startsWith(".github/workflows/") && (path.endsWith(".yml") || path.endsWith(".yaml")) ||
   path.endsWith(".ts") ||
   path.endsWith(".tsx") ||
   path.endsWith("package.json") ||

@@ -20,6 +20,7 @@ import { TsLd04 } from "./signals/ts-ld-04-naming-conventions.js"
 import { TsLd05 } from "./signals/ts-ld-05-domain-term-consistency.js"
 import { TsLd06 } from "./signals/ts-ld-06-annotation-coverage.js"
 import { TsLd07 } from "./signals/ts-ld-07-unsafe-type-erosion.js"
+import { TsLd08 } from "./signals/ts-ld-08-exhaustiveness-erosion.js"
 import { TsRp01 } from "./signals/ts-rp-01-hotspots.js"
 import { TsSl01 } from "./signals/ts-sl-01-duplication.js"
 import { TsSl02 } from "./signals/ts-sl-02-inconsistent-clones.js"
@@ -64,6 +65,7 @@ export const TS_PACK_SIGNALS: ReadonlyArray<AnySignal> = [
   TsAb05,
   TsLd06,
   TsLd07,
+  TsLd08,
   TsRp01,
   TsSl01,
   TsSl03,

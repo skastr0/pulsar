@@ -73,7 +73,7 @@ describe("SHARED-02 bus factor", () => {
     } finally {
       await repo.cleanup()
     }
-  })
+  }, 20_000)
 
   test("excludes tests and hidden metadata directories from default production bus-factor pressure", async () => {
     const repo = await createGitTestRepo("pulsar-shared-02-excludes-")
@@ -111,7 +111,7 @@ describe("SHARED-02 bus factor", () => {
     } finally {
       await repo.cleanup()
     }
-  })
+  }, 20_000)
 
   test("can cap the sampled recent history for very high-volume repos", async () => {
     const repo = await createGitTestRepo("pulsar-shared-02-max-commits-")

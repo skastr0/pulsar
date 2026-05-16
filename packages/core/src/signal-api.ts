@@ -10,6 +10,14 @@ export {
 } from "./context.js"
 export { InMemoryCacheLayer } from "./cache.js"
 export { summarize, type DistributionalSummary } from "./distribution.js"
+export {
+  COVERAGE_REFERENCE_DATA_KEY,
+} from "./coverage-facts.js"
+export type {
+  CoverageFacts,
+  CoverageFileFact,
+  CoverageMetric,
+} from "./coverage-facts.js"
 export { levenshteinDistance } from "./edit-distance.js"
 export { matchesAnyGlob } from "./globs.js"
 export { classifyFilePath, isProductionSourcePath, sortedUniqueFilePaths } from "./file-taxonomy.js"

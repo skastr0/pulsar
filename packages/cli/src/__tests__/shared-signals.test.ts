@@ -129,7 +129,11 @@ describe("polyglot shared signals", () => {
         "SHARED-03-churn-rate",
         "SHARED-05-suppression-governance",
         "SHARED-06-pr-dependency-delta",
+        "SHARED-07-machine-feedback-coverage",
         "SHARED-CHURN-01-recent-churn",
+        "SHARED-CHURN-02-recency-weighted-churn",
+        "SHARED-COCHANGE-01-logical-coupling",
+        "SHARED-COV-01-coverage-facts",
       ])
 
       const suppression = result.signalResults.get("SHARED-05-suppression-governance")?.output as
