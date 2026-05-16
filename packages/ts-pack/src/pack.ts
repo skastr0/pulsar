@@ -9,6 +9,7 @@ import { TsAd01 } from "./signals/ts-ad-01-boundary-violations.js"
 import { TsAd02 } from "./signals/ts-ad-02-circular-deps.js"
 import { TsAd03 } from "./signals/ts-ad-03-reexport-depth.js"
 import { TsAd04 } from "./signals/ts-ad-04-boundary-parser-coverage.js"
+import { TsAd05 } from "./signals/ts-ad-05-boundary-trust-breach.js"
 import { TsDe01 } from "./signals/ts-de-01-type-level-coupling.js"
 import { TsDe02 } from "./signals/ts-de-02-fan-in-out.js"
 import { TsDe03 } from "./signals/ts-de-03-propagation-cost.js"
@@ -55,6 +56,7 @@ export const TS_PACK_SIGNALS: ReadonlyArray<AnySignal> = [
   TsAd02,
   TsAd03,
   TsAd04,
+  TsAd05,
   TsDe01,
   TsDe02,
   TsDe03,

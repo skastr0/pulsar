@@ -84,6 +84,7 @@ describe("Observer + TS pack integration", () => {
         "TS-AD-02-circular-dependencies",
         "TS-AD-03-reexport-depth",
         "TS-AD-04-boundary-parser-coverage",
+        "TS-AD-05-boundary-trust-breach",
         "TS-DE-01-type-level-coupling",
         "TS-DE-02-fan-in-fan-out",
         "TS-DE-03-propagation-cost",
