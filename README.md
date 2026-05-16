@@ -26,6 +26,8 @@ In practice:
 
 Pulsar's own repository may dogfood an opinionated self-calibration. That proves the customization model; it does not define the out-of-box ideal for every repo.
 
+See [Defaults vs Programmable Taste](docs/explorations/defaults-vs-programmable-taste.md) for the design boundary between generic defaults, calibration, presets, and opinionated packages.
+
 The current workspace includes:
 
 - `@skastr0/pulsar-core`: signal runtime, registry, observer, scoring engine, vectors, calibration, and repository history primitives
