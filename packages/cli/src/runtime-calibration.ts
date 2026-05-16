@@ -18,7 +18,8 @@ export const loadProjectModuleCalibrationContext = (
   options?: { readonly dependencyRoot?: string },
 ): Effect.Effect<ResolvedCalibrationContext | undefined, unknown, never> =>
   Effect.gen(function* () {
-    const manifestPath = join(repoRoot, ".pulsar", "project-modules.json")
+    const manifestSourceRef = ".pulsar/project-modules.json"
+    const manifestPath = join(repoRoot, manifestSourceRef)
     if (!existsSync(manifestPath)) return undefined
 
     const raw = yield* Effect.tryPromise({
@@ -43,7 +44,7 @@ export const loadProjectModuleCalibrationContext = (
       detectedTechnologies: [],
       sourceExtensions: [],
       metadata: {
-        manifestPath,
+        manifestPath: manifestSourceRef,
         manifestFingerprint,
         declaredModuleCount: manifest.modules.length,
         activeModuleCount: loadedModules.length,

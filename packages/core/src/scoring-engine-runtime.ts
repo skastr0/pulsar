@@ -75,8 +75,7 @@ export const makeEngineInternals = (
         ? DiskBackedCacheLayer(options.cacheConfig)
         : InMemoryCacheLayer
     const cacheRef = yield* Effect.provide(SignalCacheTag, cacheLayer)
-    const calibrationContextCache = new Map<string, ResolvedCalibrationContext | undefined>()
-    const resolveCalibrationContext = makeCalibrationResolver(options, calibrationContextCache)
+    const resolveCalibrationContext = makeCalibrationResolver(options)
 
     return {
       cacheRef,
@@ -87,21 +86,18 @@ export const makeEngineInternals = (
 
 const makeCalibrationResolver = (
   options: ScoringEngineOptions | undefined,
-  cache: Map<string, ResolvedCalibrationContext | undefined>,
 ) => (
   worktreePath: string,
 ): Effect.Effect<ResolvedCalibrationContext | undefined, never, never> =>
   Effect.gen(function* () {
     const factory = options?.calibrationContextForWorktree
     if (factory === undefined) return options?.calibrationContext
-    if (cache.has(worktreePath)) return cache.get(worktreePath)
     const resolved = yield* factory(worktreePath).pipe(
       Effect.orDieWith(
         (cause) =>
           new Error(`Failed to resolve calibration context for ${worktreePath}: ${String(cause)}`),
       ),
     )
-    cache.set(worktreePath, resolved)
     return resolved
   })
 

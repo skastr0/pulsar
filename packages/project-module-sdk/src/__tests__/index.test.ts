@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, test } from "bun:test"
@@ -27,6 +27,27 @@ const repoFacts: RepoFacts = {
   detectedTechnologies: ["convex", "typescript"],
   sourceExtensions: [".ts"],
 }
+
+const listFiles = async (root: string): Promise<ReadonlyArray<string>> => {
+  let entries: Awaited<ReturnType<typeof readDirectoryEntries>>
+  try {
+    entries = await readDirectoryEntries(root)
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code === "ENOENT") return []
+    throw cause
+  }
+  const files = await Promise.all(
+    entries.map(async (entry) => {
+      const path = join(root, entry.name)
+      if (entry.isDirectory()) return listFiles(path)
+      return [path]
+    }),
+  )
+  return files.flat()
+}
+
+const readDirectoryEntries = (root: string) =>
+  readdir(root, { withFileTypes: true, encoding: "utf8" })
 
 describe("project module sdk", () => {
   test("defineProjectModule derives descriptor contributions and active fingerprint", () => {
@@ -960,6 +981,82 @@ describe("project module sdk", () => {
       expect(loaded.descriptor.sourceFingerprint).toMatch(/^sha256:/)
     } finally {
       await rm(repoRoot, { recursive: true, force: true })
+    }
+  })
+
+  test("repo-local module loading exercises the production bundle path", async () => {
+    const repoRoot = await mkdtemp(join(tmpdir(), "pulsar-project-module-"))
+    const stateRoot = await mkdtemp(join(tmpdir(), "pulsar-project-module-state-"))
+    const previousNodeEnv = process.env.NODE_ENV
+    const previousPulsarStateHome = process.env.PULSAR_STATE_HOME
+    try {
+      const helperRoot = join(repoRoot, "node_modules", "@acme", "module-helper")
+      await mkdir(helperRoot, { recursive: true })
+      await writeFile(
+        join(helperRoot, "package.json"),
+        JSON.stringify({
+          name: "@acme/module-helper",
+          version: "1.0.0",
+          type: "module",
+          exports: "./index.mjs",
+        }),
+        "utf8",
+      )
+      await writeFile(
+        join(helperRoot, "index.mjs"),
+        "export const marker = 'production-bundle-loaded'\n",
+        "utf8",
+      )
+      await writeFile(
+        join(repoRoot, "module.ts"),
+        [
+          "import { marker } from '@acme/module-helper'",
+          "export default {",
+          "  id: 'loaded.definition',",
+          "  version: '1.0.0',",
+          "  scope: 'repository',",
+          "  configHash: marker,",
+          "  processors: []",
+          "}",
+        ].join("\n"),
+        "utf8",
+      )
+      const manifest = await Effect.runPromise(
+        decodeProjectModuleManifest({
+          modules: [
+            {
+              id: "loaded.definition",
+              kind: "repo-local",
+              path: "module.ts",
+            },
+          ],
+        }),
+      )
+
+      process.env.NODE_ENV = "production"
+      process.env.PULSAR_STATE_HOME = stateRoot
+      const loaded = await Effect.runPromise(
+        loadProjectModuleRef(manifest.modules[0]!, { repoRoot }),
+      )
+      const cacheFiles = await listFiles(stateRoot)
+
+      expect(loaded.descriptor.configHash).toBe("production-bundle-loaded")
+      expect(
+        cacheFiles.some((file) => file.split(/[\\/]/).includes(".pulsar-bundle")),
+      ).toBe(true)
+    } finally {
+      if (previousNodeEnv === undefined) {
+        delete process.env.NODE_ENV
+      } else {
+        process.env.NODE_ENV = previousNodeEnv
+      }
+      if (previousPulsarStateHome === undefined) {
+        delete process.env.PULSAR_STATE_HOME
+      } else {
+        process.env.PULSAR_STATE_HOME = previousPulsarStateHome
+      }
+      await rm(repoRoot, { recursive: true, force: true })
+      await rm(stateRoot, { recursive: true, force: true })
     }
   })
 

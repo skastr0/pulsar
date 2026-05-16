@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { spawnSync } from "node:child_process"
+import { existsSync } from "node:fs"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
@@ -143,6 +144,57 @@ describe("pulsar runtime project modules", () => {
       )
     } finally {
       await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("project module calibration fingerprints are stable across checkout paths", async () => {
+    const firstRepoPath = await mkdtemp(join(tmpdir(), "pulsar-runtime-project-modules-"))
+    const secondRepoPath = await mkdtemp(join(tmpdir(), "pulsar-runtime-project-modules-"))
+    try {
+      const writeProjectModule = async (repoPath: string) => {
+        await writeRepoFile(
+          repoPath,
+          ".pulsar/modules/local.mjs",
+          [
+            "export default {",
+            "  id: 'repo.local-module',",
+            "  version: '1.0.0',",
+            "  scope: 'repository',",
+            "  processors: []",
+            "}",
+          ].join("\n"),
+        )
+        await writeRepoFile(
+          repoPath,
+          ".pulsar/project-modules.json",
+          JSON.stringify(
+            {
+              modules: [
+                {
+                  id: "repo.local-module",
+                  kind: "repo-local",
+                  path: ".pulsar/modules/local.mjs",
+                },
+              ],
+            },
+            null,
+            2,
+          ),
+        )
+      }
+
+      await writeProjectModule(firstRepoPath)
+      await writeProjectModule(secondRepoPath)
+
+      const first = await Effect.runPromise(loadProjectModuleCalibrationContext(firstRepoPath))
+      const second = await Effect.runPromise(loadProjectModuleCalibrationContext(secondRepoPath))
+
+      expect(first?.repoFacts.metadata?.manifestPath).toBe(".pulsar/project-modules.json")
+      expect(second?.repoFacts.metadata?.manifestPath).toBe(".pulsar/project-modules.json")
+      expect(first?.fingerprint).toBe(second?.fingerprint)
+    } finally {
+      await rm(firstRepoPath, { recursive: true, force: true })
+      await rm(secondRepoPath, { recursive: true, force: true })
     }
   })
 
@@ -464,6 +516,134 @@ export function defaultEffect(EffectApi: { orElseSucceed: (fallback: () => void)
       )
     } finally {
       await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
+  test("detached worktree project modules bundle repo-local dependencies from the scored repo", async () => {
+    const repoPath = await mkdtemp(join(tmpdir(), "pulsar-runtime-project-modules-"))
+    const stateRoot = await mkdtemp(join(tmpdir(), "pulsar-runtime-project-module-state-"))
+    const previousNodeEnv = process.env.NODE_ENV
+    const previousPulsarStateHome = process.env.PULSAR_STATE_HOME
+    try {
+      sh("git", ["init", "-q", "-b", "main"], repoPath)
+      sh("git", ["config", "user.email", "test@test.test"], repoPath)
+      sh("git", ["config", "user.name", "test"], repoPath)
+      sh("git", ["config", "commit.gpgsign", "false"], repoPath)
+      await writeRepoFile(
+        repoPath,
+        "package.json",
+        JSON.stringify(
+          {
+            name: "repo-local-module-detached-deps",
+            private: true,
+            dependencies: {
+              "@acme/module-helper": "1.0.0",
+            },
+          },
+          null,
+          2,
+        ),
+      )
+      await writeRepoFile(
+        repoPath,
+        "tsconfig.json",
+        JSON.stringify(
+          {
+            compilerOptions: {
+              target: "ES2022",
+              module: "ESNext",
+              moduleResolution: "Bundler",
+            },
+            include: ["src/**/*.ts"],
+          },
+          null,
+          2,
+        ),
+      )
+      await writeRepoFile(repoPath, "src/index.ts", "export const ready = true\n")
+      await writeRepoFile(
+        repoPath,
+        ".pulsar/modules/local.ts",
+        [
+          "import { marker } from '@acme/module-helper'",
+          "const bundled = import.meta.url.includes('/.pulsar-bundle/')",
+          "export default {",
+          "  id: 'repo.local-module',",
+          "  version: '1.0.0',",
+          "  scope: 'repository',",
+          "  configHash: `${marker}:${bundled ? 'bundled' : 'unbundled'}`,",
+          "  processors: []",
+          "}",
+        ].join("\n"),
+      )
+      await writeRepoFile(
+        repoPath,
+        ".pulsar/project-modules.json",
+        JSON.stringify(
+          {
+            modules: [
+              {
+                id: "repo.local-module",
+                kind: "repo-local",
+                path: ".pulsar/modules/local.ts",
+              },
+            ],
+          },
+          null,
+          2,
+        ),
+      )
+      sh("git", ["add", "package.json", "tsconfig.json", "src", ".pulsar"], repoPath)
+      sh("git", ["commit", "-q", "-m", "add project module"], repoPath)
+      const sha = sh("git", ["rev-parse", "HEAD"], repoPath)
+
+      await writeRepoFile(
+        repoPath,
+        "node_modules/@acme/module-helper/package.json",
+        JSON.stringify(
+          {
+            name: "@acme/module-helper",
+            version: "1.0.0",
+            type: "module",
+            exports: "./index.mjs",
+          },
+          null,
+          2,
+        ),
+      )
+      await writeRepoFile(
+        repoPath,
+        "node_modules/@acme/module-helper/index.mjs",
+        "export const marker = 'helper-loaded'\n",
+      )
+
+      process.env.NODE_ENV = "production"
+      process.env.PULSAR_STATE_HOME = stateRoot
+      const detachedContext = await Effect.runPromise(
+        withDetachedWorktreeAtRef(repoPath, sha, ({ worktreePath }) => {
+          expect(
+            existsSync(join(worktreePath, "node_modules", "@acme", "module-helper")),
+          ).toBe(false)
+          return loadProjectModuleCalibrationContext(worktreePath, {
+            dependencyRoot: repoPath,
+          })
+        }),
+      )
+
+      expect(detachedContext?.activeModules[0]?.configHash).toBe("helper-loaded:bundled")
+    } finally {
+      if (previousNodeEnv === undefined) {
+        delete process.env.NODE_ENV
+      } else {
+        process.env.NODE_ENV = previousNodeEnv
+      }
+      if (previousPulsarStateHome === undefined) {
+        delete process.env.PULSAR_STATE_HOME
+      } else {
+        process.env.PULSAR_STATE_HOME = previousPulsarStateHome
+      }
+      await rm(repoPath, { recursive: true, force: true })
+      await rm(stateRoot, { recursive: true, force: true })
     }
   }, 120_000)
 })

@@ -167,6 +167,33 @@ describe("calibration contracts", () => {
     expect(left).toBe(right)
   })
 
+  test("resolved calibration fingerprints include repo fact metadata", () => {
+    const base = computeResolvedCalibrationFingerprint({
+      repoFacts,
+      activeModules: [moduleA],
+      processors: [],
+    })
+    const withMetadata = computeResolvedCalibrationFingerprint({
+      repoFacts: {
+        ...repoFacts,
+        metadata: { architecturalTierManifest: "v1" },
+      },
+      activeModules: [moduleA],
+      processors: [],
+    })
+    const withChangedMetadata = computeResolvedCalibrationFingerprint({
+      repoFacts: {
+        ...repoFacts,
+        metadata: { architecturalTierManifest: "v2" },
+      },
+      activeModules: [moduleA],
+      processors: [],
+    })
+
+    expect(withMetadata).not.toBe(base)
+    expect(withChangedMetadata).not.toBe(withMetadata)
+  })
+
   test("runSlot executes matching processors in priority order and preserves attribution", async () => {
     const order: Array<string> = []
     const taxonomyModule: ActiveProjectModule = moduleA

@@ -412,6 +412,122 @@ describe("ScoringEngine — cache semantics", () => {
     }
   })
 
+  test("scoreCommit disk cache invalidates when calibration fingerprint changes", async () => {
+    const { repoPath, sha } = await initRepo([
+      { path: "a.ts", content: "export const x = 1\n" },
+    ])
+    const cacheDir = await mkdtemp(join(tmpdir(), "pulsar-score-cache-"))
+    try {
+      const program = Effect.gen(function* () {
+        const counter = yield* Ref.make(0)
+        const signal = makeCountingSignal(counter)
+        const registry = yield* buildRegistry([signal])
+        const calibrationA = makeResolvedCalibrationContext({
+          repoFacts: mockRepoFacts("score-cache-calibration-a"),
+        })
+        const calibrationB = makeResolvedCalibrationContext({
+          repoFacts: mockRepoFacts("score-cache-calibration-b"),
+        })
+        const runWithCalibration = (calibrationContext: typeof calibrationA) =>
+          Effect.gen(function* () {
+            const EngineLayer = ScoringEngineLayer(registry, () => Layer.empty, undefined, {
+              cacheConfig: { cacheDir },
+              calibrationContext,
+            })
+            const engine = yield* ScoringEngineTag.pipe(
+              Effect.provide(EngineLayer),
+            ) as Effect.Effect<typeof ScoringEngineTag.Service, never, never>
+            return yield* engine.scoreCommit(repoPath, sha, "MOCK-ENG-01")
+          })
+
+        const first = yield* runWithCalibration(calibrationA)
+        const afterFirst = yield* Ref.get(counter)
+        const sameCalibration = yield* runWithCalibration(calibrationA)
+        const afterSameCalibration = yield* Ref.get(counter)
+        const changedCalibration = yield* runWithCalibration(calibrationB)
+        const afterChangedCalibration = yield* Ref.get(counter)
+
+        return {
+          first,
+          sameCalibration,
+          changedCalibration,
+          afterFirst,
+          afterSameCalibration,
+          afterChangedCalibration,
+        }
+      })
+
+      const result = await Effect.runPromise(program)
+      expect(result.afterFirst).toBe(1)
+      expect(result.afterSameCalibration).toBe(1)
+      expect(result.afterChangedCalibration).toBe(2)
+      expect((result.first.output as { n: number }).n).toBe(1)
+      expect((result.sameCalibration.output as { n: number }).n).toBe(1)
+      expect((result.changedCalibration.output as { n: number }).n).toBe(2)
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+      await rm(cacheDir, { recursive: true, force: true })
+    }
+  })
+
+  test("observeCommit disk cache invalidates when calibration fingerprint changes", async () => {
+    const { repoPath, sha } = await initRepo([
+      { path: "a.ts", content: "export const x = 1\n" },
+    ])
+    const cacheDir = await mkdtemp(join(tmpdir(), "pulsar-observer-cache-"))
+    try {
+      const program = Effect.gen(function* () {
+        const counter = yield* Ref.make(0)
+        const signal = makeCountingSignal(counter)
+        const registry = yield* buildRegistry([signal])
+        const calibrationA = makeResolvedCalibrationContext({
+          repoFacts: mockRepoFacts("observer-cache-calibration-a"),
+        })
+        const calibrationB = makeResolvedCalibrationContext({
+          repoFacts: mockRepoFacts("observer-cache-calibration-b"),
+        })
+        const runWithCalibration = (calibrationContext: typeof calibrationA) =>
+          Effect.gen(function* () {
+            const EngineLayer = ScoringEngineLayer(registry, () => Layer.empty, undefined, {
+              cacheConfig: { cacheDir },
+              calibrationContext,
+            })
+            const engine = yield* ScoringEngineTag.pipe(
+              Effect.provide(EngineLayer),
+            ) as Effect.Effect<typeof ScoringEngineTag.Service, never, never>
+            return yield* engine.observeCommit(repoPath, sha)
+          })
+
+        const first = yield* runWithCalibration(calibrationA)
+        const afterFirst = yield* Ref.get(counter)
+        const sameCalibration = yield* runWithCalibration(calibrationA)
+        const afterSameCalibration = yield* Ref.get(counter)
+        const changedCalibration = yield* runWithCalibration(calibrationB)
+        const afterChangedCalibration = yield* Ref.get(counter)
+
+        return {
+          first,
+          sameCalibration,
+          changedCalibration,
+          afterFirst,
+          afterSameCalibration,
+          afterChangedCalibration,
+        }
+      })
+
+      const result = await Effect.runPromise(program)
+      expect(result.afterFirst).toBe(1)
+      expect(result.afterSameCalibration).toBe(1)
+      expect(result.afterChangedCalibration).toBe(2)
+      expect(result.first.signalResults.get("MOCK-ENG-01")?.output).toEqual({ n: 1 })
+      expect(result.sameCalibration.signalResults.get("MOCK-ENG-01")?.output).toEqual({ n: 1 })
+      expect(result.changedCalibration.signalResults.get("MOCK-ENG-01")?.output).toEqual({ n: 2 })
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+      await rm(cacheDir, { recursive: true, force: true })
+    }
+  })
+
   test("observeWorktree provides changed hunks to dirty worktree signals", async () => {
     const { repoPath, sha } = await initRepo([
       { path: "a.ts", content: "export const x = 1\n" },
@@ -806,6 +922,51 @@ describe("ScoringEngine — cache semantics", () => {
       expect(counts.afterFirst).toBe(1)
       expect(counts.afterSecond).toBe(1)
       expect(counts.afterChange).toBe(2)
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
+  test("observeWorktree refreshes factory calibration for a mutable worktree path", async () => {
+    const { repoPath, sha } = await initRepo([
+      { path: "a.ts", content: "export const x = 1\n" },
+    ])
+    try {
+      await writeFile(join(repoPath, "a.ts"), "export const x = 999\n")
+      const program = Effect.gen(function* () {
+        const resolverCalls = yield* Ref.make(0)
+        const registry = yield* buildRegistry([makeCalibrationFingerprintSignal()])
+        const calibrationA = makeResolvedCalibrationContext({
+          repoFacts: mockRepoFacts("worktree-calibration-a"),
+        })
+        const calibrationB = makeResolvedCalibrationContext({
+          repoFacts: mockRepoFacts("worktree-calibration-b"),
+        })
+        const EngineLayer = ScoringEngineLayer(registry, () => Layer.empty, undefined, {
+          calibrationContextForWorktree: () =>
+            Effect.gen(function* () {
+              const call = yield* Ref.updateAndGet(resolverCalls, (n) => n + 1)
+              return call === 1 ? calibrationA : calibrationB
+            }),
+        })
+        const engine = yield* ScoringEngineTag.pipe(
+          Effect.provide(EngineLayer),
+        ) as Effect.Effect<typeof ScoringEngineTag.Service, never, never>
+
+        const first = yield* engine.observeWorktree(repoPath, sha)
+        const second = yield* engine.observeWorktree(repoPath, sha)
+        const calls = yield* Ref.get(resolverCalls)
+        return { first, second, calls, calibrationA, calibrationB }
+      })
+
+      const result = await Effect.runPromise(program)
+      expect(result.calls).toBe(2)
+      expect(result.first.signalResults.get("MOCK-CALIBRATION-FINGERPRINT")?.output).toEqual({
+        fingerprint: result.calibrationA.fingerprint,
+      })
+      expect(result.second.signalResults.get("MOCK-CALIBRATION-FINGERPRINT")?.output).toEqual({
+        fingerprint: result.calibrationB.fingerprint,
+      })
     } finally {
       await rm(repoPath, { recursive: true, force: true })
     }

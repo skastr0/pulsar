@@ -38,6 +38,7 @@ export const computeResolvedCalibrationFingerprint = (input: {
       fingerprint: input.repoFacts.fingerprint,
       detectedTechnologies: [...input.repoFacts.detectedTechnologies].sort(),
       sourceExtensions: [...input.repoFacts.sourceExtensions].sort(),
+      metadata: input.repoFacts.metadata ?? null,
     },
     activeModules: input.activeModules
       .map((module) => ({

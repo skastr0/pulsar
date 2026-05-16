@@ -68,6 +68,8 @@ describe("pulsar elicit", () => {
   test("bootstrap writes a pending revealed-preference proposal from synthetic git history", async () => {
     const repoPath = await initRepo()
     const homePath = await mkdtemp(join(tmpdir(), "pulsar-elicit-home-"))
+    const stateHome = await mkdtemp(join(tmpdir(), "pulsar-elicit-state-"))
+    const previousPulsarStateHome = process.env.PULSAR_STATE_HOME
     try {
       await writeRepoFile(
         homePath,
@@ -118,7 +120,7 @@ describe("pulsar elicit", () => {
           "ai-slop-defense",
           ".",
         ],
-        { HOME: homePath },
+        { HOME: homePath, PULSAR_STATE_HOME: stateHome },
       )
 
       expect(out.status).toBe(0)
@@ -131,6 +133,7 @@ describe("pulsar elicit", () => {
       expect(out.stdout).toContain("revised")
       expect(out.stdout).toContain("reverted")
 
+      process.env.PULSAR_STATE_HOME = stateHome
       const pendingDir = resolvePulsarRepoStatePath(repoPath, "proposals", "pending")
       const files = await (await import("node:fs/promises")).readdir(pendingDir)
       const proposalPath = join(pendingDir, files.find((entry) => entry.includes("proposal-revealed-"))!)
@@ -139,8 +142,14 @@ describe("pulsar elicit", () => {
       expect(proposal.confidence).toBeGreaterThan(0)
       expect(Array.isArray(proposal.deltas)).toBe(true)
     } finally {
+      if (previousPulsarStateHome === undefined) {
+        delete process.env.PULSAR_STATE_HOME
+      } else {
+        process.env.PULSAR_STATE_HOME = previousPulsarStateHome
+      }
       await rm(repoPath, { recursive: true, force: true })
       await rm(homePath, { recursive: true, force: true })
+      await rm(stateHome, { recursive: true, force: true })
     }
   }, 120_000)
 
