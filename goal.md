@@ -55,6 +55,11 @@ Type-Driven Verification research evidence:
 - `/Users/guilhermecastro/Projects/research-knowledge-base/wiki/type-driven-verification/property-based-testing-executable-specifications.md`
 - `/Users/guilhermecastro/Projects/research-knowledge-base/wiki/type-driven-verification/contracts-assertions-runtime-verification.md`
 - `/Users/guilhermecastro/Projects/research-knowledge-base/wiki/type-driven-verification/economics-adoption-human-factors-constraint-systems.md`
+- `/Users/guilhermecastro/Projects/research-knowledge-base/wiki/type-driven-verification/type-soundness-statics-dynamics.md`
+- `/Users/guilhermecastro/Projects/research-knowledge-base/wiki/type-driven-verification/domain-driven-design-canonical-spine.md`
+- `/Users/guilhermecastro/Projects/research-knowledge-base/wiki/type-driven-verification/verifier-proof-property-test-feedback.md`
+- `/Users/guilhermecastro/Projects/research-knowledge-base/wiki/type-driven-verification/formal-specification-tla-alloy-model-checking.md`
+- `/Users/guilhermecastro/Projects/research-knowledge-base/wiki/type-driven-verification/ai-code-quality-security-benchmark-caveats.md`
 
 Important evidence caveat:
 
@@ -70,6 +75,84 @@ The research spine supports scoped claims:
 - Constraint systems are costed ladders. Stronger machinery is not automatically better; each layer buys different evidence at different human and maintenance cost.
 
 Pulsar should therefore avoid universal claims. The durable claim is narrower: deterministic, repo-owned constraints can make AI-assisted codebases more inspectable, steerable, and reviewable.
+
+## Type-Driven Verification Synthesis
+
+The type-safety research changes the shape of this goal. Pulsar should not present "more types" or "more metrics" as the answer. The stronger claim is that modern AI-assisted engineering needs a constraint ecosystem: multiple machine-checkable evidence layers, each scoped, costed, and calibrated to the repository's chosen architecture.
+
+### Claims Pulsar Should Keep
+
+1. Type safety is scoped evidence, not correctness.
+   - A type system proves only the properties encoded by that system under its assumptions.
+   - Type soundness does not imply business correctness, runtime boundary safety, security, termination, performance, or maintainability.
+   - Pulsar implication: every signal must name its evidence class and limit.
+   - Sources: `type-system-first-principles.md`, `type-soundness-statics-dynamics.md`.
+
+2. The winning architecture is layered constraints, not one master checker.
+   - Types, schemas, property tests, contracts, runtime verification, model checking, proof systems, architecture tests, and CI gates buy different kinds of evidence at different costs.
+   - Stronger constraints are not automatically better. The right constraint is the cheapest one that buys the evidence needed for the risk tier.
+   - Pulsar implication: the vector and calibration layer should express expected evidence by repo region and risk tier.
+   - Sources: `final-synthesis-constraint-ecosystem-report-plan.md`, `economics-adoption-human-factors-constraint-systems.md`.
+
+3. Boundary construction is where TypeScript safety becomes real.
+   - "Parse, don't validate" is the operational rule: weak external values should become stronger domain values at the boundary, and core code should not keep re-checking raw weak values.
+   - Pulsar implication: boundary/parser coverage, raw-value leakage, assertion-heavy adapters, unchecked `any`, stale generated contracts, and uncontrolled constructors are first-class signal families.
+   - Sources: `schema-driven-typescript-effect-runtime-boundaries.md`, `parse-dont-validate-boundary-construction.md`.
+
+4. Domain modeling is a constraint surface.
+   - Invariants live in construction, representation hiding, ADTs, typed errors, state transitions, and canonical domain language.
+   - Pulsar implication: file taxonomy cannot stop at `src` versus `test`; it needs domain, adapter, generated, fixture, migration, public API, pure utility, shared contextual, and integration roles.
+   - Sources: `functional-domain-modeling-invariant-encoding.md`, `domain-driven-design-canonical-spine.md`.
+
+5. Agent-readable architecture needs executable fitness functions.
+   - `AGENTS.md`, architecture docs, and repo maps orient agents, but prose does not prevent drift.
+   - Pulsar implication: repo taste must become repo-scoped calibration plus deterministic architecture fitness checks with provenance, not hidden personal instruction.
+   - Sources: `agent-readable-architecture-fitness-functions.md`, `docs/explorations/calibration-processor-architecture.md`.
+
+6. AI-generated code improves when forced through external feedback loops.
+   - The defensible mechanism is not model self-judgment; it is compiler/typechecker/static-analysis/test/verifier feedback routed back into generation and repair.
+   - Pulsar implication: feedback-loop coverage and closure rate should become health facts for AI-assisted workflows.
+   - Sources: `ai-code-generation-constraint-verifier-feedback.md`, `compiler-typechecker-static-analysis-feedback.md`, `ai-code-quality-security-benchmark-caveats.md`.
+
+7. Composite signals are where raw facts become useful judgment.
+   - Most primitive facts are too local to be strong diagnoses. Pulsar's design inference is that their value appears when composed: churn plus complexity plus coverage gap plus ownership diffusion means something different from each input alone.
+   - Pulsar implication: primitive signal expansion should be justified by composite consumers, not by signal count.
+   - Sources for the constraint-composition pattern: `verifier-proof-property-test-feedback.md`, `compiler-typechecker-static-analysis-feedback.md`.
+
+8. Proof-like artifacts certify stated obligations, not intent.
+   - Property tests, fuzzing, contracts, TLA+/Alloy models, runtime monitors, refinement types, and proof assistants are powerful only for the properties actually stated, generated, monitored, or proven.
+   - Pulsar implication: proof/property/model signals must expose property identity, assumptions, bound, oracle quality, trace conformance, drift, and maintenance cost.
+   - Sources: `property-based-testing-executable-specifications.md`, `contracts-assertions-runtime-verification.md`, `formal-specification-tla-alloy-model-checking.md`.
+
+### Overclaim Guardrails
+
+Pulsar must explicitly reject these claims in docs, UI copy, and score explanations:
+
+- A green typecheck means code is correct.
+- Runtime schemas make TypeScript sound.
+- PBT, fuzzing, or runtime verification is proof.
+- A model is the implementation.
+- A proof certifies product intent rather than a stated proposition under assumptions.
+- Prose architecture instructions keep agents aligned without executable checks.
+- AI labels are truth.
+- Stronger constraints always produce better engineering outcomes.
+- A single health score can be meaningful without evidence class, calibration provenance, and missing-fact state.
+
+### Signal Evidence Contract
+
+Every production signal and composite should declare:
+
+- evidence class: syntax, type, runtime boundary, domain invariant, architecture dependency, temporal history, test/coverage, ownership, model/proof, AI-labeled fact, or repo policy;
+- claim shape: what the signal can legitimately say;
+- non-claim shape: what the signal cannot infer;
+- applicable region: language, framework, file role, architectural tier, risk tier, or declared boundary;
+- absence semantics: `zero`, `absent`, `unknown`, `not_configured`, or `not_applicable`;
+- calibration surface: slot id, policy type, rule provenance, and override/deweight/non-applicable semantics;
+- composite consumers;
+- enforcement ceiling: hard gate, soft gate, review route, informational, or research-only;
+- failure-mode note: at least one known false-positive or false-negative pattern.
+
+No raw primitive may be promoted as a broad health claim until this contract exists.
 
 ## Current State
 
@@ -414,26 +497,32 @@ Signal count is not the primary success metric. Diagnostic power is.
    - Rationale: AI code generation benefits from external feedback loops, not model self-judgment.
    - Composite consumers: contract safety gap, review shock, risk hotspot.
 
-2. Co-change / logical coupling.
+2. `SHARED-08-feedback-loop-closure-rate`
+   - Class: universal with CI/session-history dependency.
+   - Checks: whether AI-assisted changes reach deterministic green state through compilers, typecheckers, tests, static analysis, and configured verifiers; records first-pass pass rate, repair iterations, repeated failure classes, and time-to-green.
+   - Rationale: the type-driven verification research says external feedback loops are the defensible mechanism for improving AI code, so Pulsar should measure whether the loop is actually closed.
+   - Composite consumers: AI quicksand risk, review shock, constraint effectiveness.
+
+3. Co-change / logical coupling.
    - Class: universal with repo-history dependency.
    - Emits file pairs with `co_change_count`, support, confidence, and last co-change timestamp.
    - Flags repeated co-change without structural dependency.
    - Composite consumers: architecture blast radius, risk hotspot, architecture decay.
 
-3. Recency-weighted churn.
+4. Recency-weighted churn.
    - Class: universal with repo-history dependency.
    - Supplements flat windows with exponential decay.
    - Keeps raw windowed facts for explainability.
    - Composite consumers: risk hotspot, review shock, architecture decay.
 
-4. Coverage fact source.
+5. Coverage fact source.
    - Class: reference-data-dependent.
    - Ingests lcov and common coverage JSON formats.
    - Preserves source file mapping, branch/function/line coverage, timestamp, and tool identity.
    - Absence of coverage is explicit, not zero by default.
    - Composite consumers: risk hotspot, contract safety gap, coverage debt.
 
-5. Risk Hotspot v2.
+6. Risk Hotspot v2.
    - Class: compound.
    - Composes recency-weighted churn, complexity, author/ownership concentration, coverage gap, and optionally co-change.
    - Supersedes the current two-factor hotspot as the primary review-pain signal.
@@ -468,46 +557,57 @@ Signal count is not the primary success metric. Diagnostic power is.
    - Checks broad thrown errors, untyped `catch`, Promise APIs hiding expected failures, and Effect workflows that collapse typed errors.
    - Composite consumers: contract safety gap, review shock.
 
+11. `SHARED-11-theory-encoding-index`
+   - Class: compound plus reference-data-dependent.
+   - Composes declared domain/core regions, boundary parser coverage, property/spec presence, architecture fitness coverage, typed error evidence, and AI-generated/churn pressure.
+   - Rationale: the research frames AI quicksand as loss of recoverable program theory; this composite measures whether high-risk areas have machine-checkable theory artifacts.
+   - Composite consumers: AI quicksand risk, constraint effectiveness.
+
 ### Priority P2: Architecture and Maintenance Expansion
 
-11. Test architecture family.
+12. Test architecture family.
    - Test-to-code LOC ratio per module.
    - Untested-and-hot intersection.
    - Skipped/disabled test count and age.
    - Mock density per test file.
    - Path conventions are calibratable repo facts, not universal truth.
 
-12. Distance from main sequence.
+13. Distance from main sequence.
    - Computes instability and abstractness per module/package where language data supports it.
    - Outputs distance from main sequence and trend over time.
    - Architecture physics, not a universal hard gate.
 
-13. Effect leakage.
+14. Effect leakage.
    - Detects IO, time, randomness, network, filesystem, persistence, process/env usage.
    - Respects declared pure zones from file taxonomy/tier policy.
    - Distinguishes visible typed effects from hidden ambient effects where possible.
 
-14. Suppression debt.
+15. Suppression debt.
    - Tracks TODO/FIXME/HACK age with git blame.
    - Tracks eslint-disable, ts-ignore, ts-expect-error, and language-specific suppressions.
    - Rewards justified, scoped, expiring suppressions over broad permanent suppressions.
 
-15. Type opacity.
+16. Type opacity.
    - Measures surfaces resolved to `any`, `unknown`, weak generics, broad object maps, or opaque assertions.
    - Keeps TypeScript caveat explicit: static type coverage is not runtime safety.
 
-16. Public API churn.
+17. Public API churn.
    - Tracks exported symbol churn and signature changes for packages with export maps or public barrels.
    - Distinguishes internal refactors from public contract churn.
 
-17. Dead code v2.
+18. Dead code v2.
    - Expands beyond unused exports to unused parameters, private members, and statically unreachable branches.
    - Keeps dynamic entrypoint calibration explicit.
 
-18. Conway/ownership misalignment.
+19. Conway/ownership misalignment.
    - Uses CODEOWNERS where available.
    - Falls back to historical author clusters when no owner data exists.
    - Flags modules mostly changed by authors outside nominal ownership or with ownership diffusion beyond healthy thresholds.
+
+20. Property/spec health.
+   - Tracks property-based test files, generator diversity, skipped/flaky property tests, mutation score where available, model/spec files, runtime contract/assertion checks, and trace-conformance evidence.
+   - Keeps caveat explicit: properties and models are executable evidence, not proof of unstated intent.
+   - Composite consumers: theory encoding index, constraint effectiveness, contract safety gap.
 
 ### Composite Targets
 
@@ -521,6 +621,10 @@ These composites should guide primitive prioritization:
 - `contract safety gap`: contract freshness + parser placement + unsafe boundary erosion + missing executable checks.
 - `architecture decay rate`: main-sequence drift + suppression-debt trend + co-change increase + boundary violations.
 - `coverage debt growth`: test-to-code trend + untested-hotspot delta.
+- `AI quicksand risk`: AI-touched or fast-churned code + weak machine feedback coverage + low theory encoding + high domain/core reachability + low review ownership.
+- `constraint effectiveness`: feedback-loop closure + recurring failure classes + property/spec health + maintenance burden + defect/revert follow-through.
+- `boundary integrity`: external input surface + parser/schema evidence + controlled constructors + raw-value leakage + unsafe type erosion.
+- `theory preservation`: domain construction control + property/spec health + architecture fitness coverage + low stale-comment/spec drift.
 
 ### Delayed to Avoid the Metric Tar Pit
 
@@ -644,6 +748,32 @@ Pulsar output should make clear whether a score came from:
 
 Agents can act on a finding only if they can see what would make the score improve.
 
+### Constraint Economics
+
+Pulsar should measure constraint burden alongside constraint benefit where the facts exist.
+
+Relevant burden facts:
+
+- annotation/schema/proof churn;
+- property generator churn;
+- stale generated contracts;
+- disabled or skipped checks;
+- override/deweight rates by signal;
+- CI runtime cost by fact source;
+- false-positive review notes where available;
+- repeated repair loops for the same deterministic failure class.
+
+Relevant benefit facts:
+
+- earlier detection of boundary, type, architecture, test, or ownership failures;
+- lower repair iteration count after feedback is added;
+- fewer recurring failure classes;
+- lower revert rate for high-risk regions;
+- faster time-to-green for AI-assisted changes;
+- lower review shock on hot modules.
+
+The goal is not to maximize constraint count. The goal is to maximize useful evidence per maintenance dollar for the repo's chosen risk model.
+
 ### Documentation
 
 Documentation should explain the mental model before the API:
@@ -732,14 +862,17 @@ Estimated shape: one fact-source push per primitive, then one composite push.
 Scope:
 
 - Machine feedback coverage.
+- Feedback-loop closure rate.
 - Co-change.
 - Recency-weighted churn.
 - Coverage fact source.
 - Risk Hotspot v2.
+- AI quicksand risk and/or theory encoding index as the first type-driven verification composite after Risk Hotspot v2.
 
 Decision gate:
 
 - Risk Hotspot v2 fixture output ranks review targets using documented non-size inputs: churn, ownership/authorship, coverage state, and optionally co-change; the test asserts the primitive inputs, normalized values, weights, missing-input states, and final ordering.
+- AI quicksand or theory encoding fixture output demonstrates that a green typecheck alone does not score as healthy when boundary construction, executable feedback, ownership, and theory artifacts are missing.
 
 ### Phase 5: Signal Expansion
 
@@ -796,6 +929,8 @@ Pulsar Constraint Ecosystem v1 is done when all of these hold:
 14. Every new signal declares an enforcement ceiling.
 15. AI-classified facts have a design that preserves deterministic replay and visible provenance.
 16. Documentation includes an alternate taste example with a runnable verification path.
+17. Every production signal declares its evidence class, claim limit, absence semantics, calibration surface, composite consumers, enforcement ceiling, and at least one known failure mode.
+18. At least one composite demonstrates the type-driven verification thesis: machine-checked feedback, boundary construction, theory artifacts, and maintenance cost are stronger together than any single raw metric.
 
 ## Risks and Controls
 
@@ -911,3 +1046,26 @@ Independent reviews:
 Commit gate:
 
 - TC-300 is ready to commit once `goal.md` is staged as the only artifact for the documentation change.
+
+## TC-307 Validation Record
+
+Validation type: markdown-only research integration artifact.
+
+Local checks:
+
+- `git diff --check -- goal.md` passed.
+
+Independent research coverage:
+
+- Explorer agent reviewed the local Type-Driven Verification corpus and returned a source-grounded synthesis for scoped type-safety claims, layered constraints, boundary construction, domain modeling, executable architecture checks, AI feedback loops, composites, and proof-theater warnings.
+- Grok MCP performed a separate local synthesis over the Type-Driven Verification corpus; its output converged on the same framing: Pulsar should be a deterministic constraint ecosystem, not a generic metric oracle or "more types fixes code" system.
+
+Independent reviews:
+
+- Normal requirements review: PASS with one low finding that this TC-307 validation record should exist separately from the older TC-300 record; addressed here.
+- Normal fact-check review: PASS with one non-blocking finding that the composite-signal claim should be labeled as a Pulsar design inference rather than directly source-backed by TDV pages; addressed in the claim wording.
+- Grok MCP bounded review: PASS after confirming source grounding, scoped claims, overclaim guardrails, actionable Pulsar requirements, roadmap preservation, and no commit-blocking issues.
+
+Commit gate:
+
+- TC-307 is ready to commit once `goal.md` is staged as the only artifact for the documentation change.
