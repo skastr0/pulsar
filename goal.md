@@ -24,6 +24,8 @@ This goal starts with Pulsar scoring Pulsar. Pulsar should not expand the signal
 
 If Pulsar cannot represent that distinction, more signals will push every repo toward one architectural school. The goal is not "one taste wins." The goal is "declared repo taste becomes inspectable, deterministic, and consistently scored."
 
+The three-tier model is a Pulsar design choice for this repository's self-score proof. It is not a claim that the Type-Driven Verification research prescribes these exact tiers or file-role names. The research-backed principle is narrower: program theory, boundaries, feedback loops, and constraint costs must be explicit enough to inspect and enforce. Pulsar's inference is that repo-owned taste policies are one practical way to operationalize that principle.
+
 ## Evidence Basis
 
 This goal is grounded in two local evidence sets.
@@ -64,6 +66,7 @@ Type-Driven Verification research evidence:
 Important evidence caveat:
 
 - The wiki pages are concise promoted summaries and pointers, not standalone proof. External-facing claims must cite the canonical source dossiers, source cards, papers, books, or public sources behind them. Local file names are acceptable for this internal goal, but they are not public evidence.
+- Synthesis claims below that go beyond direct restatement of those summaries are Pulsar design inferences. Before external publication, every such inference must be rechecked against the canonical source dossiers and source cards.
 
 The research spine supports scoped claims:
 
@@ -78,9 +81,11 @@ Pulsar should therefore avoid universal claims. The durable claim is narrower: d
 
 ## Type-Driven Verification Synthesis
 
-The type-safety research changes the shape of this goal. Pulsar should not present "more types" or "more metrics" as the answer. The stronger claim is that modern AI-assisted engineering needs a constraint ecosystem: multiple machine-checkable evidence layers, each scoped, costed, and calibrated to the repository's chosen architecture.
+The type-safety research changes the shape of this goal. Pulsar should not present "more types" or "more metrics" as the answer. This goal treats modern AI-assisted engineering as better served by a constraint ecosystem: multiple machine-checkable evidence layers, each scoped, costed, and calibrated to the repository's chosen architecture.
 
 ### Claims Pulsar Should Keep
+
+Each item below separates a source-backed claim from a Pulsar design inference. Lines labeled "Pulsar implication" are not direct research prescriptions; they are proposed ways to encode the research spine into deterministic repo scoring.
 
 1. Type safety is scoped evidence, not correctness.
    - A type system proves only the properties encoded by that system under its assumptions.
@@ -101,7 +106,7 @@ The type-safety research changes the shape of this goal. Pulsar should not prese
 
 4. Domain modeling is a constraint surface.
    - Invariants live in construction, representation hiding, ADTs, typed errors, state transitions, and canonical domain language.
-   - Pulsar implication: file taxonomy cannot stop at `src` versus `test`; it needs domain, adapter, generated, fixture, migration, public API, pure utility, shared contextual, and integration roles.
+   - Pulsar implication: file taxonomy cannot stop at `src` versus `test`; it needs declared roles for domain, adapter, generated, fixture, migration, public API, and whatever architecture-taste roles a repo chooses. For Pulsar's own self-score proof, those taste roles are `pure_utility`, `shared_contextual`, and `integration`.
    - Sources: `functional-domain-modeling-invariant-encoding.md`, `domain-driven-design-canonical-spine.md`.
 
 5. Agent-readable architecture needs executable fitness functions.
@@ -115,14 +120,14 @@ The type-safety research changes the shape of this goal. Pulsar should not prese
    - Sources: `ai-code-generation-constraint-verifier-feedback.md`, `compiler-typechecker-static-analysis-feedback.md`, `ai-code-quality-security-benchmark-caveats.md`.
 
 7. Composite signals are where raw facts become useful judgment.
-   - Most primitive facts are too local to be strong diagnoses. Pulsar's design inference is that their value appears when composed: churn plus complexity plus coverage gap plus ownership diffusion means something different from each input alone.
+   - Pulsar's design inference is that many primitive facts are too local to be strong diagnoses by themselves, and their value can improve when composed under an explicit diagnostic hypothesis: churn plus complexity plus coverage gap plus ownership diffusion means something different from each input alone.
    - Pulsar implication: primitive signal expansion should be justified by composite consumers, not by signal count.
    - Sources for the constraint-composition pattern: `verifier-proof-property-test-feedback.md`, `compiler-typechecker-static-analysis-feedback.md`.
 
 8. Proof-like artifacts certify stated obligations, not intent.
    - Property tests, fuzzing, contracts, TLA+/Alloy models, runtime monitors, refinement types, and proof assistants are powerful only for the properties actually stated, generated, monitored, or proven.
    - Pulsar implication: proof/property/model signals must expose property identity, assumptions, bound, oracle quality, trace conformance, drift, and maintenance cost.
-   - Sources: `property-based-testing-executable-specifications.md`, `contracts-assertions-runtime-verification.md`, `formal-specification-tla-alloy-model-checking.md`.
+   - Sources: `property-based-testing-executable-specifications.md`, `contracts-assertions-runtime-verification.md`, `formal-specification-tla-alloy-model-checking.md`, `verifier-proof-property-test-feedback.md`.
 
 ### Overclaim Guardrails
 
@@ -327,6 +332,8 @@ Make the repository safe to evolve. No taste, composite, or signal expansion wor
 ### Objective
 
 Make the three-tier architecture taste expressible as repo-owned deterministic policy through one classifier spine.
+
+This milestone proves that Pulsar can encode one declared taste, not that this taste is universally correct. The three tiers are an internal operationalization of broader theory-building, boundary, information-hiding, and simplicity principles; another repo should be able to choose a different taxonomy and still satisfy the same provenance, determinism, and overclaim guardrails.
 
 ### Work Items
 
@@ -560,7 +567,7 @@ Signal count is not the primary success metric. Diagnostic power is.
 11. `SHARED-11-theory-encoding-index`
    - Class: compound plus reference-data-dependent.
    - Composes declared domain/core regions, boundary parser coverage, property/spec presence, architecture fitness coverage, typed error evidence, and AI-generated/churn pressure.
-   - Rationale: the research frames AI quicksand as loss of recoverable program theory; this composite measures whether high-risk areas have machine-checkable theory artifacts.
+   - Rationale: as a Pulsar design inference, this composite operationalizes the research framing that AI quicksand appears when generated code outruns recoverable program theory. It measures whether high-risk areas have machine-checkable theory artifacts.
    - Composite consumers: AI quicksand risk, constraint effectiveness.
 
 ### Priority P2: Architecture and Maintenance Expansion
@@ -606,6 +613,8 @@ Signal count is not the primary success metric. Diagnostic power is.
 
 20. Property/spec health.
    - Tracks property-based test files, generator diversity, skipped/flaky property tests, mutation score where available, model/spec files, runtime contract/assertion checks, and trace-conformance evidence.
+   - Classifies property evidence by kind where possible: invariant, postcondition, metamorphic relation, inductive property, model-based property, roundtrip, differential check, or explicit test oracle.
+   - For runtime monitors and model/spec artifacts, records property identity, assumptions, bound/scope, instrumentation/trace quality, conformance link, freshness, and known monitorability limits.
    - Keeps caveat explicit: properties and models are executable evidence, not proof of unstated intent.
    - Composite consumers: theory encoding index, constraint effectiveness, contract safety gap.
 
@@ -930,7 +939,7 @@ Pulsar Constraint Ecosystem v1 is done when all of these hold:
 15. AI-classified facts have a design that preserves deterministic replay and visible provenance.
 16. Documentation includes an alternate taste example with a runnable verification path.
 17. Every production signal declares its evidence class, claim limit, absence semantics, calibration surface, composite consumers, enforcement ceiling, and at least one known failure mode.
-18. At least one composite demonstrates the type-driven verification thesis: machine-checked feedback, boundary construction, theory artifacts, and maintenance cost are stronger together than any single raw metric.
+18. At least one composite demonstrates the constraint-ecosystem approach: machine-checked feedback, boundary construction, executable theory artifacts, and maintenance cost interact under declared repo policy. It must not claim quantitative superiority over every individual primitive unless Pulsar has separate empirical evidence for that claim.
 
 ## Risks and Controls
 
