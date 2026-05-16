@@ -40,6 +40,7 @@ export const TsRp01: Signal<TsRp01Config, TsRp01Output, never> = {
   tier: 1.5,
   category: "review-pain",
   kind: "compound",
+  cacheVersion: "risk-hotspot-v2-composite-policy-v1",
   configSchema: TsRp01Config,
   defaultConfig: {
     top_n: 10,
@@ -65,6 +66,11 @@ export const TsRp01: Signal<TsRp01Config, TsRp01Output, never> = {
       data: {
         churn: h.churn,
         complexity: h.complexity,
+        ...(h.weightedChurn !== undefined ? { weightedChurn: h.weightedChurn } : {}),
+        ...(h.ownershipRisk !== undefined ? { ownershipRisk: h.ownershipRisk } : {}),
+        ...(h.coverageGap !== undefined ? { coverageGap: h.coverageGap } : {}),
+        ...(h.cochangeRisk !== undefined ? { cochangeRisk: h.cochangeRisk } : {}),
+        ...(h.riskFactors !== undefined ? { riskFactors: h.riskFactors } : {}),
         hotspotScore: h.hotspotScore,
         quadrant: h.quadrant,
         rank: h.rank,

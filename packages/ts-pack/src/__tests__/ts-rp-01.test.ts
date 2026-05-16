@@ -4,9 +4,26 @@ import { buildRegistry, runSignal } from "@skastr0/pulsar-core/scoring"
 import { Effect } from "effect"
 import { TsRp01 } from "../signals/ts-rp-01-hotspots.js"
 import { SHARED_SIGNALS } from "@skastr0/pulsar-shared-signals"
-import type { SharedChurn01Output } from "@skastr0/pulsar-shared-signals"
+import type {
+  Shared02BusFactorOutput,
+  SharedChurn01Output,
+  SharedChurn02Output,
+  SharedCochange01Output,
+  SharedCov01CoverageFactsOutput,
+} from "@skastr0/pulsar-shared-signals"
 import { TS_PACK_SIGNALS } from "../pack.js"
 import type { TsLd01Output } from "../signals/ts-ld-01-complexity.js"
+
+const hotspotInputIds = [
+  "TS-LD-01-cyclomatic-complexity",
+  "SHARED-CHURN-01-recent-churn",
+  "SHARED-CHURN-02-recency-weighted-churn",
+  "SHARED-02-bus-factor",
+  "SHARED-COV-01-coverage-facts",
+  "SHARED-COCHANGE-01-logical-coupling",
+] as const
+
+const optionalHotspotInputIds = hotspotInputIds.slice(2)
 
 const mockComplexityOut: TsLd01Output = {
   functions: [],
@@ -45,6 +62,118 @@ const mockCompositeExplanation = {
   enforcementCeiling: ["trend", "review-routing", "dashboard"] as const,
 }
 
+const coverageMetric = (covered: number, total: number) => ({
+  covered,
+  total,
+  pct: total === 0 ? 1 : covered / total,
+})
+
+const mockWeightedChurnOut: SharedChurn02Output = {
+  byFile: new Map([
+    ["/repo/a.ts", {
+      touchCount: 5,
+      rawWindowChurn: 5,
+      weightedChurn: 5,
+      lastTouchedAt: "2026-05-16T00:00:00.000Z",
+    }],
+    ["/repo/b.ts", {
+      touchCount: 5,
+      rawWindowChurn: 5,
+      weightedChurn: 5,
+      lastTouchedAt: "2026-05-16T00:00:00.000Z",
+    }],
+  ]),
+  windowDays: 90,
+  halfLifeDays: 14,
+  totalCommits: 10,
+  maxCommits: 500,
+  sampled: false,
+  topDiagnostics: 10,
+  compositeConsumers: ["risk hotspot"],
+  cacheContributors: ["test"],
+  calibrationSurface: "test fixture",
+  enforcementCeiling: ["soft-warning", "trend"],
+}
+
+const mockOwnershipOut: Shared02BusFactorOutput = {
+  byFile: new Map(),
+  siloed: [{ file: "/repo/b.ts", author: "solo", loc: 200 }],
+  distribution: summarize([1, 2]),
+  windowDays: 180,
+  maxCommits: 5000,
+  touchedFileCount: 2,
+  touchedLoc: 400,
+  repoAuthors: ["peer", "solo"],
+  effectiveSiloed: [
+    {
+      file: "/repo/b.ts",
+      author: "solo",
+      loc: 200,
+      visible: true,
+      severity: "warn",
+      penaltyWeight: 0.8,
+      factorPathPrefix: "bus_factor.repo_b",
+      policyDecisions: [],
+    },
+  ],
+  calibrationDecisions: [],
+}
+
+const mockCoverageOut: SharedCov01CoverageFactsOutput = {
+  state: "present",
+  tool: "lcov",
+  checkedPaths: ["coverage/lcov.info"],
+  files: [
+    {
+      file: "/repo/a.ts",
+      lines: coverageMetric(10, 10),
+      functions: coverageMetric(2, 2),
+      branches: coverageMetric(2, 2),
+    },
+    {
+      file: "/repo/b.ts",
+      lines: coverageMetric(2, 10),
+      functions: coverageMetric(1, 2),
+      branches: coverageMetric(0, 2),
+    },
+  ],
+  summary: {
+    lines: coverageMetric(12, 20),
+    functions: coverageMetric(3, 4),
+    branches: coverageMetric(2, 4),
+  },
+  topDiagnostics: 10,
+  compositeConsumers: ["risk hotspot"],
+  cacheContributors: ["test"],
+  calibrationSurface: "test fixture",
+  enforcementCeiling: ["trend"],
+}
+
+const mockCochangeOut: SharedCochange01Output = {
+  pairs: [
+    {
+      leftFile: "/repo/b.ts",
+      rightFile: "/repo/support.ts",
+      coChangeCount: 4,
+      leftTouchCount: 4,
+      rightTouchCount: 4,
+      support: 0.4,
+      confidence: 1,
+      lastCoChangedAt: "2026-05-16T00:00:00.000Z",
+    },
+  ],
+  byPair: new Map(),
+  windowDays: 90,
+  totalCommits: 10,
+  maxCommits: 500,
+  sampled: false,
+  topDiagnostics: 10,
+  compositeConsumers: ["risk hotspot"],
+  cacheContributors: ["test"],
+  calibrationSurface: "test fixture",
+  enforcementCeiling: ["soft-warning", "trend"],
+}
+
 describe("TS-RP-01 (compound)", () => {
   test("combines churn and complexity into ranked hotspots", async () => {
     const inputs = new Map<string, unknown>([
@@ -53,13 +182,24 @@ describe("TS-RP-01 (compound)", () => {
     ])
     const out = await Effect.runPromise(TsRp01.compute(TsRp01.defaultConfig, inputs))
     expect(out.totalFilesConsidered).toBe(4)
+    expect(out.riskModel).toBe("legacy-churn-complexity")
+    expect(out.inputFactStates).toEqual({
+      recencyWeightedChurn: "not_configured",
+      ownership: "not_configured",
+      coverage: "not_configured",
+      cochange: "not_configured",
+    })
     expect(out.explanation.primitiveInputs.map((input) => input.id)).toEqual([
-      "TS-LD-01-cyclomatic-complexity",
-      "SHARED-CHURN-01-recent-churn",
+      ...hotspotInputIds,
     ])
+    expect(out.explanation.missingInputs).toEqual([...optionalHotspotInputIds])
     expect(out.explanation.weights).toEqual([
       { id: "TS-LD-01-cyclomatic-complexity", weight: 0.5 },
       { id: "SHARED-CHURN-01-recent-churn", weight: 0.5 },
+      { id: "SHARED-CHURN-02-recency-weighted-churn", weight: 0.25 },
+      { id: "SHARED-02-bus-factor", weight: 0.15 },
+      { id: "SHARED-COV-01-coverage-facts", weight: 0.15 },
+      { id: "SHARED-COCHANGE-01-logical-coupling", weight: 0.1 },
     ])
     const expectedFinalScore =
       1 - Math.min(1, out.softTopRightShare + out.softTopRightPressure * 2)
@@ -67,42 +207,40 @@ describe("TS-RP-01 (compound)", () => {
     expect(expectedFinalScore).toBeCloseTo(0.3218255807111624, 12)
     expect(TsRp01.score(out)).toBeCloseTo(expectedFinalScore, 12)
     expect(out.explanation).toMatchObject({
-      missingInputs: [],
+      missingInputs: [...optionalHotspotInputIds],
       rationale:
         "Ranks files by the composite pressure of recent churn and cyclomatic complexity.",
       enforcementCeiling: ["trend", "review-routing", "dashboard"],
-      primitiveInputs: [
-        {
-          id: "TS-LD-01-cyclomatic-complexity",
-          aliases: ["TS-LD-01"],
-          optional: false,
-          factorPath: "inputs.complexity",
-          weight: 0.5,
-          state: "present",
-          resolvedId: "TS-LD-01",
-          rawValue: {
-            files: 4,
-            totalFunctions: 4,
-            maxComplexity: 30,
-          },
-          normalizedValue: 0.6,
-        },
-        {
-          id: "SHARED-CHURN-01-recent-churn",
-          aliases: ["SHARED-CHURN-01"],
-          optional: false,
-          factorPath: "inputs.churn",
-          weight: 0.5,
-          state: "present",
-          resolvedId: "SHARED-CHURN-01",
-          rawValue: {
-            files: 4,
-            totalCommits: 58,
-            windowDays: 90,
-          },
-          normalizedValue: 25 / 90,
-        },
-      ],
+    })
+    expect(out.explanation.primitiveInputs[0]).toMatchObject({
+      id: "TS-LD-01-cyclomatic-complexity",
+      aliases: ["TS-LD-01"],
+      optional: false,
+      factorPath: "inputs.complexity",
+      weight: 0.5,
+      state: "present",
+      resolvedId: "TS-LD-01",
+      rawValue: {
+        files: 4,
+        totalFunctions: 4,
+        maxComplexity: 30,
+      },
+      normalizedValue: 0.6,
+    })
+    expect(out.explanation.primitiveInputs[1]).toMatchObject({
+      id: "SHARED-CHURN-01-recent-churn",
+      aliases: ["SHARED-CHURN-01"],
+      optional: false,
+      factorPath: "inputs.churn",
+      weight: 0.5,
+      state: "present",
+      resolvedId: "SHARED-CHURN-01",
+      rawValue: {
+        files: 4,
+        totalCommits: 58,
+        windowDays: 90,
+      },
+      normalizedValue: 25 / 90,
     })
     expect(out.hotspots[0]?.rank).toBe(1)
     expect(out.hotspots[0]?.hotspotScore).toBeGreaterThanOrEqual(
@@ -146,7 +284,7 @@ describe("TS-RP-01 (compound)", () => {
     ])
     const out = await Effect.runPromise(TsRp01.compute(TsRp01.defaultConfig, inputs))
     expect(out.totalFilesConsidered).toBe(0)
-    expect(out.explanation.missingInputs).toEqual([])
+    expect(out.explanation.missingInputs).toEqual([...optionalHotspotInputIds])
     expect(TsRp01.score(out)).toBe(1)
   })
 
@@ -158,12 +296,177 @@ describe("TS-RP-01 (compound)", () => {
     expect(out.explanation.missingInputs).toEqual([
       "TS-LD-01-cyclomatic-complexity",
       "SHARED-CHURN-01-recent-churn",
+      ...optionalHotspotInputIds,
     ])
     expect(out.explanation.primitiveInputs.map((input) => input.state)).toEqual([
       "missing_required",
       "missing_required",
+      "missing_optional",
+      "missing_optional",
+      "missing_optional",
+      "missing_optional",
     ])
     expect(TsRp01.score(out)).toBe(1)
+  })
+
+  test("risk hotspot v2 ranks identical churn and complexity by ownership, coverage, and co-change risk", async () => {
+    const equalComplexity: TsLd01Output = {
+      functions: [],
+      calibrationDecisions: [],
+      byFile: new Map([
+        ["/repo/a.ts", summarize([10])],
+        ["/repo/b.ts", summarize([10])],
+      ]),
+      overThresholdCount: 2,
+      totalFunctions: 2,
+      maxComplexity: 10,
+      ratioPressure: 1,
+      maxComplexityPressure: 0.2,
+    }
+    const equalChurn: SharedChurn01Output = {
+      byFile: new Map([
+        ["/repo/a.ts", 5],
+        ["/repo/b.ts", 5],
+      ]),
+      windowDays: 90,
+      totalCommits: 10,
+    }
+
+    const out = await Effect.runPromise(
+      TsRp01.compute(
+        TsRp01.defaultConfig,
+        new Map<string, unknown>([
+          ["TS-LD-01", equalComplexity],
+          ["SHARED-CHURN-01", equalChurn],
+          ["SHARED-CHURN-02", mockWeightedChurnOut],
+          ["SHARED-02", mockOwnershipOut],
+          ["SHARED-COV-01", mockCoverageOut],
+          ["SHARED-COCHANGE-01", mockCochangeOut],
+        ]),
+      ),
+    )
+
+    expect(out.riskModel).toBe("risk-hotspot-v2")
+    expect(out.inputFactStates).toEqual({
+      recencyWeightedChurn: "present",
+      ownership: "present",
+      coverage: "present",
+      cochange: "present",
+    })
+    expect(out.hotspots[0]?.file).toBe("/repo/b.ts")
+    expect(out.hotspots[0]).toMatchObject({
+      ownershipRisk: 0.8,
+      coverageGap: 0.8,
+      cochangeRisk: 1,
+      riskFactors: {
+        ownership: 0.8,
+        coverage: 0.8,
+        cochange: 1,
+      },
+    })
+    expect(out.hotspots[0]?.hotspotScore).toBeGreaterThan(
+      out.hotspots[1]?.hotspotScore ?? 0,
+    )
+    expect(out.explanation.rationale).toContain("recency-weighted churn")
+    expect(out.explanation.primitiveInputs.find(
+      (input) => input.id === "SHARED-COV-01-coverage-facts",
+    )?.rawValue).toMatchObject({ state: "present", lineCoverage: 0.6 })
+    expect(TsRp01.score(out)).toBeLessThan(1)
+  })
+
+  test("risk hotspot v2 keeps risk-ranked output after the legacy stabilization window", async () => {
+    const files = Array.from({ length: 13 }, (_, index) =>
+      index === 0 ? "/repo/a.ts" : index === 1 ? "/repo/b.ts" : `/repo/c${index}.ts`
+    )
+    const equalComplexity: TsLd01Output = {
+      functions: [],
+      calibrationDecisions: [],
+      byFile: new Map(files.map((file) => [file, summarize([10])] as const)),
+      overThresholdCount: files.length,
+      totalFunctions: files.length,
+      maxComplexity: 10,
+      ratioPressure: 1,
+      maxComplexityPressure: 0.2,
+    }
+    const equalChurn: SharedChurn01Output = {
+      byFile: new Map(files.map((file) => [file, 5] as const)),
+      windowDays: 90,
+      totalCommits: 10,
+    }
+
+    const out = await Effect.runPromise(
+      TsRp01.compute(
+        TsRp01.defaultConfig,
+        new Map<string, unknown>([
+          ["TS-LD-01", equalComplexity],
+          ["SHARED-CHURN-01", equalChurn],
+          ["SHARED-CHURN-02", mockWeightedChurnOut],
+          ["SHARED-02", mockOwnershipOut],
+          ["SHARED-COV-01", mockCoverageOut],
+          ["SHARED-COCHANGE-01", mockCochangeOut],
+        ]),
+      ),
+    )
+
+    expect(out.riskModel).toBe("risk-hotspot-v2")
+    expect(out.stabilizationWeight).toBe(0)
+    expect(out.hotspots[0]?.file).toBe("/repo/b.ts")
+    expect(out.riskFilesConsidered).toBe(files.length)
+  })
+
+  test("optional risk facts distinguish absent, unknown, zero, and not-applicable states", async () => {
+    const optionalFacts = {
+      recencyWeightedChurn: {
+        ...mockWeightedChurnOut,
+        byFile: new Map(),
+      },
+      ownership: {
+        ...mockOwnershipOut,
+        siloed: [],
+        effectiveSiloed: [],
+        touchedFileCount: 0,
+        touchedLoc: 0,
+      },
+      cochange: {
+        ...mockCochangeOut,
+        pairs: [],
+        byPair: new Map(),
+      },
+    }
+
+    for (const coverageState of ["absent", "unknown"] as const) {
+      const out = await Effect.runPromise(
+        TsRp01.compute(
+          TsRp01.defaultConfig,
+          new Map<string, unknown>([
+            ["TS-LD-01", mockComplexityOut],
+            ["SHARED-CHURN-01", mockChurnOut],
+            ["SHARED-CHURN-02", optionalFacts.recencyWeightedChurn],
+            ["SHARED-02", optionalFacts.ownership],
+            [
+              "SHARED-COV-01",
+              {
+                ...mockCoverageOut,
+                state: coverageState,
+                files: [],
+              } satisfies SharedCov01CoverageFactsOutput,
+            ],
+            ["SHARED-COCHANGE-01", optionalFacts.cochange],
+          ]),
+        ),
+      )
+
+      expect(out.riskModel).toBe("legacy-churn-complexity")
+      expect(out.inputFactStates).toEqual({
+        recencyWeightedChurn: "zero",
+        ownership: "not_applicable",
+        coverage: coverageState,
+        cochange: "zero",
+      })
+      expect(out.explanation.primitiveInputs.find(
+        (input) => input.id === "SHARED-COV-01-coverage-facts",
+      )?.rawValue).toMatchObject({ state: coverageState })
+    }
   })
 
   test("score is deterministic given the same output", async () => {
@@ -306,6 +609,26 @@ describe("TS-RP-01 (compound)", () => {
         id: "SHARED-CHURN-01-recent-churn",
         cacheFingerprint: expect.any(String),
       },
+      {
+        id: "SHARED-CHURN-02-recency-weighted-churn",
+        optional: true,
+        cacheFingerprint: expect.any(String),
+      },
+      {
+        id: "SHARED-02-bus-factor",
+        optional: true,
+        cacheFingerprint: expect.any(String),
+      },
+      {
+        id: "SHARED-COV-01-coverage-facts",
+        optional: true,
+        cacheFingerprint: expect.any(String),
+      },
+      {
+        id: "SHARED-COCHANGE-01-logical-coupling",
+        optional: true,
+        cacheFingerprint: expect.any(String),
+      },
     ])
   })
 
@@ -349,6 +672,15 @@ describe("TS-RP-01 (compound)", () => {
       softTopRightShare: 2 / 3,
       softTopRightPressure: 0,
       stabilizationWeight: 0,
+      riskModel: "legacy-churn-complexity",
+      riskFilesConsidered: 0,
+      riskPressure: 0,
+      inputFactStates: {
+        recencyWeightedChurn: "not_configured",
+        ownership: "not_configured",
+        coverage: "not_configured",
+        cochange: "not_configured",
+      },
       explanation: mockCompositeExplanation,
     })
 
@@ -391,6 +723,15 @@ describe("TS-RP-01 (compound)", () => {
       softTopRightShare: 1,
       softTopRightPressure: 0,
       stabilizationWeight: 0,
+      riskModel: "legacy-churn-complexity",
+      riskFilesConsidered: 0,
+      riskPressure: 0,
+      inputFactStates: {
+        recencyWeightedChurn: "not_configured",
+        ownership: "not_configured",
+        coverage: "not_configured",
+        cochange: "not_configured",
+      },
       explanation: mockCompositeExplanation,
     })
 

@@ -4,6 +4,7 @@ import { TsAb02 } from "../signals/ts-ab-02-unused-exports-reachability.js"
 import { TsAd02 } from "../signals/ts-ad-02-circular-deps.js"
 import { TsDe04 } from "../signals/ts-de-04-package-dependency-health.js"
 import { TsLd01 } from "../signals/ts-ld-01-complexity.js"
+import { TsRp01 } from "../signals/ts-rp-01-hotspots.js"
 import { TsSl01 } from "../signals/ts-sl-01-duplication.js"
 import { TsSl03 } from "../signals/ts-sl-03-suppressions.js"
 import { TsSl04 } from "../signals/ts-sl-04-empty-implementations.js"
@@ -13,6 +14,7 @@ describe("TS pack cache versions", () => {
     const ad02 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-AD-02"))
     const de04 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-DE-04"))
     const ld01 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-LD-01"))
+    const rp01 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-RP-01"))
     const sl01 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-SL-01"))
     const sl03 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-SL-03"))
     const sl04 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-SL-04"))
@@ -22,6 +24,7 @@ describe("TS pack cache versions", () => {
     expect(ab02?.cacheVersion).toContain(TsAb02.cacheVersion)
     expect(de04?.cacheVersion).toContain(TsDe04.cacheVersion)
     expect(ld01?.cacheVersion).toContain(TsLd01.cacheVersion)
+    expect(rp01?.cacheVersion).toContain(TsRp01.cacheVersion)
     expect(sl01?.cacheVersion).toContain(TsSl01.cacheVersion)
     expect(sl03?.cacheVersion).toContain(TsSl03.cacheVersion)
     expect(sl04?.cacheVersion).toContain(TsSl04.cacheVersion)
