@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { createHash } from "node:crypto"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -8,8 +9,13 @@ import {
   COVERAGE_REFERENCE_DATA_KEY,
   type CoverageFacts,
 } from "../coverage-facts.js"
+import {
+  CONTRACT_FRESHNESS_REFERENCE_DATA_KEY,
+  type ContractFreshnessFacts,
+} from "../contract-freshness.js"
 import { type SchemaConventions } from "../conventions.js"
 import { loadCanonicalReferenceDataEntries } from "../reference-data-loader.js"
+import { computeReferenceVersionHash } from "../scoring-engine-observer-cache.js"
 
 let tmp: string
 
@@ -116,4 +122,67 @@ describe("loadCanonicalReferenceDataEntries", () => {
     expect(coverage.state).toBe("unknown")
     expect(coverage.message).toContain("Failed to parse coverage reference data")
   })
+
+  test("loads contract freshness facts and changes reference hash with declared source content", async () => {
+    await mkdir(join(tmp, ".pulsar"), { recursive: true })
+    await mkdir(join(tmp, "contracts"), { recursive: true })
+    await mkdir(join(tmp, "src", "generated"), { recursive: true })
+    const sourceContent = JSON.stringify({ openapi: "3.1.0", paths: {} })
+    const artifactContent = "export const client = {}\n"
+    await writeFile(join(tmp, "contracts", "openapi.json"), sourceContent, "utf8")
+    await writeFile(join(tmp, "src", "generated", "client.ts"), artifactContent, "utf8")
+    await writeFile(
+      join(tmp, ".pulsar", "contract-freshness.json"),
+      `${JSON.stringify(
+        {
+          schema_version: 1,
+          contracts: [
+            {
+              id: "api-client",
+              group_id: "openapi",
+              source_paths: ["contracts/openapi.json"],
+              source_hashes: {
+                "contracts/openapi.json": sha256(sourceContent),
+              },
+              artifact_path: "src/generated/client.ts",
+              artifact_sha256: sha256(artifactContent),
+              generator: "openapi-generator",
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    )
+
+    const beforeEntries = await Effect.runPromise(loadCanonicalReferenceDataEntries(tmp))
+    const beforeFacts = beforeEntries.get(
+      CONTRACT_FRESHNESS_REFERENCE_DATA_KEY,
+    ) as ContractFreshnessFacts
+    const beforeReferenceHash = computeReferenceVersionHash(beforeEntries)
+
+    expect(beforeFacts.state).toBe("zero")
+    expect(beforeFacts.contracts[0]?.sourceHashes["contracts/openapi.json"]).toBe(
+      sha256(sourceContent),
+    )
+
+    await writeFile(
+      join(tmp, "contracts", "openapi.json"),
+      JSON.stringify({ openapi: "3.1.0", paths: { "/users": {} } }),
+      "utf8",
+    )
+    const afterEntries = await Effect.runPromise(loadCanonicalReferenceDataEntries(tmp))
+    const afterFacts = afterEntries.get(
+      CONTRACT_FRESHNESS_REFERENCE_DATA_KEY,
+    ) as ContractFreshnessFacts
+    const afterReferenceHash = computeReferenceVersionHash(afterEntries)
+
+    expect(afterReferenceHash).not.toBe(beforeReferenceHash)
+    expect(afterFacts.state).toBe("present")
+    expect(afterFacts.findings.map((finding) => finding.kind)).toContain("stale-artifact")
+  })
 })
+
+const sha256 = (content: string): string =>
+  createHash("sha256").update(content).digest("hex")

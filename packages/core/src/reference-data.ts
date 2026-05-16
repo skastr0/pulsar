@@ -57,6 +57,22 @@ export type {
   CoverageMetric,
 } from "./coverage-facts.js"
 export {
+  CANONICAL_CONTRACT_FRESHNESS_RELATIVE_PATH,
+  CONTRACT_FRESHNESS_REFERENCE_DATA_KEY,
+  ContractFreshnessManifest,
+  buildNotConfiguredContractFreshnessFacts,
+  buildUnknownContractFreshnessFacts,
+  decodeContractFreshnessManifestSync,
+  loadContractFreshnessFacts,
+} from "./contract-freshness.js"
+export type {
+  ContractFreshnessArtifactFact,
+  ContractFreshnessFactState,
+  ContractFreshnessFacts,
+  ContractFreshnessFinding,
+  ContractFreshnessFindingKind,
+} from "./contract-freshness.js"
+export {
   CANONICAL_CONVENTIONS_RELATIVE_PATH,
   CANONICAL_GLOSSARY_RELATIVE_PATH,
   loadCanonicalReferenceDataEntries,

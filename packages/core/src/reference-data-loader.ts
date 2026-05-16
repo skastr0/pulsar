@@ -11,6 +11,11 @@ import {
   COVERAGE_REFERENCE_DATA_KEY,
   parseCoverageCandidate,
 } from "./coverage-facts.js"
+import {
+  CANONICAL_CONTRACT_FRESHNESS_RELATIVE_PATH,
+  CONTRACT_FRESHNESS_REFERENCE_DATA_KEY,
+  loadContractFreshnessFacts,
+} from "./contract-freshness.js"
 import { ReferenceDataLoadFailed } from "./errors.js"
 import { decodeGlossary } from "./glossary.js"
 
@@ -83,6 +88,10 @@ export const loadCanonicalReferenceDataEntries = (
       COVERAGE_REFERENCE_DATA_KEY,
       yield* loadCoverageReferenceEntry(repoRoot),
     )
+    entries.set(
+      CONTRACT_FRESHNESS_REFERENCE_DATA_KEY,
+      yield* loadContractFreshnessReferenceEntry(repoRoot),
+    )
 
     return entries as ReadonlyMap<string, unknown>
   })
@@ -119,4 +128,17 @@ const loadCoverageReferenceEntry = (
     }
 
     return buildAbsentCoverageFacts(checkedPaths)
+  })
+
+const loadContractFreshnessReferenceEntry = (
+  repoRoot: string,
+): Effect.Effect<unknown, ReferenceDataLoadFailed, never> =>
+  Effect.tryPromise({
+    try: () => loadContractFreshnessFacts(repoRoot),
+    catch: (cause) =>
+      new ReferenceDataLoadFailed({
+        repoPath: repoRoot,
+        path: CANONICAL_CONTRACT_FRESHNESS_RELATIVE_PATH,
+        message: `Failed to load contract freshness reference data: ${String(cause)}`,
+      }),
   })

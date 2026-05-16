@@ -71,6 +71,7 @@ describe("Observer + TS pack integration", () => {
         "SHARED-05-suppression-governance",
         "SHARED-06-pr-dependency-delta",
         "SHARED-07-machine-feedback-coverage",
+        "SHARED-09-contract-freshness",
         "SHARED-CHURN-01-recent-churn",
         "SHARED-CHURN-02-recency-weighted-churn",
         "SHARED-COCHANGE-01-logical-coupling",

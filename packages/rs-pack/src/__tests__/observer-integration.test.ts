@@ -92,7 +92,7 @@ describe("rs-pack integration", () => {
       expect(result.categories["abstraction-bloat"].signalCount).toBe(4)
       expect(result.categories["legibility-decay"].signalCount).toBe(6)
       expect(result.categories["generated-slop"].signalCount).toBe(5)
-      expect(result.categories["review-pain"].signalCount).toBe(10)
+      expect(result.categories["review-pain"].signalCount).toBe(11)
       expect(result.categories["legibility-decay"].score).toBeLessThan(1)
       expect(result.minimum?.signal).toBeDefined()
     } finally {

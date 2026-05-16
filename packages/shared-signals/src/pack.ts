@@ -10,6 +10,7 @@ import { withConfigFactorLedger } from "@skastr0/pulsar-core/factors"
 import { Shared05Suppression } from "./shared-05-suppression.js"
 import { Shared06PrDepDelta } from "./shared-06-pr-dep-delta.js"
 import { Shared07MachineFeedbackCoverage } from "./shared-07-machine-feedback-coverage.js"
+import { Shared09ContractFreshness } from "./shared-09-contract-freshness.js"
 import { SharedCov01CoverageFacts } from "./shared-cov-01-coverage-facts.js"
 
 const SHARED_PACK_CACHE_VERSION =
@@ -32,6 +33,7 @@ export const SHARED_SIGNALS: ReadonlyArray<AnySignal> = [
   Shared05Suppression,
   Shared06PrDepDelta,
   Shared07MachineFeedbackCoverage,
+  Shared09ContractFreshness,
   SharedCov01CoverageFacts,
 ].map(withSharedPackCacheVersion)
   .map(withConfigFactorLedger)

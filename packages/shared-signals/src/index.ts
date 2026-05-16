@@ -59,6 +59,11 @@ export {
   type Shared07MachineFeedbackCoverageOutput,
 } from "./shared-07-machine-feedback-coverage.js"
 export {
+  Shared09ContractFreshness,
+  Shared09ContractFreshnessConfig,
+  type Shared09ContractFreshnessOutput,
+} from "./shared-09-contract-freshness.js"
+export {
   SharedCov01CoverageFacts,
   SharedCov01CoverageFactsConfig,
   type SharedCov01CoverageFactsOutput,

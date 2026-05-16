@@ -1,9 +1,11 @@
+import { CANONICAL_CONTRACT_FRESHNESS_RELATIVE_PATH } from "./contract-freshness.js"
 import {
   CANONICAL_CONVENTIONS_RELATIVE_PATH,
   CANONICAL_GLOSSARY_RELATIVE_PATH,
 } from "./reference-data-loader.js"
 
 export const isPulsarSource = (path: string): boolean =>
+  path === CANONICAL_CONTRACT_FRESHNESS_RELATIVE_PATH ||
   path === CANONICAL_CONVENTIONS_RELATIVE_PATH ||
   path === CANONICAL_GLOSSARY_RELATIVE_PATH ||
   path.startsWith(".github/workflows/") && (path.endsWith(".yml") || path.endsWith(".yaml")) ||
