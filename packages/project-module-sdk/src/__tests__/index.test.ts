@@ -4,7 +4,9 @@ import { join } from "node:path"
 import { describe, expect, test } from "bun:test"
 import { Effect, Exit } from "effect"
 import {
+  addPolicyTag,
   addSourceCategory,
+  classifyArchitectureRole,
   classifyTypeScriptNoop,
   decodeProjectModuleManifest,
   defineProcessor,
@@ -16,6 +18,8 @@ import {
   makeResolvedCalibrationContext,
   markTypeScriptExportPublicEntrypoint,
   nameTypeScriptCallbackContext,
+  readArchitectureRole,
+  readPolicyTags,
   type RepoFacts,
   tuneFactorPolicy,
   tuneTypeScriptUnfinishedImplementation,
@@ -133,6 +137,78 @@ describe("project module sdk", () => {
     expect(result.value.categories).toEqual(["generated", "unknown"])
     expect(result.decisions[0]?.moduleId).toBe("acme.convex")
     expect(result.decisions[0]?.processorId).toBe("convex-generated-taxonomy")
+  })
+
+  test("taxonomy helpers classify repo-defined architecture roles and policy tags", async () => {
+    const module = defineProjectModule({
+      id: "acme.project",
+      version: "1.0.0",
+      scope: "repository",
+      processors: [
+        defineProcessor({
+          id: "domain-boundary-taxonomy",
+          slot: "taxonomy.file-classifier",
+          role: "enricher",
+          fingerprint: "domain-boundary-taxonomy-v1",
+          process: (current, _context, runtime) =>
+            Effect.sync(() => {
+              if (!current.value.path.endsWith("/src/domain/user.ts")) return current
+              const withRole = classifyArchitectureRole(
+                current,
+                runtime,
+                "domain-boundary",
+                {
+                  reason: "This repository marks domain aggregate files as boundary-owned",
+                  ruleId: "acme.domain-boundary.v1",
+                  evidence: [{ kind: "path", value: current.value.path }],
+                },
+              )
+              return addPolicyTag(withRole, runtime, "owner-reviewed", {
+                reason: "Domain boundaries require owner review in this repository",
+                ruleId: "acme.owner-reviewed.v1",
+                evidence: [{ kind: "path", value: current.value.path }],
+              })
+            }),
+        }),
+      ],
+    })
+    const context = makeResolvedCalibrationContext({
+      repoFacts,
+      activeModules: [module.activeModule],
+      processors: module.processors,
+    })
+
+    const result = await Effect.runPromise(
+      context.runSlot("taxonomy.file-classifier", {
+        path: "/repo/src/domain/user.ts",
+        categories: ["production_source"],
+      }),
+    )
+
+    expect(readArchitectureRole(result.value.metadata)).toBe("domain-boundary")
+    expect(readPolicyTags(result.value.metadata)).toEqual(["owner-reviewed"])
+    expect(result.decisions.map((decision) => decision.action)).toEqual([
+      "classify-architecture-role",
+      "add-policy-tag",
+    ])
+    expect(result.decisions.map((decision) => decision.ruleId)).toEqual([
+      "acme.domain-boundary.v1",
+      "acme.owner-reviewed.v1",
+    ])
+
+    const paddedResult = await Effect.runPromise(
+      context.runSlot("taxonomy.file-classifier", {
+        path: "/repo/src/domain/user.ts",
+        categories: ["production_source"],
+        metadata: { architecture_role: " legacy " },
+      }),
+    )
+
+    expect(paddedResult.value.metadata?.architecture_role).toBe("domain-boundary")
+    expect(paddedResult.decisions[0]).toMatchObject({
+      before: "legacy",
+      after: "domain-boundary",
+    })
   })
 
   test("processor runtime helpers classify TypeScript noops with attribution", async () => {

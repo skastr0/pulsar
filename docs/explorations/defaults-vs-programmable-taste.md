@@ -137,6 +137,23 @@ It should not live as:
 - the only supported file-role model;
 - the public claim that all repositories should organize code this way.
 
+Compatibility note: existing `architectural_tier` helpers may remain while older
+project modules migrate, but generic examples and new helper APIs should prefer
+repo-defined `architecture_role` and `policy_tags` metadata.
+
+Current compatibility surface:
+
+- Generic API: core calibration and project-module SDK exports may keep
+  compatibility helpers, but new generic helpers should be named around
+  `architecture_role` and `policy_tags`.
+- Self-calibration: `.pulsar/modules/pulsar-self.ts` may keep the three-tier
+  vocabulary because it is explicit Pulsar repository taste.
+- Tests: generic taxonomy and SDK tests should prove non-three-tier roles or
+  tags work; three-tier assertions should be limited to compatibility tests or
+  Pulsar self-calibration tests.
+- Docs: product docs may mention the three-tier model only as an optional
+  profile or migration compatibility surface, not as Pulsar's default ontology.
+
 ## Implementation Checks
 
 The following checks keep the boundary honest:

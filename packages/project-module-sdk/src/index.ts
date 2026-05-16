@@ -23,14 +23,18 @@ export {
 } from "./definition.js"
 
 export {
+  addPolicyTag,
   addSourceCategory,
+  classifyArchitectureRole,
   classifyArchitecturalTier,
   classifyTypeScriptNoop,
   markTypeScriptExportPublicEntrypoint,
   nameTypeScriptCallbackContext,
   tuneTypeScriptUnsafeType,
   tuneTypeScriptUnfinishedImplementation,
+  type AddPolicyTagOptions,
   type AddSourceCategoryOptions,
+  type ClassifyArchitectureRoleOptions,
   type ClassifyArchitecturalTierOptions,
   type ClassifyTypeScriptNoopOptions,
   type MarkTypeScriptPublicEntrypointOptions,
@@ -59,13 +63,21 @@ export {
 export type { ProjectModuleLoadOptions } from "./loader-types.js"
 
 export {
+  ARCHITECTURE_ROLE_METADATA_KEY,
   ARCHITECTURAL_TIER_METADATA_KEY,
+  POLICY_TAGS_METADATA_KEY,
+  readArchitectureRole,
   isArchitecturalTier,
   readArchitecturalTier,
+  readPolicyTags,
+  withArchitectureRoleMetadata,
   withArchitecturalTierMetadata,
+  withPolicyTagMetadata,
+  withPolicyTagsMetadata,
   fingerprintProjectModule,
   makeResolvedCalibrationContext,
   type ActiveProjectModule,
+  type ArchitectureRole,
   type ArchitecturalTier,
   type AnyCalibrationProcessor,
   type CalibrationConfidence,
@@ -79,6 +91,7 @@ export {
   type ProjectModuleContribution,
   type ProjectModuleDescriptor,
   type ProjectModuleScope,
+  type PolicyTag,
   type RepoFacts,
   type ResolvedCalibrationContext,
   type SourceCategory,

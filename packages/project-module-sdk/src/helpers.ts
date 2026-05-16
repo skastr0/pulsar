@@ -11,8 +11,12 @@ import type {
   TypeScriptUnfinishedImplementationPolicyValue,
 } from "@skastr0/pulsar-core/calibration"
 import {
+  readArchitectureRole,
   readArchitecturalTier,
+  readPolicyTags,
+  withArchitectureRoleMetadata,
   withArchitecturalTierMetadata,
+  withPolicyTagMetadata,
 } from "@skastr0/pulsar-core/calibration"
 import {
   appendProjectModuleDecision,
@@ -29,6 +33,24 @@ export interface AddSourceCategoryOptions {
 }
 
 export interface ClassifyArchitecturalTierOptions {
+  readonly action?: string
+  readonly confidence?: CalibrationDecision["confidence"]
+  readonly reason: string
+  readonly ruleId?: string
+  readonly evidence?: ReadonlyArray<CalibrationEvidenceRef>
+  readonly metadata?: Readonly<Record<string, unknown>>
+}
+
+export interface ClassifyArchitectureRoleOptions {
+  readonly action?: string
+  readonly confidence?: CalibrationDecision["confidence"]
+  readonly reason: string
+  readonly ruleId?: string
+  readonly evidence?: ReadonlyArray<CalibrationEvidenceRef>
+  readonly metadata?: Readonly<Record<string, unknown>>
+}
+
+export interface AddPolicyTagOptions {
   readonly action?: string
   readonly confidence?: CalibrationDecision["confidence"]
   readonly reason: string
@@ -116,6 +138,56 @@ export const addSourceCategory = (
       categories: [...new Set([...current.value.categories, category])].sort(),
       ...(metadata !== undefined ? { metadata } : {}),
     },
+  )
+}
+
+export const classifyArchitectureRole = (
+  current: CalibrationSlotOutput<"taxonomy.file-classifier">,
+  runtime: ProjectModuleProcessorRuntime<"taxonomy.file-classifier">,
+  role: string,
+  options: ClassifyArchitectureRoleOptions,
+): CalibrationSlotOutput<"taxonomy.file-classifier"> => {
+  const existingRole = readArchitectureRole(current.value.metadata)
+  const metadata = mergeMetadata(current.value.metadata, options.metadata)
+  const nextValue = withArchitectureRoleMetadata(current.value, role, metadata)
+  return appendProjectModuleDecision(
+    current,
+    runtime,
+    {
+      action: options.action ?? "classify-architecture-role",
+      confidence: options.confidence ?? "high",
+      reason: options.reason,
+      ...(options.ruleId !== undefined ? { ruleId: options.ruleId } : {}),
+      ...(options.evidence !== undefined ? { evidence: options.evidence } : {}),
+      before: existingRole,
+      after: readArchitectureRole(nextValue.metadata),
+    },
+    nextValue,
+  )
+}
+
+export const addPolicyTag = (
+  current: CalibrationSlotOutput<"taxonomy.file-classifier">,
+  runtime: ProjectModuleProcessorRuntime<"taxonomy.file-classifier">,
+  tag: string,
+  options: AddPolicyTagOptions,
+): CalibrationSlotOutput<"taxonomy.file-classifier"> => {
+  const existingTags = readPolicyTags(current.value.metadata)
+  const metadata = mergeMetadata(current.value.metadata, options.metadata)
+  const nextValue = withPolicyTagMetadata(current.value, tag, metadata)
+  return appendProjectModuleDecision(
+    current,
+    runtime,
+    {
+      action: options.action ?? "add-policy-tag",
+      confidence: options.confidence ?? "high",
+      reason: options.reason,
+      ...(options.ruleId !== undefined ? { ruleId: options.ruleId } : {}),
+      ...(options.evidence !== undefined ? { evidence: options.evidence } : {}),
+      before: existingTags,
+      after: readPolicyTags(nextValue.metadata),
+    },
+    nextValue,
   )
 }
 

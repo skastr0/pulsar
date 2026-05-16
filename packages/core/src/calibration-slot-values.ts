@@ -1,4 +1,8 @@
-import type { ArchitecturalTier } from "./architectural-tier.js"
+import type {
+  ArchitecturalTier,
+  ArchitectureRole,
+  PolicyTag,
+} from "./architectural-tier.js"
 import type {
   CalibrationConfidence,
   CalibrationEvidenceRef,
@@ -9,7 +13,9 @@ export interface FileClassificationValue {
   readonly path: string
   readonly categories: ReadonlyArray<SourceCategory>
   readonly metadata?: Readonly<Record<string, unknown>> & {
+    readonly architecture_role?: ArchitectureRole
     readonly architectural_tier?: ArchitecturalTier
+    readonly policy_tags?: ReadonlyArray<PolicyTag>
   }
 }
 

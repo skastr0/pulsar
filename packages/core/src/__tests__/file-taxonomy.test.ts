@@ -5,9 +5,13 @@ import {
   appendCalibrationDecision,
   defineCalibrationProcessor,
   makeResolvedCalibrationContext,
+  readArchitectureRole,
   readArchitecturalTier,
+  readPolicyTags,
   type RepoFacts,
+  withArchitectureRoleMetadata,
   withArchitecturalTierMetadata,
+  withPolicyTagMetadata,
 } from "../calibration.js"
 import {
   classifyFilePath,
@@ -120,7 +124,35 @@ describe("file taxonomy", () => {
     expect(isProduction).toBe(false)
   })
 
-  test("architectural tier metadata helpers preserve canonical tier values", () => {
+  test("neutral architecture role and policy tag helpers preserve repo-defined values", () => {
+    const classified = withPolicyTagMetadata(
+      withArchitectureRoleMetadata(
+        { path: "src/domain/user.ts", categories: ["production_source"] as const },
+        "domain-boundary",
+        { source: "test", policy_tags: ["owner-reviewed"] },
+      ),
+      "runtime-owned",
+    )
+
+    expect(readArchitectureRole(classified.metadata)).toBe("domain-boundary")
+    expect(readPolicyTags(classified.metadata)).toEqual([
+      "owner-reviewed",
+      "runtime-owned",
+    ])
+    expect(classified.metadata?.source).toBe("test")
+    expect(readArchitectureRole({ architecture_role: "" })).toBeUndefined()
+    expect(
+      withArchitectureRoleMetadata(
+        { path: "src/blank.ts", categories: ["production_source"] as const },
+        "  ",
+      ).metadata?.architecture_role,
+    ).toBeUndefined()
+    expect(readPolicyTags({ policy_tags: ["domain", "domain", "", 1] })).toEqual([
+      "domain",
+    ])
+  })
+
+  test("architectural tier metadata helpers remain available for compatibility", () => {
     const classified = withArchitecturalTierMetadata(
       { path: "src/adapter.ts", categories: ["production_source"] as const },
       "integration",
