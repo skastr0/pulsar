@@ -10,9 +10,25 @@ Experimental. Pulsar is usable for inspection and local scoring, but signal sema
 
 Pulsar turns grounded repository evidence into scores that can be reviewed, cached, calibrated, and explained. It is built for maintainers who want repo-level health signals that are harder to game than vibes-based review.
 
+## Default Philosophy
+
+Pulsar's default behavior is generic, conventional, and least-surprising. Built-in signals should reflect broadly reusable software-engineering evidence, not one maintainer's personal architecture taste.
+
+Pulsar is still designed to be deeply programmable. Repositories, organizations, frameworks, technologies, presets, and separately packaged opinionated modules can change how evidence is interpreted, but those choices must be explicit calibration rather than hidden default behavior.
+
+In practice:
+
+- defaults provide a conservative repository-health baseline;
+- vectors weight priorities for a repo or organization;
+- project modules encode score-affecting calibration with provenance;
+- presets are templates, not active scoring policy until applied;
+- opinionated distributions are valid opt-ins, not the neutral product contract.
+
+Pulsar's own repository may dogfood an opinionated self-calibration. That proves the customization model; it does not define the out-of-box ideal for every repo.
+
 The current workspace includes:
 
-- `@skastr0/pulsar-core`: signal runtime, registry, observer, scoring engine, vectors, calibration, routing, and time-series primitives
+- `@skastr0/pulsar-core`: signal runtime, registry, observer, scoring engine, vectors, calibration, and repository history primitives
 - `@skastr0/pulsar-ts-pack`: TypeScript signal pack
 - `@skastr0/pulsar-rs-pack`: Rust signal pack
 - `@skastr0/pulsar-shared-signals`: language-agnostic shared signals
@@ -81,9 +97,10 @@ Repo-owned Pulsar files live under `.pulsar/`. The public, diffable files are ex
 - `.pulsar/author-aliases.json`
 - `.pulsar/project-modules.json`
 - `.pulsar/modules/**`
-- `.pulsar/routing-patterns/**`
 
-Generated caches, quiz sessions, draft extraction files, proposal queues, time-series data, and calibration suggestion reports are local runtime state under `~/.config/pulsar/repos/<repo-id>/`. They are not global/user Pulsar customization and are not part of the repo-owned `.pulsar` surface.
+Optional review-routing configuration may also live under `.pulsar/routing-patterns/**` when a repository explicitly opts into score-based review planning. It is not part of the default scoring baseline.
+
+Generated caches, repository history snapshots, and calibration suggestion reports are local runtime state under `~/.config/pulsar/repos/<repo-id>/`. They are not global/user Pulsar customization and are not part of the repo-owned `.pulsar` surface.
 
 CI ratcheting debt is recorded separately in `pulsar-baseline.json`.
 
