@@ -14,19 +14,46 @@ import {
   type TypeScriptUnsafeTypePolicyValue,
 } from "@skastr0/pulsar-project-module-sdk"
 
+/**
+ * Pulsar repository self-calibration.
+ *
+ * This module is loaded by this repository's `.pulsar/project-modules.json`.
+ * It is not Pulsar product default behavior, and it does not define the
+ * generic scoring baseline for other repositories. The architecture-role
+ * vocabulary below is the Pulsar repository's current local taste profile.
+ */
 type PulsarArchitectureRole = "pure_utility" | "shared_contextual" | "integration"
 
-const ARCHITECTURE_ROLE_RULE_ID = "pulsar.architecture-role.v1"
-const DELIBERATE_EXISTENTIAL_RULE_ID = "pulsar.deliberate-existential-boundary.v1"
-const INTEGRATION_TYPE_COUPLING_RULE_ID = "pulsar.integration-type-coupling-policy.v1"
-const INTEGRATION_SIZE_RULE_ID = "pulsar.integration-size-policy.v1"
-const INTEGRATION_NESTING_RULE_ID = "pulsar.integration-nesting-policy.v1"
-const INTEGRATION_CLONE_RULE_ID = "pulsar.integration-clone-policy.v1"
-const SELF_HOSTING_BUS_FACTOR_RULE_ID = "pulsar.self-hosting-single-maintainer-bus-factor.v1"
-const ACTIVE_SELF_HOSTING_CLEANUP_CHURN_RULE_ID = "pulsar.active-self-hosting-cleanup-churn.v1"
-const ACTIVE_SELF_HOSTING_CLEANUP_PR_SIZE_RULE_ID = "pulsar.active-self-hosting-cleanup-pr-size.v1"
+const REPOSITORY_NAME = "pulsar"
+const SELF_CALIBRATION_SCOPE = "repo-local-self-calibration"
+const NOT_PRODUCT_DEFAULT = false
+const ARCHITECTURE_ROLE_RULE_ID = "pulsar.repository.architecture-role.v1"
+const DELIBERATE_EXISTENTIAL_RULE_ID = "pulsar.repository.deliberate-existential-boundary.v1"
+const INTEGRATION_TYPE_COUPLING_RULE_ID = "pulsar.repository.integration-type-coupling-policy.v1"
+const INTEGRATION_SIZE_RULE_ID = "pulsar.repository.integration-size-policy.v1"
+const INTEGRATION_NESTING_RULE_ID = "pulsar.repository.integration-nesting-policy.v1"
+const INTEGRATION_CLONE_RULE_ID = "pulsar.repository.integration-clone-policy.v1"
+const SELF_HOSTING_BUS_FACTOR_RULE_ID =
+  "pulsar.repository.self-hosting-single-maintainer-bus-factor.v1"
+const ACTIVE_SELF_HOSTING_CLEANUP_CHURN_RULE_ID =
+  "pulsar.repository.active-self-hosting-cleanup-churn.v1"
+const ACTIVE_SELF_HOSTING_CLEANUP_PR_SIZE_RULE_ID =
+  "pulsar.repository.active-self-hosting-cleanup-pr-size.v1"
 const SELF_HOSTING_POLICY_OWNER = "Guilherme Castro"
-const TC_158_REVIEW_TRIGGER = "TC-158 accepted and self-hosting cleanup branch merged"
+const SELF_HOSTING_CLEANUP_SCOPE = "self-hosting-cleanup"
+const SELF_HOSTING_CLEANUP_REVIEW_TRIGGER =
+  "self-hosting cleanup branch accepted and merged"
+
+const repoSelfCalibrationMetadata = (
+  policy: string,
+  extra: Readonly<Record<string, unknown>> = {},
+): Readonly<Record<string, unknown>> => ({
+  repository: REPOSITORY_NAME,
+  calibrationScope: SELF_CALIBRATION_SCOPE,
+  productDefault: NOT_PRODUCT_DEFAULT,
+  policy,
+  ...extra,
+})
 
 export default defineProjectModule({
   id: "pulsar-self",
@@ -34,11 +61,11 @@ export default defineProjectModule({
   scope: "repository",
   processors: [
     defineProcessor({
-      id: "pulsar-architecture-role-classifier",
+      id: "pulsar-repository-architecture-role-classifier",
       slot: "taxonomy.file-classifier",
       role: "enricher",
       priority: 20,
-      fingerprint: "pulsar-architecture-role-classifier-v1",
+      fingerprint: "pulsar-repository-architecture-role-classifier-v1",
       process: (current, _context, runtime) =>
         Effect.sync(() => {
           const rule = architectureRoleRule(current.value.path)
@@ -47,27 +74,25 @@ export default defineProjectModule({
           return classifyArchitectureRole(current, runtime, rule.role, {
             ruleId: ARCHITECTURE_ROLE_RULE_ID,
             reason:
-              "Pulsar self-calibration declares repo-local architecture taste once through taxonomy metadata so downstream signals can interpret size, nesting, clones, and coupling by code role.",
+              "The Pulsar repository self-calibration declares its local architecture taste once through taxonomy metadata; this is not Pulsar product default behavior.",
             evidence: [
               { kind: "path", value: current.value.path },
               { kind: "architecture-role", value: rule.role },
               { kind: "role-rule", value: rule.id },
             ],
-            metadata: {
-              repository: "pulsar",
-              policy: "repo-local-architecture-role",
+            metadata: repoSelfCalibrationMetadata("architecture-role", {
               ruleId: rule.id,
               ...(rule.boundary !== undefined ? { boundary: rule.boundary } : {}),
-            },
+            }),
           })
         }),
     }),
     defineProcessor({
-      id: "integration-size-policy",
+      id: "pulsar-repository-integration-size-policy",
       slot: "typescript.size-policy",
       role: "factor-policy",
       priority: 20,
-      fingerprint: "integration-size-policy-v1",
+      fingerprint: "pulsar-repository-integration-size-policy-v1",
       process: (current, context, runtime) =>
         Effect.gen(function* () {
           const classification = yield* architectureRoleClassificationForFile(context, current.value.file)
@@ -79,27 +104,25 @@ export default defineProjectModule({
             maxLoc: current.value.kind === "file" ? 1_200 : 160,
             ruleId: INTEGRATION_SIZE_RULE_ID,
             reason:
-              "Integration code is allowed to stay locally coherent as a larger executable story when splitting would scatter one operational decision across files.",
+              "For the Pulsar repository's self-score, integration code is allowed to stay locally coherent as a larger executable story when splitting would scatter one operational decision across files.",
             evidence: [
               { kind: "path", value: current.value.file },
               { kind: "architecture-role", value: classification.role },
               { kind: "size-kind", value: current.value.kind },
               { kind: "loc", value: String(current.value.loc) },
             ],
-            metadata: {
-              repository: "pulsar",
-              policy: "integration-size",
+            metadata: repoSelfCalibrationMetadata("integration-size", {
               architectureRole: classification.role,
-            },
+            }),
           })
         }),
     }),
     defineProcessor({
-      id: "integration-nesting-policy",
+      id: "pulsar-repository-integration-nesting-policy",
       slot: "typescript.nesting-policy",
       role: "factor-policy",
       priority: 20,
-      fingerprint: "integration-nesting-policy-v1",
+      fingerprint: "pulsar-repository-integration-nesting-policy-v1",
       process: (current, context, runtime) =>
         Effect.gen(function* () {
           const classification = yield* architectureRoleClassificationForFile(context, current.value.file)
@@ -111,26 +134,24 @@ export default defineProjectModule({
             threshold: 8,
             ruleId: INTEGRATION_NESTING_RULE_ID,
             reason:
-              "Integration code often has irreducible control-flow from external protocols, orchestration, and error routing; Pulsar tracks it as information instead of forcing helper extraction.",
+              "For the Pulsar repository's self-score, integration code often has irreducible control-flow from external protocols, orchestration, and error routing; this repo-local policy tracks it as information instead of forcing helper extraction.",
             evidence: [
               { kind: "path", value: current.value.file },
               { kind: "architecture-role", value: classification.role },
               { kind: "observed-nesting", value: String(current.value.observedNesting) },
             ],
-            metadata: {
-              repository: "pulsar",
-              policy: "integration-nesting",
+            metadata: repoSelfCalibrationMetadata("integration-nesting", {
               architectureRole: classification.role,
-            },
+            }),
           })
         }),
     }),
     defineProcessor({
-      id: "integration-clone-policy",
+      id: "pulsar-repository-integration-clone-policy",
       slot: "typescript.clone-group-policy",
       role: "factor-policy",
       priority: 20,
-      fingerprint: "integration-clone-policy-v1",
+      fingerprint: "pulsar-repository-integration-clone-policy-v1",
       process: (current, context, runtime) =>
         Effect.gen(function* () {
           const memberRoles = new Set<PulsarArchitectureRole>()
@@ -147,26 +168,24 @@ export default defineProjectModule({
             penaltyWeight: 0,
             ruleId: INTEGRATION_CLONE_RULE_ID,
             reason:
-              "Duplicate-looking integration code can preserve local protocol context better than a contextual abstraction; this policy excludes all-integration clone groups from score pressure.",
+              "For the Pulsar repository's self-score, duplicate-looking integration code can preserve local protocol context better than a contextual abstraction; this policy excludes all-integration clone groups from score pressure.",
             evidence: [
               { kind: "clone-group", value: current.value.groupId },
               { kind: "architecture-role", value: "integration" },
               { kind: "member-count", value: String(current.value.members.length) },
             ],
-            metadata: {
-              repository: "pulsar",
-              policy: "integration-clones",
+            metadata: repoSelfCalibrationMetadata("integration-clones", {
               architectureRole: "integration",
-            },
+            }),
           })
         }),
     }),
     defineProcessor({
-      id: "deliberate-existential-unsafe-types",
+      id: "pulsar-repository-deliberate-existential-unsafe-types",
       slot: "typescript.unsafe-type-policy",
       role: "factor-policy",
       priority: 20,
-      fingerprint: "deliberate-existential-unsafe-types-v1",
+      fingerprint: "pulsar-repository-deliberate-existential-unsafe-types-v1",
       process: (current, _context, runtime) =>
         Effect.sync(() => {
           if (!isDeliberateExistentialBoundary(current.value)) return current
@@ -177,22 +196,22 @@ export default defineProjectModule({
             weight: 0,
             ruleId: DELIBERATE_EXISTENTIAL_RULE_ID,
             reason:
-              "Pulsar uses this unsafe type as an explicit existential boundary where TypeScript cannot express the heterogeneous Effect/Signal service set without making downstream types less accurate.",
+              "The Pulsar repository uses this unsafe type as an explicit existential boundary where TypeScript cannot express the heterogeneous Effect/Signal service set without making downstream types less accurate.",
             evidence: [
               { kind: "path", value: current.value.file },
               { kind: "symbol", value: current.value.target },
               { kind: "unsafe-kind", value: current.value.kind },
             ],
-            metadata: { repository: "pulsar", policy: "deliberate-existential-boundary" },
+            metadata: repoSelfCalibrationMetadata("deliberate-existential-boundary"),
           })
         }),
     }),
     defineProcessor({
-      id: "integration-type-coupling-policy",
+      id: "pulsar-repository-integration-type-coupling-policy",
       slot: "typescript.type-coupling-policy",
       role: "factor-policy",
       priority: 20,
-      fingerprint: "integration-type-coupling-policy-v1",
+      fingerprint: "pulsar-repository-integration-type-coupling-policy-v1",
       process: (current, context, runtime) =>
         Effect.gen(function* () {
           const classification = yield* architectureRoleClassificationForFile(context, current.value.file)
@@ -205,28 +224,26 @@ export default defineProjectModule({
             penaltyWeight: 0,
             ruleId: INTEGRATION_TYPE_COUPLING_RULE_ID,
             reason:
-              "This file is deliberate integration code; type coupling is tracked as orchestration evidence instead of forcing contextual extraction that would scatter one local decision.",
+              "For the Pulsar repository's self-score, this file is deliberate integration code; type coupling is tracked as orchestration evidence instead of forcing contextual extraction that would scatter one local decision.",
             evidence: [
               { kind: "path", value: current.value.file },
               { kind: "boundary", value: boundary },
               { kind: "outgoing-types", value: String(current.value.externalTypesReferenced) },
               { kind: "outlier-threshold", value: String(current.value.outlierThreshold) },
             ],
-            metadata: {
-              repository: "pulsar",
-              policy: "integration-type-coupling",
+            metadata: repoSelfCalibrationMetadata("integration-type-coupling", {
               boundary,
               architectureRole: classification.role,
-            },
+            }),
           })
         }),
     }),
     defineProcessor({
-      id: "self-hosting-single-maintainer-bus-factor",
+      id: "pulsar-repository-single-maintainer-bus-factor",
       slot: "shared.bus-factor-policy",
       role: "factor-policy",
       priority: 20,
-      fingerprint: "self-hosting-single-maintainer-bus-factor-v1",
+      fingerprint: "pulsar-repository-single-maintainer-bus-factor-v1",
       process: (current, _context, runtime) =>
         Effect.sync(() => {
           if (!isSelfHostingSingleMaintainerBusFactor(current.value)) return current
@@ -237,30 +254,28 @@ export default defineProjectModule({
             penaltyWeight: 0,
             ruleId: SELF_HOSTING_BUS_FACTOR_RULE_ID,
             reason:
-              "Pulsar is currently a single-maintainer self-hosted repository. That is a real process risk, but it is not a code-health defect in the max-score code-quality loop.",
+              "The Pulsar repository is currently a single-maintainer self-hosted repository. That is a real process risk, but it is not a product-default code-health defect in this repo's max-score loop.",
             evidence: [
               { kind: "path", value: current.value.file },
               { kind: "repo-authors", value: current.value.repoAuthors.join(",") },
               { kind: "window-days", value: String(current.value.windowDays) },
               { kind: "touched-loc", value: String(current.value.touchedLoc) },
             ],
-            metadata: {
-              repository: "pulsar",
-              policy: "self-hosting-single-maintainer-process-risk",
+            metadata: repoSelfCalibrationMetadata("self-hosting-single-maintainer-process-risk", {
               owner: SELF_HOSTING_POLICY_OWNER,
               retirementTrigger: "Pulsar gains additional regular maintainers",
               reviewTrigger: "Pulsar gains additional regular maintainers",
               reviewCadence: "quarterly",
-            },
+            }),
           })
         }),
     }),
     defineProcessor({
-      id: "active-self-hosting-cleanup-churn",
+      id: "pulsar-repository-active-cleanup-churn",
       slot: "shared.churn-rate-policy",
       role: "factor-policy",
       priority: 20,
-      fingerprint: "active-self-hosting-cleanup-churn-v1",
+      fingerprint: "pulsar-repository-active-cleanup-churn-v1",
       process: (current, _context, runtime) =>
         Effect.sync(() => {
           if (!isActiveSelfHostingCleanupChurn(current.value)) return current
@@ -271,31 +286,29 @@ export default defineProjectModule({
             penaltyWeight: 0,
             ruleId: ACTIVE_SELF_HOSTING_CLEANUP_CHURN_RULE_ID,
             reason:
-              "The current churn is from TC-158 active self-hosting consolidation; this temporary policy expires when TC-158 is accepted and the cleanup branch is merged.",
+              "The current churn is from an active Pulsar repository self-hosting cleanup branch; this temporary repo policy expires when that branch is accepted and merged.",
             evidence: [
               { kind: "path", value: current.value.file },
-              { kind: "scope", value: "TC-158" },
+              { kind: "policy-scope", value: SELF_HOSTING_CLEANUP_SCOPE },
               { kind: "window-days", value: String(current.value.windowDays) },
               { kind: "introduced-lines", value: String(current.value.introducedLineCount) },
               { kind: "churned-lines", value: String(current.value.churnedLineCount) },
               { kind: "churn-rate", value: String(current.value.churnRate) },
             ],
-            metadata: {
-              repository: "pulsar",
-              policy: "active-self-hosting-cleanup",
+            metadata: repoSelfCalibrationMetadata("active-self-hosting-cleanup", {
               owner: SELF_HOSTING_POLICY_OWNER,
-              scope: "TC-158",
-              removalTrigger: TC_158_REVIEW_TRIGGER,
-            },
+              policyScope: SELF_HOSTING_CLEANUP_SCOPE,
+              removalTrigger: SELF_HOSTING_CLEANUP_REVIEW_TRIGGER,
+            }),
           })
         }),
     }),
     defineProcessor({
-      id: "active-self-hosting-cleanup-pr-size",
+      id: "pulsar-repository-active-cleanup-pr-size",
       slot: "typescript.pr-size-policy",
       role: "factor-policy",
       priority: 20,
-      fingerprint: "active-self-hosting-cleanup-pr-size-v1",
+      fingerprint: "pulsar-repository-active-cleanup-pr-size-v1",
       process: (current, _context, runtime) =>
         Effect.sync(() => {
           if (!isActiveSelfHostingCleanupPrSize(current.value)) return current
@@ -306,22 +319,20 @@ export default defineProjectModule({
             penaltyWeight: 0,
             ruleId: ACTIVE_SELF_HOSTING_CLEANUP_PR_SIZE_RULE_ID,
             reason:
-              "The current branch diff is TC-158 active self-hosting consolidation; this temporary policy expires when TC-158 is accepted and the cleanup branch is merged.",
+              "The current branch diff is from an active Pulsar repository self-hosting cleanup branch; this temporary repo policy expires when that branch is accepted and merged.",
             evidence: [
-              { kind: "scope", value: "TC-158" },
+              { kind: "policy-scope", value: SELF_HOSTING_CLEANUP_SCOPE },
               { kind: "diff-mode", value: current.value.diffMode },
               { kind: "size-category", value: current.value.sizeCategory },
               { kind: "lines-added", value: String(current.value.linesAdded) },
               { kind: "lines-deleted", value: String(current.value.linesDeleted) },
               { kind: "files-changed", value: String(current.value.filesChanged.length) },
             ],
-            metadata: {
-              repository: "pulsar",
-              policy: "active-self-hosting-cleanup",
+            metadata: repoSelfCalibrationMetadata("active-self-hosting-cleanup", {
               owner: SELF_HOSTING_POLICY_OWNER,
-              scope: "TC-158",
-              removalTrigger: TC_158_REVIEW_TRIGGER,
-            },
+              policyScope: SELF_HOSTING_CLEANUP_SCOPE,
+              removalTrigger: SELF_HOSTING_CLEANUP_REVIEW_TRIGGER,
+            }),
           })
         }),
     }),

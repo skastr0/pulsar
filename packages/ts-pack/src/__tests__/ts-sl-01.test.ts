@@ -210,14 +210,27 @@ export function copiedIntegration(value: number): number {
     )
 
     expect(classification.value.metadata?.architecture_role).toBe("integration")
+    expect(classification.value.metadata).toEqual(
+      expect.objectContaining({
+        repository: "pulsar",
+        calibrationScope: "repo-local-self-calibration",
+        productDefault: false,
+      }),
+    )
     expect(out.groups.length).toBeGreaterThan(0)
     expect(out.groups.every((group) => group.policy?.action === "exclude")).toBe(true)
     expect(TsSl01.score(out)).toBe(1)
     expect(out.calibrationDecisions).toContainEqual(
       expect.objectContaining({
         moduleId: "pulsar-self",
-        processorId: "integration-clone-policy",
-        ruleId: "pulsar.integration-clone-policy.v1",
+        processorId: "pulsar-repository-integration-clone-policy",
+        ruleId: "pulsar.repository.integration-clone-policy.v1",
+        after: expect.objectContaining({
+          metadata: expect.objectContaining({
+            calibrationScope: "repo-local-self-calibration",
+            productDefault: false,
+          }),
+        }),
       }),
     )
   })

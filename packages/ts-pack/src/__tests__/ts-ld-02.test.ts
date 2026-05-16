@@ -273,13 +273,26 @@ describe("TS-LD-02 (function / file size distribution)", () => {
     })
 
     expect(classification.value.metadata?.architecture_role).toBe("integration")
+    expect(classification.value.metadata).toEqual(
+      expect.objectContaining({
+        repository: "pulsar",
+        calibrationScope: "repo-local-self-calibration",
+        productDefault: false,
+      }),
+    )
     expect(TsLd02.score(baseline)).toBeLessThan(1)
     expect(TsLd02.score(calibrated)).toBe(1)
     expect(calibrated.calibrationDecisions).toContainEqual(
       expect.objectContaining({
         moduleId: "pulsar-self",
-        processorId: "integration-size-policy",
-        ruleId: "pulsar.integration-size-policy.v1",
+        processorId: "pulsar-repository-integration-size-policy",
+        ruleId: "pulsar.repository.integration-size-policy.v1",
+        after: expect.objectContaining({
+          metadata: expect.objectContaining({
+            calibrationScope: "repo-local-self-calibration",
+            productDefault: false,
+          }),
+        }),
       }),
     )
   })

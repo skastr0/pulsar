@@ -275,12 +275,25 @@ describe("TS-DE-01 (type-level coupling)", () => {
     const hubEntry = out.modules.find((module) => module.file === integrationHub)
 
     expect(classification.value.metadata?.architecture_role).toBe("integration")
+    expect(classification.value.metadata).toEqual(
+      expect.objectContaining({
+        repository: "pulsar",
+        calibrationScope: "repo-local-self-calibration",
+        productDefault: false,
+      }),
+    )
     expect(hubEntry?.penaltyWeight).toBe(0)
     expect(hubEntry?.policyDecisions).toContainEqual(
       expect.objectContaining({
         moduleId: "pulsar-self",
-        processorId: "integration-type-coupling-policy",
-        ruleId: "pulsar.integration-type-coupling-policy.v1",
+        processorId: "pulsar-repository-integration-type-coupling-policy",
+        ruleId: "pulsar.repository.integration-type-coupling-policy.v1",
+        after: expect.objectContaining({
+          metadata: expect.objectContaining({
+            calibrationScope: "repo-local-self-calibration",
+            productDefault: false,
+          }),
+        }),
       }),
     )
     expect(hubEntry?.policyDecisions?.[0]?.factorPaths?.some((path) =>

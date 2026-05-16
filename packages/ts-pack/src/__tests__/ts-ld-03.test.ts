@@ -351,12 +351,25 @@ describe("TS-LD-03 (nesting depth)", () => {
     )
 
     expect(classification.value.metadata?.architecture_role).toBe("integration")
+    expect(classification.value.metadata).toEqual(
+      expect.objectContaining({
+        repository: "pulsar",
+        calibrationScope: "repo-local-self-calibration",
+        productDefault: false,
+      }),
+    )
     expect(out.overThreshold).toEqual([])
     expect(out.calibrationDecisions).toContainEqual(
       expect.objectContaining({
         moduleId: "pulsar-self",
-        processorId: "integration-nesting-policy",
-        ruleId: "pulsar.integration-nesting-policy.v1",
+        processorId: "pulsar-repository-integration-nesting-policy",
+        ruleId: "pulsar.repository.integration-nesting-policy.v1",
+        after: expect.objectContaining({
+          metadata: expect.objectContaining({
+            calibrationScope: "repo-local-self-calibration",
+            productDefault: false,
+          }),
+        }),
       }),
     )
   })
