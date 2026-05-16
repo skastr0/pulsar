@@ -20,6 +20,12 @@ import type { SignalRequirements } from "./signal-runtime.js"
 export interface SignalInputRef {
   readonly id: string
   readonly optional?: boolean
+  /**
+   * Fingerprint of input-level interpretation policy owned by the compound
+   * signal, such as weights, factor paths, aliases, and value extractors.
+   * This is separate from the producing signal's own config hash.
+   */
+  readonly cacheFingerprint?: string
 }
 
 type ConfigDirection = "higher-is-stricter" | "higher-is-looser"

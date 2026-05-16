@@ -93,6 +93,24 @@ describe("Registry", () => {
     ])
   })
 
+  test("resolved input refs do not alias source signal definitions", async () => {
+    const inputRef = { id: "MOCK-01", cacheFingerprint: "source-policy-v1" }
+    const compound: AnySignal = {
+      ...MockCompound,
+      inputs: [inputRef],
+    }
+
+    const registry = await Effect.runPromise(buildRegistry([compound, MockLeaf]))
+    const resolvedInput = registry.byId.get("MOCK-02")?.inputs[0] as
+      | { cacheFingerprint?: string }
+      | undefined
+
+    expect(resolvedInput).not.toBe(inputRef)
+    expect(resolvedInput?.cacheFingerprint).toBe("source-policy-v1")
+    if (resolvedInput !== undefined) resolvedInput.cacheFingerprint = "resolved-policy-v2"
+    expect(inputRef.cacheFingerprint).toBe("source-policy-v1")
+  })
+
   test("derives enforcement from tier and kind", async () => {
     const registry = await Effect.runPromise(buildRegistry([MockLeaf]))
     const resolved = registry.byId.get("MOCK-01")

@@ -15,4 +15,13 @@ describe("shared signal identity", () => {
       expect(signal.factorDefinitions?.some((factor) => factor.path.startsWith("config."))).toBe(true)
     }
   })
+
+  test("all shared compound inputs declare cache fingerprints", () => {
+    for (const signal of SHARED_SIGNALS.filter((signal) => signal.kind === "compound")) {
+      for (const input of signal.inputs) {
+        expect(typeof input.cacheFingerprint).toBe("string")
+        expect(input.cacheFingerprint?.length).toBeGreaterThan(0)
+      }
+    }
+  })
 })

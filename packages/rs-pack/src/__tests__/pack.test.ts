@@ -15,4 +15,13 @@ describe("RS pack signal identity", () => {
       expect(signal.factorDefinitions?.some((factor) => factor.path.startsWith("config."))).toBe(true)
     }
   })
+
+  test("all Rust compound inputs declare cache fingerprints", () => {
+    for (const signal of RS_PACK_SIGNALS.filter((signal) => signal.kind === "compound")) {
+      for (const input of signal.inputs) {
+        expect(typeof input.cacheFingerprint).toBe("string")
+        expect(input.cacheFingerprint?.length).toBeGreaterThan(0)
+      }
+    }
+  })
 })

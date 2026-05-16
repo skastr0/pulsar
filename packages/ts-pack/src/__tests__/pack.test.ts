@@ -40,4 +40,14 @@ describe("TS pack cache versions", () => {
       expect(signal.factorDefinitions?.some((factor) => factor.path.startsWith("config."))).toBe(true)
     }
   })
+
+  test("all TypeScript compound inputs declare cache fingerprints", () => {
+    const tsSignals = TS_PACK_SIGNALS.filter((signal) => signal.id.startsWith("TS-"))
+    for (const signal of tsSignals.filter((signal) => signal.kind === "compound")) {
+      for (const input of signal.inputs) {
+        expect(typeof input.cacheFingerprint).toBe("string")
+        expect(input.cacheFingerprint?.length).toBeGreaterThan(0)
+      }
+    }
+  })
 })

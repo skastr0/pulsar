@@ -228,6 +228,5 @@ const normalizeInputs = (
 ): ReadonlyArray<SignalInputRef> =>
   inputs.map((input) => {
     const canonical = canonicalByIdentifier.get(input.id)
-    if (canonical === undefined || canonical === input.id) return input
-    return { ...input, id: canonical }
+    return { ...input, id: canonical ?? input.id }
   })

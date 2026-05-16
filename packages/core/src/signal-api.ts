@@ -28,8 +28,21 @@ export {
 } from "./errors.js"
 export {
   type AnySignal,
+  type InputOutputs,
   type Signal,
+  type SignalInputRef,
 } from "./signal.js"
+export {
+  buildCompositeExplanation,
+  compositeSignalInputs,
+  resolveCompositeInputs,
+  type CompositeExplanation,
+  type CompositeInputExplanation,
+  type CompositeInputResolution,
+  type CompositeInputSpec,
+  type CompositeInputState,
+  type ResolvedCompositeInput,
+} from "./composite.js"
 export type { SignalRequirements } from "./signal-runtime.js"
 export { scoreThresholdViolationShare } from "./signal-score-utils.js"
 export {

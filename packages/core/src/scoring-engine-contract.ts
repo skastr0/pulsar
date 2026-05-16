@@ -76,20 +76,14 @@ export const computeConfigHash = (
   calibrationFingerprint?: string,
 ): string => {
   const signal = registry.byId.get(signalId)
-  const config = signal
-    ? vectorResolvedConfig(signal, signal.defaultConfig, vector)
-    : undefined
   const payload: {
-    readonly cacheVersion: string | null
-    readonly config: unknown
-    readonly factorDefinitions: unknown
-    readonly factorOverrides: unknown
+    readonly signal: unknown
     readonly calibrationFingerprint?: string
   } = {
-    cacheVersion: signal?.cacheVersion ?? null,
-    config: config ?? null,
-    factorDefinitions: signal?.factorDefinitions ?? [],
-    factorOverrides: signal === undefined ? {} : factorOverridesOf(signal, vector),
+    signal:
+      signal === undefined
+        ? null
+        : signalConfigHashPayload(signal.id, registry, vector, new Set()),
   }
   const hash = createHash("sha256")
   if (calibrationFingerprint !== undefined) {
@@ -98,6 +92,38 @@ export const computeConfigHash = (
     hash.update(stableStringify(payload))
   }
   return hash.digest("hex")
+}
+
+const signalConfigHashPayload = (
+  signalId: string,
+  registry: Registry,
+  vector: PulsarVector | undefined,
+  seen: Set<string>,
+): unknown => {
+  const signal = registry.byId.get(signalId)
+  if (signal === undefined) return null
+  if (seen.has(signal.id)) return { id: signal.id, cycle: true }
+  seen.add(signal.id)
+  const config = vectorResolvedConfig(signal, signal.defaultConfig, vector)
+  const inputs =
+    signal.kind === "compound"
+      ? signal.inputs.map((input) => ({
+          id: input.id,
+          optional: input.optional === true,
+          cacheFingerprint: input.cacheFingerprint ?? null,
+          signal: signalConfigHashPayload(input.id, registry, vector, new Set(seen)),
+        }))
+      : []
+
+  return {
+    id: signal.id,
+    cacheVersion: signal.cacheVersion ?? null,
+    cacheDependencies: signal.cacheDependencies ?? [],
+    config,
+    factorDefinitions: signal.factorDefinitions ?? [],
+    factorOverrides: factorOverridesOf(signal, vector),
+    inputs,
+  }
 }
 
 export const stableStringify = (value: unknown): string => {

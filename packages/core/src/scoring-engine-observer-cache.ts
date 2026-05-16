@@ -56,6 +56,20 @@ export const computeObserverConfigHash = (
         enforcement: signal.enforcement,
         factorDefinitions: signal.factorDefinitions ?? [],
         factorOverrides: factorOverridesOf(signal, vector),
+        inputs:
+          signal.kind === "compound"
+            ? signal.inputs.map((input) => ({
+                id: input.id,
+                optional: input.optional === true,
+                cacheFingerprint: input.cacheFingerprint ?? null,
+                signal: observerSignalConfigPayload(
+                  input.id,
+                  registry,
+                  vector,
+                  new Set([signal.id]),
+                ),
+              }))
+            : [],
         kind: signal.kind,
         normalizationGroup: signal.normalizationGroup ?? null,
         tier: signal.tier,
@@ -81,6 +95,45 @@ export const computeObserverConfigHash = (
       }),
     )
     .digest("hex")
+}
+
+const observerSignalConfigPayload = (
+  signalId: string,
+  registry: Registry,
+  vector: PulsarVector | undefined,
+  seen: Set<string>,
+): unknown => {
+  const signal = registry.byId.get(signalId)
+  if (signal === undefined) return null
+  if (seen.has(signal.id)) return { id: signal.id, cycle: true }
+  seen.add(signal.id)
+  return {
+    id: signal.id,
+    category: signal.category,
+    config: vectorResolvedConfig(signal, signal.defaultConfig, vector),
+    cacheVersion: signal.cacheVersion ?? null,
+    enforcement: signal.enforcement,
+    factorDefinitions: signal.factorDefinitions ?? [],
+    factorOverrides: factorOverridesOf(signal, vector),
+    inputs:
+      signal.kind === "compound"
+        ? signal.inputs.map((input) => ({
+            id: input.id,
+            optional: input.optional === true,
+            cacheFingerprint: input.cacheFingerprint ?? null,
+            signal: observerSignalConfigPayload(
+              input.id,
+              registry,
+              vector,
+              new Set(seen),
+            ),
+          }))
+        : [],
+    kind: signal.kind,
+    normalizationGroup: signal.normalizationGroup ?? null,
+    tier: signal.tier,
+    weight: vectorWeightOf(signal, vector),
+  }
 }
 
 export const toCachedObserverOutput = (result: ObserverOutput): CachedObserverOutput => ({

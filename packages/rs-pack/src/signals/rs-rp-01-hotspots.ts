@@ -49,8 +49,14 @@ export const RsRp01: Signal<RsRp01Config, RsRp01Output, never> = {
     min_complexity: 5,
   },
   inputs: [
-    { id: "RS-LD-05-cyclomatic-complexity" },
-    { id: "SHARED-CHURN-01-recent-churn" },
+    {
+      id: "RS-LD-05-cyclomatic-complexity",
+      cacheFingerprint: "rs-rp-01-complexity-input-v1",
+    },
+    {
+      id: "SHARED-CHURN-01-recent-churn",
+      cacheFingerprint: "rs-rp-01-churn-input-v1",
+    },
   ],
   compute: (config, inputs) =>
     Effect.sync(() => {

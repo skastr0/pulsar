@@ -3,7 +3,9 @@ import { summarize } from "@skastr0/pulsar-core/signal"
 import { buildRegistry, runSignal } from "@skastr0/pulsar-core/scoring"
 import { Effect } from "effect"
 import { TsRp01 } from "../signals/ts-rp-01-hotspots.js"
+import { SHARED_SIGNALS } from "@skastr0/pulsar-shared-signals"
 import type { SharedChurn01Output } from "@skastr0/pulsar-shared-signals"
+import { TS_PACK_SIGNALS } from "../pack.js"
 import type { TsLd01Output } from "../signals/ts-ld-01-complexity.js"
 
 const mockComplexityOut: TsLd01Output = {
@@ -34,6 +36,15 @@ const mockChurnOut: SharedChurn01Output = {
   totalCommits: 58,
 }
 
+const mockCompositeExplanation = {
+  primitiveInputs: [],
+  missingInputs: [],
+  weights: [],
+  finalScore: 1,
+  rationale: "test fixture",
+  enforcementCeiling: ["trend", "review-routing", "dashboard"] as const,
+}
+
 describe("TS-RP-01 (compound)", () => {
   test("combines churn and complexity into ranked hotspots", async () => {
     const inputs = new Map<string, unknown>([
@@ -42,6 +53,57 @@ describe("TS-RP-01 (compound)", () => {
     ])
     const out = await Effect.runPromise(TsRp01.compute(TsRp01.defaultConfig, inputs))
     expect(out.totalFilesConsidered).toBe(4)
+    expect(out.explanation.primitiveInputs.map((input) => input.id)).toEqual([
+      "TS-LD-01-cyclomatic-complexity",
+      "SHARED-CHURN-01-recent-churn",
+    ])
+    expect(out.explanation.weights).toEqual([
+      { id: "TS-LD-01-cyclomatic-complexity", weight: 0.5 },
+      { id: "SHARED-CHURN-01-recent-churn", weight: 0.5 },
+    ])
+    const expectedFinalScore =
+      1 - Math.min(1, out.softTopRightShare + out.softTopRightPressure * 2)
+    expect(out.explanation.finalScore).toBeCloseTo(expectedFinalScore, 12)
+    expect(expectedFinalScore).toBeCloseTo(0.3218255807111624, 12)
+    expect(TsRp01.score(out)).toBeCloseTo(expectedFinalScore, 12)
+    expect(out.explanation).toMatchObject({
+      missingInputs: [],
+      rationale:
+        "Ranks files by the composite pressure of recent churn and cyclomatic complexity.",
+      enforcementCeiling: ["trend", "review-routing", "dashboard"],
+      primitiveInputs: [
+        {
+          id: "TS-LD-01-cyclomatic-complexity",
+          aliases: ["TS-LD-01"],
+          optional: false,
+          factorPath: "inputs.complexity",
+          weight: 0.5,
+          state: "present",
+          resolvedId: "TS-LD-01",
+          rawValue: {
+            files: 4,
+            totalFunctions: 4,
+            maxComplexity: 30,
+          },
+          normalizedValue: 0.6,
+        },
+        {
+          id: "SHARED-CHURN-01-recent-churn",
+          aliases: ["SHARED-CHURN-01"],
+          optional: false,
+          factorPath: "inputs.churn",
+          weight: 0.5,
+          state: "present",
+          resolvedId: "SHARED-CHURN-01",
+          rawValue: {
+            files: 4,
+            totalCommits: 58,
+            windowDays: 90,
+          },
+          normalizedValue: 25 / 90,
+        },
+      ],
+    })
     expect(out.hotspots[0]?.rank).toBe(1)
     expect(out.hotspots[0]?.hotspotScore).toBeGreaterThanOrEqual(
       out.hotspots[1]?.hotspotScore ?? 0,
@@ -84,6 +146,23 @@ describe("TS-RP-01 (compound)", () => {
     ])
     const out = await Effect.runPromise(TsRp01.compute(TsRp01.defaultConfig, inputs))
     expect(out.totalFilesConsidered).toBe(0)
+    expect(out.explanation.missingInputs).toEqual([])
+    expect(TsRp01.score(out)).toBe(1)
+  })
+
+  test("missing required primitive inputs are explicit and neutral", async () => {
+    const out = await Effect.runPromise(
+      TsRp01.compute(TsRp01.defaultConfig, new Map<string, unknown>()),
+    )
+    expect(out.totalFilesConsidered).toBe(0)
+    expect(out.explanation.missingInputs).toEqual([
+      "TS-LD-01-cyclomatic-complexity",
+      "SHARED-CHURN-01-recent-churn",
+    ])
+    expect(out.explanation.primitiveInputs.map((input) => input.state)).toEqual([
+      "missing_required",
+      "missing_required",
+    ])
     expect(TsRp01.score(out)).toBe(1)
   })
 
@@ -192,8 +271,8 @@ describe("TS-RP-01 (compound)", () => {
     }
     const fakeChurn = {
       ...TsRp01,
-      id: "SHARED-CHURN-01" as const,
-      aliases: [],
+      id: "SHARED-CHURN-01-recent-churn" as const,
+      aliases: ["SHARED-CHURN-01"],
       tier: 1 as const,
       kind: "legibility" as const,
       inputs: [],
@@ -209,6 +288,25 @@ describe("TS-RP-01 (compound)", () => {
     )
     expect(result.signalId).toBe("TS-RP-01-hotspots")
     expect((result.output as any).totalFilesConsidered).toBe(4)
+  })
+
+  test("mixed-pack registry canonicalizes composite inputs across shared and TypeScript packs", async () => {
+    const registry = await Effect.runPromise(
+      buildRegistry([...SHARED_SIGNALS, ...TS_PACK_SIGNALS]),
+    )
+    const resolved = registry.byId.get("TS-RP-01")
+
+    expect(resolved?.id).toBe("TS-RP-01-hotspots")
+    expect(resolved?.inputs).toMatchObject([
+      {
+        id: "TS-LD-01-cyclomatic-complexity",
+        cacheFingerprint: expect.any(String),
+      },
+      {
+        id: "SHARED-CHURN-01-recent-churn",
+        cacheFingerprint: expect.any(String),
+      },
+    ])
   })
 
   test("diagnostic hotspot labels stay contiguous when info hotspots are interleaved", () => {
@@ -251,6 +349,7 @@ describe("TS-RP-01 (compound)", () => {
       softTopRightShare: 2 / 3,
       softTopRightPressure: 0,
       stabilizationWeight: 0,
+      explanation: mockCompositeExplanation,
     })
 
     expect(diagnostics.map((diagnostic) => diagnostic.message.split(":")[0])).toEqual([
@@ -292,6 +391,7 @@ describe("TS-RP-01 (compound)", () => {
       softTopRightShare: 1,
       softTopRightPressure: 0,
       stabilizationWeight: 0,
+      explanation: mockCompositeExplanation,
     })
 
     expect(diagnostics[0]?.message).toContain("packages/app/src/provider/provider.ts")

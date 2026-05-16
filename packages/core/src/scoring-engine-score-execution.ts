@@ -29,8 +29,6 @@ import type { PulsarVector } from "./vector.js"
 
 const GIT_REVISION_CONTEXT_CACHE_DEPENDENCY = "git-revision-context"
 
-type SignalCacheDependencyCarrier = Pick<Registry["sorted"][number], "cacheDependencies">
-
 export type ScoreCommit = (
   repoPath: string,
   sha: string,
@@ -66,6 +64,7 @@ export const scoreSignalCommit = (args: {
       args.repoPath,
       args.worktreePath,
       args.sha,
+      args.registry,
       signal,
     )
     const calibrationContext = yield* args.internals.resolveCalibrationContext(args.worktreePath)
@@ -100,16 +99,38 @@ const cacheContentHashForSignal = (
   repoPath: string,
   worktreePath: string,
   sha: string,
-  signal: SignalCacheDependencyCarrier | undefined,
+  registry: Registry,
+  signal: Registry["sorted"][number] | undefined,
 ): Effect.Effect<string, ScoringEngineError, never> =>
   Effect.gen(function* () {
     const contentHash = yield* computeContentHash(repoPath, sha)
-    if (!signal?.cacheDependencies?.includes(GIT_REVISION_CONTEXT_CACHE_DEPENDENCY)) {
+    if (!signalRequiresGitRevisionContext(signal, registry)) {
       return contentHash
     }
     const revisionContextHash = yield* computeGitRevisionContextHash(worktreePath)
     return `${contentHash}:${GIT_REVISION_CONTEXT_CACHE_DEPENDENCY}:${revisionContextHash}`
   })
+
+const signalRequiresGitRevisionContext = (
+  signal: Registry["sorted"][number] | undefined,
+  registry: Registry,
+): boolean => {
+  if (signal === undefined) return false
+  const seen = new Set<string>()
+  const visit = (current: Registry["sorted"][number]): boolean => {
+    if (seen.has(current.id)) return false
+    seen.add(current.id)
+    if (current.cacheDependencies?.includes(GIT_REVISION_CONTEXT_CACHE_DEPENDENCY)) {
+      return true
+    }
+    for (const input of current.inputs) {
+      const parent = registry.byId.get(input.id)
+      if (parent !== undefined && visit(parent)) return true
+    }
+    return false
+  }
+  return visit(signal)
+}
 
 const readScoreCache = (
   cacheRef: typeof SignalCacheTag.Service,

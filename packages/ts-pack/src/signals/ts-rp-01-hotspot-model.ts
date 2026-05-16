@@ -1,3 +1,10 @@
+import {
+  buildCompositeExplanation,
+  resolveCompositeInputs,
+  type CompositeExplanation,
+  type CompositeInputResolution,
+  type CompositeInputSpec,
+} from "@skastr0/pulsar-core/signal"
 import type { SharedChurn01Output } from "@skastr0/pulsar-shared-signals"
 import type { TsLd01Output } from "./ts-ld-01-complexity.js"
 
@@ -22,6 +29,7 @@ export interface Hotspot {
 
 export interface HotspotOutput {
   readonly hotspots: ReadonlyArray<Hotspot>
+  readonly explanation: CompositeExplanation
   readonly diagnosticLimit?: number
   readonly totalFilesConsidered: number
   readonly topRightShare: number
@@ -55,13 +63,45 @@ interface HotspotInputs {
   readonly churn: SharedChurn01Output | undefined
 }
 
+const HOTSPOT_ENFORCEMENT_CEILING = [
+  "trend",
+  "review-routing",
+  "dashboard",
+] as const
+
+export const TS_RP_01_COMPOSITE_INPUTS = [
+  {
+    id: "TS-LD-01-cyclomatic-complexity",
+    aliases: ["TS-LD-01"],
+    factorPath: "inputs.complexity",
+    weight: 0.5,
+    cacheFingerprint: "ts-rp-01-hotspot-complexity-input-v1",
+    rawValue: (value) => summarizeComplexityInput(value as TsLd01Output),
+    normalize: (value) => normalizeComplexityInput(value as TsLd01Output),
+  },
+  {
+    id: "SHARED-CHURN-01-recent-churn",
+    aliases: ["SHARED-CHURN-01"],
+    factorPath: "inputs.churn",
+    weight: 0.5,
+    cacheFingerprint: "ts-rp-01-hotspot-churn-input-v1",
+    rawValue: (value) => summarizeChurnInput(value as SharedChurn01Output),
+    normalize: (value) => normalizeChurnInput(value as SharedChurn01Output),
+  },
+] satisfies ReadonlyArray<CompositeInputSpec>
+
 export const computeHotspotOutput = (
   config: HotspotConfig,
   inputs: ReadonlyMap<string, unknown>,
 ): HotspotOutput => {
-  const { complexity, churn } = resolveHotspotInputs(inputs)
+  const resolution = resolveCompositeInputs(TS_RP_01_COMPOSITE_INPUTS, inputs)
+  const { complexity, churn } = resolveHotspotInputs(resolution)
   if (complexity === undefined || churn === undefined) {
-    return emptyHotspotOutput(config)
+    return withHotspotExplanation(
+      emptyHotspotOutput(config),
+      resolution,
+      "Hotspot composite is neutral because required primitive inputs are missing.",
+    )
   }
 
   const files = buildHotspotCandidates(complexity, churn, config)
@@ -82,18 +122,23 @@ export const computeHotspotOutput = (
     config.peer_percentile_floor,
   )
 
-  return assembleHotspotOutput(config, legacy, soft, softTopRightPressure)
+  return withHotspotExplanation(
+    assembleHotspotOutput(config, legacy, soft, softTopRightPressure),
+    resolution,
+    "Ranks files by the composite pressure of recent churn and cyclomatic complexity.",
+  )
 }
 
 const resolveHotspotInputs = (
-  inputs: ReadonlyMap<string, unknown>,
+  inputs: CompositeInputResolution,
 ): HotspotInputs => ({
-  complexity: (inputs.get("TS-LD-01-cyclomatic-complexity") ??
-    inputs.get("TS-LD-01")) as TsLd01Output | undefined,
-  churn: inputs.get("SHARED-CHURN-01") as SharedChurn01Output | undefined,
+  complexity: inputs.valueOf<TsLd01Output>("TS-LD-01-cyclomatic-complexity"),
+  churn: inputs.valueOf<SharedChurn01Output>("SHARED-CHURN-01-recent-churn"),
 })
 
-const emptyHotspotOutput = (config: HotspotConfig): HotspotOutput => ({
+type HotspotOutputWithoutExplanation = Omit<HotspotOutput, "explanation">
+
+const emptyHotspotOutput = (config: HotspotConfig): HotspotOutputWithoutExplanation => ({
   hotspots: [],
   totalFilesConsidered: 0,
   topRightShare: 0,
@@ -132,7 +177,7 @@ const assembleHotspotOutput = (
   legacy: HotspotSummary,
   soft: HotspotSummary,
   softTopRightPressure: number,
-): HotspotOutput => {
+): HotspotOutputWithoutExplanation => {
   const legacyFilesConsidered = legacy.ranked.length
   const softFilesConsidered = soft.ranked.length
   const stabilizationWeight = stabilizationBlendWeight(
@@ -157,6 +202,38 @@ const assembleHotspotOutput = (
     stabilizationWeight,
   }
 }
+
+export const scoreHotspotOutput = (
+  out: HotspotOutputWithoutExplanation,
+): number => {
+  if (out.legacyFilesConsidered === 0 && out.softFilesConsidered === 0) return 1
+  const legacyScore =
+    out.legacyFilesConsidered === 0
+      ? 1
+      : Math.max(0, 1 - out.legacyTopRightShare * 1.5)
+  const stabilizedScore =
+    out.softFilesConsidered === 0
+      ? legacyScore
+      : Math.max(0, 1 - Math.min(1, out.softTopRightShare + out.softTopRightPressure * 2))
+  return (
+    legacyScore * (1 - out.stabilizationWeight) +
+    stabilizedScore * out.stabilizationWeight
+  )
+}
+
+const withHotspotExplanation = (
+  output: HotspotOutputWithoutExplanation,
+  inputs: CompositeInputResolution,
+  rationale: string,
+): HotspotOutput => ({
+  ...output,
+  explanation: buildCompositeExplanation({
+    inputs,
+    finalScore: scoreHotspotOutput(output),
+    rationale,
+    enforcementCeiling: [...HOTSPOT_ENFORCEMENT_CEILING],
+  }),
+})
 
 const median = (values: ReadonlyArray<number>): number => {
   if (values.length === 0) return 0
@@ -312,3 +389,26 @@ const stabilizationBlendWeight = (consideredFiles: number): number => {
   if (consideredFiles >= fullyLegacyAt) return 0
   return (fullyLegacyAt - consideredFiles) / (fullyLegacyAt - fullyStabilizedAt)
 }
+
+const summarizeComplexityInput = (input: TsLd01Output): unknown => ({
+  files: input.byFile.size,
+  totalFunctions: input.totalFunctions,
+  maxComplexity: input.maxComplexity,
+})
+
+const summarizeChurnInput = (input: SharedChurn01Output): unknown => ({
+  files: input.byFile.size,
+  totalCommits: input.totalCommits,
+  windowDays: input.windowDays,
+  ...(input.sampled === true ? { sampled: true } : {}),
+})
+
+const normalizeComplexityInput = (input: TsLd01Output): number =>
+  clamp01(input.maxComplexity / 50)
+
+const normalizeChurnInput = (input: SharedChurn01Output): number => {
+  const maxFileChurn = Math.max(0, ...input.byFile.values())
+  return clamp01(maxFileChurn / Math.max(1, input.windowDays))
+}
+
+const clamp01 = (value: number): number => Math.max(0, Math.min(1, value))

@@ -93,7 +93,12 @@ export const TsSl02: Signal<TsSl02Config, TsSl02Output, SignalContextTag> = {
       defaultValue: 0.95,
     },
   ],
-  inputs: [{ id: "TS-SL-01-duplication" }],
+  inputs: [
+    {
+      id: "TS-SL-01-duplication",
+      cacheFingerprint: "ts-sl-02-duplication-input-v1",
+    },
+  ],
   compute: (config, inputs) =>
     Effect.gen(function* () {
       const context = yield* SignalContextTag

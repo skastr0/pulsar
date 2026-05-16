@@ -56,8 +56,16 @@ export const Shared05Suppression: Signal<Shared05SuppressionConfig, Shared05Supp
     top_n_diagnostics: 10,
   },
   inputs: [
-    { id: "TS-SL-03-suppressions", optional: true },
-    { id: "RS-SL-02-suppressions", optional: true },
+    {
+      id: "TS-SL-03-suppressions",
+      optional: true,
+      cacheFingerprint: "shared-05-typescript-suppression-input-v1",
+    },
+    {
+      id: "RS-SL-02-suppressions",
+      optional: true,
+      cacheFingerprint: "shared-05-rust-suppression-input-v1",
+    },
   ],
   compute: (_config, inputs) =>
     Effect.sync(() => {

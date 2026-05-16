@@ -1,7 +1,13 @@
-import type { Diagnostic, Signal } from "@skastr0/pulsar-core/signal"
+import {
+  compositeSignalInputs,
+  type Diagnostic,
+  type Signal,
+} from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
 import {
+  TS_RP_01_COMPOSITE_INPUTS,
   computeHotspotOutput,
+  scoreHotspotOutput,
   type Hotspot,
   type HotspotOutput,
   type Quadrant,
@@ -42,24 +48,10 @@ export const TsRp01: Signal<TsRp01Config, TsRp01Output, never> = {
     threshold_softness: 0.5,
     peer_percentile_floor: 0.5,
   },
-  inputs: [{ id: "TS-LD-01-cyclomatic-complexity" }, { id: "SHARED-CHURN-01" }],
+  inputs: compositeSignalInputs(TS_RP_01_COMPOSITE_INPUTS),
   compute: (config, inputs) =>
     Effect.sync(() => computeHotspotOutput(config, inputs)),
-  score: (out) => {
-    if (out.legacyFilesConsidered === 0 && out.softFilesConsidered === 0) return 1
-    const legacyScore =
-      out.legacyFilesConsidered === 0
-        ? 1
-        : Math.max(0, 1 - out.legacyTopRightShare * 1.5)
-    const stabilizedScore =
-      out.softFilesConsidered === 0
-        ? legacyScore
-        : Math.max(0, 1 - Math.min(1, out.softTopRightShare + out.softTopRightPressure * 2))
-    return (
-      legacyScore * (1 - out.stabilizationWeight) +
-      stabilizedScore * out.stabilizationWeight
-    )
-  },
+  score: scoreHotspotOutput,
   diagnose: (out): ReadonlyArray<Diagnostic> => {
     const top = out.hotspots
       .slice(0, out.diagnosticLimit ?? 10)

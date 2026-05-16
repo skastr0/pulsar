@@ -59,8 +59,16 @@ export const Shared06PrDepDelta: Signal<Shared06PrDepDeltaConfig, Shared06PrDepD
     top_n_diagnostics: 10,
   },
   inputs: [
-    { id: "TS-RP-02-pr-size", optional: true },
-    { id: "RS-RP-03-pr-size", optional: true },
+    {
+      id: "TS-RP-02-pr-size",
+      optional: true,
+      cacheFingerprint: "shared-06-typescript-pr-delta-input-v1",
+    },
+    {
+      id: "RS-RP-03-pr-size",
+      optional: true,
+      cacheFingerprint: "shared-06-rust-pr-delta-input-v1",
+    },
   ],
   compute: (_config, inputs) =>
     Effect.sync(() => {

@@ -618,6 +618,114 @@ describe("ScoringEngine — cache semantics", () => {
     }
   })
 
+  test("compound config hash includes input signal semantics and policy", async () => {
+    const LeafConfig = Schema.Struct({
+      threshold: Schema.Number,
+    })
+    type LeafConfig = typeof LeafConfig.Type
+
+    const leaf: Signal<LeafConfig, { readonly n: number }, never> = {
+      id: "MOCK-COMPOSITE-LEAF",
+      tier: 1,
+      category: "review-pain",
+      kind: "legibility",
+      configSchema: LeafConfig,
+      defaultConfig: { threshold: 1 },
+      inputs: [],
+      compute: (config) => Effect.succeed({ n: config.threshold }),
+      score: () => 1,
+      diagnose: () => [],
+    }
+    const compound: Signal<{}, { readonly total: number }, never> = {
+      id: "MOCK-COMPOSITE",
+      tier: 1.5,
+      category: "review-pain",
+      kind: "compound",
+      configSchema: Schema.Struct({}),
+      defaultConfig: {},
+      inputs: [{ id: leaf.id }],
+      compute: (_config, inputs) => {
+        const out = inputs.get(leaf.id) as { readonly n: number } | undefined
+        return Effect.succeed({ total: out?.n ?? 0 })
+      },
+      score: () => 1,
+      diagnose: () => [],
+    }
+    const compositePolicyChangedCompound: Signal<
+      {},
+      { readonly total: number },
+      never
+    > = {
+      ...compound,
+      inputs: [{ id: leaf.id, cacheFingerprint: "composite-input-policy-v2" }],
+    }
+
+    const versionedLeaf: Signal<LeafConfig, { readonly n: number }, never> = {
+      ...leaf,
+      cacheVersion: "leaf-v2",
+    }
+    const factorDefinedLeaf: Signal<LeafConfig, { readonly n: number }, never> = {
+      ...leaf,
+      factorDefinitions: [
+        {
+          path: "score.weight",
+          title: "Score weight",
+          valueKind: "number",
+          scoreRole: "weight",
+          defaultValue: 1,
+        },
+      ],
+    }
+
+    const registry = await Effect.runPromise(buildRegistry([compound, leaf]))
+    const versionedRegistry = await Effect.runPromise(
+      buildRegistry([compound, versionedLeaf]),
+    )
+    const factorDefinedRegistry = await Effect.runPromise(
+      buildRegistry([compound, factorDefinedLeaf]),
+    )
+    const compositePolicyChangedRegistry = await Effect.runPromise(
+      buildRegistry([compositePolicyChangedCompound, leaf]),
+    )
+    const base = computeConfigHash(compound.id, registry, undefined)
+    const inputVersionChanged = computeConfigHash(
+      compound.id,
+      versionedRegistry,
+      undefined,
+    )
+    const inputFactorDefinitionChanged = computeConfigHash(
+      compound.id,
+      factorDefinedRegistry,
+      undefined,
+    )
+    const compositePolicyChanged = computeConfigHash(
+      compound.id,
+      compositePolicyChangedRegistry,
+      undefined,
+    )
+    const inputConfigChanged = computeConfigHash(compound.id, registry, {
+      id: "test",
+      domain: "test",
+      signal_overrides: {
+        [leaf.id]: { config: { threshold: 2 } },
+      },
+    } satisfies PulsarVector)
+    const inputPolicyChanged = computeConfigHash(compound.id, registry, {
+      id: "test",
+      domain: "test",
+      signal_overrides: {
+        [leaf.id]: { factors: { "score.weight": 0.5 } },
+      },
+    } satisfies PulsarVector)
+
+    expect(inputVersionChanged).not.toBe(base)
+    expect(inputFactorDefinitionChanged).not.toBe(base)
+    expect(compositePolicyChanged).not.toBe(base)
+    expect(inputConfigChanged).not.toBe(base)
+    expect(inputPolicyChanged).not.toBe(base)
+    expect(inputPolicyChanged).not.toBe(inputConfigChanged)
+  })
+
   test("scoreRange: each distinct content-hash runs compute once, shared cache serves repeats", async () => {
     // Build a repo with three commits: sha1, sha2 (changes code), sha3
     // (changes only a non-.ts file — content hash equals sha2's because
@@ -697,6 +805,121 @@ describe("ScoringEngine — cache semantics", () => {
       const { results, count } = await Effect.runPromise(program)
       expect(results.map((r) => r.sha)).toEqual([sha2, sha3])
       expect(count).toBe(2)
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("scoreRange: compound cache propagates input git revision dependencies", async () => {
+    const { repoPath, sha: sha1 } = await initRepo([
+      { path: "a.ts", content: "export const x = 1\n" },
+      { path: "README.md", content: "# one\n" },
+    ])
+    try {
+      const sha2 = addCommit(repoPath, "a.ts", "export const x = 42\n", "code")
+      const sha3 = addCommit(repoPath, "README.md", "# three\n", "docs")
+
+      const program = Effect.gen(function* () {
+        const makeCompoundSignal = (
+          leaf: Signal<{}, { readonly n: number }, never>,
+          counter: Ref.Ref<number>,
+          id: string,
+        ): Signal<{}, { readonly total: number }, never> => ({
+          id,
+          tier: 1.5,
+          category: "review-pain",
+          kind: "compound",
+          configSchema: Schema.Struct({}),
+          defaultConfig: {},
+          inputs: [{ id: leaf.id }],
+          compute: (_config, inputs) =>
+            Effect.gen(function* () {
+              yield* Ref.update(counter, (n) => n + 1)
+              const out = inputs.get(leaf.id) as
+                | { readonly n: number }
+                | undefined
+              return { total: out?.n ?? 0 }
+            }),
+          score: () => 1,
+          diagnose: () => [],
+        })
+
+        const controlLeafCounter = yield* Ref.make(0)
+        const controlCompoundCounter = yield* Ref.make(0)
+        const controlLeaf = makeCountingSignal(
+          controlLeafCounter,
+          "MOCK-CONTENT-LEAF",
+        )
+        const controlCompound = makeCompoundSignal(
+          controlLeaf,
+          controlCompoundCounter,
+          "MOCK-CONTENT-COMPOSITE",
+        )
+
+        const revisionLeafCounter = yield* Ref.make(0)
+        const revisionCompoundCounter = yield* Ref.make(0)
+        const revisionLeaf: Signal<{}, { readonly n: number }, never> = {
+          ...makeCountingSignal(revisionLeafCounter, "MOCK-REVISION-LEAF"),
+          cacheDependencies: ["git-revision-context"],
+        }
+        const revisionCompound = makeCompoundSignal(
+          revisionLeaf,
+          revisionCompoundCounter,
+          "MOCK-REVISION-COMPOSITE",
+        )
+        const registry = yield* buildRegistry([
+          controlCompound,
+          controlLeaf,
+          revisionCompound,
+          revisionLeaf,
+        ])
+        const EngineLayer = ScoringEngineLayer(registry, () => Layer.empty)
+        const engine = yield* ScoringEngineTag.pipe(
+          Effect.provide(EngineLayer),
+        ) as Effect.Effect<typeof ScoringEngineTag.Service, never, never>
+
+        const controlResults = yield* engine.scoreRange(
+          repoPath,
+          sha1,
+          sha3,
+          "MOCK-CONTENT-COMPOSITE",
+          { concurrency: 1 },
+        )
+        const revisionResults = yield* engine.scoreRange(
+          repoPath,
+          sha1,
+          sha3,
+          "MOCK-REVISION-COMPOSITE",
+          { concurrency: 1 },
+        )
+        const controlLeafCount = yield* Ref.get(controlLeafCounter)
+        const controlCompoundCount = yield* Ref.get(controlCompoundCounter)
+        const revisionLeafCount = yield* Ref.get(revisionLeafCounter)
+        const revisionCompoundCount = yield* Ref.get(revisionCompoundCounter)
+        return {
+          controlResults,
+          revisionResults,
+          controlLeafCount,
+          controlCompoundCount,
+          revisionLeafCount,
+          revisionCompoundCount,
+        }
+      })
+
+      const {
+        controlResults,
+        revisionResults,
+        controlLeafCount,
+        controlCompoundCount,
+        revisionLeafCount,
+        revisionCompoundCount,
+      } = await Effect.runPromise(program)
+      expect(controlResults.map((r) => r.sha)).toEqual([sha2, sha3])
+      expect(revisionResults.map((r) => r.sha)).toEqual([sha2, sha3])
+      expect(controlLeafCount).toBe(1)
+      expect(controlCompoundCount).toBe(1)
+      expect(revisionLeafCount).toBe(2)
+      expect(revisionCompoundCount).toBe(2)
     } finally {
       await rm(repoPath, { recursive: true, force: true })
     }
@@ -1333,5 +1556,54 @@ describe("ScoringEngine — cache semantics", () => {
     const result = await Effect.runPromise(program)
     expect(result.observerVersioned).not.toBe(result.observerBase)
     expect(result.signalVersioned).not.toBe(result.signalBase)
+  })
+
+  test("observer cache config hash changes with compound input policy", async () => {
+    const program = Effect.gen(function* () {
+      const counter = yield* Ref.make(0)
+      const leaf = makeCountingSignal(counter, "MOCK-OBSERVER-LEAF")
+      const compound: Signal<{}, { readonly total: number }, never> = {
+        id: "MOCK-OBSERVER-COMPOSITE",
+        tier: 1.5,
+        category: "review-pain",
+        kind: "compound",
+        configSchema: Schema.Struct({}),
+        defaultConfig: {},
+        inputs: [{ id: leaf.id, cacheFingerprint: "observer-input-policy-v1" }],
+        compute: (_config, inputs) => {
+          const out = inputs.get(leaf.id) as { readonly n: number } | undefined
+          return Effect.succeed({ total: out?.n ?? 0 })
+        },
+        score: () => 1,
+        diagnose: () => [],
+      }
+      const policyChangedCompound: Signal<{}, { readonly total: number }, never> = {
+        ...compound,
+        inputs: [{ id: leaf.id, cacheFingerprint: "observer-input-policy-v2" }],
+      }
+      const registry = yield* buildRegistry([compound, leaf])
+      const policyChangedRegistry = yield* buildRegistry([
+        policyChangedCompound,
+        leaf,
+      ])
+
+      return {
+        observerBase: computeObserverConfigHash(registry, undefined),
+        observerPolicyChanged: computeObserverConfigHash(
+          policyChangedRegistry,
+          undefined,
+        ),
+        signalBase: computeConfigHash(compound.id, registry, undefined),
+        signalPolicyChanged: computeConfigHash(
+          compound.id,
+          policyChangedRegistry,
+          undefined,
+        ),
+      }
+    })
+
+    const result = await Effect.runPromise(program)
+    expect(result.observerPolicyChanged).not.toBe(result.observerBase)
+    expect(result.signalPolicyChanged).not.toBe(result.signalBase)
   })
 })

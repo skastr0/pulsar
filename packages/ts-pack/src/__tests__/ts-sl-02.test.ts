@@ -99,7 +99,12 @@ describe("TS-SL-02 Inconsistent clone detection", () => {
   })
 
   test("declared as compound with correct inputs", () => {
-    expect(TsSl02.inputs).toEqual([{ id: "TS-SL-01-duplication" }])
+    expect(TsSl02.inputs).toEqual([
+      {
+        id: "TS-SL-01-duplication",
+        cacheFingerprint: "ts-sl-02-duplication-input-v1",
+      },
+    ])
     expect(TsSl02.aliases).toContain("TS-SL-02")
     expect(TsSl02.tier).toBe(1.5)
     expect(TsSl02.kind).toBe("compound")
