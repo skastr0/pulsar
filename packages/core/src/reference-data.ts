@@ -1,4 +1,26 @@
 export {
+  AI_FACT_ARTIFACT_SCHEMA_VERSION,
+  AI_FACT_REPLAY_OUTPUT_SCHEMA_VERSION,
+  AiFactArtifactMode,
+  AiFactEnforcementCeiling,
+  AiFactInputScope,
+  computeAiFactArtifactFingerprint,
+  computeAiFactCacheFingerprint,
+  decodeAiFactLabelArtifactSync,
+  replayAiFactArtifact,
+  serializeAiFactReplayOutput,
+} from "./ai-facts.js"
+export type {
+  AiFactClassifierDescriptor,
+  AiFactEvidenceRef,
+  AiFactInputDescriptor,
+  AiFactLabel,
+  AiFactLabelArtifact,
+  AiFactPolicy,
+  AiFactProvenance,
+  AiFactReplayOutput,
+} from "./ai-facts.js"
+export {
   computeDiagnosticHash,
   type Diagnostic,
 } from "./diagnostic.js"

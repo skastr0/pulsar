@@ -44,6 +44,7 @@ export interface SignalOutputMetadata {
   readonly computedAt?: string
   readonly stale?: boolean
   readonly applicability?: SignalApplicability
+  readonly factSource?: "deterministic" | "ai_classified"
 }
 
 export interface SignalIdentity {

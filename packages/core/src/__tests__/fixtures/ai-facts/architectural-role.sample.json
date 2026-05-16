@@ -1,0 +1,47 @@
+{
+  "schema_version": "pulsar.ai_fact_label.v1",
+  "artifact_id": "fixture.architectural-role.src-runner.v1",
+  "classifier": {
+    "id": "architectural-role",
+    "version": "1.0.0",
+    "prompt_id": "architectural-role.v1",
+    "prompt_fingerprint": "sha256:prompt-architectural-role-v1",
+    "model_id": "fixture-model-v1",
+    "model_provider": "fixture"
+  },
+  "input": {
+    "scope": "file",
+    "content_hash": "sha256:content-src-runner",
+    "input_fingerprint": "sha256:input-src-runner",
+    "source_paths": [
+      "packages/core/src/runner.ts"
+    ],
+    "git_sha": "fixture-sha"
+  },
+  "label": {
+    "kind": "architectural_role",
+    "value": "integration",
+    "confidence": 0.82,
+    "rationale": "Runner code coordinates signal execution and output assembly rather than exporting a pure reusable utility.",
+    "evidence": [
+      {
+        "path": "packages/core/src/runner.ts",
+        "line": 1,
+        "quote_hash": "sha256:evidence-src-runner",
+        "note": "fixture evidence hash, not raw source text"
+      }
+    ]
+  },
+  "policy": {
+    "enforcement_ceiling": "soft-warning",
+    "missing_label_behavior": "fail-open",
+    "stale_after_days": 30,
+    "review_route": "architecture"
+  },
+  "provenance": {
+    "mode": "offline-replay",
+    "created_at": "2026-05-16T00:00:00.000Z",
+    "created_by": "fixture",
+    "source": "committed-fixture"
+  }
+}

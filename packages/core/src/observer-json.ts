@@ -122,6 +122,12 @@ const ObserverSignalMetadataSnapshot = Schema.Struct({
   baseConfidence: Schema.optional(Schema.Number),
   computedAt: Schema.optional(Schema.String),
   stale: Schema.optional(Schema.Boolean),
+  factSource: Schema.optional(
+    Schema.Union(
+      Schema.Literal("deterministic"),
+      Schema.Literal("ai_classified"),
+    ),
+  ),
   applicability: Schema.optional(
     Schema.Union(
       Schema.Literal("applicable"),

@@ -428,6 +428,29 @@ describe("Observer — hard gate routing (AC-6)", () => {
     expect(result.hard_gate_status).toBe("pass")
     expect(result.hard_gate_violations).toEqual([])
   })
+
+  test("tier-3 AI-classified facts cannot hard-gate even with block diagnostics", async () => {
+    const a = makeLeaf({
+      id: "AI-FACT-ARCHITECTURAL-ROLE",
+      category: "architectural-drift",
+      kind: "structural",
+      tier: 3,
+      score: 0.1,
+      diagnostics: [{ severity: "block", message: "AI label says this boundary is suspect" }],
+      metadata: {
+        effectiveConfidence: 0.8,
+        baseConfidence: 0.9,
+        computedAt: "2026-05-16T00:00:00.000Z",
+      },
+    })
+
+    const result = await run([a])
+
+    expect(result.hard_gate_status).toBe("pass")
+    expect(result.hard_gate_violations).toEqual([])
+    expect(result.signalMetadata?.["AI-FACT-ARCHITECTURAL-ROLE"]?.effectiveConfidence)
+      .toBe(0.8)
+  })
 })
 
 describe("Observer — readiness pressure", () => {

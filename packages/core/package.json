@@ -54,6 +54,10 @@
       "types": "./dist/reference-data.d.ts",
       "default": "./dist/reference-data.js"
     },
+    "./ai-facts": {
+      "types": "./dist/ai-facts.d.ts",
+      "default": "./dist/ai-facts.js"
+    },
     "./routing": {
       "types": "./dist/routing.d.ts",
       "default": "./dist/routing.js"
