@@ -174,7 +174,7 @@ export function copied(value: number): number {
     )).toBe(true)
   })
 
-  test("pulsar-self tier classifier excludes all-integration clone groups", async () => {
+  test("pulsar-self role classifier excludes all-integration clone groups", async () => {
     const duplicate = `
 export function copiedIntegration(value: number): number {
   const doubled = value * 2;
@@ -209,7 +209,7 @@ export function copiedIntegration(value: number): number {
       ) as Effect.Effect<TsSl01Output, unknown, never>,
     )
 
-    expect(classification.value.metadata?.architectural_tier).toBe("integration")
+    expect(classification.value.metadata?.architecture_role).toBe("integration")
     expect(out.groups.length).toBeGreaterThan(0)
     expect(out.groups.every((group) => group.policy?.action === "exclude")).toBe(true)
     expect(TsSl01.score(out)).toBe(1)

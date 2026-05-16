@@ -239,7 +239,7 @@ describe("TS-LD-02 (function / file size distribution)", () => {
     )).toBe(true)
   })
 
-  test("pulsar-self tier classifier drives integration size policy", async () => {
+  test("pulsar-self role classifier drives integration size policy", async () => {
     for (let i = 0; i < 20; i += 1) {
       await writeTs(`small-${i}.ts`, `export function small${i}() { return ${i} }\n`)
     }
@@ -272,7 +272,7 @@ describe("TS-LD-02 (function / file size distribution)", () => {
       max_file_loc: 12,
     })
 
-    expect(classification.value.metadata?.architectural_tier).toBe("integration")
+    expect(classification.value.metadata?.architecture_role).toBe("integration")
     expect(TsLd02.score(baseline)).toBeLessThan(1)
     expect(TsLd02.score(calibrated)).toBe(1)
     expect(calibrated.calibrationDecisions).toContainEqual(

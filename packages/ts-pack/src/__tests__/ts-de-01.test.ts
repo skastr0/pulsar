@@ -247,7 +247,7 @@ describe("TS-DE-01 (type-level coupling)", () => {
     )
   })
 
-  test("pulsar-self tier classifier drives integration type-coupling policy", async () => {
+  test("pulsar-self role classifier drives integration type-coupling policy", async () => {
     for (const file of ["a", "b", "c", "d", "e"]) {
       await writeTs(`packages/ts-pack/src/signals/${file}.ts`, `export interface ${file.toUpperCase()} {}\n`)
     }
@@ -274,7 +274,7 @@ describe("TS-DE-01 (type-level coupling)", () => {
     const out = await runCompute(TsDe01.defaultConfig, calibration)
     const hubEntry = out.modules.find((module) => module.file === integrationHub)
 
-    expect(classification.value.metadata?.architectural_tier).toBe("integration")
+    expect(classification.value.metadata?.architecture_role).toBe("integration")
     expect(hubEntry?.penaltyWeight).toBe(0)
     expect(hubEntry?.policyDecisions).toContainEqual(
       expect.objectContaining({

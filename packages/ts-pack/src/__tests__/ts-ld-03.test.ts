@@ -308,7 +308,7 @@ describe("TS-LD-03 (nesting depth)", () => {
     expect(TsLd03.score(out)).toBe(0.75)
   })
 
-  test("pulsar-self tier classifier drives integration nesting policy", async () => {
+  test("pulsar-self role classifier drives integration nesting policy", async () => {
     const file = await repo.write(
       "packages/ts-pack/src/signals/ts-ld-02-orchestration.ts",
       [
@@ -350,7 +350,7 @@ describe("TS-LD-03 (nesting depth)", () => {
       ) as Effect.Effect<any, unknown, never>,
     )
 
-    expect(classification.value.metadata?.architectural_tier).toBe("integration")
+    expect(classification.value.metadata?.architecture_role).toBe("integration")
     expect(out.overThreshold).toEqual([])
     expect(out.calibrationDecisions).toContainEqual(
       expect.objectContaining({

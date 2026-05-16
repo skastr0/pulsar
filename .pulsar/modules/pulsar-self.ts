@@ -1,21 +1,22 @@
 import { Effect } from "effect"
 import {
-  classifyArchitecturalTier,
+  classifyArchitectureRole,
   defineProcessor,
   defineProjectModule,
-  readArchitecturalTier,
+  readArchitectureRole,
   tuneFactorPolicy,
   tuneTypeScriptCloneGroup,
   tuneTypeScriptNesting,
   tuneTypeScriptSize,
   tuneTypeScriptUnsafeType,
-  type ArchitecturalTier,
   type CalibrationSlotInput,
   type ResolvedCalibrationContext,
   type TypeScriptUnsafeTypePolicyValue,
 } from "@skastr0/pulsar-project-module-sdk"
 
-const ARCHITECTURAL_TIER_RULE_ID = "pulsar.architectural-tier.v1"
+type PulsarArchitectureRole = "pure_utility" | "shared_contextual" | "integration"
+
+const ARCHITECTURE_ROLE_RULE_ID = "pulsar.architecture-role.v1"
 const DELIBERATE_EXISTENTIAL_RULE_ID = "pulsar.deliberate-existential-boundary.v1"
 const INTEGRATION_TYPE_COUPLING_RULE_ID = "pulsar.integration-type-coupling-policy.v1"
 const INTEGRATION_SIZE_RULE_ID = "pulsar.integration-size-policy.v1"
@@ -33,28 +34,28 @@ export default defineProjectModule({
   scope: "repository",
   processors: [
     defineProcessor({
-      id: "architectural-tier-classifier",
+      id: "pulsar-architecture-role-classifier",
       slot: "taxonomy.file-classifier",
       role: "enricher",
       priority: 20,
-      fingerprint: "architectural-tier-classifier-v1",
+      fingerprint: "pulsar-architecture-role-classifier-v1",
       process: (current, _context, runtime) =>
         Effect.sync(() => {
-          const rule = architecturalTierRule(current.value.path)
+          const rule = architectureRoleRule(current.value.path)
           if (rule === undefined) return current
 
-          return classifyArchitecturalTier(current, runtime, rule.tier, {
-            ruleId: ARCHITECTURAL_TIER_RULE_ID,
+          return classifyArchitectureRole(current, runtime, rule.role, {
+            ruleId: ARCHITECTURE_ROLE_RULE_ID,
             reason:
-              "Pulsar self-calibration declares architecture taste once through taxonomy metadata so downstream signals can interpret size, nesting, clones, and coupling by code role.",
+              "Pulsar self-calibration declares repo-local architecture taste once through taxonomy metadata so downstream signals can interpret size, nesting, clones, and coupling by code role.",
             evidence: [
               { kind: "path", value: current.value.path },
-              { kind: "architectural-tier", value: rule.tier },
-              { kind: "tier-rule", value: rule.id },
+              { kind: "architecture-role", value: rule.role },
+              { kind: "role-rule", value: rule.id },
             ],
             metadata: {
               repository: "pulsar",
-              policy: "architectural-tier",
+              policy: "repo-local-architecture-role",
               ruleId: rule.id,
               ...(rule.boundary !== undefined ? { boundary: rule.boundary } : {}),
             },
@@ -69,8 +70,8 @@ export default defineProjectModule({
       fingerprint: "integration-size-policy-v1",
       process: (current, context, runtime) =>
         Effect.gen(function* () {
-          const classification = yield* architecturalTierClassificationForFile(context, current.value.file)
-          if (classification.tier !== "integration") return current
+          const classification = yield* architectureRoleClassificationForFile(context, current.value.file)
+          if (classification.role !== "integration") return current
 
           return tuneTypeScriptSize(current, runtime, {
             severity: "info",
@@ -81,11 +82,15 @@ export default defineProjectModule({
               "Integration code is allowed to stay locally coherent as a larger executable story when splitting would scatter one operational decision across files.",
             evidence: [
               { kind: "path", value: current.value.file },
-              { kind: "architectural-tier", value: classification.tier },
+              { kind: "architecture-role", value: classification.role },
               { kind: "size-kind", value: current.value.kind },
               { kind: "loc", value: String(current.value.loc) },
             ],
-            metadata: { repository: "pulsar", policy: "integration-size", tier: classification.tier },
+            metadata: {
+              repository: "pulsar",
+              policy: "integration-size",
+              architectureRole: classification.role,
+            },
           })
         }),
     }),
@@ -97,8 +102,8 @@ export default defineProjectModule({
       fingerprint: "integration-nesting-policy-v1",
       process: (current, context, runtime) =>
         Effect.gen(function* () {
-          const classification = yield* architecturalTierClassificationForFile(context, current.value.file)
-          if (classification.tier !== "integration") return current
+          const classification = yield* architectureRoleClassificationForFile(context, current.value.file)
+          if (classification.role !== "integration") return current
 
           return tuneTypeScriptNesting(current, runtime, {
             severity: "info",
@@ -109,10 +114,14 @@ export default defineProjectModule({
               "Integration code often has irreducible control-flow from external protocols, orchestration, and error routing; Pulsar tracks it as information instead of forcing helper extraction.",
             evidence: [
               { kind: "path", value: current.value.file },
-              { kind: "architectural-tier", value: classification.tier },
+              { kind: "architecture-role", value: classification.role },
               { kind: "observed-nesting", value: String(current.value.observedNesting) },
             ],
-            metadata: { repository: "pulsar", policy: "integration-nesting", tier: classification.tier },
+            metadata: {
+              repository: "pulsar",
+              policy: "integration-nesting",
+              architectureRole: classification.role,
+            },
           })
         }),
     }),
@@ -124,12 +133,12 @@ export default defineProjectModule({
       fingerprint: "integration-clone-policy-v1",
       process: (current, context, runtime) =>
         Effect.gen(function* () {
-          const memberTiers = new Set<ArchitecturalTier>()
+          const memberRoles = new Set<PulsarArchitectureRole>()
           for (const member of current.value.members) {
-            const classification = yield* architecturalTierClassificationForFile(context, member.file)
-            if (classification.tier !== undefined) memberTiers.add(classification.tier)
+            const classification = yield* architectureRoleClassificationForFile(context, member.file)
+            if (classification.role !== undefined) memberRoles.add(classification.role)
           }
-          if (memberTiers.size !== 1 || !memberTiers.has("integration")) return current
+          if (memberRoles.size !== 1 || !memberRoles.has("integration")) return current
 
           return tuneTypeScriptCloneGroup(current, runtime, {
             cloneAction: "exclude",
@@ -141,10 +150,14 @@ export default defineProjectModule({
               "Duplicate-looking integration code can preserve local protocol context better than a contextual abstraction; this policy excludes all-integration clone groups from score pressure.",
             evidence: [
               { kind: "clone-group", value: current.value.groupId },
-              { kind: "architectural-tier", value: "integration" },
+              { kind: "architecture-role", value: "integration" },
               { kind: "member-count", value: String(current.value.members.length) },
             ],
-            metadata: { repository: "pulsar", policy: "integration-clones", tier: "integration" },
+            metadata: {
+              repository: "pulsar",
+              policy: "integration-clones",
+              architectureRole: "integration",
+            },
           })
         }),
     }),
@@ -182,8 +195,8 @@ export default defineProjectModule({
       fingerprint: "integration-type-coupling-policy-v1",
       process: (current, context, runtime) =>
         Effect.gen(function* () {
-          const classification = yield* architecturalTierClassificationForFile(context, current.value.file)
-          if (classification.tier !== "integration") return current
+          const classification = yield* architectureRoleClassificationForFile(context, current.value.file)
+          if (classification.role !== "integration") return current
           const boundary = classification.boundary ?? classification.ruleId ?? "classified-integration"
 
           return tuneFactorPolicy(current, runtime, {
@@ -203,7 +216,7 @@ export default defineProjectModule({
               repository: "pulsar",
               policy: "integration-type-coupling",
               boundary,
-              tier: classification.tier,
+              architectureRole: classification.role,
             },
           })
         }),
@@ -366,20 +379,20 @@ const deliberateExistentialRules: ReadonlyArray<{
   },
 ]
 
-type ArchitecturalTierRule = {
+type ArchitectureRoleRule = {
   readonly id: string
-  readonly tier: ArchitecturalTier
+  readonly role: PulsarArchitectureRole
   readonly boundary?: string
   readonly matches: (path: string) => boolean
 }
 
-type ArchitecturalTierClassification = {
-  readonly tier?: ArchitecturalTier
+type ArchitectureRoleClassification = {
+  readonly role?: PulsarArchitectureRole
   readonly boundary?: string
   readonly ruleId?: string
 }
 
-const architecturalTierClassificationForFile = (
+const architectureRoleClassificationForFile = (
   context: ResolvedCalibrationContext,
   file: string,
 ) =>
@@ -387,12 +400,12 @@ const architecturalTierClassificationForFile = (
     path: file,
     categories: [],
   }).pipe(
-    Effect.map((result): ArchitecturalTierClassification => {
-      const tier = readArchitecturalTier(result.value.metadata)
+    Effect.map((result): ArchitectureRoleClassification => {
+      const role = readPulsarArchitectureRole(result.value.metadata)
       const boundary = readStringMetadata(result.value.metadata, "boundary")
       const ruleId = readStringMetadata(result.value.metadata, "ruleId")
       return {
-        ...(tier !== undefined ? { tier } : {}),
+        ...(role !== undefined ? { role } : {}),
         ...(boundary !== undefined ? { boundary } : {}),
         ...(ruleId !== undefined ? { ruleId } : {}),
       }
@@ -407,12 +420,26 @@ const readStringMetadata = (
   return typeof value === "string" ? value : undefined
 }
 
-const architecturalTierRule = (file: string): ArchitecturalTierRule | undefined => {
-  const normalized = normalizePath(file)
-  return architecturalTierRules.find((rule) => rule.matches(normalized))
+const readPulsarArchitectureRole = (
+  metadata: Readonly<Record<string, unknown>> | undefined,
+): PulsarArchitectureRole | undefined => {
+  const role = readArchitectureRole(metadata)
+  return isPulsarArchitectureRole(role) ? role : undefined
 }
 
-const architecturalTierRules: ReadonlyArray<ArchitecturalTierRule> = [
+const isPulsarArchitectureRole = (
+  value: string | undefined,
+): value is PulsarArchitectureRole =>
+  value === "pure_utility" ||
+  value === "shared_contextual" ||
+  value === "integration"
+
+const architectureRoleRule = (file: string): ArchitectureRoleRule | undefined => {
+  const normalized = normalizePath(file)
+  return architectureRoleRules.find((rule) => rule.matches(normalized))
+}
+
+const architectureRoleRules: ReadonlyArray<ArchitectureRoleRule> = [
   integrationFile(
     "core.signal-contract",
     "packages/core/src/signal.ts",
@@ -499,58 +526,58 @@ const architecturalTierRules: ReadonlyArray<ArchitecturalTierRule> = [
   sharedContextualFile("self.calibration-module", ".pulsar/modules/pulsar-self.ts"),
   pureUtilityPrefix("ts.shared-compiler", "packages/ts-pack/src/signals/shared-compiler-"),
   pureUtilityFile("core.factor-paths", "packages/core/src/factor-policy-ledger.ts"),
-  pureUtilityFile("core.architectural-tier", "packages/core/src/architectural-tier.ts"),
+  pureUtilityFile("core.architecture-role-compat", "packages/core/src/architectural-tier.ts"),
 ]
 
 function integrationFile(
   id: string,
   file: string,
   boundary: string,
-): ArchitecturalTierRule {
+): ArchitectureRoleRule {
   return {
     id,
-    tier: "integration",
+    role: "integration",
     boundary,
     matches: (path) => path.endsWith(file),
   }
 }
 
-function integrationPrefix(id: string, prefix: string): ArchitecturalTierRule {
+function integrationPrefix(id: string, prefix: string): ArchitectureRoleRule {
   return {
     id,
-    tier: "integration",
+    role: "integration",
     matches: (path) => path.includes(prefix),
   }
 }
 
-function sharedContextualFile(id: string, file: string): ArchitecturalTierRule {
+function sharedContextualFile(id: string, file: string): ArchitectureRoleRule {
   return {
     id,
-    tier: "shared_contextual",
+    role: "shared_contextual",
     matches: (path) => path.endsWith(file),
   }
 }
 
-function sharedContextualSuffix(id: string, suffix: string): ArchitecturalTierRule {
+function sharedContextualSuffix(id: string, suffix: string): ArchitectureRoleRule {
   return {
     id,
-    tier: "shared_contextual",
+    role: "shared_contextual",
     matches: (path) => path.endsWith(suffix),
   }
 }
 
-function pureUtilityFile(id: string, file: string): ArchitecturalTierRule {
+function pureUtilityFile(id: string, file: string): ArchitectureRoleRule {
   return {
     id,
-    tier: "pure_utility",
+    role: "pure_utility",
     matches: (path) => path.endsWith(file),
   }
 }
 
-function pureUtilityPrefix(id: string, prefix: string): ArchitecturalTierRule {
+function pureUtilityPrefix(id: string, prefix: string): ArchitectureRoleRule {
   return {
     id,
-    tier: "pure_utility",
+    role: "pure_utility",
     matches: (path) => path.includes(prefix),
   }
 }

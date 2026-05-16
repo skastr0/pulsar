@@ -147,7 +147,8 @@ Current compatibility surface:
   compatibility helpers, but new generic helpers should be named around
   `architecture_role` and `policy_tags`.
 - Self-calibration: `.pulsar/modules/pulsar-self.ts` may keep the three-tier
-  vocabulary because it is explicit Pulsar repository taste.
+  vocabulary because it is explicit Pulsar repository taste, but it should
+  publish that taste through repo-defined `architecture_role` metadata.
 - Tests: generic taxonomy and SDK tests should prove non-three-tier roles or
   tags work; three-tier assertions should be limited to compatibility tests or
   Pulsar self-calibration tests.
