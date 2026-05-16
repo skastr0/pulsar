@@ -98,6 +98,7 @@ describe("Observer + TS pack integration", () => {
         "TS-LD-06-annotation-coverage",
         "TS-LD-07-unsafe-type-erosion",
         "TS-LD-08-exhaustiveness-erosion",
+        "TS-LD-09-error-channel-opacity",
         "TS-RP-01-hotspots",
         "TS-RP-02-pr-size",
         "TS-SL-01-duplication",
