@@ -113,13 +113,15 @@ const linkMaterializedPackageDependencies = (
           cause,
         }),
     })
-    const dependencies = dependencyNamesOfPackageJson(parsed)
+    const dependencies = dependencyNamesOfPackageJson(parsed, {
+      includeDevDependencies: ref.kind === "repo-local",
+    })
     if (dependencies.length === 0) return
 
     const nodeModulesRoot = nearestNodeModulesRoot(shadowSourceRoot) ?? resolve(shadowSourceRoot, "node_modules")
     const sourceRequire = createRequire(packageJsonPath)
     for (const dependency of dependencies) {
-      if (dependency === ref.id) continue
+      if (isProjectModuleSelfDependency(ref, dependency)) continue
       const dependencyRoot = yield* resolveDependencyRoot(ref, sourceRoot, sourceRequire, dependency)
       if (dependencyRoot === undefined) continue
       const destination = resolve(nodeModulesRoot, ...dependency.split("/"))
@@ -133,10 +135,19 @@ const linkMaterializedPackageDependencies = (
     }
   })
 
-const dependencyNamesOfPackageJson = (value: unknown): ReadonlyArray<string> => {
+const dependencyNamesOfPackageJson = (
+  value: unknown,
+  options: { readonly includeDevDependencies: boolean },
+): ReadonlyArray<string> => {
   if (!isRecord(value)) return []
   const names = new Set<string>()
-  for (const field of ["dependencies", "peerDependencies", "optionalDependencies"]) {
+  const fields = [
+    "dependencies",
+    "peerDependencies",
+    "optionalDependencies",
+    ...(options.includeDevDependencies ? ["devDependencies"] : []),
+  ]
+  for (const field of fields) {
     const dependencies = value[field]
     if (!isRecord(dependencies)) continue
     for (const name of Object.keys(dependencies)) {
@@ -145,6 +156,12 @@ const dependencyNamesOfPackageJson = (value: unknown): ReadonlyArray<string> => 
   }
   return [...names].sort()
 }
+
+const isProjectModuleSelfDependency = (
+  ref: ProjectModuleRef,
+  dependency: string,
+): boolean =>
+  ref.kind !== "repo-local" && dependency === ref.packageName
 
 const linkMaterializedNodeModulesFallback = (
   ref: ProjectModuleRef,
