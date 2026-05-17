@@ -798,4 +798,117 @@ export function defaultEffect(EffectApi: { orElseSucceed: (fallback: () => void)
       await rm(stateRoot, { recursive: true, force: true })
     }
   }, 120_000)
+
+  test("detached worktree package project modules resolve from the dependency root", async () => {
+    const repoPath = await mkdtemp(join(tmpdir(), "pulsar-runtime-project-modules-"))
+    const stateRoot = await mkdtemp(join(tmpdir(), "pulsar-runtime-project-module-state-"))
+    const previousPulsarStateHome = process.env.PULSAR_STATE_HOME
+    try {
+      sh("git", ["init", "-q", "-b", "main"], repoPath)
+      sh("git", ["config", "user.email", "test@test.test"], repoPath)
+      sh("git", ["config", "user.name", "test"], repoPath)
+      sh("git", ["config", "commit.gpgsign", "false"], repoPath)
+      await writeRepoFile(
+        repoPath,
+        "package.json",
+        JSON.stringify(
+          {
+            name: "package-module-detached-deps",
+            private: true,
+            dependencies: {
+              "@acme/module-helper": "1.0.0",
+            },
+          },
+          null,
+          2,
+        ),
+      )
+      await writeRepoFile(
+        repoPath,
+        ".pulsar/project-modules.json",
+        JSON.stringify(
+          {
+            modules: [
+              {
+                id: "@acme/module-helper",
+                kind: "package",
+                packageName: "@acme/module-helper",
+              },
+            ],
+          },
+          null,
+          2,
+        ),
+      )
+      sh("git", ["add", "package.json", ".pulsar"], repoPath)
+      sh("git", ["commit", "-q", "-m", "add package project module"], repoPath)
+      const sha = sh("git", ["rev-parse", "HEAD"], repoPath)
+
+      await writeRepoFile(
+        repoPath,
+        "node_modules/@acme/module-helper/package.json",
+        JSON.stringify(
+          {
+            name: "@acme/module-helper",
+            version: "1.0.0",
+            type: "module",
+            exports: "./index.mjs",
+          },
+          null,
+          2,
+        ),
+      )
+      const writePackageModule = (marker: string) =>
+        writeRepoFile(
+          repoPath,
+          "node_modules/@acme/module-helper/index.mjs",
+          [
+            "export default {",
+            "  id: '@acme/module-helper',",
+            "  version: '1.0.0',",
+            "  scope: 'repository',",
+            `  configHash: '${marker}',`,
+            "  processors: []",
+            "}",
+          ].join("\n"),
+        )
+
+      process.env.PULSAR_STATE_HOME = stateRoot
+      await writePackageModule("first")
+      const firstContext = await Effect.runPromise(
+        withDetachedWorktreeAtRef(repoPath, sha, ({ worktreePath }) => {
+          expect(
+            existsSync(join(worktreePath, "node_modules", "@acme", "module-helper")),
+          ).toBe(false)
+          return loadProjectModuleCalibrationContext(worktreePath, {
+            dependencyRoot: repoPath,
+          })
+        }),
+      )
+
+      await writePackageModule("second")
+      const secondContext = await Effect.runPromise(
+        withDetachedWorktreeAtRef(repoPath, sha, ({ worktreePath }) =>
+          loadProjectModuleCalibrationContext(worktreePath, {
+            dependencyRoot: repoPath,
+          }),
+        ),
+      )
+
+      expect(firstContext?.activeModules[0]?.id).toBe("@acme/module-helper")
+      expect(firstContext?.activeModules[0]?.configHash).toBe("first")
+      expect(secondContext?.activeModules[0]?.configHash).toBe("second")
+      expect(firstContext?.activeModules[0]?.sourceFingerprint).not.toBe(
+        secondContext?.activeModules[0]?.sourceFingerprint,
+      )
+    } finally {
+      if (previousPulsarStateHome === undefined) {
+        delete process.env.PULSAR_STATE_HOME
+      } else {
+        process.env.PULSAR_STATE_HOME = previousPulsarStateHome
+      }
+      await rm(repoPath, { recursive: true, force: true })
+      await rm(stateRoot, { recursive: true, force: true })
+    }
+  }, 120_000)
 })

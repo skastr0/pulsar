@@ -35,6 +35,11 @@ interface ProjectModulePackageTarget {
   readonly packageRoot: string
 }
 
+interface ProjectModulePackageRoots {
+  readonly repoRoot: string
+  readonly dependencyRoot: string
+}
+
 export const resolveProjectModuleRefTarget = (
   ref: ProjectModuleRef,
   options: ProjectModuleLoadOptions,
@@ -44,7 +49,7 @@ export const resolveProjectModuleRefTarget = (
       return resolveRepoLocalProjectModuleTarget(ref, options)
     case "workspace":
     case "package":
-      return resolvePackageProjectModuleTarget(ref, options.repoRoot)
+      return resolvePackageProjectModuleTarget(ref, options)
   }
 }
 
@@ -110,7 +115,7 @@ const resolveRepoLocalProjectModuleTarget = (
 
 const resolvePackageProjectModuleTarget = (
   ref: ProjectModuleRef & { readonly kind: "workspace" | "package" },
-  repoRoot: string,
+  options: ProjectModuleLoadOptions,
 ): Effect.Effect<ResolvedProjectModuleTarget, ProjectModuleLoadError> =>
   Effect.gen(function* () {
     const packageName = ref.packageName
@@ -122,15 +127,27 @@ const resolvePackageProjectModuleTarget = (
       })
     }
 
-    const resolvedRepoRoot = yield* realpathOrLoadError(ref, repoRoot, "repository root")
+    const resolvedRepoRoot = yield* realpathOrLoadError(ref, options.repoRoot, "repository root")
+    const resolvedDependencyRoot =
+      ref.kind === "package" && options.dependencyRoot !== undefined
+        ? yield* realpathOrLoadError(
+            ref,
+            options.dependencyRoot,
+            "project module dependency root",
+          )
+        : resolvedRepoRoot
+    const packageResolutionRoot =
+      ref.kind === "package" ? resolvedDependencyRoot : resolvedRepoRoot
+    const packageResolutionLabel =
+      ref.kind === "package" ? "project module dependency root" : "repository root"
     const packagePath = yield* Effect.try({
       try: () =>
-        createRequire(resolve(resolvedRepoRoot, "package.json")).resolve(packageName),
+        createRequire(resolve(packageResolutionRoot, "package.json")).resolve(packageName),
       catch: (cause) =>
         new ProjectModuleLoadError({
           refId: ref.id,
           target: packageName,
-          message: `Failed to resolve project module package ${packageName} from repository root`,
+          message: `Failed to resolve project module package ${packageName} from ${packageResolutionLabel}`,
           cause,
         }),
     })
@@ -139,7 +156,10 @@ const resolvePackageProjectModuleTarget = (
     const packageTarget = yield* resolveOwnedProjectModulePackageTarget(
       ref,
       target,
-      resolvedRepoRoot,
+      {
+        repoRoot: resolvedRepoRoot,
+        dependencyRoot: resolvedDependencyRoot,
+      },
     )
     const files = yield* collectProjectModuleSourceFiles(
       ref,
@@ -173,14 +193,14 @@ const resolvePackageProjectModuleTarget = (
 const resolveOwnedProjectModulePackageTarget = (
   ref: ProjectModuleRef & { readonly kind: "workspace" | "package" },
   target: string,
-  repoRoot: string,
+  roots: ProjectModulePackageRoots,
 ): Effect.Effect<ProjectModulePackageTarget, ProjectModuleLoadError> =>
   Effect.gen(function* () {
     const packageRoot = yield* findProjectModulePackageRoot(ref, target)
     yield* verifyProjectModulePackageName(ref, target, packageRoot)
 
     if (ref.kind === "workspace") {
-      if (!isPathInside(repoRoot, packageRoot)) {
+      if (!isPathInside(roots.repoRoot, packageRoot)) {
         return yield* new ProjectModuleLoadError({
           refId: ref.id,
           target,
@@ -188,10 +208,10 @@ const resolveOwnedProjectModulePackageTarget = (
         })
       }
     } else {
-      const packageIsInRepo = isPathInside(repoRoot, packageRoot)
+      const packageIsInRepo = isPathInside(roots.repoRoot, packageRoot)
       const packageIsRepoInstall = yield* isRepoOwnedInstalledPackage(
         ref,
-        repoRoot,
+        roots.dependencyRoot,
         packageRoot,
       )
       if (!packageIsInRepo && !packageIsRepoInstall) {
