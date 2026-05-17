@@ -2,7 +2,7 @@
  * @skastr0/pulsar-ts-pack — TypeScript signal pack.
  */
 
-export const TS_PACK_VERSION = "0.1.0" as const
+export const TS_PACK_VERSION = "0.1.1" as const
 
 export {
   CASING_PATTERNS,

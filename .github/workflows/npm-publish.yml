@@ -34,9 +34,6 @@ jobs:
       - run: bun run verify
       - run: bun run build:npm-cli
       - name: Publish packages
-        env:
-          NPM_CONFIG_PROVENANCE: "true"
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_CONFIG_TOKEN }}
         run: |
           set -euo pipefail
 

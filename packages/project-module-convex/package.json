@@ -1,6 +1,6 @@
 {
   "name": "@skastr0/pulsar-project-module-convex",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Convex technology project module for Pulsar calibration",
   "license": "MIT",
@@ -42,7 +42,7 @@
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
-    "@skastr0/pulsar-project-module-sdk": "0.1.0",
+    "@skastr0/pulsar-project-module-sdk": "0.1.1",
     "effect": "^3.0.0"
   },
   "devDependencies": {

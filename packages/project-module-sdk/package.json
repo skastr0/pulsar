@@ -1,6 +1,6 @@
 {
   "name": "@skastr0/pulsar-project-module-sdk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Project module authoring SDK for Pulsar calibration processors",
   "license": "MIT",
@@ -42,7 +42,7 @@
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
-    "@skastr0/pulsar-core": "0.1.0",
+    "@skastr0/pulsar-core": "0.1.1",
     "effect": "^3.0.0",
     "typescript": "^5.8.0"
   }

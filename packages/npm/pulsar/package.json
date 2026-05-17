@@ -1,6 +1,6 @@
 {
   "name": "@skastr0/pulsar",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Deterministic, inspectable repository health CLI for Pulsar.",
   "license": "MIT",
@@ -35,9 +35,9 @@
     "node": ">=18"
   },
   "optionalDependencies": {
-    "@skastr0/pulsar-darwin-arm64": "0.1.0",
-    "@skastr0/pulsar-darwin-x64": "0.1.0",
-    "@skastr0/pulsar-linux-arm64": "0.1.0",
-    "@skastr0/pulsar-linux-x64": "0.1.0"
+    "@skastr0/pulsar-darwin-arm64": "0.1.1",
+    "@skastr0/pulsar-darwin-x64": "0.1.1",
+    "@skastr0/pulsar-linux-arm64": "0.1.1",
+    "@skastr0/pulsar-linux-x64": "0.1.1"
   }
 }

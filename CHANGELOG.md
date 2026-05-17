@@ -6,6 +6,22 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-05-17
+
+### Added
+
+- Composite signal SDK foundations and additional TypeScript/shared signal composites.
+- Architecture role metadata for opt-in calibration profiles.
+
+### Changed
+
+- Normalized self-calibration provenance and default calibration boundaries.
+- Moved npm publishing to GitHub Actions trusted publishing.
+
+### Fixed
+
+- Normalized the npm runner `bin` path for clean `npx`, `bunx`, and `pnpm dlx` execution.
+
 ## [0.1.0] - 2026-05-15
 
 ### Added
@@ -14,4 +30,3 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - TypeScript, Rust, and shared signal packages.
 - Project-module SDK and initial Effect/Convex technology calibration modules.
 - Bun-native CLI source and standalone binary release workflow.
-

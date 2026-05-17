@@ -1,6 +1,6 @@
 {
   "name": "@skastr0/pulsar-rs-pack",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Rust signal pack scaffold for Pulsar",
   "license": "MIT",
@@ -42,15 +42,15 @@
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
-    "@skastr0/pulsar-core": "0.1.0",
-    "@skastr0/pulsar-shared-signals": "0.1.0",
+    "@skastr0/pulsar-core": "0.1.1",
+    "@skastr0/pulsar-shared-signals": "0.1.1",
     "effect": "^3.0.0",
     "simple-git": "^3.25.0",
     "tree-sitter-rust": "^0.24.0",
     "web-tree-sitter": "^0.25.0"
   },
   "devDependencies": {
-    "@skastr0/pulsar-ts-pack": "0.1.0",
+    "@skastr0/pulsar-ts-pack": "0.1.1",
     "typescript": "^5.8.0"
   }
 }
