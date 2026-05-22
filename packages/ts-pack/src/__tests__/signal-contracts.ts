@@ -336,7 +336,30 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "ts-de-03.test.ts and pack.test.ts: wrapped pack cache version includes the TS-DE-03 semantic cacheVersion after diagnostic-limit, package-resolution, and TSX-exclusion semantics changed.",
     },
   },
-  pendingSignalContract("TS-DE-04-package-dependency-health"),
+  {
+    id: "TS-DE-04-package-dependency-health",
+    status: "verified",
+    evidence: {
+      identity:
+        "ts-de-04.test.ts: canonical id, alias, title, tier/category/kind, no compound inputs, semantic cacheVersion, pack registration, and registry alias lookup are asserted.",
+      config:
+        "ts-de-04.test.ts: configSchema decodes defaults, default excludes/test globs are asserted, dependency_aliases and allow_dev_dependency_in_prod change real classification, exclude_globs suppress generated/sample/vendor packages, git-backed discovery honors ignored package manifests, and diagnostics honor sanitized top_n_diagnostics.",
+      positiveFixture:
+        "ts-de-04.test.ts: real repo fixtures detect imported-but-not-declared dependencies, unused declared dependencies, direct transitive lockfile usage, devDependency imports from production files, dynamic imports, createRequire resolution, package-root tooling files, opaque bundler external declarations, and package ownership for nested manifests.",
+      negativeFixture:
+        "ts-de-04.test.ts: declared runtime deps, npm: protocol alias deps, DefinitelyTyped type-only deps, bundled tsup/esbuild deps including manifest entrypoints outside src, workspace deps, tsconfig path aliases/baseUrl aliases, framework virtual modules, root tooling deps in tooling/test files, and generated/sample/demo exclusions avoid false positives.",
+      applicability:
+        "ts-de-04.test.ts: an empty repository is measured as neutral output with missingCount=0, unusedCount=0, diagnosticLimit preserved, score 1, no diagnostics, and no external input dependency.",
+      score:
+        "ts-de-04.test.ts: published runtime missing dependencies hard-gate score, private/type-only/tooling/dynamic missing dependencies warn with partial score pressure, unused dependencies lower score softly, and clean fixtures score 1.",
+      diagnostics:
+        "ts-de-04.test.ts: diagnostics include block/warn severity, severityReason, absolute locations, stable issueKind data, compact file examples with full file payloads, issue-kind/severity ordering, and sanitized total diagnostic caps.",
+      factorLedger:
+        "ts-de-04.test.ts: registered pack signal emits exclude_globs, test_globs, top_n_diagnostics, dependency_aliases, and allow_dev_dependency_in_prod config factor-ledger entries.",
+      cacheSemantics:
+        "ts-de-04.test.ts and pack.test.ts: wrapped pack cache version includes the TS-DE-04 semantic cacheVersion after diagnostic-limit, bundled-source classification, and npm-alias normalization semantics changed.",
+    },
+  },
   pendingSignalContract("TS-DE-05-duplicate-dependency-versions"),
   pendingSignalContract("TS-AB-01-public-export-surface"),
   pendingSignalContract("TS-AB-02-unused-exports"),

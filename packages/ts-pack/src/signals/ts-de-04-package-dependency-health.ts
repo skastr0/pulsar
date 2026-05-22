@@ -27,7 +27,7 @@ export const TsDe04: Signal<
   tier: 1,
   category: "dependency-entropy",
   kind: "structural",
-  cacheVersion: "esbuild-bundled-source-v1",
+  cacheVersion: "diagnostic-limit-bundled-source-and-npm-alias-v1",
   configSchema: TsDe04Config,
   defaultConfig: {
     exclude_globs: [

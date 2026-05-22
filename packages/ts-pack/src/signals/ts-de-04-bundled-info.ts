@@ -67,12 +67,16 @@ const readBundledPackageInfo = async (packagePath: string): Promise<BundledPacka
   ])
 
   if (configText === undefined || !/\bbundle\s*:\s*true\b/.test(configText)) {
-    return { bundlesSource: false, externalPackageNames: new Set() }
+    return {
+      bundlesSource: false,
+      externalPackageNames: new Set(),
+      opaqueExternalConfig: false,
+    }
   }
 
   return {
     bundlesSource: true,
-    externalPackageNames: parseBundlerExternalPackageNames(configText),
+    ...parseBundlerExternalPackageNames(configText),
   }
 }
 
@@ -89,19 +93,31 @@ const readFirstExistingText = async (
   return undefined
 }
 
-const parseBundlerExternalPackageNames = (configText: string): ReadonlySet<string> => {
+const parseBundlerExternalPackageNames = (
+  configText: string,
+): Pick<BundledPackageInfo, "externalPackageNames" | "opaqueExternalConfig"> => {
   const externalNames = new Set<string>()
   const externalMatch = /\bexternal\s*:\s*\[([\s\S]*?)\]/m.exec(configText)
-  if (externalMatch === null) return externalNames
+  if (externalMatch === null) {
+    return {
+      externalPackageNames: externalNames,
+      opaqueExternalConfig: hasOpaqueExternalConfig(configText),
+    }
+  }
 
-  for (const match of externalMatch[1]!.matchAll(/["']([^"']+)["']/g)) {
+  const externalBody = externalMatch[1]!
+  const stringLiteralPattern = /["']([^"']+)["']/g
+  for (const match of externalBody.matchAll(stringLiteralPattern)) {
     const dependencyName = normalizePackageSpecifier(match[1]!)
     if (dependencyName !== undefined) {
       externalNames.add(dependencyName)
     }
   }
 
-  return externalNames
+  return {
+    externalPackageNames: externalNames,
+    opaqueExternalConfig: containsNonStringExternalEntry(externalBody),
+  }
 }
 
 export const isBundledPackageSourceUsage = (
@@ -111,8 +127,30 @@ export const isBundledPackageSourceUsage = (
   bundledInfo: BundledPackageInfo | undefined,
 ): boolean => {
   if (bundledInfo?.bundlesSource !== true) return false
+  if (bundledInfo.opaqueExternalConfig) return false
   if (bundledInfo.externalPackageNames.has(dependencyName)) return false
 
   const rel = relative(owningPackage.path, file).split(sep).join("/")
-  return rel.startsWith("src/")
+  return rel.startsWith("src/") || isManifestEntrypoint(owningPackage.manifest, rel)
 }
+
+const containsNonStringExternalEntry = (externalBody: string): boolean => {
+  const stripped = externalBody
+    .replaceAll(/["'][^"']*["']/g, "")
+    .replaceAll(/\/\/.*$/gm, "")
+    .replaceAll(/\/\*[\s\S]*?\*\//g, "")
+  return stripped.split(",").some((entry) => entry.trim().length > 0)
+}
+
+const hasOpaqueExternalConfig = (configText: string): boolean =>
+  /\bexternal\s*:/.test(configText) || /\bexternal\s*,/.test(configText)
+
+const isManifestEntrypoint = (
+  manifest: PackageManifest | undefined,
+  relativeFile: string,
+): boolean => manifest?.entrypoints.some((entrypoint) =>
+  normalizeEntrypoint(entrypoint) === relativeFile
+) ?? false
+
+const normalizeEntrypoint = (entrypoint: string): string =>
+  entrypoint.replace(/^\.\//, "")

@@ -1,4 +1,8 @@
+import { spawnSync } from "node:child_process"
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { buildRegistry } from "@skastr0/pulsar-core/scoring"
+import { Effect, Schema } from "effect"
+import { TS_PACK_SIGNALS } from "../pack.js"
 import { TsDe04 } from "../signals/ts-de-04-package-dependency-health.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
 
@@ -32,7 +36,132 @@ const writePackage = async (
   })
 }
 
+const runGit = (args: ReadonlyArray<string>): void => {
+  const result = spawnSync("git", args, {
+    cwd: repo.root,
+    encoding: "utf8",
+  })
+  if (result.status !== 0) {
+    throw new Error(`git ${args.join(" ")} failed: ${result.stderr.trim()}`)
+  }
+}
+
 describe("TS-DE-04 (package dependency health)", () => {
+  test("declares identity, no inputs, pack registration, and config factor ledger", async () => {
+    const registered = TS_PACK_SIGNALS.find((signal) =>
+      signal.aliases?.includes("TS-DE-04"),
+    )
+    const registry = await Effect.runPromise(buildRegistry([TsDe04]))
+    const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+    const factorLedger = registered?.factorLedger?.(out)
+
+    expect(TsDe04).toMatchObject({
+      id: "TS-DE-04-package-dependency-health",
+      title: "Package dependency health",
+      aliases: ["TS-DE-04"],
+      tier: 1,
+      category: "dependency-entropy",
+      kind: "structural",
+      cacheVersion: "diagnostic-limit-bundled-source-and-npm-alias-v1",
+      inputs: [],
+    })
+    expect(registered?.id).toBe(TsDe04.id)
+    expect(registered?.title).toBe(TsDe04.title)
+    expect(registered?.cacheVersion).toContain(TsDe04.cacheVersion)
+    expect(registry.byId.get("TS-DE-04")?.id).toBe(TsDe04.id)
+    expect(factorLedger?.signalId).toBe(TsDe04.id)
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.exclude_globs",
+        source: "signal-default",
+        scoreRole: "metadata",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.test_globs",
+        source: "signal-default",
+        scoreRole: "metadata",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        value: 20,
+        source: "signal-default",
+        scoreRole: "threshold",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.dependency_aliases",
+        source: "signal-default",
+        scoreRole: "metadata",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.allow_dev_dependency_in_prod",
+        source: "signal-default",
+        scoreRole: "metadata",
+      }),
+    )
+  })
+
+  test("empty repository is neutral and emits no diagnostics", async () => {
+    const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+
+    expect(out.missingCount).toBe(0)
+    expect(out.unusedCount).toBe(0)
+    expect(out.diagnosticLimit).toBe(20)
+    expect(TsDe04.inputs).toEqual([])
+    expect(TsDe04.score(out)).toBe(1)
+    expect(TsDe04.diagnose(out)).toEqual([])
+  })
+
+  test("git-backed discovery honors ignored package manifests", async () => {
+    runGit(["init", "--quiet"])
+    await repo.write(".gitignore", "ignored-workspace/\n")
+    await repo.writeJson("tsconfig.json", {
+      compilerOptions: {
+        target: "ES2022",
+        module: "ESNext",
+        moduleResolution: "Bundler",
+        strict: true,
+      },
+      include: ["packages/app/**/*.ts"],
+    })
+    await writePackage("app", "@repo/app", {})
+    await repo.write("packages/app/src/index.ts", "export const value = 1\n")
+    await repo.writeJson("ignored-workspace/pkg/tsconfig.json", {
+      compilerOptions: {
+        target: "ES2022",
+        module: "ESNext",
+        moduleResolution: "Bundler",
+      },
+      include: ["src/**/*.ts"],
+    })
+    await repo.writeJson("ignored-workspace/pkg/package.json", {
+      name: "ignored-package",
+      version: "0.0.0",
+      dependencies: {
+        unused: "^1.0.0",
+      },
+    })
+    await repo.write(
+      "ignored-workspace/pkg/src/index.ts",
+      "import { uniq } from 'lodash'\nexport const value = uniq([1])\n",
+    )
+
+    const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+
+    expect(out.packages.some((pkg) => pkg.packageName === "ignored-package")).toBe(false)
+    expect(TsDe04.diagnose(out).some((diagnostic) =>
+      diagnostic.message.includes("ignored-package") ||
+      diagnostic.message.includes("lodash"),
+    )).toBe(false)
+  })
+
   test("flags imported-but-not-declared dependencies", async () => {
     await writePackage("app", "@repo/app", {})
     await repo.write(
@@ -41,11 +170,18 @@ describe("TS-DE-04 (package dependency health)", () => {
     )
 
     const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+    const diagnostic = TsDe04.diagnose(out)[0]
     expect(out.packages[0]?.importedButNotDeclared).toEqual([
       { dependencyName: "lodash", files: [`${repo.root}/packages/app/src/index.ts`] },
     ])
     expect(TsDe04.score(out)).toBe(0)
-    expect(TsDe04.diagnose(out)[0]?.severity).toBe("block")
+    expect(diagnostic?.severity).toBe("block")
+    expect(diagnostic?.location?.file).toBe(`${repo.root}/packages/app/src/index.ts`)
+    expect(diagnostic?.data).toMatchObject({
+      issueKind: "missing-dependency",
+      dependencyName: "lodash",
+      hash: expect.any(String),
+    })
   })
 
   test("private package missing dependencies warn without hard-gating", async () => {
@@ -164,6 +300,109 @@ describe("TS-DE-04 (package dependency health)", () => {
     expect(extensionHealth?.importedButNotDeclared).toEqual([
       { dependencyName: "left-pad", files: [`${repo.root}/packages/extension/src/extension.ts`] },
     ])
+  })
+
+  test("fails closed for opaque bundler external declarations", async () => {
+    await writePackage("regex-extension", "@repo/regex-extension", {
+      devDependencies: {
+        "left-pad": "^1.3.0",
+      },
+    })
+    await repo.write(
+      "packages/regex-extension/esbuild.js",
+      [
+        "import esbuild from 'esbuild'",
+        "await esbuild.build({",
+        "  entryPoints: ['src/extension.ts'],",
+        "  bundle: true,",
+        "  external: [/^left-pad$/],",
+        "})",
+      ].join("\n"),
+    )
+    await repo.write(
+      "packages/regex-extension/src/extension.ts",
+      "import leftPad from 'left-pad'\nexport const value = leftPad('x', 3)\n",
+    )
+    await writePackage("callback-extension", "@repo/callback-extension", {
+      devDependencies: {
+        "right-pad": "^1.0.0",
+      },
+    })
+    await repo.write(
+      "packages/callback-extension/esbuild.js",
+      [
+        "import esbuild from 'esbuild'",
+        "const external = (name) => name === 'right-pad'",
+        "await esbuild.build({",
+        "  entryPoints: ['src/extension.ts'],",
+        "  bundle: true,",
+        "  external,",
+        "})",
+      ].join("\n"),
+    )
+    await repo.write(
+      "packages/callback-extension/src/extension.ts",
+      "import rightPad from 'right-pad'\nexport const value = rightPad('x', 3)\n",
+    )
+
+    const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+    const callbackHealth = out.packages.find((pkg) =>
+      pkg.packageName === "@repo/callback-extension"
+    )
+    const regexHealth = out.packages.find((pkg) =>
+      pkg.packageName === "@repo/regex-extension"
+    )
+
+    expect(callbackHealth?.devInProd).toEqual([
+      {
+        dependencyName: "right-pad",
+        files: [`${repo.root}/packages/callback-extension/src/extension.ts`],
+      },
+    ])
+    expect(regexHealth?.devInProd).toEqual([
+      {
+        dependencyName: "left-pad",
+        files: [`${repo.root}/packages/regex-extension/src/extension.ts`],
+      },
+    ])
+  })
+
+  test("treats bundled manifest entrypoints outside src as bundled source", async () => {
+    await writePackage("cli", "published-cli", {
+      main: "index.ts",
+      devDependencies: {
+        "inline-runtime": "^1.0.0",
+      },
+    })
+    await repo.writeJson("packages/cli/tsconfig.json", {
+      compilerOptions: {
+        target: "ES2022",
+        module: "ESNext",
+        moduleResolution: "Bundler",
+      },
+      include: ["index.ts"],
+    })
+    await repo.write(
+      "packages/cli/esbuild.js",
+      [
+        "import esbuild from 'esbuild'",
+        "await esbuild.build({",
+        "  entryPoints: ['index.ts'],",
+        "  bundle: true,",
+        "})",
+      ].join("\n"),
+    )
+    await repo.write(
+      "packages/cli/index.ts",
+      "import { inline } from 'inline-runtime'\nexport const value = inline\n",
+    )
+
+    const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+    const cliHealth = out.packages.find((pkg) => pkg.packageName === "published-cli")
+
+    expect(cliHealth?.importedButNotDeclared).toEqual([])
+    expect(cliHealth?.devInProd).toEqual([])
+    expect(cliHealth?.declaredButUnused).toEqual([])
   })
 
   test("does not flag workspace package names resolved through tsconfig path aliases", async () => {
@@ -526,6 +765,46 @@ describe("TS-DE-04 (package dependency health)", () => {
     expect(diagnostics[1]?.message).toContain("Unused declared dependencies")
   })
 
+  test("diagnostics honor top_n_diagnostics as a sanitized total cap", async () => {
+    await writePackage("app", "@repo/app", {})
+    await repo.write(
+      "packages/app/src/index.ts",
+      [
+        "import alpha from 'alpha-missing'",
+        "import beta from 'beta-missing'",
+        "import gamma from 'gamma-missing'",
+        "export const value = [alpha, beta, gamma]",
+        "",
+      ].join("\n"),
+    )
+
+    const fractional = await runSignal(repo.root, TsDe04, {
+      ...TsDe04.defaultConfig,
+      top_n_diagnostics: 1.8,
+    })
+    const negative = await runSignal(repo.root, TsDe04, {
+      ...TsDe04.defaultConfig,
+      top_n_diagnostics: -1,
+    })
+    const nanLimit = await runSignal(repo.root, TsDe04, {
+      ...TsDe04.defaultConfig,
+      top_n_diagnostics: Number.NaN,
+    })
+    const infiniteLimit = await runSignal(repo.root, TsDe04, {
+      ...TsDe04.defaultConfig,
+      top_n_diagnostics: Infinity,
+    })
+
+    expect(fractional.diagnosticLimit).toBe(1)
+    expect(TsDe04.diagnose(fractional)).toHaveLength(1)
+    expect(negative.diagnosticLimit).toBe(0)
+    expect(TsDe04.diagnose(negative)).toHaveLength(0)
+    expect(nanLimit.diagnosticLimit).toBe(0)
+    expect(TsDe04.diagnose(nanLimit)).toHaveLength(0)
+    expect(infiniteLimit.diagnosticLimit).toBe(0)
+    expect(TsDe04.diagnose(infiniteLimit)).toHaveLength(0)
+  })
+
   test("diagnostics compact long file lists but keep full file data", async () => {
     await writePackage("app", "@repo/app", {})
     for (const file of ["one", "two", "three", "four"]) {
@@ -594,6 +873,28 @@ describe("TS-DE-04 (package dependency health)", () => {
     )
 
     const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+    expect(out.packages[0]?.importedButNotDeclared).toEqual([])
+    expect(out.packages[0]?.declaredButUnused).toEqual([])
+  })
+
+  test("normalizes npm protocol version aliases to declared dependencies", async () => {
+    await writePackage("app", "@repo/app", {
+      dependencies: {
+        lodash: "^4.17.21",
+        "@scope/pkg": "^1.2.3",
+      },
+    })
+    await repo.write(
+      "packages/app/src/index.ts",
+      [
+        "import uniq from 'npm:lodash@^4.17.21'",
+        "import { scoped } from 'npm:@scope/pkg@^1.2.3/subpath'",
+        "export const value = [uniq, scoped]",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+
     expect(out.packages[0]?.importedButNotDeclared).toEqual([])
     expect(out.packages[0]?.declaredButUnused).toEqual([])
   })
@@ -826,6 +1127,38 @@ describe("TS-DE-04 (package dependency health)", () => {
     expect(out.packages[0]?.importedButNotDeclared).toEqual([])
     expect(out.packages[0]?.declaredButUnused).toEqual([])
     expect(out.packages[0]?.devInProd).toEqual([])
+  })
+
+  test("treats discovered package-root bundler helper files as tooling", async () => {
+    await writePackage("app", "@repo/app", {
+      devDependencies: {
+        "esbuild-plugin-runtime": "^1.0.0",
+        "vite-plugin-runtime": "^1.0.0",
+      },
+    })
+    await repo.writeJson("packages/app/tsconfig.json", {
+      compilerOptions: {
+        target: "ES2022",
+        module: "ESNext",
+        moduleResolution: "Bundler",
+      },
+      include: ["src/**/*.ts"],
+    })
+    await repo.write("packages/app/src/index.ts", "export const value = 1\n")
+    await repo.write(
+      "packages/app/esbuild.ts",
+      "import plugin from 'esbuild-plugin-runtime'\nexport default [plugin]\n",
+    )
+    await repo.write(
+      "packages/app/vite.mts",
+      "import plugin from 'vite-plugin-runtime'\nexport default [plugin]\n",
+    )
+
+    const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
+
+    expect(out.packages[0]?.importedButNotDeclared).toEqual([])
+    expect(out.packages[0]?.devInProd).toEqual([])
+    expect(out.packages[0]?.declaredButUnused).toEqual([])
   })
 
   test("reports transitive direct usage separately from missing deps", async () => {
@@ -1578,5 +1911,17 @@ describe("TS-DE-04 (package dependency health)", () => {
     expect(TsDe04.diagnose(out).some((diagnostic) =>
       diagnostic.message.includes("convex/server"),
     )).toBe(false)
+  })
+
+  test("configSchema decodes defaults round-trip", () => {
+    const decoded = Schema.decodeUnknownSync(TsDe04.configSchema)(TsDe04.defaultConfig)
+
+    expect(decoded.exclude_globs).toContain("**/node_modules/**")
+    expect(decoded.exclude_globs).toContain("**/vendor/**")
+    expect(decoded.test_globs).toContain("**/*.test.ts")
+    expect(decoded.test_globs).toContain("**/*.test.tsx")
+    expect(decoded.top_n_diagnostics).toBe(20)
+    expect(decoded.dependency_aliases).toEqual({})
+    expect(decoded.allow_dev_dependency_in_prod).toEqual([])
   })
 })

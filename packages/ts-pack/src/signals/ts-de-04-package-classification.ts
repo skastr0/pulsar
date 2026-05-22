@@ -43,6 +43,7 @@ export const isSvelteKitApp = (manifest: PackageManifest): boolean => {
 export const isPackageToolingFile = (packagePath: string, file: string): boolean => {
   const rel = relative(packagePath, file).split(sep).join("/")
   if (rel.startsWith("script/") || rel.startsWith("scripts/")) return true
+  if (/^(?:esbuild|vite)\.(?:cjs|cts|js|mjs|mts|ts)$/.test(rel)) return true
   return /\.(?:config|conf)\.(?:cjs|cts|js|mjs|mts|ts|tsx)$/.test(rel)
 }
 

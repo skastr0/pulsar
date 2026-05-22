@@ -63,7 +63,9 @@ export const normalizePackageSpecifier = (specifier: string): string | undefined
   }
   if (specifier.startsWith("@/")) return undefined
   if (specifier.startsWith("bun:")) return specifier
-  const withoutProtocol = specifier.startsWith("npm:") ? specifier.slice(4) : specifier
+  const withoutProtocol = specifier.startsWith("npm:")
+    ? stripNpmSpecifierVersion(specifier.slice(4))
+    : specifier
   if (withoutProtocol.startsWith("node:")) {
     return withoutProtocol
   }
@@ -75,6 +77,15 @@ export const normalizePackageSpecifier = (specifier: string): string | undefined
     return `${segments[0]}/${segments[1]}`
   }
   return segments[0] === undefined ? undefined : segments[0]
+}
+
+const stripNpmSpecifierVersion = (specifier: string): string => {
+  if (specifier.startsWith("@")) {
+    const versionIndex = specifier.indexOf("@", 1)
+    return versionIndex === -1 ? specifier : specifier.slice(0, versionIndex)
+  }
+  const versionIndex = specifier.indexOf("@")
+  return versionIndex === -1 ? specifier : specifier.slice(0, versionIndex)
 }
 
 export const isBuiltinModuleName = (packageName: string): boolean =>

@@ -40,6 +40,7 @@ export interface TsDe04Output {
 export type BundledPackageInfo = {
   readonly bundlesSource: boolean
   readonly externalPackageNames: ReadonlySet<string>
+  readonly opaqueExternalConfig: boolean
 }
 
 export type ModuleSpecifierUsage = {

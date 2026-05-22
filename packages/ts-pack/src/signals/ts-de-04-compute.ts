@@ -36,7 +36,7 @@ export const computePackageDependencyHealth = async (
       0,
     ),
     unusedCount: packageHealth.reduce((sum, pkg) => sum + pkg.declaredButUnused.length, 0),
-    diagnosticLimit: config.top_n_diagnostics,
+    diagnosticLimit: normalizeDiagnosticLimit(config.top_n_diagnostics),
   }
 }
 
@@ -86,3 +86,8 @@ const summarizePackageHealth = (
       ),
     )
     .sort((left, right) => left.packageName.localeCompare(right.packageName))
+
+const normalizeDiagnosticLimit = (value: number): number => {
+  if (!Number.isFinite(value)) return 0
+  return Math.max(0, Math.floor(value))
+}
