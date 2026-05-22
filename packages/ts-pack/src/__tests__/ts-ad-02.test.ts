@@ -331,6 +331,40 @@ describe("TS-AD-02 (circular dependencies)", () => {
     expect(TsAd02.diagnose(out)).toHaveLength(1)
   })
 
+  test("diagnostics honor top_n_diagnostics as a sanitized cycle cap", async () => {
+    await writeTs("a.ts", "import { b } from './b'\nexport const a = b + 1\n")
+    await writeTs("b.ts", "import { a } from './a'\nexport const b = a + 1\n")
+    await writeTs("x.ts", "import { y } from './y'\nexport const x = y + 1\n")
+    await writeTs("y.ts", "import { x } from './x'\nexport const y = x + 1\n")
+
+    const fractional = await runCompute({
+      ...TsAd02.defaultConfig,
+      top_n_diagnostics: 1.8,
+    })
+    const negative = await runCompute({
+      ...TsAd02.defaultConfig,
+      top_n_diagnostics: -1,
+    })
+    const nanLimit = await runCompute({
+      ...TsAd02.defaultConfig,
+      top_n_diagnostics: Number.NaN,
+    })
+    const infiniteLimit = await runCompute({
+      ...TsAd02.defaultConfig,
+      top_n_diagnostics: Infinity,
+    })
+
+    expect(fractional.cycles.length).toBeGreaterThan(1)
+    expect(fractional.diagnosticLimit).toBe(1)
+    expect(TsAd02.diagnose(fractional)).toHaveLength(1)
+    expect(negative.diagnosticLimit).toBe(0)
+    expect(TsAd02.diagnose(negative)).toEqual([])
+    expect(nanLimit.diagnosticLimit).toBe(0)
+    expect(TsAd02.diagnose(nanLimit)).toEqual([])
+    expect(infiniteLimit.diagnosticLimit).toBe(0)
+    expect(TsAd02.diagnose(infiniteLimit)).toEqual([])
+  })
+
   test("active pulsar-allow bypass silences the cycle diagnostic", async () => {
     await writeTs(
       "a.ts",

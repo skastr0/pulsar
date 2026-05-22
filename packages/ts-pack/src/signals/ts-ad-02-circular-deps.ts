@@ -47,7 +47,7 @@ export const TsAd02: Signal<TsAd02Config, TsAd02Output, TsProjectTag> = {
   tier: 1,
   category: "architectural-drift",
   kind: "structural",
-  cacheVersion: "semantic-type-only-imports-v1",
+  cacheVersion: "semantic-type-only-imports-v2",
   configSchema: TsAd02Config,
   defaultConfig: {
     // Rationale: cycles inside test scaffolding or generated output are
@@ -92,7 +92,7 @@ export const TsAd02: Signal<TsAd02Config, TsAd02Output, TsProjectTag> = {
 
           return {
             ...analysis,
-            diagnosticLimit: config.top_n_diagnostics,
+            diagnosticLimit: normalizeDiagnosticLimit(config.top_n_diagnostics),
           }
         },
         catch: (cause) =>
@@ -124,3 +124,6 @@ const cycleSizePenalty = (largestCycleSize: number): number => {
   if (largestCycleSize >= 8) return scale * 0.09
   return scale * 0.12
 }
+
+const normalizeDiagnosticLimit = (limit: number): number =>
+  Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : 0
