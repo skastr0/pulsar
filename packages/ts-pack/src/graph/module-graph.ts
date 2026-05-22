@@ -44,6 +44,9 @@ export const buildModuleGraph = (
     .getSourceFiles()
     .filter((sourceFile) => !isExcluded(sourceFile.getFilePath(), options.excludeGlobs))
   const fileSet = new Set(sourceFiles.map((sourceFile) => sourceFile.getFilePath()))
+  const sourceFileByPath = new Map(
+    sourceFiles.map((sourceFile) => [sourceFile.getFilePath(), sourceFile] as const),
+  )
   const dependencies = new Map<string, Set<string>>()
   const reverseDependencies = new Map<string, Set<string>>()
   const fileToPackage = new Map<string, PackageInfo | undefined>()
@@ -53,7 +56,10 @@ export const buildModuleGraph = (
 
   for (const sourceFile of sourceFiles) {
     const filePath = sourceFile.getFilePath()
-    dependencies.set(filePath, collectTargets(sourceFile, resolver, includeExportEdges))
+    dependencies.set(
+      filePath,
+      collectTargets(sourceFile, resolver, includeExportEdges, sourceFileByPath),
+    )
     reverseDependencies.set(filePath, new Set())
     if (packageLookupEnabled) {
       fileToPackage.set(filePath, packageForFile(filePath, options.packages ?? []))
@@ -79,6 +85,7 @@ const collectTargets = (
   sourceFile: SourceFile,
   resolver: ModuleResolver,
   includeExportEdges: boolean,
+  sourceFileByPath: ReadonlyMap<string, SourceFile>,
 ): Set<string> => {
   const sourcePath = sourceFile.getFilePath()
   const targets = new Set<string>()
@@ -99,9 +106,15 @@ const collectTargets = (
 
   if (includeExportEdges) {
     for (const declaration of sourceFile.getExportDeclarations()) {
-      if (isTypeOnlyModuleDeclaration(declaration, getIdentifierUsage)) continue
       const targetPath = resolver.resolve(sourcePath, declaration)
       if (targetPath === undefined || targetPath === sourcePath) continue
+      if (
+        isTypeOnlyModuleDeclaration(
+          declaration,
+          getIdentifierUsage,
+          () => sourceFileByPath.get(targetPath),
+        )
+      ) continue
       targets.add(targetPath)
     }
   }

@@ -2,7 +2,7 @@ import { SignalComputeError } from "@skastr0/pulsar-core/signal"
 import type { Diagnostic, Signal } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
 import { buildModuleGraph } from "../graph/module-graph.js"
-import { TsProjectTag } from "../ts-project.js"
+import { TsPackageInfoTag, TsProjectTag } from "../ts-project.js"
 
 const TsDe02Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
@@ -46,14 +46,14 @@ interface TsDe02Output {
  *   catches files that both consume and are consumed widely, which is
  *   the coupling-hub shape from the research literature.
  */
-export const TsDe02: Signal<TsDe02Config, TsDe02Output, TsProjectTag> = {
+export const TsDe02: Signal<TsDe02Config, TsDe02Output, TsProjectTag | TsPackageInfoTag> = {
   id: "TS-DE-02-fan-in-fan-out",
   title: "Fan-in/fan-out",
   aliases: ["TS-DE-02"],
   tier: 1,
   category: "dependency-entropy",
   kind: "structural",
-  cacheVersion: "diagnostic-limit-v1",
+  cacheVersion: "module-resolution-and-export-type-only-v1",
   configSchema: TsDe02Config,
   defaultConfig: {
     exclude_globs: [
@@ -73,12 +73,14 @@ export const TsDe02: Signal<TsDe02Config, TsDe02Output, TsProjectTag> = {
   compute: (config) =>
     Effect.gen(function* () {
       const project = yield* TsProjectTag
+      const packages = yield* TsPackageInfoTag
       const result = yield* Effect.try({
         try: (): TsDe02Output => {
           const diagnosticLimit = normalizeDiagnosticLimit(config.top_n_diagnostics)
           const graph = buildModuleGraph(project, {
             excludeGlobs: config.exclude_globs,
             includeExportEdges: true,
+            packages,
           })
 
           const byModule = new Map<string, ModuleFan>()

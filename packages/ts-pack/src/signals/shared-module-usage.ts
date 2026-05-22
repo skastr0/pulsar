@@ -1,10 +1,18 @@
-import { Node, ts, type ExportDeclaration, type ImportDeclaration, type SourceFile } from "ts-morph"
+import {
+  Node,
+  ts,
+  type ExportDeclaration,
+  type ExportSpecifier,
+  type ImportDeclaration,
+  type SourceFile,
+} from "ts-morph"
 
 type IdentifierUsage = "type-only" | "value"
 
 export const isTypeOnlyModuleDeclaration = (
   declaration: ImportDeclaration | ExportDeclaration,
   getIdentifierUsage: () => ReadonlyMap<string, IdentifierUsage>,
+  resolveExportSourceFile?: () => SourceFile | undefined,
 ): boolean => {
   if (declaration.isTypeOnly()) return true
   if (Node.isImportDeclaration(declaration)) {
@@ -13,7 +21,11 @@ export const isTypeOnlyModuleDeclaration = (
 
   if (declaration.getNamespaceExport() !== undefined) return false
   const namedExports = declaration.getNamedExports()
-  return namedExports.length > 0 && namedExports.every((specifier) => specifier.isTypeOnly())
+  return namedExports.length > 0 &&
+    namedExports.every((specifier) =>
+      specifier.isTypeOnly() ||
+      isSemanticallyTypeOnlyExportSpecifier(specifier, resolveExportSourceFile)
+    )
 }
 
 export const localIdentifierUsageByName = (
@@ -116,3 +128,20 @@ const isTypeOnlyImportDeclaration = (
   }
   return true
 }
+
+const isSemanticallyTypeOnlyExportSpecifier = (
+  specifier: ExportSpecifier,
+  resolveExportSourceFile: (() => SourceFile | undefined) | undefined,
+): boolean => {
+  const sourceFile = resolveExportSourceFile?.()
+  if (sourceFile === undefined) return false
+
+  const exportedName = specifier.getNameNode().getText()
+  const declarations = sourceFile.getExportedDeclarations().get(exportedName)
+  return declarations !== undefined &&
+    declarations.length > 0 &&
+    declarations.every(isTypeOnlyDeclaration)
+}
+
+const isTypeOnlyDeclaration = (declaration: Node): boolean =>
+  Node.isInterfaceDeclaration(declaration) || Node.isTypeAliasDeclaration(declaration)
