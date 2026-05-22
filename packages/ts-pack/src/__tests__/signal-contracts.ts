@@ -82,7 +82,33 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "ts-ld-03.test.ts: nesting-policy calibration records factor provenance, visibility/threshold/penalty changes, and repo self-calibration attribution.",
     },
   },
-  pendingSignalContract("TS-LD-04-naming-conventions"),
+  {
+    id: "TS-LD-04-naming-conventions",
+    status: "verified",
+    requiredEvidence: ["referenceData"],
+    evidence: {
+      identity:
+        "ts-ld-04.test.ts: pack registration exposes canonical id, alias, title, and wrapped cache version.",
+      config:
+        "ts-ld-04.test.ts: configSchema decodes defaults and diagnostics honor sanitized top_n_diagnostics.",
+      positiveFixture:
+        "ts-ld-04.test.ts: inconsistent function/class/interface/type/enum/const identifiers each produce naming violations.",
+      negativeFixture:
+        "ts-ld-04.test.ts: configured conventions accept canonical names, context-aware constants, and type-level runtime values.",
+      applicability:
+        "ts-ld-04.test.ts: empty repo with conventions is neutral; missing conventions return insufficient_evidence metadata.",
+      score:
+        "ts-ld-04.test.ts: conforming and empty fixtures score 1, missing reference data scores 1, and all-violating fixture scores 0.",
+      diagnostics:
+        "ts-ld-04.test.ts: diagnostics include warning severity, stable hashes, expected/actual patterns, and sanitized total top_n_diagnostics cap.",
+      factorLedger:
+        "ts-ld-04.test.ts: registered pack signal emits top_n_diagnostics factor-ledger entry.",
+      cacheSemantics:
+        "ts-ld-04.test.ts and pack.test.ts: wrapped pack cache version includes the TS-LD-04 semantic cacheVersion after diagnostic-limit semantics change.",
+      referenceData:
+        "ts-ld-04.test.ts: schema-conventions reference data drives loaded naming checks; missing reference data degrades explicitly and observer applicability matches single-signal output.",
+    },
+  },
   pendingSignalContract("TS-LD-05-domain-term-consistency"),
   pendingSignalContract("TS-AD-01-boundary-violations"),
   pendingSignalContract("TS-AD-02-circular-dependencies"),

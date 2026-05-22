@@ -5,6 +5,7 @@ import type { ObserverOutput } from "@skastr0/pulsar-core/observer"
 import { buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { Effect, Layer, Schema } from "effect"
 import { inferCasingPattern } from "../casing.js"
+import { TS_PACK_SIGNALS } from "../pack.js"
 import { TsLd04 } from "../signals/ts-ld-04-naming-conventions.js"
 import { TsProjectLayer } from "../ts-project.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
@@ -45,6 +46,18 @@ describe("TS-LD-04 (naming convention consistency)", () => {
     expect(inferCasingPattern("weird_PASCAL_mix")).toBe("unrecognized")
   })
 
+  test("empty repo with conventions has no identifiers and scores neutral", async () => {
+    const out = await runSignal(repo.root, TsLd04, TsLd04.defaultConfig, {
+      "schema-conventions": NAMING_CONVENTIONS,
+    })
+
+    expect(out.referenceDataStatus).toBe("loaded")
+    expect(out.totalIdentifiers).toBe(0)
+    expect(out.violations).toEqual([])
+    expect(TsLd04.score(out)).toBe(1)
+    expect(TsLd04.diagnose(out)).toEqual([])
+  })
+
   test("reports no violations when identifiers follow configured conventions", async () => {
     await repo.write(
       "src/consistent.ts",
@@ -67,6 +80,7 @@ describe("TS-LD-04 (naming convention consistency)", () => {
     expect(out.violations).toEqual([])
     expect(out.totalIdentifiers).toBe(7)
     expect(TsLd04.score(out)).toBe(1)
+    expect(TsLd04.diagnose(out)).toEqual([])
     expect(out.byKind.get("const")).toEqual({ total: 2, violating: 0 })
   })
 
@@ -218,9 +232,10 @@ describe("TS-LD-04 (naming convention consistency)", () => {
     const referenceEntries = { "schema-conventions": NAMING_CONVENTIONS }
     const single = await runSignal(repo.root, TsLd04, TsLd04.defaultConfig, referenceEntries)
     const observer = await runObserverTsLd04(repo.root, referenceEntries)
-    const observerResult = observer.signalResults.get("TS-LD-04")
+    const observerResult = observer.signalResults.get(TsLd04.id)
 
     expect(TsLd04.outputMetadata?.(single)?.applicability ?? "applicable").toBe("applicable")
+    expect(observerResult).toBeDefined()
     expect(observerResult?.metadata?.applicability ?? "applicable").toBe("applicable")
   })
 
@@ -252,11 +267,42 @@ describe("TS-LD-04 (naming convention consistency)", () => {
     ])
     expect(out.byKind.get("function")).toEqual({ total: 1, violating: 1 })
     expect(out.byKind.get("const")).toEqual({ total: 1, violating: 1 })
+    expect(TsLd04.score(out)).toBe(0)
 
     const diagnostics = TsLd04.diagnose(out)
     expect(diagnostics).toHaveLength(6)
     expect(diagnostics.every((diagnostic) => diagnostic.severity === "warn")).toBe(true)
     expect(diagnostics.every((diagnostic) => typeof diagnostic.data?.hash === "string")).toBe(true)
+  })
+
+  test("configSchema decodes defaults round-trip", () => {
+    const decoded = Schema.decodeUnknownSync(TsLd04.configSchema)(TsLd04.defaultConfig)
+
+    expect(decoded.top_n_diagnostics).toBe(20)
+    expect(decoded.exclude_globs).toContain("**/*.test.ts")
+  })
+
+  test("pack registration exposes identity, cache version, and config factor ledger", async () => {
+    await repo.write("src/consistent.ts", "export function buildUser() { return true }\n")
+    const registered = registeredTsLd04()
+    const out = await runSignal(repo.root, TsLd04, TsLd04.defaultConfig, {
+      "schema-conventions": NAMING_CONVENTIONS,
+    })
+    const factorLedger = registered.factorLedger?.(out)
+
+    expect(registered.id).toBe("TS-LD-04-naming-conventions")
+    expect(registered.aliases).toContain("TS-LD-04")
+    expect(registered.title).toBe("Naming convention consistency")
+    expect(registered.cacheVersion).toContain(TsLd04.cacheVersion)
+    expect(factorLedger?.signalId).toBe(TsLd04.id)
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        value: 20,
+        source: "signal-default",
+        scoreRole: "threshold",
+      }),
+    )
   })
 
   test("diagnostics honor top_n_diagnostics as a sanitized total cap", async () => {
@@ -325,6 +371,7 @@ describe("TS-LD-04 (naming convention consistency)", () => {
     const out = await runSignal(repo.root, TsLd04, TsLd04.defaultConfig)
 
     expect(out.referenceDataStatus).toBe("missing")
+    expect(TsLd04.outputMetadata?.(out)).toEqual({ applicability: "insufficient_evidence" })
     expect(TsLd04.score(out)).toBe(1)
     expect(TsLd04.diagnose(out)).toEqual([
       { severity: "info", message: "no naming conventions configured" },
@@ -361,4 +408,10 @@ const runObserverTsLd04 = async (
   })
 
   return Effect.runPromise(program)
+}
+
+const registeredTsLd04 = () => {
+  const signal = TS_PACK_SIGNALS.find((candidate) => candidate.id === TsLd04.id)
+  if (signal === undefined) throw new Error("TS-LD-04 is not registered")
+  return signal
 }
