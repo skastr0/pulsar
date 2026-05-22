@@ -34,7 +34,7 @@ export const TsDe01: Signal<TsDe01Config, TsDe01Output, TsProjectTag> = {
   tier: 1,
   category: "dependency-entropy",
   kind: "legibility",
-  cacheVersion: "factor-policy-v1",
+  cacheVersion: "factor-policy-v1-diagnostic-limit-v1",
   configSchema: TsDe01Config,
   defaultConfig: {
     exclude_globs: [
@@ -64,13 +64,14 @@ export const TsDe01: Signal<TsDe01Config, TsDe01Output, TsProjectTag> = {
       const calibration = yield* Effect.serviceOption(CalibrationContextTag)
       const result = yield* Effect.try({
         try: (): TsDe01Output => {
+          const diagnosticLimit = normalizeDiagnosticLimit(config.top_n_diagnostics)
           const sourceFiles = project
             .getSourceFiles()
             .filter((sourceFile) => !isExcluded(sourceFile.getFilePath(), config.exclude_globs))
           if (sourceFiles.length > config.precise_module_limit) {
-            return computeFastImportTypeCoupling(sourceFiles, config.top_n_diagnostics)
+            return computeFastImportTypeCoupling(sourceFiles, diagnosticLimit)
           }
-          return computePreciseTypeCoupling(sourceFiles, config.top_n_diagnostics)
+          return computePreciseTypeCoupling(sourceFiles, diagnosticLimit)
         },
         catch: (cause) =>
           new SignalComputeError({
@@ -240,3 +241,8 @@ const toSignalComputeError = (cause: unknown): SignalComputeError =>
         message: String(cause),
         cause,
       })
+
+const normalizeDiagnosticLimit = (value: number): number => {
+  if (!Number.isFinite(value)) return 0
+  return Math.max(0, Math.floor(value))
+}
