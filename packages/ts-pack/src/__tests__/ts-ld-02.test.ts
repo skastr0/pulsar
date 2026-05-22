@@ -521,6 +521,37 @@ describe("TS-LD-02 (function / file size distribution)", () => {
     expect(diags.every((d) => !d.message.includes("Large "))).toBe(true)
   })
 
+  test("diagnostics honor top_n_diagnostics as a sanitized total cap", async () => {
+    const big = (name: string, loc: number): string =>
+      [
+        `export function ${name}() {`,
+        ...Array.from({ length: loc }, (_, index) => `  const value${index} = ${index}`),
+        "  return 1",
+        "}",
+        "",
+      ].join("\n")
+    await writeTs("a.ts", big("a", 10))
+    await writeTs("b.ts", big("b", 9))
+    await writeTs("c.ts", big("c", 8))
+
+    const floored = await runCompute({
+      ...TsLd02.defaultConfig,
+      max_function_loc: 2,
+      max_file_loc: 2,
+      top_n_diagnostics: 1.8,
+    })
+    const disabled = await runCompute({
+      ...TsLd02.defaultConfig,
+      max_function_loc: 2,
+      max_file_loc: 2,
+      top_n_diagnostics: -1,
+    })
+
+    expect(TsLd02.diagnose(floored)).toHaveLength(1)
+    expect(TsLd02.diagnose(floored)[0]?.message).toContain("a")
+    expect(TsLd02.diagnose(disabled)).toEqual([])
+  })
+
   test("large callbacks are named from their owning declaration and callee", async () => {
     const body = Array.from({ length: 8 }, (_, index) => `    const value${index} = ${index}`)
     await writeTs(

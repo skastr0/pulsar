@@ -10,12 +10,13 @@ export const diagnoseTsLd02 = (out: TsLd02Output): ReadonlyArray<Diagnostic> => 
   )
   const thresholdFiles = out.oversizedFiles.filter((file) => !outlierFileKeys.has(file.file))
 
-  return [
+  const diagnostics = [
     ...out.outlierFunctions.map((fn) => functionOutlierDiagnostic(fn, out)),
     ...out.outlierFiles.map((file) => fileOutlierDiagnostic(file, out)),
     ...thresholdFunctions.map((fn) => functionThresholdDiagnostic(fn, out)),
     ...thresholdFiles.map((file) => fileThresholdDiagnostic(file, out)),
   ]
+  return diagnostics.slice(0, out.diagnosticLimit ?? diagnostics.length)
 }
 
 const functionOutlierDiagnostic = (

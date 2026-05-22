@@ -27,6 +27,7 @@ export const summarizeThresholds = (
   collected: CollectedSizes,
   config: TsLd02Config,
 ): ThresholdSummary => {
+  const diagnosticLimit = normalizeDiagnosticLimit(config.top_n_diagnostics)
   const byFile = summarizeFunctionsByFile(collected.perFileFunctionLocs)
   const fileSizes = summarize(collected.fileLocs)
   const functionSizes = summarize(collected.allFunctionLocs)
@@ -53,14 +54,15 @@ export const summarizeThresholds = (
     oversizedFilesAll,
     outlierFunctionCandidates: topFunctionCandidates(
       outlierFunctionCandidatesAll,
-      config.top_n_diagnostics,
+      diagnosticLimit,
     ),
-    outlierFiles: topFiles(outlierFilesAll, config.top_n_diagnostics),
+    outlierFiles: topFiles(outlierFilesAll, diagnosticLimit),
     oversizedFunctionCandidates: topFunctionCandidates(
       oversizedFunctionCandidatesAll,
-      config.top_n_diagnostics,
+      diagnosticLimit,
     ),
-    oversizedFiles: topFiles(oversizedFilesAll, config.top_n_diagnostics),
+    oversizedFiles: topFiles(oversizedFilesAll, diagnosticLimit),
+    diagnosticLimit,
     ...computeThresholdPressures(
       collected,
       fileSizes,
@@ -107,25 +109,25 @@ export const calibrateThresholdFunctions = (
     const outlierFunctionNames = yield* calibrateFunctionNames(
       topFunctionPolicies(
         outlierFunctionCandidatesAll,
-        config.top_n_diagnostics,
+        thresholds.diagnosticLimit,
       ).map(({ candidate, policy }) => withFunctionSizePolicy(candidate, policy)),
       calibration,
     )
     const oversizedFunctionNames = yield* calibrateFunctionNames(
       topFunctionPolicies(
         oversizedFunctionCandidatesAll,
-        config.top_n_diagnostics,
+        thresholds.diagnosticLimit,
       ).map(({ candidate, policy }) => withFunctionSizePolicy(candidate, policy)),
       calibration,
     )
 
     const outlierFiles = topFilePolicies(
       outlierFilePoliciesAll,
-      config.top_n_diagnostics,
+      thresholds.diagnosticLimit,
     ).map(({ file, policy }) => withFileSizePolicy(file, policy))
     const oversizedFiles = topFilePolicies(
       oversizedFilePoliciesAll,
-      config.top_n_diagnostics,
+      thresholds.diagnosticLimit,
     ).map(({ file, policy }) => withFileSizePolicy(file, policy))
 
     return {
@@ -173,6 +175,7 @@ export const buildTsLd02Output = (
   outlierFiles: sizes.outlierFiles,
   oversizedFunctions: sizes.oversizedFunctions,
   oversizedFiles: sizes.oversizedFiles,
+  diagnosticLimit: thresholds.diagnosticLimit,
   calibrationDecisions: sizes.calibrationDecisions,
   ratioPressure: sizes.ratioPressure,
   maxFunctionPressure: sizes.maxFunctionPressure,
@@ -206,6 +209,9 @@ const topFiles = (
     .slice()
     .sort((a, b) => b.loc - a.loc)
     .slice(0, limit)
+
+const normalizeDiagnosticLimit = (limit: number): number =>
+  Math.max(0, Math.floor(limit))
 
 const computeThresholdPressures = (
   collected: CollectedSizes,

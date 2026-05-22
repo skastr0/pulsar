@@ -70,6 +70,7 @@ export interface TsLd02Output {
   readonly oversizedFunctions: ReadonlyArray<FunctionSize>
   /** Top-N files above the absolute max_file_loc threshold. */
   readonly oversizedFiles: ReadonlyArray<FileSize>
+  readonly diagnosticLimit?: number
   readonly calibrationDecisions: ReadonlyArray<CalibrationDecision>
   readonly ratioPressure: number
   readonly maxFunctionPressure: number
@@ -98,6 +99,7 @@ export interface ThresholdSummary {
   readonly outlierFiles: ReadonlyArray<FileSize>
   readonly oversizedFunctionCandidates: ReadonlyArray<FunctionSizeCandidate>
   readonly oversizedFiles: ReadonlyArray<FileSize>
+  readonly diagnosticLimit: number
   readonly ratioPressure: number
   readonly maxFunctionPressure: number
   readonly maxFilePressure: number
