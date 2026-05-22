@@ -136,7 +136,33 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "ts-ld-05.test.ts: glossary reference data drives loaded term classification; missing glossary degrades explicitly with info diagnostic and insufficient_evidence metadata.",
     },
   },
-  pendingSignalContract("TS-AD-01-boundary-violations"),
+  {
+    id: "TS-AD-01-boundary-violations",
+    status: "verified",
+    requiredEvidence: ["referenceData"],
+    evidence: {
+      identity:
+        "ts-ad-01.test.ts: pack registration exposes canonical id, alias, title, and wrapped cache version.",
+      config:
+        "ts-ad-01.test.ts: configSchema decodes defaults and diagnostics honor sanitized top_n_diagnostics.",
+      positiveFixture:
+        "ts-ad-01.test.ts: fixtures flag deep reaches, blocked targets, non-allowlisted imports, unexported subpaths, and cross-package relative reaches.",
+      negativeFixture:
+        "ts-ad-01.test.ts: root-entry workspace imports, manifest-exported subpaths, and an empty convention-backed repo produce no violations.",
+      applicability:
+        "ts-ad-01.test.ts: loaded conventions with zero imports are neutral; missing schema-conventions returns insufficient_evidence metadata in single-signal and observer output.",
+      score:
+        "ts-ad-01.test.ts: loaded violation score follows 1 - violations / totalImports and zero-import or missing-reference outputs score 1.",
+      diagnostics:
+        "ts-ad-01.test.ts: diagnostics include block severity, kind/specifier/from/to message, file/line location, hash/data payload, and sanitized total top_n_diagnostics cap.",
+      factorLedger:
+        "ts-ad-01.test.ts: registered pack signal emits top_n_diagnostics factor-ledger entry.",
+      cacheSemantics:
+        "ts-ad-01.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AD-01 semantic cacheVersion after diagnostic-limit semantics change.",
+      referenceData:
+        "ts-ad-01.test.ts: schema-conventions boundary reference data drives loaded boundary classification; missing conventions degrade explicitly through signal and observer paths.",
+    },
+  },
   pendingSignalContract("TS-AD-02-circular-dependencies"),
   pendingSignalContract("TS-AD-03-reexport-depth"),
   pendingSignalContract("TS-AD-04-boundary-parser-coverage"),

@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { InMemoryCacheLayer, ReferenceDataTag, SignalContextTag, makeReferenceData } from "@skastr0/pulsar-core/signal"
+import { observe } from "@skastr0/pulsar-core/observer"
+import type { ObserverOutput } from "@skastr0/pulsar-core/observer"
+import { buildRegistry } from "@skastr0/pulsar-core/scoring"
+import { Effect, Layer, Schema } from "effect"
+import { TS_PACK_SIGNALS } from "../pack.js"
 import { TsAd01 } from "../signals/ts-ad-01-boundary-violations.js"
+import { TsProjectLayer } from "../ts-project.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
 
 let repo: TempRepo
@@ -61,6 +68,19 @@ const conventions = (
 })
 
 describe("TS-AD-01 (module boundary violations)", () => {
+  test("empty repo with boundary conventions has no imports and scores neutral", async () => {
+    const out = await runSignal(repo.root, TsAd01, TsAd01.defaultConfig, {
+      "schema-conventions": conventions({}),
+    })
+
+    expect(out.referenceDataStatus).toBe("loaded")
+    expect(out.totalImports).toBe(0)
+    expect(out.violations).toEqual([])
+    expect(out.violationsByPackage.size).toBe(0)
+    expect(TsAd01.score(out)).toBe(1)
+    expect(TsAd01.diagnose(out)).toEqual([])
+  })
+
   test("allows root-entry workspace imports that match the allowlist", async () => {
     await writePackage("core", "@repo/core")
     await writePackage("app", "@repo/app", { "@repo/core": "workspace:*" })
@@ -112,8 +132,33 @@ describe("TS-AD-01 (module boundary violations)", () => {
     })
 
     expect(out.violations[0]?.kind).toBe("deep-reach")
-    expect(TsAd01.diagnose(out)[0]?.severity).toBe("block")
-    expect(typeof TsAd01.diagnose(out)[0]?.data?.hash).toBe("string")
+    expect(out).toMatchObject({
+      totalImports: 2,
+      referenceDataStatus: "loaded",
+    })
+    expect(TsAd01.score(out)).toBe(0.5)
+
+    const diagnostics = TsAd01.diagnose(out)
+    expect(diagnostics).toHaveLength(1)
+    expect(diagnostics[0]).toEqual(
+      expect.objectContaining({
+        severity: "block",
+        message:
+          "Module boundary violation (deep-reach): @repo/core/src/internal from @repo/app to @repo/core",
+        location: expect.objectContaining({
+          file: expect.stringContaining("packages/app/src/index.ts"),
+          line: 1,
+        }),
+        data: expect.objectContaining({
+          fromPackage: "@repo/app",
+          toPackage: "@repo/core",
+          specifier: "@repo/core/src/internal",
+          kind: "deep-reach",
+          line: 1,
+        }),
+      }),
+    )
+    expect(typeof diagnostics[0]?.data?.hash).toBe("string")
   })
 
   test("allows package-name imports to manifest export subpaths", async () => {
@@ -321,6 +366,42 @@ describe("TS-AD-01 (module boundary violations)", () => {
     expect(TsAd01.diagnose(infinity)).toHaveLength(0)
   })
 
+  test("configSchema decodes defaults round-trip", () => {
+    const decoded = Schema.decodeUnknownSync(TsAd01.configSchema)(TsAd01.defaultConfig)
+
+    expect(decoded.top_n_diagnostics).toBe(20)
+    expect(decoded.exclude_globs).toContain("**/*.test.ts")
+  })
+
+  test("pack registration exposes identity, cache version, and config factor ledger", async () => {
+    await writePackage("app", "@repo/app")
+    await repo.write("packages/app/src/index.ts", "export const appValue = 1\n")
+    const registered = registeredTsAd01()
+    const out = await runSignal(repo.root, TsAd01, TsAd01.defaultConfig, {
+      "schema-conventions": conventions({
+        "packages/app": {
+          visibility: "internal",
+          allowed_imports: ["effect"],
+        },
+      }),
+    })
+    const factorLedger = registered.factorLedger?.(out)
+
+    expect(registered.id).toBe("TS-AD-01-boundary-violations")
+    expect(registered.aliases).toContain("TS-AD-01")
+    expect(registered.title).toBe("Module boundary violations")
+    expect(registered.cacheVersion).toContain(TsAd01.cacheVersion)
+    expect(factorLedger?.signalId).toBe(TsAd01.id)
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        value: 20,
+        source: "signal-default",
+        scoreRole: "threshold",
+      }),
+    )
+  })
+
   test("gracefully degrades when no conventions are configured", async () => {
     await writePackage("app", "@repo/app")
     await repo.write(
@@ -331,8 +412,25 @@ describe("TS-AD-01 (module boundary violations)", () => {
     const out = await runSignal(repo.root, TsAd01, TsAd01.defaultConfig)
 
     expect(out.referenceDataStatus).toBe("missing")
+    expect(out.totalImports).toBe(1)
+    expect(TsAd01.outputMetadata?.(out)).toEqual({ applicability: "insufficient_evidence" })
     expect(TsAd01.score(out)).toBe(1)
     expect(TsAd01.diagnose(out)).toEqual([{ severity: "warn", message: "no conventions configured" }])
+  })
+
+  test("surfaces missing-conventions applicability in observer output", async () => {
+    await writePackage("app", "@repo/app")
+    await repo.write(
+      "packages/app/src/index.ts",
+      "import { chunk } from 'lodash'\nexport const appValue = chunk([1, 2], 1)\n",
+    )
+
+    const observer = await runObserverTsAd01(repo.root, {})
+    const observerResult = observer.signalResults.get(TsAd01.id)
+
+    expect(observerResult).toBeDefined()
+    expect(observerResult?.metadata?.applicability).toBe("insufficient_evidence")
+    expect(observer.signalMetadata?.[TsAd01.id]?.applicability).toBe("insufficient_evidence")
   })
 
   test("scores violations as 1 - violations / totalImports", () => {
@@ -354,3 +452,40 @@ describe("TS-AD-01 (module boundary violations)", () => {
     expect(TsAd01.score(output)).toBeCloseTo(0.95)
   })
 })
+
+const registeredTsAd01 = () => {
+  const signal = TS_PACK_SIGNALS.find((candidate) => candidate.id === TsAd01.id)
+  if (signal === undefined) throw new Error("TS-AD-01 is not registered")
+  return signal
+}
+
+const runObserverTsAd01 = async (
+  repoRoot: string,
+  referenceEntries: Readonly<Record<string, unknown>>,
+) => {
+  const program = Effect.gen(function* () {
+    const registry = yield* buildRegistry([TsAd01])
+    const EnvLayer = Layer.mergeAll(
+      TsProjectLayer(repoRoot),
+      InMemoryCacheLayer,
+      Layer.succeed(SignalContextTag, {
+        gitSha: "TEST",
+        worktreePath: repoRoot,
+        changedHunks: [],
+      }),
+      Layer.succeed(
+        ReferenceDataTag,
+        makeReferenceData(new Map(Object.entries(referenceEntries))),
+      ),
+    )
+    return yield* (
+      Effect.provide(observe(registry, undefined), EnvLayer) as Effect.Effect<
+        ObserverOutput,
+        unknown,
+        never
+      >
+    )
+  })
+
+  return Effect.runPromise(program)
+}
