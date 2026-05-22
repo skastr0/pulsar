@@ -357,7 +357,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       factorLedger:
         "ts-de-04.test.ts: registered pack signal emits exclude_globs, test_globs, top_n_diagnostics, dependency_aliases, and allow_dev_dependency_in_prod config factor-ledger entries.",
       cacheSemantics:
-        "ts-de-04.test.ts and pack.test.ts: wrapped pack cache version includes the TS-DE-04 semantic cacheVersion after diagnostic-limit, bundled-source classification, and npm-alias normalization semantics changed.",
+        "ts-de-04.test.ts and pack.test.ts: wrapped pack cache version includes the TS-DE-04 semantic cacheVersion after diagnostic-limit, bundled-source/opaque-external classification, and npm-alias normalization semantics changed.",
     },
   },
   pendingSignalContract("TS-DE-05-duplicate-dependency-versions"),

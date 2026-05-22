@@ -143,7 +143,7 @@ const containsNonStringExternalEntry = (externalBody: string): boolean => {
 }
 
 const hasOpaqueExternalConfig = (configText: string): boolean =>
-  /\bexternal\s*:/.test(configText) || /\bexternal\s*,/.test(configText)
+  /\bexternal\s*:/.test(configText) || /\bexternal\s*(?:,|\}\)|\})/.test(configText)
 
 const isManifestEntrypoint = (
   manifest: PackageManifest | undefined,

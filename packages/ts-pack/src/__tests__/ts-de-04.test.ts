@@ -62,7 +62,7 @@ describe("TS-DE-04 (package dependency health)", () => {
       tier: 1,
       category: "dependency-entropy",
       kind: "structural",
-      cacheVersion: "diagnostic-limit-bundled-source-and-npm-alias-v1",
+      cacheVersion: "diagnostic-limit-bundled-source-and-npm-alias-v2",
       inputs: [],
     })
     expect(registered?.id).toBe(TsDe04.id)
@@ -344,6 +344,27 @@ describe("TS-DE-04 (package dependency health)", () => {
       "packages/callback-extension/src/extension.ts",
       "import rightPad from 'right-pad'\nexport const value = rightPad('x', 3)\n",
     )
+    await writePackage("shorthand-extension", "@repo/shorthand-extension", {
+      devDependencies: {
+        "center-pad": "^1.0.0",
+      },
+    })
+    await repo.write(
+      "packages/shorthand-extension/esbuild.js",
+      [
+        "import esbuild from 'esbuild'",
+        "const external = ['center-pad']",
+        "await esbuild.build({",
+        "  entryPoints: ['src/extension.ts'],",
+        "  bundle: true,",
+        "  external",
+        "})",
+      ].join("\n"),
+    )
+    await repo.write(
+      "packages/shorthand-extension/src/extension.ts",
+      "import centerPad from 'center-pad'\nexport const value = centerPad('x', 3)\n",
+    )
 
     const out = await runSignal(repo.root, TsDe04, TsDe04.defaultConfig)
     const callbackHealth = out.packages.find((pkg) =>
@@ -351,6 +372,9 @@ describe("TS-DE-04 (package dependency health)", () => {
     )
     const regexHealth = out.packages.find((pkg) =>
       pkg.packageName === "@repo/regex-extension"
+    )
+    const shorthandHealth = out.packages.find((pkg) =>
+      pkg.packageName === "@repo/shorthand-extension"
     )
 
     expect(callbackHealth?.devInProd).toEqual([
@@ -363,6 +387,12 @@ describe("TS-DE-04 (package dependency health)", () => {
       {
         dependencyName: "left-pad",
         files: [`${repo.root}/packages/regex-extension/src/extension.ts`],
+      },
+    ])
+    expect(shorthandHealth?.devInProd).toEqual([
+      {
+        dependencyName: "center-pad",
+        files: [`${repo.root}/packages/shorthand-extension/src/extension.ts`],
       },
     ])
   })
