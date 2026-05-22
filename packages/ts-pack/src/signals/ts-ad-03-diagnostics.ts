@@ -14,6 +14,8 @@ export const selectDiagnosticChains = (
   chains: ReadonlyArray<ReExportChain>,
   limit: number,
 ): ReadonlyArray<ReExportChain> => {
+  if (limit <= 0) return []
+
   const selected: Array<ReExportChain> = []
   const seenStarts = new Set<string>()
 

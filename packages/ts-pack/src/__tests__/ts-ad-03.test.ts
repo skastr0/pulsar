@@ -119,6 +119,48 @@ describe("TS-AD-03 (re-export depth)", () => {
     expect(files).toContain(otherPath)
   })
 
+  test("diagnostics honor top_n_diagnostics as a sanitized chain cap", async () => {
+    await repo.write("src/index.ts", "export * from './a'\nexport * from './b'\n")
+    await repo.write("src/a/index.ts", "export { value as a } from './value'\n")
+    await repo.write("src/a/value.ts", "export const value = 1\n")
+    await repo.write("src/b/index.ts", "export { value as b } from './value'\n")
+    await repo.write("src/b/value.ts", "export const value = 1\n")
+    await repo.write("src/other.ts", "export * from './c'\n")
+    await repo.write("src/c/index.ts", "export { value as c } from './value'\n")
+    await repo.write("src/c/value.ts", "export const value = 1\n")
+
+    const fractional = await runSignal(repo.root, TsAd03, {
+      ...TsAd03.defaultConfig,
+      chain_threshold: 1,
+      top_n_diagnostics: 1.8,
+    })
+    const negative = await runSignal(repo.root, TsAd03, {
+      ...TsAd03.defaultConfig,
+      chain_threshold: 1,
+      top_n_diagnostics: -1,
+    })
+    const nanLimit = await runSignal(repo.root, TsAd03, {
+      ...TsAd03.defaultConfig,
+      chain_threshold: 1,
+      top_n_diagnostics: Number.NaN,
+    })
+    const infiniteLimit = await runSignal(repo.root, TsAd03, {
+      ...TsAd03.defaultConfig,
+      chain_threshold: 1,
+      top_n_diagnostics: Infinity,
+    })
+
+    expect(fractional.chainsOverThreshold.length).toBeGreaterThan(1)
+    expect(fractional.diagnosticLimit).toBe(1)
+    expect(TsAd03.diagnose(fractional)).toHaveLength(1)
+    expect(negative.diagnosticLimit).toBe(0)
+    expect(TsAd03.diagnose(negative)).toEqual([])
+    expect(nanLimit.diagnosticLimit).toBe(0)
+    expect(TsAd03.diagnose(nanLimit)).toEqual([])
+    expect(infiniteLimit.diagnosticLimit).toBe(0)
+    expect(TsAd03.diagnose(infiniteLimit)).toEqual([])
+  })
+
   test("circular re-exports are capped and diagnosed", async () => {
     await repo.write("src/a.ts", "export * from './b'\n")
     await repo.write("src/b.ts", "export * from './a'\n")

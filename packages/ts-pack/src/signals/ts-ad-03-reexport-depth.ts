@@ -48,6 +48,7 @@ export const TsAd03: Signal<TsAd03Config, TsAd03Output, TsProjectTag | SignalCon
   tier: 1,
   category: "architectural-drift",
   kind: "structural",
+  cacheVersion: "diagnostic-limit-v1",
   configSchema: TsAd03Config,
   defaultConfig: {
     exclude_globs: [
@@ -126,7 +127,10 @@ const computeReExportDepthOutput = (
     stats: summarize(allChains.map((chain) => chain.depth)),
     threshold: config.chain_threshold,
     scoreScale: config.score_scale,
-    diagnosticLimit: config.top_n_diagnostics,
+    diagnosticLimit: normalizeDiagnosticLimit(config.top_n_diagnostics),
     worktreePath,
   }
 }
+
+const normalizeDiagnosticLimit = (limit: number): number =>
+  Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : 0
