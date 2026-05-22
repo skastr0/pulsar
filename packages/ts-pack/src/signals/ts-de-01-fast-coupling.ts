@@ -1,5 +1,10 @@
+import { dirname, normalize, resolve } from "node:path"
 import { ts, type SourceFile } from "ts-morph"
 import { createModuleResolver } from "../graph/module-graph.js"
+import {
+  stripKnownExtension,
+  stripRuntimeExtension,
+} from "./shared-path-extensions.js"
 import {
   buildOutputFromTables,
   createCouplingTables,
@@ -12,6 +17,7 @@ export const computeFastImportTypeCoupling = (
   diagnosticLimit: number,
 ): TsDe01Output => {
   const fileSet = new Set<string>(sourceFiles.map((sourceFile) => sourceFile.getFilePath()))
+  const pathLookup = buildPathLookup(sourceFiles)
   const resolver = createModuleResolver(sourceFiles, [])
   const { outgoing, incoming } = createCouplingTables(fileSet)
 
@@ -27,6 +33,16 @@ export const computeFastImportTypeCoupling = (
       if (targetFile === undefined || targetFile === src || !fileSet.has(targetFile)) continue
 
       const key = `${referenceName}:${reference.pos}`
+      ensureNestedSet(outgoing, src, targetFile).add(key)
+      ensureNestedSet(incoming, targetFile, src).add(key)
+    }
+
+    for (const reference of collectFastImportTypeReferences(sourceFile)) {
+      const targetFile = resolveImportTypeTarget(src, reference.moduleSpecifier, pathLookup)
+      if (targetFile === undefined || targetFile === src || !fileSet.has(targetFile)) continue
+
+      const referenceName = rootTypeReferenceName(reference.name)
+      const key = `import-type:${referenceName ?? reference.name}:${reference.pos}`
       ensureNestedSet(outgoing, src, targetFile).add(key)
       ensureNestedSet(incoming, targetFile, src).add(key)
     }
@@ -82,6 +98,55 @@ const collectFastTypeReferenceNames = (
   return references
 }
 
+const collectFastImportTypeReferences = (
+  sourceFile: SourceFile,
+): ReadonlyArray<{
+  readonly moduleSpecifier: string
+  readonly name: string
+  readonly pos: number
+}> => {
+  const compilerSourceFile = sourceFile.compilerNode
+  const references: Array<{
+    moduleSpecifier: string
+    name: string
+    pos: number
+  }> = []
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isImportTypeNode(node)) {
+      const reference = fastImportTypeReference(node, compilerSourceFile)
+      if (reference !== undefined) references.push(reference)
+    }
+    ts.forEachChild(node, visit)
+  }
+
+  visit(compilerSourceFile)
+  return references
+}
+
+const fastImportTypeReference = (
+  node: ts.ImportTypeNode,
+  sourceFile: ts.SourceFile,
+): {
+  readonly moduleSpecifier: string
+  readonly name: string
+  readonly pos: number
+} | undefined => {
+  if (
+    !ts.isLiteralTypeNode(node.argument) ||
+    !ts.isStringLiteral(node.argument.literal) ||
+    node.qualifier === undefined
+  ) {
+    return undefined
+  }
+
+  return {
+    moduleSpecifier: node.argument.literal.text,
+    name: entityNameText(node.qualifier, sourceFile),
+    pos: node.pos,
+  }
+}
+
 const fastTypeReferenceName = (
   node: ts.Node,
   sourceFile: ts.SourceFile,
@@ -109,3 +174,40 @@ const rootTypeReferenceName = (name: string): string | undefined => {
   const match = /^[$A-Z_a-z][$\w]*/.exec(trimmed)
   return match?.[0]
 }
+
+const resolveImportTypeTarget = (
+  sourcePath: string,
+  moduleSpecifier: string,
+  pathLookup: ReadonlyMap<string, string>,
+): string | undefined => {
+  if (!moduleSpecifier.startsWith(".") && !moduleSpecifier.startsWith("/")) return undefined
+  const resolved = normalizePath(resolve(dirname(sourcePath), moduleSpecifier))
+  return lookupResolvedPath(resolved, pathLookup)
+}
+
+const buildPathLookup = (
+  sourceFiles: ReadonlyArray<SourceFile>,
+): ReadonlyMap<string, string> => {
+  const lookup = new Map<string, string>()
+
+  for (const sourceFile of sourceFiles) {
+    const filePath = normalizePath(sourceFile.getFilePath())
+    const withoutExtension = stripKnownExtension(filePath)
+    lookup.set(filePath, filePath)
+    lookup.set(withoutExtension, filePath)
+
+    if (withoutExtension.endsWith("/index")) {
+      lookup.set(withoutExtension.slice(0, -"/index".length), filePath)
+    }
+  }
+
+  return lookup
+}
+
+const lookupResolvedPath = (
+  candidate: string,
+  pathLookup: ReadonlyMap<string, string>,
+): string | undefined =>
+  pathLookup.get(candidate) ?? pathLookup.get(stripRuntimeExtension(candidate))
+
+const normalizePath = (path: string): string => normalize(path).replace(/\\/g, "/")

@@ -34,7 +34,7 @@ export const TsDe01: Signal<TsDe01Config, TsDe01Output, TsProjectTag> = {
   tier: 1,
   category: "dependency-entropy",
   kind: "legibility",
-  cacheVersion: "factor-policy-v1-diagnostic-limit-v1",
+  cacheVersion: "factor-policy-v1-diagnostic-limit-v1-fast-import-type-v1",
   configSchema: TsDe01Config,
   defaultConfig: {
     exclude_globs: [
