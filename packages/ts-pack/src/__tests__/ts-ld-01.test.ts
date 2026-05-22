@@ -172,6 +172,27 @@ export function classify(a: boolean, b: boolean, c: boolean) {
     expect(classify?.complexity).toBe(5)
   })
 
+  test("simple applicable functions are healthy and produce no diagnostics", async () => {
+    await repo.write(
+      "src/index.ts",
+      `
+export function simple(value: number) {
+  if (value > 0) return value
+  return 0
+}
+`,
+    )
+
+    const out = await runSignal(repo.root, TsLd01, {
+      ...TsLd01.defaultConfig,
+      max_complexity: 4,
+    })
+
+    expect(out.totalFunctions).toBe(1)
+    expect(TsLd01.score(out)).toBe(1)
+    expect(TsLd01.diagnose(out)).toEqual([])
+  })
+
   test("single extreme function creates local max pressure", async () => {
     const branches = Array.from(
       { length: 12 },
@@ -203,7 +224,7 @@ export function classify(a: boolean, b: boolean, c: boolean) {
     expect(TsLd01.score(out)).toBeLessThan(0.4)
   })
 
-  test("diagnostics honor configured top_n_diagnostics", async () => {
+  test("diagnostics report only over-threshold functions and honor configured top_n_diagnostics", async () => {
     await repo.write(
       "src/index.ts",
       `
@@ -221,12 +242,14 @@ export function tangled(value: number, enabled: boolean) {
 
     const out = await runSignal(repo.root, TsLd01, {
       ...TsLd01.defaultConfig,
+      max_complexity: 2,
       top_n_diagnostics: 1,
     })
     const diagnostics = TsLd01.diagnose(out)
 
     expect(diagnostics).toHaveLength(1)
     expect(diagnostics[0]?.message).toContain("tangled")
+    expect(diagnostics[0]?.data?.complexity).toBeGreaterThan(2)
   })
 
   test("configSchema decodes defaults round-trip", () => {
