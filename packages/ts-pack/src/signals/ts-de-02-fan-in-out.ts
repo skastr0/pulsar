@@ -58,7 +58,9 @@ export const TsDe02: Signal<TsDe02Config, TsDe02Output, TsProjectTag> = {
   defaultConfig: {
     exclude_globs: [
       "**/*.test.ts",
+      "**/*.test.tsx",
       "**/*.spec.ts",
+      "**/*.spec.tsx",
       "**/node_modules/**",
       "**/dist/**",
       "**/.turbo/**",
