@@ -48,7 +48,7 @@ export const TsAd01: Signal<
   tier: 2,
   category: "architectural-drift",
   kind: "structural",
-  cacheVersion: "reference-data-applicability-v1",
+  cacheVersion: "reference-data-applicability-v2",
   configSchema: TsAd01Config,
   defaultConfig: {
     exclude_globs: [
@@ -83,13 +83,16 @@ export const TsAd01: Signal<
           )
 
           if (Option.isNone(rawConventions)) {
-            return missingBoundaryOutput(totalImports, config.top_n_diagnostics)
+            return missingBoundaryOutput(
+              totalImports,
+              normalizeDiagnosticLimit(config.top_n_diagnostics),
+            )
           }
 
           return computeBoundaryOutput({
             conventions: rawConventions.value,
             packages,
-            diagnosticLimit: config.top_n_diagnostics,
+            diagnosticLimit: normalizeDiagnosticLimit(config.top_n_diagnostics),
             sourceFiles,
             totalImports,
             worktreePath: context.worktreePath,
@@ -198,3 +201,6 @@ const computeBoundaryOutput = ({
     diagnosticLimit,
   }
 }
+
+const normalizeDiagnosticLimit = (limit: number): number =>
+  Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : 0

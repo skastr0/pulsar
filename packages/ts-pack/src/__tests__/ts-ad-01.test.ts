@@ -264,6 +264,63 @@ describe("TS-AD-01 (module boundary violations)", () => {
     expect(out.violationsByPackage.get("@repo/app")).toBe(1)
   })
 
+  test("diagnostics honor top_n_diagnostics as a sanitized total cap", async () => {
+    await writePackage("app", "@repo/app")
+    await repo.write(
+      "packages/app/src/index.ts",
+      [
+        "import { chunk } from 'lodash'",
+        "import { pipe } from 'remeda'",
+        "import { v4 } from 'uuid'",
+        "export const appValue = pipe(chunk([v4()], 1))",
+      ].join("\n"),
+    )
+
+    const referenceData = {
+      "schema-conventions": conventions({
+        "packages/app": {
+          visibility: "internal",
+          allowed_imports: ["effect"],
+        },
+      }),
+    }
+
+    const capped = await runSignal(
+      repo.root,
+      TsAd01,
+      { ...TsAd01.defaultConfig, top_n_diagnostics: 1.8 },
+      referenceData,
+    )
+    const negative = await runSignal(
+      repo.root,
+      TsAd01,
+      { ...TsAd01.defaultConfig, top_n_diagnostics: -1 },
+      referenceData,
+    )
+    const nan = await runSignal(
+      repo.root,
+      TsAd01,
+      { ...TsAd01.defaultConfig, top_n_diagnostics: Number.NaN },
+      referenceData,
+    )
+    const infinity = await runSignal(
+      repo.root,
+      TsAd01,
+      { ...TsAd01.defaultConfig, top_n_diagnostics: Number.POSITIVE_INFINITY },
+      referenceData,
+    )
+
+    expect(capped.violations).toHaveLength(3)
+    expect(capped.diagnosticLimit).toBe(1)
+    expect(TsAd01.diagnose(capped)).toHaveLength(1)
+    expect(negative.diagnosticLimit).toBe(0)
+    expect(TsAd01.diagnose(negative)).toHaveLength(0)
+    expect(nan.diagnosticLimit).toBe(0)
+    expect(TsAd01.diagnose(nan)).toHaveLength(0)
+    expect(infinity.diagnosticLimit).toBe(0)
+    expect(TsAd01.diagnose(infinity)).toHaveLength(0)
+  })
+
   test("gracefully degrades when no conventions are configured", async () => {
     await writePackage("app", "@repo/app")
     await repo.write(
