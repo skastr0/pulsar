@@ -585,10 +585,27 @@ describe("TS-LD-02 (function / file size distribution)", () => {
       max_file_loc: 2,
       top_n_diagnostics: -1,
     })
+    const nanLimit = await runCompute({
+      ...TsLd02.defaultConfig,
+      max_function_loc: 2,
+      max_file_loc: 2,
+      top_n_diagnostics: Number.NaN,
+    })
+    const infiniteLimit = await runCompute({
+      ...TsLd02.defaultConfig,
+      max_function_loc: 2,
+      max_file_loc: 2,
+      top_n_diagnostics: Infinity,
+    })
 
     expect(TsLd02.diagnose(floored)).toHaveLength(1)
     expect(TsLd02.diagnose(floored)[0]?.message).toContain("a")
+    expect(disabled.diagnosticLimit).toBe(0)
     expect(TsLd02.diagnose(disabled)).toEqual([])
+    expect(nanLimit.diagnosticLimit).toBe(0)
+    expect(TsLd02.diagnose(nanLimit)).toEqual([])
+    expect(infiniteLimit.diagnosticLimit).toBe(0)
+    expect(TsLd02.diagnose(infiniteLimit)).toEqual([])
   })
 
   test("large callbacks are named from their owning declaration and callee", async () => {

@@ -162,6 +162,16 @@ describe("TS-LD-03 (nesting depth)", () => {
       max_nesting: 1,
       top_n_diagnostics: -1,
     })
+    const nanLimit = await runSignal(repo.root, TsLd03, {
+      ...TsLd03.defaultConfig,
+      max_nesting: 1,
+      top_n_diagnostics: Number.NaN,
+    })
+    const infiniteLimit = await runSignal(repo.root, TsLd03, {
+      ...TsLd03.defaultConfig,
+      max_nesting: 1,
+      top_n_diagnostics: Infinity,
+    })
 
     expect(fractional.overThreshold).toHaveLength(2)
     expect(fractional.diagnosticLimit).toBe(1)
@@ -169,6 +179,12 @@ describe("TS-LD-03 (nesting depth)", () => {
     expect(negative.overThreshold).toHaveLength(2)
     expect(negative.diagnosticLimit).toBe(0)
     expect(TsLd03.diagnose(negative)).toEqual([])
+    expect(nanLimit.overThreshold).toHaveLength(2)
+    expect(nanLimit.diagnosticLimit).toBe(0)
+    expect(TsLd03.diagnose(nanLimit)).toEqual([])
+    expect(infiniteLimit.overThreshold).toHaveLength(2)
+    expect(infiniteLimit.diagnosticLimit).toBe(0)
+    expect(TsLd03.diagnose(infiniteLimit)).toEqual([])
   })
 
   test("nesting policy calibration can relax integration control flow", async () => {

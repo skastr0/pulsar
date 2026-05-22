@@ -66,7 +66,7 @@ export const TsLd03: Signal<TsLd03Config, TsLd03Output, TsProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "diagnostic-limit-v1",
+  cacheVersion: "diagnostic-limit-v2",
   configSchema: TsLd03Config,
   defaultConfig: {
     exclude_globs: [
@@ -244,7 +244,7 @@ const weightedNestingViolationCount = (out: TsLd03Output): number =>
   )
 
 const normalizeDiagnosticLimit = (limit: number): number =>
-  Math.max(0, Math.floor(limit))
+  Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : 0
 
 const withNestingPolicy = (
   entry: FunctionNesting,

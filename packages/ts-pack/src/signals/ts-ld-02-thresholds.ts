@@ -211,7 +211,7 @@ const topFiles = (
     .slice(0, limit)
 
 const normalizeDiagnosticLimit = (limit: number): number =>
-  Math.max(0, Math.floor(limit))
+  Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : 0
 
 const computeThresholdPressures = (
   collected: CollectedSizes,

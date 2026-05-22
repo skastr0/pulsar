@@ -39,7 +39,7 @@ export const TsLd02: Signal<TsLd02ConfigType, TsLd02Output, TsProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "exclusive-function-loc-v2",
+  cacheVersion: "exclusive-function-loc-v3",
   configSchema: TsLd02ConfigSchema,
   defaultConfig: {
     exclude_globs: [

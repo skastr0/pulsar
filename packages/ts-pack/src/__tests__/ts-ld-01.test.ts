@@ -238,6 +238,12 @@ export function tangled(value: number, enabled: boolean) {
   if (enabled || value < 0) return "edge"
   return "small"
 }
+
+export function knotted(value: number, enabled: boolean) {
+  if (enabled && value > 20) return "large"
+  if (enabled || value < -10) return "edge"
+  return "small"
+}
 `,
     )
 
@@ -247,10 +253,25 @@ export function tangled(value: number, enabled: boolean) {
       top_n_diagnostics: 1,
     })
     const diagnostics = TsLd01.diagnose(out)
+    const nanLimit = await runSignal(repo.root, TsLd01, {
+      ...TsLd01.defaultConfig,
+      max_complexity: 2,
+      top_n_diagnostics: Number.NaN,
+    })
+    const infiniteLimit = await runSignal(repo.root, TsLd01, {
+      ...TsLd01.defaultConfig,
+      max_complexity: 2,
+      top_n_diagnostics: Infinity,
+    })
 
     expect(diagnostics).toHaveLength(1)
-    expect(diagnostics[0]?.message).toContain("tangled")
     expect(diagnostics[0]?.data?.complexity).toBeGreaterThan(2)
+    expect(nanLimit.overThresholdCount).toBe(2)
+    expect(nanLimit.diagnosticLimit).toBe(0)
+    expect(TsLd01.diagnose(nanLimit)).toEqual([])
+    expect(infiniteLimit.overThresholdCount).toBe(2)
+    expect(infiniteLimit.diagnosticLimit).toBe(0)
+    expect(TsLd01.diagnose(infiniteLimit)).toEqual([])
   })
 
   test("configSchema decodes defaults round-trip", () => {

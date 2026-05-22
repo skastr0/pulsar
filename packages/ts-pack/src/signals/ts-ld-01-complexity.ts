@@ -45,7 +45,7 @@ export const TsLd01: Signal<TsLd01Config, TsLd01Output, TsProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "callback-context-calibration-v3",
+  cacheVersion: "callback-context-calibration-v4",
   configSchema: TsLd01Config,
   defaultConfig: {
     max_complexity: 20,
@@ -102,7 +102,7 @@ export const TsLd01: Signal<TsLd01Config, TsLd01Output, TsProjectTag> = {
         maxComplexity <= config.max_complexity || maxComplexity === 0
           ? 0
           : (maxComplexity - config.max_complexity) / maxComplexity
-      const diagnosticLimit = Math.max(0, Math.floor(config.top_n_diagnostics))
+      const diagnosticLimit = normalizeDiagnosticLimit(config.top_n_diagnostics)
       const complexityThreshold = config.max_complexity
 
       return {
@@ -145,6 +145,9 @@ export const TsLd01: Signal<TsLd01Config, TsLd01Output, TsProjectTag> = {
     }))
   },
 }
+
+const normalizeDiagnosticLimit = (limit: number): number =>
+  Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : 0
 
 const toSignalComputeError = (cause: unknown): SignalComputeError =>
   cause instanceof SignalComputeError
