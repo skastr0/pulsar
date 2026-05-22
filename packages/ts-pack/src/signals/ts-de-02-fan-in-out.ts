@@ -27,6 +27,7 @@ interface TsDe02Output {
   readonly byModule: ReadonlyMap<string, ModuleFan>
   readonly hubs: ReadonlyArray<HubEntry>
   readonly totalModules: number
+  readonly diagnosticLimit: number
 }
 
 /**
@@ -52,6 +53,7 @@ export const TsDe02: Signal<TsDe02Config, TsDe02Output, TsProjectTag> = {
   tier: 1,
   category: "dependency-entropy",
   kind: "structural",
+  cacheVersion: "diagnostic-limit-v1",
   configSchema: TsDe02Config,
   defaultConfig: {
     exclude_globs: [
@@ -71,6 +73,7 @@ export const TsDe02: Signal<TsDe02Config, TsDe02Output, TsProjectTag> = {
       const project = yield* TsProjectTag
       const result = yield* Effect.try({
         try: (): TsDe02Output => {
+          const diagnosticLimit = normalizeDiagnosticLimit(config.top_n_diagnostics)
           const graph = buildModuleGraph(project, {
             excludeGlobs: config.exclude_globs,
             includeExportEdges: true,
@@ -106,6 +109,7 @@ export const TsDe02: Signal<TsDe02Config, TsDe02Output, TsProjectTag> = {
             byModule,
             hubs,
             totalModules: graph.fileSet.size,
+            diagnosticLimit,
           }
         },
         catch: (cause) =>
@@ -127,7 +131,7 @@ export const TsDe02: Signal<TsDe02Config, TsDe02Output, TsProjectTag> = {
     return Math.max(0, 1 - hubShare * 3)
   },
   diagnose: (out): ReadonlyArray<Diagnostic> => {
-    const top = out.hubs.slice(0, 10)
+    const top = out.hubs.slice(0, out.diagnosticLimit)
     return top.map((h) => ({
       severity: "warn" as const,
       message: `Hub module: ${h.file} (fanIn=${h.fanIn}, fanOut=${h.fanOut})`,
@@ -139,4 +143,9 @@ export const TsDe02: Signal<TsDe02Config, TsDe02Output, TsProjectTag> = {
       },
     }))
   },
+}
+
+const normalizeDiagnosticLimit = (value: number): number => {
+  if (!Number.isFinite(value)) return 0
+  return Math.max(0, Math.floor(value))
 }
