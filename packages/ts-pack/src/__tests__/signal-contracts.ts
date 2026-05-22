@@ -235,7 +235,32 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "ts-ad-04.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AD-04 semantic cacheVersion after diagnostic-limit and parser-attribution semantics changed.",
     },
   },
-  pendingSignalContract("TS-AD-05-boundary-trust-breach"),
+  {
+    id: "TS-AD-05-boundary-trust-breach",
+    status: "verified",
+    evidence: {
+      identity:
+        "ts-ad-05.test.ts: compound identity, semantic cacheVersion, declared inputs, pinned input cache fingerprints, pack registration, title, and wrapped cache version are asserted.",
+      config:
+        "ts-ad-05.test.ts: configSchema decodes defaults, diagnostics honor sanitized top_n_diagnostics, and warn_threshold is sanitized before controlling diagnostic severity without changing score.",
+      positiveFixture:
+        "ts-ad-05.test.ts: synthetic primitive outputs combine parser gaps, unsafe boundary types, boundary violations, and domain drift into ranked boundary trust breaches; unsafe boundary types and boundary violations independently anchor breaches.",
+      negativeFixture:
+        "ts-ad-05.test.ts: measured zero inputs and domain-language drift without a boundary anchor produce no breaches or diagnostics.",
+      applicability:
+        "ts-ad-05.test.ts: missing, absent, and not_configured required parser coverage produce insufficient_evidence metadata, required parser not_applicable remains measured neutral, and missing/not_configured/not_applicable optional inputs remain explicit fact states.",
+      score:
+        "ts-ad-05.test.ts: score is neutral for insufficient/zero states, decreases with higher parser-gap pressure, and is unaffected by warn_threshold.",
+      diagnostics:
+        "ts-ad-05.test.ts: diagnostics include threshold-based severity, compact file message, absolute location, breach rank/data/evidence, stable ordering, and sanitized breach cap.",
+      factorLedger:
+        "ts-ad-05.test.ts: registered pack signal emits top_n_diagnostics and warn_threshold config factor-ledger entries; composite explanation records input weights, normalized values, available factor weight, and evidence completeness.",
+      compoundInputs:
+        "ts-ad-05.test.ts: declared composite inputs, aliases, canonical-id parity, pinned cache fingerprints, missing required parser coverage, required parser not-applicable state, missing optional inputs, optional reference-data absence, optional not-applicable states, and primitive normalized values are asserted.",
+      cacheSemantics:
+        "ts-ad-05.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AD-05 semantic cacheVersion after diagnostic-limit and warn-threshold semantics changed.",
+    },
+  },
   pendingSignalContract("TS-DE-01-type-level-coupling"),
   pendingSignalContract("TS-DE-02-fan-in-fan-out"),
   pendingSignalContract("TS-DE-03-propagation-cost"),
