@@ -312,7 +312,30 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "ts-de-02.test.ts and pack.test.ts: wrapped pack cache version includes the TS-DE-02 semantic cacheVersion after diagnostic-limit, package-resolution, semantic type-only export, and TSX-exclusion semantics changed.",
     },
   },
-  pendingSignalContract("TS-DE-03-propagation-cost"),
+  {
+    id: "TS-DE-03-propagation-cost",
+    status: "verified",
+    evidence: {
+      identity:
+        "ts-de-03.test.ts: canonical id, alias, title, tier/category/kind, no compound inputs, semantic cacheVersion, pack registration, and registry alias lookup are asserted.",
+      config:
+        "ts-de-03.test.ts: configSchema decodes defaults, default TS/TSX test excludes are asserted, exclude_globs remove custom files from the module graph, small-sample threshold controls diagnostics, and diagnostics honor sanitized top_n_diagnostics.",
+      positiveFixture:
+        "ts-de-03.test.ts: real module-graph and reachability fixtures count diamond reverse reach, import chains, cycles condensed through SCCs, SCCs with external dependents, package-local source aliases, workspace package-name imports, star top propagators, and high-propagation diagnostics.",
+      negativeFixture:
+        "ts-de-03.test.ts: trivial graphs, explicit type-only import chains, runtime and type re-export declarations, below-target star graphs, and excluded TS/TSX/custom files do not create propagation pressure or high-propagator diagnostics.",
+      applicability:
+        "ts-de-03.test.ts: trivial one-module projects are measured as neutral output with totalModules=1, diagnosticLimit preserved, no outputMetadata applicability override, and no external input dependency.",
+      score:
+        "ts-de-03.test.ts: score is 1 under target, decreases by the documented (propagationCost - target) / scale formula for a known chain fixture, and cycles contribute SCC peer reach.",
+      diagnostics:
+        "ts-de-03.test.ts: diagnostics include small-sample and high-propagation warning severity, compact messages, absolute locations for propagators, reverseReach/propagationCost/reachabilityMode data, stable ranking, sanitized diagnostic cap, and caps larger than the compatibility top-10 output list.",
+      factorLedger:
+        "ts-de-03.test.ts: registered pack signal emits exclude_globs, target, scale, small_sample_threshold, and top_n_diagnostics config factor-ledger entries.",
+      cacheSemantics:
+        "ts-de-03.test.ts and pack.test.ts: wrapped pack cache version includes the TS-DE-03 semantic cacheVersion after diagnostic-limit, package-resolution, and TSX-exclusion semantics changed.",
+    },
+  },
   pendingSignalContract("TS-DE-04-package-dependency-health"),
   pendingSignalContract("TS-DE-05-duplicate-dependency-versions"),
   pendingSignalContract("TS-AB-01-public-export-surface"),
