@@ -288,7 +288,30 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "ts-de-01.test.ts: project-module type-coupling policy proves visible/severity/penalty ledger attribution and diagnostic policy payloads; Pulsar self-calibration proves repo-local penalty tuning with rule IDs, factor paths, provenance, and visible score effects.",
     },
   },
-  pendingSignalContract("TS-DE-02-fan-in-fan-out"),
+  {
+    id: "TS-DE-02-fan-in-fan-out",
+    status: "verified",
+    evidence: {
+      identity:
+        "ts-de-02.test.ts: canonical id, alias, title, tier/category/kind, no compound inputs, semantic cacheVersion, pack registration, and registry alias lookup are asserted.",
+      config:
+        "ts-de-02.test.ts: configSchema decodes defaults, default TS/TSX test excludes are asserted, exclude_globs remove TS, TSX, and custom files from the module set, thresholds control hub detection, and diagnostics honor sanitized top_n_diagnostics.",
+      positiveFixture:
+        "ts-de-02.test.ts: real module-graph fixtures count runtime import fan-in/fan-out, runtime export edges, package-local source aliases, workspace package-name imports, hub fan-in/fan-out pressure, and stable multi-hub ordering.",
+      negativeFixture:
+        "ts-de-02.test.ts: empty projects, type-only imports, explicit and semantic type-only re-exports, ordinary chains, and excluded TSX/custom files produce no hub pressure or diagnostics.",
+      applicability:
+        "ts-de-02.test.ts: empty projects are neutral with totalModules=0, diagnosticLimit preserved, no outputMetadata applicability override, and no external input dependency.",
+      score:
+        "ts-de-02.test.ts: score is 1 for empty/ordinary/type-only fixtures, decreases by the documented hub-share formula for known hub fixtures, and threshold lowering creates hub pressure.",
+      diagnostics:
+        "ts-de-02.test.ts: diagnostics include warning severity, file message, absolute location, fanIn/fanOut data, stable ranking, and sanitized diagnostic cap.",
+      factorLedger:
+        "ts-de-02.test.ts: registered pack signal emits exclude_globs, hub_fan_in_threshold, hub_fan_out_threshold, and top_n_diagnostics config factor-ledger entries.",
+      cacheSemantics:
+        "ts-de-02.test.ts and pack.test.ts: wrapped pack cache version includes the TS-DE-02 semantic cacheVersion after diagnostic-limit, package-resolution, semantic type-only export, and TSX-exclusion semantics changed.",
+    },
+  },
   pendingSignalContract("TS-DE-03-propagation-cost"),
   pendingSignalContract("TS-DE-04-package-dependency-health"),
   pendingSignalContract("TS-DE-05-duplicate-dependency-versions"),
