@@ -4,7 +4,7 @@ import { Effect, Schema } from "effect"
 import { buildModuleGraph } from "../graph/module-graph.js"
 import { computeReachabilityCounts } from "../graph/reachability.js"
 import { condenseGraph, tarjanSccs } from "../graph/tarjan.js"
-import { TsProjectTag } from "../ts-project.js"
+import { TsPackageInfoTag, TsProjectTag } from "../ts-project.js"
 import { compareDescendingMetricByFile } from "./shared-rank-order.js"
 
 const TsDe03Config = Schema.Struct({
@@ -26,6 +26,7 @@ interface PropagationInfo {
 interface TsDe03Output {
   readonly byModule: ReadonlyMap<string, PropagationInfo>
   readonly propagationCost: number
+  readonly topPropagators: ReadonlyArray<{ file: string; reverseReach: number }>
   readonly top10Propagators: ReadonlyArray<{ file: string; reverseReach: number }>
   readonly totalModules: number
   readonly reachabilityMode: "bitset" | "bloom"
@@ -35,18 +36,21 @@ interface TsDe03Output {
   readonly diagnosticLimit: number
 }
 
-export const TsDe03: Signal<TsDe03Config, TsDe03Output, TsProjectTag> = {
+export const TsDe03: Signal<TsDe03Config, TsDe03Output, TsProjectTag | TsPackageInfoTag> = {
   id: "TS-DE-03-propagation-cost",
   title: "Propagation cost",
   aliases: ["TS-DE-03"],
   tier: 1,
   category: "dependency-entropy",
   kind: "structural",
+  cacheVersion: "diagnostic-limit-and-module-resolution-v1",
   configSchema: TsDe03Config,
   defaultConfig: {
     exclude_globs: [
       "**/*.test.ts",
+      "**/*.test.tsx",
       "**/*.spec.ts",
+      "**/*.spec.tsx",
       "**/node_modules/**",
       "**/dist/**",
       "**/.turbo/**",
@@ -60,11 +64,13 @@ export const TsDe03: Signal<TsDe03Config, TsDe03Output, TsProjectTag> = {
   compute: (config) =>
     Effect.gen(function* () {
       const project = yield* TsProjectTag
+      const packages = yield* TsPackageInfoTag
       const result = yield* Effect.try({
         try: (): TsDe03Output => {
           const moduleGraph = buildModuleGraph(project, {
             excludeGlobs: config.exclude_globs,
             includeExportEdges: false,
+            packages,
           })
           return computePropagationCost(moduleGraph, config)
         },
@@ -101,7 +107,7 @@ export const TsDe03: Signal<TsDe03Config, TsDe03Output, TsProjectTag> = {
     }
 
     diagnostics.push(
-      ...out.top10Propagators.slice(0, out.diagnosticLimit).map((entry) => ({
+      ...out.topPropagators.slice(0, out.diagnosticLimit).map((entry) => ({
         severity: "warn" as const,
         message: `High propagation cost module: ${entry.file} (reverse reach ${entry.reverseReach})`,
         location: { file: entry.file },
@@ -189,17 +195,19 @@ const buildPropagationOutput = (
 ): TsDe03Output => {
   const totalModules = byModule.size
   const reverseReachTotal = [...byModule.values()].reduce((sum, info) => sum + info.reverseReach, 0)
+  const rankedPropagators = topPropagators(byModule)
 
   return {
     byModule,
     propagationCost: totalModules === 0 ? 0 : reverseReachTotal / (totalModules * totalModules),
-    top10Propagators: topPropagators(byModule),
+    topPropagators: rankedPropagators,
+    top10Propagators: rankedPropagators.slice(0, 10),
     totalModules,
     reachabilityMode,
     target: config.target,
     scale: config.scale,
     smallSampleThreshold: config.small_sample_threshold,
-    diagnosticLimit: config.top_n_diagnostics,
+    diagnosticLimit: normalizeDiagnosticLimit(config.top_n_diagnostics),
   }
 }
 
@@ -211,4 +219,8 @@ const topPropagators = (
     .sort((left, right) =>
       compareDescendingMetricByFile(left.reverseReach, right.reverseReach, left.file, right.file),
     )
-    .slice(0, 10)
+
+const normalizeDiagnosticLimit = (value: number): number => {
+  if (!Number.isFinite(value)) return 0
+  return Math.max(0, Math.floor(value))
+}
