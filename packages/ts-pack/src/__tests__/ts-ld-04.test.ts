@@ -259,6 +259,56 @@ describe("TS-LD-04 (naming convention consistency)", () => {
     expect(diagnostics.every((diagnostic) => typeof diagnostic.data?.hash === "string")).toBe(true)
   })
 
+  test("diagnostics honor top_n_diagnostics as a sanitized total cap", async () => {
+    await repo.write(
+      "src/inconsistent.ts",
+      [
+        "export function get_user_data() { return true }",
+        "export class bad_class {}",
+        "export interface bad_interface { id: string }",
+        "",
+      ].join("\n"),
+    )
+
+    const fractional = await runSignal(repo.root, TsLd04, {
+      ...TsLd04.defaultConfig,
+      top_n_diagnostics: 1.8,
+    }, {
+      "schema-conventions": NAMING_CONVENTIONS,
+    })
+    const negative = await runSignal(repo.root, TsLd04, {
+      ...TsLd04.defaultConfig,
+      top_n_diagnostics: -1,
+    }, {
+      "schema-conventions": NAMING_CONVENTIONS,
+    })
+    const nanLimit = await runSignal(repo.root, TsLd04, {
+      ...TsLd04.defaultConfig,
+      top_n_diagnostics: Number.NaN,
+    }, {
+      "schema-conventions": NAMING_CONVENTIONS,
+    })
+    const infiniteLimit = await runSignal(repo.root, TsLd04, {
+      ...TsLd04.defaultConfig,
+      top_n_diagnostics: Infinity,
+    }, {
+      "schema-conventions": NAMING_CONVENTIONS,
+    })
+
+    expect(fractional.violations).toHaveLength(3)
+    expect(fractional.diagnosticLimit).toBe(1)
+    expect(TsLd04.diagnose(fractional)).toHaveLength(1)
+    expect(negative.violations).toHaveLength(3)
+    expect(negative.diagnosticLimit).toBe(0)
+    expect(TsLd04.diagnose(negative)).toEqual([])
+    expect(nanLimit.violations).toHaveLength(3)
+    expect(nanLimit.diagnosticLimit).toBe(0)
+    expect(TsLd04.diagnose(nanLimit)).toEqual([])
+    expect(infiniteLimit.violations).toHaveLength(3)
+    expect(infiniteLimit.diagnosticLimit).toBe(0)
+    expect(TsLd04.diagnose(infiniteLimit)).toEqual([])
+  })
+
   test("surfaces mixed casing as unrecognized", async () => {
     await repo.write("src/mixed.ts", "export const weird_PASCAL_mix = 1\n")
 

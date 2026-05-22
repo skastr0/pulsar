@@ -55,7 +55,7 @@ export const TsLd04: Signal<TsLd04Config, TsLd04Output, TsProjectTag | Reference
   tier: 2,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "type-level-values-v2",
+  cacheVersion: "type-level-values-v3",
   configSchema: TsLd04Config,
   defaultConfig: {
     exclude_globs: [
@@ -86,7 +86,7 @@ export const TsLd04: Signal<TsLd04Config, TsLd04Output, TsProjectTag | Reference
               byKind: summarizeByKind(identifiers, []),
               totalIdentifiers: identifiers.length,
               referenceDataStatus: "missing",
-              diagnosticLimit: config.top_n_diagnostics,
+              diagnosticLimit: normalizeDiagnosticLimit(config.top_n_diagnostics),
             }
           }
 
@@ -114,7 +114,7 @@ export const TsLd04: Signal<TsLd04Config, TsLd04Output, TsProjectTag | Reference
             byKind: summarizeByKind(identifiers, violations),
             totalIdentifiers: identifiers.length,
             referenceDataStatus: "loaded",
-            diagnosticLimit: config.top_n_diagnostics,
+            diagnosticLimit: normalizeDiagnosticLimit(config.top_n_diagnostics),
           }
         },
         catch: (cause) =>
@@ -208,6 +208,9 @@ const includePattern = (
   pattern: RecognizedCasingPattern,
 ): ReadonlyArray<RecognizedCasingPattern> =>
   patterns.includes(pattern) ? patterns : [...patterns, pattern]
+
+const normalizeDiagnosticLimit = (limit: number): number =>
+  Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : 0
 
 const summarizeByKind = (
   identifiers: ReadonlyArray<ReturnType<typeof collectIdentifierDeclarations>[number]>,
