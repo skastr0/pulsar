@@ -180,7 +180,7 @@ export const TsAd05: Signal<TsAd05Config, BoundaryTrustBreachOutput, never> = {
   tier: 1.5,
   category: "architectural-drift",
   kind: "compound",
-  cacheVersion: "boundary-trust-breach-composite-policy-v1",
+  cacheVersion: "boundary-trust-breach-composite-policy-v1-diagnostic-limit-v1",
   configSchema: TsAd05Config,
   defaultConfig: {
     top_n_diagnostics: 10,
@@ -224,7 +224,7 @@ export const computeBoundaryTrustBreachOutput = (
 ): BoundaryTrustBreachOutput => {
   const resolution = resolveCompositeInputs(TS_AD_05_COMPOSITE_INPUTS, inputs)
   const resolvedInputs = resolveBoundaryTrustInputs(resolution)
-  const diagnosticLimit = Math.max(0, Math.floor(config.top_n_diagnostics))
+  const diagnosticLimit = normalizeDiagnosticLimit(config.top_n_diagnostics)
   const inputFactStates = boundaryTrustInputFactStates(resolution, resolvedInputs)
   const insufficientParserEvidence =
     resolution.hasMissingRequiredInputs ||
@@ -626,6 +626,11 @@ const formatBoundaryFile = (file: string): string => {
     if (index !== -1) return file.slice(index + 1)
   }
   return file
+}
+
+const normalizeDiagnosticLimit = (value: number): number => {
+  if (!Number.isFinite(value)) return 0
+  return Math.max(0, Math.floor(value))
 }
 
 const clamp01 = (value: number): number => Math.max(0, Math.min(1, value))
