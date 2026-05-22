@@ -131,6 +131,8 @@ const FACTOR_WEIGHTS = {
   domainLanguageDrift: 0.1,
 } as const
 
+const DEFAULT_WARN_THRESHOLD = 0.35
+
 export const TS_AD_05_COMPOSITE_INPUTS = [
   {
     id: "TS-AD-04-boundary-parser-coverage",
@@ -180,11 +182,12 @@ export const TsAd05: Signal<TsAd05Config, BoundaryTrustBreachOutput, never> = {
   tier: 1.5,
   category: "architectural-drift",
   kind: "compound",
-  cacheVersion: "boundary-trust-breach-composite-policy-v1-diagnostic-limit-v1",
+  cacheVersion:
+    "boundary-trust-breach-composite-policy-v1-diagnostic-limit-v1-warn-threshold-v1",
   configSchema: TsAd05Config,
   defaultConfig: {
     top_n_diagnostics: 10,
-    warn_threshold: 0.35,
+    warn_threshold: DEFAULT_WARN_THRESHOLD,
   },
   inputs: compositeSignalInputs(TS_AD_05_COMPOSITE_INPUTS),
   compute: (config, inputs) =>
@@ -225,6 +228,7 @@ export const computeBoundaryTrustBreachOutput = (
   const resolution = resolveCompositeInputs(TS_AD_05_COMPOSITE_INPUTS, inputs)
   const resolvedInputs = resolveBoundaryTrustInputs(resolution)
   const diagnosticLimit = normalizeDiagnosticLimit(config.top_n_diagnostics)
+  const warnThreshold = normalizeWarnThreshold(config.warn_threshold)
   const inputFactStates = boundaryTrustInputFactStates(resolution, resolvedInputs)
   const insufficientParserEvidence =
     resolution.hasMissingRequiredInputs ||
@@ -241,7 +245,7 @@ export const computeBoundaryTrustBreachOutput = (
         inputFactStates,
         availableFactorWeight: availableFactors.totalWeight,
         riskPressure: 0,
-        warnThreshold: config.warn_threshold,
+        warnThreshold,
       }),
       resolution,
       "Boundary trust breach is not measured because boundary parser coverage is missing or insufficient.",
@@ -263,7 +267,7 @@ export const computeBoundaryTrustBreachOutput = (
       inputFactStates,
       availableFactorWeight: availableFactors.totalWeight,
       riskPressure,
-      warnThreshold: config.warn_threshold,
+      warnThreshold,
     }),
     resolution,
     state === "present"
@@ -631,6 +635,11 @@ const formatBoundaryFile = (file: string): string => {
 const normalizeDiagnosticLimit = (value: number): number => {
   if (!Number.isFinite(value)) return 0
   return Math.max(0, Math.floor(value))
+}
+
+const normalizeWarnThreshold = (value: number): number => {
+  if (!Number.isFinite(value)) return DEFAULT_WARN_THRESHOLD
+  return clamp01(value)
 }
 
 const clamp01 = (value: number): number => Math.max(0, Math.min(1, value))
