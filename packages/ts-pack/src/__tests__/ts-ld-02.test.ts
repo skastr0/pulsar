@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { Effect, Layer, Schema } from "effect"
 import { CalibrationContextTag, appendCalibrationDecision, defineCalibrationProcessor, makeResolvedCalibrationContext } from "@skastr0/pulsar-core/calibration"
 import type { RepoFacts } from "@skastr0/pulsar-core/calibration"
+import { TS_PACK_SIGNALS } from "../pack.js"
 import { TsLd02 } from "../signals/ts-ld-02-size-distribution.js"
 import {
   type TsLd02Output,
@@ -492,6 +493,44 @@ describe("TS-LD-02 (function / file size distribution)", () => {
     const decoded = Schema.decodeUnknownSync(TsLd02.configSchema)(TsLd02.defaultConfig)
     expect(decoded.max_function_loc).toBe(50)
     expect(decoded.max_file_loc).toBe(300)
+    expect(decoded.top_n_diagnostics).toBe(5)
+  })
+
+  test("pack registration exposes identity, cache version, and config factor ledger", async () => {
+    await writeTs("a.ts", "export function a() { return 1 }\n")
+    const registered = registeredTsLd02()
+    const out = await runCompute()
+    const factorLedger = registered.factorLedger?.(out)
+
+    expect(registered.id).toBe("TS-LD-02-function-size-distribution")
+    expect(registered.aliases).toContain("TS-LD-02")
+    expect(registered.title).toBe("Function size distribution")
+    expect(registered.cacheVersion).toContain(TsLd02.cacheVersion)
+    expect(factorLedger?.signalId).toBe(TsLd02.id)
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.max_function_loc",
+        value: 50,
+        source: "signal-default",
+        scoreRole: "threshold",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.max_file_loc",
+        value: 300,
+        source: "signal-default",
+        scoreRole: "threshold",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        value: 5,
+        source: "signal-default",
+        scoreRole: "threshold",
+      }),
+    )
   })
 
   test("diagnose emits warnings for true outliers", async () => {
@@ -662,3 +701,9 @@ describe("TS-LD-02 (function / file size distribution)", () => {
     })
   })
 })
+
+const registeredTsLd02 = () => {
+  const signal = TS_PACK_SIGNALS.find((candidate) => candidate.id === TsLd02.id)
+  if (signal === undefined) throw new Error("TS-LD-02 is not registered")
+  return signal
+}

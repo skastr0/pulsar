@@ -28,7 +28,33 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "ts-ld-01.test.ts: callback-context calibration renames Effect.fn callbacks and records module processor attribution.",
     },
   },
-  pendingSignalContract("TS-LD-02-function-size-distribution"),
+  {
+    id: "TS-LD-02-function-size-distribution",
+    status: "verified",
+    requiredEvidence: ["calibration"],
+    evidence: {
+      identity:
+        "ts-ld-02.test.ts: pack registration exposes canonical id, alias, title, and wrapped cache version.",
+      config:
+        "ts-ld-02.test.ts: configSchema decodes defaults and diagnostics honor sanitized top_n_diagnostics.",
+      positiveFixture:
+        "ts-ld-02.test.ts: true function outliers clear p95 + threshold; single extreme file/function creates local max pressure.",
+      negativeFixture:
+        "ts-ld-02.test.ts: small functions/files score 1; raw-threshold values below p95 + threshold are not outliers.",
+      applicability:
+        "ts-ld-02.test.ts: empty repo reports zero files/functions, score 1, and not_applicable metadata.",
+      score:
+        "ts-ld-02.test.ts: healthy fixtures score 1, true outliers lower score, and calibrated integration size pressure can restore score 1.",
+      diagnostics:
+        "ts-ld-02.test.ts: diagnostics cover true outliers, absolute threshold pressure, callback names, and sanitized total top_n_diagnostics cap.",
+      factorLedger:
+        "ts-ld-02.test.ts: registered pack signal emits max_function_loc, max_file_loc, and top_n_diagnostics factor-ledger entries.",
+      cacheSemantics:
+        "ts-ld-02.test.ts and pack.test.ts: wrapped pack cache version includes the TS-LD-02 semantic cacheVersion after diagnostic-limit semantics change.",
+      calibration:
+        "ts-ld-02.test.ts: size-policy calibration records factor provenance and callback-context calibration records naming attribution.",
+    },
+  },
   pendingSignalContract("TS-LD-03-nesting-depth"),
   pendingSignalContract("TS-LD-04-naming-conventions"),
   pendingSignalContract("TS-LD-05-domain-term-consistency"),
