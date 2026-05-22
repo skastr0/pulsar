@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { Schema } from "effect"
+import { TS_PACK_SIGNALS } from "../pack.js"
 import { TsAd04 } from "../signals/ts-ad-04-boundary-parser-coverage.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
 
@@ -18,6 +20,49 @@ const run = async (
 ): Promise<TsAd04Result> => runSignal(repo.root, TsAd04, config)
 
 describe("TS-AD-04 (boundary parser coverage)", () => {
+  test("configSchema decodes defaults round-trip", () => {
+    const decoded = Schema.decodeUnknownSync(TsAd04.configSchema)(TsAd04.defaultConfig)
+
+    expect(decoded.boundary_globs).toContain("**/api/*.ts")
+    expect(decoded.parser_call_patterns).toContain("decode")
+    expect(decoded.exclude_globs).toContain("**/*.test.ts")
+    expect(decoded.top_n_diagnostics).toBe(10)
+  })
+
+  test("pack registration exposes identity, cache version, and config factor ledger", async () => {
+    await repo.write(
+      "src/api/user.ts",
+      "export function POST(input: unknown) { return input }\n",
+    )
+    const registered = registeredTsAd04()
+    const out = await run()
+    const factorLedger = registered.factorLedger?.(out)
+
+    expect(registered.id).toBe("TS-AD-04-boundary-parser-coverage")
+    expect(registered.aliases).toContain("TS-AD-04")
+    expect(registered.title).toBe("Boundary parser coverage")
+    expect(registered.cacheVersion).toContain(TsAd04.cacheVersion)
+    expect(factorLedger?.signalId).toBe(TsAd04.id)
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.parser_call_patterns",
+        value: expect.arrayContaining(["decode"]),
+        source: "signal-default",
+        scoreRole: "metadata",
+        affectsScore: false,
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        value: 10,
+        source: "signal-default",
+        scoreRole: "threshold",
+        affectsScore: true,
+      }),
+    )
+  })
+
   test("flags weak boundary inputs without parse or decode evidence", async () => {
     await repo.write(
       "src/api/user.ts",
@@ -73,6 +118,139 @@ describe("TS-AD-04 (boundary parser coverage)", () => {
     expect(TsAd04.score(out)).toBe(1)
   })
 
+  test("scores by uncovered weak boundary ratio and caps diagnostics", async () => {
+    await repo.write(
+      "src/api/user.ts",
+      [
+        "const UserSchema = { safeParse: (value: unknown) => ({ success: true, data: value }) }",
+        "export function POST(input: unknown) {",
+        "  return UserSchema.safeParse(input)",
+        "}",
+        "export function PATCH(input: any, raw) {",
+        "  return input ?? raw",
+        "}",
+        "export const handler = (request: Request) => {",
+        "  return request.url",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await run({
+      ...TsAd04.defaultConfig,
+      top_n_diagnostics: 1,
+    })
+    const diagnostics = TsAd04.diagnose(out)
+
+    expect(out.state).toBe("present")
+    expect(out.boundaryFilesMatched).toBe(1)
+    expect(out.boundaryFunctionsAnalyzed).toBe(3)
+    expect(out.weakBoundaryFunctions).toBe(3)
+    expect(out.coveredWeakBoundaryFunctions).toBe(1)
+    expect(out.covered).toMatchObject([
+      {
+        symbol: "POST",
+        parserEvidence: ["UserSchema.safeParse"],
+      },
+    ])
+    expect(out.findings).toMatchObject([
+      {
+        symbol: "PATCH",
+        weakParameters: [
+          { name: "input", reason: "any" },
+          { name: "raw", reason: "untyped" },
+        ],
+      },
+      {
+        symbol: "handler",
+        weakParameters: [
+          { name: "request", reason: "request-like" },
+        ],
+      },
+    ])
+    expect(TsAd04.score(out)).toBeCloseTo(1 / 3)
+    expect(diagnostics).toHaveLength(1)
+    expect(diagnostics[0]).toMatchObject({
+      severity: "warn",
+      message: expect.stringContaining("PATCH"),
+      location: {
+        file: expect.stringContaining("src/api/user.ts"),
+        line: 5,
+      },
+      data: expect.objectContaining({
+        symbol: "PATCH",
+        missingEvidence: expect.stringContaining("No parse/decode/schema/assertion call"),
+      }),
+    })
+  })
+
+  test("diagnostics honor top_n_diagnostics as a sanitized finding cap", async () => {
+    await repo.write(
+      "src/api/user.ts",
+      [
+        "export function POST(input: unknown) { return input }",
+        "export function PUT(input: any) { return input }",
+        "export function PATCH(input) { return input }",
+      ].join("\n"),
+    )
+
+    const fractional = await run({
+      ...TsAd04.defaultConfig,
+      top_n_diagnostics: 1.8,
+    })
+    const negative = await run({
+      ...TsAd04.defaultConfig,
+      top_n_diagnostics: -1,
+    })
+    const nanLimit = await run({
+      ...TsAd04.defaultConfig,
+      top_n_diagnostics: Number.NaN,
+    })
+    const infiniteLimit = await run({
+      ...TsAd04.defaultConfig,
+      top_n_diagnostics: Infinity,
+    })
+
+    expect(fractional.findings).toHaveLength(3)
+    expect(fractional.diagnosticLimit).toBe(1)
+    expect(TsAd04.diagnose(fractional)).toHaveLength(1)
+    expect(negative.findings).toHaveLength(3)
+    expect(negative.diagnosticLimit).toBe(0)
+    expect(TsAd04.diagnose(negative)).toEqual([])
+    expect(nanLimit.findings).toHaveLength(3)
+    expect(nanLimit.diagnosticLimit).toBe(0)
+    expect(TsAd04.diagnose(nanLimit)).toEqual([])
+    expect(infiniteLimit.findings).toHaveLength(3)
+    expect(infiniteLimit.diagnosticLimit).toBe(0)
+    expect(TsAd04.diagnose(infiniteLimit)).toEqual([])
+  })
+
+  test("honors custom parser call patterns as parser evidence", async () => {
+    await repo.write(
+      "src/api/user.ts",
+      [
+        "const sanitizeBody = (value: unknown) => value",
+        "export function POST(input: unknown) {",
+        "  return sanitizeBody(input)",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await run({
+      ...TsAd04.defaultConfig,
+      parser_call_patterns: ["sanitizeBody"],
+    })
+
+    expect(out.state).toBe("zero")
+    expect(out.findings).toEqual([])
+    expect(out.covered).toMatchObject([
+      {
+        symbol: "POST",
+        parserEvidence: ["sanitizeBody"],
+      },
+    ])
+    expect(TsAd04.score(out)).toBe(1)
+  })
+
   test("does not treat parser pattern names in call arguments as parser evidence", async () => {
     await repo.write(
       "src/api/user.ts",
@@ -89,6 +267,133 @@ describe("TS-AD-04 (boundary parser coverage)", () => {
     expect(out.state).toBe("present")
     expect(out.covered).toEqual([])
     expect(out.findings).toMatchObject([{ symbol: "POST" }])
+  })
+
+  test("does not treat parser pattern substrings as parser evidence", async () => {
+    await repo.write(
+      "src/api/user.ts",
+      [
+        "const parseCsv = (value: unknown) => value",
+        "const safeParseCsv = (value: unknown) => value",
+        "const decodeUnknownCsv = (value: unknown) => value",
+        "export function POST(input: unknown) {",
+        "  return parseCsv(input)",
+        "}",
+        "export function PUT(input: unknown) {",
+        "  return safeParseCsv(input)",
+        "}",
+        "export function PATCH(input: unknown) {",
+        "  return decodeUnknownCsv(input)",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await run()
+
+    expect(out.state).toBe("present")
+    expect(out.covered).toEqual([])
+    expect(out.findings).toMatchObject([
+      { symbol: "POST" },
+      { symbol: "PUT" },
+      { symbol: "PATCH" },
+    ])
+  })
+
+  test("requires parser evidence to reference a weak boundary input", async () => {
+    await repo.write(
+      "src/api/user.ts",
+      [
+        "const parse = (value: unknown) => value",
+        "export function POST(input: unknown) {",
+        "  parse('literal')",
+        "  return input",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await run()
+
+    expect(out.state).toBe("present")
+    expect(out.covered).toEqual([])
+    expect(out.findings).toMatchObject([{ symbol: "POST" }])
+  })
+
+  test("does not count parser calls that only reference weak input inside nested callbacks", async () => {
+    await repo.write(
+      "src/api/user.ts",
+      [
+        "const parse = (value: unknown) => value",
+        "export function POST(input: unknown) {",
+        "  return parse(() => input)",
+        "}",
+        "export function PUT(input: unknown) {",
+        "  return parse((input) => input)",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await run()
+
+    expect(out.state).toBe("present")
+    expect(out.covered).toEqual([])
+    expect(out.findings).toMatchObject([
+      { symbol: "POST" },
+      { symbol: "PUT" },
+    ])
+  })
+
+  test("requires parser evidence inside the boundary function body", async () => {
+    await repo.write(
+      "src/api/user.ts",
+      [
+        "const parse = (value: unknown) => value",
+        "parse('warmup')",
+        "export function POST(input: unknown) {",
+        "  return input",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await run()
+
+    expect(out.state).toBe("present")
+    expect(out.covered).toEqual([])
+    expect(out.findings).toMatchObject([
+      {
+        symbol: "POST",
+        weakParameters: [
+          { name: "input", reason: "unknown" },
+        ],
+      },
+    ])
+  })
+
+  test("analyzes anonymous default-export boundary functions", async () => {
+    await repo.write(
+      "src/api/user.ts",
+      "export default (input: unknown) => input\n",
+    )
+
+    const out = await run()
+
+    expect(out.state).toBe("present")
+    expect(out.boundaryFunctionsAnalyzed).toBe(1)
+    expect(out.weakBoundaryFunctions).toBe(1)
+    expect(out.findings).toMatchObject([{ symbol: "default" }])
+  })
+
+  test("analyzes default-export function declarations", async () => {
+    await repo.write(
+      "src/api/user.ts",
+      "export default function(input: unknown) { return input }\n",
+    )
+
+    const out = await run()
+
+    expect(out.state).toBe("present")
+    expect(out.boundaryFunctionsAnalyzed).toBe(1)
+    expect(out.weakBoundaryFunctions).toBe(1)
+    expect(out.findings).toMatchObject([{ symbol: "default" }])
   })
 
   test("distinguishes absent boundary files from measured zero parser gaps", async () => {
@@ -141,6 +446,8 @@ describe("TS-AD-04 (boundary parser coverage)", () => {
     expect(TsAd04.outputMetadata?.(out)).toEqual({
       applicability: "not_applicable",
     })
+    expect(TsAd04.score(out)).toBe(1)
+    expect(TsAd04.diagnose(out)).toEqual([])
   })
 
   test("declares composite consumers and conservative enforcement", async () => {
@@ -160,3 +467,9 @@ describe("TS-AD-04 (boundary parser coverage)", () => {
     expect(out.enforcementCeiling).toEqual(["soft-warning", "trend", "review-routing"])
   })
 })
+
+const registeredTsAd04 = () => {
+  const signal = TS_PACK_SIGNALS.find((candidate) => candidate.id === TsAd04.id)
+  if (signal === undefined) throw new Error("TS-AD-04 is not registered")
+  return signal
+}

@@ -211,7 +211,30 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "ts-ad-03.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AD-03 semantic cacheVersion after diagnostic-limit and package-resolution semantics changes.",
     },
   },
-  pendingSignalContract("TS-AD-04-boundary-parser-coverage"),
+  {
+    id: "TS-AD-04-boundary-parser-coverage",
+    status: "verified",
+    evidence: {
+      identity:
+        "ts-ad-04.test.ts: pack registration exposes canonical id, alias, title, and wrapped cache version.",
+      config:
+        "ts-ad-04.test.ts: configSchema decodes defaults, custom parser_call_patterns affect parser evidence, and diagnostics honor sanitized top_n_diagnostics.",
+      positiveFixture:
+        "ts-ad-04.test.ts: fixtures detect weak any, unknown, untyped, request-like, anonymous default-export, and default-export function boundary parameters without parser evidence.",
+      negativeFixture:
+        "ts-ad-04.test.ts: parser pattern names in call arguments, parser-pattern substrings, parser calls that do not reference weak input, and parser calls outside the boundary function body do not count as parser evidence.",
+      applicability:
+        "ts-ad-04.test.ts: absent boundary files, not_configured boundary_globs, and boundary files with no weak external inputs produce distinct applicability states.",
+      score:
+        "ts-ad-04.test.ts: score is 0 for all uncovered weak boundary functions, 1 for covered/not-applicable states, and proportional for partial parser coverage.",
+      diagnostics:
+        "ts-ad-04.test.ts: diagnostics include warning severity, compact message, absolute location, finding data, missing-evidence text, and sanitized finding cap.",
+      factorLedger:
+        "ts-ad-04.test.ts: registered pack signal emits parser_call_patterns and top_n_diagnostics factor-ledger entries.",
+      cacheSemantics:
+        "ts-ad-04.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AD-04 semantic cacheVersion after diagnostic-limit and parser-attribution semantics changed.",
+    },
+  },
   pendingSignalContract("TS-AD-05-boundary-trust-breach"),
   pendingSignalContract("TS-DE-01-type-level-coupling"),
   pendingSignalContract("TS-DE-02-fan-in-fan-out"),
