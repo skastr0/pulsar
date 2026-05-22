@@ -129,6 +129,48 @@ describe("TS-LD-03 (nesting depth)", () => {
     expect(out.overThreshold).toHaveLength(1)
   })
 
+  test("diagnostics honor top_n_diagnostics as a sanitized total cap", async () => {
+    await repo.write(
+      "src/deep.ts",
+      [
+        "export function first(flag: boolean) {",
+        "  if (flag) {",
+        "    while (flag) {",
+        "      return 1",
+        "    }",
+        "  }",
+        "  return 0",
+        "}",
+        "export function second(flag: boolean) {",
+        "  if (flag) {",
+        "    while (flag) {",
+        "      return 2",
+        "    }",
+        "  }",
+        "  return 0",
+        "}",
+      ].join("\n"),
+    )
+
+    const fractional = await runSignal(repo.root, TsLd03, {
+      ...TsLd03.defaultConfig,
+      max_nesting: 1,
+      top_n_diagnostics: 1.8,
+    })
+    const negative = await runSignal(repo.root, TsLd03, {
+      ...TsLd03.defaultConfig,
+      max_nesting: 1,
+      top_n_diagnostics: -1,
+    })
+
+    expect(fractional.overThreshold).toHaveLength(2)
+    expect(fractional.diagnosticLimit).toBe(1)
+    expect(TsLd03.diagnose(fractional)).toHaveLength(1)
+    expect(negative.overThreshold).toHaveLength(2)
+    expect(negative.diagnosticLimit).toBe(0)
+    expect(TsLd03.diagnose(negative)).toEqual([])
+  })
+
   test("nesting policy calibration can relax integration control flow", async () => {
     await repo.write(
       "src/orchestrate.ts",
