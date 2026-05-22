@@ -1,0 +1,28 @@
+import { pendingSignalContract, type SignalContract } from "./signal-contract.js"
+
+export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
+  pendingSignalContract("RS-AD-01-visibility-surface"),
+  pendingSignalContract("RS-AD-02-crate-boundaries"),
+  pendingSignalContract("RS-AD-03-circular-crate-dependencies"),
+  pendingSignalContract("RS-DE-01-trait-coupling"),
+  pendingSignalContract("RS-DE-02-dependency-tree"),
+  pendingSignalContract("RS-DE-03-feature-flags"),
+  pendingSignalContract("RS-DE-04-fan-in-fan-out"),
+  pendingSignalContract("RS-AB-01-unused-public-items"),
+  pendingSignalContract("RS-AB-02-trait-object-depth"),
+  pendingSignalContract("RS-AB-03-generic-proliferation"),
+  pendingSignalContract("RS-AB-04-derive-density"),
+  pendingSignalContract("RS-LD-01-unsafe-code"),
+  pendingSignalContract("RS-LD-02-lifetime-complexity"),
+  pendingSignalContract("RS-LD-03-match-catch-all"),
+  pendingSignalContract("RS-LD-04-error-granularity"),
+  pendingSignalContract("RS-LD-05-cyclomatic-complexity"),
+  pendingSignalContract("RS-LD-06-domain-term-consistency"),
+  pendingSignalContract("RS-SL-01-duplication"),
+  pendingSignalContract("RS-SL-02-suppressions"),
+  pendingSignalContract("RS-SL-03-unwrap-expect"),
+  pendingSignalContract("RS-SL-04-clone-abuse"),
+  pendingSignalContract("RS-RP-01-hotspots"),
+  pendingSignalContract("RS-RP-02-compile-time"),
+  pendingSignalContract("RS-RP-03-pr-size"),
+]
