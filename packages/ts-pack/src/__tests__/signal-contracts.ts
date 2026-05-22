@@ -55,7 +55,33 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "ts-ld-02.test.ts: size-policy calibration records factor provenance and callback-context calibration records naming attribution.",
     },
   },
-  pendingSignalContract("TS-LD-03-nesting-depth"),
+  {
+    id: "TS-LD-03-nesting-depth",
+    status: "verified",
+    requiredEvidence: ["calibration"],
+    evidence: {
+      identity:
+        "ts-ld-03.test.ts: pack registration exposes canonical id, alias, title, and wrapped cache version.",
+      config:
+        "ts-ld-03.test.ts: configSchema decodes defaults; threshold and sanitized top_n_diagnostics affect real output.",
+      positiveFixture:
+        "ts-ld-03.test.ts: nested for/if/try/if/for control flow reaches depth 5 and produces over-threshold pressure.",
+      negativeFixture:
+        "ts-ld-03.test.ts: top-level branch scores healthy with no diagnostics; nested callbacks reset depth at function boundaries.",
+      applicability:
+        "ts-ld-03.test.ts: empty repo reports zero functions, no threshold findings, score 1, and no diagnostics.",
+      score:
+        "ts-ld-03.test.ts: healthy fixture scores 1, true nesting violation scores 0, and calibrated penalty weight partially deweights pressure.",
+      diagnostics:
+        "ts-ld-03.test.ts: diagnostics include severity, message, location, threshold data, and sanitized total top_n_diagnostics cap.",
+      factorLedger:
+        "ts-ld-03.test.ts: registered pack signal emits max_nesting and top_n_diagnostics factor-ledger entries.",
+      cacheSemantics:
+        "ts-ld-03.test.ts and pack.test.ts: wrapped pack cache version includes the TS-LD-03 semantic cacheVersion after diagnostic-limit semantics change.",
+      calibration:
+        "ts-ld-03.test.ts: nesting-policy calibration records factor provenance, visibility/threshold/penalty changes, and repo self-calibration attribution.",
+    },
+  },
   pendingSignalContract("TS-LD-04-naming-conventions"),
   pendingSignalContract("TS-LD-05-domain-term-consistency"),
   pendingSignalContract("TS-AD-01-boundary-violations"),

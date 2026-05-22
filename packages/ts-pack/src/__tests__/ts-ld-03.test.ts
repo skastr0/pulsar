@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { CalibrationContextTag, appendCalibrationDecision, defineCalibrationProcessor, makeResolvedCalibrationContext } from "@skastr0/pulsar-core/calibration"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Schema } from "effect"
+import { TS_PACK_SIGNALS } from "../pack.js"
 import { TsLd03 } from "../signals/ts-ld-03-nesting-depth.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
 import { TsProjectLayer } from "../ts-project.js"
@@ -17,6 +18,15 @@ afterEach(async () => {
 })
 
 describe("TS-LD-03 (nesting depth)", () => {
+  test("empty repo has no applicable functions and scores neutral", async () => {
+    const out = await runSignal(repo.root, TsLd03, TsLd03.defaultConfig)
+    expect(out.totalFunctions).toBe(0)
+    expect(out.byFunction).toEqual([])
+    expect(out.overThreshold).toEqual([])
+    expect(TsLd03.score(out)).toBe(1)
+    expect(TsLd03.diagnose(out)).toEqual([])
+  })
+
   test("top-level branch counts as depth 1", async () => {
     await repo.write(
       "src/flat.ts",
@@ -33,6 +43,8 @@ describe("TS-LD-03 (nesting depth)", () => {
     const out = await runSignal(repo.root, TsLd03, TsLd03.defaultConfig)
     expect(out.byFunction[0]?.maxNesting).toBe(1)
     expect([...out.byFile.values()][0]?.max).toBe(1)
+    expect(TsLd03.score(out)).toBe(1)
+    expect(TsLd03.diagnose(out)).toEqual([])
   })
 
   test("deeply nested control flow reaches depth 5", async () => {
@@ -61,6 +73,22 @@ describe("TS-LD-03 (nesting depth)", () => {
     const out = await runSignal(repo.root, TsLd03, TsLd03.defaultConfig)
     expect(out.byFunction[0]?.maxNesting).toBe(5)
     expect(out.overThreshold).toHaveLength(1)
+    expect(TsLd03.score(out)).toBe(0)
+    expect(TsLd03.diagnose(out)).toEqual([
+      expect.objectContaining({
+        severity: "warn",
+        message: "Function nesting depth `process` reaches 5",
+        location: expect.objectContaining({
+          file: expect.stringContaining("src/deep.ts"),
+          line: 1,
+        }),
+        data: expect.objectContaining({
+          name: "process",
+          maxNesting: 5,
+          threshold: 4,
+        }),
+      }),
+    ])
   })
 
   test("nested callbacks reset depth at function boundaries", async () => {
@@ -127,6 +155,42 @@ describe("TS-LD-03 (nesting depth)", () => {
       max_nesting: 1,
     })
     expect(out.overThreshold).toHaveLength(1)
+  })
+
+  test("configSchema decodes defaults round-trip", () => {
+    const decoded = Schema.decodeUnknownSync(TsLd03.configSchema)(TsLd03.defaultConfig)
+    expect(decoded.max_nesting).toBe(4)
+    expect(decoded.top_n_diagnostics).toBe(10)
+    expect(decoded.exclude_globs).toContain("**/generated/**")
+  })
+
+  test("pack registration exposes identity, cache version, and config factor ledger", async () => {
+    await repo.write("src/a.ts", "export function a() { return 1 }\n")
+    const registered = registeredTsLd03()
+    const out = await runSignal(repo.root, TsLd03, TsLd03.defaultConfig)
+    const factorLedger = registered.factorLedger?.(out)
+
+    expect(registered.id).toBe("TS-LD-03-nesting-depth")
+    expect(registered.aliases).toContain("TS-LD-03")
+    expect(registered.title).toBe("Nesting depth")
+    expect(registered.cacheVersion).toContain(TsLd03.cacheVersion)
+    expect(factorLedger?.signalId).toBe(TsLd03.id)
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.max_nesting",
+        value: 4,
+        source: "signal-default",
+        scoreRole: "threshold",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        value: 10,
+        source: "signal-default",
+        scoreRole: "threshold",
+      }),
+    )
   })
 
   test("diagnostics honor top_n_diagnostics as a sanitized total cap", async () => {
@@ -474,3 +538,9 @@ describe("TS-LD-03 (nesting depth)", () => {
     expect(out.byFunction.map((entry) => entry.name)).toEqual(["real"])
   })
 })
+
+const registeredTsLd03 = () => {
+  const signal = TS_PACK_SIGNALS.find((candidate) => candidate.id === TsLd03.id)
+  if (signal === undefined) throw new Error("TS-LD-03 is not registered")
+  return signal
+}
