@@ -2,6 +2,7 @@ import { basename } from "node:path"
 import { sortedUniqueFilePaths } from "@skastr0/pulsar-core/signal"
 import { Node, type SourceFile } from "ts-morph"
 import { createModuleResolver } from "../graph/module-graph.js"
+import type { PackageInfo } from "../discovery.js"
 
 export interface ReExportAnalysis {
   readonly isBarrel: boolean
@@ -17,6 +18,7 @@ interface ReExportAnalysisConfig {
 
 export const buildReExportAnalysis = (
   sourceFiles: ReadonlyArray<SourceFile>,
+  packages: ReadonlyArray<PackageInfo>,
   config: ReExportAnalysisConfig,
 ): {
   readonly reExportTargets: ReadonlyMap<string, ReadonlyArray<string>>
@@ -25,7 +27,7 @@ export const buildReExportAnalysis = (
   const fileSet: ReadonlySet<string> = new Set(
     sourceFiles.map((sourceFile): string => sourceFile.getFilePath()),
   )
-  const resolver = createModuleResolver(sourceFiles, [])
+  const resolver = createModuleResolver(sourceFiles, packages)
   const reExportTargets = new Map<string, ReadonlyArray<string>>()
   const analysisByFile = new Map<string, ReExportAnalysis>()
 

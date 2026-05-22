@@ -12,6 +12,22 @@ afterEach(async () => {
   await repo.cleanup()
 })
 
+const writePackage = async (slug: string, name: string): Promise<void> => {
+  await repo.writeJson(`packages/${slug}/package.json`, {
+    name,
+    version: "0.0.0",
+    private: true,
+  })
+  await repo.writeJson(`packages/${slug}/tsconfig.json`, {
+    compilerOptions: {
+      target: "ES2022",
+      module: "ESNext",
+      moduleResolution: "Bundler",
+    },
+    include: ["src/**/*.ts"],
+  })
+}
+
 describe("TS-AD-03 (re-export depth)", () => {
   test("files without re-exports have zero chain depth", async () => {
     await repo.write("src/value.ts", "export const value = 1\n")
@@ -42,6 +58,50 @@ describe("TS-AD-03 (re-export depth)", () => {
     const out = await runSignal(repo.root, TsAd03, TsAd03.defaultConfig)
     expect(out.byFile.get(rootIndex)?.maxChainDepth).toBe(4)
     expect(out.stats.max).toBe(4)
+  })
+
+  test("workspace package-name re-exports participate in chain detection", async () => {
+    await writePackage("core", "@scope/core")
+    await writePackage("facade", "@scope/facade")
+    const facadePath = await repo.write("packages/facade/src/index.ts", "export * from '@scope/core'\n")
+    const corePath = await repo.write("packages/core/src/index.ts", "export { value } from './value'\n")
+    const valuePath = await repo.write("packages/core/src/value.ts", "export const value = 1\n")
+
+    const out = await runSignal(repo.root, TsAd03, {
+      ...TsAd03.defaultConfig,
+      chain_threshold: 1,
+    })
+
+    expect(out.chainsOverThreshold[0]).toMatchObject({
+      start: facadePath,
+      end: valuePath,
+      depth: 2,
+      hops: [facadePath, corePath, valuePath],
+    })
+    expect(TsAd03.diagnose(out)[0]?.message).toContain("packages/facade/src/index.ts")
+  })
+
+  test("package-local source alias re-exports participate in chain detection", async () => {
+    await writePackage("app", "@scope/app")
+    const indexPath = await repo.write("packages/app/src/index.ts", "export * from '@/features'\n")
+    const featuresPath = await repo.write(
+      "packages/app/src/features/index.ts",
+      "export { value } from './value'\n",
+    )
+    const valuePath = await repo.write("packages/app/src/features/value.ts", "export const value = 1\n")
+
+    const out = await runSignal(repo.root, TsAd03, {
+      ...TsAd03.defaultConfig,
+      chain_threshold: 1,
+    })
+
+    expect(out.chainsOverThreshold[0]).toMatchObject({
+      start: indexPath,
+      end: valuePath,
+      depth: 2,
+      hops: [indexPath, featuresPath, valuePath],
+    })
+    expect(TsAd03.diagnose(out)[0]?.message).toContain("packages/app/src/index.ts")
   })
 
   test("very deep chains exceed the threshold and appear in diagnostics", async () => {

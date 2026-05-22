@@ -2,7 +2,8 @@ import { SignalContextTag, SignalComputeError, summarize } from "@skastr0/pulsar
 import type { Diagnostic, DistributionalSummary, Signal } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
 import type { SourceFile } from "ts-morph"
-import { TsProjectTag } from "../ts-project.js"
+import { TsPackageInfoTag, TsProjectTag } from "../ts-project.js"
+import type { PackageInfo } from "../discovery.js"
 import { isExcluded } from "./shared-globs.js"
 import {
   collectReExportChains,
@@ -41,14 +42,18 @@ interface TsAd03Output {
   readonly worktreePath?: string
 }
 
-export const TsAd03: Signal<TsAd03Config, TsAd03Output, TsProjectTag | SignalContextTag> = {
+export const TsAd03: Signal<
+  TsAd03Config,
+  TsAd03Output,
+  TsProjectTag | TsPackageInfoTag | SignalContextTag
+> = {
   id: "TS-AD-03-reexport-depth",
   title: "Re-export depth",
   aliases: ["TS-AD-03"],
   tier: 1,
   category: "architectural-drift",
   kind: "structural",
-  cacheVersion: "diagnostic-limit-v1",
+  cacheVersion: "diagnostic-limit-v1-package-resolution-v1",
   configSchema: TsAd03Config,
   defaultConfig: {
     exclude_globs: [
@@ -68,13 +73,14 @@ export const TsAd03: Signal<TsAd03Config, TsAd03Output, TsProjectTag | SignalCon
   compute: (config) =>
     Effect.gen(function* () {
       const project = yield* TsProjectTag
+      const packages = yield* TsPackageInfoTag
       const context = yield* SignalContextTag
       const result = yield* Effect.try({
         try: (): TsAd03Output => {
           const sourceFiles = project
             .getSourceFiles()
             .filter((sourceFile) => !isExcluded(sourceFile.getFilePath(), config.exclude_globs))
-          return computeReExportDepthOutput(sourceFiles, config, context.worktreePath)
+          return computeReExportDepthOutput(sourceFiles, packages, config, context.worktreePath)
         },
         catch: (cause) =>
           new SignalComputeError({
@@ -112,10 +118,11 @@ export const TsAd03: Signal<TsAd03Config, TsAd03Output, TsProjectTag | SignalCon
 
 const computeReExportDepthOutput = (
   sourceFiles: ReadonlyArray<SourceFile>,
+  packages: ReadonlyArray<PackageInfo>,
   config: TsAd03Config,
   worktreePath: string,
 ): TsAd03Output => {
-  const { reExportTargets, analysisByFile } = buildReExportAnalysis(sourceFiles, config)
+  const { reExportTargets, analysisByFile } = buildReExportAnalysis(sourceFiles, packages, config)
   const allChains = collectReExportChains(reExportTargets, analysisByFile)
   const chainsOverThreshold = uniqueChains(allChains)
     .filter((chain) => chain.depth > config.chain_threshold || chain.cycle)
