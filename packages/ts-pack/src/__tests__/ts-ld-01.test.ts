@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
+import { TS_PACK_SIGNALS } from "../pack.js"
 import { TsLd01 } from "../signals/ts-ld-01-complexity.js"
 import { Effect, Layer, Schema } from "effect"
 import { CalibrationContextTag, defineCalibrationProcessor, makeResolvedCalibrationContext, appendCalibrationDecision } from "@skastr0/pulsar-core/calibration"
@@ -259,4 +260,46 @@ export function tangled(value: number, enabled: boolean) {
     expect(decoded.top_n_diagnostics).toBe(10)
     expect(decoded.exclude_globs).toContain("**/*.test.ts")
   })
+
+  test("pack registration exposes identity, cache version, and config factor ledger", async () => {
+    await repo.write(
+      "src/index.ts",
+      `
+export function simple() {
+  return 1
+}
+`,
+    )
+    const registered = registeredTsLd01()
+    const out = await runSignal(repo.root, TsLd01, TsLd01.defaultConfig)
+    const factorLedger = registered.factorLedger?.(out)
+
+    expect(registered.id).toBe("TS-LD-01-cyclomatic-complexity")
+    expect(registered.aliases).toContain("TS-LD-01")
+    expect(registered.title).toBe("Cyclomatic complexity")
+    expect(registered.cacheVersion).toContain(TsLd01.cacheVersion)
+    expect(factorLedger?.signalId).toBe(TsLd01.id)
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.max_complexity",
+        value: 20,
+        source: "signal-default",
+        scoreRole: "threshold",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        value: 10,
+        source: "signal-default",
+        scoreRole: "threshold",
+      }),
+    )
+  })
 })
+
+const registeredTsLd01 = () => {
+  const signal = TS_PACK_SIGNALS.find((candidate) => candidate.id === TsLd01.id)
+  if (signal === undefined) throw new Error("TS-LD-01 is not registered")
+  return signal
+}

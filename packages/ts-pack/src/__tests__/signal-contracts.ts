@@ -1,7 +1,33 @@
 import { pendingSignalContract, type SignalContract } from "./signal-contract.js"
 
 export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
-  pendingSignalContract("TS-LD-01-cyclomatic-complexity"),
+  {
+    id: "TS-LD-01-cyclomatic-complexity",
+    status: "verified",
+    requiredEvidence: ["calibration"],
+    evidence: {
+      identity:
+        "ts-ld-01.test.ts: pack registration exposes canonical id, alias, title, and wrapped cache version.",
+      config:
+        "ts-ld-01.test.ts: configSchema decodes defaults; diagnostics test proves top_n_diagnostics affects real diagnose output.",
+      positiveFixture:
+        "ts-ld-01.test.ts: counts branches and boolean operators; single extreme function produces over-threshold pressure.",
+      negativeFixture:
+        "ts-ld-01.test.ts: simple applicable function scores healthy with no diagnostics; nested callbacks do not inflate the outer function.",
+      applicability:
+        "ts-ld-01.test.ts: empty inspected source reports totalFunctions=0, score 1, and not_applicable metadata.",
+      score:
+        "ts-ld-01.test.ts: healthy fixture scores 1; single extreme function makes local max pressure dominate and drops score below 0.4.",
+      diagnostics:
+        "ts-ld-01.test.ts: diagnose reports only over-threshold functions, honors top_n_diagnostics, and omits healthy diagnostics.",
+      factorLedger:
+        "ts-ld-01.test.ts: registered pack signal emits config.max_complexity and config.top_n_diagnostics factor-ledger entries.",
+      cacheSemantics:
+        "ts-ld-01.test.ts and pack.test.ts: wrapped pack cache version includes the TS-LD-01 semantic cacheVersion after diagnostic-semantics bumps.",
+      calibration:
+        "ts-ld-01.test.ts: callback-context calibration renames Effect.fn callbacks and records module processor attribution.",
+    },
+  },
   pendingSignalContract("TS-LD-02-function-size-distribution"),
   pendingSignalContract("TS-LD-03-nesting-depth"),
   pendingSignalContract("TS-LD-04-naming-conventions"),
