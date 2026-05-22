@@ -261,7 +261,33 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "ts-ad-05.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AD-05 semantic cacheVersion after diagnostic-limit and warn-threshold semantics changed.",
     },
   },
-  pendingSignalContract("TS-DE-01-type-level-coupling"),
+  {
+    id: "TS-DE-01-type-level-coupling",
+    status: "verified",
+    requiredEvidence: ["calibration"],
+    evidence: {
+      identity:
+        "ts-de-01.test.ts: canonical id, alias, title, tier/category/kind, no compound inputs, semantic cacheVersion, pack registration, and registry alias lookup are asserted.",
+      config:
+        "ts-de-01.test.ts: configSchema decodes defaults, exclude_globs remove files from the module set, precise_module_limit selects the fast path, path aliases resolve in fast mode, and diagnostics honor sanitized top_n_diagnostics.",
+      positiveFixture:
+        "ts-de-01.test.ts: real ts-morph fixtures count direct type imports, fast-path import declarations, fast-path import-type references, path-alias type imports, re-export attribution to original type definitions, mixed-reference dedupe, and diagnostic hub pressure.",
+      negativeFixture:
+        "ts-de-01.test.ts: empty projects, runtime value imports, ordinary one-type coupling, incoming model fan-in, and excluded files do not create score pressure or diagnostics.",
+      applicability:
+        "ts-de-01.test.ts: empty projects are measured as neutral output with totalModules=0, no outputMetadata applicability override, and no external input dependency.",
+      score:
+        "ts-de-01.test.ts: score is 1 for empty/ordinary/fan-in fixtures, drops for outlier outgoing type coupling, and returns to 1 when module calibration sets penalty_weight to 0.",
+      diagnostics:
+        "ts-de-01.test.ts: diagnostics include warning severity, file message, absolute location, outlier threshold, counterpart data, policy decision data, stable ranking, and sanitized diagnostic cap.",
+      factorLedger:
+        "ts-de-01.test.ts: registered pack signal emits exclude_globs, top_n_diagnostics, and precise_module_limit config factor-ledger entries; calibration tests assert module factor provenance for visibility, severity, and penalty_weight.",
+      cacheSemantics:
+        "ts-de-01.test.ts and pack.test.ts: wrapped pack cache version includes the TS-DE-01 semantic cacheVersion after diagnostic-limit and fast path target-resolution semantics changed.",
+      calibration:
+        "ts-de-01.test.ts: project-module type-coupling policy proves visible/severity/penalty ledger attribution and diagnostic policy payloads; Pulsar self-calibration proves repo-local penalty tuning with rule IDs, factor paths, provenance, and visible score effects.",
+    },
+  },
   pendingSignalContract("TS-DE-02-fan-in-fan-out"),
   pendingSignalContract("TS-DE-03-propagation-cost"),
   pendingSignalContract("TS-DE-04-package-dependency-health"),

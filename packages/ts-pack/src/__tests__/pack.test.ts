@@ -5,6 +5,7 @@ import { TsAd02 } from "../signals/ts-ad-02-circular-deps.js"
 import { TsAd03 } from "../signals/ts-ad-03-reexport-depth.js"
 import { TsAd04 } from "../signals/ts-ad-04-boundary-parser-coverage.js"
 import { TsAd05 } from "../signals/ts-ad-05-boundary-trust-breach.js"
+import { TsDe01 } from "../signals/ts-de-01-type-level-coupling.js"
 import { TsDe04 } from "../signals/ts-de-04-package-dependency-health.js"
 import { TsLd01 } from "../signals/ts-ld-01-complexity.js"
 import { TsLd09 } from "../signals/ts-ld-09-error-channel-opacity.js"
@@ -19,6 +20,7 @@ describe("TS pack cache versions", () => {
     const ad03 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-AD-03"))
     const ad04 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-AD-04"))
     const ad05 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-AD-05"))
+    const de01 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-DE-01"))
     const de04 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-DE-04"))
     const ld01 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-LD-01"))
     const ld09 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-LD-09"))
@@ -32,6 +34,7 @@ describe("TS pack cache versions", () => {
     expect(ad03?.cacheVersion).toContain(TsAd03.cacheVersion)
     expect(ad04?.cacheVersion).toContain(TsAd04.cacheVersion)
     expect(ad05?.cacheVersion).toContain(TsAd05.cacheVersion)
+    expect(de01?.cacheVersion).toContain(TsDe01.cacheVersion)
     expect(ab02?.cacheVersion).toContain(TsAb02.cacheVersion)
     expect(de04?.cacheVersion).toContain(TsDe04.cacheVersion)
     expect(ld01?.cacheVersion).toContain(TsLd01.cacheVersion)
