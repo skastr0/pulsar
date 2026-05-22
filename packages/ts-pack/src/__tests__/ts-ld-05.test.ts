@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { Schema } from "effect"
+import { TS_PACK_SIGNALS } from "../pack.js"
 import { TsLd05 } from "../signals/ts-ld-05-domain-term-consistency.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
 
@@ -26,6 +28,18 @@ afterEach(async () => {
 })
 
 describe("TS-LD-05 (domain term consistency)", () => {
+  test("empty repo with glossary has no identifiers and scores neutral", async () => {
+    const out = await runSignal(repo.root, TsLd05, TsLd05.defaultConfig, {
+      glossary: GLOSSARY,
+    })
+
+    expect(out.referenceDataStatus).toBe("loaded")
+    expect(out.totalIdentifiers).toBe(0)
+    expect(out.identifiers).toEqual([])
+    expect(TsLd05.score(out)).toBe(1)
+    expect(TsLd05.diagnose(out)).toEqual([])
+  })
+
   test("classifies identifiers across all glossary drift cases", async () => {
     await repo.write(
       "src/terms.ts",
@@ -57,6 +71,48 @@ describe("TS-LD-05 (domain term consistency)", () => {
     ).toBe("new-unique")
     expect(out.identifiers.find((item) => item.name === "OrdrLine")?.suggestedCanonical).toBe(
       "order line",
+    )
+    expect(out).toMatchObject({
+      totalIdentifiers: 4,
+      matchCount: 1,
+      newUniqueCount: 1,
+      duplicateCount: 1,
+      conflictCount: 1,
+    })
+    expect(TsLd05.score(out)).toBeCloseTo(0.6125)
+
+    const diagnostics = TsLd05.diagnose(out)
+    expect(diagnostics).toHaveLength(3)
+    expect(diagnostics.map((diagnostic) => diagnostic.severity)).toEqual([
+      "info",
+      "warn",
+      "info",
+    ])
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        message:
+          "Identifier `LineOrder` classified as duplicates-canonical (suggested canonical: order line)",
+        location: expect.objectContaining({
+          file: expect.stringContaining("src/terms.ts"),
+        }),
+        data: expect.objectContaining({
+          name: "LineOrder",
+          classification: "duplicates-canonical",
+          suggestedCanonical: "order line",
+        }),
+      }),
+    )
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        message:
+          "Identifier `OrdrLine` classified as conflicts-with-canonical (suggested canonical: order line)",
+        severity: "warn",
+        data: expect.objectContaining({
+          name: "OrdrLine",
+          classification: "conflicts-with-canonical",
+          suggestedCanonical: "order line",
+        }),
+      }),
     )
   })
 
@@ -97,6 +153,36 @@ describe("TS-LD-05 (domain term consistency)", () => {
     }
 
     expect(TsLd05.score(conflictOutput)).toBeLessThan(TsLd05.score(newUniqueOutput))
+  })
+
+  test("configSchema decodes defaults round-trip", () => {
+    const decoded = Schema.decodeUnknownSync(TsLd05.configSchema)(TsLd05.defaultConfig)
+
+    expect(decoded.top_n_diagnostics).toBe(20)
+    expect(decoded.exclude_globs).toContain("**/*.test.ts")
+  })
+
+  test("pack registration exposes identity, cache version, and config factor ledger", async () => {
+    await repo.write("src/terms.ts", "export class OrderLine {}\n")
+    const registered = registeredTsLd05()
+    const out = await runSignal(repo.root, TsLd05, TsLd05.defaultConfig, {
+      glossary: GLOSSARY,
+    })
+    const factorLedger = registered.factorLedger?.(out)
+
+    expect(registered.id).toBe("TS-LD-05-domain-term-consistency")
+    expect(registered.aliases).toContain("TS-LD-05")
+    expect(registered.title).toBe("Domain term consistency")
+    expect(registered.cacheVersion).toContain(TsLd05.cacheVersion)
+    expect(factorLedger?.signalId).toBe(TsLd05.id)
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        value: 20,
+        source: "signal-default",
+        scoreRole: "threshold",
+      }),
+    )
   })
 
   test("diagnostics honor top_n_diagnostics as a sanitized total cap", async () => {
@@ -155,7 +241,14 @@ describe("TS-LD-05 (domain term consistency)", () => {
     const out = await runSignal(repo.root, TsLd05, TsLd05.defaultConfig)
 
     expect(out.referenceDataStatus).toBe("missing")
+    expect(TsLd05.outputMetadata?.(out)).toEqual({ applicability: "insufficient_evidence" })
     expect(TsLd05.score(out)).toBe(1)
     expect(TsLd05.diagnose(out)).toEqual([{ severity: "info", message: "no glossary configured" }])
   })
 })
+
+const registeredTsLd05 = () => {
+  const signal = TS_PACK_SIGNALS.find((candidate) => candidate.id === TsLd05.id)
+  if (signal === undefined) throw new Error("TS-LD-05 is not registered")
+  return signal
+}

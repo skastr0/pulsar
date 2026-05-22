@@ -109,7 +109,33 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "ts-ld-04.test.ts: schema-conventions reference data drives loaded naming checks; missing reference data degrades explicitly and observer applicability matches single-signal output.",
     },
   },
-  pendingSignalContract("TS-LD-05-domain-term-consistency"),
+  {
+    id: "TS-LD-05-domain-term-consistency",
+    status: "verified",
+    requiredEvidence: ["referenceData"],
+    evidence: {
+      identity:
+        "ts-ld-05.test.ts: pack registration exposes canonical id, alias, title, and wrapped cache version.",
+      config:
+        "ts-ld-05.test.ts: configSchema decodes defaults and diagnostics honor sanitized top_n_diagnostics.",
+      positiveFixture:
+        "ts-ld-05.test.ts: glossary fixture classifies duplicate, conflict, and novel identifiers with canonical suggestions.",
+      negativeFixture:
+        "ts-ld-05.test.ts: canonical glossary terms match without diagnostics; empty loaded-glossary repo has no identifiers.",
+      applicability:
+        "ts-ld-05.test.ts: empty repo with glossary is neutral; missing glossary returns insufficient_evidence metadata.",
+      score:
+        "ts-ld-05.test.ts: loaded glossary drift fixture scores from weighted conflict/duplicate/novel counts; missing and empty glossary-backed fixtures score 1.",
+      diagnostics:
+        "ts-ld-05.test.ts: diagnostics include info/warn severity by classification, canonical suggestions, locations, data, and sanitized total top_n_diagnostics cap.",
+      factorLedger:
+        "ts-ld-05.test.ts: registered pack signal emits top_n_diagnostics factor-ledger entry.",
+      cacheSemantics:
+        "ts-ld-05.test.ts and pack.test.ts: wrapped pack cache version includes the TS-LD-05 semantic cacheVersion after diagnostic-limit semantics change.",
+      referenceData:
+        "ts-ld-05.test.ts: glossary reference data drives loaded term classification; missing glossary degrades explicitly with info diagnostic and insufficient_evidence metadata.",
+    },
+  },
   pendingSignalContract("TS-AD-01-boundary-violations"),
   pendingSignalContract("TS-AD-02-circular-dependencies"),
   pendingSignalContract("TS-AD-03-reexport-depth"),
