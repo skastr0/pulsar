@@ -99,6 +99,56 @@ describe("TS-LD-05 (domain term consistency)", () => {
     expect(TsLd05.score(conflictOutput)).toBeLessThan(TsLd05.score(newUniqueOutput))
   })
 
+  test("diagnostics honor top_n_diagnostics as a sanitized total cap", async () => {
+    await repo.write(
+      "src/terms.ts",
+      [
+        "export class LineOrder {}",
+        "export class OrdrLine {}",
+        "export class TelemetryProbe {}",
+        "",
+      ].join("\n"),
+    )
+
+    const fractional = await runSignal(repo.root, TsLd05, {
+      ...TsLd05.defaultConfig,
+      top_n_diagnostics: 1.8,
+    }, {
+      glossary: GLOSSARY,
+    })
+    const negative = await runSignal(repo.root, TsLd05, {
+      ...TsLd05.defaultConfig,
+      top_n_diagnostics: -1,
+    }, {
+      glossary: GLOSSARY,
+    })
+    const nanLimit = await runSignal(repo.root, TsLd05, {
+      ...TsLd05.defaultConfig,
+      top_n_diagnostics: Number.NaN,
+    }, {
+      glossary: GLOSSARY,
+    })
+    const infiniteLimit = await runSignal(repo.root, TsLd05, {
+      ...TsLd05.defaultConfig,
+      top_n_diagnostics: Infinity,
+    }, {
+      glossary: GLOSSARY,
+    })
+
+    expect(fractional.identifiers).toHaveLength(3)
+    expect(fractional.diagnosticLimit).toBe(1)
+    expect(TsLd05.diagnose(fractional)).toHaveLength(1)
+    expect(negative.identifiers).toHaveLength(3)
+    expect(negative.diagnosticLimit).toBe(0)
+    expect(TsLd05.diagnose(negative)).toEqual([])
+    expect(nanLimit.identifiers).toHaveLength(3)
+    expect(nanLimit.diagnosticLimit).toBe(0)
+    expect(TsLd05.diagnose(nanLimit)).toEqual([])
+    expect(infiniteLimit.identifiers).toHaveLength(3)
+    expect(infiniteLimit.diagnosticLimit).toBe(0)
+    expect(TsLd05.diagnose(infiniteLimit)).toEqual([])
+  })
+
   test("gracefully degrades when no glossary is configured", async () => {
     await repo.write("src/terms.ts", "export class TelemetryProbe {}\n")
 

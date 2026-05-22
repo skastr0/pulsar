@@ -67,7 +67,7 @@ export const TsLd05: Signal<TsLd05Config, TsLd05Output, TsProjectTag | Reference
   tier: 2,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "reference-data-applicability-v1",
+  cacheVersion: "reference-data-applicability-v2",
   configSchema: TsLd05Config,
   defaultConfig: {
     exclude_globs: [
@@ -99,7 +99,7 @@ export const TsLd05: Signal<TsLd05Config, TsLd05Output, TsProjectTag | Reference
               duplicateCount: 0,
               conflictCount: 0,
               referenceDataStatus: "missing",
-              diagnosticLimit: config.top_n_diagnostics,
+              diagnosticLimit: normalizeDiagnosticLimit(config.top_n_diagnostics),
             }
           }
 
@@ -120,7 +120,7 @@ export const TsLd05: Signal<TsLd05Config, TsLd05Output, TsProjectTag | Reference
               (item) => item.classification === "conflicts-with-canonical",
             ).length,
             referenceDataStatus: "loaded",
-            diagnosticLimit: config.top_n_diagnostics,
+            diagnosticLimit: normalizeDiagnosticLimit(config.top_n_diagnostics),
           }
         },
         catch: (cause) =>
@@ -286,6 +286,9 @@ const compareConflictCandidates = (
   }
   return left.canonical.localeCompare(right.canonical)
 }
+
+const normalizeDiagnosticLimit = (limit: number): number =>
+  Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : 0
 
 const minimumTokenDistance = (
   leftTokens: ReadonlyArray<string>,
