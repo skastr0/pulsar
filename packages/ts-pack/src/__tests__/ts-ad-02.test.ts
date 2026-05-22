@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Effect, Schema } from "effect"
+import { TS_PACK_SIGNALS } from "../pack.js"
 import {
   TsAd02,
   type TsAd02Output,
@@ -74,6 +75,7 @@ describe("TS-AD-02 (circular dependencies)", () => {
     const out = await runCompute()
     expect(out.cycleCount).toBe(0)
     expect(out.cycles).toHaveLength(0)
+    expect(TsAd02.outputMetadata?.(out)).toBeUndefined()
     expect(TsAd02.score(out)).toBe(1)
   })
 
@@ -344,6 +346,27 @@ describe("TS-AD-02 (circular dependencies)", () => {
     expect(decoded.exclude_globs.length).toBeGreaterThan(0)
   })
 
+  test("pack registration exposes identity, cache version, and config factor ledger", async () => {
+    await writeTs("a.ts", "export const a = 1\n")
+    const registered = registeredTsAd02()
+    const out = await runCompute()
+    const factorLedger = registered.factorLedger?.(out)
+
+    expect(registered.id).toBe("TS-AD-02-circular-dependencies")
+    expect(registered.aliases).toContain("TS-AD-02")
+    expect(registered.title).toBe("Circular dependencies")
+    expect(registered.cacheVersion).toContain(TsAd02.cacheVersion)
+    expect(factorLedger?.signalId).toBe(TsAd02.id)
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        value: 10,
+        source: "signal-default",
+        scoreRole: "threshold",
+      }),
+    )
+  })
+
   test("diagnose lists largest cycles first", async () => {
     // Two independent SCCs of different sizes.
     await writeTs("a.ts", "import { b } from './b'\nexport const a = b + 1\n")
@@ -369,6 +392,19 @@ describe("TS-AD-02 (circular dependencies)", () => {
     const breakEdge = out.cycles[0]!.minBreakEdge!
 
     expect(diagnostic?.message).toContain("candidate break")
+    expect(diagnostic).toEqual(
+      expect.objectContaining({
+        severity: "warn",
+        data: expect.objectContaining({
+          hash: out.cycles[0]?.identityHash,
+          size: 2,
+          modules: expect.arrayContaining([aPath, bPath]),
+          architecturalSpan: out.cycles[0]?.architecturalSpan,
+          minBreakEdge: breakEdge,
+          severityReason: "local-runtime-cycle",
+        }),
+      }),
+    )
     expect(diagnostic?.location).toEqual({
       file: breakEdge.from,
     })
@@ -462,3 +498,9 @@ describe("TS-AD-02 (circular dependencies)", () => {
     expect(diagnostics[0]?.location).toEqual({ file: aPath, line: 1 })
   })
 })
+
+const registeredTsAd02 = () => {
+  const signal = TS_PACK_SIGNALS.find((candidate) => candidate.id === TsAd02.id)
+  if (signal === undefined) throw new Error("TS-AD-02 is not registered")
+  return signal
+}

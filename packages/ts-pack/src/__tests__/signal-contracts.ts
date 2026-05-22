@@ -163,7 +163,30 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "ts-ad-01.test.ts: schema-conventions boundary reference data drives loaded boundary classification; missing conventions degrade explicitly through signal and observer paths.",
     },
   },
-  pendingSignalContract("TS-AD-02-circular-dependencies"),
+  {
+    id: "TS-AD-02-circular-dependencies",
+    status: "verified",
+    evidence: {
+      identity:
+        "ts-ad-02.test.ts: pack registration exposes canonical id, alias, title, and wrapped cache version.",
+      config:
+        "ts-ad-02.test.ts: configSchema decodes defaults and diagnostics honor sanitized top_n_diagnostics.",
+      positiveFixture:
+        "ts-ad-02.test.ts: fixtures detect self-loops, relative cycles, workspace package-name cycles, package-local alias cycles, larger SCCs, many scattered cycles, and repo-scale cycles.",
+      negativeFixture:
+        "ts-ad-02.test.ts: acyclic imports, same-file namespace re-exports, type-only cycles, generated, vendored, example, and sample sources produce no cycles.",
+      applicability:
+        "ts-ad-02.test.ts: acyclic projects stay applicable with no output metadata and score 1.",
+      score:
+        "ts-ad-02.test.ts: score distinguishes local, scattered, subsystem, and repo-scale cycles and preserves the documented floor.",
+      diagnostics:
+        "ts-ad-02.test.ts: diagnostics sort largest cycles first, include severity, candidate break location, hash/data payload, active/expired bypass behavior, and sanitized cycle cap.",
+      factorLedger:
+        "ts-ad-02.test.ts: registered pack signal emits top_n_diagnostics factor-ledger entry.",
+      cacheSemantics:
+        "ts-ad-02.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AD-02 semantic cacheVersion after diagnostic-limit and package-resolution semantics changes.",
+    },
+  },
   pendingSignalContract("TS-AD-03-reexport-depth"),
   pendingSignalContract("TS-AD-04-boundary-parser-coverage"),
   pendingSignalContract("TS-AD-05-boundary-trust-breach"),
