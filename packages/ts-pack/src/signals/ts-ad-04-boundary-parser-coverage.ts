@@ -101,7 +101,7 @@ export const TsAd04: Signal<TsAd04Config, TsAd04Output, TsProjectTag> = {
   tier: 1,
   category: "architectural-drift",
   kind: "structural",
-  cacheVersion: "ts-boundary-parser-evidence-v1",
+  cacheVersion: "ts-boundary-parser-evidence-v1-diagnostic-limit-v1",
   configSchema: TsAd04Config,
   defaultConfig: {
     boundary_globs: [
@@ -207,7 +207,7 @@ const computeBoundaryParserCoverage = (
   sourceFiles: ReadonlyArray<SourceFile>,
   config: TsAd04Config,
 ): TsAd04Output => {
-  const diagnosticLimit = Math.max(0, Math.floor(config.top_n_diagnostics))
+  const diagnosticLimit = normalizeDiagnosticLimit(config.top_n_diagnostics)
   if (config.boundary_globs.length === 0) {
     return baseOutput("not_configured", 0, 0, [], [], diagnosticLimit)
   }
@@ -399,6 +399,11 @@ const calleeText = (node: Node): string => {
 
 const normalizeCallText = (text: string): string =>
   text.toLowerCase().replace(/\s+/gu, "")
+
+const normalizeDiagnosticLimit = (value: number): number => {
+  if (!Number.isFinite(value)) return 0
+  return Math.max(0, Math.floor(value))
+}
 
 const compareBoundaryParserFindings = (
   left: BoundaryParserFinding,
