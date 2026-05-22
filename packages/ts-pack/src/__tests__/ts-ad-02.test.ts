@@ -18,6 +18,29 @@ const writeTs = async (relPath: string, content: string): Promise<string> => {
   return full
 }
 
+const writeJson = async (relPath: string, value: unknown): Promise<string> => {
+  const full = join(repo, relPath)
+  await mkdir(join(full, ".."), { recursive: true })
+  await writeFile(full, JSON.stringify(value, null, 2))
+  return full
+}
+
+const writePackage = async (slug: string, name: string): Promise<void> => {
+  await writeJson(`packages/${slug}/package.json`, {
+    name,
+    version: "0.0.0",
+    private: true,
+  })
+  await writeJson(`packages/${slug}/tsconfig.json`, {
+    compilerOptions: {
+      target: "ES2022",
+      module: "ESNext",
+      moduleResolution: "Bundler",
+    },
+    include: ["src/**/*.ts"],
+  })
+}
+
 const runCompute = async (config = TsAd02.defaultConfig): Promise<TsAd02Output> => {
   const program = TsAd02.compute(config, new Map()).pipe(
     Effect.provide(TsProjectLayer(repo)),
@@ -180,6 +203,43 @@ describe("TS-AD-02 (circular dependencies)", () => {
     const s = TsAd02.score(out)
     expect(s).toBeLessThan(1)
     expect(s).toBeGreaterThan(0.5)
+  })
+
+  test("workspace package-name imports participate in cycle detection", async () => {
+    await writePackage("a", "@scope/a")
+    await writePackage("b", "@scope/b")
+    const aPath = await writeTs(
+      "packages/a/src/index.ts",
+      "import { b } from '@scope/b'\nexport const a = b + 1\n",
+    )
+    const bPath = await writeTs(
+      "packages/b/src/index.ts",
+      "import { a } from '@scope/a'\nexport const b = a + 1\n",
+    )
+
+    const out = await runCompute()
+
+    expect(out.cycleCount).toBe(1)
+    expect(out.cycles[0]?.modules).toEqual(expect.arrayContaining([aPath, bPath]))
+    expect(TsAd02.diagnose(out)[0]?.message).toContain("candidate break")
+  })
+
+  test("package-local source aliases participate in cycle detection", async () => {
+    await writePackage("app", "@scope/app")
+    const aPath = await writeTs(
+      "packages/app/src/a.ts",
+      "import { b } from '@/b'\nexport const a = b + 1\n",
+    )
+    const bPath = await writeTs(
+      "packages/app/src/b.ts",
+      "import { a } from '@/a'\nexport const b = a + 1\n",
+    )
+
+    const out = await runCompute()
+
+    expect(out.cycleCount).toBe(1)
+    expect(out.cycles[0]?.modules).toEqual(expect.arrayContaining([aPath, bPath]))
+    expect(TsAd02.diagnose(out)[0]?.message).toContain("candidate break")
   })
 
   test("larger SCC (4 nodes): largestCycleSize reflects it", async () => {

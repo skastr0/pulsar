@@ -8,6 +8,7 @@ import { computeDiagnosticHash, parseBypasses } from "@skastr0/pulsar-core/signa
 import type { PulsarAllowBypass } from "@skastr0/pulsar-core/signal"
 import type { SourceFile } from "ts-morph"
 import { createModuleResolver } from "../graph/module-graph.js"
+import type { PackageInfo } from "../discovery.js"
 import { isExcluded } from "./shared-globs.js"
 import {
   isTypeOnlyModuleDeclaration,
@@ -48,6 +49,7 @@ interface CycleAnalysis {
 export const analyzeCircularDependencies = (
   sourceFiles: ReadonlyArray<SourceFile>,
   excludeGlobs: ReadonlyArray<string>,
+  packages: ReadonlyArray<PackageInfo>,
 ): CycleAnalysis => {
   const includedSourceFiles = sourceFiles.filter(
     (sf) => !isExcluded(sf.getFilePath(), excludeGlobs),
@@ -60,7 +62,7 @@ export const analyzeCircularDependencies = (
     includedSourceFiles.map((sf) => [sf.getFilePath(), parseBypasses(sf.getFullText())] as const),
   )
 
-  const graph = buildImportGraph(includedSourceFiles, fileSet)
+  const graph = buildImportGraph(includedSourceFiles, fileSet, packages)
   const sccs = stronglyConnectedComponents(graph)
 
   const rawCycles: Array<Cycle> = []
@@ -105,9 +107,10 @@ export const analyzeCircularDependencies = (
 const buildImportGraph = (
   sourceFiles: ReadonlyArray<SourceFile>,
   fileSet: ReadonlySet<string>,
+  packages: ReadonlyArray<PackageInfo>,
 ): Map<string, Set<string>> => {
   const graph = new Map<string, Set<string>>()
-  const resolver = createModuleResolver(sourceFiles, [])
+  const resolver = createModuleResolver(sourceFiles, packages)
   for (const sf of sourceFiles) {
     const path = sf.getFilePath()
     const targets = new Set<string>()

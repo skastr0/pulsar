@@ -1,7 +1,7 @@
 import { SignalComputeError } from "@skastr0/pulsar-core/signal"
 import type { Diagnostic, Signal } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
-import { TsProjectTag } from "../ts-project.js"
+import { TsPackageInfoTag, TsProjectTag } from "../ts-project.js"
 import {
   analyzeCircularDependencies,
   type Cycle,
@@ -40,14 +40,14 @@ export interface TsAd02Output {
  *   scannable; raw output preserves all cycles for consumers that want
  *   the full picture.
  */
-export const TsAd02: Signal<TsAd02Config, TsAd02Output, TsProjectTag> = {
+export const TsAd02: Signal<TsAd02Config, TsAd02Output, TsProjectTag | TsPackageInfoTag> = {
   id: "TS-AD-02-circular-dependencies",
   title: "Circular dependencies",
   aliases: ["TS-AD-02"],
   tier: 1,
   category: "architectural-drift",
   kind: "structural",
-  cacheVersion: "semantic-type-only-imports-v2",
+  cacheVersion: "semantic-type-only-imports-v3",
   configSchema: TsAd02Config,
   defaultConfig: {
     // Rationale: cycles inside test scaffolding or generated output are
@@ -83,11 +83,13 @@ export const TsAd02: Signal<TsAd02Config, TsAd02Output, TsProjectTag> = {
   compute: (config) =>
     Effect.gen(function* () {
       const project = yield* TsProjectTag
+      const packages = yield* TsPackageInfoTag
       const result = yield* Effect.try({
         try: (): TsAd02Output => {
           const analysis = analyzeCircularDependencies(
             project.getSourceFiles(),
             config.exclude_globs,
+            packages,
           )
 
           return {
