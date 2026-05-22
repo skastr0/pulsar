@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { Schema } from "effect"
+import { TS_PACK_SIGNALS } from "../pack.js"
 import { TsAd03 } from "../signals/ts-ad-03-reexport-depth.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
 
@@ -35,6 +37,9 @@ describe("TS-AD-03 (re-export depth)", () => {
     const out = await runSignal(repo.root, TsAd03, TsAd03.defaultConfig)
     expect(out.stats.max).toBe(0)
     expect(out.chainsOverThreshold).toHaveLength(0)
+    expect(TsAd03.outputMetadata?.(out)).toBeUndefined()
+    expect(TsAd03.score(out)).toBe(1)
+    expect(TsAd03.diagnose(out)).toEqual([])
   })
 
   test("a single re-export produces depth 1", async () => {
@@ -119,6 +124,22 @@ describe("TS-AD-03 (re-export depth)", () => {
     expect(diagnostic?.message).toContain("depth 6")
     expect(diagnostic?.message).toContain("src/index.ts")
     expect(diagnostic?.message).not.toContain(repo.root)
+    expect(diagnostic).toEqual(
+      expect.objectContaining({
+        severity: "warn",
+        location: expect.objectContaining({
+          file: expect.stringContaining("src/index.ts"),
+        }),
+        data: expect.objectContaining({
+          start: expect.stringContaining("src/index.ts"),
+          end: expect.stringContaining("src/l1/l2/l3/l4/l5/value.ts"),
+          depth: 6,
+          effectiveDepth: 4,
+          cycle: false,
+        }),
+      }),
+    )
+    expect(TsAd03.score(out)).toBeCloseTo(2 / 3)
     const data = diagnostic?.data as
       | { readonly hops?: ReadonlyArray<string>; readonly displayHops?: ReadonlyArray<string> }
       | undefined
@@ -221,6 +242,35 @@ describe("TS-AD-03 (re-export depth)", () => {
     expect(TsAd03.diagnose(infiniteLimit)).toEqual([])
   })
 
+  test("configSchema decodes defaults round-trip", () => {
+    const decoded = Schema.decodeUnknownSync(TsAd03.configSchema)(TsAd03.defaultConfig)
+
+    expect(decoded.chain_threshold).toBe(3)
+    expect(decoded.top_n_diagnostics).toBe(10)
+    expect(decoded.exclude_globs).toContain("**/*.test.ts")
+  })
+
+  test("pack registration exposes identity, cache version, and config factor ledger", async () => {
+    await repo.write("src/value.ts", "export const value = 1\n")
+    const registered = registeredTsAd03()
+    const out = await runSignal(repo.root, TsAd03, TsAd03.defaultConfig)
+    const factorLedger = registered.factorLedger?.(out)
+
+    expect(registered.id).toBe("TS-AD-03-reexport-depth")
+    expect(registered.aliases).toContain("TS-AD-03")
+    expect(registered.title).toBe("Re-export depth")
+    expect(registered.cacheVersion).toContain(TsAd03.cacheVersion)
+    expect(factorLedger?.signalId).toBe(TsAd03.id)
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        value: 10,
+        source: "signal-default",
+        scoreRole: "threshold",
+      }),
+    )
+  })
+
   test("circular re-exports are capped and diagnosed", async () => {
     await repo.write("src/a.ts", "export * from './b'\n")
     await repo.write("src/b.ts", "export * from './a'\n")
@@ -232,3 +282,9 @@ describe("TS-AD-03 (re-export depth)", () => {
     expect(out.chainsOverThreshold.some((chain) => chain.cycle)).toBe(true)
   })
 })
+
+const registeredTsAd03 = () => {
+  const signal = TS_PACK_SIGNALS.find((candidate) => candidate.id === TsAd03.id)
+  if (signal === undefined) throw new Error("TS-AD-03 is not registered")
+  return signal
+}

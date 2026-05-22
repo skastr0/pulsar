@@ -187,7 +187,30 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "ts-ad-02.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AD-02 semantic cacheVersion after diagnostic-limit and package-resolution semantics changes.",
     },
   },
-  pendingSignalContract("TS-AD-03-reexport-depth"),
+  {
+    id: "TS-AD-03-reexport-depth",
+    status: "verified",
+    evidence: {
+      identity:
+        "ts-ad-03.test.ts: pack registration exposes canonical id, alias, title, and wrapped cache version.",
+      config:
+        "ts-ad-03.test.ts: configSchema decodes defaults and diagnostics honor sanitized top_n_diagnostics.",
+      positiveFixture:
+        "ts-ad-03.test.ts: fixtures detect deep relative chains, workspace package-name re-export chains, package-local alias chains, repeated branches, and circular re-exports.",
+      negativeFixture:
+        "ts-ad-03.test.ts: files without re-exports have zero depth and produce no diagnostics; repeated identical chains are deduplicated.",
+      applicability:
+        "ts-ad-03.test.ts: acyclic/no-reexport projects stay applicable with no output metadata and score 1.",
+      score:
+        "ts-ad-03.test.ts: score responds to effective depth over threshold while discounted directory-index relays can remain neutral.",
+      diagnostics:
+        "ts-ad-03.test.ts: diagnostics include severity, compact path messages, absolute hops, display hops, location, cycle flag, effective depth, representative starts, and sanitized chain cap.",
+      factorLedger:
+        "ts-ad-03.test.ts: registered pack signal emits top_n_diagnostics factor-ledger entry.",
+      cacheSemantics:
+        "ts-ad-03.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AD-03 semantic cacheVersion after diagnostic-limit and package-resolution semantics changes.",
+    },
+  },
   pendingSignalContract("TS-AD-04-boundary-parser-coverage"),
   pendingSignalContract("TS-AD-05-boundary-trust-breach"),
   pendingSignalContract("TS-DE-01-type-level-coupling"),
