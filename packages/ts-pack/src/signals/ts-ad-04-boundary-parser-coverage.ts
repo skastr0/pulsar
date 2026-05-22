@@ -101,7 +101,8 @@ export const TsAd04: Signal<TsAd04Config, TsAd04Output, TsProjectTag> = {
   tier: 1,
   category: "architectural-drift",
   kind: "structural",
-  cacheVersion: "ts-boundary-parser-evidence-v1-diagnostic-limit-v1",
+  cacheVersion:
+    "ts-boundary-parser-evidence-v1-diagnostic-limit-v1-parser-attribution-v1",
   configSchema: TsAd04Config,
   defaultConfig: {
     boundary_globs: [
@@ -314,6 +315,11 @@ const collectBoundaryFunctionCandidates = (
       candidateFromFunction(sourceFile, fn, declaration.getName(), parserPatterns),
     ),
   ),
+  ...sourceFile.getExportAssignments().flatMap((assignment) => {
+    const expression = assignment.getExpression()
+    if (!Node.isArrowFunction(expression) && !Node.isFunctionExpression(expression)) return []
+    return [candidateFromFunction(sourceFile, expression, "default", parserPatterns)]
+  }),
 ]
 
 const isBoundaryFunctionDeclaration = (fn: FunctionDeclaration): boolean =>
@@ -343,13 +349,16 @@ const candidateFromFunction = (
   fn: BoundaryFunctionNode,
   symbol: string,
   parserPatterns: ReadonlyArray<string>,
-): BoundaryFunctionCandidate => ({
-  file: sourceFile.getFilePath(),
-  line: fn.getStartLineNumber(),
-  symbol,
-  weakParameters: fn.getParameters().flatMap(classifyWeakParameter),
-  parserEvidence: collectParserEvidence(fn, parserPatterns),
-})
+): BoundaryFunctionCandidate => {
+  const weakParameters = fn.getParameters().flatMap(classifyWeakParameter)
+  return {
+    file: sourceFile.getFilePath(),
+    line: fn.getStartLineNumber(),
+    symbol,
+    weakParameters,
+    parserEvidence: collectParserEvidence(fn, parserPatterns, weakParameters),
+  }
+}
 
 const classifyWeakParameter = (
   parameter: ParameterDeclaration,
@@ -376,16 +385,21 @@ const classifyWeakParameter = (
 const collectParserEvidence = (
   fn: BoundaryFunctionNode,
   parserPatterns: ReadonlyArray<string>,
+  weakParameters: ReadonlyArray<WeakBoundaryParameter>,
 ): ReadonlyArray<string> => {
   const patterns = parserPatterns.map((pattern) => normalizeCallText(pattern))
-  if (patterns.length === 0) return []
+  const weakParameterNames = new Set(weakParameters.map((parameter) => parameter.name))
+  if (patterns.length === 0 || weakParameterNames.size === 0) return []
   const calls = fn.getDescendantsOfKind(SyntaxKind.CallExpression)
   const evidence = new Set<string>()
   for (const call of calls) {
     const expression = call.getExpression()
     const expressionText = expression.getText()
     const normalizedCallee = normalizeCallText(calleeText(expression))
-    if (patterns.some((pattern) => normalizedCallee.includes(pattern))) {
+    if (
+      patterns.some((pattern) => parserPatternMatchesCallee(pattern, normalizedCallee)) &&
+      callReferencesWeakParameter(call, weakParameterNames)
+    ) {
       evidence.add(expressionText)
     }
   }
@@ -399,6 +413,48 @@ const calleeText = (node: Node): string => {
 
 const normalizeCallText = (text: string): string =>
   text.toLowerCase().replace(/\s+/gu, "")
+
+const parserPatternMatchesCallee = (
+  normalizedPattern: string,
+  normalizedCallee: string,
+): boolean => {
+  if (normalizedPattern.includes(".")) {
+    return normalizedCallee === normalizedPattern ||
+      normalizedCallee.endsWith(`.${normalizedPattern}`)
+  }
+  return calleeSegments(normalizedCallee).some((segment) =>
+    parserPatternMatchesSegment(normalizedPattern, segment),
+  )
+}
+
+const calleeSegments = (normalizedCallee: string): ReadonlyArray<string> =>
+  normalizedCallee.split(/[^a-z0-9_$]+/u).filter((segment) => segment.length > 0)
+
+const parserPatternMatchesSegment = (
+  normalizedPattern: string,
+  segment: string,
+): boolean => {
+  if (normalizedPattern === "decodeunknown" || normalizedPattern === "safeparse") {
+    return segment.startsWith(normalizedPattern)
+  }
+  return segment === normalizedPattern
+}
+
+const callReferencesWeakParameter = (
+  call: Node,
+  weakParameterNames: ReadonlySet<string>,
+): boolean =>
+  call.getChildren().some((child) => nodeReferencesWeakParameter(child, weakParameterNames))
+
+const nodeReferencesWeakParameter = (
+  node: Node,
+  weakParameterNames: ReadonlySet<string>,
+): boolean => {
+  if (Node.isIdentifier(node) && weakParameterNames.has(node.getText())) return true
+  return node.getDescendantsOfKind(SyntaxKind.Identifier).some((identifier) =>
+    weakParameterNames.has(identifier.getText()),
+  )
+}
 
 const normalizeDiagnosticLimit = (value: number): number => {
   if (!Number.isFinite(value)) return 0
