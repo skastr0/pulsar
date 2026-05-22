@@ -29,6 +29,7 @@ export interface TsLd01Output {
   readonly functions: ReadonlyArray<FunctionComplexity>
   readonly calibrationDecisions: ReadonlyArray<CalibrationDecision>
   readonly byFile: ReadonlyMap<string, DistributionalSummary>
+  readonly diagnosticLimit?: number
   readonly overThresholdCount: number
   readonly totalFunctions: number
   readonly maxComplexity: number
@@ -43,7 +44,7 @@ export const TsLd01: Signal<TsLd01Config, TsLd01Output, TsProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "callback-context-calibration-v1",
+  cacheVersion: "callback-context-calibration-v2",
   configSchema: TsLd01Config,
   defaultConfig: {
     max_complexity: 20,
@@ -100,11 +101,13 @@ export const TsLd01: Signal<TsLd01Config, TsLd01Output, TsProjectTag> = {
         maxComplexity <= config.max_complexity || maxComplexity === 0
           ? 0
           : (maxComplexity - config.max_complexity) / maxComplexity
+      const diagnosticLimit = Math.max(0, Math.floor(config.top_n_diagnostics))
 
       return {
         functions,
         calibrationDecisions,
         byFile,
+        diagnosticLimit,
         overThresholdCount,
         totalFunctions: functions.length,
         maxComplexity,
@@ -121,7 +124,7 @@ export const TsLd01: Signal<TsLd01Config, TsLd01Output, TsProjectTag> = {
     out.totalFunctions === 0 ? { applicability: "not_applicable" as const } : undefined,
   diagnose: (out): ReadonlyArray<Diagnostic> => {
     const sorted = [...out.functions].sort((a, b) => b.complexity - a.complexity)
-    const top = sorted.slice(0, 10)
+    const top = sorted.slice(0, out.diagnosticLimit ?? 10)
     return top.map((f) => ({
       severity: "warn" as const,
       message: `Function \`${f.name}\` has cyclomatic complexity ${f.complexity}`,

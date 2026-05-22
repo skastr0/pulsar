@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
 import { TsLd01 } from "../signals/ts-ld-01-complexity.js"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Schema } from "effect"
 import { CalibrationContextTag, defineCalibrationProcessor, makeResolvedCalibrationContext, appendCalibrationDecision } from "@skastr0/pulsar-core/calibration"
 import type { RepoFacts } from "@skastr0/pulsar-core/calibration"
 import { TsProjectLayer } from "../ts-project.js"
@@ -201,5 +201,39 @@ export function classify(a: boolean, b: boolean, c: boolean) {
     expect(out.maxComplexity).toBeGreaterThan(4)
     expect(out.maxComplexityPressure).toBeGreaterThan(out.ratioPressure)
     expect(TsLd01.score(out)).toBeLessThan(0.4)
+  })
+
+  test("diagnostics honor configured top_n_diagnostics", async () => {
+    await repo.write(
+      "src/index.ts",
+      `
+export function simple() {
+  return 1
+}
+
+export function tangled(value: number, enabled: boolean) {
+  if (enabled && value > 10) return "large"
+  if (enabled || value < 0) return "edge"
+  return "small"
+}
+`,
+    )
+
+    const out = await runSignal(repo.root, TsLd01, {
+      ...TsLd01.defaultConfig,
+      top_n_diagnostics: 1,
+    })
+    const diagnostics = TsLd01.diagnose(out)
+
+    expect(diagnostics).toHaveLength(1)
+    expect(diagnostics[0]?.message).toContain("tangled")
+  })
+
+  test("configSchema decodes defaults round-trip", () => {
+    const decoded = Schema.decodeUnknownSync(TsLd01.configSchema)(TsLd01.defaultConfig)
+
+    expect(decoded.max_complexity).toBe(20)
+    expect(decoded.top_n_diagnostics).toBe(10)
+    expect(decoded.exclude_globs).toContain("**/*.test.ts")
   })
 })
