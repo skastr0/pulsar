@@ -6,6 +6,7 @@ import {
 import { Effect, Schema } from "effect"
 import {
   ArrowFunction,
+  type CallExpression,
   FunctionDeclaration,
   FunctionExpression,
   Node,
@@ -102,7 +103,7 @@ export const TsAd04: Signal<TsAd04Config, TsAd04Output, TsProjectTag> = {
   category: "architectural-drift",
   kind: "structural",
   cacheVersion:
-    "ts-boundary-parser-evidence-v1-diagnostic-limit-v1-parser-attribution-v1",
+    "ts-boundary-parser-evidence-v1-diagnostic-limit-v1-parser-attribution-v2",
   configSchema: TsAd04Config,
   defaultConfig: {
     boundary_globs: [
@@ -434,26 +435,44 @@ const parserPatternMatchesSegment = (
   normalizedPattern: string,
   segment: string,
 ): boolean => {
-  if (normalizedPattern === "decodeunknown" || normalizedPattern === "safeparse") {
-    return segment.startsWith(normalizedPattern)
-  }
-  return segment === normalizedPattern
+  if (segment === normalizedPattern) return true
+  const suffix = segment.slice(normalizedPattern.length)
+  return (suffix === "sync" || suffix === "async") &&
+    segment.startsWith(normalizedPattern)
 }
 
 const callReferencesWeakParameter = (
-  call: Node,
+  call: CallExpression,
   weakParameterNames: ReadonlySet<string>,
 ): boolean =>
-  call.getChildren().some((child) => nodeReferencesWeakParameter(child, weakParameterNames))
+  call.getArguments().some((argument) =>
+    nodeReferencesWeakParameter(argument, weakParameterNames),
+  )
 
 const nodeReferencesWeakParameter = (
   node: Node,
   weakParameterNames: ReadonlySet<string>,
 ): boolean => {
+  if (isFunctionScopeNode(node)) return false
   if (Node.isIdentifier(node) && weakParameterNames.has(node.getText())) return true
-  return node.getDescendantsOfKind(SyntaxKind.Identifier).some((identifier) =>
-    weakParameterNames.has(identifier.getText()),
+  return node.getChildren().some((child) =>
+    nodeReferencesWeakParameter(child, weakParameterNames),
   )
+}
+
+const isFunctionScopeNode = (node: Node): boolean => {
+  switch (node.getKind()) {
+    case SyntaxKind.ArrowFunction:
+    case SyntaxKind.FunctionExpression:
+    case SyntaxKind.FunctionDeclaration:
+    case SyntaxKind.MethodDeclaration:
+    case SyntaxKind.Constructor:
+    case SyntaxKind.GetAccessor:
+    case SyntaxKind.SetAccessor:
+      return true
+    default:
+      return false
+  }
 }
 
 const normalizeDiagnosticLimit = (value: number): number => {
