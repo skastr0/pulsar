@@ -24,17 +24,18 @@ export const computeFastImportTypeCoupling = (
   for (const sourceFile of sourceFiles) {
     const src = sourceFile.getFilePath()
     const importedTypeTargets = importedTypeTargetsForFile(sourceFile, resolver)
-    if (importedTypeTargets.size === 0) continue
 
-    for (const reference of collectFastTypeReferenceNames(sourceFile)) {
-      const referenceName = rootTypeReferenceName(reference.name)
-      if (referenceName === undefined) continue
-      const targetFile = importedTypeTargets.get(referenceName)
-      if (targetFile === undefined || targetFile === src || !fileSet.has(targetFile)) continue
+    if (importedTypeTargets.size > 0) {
+      for (const reference of collectFastTypeReferenceNames(sourceFile)) {
+        const referenceName = rootTypeReferenceName(reference.name)
+        if (referenceName === undefined) continue
+        const targetFile = importedTypeTargets.get(referenceName)
+        if (targetFile === undefined || targetFile === src || !fileSet.has(targetFile)) continue
 
-      const key = `${referenceName}:${reference.pos}`
-      ensureNestedSet(outgoing, src, targetFile).add(key)
-      ensureNestedSet(incoming, targetFile, src).add(key)
+        const key = `${referenceName}:${reference.pos}`
+        ensureNestedSet(outgoing, src, targetFile).add(key)
+        ensureNestedSet(incoming, targetFile, src).add(key)
+      }
     }
 
     for (const reference of collectFastImportTypeReferences(sourceFile)) {
