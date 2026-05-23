@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises"
 import { join } from "node:path"
 import {
   isIncludedHistoryPath,
+  sourcePathspecs,
   type SharedHistoryFilterConfig,
 } from "./shared-history-filter.js"
 import { fileExists } from "./shared-history-files.js"
@@ -13,6 +14,11 @@ export const listAuthorsByTouchedFileInWindow = async (
   untilIso: string,
   config: SharedHistoryFilterConfig,
 ): Promise<ReadonlyMap<string, ReadonlyArray<string>>> => {
+  const pathspecs = sourcePathspecs(config.includeExtensions)
+  if (pathspecs.length === 0) {
+    return new Map()
+  }
+
   const raw = await execGit(repoPath, [
     "log",
     "--use-mailmap",
@@ -21,13 +27,30 @@ export const listAuthorsByTouchedFileInWindow = async (
       : []),
     `--since=${sinceIso}`,
     `--until=${untilIso}`,
-    "--name-only",
+    "--name-status",
+    "--find-renames=100%",
+    "--diff-filter=ACMRT",
     "--format=__commit__%x00%aN <%aE>",
+    "--",
+    ...pathspecs,
   ])
 
   let currentAuthor: string | undefined
   const byFile = new Map<string, Array<string>>()
   const filesInCommit = new Set<string>()
+  const renameTargets = new Map<string, string>()
+
+  const resolvePath = (path: string): string => {
+    let current = path
+    const seen = new Set<string>()
+    while (!seen.has(current)) {
+      seen.add(current)
+      const target = renameTargets.get(current)
+      if (target === undefined) return current
+      current = target
+    }
+    return current
+  }
 
   const flushCommit = (): void => {
     if (currentAuthor === undefined) return
@@ -48,8 +71,23 @@ export const listAuthorsByTouchedFileInWindow = async (
 
     const trimmed = line.trim()
     if (trimmed.length === 0) continue
-    if (!isIncludedHistoryPath(trimmed, config)) continue
-    filesInCommit.add(trimmed)
+    const [status = "", firstPath = "", secondPath = ""] = trimmed.split("\t")
+    if (firstPath.length === 0) continue
+
+    if (status.startsWith("R")) {
+      if (secondPath.length === 0) continue
+      const currentPath = resolvePath(secondPath)
+      if (isIncludedHistoryPath(currentPath, config)) {
+        renameTargets.set(firstPath, currentPath)
+      }
+      continue
+    }
+
+    const currentPath = resolvePath(status.startsWith("C") && secondPath.length > 0
+      ? secondPath
+      : firstPath)
+    if (!isIncludedHistoryPath(currentPath, config)) continue
+    filesInCommit.add(currentPath)
   }
 
   flushCommit()

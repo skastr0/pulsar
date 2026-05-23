@@ -82,7 +82,35 @@ export const SHARED_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "shared-cochange-01.test.ts: tests run against real git repositories with authored commit dates, proving HEAD-relative pair windows, max-count sampling, extension pathspecs, excluded-glob behavior, rename interpretation, and deterministic repeated history interpretation.",
     },
   },
-  pendingSignalContract("SHARED-02-bus-factor"),
+  {
+    id: "SHARED-02-bus-factor",
+    status: "verified",
+    requiredEvidence: ["gitContext", "calibration"],
+    evidence: {
+      identity:
+        "shared-02-bus-factor.test.ts: canonical id, alias, title, tier/category/kind, no-input contract, semantic cacheVersion, git-revision cache dependency, pack registration, registry alias lookup, and default config decoding are asserted.",
+      config:
+        "shared-02-bus-factor.test.ts: default window/max-commit/include/exclude/min-LOC/diagnostic settings are decoded; real compute fixtures prove finite-safe window, max-commit, min-LOC, and diagnostic-limit handling, empty include-extension behavior, and explicit extension/glob filtering.",
+      positiveFixture:
+        "shared-02-bus-factor.test.ts and core shared-02-bus-factor.test.ts: real git fixtures prove single-author ownership pressure, multi-author ownership relief, LOC-weighted silo ordering, mailmap and .pulsar author alias normalization, TypeScript module-extension inclusion, Rust inclusion, max-commit sampling, and deterministic equivalent-repo output.",
+      negativeFixture:
+        "shared-02-bus-factor.test.ts: commits outside the window, docs-only history, non-included extensions, default generated/test/build exclusions, configured excluded globs, empty include_extensions, and below-min-LOC files produce insufficient/no pressure instead of misleading ownership findings.",
+      applicability:
+        "shared-02-bus-factor.test.ts: empty or source-less history reports insufficient_evidence metadata; measured ownership facts remain applicable with defined metadata semantics.",
+      score:
+        "shared-02-bus-factor.test.ts and core shared-02-bus-factor.test.ts: score bounds and monotonic pressure are asserted by comparing single-author silo pressure, multi-author relief, LOC-weighted penalty caps, and calibrated neutralization.",
+      diagnostics:
+        "shared-02-bus-factor.test.ts: diagnose proves no-relevant-files and single-author informational messages plus ordered silo diagnostics, diagnostic caps, severity, message format, location, and payload data.",
+      factorLedger:
+        "shared-02-bus-factor.test.ts and core shared-02-bus-factor.test.ts: registered shared-pack signal emits config.window_days, config.min_loc, and config.include_extensions factor entries; core calibration test proves module-attributed bus_factor.*.penalty_weight factor entries.",
+      cacheSemantics:
+        "shared-02-bus-factor.test.ts and pack.test.ts: SHARED-02 declares git-revision-context and bounded-history-v5-normalized-config-git-context-factor-policy cacheVersion; wrapped shared-pack cache version preserves the signal cacheVersion after config normalization, TS module-extension semantics, and cache dependency changed.",
+      gitContext:
+        "shared-02-bus-factor.test.ts and core shared-02-bus-factor.test.ts: tests run against real git repositories with authored commit dates and authors, proving HEAD-relative ownership windows, max-count sampling, extension pathspecs, excluded-glob behavior, mailmap/alias interpretation, and deterministic repeated history interpretation.",
+      calibration:
+        "core shared-02-bus-factor.test.ts: project-module bus-factor policy processors can neutralize visible pressure with calibration decisions, rule IDs, factor paths, and module attribution preserved in effective silo entries and factor ledger output.",
+    },
+  },
   pendingSignalContract("SHARED-03-churn-rate"),
   pendingSignalContract("SHARED-05-suppression-governance"),
   pendingSignalContract("SHARED-06-pr-dependency-delta"),

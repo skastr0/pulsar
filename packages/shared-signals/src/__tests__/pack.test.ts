@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test"
-import { SharedChurn01, SharedChurn02, SharedCochange01 } from "../index.js"
+import {
+  Shared02BusFactor,
+  SharedChurn01,
+  SharedChurn02,
+  SharedCochange01,
+} from "../index.js"
 import { SHARED_SIGNALS } from "../pack.js"
 
 describe("shared signal identity", () => {
@@ -13,10 +18,14 @@ describe("shared signal identity", () => {
     const cochange01 = SHARED_SIGNALS.find((signal) =>
       signal.aliases?.includes("SHARED-COCHANGE-01"),
     )
+    const busFactor = SHARED_SIGNALS.find((signal) =>
+      signal.aliases?.includes("SHARED-02"),
+    )
 
     expect(churn01?.cacheVersion).toContain(SharedChurn01.cacheVersion)
     expect(churn02?.cacheVersion).toContain(SharedChurn02.cacheVersion)
     expect(cochange01?.cacheVersion).toContain(SharedCochange01.cacheVersion)
+    expect(busFactor?.cacheVersion).toContain(Shared02BusFactor.cacheVersion)
   })
 
   test("all shared signals expose semantic ids, aliases, and titles", () => {
