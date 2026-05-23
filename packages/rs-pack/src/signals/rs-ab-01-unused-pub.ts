@@ -78,7 +78,7 @@ export const RsAb01: Signal<RsAb01Config, RsAb01Output, RustProjectTag> = {
   tier: 1,
   category: "abstraction-bloat",
   kind: "structural",
-  cacheVersion: "rs-ab-01-public-surface-use-segments-aliases-diagnostics-v5",
+  cacheVersion: "rs-ab-01-public-surface-use-segments-aliases-diagnostics-reexports-v6",
   configSchema: RsAb01Config,
   factorDefinitions: RsAb01FactorDefinitions,
   defaultConfig: {
@@ -283,11 +283,33 @@ const collectPublicUsage = (input: {
       input.rootNamesByCrate.get(useFact.crateName) ?? new Set(),
     )
     if (relativeSegments === undefined) continue
-    const key = resolvedPublicItemKey(input.facts, useFact.crateName, relativeSegments)
-    if (key !== undefined && input.publicItemKeys.has(key)) reexports.add(key)
+    recordLocalReexport(input.facts, input.publicItemKeys, reexports, useFact.crateName, relativeSegments)
   }
 
   return { crossCrateUses, reexports }
+}
+
+const recordLocalReexport = (
+  facts: RustAnalysis,
+  publicItemKeys: ReadonlySet<string>,
+  reexports: Set<string>,
+  crateName: string,
+  relativeSegments: ReadonlyArray<string>,
+): void => {
+  const resolved = resolveCrateRelativePath(crateName, relativeSegments, facts)
+  if (resolved === undefined) return
+  if (resolved.item !== undefined) {
+    const key = publicItemKey(resolved.item)
+    if (publicItemKeys.has(key)) reexports.add(key)
+    return
+  }
+  const moduleKey = resolved.module?.modulePath ?? resolved.key
+  if (moduleKey === undefined) return
+  for (const item of facts.items) {
+    if (item.modulePath !== moduleKey) continue
+    const key = publicItemKey(item)
+    if (publicItemKeys.has(key)) reexports.add(key)
+  }
 }
 
 const recordCrossCrateUse = (
@@ -321,6 +343,7 @@ const summarizePublicItems = (input: {
 }): ReadonlyArray<UnusedPublicItem> =>
   input.publicItems.map((item) => {
     const key = publicItemKey(item)
+    const reexported = input.usage.reexports.has(key)
     return {
       crate: item.crateName,
       module: item.modulePath,
@@ -328,13 +351,15 @@ const summarizePublicItems = (input: {
       kind: item.kind,
       file: item.file,
       line: item.line,
-      reexported: input.usage.reexports.has(key),
+      reexported,
       crossCrateUses: input.usage.crossCrateUses.get(key) ?? 0,
-      surface: classifyPublicSurface(
-        item,
-        input.libraryCrates,
-        input.exportedRootModules.get(item.crateName) ?? new Set<string>(),
-      ),
+      surface: reexported
+        ? "exported-api"
+        : classifyPublicSurface(
+            item,
+            input.libraryCrates,
+            input.exportedRootModules.get(item.crateName) ?? new Set<string>(),
+          ),
     }
   })
 

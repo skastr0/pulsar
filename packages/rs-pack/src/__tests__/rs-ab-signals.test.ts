@@ -91,6 +91,7 @@ describe("RS-AB-* signals", () => {
       expect(out.deadPublicItems.some((item) => item.name === "CliOnly")).toBe(false)
       expect(out.exportedApiItems.some((item) => item.name === "PublicApi")).toBe(true)
       expect(out.exportedApiItems.some((item) => item.name === "ExternalApi")).toBe(true)
+      expect(out.exportedApiItems.find((item) => item.name === "ReExported")?.reexported).toBe(true)
       expect(out.nonLibraryPublicItems.some((item) => item.name === "binary_helper")).toBe(true)
       expect(out.nonLibraryPublicItems.some((item) => item.name === "CliOnly")).toBe(true)
     } finally {
@@ -159,6 +160,45 @@ describe("RS-AB-* signals", () => {
       expect(out.exportedApiItems.find((item) => item.name === "HyphenUsed")?.crossCrateUses).toBe(1)
       expect(out.exportedApiItems.find((item) => item.name === "AliasUsed")?.crossCrateUses).toBe(1)
       expect(out.deadPublicItems.map((item) => item.name)).toEqual(["Hidden"])
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-AB-01 classifies direct and wildcard public reexports as exported API", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-ab01-reexports-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "reexported-api"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "mod direct {",
+        "    pub struct DirectItem;",
+        "}",
+        "",
+        "mod wildcard {",
+        "    pub struct WildOne;",
+        "    pub struct WildTwo;",
+        "}",
+        "",
+        "pub use direct::DirectItem;",
+        "pub use wildcard::*;",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const out = await runSignalCompute(RsAb01, repo, RsAb01.defaultConfig)
+      expect(out.deadPublicItems).toEqual([])
+      expect(out.exportedApiItems.map((item) => item.name)).toEqual([
+        "DirectItem",
+        "WildOne",
+        "WildTwo",
+      ])
+      expect(out.exportedApiItems.every((item) => item.reexported)).toBe(true)
     } finally {
       await cleanupWorkspace(repo)
     }
