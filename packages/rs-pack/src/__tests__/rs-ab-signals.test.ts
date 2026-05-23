@@ -935,6 +935,64 @@ describe("RS-AB-* signals", () => {
     }
   })
 
+  test("RS-AB-02 resolves scoped local calls without same-name collisions", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-ab02-scoped-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "trait-object-scoped"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "use std::fmt::Debug;",
+        "pub mod a {",
+        "    use std::fmt::Debug;",
+        "    pub fn leaf() -> Box<dyn Debug> { Box::new(1_u8) }",
+        "}",
+        "pub mod b {",
+        "    use std::fmt::Debug;",
+        "    pub fn leaf() -> Box<dyn Debug> { Box::new(2_u8) }",
+        "}",
+        "pub mod nested {",
+        "    use std::fmt::Debug;",
+        "    pub mod c {",
+        "        use std::fmt::Debug;",
+        "        pub fn local() -> Box<dyn Debug> { Box::new(3_u8) }",
+        "    }",
+        "    pub fn via_self() -> Box<dyn Debug> { self::c::local() }",
+        "    pub fn via_super() -> Box<dyn Debug> { super::a::leaf() }",
+        "}",
+        "pub fn via_relative() -> Box<dyn Debug> { a::leaf() }",
+        "pub fn via_crate() -> Box<dyn Debug> { crate::nested::c::local() }",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const out = await runSignalCompute(RsAb02, repo, RsAb02.defaultConfig)
+      const byName = new Map(out.functions.map((entry) => [`${entry.module}::${entry.name}`, entry]))
+
+      expect(byName.get("trait-object-scoped::crate::via_relative")?.chainDepth).toBe(2)
+      expect(byName.get("trait-object-scoped::crate::via_relative")?.calleeNames).toEqual(["a::leaf"])
+      expect(byName.get("trait-object-scoped::crate::via_crate")?.chainDepth).toBe(2)
+      expect(byName.get("trait-object-scoped::crate::via_crate")?.calleeNames).toEqual([
+        "crate::nested::c::local",
+      ])
+      expect(byName.get("trait-object-scoped::crate::nested::via_self")?.chainDepth).toBe(2)
+      expect(byName.get("trait-object-scoped::crate::nested::via_self")?.calleeNames).toEqual([
+        "self::c::local",
+      ])
+      expect(byName.get("trait-object-scoped::crate::nested::via_super")?.chainDepth).toBe(2)
+      expect(byName.get("trait-object-scoped::crate::nested::via_super")?.calleeNames).toEqual([
+        "super::a::leaf",
+      ])
+      expect(out.functions.filter((entry) => entry.name === "leaf").map((entry) => entry.chainDepth)).toEqual([1, 1])
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
   test("RS-AB-03 summarizes generic parameter proliferation", async () => {
     const repo = await createRustWorkspace("pulsar-rs-ab03-", {
       "Cargo.toml": [

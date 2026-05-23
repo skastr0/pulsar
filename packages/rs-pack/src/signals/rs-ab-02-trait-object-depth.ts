@@ -40,6 +40,11 @@ interface TraitObjectChainEntry {
   readonly calleeNames: ReadonlyArray<string>
 }
 
+interface CalledFunctionRef {
+  readonly displayName: string
+  readonly segments: ReadonlyArray<string>
+}
+
 interface RsAb02Output {
   readonly functions: ReadonlyArray<TraitObjectChainEntry>
   readonly overThreshold: ReadonlyArray<TraitObjectChainEntry>
@@ -107,7 +112,7 @@ export const RsAb02: Signal<RsAb02Config, RsAb02Output, RustProjectTag> = {
               name: string
               line: number
               returnType: string
-              calleeNames: ReadonlyArray<string>
+              calleeRefs: ReadonlyArray<CalledFunctionRef>
             }
           >()
           const fnKeysByName = new Map<string, Array<string>>()
@@ -132,7 +137,7 @@ export const RsAb02: Signal<RsAb02Config, RsAb02Output, RustProjectTag> = {
                 name,
                 line: node.startPosition.row + 1,
                 returnType,
-                calleeNames: collectCalledFunctionNames(node),
+                calleeRefs: collectCalledFunctionRefs(node),
               })
               const bucket = fnKeysByName.get(name) ?? []
               bucket.push(key)
@@ -149,7 +154,7 @@ export const RsAb02: Signal<RsAb02Config, RsAb02Output, RustProjectTag> = {
               line: fn.line,
               returnType: fn.returnType,
               chainDepth: measureChainDepth(key, dynFns, fnKeysByName, memo, new Set()),
-              calleeNames: fn.calleeNames,
+              calleeNames: fn.calleeRefs.map((ref) => ref.displayName),
             }))
             .sort((left, right) => right.chainDepth - left.chainDepth || left.file.localeCompare(right.file))
 
@@ -239,28 +244,31 @@ const detectReturnType = (node: ReturnType<typeof namedChildrenOf>[number]): str
     .find((child) => child.type !== "where_clause" && child.type !== "block")?.text
 }
 
-const collectCalledFunctionNames = (node: ReturnType<typeof namedChildrenOf>[number]): ReadonlyArray<string> => {
-  const names = new Set<string>()
+const collectCalledFunctionRefs = (node: ReturnType<typeof namedChildrenOf>[number]): ReadonlyArray<CalledFunctionRef> => {
+  const refs = new Map<string, CalledFunctionRef>()
   const walk = (current: ReturnType<typeof namedChildrenOf>[number]): void => {
     if (current.type === "call_expression") {
       const callee = namedChildrenOf(current)[0]
-      const name = callee === undefined ? undefined : callName(callee)
-      if (name !== undefined) names.add(name)
+      const ref = callee === undefined ? undefined : callRef(callee)
+      if (ref !== undefined) refs.set(ref.displayName, ref)
     }
     for (const child of namedChildrenOf(current)) {
       walk(child)
     }
   }
   walk(node)
-  return [...names]
+  return [...refs.values()]
 }
 
-const callName = (node: ReturnType<typeof namedChildrenOf>[number]): string | undefined => {
+const callRef = (node: ReturnType<typeof namedChildrenOf>[number]): CalledFunctionRef | undefined => {
   switch (node.type) {
     case "identifier":
-      return node.text
-    case "scoped_identifier":
-      return node.text.split("::").at(-1)
+      return { displayName: node.text, segments: [node.text] }
+    case "scoped_identifier": {
+      const segments = node.text.split("::").filter((segment) => segment.length > 0)
+      if (segments.length === 0) return undefined
+      return { displayName: segments.join("::"), segments }
+    }
     default:
       return undefined
   }
@@ -268,7 +276,7 @@ const callName = (node: ReturnType<typeof namedChildrenOf>[number]): string | un
 
 const measureChainDepth = (
   key: string,
-  dynFns: ReadonlyMap<string, { readonly calleeNames: ReadonlyArray<string>; readonly module: string }>,
+  dynFns: ReadonlyMap<string, { readonly calleeRefs: ReadonlyArray<CalledFunctionRef>; readonly module: string }>,
   fnKeysByName: ReadonlyMap<string, ReadonlyArray<string>>,
   memo: Map<string, number>,
   active: Set<string>,
@@ -281,13 +289,8 @@ const measureChainDepth = (
   if (current === undefined) return 1
 
   let maxDepth = 1
-  for (const calleeName of current.calleeNames) {
-    const sameModuleKey = `${current.module}::${calleeName}`
-    const candidateKeys = dynFns.has(sameModuleKey)
-      ? [sameModuleKey]
-      : (fnKeysByName.get(calleeName) ?? []).length === 1
-        ? [fnKeysByName.get(calleeName)![0]!]
-        : []
+  for (const calleeRef of current.calleeRefs) {
+    const candidateKeys = candidateFunctionKeys(calleeRef, current.module, dynFns, fnKeysByName)
     for (const candidateKey of candidateKeys) {
       maxDepth = Math.max(
         maxDepth,
@@ -299,4 +302,48 @@ const measureChainDepth = (
   active.delete(key)
   memo.set(key, maxDepth)
   return maxDepth
+}
+
+const candidateFunctionKeys = (
+  calleeRef: CalledFunctionRef,
+  currentModule: string,
+  dynFns: ReadonlyMap<string, unknown>,
+  fnKeysByName: ReadonlyMap<string, ReadonlyArray<string>>,
+): ReadonlyArray<string> => {
+  if (calleeRef.segments.length > 1) {
+    const scopedKey = resolveScopedFunctionKey(currentModule, calleeRef.segments)
+    return scopedKey !== undefined && dynFns.has(scopedKey) ? [scopedKey] : []
+  }
+
+  const calleeName = calleeRef.segments[0]
+  if (calleeName === undefined) return []
+  const sameModuleKey = `${currentModule}::${calleeName}`
+  if (dynFns.has(sameModuleKey)) return [sameModuleKey]
+  const sameNameKeys = fnKeysByName.get(calleeName) ?? []
+  return sameNameKeys.length === 1 ? [sameNameKeys[0]!] : []
+}
+
+const resolveScopedFunctionKey = (
+  currentModule: string,
+  segments: ReadonlyArray<string>,
+): string | undefined => {
+  const currentSegments = currentModule.split("::")
+  if (currentSegments.length < 2) return undefined
+  let base = currentSegments
+  let rest = [...segments]
+
+  while (rest[0] === "super") {
+    if (base.length > 2) base = base.slice(0, -1)
+    rest = rest.slice(1)
+  }
+
+  if (rest[0] === "crate") {
+    base = currentSegments.slice(0, 2)
+    rest = rest.slice(1)
+  } else if (rest[0] === "self") {
+    rest = rest.slice(1)
+  }
+
+  if (rest.length === 0) return undefined
+  return [...base, ...rest].join("::")
 }
