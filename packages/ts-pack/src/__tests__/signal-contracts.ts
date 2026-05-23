@@ -462,7 +462,30 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "ts-ab-03.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AB-03 semantic cacheVersion after diagnostic-limit, imported alias, generic argument, heritage, alias-cache, and truncation semantics changed.",
     },
   },
-  pendingSignalContract("TS-AB-04-interface-implementation-ratio"),
+  {
+    id: "TS-AB-04-interface-implementation-ratio",
+    status: "verified",
+    evidence: {
+      identity:
+        "ts-ab-04.test.ts: canonical id, alias, title, tier/category/kind, no compound inputs, semantic cacheVersion, pack registration, and registry alias lookup are asserted.",
+      config:
+        "ts-ab-04.test.ts: configSchema decodes defaults; factor-ledger assertions cover exclude_globs, test_globs, public_entry_globs, and top_n_diagnostics with sanitized diagnostic caps.",
+      positiveFixture:
+        "ts-ab-04.test.ts: real TsProject fixtures measure single implementation pairs, multiple implementations, class expressions, nested classes, same-name interface isolation, namespace-qualified references, object literal substitutes, satisfies/as/composed substitutes, public re-export chains, package-local alias public entries, and local public export lists.",
+      negativeFixture:
+        "ts-ab-04.test.ts: value-only files, test-only interfaces, configured exclude_globs, structural data interfaces, object defaults, interface extension, unused non-object casts, type-only cast references, consumed casts, parenthesized casts, and destructured casts prove non-contract shapes are not penalized.",
+      applicability:
+        "ts-ab-04.test.ts: repositories with no production interfaces return empty pairs/flaggedPairs/deadInterfaces, zero pressures, diagnosticLimit 20, score 1, no diagnostics, and not_applicable metadata.",
+      score:
+        "ts-ab-04.test.ts: mixed one-implementation/dead-interface fixture proves both pressures are non-zero and score is 1 minus the maximum pressure, not a sum or isolated branch.",
+      diagnostics:
+        "ts-ab-04.test.ts: diagnostics include warn severity, pair/dead messages, distinct interface and implementation file payloads, file/line locations, deterministic multi-pair-before-multi-dead ordering, and sanitized top_n_diagnostics caps.",
+      factorLedger:
+        "ts-ab-04.test.ts: registered pack signal emits config.exclude_globs, config.test_globs, config.public_entry_globs, and config.top_n_diagnostics factor-ledger entries with score roles.",
+      cacheSemantics:
+        "ts-ab-04.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AB-04 semantic cacheVersion after identity, substitute, diagnostic-limit, object-data, cast-usage, public-entry, and class-implementation semantics changed.",
+    },
+  },
   pendingSignalContract("TS-AB-05-generic-proliferation"),
   pendingSignalContract("TS-LD-06-annotation-coverage"),
   pendingSignalContract("TS-LD-07-unsafe-type-erosion"),
