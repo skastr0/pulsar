@@ -5,8 +5,16 @@ import type { UncoveredFn } from "./ts-ld-06-annotation-coverage.js"
 type CompilerFunctionLike =
   | ts.FunctionDeclaration
   | ts.MethodDeclaration
+  | ts.ConstructorDeclaration
   | ts.ArrowFunction
   | ts.FunctionExpression
+
+interface VisitContext {
+  readonly className?: string | undefined
+  readonly classBoundary?: boolean | undefined
+  readonly objectName?: string | undefined
+  readonly objectBoundary?: boolean | undefined
+}
 
 interface TrackedFunction {
   readonly fn: CompilerFunctionLike
@@ -18,6 +26,7 @@ interface TrackedFunction {
 export interface FunctionCoverageMeasurement {
   readonly paramCount: number
   readonly annotatedParams: number
+  readonly returnCount: number
   readonly returnAnnotated: boolean
   readonly missingKind: UncoveredFn["missingKind"] | undefined
 }
@@ -27,36 +36,68 @@ export const collectTrackedFunctions = (sourceFile: SourceFile): ReadonlyArray<T
   const boundaryNames = collectLocalBoundaryNames(compilerSourceFile)
   const results: Array<TrackedFunction> = []
 
-  const visit = (
-    node: ts.Node,
-    classContext: { readonly name: string | undefined; readonly boundary: boolean } | undefined,
-  ): void => {
+  const visit = (node: ts.Node, context: VisitContext): void => {
     if (ts.isClassDeclaration(node)) {
       const className = node.name?.text
       const boundary =
         hasModifier(node, ts.SyntaxKind.ExportKeyword) ||
         hasModifier(node, ts.SyntaxKind.DefaultKeyword) ||
         (className !== undefined && boundaryNames.has(className))
-      ts.forEachChild(node, (child) => visit(child, { name: className, boundary }))
+      ts.forEachChild(node, (child) =>
+        visit(child, { className, classBoundary: boundary }),
+      )
       return
     }
 
-    if (isCompilerFunctionLike(node) && isTrackedFunction(node)) {
-      const boundary = isBoundaryFunction(node, boundaryNames, classContext)
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer !== undefined &&
+      ts.isObjectLiteralExpression(node.initializer)
+    ) {
+      const objectName = node.name.text
+      const boundary = boundaryNames.has(objectName) || isExportedVariableDeclaration(node)
+      ts.forEachChild(node.initializer, (child) =>
+        visit(
+          child,
+          boundary
+            ? { ...context, objectName, objectBoundary: true }
+            : context,
+        ),
+      )
+      return
+    }
+
+    if (
+      ts.isPropertyAssignment(node) &&
+      node.initializer !== undefined &&
+      ts.isObjectLiteralExpression(node.initializer) &&
+      context.objectBoundary === true &&
+      context.objectName !== undefined
+    ) {
+      const objectName = `${context.objectName}.${propertyNameText(node.name)}`
+      ts.forEachChild(node.initializer, (child) =>
+        visit(child, { ...context, objectName, objectBoundary: true }),
+      )
+      return
+    }
+
+    if (isCompilerFunctionLike(node) && isTrackedFunction(node, context)) {
+      const boundary = isBoundaryFunction(node, boundaryNames, context)
       results.push({
         fn: node,
         boundary,
-        name: functionDisplayName(node, classContext?.name),
+        name: functionDisplayName(node, context),
         line: compilerSourceFile.getLineAndCharacterOfPosition(
           node.getStart(compilerSourceFile),
         ).line + 1,
       })
     }
 
-    ts.forEachChild(node, (child) => visit(child, classContext))
+    ts.forEachChild(node, (child) => visit(child, context))
   }
 
-  visit(compilerSourceFile, undefined)
+  visit(compilerSourceFile, {})
   return results
 }
 
@@ -65,6 +106,7 @@ export const measureTrackedFunctionCoverage = (
   file: string,
 ): FunctionCoverageMeasurement => {
   const paramCount = tracked.fn.parameters.length
+  const returnCount = ts.isConstructorDeclaration(tracked.fn) ? 0 : 1
   const contextuallyTyped =
     hasContextualFunctionTypeAnnotation(tracked.fn) ||
     hasFrameworkMethodContract(tracked.fn)
@@ -72,14 +114,16 @@ export const measureTrackedFunctionCoverage = (
     ? paramCount
     : tracked.fn.parameters.filter(hasCoveredParameterType).length
   const returnAnnotated =
+    returnCount === 0 ||
     contextuallyTyped ||
     tracked.fn.type !== undefined ||
     hasImplicitComponentReturnCoverage(tracked.fn, tracked.name, file)
   return {
     paramCount,
     annotatedParams,
+    returnCount,
     returnAnnotated,
-    missingKind: classifyMissingKind(paramCount, annotatedParams, returnAnnotated),
+    missingKind: classifyMissingKind(paramCount, annotatedParams, returnCount, returnAnnotated),
   }
 }
 
@@ -122,15 +166,23 @@ const collectLocalBoundaryNames = (sourceFile: ts.SourceFile): ReadonlySet<strin
 const isCompilerFunctionLike = (node: ts.Node): node is CompilerFunctionLike =>
   ts.isFunctionDeclaration(node) ||
   ts.isMethodDeclaration(node) ||
+  ts.isConstructorDeclaration(node) ||
   ts.isArrowFunction(node) ||
   ts.isFunctionExpression(node)
 
-const isTrackedFunction = (node: CompilerFunctionLike): boolean => {
+const isTrackedFunction = (node: CompilerFunctionLike, context: VisitContext): boolean => {
+  if (ts.isConstructorDeclaration(node)) return true
   if (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node)) {
     return !isOverloadImplementation(node)
   }
   const parent = node.parent
-  return ts.isVariableDeclaration(parent) || ts.isExportAssignment(parent)
+  return (
+    ts.isVariableDeclaration(parent) ||
+    ts.isExportAssignment(parent) ||
+    (ts.isPropertyAssignment(parent) &&
+      context.objectBoundary === true &&
+      context.objectName !== undefined)
+  )
 }
 
 const isOverloadImplementation = (
@@ -168,6 +220,7 @@ const methodHasOverloadSignature = (node: ts.MethodDeclaration): boolean => {
 }
 
 const hasContextualFunctionTypeAnnotation = (node: CompilerFunctionLike): boolean => {
+  if (ts.isConstructorDeclaration(node)) return false
   const parent = node.parent
   if (!ts.isVariableDeclaration(parent)) return false
   return parent.type !== undefined
@@ -256,7 +309,7 @@ const isJsxNode = (node: ts.Node): boolean =>
 const isBoundaryFunction = (
   fn: CompilerFunctionLike,
   boundaryNames: ReadonlySet<string>,
-  classContext: { readonly boundary: boolean } | undefined,
+  context: VisitContext,
 ): boolean => {
   if (ts.isFunctionDeclaration(fn)) {
     return (
@@ -266,7 +319,7 @@ const isBoundaryFunction = (
     )
   }
 
-  if (ts.isMethodDeclaration(fn)) {
+  if (ts.isConstructorDeclaration(fn)) {
     if (!ts.isClassDeclaration(fn.parent)) return false
     if (
       hasModifier(fn, ts.SyntaxKind.PrivateKeyword) ||
@@ -274,10 +327,27 @@ const isBoundaryFunction = (
     ) {
       return false
     }
-    return classContext?.boundary === true
+    return context.classBoundary === true
+  }
+
+  if (ts.isMethodDeclaration(fn)) {
+    if (ts.isObjectLiteralExpression(fn.parent)) {
+      return context.objectBoundary === true
+    }
+    if (!ts.isClassDeclaration(fn.parent)) return false
+    if (
+      hasModifier(fn, ts.SyntaxKind.PrivateKeyword) ||
+      hasModifier(fn, ts.SyntaxKind.ProtectedKeyword)
+    ) {
+      return false
+    }
+    return context.classBoundary === true
   }
 
   const parent = fn.parent
+  if (ts.isPropertyAssignment(parent) && ts.isObjectLiteralExpression(parent.parent)) {
+    return context.objectBoundary === true
+  }
   if (ts.isVariableDeclaration(parent) && ts.isIdentifier(parent.name)) {
     return boundaryNames.has(parent.name.text) || isExportedVariableDeclaration(parent)
   }
@@ -297,17 +367,28 @@ const hasModifier = (
 
 const functionDisplayName = (
   fn: CompilerFunctionLike,
-  className: string | undefined,
+  context: VisitContext,
 ): string => {
+  if (ts.isConstructorDeclaration(fn)) {
+    return `${context.className ?? "<anonymous class>"}.constructor`
+  }
   if (ts.isMethodDeclaration(fn)) {
     const name = propertyNameText(fn.name)
-    return ts.isClassDeclaration(fn.parent) && className !== undefined ? `${className}.${name}` : name
+    if (ts.isObjectLiteralExpression(fn.parent) && context.objectName !== undefined) {
+      return `${context.objectName}.${name}`
+    }
+    return ts.isClassDeclaration(fn.parent) && context.className !== undefined
+      ? `${context.className}.${name}`
+      : name
   }
   if (ts.isFunctionDeclaration(fn) || ts.isFunctionExpression(fn)) {
     if (fn.name !== undefined) return fn.name.text
   }
 
   const parent = fn.parent
+  if (ts.isPropertyAssignment(parent) && context.objectName !== undefined) {
+    return `${context.objectName}.${propertyNameText(parent.name)}`
+  }
   if (ts.isVariableDeclaration(parent) && ts.isIdentifier(parent.name)) {
     return parent.name.text
   }
@@ -318,10 +399,11 @@ const functionDisplayName = (
 const classifyMissingKind = (
   totalParams: number,
   annotatedParams: number,
+  totalReturns: number,
   returnAnnotated: boolean,
 ): UncoveredFn["missingKind"] | undefined => {
   const paramsMissing = annotatedParams < totalParams
-  const returnMissing = !returnAnnotated
+  const returnMissing = totalReturns > 0 && !returnAnnotated
   if (paramsMissing && returnMissing) return "both"
   if (paramsMissing) return "params"
   if (returnMissing) return "return"

@@ -109,8 +109,8 @@ const addFunctionCoverage = (
 ): void => {
   coverage.totalParams += measurement.paramCount
   coverage.annotatedParams += measurement.annotatedParams
-  coverage.totalReturns += 1
-  coverage.annotatedReturns += measurement.returnAnnotated ? 1 : 0
+  coverage.totalReturns += measurement.returnCount
+  coverage.annotatedReturns += measurement.returnAnnotated ? measurement.returnCount : 0
 }
 
 const addCoverage = (target: MutableCoverage, source: MutableCoverage): void => {

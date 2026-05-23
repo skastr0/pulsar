@@ -331,6 +331,39 @@ describe("TS-LD-06 (type annotation coverage)", () => {
     expect(out.uncoveredBoundary.map((fn) => fn.name)).not.toContain("Service.hidden")
   })
 
+  test("exported class constructors count as boundary parameter contracts", async () => {
+    await writeTs(
+      "src/constructor.ts",
+      [
+        "export class Service {",
+        "  constructor(value) {",
+        "    void value",
+        "  }",
+        "}",
+        "class Internal {",
+        "  constructor(value) {",
+        "    void value",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runCompute()
+
+    expect(out.boundaryCoverage.totalParams).toBe(1)
+    expect(out.boundaryCoverage.totalReturns).toBe(0)
+    expect(out.internalCoverage.totalParams).toBe(1)
+    expect(out.uncoveredBoundary).toEqual([
+      {
+        file: join(repo, "src/constructor.ts"),
+        name: "Service.constructor",
+        line: 2,
+        missingKind: "params",
+      },
+    ])
+  })
+
   test("method overload signatures provide public method annotation contracts", async () => {
     await writeTs(
       "src/service-overloads.ts",
@@ -401,6 +434,53 @@ describe("TS-LD-06 (type annotation coverage)", () => {
     expect(out.uncoveredBoundary.map((fn) => fn.name)).toEqual([])
     expect(out.internalCoverage.totalParams).toBe(3)
     expect(out.internalCoverage.annotatedParams).toBe(0)
+  })
+
+  test("exported object literal members count as boundary functions", async () => {
+    const file = await writeTs(
+      "src/object-api.ts",
+      [
+        "export const api = {",
+        "  run(value) {",
+        "    return value",
+        "  },",
+        "  map: (value: string) => value.length,",
+        "  nested: {",
+        "    parse(value) {",
+        "      return value",
+        "    },",
+        "  },",
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runCompute()
+
+    expect(out.uncoveredBoundary).toEqual([
+      {
+        file,
+        name: "api.run",
+        line: 2,
+        missingKind: "both",
+      },
+      {
+        file,
+        name: "api.nested.parse",
+        line: 7,
+        missingKind: "both",
+      },
+      {
+        file,
+        name: "api.map",
+        line: 5,
+        missingKind: "return",
+      },
+    ])
+    expect(out.boundaryCoverage.totalParams).toBe(3)
+    expect(out.boundaryCoverage.annotatedParams).toBe(1)
+    expect(out.boundaryCoverage.totalReturns).toBe(3)
+    expect(out.boundaryCoverage.annotatedReturns).toBe(0)
   })
 
   test("test helper exports are ignored by default", async () => {
