@@ -136,12 +136,7 @@ const matchFactFromNode = (
   functionName: string,
 ): RustMatchFact => {
   const arms = allNamedChildren(firstNamedChild(node, "match_block") ?? node, "match_arm")
-  const catchAllArmCount = arms.filter((arm) => {
-    const pattern = firstNamedChild(arm, "match_pattern")
-    if (pattern === undefined) return false
-    const text = pattern.text.trim()
-    return text === "_" || text.startsWith("_ if")
-  }).length
+  const catchAllArmCount = arms.filter(isCatchAllMatchArm).length
   return {
     crateName,
     file,
@@ -153,6 +148,19 @@ const matchFactFromNode = (
     catchAllArmCount,
     hasCatchAll: catchAllArmCount > 0,
   }
+}
+
+const isCatchAllMatchArm = (arm: RustSyntaxNode): boolean => {
+  const pattern = firstNamedChild(arm, "match_pattern")
+  if (pattern === undefined) return false
+  return isCatchAllPatternText(pattern.text.trim())
+}
+
+const isCatchAllPatternText = (text: string): boolean => {
+  const binding = /^(?:ref\s+)?(?:mut\s+)?([_a-z][A-Za-z0-9_]*)(?:\s+if\b[\s\S]*)?$/.exec(text)
+  if (binding === null) return false
+  const name = binding[1]
+  return name !== "true" && name !== "false"
 }
 
 const lifetimeBoundCountOfFunction = (node: RustSyntaxNode): number =>

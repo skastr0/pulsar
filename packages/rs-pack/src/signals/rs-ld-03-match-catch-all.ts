@@ -87,7 +87,7 @@ export const RsLd03: Signal<RsLd03Config, RsLd03Output, RustProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "match-catch-all-config-applicability-diagnostics-cfg-test-v2",
+  cacheVersion: "match-catch-all-config-applicability-diagnostics-cfg-test-bindings-v3",
   configSchema: RsLd03Config,
   factorDefinitions: RsLd03FactorDefinitions,
   defaultConfig: {

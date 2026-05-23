@@ -1240,7 +1240,7 @@ describe("RS-LD-* signals", () => {
       tier: 1,
       category: "legibility-decay",
       kind: "legibility",
-      cacheVersion: "match-catch-all-config-applicability-diagnostics-cfg-test-v2",
+      cacheVersion: "match-catch-all-config-applicability-diagnostics-cfg-test-bindings-v3",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -1401,6 +1401,64 @@ describe("RS-LD-* signals", () => {
       expect(RsLd03.score(out)).toBe(1)
       expect(RsLd03.outputMetadata?.(out)).toBeUndefined()
       expect(RsLd03.diagnose(out)).toEqual([])
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-LD-03 recognizes binding catch-all match arms deliberately", async () => {
+    const repo = await createMatchWorkspace("bindings", {
+      "src/lib.rs": [
+        "pub enum Kind { Specific, Other }",
+        "",
+        "pub fn binding_default(value: u8) -> u8 {",
+        "    match value {",
+        "        0 => 0,",
+        "        other => other,",
+        "    }",
+        "}",
+        "",
+        "pub fn guarded_binding(value: u8) -> u8 {",
+        "    match value {",
+        "        0 => 0,",
+        "        rest if rest > 10 => rest,",
+        "        _ => 0,",
+        "    }",
+        "}",
+        "",
+        "pub fn guarded_underscore(value: u8) -> u8 {",
+        "    match value {",
+        "        0 => 0,",
+        "        _ if value > 10 => 1,",
+        "        _ => 0,",
+        "    }",
+        "}",
+        "",
+        "pub fn specific_patterns(value: Kind) -> u8 {",
+        "    match value {",
+        "        Kind::Specific => 1,",
+        "        Kind::Other => 2,",
+        "    }",
+        "}",
+      ],
+    })
+
+    try {
+      const out = await runSignalCompute(RsLd03, repo, RsLd03.defaultConfig)
+      const byFunction = new Map(out.matchSites.map((site) => [site.functionName, site]))
+
+      expect(out.totalMatches).toBe(4)
+      expect(out.matchesWithCatchAll).toBe(3)
+      expect(out.totalCatchAllArms).toBe(5)
+      expect(byFunction.get("binding_default")?.catchAllArmCount).toBe(1)
+      expect(byFunction.get("guarded_binding")?.catchAllArmCount).toBe(2)
+      expect(byFunction.get("guarded_underscore")?.catchAllArmCount).toBe(2)
+      expect(byFunction.get("specific_patterns")?.catchAllArmCount).toBe(0)
+      expect(RsLd03.score(out)).toBe(0)
+      expect(RsLd03.diagnose(out)[0]).toMatchObject({
+        severity: "warn",
+        message: "Match in guarded_binding uses 2 catch-all arm(s)",
+      })
     } finally {
       await cleanupWorkspace(repo)
     }
