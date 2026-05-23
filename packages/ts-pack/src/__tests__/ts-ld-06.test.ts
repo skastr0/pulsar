@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { Effect, Schema } from "effect"
+import { TS_PACK_SIGNALS } from "../pack.js"
 import {
   TsLd06,
   type TsLd06Output,
@@ -10,6 +12,14 @@ import {
 import { TsProjectLayer } from "../ts-project.js"
 
 let repo: string
+
+const stableTsLd06Output = (out: TsLd06Output): unknown => ({
+  byFile: [...out.byFile.entries()].sort(([left], [right]) => left.localeCompare(right)),
+  boundaryCoverage: out.boundaryCoverage,
+  internalCoverage: out.internalCoverage,
+  uncoveredBoundary: out.uncoveredBoundary,
+  diagnosticLimit: out.diagnosticLimit,
+})
 
 const writeTs = async (relPath: string, content: string): Promise<string> => {
   const full = join(repo, relPath)
@@ -46,6 +56,89 @@ afterEach(async () => {
 })
 
 describe("TS-LD-06 (type annotation coverage)", () => {
+  test("declares identity, no inputs, pack registration, and config factor ledger", async () => {
+    const packRegistered = TS_PACK_SIGNALS.find((signal) =>
+      signal.aliases?.includes("TS-LD-06"),
+    )
+    expect(packRegistered).toBeDefined()
+    const registry = await Effect.runPromise(buildRegistry([packRegistered!]))
+    const registered = registry.byId.get("TS-LD-06")
+    const out = await runCompute()
+    const factorLedger = registered?.factorLedger?.(out)
+
+    expect(TsLd06).toMatchObject({
+      id: "TS-LD-06-annotation-coverage",
+      title: "Type annotation coverage",
+      aliases: ["TS-LD-06"],
+      tier: 1,
+      category: "legibility-decay",
+      kind: "legibility",
+      cacheVersion: "annotation-coverage-v2-boundary-scope-v1",
+      inputs: [],
+    })
+    expect(registered?.id).toBe(TsLd06.id)
+    expect(registered?.title).toBe(TsLd06.title)
+    expect(registered?.cacheVersion).toContain(TsLd06.cacheVersion)
+    expect(registry.byId.get("TS-LD-06")?.id).toBe(TsLd06.id)
+    expect(factorLedger?.signalId).toBe(TsLd06.id)
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.exclude_globs",
+        source: "signal-default",
+        scoreRole: "metadata",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        value: 10,
+        source: "signal-default",
+        scoreRole: "threshold",
+      }),
+    )
+  })
+
+  test("no tracked functions: neutral output, score 1, and no diagnostics", async () => {
+    await writeTs("src/value.ts", "export const value = 1\n")
+
+    const out = await runCompute()
+
+    expect(out.byFile.size).toBe(0)
+    expect(out.boundaryCoverage).toEqual({
+      totalParams: 0,
+      annotatedParams: 0,
+      totalReturns: 0,
+      annotatedReturns: 0,
+      coverage: 1,
+    })
+    expect(out.internalCoverage.coverage).toBe(1)
+    expect(out.uncoveredBoundary).toEqual([])
+    expect(out.diagnosticLimit).toBe(10)
+    expect(TsLd06.score(out)).toBe(1)
+    expect(TsLd06.diagnose(out)).toEqual([])
+  })
+
+  test("internal-only functions stay neutral for boundary score", async () => {
+    await writeTs(
+      "src/internal.ts",
+      [
+        "function helper(value) {",
+        "  return value",
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runCompute()
+
+    expect(out.boundaryCoverage.totalParams).toBe(0)
+    expect(out.boundaryCoverage.totalReturns).toBe(0)
+    expect(out.internalCoverage.totalParams).toBe(1)
+    expect(out.internalCoverage.annotatedParams).toBe(0)
+    expect(out.uncoveredBoundary).toEqual([])
+    expect(TsLd06.score(out)).toBe(1)
+  })
+
   test("fully annotated boundary functions score 1", async () => {
     await writeTs(
       "src/api.ts",
@@ -208,6 +301,58 @@ describe("TS-LD-06 (type annotation coverage)", () => {
     expect(TsLd06.diagnose(negative)).toEqual([])
     expect(TsLd06.diagnose(nan)).toEqual([])
     expect(TsLd06.diagnose(infinite)).toEqual([])
+  })
+
+  test("diagnostics include ordered severity, location, and payload data", async () => {
+    const second = await writeTs(
+      "src/b.ts",
+      [
+        "export function missingReturn(value: string) {",
+        "  return value",
+        "}",
+        "",
+      ].join("\n"),
+    )
+    const first = await writeTs(
+      "src/a.ts",
+      [
+        "export function missingBoth(value) {",
+        "  return value",
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runCompute()
+
+    expect(out.uncoveredBoundary.map((fn) => fn.name)).toEqual([
+      "missingBoth",
+      "missingReturn",
+    ])
+    expect(TsLd06.diagnose(out)).toEqual([
+      {
+        severity: "warn",
+        message: "Boundary function `missingBoth` is missing explicit both annotations",
+        location: { file: first, line: 1 },
+        data: {
+          file: first,
+          name: "missingBoth",
+          line: 1,
+          missingKind: "both",
+        },
+      },
+      {
+        severity: "info",
+        message: "Boundary function `missingReturn` is missing explicit return annotations",
+        location: { file: second, line: 1 },
+        data: {
+          file: second,
+          name: "missingReturn",
+          line: 1,
+          missingKind: "return",
+        },
+      },
+    ])
   })
 
   test("component-typed exported functions do not require duplicate return annotations", async () => {
@@ -618,6 +763,22 @@ describe("TS-LD-06 (type annotation coverage)", () => {
     expect(out.uncoveredBoundary.map((fn) => fn.name)).toEqual(["publicApi"])
   })
 
+  test("default and configured exclusions remove boundary files", async () => {
+    await writeTs("src/api.ts", "export function publicApi(value) { return value }\n")
+    await writeTs("dist/build.ts", "export function built(value) { return value }\n")
+    await writeTs("vendor/sdk.ts", "export function vendored(value) { return value }\n")
+    await writeTs("src/generated/client.ts", "export function generated(value) { return value }\n")
+    await writeTs("src/__tests__/fixture.ts", "export function testFixture(value) { return value }\n")
+    await writeTs("src/custom.skip.ts", "export function customSkip(value) { return value }\n")
+
+    const out = await runCompute({
+      ...TsLd06.defaultConfig,
+      exclude_globs: [...TsLd06.defaultConfig.exclude_globs, "**/*.skip.ts"],
+    })
+
+    expect(out.uncoveredBoundary.map((fn) => fn.name)).toEqual(["publicApi"])
+  })
+
   test("hidden extension directory exports are ignored by default", async () => {
     await writeTs(
       "src/api.ts",
@@ -640,6 +801,24 @@ describe("TS-LD-06 (type annotation coverage)", () => {
 
     const out = await runCompute()
     expect(out.uncoveredBoundary.map((fn) => fn.name)).toEqual(["publicApi"])
+  })
+
+  test("deterministic: same project, same output, diagnostics, and score", async () => {
+    await writeTs(
+      "src/order.ts",
+      [
+        "export function second(value) { return value }",
+        "export function first(value: string) { return value }",
+        "",
+      ].join("\n"),
+    )
+
+    const first = await runCompute()
+    const second = await runCompute()
+
+    expect(stableTsLd06Output(second)).toEqual(stableTsLd06Output(first))
+    expect(TsLd06.diagnose(second)).toEqual(TsLd06.diagnose(first))
+    expect(TsLd06.score(second)).toBe(TsLd06.score(first))
   })
 
   test("configSchema decodes defaults round-trip", () => {

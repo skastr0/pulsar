@@ -510,7 +510,30 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "ts-ab-05.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AB-05 semantic cacheVersion after signature-scope, return-only, and diagnostic-limit semantics changed.",
     },
   },
-  pendingSignalContract("TS-LD-06-annotation-coverage"),
+  {
+    id: "TS-LD-06-annotation-coverage",
+    status: "verified",
+    evidence: {
+      identity:
+        "ts-ld-06.test.ts: canonical id, alias, title, tier/category/kind, no compound inputs, semantic cacheVersion, pack registration, and registry alias lookup are asserted.",
+      config:
+        "ts-ld-06.test.ts: configSchema decodes defaults; factor-ledger assertions cover exclude_globs and top_n_diagnostics; diagnostics-cap tests cover sanitized cap behavior.",
+      positiveFixture:
+        "ts-ld-06.test.ts: real TsProject fixtures measure annotated/unannotated boundary functions, exported variables, named/default exports, overload signatures, exported class methods/constructors, exported object-literal APIs, TSX component returns, framework-owned method contracts, and contextual function types.",
+      negativeFixture:
+        "ts-ld-06.test.ts: real fixtures prove internal-only functions stay out of boundary score, callbacks are excluded, nested same-name declarations do not inherit export status, object literal methods returned from exported class methods stay internal, and default/custom excluded files are ignored.",
+      applicability:
+        "ts-ld-06.test.ts: value-only repositories and internal-only repositories produce neutral boundary coverage, score 1, and no diagnostics while preserving internal measurement where applicable.",
+      score:
+        "ts-ld-06.test.ts: weighted boundary score is asserted for mixed param/return coverage and for default-initialized parameters; fully annotated and no-boundary cases score 1.",
+      diagnostics:
+        "ts-ld-06.test.ts: diagnostics assert warn/info severity, missingKind-specific messages, file/line locations, payload data, deterministic ordering, and sanitized top_n_diagnostics caps.",
+      factorLedger:
+        "ts-ld-06.test.ts: registered pack signal emits config.exclude_globs and config.top_n_diagnostics factor-ledger entries with score roles.",
+      cacheSemantics:
+        "ts-ld-06.test.ts and pack.test.ts: wrapped pack cache version includes the TS-LD-06 semantic cacheVersion after diagnostic-limit, overload, constructor, object-boundary, and export-linkage semantics changed.",
+    },
+  },
   pendingSignalContract("TS-LD-07-unsafe-type-erosion"),
   pendingSignalContract("TS-LD-08-exhaustiveness-erosion"),
   pendingSignalContract("TS-LD-09-error-channel-opacity"),
