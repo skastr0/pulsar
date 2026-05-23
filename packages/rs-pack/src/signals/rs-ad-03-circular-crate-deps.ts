@@ -1,6 +1,12 @@
 import {
+  makeFactorEntry,
+  makeFactorLedger,
+  type SignalFactorLedger,
+} from "@skastr0/pulsar-core/factors"
+import {
   type Diagnostic,
   type Signal,
+  type SignalFactorDefinition,
   SignalComputeError,
 } from "@skastr0/pulsar-core/signal"
 import { computeDiagnosticHash } from "@skastr0/pulsar-core/reference-data"
@@ -37,7 +43,21 @@ interface RsAd03Output {
   readonly cycleCount: number
   readonly largestCycleSize: number
   readonly metadataStatus: "loaded" | "missing"
+  readonly packageCount: number
+  readonly diagnosticLimit: number
 }
+
+const DEFAULT_TOP_N_DIAGNOSTICS = 10
+
+const RsAd03FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
+  {
+    path: "config.top_n_diagnostics",
+    title: "Config top n diagnostics",
+    valueKind: "number",
+    scoreRole: "metadata",
+    defaultValue: DEFAULT_TOP_N_DIAGNOSTICS,
+  },
+]
 
 export const RsAd03: Signal<RsAd03Config, RsAd03Output, RustProjectTag> = {
   id: "RS-AD-03-circular-crate-dependencies",
@@ -46,13 +66,16 @@ export const RsAd03: Signal<RsAd03Config, RsAd03Output, RustProjectTag> = {
   tier: 1,
   category: "architectural-drift",
   kind: "structural",
+  cacheVersion: "cargo-metadata-cycles-config-v1",
   configSchema: RsAd03Config,
+  factorDefinitions: RsAd03FactorDefinitions,
   defaultConfig: {
-    top_n_diagnostics: 10,
+    top_n_diagnostics: DEFAULT_TOP_N_DIAGNOSTICS,
   },
   inputs: [],
-  compute: () =>
+  compute: (config) =>
     Effect.gen(function* () {
+      const normalizedConfig = normalizeRsAd03Config(config)
       const project = yield* RustProjectTag
       return yield* Effect.try({
         try: (): RsAd03Output => {
@@ -63,6 +86,8 @@ export const RsAd03: Signal<RsAd03Config, RsAd03Output, RustProjectTag> = {
               cycleCount: 0,
               largestCycleSize: 0,
               metadataStatus: "missing",
+              packageCount: 0,
+              diagnosticLimit: normalizedConfig.top_n_diagnostics,
             }
           }
 
@@ -97,6 +122,8 @@ export const RsAd03: Signal<RsAd03Config, RsAd03Output, RustProjectTag> = {
             cycleCount: cycles.length,
             largestCycleSize: cycles.reduce((max, cycle) => Math.max(max, cycle.crates.length), 0),
             metadataStatus: "loaded",
+            packageCount: packages.length,
+            diagnosticLimit: normalizedConfig.top_n_diagnostics,
           }
         },
         catch: (cause) =>
@@ -111,14 +138,21 @@ export const RsAd03: Signal<RsAd03Config, RsAd03Output, RustProjectTag> = {
   },
   diagnose: (out): ReadonlyArray<Diagnostic> => {
     if (out.metadataStatus === "missing") {
-      return [{ severity: "warn", message: "RS-AD-03 could not load cargo metadata for this repo" }]
+      return [{
+        severity: "warn" as const,
+        message: "RS-AD-03 could not load cargo metadata for this repo",
+        data: {
+          metadataStatus: out.metadataStatus,
+          packageCount: out.packageCount,
+        },
+      }].slice(0, out.diagnosticLimit)
     }
-    return out.cycles.slice(0, 10).map((cycle) => ({
+    return out.cycles.slice(0, out.diagnosticLimit).map((cycle) => ({
       severity: "block" as const,
       message: `Circular crate dependency (${cycle.crates.length} crates): ${cycle.architecturalSpan}`,
       location: { file: cycle.manifestPaths[0] ?? "Cargo.toml" },
       data: {
-        hash: computeDiagnosticHash(cycle.architecturalSpan),
+        hash: hashCycle(cycle),
         crates: [...cycle.crates],
         edges: cycle.edges.map((edge) => ({ ...edge })),
         architecturalSpan: cycle.architecturalSpan,
@@ -127,7 +161,52 @@ export const RsAd03: Signal<RsAd03Config, RsAd03Output, RustProjectTag> = {
       },
     }))
   },
+  outputMetadata: (out) => {
+    if (out.metadataStatus === "missing") {
+      return { applicability: "insufficient_evidence" as const }
+    }
+    return out.packageCount === 0 ? { applicability: "not_applicable" as const } : undefined
+  },
+  factorLedger: () => makeRsAd03FactorLedger(),
 }
+
+type NormalizedRsAd03Config = RsAd03Config
+
+const normalizeRsAd03Config = (config: RsAd03Config): NormalizedRsAd03Config => ({
+  top_n_diagnostics: Number.isFinite(config.top_n_diagnostics)
+    ? Math.max(0, Math.floor(config.top_n_diagnostics))
+    : 0,
+})
+
+const makeRsAd03FactorLedger = (): SignalFactorLedger =>
+  makeFactorLedger(
+    "RS-AD-03-circular-crate-dependencies",
+    RsAd03FactorDefinitions.map((definition) =>
+      makeFactorEntry(definition, definition.defaultValue ?? null, {
+        source: "signal-default",
+      }),
+    ),
+  )
+
+const hashCycle = (cycle: CrateCycle): string =>
+  computeDiagnosticHash(
+    [
+      cycle.architecturalSpan,
+      ...sortCycleEdges(cycle.edges).map((edge) =>
+        `${edge.from}:${edge.to}:${edge.kind}:${edge.optional}:${edge.featureDriven}`,
+      ),
+    ].join("|"),
+  )
+
+const compareCycleEdges = (a: CrateEdge, b: CrateEdge): number =>
+  a.from.localeCompare(b.from) ||
+  a.to.localeCompare(b.to) ||
+  a.kind.localeCompare(b.kind) ||
+  Number(a.optional) - Number(b.optional) ||
+  Number(a.featureDriven) - Number(b.featureDriven)
+
+const sortCycleEdges = (edges: ReadonlyArray<CrateEdge>): ReadonlyArray<CrateEdge> =>
+  [...edges].sort(compareCycleEdges)
 
 const hasSelfLoop = (
   node: string | undefined,
@@ -140,8 +219,10 @@ const toCycle = (
   packageByName: ReadonlyMap<string, CargoMetadataPackage>,
 ): CrateCycle => {
   const cycleSet = new Set(scc)
-  const edges = scc.flatMap((from) =>
-    (graph.get(from) ?? []).filter((edge) => cycleSet.has(edge.to)),
+  const edges = sortCycleEdges(
+    scc.flatMap((from) =>
+      (graph.get(from) ?? []).filter((edge) => cycleSet.has(edge.to)),
+    ),
   )
   const ordered = [...scc].sort()
   const architecturalSpan = `${ordered.join("→")}→${ordered[0] ?? ""}`

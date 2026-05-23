@@ -57,7 +57,33 @@ export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "observer-integration.test.ts and CLI score tests: Rust observer integration includes RS-AD-02 in the RS pack against a real Cargo fixture, while CLI single-signal mode executes RS-AD-02 against a repository substrate with conventions loaded from disk.",
     },
   },
-  pendingSignalContract("RS-AD-03-circular-crate-dependencies"),
+  {
+    id: "RS-AD-03-circular-crate-dependencies",
+    status: "verified",
+    requiredEvidence: ["integration"],
+    evidence: {
+      identity:
+        "rs-ad-signals.test.ts: canonical id, alias, title, tier/category/kind, empty input contract, semantic cacheVersion, pack registration, registry alias lookup, config-cache hash sensitivity, and default config decoding are asserted.",
+      config:
+        "rs-ad-signals.test.ts: top_n_diagnostics decodes through the real schema and fractional, negative, and NaN diagnostic caps are normalized through compute output.",
+      positiveFixture:
+        "rs-ad-signals.test.ts: temporary Cargo workspace fixtures run through RustProjectLayer and real cargo metadata to produce feature-induced workspace crate cycles with optional and dev-dependency edge facts.",
+      negativeFixture:
+        "rs-ad-signals.test.ts: clean acyclic Cargo workspaces, missing Cargo metadata, and empty workspaces return neutral output without false cycle pressure.",
+      applicability:
+        "rs-ad-signals.test.ts: loaded Cargo metadata with packages is applicable, missing metadata emits insufficient_evidence metadata, and loaded metadata with no workspace packages emits not_applicable metadata.",
+      score:
+        "rs-ad-signals.test.ts: cycle fixtures score below clean fixtures, missing metadata stays score-neutral through applicability metadata, and additional cycles plus larger strongly connected components increase score pressure.",
+      diagnostics:
+        "rs-ad-signals.test.ts: diagnostics assert block severity, manifest locations, deterministic cycle span payloads, stable hash payloads from cycle edges, feature-induced status, missing-metadata warning payloads, and normalized diagnostic caps.",
+      factorLedger:
+        "rs-ad-signals.test.ts: registered RS pack signal emits config.top_n_diagnostics as non-score-bearing metadata with signal-default source.",
+      cacheSemantics:
+        "rs-ad-signals.test.ts and pack.test.ts: RS-AD-03 declares cargo-metadata-cycles-config-v1 cacheVersion, config/cacheVersion changes alter the signal config hash, and the RS pack wrapper preserves the signal-specific cacheVersion.",
+      integration:
+        "observer-integration.test.ts and CLI score tests: Rust observer integration includes RS-AD-03 in the RS pack against a real Cargo fixture, while CLI single-signal mode executes RS-AD-03 against a repository substrate with cargo metadata loaded from disk.",
+    },
+  },
   pendingSignalContract("RS-DE-01-trait-coupling"),
   pendingSignalContract("RS-DE-02-dependency-tree"),
   pendingSignalContract("RS-DE-03-feature-flags"),

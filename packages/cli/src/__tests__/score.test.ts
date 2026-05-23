@@ -1295,6 +1295,58 @@ export function stubF() { throw new Error("Not implemented") }
     }
   }, 120_000)
 
+  test("single-signal CLI wrapper executes RS-AD-03 with cargo metadata", async () => {
+    const repoPath = await initRepo([
+      {
+        path: "Cargo.toml",
+        content: [
+          "[workspace]",
+          'members = ["crates/a", "crates/b"]',
+          'resolver = "2"',
+          "",
+        ].join("\n"),
+      },
+      {
+        path: "crates/a/Cargo.toml",
+        content: [
+          "[package]",
+          'name = "a"',
+          'version = "0.1.0"',
+          'edition = "2021"',
+          "",
+          "[dependencies]",
+          'b = { path = "../b", optional = true }',
+          "",
+        ].join("\n"),
+      },
+      { path: "crates/a/src/lib.rs", content: "pub fn a() {}\n" },
+      {
+        path: "crates/b/Cargo.toml",
+        content: [
+          "[package]",
+          'name = "b"',
+          'version = "0.1.0"',
+          'edition = "2021"',
+          "",
+          "[dev-dependencies]",
+          'a = { path = "../a" }',
+          "",
+        ].join("\n"),
+      },
+      { path: "crates/b/src/lib.rs", content: "pub fn b() {}\n" },
+    ])
+    try {
+      const out = runCli(repoPath, ["score", "--signal", "RS-AD-03", "."])
+      expect(out.status).toBe(0)
+      expect(out.stdout).toContain("Signal: RS-AD-03-circular-crate-dependencies")
+      expect(out.stdout).toContain("BLOCK Circular crate dependency (2 crates): a -> b -> a")
+      expect(out.stdout).toContain("Score:  0.850")
+      expect(out.stdout).not.toContain("config.top_n_diagnostics=10 threshold")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
   test("single-signal mode summarizes score-bearing factor audit details", async () => {
     const repoPath = await initRepo([
       {

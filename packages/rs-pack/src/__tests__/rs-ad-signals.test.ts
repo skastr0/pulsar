@@ -197,6 +197,223 @@ const createRsAd02AliasWorkspace = () =>
     ].join("\n"),
   })
 
+const rsAd03CycleWorkspaceFiles = (): Readonly<Record<string, string>> => ({
+  "Cargo.toml": [
+    "[workspace]",
+    'members = ["crates/a", "crates/b"]',
+    'resolver = "2"',
+    "",
+  ].join("\n"),
+  "crates/a/Cargo.toml": [
+    "[package]",
+    'name = "a"',
+    'version = "0.1.0"',
+    'edition = "2021"',
+    "",
+    "[dependencies]",
+    'b = { path = "../b", optional = true }',
+    "",
+  ].join("\n"),
+  "crates/a/src/lib.rs": "pub fn a() {}\n",
+  "crates/b/Cargo.toml": [
+    "[package]",
+    'name = "b"',
+    'version = "0.1.0"',
+    'edition = "2021"',
+    "",
+    "[dev-dependencies]",
+    'a = { path = "../a" }',
+    "",
+  ].join("\n"),
+  "crates/b/src/lib.rs": "pub fn b() {}\n",
+})
+
+const createRsAd03CycleWorkspace = () =>
+  createRustWorkspace("pulsar-rs-ad03-cycle-", rsAd03CycleWorkspaceFiles())
+
+const createRsAd03RenamedCycleWorkspace = () =>
+  createRustWorkspace("pulsar-rs-ad03-renamed-cycle-", {
+    "Cargo.toml": [
+      "[workspace]",
+      'members = ["crates/a", "crates/b"]',
+      'resolver = "2"',
+      "",
+    ].join("\n"),
+    "crates/a/Cargo.toml": [
+      "[package]",
+      'name = "a"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+      "[dependencies]",
+      'b_alias = { package = "b", path = "../b", optional = true }',
+      "",
+      "[features]",
+      "default = []",
+      'use-b = ["dep:b_alias"]',
+      "",
+    ].join("\n"),
+    "crates/a/src/lib.rs": "pub fn a() {}\n",
+    "crates/b/Cargo.toml": [
+      "[package]",
+      'name = "b"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+      "[dev-dependencies]",
+      'a = { path = "../a" }',
+      "",
+    ].join("\n"),
+    "crates/b/src/lib.rs": "pub fn b() {}\n",
+  })
+
+const createRsAd03MultiCycleWorkspace = () =>
+  createRustWorkspace("pulsar-rs-ad03-multi-cycle-", {
+    "Cargo.toml": [
+      "[workspace]",
+      'members = ["crates/a", "crates/b", "crates/c", "crates/d"]',
+      'resolver = "2"',
+      "",
+    ].join("\n"),
+    "crates/a/Cargo.toml": [
+      "[package]",
+      'name = "a"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+      "[dependencies]",
+      'b = { path = "../b", optional = true }',
+      "",
+    ].join("\n"),
+    "crates/a/src/lib.rs": "pub fn a() {}\n",
+    "crates/b/Cargo.toml": [
+      "[package]",
+      'name = "b"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+      "[dev-dependencies]",
+      'a = { path = "../a" }',
+      "",
+    ].join("\n"),
+    "crates/b/src/lib.rs": "pub fn b() {}\n",
+    "crates/c/Cargo.toml": [
+      "[package]",
+      'name = "c"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+      "[dependencies]",
+      'd = { path = "../d", optional = true }',
+      "",
+    ].join("\n"),
+    "crates/c/src/lib.rs": "pub fn c() {}\n",
+    "crates/d/Cargo.toml": [
+      "[package]",
+      'name = "d"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+      "[dev-dependencies]",
+      'c = { path = "../c" }',
+      "",
+    ].join("\n"),
+    "crates/d/src/lib.rs": "pub fn d() {}\n",
+  })
+
+const createRsAd03LargeCycleWorkspace = () =>
+  createRustWorkspace("pulsar-rs-ad03-large-cycle-", {
+    "Cargo.toml": [
+      "[workspace]",
+      'members = ["crates/a", "crates/b", "crates/c"]',
+      'resolver = "2"',
+      "",
+    ].join("\n"),
+    "crates/a/Cargo.toml": [
+      "[package]",
+      'name = "a"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+      "[dependencies]",
+      'b = { path = "../b", optional = true }',
+      "",
+    ].join("\n"),
+    "crates/a/src/lib.rs": "pub fn a() {}\n",
+    "crates/b/Cargo.toml": [
+      "[package]",
+      'name = "b"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+      "[dependencies]",
+      'c = { path = "../c", optional = true }',
+      "",
+    ].join("\n"),
+    "crates/b/src/lib.rs": "pub fn b() {}\n",
+    "crates/c/Cargo.toml": [
+      "[package]",
+      'name = "c"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+      "[dev-dependencies]",
+      'a = { path = "../a" }',
+      "",
+    ].join("\n"),
+    "crates/c/src/lib.rs": "pub fn c() {}\n",
+  })
+
+const createRsAd03CleanWorkspace = () =>
+  createRustWorkspace("pulsar-rs-ad03-clean-", {
+    "Cargo.toml": [
+      "[workspace]",
+      'members = ["crates/a", "crates/b", "crates/c"]',
+      'resolver = "2"',
+      "",
+    ].join("\n"),
+    "crates/a/Cargo.toml": [
+      "[package]",
+      'name = "a"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+      "[dependencies]",
+      'b = { path = "../b" }',
+      "",
+    ].join("\n"),
+    "crates/a/src/lib.rs": "pub fn a() {}\n",
+    "crates/b/Cargo.toml": [
+      "[package]",
+      'name = "b"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+      "[dependencies]",
+      'c = { path = "../c" }',
+      "",
+    ].join("\n"),
+    "crates/b/src/lib.rs": "pub fn b() {}\n",
+    "crates/c/Cargo.toml": [
+      "[package]",
+      'name = "c"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+    ].join("\n"),
+    "crates/c/src/lib.rs": "pub fn c() {}\n",
+  })
+
+const createRsAd03EmptyWorkspace = () =>
+  createRustWorkspace("pulsar-rs-ad03-empty-", {
+    "Cargo.toml": [
+      "[workspace]",
+      "members = []",
+      'resolver = "2"',
+      "",
+    ].join("\n"),
+  })
+
 const rsAd01WorkspaceFiles = (): Readonly<Record<string, string>> => ({
   "Cargo.toml": [
     "[package]",
@@ -797,96 +1014,252 @@ describe("RS-AD-* signals", () => {
     }
   })
 
-  test("RS-AD-03 detects feature-induced workspace crate cycles from cargo metadata", async () => {
-    const metadata = {
-      version: 1,
-      workspaceRoot: "/repo",
-      targetDirectory: "/repo/target",
-      workspaceMembers: [
-        "a 0.1.0 (path+file:///repo/crates/a)",
-        "b 0.1.0 (path+file:///repo/crates/b)",
-      ],
-      packages: [
-        {
-          id: "a 0.1.0 (path+file:///repo/crates/a)",
-          name: "a",
-          version: "0.1.0",
-          edition: "2021",
-          manifestPath: "/repo/crates/a/Cargo.toml",
-          dependencies: [
-            {
-              name: "b",
-              kind: null,
-              rename: null,
-              optional: true,
-              usesDefaultFeatures: true,
-              features: ["bridge"],
-              path: "../b",
-              target: null,
-              req: "*",
-            },
-          ],
-          features: {},
-          targets: [],
+  test("RS-AD-03 declares identity, config, cache, pack registration, and factor ledger", async () => {
+    const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
+    const versionedRegistry = await Effect.runPromise(buildRegistry([
+      ...SHARED_SIGNALS,
+      ...RS_PACK_SIGNALS.map((signal) =>
+        signal.id === RsAd03.id
+          ? { ...RsAd03, cacheVersion: `${RsAd03.cacheVersion}-changed` }
+          : signal,
+      ),
+    ]))
+    const registered = registry.byId.get("RS-AD-03")
+    const decoded = Schema.decodeUnknownSync(RsAd03.configSchema)(RsAd03.defaultConfig)
+    const factorLedger = registered?.factorLedger?.({ cycles: [] })
+    const baseCacheHash = computeConfigHash(RsAd03.id, registry, undefined)
+    const versionedCacheHash = computeConfigHash(RsAd03.id, versionedRegistry, undefined)
+    const configuredCacheHash = computeConfigHash(RsAd03.id, registry, {
+      id: "rs-ad-03-contract",
+      domain: "test",
+      signal_overrides: {
+        [RsAd03.id]: {
+          config: {
+            top_n_diagnostics: 1,
+          },
         },
-        {
-          id: "b 0.1.0 (path+file:///repo/crates/b)",
-          name: "b",
-          version: "0.1.0",
-          edition: "2021",
-          manifestPath: "/repo/crates/b/Cargo.toml",
-          dependencies: [
-            {
-              name: "a",
-              kind: "dev",
-              rename: null,
-              optional: false,
-              usesDefaultFeatures: true,
-              features: [],
-              path: "../a",
-              target: null,
-              req: "*",
-            },
-          ],
-          features: {},
-          targets: [],
-        },
-      ],
-      resolve: undefined,
-    } satisfies RustProject["cargoMetadata"]
+      },
+    })
 
-    const project: RustProject = {
-      worktreePath: "/repo",
-      manifests: [
-        {
-          name: "crates/a",
-          path: "/repo/crates/a",
-          manifestPath: "/repo/crates/a/Cargo.toml",
-          packageName: "a",
+    expect(RsAd03).toMatchObject({
+      id: "RS-AD-03-circular-crate-dependencies",
+      aliases: ["RS-AD-03"],
+      title: "Circular crate dependencies",
+      tier: 1,
+      category: "architectural-drift",
+      kind: "structural",
+      cacheVersion: "cargo-metadata-cycles-config-v1",
+      inputs: [],
+    })
+    expect(decoded).toEqual({ top_n_diagnostics: 10 })
+    expect(registered?.id).toBe(RsAd03.id)
+    expect(registry.byId.get("RS-AD-03")?.id).toBe(RsAd03.id)
+    expect(versionedCacheHash).not.toBe(baseCacheHash)
+    expect(configuredCacheHash).not.toBe(baseCacheHash)
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        source: "signal-default",
+        affectsScore: false,
+        scoreRole: "metadata",
+      }),
+    )
+  })
+
+  test("RS-AD-03 detects feature-induced workspace crate cycles from real cargo metadata", async () => {
+    const repo = await createRsAd03CycleWorkspace()
+
+    try {
+      const out = await runSignalCompute(RsAd03, repo, RsAd03.defaultConfig)
+
+      expect(out.metadataStatus).toBe("loaded")
+      expect(out.packageCount).toBe(2)
+      expect(out.cycleCount).toBe(1)
+      expect(out.largestCycleSize).toBe(2)
+      expect(out.diagnosticLimit).toBe(10)
+      expect(out.cycles[0]?.crates).toEqual(["a", "b"])
+      expect(out.cycles[0]?.featureInduced).toBe(true)
+      expect(out.cycles[0]?.edges.map((edge) => edge.kind).sort()).toEqual(["dev", "normal"])
+      expect(out.cycles[0]?.edges.some((edge) => edge.optional)).toBe(true)
+      expect(RsAd03.score(out)).toBe(0.85)
+      expect(RsAd03.outputMetadata?.(out)).toBeUndefined()
+
+      const diagnostics = RsAd03.diagnose(out)
+      expect(diagnostics).toHaveLength(1)
+      expect(diagnostics[0]).toMatchObject({
+        severity: "block",
+        message: expect.stringContaining("a→b→a"),
+        data: {
+          crates: ["a", "b"],
+          architecturalSpan: "a→b→a",
+          featureInduced: true,
         },
-        {
-          name: "crates/b",
-          path: "/repo/crates/b",
-          manifestPath: "/repo/crates/b/Cargo.toml",
-          packageName: "b",
-        },
-      ],
-      sourceFiles: [],
-      cargoLockPath: undefined,
-      cargoLock: undefined,
-      cargoMetadata: metadata,
+      })
+      expect(diagnostics[0]?.location?.file).toEndWith("/crates/a/Cargo.toml")
+      expect(typeof diagnostics[0]?.data?.hash).toBe("string")
+      expect(diagnostics[0]?.data?.edges).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ from: "a", to: "b", optional: true, featureDriven: true }),
+          expect.objectContaining({ from: "b", to: "a", kind: "dev" }),
+        ]),
+      )
+    } finally {
+      await cleanupWorkspace(repo)
     }
+  })
 
-    const out = await runSignalComputeWithProject(RsAd03, project, RsAd03.defaultConfig)
+  test("RS-AD-03 keeps renamed dependency cycles and hashes canonical", async () => {
+    const repo = await createRsAd03RenamedCycleWorkspace()
 
-    expect(out.metadataStatus).toBe("loaded")
-    expect(out.cycleCount).toBe(1)
-    expect(out.cycles[0]?.crates).toEqual(["a", "b"])
-    expect(out.cycles[0]?.featureInduced).toBe(true)
+    try {
+      const out = await runSignalCompute(RsAd03, repo, RsAd03.defaultConfig)
+      const project = await Effect.runPromise(makeRustProject(repo))
+      const metadata = project.cargoMetadata
+      expect(metadata).toBeDefined()
+      if (metadata === undefined) {
+        throw new Error("expected cargo metadata for renamed dependency fixture")
+      }
 
-    const diagnostics = RsAd03.diagnose(out)
-    expect(diagnostics).toHaveLength(1)
-    expect(diagnostics[0]?.location?.file).toBe("/repo/crates/a/Cargo.toml")
-    expect(typeof diagnostics[0]?.data?.hash).toBe("string")
+      const aliasedDependency = metadata.packages
+        .find((pkg) => pkg.name === "a")
+        ?.dependencies.find((dep) => dep.rename === "b_alias")
+      expect(aliasedDependency).toMatchObject({
+        name: "b",
+        rename: "b_alias",
+        optional: true,
+      })
+
+      const reversedOrder = await runSignalComputeWithProject(
+        RsAd03,
+        {
+          ...project,
+          cargoMetadata: {
+            ...metadata,
+            workspaceMembers: [...metadata.workspaceMembers].reverse(),
+            packages: [...metadata.packages]
+              .reverse()
+              .map((pkg) => ({
+                ...pkg,
+                dependencies: [...pkg.dependencies].reverse(),
+              })),
+          },
+        },
+        RsAd03.defaultConfig,
+      )
+
+      expect(out.cycles[0]?.crates).toEqual(["a", "b"])
+      expect(out.cycles[0]?.edges).toEqual([
+        {
+          from: "a",
+          to: "b",
+          kind: "normal",
+          optional: true,
+          featureDriven: true,
+        },
+        {
+          from: "b",
+          to: "a",
+          kind: "dev",
+          optional: false,
+          featureDriven: false,
+        },
+      ])
+      expect(reversedOrder.cycles[0]?.edges).toEqual(out.cycles[0]?.edges)
+      expect(RsAd03.diagnose(reversedOrder)[0]?.data?.hash).toBe(
+        RsAd03.diagnose(out)[0]?.data?.hash,
+      )
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-AD-03 keeps clean, missing, and empty workspace cases neutral with honest applicability", async () => {
+    const cleanRepo = await createRsAd03CleanWorkspace()
+    const missingRepo = await createRustWorkspace("pulsar-rs-ad03-missing-", {
+      "README.md": "# no cargo here\n",
+    })
+    const emptyWorkspace = await createRsAd03EmptyWorkspace()
+
+    try {
+      const clean = await runSignalCompute(RsAd03, cleanRepo, RsAd03.defaultConfig)
+      const missing = await runSignalCompute(RsAd03, missingRepo, RsAd03.defaultConfig)
+      const empty = await runSignalCompute(RsAd03, emptyWorkspace, RsAd03.defaultConfig)
+
+      expect(clean.metadataStatus).toBe("loaded")
+      expect(clean.packageCount).toBe(3)
+      expect(clean.cycleCount).toBe(0)
+      expect(clean.cycles).toEqual([])
+      expect(RsAd03.score(clean)).toBe(1)
+      expect(RsAd03.diagnose(clean)).toEqual([])
+      expect(RsAd03.outputMetadata?.(clean)).toBeUndefined()
+
+      expect(missing.metadataStatus).toBe("missing")
+      expect(missing.packageCount).toBe(0)
+      expect(RsAd03.score(missing)).toBe(1)
+      expect(RsAd03.outputMetadata?.(missing)).toEqual({
+        applicability: "insufficient_evidence",
+      })
+      expect(RsAd03.diagnose(missing)[0]).toMatchObject({
+        severity: "warn",
+        data: {
+          metadataStatus: "missing",
+          packageCount: 0,
+        },
+      })
+
+      expect(empty.metadataStatus).toBe("loaded")
+      expect(empty.packageCount).toBe(0)
+      expect(RsAd03.score(empty)).toBe(1)
+      expect(RsAd03.diagnose(empty)).toEqual([])
+      expect(RsAd03.outputMetadata?.(empty)).toEqual({
+        applicability: "not_applicable",
+      })
+    } finally {
+      await cleanupWorkspace(cleanRepo)
+      await cleanupWorkspace(missingRepo)
+      await cleanupWorkspace(emptyWorkspace)
+    }
+  })
+
+  test("RS-AD-03 normalizes diagnostic limits and cycle score pressure", async () => {
+    const singleCycleRepo = await createRsAd03CycleWorkspace()
+    const multiCycleRepo = await createRsAd03MultiCycleWorkspace()
+    const largeCycleRepo = await createRsAd03LargeCycleWorkspace()
+
+    try {
+      const singleCycle = await runSignalCompute(RsAd03, singleCycleRepo, RsAd03.defaultConfig)
+      const multiCycle = await runSignalCompute(RsAd03, multiCycleRepo, RsAd03.defaultConfig)
+      const largeCycle = await runSignalCompute(RsAd03, largeCycleRepo, RsAd03.defaultConfig)
+      const capped = await runSignalCompute(RsAd03, multiCycleRepo, {
+        top_n_diagnostics: 1.9,
+      })
+      const hiddenNegative = await runSignalCompute(RsAd03, multiCycleRepo, {
+        top_n_diagnostics: -1,
+      })
+      const hiddenNaN = await runSignalCompute(RsAd03, multiCycleRepo, {
+        top_n_diagnostics: Number.NaN,
+      })
+
+      expect(capped.cycleCount).toBe(2)
+      expect(capped.diagnosticLimit).toBe(1)
+      expect(multiCycle.cycles.map((cycle) => cycle.crates)).toEqual([
+        ["a", "b"],
+        ["c", "d"],
+      ])
+      expect(largeCycle.cycleCount).toBe(1)
+      expect(largeCycle.largestCycleSize).toBe(3)
+      expect(RsAd03.diagnose(capped)).toHaveLength(1)
+      expect(RsAd03.diagnose(capped)[0]?.data?.crates).toEqual(["a", "b"])
+      expect(hiddenNegative.diagnosticLimit).toBe(0)
+      expect(hiddenNaN.diagnosticLimit).toBe(0)
+      expect(RsAd03.diagnose(hiddenNegative)).toEqual([])
+      expect(RsAd03.diagnose(hiddenNaN)).toEqual([])
+      expect(RsAd03.score(multiCycle)).toBeLessThan(RsAd03.score(singleCycle))
+      expect(RsAd03.score(largeCycle)).toBeLessThan(RsAd03.score(singleCycle))
+    } finally {
+      await cleanupWorkspace(singleCycleRepo)
+      await cleanupWorkspace(multiCycleRepo)
+      await cleanupWorkspace(largeCycleRepo)
+    }
   })
 })
