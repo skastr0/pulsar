@@ -90,7 +90,7 @@ export const RsAb02: Signal<RsAb02Config, RsAb02Output, RustProjectTag> = {
   tier: 1,
   category: "abstraction-bloat",
   kind: "legibility",
-  cacheVersion: "trait-object-depth-config-applicability-diagnostics-scoped-calls-v2",
+  cacheVersion: "trait-object-depth-config-applicability-diagnostics-scoped-calls-cfg-test-gating-v3",
   configSchema: RsAb02Config,
   factorDefinitions: RsAb02FactorDefinitions,
   defaultConfig: {

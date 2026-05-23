@@ -80,7 +80,11 @@ export const modulePathForAncestors = (
 
 const isCfgTestAttribute = (value: RustSyntaxNode | string): boolean => {
   const text = typeof value === "string" ? value : value.text
-  return /#\s*!?\[\s*cfg\s*\(\s*test\s*\)\s*\]/.test(text)
+  const match = text.match(/#\s*!?\[\s*cfg\s*\((.*)\)\s*\]/s)
+  if (match === null) return false
+  const cfgExpression = match[1]?.replace(/\s+/g, "") ?? ""
+  const withoutNotTest = cfgExpression.replace(/not\(test\)/g, "")
+  return /(^|[^A-Za-z0-9_])test([^A-Za-z0-9_]|$)/.test(withoutNotTest)
 }
 
 export const walkAttributedNodes = (

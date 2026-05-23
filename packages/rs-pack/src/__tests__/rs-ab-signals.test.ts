@@ -706,7 +706,7 @@ describe("RS-AB-* signals", () => {
       tier: 1,
       category: "abstraction-bloat",
       kind: "legibility",
-      cacheVersion: "trait-object-depth-config-applicability-diagnostics-scoped-calls-v2",
+      cacheVersion: "trait-object-depth-config-applicability-diagnostics-scoped-calls-cfg-test-gating-v3",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -1040,6 +1040,43 @@ describe("RS-AB-* signals", () => {
       expect(entriesByName.get("external_receiver")?.chainDepth).toBe(1)
       expect(entriesByName.get("external_receiver")?.calleeNames).toEqual([])
       expect(leafDepths).toEqual([1, 1])
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-AB-02 excludes composite cfg test-gated functions", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-ab02-cfg-test-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "trait-object-cfg-test"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "use std::fmt::Debug;",
+        "#[cfg(any(test, feature = \"probe\"))]",
+        "pub fn test_or_probe() -> Box<dyn Debug> { Box::new(1_u8) }",
+        "#[cfg(all(test, feature = \"probe\"))]",
+        "pub fn test_and_probe() -> Box<dyn Debug> { Box::new(2_u8) }",
+        "#[cfg(not(test))]",
+        "pub fn production_cfg() -> Box<dyn Debug> { Box::new(3_u8) }",
+        "pub fn ordinary() -> Box<dyn Debug> { production_cfg() }",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const out = await runSignalCompute(RsAb02, repo, RsAb02.defaultConfig)
+
+      expect(out.functions.map((entry) => entry.name).sort()).toEqual([
+        "ordinary",
+        "production_cfg",
+      ])
+      expect(out.functions.find((entry) => entry.name === "ordinary")?.chainDepth).toBe(2)
+      expect(out.functions.some((entry) => entry.name === "test_or_probe")).toBe(false)
+      expect(out.functions.some((entry) => entry.name === "test_and_probe")).toBe(false)
     } finally {
       await cleanupWorkspace(repo)
     }

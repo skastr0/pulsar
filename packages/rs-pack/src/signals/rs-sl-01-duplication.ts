@@ -50,7 +50,7 @@ export const RsSl01: Signal<RsSl01Config, RsSl01Output, RustProjectTag | SignalC
   tier: 1,
   category: "generated-slop",
   kind: "legibility",
-  cacheVersion: "advisory-rust-duplication-v1",
+  cacheVersion: "advisory-rust-duplication-cfg-test-gating-v2",
   configSchema: RsSl01Config,
   defaultConfig: {
     exclude_globs: [...DEFAULT_RUST_EXCLUDE_GLOBS],

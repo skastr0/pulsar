@@ -42,7 +42,7 @@ export const RsSl03: Signal<RsSl03Config, RsSl03Output, RustProjectTag> = {
   tier: 1,
   category: "generated-slop",
   kind: "legibility",
-  cacheVersion: "advisory-density-scaled-v1",
+  cacheVersion: "advisory-density-scaled-cfg-test-gating-v2",
   configSchema: RsSl03Config,
   defaultConfig: {
     exclude_globs: [...DEFAULT_RUST_EXCLUDE_GLOBS],
