@@ -791,10 +791,85 @@ describe("RS-LD-* signals", () => {
     }
   })
 
+  test("RS-LD-02 declares identity, config, cache, pack registration, and factor ledger", async () => {
+    const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
+    const versionedRegistry = await Effect.runPromise(
+      buildRegistry([
+        ...SHARED_SIGNALS,
+        ...RS_PACK_SIGNALS.filter((signal) => signal.id !== RsLd02.id),
+        { ...RsLd02, cacheVersion: `${RsLd02.cacheVersion}-next` },
+      ]),
+    )
+    const registered = registry.byId.get("RS-LD-02")
+    const decoded = Schema.decodeUnknownSync(RsLd02.configSchema)(RsLd02.defaultConfig)
+    const factorLedger = registered?.factorLedger?.({})
+    const baseCacheHash = computeConfigHash(RsLd02.id, registry, undefined)
+    const versionedCacheHash = computeConfigHash(RsLd02.id, versionedRegistry, undefined)
+    const configuredCacheHash = computeConfigHash(RsLd02.id, registry, {
+      id: "rs-ld-02-contract",
+      domain: "test",
+      signal_overrides: {
+        [RsLd02.id]: {
+          config: {
+            ...RsLd02.defaultConfig,
+            max_lifetime_complexity: 2,
+            top_n_diagnostics: 1,
+          },
+        },
+      },
+    })
+
+    expect(RsLd02).toMatchObject({
+      id: "RS-LD-02-lifetime-complexity",
+      aliases: ["RS-LD-02"],
+      title: "Lifetime complexity",
+      tier: 1,
+      category: "legibility-decay",
+      kind: "legibility",
+      cacheVersion: "lifetime-complexity-config-applicability-diagnostics-v1",
+      inputs: [],
+    })
+    expect(decoded).toEqual({
+      exclude_globs: ["**/target/**", "**/tests/**", "**/examples/**", "**/benches/**"],
+      max_lifetime_complexity: 4,
+      top_n_diagnostics: 10,
+    })
+    expect(registered?.id).toBe(RsLd02.id)
+    expect(registered?.cacheVersion).toBe(RsLd02.cacheVersion)
+    expect(registry.byId.get("RS-LD-02")?.id).toBe(RsLd02.id)
+    expect(baseCacheHash).not.toBe(versionedCacheHash)
+    expect(baseCacheHash).not.toBe(configuredCacheHash)
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.exclude_globs",
+        affectsScore: true,
+        scoreRole: "evidence",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.max_lifetime_complexity",
+        affectsScore: true,
+        scoreRole: "threshold",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        affectsScore: false,
+        scoreRole: "metadata",
+      }),
+    )
+  })
+
   test("RS-LD-02 counts lifetime parameters, bounds, and positions", async () => {
     const repo = await createLegibilityWorkspace()
     try {
-      const out = await runSignalCompute(RsLd02, repo, RsLd02.defaultConfig)
+      const out = await runSignalCompute(
+        RsLd02,
+        repo,
+        { ...RsLd02.defaultConfig, max_lifetime_complexity: 3 },
+      )
       const parse = out.functions.find((fn) => fn.name === "parse")
 
       expect(parse).toBeDefined()
@@ -802,8 +877,140 @@ describe("RS-LD-* signals", () => {
       expect(parse?.lifetimeBounds).toBeGreaterThanOrEqual(1)
       expect(parse?.inputPositions).toBeGreaterThanOrEqual(1)
       expect(parse?.outputPositions).toBe(0)
+      expect(out.sourceFileCount).toBe(1)
+      expect(out.analyzedSourceFileCount).toBe(1)
+      expect(out.totalAnalyzedFunctions).toBeGreaterThan(out.lifetimeFunctionCount)
+      expect(out.lifetimeFunctionCount).toBe(out.functions.length)
+      expect(out.totalFunctions).toBe(out.lifetimeFunctionCount)
+      expect(out.maxLifetimeComplexity).toBe(3)
+      expect(out.diagnosticLimit).toBe(10)
+      expect(out.overThresholdCount).toBeGreaterThanOrEqual(1)
+      expect(RsLd02.outputMetadata?.(out)).toBeUndefined()
+      expect(RsLd02.diagnose(out)[0]).toMatchObject({
+        severity: "warn",
+        message: expect.stringContaining("Lifetime complexity"),
+        data: expect.objectContaining({
+          maxLifetimeComplexity: 3,
+        }),
+      })
     } finally {
       await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-LD-02 normalizes diagnostics and applicability evidence", async () => {
+    const lifetime = await createLegibilityWorkspace()
+    const missing = await createRustWorkspace("pulsar-rs-ld02-missing-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "lifetime-missing"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+    })
+    const noLifetime = await createRustWorkspace("pulsar-rs-ld02-no-lifetime-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "lifetime-none"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub fn clean(value: &str) -> usize {",
+        "    value.len()",
+        "}",
+        "",
+      ].join("\n"),
+    })
+    const excluded = await createRustWorkspace("pulsar-rs-ld02-excluded-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "lifetime-excluded"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub fn parse<'a: 'b, 'b>(value: &'a str) -> &'a str",
+        "where",
+        "    'a: 'b,",
+        "{",
+        "    value",
+        "}",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const capped = await runSignalCompute(
+        RsLd02,
+        lifetime,
+        { ...RsLd02.defaultConfig, max_lifetime_complexity: 1.8, top_n_diagnostics: 1.8 },
+      )
+      const hidden = await runSignalCompute(
+        RsLd02,
+        lifetime,
+        { ...RsLd02.defaultConfig, max_lifetime_complexity: Number.NaN, top_n_diagnostics: Number.NaN },
+      )
+      const missingOut = await runSignalCompute(RsLd02, missing, RsLd02.defaultConfig)
+      const noLifetimeOut = await runSignalCompute(RsLd02, noLifetime, RsLd02.defaultConfig)
+      const excludedOut = await runSignalCompute(
+        RsLd02,
+        excluded,
+        { ...RsLd02.defaultConfig, exclude_globs: ["**/*.rs"] },
+      )
+
+      expect(capped.maxLifetimeComplexity).toBe(1)
+      expect(capped.diagnosticLimit).toBe(1)
+      expect(RsLd02.diagnose(capped)).toHaveLength(1)
+      expect(RsLd02.diagnose(capped)[0]?.data).toMatchObject({
+        maxLifetimeComplexity: 1,
+      })
+      expect(hidden.maxLifetimeComplexity).toBe(4)
+      expect(hidden.diagnosticLimit).toBe(0)
+      expect(RsLd02.diagnose(hidden)).toHaveLength(0)
+
+      expect(missingOut.sourceFileCount).toBe(0)
+      expect(RsLd02.outputMetadata?.(missingOut)).toEqual({
+        applicability: "insufficient_evidence",
+      })
+      expect(RsLd02.diagnose(missingOut)).toEqual([
+        expect.objectContaining({
+          severity: "warn",
+          message: "RS-LD-02 found no Rust source files for lifetime analysis",
+          data: expect.objectContaining({
+            sourceFileCount: 0,
+            analyzedSourceFileCount: 0,
+            totalAnalyzedFunctions: 0,
+            lifetimeFunctionCount: 0,
+          }),
+        }),
+      ])
+
+      expect(noLifetimeOut.sourceFileCount).toBe(1)
+      expect(noLifetimeOut.totalAnalyzedFunctions).toBe(1)
+      expect(noLifetimeOut.lifetimeFunctionCount).toBe(0)
+      expect(RsLd02.outputMetadata?.(noLifetimeOut)).toEqual({
+        applicability: "not_applicable",
+      })
+      expect(RsLd02.score(noLifetimeOut)).toBe(1)
+      expect(RsLd02.diagnose(noLifetimeOut)).toEqual([])
+
+      expect(excludedOut.sourceFileCount).toBe(1)
+      expect(excludedOut.analyzedSourceFileCount).toBe(0)
+      expect(excludedOut.totalAnalyzedFunctions).toBe(0)
+      expect(excludedOut.lifetimeFunctionCount).toBe(0)
+      expect(RsLd02.outputMetadata?.(excludedOut)).toEqual({
+        applicability: "not_applicable",
+      })
+      expect(RsLd02.diagnose(excludedOut)).toEqual([])
+    } finally {
+      await cleanupWorkspace(lifetime)
+      await cleanupWorkspace(missing)
+      await cleanupWorkspace(noLifetime)
+      await cleanupWorkspace(excluded)
     }
   })
 
