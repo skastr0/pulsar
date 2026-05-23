@@ -1281,7 +1281,7 @@ describe("RS-SL-* signals", () => {
       tier: 1,
       category: "generated-slop",
       kind: "legibility",
-      cacheVersion: "likely-expensive-score-cfg-test-gating-diagnostics-denominator-bindings-v5",
+      cacheVersion: "likely-expensive-score-cfg-test-gating-diagnostics-denominator-bindings-ufcs-v6",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -1521,6 +1521,99 @@ describe("RS-SL-* signals", () => {
     }
   })
 
+  test("RS-SL-04 detects UFCS clone calls on local expensive bindings", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-sl04-ufcs-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "clone-ufcs"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub fn clones() {",
+        "    let values: Vec<i32> = vec![1, 2, 3];",
+        "    let name: String = String::from(\"pulsar\");",
+        "    let shared = std::sync::Arc::new(vec![1, 2, 3]);",
+        "    let _copied_values = <Vec<i32> as Clone>::clone(&values);",
+        "    let _copied_name = Clone::clone(&name);",
+        "    let _shared = Clone::clone(&shared);",
+        "}",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const out = await runSignalCompute(RsSl04, repo, RsSl04.defaultConfig)
+
+      expect(out.totalCloneCalls).toBe(3)
+      expect(out.likelyExpensiveCloneCalls).toBe(2)
+      expect(out.modules[0]).toMatchObject({
+        cloneCalls: 3,
+        likelyExpensiveClones: 2,
+      })
+      expect(RsSl04.score(out)).toBeCloseTo(0.92)
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-SL-04 orders diagnostics by clone density before truncation", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-sl04-ordering-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "clone-ordering"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub mod high {",
+        "    pub fn clones() {",
+        "        let _one = String::from(\"one\").clone();",
+        "        let _two = vec![1, 2, 3].clone();",
+        "    }",
+        "}",
+        "",
+        "pub mod low {",
+        "    pub fn clone_once() {",
+        "        let _one = String::from(\"one\").clone();",
+        "    }",
+        "",
+        "    pub fn clean() {}",
+        "}",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const out = await runSignalCompute(RsSl04, repo, {
+        ...RsSl04.defaultConfig,
+        top_n_diagnostics: 1,
+      })
+      const diagnostics = RsSl04.diagnose(out)
+
+      expect(out.modules[0]).toMatchObject({
+        module: expect.stringContaining("::high"),
+        cloneCalls: 2,
+        likelyExpensiveClones: 2,
+        density: 2,
+      })
+      expect(out.modules[1]).toMatchObject({
+        module: expect.stringContaining("::low"),
+        cloneCalls: 1,
+        likelyExpensiveClones: 1,
+        density: 0.5,
+      })
+      expect(diagnostics).toHaveLength(1)
+      expect(diagnostics[0]).toMatchObject({
+        message: expect.stringContaining("::high contains 2 clone() calls"),
+      })
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
   test("RS-SL-04 scores likely expensive clones, not every clone call", () => {
     const cheapOnly = RsSl04.score(rsSl04Output({
       modules: [
@@ -1546,6 +1639,44 @@ describe("RS-SL-* signals", () => {
         },
       ],
     }))).toEqual([])
+
+    const mild = RsSl04.score(rsSl04Output({
+      modules: [
+        {
+          module: "crate::mild",
+          file: "src/lib.rs",
+          cloneCalls: 1,
+          likelyExpensiveClones: 1,
+          density: 1,
+        },
+      ],
+    }))
+    const risky = RsSl04.score(rsSl04Output({
+      modules: [
+        {
+          module: "crate::risky",
+          file: "src/lib.rs",
+          cloneCalls: 5,
+          likelyExpensiveClones: 5,
+          density: 5,
+        },
+      ],
+    }))
+    const broad = RsSl04.score(rsSl04Output({
+      modules: [
+        {
+          module: "crate::broad",
+          file: "src/lib.rs",
+          cloneCalls: 25,
+          likelyExpensiveClones: 25,
+          density: 25,
+        },
+      ],
+    }))
+
+    expect(mild).toBeGreaterThan(risky)
+    expect(risky).toBeGreaterThan(broad)
+    expect(broad).toBeCloseTo(0.2)
   })
 })
 

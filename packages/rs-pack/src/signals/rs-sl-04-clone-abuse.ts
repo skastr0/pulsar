@@ -48,6 +48,11 @@ interface RsSl04Output {
   readonly scoreDenominator: "likely-expensive-clone-calls"
 }
 
+interface CloneCallCandidate {
+  readonly receiver: string
+  readonly callee: string
+}
+
 const DEFAULT_TOP_N_DIAGNOSTICS = 10
 const RS_SL_04_SCORE_MODE = "likely-expensive-clone-pressure" as const
 const RS_SL_04_SCORE_DENOMINATOR = "likely-expensive-clone-calls" as const
@@ -76,7 +81,7 @@ export const RsSl04: Signal<RsSl04Config, RsSl04Output, RustProjectTag> = {
   tier: 1,
   category: "generated-slop",
   kind: "legibility",
-  cacheVersion: "likely-expensive-score-cfg-test-gating-diagnostics-denominator-bindings-v5",
+  cacheVersion: "likely-expensive-score-cfg-test-gating-diagnostics-denominator-bindings-ufcs-v6",
   configSchema: RsSl04Config,
   factorDefinitions: RsSl04FactorDefinitions,
   defaultConfig: {
@@ -118,12 +123,8 @@ export const RsSl04: Signal<RsSl04Config, RsSl04Output, RustProjectTag> = {
                 return
               }
               if (node.type !== "call_expression") return
-              const fieldExpression = namedChildrenOf(node)[0]
-              if (fieldExpression?.type !== "field_expression") return
-              const children = namedChildrenOf(fieldExpression)
-              const receiver = children[0]?.text ?? ""
-              const methodName = children.at(-1)?.text
-              if (methodName !== "clone") return
+              const cloneCall = cloneCallCandidate(node)
+              if (cloneCall === undefined) return
               const current = cloneCounts.get(modulePath) ?? {
                 file,
                 count: 0,
@@ -132,8 +133,10 @@ export const RsSl04: Signal<RsSl04Config, RsSl04Output, RustProjectTag> = {
               current.count += 1
               const functionKey = functionScopeKey(file, ancestors)
               if (
-                classifyClone(receiver) === "likely-expensive" ||
-                (functionKey !== undefined && isExpensiveBindingClone(receiver, expensiveBindings.get(functionKey)))
+                classifyClone(cloneCall.receiver) === "likely-expensive" ||
+                classifyClone(cloneCall.callee) === "likely-expensive" ||
+                (functionKey !== undefined &&
+                  isExpensiveBindingClone(cloneCall.receiver, expensiveBindings.get(functionKey)))
               ) {
                 current.likelyExpensive += 1
               }
@@ -245,6 +248,46 @@ const classifyClone = (receiver: string): "likely-expensive" | "cheap-likely" | 
     return "likely-expensive"
   }
   return "unknown"
+}
+
+const cloneCallCandidate = (node: RustSyntaxNode): CloneCallCandidate | undefined => {
+  const callee = namedChildrenOf(node)[0]
+  if (callee === undefined) return undefined
+  if (callee.type === "field_expression") {
+    const children = namedChildrenOf(callee)
+    const methodName = children.at(-1)?.text
+    if (methodName !== "clone") return undefined
+    return {
+      receiver: children[0]?.text ?? "",
+      callee: callee.text,
+    }
+  }
+  if (callee.type === "scoped_identifier" || callee.type === "generic_function") {
+    if (!isCloneUfcsCallee(callee)) return undefined
+    const args = namedChildrenOf(node).find((child) => child.type === "arguments")
+    const firstArgument = args === undefined ? undefined : namedChildrenOf(args)[0]
+    return {
+      receiver: ufcsCloneReceiver(firstArgument),
+      callee: callee.text,
+    }
+  }
+  return undefined
+}
+
+const isCloneUfcsCallee = (callee: RustSyntaxNode): boolean => {
+  const scoped = callee.type === "generic_function"
+    ? namedChildrenOf(callee).find((child) => child.type === "scoped_identifier")
+    : callee
+  const scopedText = scoped?.text ?? callee.text
+  return /\bClone\b/.test(scopedText) && scopedText.split("::").at(-1) === "clone"
+}
+
+const ufcsCloneReceiver = (argument: RustSyntaxNode | undefined): string => {
+  if (argument === undefined) return ""
+  if (argument.type === "reference_expression") {
+    return namedChildrenOf(argument).at(-1)?.text ?? argument.text
+  }
+  return argument.text
 }
 
 const localCloneBinding = (node: RustSyntaxNode): string | undefined => {
