@@ -56,4 +56,23 @@ describe("TS-AB-03 type indirection regressions", () => {
     expect(publicAlias?.depth).toBe(5)
     expect(publicAlias?.chain).toEqual(["PublicImport", "<import-type>", "C", "B", "A"])
   })
+
+  test("generic alias wrappers cannot hide concrete argument depth", async () => {
+    await repo.write(
+      "src/generic.ts",
+      [
+        "type Deep1 = string",
+        "type Deep2 = Deep1",
+        "type Id<T> = T",
+        "export type ViaId = Id<Deep2>",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsAb03, TsAb03.defaultConfig)
+    const viaId = out.declarations.find((entry) => entry.name === "ViaId")
+
+    expect(viaId?.depth).toBe(4)
+    expect(viaId?.chain).toEqual(["ViaId", "Id", "Deep2", "Deep1"])
+  })
 })

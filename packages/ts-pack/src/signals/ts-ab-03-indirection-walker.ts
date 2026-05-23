@@ -202,13 +202,16 @@ const measureTypeReference = (
 ): DepthResult => {
   const name = resolveReferenceLikeName(node)
   const aliasDeclaration = resolveAliasDeclaration(node, context)
-  if (aliasDeclaration !== undefined) {
-    return measureAliasDeclaration(aliasDeclaration, stepContext(context))
-  }
-
   const typeArgumentResults = node
     .getTypeArguments()
     .map((typeArg) => measureTypeNode(typeArg, stepContext(context)))
+
+  if (aliasDeclaration !== undefined) {
+    const aliasResult = measureAliasDeclaration(aliasDeclaration, stepContext(context))
+    const typeArguments = deepestResult(typeArgumentResults)
+    if (typeArguments.depth === 0 && !typeArguments.truncated) return aliasResult
+    return combineDepthResults(aliasResult, typeArguments)
+  }
 
   if (STANDARD_UTILITY_TYPE_ALIASES.has(name)) {
     return layerResult(name, typeArgumentResults)
@@ -216,6 +219,16 @@ const measureTypeReference = (
 
   return deepestResult(typeArgumentResults)
 }
+
+const combineDepthResults = (
+  first: DepthResult,
+  second: DepthResult,
+): DepthResult => ({
+  depth: first.depth + second.depth,
+  chain: [...first.chain, ...second.chain],
+  cycle: first.cycle || second.cycle,
+  truncated: first.truncated || second.truncated,
+})
 
 const resolveAliasDeclaration = (
   node: import("ts-morph").TypeReferenceNode | ImportTypeNode | ExpressionWithTypeArguments,
