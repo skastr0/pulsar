@@ -171,6 +171,43 @@ const createUnsafeDeclarationWorkspace = () =>
     ].join("\n"),
   })
 
+const createSafeOnlySelectorWorkspace = () =>
+  createRustWorkspace("pulsar-rs-ld01-safe-only-", {
+    "Cargo.toml": [
+      "[package]",
+      'name = "safe-selector-fixture"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+    ].join("\n"),
+    "src/lib.rs": [
+      "pub mod safe_zone {",
+      "    pub mod child {",
+      "        pub fn raw_leaf(ptr: *const u8) -> u8 {",
+      "            unsafe { *ptr }",
+      "        }",
+      "    }",
+      "",
+      "    pub mod api {",
+      "        pub fn expose(ptr: *const u8) -> u8 {",
+      "            super::child::raw_leaf(ptr)",
+      "        }",
+      "    }",
+      "}",
+      "",
+      "pub mod outside {",
+      "    pub fn ordinary() -> u8 { 0 }",
+      "}",
+      "",
+    ].join("\n"),
+    "tests/excluded.rs": [
+      "pub fn excluded_unsafe(ptr: *const u8) -> u8 {",
+      "    unsafe { *ptr }",
+      "}",
+      "",
+    ].join("\n"),
+  })
+
 describe("RS-LD-* signals", () => {
   test("RS-LD-01 declares identity, config, cache, pack registration, and factor ledger", async () => {
     const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
@@ -207,7 +244,7 @@ describe("RS-LD-* signals", () => {
       tier: 1,
       category: "legibility-decay",
       kind: "legibility",
-      cacheVersion: "unsafe-code-config-applicability-diagnostics-call-graph-density-sites-v4",
+      cacheVersion: "unsafe-code-config-applicability-diagnostics-call-graph-density-sites-safe-only-v5",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -263,6 +300,8 @@ describe("RS-LD-* signals", () => {
       expect(out.diagnosticLimit).toBe(10)
       expect(out.propagationMode).toBe("local-call-graph")
       expect(out.scoreMode).toBe("one-minus-max-propagation-share-or-capped-site-share")
+      expect(out.safeOnlySelectorMode).toBe("module-subtree")
+      expect(out.diagnosticCapPolicy).toBe("safe-only-blocks-uncapped-warnings-capped")
       expect(out.sitePressureScoreCap).toBe(1)
       expect(out.safeOnlyViolations.map((module) => module.module)).toContain(
         "legibility-fixture::crate::safe_zone",
@@ -273,6 +312,87 @@ describe("RS-LD-* signals", () => {
         severity: "block",
         message: "Unsafe usage in safe-only module legibility-fixture::crate::safe_zone",
       })
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-LD-01 applies safe-only module subtree selectors and keeps block diagnostics uncapped", async () => {
+    const repo = await createSafeOnlySelectorWorkspace()
+    try {
+      const parentSelector = "safe-selector-fixture::crate::safe_zone"
+      const childSelector = "safe-selector-fixture::crate::safe_zone::child"
+      const parentOut = await runSignalCompute(
+        RsLd01,
+        repo,
+        {
+          ...RsLd01.defaultConfig,
+          safe_only_modules: [parentSelector],
+          top_n_diagnostics: 0,
+        },
+      )
+      const childOnlyOut = await runSignalCompute(
+        RsLd01,
+        repo,
+        {
+          ...RsLd01.defaultConfig,
+          safe_only_modules: [childSelector],
+          top_n_diagnostics: 0,
+        },
+      )
+
+      expect(parentOut.sourceFileCount).toBe(2)
+      expect(parentOut.analyzedSourceFileCount).toBe(1)
+      expect(parentOut.safeOnlySelectorMode).toBe("module-subtree")
+      expect(parentOut.diagnosticCapPolicy).toBe("safe-only-blocks-uncapped-warnings-capped")
+      expect(parentOut.safeOnlyViolations.map((module) => module.module)).toEqual([
+        "safe-selector-fixture::crate::safe_zone::child",
+        "safe-selector-fixture::crate::safe_zone::api",
+      ])
+      expect(parentOut.safeOnlyViolations[0]?.safeOnlyMatchedSelectors).toEqual([parentSelector])
+      expect(parentOut.safeOnlyViolations[1]?.safeOnlyMatchedSelectors).toEqual([parentSelector])
+      expect(parentOut.safeOnlyViolations[0]?.sites).toContainEqual(
+        expect.objectContaining({
+          kind: "unsafe_block",
+          functionName: "raw_leaf",
+          line: 4,
+        }),
+      )
+      expect(parentOut.safeOnlyViolations[1]).toMatchObject({
+        unsafeSiteCount: 0,
+        propagatingFunctionCount: 1,
+      })
+      expect(RsLd01.score(parentOut)).toBe(0)
+
+      const cappedDiagnostics = RsLd01.diagnose(parentOut)
+      expect(cappedDiagnostics).toHaveLength(2)
+      expect(cappedDiagnostics.map((diagnostic) => diagnostic.severity)).toEqual([
+        "block",
+        "block",
+      ])
+      expect(cappedDiagnostics.map((diagnostic) => diagnostic.message)).toEqual([
+        "Unsafe usage in safe-only module safe-selector-fixture::crate::safe_zone::child",
+        "Unsafe usage in safe-only module safe-selector-fixture::crate::safe_zone::api",
+      ])
+      expect(cappedDiagnostics[0]?.data).toMatchObject({
+        safeOnlyMatchedSelectors: [parentSelector],
+        safeOnlySelectorMode: "module-subtree",
+        diagnosticCapPolicy: "safe-only-blocks-uncapped-warnings-capped",
+      })
+      expect(cappedDiagnostics[0]?.data?.sites).toContainEqual(
+        expect.objectContaining({
+          kind: "unsafe_block",
+          functionName: "raw_leaf",
+          module: "safe-selector-fixture::crate::safe_zone::child",
+        }),
+      )
+
+      expect(childOnlyOut.safeOnlyViolations.map((module) => module.module)).toEqual([
+        "safe-selector-fixture::crate::safe_zone::child",
+      ])
+      expect(childOnlyOut.safeOnlyViolations[0]?.safeOnlyMatchedSelectors).toEqual([
+        childSelector,
+      ])
     } finally {
       await cleanupWorkspace(repo)
     }
@@ -546,7 +666,11 @@ describe("RS-LD-* signals", () => {
       )
 
       expect(capped.diagnosticLimit).toBe(1)
-      expect(RsLd01.diagnose(capped)).toHaveLength(1)
+      expect(RsLd01.diagnose(capped)).toHaveLength(2)
+      expect(RsLd01.diagnose(capped).map((diagnostic) => diagnostic.severity)).toEqual([
+        "block",
+        "warn",
+      ])
       expect(hidden.diagnosticLimit).toBe(0)
       expect(RsLd01.diagnose(hidden)).toHaveLength(0)
 

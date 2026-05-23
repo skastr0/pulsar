@@ -52,6 +52,7 @@ interface UnsafeModuleSummary {
   readonly module: string
   readonly file: string
   readonly totalFunctions: number
+  readonly safeOnlyMatchedSelectors: ReadonlyArray<string>
   readonly unsafeSiteCount: number
   readonly unsafeSiteKindCounts: Partial<Record<UnsafeSiteKind, number>>
   readonly sites: ReadonlyArray<UnsafeSite>
@@ -83,6 +84,8 @@ interface RsLd01Output {
   readonly diagnosticLimit: number
   readonly propagationMode: "local-call-graph"
   readonly scoreMode: "one-minus-max-propagation-share-or-capped-site-share"
+  readonly safeOnlySelectorMode: "module-subtree"
+  readonly diagnosticCapPolicy: "safe-only-blocks-uncapped-warnings-capped"
   readonly sitePressureScoreCap: number
 }
 
@@ -96,6 +99,8 @@ interface FunctionCallFacts {
 const DEFAULT_TOP_N_DIAGNOSTICS = 10
 const UNSAFE_SITE_PRESSURE_SCORE_CAP = 1
 const RS_LD_01_SCORE_MODE = "one-minus-max-propagation-share-or-capped-site-share" as const
+const SAFE_ONLY_SELECTOR_MODE = "module-subtree" as const
+const DIAGNOSTIC_CAP_POLICY = "safe-only-blocks-uncapped-warnings-capped" as const
 
 const RsLd01FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
   {
@@ -128,7 +133,7 @@ export const RsLd01: Signal<RsLd01Config, RsLd01Output, RustProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "unsafe-code-config-applicability-diagnostics-call-graph-density-sites-v4",
+  cacheVersion: "unsafe-code-config-applicability-diagnostics-call-graph-density-sites-safe-only-v5",
   configSchema: RsLd01Config,
   factorDefinitions: RsLd01FactorDefinitions,
   defaultConfig: {
@@ -167,6 +172,7 @@ export const RsLd01: Signal<RsLd01Config, RsLd01Output, RustProjectTag> = {
                     module: fn.modulePath,
                     file: fn.file,
                     totalFunctions: 0,
+                    safeOnlyMatchedSelectors: [],
                     unsafeSiteCount: 0,
                     unsafeSiteKindCounts: {},
                     sites: [],
@@ -199,6 +205,13 @@ export const RsLd01: Signal<RsLd01Config, RsLd01Output, RustProjectTag> = {
 
           const modules = [...grouped.values()]
             .map((module) => unsafeModuleWithPressure(module))
+            .map((module) => ({
+              ...module,
+              safeOnlyMatchedSelectors: matchedSafeOnlySelectors(
+                module.module,
+                normalizedConfig.safe_only_modules,
+              ),
+            }))
             .sort(
               (a, b) =>
                 b.unsafePressure - a.unsafePressure ||
@@ -240,8 +253,8 @@ export const RsLd01: Signal<RsLd01Config, RsLd01Output, RustProjectTag> = {
             repositoryUnsafePressure,
             safeOnlyViolations: modules.filter(
               (module) =>
-                normalizedConfig.safe_only_modules.includes(module.module) &&
-                module.unsafeBlockCount + module.unsafeFunctionCount > 0,
+                module.safeOnlyMatchedSelectors.length > 0 &&
+                (module.unsafeSiteCount > 0 || module.propagatingFunctionCount > 0),
             ),
             sourceFileCount: project.sourceFiles.length,
             analyzedSourceFileCount: analyzedSourceFiles.length,
@@ -249,6 +262,8 @@ export const RsLd01: Signal<RsLd01Config, RsLd01Output, RustProjectTag> = {
             diagnosticLimit: normalizedConfig.top_n_diagnostics,
             propagationMode: "local-call-graph",
             scoreMode: RS_LD_01_SCORE_MODE,
+            safeOnlySelectorMode: SAFE_ONLY_SELECTOR_MODE,
+            diagnosticCapPolicy: DIAGNOSTIC_CAP_POLICY,
             sitePressureScoreCap: UNSAFE_SITE_PRESSURE_SCORE_CAP,
           }
         },
@@ -272,47 +287,55 @@ export const RsLd01: Signal<RsLd01Config, RsLd01Output, RustProjectTag> = {
           functionCount: out.functionCount,
           propagationMode: out.propagationMode,
           scoreMode: out.scoreMode,
+          safeOnlySelectorMode: out.safeOnlySelectorMode,
+          diagnosticCapPolicy: out.diagnosticCapPolicy,
         },
       }].slice(0, out.diagnosticLimit)
     }
-    return [
-      ...out.safeOnlyViolations.map((module) => ({
-        severity: "block" as const,
-        message: `Unsafe usage in safe-only module ${module.module}`,
+    const safeOnlyDiagnostics = out.safeOnlyViolations.map((module) => ({
+      severity: "block" as const,
+      message: `Unsafe usage in safe-only module ${module.module}`,
+      location: { file: module.file },
+      data: {
+          module: module.module,
+          safeOnlyMatchedSelectors: module.safeOnlyMatchedSelectors,
+          safeOnlySelectorMode: out.safeOnlySelectorMode,
+          unsafeSiteCount: module.unsafeSiteCount,
+          unsafeSiteKindCounts: module.unsafeSiteKindCounts,
+          sites: siteDiagnosticSample(module.sites),
+          unsafeBlockCount: module.unsafeBlockCount,
+          unsafeFunctionCount: module.unsafeFunctionCount,
+        propagatingFunctionCount: module.propagatingFunctionCount,
+        diagnosticCapPolicy: out.diagnosticCapPolicy,
+      },
+    }))
+    const warningDiagnostics = out.modules
+      .filter((module) => module.unsafeSiteCount > 0 || module.propagatingFunctionCount > 0)
+      .map((module) => ({
+        severity: "warn" as const,
+        message: `Unsafe surface in ${module.module}: ${(module.unsafePropagationShare * 100).toFixed(0)}% functions, ${unsafeSitePressureText(module)}`,
         location: { file: module.file },
         data: {
           module: module.module,
           unsafeSiteCount: module.unsafeSiteCount,
           unsafeSiteKindCounts: module.unsafeSiteKindCounts,
           sites: siteDiagnosticSample(module.sites),
+          unsafePropagationShare: module.unsafePropagationShare,
+          unsafeSitesPerFunction: module.unsafeSitesPerFunction,
+          cappedUnsafeSiteShare: module.cappedUnsafeSiteShare,
+          unsafePressure: module.unsafePressure,
           unsafeBlockCount: module.unsafeBlockCount,
           unsafeFunctionCount: module.unsafeFunctionCount,
           propagatingFunctionCount: module.propagatingFunctionCount,
+          propagationMode: out.propagationMode,
+          scoreMode: out.scoreMode,
+          diagnosticCapPolicy: out.diagnosticCapPolicy,
         },
-      })),
-      ...out.modules
-        .filter((module) => module.unsafeSiteCount > 0 || module.propagatingFunctionCount > 0)
-        .map((module) => ({
-          severity: "warn" as const,
-          message: `Unsafe surface in ${module.module}: ${(module.unsafePropagationShare * 100).toFixed(0)}% functions, ${unsafeSitePressureText(module)}`,
-          location: { file: module.file },
-          data: {
-            module: module.module,
-            unsafeSiteCount: module.unsafeSiteCount,
-            unsafeSiteKindCounts: module.unsafeSiteKindCounts,
-            sites: siteDiagnosticSample(module.sites),
-            unsafePropagationShare: module.unsafePropagationShare,
-            unsafeSitesPerFunction: module.unsafeSitesPerFunction,
-            cappedUnsafeSiteShare: module.cappedUnsafeSiteShare,
-            unsafePressure: module.unsafePressure,
-            unsafeBlockCount: module.unsafeBlockCount,
-            unsafeFunctionCount: module.unsafeFunctionCount,
-            propagatingFunctionCount: module.propagatingFunctionCount,
-            propagationMode: out.propagationMode,
-            scoreMode: out.scoreMode,
-          },
-        })),
-    ].slice(0, out.diagnosticLimit)
+      }))
+    return [
+      ...safeOnlyDiagnostics,
+      ...warningDiagnostics.slice(0, out.diagnosticLimit),
+    ]
   },
   outputMetadata: (out) => {
     if (out.sourceFileCount === 0) {
@@ -330,7 +353,9 @@ type NormalizedRsLd01Config = RsLd01Config
 
 const normalizeRsLd01Config = (config: RsLd01Config): NormalizedRsLd01Config => ({
   exclude_globs: config.exclude_globs,
-  safe_only_modules: config.safe_only_modules,
+  safe_only_modules: config.safe_only_modules
+    .map((module) => module.trim())
+    .filter((module) => module.length > 0),
   top_n_diagnostics: Number.isFinite(config.top_n_diagnostics)
     ? Math.max(0, Math.floor(config.top_n_diagnostics))
     : 0,
@@ -350,6 +375,7 @@ const emptyUnsafeModuleSummary = (module: string, file: string): UnsafeModuleSum
   module,
   file,
   totalFunctions: 0,
+  safeOnlyMatchedSelectors: [],
   unsafeSiteCount: 0,
   unsafeSiteKindCounts: {},
   sites: [],
@@ -417,6 +443,14 @@ const countUnsafeSiteKinds = (
   }
   return counts
 }
+
+const matchedSafeOnlySelectors = (
+  module: string,
+  selectors: ReadonlyArray<string>,
+): ReadonlyArray<string> =>
+  selectors
+    .filter((selector) => module === selector || module.startsWith(`${selector}::`))
+    .sort()
 
 const collectUnsafeSites = async (
   project: RustProject,
