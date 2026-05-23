@@ -6,6 +6,8 @@ import {
 import {
   COVERAGE_REFERENCE_DATA_KEY,
   type CoverageFacts,
+  type CoverageMetric,
+  emptyCoverageMetric,
 } from "@skastr0/pulsar-core/reference-data"
 import { Effect, Option, Schema } from "effect"
 
@@ -22,14 +24,16 @@ export interface SharedCov01CoverageFactsOutput extends CoverageFacts {
   readonly enforcementCeiling: ReadonlyArray<string>
 }
 
+const DEFAULT_TOP_N_DIAGNOSTICS = 10
+
 const notConfiguredCoverageFacts = (): CoverageFacts => ({
   state: "not_configured",
   checkedPaths: [],
   files: [],
   summary: {
-    lines: { covered: 0, total: 0, pct: 1 },
-    functions: { covered: 0, total: 0, pct: 1 },
-    branches: { covered: 0, total: 0, pct: 1 },
+    lines: emptyCoverageMetric(),
+    functions: emptyCoverageMetric(),
+    branches: emptyCoverageMetric(),
   },
   message: "Coverage reference data was not loaded",
 })
@@ -45,19 +49,20 @@ export const SharedCov01CoverageFacts: Signal<
   tier: 2,
   category: "review-pain",
   kind: "legibility",
-  cacheVersion: "reference-data-v1",
+  cacheVersion: "reference-data-v3-unavailable-unmeasured-config",
   configSchema: SharedCov01CoverageFactsConfig,
   defaultConfig: {
-    top_n_diagnostics: 10,
+    top_n_diagnostics: DEFAULT_TOP_N_DIAGNOSTICS,
   },
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
+      const normalizedConfig = normalizeSharedCov01CoverageFactsConfig(config)
       const referenceData = yield* ReferenceDataTag
       const facts = yield* referenceData.get<CoverageFacts>(COVERAGE_REFERENCE_DATA_KEY)
       return {
         ...(Option.isSome(facts) ? facts.value : notConfiguredCoverageFacts()),
-        topDiagnostics: Math.max(0, Math.floor(config.top_n_diagnostics)),
+        topDiagnostics: normalizedConfig.top_n_diagnostics,
         compositeConsumers: [
           "risk hotspot",
           "contract safety gap",
@@ -81,19 +86,7 @@ export const SharedCov01CoverageFacts: Signal<
         message:
           `Coverage facts: ${out.state}` +
           (out.sourcePath !== undefined ? ` from ${out.sourcePath}` : ""),
-        data: {
-          state: out.state,
-          sourcePath: out.sourcePath,
-          checkedPaths: out.checkedPaths,
-          lineCoverage: out.summary.lines.pct,
-          functionCoverage: out.summary.functions.pct,
-          branchCoverage: out.summary.branches.pct,
-          files: out.files.length,
-          compositeConsumers: out.compositeConsumers,
-          cacheContributors: out.cacheContributors,
-          calibrationSurface: out.calibrationSurface,
-          enforcementCeiling: out.enforcementCeiling,
-        },
+        data: coverageDiagnosticData(out),
       },
     ]
     return diagnostics.slice(0, out.topDiagnostics)
@@ -102,4 +95,40 @@ export const SharedCov01CoverageFacts: Signal<
     out.state === "present" || out.state === "zero"
       ? undefined
       : { applicability: "insufficient_evidence" as const },
+}
+
+const normalizeSharedCov01CoverageFactsConfig = (
+  config: SharedCov01CoverageFactsConfig,
+): SharedCov01CoverageFactsConfig => ({
+  top_n_diagnostics: Number.isFinite(config.top_n_diagnostics)
+    ? Math.max(0, Math.floor(config.top_n_diagnostics))
+    : 0,
+})
+
+const measuredPct = (metric: CoverageMetric): number | undefined =>
+  metric.total > 0 ? metric.pct : undefined
+
+const coverageDiagnosticData = (
+  out: SharedCov01CoverageFactsOutput,
+): Readonly<Record<string, unknown>> => ({
+  state: out.state,
+  message: out.message,
+  sourcePath: out.sourcePath,
+  checkedPaths: out.checkedPaths,
+  ...diagnosticPct("lineCoverage", out.summary.lines),
+  ...diagnosticPct("functionCoverage", out.summary.functions),
+  ...diagnosticPct("branchCoverage", out.summary.branches),
+  files: out.files.length,
+  compositeConsumers: out.compositeConsumers,
+  cacheContributors: out.cacheContributors,
+  calibrationSurface: out.calibrationSurface,
+  enforcementCeiling: out.enforcementCeiling,
+})
+
+const diagnosticPct = (
+  key: string,
+  metric: CoverageMetric,
+): Readonly<Record<string, number>> => {
+  const pct = measuredPct(metric)
+  return pct === undefined ? {} : { [key]: pct }
 }

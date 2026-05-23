@@ -204,6 +204,20 @@ describe("polyglot shared signals", () => {
       expect(machineFeedbackCoverage?.configuredClassCount).toBeGreaterThanOrEqual(4)
       expect(machineFeedbackCoverage?.missingClassCount).toBe(0)
 
+      const coverageFacts = result.signalResults.get("SHARED-COV-01-coverage-facts")?.output as
+        | {
+            state?: string
+            checkedPaths?: ReadonlyArray<string>
+            summary?: { lines?: { covered?: number; total?: number; pct?: number } }
+          }
+        | undefined
+      expect(coverageFacts?.state).toBe("absent")
+      expect(coverageFacts?.checkedPaths).toEqual([
+        "coverage/lcov.info",
+        "coverage/coverage-final.json",
+      ])
+      expect(coverageFacts?.summary?.lines).toEqual({ covered: 0, total: 0, pct: 0 })
+
       const contractFreshness = result.signalResults.get("SHARED-09-contract-freshness")?.output as
         | {
             state?: string
@@ -473,6 +487,65 @@ describe("polyglot shared signals", () => {
           }),
         }),
       ])
+    } finally {
+      await rm(repo, { recursive: true, force: true })
+    }
+  }, 120_000)
+
+  test("single-signal runtime loads SHARED-COV-01 canonical coverage data", async () => {
+    const repo = await mkdtemp(join(tmpdir(), "pulsar-cli-shared-coverage-"))
+    try {
+      await mkdir(join(repo, "coverage"), { recursive: true })
+      await writeFile(join(repo, "README.md"), "# coverage fixture\n", "utf8")
+      await writeFile(
+        join(repo, "coverage", "lcov.info"),
+        [
+          "TN:",
+          "SF:src/a.ts",
+          "FN:1,main",
+          "FNDA:1,main",
+          "DA:1,1",
+          "DA:2,0",
+          "BRDA:1,0,0,1",
+          "BRDA:1,0,1,0",
+          "end_of_record",
+        ].join("\n"),
+        "utf8",
+      )
+      sh("git", ["init", "-q", "-b", "main"], repo)
+      sh("git", ["config", "user.email", "test@test.test"], repo)
+      sh("git", ["config", "user.name", "test"], repo)
+      sh("git", ["add", "."], repo)
+      sh("git", ["commit", "-q", "-m", "fixture"], repo)
+
+      const result = await Effect.runPromise(
+        runSignalInWorktree(repo, "SHARED-COV-01"),
+      )
+      const output = result.result.output as {
+        readonly state?: string
+        readonly tool?: string
+        readonly sourcePath?: string
+        readonly summary?: {
+          readonly lines?: { readonly covered?: number; readonly total?: number; readonly pct?: number }
+          readonly functions?: { readonly covered?: number; readonly total?: number; readonly pct?: number }
+          readonly branches?: { readonly covered?: number; readonly total?: number; readonly pct?: number }
+        }
+      }
+
+      expect(result.result.signalId).toBe("SHARED-COV-01-coverage-facts")
+      expect(output.state).toBe("present")
+      expect(output.tool).toBe("lcov")
+      expect(output.sourcePath?.endsWith("/coverage/lcov.info")).toBe(true)
+      expect(output.summary).toMatchObject({
+        lines: { covered: 1, total: 2, pct: 0.5 },
+        functions: { covered: 1, total: 1, pct: 1 },
+        branches: { covered: 1, total: 2, pct: 0.5 },
+      })
+      expect(result.result.metadata).toBeUndefined()
+      expect(result.result.diagnostics[0]).toMatchObject({
+        severity: "info",
+        message: expect.stringContaining("Coverage facts: present from"),
+      })
     } finally {
       await rm(repo, { recursive: true, force: true })
     }

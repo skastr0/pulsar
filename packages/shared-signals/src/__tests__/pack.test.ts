@@ -8,6 +8,7 @@ import {
   Shared09ContractFreshness,
   Shared10DomainConstructionControl,
   Shared11TheoryEncodingIndex,
+  SharedCov01CoverageFacts,
   SharedChurn01,
   SharedChurn02,
   SharedCochange01,
@@ -49,6 +50,9 @@ describe("shared signal identity", () => {
     const theoryEncodingIndex = SHARED_SIGNALS.find((signal) =>
       signal.aliases?.includes("SHARED-11"),
     )
+    const coverageFacts = SHARED_SIGNALS.find((signal) =>
+      signal.aliases?.includes("SHARED-COV-01"),
+    )
 
     expect(churn01?.cacheVersion).toContain(SharedChurn01.cacheVersion)
     expect(churn02?.cacheVersion).toContain(SharedChurn02.cacheVersion)
@@ -67,6 +71,7 @@ describe("shared signal identity", () => {
     expect(theoryEncodingIndex?.cacheVersion).toContain(
       Shared11TheoryEncodingIndex.cacheVersion,
     )
+    expect(coverageFacts?.cacheVersion).toContain(SharedCov01CoverageFacts.cacheVersion)
   })
 
   test("all shared signals expose semantic ids, aliases, and titles", () => {

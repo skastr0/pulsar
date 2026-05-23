@@ -314,5 +314,33 @@ export const SHARED_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "cli shared-signals.test.ts, cli score.test.ts, ts-pack observer-integration.test.ts, and bun run dev score --signal SHARED-11 .: aggregate observer, direct single-signal runtime, and user-facing CLI wrapper execute SHARED-11 against repository substrates, proving measured foundation facts, missing-reference-data insufficient evidence, public metadata, public diagnostics, and factor-audit rendering.",
     },
   },
-  pendingSignalContract("SHARED-COV-01-coverage-facts"),
+  {
+    id: "SHARED-COV-01-coverage-facts",
+    status: "verified",
+    requiredEvidence: ["referenceData", "integration"],
+    evidence: {
+      identity:
+        "shared-cov-01-coverage-facts.test.ts: canonical id, alias, title, tier/category/kind, empty input contract, semantic cacheVersion, pack registration, registry alias lookup, and default config decoding are asserted.",
+      config:
+        "shared-cov-01-coverage-facts.test.ts: default diagnostic cap is decoded; fractional, negative, NaN, and Infinity diagnostic values are normalized through real compute output.",
+      positiveFixture:
+        "shared-cov-01-coverage-facts.test.ts and core coverage-facts.test.ts: LCOV and Istanbul coverage reference facts are parsed and emitted with tool, source path, checked paths, per-file facts, and line/function/branch summaries.",
+      negativeFixture:
+        "shared-cov-01-coverage-facts.test.ts, core coverage-facts.test.ts, and core reference-data-loader.test.ts: existing zero-coverage reports remain measured zero, absent coverage reports remain absent, malformed coverage becomes unknown, and omitted ReferenceData state is not_configured instead of a false healthy coverage fact.",
+      applicability:
+        "shared-cov-01-coverage-facts.test.ts: present and zero coverage facts are applicable provider facts; absent, unknown, and not_configured coverage facts emit insufficient_evidence metadata.",
+      score:
+        "shared-cov-01-coverage-facts.test.ts: score is asserted as neutral provider score for present and measured-zero coverage; unavailable evidence is carried by applicability metadata rather than pressure.",
+      diagnostics:
+        "shared-cov-01-coverage-facts.test.ts and cli shared-signals.test.ts: diagnose proves state/source/path/measured-summary payloads, unknown-state warning severity, unavailable-state messages without synthetic coverage percentages, and diagnostic caps through direct compute and runtime paths.",
+      factorLedger:
+        "shared-cov-01-coverage-facts.test.ts: registered shared-pack signal emits config.top_n_diagnostics factor entry with signal-default source and threshold role through withConfigFactorLedger.",
+      cacheSemantics:
+        "shared-cov-01-coverage-facts.test.ts and pack.test.ts: SHARED-COV-01 declares reference-data-v3-unavailable-unmeasured-config cacheVersion and the shared-pack wrapper preserves the signal cacheVersion after config-normalization and unavailable-state semantics changed.",
+      referenceData:
+        "shared-cov-01-coverage-facts.test.ts, core coverage-facts.test.ts, and core reference-data-loader.test.ts: tests parse canonical coverage/lcov.info and coverage/coverage-final.json data and load canonical coverage entries through loadCanonicalReferenceDataEntries rather than relying only on synthetic signal output.",
+      integration:
+        "cli shared-signals.test.ts, cli score.test.ts, and bun run dev score --signal SHARED-COV-01 .: aggregate observer, direct single-signal runtime, and user-facing CLI wrapper execute SHARED-COV-01 against repository substrates, proving absent coverage, loaded LCOV coverage, public diagnostics, metadata, and factor-audit rendering.",
+    },
+  },
 ]

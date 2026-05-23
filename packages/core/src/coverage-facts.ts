@@ -52,7 +52,7 @@ export interface CoverageCandidate {
 export const emptyCoverageMetric = (): CoverageMetric => ({
   covered: 0,
   total: 0,
-  pct: 1,
+  pct: 0,
 })
 
 export const coverageMetric = (covered: number, total: number): CoverageMetric => ({

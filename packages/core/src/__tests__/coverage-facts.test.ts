@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { join } from "node:path"
 import {
+  buildAbsentCoverageFacts,
+  buildUnknownCoverageFacts,
   parseCoverageCandidate,
 } from "../coverage-facts.js"
 
@@ -92,5 +94,23 @@ describe("coverage facts", () => {
 
     expect(facts.state).toBe("zero")
     expect(facts.files).toEqual([])
+  })
+
+  test("unavailable coverage facts do not masquerade as full coverage", () => {
+    const absent = buildAbsentCoverageFacts(["coverage/lcov.info"])
+    const unknown = buildUnknownCoverageFacts(
+      ["coverage/lcov.info", "coverage/coverage-final.json"],
+      "Malformed coverage report",
+      "/repo/coverage/coverage-final.json",
+    )
+
+    expect(absent.state).toBe("absent")
+    expect(absent.summary.lines).toEqual({ covered: 0, total: 0, pct: 0 })
+    expect(absent.summary.functions).toEqual({ covered: 0, total: 0, pct: 0 })
+    expect(absent.summary.branches).toEqual({ covered: 0, total: 0, pct: 0 })
+    expect(unknown.state).toBe("unknown")
+    expect(unknown.summary.lines).toEqual({ covered: 0, total: 0, pct: 0 })
+    expect(unknown.message).toBe("Malformed coverage report")
+    expect(unknown.sourcePath).toBe("/repo/coverage/coverage-final.json")
   })
 })
