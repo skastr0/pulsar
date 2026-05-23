@@ -127,6 +127,21 @@ const createUnsafePropagationWorkspace = () =>
     ].join("\n"),
   })
 
+const createUnsafeScoreWorkspace = (
+  name: string,
+  sourceLines: ReadonlyArray<string>,
+) =>
+  createRustWorkspace(`pulsar-rs-ld01-score-${name}-`, {
+    "Cargo.toml": [
+      "[package]",
+      `name = "unsafe-score-${name}"`,
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+    ].join("\n"),
+    "src/lib.rs": [...sourceLines, ""].join("\n"),
+  })
+
 describe("RS-LD-* signals", () => {
   test("RS-LD-01 declares identity, config, cache, pack registration, and factor ledger", async () => {
     const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
@@ -163,7 +178,7 @@ describe("RS-LD-* signals", () => {
       tier: 1,
       category: "legibility-decay",
       kind: "legibility",
-      cacheVersion: "unsafe-code-config-applicability-diagnostics-call-graph-v2",
+      cacheVersion: "unsafe-code-config-applicability-diagnostics-call-graph-density-v3",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -199,7 +214,7 @@ describe("RS-LD-* signals", () => {
     )
   })
 
-  test("RS-LD-01 reports unsafe density and safe-only violations", async () => {
+  test("RS-LD-01 reports unsafe pressure and safe-only violations", async () => {
     const repo = await createLegibilityWorkspace()
     try {
       const out = await runSignalCompute(
@@ -218,6 +233,8 @@ describe("RS-LD-* signals", () => {
       expect(out.functionCount).toBeGreaterThan(0)
       expect(out.diagnosticLimit).toBe(10)
       expect(out.propagationMode).toBe("local-call-graph")
+      expect(out.scoreMode).toBe("one-minus-max-propagation-share-or-capped-site-share")
+      expect(out.sitePressureScoreCap).toBe(1)
       expect(out.safeOnlyViolations.map((module) => module.module)).toContain(
         "legibility-fixture::crate::safe_zone",
       )
@@ -242,26 +259,107 @@ describe("RS-LD-* signals", () => {
 
       expect(safeZone).toMatchObject({
         totalFunctions: 3,
+        unsafeSiteCount: 1,
         unsafeBlockCount: 1,
         unsafeFunctionCount: 0,
         propagatingFunctionCount: 3,
-        unsafeDensity: 1 / 3,
+        unsafePropagationShare: 1,
+        unsafeSitesPerFunction: 1 / 3,
+        cappedUnsafeSiteShare: 1 / 3,
+        unsafePressure: 1,
       })
       expect(out.totalUnsafeBlocks).toBe(1)
       expect(out.totalUnsafeFunctions).toBe(0)
+      expect(out.totalUnsafeSites).toBe(1)
+      expect(out.totalPropagatingFunctions).toBe(3)
       expect(out.functionCount).toBe(3)
+      expect(out.repositoryUnsafePropagationShare).toBe(1)
+      expect(out.repositoryUnsafeSitesPerFunction).toBe(1 / 3)
+      expect(out.repositoryCappedUnsafeSiteShare).toBe(1 / 3)
+      expect(out.repositoryUnsafePressure).toBe(1)
       expect(out.propagationMode).toBe("local-call-graph")
+      expect(RsLd01.score(out)).toBe(0)
       expect(RsLd01.diagnose(out)).toContainEqual(
         expect.objectContaining({
-          message: "Unsafe density in unsafe-propagation::crate::safe_zone: 33% (3 propagating)",
+          message: "Unsafe propagation in unsafe-propagation::crate::safe_zone: 100% functions, 0.33 unsafe sites/function",
           data: expect.objectContaining({
             propagationMode: "local-call-graph",
             propagatingFunctionCount: 3,
+            unsafePropagationShare: 1,
+            unsafeSitesPerFunction: 1 / 3,
           }),
         }),
       )
     } finally {
       await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-LD-01 scores unsafe propagation and unsafe site pressure monotonically", async () => {
+    const clean = await createUnsafeScoreWorkspace("clean", [
+      "pub fn a() -> u8 { 0 }",
+      "pub fn b() -> u8 { 0 }",
+      "pub fn c() -> u8 { 0 }",
+      "pub fn d() -> u8 { 0 }",
+    ])
+    const oneUnsafe = await createUnsafeScoreWorkspace("one", [
+      "pub fn a(ptr: *const u8) -> u8 { unsafe { *ptr } }",
+      "pub fn b() -> u8 { 0 }",
+      "pub fn c() -> u8 { 0 }",
+      "pub fn d() -> u8 { 0 }",
+    ])
+    const twoUnsafe = await createUnsafeScoreWorkspace("two", [
+      "pub fn a(ptr: *const u8) -> u8 { unsafe { *ptr } }",
+      "pub fn b(ptr: *const u8) -> u8 { unsafe { *ptr } }",
+      "pub fn c() -> u8 { 0 }",
+      "pub fn d() -> u8 { 0 }",
+    ])
+    const siteHeavy = await createUnsafeScoreWorkspace("sites", [
+      "pub fn a(ptr: *const u8) -> u8 {",
+      "    let one = unsafe { *ptr };",
+      "    let two = unsafe { *ptr };",
+      "    let three = unsafe { *ptr };",
+      "    let four = unsafe { *ptr };",
+      "    let five = unsafe { *ptr };",
+      "    one + two + three + four + five",
+      "}",
+      "pub fn b() -> u8 { 0 }",
+      "pub fn c() -> u8 { 0 }",
+      "pub fn d() -> u8 { 0 }",
+    ])
+
+    try {
+      const cleanOut = await runSignalCompute(RsLd01, clean, RsLd01.defaultConfig)
+      const oneOut = await runSignalCompute(RsLd01, oneUnsafe, RsLd01.defaultConfig)
+      const twoOut = await runSignalCompute(RsLd01, twoUnsafe, RsLd01.defaultConfig)
+      const siteHeavyOut = await runSignalCompute(RsLd01, siteHeavy, RsLd01.defaultConfig)
+
+      expect(RsLd01.score(cleanOut)).toBe(1)
+      expect(oneOut.repositoryUnsafePropagationShare).toBe(0.25)
+      expect(oneOut.repositoryUnsafeSitesPerFunction).toBe(0.25)
+      expect(oneOut.repositoryUnsafePressure).toBe(0.25)
+      expect(RsLd01.score(oneOut)).toBe(0.75)
+      expect(twoOut.repositoryUnsafePropagationShare).toBe(0.5)
+      expect(twoOut.repositoryUnsafeSitesPerFunction).toBe(0.5)
+      expect(twoOut.repositoryUnsafePressure).toBe(0.5)
+      expect(RsLd01.score(twoOut)).toBe(0.5)
+      expect(siteHeavyOut.repositoryUnsafePropagationShare).toBe(0.25)
+      expect(siteHeavyOut.repositoryUnsafeSitesPerFunction).toBe(1.25)
+      expect(siteHeavyOut.repositoryCappedUnsafeSiteShare).toBe(1)
+      expect(siteHeavyOut.repositoryUnsafePressure).toBe(1)
+      expect(RsLd01.score(siteHeavyOut)).toBe(0)
+      expect(RsLd01.score(cleanOut)).toBeGreaterThan(RsLd01.score(oneOut))
+      expect(RsLd01.score(oneOut)).toBeGreaterThan(RsLd01.score(twoOut))
+      expect(RsLd01.score(twoOut)).toBeGreaterThan(RsLd01.score(siteHeavyOut))
+      expect(RsLd01.diagnose(siteHeavyOut)[0]?.message).toContain(
+        "1.25 unsafe sites/function",
+      )
+      expect(RsLd01.diagnose(siteHeavyOut)[0]?.message).not.toContain("125%")
+    } finally {
+      await cleanupWorkspace(clean)
+      await cleanupWorkspace(oneUnsafe)
+      await cleanupWorkspace(twoUnsafe)
+      await cleanupWorkspace(siteHeavy)
     }
   })
 
@@ -346,6 +444,7 @@ describe("RS-LD-* signals", () => {
             analyzedSourceFileCount: 0,
             functionCount: 0,
             propagationMode: "local-call-graph",
+            scoreMode: "one-minus-max-propagation-share-or-capped-site-share",
           }),
         }),
       ])

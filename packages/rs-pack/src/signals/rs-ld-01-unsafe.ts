@@ -34,22 +34,34 @@ interface UnsafeModuleSummary {
   readonly module: string
   readonly file: string
   readonly totalFunctions: number
+  readonly unsafeSiteCount: number
   readonly unsafeBlockCount: number
   readonly unsafeFunctionCount: number
   readonly propagatingFunctionCount: number
-  readonly unsafeDensity: number
+  readonly unsafePropagationShare: number
+  readonly unsafeSitesPerFunction: number
+  readonly cappedUnsafeSiteShare: number
+  readonly unsafePressure: number
 }
 
 interface RsLd01Output {
   readonly modules: ReadonlyArray<UnsafeModuleSummary>
   readonly totalUnsafeBlocks: number
   readonly totalUnsafeFunctions: number
+  readonly totalUnsafeSites: number
+  readonly totalPropagatingFunctions: number
+  readonly repositoryUnsafePropagationShare: number
+  readonly repositoryUnsafeSitesPerFunction: number
+  readonly repositoryCappedUnsafeSiteShare: number
+  readonly repositoryUnsafePressure: number
   readonly safeOnlyViolations: ReadonlyArray<UnsafeModuleSummary>
   readonly sourceFileCount: number
   readonly analyzedSourceFileCount: number
   readonly functionCount: number
   readonly diagnosticLimit: number
   readonly propagationMode: "local-call-graph"
+  readonly scoreMode: "one-minus-max-propagation-share-or-capped-site-share"
+  readonly sitePressureScoreCap: number
 }
 
 interface FunctionCallFacts {
@@ -60,6 +72,8 @@ interface FunctionCallFacts {
 }
 
 const DEFAULT_TOP_N_DIAGNOSTICS = 10
+const UNSAFE_SITE_PRESSURE_SCORE_CAP = 1
+const RS_LD_01_SCORE_MODE = "one-minus-max-propagation-share-or-capped-site-share" as const
 
 const RsLd01FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
   {
@@ -92,7 +106,7 @@ export const RsLd01: Signal<RsLd01Config, RsLd01Output, RustProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "unsafe-code-config-applicability-diagnostics-call-graph-v2",
+  cacheVersion: "unsafe-code-config-applicability-diagnostics-call-graph-density-v3",
   configSchema: RsLd01Config,
   factorDefinitions: RsLd01FactorDefinitions,
   defaultConfig: {
@@ -129,37 +143,63 @@ export const RsLd01: Signal<RsLd01Config, RsLd01Output, RustProjectTag> = {
                     module: fn.modulePath,
                     file: fn.file,
                     totalFunctions: 0,
+                    unsafeSiteCount: 0,
                     unsafeBlockCount: 0,
                     unsafeFunctionCount: 0,
                     propagatingFunctionCount: 0,
-                    unsafeDensity: 0,
+                    unsafePropagationShare: 0,
+                    unsafeSitesPerFunction: 0,
+                    cappedUnsafeSiteShare: 0,
+                    unsafePressure: 0,
                   }
                 : { ...current }
 
             next.totalFunctions += 1
             next.unsafeBlockCount += fn.unsafeBlockCount
             if (fn.isUnsafeFn) next.unsafeFunctionCount += 1
+            next.unsafeSiteCount = next.unsafeBlockCount + next.unsafeFunctionCount
             if (propagatingFunctionKeys.has(key)) next.propagatingFunctionCount += 1
             grouped.set(fn.modulePath, next)
           }
 
           const modules = [...grouped.values()]
-            .map((module) => ({
-              ...module,
-              unsafeDensity:
-                module.totalFunctions === 0
-                  ? 0
-                  : (module.unsafeBlockCount + module.unsafeFunctionCount) / module.totalFunctions,
-            }))
+            .map((module) => unsafeModuleWithPressure(module))
             .sort(
               (a, b) =>
-                b.unsafeDensity - a.unsafeDensity || b.propagatingFunctionCount - a.propagatingFunctionCount,
+                b.unsafePressure - a.unsafePressure ||
+                b.unsafePropagationShare - a.unsafePropagationShare ||
+                b.unsafeSitesPerFunction - a.unsafeSitesPerFunction,
             )
+          const totalUnsafeBlocks = modules.reduce((sum, module) => sum + module.unsafeBlockCount, 0)
+          const totalUnsafeFunctions = modules.reduce((sum, module) => sum + module.unsafeFunctionCount, 0)
+          const totalUnsafeSites = totalUnsafeBlocks + totalUnsafeFunctions
+          const totalPropagatingFunctions = modules.reduce(
+            (sum, module) => sum + module.propagatingFunctionCount,
+            0,
+          )
+          const repositoryUnsafePropagationShare = boundedShare(
+            totalPropagatingFunctions,
+            functionCount,
+          )
+          const repositoryUnsafeSitesPerFunction = ratio(totalUnsafeSites, functionCount)
+          const repositoryCappedUnsafeSiteShare = cappedSiteShare(
+            repositoryUnsafeSitesPerFunction,
+          )
+          const repositoryUnsafePressure = Math.max(
+            repositoryUnsafePropagationShare,
+            repositoryCappedUnsafeSiteShare,
+          )
 
           return {
             modules,
-            totalUnsafeBlocks: modules.reduce((sum, module) => sum + module.unsafeBlockCount, 0),
-            totalUnsafeFunctions: modules.reduce((sum, module) => sum + module.unsafeFunctionCount, 0),
+            totalUnsafeBlocks,
+            totalUnsafeFunctions,
+            totalUnsafeSites,
+            totalPropagatingFunctions,
+            repositoryUnsafePropagationShare,
+            repositoryUnsafeSitesPerFunction,
+            repositoryCappedUnsafeSiteShare,
+            repositoryUnsafePressure,
             safeOnlyViolations: modules.filter(
               (module) =>
                 normalizedConfig.safe_only_modules.includes(module.module) &&
@@ -170,6 +210,8 @@ export const RsLd01: Signal<RsLd01Config, RsLd01Output, RustProjectTag> = {
             functionCount,
             diagnosticLimit: normalizedConfig.top_n_diagnostics,
             propagationMode: "local-call-graph",
+            scoreMode: RS_LD_01_SCORE_MODE,
+            sitePressureScoreCap: UNSAFE_SITE_PRESSURE_SCORE_CAP,
           }
         },
         catch: (cause) =>
@@ -178,11 +220,8 @@ export const RsLd01: Signal<RsLd01Config, RsLd01Output, RustProjectTag> = {
     }),
   score: (out) => {
     if (out.safeOnlyViolations.length > 0) return 0
-    const totalFunctions = out.modules.reduce((sum, module) => sum + module.totalFunctions, 0)
-    if (totalFunctions === 0) return 1
-    const ratio =
-      (out.totalUnsafeBlocks + out.totalUnsafeFunctions) / Math.max(1, totalFunctions)
-    return Math.max(0, 1 - ratio * 2)
+    if (out.functionCount === 0) return 1
+    return Math.max(0, 1 - out.repositoryUnsafePressure)
   },
   diagnose: (out): ReadonlyArray<Diagnostic> => {
     if (out.sourceFileCount === 0) {
@@ -194,6 +233,7 @@ export const RsLd01: Signal<RsLd01Config, RsLd01Output, RustProjectTag> = {
           analyzedSourceFileCount: out.analyzedSourceFileCount,
           functionCount: out.functionCount,
           propagationMode: out.propagationMode,
+          scoreMode: out.scoreMode,
         },
       }].slice(0, out.diagnosticLimit)
     }
@@ -204,23 +244,30 @@ export const RsLd01: Signal<RsLd01Config, RsLd01Output, RustProjectTag> = {
         location: { file: module.file },
         data: {
           module: module.module,
+          unsafeSiteCount: module.unsafeSiteCount,
           unsafeBlockCount: module.unsafeBlockCount,
           unsafeFunctionCount: module.unsafeFunctionCount,
+          propagatingFunctionCount: module.propagatingFunctionCount,
         },
       })),
       ...out.modules
-        .filter((module) => module.unsafeBlockCount + module.unsafeFunctionCount > 0)
+        .filter((module) => module.unsafeSiteCount > 0 || module.propagatingFunctionCount > 0)
         .map((module) => ({
           severity: "warn" as const,
-          message: `Unsafe density in ${module.module}: ${(module.unsafeDensity * 100).toFixed(0)}% (${module.propagatingFunctionCount} propagating)`,
+          message: `Unsafe propagation in ${module.module}: ${(module.unsafePropagationShare * 100).toFixed(0)}% functions, ${module.unsafeSitesPerFunction.toFixed(2)} unsafe sites/function`,
           location: { file: module.file },
           data: {
             module: module.module,
-            unsafeDensity: module.unsafeDensity,
+            unsafeSiteCount: module.unsafeSiteCount,
+            unsafePropagationShare: module.unsafePropagationShare,
+            unsafeSitesPerFunction: module.unsafeSitesPerFunction,
+            cappedUnsafeSiteShare: module.cappedUnsafeSiteShare,
+            unsafePressure: module.unsafePressure,
             unsafeBlockCount: module.unsafeBlockCount,
             unsafeFunctionCount: module.unsafeFunctionCount,
             propagatingFunctionCount: module.propagatingFunctionCount,
             propagationMode: out.propagationMode,
+            scoreMode: out.scoreMode,
           },
         })),
     ].slice(0, out.diagnosticLimit)
@@ -255,6 +302,31 @@ const makeRsLd01FactorLedger = (): SignalFactorLedger =>
         source: "signal-default",
       }),
     ),
+  )
+
+const unsafeModuleWithPressure = (module: UnsafeModuleSummary): UnsafeModuleSummary => {
+  const unsafePropagationShare = boundedShare(module.propagatingFunctionCount, module.totalFunctions)
+  const unsafeSitesPerFunction = ratio(module.unsafeSiteCount, module.totalFunctions)
+  const cappedUnsafeSiteShare = cappedSiteShare(unsafeSitesPerFunction)
+  return {
+    ...module,
+    unsafePropagationShare,
+    unsafeSitesPerFunction,
+    cappedUnsafeSiteShare,
+    unsafePressure: Math.max(unsafePropagationShare, cappedUnsafeSiteShare),
+  }
+}
+
+const ratio = (numerator: number, denominator: number): number =>
+  denominator === 0 ? 0 : numerator / denominator
+
+const boundedShare = (numerator: number, denominator: number): number =>
+  Math.max(0, Math.min(1, ratio(numerator, denominator)))
+
+const cappedSiteShare = (unsafeSitesPerFunction: number): number =>
+  Math.max(
+    0,
+    Math.min(1, unsafeSitesPerFunction / UNSAFE_SITE_PRESSURE_SCORE_CAP),
   )
 
 const collectFunctionCallFacts = async (
