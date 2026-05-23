@@ -84,7 +84,7 @@ export const RsSl02: Signal<RsSl02Config, RsSl02Output, RustProjectTag | SignalC
   tier: 1,
   category: "generated-slop",
   kind: "structural",
-  cacheVersion: "unused-allows-ordinary-diagnostics-cfg-attr-v3",
+  cacheVersion: "unused-allows-ordinary-diagnostics-cfg-attr-span-v4",
   configSchema: RsSl02Config,
   factorDefinitions: RsSl02FactorDefinitions,
   defaultConfig: {
@@ -124,11 +124,12 @@ export const RsSl02: Signal<RsSl02Config, RsSl02Output, RustProjectTag | SignalC
                   continue
                 }
                 const line = attribute.startPosition.row + 1
+                const endLine = attribute.endPosition.row + 1
                 if (
                   !lineRangeOverlapsChangedHunks(
                     file,
                     line,
-                    line,
+                    endLine,
                     context.worktreePath,
                     context.changedHunks,
                   )

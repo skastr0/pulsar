@@ -515,9 +515,9 @@ export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       factorLedger:
         "rs-sl-signals.test.ts: registered RS pack signal emits config.exclude_globs as score-bearing evidence and config.top_n_diagnostics as non-score-bearing metadata with signal-default source.",
       cacheSemantics:
-        "rs-sl-signals.test.ts and pack.test.ts: RS-SL-02 declares unused-allows-ordinary-diagnostics-cfg-attr-v3 cacheVersion, config/cacheVersion changes alter the signal config hash, and the RS pack wrapper preserves the signal-specific cacheVersion.",
+        "rs-sl-signals.test.ts and pack.test.ts: RS-SL-02 declares unused-allows-ordinary-diagnostics-cfg-attr-span-v4 cacheVersion, config/cacheVersion changes alter the signal config hash, and the RS pack wrapper preserves the signal-specific cacheVersion.",
       gitContext:
-        "rs-sl-signals.test.ts: runSignalComputeWithContext supplies changedHunks against a real Rust fixture and proves only changed allow-attribute evidence is emitted with changed-hunks scope metadata.",
+        "rs-sl-signals.test.ts: runSignalComputeWithContext supplies changedHunks against real Rust fixtures and proves only changed allow-attribute evidence is emitted with changed-hunks scope metadata, including multiline allow attributes whose full attribute span overlaps the hunk.",
       integration:
         "observer-integration.test.ts and CLI score tests: Rust observer integration carries RS-SL-02 suppression score and diagnostics through the RS pack against a real Cargo fixture, while CLI single-signal mode executes RS-SL-02 against the repository substrate through the source CLI path.",
     },

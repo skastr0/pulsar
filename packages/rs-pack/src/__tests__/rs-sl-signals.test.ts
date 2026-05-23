@@ -502,7 +502,7 @@ describe("RS-SL-* signals", () => {
       tier: 1,
       category: "generated-slop",
       kind: "structural",
-      cacheVersion: "unused-allows-ordinary-diagnostics-cfg-attr-v3",
+      cacheVersion: "unused-allows-ordinary-diagnostics-cfg-attr-span-v4",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -782,6 +782,52 @@ describe("RS-SL-* signals", () => {
       ])
       expect(RsSl02.diagnose(out)[0]).toMatchObject({
         location: { line: 4 },
+        data: expect.objectContaining({ scopeMode: "changed-hunks" }),
+      })
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-SL-02 changed-hunk scope uses full multiline attribute spans", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-sl02-multiline-hunk-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "suppression-multiline-hunk"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "#[allow(",
+        "    warnings,",
+        "    clippy::unwrap_used,",
+        ")]",
+        "pub fn multiline(value: Option<u32>) -> u32 { value.unwrap() }",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const out = await runSignalComputeWithContext(
+        RsSl02,
+        repo,
+        RsSl02.defaultConfig,
+        {
+          gitSha: "HEAD",
+          worktreePath: repo,
+          changedHunks: [{ file: "src/lib.rs", oldStart: 3, oldLines: 1, newStart: 3, newLines: 1 }],
+        },
+      )
+
+      expect(out.scopeMode).toBe("changed-hunks")
+      expect(out.governedAllowAttributeCount).toBe(1)
+      expect(out.suppressions[0]).toMatchObject({
+        line: 1,
+        lints: ["warnings", "clippy::unwrap_used"],
+      })
+      expect(RsSl02.diagnose(out)[0]).toMatchObject({
+        location: { line: 1 },
         data: expect.objectContaining({ scopeMode: "changed-hunks" }),
       })
     } finally {
