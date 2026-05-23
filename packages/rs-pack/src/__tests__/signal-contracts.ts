@@ -464,7 +464,35 @@ export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "observer-integration.test.ts and CLI score tests: Rust observer integration carries RS-LD-06 domain term score and diagnostics through the RS pack against a real Cargo fixture with glossary reference data, while CLI single-signal mode executes RS-LD-06 against a repository substrate with `.pulsar/glossary.json` loaded from disk.",
     },
   },
-  pendingSignalContract("RS-SL-01-duplication"),
+  {
+    id: "RS-SL-01-duplication",
+    status: "verified",
+    requiredEvidence: ["gitContext", "integration"],
+    evidence: {
+      identity:
+        "rs-sl-signals.test.ts: canonical id, alias, title, tier/category/kind, empty input contract, semantic cacheVersion, pack registration, registry alias lookup, config-cache hash sensitivity, default config decoding, factor ledger, score mode, and score denominator are asserted.",
+      config:
+        "rs-sl-signals.test.ts: exclude_globs, min_tokens, and top_n_diagnostics decode through the real schema; fractional and NaN diagnostic/threshold config values are normalized through compute output.",
+      positiveFixture:
+        "rs-sl-signals.test.ts: temporary Cargo fixtures run through RustProjectLayer and real tree-sitter Rust parsing to prove body-level exact duplicate groups, identifier-normalized structural duplicate groups, changed-hunk duplicate grouping, module/function/line/member payloads, score shares, and diagnostics.",
+      negativeFixture:
+        "rs-sl-signals.test.ts: missing Rust source, Rust source with no functions, fully excluded Rust source, cfg(test) duplicate functions, structural-only boilerplate pressure, and helper-scale exact clones return neutral or bounded evidence without false whole-tree collapse.",
+      applicability:
+        "rs-sl-signals.test.ts: loaded Rust source with analyzed functions is applicable, no Rust source emits insufficient_evidence metadata, and analyzed Rust source with no functions or fully excluded source emits not_applicable metadata.",
+      score:
+        "rs-sl-signals.test.ts: score is asserted as bounded duplicate-function pressure over analyzed functions, with large exact duplicate pressure lowering score monotonically, helper-scale exact clones below the scoring token floor remaining neutral, and structural-only pressure capped above 0.8.",
+      diagnostics:
+        "rs-sl-signals.test.ts: diagnostics assert severity, source locations, deterministic group ordering, duplicate kind/token/member/scope/analysis payloads, normalized diagnostic caps, no-source warnings, score mode, and denominator payloads.",
+      factorLedger:
+        "rs-sl-signals.test.ts: registered RS pack signal emits config.exclude_globs as score-bearing evidence, config.min_tokens as score-bearing threshold, and config.top_n_diagnostics as non-score-bearing metadata with signal-default source.",
+      cacheSemantics:
+        "rs-sl-signals.test.ts and pack.test.ts: RS-SL-01 declares advisory-rust-duplication-cfg-test-diagnostics-changed-hunks-body-v5 cacheVersion, config/cacheVersion changes alter the signal config hash, and the RS pack wrapper preserves the signal-specific cacheVersion.",
+      gitContext:
+        "rs-sl-signals.test.ts: runSignalComputeWithContext supplies changedHunks against a real Rust fixture and proves a changed function that duplicates an unchanged existing function is detected with both members preserved and changed flags attributed.",
+      integration:
+        "observer-integration.test.ts and CLI score tests: Rust observer integration carries RS-SL-01 duplication score and diagnostics through the RS pack against a real Cargo fixture, while CLI single-signal mode executes RS-SL-01 against the repository substrate through the source CLI path.",
+    },
+  },
   pendingSignalContract("RS-SL-02-suppressions"),
   pendingSignalContract("RS-SL-03-unwrap-expect"),
   pendingSignalContract("RS-SL-04-clone-abuse"),

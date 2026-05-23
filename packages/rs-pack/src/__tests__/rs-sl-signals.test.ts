@@ -174,6 +174,35 @@ describe("RS-SL-* signals", () => {
     expect(score).toBe(1)
   })
 
+  test("RS-SL-01 scores large exact duplicate pressure monotonically", () => {
+    const small = RsSl01.score(rsSl01Output([
+      {
+        kind: "exact",
+        tokenCount: 40,
+        members: [
+          { file: "src/lib.rs", module: "crate", name: "first", line: 1, changed: true },
+          { file: "src/lib.rs", module: "crate", name: "second", line: 20, changed: true },
+        ],
+      },
+    ], 2))
+    const larger = RsSl01.score(rsSl01Output([
+      {
+        kind: "exact",
+        tokenCount: 40,
+        members: Array.from({ length: 20 }, (_, index) => ({
+          file: "src/lib.rs",
+          module: "crate",
+          name: `clone_${index}`,
+          line: index * 10 + 1,
+          changed: true,
+        })),
+      },
+    ], 20))
+
+    expect(small).toBeGreaterThan(larger)
+    expect(larger).toBeGreaterThanOrEqual(0.5)
+  })
+
   test("RS-SL-01 normalizes diagnostics and applicability evidence", async () => {
     const duplicate = await createRustWorkspace("pulsar-rs-sl01-diagnostics-", {
       "Cargo.toml": [
@@ -329,7 +358,7 @@ describe("RS-SL-* signals", () => {
         {
           gitSha: "HEAD",
           worktreePath: repo,
-          changedHunks: [{ file: "src/lib.rs", newStart: 5, newLines: 3 }],
+          changedHunks: [{ file: "src/lib.rs", oldStart: 5, oldLines: 3, newStart: 5, newLines: 3 }],
         },
       )
       const group = out.groups.find((item) => item.kind === "structural")
@@ -353,6 +382,40 @@ describe("RS-SL-* signals", () => {
           ]),
         }),
       })
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-SL-01 excludes cfg-test-gated duplicate functions", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-sl01-cfg-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "dup-cfg"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub fn production(input: i32) -> i32 {",
+        "    if input > 10 { input + 1 } else { input - 1 }",
+        "}",
+        "",
+        "#[cfg(test)]",
+        "pub fn test_clone(input: i32) -> i32 {",
+        "    if input > 10 { input + 1 } else { input - 1 }",
+        "}",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const out = await runSignalCompute(RsSl01, repo, RsSl01.defaultConfig)
+
+      expect(out.analyzedFunctionCount).toBe(1)
+      expect(out.groups).toEqual([])
+      expect(RsSl01.score(out)).toBe(1)
+      expect(RsSl01.diagnose(out)).toEqual([])
     } finally {
       await cleanupWorkspace(repo)
     }
@@ -537,4 +600,23 @@ describe("RS-SL-* signals", () => {
       analysisMode: "syntax-heuristic-clone-scan",
     })).toEqual([])
   })
+})
+
+const rsSl01Output = (
+  groups: ReadonlyArray<Parameters<typeof RsSl01.score>[0]["groups"][number]>,
+  analyzedFunctionCount: number,
+): Parameters<typeof RsSl01.score>[0] => ({
+  groups,
+  scopeMode: "whole-tree",
+  analysisMode: "function-body-normalization",
+  sourceFileCount: 1,
+  analyzedSourceFileCount: 1,
+  analyzedFunctionCount,
+  exactGroupCount: groups.filter((group) => group.kind === "exact").length,
+  structuralGroupCount: groups.filter((group) => group.kind === "structural").length,
+  duplicateGroupCount: groups.length,
+  diagnosticLimit: 10,
+  minTokens: 12,
+  scoreMode: "bounded-duplicate-function-pressure",
+  scoreDenominator: "analyzed-functions",
 })

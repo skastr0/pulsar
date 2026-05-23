@@ -1824,6 +1824,53 @@ export function stubF() { throw new Error("Not implemented") }
     }
   }, 120_000)
 
+  test("single-signal CLI wrapper executes RS-SL-01 with Rust source", async () => {
+    const repoPath = await initRepo([
+      {
+        path: "Cargo.toml",
+        content: [
+          "[package]",
+          'name = "dup-cli"',
+          'version = "0.1.0"',
+          'edition = "2021"',
+          "",
+        ].join("\n"),
+      },
+      {
+        path: "src/lib.rs",
+        content: [
+          "pub fn first(values: &[i32]) -> i32 {",
+          "    let mut total = 0;",
+          "    for value in values {",
+          "        if *value > 10 { total += *value } else { total -= *value }",
+          "    }",
+          "    if total > 100 { total } else { total + 1 }",
+          "}",
+          "",
+          "pub fn second(values: &[i32]) -> i32 {",
+          "    let mut total = 0;",
+          "    for value in values {",
+          "        if *value > 10 { total += *value } else { total -= *value }",
+          "    }",
+          "    if total > 100 { total } else { total + 1 }",
+          "}",
+          "",
+        ].join("\n"),
+      },
+    ])
+    try {
+      const out = runCli(repoPath, ["score", "--signal", "RS-SL-01", "."])
+      expect(out.status).toBe(0)
+      expect(out.stdout).toContain("Signal: RS-SL-01-duplication")
+      expect(out.stdout).toContain("WARN  exact duplicate group with 2 functions")
+      expect(out.stdout).toContain("Score:  0.990")
+      expect(out.stdout).toContain("Factor Audit (2 score-bearing)")
+      expect(out.stdout).toContain("signal-default config.")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
   test("single-signal mode summarizes score-bearing factor audit details", async () => {
     const repoPath = await initRepo([
       {

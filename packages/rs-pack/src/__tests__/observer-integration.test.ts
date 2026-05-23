@@ -23,6 +23,7 @@ import { RsLd03 } from "../signals/rs-ld-03-match-catch-all.js"
 import { RsLd04 } from "../signals/rs-ld-04-error-granularity.js"
 import { RsLd05 } from "../signals/rs-ld-05-complexity.js"
 import { RsLd06 } from "../signals/rs-ld-06-domain-terms.js"
+import { RsSl01 } from "../signals/rs-sl-01-duplication.js"
 import { cleanupWorkspace, createRustWorkspace, referenceLayer } from "./helpers.js"
 
 describe("rs-pack integration", () => {
@@ -496,6 +497,74 @@ describe("rs-pack integration", () => {
           kind: "function",
           scoreMode: "weighted-domain-term-drift-share",
           scoreDenominator: "classified-identifiers",
+        }),
+      })
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  }, 120_000)
+
+  test("observer path carries RS-SL-01 duplication score and diagnostics", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-observer-sl01-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "duplication-observer"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub fn first(values: &[i32]) -> i32 {",
+        "    let mut total = 0;",
+        "    for value in values {",
+        "        if *value > 10 { total += *value } else { total -= *value }",
+        "    }",
+        "    if total > 100 { total } else { total + 1 }",
+        "}",
+        "",
+        "pub fn second(values: &[i32]) -> i32 {",
+        "    let mut total = 0;",
+        "    for value in values {",
+        "        if *value > 10 { total += *value } else { total -= *value }",
+        "    }",
+        "    if total > 100 { total } else { total + 1 }",
+        "}",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
+      const EnvLayer = Layer.mergeAll(
+        Layer.succeed(SignalContextTag, {
+          gitSha: "HEAD",
+          worktreePath: repo,
+          changedHunks: [],
+        }),
+        referenceLayer(),
+        InMemoryCacheLayer,
+        RustProjectLayer(repo),
+      )
+
+      const result = await Effect.runPromise(
+        Effect.provide(observe(registry, undefined), EnvLayer) as Effect.Effect<
+          ObserverOutput,
+          never,
+          never
+        >,
+      )
+      const duplication = result.signalResults.get(RsSl01.id)
+
+      expect(result.categories["generated-slop"].signals[RsSl01.id]).toBeCloseTo(0.99)
+      expect(duplication?.score).toBeCloseTo(0.99)
+      expect(duplication?.diagnostics[0]).toMatchObject({
+        severity: "warn",
+        message: "exact duplicate group with 2 functions",
+        data: expect.objectContaining({
+          kind: "exact",
+          scopeMode: "whole-tree",
+          scoreMode: "bounded-duplicate-function-pressure",
+          scoreDenominator: "analyzed-functions",
         }),
       })
     } finally {
