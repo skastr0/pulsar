@@ -14,10 +14,15 @@ import { Effect, Option } from "effect"
 import { TsProjectTag } from "../ts-project.js"
 import { computeTsSl01Output } from "./ts-sl-01-compute.js"
 import {
+  DEFAULT_SCORE_BUDGET_MIN_TOKENS,
+  DEFAULT_TS_SL_01_DIAGNOSTIC_LIMIT,
   type CloneGroup,
   TsSl01Config,
   type TsSl01Output,
+  normalizeTsSl01DiagnosticLimit,
+  normalizeTsSl01MinTokens,
 } from "./ts-sl-01-model.js"
+import { sortCloneGroups } from "./ts-sl-01-groups.js"
 import {
   cloneGroupImpact,
   cloneGroupRepresentative,
@@ -33,7 +38,7 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
   tier: 1,
   category: "generated-slop",
   kind: "legibility",
-  cacheVersion: "historical-migration-impact-v1",
+  cacheVersion: "exact-source-hunks-generic-defaults-v1",
   configSchema: TsSl01Config,
   defaultConfig: {
     exclude_globs: [
@@ -101,8 +106,8 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
       "**/*.test-harness.tsx",
       "**/happydom.ts",
     ],
-    min_tokens: 12,
-    top_n_diagnostics: 10,
+    min_tokens: DEFAULT_SCORE_BUDGET_MIN_TOKENS,
+    top_n_diagnostics: DEFAULT_TS_SL_01_DIAGNOSTIC_LIMIT,
   },
   inputs: [],
   compute: (config) =>
@@ -126,44 +131,63 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
       )
     }),
   score: (out) => {
-    const minTokens = out.detectionMinTokens ?? TsSl01.defaultConfig.min_tokens
-    const penalty = out.groups.reduce(
-      (sum, group) => sum + cloneGroupImpact(group, out.scopeMode, minTokens),
+    const minTokens = normalizeTsSl01MinTokens(
+      out.detectionMinTokens ?? TsSl01.defaultConfig.min_tokens,
+    )
+    const impacts = out.groups.map((group) =>
+      cloneGroupImpact(group, out.scopeMode, minTokens),
+    )
+    const penalty = impacts.reduce((sum, impact) => sum + impact, 0)
+    if (penalty === 0) return 1
+    const zeroImpactDuplicateMembers = out.groups.reduce(
+      (sum, group, index) =>
+        impacts[index] === 0 ? sum + group.members.length : sum,
       0,
     )
-    if (penalty === 0) return 1
-    const expectedCleanBudget = Math.max(80, out.scoreBudgetFunctions * 0.12)
+    const scoreBudgetFunctions = Math.max(
+      0,
+      out.scoreBudgetFunctions - zeroImpactDuplicateMembers,
+    )
+    const expectedCleanBudget = Math.max(80, scoreBudgetFunctions * 0.12)
     return Math.max(0, 1 - Math.min(1, penalty / expectedCleanBudget))
   },
-  diagnose: (out): ReadonlyArray<Diagnostic> =>
-    out.groups
+  outputMetadata: (out) =>
+    out.totalFunctionsAnalyzed === 0 ? { applicability: "not_applicable" as const } : undefined,
+  diagnose: (out): ReadonlyArray<Diagnostic> => {
+    const minTokens = normalizeTsSl01MinTokens(
+      out.detectionMinTokens ?? TsSl01.defaultConfig.min_tokens,
+    )
+    return sortCloneGroups(out.groups, out.scopeMode, minTokens)
       .filter((group) => cloneGroupImpact(
         group,
         out.scopeMode,
-        out.detectionMinTokens ?? TsSl01.defaultConfig.min_tokens,
+        minTokens,
       ) > 0)
-      .slice(0, out.diagnosticLimit ?? 10)
+      .slice(0, normalizeTsSl01DiagnosticLimit(
+        out.diagnosticLimit ?? TsSl01.defaultConfig.top_n_diagnostics,
+      ))
       .map((group) => ({
-      severity: cloneGroupSeverity(
-        group,
-        out.scopeMode,
-        out.detectionMinTokens ?? TsSl01.defaultConfig.min_tokens,
-      ),
-      message:
-        `${group.kind} clone group with ${group.members.length} members (${group.tokenCount} tokens): ` +
-        cloneMemberSummary(group.members),
-      location: {
-        file: cloneGroupRepresentative(group)?.file ?? "unknown",
-        line: cloneGroupRepresentative(group)?.startLine,
-      },
-      data: {
-        groupId: group.groupId,
-        kind: group.kind,
-        tokenCount: group.tokenCount,
-        members: group.members,
-        structuralHash: group.structuralHash,
-      },
-    })),
+        severity: cloneGroupSeverity(
+          group,
+          out.scopeMode,
+          minTokens,
+        ),
+        message:
+          `${group.kind} clone group with ${group.members.length} members (${group.tokenCount} tokens): ` +
+          cloneMemberSummary(group.members),
+        location: {
+          file: cloneGroupRepresentative(group)?.file ?? "unknown",
+          line: cloneGroupRepresentative(group)?.startLine,
+        },
+        data: {
+          groupId: group.groupId,
+          kind: group.kind,
+          tokenCount: group.tokenCount,
+          members: group.members,
+          structuralHash: group.structuralHash,
+        },
+      }))
+  },
 }
 
 const calibrateCloneOutput = (
@@ -203,7 +227,7 @@ const defaultCloneGroupPolicy = (
   severity: cloneGroupSeverity(
     group,
     output.scopeMode,
-    output.detectionMinTokens ?? TsSl01.defaultConfig.min_tokens,
+    normalizeTsSl01MinTokens(output.detectionMinTokens ?? TsSl01.defaultConfig.min_tokens),
   ),
   penaltyWeight: 1,
   factorPathPrefix: `clones.${factorPathSegment(group.kind)}.${factorPathSegment(group.structuralHash)}.${factorPathSegment(

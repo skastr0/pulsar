@@ -1,3 +1,5 @@
+import { isAbsolute, resolve } from "node:path"
+
 export const buildHunkMap = (
   worktreePath: string,
   hunks: ReadonlyArray<{ file: string; oldStart: number; oldLines: number; newStart: number; newLines: number }>,
@@ -6,7 +8,7 @@ export const buildHunkMap = (
 
   const map = new Map<string, Array<{ start: number; end: number }>>()
   for (const hunk of hunks) {
-    const file = hunk.file.startsWith(worktreePath) ? hunk.file : `${worktreePath}/${hunk.file}`
+    const file = normalizeHunkPath(worktreePath, hunk.file)
     const ranges = map.get(file) ?? []
     ranges.push({
       start: hunk.newStart,
@@ -16,6 +18,9 @@ export const buildHunkMap = (
   }
   return map
 }
+
+const normalizeHunkPath = (worktreePath: string, file: string): string =>
+  (isAbsolute(file) ? resolve(file) : resolve(worktreePath, file)).replace(/\\/g, "/")
 
 export const lineRangeOverlapsHunkRanges = (
   startLine: number,

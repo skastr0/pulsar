@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto"
+
 export const countExactTokens = (source: string): number => {
   let count = 0
   let inToken = false
@@ -25,8 +27,8 @@ export const countExactTokens = (source: string): number => {
   return count
 }
 
-export const hashExactSource = (source: string): string => {
-  let hash = 0
+export const normalizeExactSource = (source: string): string => {
+  const normalized: Array<string> = []
   for (let index = 0; index < source.length; index++) {
     const charCode = source.charCodeAt(index)
     if (
@@ -39,8 +41,10 @@ export const hashExactSource = (source: string): string => {
     ) {
       continue
     }
-    hash = ((hash << 5) - hash) + charCode
-    hash = hash & hash
+    normalized.push(source.charAt(index))
   }
-  return Math.abs(hash).toString(36)
+  return normalized.join("")
 }
+
+export const hashExactSource = (source: string): string =>
+  createHash("sha256").update(normalizeExactSource(source)).digest("hex").slice(0, 16)

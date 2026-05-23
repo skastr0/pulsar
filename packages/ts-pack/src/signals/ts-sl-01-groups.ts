@@ -2,7 +2,7 @@ import { getFunctionName } from "./shared-function-index.js"
 import { isExactCloneEligible, isStructuralCloneEligible } from "./ts-sl-01-eligibility.js"
 import { countExactTokens } from "./ts-sl-01-hash.js"
 import type { CloneCandidate, CloneGroup, CloneGroupMember, TsSl01Config, TsSl01Output } from "./ts-sl-01-model.js"
-import { cloneGroupImpact, sortCloneMembers } from "./ts-sl-01-policy.js"
+import { cloneGroupImpact, cloneGroupRepresentative, sortCloneMembers } from "./ts-sl-01-policy.js"
 
 export const buildCloneGroups = (
   functions: ReadonlyArray<CloneCandidate>,
@@ -44,7 +44,11 @@ export const sortCloneGroups = (
   [...groups].sort((a, b) =>
     cloneGroupImpact(b, scopeMode, minTokens) - cloneGroupImpact(a, scopeMode, minTokens) ||
     b.members.length - a.members.length ||
-    b.tokenCount - a.tokenCount,
+    b.tokenCount - a.tokenCount ||
+    compareStringAsc(a.kind, b.kind) ||
+    compareStringAsc(a.structuralHash, b.structuralHash) ||
+    compareCloneGroupRepresentative(a, b) ||
+    compareStringAsc(a.groupId, b.groupId),
   )
 
 type MaterializedCloneCandidate = CloneCandidate & {
@@ -68,7 +72,7 @@ const buildExactGroups = (
 ): ReadonlyArray<{ hash: string; tokenCount: number; members: ReadonlyArray<MaterializedCloneCandidate> }> => {
   const grouped = new Map<string, Array<(typeof functions)[number]>>()
   for (const fn of functions) {
-    const key = fn.exactHash
+    const key = fn.exactKey
     const bucket = grouped.get(key) ?? []
     bucket.push(fn)
     grouped.set(key, bucket)
@@ -89,6 +93,7 @@ const buildExactGroups = (
       tokenCount: bucket[0]!.tokenCount,
       members: bucket.map(materializeCloneCandidate),
     }))
+    .sort(compareMaterializedCloneGroups)
 }
 
 const buildStructuralGroups = (
@@ -110,12 +115,13 @@ const buildStructuralGroups = (
     .map((bucket) => bucket.filter((candidate) => isStructuralCloneEligible(candidate.fn)))
     .filter((bucket) => bucket.length > 1)
     .filter((bucket) => shouldRetainCloneBucket(bucket, scopeMode))
-    .filter((bucket) => new Set(bucket.map((candidate) => candidate.exactHash)).size > 1)
+    .filter((bucket) => new Set(bucket.map((candidate) => candidate.exactKey)).size > 1)
     .map((bucket) => ({
       hash: bucket[0]!.structuralHash,
       tokenCount: bucket[0]!.tokenCount,
       members: bucket.map(materializeCloneCandidate),
     }))
+    .sort(compareMaterializedCloneGroups)
 }
 
 const shouldRetainCloneBucket = (
@@ -123,3 +129,51 @@ const shouldRetainCloneBucket = (
   scopeMode: TsSl01Output["scopeMode"],
 ): boolean =>
   scopeMode === "whole-tree" || bucket.some((candidate) => candidate.changed)
+
+const compareMaterializedCloneGroups = (
+  left: {
+    readonly hash: string
+    readonly tokenCount: number
+    readonly members: ReadonlyArray<MaterializedCloneCandidate>
+  },
+  right: {
+    readonly hash: string
+    readonly tokenCount: number
+    readonly members: ReadonlyArray<MaterializedCloneCandidate>
+  },
+): number =>
+  compareStringAsc(left.hash, right.hash) ||
+  right.tokenCount - left.tokenCount ||
+  right.members.length - left.members.length ||
+  compareCloneMembers(firstSortedMember(left.members), firstSortedMember(right.members))
+
+const firstSortedMember = (
+  members: ReadonlyArray<MaterializedCloneCandidate>,
+): CloneGroupMember | undefined =>
+  sortCloneMembers(members.map((candidate) => candidate.member))[0]
+
+const compareCloneGroupRepresentative = (
+  left: CloneGroup,
+  right: CloneGroup,
+): number =>
+  compareCloneMembers(cloneGroupRepresentative(left), cloneGroupRepresentative(right))
+
+const compareCloneMembers = (
+  left: CloneGroupMember | undefined,
+  right: CloneGroupMember | undefined,
+): number => {
+  if (left === undefined && right === undefined) return 0
+  if (left === undefined) return 1
+  if (right === undefined) return -1
+  return (
+    compareStringAsc(left.file, right.file) ||
+    left.startLine - right.startLine ||
+    left.endLine - right.endLine ||
+    compareStringAsc(left.name, right.name)
+  )
+}
+
+const compareStringAsc = (left: string, right: string): number => {
+  if (left === right) return 0
+  return left < right ? -1 : 1
+}

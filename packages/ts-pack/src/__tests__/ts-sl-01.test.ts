@@ -1,6 +1,7 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Schema } from "effect"
 import { SignalContextTag } from "@skastr0/pulsar-core/signal"
+import { buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { CalibrationContextTag, appendCalibrationDecision, defineCalibrationProcessor, makeResolvedCalibrationContext } from "@skastr0/pulsar-core/calibration"
 import { createTempRepo, runSignal } from "./test-repo.js"
 import { TsSl01 } from "../signals/ts-sl-01-duplication.js"
@@ -8,6 +9,114 @@ import { TsProjectLayer } from "../ts-project.js"
 import type { TempRepo } from "./test-repo.js"
 import type { TsSl01Output } from "../signals/ts-sl-01-model.js"
 import { makePulsarSelfCalibrationContext } from "./pulsar-self-calibration.js"
+import { TS_PACK_SIGNALS } from "../pack.js"
+
+const exactDuplicateHelpers = `
+export function duplicateOne(value: number): number {
+  const doubled = value * 2;
+  if (doubled > 10) {
+    return doubled - 1;
+  }
+  return doubled + 1;
+}
+
+export function duplicateTwo(value: number): number {
+  const doubled = value * 2;
+  if (doubled > 10) {
+    return doubled - 1;
+  }
+  return doubled + 1;
+}
+`
+
+const legacyExactHashForRegression = (source: string): string => {
+  let hash = 0
+  for (let index = 0; index < source.length; index++) {
+    const charCode = source.charCodeAt(index)
+    if (
+      charCode === 9 ||
+      charCode === 10 ||
+      charCode === 11 ||
+      charCode === 12 ||
+      charCode === 13 ||
+      charCode === 32
+    ) {
+      continue
+    }
+    hash = ((hash << 5) - hash) + charCode
+    hash = hash & hash
+  }
+  return Math.abs(hash).toString(36)
+}
+
+const legacyHashCollisionBodies = {
+  alpha: `{
+  const marker = "Aa";
+  const normalized = input.trim();
+  if (normalized.length === 0) {
+    return marker;
+  }
+  return marker + ":" + normalized;
+}`,
+  beta: `{
+  const marker = "BB";
+  const normalized = input.trim();
+  if (normalized.length === 0) {
+    return marker;
+  }
+  return marker + ":" + normalized;
+}`,
+}
+
+const duplicateFixture = {
+  alpha: `
+export function alphaOne(value: number): number {
+  const doubled = value * 2;
+  if (doubled > 10) {
+    return doubled - 1;
+  }
+  return doubled + 1;
+}
+
+export function alphaTwo(value: number): number {
+  const doubled = value * 2;
+  if (doubled > 10) {
+    return doubled - 1;
+  }
+  return doubled + 1;
+}
+`,
+  beta: `
+export function betaOne(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return "missing";
+  }
+  return trimmed.toUpperCase();
+}
+
+export function betaTwo(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return "missing";
+  }
+  return trimmed.toUpperCase();
+}
+`,
+}
+
+const normalizedGroupSnapshot = (out: TsSl01Output) =>
+  out.groups.map((group) => ({
+    groupId: group.groupId,
+    kind: group.kind,
+    structuralHash: group.structuralHash,
+    members: group.members.map((member) => ({
+      file: member.file.split("/").at(-1),
+      name: member.name,
+      startLine: member.startLine,
+      endLine: member.endLine,
+    })),
+  }))
 
 describe("TS-SL-01 Duplication on new code", () => {
   let repo: TempRepo
@@ -18,6 +127,69 @@ describe("TS-SL-01 Duplication on new code", () => {
 
   afterEach(async () => {
     await repo.cleanup()
+  })
+
+  test("declares identity, pack registration, config schema, and factor ledger", async () => {
+    await repo.write("src/value.ts", "export const value = 1\n")
+
+    const packRegistered = TS_PACK_SIGNALS.find((signal) =>
+      signal.aliases?.includes("TS-SL-01"),
+    )
+    expect(packRegistered).toBeDefined()
+    const registry = await Effect.runPromise(buildRegistry([packRegistered!]))
+    const registered = registry.byId.get("TS-SL-01")
+    const decoded = Schema.decodeUnknownSync(TsSl01.configSchema)(TsSl01.defaultConfig)
+    const out = await runSignal(repo.root, TsSl01, TsSl01.defaultConfig)
+    const factorLedger = registered?.factorLedger?.(out)
+
+    expect(TsSl01).toMatchObject({
+      id: "TS-SL-01-duplication",
+      title: "Duplication",
+      aliases: ["TS-SL-01"],
+      tier: 1,
+      category: "generated-slop",
+      kind: "legibility",
+      cacheVersion: "exact-source-hunks-generic-defaults-v1",
+      inputs: [],
+    })
+    expect(decoded).toEqual(TsSl01.defaultConfig)
+    expect(registered?.id).toBe(TsSl01.id)
+    expect(registered?.title).toBe(TsSl01.title)
+    expect(registered?.cacheVersion).toContain(TsSl01.cacheVersion)
+    expect(registry.byId.get("TS-SL-01")?.id).toBe(TsSl01.id)
+    expect(factorLedger?.signalId).toBe(TsSl01.id)
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.exclude_globs",
+        value: TsSl01.defaultConfig.exclude_globs,
+        source: "signal-default",
+        scoreRole: "metadata",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.test_globs",
+        value: TsSl01.defaultConfig.test_globs,
+        source: "signal-default",
+        scoreRole: "metadata",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.min_tokens",
+        value: 12,
+        source: "signal-default",
+        scoreRole: "threshold",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        value: 10,
+        source: "signal-default",
+        scoreRole: "threshold",
+      }),
+    )
   })
 
   test("detects exact duplicate functions", async () => {
@@ -40,6 +212,25 @@ export function helper2(x: number): number {
     expect(out.groups.length).toBeGreaterThan(0)
     expect(out.groups.some((g) => g.kind === "exact")).toBe(true)
     expect(out.scopeMode).toBe("whole-tree")
+  })
+
+  test("does not group hash-colliding different bodies as exact clones", async () => {
+    expect(legacyHashCollisionBodies.alpha).not.toBe(legacyHashCollisionBodies.beta)
+    expect(legacyExactHashForRegression(legacyHashCollisionBodies.alpha)).toBe(
+      legacyExactHashForRegression(legacyHashCollisionBodies.beta),
+    )
+
+    await repo.write(
+      "labels.ts",
+      `
+export function labelAlpha(input: string): string ${legacyHashCollisionBodies.alpha}
+
+export function labelBeta(input: string): string ${legacyHashCollisionBodies.beta}
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl01, TsSl01.defaultConfig)
+    expect(out.groups.filter((group) => group.kind === "exact")).toEqual([])
   })
 
   test("ignores duplicates in example and playground roots by default", async () => {
@@ -235,7 +426,7 @@ export function copiedIntegration(value: number): number {
     )
   })
 
-  test("deweights exact clones across parallel package implementations", async () => {
+  test("does not deweight parallel package paths by default", async () => {
     const duplicate = `
 export function onTextPart(value: string): string {
   const normalized = value.trim().toLowerCase();
@@ -250,7 +441,8 @@ export function onTextPart(value: string): string {
 
     const parallelOut = await runSignal(repo.root, TsSl01, TsSl01.defaultConfig)
 
-    await repo.write("packages/solid/src/use-assistant.ts", "export const unrelated = 1\n")
+    await repo.write("packages/react/src/use-assistant.ts", "export const unrelatedReact = 1\n")
+    await repo.write("packages/solid/src/use-assistant.ts", "export const unrelatedSolid = 1\n")
     await repo.write("src/first.ts", duplicate)
     await repo.write("src/second.ts", duplicate)
 
@@ -258,10 +450,10 @@ export function onTextPart(value: string): string {
 
     expect(parallelOut.groups.length).toBeGreaterThan(0)
     expect(localOut.groups.length).toBeGreaterThan(0)
-    expect(TsSl01.score(parallelOut)).toBeGreaterThan(TsSl01.score(localOut))
+    expect(TsSl01.score(parallelOut)).toBe(TsSl01.score(localOut))
   })
 
-  test("deweights exact clones across sibling implementation variants", () => {
+  test("does not deweight sibling implementation variants by default", () => {
     const baseGroup = {
       groupId: "exact-0",
       kind: "exact" as const,
@@ -314,7 +506,7 @@ export function onTextPart(value: string): string {
       scopeMode: "whole-tree",
     })
 
-    expect(parallelScore).toBeGreaterThan(localScore)
+    expect(parallelScore).toBe(localScore)
   })
 
   test("does not infer service-adapter intent from single-file sibling paths", () => {
@@ -405,7 +597,7 @@ export function onTextPart(value: string): string {
     expect(arbitrarySiblingScore).toBe(localScore)
   })
 
-  test("deweights repeated historical migration helpers in whole-tree scoring", () => {
+  test("does not deweight repeated historical migration helpers by default", () => {
     const baseGroup = {
       groupId: "exact-0",
       kind: "exact" as const,
@@ -451,11 +643,11 @@ export function onTextPart(value: string): string {
       scopeMode: "whole-tree",
     })
 
-    expect(TsSl01.score(migrationOut)).toBeGreaterThan(localScore)
-    expect(TsSl01.diagnose(migrationOut)[0]?.severity).toBe("info")
+    expect(TsSl01.score(migrationOut)).toBe(localScore)
+    expect(TsSl01.diagnose(migrationOut)[0]?.severity).toBe("warn")
   })
 
-  test("deweights exact clones across explicit compatibility mirrors", () => {
+  test("does not deweight compatibility-shaped paths by default", () => {
     const baseGroup = {
       groupId: "exact-0",
       kind: "exact" as const,
@@ -481,27 +673,9 @@ export function onTextPart(value: string): string {
             },
           ],
         },
-        {
-          ...baseGroup,
-          groupId: "exact-1",
-          members: [
-            {
-              file: "/repo/packages/convex-helpers/react.ts",
-              name: "<anonymous>",
-              startLine: 1,
-              endLine: 20,
-            },
-            {
-              file: "/repo/packages/convex-helpers/react/cache/hooks.ts",
-              name: "<anonymous>",
-              startLine: 1,
-              endLine: 20,
-            },
-          ],
-        },
       ],
-      totalFunctionsAnalyzed: 4,
-      scoreBudgetFunctions: 4,
+      totalFunctionsAnalyzed: 2,
+      scoreBudgetFunctions: 2,
       scopeMode: "whole-tree",
     })
     const localScore = TsSl01.score({
@@ -519,7 +693,7 @@ export function onTextPart(value: string): string {
       scopeMode: "whole-tree",
     })
 
-    expect(compatibilityScore).toBeGreaterThan(localScore)
+    expect(compatibilityScore).toBe(localScore)
   })
 
   test("does not deweight same-file local duplication as a compatibility mirror", () => {
@@ -1094,6 +1268,61 @@ export function copiedHandler(value: number): number {
     expect(TsSl01.score(out)).toBeLessThan(1)
   })
 
+  test("diff-aware: normalizes dot-relative changed hunk paths", async () => {
+    await repo.write(
+      "existing.ts",
+      `
+export function existingHandler(value: number): number {
+  const doubled = value * 2;
+  if (doubled > 10) {
+    return doubled - 1;
+  }
+  return doubled + 1;
+}
+`,
+    )
+    await repo.write(
+      "changed.ts",
+      `
+export function copiedHandler(value: number): number {
+  const doubled = value * 2;
+  if (doubled > 10) {
+    return doubled - 1;
+  }
+  return doubled + 1;
+}
+`,
+    )
+
+    const out = await Effect.runPromise(
+      TsSl01.compute(
+        TsSl01.defaultConfig,
+        new Map(),
+      ).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            TsProjectLayer(repo.root),
+            Layer.succeed(SignalContextTag, {
+              gitSha: "TEST",
+              worktreePath: repo.root,
+              changedHunks: [
+                { file: "./changed.ts", oldStart: 2, oldLines: 0, newStart: 2, newLines: 7 },
+              ],
+            }),
+          ),
+        ),
+      ),
+    )
+
+    expect(out.scopeMode).toBe("changed-hunks")
+    expect(out.totalFunctionsAnalyzed).toBe(1)
+    expect(out.groups).toHaveLength(1)
+    expect(out.groups[0]?.members.map((member) => member.file).sort()).toEqual([
+      `${repo.root}/changed.ts`,
+      `${repo.root}/existing.ts`,
+    ])
+  })
+
   test("diff-aware: default scoring ignores helper-scale exact clones", async () => {
     const helperBody = `
   const next = value + 1;
@@ -1227,13 +1456,42 @@ function unique(x: number): number { return x + 1; }
       "utils.ts",
       `
 export function unique1(x: number): number { return x; }
-export function unique2(x: string): string { return x.toUpperCase(); }
+export function unique2(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return "empty";
+  }
+  return trimmed.toUpperCase();
+}
+
+export function unique3(input: ReadonlyArray<number>): number {
+  let total = 0;
+  for (const item of input) {
+    total += item * item;
+  }
+  return total;
+}
 `,
     )
 
     const out = await runSignal(repo.root, TsSl01, TsSl01.defaultConfig)
     expect(out.groups.length).toBe(0)
     expect(TsSl01.score(out)).toBe(1)
+    expect(TsSl01.outputMetadata?.(out)).toBeUndefined()
+  })
+
+  test("all-excluded repositories are not applicable and neutral", async () => {
+    await repo.write(
+      "src/helpers.test.ts",
+      exactDuplicateHelpers,
+    )
+
+    const out = await runSignal(repo.root, TsSl01, TsSl01.defaultConfig)
+    expect(out.totalFunctionsAnalyzed).toBe(0)
+    expect(out.groups).toEqual([])
+    expect(TsSl01.score(out)).toBe(1)
+    expect(TsSl01.diagnose(out)).toEqual([])
+    expect(TsSl01.outputMetadata?.(out)).toEqual({ applicability: "not_applicable" })
   })
 
   test("score decreases with more duplicates", async () => {
@@ -1382,26 +1640,48 @@ export function dup4(x: number): number {
     expect(stricterDetectionScore).toBe(baselineScore)
   })
 
+  test("zero-impact duplicate groups cannot improve score by inflating the budget", () => {
+    const duplicatedGroup = {
+      groupId: "exact-0",
+      kind: "exact" as const,
+      tokenCount: 80,
+      structuralHash: "hash",
+      members: [
+        { file: "a.ts", name: "duplicateA", startLine: 1, endLine: 8 },
+        { file: "b.ts", name: "duplicateB", startLine: 1, endLine: 8 },
+      ],
+    }
+    const helperGroups = Array.from({ length: 800 }, (_, index) => ({
+      groupId: `helper-${index}`,
+      kind: "exact" as const,
+      tokenCount: 12,
+      structuralHash: `helper-${index}`,
+      members: [
+        { file: `helper-a-${index}.ts`, name: `helperA${index}`, startLine: 1, endLine: 3 },
+        { file: `helper-b-${index}.ts`, name: `helperB${index}`, startLine: 1, endLine: 3 },
+      ],
+    }))
+
+    const baselineScore = TsSl01.score({
+      groups: [duplicatedGroup],
+      totalFunctionsAnalyzed: 2,
+      scoreBudgetFunctions: 2,
+      scopeMode: "whole-tree",
+    })
+    const inflatedScore = TsSl01.score({
+      groups: [duplicatedGroup, ...helperGroups],
+      totalFunctionsAnalyzed: 1602,
+      scoreBudgetFunctions: 1602,
+      scopeMode: "whole-tree",
+    })
+
+    expect(inflatedScore).toBe(baselineScore)
+  })
+
   test("diagnostics include clone counterpart locations", async () => {
     await repo.write(
       "helpers.ts",
-      `
-export function duplicateOne(value: number): number {
-  const doubled = value * 2;
-  if (doubled > 10) {
-    return doubled - 1;
-  }
-  return doubled + 1;
-}
-
-export function duplicateTwo(value: number): number {
-  const doubled = value * 2;
-  if (doubled > 10) {
-    return doubled - 1;
-  }
-  return doubled + 1;
-}
-`,
+      exactDuplicateHelpers,
     )
 
     const out = await runSignal(repo.root, TsSl01, TsSl01.defaultConfig)
@@ -1410,6 +1690,30 @@ export function duplicateTwo(value: number): number {
     expect(diagnostic?.message).toContain("duplicateOne")
     expect(diagnostic?.message).toContain("duplicateTwo")
     expect(diagnostic?.message).toContain(`${repo.root}/helpers.ts`)
+    expect(diagnostic?.location).toEqual({
+      file: `${repo.root}/helpers.ts`,
+      line: 2,
+    })
+    expect(diagnostic?.data).toMatchObject({
+      groupId: "exact-0",
+      kind: "exact",
+      tokenCount: expect.any(Number),
+      structuralHash: expect.any(String),
+      members: [
+        {
+          file: `${repo.root}/helpers.ts`,
+          name: "duplicateOne",
+          startLine: 2,
+          endLine: 8,
+        },
+        {
+          file: `${repo.root}/helpers.ts`,
+          name: "duplicateTwo",
+          startLine: 10,
+          endLine: 16,
+        },
+      ],
+    })
   })
 
   test("diagnostics honor configured top_n_diagnostics", () => {
@@ -1434,6 +1738,52 @@ export function duplicateTwo(value: number): number {
 
     expect(diagnostics).toHaveLength(2)
     expect(diagnostics.map((diagnostic) => diagnostic.data?.groupId)).toEqual(["exact-0", "exact-1"])
+  })
+
+  test("normalizes non-finite and fractional detection and diagnostic limits", async () => {
+    await repo.write("helpers.ts", exactDuplicateHelpers)
+
+    const fractionalOut = await runSignal(repo.root, TsSl01, {
+      ...TsSl01.defaultConfig,
+      min_tokens: 8.9,
+      top_n_diagnostics: 1.8,
+    })
+    expect(fractionalOut.detectionMinTokens).toBe(8)
+    expect(fractionalOut.diagnosticLimit).toBe(1)
+    expect(TsSl01.diagnose(fractionalOut)).toHaveLength(1)
+    expect(Number.isFinite(TsSl01.score(fractionalOut))).toBe(true)
+
+    for (const value of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const out = await runSignal(repo.root, TsSl01, {
+        ...TsSl01.defaultConfig,
+        min_tokens: value,
+        top_n_diagnostics: value,
+      })
+      expect(out.detectionMinTokens).toBe(12)
+      expect(out.diagnosticLimit).toBe(0)
+      expect(TsSl01.diagnose(out)).toEqual([])
+      expect(Number.isFinite(TsSl01.score(out))).toBe(true)
+    }
+  })
+
+  test("orders groups and ids deterministically regardless of file insertion order", async () => {
+    await repo.write("src/alpha.ts", duplicateFixture.alpha)
+    await repo.write("src/beta.ts", duplicateFixture.beta)
+    const canonical = await runSignal(repo.root, TsSl01, TsSl01.defaultConfig)
+
+    const otherRepo = await createTempRepo("ts-sl-01-order-")
+    try {
+      await otherRepo.write("src/beta.ts", duplicateFixture.beta)
+      await otherRepo.write("src/alpha.ts", duplicateFixture.alpha)
+      const reordered = await runSignal(otherRepo.root, TsSl01, TsSl01.defaultConfig)
+
+      expect(normalizedGroupSnapshot(reordered)).toEqual(normalizedGroupSnapshot(canonical))
+      expect(TsSl01.diagnose(reordered).map((diagnostic) => diagnostic.data?.groupId)).toEqual(
+        TsSl01.diagnose(canonical).map((diagnostic) => diagnostic.data?.groupId),
+      )
+    } finally {
+      await otherRepo.cleanup()
+    }
   })
 
   test("normalizes string literals in ternary branches instead of treating them as object anchors", async () => {

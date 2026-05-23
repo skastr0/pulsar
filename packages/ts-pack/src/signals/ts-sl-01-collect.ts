@@ -3,7 +3,7 @@ import type { SourceFile } from "ts-morph"
 import { getFunctionBody, getFunctionLikeEntriesForSourceFile, type TsFunctionLike as FnLike } from "./shared-function-index.js"
 import { isExcluded, matchesAnyGlob } from "./shared-globs.js"
 import { analyzeStructuralSource } from "./ts-sl-01-structural.js"
-import { hashExactSource } from "./ts-sl-01-hash.js"
+import { hashExactSource, normalizeExactSource } from "./ts-sl-01-hash.js"
 import { buildHunkMap, lineRangeOverlapsHunkRanges } from "./ts-sl-01-hunks.js"
 import { DEFAULT_SCORE_BUDGET_MIN_TOKENS, type CloneCandidate, type CloneCandidateCollection, type CloneSourceFileCollection, type StructuralAnalysisCache, type TsSl01Config, type TsSl01Context } from "./ts-sl-01-model.js"
 
@@ -74,8 +74,9 @@ const cloneCandidateForFunction = (
 ): CloneCandidate | undefined => {
   const body = getFunctionBody(fn)
   if (body === undefined) return undefined
+  const exactKey = normalizeExactSource(body)
   const exactHash = hashExactSource(body)
-  const cacheKey = `${exactHash}:${body.length}`
+  const cacheKey = exactKey
   const structuralAnalysis =
     structuralAnalysisCache.get(cacheKey) ??
     analyzeStructuralBody(body, structuralAnalysisCache, cacheKey)
@@ -87,6 +88,7 @@ const cloneCandidateForFunction = (
     body,
     startLine,
     endLine,
+    exactKey,
     exactHash,
     structuralHash: structuralAnalysis.structuralHash,
     changed:

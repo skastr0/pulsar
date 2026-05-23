@@ -40,6 +40,21 @@ export interface TsSl01Output {
 }
 
 export const DEFAULT_SCORE_BUDGET_MIN_TOKENS = 12
+export const DEFAULT_TS_SL_01_DIAGNOSTIC_LIMIT = 10
+
+export const normalizeTsSl01Config = (config: TsSl01Config): TsSl01Config => ({
+  ...config,
+  min_tokens: normalizeTsSl01MinTokens(config.min_tokens),
+  top_n_diagnostics: normalizeTsSl01DiagnosticLimit(config.top_n_diagnostics),
+})
+
+export const normalizeTsSl01MinTokens = (value: number): number =>
+  Number.isFinite(value) && value >= 0
+    ? Math.floor(value)
+    : DEFAULT_SCORE_BUDGET_MIN_TOKENS
+
+export const normalizeTsSl01DiagnosticLimit = (value: number): number =>
+  Number.isFinite(value) && value > 0 ? Math.floor(value) : 0
 
 export type CloneCandidate = {
   readonly fn: FnLike
@@ -47,6 +62,7 @@ export type CloneCandidate = {
   readonly body: string
   readonly startLine: number
   readonly endLine: number
+  readonly exactKey: string
   readonly exactHash: string
   readonly structuralHash: string
   readonly changed: boolean
