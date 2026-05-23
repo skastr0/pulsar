@@ -534,7 +534,33 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "ts-ld-06.test.ts and pack.test.ts: wrapped pack cache version includes the TS-LD-06 semantic cacheVersion after diagnostic-limit, overload, constructor, object-boundary, contextual object-typing, and export-linkage semantics changed.",
     },
   },
-  pendingSignalContract("TS-LD-07-unsafe-type-erosion"),
+  {
+    id: "TS-LD-07-unsafe-type-erosion",
+    status: "verified",
+    requiredEvidence: ["calibration"],
+    evidence: {
+      identity:
+        "ts-ld-07.test.ts: canonical id, alias, title, tier/category/kind, no compound inputs, semantic cacheVersion, pack registration, and registry alias lookup are asserted.",
+      config:
+        "ts-ld-07.test.ts: configSchema decodes defaults; factor-ledger assertions cover exclude_globs, max_weighted_unsafe_per_kloc, max_boundary_weighted_unsafe, and top_n_diagnostics; diagnostics-cap tests cover sanitized cap behavior.",
+      positiveFixture:
+        "ts-ld-07.test.ts: real TsProject fixtures measure boundary and internal any in parameters, returns, properties, variables, type aliases, heritage clauses, assertions, default exports, exported object APIs, value type surfaces, inline function contract type surfaces, and same-line generic arguments.",
+      negativeFixture:
+        "ts-ld-07.test.ts: typed source has no unsafe erosion; path names do not promote boundary status; nested same-name variables do not inherit export status; returned object literals stay internal; internal and explicitly typed assertions remain internal; default and custom excluded files are ignored.",
+      applicability:
+        "ts-ld-07.test.ts: empty and all-excluded repositories report analyzedFiles=0, score 1, no diagnostics, and not_applicable metadata, while analyzed typed repositories stay applicable with no metadata override.",
+      score:
+        "ts-ld-07.test.ts: mixed boundary/internal fixture asserts weighted unsafe totals, boundary weighted totals, density pressure, boundary pressure, and score formula 1 / (1 + max pressure).",
+      diagnostics:
+        "ts-ld-07.test.ts: diagnostics assert warn/info severity, message text, file/line locations, payload data, deterministic ordering, and sanitized top_n_diagnostics caps.",
+      factorLedger:
+        "ts-ld-07.test.ts: registered pack signal emits config.exclude_globs, max_weighted_unsafe_per_kloc, max_boundary_weighted_unsafe, and top_n_diagnostics factor-ledger entries with score roles.",
+      cacheSemantics:
+        "ts-ld-07.test.ts and pack.test.ts: wrapped pack cache version includes the TS-LD-07 semantic cacheVersion after diagnostic-limit, export-boundary, unique-finding-id, value type-surface, applicability, inline function-contract, and boundary assertion semantics changed.",
+      calibration:
+        "ts-ld-07.test.ts: unsafe-type-policy calibration records decisions, deweights deliberate existential unsafe types, changes severity/boundary/weight, and preserves policy attribution on occurrences.",
+    },
+  },
   pendingSignalContract("TS-LD-08-exhaustiveness-erosion"),
   pendingSignalContract("TS-LD-09-error-channel-opacity"),
   pendingSignalContract("TS-RP-01-hotspots"),
