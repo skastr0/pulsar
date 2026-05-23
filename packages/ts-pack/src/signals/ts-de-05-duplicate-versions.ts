@@ -43,7 +43,7 @@ export const TsDe05: Signal<TsDe05Config, TsDe05Output, SignalContextTag> = {
   tier: 1,
   category: "dependency-entropy",
   kind: "structural",
-  cacheVersion: "factor-policy-v1-diagnostic-limit-v1",
+  cacheVersion: "factor-policy-v1-diagnostic-limit-v1-pnpm-chain-v1",
   configSchema: TsDe05Config,
   defaultConfig: {
     top_n_diagnostics: 10,
