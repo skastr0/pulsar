@@ -1499,6 +1499,47 @@ export function stubF() { throw new Error("Not implemented") }
     }
   }, 120_000)
 
+  test("single-signal CLI wrapper executes RS-AB-04 with Rust source", async () => {
+    const repoPath = await initRepo([
+      {
+        path: "Cargo.toml",
+        content: [
+          "[package]",
+          'name = "ab04-cli"',
+          'version = "0.1.0"',
+          'edition = "2021"',
+          "",
+        ].join("\n"),
+      },
+      {
+        path: "src/lib.rs",
+        content: [
+          "pub struct Clean;",
+          "#[derive(Clone, Debug, Default, Eq, PartialEq)]",
+          "pub struct TotalHeavy;",
+          "#[derive(Clone, Serialize, Deserialize)]",
+          "pub struct CustomHeavy;",
+          "",
+        ].join("\n"),
+      },
+    ])
+    try {
+      const out = runCli(repoPath, ["score", "--signal", "RS-AB-04", "."])
+      expect(out.status).toBe(0)
+      expect(out.stdout).toContain("Signal: RS-AB-04-derive-density")
+      expect(out.stdout).toContain("WARN  TotalHeavy derives 5 macros")
+      expect(out.stdout).toContain("WARN  CustomHeavy derives 2 custom macros")
+      expect(out.stdout).toContain("Score:  0.333")
+      expect(out.stdout).toContain("Factor Audit (3 score-bearing)")
+      expect(out.stdout).toContain("config.max_custom_derives=1")
+      expect(out.stdout).toContain("config.max_derive_count=4")
+      expect(out.stdout).toContain("config.exclude_globs=")
+      expect(out.stdout).not.toContain("config.top_n_diagnostics=10 threshold")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
   test("single-signal CLI wrapper executes RS-DE-02 with Cargo.lock", async () => {
     const repoPath = await initRepo([
       {

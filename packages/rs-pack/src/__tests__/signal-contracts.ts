@@ -273,7 +273,33 @@ export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "observer-integration.test.ts and CLI score tests: Rust observer integration includes RS-AB-03 in the abstraction-bloat category, while CLI single-signal mode executes RS-AB-03 against a repository substrate with Rust source parsed from disk.",
     },
   },
-  pendingSignalContract("RS-AB-04-derive-density"),
+  {
+    id: "RS-AB-04-derive-density",
+    status: "verified",
+    requiredEvidence: ["integration"],
+    evidence: {
+      identity:
+        "rs-ab-signals.test.ts: canonical id, alias, title, tier/category/kind, empty input contract, semantic cacheVersion, pack registration, registry alias lookup, config-cache hash sensitivity, and default config decoding are asserted.",
+      config:
+        "rs-ab-signals.test.ts: exclude_globs, max_custom_derives, max_derive_count, and top_n_diagnostics decode through the real schema; fractional and NaN threshold/cap values are normalized through compute output.",
+      positiveFixture:
+        "rs-ab-signals.test.ts: temporary Cargo fixtures run through RustProjectLayer and real tree-sitter Rust parsing to prove struct, enum, union, zero-derive tracked types, standard derives, custom derives, path-qualified derives, multiple direct derive attributes, cfg_attr feature derives, and non-test cfg_attr derives.",
+      negativeFixture:
+        "rs-ab-signals.test.ts: missing Rust source, no derive-bearing tracked types, fully excluded Rust source, cfg test-gated derived types, cfg_attr test-gated derives, and composite test cfg_attr derives return neutral/no false derive pressure.",
+      applicability:
+        "rs-ab-signals.test.ts: loaded Rust source with derive-bearing tracked types is applicable, no Rust source emits insufficient_evidence metadata, and loaded source with no tracked types, no derive-bearing tracked types, or no analyzed source emits not_applicable metadata.",
+      score:
+        "rs-ab-signals.test.ts: total derive-count and custom-derive fixtures score below clean tracked types, stricter max_derive_count and max_custom_derives thresholds lower scores, and relaxed thresholds remove threshold pressure.",
+      diagnostics:
+        "rs-ab-signals.test.ts: diagnostics assert severity, source locations, deterministic derive-pressure ordering, module/derive/custom/threshold payloads, exceeded-threshold payloads, no-source warning payloads, and normalized diagnostic caps.",
+      factorLedger:
+        "rs-ab-signals.test.ts: registered RS pack signal emits config.exclude_globs as score-affecting evidence, max_custom_derives and max_derive_count as score-bearing thresholds, and config.top_n_diagnostics as non-score-bearing metadata with signal-default source.",
+      cacheSemantics:
+        "rs-ab-signals.test.ts and pack.test.ts: RS-AB-04 declares derive-density-config-applicability-diagnostics-cfg-attr-thresholds-v4 cacheVersion, config/cacheVersion changes alter the signal config hash, and the RS pack wrapper preserves the signal-specific cacheVersion.",
+      integration:
+        "observer-integration.test.ts and CLI score tests: Rust observer integration includes RS-AB-04 in the abstraction-bloat category, while CLI single-signal mode executes RS-AB-04 against a repository substrate with Rust source parsed from disk.",
+    },
+  },
   pendingSignalContract("RS-LD-01-unsafe-code"),
   pendingSignalContract("RS-LD-02-lifetime-complexity"),
   pendingSignalContract("RS-LD-03-match-catch-all"),

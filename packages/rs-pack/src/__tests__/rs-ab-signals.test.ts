@@ -1917,6 +1917,19 @@ describe("RS-AB-* signals", () => {
         "",
       ].join("\n"),
     })
+    const noType = await createRustWorkspace("pulsar-rs-ab04-no-type-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "derive-no-type"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub fn ordinary() {}",
+        "",
+      ].join("\n"),
+    })
     const excluded = await createRustWorkspace("pulsar-rs-ab04-excluded-", {
       "Cargo.toml": [
         "[package]",
@@ -1955,6 +1968,7 @@ describe("RS-AB-* signals", () => {
       )
       const missingOut = await runSignalCompute(RsAb04, missing, RsAb04.defaultConfig)
       const noDeriveOut = await runSignalCompute(RsAb04, noDerive, RsAb04.defaultConfig)
+      const noTypeOut = await runSignalCompute(RsAb04, noType, RsAb04.defaultConfig)
       const excludedOut = await runSignalCompute(
         RsAb04,
         excluded,
@@ -1995,6 +2009,14 @@ describe("RS-AB-* signals", () => {
       })
       expect(RsAb04.diagnose(noDeriveOut)).toEqual([])
 
+      expect(noTypeOut.sourceFileCount).toBe(1)
+      expect(noTypeOut.trackedTypeCount).toBe(0)
+      expect(noTypeOut.deriveBearingTypeCount).toBe(0)
+      expect(RsAb04.outputMetadata?.(noTypeOut)).toEqual({
+        applicability: "not_applicable",
+      })
+      expect(RsAb04.diagnose(noTypeOut)).toEqual([])
+
       expect(excludedOut.sourceFileCount).toBe(1)
       expect(excludedOut.analyzedSourceFileCount).toBe(0)
       expect(excludedOut.trackedTypeCount).toBe(0)
@@ -2006,6 +2028,7 @@ describe("RS-AB-* signals", () => {
       await cleanupWorkspace(derive)
       await cleanupWorkspace(missing)
       await cleanupWorkspace(noDerive)
+      await cleanupWorkspace(noType)
       await cleanupWorkspace(excluded)
     }
   })

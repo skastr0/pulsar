@@ -15,6 +15,7 @@ import { RustProjectLayer } from "../project.js"
 import { RsAb01 } from "../signals/rs-ab-01-unused-pub.js"
 import { RsAb02 } from "../signals/rs-ab-02-trait-object-depth.js"
 import { RsAb03 } from "../signals/rs-ab-03-generic-proliferation.js"
+import { RsAb04 } from "../signals/rs-ab-04-derive-density.js"
 import { RsDe04 } from "../signals/rs-de-04-fan-in-fan-out.js"
 import { cleanupWorkspace, createRustWorkspace, referenceLayer } from "./helpers.js"
 
@@ -254,6 +255,58 @@ describe("rs-pack integration", () => {
       expect(genericProliferation?.diagnostics[0]).toMatchObject({
         severity: "warn",
         message: "bound_heavy has generic signature complexity 9",
+      })
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  }, 120_000)
+
+  test("observer path carries RS-AB-04 derive density score and diagnostics", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-observer-ab04-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "derive-observer"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub struct Clean;",
+        "#[derive(Clone, Debug, Default, Eq, PartialEq)]",
+        "pub struct TotalHeavy;",
+        "#[derive(Clone, Serialize, Deserialize)]",
+        "pub struct CustomHeavy;",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
+      const EnvLayer = Layer.mergeAll(
+        Layer.succeed(SignalContextTag, {
+          gitSha: "HEAD",
+          worktreePath: repo,
+          changedHunks: [],
+        }),
+        referenceLayer(),
+        InMemoryCacheLayer,
+        RustProjectLayer(repo),
+      )
+
+      const result = await Effect.runPromise(
+        Effect.provide(observe(registry, undefined), EnvLayer) as Effect.Effect<
+          ObserverOutput,
+          never,
+          never
+        >,
+      )
+      const deriveDensity = result.signalResults.get(RsAb04.id)
+
+      expect(result.categories["abstraction-bloat"].signals[RsAb04.id]).toBeCloseTo(1 / 3)
+      expect(deriveDensity?.score).toBeCloseTo(1 / 3)
+      expect(deriveDensity?.diagnostics[0]).toMatchObject({
+        severity: "warn",
+        message: "TotalHeavy derives 5 macros",
       })
     } finally {
       await cleanupWorkspace(repo)
