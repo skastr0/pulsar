@@ -84,7 +84,7 @@ export const RsSl02: Signal<RsSl02Config, RsSl02Output, RustProjectTag | SignalC
   tier: 1,
   category: "generated-slop",
   kind: "structural",
-  cacheVersion: "unused-allows-ordinary-diagnostics-v2",
+  cacheVersion: "unused-allows-ordinary-diagnostics-cfg-attr-v3",
   configSchema: RsSl02Config,
   factorDefinitions: RsSl02FactorDefinitions,
   defaultConfig: {
@@ -248,13 +248,45 @@ const makeRsSl02FactorLedger = (): SignalFactorLedger =>
   )
 
 const extractAllowLints = (text: string): ReadonlyArray<string> => {
-  const match = /#\s*!?\s*\[\s*allow\s*\(([^\)]*)\)\s*\]/.exec(text)
-  if (match === null) return []
-  return match[1]!
-    .split(",")
-    .map((value) => value.trim())
+  const stripped = stripRustComments(text)
+  return extractCallArguments(stripped, "allow")
+    .flatMap(splitAllowLintList)
     .filter((value) => value.length > 0)
 }
+
+const stripRustComments = (text: string): string =>
+  text
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\/\/.*$/gm, "")
+
+const extractCallArguments = (source: string, callee: string): ReadonlyArray<string> => {
+  const pattern = new RegExp(`\\b${callee}\\s*\\(`, "g")
+  const matches: Array<string> = []
+  let match: RegExpExecArray | null
+  while ((match = pattern.exec(source)) !== null) {
+    const argsStart = pattern.lastIndex
+    let depth = 1
+    for (let index = argsStart; index < source.length; index += 1) {
+      const char = source[index]
+      if (char === "(") {
+        depth += 1
+      } else if (char === ")") {
+        depth -= 1
+        if (depth === 0) {
+          matches.push(source.slice(argsStart, index))
+          pattern.lastIndex = index + 1
+          break
+        }
+      }
+    }
+  }
+  return matches
+}
+
+const splitAllowLintList = (raw: string): ReadonlyArray<string> =>
+  raw
+    .split(",")
+    .map((value) => value.trim())
 
 interface ClassifiedAllowLints {
   readonly ordinary: ReadonlyArray<string>

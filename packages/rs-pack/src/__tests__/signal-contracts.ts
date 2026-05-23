@@ -503,7 +503,7 @@ export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       config:
         "rs-sl-signals.test.ts: exclude_globs and top_n_diagnostics decode through the real schema; fractional and NaN diagnostic config values are normalized through compute output.",
       positiveFixture:
-        "rs-sl-signals.test.ts: temporary Cargo fixtures run through RustProjectLayer and real tree-sitter Rust parsing to prove governed allow classification for broad lint groups and slop-hiding lints, mixed ordinary/governed lint payloads, active/expired/missing pulsar-allow status, module/line/location evidence, and diagnostic severity.",
+        "rs-sl-signals.test.ts: temporary Cargo fixtures run through RustProjectLayer and real tree-sitter Rust parsing to prove governed allow classification for broad lint groups and slop-hiding lints, cfg_attr-wrapped allow syntax, comment-bearing allow lint lists, mixed ordinary/governed lint payloads, active/expired/missing pulsar-allow status, module/line/location evidence, and diagnostic severity.",
       negativeFixture:
         "rs-sl-signals.test.ts: narrow ordinary Rust allow attributes, no Rust source, fully excluded Rust source, and cfg(test)-gated governed allows remain neutral or not applicable without false production suppression evidence.",
       applicability:
@@ -515,7 +515,7 @@ export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       factorLedger:
         "rs-sl-signals.test.ts: registered RS pack signal emits config.exclude_globs as score-bearing evidence and config.top_n_diagnostics as non-score-bearing metadata with signal-default source.",
       cacheSemantics:
-        "rs-sl-signals.test.ts and pack.test.ts: RS-SL-02 declares unused-allows-ordinary-diagnostics-v2 cacheVersion, config/cacheVersion changes alter the signal config hash, and the RS pack wrapper preserves the signal-specific cacheVersion.",
+        "rs-sl-signals.test.ts and pack.test.ts: RS-SL-02 declares unused-allows-ordinary-diagnostics-cfg-attr-v3 cacheVersion, config/cacheVersion changes alter the signal config hash, and the RS pack wrapper preserves the signal-specific cacheVersion.",
       gitContext:
         "rs-sl-signals.test.ts: runSignalComputeWithContext supplies changedHunks against a real Rust fixture and proves only changed allow-attribute evidence is emitted with changed-hunks scope metadata.",
       integration:

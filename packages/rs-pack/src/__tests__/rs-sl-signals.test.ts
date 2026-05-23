@@ -502,7 +502,7 @@ describe("RS-SL-* signals", () => {
       tier: 1,
       category: "generated-slop",
       kind: "structural",
-      cacheVersion: "unused-allows-ordinary-diagnostics-v2",
+      cacheVersion: "unused-allows-ordinary-diagnostics-cfg-attr-v3",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -697,6 +697,48 @@ describe("RS-SL-* signals", () => {
       ])
       expect(out.suppressions[0]?.line).toBe(1)
       expect(RsSl02.diagnose(out)).toHaveLength(1)
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-SL-02 parses cfg_attr and commented allow lint syntax", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-sl02-cfg-attr-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "suppression-cfg-attr"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "#[cfg_attr(feature = \"compat\", allow(warnings))]",
+        "pub fn compat() {}",
+        "",
+        "#[cfg_attr(test, allow(clippy::todo))]",
+        "pub fn test_compat() {}",
+        "",
+        "#[allow(clippy::unwrap_used /* inherited Option contract */)]",
+        "pub fn commented(value: Option<u32>) -> u32 { value.unwrap() }",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const out = await runSignalCompute(RsSl02, repo, RsSl02.defaultConfig)
+
+      expect(out.governedAllowAttributeCount).toBe(3)
+      expect(out.suppressions.map((suppression) => suppression.lints)).toEqual([
+        ["warnings"],
+        ["clippy::todo"],
+        ["clippy::unwrap_used"],
+      ])
+      expect(out.suppressions[2]?.ordinaryLints).toEqual([])
+      expect(RsSl02.diagnose(out).map((diagnostic) => diagnostic.message)).toEqual([
+        "Governed allow suppression for warnings is missing",
+        "Governed allow suppression for clippy::todo is missing",
+        "Governed allow suppression for clippy::unwrap_used is missing",
+      ])
     } finally {
       await cleanupWorkspace(repo)
     }
