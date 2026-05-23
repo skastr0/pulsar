@@ -91,7 +91,8 @@ const measureAliasDeclaration = (
       truncated: false,
     }
   }
-  const cached = context.aliasDepthCache.get(aliasId)
+  const cacheKey = aliasCacheKey(aliasId, context)
+  const cached = context.aliasDepthCache.get(cacheKey)
   if (cached !== undefined) return cached
 
   const nextStack = new Set(context.aliasStack)
@@ -108,9 +109,16 @@ const measureAliasDeclaration = (
     cycle: inner.cycle,
     truncated: inner.truncated,
   }
-  context.aliasDepthCache.set(aliasId, result)
+  context.aliasDepthCache.set(cacheKey, result)
   return result
 }
+
+const aliasCacheKey = (aliasId: string, context: WalkContext): string =>
+  [
+    aliasId,
+    `steps:${context.remainingSteps}`,
+    `stack:${[...context.aliasStack].sort().join(",")}`,
+  ].join("|")
 
 const measureHeritageType = (
   typeNode: ExpressionWithTypeArguments,

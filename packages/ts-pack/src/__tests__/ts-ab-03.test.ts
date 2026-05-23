@@ -107,6 +107,31 @@ describe("TS-AB-03 (type indirection depth)", () => {
     expect(json?.chain.some((segment) => segment.includes("cycle"))).toBe(true)
   })
 
+  test("alias cache does not reuse truncated inner traversals for later declarations", async () => {
+    await writeTs(
+      "src/cache-context.ts",
+      [
+        "type A = B",
+        "type B = C",
+        "type C = D",
+        "type D = E",
+        "type E = string",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runCompute({
+      ...TsAb03.defaultConfig,
+      max_traversal_steps: 8,
+    })
+    const byName = new Map(out.declarations.map((entry) => [entry.name, entry]))
+
+    expect(byName.get("A")?.truncated).toBe(true)
+    expect(byName.get("B")?.truncated).toBe(false)
+    expect(byName.get("B")?.depth).toBe(4)
+    expect(byName.get("B")?.chain).toEqual(["B", "C", "D", "E"])
+  })
+
   test("diagnostics include resolution chains for entries above threshold", async () => {
     await writeTs(
       "src/diagnostics.ts",
