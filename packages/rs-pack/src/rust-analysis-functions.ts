@@ -10,6 +10,7 @@ import {
   allNamedChildren,
   firstNamedChild,
   itemName,
+  namedChildrenOf,
   parseVisibility,
   walkAny,
   walkNode,
@@ -129,20 +130,25 @@ const countRawPointerParams = (node: RustSyntaxNode): number =>
 
 const cyclomaticComplexity = (node: RustSyntaxNode): number => {
   let complexity = 1
-  walkNode(node, (current) => {
+  const walkComplexityNode = (current: RustSyntaxNode): void => {
     if (current.id === node.id) return
+    if (current.type === "function_item" || current.type === "closure_expression") return
     if (BRANCHING_NODE_TYPES.has(current.type)) {
       complexity += 1
-      return
     }
     if (current.type === "match_arm") {
       complexity += 1
-      return
     }
     if (current.type === "binary_expression" && /&&|\|\|/.test(current.text)) {
       complexity += 1
     }
-  })
+    for (const child of namedChildrenOf(current)) {
+      walkComplexityNode(child)
+    }
+  }
+  for (const child of namedChildrenOf(node)) {
+    walkComplexityNode(child)
+  }
   return complexity
 }
 

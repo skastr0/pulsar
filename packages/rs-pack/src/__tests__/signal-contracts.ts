@@ -418,7 +418,7 @@ export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       config:
         "rs-ld-signals.test.ts: exclude_globs, max_complexity, and top_n_diagnostics decode through the real schema; fractional and NaN diagnostic/threshold config values are normalized through compute output.",
       positiveFixture:
-        "rs-ld-signals.test.ts: temporary Cargo fixtures run through RustProjectLayer and real tree-sitter Rust parsing to prove base complexity, if/else branches, boolean operator branches, match-arm branches, by-file summaries, score shares, diagnostics, and cfg(test) exclusion.",
+        "rs-ld-signals.test.ts: temporary Cargo fixtures run through RustProjectLayer and real tree-sitter Rust parsing to prove base complexity, if/else branches, boolean operator branches, match-arm branches, lexical nested function and closure boundaries, by-file summaries, score shares, diagnostics, and cfg(test) exclusion.",
       negativeFixture:
         "rs-ld-signals.test.ts: missing Rust source, Rust source with no functions, fully excluded Rust source, and cfg(test)/cfg(any(test,...)) functions return neutral or excluded evidence without false complexity pressure.",
       applicability:
@@ -430,7 +430,7 @@ export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       factorLedger:
         "rs-ld-signals.test.ts: registered RS pack signal emits config.exclude_globs as score-bearing evidence, config.max_complexity as score-bearing threshold, and config.top_n_diagnostics as non-score-bearing metadata with signal-default source.",
       cacheSemantics:
-        "rs-ld-signals.test.ts and pack.test.ts: RS-LD-05 declares cyclomatic-complexity-config-applicability-diagnostics-cfg-test-v1 cacheVersion, config/cacheVersion changes alter the signal config hash, and the RS pack wrapper preserves the signal-specific cacheVersion.",
+        "rs-ld-signals.test.ts and pack.test.ts: RS-LD-05 declares cyclomatic-complexity-config-applicability-diagnostics-cfg-test-lexical-v2 cacheVersion, config/cacheVersion changes alter the signal config hash, and the RS pack wrapper preserves the signal-specific cacheVersion.",
       integration:
         "observer-integration.test.ts and CLI score tests: Rust observer integration carries RS-LD-05 cyclomatic complexity score and diagnostics through the RS pack against a real Cargo fixture, while CLI single-signal mode executes RS-LD-05 against the repository substrate through both source and compiled CLI entrypoints.",
     },

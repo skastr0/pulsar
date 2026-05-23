@@ -352,6 +352,35 @@ const createComplexityCfgWorkspace = () =>
     ].join("\n"),
   })
 
+const createComplexityNestedWorkspace = () =>
+  createRustWorkspace("pulsar-rs-ld05-nested-", {
+    "Cargo.toml": [
+      "[package]",
+      'name = "complexity-nested"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+    ].join("\n"),
+    "src/lib.rs": [
+      "pub fn outer(value: u8) -> u8 {",
+      "    fn inner(value: u8) -> u8 {",
+      "        if value > 0 { 1 } else { 0 }",
+      "    }",
+      "    let closure = |flag: bool| {",
+      "        if flag { 1 } else { 0 }",
+      "    };",
+      "    let _ = inner(value);",
+      "    let _ = closure(value > 0);",
+      "    value",
+      "}",
+      "",
+      "pub fn direct(value: u8) -> u8 {",
+      "    if value > 0 { 1 } else { 0 }",
+      "}",
+      "",
+    ].join("\n"),
+  })
+
 const createLifetimeScoreWorkspace = (
   name: string,
   functions: ReadonlyArray<string>,
@@ -2254,7 +2283,7 @@ describe("RS-LD-* signals", () => {
       tier: 1,
       category: "legibility-decay",
       kind: "legibility",
-      cacheVersion: "cyclomatic-complexity-config-applicability-diagnostics-cfg-test-v1",
+      cacheVersion: "cyclomatic-complexity-config-applicability-diagnostics-cfg-test-lexical-v2",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -2352,6 +2381,34 @@ describe("RS-LD-* signals", () => {
         complexity: 2,
       })
       expect(RsLd05.outputMetadata?.(out)).toBeUndefined()
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-LD-05 does not inflate outer complexity with nested functions or closures", async () => {
+    const repo = await createComplexityNestedWorkspace()
+    try {
+      const out = await runSignalCompute(
+        RsLd05,
+        repo,
+        { ...RsLd05.defaultConfig, max_complexity: 1 },
+      )
+      const byName = new Map(out.functions.map((fn) => [fn.name, fn]))
+
+      expect(byName.get("outer")).toMatchObject({
+        complexity: 1,
+      })
+      expect(byName.get("inner")).toMatchObject({
+        complexity: 2,
+      })
+      expect(byName.get("direct")).toMatchObject({
+        complexity: 2,
+      })
+      expect(out.overThresholdCount).toBe(2)
+      expect(RsLd05.diagnose(out).find((diagnostic) => diagnostic.data?.name === "outer")).toMatchObject({
+        severity: "info",
+      })
     } finally {
       await cleanupWorkspace(repo)
     }
