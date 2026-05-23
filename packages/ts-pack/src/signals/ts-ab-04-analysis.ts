@@ -323,7 +323,7 @@ const isNonObjectAssertionReference = (reference: Node): boolean => {
   const assertion = assertionReference(reference)
   if (assertion === undefined) return false
   const expression = unwrapParenthesizedExpression(assertion.getExpression())
-  return !Node.isObjectLiteralExpression(expression)
+  return !Node.isObjectLiteralExpression(expression) && !isConsumedAssertion(assertion)
 }
 
 const objectLiteralAssertionReference = (
@@ -348,6 +348,35 @@ const assertionReference = (
     ? assertion
     : undefined
 }
+
+const isConsumedAssertion = (assertion: AsExpression | SatisfiesExpression): boolean =>
+  assertionFeedsPropertyAccess(assertion) || assertionVariableIsUsed(assertion)
+
+const assertionFeedsPropertyAccess = (assertion: AsExpression | SatisfiesExpression): boolean => {
+  const parent = assertion.getParent()
+  if (Node.isPropertyAccessExpression(parent) || Node.isElementAccessExpression(parent)) {
+    const expression = parent.getExpression()
+    return (
+      expression.getStart() === assertion.getStart() &&
+      expression.getEnd() === assertion.getEnd()
+    )
+  }
+  return false
+}
+
+const assertionVariableIsUsed = (assertion: AsExpression | SatisfiesExpression): boolean => {
+  const variableDeclaration = assertion.getFirstAncestorByKind(SyntaxKind.VariableDeclaration)
+  if (variableDeclaration === undefined) return false
+  const initializer = variableDeclaration.getInitializer()
+  if (initializer === undefined || !containsNode(initializer, assertion)) return false
+
+  const nameNode = variableDeclaration.getNameNode()
+  if (!Node.isIdentifier(nameNode)) return false
+  return nameNode.findReferencesAsNodes().some((reference) => reference !== nameNode)
+}
+
+const containsNode = (container: Node, node: Node): boolean =>
+  node.getStart() >= container.getStart() && node.getEnd() <= container.getEnd()
 
 const buildImplementationIndex = (
   sourceFiles: ReadonlyArray<SourceFile>,
