@@ -104,6 +104,45 @@ describe("TS-AB-04 (interface to implementation ratio)", () => {
     expect(out.flaggedPairs).toHaveLength(0)
   })
 
+  test("composed object literal substitute types resolve interface references", async () => {
+    await repo.write(
+      "src/service.ts",
+      [
+        "export interface IService {",
+        "  run(): string",
+        "}",
+        "export class ServiceImpl implements IService {",
+        "  run() {",
+        "    return 'ok'",
+        "  }",
+        "}",
+      ].join("\n"),
+    )
+    await repo.write(
+      "src/service.test.ts",
+      [
+        "import type { IService } from './service'",
+        "type WithMeta = { readonly meta: string }",
+        "export const fakeService = {",
+        "  meta: 'test',",
+        "  run() {",
+        "    return 'fake'",
+        "  },",
+        "} satisfies IService & WithMeta",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsAb04, TsAb04.defaultConfig)
+
+    expect(out.pairs).toEqual([
+      expect.objectContaining({
+        interfaceName: "IService",
+        hasTestSubstitute: true,
+      }),
+    ])
+    expect(out.flaggedPairs).toHaveLength(0)
+  })
+
   test("non-object casts do not count as test substitutes", async () => {
     await repo.write(
       "src/service.ts",

@@ -593,6 +593,9 @@ const resolveInterfaceKeysFromTypeNode = (
   if (Node.isTypeReference(typeNode)) {
     return interfaceKeysFromDeclarations(resolveReferenceLikeDeclarations(typeNode))
   }
+  if (Node.isIntersectionTypeNode(typeNode) || Node.isUnionTypeNode(typeNode)) {
+    return typeNode.getTypeNodes().flatMap(resolveInterfaceKeysFromTypeNode)
+  }
   return []
 }
 
