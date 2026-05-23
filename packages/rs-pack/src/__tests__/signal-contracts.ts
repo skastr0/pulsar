@@ -391,7 +391,7 @@ export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       config:
         "rs-ld-signals.test.ts: exclude_globs and top_n_diagnostics decode through the real schema; fractional and NaN diagnostic caps are normalized through compute output.",
       positiveFixture:
-        "rs-ld-signals.test.ts: temporary Cargo fixtures run through RustProjectLayer and real tree-sitter Rust parsing to prove public Result-returning boundary functions, granular concrete error types, collapsed anyhow/String/&str/boxed dyn Error surfaces, anyhow::Result and eyre::Result aliases, renamed imported error aliases, plain imported error names, imported Result aliases, local Result type aliases, error-slot alias chains, module-scoped alias shadowing, opaque impl Error surfaces, std::result::Result paths, score shares, and diagnostic payloads.",
+        "rs-ld-signals.test.ts: temporary Cargo fixtures run through RustProjectLayer and real tree-sitter Rust parsing to prove public Result-returning boundary functions, granular concrete error types, collapsed anyhow/String/&str/boxed dyn Error surfaces, anyhow::Result and eyre::Result aliases, explicit error slots on Result aliases, renamed imported error aliases, plain imported error names, grouped imported names, imported Result aliases, local Result type aliases, error-slot alias chains, module-scoped alias shadowing, block-local alias isolation, opaque impl Error surfaces, std::result::Result paths, score shares, and diagnostic payloads.",
       negativeFixture:
         "rs-ld-signals.test.ts: clean granular Result functions, missing Rust source, no-Result Rust source, fully excluded Rust source, cfg(test) collapsed Result functions, composite cfg(any(test,...)) collapsed Result functions, and concrete path-qualified error types return neutral or excluded evidence without false collapsed pressure.",
       applicability:
@@ -403,7 +403,7 @@ export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       factorLedger:
         "rs-ld-signals.test.ts: registered RS pack signal emits config.exclude_globs as score-bearing evidence and config.top_n_diagnostics as non-score-bearing metadata with signal-default source.",
       cacheSemantics:
-        "rs-ld-signals.test.ts and pack.test.ts: RS-LD-04 declares error-granularity-config-applicability-diagnostics-cfg-test-result-aliases-v7 cacheVersion, config/cacheVersion changes alter the signal config hash, and the RS pack wrapper preserves the signal-specific cacheVersion.",
+        "rs-ld-signals.test.ts and pack.test.ts: RS-LD-04 declares error-granularity-config-applicability-diagnostics-cfg-test-result-aliases-v8 cacheVersion, config/cacheVersion changes alter the signal config hash, and the RS pack wrapper preserves the signal-specific cacheVersion.",
       integration:
         "observer-integration.test.ts and CLI score tests: Rust observer integration carries RS-LD-04 error granularity score and diagnostics through the RS pack against a real Cargo fixture, while CLI single-signal mode executes RS-LD-04 against the repository substrate through both source and compiled CLI entrypoints.",
     },

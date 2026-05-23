@@ -1636,7 +1636,7 @@ describe("RS-LD-* signals", () => {
       tier: 1,
       category: "legibility-decay",
       kind: "legibility",
-      cacheVersion: "error-granularity-config-applicability-diagnostics-cfg-test-result-aliases-v7",
+      cacheVersion: "error-granularity-config-applicability-diagnostics-cfg-test-result-aliases-v9",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -1784,6 +1784,7 @@ describe("RS-LD-* signals", () => {
         "type NestedResult<T> = Result<T, NestedError>;",
         "pub fn explicit_anyhow(value: &str) -> Result<(), anyhow::Error> { let _ = value; Ok(()) }",
         "pub fn anyhow_alias(value: &str) -> anyhow::Result<()> { let _ = value; Ok(()) }",
+        "pub fn anyhow_alias_custom(value: &str) -> anyhow::Result<(), crate::errors::DomainError> { let _ = value; Ok(()) }",
         "pub fn eyre_alias(value: &str) -> eyre::Result<()> { let _ = value; Ok(()) }",
         "pub fn imported_alias(value: &str) -> Result<(), AnyError> { let _ = value; Ok(()) }",
         "pub fn nested_result_alias(value: &str) -> NestedResult<()> { let _ = value; Ok(()) }",
@@ -1826,6 +1827,34 @@ describe("RS-LD-* signals", () => {
         "    pub fn local_shadow(value: &str) -> Result<(), Error> { let _ = value; Ok(()) }",
         "  }",
         "}",
+        "pub mod local_scope {",
+        "  type Error = crate::errors::DomainError;",
+        "  type LocalResult<T> = Result<T, crate::errors::DomainError>;",
+        "  fn local_import_holder(value: &str) -> Result<(), crate::errors::DomainError> {",
+        "    use anyhow::Error;",
+        "    let _ = value;",
+        "    Ok(())",
+        "  }",
+        "  fn local_type_holder(value: &str) -> Result<(), crate::errors::DomainError> {",
+        "    type LocalResult<T> = Result<T, anyhow::Error>;",
+        "    let _ = value;",
+        "    Ok(())",
+        "  }",
+        "  pub fn sibling_shadow(value: &str) -> Result<(), Error> { let _ = value; Ok(()) }",
+        "  pub fn sibling_local_result(value: &str) -> LocalResult<()> { let _ = value; Ok(()) }",
+        "}",
+        "pub mod grouped_imports {",
+        "  use anyhow::{Error, Result};",
+        "  use eyre::{Result as EyreResult};",
+        "  use std::io::{Error as IoError, ErrorKind};",
+        "  pub fn grouped_anyhow_error(value: &str) -> Result<(), Error> { let _ = value; Ok(()) }",
+        "  pub fn grouped_anyhow_result(value: &str) -> Result<()> { let _ = value; Ok(()) }",
+        "  pub fn grouped_eyre_result(value: &str) -> EyreResult<()> { let _ = value; Ok(()) }",
+        "}",
+        "pub mod grouped_concrete_imports {",
+        "  use std::io::{Error as IoError, ErrorKind};",
+        "  pub fn grouped_io_error(value: &str) -> Result<(), IoError> { let _ = ErrorKind::Other; let _ = value; Ok(()) }",
+        "}",
       ],
     })
 
@@ -1833,9 +1862,9 @@ describe("RS-LD-* signals", () => {
       const out = await runSignalCompute(RsLd04, repo, RsLd04.defaultConfig)
       const byName = new Map(out.boundaryFunctions.map((fn) => [fn.name, fn]))
 
-      expect(out.totalBoundaryResults).toBe(21)
-      expect(out.collapsedCount).toBe(15)
-      expect(out.granularCount).toBe(6)
+      expect(out.totalBoundaryResults).toBe(28)
+      expect(out.collapsedCount).toBe(18)
+      expect(out.granularCount).toBe(10)
       expect(byName.get("explicit_anyhow")).toMatchObject({
         errorType: "anyhow::Error",
         classification: "collapsed",
@@ -1843,6 +1872,10 @@ describe("RS-LD-* signals", () => {
       expect(byName.get("anyhow_alias")).toMatchObject({
         errorType: "anyhow::Error",
         classification: "collapsed",
+      })
+      expect(byName.get("anyhow_alias_custom")).toMatchObject({
+        errorType: "crate::errors::DomainError",
+        classification: "granular",
       })
       expect(byName.get("eyre_alias")).toMatchObject({
         errorType: "eyre::Report",
@@ -1920,7 +1953,31 @@ describe("RS-LD-* signals", () => {
         errorType: "crate::errors::DomainError",
         classification: "granular",
       })
-      expect(RsLd04.score(out)).toBeCloseTo(2 / 7)
+      expect(byName.get("sibling_shadow")).toMatchObject({
+        errorType: "crate::errors::DomainError",
+        classification: "granular",
+      })
+      expect(byName.get("sibling_local_result")).toMatchObject({
+        errorType: "crate::errors::DomainError",
+        classification: "granular",
+      })
+      expect(byName.get("grouped_anyhow_error")).toMatchObject({
+        errorType: "anyhow::Error",
+        classification: "collapsed",
+      })
+      expect(byName.get("grouped_anyhow_result")).toMatchObject({
+        errorType: "anyhow::Error",
+        classification: "collapsed",
+      })
+      expect(byName.get("grouped_eyre_result")).toMatchObject({
+        errorType: "eyre::Report",
+        classification: "collapsed",
+      })
+      expect(byName.get("grouped_io_error")).toMatchObject({
+        errorType: "std::io::Error",
+        classification: "granular",
+      })
+      expect(RsLd04.score(out)).toBeCloseTo(5 / 14)
     } finally {
       await cleanupWorkspace(repo)
     }

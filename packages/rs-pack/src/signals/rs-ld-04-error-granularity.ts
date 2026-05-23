@@ -80,7 +80,7 @@ export const RsLd04: Signal<RsLd04Config, RsLd04Output, RustProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "error-granularity-config-applicability-diagnostics-cfg-test-result-aliases-v7",
+  cacheVersion: "error-granularity-config-applicability-diagnostics-cfg-test-result-aliases-v9",
   configSchema: RsLd04Config,
   factorDefinitions: RsLd04FactorDefinitions,
   defaultConfig: {
@@ -291,6 +291,7 @@ const collectResultAliasScopes = (
   }
   walkAttributedNodes(root, ({ node, ancestors, testGated }) => {
     if (testGated) return
+    if (ancestors.some((ancestor) => ancestor.type === "function_item" || ancestor.type === "block")) return
     const moduleAliases = scopeForModule(modulePathForAncestors(scope, ancestors).modulePath)
     if (node.type === "use_declaration") {
       const renamedImport = /\buse\s+([A-Za-z_][A-Za-z0-9_:]*)\s+as\s+([A-Za-z_][A-Za-z0-9_]*)\s*;/.exec(node.text)
@@ -301,6 +302,17 @@ const collectResultAliasScopes = (
       const plainImport = /\buse\s+((?:[A-Za-z_][A-Za-z0-9_]*::)+)([A-Za-z_][A-Za-z0-9_]*)\s*;/.exec(node.text)
       if (plainImport !== null) {
         moduleAliases.importAliases.set(plainImport[2]!, `${plainImport[1]!}${plainImport[2]!}`)
+        return
+      }
+      const groupedImport = /\buse\s+([A-Za-z_][A-Za-z0-9_:]*)::\{([^}]+)\}\s*;/.exec(node.text)
+      if (groupedImport !== null) {
+        const prefix = groupedImport[1]!
+        for (const item of splitTopLevelCommas(groupedImport[2] ?? "")) {
+          const itemMatch = /^([A-Za-z_][A-Za-z0-9_]*)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?$/.exec(item.trim())
+          if (itemMatch === null) continue
+          const importedName = itemMatch[1]!
+          moduleAliases.importAliases.set(itemMatch[2] ?? importedName, `${prefix}::${importedName}`)
+        }
       }
     }
     if (node.type === "type_item") {
@@ -337,18 +349,22 @@ const resultErrorTypeFromReturnText = (
 ): string | undefined => {
   if (returnTypeText === undefined) return undefined
   const trimmed = returnTypeText.trim()
-  const normalized = trimmed.replace(/\s+/g, "")
-  if (/^anyhow::Result(?:<.*>)?$/.test(normalized)) return "anyhow::Error"
-  if (/^eyre::Result(?:<.*>)?$/.test(normalized)) return "eyre::Report"
 
   const genericReturn = /^((?:(?:[A-Za-z_][A-Za-z0-9_]*|self|super|crate)::)*[A-Za-z_][A-Za-z0-9_]*)<([\s\S]+)>$/.exec(trimmed)
   if (genericReturn !== null) {
     const outerType = resolveImportedTypeName(genericReturn[1]!, aliases.importAliases)
     const outerTypeNormalized = outerType.replace(/\s+/g, "")
-    if (outerTypeNormalized === "anyhow::Result") return "anyhow::Error"
-    if (outerTypeNormalized === "eyre::Result") return "eyre::Report"
+    const genericArguments = splitTopLevelCommas(genericReturn[2] ?? "")
+    if (outerTypeNormalized === "anyhow::Result") {
+      const explicitErrorType = genericArguments[1]?.trim()
+      return explicitErrorType === undefined ? "anyhow::Error" : resolveErrorAlias(explicitErrorType, aliases, seenAliases)
+    }
+    if (outerTypeNormalized === "eyre::Result") {
+      const explicitErrorType = genericArguments[1]?.trim()
+      return explicitErrorType === undefined ? "eyre::Report" : resolveErrorAlias(explicitErrorType, aliases, seenAliases)
+    }
     if (/(^|::)Result$/.test(outerType)) {
-      const errorType = splitTopLevelCommas(genericReturn[2] ?? "")[1]?.trim()
+      const errorType = genericArguments[1]?.trim()
       return errorType === undefined ? undefined : resolveErrorAlias(errorType, aliases, seenAliases)
     }
   }
