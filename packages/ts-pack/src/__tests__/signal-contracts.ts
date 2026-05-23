@@ -609,7 +609,35 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "ts-ld-09.test.ts and pack.test.ts: wrapped pack cache version includes the TS-LD-09 semantic cacheVersion after typed Promise result, implementation-evidence, namespace, callback-scope, unique finding-id, diagnostic-limit, and exclusion semantics changed.",
     },
   },
-  pendingSignalContract("TS-RP-01-hotspots"),
+  {
+    id: "TS-RP-01-hotspots",
+    status: "verified",
+    requiredEvidence: ["integration"],
+    evidence: {
+      identity:
+        "ts-rp-01.test.ts: canonical id, alias, title, tier/category/kind, semantic cacheVersion, compound input ids, pack registration, registry alias lookup, and default config decoding are asserted.",
+      config:
+        "ts-rp-01.test.ts: configSchema decodes defaults; factor-ledger assertions cover top_n, min_churn, min_complexity, threshold_softness, and peer_percentile_floor; invalid-config tests prove finite-safe diagnostic limits and non-poisoning threshold math.",
+      positiveFixture:
+        "ts-rp-01.test.ts: primitive output fixtures combine churn and complexity into ranked hotspots, classify quadrants, and risk-hotspot-v2 fixtures prove overlapping recency-weighted churn, ownership, coverage, and co-change facts affect ranking and payloads.",
+      negativeFixture:
+        "ts-rp-01.test.ts: empty required inputs, missing required inputs, absent/unknown/zero/not-applicable optional facts, and optional facts that do not overlap hotspot candidates stay neutral or legacy-scored without synthetic risk factors.",
+      applicability:
+        "ts-rp-01.test.ts: empty history and missing required primitive inputs produce zero considered files and score 1; optional input fact states distinguish not_configured, present, zero, absent, unknown, and not_applicable.",
+      score:
+        "ts-rp-01.test.ts: legacy and soft-threshold score formulas are asserted exactly, risk-hotspot-v2 score is bounded by risk pressure, deterministic repeated outputs score identically, and invalid numeric config cannot produce NaN scores.",
+      diagnostics:
+        "ts-rp-01.test.ts: diagnostics assert severity-first ordering, contiguous diagnostic labels, payload rank/diagnosticRank data, compact display paths with absolute locations, raw-output independence from top_n, and finite-safe top_n caps.",
+      factorLedger:
+        "ts-rp-01.test.ts: registered pack signal emits config.top_n, config.min_churn, config.min_complexity, config.threshold_softness, and config.peer_percentile_floor factor-ledger entries with score roles.",
+      cacheSemantics:
+        "ts-rp-01.test.ts and pack.test.ts: wrapped pack cache version includes the TS-RP-01 semantic cacheVersion after risk activation, config normalization, and deterministic ranking semantics changed; all compound inputs declare cache fingerprints.",
+      compoundInputs:
+        "ts-rp-01.test.ts: composite input resolution is asserted for required TS-LD-01 and SHARED-CHURN-01 plus optional SHARED-CHURN-02, SHARED-02, SHARED-COV-01, and SHARED-COCHANGE-01 inputs, including canonical ids, aliases, weights, states, raw values, normalized values, and cache fingerprints.",
+      integration:
+        "ts-rp-01.test.ts: a real temp git repository runs through buildRegistry with SHARED_SIGNALS and TS_PACK_SIGNALS, TsProjectLayer, SignalContextTag, real TS-LD-01 complexity output, real SHARED-CHURN-01 git churn output, and the TS-RP-01 compound target.",
+    },
+  },
   pendingSignalContract("TS-SL-01-duplication"),
   pendingSignalContract("TS-SL-03-suppressions"),
   pendingSignalContract("TS-SL-04-unfinished-implementations"),
