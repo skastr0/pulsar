@@ -204,9 +204,9 @@ export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       positiveFixture:
         "rs-ab-signals.test.ts: temporary Cargo workspace fixtures run through RustProjectLayer and real Rust source parsing to prove internal over-public items, exported root API, non-library public items, cross-crate public usage, dependency aliases, hyphenated crate identifiers, direct pub reexports, wildcard pub reexports, private reexports, and full public module-chain classification.",
       negativeFixture:
-        "rs-ab-signals.test.ts: clean exported API, missing Rust source, private-only crates, and fully excluded Rust source return neutral output without false unused-public pressure.",
+        "rs-ab-signals.test.ts: clean exported API, missing Rust source, private-only crates with and without cargo metadata, and fully excluded Rust source return neutral output without false unused-public pressure.",
       applicability:
-        "rs-ab-signals.test.ts: loaded Rust source with public item evidence is applicable, no Rust source and missing cargo metadata emit insufficient_evidence metadata, and loaded source with no public items or no analyzed source emits not_applicable metadata.",
+        "rs-ab-signals.test.ts: loaded Rust source with public item evidence is applicable, no Rust source and missing cargo metadata with public item evidence emit insufficient_evidence metadata, and loaded source with no public items or no analyzed source emits not_applicable metadata.",
       score:
         "rs-ab-signals.test.ts: unused-public fixtures score below clean fixtures, missing/no-public/excluded evidence stays score-neutral through applicability metadata, and additional dead public items at fixed public item count lower scores monotonically.",
       diagnostics:

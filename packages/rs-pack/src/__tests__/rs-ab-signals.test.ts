@@ -1,3 +1,4 @@
+import { computeDiagnosticHash } from "@skastr0/pulsar-core/reference-data"
 import { buildRegistry, computeConfigHash } from "@skastr0/pulsar-core/scoring"
 import { SHARED_SIGNALS } from "@skastr0/pulsar-shared-signals"
 import { describe, expect, test } from "bun:test"
@@ -178,7 +179,14 @@ describe("RS-AB-* signals", () => {
       expect(diagnostics[0]).toMatchObject({
         severity: "warn",
         message: "Public struct Hidden is not referenced from other workspace crates",
+        location: {
+          file: expect.stringMatching(/crates\/core\/src\/lib\.rs$/),
+          line: 5,
+        },
         data: {
+          hash: computeDiagnosticHash("core_lib|core_lib::crate::internal|Hidden|struct|5"),
+          crate: "core_lib",
+          module: "core_lib::crate::internal",
           name: "Hidden",
           kind: "struct",
           surface: "internal-overpublic",
@@ -187,7 +195,6 @@ describe("RS-AB-* signals", () => {
           analysisMode: "explicit-use-and-reexport-resolution",
         },
       })
-      expect(typeof diagnostics[0]?.data?.hash).toBe("string")
     } finally {
       await cleanupWorkspace(repo)
     }
@@ -389,6 +396,11 @@ describe("RS-AB-* signals", () => {
         repo,
         { ...RsAb01.defaultConfig, top_n_diagnostics: 1.8 },
       )
+      const uncapped = await runSignalCompute(
+        RsAb01,
+        repo,
+        { ...RsAb01.defaultConfig, top_n_diagnostics: 3 },
+      )
       const hidden = await runSignalCompute(
         RsAb01,
         repo,
@@ -399,6 +411,29 @@ describe("RS-AB-* signals", () => {
       expect(capped.diagnosticLimit).toBe(1)
       expect(RsAb01.diagnose(capped)).toHaveLength(1)
       expect(RsAb01.diagnose(capped)[0]?.data?.name).toBe("Alpha")
+      expect(RsAb01.diagnose(uncapped)).toMatchObject([
+        {
+          location: { file: expect.stringMatching(/src\/lib\.rs$/), line: 2 },
+          data: {
+            hash: computeDiagnosticHash("unused-public|unused-public::crate::internal|Alpha|struct|2"),
+            name: "Alpha",
+          },
+        },
+        {
+          location: { file: expect.stringMatching(/src\/lib\.rs$/), line: 3 },
+          data: {
+            hash: computeDiagnosticHash("unused-public|unused-public::crate::internal|Beta|struct|3"),
+            name: "Beta",
+          },
+        },
+        {
+          location: { file: expect.stringMatching(/src\/lib\.rs$/), line: 4 },
+          data: {
+            hash: computeDiagnosticHash("unused-public|unused-public::crate::internal|Gamma|struct|4"),
+            name: "Gamma",
+          },
+        },
+      ])
       expect(hidden.diagnosticLimit).toBe(0)
       expect(RsAb01.diagnose(hidden)).toHaveLength(0)
       expect(factorLedger?.entries).toContainEqual(
@@ -527,6 +562,12 @@ describe("RS-AB-* signals", () => {
       const cleanOut = await runSignalCompute(RsAb01, clean, RsAb01.defaultConfig)
       const missingOut = await runSignalCompute(RsAb01, missing, RsAb01.defaultConfig)
       const privateOut = await runSignalCompute(RsAb01, privateOnly, RsAb01.defaultConfig)
+      const privateWithoutMetadataProject = await Effect.runPromise(makeRustProject(privateOnly))
+      const privateWithoutMetadataOut = await runSignalComputeWithProject(
+        RsAb01,
+        { ...privateWithoutMetadataProject, cargoMetadata: undefined },
+        RsAb01.defaultConfig,
+      )
       const excludedOut = await runSignalCompute(
         RsAb01,
         excluded,
@@ -555,6 +596,12 @@ describe("RS-AB-* signals", () => {
         applicability: "not_applicable",
       })
       expect(RsAb01.diagnose(privateOut)).toEqual([])
+      expect(privateWithoutMetadataOut.cargoMetadataStatus).toBe("missing")
+      expect(privateWithoutMetadataOut.publicItemCount).toBe(0)
+      expect(RsAb01.outputMetadata?.(privateWithoutMetadataOut)).toEqual({
+        applicability: "not_applicable",
+      })
+      expect(RsAb01.diagnose(privateWithoutMetadataOut)).toEqual([])
 
       expect(excludedOut.analyzedSourceFileCount).toBe(0)
       expect(excludedOut.publicItemCount).toBe(0)
