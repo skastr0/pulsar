@@ -256,6 +256,25 @@ describe("TS-AB-04 (interface to implementation ratio)", () => {
     expect(out.deadInterfaces).toHaveLength(0)
   })
 
+  test("destructured non-object casts count as structural data usage", async () => {
+    await repo.write(
+      "src/destructured.ts",
+      [
+        "export interface Payload {",
+        "  readonly value: string",
+        "}",
+        "declare function readPayload(): unknown",
+        "const { value } = readPayload() as Payload",
+        "export const result = value",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsAb04, TsAb04.defaultConfig)
+
+    expect(out.totalInterfaces).toBe(0)
+    expect(out.deadInterfaces).toHaveLength(0)
+  })
+
   test("multiple implementations are not flagged", async () => {
     await repo.write(
       "src/multi.ts",

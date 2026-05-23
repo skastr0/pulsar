@@ -448,6 +448,7 @@ const assertionVariableIsUsed = (assertion: AsExpression | SatisfiesExpression):
   if (initializer === undefined || !containsNode(initializer, assertion)) return false
 
   const nameNode = variableDeclaration.getNameNode()
+  if (Node.isObjectBindingPattern(nameNode) || Node.isArrayBindingPattern(nameNode)) return true
   if (!Node.isIdentifier(nameNode)) return false
   return nameNode.findReferencesAsNodes().some((reference) => reference !== nameNode)
 }
