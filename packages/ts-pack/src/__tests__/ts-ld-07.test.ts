@@ -66,7 +66,7 @@ describe("TS-LD-07 (unsafe type erosion)", () => {
         tier: 1,
         category: "legibility-decay",
         kind: "legibility",
-        cacheVersion: "unsafe-type-erosion-v7-boundary-assertions-v1",
+        cacheVersion: "unsafe-type-erosion-v8-test-helper-exclusions-v1",
         inputs: [],
       })
       expect(registered?.id).toBe(TsLd07.id)
@@ -768,6 +768,12 @@ describe("TS-LD-07 (unsafe type erosion)", () => {
       await repo.write("src/__tests__/helper.ts", "export const raw: any = {}\n")
       await repo.write("src/test/helper.ts", "export const raw: any = {}\n")
       await repo.write("src/tests/helper.ts", "export const raw: any = {}\n")
+      await repo.write("src/test-support/helper.ts", "export const raw: any = {}\n")
+      await repo.write("src/live.test-support.ts", "export const raw: any = {}\n")
+      await repo.write("src/live.test-helpers.ts", "export const raw: any = {}\n")
+      await repo.write("src/live.test-mocks.ts", "export const raw: any = {}\n")
+      await repo.write("src/live.test-harness.ts", "export const raw: any = {}\n")
+      await repo.write("src/happydom.ts", "export const raw: any = {}\n")
       await repo.write("src/generated/client.ts", "export const raw: any = {}\n")
       await repo.write("src/client.gen.ts", "export const raw: any = {}\n")
       await repo.write("dist/out.ts", "export const raw: any = {}\n")

@@ -556,7 +556,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       factorLedger:
         "ts-ld-07.test.ts: registered pack signal emits config.exclude_globs, max_weighted_unsafe_per_kloc, max_boundary_weighted_unsafe, and top_n_diagnostics factor-ledger entries with score roles.",
       cacheSemantics:
-        "ts-ld-07.test.ts and pack.test.ts: wrapped pack cache version includes the TS-LD-07 semantic cacheVersion after diagnostic-limit, export-boundary, unique-finding-id, value type-surface, applicability, inline function-contract, and boundary assertion semantics changed.",
+        "ts-ld-07.test.ts and pack.test.ts: wrapped pack cache version includes the TS-LD-07 semantic cacheVersion after diagnostic-limit, export-boundary, unique-finding-id, value type-surface, applicability, inline function-contract, boundary assertion, and test-helper exclusion semantics changed.",
       calibration:
         "ts-ld-07.test.ts: unsafe-type-policy calibration records decisions, deweights deliberate existential unsafe types, changes severity/boundary/weight, and preserves policy attribution on occurrences.",
     },
