@@ -18,6 +18,7 @@ import { RustProjectLayer, RS_PACK_SIGNALS } from "@skastr0/pulsar-rs-pack"
 import { SHARED_SIGNALS } from "@skastr0/pulsar-shared-signals"
 import { TsProjectLayer, TS_PACK_SIGNALS } from "@skastr0/pulsar-ts-pack"
 import { Effect, Layer } from "effect"
+import { runSignalInWorktree } from "../runtime.js"
 
 describe("polyglot shared signals", () => {
   test("shared signals fire once across a polyglot workspace", async () => {
@@ -149,6 +150,83 @@ describe("polyglot shared signals", () => {
         | undefined
       expect(suppression?.byLanguage?.typescript?.totalSuppressions).toBe(1)
       expect(suppression?.byLanguage?.rust?.totalSuppressions).toBe(1)
+    } finally {
+      await rm(repo, { recursive: true, force: true })
+    }
+  }, 120_000)
+
+  test("single-signal runtime provides language layers for shared compound inputs", async () => {
+    const repo = await mkdtemp(join(tmpdir(), "pulsar-cli-shared-single-"))
+    try {
+      await mkdir(join(repo, "src"), { recursive: true })
+      await mkdir(join(repo, "crates/core/src"), { recursive: true })
+
+      await writeFile(join(repo, "package.json"), '{"name":"shared-single","private":true}\n')
+      await writeFile(
+        join(repo, "tsconfig.json"),
+        JSON.stringify(
+          {
+            compilerOptions: {
+              target: "ES2022",
+              module: "ESNext",
+            },
+            include: ["src/**/*.ts"],
+          },
+          null,
+          2,
+        ),
+      )
+      await writeFile(
+        join(repo, "src/index.ts"),
+        [
+          "// @ts-ignore intentional fixture suppression",
+          "export const value = 1",
+        ].join("\n"),
+      )
+      await writeFile(
+        join(repo, "Cargo.toml"),
+        [
+          "[workspace]",
+          'members = ["crates/core"]',
+          'resolver = "2"',
+        ].join("\n"),
+      )
+      await writeFile(
+        join(repo, "crates/core/Cargo.toml"),
+        [
+          "[package]",
+          'name = "fixture_core"',
+          'version = "0.1.0"',
+          'edition = "2021"',
+        ].join("\n"),
+      )
+      await writeFile(
+        join(repo, "crates/core/src/lib.rs"),
+        [
+          "#[allow(clippy::unwrap_used)]",
+          "pub fn value() -> i32 { 1 }",
+        ].join("\n"),
+      )
+
+      sh("git", ["init", "-q", "-b", "main"], repo)
+      sh("git", ["config", "user.email", "test@test.test"], repo)
+      sh("git", ["config", "user.name", "test"], repo)
+      sh("git", ["add", "."], repo)
+      sh("git", ["commit", "-q", "-m", "fixture"], repo)
+
+      const result = await Effect.runPromise(
+        runSignalInWorktree(repo, "SHARED-05"),
+      )
+      const output = result.result.output as {
+        readonly byLanguage?: {
+          readonly typescript?: { readonly totalSuppressions: number }
+          readonly rust?: { readonly totalSuppressions: number }
+        }
+      }
+
+      expect(result.result.signalId).toBe("SHARED-05-suppression-governance")
+      expect(output.byLanguage?.typescript?.totalSuppressions).toBe(1)
+      expect(output.byLanguage?.rust?.totalSuppressions).toBe(1)
     } finally {
       await rm(repo, { recursive: true, force: true })
     }

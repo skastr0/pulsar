@@ -140,7 +140,33 @@ export const SHARED_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "core shared-03-churn-rate.test.ts: project-module churn-rate policy processors can neutralize visible pressure with calibration decisions, rule IDs, factor paths, and module attribution preserved in effective file entries and factor ledger output.",
     },
   },
-  pendingSignalContract("SHARED-05-suppression-governance"),
+  {
+    id: "SHARED-05-suppression-governance",
+    status: "verified",
+    requiredEvidence: ["compoundInputs"],
+    evidence: {
+      identity:
+        "shared-05-suppression.test.ts: canonical id, alias, title, tier/category/kind, compound input contract, semantic cacheVersion, pack registration, registry alias lookup, and default config decoding are asserted.",
+      config:
+        "shared-05-suppression.test.ts: default top_n_diagnostics is decoded and config-factor-ledger-backed; fractional, negative, and NaN diagnostic limits are normalized through real compute output.",
+      positiveFixture:
+        "shared-05-suppression.test.ts: TypeScript and Rust suppression fixture inputs prove cross-language governance pressure, missing and expired justification aggregation, justified-suppression pressure, alias/canonical input equivalence, and deterministic output.",
+      negativeFixture:
+        "shared-05-suppression.test.ts: missing optional inputs, all-empty inputs, single-language inputs, and one-language-with-empty-peer inputs stay score-neutral and not_applicable instead of creating false cross-language pressure.",
+      applicability:
+        "shared-05-suppression.test.ts: outputMetadata reports not_applicable until suppressions appear in at least two language packs; two-language suppression facts remain applicable even when all suppressions are justified.",
+      score:
+        "shared-05-suppression.test.ts: score bounds and monotonic pressure are asserted for single-language neutrality, missing justification pressure, expired-justification pressure, justified multi-language debt, and cross-language unjustified debt.",
+      diagnostics:
+        "shared-05-suppression.test.ts: diagnose proves ordered overall/TypeScript/Rust diagnostics, diagnostic caps, not-applicable info severity, applicable warn severity, and structured aggregate/language payloads.",
+      factorLedger:
+        "shared-05-suppression.test.ts: registered shared-pack signal emits config.top_n_diagnostics factor entries through withConfigFactorLedger.",
+      cacheSemantics:
+        "shared-05-suppression.test.ts and pack.test.ts: SHARED-05 declares single-language-applicability-v2-normalized-diagnostics cacheVersion; wrapped shared-pack cache version preserves the signal cacheVersion after diagnostic normalization and applicability semantics changed.",
+      compoundInputs:
+        "shared-05-suppression.test.ts: compound inputs declare cache fingerprints for TS-SL-03-suppressions and RS-SL-02-suppressions; tests prove optional missing inputs, canonical ids, legacy aliases, empty peer inputs, and deterministic map-order handling.",
+    },
+  },
   pendingSignalContract("SHARED-06-pr-dependency-delta"),
   pendingSignalContract("SHARED-07-machine-feedback-coverage"),
   pendingSignalContract("SHARED-09-contract-freshness"),

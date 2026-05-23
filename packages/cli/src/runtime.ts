@@ -127,7 +127,7 @@ export const runSignalInWorktree = (
       yield* validateVectorAgainstPulsarSignals(vector, repoRoot)
     }
 
-    const worktreeEnvLayer = yield* buildWorktreeEnvLayer(repoRoot, gitSha, signalId)
+    const worktreeEnvLayer = yield* buildWorktreeEnvLayer(repoRoot, gitSha, registry, signalId)
     const result = yield* (Effect.provide(
       runSignal(registry, signalId, vector),
       worktreeEnvLayer,
@@ -196,7 +196,12 @@ export const makePulsarRuntime = (
     return { registry, engine, timeSeries, calibrationContext }
   })
 
-const buildWorktreeEnvLayer = (repoRoot: string, gitSha: string, signalId: string) =>
+const buildWorktreeEnvLayer = (
+  repoRoot: string,
+  gitSha: string,
+  registry: Registry,
+  signalId: string,
+) =>
   Effect.gen(function* () {
     const referenceEntries = yield* loadCanonicalReferenceDataEntries(repoRoot)
     const changedHunks = yield* collectWorktreeChangedHunks(repoRoot)
@@ -214,15 +219,39 @@ const buildWorktreeEnvLayer = (repoRoot: string, gitSha: string, signalId: strin
       calibrationContext === undefined
         ? Layer.empty
         : Layer.succeed(CalibrationContextTag, calibrationContext)
+    const requiredPacks = collectRequiredLanguagePacks(registry, signalId)
 
     return Layer.mergeAll(
       signalContextLayer,
       referenceDataLayer,
       InMemoryCacheLayer,
       calibrationContextLayer,
-      signalId.startsWith("TS-")
+      requiredPacks.typescript
         ? TsProjectLayer(repoRoot, { productionOnly: true })
         : Layer.empty,
-      signalId.startsWith("RS-") ? RustProjectLayer(repoRoot) : Layer.empty,
+      requiredPacks.rust ? RustProjectLayer(repoRoot) : Layer.empty,
     )
   })
+
+const collectRequiredLanguagePacks = (
+  registry: Registry,
+  signalId: string,
+): { readonly typescript: boolean; readonly rust: boolean } => {
+  let typescript = false
+  let rust = false
+  const visited = new Set<string>()
+
+  const visit = (id: string): void => {
+    const signal = registry.byId.get(id)
+    if (signal === undefined || visited.has(signal.id)) return
+    visited.add(signal.id)
+    if (signal.id.startsWith("TS-")) typescript = true
+    if (signal.id.startsWith("RS-")) rust = true
+    for (const input of signal.inputs) {
+      visit(input.id)
+    }
+  }
+
+  visit(signalId)
+  return { typescript, rust }
+}

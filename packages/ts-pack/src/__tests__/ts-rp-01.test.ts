@@ -142,6 +142,7 @@ const mockOwnershipOut: Shared02BusFactorOutput = {
   touchedFileCount: 2,
   touchedLoc: 400,
   repoAuthors: ["peer", "solo"],
+  topDiagnostics: 10,
   effectiveSiloed: [
     {
       file: "/repo/b.ts",

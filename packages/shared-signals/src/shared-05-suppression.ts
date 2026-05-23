@@ -31,6 +31,7 @@ export interface Shared05SuppressionOutput {
   readonly unjustifiedCount: number
   readonly missingJustificationCount: number
   readonly expiredJustificationCount: number
+  readonly topDiagnostics: number
   readonly byLanguage: {
     readonly typescript?: {
       readonly totalSuppressions: number
@@ -50,7 +51,7 @@ export const Shared05Suppression: Signal<Shared05SuppressionConfig, Shared05Supp
   tier: 1.5,
   category: "generated-slop",
   kind: "compound",
-  cacheVersion: "single-language-applicability-v1",
+  cacheVersion: "single-language-applicability-v2-normalized-diagnostics",
   configSchema: Shared05SuppressionConfig,
   defaultConfig: {
     top_n_diagnostics: 10,
@@ -67,8 +68,9 @@ export const Shared05Suppression: Signal<Shared05SuppressionConfig, Shared05Supp
       cacheFingerprint: "shared-05-rust-suppression-input-v1",
     },
   ],
-  compute: (_config, inputs) =>
+  compute: (config, inputs) =>
     Effect.sync(() => {
+      const normalizedConfig = normalizeShared05SuppressionConfig(config)
       const ts = (inputs.get("TS-SL-03-suppressions") ??
         inputs.get("TS-SL-03")) as TsSuppressionLike | undefined
       const rs = (inputs.get("RS-SL-02-suppressions") ??
@@ -88,6 +90,7 @@ export const Shared05Suppression: Signal<Shared05SuppressionConfig, Shared05Supp
           (ts?.missingJustificationCount ?? 0) + (rs?.missingJustificationCount ?? 0),
         expiredJustificationCount:
           (ts?.expiredCount ?? 0) + (rs?.expiredJustificationCount ?? 0),
+        topDiagnostics: normalizedConfig.top_n_diagnostics,
         byLanguage: {
           ...(ts !== undefined
             ? {
@@ -122,9 +125,10 @@ export const Shared05Suppression: Signal<Shared05SuppressionConfig, Shared05Supp
       ? { applicability: "not_applicable" as const }
       : undefined,
   diagnose: (out): ReadonlyArray<Diagnostic> => {
+    const crossLanguageApplicable = out.languageCount >= 2
     const diagnostics: Array<Diagnostic> = [
       {
-        severity: out.languageCount >= 2 && out.unjustifiedCount > 0 ? ("warn" as const) : ("info" as const),
+        severity: crossLanguageApplicable && out.unjustifiedCount > 0 ? ("warn" as const) : ("info" as const),
         message: `Suppression governance: ${out.unjustifiedCount} unjustified suppressions across ${out.totalSuppressions} total suppressions`,
         data: {
           totalSuppressions: out.totalSuppressions,
@@ -138,17 +142,35 @@ export const Shared05Suppression: Signal<Shared05SuppressionConfig, Shared05Supp
 
     if (out.byLanguage.typescript !== undefined) {
       diagnostics.push({
-        severity: out.byLanguage.typescript.unjustifiedCount > 0 ? ("warn" as const) : ("info" as const),
+        severity: crossLanguageApplicable && out.byLanguage.typescript.unjustifiedCount > 0 ? ("warn" as const) : ("info" as const),
         message: `TypeScript suppressions: ${out.byLanguage.typescript.unjustifiedCount} unjustified / ${out.byLanguage.typescript.totalSuppressions} total`,
+        data: {
+          language: "typescript",
+          totalSuppressions: out.byLanguage.typescript.totalSuppressions,
+          unjustifiedCount: out.byLanguage.typescript.unjustifiedCount,
+        },
       })
     }
     if (out.byLanguage.rust !== undefined) {
       diagnostics.push({
-        severity: out.byLanguage.rust.unjustifiedCount > 0 ? ("warn" as const) : ("info" as const),
+        severity: crossLanguageApplicable && out.byLanguage.rust.unjustifiedCount > 0 ? ("warn" as const) : ("info" as const),
         message: `Rust suppressions: ${out.byLanguage.rust.unjustifiedCount} unjustified / ${out.byLanguage.rust.totalSuppressions} total`,
+        data: {
+          language: "rust",
+          totalSuppressions: out.byLanguage.rust.totalSuppressions,
+          unjustifiedCount: out.byLanguage.rust.unjustifiedCount,
+        },
       })
     }
 
-    return diagnostics
+    return diagnostics.slice(0, out.topDiagnostics)
   },
 }
+
+const normalizeShared05SuppressionConfig = (
+  config: Shared05SuppressionConfig,
+): Shared05SuppressionConfig => ({
+  top_n_diagnostics: Number.isFinite(config.top_n_diagnostics)
+    ? Math.max(0, Math.floor(config.top_n_diagnostics))
+    : 0,
+})
