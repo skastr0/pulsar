@@ -50,7 +50,7 @@ interface RsLd06Output {
   readonly newUniqueCount: number
   readonly duplicateCount: number
   readonly conflictCount: number
-  readonly referenceDataStatus: "loaded" | "missing"
+  readonly referenceDataStatus: "loaded" | "missing" | "empty"
   readonly sourceFileCount: number
   readonly analyzedSourceFileCount: number
   readonly diagnosticLimit: number
@@ -92,7 +92,7 @@ export const RsLd06: Signal<RsLd06Config, RsLd06Output, RustProjectTag | Referen
   tier: 2,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "domain-terms-config-reference-data-applicability-diagnostics-v1",
+  cacheVersion: "domain-terms-config-reference-data-applicability-diagnostics-v2",
   configSchema: RsLd06Config,
   factorDefinitions: RsLd06FactorDefinitions,
   defaultConfig: {
@@ -136,6 +136,24 @@ export const RsLd06: Signal<RsLd06Config, RsLd06Output, RustProjectTag | Referen
           }
 
           const glossary = normalizeGlossary(rawGlossary.value)
+          if (glossary.length === 0) {
+            return {
+              identifiers: [],
+              totalIdentifiers: identifiers.length,
+              matchCount: 0,
+              newUniqueCount: 0,
+              duplicateCount: 0,
+              conflictCount: 0,
+              referenceDataStatus: "empty",
+              sourceFileCount: project.sourceFiles.length,
+              analyzedSourceFileCount: analyzedSourceFiles.length,
+              diagnosticLimit: normalizedConfig.top_n_diagnostics,
+              scoreMode: RS_LD_06_SCORE_MODE,
+              scoreDenominator: RS_LD_06_SCORE_DENOMINATOR,
+              weightedTermDriftPressure: 0,
+            }
+          }
+
           const classified = identifiers.map((identifier) =>
             classifyIdentifier(identifier.name, glossary, {
               file: identifier.file,
@@ -173,7 +191,7 @@ export const RsLd06: Signal<RsLd06Config, RsLd06Output, RustProjectTag | Referen
       })
     }),
   score: (out) => {
-    if (out.referenceDataStatus === "missing" || out.totalIdentifiers === 0) return 1
+    if (out.referenceDataStatus !== "loaded" || out.totalIdentifiers === 0) return 1
     return Math.max(0, 1 - out.weightedTermDriftPressure)
   },
   diagnose: (out): ReadonlyArray<Diagnostic> => {
@@ -182,6 +200,22 @@ export const RsLd06: Signal<RsLd06Config, RsLd06Output, RustProjectTag | Referen
         {
           severity: "warn",
           message: "RS-LD-06 requires glossary reference data; no glossary was loaded",
+          data: {
+            sourceFileCount: out.sourceFileCount,
+            analyzedSourceFileCount: out.analyzedSourceFileCount,
+            totalIdentifiers: out.totalIdentifiers,
+            scoreMode: out.scoreMode,
+            scoreDenominator: out.scoreDenominator,
+          },
+        },
+      ].slice(0, out.diagnosticLimit)
+    }
+
+    if (out.referenceDataStatus === "empty") {
+      return [
+        {
+          severity: "warn",
+          message: "RS-LD-06 requires non-empty glossary reference data; loaded glossary has no terms",
           data: {
             sourceFileCount: out.sourceFileCount,
             analyzedSourceFileCount: out.analyzedSourceFileCount,
@@ -222,7 +256,7 @@ export const RsLd06: Signal<RsLd06Config, RsLd06Output, RustProjectTag | Referen
       }))
   },
   outputMetadata: (out) => {
-    if (out.sourceFileCount === 0 || out.referenceDataStatus === "missing") {
+    if (out.sourceFileCount === 0 || out.referenceDataStatus !== "loaded") {
       return { applicability: "insufficient_evidence" as const }
     }
     if (out.analyzedSourceFileCount === 0 || out.totalIdentifiers === 0) {

@@ -2528,7 +2528,7 @@ describe("RS-LD-* signals", () => {
       tier: 2,
       category: "legibility-decay",
       kind: "legibility",
-      cacheVersion: "domain-terms-config-reference-data-applicability-diagnostics-v1",
+      cacheVersion: "domain-terms-config-reference-data-applicability-diagnostics-v2",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -2630,6 +2630,9 @@ describe("RS-LD-* signals", () => {
       )
       const missingOut = await runSignalCompute(RsLd06, missing, RsLd06.defaultConfig, glossary)
       const missingReferenceOut = await runSignalCompute(RsLd06, repo, RsLd06.defaultConfig)
+      const emptyGlossaryOut = await runSignalCompute(RsLd06, repo, RsLd06.defaultConfig, {
+        glossary: { terms: [] },
+      })
       const noIdentifierOut = await runSignalCompute(
         RsLd06,
         noIdentifiers,
@@ -2674,6 +2677,18 @@ describe("RS-LD-* signals", () => {
       expect(RsLd06.diagnose(missingReferenceOut)[0]).toMatchObject({
         severity: "warn",
         message: "RS-LD-06 requires glossary reference data; no glossary was loaded",
+      })
+
+      expect(emptyGlossaryOut.referenceDataStatus).toBe("empty")
+      expect(emptyGlossaryOut.totalIdentifiers).toBeGreaterThan(0)
+      expect(emptyGlossaryOut.identifiers).toEqual([])
+      expect(RsLd06.score(emptyGlossaryOut)).toBe(1)
+      expect(RsLd06.outputMetadata?.(emptyGlossaryOut)).toEqual({
+        applicability: "insufficient_evidence",
+      })
+      expect(RsLd06.diagnose(emptyGlossaryOut)[0]).toMatchObject({
+        severity: "warn",
+        message: "RS-LD-06 requires non-empty glossary reference data; loaded glossary has no terms",
       })
 
       expect(noIdentifierOut.sourceFileCount).toBe(1)
