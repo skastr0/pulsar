@@ -286,6 +286,84 @@ describe("TS-LD-06 (type annotation coverage)", () => {
     expect(fileCoverage?.internal.totalParams ?? 0).toBe(0)
   })
 
+  test("default export aliases count as boundary exports", async () => {
+    const file = await writeTs(
+      "src/default-aliases.ts",
+      [
+        "const handler = (value) => value",
+        "export default handler",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runCompute()
+
+    expect(out.uncoveredBoundary).toEqual([
+      {
+        file,
+        name: "handler",
+        line: 1,
+        missingKind: "both",
+      },
+    ])
+  })
+
+  test("default exported classes expose constructor and public methods as boundaries", async () => {
+    const file = await writeTs(
+      "src/default-class.ts",
+      [
+        "class Service {",
+        "  constructor(value) {",
+        "    void value",
+        "  }",
+        "  run(value) {",
+        "    return value",
+        "  }",
+        "}",
+        "export default Service",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runCompute()
+
+    expect(out.uncoveredBoundary).toEqual([
+      {
+        file,
+        name: "Service.run",
+        line: 5,
+        missingKind: "both",
+      },
+      {
+        file,
+        name: "Service.constructor",
+        line: 2,
+        missingKind: "params",
+      },
+    ])
+  })
+
+  test("nested same-name declarations do not inherit boundary status", async () => {
+    await writeTs(
+      "src/shadow.ts",
+      [
+        "const publicFn = (value: string): string => value",
+        "export { publicFn }",
+        "export function wrapper(): string {",
+        "  const publicFn = (value) => value",
+        "  return publicFn('ok')",
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runCompute()
+
+    expect(out.uncoveredBoundary).toEqual([])
+    expect(out.internalCoverage.totalParams).toBe(1)
+    expect(out.internalCoverage.annotatedParams).toBe(0)
+  })
+
   test("overload signatures provide the boundary annotation contract", async () => {
     await writeTs(
       "src/overloads.ts",
@@ -481,6 +559,32 @@ describe("TS-LD-06 (type annotation coverage)", () => {
     expect(out.boundaryCoverage.annotatedParams).toBe(1)
     expect(out.boundaryCoverage.totalReturns).toBe(3)
     expect(out.boundaryCoverage.annotatedReturns).toBe(0)
+  })
+
+  test("default exported object literal aliases expose member functions as boundaries", async () => {
+    const file = await writeTs(
+      "src/default-object.ts",
+      [
+        "const api = {",
+        "  run(value) {",
+        "    return value",
+        "  },",
+        "}",
+        "export default api",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runCompute()
+
+    expect(out.uncoveredBoundary).toEqual([
+      {
+        file,
+        name: "api.run",
+        line: 2,
+        missingKind: "both",
+      },
+    ])
   })
 
   test("test helper exports are ignored by default", async () => {

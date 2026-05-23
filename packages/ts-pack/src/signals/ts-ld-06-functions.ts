@@ -42,7 +42,7 @@ export const collectTrackedFunctions = (sourceFile: SourceFile): ReadonlyArray<T
       const boundary =
         hasModifier(node, ts.SyntaxKind.ExportKeyword) ||
         hasModifier(node, ts.SyntaxKind.DefaultKeyword) ||
-        (className !== undefined && boundaryNames.has(className))
+        (className !== undefined && boundaryNames.has(className) && isTopLevelClassDeclaration(node))
       ts.forEachChild(node, (child) =>
         visit(child, { className, classBoundary: boundary }),
       )
@@ -157,6 +157,10 @@ const collectLocalBoundaryNames = (sourceFile: ts.SourceFile): ReadonlySet<strin
       for (const element of statement.exportClause.elements) {
         names.add((element.propertyName ?? element.name).text)
       }
+    }
+
+    if (ts.isExportAssignment(statement) && ts.isIdentifier(statement.expression)) {
+      names.add(statement.expression.text)
     }
   }
 
@@ -315,7 +319,7 @@ const isBoundaryFunction = (
     return (
       hasModifier(fn, ts.SyntaxKind.ExportKeyword) ||
       hasModifier(fn, ts.SyntaxKind.DefaultKeyword) ||
-      (fn.name !== undefined && boundaryNames.has(fn.name.text))
+      (fn.name !== undefined && boundaryNames.has(fn.name.text) && isTopLevelFunctionDeclaration(fn))
     )
   }
 
@@ -349,7 +353,10 @@ const isBoundaryFunction = (
     return context.objectBoundary === true
   }
   if (ts.isVariableDeclaration(parent) && ts.isIdentifier(parent.name)) {
-    return boundaryNames.has(parent.name.text) || isExportedVariableDeclaration(parent)
+    return (
+      isExportedVariableDeclaration(parent) ||
+      (boundaryNames.has(parent.name.text) && isTopLevelVariableDeclaration(parent))
+    )
   }
   return ts.isExportAssignment(parent)
 }
@@ -358,6 +365,18 @@ const isExportedVariableDeclaration = (declaration: ts.VariableDeclaration): boo
   const declarationList = declaration.parent
   const statement = declarationList.parent
   return ts.isVariableStatement(statement) && hasModifier(statement, ts.SyntaxKind.ExportKeyword)
+}
+
+const isTopLevelFunctionDeclaration = (node: ts.FunctionDeclaration): boolean =>
+  ts.isSourceFile(node.parent)
+
+const isTopLevelClassDeclaration = (node: ts.ClassDeclaration): boolean =>
+  ts.isSourceFile(node.parent)
+
+const isTopLevelVariableDeclaration = (node: ts.VariableDeclaration): boolean => {
+  const declarationList = node.parent
+  const statement = declarationList.parent
+  return ts.isVariableStatement(statement) && ts.isSourceFile(statement.parent)
 }
 
 const hasModifier = (
