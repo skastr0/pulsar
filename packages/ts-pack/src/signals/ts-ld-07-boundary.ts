@@ -111,7 +111,8 @@ export const isBoundaryFunctionOwner = (
 
   return (
     isWithinExportedTypeSurface(owner, exportedNames) ||
-    isWithinExportedValueTypeSurface(owner, exportedNames)
+    isWithinExportedValueTypeSurface(owner, exportedNames) ||
+    isWithinBoundaryFunctionTypeSurface(owner, exportedNames)
   )
 }
 
@@ -128,7 +129,8 @@ export const isBoundaryProperty = (
   }
   return (
     isWithinExportedTypeSurface(property, exportedNames) ||
-    isWithinExportedValueTypeSurface(property, exportedNames)
+    isWithinExportedValueTypeSurface(property, exportedNames) ||
+    isWithinBoundaryFunctionTypeSurface(property, exportedNames)
   )
 }
 
@@ -234,6 +236,34 @@ const isWithinExportedValueTypeSurface = (
   return false
 }
 
+const isWithinBoundaryFunctionTypeSurface = (
+  node: ts.Node,
+  exportedNames: ReadonlySet<string>,
+): boolean => {
+  let current: ts.Node | undefined = node
+  while (current !== undefined) {
+    const parent: ts.Node | undefined = current.parent
+    if (
+      parent !== undefined &&
+      ts.isParameter(parent) &&
+      parent.type !== undefined &&
+      isAncestorOf(parent.type, node)
+    ) {
+      return isBoundaryParameter(parent, exportedNames)
+    }
+    if (
+      parent !== undefined &&
+      isRuntimeFunctionWithReturnType(parent) &&
+      parent.type !== undefined &&
+      isAncestorOf(parent.type, node)
+    ) {
+      return isBoundaryFunctionOwner(parent, exportedNames)
+    }
+    current = parent
+  }
+  return false
+}
+
 const objectLiteralHasBoundaryVariableRoot = (
   node: ts.ObjectLiteralExpression,
   exportedNames: ReadonlySet<string>,
@@ -261,6 +291,14 @@ const isTopLevelVariableDeclaration = (node: ts.VariableDeclaration): boolean =>
   const statement = node.parent.parent
   return ts.isVariableStatement(statement) && ts.isSourceFile(statement.parent)
 }
+
+const isRuntimeFunctionWithReturnType = (
+  node: ts.Node,
+): node is ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction | ts.FunctionExpression =>
+  ts.isFunctionDeclaration(node) ||
+  ts.isMethodDeclaration(node) ||
+  ts.isArrowFunction(node) ||
+  ts.isFunctionExpression(node)
 
 const isAncestorOf = (ancestor: ts.Node, node: ts.Node): boolean => {
   let current: ts.Node | undefined = node

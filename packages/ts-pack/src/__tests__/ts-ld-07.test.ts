@@ -390,6 +390,93 @@ describe("TS-LD-07 (unsafe type erosion)", () => {
     }
   })
 
+  test("exported function inline parameter type literals count unsafe types as boundaries", async () => {
+    await setup()
+    try {
+      await repo.write(
+        "src/consume.ts",
+        [
+          "export function consume(arg: {",
+          "  readonly raw: any",
+          "  parse(value: any): any",
+          "}): void {",
+          "  void arg",
+          "}",
+          "",
+        ].join("\n"),
+      )
+
+      const out = await runSignal(repo.root, TsLd07, TsLd07.defaultConfig)
+
+      expect(out.totalOccurrences).toBe(3)
+      expect(out.boundaryOccurrences).toBe(3)
+      expect(out.occurrences.map((occurrence) => occurrence.target).sort()).toEqual([
+        "parse",
+        "raw",
+        "value",
+      ])
+      expect(out.occurrences.every((occurrence) => occurrence.severity === "warn")).toBe(true)
+    } finally {
+      await cleanup()
+    }
+  })
+
+  test("exported function inline return type literals count unsafe types as boundaries", async () => {
+    await setup()
+    try {
+      await repo.write(
+        "src/make-api.ts",
+        [
+          "export function makeApi(): {",
+          "  readonly raw: any",
+          "  parse(value: any): any",
+          "} {",
+          "  return { raw: {}, parse: (value) => value }",
+          "}",
+          "",
+        ].join("\n"),
+      )
+
+      const out = await runSignal(repo.root, TsLd07, TsLd07.defaultConfig)
+
+      expect(out.totalOccurrences).toBe(3)
+      expect(out.boundaryOccurrences).toBe(3)
+      expect(out.occurrences.map((occurrence) => occurrence.target).sort()).toEqual([
+        "parse",
+        "raw",
+        "value",
+      ])
+    } finally {
+      await cleanup()
+    }
+  })
+
+  test("callback types nested in exported function contracts count unsafe types as boundaries", async () => {
+    await setup()
+    try {
+      await repo.write(
+        "src/callback.ts",
+        [
+          "export function subscribe(callback: (value: any) => any): void {",
+          "  void callback",
+          "}",
+          "",
+        ].join("\n"),
+      )
+
+      const out = await runSignal(repo.root, TsLd07, TsLd07.defaultConfig)
+
+      expect(out.totalOccurrences).toBe(2)
+      expect(out.boundaryOccurrences).toBe(2)
+      expect(out.occurrences.map((occurrence) => occurrence.target).sort()).toEqual([
+        "callback",
+        "value",
+      ])
+    } finally {
+      await cleanup()
+    }
+  })
+
   test("object literal API functions returned from exported functions stay internal", async () => {
     await setup()
     try {

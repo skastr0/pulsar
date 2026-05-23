@@ -234,6 +234,7 @@ const nearestNamedDeclaration = (
     ) {
       return current.name?.text
     }
+    if (ts.isParameter(current)) return current.name.getText(sourceFile)
     if (ts.isPropertyAssignment(current) || ts.isPropertySignature(current)) {
       return current.name.getText(sourceFile)
     }
