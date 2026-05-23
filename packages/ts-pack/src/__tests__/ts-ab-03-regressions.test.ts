@@ -144,4 +144,43 @@ describe("TS-AB-03 type indirection regressions", () => {
     expect(alias?.truncated).toBe(true)
     expect(alias?.chain).toContain("<truncated>")
   })
+
+  test("direct heritage chains honor traversal caps", async () => {
+    await repo.write(
+      "src/heritage-cap.ts",
+      [
+        "export interface Root { readonly id: string }",
+        "export interface Level1 extends Root {}",
+        "export interface Level2 extends Level1 {}",
+        "export interface Level3 extends Level2 {}",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsAb03, {
+      ...TsAb03.defaultConfig,
+      max_traversal_steps: 2,
+    })
+    const level3 = out.declarations.find((entry) => entry.name === "Level3")
+
+    expect(level3?.truncated).toBe(true)
+    expect(level3?.chain).toContain("<truncated>")
+  })
+
+  test("direct heritage cycles are cycle-safe", async () => {
+    await repo.write(
+      "src/heritage-cycle.ts",
+      [
+        "export interface A extends B { readonly a: string }",
+        "export interface B extends A { readonly b: string }",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsAb03, TsAb03.defaultConfig)
+    const entry = out.declarations.find((item) => item.name === "A")
+
+    expect(entry?.cycle).toBe(true)
+    expect(entry?.chain.some((segment) => segment.includes("cycle"))).toBe(true)
+  })
 })

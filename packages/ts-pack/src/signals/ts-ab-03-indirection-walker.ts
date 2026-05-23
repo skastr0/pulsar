@@ -66,10 +66,28 @@ export const measureDeclaration = (
   }
 
   if (Node.isInterfaceDeclaration(declaration) || Node.isClassDeclaration(declaration)) {
+    if (context.remainingSteps <= 0) return truncatedDepth()
+    const declarationId = declarationKey(declaration)
+    if (context.aliasStack.has(declarationId)) {
+      return {
+        depth: 1,
+        chain: [`${declaration.getName() ?? "<anonymous>"} (cycle)`],
+        cycle: true,
+        truncated: false,
+      }
+    }
+    const nextStack = new Set(context.aliasStack)
+    nextStack.add(declarationId)
+    const nextContext = {
+      remainingSteps: context.remainingSteps - 1,
+      aliasStack: nextStack,
+      localAliases: context.localAliases,
+      aliasDepthCache: context.aliasDepthCache,
+    }
     const heritageResults = declaration
       .getHeritageClauses()
       .flatMap((clause) => clause.getTypeNodes())
-      .map((typeNode) => measureHeritageType(typeNode, stepContext(context)))
+      .map((typeNode) => measureHeritageType(typeNode, nextContext))
     return deepestResult(heritageResults)
   }
 
