@@ -80,7 +80,7 @@ export const RsLd04: Signal<RsLd04Config, RsLd04Output, RustProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "error-granularity-config-applicability-diagnostics-cfg-test-result-aliases-v5",
+  cacheVersion: "error-granularity-config-applicability-diagnostics-cfg-test-result-aliases-v6",
   configSchema: RsLd04Config,
   factorDefinitions: RsLd04FactorDefinitions,
   defaultConfig: {
@@ -293,8 +293,15 @@ const collectResultAliasScopes = (
     if (testGated) return
     const moduleAliases = scopeForModule(modulePathForAncestors(scope, ancestors).modulePath)
     if (node.type === "use_declaration") {
-      const match = /\buse\s+([A-Za-z_][A-Za-z0-9_:]*)\s+as\s+([A-Za-z_][A-Za-z0-9_]*)\s*;/.exec(node.text)
-      if (match !== null) moduleAliases.importAliases.set(match[2]!, match[1]!)
+      const renamedImport = /\buse\s+([A-Za-z_][A-Za-z0-9_:]*)\s+as\s+([A-Za-z_][A-Za-z0-9_]*)\s*;/.exec(node.text)
+      if (renamedImport !== null) {
+        moduleAliases.importAliases.set(renamedImport[2]!, renamedImport[1]!)
+        return
+      }
+      const plainImport = /\buse\s+((?:[A-Za-z_][A-Za-z0-9_]*::)+)([A-Za-z_][A-Za-z0-9_]*)\s*;/.exec(node.text)
+      if (plainImport !== null) {
+        moduleAliases.importAliases.set(plainImport[2]!, `${plainImport[1]!}${plainImport[2]!}`)
+      }
     }
     if (node.type === "type_item") {
       const match = /\btype\s+([A-Za-z_][A-Za-z0-9_]*)\b[\s\S]*?=\s*([^;]+)\s*;?/.exec(node.text)
