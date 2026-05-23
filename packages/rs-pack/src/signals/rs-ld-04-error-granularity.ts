@@ -11,8 +11,15 @@ import {
 } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
 import { collectRustProjectFacts } from "../rust-analysis.js"
-import { RustProjectTag } from "../project.js"
-import { DEFAULT_RUST_EXCLUDE_GLOBS } from "./shared-rust-ast.js"
+import { type RustProject, RustProjectTag } from "../project.js"
+import { parseRustFile } from "../syn-walker.js"
+import {
+  DEFAULT_RUST_EXCLUDE_GLOBS,
+  firstNamedChild,
+  modulePathForAncestors,
+  resolveRustFileScope,
+  walkAttributedNodes,
+} from "./shared-rust-ast.js"
 import { isExcluded } from "./shared-globs.js"
 
 const RsLd04Config = Schema.Struct({
@@ -72,7 +79,7 @@ export const RsLd04: Signal<RsLd04Config, RsLd04Output, RustProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "error-granularity-config-applicability-diagnostics-v1",
+  cacheVersion: "error-granularity-config-applicability-diagnostics-cfg-test-v2",
   configSchema: RsLd04Config,
   factorDefinitions: RsLd04FactorDefinitions,
   defaultConfig: {
@@ -91,8 +98,12 @@ export const RsLd04: Signal<RsLd04Config, RsLd04Output, RustProjectTag> = {
             (file) => !isExcluded(file, normalizedConfig.exclude_globs),
           )
           const analyzedSourceFileSet = new Set(analyzedSourceFiles)
+          const activeFunctionKeys = await collectActiveFunctionKeys(project, analyzedSourceFiles)
           const boundaryFunctions = facts.functions
-            .filter((fn) => analyzedSourceFileSet.has(fn.file))
+            .filter((fn) =>
+              analyzedSourceFileSet.has(fn.file) &&
+              activeFunctionKeys.has(boundaryFunctionKey(fn))
+            )
             .filter((fn) => fn.visibility.kind !== "private")
             .filter((fn) => fn.resultErrorType !== undefined)
             .map((fn) => ({
@@ -189,6 +200,37 @@ const makeRsLd04FactorLedger = (): SignalFactorLedger =>
 
 const ratio = (numerator: number, denominator: number): number =>
   denominator === 0 ? 0 : numerator / denominator
+
+const collectActiveFunctionKeys = async (
+  project: RustProject,
+  analyzedSourceFiles: ReadonlyArray<string>,
+): Promise<ReadonlySet<string>> => {
+  const keys = new Set<string>()
+  for (const file of analyzedSourceFiles) {
+    const scope = resolveRustFileScope(project, file)
+    const tree = await parseRustFile(file)
+    walkAttributedNodes(tree.rootNode, ({ node, ancestors, testGated }) => {
+      if (testGated || node.type !== "function_item") return
+      const name = firstNamedChild(node, "identifier")?.text
+      if (name === undefined) return
+      const { modulePath } = modulePathForAncestors(scope, ancestors)
+      keys.add(boundaryFunctionKey({
+        file,
+        modulePath,
+        name,
+        line: node.startPosition.row + 1,
+      }))
+    })
+  }
+  return keys
+}
+
+const boundaryFunctionKey = (fn: {
+  readonly file: string
+  readonly modulePath: string
+  readonly name: string
+  readonly line: number
+}): string => `${fn.file}:${fn.line}:${fn.modulePath}::${fn.name}`
 
 const classifyErrorType = (errorType: string): "granular" | "collapsed" => {
   const normalized = errorType.replace(/\s+/g, "")

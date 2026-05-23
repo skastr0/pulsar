@@ -1636,7 +1636,7 @@ describe("RS-LD-* signals", () => {
       tier: 1,
       category: "legibility-decay",
       kind: "legibility",
-      cacheVersion: "error-granularity-config-applicability-diagnostics-v1",
+      cacheVersion: "error-granularity-config-applicability-diagnostics-cfg-test-v2",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -1740,6 +1740,37 @@ describe("RS-LD-* signals", () => {
       await cleanupWorkspace(clean)
       await cleanupWorkspace(mixed)
       await cleanupWorkspace(heavy)
+    }
+  })
+
+  test("RS-LD-04 excludes cfg-test-gated boundary results", async () => {
+    const repo = await createBoundaryWorkspace("cfg", {
+      "src/lib.rs": [
+        "pub struct DomainError;",
+        "pub fn production(value: &str) -> Result<(), DomainError> { let _ = value; Ok(()) }",
+        "",
+        "#[cfg(test)]",
+        "pub fn test_only(value: &str) -> Result<(), anyhow::Error> { let _ = value; Ok(()) }",
+        "",
+        "#[cfg(any(test, feature = \"probe\"))]",
+        "pub fn composite_test_only(value: &str) -> Result<(), String> { let _ = value; Ok(()) }",
+      ],
+    })
+
+    try {
+      const out = await runSignalCompute(RsLd04, repo, RsLd04.defaultConfig)
+
+      expect(out.sourceFileCount).toBe(1)
+      expect(out.analyzedSourceFileCount).toBe(1)
+      expect(out.totalBoundaryResults).toBe(1)
+      expect(out.granularCount).toBe(1)
+      expect(out.collapsedCount).toBe(0)
+      expect(out.boundaryFunctions.map((fn) => fn.name)).toEqual(["production"])
+      expect(RsLd04.score(out)).toBe(1)
+      expect(RsLd04.outputMetadata?.(out)).toBeUndefined()
+      expect(RsLd04.diagnose(out)).toEqual([])
+    } finally {
+      await cleanupWorkspace(repo)
     }
   })
 
