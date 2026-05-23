@@ -53,6 +53,7 @@ interface RsAb01Output {
   readonly exportedApiItems: ReadonlyArray<UnusedPublicItem>
   readonly nonLibraryPublicItems: ReadonlyArray<UnusedPublicItem>
   readonly publicItemCount: number
+  readonly cargoMetadataStatus: "loaded" | "missing"
   readonly diagnosticLimit: number
   readonly analysisMode: "explicit-use-and-reexport-resolution"
 }
@@ -83,7 +84,7 @@ export const RsAb01: Signal<RsAb01Config, RsAb01Output, RustProjectTag> = {
   tier: 1,
   category: "abstraction-bloat",
   kind: "structural",
-  cacheVersion: "rs-ab-01-public-surface-use-segments-aliases-diagnostics-reexports-private-visibility-chain-v8",
+  cacheVersion: "rs-ab-01-public-surface-use-segments-aliases-diagnostics-reexports-private-visibility-chain-metadata-v9",
   configSchema: RsAb01Config,
   factorDefinitions: RsAb01FactorDefinitions,
   defaultConfig: {
@@ -104,8 +105,19 @@ export const RsAb01: Signal<RsAb01Config, RsAb01Output, RustProjectTag> = {
   score: (out) => {
     return scoreThresholdViolationShare(out.publicItemCount, out.deadPublicItems.length)
   },
-  diagnose: (out): ReadonlyArray<Diagnostic> =>
-    out.deadPublicItems.slice(0, out.diagnosticLimit).map((item) => ({
+  diagnose: (out): ReadonlyArray<Diagnostic> => {
+    if (out.cargoMetadataStatus === "missing" && out.publicItemCount > 0) {
+      return [{
+          severity: "warn" as const,
+          message: "RS-AB-01 could not load cargo metadata for public item surface analysis",
+          data: {
+            cargoMetadataStatus: out.cargoMetadataStatus,
+            publicItemCount: out.publicItemCount,
+            analysisMode: out.analysisMode,
+          },
+        }].slice(0, out.diagnosticLimit)
+    }
+    return out.deadPublicItems.slice(0, out.diagnosticLimit).map((item) => ({
       severity: "warn" as const,
       message: `Public ${item.kind} ${item.name} is not referenced from other workspace crates`,
       location: { file: item.file, line: item.line },
@@ -117,7 +129,12 @@ export const RsAb01: Signal<RsAb01Config, RsAb01Output, RustProjectTag> = {
         surface: item.surface,
         analysisMode: out.analysisMode,
       },
-    })),
+    }))
+  },
+  outputMetadata: (out) =>
+    out.cargoMetadataStatus === "missing" && out.publicItemCount > 0
+      ? { applicability: "insufficient_evidence" as const }
+      : undefined,
   factorLedger: () => makeRsAb01FactorLedger(),
 }
 
@@ -184,6 +201,7 @@ const computeUnusedPublicItems = async (
       publicSummaries.filter((item) => item.surface === "non-library"),
     ),
     publicItemCount: publicItems.length,
+    cargoMetadataStatus: project.cargoMetadata === undefined ? "missing" : "loaded",
     diagnosticLimit: config.top_n_diagnostics,
     analysisMode: "explicit-use-and-reexport-resolution",
   }

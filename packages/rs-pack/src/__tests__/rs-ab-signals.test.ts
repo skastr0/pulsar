@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test"
+import { Effect } from "effect"
+import { makeRustProject } from "../project.js"
 import { RsAb01 } from "../signals/rs-ab-01-unused-pub.js"
 import { RsAb02 } from "../signals/rs-ab-02-trait-object-depth.js"
 import { RsAb03 } from "../signals/rs-ab-03-generic-proliferation.js"
@@ -7,6 +9,7 @@ import {
   cleanupWorkspace,
   createRustWorkspace,
   runSignalCompute,
+  runSignalComputeWithProject,
 } from "./helpers.js"
 
 describe("RS-AB-* signals", () => {
@@ -321,6 +324,52 @@ describe("RS-AB-* signals", () => {
           scoreRole: "metadata",
         }),
       )
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-AB-01 treats missing cargo metadata as insufficient evidence", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-ab01-missing-metadata-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "missing-metadata"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "mod internal {",
+        "    pub struct Hidden;",
+        "}",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const project = await Effect.runPromise(makeRustProject(repo))
+      const out = await runSignalComputeWithProject(
+        RsAb01,
+        { ...project, cargoMetadata: undefined },
+        RsAb01.defaultConfig,
+      )
+
+      expect(out.cargoMetadataStatus).toBe("missing")
+      expect(out.publicItemCount).toBe(1)
+      expect(RsAb01.score(out)).toBe(1)
+      expect(RsAb01.outputMetadata?.(out)).toEqual({
+        applicability: "insufficient_evidence",
+      })
+      expect(RsAb01.diagnose(out)).toEqual([
+        expect.objectContaining({
+          severity: "warn",
+          message: "RS-AB-01 could not load cargo metadata for public item surface analysis",
+          data: expect.objectContaining({
+            cargoMetadataStatus: "missing",
+            publicItemCount: 1,
+          }),
+        }),
+      ])
     } finally {
       await cleanupWorkspace(repo)
     }
