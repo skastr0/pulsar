@@ -52,7 +52,7 @@ export const TsAb02: Signal<TsAb02Config, TsAb02Output, TsProjectTag | TsPackage
   tier: 1,
   category: "abstraction-bloat",
   kind: "structural",
-  cacheVersion: "calibrated-export-reachability-v2",
+  cacheVersion: "calibrated-export-reachability-v3-diagnostic-limit-v1",
   configSchema: TsAb02Config,
   defaultConfig: {
     exclude_globs: [
@@ -181,7 +181,7 @@ export const TsAb02: Signal<TsAb02Config, TsAb02Output, TsProjectTag | TsPackage
             entry.boundaryStatus === "same-boundary" &&
             entry.classification !== "cross-package",
         ),
-        diagnosticLimit: config.top_n_diagnostics,
+        diagnosticLimit: normalizeDiagnosticLimit(config.top_n_diagnostics),
       }
     }),
   score: (out) => {
@@ -284,3 +284,6 @@ const toSignalComputeError = (cause: unknown): SignalComputeError =>
     message: String(cause),
     cause,
   })
+
+const normalizeDiagnosticLimit = (limit: number): number =>
+  Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 0
