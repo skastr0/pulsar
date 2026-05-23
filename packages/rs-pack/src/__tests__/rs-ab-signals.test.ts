@@ -1610,7 +1610,69 @@ describe("RS-AB-* signals", () => {
     }
   })
 
-  test("RS-AB-04 counts standard and custom derives per type", async () => {
+  test("RS-AB-04 declares identity, config, cache, pack registration, and factor ledger", async () => {
+    const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
+    const versionedRegistry = await Effect.runPromise(
+      buildRegistry([
+        ...SHARED_SIGNALS,
+        ...RS_PACK_SIGNALS.filter((signal) => signal.id !== RsAb04.id),
+        { ...RsAb04, cacheVersion: `${RsAb04.cacheVersion}-next` },
+      ]),
+    )
+    const registered = registry.byId.get("RS-AB-04")
+    const decoded = Schema.decodeUnknownSync(RsAb04.configSchema)(RsAb04.defaultConfig)
+    const factorLedger = registered?.factorLedger?.({})
+    const baseCacheHash = computeConfigHash(RsAb04.id, registry, undefined)
+    const versionedCacheHash = computeConfigHash(RsAb04.id, versionedRegistry, undefined)
+    const configuredCacheHash = computeConfigHash(RsAb04.id, registry, {
+      id: "rs-ab-04-contract",
+      domain: "test",
+      signal_overrides: {
+        [RsAb04.id]: {
+          config: {
+            ...RsAb04.defaultConfig,
+            top_n_diagnostics: 1,
+          },
+        },
+      },
+    })
+
+    expect(RsAb04).toMatchObject({
+      id: "RS-AB-04-derive-density",
+      aliases: ["RS-AB-04"],
+      title: "Derive density",
+      tier: 1,
+      category: "abstraction-bloat",
+      kind: "legibility",
+      cacheVersion: "derive-density-config-applicability-diagnostics-cfg-test-gating-v2",
+      inputs: [],
+    })
+    expect(decoded).toEqual({
+      exclude_globs: ["**/target/**", "**/tests/**", "**/examples/**", "**/benches/**"],
+      top_n_diagnostics: 10,
+    })
+    expect(registered?.id).toBe(RsAb04.id)
+    expect(registered?.cacheVersion).toBe(RsAb04.cacheVersion)
+    expect(registry.byId.get("RS-AB-04")?.id).toBe(RsAb04.id)
+    expect(baseCacheHash).not.toBe(versionedCacheHash)
+    expect(baseCacheHash).not.toBe(configuredCacheHash)
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.exclude_globs",
+        affectsScore: true,
+        scoreRole: "evidence",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        affectsScore: false,
+        scoreRole: "metadata",
+      }),
+    )
+  })
+
+  test("RS-AB-04 counts standard and custom derives per tracked type", async () => {
     const repo = await createRustWorkspace("pulsar-rs-ab04-", {
       "Cargo.toml": [
         "[package]",
@@ -1622,6 +1684,12 @@ describe("RS-AB-* signals", () => {
       "src/lib.rs": [
         "#[derive(Clone, Debug, Serialize, Deserialize)]",
         "pub struct Model { pub id: u32 }",
+        "pub struct Plain;",
+        "#[derive(Default)]",
+        "pub enum Choice { A }",
+        "#[cfg(any(test, feature = \"probe\"))]",
+        "#[derive(Clone, Debug, Serialize, Deserialize)]",
+        "pub struct TestOnly;",
         "",
       ].join("\n"),
     })
@@ -1629,10 +1697,162 @@ describe("RS-AB-* signals", () => {
     try {
       const out = await runSignalCompute(RsAb04, repo, RsAb04.defaultConfig)
       const model = out.types.find((entry) => entry.name === "Model")
+      const plain = out.types.find((entry) => entry.name === "Plain")
+      const diagnostics = RsAb04.diagnose(out)
+
+      expect(out.sourceFileCount).toBe(1)
+      expect(out.analyzedSourceFileCount).toBe(1)
+      expect(out.trackedTypeCount).toBe(3)
+      expect(out.deriveBearingTypeCount).toBe(2)
       expect(model?.deriveCount).toBe(4)
       expect(model?.customDerives).toEqual(["Serialize", "Deserialize"])
+      expect(plain).toMatchObject({
+        deriveCount: 0,
+        standardDerives: [],
+        customDerives: [],
+      })
+      expect(out.types.some((entry) => entry.name === "TestOnly")).toBe(false)
+      expect(RsAb04.outputMetadata?.(out)).toBeUndefined()
+      expect(RsAb04.score(out)).toBeCloseTo(2 / 3)
+      expect(diagnostics).toMatchObject([
+        {
+          severity: "info",
+          message: "Model derives 4 macros (2 custom)",
+          location: { file: expect.stringMatching(/src\/lib\.rs$/), line: 2 },
+          data: {
+            module: "derive-fixture::crate",
+            deriveCount: 4,
+            standardDerives: ["Clone", "Debug"],
+            customDerives: ["Serialize", "Deserialize"],
+            analysisMode: "attribute-attached-derive-count",
+          },
+        },
+        {
+          severity: "warn",
+          message: "Choice derives 1 macros (0 custom)",
+        },
+      ])
     } finally {
       await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-AB-04 normalizes diagnostics and applicability evidence", async () => {
+    const derive = await createRustWorkspace("pulsar-rs-ab04-config-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "derive-config"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "#[derive(Clone, Debug, Serialize, Deserialize)]",
+        "pub struct Model;",
+        "#[derive(Default)]",
+        "pub struct Other;",
+        "pub struct Plain;",
+        "",
+      ].join("\n"),
+    })
+    const missing = await createRustWorkspace("pulsar-rs-ab04-missing-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "derive-missing"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+    })
+    const noDerive = await createRustWorkspace("pulsar-rs-ab04-none-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "derive-none"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub struct Plain;",
+        "",
+      ].join("\n"),
+    })
+    const excluded = await createRustWorkspace("pulsar-rs-ab04-excluded-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "derive-excluded"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "#[derive(Clone, Debug, Serialize, Deserialize)]",
+        "pub struct Hidden;",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const capped = await runSignalCompute(
+        RsAb04,
+        derive,
+        { ...RsAb04.defaultConfig, top_n_diagnostics: 1.8 },
+      )
+      const hidden = await runSignalCompute(
+        RsAb04,
+        derive,
+        { ...RsAb04.defaultConfig, top_n_diagnostics: Number.NaN },
+      )
+      const missingOut = await runSignalCompute(RsAb04, missing, RsAb04.defaultConfig)
+      const noDeriveOut = await runSignalCompute(RsAb04, noDerive, RsAb04.defaultConfig)
+      const excludedOut = await runSignalCompute(
+        RsAb04,
+        excluded,
+        { ...RsAb04.defaultConfig, exclude_globs: ["**/*.rs"] },
+      )
+
+      expect(capped.diagnosticLimit).toBe(1)
+      expect(RsAb04.diagnose(capped)).toHaveLength(1)
+      expect(hidden.diagnosticLimit).toBe(0)
+      expect(RsAb04.diagnose(hidden)).toHaveLength(0)
+
+      expect(missingOut.sourceFileCount).toBe(0)
+      expect(RsAb04.outputMetadata?.(missingOut)).toEqual({
+        applicability: "insufficient_evidence",
+      })
+      expect(RsAb04.diagnose(missingOut)).toEqual([
+        expect.objectContaining({
+          severity: "warn",
+          message: "RS-AB-04 found no Rust source files for derive density analysis",
+          data: expect.objectContaining({
+            sourceFileCount: 0,
+            analyzedSourceFileCount: 0,
+            trackedTypeCount: 0,
+            deriveBearingTypeCount: 0,
+          }),
+        }),
+      ])
+
+      expect(noDeriveOut.sourceFileCount).toBe(1)
+      expect(noDeriveOut.trackedTypeCount).toBe(1)
+      expect(noDeriveOut.deriveBearingTypeCount).toBe(0)
+      expect(RsAb04.outputMetadata?.(noDeriveOut)).toEqual({
+        applicability: "not_applicable",
+      })
+      expect(RsAb04.diagnose(noDeriveOut)).toEqual([])
+
+      expect(excludedOut.sourceFileCount).toBe(1)
+      expect(excludedOut.analyzedSourceFileCount).toBe(0)
+      expect(excludedOut.trackedTypeCount).toBe(0)
+      expect(RsAb04.outputMetadata?.(excludedOut)).toEqual({
+        applicability: "not_applicable",
+      })
+      expect(RsAb04.diagnose(excludedOut)).toEqual([])
+    } finally {
+      await cleanupWorkspace(derive)
+      await cleanupWorkspace(missing)
+      await cleanupWorkspace(noDerive)
+      await cleanupWorkspace(excluded)
     }
   })
 })
