@@ -36,7 +36,7 @@ export const TsAb05: Signal<TsAb05Config, TsAb05Output, TsProjectTag> = {
   tier: 1,
   category: "abstraction-bloat",
   kind: "legibility",
-  cacheVersion: "generic-proliferation-v1-diagnostic-limit-v1",
+  cacheVersion: "generic-proliferation-v2-return-only-diagnostic-limit-v1",
   configSchema: TsAb05Config,
   defaultConfig: {
     exclude_globs: [
@@ -237,13 +237,17 @@ const detectCompilerReturnOnlyParams = (
 
   const parameterTypeNodes = declaration.parameters.map((parameter) => parameter.type)
   const returnTypeNode = declaration.type
+  const inputTypeNodes = typeParameters.flatMap((typeParameter) => [
+    typeParameter.constraint,
+    typeParameter.default,
+  ])
 
   return typeParameters
     .map((typeParameter) => typeParameter.name.text)
     .filter(
       (name) =>
         compilerNameIsUsedInNodes(name, [returnTypeNode]) &&
-        !compilerNameIsUsedInNodes(name, parameterTypeNodes),
+        !compilerNameIsUsedInNodes(name, [...parameterTypeNodes, ...inputTypeNodes]),
     )
 }
 

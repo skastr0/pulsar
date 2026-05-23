@@ -102,6 +102,31 @@ describe("TS-AB-05 (generic parameter proliferation)", () => {
     expect(makeValue?.returnOnlyParams).toEqual(["T"])
   })
 
+  test("constraints and defaults prevent false return-only generic classification", async () => {
+    await writeTs(
+      "src/constraint-return.ts",
+      [
+        "export function constrained<T, U extends T>(value: U): T {",
+        "  return value",
+        "}",
+        "export function defaulted<T, U = T>(value: U): T {",
+        "  return value as unknown as T",
+        "}",
+        "export function returnOnly<T, U>(value: U): T {",
+        "  return value as unknown as T",
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runCompute()
+    const byName = new Map(out.byDeclaration.map((entry) => [entry.declarationName, entry]))
+
+    expect(byName.get("constrained")?.returnOnlyParams).toEqual([])
+    expect(byName.get("defaulted")?.returnOnlyParams).toEqual([])
+    expect(byName.get("returnOnly")?.returnOnlyParams).toEqual(["T"])
+  })
+
   test("diagnostics list over-threshold declarations", async () => {
     await writeTs(
       "src/diagnostics.ts",
