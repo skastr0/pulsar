@@ -225,6 +225,25 @@ describe("polyglot shared signals", () => {
       expect(domainConstruction?.state).toBe("zero")
       expect(domainConstruction?.configuredConstructCount).toBe(1)
       expect(domainConstruction?.weightedFindings).toBe(0)
+
+      const theoryEncoding = result.signalResults.get("SHARED-11-theory-encoding-index")?.output as
+        | {
+            state?: string
+            requiredFoundationMeasured?: boolean
+            availableFactorWeight?: number
+            inputFactStates?: {
+              domainConstructionControl?: string
+              contractFreshness?: string
+            }
+          }
+        | undefined
+      expect(theoryEncoding?.state).not.toBe("insufficient_evidence")
+      expect(theoryEncoding?.requiredFoundationMeasured).toBe(true)
+      expect(theoryEncoding?.availableFactorWeight).toBeGreaterThanOrEqual(0.45)
+      expect(theoryEncoding?.inputFactStates).toMatchObject({
+        domainConstructionControl: "zero",
+        contractFreshness: "zero",
+      })
     } finally {
       await rm(repo, { recursive: true, force: true })
     }
@@ -385,6 +404,75 @@ describe("polyglot shared signals", () => {
       expect(domainConstructionOutput.state).toBe("zero")
       expect(domainConstructionOutput.configuredConstructCount).toBe(1)
       expect(domainConstructionOutput.weightedFindings).toBe(0)
+
+      const theoryEncodingResult = await Effect.runPromise(
+        runSignalInWorktree(repo, "SHARED-11"),
+      )
+      const theoryEncodingOutput = theoryEncodingResult.result.output as {
+        readonly state?: string
+        readonly requiredFoundationMeasured?: boolean
+        readonly availableFactorWeight?: number
+        readonly inputFactStates?: {
+          readonly domainConstructionControl?: string
+          readonly contractFreshness?: string
+        }
+      }
+
+      expect(theoryEncodingResult.result.signalId).toBe("SHARED-11-theory-encoding-index")
+      expect(theoryEncodingOutput.state).not.toBe("insufficient_evidence")
+      expect(theoryEncodingOutput.requiredFoundationMeasured).toBe(true)
+      expect(theoryEncodingOutput.availableFactorWeight).toBeGreaterThanOrEqual(0.45)
+      expect(theoryEncodingOutput.inputFactStates).toMatchObject({
+        domainConstructionControl: "zero",
+        contractFreshness: "zero",
+      })
+    } finally {
+      await rm(repo, { recursive: true, force: true })
+    }
+  }, 120_000)
+
+  test("single-signal runtime does not measure SHARED-11 without required reference data", async () => {
+    const repo = await mkdtemp(join(tmpdir(), "pulsar-cli-shared-theory-"))
+    try {
+      await writeFile(join(repo, "README.md"), "# theory fixture\n", "utf8")
+      sh("git", ["init", "-q", "-b", "main"], repo)
+      sh("git", ["config", "user.email", "test@test.test"], repo)
+      sh("git", ["config", "user.name", "test"], repo)
+      sh("git", ["add", "."], repo)
+      sh("git", ["commit", "-q", "-m", "fixture"], repo)
+
+      const result = await Effect.runPromise(
+        runSignalInWorktree(repo, "SHARED-11"),
+      )
+      const output = result.result.output as {
+        readonly state?: string
+        readonly requiredFoundationMeasured?: boolean
+        readonly inputFactStates?: {
+          readonly domainConstructionControl?: string
+          readonly contractFreshness?: string
+        }
+      }
+
+      expect(result.result.signalId).toBe("SHARED-11-theory-encoding-index")
+      expect(output.state).toBe("insufficient_evidence")
+      expect(output.requiredFoundationMeasured).toBe(false)
+      expect(output.inputFactStates).toMatchObject({
+        domainConstructionControl: "not_configured",
+        contractFreshness: "not_configured",
+      })
+      expect(result.result.metadata).toEqual({
+        applicability: "insufficient_evidence",
+      })
+      expect(result.result.diagnostics).toEqual([
+        expect.objectContaining({
+          severity: "warn",
+          message:
+            "Theory encoding index has insufficient configured evidence to measure.",
+          data: expect.objectContaining({
+            requiredFoundationMeasured: false,
+          }),
+        }),
+      ])
     } finally {
       await rm(repo, { recursive: true, force: true })
     }

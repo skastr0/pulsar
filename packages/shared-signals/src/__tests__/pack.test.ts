@@ -7,6 +7,7 @@ import {
   Shared07MachineFeedbackCoverage,
   Shared09ContractFreshness,
   Shared10DomainConstructionControl,
+  Shared11TheoryEncodingIndex,
   SharedChurn01,
   SharedChurn02,
   SharedCochange01,
@@ -45,6 +46,9 @@ describe("shared signal identity", () => {
     const domainConstructionControl = SHARED_SIGNALS.find((signal) =>
       signal.aliases?.includes("SHARED-10"),
     )
+    const theoryEncodingIndex = SHARED_SIGNALS.find((signal) =>
+      signal.aliases?.includes("SHARED-11"),
+    )
 
     expect(churn01?.cacheVersion).toContain(SharedChurn01.cacheVersion)
     expect(churn02?.cacheVersion).toContain(SharedChurn02.cacheVersion)
@@ -59,6 +63,9 @@ describe("shared signal identity", () => {
     expect(contractFreshness?.cacheVersion).toContain(Shared09ContractFreshness.cacheVersion)
     expect(domainConstructionControl?.cacheVersion).toContain(
       Shared10DomainConstructionControl.cacheVersion,
+    )
+    expect(theoryEncodingIndex?.cacheVersion).toContain(
+      Shared11TheoryEncodingIndex.cacheVersion,
     )
   })
 

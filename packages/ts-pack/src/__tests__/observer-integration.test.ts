@@ -144,8 +144,12 @@ describe("Observer + TS pack integration", () => {
       // diagnostic consistent with the measured output state.
       const theory = out.signalResults.get("SHARED-11-theory-encoding-index")
       expect(theory?.output).toMatchObject({
+        state: "insufficient_evidence",
         riskModel: "theory-encoding-index-v1",
+        requiredFoundationMeasured: false,
         inputFactStates: expect.objectContaining({
+          domainConstructionControl: "not_configured",
+          contractFreshness: "not_configured",
           recencyWeightedChurn: expect.any(String),
         }),
         explanation: expect.objectContaining({
@@ -159,7 +163,19 @@ describe("Observer + TS pack integration", () => {
           ]),
         }),
       })
-      expect(theory?.diagnostics.length).toBeGreaterThan(0)
+      expect(theory?.metadata).toEqual({
+        applicability: "insufficient_evidence",
+      })
+      expect(theory?.diagnostics).toEqual([
+        expect.objectContaining({
+          severity: "warn",
+          message:
+            "Theory encoding index has insufficient configured evidence to measure.",
+          data: expect.objectContaining({
+            requiredFoundationMeasured: false,
+          }),
+        }),
+      ])
     },
     120_000,
   )

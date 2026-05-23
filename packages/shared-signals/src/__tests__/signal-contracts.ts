@@ -285,6 +285,34 @@ export const SHARED_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "cli shared-signals.test.ts and bun run dev score --signal SHARED-10 .: aggregate observer and direct single-signal runtime execute SHARED-10 against repository substrate with canonical reference-data loading, including zero, not_configured, unknown, and missing-source-provenance states.",
     },
   },
-  pendingSignalContract("SHARED-11-theory-encoding-index"),
+  {
+    id: "SHARED-11-theory-encoding-index",
+    status: "verified",
+    requiredEvidence: ["compoundInputs", "integration"],
+    evidence: {
+      identity:
+        "shared-11-theory-encoding-index.test.ts: canonical id, alias, title, tier/category/kind, semantic cacheVersion, pack registration, registry alias lookup, and derived enforcement ceiling are asserted.",
+      config:
+        "shared-11-theory-encoding-index.test.ts: default diagnostic cap, warning threshold, and minimum available factor weight are decoded; non-finite diagnostic/threshold/minimum values are normalized through real compute output.",
+      positiveFixture:
+        "shared-11-theory-encoding-index.test.ts: measured SHARED-10 and SHARED-09 foundation facts produce zero pressure; combined foundation, machine-feedback, coverage, boundary-parser, error-channel, property/spec, and churn facts produce deterministic weighted pressure, ordered gaps, property/spec evidence, and value-level primitive-input explanations.",
+      negativeFixture:
+        "shared-11-theory-encoding-index.test.ts: missing required inputs, not_configured required foundations, optional facts attempting to rescue unmeasured foundations, unknown machine-feedback evidence, zero-denominator coverage, empty churn facts, contract inventory, and model filenames are rejected instead of being treated as healthy theory evidence.",
+      applicability:
+        "shared-11-theory-encoding-index.test.ts, cli shared-signals.test.ts, and ts-pack observer-integration.test.ts: missing or unmeasured required foundations emit insufficient_evidence metadata; measured required foundations remain applicable even when optional facts are absent.",
+      score:
+        "shared-11-theory-encoding-index.test.ts: score bounds and monotonic pressure are asserted by comparing insufficient evidence, zero foundation facts, mixed weighted gaps, and non-finite config normalization cases.",
+      diagnostics:
+        "shared-11-theory-encoding-index.test.ts, cli shared-signals.test.ts, and ts-pack observer-integration.test.ts: diagnose proves insufficient-evidence warning payloads, measured-zero info diagnostics, warning threshold severity, deterministic gap order, and diagnostic caps through direct compute and public runtime paths.",
+      factorLedger:
+        "shared-11-theory-encoding-index.test.ts: registered shared-pack signal emits config.top_n_diagnostics, config.warn_threshold, and config.min_available_factor_weight factor entries through explicit threshold classification.",
+      cacheSemantics:
+        "shared-11-theory-encoding-index.test.ts and pack.test.ts: SHARED-11 declares theory-encoding-index-composite-v4-grounded-optionals cacheVersion, all compound inputs declare cache fingerprints, and the shared-pack wrapper preserves the signal cacheVersion after required-foundation, grounded optional-evidence, and config-normalization semantics changed.",
+      compoundInputs:
+        "shared-11-theory-encoding-index.test.ts: canonical compound input ids, aliases, required-vs-optional status, cache fingerprints, alias-equivalent output, primitive-input explanations, and required-foundation gating are asserted across SHARED-10, SHARED-09, SHARED-07, SHARED-COV-01, TS-AD-04, TS-LD-09, and SHARED-CHURN-02.",
+      integration:
+        "cli shared-signals.test.ts, cli score.test.ts, ts-pack observer-integration.test.ts, and bun run dev score --signal SHARED-11 .: aggregate observer, direct single-signal runtime, and user-facing CLI wrapper execute SHARED-11 against repository substrates, proving measured foundation facts, missing-reference-data insufficient evidence, public metadata, public diagnostics, and factor-audit rendering.",
+    },
+  },
   pendingSignalContract("SHARED-COV-01-coverage-facts"),
 ]

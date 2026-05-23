@@ -1160,6 +1160,21 @@ export function stubF() { throw new Error("Not implemented") }
     }
   }, 120_000)
 
+  test("single-signal CLI wrapper executes SHARED-11 on the user-facing path", async () => {
+    const repoPath = await initRepo(simpleRepoFiles())
+    try {
+      const out = runCli(repoPath, ["score", "--signal", "SHARED-11", "."])
+      expect(out.status).toBe(0)
+      expect(out.stdout).toContain("Signal: SHARED-11-theory-encoding-index")
+      expect(out.stdout).toContain(
+        "WARN  Theory encoding index has insufficient configured evidence to measure.",
+      )
+      expect(out.stdout).toContain("config.top_n_diagnostics=10 threshold")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
   test("single-signal mode summarizes score-bearing factor audit details", async () => {
     const repoPath = await initRepo([
       {

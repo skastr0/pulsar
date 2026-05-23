@@ -85,6 +85,7 @@ export interface Shared11TheoryEncodingIndexOutput {
   readonly explanation: CompositeExplanation
   readonly diagnosticLimit: number
   readonly inputFactStates: TheoryEncodingInputFactStates
+  readonly requiredFoundationMeasured: boolean
   readonly availableFactorWeight: number
   readonly totalDeclaredFactorWeight: number
   readonly evidenceCompleteness: number
@@ -142,6 +143,10 @@ const THEORY_ENCODING_ENFORCEMENT_CEILING = [
   "review-routing",
   "dashboard",
 ] as const
+
+const DEFAULT_TOP_N_DIAGNOSTICS = 10
+const DEFAULT_WARN_THRESHOLD = 0.35
+const DEFAULT_MIN_AVAILABLE_FACTOR_WEIGHT = 0.25
 
 const FACTOR_WEIGHTS = {
   domainConstructionControl: 0.2,
@@ -258,18 +263,70 @@ export const Shared11TheoryEncodingIndex: Signal<
   tier: 1.5,
   category: "architectural-drift",
   kind: "compound",
-  cacheVersion: "theory-encoding-index-composite-v2-machine-feedback-unknown",
+  cacheVersion: "theory-encoding-index-composite-v4-grounded-optionals",
   configSchema: Shared11TheoryEncodingIndexConfig,
   defaultConfig: {
-    top_n_diagnostics: 10,
-    warn_threshold: 0.35,
-    min_available_factor_weight: 0.25,
+    top_n_diagnostics: DEFAULT_TOP_N_DIAGNOSTICS,
+    warn_threshold: DEFAULT_WARN_THRESHOLD,
+    min_available_factor_weight: DEFAULT_MIN_AVAILABLE_FACTOR_WEIGHT,
   },
   configDirections: {
     top_n_diagnostics: "higher-is-looser",
     warn_threshold: "higher-is-looser",
     min_available_factor_weight: "higher-is-stricter",
   },
+  factorDefinitions: [
+    {
+      path: "config.top_n_diagnostics",
+      title: "Config top n diagnostics",
+      valueKind: "number",
+      scoreRole: "threshold",
+      defaultValue: DEFAULT_TOP_N_DIAGNOSTICS,
+    },
+    {
+      path: "config.warn_threshold",
+      title: "Config warn threshold",
+      valueKind: "number",
+      scoreRole: "threshold",
+      defaultValue: DEFAULT_WARN_THRESHOLD,
+    },
+    {
+      path: "config.min_available_factor_weight",
+      title: "Config min available factor weight",
+      valueKind: "number",
+      scoreRole: "threshold",
+      defaultValue: DEFAULT_MIN_AVAILABLE_FACTOR_WEIGHT,
+    },
+  ],
+  factorLedger: () => ({
+    signalId: "SHARED-11-theory-encoding-index",
+    entries: [
+      {
+        path: "config.top_n_diagnostics",
+        title: "Config top n diagnostics",
+        scoreRole: "threshold",
+        value: DEFAULT_TOP_N_DIAGNOSTICS,
+        source: "signal-default",
+        affectsScore: true,
+      },
+      {
+        path: "config.warn_threshold",
+        title: "Config warn threshold",
+        scoreRole: "threshold",
+        value: DEFAULT_WARN_THRESHOLD,
+        source: "signal-default",
+        affectsScore: true,
+      },
+      {
+        path: "config.min_available_factor_weight",
+        title: "Config min available factor weight",
+        scoreRole: "threshold",
+        value: DEFAULT_MIN_AVAILABLE_FACTOR_WEIGHT,
+        source: "signal-default",
+        affectsScore: true,
+      },
+    ],
+  }),
   inputs: compositeSignalInputs(SHARED_11_COMPOSITE_INPUTS),
   compute: (config, inputs) =>
     Effect.sync(() => computeTheoryEncodingIndexOutput(config, inputs)),
@@ -280,7 +337,7 @@ export const Shared11TheoryEncodingIndex: Signal<
   diagnose: (out): ReadonlyArray<Diagnostic> => {
     if (out.state === "insufficient_evidence") {
       return [{
-        severity: "warn",
+        severity: "warn" as const,
         message:
           "Theory encoding index has insufficient configured evidence to measure.",
         data: {
@@ -288,21 +345,23 @@ export const Shared11TheoryEncodingIndex: Signal<
           availableFactorWeight: out.availableFactorWeight,
           minAvailableFactorWeight: out.minAvailableFactorWeight,
           evidenceCompleteness: out.evidenceCompleteness,
+          requiredFoundationMeasured: out.requiredFoundationMeasured,
         },
-      }]
+      }].slice(0, out.diagnosticLimit)
     }
 
     if (out.gaps.length === 0) {
       return [{
-        severity: "info",
+        severity: "info" as const,
         message: "Theory encoding index is measured with no theory gaps.",
         data: {
           inputFactStates: out.inputFactStates,
           theoryEncodingScore: out.theoryEncodingScore,
           availableFactorWeight: out.availableFactorWeight,
           evidenceCompleteness: out.evidenceCompleteness,
+          requiredFoundationMeasured: out.requiredFoundationMeasured,
         },
-      }]
+      }].slice(0, out.diagnosticLimit)
     }
 
     return out.gaps.slice(0, out.diagnosticLimit).map((gap) => ({
@@ -329,11 +388,13 @@ export const computeTheoryEncodingIndexOutput = (
   config: Shared11TheoryEncodingIndexConfig,
   inputOutputs: ReadonlyMap<string, unknown>,
 ): Shared11TheoryEncodingIndexOutput => {
+  const normalizedConfig = normalizeShared11TheoryEncodingIndexConfig(config)
   const resolution = resolveCompositeInputs(SHARED_11_COMPOSITE_INPUTS, inputOutputs)
   const inputs = resolveTheoryEncodingInputs(resolution)
   const inputFactStates = theoryEncodingInputFactStates(resolution, inputs)
-  const diagnosticLimit = Math.max(0, Math.floor(config.top_n_diagnostics))
-  const minAvailableFactorWeight = clamp01(config.min_available_factor_weight)
+  const diagnosticLimit = normalizedConfig.top_n_diagnostics
+  const warnThreshold = normalizedConfig.warn_threshold
+  const minAvailableFactorWeight = normalizedConfig.min_available_factor_weight
   const factors = buildTheoryEncodingFactors(inputFactStates, inputs)
   const availableFactorWeight = factors.reduce(
     (total, factor) => total + (factor.pressure === undefined ? 0 : factor.weight),
@@ -345,8 +406,13 @@ export const computeTheoryEncodingIndexOutput = (
   )
   const evidenceCompleteness = clamp01(availableFactorWeight / totalDeclaredFactorWeight)
   const hasConfiguredEvidence = availableFactorWeight >= minAvailableFactorWeight
+  const requiredFoundationMeasured = requiredFoundationInputsMeasured(inputFactStates)
 
-  if (resolution.hasMissingRequiredInputs || !hasConfiguredEvidence) {
+  if (
+    resolution.hasMissingRequiredInputs ||
+    !requiredFoundationMeasured ||
+    !hasConfiguredEvidence
+  ) {
     return withTheoryEncodingExplanation(
       baseTheoryEncodingOutput({
         state: "insufficient_evidence",
@@ -358,12 +424,13 @@ export const computeTheoryEncodingIndexOutput = (
         totalDeclaredFactorWeight,
         evidenceCompleteness,
         theoryGapPressure: 0,
-        warnThreshold: config.warn_threshold,
+        warnThreshold,
         minAvailableFactorWeight,
+        requiredFoundationMeasured,
       }),
       resolution,
-      resolution.hasMissingRequiredInputs
-        ? "Theory encoding index is not measured because required shared theory facts are missing."
+      resolution.hasMissingRequiredInputs || !requiredFoundationMeasured
+        ? "Theory encoding index is not measured because required shared theory facts are missing or not measured."
         : "Theory encoding index is not measured because configured deterministic evidence is below the minimum available factor weight.",
     )
   }
@@ -398,8 +465,9 @@ export const computeTheoryEncodingIndexOutput = (
       totalDeclaredFactorWeight,
       evidenceCompleteness,
       theoryGapPressure,
-      warnThreshold: config.warn_threshold,
+      warnThreshold,
       minAvailableFactorWeight,
+      requiredFoundationMeasured,
     }),
     resolution,
     state === "present"
@@ -441,12 +509,27 @@ const resolveTheoryEncodingInputs = (
     ),
 })
 
+const normalizeShared11TheoryEncodingIndexConfig = (
+  config: Shared11TheoryEncodingIndexConfig,
+): Shared11TheoryEncodingIndexConfig => ({
+  top_n_diagnostics: Number.isFinite(config.top_n_diagnostics)
+    ? Math.max(0, Math.floor(config.top_n_diagnostics))
+    : 0,
+  warn_threshold: Number.isFinite(config.warn_threshold)
+    ? clamp01(config.warn_threshold)
+    : DEFAULT_WARN_THRESHOLD,
+  min_available_factor_weight: Number.isFinite(config.min_available_factor_weight)
+    ? clamp01(config.min_available_factor_weight)
+    : DEFAULT_MIN_AVAILABLE_FACTOR_WEIGHT,
+})
+
 const baseTheoryEncodingOutput = (args: {
   readonly state: TheoryEncodingIndexState
   readonly factors: ReadonlyArray<TheoryEncodingFactor>
   readonly gaps: ReadonlyArray<TheoryEncodingGap>
   readonly diagnosticLimit: number
   readonly inputFactStates: TheoryEncodingInputFactStates
+  readonly requiredFoundationMeasured: boolean
   readonly availableFactorWeight: number
   readonly totalDeclaredFactorWeight: number
   readonly evidenceCompleteness: number
@@ -572,11 +655,21 @@ const inputFactState = (
       ? "missing_optional"
       : state ?? "unknown"
 
+const requiredFoundationInputsMeasured = (
+  states: TheoryEncodingInputFactStates,
+): boolean =>
+  isMeasuredTheoryEncodingState(states.domainConstructionControl) &&
+  isMeasuredTheoryEncodingState(states.contractFreshness)
+
+const isMeasuredTheoryEncodingState = (
+  state: TheoryEncodingInputFactState,
+): boolean => state === "present" || state === "zero"
+
 const recencyWeightedChurnState = (
   input: SharedChurn02Output | undefined,
 ): TheoryEncodingInputFactState | undefined => {
   if (input === undefined) return undefined
-  return input.byFile.size === 0 ? "zero" : "present"
+  return input.byFile.size === 0 ? "absent" : "present"
 }
 
 const buildTheoryEncodingFactors = (
@@ -817,8 +910,9 @@ const normalizeMachineFeedbackCoverage = (
   input: Shared07MachineFeedbackCoverageOutput | undefined,
 ): number | undefined => {
   if (input === undefined) return undefined
+  if (input.state === "unknown") return undefined
   const requiredClassCount = input.requiredClasses.length
-  if (requiredClassCount === 0) return input.state === "unknown" ? 1 : 0
+  if (requiredClassCount === 0) return 0
   return clamp01(
     (input.missingClassCount + input.unknownClassCount * 0.5) /
       requiredClassCount,
@@ -864,7 +958,7 @@ const normalizeCoverageFacts = (
     input.summary.functions,
     input.summary.branches,
   ].filter((metric) => metric.total > 0)
-  if (metrics.length === 0) return 0
+  if (metrics.length === 0) return undefined
   return clamp01(
     metrics.reduce((total, metric) => total + (1 - metric.pct), 0) /
       metrics.length,
@@ -947,21 +1041,32 @@ const propertySpecEvidence = (
       path: evidence.path,
       symbol: evidence.symbol,
     }))
-  const contracts = (inputs.contractFreshness?.contracts ?? []).map((contract) => ({
+  const contractContext = (inputs.contractFreshness?.contracts ?? []).map((contract) => ({
     contractId: contract.contractId,
     groupId: contract.groupId,
     artifactPath: contract.artifactPath,
     sourcePaths: contract.sourcePaths,
   }))
   const specFiles = specLikeFiles(inputs.coverageFacts?.files.map((file) => file.file) ?? [])
-  const declaredTheorySurfaces =
-    (inputs.domainConstructionControl?.constructs.length ?? 0) +
-    (inputs.contractFreshness?.contracts.length ?? 0)
+  const declaredTheorySurfaces = inputs.domainConstructionControl?.constructs.length ?? 0
   const coverageFileCount = inputs.coverageFacts?.files.length ?? 0
-  const expectedEvidence = declaredTheorySurfaces === 0
-    ? coverageFileCount > 0 ? 1 : 0
-    : declaredTheorySurfaces
-  const evidenceCount = constructionEvidence.length + contracts.length + specFiles.length
+  if (declaredTheorySurfaces === 0) {
+    return {
+      state: "missing_optional",
+      evidence: {
+        state: "missing_optional",
+        declaredTheorySurfaces,
+        coverageFileCount,
+        contractContext: contractContext.slice(0, 8),
+        specLikeFiles: specFiles.slice(0, 8),
+      },
+    }
+  }
+  const expectedEvidence = declaredTheorySurfaces
+  const evidenceCount = Math.min(
+    expectedEvidence,
+    constructionEvidence.length + specFiles.length,
+  )
   const pressure = expectedEvidence === 0
     ? 0
     : clamp01(1 - Math.min(1, evidenceCount / expectedEvidence))
@@ -974,7 +1079,7 @@ const propertySpecEvidence = (
       coverageFileCount,
       evidenceCount,
       constructionEvidence: constructionEvidence.slice(0, 8),
-      contracts: contracts.slice(0, 8),
+      contractContext: contractContext.slice(0, 8),
       specLikeFiles: specFiles.slice(0, 8),
       checkedCoveragePaths: inputs.coverageFacts?.checkedPaths ?? [],
     },
@@ -1003,6 +1108,7 @@ const normalizeRecencyWeightedChurn = (
   input: SharedChurn02Output | undefined,
 ): number | undefined => {
   if (input === undefined) return undefined
+  if (input.byFile.size === 0) return undefined
   const topWeightedChurn = topWeightedChurnFiles(input)[0]?.weightedChurn ?? 0
   return clamp01(topWeightedChurn / 5)
 }
@@ -1043,7 +1149,7 @@ const coverageFileScore = (file: {
 const specLikeFiles = (files: ReadonlyArray<string>): ReadonlyArray<string> =>
   uniqueStrings(
     files.filter((file) =>
-      /(?:^|[/._-])(?:test|tests|spec|specs|property|properties|prop|check|model)(?:[/._-]|$)/iu
+      /(?:^|[/._-])(?:test|tests|spec|specs|property|properties|prop|check)(?:[/._-]|$)/iu
         .test(file)
     ),
   )
