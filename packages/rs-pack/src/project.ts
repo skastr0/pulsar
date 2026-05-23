@@ -11,6 +11,12 @@ export interface RustManifestInfo {
   readonly path: string
   readonly manifestPath: string
   readonly packageName: string | undefined
+  readonly dependencies?: ReadonlyArray<RustDependencyInfo>
+}
+
+export interface RustDependencyInfo {
+  readonly alias: string
+  readonly packageName: string
 }
 
 export interface RustProject {
@@ -69,6 +75,7 @@ export const discoverRustManifests = (
           path: packageDir,
           manifestPath,
           packageName: yield* readCargoPackageName(manifestPath),
+          dependencies: yield* readCargoDependencies(manifestPath),
         }
       }),
     )
@@ -200,6 +207,90 @@ const readCargoPackageName = (
     },
     catch: (error: unknown) => error,
   })
+
+const DEPENDENCY_SECTION_PATTERN =
+  /^\[(?:target\.[^\]]+\.)?(?:dev-|build-)?dependencies\]$/
+const DEPENDENCY_TABLE_SECTION_PATTERN =
+  /^\[(?:target\.[^\]]+\.)?(?:dev-|build-)?dependencies\.([A-Za-z0-9_-]+)\]$/
+const DEPENDENCY_KEY_PATTERN = /^([A-Za-z0-9_-]+)\s*=\s*(.+)$/
+
+const readCargoDependencies = (
+  manifestPath: string,
+): Effect.Effect<ReadonlyArray<RustDependencyInfo>, unknown> =>
+  Effect.tryPromise({
+    try: async () => parseCargoDependencyNames(await readFile(manifestPath, "utf8")),
+    catch: (error: unknown) => error,
+  })
+
+const parseCargoDependencyNames = (raw: string): ReadonlyArray<RustDependencyInfo> => {
+  const dependencies = new Map<string, RustDependencyInfo>()
+  let inDependencySection = false
+  let tableAlias: string | undefined
+  let tablePackageName: string | undefined
+
+  const flushTableDependency = (): void => {
+    if (tableAlias === undefined) return
+    dependencies.set(tableAlias, {
+      alias: tableAlias,
+      packageName: tablePackageName ?? tableAlias,
+    })
+    tableAlias = undefined
+    tablePackageName = undefined
+  }
+
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = stripTomlLineComment(line).trim()
+    if (trimmed.length === 0) continue
+
+    if (trimmed.startsWith("[")) {
+      flushTableDependency()
+      inDependencySection = DEPENDENCY_SECTION_PATTERN.test(trimmed)
+      const tableMatch = DEPENDENCY_TABLE_SECTION_PATTERN.exec(trimmed)
+      tableAlias = tableMatch?.[1]
+      tablePackageName = undefined
+      continue
+    }
+
+    if (tableAlias !== undefined) {
+      const packageMatch = /^package\s*=\s*"([^"]+)"$/.exec(trimmed)
+      if (packageMatch !== null) tablePackageName = packageMatch[1]
+      continue
+    }
+
+    if (!inDependencySection) continue
+    const dependencyMatch = DEPENDENCY_KEY_PATTERN.exec(trimmed)
+    if (dependencyMatch === null) continue
+    const alias = dependencyMatch[1]!
+    const value = dependencyMatch[2]!.trim()
+    const packageName = /(?:^|[,{]\s*)package\s*=\s*"([^"]+)"/.exec(value)?.[1] ?? alias
+    dependencies.set(alias, { alias, packageName })
+  }
+
+  flushTableDependency()
+  return [...dependencies.values()]
+}
+
+const stripTomlLineComment = (line: string): string => {
+  let inString = false
+  let escaped = false
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index]
+    if (escaped) {
+      escaped = false
+      continue
+    }
+    if (char === "\\") {
+      escaped = true
+      continue
+    }
+    if (char === "\"") {
+      inString = !inString
+      continue
+    }
+    if (char === "#" && !inString) return line.slice(0, index)
+  }
+  return line
+}
 
 const maybeReadUtf8 = (
   filePath: string,

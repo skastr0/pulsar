@@ -5,6 +5,8 @@ import {
   type RustModuleFact,
   type RustUseFact,
 } from "../rust-analysis.js"
+import type { CargoMetadata } from "../cargo-metadata.js"
+import { workspacePackages } from "../cargo-metadata.js"
 import type { RustManifestInfo } from "../project.js"
 import { resolveManifestForFile } from "../rust-analysis-modules.js"
 import { isExcluded } from "./shared-globs.js"
@@ -16,41 +18,51 @@ import type {
 
 type RustProjectFacts = Awaited<ReturnType<typeof collectRustProjectFacts>>
 
+export interface CrateReferenceIndex {
+  readonly byIdentifier: ReadonlyMap<string, RustManifestInfo>
+  readonly dependencyAliasesByManifestPath: ReadonlyMap<string, ReadonlyMap<string, RustManifestInfo>>
+}
+
 export const collectCrossCrateImports = (
   facts: RustProjectFacts,
-  crateByIdentifier: ReadonlyMap<string, RustManifestInfo>,
+  manifests: ReadonlyArray<RustManifestInfo>,
+  crateIndex: CrateReferenceIndex,
   config: RsAd02Config,
 ): ReadonlyArray<RustUseFact> =>
   facts.uses.filter((useFact) => {
     if (isExcluded(useFact.file, config.exclude_globs)) return false
-    const root = useFact.segments[0]
-    return root !== undefined && crateByIdentifier.has(root)
+    return resolveCrateImportTarget(useFact, manifests, crateIndex) !== undefined
   })
 
 export const evaluateCrateBoundaryViolations = (
   crossCrateImports: ReadonlyArray<RustUseFact>,
   manifests: ReadonlyArray<RustManifestInfo>,
-  crateByIdentifier: ReadonlyMap<string, RustManifestInfo>,
+  crateIndex: CrateReferenceIndex,
   rules: ReadonlyMap<string, RustBoundaryRule>,
   facts: RustProjectFacts,
 ): ReadonlyArray<RsAd02Violation> => {
   const violations = crossCrateImports.flatMap((useFact) =>
-    violationForCrossCrateImport(useFact, manifests, crateByIdentifier, rules, facts),
+    violationForCrossCrateImport(useFact, manifests, crateIndex, rules, facts),
   )
-  return violations.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line)
+  return violations.sort((a, b) =>
+    a.file.localeCompare(b.file) ||
+    a.line - b.line ||
+    a.importPath.localeCompare(b.importPath) ||
+    a.kind.localeCompare(b.kind)
+  )
 }
 
 const violationForCrossCrateImport = (
   useFact: RustUseFact,
   manifests: ReadonlyArray<RustManifestInfo>,
-  crateByIdentifier: ReadonlyMap<string, RustManifestInfo>,
+  crateIndex: CrateReferenceIndex,
   rules: ReadonlyMap<string, RustBoundaryRule>,
   facts: RustProjectFacts,
 ): ReadonlyArray<RsAd02Violation> => {
-  const targetCrate = crateByIdentifier.get(useFact.segments[0]!)
-  if (targetCrate === undefined) return []
   const fromCrate = resolveManifestForFile(useFact.file, manifests)
   if (fromCrate === undefined) return []
+  const targetCrate = resolveCrateImportTarget(useFact, manifests, crateIndex)
+  if (targetCrate === undefined) return []
   const rule = lookupBoundaryRule(rules, targetCrate)
   if (rule === undefined) return []
 
@@ -140,25 +152,104 @@ const baseViolation = (
 })
 
 const crateIdentifiers = (manifest: RustManifestInfo): ReadonlySet<string> =>
-  new Set([manifest.name, manifest.packageName].filter((value): value is string => value !== undefined))
+  new Set(
+    [manifest.name, manifest.packageName, rustCrateIdentifier(manifest.packageName)]
+      .filter((value): value is string => value !== undefined),
+  )
 
 export const buildCrateIdentifierIndex = (
   manifests: ReadonlyArray<RustManifestInfo>,
-): ReadonlyMap<string, RustManifestInfo> => {
-  const index = new Map<string, RustManifestInfo>()
+  cargoMetadata: CargoMetadata | undefined = undefined,
+): CrateReferenceIndex => {
+  const byIdentifier = new Map<string, RustManifestInfo>()
+  const dependencyAliasesByManifestPath = new Map<string, Map<string, RustManifestInfo>>()
+  const byPackageName = new Map<string, RustManifestInfo>()
+
   for (const manifest of manifests) {
+    if (manifest.packageName !== undefined) byPackageName.set(manifest.packageName, manifest)
     for (const identifier of crateIdentifiers(manifest)) {
-      index.set(identifier, manifest)
+      byIdentifier.set(identifier, manifest)
     }
   }
-  return index
+
+  const addDependencyAlias = (
+    manifest: RustManifestInfo | undefined,
+    alias: string | undefined,
+    packageName: string | undefined,
+  ): void => {
+    if (manifest === undefined || alias === undefined || packageName === undefined) return
+    const target = byPackageName.get(packageName)
+    if (target === undefined) return
+    const aliases = dependencyAliasesByManifestPath.get(manifest.manifestPath) ?? new Map<string, RustManifestInfo>()
+    aliases.set(alias, target)
+    aliases.set(alias.replaceAll("-", "_"), target)
+    dependencyAliasesByManifestPath.set(manifest.manifestPath, aliases)
+  }
+
+  for (const manifest of manifests) {
+    for (const dependency of manifest.dependencies ?? []) {
+      addDependencyAlias(manifest, dependency.alias, dependency.packageName)
+    }
+  }
+
+  if (cargoMetadata !== undefined) {
+    const manifestByMetadataPath = new Map(
+      manifests.map((manifest) => [normalizePath(manifest.manifestPath), manifest] as const),
+    )
+    for (const pkg of workspacePackages(cargoMetadata)) {
+      const manifest = manifestByMetadataPath.get(normalizePath(pkg.manifestPath))
+      for (const dependency of pkg.dependencies) {
+        addDependencyAlias(
+          manifest,
+          dependency.rename ?? rustCrateIdentifier(dependency.name),
+          dependency.name,
+        )
+      }
+    }
+  }
+
+  return { byIdentifier, dependencyAliasesByManifestPath }
 }
 
 const lookupBoundaryRule = (
   rules: ReadonlyMap<string, RustBoundaryRule>,
   manifest: RustManifestInfo,
 ): RustBoundaryRule | undefined =>
-  rules.get(manifest.packageName ?? "") ?? rules.get(manifest.name)
+  rules.get(manifest.packageName ?? "") ??
+  rules.get(rustCrateIdentifier(manifest.packageName) ?? "") ??
+  rules.get(manifest.name)
+
+export const hasBoundaryRuleForUse = (
+  useFact: RustUseFact,
+  manifests: ReadonlyArray<RustManifestInfo>,
+  crateIndex: CrateReferenceIndex,
+  rules: ReadonlyMap<string, RustBoundaryRule>,
+): boolean => {
+  const targetCrate = resolveCrateImportTarget(useFact, manifests, crateIndex)
+  return targetCrate !== undefined && lookupBoundaryRule(rules, targetCrate) !== undefined
+}
+
+const resolveCrateImportTarget = (
+  useFact: RustUseFact,
+  manifests: ReadonlyArray<RustManifestInfo>,
+  crateIndex: CrateReferenceIndex,
+): RustManifestInfo | undefined => {
+  const root = useFact.segments[0]
+  if (root === undefined) return undefined
+  const fromCrate = resolveManifestForFile(useFact.file, manifests)
+  const dependencyTarget =
+    fromCrate === undefined
+      ? undefined
+      : crateIndex.dependencyAliasesByManifestPath.get(fromCrate.manifestPath)?.get(root)
+  const targetCrate = dependencyTarget ?? crateIndex.byIdentifier.get(root)
+  if (targetCrate === undefined || fromCrate === undefined) return targetCrate
+  return targetCrate.manifestPath === fromCrate.manifestPath ? undefined : targetCrate
+}
+
+const rustCrateIdentifier = (name: string | undefined): string | undefined =>
+  name?.replaceAll("-", "_")
+
+const normalizePath = (path: string): string => path.replaceAll("\\", "/")
 
 const importedModulePath = (segments: ReadonlyArray<string>, importingModule: boolean): string => {
   if (segments.length === 0) return "crate"

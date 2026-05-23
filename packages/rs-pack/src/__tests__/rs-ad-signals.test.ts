@@ -3,7 +3,7 @@ import {
   makeReferenceData,
   ReferenceDataTag,
 } from "@skastr0/pulsar-core/reference-data"
-import { buildRegistry } from "@skastr0/pulsar-core/scoring"
+import { buildRegistry, computeConfigHash } from "@skastr0/pulsar-core/scoring"
 import { InMemoryCacheLayer } from "@skastr0/pulsar-core/signal"
 import { SHARED_SIGNALS } from "@skastr0/pulsar-shared-signals"
 import { describe, expect, test } from "bun:test"
@@ -12,6 +12,7 @@ import { join } from "node:path"
 import { Effect, Layer, Schema } from "effect"
 import { RS_PACK_SIGNALS } from "../pack.js"
 import {
+  makeRustProject,
   RustProjectLayer,
   type RustProject,
 } from "../project.js"
@@ -35,7 +36,7 @@ const createRsAd02Workspace = () =>
   createRustWorkspace("pulsar-rs-ad02-", {
     "Cargo.toml": [
       "[workspace]",
-      'members = ["crates/core", "crates/app"]',
+      'members = ["crates/core", "crates/app", "crates/rogue"]',
       'resolver = "2"',
       "",
     ].join("\n"),
@@ -78,6 +79,120 @@ const createRsAd02Workspace = () =>
       "pub fn build(_thing: Thing) {",
       "    let _ = core::mem::size_of::<Thing>();",
       "}",
+      "",
+    ].join("\n"),
+    "crates/rogue/Cargo.toml": [
+      "[package]",
+      'name = "rogue"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+      "[dependencies]",
+      'core = { path = "../core" }',
+      "",
+    ].join("\n"),
+    "crates/rogue/src/lib.rs": [
+      "use core::api::Thing;",
+      "",
+      "pub fn steal(_thing: Thing) {}",
+      "",
+    ].join("\n"),
+  })
+
+const createRsAd02CleanWorkspace = () =>
+  createRustWorkspace("pulsar-rs-ad02-clean-", {
+    "Cargo.toml": [
+      "[workspace]",
+      'members = ["crates/core", "crates/app"]',
+      'resolver = "2"',
+      "",
+    ].join("\n"),
+    "crates/core/Cargo.toml": [
+      "[package]",
+      'name = "core"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+    ].join("\n"),
+    "crates/core/src/lib.rs": [
+      "pub mod api {",
+      "    pub struct Thing;",
+      "}",
+      "",
+    ].join("\n"),
+    "crates/app/Cargo.toml": [
+      "[package]",
+      'name = "app"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+      "[dependencies]",
+      'core = { path = "../core" }',
+      "",
+    ].join("\n"),
+    "crates/app/src/lib.rs": [
+      "use core::api::Thing;",
+      "",
+      "pub fn build(_thing: Thing) {}",
+      "",
+    ].join("\n"),
+  })
+
+const createRsAd02AliasWorkspace = () =>
+  createRustWorkspace("pulsar-rs-ad02-alias-", {
+    "Cargo.toml": [
+      "[workspace]",
+      'members = ["crates/core-lib", "crates/app", "crates/hyphen-user"]',
+      'resolver = "2"',
+      "",
+    ].join("\n"),
+    "crates/core-lib/Cargo.toml": [
+      "[package]",
+      'name = "core-lib"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+    ].join("\n"),
+    "crates/core-lib/src/lib.rs": [
+      "pub mod api {",
+      "    pub struct Thing;",
+      "}",
+      "pub mod internal_pub {",
+      "    pub struct Exposed;",
+      "}",
+      "",
+    ].join("\n"),
+    "crates/app/Cargo.toml": [
+      "[package]",
+      'name = "app"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+      "[dependencies]",
+      'core_alias = { package = "core-lib", path = "../core-lib" }',
+      "",
+    ].join("\n"),
+    "crates/app/src/lib.rs": [
+      "use core_alias::internal_pub::Exposed;",
+      "use core_alias::internal_pub::Exposed as ExposedAgain;",
+      "",
+      "pub fn build(_value: Exposed, _again: ExposedAgain) {}",
+      "",
+    ].join("\n"),
+    "crates/hyphen-user/Cargo.toml": [
+      "[package]",
+      'name = "hyphen-user"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+      "[dependencies]",
+      'core-lib = { path = "../core-lib" }',
+      "",
+    ].join("\n"),
+    "crates/hyphen-user/src/lib.rs": [
+      "use core_lib::internal_pub::Exposed;",
+      "",
+      "pub fn build(_value: Exposed) {}",
       "",
     ].join("\n"),
   })
@@ -287,7 +402,72 @@ describe("RS-AD-* signals", () => {
     }
   })
 
-  test("RS-AD-02 flags private and undeclared crate-boundary imports", async () => {
+  test("RS-AD-02 declares identity, config, cache, pack registration, and factor ledger", async () => {
+    const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
+    const versionedRegistry = await Effect.runPromise(buildRegistry([
+      ...SHARED_SIGNALS,
+      ...RS_PACK_SIGNALS.map((signal) =>
+        signal.id === RsAd02.id
+          ? { ...RsAd02, cacheVersion: `${RsAd02.cacheVersion}-changed` }
+          : signal,
+      ),
+    ]))
+    const registered = registry.byId.get("RS-AD-02")
+    const decoded = Schema.decodeUnknownSync(RsAd02.configSchema)(RsAd02.defaultConfig)
+    const factorLedger = registered?.factorLedger?.({} as RsAd02Output)
+    const baseCacheHash = computeConfigHash(RsAd02.id, registry, undefined)
+    const versionedCacheHash = computeConfigHash(RsAd02.id, versionedRegistry, undefined)
+    const configuredCacheHash = computeConfigHash(RsAd02.id, registry, {
+      id: "rs-ad-02-contract",
+      domain: "test",
+      signal_overrides: {
+        [RsAd02.id]: {
+          config: {
+            ...RsAd02.defaultConfig,
+            top_n_diagnostics: 1,
+          },
+        },
+      },
+    })
+
+    expect(RsAd02).toMatchObject({
+      id: "RS-AD-02-crate-boundaries",
+      aliases: ["RS-AD-02"],
+      title: "Crate boundary violations",
+      tier: 2,
+      category: "architectural-drift",
+      kind: "structural",
+      cacheVersion: "crate-boundary-reference-data-config-aliases-v2",
+      inputs: [],
+    })
+    expect(decoded).toEqual({
+      exclude_globs: ["**/target/**", "**/tests/**", "**/examples/**", "**/benches/**"],
+      top_n_diagnostics: 10,
+    })
+    expect(registered?.id).toBe(RsAd02.id)
+    expect(registered?.cacheVersion).toBe(RsAd02.cacheVersion)
+    expect(registry.byId.get("RS-AD-02")?.id).toBe(RsAd02.id)
+    expect(versionedCacheHash).not.toBe(baseCacheHash)
+    expect(configuredCacheHash).not.toBe(baseCacheHash)
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.exclude_globs",
+        source: "signal-default",
+        affectsScore: true,
+        scoreRole: "evidence",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        source: "signal-default",
+        affectsScore: false,
+        scoreRole: "metadata",
+      }),
+    )
+  })
+
+  test("RS-AD-02 flags dependent, private target, and public-module boundary violations", async () => {
     const repo = await createRsAd02Workspace()
 
     try {
@@ -304,16 +484,248 @@ describe("RS-AD-* signals", () => {
       })
 
       expect(out.referenceDataStatus).toBe("loaded")
-      expect(out.checkedImports).toBe(3)
-      expect(out.violations).toHaveLength(2)
+      expect(out.checkedImports).toBe(4)
+      expect(out.diagnosticLimit).toBe(10)
+      expect(out.violations).toHaveLength(3)
       expect(out.violations.map((violation) => violation.kind).sort()).toEqual([
         "boundary-rule",
+        "dependent-not-allowed",
         "non-public-target",
       ])
+      expect(out.violations.map((violation) => violation.importPath)).toEqual([
+        "core::internal::Hidden",
+        "core::internal_pub::Exposed",
+        "core::api::Thing",
+      ])
+      expect(RsAd02.score(out)).toBe(0)
+      expect(RsAd02.outputMetadata?.(out)).toBeUndefined()
 
       const diagnostics = RsAd02.diagnose(out)
-      expect(diagnostics).toHaveLength(2)
+      expect(diagnostics).toHaveLength(3)
+      expect(diagnostics.every((diagnostic) => diagnostic.severity === "block")).toBe(true)
       expect(diagnostics.every((diagnostic) => typeof diagnostic.data?.hash === "string")).toBe(true)
+      expect(new Set(diagnostics.map((diagnostic) => diagnostic.data?.hash)).size).toBe(3)
+      expect(diagnostics[0]).toMatchObject({
+        message: expect.stringContaining("core::internal::Hidden"),
+        data: {
+          fromCrate: "app",
+          toCrate: "core",
+          kind: "non-public-target",
+        },
+      })
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-AD-02 resolves hyphenated crate names and dependency rename aliases", async () => {
+    const repo = await createRsAd02AliasWorkspace()
+    const entries = {
+      "schema-conventions": {
+        rust_crate_boundaries: {
+          "core-lib": {
+            visibility: "public-api",
+            allowed_dependents: ["app", "hyphen-user"],
+            public_modules: ["crate::api"],
+          },
+        },
+      },
+    }
+
+    try {
+      const out = await runSignalCompute(RsAd02, repo, RsAd02.defaultConfig, entries)
+      const project = await Effect.runPromise(makeRustProject(repo))
+      const noCargoMetadata = await runSignalComputeWithProject(
+        RsAd02,
+        { ...project, cargoMetadata: undefined },
+        RsAd02.defaultConfig,
+        entries,
+      )
+
+      expect(out.referenceDataStatus).toBe("loaded")
+      expect(out.checkedImports).toBe(3)
+      expect(out.violations.map((violation) => violation.importPath)).toEqual([
+        "core_alias::internal_pub::Exposed",
+        "core_alias::internal_pub::Exposed",
+        "core_lib::internal_pub::Exposed",
+      ])
+      expect(out.violations.every((violation) => violation.kind === "boundary-rule")).toBe(true)
+      expect(out.violations.map((violation) => violation.toCrate)).toEqual([
+        "core-lib",
+        "core-lib",
+        "core-lib",
+      ])
+      const diagnostics = RsAd02.diagnose(out)
+      const hashes = diagnostics.map((diagnostic) => diagnostic.data?.hash)
+      expect(diagnostics).toHaveLength(3)
+      expect(new Set(hashes).size).toBe(3)
+      expect(noCargoMetadata.referenceDataStatus).toBe("loaded")
+      expect(noCargoMetadata.checkedImports).toBe(3)
+      expect(noCargoMetadata.violations.map((violation) => violation.importPath)).toEqual(
+        out.violations.map((violation) => violation.importPath),
+      )
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-AD-02 keeps clean allowed imports neutral and applicable", async () => {
+    const repo = await createRsAd02CleanWorkspace()
+
+    try {
+      const out = await runSignalCompute(RsAd02, repo, RsAd02.defaultConfig, {
+        "schema-conventions": {
+          rust_crate_boundaries: {
+            core: {
+              visibility: "public-api",
+              allowed_dependents: ["app"],
+              public_modules: ["crate::api"],
+            },
+          },
+        },
+      })
+
+      expect(out.referenceDataStatus).toBe("loaded")
+      expect(out.checkedImports).toBe(1)
+      expect(out.violations).toEqual([])
+      expect(RsAd02.score(out)).toBe(1)
+      expect(RsAd02.diagnose(out)).toEqual([])
+      expect(RsAd02.outputMetadata?.(out)).toBeUndefined()
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-AD-02 distinguishes missing reference data, no import evidence, and exclusions", async () => {
+    const violatingRepo = await createRsAd02Workspace()
+    const nonRustRepo = await createRustWorkspace("pulsar-rs-ad02-empty-", {
+      "README.md": "# no rust here\n",
+    })
+
+    try {
+      const missing = await runSignalCompute(RsAd02, violatingRepo, RsAd02.defaultConfig)
+      const loadedWithoutRustRules = await runSignalCompute(RsAd02, violatingRepo, RsAd02.defaultConfig, {
+        "schema-conventions": {
+          boundaries: {
+            core: {
+              visibility: "public-api",
+              allowed_imports: [],
+            },
+          },
+          rust_crate_boundaries: {},
+        },
+      })
+      const noRust = await runSignalCompute(RsAd02, nonRustRepo, RsAd02.defaultConfig)
+      const noRustWithConventions = await runSignalCompute(RsAd02, nonRustRepo, RsAd02.defaultConfig, {
+        "schema-conventions": {
+          rust_crate_boundaries: {},
+        },
+      })
+      const excluded = await runSignalCompute(RsAd02, violatingRepo, {
+        ...RsAd02.defaultConfig,
+        exclude_globs: ["**/crates/app/src/**", "**/crates/rogue/src/**"],
+      }, {
+        "schema-conventions": {
+          rust_crate_boundaries: {
+            core: {
+              visibility: "public-api",
+              allowed_dependents: ["app"],
+              public_modules: ["crate::api"],
+            },
+          },
+        },
+      })
+
+      expect(missing.referenceDataStatus).toBe("missing")
+      expect(missing.checkedImports).toBe(4)
+      expect(RsAd02.score(missing)).toBe(1)
+      expect(RsAd02.outputMetadata?.(missing)).toEqual({
+        applicability: "insufficient_evidence",
+      })
+      expect(RsAd02.diagnose(missing)[0]).toMatchObject({
+        severity: "warn",
+        data: {
+          checkedImports: 4,
+          referenceDataStatus: "missing",
+        },
+      })
+
+      expect(loadedWithoutRustRules.referenceDataStatus).toBe("missing")
+      expect(loadedWithoutRustRules.checkedImports).toBe(4)
+      expect(RsAd02.score(loadedWithoutRustRules)).toBe(1)
+      expect(RsAd02.outputMetadata?.(loadedWithoutRustRules)).toEqual({
+        applicability: "insufficient_evidence",
+      })
+      expect(RsAd02.diagnose(loadedWithoutRustRules)[0]).toMatchObject({
+        severity: "warn",
+        data: {
+          checkedImports: 4,
+          referenceDataStatus: "missing",
+        },
+      })
+
+      expect(noRust.referenceDataStatus).toBe("missing")
+      expect(noRust.checkedImports).toBe(0)
+      expect(RsAd02.outputMetadata?.(noRust)).toEqual({
+        applicability: "insufficient_evidence",
+      })
+
+      expect(noRustWithConventions.referenceDataStatus).toBe("loaded")
+      expect(noRustWithConventions.checkedImports).toBe(0)
+      expect(RsAd02.score(noRustWithConventions)).toBe(1)
+      expect(RsAd02.diagnose(noRustWithConventions)).toEqual([])
+      expect(RsAd02.outputMetadata?.(noRustWithConventions)).toEqual({
+        applicability: "not_applicable",
+      })
+
+      expect(excluded.referenceDataStatus).toBe("loaded")
+      expect(excluded.checkedImports).toBe(0)
+      expect(excluded.violations).toEqual([])
+      expect(RsAd02.score(excluded)).toBe(1)
+      expect(RsAd02.diagnose(excluded)).toEqual([])
+      expect(RsAd02.outputMetadata?.(excluded)).toEqual({
+        applicability: "not_applicable",
+      })
+    } finally {
+      await cleanupWorkspace(violatingRepo)
+      await cleanupWorkspace(nonRustRepo)
+    }
+  })
+
+  test("RS-AD-02 normalizes diagnostic limits and caps diagnostics", async () => {
+    const repo = await createRsAd02Workspace()
+    const entries = {
+      "schema-conventions": {
+        rust_crate_boundaries: {
+          core: {
+            visibility: "public-api",
+            allowed_dependents: ["app"],
+            public_modules: ["crate", "crate::api"],
+          },
+        },
+      },
+    }
+
+    try {
+      const capped = await runSignalCompute(RsAd02, repo, {
+        ...RsAd02.defaultConfig,
+        top_n_diagnostics: 1.9,
+      }, entries)
+      const hiddenNegative = await runSignalCompute(RsAd02, repo, {
+        ...RsAd02.defaultConfig,
+        top_n_diagnostics: -1,
+      }, entries)
+      const hiddenNaN = await runSignalCompute(RsAd02, repo, {
+        ...RsAd02.defaultConfig,
+        top_n_diagnostics: Number.NaN,
+      }, entries)
+
+      expect(capped.diagnosticLimit).toBe(1)
+      expect(RsAd02.diagnose(capped)).toHaveLength(1)
+      expect(hiddenNegative.diagnosticLimit).toBe(0)
+      expect(hiddenNaN.diagnosticLimit).toBe(0)
+      expect(RsAd02.diagnose(hiddenNegative)).toEqual([])
+      expect(RsAd02.diagnose(hiddenNaN)).toEqual([])
     } finally {
       await cleanupWorkspace(repo)
     }
@@ -377,6 +789,7 @@ describe("RS-AD-* signals", () => {
       expect(out.referenceDataStatus).toBe("loaded")
       expect(out.violations.map((violation) => violation.kind).sort()).toEqual([
         "boundary-rule",
+        "dependent-not-allowed",
         "non-public-target",
       ])
     } finally {

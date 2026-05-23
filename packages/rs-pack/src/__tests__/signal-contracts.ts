@@ -28,7 +28,35 @@ export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "observer-integration.test.ts and CLI score tests: Rust observer integration executes RS-AD-01 inside the RS pack against a real Cargo fixture, while the CLI category path verifies Rust signals are selected for Rust-only repositories.",
     },
   },
-  pendingSignalContract("RS-AD-02-crate-boundaries"),
+  {
+    id: "RS-AD-02-crate-boundaries",
+    status: "verified",
+    requiredEvidence: ["referenceData", "integration"],
+    evidence: {
+      identity:
+        "rs-ad-signals.test.ts: canonical id, alias, title, tier/category/kind, empty input contract, semantic cacheVersion, pack registration, registry alias lookup, and default config decoding are asserted.",
+      config:
+        "rs-ad-signals.test.ts: default exclude_globs and top_n_diagnostics decode through the real schema; fractional, negative, and NaN diagnostic caps are normalized through compute output.",
+      positiveFixture:
+        "rs-ad-signals.test.ts: temporary Cargo workspace fixtures exercise RustProjectLayer and collectRustProjectFacts for cross-crate imports that produce dependent-not-allowed, non-public-target, and boundary-rule violations, including hyphenated crate roots and dependency rename aliases.",
+      negativeFixture:
+        "rs-ad-signals.test.ts: clean allowed imports, no Rust source, and fully excluded importing crates return neutral output without false boundary pressure.",
+      applicability:
+        "rs-ad-signals.test.ts: loaded Rust schema conventions with checked imports are applicable, missing or ungoverned Rust boundary conventions emit insufficient_evidence metadata, and loaded conventions with no checked imports emit not_applicable metadata.",
+      score:
+        "rs-ad-signals.test.ts: violating fixtures score below clean fixtures, missing reference data stays score-neutral through applicability metadata, and violation pressure is bounded by checked import count.",
+      diagnostics:
+        "rs-ad-signals.test.ts: diagnostics assert block severity, file/line locations, deterministic violation ordering, unique stable hash payloads for duplicate imports on different lines, missing-reference warning payloads, and normalized diagnostic caps.",
+      factorLedger:
+        "rs-ad-signals.test.ts: registered RS pack signal emits config.exclude_globs as score-bearing evidence and config.top_n_diagnostics as non-score-bearing metadata with signal-default source.",
+      cacheSemantics:
+        "rs-ad-signals.test.ts, pack.test.ts, and core scoring-engine tests: RS-AD-02 declares crate-boundary-reference-data-config-aliases-v2 cacheVersion, config/cacheVersion changes alter the signal config hash, the RS pack wrapper preserves the version, and Tier-2 scoring cache semantics include reference-data version hashes.",
+      referenceData:
+        "rs-ad-signals.test.ts: direct ReferenceData fixtures and canonical `.pulsar/conventions.json` loading prove schema-conventions rust_crate_boundaries drive boundary rules, generic boundaries are not accepted as Rust boundary rules, and missing schema-conventions remains distinct from a clean pass.",
+      integration:
+        "observer-integration.test.ts and CLI score tests: Rust observer integration includes RS-AD-02 in the RS pack against a real Cargo fixture, while CLI single-signal mode executes RS-AD-02 against a repository substrate with conventions loaded from disk.",
+    },
+  },
   pendingSignalContract("RS-AD-03-circular-crate-dependencies"),
   pendingSignalContract("RS-DE-01-trait-coupling"),
   pendingSignalContract("RS-DE-02-dependency-tree"),

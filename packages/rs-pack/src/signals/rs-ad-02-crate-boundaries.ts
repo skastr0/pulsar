@@ -1,6 +1,12 @@
 import {
+  makeFactorEntry,
+  makeFactorLedger,
+  type SignalFactorLedger,
+} from "@skastr0/pulsar-core/factors"
+import {
   type Diagnostic,
   type Signal,
+  type SignalFactorDefinition,
   SignalComputeError,
 } from "@skastr0/pulsar-core/signal"
 import {
@@ -26,6 +32,7 @@ import {
   buildCrateIdentifierIndex,
   collectCrossCrateImports,
   evaluateCrateBoundaryViolations,
+  hasBoundaryRuleForUse,
 } from "./rs-ad-02-crate-analysis.js"
 import {
   RsAd02Config,
@@ -34,6 +41,26 @@ import {
   type RsAd02Violation,
 } from "./rs-ad-02-types.js"
 
+const DEFAULT_TOP_N_DIAGNOSTICS = 10
+const DEFAULT_EXCLUDE_GLOBS = ["**/target/**", "**/tests/**", "**/examples/**", "**/benches/**"] as const
+
+const RsAd02FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
+  {
+    path: "config.exclude_globs",
+    title: "Config exclude globs",
+    valueKind: "array",
+    scoreRole: "evidence",
+    defaultValue: [...DEFAULT_EXCLUDE_GLOBS],
+  },
+  {
+    path: "config.top_n_diagnostics",
+    title: "Config top n diagnostics",
+    valueKind: "number",
+    scoreRole: "metadata",
+    defaultValue: DEFAULT_TOP_N_DIAGNOSTICS,
+  },
+]
+
 export const RsAd02: Signal<RsAd02ConfigType, RsAd02Output, RustProjectTag | ReferenceDataTag> = {
   id: "RS-AD-02-crate-boundaries",
   title: "Crate boundary violations",
@@ -41,18 +68,21 @@ export const RsAd02: Signal<RsAd02ConfigType, RsAd02Output, RustProjectTag | Ref
   tier: 2,
   category: "architectural-drift",
   kind: "structural",
+  cacheVersion: "crate-boundary-reference-data-config-aliases-v2",
   configSchema: RsAd02Config,
+  factorDefinitions: RsAd02FactorDefinitions,
   defaultConfig: {
-    exclude_globs: ["**/target/**", "**/tests/**", "**/examples/**", "**/benches/**"],
-    top_n_diagnostics: 10,
+    exclude_globs: [...DEFAULT_EXCLUDE_GLOBS],
+    top_n_diagnostics: DEFAULT_TOP_N_DIAGNOSTICS,
   },
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
+      const normalizedConfig = normalizeRsAd02Config(config)
       const project = yield* RustProjectTag
       const referenceData = yield* ReferenceDataTag
       return yield* Effect.tryPromise({
-        try: () => computeRsAd02Output(project, referenceData, config),
+        try: () => computeRsAd02Output(project, referenceData, normalizedConfig),
         catch: (cause) =>
           new SignalComputeError({ signalId: "RS-AD-02-crate-boundaries", message: String(cause), cause }),
       })
@@ -65,14 +95,18 @@ export const RsAd02: Signal<RsAd02ConfigType, RsAd02Output, RustProjectTag | Ref
     if (out.referenceDataStatus === "missing") {
       return [
         {
-          severity: "warn",
+          severity: "warn" as const,
           message:
             "RS-AD-02 requires schema-conventions reference data; no Rust boundary rules were loaded",
+          data: {
+            checkedImports: out.checkedImports,
+            referenceDataStatus: out.referenceDataStatus,
+          },
         },
-      ]
+      ].slice(0, out.diagnosticLimit)
     }
 
-    return out.violations.slice(0, 10).map((violation) => ({
+    return out.violations.slice(0, out.diagnosticLimit).map((violation) => ({
       severity: "block" as const,
       message: `Crate boundary violation: ${violation.importPath} (${violation.detail})`,
       location: { file: violation.file, line: violation.line },
@@ -82,39 +116,67 @@ export const RsAd02: Signal<RsAd02ConfigType, RsAd02Output, RustProjectTag | Ref
       },
     }))
   },
+  outputMetadata: (out) => {
+    if (out.referenceDataStatus === "missing") {
+      return { applicability: "insufficient_evidence" as const }
+    }
+    return out.checkedImports === 0 ? { applicability: "not_applicable" as const } : undefined
+  },
+  factorLedger: () => makeRsAd02FactorLedger(),
 }
+
+type NormalizedRsAd02Config = RsAd02ConfigType
+
+const normalizeRsAd02Config = (config: RsAd02ConfigType): NormalizedRsAd02Config => ({
+  exclude_globs: config.exclude_globs,
+  top_n_diagnostics: Number.isFinite(config.top_n_diagnostics)
+    ? Math.max(0, Math.floor(config.top_n_diagnostics))
+    : 0,
+})
 
 const computeRsAd02Output = async (
   project: RustProject,
   referenceData: ReferenceData,
-  config: RsAd02ConfigType,
+  config: NormalizedRsAd02Config,
 ): Promise<RsAd02Output> => {
-  if (project.sourceFiles.length === 0) return missingReferenceDataOutput(0)
-
   const facts = await collectRustProjectFacts(project)
-  const crateByIdentifier = buildCrateIdentifierIndex(project.manifests)
-  const crossCrateImports = collectCrossCrateImports(facts, crateByIdentifier, config)
+  const crateIndex = buildCrateIdentifierIndex(project.manifests, project.cargoMetadata)
+  const crossCrateImports = collectCrossCrateImports(facts, project.manifests, crateIndex, config)
   const rawConventions = await Effect.runPromise(referenceData.get<unknown>("schema-conventions"))
-  if (Option.isNone(rawConventions)) return missingReferenceDataOutput(crossCrateImports.length)
+  if (Option.isNone(rawConventions)) {
+    return missingReferenceDataOutput(crossCrateImports.length, config.top_n_diagnostics)
+  }
 
   const rules = normalizeBoundaryRules(rawConventions.value)
+  const governedImports = crossCrateImports.filter((useFact) =>
+    hasBoundaryRuleForUse(useFact, project.manifests, crateIndex, rules),
+  )
+  if (crossCrateImports.length > 0 && governedImports.length === 0) {
+    return missingReferenceDataOutput(crossCrateImports.length, config.top_n_diagnostics)
+  }
+
   return {
-    checkedImports: crossCrateImports.length,
+    checkedImports: governedImports.length,
     violations: evaluateCrateBoundaryViolations(
-      crossCrateImports,
+      governedImports,
       project.manifests,
-      crateByIdentifier,
+      crateIndex,
       rules,
       facts,
     ),
     referenceDataStatus: "loaded",
+    diagnosticLimit: config.top_n_diagnostics,
   }
 }
 
-const missingReferenceDataOutput = (checkedImports: number): RsAd02Output => ({
+const missingReferenceDataOutput = (
+  checkedImports: number,
+  diagnosticLimit: number,
+): RsAd02Output => ({
   checkedImports,
   violations: [],
   referenceDataStatus: "missing",
+  diagnosticLimit,
 })
 
 const hashViolation = (violation: RsAd02Violation): string =>
@@ -123,7 +185,18 @@ const hashViolation = (violation: RsAd02Violation): string =>
       violation.fromCrate,
       violation.toCrate,
       violation.file,
+      String(violation.line),
       violation.importPath,
       violation.kind,
     ].join("|"),
+  )
+
+const makeRsAd02FactorLedger = (): SignalFactorLedger =>
+  makeFactorLedger(
+    "RS-AD-02-crate-boundaries",
+    RsAd02FactorDefinitions.map((definition) =>
+      makeFactorEntry(definition, definition.defaultValue ?? null, {
+        source: "signal-default",
+      }),
+    ),
   )

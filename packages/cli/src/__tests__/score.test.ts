@@ -1222,6 +1222,79 @@ export function stubF() { throw new Error("Not implemented") }
     }
   }, 120_000)
 
+  test("single-signal CLI wrapper executes RS-AD-02 with repo conventions", async () => {
+    const repoPath = await initRepo([
+      {
+        path: "Cargo.toml",
+        content: [
+          "[workspace]",
+          'members = ["crates/core", "crates/app"]',
+          'resolver = "2"',
+          "",
+        ].join("\n"),
+      },
+      {
+        path: "crates/core/Cargo.toml",
+        content: "[package]\nname = \"core\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+      },
+      {
+        path: "crates/core/src/lib.rs",
+        content: [
+          "pub mod api {",
+          "    pub struct Thing;",
+          "}",
+          "pub mod internal_pub {",
+          "    pub struct Exposed;",
+          "}",
+          "",
+        ].join("\n"),
+      },
+      {
+        path: "crates/app/Cargo.toml",
+        content: "[package]\nname = \"app\"\nversion = \"0.1.0\"\nedition = \"2021\"\n[dependencies]\ncore = { path = \"../core\" }\n",
+      },
+      {
+        path: "crates/app/src/lib.rs",
+        content: "use core::internal_pub::Exposed;\npub fn build(_value: Exposed) {}\n",
+      },
+      {
+        path: ".pulsar/conventions.json",
+        content: `${JSON.stringify({
+          schema_version: 1,
+          extracted_at_sha: "HEAD",
+          boundaries: {},
+          rust_crate_boundaries: {
+            core: {
+              visibility: "public-api",
+              allowed_dependents: ["app"],
+              public_modules: ["crate::api"],
+            },
+          },
+          naming_conventions: {
+            function: "camelCase",
+            class: "PascalCase",
+            interface: "PascalCase",
+            type: "PascalCase",
+            const: "camelCase | UPPER_SNAKE_CASE",
+            enum: "PascalCase",
+          },
+          architectural_rules: [],
+        })}\n`,
+      },
+    ])
+    try {
+      const out = runCli(repoPath, ["score", "--signal", "RS-AD-02", "."])
+      expect(out.status).toBe(0)
+      expect(out.stdout).toContain("Signal: RS-AD-02-crate-boundaries")
+      expect(out.stdout).toContain("BLOCK Crate boundary violation: core::internal_pub::Exposed")
+      expect(out.stdout).toContain("Factor Audit (1 score-bearing)")
+      expect(out.stdout).toContain("config.exclude_globs=")
+      expect(out.stdout).not.toContain("config.top_n_diagnostics=10 threshold")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
   test("single-signal mode summarizes score-bearing factor audit details", async () => {
     const repoPath = await initRepo([
       {

@@ -6,7 +6,7 @@ const isStringArray = (value: unknown): value is ReadonlyArray<string> =>
 
 export const normalizeBoundaryRules = (raw: unknown): ReadonlyMap<string, RustBoundaryRule> => {
   const record = asUnknownRecord(raw)
-  const boundaries = asUnknownRecord(record?.rust_crate_boundaries) ?? asUnknownRecord(record?.boundaries) ?? {}
+  const boundaries = asUnknownRecord(record?.rust_crate_boundaries) ?? {}
   return new Map(
     Object.entries(boundaries).flatMap(([key, value]) => {
       const rule = asUnknownRecord(value)

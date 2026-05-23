@@ -26,4 +26,5 @@ export interface RsAd02Output {
   readonly checkedImports: number
   readonly violations: ReadonlyArray<RsAd02Violation>
   readonly referenceDataStatus: "loaded" | "missing"
+  readonly diagnosticLimit: number
 }
