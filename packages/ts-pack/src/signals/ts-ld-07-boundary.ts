@@ -50,6 +50,10 @@ export const collectLocalExportedNames = (sourceFile: ts.SourceFile): ReadonlySe
         names.add((element.propertyName ?? element.name).text)
       }
     }
+
+    if (ts.isExportAssignment(statement) && ts.isIdentifier(statement.expression)) {
+      names.add(statement.expression.text)
+    }
   }
 
   return names
@@ -83,6 +87,9 @@ export const isBoundaryFunctionOwner = (
   }
 
   if (ts.isMethodDeclaration(owner)) {
+    if (ts.isObjectLiteralExpression(owner.parent)) {
+      return isWithinExportedObjectLiteralSurface(owner, exportedNames)
+    }
     return (
       isPublicClassMember(owner) &&
       ts.isClassDeclaration(owner.parent) &&
@@ -93,7 +100,12 @@ export const isBoundaryFunctionOwner = (
   if (ts.isArrowFunction(owner) || ts.isFunctionExpression(owner)) {
     const parent = owner.parent
     if (ts.isVariableDeclaration(parent)) return isBoundaryVariable(parent, exportedNames)
-    if (ts.isPropertyAssignment(parent)) return isWithinExportedTypeSurface(parent, exportedNames)
+    if (ts.isPropertyAssignment(parent)) {
+      return (
+        isWithinExportedTypeSurface(parent, exportedNames) ||
+        isWithinExportedObjectLiteralSurface(parent, exportedNames)
+      )
+    }
     return ts.isExportAssignment(parent)
   }
 
@@ -123,7 +135,7 @@ export const isBoundaryVariable = (
   return (
     ts.isVariableStatement(statement) &&
     (hasModifier(statement, ts.SyntaxKind.ExportKeyword) ||
-      exportedNames.has(declaration.name.text))
+      (exportedNames.has(declaration.name.text) && isTopLevelVariableDeclaration(declaration)))
   )
 }
 
@@ -179,9 +191,50 @@ const isBoundaryClass = (
   exportedNames: ReadonlySet<string>,
 ): boolean => isBoundaryDeclaration(node, exportedNames)
 
+const isWithinExportedObjectLiteralSurface = (
+  node: ts.Node,
+  exportedNames: ReadonlySet<string>,
+): boolean => {
+  let current: ts.Node | undefined = node
+  while (current !== undefined) {
+    if (
+      ts.isObjectLiteralExpression(current) &&
+      objectLiteralHasBoundaryVariableRoot(current, exportedNames)
+    ) {
+      return true
+    }
+    current = current.parent
+  }
+  return false
+}
+
+const objectLiteralHasBoundaryVariableRoot = (
+  node: ts.ObjectLiteralExpression,
+  exportedNames: ReadonlySet<string>,
+): boolean => {
+  let current: ts.Node = node
+  while (current.parent !== undefined) {
+    const parent = current.parent
+    if (ts.isVariableDeclaration(parent)) {
+      return parent.initializer === current && isBoundaryVariable(parent, exportedNames)
+    }
+    if (ts.isPropertyAssignment(parent) && ts.isObjectLiteralExpression(parent.parent)) {
+      current = parent.parent
+      continue
+    }
+    return false
+  }
+  return false
+}
+
 const isPublicClassMember = (node: ts.Node): boolean =>
   !hasModifier(node, ts.SyntaxKind.PrivateKeyword) &&
   !hasModifier(node, ts.SyntaxKind.ProtectedKeyword)
+
+const isTopLevelVariableDeclaration = (node: ts.VariableDeclaration): boolean => {
+  const statement = node.parent.parent
+  return ts.isVariableStatement(statement) && ts.isSourceFile(statement.parent)
+}
 
 const hasModifier = (node: ts.Node, kind: ts.SyntaxKind): boolean =>
   ts.canHaveModifiers(node) &&

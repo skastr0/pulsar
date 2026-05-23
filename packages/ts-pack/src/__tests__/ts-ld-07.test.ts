@@ -175,6 +175,161 @@ describe("TS-LD-07 (unsafe type erosion)", () => {
     }
   })
 
+  test("default export aliases count unsafe types as boundary evidence", async () => {
+    await setup()
+    try {
+      await repo.write(
+        "src/default-alias.ts",
+        [
+          "const handler = (value: any): any => value",
+          "export default handler",
+          "",
+        ].join("\n"),
+      )
+
+      const out = await runSignal(repo.root, TsLd07, TsLd07.defaultConfig)
+
+      expect(out.totalOccurrences).toBe(2)
+      expect(out.boundaryOccurrences).toBe(2)
+      expect(out.occurrences.map((occurrence) => occurrence.target).sort()).toEqual([
+        "handler",
+        "value",
+      ])
+      expect(out.occurrences.every((occurrence) => occurrence.severity === "warn")).toBe(true)
+    } finally {
+      await cleanup()
+    }
+  })
+
+  test("default exported class aliases expose public unsafe members as boundaries", async () => {
+    await setup()
+    try {
+      await repo.write(
+        "src/default-class.ts",
+        [
+          "class Service {",
+          "  readonly raw: any",
+          "  run(value: any): any {",
+          "    return value",
+          "  }",
+          "  private hidden(value: any): any {",
+          "    return value",
+          "  }",
+          "}",
+          "export default Service",
+          "",
+        ].join("\n"),
+      )
+
+      const out = await runSignal(repo.root, TsLd07, TsLd07.defaultConfig)
+      const boundaryTargets = out.occurrences
+        .filter((occurrence) => occurrence.boundary)
+        .map((occurrence) => occurrence.target)
+        .sort()
+      const internalTargets = out.occurrences
+        .filter((occurrence) => !occurrence.boundary)
+        .map((occurrence) => occurrence.target)
+        .sort()
+
+      expect(boundaryTargets).toEqual(["raw", "run", "value"])
+      expect(internalTargets).toEqual(["hidden", "value"])
+    } finally {
+      await cleanup()
+    }
+  })
+
+  test("nested same-name variables do not inherit named export boundary status", async () => {
+    await setup()
+    try {
+      await repo.write(
+        "src/shadow.ts",
+        [
+          "const publicValue: string = 'ok'",
+          "export { publicValue }",
+          "export function wrapper(): void {",
+          "  const publicValue: any = {}",
+          "  void publicValue",
+          "}",
+          "",
+        ].join("\n"),
+      )
+
+      const out = await runSignal(repo.root, TsLd07, TsLd07.defaultConfig)
+
+      expect(out.totalOccurrences).toBe(1)
+      expect(out.boundaryOccurrences).toBe(0)
+      expect(out.occurrences[0]).toMatchObject({
+        kind: "variable",
+        target: "publicValue",
+        boundary: false,
+        severity: "info",
+      })
+    } finally {
+      await cleanup()
+    }
+  })
+
+  test("exported object literal API functions count unsafe types as boundaries", async () => {
+    await setup()
+    try {
+      await repo.write(
+        "src/api.ts",
+        [
+          "export const api = {",
+          "  handle(value: any): any {",
+          "    return value",
+          "  },",
+          "  parse: (value: any): any => value,",
+          "  nested: {",
+          "    run(value: any): any {",
+          "      return value",
+          "    },",
+          "  },",
+          "}",
+          "",
+        ].join("\n"),
+      )
+
+      const out = await runSignal(repo.root, TsLd07, TsLd07.defaultConfig)
+
+      expect(out.totalOccurrences).toBe(6)
+      expect(out.boundaryOccurrences).toBe(6)
+      expect(new Set(out.occurrences.map((occurrence) => occurrence.target))).toEqual(
+        new Set(["handle", "parse", "run", "value"]),
+      )
+      expect(out.occurrences.every((occurrence) => occurrence.severity === "warn")).toBe(true)
+    } finally {
+      await cleanup()
+    }
+  })
+
+  test("object literal API functions returned from exported functions stay internal", async () => {
+    await setup()
+    try {
+      await repo.write(
+        "src/factory.ts",
+        [
+          "export function makeApi() {",
+          "  return {",
+          "    run(value: any): any {",
+          "      return value",
+          "    },",
+          "  }",
+          "}",
+          "",
+        ].join("\n"),
+      )
+
+      const out = await runSignal(repo.root, TsLd07, TsLd07.defaultConfig)
+
+      expect(out.totalOccurrences).toBe(2)
+      expect(out.boundaryOccurrences).toBe(0)
+      expect(out.occurrences.every((occurrence) => occurrence.severity === "info")).toBe(true)
+    } finally {
+      await cleanup()
+    }
+  })
+
   test("generated and declaration files are excluded by default", async () => {
     await setup()
     try {

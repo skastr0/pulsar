@@ -71,7 +71,7 @@ export const TsLd07: Signal<TsLd07Config, TsLd07Output, TsProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "unsafe-type-erosion-v1-diagnostic-limit-v1",
+  cacheVersion: "unsafe-type-erosion-v2-export-boundaries-v1",
   configSchema: TsLd07Config,
   defaultConfig: {
     exclude_globs: [
