@@ -256,7 +256,35 @@ export const SHARED_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "cli shared-signals.test.ts and bun run dev score --signal SHARED-09 .: aggregate observer and direct single-signal runtime execute SHARED-09 against repository substrate with canonical reference-data loading, including zero, not_configured, unknown, and missing-provenance states.",
     },
   },
-  pendingSignalContract("SHARED-10-domain-construction-control"),
+  {
+    id: "SHARED-10-domain-construction-control",
+    status: "verified",
+    requiredEvidence: ["referenceData", "integration"],
+    evidence: {
+      identity:
+        "shared-10-domain-construction-control.test.ts: canonical id, alias, title, tier/category/kind, empty input contract, semantic cacheVersion, pack registration, registry alias lookup, and default config decoding are asserted.",
+      config:
+        "shared-10-domain-construction-control.test.ts: default diagnostic cap, weighted-finding cap, and explicit-open diagnostic toggle are decoded and config-factor-ledger-backed; fractional, NaN, and Infinity diagnostic/pressure config values are normalized through real compute output.",
+      positiveFixture:
+        "shared-10-domain-construction-control.test.ts and core domain-construction.test.ts: canonical .pulsar/domain-construction.json fixtures prove controlled constructs with private constructors and parser evidence, public/implicit constructor detection, default-exported declaration and parser syntax, generic class constraints with braces, regex-literal class bodies, controlled export evidence, explicitly open constructs, stale declaration/evidence hashes, missing source-hash provenance, missing declaration files, duplicate-path provenance dedupe, deterministic finding order, and repo-path-stable reference-data output.",
+      negativeFixture:
+        "shared-10-domain-construction-control.test.ts and core domain-construction.test.ts: absent manifests are not_configured, empty manifests are not_applicable, malformed manifests are unknown, missing declaration files are stale-source, missing exported construct declarations are score-bearing, missing/symbol-mismatched parser evidence is score-bearing, type-only and ambient parser evidence are rejected, non-exported and ambient controlled export evidence is rejected, and manifests missing source-hash provenance do not claim zero construction control.",
+      applicability:
+        "shared-10-domain-construction-control.test.ts: outputMetadata is undefined for present/zero reference data, not_applicable for empty manifests, insufficient_evidence for not_configured and unknown reference data, and explicitly open constructs remain visible while score-neutral.",
+      score:
+        "shared-10-domain-construction-control.test.ts: score bounds and monotonic pressure are asserted by relationally comparing zero, missing-construction-evidence, missing-source-provenance, uncontrolled-constructor/stale-source mixed pressure, tight-cap, at-cap, and loose-cap cases plus finite score behavior under non-finite config.",
+      diagnostics:
+        "shared-10-domain-construction-control.test.ts: diagnose proves severity/weight ordering, explicit-open filtering, diagnostic caps, missing-manifest and malformed-manifest summary diagnostics, file/line locations, and structured payload fields for weighted pressure, cache contributors, and claim limits.",
+      factorLedger:
+        "shared-10-domain-construction-control.test.ts: registered shared-pack signal emits config.top_n_diagnostics, config.max_weighted_findings, and config.include_explicitly_open_diagnostics factor entries through explicit threshold classification plus withConfigFactorLedger.",
+      cacheSemantics:
+        "shared-10-domain-construction-control.test.ts and pack.test.ts: SHARED-10 declares reference-data-v2-normalized-config-source-provenance cacheVersion; wrapped shared-pack cache version preserves the signal cacheVersion after source-provenance and config-normalization semantics changed.",
+      referenceData:
+        "shared-10-domain-construction-control.test.ts, core domain-construction.test.ts, and core reference-data-loader.test.ts: tests load canonical domain construction entries from repo-owned .pulsar/domain-construction.json through loadCanonicalReferenceDataEntries and source-level loadDomainConstructionFacts rather than injecting synthetic signal output.",
+      integration:
+        "cli shared-signals.test.ts and bun run dev score --signal SHARED-10 .: aggregate observer and direct single-signal runtime execute SHARED-10 against repository substrate with canonical reference-data loading, including zero, not_configured, unknown, and missing-source-provenance states.",
+    },
+  },
   pendingSignalContract("SHARED-11-theory-encoding-index"),
   pendingSignalContract("SHARED-COV-01-coverage-facts"),
 ]

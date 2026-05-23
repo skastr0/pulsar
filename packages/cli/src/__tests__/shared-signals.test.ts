@@ -58,6 +58,7 @@ describe("polyglot shared signals", () => {
         ),
       )
       await writeContractFreshnessFixture(repo)
+      await writeDomainConstructionFixture(repo)
       await writeFile(
         join(repo, "packages/web/src/index.ts"),
         [
@@ -213,6 +214,17 @@ describe("polyglot shared signals", () => {
       expect(contractFreshness?.state).toBe("zero")
       expect(contractFreshness?.configuredContractCount).toBe(1)
       expect(contractFreshness?.totalFindings).toBe(0)
+
+      const domainConstruction = result.signalResults.get("SHARED-10-domain-construction-control")?.output as
+        | {
+            state?: string
+            configuredConstructCount?: number
+            weightedFindings?: number
+          }
+        | undefined
+      expect(domainConstruction?.state).toBe("zero")
+      expect(domainConstruction?.configuredConstructCount).toBe(1)
+      expect(domainConstruction?.weightedFindings).toBe(0)
     } finally {
       await rm(repo, { recursive: true, force: true })
     }
@@ -252,6 +264,7 @@ describe("polyglot shared signals", () => {
         ),
       )
       await writeContractFreshnessFixture(repo)
+      await writeDomainConstructionFixture(repo)
       await writeFile(
         join(repo, "src/index.ts"),
         [
@@ -356,6 +369,22 @@ describe("polyglot shared signals", () => {
       expect(contractFreshnessOutput.state).toBe("zero")
       expect(contractFreshnessOutput.configuredContractCount).toBe(1)
       expect(contractFreshnessOutput.totalFindings).toBe(0)
+
+      const domainConstructionResult = await Effect.runPromise(
+        runSignalInWorktree(repo, "SHARED-10"),
+      )
+      const domainConstructionOutput = domainConstructionResult.result.output as {
+        readonly state?: string
+        readonly configuredConstructCount?: number
+        readonly weightedFindings?: number
+      }
+
+      expect(domainConstructionResult.result.signalId).toBe(
+        "SHARED-10-domain-construction-control",
+      )
+      expect(domainConstructionOutput.state).toBe("zero")
+      expect(domainConstructionOutput.configuredConstructCount).toBe(1)
+      expect(domainConstructionOutput.weightedFindings).toBe(0)
     } finally {
       await rm(repo, { recursive: true, force: true })
     }
@@ -435,6 +464,103 @@ describe("polyglot shared signals", () => {
       await rm(repo, { recursive: true, force: true })
     }
   }, 120_000)
+
+  test("single-signal runtime exposes SHARED-10 reference-data failure states", async () => {
+    const repo = await mkdtemp(join(tmpdir(), "pulsar-cli-shared-domain-"))
+    try {
+      await mkdir(join(repo, "src", "domain"), { recursive: true })
+      await writeFile(join(repo, "README.md"), "# domain fixture\n", "utf8")
+      sh("git", ["init", "-q", "-b", "main"], repo)
+      sh("git", ["config", "user.email", "test@test.test"], repo)
+      sh("git", ["config", "user.name", "test"], repo)
+      sh("git", ["add", "."], repo)
+      sh("git", ["commit", "-q", "-m", "fixture"], repo)
+
+      const absentResult = await Effect.runPromise(
+        runSignalInWorktree(repo, "SHARED-10"),
+      )
+      const absentOutput = absentResult.result.output as {
+        readonly state?: string
+      }
+      expect(absentResult.result.signalId).toBe("SHARED-10-domain-construction-control")
+      expect(absentOutput.state).toBe("not_configured")
+      expect(absentResult.result.metadata).toEqual({
+        applicability: "insufficient_evidence",
+      })
+
+      await mkdir(join(repo, ".pulsar"), { recursive: true })
+      await writeFile(join(repo, ".pulsar", "domain-construction.json"), "{", "utf8")
+      const malformedResult = await Effect.runPromise(
+        runSignalInWorktree(repo, "SHARED-10"),
+      )
+      const malformedOutput = malformedResult.result.output as {
+        readonly state?: string
+      }
+      expect(malformedOutput.state).toBe("unknown")
+      expect(malformedResult.result.diagnostics[0]?.severity).toBe("warn")
+      expect(malformedResult.result.metadata).toEqual({
+        applicability: "insufficient_evidence",
+      })
+
+      const declarationContent = [
+        "export class UserId {",
+        "  private constructor(readonly value: string) {}",
+        "}",
+        "",
+      ].join("\n")
+      const parserContent = [
+        "import { UserId } from './user-id'",
+        "export const parseUserId = (value: string): UserId => value as unknown as UserId",
+        "",
+      ].join("\n")
+      await writeFile(join(repo, "src", "domain", "user-id.ts"), declarationContent, "utf8")
+      await writeFile(join(repo, "src", "domain", "parse-user-id.ts"), parserContent, "utf8")
+      await writeFile(
+        join(repo, ".pulsar", "domain-construction.json"),
+        `${JSON.stringify(
+          {
+            schema_version: 1,
+            constructs: [
+              {
+                id: "user-id",
+                symbol: "UserId",
+                kind: "value-object",
+                declaration_path: "src/domain/user-id.ts",
+                source_hashes: {},
+                control: {
+                  intent: "controlled",
+                  parsers: [
+                    {
+                      path: "src/domain/parse-user-id.ts",
+                      symbol: "parseUserId",
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+          null,
+          2,
+        )}\n`,
+        "utf8",
+      )
+      const missingProvenanceResult = await Effect.runPromise(
+        runSignalInWorktree(repo, "SHARED-10"),
+      )
+      const missingProvenanceOutput = missingProvenanceResult.result.output as {
+        readonly state?: string
+        readonly findings?: ReadonlyArray<{ readonly kind?: string }>
+      }
+
+      expect(missingProvenanceOutput.state).toBe("present")
+      expect(missingProvenanceOutput.findings?.map((finding) => finding.kind)).toContain(
+        "missing-source-provenance",
+      )
+      expect(missingProvenanceResult.result.score).toBeLessThan(1)
+    } finally {
+      await rm(repo, { recursive: true, force: true })
+    }
+  }, 120_000)
 })
 
 const sh = (cmd: string, args: ReadonlyArray<string>, cwd: string): string => {
@@ -469,6 +595,56 @@ const writeContractFreshnessFixture = async (repo: string): Promise<void> => {
             artifact_path: "src/generated/client.ts",
             artifact_sha256: sha256(artifactContent),
             generator: "openapi-generator",
+          },
+        ],
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  )
+}
+
+const writeDomainConstructionFixture = async (repo: string): Promise<void> => {
+  const declarationContent = [
+    "export class UserId {",
+    "  private constructor(readonly value: string) {}",
+    "}",
+    "",
+  ].join("\n")
+  const parserContent = [
+    "import { UserId } from './user-id'",
+    "export const parseUserId = (value: string): UserId => value as unknown as UserId",
+    "",
+  ].join("\n")
+  await mkdir(join(repo, ".pulsar"), { recursive: true })
+  await mkdir(join(repo, "src", "domain"), { recursive: true })
+  await writeFile(join(repo, "src", "domain", "user-id.ts"), declarationContent, "utf8")
+  await writeFile(join(repo, "src", "domain", "parse-user-id.ts"), parserContent, "utf8")
+  await writeFile(
+    join(repo, ".pulsar", "domain-construction.json"),
+    `${JSON.stringify(
+      {
+        schema_version: 1,
+        constructs: [
+          {
+            id: "user-id",
+            symbol: "UserId",
+            kind: "value-object",
+            declaration_path: "src/domain/user-id.ts",
+            source_hashes: {
+              "src/domain/user-id.ts": sha256(declarationContent),
+              "src/domain/parse-user-id.ts": sha256(parserContent),
+            },
+            control: {
+              intent: "controlled",
+              parsers: [
+                {
+                  path: "src/domain/parse-user-id.ts",
+                  symbol: "parseUserId",
+                },
+              ],
+            },
           },
         ],
       },

@@ -169,8 +169,20 @@ export const computeReferenceVersionHash = (
 ): string => {
   const normalized = [...referenceEntries.entries()].sort(([left], [right]) =>
     left.localeCompare(right),
-  )
+  ).map(([key, value]) => [key, normalizeReferenceVersionValue(value)] as const)
   return createHash("sha256").update(stableStringify(normalized)).digest("hex")
+}
+
+const normalizeReferenceVersionValue = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(normalizeReferenceVersionValue)
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([key]) => key !== "sourcePath")
+        .map(([key, nested]) => [key, normalizeReferenceVersionValue(nested)]),
+    )
+  }
+  return value
 }
 
 export const hashChangedHunks = (changedHunks: ReadonlyArray<ChangedHunk>): string => {

@@ -305,6 +305,7 @@ const domainConstruction = (args: {
     scoreFindings: findings,
     totalFindings: findings.length,
     weightedFindings,
+    maxWeightedFindings: 8,
     scorePressure: args.scorePressure ?? 0,
     diagnosticLimit: 10,
     configuredConstructCount: constructs.length,

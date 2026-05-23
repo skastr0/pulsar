@@ -26,6 +26,7 @@ export interface Shared10DomainConstructionControlOutput
   readonly scoreFindings: ReadonlyArray<DomainConstructionFinding>
   readonly totalFindings: number
   readonly weightedFindings: number
+  readonly maxWeightedFindings: number
   readonly scorePressure: number
   readonly diagnosticLimit: number
   readonly configuredConstructCount: number
@@ -46,6 +47,10 @@ const notConfiguredDomainConstructionFacts = (): DomainConstructionFacts =>
     CANONICAL_DOMAIN_CONSTRUCTION_RELATIVE_PATH,
   ])
 
+const DEFAULT_TOP_N_DIAGNOSTICS = 10
+const DEFAULT_MAX_WEIGHTED_FINDINGS = 8
+const DEFAULT_INCLUDE_EXPLICITLY_OPEN_DIAGNOSTICS = true
+
 export const Shared10DomainConstructionControl: Signal<
   Shared10DomainConstructionControlConfig,
   Shared10DomainConstructionControlOutput,
@@ -57,17 +62,39 @@ export const Shared10DomainConstructionControl: Signal<
   tier: 2,
   category: "abstraction-bloat",
   kind: "legibility",
-  cacheVersion: "reference-data-v1",
+  cacheVersion: "reference-data-v2-normalized-config-source-provenance",
   configSchema: Shared10DomainConstructionControlConfig,
   defaultConfig: {
-    top_n_diagnostics: 10,
-    max_weighted_findings: 8,
-    include_explicitly_open_diagnostics: true,
+    top_n_diagnostics: DEFAULT_TOP_N_DIAGNOSTICS,
+    max_weighted_findings: DEFAULT_MAX_WEIGHTED_FINDINGS,
+    include_explicitly_open_diagnostics: DEFAULT_INCLUDE_EXPLICITLY_OPEN_DIAGNOSTICS,
   },
   configDirections: {
     top_n_diagnostics: "higher-is-looser",
     max_weighted_findings: "higher-is-looser",
   },
+  factorDefinitions: [
+    {
+      path: "config.max_weighted_findings",
+      title: "Config max weighted findings",
+      valueKind: "number",
+      scoreRole: "threshold",
+      defaultValue: DEFAULT_MAX_WEIGHTED_FINDINGS,
+    },
+  ],
+  factorLedger: () => ({
+    signalId: "SHARED-10-domain-construction-control",
+    entries: [
+      {
+        path: "config.max_weighted_findings",
+        title: "Config max weighted findings",
+        scoreRole: "threshold",
+        value: DEFAULT_MAX_WEIGHTED_FINDINGS,
+        source: "signal-default",
+        affectsScore: true,
+      },
+    ],
+  }),
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
@@ -94,7 +121,10 @@ export const Shared10DomainConstructionControl: Signal<
           ...finding,
           state: out.state,
           sourceFingerprint: out.sourceFingerprint,
+          weightedFindings: out.weightedFindings,
+          maxWeightedFindings: out.maxWeightedFindings,
           scorePressure: out.scorePressure,
+          diagnosticLimit: out.diagnosticLimit,
           compositeConsumers: out.compositeConsumers,
           cacheContributors: out.cacheContributors,
           calibrationSurface: out.calibrationSurface,
@@ -120,6 +150,10 @@ export const Shared10DomainConstructionControl: Signal<
           configuredConstructCount: out.configuredConstructCount,
           controlledConstructCount: out.controlledConstructCount,
           explicitlyOpenConstructCount: out.explicitlyOpenConstructCount,
+          weightedFindings: out.weightedFindings,
+          maxWeightedFindings: out.maxWeightedFindings,
+          scorePressure: out.scorePressure,
+          diagnosticLimit: out.diagnosticLimit,
           compositeConsumers: out.compositeConsumers,
           cacheContributors: out.cacheContributors,
           calibrationSurface: out.calibrationSurface,
@@ -147,11 +181,12 @@ const buildOutput = (
   facts: DomainConstructionFacts,
   config: Shared10DomainConstructionControlConfig,
 ): Shared10DomainConstructionControlOutput => {
-  const diagnosticLimit = Math.max(0, Math.floor(config.top_n_diagnostics))
-  const maxWeightedFindings = Math.max(1, config.max_weighted_findings)
+  const normalizedConfig = normalizeShared10DomainConstructionControlConfig(config)
+  const diagnosticLimit = normalizedConfig.top_n_diagnostics
+  const maxWeightedFindings = normalizedConfig.max_weighted_findings
   const topFindings = [...facts.findings]
     .filter((finding) =>
-      config.include_explicitly_open_diagnostics ||
+      normalizedConfig.include_explicitly_open_diagnostics ||
       finding.kind !== "explicitly-open-construct",
     )
     .sort(compareFindings)
@@ -167,6 +202,7 @@ const buildOutput = (
     scoreFindings,
     totalFindings: facts.findings.length,
     weightedFindings,
+    maxWeightedFindings,
     scorePressure: weightedFindings / maxWeightedFindings,
     diagnosticLimit,
     configuredConstructCount: facts.constructs.length,
@@ -213,6 +249,20 @@ const buildOutput = (
   }
 }
 
+const normalizeShared10DomainConstructionControlConfig = (
+  config: Shared10DomainConstructionControlConfig,
+): Shared10DomainConstructionControlConfig => ({
+  top_n_diagnostics: Number.isFinite(config.top_n_diagnostics)
+    ? Math.max(0, Math.floor(config.top_n_diagnostics))
+    : 0,
+  max_weighted_findings:
+    Number.isFinite(config.max_weighted_findings) && config.max_weighted_findings > 0
+      ? config.max_weighted_findings
+      : DEFAULT_MAX_WEIGHTED_FINDINGS,
+  include_explicitly_open_diagnostics:
+    config.include_explicitly_open_diagnostics === true,
+})
+
 const domainConstructionKindLabel = (
   kind: DomainConstructionFinding["kind"],
 ): string => {
@@ -221,6 +271,8 @@ const domainConstructionKindLabel = (
       return "Uncontrolled constructor/export"
     case "missing-construction-evidence":
       return "Missing construction evidence"
+    case "missing-source-provenance":
+      return "Missing source provenance"
     case "stale-source":
       return "Stale construction source evidence"
     case "explicitly-open-construct":

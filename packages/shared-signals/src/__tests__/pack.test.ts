@@ -6,6 +6,7 @@ import {
   Shared06PrDepDelta,
   Shared07MachineFeedbackCoverage,
   Shared09ContractFreshness,
+  Shared10DomainConstructionControl,
   SharedChurn01,
   SharedChurn02,
   SharedCochange01,
@@ -41,6 +42,9 @@ describe("shared signal identity", () => {
     const contractFreshness = SHARED_SIGNALS.find((signal) =>
       signal.aliases?.includes("SHARED-09"),
     )
+    const domainConstructionControl = SHARED_SIGNALS.find((signal) =>
+      signal.aliases?.includes("SHARED-10"),
+    )
 
     expect(churn01?.cacheVersion).toContain(SharedChurn01.cacheVersion)
     expect(churn02?.cacheVersion).toContain(SharedChurn02.cacheVersion)
@@ -53,6 +57,9 @@ describe("shared signal identity", () => {
       Shared07MachineFeedbackCoverage.cacheVersion,
     )
     expect(contractFreshness?.cacheVersion).toContain(Shared09ContractFreshness.cacheVersion)
+    expect(domainConstructionControl?.cacheVersion).toContain(
+      Shared10DomainConstructionControl.cacheVersion,
+    )
   })
 
   test("all shared signals expose semantic ids, aliases, and titles", () => {

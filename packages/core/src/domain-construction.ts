@@ -61,6 +61,7 @@ export type DomainConstructionFactState =
 export type DomainConstructionFindingKind =
   | "uncontrolled-constructor-export"
   | "missing-construction-evidence"
+  | "missing-source-provenance"
   | "stale-source"
   | "explicitly-open-construct"
 
@@ -114,6 +115,7 @@ export interface DomainConstructionFacts {
 const FINDING_WEIGHT: Record<DomainConstructionFindingKind, number> = {
   "uncontrolled-constructor-export": 5,
   "missing-construction-evidence": 3,
+  "missing-source-provenance": 3,
   "stale-source": 4,
   "explicitly-open-construct": 0,
 }
@@ -187,22 +189,46 @@ const collectDomainConstructionFacts = async (
     for (const evidence of [...smartConstructors, ...parsers, ...controlledExports]) {
       checkedPathSet.add(normalizePath(evidence.path))
     }
+    const expectedSourceHashes = normalizeHashRecord(construct.source_hashes ?? {})
+    const expectedSourceHashPaths = Object.keys(expectedSourceHashes)
+    for (const path of expectedSourceHashPaths) checkedPathSet.add(path)
 
-    const allEvidencePaths = [
+    const declaredSourcePaths = unique([
       declarationPath,
       ...smartConstructors.map((evidence) => evidence.path),
       ...parsers.map((evidence) => evidence.path),
       ...controlledExports.map((evidence) => evidence.path),
-    ].map(normalizePath)
+    ].map(normalizePath))
+    const allEvidencePaths = unique([
+      ...declaredSourcePaths,
+      ...expectedSourceHashPaths,
+    ])
     const sourceHashes = await currentSourceHashes(repoRoot, allEvidencePaths)
-    const expectedSourceHashes = normalizeHashRecord(construct.source_hashes ?? {})
     const declarationContent = await readSource(repoRoot, declarationPath)
-    const declaredShape = declarationContent === undefined
+    const declarationSyntax = declarationContent === undefined
+      ? undefined
+      : analyzeSourceSyntax(declarationContent)
+    const declaredShape = declarationSyntax === undefined
       ? emptyDeclarationShape()
-      : analyzeDeclarationShape(declarationContent, construct.symbol)
-    const smartConstructorFacts = await collectEvidenceFacts(repoRoot, smartConstructors, sourceHashes)
-    const parserFacts = await collectEvidenceFacts(repoRoot, parsers, sourceHashes)
-    const controlledExportFacts = await collectEvidenceFacts(repoRoot, controlledExports, sourceHashes)
+      : analyzeDeclarationShape(declarationSyntax, construct.symbol)
+    const smartConstructorFacts = await collectEvidenceFacts(
+      repoRoot,
+      smartConstructors,
+      sourceHashes,
+      "runtime-value",
+    )
+    const parserFacts = await collectEvidenceFacts(
+      repoRoot,
+      parsers,
+      sourceHashes,
+      "runtime-value",
+    )
+    const controlledExportFacts = await collectEvidenceFacts(
+      repoRoot,
+      controlledExports,
+      sourceHashes,
+      "exported-value",
+    )
     const allowPublicConstructor = control.allow_public_constructor === true
 
     constructs.push({
@@ -223,9 +249,55 @@ const collectDomainConstructionFacts = async (
       controlledExports: controlledExportFacts,
     })
 
+    const expectedSourceHashPathSet = new Set(expectedSourceHashPaths)
+    const declaredSourcePathSet = new Set(declaredSourcePaths)
+    const missingSourceHashPaths = declaredSourcePaths.filter((path) =>
+      !expectedSourceHashPathSet.has(path),
+    )
+    for (const path of missingSourceHashPaths) {
+      findings.push(makeFinding({
+        constructId: construct.id,
+        symbol: construct.symbol,
+        kind: "missing-source-provenance",
+        file: path,
+        evidence: [`declared domain construction source ${path} has no recorded hash provenance`],
+      }))
+    }
+    const undeclaredSourceHashPaths = expectedSourceHashPaths.filter((path) =>
+      !declaredSourcePathSet.has(path),
+    )
+    for (const path of undeclaredSourceHashPaths) {
+      findings.push(makeFinding({
+        constructId: construct.id,
+        symbol: construct.symbol,
+        kind: "missing-source-provenance",
+        file: path,
+        evidence: [`recorded source hash ${path} is not declared as construction evidence`],
+      }))
+    }
+
+    if (declarationContent === undefined) {
+      findings.push(makeFinding({
+        constructId: construct.id,
+        symbol: construct.symbol,
+        kind: "stale-source",
+        file: declarationPath,
+        evidence: ["declared domain construct declaration is missing"],
+      }))
+    } else if (!declaredShape.exportedDeclarationDetected) {
+      findings.push(makeFinding({
+        constructId: construct.id,
+        symbol: construct.symbol,
+        kind: "missing-construction-evidence",
+        file: declarationPath,
+        evidence: [`declared domain construct symbol ${construct.symbol} was not found`],
+      }))
+    }
+
     for (const [path, expectedHash] of Object.entries(expectedSourceHashes)) {
       const actualHash = sourceHashes[path]
       if (actualHash === undefined) {
+        if (path === declarationPath && declarationContent === undefined) continue
         findings.push(makeFinding({
           constructId: construct.id,
           symbol: construct.symbol,
@@ -306,6 +378,29 @@ const collectDomainConstructionFacts = async (
         }))
       }
     }
+    for (const evidence of controlledExportFacts) {
+      if (!evidence.present) {
+        findings.push(makeFinding({
+          constructId: construct.id,
+          symbol: construct.symbol,
+          kind: "missing-construction-evidence",
+          file: evidence.path,
+          evidence: [
+            "declared controlled-export evidence file is missing",
+          ],
+        }))
+      } else if (!evidence.matchedSymbol) {
+        findings.push(makeFinding({
+          constructId: construct.id,
+          symbol: construct.symbol,
+          kind: "missing-construction-evidence",
+          file: evidence.path,
+          evidence: [
+            `declared controlled-export symbol ${evidence.symbol ?? "<unspecified>"} was not found`,
+          ],
+        }))
+      }
+    }
   }
 
   findings.sort(compareFindings)
@@ -330,14 +425,16 @@ const collectEvidenceFacts = async (
   repoRoot: string,
   evidence: ReadonlyArray<DomainConstructionEvidence>,
   sourceHashes: Readonly<Record<string, string>>,
+  symbolMode: EvidenceSymbolMode,
 ): Promise<ReadonlyArray<DomainConstructionEvidenceFact>> =>
   Promise.all(
     evidence.map(async (item) => {
       const path = normalizePath(item.path)
       const content = await readSource(repoRoot, path)
+      const syntax = content === undefined ? undefined : analyzeSourceSyntax(content)
       const matchedSymbol =
         item.symbol === undefined ||
-        (content !== undefined && symbolPattern(item.symbol).test(content))
+        (syntax !== undefined && matchesEvidenceSymbol(syntax, item.symbol, symbolMode))
       return {
         path,
         ...(item.symbol === undefined ? {} : { symbol: item.symbol }),
@@ -382,28 +479,340 @@ const emptyDeclarationShape = (): DeclarationShape => ({
   privateConstructorDetected: false,
 })
 
+type EvidenceSymbolMode = "runtime-value" | "exported-value"
+
 const analyzeDeclarationShape = (
-  content: string,
+  syntax: SourceSyntax,
   symbol: string,
 ): DeclarationShape => {
-  const escaped = escapeRegExp(symbol)
-  const exportedDeclarationDetected = new RegExp(
-    `\\bexport\\s+(?:abstract\\s+)?(?:class|interface|type)\\s+${escaped}\\b`,
-    "u",
-  ).test(content)
-  const classDeclarationDetected = new RegExp(
-    `\\bexport\\s+(?:abstract\\s+)?class\\s+${escaped}\\b`,
-    "u",
-  ).test(content)
-  const constructorDetected = /\bconstructor\s*\(/u.test(content)
-  const privateConstructorDetected = /\b(?:private|protected)\s+constructor\s*\(/u.test(content)
+  const exportedDeclarationDetected = hasExportedDeclaration(syntax, symbol)
+  const classShape = exportedClassShape(syntax, symbol)
+  const topLevelClassBody = classShape === undefined
+    ? undefined
+    : topLevelClassMemberText(classShape.body)
+  const privateConstructorDetected =
+    topLevelClassBody !== undefined &&
+    /\b(?:private|protected)\s+constructor\s*\(/u.test(topLevelClassBody)
   return {
     exportedDeclarationDetected,
     publicConstructorDetected:
-      classDeclarationDetected && constructorDetected && !privateConstructorDetected,
+      classShape !== undefined && !classShape.isAbstract && !privateConstructorDetected,
     privateConstructorDetected,
   }
 }
+
+interface SourceSyntax {
+  readonly code: string
+}
+
+const analyzeSourceSyntax = (content: string): SourceSyntax => ({
+  code: maskAmbientBlocks(maskCommentsAndStrings(content)),
+})
+
+const hasExportedDeclaration = (syntax: SourceSyntax, symbol: string): boolean => {
+  const escaped = escapeRegExp(symbol)
+  return new RegExp(
+    `\\bexport\\s+(?:default\\s+)?(?:abstract\\s+)?(?:class|interface|type)\\s+${escaped}\\b`,
+    "u",
+  ).test(syntax.code)
+}
+
+const matchesEvidenceSymbol = (
+  syntax: SourceSyntax,
+  symbol: string,
+  mode: EvidenceSymbolMode,
+): boolean =>
+  mode === "exported-value"
+    ? hasExportedValueDeclaration(syntax, symbol)
+    : hasRuntimeValueDeclaration(syntax, symbol)
+
+const hasRuntimeValueDeclaration = (syntax: SourceSyntax, symbol: string): boolean => {
+  const escaped = escapeRegExp(symbol)
+  const pattern = new RegExp(
+    runtimeValueDeclarationPattern(escaped, "(?:export\\s+(?:default\\s+)?)?"),
+    "gu",
+  )
+  for (const match of syntax.code.matchAll(pattern)) {
+    if (!hasAmbientDeclarePrefix(syntax.code, match.index ?? 0)) return true
+  }
+  return false
+}
+
+const hasExportedValueDeclaration = (syntax: SourceSyntax, symbol: string): boolean =>
+  hasDirectExportedValueDeclaration(syntax, symbol) ||
+  hasNamedExportedValueDeclaration(syntax, symbol)
+
+const hasDirectExportedValueDeclaration = (syntax: SourceSyntax, symbol: string): boolean => {
+  const escaped = escapeRegExp(symbol)
+  return new RegExp(
+    runtimeValueDeclarationPattern(escaped, "export\\s+(?:default\\s+)?"),
+    "u",
+  ).test(syntax.code)
+}
+
+const runtimeValueDeclarationPattern = (
+  escapedSymbol: string,
+  exportPrefixPattern: string,
+): string =>
+  [
+    `\\b(?!declare\\s)${exportPrefixPattern}(?!declare\\s)(?:`,
+    `(?:const|let|var|class|enum)\\s+${escapedSymbol}\\b`,
+    "|",
+    `(?:async\\s+)?function\\s*\\*?\\s+${escapedSymbol}\\b`,
+    ")",
+  ].join("")
+
+const hasAmbientDeclarePrefix = (content: string, matchIndex: number): boolean =>
+  /\bdeclare$/u.test(content.slice(0, matchIndex).trimEnd())
+
+const hasNamedExportedValueDeclaration = (syntax: SourceSyntax, symbol: string): boolean => {
+  const exportListPattern = /\bexport\s*\{([^}]*)\}/gu
+  for (const match of syntax.code.matchAll(exportListPattern)) {
+    const members = (match[1] ?? "").split(",")
+    for (const member of members) {
+      const parsed = parseExportMember(member)
+      if (parsed === undefined) continue
+      if (parsed.exported !== symbol && parsed.local !== symbol) continue
+      if (hasRuntimeValueDeclaration(syntax, parsed.local)) return true
+    }
+  }
+  return hasDefaultExportedLocalValue(syntax, symbol)
+}
+
+const parseExportMember = (
+  member: string,
+): { readonly local: string; readonly exported: string } | undefined => {
+  const normalized = member.trim()
+  if (/^type\s+/u.test(normalized)) return undefined
+  const aliased = /^([A-Za-z_$][\w$]*)\s+as\s+([A-Za-z_$][\w$]*)$/u.exec(normalized)
+  if (aliased !== null) return { local: aliased[1]!, exported: aliased[2]! }
+  const direct = /^([A-Za-z_$][\w$]*)$/u.exec(normalized)
+  if (direct !== null) return { local: direct[1]!, exported: direct[1]! }
+  return undefined
+}
+
+const hasDefaultExportedLocalValue = (syntax: SourceSyntax, symbol: string): boolean => {
+  const escaped = escapeRegExp(symbol)
+  return new RegExp(`\\bexport\\s+default\\s+${escaped}\\b`, "u").test(syntax.code) &&
+    hasRuntimeValueDeclaration(syntax, symbol)
+}
+
+interface ExportedClassShape {
+  readonly body: string
+  readonly isAbstract: boolean
+}
+
+const exportedClassShape = (
+  syntax: SourceSyntax,
+  symbol: string,
+): ExportedClassShape | undefined => {
+  const escaped = escapeRegExp(symbol)
+  const pattern = new RegExp(
+    `\\bexport\\s+(?:default\\s+)?(abstract\\s+)?class\\s+${escaped}\\b`,
+    "u",
+  )
+  const match = pattern.exec(syntax.code)
+  if (match === null) return undefined
+  const openBrace = findClassBodyOpenBrace(syntax.code, match.index + match[0].length)
+  if (openBrace === undefined) return undefined
+  const closeBrace = matchingBraceIndex(syntax.code, openBrace)
+  const body = closeBrace === undefined
+    ? syntax.code.slice(openBrace + 1)
+    : syntax.code.slice(openBrace + 1, closeBrace)
+  return { body, isAbstract: match[1] !== undefined }
+}
+
+const findClassBodyOpenBrace = (
+  content: string,
+  start: number,
+): number | undefined => {
+  let angleDepth = 0
+  let parenDepth = 0
+  let bracketDepth = 0
+  for (let index = start; index < content.length; index += 1) {
+    const char = content[index]
+    if (char === "<") {
+      angleDepth += 1
+      continue
+    }
+    if (char === ">" && angleDepth > 0) {
+      angleDepth -= 1
+      continue
+    }
+    if (angleDepth === 0) {
+      if (char === "(") {
+        parenDepth += 1
+        continue
+      }
+      if (char === ")" && parenDepth > 0) {
+        parenDepth -= 1
+        continue
+      }
+      if (char === "[") {
+        bracketDepth += 1
+        continue
+      }
+      if (char === "]" && bracketDepth > 0) {
+        bracketDepth -= 1
+        continue
+      }
+      if (char === "{" && parenDepth === 0 && bracketDepth === 0) return index
+    }
+    if (char === ";" && angleDepth === 0 && parenDepth === 0 && bracketDepth === 0) {
+      return undefined
+    }
+  }
+  return undefined
+}
+
+const topLevelClassMemberText = (body: string): string => {
+  let result = ""
+  let braceDepth = 0
+  for (let index = 0; index < body.length; index += 1) {
+    const char = body[index]
+    if (char === "{") {
+      result += " "
+      braceDepth += 1
+      continue
+    }
+    if (char === "}") {
+      if (braceDepth > 0) braceDepth -= 1
+      result += " "
+      continue
+    }
+    result += braceDepth === 0 ? char : " "
+  }
+  return result
+}
+
+const matchingBraceIndex = (content: string, openBrace: number): number | undefined => {
+  let depth = 0
+  for (let index = openBrace; index < content.length; index += 1) {
+    const char = content[index]
+    if (char === "{") depth += 1
+    if (char === "}") {
+      depth -= 1
+      if (depth === 0) return index
+    }
+  }
+  return undefined
+}
+
+const maskAmbientBlocks = (content: string): string => {
+  const result = content.split("")
+  const ambientBlockPattern = /\b(?:export\s+)?declare\s+(?:global|module|namespace)\b/gu
+  for (const match of content.matchAll(ambientBlockPattern)) {
+    const start = match.index ?? 0
+    const openBrace = content.indexOf("{", start + match[0].length)
+    if (openBrace === -1) continue
+    const closeBrace = matchingBraceIndex(content, openBrace)
+    const stop = closeBrace === undefined ? content.length : closeBrace + 1
+    for (let index = start; index < stop; index += 1) result[index] = " "
+  }
+  return result.join("")
+}
+
+const maskCommentsAndStrings = (content: string): string => {
+  let result = ""
+  for (let index = 0; index < content.length;) {
+    const char = content[index]
+    const next = content[index + 1]
+    if (char === "/" && next === "/") {
+      const end = content.indexOf("\n", index + 2)
+      const stop = end === -1 ? content.length : end
+      result += " ".repeat(stop - index)
+      index = stop
+      continue
+    }
+    if (char === "/" && next === "*") {
+      const end = content.indexOf("*/", index + 2)
+      const stop = end === -1 ? content.length : end + 2
+      result += " ".repeat(stop - index)
+      index = stop
+      continue
+    }
+    if (char === "\"" || char === "'" || char === "`") {
+      const stop = quotedLiteralEnd(content, index, char)
+      result += " ".repeat(stop - index)
+      index = stop
+      continue
+    }
+    if (char === "/" && isRegexLiteralStart(result)) {
+      const stop = regexLiteralEnd(content, index)
+      if (stop !== undefined) {
+        result += " ".repeat(stop - index)
+        index = stop
+        continue
+      }
+    }
+    result += char
+    index += 1
+  }
+  return result
+}
+
+const quotedLiteralEnd = (content: string, start: number, quote: string): number => {
+  for (let index = start + 1; index < content.length; index += 1) {
+    const char = content[index]
+    if (char === "\\") {
+      index += 1
+      continue
+    }
+    if (char === quote) return index + 1
+  }
+  return content.length
+}
+
+const regexLiteralEnd = (content: string, start: number): number | undefined => {
+  let inCharacterClass = false
+  for (let index = start + 1; index < content.length; index += 1) {
+    const char = content[index]
+    if (char === "\n" || char === "\r") return undefined
+    if (char === "\\") {
+      index += 1
+      continue
+    }
+    if (char === "[") {
+      inCharacterClass = true
+      continue
+    }
+    if (char === "]") {
+      inCharacterClass = false
+      continue
+    }
+    if (char === "/" && !inCharacterClass) {
+      let stop = index + 1
+      while (/[A-Za-z]/u.test(content[stop] ?? "")) stop += 1
+      return stop
+    }
+  }
+  return undefined
+}
+
+const isRegexLiteralStart = (maskedPrefix: string): boolean => {
+  const trimmed = maskedPrefix.trimEnd()
+  if (trimmed.length === 0) return true
+  const previous = trimmed.at(-1)
+  if (previous === undefined) return true
+  if ("([{=,:;!&|?+-*%^~<>".includes(previous)) return true
+  const match = /([A-Za-z_$][\w$]*)$/u.exec(trimmed)
+  return match !== null && REGEX_PREFIX_KEYWORDS.has(match[1]!)
+}
+
+const REGEX_PREFIX_KEYWORDS = new Set([
+  "case",
+  "delete",
+  "do",
+  "else",
+  "in",
+  "instanceof",
+  "of",
+  "return",
+  "throw",
+  "typeof",
+  "void",
+  "yield",
+])
 
 const makeFinding = (args: {
   readonly constructId: string
@@ -459,9 +868,6 @@ const sortJson = (value: unknown): unknown => {
   }
   return value
 }
-
-const symbolPattern = (symbol: string): RegExp =>
-  new RegExp(`\\b${escapeRegExp(symbol)}\\b`, "u")
 
 const escapeRegExp = (value: string): string =>
   value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")
