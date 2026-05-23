@@ -638,7 +638,33 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "ts-rp-01.test.ts: a real temp git repository runs through buildRegistry with SHARED_SIGNALS and TS_PACK_SIGNALS, TsProjectLayer, SignalContextTag, real TS-LD-01 complexity output, real SHARED-CHURN-01 git churn output, and the TS-RP-01 compound target.",
     },
   },
-  pendingSignalContract("TS-SL-01-duplication"),
+  {
+    id: "TS-SL-01-duplication",
+    status: "verified",
+    requiredEvidence: ["calibration"],
+    evidence: {
+      identity:
+        "ts-sl-01.test.ts: canonical id, alias, title, tier/category/kind, semantic cacheVersion, no-input contract, pack registration, registry alias lookup, and default config decoding are asserted.",
+      config:
+        "ts-sl-01.test.ts: configSchema decodes defaults; exclude_globs and test_globs are proven against real repos; min_tokens and top_n_diagnostics are floored, finite-safe, and cannot poison scoring or diagnostics.",
+      positiveFixture:
+        "ts-sl-01.test.ts: real ts-morph temp-repo fixtures detect exact duplicate functions, structural near-duplicates, production duplicates outside excluded roots, changed-hunk duplicates against whole-tree counterparts, and duplicated imperative branches.",
+      negativeFixture:
+        "ts-sl-01.test.ts: real fixtures prove examples/playgrounds, tests, generated files and headers, tiny schema/effect/jsx callbacks, object-literal request anchors, SVG/icon wrappers, AST predicate guards, and adapter wrappers do not create unsupported findings.",
+      applicability:
+        "ts-sl-01.test.ts: all-excluded repositories return totalFunctionsAnalyzed=0, score 1, no diagnostics, and not_applicable metadata; analyzed repositories with no duplicates score 1 without not_applicable metadata.",
+      score:
+        "ts-sl-01.test.ts: duplicate pressure lowers score, compatibility/migration/parallel path shapes are not deweighted by generic defaults, lower min_tokens and zero-impact duplicate groups cannot improve scores by denominator inflation, and non-finite config keeps finite scores.",
+      diagnostics:
+        "ts-sl-01.test.ts: diagnostics assert message counterparts, absolute file/line location, structured payload groupId/kind/tokenCount/members/structuralHash, deterministic ordering, positive-impact filtering, and finite-safe diagnostic caps.",
+      factorLedger:
+        "ts-sl-01.test.ts: registered pack signal emits config.exclude_globs, config.test_globs, config.min_tokens, and config.top_n_diagnostics factor-ledger entries with score roles.",
+      cacheSemantics:
+        "ts-sl-01.test.ts and pack.test.ts: wrapped pack cache version includes the TS-SL-01 semantic cacheVersion after exact-source grouping, hunk path normalization, generic default policy, limit normalization, not-applicable metadata, diagnostic sorting, and stable group-id semantics changed.",
+      calibration:
+        "ts-sl-01.test.ts: project-owned clone-group-policy processors and Pulsar self-calibration run through CalibrationContextTag, emit attribution decisions, can exclude integration clone groups, and alter score pressure only through explicit policy output.",
+    },
+  },
   pendingSignalContract("TS-SL-03-suppressions"),
   pendingSignalContract("TS-SL-04-unfinished-implementations"),
   pendingSignalContract("TS-RP-02-pr-size"),
