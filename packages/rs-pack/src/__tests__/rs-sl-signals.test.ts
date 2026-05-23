@@ -922,7 +922,7 @@ describe("RS-SL-* signals", () => {
       tier: 1,
       category: "generated-slop",
       kind: "legibility",
-      cacheVersion: "advisory-density-scaled-cfg-test-gating-diagnostics-denominator-v4",
+      cacheVersion: "advisory-density-scaled-cfg-test-gating-diagnostics-denominator-ufcs-v5",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -1016,6 +1016,45 @@ describe("RS-SL-* signals", () => {
         density: 1,
       })
       expect(RsSl03.diagnose(out)[0]?.severity).toBe("warn")
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-SL-03 detects method and UFCS unwrap expect calls without syntax false positives", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-sl03-ufcs-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "panic-ufcs"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "macro_rules! unwrap { () => {}; }",
+        "pub fn calls(value: Option<u32>, result: Result<u32, String>) {",
+        "    let _ = value.unwrap();",
+        "    let _ = Option::unwrap(Some(1));",
+        "    let _ = Result::expect(result, \"ready\");",
+        "    let _word = \"unwrap expect\";",
+        "    unwrap!();",
+        "}",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const out = await runSignalCompute(RsSl03, repo, RsSl03.defaultConfig)
+
+      expect(out.totalCalls).toBe(3)
+      expect(out.analyzedFunctionCount).toBe(1)
+      expect(out.modules[0]).toMatchObject({
+        unwrapExpectCalls: 3,
+        density: 3,
+      })
+      expect(RsSl03.diagnose(out)[0]).toMatchObject({
+        message: "panic-ufcs::crate contains 3 unwrap/expect call sites",
+      })
     } finally {
       await cleanupWorkspace(repo)
     }

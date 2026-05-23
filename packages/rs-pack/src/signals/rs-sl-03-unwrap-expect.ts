@@ -11,7 +11,7 @@ import {
 } from "@skastr0/pulsar-core/factors"
 import { Effect, Schema } from "effect"
 import { RustProjectTag } from "../project.js"
-import { parseRustFile } from "../syn-walker.js"
+import { parseRustFile, type RustSyntaxNode } from "../syn-walker.js"
 import {
   DEFAULT_RUST_EXCLUDE_GLOBS,
   modulePathForAncestors,
@@ -74,7 +74,7 @@ export const RsSl03: Signal<RsSl03Config, RsSl03Output, RustProjectTag> = {
   tier: 1,
   category: "generated-slop",
   kind: "legibility",
-  cacheVersion: "advisory-density-scaled-cfg-test-gating-diagnostics-denominator-v4",
+  cacheVersion: "advisory-density-scaled-cfg-test-gating-diagnostics-denominator-ufcs-v5",
   configSchema: RsSl03Config,
   factorDefinitions: RsSl03FactorDefinitions,
   defaultConfig: {
@@ -99,16 +99,14 @@ export const RsSl03: Signal<RsSl03Config, RsSl03Output, RustProjectTag> = {
             const tree = await parseRustFile(file)
             walkAttributedNodes(tree.rootNode, ({ node, ancestors, testGated }) => {
               if (testGated) return
-              const fieldExpression = namedChildrenOf(node)[0]
               const { modulePath } = modulePathForAncestors(scope, ancestors)
               if (node.type === "function_item") {
                 functionCounts.set(modulePath, (functionCounts.get(modulePath) ?? 0) + 1)
                 return
               }
               if (node.type !== "call_expression") return
-              if (fieldExpression?.type !== "field_expression") return
-              const methodName = namedChildrenOf(fieldExpression).at(-1)?.text
-              if (methodName !== "unwrap" && methodName !== "expect") return
+              const callName = unwrapExpectCallName(node)
+              if (callName === undefined) return
               const current = callCounts.get(modulePath) ?? { file, count: 0 }
               current.count += 1
               callCounts.set(modulePath, current)
@@ -202,3 +200,18 @@ const makeRsSl03FactorLedger = (): SignalFactorLedger =>
       }),
     ),
   )
+
+const unwrapExpectCallName = (node: RustSyntaxNode): "unwrap" | "expect" | undefined => {
+  const callee = namedChildrenOf(node)[0]
+  if (callee === undefined) return undefined
+  if (callee.type === "field_expression") {
+    return unwrapExpectName(namedChildrenOf(callee).at(-1)?.text)
+  }
+  if (callee.type === "scoped_identifier" || callee.type === "generic_function") {
+    return unwrapExpectName(callee.text.split("::").at(-1))
+  }
+  return undefined
+}
+
+const unwrapExpectName = (name: string | undefined): "unwrap" | "expect" | undefined =>
+  name === "unwrap" || name === "expect" ? name : undefined
