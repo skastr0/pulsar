@@ -1,7 +1,13 @@
 import {
+  makeFactorEntry,
+  makeFactorLedger,
+  type SignalFactorLedger,
+} from "@skastr0/pulsar-core/factors"
+import {
   type Diagnostic,
   scoreThresholdViolationShare,
   type Signal,
+  type SignalFactorDefinition,
   SignalComputeError,
 } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
@@ -42,8 +48,28 @@ interface RsAb01Output {
   readonly exportedApiItems: ReadonlyArray<UnusedPublicItem>
   readonly nonLibraryPublicItems: ReadonlyArray<UnusedPublicItem>
   readonly publicItemCount: number
+  readonly diagnosticLimit: number
   readonly analysisMode: "explicit-use-and-reexport-resolution"
 }
+
+const DEFAULT_TOP_N_DIAGNOSTICS = 20
+
+const RsAb01FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
+  {
+    path: "config.exclude_globs",
+    title: "Config exclude globs",
+    valueKind: "array",
+    scoreRole: "evidence",
+    defaultValue: [...DEFAULT_RUST_EXCLUDE_GLOBS],
+  },
+  {
+    path: "config.top_n_diagnostics",
+    title: "Config top n diagnostics",
+    valueKind: "number",
+    scoreRole: "metadata",
+    defaultValue: DEFAULT_TOP_N_DIAGNOSTICS,
+  },
+]
 
 export const RsAb01: Signal<RsAb01Config, RsAb01Output, RustProjectTag> = {
   id: "RS-AB-01-unused-public-items",
@@ -52,18 +78,20 @@ export const RsAb01: Signal<RsAb01Config, RsAb01Output, RustProjectTag> = {
   tier: 1,
   category: "abstraction-bloat",
   kind: "structural",
-  cacheVersion: "rs-ab-01-public-surface-use-segments-aliases-v4",
+  cacheVersion: "rs-ab-01-public-surface-use-segments-aliases-diagnostics-v5",
   configSchema: RsAb01Config,
+  factorDefinitions: RsAb01FactorDefinitions,
   defaultConfig: {
     exclude_globs: [...DEFAULT_RUST_EXCLUDE_GLOBS],
-    top_n_diagnostics: 20,
+    top_n_diagnostics: DEFAULT_TOP_N_DIAGNOSTICS,
   },
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
+      const normalizedConfig = normalizeRsAb01Config(config)
       const project = yield* RustProjectTag
       return yield* Effect.tryPromise({
-        try: () => computeUnusedPublicItems(project, config),
+        try: () => computeUnusedPublicItems(project, normalizedConfig),
         catch: (cause) =>
           new SignalComputeError({ signalId: "RS-AB-01-unused-public-items", message: String(cause), cause }),
       })
@@ -72,7 +100,7 @@ export const RsAb01: Signal<RsAb01Config, RsAb01Output, RustProjectTag> = {
     return scoreThresholdViolationShare(out.publicItemCount, out.deadPublicItems.length)
   },
   diagnose: (out): ReadonlyArray<Diagnostic> =>
-    out.deadPublicItems.slice(0, 20).map((item) => ({
+    out.deadPublicItems.slice(0, out.diagnosticLimit).map((item) => ({
       severity: "warn" as const,
       message: `Public ${item.kind} ${item.name} is not referenced from other workspace crates`,
       location: { file: item.file, line: item.line },
@@ -85,11 +113,31 @@ export const RsAb01: Signal<RsAb01Config, RsAb01Output, RustProjectTag> = {
         analysisMode: out.analysisMode,
       },
     })),
+  factorLedger: () => makeRsAb01FactorLedger(),
 }
+
+type NormalizedRsAb01Config = RsAb01Config
+
+const normalizeRsAb01Config = (config: RsAb01Config): NormalizedRsAb01Config => ({
+  exclude_globs: config.exclude_globs,
+  top_n_diagnostics: Number.isFinite(config.top_n_diagnostics)
+    ? Math.max(0, Math.floor(config.top_n_diagnostics))
+    : 0,
+})
+
+const makeRsAb01FactorLedger = (): SignalFactorLedger =>
+  makeFactorLedger(
+    "RS-AB-01-unused-public-items",
+    RsAb01FactorDefinitions.map((definition) =>
+      makeFactorEntry(definition, definition.defaultValue ?? null, {
+        source: "signal-default",
+      }),
+    ),
+  )
 
 const computeUnusedPublicItems = async (
   project: RustProject,
-  config: RsAb01Config,
+  config: NormalizedRsAb01Config,
 ): Promise<RsAb01Output> => {
   const facts = await collectRustProjectFacts(project)
   const workspaceCrates = collectWorkspaceCrates(project)
@@ -130,6 +178,7 @@ const computeUnusedPublicItems = async (
       publicSummaries.filter((item) => item.surface === "non-library"),
     ),
     publicItemCount: publicItems.length,
+    diagnosticLimit: config.top_n_diagnostics,
     analysisMode: "explicit-use-and-reexport-resolution",
   }
 }

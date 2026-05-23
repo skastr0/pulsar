@@ -164,6 +164,62 @@ describe("RS-AB-* signals", () => {
     }
   })
 
+  test("RS-AB-01 normalizes diagnostic caps and classifies config factors", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-ab01-diagnostics-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "unused-public"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "mod internal {",
+        "    pub struct Alpha;",
+        "    pub struct Beta;",
+        "    pub struct Gamma;",
+        "}",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const capped = await runSignalCompute(
+        RsAb01,
+        repo,
+        { ...RsAb01.defaultConfig, top_n_diagnostics: 1.8 },
+      )
+      const hidden = await runSignalCompute(
+        RsAb01,
+        repo,
+        { ...RsAb01.defaultConfig, top_n_diagnostics: Number.NaN },
+      )
+      const factorLedger = RsAb01.factorLedger?.(capped)
+
+      expect(capped.diagnosticLimit).toBe(1)
+      expect(RsAb01.diagnose(capped)).toHaveLength(1)
+      expect(RsAb01.diagnose(capped)[0]?.data?.name).toBe("Alpha")
+      expect(hidden.diagnosticLimit).toBe(0)
+      expect(RsAb01.diagnose(hidden)).toHaveLength(0)
+      expect(factorLedger?.entries).toContainEqual(
+        expect.objectContaining({
+          path: "config.exclude_globs",
+          affectsScore: true,
+          scoreRole: "evidence",
+        }),
+      )
+      expect(factorLedger?.entries).toContainEqual(
+        expect.objectContaining({
+          path: "config.top_n_diagnostics",
+          affectsScore: false,
+          scoreRole: "metadata",
+        }),
+      )
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
   test("RS-AB-02 measures local trait-object call-chain depth", async () => {
     const repo = await createRustWorkspace("pulsar-rs-ab02-", {
       "Cargo.toml": [
