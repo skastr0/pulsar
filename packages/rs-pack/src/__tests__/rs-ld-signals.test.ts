@@ -1240,7 +1240,7 @@ describe("RS-LD-* signals", () => {
       tier: 1,
       category: "legibility-decay",
       kind: "legibility",
-      cacheVersion: "match-catch-all-config-applicability-diagnostics-v1",
+      cacheVersion: "match-catch-all-config-applicability-diagnostics-cfg-test-v2",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -1357,6 +1357,52 @@ describe("RS-LD-* signals", () => {
       await cleanupWorkspace(clean)
       await cleanupWorkspace(oneOver)
       await cleanupWorkspace(twoOver)
+    }
+  })
+
+  test("RS-LD-03 excludes cfg-test-gated match expressions", async () => {
+    const repo = await createMatchWorkspace("cfg", {
+      "src/lib.rs": [
+        "pub fn production(value: u8) -> u8 {",
+        "    match value {",
+        "        0 => 0,",
+        "        1 => 1,",
+        "        2 => 2,",
+        "    }",
+        "}",
+        "",
+        "#[cfg(test)]",
+        "pub fn test_only(value: u8) -> u8 {",
+        "    match value {",
+        "        0 => 0,",
+        "        _ => 1,",
+        "    }",
+        "}",
+        "",
+        "#[cfg(any(test, feature = \"probe\"))]",
+        "pub fn composite_test_only(value: u8) -> u8 {",
+        "    match value {",
+        "        0 => 0,",
+        "        _ => 1,",
+        "    }",
+        "}",
+      ],
+    })
+
+    try {
+      const out = await runSignalCompute(RsLd03, repo, RsLd03.defaultConfig)
+
+      expect(out.sourceFileCount).toBe(1)
+      expect(out.analyzedSourceFileCount).toBe(1)
+      expect(out.totalMatches).toBe(1)
+      expect(out.matchesWithCatchAll).toBe(0)
+      expect(out.totalCatchAllArms).toBe(0)
+      expect(out.matchSites.map((site) => site.functionName)).toEqual(["production"])
+      expect(RsLd03.score(out)).toBe(1)
+      expect(RsLd03.outputMetadata?.(out)).toBeUndefined()
+      expect(RsLd03.diagnose(out)).toEqual([])
+    } finally {
+      await cleanupWorkspace(repo)
     }
   })
 

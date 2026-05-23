@@ -11,8 +11,15 @@ import {
 } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
 import { collectRustProjectFacts } from "../rust-analysis.js"
-import { RustProjectTag } from "../project.js"
-import { DEFAULT_RUST_EXCLUDE_GLOBS } from "./shared-rust-ast.js"
+import { type RustProject, RustProjectTag } from "../project.js"
+import { parseRustFile } from "../syn-walker.js"
+import {
+  DEFAULT_RUST_EXCLUDE_GLOBS,
+  firstNamedChild,
+  modulePathForAncestors,
+  resolveRustFileScope,
+  walkAttributedNodes,
+} from "./shared-rust-ast.js"
 import { isExcluded, matchesAnyGlob } from "./shared-globs.js"
 
 const RsLd03Config = Schema.Struct({
@@ -80,7 +87,7 @@ export const RsLd03: Signal<RsLd03Config, RsLd03Output, RustProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "match-catch-all-config-applicability-diagnostics-v1",
+  cacheVersion: "match-catch-all-config-applicability-diagnostics-cfg-test-v2",
   configSchema: RsLd03Config,
   factorDefinitions: RsLd03FactorDefinitions,
   defaultConfig: {
@@ -103,8 +110,12 @@ export const RsLd03: Signal<RsLd03Config, RsLd03Output, RustProjectTag> = {
                 matchesAnyGlob(file, normalizedConfig.core_logic_globs)),
           )
           const analyzedSourceFileSet = new Set(analyzedSourceFiles)
+          const activeMatchKeys = await collectActiveMatchKeys(project, analyzedSourceFiles)
           const matchSites = facts.matches
-            .filter((site) => analyzedSourceFileSet.has(site.file))
+            .filter((site) =>
+              analyzedSourceFileSet.has(site.file) &&
+              activeMatchKeys.has(matchSiteKey(site))
+            )
             .map((site) => ({
               file: site.file,
               module: site.modulePath,
@@ -199,3 +210,36 @@ const makeRsLd03FactorLedger = (): SignalFactorLedger =>
 
 const ratio = (numerator: number, denominator: number): number =>
   denominator === 0 ? 0 : numerator / denominator
+
+const collectActiveMatchKeys = async (
+  project: RustProject,
+  analyzedSourceFiles: ReadonlyArray<string>,
+): Promise<ReadonlySet<string>> => {
+  const keys = new Set<string>()
+  for (const file of analyzedSourceFiles) {
+    const scope = resolveRustFileScope(project, file)
+    const tree = await parseRustFile(file)
+    walkAttributedNodes(tree.rootNode, ({ node, ancestors, testGated }) => {
+      if (testGated || node.type !== "match_expression") return
+      const functionNode = [...ancestors].reverse().find((ancestor) => ancestor.type === "function_item")
+      const functionName = functionNode === undefined
+        ? "<unknown>"
+        : firstNamedChild(functionNode, "identifier")?.text ?? "<anonymous>"
+      const { modulePath } = modulePathForAncestors(scope, ancestors)
+      keys.add(matchSiteKey({
+        file,
+        modulePath,
+        functionName,
+        line: node.startPosition.row + 1,
+      }))
+    })
+  }
+  return keys
+}
+
+const matchSiteKey = (site: {
+  readonly file: string
+  readonly modulePath: string
+  readonly functionName: string
+  readonly line: number
+}): string => `${site.file}:${site.line}:${site.modulePath}::${site.functionName}`
