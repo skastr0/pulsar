@@ -113,6 +113,51 @@ describe("TS-LD-07 (unsafe type erosion)", () => {
     }
   })
 
+  test("diagnostic cap is sanitized before selecting occurrences", async () => {
+    await setup()
+    try {
+      await repo.write(
+        "src/contracts.ts",
+        [
+          "export interface PublicPayload {",
+          "  readonly raw: any",
+          "}",
+          "export function handle(payload: any): any {",
+          "  const scratch: any = payload",
+          "  return scratch",
+          "}",
+          "",
+        ].join("\n"),
+      )
+
+      const fractional = await runSignal(repo.root, TsLd07, {
+        ...TsLd07.defaultConfig,
+        top_n_diagnostics: 1.9,
+      })
+      expect(fractional.diagnosticLimit).toBe(1)
+      expect(fractional.topOccurrences).toHaveLength(1)
+      expect(TsLd07.diagnose(fractional)).toHaveLength(1)
+
+      const negative = await runSignal(repo.root, TsLd07, {
+        ...TsLd07.defaultConfig,
+        top_n_diagnostics: -1,
+      })
+      expect(negative.diagnosticLimit).toBe(0)
+      expect(negative.topOccurrences).toEqual([])
+      expect(TsLd07.diagnose(negative)).toEqual([])
+
+      const nonFinite = await runSignal(repo.root, TsLd07, {
+        ...TsLd07.defaultConfig,
+        top_n_diagnostics: Number.NaN,
+      })
+      expect(nonFinite.diagnosticLimit).toBe(0)
+      expect(nonFinite.topOccurrences).toEqual([])
+      expect(TsLd07.diagnose(nonFinite)).toEqual([])
+    } finally {
+      await cleanup()
+    }
+  })
+
   test("path names do not promote unsafe types to boundary evidence", async () => {
     await setup()
     try {

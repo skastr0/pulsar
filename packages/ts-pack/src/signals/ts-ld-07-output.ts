@@ -15,6 +15,7 @@ export const buildUnsafeTypeOutput = (
   config: TsLd07Config,
   calibrationDecisions: ReadonlyArray<CalibrationDecision> = [],
 ): TsLd07Output => {
+  const diagnosticLimit = normalizeDiagnosticLimit(config.top_n_diagnostics)
   const weightedUnsafe = occurrences.reduce((sum, occurrence) => sum + occurrence.weight, 0)
   const boundaryOccurrences = occurrences.filter((occurrence) => occurrence.boundary).length
   const boundaryWeightedUnsafe = occurrences.reduce(
@@ -27,7 +28,7 @@ export const buildUnsafeTypeOutput = (
   return {
     byFile,
     occurrences,
-    topOccurrences: occurrences.slice(0, config.top_n_diagnostics),
+    topOccurrences: occurrences.slice(0, diagnosticLimit),
     calibrationDecisions,
     totalOccurrences: occurrences.length,
     boundaryOccurrences,
@@ -43,7 +44,7 @@ export const buildUnsafeTypeOutput = (
     ),
     densityThreshold: config.max_weighted_unsafe_per_kloc,
     boundaryThreshold: config.max_boundary_weighted_unsafe,
-    diagnosticLimit: config.top_n_diagnostics,
+    diagnosticLimit,
   }
 }
 
@@ -75,3 +76,6 @@ export const compareUnsafeOccurrences = (
 
 const thresholdPressure = (value: number, threshold: number): number =>
   threshold <= 0 ? 0 : value / threshold
+
+const normalizeDiagnosticLimit = (limit: number): number =>
+  Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 0
