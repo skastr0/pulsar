@@ -561,7 +561,30 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "ts-ld-07.test.ts: unsafe-type-policy calibration records decisions, deweights deliberate existential unsafe types, changes severity/boundary/weight, and preserves policy attribution on occurrences.",
     },
   },
-  pendingSignalContract("TS-LD-08-exhaustiveness-erosion"),
+  {
+    id: "TS-LD-08-exhaustiveness-erosion",
+    status: "verified",
+    evidence: {
+      identity:
+        "ts-ld-08.test.ts: canonical id, alias, title, tier/category/kind, no compound inputs, semantic cacheVersion, pack registration, registry alias lookup, and default config decoding are asserted.",
+      config:
+        "ts-ld-08.test.ts: configSchema decodes defaults; factor-ledger assertions cover exclude_globs, min_case_clauses, and top_n_diagnostics; threshold and diagnostics-cap tests cover min-case and sanitized cap behavior.",
+      positiveFixture:
+        "ts-ld-08.test.ts: real TsProject fixtures flag finite literal-union and enum switches with catch-all defaults, including source facts for expression, type text, case count, variant count, handled/unhandled variants, location, and default text.",
+      negativeFixture:
+        "ts-ld-08.test.ts: real fixtures prove open string, boolean, and partially open union switches are not finite exhaustiveness evidence, complete switches without defaults stay healthy, explicit assertNever/satisfies-never/never-assignment defaults are accepted, never casts do not suppress findings, and default/custom excluded files are ignored.",
+      applicability:
+        "ts-ld-08.test.ts: repositories with no switches or only non-finite/excluded switches return neutral score, no diagnostics, and not_applicable metadata; finite healthy switches stay applicable.",
+      score:
+        "ts-ld-08.test.ts: multi-finding fixtures assert the exact score formula 1 / (1 + findingCount / 10), while no-finding and threshold-below-min cases score 1.",
+      diagnostics:
+        "ts-ld-08.test.ts: diagnostics assert warn severity, message text, file/line/column locations, payload data, deterministic ordering by case count/unhandled variants/file/line/column, defaultText truncation, and finite-safe top_n_diagnostics caps.",
+      factorLedger:
+        "ts-ld-08.test.ts: registered pack signal emits config.exclude_globs, config.min_case_clauses, and config.top_n_diagnostics factor-ledger entries with score roles.",
+      cacheSemantics:
+        "ts-ld-08.test.ts and pack.test.ts: wrapped pack cache version includes the TS-LD-08 semantic cacheVersion after finite-domain gating, never-guard recognition, diagnostic-limit, and exclusion semantics changed.",
+    },
+  },
   pendingSignalContract("TS-LD-09-error-channel-opacity"),
   pendingSignalContract("TS-RP-01-hotspots"),
   pendingSignalContract("TS-SL-01-duplication"),
