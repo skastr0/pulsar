@@ -11,6 +11,7 @@ import {
   cleanupWorkspace,
   createRustWorkspace,
   runSignalCompute,
+  runSignalComputeWithContext,
 } from "./helpers.js"
 
 describe("RS-SL-* signals", () => {
@@ -49,7 +50,7 @@ describe("RS-SL-* signals", () => {
       tier: 1,
       category: "generated-slop",
       kind: "legibility",
-      cacheVersion: "advisory-rust-duplication-cfg-test-diagnostics-v3",
+      cacheVersion: "advisory-rust-duplication-cfg-test-diagnostics-changed-hunks-v4",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -121,8 +122,8 @@ describe("RS-SL-* signals", () => {
         kind: "structural" as const,
         tokenCount: 12,
         members: [
-          { file: "src/lib.rs", module: "crate", name: `getter_${index}`, line: index + 1 },
-          { file: "src/lib.rs", module: "crate", name: `accessor_${index}`, line: index + 101 },
+          { file: "src/lib.rs", module: "crate", name: `getter_${index}`, line: index + 1, changed: false },
+          { file: "src/lib.rs", module: "crate", name: `accessor_${index}`, line: index + 101, changed: false },
         ],
       })),
       scopeMode: "whole-tree",
@@ -148,8 +149,8 @@ describe("RS-SL-* signals", () => {
         kind: "exact" as const,
         tokenCount: 12,
         members: [
-          { file: "src/lib.rs", module: "crate", name: `helper_${index}`, line: index + 1 },
-          { file: "src/lib.rs", module: "crate", name: `helper_copy_${index}`, line: index + 101 },
+          { file: "src/lib.rs", module: "crate", name: `helper_${index}`, line: index + 1, changed: false },
+          { file: "src/lib.rs", module: "crate", name: `helper_copy_${index}`, line: index + 101, changed: false },
         ],
       })),
       scopeMode: "whole-tree",
@@ -292,6 +293,64 @@ describe("RS-SL-* signals", () => {
       await cleanupWorkspace(missing)
       await cleanupWorkspace(noFunctions)
       await cleanupWorkspace(excluded)
+    }
+  })
+
+  test("RS-SL-01 changed-hunk scope keeps unchanged duplicate evidence", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-sl01-changed-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "dup-changed"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub fn existing(input: i32) -> i32 {",
+        "    if input > 10 { input + 1 } else { input - 1 }",
+        "}",
+        "",
+        "pub fn changed(value: i32) -> i32 {",
+        "    if value > 10 { value + 1 } else { value - 1 }",
+        "}",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const out = await runSignalComputeWithContext(
+        RsSl01,
+        repo,
+        RsSl01.defaultConfig,
+        {
+          gitSha: "HEAD",
+          worktreePath: repo,
+          changedHunks: [{ file: "src/lib.rs", newStart: 5, newLines: 3 }],
+        },
+      )
+      const group = out.groups.find((item) => item.kind === "structural")
+
+      expect(out.scopeMode).toBe("changed-hunks")
+      expect(group?.members.map((member) => ({
+        name: member.name,
+        changed: member.changed,
+      }))).toEqual([
+        { name: "existing", changed: false },
+        { name: "changed", changed: true },
+      ])
+      expect(RsSl01.diagnose(out)[0]).toMatchObject({
+        severity: "info",
+        message: "structural duplicate group with 2 functions",
+        data: expect.objectContaining({
+          scopeMode: "changed-hunks",
+          members: expect.arrayContaining([
+            expect.objectContaining({ name: "existing", changed: false }),
+            expect.objectContaining({ name: "changed", changed: true }),
+          ]),
+        }),
+      })
+    } finally {
+      await cleanupWorkspace(repo)
     }
   })
 

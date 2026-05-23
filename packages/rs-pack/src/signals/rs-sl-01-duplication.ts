@@ -35,6 +35,7 @@ interface DuplicateGroupMember {
   readonly module: string
   readonly name: string
   readonly line: number
+  readonly changed: boolean
 }
 
 interface DuplicateGroup {
@@ -95,7 +96,7 @@ export const RsSl01: Signal<RsSl01Config, RsSl01Output, RustProjectTag | SignalC
   tier: 1,
   category: "generated-slop",
   kind: "legibility",
-  cacheVersion: "advisory-rust-duplication-cfg-test-diagnostics-v3",
+  cacheVersion: "advisory-rust-duplication-cfg-test-diagnostics-changed-hunks-v4",
   configSchema: RsSl01Config,
   factorDefinitions: RsSl01FactorDefinitions,
   defaultConfig: {
@@ -129,17 +130,13 @@ export const RsSl01: Signal<RsSl01Config, RsSl01Output, RustProjectTag | SignalC
               if (testGated || node.type !== "function_item") return
               const startLine = node.startPosition.row + 1
               const endLine = node.endPosition.row + 1
-              if (
-                !lineRangeOverlapsChangedHunks(
-                  file,
-                  startLine,
-                  endLine,
-                  context.worktreePath,
-                  context.changedHunks,
-                )
-              ) {
-                return
-              }
+              const changed = lineRangeOverlapsChangedHunks(
+                file,
+                startLine,
+                endLine,
+                context.worktreePath,
+                context.changedHunks,
+              )
 
               const structuralTokens = tokenizeStructural(node.text)
               if (structuralTokens.length < normalizedConfig.min_tokens) return
@@ -153,13 +150,17 @@ export const RsSl01: Signal<RsSl01Config, RsSl01Output, RustProjectTag | SignalC
                   module: modulePath,
                   name: firstNamedChild(node, "identifier")?.text ?? "<anonymous>",
                   line: startLine,
+                  changed,
                 },
               })
             })
           }
 
-          const exactGroups = buildGroups(functions, "exact")
-          const structuralGroups = buildGroups(functions, "structural").filter((group) => {
+          const exactGroups = filterGroupsForScope(
+            buildGroups(functions, "exact"),
+            context.changedHunks.length > 0,
+          )
+          const structuralGroups = filterGroupsForScope(buildGroups(functions, "structural"), context.changedHunks.length > 0).filter((group) => {
             const exactVariants = new Set(
               group.members.map((member) =>
                 functions.find(
@@ -292,6 +293,14 @@ const buildGroups = (
       members: group.map((entry) => entry.member),
     }))
 }
+
+const filterGroupsForScope = (
+  groups: ReadonlyArray<DuplicateGroup>,
+  changedHunksOnly: boolean,
+): ReadonlyArray<DuplicateGroup> =>
+  changedHunksOnly
+    ? groups.filter((group) => group.members.some((member) => member.changed))
+    : groups
 
 const normalizeExact = (source: string): string => source.replace(/\s+/g, " ").trim()
 
