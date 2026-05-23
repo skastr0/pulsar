@@ -665,7 +665,33 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "ts-sl-01.test.ts: project-owned clone-group-policy processors and Pulsar self-calibration run through CalibrationContextTag, emit attribution decisions, can exclude integration clone groups, and alter score pressure only through explicit policy output.",
     },
   },
-  pendingSignalContract("TS-SL-03-suppressions"),
+  {
+    id: "TS-SL-03-suppressions",
+    status: "verified",
+    requiredEvidence: ["gitContext"],
+    evidence: {
+      identity:
+        "ts-sl-03.test.ts: canonical id, alias, title, tier/category/kind, semantic cacheVersion, no-input contract, pack registration, registry alias lookup, and default config decoding are asserted.",
+      config:
+        "ts-sl-03.test.ts: configSchema decodes defaults; exclude_globs and test_globs are proven against real repos; top_n_diagnostics is floored, finite-safe, and cannot poison score or diagnostics.",
+      positiveFixture:
+        "ts-sl-03.test.ts: real ts-morph temp-repo fixtures detect missing @ts-ignore, @ts-expect-error, eslint-disable, expired bypasses, and production suppressions outside excluded roots.",
+      negativeFixture:
+        "ts-sl-03.test.ts: real fixtures prove active bypasses, inline justifications, contextual comments, adjacent JSDoc, ban-ts-comment bridge suppressions, and directive-like string/comment text are classified correctly; generic defaults do not auto-justify Pulumi metadata or trace/no-console suppressions without explicit explanation.",
+      applicability:
+        "ts-sl-03.test.ts: analyzed repositories with no suppressions score 1 without not_applicable metadata; all-excluded generated/test/example/type-test repositories return zero suppressions, score 1, and not_applicable metadata.",
+      score:
+        "ts-sl-03.test.ts: missing and expired suppressions lower score, changed-hunk scoring stays stricter, whole-tree score remains density-aware without collapsing to zero, and invalid diagnostic config keeps finite scores.",
+      diagnostics:
+        "ts-sl-03.test.ts: diagnostics assert severity, precise suppression wording, absolute file/line location, structured payload kind/rule/justification/source/ticket/hash, expired-block before missing-warn before active-info ordering, deterministic output, and finite-safe diagnostic caps.",
+      factorLedger:
+        "ts-sl-03.test.ts: registered pack signal emits config.exclude_globs, config.test_globs, and config.top_n_diagnostics factor-ledger entries with default values and score roles.",
+      cacheSemantics:
+        "ts-sl-03.test.ts and pack.test.ts: wrapped pack cache version includes the TS-SL-03 semantic cacheVersion after comment-directive parsing, target-line hunk detection, root-independent diagnostic hashes, generic default justification semantics, diagnostic-limit normalization, hunk path normalization, deterministic ordering, and applicability metadata changed.",
+      gitContext:
+        "ts-sl-03.test.ts: changed-hunk fixtures run through TsProjectLayer and SignalContextTag, proving only changed suppressions are reported and dot-relative hunk paths resolve to the real source file.",
+    },
+  },
   pendingSignalContract("TS-SL-04-unfinished-implementations"),
   pendingSignalContract("TS-RP-02-pr-size"),
   pendingSignalContract("TS-SL-02-inconsistent-clones"),
