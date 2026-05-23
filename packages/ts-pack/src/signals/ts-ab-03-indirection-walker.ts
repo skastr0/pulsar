@@ -3,6 +3,7 @@ import {
   type ClassDeclaration,
   type EnumDeclaration,
   type ExpressionWithTypeArguments,
+  type ImportTypeNode,
   type InterfaceDeclaration,
   type SourceFile,
   type TypeAliasDeclaration,
@@ -11,6 +12,7 @@ import {
 import {
   STANDARD_UTILITY_TYPE_ALIASES,
   declarationKey,
+  resolveReferenceLikeDeclarations,
   resolveReferenceLikeName,
 } from "./shared-type-analysis.js"
 
@@ -173,9 +175,15 @@ const measureTypeNode = (node: TypeNode, context: WalkContext): DepthResult => {
     )
   }
   if (Node.isImportTypeNode(node)) {
+    const aliasDeclaration = resolveAliasDeclaration(node, context)
     return layerResult(
       "<import-type>",
-      node.getTypeArguments().map((typeArg) => measureTypeNode(typeArg, stepContext(context))),
+      [
+        ...(aliasDeclaration === undefined
+          ? []
+          : [measureAliasDeclaration(aliasDeclaration, stepContext(context))]),
+        ...node.getTypeArguments().map((typeArg) => measureTypeNode(typeArg, stepContext(context))),
+      ],
     )
   }
   if (Node.isTypeQuery(node)) {
@@ -193,7 +201,7 @@ const measureTypeReference = (
   context: WalkContext,
 ): DepthResult => {
   const name = resolveReferenceLikeName(node)
-  const aliasDeclaration = context.localAliases.get(name)
+  const aliasDeclaration = resolveAliasDeclaration(node, context)
   if (aliasDeclaration !== undefined) {
     return measureAliasDeclaration(aliasDeclaration, stepContext(context))
   }
@@ -207,6 +215,15 @@ const measureTypeReference = (
   }
 
   return deepestResult(typeArgumentResults)
+}
+
+const resolveAliasDeclaration = (
+  node: import("ts-morph").TypeReferenceNode | ImportTypeNode | ExpressionWithTypeArguments,
+  context: WalkContext,
+): TypeAliasDeclaration | undefined => {
+  const localAlias = context.localAliases.get(resolveReferenceLikeName(node))
+  if (localAlias !== undefined) return localAlias
+  return resolveReferenceLikeDeclarations(node).find(Node.isTypeAliasDeclaration)
 }
 
 const layerResult = (label: string, results: ReadonlyArray<DepthResult>): DepthResult => {
