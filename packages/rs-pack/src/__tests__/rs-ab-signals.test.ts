@@ -706,7 +706,7 @@ describe("RS-AB-* signals", () => {
       tier: 1,
       category: "abstraction-bloat",
       kind: "legibility",
-      cacheVersion: "trait-object-depth-config-applicability-diagnostics-scoped-calls-cfg-test-gating-v3",
+      cacheVersion: "trait-object-depth-config-applicability-diagnostics-scoped-calls-cfg-test-gating-cycles-v4",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -1077,6 +1077,41 @@ describe("RS-AB-* signals", () => {
       expect(out.functions.find((entry) => entry.name === "ordinary")?.chainDepth).toBe(2)
       expect(out.functions.some((entry) => entry.name === "test_or_probe")).toBe(false)
       expect(out.functions.some((entry) => entry.name === "test_and_probe")).toBe(false)
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-AB-02 keeps recursive cycles from inflating finite chain depth", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-ab02-cycles-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "trait-object-cycles"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "use std::fmt::Debug;",
+        "pub fn alpha() -> Box<dyn Debug> { beta() }",
+        "pub fn beta() -> Box<dyn Debug> { alpha() }",
+        "pub fn leaf() -> Box<dyn Debug> { Box::new(1_u8) }",
+        "pub fn middle() -> Box<dyn Debug> { leaf() }",
+        "pub fn top() -> Box<dyn Debug> { middle() }",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const out = await runSignalCompute(RsAb02, repo, RsAb02.defaultConfig)
+      const entriesByName = new Map(out.functions.map((entry) => [entry.name, entry]))
+
+      expect(entriesByName.get("alpha")?.chainDepth).toBe(2)
+      expect(entriesByName.get("beta")?.chainDepth).toBe(2)
+      expect(entriesByName.get("top")?.chainDepth).toBe(3)
+      expect(entriesByName.get("middle")?.chainDepth).toBe(2)
+      expect(entriesByName.get("leaf")?.chainDepth).toBe(1)
+      expect(RsAb02.score(out)).toBeCloseTo(0.2)
     } finally {
       await cleanupWorkspace(repo)
     }

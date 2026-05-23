@@ -90,7 +90,7 @@ export const RsAb02: Signal<RsAb02Config, RsAb02Output, RustProjectTag> = {
   tier: 1,
   category: "abstraction-bloat",
   kind: "legibility",
-  cacheVersion: "trait-object-depth-config-applicability-diagnostics-scoped-calls-cfg-test-gating-v3",
+  cacheVersion: "trait-object-depth-config-applicability-diagnostics-scoped-calls-cfg-test-gating-cycles-v4",
   configSchema: RsAb02Config,
   factorDefinitions: RsAb02FactorDefinitions,
   defaultConfig: {
@@ -300,12 +300,16 @@ const measureChainDepth = (
   memo: Map<string, number>,
   active: Set<string>,
 ): number => {
-  const cached = memo.get(key)
+  if (active.has(key)) return 0
+  const shouldMemo = active.size === 0
+  const cached = shouldMemo ? memo.get(key) : undefined
   if (cached !== undefined) return cached
-  if (active.has(key)) return 1
   active.add(key)
   const current = dynFns.get(key)
-  if (current === undefined) return 1
+  if (current === undefined) {
+    active.delete(key)
+    return 1
+  }
 
   let maxDepth = 1
   for (const calleeRef of current.calleeRefs) {
@@ -319,7 +323,7 @@ const measureChainDepth = (
   }
 
   active.delete(key)
-  memo.set(key, maxDepth)
+  if (shouldMemo) memo.set(key, maxDepth)
   return maxDepth
 }
 
