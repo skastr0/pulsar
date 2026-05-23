@@ -11,7 +11,12 @@ import {
   SignalComputeError,
 } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
-import { collectRustProjectFacts, type RustAnalysis, type RustItemFact } from "../rust-analysis.js"
+import {
+  collectRustProjectFacts,
+  isExternallyVisible,
+  type RustAnalysis,
+  type RustItemFact,
+} from "../rust-analysis.js"
 import { RustProjectTag, type RustManifestInfo, type RustProject } from "../project.js"
 import { DEFAULT_RUST_EXCLUDE_GLOBS } from "./shared-rust-ast.js"
 import {
@@ -78,7 +83,7 @@ export const RsAb01: Signal<RsAb01Config, RsAb01Output, RustProjectTag> = {
   tier: 1,
   category: "abstraction-bloat",
   kind: "structural",
-  cacheVersion: "rs-ab-01-public-surface-use-segments-aliases-diagnostics-reexports-v6",
+  cacheVersion: "rs-ab-01-public-surface-use-segments-aliases-diagnostics-reexports-private-visibility-v7",
   configSchema: RsAb01Config,
   factorDefinitions: RsAb01FactorDefinitions,
   defaultConfig: {
@@ -278,6 +283,9 @@ const collectPublicUsage = (input: {
       continue
     }
     if (useFact.visibility.kind !== "pub") continue
+    if (!isModulePathExternallyReachable(input.facts, useFact.crateName, useFact.relativeModulePath)) {
+      continue
+    }
     const relativeSegments = toLocalRelativeSegments(
       useFact,
       input.rootNamesByCrate.get(useFact.crateName) ?? new Set(),
@@ -310,6 +318,21 @@ const recordLocalReexport = (
     const key = publicItemKey(item)
     if (publicItemKeys.has(key)) reexports.add(key)
   }
+}
+
+const isModulePathExternallyReachable = (
+  facts: RustAnalysis,
+  crateName: string,
+  relativeModulePath: string,
+): boolean => {
+  const segments = relativeModulePath.split("::").filter((segment) => segment.length > 0)
+  if (segments[0] !== "crate") return false
+  for (let index = 1; index < segments.length; index += 1) {
+    const modulePath = `${crateName}::${segments.slice(0, index + 1).join("::")}`
+    const module = facts.modulesByPath.get(modulePath)
+    if (module === undefined || !isExternallyVisible(module.visibility)) return false
+  }
+  return true
 }
 
 const recordCrossCrateUse = (

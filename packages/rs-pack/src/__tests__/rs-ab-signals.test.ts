@@ -204,6 +204,38 @@ describe("RS-AB-* signals", () => {
     }
   })
 
+  test("RS-AB-01 ignores public reexports nested under private modules", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-ab01-private-reexport-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "private-reexport"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "mod internal {",
+        "    pub struct Hidden;",
+        "}",
+        "",
+        "mod bridge {",
+        "    pub use super::internal::Hidden;",
+        "}",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const out = await runSignalCompute(RsAb01, repo, RsAb01.defaultConfig)
+      expect(out.deadPublicItems.map((item) => item.name)).toEqual(["Hidden"])
+      expect(out.deadPublicItems[0]?.surface).toBe("internal-overpublic")
+      expect(out.deadPublicItems[0]?.reexported).toBe(false)
+      expect(out.exportedApiItems.some((item) => item.name === "Hidden")).toBe(false)
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
   test("RS-AB-01 normalizes diagnostic caps and classifies config factors", async () => {
     const repo = await createRustWorkspace("pulsar-rs-ab01-diagnostics-", {
       "Cargo.toml": [
