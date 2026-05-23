@@ -93,7 +93,12 @@ interface FunctionCallFacts {
   readonly key: string
   readonly module: string
   readonly name: string
-  readonly calleeNames: ReadonlyArray<string>
+  readonly callees: ReadonlyArray<CalleeRef>
+}
+
+interface CalleeRef {
+  readonly name: string
+  readonly pathSegments: ReadonlyArray<string>
 }
 
 const DEFAULT_TOP_N_DIAGNOSTICS = 10
@@ -133,7 +138,7 @@ export const RsLd01: Signal<RsLd01Config, RsLd01Output, RustProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "unsafe-code-config-applicability-diagnostics-call-graph-density-sites-safe-only-v5",
+  cacheVersion: "unsafe-code-config-applicability-diagnostics-call-graph-density-sites-safe-only-qualified-v6",
   configSchema: RsLd01Config,
   factorDefinitions: RsLd01FactorDefinitions,
   defaultConfig: {
@@ -556,7 +561,7 @@ const collectFunctionCallFacts = async (
         key: functionKey(modulePath, name),
         module: modulePath,
         name,
-        calleeNames: collectCalledFunctionNames(node),
+        callees: collectCalledFunctionRefs(node),
       })
     })
   }
@@ -590,8 +595,8 @@ const unsafePropagatingFunctionKeys = (
     changed = false
     for (const fn of callFacts) {
       if (propagating.has(fn.key)) continue
-      const callees = fn.calleeNames.flatMap((name) =>
-        resolveCalleeKeys(fn.module, name, knownKeys, keysByName),
+      const callees = fn.callees.flatMap((callee) =>
+        resolveCalleeKeys(fn.module, callee, knownKeys, keysByName),
       )
       if (callees.some((key) => propagating.has(key))) {
         propagating.add(fn.key)
@@ -604,39 +609,83 @@ const unsafePropagatingFunctionKeys = (
 
 const resolveCalleeKeys = (
   callerModule: string,
-  calleeName: string,
+  callee: CalleeRef,
   knownKeys: ReadonlySet<string>,
   keysByName: ReadonlyMap<string, ReadonlyArray<string>>,
 ): ReadonlyArray<string> => {
-  const localKey = functionKey(callerModule, calleeName)
+  const qualifiedKey = resolveQualifiedCalleeKey(callerModule, callee.pathSegments)
+  if (qualifiedKey !== undefined) {
+    return knownKeys.has(qualifiedKey) ? [qualifiedKey] : []
+  }
+  const localKey = functionKey(callerModule, callee.name)
   if (knownKeys.has(localKey)) return [localKey]
-  const candidates = keysByName.get(calleeName) ?? []
+  const candidates = keysByName.get(callee.name) ?? []
   return candidates.length === 1 ? candidates : []
 }
 
-const collectCalledFunctionNames = (node: RustSyntaxNode): ReadonlyArray<string> => {
-  const names = new Set<string>()
+const resolveQualifiedCalleeKey = (
+  callerModule: string,
+  pathSegments: ReadonlyArray<string>,
+): string | undefined => {
+  if (pathSegments.length <= 1) return undefined
+  const moduleSegments = callerModule.split("::")
+  const crateRoot = moduleSegments.slice(0, 2)
+  let base = [...moduleSegments]
+  let index = 0
+
+  if (pathSegments[0] === "crate") {
+    base = crateRoot
+    index = 1
+  } else if (pathSegments[0] === "self") {
+    index = 1
+  } else {
+    while (pathSegments[index] === "super") {
+      if (base.length > crateRoot.length) base = base.slice(0, -1)
+      index += 1
+    }
+  }
+
+  const calleeName = pathSegments[pathSegments.length - 1]
+  const relativeModuleSegments = pathSegments.slice(index, -1)
+  if (calleeName === undefined) return undefined
+  return [...base, ...relativeModuleSegments, calleeName].join("::")
+}
+
+const collectCalledFunctionRefs = (node: RustSyntaxNode): ReadonlyArray<CalleeRef> => {
+  const refs = new Map<string, CalleeRef>()
   const walk = (current: RustSyntaxNode): void => {
     if (current.type === "call_expression") {
       const callee = namedChildrenOf(current)[0]
-      const name = calleeName(callee)
-      if (name !== undefined) names.add(name)
+      const ref = calleeRef(callee)
+      if (ref !== undefined) refs.set(ref.pathSegments.join("::"), ref)
     }
     for (const child of namedChildrenOf(current)) walk(child)
   }
   walk(node)
-  return [...names].sort()
+  return [...refs.values()].sort((left, right) =>
+    left.pathSegments.join("::").localeCompare(right.pathSegments.join("::")),
+  )
 }
 
-const calleeName = (node: RustSyntaxNode | undefined): string | undefined => {
+const calleeRef = (node: RustSyntaxNode | undefined): CalleeRef | undefined => {
   if (node === undefined) return undefined
-  if (node.type === "identifier") return node.text
-  if (node.type === "generic_function") return calleeName(namedChildrenOf(node)[0])
+  if (node.type === "identifier") return { name: node.text, pathSegments: [node.text] }
+  if (node.type === "generic_function") return calleeRef(namedChildrenOf(node)[0])
   if (node.type === "scoped_identifier") {
-    const identifiers = namedChildrenOf(node).filter((child) => child.type === "identifier")
-    return identifiers[identifiers.length - 1]?.text
+    const pathSegments = scopedIdentifierSegments(node)
+    const name = pathSegments[pathSegments.length - 1]
+    return name === undefined ? undefined : { name, pathSegments }
   }
   return undefined
 }
+
+const scopedIdentifierSegments = (node: RustSyntaxNode): ReadonlyArray<string> =>
+  namedChildrenOf(node).flatMap((child) => {
+    if (child.type === "identifier" || child.type === "super" || child.type === "crate" || child.type === "self") {
+      return [child.text]
+    }
+    if (child.type === "scoped_identifier") return scopedIdentifierSegments(child)
+    return []
+  })
 
 const functionKey = (module: string, name: string): string => `${module}::${name}`

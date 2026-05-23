@@ -127,6 +127,41 @@ const createUnsafePropagationWorkspace = () =>
     ].join("\n"),
   })
 
+const createQualifiedUnsafePropagationWorkspace = () =>
+  createRustWorkspace("pulsar-rs-ld01-qualified-propagation-", {
+    "Cargo.toml": [
+      "[package]",
+      'name = "qualified-propagation"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+    ].join("\n"),
+    "src/lib.rs": [
+      "pub mod safe_zone {",
+      "    pub fn raw_deref(ptr: *const u8) -> u8 {",
+      "        unsafe { *ptr }",
+      "    }",
+      "}",
+      "",
+      "pub mod alt {",
+      "    pub fn raw_deref(_: *const u8) -> u8 { 0 }",
+      "}",
+      "",
+      "pub mod wrapper {",
+      "    pub fn api(ptr: *const u8) -> u8 {",
+      "        super::safe_zone::raw_deref(ptr)",
+      "    }",
+      "}",
+      "",
+      "pub mod ambiguous {",
+      "    pub fn api(ptr: *const u8) -> u8 {",
+      "        raw_deref(ptr)",
+      "    }",
+      "}",
+      "",
+    ].join("\n"),
+  })
+
 const createUnsafeScoreWorkspace = (
   name: string,
   sourceLines: ReadonlyArray<string>,
@@ -244,7 +279,7 @@ describe("RS-LD-* signals", () => {
       tier: 1,
       category: "legibility-decay",
       kind: "legibility",
-      cacheVersion: "unsafe-code-config-applicability-diagnostics-call-graph-density-sites-safe-only-v5",
+      cacheVersion: "unsafe-code-config-applicability-diagnostics-call-graph-density-sites-safe-only-qualified-v6",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -436,6 +471,48 @@ describe("RS-LD-* signals", () => {
             propagatingFunctionCount: 3,
             unsafePropagationShare: 1,
             unsafeSitesPerFunction: 1 / 3,
+          }),
+        }),
+      )
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-LD-01 resolves qualified unsafe calls before ambiguous bare-name fallback", async () => {
+    const repo = await createQualifiedUnsafePropagationWorkspace()
+    try {
+      const out = await runSignalCompute(RsLd01, repo, RsLd01.defaultConfig)
+      const safeZone = out.modules.find(
+        (module) => module.module === "qualified-propagation::crate::safe_zone",
+      )
+      const wrapper = out.modules.find(
+        (module) => module.module === "qualified-propagation::crate::wrapper",
+      )
+      const ambiguous = out.modules.find(
+        (module) => module.module === "qualified-propagation::crate::ambiguous",
+      )
+
+      expect(safeZone).toMatchObject({
+        propagatingFunctionCount: 1,
+        unsafeSiteCount: 1,
+      })
+      expect(wrapper).toMatchObject({
+        propagatingFunctionCount: 1,
+        unsafeSiteCount: 0,
+        unsafePropagationShare: 1,
+      })
+      expect(ambiguous).toMatchObject({
+        totalFunctions: 1,
+        propagatingFunctionCount: 0,
+        unsafeSiteCount: 0,
+      })
+      expect(RsLd01.diagnose(out)).toContainEqual(
+        expect.objectContaining({
+          message: "Unsafe surface in qualified-propagation::crate::wrapper: 100% functions, 0.00 unsafe sites/function",
+          data: expect.objectContaining({
+            propagatingFunctionCount: 1,
+            unsafeSiteCount: 0,
           }),
         }),
       )

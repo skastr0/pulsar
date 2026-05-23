@@ -310,7 +310,7 @@ export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       config:
         "rs-ld-signals.test.ts: exclude_globs, safe_only_modules, and top_n_diagnostics decode through the real schema; fractional, NaN, and zero diagnostic caps are normalized through compute output; safe_only_modules selectors are normalized and applied as module-subtree selectors.",
       positiveFixture:
-        "rs-ld-signals.test.ts: temporary Cargo fixtures run through RustProjectLayer and real tree-sitter Rust parsing to prove unsafe blocks, unsafe functions, local call-chain propagation, unsafe trait declarations, unsafe impls, unsafe trait method signatures, foreign function declarations, static mut declarations, and hyphenated crate/nested module safe-only matching.",
+        "rs-ld-signals.test.ts: temporary Cargo fixtures run through RustProjectLayer and real tree-sitter Rust parsing to prove unsafe blocks, unsafe functions, local call-chain propagation, qualified call propagation before ambiguous bare-name fallback, unsafe trait declarations, unsafe impls, unsafe trait method signatures, foreign function declarations, static mut declarations, and hyphenated crate/nested module safe-only matching.",
       negativeFixture:
         "rs-ld-signals.test.ts: clean no-unsafe functions, missing Rust source, no-function Rust source, fully excluded Rust source, tests/ excluded unsafe source, cfg(test) unsafe functions, and composite cfg(any(test,...)) unsafe functions return neutral or excluded evidence without false unsafe pressure.",
       applicability:
@@ -322,7 +322,7 @@ export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       factorLedger:
         "rs-ld-signals.test.ts: registered RS pack signal emits config.exclude_globs as score-bearing evidence, config.safe_only_modules as a score-bearing threshold, and config.top_n_diagnostics as non-score-bearing metadata with signal-default source.",
       cacheSemantics:
-        "rs-ld-signals.test.ts and pack.test.ts: RS-LD-01 declares unsafe-code-config-applicability-diagnostics-call-graph-density-sites-safe-only-v5 cacheVersion, config/cacheVersion changes alter the signal config hash, and the RS pack wrapper preserves the signal-specific cacheVersion.",
+        "rs-ld-signals.test.ts and pack.test.ts: RS-LD-01 declares unsafe-code-config-applicability-diagnostics-call-graph-density-sites-safe-only-qualified-v6 cacheVersion, config/cacheVersion changes alter the signal config hash, and the RS pack wrapper preserves the signal-specific cacheVersion.",
       integration:
         "observer-integration.test.ts and CLI score tests: Rust observer integration carries RS-LD-01 unsafe score and diagnostics through the RS pack against a real Cargo fixture, while CLI single-signal mode executes RS-LD-01 against the repository substrate through both source and compiled CLI entrypoints.",
     },
