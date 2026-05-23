@@ -202,8 +202,8 @@ describe("TS-AB-04 (interface to implementation ratio)", () => {
         "  readonly value: string",
         "}",
         "declare function readPayload(): unknown",
-        "function consume(payload: Payload) {",
-        "  return payload.value",
+        "function consume(payload: unknown) {",
+        "  return payload",
         "}",
         "export const value = consume(readPayload() as Payload)",
       ].join("\n"),
@@ -226,6 +226,27 @@ describe("TS-AB-04 (interface to implementation ratio)", () => {
         "export function loadPayload() {",
         "  return readPayload() as Payload",
         "}",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsAb04, TsAb04.defaultConfig)
+
+    expect(out.totalInterfaces).toBe(0)
+    expect(out.deadInterfaces).toHaveLength(0)
+  })
+
+  test("parenthesized non-object casts count as structural data usage", async () => {
+    await repo.write(
+      "src/parenthesized.ts",
+      [
+        "export interface Payload {",
+        "  readonly value: string",
+        "}",
+        "declare function readPayload(): unknown",
+        "export function loadPayload() {",
+        "  return (readPayload() as Payload)",
+        "}",
+        "export const value = ((readPayload() as Payload)).value",
       ].join("\n"),
     )
 

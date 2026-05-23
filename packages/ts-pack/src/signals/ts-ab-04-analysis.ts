@@ -414,18 +414,28 @@ const isConsumedAssertion = (assertion: AsExpression | SatisfiesExpression): boo
   assertionFeedsExpression(assertion) || assertionVariableIsUsed(assertion)
 
 const assertionFeedsExpression = (assertion: AsExpression | SatisfiesExpression): boolean => {
-  const parent = assertion.getParent()
+  const expression = outermostParenthesizedExpression(assertion)
+  const parent = expression.getParent()
   if (Node.isPropertyAccessExpression(parent) || Node.isElementAccessExpression(parent)) {
-    return sameSpan(parent.getExpression(), assertion)
+    return sameSpan(parent.getExpression(), expression)
   }
   if (Node.isCallExpression(parent)) {
-    return parent.getArguments().some((argument) => sameSpan(argument, assertion))
+    return parent.getArguments().some((argument) => sameSpan(argument, expression))
   }
   if (Node.isReturnStatement(parent)) {
-    const expression = parent.getExpression()
-    return expression !== undefined && sameSpan(expression, assertion)
+    const returnExpression = parent.getExpression()
+    return returnExpression !== undefined && sameSpan(returnExpression, expression)
   }
   return false
+}
+
+const outermostParenthesizedExpression = (node: Node): Node => {
+  let current = node
+  while (true) {
+    const parent = current.getParent()
+    if (!Node.isParenthesizedExpression(parent)) return current
+    current = parent
+  }
 }
 
 const sameSpan = (left: Node, right: Node): boolean =>
