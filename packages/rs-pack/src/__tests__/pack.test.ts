@@ -11,6 +11,7 @@ import { RsDe01 } from "../signals/rs-de-01-trait-coupling.js"
 import { RsDe02 } from "../signals/rs-de-02-dep-tree.js"
 import { RsDe03 } from "../signals/rs-de-03-feature-flags.js"
 import { RsDe04 } from "../signals/rs-de-04-fan-in-fan-out.js"
+import { RsLd06 } from "../signals/rs-ld-06-domain-terms.js"
 import { RsSl01 } from "../signals/rs-sl-01-duplication.js"
 import { RsSl03 } from "../signals/rs-sl-03-unwrap-expect.js"
 import { RsSl04 } from "../signals/rs-sl-04-clone-abuse.js"
@@ -50,6 +51,9 @@ describe("RS pack signal identity", () => {
     const fanInFanOut = RS_PACK_SIGNALS.find((signal) =>
       signal.aliases?.includes("RS-DE-04"),
     )
+    const domainTermConsistency = RS_PACK_SIGNALS.find((signal) =>
+      signal.aliases?.includes("RS-LD-06"),
+    )
     const duplication = RS_PACK_SIGNALS.find((signal) =>
       signal.aliases?.includes("RS-SL-01"),
     )
@@ -71,6 +75,7 @@ describe("RS pack signal identity", () => {
     expect(dependencyTree?.cacheVersion).toBe(RsDe02.cacheVersion)
     expect(featureFlags?.cacheVersion).toBe(RsDe03.cacheVersion)
     expect(fanInFanOut?.cacheVersion).toBe(RsDe04.cacheVersion)
+    expect(domainTermConsistency?.cacheVersion).toBe(RsLd06.cacheVersion)
     expect(duplication?.cacheVersion).toBe(RsSl01.cacheVersion)
     expect(unwrapExpect?.cacheVersion).toBe(RsSl03.cacheVersion)
     expect(cloneAbuse?.cacheVersion).toBe(RsSl04.cacheVersion)

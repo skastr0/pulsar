@@ -435,7 +435,35 @@ export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "observer-integration.test.ts and CLI score tests: Rust observer integration carries RS-LD-05 cyclomatic complexity score and diagnostics through the RS pack against a real Cargo fixture, while CLI single-signal mode executes RS-LD-05 against the repository substrate through both source and compiled CLI entrypoints.",
     },
   },
-  pendingSignalContract("RS-LD-06-domain-term-consistency"),
+  {
+    id: "RS-LD-06-domain-term-consistency",
+    status: "verified",
+    requiredEvidence: ["referenceData", "integration"],
+    evidence: {
+      identity:
+        "rs-ld-signals.test.ts: canonical id, alias, title, tier/category/kind, empty input contract, semantic cacheVersion, pack registration, registry alias lookup, config-cache hash sensitivity, default config decoding, factor ledger, score mode, and score denominator are asserted.",
+      config:
+        "rs-ld-signals.test.ts: exclude_globs and top_n_diagnostics decode through the real schema; fractional and NaN diagnostic caps are normalized through compute output.",
+      positiveFixture:
+        "rs-ld-signals.test.ts: temporary Cargo fixtures run through RustProjectLayer and real tree-sitter Rust parsing to prove item/function/parameter identifiers, canonical glossary matches, alias phrase matches, all-known-token compositions, duplicate canonical token order, near-miss canonical conflicts, new-unique identifiers, deterministic score shares, and diagnostic payloads.",
+      negativeFixture:
+        "rs-ld-signals.test.ts: missing Rust source, Rust source with no identifiers, fully excluded source, missing glossary, empty glossary, and cfg(test)/cfg(any(test,...)) identifiers return neutral or excluded evidence without false domain-term drift pressure.",
+      applicability:
+        "rs-ld-signals.test.ts: loaded Rust source with non-empty glossary and identifiers is applicable, missing or empty glossary and no Rust source emit insufficient_evidence metadata, and analyzed Rust source with no identifiers or fully excluded source emits not_applicable metadata.",
+      score:
+        "rs-ld-signals.test.ts: score is asserted as weighted domain-term drift pressure over classified identifiers, with conflicts weighted 0.8, duplicate canonical order weighted 0.5, new unique terms weighted 0.2, and missing/empty/no-identifier fixtures remaining score-neutral.",
+      diagnostics:
+        "rs-ld-signals.test.ts: diagnostics assert severity, source locations, deterministic pressure ordering, identifier/module/kind/classification/suggested-canonical payloads, normalized diagnostic caps, missing-glossary warnings, empty-glossary warnings, score mode, and denominator payloads.",
+      factorLedger:
+        "rs-ld-signals.test.ts: registered RS pack signal emits config.exclude_globs as score-bearing evidence and config.top_n_diagnostics as non-score-bearing metadata with signal-default source.",
+      cacheSemantics:
+        "rs-ld-signals.test.ts and pack.test.ts: RS-LD-06 declares domain-terms-config-reference-data-applicability-diagnostics-cfg-test-aliases-v4 cacheVersion, config/cacheVersion changes alter the signal config hash, and the RS pack wrapper preserves the signal-specific cacheVersion.",
+      referenceData:
+        "rs-ld-signals.test.ts, observer-integration.test.ts, and CLI score tests: direct ReferenceData fixtures and canonical `.pulsar/glossary.json` loading prove glossary terms and aliases drive domain-term classification, while missing and empty glossary data remain insufficient evidence rather than clean or failing evidence.",
+      integration:
+        "observer-integration.test.ts and CLI score tests: Rust observer integration carries RS-LD-06 domain term score and diagnostics through the RS pack against a real Cargo fixture with glossary reference data, while CLI single-signal mode executes RS-LD-06 against a repository substrate with `.pulsar/glossary.json` loaded from disk.",
+    },
+  },
   pendingSignalContract("RS-SL-01-duplication"),
   pendingSignalContract("RS-SL-02-suppressions"),
   pendingSignalContract("RS-SL-03-unwrap-expect"),

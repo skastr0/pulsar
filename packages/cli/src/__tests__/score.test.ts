@@ -1764,6 +1764,66 @@ export function stubF() { throw new Error("Not implemented") }
     }
   }, 120_000)
 
+  test("single-signal CLI wrapper executes RS-LD-06 with repo glossary", async () => {
+    const repoPath = await initRepo([
+      {
+        path: "Cargo.toml",
+        content: [
+          "[package]",
+          'name = "domain-cli"',
+          'version = "0.1.0"',
+          'edition = "2021"',
+          "",
+        ].join("\n"),
+      },
+      {
+        path: "src/lib.rs",
+        content: [
+          "pub mod domain {",
+          "    pub fn order_line(order_line: &str) -> usize {",
+          "        order_line.len()",
+          "    }",
+          "",
+          "    pub fn ordr_line(order_line: &str) -> usize {",
+          "        order_line.len()",
+          "    }",
+          "",
+          "    pub fn invoice_probe(invoice_probe: &str) -> usize {",
+          "        invoice_probe.len()",
+          "    }",
+          "}",
+          "",
+        ].join("\n"),
+      },
+      {
+        path: ".pulsar/glossary.json",
+        content: `${JSON.stringify({
+          schema_version: 1,
+          extracted_at_sha: "HEAD",
+          confirmed_at: "2026-05-23T00:00:00.000Z",
+          terms: [
+            { canonical: "domain", aliases: [], frequency: 1, provenance: [] },
+            { canonical: "order line", aliases: [], frequency: 1, provenance: [] },
+          ],
+          rejected_terms: [],
+        })}\n`,
+      },
+    ])
+    try {
+      const out = runCli(repoPath, ["score", "--signal", "RS-LD-06", "."])
+      expect(out.status).toBe(0)
+      expect(out.stdout).toContain("Signal: RS-LD-06-domain-term-consistency")
+      expect(out.stdout).toContain(
+        "WARN  Identifier ordr_line classified as conflicts-with-canonical (suggested: order line)",
+      )
+      expect(out.stdout).toContain("Score:  0.829")
+      expect(out.stdout).toContain("Factor Audit (1 score-bearing)")
+      expect(out.stdout).toContain("signal-default config.")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
   test("single-signal mode summarizes score-bearing factor audit details", async () => {
     const repoPath = await initRepo([
       {

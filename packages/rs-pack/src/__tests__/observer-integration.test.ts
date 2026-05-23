@@ -22,6 +22,7 @@ import { RsLd02 } from "../signals/rs-ld-02-lifetimes.js"
 import { RsLd03 } from "../signals/rs-ld-03-match-catch-all.js"
 import { RsLd04 } from "../signals/rs-ld-04-error-granularity.js"
 import { RsLd05 } from "../signals/rs-ld-05-complexity.js"
+import { RsLd06 } from "../signals/rs-ld-06-domain-terms.js"
 import { cleanupWorkspace, createRustWorkspace, referenceLayer } from "./helpers.js"
 
 describe("rs-pack integration", () => {
@@ -425,6 +426,76 @@ describe("rs-pack integration", () => {
           complexity: 13,
           scoreMode: "double-weighted-over-threshold-functions",
           scoreDenominator: "analyzed-functions",
+        }),
+      })
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  }, 120_000)
+
+  test("observer path carries RS-LD-06 domain term score and diagnostics", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-observer-ld06-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "domain-terms-observer"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub mod domain {",
+        "    pub fn order_line(order_line: &str) -> usize {",
+        "        order_line.len()",
+        "    }",
+        "",
+        "    pub fn ordr_line(order_line: &str) -> usize {",
+        "        order_line.len()",
+        "    }",
+        "",
+        "    pub fn invoice_probe(invoice_probe: &str) -> usize {",
+        "        invoice_probe.len()",
+        "    }",
+        "}",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
+      const EnvLayer = Layer.mergeAll(
+        Layer.succeed(SignalContextTag, {
+          gitSha: "HEAD",
+          worktreePath: repo,
+          changedHunks: [],
+        }),
+        referenceLayer({
+          glossary: {
+            terms: [{ canonical: "domain" }, { canonical: "order line" }],
+          },
+        }),
+        InMemoryCacheLayer,
+        RustProjectLayer(repo),
+      )
+
+      const result = await Effect.runPromise(
+        Effect.provide(observe(registry, undefined), EnvLayer) as Effect.Effect<
+          ObserverOutput,
+          never,
+          never
+        >,
+      )
+      const domainTermConsistency = result.signalResults.get(RsLd06.id)
+
+      expect(result.categories["legibility-decay"].signals[RsLd06.id]).toBeCloseTo(1 - 1.2 / 7)
+      expect(domainTermConsistency?.score).toBeCloseTo(1 - 1.2 / 7)
+      expect(domainTermConsistency?.diagnostics[0]).toMatchObject({
+        severity: "warn",
+        message: "Identifier ordr_line classified as conflicts-with-canonical (suggested: order line)",
+        data: expect.objectContaining({
+          name: "ordr_line",
+          kind: "function",
+          scoreMode: "weighted-domain-term-drift-share",
+          scoreDenominator: "classified-identifiers",
         }),
       })
     } finally {
