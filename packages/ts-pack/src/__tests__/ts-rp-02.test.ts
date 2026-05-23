@@ -207,7 +207,7 @@ describe("TS-RP-02 PR size and dependency delta", () => {
       tier: 1,
       category: "review-pain",
       kind: "structural",
-      cacheVersion: "branch-range-factor-policy-diagnostic-limit-package-import-edges-v1",
+      cacheVersion: "branch-range-factor-policy-diagnostic-limit-package-import-edges-v2",
       inputs: [],
     })
     expect(decoded).toEqual(TsRp02.defaultConfig)
@@ -552,6 +552,73 @@ export function useHelper(): string { return helper() + extra() + legacy(); }
       expect.objectContaining({
         file: `${repo.root}/packages/app/src/index.ts`,
         line: 2,
+        fromPackage: "@repo/app",
+        toPackage: "@repo/app",
+        fromBoundary: "entry",
+        toBoundary: "local",
+        isCrossBoundary: true,
+      }),
+    ])
+  }, 120_000)
+
+  test("package-local tsconfig aliases resolve even when they are not in the seed tsconfig", async () => {
+    await repo.writeJson("tsconfig.json", {
+      compilerOptions: {
+        target: "ES2022",
+        module: "ESNext",
+        moduleResolution: "Bundler",
+      },
+      include: ["packages/*/src/**/*.ts"],
+    })
+    await writePackage(repo, "app", "@repo/app")
+    await repo.writeJson("packages/app/tsconfig.json", {
+      compilerOptions: {
+        target: "ES2022",
+        module: "ESNext",
+        moduleResolution: "Bundler",
+        baseUrl: ".",
+        paths: {
+          "@/*": ["src/*"],
+        },
+      },
+      include: ["src/**/*.ts"],
+    })
+    await repo.write("packages/app/src/local.ts", "export const local = 1\n")
+    await repo.write("packages/app/src/index.ts", "export const app = 1\n")
+    git(repo.root, ["add", "."])
+    git(repo.root, ["commit", "-q", "-m", "Add non-seed alias fixture"])
+
+    await repo.write(
+      "packages/app/src/index.ts",
+      [
+        "import { local } from '@/local'",
+        "export const app = local",
+        "",
+      ].join("\n"),
+    )
+    git(repo.root, ["add", "."])
+    git(repo.root, ["commit", "-q", "-m", "Add non-seed alias import"])
+
+    const out = await computeWithContext(
+      repo,
+      {
+        ...TsRp02.defaultConfig,
+        boundary_rules: [
+          { name: "entry", globs: ["packages/app/src/index.ts"] },
+          { name: "local", globs: ["packages/app/src/local.ts"] },
+        ],
+      },
+      {
+        gitSha: "HEAD",
+        changedHunks: [],
+      },
+    )
+
+    expect(out.newCrossPackageEdges).toEqual([])
+    expect(out.newCrossBoundaryEdges).toEqual([
+      expect.objectContaining({
+        file: `${repo.root}/packages/app/src/index.ts`,
+        line: 1,
         fromPackage: "@repo/app",
         toPackage: "@repo/app",
         fromBoundary: "entry",
@@ -1187,6 +1254,57 @@ export const second = 2
     expect(out.linesDeleted).toBe(0)
     expect(TsRp02.outputMetadata?.(out)).toEqual({ applicability: "not_applicable" })
     expect(TsRp02.score(out)).toBe(1)
+  }, 120_000)
+
+  test("changed hunk fallback counts standard TypeScript ESM and CJS extensions", async () => {
+    const out = await run(repo, TsRp02.defaultConfig, [
+      { file: "src/module.mts", oldStart: 1, oldLines: 0, newStart: 1, newLines: 3 },
+      { file: "src/common.cts", oldStart: 1, oldLines: 1, newStart: 1, newLines: 2 },
+      { file: "src/types.d.mts", oldStart: 1, oldLines: 0, newStart: 1, newLines: 1 },
+      { file: "src/types.d.cts", oldStart: 1, oldLines: 0, newStart: 1, newLines: 1 },
+    ])
+
+    expect(relativeFiles(repo.root, out.filesChanged)).toEqual([
+      "/src/common.cts",
+      "/src/module.mts",
+      "/src/types.d.cts",
+      "/src/types.d.mts",
+    ])
+    expect(out.linesAdded).toBe(7)
+    expect(out.linesDeleted).toBe(1)
+    expect(out.diffMode).toBe("changed-hunks-fallback")
+  }, 120_000)
+
+  test("git range pathspecs include standard TypeScript ESM and CJS extensions", async () => {
+    await repo.writeJson("tsconfig.json", {
+      compilerOptions: {
+        target: "ES2022",
+        module: "NodeNext",
+        moduleResolution: "NodeNext",
+      },
+      include: ["src/**/*"],
+    })
+    await repo.write("src/module.mts", "export const moduleValue = 1\n")
+    await repo.write("src/common.cts", "export const commonValue = 1\n")
+    await repo.write("src/types.d.mts", "export interface ModuleValue { value: number }\n")
+    await repo.write("src/types.d.cts", "export interface CommonValue { value: number }\n")
+    git(repo.root, ["add", "."])
+    git(repo.root, ["commit", "-q", "-m", "Add TS module extensions"])
+
+    const out = await computeWithContext(repo, TsRp02.defaultConfig, {
+      gitSha: "HEAD",
+      changedHunks: [],
+    })
+
+    expect(relativeFiles(repo.root, out.filesChanged)).toEqual([
+      "/src/common.cts",
+      "/src/module.mts",
+      "/src/types.d.cts",
+      "/src/types.d.mts",
+    ])
+    expect(out.linesAdded).toBe(4)
+    expect(out.linesDeleted).toBe(0)
+    expect(out.diffMode).toBe("git-commit-range")
   }, 120_000)
 
   test("custom dot-relative exclude globs apply to changed hunk evidence", async () => {

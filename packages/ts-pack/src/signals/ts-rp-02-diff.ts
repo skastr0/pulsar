@@ -1,4 +1,5 @@
-import { isAbsolute, relative, resolve } from "node:path"
+import { existsSync, readFileSync } from "node:fs"
+import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 import type { SignalContext } from "@skastr0/pulsar-core/signal"
 import { matchesAnyGlob } from "./shared-globs.js"
 import { normalizePackageSpecifier, packageForFile, type BoundaryRule } from "./shared-workspace.js"
@@ -7,8 +8,16 @@ import type { ChangedFileStat, ImportEdge, TsRp02Config, TsRp02Output } from "./
 export const TS_DIFF_PATHSPECS = [
   ":(glob)*.ts",
   ":(glob)*.tsx",
+  ":(glob)*.mts",
+  ":(glob)*.cts",
+  ":(glob)*.d.mts",
+  ":(glob)*.d.cts",
   ":(glob)**/*.ts",
   ":(glob)**/*.tsx",
+  ":(glob)**/*.mts",
+  ":(glob)**/*.cts",
+  ":(glob)**/*.d.mts",
+  ":(glob)**/*.d.cts",
 ]
 
 export const parseGitDiff = (
@@ -273,9 +282,10 @@ const parseImportEdges = (
     )
 
     for (const declaration of dependencyDeclarations) {
-      const targetFile = declaration.getModuleSpecifierSourceFile()?.getFilePath()
-
       const fromPkg = packageForFile(currentFile, packages)
+      const targetFile = declaration.getModuleSpecifierSourceFile()?.getFilePath() ??
+        resolvePackageLocalAliasFile(project, moduleSpecifier, fromPkg)
+
       const toPkg = targetFile === undefined
         ? packageForModuleSpecifier(moduleSpecifier, packages)
         : packageForFile(targetFile, packages)
@@ -356,6 +366,116 @@ const packageForModuleSpecifier = (
   return packages.find((pkg) => pkg.manifest?.name === packageName)
 }
 
+const resolvePackageLocalAliasFile = (
+  project: import("ts-morph").Project,
+  moduleSpecifier: string,
+  fromPkg: import("../discovery.js").PackageInfo | undefined,
+): string | undefined => {
+  if (fromPkg === undefined || moduleSpecifier.startsWith(".")) return undefined
+  const paths = readTsconfigPaths(fromPkg.tsconfigPath)
+  if (paths === undefined) return undefined
+
+  for (const [aliasPattern, targetPatterns] of Object.entries(paths.paths)) {
+    const captures = matchAliasPattern(aliasPattern, moduleSpecifier)
+    if (captures === undefined) continue
+    for (const targetPattern of targetPatterns) {
+      const targetPath = applyAliasTargetPattern(targetPattern, captures)
+      const resolved = resolveExistingTypeScriptPath(
+        project,
+        resolve(paths.baseDir, targetPath),
+      )
+      if (resolved !== undefined) return resolved
+    }
+  }
+  return undefined
+}
+
+const readTsconfigPaths = (
+  tsconfigPath: string,
+): { readonly baseDir: string; readonly paths: Readonly<Record<string, ReadonlyArray<string>>> } | undefined => {
+  try {
+    const parsed = JSON.parse(readFileSync(tsconfigPath, "utf8")) as {
+      readonly compilerOptions?: {
+        readonly baseUrl?: unknown
+        readonly paths?: unknown
+      }
+    }
+    const paths = parsed.compilerOptions?.paths
+    if (paths === undefined || paths === null || typeof paths !== "object" || Array.isArray(paths)) {
+      return undefined
+    }
+    const normalizedPaths = Object.fromEntries(
+      Object.entries(paths).flatMap(([key, value]) =>
+        typeof key === "string" &&
+        Array.isArray(value) &&
+        value.every((entry) => typeof entry === "string")
+          ? [[key, value]]
+          : [],
+      ),
+    )
+    const baseUrl = parsed.compilerOptions?.baseUrl
+    const baseDir = typeof baseUrl === "string"
+      ? resolve(dirname(tsconfigPath), baseUrl)
+      : dirname(tsconfigPath)
+    return { baseDir, paths: normalizedPaths }
+  } catch {
+    return undefined
+  }
+}
+
+const matchAliasPattern = (
+  pattern: string,
+  moduleSpecifier: string,
+): ReadonlyArray<string> | undefined => {
+  const starCount = pattern.split("*").length - 1
+  if (starCount === 0) return pattern === moduleSpecifier ? [] : undefined
+  const escapedParts = pattern.split("*").map(escapeRegExp)
+  const regex = new RegExp(`^${escapedParts.join("(.+)")}$`)
+  const match = regex.exec(moduleSpecifier)
+  return match === null ? undefined : match.slice(1)
+}
+
+const applyAliasTargetPattern = (
+  targetPattern: string,
+  captures: ReadonlyArray<string>,
+): string => {
+  let captureIndex = 0
+  return targetPattern.replaceAll("*", () => captures[captureIndex++] ?? "")
+}
+
+const resolveExistingTypeScriptPath = (
+  project: import("ts-morph").Project,
+  basePath: string,
+): string | undefined => {
+  for (const candidate of typeScriptResolutionCandidates(basePath)) {
+    if (!existsSync(candidate)) continue
+    project.addSourceFileAtPathIfExists(candidate)
+    return candidate
+  }
+  return undefined
+}
+
+const typeScriptResolutionCandidates = (basePath: string): ReadonlyArray<string> => [
+  basePath,
+  `${basePath}.ts`,
+  `${basePath}.tsx`,
+  `${basePath}.mts`,
+  `${basePath}.cts`,
+  `${basePath}.d.ts`,
+  `${basePath}.d.mts`,
+  `${basePath}.d.cts`,
+  join(basePath, "index.ts"),
+  join(basePath, "index.tsx"),
+  join(basePath, "index.mts"),
+  join(basePath, "index.cts"),
+  join(basePath, "index.d.ts"),
+  join(basePath, "index.d.mts"),
+  join(basePath, "index.d.cts"),
+]
+
+const escapeRegExp = (value: string): string =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+
 const matchesSourcePath = (
   absoluteFile: string,
   worktreePath: string,
@@ -376,4 +496,4 @@ const compareImportEdges = (left: ImportEdge, right: ImportEdge): number =>
   (left.toBoundary ?? "").localeCompare(right.toBoundary ?? "")
 
 const isTypeScriptSourcePath = (file: string): boolean =>
-  /\.(?:ts|tsx)$/.test(file)
+  /\.(?:ts|tsx|mts|cts)$/.test(file) || /\.d\.(?:mts|cts)$/.test(file)

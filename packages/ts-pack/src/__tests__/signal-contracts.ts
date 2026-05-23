@@ -729,9 +729,9 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       identity:
         "ts-rp-02.test.ts: canonical id, alias, title, tier/category/kind, semantic cacheVersion, no-input contract, pack registration, registry alias lookup, and default config decoding are asserted.",
       config:
-        "ts-rp-02.test.ts: configSchema decodes defaults; exclude_globs, boundary_rules, top_n_diagnostics, and PR-size budgets are proven through real changed-hunk fixtures, dot-relative excludes, diagnostic cap normalization, and exact budget category branches.",
+        "ts-rp-02.test.ts: configSchema decodes defaults; exclude_globs, boundary_rules, top_n_diagnostics, TypeScript module extensions, and PR-size budgets are proven through real changed-hunk fixtures, dot-relative excludes, diagnostic cap normalization, and exact budget category branches.",
       positiveFixture:
-        "ts-rp-02.test.ts: real temp-repo fixtures prove changed-hunk PR metrics, committed range diffs, upstream branch ranges, cross-package import additions, workspace package-name import additions with and without tsconfig path aliases, package-local alias import additions, same-specifier import additions, multiline import additions, cross-boundary import additions, generated-file exclusions, and largest-file ranking.",
+        "ts-rp-02.test.ts: real temp-repo fixtures prove changed-hunk PR metrics, committed range diffs, upstream branch ranges, cross-package import additions, workspace package-name import additions with and without tsconfig path aliases, root and non-seed package-local alias import additions, same-specifier import additions, multiline import additions, .mts/.cts/.d.mts/.d.cts pathspec coverage, cross-boundary import additions, generated-file exclusions, and largest-file ranking.",
       negativeFixture:
         "ts-rp-02.test.ts: clean git ranges are not_applicable, missing git evidence is insufficient_evidence, generated/non-TypeScript changed files are excluded, import reorder-only diffs do not create dependency-delta findings, and custom exclude globs remove matching changed files.",
       applicability:
@@ -743,7 +743,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       factorLedger:
         "ts-rp-02.test.ts: registered pack signal emits config.exclude_globs, config.test_globs, config.boundary_rules, config.top_n_diagnostics, and pr_size policy factor entries with default/module attribution and score roles.",
       cacheSemantics:
-        "ts-rp-02.test.ts and pack.test.ts: wrapped pack cache version includes the TS-RP-02 semantic cacheVersion after diagnostic-limit handling, normalized hunk/exclude paths, boundary rules, finite-safe policy output, deterministic ordering, and added internal-import edge semantics changed.",
+        "ts-rp-02.test.ts and pack.test.ts: wrapped pack cache version includes the TS-RP-02 semantic cacheVersion after diagnostic-limit handling, normalized hunk/exclude paths, boundary rules, finite-safe policy output, deterministic ordering, TypeScript module extension coverage, package-local alias resolution, and added internal-import edge semantics changed.",
       gitContext:
         "ts-rp-02.test.ts: tests run through TsProjectLayer and SignalContextTag, proving changed-hunk fallback, dependencyDeltaMode unavailable for hunk-only evidence, committed range diffs, upstream branch range selection, clean range not_applicable behavior, and non-git fallback behavior.",
       calibration:

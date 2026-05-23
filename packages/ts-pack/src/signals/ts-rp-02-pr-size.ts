@@ -93,7 +93,7 @@ export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackage
   tier: 1,
   category: "review-pain",
   kind: "structural",
-  cacheVersion: "branch-range-factor-policy-diagnostic-limit-package-import-edges-v1",
+  cacheVersion: "branch-range-factor-policy-diagnostic-limit-package-import-edges-v2",
   cacheDependencies: ["git-revision-context"],
   configSchema: TsRp02Config,
   defaultConfig: DEFAULT_TS_RP_02_CONFIG,
