@@ -99,10 +99,11 @@ const measureAliasDeclaration = (
 
   const nextStack = new Set(context.aliasStack)
   nextStack.add(aliasId)
+  const localAliases = buildLocalAliasMap(declaration.getSourceFile())
   const inner = measureTypeNode(declaration.getTypeNodeOrThrow(), {
     remainingSteps: context.remainingSteps - 1,
     aliasStack: nextStack,
-    localAliases: context.localAliases,
+    localAliases,
     aliasDepthCache: context.aliasDepthCache,
   })
   const result = {

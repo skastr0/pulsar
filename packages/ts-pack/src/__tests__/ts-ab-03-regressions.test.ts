@@ -35,6 +35,33 @@ describe("TS-AB-03 type indirection regressions", () => {
     expect(publicAlias?.chain).toEqual(["Public", "C", "B", "A"])
   })
 
+  test("importer-local aliases cannot shadow imported alias internals", async () => {
+    await repo.write(
+      "src/types.ts",
+      [
+        "type A = string",
+        "export type B = A",
+        "export type C = B",
+        "",
+      ].join("\n"),
+    )
+    await repo.write(
+      "src/public.ts",
+      [
+        "import type { C } from './types'",
+        "type B = string",
+        "export type Public = C",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsAb03, TsAb03.defaultConfig)
+    const publicAlias = out.declarations.find((entry) => entry.name === "Public")
+
+    expect(publicAlias?.depth).toBe(4)
+    expect(publicAlias?.chain).toEqual(["Public", "C", "B", "A"])
+  })
+
   test("resolves import-type alias qualifiers across source files", async () => {
     await repo.write(
       "src/types.ts",
