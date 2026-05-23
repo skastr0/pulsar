@@ -48,6 +48,7 @@ export const TsLd06: Signal<TsLd06Config, TsLd06Output, TsProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
+  cacheVersion: "annotation-coverage-v1-diagnostic-limit-v1",
   configSchema: TsLd06Config,
   defaultConfig: {
     exclude_globs: [

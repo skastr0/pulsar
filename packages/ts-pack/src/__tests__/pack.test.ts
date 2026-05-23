@@ -15,6 +15,7 @@ import { TsDe03 } from "../signals/ts-de-03-propagation-cost.js"
 import { TsDe04 } from "../signals/ts-de-04-package-dependency-health.js"
 import { TsDe05 } from "../signals/ts-de-05-duplicate-versions.js"
 import { TsLd01 } from "../signals/ts-ld-01-complexity.js"
+import { TsLd06 } from "../signals/ts-ld-06-annotation-coverage.js"
 import { TsLd09 } from "../signals/ts-ld-09-error-channel-opacity.js"
 import { TsRp01 } from "../signals/ts-rp-01-hotspots.js"
 import { TsSl01 } from "../signals/ts-sl-01-duplication.js"
@@ -33,6 +34,7 @@ describe("TS pack cache versions", () => {
     const de04 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-DE-04"))
     const de05 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-DE-05"))
     const ld01 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-LD-01"))
+    const ld06 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-LD-06"))
     const ld09 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-LD-09"))
     const rp01 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-RP-01"))
     const sl01 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-SL-01"))
@@ -59,6 +61,7 @@ describe("TS pack cache versions", () => {
     expect(de04?.cacheVersion).toContain(TsDe04.cacheVersion)
     expect(de05?.cacheVersion).toContain(TsDe05.cacheVersion)
     expect(ld01?.cacheVersion).toContain(TsLd01.cacheVersion)
+    expect(ld06?.cacheVersion).toContain(TsLd06.cacheVersion)
     expect(ld09?.cacheVersion).toContain(TsLd09.cacheVersion)
     expect(rp01?.cacheVersion).toContain(TsRp01.cacheVersion)
     expect(sl01?.cacheVersion).toContain(TsSl01.cacheVersion)

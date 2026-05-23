@@ -182,6 +182,34 @@ describe("TS-LD-06 (type annotation coverage)", () => {
     expect(TsLd06.diagnose(out)[0]?.severity).toBe("warn")
   })
 
+  test("diagnostics honor sanitized top_n_diagnostics", async () => {
+    await writeTs(
+      "src/many.ts",
+      [
+        "export function first(value) { return value }",
+        "export function second(value) { return value }",
+        "",
+      ].join("\n"),
+    )
+
+    const fractional = await runCompute({ ...TsLd06.defaultConfig, top_n_diagnostics: 1.8 })
+    const negative = await runCompute({ ...TsLd06.defaultConfig, top_n_diagnostics: -1 })
+    const nan = await runCompute({ ...TsLd06.defaultConfig, top_n_diagnostics: Number.NaN })
+    const infinite = await runCompute({
+      ...TsLd06.defaultConfig,
+      top_n_diagnostics: Number.POSITIVE_INFINITY,
+    })
+
+    expect(fractional.diagnosticLimit).toBe(1)
+    expect(TsLd06.diagnose(fractional)).toHaveLength(1)
+    expect(negative.diagnosticLimit).toBe(0)
+    expect(nan.diagnosticLimit).toBe(0)
+    expect(infinite.diagnosticLimit).toBe(0)
+    expect(TsLd06.diagnose(negative)).toEqual([])
+    expect(TsLd06.diagnose(nan)).toEqual([])
+    expect(TsLd06.diagnose(infinite)).toEqual([])
+  })
+
   test("component-typed exported functions do not require duplicate return annotations", async () => {
     await writeTs(
       "src/component.ts",

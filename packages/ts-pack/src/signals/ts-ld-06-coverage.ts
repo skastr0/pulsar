@@ -55,7 +55,7 @@ export const computeAnnotationCoverage = (
     boundaryCoverage: finalizeCoverage(boundaryTotals),
     internalCoverage: finalizeCoverage(internalTotals),
     uncoveredBoundary,
-    diagnosticLimit: config.top_n_diagnostics,
+    diagnosticLimit: normalizeDiagnosticLimit(config.top_n_diagnostics),
   }
 }
 
@@ -154,3 +154,6 @@ const compareUncoveredBoundary = (left: UncoveredFn, right: UncoveredFn): number
   if (left.file !== right.file) return left.file.localeCompare(right.file)
   return left.line - right.line
 }
+
+const normalizeDiagnosticLimit = (limit: number): number =>
+  Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 0
