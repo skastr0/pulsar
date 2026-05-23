@@ -549,7 +549,33 @@ export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "observer-integration.test.ts and CLI score tests: Rust observer integration carries RS-SL-03 unwrap/expect score and diagnostics through the RS pack against a real Cargo fixture, while CLI single-signal mode executes RS-SL-03 against the repository substrate through the source CLI path.",
     },
   },
-  pendingSignalContract("RS-SL-04-clone-abuse"),
+  {
+    id: "RS-SL-04-clone-abuse",
+    status: "verified",
+    requiredEvidence: ["integration"],
+    evidence: {
+      identity:
+        "rs-sl-signals.test.ts: canonical id, alias, title, tier/category/kind, empty input contract, semantic cacheVersion, pack registration, registry alias lookup, config-cache hash sensitivity, default config decoding, factor ledger, score mode, and score denominator are asserted.",
+      config:
+        "rs-sl-signals.test.ts: exclude_globs and top_n_diagnostics decode through the real schema; fractional and NaN diagnostic config values are normalized through compute output.",
+      positiveFixture:
+        "rs-sl-signals.test.ts: temporary Cargo fixtures run through RustProjectLayer and real tree-sitter Rust parsing to prove syntax-likely expensive clone expressions, local owned Vec/String binding clones, UFCS Clone::clone and typed <Vec as Clone>::clone calls, module attribution, per-module density, diagnostics, and score pressure.",
+      negativeFixture:
+        "rs-sl-signals.test.ts: cheap Arc/Rc-style shared clones, cfg(test)-gated clones/functions, no Rust source, fully excluded Rust source, Rust source with no functions, strings/comments/macros outside call expressions, and functionless Rust source remain correctly classified without false clone pressure.",
+      applicability:
+        "rs-sl-signals.test.ts: loaded Rust source with analyzed functions is applicable, no Rust source emits insufficient_evidence metadata, and fully excluded or functionless Rust source emits not_applicable metadata.",
+      score:
+        "rs-sl-signals.test.ts: score is asserted as bounded likely-expensive-clone pressure, cheap clone-only output remains neutral, mild/risky/broad likely-expensive clone counts lower scores monotonically, and the bounded score floor is asserted.",
+      diagnostics:
+        "rs-sl-signals.test.ts: diagnostics assert severity, module/file payloads, clone counts, likely-expensive clone counts, density, normalized diagnostic caps, density ordering before truncation, no-source warnings, score mode, and denominator payloads.",
+      factorLedger:
+        "rs-sl-signals.test.ts: registered RS pack signal emits config.exclude_globs as score-bearing evidence and config.top_n_diagnostics as non-score-bearing metadata with signal-default source.",
+      cacheSemantics:
+        "rs-sl-signals.test.ts and pack.test.ts: RS-SL-04 declares likely-expensive-score-cfg-test-gating-diagnostics-denominator-bindings-ufcs-v6 cacheVersion, config/cacheVersion changes alter the signal config hash, and the RS pack wrapper preserves the signal-specific cacheVersion.",
+      integration:
+        "observer-integration.test.ts and CLI score tests: Rust observer integration carries RS-SL-04 clone score and diagnostics through the RS pack against a real Cargo fixture, while CLI single-signal mode executes RS-SL-04 against the repository substrate through the source CLI path.",
+    },
+  },
   pendingSignalContract("RS-RP-01-hotspots"),
   pendingSignalContract("RS-RP-02-compile-time"),
   pendingSignalContract("RS-RP-03-pr-size"),

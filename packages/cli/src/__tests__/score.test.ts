@@ -1935,6 +1935,36 @@ export function stubF() { throw new Error("Not implemented") }
     }
   }, 120_000)
 
+  test("single-signal CLI wrapper executes RS-SL-04 with Rust source", async () => {
+    const repoPath = await initRepo([
+      {
+        path: "Cargo.toml",
+        content: [
+          "[package]",
+          'name = "clone-cli"',
+          'version = "0.1.0"',
+          'edition = "2021"',
+          "",
+        ].join("\n"),
+      },
+      {
+        path: "src/lib.rs",
+        content: "pub fn copied() { let _value = String::from(\"hello\").clone(); }\n",
+      },
+    ])
+    try {
+      const out = runCli(repoPath, ["score", "--signal", "RS-SL-04", "."])
+      expect(out.status).toBe(0)
+      expect(out.stdout).toContain("Signal: RS-SL-04-clone-abuse")
+      expect(out.stdout).toContain("WARN  clone-cli::crate contains 1 clone() calls")
+      expect(out.stdout).toContain("Score:  0.960")
+      expect(out.stdout).toContain("Factor Audit (1 score-bearing)")
+      expect(out.stdout).toContain("signal-default config.")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
   test("single-signal mode summarizes score-bearing factor audit details", async () => {
     const repoPath = await initRepo([
       {

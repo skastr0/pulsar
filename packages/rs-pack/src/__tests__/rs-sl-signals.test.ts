@@ -1558,6 +1558,39 @@ describe("RS-SL-* signals", () => {
     }
   })
 
+  test("RS-SL-04 ignores clone-looking strings comments and macro names", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-sl04-negative-text-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "clone-negative-text"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "macro_rules! clone { () => {}; }",
+        "",
+        "pub fn clean() {",
+        "    let _text = \"String::from(\\\"hello\\\").clone()\";",
+        "    // Clone::clone(&text)",
+        "    clone!();",
+        "}",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const out = await runSignalCompute(RsSl04, repo, RsSl04.defaultConfig)
+
+      expect(out.totalCloneCalls).toBe(0)
+      expect(out.likelyExpensiveCloneCalls).toBe(0)
+      expect(RsSl04.score(out)).toBe(1)
+      expect(RsSl04.diagnose(out)).toEqual([])
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
   test("RS-SL-04 orders diagnostics by clone density before truncation", async () => {
     const repo = await createRustWorkspace("pulsar-rs-sl04-ordering-", {
       "Cargo.toml": [
