@@ -922,7 +922,7 @@ describe("RS-SL-* signals", () => {
       tier: 1,
       category: "generated-slop",
       kind: "legibility",
-      cacheVersion: "advisory-density-scaled-cfg-test-gating-diagnostics-denominator-ufcs-v5",
+      cacheVersion: "advisory-density-scaled-cfg-test-gating-diagnostics-denominator-ufcs-cfg-predicate-v6",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -1016,6 +1016,41 @@ describe("RS-SL-* signals", () => {
         density: 1,
       })
       expect(RsSl03.diagnose(out)[0]?.severity).toBe("warn")
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-SL-03 does not treat cfg feature named test as test gating", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-sl03-cfg-feature-test-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "panic-cfg-feature-test"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub fn prod() { let _ = Some(1).unwrap(); }",
+        "",
+        "#[cfg(feature = \"test\")]",
+        "pub fn feature_named_test() { let _ = Some(1).expect(\"x\"); }",
+        "",
+        "#[cfg(test)]",
+        "pub fn real_test() { let _ = Some(1).unwrap(); }",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const out = await runSignalCompute(RsSl03, repo, RsSl03.defaultConfig)
+
+      expect(out.totalCalls).toBe(2)
+      expect(out.analyzedFunctionCount).toBe(2)
+      expect(out.modules[0]).toMatchObject({
+        unwrapExpectCalls: 2,
+        density: 1,
+      })
     } finally {
       await cleanupWorkspace(repo)
     }

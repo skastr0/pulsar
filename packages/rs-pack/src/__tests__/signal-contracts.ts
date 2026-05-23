@@ -534,7 +534,7 @@ export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       positiveFixture:
         "rs-sl-signals.test.ts: temporary Cargo fixtures run through RustProjectLayer and real tree-sitter Rust parsing to prove method-call unwrap/expect usage, UFCS unwrap/expect usage, module attribution, per-module density, diagnostics, and score pressure.",
       negativeFixture:
-        "rs-sl-signals.test.ts: cfg(test)-gated unwrap/expect calls and functions, macros, comments, strings, no Rust source, fully excluded Rust source, and Rust source with no functions remain neutral, insufficient, or not applicable without false unwrap/expect evidence.",
+        "rs-sl-signals.test.ts: cfg(test)-gated unwrap/expect calls and functions, non-test cfg strings such as feature = \"test\", macros, comments, strings, no Rust source, fully excluded Rust source, and Rust source with no functions remain correctly classified without false unwrap/expect evidence loss or gain.",
       applicability:
         "rs-sl-signals.test.ts: loaded Rust source with analyzed functions is applicable, no Rust source emits insufficient_evidence metadata, and fully excluded or functionless Rust source emits not_applicable metadata.",
       score:
@@ -544,7 +544,7 @@ export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       factorLedger:
         "rs-sl-signals.test.ts: registered RS pack signal emits config.exclude_globs as score-bearing evidence and config.top_n_diagnostics as non-score-bearing metadata with signal-default source.",
       cacheSemantics:
-        "rs-sl-signals.test.ts and pack.test.ts: RS-SL-03 declares advisory-density-scaled-cfg-test-gating-diagnostics-denominator-ufcs-v5 cacheVersion, config/cacheVersion changes alter the signal config hash, and the RS pack wrapper preserves the signal-specific cacheVersion.",
+        "rs-sl-signals.test.ts and pack.test.ts: RS-SL-03 declares advisory-density-scaled-cfg-test-gating-diagnostics-denominator-ufcs-cfg-predicate-v6 cacheVersion, config/cacheVersion changes alter the signal config hash, and the RS pack wrapper preserves the signal-specific cacheVersion.",
       integration:
         "observer-integration.test.ts and CLI score tests: Rust observer integration carries RS-SL-03 unwrap/expect score and diagnostics through the RS pack against a real Cargo fixture, while CLI single-signal mode executes RS-SL-03 against the repository substrate through the source CLI path.",
     },

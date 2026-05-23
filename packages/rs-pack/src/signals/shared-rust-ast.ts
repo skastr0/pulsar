@@ -82,10 +82,17 @@ const isCfgTestAttribute = (value: RustSyntaxNode | string): boolean => {
   const text = typeof value === "string" ? value : value.text
   const match = text.match(/#\s*!?\[\s*cfg\s*\((.*)\)\s*\]/s)
   if (match === null) return false
-  const cfgExpression = match[1]?.replace(/\s+/g, "") ?? ""
+  const cfgExpression = stripRustStringLiterals(match[1] ?? "").replace(/\s+/g, "")
   const withoutNotTest = cfgExpression.replace(/not\(test\)/g, "")
   return /(^|[^A-Za-z0-9_])test([^A-Za-z0-9_]|$)/.test(withoutNotTest)
 }
+
+const stripRustStringLiterals = (text: string): string =>
+  text
+    .replace(/br#*"[\s\S]*?"#*/g, "STR")
+    .replace(/r#*"[\s\S]*?"#*/g, "STR")
+    .replace(/b"(?:[^"\\]|\\.)*"/g, "STR")
+    .replace(/"(?:[^"\\]|\\.)*"/g, "STR")
 
 export const walkAttributedNodes = (
   root: RustSyntaxNode,
