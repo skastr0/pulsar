@@ -156,6 +156,30 @@ describe("TS-AB-04 (interface to implementation ratio)", () => {
     expect(TsAb04.score(out)).toBe(0.75)
   })
 
+  test("type-only references to non-object cast bindings do not hide dead interfaces", async () => {
+    await repo.write(
+      "src/type-query-cast.ts",
+      [
+        "export interface Payload {",
+        "  readonly value: string",
+        "}",
+        "declare function readPayload(): unknown",
+        "const payload = readPayload() as Payload",
+        "export type PayloadShape = typeof payload",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsAb04, TsAb04.defaultConfig)
+
+    expect(out.totalInterfaces).toBe(1)
+    expect(out.deadInterfaces).toEqual([
+      expect.objectContaining({
+        interfaceName: "Payload",
+      }),
+    ])
+    expect(TsAb04.score(out)).toBe(0.75)
+  })
+
   test("consumed non-object casts count as structural data usage", async () => {
     await repo.write(
       "src/parsed.ts",
