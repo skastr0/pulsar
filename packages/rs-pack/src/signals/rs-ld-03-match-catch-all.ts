@@ -1,11 +1,18 @@
 import {
+  makeFactorEntry,
+  makeFactorLedger,
+  type SignalFactorLedger,
+} from "@skastr0/pulsar-core/factors"
+import {
   type Diagnostic,
   type Signal,
+  type SignalFactorDefinition,
   SignalComputeError,
 } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
 import { collectRustProjectFacts } from "../rust-analysis.js"
 import { RustProjectTag } from "../project.js"
+import { DEFAULT_RUST_EXCLUDE_GLOBS } from "./shared-rust-ast.js"
 import { isExcluded, matchesAnyGlob } from "./shared-globs.js"
 
 const RsLd03Config = Schema.Struct({
@@ -29,7 +36,42 @@ interface RsLd03Output {
   readonly totalMatches: number
   readonly matchesWithCatchAll: number
   readonly totalCatchAllArms: number
+  readonly sourceFileCount: number
+  readonly analyzedSourceFileCount: number
+  readonly diagnosticLimit: number
+  readonly scoreMode: "double-weighted-catch-all-match-share"
+  readonly scoreDenominator: "analyzed-match-expressions"
+  readonly catchAllMatchShare: number
+  readonly weightedCatchAllPressure: number
 }
+
+const DEFAULT_TOP_N_DIAGNOSTICS = 10
+const RS_LD_03_SCORE_MODE = "double-weighted-catch-all-match-share" as const
+const RS_LD_03_SCORE_DENOMINATOR = "analyzed-match-expressions" as const
+
+const RsLd03FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
+  {
+    path: "config.exclude_globs",
+    title: "Config exclude globs",
+    valueKind: "array",
+    scoreRole: "evidence",
+    defaultValue: [...DEFAULT_RUST_EXCLUDE_GLOBS],
+  },
+  {
+    path: "config.core_logic_globs",
+    title: "Config core logic globs",
+    valueKind: "array",
+    scoreRole: "evidence",
+    defaultValue: [],
+  },
+  {
+    path: "config.top_n_diagnostics",
+    title: "Config top n diagnostics",
+    valueKind: "number",
+    scoreRole: "metadata",
+    defaultValue: DEFAULT_TOP_N_DIAGNOSTICS,
+  },
+]
 
 export const RsLd03: Signal<RsLd03Config, RsLd03Output, RustProjectTag> = {
   id: "RS-LD-03-match-catch-all",
@@ -38,26 +80,31 @@ export const RsLd03: Signal<RsLd03Config, RsLd03Output, RustProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
+  cacheVersion: "match-catch-all-config-applicability-diagnostics-v1",
   configSchema: RsLd03Config,
+  factorDefinitions: RsLd03FactorDefinitions,
   defaultConfig: {
-    exclude_globs: ["**/target/**", "**/tests/**", "**/examples/**", "**/benches/**"],
+    exclude_globs: [...DEFAULT_RUST_EXCLUDE_GLOBS],
     core_logic_globs: [],
-    top_n_diagnostics: 10,
+    top_n_diagnostics: DEFAULT_TOP_N_DIAGNOSTICS,
   },
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
+      const normalizedConfig = normalizeRsLd03Config(config)
       const project = yield* RustProjectTag
       return yield* Effect.tryPromise({
         try: async (): Promise<RsLd03Output> => {
           const facts = await collectRustProjectFacts(project)
+          const analyzedSourceFiles = project.sourceFiles.filter(
+            (file) =>
+              !isExcluded(file, normalizedConfig.exclude_globs) &&
+              (normalizedConfig.core_logic_globs.length === 0 ||
+                matchesAnyGlob(file, normalizedConfig.core_logic_globs)),
+          )
+          const analyzedSourceFileSet = new Set(analyzedSourceFiles)
           const matchSites = facts.matches
-            .filter((site) => !isExcluded(site.file, config.exclude_globs))
-            .filter(
-              (site) =>
-                config.core_logic_globs.length === 0 ||
-                matchesAnyGlob(site.file, config.core_logic_globs),
-            )
+            .filter((site) => analyzedSourceFileSet.has(site.file))
             .map((site) => ({
               file: site.file,
               module: site.modulePath,
@@ -67,30 +114,88 @@ export const RsLd03: Signal<RsLd03Config, RsLd03Output, RustProjectTag> = {
               catchAllArmCount: site.catchAllArmCount,
             }))
             .sort((a, b) => b.catchAllArmCount - a.catchAllArmCount || a.file.localeCompare(b.file))
+          const matchesWithCatchAll = matchSites.filter((site) => site.catchAllArmCount > 0).length
+          const catchAllMatchShare = ratio(matchesWithCatchAll, matchSites.length)
 
           return {
             matchSites,
             totalMatches: matchSites.length,
-            matchesWithCatchAll: matchSites.filter((site) => site.catchAllArmCount > 0).length,
+            matchesWithCatchAll,
             totalCatchAllArms: matchSites.reduce((sum, site) => sum + site.catchAllArmCount, 0),
+            sourceFileCount: project.sourceFiles.length,
+            analyzedSourceFileCount: analyzedSourceFiles.length,
+            diagnosticLimit: normalizedConfig.top_n_diagnostics,
+            scoreMode: RS_LD_03_SCORE_MODE,
+            scoreDenominator: RS_LD_03_SCORE_DENOMINATOR,
+            catchAllMatchShare,
+            weightedCatchAllPressure: Math.min(1, catchAllMatchShare * 2),
           }
         },
         catch: (cause) =>
           new SignalComputeError({ signalId: "RS-LD-03-match-catch-all", message: String(cause), cause }),
       })
     }),
-  score: (out) => {
-    if (out.totalMatches === 0) return 1
-    return Math.max(0, 1 - (out.matchesWithCatchAll / out.totalMatches) * 2)
-  },
-  diagnose: (out): ReadonlyArray<Diagnostic> =>
-    out.matchSites
+  score: (out) => Math.max(0, 1 - out.weightedCatchAllPressure),
+  diagnose: (out): ReadonlyArray<Diagnostic> => {
+    if (out.sourceFileCount === 0) {
+      return [{
+        severity: "warn" as const,
+        message: "RS-LD-03 found no Rust source files for match catch-all analysis",
+        data: {
+          sourceFileCount: out.sourceFileCount,
+          analyzedSourceFileCount: out.analyzedSourceFileCount,
+          totalMatches: out.totalMatches,
+          matchesWithCatchAll: out.matchesWithCatchAll,
+          scoreMode: out.scoreMode,
+          scoreDenominator: out.scoreDenominator,
+        },
+      }].slice(0, out.diagnosticLimit)
+    }
+    return out.matchSites
       .filter((site) => site.catchAllArmCount > 0)
-      .slice(0, 10)
+      .slice(0, out.diagnosticLimit)
       .map((site) => ({
         severity: "warn" as const,
         message: `Match in ${site.functionName} uses ${site.catchAllArmCount} catch-all arm(s)`,
         location: { file: site.file, line: site.line },
-        data: { ...site },
-      })),
+        data: {
+          ...site,
+          scoreMode: out.scoreMode,
+          scoreDenominator: out.scoreDenominator,
+        },
+      }))
+  },
+  outputMetadata: (out) => {
+    if (out.sourceFileCount === 0) {
+      return { applicability: "insufficient_evidence" as const }
+    }
+    if (out.analyzedSourceFileCount === 0 || out.totalMatches === 0) {
+      return { applicability: "not_applicable" as const }
+    }
+    return undefined
+  },
+  factorLedger: () => makeRsLd03FactorLedger(),
 }
+
+type NormalizedRsLd03Config = RsLd03Config
+
+const normalizeRsLd03Config = (config: RsLd03Config): NormalizedRsLd03Config => ({
+  exclude_globs: config.exclude_globs,
+  core_logic_globs: config.core_logic_globs,
+  top_n_diagnostics: Number.isFinite(config.top_n_diagnostics)
+    ? Math.max(0, Math.floor(config.top_n_diagnostics))
+    : 0,
+})
+
+const makeRsLd03FactorLedger = (): SignalFactorLedger =>
+  makeFactorLedger(
+    "RS-LD-03-match-catch-all",
+    RsLd03FactorDefinitions.map((definition) =>
+      makeFactorEntry(definition, definition.defaultValue ?? null, {
+        source: "signal-default",
+      }),
+    ),
+  )
+
+const ratio = (numerator: number, denominator: number): number =>
+  denominator === 0 ? 0 : numerator / denominator

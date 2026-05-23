@@ -293,6 +293,26 @@ const createLifetimeScoreWorkspace = (
     "src/lib.rs": [...functions, ""].join("\n"),
   })
 
+const createMatchWorkspace = (
+  name: string,
+  files: Record<string, string | ReadonlyArray<string>>,
+) =>
+  createRustWorkspace(`pulsar-rs-ld03-${name}-`, {
+    "Cargo.toml": [
+      "[package]",
+      `name = "match-${name}"`,
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+    ].join("\n"),
+    ...Object.fromEntries(
+      Object.entries(files).map(([path, content]) => [
+        path,
+        Array.isArray(content) ? [...content, ""].join("\n") : content,
+      ]),
+    ),
+  })
+
 describe("RS-LD-* signals", () => {
   test("RS-LD-01 declares identity, config, cache, pack registration, and factor ledger", async () => {
     const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
@@ -1185,6 +1205,77 @@ describe("RS-LD-* signals", () => {
     }
   })
 
+  test("RS-LD-03 declares identity, config, cache, pack registration, and factor ledger", async () => {
+    const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
+    const versionedRegistry = await Effect.runPromise(
+      buildRegistry([
+        ...SHARED_SIGNALS,
+        ...RS_PACK_SIGNALS.filter((signal) => signal.id !== RsLd03.id),
+        { ...RsLd03, cacheVersion: `${RsLd03.cacheVersion}-next` },
+      ]),
+    )
+    const registered = registry.byId.get("RS-LD-03")
+    const decoded = Schema.decodeUnknownSync(RsLd03.configSchema)(RsLd03.defaultConfig)
+    const factorLedger = registered?.factorLedger?.({})
+    const baseCacheHash = computeConfigHash(RsLd03.id, registry, undefined)
+    const versionedCacheHash = computeConfigHash(RsLd03.id, versionedRegistry, undefined)
+    const configuredCacheHash = computeConfigHash(RsLd03.id, registry, {
+      id: "rs-ld-03-contract",
+      domain: "test",
+      signal_overrides: {
+        [RsLd03.id]: {
+          config: {
+            ...RsLd03.defaultConfig,
+            core_logic_globs: ["**/core.rs"],
+            top_n_diagnostics: 1,
+          },
+        },
+      },
+    })
+
+    expect(RsLd03).toMatchObject({
+      id: "RS-LD-03-match-catch-all",
+      aliases: ["RS-LD-03"],
+      title: "Match catch-all usage",
+      tier: 1,
+      category: "legibility-decay",
+      kind: "legibility",
+      cacheVersion: "match-catch-all-config-applicability-diagnostics-v1",
+      inputs: [],
+    })
+    expect(decoded).toEqual({
+      exclude_globs: ["**/target/**", "**/tests/**", "**/examples/**", "**/benches/**"],
+      core_logic_globs: [],
+      top_n_diagnostics: 10,
+    })
+    expect(registered?.id).toBe(RsLd03.id)
+    expect(registered?.cacheVersion).toBe(RsLd03.cacheVersion)
+    expect(registry.byId.get("RS-LD-03")?.id).toBe(RsLd03.id)
+    expect(baseCacheHash).not.toBe(versionedCacheHash)
+    expect(baseCacheHash).not.toBe(configuredCacheHash)
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.exclude_globs",
+        affectsScore: true,
+        scoreRole: "evidence",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.core_logic_globs",
+        affectsScore: true,
+        scoreRole: "evidence",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        affectsScore: false,
+        scoreRole: "metadata",
+      }),
+    )
+  })
+
   test("RS-LD-03 measures catch-all usage in match expressions", async () => {
     const repo = await createLegibilityWorkspace()
     try {
@@ -1192,8 +1283,195 @@ describe("RS-LD-* signals", () => {
       expect(out.totalMatches).toBe(1)
       expect(out.matchesWithCatchAll).toBe(1)
       expect(out.totalCatchAllArms).toBe(1)
+      expect(out.sourceFileCount).toBe(1)
+      expect(out.analyzedSourceFileCount).toBe(1)
+      expect(out.scoreMode).toBe("double-weighted-catch-all-match-share")
+      expect(out.scoreDenominator).toBe("analyzed-match-expressions")
+      expect(out.catchAllMatchShare).toBe(1)
+      expect(out.weightedCatchAllPressure).toBe(1)
+      expect(RsLd03.score(out)).toBe(0)
+      expect(RsLd03.outputMetadata?.(out)).toBeUndefined()
+      expect(RsLd03.diagnose(out)[0]).toMatchObject({
+        severity: "warn",
+        message: "Match in parse uses 1 catch-all arm(s)",
+        data: expect.objectContaining({
+          scoreMode: "double-weighted-catch-all-match-share",
+          scoreDenominator: "analyzed-match-expressions",
+        }),
+      })
     } finally {
       await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-LD-03 scores catch-all pressure monotonically over analyzed matches", async () => {
+    const cleanMatch = [
+      "pub fn clean(value: u8) -> u8 {",
+      "    match value {",
+      "        0 => 0,",
+      "        1 => 1,",
+      "        2 => 2,",
+      "    }",
+      "}",
+    ].join("\n")
+    const catchAllMatch = (name: string) => [
+      `pub fn ${name}(value: u8) -> u8 {`,
+      "    match value {",
+      "        0 => 0,",
+      "        _ => 1,",
+      "    }",
+      "}",
+    ].join("\n")
+    const clean = await createMatchWorkspace("clean", {
+      "src/lib.rs": [cleanMatch, cleanMatch.replace("clean", "also_clean")].join("\n\n"),
+    })
+    const oneOver = await createMatchWorkspace("one-over", {
+      "src/lib.rs": [catchAllMatch("fallback_one"), cleanMatch, cleanMatch.replace("clean", "also_clean")].join("\n\n"),
+    })
+    const twoOver = await createMatchWorkspace("two-over", {
+      "src/lib.rs": [catchAllMatch("fallback_one"), catchAllMatch("fallback_two"), cleanMatch].join("\n\n"),
+    })
+
+    try {
+      const cleanOut = await runSignalCompute(RsLd03, clean, RsLd03.defaultConfig)
+      const oneOverOut = await runSignalCompute(RsLd03, oneOver, RsLd03.defaultConfig)
+      const twoOverOut = await runSignalCompute(RsLd03, twoOver, RsLd03.defaultConfig)
+
+      expect(cleanOut.totalMatches).toBe(2)
+      expect(cleanOut.matchesWithCatchAll).toBe(0)
+      expect(cleanOut.catchAllMatchShare).toBe(0)
+      expect(cleanOut.weightedCatchAllPressure).toBe(0)
+      expect(RsLd03.score(cleanOut)).toBe(1)
+      expect(oneOverOut.totalMatches).toBe(3)
+      expect(oneOverOut.matchesWithCatchAll).toBe(1)
+      expect(oneOverOut.catchAllMatchShare).toBe(1 / 3)
+      expect(oneOverOut.weightedCatchAllPressure).toBe(2 / 3)
+      expect(RsLd03.score(oneOverOut)).toBeCloseTo(1 / 3)
+      expect(twoOverOut.totalMatches).toBe(3)
+      expect(twoOverOut.matchesWithCatchAll).toBe(2)
+      expect(twoOverOut.weightedCatchAllPressure).toBe(1)
+      expect(RsLd03.score(twoOverOut)).toBe(0)
+      expect(RsLd03.score(cleanOut)).toBeGreaterThan(RsLd03.score(oneOverOut))
+      expect(RsLd03.score(oneOverOut)).toBeGreaterThan(RsLd03.score(twoOverOut))
+    } finally {
+      await cleanupWorkspace(clean)
+      await cleanupWorkspace(oneOver)
+      await cleanupWorkspace(twoOver)
+    }
+  })
+
+  test("RS-LD-03 normalizes diagnostics, scope, and applicability evidence", async () => {
+    const scoped = await createMatchWorkspace("scoped", {
+      "src/lib.rs": [
+        "pub mod core;",
+        "pub fn fallback(value: u8) -> u8 {",
+        "    match value {",
+        "        0 => 0,",
+        "        _ => 1,",
+        "    }",
+        "}",
+      ],
+      "src/core.rs": [
+        "pub fn explicit(value: u8) -> u8 {",
+        "    match value {",
+        "        0 => 0,",
+        "        1 => 1,",
+        "        2 => 2,",
+        "    }",
+        "}",
+      ],
+    })
+    const missing = await createMatchWorkspace("missing", {})
+    const noMatch = await createMatchWorkspace("no-match", {
+      "src/lib.rs": "pub fn clean(value: u8) -> u8 { value }",
+    })
+    const excluded = await createMatchWorkspace("excluded", {
+      "src/lib.rs": [
+        "pub fn fallback(value: u8) -> u8 {",
+        "    match value {",
+        "        0 => 0,",
+        "        _ => 1,",
+        "    }",
+        "}",
+      ],
+    })
+
+    try {
+      const capped = await runSignalCompute(
+        RsLd03,
+        scoped,
+        { ...RsLd03.defaultConfig, top_n_diagnostics: 1.8 },
+      )
+      const hidden = await runSignalCompute(
+        RsLd03,
+        scoped,
+        { ...RsLd03.defaultConfig, top_n_diagnostics: Number.NaN },
+      )
+      const coreOnly = await runSignalCompute(
+        RsLd03,
+        scoped,
+        { ...RsLd03.defaultConfig, core_logic_globs: ["**/core.rs"] },
+      )
+      const missingOut = await runSignalCompute(RsLd03, missing, RsLd03.defaultConfig)
+      const noMatchOut = await runSignalCompute(RsLd03, noMatch, RsLd03.defaultConfig)
+      const excludedOut = await runSignalCompute(
+        RsLd03,
+        excluded,
+        { ...RsLd03.defaultConfig, exclude_globs: ["**/*.rs"] },
+      )
+
+      expect(capped.diagnosticLimit).toBe(1)
+      expect(RsLd03.diagnose(capped)).toHaveLength(1)
+      expect(hidden.diagnosticLimit).toBe(0)
+      expect(RsLd03.diagnose(hidden)).toHaveLength(0)
+
+      expect(coreOnly.sourceFileCount).toBe(2)
+      expect(coreOnly.analyzedSourceFileCount).toBe(1)
+      expect(coreOnly.totalMatches).toBe(1)
+      expect(coreOnly.matchesWithCatchAll).toBe(0)
+      expect(RsLd03.score(coreOnly)).toBe(1)
+      expect(RsLd03.outputMetadata?.(coreOnly)).toBeUndefined()
+
+      expect(missingOut.sourceFileCount).toBe(0)
+      expect(RsLd03.outputMetadata?.(missingOut)).toEqual({
+        applicability: "insufficient_evidence",
+      })
+      expect(RsLd03.diagnose(missingOut)).toEqual([
+        expect.objectContaining({
+          severity: "warn",
+          message: "RS-LD-03 found no Rust source files for match catch-all analysis",
+          data: expect.objectContaining({
+            sourceFileCount: 0,
+            analyzedSourceFileCount: 0,
+            totalMatches: 0,
+            matchesWithCatchAll: 0,
+            scoreMode: "double-weighted-catch-all-match-share",
+            scoreDenominator: "analyzed-match-expressions",
+          }),
+        }),
+      ])
+
+      expect(noMatchOut.sourceFileCount).toBe(1)
+      expect(noMatchOut.analyzedSourceFileCount).toBe(1)
+      expect(noMatchOut.totalMatches).toBe(0)
+      expect(RsLd03.outputMetadata?.(noMatchOut)).toEqual({
+        applicability: "not_applicable",
+      })
+      expect(RsLd03.score(noMatchOut)).toBe(1)
+      expect(RsLd03.diagnose(noMatchOut)).toEqual([])
+
+      expect(excludedOut.sourceFileCount).toBe(1)
+      expect(excludedOut.analyzedSourceFileCount).toBe(0)
+      expect(excludedOut.totalMatches).toBe(0)
+      expect(RsLd03.outputMetadata?.(excludedOut)).toEqual({
+        applicability: "not_applicable",
+      })
+      expect(RsLd03.diagnose(excludedOut)).toEqual([])
+    } finally {
+      await cleanupWorkspace(scoped)
+      await cleanupWorkspace(missing)
+      await cleanupWorkspace(noMatch)
+      await cleanupWorkspace(excluded)
     }
   })
 
