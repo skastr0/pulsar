@@ -290,6 +290,14 @@ const deepestResult = (results: ReadonlyArray<DepthResult>): DepthResult => {
       best = result
       continue
     }
+    if (result.depth === best.depth && !best.truncated && result.truncated) {
+      best = result
+      continue
+    }
+    if (result.depth === best.depth && !best.cycle && result.cycle) {
+      best = result
+      continue
+    }
     if (result.depth === best.depth && result.chain.join("/") < best.chain.join("/")) {
       best = result
     }

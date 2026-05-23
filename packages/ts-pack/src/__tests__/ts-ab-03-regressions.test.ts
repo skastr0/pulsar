@@ -97,4 +97,24 @@ describe("TS-AB-03 type indirection regressions", () => {
     expect(byName.get("ChildClass")?.depth).toBe(1)
     expect(byName.get("ChildClass")?.chain).toEqual(["BaseClass"])
   })
+
+  test("traversal cap evidence is preserved for zero-depth truncated branches", async () => {
+    await repo.write(
+      "src/truncated.ts",
+      [
+        "type B = string",
+        "export type A = { readonly value: B }",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsAb03, {
+      ...TsAb03.defaultConfig,
+      max_traversal_steps: 2,
+    })
+    const alias = out.declarations.find((entry) => entry.name === "A")
+
+    expect(alias?.truncated).toBe(true)
+    expect(alias?.chain).toContain("<truncated>")
+  })
 })
