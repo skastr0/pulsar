@@ -1636,7 +1636,7 @@ describe("RS-LD-* signals", () => {
       tier: 1,
       category: "legibility-decay",
       kind: "legibility",
-      cacheVersion: "error-granularity-config-applicability-diagnostics-cfg-test-result-aliases-v9",
+      cacheVersion: "error-granularity-config-applicability-diagnostics-cfg-test-result-aliases-v10",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -1855,6 +1855,10 @@ describe("RS-LD-* signals", () => {
         "  use std::io::{Error as IoError, ErrorKind};",
         "  pub fn grouped_io_error(value: &str) -> Result<(), IoError> { let _ = ErrorKind::Other; let _ = value; Ok(()) }",
         "}",
+        "pub mod nested_grouped_imports {",
+        "  use std::{io::{Error as IoError, ErrorKind}};",
+        "  pub fn nested_grouped_io_error(value: &str) -> Result<(), IoError> { let _ = ErrorKind::Other; let _ = value; Ok(()) }",
+        "}",
       ],
     })
 
@@ -1862,9 +1866,9 @@ describe("RS-LD-* signals", () => {
       const out = await runSignalCompute(RsLd04, repo, RsLd04.defaultConfig)
       const byName = new Map(out.boundaryFunctions.map((fn) => [fn.name, fn]))
 
-      expect(out.totalBoundaryResults).toBe(28)
+      expect(out.totalBoundaryResults).toBe(29)
       expect(out.collapsedCount).toBe(18)
-      expect(out.granularCount).toBe(10)
+      expect(out.granularCount).toBe(11)
       expect(byName.get("explicit_anyhow")).toMatchObject({
         errorType: "anyhow::Error",
         classification: "collapsed",
@@ -1977,7 +1981,11 @@ describe("RS-LD-* signals", () => {
         errorType: "std::io::Error",
         classification: "granular",
       })
-      expect(RsLd04.score(out)).toBeCloseTo(5 / 14)
+      expect(byName.get("nested_grouped_io_error")).toMatchObject({
+        errorType: "std::io::Error",
+        classification: "granular",
+      })
+      expect(RsLd04.score(out)).toBeCloseTo(11 / 29)
     } finally {
       await cleanupWorkspace(repo)
     }

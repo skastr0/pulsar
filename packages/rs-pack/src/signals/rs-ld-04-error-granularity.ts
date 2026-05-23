@@ -80,7 +80,7 @@ export const RsLd04: Signal<RsLd04Config, RsLd04Output, RustProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "error-granularity-config-applicability-diagnostics-cfg-test-result-aliases-v9",
+  cacheVersion: "error-granularity-config-applicability-diagnostics-cfg-test-result-aliases-v10",
   configSchema: RsLd04Config,
   factorDefinitions: RsLd04FactorDefinitions,
   defaultConfig: {
@@ -294,25 +294,8 @@ const collectResultAliasScopes = (
     if (ancestors.some((ancestor) => ancestor.type === "function_item" || ancestor.type === "block")) return
     const moduleAliases = scopeForModule(modulePathForAncestors(scope, ancestors).modulePath)
     if (node.type === "use_declaration") {
-      const renamedImport = /\buse\s+([A-Za-z_][A-Za-z0-9_:]*)\s+as\s+([A-Za-z_][A-Za-z0-9_]*)\s*;/.exec(node.text)
-      if (renamedImport !== null) {
-        moduleAliases.importAliases.set(renamedImport[2]!, renamedImport[1]!)
-        return
-      }
-      const plainImport = /\buse\s+((?:[A-Za-z_][A-Za-z0-9_]*::)+)([A-Za-z_][A-Za-z0-9_]*)\s*;/.exec(node.text)
-      if (plainImport !== null) {
-        moduleAliases.importAliases.set(plainImport[2]!, `${plainImport[1]!}${plainImport[2]!}`)
-        return
-      }
-      const groupedImport = /\buse\s+([A-Za-z_][A-Za-z0-9_:]*)::\{([^}]+)\}\s*;/.exec(node.text)
-      if (groupedImport !== null) {
-        const prefix = groupedImport[1]!
-        for (const item of splitTopLevelCommas(groupedImport[2] ?? "")) {
-          const itemMatch = /^([A-Za-z_][A-Za-z0-9_]*)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?$/.exec(item.trim())
-          if (itemMatch === null) continue
-          const importedName = itemMatch[1]!
-          moduleAliases.importAliases.set(itemMatch[2] ?? importedName, `${prefix}::${importedName}`)
-        }
+      for (const [name, target] of importAliasesFromUseDeclaration(node.text)) {
+        moduleAliases.importAliases.set(name, target)
       }
     }
     if (node.type === "type_item") {
@@ -322,6 +305,52 @@ const collectResultAliasScopes = (
   })
   return scopes
 }
+
+const importAliasesFromUseDeclaration = (text: string): ReadonlyArray<readonly [string, string]> => {
+  const match = /^\s*(?:pub(?:\s*\([^)]*\))?\s+)?use\s+([\s\S]*?)\s*;?\s*$/.exec(text)
+  if (match === null) return []
+  return importAliasesFromUseTree(match[1]!)
+}
+
+const importAliasesFromUseTree = (
+  text: string,
+  prefix = "",
+): ReadonlyArray<readonly [string, string]> => {
+  const trimmed = text.trim()
+  const grouped = splitUseTreeGroup(trimmed)
+  if (grouped !== undefined) {
+    const groupedPrefix = joinUsePath(prefix, grouped.prefix)
+    return splitTopLevelCommas(grouped.body).flatMap((item) => importAliasesFromUseTree(item, groupedPrefix))
+  }
+
+  const renamed = /^([A-Za-z_][A-Za-z0-9_:]*|self|super|crate)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?$/.exec(trimmed)
+  if (renamed === null) return []
+  const importedPath = joinUsePath(prefix, renamed[1]!)
+  const importedName = importedPath.split("::").at(-1)
+  if (importedName === undefined || importedName === "self" || importedName === "*") return []
+  return [[renamed[2] ?? importedName, importedPath]]
+}
+
+const splitUseTreeGroup = (text: string): { readonly prefix: string, readonly body: string } | undefined => {
+  for (let index = 0; index < text.length - 2; index += 1) {
+    if (text[index] !== ":" || text[index + 1] !== ":" || text[index + 2] !== "{") continue
+    const prefix = text.slice(0, index).trim()
+    const bodyStart = index + 3
+    let depth = 1
+    for (let cursor = bodyStart; cursor < text.length; cursor += 1) {
+      const char = text[cursor]
+      if (char === "{") depth += 1
+      if (char === "}") depth -= 1
+      if (depth === 0 && text.slice(cursor + 1).trim() === "") {
+        return { prefix, body: text.slice(bodyStart, cursor) }
+      }
+    }
+  }
+  return undefined
+}
+
+const joinUsePath = (prefix: string, path: string): string =>
+  prefix.length === 0 ? path : `${prefix}::${path}`
 
 const aliasesForModule = (
   modulePath: string,
