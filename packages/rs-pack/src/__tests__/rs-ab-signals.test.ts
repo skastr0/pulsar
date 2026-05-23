@@ -236,6 +236,40 @@ describe("RS-AB-* signals", () => {
     }
   })
 
+  test("RS-AB-01 requires the full module chain to be public for exported API", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-ab01-private-nested-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "private-nested"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub mod api {",
+        "    mod hidden {",
+        "        pub struct Ghost;",
+        "    }",
+        "",
+        "    pub mod visible {",
+        "        pub struct Surface;",
+        "    }",
+        "}",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const out = await runSignalCompute(RsAb01, repo, RsAb01.defaultConfig)
+      expect(out.deadPublicItems.map((item) => item.name)).toEqual(["Ghost"])
+      expect(out.deadPublicItems[0]?.surface).toBe("internal-overpublic")
+      expect(out.exportedApiItems.map((item) => item.name)).toContain("Surface")
+      expect(out.exportedApiItems.some((item) => item.name === "Ghost")).toBe(false)
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
   test("RS-AB-01 normalizes diagnostic caps and classifies config factors", async () => {
     const repo = await createRustWorkspace("pulsar-rs-ab01-diagnostics-", {
       "Cargo.toml": [

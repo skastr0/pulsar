@@ -83,7 +83,7 @@ export const RsAb01: Signal<RsAb01Config, RsAb01Output, RustProjectTag> = {
   tier: 1,
   category: "abstraction-bloat",
   kind: "structural",
-  cacheVersion: "rs-ab-01-public-surface-use-segments-aliases-diagnostics-reexports-private-visibility-v7",
+  cacheVersion: "rs-ab-01-public-surface-use-segments-aliases-diagnostics-reexports-private-visibility-chain-v8",
   configSchema: RsAb01Config,
   factorDefinitions: RsAb01FactorDefinitions,
   defaultConfig: {
@@ -161,6 +161,7 @@ const computeUnusedPublicItems = async (
     excludeGlobs: config.exclude_globs,
   })
   const publicSummaries = summarizePublicItems({
+    facts,
     publicItems,
     usage,
     libraryCrates,
@@ -359,6 +360,7 @@ const resolvedPublicItemKey = (
 }
 
 const summarizePublicItems = (input: {
+  readonly facts: RustAnalysis
   readonly publicItems: ReadonlyArray<RustItemFact>
   readonly usage: PublicUsage
   readonly libraryCrates: ReadonlySet<string>
@@ -379,6 +381,7 @@ const summarizePublicItems = (input: {
       surface: reexported
         ? "exported-api"
         : classifyPublicSurface(
+            input.facts,
             item,
             input.libraryCrates,
             input.exportedRootModules.get(item.crateName) ?? new Set<string>(),
@@ -395,6 +398,7 @@ const sortByLocation = (
   items.slice().sort((left, right) => left.file.localeCompare(right.file) || left.line - right.line)
 
 const classifyPublicSurface = (
+  facts: RustAnalysis,
   item: { readonly crateName: string; readonly relativeModulePath: string },
   libraryCrates: ReadonlySet<string>,
   exportedRootModules: ReadonlySet<string>,
@@ -404,5 +408,8 @@ const classifyPublicSurface = (
   if (segments[0] !== "crate") return "non-library"
   const root = segments[1]
   if (root === undefined) return "exported-api"
-  return exportedRootModules.has(root) ? "exported-api" : "internal-overpublic"
+  return exportedRootModules.has(root) &&
+    isModulePathExternallyReachable(facts, item.crateName, item.relativeModulePath)
+    ? "exported-api"
+    : "internal-overpublic"
 }
