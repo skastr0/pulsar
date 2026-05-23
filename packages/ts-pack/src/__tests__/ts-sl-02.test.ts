@@ -1,14 +1,16 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Schema } from "effect"
 import { SignalContextTag } from "@skastr0/pulsar-core/signal"
+import { buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { spawnSync } from "node:child_process"
 import { writeFileSync } from "node:fs"
 import { mkdtemp } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { TsSl02 } from "../signals/ts-sl-02-inconsistent-clones.js"
+import { TsSl02, normalizeTsSl02Config } from "../signals/ts-sl-02-inconsistent-clones.js"
 import { TsSl01 } from "../signals/ts-sl-01-duplication.js"
 import type { TsSl01Output } from "../signals/ts-sl-01-model.js"
+import { TS_PACK_SIGNALS } from "../pack.js"
 
 const git = (repo: string, args: Array<string>, env?: Record<string, string>): void => {
   const result = spawnSync("git", args, {
@@ -44,6 +46,26 @@ const makeCommitMany = (
     GIT_COMMITTER_DATE: dateIso,
   })
 }
+
+const runTsSl02 = async (
+  repo: string,
+  inputs: ReadonlyMap<string, unknown>,
+  options: {
+    readonly config?: typeof TsSl02.defaultConfig
+    readonly gitSha?: string
+  } = {},
+) =>
+  Effect.runPromise(
+    TsSl02.compute(options.config ?? TsSl02.defaultConfig, inputs).pipe(
+      Effect.provide(
+        Layer.succeed(SignalContextTag, {
+          gitSha: options.gitSha ?? "HEAD",
+          worktreePath: repo,
+          changedHunks: [],
+        }),
+      ),
+    ),
+  )
 
 describe("TS-SL-02 Inconsistent clone detection", () => {
   let repo: string
@@ -96,18 +118,93 @@ describe("TS-SL-02 Inconsistent clone detection", () => {
     expect(out.analyzedGroups).toBe(0)
     expect(out.analysisLimitHit).toBe(false)
     expect(TsSl02.score(out)).toBe(1)
+    expect(TsSl02.outputMetadata?.(out)).toEqual({ applicability: "not_applicable" })
   })
 
-  test("declared as compound with correct inputs", () => {
+  test("declares identity, pack registration, config schema, cache, and factor ledger", async () => {
+    const packRegistered = TS_PACK_SIGNALS.find((signal) =>
+      signal.aliases?.includes("TS-SL-02"),
+    )
+    expect(packRegistered).toBeDefined()
+    const registry = await Effect.runPromise(buildRegistry([TsSl01, packRegistered!]))
+    const registered = registry.byId.get("TS-SL-02")
+    const decoded = Schema.decodeUnknownSync(TsSl02.configSchema)(TsSl02.defaultConfig)
+
+    expect(TsSl02).toMatchObject({
+      id: "TS-SL-02-inconsistent-clones",
+      title: "Inconsistent clones",
+      aliases: ["TS-SL-02"],
+      tier: 1.5,
+      category: "generated-slop",
+      kind: "compound",
+      cacheVersion: "history-context-normalized-config-v1",
+      cacheDependencies: ["git-revision-context"],
+    })
     expect(TsSl02.inputs).toEqual([
       {
         id: "TS-SL-01-duplication",
         cacheFingerprint: "ts-sl-02-duplication-input-v1",
       },
     ])
-    expect(TsSl02.aliases).toContain("TS-SL-02")
-    expect(TsSl02.tier).toBe(1.5)
-    expect(TsSl02.kind).toBe("compound")
+    expect(decoded).toEqual(TsSl02.defaultConfig)
+    expect(registered?.id).toBe(TsSl02.id)
+    expect(registered?.cacheVersion).toContain(TsSl02.cacheVersion)
+    expect(registry.byId.get("TS-SL-02")?.id).toBe(TsSl02.id)
+
+    const factorLedger = registered?.factorLedger?.({
+      totalGroups: 1,
+      candidateGroups: 1,
+      analyzedGroups: 1,
+      analysisLimitHit: false,
+      analysisLimitScoreCap: 0.95,
+      divergentGroups: [],
+      divergenceDistribution: { min: 0, max: 0, mean: 0, median: 0 },
+    })
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.analysis_limit_score_cap",
+        value: 0.95,
+        source: "signal-default",
+        affectsScore: false,
+        scoreRole: "score-cap",
+      }),
+    )
+  })
+
+  test("normalizes unsafe config values before analysis and diagnostics", () => {
+    const normalized = normalizeTsSl02Config({
+      divergence_threshold: 1.4,
+      min_window_days: Number.NaN,
+      top_n_diagnostics: -1,
+      max_groups_analyzed: 2.9,
+      max_members_per_group: 0,
+      analysis_limit_score_cap: Number.POSITIVE_INFINITY,
+    })
+
+    expect(normalized).toEqual({
+      divergence_threshold: 1,
+      min_window_days: TsSl02.defaultConfig.min_window_days,
+      top_n_diagnostics: 0,
+      max_groups_analyzed: 2,
+      max_members_per_group: TsSl02.defaultConfig.max_members_per_group,
+      analysis_limit_score_cap: TsSl02.defaultConfig.analysis_limit_score_cap,
+    })
+    expect(TsSl02.diagnose({
+      totalGroups: 1,
+      candidateGroups: 1,
+      analyzedGroups: 1,
+      analysisLimitHit: false,
+      diagnosticLimit: -1,
+      divergentGroups: [
+        {
+          groupId: "hidden",
+          divergenceScore: 1,
+          lastModifiedWindow: 1,
+          members: [],
+        },
+      ],
+      divergenceDistribution: { min: 1, max: 1, mean: 1, median: 1 },
+    })).toEqual([])
   })
 
   test("does not mark two-member clones from the same commit as divergent", async () => {
@@ -278,6 +375,7 @@ describe("TS-SL-02 Inconsistent clone detection", () => {
     expect(out.totalGroups).toBe(1)
     expect(out.analyzedGroups).toBe(0)
     expect(out.divergentGroups).toEqual([])
+    expect(TsSl02.outputMetadata?.(out)).toEqual({ applicability: "not_applicable" })
     expect(TsSl02.score(out)).toBe(1)
   })
 
@@ -336,6 +434,46 @@ describe("TS-SL-02 Inconsistent clone detection", () => {
       divergenceScore: 1,
     })
     expect(TsSl02.score(out)).toBeLessThan(1)
+  })
+
+  test("invalid gitSha falls back to HEAD time without wall-clock nondeterminism", async () => {
+    const cloneGroups = [
+      {
+        groupId: "fallback-head-time",
+        kind: "structural" as const,
+        tokenCount: 60,
+        members: [
+          { file: join(repo, "handler-a.ts"), name: "handleA", startLine: 1, endLine: 10 },
+          { file: join(repo, "handler-b.ts"), name: "handleB", startLine: 1, endLine: 10 },
+        ],
+        structuralHash: "hash123",
+      },
+    ]
+    const inputs = new Map<string, unknown>([
+      [
+        "TS-SL-01",
+        {
+          groups: cloneGroups,
+          totalFunctionsAnalyzed: 2,
+          scoreBudgetFunctions: 2,
+          scopeMode: "whole-tree",
+        } as TsSl01Output,
+      ],
+    ])
+
+    const body = (name: string, value: number) =>
+      Array.from({ length: 10 }, (_, index) =>
+        index === 0 ? `export function ${name}() { return ${value}; }` : `export const ${name}${index} = ${index}`,
+      ).join("\n")
+    makeCommit(repo, "handler-a.ts", body("handleA", 1), "2024-06-01T00:00:00Z")
+    makeCommit(repo, "handler-b.ts", body("handleB", 2), "2024-06-20T00:00:00Z")
+
+    const out = await runTsSl02(repo, inputs, {
+      gitSha: "not-a-real-ref",
+    })
+
+    expect(out.divergentGroups).toHaveLength(1)
+    expect(out.divergentGroups[0]?.groupId).toBe("fallback-head-time")
   })
 
   test("does not treat unknown blame history as divergent clone evidence", async () => {
@@ -424,6 +562,7 @@ describe("TS-SL-02 Inconsistent clone detection", () => {
 
     expect(out.analyzedGroups).toBe(0)
     expect(out.divergentGroups).toEqual([])
+    expect(TsSl02.outputMetadata?.(out)).toEqual({ applicability: "not_applicable" })
     expect(TsSl02.score(out)).toBe(1)
   })
 
@@ -557,6 +696,63 @@ describe("TS-SL-02 Inconsistent clone detection", () => {
     expect(out.divergentGroups.map((group) => group.groupId)).toEqual(["outer-provider"])
   })
 
+  test("nested structural clone de-duplication is independent of input order", async () => {
+    const outer = {
+      groupId: "outer-provider",
+      kind: "structural" as const,
+      tokenCount: 80,
+      members: [
+        { file: join(repo, "provider-a.ts"), name: "providerA", startLine: 1, endLine: 20 },
+        { file: join(repo, "provider-b.ts"), name: "providerB", startLine: 1, endLine: 20 },
+      ],
+      structuralHash: "outer",
+    }
+    const inner = {
+      groupId: "inner-callback",
+      kind: "structural" as const,
+      tokenCount: 35,
+      members: [
+        { file: join(repo, "provider-a.ts"), name: "callbackA", startLine: 5, endLine: 12 },
+        { file: join(repo, "provider-b.ts"), name: "callbackB", startLine: 5, endLine: 12 },
+      ],
+      structuralHash: "inner",
+    }
+
+    makeCommit(repo, "provider-a.ts", Array.from({ length: 20 }, (_, i) => `export const a${i} = ${i}`).join("\n"), "2024-06-01T00:00:00Z")
+    makeCommit(repo, "provider-b.ts", Array.from({ length: 20 }, (_, i) => `export const b${i} = ${i}`).join("\n"), "2024-06-20T00:00:00Z")
+
+    const outputForGroups = async (groups: ReadonlyArray<typeof outer | typeof inner>) =>
+      runTsSl02(
+        repo,
+        new Map<string, unknown>([
+          [
+            "TS-SL-01",
+            {
+              groups,
+              totalFunctionsAnalyzed: 4,
+              scoreBudgetFunctions: 4,
+              scopeMode: "whole-tree",
+            } as TsSl01Output,
+          ],
+        ]),
+        {
+          config: {
+            ...TsSl02.defaultConfig,
+            max_groups_analyzed: 4,
+          },
+        },
+      )
+
+    const outerFirst = await outputForGroups([outer, inner])
+    const innerFirst = await outputForGroups([inner, outer])
+
+    expect(outerFirst.analyzedGroups).toBe(1)
+    expect(innerFirst.analyzedGroups).toBe(1)
+    expect(outerFirst.divergentGroups.map((group) => group.groupId)).toEqual(["outer-provider"])
+    expect(innerFirst.divergentGroups.map((group) => group.groupId)).toEqual(["outer-provider"])
+    expect(innerFirst.divergenceDistribution).toEqual(outerFirst.divergenceDistribution)
+  })
+
   test("bounds history analysis to the configured group and member budgets", async () => {
     const cloneGroups = Array(4)
       .fill(0)
@@ -609,6 +805,66 @@ describe("TS-SL-02 Inconsistent clone detection", () => {
     expect(out.totalGroups).toBe(4)
     expect(out.analyzedGroups).toBe(2)
     expect(out.analysisLimitHit).toBe(true)
+  })
+
+  test("zero analysis budget is uncertainty, not a perfect score", async () => {
+    const cloneGroups = [
+      {
+        groupId: "candidate-behind-zero-budget",
+        kind: "structural" as const,
+        tokenCount: 60,
+        members: [
+          { file: join(repo, "handler-a.ts"), name: "handleA", startLine: 1, endLine: 3 },
+          { file: join(repo, "handler-b.ts"), name: "handleB", startLine: 1, endLine: 3 },
+        ],
+        structuralHash: "hash123",
+      },
+    ]
+    const inputs = new Map<string, unknown>([
+      [
+        "TS-SL-01",
+        {
+          groups: cloneGroups,
+          totalFunctionsAnalyzed: 2,
+          scoreBudgetFunctions: 2,
+          scopeMode: "whole-tree",
+        } as TsSl01Output,
+      ],
+    ])
+
+    makeCommitMany(
+      repo,
+      [
+        { path: "handler-a.ts", content: "export function handleA() {\n  return 1\n}\n" },
+        { path: "handler-b.ts", content: "export function handleB() {\n  return 2\n}\n" },
+      ],
+      "2024-06-01T00:00:00Z",
+    )
+
+    const out = await runTsSl02(repo, inputs, {
+      config: {
+        ...TsSl02.defaultConfig,
+        max_groups_analyzed: 0,
+        analysis_limit_score_cap: 0.4,
+      },
+    })
+    const diagnostics = TsSl02.diagnose(out)
+    const factorLedger = TsSl02.factorLedger?.(out)
+
+    expect(out.candidateGroups).toBe(1)
+    expect(out.analyzedGroups).toBe(0)
+    expect(out.analysisLimitHit).toBe(true)
+    expect(TsSl02.score(out)).toBe(0.4)
+    expect(diagnostics).toHaveLength(1)
+    expect(diagnostics[0]?.message).toContain("analyzed 0/1 candidate groups")
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.analysis_limit_score_cap",
+        value: 0.4,
+        source: "vector",
+        affectsScore: true,
+      }),
+    )
   })
 
   test("default budget reaches divergent groups behind stable boilerplate", async () => {
@@ -743,6 +999,28 @@ describe("TS-SL-02 Inconsistent clone detection", () => {
     expect(score).toBe(0.95)
   })
 
+  test("analysis limit score cap is clamped to score bounds", () => {
+    expect(TsSl02.score({
+      totalGroups: 12,
+      candidateGroups: 12,
+      analyzedGroups: 0,
+      analysisLimitHit: true,
+      analysisLimitScoreCap: 1.2,
+      divergentGroups: [],
+      divergenceDistribution: { min: 0, max: 0, mean: 0, median: 0 },
+    })).toBe(1)
+
+    expect(TsSl02.score({
+      totalGroups: 12,
+      candidateGroups: 12,
+      analyzedGroups: 0,
+      analysisLimitHit: true,
+      analysisLimitScoreCap: -0.1,
+      divergentGroups: [],
+      divergenceDistribution: { min: 0, max: 0, mean: 0, median: 0 },
+    })).toBe(0)
+  })
+
   test("analysis limit cap is configurable and diagnosed when no divergent groups are found", () => {
     const output = {
       totalGroups: 20,
@@ -778,7 +1056,9 @@ describe("TS-SL-02 Inconsistent clone detection", () => {
       expect.objectContaining({
         path: "config.analysis_limit_score_cap",
         value: 0.98,
+        source: "vector",
         scoreRole: "score-cap",
+        affectsScore: true,
       }),
     )
   })
@@ -1014,20 +1294,34 @@ describe("TS-SL-02 Inconsistent clone detection", () => {
       ],
     ])
 
-    const out = await Effect.runPromise(
-      TsSl02.compute(TsSl02.defaultConfig, inputs).pipe(
-        Effect.provide(
-          Layer.succeed(SignalContextTag, {
-            gitSha: "HEAD",
-            worktreePath: repo,
-            changedHunks: [],
-          }),
-        ),
-      ),
-    )
+    const body = (name: string, value: number) =>
+      [
+        `export function ${name}() {`,
+        `  const value = ${value}`,
+        "  if (value > 0) {",
+        "    return value",
+        "  }",
+        "  return 0",
+        "}",
+        "",
+        "export const marker = true",
+        "",
+      ].join("\n")
+    makeCommit(repo, "a.ts", body("fnA", 1), "2024-06-01T00:00:00Z")
+    makeCommit(repo, "b.ts", body("fnB", 2), "2024-07-01T00:00:00Z")
+    makeCommit(repo, "c.ts", body("fnC", 3), "2024-07-15T00:00:00Z")
+
+    const out = await runTsSl02(repo, inputs)
 
     const diagnostics = TsSl02.diagnose(out)
-    expect(diagnostics.length).toBeGreaterThanOrEqual(0)
+    expect(diagnostics).toHaveLength(1)
+    expect(diagnostics[0]?.severity).toBe("warn")
+    expect(diagnostics[0]?.message).toContain("divergence=1.00")
+    expect(diagnostics[0]?.data).toMatchObject({
+      groupId: "high-divergence",
+      divergenceScore: 1,
+      lastModifiedWindow: 44,
+    })
   })
 
   test("diagnostics include clone member names and locations", () => {

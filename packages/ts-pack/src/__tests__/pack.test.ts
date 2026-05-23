@@ -22,6 +22,7 @@ import { TsLd09 } from "../signals/ts-ld-09-error-channel-opacity.js"
 import { TsRp01 } from "../signals/ts-rp-01-hotspots.js"
 import { TsRp02 } from "../signals/ts-rp-02-pr-size.js"
 import { TsSl01 } from "../signals/ts-sl-01-duplication.js"
+import { TsSl02 } from "../signals/ts-sl-02-inconsistent-clones.js"
 import { TsSl03 } from "../signals/ts-sl-03-suppressions.js"
 import { TsSl04 } from "../signals/ts-sl-04-empty-implementations.js"
 
@@ -44,6 +45,7 @@ describe("TS pack cache versions", () => {
     const rp01 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-RP-01"))
     const rp02 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-RP-02"))
     const sl01 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-SL-01"))
+    const sl02 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-SL-02"))
     const sl03 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-SL-03"))
     const sl04 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-SL-04"))
     const ab01 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-AB-01"))
@@ -74,6 +76,7 @@ describe("TS pack cache versions", () => {
     expect(rp01?.cacheVersion).toContain(TsRp01.cacheVersion)
     expect(rp02?.cacheVersion).toContain(TsRp02.cacheVersion)
     expect(sl01?.cacheVersion).toContain(TsSl01.cacheVersion)
+    expect(sl02?.cacheVersion).toContain(TsSl02.cacheVersion)
     expect(sl03?.cacheVersion).toContain(TsSl03.cacheVersion)
     expect(sl04?.cacheVersion).toContain(TsSl04.cacheVersion)
   })

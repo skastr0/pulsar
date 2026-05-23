@@ -1,4 +1,4 @@
-import { pendingSignalContract, type SignalContract } from "./signal-contract.js"
+import type { SignalContract } from "./signal-contract.js"
 
 export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
   {
@@ -750,5 +750,33 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "ts-rp-02.test.ts: project-owned pr-size-policy processors run through CalibrationContextTag, can tune severity and penalty, emit factor provenance, and cannot poison score/factor paths with non-finite or invalid output.",
     },
   },
-  pendingSignalContract("TS-SL-02-inconsistent-clones"),
+  {
+    id: "TS-SL-02-inconsistent-clones",
+    status: "verified",
+    requiredEvidence: ["compoundInputs", "gitContext"],
+    evidence: {
+      identity:
+        "ts-sl-02.test.ts: canonical id, alias, title, tier/category/kind, semantic cacheVersion, git-revision cache dependency, config schema decode, required compound input fingerprint, pack registration, registry alias lookup, and default factor ledger are asserted.",
+      config:
+        "ts-sl-02.test.ts: normalizeTsSl02Config proves finite-safe divergence thresholds, min-window fallback, diagnostic caps, analysis group/member budgets, and analysis-limit score caps; compute fixtures prove configured analysis budget and cap effects.",
+      positiveFixture:
+        "ts-sl-02.test.ts: real git fixture commits prove structural clone groups with different blame history become divergent clone evidence, invalid gitSha falls back deterministically to HEAD time, parallel families and paired variants are classified with medium confidence, and default analysis budget reaches late divergent candidates.",
+      negativeFixture:
+        "ts-sl-02.test.ts: no TS-SL-01 groups, exact clones, tiny structural clones, same-commit structural clones, TS-SL-01 policy-excluded groups, unknown blame history, and borderline non-actionable divergence remain neutral instead of producing false pressure.",
+      applicability:
+        "ts-sl-02.test.ts: empty, exact-only, tiny-only, and policy-excluded candidate surfaces return neutral score with not_applicable metadata; candidate surfaces with no completed analysis remain applicable uncertainty through the analysis-limit cap.",
+      score:
+        "ts-sl-02.test.ts: score bounds, analysis-limit cap behavior, cap clamping, zero-budget uncertainty, high-vs-medium confidence pressure, non-dilution when vector config analyzes more groups, and monotonic pressure from additional actionable groups are asserted.",
+      diagnostics:
+        "ts-sl-02.test.ts: diagnostics assert severity, divergence score text and payload, clone member summaries/locations, evidence kind/confidence, top_n_diagnostics cap behavior, negative cap normalization, and analysis-limit-only diagnostics.",
+      factorLedger:
+        "ts-sl-02.test.ts: factor ledger entries assert analysis limit facts, candidate/analyzed counts, config.analysis_limit_score_cap value/source/score role, default-vs-vector provenance, and conditional affectsScore behavior.",
+      cacheSemantics:
+        "ts-sl-02.test.ts and pack.test.ts: TS-SL-02 declares git-revision-context dependency and history-context-normalized-config-v1 cacheVersion; wrapped pack cache version includes the signal cacheVersion after history fallback, normalized config, score cap, and candidate ordering semantics changed.",
+      compoundInputs:
+        "ts-sl-02.test.ts: TS-SL-02 consumes the real TS-SL-01-duplication output shape by canonical id and legacy alias, filters groups through TS-SL-01 policy impact, ignores exact/tiny clone candidates, and registry construction verifies the required TS-SL-01 dependency fingerprint.",
+      gitContext:
+        "ts-sl-02.test.ts: fixtures use real git commits with authored dates and git blame ranges, prove same-commit vs different-commit behavior, unknown blame fallback, invalid gitSha deterministic HEAD-time fallback, and cache dependency declaration for history-sensitive output.",
+    },
+  },
 ]

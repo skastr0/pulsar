@@ -40,14 +40,24 @@ export const getReferenceTime = async (
   git: GitClient,
   gitSha: string,
 ): Promise<number> => {
+  const contextTime = await readCommitTime(git, gitSha)
+  if (contextTime !== undefined) return contextTime
+  const headTime = gitSha === "HEAD" ? undefined : await readCommitTime(git, "HEAD")
+  return headTime ?? 0
+}
+
+const readCommitTime = async (
+  git: GitClient,
+  ref: string,
+): Promise<number | undefined> => {
   try {
-    const raw = await git.raw(["show", "-s", "--format=%ct", gitSha])
+    const raw = await git.raw(["show", "-s", "--format=%ct", ref])
     const timestampSeconds = Number(raw.trim())
     if (Number.isFinite(timestampSeconds)) return timestampSeconds * 1000
   } catch {
-    // Fall back to wall-clock time only when HEAD metadata is unavailable.
+    return undefined
   }
-  return Date.now()
+  return undefined
 }
 
 export const calculateDistribution = (
@@ -106,9 +116,14 @@ const loadCloneMemberHistory = async (
       lastModifiedSha: history.sha,
       lastModifiedAt: history.date,
       historyStatus: history.status,
-      timestamp: new Date(history.date).getTime(),
+      timestamp: timestampForHistoryDate(history.date),
     },
   }
+}
+
+const timestampForHistoryDate = (date: string): number => {
+  const timestamp = new Date(date).getTime()
+  return Number.isFinite(timestamp) ? timestamp : 0
 }
 
 const getLastModifiedForRange = async (

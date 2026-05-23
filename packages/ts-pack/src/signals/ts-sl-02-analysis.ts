@@ -46,7 +46,7 @@ export const analyzeInconsistentClones = async (
     if (divergentGroup !== undefined) divergentGroups.push(divergentGroup)
   }
 
-  const sortedGroups = divergentGroups.sort((a, b) => b.divergenceScore - a.divergenceScore)
+  const sortedGroups = divergentGroups.sort(compareDivergentClones)
   return {
     divergentGroups: sortedGroups,
     totalGroups: tsSl01Output.groups.length,
@@ -120,7 +120,7 @@ const selectNonOverlappingCandidateGroups = (
   groups: ReadonlyArray<CloneGroup>,
 ): ReadonlyArray<CloneGroup> => {
   const selected: Array<CloneGroup> = []
-  for (const group of groups) {
+  for (const group of [...groups].sort(compareCandidateCloneGroups)) {
     if (selected.some((existing) => isNestedCloneGroup(group, existing))) continue
     selected.push(group)
   }
@@ -137,3 +137,20 @@ const isNestedCloneGroup = (candidate: CloneGroup, existing: CloneGroup): boolea
     ),
   )
 }
+
+const compareDivergentClones = (left: DivergentClone, right: DivergentClone): number =>
+  right.divergenceScore - left.divergenceScore ||
+  right.lastModifiedWindow - left.lastModifiedWindow ||
+  left.groupId.localeCompare(right.groupId)
+
+const compareCandidateCloneGroups = (left: CloneGroup, right: CloneGroup): number =>
+  (right.tokenCount ?? 0) - (left.tokenCount ?? 0) ||
+  totalMemberSpan(right) - totalMemberSpan(left) ||
+  right.members.length - left.members.length ||
+  left.groupId.localeCompare(right.groupId)
+
+const totalMemberSpan = (group: CloneGroup): number =>
+  group.members.reduce(
+    (total, member) => total + Math.max(0, member.endLine - member.startLine + 1),
+    0,
+  )
