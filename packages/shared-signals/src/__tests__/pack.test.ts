@@ -3,6 +3,7 @@ import {
   Shared02BusFactor,
   Shared03ChurnRate,
   Shared05Suppression,
+  Shared06PrDepDelta,
   SharedChurn01,
   SharedChurn02,
   SharedCochange01,
@@ -29,6 +30,9 @@ describe("shared signal identity", () => {
     const suppression = SHARED_SIGNALS.find((signal) =>
       signal.aliases?.includes("SHARED-05"),
     )
+    const prDependencyDelta = SHARED_SIGNALS.find((signal) =>
+      signal.aliases?.includes("SHARED-06"),
+    )
 
     expect(churn01?.cacheVersion).toContain(SharedChurn01.cacheVersion)
     expect(churn02?.cacheVersion).toContain(SharedChurn02.cacheVersion)
@@ -36,6 +40,7 @@ describe("shared signal identity", () => {
     expect(busFactor?.cacheVersion).toContain(Shared02BusFactor.cacheVersion)
     expect(churnRate?.cacheVersion).toContain(Shared03ChurnRate.cacheVersion)
     expect(suppression?.cacheVersion).toContain(Shared05Suppression.cacheVersion)
+    expect(prDependencyDelta?.cacheVersion).toContain(Shared06PrDepDelta.cacheVersion)
   })
 
   test("all shared signals expose semantic ids, aliases, and titles", () => {

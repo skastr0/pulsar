@@ -86,10 +86,8 @@ describe("polyglot shared signals", () => {
       await writeFile(
         join(repo, "crates/api/src/lib.rs"),
         [
-          "#[allow(clippy::unwrap_used)]",
           "pub fn render() -> &'static str {",
-          "    use fixture_core::ping;",
-          "    ping()",
+          '    "pong"',
           "}",
         ].join("\n"),
       )
@@ -99,6 +97,18 @@ describe("polyglot shared signals", () => {
       sh("git", ["config", "user.name", "test"], repo)
       sh("git", ["add", "."], repo)
       sh("git", ["commit", "-q", "-m", "fixture"], repo)
+      await writeFile(
+        join(repo, "crates/api/src/lib.rs"),
+        [
+          "use fixture_core::ping;",
+          "#[allow(clippy::unwrap_used)]",
+          "pub fn render() -> &'static str {",
+          "    ping()",
+          "}",
+        ].join("\n"),
+      )
+      sh("git", ["add", "."], repo)
+      sh("git", ["commit", "-q", "-m", "add cross crate dependency"], repo)
       const head = sh("git", ["rev-parse", "HEAD"], repo)
 
       const registry = await Effect.runPromise(
@@ -150,6 +160,19 @@ describe("polyglot shared signals", () => {
         | undefined
       expect(suppression?.byLanguage?.typescript?.totalSuppressions).toBe(1)
       expect(suppression?.byLanguage?.rust?.totalSuppressions).toBe(1)
+
+      const prDependencyDelta = result.signalResults.get("SHARED-06-pr-dependency-delta")?.output as
+        | {
+            dependencyDeltaState?: string
+            crossCrateEdges?: number
+            byLanguage?: {
+              rust?: { newDependencyEdges: number }
+            }
+          }
+        | undefined
+      expect(prDependencyDelta?.dependencyDeltaState).toBe("measured")
+      expect(prDependencyDelta?.crossCrateEdges).toBe(1)
+      expect(prDependencyDelta?.byLanguage?.rust?.newDependencyEdges).toBe(1)
     } finally {
       await rm(repo, { recursive: true, force: true })
     }
@@ -213,6 +236,17 @@ describe("polyglot shared signals", () => {
       sh("git", ["config", "user.name", "test"], repo)
       sh("git", ["add", "."], repo)
       sh("git", ["commit", "-q", "-m", "fixture"], repo)
+      await writeFile(join(repo, "src/extra.ts"), "export const extra = 2\n")
+      await writeFile(
+        join(repo, "crates/core/src/lib.rs"),
+        [
+          "#[allow(clippy::unwrap_used)]",
+          "pub fn value() -> i32 { 1 }",
+          "pub fn extra() -> i32 { 2 }",
+        ].join("\n"),
+      )
+      sh("git", ["add", "."], repo)
+      sh("git", ["commit", "-q", "-m", "change fixture"], repo)
 
       const result = await Effect.runPromise(
         runSignalInWorktree(repo, "SHARED-05"),
@@ -227,6 +261,22 @@ describe("polyglot shared signals", () => {
       expect(result.result.signalId).toBe("SHARED-05-suppression-governance")
       expect(output.byLanguage?.typescript?.totalSuppressions).toBe(1)
       expect(output.byLanguage?.rust?.totalSuppressions).toBe(1)
+
+      const prDeltaResult = await Effect.runPromise(
+        runSignalInWorktree(repo, "SHARED-06"),
+      )
+      const prDeltaOutput = prDeltaResult.result.output as {
+        readonly dependencyDeltaState?: string
+        readonly byLanguage?: {
+          readonly typescript?: { readonly linesAdded: number }
+          readonly rust?: { readonly linesAdded: number }
+        }
+      }
+
+      expect(prDeltaResult.result.signalId).toBe("SHARED-06-pr-dependency-delta")
+      expect(prDeltaOutput.dependencyDeltaState).toBe("measured")
+      expect(prDeltaOutput.byLanguage?.typescript?.linesAdded).toBeGreaterThan(0)
+      expect(prDeltaOutput.byLanguage?.rust?.linesAdded).toBeGreaterThan(0)
     } finally {
       await rm(repo, { recursive: true, force: true })
     }

@@ -167,7 +167,37 @@ export const SHARED_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "shared-05-suppression.test.ts: compound inputs declare cache fingerprints for TS-SL-03-suppressions and RS-SL-02-suppressions; tests prove optional missing inputs, canonical ids, legacy aliases, empty peer inputs, and deterministic map-order handling.",
     },
   },
-  pendingSignalContract("SHARED-06-pr-dependency-delta"),
+  {
+    id: "SHARED-06-pr-dependency-delta",
+    status: "verified",
+    requiredEvidence: ["compoundInputs", "gitContext", "integration"],
+    evidence: {
+      identity:
+        "shared-06-pr-dep-delta.test.ts: canonical id, alias, title, tier/category/kind, compound input contract, semantic cacheVersion, pack registration, registry alias lookup, and default config decoding are asserted.",
+      config:
+        "shared-06-pr-dep-delta.test.ts: default top_n_diagnostics is decoded and config-factor-ledger-backed; fractional, negative, NaN, and Infinity diagnostic limits are normalized through real compute output.",
+      positiveFixture:
+        "shared-06-pr-dep-delta.test.ts: TypeScript and Rust PR-size fixture inputs prove cross-boundary, cross-package, and cross-crate dependency-edge aggregation, per-language facts, alias/canonical input equivalence, deterministic output, and measured line-churn context.",
+      negativeFixture:
+        "shared-06-pr-dep-delta.test.ts: missing optional inputs, clean measured diffs, empty dependency deltas, missing git diff evidence, and changed-hunks fallback evidence are distinguished instead of collapsing every zero-edge output into a healthy result.",
+      applicability:
+        "shared-06-pr-dep-delta.test.ts: outputMetadata reports not_applicable for no PR surface, stays applicable for measured line churn with no new dependency edges, and reports insufficient_evidence for missing or unavailable dependency-delta facts.",
+      score:
+        "shared-06-pr-dep-delta.test.ts: score bounds and monotonic pressure are asserted for cross-package, cross-crate, cross-boundary, mixed-language, no-edge, and saturated edge-count cases.",
+      diagnostics:
+        "shared-06-pr-dep-delta.test.ts: diagnose proves ordered aggregate/TypeScript/Rust diagnostics, diagnostic caps, info/warn severity for measured and insufficient evidence states, and structured aggregate/language payloads.",
+      factorLedger:
+        "shared-06-pr-dep-delta.test.ts: registered shared-pack signal emits config.top_n_diagnostics factor entries through withConfigFactorLedger.",
+      cacheSemantics:
+        "shared-06-pr-dep-delta.test.ts and pack.test.ts: SHARED-06 declares empty-diff-applicability-v2-evidence-state-diagnostics cacheVersion; wrapped shared-pack cache version preserves the signal cacheVersion after evidence-state and diagnostic semantics changed.",
+      compoundInputs:
+        "shared-06-pr-dep-delta.test.ts: compound inputs declare cache fingerprints for TS-RP-02-pr-size and RS-RP-03-pr-size; tests prove optional missing inputs, canonical ids, legacy aliases, dependency evidence states, and deterministic map-order handling.",
+      gitContext:
+        "cli shared-signals.test.ts, ts-rp-02.test.ts, and rs-rp-signals.test.ts: tests run against real git repositories and committed follow-up diffs, proving upstream TS/Rust PR-size signals feed SHARED-06 with git commit-range dependency-delta facts rather than synthetic-only output.",
+      integration:
+        "cli shared-signals.test.ts and bun run dev score --signal SHARED-06 .: aggregate observer and direct single-signal runtime fixtures provide TS/Rust language layers for SHARED-06 compound inputs and execute the shared signal on real worktree substrate.",
+    },
+  },
   pendingSignalContract("SHARED-07-machine-feedback-coverage"),
   pendingSignalContract("SHARED-09-contract-freshness"),
   pendingSignalContract("SHARED-10-domain-construction-control"),
