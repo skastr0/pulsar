@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { TS_PACK_SIGNALS } from "../pack.js"
+import { TsAb01 } from "../signals/ts-ab-01-public-export-surface.js"
 import { TsAb02 } from "../signals/ts-ab-02-unused-exports-reachability.js"
 import { TsAd02 } from "../signals/ts-ad-02-circular-deps.js"
 import { TsAd03 } from "../signals/ts-ad-03-reexport-depth.js"
@@ -34,6 +35,7 @@ describe("TS pack cache versions", () => {
     const sl01 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-SL-01"))
     const sl03 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-SL-03"))
     const sl04 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-SL-04"))
+    const ab01 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-AB-01"))
     const ab02 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-AB-02"))
 
     expect(ad02?.cacheVersion).toContain(TsAd02.cacheVersion)
@@ -43,6 +45,7 @@ describe("TS pack cache versions", () => {
     expect(de01?.cacheVersion).toContain(TsDe01.cacheVersion)
     expect(de02?.cacheVersion).toContain(TsDe02.cacheVersion)
     expect(de03?.cacheVersion).toContain(TsDe03.cacheVersion)
+    expect(ab01?.cacheVersion).toContain(TsAb01.cacheVersion)
     expect(ab02?.cacheVersion).toContain(TsAb02.cacheVersion)
     expect(de04?.cacheVersion).toContain(TsDe04.cacheVersion)
     expect(de05?.cacheVersion).toContain(TsDe05.cacheVersion)

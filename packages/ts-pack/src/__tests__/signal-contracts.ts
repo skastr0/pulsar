@@ -387,7 +387,30 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "ts-de-05.test.ts: dependency-version policy calibration suppresses a host-SDK-owned duplicate with rule attribution, calibrationDecisions, module-sourced factor entries, score restoration, and no visible diagnostics.",
     },
   },
-  pendingSignalContract("TS-AB-01-public-export-surface"),
+  {
+    id: "TS-AB-01-public-export-surface",
+    status: "verified",
+    evidence: {
+      identity:
+        "ts-ab-01.test.ts: canonical id, alias, title, tier/category/kind, no compound inputs, semantic cacheVersion, pack registration, and registry alias lookup are asserted.",
+      config:
+        "ts-ab-01.test.ts: configSchema decodes defaults, public_export_globs/exclude_globs/surface_threshold/top_n_diagnostics are asserted through config and factor-ledger entries, and diagnostics honor sanitized top_n_diagnostics.",
+      positiveFixture:
+        "ts-ab-01.test.ts: real TsProject fixtures count function/class/interface/type/const/default/export-equals exports, named re-exports, export-star re-exports, source module attribution, weighted runtime/type-only surfaces, and both default public barrel glob shapes.",
+      negativeFixture:
+        "ts-ab-01.test.ts: non-public helper files and excluded docs/prototype barrels produce no public export surface, no diagnostics, and score 1.",
+      applicability:
+        "ts-ab-01.test.ts: repositories with no matching public barrel files return empty byFile, totalPublicExports=0, no largestSurface, preserved diagnosticLimit, no outputMetadata override, score 1, and no diagnostics.",
+      score:
+        "ts-ab-01.test.ts: below-threshold and type-only-weighted surfaces score 1, oversized runtime surfaces lower score, threshold config changes score, and mixed fixtures prove scoring uses the worst weighted surface rather than largest raw export count.",
+      diagnostics:
+        "ts-ab-01.test.ts: diagnostics include warning/info severity, compact messages, file locations, total/weighted/byKind/source-module payload data, weighted-pressure ordering with raw-count tie-breaks, and sanitized diagnostic caps.",
+      factorLedger:
+        "ts-ab-01.test.ts: registered pack signal emits public_export_globs, exclude_globs, surface_threshold, and top_n_diagnostics config factor-ledger entries.",
+      cacheSemantics:
+        "ts-ab-01.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AB-01 semantic cacheVersion after diagnostic-limit and weighted-surface semantics changed.",
+    },
+  },
   pendingSignalContract("TS-AB-02-unused-exports"),
   pendingSignalContract("TS-AB-03-type-indirection-depth"),
   pendingSignalContract("TS-AB-04-interface-implementation-ratio"),
