@@ -14,10 +14,9 @@ import {
 } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
 import { RustProjectTag } from "../project.js"
-import { parseRustFile } from "../syn-walker.js"
+import { parseRustFile, type RustSyntaxNode } from "../syn-walker.js"
 import {
   DEFAULT_RUST_EXCLUDE_GLOBS,
-  allNamedChildren,
   firstNamedChild,
   modulePathForAncestors,
   namedChildrenOf,
@@ -52,7 +51,7 @@ interface RsAb03Output {
   readonly analyzedSourceFileCount: number
   readonly maxGenericParameters: number
   readonly diagnosticLimit: number
-  readonly analysisMode: "ast-parameter-and-where-clause-counts"
+  readonly analysisMode: "ast-generic-signature-counts"
 }
 
 const DEFAULT_MAX_GENERIC_PARAMETERS = 3
@@ -89,7 +88,7 @@ export const RsAb03: Signal<RsAb03Config, RsAb03Output, RustProjectTag> = {
   tier: 1,
   category: "abstraction-bloat",
   kind: "legibility",
-  cacheVersion: "generic-proliferation-config-applicability-diagnostics-cfg-test-gating-v2",
+  cacheVersion: "generic-proliferation-config-applicability-diagnostics-cfg-test-gating-bounds-v3",
   configSchema: RsAb03Config,
   factorDefinitions: RsAb03FactorDefinitions,
   defaultConfig: {
@@ -120,7 +119,7 @@ export const RsAb03: Signal<RsAb03Config, RsAb03Output, RustProjectTag> = {
               ).length
               if (paramCount === 0) return
               const whereClausePredicates = whereClause === undefined ? 0 : namedChildrenOf(whereClause).length
-              const boundCount = countNamedDescendants(typeParameters, "trait_bounds") + countNamedDescendants(whereClause, "trait_bounds")
+              const boundCount = countSignatureBounds(node, typeParameters, whereClause)
               const { modulePath } = modulePathForAncestors(scope, ancestors)
               declarations.push({
                 file,
@@ -144,7 +143,7 @@ export const RsAb03: Signal<RsAb03Config, RsAb03Output, RustProjectTag> = {
             analyzedSourceFileCount: analyzedSourceFiles.length,
             maxGenericParameters: normalizedConfig.max_generic_parameters,
             diagnosticLimit: normalizedConfig.top_n_diagnostics,
-            analysisMode: "ast-parameter-and-where-clause-counts",
+            analysisMode: "ast-generic-signature-counts",
           }
         },
         catch: (cause) =>
@@ -218,7 +217,7 @@ const makeRsAb03FactorLedger = (): SignalFactorLedger =>
 const isGenericTrackedNode = (type: string): boolean =>
   ["function_item", "struct_item", "enum_item", "trait_item", "type_item", "impl_item"].includes(type)
 
-const declarationName = (node: ReturnType<typeof namedChildrenOf>[number]): string => {
+const declarationName = (node: RustSyntaxNode): string => {
   if (node.type === "impl_item") {
     const target = namedChildrenOf(node).find(
       (child) => child.type !== "type_parameters" && child.type !== "where_clause" && child.type !== "declaration_list",
@@ -228,16 +227,28 @@ const declarationName = (node: ReturnType<typeof namedChildrenOf>[number]): stri
   return firstNamedChild(node, "identifier")?.text ?? firstNamedChild(node, "type_identifier")?.text ?? "<anonymous>"
 }
 
-const countNamedDescendants = (
-  node: ReturnType<typeof namedChildrenOf>[number] | undefined,
-  type: string,
-): number => {
+const countSignatureBounds = (
+  declaration: RustSyntaxNode,
+  typeParameters: RustSyntaxNode | undefined,
+  whereClause: RustSyntaxNode | undefined,
+): number =>
+  countBoundsIn(typeParameters) +
+  countBoundsIn(whereClause) +
+  namedChildrenOf(declaration)
+    .filter((child) => child.type === "trait_bounds")
+    .reduce((sum, bounds) => sum + countBoundItems(bounds), 0)
+
+const countBoundsIn = (node: RustSyntaxNode | undefined): number => {
   if (node === undefined) return 0
   let count = 0
-  const walk = (current: ReturnType<typeof namedChildrenOf>[number]): void => {
-    if (current.type === type) count += 1
+  const walk = (current: RustSyntaxNode): void => {
+    if (current.type === "trait_bounds") {
+      count += countBoundItems(current)
+    }
     for (const child of namedChildrenOf(current)) walk(child)
   }
   walk(node)
   return count
 }
+
+const countBoundItems = (bounds: RustSyntaxNode): number => namedChildrenOf(bounds).length

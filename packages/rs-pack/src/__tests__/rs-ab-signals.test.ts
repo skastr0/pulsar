@@ -1151,7 +1151,7 @@ describe("RS-AB-* signals", () => {
       tier: 1,
       category: "abstraction-bloat",
       kind: "legibility",
-      cacheVersion: "generic-proliferation-config-applicability-diagnostics-cfg-test-gating-v2",
+      cacheVersion: "generic-proliferation-config-applicability-diagnostics-cfg-test-gating-bounds-v3",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -1247,7 +1247,7 @@ describe("RS-AB-* signals", () => {
             whereClausePredicates: 3,
             boundCount: 3,
             complexity: 9,
-            analysisMode: "ast-parameter-and-where-clause-counts",
+            analysisMode: "ast-generic-signature-counts",
           },
         },
       ])
@@ -1417,6 +1417,85 @@ describe("RS-AB-* signals", () => {
       expect(implEntry?.whereClausePredicates).toBe(1)
       expect(implEntry?.complexity).toBe(5)
       expect(out.declarations.some((entry) => entry.declarationName === "TestOnly")).toBe(false)
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-AB-03 counts individual generic bounds in signatures", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-ab03-bounds-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "generic-bounds"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub trait Store<T>: Send + Sync + 'static",
+        "where",
+        "    T: Clone + AsRef<str>,",
+        "{",
+        "    fn get(&self) -> T;",
+        "}",
+        "pub fn bound_heavy<T: Clone + Send, U, V>(value: T) -> V",
+        "where",
+        "    U: Into<V> + TryFrom<T>,",
+        "    V: Clone + Send + 'static,",
+        "{",
+        "    todo!()",
+        "}",
+        "pub struct Borrowed<'a, T: 'a + Clone>(pub &'a T);",
+        "pub struct Nested<T: Into<Vec<Option<T>>> + Iterator<Item = Result<T, E>>, E>(pub T, pub E);",
+        "pub fn associated<T>()",
+        "where",
+        "    T: Iterator<Item: Clone + Send> + ExactSizeIterator,",
+        "{}",
+        "pub struct Fancy<'a, T: 'a + ?Sized + std::fmt::Debug + for<'b> Fn(&'b str)>(pub &'a T);",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const out = await runSignalCompute(RsAb03, repo, RsAb03.defaultConfig)
+      const byName = new Map(out.declarations.map((entry) => [entry.declarationName, entry]))
+
+      expect(byName.get("Store")).toMatchObject({
+        paramCount: 1,
+        whereClausePredicates: 1,
+        boundCount: 5,
+        complexity: 7,
+      })
+      expect(byName.get("bound_heavy")).toMatchObject({
+        paramCount: 3,
+        whereClausePredicates: 2,
+        boundCount: 7,
+        complexity: 12,
+      })
+      expect(byName.get("Borrowed")).toMatchObject({
+        paramCount: 2,
+        whereClausePredicates: 0,
+        boundCount: 2,
+        complexity: 4,
+      })
+      expect(byName.get("Nested")).toMatchObject({
+        paramCount: 2,
+        whereClausePredicates: 0,
+        boundCount: 2,
+        complexity: 4,
+      })
+      expect(byName.get("associated")).toMatchObject({
+        paramCount: 1,
+        whereClausePredicates: 1,
+        boundCount: 4,
+        complexity: 6,
+      })
+      expect(byName.get("Fancy")).toMatchObject({
+        paramCount: 2,
+        whereClausePredicates: 0,
+        boundCount: 4,
+        complexity: 6,
+      })
     } finally {
       await cleanupWorkspace(repo)
     }
