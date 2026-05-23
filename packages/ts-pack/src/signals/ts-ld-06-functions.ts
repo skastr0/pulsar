@@ -126,9 +126,45 @@ const isCompilerFunctionLike = (node: ts.Node): node is CompilerFunctionLike =>
   ts.isFunctionExpression(node)
 
 const isTrackedFunction = (node: CompilerFunctionLike): boolean => {
-  if (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node)) return true
+  if (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node)) {
+    return !isOverloadImplementation(node)
+  }
   const parent = node.parent
   return ts.isVariableDeclaration(parent) || ts.isExportAssignment(parent)
+}
+
+const isOverloadImplementation = (
+  node: ts.FunctionDeclaration | ts.MethodDeclaration,
+): boolean => {
+  if (node.body === undefined) return false
+  if (ts.isFunctionDeclaration(node)) return functionHasOverloadSignature(node)
+  return methodHasOverloadSignature(node)
+}
+
+const functionHasOverloadSignature = (node: ts.FunctionDeclaration): boolean => {
+  const name = node.name?.text
+  if (name === undefined) return false
+  return node
+    .getSourceFile()
+    .statements.some(
+      (statement) =>
+        statement !== node &&
+        ts.isFunctionDeclaration(statement) &&
+        statement.body === undefined &&
+        statement.name?.text === name,
+    )
+}
+
+const methodHasOverloadSignature = (node: ts.MethodDeclaration): boolean => {
+  if (!ts.isClassDeclaration(node.parent) && !ts.isClassExpression(node.parent)) return false
+  const name = propertyNameText(node.name)
+  return node.parent.members.some(
+    (member) =>
+      member !== node &&
+      ts.isMethodDeclaration(member) &&
+      member.body === undefined &&
+      propertyNameText(member.name) === name,
+  )
 }
 
 const hasContextualFunctionTypeAnnotation = (node: CompilerFunctionLike): boolean => {

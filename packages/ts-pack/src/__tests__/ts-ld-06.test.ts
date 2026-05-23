@@ -286,6 +286,29 @@ describe("TS-LD-06 (type annotation coverage)", () => {
     expect(fileCoverage?.internal.totalParams ?? 0).toBe(0)
   })
 
+  test("overload signatures provide the boundary annotation contract", async () => {
+    await writeTs(
+      "src/overloads.ts",
+      [
+        "export function parse(value: string): string",
+        "export function parse(value: number): number",
+        "export function parse(value) {",
+        "  return value",
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runCompute()
+
+    expect(out.boundaryCoverage.totalParams).toBe(2)
+    expect(out.boundaryCoverage.annotatedParams).toBe(2)
+    expect(out.boundaryCoverage.totalReturns).toBe(2)
+    expect(out.boundaryCoverage.annotatedReturns).toBe(2)
+    expect(out.uncoveredBoundary).toEqual([])
+    expect(TsLd06.score(out)).toBe(1)
+  })
+
   test("exported class public methods count as boundary functions", async () => {
     await writeTs(
       "src/service.ts",
@@ -306,6 +329,29 @@ describe("TS-LD-06 (type annotation coverage)", () => {
     const out = await runCompute()
     expect(out.uncoveredBoundary.map((fn) => fn.name)).toContain("Service.run")
     expect(out.uncoveredBoundary.map((fn) => fn.name)).not.toContain("Service.hidden")
+  })
+
+  test("method overload signatures provide public method annotation contracts", async () => {
+    await writeTs(
+      "src/service-overloads.ts",
+      [
+        "export class Service {",
+        "  run(value: string): string",
+        "  run(value) {",
+        "    return value",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runCompute()
+
+    expect(out.boundaryCoverage.totalParams).toBe(1)
+    expect(out.boundaryCoverage.annotatedParams).toBe(1)
+    expect(out.boundaryCoverage.totalReturns).toBe(1)
+    expect(out.boundaryCoverage.annotatedReturns).toBe(1)
+    expect(out.uncoveredBoundary).toEqual([])
   })
 
   test("framework-owned method contracts count as contextually typed", async () => {
