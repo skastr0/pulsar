@@ -1555,6 +1555,57 @@ export function stubF() { throw new Error("Not implemented") }
     }
   }, 120_000)
 
+  test("single-signal CLI wrapper executes RS-DE-04 with Rust source", async () => {
+    const repoPath = await initRepo([
+      {
+        path: "Cargo.toml",
+        content: [
+          "[package]",
+          'name = "fan-cli"',
+          'version = "0.1.0"',
+          'edition = "2021"',
+          "",
+        ].join("\n"),
+      },
+      {
+        path: "src/lib.rs",
+        content: [
+          "pub mod dep_a { pub struct A; }",
+          "pub mod dep_b { pub struct B; }",
+          "pub mod dep_c { pub struct C; }",
+          "pub mod dep_d { pub struct D; }",
+          "",
+          "pub mod api {",
+          "    use crate::{dep_a::A, dep_b::B, dep_c::C, dep_d::D};",
+          "    pub struct Thing;",
+          "    pub fn build(_: A, _: B, _: C, _: D) -> Thing { Thing }",
+          "}",
+          "",
+          "pub mod user_one { use crate::api::Thing; pub fn go(_: Thing) {} }",
+          "pub mod user_two { use crate::api::Thing; pub fn go(_: Thing) {} }",
+          "pub mod user_three { use crate::api::Thing; pub fn go(_: Thing) {} }",
+          "pub mod user_four { use crate::api::Thing; pub fn go(_: Thing) {} }",
+          "pub mod user_five { use crate::api::Thing; pub fn go(_: Thing) {} }",
+          "pub mod user_six { use crate::api::Thing; pub fn go(_: Thing) {} }",
+          "",
+        ].join("\n"),
+      },
+    ])
+    try {
+      const out = runCli(repoPath, ["score", "--signal", "RS-DE-04", "."])
+      expect(out.status).toBe(0)
+      expect(out.stdout).toContain("Signal: RS-DE-04-fan-in-fan-out")
+      expect(out.stdout).toContain("WARN  Module fan-cli::crate::api is a coupling hub (fanIn=6, fanOut=4)")
+      expect(out.stdout).toContain("Score:  0.817")
+      expect(out.stdout).toContain("Factor Audit (3 score-bearing)")
+      expect(out.stdout).toContain("config.hub_fan_in_threshold=6 threshold")
+      expect(out.stdout).toContain("config.hub_fan_out_threshold=4 threshold")
+      expect(out.stdout).not.toContain("config.top_n_diagnostics=10 threshold")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
   test("single-signal mode summarizes score-bearing factor audit details", async () => {
     const repoPath = await initRepo([
       {

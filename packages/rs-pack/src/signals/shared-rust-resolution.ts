@@ -63,16 +63,29 @@ export const toLocalRelativeSegments = (
 ): ReadonlyArray<string> | undefined => {
   const [head, ...rest] = useFact.segments
   if (head === undefined) return undefined
-  const current = useFact.relativeModulePath.split("::")
+  const current = useFact.relativeModulePath.split("::").slice(1)
   switch (head) {
     case useFact.crateName:
     case "crate":
       return rest
     case "self":
-      return [...current.slice(1), ...rest]
+      return [...current, ...rest]
     case "super":
-      return [...current.slice(1, -1), ...rest]
+      return resolveSuperSegments(current, useFact.segments)
     default:
       return rootNames.has(head) ? useFact.segments : undefined
   }
+}
+
+const resolveSuperSegments = (
+  currentModuleSegments: ReadonlyArray<string>,
+  useSegments: ReadonlyArray<string>,
+): ReadonlyArray<string> => {
+  let ancestor = [...currentModuleSegments]
+  let index = 0
+  while (useSegments[index] === "super") {
+    ancestor = ancestor.slice(0, -1)
+    index += 1
+  }
+  return [...ancestor, ...useSegments.slice(index)]
 }

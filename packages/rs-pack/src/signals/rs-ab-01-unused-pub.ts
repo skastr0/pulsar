@@ -47,7 +47,7 @@ export const RsAb01: Signal<RsAb01Config, RsAb01Output, RustProjectTag> = {
   tier: 1,
   category: "abstraction-bloat",
   kind: "structural",
-  cacheVersion: "rs-ab-01-public-surface-v2",
+  cacheVersion: "rs-ab-01-public-surface-use-segments-v3",
   configSchema: RsAb01Config,
   defaultConfig: {
     exclude_globs: [...DEFAULT_RUST_EXCLUDE_GLOBS],

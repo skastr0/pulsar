@@ -68,7 +68,7 @@ export const RsAd02: Signal<RsAd02ConfigType, RsAd02Output, RustProjectTag | Ref
   tier: 2,
   category: "architectural-drift",
   kind: "structural",
-  cacheVersion: "crate-boundary-reference-data-config-aliases-v2",
+  cacheVersion: "crate-boundary-reference-data-config-aliases-use-segments-v3",
   configSchema: RsAd02Config,
   factorDefinitions: RsAd02FactorDefinitions,
   defaultConfig: {

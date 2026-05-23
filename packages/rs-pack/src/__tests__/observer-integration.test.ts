@@ -12,6 +12,7 @@ import { Effect, Layer } from "effect"
 import { SHARED_SIGNALS } from "@skastr0/pulsar-shared-signals"
 import { RS_PACK_SIGNALS } from "../pack.js"
 import { RustProjectLayer } from "../project.js"
+import { RsDe04 } from "../signals/rs-de-04-fan-in-fan-out.js"
 import { cleanupWorkspace, createRustWorkspace, referenceLayer } from "./helpers.js"
 
 describe("rs-pack integration", () => {
@@ -95,6 +96,70 @@ describe("rs-pack integration", () => {
       expect(result.categories["review-pain"].signalCount).toBe(11)
       expect(result.categories["legibility-decay"].score).toBeLessThan(1)
       expect(result.minimum?.signal).toBeDefined()
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  }, 120_000)
+
+  test("observer path carries RS-DE-04 fan-in/fan-out score and diagnostics", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-observer-de04-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "fan-observer"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub mod dep_a { pub struct A; }",
+        "pub mod dep_b { pub struct B; }",
+        "pub mod dep_c { pub struct C; }",
+        "pub mod dep_d { pub struct D; }",
+        "",
+        "pub mod api {",
+        "    use crate::{dep_a::A, dep_b::B, dep_c::C, dep_d::D};",
+        "    pub struct Thing;",
+        "    pub fn build(_: A, _: B, _: C, _: D) -> Thing { Thing }",
+        "}",
+        "",
+        "pub mod user_one { use crate::api::Thing; pub fn go(_: Thing) {} }",
+        "pub mod user_two { use crate::api::Thing; pub fn go(_: Thing) {} }",
+        "pub mod user_three { use crate::api::Thing; pub fn go(_: Thing) {} }",
+        "pub mod user_four { use crate::api::Thing; pub fn go(_: Thing) {} }",
+        "pub mod user_five { use crate::api::Thing; pub fn go(_: Thing) {} }",
+        "pub mod user_six { use crate::api::Thing; pub fn go(_: Thing) {} }",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
+      const EnvLayer = Layer.mergeAll(
+        Layer.succeed(SignalContextTag, {
+          gitSha: "HEAD",
+          worktreePath: repo,
+          changedHunks: [],
+        }),
+        referenceLayer(),
+        InMemoryCacheLayer,
+        RustProjectLayer(repo),
+      )
+
+      const result = await Effect.runPromise(
+        Effect.provide(observe(registry, undefined), EnvLayer) as Effect.Effect<
+          ObserverOutput,
+          never,
+          never
+        >,
+      )
+      const fanInFanOut = result.signalResults.get(RsDe04.id)
+
+      expect(result.categories["dependency-entropy"].signals[RsDe04.id]).toBeCloseTo(0.8166666667)
+      expect(fanInFanOut?.score).toBeCloseTo(0.8166666667)
+      expect(fanInFanOut?.diagnostics[0]).toMatchObject({
+        severity: "warn",
+        message: "Module fan-observer::crate::api is a coupling hub (fanIn=6, fanOut=4)",
+      })
     } finally {
       await cleanupWorkspace(repo)
     }

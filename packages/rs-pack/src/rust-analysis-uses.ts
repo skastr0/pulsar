@@ -40,8 +40,11 @@ const flattenUseSegments = (
     }
     case "use_list":
       return namedChildrenOf(node).flatMap((child) => flattenUseSegments(child, prefix))
-    case "use_wildcard":
-      return [[...prefix, "*"]]
+    case "use_wildcard": {
+      const base = namedChildrenOf(node)[0]
+      const baseSegments = base === undefined ? [] : segmentsFromScopedNode(base)
+      return [[...prefix, ...baseSegments, "*"]]
+    }
     case "identifier":
     case "crate":
     case "self":
@@ -61,7 +64,6 @@ export const recordRustUseFacts = (
 ): void => {
   if (node.type !== "use_declaration") return
   const flattened = flattenUseSegments(node)
-    .map((segments) => segments.filter((segment) => segment !== "self"))
     .filter((segments) => segments.length > 0)
   const visibility = parseVisibility(node)
   for (const segments of flattened) {

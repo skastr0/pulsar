@@ -435,7 +435,7 @@ export function formattedTiny(value: number): number {
       expect(vectorArchitecture.aggregation.pressure.finalPressure).not.toBe(
         baselineArchitecture.aggregation.pressure.finalPressure,
       )
-      expect(vectorArchitecture.score).toBeGreaterThan(baselineArchitecture.score)
+      expect(vectorArchitecture.score).toBeLessThan(baselineArchitecture.score)
 
       const human = runCli(repoPath, ["score", "--category", "architectural-drift", "."])
       expect(human.status).toBe(0)
@@ -512,10 +512,10 @@ export function formattedTiny(value: number): number {
       expect(dirtyArchitecture.aggregation.pressure.finalPressure).not.toBe(
         defaultArchitecture.aggregation.pressure.finalPressure,
       )
-      expect(dirtyArchitecture.score).toBeGreaterThan(defaultArchitecture.score)
+      expect(dirtyArchitecture.score).toBeLessThan(defaultArchitecture.score)
       expect(dirtyArchitecture.signals[TS_AD_02_SIGNAL_ID]).toBeLessThan(1)
       expect(cleanArchitecture.signals[TS_AD_02_SIGNAL_ID]).toBe(1)
-      expect(cleanArchitecture.signals["SHARED-11-theory-encoding-index"]).toBeLessThan(1)
+      expect(dirtyArchitecture.score).toBeLessThan(cleanArchitecture.score)
     } finally {
       await rm(dirtyRepoPath, { recursive: true, force: true })
       await rm(cleanRepoPath, { recursive: true, force: true })

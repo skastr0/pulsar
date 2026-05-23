@@ -811,6 +811,161 @@ const createRsDe03MoreComplexWorkspace = () =>
     ].join("\n"),
   })
 
+const rsDe04HubWorkspaceFiles = (
+  mode: "base" | "severe" = "base",
+): Readonly<Record<string, string>> => ({
+  "Cargo.toml": [
+    "[package]",
+    'name = "fan-fixture"',
+    'version = "0.1.0"',
+    'edition = "2021"',
+    "",
+  ].join("\n"),
+  "src/lib.rs": [
+    "pub mod util { pub struct Util; }",
+    "pub mod cache { pub struct Cache; }",
+    "pub mod config { pub struct Config; }",
+    "pub mod extra_dep_a { pub struct ExtraDepA; }",
+    "pub mod extra_dep_b { pub struct ExtraDepB; }",
+    "",
+    "pub mod api {",
+    "    use crate::{cache::Cache, config::Config, util::Util};",
+    ...(mode === "severe"
+      ? [
+        "    use crate::{extra_dep_a::ExtraDepA, extra_dep_b::ExtraDepB};",
+        "    pub fn extra(_: ExtraDepA, _: ExtraDepB) {}",
+      ]
+      : []),
+    "    pub struct Thing;",
+    "    pub fn build(_: Cache, _: Config, _: Util) -> Thing { Thing }",
+    "}",
+    "",
+    "pub mod left { use crate::api::Thing; pub fn go(_: Thing) {} }",
+    "pub mod right { use super::api::Thing; pub fn go(_: Thing) {} }",
+    "pub mod wildcard { use crate::api::*; pub fn go(_: Thing) {} }",
+    "pub mod group {",
+    "    pub mod nested { use super::super::api::Thing; pub fn go(_: Thing) {} }",
+    "}",
+    mode === "severe"
+      ? "pub mod extra_in_a { use crate::api::Thing; pub fn go(_: Thing) {} }"
+      : "pub mod extra_in_a { pub fn idle() {} }",
+    mode === "severe"
+      ? "pub mod extra_in_b { use crate::api::Thing; pub fn go(_: Thing) {} }"
+      : "pub mod extra_in_b { pub fn idle() {} }",
+    "",
+  ].join("\n"),
+})
+
+const createRsDe04HubWorkspace = (mode: "base" | "severe" = "base") =>
+  createRustWorkspace("pulsar-rs-de04-hub-", rsDe04HubWorkspaceFiles(mode))
+
+const createRsDe04CleanWorkspace = () =>
+  createRustWorkspace("pulsar-rs-de04-clean-", {
+    "Cargo.toml": [
+      "[package]",
+      'name = "fan-clean"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+    ].join("\n"),
+    "src/lib.rs": [
+      "pub mod api { pub struct Thing; }",
+      "pub mod left { use crate::api::Thing; pub fn go(_: Thing) {} }",
+      "",
+    ].join("\n"),
+  })
+
+const createRsDe04NoUseWorkspace = () =>
+  createRustWorkspace("pulsar-rs-de04-no-use-", {
+    "Cargo.toml": [
+      "[package]",
+      'name = "fan-no-use"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+    ].join("\n"),
+    "src/lib.rs": [
+      "pub mod api { pub struct Thing; }",
+      "pub mod left { pub fn go() {} }",
+      "",
+    ].join("\n"),
+  })
+
+const createRsDe04MultiFileWorkspace = () =>
+  createRustWorkspace("pulsar-rs-de04-multi-file-", {
+    "Cargo.toml": [
+      "[package]",
+      'name = "fan-multi"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+    ].join("\n"),
+    "src/lib.rs": [
+      "pub mod api;",
+      "pub mod consumer;",
+      "pub mod external;",
+      "pub mod excluded;",
+      "",
+    ].join("\n"),
+    "src/api.rs": [
+      "pub mod child { pub struct Child; }",
+      "use self::child::Child;",
+      "pub struct Thing;",
+      "pub fn build(_: Child) -> Thing { Thing }",
+      "",
+    ].join("\n"),
+    "src/consumer.rs": [
+      "use crate::api::Thing;",
+      "pub fn go(_: Thing) {}",
+      "",
+    ].join("\n"),
+    "src/external.rs": [
+      "use std::fmt::Display;",
+      "pub fn external<T: Display>(_: T) {}",
+      "",
+    ].join("\n"),
+    "src/excluded.rs": [
+      "use crate::api::Thing;",
+      "pub fn hidden(_: Thing) {}",
+      "",
+    ].join("\n"),
+  })
+
+const createRsDe04ManyHubsWorkspace = () =>
+  createRustWorkspace("pulsar-rs-de04-many-hubs-", {
+    "Cargo.toml": [
+      "[package]",
+      'name = "fan-many"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+    ].join("\n"),
+    "src/lib.rs": [
+      ...Array.from(
+        { length: 12 },
+        (_, index) => `pub mod dep_${String(index).padStart(2, "0")} { pub struct Dep; }`,
+      ),
+      "",
+      ...Array.from(
+        { length: 12 },
+        (_, index) => [
+          `pub mod hub_${String(index).padStart(2, "0")} {`,
+          `    use crate::dep_${String(index).padStart(2, "0")}::Dep;`,
+          "    pub struct Thing;",
+          "    pub fn build(_: Dep) -> Thing { Thing }",
+          "}",
+        ].join("\n"),
+      ),
+      "",
+      ...Array.from(
+        { length: 12 },
+        (_, index) =>
+          `pub mod user_${String(index).padStart(2, "0")} { use crate::hub_${String(index).padStart(2, "0")}::Thing; pub fn go(_: Thing) {} }`,
+      ),
+      "",
+    ].join("\n"),
+  })
+
 describe("RS-DE-* signals", () => {
   test("RS-DE-01 declares identity, config, cache, pack registration, and factor ledger", async () => {
     const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
@@ -1679,29 +1834,339 @@ describe("RS-DE-* signals", () => {
     }
   })
 
-  test("RS-DE-04 measures explicit module fan-in and fan-out", async () => {
-    const repo = await createRustWorkspace("pulsar-rs-de04-", {
-      "Cargo.toml": [
-        "[package]",
-        'name = "fan-fixture"',
-        'version = "0.1.0"',
-        'edition = "2021"',
-        "",
-      ].join("\n"),
-      "src/lib.rs": [
-        "pub mod api { pub struct Thing; }",
-        "pub mod left { use crate::api::Thing; pub fn go(_: Thing) {} }",
-        "pub mod right { use crate::api::Thing; pub fn go(_: Thing) {} }",
-        "",
-      ].join("\n"),
+  test("RS-DE-04 declares identity, config, cache, pack registration, and factor ledger", async () => {
+    const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
+    const versionedRegistry = await Effect.runPromise(buildRegistry([
+      ...SHARED_SIGNALS,
+      ...RS_PACK_SIGNALS.map((signal) =>
+        signal.id === RsDe04.id
+          ? { ...RsDe04, cacheVersion: `${RsDe04.cacheVersion}-changed` }
+          : signal,
+      ),
+    ]))
+    const registered = registry.byId.get("RS-DE-04")
+    const decoded = Schema.decodeUnknownSync(RsDe04.configSchema)(RsDe04.defaultConfig)
+    const factorLedger = registered?.factorLedger?.({} as never)
+    const baseCacheHash = computeConfigHash(RsDe04.id, registry, undefined)
+    const versionedCacheHash = computeConfigHash(RsDe04.id, versionedRegistry, undefined)
+    const configuredCacheHash = computeConfigHash(RsDe04.id, registry, {
+      id: "rs-de-04-contract",
+      domain: "test",
+      signal_overrides: {
+        [RsDe04.id]: {
+          config: {
+            ...RsDe04.defaultConfig,
+            hub_fan_in_threshold: 2,
+            hub_fan_out_threshold: 2,
+            top_n_diagnostics: 1,
+          },
+        },
+      },
     })
 
+    expect(RsDe04).toMatchObject({
+      id: "RS-DE-04-fan-in-fan-out",
+      aliases: ["RS-DE-04"],
+      title: "Fan-in/fan-out",
+      tier: 1,
+      category: "dependency-entropy",
+      kind: "structural",
+      cacheVersion: "rust-use-fan-in-out-config-v2",
+      inputs: [],
+    })
+    expect(decoded).toEqual({
+      exclude_globs: ["**/target/**", "**/tests/**", "**/examples/**", "**/benches/**"],
+      hub_fan_in_threshold: 6,
+      hub_fan_out_threshold: 4,
+      top_n_diagnostics: 10,
+    })
+    expect(registered?.id).toBe(RsDe04.id)
+    expect(registered?.cacheVersion).toBe(RsDe04.cacheVersion)
+    expect(registry.byId.get("RS-DE-04")?.id).toBe(RsDe04.id)
+    expect(versionedCacheHash).not.toBe(baseCacheHash)
+    expect(configuredCacheHash).not.toBe(baseCacheHash)
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.exclude_globs",
+        source: "signal-default",
+        affectsScore: true,
+        scoreRole: "evidence",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.hub_fan_in_threshold",
+        source: "signal-default",
+        affectsScore: true,
+        scoreRole: "threshold",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.hub_fan_out_threshold",
+        source: "signal-default",
+        affectsScore: true,
+        scoreRole: "threshold",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        source: "signal-default",
+        affectsScore: false,
+        scoreRole: "metadata",
+      }),
+    )
+  })
+
+  test("RS-DE-04 resolves explicit local uses into module fan-in and fan-out", async () => {
+    const repo = await createRsDe04HubWorkspace("base")
+
     try {
-      const out = await runSignalCompute(RsDe04, repo, RsDe04.defaultConfig)
-      expect(out.byModule.get("fan-fixture::crate::api")?.fanIn).toBe(2)
+      const out = await runSignalCompute(RsDe04, repo, {
+        ...RsDe04.defaultConfig,
+        hub_fan_in_threshold: 3,
+        hub_fan_out_threshold: 3,
+      })
+
+      expect(out.sourceFileCount).toBe(1)
+      expect(out.analyzedSourceFileCount).toBe(1)
+      expect(out.moduleCount).toBe(14)
+      expect(out.useCount).toBe(7)
+      expect(out.resolvedUseCount).toBe(7)
+      expect(out.hubCount).toBe(1)
+      expect(out.totalHubPressure).toBe(3)
+      expect(out.byModule.get("fan-fixture::crate::api")).toEqual({
+        fanIn: 4,
+        fanOut: 3,
+      })
       expect(out.byModule.get("fan-fixture::crate::left")?.fanOut).toBe(1)
+      expect(out.byModule.get("fan-fixture::crate::wildcard")?.fanOut).toBe(1)
+      expect(out.byModule.get("fan-fixture::crate::group::nested")?.fanOut).toBe(1)
+      expect(RsDe04.score(out)).toBeCloseTo(0.8357142857)
+      expect(RsDe04.outputMetadata?.(out)).toBeUndefined()
+
+      const diagnostics = RsDe04.diagnose(out)
+      expect(diagnostics).toHaveLength(1)
+      expect(diagnostics[0]).toMatchObject({
+        severity: "warn",
+        message: "Module fan-fixture::crate::api is a coupling hub (fanIn=4, fanOut=3)",
+        data: {
+          module: "fan-fixture::crate::api",
+          fanIn: 4,
+          fanOut: 3,
+          hubPressure: 3,
+          hubFanInThreshold: 3,
+          hubFanOutThreshold: 3,
+        },
+      })
+      expect(diagnostics[0]?.location?.file).toEndWith("/src/lib.rs")
+      expect(typeof diagnostics[0]?.data?.hash).toBe("string")
     } finally {
       await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-DE-04 caps and orders many hub diagnostics deterministically", async () => {
+    const repo = await createRsDe04ManyHubsWorkspace()
+
+    try {
+      const out = await runSignalCompute(RsDe04, repo, {
+        ...RsDe04.defaultConfig,
+        hub_fan_in_threshold: 1,
+        hub_fan_out_threshold: 1,
+        top_n_diagnostics: 5,
+      })
+      const diagnostics = RsDe04.diagnose(out)
+
+      expect(out.hubCount).toBe(12)
+      expect(diagnostics).toHaveLength(5)
+      expect(diagnostics.map((diagnostic) => diagnostic.data?.module)).toEqual([
+        "fan-many::crate::hub_00",
+        "fan-many::crate::hub_01",
+        "fan-many::crate::hub_02",
+        "fan-many::crate::hub_03",
+        "fan-many::crate::hub_04",
+      ])
+      expect(new Set(diagnostics.map((diagnostic) => diagnostic.data?.hash)).size).toBe(5)
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-DE-04 keeps clean, no-use, missing, and excluded source evidence honest", async () => {
+    const cleanRepo = await createRsDe04CleanWorkspace()
+    const noUseRepo = await createRsDe04NoUseWorkspace()
+    const missingRepo = await createRustWorkspace("pulsar-rs-de04-missing-", {
+      "README.md": "# no rust here\n",
+    })
+    const excludedRepo = await createRsDe04HubWorkspace("base")
+
+    try {
+      const clean = await runSignalCompute(RsDe04, cleanRepo, {
+        ...RsDe04.defaultConfig,
+        hub_fan_in_threshold: 2,
+        hub_fan_out_threshold: 2,
+      })
+      const noUse = await runSignalCompute(RsDe04, noUseRepo, RsDe04.defaultConfig)
+      const missing = await runSignalCompute(RsDe04, missingRepo, RsDe04.defaultConfig)
+      const excluded = await runSignalCompute(RsDe04, excludedRepo, {
+        ...RsDe04.defaultConfig,
+        exclude_globs: ["**/src/**"],
+      })
+
+      expect(clean.moduleCount).toBe(3)
+      expect(clean.resolvedUseCount).toBe(1)
+      expect(clean.hubCount).toBe(0)
+      expect(RsDe04.score(clean)).toBe(1)
+      expect(RsDe04.diagnose(clean)).toEqual([])
+      expect(RsDe04.outputMetadata?.(clean)).toBeUndefined()
+
+      expect(noUse.moduleCount).toBe(3)
+      expect(noUse.resolvedUseCount).toBe(0)
+      expect(RsDe04.score(noUse)).toBe(1)
+      expect(RsDe04.diagnose(noUse)).toEqual([])
+      expect(RsDe04.outputMetadata?.(noUse)).toEqual({
+        applicability: "not_applicable",
+      })
+
+      expect(missing.sourceFileCount).toBe(0)
+      expect(RsDe04.score(missing)).toBe(1)
+      expect(RsDe04.outputMetadata?.(missing)).toEqual({
+        applicability: "insufficient_evidence",
+      })
+      expect(RsDe04.diagnose(missing)[0]).toMatchObject({
+        severity: "warn",
+        message: "RS-DE-04 found no Rust source files for fan-in/fan-out analysis",
+        data: {
+          sourceFileCount: 0,
+          moduleCount: 0,
+        },
+      })
+
+      expect(excluded.sourceFileCount).toBe(1)
+      expect(excluded.analyzedSourceFileCount).toBe(0)
+      expect(excluded.moduleCount).toBe(0)
+      expect(RsDe04.score(excluded)).toBe(1)
+      expect(RsDe04.diagnose(excluded)).toEqual([])
+      expect(RsDe04.outputMetadata?.(excluded)).toEqual({
+        applicability: "not_applicable",
+      })
+    } finally {
+      await cleanupWorkspace(cleanRepo)
+      await cleanupWorkspace(noUseRepo)
+      await cleanupWorkspace(missingRepo)
+      await cleanupWorkspace(excludedRepo)
+    }
+  })
+
+  test("RS-DE-04 resolves multi-file, self-relative, external, and excluded-target uses", async () => {
+    const repo = await createRsDe04MultiFileWorkspace()
+
+    try {
+      const out = await runSignalCompute(RsDe04, repo, {
+        ...RsDe04.defaultConfig,
+        exclude_globs: ["**/src/excluded.rs"],
+      })
+
+      expect(out.sourceFileCount).toBe(5)
+      expect(out.analyzedSourceFileCount).toBe(4)
+      expect(out.useCount).toBe(3)
+      expect(out.resolvedUseCount).toBe(2)
+      expect(out.byModule.get("fan-multi::crate::api")).toEqual({
+        fanIn: 1,
+        fanOut: 1,
+      })
+      expect(out.byModule.get("fan-multi::crate::api::child")).toEqual({
+        fanIn: 1,
+        fanOut: 0,
+      })
+      expect(out.byModule.get("fan-multi::crate::consumer")?.fanOut).toBe(1)
+      expect(out.byModule.get("fan-multi::crate::external")?.fanOut).toBe(0)
+      expect(out.byModule.has("fan-multi::crate::excluded")).toBe(false)
+      expect(RsDe04.score(out)).toBe(1)
+      expect(RsDe04.diagnose(out)).toEqual([])
+      expect(RsDe04.outputMetadata?.(out)).toBeUndefined()
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-DE-04 normalizes config and scores hub pressure monotonically", async () => {
+    const baseRepo = await createRsDe04HubWorkspace("base")
+    const severeRepo = await createRsDe04HubWorkspace("severe")
+    const firstRoot = await createRsDe04HubWorkspace("base")
+    const secondRoot = await createRsDe04HubWorkspace("base")
+
+    try {
+      const base = await runSignalCompute(RsDe04, baseRepo, {
+        ...RsDe04.defaultConfig,
+        hub_fan_in_threshold: 3.9,
+        hub_fan_out_threshold: 3.1,
+        top_n_diagnostics: 1.9,
+      })
+      const strict = await runSignalCompute(RsDe04, baseRepo, {
+        ...RsDe04.defaultConfig,
+        hub_fan_in_threshold: 2,
+        hub_fan_out_threshold: 2,
+      })
+      const severe = await runSignalCompute(RsDe04, severeRepo, {
+        ...RsDe04.defaultConfig,
+        hub_fan_in_threshold: 3,
+        hub_fan_out_threshold: 3,
+      })
+      const hiddenNegative = await runSignalCompute(RsDe04, baseRepo, {
+        ...RsDe04.defaultConfig,
+        hub_fan_in_threshold: -1,
+        hub_fan_out_threshold: -1,
+        top_n_diagnostics: -1,
+      })
+      const hiddenNaN = await runSignalCompute(RsDe04, baseRepo, {
+        ...RsDe04.defaultConfig,
+        hub_fan_in_threshold: Number.NaN,
+        hub_fan_out_threshold: Number.NaN,
+        top_n_diagnostics: Number.NaN,
+      })
+      const first = await runSignalCompute(RsDe04, firstRoot, {
+        ...RsDe04.defaultConfig,
+        hub_fan_in_threshold: 3,
+        hub_fan_out_threshold: 3,
+      })
+      const second = await runSignalCompute(RsDe04, secondRoot, {
+        ...RsDe04.defaultConfig,
+        hub_fan_in_threshold: 3,
+        hub_fan_out_threshold: 3,
+      })
+
+      expect(base.hubFanInThreshold).toBe(3)
+      expect(base.hubFanOutThreshold).toBe(3)
+      expect(base.diagnosticLimit).toBe(1)
+      expect(RsDe04.diagnose(base)).toHaveLength(1)
+      expect(strict.totalHubPressure).toBeGreaterThan(base.totalHubPressure)
+      expect(RsDe04.score(strict)).toBeLessThan(RsDe04.score(base))
+      expect(severe.moduleCount).toBe(base.moduleCount)
+      expect(severe.hubCount).toBe(base.hubCount)
+      expect(severe.totalHubPressure).toBeGreaterThan(base.totalHubPressure)
+      expect(RsDe04.score(severe)).toBeLessThan(RsDe04.score(base))
+      expect(hiddenNegative.hubFanInThreshold).toBe(1)
+      expect(hiddenNegative.hubFanOutThreshold).toBe(1)
+      expect(hiddenNegative.diagnosticLimit).toBe(0)
+      expect(hiddenNegative.hubCount).toBe(1)
+      expect(RsDe04.score(hiddenNegative)).toBeGreaterThan(0)
+      expect(RsDe04.score(hiddenNegative)).toBeLessThan(1)
+      expect(hiddenNaN.hubFanInThreshold).toBe(6)
+      expect(hiddenNaN.hubFanOutThreshold).toBe(4)
+      expect(hiddenNaN.diagnosticLimit).toBe(0)
+      expect(RsDe04.diagnose(hiddenNegative)).toEqual([])
+      expect(RsDe04.diagnose(hiddenNaN)).toEqual([])
+      expect(RsDe04.diagnose(first).map((diagnostic) => diagnostic.data?.hash)).toEqual(
+        RsDe04.diagnose(second).map((diagnostic) => diagnostic.data?.hash),
+      )
+    } finally {
+      await cleanupWorkspace(baseRepo)
+      await cleanupWorkspace(severeRepo)
+      await cleanupWorkspace(firstRoot)
+      await cleanupWorkspace(secondRoot)
     }
   })
 })

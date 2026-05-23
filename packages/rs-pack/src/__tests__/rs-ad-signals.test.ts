@@ -654,7 +654,7 @@ describe("RS-AD-* signals", () => {
       tier: 2,
       category: "architectural-drift",
       kind: "structural",
-      cacheVersion: "crate-boundary-reference-data-config-aliases-v2",
+      cacheVersion: "crate-boundary-reference-data-config-aliases-use-segments-v3",
       inputs: [],
     })
     expect(decoded).toEqual({

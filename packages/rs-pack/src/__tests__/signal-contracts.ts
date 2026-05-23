@@ -50,7 +50,7 @@ export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       factorLedger:
         "rs-ad-signals.test.ts: registered RS pack signal emits config.exclude_globs as score-bearing evidence and config.top_n_diagnostics as non-score-bearing metadata with signal-default source.",
       cacheSemantics:
-        "rs-ad-signals.test.ts, pack.test.ts, and core scoring-engine tests: RS-AD-02 declares crate-boundary-reference-data-config-aliases-v2 cacheVersion, config/cacheVersion changes alter the signal config hash, the RS pack wrapper preserves the version, and Tier-2 scoring cache semantics include reference-data version hashes.",
+        "rs-ad-signals.test.ts, pack.test.ts, and core scoring-engine tests: RS-AD-02 declares crate-boundary-reference-data-config-aliases-use-segments-v3 cacheVersion, config/cacheVersion changes alter the signal config hash, the RS pack wrapper preserves the version, and Tier-2 scoring cache semantics include reference-data version hashes.",
       referenceData:
         "rs-ad-signals.test.ts: direct ReferenceData fixtures and canonical `.pulsar/conventions.json` loading prove schema-conventions rust_crate_boundaries drive boundary rules, generic boundaries are not accepted as Rust boundary rules, and missing schema-conventions remains distinct from a clean pass.",
       integration:
@@ -165,7 +165,33 @@ export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "observer-integration.test.ts and CLI score tests: Rust observer integration includes dependency-entropy Rust signals in the RS pack, while CLI single-signal mode executes RS-DE-03 against a repository substrate with Cargo metadata and Rust source parsed from disk.",
     },
   },
-  pendingSignalContract("RS-DE-04-fan-in-fan-out"),
+  {
+    id: "RS-DE-04-fan-in-fan-out",
+    status: "verified",
+    requiredEvidence: ["integration"],
+    evidence: {
+      identity:
+        "rs-de-signals.test.ts: canonical id, alias, title, tier/category/kind, empty input contract, semantic cacheVersion, pack registration, registry alias lookup, config-cache hash sensitivity, and default config decoding are asserted.",
+      config:
+        "rs-de-signals.test.ts: exclude_globs, hub_fan_in_threshold, hub_fan_out_threshold, and top_n_diagnostics decode through the real schema; fractional, negative, and NaN thresholds/caps are normalized through compute output.",
+      positiveFixture:
+        "rs-de-signals.test.ts: temporary Cargo crate fixtures run through RustProjectLayer and real Rust source parsing to prove explicit crate/self/super and repeated-super local use resolution, grouped imports, wildcard imports, multi-file modules, fan-in, fan-out, hub detection, and resolved-edge counting.",
+      negativeFixture:
+        "rs-de-signals.test.ts: clean low-coupling crates, crates with no local use edges, external-only imports, missing Rust source, fully excluded Rust source, and excluded target modules return neutral output without false hub pressure.",
+      applicability:
+        "rs-de-signals.test.ts: loaded Rust source with local use evidence is applicable, no Rust source emits insufficient_evidence metadata, and loaded source with no resolved local edges or no analyzed modules emits not_applicable metadata.",
+      score:
+        "rs-de-signals.test.ts: hub fixtures score below clean fixtures, missing/no-use/excluded evidence stays score-neutral through applicability metadata, stricter hub thresholds lower scores, and additional hub fan-in/fan-out pressure lowers scores monotonically at fixed module count.",
+      diagnostics:
+        "rs-de-signals.test.ts: diagnostics assert severity, source locations, deterministic hub ordering, checkout-root-independent stable hash payloads, hub fan-in/fan-out/pressure payloads, configured threshold payloads, no-source warning payloads, and normalized diagnostic caps.",
+      factorLedger:
+        "rs-de-signals.test.ts: registered RS pack signal emits config.exclude_globs as score-affecting evidence, hub fan-in/fan-out thresholds as score-bearing thresholds, and config.top_n_diagnostics as non-score-bearing metadata with signal-default source.",
+      cacheSemantics:
+        "rs-de-signals.test.ts and pack.test.ts: RS-DE-04 declares rust-use-fan-in-out-config-v2 cacheVersion, config/cacheVersion changes alter the signal config hash, and the RS pack wrapper preserves the signal-specific cacheVersion.",
+      integration:
+        "observer-integration.test.ts and CLI score tests: Rust observer integration includes dependency-entropy Rust signals in the RS pack, while CLI single-signal mode executes RS-DE-04 against a repository substrate with Rust source parsed from disk.",
+    },
+  },
   pendingSignalContract("RS-AB-01-unused-public-items"),
   pendingSignalContract("RS-AB-02-trait-object-depth"),
   pendingSignalContract("RS-AB-03-generic-proliferation"),
