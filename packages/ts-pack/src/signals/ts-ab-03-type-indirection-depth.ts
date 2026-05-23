@@ -49,7 +49,7 @@ export const TsAb03: Signal<TsAb03Config, TsAb03Output, TsProjectTag> = {
   tier: 1,
   category: "abstraction-bloat",
   kind: "legibility",
-  cacheVersion: "type-indirection-depth-v1-diagnostic-limit-v1",
+  cacheVersion: "type-indirection-depth-v2-diagnostic-limit-v1",
   configSchema: TsAb03Config,
   defaultConfig: {
     exclude_globs: [
