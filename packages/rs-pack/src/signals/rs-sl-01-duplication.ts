@@ -2,8 +2,14 @@ import {
   SignalContextTag,
   type Diagnostic,
   type Signal,
+  type SignalFactorDefinition,
   SignalComputeError,
 } from "@skastr0/pulsar-core/signal"
+import {
+  makeFactorEntry,
+  makeFactorLedger,
+  type SignalFactorLedger,
+} from "@skastr0/pulsar-core/factors"
 import { Effect, Schema } from "effect"
 import { RustProjectTag } from "../project.js"
 import { parseRustFile } from "../syn-walker.js"
@@ -41,7 +47,46 @@ interface RsSl01Output {
   readonly groups: ReadonlyArray<DuplicateGroup>
   readonly scopeMode: "whole-tree" | "changed-hunks"
   readonly analysisMode: "function-body-normalization"
+  readonly sourceFileCount: number
+  readonly analyzedSourceFileCount: number
+  readonly analyzedFunctionCount: number
+  readonly exactGroupCount: number
+  readonly structuralGroupCount: number
+  readonly duplicateGroupCount: number
+  readonly diagnosticLimit: number
+  readonly minTokens: number
+  readonly scoreMode: "bounded-duplicate-function-pressure"
+  readonly scoreDenominator: "analyzed-functions"
 }
+
+const DEFAULT_MIN_TOKENS = 12
+const DEFAULT_TOP_N_DIAGNOSTICS = 10
+const RS_SL_01_SCORE_MODE = "bounded-duplicate-function-pressure" as const
+const RS_SL_01_SCORE_DENOMINATOR = "analyzed-functions" as const
+
+const RsSl01FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
+  {
+    path: "config.exclude_globs",
+    title: "Config exclude globs",
+    valueKind: "array",
+    scoreRole: "evidence",
+    defaultValue: [...DEFAULT_RUST_EXCLUDE_GLOBS],
+  },
+  {
+    path: "config.min_tokens",
+    title: "Config min tokens",
+    valueKind: "number",
+    scoreRole: "threshold",
+    defaultValue: DEFAULT_MIN_TOKENS,
+  },
+  {
+    path: "config.top_n_diagnostics",
+    title: "Config top n diagnostics",
+    valueKind: "number",
+    scoreRole: "metadata",
+    defaultValue: DEFAULT_TOP_N_DIAGNOSTICS,
+  },
+]
 
 export const RsSl01: Signal<RsSl01Config, RsSl01Output, RustProjectTag | SignalContextTag> = {
   id: "RS-SL-01-duplication",
@@ -50,16 +95,18 @@ export const RsSl01: Signal<RsSl01Config, RsSl01Output, RustProjectTag | SignalC
   tier: 1,
   category: "generated-slop",
   kind: "legibility",
-  cacheVersion: "advisory-rust-duplication-cfg-test-gating-v2",
+  cacheVersion: "advisory-rust-duplication-cfg-test-diagnostics-v3",
   configSchema: RsSl01Config,
+  factorDefinitions: RsSl01FactorDefinitions,
   defaultConfig: {
     exclude_globs: [...DEFAULT_RUST_EXCLUDE_GLOBS],
-    min_tokens: 12,
-    top_n_diagnostics: 10,
+    min_tokens: DEFAULT_MIN_TOKENS,
+    top_n_diagnostics: DEFAULT_TOP_N_DIAGNOSTICS,
   },
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
+      const normalizedConfig = normalizeRsSl01Config(config)
       const project = yield* RustProjectTag
       const context = yield* SignalContextTag
       return yield* Effect.tryPromise({
@@ -71,8 +118,11 @@ export const RsSl01: Signal<RsSl01Config, RsSl01Output, RustProjectTag | SignalC
             member: DuplicateGroupMember
           }> = []
 
-          for (const file of project.sourceFiles) {
-            if (isExcluded(file, config.exclude_globs)) continue
+          const analyzedSourceFiles = project.sourceFiles.filter(
+            (file) => !isExcluded(file, normalizedConfig.exclude_globs),
+          )
+
+          for (const file of analyzedSourceFiles) {
             const scope = resolveRustFileScope(project, file)
             const tree = await parseRustFile(file)
             walkAttributedNodes(tree.rootNode, ({ node, ancestors, testGated }) => {
@@ -92,7 +142,7 @@ export const RsSl01: Signal<RsSl01Config, RsSl01Output, RustProjectTag | SignalC
               }
 
               const structuralTokens = tokenizeStructural(node.text)
-              if (structuralTokens.length < config.min_tokens) return
+              if (structuralTokens.length < normalizedConfig.min_tokens) return
               const { modulePath } = modulePathForAncestors(scope, ancestors)
               functions.push({
                 exact: normalizeExact(node.text),
@@ -119,13 +169,24 @@ export const RsSl01: Signal<RsSl01Config, RsSl01Output, RustProjectTag | SignalC
             )
             return exactVariants.size > 1
           })
+          const groups = [...exactGroups, ...structuralGroups].sort(
+            (left, right) => right.members.length - left.members.length || right.tokenCount - left.tokenCount,
+          )
 
           return {
-            groups: [...exactGroups, ...structuralGroups].sort(
-              (left, right) => right.members.length - left.members.length || right.tokenCount - left.tokenCount,
-            ),
+            groups,
             scopeMode: context.changedHunks.length > 0 ? "changed-hunks" : "whole-tree",
             analysisMode: "function-body-normalization",
+            sourceFileCount: project.sourceFiles.length,
+            analyzedSourceFileCount: analyzedSourceFiles.length,
+            analyzedFunctionCount: functions.length,
+            exactGroupCount: exactGroups.length,
+            structuralGroupCount: structuralGroups.length,
+            duplicateGroupCount: groups.length,
+            diagnosticLimit: normalizedConfig.top_n_diagnostics,
+            minTokens: normalizedConfig.min_tokens,
+            scoreMode: RS_SL_01_SCORE_MODE,
+            scoreDenominator: RS_SL_01_SCORE_DENOMINATOR,
           }
         },
         catch: (cause) =>
@@ -143,7 +204,19 @@ export const RsSl01: Signal<RsSl01Config, RsSl01Output, RustProjectTag | SignalC
     return Math.max(0, 1 - Math.min(0.5, exactPenalty + structuralPenalty))
   },
   diagnose: (out): ReadonlyArray<Diagnostic> =>
-    out.groups.slice(0, 10).map((group) => ({
+    out.sourceFileCount === 0
+      ? [{
+        severity: "warn" as const,
+        message: "RS-SL-01 found no Rust source files for duplication analysis",
+        data: {
+          sourceFileCount: out.sourceFileCount,
+          analyzedSourceFileCount: out.analyzedSourceFileCount,
+          analyzedFunctionCount: out.analyzedFunctionCount,
+          scoreMode: out.scoreMode,
+          scoreDenominator: out.scoreDenominator,
+        },
+      }].slice(0, out.diagnosticLimit)
+      : out.groups.slice(0, out.diagnosticLimit).map((group) => ({
       severity: group.kind === "exact" ? ("warn" as const) : ("info" as const),
       message: `${group.kind} duplicate group with ${group.members.length} functions`,
       location: {
@@ -156,9 +229,44 @@ export const RsSl01: Signal<RsSl01Config, RsSl01Output, RustProjectTag | SignalC
         members: group.members,
         scopeMode: out.scopeMode,
         analysisMode: out.analysisMode,
+        minTokens: out.minTokens,
+        scoreMode: out.scoreMode,
+        scoreDenominator: out.scoreDenominator,
       },
     })),
+  outputMetadata: (out) => {
+    if (out.sourceFileCount === 0) {
+      return { applicability: "insufficient_evidence" as const }
+    }
+    if (out.analyzedSourceFileCount === 0 || out.analyzedFunctionCount === 0) {
+      return { applicability: "not_applicable" as const }
+    }
+    return undefined
+  },
+  factorLedger: () => makeRsSl01FactorLedger(),
 }
+
+type NormalizedRsSl01Config = RsSl01Config
+
+const normalizeRsSl01Config = (config: RsSl01Config): NormalizedRsSl01Config => ({
+  exclude_globs: config.exclude_globs,
+  min_tokens: Number.isFinite(config.min_tokens)
+    ? Math.max(0, Math.floor(config.min_tokens))
+    : DEFAULT_MIN_TOKENS,
+  top_n_diagnostics: Number.isFinite(config.top_n_diagnostics)
+    ? Math.max(0, Math.floor(config.top_n_diagnostics))
+    : 0,
+})
+
+const makeRsSl01FactorLedger = (): SignalFactorLedger =>
+  makeFactorLedger(
+    "RS-SL-01-duplication",
+    RsSl01FactorDefinitions.map((definition) =>
+      makeFactorEntry(definition, definition.defaultValue ?? null, {
+        source: "signal-default",
+      }),
+    ),
+  )
 
 const buildGroups = (
   functions: ReadonlyArray<{

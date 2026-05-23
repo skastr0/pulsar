@@ -1,4 +1,8 @@
 import { describe, expect, test } from "bun:test"
+import { buildRegistry, computeConfigHash } from "@skastr0/pulsar-core/scoring"
+import { SHARED_SIGNALS } from "@skastr0/pulsar-shared-signals"
+import { Effect, Schema } from "effect"
+import { RS_PACK_SIGNALS } from "../pack.js"
 import { RsSl01 } from "../signals/rs-sl-01-duplication.js"
 import { RsSl02 } from "../signals/rs-sl-02-suppressions.js"
 import { RsSl03 } from "../signals/rs-sl-03-unwrap-expect.js"
@@ -10,6 +14,77 @@ import {
 } from "./helpers.js"
 
 describe("RS-SL-* signals", () => {
+  test("RS-SL-01 declares identity, config, cache, pack registration, and factor ledger", async () => {
+    const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
+    const versionedRegistry = await Effect.runPromise(
+      buildRegistry([
+        ...SHARED_SIGNALS,
+        ...RS_PACK_SIGNALS.filter((signal) => signal.id !== RsSl01.id),
+        { ...RsSl01, cacheVersion: `${RsSl01.cacheVersion}-next` },
+      ]),
+    )
+    const registered = registry.byId.get("RS-SL-01")
+    const decoded = Schema.decodeUnknownSync(RsSl01.configSchema)(RsSl01.defaultConfig)
+    const factorLedger = registered?.factorLedger?.({})
+    const baseCacheHash = computeConfigHash(RsSl01.id, registry, undefined)
+    const versionedCacheHash = computeConfigHash(RsSl01.id, versionedRegistry, undefined)
+    const configuredCacheHash = computeConfigHash(RsSl01.id, registry, {
+      id: "rs-sl-01-contract",
+      domain: "test",
+      signal_overrides: {
+        [RsSl01.id]: {
+          config: {
+            ...RsSl01.defaultConfig,
+            min_tokens: 20,
+            top_n_diagnostics: 1,
+          },
+        },
+      },
+    })
+
+    expect(RsSl01).toMatchObject({
+      id: "RS-SL-01-duplication",
+      aliases: ["RS-SL-01"],
+      title: "Duplication",
+      tier: 1,
+      category: "generated-slop",
+      kind: "legibility",
+      cacheVersion: "advisory-rust-duplication-cfg-test-diagnostics-v3",
+      inputs: [],
+    })
+    expect(decoded).toEqual({
+      exclude_globs: ["**/target/**", "**/tests/**", "**/examples/**", "**/benches/**"],
+      min_tokens: 12,
+      top_n_diagnostics: 10,
+    })
+    expect(registered?.id).toBe(RsSl01.id)
+    expect(registered?.cacheVersion).toBe(RsSl01.cacheVersion)
+    expect(registry.byId.get("RS-SL-01")?.id).toBe(RsSl01.id)
+    expect(baseCacheHash).not.toBe(versionedCacheHash)
+    expect(baseCacheHash).not.toBe(configuredCacheHash)
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.exclude_globs",
+        affectsScore: true,
+        scoreRole: "evidence",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.min_tokens",
+        affectsScore: true,
+        scoreRole: "threshold",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        affectsScore: false,
+        scoreRole: "metadata",
+      }),
+    )
+  })
+
   test("RS-SL-01 finds exact and structural duplication", async () => {
     const repo = await createRustWorkspace("pulsar-rs-sl01-", {
       "Cargo.toml": [
@@ -31,6 +106,10 @@ describe("RS-SL-* signals", () => {
       const out = await runSignalCompute(RsSl01, repo, RsSl01.defaultConfig)
       expect(out.groups.length).toBeGreaterThanOrEqual(1)
       expect(out.groups.some((group) => group.kind === "structural")).toBe(true)
+      expect(out.scopeMode).toBe("whole-tree")
+      expect(out.analysisMode).toBe("function-body-normalization")
+      expect(out.analyzedFunctionCount).toBe(3)
+      expect(RsSl01.outputMetadata?.(out)).toBeUndefined()
     } finally {
       await cleanupWorkspace(repo)
     }
@@ -48,6 +127,16 @@ describe("RS-SL-* signals", () => {
       })),
       scopeMode: "whole-tree",
       analysisMode: "function-body-normalization",
+      sourceFileCount: 1,
+      analyzedSourceFileCount: 1,
+      analyzedFunctionCount: 100,
+      exactGroupCount: 0,
+      structuralGroupCount: 50,
+      duplicateGroupCount: 50,
+      diagnosticLimit: 10,
+      minTokens: 12,
+      scoreMode: "bounded-duplicate-function-pressure",
+      scoreDenominator: "analyzed-functions",
     })
 
     expect(score).toBeGreaterThan(0.8)
@@ -65,9 +154,145 @@ describe("RS-SL-* signals", () => {
       })),
       scopeMode: "whole-tree",
       analysisMode: "function-body-normalization",
+      sourceFileCount: 1,
+      analyzedSourceFileCount: 1,
+      analyzedFunctionCount: 50,
+      exactGroupCount: 25,
+      structuralGroupCount: 0,
+      duplicateGroupCount: 25,
+      diagnosticLimit: 10,
+      minTokens: 12,
+      scoreMode: "bounded-duplicate-function-pressure",
+      scoreDenominator: "analyzed-functions",
     })
 
     expect(score).toBe(1)
+  })
+
+  test("RS-SL-01 normalizes diagnostics and applicability evidence", async () => {
+    const duplicate = await createRustWorkspace("pulsar-rs-sl01-diagnostics-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "dup-diagnostics"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub fn first(input: i32) -> i32 { if input > 10 { input + 1 } else { input - 1 } }",
+        "pub fn second(value: i32) -> i32 { if value > 10 { value + 1 } else { value - 1 } }",
+        "pub fn third(other: i32) -> i32 { if other > 10 { other + 1 } else { other - 1 } }",
+        "",
+      ].join("\n"),
+    })
+    const missing = await createRustWorkspace("pulsar-rs-sl01-missing-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "dup-missing"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+    })
+    const noFunctions = await createRustWorkspace("pulsar-rs-sl01-no-functions-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "dup-no-functions"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub struct Data;",
+        "",
+      ].join("\n"),
+    })
+    const excluded = await createRustWorkspace("pulsar-rs-sl01-excluded-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "dup-excluded"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub fn first(input: i32) -> i32 { if input > 10 { input + 1 } else { input - 1 } }",
+        "pub fn second(value: i32) -> i32 { if value > 10 { value + 1 } else { value - 1 } }",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const out = await runSignalCompute(
+        RsSl01,
+        duplicate,
+        { ...RsSl01.defaultConfig, min_tokens: Number.NaN, top_n_diagnostics: 1.8 },
+      )
+      const missingOut = await runSignalCompute(RsSl01, missing, RsSl01.defaultConfig)
+      const noFunctionOut = await runSignalCompute(RsSl01, noFunctions, RsSl01.defaultConfig)
+      const excludedOut = await runSignalCompute(
+        RsSl01,
+        excluded,
+        { ...RsSl01.defaultConfig, exclude_globs: ["**/src/**"] },
+      )
+      const noDiagnosticOut = await runSignalCompute(
+        RsSl01,
+        duplicate,
+        { ...RsSl01.defaultConfig, top_n_diagnostics: Number.NaN },
+      )
+
+      expect(out.minTokens).toBe(12)
+      expect(out.diagnosticLimit).toBe(1)
+      expect(RsSl01.diagnose(out)).toHaveLength(1)
+      expect(RsSl01.diagnose(out)[0]).toMatchObject({
+        severity: "info",
+        message: "structural duplicate group with 3 functions",
+        data: expect.objectContaining({
+          scopeMode: "whole-tree",
+          analysisMode: "function-body-normalization",
+          minTokens: 12,
+          scoreMode: "bounded-duplicate-function-pressure",
+          scoreDenominator: "analyzed-functions",
+        }),
+      })
+
+      expect(missingOut.sourceFileCount).toBe(0)
+      expect(missingOut.analyzedSourceFileCount).toBe(0)
+      expect(missingOut.analyzedFunctionCount).toBe(0)
+      expect(RsSl01.score(missingOut)).toBe(1)
+      expect(RsSl01.outputMetadata?.(missingOut)).toEqual({
+        applicability: "insufficient_evidence",
+      })
+      expect(RsSl01.diagnose(missingOut)[0]).toMatchObject({
+        severity: "warn",
+        message: "RS-SL-01 found no Rust source files for duplication analysis",
+      })
+
+      expect(noFunctionOut.sourceFileCount).toBe(1)
+      expect(noFunctionOut.analyzedSourceFileCount).toBe(1)
+      expect(noFunctionOut.analyzedFunctionCount).toBe(0)
+      expect(RsSl01.score(noFunctionOut)).toBe(1)
+      expect(RsSl01.outputMetadata?.(noFunctionOut)).toEqual({
+        applicability: "not_applicable",
+      })
+      expect(RsSl01.diagnose(noFunctionOut)).toEqual([])
+
+      expect(excludedOut.sourceFileCount).toBe(1)
+      expect(excludedOut.analyzedSourceFileCount).toBe(0)
+      expect(excludedOut.analyzedFunctionCount).toBe(0)
+      expect(RsSl01.outputMetadata?.(excludedOut)).toEqual({
+        applicability: "not_applicable",
+      })
+      expect(RsSl01.diagnose(excludedOut)).toEqual([])
+
+      expect(noDiagnosticOut.diagnosticLimit).toBe(0)
+      expect(RsSl01.diagnose(noDiagnosticOut)).toEqual([])
+    } finally {
+      await cleanupWorkspace(duplicate)
+      await cleanupWorkspace(missing)
+      await cleanupWorkspace(noFunctions)
+      await cleanupWorkspace(excluded)
+    }
   })
 
   test("RS-SL-02 enforces pulsar-allow governance on suspicious allow attributes", async () => {
