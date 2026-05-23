@@ -1188,6 +1188,40 @@ export function stubF() { throw new Error("Not implemented") }
     }
   }, 120_000)
 
+  test("single-signal CLI wrapper executes RS-AD-01 on the user-facing path", async () => {
+    const repoPath = await initRepo([
+      {
+        path: "Cargo.toml",
+        content: "[package]\nname = \"rust-cli\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+      },
+      { path: "src/lib.rs", content: "pub fn exposed() {}\nfn hidden() {}\n" },
+    ])
+    try {
+      const out = runCli(repoPath, ["score", "--signal", "RS-AD-01", "."])
+      expect(out.status).toBe(0)
+      expect(out.stdout).toContain("Signal: RS-AD-01-visibility-surface")
+      expect(out.stdout).toContain("WARN  Module rust-cli::crate exposes 50%")
+      expect(out.stdout).toContain("Factor Audit (1 score-bearing)")
+      expect(out.stdout).toContain("config.warn_pub_ratio=0.35 threshold")
+      expect(out.stdout).not.toContain("config.top_n_diagnostics=5 threshold")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
+  test("implemented Rust single-signal mode runs on inactive repos instead of reporting reserved placeholder", async () => {
+    const repoPath = await initRepo(simpleRepoFiles())
+    try {
+      const out = runCli(repoPath, ["score", "--signal", "RS-AD-01", "."])
+      expect(out.status).toBe(0)
+      expect(out.stdout).toContain("Signal: RS-AD-01-visibility-surface")
+      expect(out.stdout).not.toContain("not implemented yet")
+      expect(out.stdout).toContain("Score:  1.000")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
   test("single-signal mode summarizes score-bearing factor audit details", async () => {
     const repoPath = await initRepo([
       {

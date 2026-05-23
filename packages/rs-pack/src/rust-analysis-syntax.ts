@@ -79,12 +79,13 @@ export const parseVisibility = (node: RustSyntaxNode): RustVisibility => {
   if (modifier === undefined) return { kind: "private" }
   const text = modifier.text.trim()
   if (text === "pub") return { kind: "pub" }
-  if (text === "pub(crate)") return { kind: "pub-crate" }
-  if (text === "pub(super)") return { kind: "pub-super" }
-  if (text.startsWith("pub(in ") && text.endsWith(")")) {
+  if (/^pub\s*\(\s*crate\s*\)$/.test(text)) return { kind: "pub-crate" }
+  if (/^pub\s*\(\s*super\s*\)$/.test(text)) return { kind: "pub-super" }
+  const pubInMatch = /^pub\s*\(\s*in\s+(.+?)\s*\)$/.exec(text)
+  if (pubInMatch !== null) {
     return {
       kind: "pub-in-path",
-      path: text.slice("pub(in ".length, -1).trim(),
+      path: pubInMatch[1]!.trim(),
     }
   }
   return { kind: "private" }

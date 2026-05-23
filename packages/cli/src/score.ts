@@ -189,7 +189,9 @@ const scoreCommandExitCode = (
 
 const runSingleSignalMode = (opts: ScoreOptions) =>
   Effect.gen(function* () {
-    const registry = yield* buildPulsarRegistry(opts.repoPath)
+    const registry = yield* buildPulsarRegistry(opts.repoPath, {
+      includeSignalId: opts.signalId!,
+    })
     if (!registry.has(opts.signalId!)) {
       if (isReservedRustSignalId(opts.signalId!)) {
         console.log(formatReservedRustSignalMessage(opts.signalId!))

@@ -122,7 +122,9 @@ export const runSignalInWorktree = (
   Effect.gen(function* () {
     const repoRoot = yield* resolveRepoRoot(repoPath)
     const gitSha = yield* readHeadSha(repoRoot)
-    const registry: Registry = yield* buildPulsarRegistry(repoRoot)
+    const registry: Registry = yield* buildPulsarRegistry(repoRoot, {
+      includeSignalId: signalId,
+    })
     if (vector !== undefined) {
       yield* validateVectorAgainstPulsarSignals(vector, repoRoot)
     }

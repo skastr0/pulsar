@@ -21,19 +21,26 @@ import { resolveRepoRoot } from "./runtime-git.js"
 const PULSAR_SIGNALS = [...TS_PACK_SIGNALS, ...RS_PACK_SIGNALS]
 const PULSAR_SHARED_SIGNALS = SHARED_SIGNALS
 
+interface BuildPulsarRegistryOptions {
+  readonly includeSignalId?: string
+}
+
 export const isReservedRustSignalId = (signalId: string): boolean => signalId.startsWith("RS-")
 
 export const formatReservedRustSignalMessage = (signalId: string): string =>
   `Signal ${signalId} is not implemented yet. The Rust pack now supports RS-AD-* and RS-LD-* batch 1, but this signal still belongs to a later Rust glyph.`
 
-export const buildPulsarRegistry = (repoPath?: string): Effect.Effect<Registry, Error, never> =>
+export const buildPulsarRegistry = (
+  repoPath?: string,
+  options?: BuildPulsarRegistryOptions,
+): Effect.Effect<Registry, Error, never> =>
   Effect.gen(function* () {
     if (repoPath === undefined) {
       return (yield* buildRegistry([...PULSAR_SHARED_SIGNALS, ...PULSAR_SIGNALS])) as Registry
     }
 
     const repoRoot = yield* resolveRepoRoot(repoPath)
-    const signals = yield* detectPulsarSignals(repoRoot)
+    const signals = yield* detectPulsarSignals(repoRoot, options)
     return (yield* buildRegistry([...PULSAR_SHARED_SIGNALS, ...signals])) as Registry
   })
 
@@ -63,7 +70,10 @@ export const validateVectorAgainstPulsarSignals = (
     yield* validateVectorAgainstRegistry(vector, fullRegistry)
   })
 
-const detectPulsarSignals = (repoRoot: string) =>
+const detectPulsarSignals = (
+  repoRoot: string,
+  options?: BuildPulsarRegistryOptions,
+) =>
   Effect.gen(function* () {
     const git = simpleGit(repoRoot)
     const raw = yield* Effect.tryPromise({
@@ -81,10 +91,12 @@ const detectPulsarSignals = (repoRoot: string) =>
       (file) => file.endsWith(".ts") || file.endsWith(".tsx") || file.endsWith("tsconfig.json"),
     )
     const hasRust = files.some(isRustSignalPath)
+    const forceTypeScript = options?.includeSignalId?.startsWith("TS-") === true
+    const forceRust = options?.includeSignalId?.startsWith("RS-") === true
 
     return [
-      ...(hasTypeScript || hasRust ? PULSAR_SHARED_SIGNALS : []),
-      ...(hasTypeScript ? TS_PACK_SIGNALS : []),
-      ...(hasRust ? RS_PACK_SIGNALS : []),
+      ...(hasTypeScript || hasRust || forceTypeScript || forceRust ? PULSAR_SHARED_SIGNALS : []),
+      ...(hasTypeScript || forceTypeScript ? TS_PACK_SIGNALS : []),
+      ...(hasRust || forceRust ? RS_PACK_SIGNALS : []),
     ]
   })
