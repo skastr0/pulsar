@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import { Effect } from "effect"
+import { buildRegistry } from "@skastr0/pulsar-core/scoring"
+import { Effect, Schema } from "effect"
 import { SignalContextTag } from "@skastr0/pulsar-core/signal"
 import {
   CalibrationContextTag,
   defineCalibrationProcessor,
   makeResolvedCalibrationContext,
 } from "@skastr0/pulsar-core/calibration"
+import { TS_PACK_SIGNALS } from "../pack.js"
 import { TsDe05 } from "../signals/ts-de-05-duplicate-versions.js"
 import { createTempRepo, type TempRepo } from "./test-repo.js"
 
@@ -21,11 +23,16 @@ afterEach(async () => {
 
 const runCompute = async (
   calibration?: Parameters<typeof makeResolvedCalibrationContext>[0],
+) => runComputeWithConfig(TsDe05.defaultConfig, calibration)
+
+const runComputeWithConfig = async (
+  config: typeof TsDe05.defaultConfig,
+  calibration?: Parameters<typeof makeResolvedCalibrationContext>[0],
 ) =>
   Effect.runPromise(
     (calibration === undefined
-      ? TsDe05.compute(TsDe05.defaultConfig, new Map())
-      : TsDe05.compute(TsDe05.defaultConfig, new Map()).pipe(
+      ? TsDe05.compute(config, new Map())
+      : TsDe05.compute(config, new Map()).pipe(
           Effect.provideService(
             CalibrationContextTag,
             makeResolvedCalibrationContext(calibration),
@@ -48,6 +55,45 @@ const runCompute = async (
   )
 
 describe("TS-DE-05 (duplicate dependency versions)", () => {
+  test("declares identity, no inputs, pack registration, and config factor ledger", async () => {
+    const registered = TS_PACK_SIGNALS.find((signal) =>
+      signal.aliases?.includes("TS-DE-05"),
+    )
+    const registry = await Effect.runPromise(buildRegistry([TsDe05]))
+    const out = await runCompute()
+    const factorLedger = registered?.factorLedger?.(out)
+
+    expect(TsDe05).toMatchObject({
+      id: "TS-DE-05-duplicate-dependency-versions",
+      title: "Duplicate dependency versions",
+      aliases: ["TS-DE-05"],
+      tier: 1,
+      category: "dependency-entropy",
+      kind: "structural",
+      cacheVersion: "factor-policy-v1-diagnostic-limit-v1-pnpm-chain-v1",
+      inputs: [],
+    })
+    expect(registered?.id).toBe(TsDe05.id)
+    expect(registered?.title).toBe(TsDe05.title)
+    expect(registered?.cacheVersion).toContain(TsDe05.cacheVersion)
+    expect(registry.byId.get("TS-DE-05")?.id).toBe(TsDe05.id)
+    expect(factorLedger?.signalId).toBe(TsDe05.id)
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        value: 10,
+        source: "signal-default",
+        scoreRole: "threshold",
+      }),
+    )
+  })
+
+  test("configSchema decodes defaults round-trip", () => {
+    const decoded = Schema.decodeUnknownSync(TsDe05.configSchema)(TsDe05.defaultConfig)
+
+    expect(decoded.top_n_diagnostics).toBe(10)
+  })
+
   test("reports no duplicates for a flat lockfile", async () => {
     await repo.write(
       "bun.lock",
@@ -66,7 +112,12 @@ describe("TS-DE-05 (duplicate dependency versions)", () => {
     const out = await runCompute()
     expect(out.duplicates).toHaveLength(0)
     expect(out.lockfileStatus).toBe("bun")
+    expect(out.totalPackages).toBe(2)
+    expect(out.totalDuplicateInstances).toBe(0)
+    expect(out.diagnosticLimit).toBe(10)
+    expect(TsDe05.inputs).toEqual([])
     expect(TsDe05.score(out)).toBe(1)
+    expect(TsDe05.diagnose(out)).toEqual([])
   })
 
   test("groups duplicate versions and records workspace pull-in chains", async () => {
@@ -102,8 +153,25 @@ describe("TS-DE-05 (duplicate dependency versions)", () => {
     })
     expect(TsDe05.score(out)).toBeLessThan(1)
     expect(TsDe05.score(out)).toBeGreaterThan(0.85)
-    expect(TsDe05.diagnose(out)[0]?.severity).toBe("info")
-    expect(TsDe05.diagnose(out)[0]?.message).toContain("Duplicate transitive")
+    const diagnostics = TsDe05.diagnose(out)
+    expect(diagnostics).toHaveLength(1)
+    expect(diagnostics[0]?.severity).toBe("info")
+    expect(diagnostics[0]?.message).toContain("Duplicate transitive")
+    const diagnosticData = diagnostics[0]?.data as {
+      readonly pullInChains: ReadonlyArray<{ readonly version: string; readonly chain: ReadonlyArray<string> }>
+    }
+    expect(diagnosticData).toMatchObject({
+      name: "alpha",
+      versions: ["1.0.0", "2.0.0"],
+      directVersions: ["1.0.0"],
+      instanceCount: 2,
+      directInstanceCount: 1,
+      evidenceKind: "transitive-lockfile-duplicate",
+    })
+    expect(diagnosticData.pullInChains).toContainEqual({
+      version: "2.0.0",
+      chain: ["@repo/app", "wrapper", "alpha"],
+    })
   })
 
   test("warns more strongly for direct workspace duplicate versions", async () => {
@@ -137,8 +205,73 @@ describe("TS-DE-05 (duplicate dependency versions)", () => {
     expect(out.duplicates[0]?.directInstanceCount).toBe(2)
     expect(out.duplicates[0]?.evidenceKind).toBe("direct-workspace-duplicate")
     expect(TsDe05.score(out)).toBeLessThan(0.8)
-    expect(TsDe05.diagnose(out)[0]?.severity).toBe("warn")
-    expect(TsDe05.diagnose(out)[0]?.message).toContain("Duplicate direct")
+    const diagnostics = TsDe05.diagnose(out)
+    expect(diagnostics[0]?.severity).toBe("warn")
+    expect(diagnostics[0]?.message).toContain("Duplicate direct")
+    expect(diagnostics[0]?.data).toMatchObject({
+      name: "alpha",
+      versions: ["1.0.0", "2.0.0"],
+      directVersions: ["1.0.0", "2.0.0"],
+      instanceCount: 2,
+      directInstanceCount: 2,
+      evidenceKind: "direct-workspace-duplicate",
+      policyDecisions: [],
+    })
+  })
+
+  test("diagnostics honor sanitized top_n_diagnostics", async () => {
+    await repo.write(
+      "bun.lock",
+      [
+        "{",
+        '  "lockfileVersion": 1,',
+        '  "workspaces": {',
+        '    "packages/app": {',
+        '      "name": "@repo/app",',
+        '      "dependencies": { "alpha": "1.0.0", "beta": "1.0.0" }',
+        "    },",
+        '    "packages/worker": {',
+        '      "name": "@repo/worker",',
+        '      "dependencies": { "alpha": "2.0.0", "beta": "2.0.0" }',
+        "    }",
+        "  },",
+        '  "packages": {',
+        '    "alpha": ["alpha@1.0.0", "", {}, "hash"],',
+        '    "alpha@2": ["alpha@2.0.0", "", {}, "hash"],',
+        '    "beta": ["beta@1.0.0", "", {}, "hash"],',
+        '    "beta@2": ["beta@2.0.0", "", {}, "hash"]',
+        "  }",
+        "}",
+      ].join("\n"),
+    )
+
+    const capped = await runComputeWithConfig({
+      ...TsDe05.defaultConfig,
+      top_n_diagnostics: 1.8,
+    })
+    expect(capped.diagnosticLimit).toBe(1)
+    expect(TsDe05.diagnose(capped)).toHaveLength(1)
+
+    const negative = await runComputeWithConfig({
+      ...TsDe05.defaultConfig,
+      top_n_diagnostics: -1,
+    })
+    expect(negative.diagnosticLimit).toBe(0)
+    expect(TsDe05.diagnose(negative)).toEqual([])
+
+    const nan = await runComputeWithConfig({
+      ...TsDe05.defaultConfig,
+      top_n_diagnostics: Number.NaN,
+    })
+    expect(nan.diagnosticLimit).toBe(0)
+    expect(TsDe05.diagnose(nan)).toEqual([])
+
+    const infinite = await runComputeWithConfig({
+      ...TsDe05.defaultConfig,
+      top_n_diagnostics: Number.POSITIVE_INFINITY,
+    })
+    expect(infinite.diagnosticLimit).toBe(0)
+    expect(TsDe05.diagnose(infinite)).toEqual([])
   })
 
   test("project modules can suppress legitimate transitive host SDK duplicates with attribution", async () => {
@@ -214,11 +347,52 @@ describe("TS-DE-05 (duplicate dependency versions)", () => {
       activeModules: [],
       processors: [processor],
     })
+    const registered = TS_PACK_SIGNALS.find((signal) =>
+      signal.aliases?.includes("TS-DE-05"),
+    )
+    const registeredLedger = registered?.factorLedger?.(out)
 
     expect(out.duplicates).toHaveLength(1)
     expect(out.duplicates[0]?.visible).toBe(false)
     expect(out.calibrationDecisions[0]?.ruleId).toBe("repo.host-sdk-duplicate.v1")
-    expect(out.factorLedger.entries.some((entry) => entry.source === "module")).toBe(true)
+    expect(out.factorLedger.entries).toContainEqual(
+      expect.objectContaining({
+        path: "duplicate_versions.effect.visible",
+        value: false,
+        source: "module",
+        attribution: expect.objectContaining({
+          moduleId: "repo-policy",
+          processorId: "host-sdk-duplicates",
+          ruleId: "repo.host-sdk-duplicate.v1",
+        }),
+      }),
+    )
+    expect(out.factorLedger.entries).toContainEqual(
+      expect.objectContaining({
+        path: "duplicate_versions.effect.penalty_weight",
+        value: 0,
+        source: "module",
+        scoreRole: "penalty",
+        attribution: expect.objectContaining({
+          ruleId: "repo.host-sdk-duplicate.v1",
+        }),
+      }),
+    )
+    expect(registeredLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "duplicate_versions.effect.visible",
+        source: "module",
+        attribution: expect.objectContaining({
+          ruleId: "repo.host-sdk-duplicate.v1",
+        }),
+      }),
+    )
+    expect(registeredLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        source: "signal-default",
+      }),
+    )
     expect(TsDe05.score(out)).toBe(1)
     expect(TsDe05.diagnose(out)).toEqual([])
   })
@@ -383,6 +557,10 @@ describe("TS-DE-05 (duplicate dependency versions)", () => {
         "",
         "  wrapper@1.0.0:",
         "    resolution: {integrity: sha512-wrapper}",
+        "    dependencies:",
+        "      alpha:",
+        "        specifier: 2.0.0",
+        "        version: 2.0.0",
       ].join("\n"),
     )
 
@@ -393,6 +571,10 @@ describe("TS-DE-05 (duplicate dependency versions)", () => {
     expect(out.duplicates[0]?.versions).toEqual(["1.0.0", "2.0.0"])
     expect(out.duplicates[0]?.directVersions).toEqual(["1.0.0"])
     expect(out.duplicates[0]?.evidenceKind).toBe("transitive-lockfile-duplicate")
+    expect(out.duplicates[0]?.pullInChains).toContainEqual({
+      version: "2.0.0",
+      chain: ["workspace", "wrapper", "alpha"],
+    })
     expect(TsDe05.score(out)).toBeLessThan(1)
   })
 
@@ -442,14 +624,39 @@ describe("TS-DE-05 (duplicate dependency versions)", () => {
     expect(out.lockfileStatus).toBe("unsupported")
     expect(out.lockfileFiles).toEqual(["yarn.lock"])
     expect(out.duplicates).toEqual([])
+    expect(out.diagnosticLimit).toBe(10)
     expect(TsDe05.score(out)).toBe(1)
     expect(TsDe05.diagnose(out)[0]?.severity).toBe("info")
+    expect(TsDe05.diagnose(out)[0]?.data).toEqual({
+      lockfileStatus: "unsupported",
+      files: ["yarn.lock"],
+    })
+
+    const capped = await runComputeWithConfig({
+      ...TsDe05.defaultConfig,
+      top_n_diagnostics: 0,
+    })
+    expect(capped.diagnosticLimit).toBe(0)
+    expect(TsDe05.diagnose(capped)).toEqual([])
   })
 
   test("missing lockfiles skip duplicate-version analysis without failing", async () => {
     const out = await runCompute()
     expect(out.lockfileStatus).toBe("missing")
+    expect(out.lockfileFiles).toEqual([])
     expect(out.duplicates).toEqual([])
+    expect(out.diagnosticLimit).toBe(10)
     expect(TsDe05.score(out)).toBe(1)
+    expect(TsDe05.diagnose(out)[0]?.data).toEqual({
+      lockfileStatus: "missing",
+      files: [],
+    })
+
+    const capped = await runComputeWithConfig({
+      ...TsDe05.defaultConfig,
+      top_n_diagnostics: 0,
+    })
+    expect(capped.diagnosticLimit).toBe(0)
+    expect(TsDe05.diagnose(capped)).toEqual([])
   })
 })

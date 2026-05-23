@@ -360,7 +360,33 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "ts-de-04.test.ts and pack.test.ts: wrapped pack cache version includes the TS-DE-04 semantic cacheVersion after diagnostic-limit, bundled-source/opaque-external classification, and npm-alias normalization semantics changed.",
     },
   },
-  pendingSignalContract("TS-DE-05-duplicate-dependency-versions"),
+  {
+    id: "TS-DE-05-duplicate-dependency-versions",
+    status: "verified",
+    requiredEvidence: ["calibration"],
+    evidence: {
+      identity:
+        "ts-de-05.test.ts: canonical id, alias, title, tier/category/kind, no compound inputs, semantic cacheVersion, pack registration, and registry alias lookup are asserted.",
+      config:
+        "ts-de-05.test.ts: configSchema decodes defaults, config top_n_diagnostics is emitted through the registered pack factor ledger, and diagnostics honor sanitized top_n_diagnostics.",
+      positiveFixture:
+        "ts-de-05.test.ts: real bun/package-lock/pnpm lockfile fixtures detect transitive duplicate versions, direct workspace duplicate versions, scoped nested packages, wrapper-mediated workspace pull-in chains, and stable direct/transitive evidence kinds.",
+      negativeFixture:
+        "ts-de-05.test.ts: flat supported lockfiles report zero duplicate groups, score 1, no diagnostics, and unsupported lockfiles skip duplicate-version analysis without failing.",
+      applicability:
+        "ts-de-05.test.ts: missing lockfiles and unsupported yarn.lock fixtures return neutral output with explicit lockfileStatus/lockfileFiles metadata, score 1, and capped info diagnostics.",
+      score:
+        "ts-de-05.test.ts: clean and suppressed fixtures score 1, transitive duplicate fixtures lower score softly, and direct workspace duplicate fixtures produce stronger score pressure.",
+      diagnostics:
+        "ts-de-05.test.ts: diagnostics include severity, compact direct/transitive messages, duplicate package data, versions, direct instance counts, pull-in chains, policy decisions, and sanitized diagnostic caps including missing/unsupported lockfile cases.",
+      factorLedger:
+        "ts-de-05.test.ts: registered pack signal emits config.top_n_diagnostics, dependency-version policy calibration records duplicate-specific visible/penalty factor entries with module attribution, and the pack-wrapped ledger preserves those entries.",
+      cacheSemantics:
+        "ts-de-05.test.ts and pack.test.ts: wrapped pack cache version includes the TS-DE-05 semantic cacheVersion after diagnostic-limit and pnpm chain semantics changed.",
+      calibration:
+        "ts-de-05.test.ts: dependency-version policy calibration suppresses a host-SDK-owned duplicate with rule attribution, calibrationDecisions, module-sourced factor entries, score restoration, and no visible diagnostics.",
+    },
+  },
   pendingSignalContract("TS-AB-01-public-export-surface"),
   pendingSignalContract("TS-AB-02-unused-exports"),
   pendingSignalContract("TS-AB-03-type-indirection-depth"),
