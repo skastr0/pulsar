@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto"
 import { existsSync } from "node:fs"
 import { readdir, readFile } from "node:fs/promises"
-import { join } from "node:path"
+import { join, relative } from "node:path"
+import { parseDocument } from "yaml"
 
 export const MACHINE_FEEDBACK_CLASSES = [
   "build",
@@ -70,11 +71,11 @@ export const collectMachineFeedbackFacts = async (
 
   for (const parsed of [...packageScripts.errors, ...workflowRuns.errors]) {
     for (const feedbackClass of MACHINE_FEEDBACK_CLASSES) {
-      classFacts.get(feedbackClass)?.evidence.push(parsed)
-    }
-    for (const requiredClass of requiredClasses) {
-      const fact = classFacts.get(requiredClass)
-      if (fact !== undefined) fact.unknown = true
+      const fact = classFacts.get(feedbackClass)
+      if (fact !== undefined) {
+        fact.evidence.push(parsed)
+        fact.unknown = true
+      }
     }
   }
 
@@ -120,7 +121,7 @@ export const collectMachineFeedbackFacts = async (
   ).length
   return {
     state:
-      unknownClassCount > 0
+      classes.some((fact) => fact.state === "unknown")
         ? "unknown"
         : configuredClassCount > 0
           ? "present"
@@ -130,7 +131,7 @@ export const collectMachineFeedbackFacts = async (
     ciReachableClassCount,
     missingClassCount,
     unknownClassCount,
-    sourceFingerprint: fingerprintMachineFeedback(packageScripts, workflowRuns),
+    sourceFingerprint: fingerprintMachineFeedback(repoRoot, packageScripts, workflowRuns),
   }
 }
 
@@ -199,7 +200,9 @@ const readGithubWorkflowRuns = async (
     const path = join(workflowDir, entry.name)
     try {
       const raw = await readFile(path, "utf8")
-      runs.push(...extractWorkflowRunCommands(path, raw))
+      const parsed = extractWorkflowRunCommands(path, raw)
+      runs.push(...parsed.commands)
+      errors.push(...parsed.errors)
     } catch (cause) {
       errors.push({
         kind: "parse-error",
@@ -225,50 +228,47 @@ const readGithubWorkflowRuns = async (
 const extractWorkflowRunCommands = (
   path: string,
   content: string,
-): ReadonlyArray<{ readonly path: string; readonly command: string }> => {
+): {
+  readonly commands: ReadonlyArray<{ readonly path: string; readonly command: string }>
+  readonly errors: ReadonlyArray<MachineFeedbackEvidence>
+} => {
+  const document = parseDocument(content)
+  if (document.errors.length > 0) {
+    return {
+      commands: [],
+      errors: document.errors.map((error) => ({
+        kind: "parse-error" as const,
+        path,
+        detail: `Failed to parse workflow YAML: ${error.message}`,
+      })),
+    }
+  }
+
   const commands: Array<{ readonly path: string; readonly command: string }> = []
-  const lines = content.split(/\r?\n/u)
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index] ?? ""
-    const match = line.match(/^\s*-?\s*run:\s*(.+)$/u)
-    if (match === null) continue
-    const rawCommand = match[1]?.trim() ?? ""
-    if (rawCommand === "|" || rawCommand === ">") {
-      const block = collectWorkflowRunBlock(lines, index, leadingWhitespace(line))
-      index = block.nextIndex - 1
-      if (block.command.length > 0) commands.push({ path, command: block.command })
-      continue
-    }
-    if (rawCommand.length === 0) continue
-    commands.push({ path, command: rawCommand.replace(/^['"]|['"]$/g, "") })
-  }
-  return commands
+  collectRunCommands(document.toJS(), path, commands)
+  return { commands, errors: [] }
 }
 
-const collectWorkflowRunBlock = (
-  lines: ReadonlyArray<string>,
-  startIndex: number,
-  runIndent: number,
-): { readonly command: string; readonly nextIndex: number } => {
-  const blockLines: Array<string> = []
-  let index = startIndex + 1
-  for (; index < lines.length; index += 1) {
-    const line = lines[index] ?? ""
-    if (line.trim().length === 0) {
-      blockLines.push("")
+const collectRunCommands = (
+  value: unknown,
+  path: string,
+  commands: Array<{ readonly path: string; readonly command: string }>,
+): void => {
+  if (Array.isArray(value)) {
+    for (const item of value) collectRunCommands(item, path, commands)
+    return
+  }
+
+  if (value === null || typeof value !== "object") return
+
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if (key === "run" && typeof item === "string" && item.trim().length > 0) {
+      commands.push({ path, command: item.trim() })
       continue
     }
-    if (leadingWhitespace(line) <= runIndent) break
-    blockLines.push(line.trim())
-  }
-
-  return {
-    command: blockLines.join("\n").trim(),
-    nextIndex: index,
+    collectRunCommands(item, path, commands)
   }
 }
-
-const leadingWhitespace = (line: string): number => line.match(/^\s*/u)?.[0].length ?? 0
 
 const classifyScripts = (
   scripts: ReadonlyMap<string, string>,
@@ -320,6 +320,7 @@ const referencedScripts = (command: string): ReadonlyArray<string> => {
 }
 
 const fingerprintMachineFeedback = (
+  repoRoot: string,
   packageScripts: Awaited<ReturnType<typeof readRootPackageScripts>>,
   workflowRuns: Awaited<ReturnType<typeof readGithubWorkflowRuns>>,
 ): string =>
@@ -332,9 +333,25 @@ const fingerprintMachineFeedback = (
             : [...packageScripts.value.scripts.entries()].sort(([left], [right]) =>
                 left.localeCompare(right),
               ),
-        packageErrors: packageScripts.errors,
-        workflowRuns: workflowRuns.value,
-        workflowErrors: workflowRuns.errors,
+        packageErrors: packageScripts.errors.map((error) => normalizeEvidenceForFingerprint(repoRoot, error)),
+        workflowRuns: workflowRuns.value.map((run) => ({
+          ...run,
+          path: stableRepoPath(repoRoot, run.path),
+        })),
+        workflowErrors: workflowRuns.errors.map((error) => normalizeEvidenceForFingerprint(repoRoot, error)),
       }),
     )
     .digest("hex")
+
+const normalizeEvidenceForFingerprint = (
+  repoRoot: string,
+  evidence: MachineFeedbackEvidence,
+): MachineFeedbackEvidence => ({
+  ...evidence,
+  path: stableRepoPath(repoRoot, evidence.path),
+})
+
+const stableRepoPath = (repoRoot: string, path: string): string => {
+  const relativePath = relative(repoRoot, path).replaceAll("\\", "/")
+  return relativePath.startsWith("..") ? path.replaceAll("\\", "/") : relativePath
+}

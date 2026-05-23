@@ -4,6 +4,7 @@ import {
   Shared03ChurnRate,
   Shared05Suppression,
   Shared06PrDepDelta,
+  Shared07MachineFeedbackCoverage,
   SharedChurn01,
   SharedChurn02,
   SharedCochange01,
@@ -33,6 +34,9 @@ describe("shared signal identity", () => {
     const prDependencyDelta = SHARED_SIGNALS.find((signal) =>
       signal.aliases?.includes("SHARED-06"),
     )
+    const machineFeedbackCoverage = SHARED_SIGNALS.find((signal) =>
+      signal.aliases?.includes("SHARED-07"),
+    )
 
     expect(churn01?.cacheVersion).toContain(SharedChurn01.cacheVersion)
     expect(churn02?.cacheVersion).toContain(SharedChurn02.cacheVersion)
@@ -41,6 +45,9 @@ describe("shared signal identity", () => {
     expect(churnRate?.cacheVersion).toContain(Shared03ChurnRate.cacheVersion)
     expect(suppression?.cacheVersion).toContain(Shared05Suppression.cacheVersion)
     expect(prDependencyDelta?.cacheVersion).toContain(Shared06PrDepDelta.cacheVersion)
+    expect(machineFeedbackCoverage?.cacheVersion).toContain(
+      Shared07MachineFeedbackCoverage.cacheVersion,
+    )
   })
 
   test("all shared signals expose semantic ids, aliases, and titles", () => {

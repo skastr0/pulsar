@@ -198,7 +198,35 @@ export const SHARED_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "cli shared-signals.test.ts and bun run dev score --signal SHARED-06 .: aggregate observer and direct single-signal runtime fixtures provide TS/Rust language layers for SHARED-06 compound inputs and execute the shared signal on real worktree substrate.",
     },
   },
-  pendingSignalContract("SHARED-07-machine-feedback-coverage"),
+  {
+    id: "SHARED-07-machine-feedback-coverage",
+    status: "verified",
+    requiredEvidence: ["gitContext", "integration"],
+    evidence: {
+      identity:
+        "shared-07-machine-feedback-coverage.test.ts: canonical id, alias, title, tier/category/kind, empty input contract, semantic cacheVersion, pack registration, registry alias lookup, and default config decoding are asserted.",
+      config:
+        "shared-07-machine-feedback-coverage.test.ts: default required_classes and top_n_diagnostics are decoded and config-factor-ledger-backed; duplicate required classes are normalized to a canonical set and fractional, negative, NaN, and Infinity diagnostic limits are normalized through real compute output.",
+      positiveFixture:
+        "shared-07-machine-feedback-coverage.test.ts: package-script and parser-backed GitHub workflow fixtures prove build/typecheck/test/static_analysis/coverage discovery, workflow script-alias expansion, YAML block-scalar run commands, CI reachability, repo-path-stable sourceFingerprint, and deterministic repeated output.",
+      negativeFixture:
+        "shared-07-machine-feedback-coverage.test.ts: missing manifests/workflows are explicit absent facts, malformed package metadata and malformed workflow YAML are unknown with parse-error evidence rather than absent/present, and empty required class lists do not hide malformed evidence.",
+      applicability:
+        "shared-07-machine-feedback-coverage.test.ts: outputMetadata is asserted as not_applicable because SHARED-07 is a fact provider consumed by composites such as SHARED-11 rather than a direct score-bearing pressure signal.",
+      score:
+        "shared-07-machine-feedback-coverage.test.ts: score remains neutral for present, absent, and empty-required fact-provider outputs while missing/unknown counts are preserved for downstream composite scoring.",
+      diagnostics:
+        "shared-07-machine-feedback-coverage.test.ts: diagnose proves warning-first class ordering, required absent/unknown warning severity, present info severity, diagnostic caps, and structured class/evidence payloads.",
+      factorLedger:
+        "shared-07-machine-feedback-coverage.test.ts: registered shared-pack signal emits config.required_classes and config.top_n_diagnostics factor entries through withConfigFactorLedger.",
+      cacheSemantics:
+        "shared-07-machine-feedback-coverage.test.ts and pack.test.ts: SHARED-07 declares scripts-and-github-workflows-v2-yaml-parser-stable-fingerprint cacheVersion; wrapped shared-pack cache version preserves the signal cacheVersion after config normalization, parser-backed workflow evidence, repo-relative fingerprinting, and diagnostic ordering changed.",
+      gitContext:
+        "shared-07-machine-feedback-coverage.test.ts and cli shared-signals.test.ts: tests provide SignalContextTag with real worktree paths and filesystem fixtures for package.json and .github/workflows evidence.",
+      integration:
+        "cli shared-signals.test.ts and bun run dev score --signal SHARED-07 .: aggregate observer and direct single-signal runtime execute SHARED-07 against repository substrate and expose machine feedback facts without language-pack dependencies.",
+    },
+  },
   pendingSignalContract("SHARED-09-contract-freshness"),
   pendingSignalContract("SHARED-10-domain-construction-control"),
   pendingSignalContract("SHARED-11-theory-encoding-index"),

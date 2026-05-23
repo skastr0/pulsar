@@ -43,7 +43,8 @@
   },
   "dependencies": {
     "@skastr0/pulsar-core": "0.1.1",
-    "effect": "^3.0.0"
+    "effect": "^3.0.0",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "typescript": "^5.8.0"

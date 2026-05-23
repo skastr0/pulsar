@@ -28,7 +28,19 @@ describe("polyglot shared signals", () => {
       await mkdir(join(repo, "crates/core/src"), { recursive: true })
       await mkdir(join(repo, "crates/api/src"), { recursive: true })
 
-      await writeFile(join(repo, "package.json"), '{"name":"shared-fixture","private":true}\n')
+      await writeFile(
+        join(repo, "package.json"),
+        JSON.stringify({
+          name: "shared-fixture",
+          private: true,
+          scripts: {
+            build: "tsc -b",
+            typecheck: "tsc --noEmit",
+            test: "bun test",
+            lint: "eslint .",
+          },
+        }),
+      )
       await writeFile(
         join(repo, "tsconfig.json"),
         JSON.stringify(
@@ -173,6 +185,17 @@ describe("polyglot shared signals", () => {
       expect(prDependencyDelta?.dependencyDeltaState).toBe("measured")
       expect(prDependencyDelta?.crossCrateEdges).toBe(1)
       expect(prDependencyDelta?.byLanguage?.rust?.newDependencyEdges).toBe(1)
+
+      const machineFeedbackCoverage = result.signalResults.get("SHARED-07-machine-feedback-coverage")?.output as
+        | {
+            state?: string
+            configuredClassCount?: number
+            missingClassCount?: number
+          }
+        | undefined
+      expect(machineFeedbackCoverage?.state).toBe("present")
+      expect(machineFeedbackCoverage?.configuredClassCount).toBeGreaterThanOrEqual(4)
+      expect(machineFeedbackCoverage?.missingClassCount).toBe(0)
     } finally {
       await rm(repo, { recursive: true, force: true })
     }
@@ -184,7 +207,19 @@ describe("polyglot shared signals", () => {
       await mkdir(join(repo, "src"), { recursive: true })
       await mkdir(join(repo, "crates/core/src"), { recursive: true })
 
-      await writeFile(join(repo, "package.json"), '{"name":"shared-single","private":true}\n')
+      await writeFile(
+        join(repo, "package.json"),
+        JSON.stringify({
+          name: "shared-single",
+          private: true,
+          scripts: {
+            build: "tsc -b",
+            typecheck: "tsc --noEmit",
+            test: "bun test",
+            lint: "eslint .",
+          },
+        }),
+      )
       await writeFile(
         join(repo, "tsconfig.json"),
         JSON.stringify(
@@ -277,6 +312,18 @@ describe("polyglot shared signals", () => {
       expect(prDeltaOutput.dependencyDeltaState).toBe("measured")
       expect(prDeltaOutput.byLanguage?.typescript?.linesAdded).toBeGreaterThan(0)
       expect(prDeltaOutput.byLanguage?.rust?.linesAdded).toBeGreaterThan(0)
+
+      const feedbackResult = await Effect.runPromise(
+        runSignalInWorktree(repo, "SHARED-07"),
+      )
+      const feedbackOutput = feedbackResult.result.output as {
+        readonly state?: string
+        readonly missingClassCount?: number
+      }
+
+      expect(feedbackResult.result.signalId).toBe("SHARED-07-machine-feedback-coverage")
+      expect(feedbackOutput.state).toBe("present")
+      expect(feedbackOutput.missingClassCount).toBe(0)
     } finally {
       await rm(repo, { recursive: true, force: true })
     }

@@ -7,6 +7,7 @@ import {
 import { Effect, Schema } from "effect"
 import {
   collectMachineFeedbackFacts,
+  MACHINE_FEEDBACK_CLASSES,
   type MachineFeedbackClass,
   type MachineFeedbackFacts,
 } from "./machine-feedback-facts.js"
@@ -46,7 +47,7 @@ export const Shared07MachineFeedbackCoverage: Signal<
   tier: 1,
   category: "review-pain",
   kind: "legibility",
-  cacheVersion: "scripts-and-github-workflows-v1",
+  cacheVersion: "scripts-and-github-workflows-v2-yaml-parser-stable-fingerprint",
   configSchema: Shared07MachineFeedbackCoverageConfig,
   defaultConfig: {
     required_classes: ["build", "typecheck", "test", "static_analysis"],
@@ -56,8 +57,9 @@ export const Shared07MachineFeedbackCoverage: Signal<
   compute: (config) =>
     Effect.gen(function* () {
       const ctx = yield* SignalContextTag
+      const normalizedConfig = normalizeShared07MachineFeedbackCoverageConfig(config)
       const facts = yield* Effect.tryPromise({
-        try: () => collectMachineFeedbackFacts(ctx.worktreePath, config.required_classes),
+        try: () => collectMachineFeedbackFacts(ctx.worktreePath, normalizedConfig.required_classes),
         catch: (cause) =>
           new SignalComputeError({
             signalId: "SHARED-07-machine-feedback-coverage",
@@ -67,8 +69,8 @@ export const Shared07MachineFeedbackCoverage: Signal<
       })
       return {
         ...facts,
-        requiredClasses: config.required_classes,
-        topDiagnostics: Math.max(0, Math.floor(config.top_n_diagnostics)),
+        requiredClasses: normalizedConfig.required_classes,
+        topDiagnostics: normalizedConfig.top_n_diagnostics,
         compositeConsumers: [
           "AI quicksand risk",
           "contract safety gap",
@@ -89,15 +91,16 @@ export const Shared07MachineFeedbackCoverage: Signal<
   diagnose: (out): ReadonlyArray<Diagnostic> => {
     const required = new Set(out.requiredClasses)
     return out.classes
-      .filter((entry) => required.has(entry.class) || entry.state === "present")
+      .filter((entry) =>
+        required.has(entry.class) || entry.state === "present" || entry.state === "unknown"
+      )
+      .sort((left, right) =>
+        diagnosticRank(left, required) - diagnosticRank(right, required) ||
+        classRank(left.class) - classRank(right.class)
+      )
       .slice(0, out.topDiagnostics)
       .map((entry) => ({
-        severity:
-          entry.state === "unknown"
-            ? "warn"
-            : required.has(entry.class) && entry.state === "absent"
-              ? "warn"
-              : "info",
+        severity: machineFeedbackSeverity(entry, required),
         message:
           `Machine feedback ${entry.class}: ${entry.state}` +
           (entry.ciReachable ? " (CI reachable)" : ""),
@@ -112,3 +115,30 @@ export const Shared07MachineFeedbackCoverage: Signal<
   },
   outputMetadata: () => ({ applicability: "not_applicable" as const }),
 }
+
+const normalizeShared07MachineFeedbackCoverageConfig = (
+  config: Shared07MachineFeedbackCoverageConfig,
+): Shared07MachineFeedbackCoverageConfig => ({
+  required_classes: MACHINE_FEEDBACK_CLASSES.filter((feedbackClass) =>
+    config.required_classes.includes(feedbackClass),
+  ),
+  top_n_diagnostics: Number.isFinite(config.top_n_diagnostics)
+    ? Math.max(0, Math.floor(config.top_n_diagnostics))
+    : 0,
+})
+
+const machineFeedbackSeverity = (
+  entry: MachineFeedbackFacts["classes"][number],
+  required: ReadonlySet<MachineFeedbackClass>,
+): Diagnostic["severity"] =>
+  entry.state === "unknown" || (required.has(entry.class) && entry.state === "absent")
+    ? "warn"
+    : "info"
+
+const diagnosticRank = (
+  entry: MachineFeedbackFacts["classes"][number],
+  required: ReadonlySet<MachineFeedbackClass>,
+): number => machineFeedbackSeverity(entry, required) === "warn" ? 0 : 1
+
+const classRank = (feedbackClass: MachineFeedbackClass): number =>
+  MACHINE_FEEDBACK_CLASSES.indexOf(feedbackClass)

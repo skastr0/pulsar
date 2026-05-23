@@ -24,7 +24,7 @@ describe("Theory encoding index", () => {
       category: "architectural-drift",
       kind: "compound",
       tier: 1.5,
-      cacheVersion: "theory-encoding-index-composite-v1",
+      cacheVersion: "theory-encoding-index-composite-v2-machine-feedback-unknown",
     })
     expect(Shared11TheoryEncodingIndex.inputs.map((input) => input.id)).toEqual([
       "SHARED-10-domain-construction-control",
@@ -174,6 +174,30 @@ describe("Theory encoding index", () => {
       expect.objectContaining({ artifactPath: "src/generated/client.ts" }),
     )
     expect(propertySpecEvidence.specLikeFiles).toEqual(["/repo/src/domain.spec.ts"])
+  })
+
+  test("unknown machine feedback evidence with no required classes is not neutralized", async () => {
+    const out = await run(new Map<string, unknown>([
+      ["SHARED-10", domainConstruction({ scorePressure: 0 })],
+      ["SHARED-09", contractFreshness({ scorePressure: 0 })],
+      [
+        "SHARED-07",
+        machineFeedback({
+          state: "unknown",
+          requiredClasses: [],
+          missingClassCount: 0,
+          unknownClassCount: 0,
+        }),
+      ],
+    ]))
+
+    const machineFeedbackFactor = out.factors.find(
+      (factor) => factor.id === "machine-feedback-coverage",
+    )
+
+    expect(out.state).toBe("present")
+    expect(machineFeedbackFactor?.pressure).toBe(1)
+    expect(out.gaps.map((gap) => gap.factorId)).toContain("machine-feedback-coverage")
   })
 
   test("diagnostics are stable and capped by config", async () => {
@@ -356,17 +380,19 @@ const contractFreshness = (args: {
 }
 
 const machineFeedback = (args: {
+  readonly state?: Shared07MachineFeedbackCoverageOutput["state"]
+  readonly requiredClasses?: Shared07MachineFeedbackCoverageOutput["requiredClasses"]
   readonly missingClassCount?: number
   readonly unknownClassCount?: number
 }): Shared07MachineFeedbackCoverageOutput => ({
-  state: "present",
+  state: args.state ?? "present",
   classes: [],
   configuredClassCount: 4 - (args.missingClassCount ?? 0),
   ciReachableClassCount: 0,
   missingClassCount: args.missingClassCount ?? 0,
   unknownClassCount: args.unknownClassCount ?? 0,
   sourceFingerprint: "feedback",
-  requiredClasses: ["build", "typecheck", "test", "static_analysis"],
+  requiredClasses: args.requiredClasses ?? ["build", "typecheck", "test", "static_analysis"],
   topDiagnostics: 10,
   compositeConsumers: ["theory encoding index"],
   cacheContributors: ["test"],

@@ -258,7 +258,7 @@ export const Shared11TheoryEncodingIndex: Signal<
   tier: 1.5,
   category: "architectural-drift",
   kind: "compound",
-  cacheVersion: "theory-encoding-index-composite-v1",
+  cacheVersion: "theory-encoding-index-composite-v2-machine-feedback-unknown",
   configSchema: Shared11TheoryEncodingIndexConfig,
   defaultConfig: {
     top_n_diagnostics: 10,
@@ -818,7 +818,7 @@ const normalizeMachineFeedbackCoverage = (
 ): number | undefined => {
   if (input === undefined) return undefined
   const requiredClassCount = input.requiredClasses.length
-  if (requiredClassCount === 0) return 0
+  if (requiredClassCount === 0) return input.state === "unknown" ? 1 : 0
   return clamp01(
     (input.missingClassCount + input.unknownClassCount * 0.5) /
       requiredClassCount,
