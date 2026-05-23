@@ -5,7 +5,7 @@ import { isEmptyBodyText } from "./ts-sl-04-noop-ast.js"
 export { isEmptyBodyText, propertyNameOf } from "./ts-sl-04-noop-ast.js"
 
 export const isIntentionalNoop = (filePath: string, fn: FnLike, bodyText: string): boolean => {
-  if (!isEmptyBodyText(bodyText) && !isNoopImplementationFile(filePath)) {
+  if (!isEmptyBodyText(bodyText)) {
     return false
   }
 

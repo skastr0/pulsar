@@ -22,6 +22,7 @@ import {
   makeFactorLedger,
 } from "@skastr0/pulsar-core/factors"
 import { Effect, Option } from "effect"
+import { isAbsolute, relative, resolve } from "node:path"
 import { Node, SyntaxKind, type Project } from "ts-morph"
 import { TsProjectTag } from "../ts-project.js"
 import {
@@ -30,8 +31,13 @@ import {
   getFunctionName,
   type TsFunctionLike as FnLike,
 } from "./shared-function-index.js"
-import { isExcluded, matchesAnyGlob } from "./shared-globs.js"
-import { defaultTsSl04Config, TsSl04Config as tsSl04ConfigSchema } from "./ts-sl-04-config.js"
+import { matchesAnyGlob } from "./shared-globs.js"
+import {
+  defaultTsSl04Config,
+  normalizeTsSl04Config,
+  normalizeTsSl04DiagnosticLimit,
+  TsSl04Config as tsSl04ConfigSchema,
+} from "./ts-sl-04-config.js"
 import type { TsSl04Config } from "./ts-sl-04-config.js"
 import {
   STUB_KIND_FACTOR_PREFIX,
@@ -70,7 +76,7 @@ export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalCon
   tier: 1,
   category: "generated-slop",
   kind: "structural",
-  cacheVersion: "factor-policy-v1",
+  cacheVersion: "factor-policy-hunks-stable-hash-generic-noops-globs-finite-v1",
   configSchema: tsSl04ConfigSchema,
   defaultConfig: defaultTsSl04Config,
   factorDefinitions: tsSl04FactorDefinitions,
@@ -81,7 +87,7 @@ export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalCon
       const context = yield* SignalContextTag
       const calibration = yield* Effect.serviceOption(CalibrationContextTag)
       const factorPolicy = yield* Effect.serviceOption(SignalFactorPolicyTag)
-      return yield* computeTsSl04Output(config, {
+      return yield* computeTsSl04Output(normalizeTsSl04Config(config), {
         project,
         context,
         calibration,
@@ -92,18 +98,26 @@ export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalCon
     if (out.totalFunctions === 0) return 1
     if (out.productionStubs.length === 0) return 1
     const weightedProductionStubs = out.productionStubs.reduce(
-      (sum, stub) => sum + stub.penaltyWeight,
+      (sum, stub) => sum + normalizeNonNegativeFiniteNumber(stub.penaltyWeight, 0),
       0,
     )
-    const baseScore = Math.max(0, 1 - Math.min(1, weightedProductionStubs / out.expectedCleanBudget))
+    const expectedCleanBudget = normalizePositiveFiniteNumber(out.expectedCleanBudget, 0)
+    const pressure = expectedCleanBudget === 0 ? 1 : weightedProductionStubs / expectedCleanBudget
+    const baseScore = Math.max(0, 1 - Math.min(1, pressure))
     const scoreCaps = out.productionStubs.flatMap((stub) =>
-      stub.scoreCapParticipation && stub.scoreCap !== undefined ? [stub.scoreCap] : [],
+      stub.scoreCapParticipation && stub.scoreCap !== undefined
+        ? normalizeScoreCap(stub.scoreCap)
+        : [],
     )
     return scoreCaps.length > 0 ? Math.min(baseScore, ...scoreCaps) : baseScore
   },
+  outputMetadata: (out) =>
+    out.totalFunctions === 0 ? { applicability: "not_applicable" as const } : undefined,
   diagnose: (out): ReadonlyArray<Diagnostic> => {
     const diagnostics: Array<Diagnostic> = []
-    const topN = out.stubs.filter((stub) => stub.visible).slice(0, out.diagnosticLimit)
+    const topN = out.stubs
+      .filter((stub) => stub.visible)
+      .slice(0, normalizeTsSl04DiagnosticLimit(out.diagnosticLimit))
 
     for (const stub of topN) {
       diagnostics.push({
@@ -111,7 +125,9 @@ export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalCon
         message: `${stub.name}: ${stub.kind} (${stub.confidence} confidence)${stub.message ? ` — "${stub.message}"` : ""}`,
         location: { file: stub.file, line: stub.line },
         data: {
-          hash: computeDiagnosticHash(`${stub.file}:${stub.line}:${stub.kind}`),
+          hash: computeDiagnosticHash(
+            `${stub.relativeFile ?? stub.file}:${stub.line}:${stub.kind}`,
+          ),
           kind: stub.kind,
           confidence: stub.confidence,
           penaltyWeight: stub.penaltyWeight,
@@ -173,6 +189,7 @@ interface StubCandidateCollection {
 
 interface StubCandidate {
   readonly path: string
+  readonly relativePath: string
   readonly name: string
   readonly line: number
   readonly nodeKind: string
@@ -212,9 +229,10 @@ const collectStubCandidates = (
   const hunkIndex = buildChangedHunkIndex(context.worktreePath, context.changedHunks)
 
   for (const { path, fn } of getFunctionLikeIndex(project)) {
-    if (isExcluded(path, config.exclude_globs)) continue
+    const relativePath = relative(context.worktreePath, path).replace(/\\/g, "/")
+    if (matchesSourcePath(path, relativePath, config.exclude_globs)) continue
 
-    const isTestPath = matchesAnyGlob(path, config.test_globs)
+    const isTestPath = matchesSourcePath(path, relativePath, config.test_globs)
     if (isTestPath && !config.include_test_stubs) continue
 
     if (!lineRangeOverlapsHunkIndex(path, fn, context.worktreePath, hunkIndex)) {
@@ -227,7 +245,7 @@ const collectStubCandidates = (
 
     totalFunctions++
 
-    const candidate = stubCandidateForFunction(path, fn, isTestPath)
+    const candidate = stubCandidateForFunction(path, relativePath, fn, isTestPath)
     if (candidate !== undefined) {
       candidates.push(candidate)
     }
@@ -238,6 +256,7 @@ const collectStubCandidates = (
 
 const stubCandidateForFunction = (
   path: string,
+  relativePath: string,
   fn: FnLike,
   isTestPath: boolean,
 ): StubCandidate | undefined => {
@@ -250,6 +269,7 @@ const stubCandidateForFunction = (
 
   return {
     path,
+    relativePath,
     name: getFunctionName(fn),
     line: fn.getStartLineNumber(),
     nodeKind: syntaxKindName(fn.getKind()),
@@ -266,6 +286,15 @@ const stubCandidateForFunction = (
     stubKind,
   }
 }
+
+const matchesSourcePath = (
+  path: string,
+  relativePath: string,
+  globs: ReadonlyArray<string>,
+): boolean =>
+  matchesAnyGlob(path, globs) ||
+  matchesAnyGlob(relativePath, globs) ||
+  matchesAnyGlob(`./${relativePath}`, globs)
 
 const isAbstractMethod = (fn: FnLike): boolean =>
   Node.isMethodDeclaration(fn) && fn.isAbstract()
@@ -315,7 +344,7 @@ const lineRangeOverlapsHunkIndex = (
 }
 
 const absoluteHunkFilePath = (worktreePath: string, filePath: string): string =>
-  filePath.startsWith(worktreePath) ? filePath : `${worktreePath}/${filePath}`
+  (isAbsolute(filePath) ? resolve(filePath) : resolve(worktreePath, filePath)).replace(/\\/g, "/")
 
 const classifyStub = (
   fn: FnLike,
@@ -366,7 +395,7 @@ const MAYBE_PLACEHOLDER_RETURN_PATTERN = /\breturn\b[\s\S]*(?:placeholder|mock|t
 
 const isExplicitUnsupportedCapabilityMessage = (message: string): boolean =>
   /`[^`]+`\s+on\s+.+\s+is\s+not\s+implemented\s+by\s+[^.]+\./i.test(message) ||
-  /^not\s+implemented\s+on\s+.+/i.test(message)
+  /^not\s+implemented\s+on\s+(?:android|browser|cloudflare workers?|darwin|edge(?: runtime)?|ios|linux|macos|node(?:\.js)?|react native web|tvos|visionos|watchos|web|windows|.+\s+runtime|.+\s+platform)\.?$/i.test(message.trim())
 
 const isFixtureEntrypointPlaceholder = (fn: FnLike, message: string): boolean => {
   if (!/^fixture\s+not\s+implemented!?$/i.test(message.trim())) return false
@@ -693,13 +722,18 @@ const applyVectorOverridesToStubPolicy = (
 ): TypeScriptUnfinishedImplementationPolicyValue => {
   const prefix = policy.factorPathPrefix
   const confidence = stringFactorValue(`${prefix}.confidence`, policy.confidence, overrides)
-  const scoreCap = numberFactorValue(`${prefix}.score_cap`, policy.scoreCap, overrides)
+  const scoreCap = normalizeOptionalScoreCap(
+    numberFactorValue(`${prefix}.score_cap`, policy.scoreCap, overrides),
+    policy.scoreCap,
+  )
   return {
     ...policy,
     confidence: toStubConfidence(confidence),
-    penaltyWeight:
+    penaltyWeight: normalizeNonNegativeFiniteNumber(
       numberFactorValue(`${prefix}.penalty_weight`, policy.penaltyWeight, overrides) ??
       policy.penaltyWeight,
+      policy.penaltyWeight,
+    ),
     scoreCapParticipation: booleanFactorValue(
       `${prefix}.score_cap_participation`,
       policy.scoreCapParticipation,
@@ -727,6 +761,10 @@ const finalizeStubPolicy = (
   return {
     ...policy,
     confidence,
+    penaltyWeight: normalizeNonNegativeFiniteNumber(
+      policy.penaltyWeight,
+      penaltyWeightForStubKind(toStubKind(policy.stubKind)),
+    ),
     severity: shouldRecomputeSeverity
       ? severityForStub(candidate.isTestPath, confidence, hardGateProduction)
       : policy.severity,
@@ -739,6 +777,7 @@ const createStub = (
   policyDecisions: ReadonlyArray<CalibrationDecision>,
 ): Stub => ({
   file: candidate.path,
+  relativeFile: candidate.relativePath,
   name: candidate.name,
   line: candidate.line,
   kind: toStubKind(policy.stubKind),
@@ -800,16 +839,14 @@ const resolveCleanBudget = (
   totalFunctions: number,
   factorOverrides: Readonly<Record<string, SignalFactorValue>>,
 ): CleanBudget => {
-  const expectedCleanFunctionRatio = numberFactorValue(
-    "budget.expected_clean_function_ratio",
+  const expectedCleanFunctionRatio = normalizePositiveFiniteNumber(
+    numberFactorValue("budget.expected_clean_function_ratio", 0.01, factorOverrides) ?? 0.01,
     0.01,
-    factorOverrides,
-  ) ?? 0.01
-  const expectedCleanMinFunctions = numberFactorValue(
-    "budget.expected_clean_min_functions",
+  )
+  const expectedCleanMinFunctions = normalizePositiveFiniteNumber(
+    numberFactorValue("budget.expected_clean_min_functions", 10, factorOverrides) ?? 10,
     10,
-    factorOverrides,
-  ) ?? 10
+  )
   return {
     expectedCleanBudget: Math.max(
       expectedCleanMinFunctions,
@@ -872,10 +909,17 @@ const buildTsSl04FactorLedger = (
   ], factorOverrides))
 
 const compareStubs = (a: Stub, b: Stub): number =>
+  severityPriority(a.severity) - severityPriority(b.severity) ||
   confidencePriority(a.confidence) - confidencePriority(b.confidence) ||
   b.penaltyWeight - a.penaltyWeight ||
-  a.file.localeCompare(b.file) ||
+  compareStringAsc(a.file, b.file) ||
   a.line - b.line
+
+const severityPriority = (severity: string): number => {
+  if (severity === "block") return 0
+  if (severity === "warn") return 1
+  return 2
+}
 
 const confidencePriority = (confidence: StubConfidence): number => {
   if (confidence === "high") return 0
@@ -886,7 +930,36 @@ const confidencePriority = (confidence: StubConfidence): number => {
 const compareCandidateSummaries = (
   a: StubCandidateSummary,
   b: StubCandidateSummary,
-): number => a.file.localeCompare(b.file) || a.line - b.line || a.name.localeCompare(b.name)
+): number => compareStringAsc(a.file, b.file) || a.line - b.line || compareStringAsc(a.name, b.name)
+
+const compareStringAsc = (left: string, right: string): number => {
+  if (left === right) return 0
+  return left < right ? -1 : 1
+}
+
+const normalizePositiveFiniteNumber = (value: number, fallback: number): number =>
+  Number.isFinite(value) && value >= 0 ? value : fallback
+
+const normalizeNonNegativeFiniteNumber = (value: number, fallback: number): number =>
+  Number.isFinite(value) && value >= 0 ? value : fallback
+
+const normalizeScoreCap = (value: number): ReadonlyArray<number> => {
+  if (!Number.isFinite(value)) return []
+  return [Math.max(0, Math.min(1, value))]
+}
+
+const normalizeOptionalScoreCap = (
+  value: number | undefined,
+  fallback?: number,
+): number | undefined => {
+  if (value === undefined) return undefined
+  if (!Number.isFinite(value)) {
+    return fallback !== undefined && Number.isFinite(fallback)
+      ? Math.max(0, Math.min(1, fallback))
+      : undefined
+  }
+  return Math.max(0, Math.min(1, value))
+}
 
 const toSignalComputeError = (cause: unknown): SignalComputeError =>
   cause instanceof SignalComputeError

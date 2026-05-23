@@ -4,6 +4,7 @@ import type { StubConfidence, StubKind, StubSeverity } from "./ts-sl-04-factors.
 
 export interface Stub {
   readonly file: string
+  readonly relativeFile?: string
   readonly name: string
   readonly line: number
   readonly kind: StubKind

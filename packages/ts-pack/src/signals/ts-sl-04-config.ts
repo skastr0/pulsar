@@ -9,6 +9,16 @@ export const TsSl04Config = Schema.Struct({
 })
 export type TsSl04Config = typeof TsSl04Config.Type
 
+export const DEFAULT_TS_SL_04_DIAGNOSTIC_LIMIT = 20
+
+export const normalizeTsSl04Config = (config: TsSl04Config): TsSl04Config => ({
+  ...config,
+  top_n_diagnostics: normalizeTsSl04DiagnosticLimit(config.top_n_diagnostics),
+})
+
+export const normalizeTsSl04DiagnosticLimit = (value: number): number =>
+  Number.isFinite(value) && value > 0 ? Math.floor(value) : 0
+
 export const defaultTsSl04Config: TsSl04Config = {
   exclude_globs: [
     "**/node_modules/**",
@@ -103,7 +113,7 @@ export const defaultTsSl04Config: TsSl04Config = {
     "**/*test-runtime*.tsx",
     "**/happydom.ts",
   ],
-  top_n_diagnostics: 20,
+  top_n_diagnostics: DEFAULT_TS_SL_04_DIAGNOSTIC_LIMIT,
   hard_gate_production: true,
   include_test_stubs: false,
 }

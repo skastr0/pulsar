@@ -1,13 +1,82 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Schema } from "effect"
 import { SignalContextTag } from "@skastr0/pulsar-core/signal"
 import { CalibrationContextTag, appendCalibrationDecision, defineCalibrationProcessor, makeResolvedCalibrationContext } from "@skastr0/pulsar-core/calibration"
 import type { RepoFacts } from "@skastr0/pulsar-core/calibration"
 import { SIGNAL_FACTOR_POLICY_PRECEDENCE, SignalFactorPolicyTag } from "@skastr0/pulsar-core/factors"
+import { buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { createTempRepo, runSignal } from "./test-repo.js"
 import { TsSl04 } from "../signals/ts-sl-04-empty-implementations.js"
 import { TsProjectLayer } from "../ts-project.js"
 import type { TempRepo } from "./test-repo.js"
+import { TS_PACK_SIGNALS } from "../pack.js"
+import type { Stub } from "../signals/ts-sl-04-model.js"
+
+const throwingStubSource = `
+export function stub() {
+  throw new Error("Not implemented");
+}
+`
+
+const emptyStubSource = `
+export function empty() {}
+`
+
+const makeStub = (overrides: Partial<Stub> = {}): Stub => ({
+  file: "/repo/src/stub.ts",
+  relativeFile: "src/stub.ts",
+  name: "stub",
+  line: 1,
+  kind: "empty-body",
+  visible: true,
+  severity: "warn",
+  confidence: "low",
+  penaltyWeight: 0.25,
+  scoreCapParticipation: false,
+  scoreCap: undefined,
+  inTestPath: false,
+  message: "Empty implementation",
+  policyDecisions: [],
+  ...overrides,
+})
+
+const scoreOutput = (
+  productionStubs: ReadonlyArray<Stub>,
+  overrides: Partial<Parameters<typeof TsSl04.score>[0]> = {},
+): Parameters<typeof TsSl04.score>[0] => ({
+  rawCandidates: [],
+  stubs: productionStubs,
+  calibrationDecisions: [],
+  byKind: new Map(),
+  productionStubs,
+  testStubs: [],
+  totalFunctions: 1,
+  expectedCleanBudget: 10,
+  expectedCleanFunctionRatio: 0.01,
+  expectedCleanMinFunctions: 10,
+  hardGateProduction: true,
+  diagnosticLimit: 20,
+  factorLedger: {
+    signalId: "TS-SL-04-unfinished-implementations",
+    entries: [],
+  },
+  ...overrides,
+})
+
+const normalizedStubSnapshot = (out: Parameters<typeof TsSl04.score>[0]) =>
+  out.stubs.map((stub) => ({
+    ...stub,
+    file: stub.file.split("/").at(-1),
+  }))
+
+const normalizedDiagnosticSnapshot = (out: Parameters<typeof TsSl04.score>[0]) =>
+  TsSl04.diagnose(out).map((diagnostic) => ({
+    severity: diagnostic.severity,
+    message: diagnostic.message,
+    file: diagnostic.location?.file.split("/").at(-1),
+    line: diagnostic.location?.line,
+    data: diagnostic.data,
+  }))
 
 describe("TS-SL-04 Empty implementations and stubs", () => {
   let repo: TempRepo
@@ -18,6 +87,109 @@ describe("TS-SL-04 Empty implementations and stubs", () => {
 
   afterEach(async () => {
     await repo.cleanup()
+  })
+
+  test("declares identity, pack registration, config schema, and factor ledger", async () => {
+    await repo.write("src/value.ts", "export function value() { return 1 }\n")
+
+    const packRegistered = TS_PACK_SIGNALS.find((signal) =>
+      signal.aliases?.includes("TS-SL-04"),
+    )
+    expect(packRegistered).toBeDefined()
+    const registry = await Effect.runPromise(buildRegistry([packRegistered!]))
+    const registered = registry.byId.get("TS-SL-04")
+    const decoded = Schema.decodeUnknownSync(TsSl04.configSchema)(TsSl04.defaultConfig)
+    const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
+    const factorLedger = registered?.factorLedger?.(out)
+
+    expect(TsSl04).toMatchObject({
+      id: "TS-SL-04-unfinished-implementations",
+      title: "Unfinished implementations",
+      aliases: ["TS-SL-04"],
+      tier: 1,
+      category: "generated-slop",
+      kind: "structural",
+      cacheVersion: "factor-policy-hunks-stable-hash-generic-noops-globs-finite-v1",
+      inputs: [],
+    })
+    expect(decoded).toEqual(TsSl04.defaultConfig)
+    expect(registered?.id).toBe(TsSl04.id)
+    expect(registered?.title).toBe(TsSl04.title)
+    expect(registered?.cacheVersion).toContain(TsSl04.cacheVersion)
+    expect(registry.byId.get("TS-SL-04")?.id).toBe(TsSl04.id)
+    expect(factorLedger?.signalId).toBe(TsSl04.id)
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.exclude_globs",
+        value: TsSl04.defaultConfig.exclude_globs,
+        source: "signal-default",
+        scoreRole: "metadata",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.test_globs",
+        value: TsSl04.defaultConfig.test_globs,
+        source: "signal-default",
+        scoreRole: "metadata",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        value: 20,
+        source: "signal-default",
+        scoreRole: "threshold",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.hard_gate_production",
+        value: true,
+        source: "signal-default",
+        scoreRole: "threshold",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.include_test_stubs",
+        value: false,
+        source: "signal-default",
+        scoreRole: "threshold",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "budget.expected_clean_function_ratio",
+        value: 0.01,
+        source: "computed",
+        scoreRole: "threshold",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "budget.expected_clean_min_functions",
+        value: 10,
+        source: "computed",
+        scoreRole: "threshold",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "filtering.include_test_stubs",
+        value: false,
+        source: "computed",
+        scoreRole: "metadata",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "filtering.production_only_score",
+        value: true,
+        source: "computed",
+        scoreRole: "metadata",
+      }),
+    )
   })
 
   test("detects throw-not-implemented stubs", async () => {
@@ -685,12 +857,35 @@ export function done() {
 export const throwNotImplementedOnRNWeb = <T>(): T => {
   throw new Error("Not implemented on React Native Web");
 }
+
+export function unsupportedOnIos() {
+  throw new Error("Not implemented on iOS");
+}
 `,
     )
 
     const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
     expect(out.stubs).toHaveLength(0)
     expect(TsSl04.score(out)).toBe(1)
+  })
+
+  test("still flags future-work messages that merely say not implemented on a path", async () => {
+    await repo.write(
+      "future.ts",
+      `
+export function futureFeature() {
+  throw new Error("Not implemented on v2 path yet")
+}
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
+    expect(out.stubs).toHaveLength(1)
+    expect(out.stubs[0]).toMatchObject({
+      name: "futureFeature",
+      kind: "throw-not-implemented",
+      confidence: "high",
+    })
   })
 
   test("does not classify fixture entrypoint placeholders as production stubs", async () => {
@@ -812,20 +1007,89 @@ function testStub() {
     expect(out.productionStubs).toEqual([])
   })
 
+  test("applicability distinguishes analyzed clean code from all-excluded code", async () => {
+    await repo.write("src/value.ts", "export function value() { return 1 }\n")
+
+    const clean = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
+    expect(clean.totalFunctions).toBe(1)
+    expect(clean.stubs).toEqual([])
+    expect(TsSl04.score(clean)).toBe(1)
+    expect(TsSl04.outputMetadata?.(clean)).toBeUndefined()
+
+    const excludedRepo = await createTempRepo("ts-sl-04-excluded-")
+    try {
+      await excludedRepo.write("examples/stub.ts", emptyStubSource)
+      const excluded = await runSignal(excludedRepo.root, TsSl04, TsSl04.defaultConfig)
+      expect(excluded.totalFunctions).toBe(0)
+      expect(excluded.stubs).toEqual([])
+      expect(TsSl04.score(excluded)).toBe(1)
+      expect(TsSl04.outputMetadata?.(excluded)).toEqual({ applicability: "not_applicable" })
+    } finally {
+      await excludedRepo.cleanup()
+    }
+  })
+
+  test("custom exclude and test globs control analyzed applicability", async () => {
+    await repo.write("src/ignored.ts", emptyStubSource)
+    await repo.write("src/helper.test.ts", emptyStubSource)
+
+    const excluded = await runSignal(repo.root, TsSl04, {
+      ...TsSl04.defaultConfig,
+      exclude_globs: [...TsSl04.defaultConfig.exclude_globs, "src/ignored.ts"],
+    })
+    expect(excluded.totalFunctions).toBe(0)
+    expect(excluded.stubs).toEqual([])
+    expect(TsSl04.outputMetadata?.(excluded)).toEqual({ applicability: "not_applicable" })
+
+    const dotRelativeExcluded = await runSignal(repo.root, TsSl04, {
+      ...TsSl04.defaultConfig,
+      exclude_globs: [...TsSl04.defaultConfig.exclude_globs, "./src/ignored.ts"],
+      test_globs: ["./src/helper.test.ts"],
+    })
+    expect(dotRelativeExcluded.totalFunctions).toBe(0)
+    expect(dotRelativeExcluded.stubs).toEqual([])
+    expect(TsSl04.outputMetadata?.(dotRelativeExcluded)).toEqual({ applicability: "not_applicable" })
+
+    const testAnalyzedAsProduction = await runSignal(repo.root, TsSl04, {
+      ...TsSl04.defaultConfig,
+      exclude_globs: [...TsSl04.defaultConfig.exclude_globs, "src/ignored.ts"],
+      test_globs: [],
+    })
+    expect(testAnalyzedAsProduction.totalFunctions).toBe(1)
+    expect(testAnalyzedAsProduction.productionStubs).toHaveLength(1)
+    expect(TsSl04.outputMetadata?.(testAnalyzedAsProduction)).toBeUndefined()
+  })
+
   test("diagnostics include hash for ratcheting", async () => {
-    await repo.write(
-      "utils.ts",
-      `
-export function stub() {
-  throw new Error("Not implemented");
-}
-`,
-    )
+    await repo.write("utils.ts", throwingStubSource)
 
     const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
     const diagnostics = TsSl04.diagnose(out)
     expect(diagnostics.length).toBeGreaterThan(0)
     expect(diagnostics[0]?.data?.hash).toBeDefined()
+    expect(diagnostics[0]).toMatchObject({
+      severity: "block",
+      message: 'stub: throw-not-implemented (high confidence) — "Not implemented"',
+      location: {
+        file: `${repo.root}/utils.ts`,
+        line: 2,
+      },
+      data: {
+        kind: "throw-not-implemented",
+        confidence: "high",
+        penaltyWeight: 1,
+        scoreCapParticipation: true,
+        scoreCap: 0.8,
+        inTestPath: false,
+        message: "Not implemented",
+      },
+    })
+    expect(diagnostics[0]?.data?.factorPaths).toEqual([
+      "stub_kinds.throw-not-implemented.confidence",
+      "stub_kinds.throw-not-implemented.penalty_weight",
+      "stub_kinds.throw-not-implemented.score_cap_participation",
+      "stub_kinds.throw-not-implemented.score_cap",
+    ])
   })
 
   test("score decreases with production stubs", async () => {
@@ -849,6 +1113,82 @@ export function stub3() {
     const score = TsSl04.score(out)
     expect(score).toBeLessThan(1)
     expect(score).toBeGreaterThanOrEqual(0)
+  })
+
+  test("score formula accounts for low, medium, high, caps, and invalid budgets", () => {
+    expect(TsSl04.score(scoreOutput([
+      makeStub({
+        kind: "empty-body",
+        confidence: "low",
+        penaltyWeight: 0.25,
+        scoreCapParticipation: false,
+        scoreCap: undefined,
+      }),
+    ]))).toBeCloseTo(0.975)
+
+    expect(TsSl04.score(scoreOutput([
+      makeStub({
+        kind: "mock-return",
+        confidence: "medium",
+        penaltyWeight: 0.6,
+        scoreCapParticipation: false,
+        scoreCap: undefined,
+      }),
+    ]))).toBeCloseTo(0.94)
+
+    expect(TsSl04.score(scoreOutput([
+      makeStub({
+        kind: "throw-not-implemented",
+        severity: "block",
+        confidence: "high",
+        penaltyWeight: 1,
+        scoreCapParticipation: true,
+        scoreCap: 0.8,
+      }),
+    ]))).toBe(0.8)
+
+    expect(TsSl04.score(scoreOutput([
+      makeStub({ scoreCapParticipation: true, scoreCap: Number.NaN }),
+    ]))).toBeCloseTo(0.975)
+    expect(TsSl04.score(scoreOutput([
+      makeStub(),
+    ], { expectedCleanBudget: Number.NaN }))).toBe(0)
+  })
+
+  test("vector factor overrides cannot poison score with non-finite weights or budgets", async () => {
+    await repo.write("src/auth.ts", throwingStubSource)
+
+    const out = await Effect.runPromise(
+      TsSl04.compute(TsSl04.defaultConfig, new Map()).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            TsProjectLayer(repo.root),
+            Layer.succeed(SignalContextTag, {
+              gitSha: "TEST",
+              worktreePath: repo.root,
+              changedHunks: [],
+            }),
+            Layer.succeed(SignalFactorPolicyTag, {
+              signalId: "TS-SL-04-unfinished-implementations",
+              precedence: SIGNAL_FACTOR_POLICY_PRECEDENCE,
+              vectorOverrides: {
+                "budget.expected_clean_function_ratio": Number.NaN,
+                "budget.expected_clean_min_functions": Number.NaN,
+                "stub_kinds.throw-not-implemented.penalty_weight": Number.NaN,
+                "stub_kinds.throw-not-implemented.score_cap": Number.NaN,
+              },
+            }),
+          ),
+        ),
+      ),
+    )
+
+    expect(out.expectedCleanFunctionRatio).toBe(0.01)
+    expect(out.expectedCleanMinFunctions).toBe(10)
+    expect(out.stubs[0]?.penaltyWeight).toBe(1)
+    expect(out.stubs[0]?.scoreCap).toBe(0.8)
+    expect(Number.isFinite(TsSl04.score(out))).toBe(true)
+    expect(TsSl04.score(out)).toBe(0.8)
   })
 
   test("high-confidence production stubs cap the score even in large repos", () => {
@@ -924,6 +1264,59 @@ export function stub${index}() {
     expect(TsSl04.diagnose(out)).toHaveLength(2)
   })
 
+  test("diagnostics honor sanitized top_n_diagnostics", async () => {
+    await repo.write(
+      "utils.ts",
+      Array.from({ length: 3 }, (_, index) => `
+export function stub${index}() {
+  throw new Error("Not implemented");
+}
+`).join("\n"),
+    )
+
+    const fractional = await runSignal(repo.root, TsSl04, {
+      ...TsSl04.defaultConfig,
+      top_n_diagnostics: 1.8,
+    })
+    expect(fractional.diagnosticLimit).toBe(1)
+    expect(TsSl04.diagnose(fractional)).toHaveLength(1)
+
+    for (const value of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const out = await runSignal(repo.root, TsSl04, {
+        ...TsSl04.defaultConfig,
+        top_n_diagnostics: value,
+      })
+      expect(out.diagnosticLimit).toBe(0)
+      expect(TsSl04.diagnose(out)).toEqual([])
+      expect(Number.isFinite(TsSl04.score(out))).toBe(true)
+    }
+  })
+
+  test("diagnostics prioritize production severity before test-only info under caps", async () => {
+    await repo.write("src/prod-empty.ts", emptyStubSource)
+    await repo.write("src/helper.test.ts", throwingStubSource)
+
+    const out = await runSignal(repo.root, TsSl04, {
+      ...TsSl04.defaultConfig,
+      include_test_stubs: true,
+      top_n_diagnostics: 1,
+    })
+
+    const diagnostics = TsSl04.diagnose(out)
+    expect(out.stubs.map((stub) => `${stub.severity}:${stub.name}`)).toEqual([
+      "warn:empty",
+      "info:stub",
+    ])
+    expect(diagnostics).toHaveLength(1)
+    expect(diagnostics[0]).toMatchObject({
+      severity: "warn",
+      data: {
+        kind: "empty-body",
+        inTestPath: false,
+      },
+    })
+  })
+
   test("diff-aware: only flags stubs in changed hunks", async () => {
     await repo.write(
       "utils.ts",
@@ -960,6 +1353,90 @@ export function newStub() {
     )
 
     expect(out.stubs.map((stub) => stub.name)).toEqual(["newStub"])
+  })
+
+  test("diff-aware: normalizes dot-relative changed hunk paths", async () => {
+    await repo.write(
+      "utils.ts",
+      `
+export function newStub() {
+  throw new Error("Not implemented");
+}
+`,
+    )
+
+    const out = await Effect.runPromise(
+      TsSl04.compute(
+        TsSl04.defaultConfig,
+        new Map(),
+      ).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            TsProjectLayer(repo.root),
+            Layer.succeed(SignalContextTag, {
+              gitSha: "TEST",
+              worktreePath: repo.root,
+              changedHunks: [
+                { file: "./utils.ts", oldStart: 2, oldLines: 0, newStart: 2, newLines: 3 },
+              ],
+            }),
+          ),
+        ),
+      ),
+    )
+
+    expect(out.totalFunctions).toBe(1)
+    expect(out.stubs.map((stub) => stub.name)).toEqual(["newStub"])
+    expect(TsSl04.outputMetadata?.(out)).toBeUndefined()
+  })
+
+  test("diff-aware: non-TypeScript hunks are not applicable", async () => {
+    await repo.write("src/value.ts", "export function value() { return 1 }\n")
+
+    const out = await Effect.runPromise(
+      TsSl04.compute(
+        TsSl04.defaultConfig,
+        new Map(),
+      ).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            TsProjectLayer(repo.root),
+            Layer.succeed(SignalContextTag, {
+              gitSha: "TEST",
+              worktreePath: repo.root,
+              changedHunks: [
+                { file: "README.md", oldStart: 1, oldLines: 0, newStart: 1, newLines: 1 },
+              ],
+            }),
+          ),
+        ),
+      ),
+    )
+
+    expect(out.totalFunctions).toBe(0)
+    expect(out.stubs).toEqual([])
+    expect(TsSl04.score(out)).toBe(1)
+    expect(TsSl04.outputMetadata?.(out)).toEqual({ applicability: "not_applicable" })
+  })
+
+  test("outputs and diagnostics are deterministic across equivalent repos", async () => {
+    await repo.write("b.ts", emptyStubSource)
+    await repo.write("a.ts", throwingStubSource)
+    const canonical = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
+    const rerun = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
+    expect(TsSl04.diagnose(rerun)).toEqual(TsSl04.diagnose(canonical))
+
+    const otherRepo = await createTempRepo("ts-sl-04-order-")
+    try {
+      await otherRepo.write("a.ts", throwingStubSource)
+      await otherRepo.write("b.ts", emptyStubSource)
+      const reordered = await runSignal(otherRepo.root, TsSl04, TsSl04.defaultConfig)
+
+      expect(normalizedStubSnapshot(reordered)).toEqual(normalizedStubSnapshot(canonical))
+      expect(normalizedDiagnosticSnapshot(reordered)).toEqual(normalizedDiagnosticSnapshot(canonical))
+    } finally {
+      await otherRepo.cleanup()
+    }
   })
 
   test("detects mock-return patterns with placeholder literals", async () => {
@@ -1307,6 +1784,26 @@ export function isAvailable() {
 
     const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
     expect(out.stubs).toHaveLength(0)
+  })
+
+  test("explicit noop files still report real throw-not-implemented stubs", async () => {
+    await repo.write(
+      "adapter.noop.ts",
+      `
+export function activePath() {
+  throw new Error("TODO: implement active runtime")
+}
+
+export function fallback() {}
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
+    expect(out.stubs.map((stub) => stub.name)).toEqual(["activePath"])
+    expect(out.stubs[0]).toMatchObject({
+      kind: "throw-not-implemented",
+      confidence: "high",
+    })
   })
 
   test("does not classify ignored-parameter plugin lifecycle cleanup hooks as unfinished stubs", async () => {
@@ -1799,7 +2296,7 @@ class BorrowedManager implements Manager {
     expect(out.stubs).toEqual([])
   })
 
-  test("does not classify common empty contract callbacks as unfinished stubs", async () => {
+  test("does not classify common generic empty contract callbacks as unfinished stubs", async () => {
     await repo.write(
       "contracts.ts",
       `
@@ -1810,13 +2307,31 @@ export const responder = {
   dispose: () => {},
   cleanup: async () => {},
   log: () => {},
-  markDispatchIdle: () => {},
-  markRunComplete: () => {},
   notifyStarted: () => {},
   release: () => {},
-  releaseRetryTokens: () => {},
   stop: () => {},
   async *[Symbol.asyncIterator]() {},
+}
+`,
+    )
+
+    const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
+    expect(out.stubs).toEqual([])
+  })
+
+  test("generic defaults flag project-specific empty callbacks without module calibration", async () => {
+    await repo.write(
+      "contracts.ts",
+      `
+export const responder = {
+  markDispatchIdle: () => {},
+  markRunComplete: () => {},
+  onReplyStart: () => {},
+  refreshTypingTtl: () => {},
+  releaseRetryTokens: () => {},
+  sendPairingReply: () => {},
+  startTypingLoop: () => {},
+  startTypingOnText: () => {},
 }
 
 const clearProviderRuntimeHookCache = () => {}
@@ -1830,7 +2345,19 @@ export const hooks = {
     )
 
     const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
-    expect(out.stubs).toEqual([])
+    expect(out.stubs.map((stub) => stub.name).sort()).toEqual([
+      "clearProviderRuntimeHookCache",
+      "clearSetupPromotionRuntimeModuleCache",
+      "markDispatchIdle",
+      "markRunComplete",
+      "onReplyStart",
+      "prepareProviderDynamicModel",
+      "refreshTypingTtl",
+      "releaseRetryTokens",
+      "sendPairingReply",
+      "startTypingLoop",
+      "startTypingOnText",
+    ].sort())
   })
 
   test("does not classify keepalive timer and registration marker callbacks as unfinished stubs", async () => {
