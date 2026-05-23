@@ -1,4 +1,8 @@
 import { describe, expect, test } from "bun:test"
+import { buildRegistry, computeConfigHash } from "@skastr0/pulsar-core/scoring"
+import { SHARED_SIGNALS } from "@skastr0/pulsar-shared-signals"
+import { Effect, Schema } from "effect"
+import { RS_PACK_SIGNALS } from "../pack.js"
 import { RsLd01 } from "../signals/rs-ld-01-unsafe.js"
 import { RsLd02 } from "../signals/rs-ld-02-lifetimes.js"
 import { RsLd03 } from "../signals/rs-ld-03-match-catch-all.js"
@@ -87,6 +91,77 @@ const createLegibilityWorkspace = () =>
   })
 
 describe("RS-LD-* signals", () => {
+  test("RS-LD-01 declares identity, config, cache, pack registration, and factor ledger", async () => {
+    const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
+    const versionedRegistry = await Effect.runPromise(
+      buildRegistry([
+        ...SHARED_SIGNALS,
+        ...RS_PACK_SIGNALS.filter((signal) => signal.id !== RsLd01.id),
+        { ...RsLd01, cacheVersion: `${RsLd01.cacheVersion}-next` },
+      ]),
+    )
+    const registered = registry.byId.get("RS-LD-01")
+    const decoded = Schema.decodeUnknownSync(RsLd01.configSchema)(RsLd01.defaultConfig)
+    const factorLedger = registered?.factorLedger?.({})
+    const baseCacheHash = computeConfigHash(RsLd01.id, registry, undefined)
+    const versionedCacheHash = computeConfigHash(RsLd01.id, versionedRegistry, undefined)
+    const configuredCacheHash = computeConfigHash(RsLd01.id, registry, {
+      id: "rs-ld-01-contract",
+      domain: "test",
+      signal_overrides: {
+        [RsLd01.id]: {
+          config: {
+            ...RsLd01.defaultConfig,
+            safe_only_modules: ["legibility-fixture::crate::safe_zone"],
+            top_n_diagnostics: 1,
+          },
+        },
+      },
+    })
+
+    expect(RsLd01).toMatchObject({
+      id: "RS-LD-01-unsafe-code",
+      aliases: ["RS-LD-01"],
+      title: "Unsafe code",
+      tier: 1,
+      category: "legibility-decay",
+      kind: "legibility",
+      cacheVersion: "unsafe-code-config-applicability-diagnostics-v1",
+      inputs: [],
+    })
+    expect(decoded).toEqual({
+      exclude_globs: ["**/target/**", "**/tests/**", "**/examples/**", "**/benches/**"],
+      safe_only_modules: [],
+      top_n_diagnostics: 10,
+    })
+    expect(registered?.id).toBe(RsLd01.id)
+    expect(registered?.cacheVersion).toBe(RsLd01.cacheVersion)
+    expect(registry.byId.get("RS-LD-01")?.id).toBe(RsLd01.id)
+    expect(baseCacheHash).not.toBe(versionedCacheHash)
+    expect(baseCacheHash).not.toBe(configuredCacheHash)
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.exclude_globs",
+        affectsScore: true,
+        scoreRole: "evidence",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.safe_only_modules",
+        affectsScore: true,
+        scoreRole: "threshold",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        affectsScore: false,
+        scoreRole: "metadata",
+      }),
+    )
+  })
+
   test("RS-LD-01 reports unsafe density and safe-only violations", async () => {
     const repo = await createLegibilityWorkspace()
     try {
@@ -101,12 +176,129 @@ describe("RS-LD-* signals", () => {
 
       expect(out.totalUnsafeBlocks).toBe(2)
       expect(out.totalUnsafeFunctions).toBe(1)
+      expect(out.sourceFileCount).toBe(1)
+      expect(out.analyzedSourceFileCount).toBe(1)
+      expect(out.functionCount).toBeGreaterThan(0)
+      expect(out.diagnosticLimit).toBe(10)
       expect(out.propagationMode).toBe("local-signature-only")
       expect(out.safeOnlyViolations.map((module) => module.module)).toContain(
         "legibility-fixture::crate::safe_zone",
       )
+      expect(RsLd01.outputMetadata?.(out)).toBeUndefined()
+      expect(RsLd01.score(out)).toBe(0)
+      expect(RsLd01.diagnose(out)[0]).toMatchObject({
+        severity: "block",
+        message: "Unsafe usage in safe-only module legibility-fixture::crate::safe_zone",
+      })
     } finally {
       await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-LD-01 normalizes diagnostics and applicability evidence", async () => {
+    const unsafe = await createLegibilityWorkspace()
+    const missing = await createRustWorkspace("pulsar-rs-ld01-missing-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "unsafe-missing"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+    })
+    const noFunction = await createRustWorkspace("pulsar-rs-ld01-no-function-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "unsafe-no-function"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub struct Marker;",
+        "",
+      ].join("\n"),
+    })
+    const excluded = await createRustWorkspace("pulsar-rs-ld01-excluded-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "unsafe-excluded"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub fn raw_deref(ptr: *const u8) -> u8 {",
+        "    unsafe { *ptr }",
+        "}",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const capped = await runSignalCompute(
+        RsLd01,
+        unsafe,
+        {
+          ...RsLd01.defaultConfig,
+          safe_only_modules: ["legibility-fixture::crate::safe_zone"],
+          top_n_diagnostics: 1.8,
+        },
+      )
+      const hidden = await runSignalCompute(
+        RsLd01,
+        unsafe,
+        { ...RsLd01.defaultConfig, top_n_diagnostics: Number.NaN },
+      )
+      const missingOut = await runSignalCompute(RsLd01, missing, RsLd01.defaultConfig)
+      const noFunctionOut = await runSignalCompute(RsLd01, noFunction, RsLd01.defaultConfig)
+      const excludedOut = await runSignalCompute(
+        RsLd01,
+        excluded,
+        { ...RsLd01.defaultConfig, exclude_globs: ["**/*.rs"] },
+      )
+
+      expect(capped.diagnosticLimit).toBe(1)
+      expect(RsLd01.diagnose(capped)).toHaveLength(1)
+      expect(hidden.diagnosticLimit).toBe(0)
+      expect(RsLd01.diagnose(hidden)).toHaveLength(0)
+
+      expect(missingOut.sourceFileCount).toBe(0)
+      expect(RsLd01.outputMetadata?.(missingOut)).toEqual({
+        applicability: "insufficient_evidence",
+      })
+      expect(RsLd01.diagnose(missingOut)).toEqual([
+        expect.objectContaining({
+          severity: "warn",
+          message: "RS-LD-01 found no Rust source files for unsafe code analysis",
+          data: expect.objectContaining({
+            sourceFileCount: 0,
+            analyzedSourceFileCount: 0,
+            functionCount: 0,
+            propagationMode: "local-signature-only",
+          }),
+        }),
+      ])
+
+      expect(noFunctionOut.sourceFileCount).toBe(1)
+      expect(noFunctionOut.functionCount).toBe(0)
+      expect(RsLd01.outputMetadata?.(noFunctionOut)).toEqual({
+        applicability: "not_applicable",
+      })
+      expect(RsLd01.diagnose(noFunctionOut)).toEqual([])
+
+      expect(excludedOut.sourceFileCount).toBe(1)
+      expect(excludedOut.analyzedSourceFileCount).toBe(0)
+      expect(excludedOut.functionCount).toBe(0)
+      expect(RsLd01.outputMetadata?.(excludedOut)).toEqual({
+        applicability: "not_applicable",
+      })
+      expect(RsLd01.diagnose(excludedOut)).toEqual([])
+    } finally {
+      await cleanupWorkspace(unsafe)
+      await cleanupWorkspace(missing)
+      await cleanupWorkspace(noFunction)
+      await cleanupWorkspace(excluded)
     }
   })
 
