@@ -1,11 +1,14 @@
 import {
+  type AsExpression,
   type ExpressionWithTypeArguments,
   Node,
   type Project,
+  type SatisfiesExpression,
   SyntaxKind,
   type InterfaceDeclaration,
   type SourceFile,
   type TypeNode,
+  type VariableDeclaration,
 } from "ts-morph"
 import { createModuleResolver, type ModuleResolver } from "../graph/module-graph.js"
 import { isExcluded, matchesAnyGlob } from "./shared-globs.js"
@@ -314,8 +317,9 @@ const buildImplementationIndex = (
     }
 
     for (const declaration of sourceFile.getVariableDeclarations()) {
-      if (!Node.isObjectLiteralExpression(declaration.getInitializer())) continue
-      for (const key of resolveInterfaceKeysFromTypeNode(declaration.getTypeNode())) {
+      const substituteType = objectLiteralSubstituteTypeNode(declaration)
+      if (substituteType === undefined) continue
+      for (const key of resolveInterfaceKeysFromTypeNode(substituteType)) {
         add(key, {
           file,
           name: declaration.getName(),
@@ -330,6 +334,35 @@ const buildImplementationIndex = (
       [...descriptors.values()].sort(compareImplementationDescriptors),
     ]),
   )
+}
+
+const objectLiteralSubstituteTypeNode = (
+  declaration: VariableDeclaration,
+): TypeNode | undefined => {
+  const initializer = declaration.getInitializer()
+  if (initializer === undefined) return undefined
+  const initializerExpression = unwrapParenthesizedExpression(initializer)
+  if (Node.isObjectLiteralExpression(initializerExpression)) return declaration.getTypeNode()
+
+  const expression = objectLiteralAssertionExpression(initializerExpression)
+  if (expression === undefined) return undefined
+  return expression.getTypeNode()
+}
+
+const objectLiteralAssertionExpression = (
+  node: Node,
+): AsExpression | SatisfiesExpression | undefined => {
+  if (!Node.isAsExpression(node) && !Node.isSatisfiesExpression(node)) return undefined
+  const expression = unwrapParenthesizedExpression(node.getExpression())
+  return Node.isObjectLiteralExpression(expression) ? node : undefined
+}
+
+const unwrapParenthesizedExpression = (node: Node): Node => {
+  let current = node
+  while (Node.isParenthesizedExpression(current)) {
+    current = current.getExpression()
+  }
+  return current
 }
 
 const resolveInterfaceKeysFromReference = (

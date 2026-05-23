@@ -64,6 +64,75 @@ describe("TS-AB-04 (interface to implementation ratio)", () => {
     expect(out.pairs[0]?.hasTestSubstitute).toBe(true)
   })
 
+  test("satisfies and as object literals count as test substitutes", async () => {
+    await repo.write(
+      "src/service.ts",
+      [
+        "export interface ISatisfiesService { run(): string }",
+        "export interface ICastService { run(): string }",
+        "export class SatisfiesService implements ISatisfiesService {",
+        "  run() { return 'ok' }",
+        "}",
+        "export class CastService implements ICastService {",
+        "  run() { return 'ok' }",
+        "}",
+      ].join("\n"),
+    )
+    await repo.write(
+      "src/service.test.ts",
+      [
+        "import type { ICastService, ISatisfiesService } from './service'",
+        "export const satisfiesFake = {",
+        "  run() { return 'fake' },",
+        "} satisfies ISatisfiesService",
+        "export const castFake = {",
+        "  run() { return 'fake' },",
+        "} as ICastService",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsAb04, TsAb04.defaultConfig)
+
+    expect(
+      out.pairs
+        .map((pair) => [pair.interfaceName, pair.hasTestSubstitute])
+        .sort(([left], [right]) => String(left).localeCompare(String(right))),
+    ).toEqual([
+      ["ICastService", true],
+      ["ISatisfiesService", true],
+    ])
+    expect(out.flaggedPairs).toHaveLength(0)
+  })
+
+  test("non-object casts do not count as test substitutes", async () => {
+    await repo.write(
+      "src/service.ts",
+      [
+        "export interface IService {",
+        "  run(): string",
+        "}",
+        "export class ServiceImpl implements IService {",
+        "  run() {",
+        "    return 'ok'",
+        "  }",
+        "}",
+      ].join("\n"),
+    )
+    await repo.write(
+      "src/service.test.ts",
+      [
+        "import type { IService } from './service'",
+        "declare function makeFake(): unknown",
+        "export const fakeService = makeFake() as IService",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsAb04, TsAb04.defaultConfig)
+
+    expect(out.pairs[0]?.hasTestSubstitute).toBe(false)
+    expect(out.flaggedPairs).toHaveLength(1)
+  })
+
   test("multiple implementations are not flagged", async () => {
     await repo.write(
       "src/multi.ts",
