@@ -1631,6 +1631,8 @@ describe("RS-AB-* signals", () => {
         [RsAb04.id]: {
           config: {
             ...RsAb04.defaultConfig,
+            max_custom_derives: 2,
+            max_derive_count: 5,
             top_n_diagnostics: 1,
           },
         },
@@ -1644,11 +1646,13 @@ describe("RS-AB-* signals", () => {
       tier: 1,
       category: "abstraction-bloat",
       kind: "legibility",
-      cacheVersion: "derive-density-config-applicability-diagnostics-cfg-test-gating-v2",
+      cacheVersion: "derive-density-config-applicability-diagnostics-cfg-test-gating-thresholds-v3",
       inputs: [],
     })
     expect(decoded).toEqual({
       exclude_globs: ["**/target/**", "**/tests/**", "**/examples/**", "**/benches/**"],
+      max_custom_derives: 1,
+      max_derive_count: 4,
       top_n_diagnostics: 10,
     })
     expect(registered?.id).toBe(RsAb04.id)
@@ -1661,6 +1665,20 @@ describe("RS-AB-* signals", () => {
         path: "config.exclude_globs",
         affectsScore: true,
         scoreRole: "evidence",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.max_custom_derives",
+        affectsScore: true,
+        scoreRole: "threshold",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.max_derive_count",
+        affectsScore: true,
+        scoreRole: "threshold",
       }),
     )
     expect(factorLedger?.entries).toContainEqual(
@@ -1704,6 +1722,8 @@ describe("RS-AB-* signals", () => {
       expect(out.analyzedSourceFileCount).toBe(1)
       expect(out.trackedTypeCount).toBe(3)
       expect(out.deriveBearingTypeCount).toBe(2)
+      expect(out.maxCustomDerives).toBe(1)
+      expect(out.maxDeriveCount).toBe(4)
       expect(model?.deriveCount).toBe(4)
       expect(model?.customDerives).toEqual(["Serialize", "Deserialize"])
       expect(plain).toMatchObject({
@@ -1716,20 +1736,81 @@ describe("RS-AB-* signals", () => {
       expect(RsAb04.score(out)).toBeCloseTo(2 / 3)
       expect(diagnostics).toMatchObject([
         {
-          severity: "info",
-          message: "Model derives 4 macros (2 custom)",
+          severity: "warn",
+          message: "Model derives 2 custom macros",
           location: { file: expect.stringMatching(/src\/lib\.rs$/), line: 2 },
           data: {
             module: "derive-fixture::crate",
             deriveCount: 4,
             standardDerives: ["Clone", "Debug"],
             customDerives: ["Serialize", "Deserialize"],
+            maxCustomDerives: 1,
+            maxDeriveCount: 4,
+            thresholdsExceeded: ["custom_derives"],
             analysisMode: "attribute-attached-derive-count",
           },
         },
+      ])
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-AB-04 scores total derive and custom derive pressure", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-ab04-score-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "derive-score"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub struct Clean;",
+        "#[derive(Clone, Debug, Default, Eq, PartialEq)]",
+        "pub struct TotalHeavy;",
+        "#[derive(Clone, Serialize, Deserialize)]",
+        "pub struct CustomHeavy;",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const pressured = await runSignalCompute(
+        RsAb04,
+        repo,
+        { ...RsAb04.defaultConfig, max_custom_derives: 1, max_derive_count: 4 },
+      )
+      const relaxed = await runSignalCompute(
+        RsAb04,
+        repo,
+        { ...RsAb04.defaultConfig, max_custom_derives: 3, max_derive_count: 8 },
+      )
+      const diagnostics = RsAb04.diagnose(pressured)
+
+      expect(pressured.overThreshold.map((entry) => entry.name)).toEqual([
+        "TotalHeavy",
+        "CustomHeavy",
+      ])
+      expect(RsAb04.score(pressured)).toBeCloseTo(1 / 3)
+      expect(relaxed.overThreshold).toEqual([])
+      expect(RsAb04.score(relaxed)).toBe(1)
+      expect(diagnostics).toMatchObject([
         {
-          severity: "warn",
-          message: "Choice derives 1 macros (0 custom)",
+          message: "TotalHeavy derives 5 macros",
+          data: {
+            deriveCount: 5,
+            customDerives: [],
+            thresholdsExceeded: ["derive_count"],
+          },
+        },
+        {
+          message: "CustomHeavy derives 2 custom macros",
+          data: {
+            deriveCount: 3,
+            customDerives: ["Serialize", "Deserialize"],
+            thresholdsExceeded: ["custom_derives"],
+          },
         },
       ])
     } finally {
@@ -1796,12 +1877,22 @@ describe("RS-AB-* signals", () => {
       const capped = await runSignalCompute(
         RsAb04,
         derive,
-        { ...RsAb04.defaultConfig, top_n_diagnostics: 1.8 },
+        {
+          ...RsAb04.defaultConfig,
+          max_custom_derives: 0.8,
+          max_derive_count: 3.8,
+          top_n_diagnostics: 1.8,
+        },
       )
       const hidden = await runSignalCompute(
         RsAb04,
         derive,
-        { ...RsAb04.defaultConfig, top_n_diagnostics: Number.NaN },
+        {
+          ...RsAb04.defaultConfig,
+          max_custom_derives: Number.NaN,
+          max_derive_count: Number.NaN,
+          top_n_diagnostics: Number.NaN,
+        },
       )
       const missingOut = await runSignalCompute(RsAb04, missing, RsAb04.defaultConfig)
       const noDeriveOut = await runSignalCompute(RsAb04, noDerive, RsAb04.defaultConfig)
@@ -1811,8 +1902,12 @@ describe("RS-AB-* signals", () => {
         { ...RsAb04.defaultConfig, exclude_globs: ["**/*.rs"] },
       )
 
+      expect(capped.maxCustomDerives).toBe(0)
+      expect(capped.maxDeriveCount).toBe(3)
       expect(capped.diagnosticLimit).toBe(1)
       expect(RsAb04.diagnose(capped)).toHaveLength(1)
+      expect(hidden.maxCustomDerives).toBe(1)
+      expect(hidden.maxDeriveCount).toBe(4)
       expect(hidden.diagnosticLimit).toBe(0)
       expect(RsAb04.diagnose(hidden)).toHaveLength(0)
 

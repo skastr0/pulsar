@@ -25,6 +25,8 @@ import { isExcluded } from "./shared-globs.js"
 
 const RsAb04Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
+  max_custom_derives: Schema.Number,
+  max_derive_count: Schema.Number,
   top_n_diagnostics: Schema.Number,
 })
 type RsAb04Config = typeof RsAb04Config.Type
@@ -41,15 +43,20 @@ interface DeriveDensityEntry {
 
 interface RsAb04Output {
   readonly types: ReadonlyArray<DeriveDensityEntry>
+  readonly overThreshold: ReadonlyArray<DeriveDensityEntry>
   readonly distribution: DistributionalSummary
   readonly sourceFileCount: number
   readonly analyzedSourceFileCount: number
   readonly trackedTypeCount: number
   readonly deriveBearingTypeCount: number
+  readonly maxCustomDerives: number
+  readonly maxDeriveCount: number
   readonly diagnosticLimit: number
   readonly analysisMode: "attribute-attached-derive-count"
 }
 
+const DEFAULT_MAX_CUSTOM_DERIVES = 1
+const DEFAULT_MAX_DERIVE_COUNT = 4
 const DEFAULT_TOP_N_DIAGNOSTICS = 10
 
 const STANDARD_DERIVES = new Set([
@@ -73,6 +80,20 @@ const RsAb04FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
     defaultValue: [...DEFAULT_RUST_EXCLUDE_GLOBS],
   },
   {
+    path: "config.max_custom_derives",
+    title: "Config max custom derives",
+    valueKind: "number",
+    scoreRole: "threshold",
+    defaultValue: DEFAULT_MAX_CUSTOM_DERIVES,
+  },
+  {
+    path: "config.max_derive_count",
+    title: "Config max derive count",
+    valueKind: "number",
+    scoreRole: "threshold",
+    defaultValue: DEFAULT_MAX_DERIVE_COUNT,
+  },
+  {
     path: "config.top_n_diagnostics",
     title: "Config top n diagnostics",
     valueKind: "number",
@@ -88,11 +109,13 @@ export const RsAb04: Signal<RsAb04Config, RsAb04Output, RustProjectTag> = {
   tier: 1,
   category: "abstraction-bloat",
   kind: "legibility",
-  cacheVersion: "derive-density-config-applicability-diagnostics-cfg-test-gating-v2",
+  cacheVersion: "derive-density-config-applicability-diagnostics-cfg-test-gating-thresholds-v3",
   configSchema: RsAb04Config,
   factorDefinitions: RsAb04FactorDefinitions,
   defaultConfig: {
     exclude_globs: [...DEFAULT_RUST_EXCLUDE_GLOBS],
+    max_custom_derives: DEFAULT_MAX_CUSTOM_DERIVES,
+    max_derive_count: DEFAULT_MAX_DERIVE_COUNT,
     top_n_diagnostics: DEFAULT_TOP_N_DIAGNOSTICS,
   },
   inputs: [],
@@ -128,11 +151,16 @@ export const RsAb04: Signal<RsAb04Config, RsAb04Output, RustProjectTag> = {
           entries.sort((left, right) => right.deriveCount - left.deriveCount || left.file.localeCompare(right.file))
           return {
             types: entries,
+            overThreshold: entries.filter((entry) =>
+              exceedsThresholds(entry, normalizedConfig).length > 0,
+            ),
             distribution: summarize(entries.map((entry) => entry.deriveCount)),
             sourceFileCount: project.sourceFiles.length,
             analyzedSourceFileCount: analyzedSourceFiles.length,
             trackedTypeCount: entries.length,
             deriveBearingTypeCount: entries.filter((entry) => entry.deriveCount > 0).length,
+            maxCustomDerives: normalizedConfig.max_custom_derives,
+            maxDeriveCount: normalizedConfig.max_derive_count,
             diagnosticLimit: normalizedConfig.top_n_diagnostics,
             analysisMode: "attribute-attached-derive-count",
           }
@@ -143,8 +171,7 @@ export const RsAb04: Signal<RsAb04Config, RsAb04Output, RustProjectTag> = {
     }),
   score: (out) => {
     if (out.types.length === 0) return 1
-    const customHeavy = out.types.filter((entry) => entry.customDerives.length >= 2).length
-    return Math.max(0, 1 - customHeavy / out.types.length)
+    return Math.max(0, 1 - out.overThreshold.length / out.types.length)
   },
   diagnose: (out): ReadonlyArray<Diagnostic> => {
     if (out.sourceFileCount === 0) {
@@ -160,15 +187,18 @@ export const RsAb04: Signal<RsAb04Config, RsAb04Output, RustProjectTag> = {
         },
       }].slice(0, out.diagnosticLimit)
     }
-    return out.types.filter((entry) => entry.deriveCount > 0).slice(0, out.diagnosticLimit).map((entry) => ({
-      severity: entry.customDerives.length > 0 ? ("info" as const) : ("warn" as const),
-      message: `${entry.name} derives ${entry.deriveCount} macros (${entry.customDerives.length} custom)`,
+    return out.overThreshold.slice(0, out.diagnosticLimit).map((entry) => ({
+      severity: "warn" as const,
+      message: diagnosticMessage(entry, out),
       location: { file: entry.file, line: entry.line },
       data: {
         module: entry.module,
         deriveCount: entry.deriveCount,
         standardDerives: entry.standardDerives,
         customDerives: entry.customDerives,
+        maxCustomDerives: out.maxCustomDerives,
+        maxDeriveCount: out.maxDeriveCount,
+        thresholdsExceeded: thresholdsExceeded(entry, out),
         analysisMode: out.analysisMode,
       },
     }))
@@ -189,6 +219,12 @@ type NormalizedRsAb04Config = RsAb04Config
 
 const normalizeRsAb04Config = (config: RsAb04Config): NormalizedRsAb04Config => ({
   exclude_globs: config.exclude_globs,
+  max_custom_derives: Number.isFinite(config.max_custom_derives)
+    ? Math.max(0, Math.floor(config.max_custom_derives))
+    : DEFAULT_MAX_CUSTOM_DERIVES,
+  max_derive_count: Number.isFinite(config.max_derive_count)
+    ? Math.max(0, Math.floor(config.max_derive_count))
+    : DEFAULT_MAX_DERIVE_COUNT,
   top_n_diagnostics: Number.isFinite(config.top_n_diagnostics)
     ? Math.max(0, Math.floor(config.top_n_diagnostics))
     : 0,
@@ -203,6 +239,39 @@ const makeRsAb04FactorLedger = (): SignalFactorLedger =>
       }),
     ),
   )
+
+const exceedsThresholds = (
+  entry: DeriveDensityEntry,
+  config: Pick<NormalizedRsAb04Config, "max_custom_derives" | "max_derive_count">,
+): ReadonlyArray<"derive_count" | "custom_derives"> => {
+  const exceeded: Array<"derive_count" | "custom_derives"> = []
+  if (entry.deriveCount > config.max_derive_count) exceeded.push("derive_count")
+  if (entry.customDerives.length > config.max_custom_derives) exceeded.push("custom_derives")
+  return exceeded
+}
+
+const thresholdsExceeded = (
+  entry: DeriveDensityEntry,
+  out: Pick<RsAb04Output, "maxCustomDerives" | "maxDeriveCount">,
+): ReadonlyArray<"derive_count" | "custom_derives"> =>
+  exceedsThresholds(entry, {
+    max_custom_derives: out.maxCustomDerives,
+    max_derive_count: out.maxDeriveCount,
+  })
+
+const diagnosticMessage = (
+  entry: DeriveDensityEntry,
+  out: Pick<RsAb04Output, "maxCustomDerives" | "maxDeriveCount">,
+): string => {
+  const exceeded = thresholdsExceeded(entry, out)
+  if (exceeded.includes("derive_count") && exceeded.includes("custom_derives")) {
+    return `${entry.name} derives ${entry.deriveCount} macros with ${entry.customDerives.length} custom`
+  }
+  if (exceeded.includes("custom_derives")) {
+    return `${entry.name} derives ${entry.customDerives.length} custom macros`
+  }
+  return `${entry.name} derives ${entry.deriveCount} macros`
+}
 
 const extractDerives = (attribute: { readonly text: string }): ReadonlyArray<string> => {
   const match = /#\s*\[\s*derive\s*\(([^\)]*)\)\s*\]/.exec(attribute.text)
