@@ -126,15 +126,25 @@ const measureHeritageType = (
   typeNode: ExpressionWithTypeArguments,
   context: WalkContext,
 ): DepthResult => {
-  const declaration = context.localAliases.get(typeNode.getExpression().getText())
-  if (declaration !== undefined) {
-    return measureAliasDeclaration(declaration, context)
+  const aliasDeclaration = resolveAliasDeclaration(typeNode, context)
+  if (aliasDeclaration !== undefined) {
+    return measureAliasDeclaration(aliasDeclaration, context)
   }
-  return deepestResult(
-    typeNode
-      .getTypeArguments()
-      .map((typeArg: TypeNode) => measureTypeNode(typeArg, stepContext(context))),
-  )
+
+  const heritageDeclaration = resolveHeritageDeclaration(typeNode)
+  const typeArgumentResults = typeNode
+    .getTypeArguments()
+    .map((typeArg: TypeNode) => measureTypeNode(typeArg, stepContext(context)))
+  if (heritageDeclaration !== undefined) {
+    return layerResult(
+      heritageDeclaration.getName() ?? typeNode.getExpression().getText(),
+      [
+        measureDeclaration(heritageDeclaration, stepContext(context)),
+        ...typeArgumentResults,
+      ],
+    )
+  }
+  return deepestResult(typeArgumentResults)
 }
 
 const measureTypeNode = (node: TypeNode, context: WalkContext): DepthResult => {
@@ -238,6 +248,14 @@ const resolveAliasDeclaration = (
   if (localAlias !== undefined) return localAlias
   return resolveReferenceLikeDeclarations(node).find(Node.isTypeAliasDeclaration)
 }
+
+const resolveHeritageDeclaration = (
+  node: ExpressionWithTypeArguments,
+): InterfaceDeclaration | ClassDeclaration | undefined =>
+  resolveReferenceLikeDeclarations(node).find(
+    (declaration): declaration is InterfaceDeclaration | ClassDeclaration =>
+      Node.isInterfaceDeclaration(declaration) || Node.isClassDeclaration(declaration),
+  )
 
 const layerResult = (label: string, results: ReadonlyArray<DepthResult>): DepthResult => {
   const deepest = deepestResult(results)

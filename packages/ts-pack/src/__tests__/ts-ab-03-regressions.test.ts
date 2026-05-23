@@ -75,4 +75,26 @@ describe("TS-AB-03 type indirection regressions", () => {
     expect(viaId?.depth).toBe(4)
     expect(viaId?.chain).toEqual(["ViaId", "Id", "Deep2", "Deep1"])
   })
+
+  test("direct interface and class heritage contributes indirection depth", async () => {
+    await repo.write(
+      "src/heritage-direct.ts",
+      [
+        "export interface Root { readonly id: string }",
+        "export interface Base extends Root { readonly label: string }",
+        "export interface Child extends Base { readonly name: string }",
+        "export class BaseClass {}",
+        "export class ChildClass extends BaseClass {}",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsAb03, TsAb03.defaultConfig)
+    const byName = new Map(out.declarations.map((entry) => [entry.name, entry]))
+
+    expect(byName.get("Child")?.depth).toBe(2)
+    expect(byName.get("Child")?.chain).toEqual(["Base", "Root"])
+    expect(byName.get("ChildClass")?.depth).toBe(1)
+    expect(byName.get("ChildClass")?.chain).toEqual(["BaseClass"])
+  })
 })
