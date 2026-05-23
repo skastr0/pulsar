@@ -14,13 +14,21 @@ import type {
 } from "@skastr0/pulsar-shared-signals"
 import type { TsLd01Output } from "./ts-ld-01-complexity.js"
 
-interface HotspotConfig {
+export interface HotspotConfig {
   readonly top_n: number
   readonly min_churn: number
   readonly min_complexity: number
   readonly threshold_softness: number
   readonly peer_percentile_floor: number
 }
+
+export const TS_RP_01_DEFAULT_CONFIG = {
+  top_n: 10,
+  min_churn: 2,
+  min_complexity: 5,
+  threshold_softness: 0.5,
+  peer_percentile_floor: 0.5,
+} satisfies HotspotConfig
 
 export type Quadrant = "top-right" | "top-left" | "bottom-right" | "bottom-left"
 
@@ -178,9 +186,10 @@ export const TS_RP_01_COMPOSITE_INPUTS = [
 ] satisfies ReadonlyArray<CompositeInputSpec>
 
 export const computeHotspotOutput = (
-  config: HotspotConfig,
+  rawConfig: HotspotConfig,
   inputs: ReadonlyMap<string, unknown>,
 ): HotspotOutput => {
+  const config = normalizeHotspotConfig(rawConfig)
   const resolution = resolveCompositeInputs(TS_RP_01_COMPOSITE_INPUTS, inputs)
   const { complexity, churn, weightedChurn, ownership, coverage, cochange } =
     resolveHotspotInputs(resolution)
@@ -193,9 +202,26 @@ export const computeHotspotOutput = (
   }
 
   const richFacts = buildRichFactIndexes({ weightedChurn, ownership, coverage, cochange })
-  const files = buildHotspotCandidates(complexity, churn, config, richFacts)
+  const baseFiles = buildHotspotCandidates(complexity, churn, config, richFacts)
   const riskModel =
-    richFacts.hasRiskFacts ? "risk-hotspot-v2" as const : "legacy-churn-complexity" as const
+    baseFiles.some(hasCandidateRiskFacts)
+      ? "risk-hotspot-v2" as const
+      : "legacy-churn-complexity" as const
+  const files =
+    riskModel === "risk-hotspot-v2"
+      ? baseFiles.map((entry) => ({
+        ...entry,
+        riskFactors: riskFactorsFor({
+          churn: entry.churn,
+          complexity: entry.complexity,
+          config,
+          ...(entry.weightedChurn !== undefined ? { weightedChurn: entry.weightedChurn } : {}),
+          ...(entry.ownershipRisk !== undefined ? { ownershipRisk: entry.ownershipRisk } : {}),
+          ...(entry.coverageGap !== undefined ? { coverageGap: entry.coverageGap } : {}),
+          ...(entry.cochangeRisk !== undefined ? { cochangeRisk: entry.cochangeRisk } : {}),
+        }),
+      }))
+      : baseFiles
   const legacyEntries = files.filter((entry) =>
     entry.churn >= config.min_churn && entry.complexity >= config.min_complexity,
   )
@@ -285,17 +311,6 @@ const buildHotspotCandidates = (
     const ownershipRisk = facts.ownershipRiskByFile.get(file)
     const coverageGap = facts.coverageGapByFile.get(file)
     const cochangeRisk = facts.cochangeRiskByFile.get(file)
-    const riskFactors = facts.hasRiskFacts
-      ? riskFactorsFor({
-        churn: c,
-        complexity: cplx,
-        config,
-        ...(weightedChurn !== undefined ? { weightedChurn } : {}),
-        ...(ownershipRisk !== undefined ? { ownershipRisk } : {}),
-        ...(coverageGap !== undefined ? { coverageGap } : {}),
-        ...(cochangeRisk !== undefined ? { cochangeRisk } : {}),
-      })
-      : undefined
     const thresholdWeight =
       softGate(c, config.min_churn, config.threshold_softness) *
       softGate(cplx, config.min_complexity, config.threshold_softness)
@@ -308,11 +323,16 @@ const buildHotspotCandidates = (
       ...(ownershipRisk !== undefined ? { ownershipRisk } : {}),
       ...(coverageGap !== undefined ? { coverageGap } : {}),
       ...(cochangeRisk !== undefined ? { cochangeRisk } : {}),
-      ...(riskFactors !== undefined ? { riskFactors } : {}),
     })
   }
   return files
 }
+
+const hasCandidateRiskFacts = (entry: HotspotCandidate): boolean =>
+  entry.weightedChurn !== undefined ||
+  entry.ownershipRisk !== undefined ||
+  entry.coverageGap !== undefined ||
+  entry.cochangeRisk !== undefined
 
 const assembleHotspotOutput = (
   config: HotspotConfig,
@@ -360,10 +380,14 @@ export const scoreHotspotOutput = (
     return Math.max(0, 1 - Math.min(1, out.riskPressure))
   }
   if (out.legacyFilesConsidered === 0 && out.softFilesConsidered === 0) return 1
+  const legacyPressure = Math.min(
+    1,
+    Math.max(out.legacyTopRightShare * 1.5, out.softTopRightPressure),
+  )
   const legacyScore =
     out.legacyFilesConsidered === 0
       ? 1
-      : Math.max(0, 1 - out.legacyTopRightShare * 1.5)
+      : Math.max(0, 1 - legacyPressure)
   const stabilizedScore =
     out.softFilesConsidered === 0
       ? legacyScore
@@ -414,6 +438,7 @@ const classifyQuadrant = (
 
 const softGate = (value: number, minimum: number, softness: number): number => {
   if (minimum <= 0) return value > 0 ? 1 : 0
+  if (softness <= 0) return value >= minimum ? 1 : 0
   const clampedSoftness = Math.max(0, Math.min(0.99, softness))
   const lower = Math.max(0, minimum * (1 - clampedSoftness))
   const upper = Math.max(lower + Number.EPSILON, minimum * (1 + clampedSoftness))
@@ -492,7 +517,7 @@ const summarizeHotspots = (
     rank: 0,
   }))
 
-  scored.sort((left, right) => right.hotspotScore - left.hotspotScore)
+  scored.sort(compareScoredHotspots)
   const ranked = scored.map((hotspot, index) => ({ ...hotspot, rank: index + 1 }))
   const topRight = ranked.filter((hotspot) => hotspot.quadrant === "top-right").length
 
@@ -627,14 +652,14 @@ const normalizeCoverageInput = (input: SharedCov01CoverageFactsOutput): number =
 const normalizeCochangeInput = (input: SharedCochange01Output): number =>
   clamp01(Math.max(0, ...input.pairs.map((pair) => pair.confidence)))
 
-const clamp01 = (value: number): number => Math.max(0, Math.min(1, value))
+const clamp01 = (value: number): number =>
+  Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0
 
 interface RichFactIndexes {
   readonly weightedChurnByFile: ReadonlyMap<string, { readonly weightedChurn: number }>
   readonly ownershipRiskByFile: ReadonlyMap<string, number>
   readonly coverageGapByFile: ReadonlyMap<string, number>
   readonly cochangeRiskByFile: ReadonlyMap<string, number>
-  readonly hasRiskFacts: boolean
   readonly states: HotspotInputFactStates
 }
 
@@ -656,11 +681,6 @@ const buildRichFactIndexes = (
     ownershipRiskByFile,
     coverageGapByFile,
     cochangeRiskByFile,
-    hasRiskFacts:
-      weightedChurnByFile.size > 0 ||
-      ownershipRiskByFile.size > 0 ||
-      coverageGapByFile.size > 0 ||
-      cochangeRiskByFile.size > 0,
     states,
   }
 }
@@ -776,4 +796,75 @@ const riskPressureFor = (hotspots: ReadonlyArray<Hotspot>): number => {
   if (risky.length === 0) return 0
   const top = risky.slice(0, Math.min(10, risky.length))
   return top.reduce((sum, hotspot) => sum + hotspot.hotspotScore, 0) / top.length
+}
+
+const normalizeHotspotConfig = (config: HotspotConfig): HotspotConfig => ({
+  top_n: normalizeDiagnosticLimit(config.top_n),
+  min_churn: normalizeNonNegativeFinite(
+    config.min_churn,
+    TS_RP_01_DEFAULT_CONFIG.min_churn,
+  ),
+  min_complexity: normalizeNonNegativeFinite(
+    config.min_complexity,
+    TS_RP_01_DEFAULT_CONFIG.min_complexity,
+  ),
+  threshold_softness: normalizeFiniteRange(
+    config.threshold_softness,
+    TS_RP_01_DEFAULT_CONFIG.threshold_softness,
+    0,
+    0.99,
+  ),
+  peer_percentile_floor: normalizeFiniteRange(
+    config.peer_percentile_floor,
+    TS_RP_01_DEFAULT_CONFIG.peer_percentile_floor,
+    0,
+    0.95,
+  ),
+})
+
+const normalizeDiagnosticLimit = (value: number): number =>
+  Number.isFinite(value) && value > 0 ? Math.floor(value) : 0
+
+const normalizeNonNegativeFinite = (value: number, fallback: number): number =>
+  Number.isFinite(value) ? Math.max(0, value) : fallback
+
+const normalizeFiniteRange = (
+  value: number,
+  fallback: number,
+  min: number,
+  max: number,
+): number =>
+  Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : fallback
+
+const compareScoredHotspots = (
+  left: {
+    readonly file: string
+    readonly churn: number
+    readonly complexity: number
+    readonly hotspotScore: number
+  },
+  right: {
+    readonly file: string
+    readonly churn: number
+    readonly complexity: number
+    readonly hotspotScore: number
+  },
+): number => {
+  const scoreDelta = compareNumberDesc(left.hotspotScore, right.hotspotScore)
+  if (scoreDelta !== 0) return scoreDelta
+  const churnDelta = compareNumberDesc(left.churn, right.churn)
+  if (churnDelta !== 0) return churnDelta
+  const complexityDelta = compareNumberDesc(left.complexity, right.complexity)
+  if (complexityDelta !== 0) return complexityDelta
+  return compareStringAsc(left.file, right.file)
+}
+
+const compareNumberDesc = (left: number, right: number): number => {
+  if (left === right) return 0
+  return right > left ? 1 : -1
+}
+
+const compareStringAsc = (left: string, right: string): number => {
+  if (left === right) return 0
+  return left < right ? -1 : 1
 }

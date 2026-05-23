@@ -6,6 +6,7 @@ import {
 import { Effect, Schema } from "effect"
 import {
   TS_RP_01_COMPOSITE_INPUTS,
+  TS_RP_01_DEFAULT_CONFIG,
   computeHotspotOutput,
   scoreHotspotOutput,
   type Hotspot,
@@ -40,23 +41,19 @@ export const TsRp01: Signal<TsRp01Config, TsRp01Output, never> = {
   tier: 1.5,
   category: "review-pain",
   kind: "compound",
-  cacheVersion: "risk-hotspot-v2-composite-policy-v1",
+  cacheVersion: "risk-hotspot-v2-grounded-config-ranking-v1",
   configSchema: TsRp01Config,
-  defaultConfig: {
-    top_n: 10,
-    min_churn: 2,
-    min_complexity: 5,
-    threshold_softness: 0.5,
-    peer_percentile_floor: 0.5,
-  },
+  defaultConfig: TS_RP_01_DEFAULT_CONFIG,
   inputs: compositeSignalInputs(TS_RP_01_COMPOSITE_INPUTS),
   compute: (config, inputs) =>
     Effect.sync(() => computeHotspotOutput(config, inputs)),
   score: scoreHotspotOutput,
   diagnose: (out): ReadonlyArray<Diagnostic> => {
+    const diagnosticLimit = normalizeDiagnosticLimit(out.diagnosticLimit ?? 10)
     const top = out.hotspots
-      .slice(0, out.diagnosticLimit ?? 10)
+      .slice()
       .sort(compareDiagnosticHotspots)
+      .slice(0, diagnosticLimit)
     return top.map((h, index) => ({
       severity: h.quadrant === "top-right" ? ("warn" as const) : ("info" as const),
       message:
@@ -107,3 +104,6 @@ const compareDiagnosticHotspots = (left: Hotspot, right: Hotspot): number => {
 
 const hotspotSeverityRank = (hotspot: Hotspot): number =>
   hotspot.quadrant === "top-right" ? 0 : 1
+
+const normalizeDiagnosticLimit = (value: number): number =>
+  Number.isFinite(value) && value > 0 ? Math.floor(value) : 0
