@@ -29,7 +29,7 @@ export const listAddedLinesByFileInMatureWindow = async (
     "--format=__commit__%x00%cI",
     "--unified=0",
     "--no-ext-diff",
-    "--find-renames=100%",
+    "--find-renames",
     "-p",
     ...(pathspecs.length > 0 ? ["--", ...pathspecs] : []),
   ])

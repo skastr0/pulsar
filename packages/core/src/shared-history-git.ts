@@ -2,6 +2,7 @@ import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import {
   isIncludedHistoryPath,
+  sourcePathspecs,
   type SharedHistoryFilterConfig,
 } from "./shared-history-filter.js"
 
@@ -28,7 +29,11 @@ export const countCommitsInWindow = async (
   repoPath: string,
   sinceIso: string,
   untilIso: string,
+  config?: SharedHistoryFilterConfig,
 ): Promise<number> => {
+  const pathspecs = config === undefined ? [] : sourcePathspecs(config.includeExtensions)
+  if (config !== undefined && pathspecs.length === 0) return 0
+
   const raw = await execGit(repoPath, [
     "rev-list",
     "--count",
@@ -37,6 +42,7 @@ export const countCommitsInWindow = async (
     `--until=${untilIso}`,
     "HEAD",
     "--",
+    ...pathspecs,
   ])
   const count = Number.parseInt(raw.trim(), 10)
   return Number.isFinite(count) ? count : 0

@@ -5,7 +5,6 @@ import {
   countCommitsInWindow,
   listAddedLineCountInWindow,
   listAddedLinesByFileInMatureWindow,
-  listTrackedFiles,
   readFileAtCommit,
   readHeadDate,
   type SharedHistoryFilterConfig,
@@ -35,11 +34,17 @@ export const computeChurnRateOutput = async (
   ctx: SignalContext,
   config: Shared03ChurnRateConfig,
 ): Promise<Shared03ChurnRateOutput> => {
+  if (config.include_extensions.length === 0) {
+    return neutralChurnOutput(
+      config,
+      "SHARED-03 has no included source extensions; returning a neutral score",
+    )
+  }
+
   const window = await resolveChurnHistoryWindow(ctx, config)
   const skipped = await skippedChurnOutput(ctx, config, window)
   if (skipped !== undefined) return skipped
 
-  const trackedFiles = new Set(await listTrackedFiles(ctx.worktreePath, window.historyFilter))
   const introducedByFile = await listAddedLinesByFileInMatureWindow(
     ctx.worktreePath,
     window.introductionStart.toISOString(),
@@ -47,8 +52,8 @@ export const computeChurnRateOutput = async (
     window.headDate.toISOString(),
     window.historyFilter,
   )
-  const fileRates = await collectFileChurnRates(ctx, config, trackedFiles, introducedByFile)
-  return summarizeChurnRates(fileRates, config.window_days)
+  const fileRates = await collectFileChurnRates(ctx, config, introducedByFile)
+  return summarizeChurnRates(fileRates, config)
 }
 
 const resolveChurnHistoryWindow = async (
@@ -78,10 +83,11 @@ const skippedChurnOutput = async (
     ctx.worktreePath,
     window.introductionStart.toISOString(),
     window.maturityCutoff.toISOString(),
+    window.historyFilter,
   )
   if (matureCommitCount > config.max_mature_commits) {
     return neutralChurnOutput(
-      config.window_days,
+      config,
       `mature history window has ${matureCommitCount} commits; skipping expensive line-survival matching`,
     )
   }
@@ -94,7 +100,7 @@ const skippedChurnOutput = async (
   )
   return matureAddedLineCount > 50_000
     ? neutralChurnOutput(
-        config.window_days,
+        config,
         `mature history window has ${matureAddedLineCount} added lines; skipping expensive line-survival matching`,
         matureAddedLineCount,
       )
@@ -102,7 +108,7 @@ const skippedChurnOutput = async (
 }
 
 const neutralChurnOutput = (
-  windowDays: number,
+  config: Shared03ChurnRateConfig,
   skippedReason: string,
   introducedLineCount = 0,
 ): Shared03ChurnRateOutput => ({
@@ -110,7 +116,8 @@ const neutralChurnOutput = (
   introducedLineCount,
   churnRate: 0,
   byFile: new Map(),
-  windowDays,
+  windowDays: config.window_days,
+  topDiagnostics: config.top_n_diagnostics,
   insufficientHistory: true,
   skippedReason,
 })
@@ -118,14 +125,10 @@ const neutralChurnOutput = (
 const collectFileChurnRates = async (
   ctx: SignalContext,
   config: Shared03ChurnRateConfig,
-  trackedFiles: ReadonlySet<string>,
   introducedByFile: ReadonlyMap<string, ReadonlyArray<string>>,
 ): Promise<ReadonlyArray<FileChurnRate>> =>
   mapWithConcurrency(
-    [...introducedByFile.entries()].filter(
-      ([relativePath, introducedLines]) =>
-        trackedFiles.has(relativePath) && introducedLines.length > 0,
-    ),
+    [...introducedByFile.entries()].filter(([, introducedLines]) => introducedLines.length > 0),
     8,
     ([relativePath, introducedLines]) =>
       computeFileChurnRate(ctx, config, relativePath, introducedLines),
@@ -159,7 +162,7 @@ const computeFileChurnRate = async (
 
 const summarizeChurnRates = (
   fileRates: ReadonlyArray<FileChurnRate>,
-  windowDays: number,
+  config: Shared03ChurnRateConfig,
 ): Shared03ChurnRateOutput => {
   const byFile = new Map<string, Shared03FileRate>()
   let introducedLineCount = 0
@@ -182,7 +185,8 @@ const summarizeChurnRates = (
     introducedLineCount,
     churnRate: insufficientHistory ? 0 : churnedLineCount / introducedLineCount,
     byFile,
-    windowDays,
+    windowDays: config.window_days,
+    topDiagnostics: config.top_n_diagnostics,
     insufficientHistory,
   }
 }

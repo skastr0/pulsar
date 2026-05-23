@@ -28,6 +28,7 @@ export const Shared03ChurnRateConfig = Schema.Struct({
   similarity_threshold: Schema.Number,
   include_extensions: Schema.Array(Schema.String),
   exclude_globs: Schema.Array(Schema.String),
+  top_n_diagnostics: Schema.Number,
 })
 export type Shared03ChurnRateConfig = typeof Shared03ChurnRateConfig.Type
 
@@ -43,6 +44,7 @@ export interface Shared03ChurnRateOutput {
   readonly churnRate: number
   readonly byFile: ReadonlyMap<string, Shared03FileRate>
   readonly windowDays: number
+  readonly topDiagnostics: number
   readonly insufficientHistory: boolean
   readonly skippedReason?: string
   readonly effectiveFiles?: ReadonlyArray<Shared03EffectiveFileRate>
@@ -57,6 +59,15 @@ interface Shared03EffectiveFileRate extends Shared03FileRate {
   readonly penaltyWeight: number
   readonly factorPathPrefix: string
   readonly policyDecisions: ReadonlyArray<CalibrationDecision>
+}
+
+const DEFAULT_SHARED_03_CHURN_RATE_CONFIG: Shared03ChurnRateConfig = {
+  window_days: 14,
+  max_mature_commits: 500,
+  similarity_threshold: 0.8,
+  include_extensions: [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".rs"],
+  exclude_globs: [...SHARED_PRODUCTION_EXCLUDE_GLOBS],
+  top_n_diagnostics: 10,
 }
 
 /**
@@ -76,23 +87,19 @@ export const Shared03ChurnRate: Signal<
   tier: 1.5,
   category: "review-pain",
   kind: "legibility",
-  cacheVersion: "applicability-v2-factor-policy",
+  cacheVersion: "applicability-v3-normalized-config-git-context-factor-policy",
+  cacheDependencies: ["git-revision-context"],
   configSchema: Shared03ChurnRateConfig,
-  defaultConfig: {
-    window_days: 14,
-    max_mature_commits: 500,
-    similarity_threshold: 0.8,
-    include_extensions: [".ts", ".tsx", ".js", ".jsx", ".rs"],
-    exclude_globs: [...SHARED_PRODUCTION_EXCLUDE_GLOBS],
-  },
+  defaultConfig: DEFAULT_SHARED_03_CHURN_RATE_CONFIG,
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
       const ctx = yield* SignalContextTag
       const calibration = yield* Effect.serviceOption(CalibrationContextTag)
+      const normalizedConfig = normalizeShared03ChurnRateConfig(config)
 
       const output = yield* Effect.tryPromise({
-        try: () => computeChurnRateOutput(ctx, config),
+        try: () => computeChurnRateOutput(ctx, normalizedConfig),
         catch: (cause) =>
           new SignalComputeError({
             signalId: "SHARED-03-churn-rate",
@@ -139,7 +146,7 @@ export const Shared03ChurnRate: Signal<
           b.introduced - a.introduced ||
           a.file.localeCompare(b.file),
       )
-      .slice(0, 10)
+      .slice(0, out.topDiagnostics)
 
     return noisiestFiles.map((entry) => ({
       severity: entry.severity,
@@ -163,6 +170,48 @@ export const Shared03ChurnRate: Signal<
 }
 
 const formatPercent = (value: number): string => `${Math.round(value * 100)}%`
+
+const normalizeShared03ChurnRateConfig = (
+  config: Shared03ChurnRateConfig,
+): Shared03ChurnRateConfig => ({
+  window_days: normalizePositiveFiniteNumber(
+    config.window_days,
+    DEFAULT_SHARED_03_CHURN_RATE_CONFIG.window_days,
+  ),
+  max_mature_commits: normalizePositiveInteger(
+    config.max_mature_commits,
+    DEFAULT_SHARED_03_CHURN_RATE_CONFIG.max_mature_commits,
+  ),
+  similarity_threshold: normalizeSimilarityThreshold(config.similarity_threshold),
+  include_extensions: stringArrayOrDefault(config.include_extensions, []),
+  exclude_globs: stringArrayOrDefault(
+    config.exclude_globs,
+    DEFAULT_SHARED_03_CHURN_RATE_CONFIG.exclude_globs,
+  ),
+  top_n_diagnostics: normalizeDiagnosticLimit(config.top_n_diagnostics),
+})
+
+const normalizePositiveFiniteNumber = (value: number, fallback: number): number =>
+  Number.isFinite(value) && value > 0 ? value : fallback
+
+const normalizePositiveInteger = (value: number, fallback: number): number =>
+  Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback
+
+const normalizeSimilarityThreshold = (value: number): number =>
+  Number.isFinite(value) && value > 0 && value <= 1
+    ? value
+    : DEFAULT_SHARED_03_CHURN_RATE_CONFIG.similarity_threshold
+
+const normalizeDiagnosticLimit = (value: number): number =>
+  Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0
+
+const stringArrayOrDefault = (
+  value: ReadonlyArray<string>,
+  fallback: ReadonlyArray<string>,
+): ReadonlyArray<string> =>
+  Array.isArray(value) && value.every((entry) => typeof entry === "string")
+    ? value
+    : fallback
 
 const applyChurnRatePolicy = (
   output: Shared03ChurnRateOutput,

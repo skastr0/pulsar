@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test"
+import { spawnSync } from "node:child_process"
+import { rm } from "node:fs/promises"
 import { join } from "node:path"
 import { Effect, Layer } from "effect"
 import {
@@ -292,6 +294,99 @@ describe("SHARED-03 churn rate", () => {
     }
   }, 120_000)
 
+  test("counts mature files deleted before HEAD as fully churned", async () => {
+    const repo = await createGitTestRepo("pulsar-shared-03-deleted-")
+    try {
+      await repo.write("src/deleted.ts", churnLines("deleted"))
+      await repo.commitAll({
+        message: "introduce deleted file",
+        dateIso: "2024-01-01T00:00:00Z",
+      })
+
+      await rm(join(repo.root, "src/deleted.ts"))
+      await repo.commitAll({
+        message: "delete file",
+        dateIso: "2024-01-05T00:00:00Z",
+      })
+
+      await repo.write("README.md", "noop\n")
+      await repo.commitAll({
+        message: "advance head",
+        dateIso: "2024-01-20T00:00:00Z",
+      })
+
+      const output = await Effect.runPromise(
+        Shared03ChurnRate.compute(Shared03ChurnRate.defaultConfig, new Map()).pipe(
+          Effect.provide(
+            Layer.succeed(SignalContextTag, {
+              gitSha: repo.revParse("HEAD"),
+              worktreePath: repo.root,
+              changedHunks: [],
+            }),
+          ),
+        ) as Effect.Effect<any, any, never>,
+      )
+
+      expect(output.byFile.get(join(repo.root, "src/deleted.ts"))).toEqual({
+        introduced: 3,
+        churned: 3,
+        rate: 1,
+      })
+      expect(output.churnRate).toBe(1)
+      expect(Shared03ChurnRate.score(output)).toBe(0)
+    } finally {
+      await repo.cleanup()
+    }
+  }, 120_000)
+
+  test("remaps mature lines when rename and edit happen in the same commit", async () => {
+    const repo = await createGitTestRepo("pulsar-shared-03-rename-edit-")
+    try {
+      await repo.write("src/original.ts", longChurnLines("rename", 10))
+      await repo.commitAll({
+        message: "introduce original file",
+        dateIso: "2024-01-01T00:00:00Z",
+      })
+
+      runGit(repo.root, ["mv", "src/original.ts", "src/renamed.ts"])
+      await repo.write(
+        "src/renamed.ts",
+        longChurnLines("rename", 9) + "export const replacement = 999\n",
+      )
+      await repo.commitAll({
+        message: "rename and edit",
+        dateIso: "2024-01-05T00:00:00Z",
+      })
+
+      await repo.write("README.md", "noop\n")
+      await repo.commitAll({
+        message: "advance head",
+        dateIso: "2024-01-20T00:00:00Z",
+      })
+
+      const output = await Effect.runPromise(
+        Shared03ChurnRate.compute(Shared03ChurnRate.defaultConfig, new Map()).pipe(
+          Effect.provide(
+            Layer.succeed(SignalContextTag, {
+              gitSha: repo.revParse("HEAD"),
+              worktreePath: repo.root,
+              changedHunks: [],
+            }),
+          ),
+        ) as Effect.Effect<any, any, never>,
+      )
+
+      expect(output.byFile.has(join(repo.root, "src/original.ts"))).toBe(false)
+      expect(output.byFile.get(join(repo.root, "src/renamed.ts"))).toEqual({
+        introduced: 11,
+        churned: 1,
+        rate: 1 / 11,
+      })
+    } finally {
+      await repo.cleanup()
+    }
+  }, 120_000)
+
   test("returns a neutral score when the repo has no mature window yet", async () => {
     const repo = await createGitTestRepo("pulsar-shared-03-insufficient-")
     try {
@@ -371,6 +466,55 @@ describe("SHARED-03 churn rate", () => {
     }
   }, 120_000)
 
+  test("max mature commit cap counts source commits instead of docs-only commits", async () => {
+    const repo = await createGitTestRepo("pulsar-shared-03-source-cap-")
+    try {
+      await repo.write("src/source.ts", churnLines("source"))
+      await repo.commitAll({
+        message: "introduce source lines",
+        dateIso: "2024-01-01T00:00:00Z",
+      })
+
+      for (let index = 0; index < 3; index += 1) {
+        await repo.write("README.md", `docs ${index}\n`)
+        await repo.commitAll({
+          message: `docs ${index}`,
+          dateIso: `2024-01-0${index + 2}T00:00:00Z`,
+        })
+      }
+
+      await repo.write("README.md", "head\n")
+      await repo.commitAll({
+        message: "advance head",
+        dateIso: "2024-01-20T00:00:00Z",
+      })
+
+      const output = await Effect.runPromise(
+        Shared03ChurnRate.compute(
+          { ...Shared03ChurnRate.defaultConfig, max_mature_commits: 1 },
+          new Map(),
+        ).pipe(
+          Effect.provide(
+            Layer.succeed(SignalContextTag, {
+              gitSha: repo.revParse("HEAD"),
+              worktreePath: repo.root,
+              changedHunks: [],
+            }),
+          ),
+        ) as Effect.Effect<any, any, never>,
+      )
+
+      expect(output.insufficientHistory).toBe(false)
+      expect(output.byFile.get(join(repo.root, "src/source.ts"))).toEqual({
+        introduced: 3,
+        churned: 0,
+        rate: 0,
+      })
+    } finally {
+      await repo.cleanup()
+    }
+  }, 120_000)
+
   test("diagnostics rank by churned-line impact and include repo context", () => {
     const root = "/repo"
     const output = {
@@ -378,6 +522,7 @@ describe("SHARED-03 churn rate", () => {
       introducedLineCount: 40,
       churnRate: 0.375,
       windowDays: 14,
+      topDiagnostics: 10,
       insufficientHistory: false,
       byFile: new Map([
         [
@@ -439,3 +584,15 @@ const churnLines = (label: string): string =>
     `export const ${label}C = 3`,
     "",
   ].join("\n")
+
+const longChurnLines = (label: string, count: number): string =>
+  Array.from({ length: count }, (_, index) => `export const ${label}${index} = ${index}`).join(
+    "\n",
+  ) + "\n"
+
+const runGit = (cwd: string, args: ReadonlyArray<string>): void => {
+  const result = spawnSync("git", [...args], { cwd, encoding: "utf8" })
+  if (result.status !== 0) {
+    throw new Error(`git ${args.join(" ")} failed: ${result.stderr || result.stdout}`)
+  }
+}

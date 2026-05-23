@@ -111,7 +111,35 @@ export const SHARED_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "core shared-02-bus-factor.test.ts: project-module bus-factor policy processors can neutralize visible pressure with calibration decisions, rule IDs, factor paths, and module attribution preserved in effective silo entries and factor ledger output.",
     },
   },
-  pendingSignalContract("SHARED-03-churn-rate"),
+  {
+    id: "SHARED-03-churn-rate",
+    status: "verified",
+    requiredEvidence: ["gitContext", "calibration"],
+    evidence: {
+      identity:
+        "shared-03-churn-rate.test.ts: canonical id, alias, title, tier/category/kind, no-input contract, semantic cacheVersion, git-revision cache dependency, pack registration, registry alias lookup, and default config decoding are asserted.",
+      config:
+        "shared-03-churn-rate.test.ts: default window/max-mature-commit/similarity/include/exclude/diagnostic settings are decoded; real compute fixtures prove finite-safe window, max-mature-commit, similarity-threshold, diagnostic-limit handling, empty include-extension behavior, and explicit extension/glob filtering.",
+      positiveFixture:
+        "shared-03-churn-rate.test.ts and core shared-03-churn-rate.test.ts: real git fixtures prove mature-line churn, unchanged-line retention, revert-window churn, deleted-file churn, exact and edited rename handling, dirty worktree exclusion, TypeScript module-extension inclusion, Rust inclusion, source-filtered max-mature-commit sampling, and deterministic equivalent-repo output.",
+      negativeFixture:
+        "shared-03-churn-rate.test.ts: docs-only history, non-production test files, excluded globs, empty include_extensions, and source-less mature windows produce insufficient/no pressure instead of misleading churn findings.",
+      applicability:
+        "shared-03-churn-rate.test.ts and core shared-03-churn-rate.test.ts: source-less or not-yet-mature windows report insufficient_evidence metadata; measured mature churn facts remain applicable with defined metadata semantics.",
+      score:
+        "shared-03-churn-rate.test.ts and core shared-03-churn-rate.test.ts: score bounds and monotonic pressure are asserted by comparing retained mature lines, increasing churned-line pressure, calibrated neutralization, and capped full-pressure churn.",
+      diagnostics:
+        "shared-03-churn-rate.test.ts: diagnose proves insufficient-history informational messages plus ordered churn payloads, diagnostic caps, severity, message format, location, and repo/file rate data.",
+      factorLedger:
+        "shared-03-churn-rate.test.ts and core shared-03-churn-rate.test.ts: registered shared-pack signal emits config.window_days, config.similarity_threshold, and config.include_extensions factor entries; core calibration test proves module-attributed churn_rate.*.penalty_weight factor entries.",
+      cacheSemantics:
+        "shared-03-churn-rate.test.ts and pack.test.ts: SHARED-03 declares git-revision-context and applicability-v3-normalized-config-git-context-factor-policy cacheVersion; wrapped shared-pack cache version preserves the signal cacheVersion after config normalization, TS module-extension semantics, and cache dependency changed.",
+      gitContext:
+        "shared-03-churn-rate.test.ts and core shared-03-churn-rate.test.ts: tests run against real git repositories with authored commit dates, proving HEAD-relative mature windows, revert-window line survival, deleted-file survival failure, source-pathspec commit caps, rename-plus-edit interpretation, dirty worktree isolation, and deterministic repeated history interpretation.",
+      calibration:
+        "core shared-03-churn-rate.test.ts: project-module churn-rate policy processors can neutralize visible pressure with calibration decisions, rule IDs, factor paths, and module attribution preserved in effective file entries and factor ledger output.",
+    },
+  },
   pendingSignalContract("SHARED-05-suppression-governance"),
   pendingSignalContract("SHARED-06-pr-dependency-delta"),
   pendingSignalContract("SHARED-07-machine-feedback-coverage"),
