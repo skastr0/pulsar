@@ -129,6 +129,51 @@ describe("TS-AB-03 (type indirection depth)", () => {
     expect(diagnostics[0]?.message).toContain("→")
   })
 
+  test("diagnostics honor sanitized top_n_diagnostics", async () => {
+    await writeTs(
+      "src/diagnostic-limit.ts",
+      [
+        "type A = string",
+        "export type B = A",
+        "export type C = B",
+        "export type D = C",
+        "",
+      ].join("\n"),
+    )
+
+    const capped = await runCompute({
+      ...TsAb03.defaultConfig,
+      max_depth: 1,
+      top_n_diagnostics: 1.8,
+    })
+    expect(capped.diagnosticLimit).toBe(1)
+    expect(TsAb03.diagnose(capped)).toHaveLength(1)
+
+    const negative = await runCompute({
+      ...TsAb03.defaultConfig,
+      max_depth: 1,
+      top_n_diagnostics: -1,
+    })
+    expect(negative.diagnosticLimit).toBe(0)
+    expect(TsAb03.diagnose(negative)).toEqual([])
+
+    const nan = await runCompute({
+      ...TsAb03.defaultConfig,
+      max_depth: 1,
+      top_n_diagnostics: Number.NaN,
+    })
+    expect(nan.diagnosticLimit).toBe(0)
+    expect(TsAb03.diagnose(nan)).toEqual([])
+
+    const infinite = await runCompute({
+      ...TsAb03.defaultConfig,
+      max_depth: 1,
+      top_n_diagnostics: Number.POSITIVE_INFINITY,
+    })
+    expect(infinite.diagnosticLimit).toBe(0)
+    expect(TsAb03.diagnose(infinite)).toEqual([])
+  })
+
   test("shallow local helper aliases are informational, not warning-level boundary findings", async () => {
     await writeTs(
       "src/local-helper.ts",

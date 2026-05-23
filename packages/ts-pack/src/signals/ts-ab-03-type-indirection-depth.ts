@@ -49,6 +49,7 @@ export const TsAb03: Signal<TsAb03Config, TsAb03Output, TsProjectTag> = {
   tier: 1,
   category: "abstraction-bloat",
   kind: "legibility",
+  cacheVersion: "type-indirection-depth-v1-diagnostic-limit-v1",
   configSchema: TsAb03Config,
   defaultConfig: {
     exclude_globs: [
@@ -149,7 +150,7 @@ export const TsAb03: Signal<TsAb03Config, TsAb03Output, TsProjectTag> = {
             overThreshold: declarations.filter((entry) => entry.depth > config.max_depth),
             maxDepth: config.max_depth,
             traversalCap: config.max_traversal_steps,
-            diagnosticLimit: config.top_n_diagnostics,
+            diagnosticLimit: normalizeDiagnosticLimit(config.top_n_diagnostics),
           }
         },
         catch: (cause) =>
@@ -218,3 +219,6 @@ const compareIndirectionEntries = (
   }
   return left.line - right.line
 }
+
+const normalizeDiagnosticLimit = (limit: number): number =>
+  Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 0
