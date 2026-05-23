@@ -2094,6 +2094,128 @@ export function stubF() { throw new Error("Not implemented") }
     }
   }, 120_000)
 
+  test("single-signal CLI wrapper executes RS-RP-03 with Rust git diff data", async () => {
+    const repoPath = await initRepo([
+      {
+        path: "Cargo.toml",
+        content: [
+          "[workspace]",
+          'members = ["crates/core", "crates/app"]',
+          'resolver = "2"',
+          "",
+        ].join("\n"),
+      },
+      {
+        path: "crates/core/Cargo.toml",
+        content: [
+          "[package]",
+          'name = "cli_core"',
+          'version = "0.1.0"',
+          'edition = "2021"',
+          "",
+        ].join("\n"),
+      },
+      {
+        path: "crates/core/src/lib.rs",
+        content: "pub mod api { pub struct Thing; }\n",
+      },
+      {
+        path: "crates/app/Cargo.toml",
+        content: [
+          "[package]",
+          'name = "cli_app"',
+          'version = "0.1.0"',
+          'edition = "2021"',
+          "",
+          "[dependencies]",
+          'cli_core = { path = "../core" }',
+          "",
+        ].join("\n"),
+      },
+      {
+        path: "crates/app/src/lib.rs",
+        content: "pub fn untouched() {}\n",
+      },
+    ])
+    try {
+      await writeRepoFile(repoPath, "crates/app/src/lib.rs", [
+        "use cli_core::api::Thing;",
+        "pub fn changed(_thing: Thing) {}",
+        "",
+      ].join("\n"))
+
+      const out = runCli(repoPath, ["score", "--signal", "RS-RP-03", "."])
+      expect(out.status).toBe(0)
+      expect(out.stdout).toContain("Signal: RS-RP-03-pr-size")
+      expect(out.stdout).toContain("WARN  PR surface: +")
+      expect(out.stdout).toContain("WARN  New cross-crate Rust import from cli_app to cli_core")
+      expect(out.stdout).toContain("Score:  0.847")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
+  test("single-signal CLI wrapper executes RS-RP-03 with untracked Rust hunk fallback", async () => {
+    const repoPath = await initRepo([
+      {
+        path: "Cargo.toml",
+        content: [
+          "[workspace]",
+          'members = ["crates/core", "crates/app"]',
+          'resolver = "2"',
+          "",
+        ].join("\n"),
+      },
+      {
+        path: "crates/core/Cargo.toml",
+        content: [
+          "[package]",
+          'name = "fallback_core"',
+          'version = "0.1.0"',
+          'edition = "2021"',
+          "",
+        ].join("\n"),
+      },
+      {
+        path: "crates/core/src/lib.rs",
+        content: "pub mod api { pub struct Thing; }\n",
+      },
+      {
+        path: "crates/app/Cargo.toml",
+        content: [
+          "[package]",
+          'name = "fallback_app"',
+          'version = "0.1.0"',
+          'edition = "2021"',
+          "",
+          "[dependencies]",
+          'fallback_core = { path = "../core" }',
+          "",
+        ].join("\n"),
+      },
+      {
+        path: "crates/app/src/lib.rs",
+        content: "pub fn untouched() {}\n",
+      },
+    ])
+    try {
+      await writeRepoFile(repoPath, "crates/app/src/new_module.rs", [
+        "use fallback_core::api::Thing;",
+        "pub fn changed(_thing: Thing) {}",
+        "",
+      ].join("\n"))
+
+      const out = runCli(repoPath, ["score", "--signal", "RS-RP-03", "."])
+      expect(out.status).toBe(0)
+      expect(out.stdout).toContain("Signal: RS-RP-03-pr-size")
+      expect(out.stdout).toContain("WARN  PR surface: +2 / -0 across 1 files")
+      expect(out.stdout).toContain("WARN  New cross-crate Rust import from fallback_app to fallback_core")
+      expect(out.stdout).toContain("Score:  0.848")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
   test("single-signal mode summarizes score-bearing factor audit details", async () => {
     const repoPath = await initRepo([
       {

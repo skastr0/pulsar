@@ -1,4 +1,4 @@
-import { pendingSignalContract, type SignalContract } from "./signal-contract.js"
+import type { SignalContract } from "./signal-contract.js"
 
 export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
   {
@@ -632,5 +632,33 @@ export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "observer-integration.test.ts and CLI score tests: Rust observer integration carries RS-RP-02 compile-time score and diagnostics through the RS pack against a real Cargo fixture with cargo timing HTML, while CLI single-signal mode executes RS-RP-02 against the repository substrate through the source CLI path.",
     },
   },
-  pendingSignalContract("RS-RP-03-pr-size"),
+  {
+    id: "RS-RP-03-pr-size",
+    status: "verified",
+    requiredEvidence: ["gitContext", "integration"],
+    evidence: {
+      identity:
+        "rs-rp-signals.test.ts: canonical id, alias, title, tier/category/kind, empty input contract, semantic cacheVersion, git-revision-context dependency, pack registration, registry alias lookup, default config decoding, factor ledger, score mode, and score denominator are asserted.",
+      config:
+        "rs-rp-signals.test.ts: top_n_diagnostics decodes through the real schema; fractional and NaN diagnostic cap values are normalized through compute output.",
+      positiveFixture:
+        "rs-rp-signals.test.ts: temporary Cargo workspace fixtures exercise real RustProjectLayer, git working-tree diffs, clean-worktree commit ranges, changed-hunk fallback with changed Rust import lines, same-name workspace crate imports, and renamed plus hyphenated dependency aliases that produce new cross-crate edge facts.",
+      negativeFixture:
+        "rs-rp-signals.test.ts: missing git and changed-hunk evidence, commit ranges with no Rust diff, non-Rust changed hunks, and clean no-edge changed Rust hunks avoid false cross-crate or Rust PR-size pressure.",
+      applicability:
+        "rs-rp-signals.test.ts: missing diff evidence emits insufficient_evidence metadata, non-Rust changed-hunk fallback emits not_applicable metadata, and measured Rust diff or Rust changed-hunk evidence remains applicable.",
+      score:
+        "rs-rp-signals.test.ts: score is asserted as bounded PR-size and cross-crate-edge pressure over changed Rust lines and new cross-crate edges; small, broad, and edge-bearing fixtures lower scores monotonically while no Rust evidence remains neutral.",
+      diagnostics:
+        "rs-rp-signals.test.ts: diagnostics assert severity, normalized top_n_diagnostics caps, PR-surface payloads, cross-crate edge payloads, missing-diff warnings, diff modes, score mode, and score denominator payloads.",
+      factorLedger:
+        "rs-rp-signals.test.ts: registered RS pack signal emits config.top_n_diagnostics as non-score-bearing metadata with signal-default source.",
+      cacheSemantics:
+        "rs-rp-signals.test.ts and pack.test.ts: RS-RP-03 declares git-diff-pr-size-git-context-aliases-rust-hunks-v3 cacheVersion, git-revision-context cache dependency, config/cacheVersion changes alter the signal config hash, and the RS pack wrapper preserves the signal-specific cacheVersion and cacheDependencies.",
+      gitContext:
+        "rs-rp-signals.test.ts: direct fixtures initialize real git repositories, mutate working trees, commit docs-only and Rust changes, and verify working-tree, commit-range, and changed-hunk fallback modes without stubbing the diff substrate.",
+      integration:
+        "observer-integration.test.ts and CLI score tests: Rust observer integration carries RS-RP-03 PR-size score and diagnostics through the RS pack against a real Cargo workspace with working-tree git diff data, while CLI single-signal mode executes RS-RP-03 through the source CLI path for both git diff and untracked changed-hunk fallback substrates.",
+    },
+  },
 ]

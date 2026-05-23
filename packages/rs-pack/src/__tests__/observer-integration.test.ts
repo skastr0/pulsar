@@ -28,6 +28,7 @@ import { RsLd05 } from "../signals/rs-ld-05-complexity.js"
 import { RsLd06 } from "../signals/rs-ld-06-domain-terms.js"
 import { RsRp01 } from "../signals/rs-rp-01-hotspots.js"
 import { RsRp02 } from "../signals/rs-rp-02-compile-time.js"
+import { RsRp03 } from "../signals/rs-rp-03-pr-size.js"
 import { RsSl01 } from "../signals/rs-sl-01-duplication.js"
 import { RsSl02 } from "../signals/rs-sl-02-suppressions.js"
 import { RsSl03 } from "../signals/rs-sl-03-unwrap-expect.js"
@@ -875,6 +876,93 @@ describe("rs-pack integration", () => {
           scoreDenominator: "slowest-crate-duration-ms",
         }),
       })
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  }, 120_000)
+
+  test("observer path carries RS-RP-03 PR-size score and diagnostics", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-observer-rp03-", {
+      "Cargo.toml": [
+        "[workspace]",
+        'members = ["crates/core", "crates/app"]',
+        'resolver = "2"',
+        "",
+      ].join("\n"),
+      "crates/core/Cargo.toml": [
+        "[package]",
+        'name = "observer_core"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "crates/core/src/lib.rs": "pub mod api { pub struct Thing; }\n",
+      "crates/app/Cargo.toml": [
+        "[package]",
+        'name = "observer_app"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+        "[dependencies]",
+        'observer_core = { path = "../core" }',
+        "",
+      ].join("\n"),
+      "crates/app/src/lib.rs": "pub fn untouched() {}\n",
+    })
+
+    try {
+      await initGitRepo(repo)
+      await writeFile(
+        `${repo}/crates/app/src/lib.rs`,
+        [
+          "use observer_core::api::Thing;",
+          "pub fn changed(_thing: Thing) {}",
+          "",
+        ].join("\n"),
+      )
+
+      const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
+      const EnvLayer = Layer.mergeAll(
+        Layer.succeed(SignalContextTag, {
+          gitSha: "HEAD",
+          worktreePath: repo,
+          changedHunks: [],
+        }),
+        referenceLayer(),
+        InMemoryCacheLayer,
+        RustProjectLayer(repo),
+      )
+
+      const result = await Effect.runPromise(
+        Effect.provide(observe(registry, undefined), EnvLayer) as Effect.Effect<
+          ObserverOutput,
+          never,
+          never
+        >,
+      )
+      const prSize = result.signalResults.get(RsRp03.id)
+
+      expect(result.categories["review-pain"].signals[RsRp03.id]).toBeLessThan(1)
+      expect(prSize?.score).toBeLessThan(1)
+      expect(prSize?.diagnostics[0]).toMatchObject({
+        severity: "warn",
+        message: expect.stringContaining("PR surface: +"),
+        data: expect.objectContaining({
+          diffMode: "git-working-tree",
+          scoreMode: "bounded-pr-size-and-cross-crate-edge-pressure",
+          scoreDenominator: "changed-rust-lines-and-cross-crate-edges",
+        }),
+      })
+      expect(prSize?.diagnostics).toContainEqual(
+        expect.objectContaining({
+          severity: "warn",
+          message: "New cross-crate Rust import from observer_app to observer_core",
+          data: expect.objectContaining({
+            fromCrate: "observer_app",
+            toCrate: "observer_core",
+          }),
+        }),
+      )
     } finally {
       await cleanupWorkspace(repo)
     }

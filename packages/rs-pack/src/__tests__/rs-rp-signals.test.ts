@@ -661,6 +661,60 @@ describe("RS-RP-* signals", () => {
     expect(RsRp02.score(slow)).toBeCloseTo(0.5)
   })
 
+  test("RS-RP-03 declares identity, config, cache, pack registration, and factor ledger", async () => {
+    const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
+    const versionedRegistry = await Effect.runPromise(
+      buildRegistry([
+        ...SHARED_SIGNALS,
+        ...RS_PACK_SIGNALS.filter((signal) => signal.id !== RsRp03.id),
+        { ...RsRp03, cacheVersion: `${RsRp03.cacheVersion}-next` },
+      ]),
+    )
+    const registered = registry.byId.get("RS-RP-03")
+    const decoded = Schema.decodeUnknownSync(RsRp03.configSchema)(RsRp03.defaultConfig)
+    const factorLedger = registered?.factorLedger?.({})
+    const baseCacheHash = computeConfigHash(RsRp03.id, registry, undefined)
+    const versionedCacheHash = computeConfigHash(RsRp03.id, versionedRegistry, undefined)
+    const configuredCacheHash = computeConfigHash(RsRp03.id, registry, {
+      id: "rs-rp-03-contract",
+      domain: "test",
+      signal_overrides: {
+        [RsRp03.id]: {
+          config: {
+            ...RsRp03.defaultConfig,
+            top_n_diagnostics: 1,
+          },
+        },
+      },
+    })
+
+    expect(RsRp03).toMatchObject({
+      id: "RS-RP-03-pr-size",
+      aliases: ["RS-RP-03"],
+      title: "PR size",
+      tier: 1,
+      category: "review-pain",
+      kind: "structural",
+      cacheVersion: "git-diff-pr-size-git-context-aliases-rust-hunks-v3",
+      cacheDependencies: ["git-revision-context"],
+      inputs: [],
+    })
+    expect(decoded).toEqual({
+      top_n_diagnostics: 10,
+    })
+    expect(registered?.id).toBe(RsRp03.id)
+    expect(registry.byId.get("RS-RP-03")?.id).toBe(RsRp03.id)
+    expect(baseCacheHash).not.toBe(versionedCacheHash)
+    expect(baseCacheHash).not.toBe(configuredCacheHash)
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        affectsScore: false,
+        scoreRole: "metadata",
+      }),
+    )
+  })
+
   test("RS-RP-03 counts diff size and new cross-crate import edges", async () => {
     const repo = await createRustWorkspace("pulsar-rs-rp03-", {
       "Cargo.toml": [
@@ -710,7 +764,10 @@ describe("RS-RP-* signals", () => {
       const out = await runSignalComputeWithContext(
         RsRp03,
         repo,
-        RsRp03.defaultConfig,
+        {
+          ...RsRp03.defaultConfig,
+          top_n_diagnostics: 2,
+        },
         {
           gitSha: "HEAD",
           worktreePath: repo,
@@ -729,9 +786,444 @@ describe("RS-RP-* signals", () => {
       expect(out.linesAdded).toBeGreaterThanOrEqual(2)
       expect(out.newCrossCrateEdges.some((edge) => edge.toCrate === "pulsar_core")).toBe(true)
       expect(out.cratesTouched).toContain("pulsar_app")
+      expect(out.diffMode).toBe("git-working-tree")
+      expect(out.diagnosticLimit).toBe(2)
+      expect(RsRp03.outputMetadata?.(out)).toBeUndefined()
+      expect(RsRp03.diagnose(out)).toEqual([
+        expect.objectContaining({
+          severity: "warn",
+          message: expect.stringContaining("PR surface: +"),
+          data: expect.objectContaining({
+            diffMode: "git-working-tree",
+            scoreMode: "bounded-pr-size-and-cross-crate-edge-pressure",
+            scoreDenominator: "changed-rust-lines-and-cross-crate-edges",
+          }),
+        }),
+        expect.objectContaining({
+          severity: "warn",
+          message: "New cross-crate Rust import from pulsar_app to pulsar_core",
+          data: expect.objectContaining({
+            fromCrate: "pulsar_app",
+            toCrate: "pulsar_core",
+          }),
+        }),
+      ])
     } finally {
       await cleanupWorkspace(repo)
     }
+  })
+
+  test("RS-RP-03 resolves renamed dependency aliases in new cross-crate edges", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-rp03-alias-", {
+      "Cargo.toml": [
+        "[workspace]",
+        'members = ["crates/core", "crates/app"]',
+        'resolver = "2"',
+        "",
+      ].join("\n"),
+      "crates/core/Cargo.toml": [
+        "[package]",
+        'name = "core-lib"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "crates/core/src/lib.rs": "pub mod api { pub struct Thing; }\n",
+      "crates/app/Cargo.toml": [
+        "[package]",
+        'name = "alias_app"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+        "[dependencies]",
+        'core-alias = { package = "core-lib", path = "../core" }',
+        "",
+      ].join("\n"),
+      "crates/app/src/lib.rs": "pub fn untouched() {}\n",
+    })
+
+    try {
+      await initGitRepo(repo)
+      await writeFile(
+        `${repo}/crates/app/src/lib.rs`,
+        [
+          "use core_alias::api::Thing;",
+          "pub fn changed(_thing: Thing) {}",
+          "",
+        ].join("\n"),
+      )
+
+      const out = await runSignalComputeWithContext(
+        RsRp03,
+        repo,
+        RsRp03.defaultConfig,
+        {
+          gitSha: "HEAD",
+          worktreePath: repo,
+          changedHunks: [],
+        },
+      )
+
+      expect(out.newCrossCrateEdges).toContainEqual(
+        expect.objectContaining({
+          fromCrate: "alias_app",
+          toCrate: "core-lib",
+        }),
+      )
+      expect(RsRp03.diagnose(out)).toContainEqual(
+        expect.objectContaining({
+          message: "New cross-crate Rust import from alias_app to core-lib",
+        }),
+      )
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-RP-03 reads clean-worktree commit ranges", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-rp03-range-", {
+      "Cargo.toml": [
+        "[workspace]",
+        'members = ["crates/core", "crates/app"]',
+        'resolver = "2"',
+        "",
+      ].join("\n"),
+      "crates/core/Cargo.toml": [
+        "[package]",
+        'name = "range_core"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "crates/core/src/lib.rs": "pub mod api { pub struct Thing; }\n",
+      "crates/app/Cargo.toml": [
+        "[package]",
+        'name = "range_app"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+        "[dependencies]",
+        'range_core = { path = "../core" }',
+        "",
+      ].join("\n"),
+      "crates/app/src/lib.rs": "pub fn untouched() {}\n",
+    })
+
+    try {
+      await initGitRepo(repo)
+      await writeFile(
+        `${repo}/crates/app/src/lib.rs`,
+        [
+          "use range_core::api::Thing;",
+          "pub fn changed(_thing: Thing) {}",
+          "",
+        ].join("\n"),
+      )
+      await execFileAsync("git", ["add", "crates/app/src/lib.rs"], { cwd: repo })
+      await execFileAsync(
+        "git",
+        [
+          "-c",
+          "user.name=Pulsar",
+          "-c",
+          "user.email=pulsar@example.com",
+          "commit",
+          "-m",
+          "range change",
+        ],
+        { cwd: repo },
+      )
+
+      const out = await runSignalComputeWithContext(
+        RsRp03,
+        repo,
+        RsRp03.defaultConfig,
+        {
+          gitSha: "HEAD",
+          worktreePath: repo,
+          changedHunks: [],
+        },
+      )
+
+      expect(out.diffMode).toBe("git-commit-range")
+      expect(out.newCrossCrateEdges).toContainEqual(
+        expect.objectContaining({
+          fromCrate: "range_app",
+          toCrate: "range_core",
+        }),
+      )
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-RP-03 falls back when the commit range has no Rust diff but context hunks do", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-rp03-empty-range-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "empty_range"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": "pub fn untouched() {}\n",
+      "README.md": "initial\n",
+    })
+
+    try {
+      await initGitRepo(repo)
+      await writeFile(`${repo}/README.md`, "initial\nlatest docs\n")
+      await execFileAsync("git", ["add", "README.md"], { cwd: repo })
+      await execFileAsync(
+        "git",
+        [
+          "-c",
+          "user.name=Pulsar",
+          "-c",
+          "user.email=pulsar@example.com",
+          "commit",
+          "-m",
+          "docs only",
+        ],
+        { cwd: repo },
+      )
+
+      const out = await runSignalComputeWithContext(
+        RsRp03,
+        repo,
+        RsRp03.defaultConfig,
+        {
+          gitSha: "HEAD",
+          worktreePath: repo,
+          changedHunks: [
+            {
+              file: "src/lib.rs",
+              oldStart: 1,
+              oldLines: 1,
+              newStart: 1,
+              newLines: 3,
+            },
+          ],
+        },
+      )
+
+      expect(out.diffMode).toBe("changed-hunks-fallback")
+      expect(out.linesAdded).toBe(3)
+      expect(out.linesDeleted).toBe(1)
+      expect(out.filesChanged).toEqual([`${repo}/src/lib.rs`])
+      expect(RsRp03.outputMetadata?.(out)).toBeUndefined()
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-RP-03 prefers collected Rust hunks before commit ranges when plain git diff is empty", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-rp03-staged-hunks-", {
+      "Cargo.toml": [
+        "[workspace]",
+        'members = ["crates/core", "crates/app"]',
+        'resolver = "2"',
+        "",
+      ].join("\n"),
+      "crates/core/Cargo.toml": [
+        "[package]",
+        'name = "staged_core"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "crates/core/src/lib.rs": "pub mod api { pub struct Thing; }\n",
+      "crates/app/Cargo.toml": [
+        "[package]",
+        'name = "staged_app"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+        "[dependencies]",
+        'staged_core = { path = "../core" }',
+        "",
+      ].join("\n"),
+      "crates/app/src/lib.rs": "pub fn committed() {}\n",
+    })
+
+    try {
+      await initGitRepo(repo)
+      await writeFile(
+        `${repo}/crates/app/src/new_module.rs`,
+        [
+          "use staged_core::api::Thing;",
+          "pub fn changed(_thing: Thing) {}",
+          "",
+        ].join("\n"),
+      )
+
+      const out = await runSignalComputeWithContext(
+        RsRp03,
+        repo,
+        RsRp03.defaultConfig,
+        {
+          gitSha: "HEAD",
+          worktreePath: repo,
+          changedHunks: [
+            {
+              file: "crates/app/src/new_module.rs",
+              oldStart: 0,
+              oldLines: 0,
+              newStart: 1,
+              newLines: 2,
+            },
+          ],
+        },
+      )
+
+      expect(out.diffMode).toBe("changed-hunks-fallback")
+      expect(out.linesAdded).toBe(2)
+      expect(out.linesDeleted).toBe(0)
+      expect(out.filesChanged).toEqual([`${repo}/crates/app/src/new_module.rs`])
+      expect(out.newCrossCrateEdges).toContainEqual(
+        expect.objectContaining({
+          fromCrate: "staged_app",
+          toCrate: "staged_core",
+        }),
+      )
+      expect(RsRp03.outputMetadata?.(out)).toBeUndefined()
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-RP-03 normalizes changed-hunk fallback and missing diff evidence", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-rp03-fallback-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "fallback_crate"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": "pub fn unchanged() {}\n",
+    })
+
+    try {
+      const fallbackOut = await runSignalComputeWithContext(
+        RsRp03,
+        repo,
+        {
+          ...RsRp03.defaultConfig,
+          top_n_diagnostics: 1.8,
+        },
+        {
+          gitSha: "HEAD",
+          worktreePath: repo,
+          changedHunks: [
+            {
+              file: "src/lib.rs",
+              oldStart: 1,
+              oldLines: 2,
+              newStart: 1,
+              newLines: 5,
+            },
+          ],
+        },
+      )
+      const nonRustFallbackOut = await runSignalComputeWithContext(
+        RsRp03,
+        repo,
+        RsRp03.defaultConfig,
+        {
+          gitSha: "HEAD",
+          worktreePath: repo,
+          changedHunks: [
+            {
+              file: "src/app.ts",
+              oldStart: 1,
+              oldLines: 4,
+              newStart: 1,
+              newLines: 6,
+            },
+          ],
+        },
+      )
+      const missingOut = await runSignalComputeWithContext(
+        RsRp03,
+        repo,
+        RsRp03.defaultConfig,
+        {
+          gitSha: "HEAD",
+          worktreePath: repo,
+          changedHunks: [],
+        },
+      )
+      const hiddenOut = await runSignalComputeWithContext(
+        RsRp03,
+        repo,
+        {
+          ...RsRp03.defaultConfig,
+          top_n_diagnostics: Number.NaN,
+        },
+        {
+          gitSha: "HEAD",
+          worktreePath: repo,
+          changedHunks: [],
+        },
+      )
+
+      expect(fallbackOut.diffMode).toBe("changed-hunks-fallback")
+      expect(fallbackOut.linesAdded).toBe(5)
+      expect(fallbackOut.linesDeleted).toBe(2)
+      expect(fallbackOut.diagnosticLimit).toBe(1)
+      expect(fallbackOut.cratesTouched).toEqual(["fallback_crate"])
+      expect(RsRp03.outputMetadata?.(fallbackOut)).toBeUndefined()
+      expect(RsRp03.diagnose(fallbackOut)).toHaveLength(1)
+      expect(nonRustFallbackOut.diffMode).toBe("changed-hunks-fallback")
+      expect(nonRustFallbackOut.linesAdded).toBe(0)
+      expect(nonRustFallbackOut.linesDeleted).toBe(0)
+      expect(nonRustFallbackOut.filesChanged).toEqual([])
+      expect(RsRp03.score(nonRustFallbackOut)).toBe(1)
+      expect(RsRp03.outputMetadata?.(nonRustFallbackOut)).toEqual({
+        applicability: "not_applicable",
+      })
+      expect(missingOut.diffMode).toBe("missing")
+      expect(RsRp03.outputMetadata?.(missingOut)).toEqual({
+        applicability: "insufficient_evidence",
+      })
+      expect(RsRp03.diagnose(missingOut)[0]).toMatchObject({
+        severity: "warn",
+        message: "RS-RP-03 could not inspect git diff state",
+      })
+      expect(hiddenOut.diagnosticLimit).toBe(0)
+      expect(RsRp03.diagnose(hiddenOut)).toEqual([])
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-RP-03 scores PR size and cross-crate edge pressure monotonically", () => {
+    const small = rsRp03Output({
+      linesAdded: 10,
+      linesDeleted: 0,
+      newCrossCrateEdges: [],
+    })
+    const large = rsRp03Output({
+      linesAdded: 600,
+      linesDeleted: 0,
+      newCrossCrateEdges: [],
+    })
+    const edged = rsRp03Output({
+      linesAdded: 10,
+      linesDeleted: 0,
+      newCrossCrateEdges: [
+        {
+          file: "/repo/crates/app/src/lib.rs",
+          fromCrate: "app",
+          toCrate: "core",
+        },
+      ],
+    })
+
+    expect(RsRp03.score(small)).toBeGreaterThan(RsRp03.score(large))
+    expect(RsRp03.score(small)).toBeGreaterThan(RsRp03.score(edged))
+    expect(RsRp03.score(large)).toBeCloseTo(0.4)
   })
 
   test("rust-only registry builds with RS pack signals", async () => {
@@ -891,4 +1383,24 @@ const rsRp02Output = ({
   diagnosticLimit: 10,
   scoreMode: "slowest-crate-compile-duration",
   scoreDenominator: "slowest-crate-duration-ms",
+})
+
+const rsRp03Output = ({
+  linesAdded,
+  linesDeleted,
+  newCrossCrateEdges,
+}: {
+  readonly linesAdded: number
+  readonly linesDeleted: number
+  readonly newCrossCrateEdges: ReadonlyArray<Parameters<typeof RsRp03.score>[0]["newCrossCrateEdges"][number]>
+}): Parameters<typeof RsRp03.score>[0] => ({
+  linesAdded,
+  linesDeleted,
+  filesChanged: ["/repo/crates/app/src/lib.rs"],
+  cratesTouched: ["app"],
+  newCrossCrateEdges,
+  diffMode: "git-working-tree",
+  diagnosticLimit: 10,
+  scoreMode: "bounded-pr-size-and-cross-crate-edge-pressure",
+  scoreDenominator: "changed-rust-lines-and-cross-crate-edges",
 })

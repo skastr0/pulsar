@@ -14,6 +14,7 @@ import { RsDe04 } from "../signals/rs-de-04-fan-in-fan-out.js"
 import { RsLd06 } from "../signals/rs-ld-06-domain-terms.js"
 import { RsRp01 } from "../signals/rs-rp-01-hotspots.js"
 import { RsRp02 } from "../signals/rs-rp-02-compile-time.js"
+import { RsRp03 } from "../signals/rs-rp-03-pr-size.js"
 import { RsSl01 } from "../signals/rs-sl-01-duplication.js"
 import { RsSl03 } from "../signals/rs-sl-03-unwrap-expect.js"
 import { RsSl04 } from "../signals/rs-sl-04-clone-abuse.js"
@@ -71,6 +72,9 @@ describe("RS pack signal identity", () => {
     const compileTime = RS_PACK_SIGNALS.find((signal) =>
       signal.aliases?.includes("RS-RP-02"),
     )
+    const prSize = RS_PACK_SIGNALS.find((signal) =>
+      signal.aliases?.includes("RS-RP-03"),
+    )
 
     expect(visibilitySurface?.cacheVersion).toBe(RsAd01.cacheVersion)
     expect(crateBoundaries?.cacheVersion).toBe(RsAd02.cacheVersion)
@@ -89,6 +93,8 @@ describe("RS pack signal identity", () => {
     expect(cloneAbuse?.cacheVersion).toBe(RsSl04.cacheVersion)
     expect(hotspots?.cacheVersion).toBe(RsRp01.cacheVersion)
     expect(compileTime?.cacheVersion).toBe(RsRp02.cacheVersion)
+    expect(prSize?.cacheVersion).toBe(RsRp03.cacheVersion)
+    expect(prSize?.cacheDependencies).toEqual(RsRp03.cacheDependencies)
   })
 
   test("all Rust signals expose semantic ids, aliases, and titles", () => {
