@@ -576,7 +576,35 @@ export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "observer-integration.test.ts and CLI score tests: Rust observer integration carries RS-SL-04 clone score and diagnostics through the RS pack against a real Cargo fixture, while CLI single-signal mode executes RS-SL-04 against the repository substrate through the source CLI path.",
     },
   },
-  pendingSignalContract("RS-RP-01-hotspots"),
+  {
+    id: "RS-RP-01-hotspots",
+    status: "verified",
+    requiredEvidence: ["compoundInputs", "integration"],
+    evidence: {
+      identity:
+        "rs-rp-signals.test.ts: canonical id, alias, title, tier/category/kind, semantic cacheVersion, pack registration, registry alias lookup, default config decoding, compound input declarations, factor ledger, score mode, and score denominator are asserted.",
+      config:
+        "rs-rp-signals.test.ts: top_n, min_churn, and min_complexity decode through the real schema; fractional and NaN config values are normalized through compute output.",
+      positiveFixture:
+        "rs-rp-signals.test.ts: canonical and alias compound-input fixtures combine RS-LD-05 byFile max complexity with SHARED-CHURN-01 file churn to produce ranked Rust hotspot files with churn, complexity, hotspotScore, quadrant, and rank evidence.",
+      negativeFixture:
+        "rs-rp-signals.test.ts: missing required compound inputs, non-overlapping churn/complexity file paths, churn-only/complexity-only facts, and below-threshold aligned files avoid false hotspot pressure.",
+      applicability:
+        "rs-rp-signals.test.ts: missing required primitive inputs emit insufficient_evidence metadata, present inputs with no aligned churn plus complexity files emit not_applicable metadata, and measured clean inputs remain applicable with score 1.",
+      score:
+        "rs-rp-signals.test.ts: score is asserted as bounded hotspot pressure over aligned churn-complexity files; clean, mild, and broad aligned hotspot fixtures prove monotonic score pressure.",
+      diagnostics:
+        "rs-rp-signals.test.ts: diagnostics assert severity, deterministic hotspotScore then path ordering, normalized top_n caps, hotspot payloads, missing-input warnings, score mode, and denominator payloads.",
+      factorLedger:
+        "rs-rp-signals.test.ts: registered RS pack signal emits config.top_n as non-score-bearing metadata and min_churn/min_complexity as score-bearing thresholds with signal-default source.",
+      cacheSemantics:
+        "rs-rp-signals.test.ts and pack.test.ts: RS-RP-01 declares rust-hotspot-config-compound-applicability-ranking-v2 cacheVersion, config/cacheVersion/compound input policy changes alter the signal config hash, the RS pack wrapper preserves the cacheVersion, and both compound inputs declare cache fingerprints.",
+      compoundInputs:
+        "rs-rp-signals.test.ts: buildRegistry requires RS-LD-05-cyclomatic-complexity and SHARED-CHURN-01-recent-churn input signals, verifies composite input fingerprints, and compute tests assert the explanation records present or missing primitive input states.",
+      integration:
+        "observer-integration.test.ts and CLI score tests: Rust observer integration runs RS-RP-01 through the RS pack using real RS-LD-05 complexity and SHARED-CHURN-01 git churn inputs from a committed Cargo fixture, while CLI single-signal mode executes RS-RP-01 against the repository substrate through the source CLI path.",
+    },
+  },
   pendingSignalContract("RS-RP-02-compile-time"),
   pendingSignalContract("RS-RP-03-pr-size"),
 ]

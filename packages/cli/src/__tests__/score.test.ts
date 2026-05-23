@@ -1965,6 +1965,97 @@ export function stubF() { throw new Error("Not implemented") }
     }
   }, 120_000)
 
+  test("single-signal CLI wrapper executes RS-RP-01 with Rust source and git churn", async () => {
+    const repoPath = await initRepo([
+      {
+        path: "Cargo.toml",
+        content: [
+          "[package]",
+          'name = "hotspot-cli"',
+          'version = "0.1.0"',
+          'edition = "2021"',
+          "",
+        ].join("\n"),
+      },
+      {
+        path: "src/lib.rs",
+        content: [
+          "pub fn hotspot(value: u32) -> u32 {",
+          "    if value == 0 {",
+          "        0",
+          "    } else if value == 1 {",
+          "        1",
+          "    } else if value == 2 {",
+          "        2",
+          "    } else if value == 3 {",
+          "        3",
+          "    } else if value == 4 {",
+          "        4",
+          "    } else {",
+          "        5",
+          "    }",
+          "}",
+          "",
+        ].join("\n"),
+      },
+    ])
+    try {
+      await writeRepoFile(repoPath, "src/lib.rs", [
+        "pub fn hotspot(value: u32) -> u32 {",
+        "    if value == 0 {",
+        "        0",
+        "    } else if value == 1 {",
+        "        1",
+        "    } else if value == 2 {",
+        "        2",
+        "    } else if value == 3 {",
+        "        3",
+        "    } else if value == 4 {",
+        "        4",
+        "    } else {",
+        "        5",
+        "    }",
+        "}",
+        "// churn one",
+        "",
+      ].join("\n"))
+      sh("git", ["add", "src/lib.rs"], repoPath)
+      sh("git", ["commit", "-q", "-m", "touch hotspot one"], repoPath)
+      await writeRepoFile(repoPath, "src/lib.rs", [
+        "pub fn hotspot(value: u32) -> u32 {",
+        "    if value == 0 {",
+        "        0",
+        "    } else if value == 1 {",
+        "        1",
+        "    } else if value == 2 {",
+        "        2",
+        "    } else if value == 3 {",
+        "        3",
+        "    } else if value == 4 {",
+        "        4",
+        "    } else {",
+        "        5",
+        "    }",
+        "}",
+        "// churn one",
+        "// churn two",
+        "",
+      ].join("\n"))
+      sh("git", ["add", "src/lib.rs"], repoPath)
+      sh("git", ["commit", "-q", "-m", "touch hotspot two"], repoPath)
+
+      const out = runCli(repoPath, ["score", "--signal", "RS-RP-01", "."])
+      expect(out.status).toBe(0)
+      expect(out.stdout).toContain("Signal: RS-RP-01-hotspots")
+      expect(out.stdout).toContain("WARN  Hotspot #1:")
+      expect(out.stdout).toContain("Score:  0.200")
+      expect(out.stdout).toContain("Factor Audit (2 score-bearing)")
+      expect(out.stdout).toContain("signal-default config.")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
   test("single-signal mode summarizes score-bearing factor audit details", async () => {
     const repoPath = await initRepo([
       {

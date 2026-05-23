@@ -7,6 +7,9 @@ import {
   observe,
   type ObserverOutput,
 } from "@skastr0/pulsar-core/scoring"
+import { execFile } from "node:child_process"
+import { writeFile } from "node:fs/promises"
+import { promisify } from "node:util"
 import { describe, expect, test } from "bun:test"
 import { Effect, Layer } from "effect"
 import { SHARED_SIGNALS } from "@skastr0/pulsar-shared-signals"
@@ -23,11 +26,14 @@ import { RsLd03 } from "../signals/rs-ld-03-match-catch-all.js"
 import { RsLd04 } from "../signals/rs-ld-04-error-granularity.js"
 import { RsLd05 } from "../signals/rs-ld-05-complexity.js"
 import { RsLd06 } from "../signals/rs-ld-06-domain-terms.js"
+import { RsRp01 } from "../signals/rs-rp-01-hotspots.js"
 import { RsSl01 } from "../signals/rs-sl-01-duplication.js"
 import { RsSl02 } from "../signals/rs-sl-02-suppressions.js"
 import { RsSl03 } from "../signals/rs-sl-03-unwrap-expect.js"
 import { RsSl04 } from "../signals/rs-sl-04-clone-abuse.js"
 import { cleanupWorkspace, createRustWorkspace, referenceLayer } from "./helpers.js"
+
+const execFileAsync = promisify(execFile)
 
 describe("rs-pack integration", () => {
   test("observes a real Rust repo with plausible architectural and legibility output", async () => {
@@ -740,6 +746,78 @@ describe("rs-pack integration", () => {
     }
   }, 120_000)
 
+  test("observer path carries RS-RP-01 hotspot score and diagnostics", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-observer-rp01-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "hotspot-observer"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub fn hotspot(value: u32) -> u32 {",
+        "    if value == 0 {",
+        "        0",
+        "    } else if value == 1 {",
+        "        1",
+        "    } else if value == 2 {",
+        "        2",
+        "    } else if value == 3 {",
+        "        3",
+        "    } else if value == 4 {",
+        "        4",
+        "    } else {",
+        "        5",
+        "    }",
+        "}",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      await initGitRepo(repo)
+      await appendAndCommit(repo, "src/lib.rs", "// observer churn one\n", "touch hotspot one")
+      await appendAndCommit(repo, "src/lib.rs", "// observer churn two\n", "touch hotspot two")
+
+      const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
+      const EnvLayer = Layer.mergeAll(
+        Layer.succeed(SignalContextTag, {
+          gitSha: "HEAD",
+          worktreePath: repo,
+          changedHunks: [],
+        }),
+        referenceLayer(),
+        InMemoryCacheLayer,
+        RustProjectLayer(repo),
+      )
+
+      const result = await Effect.runPromise(
+        Effect.provide(observe(registry, undefined), EnvLayer) as Effect.Effect<
+          ObserverOutput,
+          never,
+          never
+        >,
+      )
+      const hotspots = result.signalResults.get(RsRp01.id)
+
+      expect(result.categories["review-pain"].signals[RsRp01.id]).toBeLessThan(1)
+      expect(hotspots?.score).toBeLessThan(1)
+      expect(hotspots?.diagnostics[0]).toMatchObject({
+        severity: "warn",
+        message: expect.stringContaining("Hotspot #1:"),
+        data: expect.objectContaining({
+          quadrant: "top-right",
+          analysisMode: "rust-churn-complexity-hotspots",
+          scoreMode: "bounded-hotspot-pressure",
+          scoreDenominator: "aligned-churn-complexity-files",
+        }),
+      })
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  }, 120_000)
+
   test("observer path carries RS-AB-01 unused public item score and diagnostics", async () => {
     const repo = await createRustWorkspace("pulsar-rs-observer-ab01-", {
       "Cargo.toml": [
@@ -1012,3 +1090,48 @@ describe("rs-pack integration", () => {
     }
   }, 120_000)
 })
+
+const initGitRepo = async (repo: string): Promise<void> => {
+  await execFileAsync("git", ["init", "-q", "-b", "main"], { cwd: repo })
+  await execFileAsync("git", ["add", "."], { cwd: repo })
+  await execFileAsync(
+    "git",
+    [
+      "-c",
+      "user.name=Pulsar",
+      "-c",
+      "user.email=pulsar@example.com",
+      "commit",
+      "-q",
+      "-m",
+      "fixture",
+    ],
+    { cwd: repo },
+  )
+}
+
+const appendAndCommit = async (
+  repo: string,
+  relativePath: string,
+  content: string,
+  message: string,
+): Promise<void> => {
+  const fullPath = `${repo}/${relativePath}`
+  const current = await Bun.file(fullPath).text()
+  await writeFile(fullPath, `${current}${content}`)
+  await execFileAsync("git", ["add", relativePath], { cwd: repo })
+  await execFileAsync(
+    "git",
+    [
+      "-c",
+      "user.name=Pulsar",
+      "-c",
+      "user.email=pulsar@example.com",
+      "commit",
+      "-q",
+      "-m",
+      message,
+    ],
+    { cwd: repo },
+  )
+}
