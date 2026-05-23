@@ -243,6 +243,41 @@ const createSafeOnlySelectorWorkspace = () =>
     ].join("\n"),
   })
 
+const createLifetimeCfgWorkspace = () =>
+  createRustWorkspace("pulsar-rs-ld02-cfg-", {
+    "Cargo.toml": [
+      "[package]",
+      'name = "lifetime-cfg"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+    ].join("\n"),
+    "src/lib.rs": [
+      "pub fn production<'a>(value: &'a str) -> &'a str {",
+      "    value",
+      "}",
+      "",
+      "#[cfg(test)]",
+      "pub fn test_only<'a: 'b, 'b, 'c>(left: &'a str, right: &'b str) -> &'c str",
+      "where",
+      "    'a: 'b,",
+      "    'b: 'c,",
+      "{",
+      "    let _ = (left, right);",
+      "    unreachable!()",
+      "}",
+      "",
+      "#[cfg(any(test, feature = \"probe\"))]",
+      "pub fn composite_test_only<'a: 'b, 'b>(value: &'a str) -> &'b str",
+      "where",
+      "    'a: 'b,",
+      "{",
+      "    value",
+      "}",
+      "",
+    ].join("\n"),
+  })
+
 describe("RS-LD-* signals", () => {
   test("RS-LD-01 declares identity, config, cache, pack registration, and factor ledger", async () => {
     const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
@@ -826,7 +861,7 @@ describe("RS-LD-* signals", () => {
       tier: 1,
       category: "legibility-decay",
       kind: "legibility",
-      cacheVersion: "lifetime-complexity-config-applicability-diagnostics-v1",
+      cacheVersion: "lifetime-complexity-config-applicability-diagnostics-cfg-test-v2",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -893,6 +928,42 @@ describe("RS-LD-* signals", () => {
           maxLifetimeComplexity: 3,
         }),
       })
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-LD-02 excludes cfg-test-gated lifetime functions", async () => {
+    const repo = await createLifetimeCfgWorkspace()
+    try {
+      const out = await runSignalCompute(
+        RsLd02,
+        repo,
+        { ...RsLd02.defaultConfig, max_lifetime_complexity: 3 },
+      )
+
+      expect(out.sourceFileCount).toBe(1)
+      expect(out.analyzedSourceFileCount).toBe(1)
+      expect(out.totalAnalyzedFunctions).toBe(1)
+      expect(out.lifetimeFunctionCount).toBe(1)
+      expect(out.functions.map((fn) => fn.name)).toEqual(["production"])
+      expect(out.functions[0]).toMatchObject({
+        name: "production",
+        lifetimeParams: 1,
+        lifetimeBounds: 0,
+        inputPositions: 1,
+        outputPositions: 1,
+        constraintPositions: 0,
+        complexity: 3,
+      })
+      expect(out.overThresholdCount).toBe(0)
+      expect(RsLd02.score(out)).toBe(1)
+      expect(RsLd02.diagnose(out)).toEqual([
+        expect.objectContaining({
+          severity: "info",
+          message: "Lifetime complexity in production: 3 (params:1, bounds:0, in:1, out:1)",
+        }),
+      ])
     } finally {
       await cleanupWorkspace(repo)
     }

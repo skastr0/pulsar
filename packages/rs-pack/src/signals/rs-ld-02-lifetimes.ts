@@ -13,8 +13,15 @@ import {
 } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
 import { collectRustProjectFacts } from "../rust-analysis.js"
-import { RustProjectTag } from "../project.js"
-import { DEFAULT_RUST_EXCLUDE_GLOBS } from "./shared-rust-ast.js"
+import { type RustProject, RustProjectTag } from "../project.js"
+import { parseRustFile } from "../syn-walker.js"
+import {
+  DEFAULT_RUST_EXCLUDE_GLOBS,
+  firstNamedChild,
+  modulePathForAncestors,
+  resolveRustFileScope,
+  walkAttributedNodes,
+} from "./shared-rust-ast.js"
 import { isExcluded } from "./shared-globs.js"
 import { scoreDoubleWeightedThresholdRatio } from "./shared-threshold-score.js"
 
@@ -85,7 +92,7 @@ export const RsLd02: Signal<RsLd02Config, RsLd02Output, RustProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "lifetime-complexity-config-applicability-diagnostics-v1",
+  cacheVersion: "lifetime-complexity-config-applicability-diagnostics-cfg-test-v2",
   configSchema: RsLd02Config,
   factorDefinitions: RsLd02FactorDefinitions,
   defaultConfig: {
@@ -104,8 +111,11 @@ export const RsLd02: Signal<RsLd02Config, RsLd02Output, RustProjectTag> = {
           const analyzedSourceFiles = project.sourceFiles.filter(
             (file) => !isExcluded(file, normalizedConfig.exclude_globs),
           )
+          const activeFunctionKeys = await collectActiveFunctionKeys(project, analyzedSourceFiles)
           const analyzedFunctions = facts.functions.filter(
-            (fn) => !isExcluded(fn.file, normalizedConfig.exclude_globs),
+            (fn) =>
+              !isExcluded(fn.file, normalizedConfig.exclude_globs) &&
+              activeFunctionKeys.has(lifetimeFunctionKey(fn)),
           )
           const functions = analyzedFunctions
             .map((fn) => ({
@@ -215,3 +225,34 @@ const makeRsLd02FactorLedger = (): SignalFactorLedger =>
       }),
     ),
   )
+
+const collectActiveFunctionKeys = async (
+  project: RustProject,
+  analyzedSourceFiles: ReadonlyArray<string>,
+): Promise<ReadonlySet<string>> => {
+  const keys = new Set<string>()
+  for (const file of analyzedSourceFiles) {
+    const scope = resolveRustFileScope(project, file)
+    const tree = await parseRustFile(file)
+    walkAttributedNodes(tree.rootNode, ({ node, ancestors, testGated }) => {
+      if (testGated || node.type !== "function_item") return
+      const name = firstNamedChild(node, "identifier")?.text
+      if (name === undefined) return
+      const { modulePath } = modulePathForAncestors(scope, ancestors)
+      keys.add(lifetimeFunctionKey({
+        file,
+        modulePath,
+        name,
+        line: node.startPosition.row + 1,
+      }))
+    })
+  }
+  return keys
+}
+
+const lifetimeFunctionKey = (fn: {
+  readonly file: string
+  readonly modulePath: string
+  readonly name: string
+  readonly line: number
+}): string => `${fn.file}:${fn.line}:${fn.modulePath}::${fn.name}`
