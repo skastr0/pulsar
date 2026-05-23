@@ -1281,7 +1281,7 @@ describe("RS-SL-* signals", () => {
       tier: 1,
       category: "generated-slop",
       kind: "legibility",
-      cacheVersion: "likely-expensive-score-cfg-test-gating-diagnostics-denominator-v4",
+      cacheVersion: "likely-expensive-score-cfg-test-gating-diagnostics-denominator-bindings-v5",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -1479,6 +1479,43 @@ describe("RS-SL-* signals", () => {
         likelyExpensiveClones: 1,
         density: 1,
       })
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-SL-04 classifies local owned collection and string binding clones", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-sl04-local-bindings-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "clone-local-bindings"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub fn clones() {",
+        "    let values = vec![1, 2, 3];",
+        "    let name: String = String::from(\"pulsar\");",
+        "    let shared = std::sync::Arc::new(vec![1, 2, 3]);",
+        "    let _copied_values = values.clone();",
+        "    let _copied_name = name.clone();",
+        "    let _shared = shared.clone();",
+        "}",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const out = await runSignalCompute(RsSl04, repo, RsSl04.defaultConfig)
+
+      expect(out.totalCloneCalls).toBe(3)
+      expect(out.likelyExpensiveCloneCalls).toBe(2)
+      expect(out.modules[0]).toMatchObject({
+        cloneCalls: 3,
+        likelyExpensiveClones: 2,
+      })
+      expect(RsSl04.score(out)).toBeCloseTo(0.92)
     } finally {
       await cleanupWorkspace(repo)
     }

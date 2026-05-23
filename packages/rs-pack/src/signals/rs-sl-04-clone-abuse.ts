@@ -11,7 +11,7 @@ import {
 } from "@skastr0/pulsar-core/factors"
 import { Effect, Schema } from "effect"
 import { RustProjectTag } from "../project.js"
-import { parseRustFile } from "../syn-walker.js"
+import { parseRustFile, type RustSyntaxNode } from "../syn-walker.js"
 import {
   DEFAULT_RUST_EXCLUDE_GLOBS,
   modulePathForAncestors,
@@ -76,7 +76,7 @@ export const RsSl04: Signal<RsSl04Config, RsSl04Output, RustProjectTag> = {
   tier: 1,
   category: "generated-slop",
   kind: "legibility",
-  cacheVersion: "likely-expensive-score-cfg-test-gating-diagnostics-denominator-v4",
+  cacheVersion: "likely-expensive-score-cfg-test-gating-diagnostics-denominator-bindings-v5",
   configSchema: RsSl04Config,
   factorDefinitions: RsSl04FactorDefinitions,
   defaultConfig: {
@@ -96,6 +96,7 @@ export const RsSl04: Signal<RsSl04Config, RsSl04Output, RustProjectTag> = {
           )
 
           const cloneCounts = new Map<string, { file: string; count: number; likelyExpensive: number }>()
+          const expensiveBindings = new Map<string, Set<string>>()
           for (const file of analyzedSourceFiles) {
             const scope = resolveRustFileScope(project, file)
             const tree = await parseRustFile(file)
@@ -104,6 +105,16 @@ export const RsSl04: Signal<RsSl04Config, RsSl04Output, RustProjectTag> = {
               const { modulePath } = modulePathForAncestors(scope, ancestors)
               if (node.type === "function_item") {
                 functionCounts.set(modulePath, (functionCounts.get(modulePath) ?? 0) + 1)
+                return
+              }
+              if (node.type === "let_declaration") {
+                const binding = localCloneBinding(node)
+                const functionKey = functionScopeKey(file, ancestors)
+                if (binding !== undefined && functionKey !== undefined) {
+                  const current = expensiveBindings.get(functionKey) ?? new Set<string>()
+                  current.add(binding)
+                  expensiveBindings.set(functionKey, current)
+                }
                 return
               }
               if (node.type !== "call_expression") return
@@ -119,7 +130,11 @@ export const RsSl04: Signal<RsSl04Config, RsSl04Output, RustProjectTag> = {
                 likelyExpensive: 0,
               }
               current.count += 1
-              if (classifyClone(receiver) === "likely-expensive") {
+              const functionKey = functionScopeKey(file, ancestors)
+              if (
+                classifyClone(receiver) === "likely-expensive" ||
+                (functionKey !== undefined && isExpensiveBindingClone(receiver, expensiveBindings.get(functionKey)))
+              ) {
                 current.likelyExpensive += 1
               }
               cloneCounts.set(modulePath, current)
@@ -221,12 +236,45 @@ const makeRsSl04FactorLedger = (): SignalFactorLedger =>
   )
 
 const classifyClone = (receiver: string): "likely-expensive" | "cheap-likely" | "unknown" => {
-  if (/\b(?:Arc|Rc)\b/.test(receiver)) return "cheap-likely"
-  if (/\b(?:String|Vec|HashMap|BTreeMap|HashSet|BTreeSet)\b/.test(receiver)) {
+  const normalized = receiver.trim()
+  if (/\b(?:Arc|Rc)\b/.test(normalized)) return "cheap-likely"
+  if (/\b(?:String|Vec|HashMap|BTreeMap|HashSet|BTreeSet)\b/.test(normalized)) {
     return "likely-expensive"
   }
-  if (receiver.startsWith("vec!") || receiver.includes("to_string") || receiver.includes("format!")) {
+  if (normalized.startsWith("vec!") || normalized.includes("to_string") || normalized.includes("format!")) {
     return "likely-expensive"
   }
   return "unknown"
+}
+
+const localCloneBinding = (node: RustSyntaxNode): string | undefined => {
+  const match = /^\s*let\s+(?:mut\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*(?::\s*([^=;]+))?(?:=\s*([\s\S]*?))?;?\s*$/.exec(node.text)
+  if (match === null) return undefined
+  const name = match[1]
+  const declaredType = match[2] ?? ""
+  const initializer = match[3] ?? ""
+  const source = `${declaredType} ${initializer}`
+  return name !== undefined && classifyClone(source) === "likely-expensive" ? name : undefined
+}
+
+const isExpensiveBindingClone = (
+  receiver: string,
+  bindings: ReadonlySet<string> | undefined,
+): boolean => {
+  if (bindings === undefined) return false
+  const match = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*$/.exec(receiver)
+  return match?.[1] !== undefined && bindings.has(match[1])
+}
+
+const functionScopeKey = (
+  file: string,
+  ancestors: ReadonlyArray<RustSyntaxNode>,
+): string | undefined => {
+  for (let index = ancestors.length - 1; index >= 0; index -= 1) {
+    const ancestor = ancestors[index]
+    if (ancestor?.type === "function_item") {
+      return `${file}:${ancestor.startPosition.row + 1}`
+    }
+  }
+  return undefined
 }
