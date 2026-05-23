@@ -692,7 +692,35 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "ts-sl-03.test.ts: changed-hunk fixtures run through TsProjectLayer and SignalContextTag, proving only changed suppressions are reported and dot-relative hunk paths resolve to the real source file.",
     },
   },
-  pendingSignalContract("TS-SL-04-unfinished-implementations"),
+  {
+    id: "TS-SL-04-unfinished-implementations",
+    status: "verified",
+    requiredEvidence: ["gitContext", "calibration"],
+    evidence: {
+      identity:
+        "ts-sl-04.test.ts: canonical id, alias, title, tier/category/kind, semantic cacheVersion, no-input contract, pack registration, registry alias lookup, and default config decoding are asserted.",
+      config:
+        "ts-sl-04.test.ts: configSchema decodes defaults; exclude_globs and test_globs are proven against real repos with repo-relative and dot-relative overrides; top_n_diagnostics is floored, finite-safe, and cannot poison score or diagnostics.",
+      positiveFixture:
+        "ts-sl-04.test.ts: real ts-morph temp-repo fixtures detect throw-not-implemented, TODO-only, empty-body, mock-return, async empty functions, production stubs outside excluded roots, and project-specific empty callbacks without module calibration.",
+      negativeFixture:
+        "ts-sl-04.test.ts: real fixtures prove examples/samples/demos/specs/generated/test/story/runtime/mock roots, explicit noop files with empty bodies, platform/runtime unsupported capability throws, ordinary literal returns, ambient declarations, no-op handlers, lifecycle fallbacks, and generic contract callbacks avoid unsupported findings.",
+      applicability:
+        "ts-sl-04.test.ts: analyzed clean repositories score 1 without not_applicable metadata; all-excluded repositories and changed-hunk runs with no overlapping TypeScript function evidence return totalFunctions=0, score 1, no diagnostics, and not_applicable metadata.",
+      score:
+        "ts-sl-04.test.ts: exact score branches cover low empty-body weight, medium mock-return weight, high throw-not-implemented score caps, finite-safe score caps, invalid budget and weight normalization, production-only score pressure, and vector/module factor overrides.",
+      diagnostics:
+        "ts-sl-04.test.ts: diagnostics assert severity, message, absolute file/line location, structured payload kind/confidence/weight/cap/factorPaths/test-path/message/hash, production severity before test-info caps, deterministic repeated output, root-independent hashes, and finite-safe diagnostic caps.",
+      factorLedger:
+        "ts-sl-04.test.ts: registered pack signal emits config.exclude_globs, config.test_globs, config.top_n_diagnostics, config.hard_gate_production, config.include_test_stubs, budget.expected_clean_function_ratio, budget.expected_clean_min_functions, filtering.include_test_stubs, filtering.production_only_score, and stub-kind factor entries with defaults and score roles.",
+      cacheSemantics:
+        "ts-sl-04.test.ts and pack.test.ts: wrapped pack cache version includes the TS-SL-04 semantic cacheVersion after diagnostic-limit normalization, applicability metadata, hunk path normalization, root-independent diagnostic hashes, generic noop defaults, relative/dot-relative glob matching, finite factor normalization, and deterministic ordering changed.",
+      gitContext:
+        "ts-sl-04.test.ts: changed-hunk fixtures run through TsProjectLayer and SignalContextTag, proving only changed functions are reported, dot-relative hunk paths resolve to the real source file, and non-TypeScript hunks are not applicable.",
+      calibration:
+        "ts-sl-04.test.ts: project-owned noop-classifier and unfinished-implementation-policy processors run through CalibrationContextTag, emit attribution decisions, can classify repo-specific intentional no-ops, and can keep findings visible while changing score pressure only through explicit policy output.",
+    },
+  },
   pendingSignalContract("TS-RP-02-pr-size"),
   pendingSignalContract("TS-SL-02-inconsistent-clones"),
 ]
