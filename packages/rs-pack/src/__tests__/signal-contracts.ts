@@ -354,7 +354,33 @@ export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "observer-integration.test.ts and CLI score tests: Rust observer integration carries RS-LD-02 lifetime score and diagnostics through the RS pack against a real Cargo fixture, while CLI single-signal mode executes RS-LD-02 against the repository substrate through both source and compiled CLI entrypoints.",
     },
   },
-  pendingSignalContract("RS-LD-03-match-catch-all"),
+  {
+    id: "RS-LD-03-match-catch-all",
+    status: "verified",
+    requiredEvidence: ["integration"],
+    evidence: {
+      identity:
+        "rs-ld-signals.test.ts: canonical id, alias, title, tier/category/kind, empty input contract, semantic cacheVersion, pack registration, registry alias lookup, config-cache hash sensitivity, default config decoding, factor ledger, score mode, and score denominator are asserted.",
+      config:
+        "rs-ld-signals.test.ts: exclude_globs, core_logic_globs, and top_n_diagnostics decode through the real schema; fractional and NaN diagnostic caps are normalized through compute output; core_logic_globs limits the analyzed source substrate.",
+      positiveFixture:
+        "rs-ld-signals.test.ts: temporary Cargo fixtures run through RustProjectLayer and real tree-sitter Rust parsing to prove match expressions, underscore catch-all arms, guarded underscore arms, lower-case binding catch-all arms, guarded binding arms, catch-all arm counts, match counts, scoped file analysis, and diagnostic payloads.",
+      negativeFixture:
+        "rs-ld-signals.test.ts: clean explicit match arms, missing Rust source, no-match Rust source, fully excluded Rust source, cfg(test) catch-all matches, composite cfg(any(test,...)) catch-all matches, and non-catch-all path patterns return neutral or excluded evidence without false catch-all pressure.",
+      applicability:
+        "rs-ld-signals.test.ts: loaded Rust source with analyzed match expressions is applicable, no Rust source emits insufficient_evidence metadata, and analyzed Rust source with no match expressions or fully excluded source emits not_applicable metadata.",
+      score:
+        "rs-ld-signals.test.ts: score is asserted as one-minus double-weighted catch-all match share, with denominator named as analyzed match expressions; clean fixtures score 1, one-over-three scores one third, two-over-three clamps to 0, and additional catch-all-bearing matches lower scores monotonically.",
+      diagnostics:
+        "rs-ld-signals.test.ts: diagnostics assert severity, source locations, deterministic catch-all count ordering, function/module/match-arm payloads, score mode and denominator payloads, no-source warning payloads, and normalized diagnostic caps.",
+      factorLedger:
+        "rs-ld-signals.test.ts: registered RS pack signal emits config.exclude_globs and config.core_logic_globs as score-bearing evidence and config.top_n_diagnostics as non-score-bearing metadata with signal-default source.",
+      cacheSemantics:
+        "rs-ld-signals.test.ts and pack.test.ts: RS-LD-03 declares match-catch-all-config-applicability-diagnostics-cfg-test-bindings-v3 cacheVersion, config/cacheVersion changes alter the signal config hash, and the RS pack wrapper preserves the signal-specific cacheVersion.",
+      integration:
+        "observer-integration.test.ts and CLI score tests: Rust observer integration carries RS-LD-03 catch-all score and diagnostics through the RS pack against a real Cargo fixture, while CLI single-signal mode executes RS-LD-03 against the repository substrate through both source and compiled CLI entrypoints.",
+    },
+  },
   pendingSignalContract("RS-LD-04-error-granularity"),
   pendingSignalContract("RS-LD-05-cyclomatic-complexity"),
   pendingSignalContract("RS-LD-06-domain-term-consistency"),

@@ -19,6 +19,7 @@ import { RsAb04 } from "../signals/rs-ab-04-derive-density.js"
 import { RsDe04 } from "../signals/rs-de-04-fan-in-fan-out.js"
 import { RsLd01 } from "../signals/rs-ld-01-unsafe.js"
 import { RsLd02 } from "../signals/rs-ld-02-lifetimes.js"
+import { RsLd03 } from "../signals/rs-ld-03-match-catch-all.js"
 import { cleanupWorkspace, createRustWorkspace, referenceLayer } from "./helpers.js"
 
 describe("rs-pack integration", () => {
@@ -216,6 +217,80 @@ describe("rs-pack integration", () => {
           complexity: 15,
           scoreMode: "double-weighted-over-threshold-lifetime-functions",
           scoreDenominator: "lifetime-bearing-functions",
+        }),
+      })
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  }, 120_000)
+
+  test("observer path carries RS-LD-03 catch-all score and diagnostics", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-observer-ld03-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "catch-all-observer"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub fn fallback(value: u8) -> u8 {",
+        "    match value {",
+        "        0 => 0,",
+        "        other => other,",
+        "    }",
+        "}",
+        "",
+        "pub fn clean_a(value: u8) -> u8 {",
+        "    match value {",
+        "        0 => 0,",
+        "        1 => 1,",
+        "        2 => 2,",
+        "    }",
+        "}",
+        "",
+        "pub fn clean_b(value: u8) -> u8 {",
+        "    match value {",
+        "        3 => 3,",
+        "        4 => 4,",
+        "        5 => 5,",
+        "    }",
+        "}",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
+      const EnvLayer = Layer.mergeAll(
+        Layer.succeed(SignalContextTag, {
+          gitSha: "HEAD",
+          worktreePath: repo,
+          changedHunks: [],
+        }),
+        referenceLayer(),
+        InMemoryCacheLayer,
+        RustProjectLayer(repo),
+      )
+
+      const result = await Effect.runPromise(
+        Effect.provide(observe(registry, undefined), EnvLayer) as Effect.Effect<
+          ObserverOutput,
+          never,
+          never
+        >,
+      )
+      const matchCatchAll = result.signalResults.get(RsLd03.id)
+
+      expect(result.categories["legibility-decay"].signals[RsLd03.id]).toBeCloseTo(1 / 3)
+      expect(matchCatchAll?.score).toBeCloseTo(1 / 3)
+      expect(matchCatchAll?.diagnostics[0]).toMatchObject({
+        severity: "warn",
+        message: "Match in fallback uses 1 catch-all arm(s)",
+        data: expect.objectContaining({
+          catchAllArmCount: 1,
+          scoreMode: "double-weighted-catch-all-match-share",
+          scoreDenominator: "analyzed-match-expressions",
         }),
       })
     } finally {
