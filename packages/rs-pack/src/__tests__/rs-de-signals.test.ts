@@ -1,4 +1,8 @@
+import { buildRegistry, computeConfigHash } from "@skastr0/pulsar-core/scoring"
+import { SHARED_SIGNALS } from "@skastr0/pulsar-shared-signals"
 import { describe, expect, test } from "bun:test"
+import { Effect, Schema } from "effect"
+import { RS_PACK_SIGNALS } from "../pack.js"
 import { RsDe01 } from "../signals/rs-de-01-trait-coupling.js"
 import { RsDe02 } from "../signals/rs-de-02-dep-tree.js"
 import { RsDe03 } from "../signals/rs-de-03-feature-flags.js"
@@ -9,63 +13,214 @@ import {
   runSignalCompute,
 } from "./helpers.js"
 
+const rsDe01TraitWorkspaceFiles = (): Readonly<Record<string, string>> => ({
+  "Cargo.toml": [
+    "[package]",
+    'name = "de-trait-fixture"',
+    'version = "0.1.0"',
+    'edition = "2021"',
+    "",
+  ].join("\n"),
+  "src/lib.rs": [
+    "use std::fmt::{Display, Formatter, Result as FmtResult};",
+    "",
+    "pub struct LocalType;",
+    "pub trait LocalTrait { fn render(&self) -> &'static str; }",
+    "",
+    "impl Display for LocalType {",
+    "    fn fmt(&self, _f: &mut Formatter<'_>) -> FmtResult { Ok(()) }",
+    "}",
+    "",
+    "impl LocalTrait for LocalType {",
+    "    fn render(&self) -> &'static str { \"local\" }",
+    "}",
+    "",
+    "impl std::fmt::Debug for LocalType {",
+    "    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { Ok(()) }",
+    "}",
+    "",
+    "impl serde::Serialize for LocalType {",
+    "    fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>",
+    "    where",
+    "        S: serde::Serializer,",
+    "    {",
+    "        unimplemented!()",
+    "    }",
+    "}",
+    "",
+    "impl axum::response::IntoResponse for LocalType {",
+    "    fn into_response(self) -> axum::response::Response {",
+    "        unimplemented!()",
+    "    }",
+    "}",
+    "",
+    "impl external_crate::ExternalTrait for LocalType {",
+    "    fn external(&self) {}",
+    "}",
+    "",
+    "impl external_crate::ExternalTrait for external_crate::ExternalType {",
+    "    fn adapter(&self) {}",
+    "}",
+    "",
+  ].join("\n"),
+})
+
+const createRsDe01TraitWorkspace = () =>
+  createRustWorkspace("pulsar-rs-de01-", rsDe01TraitWorkspaceFiles())
+
+const createRsDe01CleanLocalWorkspace = () =>
+  createRustWorkspace("pulsar-rs-de01-clean-", {
+    "Cargo.toml": [
+      "[package]",
+      'name = "de-clean-fixture"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+    ].join("\n"),
+    "src/lib.rs": [
+      "pub struct LocalType;",
+      "pub trait LocalTrait { fn render(&self) -> &'static str; }",
+      "",
+      "impl LocalTrait for LocalType {",
+      "    fn render(&self) -> &'static str { \"local\" }",
+      "}",
+      "",
+    ].join("\n"),
+  })
+
+const createRsDe01NoTraitWorkspace = () =>
+  createRustWorkspace("pulsar-rs-de01-no-trait-", {
+    "Cargo.toml": [
+      "[package]",
+      'name = "de-no-trait-fixture"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+    ].join("\n"),
+    "src/lib.rs": "pub struct LocalType;\npub fn build() {}\n",
+  })
+
+const createRsDe01OneConcerningWorkspace = () =>
+  createRustWorkspace("pulsar-rs-de01-one-concerning-", {
+    "Cargo.toml": [
+      "[package]",
+      'name = "de-one-concerning-fixture"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+    ].join("\n"),
+    "src/lib.rs": [
+      "impl external_crate::ExternalTrait for external_crate::ExternalType {",
+      "    fn adapter(&self) {}",
+      "}",
+      "",
+    ].join("\n"),
+  })
+
+const createRsDe01MultiModuleWorkspace = () =>
+  createRustWorkspace("pulsar-rs-de01-multi-", {
+    "Cargo.toml": [
+      "[package]",
+      'name = "de-multi-fixture"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+    ].join("\n"),
+    "src/lib.rs": [
+      "pub mod alpha {",
+      "    impl external_crate::ExternalTrait for external_crate::AlphaType {",
+      "        fn adapter(&self) {}",
+      "    }",
+      "}",
+      "",
+      "pub mod beta {",
+      "    impl external_crate::ExternalTrait for external_crate::BetaType {",
+      "        fn adapter(&self) {}",
+      "    }",
+      "}",
+      "",
+    ].join("\n"),
+  })
+
 describe("RS-DE-* signals", () => {
-  test("RS-DE-01 classifies ordinary and concerning foreign trait implementations", async () => {
-    const repo = await createRustWorkspace("pulsar-rs-de01-", {
-      "Cargo.toml": [
-        "[package]",
-        'name = "de-trait-fixture"',
-        'version = "0.1.0"',
-        'edition = "2021"',
-        "",
-      ].join("\n"),
-      "src/lib.rs": [
-        "use std::fmt::{Display, Formatter, Result as FmtResult};",
-        "",
-        "pub struct LocalType;",
-        "pub trait LocalTrait { fn render(&self) -> &'static str; }",
-        "",
-        "impl Display for LocalType {",
-        "    fn fmt(&self, _f: &mut Formatter<'_>) -> FmtResult { Ok(()) }",
-        "}",
-        "",
-        "impl LocalTrait for LocalType {",
-        "    fn render(&self) -> &'static str { \"local\" }",
-        "}",
-        "",
-        "impl std::fmt::Debug for LocalType {",
-        "    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { Ok(()) }",
-        "}",
-        "",
-        "impl serde::Serialize for LocalType {",
-        "    fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>",
-        "    where",
-        "        S: serde::Serializer,",
-        "    {",
-        "        unimplemented!()",
-        "    }",
-        "}",
-        "",
-        "impl axum::response::IntoResponse for LocalType {",
-        "    fn into_response(self) -> axum::response::Response {",
-        "        unimplemented!()",
-        "    }",
-        "}",
-        "",
-        "impl external_crate::ExternalTrait for LocalType {",
-        "    fn external(&self) {}",
-        "}",
-        "",
-      ].join("\n"),
+  test("RS-DE-01 declares identity, config, cache, pack registration, and factor ledger", async () => {
+    const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
+    const versionedRegistry = await Effect.runPromise(buildRegistry([
+      ...SHARED_SIGNALS,
+      ...RS_PACK_SIGNALS.map((signal) =>
+        signal.id === RsDe01.id
+          ? { ...RsDe01, cacheVersion: `${RsDe01.cacheVersion}-changed` }
+          : signal,
+      ),
+    ]))
+    const registered = registry.byId.get("RS-DE-01")
+    const decoded = Schema.decodeUnknownSync(RsDe01.configSchema)(RsDe01.defaultConfig)
+    const factorLedger = registered?.factorLedger?.({} as never)
+    const baseCacheHash = computeConfigHash(RsDe01.id, registry, undefined)
+    const versionedCacheHash = computeConfigHash(RsDe01.id, versionedRegistry, undefined)
+    const configuredCacheHash = computeConfigHash(RsDe01.id, registry, {
+      id: "rs-de-01-contract",
+      domain: "test",
+      signal_overrides: {
+        [RsDe01.id]: {
+          config: {
+            ...RsDe01.defaultConfig,
+            top_n_diagnostics: 1,
+          },
+        },
+      },
     })
+
+    expect(RsDe01).toMatchObject({
+      id: "RS-DE-01-trait-coupling",
+      aliases: ["RS-DE-01"],
+      title: "Trait coupling",
+      tier: 1,
+      category: "dependency-entropy",
+      kind: "structural",
+      cacheVersion: "trait-coupling-config-applicability-diagnostics-v1",
+      inputs: [],
+    })
+    expect(decoded).toEqual({
+      exclude_globs: ["**/target/**", "**/tests/**", "**/examples/**", "**/benches/**"],
+      top_n_diagnostics: 10,
+    })
+    expect(registered?.id).toBe(RsDe01.id)
+    expect(registered?.cacheVersion).toBe(RsDe01.cacheVersion)
+    expect(registry.byId.get("RS-DE-01")?.id).toBe(RsDe01.id)
+    expect(versionedCacheHash).not.toBe(baseCacheHash)
+    expect(configuredCacheHash).not.toBe(baseCacheHash)
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.exclude_globs",
+        source: "signal-default",
+        affectsScore: false,
+        scoreRole: "metadata",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        source: "signal-default",
+        affectsScore: false,
+        scoreRole: "metadata",
+      }),
+    )
+  })
+
+  test("RS-DE-01 classifies ordinary and concerning foreign trait implementations", async () => {
+    const repo = await createRsDe01TraitWorkspace()
 
     try {
       const out = await runSignalCompute(RsDe01, repo, RsDe01.defaultConfig)
       const module = out.byModule.get("de-trait-fixture::crate")
-      expect(out.totalForeignTraitImpls).toBeGreaterThanOrEqual(4)
-      expect(out.totalConcerningForeignTraitImpls).toBe(1)
-      expect(module?.ordinaryForeignTraitImpls).toBeGreaterThanOrEqual(3)
-      expect(module?.concerningForeignTraitImpls).toBe(1)
+      expect(out.sourceFileCount).toBe(1)
+      expect(out.analyzedFileCount).toBe(1)
+      expect(out.totalTraitImpls).toBe(7)
+      expect(out.totalForeignTraitImpls).toBe(5)
+      expect(out.totalConcerningForeignTraitImpls).toBe(2)
+      expect(module?.ordinaryForeignTraitImpls).toBe(3)
+      expect(module?.concerningForeignTraitImpls).toBe(2)
       expect(module?.details.find((detail) => detail.trait === "std::fmt::Debug")?.family).toBe(
         "standard-library-ergonomic",
       )
@@ -79,8 +234,168 @@ describe("RS-DE-* signals", () => {
         "application-external",
       )
       expect(out.analysisMode).toBe("syntax-and-local-name-resolution")
+      expect(RsDe01.score(out)).toBe(0)
+      expect(RsDe01.outputMetadata?.(out)).toBeUndefined()
+
+      const diagnostics = RsDe01.diagnose(out)
+      expect(diagnostics).toHaveLength(1)
+      expect(diagnostics[0]).toMatchObject({
+        severity: "warn",
+        message: "Module de-trait-fixture::crate implements 2 concerning foreign traits (3 ordinary)",
+        data: {
+          module: "de-trait-fixture::crate",
+          foreignTraitImpls: 5,
+          concerningForeignTraitImpls: 2,
+          ordinaryForeignTraitImpls: 3,
+          orphanWorkaroundCandidates: 1,
+          analysisMode: "syntax-and-local-name-resolution",
+        },
+      })
+      expect(diagnostics[0]?.location?.file).toEndWith("/src/lib.rs")
+      expect(typeof diagnostics[0]?.location?.line).toBe("number")
+      expect(typeof diagnostics[0]?.data?.hash).toBe("string")
+      expect(diagnostics[0]?.data?.details).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            trait: "external_crate::ExternalTrait",
+            type: "LocalType",
+            relativeFile: "src/lib.rs",
+            family: "application-external",
+            orphanWorkaroundCandidate: false,
+          }),
+          expect.objectContaining({
+            trait: "external_crate::ExternalTrait",
+            type: "external_crate::ExternalType",
+            relativeFile: "src/lib.rs",
+            family: "application-external",
+            orphanWorkaroundCandidate: true,
+          }),
+        ]),
+      )
     } finally {
       await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-DE-01 keeps diagnostic hashes stable across checkout roots", async () => {
+    const firstRepo = await createRsDe01TraitWorkspace()
+    const secondRepo = await createRsDe01TraitWorkspace()
+
+    try {
+      const first = await runSignalCompute(RsDe01, firstRepo, RsDe01.defaultConfig)
+      const second = await runSignalCompute(RsDe01, secondRepo, RsDe01.defaultConfig)
+
+      expect(firstRepo).not.toBe(secondRepo)
+      expect(RsDe01.diagnose(first)[0]?.data?.hash).toBe(
+        RsDe01.diagnose(second)[0]?.data?.hash,
+      )
+    } finally {
+      await cleanupWorkspace(firstRepo)
+      await cleanupWorkspace(secondRepo)
+    }
+  })
+
+  test("RS-DE-01 keeps local-only, no-source, no-trait, and excluded source cases neutral", async () => {
+    const cleanRepo = await createRsDe01CleanLocalWorkspace()
+    const noSourceRepo = await createRustWorkspace("pulsar-rs-de01-no-source-", {
+      "README.md": "# no rust here\n",
+    })
+    const noTraitRepo = await createRsDe01NoTraitWorkspace()
+    const excludedRepo = await createRsDe01TraitWorkspace()
+
+    try {
+      const clean = await runSignalCompute(RsDe01, cleanRepo, RsDe01.defaultConfig)
+      const noSource = await runSignalCompute(RsDe01, noSourceRepo, RsDe01.defaultConfig)
+      const noTrait = await runSignalCompute(RsDe01, noTraitRepo, RsDe01.defaultConfig)
+      const excluded = await runSignalCompute(RsDe01, excludedRepo, {
+        ...RsDe01.defaultConfig,
+        exclude_globs: ["**/src/**"],
+      })
+
+      expect(clean.sourceFileCount).toBe(1)
+      expect(clean.analyzedFileCount).toBe(1)
+      expect(clean.totalTraitImpls).toBe(1)
+      expect(clean.modules).toEqual([])
+      expect(RsDe01.score(clean)).toBe(1)
+      expect(RsDe01.diagnose(clean)).toEqual([])
+      expect(RsDe01.outputMetadata?.(clean)).toBeUndefined()
+
+      expect(noSource.sourceFileCount).toBe(0)
+      expect(noSource.analyzedFileCount).toBe(0)
+      expect(RsDe01.score(noSource)).toBe(1)
+      expect(RsDe01.outputMetadata?.(noSource)).toEqual({
+        applicability: "insufficient_evidence",
+      })
+      expect(RsDe01.diagnose(noSource)[0]).toMatchObject({
+        severity: "warn",
+        data: {
+          sourceFileCount: 0,
+          analyzedFileCount: 0,
+          totalTraitImpls: 0,
+        },
+      })
+
+      expect(noTrait.sourceFileCount).toBe(1)
+      expect(noTrait.analyzedFileCount).toBe(1)
+      expect(noTrait.totalTraitImpls).toBe(0)
+      expect(RsDe01.score(noTrait)).toBe(1)
+      expect(RsDe01.diagnose(noTrait)).toEqual([])
+      expect(RsDe01.outputMetadata?.(noTrait)).toEqual({
+        applicability: "not_applicable",
+      })
+
+      expect(excluded.sourceFileCount).toBe(1)
+      expect(excluded.analyzedFileCount).toBe(0)
+      expect(excluded.totalTraitImpls).toBe(0)
+      expect(RsDe01.score(excluded)).toBe(1)
+      expect(RsDe01.diagnose(excluded)).toEqual([])
+      expect(RsDe01.outputMetadata?.(excluded)).toEqual({
+        applicability: "not_applicable",
+      })
+    } finally {
+      await cleanupWorkspace(cleanRepo)
+      await cleanupWorkspace(noSourceRepo)
+      await cleanupWorkspace(noTraitRepo)
+      await cleanupWorkspace(excludedRepo)
+    }
+  })
+
+  test("RS-DE-01 normalizes diagnostic limits and trait-coupling score pressure", async () => {
+    const oneConcerningRepo = await createRsDe01OneConcerningWorkspace()
+    const multiModuleRepo = await createRsDe01MultiModuleWorkspace()
+
+    try {
+      const oneConcerning = await runSignalCompute(RsDe01, oneConcerningRepo, RsDe01.defaultConfig)
+      const capped = await runSignalCompute(RsDe01, multiModuleRepo, {
+        ...RsDe01.defaultConfig,
+        top_n_diagnostics: 1.9,
+      })
+      const hiddenNegative = await runSignalCompute(RsDe01, multiModuleRepo, {
+        ...RsDe01.defaultConfig,
+        top_n_diagnostics: -1,
+      })
+      const hiddenNaN = await runSignalCompute(RsDe01, multiModuleRepo, {
+        ...RsDe01.defaultConfig,
+        top_n_diagnostics: Number.NaN,
+      })
+
+      expect(capped.totalConcerningForeignTraitImpls).toBe(2)
+      expect(capped.modules.map((module) => module.module)).toEqual([
+        "de-multi-fixture::crate::alpha",
+        "de-multi-fixture::crate::beta",
+      ])
+      expect(capped.diagnosticLimit).toBe(1)
+      expect(RsDe01.diagnose(capped)).toHaveLength(1)
+      expect(RsDe01.diagnose(capped)[0]?.data?.module).toBe("de-multi-fixture::crate::alpha")
+      expect(hiddenNegative.diagnosticLimit).toBe(0)
+      expect(hiddenNaN.diagnosticLimit).toBe(0)
+      expect(RsDe01.diagnose(hiddenNegative)).toEqual([])
+      expect(RsDe01.diagnose(hiddenNaN)).toEqual([])
+      expect(oneConcerning.totalConcerningForeignTraitImpls).toBe(1)
+      expect(RsDe01.score(capped)).toBeLessThan(RsDe01.score(oneConcerning))
+    } finally {
+      await cleanupWorkspace(oneConcerningRepo)
+      await cleanupWorkspace(multiModuleRepo)
     }
   })
 

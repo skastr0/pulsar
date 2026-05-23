@@ -84,7 +84,33 @@ export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "observer-integration.test.ts and CLI score tests: Rust observer integration includes RS-AD-03 in the RS pack against a real Cargo fixture, while CLI single-signal mode executes RS-AD-03 against a repository substrate with cargo metadata loaded from disk.",
     },
   },
-  pendingSignalContract("RS-DE-01-trait-coupling"),
+  {
+    id: "RS-DE-01-trait-coupling",
+    status: "verified",
+    requiredEvidence: ["integration"],
+    evidence: {
+      identity:
+        "rs-de-signals.test.ts: canonical id, alias, title, tier/category/kind, empty input contract, semantic cacheVersion, pack registration, registry alias lookup, config-cache hash sensitivity, and default config decoding are asserted.",
+      config:
+        "rs-de-signals.test.ts: exclude_globs and top_n_diagnostics decode through the real schema and fractional, negative, and NaN diagnostic caps are normalized through compute output.",
+      positiveFixture:
+        "rs-de-signals.test.ts: temporary Cargo crate fixtures run through RustProjectLayer and real tree-sitter Rust parsing to classify standard-library ergonomic, serialization, framework adapter, application-external, and orphan-workaround candidate trait implementations.",
+      negativeFixture:
+        "rs-de-signals.test.ts: local-trait/local-type impls, no Rust source, no trait impls, and fully excluded Rust source return neutral output without false foreign-trait pressure.",
+      applicability:
+        "rs-de-signals.test.ts: clean local trait impls remain applicable measured passes, no Rust source emits insufficient_evidence metadata, and no trait impls or fully excluded source emit not_applicable metadata.",
+      score:
+        "rs-de-signals.test.ts: concerning fixtures score below clean fixtures, no evidence stays score-neutral through applicability metadata, and additional concerning impls increase score pressure without dilution by clean modules.",
+      diagnostics:
+        "rs-de-signals.test.ts: diagnostics assert severity, file/line locations, deterministic module ordering, checkout-root-independent stable hash payloads, trait/type/family/orphan-workaround detail payloads, missing-source warning payloads, and normalized diagnostic caps.",
+      factorLedger:
+        "rs-de-signals.test.ts: registered RS pack signal emits config.exclude_globs and config.top_n_diagnostics as non-score-bearing metadata with signal-default source.",
+      cacheSemantics:
+        "rs-de-signals.test.ts and pack.test.ts: RS-DE-01 declares trait-coupling-config-applicability-diagnostics-v1 cacheVersion, config/cacheVersion changes alter the signal config hash, and the RS pack wrapper preserves the signal-specific cacheVersion.",
+      integration:
+        "observer-integration.test.ts and CLI score tests: Rust observer integration includes dependency-entropy Rust signals in the RS pack, while CLI single-signal mode executes RS-DE-01 against a repository substrate with real Rust source parsed from disk.",
+    },
+  },
   pendingSignalContract("RS-DE-02-dependency-tree"),
   pendingSignalContract("RS-DE-03-feature-flags"),
   pendingSignalContract("RS-DE-04-fan-in-fan-out"),

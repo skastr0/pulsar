@@ -3,6 +3,7 @@ import { RS_PACK_SIGNALS } from "../pack.js"
 import { RsAd01 } from "../signals/rs-ad-01-visibility-surface.js"
 import { RsAd02 } from "../signals/rs-ad-02-crate-boundaries.js"
 import { RsAd03 } from "../signals/rs-ad-03-circular-crate-deps.js"
+import { RsDe01 } from "../signals/rs-de-01-trait-coupling.js"
 
 describe("RS pack signal identity", () => {
   test("pack wrapper preserves signal-specific cache versions", () => {
@@ -15,10 +16,14 @@ describe("RS pack signal identity", () => {
     const circularCrateDependencies = RS_PACK_SIGNALS.find((signal) =>
       signal.aliases?.includes("RS-AD-03"),
     )
+    const traitCoupling = RS_PACK_SIGNALS.find((signal) =>
+      signal.aliases?.includes("RS-DE-01"),
+    )
 
     expect(visibilitySurface?.cacheVersion).toBe(RsAd01.cacheVersion)
     expect(crateBoundaries?.cacheVersion).toBe(RsAd02.cacheVersion)
     expect(circularCrateDependencies?.cacheVersion).toBe(RsAd03.cacheVersion)
+    expect(traitCoupling?.cacheVersion).toBe(RsDe01.cacheVersion)
   })
 
   test("all Rust signals expose semantic ids, aliases, and titles", () => {

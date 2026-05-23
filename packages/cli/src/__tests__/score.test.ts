@@ -1347,6 +1347,41 @@ export function stubF() { throw new Error("Not implemented") }
     }
   }, 120_000)
 
+  test("single-signal CLI wrapper executes RS-DE-01 with Rust source", async () => {
+    const repoPath = await initRepo([
+      {
+        path: "Cargo.toml",
+        content: [
+          "[package]",
+          'name = "de-cli"',
+          'version = "0.1.0"',
+          'edition = "2021"',
+          "",
+        ].join("\n"),
+      },
+      {
+        path: "src/lib.rs",
+        content: [
+          "impl external_crate::ExternalTrait for external_crate::ExternalType {",
+          "    fn adapter(&self) {}",
+          "}",
+          "",
+        ].join("\n"),
+      },
+    ])
+    try {
+      const out = runCli(repoPath, ["score", "--signal", "RS-DE-01", "."])
+      expect(out.status).toBe(0)
+      expect(out.stdout).toContain("Signal: RS-DE-01-trait-coupling")
+      expect(out.stdout).toContain("WARN  Module de-cli::crate implements 1 concerning foreign traits (0 ordinary)")
+      expect(out.stdout).toContain("Score:  0.500")
+      expect(out.stdout).not.toContain("config.top_n_diagnostics=10 threshold")
+      expect(out.stdout).not.toContain("config.exclude_globs=")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
   test("single-signal mode summarizes score-bearing factor audit details", async () => {
     const repoPath = await initRepo([
       {
