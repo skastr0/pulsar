@@ -21,6 +21,7 @@ import { RsLd01 } from "../signals/rs-ld-01-unsafe.js"
 import { RsLd02 } from "../signals/rs-ld-02-lifetimes.js"
 import { RsLd03 } from "../signals/rs-ld-03-match-catch-all.js"
 import { RsLd04 } from "../signals/rs-ld-04-error-granularity.js"
+import { RsLd05 } from "../signals/rs-ld-05-complexity.js"
 import { cleanupWorkspace, createRustWorkspace, referenceLayer } from "./helpers.js"
 
 describe("rs-pack integration", () => {
@@ -351,6 +352,79 @@ describe("rs-pack integration", () => {
           classification: "collapsed",
           scoreMode: "granular-result-boundary-share",
           scoreDenominator: "public-result-boundary-functions",
+        }),
+      })
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  }, 120_000)
+
+  test("observer path carries RS-LD-05 cyclomatic complexity score and diagnostics", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-observer-ld05-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "complexity-observer"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub fn complex(value: u8) -> u8 {",
+        "    if value > 0 && value < 10 {",
+        "        1",
+        "    } else {",
+        "        match value {",
+        "            0 => 0,",
+        "            1 => 1,",
+        "            2 => 2,",
+        "            3 => 3,",
+        "            4 => 4,",
+        "            5 => 5,",
+        "            6 => 6,",
+        "            7 => 7,",
+        "            8 => 8,",
+        "            _ => 9,",
+        "        }",
+        "    }",
+        "}",
+        "",
+        "pub fn simple_a(value: u8) -> u8 { value }",
+        "pub fn simple_b(value: u8) -> u8 { value }",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
+      const EnvLayer = Layer.mergeAll(
+        Layer.succeed(SignalContextTag, {
+          gitSha: "HEAD",
+          worktreePath: repo,
+          changedHunks: [],
+        }),
+        referenceLayer(),
+        InMemoryCacheLayer,
+        RustProjectLayer(repo),
+      )
+
+      const result = await Effect.runPromise(
+        Effect.provide(observe(registry, undefined), EnvLayer) as Effect.Effect<
+          ObserverOutput,
+          never,
+          never
+        >,
+      )
+      const cyclomaticComplexity = result.signalResults.get(RsLd05.id)
+
+      expect(result.categories["legibility-decay"].signals[RsLd05.id]).toBeCloseTo(1 / 3)
+      expect(cyclomaticComplexity?.score).toBeCloseTo(1 / 3)
+      expect(cyclomaticComplexity?.diagnostics[0]).toMatchObject({
+        severity: "warn",
+        message: "Function complex has cyclomatic complexity 13",
+        data: expect.objectContaining({
+          complexity: 13,
+          scoreMode: "double-weighted-over-threshold-functions",
+          scoreDenominator: "analyzed-functions",
         }),
       })
     } finally {

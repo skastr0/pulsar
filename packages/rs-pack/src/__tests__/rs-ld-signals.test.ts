@@ -278,6 +278,80 @@ const createLifetimeCfgWorkspace = () =>
     ].join("\n"),
   })
 
+const createComplexityWorkspace = () =>
+  createRustWorkspace("pulsar-rs-ld05-complexity-", {
+    "Cargo.toml": [
+      "[package]",
+      'name = "complexity-fixture"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+    ].join("\n"),
+    "src/lib.rs": [
+      "pub fn simple(value: u8) -> u8 {",
+      "    value",
+      "}",
+      "",
+      "pub fn branch(value: u8) -> u8 {",
+      "    if value > 0 { 1 } else { 0 }",
+      "}",
+      "",
+      "pub fn boolean_probe(value: u8) -> u8 {",
+      "    if value > 0 && value < 10 || value == 42 {",
+      "        1",
+      "    } else {",
+      "        0",
+      "    }",
+      "}",
+      "",
+      "pub fn match_probe(value: u8) -> u8 {",
+      "    match value {",
+      "        0 => 0,",
+      "        1 => 1,",
+      "        _ => 2,",
+      "    }",
+      "}",
+      "",
+    ].join("\n"),
+  })
+
+const createComplexityCfgWorkspace = () =>
+  createRustWorkspace("pulsar-rs-ld05-cfg-", {
+    "Cargo.toml": [
+      "[package]",
+      'name = "complexity-cfg"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+    ].join("\n"),
+    "src/lib.rs": [
+      "pub fn production(value: u8) -> u8 {",
+      "    if value > 0 { 1 } else { 0 }",
+      "}",
+      "",
+      "#[cfg(test)]",
+      "pub fn test_only(value: u8) -> u8 {",
+      "    if value == 0 {",
+      "        0",
+      "    } else if value == 1 || value == 2 {",
+      "        1",
+      "    } else {",
+      "        2",
+      "    }",
+      "}",
+      "",
+      "#[cfg(any(test, feature = \"probe\"))]",
+      "pub fn composite_test_only(value: u8) -> u8 {",
+      "    match value {",
+      "        0 => 0,",
+      "        1 => 1,",
+      "        _ => 2,",
+      "    }",
+      "}",
+      "",
+    ].join("\n"),
+  })
+
 const createLifetimeScoreWorkspace = (
   name: string,
   functions: ReadonlyArray<string>,
@@ -2145,21 +2219,221 @@ describe("RS-LD-* signals", () => {
     }
   })
 
+  test("RS-LD-05 declares identity, config, cache, pack registration, and factor ledger", async () => {
+    const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
+    const versionedRegistry = await Effect.runPromise(
+      buildRegistry([
+        ...SHARED_SIGNALS,
+        ...RS_PACK_SIGNALS.filter((signal) => signal.id !== RsLd05.id),
+        { ...RsLd05, cacheVersion: `${RsLd05.cacheVersion}-next` },
+      ]),
+    )
+    const registered = registry.byId.get("RS-LD-05")
+    const decoded = Schema.decodeUnknownSync(RsLd05.configSchema)(RsLd05.defaultConfig)
+    const factorLedger = registered?.factorLedger?.({})
+    const baseCacheHash = computeConfigHash(RsLd05.id, registry, undefined)
+    const versionedCacheHash = computeConfigHash(RsLd05.id, versionedRegistry, undefined)
+    const configuredCacheHash = computeConfigHash(RsLd05.id, registry, {
+      id: "rs-ld-05-contract",
+      domain: "test",
+      signal_overrides: {
+        [RsLd05.id]: {
+          config: {
+            ...RsLd05.defaultConfig,
+            max_complexity: 2,
+            top_n_diagnostics: 1,
+          },
+        },
+      },
+    })
+
+    expect(RsLd05).toMatchObject({
+      id: "RS-LD-05-cyclomatic-complexity",
+      aliases: ["RS-LD-05"],
+      title: "Cyclomatic complexity",
+      tier: 1,
+      category: "legibility-decay",
+      kind: "legibility",
+      cacheVersion: "cyclomatic-complexity-config-applicability-diagnostics-cfg-test-v1",
+      inputs: [],
+    })
+    expect(decoded).toEqual({
+      exclude_globs: ["**/target/**", "**/tests/**", "**/examples/**", "**/benches/**"],
+      max_complexity: 10,
+      top_n_diagnostics: 10,
+    })
+    expect(registered?.id).toBe(RsLd05.id)
+    expect(registered?.cacheVersion).toBe(RsLd05.cacheVersion)
+    expect(registry.byId.get("RS-LD-05")?.id).toBe(RsLd05.id)
+    expect(baseCacheHash).not.toBe(versionedCacheHash)
+    expect(baseCacheHash).not.toBe(configuredCacheHash)
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.exclude_globs",
+        affectsScore: true,
+        scoreRole: "evidence",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.max_complexity",
+        affectsScore: true,
+        scoreRole: "threshold",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        affectsScore: false,
+        scoreRole: "metadata",
+      }),
+    )
+  })
+
   test("RS-LD-05 computes standard cyclomatic complexity", async () => {
-    const repo = await createLegibilityWorkspace()
+    const repo = await createComplexityWorkspace()
     try {
       const out = await runSignalCompute(
         RsLd05,
         repo,
         { ...RsLd05.defaultConfig, max_complexity: 3 },
       )
-      const telemetry = out.functions.find((fn) => fn.name === "telemetry_probe")
-      expect(telemetry).toBeDefined()
-      expect(telemetry?.complexity).toBeGreaterThan(3)
+      const simple = out.functions.find((fn) => fn.name === "simple")
+      const branch = out.functions.find((fn) => fn.name === "branch")
+      const booleanProbe = out.functions.find((fn) => fn.name === "boolean_probe")
+      const matchProbe = out.functions.find((fn) => fn.name === "match_probe")
+
+      expect(simple?.complexity).toBe(1)
+      expect(branch?.complexity).toBe(2)
+      expect(booleanProbe?.complexity).toBe(4)
+      expect(matchProbe?.complexity).toBe(4)
+      expect(out.sourceFileCount).toBe(1)
+      expect(out.analyzedSourceFileCount).toBe(1)
+      expect(out.totalFunctions).toBe(4)
+      expect(out.maxComplexity).toBe(3)
+      expect(out.diagnosticLimit).toBe(10)
       expect(out.analysisMode).toBe("standard-cyclomatic")
-      expect(out.overThresholdCount).toBeGreaterThanOrEqual(1)
+      expect(out.scoreMode).toBe("double-weighted-over-threshold-functions")
+      expect(out.scoreDenominator).toBe("analyzed-functions")
+      expect(out.overThresholdCount).toBe(2)
+      expect(out.overThresholdFunctionShare).toBe(0.5)
+      expect(out.weightedComplexityPressure).toBe(1)
+      expect(RsLd05.score(out)).toBe(0)
+      expect(RsLd05.outputMetadata?.(out)).toBeUndefined()
+      expect(RsLd05.diagnose(out)[0]).toMatchObject({
+        severity: "warn",
+        message: "Function boolean_probe has cyclomatic complexity 4",
+        data: expect.objectContaining({
+          maxComplexity: 3,
+          scoreMode: "double-weighted-over-threshold-functions",
+          scoreDenominator: "analyzed-functions",
+        }),
+      })
     } finally {
       await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-LD-05 excludes cfg-test-gated functions", async () => {
+    const repo = await createComplexityCfgWorkspace()
+    try {
+      const out = await runSignalCompute(
+        RsLd05,
+        repo,
+        { ...RsLd05.defaultConfig, max_complexity: 1 },
+      )
+
+      expect(out.sourceFileCount).toBe(1)
+      expect(out.analyzedSourceFileCount).toBe(1)
+      expect(out.totalFunctions).toBe(1)
+      expect(out.functions.map((fn) => fn.name)).toEqual(["production"])
+      expect(out.functions[0]).toMatchObject({
+        name: "production",
+        complexity: 2,
+      })
+      expect(RsLd05.outputMetadata?.(out)).toBeUndefined()
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-LD-05 normalizes diagnostics and applicability evidence", async () => {
+    const complex = await createComplexityWorkspace()
+    const missing = await createRustWorkspace("pulsar-rs-ld05-missing-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "complexity-missing"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+    })
+    const noFunctions = await createRustWorkspace("pulsar-rs-ld05-no-functions-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "complexity-no-functions"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub struct Data;",
+        "",
+      ].join("\n"),
+    })
+    const excluded = await createComplexityWorkspace()
+
+    try {
+      const out = await runSignalCompute(
+        RsLd05,
+        complex,
+        { ...RsLd05.defaultConfig, max_complexity: Number.NaN, top_n_diagnostics: 1.8 },
+      )
+      const missingOut = await runSignalCompute(RsLd05, missing, RsLd05.defaultConfig)
+      const noFunctionOut = await runSignalCompute(RsLd05, noFunctions, RsLd05.defaultConfig)
+      const excludedOut = await runSignalCompute(
+        RsLd05,
+        excluded,
+        { ...RsLd05.defaultConfig, exclude_globs: ["**/src/**"] },
+      )
+
+      expect(out.maxComplexity).toBe(10)
+      expect(out.diagnosticLimit).toBe(1)
+      expect(RsLd05.diagnose(out)).toHaveLength(1)
+
+      expect(missingOut.sourceFileCount).toBe(0)
+      expect(missingOut.analyzedSourceFileCount).toBe(0)
+      expect(missingOut.totalFunctions).toBe(0)
+      expect(RsLd05.score(missingOut)).toBe(1)
+      expect(RsLd05.outputMetadata?.(missingOut)).toEqual({
+        applicability: "insufficient_evidence",
+      })
+      expect(RsLd05.diagnose(missingOut)[0]).toMatchObject({
+        severity: "warn",
+        message: "RS-LD-05 found no Rust source files for cyclomatic complexity analysis",
+      })
+
+      expect(noFunctionOut.sourceFileCount).toBe(1)
+      expect(noFunctionOut.analyzedSourceFileCount).toBe(1)
+      expect(noFunctionOut.totalFunctions).toBe(0)
+      expect(RsLd05.score(noFunctionOut)).toBe(1)
+      expect(RsLd05.outputMetadata?.(noFunctionOut)).toEqual({
+        applicability: "not_applicable",
+      })
+      expect(RsLd05.diagnose(noFunctionOut)).toEqual([])
+
+      expect(excludedOut.sourceFileCount).toBe(1)
+      expect(excludedOut.analyzedSourceFileCount).toBe(0)
+      expect(excludedOut.totalFunctions).toBe(0)
+      expect(RsLd05.outputMetadata?.(excludedOut)).toEqual({
+        applicability: "not_applicable",
+      })
+      expect(RsLd05.diagnose(excludedOut)).toEqual([])
+    } finally {
+      await cleanupWorkspace(complex)
+      await cleanupWorkspace(missing)
+      await cleanupWorkspace(noFunctions)
+      await cleanupWorkspace(excluded)
     }
   })
 

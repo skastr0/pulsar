@@ -408,7 +408,33 @@ export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "observer-integration.test.ts and CLI score tests: Rust observer integration carries RS-LD-04 error granularity score and diagnostics through the RS pack against a real Cargo fixture, while CLI single-signal mode executes RS-LD-04 against the repository substrate through both source and compiled CLI entrypoints.",
     },
   },
-  pendingSignalContract("RS-LD-05-cyclomatic-complexity"),
+  {
+    id: "RS-LD-05-cyclomatic-complexity",
+    status: "verified",
+    requiredEvidence: ["integration"],
+    evidence: {
+      identity:
+        "rs-ld-signals.test.ts: canonical id, alias, title, tier/category/kind, empty input contract, semantic cacheVersion, pack registration, registry alias lookup, config-cache hash sensitivity, default config decoding, factor ledger, score mode, and score denominator are asserted.",
+      config:
+        "rs-ld-signals.test.ts: exclude_globs, max_complexity, and top_n_diagnostics decode through the real schema; fractional and NaN diagnostic/threshold config values are normalized through compute output.",
+      positiveFixture:
+        "rs-ld-signals.test.ts: temporary Cargo fixtures run through RustProjectLayer and real tree-sitter Rust parsing to prove base complexity, if/else branches, boolean operator branches, match-arm branches, by-file summaries, score shares, diagnostics, and cfg(test) exclusion.",
+      negativeFixture:
+        "rs-ld-signals.test.ts: missing Rust source, Rust source with no functions, fully excluded Rust source, and cfg(test)/cfg(any(test,...)) functions return neutral or excluded evidence without false complexity pressure.",
+      applicability:
+        "rs-ld-signals.test.ts: loaded Rust source with analyzed functions is applicable, no Rust source emits insufficient_evidence metadata, and analyzed Rust source with no functions or fully excluded source emits not_applicable metadata.",
+      score:
+        "rs-ld-signals.test.ts: score is asserted as double-weighted over-threshold analyzed-function share, with denominator named as analyzed functions; no-function fixtures score 1 and two-over-four functions scores 0.",
+      diagnostics:
+        "rs-ld-signals.test.ts: diagnostics assert severity, source locations, deterministic complexity ordering, function/module/complexity payloads, normalized diagnostic caps, score mode, and denominator payloads.",
+      factorLedger:
+        "rs-ld-signals.test.ts: registered RS pack signal emits config.exclude_globs as score-bearing evidence, config.max_complexity as score-bearing threshold, and config.top_n_diagnostics as non-score-bearing metadata with signal-default source.",
+      cacheSemantics:
+        "rs-ld-signals.test.ts and pack.test.ts: RS-LD-05 declares cyclomatic-complexity-config-applicability-diagnostics-cfg-test-v1 cacheVersion, config/cacheVersion changes alter the signal config hash, and the RS pack wrapper preserves the signal-specific cacheVersion.",
+      integration:
+        "observer-integration.test.ts and CLI score tests: Rust observer integration carries RS-LD-05 cyclomatic complexity score and diagnostics through the RS pack against a real Cargo fixture, while CLI single-signal mode executes RS-LD-05 against the repository substrate through both source and compiled CLI entrypoints.",
+    },
+  },
   pendingSignalContract("RS-LD-06-domain-term-consistency"),
   pendingSignalContract("RS-SL-01-duplication"),
   pendingSignalContract("RS-SL-02-suppressions"),
