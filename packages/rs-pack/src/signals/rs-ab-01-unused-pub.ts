@@ -6,8 +6,13 @@ import {
 } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
 import { collectRustProjectFacts, type RustAnalysis, type RustItemFact } from "../rust-analysis.js"
-import { RustProjectTag, type RustProject } from "../project.js"
+import { RustProjectTag, type RustManifestInfo, type RustProject } from "../project.js"
 import { DEFAULT_RUST_EXCLUDE_GLOBS } from "./shared-rust-ast.js"
+import {
+  buildCrateIdentifierIndex,
+  type CrateReferenceIndex,
+  resolveCrateImportTarget,
+} from "./rs-ad-02-crate-analysis.js"
 import {
   resolveCrateRelativePath,
   toLocalRelativeSegments,
@@ -47,7 +52,7 @@ export const RsAb01: Signal<RsAb01Config, RsAb01Output, RustProjectTag> = {
   tier: 1,
   category: "abstraction-bloat",
   kind: "structural",
-  cacheVersion: "rs-ab-01-public-surface-use-segments-v3",
+  cacheVersion: "rs-ab-01-public-surface-use-segments-aliases-v4",
   configSchema: RsAb01Config,
   defaultConfig: {
     exclude_globs: [...DEFAULT_RUST_EXCLUDE_GLOBS],
@@ -89,6 +94,7 @@ const computeUnusedPublicItems = async (
   const facts = await collectRustProjectFacts(project)
   const workspaceCrates = collectWorkspaceCrates(project)
   const libraryCrates = collectLibraryCrates(project, workspaceCrates)
+  const crateIndex = buildCrateIdentifierIndex(project.manifests, project.cargoMetadata)
   const rootNamesByCrate = collectRootNamesByCrate(facts)
   const exportedRootModules = collectExportedRootModules(facts)
   const publicItems = collectPublicItems(facts, config)
@@ -97,7 +103,8 @@ const computeUnusedPublicItems = async (
     facts,
     publicItemKeys,
     rootNamesByCrate,
-    workspaceCrates,
+    manifests: project.manifests,
+    crateIndex,
     excludeGlobs: config.exclude_globs,
   })
   const publicSummaries = summarizePublicItems({
@@ -201,7 +208,8 @@ const collectPublicUsage = (input: {
   readonly facts: RustAnalysis
   readonly publicItemKeys: ReadonlySet<string>
   readonly rootNamesByCrate: ReadonlyMap<string, ReadonlySet<string>>
-  readonly workspaceCrates: ReadonlySet<string>
+  readonly manifests: ReadonlyArray<RustManifestInfo>
+  readonly crateIndex: CrateReferenceIndex
   readonly excludeGlobs: ReadonlyArray<string>
 }): PublicUsage => {
   const crossCrateUses = new Map<string, number>()
@@ -209,10 +217,15 @@ const collectPublicUsage = (input: {
 
   for (const useFact of input.facts.uses) {
     if (isExcluded(useFact.file, input.excludeGlobs)) continue
-    const [root] = useFact.segments
-    if (root === undefined) continue
-    if (input.workspaceCrates.has(root) && root !== useFact.crateName) {
-      recordCrossCrateUse(input.facts, input.publicItemKeys, crossCrateUses, root, useFact.segments)
+    const targetCrate = resolveCrateImportTarget(useFact, input.manifests, input.crateIndex)
+    if (targetCrate !== undefined) {
+      recordCrossCrateUse(
+        input.facts,
+        input.publicItemKeys,
+        crossCrateUses,
+        targetCrate.packageName ?? targetCrate.name,
+        useFact.segments.slice(1),
+      )
       continue
     }
     if (useFact.visibility.kind !== "pub") continue
@@ -233,9 +246,9 @@ const recordCrossCrateUse = (
   publicItemKeys: ReadonlySet<string>,
   crossCrateUses: Map<string, number>,
   crateName: string,
-  segments: ReadonlyArray<string>,
+  relativeSegments: ReadonlyArray<string>,
 ): void => {
-  const key = resolvedPublicItemKey(facts, crateName, segments.slice(1))
+  const key = resolvedPublicItemKey(facts, crateName, relativeSegments)
   if (key === undefined || !publicItemKeys.has(key)) return
   crossCrateUses.set(key, (crossCrateUses.get(key) ?? 0) + 1)
 }

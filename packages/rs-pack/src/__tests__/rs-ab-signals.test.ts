@@ -98,6 +98,72 @@ describe("RS-AB-* signals", () => {
     }
   })
 
+  test("RS-AB-01 resolves hyphenated crates and dependency aliases as cross-crate uses", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-ab01-alias-", {
+      "Cargo.toml": [
+        "[workspace]",
+        'members = ["crates/core-lib", "crates/hyphen-user", "crates/alias-user"]',
+        'resolver = "2"',
+        "",
+      ].join("\n"),
+      "crates/core-lib/Cargo.toml": [
+        "[package]",
+        'name = "core-lib"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "crates/core-lib/src/lib.rs": [
+        "pub struct HyphenUsed;",
+        "pub struct AliasUsed;",
+        "pub struct UnusedRoot;",
+        "mod internal {",
+        "    pub struct Hidden;",
+        "}",
+        "",
+      ].join("\n"),
+      "crates/hyphen-user/Cargo.toml": [
+        "[package]",
+        'name = "hyphen-user"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+        "[dependencies]",
+        'core-lib = { path = "../core-lib" }',
+        "",
+      ].join("\n"),
+      "crates/hyphen-user/src/lib.rs": [
+        "use core_lib::HyphenUsed;",
+        "pub fn use_hyphen(_: HyphenUsed) {}",
+        "",
+      ].join("\n"),
+      "crates/alias-user/Cargo.toml": [
+        "[package]",
+        'name = "alias-user"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+        "[dependencies]",
+        'domain = { package = "core-lib", path = "../core-lib" }',
+        "",
+      ].join("\n"),
+      "crates/alias-user/src/lib.rs": [
+        "use domain::AliasUsed;",
+        "pub fn use_alias(_: AliasUsed) {}",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const out = await runSignalCompute(RsAb01, repo, RsAb01.defaultConfig)
+      expect(out.exportedApiItems.find((item) => item.name === "HyphenUsed")?.crossCrateUses).toBe(1)
+      expect(out.exportedApiItems.find((item) => item.name === "AliasUsed")?.crossCrateUses).toBe(1)
+      expect(out.deadPublicItems.map((item) => item.name)).toEqual(["Hidden"])
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
   test("RS-AB-02 measures local trait-object call-chain depth", async () => {
     const repo = await createRustWorkspace("pulsar-rs-ab02-", {
       "Cargo.toml": [

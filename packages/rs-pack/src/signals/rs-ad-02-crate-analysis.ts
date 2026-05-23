@@ -229,7 +229,7 @@ export const hasBoundaryRuleForUse = (
   return targetCrate !== undefined && lookupBoundaryRule(rules, targetCrate) !== undefined
 }
 
-const resolveCrateImportTarget = (
+export const resolveCrateImportTarget = (
   useFact: RustUseFact,
   manifests: ReadonlyArray<RustManifestInfo>,
   crateIndex: CrateReferenceIndex,
