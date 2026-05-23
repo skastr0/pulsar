@@ -14,6 +14,7 @@ import { RS_PACK_SIGNALS } from "../pack.js"
 import { RustProjectLayer } from "../project.js"
 import { RsAb01 } from "../signals/rs-ab-01-unused-pub.js"
 import { RsAb02 } from "../signals/rs-ab-02-trait-object-depth.js"
+import { RsAb03 } from "../signals/rs-ab-03-generic-proliferation.js"
 import { RsDe04 } from "../signals/rs-de-04-fan-in-fan-out.js"
 import { cleanupWorkspace, createRustWorkspace, referenceLayer } from "./helpers.js"
 
@@ -199,6 +200,60 @@ describe("rs-pack integration", () => {
       expect(traitObjectDepth?.diagnostics[0]).toMatchObject({
         severity: "warn",
         message: "Trait-object chain depth 3 in top",
+      })
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  }, 120_000)
+
+  test("observer path carries RS-AB-03 generic proliferation score and diagnostics", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-observer-ab03-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "generic-observer"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub struct Clean<T>(pub T);",
+        "pub fn bound_heavy<T>(value: T)",
+        "where",
+        "    T: Clone + Send + Sync + Default + 'static + Into<String> + AsRef<str>,",
+        "{",
+        "    let _ = value;",
+        "}",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
+      const EnvLayer = Layer.mergeAll(
+        Layer.succeed(SignalContextTag, {
+          gitSha: "HEAD",
+          worktreePath: repo,
+          changedHunks: [],
+        }),
+        referenceLayer(),
+        InMemoryCacheLayer,
+        RustProjectLayer(repo),
+      )
+
+      const result = await Effect.runPromise(
+        Effect.provide(observe(registry, undefined), EnvLayer) as Effect.Effect<
+          ObserverOutput,
+          never,
+          never
+        >,
+      )
+      const genericProliferation = result.signalResults.get(RsAb03.id)
+
+      expect(result.categories["abstraction-bloat"].signals[RsAb03.id]).toBeCloseTo(0.5)
+      expect(genericProliferation?.score).toBeCloseTo(0.5)
+      expect(genericProliferation?.diagnostics[0]).toMatchObject({
+        severity: "warn",
+        message: "bound_heavy has generic signature complexity 9",
       })
     } finally {
       await cleanupWorkspace(repo)

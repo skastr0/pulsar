@@ -1131,6 +1131,18 @@ describe("RS-AB-* signals", () => {
     const factorLedger = registered?.factorLedger?.({})
     const baseCacheHash = computeConfigHash(RsAb03.id, registry, undefined)
     const versionedCacheHash = computeConfigHash(RsAb03.id, versionedRegistry, undefined)
+    const complexityConfiguredCacheHash = computeConfigHash(RsAb03.id, registry, {
+      id: "rs-ab-03-complexity-contract",
+      domain: "test",
+      signal_overrides: {
+        [RsAb03.id]: {
+          config: {
+            ...RsAb03.defaultConfig,
+            max_generic_complexity: 7,
+          },
+        },
+      },
+    })
     const configuredCacheHash = computeConfigHash(RsAb03.id, registry, {
       id: "rs-ab-03-contract",
       domain: "test",
@@ -1165,6 +1177,7 @@ describe("RS-AB-* signals", () => {
     expect(registered?.cacheVersion).toBe(RsAb03.cacheVersion)
     expect(registry.byId.get("RS-AB-03")?.id).toBe(RsAb03.id)
     expect(baseCacheHash).not.toBe(versionedCacheHash)
+    expect(baseCacheHash).not.toBe(complexityConfiguredCacheHash)
     expect(baseCacheHash).not.toBe(configuredCacheHash)
     expect(factorLedger?.entries).toContainEqual(
       expect.objectContaining({

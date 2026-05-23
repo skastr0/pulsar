@@ -246,7 +246,33 @@ export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "observer-integration.test.ts and CLI score tests: Rust observer integration includes RS-AB-02 in the abstraction-bloat category, while CLI single-signal mode executes RS-AB-02 against a repository substrate with Rust source parsed from disk.",
     },
   },
-  pendingSignalContract("RS-AB-03-generic-proliferation"),
+  {
+    id: "RS-AB-03-generic-proliferation",
+    status: "verified",
+    requiredEvidence: ["integration"],
+    evidence: {
+      identity:
+        "rs-ab-signals.test.ts: canonical id, alias, title, tier/category/kind, empty input contract, semantic cacheVersion, pack registration, registry alias lookup, config-cache hash sensitivity, and default config decoding are asserted.",
+      config:
+        "rs-ab-signals.test.ts: exclude_globs, max_generic_parameters, max_generic_complexity, and top_n_diagnostics decode through the real schema; fractional and NaN threshold/cap values are normalized through compute output.",
+      positiveFixture:
+        "rs-ab-signals.test.ts: temporary Cargo fixtures run through RustProjectLayer and real tree-sitter Rust parsing to prove generic functions, structs, enums, traits, type aliases, impl generics, lifetime parameters, const parameters, where predicates, type-parameter bounds, trait supertraits, scoped bounds, removed trait bounds, higher-ranked trait bounds, associated type bounds, and nested generic arguments.",
+      negativeFixture:
+        "rs-ab-signals.test.ts: missing Rust source, no generic declarations, fully excluded Rust source, and composite cfg test-gated generic declarations return neutral output without false generic proliferation pressure.",
+      applicability:
+        "rs-ab-signals.test.ts: loaded Rust source with generic declaration evidence is applicable, no Rust source emits insufficient_evidence metadata, and loaded source with no generic declarations or no analyzed source emits not_applicable metadata.",
+      score:
+        "rs-ab-signals.test.ts: parameter-count and generic-complexity fixtures score below clean fixtures, stricter max_generic_parameters and max_generic_complexity thresholds lower scores monotonically, and relaxed complexity thresholds remove complexity-only pressure without hiding parameter pressure.",
+      diagnostics:
+        "rs-ab-signals.test.ts: diagnostics assert severity, source locations, deterministic declaration ordering, module/param/where/bound/complexity payloads, exceeded-threshold payloads, no-source warning payloads, and normalized diagnostic caps.",
+      factorLedger:
+        "rs-ab-signals.test.ts: registered RS pack signal emits config.exclude_globs as score-affecting evidence, max_generic_parameters and max_generic_complexity as score-bearing thresholds, and config.top_n_diagnostics as non-score-bearing metadata with signal-default source.",
+      cacheSemantics:
+        "rs-ab-signals.test.ts and pack.test.ts: RS-AB-03 declares generic-proliferation-config-applicability-diagnostics-cfg-test-gating-bounds-complexity-v4 cacheVersion, config/cacheVersion changes alter the signal config hash, and the RS pack wrapper preserves the signal-specific cacheVersion.",
+      integration:
+        "observer-integration.test.ts and CLI score tests: Rust observer integration includes RS-AB-03 in the abstraction-bloat category, while CLI single-signal mode executes RS-AB-03 against a repository substrate with Rust source parsed from disk.",
+    },
+  },
   pendingSignalContract("RS-AB-04-derive-density"),
   pendingSignalContract("RS-LD-01-unsafe-code"),
   pendingSignalContract("RS-LD-02-lifetime-complexity"),

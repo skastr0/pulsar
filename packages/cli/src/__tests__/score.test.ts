@@ -1457,6 +1457,48 @@ export function stubF() { throw new Error("Not implemented") }
     }
   }, 120_000)
 
+  test("single-signal CLI wrapper executes RS-AB-03 with Rust source", async () => {
+    const repoPath = await initRepo([
+      {
+        path: "Cargo.toml",
+        content: [
+          "[package]",
+          'name = "ab03-cli"',
+          'version = "0.1.0"',
+          'edition = "2021"',
+          "",
+        ].join("\n"),
+      },
+      {
+        path: "src/lib.rs",
+        content: [
+          "pub struct Clean<T>(pub T);",
+          "pub fn bound_heavy<T>(value: T)",
+          "where",
+          "    T: Clone + Send + Sync + Default + 'static + Into<String> + AsRef<str>,",
+          "{",
+          "    let _ = value;",
+          "}",
+          "",
+        ].join("\n"),
+      },
+    ])
+    try {
+      const out = runCli(repoPath, ["score", "--signal", "RS-AB-03", "."])
+      expect(out.status).toBe(0)
+      expect(out.stdout).toContain("Signal: RS-AB-03-generic-proliferation")
+      expect(out.stdout).toContain("WARN  bound_heavy has generic signature complexity 9")
+      expect(out.stdout).toContain("Score:  0.500")
+      expect(out.stdout).toContain("Factor Audit (3 score-bearing)")
+      expect(out.stdout).toContain("config.max_generic_complexity=8")
+      expect(out.stdout).toContain("config.max_generic_parameters=3")
+      expect(out.stdout).toContain("config.exclude_globs=")
+      expect(out.stdout).not.toContain("config.top_n_diagnostics=10 threshold")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
   test("single-signal CLI wrapper executes RS-DE-02 with Cargo.lock", async () => {
     const repoPath = await initRepo([
       {
