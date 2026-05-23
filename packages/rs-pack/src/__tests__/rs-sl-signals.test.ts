@@ -1247,6 +1247,68 @@ describe("RS-SL-* signals", () => {
     expect(broader).toBeGreaterThanOrEqual(0.5)
   })
 
+  test("RS-SL-04 declares identity, config, cache, pack registration, and factor ledger", async () => {
+    const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
+    const versionedRegistry = await Effect.runPromise(
+      buildRegistry([
+        ...SHARED_SIGNALS,
+        ...RS_PACK_SIGNALS.filter((signal) => signal.id !== RsSl04.id),
+        { ...RsSl04, cacheVersion: `${RsSl04.cacheVersion}-next` },
+      ]),
+    )
+    const registered = registry.byId.get("RS-SL-04")
+    const decoded = Schema.decodeUnknownSync(RsSl04.configSchema)(RsSl04.defaultConfig)
+    const factorLedger = registered?.factorLedger?.({})
+    const baseCacheHash = computeConfigHash(RsSl04.id, registry, undefined)
+    const versionedCacheHash = computeConfigHash(RsSl04.id, versionedRegistry, undefined)
+    const configuredCacheHash = computeConfigHash(RsSl04.id, registry, {
+      id: "rs-sl-04-contract",
+      domain: "test",
+      signal_overrides: {
+        [RsSl04.id]: {
+          config: {
+            ...RsSl04.defaultConfig,
+            top_n_diagnostics: 1,
+          },
+        },
+      },
+    })
+
+    expect(RsSl04).toMatchObject({
+      id: "RS-SL-04-clone-abuse",
+      aliases: ["RS-SL-04"],
+      title: "Clone abuse",
+      tier: 1,
+      category: "generated-slop",
+      kind: "legibility",
+      cacheVersion: "likely-expensive-score-cfg-test-gating-diagnostics-v3",
+      inputs: [],
+    })
+    expect(decoded).toEqual({
+      exclude_globs: ["**/target/**", "**/tests/**", "**/examples/**", "**/benches/**"],
+      top_n_diagnostics: 10,
+    })
+    expect(registered?.id).toBe(RsSl04.id)
+    expect(registered?.cacheVersion).toBe(RsSl04.cacheVersion)
+    expect(registry.byId.get("RS-SL-04")?.id).toBe(RsSl04.id)
+    expect(baseCacheHash).not.toBe(versionedCacheHash)
+    expect(baseCacheHash).not.toBe(configuredCacheHash)
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.exclude_globs",
+        affectsScore: true,
+        scoreRole: "evidence",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        affectsScore: false,
+        scoreRole: "metadata",
+      }),
+    )
+  })
+
   test("RS-SL-04 highlights syntax-likely expensive clone patterns", async () => {
     const repo = await createRustWorkspace("pulsar-rs-sl04-", {
       "Cargo.toml": [
@@ -1269,39 +1331,147 @@ describe("RS-SL-* signals", () => {
     try {
       const out = await runSignalCompute(RsSl04, repo, RsSl04.defaultConfig)
       expect(out.totalCloneCalls).toBe(2)
+      expect(out.likelyExpensiveCloneCalls).toBe(1)
       expect(out.modules[0]?.likelyExpensiveClones).toBeGreaterThanOrEqual(1)
+      expect(out.modules[0]?.density).toBe(2)
+      expect(out.scoreMode).toBe("likely-expensive-clone-pressure")
+      expect(out.scoreDenominator).toBe("likely-expensive-clone-calls")
+      expect(RsSl04.outputMetadata?.(out)).toBeUndefined()
     } finally {
       await cleanupWorkspace(repo)
     }
   })
 
-  test("RS-SL-04 scores likely expensive clones, not every clone call", () => {
-    const cheapOnly = RsSl04.score({
-      modules: [
-        {
-          module: "crate::shared",
-          file: "src/lib.rs",
-          cloneCalls: 100,
-          likelyExpensiveClones: 0,
-        },
-      ],
-      totalCloneCalls: 100,
-      analysisMode: "syntax-heuristic-clone-scan",
+  test("RS-SL-04 normalizes diagnostics and applicability evidence", async () => {
+    const risky = await createRustWorkspace("pulsar-rs-sl04-diagnostics-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "clone-diagnostics"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub fn first() { let _ = String::from(\"hello\").clone(); }",
+        "pub fn second() { let _ = vec![1, 2, 3].clone(); }",
+        "",
+      ].join("\n"),
+    })
+    const noSource = await createRustWorkspace("pulsar-rs-sl04-empty-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "clone-empty"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+    })
+    const excluded = await createRustWorkspace("pulsar-rs-sl04-excluded-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "clone-excluded"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": "pub fn hidden() { let _ = String::from(\"hidden\").clone(); }\n",
+    })
+    const noFunctions = await createRustWorkspace("pulsar-rs-sl04-no-functions-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "clone-no-functions"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": "pub const READY: bool = true;\n",
     })
 
-    expect(cheapOnly).toBe(1)
-    expect(RsSl04.diagnose({
+    try {
+      const out = await runSignalCompute(RsSl04, risky, {
+        ...RsSl04.defaultConfig,
+        top_n_diagnostics: 1.8,
+      })
+      const hiddenOut = await runSignalCompute(RsSl04, risky, {
+        ...RsSl04.defaultConfig,
+        top_n_diagnostics: Number.NaN,
+      })
+      const noSourceOut = await runSignalCompute(RsSl04, noSource, RsSl04.defaultConfig)
+      const excludedOut = await runSignalCompute(RsSl04, excluded, {
+        ...RsSl04.defaultConfig,
+        exclude_globs: ["**/src/**"],
+      })
+      const noFunctionsOut = await runSignalCompute(RsSl04, noFunctions, RsSl04.defaultConfig)
+      const diagnostics = RsSl04.diagnose(out)
+
+      expect(out.analyzedFunctionCount).toBe(2)
+      expect(out.diagnosticLimit).toBe(1)
+      expect(diagnostics).toHaveLength(1)
+      expect(diagnostics[0]).toMatchObject({
+        severity: "warn",
+        message: "clone-diagnostics::crate contains 2 clone() calls",
+        data: expect.objectContaining({
+          cloneCalls: 2,
+          likelyExpensiveClones: 2,
+          density: 1,
+          analysisMode: "syntax-heuristic-clone-scan",
+          scoreMode: "likely-expensive-clone-pressure",
+          scoreDenominator: "likely-expensive-clone-calls",
+        }),
+      })
+      expect(hiddenOut.diagnosticLimit).toBe(0)
+      expect(RsSl04.diagnose(hiddenOut)).toEqual([])
+      expect(noSourceOut.sourceFileCount).toBe(0)
+      expect(RsSl04.outputMetadata?.(noSourceOut)).toEqual({
+        applicability: "insufficient_evidence",
+      })
+      expect(RsSl04.diagnose(noSourceOut)[0]).toMatchObject({
+        severity: "warn",
+        message: "RS-SL-04 found no Rust source files for clone analysis",
+      })
+      expect(excludedOut.sourceFileCount).toBe(1)
+      expect(excludedOut.analyzedSourceFileCount).toBe(0)
+      expect(RsSl04.outputMetadata?.(excludedOut)).toEqual({
+        applicability: "not_applicable",
+      })
+      expect(noFunctionsOut.sourceFileCount).toBe(1)
+      expect(noFunctionsOut.analyzedFunctionCount).toBe(0)
+      expect(RsSl04.outputMetadata?.(noFunctionsOut)).toEqual({
+        applicability: "not_applicable",
+      })
+    } finally {
+      await cleanupWorkspace(risky)
+      await cleanupWorkspace(noSource)
+      await cleanupWorkspace(excluded)
+      await cleanupWorkspace(noFunctions)
+    }
+  })
+
+  test("RS-SL-04 scores likely expensive clones, not every clone call", () => {
+    const cheapOnly = RsSl04.score(rsSl04Output({
       modules: [
         {
           module: "crate::shared",
           file: "src/lib.rs",
           cloneCalls: 100,
           likelyExpensiveClones: 0,
+          density: 100,
         },
       ],
-      totalCloneCalls: 100,
-      analysisMode: "syntax-heuristic-clone-scan",
-    })).toEqual([])
+    }))
+
+    expect(cheapOnly).toBe(1)
+    expect(RsSl04.diagnose(rsSl04Output({
+      modules: [
+        {
+          module: "crate::shared",
+          file: "src/lib.rs",
+          cloneCalls: 100,
+          likelyExpensiveClones: 0,
+          density: 100,
+        },
+      ],
+    }))).toEqual([])
   })
 })
 
@@ -1356,4 +1526,24 @@ const rsSl03Output = ({
   diagnosticLimit: 10,
   scoreMode: "bounded-unwrap-expect-density",
   scoreDenominator: "analyzed-functions-per-module",
+})
+
+const rsSl04Output = ({
+  modules,
+}: {
+  readonly modules: ReadonlyArray<Parameters<typeof RsSl04.score>[0]["modules"][number]>
+}): Parameters<typeof RsSl04.score>[0] => ({
+  modules,
+  totalCloneCalls: modules.reduce((sum, module) => sum + module.cloneCalls, 0),
+  likelyExpensiveCloneCalls: modules.reduce(
+    (sum, module) => sum + module.likelyExpensiveClones,
+    0,
+  ),
+  analysisMode: "syntax-heuristic-clone-scan",
+  sourceFileCount: 1,
+  analyzedSourceFileCount: 1,
+  analyzedFunctionCount: modules.length,
+  diagnosticLimit: 10,
+  scoreMode: "likely-expensive-clone-pressure",
+  scoreDenominator: "likely-expensive-clone-calls",
 })
