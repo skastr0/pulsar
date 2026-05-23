@@ -51,6 +51,7 @@ export interface ErrorChannelOpacityFinding {
   readonly findingId: string
   readonly file: string
   readonly line: number
+  readonly column: number
   readonly symbol: string
   readonly kind: ErrorChannelOpacityKind
   readonly expressionText: string
@@ -135,7 +136,7 @@ export const TsLd09: Signal<TsLd09Config, TsLd09Output, TsProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "ts-error-channel-opacity-v1",
+  cacheVersion: "ts-error-channel-opacity-v7-grounded-namespace-scope-v1",
   configSchema: TsLd09Config,
   defaultConfig: {
     exclude_globs: [
@@ -151,6 +152,7 @@ export const TsLd09: Signal<TsLd09Config, TsLd09Output, TsProjectTag> = {
       "**/build/**",
       "**/coverage/**",
       "**/.turbo/**",
+      "**/.pi/**",
       "**/vendor/**",
       "**/gen/**",
       "**/generated/**",
@@ -158,9 +160,34 @@ export const TsLd09: Signal<TsLd09Config, TsLd09Output, TsProjectTag> = {
       "**/*.gen.tsx",
       "**/*.generated.ts",
       "**/*.generated.tsx",
+      "**/sst-env.d.ts",
       "**/__tests__/**",
       "**/test/**",
       "**/tests/**",
+      "**/test-support/**",
+      "**/test-utils/**",
+      "**/*test-support.ts",
+      "**/*test-support.tsx",
+      "**/*.test-support.ts",
+      "**/*.test-support.tsx",
+      "**/*test-utils.ts",
+      "**/*test-utils.tsx",
+      "**/test-helpers.ts",
+      "**/*test-helpers.ts",
+      "**/*test-helpers.tsx",
+      "**/*.test-helpers.ts",
+      "**/*.test-helpers.tsx",
+      "**/test-mocks.ts",
+      "**/*test-mocks.ts",
+      "**/*test-mocks.tsx",
+      "**/*.test-mocks.ts",
+      "**/*.test-mocks.tsx",
+      "**/test-harness.ts",
+      "**/*test-harness.ts",
+      "**/*test-harness.tsx",
+      "**/*.test-harness.ts",
+      "**/*.test-harness.tsx",
+      "**/happydom.ts",
       "**/fixtures/**",
     ],
     top_n_diagnostics: 10,
@@ -208,7 +235,7 @@ export const TsLd09: Signal<TsLd09Config, TsLd09Output, TsProjectTag> = {
       message:
         `${errorChannelKindLabel(finding.kind)} in ` +
         `${finding.boundary ? "boundary " : ""}\`${finding.symbol}\``,
-      location: { file: finding.file, line: finding.line },
+      location: { file: finding.file, line: finding.line, column: finding.column },
       data: {
         ...finding,
         densityPerKloc: out.densityPerKloc,
@@ -259,6 +286,7 @@ const collectErrorChannelOpacityFindings = (
   config: TsLd09Config,
 ): ReadonlyArray<LocalErrorChannelFinding> => {
   const compilerSourceFile = sourceFile.compilerNode
+  const typeChecker = sourceFile.getProject().getTypeChecker().compilerObject
   const exportedNames = collectLocalExportedNames(compilerSourceFile)
   const findings: Array<LocalErrorChannelFinding> = []
 
@@ -266,9 +294,9 @@ const collectErrorChannelOpacityFindings = (
     const finding =
       collectBroadThrow(node, compilerSourceFile, exportedNames) ??
       collectCatchCollapse(node, compilerSourceFile, exportedNames) ??
-      collectOpaquePromiseApi(node, compilerSourceFile, exportedNames, config) ??
-      collectEffectOpacity(node, compilerSourceFile, exportedNames) ??
-      collectPromiseCatchCollapse(node, compilerSourceFile, exportedNames)
+      collectOpaquePromiseApi(node, compilerSourceFile, exportedNames, config, typeChecker) ??
+      collectEffectOpacity(node, compilerSourceFile, exportedNames, config, typeChecker) ??
+      collectPromiseCatchCollapse(node, compilerSourceFile, exportedNames, typeChecker)
 
     if (finding !== undefined) findings.push(finding)
     ts.forEachChild(node, visit)
@@ -329,6 +357,7 @@ const collectOpaquePromiseApi = (
   sourceFile: ts.SourceFile,
   exportedNames: ReadonlySet<string>,
   config: TsLd09Config,
+  typeChecker: ts.TypeChecker,
 ): LocalErrorChannelFinding | undefined => {
   if (!isPromiseApiOwner(node)) return undefined
   if (!isBoundaryFunctionOwner(node, exportedNames)) return undefined
@@ -338,6 +367,7 @@ const collectOpaquePromiseApi = (
 
   const returnTypeText = functionReturnTypeText(node, sourceFile)
   if (!hasOpaquePromiseReturn(node, returnTypeText)) return undefined
+  if (!functionContainsExpectedFailureEvidence(node, sourceFile, config, typeChecker)) return undefined
 
   return localFinding({
     sourceFile,
@@ -356,67 +386,79 @@ const collectEffectOpacity = (
   node: ts.Node,
   sourceFile: ts.SourceFile,
   exportedNames: ReadonlySet<string>,
+  config: TsLd09Config,
+  typeChecker: ts.TypeChecker,
 ): LocalErrorChannelFinding | undefined => {
   if (!ts.isCallExpression(node)) return undefined
+  const boundary = nearestBoundaryOwner(node, exportedNames)
+  const symbol = nearestBoundarySymbol(node, sourceFile)
   const callee = calleeName(node.expression, sourceFile)
   if (callee === undefined) return undefined
   const pipedCollapseCallee = pipeCollapseCallee(node, sourceFile)
 
-  if (callee === "tryPromise") {
+  if (callee === "tryPromise" && isEffectStaticCall(node.expression, "tryPromise")) {
     const catchMapper = effectTryPromiseCatchMapper(node)
     if (catchMapper === undefined) {
       return localFinding({
         sourceFile,
         node,
-        symbol: nearestFunctionName(node, sourceFile) ?? "Effect.tryPromise",
+        symbol: symbol ?? "Effect.tryPromise",
         kind: "effect-unknown-exception",
         expressionText: node.expression.getText(sourceFile),
-        boundary: nearestBoundaryOwner(node, exportedNames),
+        boundary,
         expectedFailureEvidence: ["Effect.tryPromise without typed catch mapper"],
         collapseMode: "unknown-exception",
       })
     }
-    if (effectTryPromiseCatchMapperCollapses(catchMapper, sourceFile)) {
-      const collapseMode = effectTryPromiseCatchMapperReturnsFallback(catchMapper, sourceFile)
+    if (effectTryPromiseCatchMapperCollapses(catchMapper, sourceFile, typeChecker)) {
+      const collapseMode = effectTryPromiseCatchMapperReturnsFallback(catchMapper, sourceFile, typeChecker)
         ? "fallback"
         : "swallowed"
       return localFinding({
         sourceFile,
         node: catchMapper,
-        symbol: nearestFunctionName(node, sourceFile) ?? "Effect.tryPromise",
+        symbol: symbol ?? "Effect.tryPromise",
         kind: "effect-error-collapse",
         expressionText: catchMapper.getText(sourceFile).slice(0, 200),
-        boundary: nearestBoundaryOwner(node, exportedNames),
+        boundary,
         expectedFailureEvidence: ["Effect.tryPromise catch mapper returns fallback or swallows the exception"],
         collapseMode,
       })
     }
   }
 
-  if (callee === "promise" && callTextSuggestsExpectedFailure(node, sourceFile)) {
+  if (
+    callee === "promise" &&
+    isEffectStaticCall(node.expression, "promise") &&
+    callTextSuggestsExpectedFailure(node, sourceFile, config)
+  ) {
     return localFinding({
       sourceFile,
       node,
-      symbol: nearestFunctionName(node, sourceFile) ?? "Effect.promise",
+      symbol: symbol ?? "Effect.promise",
       kind: "effect-unknown-exception",
       expressionText: node.expression.getText(sourceFile),
-      boundary: nearestBoundaryOwner(node, exportedNames),
+      boundary,
       expectedFailureEvidence: ["Effect.promise wrapping expected-failure operation"],
       collapseMode: "promise-rejection",
     })
   }
 
-  if (EFFECT_COLLAPSE_CALLEES.has(callee) && !isPipeArgument(node, sourceFile)) {
+  if (
+    EFFECT_COLLAPSE_CALLEES.has(callee) &&
+    isEffectStaticCall(node.expression, callee) &&
+    !isPipeArgument(node, sourceFile)
+  ) {
     const collapseMode: ErrorChannelCollapseMode = callee === "orElseSucceed"
       ? "success-channel"
       : "defect"
     return localFinding({
       sourceFile,
       node,
-      symbol: nearestFunctionName(node, sourceFile) ?? `Effect.${callee}`,
+      symbol: symbol ?? `Effect.${callee}`,
       kind: "effect-error-collapse",
       expressionText: node.expression.getText(sourceFile),
-      boundary: nearestBoundaryOwner(node, exportedNames),
+      boundary,
       expectedFailureEvidence: [`Effect.${callee} collapses the typed error channel`],
       collapseMode,
     })
@@ -429,10 +471,10 @@ const collectEffectOpacity = (
     return localFinding({
       sourceFile,
       node,
-      symbol: nearestFunctionName(node, sourceFile) ?? `Effect.${pipedCollapseCallee}`,
+      symbol: symbol ?? `Effect.${pipedCollapseCallee}`,
       kind: "effect-error-collapse",
       expressionText: node.getText(sourceFile).slice(0, 200),
-      boundary: nearestBoundaryOwner(node, exportedNames),
+      boundary,
       expectedFailureEvidence: [
         `Effect.${pipedCollapseCallee} collapses the typed error channel in a pipe`,
       ],
@@ -447,12 +489,14 @@ const collectPromiseCatchCollapse = (
   node: ts.Node,
   sourceFile: ts.SourceFile,
   exportedNames: ReadonlySet<string>,
+  typeChecker: ts.TypeChecker,
 ): LocalErrorChannelFinding | undefined => {
   if (!ts.isCallExpression(node)) return undefined
   if (calleeName(node.expression, sourceFile) !== "catch") return undefined
+  if (!isPromiseCatchCall(node, typeChecker)) return undefined
   const callback = node.arguments[0]
-  if (callback === undefined || !callbackCollapsesError(callback, sourceFile)) return undefined
-  const collapseMode = callbackReturnsFallback(callback, sourceFile) ? "fallback" : "swallowed"
+  if (callback === undefined || !callbackCollapsesError(callback, sourceFile, typeChecker)) return undefined
+  const collapseMode = callbackReturnsFallback(callback, sourceFile, typeChecker) ? "fallback" : "swallowed"
 
   return localFinding({
     sourceFile,
@@ -477,11 +521,12 @@ const localFinding = (args: {
   readonly expectedFailureEvidence: ReadonlyArray<string>
   readonly collapseMode?: ErrorChannelCollapseMode
 }): LocalErrorChannelFinding => {
-  const line = lineOf(args.node, args.sourceFile)
+  const { line, column } = positionOf(args.node, args.sourceFile)
   const baseWeight = errorChannelWeight(args.kind, args.boundary)
   return {
-    findingId: `${line}:${args.kind}:${args.symbol}`,
+    findingId: `${line}:${column}:${args.kind}:${args.symbol}`,
     line,
+    column,
     symbol: args.symbol,
     kind: args.kind,
     expressionText: args.expressionText,
@@ -511,7 +556,7 @@ const buildErrorChannelOpacityOutput = (
   )
   const analyzedKloc = Math.max(1, analyzedLines / 1000)
   const densityPerKloc = weightedOpacity / analyzedKloc
-  const diagnosticLimit = Math.max(0, Math.floor(config.top_n_diagnostics))
+  const diagnosticLimit = normalizeDiagnosticLimit(config.top_n_diagnostics)
 
   return {
     state: analyzedFiles === 0 ? "not_applicable" : findings.length === 0 ? "zero" : "present",
@@ -614,9 +659,10 @@ const catchCollapsesErrorChannel = (
   sourceFile: ts.SourceFile,
 ): boolean => {
   const block = clause.block
-  if (blockContainsDomainErrorMapping(block)) return false
   if (blockContainsCatchVariableNarrowing(clause, sourceFile) && blockRethrows(block)) return false
-  return blockReturnsFallback(block, sourceFile) || blockSwallowsError(block)
+  const collapses = blockReturnsFallback(block, sourceFile) || blockSwallowsError(block)
+  if (!collapses && blockContainsDomainErrorMapping(block)) return false
+  return collapses
 }
 
 const catchEvidence = (
@@ -654,9 +700,10 @@ const blockReturnsFallback = (
 const callbackReturnsFallback = (
   callback: ts.Node,
   sourceFile: ts.SourceFile,
+  typeChecker?: ts.TypeChecker,
 ): boolean => {
-  const target = callbackTarget(callback, sourceFile)
-  if (target !== undefined) return callbackReturnsFallback(target, sourceFile)
+  const target = callbackTarget(callback, sourceFile, typeChecker)
+  if (target !== undefined) return callbackReturnsFallback(target, sourceFile, typeChecker)
   if (ts.isArrowFunction(callback) && callback.body !== undefined && !ts.isBlock(callback.body)) {
     return returnExpressionIsFallback(callback.body, sourceFile)
   }
@@ -675,10 +722,11 @@ const callbackReturnsFallback = (
 const callbackCollapsesError = (
   callback: ts.Node,
   sourceFile: ts.SourceFile,
+  typeChecker?: ts.TypeChecker,
 ): boolean => {
-  if (callbackReturnsFallback(callback, sourceFile)) return true
-  const target = callbackTarget(callback, sourceFile)
-  if (target !== undefined) return callbackCollapsesError(target, sourceFile)
+  if (callbackReturnsFallback(callback, sourceFile, typeChecker)) return true
+  const target = callbackTarget(callback, sourceFile, typeChecker)
+  if (target !== undefined) return callbackCollapsesError(target, sourceFile, typeChecker)
   if (
     (ts.isArrowFunction(callback) ||
       ts.isFunctionExpression(callback) ||
@@ -726,7 +774,7 @@ const blockContainsDomainErrorMapping = (block: ts.Block): boolean => {
         return
       }
     }
-    if (ts.isCallExpression(node) && node.expression.getText().endsWith(".fail")) {
+    if (isEffectFailCall(node)) {
       found = true
       return
     }
@@ -741,8 +789,11 @@ type CallbackTarget = ts.ArrowFunction | ts.FunctionDeclaration | ts.FunctionExp
 const callbackTarget = (
   callback: ts.Node,
   sourceFile: ts.SourceFile,
+  typeChecker?: ts.TypeChecker,
 ): CallbackTarget | undefined => {
   if (!ts.isIdentifier(callback)) return undefined
+  const symbolTarget = callbackSymbolTarget(callback, typeChecker)
+  if (symbolTarget !== undefined) return symbolTarget
   const targetName = callback.text
   let target: CallbackTarget | undefined
 
@@ -767,6 +818,23 @@ const callbackTarget = (
 
   visit(sourceFile)
   return target
+}
+
+const callbackSymbolTarget = (
+  callback: ts.Identifier,
+  typeChecker?: ts.TypeChecker,
+): CallbackTarget | undefined => {
+  const declaration = typeChecker?.getSymbolAtLocation(callback)?.valueDeclaration
+  if (declaration === undefined) return undefined
+  if (ts.isFunctionDeclaration(declaration)) return declaration
+  if (
+    ts.isVariableDeclaration(declaration) &&
+    declaration.initializer !== undefined &&
+    (ts.isArrowFunction(declaration.initializer) || ts.isFunctionExpression(declaration.initializer))
+  ) {
+    return declaration.initializer
+  }
+  return undefined
 }
 
 const blockSwallowsError = (block: ts.Block): boolean => {
@@ -829,9 +897,70 @@ const hasOpaquePromiseReturn = (
   node: FunctionBoundaryOwner,
   returnTypeText: string | undefined,
 ): boolean => {
+  if (returnTypeText !== undefined && promiseReturnTypeModelsExpectedFailure(returnTypeText)) {
+    return false
+  }
   if (returnTypeText?.includes("Promise<") === true) return true
   return ts.canHaveModifiers(node) &&
     (ts.getModifiers(node)?.some((modifier) => modifier.kind === ts.SyntaxKind.AsyncKeyword) ?? false)
+}
+
+const promiseReturnTypeModelsExpectedFailure = (returnTypeText: string): boolean =>
+  /\b(?:AsyncResult|Either|PromiseResult|Result|TaskEither)\s*</u.test(returnTypeText)
+
+const functionContainsExpectedFailureEvidence = (
+  node: FunctionBoundaryOwner,
+  sourceFile: ts.SourceFile,
+  config: TsLd09Config,
+  typeChecker: ts.TypeChecker,
+): boolean => {
+  const body = "body" in node ? node.body : undefined
+  if (body === undefined) return false
+  let found = false
+  const visit = (candidate: ts.Node): void => {
+    if (found) return
+    if (candidate !== body && isFunctionLikeNode(candidate)) return
+    if (
+      ts.isThrowStatement(candidate) &&
+      candidate.expression !== undefined &&
+      broadThrowCollapseMode(candidate.expression) !== undefined
+    ) {
+      found = true
+      return
+    }
+    if (ts.isCatchClause(candidate) && catchCollapsesErrorChannel(candidate, sourceFile)) {
+      found = true
+      return
+    }
+    if (ts.isCallExpression(candidate)) {
+      if (isPromiseRejectCall(candidate.expression)) {
+        found = true
+        return
+      }
+      if (
+        calleeName(candidate.expression, sourceFile) === "catch" &&
+        isPromiseCatchCall(candidate, typeChecker) &&
+        candidate.arguments[0] !== undefined &&
+        callbackCollapsesError(candidate.arguments[0], sourceFile, typeChecker)
+      ) {
+        found = true
+        return
+      }
+      const callee = calleeName(candidate.expression, sourceFile)
+      if (
+        (callee === "tryPromise" && isEffectStaticCall(candidate.expression, "tryPromise")) ||
+        (callee === "promise" &&
+          isEffectStaticCall(candidate.expression, "promise") &&
+          callTextSuggestsExpectedFailure(candidate, sourceFile, config))
+      ) {
+        found = true
+        return
+      }
+    }
+    ts.forEachChild(candidate, visit)
+  }
+  visit(body)
+  return found
 }
 
 const functionReturnTypeText = (
@@ -848,10 +977,10 @@ const expectedFailureEvidenceFor = (
   symbol: string,
   config: TsLd09Config,
 ): ReadonlyArray<string> => {
-  const lowered = symbol.toLocaleLowerCase()
+  const lowered = symbol.toLowerCase()
   return config.expected_failure_name_patterns
     .filter((pattern) => pattern.trim() !== "")
-    .filter((pattern) => lowered.includes(pattern.toLocaleLowerCase()))
+    .filter((pattern) => lowered.includes(pattern.toLowerCase()))
     .map((pattern) => `name matches expected-failure pattern \`${pattern}\``)
 }
 
@@ -880,8 +1009,9 @@ const effectTryPromiseCatchMapper = (
 const effectTryPromiseCatchMapperCollapses = (
   mapper: EffectTryPromiseCatchMapper,
   sourceFile: ts.SourceFile,
+  typeChecker?: ts.TypeChecker,
 ): boolean => {
-  if (effectTryPromiseCatchMapperReturnsFallback(mapper, sourceFile)) return true
+  if (effectTryPromiseCatchMapperReturnsFallback(mapper, sourceFile, typeChecker)) return true
   if (ts.isMethodDeclaration(mapper) && mapper.body !== undefined) {
     return blockSwallowsError(mapper.body)
   }
@@ -898,10 +1028,11 @@ const effectTryPromiseCatchMapperCollapses = (
 const effectTryPromiseCatchMapperReturnsFallback = (
   mapper: EffectTryPromiseCatchMapper,
   sourceFile: ts.SourceFile,
+  typeChecker?: ts.TypeChecker,
 ): boolean => {
   if (ts.isShorthandPropertyAssignment(mapper)) return false
   if (ts.isPropertyAssignment(mapper)) {
-    return callbackReturnsFallback(mapper.initializer, sourceFile)
+    return callbackReturnsFallback(mapper.initializer, sourceFile, typeChecker)
   }
   return mapper.body === undefined ? false : blockReturnsFallback(mapper.body, sourceFile)
 }
@@ -909,10 +1040,11 @@ const effectTryPromiseCatchMapperReturnsFallback = (
 const callTextSuggestsExpectedFailure = (
   node: ts.CallExpression,
   sourceFile: ts.SourceFile,
+  config: TsLd09Config,
 ): boolean =>
-  /\b(fetch|readFile|writeFile|request|parse|decode|load|validate)\b/iu.test(
-    node.getText(sourceFile),
-  )
+  config.expected_failure_name_patterns
+    .filter((pattern) => pattern.trim() !== "")
+    .some((pattern) => node.getText(sourceFile).toLowerCase().includes(pattern.toLowerCase()))
 
 const pipeCollapseCallee = (
   node: ts.CallExpression,
@@ -923,7 +1055,15 @@ const pipeCollapseCallee = (
     const name = ts.isCallExpression(argument)
       ? calleeName(argument.expression, sourceFile)
       : expressionName(argument)
-    if (name !== undefined && EFFECT_COLLAPSE_CALLEES.has(name)) return name
+    if (
+      name !== undefined &&
+      EFFECT_COLLAPSE_CALLEES.has(name) &&
+      (ts.isCallExpression(argument)
+        ? isEffectStaticCall(argument.expression, name)
+        : isEffectStaticReference(argument, name))
+    ) {
+      return name
+    }
   }
   return undefined
 }
@@ -935,6 +1075,33 @@ const isPipeArgument = (
   ts.isCallExpression(node.parent) &&
   node.parent.arguments.some((argument) => argument === node) &&
   calleeName(node.parent.expression, sourceFile) === "pipe"
+
+const isEffectStaticCall = (expression: ts.Expression, name: string): boolean =>
+  ts.isPropertyAccessExpression(expression) &&
+  expressionName(expression.expression) === "Effect" &&
+  propertyNameText(expression.name) === name
+
+const isEffectStaticReference = (expression: ts.Expression, name: string): boolean =>
+  ts.isPropertyAccessExpression(expression) &&
+  expressionName(expression.expression) === "Effect" &&
+  propertyNameText(expression.name) === name
+
+const isEffectFailCall = (node: ts.Node): boolean =>
+  ts.isCallExpression(node) && isEffectStaticCall(node.expression, "fail")
+
+const isPromiseRejectCall = (expression: ts.Expression): boolean =>
+  ts.isPropertyAccessExpression(expression) &&
+  expressionName(expression.expression) === "Promise" &&
+  propertyNameText(expression.name) === "reject"
+
+const isPromiseCatchCall = (node: ts.CallExpression, typeChecker: ts.TypeChecker): boolean => {
+  if (!ts.isPropertyAccessExpression(node.expression)) return false
+  const receiverType = typeChecker.getTypeAtLocation(node.expression.expression)
+  const receiverTypeText = typeChecker.typeToString(receiverType)
+  if (/\bPromise(?:<|$)/u.test(receiverTypeText)) return true
+  return receiverType.getProperty("then") !== undefined &&
+    receiverType.getProperty("catch") !== undefined
+}
 
 const calleeName = (
   expression: ts.Expression,
@@ -956,7 +1123,26 @@ const nearestBoundaryOwner = (
   exportedNames: ReadonlySet<string>,
 ): boolean => {
   const owner = nearestFunctionOwner(node)
-  return owner === undefined ? false : isBoundaryFunctionOwner(owner, exportedNames)
+  if (owner !== undefined) return isBoundaryFunctionOwner(owner, exportedNames)
+  const valueName = nearestExportedValueName(node)
+  return valueName !== undefined && exportedNames.has(valueName)
+}
+
+const nearestBoundarySymbol = (
+  node: ts.Node,
+  sourceFile: ts.SourceFile,
+): string | undefined =>
+  nearestFunctionName(node, sourceFile) ?? nearestExportedValueName(node)
+
+const nearestExportedValueName = (node: ts.Node): string | undefined => {
+  let current: ts.Node | undefined = node
+  while (current !== undefined) {
+    if (ts.isVariableDeclaration(current) && ts.isIdentifier(current.name)) {
+      return current.name.text
+    }
+    current = current.parent
+  }
+  return undefined
 }
 
 const nearestFunctionOwner = (node: ts.Node): FunctionBoundaryOwner | undefined => {
@@ -1017,8 +1203,16 @@ const nearestNamedDeclaration = (
   return undefined
 }
 
-const lineOf = (node: ts.Node, sourceFile: ts.SourceFile): number =>
-  sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1
+const positionOf = (
+  node: ts.Node,
+  sourceFile: ts.SourceFile,
+): { readonly line: number; readonly column: number } => {
+  const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile))
+  return {
+    line: position.line + 1,
+    column: position.character + 1,
+  }
+}
 
 const isFunctionLikeNode = (node: ts.Node): boolean =>
   ts.isFunctionDeclaration(node) ||
@@ -1044,12 +1238,15 @@ const compareErrorChannelFindings = (
   if (left.boundary !== right.boundary) return left.boundary ? -1 : 1
   const byWeight = right.weight - left.weight
   if (byWeight !== 0) return byWeight
-  if (left.file !== right.file) return left.file.localeCompare(right.file)
-  return left.line - right.line
+  if (left.file !== right.file) return left.file < right.file ? -1 : 1
+  return left.line - right.line || left.column - right.column
 }
 
 const thresholdPressure = (value: number, threshold: number): number =>
   threshold <= 0 ? 0 : value / threshold
+
+const normalizeDiagnosticLimit = (limit: number): number =>
+  Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 0
 
 const errorChannelKindLabel = (kind: ErrorChannelOpacityKind): string => {
   switch (kind) {
