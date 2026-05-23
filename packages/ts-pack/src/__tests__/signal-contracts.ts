@@ -411,7 +411,33 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "ts-ab-01.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AB-01 semantic cacheVersion after diagnostic-limit and weighted-surface semantics changed.",
     },
   },
-  pendingSignalContract("TS-AB-02-unused-exports"),
+  {
+    id: "TS-AB-02-unused-exports",
+    status: "verified",
+    requiredEvidence: ["calibration"],
+    evidence: {
+      identity:
+        "ts-ab-02.test.ts: canonical id, alias, title, tier/category/kind, no compound inputs, semantic cacheVersion, pack registration, and registry alias lookup are asserted.",
+      config:
+        "ts-ab-02.test.ts: configSchema decodes defaults and factor-ledger assertions cover exclude_globs, public_entry_globs, boundary_rules, and top_n_diagnostics with sanitized diagnostic caps.",
+      positiveFixture:
+        "ts-ab-02.test.ts: real TsProject/TsPackageInfo repo fixtures classify unused, internal-only, cross-module, cross-package, package manifest entrypoints, public barrels, runtime APIs, framework config files, pi extensions, destructured exports, namespace imports, dynamic imports, and alias consumers.",
+      negativeFixture:
+        "ts-ab-02.test.ts: public entry imports do not promote imported internals, test support/example/generated/playground exports are excluded, Convex runtime exports stay unused without calibration, and concrete namespace/dynamic import fixtures leave unrelated exports unused.",
+      applicability:
+        "ts-ab-02.test.ts: repositories with no exported bindings return empty exports, zero counts, no boundaryConfined entries, preserved diagnosticLimit, score 1, and no diagnostics.",
+      score:
+        "ts-ab-02.test.ts: empty outputs score 1 and mixed runtime/type-only/test-hook/internal-only/cross-module fixtures prove weighted unused/internal penalties are divided by total exported bindings.",
+      diagnostics:
+        "ts-ab-02.test.ts: diagnostics omit healthy cross-module/cross-package exports, include block/warn/info severities, boundary hashes, locations, reference files, declaration files, classification/evidence/penalty payloads, deterministic ordering, and sanitized diagnostic caps.",
+      factorLedger:
+        "ts-ab-02.test.ts: registered pack signal emits config.exclude_globs, config.public_entry_globs, config.boundary_rules, and config.top_n_diagnostics factor-ledger entries with score roles.",
+      cacheSemantics:
+        "ts-ab-02.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AB-02 semantic cacheVersion after diagnostic-limit and precise namespace/dynamic consumer semantics changed.",
+      calibration:
+        "ts-ab-02.test.ts: export-reachability calibration marks a Convex runtime export public with module id, processor id, action, reason, path/symbol evidence, calibrationDecisions, and cross-package classification while ordinary unused exports remain penalized.",
+    },
+  },
   pendingSignalContract("TS-AB-03-type-indirection-depth"),
   pendingSignalContract("TS-AB-04-interface-implementation-ratio"),
   pendingSignalContract("TS-AB-05-generic-proliferation"),

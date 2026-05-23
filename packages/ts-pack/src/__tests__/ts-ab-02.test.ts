@@ -1,12 +1,15 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Schema } from "effect"
 import { CalibrationContextTag, appendCalibrationDecision, defineCalibrationProcessor, makeResolvedCalibrationContext } from "@skastr0/pulsar-core/calibration"
 import type { RepoFacts } from "@skastr0/pulsar-core/calibration"
+import { buildRegistry } from "@skastr0/pulsar-core/scoring"
+import { TS_PACK_SIGNALS } from "../pack.js"
 import { TsAb02 } from "../signals/ts-ab-02-unused-exports-reachability.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
 import { TsProjectLayer } from "../ts-project.js"
 
 let repo: TempRepo
+type TsAb02Result = Parameters<typeof TsAb02.score>[0]
 
 beforeEach(async () => {
   repo = await createTempRepo("pulsar-ts-ab-02-")
@@ -17,6 +20,79 @@ afterEach(async () => {
 })
 
 describe("TS-AB-02 (unused exports reachability)", () => {
+  test("declares identity, no inputs, pack registration, and config factor ledger", async () => {
+    const registered = TS_PACK_SIGNALS.find((signal) =>
+      signal.aliases?.includes("TS-AB-02"),
+    )
+    const registry = await Effect.runPromise(buildRegistry([TsAb02]))
+    const out = await runSignal(repo.root, TsAb02, TsAb02.defaultConfig)
+    const factorLedger = registered?.factorLedger?.(out)
+
+    expect(TsAb02).toMatchObject({
+      id: "TS-AB-02-unused-exports",
+      title: "Unused exports",
+      aliases: ["TS-AB-02"],
+      tier: 1,
+      category: "abstraction-bloat",
+      kind: "structural",
+      cacheVersion: "calibrated-export-reachability-v3-diagnostic-limit-v1",
+      inputs: [],
+    })
+    expect(registered?.id).toBe(TsAb02.id)
+    expect(registered?.title).toBe(TsAb02.title)
+    expect(registered?.cacheVersion).toContain(TsAb02.cacheVersion)
+    expect(registry.byId.get("TS-AB-02")?.id).toBe(TsAb02.id)
+    expect(factorLedger?.signalId).toBe(TsAb02.id)
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.exclude_globs",
+        source: "signal-default",
+        scoreRole: "metadata",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.public_entry_globs",
+        source: "signal-default",
+        scoreRole: "metadata",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.boundary_rules",
+        source: "signal-default",
+        scoreRole: "metadata",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        value: 20,
+        source: "signal-default",
+        scoreRole: "threshold",
+      }),
+    )
+  })
+
+  test("no exports: zero counts, score 1, and no diagnostics", async () => {
+    await repo.write("src/helper.ts", "const local = 1\n")
+
+    const out = await runSignal(repo.root, TsAb02, TsAb02.defaultConfig)
+
+    expect(out.exports).toEqual([])
+    expect(out.counts).toEqual({
+      unused: 0,
+      "internal-only": 0,
+      "cross-module": 0,
+      "cross-package": 0,
+    })
+    expect(out.boundaryConfined).toEqual([])
+    expect(out.diagnosticLimit).toBe(20)
+    expect(TsAb02.inputs).toEqual([])
+    expect(TsAb02.score(out)).toBe(1)
+    expect(TsAb02.diagnose(out)).toEqual([])
+  })
+
   test("classifies unused, internal-only, cross-module, and cross-package exports", async () => {
     await repo.writeJson("packages/a/tsconfig.json", {
       compilerOptions: { target: "ES2022", module: "ESNext", moduleResolution: "Bundler" },
@@ -117,6 +193,81 @@ describe("TS-AB-02 (unused exports reachability)", () => {
     expect(entry?.classification).toBe("cross-module")
     const lazyEntry = out.exports.find((item) => item.exportName === "LazyDialog")
     expect(lazyEntry?.classification).toBe("cross-module")
+  })
+
+  test("namespace imports only mark concretely accessed exports reachable", async () => {
+    await repo.write(
+      "src/api.ts",
+      ["export const used = 1", "export const unused = 2", ""].join("\n"),
+    )
+    await repo.write(
+      "src/consumer.ts",
+      "import * as api from './api'\nexport const value = api.used\n",
+    )
+
+    const out = await runSignal(repo.root, TsAb02, TsAb02.defaultConfig)
+    const byName = new Map(out.exports.map((entry) => [entry.exportName, entry]))
+
+    expect(byName.get("used")?.classification).toBe("cross-module")
+    expect(byName.get("used")?.referenceFiles).toContain(`${repo.root}/src/consumer.ts`)
+    expect(byName.get("unused")?.classification).toBe("unused")
+  })
+
+  test("namespace import reachability ignores shadowed local names", async () => {
+    await repo.write(
+      "src/api.ts",
+      ["export const used = 1", "export const unused = 2", ""].join("\n"),
+    )
+    await repo.write(
+      "src/consumer.ts",
+      [
+        "import * as api from './api'",
+        "function shadow(api: { unused: number }) { return api.unused }",
+        "export const value = api.used + shadow({ unused: 0 })",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsAb02, TsAb02.defaultConfig)
+    const byName = new Map(out.exports.map((entry) => [entry.exportName, entry]))
+
+    expect(byName.get("used")?.classification).toBe("cross-module")
+    expect(byName.get("unused")?.classification).toBe("unused")
+  })
+
+  test("dynamic imports only mark concretely accessed exports reachable", async () => {
+    await repo.write(
+      "src/api.ts",
+      ["export const used = 1", "export const unused = 2", ""].join("\n"),
+    )
+    await repo.write(
+      "src/consumer.ts",
+      "export const load = () => import('./api').then((module) => module.used)\n",
+    )
+
+    const out = await runSignal(repo.root, TsAb02, TsAb02.defaultConfig)
+    const byName = new Map(out.exports.map((entry) => [entry.exportName, entry]))
+
+    expect(byName.get("used")?.classification).toBe("cross-module")
+    expect(byName.get("used")?.referenceFiles).toContain(`${repo.root}/src/consumer.ts`)
+    expect(byName.get("unused")?.classification).toBe("unused")
+  })
+
+  test("parenthesized dynamic imports preserve concrete export reachability", async () => {
+    await repo.write(
+      "src/api.ts",
+      ["export const used = 1", "export const unused = 2", ""].join("\n"),
+    )
+    await repo.write(
+      "src/consumer.ts",
+      "export const load = () => (import('./api')).then((module) => module.used)\n",
+    )
+
+    const out = await runSignal(repo.root, TsAb02, TsAb02.defaultConfig)
+    const byName = new Map(out.exports.map((entry) => [entry.exportName, entry]))
+
+    expect(byName.get("used")?.classification).toBe("cross-module")
+    expect(byName.get("unused")?.classification).toBe("unused")
   })
 
   test("treats package manifest entrypoints as externally consumed exports", async () => {
@@ -286,7 +437,22 @@ describe("TS-AB-02 (unused exports reachability)", () => {
     expect(byName.get("syncLifecyclePublic")?.classification).toBe("cross-package")
     expect(byName.get("ordinaryUnused")?.classification).toBe("unused")
     expect(out.calibrationDecisions).toHaveLength(1)
-    expect(out.calibrationDecisions[0]?.slot).toBe("typescript.export-reachability")
+    expect(out.calibrationDecisions[0]).toMatchObject({
+      moduleId: "@skastr0/pulsar-project-module-convex",
+      processorId: "convex-public-entrypoints",
+      slot: "typescript.export-reachability",
+      action: "mark-public-entrypoint",
+      confidence: "high",
+      reason: "Convex runtime module exports are invoked externally by the Convex runtime",
+    })
+    expect(out.calibrationDecisions[0]?.evidence).toContainEqual({
+      kind: "path",
+      value: `${repo.root}/convex/lifecycle.ts`,
+    })
+    expect(out.calibrationDecisions[0]?.evidence).toContainEqual({
+      kind: "symbol",
+      value: "syncLifecyclePublic",
+    })
   })
 
   test("diagnostics omit healthy cross-module and cross-package exports", async () => {
@@ -347,6 +513,146 @@ describe("TS-AB-02 (unused exports reachability)", () => {
       diagnostic.message.includes("test-hook") &&
       diagnostic.severity === "info",
     )).toBe(true)
+  })
+
+  test("score uses weighted unused and internal-only penalties over all exports", async () => {
+    await repo.write(
+      "src/api.ts",
+      [
+        "export const runtimeUnused = 1",
+        "export const internalOnly = 2",
+        "export interface TypeOnlyUnused { value: string }",
+        "export const createSessionForTest = () => ({})",
+        "export const crossModule = 3",
+        "const local = internalOnly",
+        "",
+      ].join("\n"),
+    )
+    await repo.write(
+      "src/consumer.ts",
+      "import { crossModule } from './api'\nconst value = crossModule\nvoid value\n",
+    )
+
+    const out = await runSignal(repo.root, TsAb02, TsAb02.defaultConfig)
+    const byName = new Map(out.exports.map((entry) => [entry.exportName, entry]))
+
+    expect(byName.get("runtimeUnused")?.classification).toBe("unused")
+    expect(byName.get("internalOnly")?.classification).toBe("internal-only")
+    expect(byName.get("TypeOnlyUnused")?.classification).toBe("unused")
+    expect(byName.get("createSessionForTest")?.classification).toBe("unused")
+    expect(byName.get("crossModule")?.classification).toBe("cross-module")
+    expect(TsAb02.score(out)).toBeCloseTo(1 - (1 + 0.5 + 0.35 + 0.2) / 5)
+  })
+
+  test("diagnostics include ordered boundary and unused payloads", async () => {
+    await repo.write(
+      "src/domain/api.ts",
+      "export const domainOnly = 1\n",
+    )
+    await repo.write(
+      "src/domain/use.ts",
+      "import { domainOnly } from './api'\nconst value = domainOnly\nvoid value\n",
+    )
+    await repo.write(
+      "src/other/api.ts",
+      "export const runtimeUnused = 2\n",
+    )
+
+    const out = await runSignal(repo.root, TsAb02, {
+      ...TsAb02.defaultConfig,
+      boundary_rules: [{ name: "domain", globs: ["**/src/domain/**"] }],
+    })
+    const diagnostics = TsAb02.diagnose(out)
+    const boundary = diagnostics.find((diagnostic) =>
+      diagnostic.data?.exportName === "domainOnly"
+    )
+    const unused = diagnostics.find((diagnostic) =>
+      diagnostic.data?.exportName === "runtimeUnused"
+    )
+
+    expect(diagnostics[0]?.data?.exportName).toBe("domainOnly")
+    expect(boundary).toMatchObject({
+      severity: "block",
+      location: { file: `${repo.root}/src/domain/api.ts` },
+      data: {
+        hash: expect.any(String),
+        exportFile: `${repo.root}/src/domain/api.ts`,
+        exportName: "domainOnly",
+        classification: "cross-module",
+        referenceFiles: [`${repo.root}/src/domain/use.ts`],
+      },
+    })
+    expect(unused).toMatchObject({
+      severity: "warn",
+      location: { file: `${repo.root}/src/other/api.ts` },
+      data: {
+        exportFile: `${repo.root}/src/other/api.ts`,
+        exportName: "runtimeUnused",
+        declarationFiles: [`${repo.root}/src/other/api.ts`],
+        classification: "unused",
+        evidence: "runtime",
+        penaltyWeight: 1,
+        referenceFiles: [],
+        sameFileReferenceCount: 0,
+        viaReExport: false,
+        boundaryStatus: "unmapped",
+        crossBoundaryFiles: [],
+      },
+    })
+  })
+
+  test("diagnostics honor sanitized top_n_diagnostics", async () => {
+    await repo.write(
+      "src/api.ts",
+      ["export const alpha = 1", "export const beta = 2", "export const gamma = 3", ""].join("\n"),
+    )
+
+    const capped = await runSignal(repo.root, TsAb02, {
+      ...TsAb02.defaultConfig,
+      top_n_diagnostics: 1.8,
+    })
+    expect(capped.diagnosticLimit).toBe(1)
+    expect(TsAb02.diagnose(capped)).toHaveLength(1)
+
+    const negative = await runSignal(repo.root, TsAb02, {
+      ...TsAb02.defaultConfig,
+      top_n_diagnostics: -1,
+    })
+    expect(negative.diagnosticLimit).toBe(0)
+    expect(TsAb02.diagnose(negative)).toEqual([])
+
+    const nan = await runSignal(repo.root, TsAb02, {
+      ...TsAb02.defaultConfig,
+      top_n_diagnostics: Number.NaN,
+    })
+    expect(nan.diagnosticLimit).toBe(0)
+    expect(TsAb02.diagnose(nan)).toEqual([])
+
+    const infinite = await runSignal(repo.root, TsAb02, {
+      ...TsAb02.defaultConfig,
+      top_n_diagnostics: Number.POSITIVE_INFINITY,
+    })
+    expect(infinite.diagnosticLimit).toBe(0)
+    expect(TsAb02.diagnose(infinite)).toEqual([])
+  })
+
+  test("deterministic: same project, same ordering, diagnostics, and score", async () => {
+    await repo.write(
+      "src/api.ts",
+      [
+        "export const zeta = 1",
+        "export interface Alpha { value: string }",
+        "export const createFixtureForTest = () => ({})",
+        "",
+      ].join("\n"),
+    )
+
+    const out1 = await runSignal(repo.root, TsAb02, TsAb02.defaultConfig)
+    const out2 = await runSignal(repo.root, TsAb02, TsAb02.defaultConfig)
+
+    expect(projectOutput(out2)).toEqual(projectOutput(out1))
+    expect(TsAb02.diagnose(out2)).toEqual(TsAb02.diagnose(out1))
+    expect(TsAb02.score(out2)).toBe(TsAb02.score(out1))
   })
 
   test("treats pi extension files as externally consumed entrypoints", async () => {
@@ -413,4 +719,20 @@ describe("TS-AB-02 (unused exports reachability)", () => {
     expect(names).toContain("ThingProvider")
     expect(names.some((name) => name.includes("{"))).toBe(false)
   })
+
+  test("configSchema decodes defaults round-trip", () => {
+    const decoded = Schema.decodeUnknownSync(TsAb02.configSchema)(TsAb02.defaultConfig)
+    expect(decoded.exclude_globs).toContain("**/node_modules/**")
+    expect(decoded.public_entry_globs).toContain("**/src/index.ts")
+    expect(decoded.public_entry_globs).toContain("**/*.config.ts")
+    expect(decoded.boundary_rules).toEqual([])
+    expect(decoded.top_n_diagnostics).toBe(20)
+  })
+})
+
+const projectOutput = (out: TsAb02Result): unknown => ({
+  exports: out.exports,
+  counts: out.counts,
+  boundaryConfined: out.boundaryConfined,
+  diagnosticLimit: out.diagnosticLimit,
 })
