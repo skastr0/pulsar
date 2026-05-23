@@ -4,6 +4,7 @@ import {
   type ClassExpression,
   type ExpressionWithTypeArguments,
   type ExportDeclaration,
+  type ExportSpecifier,
   Node,
   type Project,
   type SatisfiesExpression,
@@ -261,9 +262,19 @@ const collectPublicInterfacesFromExports = (
   }
 
   for (const declaration of sourceFile.getExportDeclarations()) {
+    const namedExports = declaration.getNamedExports()
+
+    if (declaration.getModuleSpecifierValue() === undefined) {
+      for (const specifier of namedExports) {
+        for (const key of interfaceKeysFromExportSpecifier(specifier)) {
+          publicKeys.add(key)
+        }
+      }
+      continue
+    }
+
     const targetPath = resolver.resolve(file, declaration)
     const targetFile = targetPath === undefined ? undefined : sourceFileByPath.get(targetPath)
-    const namedExports = declaration.getNamedExports()
 
     if (targetFile === undefined) continue
 
@@ -286,6 +297,14 @@ const collectPublicInterfacesFromExports = (
 }
 
 const interfaceKey = (iface: InterfaceDeclaration): string => declarationKey(iface)
+
+const interfaceKeysFromExportSpecifier = (
+  specifier: ExportSpecifier,
+): ReadonlyArray<string> => {
+  const symbol = specifier.getNameNode().getSymbol()
+  const resolved = symbol?.getAliasedSymbol() ?? symbol
+  return interfaceKeysFromDeclarations(resolved?.getDeclarations() ?? [])
+}
 
 const collectPublicInterfaceFromNamedExport = (
   exportName: string,

@@ -491,6 +491,39 @@ describe("TS-AB-04 (interface to implementation ratio)", () => {
     expect(out.deadInterfaces).toHaveLength(0)
   })
 
+  test("public entry local export lists exclude implementation contracts", async () => {
+    await repo.write(
+      "src/index.ts",
+      [
+        "interface IService {",
+        "  run(): string",
+        "}",
+        "interface ITypeOnly {",
+        "  run(): string",
+        "}",
+        "export { IService }",
+        "export type { ITypeOnly }",
+      ].join("\n"),
+    )
+    await repo.write(
+      "src/service.ts",
+      [
+        "import type { IService } from './index'",
+        "export class ServiceImpl implements IService {",
+        "  run() {",
+        "    return 'ok'",
+        "  }",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsAb04, TsAb04.defaultConfig)
+
+    expect(out.totalInterfaces).toBe(0)
+    expect(out.flaggedPairs).toHaveLength(0)
+    expect(out.deadInterfaces).toHaveLength(0)
+  })
+
   test("dead interfaces are surfaced separately", async () => {
     await repo.write(
       "src/dead.ts",
