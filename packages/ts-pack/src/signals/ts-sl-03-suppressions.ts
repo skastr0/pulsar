@@ -12,8 +12,19 @@ const TsSl03Config = Schema.Struct({
 })
 export type TsSl03Config = typeof TsSl03Config.Type
 
+export const DEFAULT_TS_SL_03_DIAGNOSTIC_LIMIT = 20
+
+export const normalizeTsSl03Config = (config: TsSl03Config): TsSl03Config => ({
+  ...config,
+  top_n_diagnostics: normalizeTsSl03DiagnosticLimit(config.top_n_diagnostics),
+})
+
+export const normalizeTsSl03DiagnosticLimit = (value: number): number =>
+  Number.isFinite(value) && value > 0 ? Math.floor(value) : 0
+
 export interface Suppression {
   readonly file: string
+  readonly relativeFile?: string
   readonly line: number
   readonly kind: "ts-ignore" | "ts-expect-error" | "eslint-disable"
   readonly rule: string | undefined
@@ -39,7 +50,7 @@ export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalCon
   tier: 1,
   category: "generated-slop",
   kind: "structural",
-  cacheVersion: "generated-root-exclusions-v1",
+  cacheVersion: "comment-directives-target-hunks-stable-hash-v1",
   configSchema: TsSl03Config,
   defaultConfig: {
     exclude_globs: [
@@ -129,7 +140,7 @@ export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalCon
       "**/*.test-harness.tsx",
       "**/happydom.ts",
     ],
-    top_n_diagnostics: 20,
+    top_n_diagnostics: DEFAULT_TS_SL_03_DIAGNOSTIC_LIMIT,
   },
   inputs: [],
   compute: (config) =>
@@ -137,7 +148,7 @@ export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalCon
       const project = yield* TsProjectTag
       const context = yield* SignalContextTag
       return yield* Effect.tryPromise({
-        try: () => Promise.resolve(computeSuppressions(project, context, config)),
+        try: () => Promise.resolve(computeSuppressions(project, context, normalizeTsSl03Config(config))),
         catch: (cause) =>
           new SignalComputeError({ signalId: "TS-SL-03-suppressions", message: String(cause), cause }),
       })
@@ -155,8 +166,10 @@ export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalCon
     const maxPenalty = out.scopeMode === "changed-hunks" ? 1 : 0.65
     return Math.max(0, 1 - Math.min(maxPenalty, penalty / denominator))
   },
+  outputMetadata: (out) =>
+    out.analyzedFileCount === 0 ? { applicability: "not_applicable" as const } : undefined,
   diagnose: (out): ReadonlyArray<Diagnostic> =>
-    out.suppressions.slice(0, out.diagnosticLimit).map((suppression) => {
+    out.suppressions.slice(0, normalizeTsSl03DiagnosticLimit(out.diagnosticLimit)).map((suppression) => {
       const isUnjustified = suppression.justification === "missing" || suppression.justification === "expired"
       return {
         severity: suppression.justification === "expired"
@@ -167,7 +180,9 @@ export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalCon
         message: suppressionMessage(suppression),
         location: { file: suppression.file, line: suppression.line },
         data: {
-          hash: computeDiagnosticHash(`${suppression.file}:${suppression.line}:${suppression.kind}`),
+          hash: computeDiagnosticHash(
+            `${suppression.relativeFile ?? suppression.file}:${suppression.line}:${suppression.kind}`,
+          ),
           kind: suppression.kind,
           rule: suppression.rule,
           justification: suppression.justification,

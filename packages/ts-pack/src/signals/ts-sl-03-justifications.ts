@@ -1,4 +1,3 @@
-import { escapeRegExp } from "./shared-regexp.js"
 import type { Suppression } from "./ts-sl-03-suppressions.js"
 
 export const suppressionMessage = (suppression: Suppression): string => {
@@ -27,7 +26,7 @@ export const extractSuppression = (
 } | undefined => {
   const trimmed = line.trim()
 
-  const tsIgnoreMatch = /\B@ts-ignore\b/.exec(trimmed)
+  const tsIgnoreMatch = /^\/\/\s*@ts-ignore\b/.exec(trimmed)
   if (tsIgnoreMatch) {
     return {
       kind: "ts-ignore",
@@ -36,7 +35,7 @@ export const extractSuppression = (
     }
   }
 
-  const tsExpectMatch = /\B@ts-expect-error\b/.exec(trimmed)
+  const tsExpectMatch = /^\/\/\s*@ts-expect-error\b/.exec(trimmed)
   if (tsExpectMatch) {
     return {
       kind: "ts-expect-error",
@@ -63,15 +62,6 @@ export const contextualSuppressionJustification = (
   suppressionIndex: number,
   suppression: { readonly kind: Suppression["kind"]; readonly rule: string | undefined },
 ): string | undefined => {
-  const frameworkMetadataJustification = frameworkMetadataSuppressionJustification(lines, suppressionIndex)
-  if (frameworkMetadataJustification !== undefined) return frameworkMetadataJustification
-
-  const frameworkMetadataAccessJustification = frameworkMetadataAccessSuppressionJustification(lines, suppressionIndex)
-  if (frameworkMetadataAccessJustification !== undefined) return frameworkMetadataAccessJustification
-
-  const traceLoggingJustification = traceLoggingSuppressionJustification(lines, suppressionIndex, suppression)
-  if (traceLoggingJustification !== undefined) return traceLoggingJustification
-
   const nearbyComment = nearbyPrecedingCommentJustification(lines, suppressionIndex)
   if (nearbyComment !== undefined) return nearbyComment
 
@@ -180,59 +170,6 @@ const interveningLinesAreExpressionScaffold = (
 const isExpressionScaffoldLine = (line: string): boolean =>
   /^[A-Za-z_$][\w$.'"\[\]!?:<>= ]*(?:&&|\|\||[({:,])$/.test(line) ||
   /^(?:if|return|const|let|var)\b.*[({:,]$/.test(line)
-
-const traceLoggingSuppressionJustification = (
-  lines: ReadonlyArray<string>,
-  suppressionIndex: number,
-  suppression: { readonly kind: Suppression["kind"]; readonly rule: string | undefined },
-): string | undefined => {
-  if (suppression.kind !== "eslint-disable" || suppression.rule !== "no-console") return undefined
-
-  const context = lines
-    .slice(Math.max(0, suppressionIndex - 3), Math.min(lines.length, suppressionIndex + 4))
-    .join("\n")
-
-  return /\b(?:trace|debug|verbose)(?:Events?|Logging|Mode)?\b/i.test(context)
-    ? "Debug/trace logging branch"
-    : undefined
-}
-
-const frameworkMetadataSuppressionJustification = (
-  lines: ReadonlyArray<string>,
-  suppressionIndex: number,
-): string | undefined => {
-  const next = lines[suppressionIndex + 1]?.trim()
-  const assignment = next === undefined
-    ? undefined
-    : /^[A-Za-z_$][\w$]*\.__pulumiType\s*=\s*([A-Za-z_$][\w$]*)\s*;?$/.exec(next)
-  const pulumiTypeIdentifier = assignment?.[1]
-  if (pulumiTypeIdentifier === undefined) {
-    return undefined
-  }
-
-  for (let index = suppressionIndex - 1; index >= Math.max(0, suppressionIndex - 3); index--) {
-    const previous = lines[index]?.trim()
-    if (previous === undefined || previous.length === 0) continue
-    const declaration = new RegExp(`^const\\s+${escapeRegExp(pulumiTypeIdentifier)}\\s*=`).exec(previous)
-    if (declaration !== null) {
-      return "Pulumi runtime type metadata assignment"
-    }
-  }
-
-  return undefined
-}
-
-const frameworkMetadataAccessSuppressionJustification = (
-  lines: ReadonlyArray<string>,
-  suppressionIndex: number,
-): string | undefined => {
-  const context = lines
-    .slice(suppressionIndex + 1, Math.min(lines.length, suppressionIndex + 3))
-    .join("\n")
-  return /\.__pulumiType\b/.test(context)
-    ? "Pulumi runtime type metadata access"
-    : undefined
-}
 
 const contiguousLineCommentText = (lines: ReadonlyArray<string>, endIndex: number): string | undefined => {
   const comments: Array<string> = []

@@ -1,5 +1,5 @@
 import { SignalContextTag, parseBypasses } from "@skastr0/pulsar-core/signal"
-import { relative } from "node:path"
+import { isAbsolute, relative, resolve } from "node:path"
 import type { Project, SourceFile } from "ts-morph"
 import { isExcluded, matchesAnyGlob } from "./shared-globs.js"
 import {
@@ -19,7 +19,12 @@ export const computeSuppressions = (
   const suppressions = sourceFiles.flatMap((sourceFile) =>
     collectFileSuppressions(sourceFile, context),
   )
-  return buildSuppressionOutput(suppressions, sourceFiles.length, config, context)
+  const analyzedFileCount = context.changedHunks.length === 0
+    ? sourceFiles.length
+    : sourceFiles.filter((sourceFile) =>
+      sourceFileOverlapsHunks(sourceFile.getFilePath(), context.worktreePath, context.changedHunks),
+    ).length
+  return buildSuppressionOutput(suppressions, analyzedFileCount, config, context)
 }
 
 const selectSourceFiles = (
@@ -67,7 +72,7 @@ const suppressionAtLine = (
   const parsed = extractSuppression(line)
   if (parsed === undefined) return undefined
   if (isBanTsCommentBridge(parsed, lines[index + 1])) return undefined
-  if (!lineOverlapsHunks(path, lineNum, context.worktreePath, context.changedHunks)) {
+  if (!suppressionOverlapsHunks(path, lineNum, context.worktreePath, context.changedHunks)) {
     return undefined
   }
 
@@ -91,6 +96,7 @@ const suppressionAtLine = (
 
   return {
     file: path,
+    relativeFile: relative(context.worktreePath, path).replace(/\\/g, "/"),
     line: lineNum,
     kind: parsed.kind,
     rule: parsed.rule,
@@ -140,7 +146,7 @@ const buildSuppressionOutput = (
 
 const compareSuppressions = (a: Suppression, b: Suppression): number =>
   suppressionPriority(a) - suppressionPriority(b) ||
-  a.file.localeCompare(b.file) ||
+  compareStringAsc(a.file, b.file) ||
   a.line - b.line
 
 const matchesSourcePath = (
@@ -159,11 +165,30 @@ const isBanTsCommentBridge = (
   /@ts-(?:ignore|expect-error)\b/.test(nextLine)
 
 const suppressionPriority = (suppression: Suppression): number => {
-  if (suppression.justification === "missing") return 0
-  if (suppression.justification === "expired") return 1
+  if (suppression.justification === "expired") return 0
+  if (suppression.justification === "missing") return 1
   return 2
 }
 
+
+const suppressionOverlapsHunks = (
+  filePath: string,
+  line: number,
+  worktreePath: string,
+  hunks: ReadonlyArray<{ file: string; oldStart: number; oldLines: number; newStart: number; newLines: number }>,
+): boolean =>
+  lineOverlapsHunks(filePath, line, worktreePath, hunks) ||
+  lineOverlapsHunks(filePath, line + 1, worktreePath, hunks)
+
+const sourceFileOverlapsHunks = (
+  filePath: string,
+  worktreePath: string,
+  hunks: ReadonlyArray<{ file: string; oldStart: number; oldLines: number; newStart: number; newLines: number }>,
+): boolean => {
+  if (hunks.length === 0) return true
+  const absoluteFile = normalizeHunkPath(worktreePath, filePath)
+  return hunks.some((hunk) => normalizeHunkPath(worktreePath, hunk.file) === absoluteFile)
+}
 
 const lineOverlapsHunks = (
   filePath: string,
@@ -172,10 +197,10 @@ const lineOverlapsHunks = (
   hunks: ReadonlyArray<{ file: string; oldStart: number; oldLines: number; newStart: number; newLines: number }>,
 ): boolean => {
   if (hunks.length === 0) return true
-  const absoluteFile = filePath.startsWith(worktreePath) ? filePath : `${worktreePath}/${filePath}`
+  const absoluteFile = normalizeHunkPath(worktreePath, filePath)
 
   for (const hunk of hunks) {
-    const hunkFileAbsolute = hunk.file.startsWith(worktreePath) ? hunk.file : `${worktreePath}/${hunk.file}`
+    const hunkFileAbsolute = normalizeHunkPath(worktreePath, hunk.file)
     if (hunkFileAbsolute !== absoluteFile) continue
 
     const hunkStart = hunk.newStart
@@ -189,3 +214,10 @@ const lineOverlapsHunks = (
   return false
 }
 
+const normalizeHunkPath = (worktreePath: string, file: string): string =>
+  (isAbsolute(file) ? resolve(file) : resolve(worktreePath, file)).replace(/\\/g, "/")
+
+const compareStringAsc = (left: string, right: string): number => {
+  if (left === right) return 0
+  return left < right ? -1 : 1
+}
