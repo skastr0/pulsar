@@ -11,7 +11,11 @@ export const diagnosePublicExportSurface = (
   out: PublicExportDiagnosticsOutput,
 ): ReadonlyArray<Diagnostic> => {
   const entries = [...out.byFile.entries()]
-    .sort((a, b) => b[1].total - a[1].total)
+    .sort((a, b) =>
+      b[1].weightedTotal - a[1].weightedTotal ||
+      b[1].total - a[1].total ||
+      a[0].localeCompare(b[0]),
+    )
     .slice(0, out.diagnosticLimit)
   return entries.map(([file, surface]) => ({
     severity: surface.weightedTotal > out.surfaceThreshold ? ("warn" as const) : ("info" as const),

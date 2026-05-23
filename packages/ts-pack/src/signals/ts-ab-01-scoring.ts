@@ -2,9 +2,6 @@ import type { FileSurface } from "./ts-ab-01-export-collection.js"
 
 interface PublicExportScoreOutput {
   readonly byFile: ReadonlyMap<string, FileSurface>
-  readonly largestSurface:
-    | { readonly file: string; readonly total: number }
-    | undefined
   readonly surfaceThreshold: number
 }
 
@@ -15,10 +12,10 @@ export const scorePublicExportSurface = (out: PublicExportScoreOutput): number =
   // 10x the threshold drops 0.5. Using the max rather than the mean
   // surfaces a single runaway file instead of letting small tidy
   // barrels mask it.
-  const worst =
-    out.largestSurface === undefined
-      ? 0
-      : out.byFile.get(out.largestSurface.file)?.weightedTotal ?? out.largestSurface.total
+  const worst = [...out.byFile.values()].reduce(
+    (max, surface) => Math.max(max, surface.weightedTotal),
+    0,
+  )
   if (worst <= 0) return 1
   const ratio = worst / Math.max(1, out.surfaceThreshold)
   if (ratio <= 1) return 1

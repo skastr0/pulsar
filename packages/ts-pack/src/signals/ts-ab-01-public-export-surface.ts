@@ -60,7 +60,7 @@ export const TsAb01: Signal<TsAb01Config, TsAb01Output, TsProjectTag> = {
   tier: 1,
   category: "abstraction-bloat",
   kind: "legibility",
-  cacheVersion: "diagnostic-limit-v1",
+  cacheVersion: "diagnostic-limit-weighted-surface-v1",
   configSchema: TsAb01Config,
   defaultConfig: {
     public_export_globs: ["**/src/index.ts", "**/index.ts"],
