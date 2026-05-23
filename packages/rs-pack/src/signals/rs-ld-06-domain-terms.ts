@@ -229,7 +229,7 @@ export const RsLd06: Signal<RsLd06Config, RsLd06Output, RustProjectTag | Referen
     if (out.referenceDataStatus === "missing") {
       return [
         {
-          severity: "warn",
+          severity: "warn" as const,
           message: "RS-LD-06 requires glossary reference data; no glossary was loaded",
           data: {
             sourceFileCount: out.sourceFileCount,
@@ -245,7 +245,7 @@ export const RsLd06: Signal<RsLd06Config, RsLd06Output, RustProjectTag | Referen
     if (out.referenceDataStatus === "empty") {
       return [
         {
-          severity: "warn",
+          severity: "warn" as const,
           message: "RS-LD-06 requires non-empty glossary reference data; loaded glossary has no terms",
           data: {
             sourceFileCount: out.sourceFileCount,
