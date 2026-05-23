@@ -332,6 +332,67 @@ describe("RS-RP-* signals", () => {
     expect(broad.hotspots.map((hotspot) => hotspot.rank)).toEqual([1, 2, 3])
   })
 
+  test("RS-RP-02 declares identity, config, cache, pack registration, and factor ledger", async () => {
+    const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
+    const versionedRegistry = await Effect.runPromise(
+      buildRegistry([
+        ...SHARED_SIGNALS,
+        ...RS_PACK_SIGNALS.filter((signal) => signal.id !== RsRp02.id),
+        { ...RsRp02, cacheVersion: `${RsRp02.cacheVersion}-next` },
+      ]),
+    )
+    const registered = registry.byId.get("RS-RP-02")
+    const decoded = Schema.decodeUnknownSync(RsRp02.configSchema)(RsRp02.defaultConfig)
+    const factorLedger = registered?.factorLedger?.({})
+    const baseCacheHash = computeConfigHash(RsRp02.id, registry, undefined)
+    const versionedCacheHash = computeConfigHash(RsRp02.id, versionedRegistry, undefined)
+    const configuredCacheHash = computeConfigHash(RsRp02.id, registry, {
+      id: "rs-rp-02-contract",
+      domain: "test",
+      signal_overrides: {
+        [RsRp02.id]: {
+          config: {
+            ...RsRp02.defaultConfig,
+            top_n_diagnostics: 1,
+          },
+        },
+      },
+    })
+
+    expect(RsRp02).toMatchObject({
+      id: "RS-RP-02-compile-time",
+      aliases: ["RS-RP-02"],
+      title: "Compile time",
+      tier: 1,
+      category: "review-pain",
+      kind: "structural",
+      cacheVersion: "cargo-timings-config-applicability-diagnostics-v1",
+      inputs: [],
+    })
+    expect(decoded).toEqual({
+      top_n_diagnostics: 10,
+      measure_live_builds: false,
+    })
+    expect(registered?.id).toBe(RsRp02.id)
+    expect(registry.byId.get("RS-RP-02")?.id).toBe(RsRp02.id)
+    expect(baseCacheHash).not.toBe(versionedCacheHash)
+    expect(baseCacheHash).not.toBe(configuredCacheHash)
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        affectsScore: false,
+        scoreRole: "metadata",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.measure_live_builds",
+        affectsScore: true,
+        scoreRole: "evidence",
+      }),
+    )
+  })
+
   test("RS-RP-02 parses existing cargo timing output without live builds", async () => {
     const repo = await createRustWorkspace("pulsar-rs-rp02-", {
       "Cargo.toml": [
@@ -353,17 +414,189 @@ describe("RS-RP-* signals", () => {
         `${repo}/target/cargo-timings/cargo-timing.html`,
         [
           "<script>",
-          'const UNIT_DATA = [{"i":0,"name":"compile-fixture","duration":0.42,"unblocked_units":[],"unblocked_rmeta_units":[]}];',
+          "const UNIT_DATA = [",
+          '{"i":0,"name":"compile-fixture","duration":1.5,"unblocked_units":[1,2],"unblocked_rmeta_units":[3]},',
+          '{"i":1,"name":"compile-fixture","duration":0.8,"unblocked_units":[],"unblocked_rmeta_units":[]},',
+          '{"i":2,"name":"helper-crate","duration":0.5,"unblocked_units":[],"unblocked_rmeta_units":[]}',
+          "];",
           "</script>",
         ].join("\n"),
       )
       const out = await runSignalCompute(RsRp02, repo, RsRp02.defaultConfig)
       expect(out.buildStatus).toBe("measured")
-      expect(out.crates.some((entry) => entry.crate === "compile-fixture")).toBe(true)
+      expect(out.totalUnits).toBe(3)
       expect(out.cacheProbeMode).toBe("unavailable")
+      expect(out.measurementMode).toBe("existing-cargo-timings")
+      expect(out.crates[0]).toMatchObject({
+        crate: "compile-fixture",
+        totalDurationMs: 2300,
+        unitCount: 2,
+        cascadeImpact: 3,
+      })
+      expect(out.crates[1]).toMatchObject({
+        crate: "helper-crate",
+        totalDurationMs: 500,
+        unitCount: 1,
+      })
+      expect(RsRp02.score(out)).toBeCloseTo(0.77)
+      expect(RsRp02.outputMetadata?.(out)).toBeUndefined()
     } finally {
       await cleanupWorkspace(repo)
     }
+  })
+
+  test("RS-RP-02 normalizes diagnostics and applicability evidence", async () => {
+    const measured = await createRustWorkspace("pulsar-rs-rp02-diagnostics-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "compile-diagnostics"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": "pub fn meaning() -> u32 { 42 }\n",
+    })
+    const missingTiming = await createRustWorkspace("pulsar-rs-rp02-missing-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "compile-missing"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": "pub fn meaning() -> u32 { 42 }\n",
+    })
+    const invalidTiming = await createRustWorkspace("pulsar-rs-rp02-invalid-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "compile-invalid"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": "pub fn meaning() -> u32 { 42 }\n",
+    })
+    const noCargo = await createRustWorkspace("pulsar-rs-rp02-no-cargo-", {
+      "README.md": "not a Cargo project\n",
+    })
+
+    try {
+      await mkdir(`${measured}/target/cargo-timings`, { recursive: true })
+      await writeFile(
+        `${measured}/target/cargo-timings/cargo-timing.html`,
+        [
+          "<script>",
+          "const UNIT_DATA = [",
+          '{"i":0,"name":"slow-crate","duration":2.4,"unblocked_units":[],"unblocked_rmeta_units":[]},',
+          '{"i":1,"name":"fast-crate","duration":0.2,"unblocked_units":[],"unblocked_rmeta_units":[]}',
+          "];",
+          "</script>",
+        ].join("\n"),
+      )
+      await mkdir(`${invalidTiming}/target/cargo-timings`, { recursive: true })
+      await writeFile(
+        `${invalidTiming}/target/cargo-timings/cargo-timing.html`,
+        '<script>const UNIT_DATA = [{"i":"bad","name":"compile-invalid","duration":1}];</script>',
+      )
+
+      const out = await runSignalCompute(RsRp02, measured, {
+        ...RsRp02.defaultConfig,
+        top_n_diagnostics: 1.8,
+      })
+      const hiddenOut = await runSignalCompute(RsRp02, measured, {
+        ...RsRp02.defaultConfig,
+        top_n_diagnostics: Number.NaN,
+      })
+      const missingOut = await runSignalCompute(RsRp02, missingTiming, RsRp02.defaultConfig)
+      const invalidOut = await runSignalCompute(RsRp02, invalidTiming, RsRp02.defaultConfig)
+      const noCargoOut = await runSignalCompute(RsRp02, noCargo, RsRp02.defaultConfig)
+      const diagnostics = RsRp02.diagnose(out)
+
+      expect(out.diagnosticLimit).toBe(1)
+      expect(diagnostics).toHaveLength(1)
+      expect(diagnostics[0]).toMatchObject({
+        severity: "warn",
+        message: "Compile hotspot slow-crate: 2.40s",
+        data: expect.objectContaining({
+          crate: "slow-crate",
+          totalDurationMs: 2400,
+          measurementMode: "existing-cargo-timings",
+          scoreMode: "slowest-crate-compile-duration",
+          scoreDenominator: "slowest-crate-duration-ms",
+        }),
+      })
+      expect(hiddenOut.diagnosticLimit).toBe(0)
+      expect(RsRp02.diagnose(hiddenOut)).toEqual([])
+      expect(missingOut.unavailableReason).toBe("missing-timing-data")
+      expect(RsRp02.outputMetadata?.(missingOut)).toEqual({
+        applicability: "insufficient_evidence",
+      })
+      expect(RsRp02.diagnose(missingOut)[0]).toMatchObject({
+        severity: "warn",
+        message: "RS-RP-02 could not collect cargo timing data",
+        data: expect.objectContaining({
+          unavailableReason: "missing-timing-data",
+        }),
+      })
+      expect(invalidOut.unavailableReason).toBe("invalid-timing-data")
+      expect(RsRp02.outputMetadata?.(invalidOut)).toEqual({
+        applicability: "insufficient_evidence",
+      })
+      expect(noCargoOut.unavailableReason).toBe("no-cargo-project")
+      expect(RsRp02.outputMetadata?.(noCargoOut)).toEqual({
+        applicability: "not_applicable",
+      })
+    } finally {
+      await cleanupWorkspace(measured)
+      await cleanupWorkspace(missingTiming)
+      await cleanupWorkspace(invalidTiming)
+      await cleanupWorkspace(noCargo)
+    }
+  })
+
+  test("RS-RP-02 scores slower measured compile hotspots monotonically", () => {
+    const unavailable = rsRp02Output({
+      buildStatus: "unavailable",
+      crates: [],
+      totalUnits: 0,
+      unavailableReason: "missing-timing-data",
+    })
+    const emptyMeasured = rsRp02Output({
+      buildStatus: "measured",
+      crates: [],
+      totalUnits: 0,
+    })
+    const fast = rsRp02Output({
+      buildStatus: "measured",
+      crates: [
+        {
+          crate: "fast",
+          totalDurationMs: 500,
+          unitCount: 1,
+          cascadeImpact: 0,
+          incrementalCacheHitRate: undefined,
+        },
+      ],
+      totalUnits: 1,
+    })
+    const slow = rsRp02Output({
+      buildStatus: "measured",
+      crates: [
+        {
+          crate: "slow",
+          totalDurationMs: 5_000,
+          unitCount: 1,
+          cascadeImpact: 0,
+          incrementalCacheHitRate: undefined,
+        },
+      ],
+      totalUnits: 1,
+    })
+
+    expect(RsRp02.score(unavailable)).toBe(1)
+    expect(RsRp02.score(emptyMeasured)).toBe(1)
+    expect(RsRp02.score(fast)).toBeGreaterThan(RsRp02.score(slow))
+    expect(RsRp02.score(slow)).toBeCloseTo(0.5)
   })
 
   test("RS-RP-03 counts diff size and new cross-crate import edges", async () => {
@@ -573,3 +806,27 @@ const amendTrackedFile = async (repo: string, relativePath: string, dateIso: str
     },
   )
 }
+
+const rsRp02Output = ({
+  buildStatus,
+  crates,
+  totalUnits,
+  unavailableReason,
+}: {
+  readonly buildStatus: Parameters<typeof RsRp02.score>[0]["buildStatus"]
+  readonly crates: ReadonlyArray<Parameters<typeof RsRp02.score>[0]["crates"][number]>
+  readonly totalUnits: number
+  readonly unavailableReason?: Parameters<typeof RsRp02.score>[0]["unavailableReason"]
+}): Parameters<typeof RsRp02.score>[0] => ({
+  crates,
+  totalUnits,
+  buildStatus,
+  ...(unavailableReason !== undefined ? { unavailableReason } : {}),
+  timingSource: "cargo-timings-html",
+  cacheProbeMode: "unavailable",
+  measurementMode: "existing-cargo-timings",
+  manifestCount: 1,
+  diagnosticLimit: 10,
+  scoreMode: "slowest-crate-compile-duration",
+  scoreDenominator: "slowest-crate-duration-ms",
+})
