@@ -672,6 +672,83 @@ describe("RS-AB-* signals", () => {
     }
   })
 
+  test("RS-AB-02 declares identity, config, cache, pack registration, and factor ledger", async () => {
+    const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
+    const versionedRegistry = await Effect.runPromise(
+      buildRegistry([
+        ...SHARED_SIGNALS,
+        ...RS_PACK_SIGNALS.filter((signal) => signal.id !== RsAb02.id),
+        { ...RsAb02, cacheVersion: `${RsAb02.cacheVersion}-next` },
+      ]),
+    )
+    const registered = registry.byId.get("RS-AB-02")
+    const decoded = Schema.decodeUnknownSync(RsAb02.configSchema)(RsAb02.defaultConfig)
+    const factorLedger = registered?.factorLedger?.({})
+    const baseCacheHash = computeConfigHash(RsAb02.id, registry, undefined)
+    const versionedCacheHash = computeConfigHash(RsAb02.id, versionedRegistry, undefined)
+    const configuredCacheHash = computeConfigHash(RsAb02.id, registry, {
+      id: "rs-ab-02-contract",
+      domain: "test",
+      signal_overrides: {
+        [RsAb02.id]: {
+          config: {
+            ...RsAb02.defaultConfig,
+            max_chain_depth: 2,
+          },
+        },
+      },
+    })
+
+    expect(RsAb02).toMatchObject({
+      id: "RS-AB-02-trait-object-depth",
+      aliases: ["RS-AB-02"],
+      title: "Trait object depth",
+      tier: 1,
+      category: "abstraction-bloat",
+      kind: "legibility",
+      cacheVersion: "trait-object-depth-config-applicability-diagnostics-v1",
+      inputs: [],
+    })
+    expect(decoded).toEqual({
+      exclude_globs: ["**/target/**", "**/tests/**", "**/examples/**", "**/benches/**"],
+      max_chain_depth: 1,
+      top_n_diagnostics: 10,
+    })
+    expect(registered?.id).toBe(RsAb02.id)
+    expect(registered?.cacheVersion).toBe(RsAb02.cacheVersion)
+    expect(registry.byId.get("RS-AB-02")?.id).toBe(RsAb02.id)
+    expect(baseCacheHash).not.toBe(versionedCacheHash)
+    expect(baseCacheHash).not.toBe(configuredCacheHash)
+    expect(factorLedger?.entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: "config.exclude_globs", source: "signal-default" }),
+        expect.objectContaining({ path: "config.max_chain_depth", source: "signal-default" }),
+        expect.objectContaining({ path: "config.top_n_diagnostics", source: "signal-default" }),
+      ]),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.exclude_globs",
+        affectsScore: true,
+        scoreRole: "evidence",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.max_chain_depth",
+        affectsScore: true,
+        scoreRole: "threshold",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        affectsScore: false,
+        scoreRole: "metadata",
+      }),
+    )
+  })
+
   test("RS-AB-02 measures local trait-object call-chain depth", async () => {
     const repo = await createRustWorkspace("pulsar-rs-ab02-", {
       "Cargo.toml": [
@@ -692,10 +769,169 @@ describe("RS-AB-* signals", () => {
 
     try {
       const out = await runSignalCompute(RsAb02, repo, RsAb02.defaultConfig)
+      const diagnostics = RsAb02.diagnose(out)
+
+      expect(out.functions.map((entry) => [entry.name, entry.chainDepth])).toEqual([
+        ["top", 3],
+        ["middle", 2],
+        ["leaf", 1],
+      ])
       expect(out.functions.find((entry) => entry.name === "leaf")?.chainDepth).toBe(1)
       expect(out.functions.find((entry) => entry.name === "top")?.chainDepth).toBeGreaterThanOrEqual(3)
+      expect(out.overThreshold.map((entry) => entry.name)).toEqual(["top", "middle"])
+      expect(out.maxChainDepth).toBe(1)
+      expect(out.diagnosticLimit).toBe(10)
+      expect(RsAb02.outputMetadata?.(out)).toBeUndefined()
+      expect(RsAb02.score(out)).toBeCloseTo(1 / 3)
+      expect(diagnostics).toMatchObject([
+        {
+          severity: "warn",
+          message: "Trait-object chain depth 3 in top",
+          location: { file: expect.stringMatching(/src\/lib\.rs$/), line: 4 },
+          data: {
+            module: "trait-object-fixture::crate",
+            name: "top",
+            returnType: "Box<dyn Display>",
+            calleeNames: ["middle"],
+            analysisMode: "local-dyn-return-call-graph",
+          },
+        },
+        {
+          severity: "warn",
+          message: "Trait-object chain depth 2 in middle",
+          location: { file: expect.stringMatching(/src\/lib\.rs$/), line: 3 },
+          data: {
+            module: "trait-object-fixture::crate",
+            name: "middle",
+            returnType: "Box<dyn Display>",
+            calleeNames: ["leaf"],
+            analysisMode: "local-dyn-return-call-graph",
+          },
+        },
+      ])
     } finally {
       await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-AB-02 normalizes config, diagnostics, and applicability evidence", async () => {
+    const chain = await createRustWorkspace("pulsar-rs-ab02-config-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "trait-object-config"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "use std::fmt::Debug;",
+        "pub fn leaf() -> Box<dyn Debug> { Box::new(1_u8) }",
+        "pub fn middle() -> Box<dyn Debug> { leaf() }",
+        "pub fn top() -> Box<dyn Debug> { middle() }",
+        "",
+      ].join("\n"),
+    })
+    const missing = await createRustWorkspace("pulsar-rs-ab02-missing-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "trait-object-missing"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+    })
+    const noDyn = await createRustWorkspace("pulsar-rs-ab02-no-dyn-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "trait-object-no-dyn"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub fn ordinary() -> usize { 1 }",
+        "",
+      ].join("\n"),
+    })
+    const excluded = await createRustWorkspace("pulsar-rs-ab02-excluded-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "trait-object-excluded"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "use std::fmt::Debug;",
+        "pub fn hidden() -> Box<dyn Debug> { Box::new(1_u8) }",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const capped = await runSignalCompute(
+        RsAb02,
+        chain,
+        { ...RsAb02.defaultConfig, max_chain_depth: 1.8, top_n_diagnostics: 1.8 },
+      )
+      const hidden = await runSignalCompute(
+        RsAb02,
+        chain,
+        { ...RsAb02.defaultConfig, max_chain_depth: Number.NaN, top_n_diagnostics: Number.NaN },
+      )
+      const strict = await runSignalCompute(
+        RsAb02,
+        chain,
+        { ...RsAb02.defaultConfig, max_chain_depth: 0 },
+      )
+      const missingOut = await runSignalCompute(RsAb02, missing, RsAb02.defaultConfig)
+      const noDynOut = await runSignalCompute(RsAb02, noDyn, RsAb02.defaultConfig)
+      const excludedOut = await runSignalCompute(
+        RsAb02,
+        excluded,
+        { ...RsAb02.defaultConfig, exclude_globs: ["**/*.rs"] },
+      )
+
+      expect(capped.maxChainDepth).toBe(1)
+      expect(capped.diagnosticLimit).toBe(1)
+      expect(RsAb02.diagnose(capped)).toHaveLength(1)
+      expect(RsAb02.diagnose(capped)[0]?.data?.name).toBe("top")
+      expect(hidden.maxChainDepth).toBe(1)
+      expect(hidden.diagnosticLimit).toBe(0)
+      expect(RsAb02.diagnose(hidden)).toHaveLength(0)
+      expect(strict.overThreshold).toHaveLength(3)
+      expect(RsAb02.score(strict)).toBeLessThan(RsAb02.score(capped))
+
+      expect(missingOut.sourceFileCount).toBe(0)
+      expect(RsAb02.outputMetadata?.(missingOut)).toEqual({
+        applicability: "insufficient_evidence",
+      })
+      expect(RsAb02.diagnose(missingOut)).toEqual([
+        expect.objectContaining({
+          severity: "warn",
+          message: "RS-AB-02 found no Rust source files for trait-object depth analysis",
+        }),
+      ])
+
+      expect(noDynOut.sourceFileCount).toBe(1)
+      expect(noDynOut.functions).toEqual([])
+      expect(RsAb02.outputMetadata?.(noDynOut)).toEqual({
+        applicability: "not_applicable",
+      })
+      expect(RsAb02.diagnose(noDynOut)).toEqual([])
+
+      expect(excludedOut.sourceFileCount).toBe(1)
+      expect(excludedOut.analyzedSourceFileCount).toBe(0)
+      expect(excludedOut.functions).toEqual([])
+      expect(RsAb02.outputMetadata?.(excludedOut)).toEqual({
+        applicability: "not_applicable",
+      })
+      expect(RsAb02.diagnose(excludedOut)).toEqual([])
+    } finally {
+      await cleanupWorkspace(chain)
+      await cleanupWorkspace(missing)
+      await cleanupWorkspace(noDyn)
+      await cleanupWorkspace(excluded)
     }
   })
 

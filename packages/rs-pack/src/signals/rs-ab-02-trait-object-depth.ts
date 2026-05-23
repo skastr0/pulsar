@@ -1,7 +1,13 @@
 import {
+  makeFactorEntry,
+  makeFactorLedger,
+  type SignalFactorLedger,
+} from "@skastr0/pulsar-core/factors"
+import {
   type Diagnostic,
   scoreThresholdViolationShare,
   type Signal,
+  type SignalFactorDefinition,
   SignalComputeError,
 } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
@@ -37,8 +43,39 @@ interface TraitObjectChainEntry {
 interface RsAb02Output {
   readonly functions: ReadonlyArray<TraitObjectChainEntry>
   readonly overThreshold: ReadonlyArray<TraitObjectChainEntry>
+  readonly sourceFileCount: number
+  readonly analyzedSourceFileCount: number
+  readonly maxChainDepth: number
+  readonly diagnosticLimit: number
   readonly analysisMode: "local-dyn-return-call-graph"
 }
+
+const DEFAULT_MAX_CHAIN_DEPTH = 1
+const DEFAULT_TOP_N_DIAGNOSTICS = 10
+
+const RsAb02FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
+  {
+    path: "config.exclude_globs",
+    title: "Config exclude globs",
+    valueKind: "array",
+    scoreRole: "evidence",
+    defaultValue: [...DEFAULT_RUST_EXCLUDE_GLOBS],
+  },
+  {
+    path: "config.max_chain_depth",
+    title: "Config max chain depth",
+    valueKind: "number",
+    scoreRole: "threshold",
+    defaultValue: DEFAULT_MAX_CHAIN_DEPTH,
+  },
+  {
+    path: "config.top_n_diagnostics",
+    title: "Config top n diagnostics",
+    valueKind: "number",
+    scoreRole: "metadata",
+    defaultValue: DEFAULT_TOP_N_DIAGNOSTICS,
+  },
+]
 
 export const RsAb02: Signal<RsAb02Config, RsAb02Output, RustProjectTag> = {
   id: "RS-AB-02-trait-object-depth",
@@ -47,15 +84,18 @@ export const RsAb02: Signal<RsAb02Config, RsAb02Output, RustProjectTag> = {
   tier: 1,
   category: "abstraction-bloat",
   kind: "legibility",
+  cacheVersion: "trait-object-depth-config-applicability-diagnostics-v1",
   configSchema: RsAb02Config,
+  factorDefinitions: RsAb02FactorDefinitions,
   defaultConfig: {
     exclude_globs: [...DEFAULT_RUST_EXCLUDE_GLOBS],
-    max_chain_depth: 1,
-    top_n_diagnostics: 10,
+    max_chain_depth: DEFAULT_MAX_CHAIN_DEPTH,
+    top_n_diagnostics: DEFAULT_TOP_N_DIAGNOSTICS,
   },
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
+      const normalizedConfig = normalizeRsAb02Config(config)
       const project = yield* RustProjectTag
       return yield* Effect.tryPromise({
         try: async (): Promise<RsAb02Output> => {
@@ -72,8 +112,11 @@ export const RsAb02: Signal<RsAb02Config, RsAb02Output, RustProjectTag> = {
           >()
           const fnKeysByName = new Map<string, Array<string>>()
 
-          for (const file of project.sourceFiles) {
-            if (isExcluded(file, config.exclude_globs)) continue
+          const analyzedSourceFiles = project.sourceFiles.filter(
+            (file) => !isExcluded(file, normalizedConfig.exclude_globs),
+          )
+
+          for (const file of analyzedSourceFiles) {
             const scope = resolveRustFileScope(project, file)
             const tree = await parseRustFile(file)
             walkAttributedNodes(tree.rootNode, ({ node, ancestors, testGated }) => {
@@ -112,7 +155,11 @@ export const RsAb02: Signal<RsAb02Config, RsAb02Output, RustProjectTag> = {
 
           return {
             functions: entries,
-            overThreshold: entries.filter((entry) => entry.chainDepth > config.max_chain_depth),
+            overThreshold: entries.filter((entry) => entry.chainDepth > normalizedConfig.max_chain_depth),
+            sourceFileCount: project.sourceFiles.length,
+            analyzedSourceFileCount: analyzedSourceFiles.length,
+            maxChainDepth: normalizedConfig.max_chain_depth,
+            diagnosticLimit: normalizedConfig.top_n_diagnostics,
             analysisMode: "local-dyn-return-call-graph",
           }
         },
@@ -123,8 +170,20 @@ export const RsAb02: Signal<RsAb02Config, RsAb02Output, RustProjectTag> = {
   score: (out) => {
     return scoreThresholdViolationShare(out.functions.length, out.overThreshold.length)
   },
-  diagnose: (out): ReadonlyArray<Diagnostic> =>
-    out.overThreshold.slice(0, 10).map((entry) => ({
+  diagnose: (out): ReadonlyArray<Diagnostic> => {
+    if (out.sourceFileCount === 0) {
+      return [{
+        severity: "warn" as const,
+        message: "RS-AB-02 found no Rust source files for trait-object depth analysis",
+        data: {
+          sourceFileCount: out.sourceFileCount,
+          analyzedSourceFileCount: out.analyzedSourceFileCount,
+          functionCount: out.functions.length,
+          analysisMode: out.analysisMode,
+        },
+      }].slice(0, out.diagnosticLimit)
+    }
+    return out.overThreshold.slice(0, out.diagnosticLimit).map((entry) => ({
       severity: "warn" as const,
       message: `Trait-object chain depth ${entry.chainDepth} in ${entry.name}`,
       location: { file: entry.file, line: entry.line },
@@ -135,8 +194,41 @@ export const RsAb02: Signal<RsAb02Config, RsAb02Output, RustProjectTag> = {
         calleeNames: entry.calleeNames,
         analysisMode: out.analysisMode,
       },
-    })),
+    }))
+  },
+  outputMetadata: (out) => {
+    if (out.sourceFileCount === 0) {
+      return { applicability: "insufficient_evidence" as const }
+    }
+    if (out.analyzedSourceFileCount === 0 || out.functions.length === 0) {
+      return { applicability: "not_applicable" as const }
+    }
+    return undefined
+  },
+  factorLedger: () => makeRsAb02FactorLedger(),
 }
+
+type NormalizedRsAb02Config = RsAb02Config
+
+const normalizeRsAb02Config = (config: RsAb02Config): NormalizedRsAb02Config => ({
+  exclude_globs: config.exclude_globs,
+  max_chain_depth: Number.isFinite(config.max_chain_depth)
+    ? Math.max(0, Math.floor(config.max_chain_depth))
+    : DEFAULT_MAX_CHAIN_DEPTH,
+  top_n_diagnostics: Number.isFinite(config.top_n_diagnostics)
+    ? Math.max(0, Math.floor(config.top_n_diagnostics))
+    : 0,
+})
+
+const makeRsAb02FactorLedger = (): SignalFactorLedger =>
+  makeFactorLedger(
+    "RS-AB-02-trait-object-depth",
+    RsAb02FactorDefinitions.map((definition) =>
+      makeFactorEntry(definition, definition.defaultValue ?? null, {
+        source: "signal-default",
+      }),
+    ),
+  )
 
 const detectReturnType = (node: ReturnType<typeof namedChildrenOf>[number]): string | undefined => {
   const children = namedChildrenOf(node)
