@@ -296,6 +296,65 @@ describe("TS-AB-04 (interface to implementation ratio)", () => {
     expect(out.deadInterfaces).toHaveLength(0)
   })
 
+  test("public named re-export chains exclude implementation contracts", async () => {
+    await repo.write(
+      "src/contracts.ts",
+      [
+        "export interface IService {",
+        "  run(): string",
+        "}",
+      ].join("\n"),
+    )
+    await repo.write("src/public.ts", "export { IService } from './contracts'\n")
+    await repo.write("src/index.ts", "export { IService } from './public'\n")
+    await repo.write(
+      "src/service.ts",
+      [
+        "import type { IService } from './contracts'",
+        "export class ServiceImpl implements IService {",
+        "  run() {",
+        "    return 'ok'",
+        "  }",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsAb04, TsAb04.defaultConfig)
+
+    expect(out.totalInterfaces).toBe(0)
+    expect(out.flaggedPairs).toHaveLength(0)
+    expect(out.deadInterfaces).toHaveLength(0)
+  })
+
+  test("public package-local alias re-exports exclude implementation contracts", async () => {
+    await repo.write(
+      "src/contracts.ts",
+      [
+        "export interface IService {",
+        "  run(): string",
+        "}",
+      ].join("\n"),
+    )
+    await repo.write("src/index.ts", "export { IService } from '@/contracts'\n")
+    await repo.write(
+      "src/service.ts",
+      [
+        "import type { IService } from './contracts'",
+        "export class ServiceImpl implements IService {",
+        "  run() {",
+        "    return 'ok'",
+        "  }",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsAb04, TsAb04.defaultConfig)
+
+    expect(out.totalInterfaces).toBe(0)
+    expect(out.flaggedPairs).toHaveLength(0)
+    expect(out.deadInterfaces).toHaveLength(0)
+  })
+
   test("dead interfaces are surfaced separately", async () => {
     await repo.write(
       "src/dead.ts",

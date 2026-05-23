@@ -1,6 +1,7 @@
 import {
   type AsExpression,
   type ExpressionWithTypeArguments,
+  type ExportDeclaration,
   Node,
   type Project,
   type SatisfiesExpression,
@@ -10,6 +11,7 @@ import {
   type TypeNode,
   type VariableDeclaration,
 } from "ts-morph"
+import type { PackageInfo } from "../discovery.js"
 import { createModuleResolver, type ModuleResolver } from "../graph/module-graph.js"
 import { isExcluded, matchesAnyGlob } from "./shared-globs.js"
 import { hasExportModifier } from "./shared-ts-morph-modifiers.js"
@@ -70,9 +72,10 @@ interface InterfaceImplementationAccumulator {
 export const computeInterfaceImplementationRatio = (
   project: Project,
   config: TsAb04AnalysisConfig,
+  packages: ReadonlyArray<PackageInfo> = [],
 ): TsAb04Output => {
   const { productionFiles, testFiles } = selectInterfaceAnalysisFiles(project, config)
-  const candidateInterfaces = collectCandidateInterfaces(productionFiles, config)
+  const candidateInterfaces = collectCandidateInterfaces(productionFiles, config, packages)
   const prodImplementations = buildImplementationIndex(productionFiles)
   const testImplementations = buildImplementationIndex(testFiles)
   const accumulator = buildInterfaceImplementationAccumulator(
@@ -106,10 +109,12 @@ const selectInterfaceAnalysisFiles = (
 const collectCandidateInterfaces = (
   productionFiles: ReadonlyArray<SourceFile>,
   config: TsAb04AnalysisConfig,
+  packages: ReadonlyArray<PackageInfo>,
 ): ReadonlyArray<InterfaceDeclaration> => {
   const publicInterfaces = buildPublicInterfaceKeySet(
     productionFiles,
     config.public_entry_globs,
+    packages,
   )
   return productionFiles
     .flatMap((sourceFile) => sourceFile.getInterfaces())
@@ -218,11 +223,12 @@ const compareDeadInterfaces = (left: DeadInterface, right: DeadInterface): numbe
 const buildPublicInterfaceKeySet = (
   sourceFiles: ReadonlyArray<SourceFile>,
   publicEntryGlobs: ReadonlyArray<string>,
+  packages: ReadonlyArray<PackageInfo>,
 ): ReadonlySet<string> => {
   const sourceFileByPath = new Map(
     sourceFiles.map((sourceFile) => [sourceFile.getFilePath(), sourceFile] as const),
   )
-  const resolver = createModuleResolver(sourceFiles, [])
+  const resolver = createModuleResolver(sourceFiles, packages)
   const publicKeys = new Set<string>()
   const visited = new Set<string>()
 
@@ -260,10 +266,14 @@ const collectPublicInterfacesFromExports = (
 
     if (namedExports.length > 0) {
       for (const specifier of namedExports) {
-        const iface = targetFile.getInterface(specifier.getName())
-        if (iface !== undefined) {
-          publicKeys.add(interfaceKey(iface))
-        }
+        collectPublicInterfaceFromNamedExport(
+          specifier.getName(),
+          targetFile,
+          sourceFileByPath,
+          resolver,
+          publicKeys,
+          visited,
+        )
       }
       continue
     }
@@ -273,6 +283,54 @@ const collectPublicInterfacesFromExports = (
 }
 
 const interfaceKey = (iface: InterfaceDeclaration): string => declarationKey(iface)
+
+const collectPublicInterfaceFromNamedExport = (
+  exportName: string,
+  sourceFile: SourceFile,
+  sourceFileByPath: ReadonlyMap<string, SourceFile>,
+  resolver: ModuleResolver,
+  publicKeys: Set<string>,
+  visited: Set<string>,
+): void => {
+  const iface = sourceFile.getInterface(exportName)
+  if (iface !== undefined) {
+    publicKeys.add(interfaceKey(iface))
+    return
+  }
+
+  const exportKey = `${sourceFile.getFilePath()}:${exportName}`
+  if (visited.has(exportKey)) return
+  visited.add(exportKey)
+
+  for (const declaration of sourceFile.getExportDeclarations()) {
+    const targetExportName = matchingNamedExport(declaration, exportName)
+    if (targetExportName === undefined) continue
+
+    const targetPath = resolver.resolve(sourceFile.getFilePath(), declaration)
+    const targetFile = targetPath === undefined ? undefined : sourceFileByPath.get(targetPath)
+    if (targetFile === undefined) continue
+
+    collectPublicInterfaceFromNamedExport(
+      targetExportName,
+      targetFile,
+      sourceFileByPath,
+      resolver,
+      publicKeys,
+      visited,
+    )
+  }
+}
+
+const matchingNamedExport = (
+  declaration: ExportDeclaration,
+  exportName: string,
+): string | undefined => {
+  for (const specifier of declaration.getNamedExports()) {
+    const exportedName = specifier.getAliasNode()?.getText() ?? specifier.getName()
+    if (exportedName === exportName) return specifier.getName()
+  }
+  return undefined
+}
 
 const hasStructuralTypeUsage = (iface: InterfaceDeclaration): boolean => {
   const nameNode = iface.getNameNode()
