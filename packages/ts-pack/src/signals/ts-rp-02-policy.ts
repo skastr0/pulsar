@@ -10,7 +10,7 @@ import {
   makeFactorLedger,
 } from "@skastr0/pulsar-core/factors"
 import { Effect, Option } from "effect"
-import type { TsRp02Output } from "./ts-rp-02-pr-size.js"
+import { normalizeNonNegativeFiniteNumber, type TsRp02Output } from "./ts-rp-02-pr-size.js"
 
 export const applyPrSizePolicy = (
   output: TsRp02Output,
@@ -22,7 +22,7 @@ export const applyPrSizePolicy = (
   }
   return Effect.map(
     calibration.value.runSlot("typescript.pr-size-policy", input),
-    (policy) => withEffectivePrSizePolicy(output, policy.value, policy.decisions),
+    (policy) => withEffectivePrSizePolicy(output, normalizePrSizePolicy(output, policy.value), policy.decisions),
   )
 }
 
@@ -56,6 +56,25 @@ const withEffectivePrSizePolicy = (
   calibrationDecisions: decisions,
   factorLedger: makeTsRp02FactorLedger(policy, decisions),
 })
+
+const normalizePrSizePolicy = (
+  output: TsRp02Output,
+  policy: TypeScriptPrSizePolicyValue,
+): TypeScriptPrSizePolicyValue => ({
+  ...policy,
+  visible: policy.visible === false ? false : true,
+  severity: isDiagnosticSeverity(policy.severity) ? policy.severity : defaultPrSizePolicy(output).severity,
+  penaltyWeight: normalizeNonNegativeFiniteNumber(policy.penaltyWeight, output.sizePenalty),
+  factorPathPrefix: isValidFactorPathPrefix(policy.factorPathPrefix)
+    ? policy.factorPathPrefix
+    : "pr_size",
+})
+
+const isDiagnosticSeverity = (value: string): value is TypeScriptPrSizePolicyValue["severity"] =>
+  value === "info" || value === "warn" || value === "block"
+
+const isValidFactorPathPrefix = (value: string): boolean =>
+  /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/.test(value)
 
 const makeTsRp02FactorLedger = (
   policy: TypeScriptPrSizePolicyValue,

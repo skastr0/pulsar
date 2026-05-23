@@ -1,7 +1,7 @@
-import { join } from "node:path"
+import { isAbsolute, relative, resolve } from "node:path"
 import type { SignalContext } from "@skastr0/pulsar-core/signal"
-import { isExcluded } from "./shared-globs.js"
-import { boundaryOfFile, packageForFile, type BoundaryRule } from "./shared-workspace.js"
+import { matchesAnyGlob } from "./shared-globs.js"
+import { normalizePackageSpecifier, packageForFile, type BoundaryRule } from "./shared-workspace.js"
 import type { ChangedFileStat, ImportEdge, TsRp02Config, TsRp02Output } from "./ts-rp-02-pr-size.js"
 
 export const TS_DIFF_PATHSPECS = [
@@ -27,8 +27,8 @@ export const parseGitDiff = (
   for (const line of numstat.split("\n")) {
     const match = /^(\d+|-)\t(\d+|-)\t(.+)$/.exec(line.trim())
     if (match === null) continue
-    const file = join(worktreePath, match[3]!)
-    if (isExcluded(file, config.exclude_globs)) continue
+    const file = resolveSourcePath(worktreePath, match[3]!)
+    if (matchesSourcePath(file, worktreePath, config.exclude_globs)) continue
     const added = match[1] === "-" ? 0 : Number(match[1])
     const deleted = match[2] === "-" ? 0 : Number(match[2])
     linesAdded += added
@@ -51,7 +51,7 @@ export const parseGitDiff = (
     uniqueFiles,
     diff,
     worktreePath,
-    [],
+    config.boundary_rules,
   )
 
   const totalLines = linesAdded + linesDeleted
@@ -68,8 +68,10 @@ export const parseGitDiff = (
     newCrossPackageEdges: crossPackageEdges,
     newCrossBoundaryEdges: crossBoundaryEdges,
     diffMode,
+    dependencyDeltaMode: "measured",
     sizeCategory,
     sizePenalty,
+    diagnosticLimit: config.top_n_diagnostics,
   }
 }
 
@@ -89,14 +91,17 @@ export const fromChangedHunks = (
       newCrossPackageEdges: [],
       newCrossBoundaryEdges: [],
       diffMode: "missing",
+      dependencyDeltaMode: "unavailable",
       sizeCategory: "small",
       sizePenalty: 0,
+      diagnosticLimit: config.top_n_diagnostics,
     }
   }
 
   const filesChanged: Array<string> = [
     ...new Set(context.changedHunks.map((hunk) => resolveChangedHunkPath(context.worktreePath, hunk.file))),
-  ].filter((f) => !isExcluded(f, config.exclude_globs))
+  ].filter((f) => isTypeScriptSourcePath(f) && !matchesSourcePath(f, context.worktreePath, config.exclude_globs))
+    .sort((left, right) => left.localeCompare(right))
   const allowedFiles = new Set(filesChanged)
   const statsByFile = new Map<string, ChangedFileStat>()
   for (const hunk of context.changedHunks) {
@@ -131,13 +136,18 @@ export const fromChangedHunks = (
     newCrossPackageEdges: [],
     newCrossBoundaryEdges: [],
     diffMode: "changed-hunks-fallback",
+    dependencyDeltaMode: "unavailable",
     sizeCategory,
     sizePenalty,
+    diagnosticLimit: config.top_n_diagnostics,
   }
 }
 
 const resolveChangedHunkPath = (worktreePath: string, file: string): string =>
-  file.startsWith(worktreePath) ? file : join(worktreePath, file)
+  resolveSourcePath(worktreePath, file)
+
+const resolveSourcePath = (worktreePath: string, file: string): string =>
+  isAbsolute(file) ? file : resolve(worktreePath, file)
 
 const classifySizeCategory = (
   totalLines: number,
@@ -215,38 +225,70 @@ const parseImportEdges = (
   const fileSet = new Set(changedFiles)
 
   let currentFile: string | undefined
+  let currentNewLine: number | undefined
   for (const line of diff.split("\n")) {
     const fileMatch = /^\+\+\+ b\/(.+)$/.exec(line)
     if (fileMatch !== null) {
-      currentFile = join(worktreePath, fileMatch[1]!)
+      currentFile = resolveSourcePath(worktreePath, fileMatch[1]!)
+      currentNewLine = undefined
       continue
     }
 
+    const hunkMatch = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line)
+    if (hunkMatch !== null) {
+      currentNewLine = Number(hunkMatch[1])
+      continue
+    }
+
+    if (line.startsWith("-") && !line.startsWith("---")) continue
+    if (line.startsWith(" ")) {
+      currentNewLine = currentNewLine === undefined ? undefined : currentNewLine + 1
+      continue
+    }
     if (!line.startsWith("+") || line.startsWith("+++")) continue
 
-    const importMatch = /^\+\s*import\s+.*\s+from\s+['"]([^'"]+)['"]/.exec(line)
-    if (importMatch === null || currentFile === undefined) continue
+    const addedLineNumber = currentNewLine
+    currentNewLine = currentNewLine === undefined ? undefined : currentNewLine + 1
 
-    const moduleSpecifier = importMatch[1]!
-    if (!moduleSpecifier.startsWith(".")) continue
+    const moduleSpecifier = addedModuleSpecifier(line)
+    if (
+      moduleSpecifier === undefined ||
+      currentFile === undefined ||
+      addedLineNumber === undefined ||
+      !fileSet.has(currentFile)
+    ) {
+      continue
+    }
 
     const sourceFile = project.getSourceFile(currentFile)
     if (sourceFile === undefined) continue
 
-    for (const importDecl of sourceFile.getImportDeclarations()) {
-      const targetFile = importDecl.getModuleSpecifierSourceFile()?.getFilePath()
-      if (targetFile === undefined) continue
-      if (!fileSet.has(targetFile)) continue
+    const dependencyDeclarations = [
+      ...sourceFile.getImportDeclarations(),
+      ...sourceFile.getExportDeclarations(),
+    ].filter((declaration) =>
+      declaration.getModuleSpecifierValue() === moduleSpecifier &&
+      declaration.getStartLineNumber() <= addedLineNumber &&
+      declaration.getEndLineNumber() >= addedLineNumber
+    )
+
+    for (const declaration of dependencyDeclarations) {
+      const targetFile = declaration.getModuleSpecifierSourceFile()?.getFilePath()
 
       const fromPkg = packageForFile(currentFile, packages)
-      const toPkg = packageForFile(targetFile, packages)
+      const toPkg = targetFile === undefined
+        ? packageForModuleSpecifier(moduleSpecifier, packages)
+        : packageForFile(targetFile, packages)
+      if (toPkg === undefined && targetFile === undefined) continue
 
-      const fromBoundary = boundaryOfFile(currentFile, boundaryRules)
-      const toBoundary = boundaryOfFile(targetFile, boundaryRules)
+      const fromBoundary = boundaryOfSourceFile(currentFile, worktreePath, boundaryRules)
+      const toBoundary = targetFile === undefined
+        ? boundaryOfPackage(toPkg, worktreePath, boundaryRules)
+        : boundaryOfSourceFile(targetFile, worktreePath, boundaryRules)
 
       const edge: ImportEdge = {
         file: currentFile,
-        line: importDecl.getStartLineNumber(),
+        line: declaration.getStartLineNumber(),
         fromPackage: fromPkg?.manifest?.name,
         toPackage: toPkg?.manifest?.name,
         isCrossBoundary: fromBoundary !== undefined && toBoundary !== undefined && fromBoundary !== toBoundary,
@@ -274,10 +316,64 @@ const dedupeEdges = (edges: ReadonlyArray<ImportEdge>): ReadonlyArray<ImportEdge
   const seen = new Set<string>()
   const result: Array<ImportEdge> = []
   for (const edge of edges) {
-    const key = `${edge.file}:${edge.line}:${edge.fromPackage}:${edge.toPackage}`
+    const key = `${edge.file}:${edge.line}:${edge.fromPackage}:${edge.toPackage}:${edge.fromBoundary}:${edge.toBoundary}`
     if (seen.has(key)) continue
     seen.add(key)
     result.push(edge)
   }
-  return result
+  return result.sort(compareImportEdges)
 }
+
+const addedModuleSpecifier = (line: string): string | undefined => {
+  const staticImport = /^\+\s*import\s+(?:type\s+)?(?:.+?\s+from\s+)?['"]([^'"]+)['"]/.exec(line)
+  if (staticImport !== null) return staticImport[1]
+  const exportFrom = /^\+\s*export\s+(?:type\s+)?(?:.+?\s+from\s+)['"]([^'"]+)['"]/.exec(line)
+  if (exportFrom !== null) return exportFrom[1]
+  const multilineFrom = /^\+\s*}\s*from\s+['"]([^'"]+)['"]/.exec(line)
+  return multilineFrom?.[1]
+}
+
+const boundaryOfSourceFile = (
+  file: string,
+  worktreePath: string,
+  rules: ReadonlyArray<BoundaryRule>,
+): string | undefined =>
+  rules.find((rule) => matchesSourcePath(file, worktreePath, rule.globs))?.name
+
+const boundaryOfPackage = (
+  pkg: import("../discovery.js").PackageInfo | undefined,
+  worktreePath: string,
+  rules: ReadonlyArray<BoundaryRule>,
+): string | undefined =>
+  pkg === undefined ? undefined : boundaryOfSourceFile(pkg.path, worktreePath, rules)
+
+const packageForModuleSpecifier = (
+  moduleSpecifier: string,
+  packages: ReadonlyArray<import("../discovery.js").PackageInfo>,
+): import("../discovery.js").PackageInfo | undefined => {
+  const packageName = normalizePackageSpecifier(moduleSpecifier)
+  if (packageName === undefined) return undefined
+  return packages.find((pkg) => pkg.manifest?.name === packageName)
+}
+
+const matchesSourcePath = (
+  absoluteFile: string,
+  worktreePath: string,
+  globs: ReadonlyArray<string>,
+): boolean => {
+  const relativeFile = relative(worktreePath, absoluteFile).replaceAll("\\", "/")
+  return matchesAnyGlob(absoluteFile, globs) ||
+    matchesAnyGlob(relativeFile, globs) ||
+    matchesAnyGlob(`./${relativeFile}`, globs)
+}
+
+const compareImportEdges = (left: ImportEdge, right: ImportEdge): number =>
+  left.file.localeCompare(right.file) ||
+  left.line - right.line ||
+  (left.fromPackage ?? "").localeCompare(right.fromPackage ?? "") ||
+  (left.toPackage ?? "").localeCompare(right.toPackage ?? "") ||
+  (left.fromBoundary ?? "").localeCompare(right.fromBoundary ?? "") ||
+  (left.toBoundary ?? "").localeCompare(right.toBoundary ?? "")
+
+const isTypeScriptSourcePath = (file: string): boolean =>
+  /\.(?:ts|tsx)$/.test(file)

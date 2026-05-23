@@ -11,15 +11,43 @@ import { formatLargestFiles } from "./ts-rp-02-diagnostics.js"
 import { fromChangedHunks, parseGitDiff, TS_DIFF_PATHSPECS } from "./ts-rp-02-diff.js"
 import { applyPrSizePolicy } from "./ts-rp-02-policy.js"
 
+const BoundaryRuleSchema = Schema.Struct({
+  name: Schema.String,
+  globs: Schema.Array(Schema.String),
+})
+
 const TsRp02Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   test_globs: Schema.Array(Schema.String),
+  boundary_rules: Schema.Array(BoundaryRuleSchema),
   top_n_diagnostics: Schema.Number,
   small_pr_budget: Schema.Number,
   medium_pr_budget: Schema.Number,
   large_pr_budget: Schema.Number,
 })
 export type TsRp02Config = typeof TsRp02Config.Type
+
+export const DEFAULT_TS_RP_02_DIAGNOSTIC_LIMIT = 10
+
+const DEFAULT_TS_RP_02_CONFIG: TsRp02Config = {
+  exclude_globs: [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/.turbo/**",
+    "**/gen/**",
+    "**/generated/**",
+    "**/*.gen.ts",
+    "**/*.gen.tsx",
+    "**/*.generated.ts",
+    "**/*.generated.tsx",
+  ],
+  test_globs: ["**/*.test.ts", "**/*.spec.ts", "**/__tests__/**"],
+  boundary_rules: [],
+  top_n_diagnostics: DEFAULT_TS_RP_02_DIAGNOSTIC_LIMIT,
+  small_pr_budget: 100,
+  medium_pr_budget: 300,
+  large_pr_budget: 500,
+}
 
 export interface ImportEdge {
   readonly file: string
@@ -47,8 +75,10 @@ export interface TsRp02Output {
   readonly newCrossPackageEdges: ReadonlyArray<ImportEdge>
   readonly newCrossBoundaryEdges: ReadonlyArray<ImportEdge>
   readonly diffMode: "git-working-tree" | "git-branch-range" | "git-commit-range" | "changed-hunks-fallback" | "missing"
+  readonly dependencyDeltaMode: "measured" | "unavailable"
   readonly sizeCategory: "small" | "medium" | "large" | "oversized"
   readonly sizePenalty: number
+  readonly diagnosticLimit: number
   readonly visible?: boolean
   readonly severity?: "info" | "warn" | "block"
   readonly factorPathPrefix?: string
@@ -63,27 +93,10 @@ export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackage
   tier: 1,
   category: "review-pain",
   kind: "structural",
-  cacheVersion: "branch-range-factor-policy-v1",
+  cacheVersion: "branch-range-factor-policy-diagnostic-limit-package-import-edges-v1",
   cacheDependencies: ["git-revision-context"],
   configSchema: TsRp02Config,
-  defaultConfig: {
-    exclude_globs: [
-      "**/node_modules/**",
-      "**/dist/**",
-      "**/.turbo/**",
-      "**/gen/**",
-      "**/generated/**",
-      "**/*.gen.ts",
-      "**/*.gen.tsx",
-      "**/*.generated.ts",
-      "**/*.generated.tsx",
-    ],
-    test_globs: ["**/*.test.ts", "**/*.spec.ts", "**/__tests__/**"],
-    top_n_diagnostics: 10,
-    small_pr_budget: 100,
-    medium_pr_budget: 300,
-    large_pr_budget: 500,
-  },
+  defaultConfig: DEFAULT_TS_RP_02_CONFIG,
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
@@ -91,9 +104,10 @@ export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackage
       const packages = yield* TsPackageInfoTag
       const context = yield* SignalContextTag
       const calibration = yield* Effect.serviceOption(CalibrationContextTag)
+      const normalizedConfig = normalizeTsRp02Config(config)
       const output = yield* Effect.tryPromise({
         try: async (): Promise<TsRp02Output> => {
-          return await computeGitPrSizeOutput(project, packages, context, config)
+          return await computeGitPrSizeOutput(project, packages, context, normalizedConfig)
         },
         catch: (cause) =>
           new SignalComputeError({ signalId: "TS-RP-02-pr-size", message: String(cause), cause }),
@@ -103,7 +117,7 @@ export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackage
       )
     }),
   score: (out) => {
-    const sizePenalty = out.visible === false ? 0 : out.sizePenalty
+    const sizePenalty = out.visible === false ? 0 : normalizeNonNegativeFiniteNumber(out.sizePenalty, 0)
     const edgePenalty = out.newCrossBoundaryEdges.length * 0.2 + out.newCrossPackageEdges.length * 0.1
     return Math.max(0, 1 - sizePenalty - edgePenalty)
   },
@@ -114,6 +128,9 @@ export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackage
       : undefined
   },
   diagnose: (out): ReadonlyArray<Diagnostic> => {
+    const diagnosticLimit = normalizeTsRp02DiagnosticLimit(out.diagnosticLimit)
+    if (diagnosticLimit <= 0) return []
+
     if (out.diffMode === "missing") {
       return [{ severity: "warn", message: "TS-RP-02 could not inspect git diff state" }]
     }
@@ -138,13 +155,14 @@ export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackage
           packagesTouched: out.packagesTouched,
           sizeCategory: out.sizeCategory,
           diffMode: out.diffMode,
+          dependencyDeltaMode: out.dependencyDeltaMode,
           sizePenalty: out.sizePenalty,
           policyDecisions: out.calibrationDecisions ?? [],
         },
       })
     }
 
-    for (const edge of out.newCrossBoundaryEdges.slice(0, 10)) {
+    for (const edge of out.newCrossBoundaryEdges) {
       diagnostics.push({
         severity: "warn" as const,
         message: `New cross-boundary import: ${edge.fromBoundary ?? "unmapped"} → ${edge.toBoundary ?? "unmapped"}`,
@@ -158,10 +176,73 @@ export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackage
       })
     }
 
-    return diagnostics
+    const crossBoundaryKeys = new Set(out.newCrossBoundaryEdges.map(edgeIdentity))
+    for (const edge of out.newCrossPackageEdges.filter((edge) => !crossBoundaryKeys.has(edgeIdentity(edge)))) {
+      diagnostics.push({
+        severity: "warn" as const,
+        message: `New cross-package import: ${edge.fromPackage ?? "unmapped"} → ${edge.toPackage ?? "unmapped"}`,
+        location: { file: edge.file, line: edge.line },
+        data: {
+          fromPackage: edge.fromPackage,
+          toPackage: edge.toPackage,
+          fromBoundary: edge.fromBoundary,
+          toBoundary: edge.toBoundary,
+        },
+      })
+    }
+
+    return diagnostics.slice(0, diagnosticLimit)
   },
   factorLedger: (out) => out.factorLedger,
 }
+
+export const normalizeTsRp02Config = (config: TsRp02Config): TsRp02Config => {
+  const smallPrBudget = normalizePositiveFiniteNumber(
+    config.small_pr_budget,
+    DEFAULT_TS_RP_02_CONFIG.small_pr_budget,
+  )
+  const mediumPrBudget = Math.max(
+    smallPrBudget,
+    normalizePositiveFiniteNumber(
+      config.medium_pr_budget,
+      DEFAULT_TS_RP_02_CONFIG.medium_pr_budget,
+    ),
+  )
+  const largePrBudget = Math.max(
+    mediumPrBudget,
+    normalizePositiveFiniteNumber(
+      config.large_pr_budget,
+      DEFAULT_TS_RP_02_CONFIG.large_pr_budget,
+    ),
+  )
+  return {
+    exclude_globs: stringArrayOrDefault(config.exclude_globs, DEFAULT_TS_RP_02_CONFIG.exclude_globs),
+    test_globs: stringArrayOrDefault(config.test_globs, DEFAULT_TS_RP_02_CONFIG.test_globs),
+    boundary_rules: Array.isArray(config.boundary_rules) ? config.boundary_rules : [],
+    top_n_diagnostics: normalizeTsRp02DiagnosticLimit(config.top_n_diagnostics),
+    small_pr_budget: smallPrBudget,
+    medium_pr_budget: mediumPrBudget,
+    large_pr_budget: largePrBudget,
+  }
+}
+
+export const normalizeTsRp02DiagnosticLimit = (value: number): number =>
+  Number.isFinite(value) && value > 0 ? Math.floor(value) : 0
+
+export const normalizeNonNegativeFiniteNumber = (value: number, fallback: number): number =>
+  Number.isFinite(value) && value >= 0 ? value : fallback
+
+const normalizePositiveFiniteNumber = (value: number, fallback: number): number =>
+  Number.isFinite(value) && value > 0 ? value : fallback
+
+const stringArrayOrDefault = (
+  value: ReadonlyArray<string>,
+  fallback: ReadonlyArray<string>,
+): ReadonlyArray<string> =>
+  Array.isArray(value) && value.every((entry) => typeof entry === "string") ? value : fallback
+
+const edgeIdentity = (edge: ImportEdge): string =>
+  `${edge.file}:${edge.line}:${edge.fromPackage ?? ""}:${edge.toPackage ?? ""}:${edge.fromBoundary ?? ""}:${edge.toBoundary ?? ""}`
 
 type GitClient = ReturnType<typeof simpleGit>
 
