@@ -1,7 +1,11 @@
 export const SHARED_PRODUCTION_EXCLUDE_GLOBS = [
+  "node_modules/**",
   "**/node_modules/**",
+  "dist/**",
   "**/dist/**",
+  ".turbo/**",
   "**/.turbo/**",
+  "target/**",
   "**/target/**",
   ".*/**",
   "**/.*/**",

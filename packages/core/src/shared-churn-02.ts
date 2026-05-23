@@ -17,6 +17,15 @@ export const SharedChurn02Config = Schema.Struct({
 })
 export type SharedChurn02Config = typeof SharedChurn02Config.Type
 
+const DEFAULT_SHARED_CHURN_02_CONFIG: SharedChurn02Config = {
+  window_days: 90,
+  half_life_days: 14,
+  max_commits: 500,
+  include_extensions: [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".rs"],
+  exclude_globs: [...SHARED_PRODUCTION_EXCLUDE_GLOBS],
+  top_n_diagnostics: 10,
+}
+
 export interface WeightedChurnFile {
   readonly touchCount: number
   readonly rawWindowChurn: number
@@ -49,23 +58,17 @@ export const SharedChurn02: Signal<
   tier: 1,
   category: "review-pain",
   kind: "legibility",
-  cacheVersion: "exponential-decay-v1",
+  cacheVersion: "exponential-decay-normalized-history-v1",
   cacheDependencies: ["git-revision-context"],
   configSchema: SharedChurn02Config,
-  defaultConfig: {
-    window_days: 90,
-    half_life_days: 14,
-    max_commits: 500,
-    include_extensions: [".ts", ".tsx", ".js", ".jsx", ".rs"],
-    exclude_globs: [...SHARED_PRODUCTION_EXCLUDE_GLOBS],
-    top_n_diagnostics: 10,
-  },
+  defaultConfig: DEFAULT_SHARED_CHURN_02_CONFIG,
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
       const ctx = yield* SignalContextTag
+      const normalizedConfig = normalizeSharedChurn02Config(config)
       return yield* Effect.tryPromise({
-        try: () => computeWeightedChurn(ctx.worktreePath, config),
+        try: () => computeWeightedChurn(ctx.worktreePath, normalizedConfig),
         catch: (cause) =>
           new SignalComputeError({
             signalId: "SHARED-CHURN-02-recency-weighted-churn",
@@ -77,7 +80,10 @@ export const SharedChurn02: Signal<
   score: () => 1,
   diagnose: (out): ReadonlyArray<Diagnostic> =>
     [...out.byFile.entries()]
-      .sort(([, left], [, right]) => right.weightedChurn - left.weightedChurn)
+      .sort(([leftFile, left], [rightFile, right]) =>
+        right.weightedChurn - left.weightedChurn ||
+        leftFile.localeCompare(rightFile),
+      )
       .slice(0, out.topDiagnostics)
       .map(([file, churn]) => ({
         severity: churn.weightedChurn >= 2 ? "warn" : "info",
@@ -94,6 +100,10 @@ const computeWeightedChurn = async (
   repoPath: string,
   config: SharedChurn02Config,
 ): Promise<SharedChurn02Output> => {
+  if (config.include_extensions.length === 0) {
+    return emptyOutput(config)
+  }
+
   const headDate = await readHeadDate(repoPath)
   const sinceDate = new Date(headDate.getTime() - config.window_days * 24 * 3600 * 1000)
   const commits = await listTouchedCommitsInWindow(
@@ -136,7 +146,7 @@ const computeWeightedChurn = async (
     totalCommits: commits.length,
     maxCommits: config.max_commits,
     sampled: commits.length >= config.max_commits,
-    topDiagnostics: Math.max(0, Math.floor(config.top_n_diagnostics)),
+    topDiagnostics: config.top_n_diagnostics,
     compositeConsumers: [
       "risk hotspot",
       "review shock",
@@ -155,5 +165,71 @@ const computeWeightedChurn = async (
     enforcementCeiling: ["soft-warning", "trend"],
   }
 }
+
+const emptyOutput = (config: SharedChurn02Config): SharedChurn02Output => ({
+  byFile: new Map(),
+  windowDays: config.window_days,
+  halfLifeDays: config.half_life_days,
+  totalCommits: 0,
+  maxCommits: config.max_commits,
+  sampled: false,
+  topDiagnostics: config.top_n_diagnostics,
+  compositeConsumers: [
+    "risk hotspot",
+    "review shock",
+    "architecture decay",
+  ],
+  cacheContributors: [
+    "git-revision-context",
+    "config.window_days",
+    "config.half_life_days",
+    "config.max_commits",
+    "config.include_extensions",
+    "config.exclude_globs",
+    "config.top_n_diagnostics",
+  ],
+  calibrationSurface: "config thresholds only; downstream composites decide risk meaning",
+  enforcementCeiling: ["soft-warning", "trend"],
+})
+
+const normalizeSharedChurn02Config = (
+  config: SharedChurn02Config,
+): SharedChurn02Config => ({
+  window_days: normalizePositiveFiniteNumber(
+    config.window_days,
+    DEFAULT_SHARED_CHURN_02_CONFIG.window_days,
+  ),
+  half_life_days: normalizePositiveFiniteNumber(
+    config.half_life_days,
+    DEFAULT_SHARED_CHURN_02_CONFIG.half_life_days,
+  ),
+  max_commits: normalizePositiveInteger(
+    config.max_commits,
+    DEFAULT_SHARED_CHURN_02_CONFIG.max_commits,
+  ),
+  include_extensions: stringArrayOrDefault(config.include_extensions, []),
+  exclude_globs: stringArrayOrDefault(
+    config.exclude_globs,
+    DEFAULT_SHARED_CHURN_02_CONFIG.exclude_globs,
+  ),
+  top_n_diagnostics: normalizeDiagnosticLimit(config.top_n_diagnostics),
+})
+
+const normalizePositiveFiniteNumber = (value: number, fallback: number): number =>
+  Number.isFinite(value) && value > 0 ? value : fallback
+
+const normalizePositiveInteger = (value: number, fallback: number): number =>
+  Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback
+
+const normalizeDiagnosticLimit = (value: number): number =>
+  Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0
+
+const stringArrayOrDefault = (
+  value: ReadonlyArray<string>,
+  fallback: ReadonlyArray<string>,
+): ReadonlyArray<string> =>
+  Array.isArray(value) && value.every((entry) => typeof entry === "string")
+    ? value
+    : fallback
 
 const formatChurn = (value: number): string => value.toFixed(2)
