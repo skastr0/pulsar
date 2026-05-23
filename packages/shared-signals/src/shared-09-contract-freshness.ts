@@ -21,6 +21,7 @@ export interface Shared09ContractFreshnessOutput extends ContractFreshnessFacts 
   readonly topFindings: ReadonlyArray<ContractFreshnessFinding>
   readonly totalFindings: number
   readonly weightedFindings: number
+  readonly maxWeightedFindings: number
   readonly scorePressure: number
   readonly diagnosticLimit: number
   readonly configuredContractCount: number
@@ -45,6 +46,9 @@ const notConfiguredContractFreshnessFacts = (): ContractFreshnessFacts => ({
   message: "Contract freshness reference data was not loaded",
 })
 
+const DEFAULT_TOP_N_DIAGNOSTICS = 10
+const DEFAULT_MAX_WEIGHTED_FINDINGS = 8
+
 export const Shared09ContractFreshness: Signal<
   Shared09ContractFreshnessConfig,
   Shared09ContractFreshnessOutput,
@@ -56,16 +60,38 @@ export const Shared09ContractFreshness: Signal<
   tier: 2,
   category: "review-pain",
   kind: "legibility",
-  cacheVersion: "reference-data-v1",
+  cacheVersion: "reference-data-v2-normalized-config-source-provenance",
   configSchema: Shared09ContractFreshnessConfig,
   defaultConfig: {
-    top_n_diagnostics: 10,
-    max_weighted_findings: 8,
+    top_n_diagnostics: DEFAULT_TOP_N_DIAGNOSTICS,
+    max_weighted_findings: DEFAULT_MAX_WEIGHTED_FINDINGS,
   },
   configDirections: {
     top_n_diagnostics: "higher-is-looser",
     max_weighted_findings: "higher-is-looser",
   },
+  factorDefinitions: [
+    {
+      path: "config.max_weighted_findings",
+      title: "Config max weighted findings",
+      valueKind: "number",
+      scoreRole: "threshold",
+      defaultValue: DEFAULT_MAX_WEIGHTED_FINDINGS,
+    },
+  ],
+  factorLedger: () => ({
+    signalId: "SHARED-09-contract-freshness",
+    entries: [
+      {
+        path: "config.max_weighted_findings",
+        title: "Config max weighted findings",
+        scoreRole: "threshold",
+        value: DEFAULT_MAX_WEIGHTED_FINDINGS,
+        source: "signal-default",
+        affectsScore: true,
+      },
+    ],
+  }),
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
@@ -92,7 +118,10 @@ export const Shared09ContractFreshness: Signal<
           ...finding,
           state: out.state,
           sourceFingerprint: out.sourceFingerprint,
+          weightedFindings: out.weightedFindings,
+          maxWeightedFindings: out.maxWeightedFindings,
           scorePressure: out.scorePressure,
+          diagnosticLimit: out.diagnosticLimit,
           compositeConsumers: out.compositeConsumers,
           cacheContributors: out.cacheContributors,
           calibrationSurface: out.calibrationSurface,
@@ -116,6 +145,10 @@ export const Shared09ContractFreshness: Signal<
           checkedPaths: out.checkedPaths,
           message: out.message,
           configuredContractCount: out.configuredContractCount,
+          weightedFindings: out.weightedFindings,
+          maxWeightedFindings: out.maxWeightedFindings,
+          scorePressure: out.scorePressure,
+          diagnosticLimit: out.diagnosticLimit,
           compositeConsumers: out.compositeConsumers,
           cacheContributors: out.cacheContributors,
           calibrationSurface: out.calibrationSurface,
@@ -143,8 +176,9 @@ const buildOutput = (
   facts: ContractFreshnessFacts,
   config: Shared09ContractFreshnessConfig,
 ): Shared09ContractFreshnessOutput => {
-  const diagnosticLimit = Math.max(0, Math.floor(config.top_n_diagnostics))
-  const maxWeightedFindings = Math.max(1, config.max_weighted_findings)
+  const normalizedConfig = normalizeShared09ContractFreshnessConfig(config)
+  const diagnosticLimit = normalizedConfig.top_n_diagnostics
+  const maxWeightedFindings = normalizedConfig.max_weighted_findings
   const topFindings = [...facts.findings]
     .sort(compareFindings)
     .slice(0, diagnosticLimit)
@@ -157,6 +191,7 @@ const buildOutput = (
     topFindings,
     totalFindings: facts.findings.length,
     weightedFindings,
+    maxWeightedFindings,
     scorePressure: weightedFindings / maxWeightedFindings,
     diagnosticLimit,
     configuredContractCount: facts.contracts.length,
@@ -195,6 +230,18 @@ const buildOutput = (
     enforcementCeiling: ["soft-warning", "review-routing", "composite-input"],
   }
 }
+
+const normalizeShared09ContractFreshnessConfig = (
+  config: Shared09ContractFreshnessConfig,
+): Shared09ContractFreshnessConfig => ({
+  top_n_diagnostics: Number.isFinite(config.top_n_diagnostics)
+    ? Math.max(0, Math.floor(config.top_n_diagnostics))
+    : 0,
+  max_weighted_findings:
+    Number.isFinite(config.max_weighted_findings) && config.max_weighted_findings > 0
+      ? config.max_weighted_findings
+      : DEFAULT_MAX_WEIGHTED_FINDINGS,
+})
 
 const contractFreshnessKindLabel = (
   kind: ContractFreshnessFinding["kind"],

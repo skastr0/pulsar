@@ -363,6 +363,7 @@ const contractFreshness = (args: {
     topFindings: findings,
     totalFindings: findings.length,
     weightedFindings,
+    maxWeightedFindings: 8,
     scorePressure: args.scorePressure ?? 0,
     diagnosticLimit: 10,
     configuredContractCount: contracts.length,

@@ -227,7 +227,35 @@ export const SHARED_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "cli shared-signals.test.ts and bun run dev score --signal SHARED-07 .: aggregate observer and direct single-signal runtime execute SHARED-07 against repository substrate and expose machine feedback facts without language-pack dependencies.",
     },
   },
-  pendingSignalContract("SHARED-09-contract-freshness"),
+  {
+    id: "SHARED-09-contract-freshness",
+    status: "verified",
+    requiredEvidence: ["referenceData", "integration"],
+    evidence: {
+      identity:
+        "shared-09-contract-freshness.test.ts: canonical id, alias, title, tier/category/kind, empty input contract, semantic cacheVersion, pack registration, registry alias lookup, and default config decoding are asserted.",
+      config:
+        "shared-09-contract-freshness.test.ts: default diagnostic and weighted-finding caps are decoded and config-factor-ledger-backed; fractional, NaN, and Infinity diagnostic/pressure config values are normalized through real compute output.",
+      positiveFixture:
+        "shared-09-contract-freshness.test.ts: canonical .pulsar/contract-freshness.json fixtures prove fresh source/artifact hashes, stale source hashes, stale artifact hashes, missing source contracts, missing generated artifacts, missing source-hash provenance, opt-in orphan globs, deterministic finding order, and repo-path-stable sourceFingerprint output.",
+      negativeFixture:
+        "shared-09-contract-freshness.test.ts: absent manifests are not_configured with insufficient evidence, malformed manifests are unknown with warn diagnostics, and contracts missing source-hash provenance do not claim zero freshness merely because an artifact hash exists.",
+      applicability:
+        "shared-09-contract-freshness.test.ts: outputMetadata is undefined for present/zero reference data, insufficient_evidence for not_configured and unknown reference data, and explicit score-neutral behavior is preserved when no findings exist.",
+      score:
+        "shared-09-contract-freshness.test.ts: score bounds and monotonic pressure are asserted by relationally comparing zero, missing-provenance, stale-artifact, mixed-finding, tight-cap, at-cap, and loose-cap cases plus finite score behavior under non-finite config.",
+      diagnostics:
+        "shared-09-contract-freshness.test.ts: diagnose proves severity/weight ordering, diagnostic caps, missing-manifest and malformed-manifest summary diagnostics, file/line locations, and structured payload fields for weighted pressure, cache contributors, and claim limits.",
+      factorLedger:
+        "shared-09-contract-freshness.test.ts: registered shared-pack signal emits config.top_n_diagnostics and config.max_weighted_findings factor entries through explicit threshold classification plus withConfigFactorLedger.",
+      cacheSemantics:
+        "shared-09-contract-freshness.test.ts and pack.test.ts: SHARED-09 declares reference-data-v2-normalized-config-source-provenance cacheVersion; wrapped shared-pack cache version preserves the signal cacheVersion after source-provenance and config-normalization semantics changed.",
+      referenceData:
+        "shared-09-contract-freshness.test.ts and core reference-data-loader.test.ts: tests load canonical contract freshness entries from repo-owned .pulsar/contract-freshness.json through loadCanonicalReferenceDataEntries rather than injecting synthetic signal output.",
+      integration:
+        "cli shared-signals.test.ts and bun run dev score --signal SHARED-09 .: aggregate observer and direct single-signal runtime execute SHARED-09 against repository substrate with canonical reference-data loading, including zero, not_configured, unknown, and missing-provenance states.",
+    },
+  },
   pendingSignalContract("SHARED-10-domain-construction-control"),
   pendingSignalContract("SHARED-11-theory-encoding-index"),
   pendingSignalContract("SHARED-COV-01-coverage-facts"),

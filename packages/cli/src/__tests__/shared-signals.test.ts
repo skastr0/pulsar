@@ -2,11 +2,13 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { spawnSync } from "node:child_process"
+import { createHash } from "node:crypto"
 import { describe, expect, test } from "bun:test"
 import {
   observe,
   type ObserverOutput,
 } from "@skastr0/pulsar-core/observer"
+import { loadCanonicalReferenceDataEntries } from "@skastr0/pulsar-core/reference-data"
 import { buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { makeReferenceData } from "@skastr0/pulsar-core/reference-data"
 import {
@@ -55,6 +57,7 @@ describe("polyglot shared signals", () => {
           2,
         ),
       )
+      await writeContractFreshnessFixture(repo)
       await writeFile(
         join(repo, "packages/web/src/index.ts"),
         [
@@ -122,6 +125,9 @@ describe("polyglot shared signals", () => {
       sh("git", ["add", "."], repo)
       sh("git", ["commit", "-q", "-m", "add cross crate dependency"], repo)
       const head = sh("git", ["rev-parse", "HEAD"], repo)
+      const referenceDataEntries = await Effect.runPromise(
+        loadCanonicalReferenceDataEntries(repo),
+      )
 
       const registry = await Effect.runPromise(
         buildRegistry([...SHARED_SIGNALS, ...TS_PACK_SIGNALS, ...RS_PACK_SIGNALS]),
@@ -132,7 +138,7 @@ describe("polyglot shared signals", () => {
           worktreePath: repo,
           changedHunks: [],
         }),
-        Layer.succeed(ReferenceDataTag, makeReferenceData(new Map())),
+        Layer.succeed(ReferenceDataTag, makeReferenceData(referenceDataEntries)),
         InMemoryCacheLayer,
         TsProjectLayer(repo),
         RustProjectLayer(repo),
@@ -196,6 +202,17 @@ describe("polyglot shared signals", () => {
       expect(machineFeedbackCoverage?.state).toBe("present")
       expect(machineFeedbackCoverage?.configuredClassCount).toBeGreaterThanOrEqual(4)
       expect(machineFeedbackCoverage?.missingClassCount).toBe(0)
+
+      const contractFreshness = result.signalResults.get("SHARED-09-contract-freshness")?.output as
+        | {
+            state?: string
+            configuredContractCount?: number
+            totalFindings?: number
+          }
+        | undefined
+      expect(contractFreshness?.state).toBe("zero")
+      expect(contractFreshness?.configuredContractCount).toBe(1)
+      expect(contractFreshness?.totalFindings).toBe(0)
     } finally {
       await rm(repo, { recursive: true, force: true })
     }
@@ -234,6 +251,7 @@ describe("polyglot shared signals", () => {
           2,
         ),
       )
+      await writeContractFreshnessFixture(repo)
       await writeFile(
         join(repo, "src/index.ts"),
         [
@@ -324,6 +342,95 @@ describe("polyglot shared signals", () => {
       expect(feedbackResult.result.signalId).toBe("SHARED-07-machine-feedback-coverage")
       expect(feedbackOutput.state).toBe("present")
       expect(feedbackOutput.missingClassCount).toBe(0)
+
+      const contractFreshnessResult = await Effect.runPromise(
+        runSignalInWorktree(repo, "SHARED-09"),
+      )
+      const contractFreshnessOutput = contractFreshnessResult.result.output as {
+        readonly state?: string
+        readonly configuredContractCount?: number
+        readonly totalFindings?: number
+      }
+
+      expect(contractFreshnessResult.result.signalId).toBe("SHARED-09-contract-freshness")
+      expect(contractFreshnessOutput.state).toBe("zero")
+      expect(contractFreshnessOutput.configuredContractCount).toBe(1)
+      expect(contractFreshnessOutput.totalFindings).toBe(0)
+    } finally {
+      await rm(repo, { recursive: true, force: true })
+    }
+  }, 120_000)
+
+  test("single-signal runtime exposes SHARED-09 reference-data failure states", async () => {
+    const repo = await mkdtemp(join(tmpdir(), "pulsar-cli-shared-contract-"))
+    try {
+      await mkdir(join(repo, "src", "generated"), { recursive: true })
+      await writeFile(join(repo, "README.md"), "# contract fixture\n", "utf8")
+      sh("git", ["init", "-q", "-b", "main"], repo)
+      sh("git", ["config", "user.email", "test@test.test"], repo)
+      sh("git", ["config", "user.name", "test"], repo)
+      sh("git", ["add", "."], repo)
+      sh("git", ["commit", "-q", "-m", "fixture"], repo)
+
+      const absentResult = await Effect.runPromise(
+        runSignalInWorktree(repo, "SHARED-09"),
+      )
+      const absentOutput = absentResult.result.output as {
+        readonly state?: string
+      }
+      expect(absentResult.result.signalId).toBe("SHARED-09-contract-freshness")
+      expect(absentOutput.state).toBe("not_configured")
+      expect(absentResult.result.metadata).toEqual({
+        applicability: "insufficient_evidence",
+      })
+
+      await mkdir(join(repo, ".pulsar"), { recursive: true })
+      await writeFile(join(repo, ".pulsar", "contract-freshness.json"), "{", "utf8")
+      const malformedResult = await Effect.runPromise(
+        runSignalInWorktree(repo, "SHARED-09"),
+      )
+      const malformedOutput = malformedResult.result.output as {
+        readonly state?: string
+      }
+      expect(malformedOutput.state).toBe("unknown")
+      expect(malformedResult.result.diagnostics[0]?.severity).toBe("warn")
+      expect(malformedResult.result.metadata).toEqual({
+        applicability: "insufficient_evidence",
+      })
+
+      const artifactContent = "export const client = {}\n"
+      await writeFile(join(repo, "src", "generated", "client.ts"), artifactContent, "utf8")
+      await writeFile(
+        join(repo, ".pulsar", "contract-freshness.json"),
+        `${JSON.stringify(
+          {
+            schema_version: 1,
+            contracts: [
+              {
+                id: "api-client",
+                group_id: "openapi",
+                source_paths: [],
+                artifact_path: "src/generated/client.ts",
+                artifact_sha256: sha256(artifactContent),
+              },
+            ],
+          },
+          null,
+          2,
+        )}\n`,
+        "utf8",
+      )
+      const missingProvenanceResult = await Effect.runPromise(
+        runSignalInWorktree(repo, "SHARED-09"),
+      )
+      const missingProvenanceOutput = missingProvenanceResult.result.output as {
+        readonly state?: string
+        readonly findings?: ReadonlyArray<{ readonly kind?: string }>
+      }
+
+      expect(missingProvenanceOutput.state).toBe("present")
+      expect(missingProvenanceOutput.findings?.[0]?.kind).toBe("missing-provenance")
+      expect(missingProvenanceResult.result.score).toBeLessThan(1)
     } finally {
       await rm(repo, { recursive: true, force: true })
     }
@@ -337,3 +444,40 @@ const sh = (cmd: string, args: ReadonlyArray<string>, cwd: string): string => {
   }
   return result.stdout.trim()
 }
+
+const writeContractFreshnessFixture = async (repo: string): Promise<void> => {
+  const sourceContent = `${JSON.stringify({ openapi: "3.1.0", paths: {} })}\n`
+  const artifactContent = "export const client = {}\n"
+  await mkdir(join(repo, ".pulsar"), { recursive: true })
+  await mkdir(join(repo, "contracts"), { recursive: true })
+  await mkdir(join(repo, "src", "generated"), { recursive: true })
+  await writeFile(join(repo, "contracts", "openapi.json"), sourceContent, "utf8")
+  await writeFile(join(repo, "src", "generated", "client.ts"), artifactContent, "utf8")
+  await writeFile(
+    join(repo, ".pulsar", "contract-freshness.json"),
+    `${JSON.stringify(
+      {
+        schema_version: 1,
+        contracts: [
+          {
+            id: "api-client",
+            group_id: "openapi",
+            source_paths: ["contracts/openapi.json"],
+            source_hashes: {
+              "contracts/openapi.json": sha256(sourceContent),
+            },
+            artifact_path: "src/generated/client.ts",
+            artifact_sha256: sha256(artifactContent),
+            generator: "openapi-generator",
+          },
+        ],
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  )
+}
+
+const sha256 = (content: string): string =>
+  createHash("sha256").update(content).digest("hex")
