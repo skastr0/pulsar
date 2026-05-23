@@ -1177,6 +1177,41 @@ describe("RS-SL-* signals", () => {
     expect(score).toBeGreaterThan(0.7)
   })
 
+  test("RS-SL-03 scores unwrap expect pressure monotonically", () => {
+    const mild = RsSl03.score(rsSl03Output({
+      modules: [
+        {
+          module: "crate::mild",
+          file: "src/lib.rs",
+          unwrapExpectCalls: 1,
+          density: 0.5,
+        },
+      ],
+    }))
+    const risky = RsSl03.score(rsSl03Output({
+      modules: [
+        {
+          module: "crate::risky",
+          file: "src/lib.rs",
+          unwrapExpectCalls: 1,
+          density: 1,
+        },
+      ],
+    }))
+    const broader = RsSl03.score(rsSl03Output({
+      modules: Array.from({ length: 10 }, (_, index) => ({
+        module: `crate::module_${index}`,
+        file: "src/lib.rs",
+        unwrapExpectCalls: 5,
+        density: 1,
+      })),
+    }))
+
+    expect(mild).toBeGreaterThan(risky)
+    expect(risky).toBeGreaterThan(broader)
+    expect(broader).toBeGreaterThanOrEqual(0.5)
+  })
+
   test("RS-SL-04 highlights syntax-likely expensive clone patterns", async () => {
     const repo = await createRustWorkspace("pulsar-rs-sl04-", {
       "Cargo.toml": [

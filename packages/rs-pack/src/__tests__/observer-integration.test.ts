@@ -25,6 +25,7 @@ import { RsLd05 } from "../signals/rs-ld-05-complexity.js"
 import { RsLd06 } from "../signals/rs-ld-06-domain-terms.js"
 import { RsSl01 } from "../signals/rs-sl-01-duplication.js"
 import { RsSl02 } from "../signals/rs-sl-02-suppressions.js"
+import { RsSl03 } from "../signals/rs-sl-03-unwrap-expect.js"
 import { cleanupWorkspace, createRustWorkspace, referenceLayer } from "./helpers.js"
 
 describe("rs-pack integration", () => {
@@ -620,6 +621,60 @@ describe("rs-pack integration", () => {
           lints: ["clippy::unwrap_used"],
           scoreMode: "governed-allow-debt",
           scoreDenominator: "governed-allow-attributes",
+        }),
+      })
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  }, 120_000)
+
+  test("observer path carries RS-SL-03 unwrap expect score and diagnostics", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-observer-sl03-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "panic-observer"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub fn unwrapped(value: Option<u32>) -> u32 { value.unwrap() }",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
+      const EnvLayer = Layer.mergeAll(
+        Layer.succeed(SignalContextTag, {
+          gitSha: "HEAD",
+          worktreePath: repo,
+          changedHunks: [],
+        }),
+        referenceLayer(),
+        InMemoryCacheLayer,
+        RustProjectLayer(repo),
+      )
+
+      const result = await Effect.runPromise(
+        Effect.provide(observe(registry, undefined), EnvLayer) as Effect.Effect<
+          ObserverOutput,
+          never,
+          never
+        >,
+      )
+      const panicUsage = result.signalResults.get(RsSl03.id)
+
+      expect(result.categories["generated-slop"].signals[RsSl03.id]).toBeCloseTo(0.949)
+      expect(panicUsage?.score).toBeCloseTo(0.949)
+      expect(panicUsage?.diagnostics[0]).toMatchObject({
+        severity: "warn",
+        message: "panic-observer::crate contains 1 unwrap/expect call sites",
+        data: expect.objectContaining({
+          unwrapExpectCalls: 1,
+          density: 1,
+          scoreMode: "bounded-unwrap-expect-density",
+          scoreDenominator: "analyzed-functions-per-module",
         }),
       })
     } finally {

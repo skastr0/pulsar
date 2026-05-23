@@ -1905,6 +1905,36 @@ export function stubF() { throw new Error("Not implemented") }
     }
   }, 120_000)
 
+  test("single-signal CLI wrapper executes RS-SL-03 with Rust source", async () => {
+    const repoPath = await initRepo([
+      {
+        path: "Cargo.toml",
+        content: [
+          "[package]",
+          'name = "panic-cli"',
+          'version = "0.1.0"',
+          'edition = "2021"',
+          "",
+        ].join("\n"),
+      },
+      {
+        path: "src/lib.rs",
+        content: "pub fn unwrapped(value: Option<u32>) -> u32 { value.unwrap() }\n",
+      },
+    ])
+    try {
+      const out = runCli(repoPath, ["score", "--signal", "RS-SL-03", "."])
+      expect(out.status).toBe(0)
+      expect(out.stdout).toContain("Signal: RS-SL-03-unwrap-expect")
+      expect(out.stdout).toContain("WARN  panic-cli::crate contains 1 unwrap/expect call sites")
+      expect(out.stdout).toContain("Score:  0.949")
+      expect(out.stdout).toContain("Factor Audit (1 score-bearing)")
+      expect(out.stdout).toContain("signal-default config.")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
   test("single-signal mode summarizes score-bearing factor audit details", async () => {
     const repoPath = await initRepo([
       {
