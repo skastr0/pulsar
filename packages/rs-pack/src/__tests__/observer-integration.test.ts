@@ -17,6 +17,7 @@ import { RsAb02 } from "../signals/rs-ab-02-trait-object-depth.js"
 import { RsAb03 } from "../signals/rs-ab-03-generic-proliferation.js"
 import { RsAb04 } from "../signals/rs-ab-04-derive-density.js"
 import { RsDe04 } from "../signals/rs-de-04-fan-in-fan-out.js"
+import { RsLd01 } from "../signals/rs-ld-01-unsafe.js"
 import { cleanupWorkspace, createRustWorkspace, referenceLayer } from "./helpers.js"
 
 describe("rs-pack integration", () => {
@@ -100,6 +101,58 @@ describe("rs-pack integration", () => {
       expect(result.categories["review-pain"].signalCount).toBe(11)
       expect(result.categories["legibility-decay"].score).toBeLessThan(1)
       expect(result.minimum?.signal).toBeDefined()
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  }, 120_000)
+
+  test("observer path carries RS-LD-01 unsafe score and diagnostics", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-observer-ld01-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "unsafe-observer"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub unsafe fn raw_copy(src: *const u8) -> u8 {",
+        "    unsafe { *src }",
+        "}",
+        "",
+        "pub fn clean() -> u8 { 0 }",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
+      const EnvLayer = Layer.mergeAll(
+        Layer.succeed(SignalContextTag, {
+          gitSha: "HEAD",
+          worktreePath: repo,
+          changedHunks: [],
+        }),
+        referenceLayer(),
+        InMemoryCacheLayer,
+        RustProjectLayer(repo),
+      )
+
+      const result = await Effect.runPromise(
+        Effect.provide(observe(registry, undefined), EnvLayer) as Effect.Effect<
+          ObserverOutput,
+          never,
+          never
+        >,
+      )
+      const unsafeCode = result.signalResults.get(RsLd01.id)
+
+      expect(result.categories["legibility-decay"].signals[RsLd01.id]).toBe(0)
+      expect(unsafeCode?.score).toBe(0)
+      expect(unsafeCode?.diagnostics[0]).toMatchObject({
+        severity: "warn",
+        message: "Unsafe surface in unsafe-observer::crate: 50% functions, 1.00 unsafe sites/function",
+      })
     } finally {
       await cleanupWorkspace(repo)
     }

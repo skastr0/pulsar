@@ -300,7 +300,33 @@ export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "observer-integration.test.ts and CLI score tests: Rust observer integration includes RS-AB-04 in the abstraction-bloat category, while CLI single-signal mode executes RS-AB-04 against a repository substrate with Rust source parsed from disk.",
     },
   },
-  pendingSignalContract("RS-LD-01-unsafe-code"),
+  {
+    id: "RS-LD-01-unsafe-code",
+    status: "verified",
+    requiredEvidence: ["integration"],
+    evidence: {
+      identity:
+        "rs-ld-signals.test.ts: canonical id, alias, title, tier/category/kind, empty input contract, semantic cacheVersion, pack registration, registry alias lookup, config-cache hash sensitivity, default config decoding, factor ledger, score mode, safe-only selector mode, and diagnostic cap policy are asserted.",
+      config:
+        "rs-ld-signals.test.ts: exclude_globs, safe_only_modules, and top_n_diagnostics decode through the real schema; fractional, NaN, and zero diagnostic caps are normalized through compute output; safe_only_modules selectors are normalized and applied as module-subtree selectors.",
+      positiveFixture:
+        "rs-ld-signals.test.ts: temporary Cargo fixtures run through RustProjectLayer and real tree-sitter Rust parsing to prove unsafe blocks, unsafe functions, local call-chain propagation, unsafe trait declarations, unsafe impls, unsafe trait method signatures, foreign function declarations, static mut declarations, and hyphenated crate/nested module safe-only matching.",
+      negativeFixture:
+        "rs-ld-signals.test.ts: clean no-unsafe functions, missing Rust source, no-function Rust source, fully excluded Rust source, tests/ excluded unsafe source, cfg(test) unsafe functions, and composite cfg(any(test,...)) unsafe functions return neutral or excluded evidence without false unsafe pressure.",
+      applicability:
+        "rs-ld-signals.test.ts: loaded Rust source with unsafe evidence is applicable, no Rust source emits insufficient_evidence metadata, and analyzed Rust source with no functions/no unsafe sites or fully excluded source emits not_applicable metadata.",
+      score:
+        "rs-ld-signals.test.ts: score is asserted as one-minus-max-propagation-share-or-capped-site-share, safe-only violations hard-gate to zero, clean fixtures score 1, additional unsafe-bearing functions lower scores monotonically, and additional unsafe sites increase capped site pressure without reporting impossible percentages.",
+      diagnostics:
+        "rs-ld-signals.test.ts: diagnostics assert safe-only block severity and deterministic ordering, safe-only block diagnostics remain uncapped while warning diagnostics obey top_n_diagnostics, module-subtree selector payloads include matched selectors, unsafe surface warnings expose site kind/name/function/module/file/line samples, kind counts, propagation share, sites/function pressure, no-source warning payloads, and cap-policy metadata.",
+      factorLedger:
+        "rs-ld-signals.test.ts: registered RS pack signal emits config.exclude_globs as score-bearing evidence, config.safe_only_modules as a score-bearing threshold, and config.top_n_diagnostics as non-score-bearing metadata with signal-default source.",
+      cacheSemantics:
+        "rs-ld-signals.test.ts and pack.test.ts: RS-LD-01 declares unsafe-code-config-applicability-diagnostics-call-graph-density-sites-safe-only-v5 cacheVersion, config/cacheVersion changes alter the signal config hash, and the RS pack wrapper preserves the signal-specific cacheVersion.",
+      integration:
+        "observer-integration.test.ts and CLI score tests: Rust observer integration carries RS-LD-01 unsafe score and diagnostics through the RS pack against a real Cargo fixture, while CLI single-signal mode executes RS-LD-01 against the repository substrate through both source and compiled CLI entrypoints.",
+    },
+  },
   pendingSignalContract("RS-LD-02-lifetime-complexity"),
   pendingSignalContract("RS-LD-03-match-catch-all"),
   pendingSignalContract("RS-LD-04-error-granularity"),
