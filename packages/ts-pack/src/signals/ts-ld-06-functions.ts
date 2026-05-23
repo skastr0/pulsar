@@ -226,8 +226,35 @@ const methodHasOverloadSignature = (node: ts.MethodDeclaration): boolean => {
 const hasContextualFunctionTypeAnnotation = (node: CompilerFunctionLike): boolean => {
   if (ts.isConstructorDeclaration(node)) return false
   const parent = node.parent
-  if (!ts.isVariableDeclaration(parent)) return false
-  return parent.type !== undefined
+  return (
+    (ts.isVariableDeclaration(parent) && parent.type !== undefined) ||
+    hasContextuallyTypedObjectLiteralAncestor(node)
+  )
+}
+
+const hasContextuallyTypedObjectLiteralAncestor = (node: ts.Node): boolean => {
+  let current: ts.Node | undefined = node.parent
+  while (current !== undefined) {
+    if (
+      ts.isObjectLiteralExpression(current) &&
+      objectLiteralHasEnclosingVariableType(current)
+    ) {
+      return true
+    }
+    current = current.parent
+  }
+  return false
+}
+
+const objectLiteralHasEnclosingVariableType = (node: ts.ObjectLiteralExpression): boolean => {
+  let current: ts.Node = node
+  while (current.parent !== undefined) {
+    if (ts.isVariableDeclaration(current.parent)) {
+      return current.parent.initializer === current && current.parent.type !== undefined
+    }
+    current = current.parent
+  }
+  return false
 }
 
 const DURABLE_OBJECT_METHOD_CONTRACTS = new Set([

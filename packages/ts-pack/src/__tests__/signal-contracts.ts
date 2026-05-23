@@ -519,7 +519,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       config:
         "ts-ld-06.test.ts: configSchema decodes defaults; factor-ledger assertions cover exclude_globs and top_n_diagnostics; diagnostics-cap tests cover sanitized cap behavior.",
       positiveFixture:
-        "ts-ld-06.test.ts: real TsProject fixtures measure annotated/unannotated boundary functions, exported variables, named/default exports, overload signatures, exported class methods/constructors, exported object-literal APIs, TSX component returns, framework-owned method contracts, and contextual function types.",
+        "ts-ld-06.test.ts: real TsProject fixtures measure annotated/unannotated boundary functions, exported variables, named/default exports, overload signatures, exported class methods/constructors, typed and untyped exported object-literal APIs, TSX component returns, framework-owned method contracts, and contextual function types.",
       negativeFixture:
         "ts-ld-06.test.ts: real fixtures prove internal-only functions stay out of boundary score, callbacks are excluded, nested same-name declarations do not inherit export status, object literal methods returned from exported class methods stay internal, and default/custom excluded files are ignored.",
       applicability:
@@ -531,7 +531,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       factorLedger:
         "ts-ld-06.test.ts: registered pack signal emits config.exclude_globs and config.top_n_diagnostics factor-ledger entries with score roles.",
       cacheSemantics:
-        "ts-ld-06.test.ts and pack.test.ts: wrapped pack cache version includes the TS-LD-06 semantic cacheVersion after diagnostic-limit, overload, constructor, object-boundary, and export-linkage semantics changed.",
+        "ts-ld-06.test.ts and pack.test.ts: wrapped pack cache version includes the TS-LD-06 semantic cacheVersion after diagnostic-limit, overload, constructor, object-boundary, contextual object-typing, and export-linkage semantics changed.",
     },
   },
   pendingSignalContract("TS-LD-07-unsafe-type-erosion"),

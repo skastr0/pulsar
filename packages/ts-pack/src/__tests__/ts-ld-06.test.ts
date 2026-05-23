@@ -73,7 +73,7 @@ describe("TS-LD-06 (type annotation coverage)", () => {
       tier: 1,
       category: "legibility-decay",
       kind: "legibility",
-      cacheVersion: "annotation-coverage-v2-boundary-scope-v1",
+      cacheVersion: "annotation-coverage-v3-contextual-object-boundaries-v1",
       inputs: [],
     })
     expect(registered?.id).toBe(TsLd06.id)
@@ -704,6 +704,37 @@ describe("TS-LD-06 (type annotation coverage)", () => {
     expect(out.boundaryCoverage.annotatedParams).toBe(1)
     expect(out.boundaryCoverage.totalReturns).toBe(3)
     expect(out.boundaryCoverage.annotatedReturns).toBe(0)
+  })
+
+  test("typed exported object literal members count as annotated boundary contracts", async () => {
+    await writeTs(
+      "src/typed-object-api.ts",
+      [
+        "type Api = {",
+        "  run(value: string): string",
+        "  nested: { parse(value: string): string }",
+        "}",
+        "export const api: Api = {",
+        "  run(value) {",
+        "    return value",
+        "  },",
+        "  nested: {",
+        "    parse(value) {",
+        "      return value",
+        "    },",
+        "  },",
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runCompute()
+
+    expect(out.boundaryCoverage.totalParams).toBe(2)
+    expect(out.boundaryCoverage.annotatedParams).toBe(2)
+    expect(out.boundaryCoverage.totalReturns).toBe(2)
+    expect(out.boundaryCoverage.annotatedReturns).toBe(2)
+    expect(out.uncoveredBoundary).toEqual([])
   })
 
   test("default exported object literal aliases expose member functions as boundaries", async () => {
