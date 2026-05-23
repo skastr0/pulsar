@@ -43,6 +43,7 @@ interface TraitObjectChainEntry {
 interface CalledFunctionRef {
   readonly displayName: string
   readonly segments: ReadonlyArray<string>
+  readonly resolution: "unqualified" | "scoped-path" | "self-method"
 }
 
 interface RsAb02Output {
@@ -89,7 +90,7 @@ export const RsAb02: Signal<RsAb02Config, RsAb02Output, RustProjectTag> = {
   tier: 1,
   category: "abstraction-bloat",
   kind: "legibility",
-  cacheVersion: "trait-object-depth-config-applicability-diagnostics-v1",
+  cacheVersion: "trait-object-depth-config-applicability-diagnostics-scoped-calls-v2",
   configSchema: RsAb02Config,
   factorDefinitions: RsAb02FactorDefinitions,
   defaultConfig: {
@@ -109,6 +110,7 @@ export const RsAb02: Signal<RsAb02Config, RsAb02Output, RustProjectTag> = {
             {
               file: string
               module: string
+              ownerPath: string
               name: string
               line: number
               returnType: string
@@ -130,10 +132,12 @@ export const RsAb02: Signal<RsAb02Config, RsAb02Output, RustProjectTag> = {
               const returnType = detectReturnType(node)
               if (name === undefined || returnType === undefined || !returnType.includes("dyn ")) return
               const { modulePath } = modulePathForAncestors(scope, ancestors)
-              const key = `${modulePath}::${name}`
+              const ownerPath = ownerPathForFunction(modulePath, ancestors)
+              const key = `${ownerPath}::${name}`
               dynFns.set(key, {
                 file,
                 module: modulePath,
+                ownerPath,
                 name,
                 line: node.startPosition.row + 1,
                 returnType,
@@ -263,11 +267,22 @@ const collectCalledFunctionRefs = (node: ReturnType<typeof namedChildrenOf>[numb
 const callRef = (node: ReturnType<typeof namedChildrenOf>[number]): CalledFunctionRef | undefined => {
   switch (node.type) {
     case "identifier":
-      return { displayName: node.text, segments: [node.text] }
+      return { displayName: node.text, segments: [node.text], resolution: "unqualified" }
     case "scoped_identifier": {
       const segments = node.text.split("::").filter((segment) => segment.length > 0)
       if (segments.length === 0) return undefined
-      return { displayName: segments.join("::"), segments }
+      return { displayName: segments.join("::"), segments, resolution: "scoped-path" }
+    }
+    case "generic_function": {
+      const callable = namedChildrenOf(node)[0]
+      return callable === undefined ? undefined : callRef(callable)
+    }
+    case "field_expression": {
+      const children = namedChildrenOf(node)
+      const receiver = children[0]
+      const method = children.find((child) => child.type === "field_identifier")
+      if (receiver?.text !== "self" || method === undefined) return undefined
+      return { displayName: `self.${method.text}`, segments: [method.text], resolution: "self-method" }
     }
     default:
       return undefined
@@ -276,7 +291,11 @@ const callRef = (node: ReturnType<typeof namedChildrenOf>[number]): CalledFuncti
 
 const measureChainDepth = (
   key: string,
-  dynFns: ReadonlyMap<string, { readonly calleeRefs: ReadonlyArray<CalledFunctionRef>; readonly module: string }>,
+  dynFns: ReadonlyMap<string, {
+    readonly calleeRefs: ReadonlyArray<CalledFunctionRef>
+    readonly module: string
+    readonly ownerPath: string
+  }>,
   fnKeysByName: ReadonlyMap<string, ReadonlyArray<string>>,
   memo: Map<string, number>,
   active: Set<string>,
@@ -290,7 +309,7 @@ const measureChainDepth = (
 
   let maxDepth = 1
   for (const calleeRef of current.calleeRefs) {
-    const candidateKeys = candidateFunctionKeys(calleeRef, current.module, dynFns, fnKeysByName)
+    const candidateKeys = candidateFunctionKeys(calleeRef, current.module, current.ownerPath, dynFns, fnKeysByName)
     for (const candidateKey of candidateKeys) {
       maxDepth = Math.max(
         maxDepth,
@@ -307,16 +326,26 @@ const measureChainDepth = (
 const candidateFunctionKeys = (
   calleeRef: CalledFunctionRef,
   currentModule: string,
+  currentOwnerPath: string,
   dynFns: ReadonlyMap<string, unknown>,
   fnKeysByName: ReadonlyMap<string, ReadonlyArray<string>>,
 ): ReadonlyArray<string> => {
-  if (calleeRef.segments.length > 1) {
+  if (calleeRef.resolution === "self-method") {
+    const methodName = calleeRef.segments[0]
+    if (methodName === undefined) return []
+    const sameOwnerKey = `${currentOwnerPath}::${methodName}`
+    return dynFns.has(sameOwnerKey) ? [sameOwnerKey] : []
+  }
+
+  if (calleeRef.resolution === "scoped-path") {
     const scopedKey = resolveScopedFunctionKey(currentModule, calleeRef.segments)
     return scopedKey !== undefined && dynFns.has(scopedKey) ? [scopedKey] : []
   }
 
   const calleeName = calleeRef.segments[0]
   if (calleeName === undefined) return []
+  const sameOwnerKey = `${currentOwnerPath}::${calleeName}`
+  if (dynFns.has(sameOwnerKey)) return [sameOwnerKey]
   const sameModuleKey = `${currentModule}::${calleeName}`
   if (dynFns.has(sameModuleKey)) return [sameModuleKey]
   const sameNameKeys = fnKeysByName.get(calleeName) ?? []
@@ -346,4 +375,35 @@ const resolveScopedFunctionKey = (
 
   if (rest.length === 0) return undefined
   return [...base, ...rest].join("::")
+}
+
+const ownerPathForFunction = (
+  modulePath: string,
+  ancestors: ReadonlyArray<ReturnType<typeof namedChildrenOf>[number]>,
+): string => {
+  const implAncestor = nearestAncestor(ancestors, "impl_item")
+  if (implAncestor === undefined) return modulePath
+  return `${modulePath}::${implOwnerName(implAncestor)}`
+}
+
+const nearestAncestor = (
+  ancestors: ReadonlyArray<ReturnType<typeof namedChildrenOf>[number]>,
+  type: string,
+): ReturnType<typeof namedChildrenOf>[number] | undefined => {
+  for (let index = ancestors.length - 1; index >= 0; index -= 1) {
+    const ancestor = ancestors[index]
+    if (ancestor?.type === type) return ancestor
+  }
+  return undefined
+}
+
+const implOwnerName = (node: ReturnType<typeof namedChildrenOf>[number]): string => {
+  const parts = namedChildrenOf(node)
+    .filter((child) =>
+      child.type !== "type_parameters" &&
+      child.type !== "where_clause" &&
+      child.type !== "declaration_list"
+    )
+    .map((child) => child.text)
+  return `impl ${parts.join(" for ") || "<unknown>"}`
 }

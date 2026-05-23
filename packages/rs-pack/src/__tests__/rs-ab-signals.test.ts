@@ -706,7 +706,7 @@ describe("RS-AB-* signals", () => {
       tier: 1,
       category: "abstraction-bloat",
       kind: "legibility",
-      cacheVersion: "trait-object-depth-config-applicability-diagnostics-v1",
+      cacheVersion: "trait-object-depth-config-applicability-diagnostics-scoped-calls-v2",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -988,6 +988,58 @@ describe("RS-AB-* signals", () => {
         "super::a::leaf",
       ])
       expect(out.functions.filter((entry) => entry.name === "leaf").map((entry) => entry.chainDepth)).toEqual([1, 1])
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-AB-02 resolves generic function and self method calls conservatively", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-ab02-methods-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "trait-object-methods"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "use std::fmt::Debug;",
+        "pub fn generic_leaf<T>() -> Box<dyn Debug> { Box::new(1_u8) }",
+        "pub fn generic_top() -> Box<dyn Debug> { generic_leaf::<u8>() }",
+        "",
+        "pub struct Builder;",
+        "impl Builder {",
+        "    pub fn leaf(&self) -> Box<dyn Debug> { Box::new(2_u8) }",
+        "    pub fn middle(&self) -> Box<dyn Debug> { self.leaf() }",
+        "    pub fn top(&self) -> Box<dyn Debug> { self.middle() }",
+        "}",
+        "",
+        "pub struct Other;",
+        "impl Other {",
+        "    pub fn leaf(&self) -> Box<dyn Debug> { Box::new(3_u8) }",
+        "}",
+        "pub fn external_receiver(other: Other) -> Box<dyn Debug> { other.leaf() }",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const out = await runSignalCompute(RsAb02, repo, RsAb02.defaultConfig)
+      const entriesByName = new Map(out.functions.map((entry) => [entry.name, entry]))
+      const leafDepths = out.functions
+        .filter((entry) => entry.name === "leaf")
+        .map((entry) => entry.chainDepth)
+        .sort()
+
+      expect(entriesByName.get("generic_top")?.chainDepth).toBe(2)
+      expect(entriesByName.get("generic_top")?.calleeNames).toEqual(["generic_leaf"])
+      expect(entriesByName.get("top")?.chainDepth).toBe(3)
+      expect(entriesByName.get("top")?.calleeNames).toEqual(["self.middle"])
+      expect(entriesByName.get("middle")?.chainDepth).toBe(2)
+      expect(entriesByName.get("middle")?.calleeNames).toEqual(["self.leaf"])
+      expect(entriesByName.get("external_receiver")?.chainDepth).toBe(1)
+      expect(entriesByName.get("external_receiver")?.calleeNames).toEqual([])
+      expect(leafDepths).toEqual([1, 1])
     } finally {
       await cleanupWorkspace(repo)
     }
