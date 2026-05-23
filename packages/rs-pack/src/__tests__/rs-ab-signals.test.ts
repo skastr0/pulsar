@@ -1117,6 +1117,76 @@ describe("RS-AB-* signals", () => {
     }
   })
 
+  test("RS-AB-03 declares identity, config, cache, pack registration, and factor ledger", async () => {
+    const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
+    const versionedRegistry = await Effect.runPromise(
+      buildRegistry([
+        ...SHARED_SIGNALS,
+        ...RS_PACK_SIGNALS.filter((signal) => signal.id !== RsAb03.id),
+        { ...RsAb03, cacheVersion: `${RsAb03.cacheVersion}-next` },
+      ]),
+    )
+    const registered = registry.byId.get("RS-AB-03")
+    const decoded = Schema.decodeUnknownSync(RsAb03.configSchema)(RsAb03.defaultConfig)
+    const factorLedger = registered?.factorLedger?.({})
+    const baseCacheHash = computeConfigHash(RsAb03.id, registry, undefined)
+    const versionedCacheHash = computeConfigHash(RsAb03.id, versionedRegistry, undefined)
+    const configuredCacheHash = computeConfigHash(RsAb03.id, registry, {
+      id: "rs-ab-03-contract",
+      domain: "test",
+      signal_overrides: {
+        [RsAb03.id]: {
+          config: {
+            ...RsAb03.defaultConfig,
+            max_generic_parameters: 2,
+          },
+        },
+      },
+    })
+
+    expect(RsAb03).toMatchObject({
+      id: "RS-AB-03-generic-proliferation",
+      aliases: ["RS-AB-03"],
+      title: "Generic proliferation",
+      tier: 1,
+      category: "abstraction-bloat",
+      kind: "legibility",
+      cacheVersion: "generic-proliferation-config-applicability-diagnostics-cfg-test-gating-v2",
+      inputs: [],
+    })
+    expect(decoded).toEqual({
+      exclude_globs: ["**/target/**", "**/tests/**", "**/examples/**", "**/benches/**"],
+      max_generic_parameters: 3,
+      top_n_diagnostics: 10,
+    })
+    expect(registered?.id).toBe(RsAb03.id)
+    expect(registered?.cacheVersion).toBe(RsAb03.cacheVersion)
+    expect(registry.byId.get("RS-AB-03")?.id).toBe(RsAb03.id)
+    expect(baseCacheHash).not.toBe(versionedCacheHash)
+    expect(baseCacheHash).not.toBe(configuredCacheHash)
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.exclude_globs",
+        affectsScore: true,
+        scoreRole: "evidence",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.max_generic_parameters",
+        affectsScore: true,
+        scoreRole: "threshold",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        affectsScore: false,
+        scoreRole: "metadata",
+      }),
+    )
+  })
+
   test("RS-AB-03 summarizes generic parameter proliferation", async () => {
     const repo = await createRustWorkspace("pulsar-rs-ab03-", {
       "Cargo.toml": [
@@ -1146,10 +1216,152 @@ describe("RS-AB-* signals", () => {
         repo,
         { ...RsAb03.defaultConfig, max_generic_parameters: 2 },
       )
+      const diagnostics = RsAb03.diagnose(out)
+
+      expect(out.declarations.map((entry) => [entry.declarationName, entry.paramCount])).toEqual([
+        ["process", 3],
+        ["Pair", 2],
+      ])
       expect(out.parameterDistribution.max).toBeGreaterThanOrEqual(3)
       expect(out.overThreshold.some((entry) => entry.declarationName === "process")).toBe(true)
+      expect(out.maxGenericParameters).toBe(2)
+      expect(out.diagnosticLimit).toBe(10)
+      expect(RsAb03.outputMetadata?.(out)).toBeUndefined()
+      expect(RsAb03.score(out)).toBeCloseTo(0.5)
+      expect(diagnostics).toMatchObject([
+        {
+          severity: "warn",
+          message: "process uses 3 generic parameters",
+          location: { file: expect.stringMatching(/src\/lib\.rs$/), line: 2 },
+          data: {
+            module: "generic-fixture::crate",
+            paramCount: 3,
+            analysisMode: "ast-parameter-and-where-clause-counts",
+          },
+        },
+      ])
     } finally {
       await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-AB-03 normalizes config, diagnostics, and applicability evidence", async () => {
+    const generic = await createRustWorkspace("pulsar-rs-ab03-config-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "generic-config"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub struct Alpha<T, U, V>(pub T, pub U, pub V);",
+        "pub struct Beta<T, U>(pub T, pub U);",
+        "pub fn gamma<T, U, V, W>() {}",
+        "",
+      ].join("\n"),
+    })
+    const missing = await createRustWorkspace("pulsar-rs-ab03-missing-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "generic-missing"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+    })
+    const noGeneric = await createRustWorkspace("pulsar-rs-ab03-no-generic-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "generic-none"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub struct Plain;",
+        "pub fn ordinary() {}",
+        "",
+      ].join("\n"),
+    })
+    const excluded = await createRustWorkspace("pulsar-rs-ab03-excluded-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "generic-excluded"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub struct Hidden<T, U, V>(pub T, pub U, pub V);",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const capped = await runSignalCompute(
+        RsAb03,
+        generic,
+        { ...RsAb03.defaultConfig, max_generic_parameters: 2.8, top_n_diagnostics: 1.8 },
+      )
+      const hidden = await runSignalCompute(
+        RsAb03,
+        generic,
+        { ...RsAb03.defaultConfig, max_generic_parameters: Number.NaN, top_n_diagnostics: Number.NaN },
+      )
+      const strict = await runSignalCompute(
+        RsAb03,
+        generic,
+        { ...RsAb03.defaultConfig, max_generic_parameters: 1 },
+      )
+      const missingOut = await runSignalCompute(RsAb03, missing, RsAb03.defaultConfig)
+      const noGenericOut = await runSignalCompute(RsAb03, noGeneric, RsAb03.defaultConfig)
+      const excludedOut = await runSignalCompute(
+        RsAb03,
+        excluded,
+        { ...RsAb03.defaultConfig, exclude_globs: ["**/*.rs"] },
+      )
+
+      expect(capped.maxGenericParameters).toBe(2)
+      expect(capped.diagnosticLimit).toBe(1)
+      expect(RsAb03.diagnose(capped)).toHaveLength(1)
+      expect(RsAb03.diagnose(capped)[0]?.data?.paramCount).toBe(4)
+      expect(hidden.maxGenericParameters).toBe(3)
+      expect(hidden.diagnosticLimit).toBe(0)
+      expect(RsAb03.diagnose(hidden)).toHaveLength(0)
+      expect(strict.overThreshold).toHaveLength(3)
+      expect(RsAb03.score(strict)).toBeLessThan(RsAb03.score(capped))
+
+      expect(missingOut.sourceFileCount).toBe(0)
+      expect(RsAb03.outputMetadata?.(missingOut)).toEqual({
+        applicability: "insufficient_evidence",
+      })
+      expect(RsAb03.diagnose(missingOut)).toEqual([
+        expect.objectContaining({
+          severity: "warn",
+          message: "RS-AB-03 found no Rust source files for generic proliferation analysis",
+        }),
+      ])
+
+      expect(noGenericOut.sourceFileCount).toBe(1)
+      expect(noGenericOut.declarations).toEqual([])
+      expect(RsAb03.outputMetadata?.(noGenericOut)).toEqual({
+        applicability: "not_applicable",
+      })
+      expect(RsAb03.diagnose(noGenericOut)).toEqual([])
+
+      expect(excludedOut.sourceFileCount).toBe(1)
+      expect(excludedOut.analyzedSourceFileCount).toBe(0)
+      expect(excludedOut.declarations).toEqual([])
+      expect(RsAb03.outputMetadata?.(excludedOut)).toEqual({
+        applicability: "not_applicable",
+      })
+      expect(RsAb03.diagnose(excludedOut)).toEqual([])
+    } finally {
+      await cleanupWorkspace(generic)
+      await cleanupWorkspace(missing)
+      await cleanupWorkspace(noGeneric)
+      await cleanupWorkspace(excluded)
     }
   })
 

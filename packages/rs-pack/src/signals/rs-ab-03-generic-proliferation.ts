@@ -1,8 +1,14 @@
 import {
+  makeFactorEntry,
+  makeFactorLedger,
+  type SignalFactorLedger,
+} from "@skastr0/pulsar-core/factors"
+import {
   type Diagnostic,
   type DistributionalSummary,
   scoreThresholdViolationShare,
   type Signal,
+  type SignalFactorDefinition,
   SignalComputeError,
   summarize,
 } from "@skastr0/pulsar-core/signal"
@@ -42,8 +48,39 @@ interface RsAb03Output {
   readonly declarations: ReadonlyArray<RustGenericAnalysis>
   readonly parameterDistribution: DistributionalSummary
   readonly overThreshold: ReadonlyArray<RustGenericAnalysis>
+  readonly sourceFileCount: number
+  readonly analyzedSourceFileCount: number
+  readonly maxGenericParameters: number
+  readonly diagnosticLimit: number
   readonly analysisMode: "ast-parameter-and-where-clause-counts"
 }
+
+const DEFAULT_MAX_GENERIC_PARAMETERS = 3
+const DEFAULT_TOP_N_DIAGNOSTICS = 10
+
+const RsAb03FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
+  {
+    path: "config.exclude_globs",
+    title: "Config exclude globs",
+    valueKind: "array",
+    scoreRole: "evidence",
+    defaultValue: [...DEFAULT_RUST_EXCLUDE_GLOBS],
+  },
+  {
+    path: "config.max_generic_parameters",
+    title: "Config max generic parameters",
+    valueKind: "number",
+    scoreRole: "threshold",
+    defaultValue: DEFAULT_MAX_GENERIC_PARAMETERS,
+  },
+  {
+    path: "config.top_n_diagnostics",
+    title: "Config top n diagnostics",
+    valueKind: "number",
+    scoreRole: "metadata",
+    defaultValue: DEFAULT_TOP_N_DIAGNOSTICS,
+  },
+]
 
 export const RsAb03: Signal<RsAb03Config, RsAb03Output, RustProjectTag> = {
   id: "RS-AB-03-generic-proliferation",
@@ -52,22 +89,26 @@ export const RsAb03: Signal<RsAb03Config, RsAb03Output, RustProjectTag> = {
   tier: 1,
   category: "abstraction-bloat",
   kind: "legibility",
-  cacheVersion: "generic-proliferation-cfg-test-gating-v1",
+  cacheVersion: "generic-proliferation-config-applicability-diagnostics-cfg-test-gating-v2",
   configSchema: RsAb03Config,
+  factorDefinitions: RsAb03FactorDefinitions,
   defaultConfig: {
     exclude_globs: [...DEFAULT_RUST_EXCLUDE_GLOBS],
-    max_generic_parameters: 3,
-    top_n_diagnostics: 10,
+    max_generic_parameters: DEFAULT_MAX_GENERIC_PARAMETERS,
+    top_n_diagnostics: DEFAULT_TOP_N_DIAGNOSTICS,
   },
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
+      const normalizedConfig = normalizeRsAb03Config(config)
       const project = yield* RustProjectTag
       return yield* Effect.tryPromise({
         try: async (): Promise<RsAb03Output> => {
           const declarations: Array<RustGenericAnalysis> = []
-          for (const file of project.sourceFiles) {
-            if (isExcluded(file, config.exclude_globs)) continue
+          const analyzedSourceFiles = project.sourceFiles.filter(
+            (file) => !isExcluded(file, normalizedConfig.exclude_globs),
+          )
+          for (const file of analyzedSourceFiles) {
             const scope = resolveRustFileScope(project, file)
             const tree = await parseRustFile(file)
             walkAttributedNodes(tree.rootNode, ({ node, ancestors, testGated }) => {
@@ -98,7 +139,11 @@ export const RsAb03: Signal<RsAb03Config, RsAb03Output, RustProjectTag> = {
           return {
             declarations,
             parameterDistribution: summarize(declarations.map((entry) => entry.paramCount)),
-            overThreshold: declarations.filter((entry) => entry.paramCount > config.max_generic_parameters),
+            overThreshold: declarations.filter((entry) => entry.paramCount > normalizedConfig.max_generic_parameters),
+            sourceFileCount: project.sourceFiles.length,
+            analyzedSourceFileCount: analyzedSourceFiles.length,
+            maxGenericParameters: normalizedConfig.max_generic_parameters,
+            diagnosticLimit: normalizedConfig.top_n_diagnostics,
             analysisMode: "ast-parameter-and-where-clause-counts",
           }
         },
@@ -109,8 +154,20 @@ export const RsAb03: Signal<RsAb03Config, RsAb03Output, RustProjectTag> = {
   score: (out) => {
     return scoreThresholdViolationShare(out.declarations.length, out.overThreshold.length)
   },
-  diagnose: (out): ReadonlyArray<Diagnostic> =>
-    out.overThreshold.slice(0, 10).map((entry) => ({
+  diagnose: (out): ReadonlyArray<Diagnostic> => {
+    if (out.sourceFileCount === 0) {
+      return [{
+        severity: "warn" as const,
+        message: "RS-AB-03 found no Rust source files for generic proliferation analysis",
+        data: {
+          sourceFileCount: out.sourceFileCount,
+          analyzedSourceFileCount: out.analyzedSourceFileCount,
+          declarationCount: out.declarations.length,
+          analysisMode: out.analysisMode,
+        },
+      }].slice(0, out.diagnosticLimit)
+    }
+    return out.overThreshold.slice(0, out.diagnosticLimit).map((entry) => ({
       severity: "warn" as const,
       message: `${entry.declarationName} uses ${entry.paramCount} generic parameters`,
       location: { file: entry.file, line: entry.line },
@@ -122,8 +179,41 @@ export const RsAb03: Signal<RsAb03Config, RsAb03Output, RustProjectTag> = {
         complexity: entry.complexity,
         analysisMode: out.analysisMode,
       },
-    })),
+    }))
+  },
+  outputMetadata: (out) => {
+    if (out.sourceFileCount === 0) {
+      return { applicability: "insufficient_evidence" as const }
+    }
+    if (out.analyzedSourceFileCount === 0 || out.declarations.length === 0) {
+      return { applicability: "not_applicable" as const }
+    }
+    return undefined
+  },
+  factorLedger: () => makeRsAb03FactorLedger(),
 }
+
+type NormalizedRsAb03Config = RsAb03Config
+
+const normalizeRsAb03Config = (config: RsAb03Config): NormalizedRsAb03Config => ({
+  exclude_globs: config.exclude_globs,
+  max_generic_parameters: Number.isFinite(config.max_generic_parameters)
+    ? Math.max(0, Math.floor(config.max_generic_parameters))
+    : DEFAULT_MAX_GENERIC_PARAMETERS,
+  top_n_diagnostics: Number.isFinite(config.top_n_diagnostics)
+    ? Math.max(0, Math.floor(config.top_n_diagnostics))
+    : 0,
+})
+
+const makeRsAb03FactorLedger = (): SignalFactorLedger =>
+  makeFactorLedger(
+    "RS-AB-03-generic-proliferation",
+    RsAb03FactorDefinitions.map((definition) =>
+      makeFactorEntry(definition, definition.defaultValue ?? null, {
+        source: "signal-default",
+      }),
+    ),
+  )
 
 const isGenericTrackedNode = (type: string): boolean =>
   ["function_item", "struct_item", "enum_item", "trait_item", "type_item", "impl_item"].includes(type)
