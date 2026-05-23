@@ -17,6 +17,7 @@ import {
   DEFAULT_RUST_EXCLUDE_GLOBS,
   firstNamedChild,
   modulePathForAncestors,
+  namedChildrenOf,
   resolveRustFileScope,
   walkAttributedNodes,
 } from "./shared-rust-ast.js"
@@ -79,7 +80,7 @@ export const RsLd04: Signal<RsLd04Config, RsLd04Output, RustProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "error-granularity-config-applicability-diagnostics-cfg-test-result-aliases-v3",
+  cacheVersion: "error-granularity-config-applicability-diagnostics-cfg-test-result-aliases-v5",
   configSchema: RsLd04Config,
   factorDefinitions: RsLd04FactorDefinitions,
   defaultConfig: {
@@ -99,21 +100,25 @@ export const RsLd04: Signal<RsLd04Config, RsLd04Output, RustProjectTag> = {
           )
           const analyzedSourceFileSet = new Set(analyzedSourceFiles)
           const activeFunctionKeys = await collectActiveFunctionKeys(project, analyzedSourceFiles)
+          const resolvedResultErrorTypes = await collectResolvedResultErrorTypes(project, analyzedSourceFiles)
           const boundaryFunctions = facts.functions
             .filter((fn) =>
               analyzedSourceFileSet.has(fn.file) &&
               activeFunctionKeys.has(boundaryFunctionKey(fn))
             )
             .filter((fn) => fn.visibility.kind !== "private")
-            .filter((fn) => fn.resultErrorType !== undefined)
-            .map((fn) => ({
-              file: fn.file,
-              module: fn.modulePath,
-              name: fn.name,
-              line: fn.line,
-              errorType: fn.resultErrorType!,
-              classification: classifyErrorType(fn.resultErrorType!) as "granular" | "collapsed",
-            }))
+            .flatMap((fn) => {
+              const errorType = resolvedResultErrorTypes.get(boundaryFunctionKey(fn)) ?? fn.resultErrorType
+              if (errorType === undefined) return []
+              return [{
+                file: fn.file,
+                module: fn.modulePath,
+                name: fn.name,
+                line: fn.line,
+                errorType,
+                classification: classifyErrorType(errorType) as "granular" | "collapsed",
+              }]
+            })
             .sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line)
           const granularCount = boundaryFunctions.filter((fn) => fn.classification === "granular").length
           const collapsedCount = boundaryFunctions.filter((fn) => fn.classification === "collapsed").length
@@ -232,6 +237,160 @@ const boundaryFunctionKey = (fn: {
   readonly line: number
 }): string => `${fn.file}:${fn.line}:${fn.modulePath}::${fn.name}`
 
+interface ResultAliasScope {
+  readonly importAliases: ReadonlyMap<string, string>
+  readonly typeAliases: ReadonlyMap<string, string>
+}
+
+const collectResolvedResultErrorTypes = async (
+  project: RustProject,
+  analyzedSourceFiles: ReadonlyArray<string>,
+): Promise<ReadonlyMap<string, string>> => {
+  const resultErrorTypes = new Map<string, string>()
+  for (const file of analyzedSourceFiles) {
+    const scope = resolveRustFileScope(project, file)
+    const tree = await parseRustFile(file)
+    const aliasesByModule = collectResultAliasScopes(scope, tree.rootNode)
+    walkAttributedNodes(tree.rootNode, ({ node, ancestors, testGated }) => {
+      if (testGated || node.type !== "function_item") return
+      const name = firstNamedChild(node, "identifier")?.text
+      if (name === undefined) return
+      const returnTypeText = returnTypeTextOfFunction(node)
+      const { modulePath } = modulePathForAncestors(scope, ancestors)
+      const aliases = aliasesForModule(modulePath, aliasesByModule)
+      const errorType = resultErrorTypeFromReturnText(returnTypeText, aliases)
+      if (errorType === undefined) return
+      resultErrorTypes.set(boundaryFunctionKey({
+        file,
+        modulePath,
+        name,
+        line: node.startPosition.row + 1,
+      }), errorType)
+    })
+  }
+  return resultErrorTypes
+}
+
+const collectResultAliasScopes = (
+  scope: ReturnType<typeof resolveRustFileScope>,
+  root: Parameters<typeof walkAttributedNodes>[0],
+): ReadonlyMap<string, ResultAliasScope> => {
+  const scopes = new Map<string, {
+    readonly importAliases: Map<string, string>
+    readonly typeAliases: Map<string, string>
+  }>()
+  const scopeForModule = (modulePath: string): {
+    readonly importAliases: Map<string, string>
+    readonly typeAliases: Map<string, string>
+  } => {
+    const existing = scopes.get(modulePath)
+    if (existing !== undefined) return existing
+    const created = { importAliases: new Map<string, string>(), typeAliases: new Map<string, string>() }
+    scopes.set(modulePath, created)
+    return created
+  }
+  walkAttributedNodes(root, ({ node, ancestors, testGated }) => {
+    if (testGated) return
+    const moduleAliases = scopeForModule(modulePathForAncestors(scope, ancestors).modulePath)
+    if (node.type === "use_declaration") {
+      const match = /\buse\s+([A-Za-z_][A-Za-z0-9_:]*)\s+as\s+([A-Za-z_][A-Za-z0-9_]*)\s*;/.exec(node.text)
+      if (match !== null) moduleAliases.importAliases.set(match[2]!, match[1]!)
+    }
+    if (node.type === "type_item") {
+      const match = /\btype\s+([A-Za-z_][A-Za-z0-9_]*)\b[\s\S]*?=\s*([^;]+)\s*;?/.exec(node.text)
+      if (match !== null) moduleAliases.typeAliases.set(match[1]!, match[2]!.trim())
+    }
+  })
+  return scopes
+}
+
+const aliasesForModule = (
+  modulePath: string,
+  aliasesByModule: ReadonlyMap<string, ResultAliasScope>,
+): ResultAliasScope => {
+  const importAliases = new Map<string, string>()
+  const typeAliases = new Map<string, string>()
+  const moduleSegments = modulePath.split("::")
+  for (let length = 1; length <= moduleSegments.length; length += 1) {
+    const scope = aliasesByModule.get(moduleSegments.slice(0, length).join("::"))
+    if (scope === undefined) continue
+    for (const [name, target] of scope.importAliases) importAliases.set(name, target)
+    for (const [name, target] of scope.typeAliases) typeAliases.set(name, target)
+  }
+  return { importAliases, typeAliases }
+}
+
+const returnTypeTextOfFunction = (node: Parameters<typeof firstNamedChild>[0]): string | undefined => {
+  const children = namedChildrenOf(node)
+  const parametersIndex = children.findIndex((child) => child.type === "parameters")
+  if (parametersIndex === -1) return undefined
+  return children.slice(parametersIndex + 1).find(
+    (child) => child.type !== "where_clause" && child.type !== "block",
+  )?.text
+}
+
+const resultErrorTypeFromReturnText = (
+  returnTypeText: string | undefined,
+  aliases: ResultAliasScope,
+  seenAliases: ReadonlySet<string> = new Set(),
+): string | undefined => {
+  if (returnTypeText === undefined) return undefined
+  const trimmed = returnTypeText.trim()
+  const normalized = trimmed.replace(/\s+/g, "")
+  if (/^anyhow::Result(?:<.*>)?$/.test(normalized)) return "anyhow::Error"
+  if (/^eyre::Result(?:<.*>)?$/.test(normalized)) return "eyre::Report"
+
+  const resultArguments = /^(?:(?:[A-Za-z_][A-Za-z0-9_]*|self|super|crate)::)*Result<([\s\S]+)>$/.exec(trimmed)
+  if (resultArguments !== null) {
+    const errorType = splitTopLevelCommas(resultArguments[1] ?? "")[1]?.trim()
+    return errorType === undefined ? undefined : resolveErrorAlias(errorType, aliases, seenAliases)
+  }
+
+  const aliasCall = /^([A-Za-z_][A-Za-z0-9_]*)(?:<[\s\S]*>)?$/.exec(trimmed)
+  if (aliasCall === null) return undefined
+  const aliasName = aliasCall[1]!
+  if (seenAliases.has(aliasName)) return undefined
+  const aliasedType = aliases.typeAliases.get(aliasName)
+  if (aliasedType === undefined) return undefined
+  return resultErrorTypeFromReturnText(aliasedType, aliases, new Set([...seenAliases, aliasName]))
+}
+
+const resolveErrorAlias = (
+  errorType: string,
+  aliases: ResultAliasScope,
+  seenAliases: ReadonlySet<string>,
+): string => {
+  const trimmed = errorType.trim()
+  const importedType = aliases.importAliases.get(trimmed)
+  if (importedType !== undefined) return importedType
+
+  const aliasName = /^([A-Za-z_][A-Za-z0-9_]*)$/.exec(trimmed)?.[1]
+  if (aliasName === undefined || seenAliases.has(aliasName)) return trimmed
+  const aliasedType = aliases.typeAliases.get(aliasName)
+  if (aliasedType === undefined) return trimmed
+
+  const nextSeenAliases = new Set([...seenAliases, aliasName])
+  return resultErrorTypeFromReturnText(aliasedType, aliases, nextSeenAliases) ??
+    resolveErrorAlias(aliasedType, aliases, nextSeenAliases)
+}
+
+const splitTopLevelCommas = (text: string): ReadonlyArray<string> => {
+  const parts: Array<string> = []
+  let depth = 0
+  let start = 0
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index]
+    if (char === "<" || char === "(" || char === "[" || char === "{") depth += 1
+    if (char === ">" || char === ")" || char === "]" || char === "}") depth = Math.max(0, depth - 1)
+    if (char === "," && depth === 0) {
+      parts.push(text.slice(start, index))
+      start = index + 1
+    }
+  }
+  parts.push(text.slice(start))
+  return parts
+}
+
 const classifyErrorType = (errorType: string): "granular" | "collapsed" => {
   const normalized = errorType.replace(/\s+/g, "")
   if (
@@ -241,6 +400,7 @@ const classifyErrorType = (errorType: string): "granular" | "collapsed" => {
     normalized === "String" ||
     normalized === "&str" ||
     normalized === "&'staticstr" ||
+    /^impl.*Error/.test(normalized) ||
     /Box<dyn.*Error.*>/.test(normalized) ||
     /dyn.*Error/.test(normalized)
   ) {
