@@ -1646,7 +1646,7 @@ describe("RS-AB-* signals", () => {
       tier: 1,
       category: "abstraction-bloat",
       kind: "legibility",
-      cacheVersion: "derive-density-config-applicability-diagnostics-cfg-test-gating-thresholds-v3",
+      cacheVersion: "derive-density-config-applicability-diagnostics-cfg-attr-thresholds-v4",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -1813,6 +1813,65 @@ describe("RS-AB-* signals", () => {
           },
         },
       ])
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-AB-04 extracts direct and cfg_attr derives deliberately", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-ab04-cfg-attr-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "derive-cfg-attr"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "#[derive(Clone)]",
+        "#[derive(serde::Serialize, Deserialize)]",
+        "pub struct Direct;",
+        "#[cfg_attr(feature = \"serde\", derive(Serialize, Deserialize))]",
+        "pub enum FeatureDerived { A }",
+        "#[cfg_attr(test, derive(Clone, Debug, Serialize))]",
+        "pub struct TestOnlyConditional;",
+        "#[cfg_attr(all(test, feature = \"serde\"), derive(Serialize, Deserialize))]",
+        "pub struct CompositeTestOnly;",
+        "#[cfg_attr(not(test), derive(Clone))]",
+        "pub union NonTestConditional { field: u32 }",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const out = await runSignalCompute(RsAb04, repo, RsAb04.defaultConfig)
+      const byName = new Map(out.types.map((entry) => [entry.name, entry]))
+
+      expect(byName.get("Direct")).toMatchObject({
+        deriveCount: 3,
+        standardDerives: ["Clone"],
+        customDerives: ["serde::Serialize", "Deserialize"],
+      })
+      expect(byName.get("FeatureDerived")).toMatchObject({
+        deriveCount: 2,
+        standardDerives: [],
+        customDerives: ["Serialize", "Deserialize"],
+      })
+      expect(byName.get("TestOnlyConditional")).toMatchObject({
+        deriveCount: 0,
+        standardDerives: [],
+        customDerives: [],
+      })
+      expect(byName.get("CompositeTestOnly")).toMatchObject({
+        deriveCount: 0,
+        standardDerives: [],
+        customDerives: [],
+      })
+      expect(byName.get("NonTestConditional")).toMatchObject({
+        deriveCount: 1,
+        standardDerives: ["Clone"],
+        customDerives: [],
+      })
     } finally {
       await cleanupWorkspace(repo)
     }

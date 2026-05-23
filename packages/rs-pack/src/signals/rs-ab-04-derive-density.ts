@@ -13,11 +13,12 @@ import {
 } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
 import { RustProjectTag } from "../project.js"
-import { parseRustFile } from "../syn-walker.js"
+import { parseRustFile, type RustSyntaxNode } from "../syn-walker.js"
 import {
   DEFAULT_RUST_EXCLUDE_GLOBS,
   firstNamedChild,
   modulePathForAncestors,
+  namedChildrenOf,
   resolveRustFileScope,
   walkAttributedNodes,
 } from "./shared-rust-ast.js"
@@ -109,7 +110,7 @@ export const RsAb04: Signal<RsAb04Config, RsAb04Output, RustProjectTag> = {
   tier: 1,
   category: "abstraction-bloat",
   kind: "legibility",
-  cacheVersion: "derive-density-config-applicability-diagnostics-cfg-test-gating-thresholds-v3",
+  cacheVersion: "derive-density-config-applicability-diagnostics-cfg-attr-thresholds-v4",
   configSchema: RsAb04Config,
   factorDefinitions: RsAb04FactorDefinitions,
   defaultConfig: {
@@ -273,11 +274,57 @@ const diagnosticMessage = (
   return `${entry.name} derives ${entry.deriveCount} macros`
 }
 
-const extractDerives = (attribute: { readonly text: string }): ReadonlyArray<string> => {
-  const match = /#\s*\[\s*derive\s*\(([^\)]*)\)\s*\]/.exec(attribute.text)
+const extractDerives = (attributeItem: RustSyntaxNode): ReadonlyArray<string> => {
+  const attribute = firstNamedChild(attributeItem, "attribute") ?? attributeItem
+  const children = namedChildrenOf(attribute)
+  const attributeName = children.find((child) => child.type === "identifier")?.text
+  const tokenTree = children.find((child) => child.type === "token_tree")
+  if (attributeName === "derive") return deriveNamesFromTokenTree(tokenTree)
+  if (attributeName === "cfg_attr") return deriveNamesFromCfgAttr(tokenTree)
+  return []
+}
+
+const deriveNamesFromCfgAttr = (tokenTree: RustSyntaxNode | undefined): ReadonlyArray<string> => {
+  if (tokenTree === undefined) return []
+  const parts = splitTopLevelCommas(unwrapOuterParens(tokenTree.text))
+  const cfgExpression = parts[0]
+  if (cfgExpression === undefined || isCfgTestExpression(cfgExpression)) return []
+  return parts.slice(1).flatMap(deriveNamesFromAttributeText)
+}
+
+const deriveNamesFromTokenTree = (tokenTree: RustSyntaxNode | undefined): ReadonlyArray<string> =>
+  tokenTree === undefined ? [] : splitTopLevelCommas(unwrapOuterParens(tokenTree.text))
+
+const deriveNamesFromAttributeText = (attributeText: string): ReadonlyArray<string> => {
+  const match = /^derive\s*\((.*)\)$/s.exec(attributeText.trim())
   if (match === null) return []
-  return match[1]!
-    .split(",")
-    .map((value) => value.trim())
-    .filter((value) => value.length > 0)
+  return splitTopLevelCommas(match[1] ?? "")
+}
+
+const unwrapOuterParens = (value: string): string => {
+  const trimmed = value.trim()
+  return trimmed.startsWith("(") && trimmed.endsWith(")") ? trimmed.slice(1, -1) : trimmed
+}
+
+const splitTopLevelCommas = (value: string): ReadonlyArray<string> => {
+  const parts: Array<string> = []
+  let depth = 0
+  let start = 0
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index]
+    if (char === "(" || char === "[" || char === "{") depth += 1
+    if (char === ")" || char === "]" || char === "}") depth = Math.max(0, depth - 1)
+    if (char === "," && depth === 0) {
+      parts.push(value.slice(start, index).trim())
+      start = index + 1
+    }
+  }
+  parts.push(value.slice(start).trim())
+  return parts.filter((part) => part.length > 0)
+}
+
+const isCfgTestExpression = (value: string): boolean => {
+  const cfgExpression = value.replace(/\s+/g, "")
+  const withoutNotTest = cfgExpression.replace(/not\(test\)/g, "")
+  return /(^|[^A-Za-z0-9_])test([^A-Za-z0-9_]|$)/.test(withoutNotTest)
 }
