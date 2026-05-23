@@ -1636,7 +1636,7 @@ describe("RS-LD-* signals", () => {
       tier: 1,
       category: "legibility-decay",
       kind: "legibility",
-      cacheVersion: "error-granularity-config-applicability-diagnostics-cfg-test-result-aliases-v11",
+      cacheVersion: "error-granularity-config-applicability-diagnostics-cfg-test-result-aliases-v12",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -1783,6 +1783,8 @@ describe("RS-LD-* signals", () => {
         "pub mod errors { pub struct DomainError; }",
         "pub use crate::errors::DomainError as PublicDomainError;",
         "type AppResult<T> = Result<T, crate::errors::DomainError>;",
+        "type CrateNestedError = anyhow::Error;",
+        "type CrateAliasError = CrateNestedError;",
         "type NestedError = AnyError;",
         "type NestedResult<T> = Result<T, NestedError>;",
         "pub fn explicit_anyhow(value: &str) -> Result<(), anyhow::Error> { let _ = value; Ok(()) }",
@@ -1879,6 +1881,22 @@ describe("RS-LD-* signals", () => {
         "  pub fn crate_result(value: &str) -> CrateAnyResult<()> { let _ = value; Ok(()) }",
         "  pub fn crate_error(value: &str) -> Result<(), CrateAnyError> { let _ = value; Ok(()) }",
         "  pub fn crate_domain(value: &str) -> Result<(), PublicDomainError> { let _ = value; Ok(()) }",
+        "  use crate::CrateAliasError;",
+        "  pub fn crate_chained_error(value: &str) -> Result<(), CrateAliasError> { let _ = value; Ok(()) }",
+        "}",
+        "pub mod chained_reexports {",
+        "  type NestedError = anyhow::Error;",
+        "  type Alias = NestedError;",
+        "  pub mod child {",
+        "    use super::Alias;",
+        "    pub fn chained_super_error(value: &str) -> Result<(), Alias> { let _ = value; Ok(()) }",
+        "  }",
+        "}",
+        "pub mod self_reexports {",
+        "  type NestedError = anyhow::Error;",
+        "  type Alias = NestedError;",
+        "  use self::Alias as SelfAlias;",
+        "  pub fn self_chained_error(value: &str) -> Result<(), SelfAlias> { let _ = value; Ok(()) }",
         "}",
       ],
     })
@@ -1887,8 +1905,8 @@ describe("RS-LD-* signals", () => {
       const out = await runSignalCompute(RsLd04, repo, RsLd04.defaultConfig)
       const byName = new Map(out.boundaryFunctions.map((fn) => [fn.name, fn]))
 
-      expect(out.totalBoundaryResults).toBe(34)
-      expect(out.collapsedCount).toBe(22)
+      expect(out.totalBoundaryResults).toBe(37)
+      expect(out.collapsedCount).toBe(25)
       expect(out.granularCount).toBe(12)
       expect(byName.get("explicit_anyhow")).toMatchObject({
         errorType: "anyhow::Error",
@@ -2026,7 +2044,19 @@ describe("RS-LD-* signals", () => {
         errorType: "crate::errors::DomainError",
         classification: "granular",
       })
-      expect(RsLd04.score(out)).toBeCloseTo(6 / 17)
+      expect(byName.get("crate_chained_error")).toMatchObject({
+        errorType: "anyhow::Error",
+        classification: "collapsed",
+      })
+      expect(byName.get("chained_super_error")).toMatchObject({
+        errorType: "anyhow::Error",
+        classification: "collapsed",
+      })
+      expect(byName.get("self_chained_error")).toMatchObject({
+        errorType: "anyhow::Error",
+        classification: "collapsed",
+      })
+      expect(RsLd04.score(out)).toBeCloseTo(12 / 37)
     } finally {
       await cleanupWorkspace(repo)
     }

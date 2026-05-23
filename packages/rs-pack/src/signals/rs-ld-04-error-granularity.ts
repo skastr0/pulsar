@@ -80,7 +80,7 @@ export const RsLd04: Signal<RsLd04Config, RsLd04Output, RustProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "error-granularity-config-applicability-diagnostics-cfg-test-result-aliases-v11",
+  cacheVersion: "error-granularity-config-applicability-diagnostics-cfg-test-result-aliases-v12",
   configSchema: RsLd04Config,
   factorDefinitions: RsLd04FactorDefinitions,
   defaultConfig: {
@@ -348,7 +348,54 @@ const resolveRelativeImportTarget = (
       new Set([...seenTargets, `${modulePath}:${target}`]),
     )
   }
-  return targetScope?.typeAliases.get(importedName) ?? target
+  const typeAliasTarget = targetScope?.typeAliases.get(importedName)
+  return typeAliasTarget === undefined
+    ? target
+    : resolveAliasTargetInModule(
+      targetModulePath,
+      typeAliasTarget,
+      scopes,
+      crateRootModulePath,
+      new Set([...seenTargets, `${modulePath}:${target}`]),
+    )
+}
+
+const resolveAliasTargetInModule = (
+  modulePath: string,
+  target: string,
+  scopes: ReadonlyMap<string, MutableResultAliasScope>,
+  crateRootModulePath: string,
+  seenTargets: ReadonlySet<string>,
+): string => {
+  if (seenTargets.has(`${modulePath}:${target}`)) return target
+  const trimmed = target.trim()
+  if (/^(?:self|super|crate)::/.test(trimmed)) {
+    return resolveRelativeImportTarget(modulePath, trimmed, scopes, crateRootModulePath, seenTargets)
+  }
+  const aliasName = /^([A-Za-z_][A-Za-z0-9_]*)$/.exec(trimmed)?.[1]
+  if (aliasName === undefined) return trimmed
+  const aliases = scopes.get(modulePath)
+  const importTarget = aliases?.importAliases.get(aliasName)
+  if (importTarget !== undefined) {
+    return resolveRelativeImportTarget(
+      modulePath,
+      importTarget,
+      scopes,
+      crateRootModulePath,
+      new Set([...seenTargets, `${modulePath}:${target}`]),
+    )
+  }
+  const typeAliasTarget = aliases?.typeAliases.get(aliasName)
+  if (typeAliasTarget !== undefined) {
+    return resolveAliasTargetInModule(
+      modulePath,
+      typeAliasTarget,
+      scopes,
+      crateRootModulePath,
+      new Set([...seenTargets, `${modulePath}:${target}`]),
+    )
+  }
+  return trimmed
 }
 
 const modulePathForRelativeImport = (
