@@ -13,6 +13,7 @@ import { SHARED_SIGNALS } from "@skastr0/pulsar-shared-signals"
 import { RS_PACK_SIGNALS } from "../pack.js"
 import { RustProjectLayer } from "../project.js"
 import { RsAb01 } from "../signals/rs-ab-01-unused-pub.js"
+import { RsAb02 } from "../signals/rs-ab-02-trait-object-depth.js"
 import { RsDe04 } from "../signals/rs-de-04-fan-in-fan-out.js"
 import { cleanupWorkspace, createRustWorkspace, referenceLayer } from "./helpers.js"
 
@@ -147,6 +148,57 @@ describe("rs-pack integration", () => {
       expect(unusedPublic?.diagnostics[0]).toMatchObject({
         severity: "warn",
         message: "Public struct Hidden is not referenced from other workspace crates",
+      })
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  }, 120_000)
+
+  test("observer path carries RS-AB-02 trait-object depth score and diagnostics", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-observer-ab02-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "trait-object-observer"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "use std::fmt::Debug;",
+        "pub fn leaf() -> Box<dyn Debug> { Box::new(1_u8) }",
+        "pub fn middle() -> Box<dyn Debug> { leaf() }",
+        "pub fn top() -> Box<dyn Debug> { middle() }",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
+      const EnvLayer = Layer.mergeAll(
+        Layer.succeed(SignalContextTag, {
+          gitSha: "HEAD",
+          worktreePath: repo,
+          changedHunks: [],
+        }),
+        referenceLayer(),
+        InMemoryCacheLayer,
+        RustProjectLayer(repo),
+      )
+
+      const result = await Effect.runPromise(
+        Effect.provide(observe(registry, undefined), EnvLayer) as Effect.Effect<
+          ObserverOutput,
+          never,
+          never
+        >,
+      )
+      const traitObjectDepth = result.signalResults.get(RsAb02.id)
+
+      expect(result.categories["abstraction-bloat"].signals[RsAb02.id]).toBeCloseTo(1 / 3)
+      expect(traitObjectDepth?.score).toBeCloseTo(1 / 3)
+      expect(traitObjectDepth?.diagnostics[0]).toMatchObject({
+        severity: "warn",
+        message: "Trait-object chain depth 3 in top",
       })
     } finally {
       await cleanupWorkspace(repo)

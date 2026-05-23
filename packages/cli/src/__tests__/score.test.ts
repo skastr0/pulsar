@@ -1419,6 +1419,44 @@ export function stubF() { throw new Error("Not implemented") }
     }
   }, 120_000)
 
+  test("single-signal CLI wrapper executes RS-AB-02 with Rust source", async () => {
+    const repoPath = await initRepo([
+      {
+        path: "Cargo.toml",
+        content: [
+          "[package]",
+          'name = "ab02-cli"',
+          'version = "0.1.0"',
+          'edition = "2021"',
+          "",
+        ].join("\n"),
+      },
+      {
+        path: "src/lib.rs",
+        content: [
+          "use std::fmt::Debug;",
+          "pub fn leaf() -> Box<dyn Debug> { Box::new(1_u8) }",
+          "pub fn middle() -> Box<dyn Debug> { leaf() }",
+          "pub fn top() -> Box<dyn Debug> { middle() }",
+          "",
+        ].join("\n"),
+      },
+    ])
+    try {
+      const out = runCli(repoPath, ["score", "--signal", "RS-AB-02", "."])
+      expect(out.status).toBe(0)
+      expect(out.stdout).toContain("Signal: RS-AB-02-trait-object-depth")
+      expect(out.stdout).toContain("WARN  Trait-object chain depth 3 in top")
+      expect(out.stdout).toContain("Score:  0.333")
+      expect(out.stdout).toContain("Factor Audit (2 score-bearing)")
+      expect(out.stdout).toContain("config.max_chain_depth=1")
+      expect(out.stdout).toContain("config.exclude_globs=")
+      expect(out.stdout).not.toContain("config.top_n_diagnostics=10 threshold")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
   test("single-signal CLI wrapper executes RS-DE-02 with Cargo.lock", async () => {
     const repoPath = await initRepo([
       {

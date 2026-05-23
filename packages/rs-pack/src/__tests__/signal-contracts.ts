@@ -219,7 +219,33 @@ export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "observer-integration.test.ts and CLI score tests: Rust observer integration includes RS-AB-01 in the abstraction-bloat category, while CLI single-signal mode executes RS-AB-01 against a repository substrate with Rust source parsed from disk.",
     },
   },
-  pendingSignalContract("RS-AB-02-trait-object-depth"),
+  {
+    id: "RS-AB-02-trait-object-depth",
+    status: "verified",
+    requiredEvidence: ["integration"],
+    evidence: {
+      identity:
+        "rs-ab-signals.test.ts: canonical id, alias, title, tier/category/kind, empty input contract, semantic cacheVersion, pack registration, registry alias lookup, config-cache hash sensitivity, and default config decoding are asserted.",
+      config:
+        "rs-ab-signals.test.ts: exclude_globs, max_chain_depth, and top_n_diagnostics decode through the real schema; fractional and NaN threshold/cap values are normalized through compute output.",
+      positiveFixture:
+        "rs-ab-signals.test.ts: temporary Cargo fixtures run through RustProjectLayer and real Rust parsing to prove dyn-return function discovery, local call-chain depth, scoped crate/self/super/relative calls, generic function calls, self method calls with impl-owner context, duplicate same-name functions, composite cfg test gates, and recursive-cycle bounding.",
+      negativeFixture:
+        "rs-ab-signals.test.ts: missing Rust source, no dyn-return functions, fully excluded Rust source, composite cfg test-gated dyn functions, and unresolved arbitrary receiver calls return neutral output without false trait-object depth pressure.",
+      applicability:
+        "rs-ab-signals.test.ts: loaded Rust source with dyn-return function evidence is applicable, no Rust source emits insufficient_evidence metadata, and loaded source with no dyn-return functions or no analyzed source emits not_applicable metadata.",
+      score:
+        "rs-ab-signals.test.ts: over-threshold chain fixtures score below clean/no-evidence fixtures, stricter max_chain_depth lowers scores, and recursive cycles are bounded to finite unique path length rather than inflated by cycle-back edges.",
+      diagnostics:
+        "rs-ab-signals.test.ts: diagnostics assert severity, source locations, deterministic depth ordering, function/module/return/callee payloads, no-source warning payloads, and normalized diagnostic caps.",
+      factorLedger:
+        "rs-ab-signals.test.ts: registered RS pack signal emits config.exclude_globs as score-affecting evidence, config.max_chain_depth as a score-bearing threshold, and config.top_n_diagnostics as non-score-bearing metadata with signal-default source.",
+      cacheSemantics:
+        "rs-ab-signals.test.ts and pack.test.ts: RS-AB-02 declares trait-object-depth-config-applicability-diagnostics-scoped-calls-cfg-test-gating-cycles-v4 cacheVersion, config/cacheVersion changes alter the signal config hash, and the RS pack wrapper preserves the signal-specific cacheVersion.",
+      integration:
+        "observer-integration.test.ts and CLI score tests: Rust observer integration includes RS-AB-02 in the abstraction-bloat category, while CLI single-signal mode executes RS-AB-02 against a repository substrate with Rust source parsed from disk.",
+    },
+  },
   pendingSignalContract("RS-AB-03-generic-proliferation"),
   pendingSignalContract("RS-AB-04-derive-density"),
   pendingSignalContract("RS-LD-01-unsafe-code"),
