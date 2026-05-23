@@ -1222,6 +1222,14 @@ describe("RS-AB-* signals", () => {
         ["process", 3],
         ["Pair", 2],
       ])
+      expect(out.declarations.find((entry) => entry.declarationName === "Pair")).toMatchObject({
+        whereClausePredicates: 0,
+        complexity: 2,
+      })
+      expect(out.declarations.find((entry) => entry.declarationName === "process")).toMatchObject({
+        whereClausePredicates: 3,
+        complexity: 9,
+      })
       expect(out.parameterDistribution.max).toBeGreaterThanOrEqual(3)
       expect(out.overThreshold.some((entry) => entry.declarationName === "process")).toBe(true)
       expect(out.maxGenericParameters).toBe(2)
@@ -1236,6 +1244,9 @@ describe("RS-AB-* signals", () => {
           data: {
             module: "generic-fixture::crate",
             paramCount: 3,
+            whereClausePredicates: 3,
+            boundCount: 3,
+            complexity: 9,
             analysisMode: "ast-parameter-and-where-clause-counts",
           },
         },
@@ -1362,6 +1373,52 @@ describe("RS-AB-* signals", () => {
       await cleanupWorkspace(missing)
       await cleanupWorkspace(noGeneric)
       await cleanupWorkspace(excluded)
+    }
+  })
+
+  test("RS-AB-03 counts lifetime, const, trait, type, and impl generics", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-ab03-shapes-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "generic-shapes"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub struct Pair<'a, T, const N: usize>(pub &'a [T; N]);",
+        "pub enum Choice<T, E> { Ok(T), Err(E) }",
+        "pub trait Service<'a, T> { fn handle(&self, value: &'a T); }",
+        "pub type Alias<T> = Vec<T>;",
+        "impl<'a, T, const N: usize> Pair<'a, T, N>",
+        "where",
+        "    T: Clone,",
+        "{",
+        "    pub fn new(value: &'a [T; N]) -> Self { Self(value) }",
+        "}",
+        "#[cfg(any(test, feature = \"probe\"))]",
+        "pub struct TestOnly<T, U, V>(pub T, pub U, pub V);",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const out = await runSignalCompute(RsAb03, repo, RsAb03.defaultConfig)
+      const byName = new Map(out.declarations.map((entry) => [entry.declarationName, entry]))
+      const implEntry = out.declarations.find((entry) => entry.declarationName.startsWith("impl "))
+
+      expect(byName.get("Pair")?.paramCount).toBe(3)
+      expect(byName.get("Pair")?.whereClausePredicates).toBe(0)
+      expect(byName.get("Pair")?.complexity).toBe(3)
+      expect(byName.get("Choice")?.paramCount).toBe(2)
+      expect(byName.get("Service")?.paramCount).toBe(2)
+      expect(byName.get("Alias")?.paramCount).toBe(1)
+      expect(implEntry?.paramCount).toBe(3)
+      expect(implEntry?.whereClausePredicates).toBe(1)
+      expect(implEntry?.complexity).toBe(5)
+      expect(out.declarations.some((entry) => entry.declarationName === "TestOnly")).toBe(false)
+    } finally {
+      await cleanupWorkspace(repo)
     }
   })
 

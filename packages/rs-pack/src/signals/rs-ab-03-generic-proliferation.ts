@@ -119,7 +119,7 @@ export const RsAb03: Signal<RsAb03Config, RsAb03Output, RustProjectTag> = {
                 ["type_parameter", "lifetime_parameter", "const_parameter"].includes(child.type),
               ).length
               if (paramCount === 0) return
-              const whereClausePredicates = namedChildrenOf(whereClause ?? node).length
+              const whereClausePredicates = whereClause === undefined ? 0 : namedChildrenOf(whereClause).length
               const boundCount = countNamedDescendants(typeParameters, "trait_bounds") + countNamedDescendants(whereClause, "trait_bounds")
               const { modulePath } = modulePathForAncestors(scope, ancestors)
               declarations.push({
