@@ -25,6 +25,7 @@ interface TsAb01Output {
   readonly largestSurface:
     | { readonly file: string; readonly total: number }
     | undefined
+  readonly diagnosticLimit: number
   /**
    * The threshold used at compute time. Captured in output so the
    * pure `score` function can apply the log-scale penalty without
@@ -59,6 +60,7 @@ export const TsAb01: Signal<TsAb01Config, TsAb01Output, TsProjectTag> = {
   tier: 1,
   category: "abstraction-bloat",
   kind: "legibility",
+  cacheVersion: "diagnostic-limit-v1",
   configSchema: TsAb01Config,
   defaultConfig: {
     public_export_globs: ["**/src/index.ts", "**/index.ts"],
@@ -128,6 +130,7 @@ export const TsAb01: Signal<TsAb01Config, TsAb01Output, TsProjectTag> = {
             byFile: surfaces.byFile,
             totalPublicExports: surfaces.totalPublicExports,
             largestSurface: surfaces.largestSurface,
+            diagnosticLimit: normalizeDiagnosticLimit(config.top_n_diagnostics),
             surfaceThreshold: config.surface_threshold,
           }
         },
@@ -142,4 +145,9 @@ export const TsAb01: Signal<TsAb01Config, TsAb01Output, TsProjectTag> = {
     }),
   score: scorePublicExportSurface,
   diagnose: diagnosePublicExportSurface,
+}
+
+const normalizeDiagnosticLimit = (value: number): number => {
+  if (!Number.isFinite(value)) return 0
+  return Math.max(0, Math.floor(value))
 }

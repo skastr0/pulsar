@@ -3,6 +3,7 @@ import { exportKindWeight, type FileSurface } from "./ts-ab-01-export-collection
 
 interface PublicExportDiagnosticsOutput {
   readonly byFile: ReadonlyMap<string, FileSurface>
+  readonly diagnosticLimit: number
   readonly surfaceThreshold: number
 }
 
@@ -11,7 +12,7 @@ export const diagnosePublicExportSurface = (
 ): ReadonlyArray<Diagnostic> => {
   const entries = [...out.byFile.entries()]
     .sort((a, b) => b[1].total - a[1].total)
-    .slice(0, 5)
+    .slice(0, out.diagnosticLimit)
   return entries.map(([file, surface]) => ({
     severity: surface.weightedTotal > out.surfaceThreshold ? ("warn" as const) : ("info" as const),
     message:
