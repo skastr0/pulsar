@@ -1,5 +1,8 @@
+import { buildRegistry, computeConfigHash } from "@skastr0/pulsar-core/scoring"
+import { SHARED_SIGNALS } from "@skastr0/pulsar-shared-signals"
 import { describe, expect, test } from "bun:test"
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
+import { RS_PACK_SIGNALS } from "../pack.js"
 import { makeRustProject } from "../project.js"
 import { RsAb01 } from "../signals/rs-ab-01-unused-pub.js"
 import { RsAb02 } from "../signals/rs-ab-02-trait-object-depth.js"
@@ -13,6 +16,74 @@ import {
 } from "./helpers.js"
 
 describe("RS-AB-* signals", () => {
+  test("RS-AB-01 declares identity, config, cache, pack registration, and factor ledger", async () => {
+    const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
+    const versionedRegistry = await Effect.runPromise(
+      buildRegistry([
+        ...SHARED_SIGNALS,
+        ...RS_PACK_SIGNALS.filter((signal) => signal.id !== RsAb01.id),
+        { ...RsAb01, cacheVersion: `${RsAb01.cacheVersion}-next` },
+      ]),
+    )
+    const registered = registry.byId.get("RS-AB-01")
+    const decoded = Schema.decodeUnknownSync(RsAb01.configSchema)(RsAb01.defaultConfig)
+    const factorLedger = registered?.factorLedger?.({})
+    const baseCacheHash = computeConfigHash(RsAb01.id, registry, undefined)
+    const versionedCacheHash = computeConfigHash(RsAb01.id, versionedRegistry, undefined)
+    const configuredCacheHash = computeConfigHash(RsAb01.id, registry, {
+      id: "rs-ab-01-contract",
+      domain: "test",
+      signal_overrides: {
+        [RsAb01.id]: {
+          config: {
+            ...RsAb01.defaultConfig,
+            top_n_diagnostics: 3,
+          },
+        },
+      },
+    })
+
+    expect(RsAb01).toMatchObject({
+      id: "RS-AB-01-unused-public-items",
+      aliases: ["RS-AB-01"],
+      title: "Unused public items",
+      tier: 1,
+      category: "abstraction-bloat",
+      kind: "structural",
+      cacheVersion: "rs-ab-01-public-surface-use-segments-aliases-diagnostics-reexports-private-visibility-chain-metadata-applicability-v10",
+      inputs: [],
+    })
+    expect(decoded).toEqual({
+      exclude_globs: ["**/target/**", "**/tests/**", "**/examples/**", "**/benches/**"],
+      top_n_diagnostics: 20,
+    })
+    expect(registered?.id).toBe(RsAb01.id)
+    expect(registered?.cacheVersion).toBe(RsAb01.cacheVersion)
+    expect(registry.byId.get("RS-AB-01")?.id).toBe(RsAb01.id)
+    expect(baseCacheHash).not.toBe(versionedCacheHash)
+    expect(baseCacheHash).not.toBe(configuredCacheHash)
+    expect(factorLedger?.entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: "config.exclude_globs", source: "signal-default" }),
+        expect.objectContaining({ path: "config.top_n_diagnostics", source: "signal-default" }),
+      ]),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.exclude_globs",
+        affectsScore: true,
+        scoreRole: "evidence",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        affectsScore: false,
+        scoreRole: "metadata",
+      }),
+    )
+  })
+
   test("RS-AB-01 distinguishes exported API from internal over-public items", async () => {
     const repo = await createRustWorkspace("pulsar-rs-ab01-", {
       "Cargo.toml": [
@@ -86,6 +157,7 @@ describe("RS-AB-* signals", () => {
       expect(out.deadPublicItems.find((item) => item.name === "Hidden")?.surface).toBe(
         "internal-overpublic",
       )
+      expect(out.deadPublicItems.map((item) => item.name)).toEqual(["Hidden"])
       expect(out.deadPublicItems.some((item) => item.name === "PublicApi")).toBe(false)
       expect(out.deadPublicItems.some((item) => item.name === "ExternalApi")).toBe(false)
       expect(out.deadPublicItems.some((item) => item.name === "ReExported")).toBe(false)
@@ -97,6 +169,25 @@ describe("RS-AB-* signals", () => {
       expect(out.exportedApiItems.find((item) => item.name === "ReExported")?.reexported).toBe(true)
       expect(out.nonLibraryPublicItems.some((item) => item.name === "binary_helper")).toBe(true)
       expect(out.nonLibraryPublicItems.some((item) => item.name === "CliOnly")).toBe(true)
+      expect(RsAb01.outputMetadata?.(out)).toBeUndefined()
+      expect(RsAb01.score(out)).toBeGreaterThan(0)
+      expect(RsAb01.score(out)).toBeLessThan(1)
+
+      const diagnostics = RsAb01.diagnose(out)
+      expect(diagnostics).toHaveLength(1)
+      expect(diagnostics[0]).toMatchObject({
+        severity: "warn",
+        message: "Public struct Hidden is not referenced from other workspace crates",
+        data: {
+          name: "Hidden",
+          kind: "struct",
+          surface: "internal-overpublic",
+          reexported: false,
+          crossCrateUses: 0,
+          analysisMode: "explicit-use-and-reexport-resolution",
+        },
+      })
+      expect(typeof diagnostics[0]?.data?.hash).toBe("string")
     } finally {
       await cleanupWorkspace(repo)
     }
@@ -372,6 +463,165 @@ describe("RS-AB-* signals", () => {
       ])
     } finally {
       await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-AB-01 keeps clean, missing, no-public, and excluded source evidence honest", async () => {
+    const clean = await createRustWorkspace("pulsar-rs-ab01-clean-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "clean-public"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub struct Api;",
+        "mod internal {",
+        "    struct PrivateOnly;",
+        "}",
+        "",
+      ].join("\n"),
+    })
+    const missing = await createRustWorkspace("pulsar-rs-ab01-missing-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "missing-source"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+    })
+    const privateOnly = await createRustWorkspace("pulsar-rs-ab01-private-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "private-only"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "mod internal {",
+        "    struct PrivateOnly;",
+        "}",
+        "",
+      ].join("\n"),
+    })
+    const excluded = await createRustWorkspace("pulsar-rs-ab01-excluded-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "excluded-public"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "mod internal {",
+        "    pub struct Hidden;",
+        "}",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const cleanOut = await runSignalCompute(RsAb01, clean, RsAb01.defaultConfig)
+      const missingOut = await runSignalCompute(RsAb01, missing, RsAb01.defaultConfig)
+      const privateOut = await runSignalCompute(RsAb01, privateOnly, RsAb01.defaultConfig)
+      const excludedOut = await runSignalCompute(
+        RsAb01,
+        excluded,
+        { ...RsAb01.defaultConfig, exclude_globs: ["**/*.rs"] },
+      )
+
+      expect(cleanOut.deadPublicItems).toEqual([])
+      expect(RsAb01.score(cleanOut)).toBe(1)
+      expect(RsAb01.diagnose(cleanOut)).toEqual([])
+      expect(RsAb01.outputMetadata?.(cleanOut)).toBeUndefined()
+
+      expect(missingOut.sourceFileCount).toBe(0)
+      expect(RsAb01.outputMetadata?.(missingOut)).toEqual({
+        applicability: "insufficient_evidence",
+      })
+      expect(RsAb01.score(missingOut)).toBe(1)
+      expect(RsAb01.diagnose(missingOut)).toEqual([
+        expect.objectContaining({
+          severity: "warn",
+          message: "RS-AB-01 found no Rust source files for public item analysis",
+        }),
+      ])
+
+      expect(privateOut.publicItemCount).toBe(0)
+      expect(RsAb01.outputMetadata?.(privateOut)).toEqual({
+        applicability: "not_applicable",
+      })
+      expect(RsAb01.diagnose(privateOut)).toEqual([])
+
+      expect(excludedOut.analyzedSourceFileCount).toBe(0)
+      expect(excludedOut.publicItemCount).toBe(0)
+      expect(RsAb01.outputMetadata?.(excludedOut)).toEqual({
+        applicability: "not_applicable",
+      })
+      expect(RsAb01.diagnose(excludedOut)).toEqual([])
+    } finally {
+      await cleanupWorkspace(clean)
+      await cleanupWorkspace(missing)
+      await cleanupWorkspace(privateOnly)
+      await cleanupWorkspace(excluded)
+    }
+  })
+
+  test("RS-AB-01 scores additional dead public items as higher pressure", async () => {
+    const lowPressure = await createRustWorkspace("pulsar-rs-ab01-low-pressure-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "low-pressure"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub struct ApiOne;",
+        "pub struct ApiTwo;",
+        "pub struct ApiThree;",
+        "mod internal {",
+        "    pub struct DeadOne;",
+        "}",
+        "",
+      ].join("\n"),
+    })
+    const highPressure = await createRustWorkspace("pulsar-rs-ab01-high-pressure-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "high-pressure"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub struct ApiOne;",
+        "pub struct ApiTwo;",
+        "mod internal {",
+        "    pub struct DeadOne;",
+        "    pub struct DeadTwo;",
+        "}",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const low = await runSignalCompute(RsAb01, lowPressure, RsAb01.defaultConfig)
+      const high = await runSignalCompute(RsAb01, highPressure, RsAb01.defaultConfig)
+
+      expect(low.publicItemCount).toBe(4)
+      expect(high.publicItemCount).toBe(4)
+      expect(low.deadPublicItems).toHaveLength(1)
+      expect(high.deadPublicItems).toHaveLength(2)
+      expect(RsAb01.score(low)).toBeCloseTo(0.75)
+      expect(RsAb01.score(high)).toBeCloseTo(0.5)
+      expect(RsAb01.score(high)).toBeLessThan(RsAb01.score(low))
+    } finally {
+      await cleanupWorkspace(lowPressure)
+      await cleanupWorkspace(highPressure)
     }
   })
 

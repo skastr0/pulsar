@@ -3,6 +3,7 @@ import {
   makeFactorLedger,
   type SignalFactorLedger,
 } from "@skastr0/pulsar-core/factors"
+import { computeDiagnosticHash } from "@skastr0/pulsar-core/reference-data"
 import {
   type Diagnostic,
   scoreThresholdViolationShare,
@@ -53,6 +54,8 @@ interface RsAb01Output {
   readonly exportedApiItems: ReadonlyArray<UnusedPublicItem>
   readonly nonLibraryPublicItems: ReadonlyArray<UnusedPublicItem>
   readonly publicItemCount: number
+  readonly sourceFileCount: number
+  readonly analyzedSourceFileCount: number
   readonly cargoMetadataStatus: "loaded" | "missing"
   readonly diagnosticLimit: number
   readonly analysisMode: "explicit-use-and-reexport-resolution"
@@ -84,7 +87,7 @@ export const RsAb01: Signal<RsAb01Config, RsAb01Output, RustProjectTag> = {
   tier: 1,
   category: "abstraction-bloat",
   kind: "structural",
-  cacheVersion: "rs-ab-01-public-surface-use-segments-aliases-diagnostics-reexports-private-visibility-chain-metadata-v9",
+  cacheVersion: "rs-ab-01-public-surface-use-segments-aliases-diagnostics-reexports-private-visibility-chain-metadata-applicability-v10",
   configSchema: RsAb01Config,
   factorDefinitions: RsAb01FactorDefinitions,
   defaultConfig: {
@@ -106,35 +109,58 @@ export const RsAb01: Signal<RsAb01Config, RsAb01Output, RustProjectTag> = {
     return scoreThresholdViolationShare(out.publicItemCount, out.deadPublicItems.length)
   },
   diagnose: (out): ReadonlyArray<Diagnostic> => {
+    if (out.sourceFileCount === 0) {
+      return [{
+        severity: "warn" as const,
+        message: "RS-AB-01 found no Rust source files for public item analysis",
+        data: {
+          sourceFileCount: out.sourceFileCount,
+          analyzedSourceFileCount: out.analyzedSourceFileCount,
+          publicItemCount: out.publicItemCount,
+          analysisMode: out.analysisMode,
+        },
+      }].slice(0, out.diagnosticLimit)
+    }
     if (out.cargoMetadataStatus === "missing" && out.publicItemCount > 0) {
       return [{
-          severity: "warn" as const,
-          message: "RS-AB-01 could not load cargo metadata for public item surface analysis",
-          data: {
-            cargoMetadataStatus: out.cargoMetadataStatus,
-            publicItemCount: out.publicItemCount,
-            analysisMode: out.analysisMode,
-          },
-        }].slice(0, out.diagnosticLimit)
+        severity: "warn" as const,
+        message: "RS-AB-01 could not load cargo metadata for public item surface analysis",
+        data: {
+          cargoMetadataStatus: out.cargoMetadataStatus,
+          publicItemCount: out.publicItemCount,
+          analysisMode: out.analysisMode,
+        },
+      }].slice(0, out.diagnosticLimit)
     }
     return out.deadPublicItems.slice(0, out.diagnosticLimit).map((item) => ({
       severity: "warn" as const,
       message: `Public ${item.kind} ${item.name} is not referenced from other workspace crates`,
       location: { file: item.file, line: item.line },
       data: {
+        hash: hashUnusedPublicItem(item),
         crate: item.crate,
         module: item.module,
         name: item.name,
         kind: item.kind,
         surface: item.surface,
+        reexported: item.reexported,
+        crossCrateUses: item.crossCrateUses,
         analysisMode: out.analysisMode,
       },
     }))
   },
-  outputMetadata: (out) =>
-    out.cargoMetadataStatus === "missing" && out.publicItemCount > 0
-      ? { applicability: "insufficient_evidence" as const }
-      : undefined,
+  outputMetadata: (out) => {
+    if (out.sourceFileCount === 0) {
+      return { applicability: "insufficient_evidence" as const }
+    }
+    if (out.cargoMetadataStatus === "missing" && out.publicItemCount > 0) {
+      return { applicability: "insufficient_evidence" as const }
+    }
+    if (out.analyzedSourceFileCount === 0 || out.publicItemCount === 0) {
+      return { applicability: "not_applicable" as const }
+    }
+    return undefined
+  },
   factorLedger: () => makeRsAb01FactorLedger(),
 }
 
@@ -162,6 +188,9 @@ const computeUnusedPublicItems = async (
   config: NormalizedRsAb01Config,
 ): Promise<RsAb01Output> => {
   const facts = await collectRustProjectFacts(project)
+  const analyzedSourceFiles = project.sourceFiles.filter(
+    (file) => !isExcluded(file, config.exclude_globs),
+  )
   const workspaceCrates = collectWorkspaceCrates(project)
   const libraryCrates = collectLibraryCrates(project, workspaceCrates)
   const crateIndex = buildCrateIdentifierIndex(project.manifests, project.cargoMetadata)
@@ -201,6 +230,8 @@ const computeUnusedPublicItems = async (
       publicSummaries.filter((item) => item.surface === "non-library"),
     ),
     publicItemCount: publicItems.length,
+    sourceFileCount: project.sourceFiles.length,
+    analyzedSourceFileCount: analyzedSourceFiles.length,
     cargoMetadataStatus: project.cargoMetadata === undefined ? "missing" : "loaded",
     diagnosticLimit: config.top_n_diagnostics,
     analysisMode: "explicit-use-and-reexport-resolution",
@@ -409,6 +440,17 @@ const summarizePublicItems = (input: {
 
 const publicItemKey = (item: { readonly modulePath: string; readonly name: string }): string =>
   `${item.modulePath}::${item.name}`
+
+const hashUnusedPublicItem = (item: UnusedPublicItem): string =>
+  computeDiagnosticHash(
+    [
+      item.crate,
+      item.module,
+      item.name,
+      item.kind,
+      String(item.line),
+    ].join("|"),
+  )
 
 const sortByLocation = (
   items: ReadonlyArray<UnusedPublicItem>,

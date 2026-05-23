@@ -12,6 +12,7 @@ import { Effect, Layer } from "effect"
 import { SHARED_SIGNALS } from "@skastr0/pulsar-shared-signals"
 import { RS_PACK_SIGNALS } from "../pack.js"
 import { RustProjectLayer } from "../project.js"
+import { RsAb01 } from "../signals/rs-ab-01-unused-pub.js"
 import { RsDe04 } from "../signals/rs-de-04-fan-in-fan-out.js"
 import { cleanupWorkspace, createRustWorkspace, referenceLayer } from "./helpers.js"
 
@@ -96,6 +97,57 @@ describe("rs-pack integration", () => {
       expect(result.categories["review-pain"].signalCount).toBe(11)
       expect(result.categories["legibility-decay"].score).toBeLessThan(1)
       expect(result.minimum?.signal).toBeDefined()
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  }, 120_000)
+
+  test("observer path carries RS-AB-01 unused public item score and diagnostics", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-observer-ab01-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "unused-observer"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub struct Api;",
+        "mod internal {",
+        "    pub struct Hidden;",
+        "}",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
+      const EnvLayer = Layer.mergeAll(
+        Layer.succeed(SignalContextTag, {
+          gitSha: "HEAD",
+          worktreePath: repo,
+          changedHunks: [],
+        }),
+        referenceLayer(),
+        InMemoryCacheLayer,
+        RustProjectLayer(repo),
+      )
+
+      const result = await Effect.runPromise(
+        Effect.provide(observe(registry, undefined), EnvLayer) as Effect.Effect<
+          ObserverOutput,
+          never,
+          never
+        >,
+      )
+      const unusedPublic = result.signalResults.get(RsAb01.id)
+
+      expect(result.categories["abstraction-bloat"].signals[RsAb01.id]).toBeCloseTo(0.5)
+      expect(unusedPublic?.score).toBeCloseTo(0.5)
+      expect(unusedPublic?.diagnostics[0]).toMatchObject({
+        severity: "warn",
+        message: "Public struct Hidden is not referenced from other workspace crates",
+      })
     } finally {
       await cleanupWorkspace(repo)
     }

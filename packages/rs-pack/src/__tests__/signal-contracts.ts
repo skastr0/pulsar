@@ -192,7 +192,33 @@ export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "observer-integration.test.ts and CLI score tests: Rust observer integration includes dependency-entropy Rust signals in the RS pack, while CLI single-signal mode executes RS-DE-04 against a repository substrate with Rust source parsed from disk.",
     },
   },
-  pendingSignalContract("RS-AB-01-unused-public-items"),
+  {
+    id: "RS-AB-01-unused-public-items",
+    status: "verified",
+    requiredEvidence: ["integration"],
+    evidence: {
+      identity:
+        "rs-ab-signals.test.ts: canonical id, alias, title, tier/category/kind, empty input contract, semantic cacheVersion, pack registration, registry alias lookup, config-cache hash sensitivity, and default config decoding are asserted.",
+      config:
+        "rs-ab-signals.test.ts: exclude_globs and top_n_diagnostics decode through the real schema and fractional plus NaN diagnostic caps are normalized through compute output.",
+      positiveFixture:
+        "rs-ab-signals.test.ts: temporary Cargo workspace fixtures run through RustProjectLayer and real Rust source parsing to prove internal over-public items, exported root API, non-library public items, cross-crate public usage, dependency aliases, hyphenated crate identifiers, direct pub reexports, wildcard pub reexports, private reexports, and full public module-chain classification.",
+      negativeFixture:
+        "rs-ab-signals.test.ts: clean exported API, missing Rust source, private-only crates, and fully excluded Rust source return neutral output without false unused-public pressure.",
+      applicability:
+        "rs-ab-signals.test.ts: loaded Rust source with public item evidence is applicable, no Rust source and missing cargo metadata emit insufficient_evidence metadata, and loaded source with no public items or no analyzed source emits not_applicable metadata.",
+      score:
+        "rs-ab-signals.test.ts: unused-public fixtures score below clean fixtures, missing/no-public/excluded evidence stays score-neutral through applicability metadata, and additional dead public items at fixed public item count lower scores monotonically.",
+      diagnostics:
+        "rs-ab-signals.test.ts: diagnostics assert severity, source locations, deterministic location ordering, stable hash payloads, item/surface/reexport/cross-crate payloads, no-source and missing-metadata warning payloads, and normalized diagnostic caps.",
+      factorLedger:
+        "rs-ab-signals.test.ts: registered RS pack signal emits config.exclude_globs as score-affecting evidence and config.top_n_diagnostics as non-score-bearing metadata with signal-default source.",
+      cacheSemantics:
+        "rs-ab-signals.test.ts and pack.test.ts: RS-AB-01 declares rs-ab-01-public-surface-use-segments-aliases-diagnostics-reexports-private-visibility-chain-metadata-applicability-v10 cacheVersion, config/cacheVersion changes alter the signal config hash, and the RS pack wrapper preserves the signal-specific cacheVersion.",
+      integration:
+        "observer-integration.test.ts and CLI score tests: Rust observer integration includes RS-AB-01 in the abstraction-bloat category, while CLI single-signal mode executes RS-AB-01 against a repository substrate with Rust source parsed from disk.",
+    },
+  },
   pendingSignalContract("RS-AB-02-trait-object-depth"),
   pendingSignalContract("RS-AB-03-generic-proliferation"),
   pendingSignalContract("RS-AB-04-derive-density"),

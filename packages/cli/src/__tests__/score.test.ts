@@ -1382,6 +1382,43 @@ export function stubF() { throw new Error("Not implemented") }
     }
   }, 120_000)
 
+  test("single-signal CLI wrapper executes RS-AB-01 with Rust source", async () => {
+    const repoPath = await initRepo([
+      {
+        path: "Cargo.toml",
+        content: [
+          "[package]",
+          'name = "ab-cli"',
+          'version = "0.1.0"',
+          'edition = "2021"',
+          "",
+        ].join("\n"),
+      },
+      {
+        path: "src/lib.rs",
+        content: [
+          "pub struct Api;",
+          "mod internal {",
+          "    pub struct Hidden;",
+          "}",
+          "",
+        ].join("\n"),
+      },
+    ])
+    try {
+      const out = runCli(repoPath, ["score", "--signal", "RS-AB-01", "."])
+      expect(out.status).toBe(0)
+      expect(out.stdout).toContain("Signal: RS-AB-01-unused-public-items")
+      expect(out.stdout).toContain("WARN  Public struct Hidden is not referenced from other workspace crates")
+      expect(out.stdout).toContain("Score:  0.500")
+      expect(out.stdout).toContain("Factor Audit (1 score-bearing)")
+      expect(out.stdout).toContain("config.exclude_globs=")
+      expect(out.stdout).not.toContain("config.top_n_diagnostics=20 threshold")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
   test("single-signal CLI wrapper executes RS-DE-02 with Cargo.lock", async () => {
     const repoPath = await initRepo([
       {
