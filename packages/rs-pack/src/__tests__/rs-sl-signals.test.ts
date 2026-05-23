@@ -888,6 +888,68 @@ describe("RS-SL-* signals", () => {
     expect(expired).toBe(0)
   })
 
+  test("RS-SL-03 declares identity, config, cache, pack registration, and factor ledger", async () => {
+    const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
+    const versionedRegistry = await Effect.runPromise(
+      buildRegistry([
+        ...SHARED_SIGNALS,
+        ...RS_PACK_SIGNALS.filter((signal) => signal.id !== RsSl03.id),
+        { ...RsSl03, cacheVersion: `${RsSl03.cacheVersion}-next` },
+      ]),
+    )
+    const registered = registry.byId.get("RS-SL-03")
+    const decoded = Schema.decodeUnknownSync(RsSl03.configSchema)(RsSl03.defaultConfig)
+    const factorLedger = registered?.factorLedger?.({})
+    const baseCacheHash = computeConfigHash(RsSl03.id, registry, undefined)
+    const versionedCacheHash = computeConfigHash(RsSl03.id, versionedRegistry, undefined)
+    const configuredCacheHash = computeConfigHash(RsSl03.id, registry, {
+      id: "rs-sl-03-contract",
+      domain: "test",
+      signal_overrides: {
+        [RsSl03.id]: {
+          config: {
+            ...RsSl03.defaultConfig,
+            top_n_diagnostics: 1,
+          },
+        },
+      },
+    })
+
+    expect(RsSl03).toMatchObject({
+      id: "RS-SL-03-unwrap-expect",
+      aliases: ["RS-SL-03"],
+      title: "Unwrap/expect usage",
+      tier: 1,
+      category: "generated-slop",
+      kind: "legibility",
+      cacheVersion: "advisory-density-scaled-cfg-test-gating-diagnostics-v3",
+      inputs: [],
+    })
+    expect(decoded).toEqual({
+      exclude_globs: ["**/target/**", "**/tests/**", "**/examples/**", "**/benches/**"],
+      top_n_diagnostics: 10,
+    })
+    expect(registered?.id).toBe(RsSl03.id)
+    expect(registered?.cacheVersion).toBe(RsSl03.cacheVersion)
+    expect(registry.byId.get("RS-SL-03")?.id).toBe(RsSl03.id)
+    expect(baseCacheHash).not.toBe(versionedCacheHash)
+    expect(baseCacheHash).not.toBe(configuredCacheHash)
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.exclude_globs",
+        affectsScore: true,
+        scoreRole: "evidence",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        affectsScore: false,
+        scoreRole: "metadata",
+      }),
+    )
+  })
+
   test("RS-SL-03 excludes unwrap/expect inside cfg(test) blocks", async () => {
     const repo = await createRustWorkspace("pulsar-rs-sl03-", {
       "Cargo.toml": [
@@ -913,22 +975,129 @@ describe("RS-SL-* signals", () => {
       const out = await runSignalCompute(RsSl03, repo, RsSl03.defaultConfig)
       expect(out.totalCalls).toBe(1)
       expect(out.modules[0]?.unwrapExpectCalls).toBe(1)
+      expect(out.sourceFileCount).toBe(1)
+      expect(out.analyzedSourceFileCount).toBe(1)
+      expect(out.scoreMode).toBe("bounded-unwrap-expect-density")
+      expect(out.scoreDenominator).toBe("analyzed-functions-per-module")
+      expect(RsSl03.outputMetadata?.(out)).toBeUndefined()
     } finally {
       await cleanupWorkspace(repo)
     }
   })
 
+  test("RS-SL-03 normalizes diagnostics and applicability evidence", async () => {
+    const risky = await createRustWorkspace("pulsar-rs-sl03-diagnostics-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "panic-diagnostics"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub fn first(value: Option<u32>) -> u32 { value.unwrap() }",
+        "pub fn second(value: Option<u32>) -> u32 { value.expect(\"ready\") }",
+        "",
+      ].join("\n"),
+    })
+    const noSource = await createRustWorkspace("pulsar-rs-sl03-empty-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "panic-empty"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+    })
+    const excluded = await createRustWorkspace("pulsar-rs-sl03-excluded-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "panic-excluded"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": "pub fn hidden(value: Option<u32>) -> u32 { value.unwrap() }\n",
+    })
+    const noFunctions = await createRustWorkspace("pulsar-rs-sl03-no-functions-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "panic-no-functions"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": "pub const READY: bool = true;\n",
+    })
+
+    try {
+      const out = await runSignalCompute(RsSl03, risky, {
+        ...RsSl03.defaultConfig,
+        top_n_diagnostics: 1.8,
+      })
+      const hiddenOut = await runSignalCompute(RsSl03, risky, {
+        ...RsSl03.defaultConfig,
+        top_n_diagnostics: Number.NaN,
+      })
+      const noSourceOut = await runSignalCompute(RsSl03, noSource, RsSl03.defaultConfig)
+      const excludedOut = await runSignalCompute(RsSl03, excluded, {
+        ...RsSl03.defaultConfig,
+        exclude_globs: ["**/src/**"],
+      })
+      const noFunctionsOut = await runSignalCompute(RsSl03, noFunctions, RsSl03.defaultConfig)
+      const diagnostics = RsSl03.diagnose(out)
+
+      expect(out.analyzedFunctionCount).toBe(2)
+      expect(out.diagnosticLimit).toBe(1)
+      expect(diagnostics).toHaveLength(1)
+      expect(diagnostics[0]).toMatchObject({
+        severity: "warn",
+        message: "panic-diagnostics::crate contains 2 unwrap/expect call sites",
+        data: expect.objectContaining({
+          unwrapExpectCalls: 2,
+          density: 1,
+          analysisMode: "call-expression-field-scan",
+          scoreMode: "bounded-unwrap-expect-density",
+          scoreDenominator: "analyzed-functions-per-module",
+        }),
+      })
+      expect(hiddenOut.diagnosticLimit).toBe(0)
+      expect(RsSl03.diagnose(hiddenOut)).toEqual([])
+      expect(noSourceOut.sourceFileCount).toBe(0)
+      expect(RsSl03.outputMetadata?.(noSourceOut)).toEqual({
+        applicability: "insufficient_evidence",
+      })
+      expect(RsSl03.diagnose(noSourceOut)[0]).toMatchObject({
+        severity: "warn",
+        message: "RS-SL-03 found no Rust source files for unwrap/expect analysis",
+      })
+      expect(excludedOut.sourceFileCount).toBe(1)
+      expect(excludedOut.analyzedSourceFileCount).toBe(0)
+      expect(RsSl03.outputMetadata?.(excludedOut)).toEqual({
+        applicability: "not_applicable",
+      })
+      expect(noFunctionsOut.sourceFileCount).toBe(1)
+      expect(noFunctionsOut.analyzedFunctionCount).toBe(0)
+      expect(RsSl03.outputMetadata?.(noFunctionsOut)).toEqual({
+        applicability: "not_applicable",
+      })
+    } finally {
+      await cleanupWorkspace(risky)
+      await cleanupWorkspace(noSource)
+      await cleanupWorkspace(excluded)
+      await cleanupWorkspace(noFunctions)
+    }
+  })
+
   test("RS-SL-03 scales repo-wide unwrap pressure without automatic zero score", () => {
-    const score = RsSl03.score({
+    const score = RsSl03.score(rsSl03Output({
       modules: Array.from({ length: 10 }, (_, index) => ({
         module: `crate::module_${index}`,
         file: "src/lib.rs",
         unwrapExpectCalls: 5,
         density: 0.5,
       })),
-      totalCalls: 50,
-      analysisMode: "call-expression-field-scan",
-    })
+    }))
 
     expect(score).toBeGreaterThan(0.7)
   })
@@ -1026,4 +1195,20 @@ const rsSl02Output = (
   diagnosticLimit: 20,
   scoreMode: "governed-allow-debt",
   scoreDenominator: "governed-allow-attributes",
+})
+
+const rsSl03Output = ({
+  modules,
+}: {
+  readonly modules: ReadonlyArray<Parameters<typeof RsSl03.score>[0]["modules"][number]>
+}): Parameters<typeof RsSl03.score>[0] => ({
+  modules,
+  totalCalls: modules.reduce((sum, module) => sum + module.unwrapExpectCalls, 0),
+  analysisMode: "call-expression-field-scan",
+  sourceFileCount: 1,
+  analyzedSourceFileCount: 1,
+  analyzedFunctionCount: modules.length,
+  diagnosticLimit: 10,
+  scoreMode: "bounded-unwrap-expect-density",
+  scoreDenominator: "analyzed-functions-per-module",
 })

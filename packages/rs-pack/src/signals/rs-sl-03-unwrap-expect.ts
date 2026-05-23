@@ -1,8 +1,14 @@
 import {
   type Diagnostic,
   type Signal,
+  type SignalFactorDefinition,
   SignalComputeError,
 } from "@skastr0/pulsar-core/signal"
+import {
+  makeFactorEntry,
+  makeFactorLedger,
+  type SignalFactorLedger,
+} from "@skastr0/pulsar-core/factors"
 import { Effect, Schema } from "effect"
 import { collectRustProjectFacts } from "../rust-analysis.js"
 import { RustProjectTag } from "../project.js"
@@ -33,7 +39,34 @@ interface RsSl03Output {
   readonly modules: ReadonlyArray<PanicDensityModule>
   readonly totalCalls: number
   readonly analysisMode: "call-expression-field-scan"
+  readonly sourceFileCount: number
+  readonly analyzedSourceFileCount: number
+  readonly analyzedFunctionCount: number
+  readonly diagnosticLimit: number
+  readonly scoreMode: "bounded-unwrap-expect-density"
+  readonly scoreDenominator: "analyzed-functions-per-module"
 }
+
+const DEFAULT_TOP_N_DIAGNOSTICS = 10
+const RS_SL_03_SCORE_MODE = "bounded-unwrap-expect-density" as const
+const RS_SL_03_SCORE_DENOMINATOR = "analyzed-functions-per-module" as const
+
+const RsSl03FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
+  {
+    path: "config.exclude_globs",
+    title: "Config exclude globs",
+    valueKind: "array",
+    scoreRole: "evidence",
+    defaultValue: [...DEFAULT_RUST_EXCLUDE_GLOBS],
+  },
+  {
+    path: "config.top_n_diagnostics",
+    title: "Config top n diagnostics",
+    valueKind: "number",
+    scoreRole: "metadata",
+    defaultValue: DEFAULT_TOP_N_DIAGNOSTICS,
+  },
+]
 
 export const RsSl03: Signal<RsSl03Config, RsSl03Output, RustProjectTag> = {
   id: "RS-SL-03-unwrap-expect",
@@ -42,28 +75,32 @@ export const RsSl03: Signal<RsSl03Config, RsSl03Output, RustProjectTag> = {
   tier: 1,
   category: "generated-slop",
   kind: "legibility",
-  cacheVersion: "advisory-density-scaled-cfg-test-gating-v2",
+  cacheVersion: "advisory-density-scaled-cfg-test-gating-diagnostics-v3",
   configSchema: RsSl03Config,
+  factorDefinitions: RsSl03FactorDefinitions,
   defaultConfig: {
     exclude_globs: [...DEFAULT_RUST_EXCLUDE_GLOBS],
-    top_n_diagnostics: 10,
+    top_n_diagnostics: DEFAULT_TOP_N_DIAGNOSTICS,
   },
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
+      const normalizedConfig = normalizeRsSl03Config(config)
       const project = yield* RustProjectTag
       return yield* Effect.tryPromise({
         try: async (): Promise<RsSl03Output> => {
           const facts = await collectRustProjectFacts(project)
           const functionCounts = new Map<string, number>()
+          const analyzedSourceFiles = project.sourceFiles.filter(
+            (file) => !isExcluded(file, normalizedConfig.exclude_globs),
+          )
           for (const fn of facts.functions) {
-            if (isExcluded(fn.file, config.exclude_globs)) continue
+            if (isExcluded(fn.file, normalizedConfig.exclude_globs)) continue
             functionCounts.set(fn.modulePath, (functionCounts.get(fn.modulePath) ?? 0) + 1)
           }
 
           const callCounts = new Map<string, { file: string; count: number }>()
-          for (const file of project.sourceFiles) {
-            if (isExcluded(file, config.exclude_globs)) continue
+          for (const file of analyzedSourceFiles) {
             const scope = resolveRustFileScope(project, file)
             const tree = await parseRustFile(file)
             walkAttributedNodes(tree.rootNode, ({ node, ancestors, testGated }) => {
@@ -92,6 +129,12 @@ export const RsSl03: Signal<RsSl03Config, RsSl03Output, RustProjectTag> = {
             modules,
             totalCalls: modules.reduce((sum, module) => sum + module.unwrapExpectCalls, 0),
             analysisMode: "call-expression-field-scan",
+            sourceFileCount: project.sourceFiles.length,
+            analyzedSourceFileCount: analyzedSourceFiles.length,
+            analyzedFunctionCount: [...functionCounts.values()].reduce((sum, count) => sum + count, 0),
+            diagnosticLimit: normalizedConfig.top_n_diagnostics,
+            scoreMode: RS_SL_03_SCORE_MODE,
+            scoreDenominator: RS_SL_03_SCORE_DENOMINATOR,
           }
         },
         catch: (cause) =>
@@ -105,15 +148,58 @@ export const RsSl03: Signal<RsSl03Config, RsSl03Output, RustProjectTag> = {
     return Math.max(0, 1 - Math.min(0.5, penalty))
   },
   diagnose: (out): ReadonlyArray<Diagnostic> =>
-    out.modules.slice(0, 10).map((module) => ({
-      severity: module.density >= 1 ? ("warn" as const) : ("info" as const),
-      message: `${module.module} contains ${module.unwrapExpectCalls} unwrap/expect call sites`,
-      location: { file: module.file },
-      data: {
-        module: module.module,
-        unwrapExpectCalls: module.unwrapExpectCalls,
-        density: module.density,
-        analysisMode: out.analysisMode,
-      },
-    })),
+    out.sourceFileCount === 0
+      ? [{
+        severity: "warn" as const,
+        message: "RS-SL-03 found no Rust source files for unwrap/expect analysis",
+        data: {
+          sourceFileCount: out.sourceFileCount,
+          analyzedSourceFileCount: out.analyzedSourceFileCount,
+          analyzedFunctionCount: out.analyzedFunctionCount,
+          scoreMode: out.scoreMode,
+          scoreDenominator: out.scoreDenominator,
+        },
+      }].slice(0, out.diagnosticLimit)
+      : out.modules.slice(0, out.diagnosticLimit).map((module) => ({
+        severity: module.density >= 1 ? ("warn" as const) : ("info" as const),
+        message: `${module.module} contains ${module.unwrapExpectCalls} unwrap/expect call sites`,
+        location: { file: module.file },
+        data: {
+          module: module.module,
+          unwrapExpectCalls: module.unwrapExpectCalls,
+          density: module.density,
+          analysisMode: out.analysisMode,
+          scoreMode: out.scoreMode,
+          scoreDenominator: out.scoreDenominator,
+        },
+      })),
+  outputMetadata: (out) => {
+    if (out.sourceFileCount === 0) {
+      return { applicability: "insufficient_evidence" as const }
+    }
+    if (out.analyzedSourceFileCount === 0 || out.analyzedFunctionCount === 0) {
+      return { applicability: "not_applicable" as const }
+    }
+    return undefined
+  },
+  factorLedger: () => makeRsSl03FactorLedger(),
 }
+
+type NormalizedRsSl03Config = RsSl03Config
+
+const normalizeRsSl03Config = (config: RsSl03Config): NormalizedRsSl03Config => ({
+  exclude_globs: config.exclude_globs,
+  top_n_diagnostics: Number.isFinite(config.top_n_diagnostics)
+    ? Math.max(0, Math.floor(config.top_n_diagnostics))
+    : 0,
+})
+
+const makeRsSl03FactorLedger = (): SignalFactorLedger =>
+  makeFactorLedger(
+    "RS-SL-03-unwrap-expect",
+    RsSl03FactorDefinitions.map((definition) =>
+      makeFactorEntry(definition, definition.defaultValue ?? null, {
+        source: "signal-default",
+      }),
+    ),
+  )
