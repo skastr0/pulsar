@@ -486,7 +486,30 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "ts-ab-04.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AB-04 semantic cacheVersion after identity, substitute, diagnostic-limit, object-data, cast-usage, public-entry, and class-implementation semantics changed.",
     },
   },
-  pendingSignalContract("TS-AB-05-generic-proliferation"),
+  {
+    id: "TS-AB-05-generic-proliferation",
+    status: "verified",
+    evidence: {
+      identity:
+        "ts-ab-05.test.ts: canonical id, alias, title, tier/category/kind, no compound inputs, semantic cacheVersion, pack registration, and registry alias lookup are asserted.",
+      config:
+        "ts-ab-05.test.ts: configSchema decodes defaults; factor-ledger assertions cover exclude_globs, max_generic_parameters, and top_n_diagnostics with sanitized diagnostic caps.",
+      positiveFixture:
+        "ts-ab-05.test.ts: real TsProject fixtures measure function declarations, function expressions, arrows, default export arrows, methods, type aliases, interfaces, classes, generic counts, nested constraints, and true return-only generics.",
+      negativeFixture:
+        "ts-ab-05.test.ts: value-only files produce no tracked declarations; test, declaration, and generated files are excluded; constraint/default-dependent generics are not falsely classified as return-only.",
+      applicability:
+        "ts-ab-05.test.ts: repositories with no tracked declarations return empty byDeclaration/overThreshold, zero distribution, preserved thresholds, score 1, and no diagnostics.",
+      score:
+        "ts-ab-05.test.ts: mixed two-healthy/two-over-threshold fixture proves score is 1 minus over-threshold declarations divided by total tracked declarations.",
+      diagnostics:
+        "ts-ab-05.test.ts: diagnostics include warn severity, declaration messages, file/line locations, generic threshold data, returnOnlyParams, deterministic ordering, and sanitized top_n_diagnostics caps.",
+      factorLedger:
+        "ts-ab-05.test.ts: registered pack signal emits config.exclude_globs, config.max_generic_parameters, and config.top_n_diagnostics factor-ledger entries with score roles.",
+      cacheSemantics:
+        "ts-ab-05.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AB-05 semantic cacheVersion after return-only and diagnostic-limit semantics changed.",
+    },
+  },
   pendingSignalContract("TS-LD-06-annotation-coverage"),
   pendingSignalContract("TS-LD-07-unsafe-type-erosion"),
   pendingSignalContract("TS-LD-08-exhaustiveness-erosion"),

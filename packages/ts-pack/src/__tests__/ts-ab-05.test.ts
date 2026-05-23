@@ -2,12 +2,22 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { Effect, Schema } from "effect"
+import { TS_PACK_SIGNALS } from "../pack.js"
 import { TsAb05 } from "../signals/ts-ab-05-generic-proliferation.js"
 import { TsProjectLayer } from "../ts-project.js"
 
 let repo: string
 type TsAb05Result = Parameters<typeof TsAb05.score>[0]
+
+const stableTsAb05Output = (out: TsAb05Result): unknown => ({
+  byDeclaration: out.byDeclaration,
+  distribution: out.distribution,
+  overThreshold: out.overThreshold,
+  genericThreshold: out.genericThreshold,
+  diagnosticLimit: out.diagnosticLimit,
+})
 
 const writeTs = async (relPath: string, content: string): Promise<string> => {
   const full = join(repo, relPath)
@@ -43,6 +53,70 @@ afterEach(async () => {
 })
 
 describe("TS-AB-05 (generic parameter proliferation)", () => {
+  test("declares identity, no inputs, pack registration, and config factor ledger", async () => {
+    const packRegistered = TS_PACK_SIGNALS.find((signal) =>
+      signal.aliases?.includes("TS-AB-05"),
+    )
+    expect(packRegistered).toBeDefined()
+    const registry = await Effect.runPromise(buildRegistry([packRegistered!]))
+    const registered = registry.byId.get("TS-AB-05")
+    const out = await runCompute()
+    const factorLedger = registered?.factorLedger?.(out)
+
+    expect(TsAb05).toMatchObject({
+      id: "TS-AB-05-generic-proliferation",
+      title: "Generic proliferation",
+      aliases: ["TS-AB-05"],
+      tier: 1,
+      category: "abstraction-bloat",
+      kind: "legibility",
+      cacheVersion: "generic-proliferation-v2-return-only-diagnostic-limit-v1",
+      inputs: [],
+    })
+    expect(registered?.id).toBe(TsAb05.id)
+    expect(registered?.title).toBe(TsAb05.title)
+    expect(registered?.cacheVersion).toContain(TsAb05.cacheVersion)
+    expect(registry.byId.get("TS-AB-05")?.id).toBe(TsAb05.id)
+    expect(factorLedger?.signalId).toBe(TsAb05.id)
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.exclude_globs",
+        source: "signal-default",
+        scoreRole: "metadata",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.max_generic_parameters",
+        value: 3,
+        source: "signal-default",
+        scoreRole: "threshold",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        value: 10,
+        source: "signal-default",
+        scoreRole: "threshold",
+      }),
+    )
+  })
+
+  test("no tracked declarations: neutral output, score 1, and no diagnostics", async () => {
+    await writeTs("src/value.ts", "export const value = 1\n")
+
+    const out = await runCompute()
+
+    expect(out.byDeclaration).toEqual([])
+    expect(out.distribution).toEqual({ max: 0, p95: 0, avg: 0, sum: 0, count: 0 })
+    expect(out.overThreshold).toEqual([])
+    expect(out.genericThreshold).toBe(3)
+    expect(out.diagnosticLimit).toBe(10)
+    expect(TsAb05.score(out)).toBe(1)
+    expect(TsAb05.diagnose(out)).toEqual([])
+  })
+
   test("tracks 0, 1, 3, and 5 generic parameters across declarations", async () => {
     await writeTs(
       "src/index.ts",
@@ -65,6 +139,37 @@ describe("TS-AB-05 (generic parameter proliferation)", () => {
     expect(out.distribution.count).toBe(4)
     expect(out.overThreshold.map((entry) => entry.declarationName)).toEqual(["Five"])
     expect(TsAb05.score(out)).toBeLessThan(1)
+  })
+
+  test("tracks function expressions, arrows, interfaces, methods, and anonymous declarations", async () => {
+    await writeTs(
+      "src/declarations.ts",
+      [
+        "export interface Box<T> {",
+        "  readonly value: T",
+        "}",
+        "export class Mapper {",
+        "  map<U>(value: unknown): U {",
+        "    return value as U",
+        "  }",
+        "}",
+        "export const arrow = <T, U>(value: T): U => value as unknown as U",
+        "export const fn = function <T, U, V>(value: T): [T, U, V] {",
+        "  return [value, undefined as U, undefined as V]",
+        "}",
+        "export default <T>(value: T): T => value",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runCompute()
+    const byName = new Map(out.byDeclaration.map((entry) => [entry.declarationName, entry]))
+
+    expect(byName.get("Box")?.paramCount).toBe(1)
+    expect(byName.get("map")?.paramCount).toBe(1)
+    expect(byName.get("arrow")?.paramCount).toBe(2)
+    expect(byName.get("fn")?.paramCount).toBe(3)
+    expect(byName.get("<default export>")?.paramCount).toBe(1)
   })
 
   test("computes nested constraint depth per type parameter", async () => {
@@ -128,7 +233,7 @@ describe("TS-AB-05 (generic parameter proliferation)", () => {
   })
 
   test("diagnostics list over-threshold declarations", async () => {
-    await writeTs(
+    const file = await writeTs(
       "src/diagnostics.ts",
       [
         "export type TooMany<A, B, C, D> = [A, B, C, D]",
@@ -143,7 +248,26 @@ describe("TS-AB-05 (generic parameter proliferation)", () => {
 
     const diagnostics = TsAb05.diagnose(out)
     expect(diagnostics).toHaveLength(1)
-    expect(diagnostics[0]?.message).toContain("TooMany")
+    expect(diagnostics[0]).toEqual(
+      expect.objectContaining({
+        severity: "warn",
+        message:
+          "Generic proliferation in `TooMany`: 4 type parameters (max constraint depth 0)",
+        location: expect.objectContaining({
+          file,
+          line: 1,
+        }),
+        data: expect.objectContaining({
+          file,
+          declarationName: "TooMany",
+          line: 1,
+          paramCount: 4,
+          maxConstraintDepth: 0,
+          returnOnlyParams: [],
+          genericThreshold: 2,
+        }),
+      }),
+    )
   })
 
   test("diagnostics honor sanitized top_n_diagnostics", async () => {
@@ -187,8 +311,61 @@ describe("TS-AB-05 (generic parameter proliferation)", () => {
     expect(TsAb05.diagnose(infinite)).toEqual([])
   })
 
+  test("score uses over-threshold declarations over total tracked declarations", async () => {
+    await writeTs(
+      "src/score.ts",
+      [
+        "export type A<T> = T",
+        "export type B<T> = T",
+        "export type TooManyA<A, B, C, D> = [A, B, C, D]",
+        "export type TooManyB<A, B, C, D> = [A, B, C, D]",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runCompute()
+
+    expect(out.byDeclaration).toHaveLength(4)
+    expect(out.overThreshold).toHaveLength(2)
+    expect(TsAb05.score(out)).toBe(0.5)
+  })
+
+  test("excluded test, declaration, and generated files are not analyzed", async () => {
+    await writeTs("src/live.ts", "export type Live<T> = T\n")
+    await writeTs("src/live.test.ts", "export type TestOnly<A, B, C, D> = [A, B, C, D]\n")
+    await writeTs("src/generated.gen.ts", "export type Generated<A, B, C, D> = [A, B, C, D]\n")
+    await writeTs("src/types.d.ts", "export type Ambient<A, B, C, D> = [A, B, C, D]\n")
+
+    const out = await runCompute()
+
+    expect(out.byDeclaration.map((entry) => entry.declarationName)).toEqual(["Live"])
+    expect(out.overThreshold).toEqual([])
+    expect(TsAb05.score(out)).toBe(1)
+  })
+
+  test("deterministic: same project, same output, diagnostics, and score", async () => {
+    await writeTs(
+      "src/order.ts",
+      [
+        "export type TooManyB<A, B, C, D> = [A, B, C, D]",
+        "export type TooManyA<A, B, C, D> = [A, B, C, D]",
+        "export type Small<T> = T",
+        "",
+      ].join("\n"),
+    )
+
+    const first = await runCompute({ ...TsAb05.defaultConfig, max_generic_parameters: 2 })
+    const second = await runCompute({ ...TsAb05.defaultConfig, max_generic_parameters: 2 })
+
+    expect(stableTsAb05Output(second)).toEqual(stableTsAb05Output(first))
+    expect(TsAb05.diagnose(second)).toEqual(TsAb05.diagnose(first))
+    expect(TsAb05.score(second)).toBe(TsAb05.score(first))
+  })
+
   test("configSchema decodes defaults round-trip", () => {
     const decoded = Schema.decodeUnknownSync(TsAb05.configSchema)(TsAb05.defaultConfig)
+    expect(decoded.exclude_globs).toContain("**/node_modules/**")
+    expect(decoded.exclude_globs).toContain("**/*.test.ts")
     expect(decoded.max_generic_parameters).toBe(3)
     expect(decoded.top_n_diagnostics).toBe(10)
   })
