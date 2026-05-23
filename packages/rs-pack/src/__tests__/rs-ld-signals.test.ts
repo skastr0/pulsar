@@ -2494,6 +2494,68 @@ describe("RS-LD-* signals", () => {
     }
   })
 
+  test("RS-LD-06 declares identity, config, cache, pack registration, and factor ledger", async () => {
+    const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
+    const versionedRegistry = await Effect.runPromise(
+      buildRegistry([
+        ...SHARED_SIGNALS,
+        ...RS_PACK_SIGNALS.filter((signal) => signal.id !== RsLd06.id),
+        { ...RsLd06, cacheVersion: `${RsLd06.cacheVersion}-next` },
+      ]),
+    )
+    const registered = registry.byId.get("RS-LD-06")
+    const decoded = Schema.decodeUnknownSync(RsLd06.configSchema)(RsLd06.defaultConfig)
+    const factorLedger = registered?.factorLedger?.({})
+    const baseCacheHash = computeConfigHash(RsLd06.id, registry, undefined)
+    const versionedCacheHash = computeConfigHash(RsLd06.id, versionedRegistry, undefined)
+    const configuredCacheHash = computeConfigHash(RsLd06.id, registry, {
+      id: "rs-ld-06-contract",
+      domain: "test",
+      signal_overrides: {
+        [RsLd06.id]: {
+          config: {
+            ...RsLd06.defaultConfig,
+            top_n_diagnostics: 1,
+          },
+        },
+      },
+    })
+
+    expect(RsLd06).toMatchObject({
+      id: "RS-LD-06-domain-term-consistency",
+      aliases: ["RS-LD-06"],
+      title: "Domain term consistency",
+      tier: 2,
+      category: "legibility-decay",
+      kind: "legibility",
+      cacheVersion: "domain-terms-config-reference-data-applicability-diagnostics-v1",
+      inputs: [],
+    })
+    expect(decoded).toEqual({
+      exclude_globs: ["**/target/**", "**/tests/**", "**/examples/**", "**/benches/**"],
+      top_n_diagnostics: 10,
+    })
+    expect(registered?.id).toBe(RsLd06.id)
+    expect(registered?.cacheVersion).toBe(RsLd06.cacheVersion)
+    expect(registry.byId.get("RS-LD-06")?.id).toBe(RsLd06.id)
+    expect(baseCacheHash).not.toBe(versionedCacheHash)
+    expect(baseCacheHash).not.toBe(configuredCacheHash)
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.exclude_globs",
+        affectsScore: true,
+        scoreRole: "evidence",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        affectsScore: false,
+        scoreRole: "metadata",
+      }),
+    )
+  })
+
   test("RS-LD-06 classifies identifier glossary drift", async () => {
     const repo = await createLegibilityWorkspace()
     try {
@@ -2523,6 +2585,121 @@ describe("RS-LD-* signals", () => {
       ).toBe("new-unique")
     } finally {
       await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-LD-06 normalizes diagnostics and applicability evidence", async () => {
+    const repo = await createLegibilityWorkspace()
+    const missing = await createRustWorkspace("pulsar-rs-ld06-missing-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "domain-terms-missing"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+    })
+    const noIdentifiers = await createRustWorkspace("pulsar-rs-ld06-no-identifiers-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "domain-terms-no-identifiers"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": "",
+    })
+    const excluded = await createLegibilityWorkspace()
+    const glossary = {
+      glossary: {
+        terms: [
+          { canonical: "order line" },
+          { canonical: "parse" },
+          { canonical: "value" },
+          { canonical: "raw copy" },
+        ],
+      },
+    }
+
+    try {
+      const out = await runSignalCompute(
+        RsLd06,
+        repo,
+        { ...RsLd06.defaultConfig, top_n_diagnostics: 1.8 },
+        glossary,
+      )
+      const missingOut = await runSignalCompute(RsLd06, missing, RsLd06.defaultConfig, glossary)
+      const missingReferenceOut = await runSignalCompute(RsLd06, repo, RsLd06.defaultConfig)
+      const noIdentifierOut = await runSignalCompute(
+        RsLd06,
+        noIdentifiers,
+        RsLd06.defaultConfig,
+        glossary,
+      )
+      const excludedOut = await runSignalCompute(
+        RsLd06,
+        excluded,
+        { ...RsLd06.defaultConfig, exclude_globs: ["**/src/**"] },
+        glossary,
+      )
+      const noDiagnosticOut = await runSignalCompute(
+        RsLd06,
+        repo,
+        { ...RsLd06.defaultConfig, top_n_diagnostics: Number.NaN },
+        glossary,
+      )
+
+      expect(out.diagnosticLimit).toBe(1)
+      expect(RsLd06.diagnose(out)).toHaveLength(1)
+      expect(RsLd06.outputMetadata?.(out)).toBeUndefined()
+
+      expect(missingOut.sourceFileCount).toBe(0)
+      expect(missingOut.analyzedSourceFileCount).toBe(0)
+      expect(missingOut.totalIdentifiers).toBe(0)
+      expect(RsLd06.score(missingOut)).toBe(1)
+      expect(RsLd06.outputMetadata?.(missingOut)).toEqual({
+        applicability: "insufficient_evidence",
+      })
+      expect(RsLd06.diagnose(missingOut)[0]).toMatchObject({
+        severity: "warn",
+        message: "RS-LD-06 found no Rust source files for domain term analysis",
+      })
+
+      expect(missingReferenceOut.referenceDataStatus).toBe("missing")
+      expect(missingReferenceOut.totalIdentifiers).toBeGreaterThan(0)
+      expect(RsLd06.score(missingReferenceOut)).toBe(1)
+      expect(RsLd06.outputMetadata?.(missingReferenceOut)).toEqual({
+        applicability: "insufficient_evidence",
+      })
+      expect(RsLd06.diagnose(missingReferenceOut)[0]).toMatchObject({
+        severity: "warn",
+        message: "RS-LD-06 requires glossary reference data; no glossary was loaded",
+      })
+
+      expect(noIdentifierOut.sourceFileCount).toBe(1)
+      expect(noIdentifierOut.analyzedSourceFileCount).toBe(1)
+      expect(noIdentifierOut.totalIdentifiers).toBe(0)
+      expect(RsLd06.score(noIdentifierOut)).toBe(1)
+      expect(RsLd06.outputMetadata?.(noIdentifierOut)).toEqual({
+        applicability: "not_applicable",
+      })
+      expect(RsLd06.diagnose(noIdentifierOut)).toEqual([])
+
+      expect(excludedOut.sourceFileCount).toBeGreaterThan(0)
+      expect(excludedOut.analyzedSourceFileCount).toBe(0)
+      expect(excludedOut.totalIdentifiers).toBe(0)
+      expect(RsLd06.outputMetadata?.(excludedOut)).toEqual({
+        applicability: "not_applicable",
+      })
+      expect(RsLd06.diagnose(excludedOut)).toEqual([])
+
+      expect(noDiagnosticOut.diagnosticLimit).toBe(0)
+      expect(RsLd06.diagnose(noDiagnosticOut)).toEqual([])
+    } finally {
+      await cleanupWorkspace(repo)
+      await cleanupWorkspace(missing)
+      await cleanupWorkspace(noIdentifiers)
+      await cleanupWorkspace(excluded)
     }
   })
 })
