@@ -4,6 +4,7 @@ import {
   collectLocalExportedNames,
   type FunctionBoundaryOwner,
   isBoundaryDeclaration,
+  isBoundaryAssertion,
   isBoundaryFunctionOwner,
   isBoundaryParameter,
   isBoundaryProperty,
@@ -90,7 +91,7 @@ const classifyAnyKeywordAncestor = (
   sourceFile: ts.SourceFile,
   exportedNames: ReadonlySet<string>,
 ): Pick<LocalUnsafeTypeOccurrence, "kind" | "target" | "boundary"> | undefined =>
-  classifyAnyAssertion(current, sourceFile) ??
+  classifyAnyAssertion(current, sourceFile, exportedNames) ??
   classifyAnyParameter(current, sourceFile, exportedNames) ??
   classifyAnyReturn(current, node, sourceFile, exportedNames) ??
   classifyAnyProperty(current, exportedNames) ??
@@ -101,12 +102,13 @@ const classifyAnyKeywordAncestor = (
 const classifyAnyAssertion = (
   current: ts.Node,
   sourceFile: ts.SourceFile,
+  exportedNames: ReadonlySet<string>,
 ): Pick<LocalUnsafeTypeOccurrence, "kind" | "target" | "boundary"> | undefined =>
   ts.isAsExpression(current) || ts.isTypeAssertionExpression(current)
     ? {
         kind: "assertion",
         target: assertionTargetName(current, sourceFile),
-        boundary: false,
+        boundary: isBoundaryAssertion(current, exportedNames),
       }
     : undefined
 

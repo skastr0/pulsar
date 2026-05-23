@@ -477,6 +477,68 @@ describe("TS-LD-07 (unsafe type erosion)", () => {
     }
   })
 
+  test("exported inferred assertions count as boundary unsafe contracts", async () => {
+    await setup()
+    try {
+      await repo.write(
+        "src/assertions.ts",
+        [
+          "declare const external: unknown",
+          "export const boundaryValue = external as any",
+          "export function parse(input: unknown) {",
+          "  return input as any",
+          "}",
+          "export const api = {",
+          "  raw: external as any,",
+          "  parse(input: unknown) {",
+          "    return input as any",
+          "  },",
+          "}",
+          "",
+        ].join("\n"),
+      )
+
+      const out = await runSignal(repo.root, TsLd07, TsLd07.defaultConfig)
+
+      expect(out.totalOccurrences).toBe(4)
+      expect(out.boundaryOccurrences).toBe(4)
+      expect(out.occurrences.every((occurrence) => occurrence.kind === "assertion")).toBe(true)
+      expect(out.occurrences.every((occurrence) => occurrence.severity === "warn")).toBe(true)
+    } finally {
+      await cleanup()
+    }
+  })
+
+  test("internal and explicitly typed assertions remain internal unsafe facts", async () => {
+    await setup()
+    try {
+      await repo.write(
+        "src/internal-assertions.ts",
+        [
+          "declare const external: unknown",
+          "const local = external as any",
+          "export const safeValue: unknown = external as any",
+          "export function parse(input: unknown): unknown {",
+          "  return input as any",
+          "}",
+          "export const typedApi: { readonly raw: unknown } = {",
+          "  raw: external as any,",
+          "}",
+          "",
+        ].join("\n"),
+      )
+
+      const out = await runSignal(repo.root, TsLd07, TsLd07.defaultConfig)
+
+      expect(out.totalOccurrences).toBe(4)
+      expect(out.boundaryOccurrences).toBe(0)
+      expect(out.occurrences.every((occurrence) => occurrence.kind === "assertion")).toBe(true)
+      expect(out.occurrences.every((occurrence) => occurrence.severity === "info")).toBe(true)
+    } finally {
+      await cleanup()
+    }
+  })
+
   test("object literal API functions returned from exported functions stay internal", async () => {
     await setup()
     try {

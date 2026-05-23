@@ -134,6 +134,15 @@ export const isBoundaryProperty = (
   )
 }
 
+export const isBoundaryAssertion = (
+  assertion: ts.AsExpression | ts.TypeAssertion,
+  exportedNames: ReadonlySet<string>,
+): boolean =>
+  isBoundaryVariableInitializerAssertion(assertion, exportedNames) ||
+  isBoundaryReturnAssertion(assertion, exportedNames) ||
+  isBoundaryObjectPropertyAssertion(assertion, exportedNames) ||
+  ts.isExportAssignment(assertion.parent)
+
 export const isBoundaryVariable = (
   declaration: ts.VariableDeclaration,
   exportedNames: ReadonlySet<string>,
@@ -283,6 +292,68 @@ const objectLiteralHasBoundaryVariableRoot = (
   return false
 }
 
+const isBoundaryVariableInitializerAssertion = (
+  assertion: ts.Node,
+  exportedNames: ReadonlySet<string>,
+): boolean => {
+  const variable = nearestAncestor(assertion, ts.isVariableDeclaration)
+  return (
+    variable !== undefined &&
+    variable.type === undefined &&
+    variable.initializer !== undefined &&
+    isAncestorOf(variable.initializer, assertion) &&
+    isBoundaryVariable(variable, exportedNames)
+  )
+}
+
+const isBoundaryReturnAssertion = (
+  assertion: ts.Node,
+  exportedNames: ReadonlySet<string>,
+): boolean => {
+  const returnStatement = nearestAncestor(assertion, ts.isReturnStatement)
+  if (
+    returnStatement === undefined ||
+    returnStatement.expression === undefined ||
+    !isAncestorOf(returnStatement.expression, assertion)
+  ) {
+    return isBoundaryConciseArrowReturnAssertion(assertion, exportedNames)
+  }
+  const owner = nearestFunctionBodyOwner(returnStatement)
+  return (
+    owner !== undefined &&
+    functionReturnIsInferred(owner) &&
+    isBoundaryFunctionOwner(owner, exportedNames)
+  )
+}
+
+const isBoundaryConciseArrowReturnAssertion = (
+  assertion: ts.Node,
+  exportedNames: ReadonlySet<string>,
+): boolean => {
+  const arrow = nearestAncestor(assertion, ts.isArrowFunction)
+  return (
+    arrow !== undefined &&
+    !ts.isBlock(arrow.body) &&
+    isAncestorOf(arrow.body, assertion) &&
+    functionReturnIsInferred(arrow) &&
+    isBoundaryFunctionOwner(arrow, exportedNames)
+  )
+}
+
+const isBoundaryObjectPropertyAssertion = (
+  assertion: ts.Node,
+  exportedNames: ReadonlySet<string>,
+): boolean => {
+  const property = nearestAncestor(assertion, ts.isPropertyAssignment)
+  return (
+    property !== undefined &&
+    property.initializer !== undefined &&
+    isAncestorOf(property.initializer, assertion) &&
+    !objectLiteralHasEnclosingVariableType(property.parent) &&
+    isWithinExportedObjectLiteralSurface(property, exportedNames)
+  )
+}
+
 const isPublicClassMember = (node: ts.Node): boolean =>
   !hasModifier(node, ts.SyntaxKind.PrivateKeyword) &&
   !hasModifier(node, ts.SyntaxKind.ProtectedKeyword)
@@ -299,6 +370,62 @@ const isRuntimeFunctionWithReturnType = (
   ts.isMethodDeclaration(node) ||
   ts.isArrowFunction(node) ||
   ts.isFunctionExpression(node)
+
+const nearestFunctionBodyOwner = (
+  node: ts.Node,
+): ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction | ts.FunctionExpression | undefined =>
+  nearestAncestor(node, isRuntimeFunctionWithReturnType)
+
+const functionReturnIsInferred = (
+  node: ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction | ts.FunctionExpression,
+): boolean =>
+  node.type === undefined &&
+  !hasVariableFunctionTypeAnnotation(node) &&
+  !hasContextuallyTypedObjectLiteralAncestor(node)
+
+const hasVariableFunctionTypeAnnotation = (
+  node: ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction | ts.FunctionExpression,
+): boolean => {
+  const parent = node.parent
+  return ts.isVariableDeclaration(parent) && parent.type !== undefined
+}
+
+const hasContextuallyTypedObjectLiteralAncestor = (node: ts.Node): boolean => {
+  let current: ts.Node | undefined = node.parent
+  while (current !== undefined) {
+    if (
+      ts.isObjectLiteralExpression(current) &&
+      objectLiteralHasEnclosingVariableType(current)
+    ) {
+      return true
+    }
+    current = current.parent
+  }
+  return false
+}
+
+const objectLiteralHasEnclosingVariableType = (node: ts.Node): boolean => {
+  let current: ts.Node = node
+  while (current.parent !== undefined) {
+    if (ts.isVariableDeclaration(current.parent)) {
+      return current.parent.initializer === current && current.parent.type !== undefined
+    }
+    current = current.parent
+  }
+  return false
+}
+
+const nearestAncestor = <T extends ts.Node>(
+  node: ts.Node,
+  predicate: (candidate: ts.Node) => candidate is T,
+): T | undefined => {
+  let current: ts.Node | undefined = node.parent
+  while (current !== undefined) {
+    if (predicate(current)) return current
+    current = current.parent
+  }
+  return undefined
+}
 
 const isAncestorOf = (ancestor: ts.Node, node: ts.Node): boolean => {
   let current: ts.Node | undefined = node
