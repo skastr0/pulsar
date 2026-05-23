@@ -1454,6 +1454,107 @@ export function stubF() { throw new Error("Not implemented") }
     }
   }, 120_000)
 
+  test("single-signal CLI wrapper executes RS-DE-03 with cargo metadata", async () => {
+    const repoPath = await initRepo([
+      {
+        path: "Cargo.toml",
+        content: [
+          "[workspace]",
+          'members = ["crates/core", "crates/renamed-dep", "crates/app"]',
+          'resolver = "2"',
+          "",
+        ].join("\n"),
+      },
+      {
+        path: "crates/core/Cargo.toml",
+        content: [
+          "[package]",
+          'name = "core"',
+          'version = "0.1.0"',
+          'edition = "2021"',
+          "",
+          "[features]",
+          'serde = []',
+          "",
+        ].join("\n"),
+      },
+      {
+        path: "crates/core/src/lib.rs",
+        content: [
+          "#[cfg(feature = \"serde\")]",
+          "pub fn encoded() {}",
+          "",
+        ].join("\n"),
+      },
+      {
+        path: "crates/renamed-dep/Cargo.toml",
+        content: [
+          "[package]",
+          'name = "renamed-dep"',
+          'version = "0.1.0"',
+          'edition = "2021"',
+          "",
+          "[features]",
+          'derive = []',
+          "",
+        ].join("\n"),
+      },
+      {
+        path: "crates/renamed-dep/src/lib.rs",
+        content: [
+          "#[cfg(feature = \"derive\")]",
+          "pub fn derived() {}",
+          "",
+        ].join("\n"),
+      },
+      {
+        path: "crates/app/Cargo.toml",
+        content: [
+          "[package]",
+          'name = "app"',
+          'version = "0.1.0"',
+          'edition = "2021"',
+          "",
+          "[dependencies]",
+          'core = { path = "../core", optional = true }',
+          'renamed_alias = { package = "renamed-dep", path = "../renamed-dep", optional = true }',
+          "",
+          "[features]",
+          'default = ["json"]',
+          'json = ["core?/serde"]',
+          'local = ["json"]',
+          'storage = ["dep:renamed_alias"]',
+          'derive = ["renamed_alias/derive"]',
+          'full = ["local", "core"]',
+          "",
+        ].join("\n"),
+      },
+      {
+        path: "crates/app/src/lib.rs",
+        content: [
+          "#[cfg(feature = \"json\")]",
+          "pub fn json_mode() {}",
+          "",
+          "pub fn runtime() -> bool {",
+          "    cfg!(feature = \"storage\")",
+          "}",
+          "",
+        ].join("\n"),
+      },
+    ])
+    try {
+      const out = runCli(repoPath, ["score", "--signal", "RS-DE-03", "."])
+      expect(out.status).toBe(0)
+      expect(out.stdout).toContain("Signal: RS-DE-03-feature-flags")
+      expect(out.stdout).toContain("INFO  Crate app defines 7 features (4 cross-crate propagations, 2 cfg sites)")
+      expect(out.stdout).toContain("Score:  0.800")
+      expect(out.stdout).toContain("config.warn_feature_count=8 threshold")
+      expect(out.stdout).not.toContain("config.top_n_diagnostics=10 threshold")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
   test("single-signal mode summarizes score-bearing factor audit details", async () => {
     const repoPath = await initRepo([
       {

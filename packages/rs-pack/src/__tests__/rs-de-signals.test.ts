@@ -634,6 +634,183 @@ const createRsDe02WorkspaceInheritedWorkspace = () =>
     "crates/app/src/lib.rs": "pub fn fixture() {}\n",
   })
 
+const rsDe03FeatureWorkspaceFiles = (): Readonly<Record<string, string>> => ({
+  "Cargo.toml": [
+    "[workspace]",
+    'members = ["crates/core", "crates/renamed-dep", "crates/app"]',
+    'resolver = "2"',
+    "",
+  ].join("\n"),
+  "crates/core/Cargo.toml": [
+    "[package]",
+    'name = "core"',
+    'version = "0.1.0"',
+    'edition = "2021"',
+    "",
+    "[features]",
+    'serde = []',
+    "",
+  ].join("\n"),
+  "crates/core/src/lib.rs": [
+    "#[cfg(feature = \"serde\")]",
+    "pub fn encoded() {}",
+    "",
+  ].join("\n"),
+  "crates/renamed-dep/Cargo.toml": [
+    "[package]",
+    'name = "renamed-dep"',
+    'version = "0.1.0"',
+    'edition = "2021"',
+    "",
+    "[features]",
+    'derive = []',
+    "",
+  ].join("\n"),
+  "crates/renamed-dep/src/lib.rs": [
+    "#[cfg(feature = \"derive\")]",
+    "pub fn derived() {}",
+    "",
+  ].join("\n"),
+  "crates/app/Cargo.toml": [
+    "[package]",
+    'name = "app"',
+    'version = "0.1.0"',
+    'edition = "2021"',
+    "",
+    "[dependencies]",
+    'core = { path = "../core", optional = true }',
+    'renamed_alias = { package = "renamed-dep", path = "../renamed-dep", optional = true }',
+    "",
+    "[features]",
+    'default = ["json"]',
+    'json = ["core?/serde"]',
+    'local = ["json"]',
+    'storage = ["dep:renamed_alias"]',
+    'derive = ["renamed_alias/derive"]',
+    'full = ["local", "core"]',
+    "",
+  ].join("\n"),
+  "crates/app/src/lib.rs": [
+    "#[cfg(feature = \"json\")]",
+    "pub fn json_mode() {}",
+    "",
+    "pub fn runtime() -> bool {",
+    "    cfg!(feature = \"storage\")",
+    "}",
+    "",
+  ].join("\n"),
+})
+
+const createRsDe03FeatureWorkspace = () =>
+  createRustWorkspace("pulsar-rs-de03-", rsDe03FeatureWorkspaceFiles())
+
+const createRsDe03CleanWorkspace = () =>
+  createRustWorkspace("pulsar-rs-de03-clean-", {
+    "Cargo.toml": [
+      "[package]",
+      'name = "feature-clean"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+    ].join("\n"),
+    "src/lib.rs": "pub fn plain() {}\n",
+  })
+
+const createRsDe03CommentOnlyWorkspace = () =>
+  createRustWorkspace("pulsar-rs-de03-comment-only-", {
+    "Cargo.toml": [
+      "[package]",
+      'name = "feature-comment-only"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+    ].join("\n"),
+    "src/lib.rs": [
+      "// #[cfg(feature = \"ghost\")]",
+      "// let _ = cfg!(feature = \"ghost\");",
+      "/// #[cfg(feature = \"doc_ghost\")]",
+      "pub const TEXT: &str = \"#[cfg(feature = \\\"string_ghost\\\")] cfg!(feature = \\\"string_ghost\\\")\";",
+      "pub fn plain() {}",
+      "",
+    ].join("\n"),
+  })
+
+const createRsDe03MoreComplexWorkspace = () =>
+  createRustWorkspace("pulsar-rs-de03-complex-", {
+    "Cargo.toml": [
+      "[workspace]",
+      'members = ["crates/core", "crates/renamed-dep", "crates/app"]',
+      'resolver = "2"',
+      "",
+    ].join("\n"),
+    "crates/core/Cargo.toml": [
+      "[package]",
+      'name = "core"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+      "[features]",
+      'serde = []',
+      "",
+    ].join("\n"),
+    "crates/core/src/lib.rs": [
+      "#[cfg(feature = \"serde\")]",
+      "pub fn encoded() {}",
+      "",
+    ].join("\n"),
+    "crates/renamed-dep/Cargo.toml": [
+      "[package]",
+      'name = "renamed-dep"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+      "[features]",
+      'derive = []',
+      "",
+    ].join("\n"),
+    "crates/renamed-dep/src/lib.rs": [
+      "#[cfg(feature = \"derive\")]",
+      "pub fn derived() {}",
+      "",
+    ].join("\n"),
+    "crates/app/Cargo.toml": [
+      "[package]",
+      'name = "app"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+      "[dependencies]",
+      'core = { path = "../core", optional = true }',
+      'renamed_alias = { package = "renamed-dep", path = "../renamed-dep", optional = true }',
+      "",
+      "[features]",
+      'default = ["f1"]',
+      'f1 = ["core?/serde"]',
+      'f2 = ["core?/serde"]',
+      'f3 = ["dep:core"]',
+      'f4 = ["renamed_alias/derive"]',
+      'f5 = ["dep:renamed_alias"]',
+      'f6 = ["f1", "f2"]',
+      'f7 = []',
+      'f8 = []',
+      'f9 = []',
+      'f10 = []',
+      "",
+    ].join("\n"),
+    "crates/app/src/lib.rs": [
+      "#[cfg(feature = \"f1\")]",
+      "pub fn f1() {}",
+      "#[cfg(feature = \"f2\")]",
+      "pub fn f2() {}",
+      "#[cfg(feature = \"f3\")]",
+      "pub fn f3() {}",
+      "#[cfg(feature = \"f4\")]",
+      "pub fn f4() {}",
+      "pub fn runtime() -> bool { cfg!(feature = \"f5\") || cfg!(feature = \"f6\") }",
+      "",
+    ].join("\n"),
+  })
+
 describe("RS-DE-* signals", () => {
   test("RS-DE-01 declares identity, config, cache, pack registration, and factor ledger", async () => {
     const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
@@ -1226,58 +1403,279 @@ describe("RS-DE-* signals", () => {
     }
   })
 
-  test("RS-DE-03 counts feature flags and cross-crate propagation", async () => {
-    const repo = await createRustWorkspace("pulsar-rs-de03-", {
-      "Cargo.toml": [
-        "[workspace]",
-        'members = ["crates/core", "crates/app"]',
-        'resolver = "2"',
-        "",
-      ].join("\n"),
-      "crates/core/Cargo.toml": [
-        "[package]",
-        'name = "core"',
-        'version = "0.1.0"',
-        'edition = "2021"',
-        "",
-        "[features]",
-        'serde = []',
-        "",
-      ].join("\n"),
-      "crates/core/src/lib.rs": [
-        "#[cfg(feature = \"serde\")]",
-        "pub fn encoded() {}",
-        "",
-      ].join("\n"),
-      "crates/app/Cargo.toml": [
-        "[package]",
-        'name = "app"',
-        'version = "0.1.0"',
-        'edition = "2021"',
-        "",
-        "[dependencies]",
-        'core = { path = "../core", optional = true }',
-        "",
-        "[features]",
-        'json = ["core?/serde"]',
-        'full = ["json", "core"]',
-        "",
-      ].join("\n"),
-      "crates/app/src/lib.rs": [
-        "#[cfg(feature = \"json\")]",
-        "pub fn json_mode() {}",
-        "",
-      ].join("\n"),
+  test("RS-DE-03 declares identity, config, cache, pack registration, and factor ledger", async () => {
+    const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
+    const versionedRegistry = await Effect.runPromise(buildRegistry([
+      ...SHARED_SIGNALS,
+      ...RS_PACK_SIGNALS.map((signal) =>
+        signal.id === RsDe03.id
+          ? { ...RsDe03, cacheVersion: `${RsDe03.cacheVersion}-changed` }
+          : signal,
+      ),
+    ]))
+    const registered = registry.byId.get("RS-DE-03")
+    const decoded = Schema.decodeUnknownSync(RsDe03.configSchema)(RsDe03.defaultConfig)
+    const factorLedger = registered?.factorLedger?.({} as never)
+    const baseCacheHash = computeConfigHash(RsDe03.id, registry, undefined)
+    const versionedCacheHash = computeConfigHash(RsDe03.id, versionedRegistry, undefined)
+    const configuredCacheHash = computeConfigHash(RsDe03.id, registry, {
+      id: "rs-de-03-contract",
+      domain: "test",
+      signal_overrides: {
+        [RsDe03.id]: {
+          config: {
+            ...RsDe03.defaultConfig,
+            warn_feature_count: 2,
+            top_n_diagnostics: 1,
+          },
+        },
+      },
     })
+
+    expect(RsDe03).toMatchObject({
+      id: "RS-DE-03-feature-flags",
+      aliases: ["RS-DE-03"],
+      title: "Feature flag complexity",
+      tier: 1,
+      category: "dependency-entropy",
+      kind: "structural",
+      cacheVersion: "cargo-feature-flags-config-propagation-v1",
+      inputs: [],
+    })
+    expect(decoded).toEqual({
+      exclude_globs: ["**/target/**", "**/tests/**", "**/examples/**", "**/benches/**"],
+      warn_feature_count: 8,
+      top_n_diagnostics: 10,
+    })
+    expect(registered?.id).toBe(RsDe03.id)
+    expect(registered?.cacheVersion).toBe(RsDe03.cacheVersion)
+    expect(registry.byId.get("RS-DE-03")?.id).toBe(RsDe03.id)
+    expect(versionedCacheHash).not.toBe(baseCacheHash)
+    expect(configuredCacheHash).not.toBe(baseCacheHash)
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.exclude_globs",
+        source: "signal-default",
+        affectsScore: true,
+        scoreRole: "evidence",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.warn_feature_count",
+        source: "signal-default",
+        affectsScore: true,
+        scoreRole: "threshold",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        source: "signal-default",
+        affectsScore: false,
+        scoreRole: "metadata",
+      }),
+    )
+  })
+
+  test("RS-DE-03 counts feature flags, cfg sites, and Cargo feature propagation", async () => {
+    const repo = await createRsDe03FeatureWorkspace()
 
     try {
       const out = await runSignalCompute(RsDe03, repo, RsDe03.defaultConfig)
+      const app = out.crates.find((entry) => entry.crate === "app")
+      const appPropagations = out.propagationByCrate.get("app") ?? []
+
       expect(out.metadataStatus).toBe("loaded")
-      expect(out.crates.find((entry) => entry.crate === "app")?.featureCount).toBe(3)
-      expect(out.propagationByCrate.get("app")?.some((entry) => entry.targetCrate === "core")).toBe(true)
-      expect(out.totalConditionalCompilationSites).toBeGreaterThanOrEqual(2)
+      expect(out.packageCount).toBe(3)
+      expect(out.sourceFileCount).toBe(3)
+      expect(out.analyzedSourceFileCount).toBe(3)
+      expect(out.featureDefinitionCount).toBe(9)
+      expect(out.propagationCount).toBe(4)
+      expect(out.totalConditionalCompilationSites).toBe(4)
+      expect(app).toMatchObject({
+        crate: "app",
+        featureCount: 7,
+        conditionalCompilationSites: 2,
+        propagatedFeatures: 4,
+      })
+      expect(appPropagations).toHaveLength(4)
+      expect(appPropagations).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          feature: "core",
+          dependencyAlias: "core",
+          targetCrate: "core",
+          targetFeature: undefined,
+          optional: true,
+          activationKind: "optional-dependency",
+        }),
+        expect.objectContaining({
+          feature: "json",
+          dependencyAlias: "core",
+          targetCrate: "core",
+          targetFeature: "serde",
+          optional: true,
+          activationKind: "weak-dependency-feature",
+        }),
+        expect.objectContaining({
+          feature: "storage",
+          dependencyAlias: "renamed_alias",
+          targetCrate: "renamed-dep",
+          targetFeature: undefined,
+          optional: true,
+          activationKind: "optional-dependency",
+        }),
+        expect.objectContaining({
+          feature: "derive",
+          dependencyAlias: "renamed_alias",
+          targetCrate: "renamed-dep",
+          targetFeature: "derive",
+          optional: true,
+          activationKind: "dependency-feature",
+        }),
+      ]))
+      expect(appPropagations.map((entry) => entry.targetCrate)).not.toContain("json")
+      expect(RsDe03.score(out)).toBeCloseTo(0.8)
+      expect(RsDe03.outputMetadata?.(out)).toBeUndefined()
+
+      const diagnostics = RsDe03.diagnose(out)
+      expect(diagnostics).toHaveLength(3)
+      expect(diagnostics[0]).toMatchObject({
+        severity: "info",
+        message: "Crate app defines 7 features (4 cross-crate propagations, 2 cfg sites)",
+        data: {
+          crate: "app",
+          featureCount: 7,
+          conditionalCompilationSites: 2,
+          propagatedFeatures: 4,
+          warnFeatureCount: 8,
+        },
+      })
+      expect(diagnostics[0]?.location?.file).toEndWith("crates/app/Cargo.toml")
+      expect(typeof diagnostics[0]?.data?.hash).toBe("string")
     } finally {
       await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-DE-03 keeps clean, missing, and excluded feature evidence honest", async () => {
+    const cleanRepo = await createRsDe03CleanWorkspace()
+    const commentOnlyRepo = await createRsDe03CommentOnlyWorkspace()
+    const missingRepo = await createRustWorkspace("pulsar-rs-de03-missing-", {
+      "README.md": "# no cargo metadata here\n",
+    })
+    const excludedRepo = await createRsDe03FeatureWorkspace()
+
+    try {
+      const clean = await runSignalCompute(RsDe03, cleanRepo, RsDe03.defaultConfig)
+      const commentOnly = await runSignalCompute(RsDe03, commentOnlyRepo, RsDe03.defaultConfig)
+      const missing = await runSignalCompute(RsDe03, missingRepo, RsDe03.defaultConfig)
+      const excluded = await runSignalCompute(RsDe03, excludedRepo, {
+        ...RsDe03.defaultConfig,
+        exclude_globs: ["**/crates/app/src/**"],
+      })
+      const measured = await runSignalCompute(RsDe03, excludedRepo, RsDe03.defaultConfig)
+
+      expect(clean.metadataStatus).toBe("loaded")
+      expect(clean.packageCount).toBe(1)
+      expect(clean.featureDefinitionCount).toBe(0)
+      expect(clean.propagationCount).toBe(0)
+      expect(clean.totalConditionalCompilationSites).toBe(0)
+      expect(RsDe03.score(clean)).toBe(1)
+      expect(RsDe03.diagnose(clean)).toEqual([])
+      expect(RsDe03.outputMetadata?.(clean)).toEqual({
+        applicability: "not_applicable",
+      })
+
+      expect(commentOnly.metadataStatus).toBe("loaded")
+      expect(commentOnly.packageCount).toBe(1)
+      expect(commentOnly.featureDefinitionCount).toBe(0)
+      expect(commentOnly.totalConditionalCompilationSites).toBe(0)
+      expect(RsDe03.score(commentOnly)).toBe(1)
+      expect(RsDe03.diagnose(commentOnly)).toEqual([])
+      expect(RsDe03.outputMetadata?.(commentOnly)).toEqual({
+        applicability: "not_applicable",
+      })
+
+      expect(missing.metadataStatus).toBe("missing")
+      expect(missing.packageCount).toBe(0)
+      expect(RsDe03.score(missing)).toBe(1)
+      expect(RsDe03.outputMetadata?.(missing)).toEqual({
+        applicability: "insufficient_evidence",
+      })
+      expect(RsDe03.diagnose(missing)[0]).toMatchObject({
+        severity: "warn",
+        message: "RS-DE-03 could not load cargo metadata for feature analysis",
+        data: {
+          metadataStatus: "missing",
+          packageCount: 0,
+        },
+      })
+
+      expect(excluded.sourceFileCount).toBe(3)
+      expect(excluded.analyzedSourceFileCount).toBe(2)
+      expect(excluded.totalConditionalCompilationSites).toBe(2)
+      expect(excluded.propagationCount).toBe(measured.propagationCount)
+      expect(RsDe03.score(excluded)).toBeGreaterThan(RsDe03.score(measured))
+      expect(RsDe03.outputMetadata?.(excluded)).toBeUndefined()
+    } finally {
+      await cleanupWorkspace(cleanRepo)
+      await cleanupWorkspace(commentOnlyRepo)
+      await cleanupWorkspace(missingRepo)
+      await cleanupWorkspace(excludedRepo)
+    }
+  })
+
+  test("RS-DE-03 normalizes config and scores feature complexity monotonically", async () => {
+    const repo = await createRsDe03FeatureWorkspace()
+    const complexRepo = await createRsDe03MoreComplexWorkspace()
+    const firstRoot = await createRsDe03FeatureWorkspace()
+    const secondRoot = await createRsDe03FeatureWorkspace()
+
+    try {
+      const base = await runSignalCompute(RsDe03, repo, RsDe03.defaultConfig)
+      const strict = await runSignalCompute(RsDe03, repo, {
+        ...RsDe03.defaultConfig,
+        warn_feature_count: 2.9,
+        top_n_diagnostics: 1.9,
+      })
+      const hiddenNegative = await runSignalCompute(RsDe03, repo, {
+        ...RsDe03.defaultConfig,
+        top_n_diagnostics: -1,
+      })
+      const hiddenNaN = await runSignalCompute(RsDe03, repo, {
+        ...RsDe03.defaultConfig,
+        warn_feature_count: Number.NaN,
+        top_n_diagnostics: Number.NaN,
+      })
+      const complex = await runSignalCompute(RsDe03, complexRepo, RsDe03.defaultConfig)
+      const first = await runSignalCompute(RsDe03, firstRoot, RsDe03.defaultConfig)
+      const second = await runSignalCompute(RsDe03, secondRoot, RsDe03.defaultConfig)
+
+      expect(strict.warnFeatureCount).toBe(2)
+      expect(strict.diagnosticLimit).toBe(1)
+      expect(RsDe03.score(strict)).toBeLessThan(RsDe03.score(base))
+      expect(RsDe03.diagnose(strict)).toHaveLength(1)
+      expect(RsDe03.diagnose(strict)[0]?.severity).toBe("warn")
+      expect(hiddenNegative.diagnosticLimit).toBe(0)
+      expect(hiddenNaN.warnFeatureCount).toBe(8)
+      expect(hiddenNaN.diagnosticLimit).toBe(0)
+      expect(RsDe03.diagnose(hiddenNegative)).toEqual([])
+      expect(RsDe03.diagnose(hiddenNaN)).toEqual([])
+      expect(complex.featureDefinitionCount).toBeGreaterThan(base.featureDefinitionCount)
+      expect(complex.propagationCount).toBeGreaterThan(base.propagationCount)
+      expect(complex.totalConditionalCompilationSites).toBeGreaterThan(
+        base.totalConditionalCompilationSites,
+      )
+      expect(RsDe03.score(complex)).toBeLessThan(RsDe03.score(base))
+      expect(RsDe03.diagnose(first).map((diagnostic) => diagnostic.data?.hash)).toEqual(
+        RsDe03.diagnose(second).map((diagnostic) => diagnostic.data?.hash),
+      )
+    } finally {
+      await cleanupWorkspace(repo)
+      await cleanupWorkspace(complexRepo)
+      await cleanupWorkspace(firstRoot)
+      await cleanupWorkspace(secondRoot)
     }
   })
 

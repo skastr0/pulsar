@@ -138,7 +138,33 @@ export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "observer-integration.test.ts and CLI score tests: Rust observer integration includes dependency-entropy Rust signals in the RS pack, while CLI single-signal mode executes RS-DE-02 against a repository substrate with Cargo.lock parsed from disk.",
     },
   },
-  pendingSignalContract("RS-DE-03-feature-flags"),
+  {
+    id: "RS-DE-03-feature-flags",
+    status: "verified",
+    requiredEvidence: ["integration"],
+    evidence: {
+      identity:
+        "rs-de-signals.test.ts: canonical id, alias, title, tier/category/kind, empty input contract, semantic cacheVersion, pack registration, registry alias lookup, config-cache hash sensitivity, and default config decoding are asserted.",
+      config:
+        "rs-de-signals.test.ts: exclude_globs, warn_feature_count, and top_n_diagnostics decode through the real schema; fractional, negative, and NaN threshold/cap values are normalized through compute output.",
+      positiveFixture:
+        "rs-de-signals.test.ts: temporary Cargo workspaces run through RustProjectLayer and real cargo metadata to prove feature counts, cfg(feature) conditional sites, local feature references, dep: optional dependency activation, dependency/feature propagation, dependency?/feature weak propagation, and renamed dependency aliases.",
+      negativeFixture:
+        "rs-de-signals.test.ts: clean no-feature crates, missing cargo metadata, and excluded source files return neutral output without false feature-complexity pressure.",
+      applicability:
+        "rs-de-signals.test.ts: loaded feature surfaces are applicable, missing cargo metadata emits insufficient_evidence metadata, and loaded crates with no feature/cfg evidence emit not_applicable metadata.",
+      score:
+        "rs-de-signals.test.ts: feature/propagation/cfg fixtures score below clean fixtures, missing/no evidence stays score-neutral through applicability metadata, stricter warn_feature_count lowers score, and additional feature definitions, propagations, and cfg sites increase score pressure.",
+      diagnostics:
+        "rs-de-signals.test.ts: diagnostics assert severity, manifest locations, deterministic feature-pressure ordering, checkout-root-independent stable hash payloads, feature/propagation/cfg payloads, missing-metadata warning payloads, configured warn thresholds, and normalized diagnostic caps.",
+      factorLedger:
+        "rs-de-signals.test.ts: registered RS pack signal emits config.exclude_globs as score-affecting evidence, config.warn_feature_count as a score-bearing threshold, and config.top_n_diagnostics as non-score-bearing metadata with signal-default source.",
+      cacheSemantics:
+        "rs-de-signals.test.ts and pack.test.ts: RS-DE-03 declares cargo-feature-flags-config-propagation-v1 cacheVersion, config/cacheVersion changes alter the signal config hash, and the RS pack wrapper preserves the signal-specific cacheVersion.",
+      integration:
+        "observer-integration.test.ts and CLI score tests: Rust observer integration includes dependency-entropy Rust signals in the RS pack, while CLI single-signal mode executes RS-DE-03 against a repository substrate with Cargo metadata and Rust source parsed from disk.",
+    },
+  },
   pendingSignalContract("RS-DE-04-fan-in-fan-out"),
   pendingSignalContract("RS-AB-01-unused-public-items"),
   pendingSignalContract("RS-AB-02-trait-object-depth"),
