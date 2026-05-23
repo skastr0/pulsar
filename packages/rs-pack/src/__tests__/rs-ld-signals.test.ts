@@ -2528,7 +2528,7 @@ describe("RS-LD-* signals", () => {
       tier: 2,
       category: "legibility-decay",
       kind: "legibility",
-      cacheVersion: "domain-terms-config-reference-data-applicability-diagnostics-cfg-test-v3",
+      cacheVersion: "domain-terms-config-reference-data-applicability-diagnostics-cfg-test-aliases-v4",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -2627,6 +2627,96 @@ describe("RS-LD-* signals", () => {
       expect(out.identifiers.some((item) => item.name === "OrdrLine")).toBe(false)
       expect(RsLd06.score(out)).toBe(1)
       expect(RsLd06.diagnose(out)).toEqual([])
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-LD-06 applies aliases and prioritizes drift diagnostics", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-ld06-aliases-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "domain-terms-aliases"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub mod domain {",
+        "    pub fn order_line(order_line: &str) -> usize {",
+        "        order_line.len()",
+        "    }",
+        "",
+        "    pub fn line_order(order_line: &str) -> usize {",
+        "        order_line.len()",
+        "    }",
+        "",
+        "    pub fn ordr_line(order_line: &str) -> usize {",
+        "        order_line.len()",
+        "    }",
+        "",
+        "    pub fn metric_probe(metric_probe: &str) -> usize {",
+        "        metric_probe.len()",
+        "    }",
+        "",
+        "    pub fn invoice_probe(invoice_probe: &str) -> usize {",
+        "        invoice_probe.len()",
+        "    }",
+        "}",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const out = await runSignalCompute(
+        RsLd06,
+        repo,
+        { ...RsLd06.defaultConfig, top_n_diagnostics: 2 },
+        {
+          glossary: {
+            terms: [
+              { canonical: "domain" },
+              { canonical: "order line" },
+              { canonical: "telemetry probe", aliases: ["metric probe"] },
+            ],
+          },
+        },
+      )
+      const diagnostics = RsLd06.diagnose(out)
+
+      expect(out.totalIdentifiers).toBe(11)
+      expect(out.matchCount).toBe(7)
+      expect(out.duplicateCount).toBe(1)
+      expect(out.conflictCount).toBe(1)
+      expect(out.newUniqueCount).toBe(2)
+      expect(RsLd06.score(out)).toBeCloseTo(1 - 1.7 / 11)
+      expect(out.identifiers.find((item) => item.name === "metric_probe")?.classification).toBe(
+        "matches-glossary",
+      )
+      expect(out.identifiers.find((item) => item.name === "line_order")?.classification).toBe(
+        "duplicates-canonical",
+      )
+      expect(out.identifiers.find((item) => item.name === "ordr_line")?.classification).toBe(
+        "conflicts-with-canonical",
+      )
+      expect(out.identifiers.find((item) => item.name === "invoice_probe")?.classification).toBe(
+        "new-unique",
+      )
+      expect(diagnostics).toHaveLength(2)
+      expect(diagnostics[0]).toMatchObject({
+        severity: "warn",
+        message: "Identifier ordr_line classified as conflicts-with-canonical (suggested: order line)",
+        data: expect.objectContaining({
+          name: "ordr_line",
+          kind: "function",
+          scoreMode: "weighted-domain-term-drift-share",
+          scoreDenominator: "classified-identifiers",
+        }),
+      })
+      expect(diagnostics[1]).toMatchObject({
+        severity: "info",
+        message: "Identifier line_order classified as duplicates-canonical (suggested: order line)",
+      })
     } finally {
       await cleanupWorkspace(repo)
     }

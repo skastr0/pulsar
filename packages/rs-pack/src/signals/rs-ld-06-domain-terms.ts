@@ -46,6 +46,7 @@ type IdentifierClassification =
 interface IdentifierGlossaryMatch {
   readonly file: string
   readonly module: string
+  readonly kind: "item" | "function" | "parameter"
   readonly name: string
   readonly line: number
   readonly classification: IdentifierClassification
@@ -71,6 +72,25 @@ interface RsLd06Output {
 interface GlossaryEntry {
   readonly canonical: string
   readonly aliases: ReadonlyArray<string>
+}
+
+interface GlossaryVariant {
+  readonly canonical: string
+  readonly tokens: ReadonlyArray<string>
+  readonly tokenSet: ReadonlySet<string>
+}
+
+interface GlossaryLookup {
+  readonly knownPhrases: ReadonlySet<string>
+  readonly knownTokens: ReadonlySet<string>
+  readonly canonicalBySortedTokens: ReadonlyMap<string, string>
+  readonly variants: ReadonlyArray<GlossaryVariant>
+}
+
+interface ConflictCandidate {
+  readonly canonical: string
+  readonly overlapCount: number
+  readonly distance: number
 }
 
 const DEFAULT_TOP_N_DIAGNOSTICS = 10
@@ -101,7 +121,7 @@ export const RsLd06: Signal<RsLd06Config, RsLd06Output, RustProjectTag | Referen
   tier: 2,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "domain-terms-config-reference-data-applicability-diagnostics-cfg-test-v3",
+  cacheVersion: "domain-terms-config-reference-data-applicability-diagnostics-cfg-test-aliases-v4",
   configSchema: RsLd06Config,
   factorDefinitions: RsLd06FactorDefinitions,
   defaultConfig: {
@@ -163,10 +183,12 @@ export const RsLd06: Signal<RsLd06Config, RsLd06Output, RustProjectTag | Referen
             }
           }
 
+          const glossaryLookup = buildGlossaryLookup(glossary)
           const classified = identifiers.map((identifier) =>
-            classifyIdentifier(identifier.name, glossary, {
+            classifyIdentifier(identifier.name, identifier.tokens, glossaryLookup, {
               file: identifier.file,
               module: identifier.modulePath,
+              kind: identifier.kind,
               line: identifier.line,
             }),
           )
@@ -250,8 +272,9 @@ export const RsLd06: Signal<RsLd06Config, RsLd06Output, RustProjectTag | Referen
       }].slice(0, out.diagnosticLimit)
     }
 
-    return out.identifiers
+    return [...out.identifiers]
       .filter((identifier) => identifier.classification !== "matches-glossary")
+      .sort(compareIdentifierDiagnostics)
       .slice(0, out.diagnosticLimit)
       .map((identifier) => ({
         severity: identifier.classification === "conflicts-with-canonical" ? ("warn" as const) : ("info" as const),
@@ -394,44 +417,71 @@ const normalizeGlossaryEntry = (entry: unknown): ReadonlyArray<GlossaryEntry> =>
   ]
 }
 
+const buildGlossaryLookup = (glossary: ReadonlyArray<GlossaryEntry>): GlossaryLookup => {
+  const knownPhrases = new Set<string>()
+  const knownTokens = new Set<string>()
+  const canonicalBySortedTokens = new Map<string, string>()
+  const variants: Array<GlossaryVariant> = []
+
+  for (const entry of glossary) {
+    const canonicalTokens = tokenizeIdentifier(entry.canonical)
+    if (canonicalTokens.length > 0) {
+      knownPhrases.add(canonicalTokens.join(" "))
+      canonicalBySortedTokens.set(sortTokens(entry.canonical), entry.canonical)
+      canonicalTokens.forEach((token) => knownTokens.add(token))
+      variants.push({
+        canonical: entry.canonical,
+        tokens: canonicalTokens,
+        tokenSet: new Set(canonicalTokens),
+      })
+    }
+
+    for (const alias of entry.aliases) {
+      const aliasTokens = tokenizeIdentifier(alias)
+      if (aliasTokens.length === 0) continue
+      knownPhrases.add(aliasTokens.join(" "))
+      aliasTokens.forEach((token) => knownTokens.add(token))
+      variants.push({
+        canonical: entry.canonical,
+        tokens: aliasTokens,
+        tokenSet: new Set(aliasTokens),
+      })
+    }
+  }
+
+  return { knownPhrases, knownTokens, canonicalBySortedTokens, variants }
+}
+
 const classifyIdentifier = (
   name: string,
-  glossary: ReadonlyArray<GlossaryEntry>,
-  context: { readonly file: string; readonly module: string; readonly line: number },
+  tokens: ReadonlyArray<string>,
+  glossaryLookup: GlossaryLookup,
+  context: {
+    readonly file: string
+    readonly module: string
+    readonly kind: "item" | "function" | "parameter"
+    readonly line: number
+  },
 ): IdentifierGlossaryMatch => {
-  const tokens = tokenizeIdentifier(name)
   const normalized = tokens.join(" ")
-  const knownPhrases = new Set(
-    glossary.flatMap((entry) => [entry.canonical, ...entry.aliases]).map((value) => tokenizeIdentifier(value).join(" ")),
-  )
-  const canonicalBySortedTokens = new Map(
-    glossary.map((entry) => [sortTokens(entry.canonical), entry.canonical] as const),
-  )
-  const knownTokens = new Set(
-    glossary.flatMap((entry) => tokenizeIdentifier(entry.canonical)).filter((token) => token.length > 0),
-  )
-  const unknownTokens = tokens.filter((token) => !knownTokens.has(token))
 
   let classification: IdentifierClassification = "new-unique"
   let suggestedCanonical: string | undefined
 
-  if (knownPhrases.has(normalized)) {
+  if (normalized.length > 0 && glossaryLookup.knownPhrases.has(normalized)) {
     classification = "matches-glossary"
   } else {
-    const duplicateCanonical = canonicalBySortedTokens.get(sortTokens(name))
+    const duplicateCanonical = glossaryLookup.canonicalBySortedTokens.get(sortTokens(name))
     if (duplicateCanonical !== undefined) {
       classification = "duplicates-canonical"
       suggestedCanonical = duplicateCanonical
-    } else if (tokens.every((token) => knownTokens.has(token))) {
+    } else if (
+      tokens.length > 0 &&
+      tokens.every((token) => glossaryLookup.knownTokens.has(token))
+    ) {
       classification = "matches-glossary"
     } else {
-      const conflicting = glossary.find((entry) =>
-        unknownTokens.some((candidate) =>
-          tokenizeIdentifier(entry.canonical).some(
-            (token) => levenshteinDistance(token, candidate) <= 1,
-          ),
-        ),
-      )
+      const conflicting = findConflictCandidate(tokens, glossaryLookup.variants)
       if (conflicting !== undefined) {
         classification = "conflicts-with-canonical"
         suggestedCanonical = conflicting.canonical
@@ -442,11 +492,98 @@ const classifyIdentifier = (
   return {
     file: context.file,
     module: context.module,
+    kind: context.kind,
     name,
     line: context.line,
     classification,
     suggestedCanonical,
   }
+}
+
+const findConflictCandidate = (
+  identifierTokens: ReadonlyArray<string>,
+  variants: ReadonlyArray<GlossaryVariant>,
+): ConflictCandidate | undefined => {
+  let best: ConflictCandidate | undefined
+
+  for (const variant of variants) {
+    if (identifierTokens.length === 0 || variant.tokens.length === 0) continue
+
+    const overlapCount = identifierTokens.filter((token) => variant.tokenSet.has(token)).length
+    const nonOverlappingTokens = identifierTokens.filter((token) => !variant.tokenSet.has(token))
+    const distance = minimumTokenDistance(
+      nonOverlappingTokens.length > 0 ? nonOverlappingTokens : identifierTokens,
+      variant.tokens,
+    )
+    const singleTokenNearMiss =
+      identifierTokens.length === 1 && variant.tokens.length === 1 && distance <= 1
+    const overlapNearMiss = overlapCount > 0 && nonOverlappingTokens.length > 0 && distance <= 1
+
+    if (!singleTokenNearMiss && !overlapNearMiss) continue
+
+    const candidate: ConflictCandidate = {
+      canonical: variant.canonical,
+      overlapCount,
+      distance,
+    }
+
+    if (best === undefined || compareConflictCandidates(candidate, best) < 0) {
+      best = candidate
+    }
+  }
+
+  return best
+}
+
+const compareConflictCandidates = (
+  left: ConflictCandidate,
+  right: ConflictCandidate,
+): number => {
+  if (left.overlapCount !== right.overlapCount) {
+    return right.overlapCount - left.overlapCount
+  }
+  if (left.distance !== right.distance) {
+    return left.distance - right.distance
+  }
+  return left.canonical.localeCompare(right.canonical)
+}
+
+const compareIdentifierDiagnostics = (
+  left: IdentifierGlossaryMatch,
+  right: IdentifierGlossaryMatch,
+): number => {
+  const leftPressure = classificationPressure(left.classification)
+  const rightPressure = classificationPressure(right.classification)
+  if (leftPressure !== rightPressure) return rightPressure - leftPressure
+  return left.file.localeCompare(right.file) || left.line - right.line || left.name.localeCompare(right.name)
+}
+
+const classificationPressure = (classification: IdentifierClassification): number => {
+  switch (classification) {
+    case "conflicts-with-canonical":
+      return 3
+    case "duplicates-canonical":
+      return 2
+    case "new-unique":
+      return 1
+    case "matches-glossary":
+      return 0
+  }
+}
+
+const minimumTokenDistance = (
+  leftTokens: ReadonlyArray<string>,
+  rightTokens: ReadonlyArray<string>,
+): number => {
+  let best = Number.POSITIVE_INFINITY
+
+  for (const left of leftTokens) {
+    for (const right of rightTokens) {
+      best = Math.min(best, levenshteinDistance(left, right))
+    }
+  }
+
+  return best
 }
 
 const sortTokens = (value: string): string => tokenizeIdentifier(value).slice().sort().join(" ")
