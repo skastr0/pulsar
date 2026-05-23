@@ -1138,6 +1138,7 @@ describe("RS-AB-* signals", () => {
         [RsAb03.id]: {
           config: {
             ...RsAb03.defaultConfig,
+            max_generic_complexity: 7,
             max_generic_parameters: 2,
           },
         },
@@ -1151,11 +1152,12 @@ describe("RS-AB-* signals", () => {
       tier: 1,
       category: "abstraction-bloat",
       kind: "legibility",
-      cacheVersion: "generic-proliferation-config-applicability-diagnostics-cfg-test-gating-bounds-v3",
+      cacheVersion: "generic-proliferation-config-applicability-diagnostics-cfg-test-gating-bounds-complexity-v4",
       inputs: [],
     })
     expect(decoded).toEqual({
       exclude_globs: ["**/target/**", "**/tests/**", "**/examples/**", "**/benches/**"],
+      max_generic_complexity: 8,
       max_generic_parameters: 3,
       top_n_diagnostics: 10,
     })
@@ -1169,6 +1171,13 @@ describe("RS-AB-* signals", () => {
         path: "config.exclude_globs",
         affectsScore: true,
         scoreRole: "evidence",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.max_generic_complexity",
+        affectsScore: true,
+        scoreRole: "threshold",
       }),
     )
     expect(factorLedger?.entries).toContainEqual(
@@ -1230,8 +1239,10 @@ describe("RS-AB-* signals", () => {
         whereClausePredicates: 3,
         complexity: 9,
       })
+      expect(out.complexityDistribution.max).toBeGreaterThanOrEqual(9)
       expect(out.parameterDistribution.max).toBeGreaterThanOrEqual(3)
       expect(out.overThreshold.some((entry) => entry.declarationName === "process")).toBe(true)
+      expect(out.maxGenericComplexity).toBe(8)
       expect(out.maxGenericParameters).toBe(2)
       expect(out.diagnosticLimit).toBe(10)
       expect(RsAb03.outputMetadata?.(out)).toBeUndefined()
@@ -1239,7 +1250,7 @@ describe("RS-AB-* signals", () => {
       expect(diagnostics).toMatchObject([
         {
           severity: "warn",
-          message: "process uses 3 generic parameters",
+          message: "process uses 3 generic parameters with generic signature complexity 9",
           location: { file: expect.stringMatching(/src\/lib\.rs$/), line: 2 },
           data: {
             module: "generic-fixture::crate",
@@ -1247,7 +1258,79 @@ describe("RS-AB-* signals", () => {
             whereClausePredicates: 3,
             boundCount: 3,
             complexity: 9,
+            maxGenericComplexity: 8,
+            maxGenericParameters: 2,
+            thresholdsExceeded: ["generic_parameters", "generic_complexity"],
             analysisMode: "ast-generic-signature-counts",
+          },
+        },
+      ])
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-AB-03 scores both generic parameter and bound complexity pressure", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-ab03-score-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "generic-score"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub struct Clean<T>(pub T);",
+        "pub struct ParamHeavy<T, U, V, W>(pub T, pub U, pub V, pub W);",
+        "pub fn bound_heavy<T>(value: T)",
+        "where",
+        "    T: Clone + Send + Sync + Default + 'static + Into<String> + AsRef<str>,",
+        "{",
+        "    let _ = value;",
+        "}",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const pressured = await runSignalCompute(
+        RsAb03,
+        repo,
+        { ...RsAb03.defaultConfig, max_generic_complexity: 8, max_generic_parameters: 3 },
+      )
+      const relaxedComplexity = await runSignalCompute(
+        RsAb03,
+        repo,
+        { ...RsAb03.defaultConfig, max_generic_complexity: 12, max_generic_parameters: 3 },
+      )
+      const diagnostics = RsAb03.diagnose(pressured)
+
+      expect(pressured.overThreshold.map((entry) => entry.declarationName)).toEqual([
+        "ParamHeavy",
+        "bound_heavy",
+      ])
+      expect(RsAb03.score(pressured)).toBeCloseTo(1 / 3)
+      expect(relaxedComplexity.overThreshold.map((entry) => entry.declarationName)).toEqual([
+        "ParamHeavy",
+      ])
+      expect(RsAb03.score(relaxedComplexity)).toBeCloseTo(2 / 3)
+      expect(diagnostics).toMatchObject([
+        {
+          message: "ParamHeavy uses 4 generic parameters",
+          data: {
+            thresholdsExceeded: ["generic_parameters"],
+          },
+        },
+        {
+          message: "bound_heavy has generic signature complexity 9",
+          data: {
+            paramCount: 1,
+            whereClausePredicates: 1,
+            boundCount: 7,
+            complexity: 9,
+            maxGenericComplexity: 8,
+            maxGenericParameters: 3,
+            thresholdsExceeded: ["generic_complexity"],
           },
         },
       ])
@@ -1313,17 +1396,27 @@ describe("RS-AB-* signals", () => {
       const capped = await runSignalCompute(
         RsAb03,
         generic,
-        { ...RsAb03.defaultConfig, max_generic_parameters: 2.8, top_n_diagnostics: 1.8 },
+        {
+          ...RsAb03.defaultConfig,
+          max_generic_complexity: 5.8,
+          max_generic_parameters: 2.8,
+          top_n_diagnostics: 1.8,
+        },
       )
       const hidden = await runSignalCompute(
         RsAb03,
         generic,
-        { ...RsAb03.defaultConfig, max_generic_parameters: Number.NaN, top_n_diagnostics: Number.NaN },
+        {
+          ...RsAb03.defaultConfig,
+          max_generic_complexity: Number.NaN,
+          max_generic_parameters: Number.NaN,
+          top_n_diagnostics: Number.NaN,
+        },
       )
       const strict = await runSignalCompute(
         RsAb03,
         generic,
-        { ...RsAb03.defaultConfig, max_generic_parameters: 1 },
+        { ...RsAb03.defaultConfig, max_generic_complexity: 1, max_generic_parameters: 1 },
       )
       const missingOut = await runSignalCompute(RsAb03, missing, RsAb03.defaultConfig)
       const noGenericOut = await runSignalCompute(RsAb03, noGeneric, RsAb03.defaultConfig)
@@ -1333,10 +1426,13 @@ describe("RS-AB-* signals", () => {
         { ...RsAb03.defaultConfig, exclude_globs: ["**/*.rs"] },
       )
 
+      expect(capped.maxGenericComplexity).toBe(5)
       expect(capped.maxGenericParameters).toBe(2)
       expect(capped.diagnosticLimit).toBe(1)
       expect(RsAb03.diagnose(capped)).toHaveLength(1)
       expect(RsAb03.diagnose(capped)[0]?.data?.paramCount).toBe(4)
+      expect(RsAb03.diagnose(capped)[0]?.data?.maxGenericComplexity).toBe(5)
+      expect(hidden.maxGenericComplexity).toBe(8)
       expect(hidden.maxGenericParameters).toBe(3)
       expect(hidden.diagnosticLimit).toBe(0)
       expect(RsAb03.diagnose(hidden)).toHaveLength(0)

@@ -27,6 +27,7 @@ import { isExcluded } from "./shared-globs.js"
 
 const RsAb03Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
+  max_generic_complexity: Schema.Number,
   max_generic_parameters: Schema.Number,
   top_n_diagnostics: Schema.Number,
 })
@@ -45,15 +46,18 @@ interface RustGenericAnalysis {
 
 interface RsAb03Output {
   readonly declarations: ReadonlyArray<RustGenericAnalysis>
+  readonly complexityDistribution: DistributionalSummary
   readonly parameterDistribution: DistributionalSummary
   readonly overThreshold: ReadonlyArray<RustGenericAnalysis>
   readonly sourceFileCount: number
   readonly analyzedSourceFileCount: number
+  readonly maxGenericComplexity: number
   readonly maxGenericParameters: number
   readonly diagnosticLimit: number
   readonly analysisMode: "ast-generic-signature-counts"
 }
 
+const DEFAULT_MAX_GENERIC_COMPLEXITY = 8
 const DEFAULT_MAX_GENERIC_PARAMETERS = 3
 const DEFAULT_TOP_N_DIAGNOSTICS = 10
 
@@ -64,6 +68,13 @@ const RsAb03FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
     valueKind: "array",
     scoreRole: "evidence",
     defaultValue: [...DEFAULT_RUST_EXCLUDE_GLOBS],
+  },
+  {
+    path: "config.max_generic_complexity",
+    title: "Config max generic complexity",
+    valueKind: "number",
+    scoreRole: "threshold",
+    defaultValue: DEFAULT_MAX_GENERIC_COMPLEXITY,
   },
   {
     path: "config.max_generic_parameters",
@@ -88,11 +99,12 @@ export const RsAb03: Signal<RsAb03Config, RsAb03Output, RustProjectTag> = {
   tier: 1,
   category: "abstraction-bloat",
   kind: "legibility",
-  cacheVersion: "generic-proliferation-config-applicability-diagnostics-cfg-test-gating-bounds-v3",
+  cacheVersion: "generic-proliferation-config-applicability-diagnostics-cfg-test-gating-bounds-complexity-v4",
   configSchema: RsAb03Config,
   factorDefinitions: RsAb03FactorDefinitions,
   defaultConfig: {
     exclude_globs: [...DEFAULT_RUST_EXCLUDE_GLOBS],
+    max_generic_complexity: DEFAULT_MAX_GENERIC_COMPLEXITY,
     max_generic_parameters: DEFAULT_MAX_GENERIC_PARAMETERS,
     top_n_diagnostics: DEFAULT_TOP_N_DIAGNOSTICS,
   },
@@ -137,10 +149,14 @@ export const RsAb03: Signal<RsAb03Config, RsAb03Output, RustProjectTag> = {
           declarations.sort((left, right) => right.paramCount - left.paramCount || left.file.localeCompare(right.file))
           return {
             declarations,
+            complexityDistribution: summarize(declarations.map((entry) => entry.complexity)),
             parameterDistribution: summarize(declarations.map((entry) => entry.paramCount)),
-            overThreshold: declarations.filter((entry) => entry.paramCount > normalizedConfig.max_generic_parameters),
+            overThreshold: declarations.filter((entry) =>
+              exceedsThresholds(entry, normalizedConfig).length > 0,
+            ),
             sourceFileCount: project.sourceFiles.length,
             analyzedSourceFileCount: analyzedSourceFiles.length,
+            maxGenericComplexity: normalizedConfig.max_generic_complexity,
             maxGenericParameters: normalizedConfig.max_generic_parameters,
             diagnosticLimit: normalizedConfig.top_n_diagnostics,
             analysisMode: "ast-generic-signature-counts",
@@ -168,7 +184,7 @@ export const RsAb03: Signal<RsAb03Config, RsAb03Output, RustProjectTag> = {
     }
     return out.overThreshold.slice(0, out.diagnosticLimit).map((entry) => ({
       severity: "warn" as const,
-      message: `${entry.declarationName} uses ${entry.paramCount} generic parameters`,
+      message: diagnosticMessage(entry, out),
       location: { file: entry.file, line: entry.line },
       data: {
         module: entry.module,
@@ -176,6 +192,9 @@ export const RsAb03: Signal<RsAb03Config, RsAb03Output, RustProjectTag> = {
         whereClausePredicates: entry.whereClausePredicates,
         boundCount: entry.boundCount,
         complexity: entry.complexity,
+        maxGenericComplexity: out.maxGenericComplexity,
+        maxGenericParameters: out.maxGenericParameters,
+        thresholdsExceeded: thresholdsExceeded(entry, out),
         analysisMode: out.analysisMode,
       },
     }))
@@ -196,6 +215,9 @@ type NormalizedRsAb03Config = RsAb03Config
 
 const normalizeRsAb03Config = (config: RsAb03Config): NormalizedRsAb03Config => ({
   exclude_globs: config.exclude_globs,
+  max_generic_complexity: Number.isFinite(config.max_generic_complexity)
+    ? Math.max(0, Math.floor(config.max_generic_complexity))
+    : DEFAULT_MAX_GENERIC_COMPLEXITY,
   max_generic_parameters: Number.isFinite(config.max_generic_parameters)
     ? Math.max(0, Math.floor(config.max_generic_parameters))
     : DEFAULT_MAX_GENERIC_PARAMETERS,
@@ -216,6 +238,39 @@ const makeRsAb03FactorLedger = (): SignalFactorLedger =>
 
 const isGenericTrackedNode = (type: string): boolean =>
   ["function_item", "struct_item", "enum_item", "trait_item", "type_item", "impl_item"].includes(type)
+
+const exceedsThresholds = (
+  entry: RustGenericAnalysis,
+  config: Pick<NormalizedRsAb03Config, "max_generic_complexity" | "max_generic_parameters">,
+): ReadonlyArray<"generic_parameters" | "generic_complexity"> => {
+  const exceeded: Array<"generic_parameters" | "generic_complexity"> = []
+  if (entry.paramCount > config.max_generic_parameters) exceeded.push("generic_parameters")
+  if (entry.complexity > config.max_generic_complexity) exceeded.push("generic_complexity")
+  return exceeded
+}
+
+const thresholdsExceeded = (
+  entry: RustGenericAnalysis,
+  out: Pick<RsAb03Output, "maxGenericComplexity" | "maxGenericParameters">,
+): ReadonlyArray<"generic_parameters" | "generic_complexity"> =>
+  exceedsThresholds(entry, {
+    max_generic_complexity: out.maxGenericComplexity,
+    max_generic_parameters: out.maxGenericParameters,
+  })
+
+const diagnosticMessage = (
+  entry: RustGenericAnalysis,
+  out: Pick<RsAb03Output, "maxGenericComplexity" | "maxGenericParameters">,
+): string => {
+  const exceeded = thresholdsExceeded(entry, out)
+  if (exceeded.includes("generic_parameters") && exceeded.includes("generic_complexity")) {
+    return `${entry.declarationName} uses ${entry.paramCount} generic parameters with generic signature complexity ${entry.complexity}`
+  }
+  if (exceeded.includes("generic_complexity")) {
+    return `${entry.declarationName} has generic signature complexity ${entry.complexity}`
+  }
+  return `${entry.declarationName} uses ${entry.paramCount} generic parameters`
+}
 
 const declarationName = (node: RustSyntaxNode): string => {
   if (node.type === "impl_item") {
