@@ -585,7 +585,30 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "ts-ld-08.test.ts and pack.test.ts: wrapped pack cache version includes the TS-LD-08 semantic cacheVersion after finite-domain gating, never-guard recognition, diagnostic-limit, and exclusion semantics changed.",
     },
   },
-  pendingSignalContract("TS-LD-09-error-channel-opacity"),
+  {
+    id: "TS-LD-09-error-channel-opacity",
+    status: "verified",
+    evidence: {
+      identity:
+        "ts-ld-09.test.ts: canonical id, alias, title, tier/category/kind, no compound inputs, semantic cacheVersion, pack registration, and registry alias lookup are asserted.",
+      config:
+        "ts-ld-09.test.ts: configSchema decodes defaults; factor-ledger assertions cover exclude_globs, expected_failure_name_patterns, max_weighted_opacity_per_kloc, max_boundary_weighted_opacity, and top_n_diagnostics; diagnostics-cap tests cover sanitized cap behavior.",
+      positiveFixture:
+        "ts-ld-09.test.ts: real TsProject fixtures flag broad built-in throws, opaque expected-failure Promise APIs with implementation failure evidence, catch fallback/swallow collapse, Promise.catch collapse, exported Effect value APIs, Effect.tryPromise unknown exceptions and weak catch mappers, configurable Effect.promise expected-failure wrappers, and Effect orDie/orElseSucceed channel collapse.",
+      negativeFixture:
+        "ts-ld-09.test.ts: real fixtures prove domain Error throws, typed Effect failures, catch blocks that map to domain errors, async helpers without implementation failure evidence, internal async helpers without expected-failure names, typed Promise Result/Either APIs, non-Effect/non-Promise same-name APIs, lexically shadowed callbacks, generated/declaration/test/helper files, and custom expected-failure naming boundaries do not create false findings.",
+      applicability:
+        "ts-ld-09.test.ts: all-excluded repositories return state not_applicable, analyzedFiles=0, score 1, no diagnostics, and not_applicable metadata; analyzed repositories with no findings return state zero.",
+      score:
+        "ts-ld-09.test.ts: boundary broad-throw plus opaque Promise fixture asserts weighted opacity, density pressure, boundary pressure, and score formula 1 / (1 + max pressure); no-finding states score 1.",
+      diagnostics:
+        "ts-ld-09.test.ts: diagnostics assert severity, message category, file/line/column location, payload data including thresholds and unique finding IDs, deterministic ordering, and finite-safe top_n_diagnostics caps.",
+      factorLedger:
+        "ts-ld-09.test.ts: registered pack signal emits config.exclude_globs, expected_failure_name_patterns, max_weighted_opacity_per_kloc, max_boundary_weighted_opacity, and top_n_diagnostics factor-ledger entries with score roles.",
+      cacheSemantics:
+        "ts-ld-09.test.ts and pack.test.ts: wrapped pack cache version includes the TS-LD-09 semantic cacheVersion after typed Promise result, implementation-evidence, namespace, callback-scope, unique finding-id, diagnostic-limit, and exclusion semantics changed.",
+    },
+  },
   pendingSignalContract("TS-RP-01-hotspots"),
   pendingSignalContract("TS-SL-01-duplication"),
   pendingSignalContract("TS-SL-03-suppressions"),
