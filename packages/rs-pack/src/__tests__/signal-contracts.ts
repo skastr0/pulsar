@@ -605,6 +605,32 @@ export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "observer-integration.test.ts and CLI score tests: Rust observer integration runs RS-RP-01 through the RS pack using real RS-LD-05 complexity and SHARED-CHURN-01 git churn inputs from a committed Cargo fixture, while CLI single-signal mode executes RS-RP-01 against the repository substrate through the source CLI path.",
     },
   },
-  pendingSignalContract("RS-RP-02-compile-time"),
+  {
+    id: "RS-RP-02-compile-time",
+    status: "verified",
+    requiredEvidence: ["integration"],
+    evidence: {
+      identity:
+        "rs-rp-signals.test.ts: canonical id, alias, title, tier/category/kind, empty input contract, semantic cacheVersion, pack registration, registry alias lookup, default config decoding, factor ledger, score mode, and score denominator are asserted.",
+      config:
+        "rs-rp-signals.test.ts: top_n_diagnostics and measure_live_builds decode through the real schema; fractional and NaN diagnostic cap values are normalized through compute output.",
+      positiveFixture:
+        "rs-rp-signals.test.ts: temporary Cargo fixtures with existing target/cargo-timings/cargo-timing.html files exercise real RustProjectLayer and parse multiple cargo timing units per crate, grouped duration, unit count, cascade impact, deterministic crate ranking, workspace crate presence, and nested-manifest timing report discovery.",
+      negativeFixture:
+        "rs-rp-signals.test.ts: missing timing reports, invalid UNIT_DATA payloads, no Cargo project workspaces, failed live builds with stale timing reports, unavailable output, and measured empty timing output avoid false compile-time pressure.",
+      applicability:
+        "rs-rp-signals.test.ts: missing or invalid cargo timing data emits insufficient_evidence metadata, no Cargo project emits not_applicable metadata, and measured timing reports remain applicable.",
+      score:
+        "rs-rp-signals.test.ts: score is asserted as slowest-crate compile-duration pressure; unavailable and empty measured outputs stay neutral while slower measured compile hotspots lower scores monotonically.",
+      diagnostics:
+        "rs-rp-signals.test.ts: diagnostics assert severity, normalized top_n_diagnostics caps, missing-data warnings, crate timing payloads, cache probe mode, measurement mode, score mode, and denominator payloads.",
+      factorLedger:
+        "rs-rp-signals.test.ts: registered RS pack signal emits config.top_n_diagnostics as non-score-bearing metadata and config.measure_live_builds as score-bearing evidence with signal-default source.",
+      cacheSemantics:
+        "rs-rp-signals.test.ts and pack.test.ts: RS-RP-02 declares cargo-timings-config-applicability-diagnostics-live-build-nested-v2 cacheVersion, config/cacheVersion changes alter the signal config hash, and the RS pack wrapper preserves the signal-specific cacheVersion.",
+      integration:
+        "observer-integration.test.ts and CLI score tests: Rust observer integration carries RS-RP-02 compile-time score and diagnostics through the RS pack against a real Cargo fixture with cargo timing HTML, while CLI single-signal mode executes RS-RP-02 against the repository substrate through the source CLI path.",
+    },
+  },
   pendingSignalContract("RS-RP-03-pr-size"),
 ]

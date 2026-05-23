@@ -2056,6 +2056,44 @@ export function stubF() { throw new Error("Not implemented") }
     }
   }, 120_000)
 
+  test("single-signal CLI wrapper executes RS-RP-02 with cargo timing data", async () => {
+    const repoPath = await initRepo([
+      {
+        path: "Cargo.toml",
+        content: [
+          "[package]",
+          'name = "compile-cli"',
+          'version = "0.1.0"',
+          'edition = "2021"',
+          "",
+        ].join("\n"),
+      },
+      {
+        path: "src/lib.rs",
+        content: "pub fn meaning() -> u32 { 42 }\n",
+      },
+      {
+        path: "target/cargo-timings/cargo-timing.html",
+        content: [
+          "<script>",
+          'const UNIT_DATA = [{"i":0,"name":"compile-cli","duration":2.4,"unblocked_units":[],"unblocked_rmeta_units":[]}];',
+          "</script>",
+        ].join("\n"),
+      },
+    ])
+    try {
+      const out = runCli(repoPath, ["score", "--signal", "RS-RP-02", "."])
+      expect(out.status).toBe(0)
+      expect(out.stdout).toContain("Signal: RS-RP-02-compile-time")
+      expect(out.stdout).toContain("WARN  Compile hotspot compile-cli: 2.40s")
+      expect(out.stdout).toContain("Score:  0.760")
+      expect(out.stdout).toContain("Factor Audit (1 score-bearing)")
+      expect(out.stdout).toContain("signal-default config.")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
   test("single-signal mode summarizes score-bearing factor audit details", async () => {
     const repoPath = await initRepo([
       {

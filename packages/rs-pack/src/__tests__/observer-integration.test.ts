@@ -8,7 +8,7 @@ import {
   type ObserverOutput,
 } from "@skastr0/pulsar-core/scoring"
 import { execFile } from "node:child_process"
-import { writeFile } from "node:fs/promises"
+import { mkdir, writeFile } from "node:fs/promises"
 import { promisify } from "node:util"
 import { describe, expect, test } from "bun:test"
 import { Effect, Layer } from "effect"
@@ -27,6 +27,7 @@ import { RsLd04 } from "../signals/rs-ld-04-error-granularity.js"
 import { RsLd05 } from "../signals/rs-ld-05-complexity.js"
 import { RsLd06 } from "../signals/rs-ld-06-domain-terms.js"
 import { RsRp01 } from "../signals/rs-rp-01-hotspots.js"
+import { RsRp02 } from "../signals/rs-rp-02-compile-time.js"
 import { RsSl01 } from "../signals/rs-sl-01-duplication.js"
 import { RsSl02 } from "../signals/rs-sl-02-suppressions.js"
 import { RsSl03 } from "../signals/rs-sl-03-unwrap-expect.js"
@@ -811,6 +812,67 @@ describe("rs-pack integration", () => {
           analysisMode: "rust-churn-complexity-hotspots",
           scoreMode: "bounded-hotspot-pressure",
           scoreDenominator: "aligned-churn-complexity-files",
+        }),
+      })
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  }, 120_000)
+
+  test("observer path carries RS-RP-02 compile-time score and diagnostics", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-observer-rp02-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "compile-observer"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": "pub fn meaning() -> u32 { 42 }\n",
+    })
+
+    try {
+      await mkdir(`${repo}/target/cargo-timings`, { recursive: true })
+      await writeFile(
+        `${repo}/target/cargo-timings/cargo-timing.html`,
+        [
+          "<script>",
+          'const UNIT_DATA = [{"i":0,"name":"compile-observer","duration":2.4,"unblocked_units":[],"unblocked_rmeta_units":[]}];',
+          "</script>",
+        ].join("\n"),
+      )
+
+      const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
+      const EnvLayer = Layer.mergeAll(
+        Layer.succeed(SignalContextTag, {
+          gitSha: "HEAD",
+          worktreePath: repo,
+          changedHunks: [],
+        }),
+        referenceLayer(),
+        InMemoryCacheLayer,
+        RustProjectLayer(repo),
+      )
+
+      const result = await Effect.runPromise(
+        Effect.provide(observe(registry, undefined), EnvLayer) as Effect.Effect<
+          ObserverOutput,
+          never,
+          never
+        >,
+      )
+      const compileTime = result.signalResults.get(RsRp02.id)
+
+      expect(result.categories["review-pain"].signals[RsRp02.id]).toBeCloseTo(0.76)
+      expect(compileTime?.score).toBeCloseTo(0.76)
+      expect(compileTime?.diagnostics[0]).toMatchObject({
+        severity: "warn",
+        message: "Compile hotspot compile-observer: 2.40s",
+        data: expect.objectContaining({
+          totalDurationMs: 2400,
+          measurementMode: "existing-cargo-timings",
+          scoreMode: "slowest-crate-compile-duration",
+          scoreDenominator: "slowest-crate-duration-ms",
         }),
       })
     } finally {
