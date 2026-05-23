@@ -43,7 +43,7 @@ export const TsDe05: Signal<TsDe05Config, TsDe05Output, SignalContextTag> = {
   tier: 1,
   category: "dependency-entropy",
   kind: "structural",
-  cacheVersion: "factor-policy-v1",
+  cacheVersion: "factor-policy-v1-diagnostic-limit-v1",
   configSchema: TsDe05Config,
   defaultConfig: {
     top_n_diagnostics: 10,
@@ -67,7 +67,7 @@ export const TsDe05: Signal<TsDe05Config, TsDe05Output, SignalContextTag> = {
           duplicates: [],
           totalPackages: 0,
           totalDuplicateInstances: 0,
-          diagnosticLimit: config.top_n_diagnostics,
+          diagnosticLimit: normalizeDiagnosticLimit(config.top_n_diagnostics),
           lockfileStatus: lockfile.kind,
           lockfileFiles: lockfile.files,
           calibrationDecisions: [],
@@ -87,7 +87,7 @@ export const TsDe05: Signal<TsDe05Config, TsDe05Output, SignalContextTag> = {
         duplicates,
         totalPackages: resolvedPackages.length,
         totalDuplicateInstances: duplicates.reduce((sum, group) => sum + group.instanceCount, 0),
-        diagnosticLimit: config.top_n_diagnostics,
+        diagnosticLimit: normalizeDiagnosticLimit(config.top_n_diagnostics),
         lockfileStatus: lockfile.kind,
         lockfileFiles: [lockfile.path],
         calibrationDecisions: duplicates.flatMap((group) => group.policyDecisions),
@@ -118,7 +118,7 @@ export const TsDe05: Signal<TsDe05Config, TsDe05Output, SignalContextTag> = {
           lockfileStatus: out.lockfileStatus,
           files: out.lockfileFiles.slice(),
         },
-      }]
+      }].slice(0, out.diagnosticLimit)
     }
 
     return out.duplicates.filter((group) => group.visible).slice(0, out.diagnosticLimit).map((group) => ({
@@ -146,6 +146,11 @@ export const TsDe05: Signal<TsDe05Config, TsDe05Output, SignalContextTag> = {
     }))
   },
   factorLedger: (out) => out.factorLedger,
+}
+
+const normalizeDiagnosticLimit = (value: number): number => {
+  if (!Number.isFinite(value)) return 0
+  return Math.max(0, Math.floor(value))
 }
 
 const applyDependencyVersionPolicy = (
