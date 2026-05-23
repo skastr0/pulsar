@@ -111,7 +111,8 @@ export const RsSl02: Signal<RsSl02Config, RsSl02Output, RustProjectTag | SignalC
             const bypasses = parseBypasses(source)
             const scope = resolveRustFileScope(project, file)
             const tree = await parseRustFile(file)
-            walkAttributedNodes(tree.rootNode, ({ node, ancestors, attachedAttributes }) => {
+            walkAttributedNodes(tree.rootNode, ({ node, ancestors, attachedAttributes, testGated }) => {
+              if (testGated) return
               const { modulePath } = modulePathForAncestors(scope, ancestors)
               for (const attribute of attachedAttributes) {
                 const lints = extractAllowLints(attribute.text)

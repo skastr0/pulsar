@@ -657,6 +657,41 @@ describe("RS-SL-* signals", () => {
     }
   })
 
+  test("RS-SL-02 excludes cfg-test-gated allow attributes", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-sl02-cfg-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "suppression-cfg"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "#[allow(clippy::unwrap_used)]",
+        "pub fn production(value: Option<u32>) -> u32 { value.unwrap() }",
+        "",
+        "#[cfg(any(test, feature = \"fixture\"))]",
+        "#[allow(warnings)]",
+        "pub fn test_only() {}",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const out = await runSignalCompute(RsSl02, repo, RsSl02.defaultConfig)
+
+      expect(out.governedAllowAttributeCount).toBe(1)
+      expect(out.missingJustificationCount).toBe(1)
+      expect(out.suppressions.map((suppression) => suppression.lints)).toEqual([
+        ["clippy::unwrap_used"],
+      ])
+      expect(out.suppressions[0]?.line).toBe(1)
+      expect(RsSl02.diagnose(out)).toHaveLength(1)
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
   test("RS-SL-03 excludes unwrap/expect inside cfg(test) blocks", async () => {
     const repo = await createRustWorkspace("pulsar-rs-sl03-", {
       "Cargo.toml": [
