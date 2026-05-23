@@ -194,6 +194,47 @@ describe("TS-AB-04 (interface to implementation ratio)", () => {
     expect(out.deadInterfaces).toHaveLength(0)
   })
 
+  test("call arguments with non-object casts count as structural data usage", async () => {
+    await repo.write(
+      "src/call.ts",
+      [
+        "export interface Payload {",
+        "  readonly value: string",
+        "}",
+        "declare function readPayload(): unknown",
+        "function consume(payload: Payload) {",
+        "  return payload.value",
+        "}",
+        "export const value = consume(readPayload() as Payload)",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsAb04, TsAb04.defaultConfig)
+
+    expect(out.totalInterfaces).toBe(0)
+    expect(out.deadInterfaces).toHaveLength(0)
+  })
+
+  test("returned non-object casts count as structural data usage", async () => {
+    await repo.write(
+      "src/return.ts",
+      [
+        "export interface Payload {",
+        "  readonly value: string",
+        "}",
+        "declare function readPayload(): unknown",
+        "export function loadPayload() {",
+        "  return readPayload() as Payload",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsAb04, TsAb04.defaultConfig)
+
+    expect(out.totalInterfaces).toBe(0)
+    expect(out.deadInterfaces).toHaveLength(0)
+  })
+
   test("multiple implementations are not flagged", async () => {
     await repo.write(
       "src/multi.ts",

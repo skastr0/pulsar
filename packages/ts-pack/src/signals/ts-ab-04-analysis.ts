@@ -408,19 +408,25 @@ const assertionReference = (
 }
 
 const isConsumedAssertion = (assertion: AsExpression | SatisfiesExpression): boolean =>
-  assertionFeedsPropertyAccess(assertion) || assertionVariableIsUsed(assertion)
+  assertionFeedsExpression(assertion) || assertionVariableIsUsed(assertion)
 
-const assertionFeedsPropertyAccess = (assertion: AsExpression | SatisfiesExpression): boolean => {
+const assertionFeedsExpression = (assertion: AsExpression | SatisfiesExpression): boolean => {
   const parent = assertion.getParent()
   if (Node.isPropertyAccessExpression(parent) || Node.isElementAccessExpression(parent)) {
+    return sameSpan(parent.getExpression(), assertion)
+  }
+  if (Node.isCallExpression(parent)) {
+    return parent.getArguments().some((argument) => sameSpan(argument, assertion))
+  }
+  if (Node.isReturnStatement(parent)) {
     const expression = parent.getExpression()
-    return (
-      expression.getStart() === assertion.getStart() &&
-      expression.getEnd() === assertion.getEnd()
-    )
+    return expression !== undefined && sameSpan(expression, assertion)
   }
   return false
 }
+
+const sameSpan = (left: Node, right: Node): boolean =>
+  left.getStart() === right.getStart() && left.getEnd() === right.getEnd()
 
 const assertionVariableIsUsed = (assertion: AsExpression | SatisfiesExpression): boolean => {
   const variableDeclaration = assertion.getFirstAncestorByKind(SyntaxKind.VariableDeclaration)
