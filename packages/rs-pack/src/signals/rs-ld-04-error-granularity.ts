@@ -80,7 +80,7 @@ export const RsLd04: Signal<RsLd04Config, RsLd04Output, RustProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "error-granularity-config-applicability-diagnostics-cfg-test-result-aliases-v6",
+  cacheVersion: "error-granularity-config-applicability-diagnostics-cfg-test-result-aliases-v7",
   configSchema: RsLd04Config,
   factorDefinitions: RsLd04FactorDefinitions,
   defaultConfig: {
@@ -315,16 +315,10 @@ const aliasesForModule = (
   modulePath: string,
   aliasesByModule: ReadonlyMap<string, ResultAliasScope>,
 ): ResultAliasScope => {
-  const importAliases = new Map<string, string>()
-  const typeAliases = new Map<string, string>()
-  const moduleSegments = modulePath.split("::")
-  for (let length = 1; length <= moduleSegments.length; length += 1) {
-    const scope = aliasesByModule.get(moduleSegments.slice(0, length).join("::"))
-    if (scope === undefined) continue
-    for (const [name, target] of scope.importAliases) importAliases.set(name, target)
-    for (const [name, target] of scope.typeAliases) typeAliases.set(name, target)
+  return aliasesByModule.get(modulePath) ?? {
+    importAliases: new Map<string, string>(),
+    typeAliases: new Map<string, string>(),
   }
-  return { importAliases, typeAliases }
 }
 
 const returnTypeTextOfFunction = (node: Parameters<typeof firstNamedChild>[0]): string | undefined => {
@@ -347,10 +341,16 @@ const resultErrorTypeFromReturnText = (
   if (/^anyhow::Result(?:<.*>)?$/.test(normalized)) return "anyhow::Error"
   if (/^eyre::Result(?:<.*>)?$/.test(normalized)) return "eyre::Report"
 
-  const resultArguments = /^(?:(?:[A-Za-z_][A-Za-z0-9_]*|self|super|crate)::)*Result<([\s\S]+)>$/.exec(trimmed)
-  if (resultArguments !== null) {
-    const errorType = splitTopLevelCommas(resultArguments[1] ?? "")[1]?.trim()
-    return errorType === undefined ? undefined : resolveErrorAlias(errorType, aliases, seenAliases)
+  const genericReturn = /^((?:(?:[A-Za-z_][A-Za-z0-9_]*|self|super|crate)::)*[A-Za-z_][A-Za-z0-9_]*)<([\s\S]+)>$/.exec(trimmed)
+  if (genericReturn !== null) {
+    const outerType = resolveImportedTypeName(genericReturn[1]!, aliases.importAliases)
+    const outerTypeNormalized = outerType.replace(/\s+/g, "")
+    if (outerTypeNormalized === "anyhow::Result") return "anyhow::Error"
+    if (outerTypeNormalized === "eyre::Result") return "eyre::Report"
+    if (/(^|::)Result$/.test(outerType)) {
+      const errorType = splitTopLevelCommas(genericReturn[2] ?? "")[1]?.trim()
+      return errorType === undefined ? undefined : resolveErrorAlias(errorType, aliases, seenAliases)
+    }
   }
 
   const aliasCall = /^([A-Za-z_][A-Za-z0-9_]*)(?:<[\s\S]*>)?$/.exec(trimmed)
@@ -380,6 +380,11 @@ const resolveErrorAlias = (
   return resultErrorTypeFromReturnText(aliasedType, aliases, nextSeenAliases) ??
     resolveErrorAlias(aliasedType, aliases, nextSeenAliases)
 }
+
+const resolveImportedTypeName = (
+  typeName: string,
+  importAliases: ReadonlyMap<string, string>,
+): string => /^[A-Za-z_][A-Za-z0-9_]*$/.test(typeName) ? importAliases.get(typeName) ?? typeName : typeName
 
 const splitTopLevelCommas = (text: string): ReadonlyArray<string> => {
   const parts: Array<string> = []

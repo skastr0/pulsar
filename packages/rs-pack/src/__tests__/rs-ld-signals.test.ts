@@ -1636,7 +1636,7 @@ describe("RS-LD-* signals", () => {
       tier: 1,
       category: "legibility-decay",
       kind: "legibility",
-      cacheVersion: "error-granularity-config-applicability-diagnostics-cfg-test-result-aliases-v6",
+      cacheVersion: "error-granularity-config-applicability-diagnostics-cfg-test-result-aliases-v7",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -1811,6 +1811,21 @@ describe("RS-LD-* signals", () => {
         "  use std::io::Error;",
         "  pub fn direct_io_error(value: &str) -> Result<(), Error> { let _ = value; Ok(()) }",
         "}",
+        "pub mod result_imports {",
+        "  use anyhow::Result;",
+        "  use anyhow::Result as AnyResult;",
+        "  use eyre::Result as EyreResult;",
+        "  pub fn direct_anyhow_result(value: &str) -> Result<()> { let _ = value; Ok(()) }",
+        "  pub fn renamed_anyhow_result(value: &str) -> AnyResult<()> { let _ = value; Ok(()) }",
+        "  pub fn renamed_eyre_result(value: &str) -> EyreResult<()> { let _ = value; Ok(()) }",
+        "}",
+        "pub mod no_parent_alias_leak {",
+        "  use anyhow::Error;",
+        "  pub mod inner {",
+        "    type Error = crate::errors::DomainError;",
+        "    pub fn local_shadow(value: &str) -> Result<(), Error> { let _ = value; Ok(()) }",
+        "  }",
+        "}",
       ],
     })
 
@@ -1818,9 +1833,9 @@ describe("RS-LD-* signals", () => {
       const out = await runSignalCompute(RsLd04, repo, RsLd04.defaultConfig)
       const byName = new Map(out.boundaryFunctions.map((fn) => [fn.name, fn]))
 
-      expect(out.totalBoundaryResults).toBe(17)
-      expect(out.collapsedCount).toBe(12)
-      expect(out.granularCount).toBe(5)
+      expect(out.totalBoundaryResults).toBe(21)
+      expect(out.collapsedCount).toBe(15)
+      expect(out.granularCount).toBe(6)
       expect(byName.get("explicit_anyhow")).toMatchObject({
         errorType: "anyhow::Error",
         classification: "collapsed",
@@ -1889,7 +1904,23 @@ describe("RS-LD-* signals", () => {
         errorType: "std::io::Error",
         classification: "granular",
       })
-      expect(RsLd04.score(out)).toBeCloseTo(5 / 17)
+      expect(byName.get("direct_anyhow_result")).toMatchObject({
+        errorType: "anyhow::Error",
+        classification: "collapsed",
+      })
+      expect(byName.get("renamed_anyhow_result")).toMatchObject({
+        errorType: "anyhow::Error",
+        classification: "collapsed",
+      })
+      expect(byName.get("renamed_eyre_result")).toMatchObject({
+        errorType: "eyre::Report",
+        classification: "collapsed",
+      })
+      expect(byName.get("local_shadow")).toMatchObject({
+        errorType: "crate::errors::DomainError",
+        classification: "granular",
+      })
+      expect(RsLd04.score(out)).toBeCloseTo(2 / 7)
     } finally {
       await cleanupWorkspace(repo)
     }
