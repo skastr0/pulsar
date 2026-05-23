@@ -313,6 +313,29 @@ const createMatchWorkspace = (
     ),
   })
 
+const createBoundaryWorkspace = (
+  name: string,
+  files: Record<string, string | ReadonlyArray<string>>,
+) =>
+  createRustWorkspace(`pulsar-rs-ld04-${name}-`, {
+    "Cargo.toml": [
+      "[package]",
+      `name = "boundary-${name}"`,
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+      "[dependencies]",
+      'anyhow = "1"',
+      "",
+    ].join("\n"),
+    ...Object.fromEntries(
+      Object.entries(files).map(([path, content]) => [
+        path,
+        Array.isArray(content) ? [...content, ""].join("\n") : content,
+      ]),
+    ),
+  })
+
 describe("RS-LD-* signals", () => {
   test("RS-LD-01 declares identity, config, cache, pack registration, and factor ledger", async () => {
     const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
@@ -1579,18 +1602,227 @@ describe("RS-LD-* signals", () => {
     }
   })
 
+  test("RS-LD-04 declares identity, config, cache, pack registration, and factor ledger", async () => {
+    const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
+    const versionedRegistry = await Effect.runPromise(
+      buildRegistry([
+        ...SHARED_SIGNALS,
+        ...RS_PACK_SIGNALS.filter((signal) => signal.id !== RsLd04.id),
+        { ...RsLd04, cacheVersion: `${RsLd04.cacheVersion}-next` },
+      ]),
+    )
+    const registered = registry.byId.get("RS-LD-04")
+    const decoded = Schema.decodeUnknownSync(RsLd04.configSchema)(RsLd04.defaultConfig)
+    const factorLedger = registered?.factorLedger?.({})
+    const baseCacheHash = computeConfigHash(RsLd04.id, registry, undefined)
+    const versionedCacheHash = computeConfigHash(RsLd04.id, versionedRegistry, undefined)
+    const configuredCacheHash = computeConfigHash(RsLd04.id, registry, {
+      id: "rs-ld-04-contract",
+      domain: "test",
+      signal_overrides: {
+        [RsLd04.id]: {
+          config: {
+            ...RsLd04.defaultConfig,
+            top_n_diagnostics: 1,
+          },
+        },
+      },
+    })
+
+    expect(RsLd04).toMatchObject({
+      id: "RS-LD-04-error-granularity",
+      aliases: ["RS-LD-04"],
+      title: "Error granularity",
+      tier: 1,
+      category: "legibility-decay",
+      kind: "legibility",
+      cacheVersion: "error-granularity-config-applicability-diagnostics-v1",
+      inputs: [],
+    })
+    expect(decoded).toEqual({
+      exclude_globs: ["**/target/**", "**/tests/**", "**/examples/**", "**/benches/**"],
+      top_n_diagnostics: 10,
+    })
+    expect(registered?.id).toBe(RsLd04.id)
+    expect(registered?.cacheVersion).toBe(RsLd04.cacheVersion)
+    expect(registry.byId.get("RS-LD-04")?.id).toBe(RsLd04.id)
+    expect(baseCacheHash).not.toBe(versionedCacheHash)
+    expect(baseCacheHash).not.toBe(configuredCacheHash)
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.exclude_globs",
+        affectsScore: true,
+        scoreRole: "evidence",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        affectsScore: false,
+        scoreRole: "metadata",
+      }),
+    )
+  })
+
   test("RS-LD-04 distinguishes granular and collapsed boundary errors", async () => {
     const repo = await createLegibilityWorkspace()
     try {
       const out = await runSignalCompute(RsLd04, repo, RsLd04.defaultConfig)
       expect(out.totalBoundaryResults).toBe(2)
+      expect(out.sourceFileCount).toBe(1)
+      expect(out.analyzedSourceFileCount).toBe(1)
       expect(out.granularCount).toBe(1)
       expect(out.collapsedCount).toBe(1)
+      expect(out.granularBoundaryShare).toBe(0.5)
+      expect(out.collapsedBoundaryShare).toBe(0.5)
+      expect(out.scoreMode).toBe("granular-result-boundary-share")
+      expect(out.scoreDenominator).toBe("public-result-boundary-functions")
+      expect(RsLd04.score(out)).toBe(0.5)
+      expect(RsLd04.outputMetadata?.(out)).toBeUndefined()
       expect(out.boundaryFunctions.find((fn) => fn.name === "parse_anyhow")?.classification).toBe(
         "collapsed",
       )
+      expect(RsLd04.diagnose(out)[0]).toMatchObject({
+        severity: "warn",
+        message: "Boundary function parse_anyhow returns collapsed error type anyhow::Error",
+        data: expect.objectContaining({
+          scoreMode: "granular-result-boundary-share",
+          scoreDenominator: "public-result-boundary-functions",
+        }),
+      })
     } finally {
       await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-LD-04 scores granular boundary pressure over public Result functions", async () => {
+    const granular = [
+      "pub struct DomainError;",
+      "pub struct OtherError;",
+      "pub fn parse(value: &str) -> Result<(), DomainError> { let _ = value; Ok(()) }",
+      "pub fn load(value: &str) -> Result<(), OtherError> { let _ = value; Ok(()) }",
+    ]
+    const oneCollapsed = [
+      "pub struct DomainError;",
+      "pub fn parse(value: &str) -> Result<(), DomainError> { let _ = value; Ok(()) }",
+      "pub fn load(value: &str) -> Result<(), anyhow::Error> { let _ = value; Ok(()) }",
+    ]
+    const twoCollapsed = [
+      "pub struct DomainError;",
+      "pub fn parse(value: &str) -> Result<(), DomainError> { let _ = value; Ok(()) }",
+      "pub fn load(value: &str) -> Result<(), anyhow::Error> { let _ = value; Ok(()) }",
+      "pub fn save(value: &str) -> Result<(), String> { let _ = value; Ok(()) }",
+    ]
+    const clean = await createBoundaryWorkspace("clean", { "src/lib.rs": granular })
+    const mixed = await createBoundaryWorkspace("mixed", { "src/lib.rs": oneCollapsed })
+    const heavy = await createBoundaryWorkspace("heavy", { "src/lib.rs": twoCollapsed })
+
+    try {
+      const cleanOut = await runSignalCompute(RsLd04, clean, RsLd04.defaultConfig)
+      const mixedOut = await runSignalCompute(RsLd04, mixed, RsLd04.defaultConfig)
+      const heavyOut = await runSignalCompute(RsLd04, heavy, RsLd04.defaultConfig)
+
+      expect(cleanOut.totalBoundaryResults).toBe(2)
+      expect(cleanOut.granularCount).toBe(2)
+      expect(cleanOut.collapsedCount).toBe(0)
+      expect(RsLd04.score(cleanOut)).toBe(1)
+      expect(mixedOut.totalBoundaryResults).toBe(2)
+      expect(mixedOut.granularCount).toBe(1)
+      expect(mixedOut.collapsedCount).toBe(1)
+      expect(RsLd04.score(mixedOut)).toBe(0.5)
+      expect(heavyOut.totalBoundaryResults).toBe(3)
+      expect(heavyOut.granularCount).toBe(1)
+      expect(heavyOut.collapsedCount).toBe(2)
+      expect(RsLd04.score(heavyOut)).toBeCloseTo(1 / 3)
+      expect(RsLd04.score(cleanOut)).toBeGreaterThan(RsLd04.score(mixedOut))
+      expect(RsLd04.score(mixedOut)).toBeGreaterThan(RsLd04.score(heavyOut))
+    } finally {
+      await cleanupWorkspace(clean)
+      await cleanupWorkspace(mixed)
+      await cleanupWorkspace(heavy)
+    }
+  })
+
+  test("RS-LD-04 normalizes diagnostics and applicability evidence", async () => {
+    const collapsed = await createBoundaryWorkspace("collapsed", {
+      "src/lib.rs": [
+        "pub fn parse(value: &str) -> Result<(), anyhow::Error> { let _ = value; Ok(()) }",
+        "pub fn load(value: &str) -> Result<(), String> { let _ = value; Ok(()) }",
+      ],
+    })
+    const missing = await createBoundaryWorkspace("missing", {})
+    const noBoundary = await createBoundaryWorkspace("no-boundary", {
+      "src/lib.rs": "pub fn clean(value: &str) -> usize { value.len() }",
+    })
+    const excluded = await createBoundaryWorkspace("excluded", {
+      "src/lib.rs": "pub fn parse(value: &str) -> Result<(), anyhow::Error> { let _ = value; Ok(()) }",
+    })
+
+    try {
+      const capped = await runSignalCompute(
+        RsLd04,
+        collapsed,
+        { ...RsLd04.defaultConfig, top_n_diagnostics: 1.8 },
+      )
+      const hidden = await runSignalCompute(
+        RsLd04,
+        collapsed,
+        { ...RsLd04.defaultConfig, top_n_diagnostics: Number.NaN },
+      )
+      const missingOut = await runSignalCompute(RsLd04, missing, RsLd04.defaultConfig)
+      const noBoundaryOut = await runSignalCompute(RsLd04, noBoundary, RsLd04.defaultConfig)
+      const excludedOut = await runSignalCompute(
+        RsLd04,
+        excluded,
+        { ...RsLd04.defaultConfig, exclude_globs: ["**/*.rs"] },
+      )
+
+      expect(capped.diagnosticLimit).toBe(1)
+      expect(RsLd04.diagnose(capped)).toHaveLength(1)
+      expect(hidden.diagnosticLimit).toBe(0)
+      expect(RsLd04.diagnose(hidden)).toHaveLength(0)
+
+      expect(missingOut.sourceFileCount).toBe(0)
+      expect(RsLd04.outputMetadata?.(missingOut)).toEqual({
+        applicability: "insufficient_evidence",
+      })
+      expect(RsLd04.diagnose(missingOut)).toEqual([
+        expect.objectContaining({
+          severity: "warn",
+          message: "RS-LD-04 found no Rust source files for error granularity analysis",
+          data: expect.objectContaining({
+            sourceFileCount: 0,
+            analyzedSourceFileCount: 0,
+            totalBoundaryResults: 0,
+            granularCount: 0,
+            collapsedCount: 0,
+            scoreMode: "granular-result-boundary-share",
+            scoreDenominator: "public-result-boundary-functions",
+          }),
+        }),
+      ])
+
+      expect(noBoundaryOut.sourceFileCount).toBe(1)
+      expect(noBoundaryOut.analyzedSourceFileCount).toBe(1)
+      expect(noBoundaryOut.totalBoundaryResults).toBe(0)
+      expect(RsLd04.outputMetadata?.(noBoundaryOut)).toEqual({
+        applicability: "not_applicable",
+      })
+      expect(RsLd04.score(noBoundaryOut)).toBe(1)
+      expect(RsLd04.diagnose(noBoundaryOut)).toEqual([])
+
+      expect(excludedOut.sourceFileCount).toBe(1)
+      expect(excludedOut.analyzedSourceFileCount).toBe(0)
+      expect(excludedOut.totalBoundaryResults).toBe(0)
+      expect(RsLd04.outputMetadata?.(excludedOut)).toEqual({
+        applicability: "not_applicable",
+      })
+      expect(RsLd04.diagnose(excludedOut)).toEqual([])
+    } finally {
+      await cleanupWorkspace(collapsed)
+      await cleanupWorkspace(missing)
+      await cleanupWorkspace(noBoundary)
+      await cleanupWorkspace(excluded)
     }
   })
 
