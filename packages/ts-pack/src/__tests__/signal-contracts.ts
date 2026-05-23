@@ -438,7 +438,30 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "ts-ab-02.test.ts: export-reachability calibration marks a Convex runtime export public with module id, processor id, action, reason, path/symbol evidence, calibrationDecisions, and cross-package classification while ordinary unused exports remain penalized.",
     },
   },
-  pendingSignalContract("TS-AB-03-type-indirection-depth"),
+  {
+    id: "TS-AB-03-type-indirection-depth",
+    status: "verified",
+    evidence: {
+      identity:
+        "ts-ab-03.test.ts: canonical id, alias, title, tier/category/kind, no compound inputs, semantic cacheVersion, pack registration, and registry alias lookup are asserted.",
+      config:
+        "ts-ab-03.test.ts: configSchema decodes defaults and factor-ledger assertions cover exclude_globs, max_depth, max_traversal_steps, and top_n_diagnostics with sanitized diagnostic caps.",
+      positiveFixture:
+        "ts-ab-03.test.ts and ts-ab-03-regressions.test.ts: real TsProject fixtures measure simple, deep, mapped, conditional, indexed-access, import-type, typeof, utility, same-file/imported/importer-shadowed alias chains, generic alias wrappers, interface/class heritage, heritage cycles, recursive aliases, and traversal caps.",
+      negativeFixture:
+        "ts-ab-03.test.ts: value-only files produce no tracked declarations; generated and test declarations are excluded; shallow local helper aliases remain info-level rather than boundary warnings.",
+      applicability:
+        "ts-ab-03.test.ts: repositories with no tracked declarations return empty declarations/byFile/overThreshold, zero repoDistribution, preserved caps, score 1, and no diagnostics.",
+      score:
+        "ts-ab-03.test.ts: clean fixtures score 1 and mixed over-threshold fixtures prove score is 1 minus over-threshold declarations divided by total tracked declarations.",
+      diagnostics:
+        "ts-ab-03.test.ts: diagnostics include severity, compact chain messages, file/line locations, depth/exported/chain/cycle/truncated/maxDepth/traversalCap payloads, deterministic ordering, and sanitized diagnostic caps.",
+      factorLedger:
+        "ts-ab-03.test.ts: registered pack signal emits config.exclude_globs, config.max_depth, config.max_traversal_steps, and config.top_n_diagnostics factor-ledger entries with score roles.",
+      cacheSemantics:
+        "ts-ab-03.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AB-03 semantic cacheVersion after diagnostic-limit, imported alias, generic argument, heritage, alias-cache, and truncation semantics changed.",
+    },
+  },
   pendingSignalContract("TS-AB-04-interface-implementation-ratio"),
   pendingSignalContract("TS-AB-05-generic-proliferation"),
   pendingSignalContract("TS-LD-06-annotation-coverage"),
