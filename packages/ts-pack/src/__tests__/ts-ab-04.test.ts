@@ -78,6 +78,94 @@ describe("TS-AB-04 (interface to implementation ratio)", () => {
     expect(out.flaggedPairs).toHaveLength(0)
   })
 
+  test("same-named interfaces in different files are matched independently", async () => {
+    const unusedFile = await repo.write(
+      "src/unused-service.ts",
+      [
+        "export interface IService {",
+        "  stale(): string",
+        "}",
+      ].join("\n"),
+    )
+    const liveFile = await repo.write(
+      "src/live-service.ts",
+      [
+        "export interface IService {",
+        "  run(): string",
+        "}",
+        "export class LiveService implements IService {",
+        "  run() {",
+        "    return 'ok'",
+        "  }",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsAb04, TsAb04.defaultConfig)
+
+    expect(out.pairs).toHaveLength(1)
+    expect(out.flaggedPairs).toEqual([
+      expect.objectContaining({
+        interfaceFile: liveFile,
+        interfaceName: "IService",
+        implementationName: "LiveService",
+      }),
+    ])
+    expect(out.deadInterfaces).toEqual([
+      expect.objectContaining({
+        interfaceFile: unusedFile,
+        interfaceName: "IService",
+      }),
+    ])
+    expect(out.totalInterfaces).toBe(2)
+  })
+
+  test("namespace-qualified implementations and typed substitutes resolve to the interface", async () => {
+    const interfaceFile = await repo.write(
+      "src/contracts.ts",
+      [
+        "export interface IService {",
+        "  run(): string",
+        "}",
+      ].join("\n"),
+    )
+    const implementationFile = await repo.write(
+      "src/service.ts",
+      [
+        "import * as contracts from './contracts'",
+        "export class ServiceImpl implements contracts.IService {",
+        "  run() {",
+        "    return 'ok'",
+        "  }",
+        "}",
+      ].join("\n"),
+    )
+    await repo.write(
+      "src/service.test.ts",
+      [
+        "import * as contracts from './contracts'",
+        "export const fakeService: contracts.IService = {",
+        "  run() {",
+        "    return 'fake'",
+        "  }",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsAb04, TsAb04.defaultConfig)
+
+    expect(out.pairs).toEqual([
+      expect.objectContaining({
+        interfaceFile,
+        implementationFile,
+        implementationName: "ServiceImpl",
+        hasTestSubstitute: true,
+      }),
+    ])
+    expect(out.flaggedPairs).toHaveLength(0)
+    expect(out.deadInterfaces).toHaveLength(0)
+  })
+
   test("dead interfaces are surfaced separately", async () => {
     await repo.write(
       "src/dead.ts",

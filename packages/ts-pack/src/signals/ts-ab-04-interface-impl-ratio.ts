@@ -24,7 +24,7 @@ export const TsAb04: Signal<TsAb04Config, TsAb04Output, TsProjectTag> = {
   tier: 1,
   category: "abstraction-bloat",
   kind: "legibility",
-  cacheVersion: "structural-interface-usage-v1",
+  cacheVersion: "structural-interface-usage-v2-qualified-identity-v1",
   configSchema: TsAb04Config,
   defaultConfig: {
     exclude_globs: ["**/node_modules/**", "**/dist/**", "**/.turbo/**"],

@@ -1,7 +1,16 @@
-import { Node, type Project, SyntaxKind, type InterfaceDeclaration, type SourceFile } from "ts-morph"
+import {
+  type ExpressionWithTypeArguments,
+  Node,
+  type Project,
+  SyntaxKind,
+  type InterfaceDeclaration,
+  type SourceFile,
+  type TypeNode,
+} from "ts-morph"
 import { createModuleResolver, type ModuleResolver } from "../graph/module-graph.js"
 import { isExcluded, matchesAnyGlob } from "./shared-globs.js"
 import { hasExportModifier } from "./shared-ts-morph-modifiers.js"
+import { declarationKey, resolveReferenceLikeDeclarations } from "./shared-type-analysis.js"
 
 export interface SingleImplPair {
   readonly interfaceFile: string
@@ -117,8 +126,9 @@ const addInterfaceImplementationFinding = (
   testImplementations: ReadonlyMap<string, ReadonlyArray<ImplementationDescriptor>>,
   accumulator: InterfaceImplementationAccumulator,
 ): void => {
-  const productionImplementations = prodImplementations.get(iface.getName()) ?? []
-  const hasTestSubstitute = (testImplementations.get(iface.getName()) ?? []).length > 0
+  const key = interfaceKey(iface)
+  const productionImplementations = prodImplementations.get(key) ?? []
+  const hasTestSubstitute = (testImplementations.get(key) ?? []).length > 0
   if (productionImplementations.length === 0) {
     addDeadInterfaceFinding(iface, accumulator)
     return
@@ -243,8 +253,7 @@ const collectPublicInterfacesFromExports = (
   }
 }
 
-const interfaceKey = (iface: InterfaceDeclaration): string =>
-  `${iface.getSourceFile().getFilePath()}:${iface.getName()}`
+const interfaceKey = (iface: InterfaceDeclaration): string => declarationKey(iface)
 
 const hasStructuralTypeUsage = (iface: InterfaceDeclaration): boolean => {
   const nameNode = iface.getNameNode()
@@ -283,13 +292,13 @@ const isTypedObjectLiteralReference = (reference: Node): boolean => {
 const buildImplementationIndex = (
   sourceFiles: ReadonlyArray<SourceFile>,
 ): ReadonlyMap<string, ReadonlyArray<ImplementationDescriptor>> => {
-  const byInterface = new Map<string, Map<string, ImplementationDescriptor>>()
+  const byInterfaceKey = new Map<string, Map<string, ImplementationDescriptor>>()
 
-  const add = (interfaceName: string | undefined, descriptor: ImplementationDescriptor): void => {
-    if (interfaceName === undefined || interfaceName.length === 0) return
-    const bucket = byInterface.get(interfaceName) ?? new Map<string, ImplementationDescriptor>()
+  const add = (interfaceKey: string, descriptor: ImplementationDescriptor): void => {
+    const bucket =
+      byInterfaceKey.get(interfaceKey) ?? new Map<string, ImplementationDescriptor>()
     bucket.set(`${descriptor.file}:${descriptor.name}`, descriptor)
-    byInterface.set(interfaceName, bucket)
+    byInterfaceKey.set(interfaceKey, bucket)
   }
 
   for (const sourceFile of sourceFiles) {
@@ -298,33 +307,50 @@ const buildImplementationIndex = (
     for (const classDeclaration of sourceFile.getClasses()) {
       const name = classDeclaration.getName() ?? "<anonymous-class>"
       for (const heritage of classDeclaration.getImplements()) {
-        add(rootReferenceName(heritage.getExpression().getText()), { file, name })
+        for (const key of resolveInterfaceKeysFromReference(heritage)) {
+          add(key, { file, name })
+        }
       }
     }
 
     for (const declaration of sourceFile.getVariableDeclarations()) {
       if (!Node.isObjectLiteralExpression(declaration.getInitializer())) continue
-      add(rootReferenceName(declaration.getTypeNode()?.getText()), {
-        file,
-        name: declaration.getName(),
-      })
+      for (const key of resolveInterfaceKeysFromTypeNode(declaration.getTypeNode())) {
+        add(key, {
+          file,
+          name: declaration.getName(),
+        })
+      }
     }
   }
 
   return new Map(
-    [...byInterface.entries()].map(([interfaceName, descriptors]) => [
-      interfaceName,
+    [...byInterfaceKey.entries()].map(([key, descriptors]) => [
+      key,
       [...descriptors.values()].sort(compareImplementationDescriptors),
     ]),
   )
 }
 
-const rootReferenceName = (text: string | undefined): string | undefined => {
-  const trimmed = text?.trim()
-  if (trimmed === undefined || trimmed.length === 0) return undefined
-  const match = /^[$A-Z_a-z][$\w]*/.exec(trimmed)
-  return match?.[0]
+const resolveInterfaceKeysFromReference = (
+  reference: ExpressionWithTypeArguments,
+): ReadonlyArray<string> => interfaceKeysFromDeclarations(resolveReferenceLikeDeclarations(reference))
+
+const resolveInterfaceKeysFromTypeNode = (
+  typeNode: TypeNode | undefined,
+): ReadonlyArray<string> => {
+  if (typeNode === undefined) return []
+  if (Node.isParenthesizedTypeNode(typeNode)) {
+    return resolveInterfaceKeysFromTypeNode(typeNode.getTypeNode())
+  }
+  if (Node.isTypeReference(typeNode)) {
+    return interfaceKeysFromDeclarations(resolveReferenceLikeDeclarations(typeNode))
+  }
+  return []
 }
+
+const interfaceKeysFromDeclarations = (declarations: ReadonlyArray<Node>): ReadonlyArray<string> =>
+  declarations.filter(Node.isInterfaceDeclaration).map(interfaceKey)
 
 const compareImplementationDescriptors = (
   left: ImplementationDescriptor,
