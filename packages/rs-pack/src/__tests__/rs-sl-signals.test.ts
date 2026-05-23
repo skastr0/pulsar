@@ -922,7 +922,7 @@ describe("RS-SL-* signals", () => {
       tier: 1,
       category: "generated-slop",
       kind: "legibility",
-      cacheVersion: "advisory-density-scaled-cfg-test-gating-diagnostics-v3",
+      cacheVersion: "advisory-density-scaled-cfg-test-gating-diagnostics-denominator-v4",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -980,6 +980,42 @@ describe("RS-SL-* signals", () => {
       expect(out.scoreMode).toBe("bounded-unwrap-expect-density")
       expect(out.scoreDenominator).toBe("analyzed-functions-per-module")
       expect(RsSl03.outputMetadata?.(out)).toBeUndefined()
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-SL-03 excludes cfg-test-gated functions from density denominator", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-sl03-density-cfg-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "panic-density-cfg"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub fn prod() { let _ = Some(1).unwrap(); }",
+        "",
+        "#[cfg(any(test, feature = \"fixture\"))]",
+        "pub fn helper_one() {}",
+        "",
+        "#[cfg(test)]",
+        "pub fn helper_two() { let _ = Some(1).expect(\"x\"); }",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const out = await runSignalCompute(RsSl03, repo, RsSl03.defaultConfig)
+
+      expect(out.totalCalls).toBe(1)
+      expect(out.analyzedFunctionCount).toBe(1)
+      expect(out.modules[0]).toMatchObject({
+        unwrapExpectCalls: 1,
+        density: 1,
+      })
+      expect(RsSl03.diagnose(out)[0]?.severity).toBe("warn")
     } finally {
       await cleanupWorkspace(repo)
     }
