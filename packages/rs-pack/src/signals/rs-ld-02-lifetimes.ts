@@ -23,7 +23,6 @@ import {
   walkAttributedNodes,
 } from "./shared-rust-ast.js"
 import { isExcluded } from "./shared-globs.js"
-import { scoreDoubleWeightedThresholdRatio } from "./shared-threshold-score.js"
 
 const RsLd02Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
@@ -56,10 +55,16 @@ interface RsLd02Output {
   readonly analyzedSourceFileCount: number
   readonly maxLifetimeComplexity: number
   readonly diagnosticLimit: number
+  readonly scoreMode: "double-weighted-over-threshold-lifetime-functions"
+  readonly scoreDenominator: "lifetime-bearing-functions"
+  readonly overThresholdLifetimeShare: number
+  readonly weightedLifetimePressure: number
 }
 
 const DEFAULT_MAX_LIFETIME_COMPLEXITY = 4
 const DEFAULT_TOP_N_DIAGNOSTICS = 10
+const RS_LD_02_SCORE_MODE = "double-weighted-over-threshold-lifetime-functions" as const
+const RS_LD_02_SCORE_DENOMINATOR = "lifetime-bearing-functions" as const
 
 const RsLd02FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
   {
@@ -92,7 +97,7 @@ export const RsLd02: Signal<RsLd02Config, RsLd02Output, RustProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "lifetime-complexity-config-applicability-diagnostics-cfg-test-v2",
+  cacheVersion: "lifetime-complexity-config-applicability-diagnostics-cfg-test-score-v3",
   configSchema: RsLd02Config,
   factorDefinitions: RsLd02FactorDefinitions,
   defaultConfig: {
@@ -148,13 +153,15 @@ export const RsLd02: Signal<RsLd02Config, RsLd02Output, RustProjectTag> = {
           for (const [file, values] of byFileValues) {
             byFile.set(file, summarize(values))
           }
+          const overThresholdCount = functions.filter(
+            (fn) => fn.complexity > normalizedConfig.max_lifetime_complexity,
+          ).length
+          const overThresholdLifetimeShare = ratio(overThresholdCount, functions.length)
 
           return {
             functions,
             byFile,
-            overThresholdCount: functions.filter(
-              (fn) => fn.complexity > normalizedConfig.max_lifetime_complexity,
-            ).length,
+            overThresholdCount,
             totalFunctions: functions.length,
             totalAnalyzedFunctions: analyzedFunctions.length,
             lifetimeFunctionCount: functions.length,
@@ -162,13 +169,17 @@ export const RsLd02: Signal<RsLd02Config, RsLd02Output, RustProjectTag> = {
             analyzedSourceFileCount: analyzedSourceFiles.length,
             maxLifetimeComplexity: normalizedConfig.max_lifetime_complexity,
             diagnosticLimit: normalizedConfig.top_n_diagnostics,
+            scoreMode: RS_LD_02_SCORE_MODE,
+            scoreDenominator: RS_LD_02_SCORE_DENOMINATOR,
+            overThresholdLifetimeShare,
+            weightedLifetimePressure: Math.min(1, overThresholdLifetimeShare * 2),
           }
         },
         catch: (cause) =>
           new SignalComputeError({ signalId: "RS-LD-02-lifetime-complexity", message: String(cause), cause }),
       })
     }),
-  score: (out) => scoreDoubleWeightedThresholdRatio(out.overThresholdCount, out.totalFunctions),
+  score: (out) => Math.max(0, 1 - out.weightedLifetimePressure),
   diagnose: (out): ReadonlyArray<Diagnostic> => {
     if (out.sourceFileCount === 0) {
       return [{
@@ -179,6 +190,8 @@ export const RsLd02: Signal<RsLd02Config, RsLd02Output, RustProjectTag> = {
           analyzedSourceFileCount: out.analyzedSourceFileCount,
           totalAnalyzedFunctions: out.totalAnalyzedFunctions,
           lifetimeFunctionCount: out.lifetimeFunctionCount,
+          scoreMode: out.scoreMode,
+          scoreDenominator: out.scoreDenominator,
         },
       }].slice(0, out.diagnosticLimit)
     }
@@ -189,6 +202,8 @@ export const RsLd02: Signal<RsLd02Config, RsLd02Output, RustProjectTag> = {
       data: {
         ...fn,
         maxLifetimeComplexity: out.maxLifetimeComplexity,
+        scoreMode: out.scoreMode,
+        scoreDenominator: out.scoreDenominator,
       },
     }))
   },
@@ -225,6 +240,9 @@ const makeRsLd02FactorLedger = (): SignalFactorLedger =>
       }),
     ),
   )
+
+const ratio = (numerator: number, denominator: number): number =>
+  denominator === 0 ? 0 : numerator / denominator
 
 const collectActiveFunctionKeys = async (
   project: RustProject,

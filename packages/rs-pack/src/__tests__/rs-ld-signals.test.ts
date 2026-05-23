@@ -278,6 +278,21 @@ const createLifetimeCfgWorkspace = () =>
     ].join("\n"),
   })
 
+const createLifetimeScoreWorkspace = (
+  name: string,
+  functions: ReadonlyArray<string>,
+) =>
+  createRustWorkspace(`pulsar-rs-ld02-score-${name}-`, {
+    "Cargo.toml": [
+      "[package]",
+      `name = "lifetime-score-${name}"`,
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+    ].join("\n"),
+    "src/lib.rs": [...functions, ""].join("\n"),
+  })
+
 describe("RS-LD-* signals", () => {
   test("RS-LD-01 declares identity, config, cache, pack registration, and factor ledger", async () => {
     const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
@@ -861,7 +876,7 @@ describe("RS-LD-* signals", () => {
       tier: 1,
       category: "legibility-decay",
       kind: "legibility",
-      cacheVersion: "lifetime-complexity-config-applicability-diagnostics-cfg-test-v2",
+      cacheVersion: "lifetime-complexity-config-applicability-diagnostics-cfg-test-score-v3",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -919,6 +934,8 @@ describe("RS-LD-* signals", () => {
       expect(out.totalFunctions).toBe(out.lifetimeFunctionCount)
       expect(out.maxLifetimeComplexity).toBe(3)
       expect(out.diagnosticLimit).toBe(10)
+      expect(out.scoreMode).toBe("double-weighted-over-threshold-lifetime-functions")
+      expect(out.scoreDenominator).toBe("lifetime-bearing-functions")
       expect(out.overThresholdCount).toBeGreaterThanOrEqual(1)
       expect(RsLd02.outputMetadata?.(out)).toBeUndefined()
       expect(RsLd02.diagnose(out)[0]).toMatchObject({
@@ -966,6 +983,87 @@ describe("RS-LD-* signals", () => {
       ])
     } finally {
       await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-LD-02 scores lifetime pressure monotonically over lifetime-bearing functions", async () => {
+    const simpleLifetimeFunctions = [
+      "pub fn a<'a>(value: &'a str) -> &'a str { value }",
+      "pub fn b<'a>(value: &'a str) -> &'a str { value }",
+      "pub fn c<'a>(value: &'a str) -> &'a str { value }",
+      "pub fn d<'a>(value: &'a str) -> &'a str { value }",
+    ]
+    const heavyOne = [
+      "pub fn heavy_one<'a: 'b, 'b, 'c>(left: &'a str, right: &'b str) -> &'c str",
+      "where",
+      "    'a: 'b,",
+      "    'b: 'c,",
+      "{",
+      "    let _ = (left, right);",
+      "    unreachable!()",
+      "}",
+    ].join("\n")
+    const heavyTwo = heavyOne.replace("heavy_one", "heavy_two")
+    const noEvidence = await createLifetimeScoreWorkspace("none", [
+      "pub fn clean(value: &str) -> usize { value.len() }",
+    ])
+    const underThreshold = await createLifetimeScoreWorkspace("under", simpleLifetimeFunctions)
+    const oneOver = await createLifetimeScoreWorkspace("one-over", [
+      heavyOne,
+      ...simpleLifetimeFunctions.slice(1),
+    ])
+    const twoOver = await createLifetimeScoreWorkspace("two-over", [
+      heavyOne,
+      heavyTwo,
+      ...simpleLifetimeFunctions.slice(2),
+    ])
+
+    try {
+      const noEvidenceOut = await runSignalCompute(RsLd02, noEvidence, RsLd02.defaultConfig)
+      const underOut = await runSignalCompute(RsLd02, underThreshold, RsLd02.defaultConfig)
+      const oneOverOut = await runSignalCompute(RsLd02, oneOver, RsLd02.defaultConfig)
+      const twoOverOut = await runSignalCompute(RsLd02, twoOver, RsLd02.defaultConfig)
+      const strictOut = await runSignalCompute(
+        RsLd02,
+        underThreshold,
+        { ...RsLd02.defaultConfig, max_lifetime_complexity: 2 },
+      )
+
+      expect(RsLd02.score(noEvidenceOut)).toBe(1)
+      expect(noEvidenceOut.lifetimeFunctionCount).toBe(0)
+      expect(noEvidenceOut.overThresholdLifetimeShare).toBe(0)
+      expect(noEvidenceOut.weightedLifetimePressure).toBe(0)
+      expect(noEvidenceOut.scoreMode).toBe("double-weighted-over-threshold-lifetime-functions")
+      expect(noEvidenceOut.scoreDenominator).toBe("lifetime-bearing-functions")
+      expect(underOut.lifetimeFunctionCount).toBe(4)
+      expect(underOut.overThresholdCount).toBe(0)
+      expect(underOut.overThresholdLifetimeShare).toBe(0)
+      expect(underOut.weightedLifetimePressure).toBe(0)
+      expect(underOut.scoreMode).toBe("double-weighted-over-threshold-lifetime-functions")
+      expect(underOut.scoreDenominator).toBe("lifetime-bearing-functions")
+      expect(RsLd02.score(underOut)).toBe(1)
+      expect(oneOverOut.lifetimeFunctionCount).toBe(4)
+      expect(oneOverOut.overThresholdCount).toBe(1)
+      expect(oneOverOut.overThresholdLifetimeShare).toBe(0.25)
+      expect(oneOverOut.weightedLifetimePressure).toBe(0.5)
+      expect(RsLd02.score(oneOverOut)).toBe(0.5)
+      expect(twoOverOut.lifetimeFunctionCount).toBe(4)
+      expect(twoOverOut.overThresholdCount).toBe(2)
+      expect(twoOverOut.overThresholdLifetimeShare).toBe(0.5)
+      expect(twoOverOut.weightedLifetimePressure).toBe(1)
+      expect(RsLd02.score(twoOverOut)).toBe(0)
+      expect(RsLd02.score(underOut)).toBeGreaterThan(RsLd02.score(oneOverOut))
+      expect(RsLd02.score(oneOverOut)).toBeGreaterThan(RsLd02.score(twoOverOut))
+      expect(strictOut.maxLifetimeComplexity).toBe(2)
+      expect(strictOut.overThresholdCount).toBe(4)
+      expect(RsLd02.score(strictOut)).toBeLessThan(RsLd02.score(underOut))
+      expect(oneOverOut.scoreMode).toBe("double-weighted-over-threshold-lifetime-functions")
+      expect(oneOverOut.scoreDenominator).toBe("lifetime-bearing-functions")
+    } finally {
+      await cleanupWorkspace(noEvidence)
+      await cleanupWorkspace(underThreshold)
+      await cleanupWorkspace(oneOver)
+      await cleanupWorkspace(twoOver)
     }
   })
 
@@ -1056,6 +1154,8 @@ describe("RS-LD-* signals", () => {
             analyzedSourceFileCount: 0,
             totalAnalyzedFunctions: 0,
             lifetimeFunctionCount: 0,
+            scoreMode: "double-weighted-over-threshold-lifetime-functions",
+            scoreDenominator: "lifetime-bearing-functions",
           }),
         }),
       ])
