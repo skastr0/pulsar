@@ -3,13 +3,20 @@ import {
   SignalContextTag,
   type Diagnostic,
   type Signal,
+  type SignalFactorDefinition,
   SignalComputeError,
 } from "@skastr0/pulsar-core/signal"
+import {
+  makeFactorEntry,
+  makeFactorLedger,
+  type SignalFactorLedger,
+} from "@skastr0/pulsar-core/factors"
 import { readFile } from "node:fs/promises"
 import { Effect, Schema } from "effect"
 import { RustProjectTag } from "../project.js"
 import { parseRustFile } from "../syn-walker.js"
 import {
+  DEFAULT_RUST_EXCLUDE_GLOBS,
   lineRangeOverlapsChangedHunks,
   modulePathForAncestors,
   resolveRustFileScope,
@@ -42,7 +49,33 @@ interface RsSl02Output {
   readonly expiredJustificationCount: number
   readonly scopeMode: "whole-tree" | "changed-hunks"
   readonly analysisMode: "allow-attributes-with-rust-lint-governance"
+  readonly sourceFileCount: number
+  readonly analyzedSourceFileCount: number
+  readonly diagnosticLimit: number
+  readonly scoreMode: "governed-allow-debt"
+  readonly scoreDenominator: "governed-allow-attributes"
 }
+
+const DEFAULT_TOP_N_DIAGNOSTICS = 20
+const RS_SL_02_SCORE_MODE = "governed-allow-debt" as const
+const RS_SL_02_SCORE_DENOMINATOR = "governed-allow-attributes" as const
+
+const RsSl02FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
+  {
+    path: "config.exclude_globs",
+    title: "Config exclude globs",
+    valueKind: "array",
+    scoreRole: "evidence",
+    defaultValue: [...DEFAULT_RUST_EXCLUDE_GLOBS],
+  },
+  {
+    path: "config.top_n_diagnostics",
+    title: "Config top n diagnostics",
+    valueKind: "number",
+    scoreRole: "metadata",
+    defaultValue: DEFAULT_TOP_N_DIAGNOSTICS,
+  },
+]
 
 export const RsSl02: Signal<RsSl02Config, RsSl02Output, RustProjectTag | SignalContextTag> = {
   id: "RS-SL-02-suppressions",
@@ -51,15 +84,17 @@ export const RsSl02: Signal<RsSl02Config, RsSl02Output, RustProjectTag | SignalC
   tier: 1,
   category: "generated-slop",
   kind: "structural",
-  cacheVersion: "unused-allows-ordinary-v1",
+  cacheVersion: "unused-allows-ordinary-diagnostics-v2",
   configSchema: RsSl02Config,
+  factorDefinitions: RsSl02FactorDefinitions,
   defaultConfig: {
-    exclude_globs: ["**/target/**"],
-    top_n_diagnostics: 20,
+    exclude_globs: [...DEFAULT_RUST_EXCLUDE_GLOBS],
+    top_n_diagnostics: DEFAULT_TOP_N_DIAGNOSTICS,
   },
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
+      const normalizedConfig = normalizeRsSl02Config(config)
       const project = yield* RustProjectTag
       const context = yield* SignalContextTag
       return yield* Effect.tryPromise({
@@ -67,8 +102,11 @@ export const RsSl02: Signal<RsSl02Config, RsSl02Output, RustProjectTag | SignalC
           const suppressions: Array<RustSuppression> = []
           let ordinaryAllowAttributeCount = 0
           let ordinaryAllowLintCount = 0
-          for (const file of project.sourceFiles) {
-            if (isExcluded(file, config.exclude_globs)) continue
+          const analyzedSourceFiles = project.sourceFiles.filter(
+            (file) => !isExcluded(file, normalizedConfig.exclude_globs),
+          )
+
+          for (const file of analyzedSourceFiles) {
             const source = await readFile(file, "utf8")
             const bypasses = parseBypasses(source)
             const scope = resolveRustFileScope(project, file)
@@ -115,7 +153,9 @@ export const RsSl02: Signal<RsSl02Config, RsSl02Output, RustProjectTag | SignalC
           }
 
           return {
-            suppressions: suppressions.sort((left, right) => left.file.localeCompare(right.file) || left.line - right.line),
+            suppressions: suppressions.sort(
+              (left, right) => left.file.localeCompare(right.file) || left.line - right.line,
+            ),
             ordinaryAllowAttributeCount,
             ordinaryAllowLintCount,
             governedAllowAttributeCount: suppressions.length,
@@ -127,6 +167,11 @@ export const RsSl02: Signal<RsSl02Config, RsSl02Output, RustProjectTag | SignalC
             ).length,
             scopeMode: context.changedHunks.length > 0 ? "changed-hunks" : "whole-tree",
             analysisMode: "allow-attributes-with-rust-lint-governance",
+            sourceFileCount: project.sourceFiles.length,
+            analyzedSourceFileCount: analyzedSourceFiles.length,
+            diagnosticLimit: normalizedConfig.top_n_diagnostics,
+            scoreMode: RS_SL_02_SCORE_MODE,
+            scoreDenominator: RS_SL_02_SCORE_DENOMINATOR,
           }
         },
         catch: (cause) =>
@@ -139,25 +184,67 @@ export const RsSl02: Signal<RsSl02Config, RsSl02Output, RustProjectTag | SignalC
     return Math.max(0, 1 - out.suppressions.length / 25)
   },
   diagnose: (out): ReadonlyArray<Diagnostic> =>
-    out.suppressions.slice(0, 20).map((suppression) => ({
-      severity:
-        suppression.justification === "active"
-          ? ("info" as const)
-          : ("block" as const),
-      message: `Governed allow suppression for ${suppression.lints.join(", ")} is ${suppression.justification}`,
-      location: { file: suppression.file, line: suppression.line },
-      data: {
-        module: suppression.module,
-        lints: suppression.lints,
-        ordinaryLints: suppression.ordinaryLints,
-        justification: suppression.justification,
-        classification: suppression.classification,
-        requiresJustification: true,
-        scopeMode: out.scopeMode,
-        analysisMode: out.analysisMode,
-      },
-    })),
+    out.sourceFileCount === 0
+      ? [{
+        severity: "warn" as const,
+        message: "RS-SL-02 found no Rust source files for suppression analysis",
+        data: {
+          sourceFileCount: out.sourceFileCount,
+          analyzedSourceFileCount: out.analyzedSourceFileCount,
+          scoreMode: out.scoreMode,
+          scoreDenominator: out.scoreDenominator,
+        },
+      }].slice(0, out.diagnosticLimit)
+      : out.suppressions.slice(0, out.diagnosticLimit).map((suppression) => ({
+        severity:
+          suppression.justification === "active"
+            ? ("info" as const)
+            : ("block" as const),
+        message: `Governed allow suppression for ${suppression.lints.join(", ")} is ${suppression.justification}`,
+        location: { file: suppression.file, line: suppression.line },
+        data: {
+          module: suppression.module,
+          lints: suppression.lints,
+          ordinaryLints: suppression.ordinaryLints,
+          justification: suppression.justification,
+          classification: suppression.classification,
+          requiresJustification: true,
+          scopeMode: out.scopeMode,
+          analysisMode: out.analysisMode,
+          scoreMode: out.scoreMode,
+          scoreDenominator: out.scoreDenominator,
+        },
+      })),
+  outputMetadata: (out) => {
+    if (out.sourceFileCount === 0) {
+      return { applicability: "insufficient_evidence" as const }
+    }
+    if (out.analyzedSourceFileCount === 0) {
+      return { applicability: "not_applicable" as const }
+    }
+    return undefined
+  },
+  factorLedger: () => makeRsSl02FactorLedger(),
 }
+
+type NormalizedRsSl02Config = RsSl02Config
+
+const normalizeRsSl02Config = (config: RsSl02Config): NormalizedRsSl02Config => ({
+  exclude_globs: config.exclude_globs,
+  top_n_diagnostics: Number.isFinite(config.top_n_diagnostics)
+    ? Math.max(0, Math.floor(config.top_n_diagnostics))
+    : 0,
+})
+
+const makeRsSl02FactorLedger = (): SignalFactorLedger =>
+  makeFactorLedger(
+    "RS-SL-02-suppressions",
+    RsSl02FactorDefinitions.map((definition) =>
+      makeFactorEntry(definition, definition.defaultValue ?? null, {
+        source: "signal-default",
+      }),
+    ),
+  )
 
 const extractAllowLints = (text: string): ReadonlyArray<string> => {
   const match = /#\s*!?\s*\[\s*allow\s*\(([^\)]*)\)\s*\]/.exec(text)

@@ -458,6 +458,164 @@ describe("RS-SL-* signals", () => {
     }
   })
 
+  test("RS-SL-02 declares identity, config, cache, pack registration, and factor ledger", async () => {
+    const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
+    const versionedRegistry = await Effect.runPromise(
+      buildRegistry([
+        ...SHARED_SIGNALS,
+        ...RS_PACK_SIGNALS.filter((signal) => signal.id !== RsSl02.id),
+        { ...RsSl02, cacheVersion: `${RsSl02.cacheVersion}-next` },
+      ]),
+    )
+    const registered = registry.byId.get("RS-SL-02")
+    const decoded = Schema.decodeUnknownSync(RsSl02.configSchema)(RsSl02.defaultConfig)
+    const factorLedger = registered?.factorLedger?.({})
+    const baseCacheHash = computeConfigHash(RsSl02.id, registry, undefined)
+    const versionedCacheHash = computeConfigHash(RsSl02.id, versionedRegistry, undefined)
+    const configuredCacheHash = computeConfigHash(RsSl02.id, registry, {
+      id: "rs-sl-02-contract",
+      domain: "test",
+      signal_overrides: {
+        [RsSl02.id]: {
+          config: {
+            ...RsSl02.defaultConfig,
+            top_n_diagnostics: 1,
+          },
+        },
+      },
+    })
+
+    expect(RsSl02).toMatchObject({
+      id: "RS-SL-02-suppressions",
+      aliases: ["RS-SL-02"],
+      title: "Suppressions",
+      tier: 1,
+      category: "generated-slop",
+      kind: "structural",
+      cacheVersion: "unused-allows-ordinary-diagnostics-v2",
+      inputs: [],
+    })
+    expect(decoded).toEqual({
+      exclude_globs: ["**/target/**", "**/tests/**", "**/examples/**", "**/benches/**"],
+      top_n_diagnostics: 20,
+    })
+    expect(registered?.id).toBe(RsSl02.id)
+    expect(registered?.cacheVersion).toBe(RsSl02.cacheVersion)
+    expect(registry.byId.get("RS-SL-02")?.id).toBe(RsSl02.id)
+    expect(baseCacheHash).not.toBe(versionedCacheHash)
+    expect(baseCacheHash).not.toBe(configuredCacheHash)
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.exclude_globs",
+        affectsScore: true,
+        scoreRole: "evidence",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        affectsScore: false,
+        scoreRole: "metadata",
+      }),
+    )
+  })
+
+  test("RS-SL-02 normalizes diagnostics and applicability evidence", async () => {
+    const governed = await createRustWorkspace("pulsar-rs-sl02-diagnostics-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "suppression-diagnostics"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "#[allow(clippy::unwrap_used)]",
+        "pub fn first(value: Option<u32>) -> u32 { value.unwrap() }",
+        "",
+        "#[allow(warnings)]",
+        "pub fn second() {}",
+        "",
+      ].join("\n"),
+    })
+    const noSource = await createRustWorkspace("pulsar-rs-sl02-empty-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "suppression-empty"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+    })
+    const excluded = await createRustWorkspace("pulsar-rs-sl02-excluded-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "suppression-excluded"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "#[allow(warnings)]",
+        "pub fn hidden() {}",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const out = await runSignalCompute(RsSl02, governed, {
+        ...RsSl02.defaultConfig,
+        top_n_diagnostics: 1.8,
+      })
+      const hiddenOut = await runSignalCompute(RsSl02, governed, {
+        ...RsSl02.defaultConfig,
+        top_n_diagnostics: Number.NaN,
+      })
+      const noSourceOut = await runSignalCompute(RsSl02, noSource, RsSl02.defaultConfig)
+      const excludedOut = await runSignalCompute(RsSl02, excluded, {
+        ...RsSl02.defaultConfig,
+        exclude_globs: ["**/src/**"],
+      })
+      const diagnostics = RsSl02.diagnose(out)
+
+      expect(out.sourceFileCount).toBe(1)
+      expect(out.analyzedSourceFileCount).toBe(1)
+      expect(out.diagnosticLimit).toBe(1)
+      expect(out.scoreMode).toBe("governed-allow-debt")
+      expect(out.scoreDenominator).toBe("governed-allow-attributes")
+      expect(diagnostics).toHaveLength(1)
+      expect(diagnostics[0]).toMatchObject({
+        severity: "block",
+        message: "Governed allow suppression for clippy::unwrap_used is missing",
+        data: expect.objectContaining({
+          scopeMode: "whole-tree",
+          analysisMode: "allow-attributes-with-rust-lint-governance",
+          scoreMode: "governed-allow-debt",
+          scoreDenominator: "governed-allow-attributes",
+        }),
+      })
+      expect(hiddenOut.diagnosticLimit).toBe(0)
+      expect(RsSl02.diagnose(hiddenOut)).toEqual([])
+      expect(noSourceOut.sourceFileCount).toBe(0)
+      expect(RsSl02.outputMetadata?.(noSourceOut)).toEqual({
+        applicability: "insufficient_evidence",
+      })
+      expect(RsSl02.diagnose(noSourceOut)[0]).toMatchObject({
+        severity: "warn",
+        message: "RS-SL-02 found no Rust source files for suppression analysis",
+      })
+      expect(excludedOut.sourceFileCount).toBe(1)
+      expect(excludedOut.analyzedSourceFileCount).toBe(0)
+      expect(RsSl02.outputMetadata?.(excludedOut)).toEqual({
+        applicability: "not_applicable",
+      })
+    } finally {
+      await cleanupWorkspace(governed)
+      await cleanupWorkspace(noSource)
+      await cleanupWorkspace(excluded)
+    }
+  })
+
   test("RS-SL-02 treats narrow ordinary Rust allow attributes as non-governed", async () => {
     const repo = await createRustWorkspace("pulsar-rs-sl02-ordinary-", {
       "Cargo.toml": [
