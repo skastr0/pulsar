@@ -142,6 +142,35 @@ const createUnsafeScoreWorkspace = (
     "src/lib.rs": [...sourceLines, ""].join("\n"),
   })
 
+const createUnsafeDeclarationWorkspace = () =>
+  createRustWorkspace("pulsar-rs-ld01-declarations-", {
+    "Cargo.toml": [
+      "[package]",
+      'name = "unsafe-declarations"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+    ].join("\n"),
+    "src/lib.rs": [
+      "pub unsafe trait Dangerous {",
+      "    unsafe fn touch(&self);",
+      "}",
+      "",
+      "pub struct Local;",
+      "",
+      "unsafe impl Dangerous for Local {",
+      "    unsafe fn touch(&self) {}",
+      "}",
+      "",
+      "extern \"C\" {",
+      "    pub fn ffi_call(ptr: *const u8) -> u8;",
+      "}",
+      "",
+      "pub static mut GLOBAL: u8 = 0;",
+      "",
+    ].join("\n"),
+  })
+
 describe("RS-LD-* signals", () => {
   test("RS-LD-01 declares identity, config, cache, pack registration, and factor ledger", async () => {
     const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
@@ -178,7 +207,7 @@ describe("RS-LD-* signals", () => {
       tier: 1,
       category: "legibility-decay",
       kind: "legibility",
-      cacheVersion: "unsafe-code-config-applicability-diagnostics-call-graph-density-v3",
+      cacheVersion: "unsafe-code-config-applicability-diagnostics-call-graph-density-sites-v4",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -281,7 +310,7 @@ describe("RS-LD-* signals", () => {
       expect(RsLd01.score(out)).toBe(0)
       expect(RsLd01.diagnose(out)).toContainEqual(
         expect.objectContaining({
-          message: "Unsafe propagation in unsafe-propagation::crate::safe_zone: 100% functions, 0.33 unsafe sites/function",
+          message: "Unsafe surface in unsafe-propagation::crate::safe_zone: 100% functions, 0.33 unsafe sites/function",
           data: expect.objectContaining({
             propagationMode: "local-call-graph",
             propagatingFunctionCount: 3,
@@ -360,6 +389,96 @@ describe("RS-LD-* signals", () => {
       await cleanupWorkspace(oneUnsafe)
       await cleanupWorkspace(twoUnsafe)
       await cleanupWorkspace(siteHeavy)
+    }
+  })
+
+  test("RS-LD-01 extracts unsafe API and declaration sites", async () => {
+    const repo = await createUnsafeDeclarationWorkspace()
+    try {
+      const out = await runSignalCompute(RsLd01, repo, RsLd01.defaultConfig)
+      const module = out.modules.find(
+        (entry) => entry.module === "unsafe-declarations::crate",
+      )
+      const siteKinds = out.unsafeSites.map((site) => site.kind).sort()
+
+      expect(out.totalUnsafeBlocks).toBe(0)
+      expect(out.totalUnsafeFunctions).toBe(1)
+      expect(out.totalUnsafeSites).toBe(6)
+      expect(out.unsafeSiteKindCounts).toMatchObject({
+        foreign_function: 1,
+        static_mut: 1,
+        unsafe_function: 1,
+        unsafe_function_signature: 1,
+        unsafe_impl: 1,
+        unsafe_trait: 1,
+      })
+      expect(siteKinds).toEqual([
+        "foreign_function",
+        "static_mut",
+        "unsafe_function",
+        "unsafe_function_signature",
+        "unsafe_impl",
+        "unsafe_trait",
+      ])
+      expect(module).toMatchObject({
+        unsafeSiteCount: 6,
+        unsafeSitesPerFunction: 6,
+        cappedUnsafeSiteShare: 1,
+        unsafePressure: 1,
+      })
+      expect(module?.unsafeSiteKindCounts).toEqual(expect.objectContaining({
+        foreign_function: 1,
+        static_mut: 1,
+        unsafe_function: 1,
+        unsafe_function_signature: 1,
+        unsafe_impl: 1,
+        unsafe_trait: 1,
+      }))
+      expect(out.unsafeSites).toContainEqual(
+        expect.objectContaining({
+          kind: "unsafe_trait",
+          name: "Dangerous",
+          module: "unsafe-declarations::crate",
+          line: 1,
+        }),
+      )
+      expect(out.unsafeSites).toContainEqual(
+        expect.objectContaining({
+          kind: "foreign_function",
+          name: "ffi_call",
+          functionName: "ffi_call",
+          module: "unsafe-declarations::crate",
+        }),
+      )
+      expect(out.unsafeSites).toContainEqual(
+        expect.objectContaining({
+          kind: "static_mut",
+          name: "GLOBAL",
+          module: "unsafe-declarations::crate",
+        }),
+      )
+      expect(RsLd01.score(out)).toBe(0)
+      expect(RsLd01.diagnose(out)).toContainEqual(
+        expect.objectContaining({
+          message: "Unsafe surface in unsafe-declarations::crate: 100% functions, 6.00 unsafe sites/function",
+          data: expect.objectContaining({
+            unsafeSiteKindCounts: expect.objectContaining({
+              foreign_function: 1,
+              static_mut: 1,
+              unsafe_function_signature: 1,
+              unsafe_trait: 1,
+            }),
+            sites: expect.arrayContaining([
+              expect.objectContaining({ kind: "unsafe_trait", name: "Dangerous" }),
+              expect.objectContaining({ kind: "unsafe_impl" }),
+              expect.objectContaining({ kind: "foreign_function", name: "ffi_call" }),
+              expect.objectContaining({ kind: "static_mut", name: "GLOBAL" }),
+            ]),
+          }),
+        }),
+      )
+    } finally {
+      await cleanupWorkspace(repo)
     }
   })
 

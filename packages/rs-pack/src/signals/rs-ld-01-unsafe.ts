@@ -30,11 +30,31 @@ const RsLd01Config = Schema.Struct({
 })
 type RsLd01Config = typeof RsLd01Config.Type
 
+type UnsafeSiteKind =
+  | "unsafe_block"
+  | "unsafe_function"
+  | "unsafe_function_signature"
+  | "unsafe_trait"
+  | "unsafe_impl"
+  | "foreign_function"
+  | "static_mut"
+
+interface UnsafeSite {
+  readonly kind: UnsafeSiteKind
+  readonly module: string
+  readonly file: string
+  readonly line: number
+  readonly name: string | undefined
+  readonly functionName: string | undefined
+}
+
 interface UnsafeModuleSummary {
   readonly module: string
   readonly file: string
   readonly totalFunctions: number
   readonly unsafeSiteCount: number
+  readonly unsafeSiteKindCounts: Partial<Record<UnsafeSiteKind, number>>
+  readonly sites: ReadonlyArray<UnsafeSite>
   readonly unsafeBlockCount: number
   readonly unsafeFunctionCount: number
   readonly propagatingFunctionCount: number
@@ -49,6 +69,8 @@ interface RsLd01Output {
   readonly totalUnsafeBlocks: number
   readonly totalUnsafeFunctions: number
   readonly totalUnsafeSites: number
+  readonly unsafeSites: ReadonlyArray<UnsafeSite>
+  readonly unsafeSiteKindCounts: Partial<Record<UnsafeSiteKind, number>>
   readonly totalPropagatingFunctions: number
   readonly repositoryUnsafePropagationShare: number
   readonly repositoryUnsafeSitesPerFunction: number
@@ -106,7 +128,7 @@ export const RsLd01: Signal<RsLd01Config, RsLd01Output, RustProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "unsafe-code-config-applicability-diagnostics-call-graph-density-v3",
+  cacheVersion: "unsafe-code-config-applicability-diagnostics-call-graph-density-sites-v4",
   configSchema: RsLd01Config,
   factorDefinitions: RsLd01FactorDefinitions,
   defaultConfig: {
@@ -129,6 +151,8 @@ export const RsLd01: Signal<RsLd01Config, RsLd01Output, RustProjectTag> = {
           const callFacts = await collectFunctionCallFacts(project, analyzedSourceFiles)
           const callFactsByKey = new Map(callFacts.map((fn) => [fn.key, fn]))
           const propagatingFunctionKeys = unsafePropagatingFunctionKeys(facts.functions, callFacts)
+          const unsafeSites = await collectUnsafeSites(project, analyzedSourceFiles)
+          const unsafeSitesByModule = groupUnsafeSitesByModule(unsafeSites)
           let functionCount = 0
 
           for (const fn of facts.functions) {
@@ -144,6 +168,8 @@ export const RsLd01: Signal<RsLd01Config, RsLd01Output, RustProjectTag> = {
                     file: fn.file,
                     totalFunctions: 0,
                     unsafeSiteCount: 0,
+                    unsafeSiteKindCounts: {},
+                    sites: [],
                     unsafeBlockCount: 0,
                     unsafeFunctionCount: 0,
                     propagatingFunctionCount: 0,
@@ -157,9 +183,18 @@ export const RsLd01: Signal<RsLd01Config, RsLd01Output, RustProjectTag> = {
             next.totalFunctions += 1
             next.unsafeBlockCount += fn.unsafeBlockCount
             if (fn.isUnsafeFn) next.unsafeFunctionCount += 1
-            next.unsafeSiteCount = next.unsafeBlockCount + next.unsafeFunctionCount
             if (propagatingFunctionKeys.has(key)) next.propagatingFunctionCount += 1
             grouped.set(fn.modulePath, next)
+          }
+
+          for (const [module, sites] of unsafeSitesByModule) {
+            const current = grouped.get(module)
+            grouped.set(module, {
+              ...(current ?? emptyUnsafeModuleSummary(module, sites[0]?.file ?? project.worktreePath)),
+              unsafeSiteCount: sites.length,
+              unsafeSiteKindCounts: countUnsafeSiteKinds(sites),
+              sites,
+            })
           }
 
           const modules = [...grouped.values()]
@@ -172,7 +207,8 @@ export const RsLd01: Signal<RsLd01Config, RsLd01Output, RustProjectTag> = {
             )
           const totalUnsafeBlocks = modules.reduce((sum, module) => sum + module.unsafeBlockCount, 0)
           const totalUnsafeFunctions = modules.reduce((sum, module) => sum + module.unsafeFunctionCount, 0)
-          const totalUnsafeSites = totalUnsafeBlocks + totalUnsafeFunctions
+          const totalUnsafeSites = unsafeSites.length
+          const unsafeSiteKindCounts = countUnsafeSiteKinds(unsafeSites)
           const totalPropagatingFunctions = modules.reduce(
             (sum, module) => sum + module.propagatingFunctionCount,
             0,
@@ -181,7 +217,7 @@ export const RsLd01: Signal<RsLd01Config, RsLd01Output, RustProjectTag> = {
             totalPropagatingFunctions,
             functionCount,
           )
-          const repositoryUnsafeSitesPerFunction = ratio(totalUnsafeSites, functionCount)
+          const repositoryUnsafeSitesPerFunction = unsafeSitePressure(totalUnsafeSites, functionCount)
           const repositoryCappedUnsafeSiteShare = cappedSiteShare(
             repositoryUnsafeSitesPerFunction,
           )
@@ -195,6 +231,8 @@ export const RsLd01: Signal<RsLd01Config, RsLd01Output, RustProjectTag> = {
             totalUnsafeBlocks,
             totalUnsafeFunctions,
             totalUnsafeSites,
+            unsafeSites,
+            unsafeSiteKindCounts,
             totalPropagatingFunctions,
             repositoryUnsafePropagationShare,
             repositoryUnsafeSitesPerFunction,
@@ -220,7 +258,7 @@ export const RsLd01: Signal<RsLd01Config, RsLd01Output, RustProjectTag> = {
     }),
   score: (out) => {
     if (out.safeOnlyViolations.length > 0) return 0
-    if (out.functionCount === 0) return 1
+    if (out.functionCount === 0 && out.totalUnsafeSites === 0) return 1
     return Math.max(0, 1 - out.repositoryUnsafePressure)
   },
   diagnose: (out): ReadonlyArray<Diagnostic> => {
@@ -245,6 +283,8 @@ export const RsLd01: Signal<RsLd01Config, RsLd01Output, RustProjectTag> = {
         data: {
           module: module.module,
           unsafeSiteCount: module.unsafeSiteCount,
+          unsafeSiteKindCounts: module.unsafeSiteKindCounts,
+          sites: siteDiagnosticSample(module.sites),
           unsafeBlockCount: module.unsafeBlockCount,
           unsafeFunctionCount: module.unsafeFunctionCount,
           propagatingFunctionCount: module.propagatingFunctionCount,
@@ -254,11 +294,13 @@ export const RsLd01: Signal<RsLd01Config, RsLd01Output, RustProjectTag> = {
         .filter((module) => module.unsafeSiteCount > 0 || module.propagatingFunctionCount > 0)
         .map((module) => ({
           severity: "warn" as const,
-          message: `Unsafe propagation in ${module.module}: ${(module.unsafePropagationShare * 100).toFixed(0)}% functions, ${module.unsafeSitesPerFunction.toFixed(2)} unsafe sites/function`,
+          message: `Unsafe surface in ${module.module}: ${(module.unsafePropagationShare * 100).toFixed(0)}% functions, ${unsafeSitePressureText(module)}`,
           location: { file: module.file },
           data: {
             module: module.module,
             unsafeSiteCount: module.unsafeSiteCount,
+            unsafeSiteKindCounts: module.unsafeSiteKindCounts,
+            sites: siteDiagnosticSample(module.sites),
             unsafePropagationShare: module.unsafePropagationShare,
             unsafeSitesPerFunction: module.unsafeSitesPerFunction,
             cappedUnsafeSiteShare: module.cappedUnsafeSiteShare,
@@ -276,7 +318,7 @@ export const RsLd01: Signal<RsLd01Config, RsLd01Output, RustProjectTag> = {
     if (out.sourceFileCount === 0) {
       return { applicability: "insufficient_evidence" as const }
     }
-    if (out.analyzedSourceFileCount === 0 || out.functionCount === 0) {
+    if (out.analyzedSourceFileCount === 0 || (out.functionCount === 0 && out.totalUnsafeSites === 0)) {
       return { applicability: "not_applicable" as const }
     }
     return undefined
@@ -304,9 +346,25 @@ const makeRsLd01FactorLedger = (): SignalFactorLedger =>
     ),
   )
 
+const emptyUnsafeModuleSummary = (module: string, file: string): UnsafeModuleSummary => ({
+  module,
+  file,
+  totalFunctions: 0,
+  unsafeSiteCount: 0,
+  unsafeSiteKindCounts: {},
+  sites: [],
+  unsafeBlockCount: 0,
+  unsafeFunctionCount: 0,
+  propagatingFunctionCount: 0,
+  unsafePropagationShare: 0,
+  unsafeSitesPerFunction: 0,
+  cappedUnsafeSiteShare: 0,
+  unsafePressure: 0,
+})
+
 const unsafeModuleWithPressure = (module: UnsafeModuleSummary): UnsafeModuleSummary => {
   const unsafePropagationShare = boundedShare(module.propagatingFunctionCount, module.totalFunctions)
-  const unsafeSitesPerFunction = ratio(module.unsafeSiteCount, module.totalFunctions)
+  const unsafeSitesPerFunction = unsafeSitePressure(module.unsafeSiteCount, module.totalFunctions)
   const cappedUnsafeSiteShare = cappedSiteShare(unsafeSitesPerFunction)
   return {
     ...module,
@@ -320,6 +378,9 @@ const unsafeModuleWithPressure = (module: UnsafeModuleSummary): UnsafeModuleSumm
 const ratio = (numerator: number, denominator: number): number =>
   denominator === 0 ? 0 : numerator / denominator
 
+const unsafeSitePressure = (unsafeSiteCount: number, functionCount: number): number =>
+  functionCount === 0 ? unsafeSiteCount : unsafeSiteCount / functionCount
+
 const boundedShare = (numerator: number, denominator: number): number =>
   Math.max(0, Math.min(1, ratio(numerator, denominator)))
 
@@ -328,6 +389,121 @@ const cappedSiteShare = (unsafeSitesPerFunction: number): number =>
     0,
     Math.min(1, unsafeSitesPerFunction / UNSAFE_SITE_PRESSURE_SCORE_CAP),
   )
+
+const unsafeSitePressureText = (module: UnsafeModuleSummary): string =>
+  module.totalFunctions === 0
+    ? `${module.unsafeSiteCount} unsafe site${module.unsafeSiteCount === 1 ? "" : "s"} and no functions`
+    : `${module.unsafeSitesPerFunction.toFixed(2)} unsafe sites/function`
+
+const siteDiagnosticSample = (sites: ReadonlyArray<UnsafeSite>): ReadonlyArray<UnsafeSite> =>
+  sites.slice(0, 10)
+
+const groupUnsafeSitesByModule = (
+  sites: ReadonlyArray<UnsafeSite>,
+): ReadonlyMap<string, ReadonlyArray<UnsafeSite>> => {
+  const grouped = new Map<string, Array<UnsafeSite>>()
+  for (const site of sites) {
+    grouped.set(site.module, [...(grouped.get(site.module) ?? []), site])
+  }
+  return grouped
+}
+
+const countUnsafeSiteKinds = (
+  sites: ReadonlyArray<UnsafeSite>,
+): Partial<Record<UnsafeSiteKind, number>> => {
+  const counts: Partial<Record<UnsafeSiteKind, number>> = {}
+  for (const site of sites) {
+    counts[site.kind] = (counts[site.kind] ?? 0) + 1
+  }
+  return counts
+}
+
+const collectUnsafeSites = async (
+  project: RustProject,
+  analyzedSourceFiles: ReadonlyArray<string>,
+): Promise<ReadonlyArray<UnsafeSite>> => {
+  const sites: Array<UnsafeSite> = []
+  for (const file of analyzedSourceFiles) {
+    const scope = resolveRustFileScope(project, file)
+    const tree = await parseRustFile(file)
+    walkAttributedNodes(tree.rootNode, ({ node, ancestors, testGated }) => {
+      if (testGated) return
+      const site = unsafeSiteFromNode(file, scope, node, ancestors)
+      if (site !== undefined) sites.push(site)
+    })
+  }
+  return sites.sort(
+    (left, right) =>
+      left.file.localeCompare(right.file) ||
+      left.line - right.line ||
+      left.kind.localeCompare(right.kind) ||
+      (left.name ?? "").localeCompare(right.name ?? ""),
+  )
+}
+
+const unsafeSiteFromNode = (
+  file: string,
+  scope: ReturnType<typeof resolveRustFileScope>,
+  node: RustSyntaxNode,
+  ancestors: ReadonlyArray<RustSyntaxNode>,
+): UnsafeSite | undefined => {
+  const kind = unsafeSiteKind(node, ancestors)
+  if (kind === undefined) return undefined
+  const { modulePath } = modulePathForAncestors(scope, ancestors)
+  const name = unsafeSiteName(node, kind)
+  return {
+    kind,
+    module: modulePath,
+    file,
+    line: node.startPosition.row + 1,
+    name,
+    functionName: kind === "unsafe_block" ? nearestFunctionName(ancestors) : name,
+  }
+}
+
+const unsafeSiteKind = (
+  node: RustSyntaxNode,
+  ancestors: ReadonlyArray<RustSyntaxNode>,
+): UnsafeSiteKind | undefined => {
+  if (node.type === "unsafe_block") return "unsafe_block"
+  if (node.type === "function_item" && hasUnsafeFunctionModifier(node)) return "unsafe_function"
+  if (node.type === "function_signature_item" && hasAncestor(ancestors, "foreign_mod_item")) {
+    return "foreign_function"
+  }
+  if (node.type === "function_signature_item" && hasUnsafeFunctionModifier(node)) {
+    return "unsafe_function_signature"
+  }
+  if (node.type === "trait_item" && /\bunsafe\s+trait\b/.test(node.text)) return "unsafe_trait"
+  if (node.type === "impl_item" && /^\s*unsafe\s+impl\b/.test(node.text)) return "unsafe_impl"
+  if (node.type === "static_item" && firstNamedChild(node, "mutable_specifier") !== undefined) {
+    return "static_mut"
+  }
+  return undefined
+}
+
+const unsafeSiteName = (node: RustSyntaxNode, kind: UnsafeSiteKind): string | undefined => {
+  if (kind === "unsafe_impl") return node.text.split("{")[0]?.trim()
+  return (
+    firstNamedChild(node, "identifier")?.text ??
+    firstNamedChild(node, "type_identifier")?.text
+  )
+}
+
+const hasUnsafeFunctionModifier = (node: RustSyntaxNode): boolean =>
+  (firstNamedChild(node, "function_modifiers")?.text ?? "").includes("unsafe")
+
+const hasAncestor = (ancestors: ReadonlyArray<RustSyntaxNode>, type: string): boolean =>
+  ancestors.some((ancestor) => ancestor.type === type)
+
+const nearestFunctionName = (ancestors: ReadonlyArray<RustSyntaxNode>): string | undefined => {
+  for (let index = ancestors.length - 1; index >= 0; index -= 1) {
+    const ancestor = ancestors[index]!
+    if (ancestor.type === "function_item" || ancestor.type === "function_signature_item") {
+      return firstNamedChild(ancestor, "identifier")?.text
+    }
+  }
+  return undefined
+}
 
 const collectFunctionCallFacts = async (
   project: RustProject,
