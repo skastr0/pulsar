@@ -36,6 +36,7 @@ export const TsAb05: Signal<TsAb05Config, TsAb05Output, TsProjectTag> = {
   tier: 1,
   category: "abstraction-bloat",
   kind: "legibility",
+  cacheVersion: "generic-proliferation-v1-diagnostic-limit-v1",
   configSchema: TsAb05Config,
   defaultConfig: {
     exclude_globs: [
@@ -117,7 +118,7 @@ export const TsAb05: Signal<TsAb05Config, TsAb05Output, TsProjectTag> = {
               (analysis) => analysis.paramCount > config.max_generic_parameters,
             ),
             genericThreshold: config.max_generic_parameters,
-            diagnosticLimit: config.top_n_diagnostics,
+            diagnosticLimit: normalizeDiagnosticLimit(config.top_n_diagnostics),
           }
         },
         catch: (cause) =>
@@ -320,3 +321,6 @@ const compareGenericAnalysis = (left: GenericAnalysis, right: GenericAnalysis): 
   }
   return left.line - right.line
 }
+
+const normalizeDiagnosticLimit = (limit: number): number =>
+  Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 0

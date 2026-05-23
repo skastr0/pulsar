@@ -4,6 +4,7 @@ import { TsAb01 } from "../signals/ts-ab-01-public-export-surface.js"
 import { TsAb02 } from "../signals/ts-ab-02-unused-exports-reachability.js"
 import { TsAb03 } from "../signals/ts-ab-03-type-indirection-depth.js"
 import { TsAb04 } from "../signals/ts-ab-04-interface-impl-ratio.js"
+import { TsAb05 } from "../signals/ts-ab-05-generic-proliferation.js"
 import { TsAd02 } from "../signals/ts-ad-02-circular-deps.js"
 import { TsAd03 } from "../signals/ts-ad-03-reexport-depth.js"
 import { TsAd04 } from "../signals/ts-ad-04-boundary-parser-coverage.js"
@@ -41,6 +42,7 @@ describe("TS pack cache versions", () => {
     const ab02 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-AB-02"))
     const ab03 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-AB-03"))
     const ab04 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-AB-04"))
+    const ab05 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-AB-05"))
 
     expect(ad02?.cacheVersion).toContain(TsAd02.cacheVersion)
     expect(ad03?.cacheVersion).toContain(TsAd03.cacheVersion)
@@ -53,6 +55,7 @@ describe("TS pack cache versions", () => {
     expect(ab02?.cacheVersion).toContain(TsAb02.cacheVersion)
     expect(ab03?.cacheVersion).toContain(TsAb03.cacheVersion)
     expect(ab04?.cacheVersion).toContain(TsAb04.cacheVersion)
+    expect(ab05?.cacheVersion).toContain(TsAb05.cacheVersion)
     expect(de04?.cacheVersion).toContain(TsDe04.cacheVersion)
     expect(de05?.cacheVersion).toContain(TsDe05.cacheVersion)
     expect(ld01?.cacheVersion).toContain(TsLd01.cacheVersion)

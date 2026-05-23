@@ -121,6 +121,47 @@ describe("TS-AB-05 (generic parameter proliferation)", () => {
     expect(diagnostics[0]?.message).toContain("TooMany")
   })
 
+  test("diagnostics honor sanitized top_n_diagnostics", async () => {
+    await writeTs(
+      "src/many.ts",
+      [
+        "export type TooManyA<A, B, C, D> = [A, B, C, D]",
+        "export type TooManyB<A, B, C, D> = [A, B, C, D]",
+        "",
+      ].join("\n"),
+    )
+
+    const fractional = await runCompute({
+      ...TsAb05.defaultConfig,
+      max_generic_parameters: 2,
+      top_n_diagnostics: 1.8,
+    })
+    const negative = await runCompute({
+      ...TsAb05.defaultConfig,
+      max_generic_parameters: 2,
+      top_n_diagnostics: -1,
+    })
+    const nan = await runCompute({
+      ...TsAb05.defaultConfig,
+      max_generic_parameters: 2,
+      top_n_diagnostics: Number.NaN,
+    })
+    const infinite = await runCompute({
+      ...TsAb05.defaultConfig,
+      max_generic_parameters: 2,
+      top_n_diagnostics: Number.POSITIVE_INFINITY,
+    })
+
+    expect(fractional.diagnosticLimit).toBe(1)
+    expect(TsAb05.diagnose(fractional)).toHaveLength(1)
+    expect(negative.diagnosticLimit).toBe(0)
+    expect(nan.diagnosticLimit).toBe(0)
+    expect(infinite.diagnosticLimit).toBe(0)
+    expect(TsAb05.diagnose(negative)).toEqual([])
+    expect(TsAb05.diagnose(nan)).toEqual([])
+    expect(TsAb05.diagnose(infinite)).toEqual([])
+  })
+
   test("configSchema decodes defaults round-trip", () => {
     const decoded = Schema.decodeUnknownSync(TsAb05.configSchema)(TsAb05.defaultConfig)
     expect(decoded.max_generic_parameters).toBe(3)
