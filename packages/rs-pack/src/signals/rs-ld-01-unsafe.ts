@@ -11,8 +11,16 @@ import {
 } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
 import { collectRustProjectFacts } from "../rust-analysis.js"
-import { RustProjectTag } from "../project.js"
-import { DEFAULT_RUST_EXCLUDE_GLOBS } from "./shared-rust-ast.js"
+import { type RustProject, RustProjectTag } from "../project.js"
+import { parseRustFile, type RustSyntaxNode } from "../syn-walker.js"
+import {
+  DEFAULT_RUST_EXCLUDE_GLOBS,
+  firstNamedChild,
+  modulePathForAncestors,
+  namedChildrenOf,
+  resolveRustFileScope,
+  walkAttributedNodes,
+} from "./shared-rust-ast.js"
 import { isExcluded } from "./shared-globs.js"
 
 const RsLd01Config = Schema.Struct({
@@ -41,7 +49,14 @@ interface RsLd01Output {
   readonly analyzedSourceFileCount: number
   readonly functionCount: number
   readonly diagnosticLimit: number
-  readonly propagationMode: "local-signature-only"
+  readonly propagationMode: "local-call-graph"
+}
+
+interface FunctionCallFacts {
+  readonly key: string
+  readonly module: string
+  readonly name: string
+  readonly calleeNames: ReadonlyArray<string>
 }
 
 const DEFAULT_TOP_N_DIAGNOSTICS = 10
@@ -77,7 +92,7 @@ export const RsLd01: Signal<RsLd01Config, RsLd01Output, RustProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "unsafe-code-config-applicability-diagnostics-v1",
+  cacheVersion: "unsafe-code-config-applicability-diagnostics-call-graph-v2",
   configSchema: RsLd01Config,
   factorDefinitions: RsLd01FactorDefinitions,
   defaultConfig: {
@@ -97,10 +112,15 @@ export const RsLd01: Signal<RsLd01Config, RsLd01Output, RustProjectTag> = {
           const analyzedSourceFiles = project.sourceFiles.filter(
             (file) => !isExcluded(file, normalizedConfig.exclude_globs),
           )
+          const callFacts = await collectFunctionCallFacts(project, analyzedSourceFiles)
+          const callFactsByKey = new Map(callFacts.map((fn) => [fn.key, fn]))
+          const propagatingFunctionKeys = unsafePropagatingFunctionKeys(facts.functions, callFacts)
           let functionCount = 0
 
           for (const fn of facts.functions) {
             if (isExcluded(fn.file, normalizedConfig.exclude_globs)) continue
+            const key = functionKey(fn.modulePath, fn.name)
+            if (!callFactsByKey.has(key)) continue
             functionCount += 1
             const current = grouped.get(fn.modulePath)
             const next =
@@ -119,7 +139,7 @@ export const RsLd01: Signal<RsLd01Config, RsLd01Output, RustProjectTag> = {
             next.totalFunctions += 1
             next.unsafeBlockCount += fn.unsafeBlockCount
             if (fn.isUnsafeFn) next.unsafeFunctionCount += 1
-            if (isPropagatingUnsafe(fn)) next.propagatingFunctionCount += 1
+            if (propagatingFunctionKeys.has(key)) next.propagatingFunctionCount += 1
             grouped.set(fn.modulePath, next)
           }
 
@@ -149,7 +169,7 @@ export const RsLd01: Signal<RsLd01Config, RsLd01Output, RustProjectTag> = {
             analyzedSourceFileCount: analyzedSourceFiles.length,
             functionCount,
             diagnosticLimit: normalizedConfig.top_n_diagnostics,
-            propagationMode: "local-signature-only",
+            propagationMode: "local-call-graph",
           }
         },
         catch: (cause) =>
@@ -237,16 +257,104 @@ const makeRsLd01FactorLedger = (): SignalFactorLedger =>
     ),
   )
 
-const isPropagatingUnsafe = (
-  fn: {
+const collectFunctionCallFacts = async (
+  project: RustProject,
+  analyzedSourceFiles: ReadonlyArray<string>,
+): Promise<ReadonlyArray<FunctionCallFacts>> => {
+  const facts: Array<FunctionCallFacts> = []
+  for (const file of analyzedSourceFiles) {
+    const scope = resolveRustFileScope(project, file)
+    const tree = await parseRustFile(file)
+    walkAttributedNodes(tree.rootNode, ({ node, ancestors, testGated }) => {
+      if (testGated || node.type !== "function_item") return
+      const name = firstNamedChild(node, "identifier")?.text
+      if (name === undefined) return
+      const { modulePath } = modulePathForAncestors(scope, ancestors)
+      facts.push({
+        key: functionKey(modulePath, name),
+        module: modulePath,
+        name,
+        calleeNames: collectCalledFunctionNames(node),
+      })
+    })
+  }
+  return facts
+}
+
+const unsafePropagatingFunctionKeys = (
+  functions: ReadonlyArray<{
+    readonly modulePath: string
+    readonly name: string
     readonly isUnsafeFn: boolean
     readonly unsafeBlockCount: number
-    readonly rawPointerParamCount: number
-    readonly rawPointerReturn: boolean
-    readonly returnTypeText: string | undefined
-  },
-): boolean =>
-  (fn.isUnsafeFn || fn.unsafeBlockCount > 0) &&
-  (fn.rawPointerParamCount > 0 ||
-    fn.rawPointerReturn ||
-    (fn.returnTypeText?.includes("&") ?? false))
+  }>,
+  callFacts: ReadonlyArray<FunctionCallFacts>,
+): ReadonlySet<string> => {
+  const knownKeys = new Set(callFacts.map((fn) => fn.key))
+  const keysByName = new Map<string, Array<string>>()
+  for (const fn of callFacts) {
+    keysByName.set(fn.name, [...(keysByName.get(fn.name) ?? []), fn.key])
+  }
+
+  const propagating = new Set(
+    functions
+      .filter((fn) => fn.isUnsafeFn || fn.unsafeBlockCount > 0)
+      .map((fn) => functionKey(fn.modulePath, fn.name))
+      .filter((key) => knownKeys.has(key)),
+  )
+
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const fn of callFacts) {
+      if (propagating.has(fn.key)) continue
+      const callees = fn.calleeNames.flatMap((name) =>
+        resolveCalleeKeys(fn.module, name, knownKeys, keysByName),
+      )
+      if (callees.some((key) => propagating.has(key))) {
+        propagating.add(fn.key)
+        changed = true
+      }
+    }
+  }
+  return propagating
+}
+
+const resolveCalleeKeys = (
+  callerModule: string,
+  calleeName: string,
+  knownKeys: ReadonlySet<string>,
+  keysByName: ReadonlyMap<string, ReadonlyArray<string>>,
+): ReadonlyArray<string> => {
+  const localKey = functionKey(callerModule, calleeName)
+  if (knownKeys.has(localKey)) return [localKey]
+  const candidates = keysByName.get(calleeName) ?? []
+  return candidates.length === 1 ? candidates : []
+}
+
+const collectCalledFunctionNames = (node: RustSyntaxNode): ReadonlyArray<string> => {
+  const names = new Set<string>()
+  const walk = (current: RustSyntaxNode): void => {
+    if (current.type === "call_expression") {
+      const callee = namedChildrenOf(current)[0]
+      const name = calleeName(callee)
+      if (name !== undefined) names.add(name)
+    }
+    for (const child of namedChildrenOf(current)) walk(child)
+  }
+  walk(node)
+  return [...names].sort()
+}
+
+const calleeName = (node: RustSyntaxNode | undefined): string | undefined => {
+  if (node === undefined) return undefined
+  if (node.type === "identifier") return node.text
+  if (node.type === "generic_function") return calleeName(namedChildrenOf(node)[0])
+  if (node.type === "scoped_identifier") {
+    const identifiers = namedChildrenOf(node).filter((child) => child.type === "identifier")
+    return identifiers[identifiers.length - 1]?.text
+  }
+  return undefined
+}
+
+const functionKey = (module: string, name: string): string => `${module}::${name}`

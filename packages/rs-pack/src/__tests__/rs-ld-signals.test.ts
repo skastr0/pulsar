@@ -90,6 +90,43 @@ const createLegibilityWorkspace = () =>
     ].join("\n"),
   })
 
+const createUnsafePropagationWorkspace = () =>
+  createRustWorkspace("pulsar-rs-ld01-propagation-", {
+    "Cargo.toml": [
+      "[package]",
+      'name = "unsafe-propagation"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+    ].join("\n"),
+    "src/lib.rs": [
+      "pub mod safe_zone {",
+      "    pub fn raw_deref(ptr: *const u8) -> u8 {",
+      "        unsafe { *ptr }",
+      "    }",
+      "",
+      "    pub fn wrapper(ptr: *const u8) -> u8 {",
+      "        raw_deref(ptr)",
+      "    }",
+      "",
+      "    pub fn api(ptr: *const u8) -> u8 {",
+      "        wrapper(ptr)",
+      "    }",
+      "",
+      "    #[cfg(test)]",
+      "    pub fn test_only(ptr: *const u8) -> u8 {",
+      "        unsafe { *ptr }",
+      "    }",
+      "",
+      "    #[cfg(any(test, feature = \"probe\"))]",
+      "    pub fn composite_test_only(ptr: *const u8) -> u8 {",
+      "        unsafe { *ptr }",
+      "    }",
+      "}",
+      "",
+    ].join("\n"),
+  })
+
 describe("RS-LD-* signals", () => {
   test("RS-LD-01 declares identity, config, cache, pack registration, and factor ledger", async () => {
     const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
@@ -126,7 +163,7 @@ describe("RS-LD-* signals", () => {
       tier: 1,
       category: "legibility-decay",
       kind: "legibility",
-      cacheVersion: "unsafe-code-config-applicability-diagnostics-v1",
+      cacheVersion: "unsafe-code-config-applicability-diagnostics-call-graph-v2",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -180,7 +217,7 @@ describe("RS-LD-* signals", () => {
       expect(out.analyzedSourceFileCount).toBe(1)
       expect(out.functionCount).toBeGreaterThan(0)
       expect(out.diagnosticLimit).toBe(10)
-      expect(out.propagationMode).toBe("local-signature-only")
+      expect(out.propagationMode).toBe("local-call-graph")
       expect(out.safeOnlyViolations.map((module) => module.module)).toContain(
         "legibility-fixture::crate::safe_zone",
       )
@@ -190,6 +227,39 @@ describe("RS-LD-* signals", () => {
         severity: "block",
         message: "Unsafe usage in safe-only module legibility-fixture::crate::safe_zone",
       })
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-LD-01 propagates unsafe usage through local call chains and excludes cfg-test functions", async () => {
+    const repo = await createUnsafePropagationWorkspace()
+    try {
+      const out = await runSignalCompute(RsLd01, repo, RsLd01.defaultConfig)
+      const safeZone = out.modules.find(
+        (module) => module.module === "unsafe-propagation::crate::safe_zone",
+      )
+
+      expect(safeZone).toMatchObject({
+        totalFunctions: 3,
+        unsafeBlockCount: 1,
+        unsafeFunctionCount: 0,
+        propagatingFunctionCount: 3,
+        unsafeDensity: 1 / 3,
+      })
+      expect(out.totalUnsafeBlocks).toBe(1)
+      expect(out.totalUnsafeFunctions).toBe(0)
+      expect(out.functionCount).toBe(3)
+      expect(out.propagationMode).toBe("local-call-graph")
+      expect(RsLd01.diagnose(out)).toContainEqual(
+        expect.objectContaining({
+          message: "Unsafe density in unsafe-propagation::crate::safe_zone: 33% (3 propagating)",
+          data: expect.objectContaining({
+            propagationMode: "local-call-graph",
+            propagatingFunctionCount: 3,
+          }),
+        }),
+      )
     } finally {
       await cleanupWorkspace(repo)
     }
@@ -275,7 +345,7 @@ describe("RS-LD-* signals", () => {
             sourceFileCount: 0,
             analyzedSourceFileCount: 0,
             functionCount: 0,
-            propagationMode: "local-signature-only",
+            propagationMode: "local-call-graph",
           }),
         }),
       ])
