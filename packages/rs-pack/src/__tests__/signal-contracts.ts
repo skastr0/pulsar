@@ -327,7 +327,33 @@ export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "observer-integration.test.ts and CLI score tests: Rust observer integration carries RS-LD-01 unsafe score and diagnostics through the RS pack against a real Cargo fixture, while CLI single-signal mode executes RS-LD-01 against the repository substrate through both source and compiled CLI entrypoints.",
     },
   },
-  pendingSignalContract("RS-LD-02-lifetime-complexity"),
+  {
+    id: "RS-LD-02-lifetime-complexity",
+    status: "verified",
+    requiredEvidence: ["integration"],
+    evidence: {
+      identity:
+        "rs-ld-signals.test.ts: canonical id, alias, title, tier/category/kind, empty input contract, semantic cacheVersion, pack registration, registry alias lookup, config-cache hash sensitivity, default config decoding, factor ledger, score mode, and score denominator are asserted.",
+      config:
+        "rs-ld-signals.test.ts: exclude_globs, max_lifetime_complexity, and top_n_diagnostics decode through the real schema; fractional, NaN, and zero diagnostic caps or thresholds are normalized through compute output.",
+      positiveFixture:
+        "rs-ld-signals.test.ts: temporary Cargo fixtures run through RustProjectLayer and real tree-sitter Rust parsing to prove lifetime parameters, parameter and where-clause bounds, input positions, output positions, constraint positions, lifetime-bearing function counts, by-file summaries, and threshold exceedance evidence.",
+      negativeFixture:
+        "rs-ld-signals.test.ts: missing Rust source, functions without explicit lifetime evidence, fully excluded Rust source, cfg(test) lifetime functions, and composite cfg(any(test,...)) lifetime functions return neutral or excluded evidence without false lifetime pressure.",
+      applicability:
+        "rs-ld-signals.test.ts: loaded Rust source with lifetime-bearing function evidence is applicable, no Rust source emits insufficient_evidence metadata, and analyzed Rust source with no explicit lifetimes or fully excluded source emits not_applicable metadata.",
+      score:
+        "rs-ld-signals.test.ts: score is asserted as one-minus double-weighted over-threshold lifetime-function share, with denominator named as lifetime-bearing functions; clean/no-evidence and under-threshold fixtures score 1, one-over-four scores 0.5, two-over-four scores 0, and stricter max_lifetime_complexity lowers the same fixture's score.",
+      diagnostics:
+        "rs-ld-signals.test.ts: diagnostics assert severity, source locations, deterministic complexity ordering, function/module/lifetime-count payloads, configured threshold payloads, score mode and denominator payloads, no-source warning payloads, and normalized diagnostic caps.",
+      factorLedger:
+        "rs-ld-signals.test.ts: registered RS pack signal emits config.exclude_globs as score-bearing evidence, config.max_lifetime_complexity as a score-bearing threshold, and config.top_n_diagnostics as non-score-bearing metadata with signal-default source.",
+      cacheSemantics:
+        "rs-ld-signals.test.ts and pack.test.ts: RS-LD-02 declares lifetime-complexity-config-applicability-diagnostics-cfg-test-score-v3 cacheVersion, config/cacheVersion changes alter the signal config hash, and the RS pack wrapper preserves the signal-specific cacheVersion.",
+      integration:
+        "observer-integration.test.ts and CLI score tests: Rust observer integration carries RS-LD-02 lifetime score and diagnostics through the RS pack against a real Cargo fixture, while CLI single-signal mode executes RS-LD-02 against the repository substrate through both source and compiled CLI entrypoints.",
+    },
+  },
   pendingSignalContract("RS-LD-03-match-catch-all"),
   pendingSignalContract("RS-LD-04-error-granularity"),
   pendingSignalContract("RS-LD-05-cyclomatic-complexity"),
