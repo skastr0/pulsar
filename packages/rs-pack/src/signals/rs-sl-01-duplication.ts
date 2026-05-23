@@ -12,7 +12,7 @@ import {
 } from "@skastr0/pulsar-core/factors"
 import { Effect, Schema } from "effect"
 import { RustProjectTag } from "../project.js"
-import { parseRustFile } from "../syn-walker.js"
+import { parseRustFile, type RustSyntaxNode } from "../syn-walker.js"
 import {
   DEFAULT_RUST_EXCLUDE_GLOBS,
   firstNamedChild,
@@ -96,7 +96,7 @@ export const RsSl01: Signal<RsSl01Config, RsSl01Output, RustProjectTag | SignalC
   tier: 1,
   category: "generated-slop",
   kind: "legibility",
-  cacheVersion: "advisory-rust-duplication-cfg-test-diagnostics-changed-hunks-v4",
+  cacheVersion: "advisory-rust-duplication-cfg-test-diagnostics-changed-hunks-body-v5",
   configSchema: RsSl01Config,
   factorDefinitions: RsSl01FactorDefinitions,
   defaultConfig: {
@@ -138,11 +138,12 @@ export const RsSl01: Signal<RsSl01Config, RsSl01Output, RustProjectTag | SignalC
                 context.changedHunks,
               )
 
-              const structuralTokens = tokenizeStructural(node.text)
+              const bodySource = functionBodySource(node)
+              const structuralTokens = tokenizeStructural(bodySource)
               if (structuralTokens.length < normalizedConfig.min_tokens) return
               const { modulePath } = modulePathForAncestors(scope, ancestors)
               functions.push({
-                exact: normalizeExact(node.text),
+                exact: normalizeExact(bodySource),
                 structural: structuralTokens.join(" "),
                 tokenCount: structuralTokens.length,
                 member: {
@@ -301,6 +302,9 @@ const filterGroupsForScope = (
   changedHunksOnly
     ? groups.filter((group) => group.members.some((member) => member.changed))
     : groups
+
+const functionBodySource = (node: RustSyntaxNode): string =>
+  firstNamedChild(node, "block")?.text ?? node.text
 
 const normalizeExact = (source: string): string => source.replace(/\s+/g, " ").trim()
 

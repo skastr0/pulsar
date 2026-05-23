@@ -50,7 +50,7 @@ describe("RS-SL-* signals", () => {
       tier: 1,
       category: "generated-slop",
       kind: "legibility",
-      cacheVersion: "advisory-rust-duplication-cfg-test-diagnostics-changed-hunks-v4",
+      cacheVersion: "advisory-rust-duplication-cfg-test-diagnostics-changed-hunks-body-v5",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -106,6 +106,10 @@ describe("RS-SL-* signals", () => {
     try {
       const out = await runSignalCompute(RsSl01, repo, RsSl01.defaultConfig)
       expect(out.groups.length).toBeGreaterThanOrEqual(1)
+      expect(out.groups.find((group) => group.kind === "exact")?.members.map((member) => member.name)).toEqual([
+        "first",
+        "third",
+      ])
       expect(out.groups.some((group) => group.kind === "structural")).toBe(true)
       expect(out.scopeMode).toBe("whole-tree")
       expect(out.analysisMode).toBe("function-body-normalization")
