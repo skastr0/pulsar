@@ -435,6 +435,10 @@ describe("RS-SL-* signals", () => {
         "#[allow(dead_code, clippy::unwrap_used)]",
         "pub fn guarded(value: Option<u32>) -> u32 { value.unwrap() }",
         "",
+        "// pulsar-allow ENG-OLD until:2000-01-01 stale lint debt",
+        "#[allow(clippy::todo)]",
+        "pub fn expired() {}",
+        "",
         "#[allow(warnings)]",
         "pub fn unguarded() {}",
         "",
@@ -443,16 +447,22 @@ describe("RS-SL-* signals", () => {
 
     try {
       const out = await runSignalCompute(RsSl02, repo, RsSl02.defaultConfig)
-      expect(out.governedAllowAttributeCount).toBe(2)
+      expect(out.governedAllowAttributeCount).toBe(3)
       expect(out.ordinaryAllowAttributeCount).toBe(0)
       expect(out.ordinaryAllowLintCount).toBe(1)
       expect(out.missingJustificationCount).toBe(1)
-      expect(out.expiredJustificationCount).toBe(0)
+      expect(out.expiredJustificationCount).toBe(1)
       expect(out.suppressions.map((suppression) => suppression.lints)).toEqual([
         ["clippy::unwrap_used"],
+        ["clippy::todo"],
         ["warnings"],
       ])
       expect(out.suppressions[0]?.ordinaryLints).toEqual(["dead_code"])
+      expect(out.suppressions.map((suppression) => suppression.justification)).toEqual([
+        "active",
+        "expired",
+        "missing",
+      ])
     } finally {
       await cleanupWorkspace(repo)
     }
@@ -692,6 +702,104 @@ describe("RS-SL-* signals", () => {
     }
   })
 
+  test("RS-SL-02 changed-hunk scope keeps only changed allow evidence", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-sl02-changed-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "suppression-changed"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "#[allow(warnings)]",
+        "pub fn first() {}",
+        "",
+        "#[allow(clippy::unwrap_used)]",
+        "pub fn second(value: Option<u32>) -> u32 { value.unwrap() }",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const out = await runSignalComputeWithContext(
+        RsSl02,
+        repo,
+        RsSl02.defaultConfig,
+        {
+          gitSha: "HEAD",
+          worktreePath: repo,
+          changedHunks: [{ file: "src/lib.rs", oldStart: 4, oldLines: 1, newStart: 4, newLines: 1 }],
+        },
+      )
+
+      expect(out.scopeMode).toBe("changed-hunks")
+      expect(out.governedAllowAttributeCount).toBe(1)
+      expect(out.suppressions.map((suppression) => suppression.lints)).toEqual([
+        ["clippy::unwrap_used"],
+      ])
+      expect(RsSl02.diagnose(out)[0]).toMatchObject({
+        location: { line: 4 },
+        data: expect.objectContaining({ scopeMode: "changed-hunks" }),
+      })
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-SL-02 scores governed allow pressure and failed governance monotonically", () => {
+    const oneActive = RsSl02.score(rsSl02Output([
+      {
+        file: "src/lib.rs",
+        module: "crate",
+        line: 1,
+        lints: ["clippy::unwrap_used"],
+        ordinaryLints: [],
+        justification: "active",
+        classification: "requires-governance",
+      },
+    ]))
+    const manyActive = RsSl02.score(rsSl02Output(
+      Array.from({ length: 10 }, (_, index) => ({
+        file: "src/lib.rs",
+        module: "crate",
+        line: index + 1,
+        lints: ["clippy::unwrap_used"],
+        ordinaryLints: [],
+        justification: "active",
+        classification: "requires-governance",
+      })),
+    ))
+    const missing = RsSl02.score(rsSl02Output([
+      {
+        file: "src/lib.rs",
+        module: "crate",
+        line: 1,
+        lints: ["warnings"],
+        ordinaryLints: [],
+        justification: "missing",
+        classification: "requires-governance",
+      },
+    ]))
+    const expired = RsSl02.score(rsSl02Output([
+      {
+        file: "src/lib.rs",
+        module: "crate",
+        line: 1,
+        lints: ["clippy::todo"],
+        ordinaryLints: [],
+        justification: "expired",
+        classification: "requires-governance",
+      },
+    ]))
+
+    expect(oneActive).toBeGreaterThan(manyActive)
+    expect(oneActive).toBeLessThan(1)
+    expect(manyActive).toBeGreaterThan(0.5)
+    expect(missing).toBe(0)
+    expect(expired).toBe(0)
+  })
+
   test("RS-SL-03 excludes unwrap/expect inside cfg(test) blocks", async () => {
     const repo = await createRustWorkspace("pulsar-rs-sl03-", {
       "Cargo.toml": [
@@ -812,4 +920,22 @@ const rsSl01Output = (
   minTokens: 12,
   scoreMode: "bounded-duplicate-function-pressure",
   scoreDenominator: "analyzed-functions",
+})
+
+const rsSl02Output = (
+  suppressions: ReadonlyArray<Parameters<typeof RsSl02.score>[0]["suppressions"][number]>,
+): Parameters<typeof RsSl02.score>[0] => ({
+  suppressions,
+  ordinaryAllowAttributeCount: 0,
+  ordinaryAllowLintCount: 0,
+  governedAllowAttributeCount: suppressions.length,
+  missingJustificationCount: suppressions.filter((suppression) => suppression.justification === "missing").length,
+  expiredJustificationCount: suppressions.filter((suppression) => suppression.justification === "expired").length,
+  scopeMode: "whole-tree",
+  analysisMode: "allow-attributes-with-rust-lint-governance",
+  sourceFileCount: 1,
+  analyzedSourceFileCount: 1,
+  diagnosticLimit: 20,
+  scoreMode: "governed-allow-debt",
+  scoreDenominator: "governed-allow-attributes",
 })

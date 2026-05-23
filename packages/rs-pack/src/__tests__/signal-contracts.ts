@@ -493,7 +493,35 @@ export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "observer-integration.test.ts and CLI score tests: Rust observer integration carries RS-SL-01 duplication score and diagnostics through the RS pack against a real Cargo fixture, while CLI single-signal mode executes RS-SL-01 against the repository substrate through the source CLI path.",
     },
   },
-  pendingSignalContract("RS-SL-02-suppressions"),
+  {
+    id: "RS-SL-02-suppressions",
+    status: "verified",
+    requiredEvidence: ["gitContext", "integration"],
+    evidence: {
+      identity:
+        "rs-sl-signals.test.ts: canonical id, alias, title, tier/category/kind, empty input contract, semantic cacheVersion, pack registration, registry alias lookup, config-cache hash sensitivity, default config decoding, factor ledger, score mode, and score denominator are asserted.",
+      config:
+        "rs-sl-signals.test.ts: exclude_globs and top_n_diagnostics decode through the real schema; fractional and NaN diagnostic config values are normalized through compute output.",
+      positiveFixture:
+        "rs-sl-signals.test.ts: temporary Cargo fixtures run through RustProjectLayer and real tree-sitter Rust parsing to prove governed allow classification for broad lint groups and slop-hiding lints, mixed ordinary/governed lint payloads, active/expired/missing pulsar-allow status, module/line/location evidence, and diagnostic severity.",
+      negativeFixture:
+        "rs-sl-signals.test.ts: narrow ordinary Rust allow attributes, no Rust source, fully excluded Rust source, and cfg(test)-gated governed allows remain neutral or not applicable without false production suppression evidence.",
+      applicability:
+        "rs-sl-signals.test.ts: loaded Rust source is applicable even when no governed allow exists, no Rust source emits insufficient_evidence metadata, and fully excluded Rust source emits not_applicable metadata.",
+      score:
+        "rs-sl-signals.test.ts: score is asserted as governed-allow-debt, active governed allows lower score monotonically with bounded pressure, and missing or expired governance drives score to zero.",
+      diagnostics:
+        "rs-sl-signals.test.ts: diagnostics assert block/info severity, source locations, deterministic ordering, governed/ordinary lint payloads, justification status, normalized diagnostic caps, no-source warnings, score mode, and denominator payloads.",
+      factorLedger:
+        "rs-sl-signals.test.ts: registered RS pack signal emits config.exclude_globs as score-bearing evidence and config.top_n_diagnostics as non-score-bearing metadata with signal-default source.",
+      cacheSemantics:
+        "rs-sl-signals.test.ts and pack.test.ts: RS-SL-02 declares unused-allows-ordinary-diagnostics-v2 cacheVersion, config/cacheVersion changes alter the signal config hash, and the RS pack wrapper preserves the signal-specific cacheVersion.",
+      gitContext:
+        "rs-sl-signals.test.ts: runSignalComputeWithContext supplies changedHunks against a real Rust fixture and proves only changed allow-attribute evidence is emitted with changed-hunks scope metadata.",
+      integration:
+        "observer-integration.test.ts and CLI score tests: Rust observer integration carries RS-SL-02 suppression score and diagnostics through the RS pack against a real Cargo fixture, while CLI single-signal mode executes RS-SL-02 against the repository substrate through the source CLI path.",
+    },
+  },
   pendingSignalContract("RS-SL-03-unwrap-expect"),
   pendingSignalContract("RS-SL-04-clone-abuse"),
   pendingSignalContract("RS-RP-01-hotspots"),

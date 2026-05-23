@@ -24,6 +24,7 @@ import { RsLd04 } from "../signals/rs-ld-04-error-granularity.js"
 import { RsLd05 } from "../signals/rs-ld-05-complexity.js"
 import { RsLd06 } from "../signals/rs-ld-06-domain-terms.js"
 import { RsSl01 } from "../signals/rs-sl-01-duplication.js"
+import { RsSl02 } from "../signals/rs-sl-02-suppressions.js"
 import { cleanupWorkspace, createRustWorkspace, referenceLayer } from "./helpers.js"
 
 describe("rs-pack integration", () => {
@@ -565,6 +566,60 @@ describe("rs-pack integration", () => {
           scopeMode: "whole-tree",
           scoreMode: "bounded-duplicate-function-pressure",
           scoreDenominator: "analyzed-functions",
+        }),
+      })
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  }, 120_000)
+
+  test("observer path carries RS-SL-02 suppression score and diagnostics", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-observer-sl02-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "suppression-observer"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "#[allow(clippy::unwrap_used)]",
+        "pub fn unguarded(value: Option<u32>) -> u32 { value.unwrap() }",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
+      const EnvLayer = Layer.mergeAll(
+        Layer.succeed(SignalContextTag, {
+          gitSha: "HEAD",
+          worktreePath: repo,
+          changedHunks: [],
+        }),
+        referenceLayer(),
+        InMemoryCacheLayer,
+        RustProjectLayer(repo),
+      )
+
+      const result = await Effect.runPromise(
+        Effect.provide(observe(registry, undefined), EnvLayer) as Effect.Effect<
+          ObserverOutput,
+          never,
+          never
+        >,
+      )
+      const suppression = result.signalResults.get(RsSl02.id)
+
+      expect(result.categories["generated-slop"].signals[RsSl02.id]).toBe(0)
+      expect(suppression?.score).toBe(0)
+      expect(suppression?.diagnostics[0]).toMatchObject({
+        severity: "block",
+        message: "Governed allow suppression for clippy::unwrap_used is missing",
+        data: expect.objectContaining({
+          lints: ["clippy::unwrap_used"],
+          scoreMode: "governed-allow-debt",
+          scoreDenominator: "governed-allow-attributes",
         }),
       })
     } finally {
