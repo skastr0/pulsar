@@ -17,10 +17,19 @@ import {
   Schema,
 } from "effect"
 import { collectRustProjectFacts, tokenizeIdentifier } from "../rust-analysis.js"
-import { RustProjectTag } from "../project.js"
+import { type RustProject, RustProjectTag } from "../project.js"
+import { itemKind, itemName } from "../rust-analysis-syntax.js"
+import { parseRustFile, type RustSyntaxNode } from "../syn-walker.js"
 import { isExcluded } from "./shared-globs.js"
 import { asUnknownRecord } from "./shared-record-guards.js"
-import { DEFAULT_RUST_EXCLUDE_GLOBS } from "./shared-rust-ast.js"
+import {
+  allNamedChildren,
+  DEFAULT_RUST_EXCLUDE_GLOBS,
+  firstNamedChild,
+  modulePathForAncestors,
+  resolveRustFileScope,
+  walkAttributedNodes,
+} from "./shared-rust-ast.js"
 
 const RsLd06Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
@@ -92,7 +101,7 @@ export const RsLd06: Signal<RsLd06Config, RsLd06Output, RustProjectTag | Referen
   tier: 2,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "domain-terms-config-reference-data-applicability-diagnostics-v2",
+  cacheVersion: "domain-terms-config-reference-data-applicability-diagnostics-cfg-test-v3",
   configSchema: RsLd06Config,
   factorDefinitions: RsLd06FactorDefinitions,
   defaultConfig: {
@@ -111,9 +120,9 @@ export const RsLd06: Signal<RsLd06Config, RsLd06Output, RustProjectTag | Referen
           const analyzedSourceFiles = project.sourceFiles.filter(
             (file) => !isExcluded(file, normalizedConfig.exclude_globs),
           )
-          const analyzedSourceFileSet = new Set(analyzedSourceFiles)
+          const activeIdentifierKeys = await collectActiveIdentifierKeys(project, analyzedSourceFiles)
           const identifiers = facts.identifiers.filter((identifier) =>
-            analyzedSourceFileSet.has(identifier.file) &&
+            activeIdentifierKeys.has(identifierKey(identifier)) &&
             identifier.tokens.length > 0
           )
           const rawGlossary = await Effect.runPromise(referenceData.get<unknown>("glossary"))
@@ -296,6 +305,60 @@ const weightedTermDriftPressure = (counts: {
   const penalty = counts.conflictCount * 0.8 + counts.duplicateCount * 0.5 + counts.newUniqueCount * 0.2
   return Math.min(1, penalty / counts.totalIdentifiers)
 }
+
+const collectActiveIdentifierKeys = async (
+  project: RustProject,
+  analyzedSourceFiles: ReadonlyArray<string>,
+): Promise<ReadonlySet<string>> => {
+  const keys = new Set<string>()
+
+  for (const file of analyzedSourceFiles) {
+    const scope = resolveRustFileScope(project, file)
+    const tree = await parseRustFile(file)
+    walkAttributedNodes(tree.rootNode, ({ node, ancestors, testGated }) => {
+      if (testGated) return
+      const kind = itemKind(node)
+      const name = kind === undefined ? undefined : itemName(node)
+      if (kind === undefined || name === undefined) return
+
+      const { modulePath } = modulePathForAncestors(scope, ancestors)
+      const line = node.startPosition.row + 1
+      keys.add(identifierKey({
+        file,
+        modulePath,
+        line,
+        kind: kind === "fn" ? "function" : "item",
+        name,
+      }))
+
+      if (kind !== "fn") return
+      for (const parameterName of collectParameterIdentifiers(node)) {
+        keys.add(identifierKey({
+          file,
+          modulePath,
+          line,
+          kind: "parameter",
+          name: parameterName,
+        }))
+      }
+    })
+  }
+
+  return keys
+}
+
+const collectParameterIdentifiers = (node: RustSyntaxNode): ReadonlyArray<string> =>
+  allNamedChildren(firstNamedChild(node, "parameters") ?? node, "parameter")
+    .map((parameter) => firstNamedChild(parameter, "identifier")?.text)
+    .filter((name): name is string => name !== undefined)
+
+const identifierKey = (identifier: {
+  readonly file: string
+  readonly modulePath: string
+  readonly line: number
+  readonly kind: string
+  readonly name: string
+}): string => `${identifier.file}:${identifier.line}:${identifier.modulePath}:${identifier.kind}:${identifier.name}`
 
 const normalizeGlossary = (raw: unknown): ReadonlyArray<GlossaryEntry> => {
   if (Array.isArray(raw)) {

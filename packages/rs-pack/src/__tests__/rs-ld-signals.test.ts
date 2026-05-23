@@ -2528,7 +2528,7 @@ describe("RS-LD-* signals", () => {
       tier: 2,
       category: "legibility-decay",
       kind: "legibility",
-      cacheVersion: "domain-terms-config-reference-data-applicability-diagnostics-v2",
+      cacheVersion: "domain-terms-config-reference-data-applicability-diagnostics-cfg-test-v3",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -2583,6 +2583,50 @@ describe("RS-LD-* signals", () => {
       expect(
         out.identifiers.find((item) => item.name === "telemetry_probe")?.classification,
       ).toBe("new-unique")
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-LD-06 excludes cfg-test-gated identifiers", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-ld06-cfg-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "domain-terms-cfg"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub fn order_line(order_line: &str) -> usize {",
+        "    order_line.len()",
+        "}",
+        "",
+        "#[cfg(test)]",
+        "pub fn ordr_line(ordr_line: &str) -> usize {",
+        "    ordr_line.len()",
+        "}",
+        "",
+        "#[cfg(any(test, feature = \"fixtures\"))]",
+        "pub struct OrdrLine;",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const out = await runSignalCompute(RsLd06, repo, RsLd06.defaultConfig, {
+        glossary: {
+          terms: [{ canonical: "order line" }],
+        },
+      })
+
+      expect(out.totalIdentifiers).toBe(2)
+      expect(out.matchCount).toBe(2)
+      expect(out.conflictCount).toBe(0)
+      expect(out.identifiers.some((item) => item.name === "ordr_line")).toBe(false)
+      expect(out.identifiers.some((item) => item.name === "OrdrLine")).toBe(false)
+      expect(RsLd06.score(out)).toBe(1)
+      expect(RsLd06.diagnose(out)).toEqual([])
     } finally {
       await cleanupWorkspace(repo)
     }
