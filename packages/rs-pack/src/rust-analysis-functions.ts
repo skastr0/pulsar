@@ -86,14 +86,32 @@ const lifetimeCountInNode = (node: RustSyntaxNode | undefined): number => {
 }
 
 const resultErrorType = (returnType: RustSyntaxNode | undefined): string | undefined => {
-  if (returnType?.type !== "generic_type") return undefined
-  const target = returnType.namedChildren.find((child): child is RustSyntaxNode => child !== null)?.text ?? ""
-  if (!target.endsWith("Result")) return undefined
-  const typeArguments = firstNamedChild(returnType, "type_arguments")
-  const args = typeArguments === undefined
-    ? []
-    : typeArguments.namedChildren.filter((child): child is RustSyntaxNode => child !== null)
-  return args[1]?.text
+  const text = returnType?.text.trim()
+  if (text === undefined) return undefined
+  const normalized = text.replace(/\s+/g, "")
+  if (/^anyhow::Result(?:<.*>)?$/.test(normalized)) return "anyhow::Error"
+  if (/^eyre::Result(?:<.*>)?$/.test(normalized)) return "eyre::Report"
+
+  const resultArguments = /^(?:(?:[A-Za-z_][A-Za-z0-9_]*|self|super|crate)::)*Result<([\s\S]+)>$/.exec(text)
+  if (resultArguments === null) return undefined
+  return splitTopLevelCommas(resultArguments[1] ?? "")[1]?.trim()
+}
+
+const splitTopLevelCommas = (text: string): ReadonlyArray<string> => {
+  const parts: Array<string> = []
+  let depth = 0
+  let start = 0
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index]
+    if (char === "<" || char === "(" || char === "[" || char === "{") depth += 1
+    if (char === ">" || char === ")" || char === "]" || char === "}") depth = Math.max(0, depth - 1)
+    if (char === "," && depth === 0) {
+      parts.push(text.slice(start, index))
+      start = index + 1
+    }
+  }
+  parts.push(text.slice(start))
+  return parts
 }
 
 const countUnsafeBlocks = (node: RustSyntaxNode): number => {

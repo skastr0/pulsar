@@ -1636,7 +1636,7 @@ describe("RS-LD-* signals", () => {
       tier: 1,
       category: "legibility-decay",
       kind: "legibility",
-      cacheVersion: "error-granularity-config-applicability-diagnostics-cfg-test-v2",
+      cacheVersion: "error-granularity-config-applicability-diagnostics-cfg-test-result-aliases-v3",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -1769,6 +1769,66 @@ describe("RS-LD-* signals", () => {
       expect(RsLd04.score(out)).toBe(1)
       expect(RsLd04.outputMetadata?.(out)).toBeUndefined()
       expect(RsLd04.diagnose(out)).toEqual([])
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-LD-04 recognizes collapsed result aliases and string errors", async () => {
+    const repo = await createBoundaryWorkspace("aliases", {
+      "src/lib.rs": [
+        "pub mod errors { pub struct DomainError; }",
+        "pub fn explicit_anyhow(value: &str) -> Result<(), anyhow::Error> { let _ = value; Ok(()) }",
+        "pub fn anyhow_alias(value: &str) -> anyhow::Result<()> { let _ = value; Ok(()) }",
+        "pub fn eyre_alias(value: &str) -> eyre::Result<()> { let _ = value; Ok(()) }",
+        "pub fn static_str(value: &str) -> Result<(), &'static str> { let _ = value; Ok(()) }",
+        "pub fn borrowed_str(value: &str) -> Result<(), &str> { let _ = value; Ok(()) }",
+        "pub fn boxed_dyn(value: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> { let _ = value; Ok(()) }",
+        "pub fn concrete(value: &str) -> Result<(), crate::errors::DomainError> { let _ = value; Ok(()) }",
+        "pub fn std_result(value: &str) -> std::result::Result<(), crate::errors::DomainError> { let _ = value; Ok(()) }",
+      ],
+    })
+
+    try {
+      const out = await runSignalCompute(RsLd04, repo, RsLd04.defaultConfig)
+      const byName = new Map(out.boundaryFunctions.map((fn) => [fn.name, fn]))
+
+      expect(out.totalBoundaryResults).toBe(8)
+      expect(out.collapsedCount).toBe(6)
+      expect(out.granularCount).toBe(2)
+      expect(byName.get("explicit_anyhow")).toMatchObject({
+        errorType: "anyhow::Error",
+        classification: "collapsed",
+      })
+      expect(byName.get("anyhow_alias")).toMatchObject({
+        errorType: "anyhow::Error",
+        classification: "collapsed",
+      })
+      expect(byName.get("eyre_alias")).toMatchObject({
+        errorType: "eyre::Report",
+        classification: "collapsed",
+      })
+      expect(byName.get("static_str")).toMatchObject({
+        errorType: "&'static str",
+        classification: "collapsed",
+      })
+      expect(byName.get("borrowed_str")).toMatchObject({
+        errorType: "&str",
+        classification: "collapsed",
+      })
+      expect(byName.get("boxed_dyn")).toMatchObject({
+        errorType: "Box<dyn std::error::Error + Send + Sync>",
+        classification: "collapsed",
+      })
+      expect(byName.get("concrete")).toMatchObject({
+        errorType: "crate::errors::DomainError",
+        classification: "granular",
+      })
+      expect(byName.get("std_result")).toMatchObject({
+        errorType: "crate::errors::DomainError",
+        classification: "granular",
+      })
+      expect(RsLd04.score(out)).toBe(0.25)
     } finally {
       await cleanupWorkspace(repo)
     }

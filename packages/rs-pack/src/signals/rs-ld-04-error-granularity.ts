@@ -79,7 +79,7 @@ export const RsLd04: Signal<RsLd04Config, RsLd04Output, RustProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "error-granularity-config-applicability-diagnostics-cfg-test-v2",
+  cacheVersion: "error-granularity-config-applicability-diagnostics-cfg-test-result-aliases-v3",
   configSchema: RsLd04Config,
   factorDefinitions: RsLd04FactorDefinitions,
   defaultConfig: {
@@ -236,7 +236,10 @@ const classifyErrorType = (errorType: string): "granular" | "collapsed" => {
   const normalized = errorType.replace(/\s+/g, "")
   if (
     normalized === "anyhow::Error" ||
+    normalized === "eyre::Report" ||
+    normalized === "eyre::Error" ||
     normalized === "String" ||
+    normalized === "&str" ||
     normalized === "&'staticstr" ||
     /Box<dyn.*Error.*>/.test(normalized) ||
     /dyn.*Error/.test(normalized)
