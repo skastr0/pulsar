@@ -366,7 +366,7 @@ describe("RS-RP-* signals", () => {
       tier: 1,
       category: "review-pain",
       kind: "structural",
-      cacheVersion: "cargo-timings-config-applicability-diagnostics-v1",
+      cacheVersion: "cargo-timings-config-applicability-diagnostics-live-build-nested-v2",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -551,6 +551,68 @@ describe("RS-RP-* signals", () => {
       await cleanupWorkspace(missingTiming)
       await cleanupWorkspace(invalidTiming)
       await cleanupWorkspace(noCargo)
+    }
+  })
+
+  test("RS-RP-02 rejects stale timing data after failed live builds", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-rp02-stale-live-", {
+      "Cargo.toml": "this is not valid toml = [\n",
+      "src/lib.rs": "pub fn meaning() -> u32 { 42 }\n",
+      "target/cargo-timings/cargo-timing.html": [
+        "<script>",
+        'const UNIT_DATA = [{"i":0,"name":"stale-crate","duration":2.4,"unblocked_units":[],"unblocked_rmeta_units":[]}];',
+        "</script>",
+      ].join("\n"),
+    })
+
+    try {
+      const out = await runSignalCompute(RsRp02, repo, {
+        ...RsRp02.defaultConfig,
+        measure_live_builds: true,
+      })
+
+      expect(out.buildStatus).toBe("unavailable")
+      expect(out.unavailableReason).toBe("cargo-build-failed")
+      expect(out.measurementMode).toBe("live-cargo-build")
+      expect(out.crates).toEqual([])
+      expect(RsRp02.score(out)).toBe(1)
+      expect(RsRp02.outputMetadata?.(out)).toEqual({
+        applicability: "insufficient_evidence",
+      })
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-RP-02 discovers timing reports for nested manifest crates", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-rp02-nested-", {
+      "crates/app/Cargo.toml": [
+        "[package]",
+        'name = "nested-compile"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "crates/app/src/lib.rs": "pub fn meaning() -> u32 { 42 }\n",
+      "crates/app/target/cargo-timings/cargo-timing.html": [
+        "<script>",
+        'const UNIT_DATA = [{"i":0,"name":"nested-compile","duration":1.2,"unblocked_units":[],"unblocked_rmeta_units":[]}];',
+        "</script>",
+      ].join("\n"),
+    })
+
+    try {
+      const out = await runSignalCompute(RsRp02, repo, RsRp02.defaultConfig)
+
+      expect(out.buildStatus).toBe("measured")
+      expect(out.crates[0]).toMatchObject({
+        crate: "nested-compile",
+        totalDurationMs: 1200,
+        unitCount: 1,
+      })
+      expect(RsRp02.outputMetadata?.(out)).toBeUndefined()
+    } finally {
+      await cleanupWorkspace(repo)
     }
   })
 

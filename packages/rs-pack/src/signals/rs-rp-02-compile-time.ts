@@ -17,7 +17,7 @@ import { join } from "node:path"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { Effect, Schema } from "effect"
-import { RustProjectTag, type RustManifestInfo } from "../project.js"
+import { RustProjectTag, type RustManifestInfo, type RustProject } from "../project.js"
 
 const execFileAsync = promisify(execFile)
 
@@ -104,7 +104,7 @@ export const RsRp02: Signal<RsRp02Config, RsRp02Output, RustProjectTag> = {
   tier: 1,
   category: "review-pain",
   kind: "structural",
-  cacheVersion: "cargo-timings-config-applicability-diagnostics-v1",
+  cacheVersion: "cargo-timings-config-applicability-diagnostics-live-build-nested-v2",
   configSchema: RsRp02Config,
   factorDefinitions: RsRp02FactorDefinitions,
   defaultConfig: {
@@ -118,7 +118,7 @@ export const RsRp02: Signal<RsRp02Config, RsRp02Output, RustProjectTag> = {
       const project = yield* RustProjectTag
       return yield* Effect.tryPromise({
         try: async (): Promise<RsRp02Output> => {
-          if (project.manifests.length === 0 || !(await exists(join(project.worktreePath, "Cargo.toml")))) {
+          if (project.manifests.length === 0) {
             return emptyCompileOutput(normalizedConfig, {
               cacheProbeMode: "unavailable",
               manifestCount: project.manifests.length,
@@ -127,7 +127,7 @@ export const RsRp02: Signal<RsRp02Config, RsRp02Output, RustProjectTag> = {
             })
           }
 
-          const existingUnits = await readTimingUnits(project.worktreePath)
+          const existingUnits = await readTimingUnits(project)
           if (!normalizedConfig.measure_live_builds) {
             if (existingUnits.status !== "found") {
               return emptyCompileOutput(normalizedConfig, {
@@ -149,8 +149,16 @@ export const RsRp02: Signal<RsRp02Config, RsRp02Output, RustProjectTag> = {
             )
           }
 
-          const firstBuild = await runCargoBuildWithTimings(project.worktreePath)
-          const firstUnits = firstBuild ? await readTimingUnits(project.worktreePath) : existingUnits
+          const firstBuild = await runCargoBuildWithTimings(project)
+          if (!firstBuild) {
+            return emptyCompileOutput(normalizedConfig, {
+              cacheProbeMode: "unavailable",
+              manifestCount: project.manifests.length,
+              measurementMode: "live-cargo-build",
+              unavailableReason: "cargo-build-failed",
+            })
+          }
+          const firstUnits = await readTimingUnits(project)
           if (firstUnits.status !== "found") {
             return emptyCompileOutput(normalizedConfig, {
               cacheProbeMode: "unavailable",
@@ -164,10 +172,10 @@ export const RsRp02: Signal<RsRp02Config, RsRp02Output, RustProjectTag> = {
             })
           }
 
-          const secondBuild = await runCargoBuildWithTimings(project.worktreePath)
+          const secondBuild = await runCargoBuildWithTimings(project)
           const secondUnits = !secondBuild
             ? { status: "missing" as const }
-            : await readTimingUnits(project.worktreePath)
+            : await readTimingUnits(project)
           const secondCrates = new Set(secondUnits.status === "found" ? secondUnits.units.map((unit) => unit.name) : [])
 
           return measuredCompileOutput(
@@ -295,16 +303,30 @@ const makeRsRp02FactorLedger = (): SignalFactorLedger =>
     ),
   )
 
-const runCargoBuildWithTimings = async (cwd: string): Promise<boolean> => {
+const runCargoBuildWithTimings = async (project: RustProject): Promise<boolean> => {
+  const command = cargoBuildCommand(project)
+  if (command === undefined) return false
   try {
-    await execFileAsync("cargo", ["build", "--timings"], {
-      cwd,
+    await execFileAsync("cargo", command, {
+      cwd: project.worktreePath,
       maxBuffer: 10 * 1024 * 1024,
     })
     return true
   } catch {
     return false
   }
+}
+
+const cargoBuildCommand = (project: RustProject): ReadonlyArray<string> | undefined => {
+  const rootManifestPath = join(project.worktreePath, "Cargo.toml")
+  if (project.manifests.some((manifest) => manifest.manifestPath === rootManifestPath)) {
+    return ["build", "--timings"]
+  }
+  const packageManifest = project.manifests.find((manifest) => manifest.packageName !== undefined) ??
+    project.manifests[0]
+  return packageManifest === undefined
+    ? undefined
+    : ["build", "--timings", "--manifest-path", packageManifest.manifestPath]
 }
 
 const workspaceCrateNames = (
@@ -314,15 +336,29 @@ const workspaceCrateNames = (
     .map((manifest) => manifest.packageName)
     .filter((name): name is string => name !== undefined)
 
-const readTimingUnits = async (cwd: string): Promise<TimingReadResult> => {
-  const reportPath = join(cwd, "target", "cargo-timings", "cargo-timing.html")
-  if (!(await exists(reportPath))) return { status: "missing" }
-  const html = await readFile(reportPath, "utf8")
-  const match = /const UNIT_DATA = (\[[\s\S]*?\]);/.exec(html)
-  if (match === null) return { status: "invalid" }
-  const units = parseTimingUnits(match[1]!)
-  return units === undefined ? { status: "invalid" } : { status: "found", units }
+const readTimingUnits = async (project: RustProject): Promise<TimingReadResult> => {
+  let foundInvalid = false
+  for (const root of timingRoots(project)) {
+    const reportPath = join(root, "target", "cargo-timings", "cargo-timing.html")
+    if (!(await exists(reportPath))) continue
+    const html = await readFile(reportPath, "utf8")
+    const match = /const UNIT_DATA = (\[[\s\S]*?\]);/.exec(html)
+    if (match === null) {
+      foundInvalid = true
+      continue
+    }
+    const units = parseTimingUnits(match[1]!)
+    if (units === undefined) {
+      foundInvalid = true
+      continue
+    }
+    return { status: "found", units }
+  }
+  return foundInvalid ? { status: "invalid" } : { status: "missing" }
 }
+
+const timingRoots = (project: RustProject): ReadonlyArray<string> =>
+  [...new Set([project.worktreePath, ...project.manifests.map((manifest) => manifest.path)])]
 
 const summarizeCrates = (
   units: ReadonlyArray<CargoTimingUnit>,
