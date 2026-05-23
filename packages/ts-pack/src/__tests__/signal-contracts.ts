@@ -495,7 +495,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       config:
         "ts-ab-05.test.ts: configSchema decodes defaults; factor-ledger assertions cover exclude_globs, max_generic_parameters, and top_n_diagnostics with sanitized diagnostic caps.",
       positiveFixture:
-        "ts-ab-05.test.ts: real TsProject fixtures measure function declarations, function expressions, arrows, default export arrows, methods, type aliases, interfaces, classes, generic counts, nested constraints, and true return-only generics.",
+        "ts-ab-05.test.ts: real TsProject fixtures measure function declarations, function expressions, arrows, default export arrows, methods, interface method/call/construct signatures, direct type-alias function/constructor shapes, type aliases, interfaces, classes, generic counts, nested constraints, and true return-only generics.",
       negativeFixture:
         "ts-ab-05.test.ts: value-only files produce no tracked declarations; test, declaration, and generated files are excluded; constraint/default-dependent generics are not falsely classified as return-only.",
       applicability:
@@ -507,7 +507,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       factorLedger:
         "ts-ab-05.test.ts: registered pack signal emits config.exclude_globs, config.max_generic_parameters, and config.top_n_diagnostics factor-ledger entries with score roles.",
       cacheSemantics:
-        "ts-ab-05.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AB-05 semantic cacheVersion after return-only and diagnostic-limit semantics changed.",
+        "ts-ab-05.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AB-05 semantic cacheVersion after signature-scope, return-only, and diagnostic-limit semantics changed.",
     },
   },
   pendingSignalContract("TS-LD-06-annotation-coverage"),

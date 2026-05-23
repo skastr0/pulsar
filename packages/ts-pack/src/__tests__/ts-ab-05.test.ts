@@ -70,7 +70,7 @@ describe("TS-AB-05 (generic parameter proliferation)", () => {
       tier: 1,
       category: "abstraction-bloat",
       kind: "legibility",
-      cacheVersion: "generic-proliferation-v2-return-only-diagnostic-limit-v1",
+      cacheVersion: "generic-proliferation-v3-signature-declarations-v1",
       inputs: [],
     })
     expect(registered?.id).toBe(TsAb05.id)
@@ -170,6 +170,43 @@ describe("TS-AB-05 (generic parameter proliferation)", () => {
     expect(byName.get("arrow")?.paramCount).toBe(2)
     expect(byName.get("fn")?.paramCount).toBe(3)
     expect(byName.get("<default export>")?.paramCount).toBe(1)
+  })
+
+  test("tracks interface signatures and direct type-alias function shapes", async () => {
+    await writeTs(
+      "src/signatures.ts",
+      [
+        "export interface Api {",
+        "  method<A, B, C, D>(value: A): D",
+        "  <T, U, V, W>(value: T): W",
+        "  new <I, O>(input: I): O",
+        "}",
+        "export type FnAlias = <T, U, V, W>(value: T) => W",
+        "export type NewAlias = new <A, B, C>(value: A) => B",
+        "export type Parenthesized = (<P, Q, R, S>(value: P) => S)",
+        "export type Nested = { handler: <X, Y, Z, W>(value: X) => W }",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runCompute()
+    const byName = new Map(out.byDeclaration.map((entry) => [entry.declarationName, entry]))
+
+    expect(byName.get("method")?.paramCount).toBe(4)
+    expect(byName.get("method")?.returnOnlyParams).toEqual(["D"])
+    expect(byName.get("Api.<call>")?.paramCount).toBe(4)
+    expect(byName.get("Api.<call>")?.returnOnlyParams).toEqual(["W"])
+    expect(byName.get("Api.<new>")?.paramCount).toBe(2)
+    expect(byName.get("Api.<new>")?.returnOnlyParams).toEqual(["O"])
+    expect(byName.get("FnAlias.<call>")?.paramCount).toBe(4)
+    expect(byName.get("FnAlias.<call>")?.returnOnlyParams).toEqual(["W"])
+    expect(byName.get("NewAlias.<new>")?.paramCount).toBe(3)
+    expect(byName.get("Parenthesized.<call>")?.paramCount).toBe(4)
+    expect(byName.has("Nested.<call>")).toBe(false)
+    expect(byName.get("Nested")?.paramCount).toBe(0)
+    expect(out.overThreshold.map((entry) => entry.declarationName)).toEqual(
+      expect.arrayContaining(["method", "Api.<call>", "FnAlias.<call>", "Parenthesized.<call>"]),
+    )
   })
 
   test("computes nested constraint depth per type parameter", async () => {
