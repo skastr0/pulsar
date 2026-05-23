@@ -1382,6 +1382,78 @@ export function stubF() { throw new Error("Not implemented") }
     }
   }, 120_000)
 
+  test("single-signal CLI wrapper executes RS-DE-02 with Cargo.lock", async () => {
+    const repoPath = await initRepo([
+      {
+        path: "Cargo.toml",
+        content: [
+          "[package]",
+          'name = "dep-tree-cli"',
+          'version = "0.1.0"',
+          'edition = "2021"',
+          "",
+          "[dependencies]",
+          'foo = "1"',
+          'bar = "1"',
+          "",
+        ].join("\n"),
+      },
+      {
+        path: "Cargo.lock",
+        content: [
+          "version = 3",
+          "",
+          "[[package]]",
+          'name = "dep-tree-cli"',
+          'version = "0.1.0"',
+          "dependencies = [",
+          ' "bar 1.0.0",',
+          ' "foo 1.0.0",',
+          "]",
+          "",
+          "[[package]]",
+          'name = "bar"',
+          'version = "1.0.0"',
+          "dependencies = [",
+          ' "baz 2.0.0",',
+          ' "qux",',
+          "]",
+          "",
+          "[[package]]",
+          'name = "foo"',
+          'version = "1.0.0"',
+          'dependencies = ["baz 1.0.0"]',
+          "",
+          "[[package]]",
+          'name = "qux"',
+          'version = "1.0.0"',
+          'dependencies = ["baz 1.0.0"]',
+          "",
+          "[[package]]",
+          'name = "baz"',
+          'version = "1.0.0"',
+          "",
+          "[[package]]",
+          'name = "baz"',
+          'version = "2.0.0"',
+          "",
+        ].join("\n"),
+      },
+      { path: "src/lib.rs", content: "pub fn fixture() {}\n" },
+    ])
+    try {
+      const out = runCli(repoPath, ["score", "--signal", "RS-DE-02", "."])
+      expect(out.status).toBe(0)
+      expect(out.stdout).toContain("Signal: RS-DE-02-dependency-tree")
+      expect(out.stdout).toContain("WARN  Duplicate crate versions for baz: 1.0.0, 2.0.0")
+      expect(out.stdout).toContain("INFO  Top-level dependency bar reaches depth 2")
+      expect(out.stdout).toContain("Score:  0.800")
+      expect(out.stdout).not.toContain("config.top_n_diagnostics=10 threshold")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
   test("single-signal mode summarizes score-bearing factor audit details", async () => {
     const repoPath = await initRepo([
       {

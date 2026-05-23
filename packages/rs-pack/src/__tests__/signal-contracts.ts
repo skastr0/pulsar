@@ -111,7 +111,33 @@ export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "observer-integration.test.ts and CLI score tests: Rust observer integration includes dependency-entropy Rust signals in the RS pack, while CLI single-signal mode executes RS-DE-01 against a repository substrate with real Rust source parsed from disk.",
     },
   },
-  pendingSignalContract("RS-DE-02-dependency-tree"),
+  {
+    id: "RS-DE-02-dependency-tree",
+    status: "verified",
+    requiredEvidence: ["integration"],
+    evidence: {
+      identity:
+        "rs-de-signals.test.ts: canonical id, alias, title, tier/category/kind, empty input contract, semantic cacheVersion, pack registration, registry alias lookup, config-cache hash sensitivity, and default config decoding are asserted.",
+      config:
+        "rs-de-signals.test.ts: top_n_diagnostics decodes through the real schema and fractional, negative, and NaN diagnostic caps are normalized through compute output.",
+      positiveFixture:
+        "rs-de-signals.test.ts: temporary Cargo fixtures run through RustProjectLayer with real Cargo.toml and Cargo.lock files to prove duplicate versions, top-level dependency depth, versionless lock dependency entries, workspace-inherited dependency aliases and package renames, and same-name/same-version packages from distinct sources.",
+      negativeFixture:
+        "rs-de-signals.test.ts: clean direct dependencies, missing Cargo.lock, and no-dependency lockfiles return neutral output without false dependency-tree pressure.",
+      applicability:
+        "rs-de-signals.test.ts: loaded lockfiles with direct dependency evidence are applicable, missing Cargo.lock emits insufficient_evidence metadata, and loaded lockfiles with no dependency evidence emit not_applicable metadata.",
+      score:
+        "rs-de-signals.test.ts: duplicate/depth fixtures score below clean fixtures, missing/no-dependency evidence stays score-neutral through applicability metadata, and additional duplicates, depth, and dependency breadth increase score pressure.",
+      diagnostics:
+        "rs-de-signals.test.ts: diagnostics assert severity, Cargo.lock locations, deterministic duplicate-before-depth ordering, checkout-root-independent stable hash payloads, duplicate/version/depth/reachability payloads, missing-lock warning payloads, and normalized diagnostic caps.",
+      factorLedger:
+        "rs-de-signals.test.ts: registered RS pack signal emits config.top_n_diagnostics as non-score-bearing metadata with signal-default source.",
+      cacheSemantics:
+        "rs-de-signals.test.ts and pack.test.ts: RS-DE-02 declares cargo-lock-dependency-tree-workspace-deps-v1 cacheVersion, config/cacheVersion changes alter the signal config hash, and the RS pack wrapper preserves the signal-specific cacheVersion.",
+      integration:
+        "observer-integration.test.ts and CLI score tests: Rust observer integration includes dependency-entropy Rust signals in the RS pack, while CLI single-signal mode executes RS-DE-02 against a repository substrate with Cargo.lock parsed from disk.",
+    },
+  },
   pendingSignalContract("RS-DE-03-feature-flags"),
   pendingSignalContract("RS-DE-04-fan-in-fan-out"),
   pendingSignalContract("RS-AB-01-unused-public-items"),

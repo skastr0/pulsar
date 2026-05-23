@@ -142,6 +142,498 @@ const createRsDe01MultiModuleWorkspace = () =>
     ].join("\n"),
   })
 
+const rsDe02ProblemWorkspaceFiles = (): Readonly<Record<string, string>> => ({
+  "Cargo.toml": [
+    "[package]",
+    'name = "dep-tree-fixture"',
+    'version = "0.1.0"',
+    'edition = "2021"',
+    "",
+    "[dependencies]",
+    'foo = "1"',
+    'bar = "1"',
+    "",
+  ].join("\n"),
+  "Cargo.lock": [
+    "version = 3",
+    "",
+    "[[package]]",
+    'name = "dep-tree-fixture"',
+    'version = "0.1.0"',
+    "dependencies = [",
+    ' "bar 1.0.0",',
+    ' "foo 1.0.0",',
+    "]",
+    "",
+    "[[package]]",
+    'name = "bar"',
+    'version = "1.0.0"',
+    "dependencies = [",
+    ' "baz 2.0.0",',
+    ' "qux",',
+    "]",
+    "",
+    "[[package]]",
+    'name = "foo"',
+    'version = "1.0.0"',
+    'dependencies = ["baz 1.0.0"]',
+    "",
+    "[[package]]",
+    'name = "qux"',
+    'version = "1.0.0"',
+    'dependencies = ["baz 1.0.0"]',
+    "",
+    "[[package]]",
+    'name = "baz"',
+    'version = "1.0.0"',
+    "",
+    "[[package]]",
+    'name = "baz"',
+    'version = "2.0.0"',
+    "",
+  ].join("\n"),
+  "src/lib.rs": "pub fn fixture() {}\n",
+})
+
+const createRsDe02ProblemWorkspace = () =>
+  createRustWorkspace("pulsar-rs-de02-", rsDe02ProblemWorkspaceFiles())
+
+const createRsDe02CleanWorkspace = () =>
+  createRustWorkspace("pulsar-rs-de02-clean-", {
+    "Cargo.toml": [
+      "[package]",
+      'name = "dep-tree-clean-fixture"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+      "[dependencies]",
+      'foo = "1"',
+      "",
+    ].join("\n"),
+    "Cargo.lock": [
+      "version = 3",
+      "",
+      "[[package]]",
+      'name = "dep-tree-clean-fixture"',
+      'version = "0.1.0"',
+      'dependencies = ["foo"]',
+      "",
+      "[[package]]",
+      'name = "foo"',
+      'version = "1.0.0"',
+      "",
+    ].join("\n"),
+    "src/lib.rs": "pub fn fixture() {}\n",
+  })
+
+const createRsDe02NoDependencyWorkspace = () =>
+  createRustWorkspace("pulsar-rs-de02-no-deps-", {
+    "Cargo.toml": [
+      "[package]",
+      'name = "dep-tree-no-deps-fixture"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+    ].join("\n"),
+    "Cargo.lock": [
+      "version = 3",
+      "",
+      "[[package]]",
+      'name = "dep-tree-no-deps-fixture"',
+      'version = "0.1.0"',
+      "",
+    ].join("\n"),
+    "src/lib.rs": "pub fn fixture() {}\n",
+  })
+
+const createRsDe02WorseWorkspace = () =>
+  createRustWorkspace("pulsar-rs-de02-worse-", {
+    "Cargo.toml": [
+      "[package]",
+      'name = "dep-tree-worse-fixture"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+      "[dependencies]",
+      'foo = "1"',
+      'bar = "1"',
+      "",
+    ].join("\n"),
+    "Cargo.lock": [
+      "version = 3",
+      "",
+      "[[package]]",
+      'name = "dep-tree-worse-fixture"',
+      'version = "0.1.0"',
+      "dependencies = [",
+      ' "bar 1.0.0",',
+      ' "foo 1.0.0",',
+      "]",
+      "",
+      "[[package]]",
+      'name = "bar"',
+      'version = "1.0.0"',
+      "dependencies = [",
+      ' "mid1 1.0.0",',
+      ' "zap 2.0.0",',
+      "]",
+      "",
+      "[[package]]",
+      'name = "foo"',
+      'version = "1.0.0"',
+      "dependencies = [",
+      ' "baz 1.0.0",',
+      ' "zap 1.0.0",',
+      "]",
+      "",
+      "[[package]]",
+      'name = "mid1"',
+      'version = "1.0.0"',
+      'dependencies = ["mid2 1.0.0"]',
+      "",
+      "[[package]]",
+      'name = "mid2"',
+      'version = "1.0.0"',
+      'dependencies = ["mid3 1.0.0"]',
+      "",
+      "[[package]]",
+      'name = "mid3"',
+      'version = "1.0.0"',
+      'dependencies = ["baz 2.0.0"]',
+      "",
+      "[[package]]",
+      'name = "baz"',
+      'version = "1.0.0"',
+      "",
+      "[[package]]",
+      'name = "baz"',
+      'version = "2.0.0"',
+      "",
+      "[[package]]",
+      'name = "zap"',
+      'version = "1.0.0"',
+      "",
+      "[[package]]",
+      'name = "zap"',
+      'version = "2.0.0"',
+      "",
+    ].join("\n"),
+    "src/lib.rs": "pub fn fixture() {}\n",
+  })
+
+const createRsDe02BroaderWorkspace = () =>
+  createRustWorkspace("pulsar-rs-de02-broader-", {
+    "Cargo.toml": [
+      "[package]",
+      'name = "dep-tree-broader-fixture"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+      "[dependencies]",
+      'bar = "1"',
+      'foo = "1"',
+      'leaf1 = "1"',
+      'leaf2 = "1"',
+      'leaf3 = "1"',
+      'leaf4 = "1"',
+      'leaf5 = "1"',
+      'leaf6 = "1"',
+      "",
+    ].join("\n"),
+    "Cargo.lock": [
+      "version = 3",
+      "",
+      "[[package]]",
+      'name = "dep-tree-broader-fixture"',
+      'version = "0.1.0"',
+      "dependencies = [",
+      ' "bar 1.0.0",',
+      ' "foo 1.0.0",',
+      ' "leaf1 1.0.0",',
+      ' "leaf2 1.0.0",',
+      ' "leaf3 1.0.0",',
+      ' "leaf4 1.0.0",',
+      ' "leaf5 1.0.0",',
+      ' "leaf6 1.0.0",',
+      "]",
+      "",
+      "[[package]]",
+      'name = "bar"',
+      'version = "1.0.0"',
+      "dependencies = [",
+      ' "baz 2.0.0",',
+      ' "qux",',
+      "]",
+      "",
+      "[[package]]",
+      'name = "foo"',
+      'version = "1.0.0"',
+      'dependencies = ["baz 1.0.0"]',
+      "",
+      "[[package]]",
+      'name = "qux"',
+      'version = "1.0.0"',
+      'dependencies = ["baz 1.0.0"]',
+      "",
+      "[[package]]",
+      'name = "baz"',
+      'version = "1.0.0"',
+      "",
+      "[[package]]",
+      'name = "baz"',
+      'version = "2.0.0"',
+      "",
+      ...[1, 2, 3, 4, 5, 6].flatMap((index) => [
+        "[[package]]",
+        `name = "leaf${index}"`,
+        'version = "1.0.0"',
+        "",
+      ]),
+    ].join("\n"),
+    "src/lib.rs": "pub fn fixture() {}\n",
+  })
+
+const createRsDe02SourceCollisionWorkspace = () =>
+  createRustWorkspace("pulsar-rs-de02-source-collision-", {
+    "Cargo.toml": [
+      "[package]",
+      'name = "dep-tree-source-fixture"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+      "[dependencies]",
+      'foo = "1"',
+      'bar = "1"',
+      "",
+    ].join("\n"),
+    "Cargo.lock": [
+      "version = 3",
+      "",
+      "[[package]]",
+      'name = "dep-tree-source-fixture"',
+      'version = "0.1.0"',
+      "dependencies = [",
+      ' "bar 1.0.0",',
+      ' "foo 1.0.0",',
+      "]",
+      "",
+      "[[package]]",
+      'name = "foo"',
+      'version = "1.0.0"',
+      'dependencies = ["shared 1.0.0 (registry+https://example.invalid/index)"]',
+      "",
+      "[[package]]",
+      'name = "bar"',
+      'version = "1.0.0"',
+      'dependencies = ["shared 1.0.0 (git+https://example.invalid/shared)"]',
+      "",
+      "[[package]]",
+      'name = "shared"',
+      'version = "1.0.0"',
+      'source = "registry+https://example.invalid/index"',
+      "",
+      "[[package]]",
+      'name = "shared"',
+      'version = "1.0.0"',
+      'source = "git+https://example.invalid/shared"',
+      'dependencies = ["git-leaf 1.0.0"]',
+      "",
+      "[[package]]",
+      'name = "git-leaf"',
+      'version = "1.0.0"',
+      "",
+    ].join("\n"),
+    "src/lib.rs": "pub fn fixture() {}\n",
+  })
+
+const createRsDe02DirectSourceCollisionWorkspace = () =>
+  createRustWorkspace("pulsar-rs-de02-direct-source-collision-", {
+    "Cargo.toml": [
+      "[package]",
+      'name = "dep-tree-direct-source-fixture"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+      "[dependencies]",
+      'shared = "1"',
+      "",
+    ].join("\n"),
+    "Cargo.lock": [
+      "version = 3",
+      "",
+      "[[package]]",
+      'name = "dep-tree-direct-source-fixture"',
+      'version = "0.1.0"',
+      'dependencies = ["shared 1.0.0 (registry+https://example.invalid/index)"]',
+      "",
+      "[[package]]",
+      'name = "shared"',
+      'version = "1.0.0"',
+      'source = "registry+https://example.invalid/index"',
+      "",
+      "[[package]]",
+      'name = "shared"',
+      'version = "1.0.0"',
+      'source = "git+https://example.invalid/shared"',
+      'dependencies = ["git-leaf 1.0.0"]',
+      "",
+      "[[package]]",
+      'name = "git-leaf"',
+      'version = "1.0.0"',
+      "",
+    ].join("\n"),
+    "src/lib.rs": "pub fn fixture() {}\n",
+  })
+
+const createRsDe02AmbiguousDirectSourceWorkspace = () =>
+  createRustWorkspace("pulsar-rs-de02-ambiguous-direct-source-", {
+    "Cargo.toml": [
+      "[package]",
+      'name = "dep-tree-ambiguous-source-fixture"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+      "[dependencies]",
+      'shared = "1"',
+      "",
+    ].join("\n"),
+    "Cargo.lock": [
+      "version = 3",
+      "",
+      "[[package]]",
+      'name = "dep-tree-ambiguous-source-fixture"',
+      'version = "0.1.0"',
+      'dependencies = ["shared 1.0.0"]',
+      "",
+      "[[package]]",
+      'name = "shared"',
+      'version = "1.0.0"',
+      'source = "registry+https://example.invalid/index"',
+      "",
+      "[[package]]",
+      'name = "shared"',
+      'version = "1.0.0"',
+      'source = "git+https://example.invalid/shared"',
+      'dependencies = ["git-leaf 1.0.0"]',
+      "",
+      "[[package]]",
+      'name = "git-leaf"',
+      'version = "1.0.0"',
+      "",
+    ].join("\n"),
+    "src/lib.rs": "pub fn fixture() {}\n",
+  })
+
+const createRsDe02EqualDepthWorkspace = () =>
+  createRustWorkspace("pulsar-rs-de02-equal-depth-", {
+    "Cargo.toml": [
+      "[package]",
+      'name = "dep-tree-equal-depth-fixture"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+      "[dependencies]",
+      'beta = "1"',
+      'alpha = "1"',
+      "",
+    ].join("\n"),
+    "Cargo.lock": [
+      "version = 3",
+      "",
+      "[[package]]",
+      'name = "dep-tree-equal-depth-fixture"',
+      'version = "0.1.0"',
+      "dependencies = [",
+      ' "beta 1.0.0",',
+      ' "alpha 1.0.0",',
+      "]",
+      "",
+      "[[package]]",
+      'name = "beta"',
+      'version = "1.0.0"',
+      'dependencies = ["leaf-b 1.0.0"]',
+      "",
+      "[[package]]",
+      'name = "alpha"',
+      'version = "1.0.0"',
+      'dependencies = ["leaf-a 1.0.0"]',
+      "",
+      "[[package]]",
+      'name = "leaf-a"',
+      'version = "1.0.0"',
+      "",
+      "[[package]]",
+      'name = "leaf-b"',
+      'version = "1.0.0"',
+      "",
+    ].join("\n"),
+    "src/lib.rs": "pub fn fixture() {}\n",
+  })
+
+const createRsDe02WorkspaceInheritedWorkspace = () =>
+  createRustWorkspace("pulsar-rs-de02-workspace-inherited-", {
+    "Cargo.toml": [
+      "[workspace]",
+      'members = ["crates/app"]',
+      'resolver = "2"',
+      "",
+      "[workspace.dependencies]",
+      'serde_alias = { package = "serde", version = "1" }',
+      'bar = "1"',
+      "",
+      "[workspace.dependencies.renamed_table]",
+      'package = "renamed"',
+      'version = "1"',
+      "",
+    ].join("\n"),
+    "crates/app/Cargo.toml": [
+      "[package]",
+      'name = "dep-tree-workspace-inherit-fixture"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+      "[dependencies]",
+      'serde_alias = { workspace = true }',
+      'bar = { workspace = true }',
+      "",
+      "[dependencies.renamed_table]",
+      "workspace = true",
+      "",
+    ].join("\n"),
+    "Cargo.lock": [
+      "version = 3",
+      "",
+      "[[package]]",
+      'name = "dep-tree-workspace-inherit-fixture"',
+      'version = "0.1.0"',
+      "dependencies = [",
+      ' "bar 1.0.0",',
+      ' "renamed 1.0.0",',
+      ' "serde 1.0.0",',
+      "]",
+      "",
+      "[[package]]",
+      'name = "bar"',
+      'version = "1.0.0"',
+      'dependencies = ["leaf 1.0.0"]',
+      "",
+      "[[package]]",
+      'name = "renamed"',
+      'version = "1.0.0"',
+      'dependencies = ["leaf 1.0.0"]',
+      "",
+      "[[package]]",
+      'name = "serde"',
+      'version = "1.0.0"',
+      "",
+      "[[package]]",
+      'name = "leaf"',
+      'version = "1.0.0"',
+      "",
+    ].join("\n"),
+    "crates/app/src/lib.rs": "pub fn fixture() {}\n",
+  })
+
 describe("RS-DE-* signals", () => {
   test("RS-DE-01 declares identity, config, cache, pack registration, and factor ledger", async () => {
     const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
@@ -399,65 +891,336 @@ describe("RS-DE-* signals", () => {
     }
   })
 
+  test("RS-DE-02 declares identity, config, cache, pack registration, and factor ledger", async () => {
+    const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
+    const versionedRegistry = await Effect.runPromise(buildRegistry([
+      ...SHARED_SIGNALS,
+      ...RS_PACK_SIGNALS.map((signal) =>
+        signal.id === RsDe02.id
+          ? { ...RsDe02, cacheVersion: `${RsDe02.cacheVersion}-changed` }
+          : signal,
+      ),
+    ]))
+    const registered = registry.byId.get("RS-DE-02")
+    const decoded = Schema.decodeUnknownSync(RsDe02.configSchema)(RsDe02.defaultConfig)
+    const factorLedger = registered?.factorLedger?.({} as never)
+    const baseCacheHash = computeConfigHash(RsDe02.id, registry, undefined)
+    const versionedCacheHash = computeConfigHash(RsDe02.id, versionedRegistry, undefined)
+    const configuredCacheHash = computeConfigHash(RsDe02.id, registry, {
+      id: "rs-de-02-contract",
+      domain: "test",
+      signal_overrides: {
+        [RsDe02.id]: {
+          config: {
+            top_n_diagnostics: 1,
+          },
+        },
+      },
+    })
+
+    expect(RsDe02).toMatchObject({
+      id: "RS-DE-02-dependency-tree",
+      aliases: ["RS-DE-02"],
+      title: "Dependency tree",
+      tier: 1,
+      category: "dependency-entropy",
+      kind: "structural",
+      cacheVersion: "cargo-lock-dependency-tree-workspace-deps-v1",
+      inputs: [],
+    })
+    expect(decoded).toEqual({ top_n_diagnostics: 10 })
+    expect(registered?.id).toBe(RsDe02.id)
+    expect(registered?.cacheVersion).toBe(RsDe02.cacheVersion)
+    expect(registry.byId.get("RS-DE-02")?.id).toBe(RsDe02.id)
+    expect(versionedCacheHash).not.toBe(baseCacheHash)
+    expect(configuredCacheHash).not.toBe(baseCacheHash)
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.top_n_diagnostics",
+        source: "signal-default",
+        affectsScore: false,
+        scoreRole: "metadata",
+      }),
+    )
+  })
+
   test("RS-DE-02 reports duplicate versions and dependency depth from Cargo.lock", async () => {
-    const repo = await createRustWorkspace("pulsar-rs-de02-", {
+    const repo = await createRsDe02ProblemWorkspace()
+
+    try {
+      const out = await runSignalCompute(RsDe02, repo, RsDe02.defaultConfig)
+      expect(out.lockfileStatus).toBe("loaded")
+      expect(out.packageCount).toBe(6)
+      expect(out.dependencyPackageCount).toBe(5)
+      expect(out.manifestCount).toBe(1)
+      expect(out.directDependencyCount).toBe(2)
+      expect(out.duplicateCount).toBe(1)
+      expect(out.duplicates).toEqual([
+        {
+          name: "baz",
+          versions: ["1.0.0", "2.0.0"],
+          instanceCount: 2,
+        },
+      ])
+      expect(out.topLevelDependencies.map((entry) => entry.name)).toEqual(["bar", "foo"])
+      expect(out.topLevelDependencies.find((entry) => entry.name === "bar")).toMatchObject({
+        maxDepth: 2,
+        reachablePackages: 4,
+        rootInstances: 1,
+      })
+      expect(out.topLevelDependencies.find((entry) => entry.name === "foo")?.maxDepth).toBe(1)
+      expect(RsDe02.score(out)).toBeCloseTo(0.8)
+      expect(RsDe02.outputMetadata?.(out)).toBeUndefined()
+
+      const diagnostics = RsDe02.diagnose(out)
+      expect(diagnostics).toHaveLength(3)
+      expect(diagnostics[0]).toMatchObject({
+        severity: "warn",
+        message: "Duplicate crate versions for baz: 1.0.0, 2.0.0",
+        location: { file: "Cargo.lock" },
+        data: {
+          name: "baz",
+          versions: ["1.0.0", "2.0.0"],
+          instanceCount: 2,
+        },
+      })
+      expect(diagnostics[1]).toMatchObject({
+        severity: "info",
+        message: "Top-level dependency bar reaches depth 2",
+        data: {
+          name: "bar",
+          maxDepth: 2,
+          reachablePackages: 4,
+          rootInstances: 1,
+        },
+      })
+      expect(typeof diagnostics[0]?.data?.hash).toBe("string")
+      expect(typeof diagnostics[1]?.data?.hash).toBe("string")
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-DE-02 keeps clean, missing, and no-dependency lockfiles neutral", async () => {
+    const cleanRepo = await createRsDe02CleanWorkspace()
+    const missingRepo = await createRustWorkspace("pulsar-rs-de02-missing-", {
       "Cargo.toml": [
         "[package]",
-        'name = "dep-tree-fixture"',
+        'name = "dep-tree-missing-fixture"',
         'version = "0.1.0"',
         'edition = "2021"',
         "",
         "[dependencies]",
         'foo = "1"',
-        'bar = "1"',
         "",
-      ].join("\n"),
-      "Cargo.lock": [
-        'version = 3',
-        '',
-        '[[package]]',
-        'name = "dep-tree-fixture"',
-        'version = "0.1.0"',
-        'dependencies = [',
-        ' "foo 1.0.0",',
-        ' "bar 1.0.0",',
-        ']',
-        '',
-        '[[package]]',
-        'name = "foo"',
-        'version = "1.0.0"',
-        'dependencies = ["baz 1.0.0"]',
-        '',
-        '[[package]]',
-        'name = "bar"',
-        'version = "1.0.0"',
-        'dependencies = [',
-        ' "baz 2.0.0",',
-        ' "qux 1.0.0",',
-        ']',
-        '',
-        '[[package]]',
-        'name = "qux"',
-        'version = "1.0.0"',
-        'dependencies = ["baz 1.0.0"]',
-        '',
-        '[[package]]',
-        'name = "baz"',
-        'version = "1.0.0"',
-        '',
-        '[[package]]',
-        'name = "baz"',
-        'version = "2.0.0"',
-        '',
       ].join("\n"),
       "src/lib.rs": "pub fn fixture() {}\n",
     })
+    const noDependencyRepo = await createRsDe02NoDependencyWorkspace()
+
+    try {
+      const clean = await runSignalCompute(RsDe02, cleanRepo, RsDe02.defaultConfig)
+      const missing = await runSignalCompute(RsDe02, missingRepo, RsDe02.defaultConfig)
+      const noDependency = await runSignalCompute(RsDe02, noDependencyRepo, RsDe02.defaultConfig)
+
+      expect(clean.lockfileStatus).toBe("loaded")
+      expect(clean.packageCount).toBe(2)
+      expect(clean.directDependencyCount).toBe(1)
+      expect(clean.duplicateCount).toBe(0)
+      expect(clean.topLevelDependencies).toEqual([
+        {
+          name: "foo",
+          rootInstances: 1,
+          maxDepth: 0,
+          reachablePackages: 1,
+        },
+      ])
+      expect(RsDe02.score(clean)).toBe(1)
+      expect(RsDe02.diagnose(clean)).toEqual([])
+      expect(RsDe02.outputMetadata?.(clean)).toBeUndefined()
+
+      expect(missing.lockfileStatus).toBe("missing")
+      expect(missing.packageCount).toBe(0)
+      expect(missing.dependencyPackageCount).toBe(0)
+      expect(missing.directDependencyCount).toBe(1)
+      expect(RsDe02.score(missing)).toBe(1)
+      expect(RsDe02.outputMetadata?.(missing)).toEqual({
+        applicability: "insufficient_evidence",
+      })
+      expect(RsDe02.diagnose(missing)[0]).toMatchObject({
+        severity: "warn",
+        data: {
+          lockfileStatus: "missing",
+          directDependencyCount: 1,
+          packageCount: 0,
+        },
+      })
+
+      expect(noDependency.lockfileStatus).toBe("loaded")
+      expect(noDependency.packageCount).toBe(1)
+      expect(noDependency.dependencyPackageCount).toBe(0)
+      expect(noDependency.directDependencyCount).toBe(0)
+      expect(RsDe02.score(noDependency)).toBe(1)
+      expect(RsDe02.diagnose(noDependency)).toEqual([])
+      expect(RsDe02.outputMetadata?.(noDependency)).toEqual({
+        applicability: "not_applicable",
+      })
+    } finally {
+      await cleanupWorkspace(cleanRepo)
+      await cleanupWorkspace(missingRepo)
+      await cleanupWorkspace(noDependencyRepo)
+    }
+  })
+
+  test("RS-DE-02 normalizes diagnostic limits and dependency score pressure", async () => {
+    const problemRepo = await createRsDe02ProblemWorkspace()
+    const worseRepo = await createRsDe02WorseWorkspace()
+    const broaderRepo = await createRsDe02BroaderWorkspace()
+    const equalDepthRepo = await createRsDe02EqualDepthWorkspace()
+    const firstProblemRoot = await createRsDe02ProblemWorkspace()
+    const secondProblemRoot = await createRsDe02ProblemWorkspace()
+
+    try {
+      const problem = await runSignalCompute(RsDe02, problemRepo, RsDe02.defaultConfig)
+      const worse = await runSignalCompute(RsDe02, worseRepo, RsDe02.defaultConfig)
+      const broader = await runSignalCompute(RsDe02, broaderRepo, RsDe02.defaultConfig)
+      const equalDepth = await runSignalCompute(RsDe02, equalDepthRepo, {
+        top_n_diagnostics: 2.9,
+      })
+      const capped = await runSignalCompute(RsDe02, problemRepo, {
+        top_n_diagnostics: 1.9,
+      })
+      const hiddenNegative = await runSignalCompute(RsDe02, problemRepo, {
+        top_n_diagnostics: -1,
+      })
+      const hiddenNaN = await runSignalCompute(RsDe02, problemRepo, {
+        top_n_diagnostics: Number.NaN,
+      })
+      const firstRoot = await runSignalCompute(RsDe02, firstProblemRoot, RsDe02.defaultConfig)
+      const secondRoot = await runSignalCompute(RsDe02, secondProblemRoot, RsDe02.defaultConfig)
+
+      expect(worse.duplicateCount).toBe(2)
+      expect(worse.topLevelDependencies.find((entry) => entry.name === "bar")?.maxDepth).toBe(4)
+      expect(RsDe02.score(worse)).toBeLessThan(RsDe02.score(problem))
+      expect(broader.dependencyPackageCount).toBeGreaterThan(problem.dependencyPackageCount)
+      expect(broader.duplicateCount).toBe(problem.duplicateCount)
+      expect(broader.topLevelDependencies.find((entry) => entry.name === "bar")?.maxDepth).toBe(
+        problem.topLevelDependencies.find((entry) => entry.name === "bar")?.maxDepth,
+      )
+      expect(RsDe02.score(broader)).toBeLessThan(RsDe02.score(problem))
+      expect(capped.diagnosticLimit).toBe(1)
+      expect(RsDe02.diagnose(capped)).toHaveLength(1)
+      expect(RsDe02.diagnose(capped)[0]?.data?.name).toBe("baz")
+      expect(equalDepth.diagnosticLimit).toBe(2)
+      expect(RsDe02.diagnose(equalDepth).map((diagnostic) => diagnostic.data?.name)).toEqual([
+        "alpha",
+        "beta",
+      ])
+      expect(hiddenNegative.diagnosticLimit).toBe(0)
+      expect(hiddenNaN.diagnosticLimit).toBe(0)
+      expect(RsDe02.diagnose(hiddenNegative)).toEqual([])
+      expect(RsDe02.diagnose(hiddenNaN)).toEqual([])
+      expect(RsDe02.diagnose(firstRoot).map((diagnostic) => diagnostic.data?.hash)).toEqual(
+        RsDe02.diagnose(secondRoot).map((diagnostic) => diagnostic.data?.hash),
+      )
+    } finally {
+      await cleanupWorkspace(problemRepo)
+      await cleanupWorkspace(worseRepo)
+      await cleanupWorkspace(broaderRepo)
+      await cleanupWorkspace(equalDepthRepo)
+      await cleanupWorkspace(firstProblemRoot)
+      await cleanupWorkspace(secondProblemRoot)
+    }
+  })
+
+  test("RS-DE-02 distinguishes same-name same-version packages from different sources", async () => {
+    const repo = await createRsDe02SourceCollisionWorkspace()
+    const directRepo = await createRsDe02DirectSourceCollisionWorkspace()
+    const ambiguousDirectRepo = await createRsDe02AmbiguousDirectSourceWorkspace()
 
     try {
       const out = await runSignalCompute(RsDe02, repo, RsDe02.defaultConfig)
+      const direct = await runSignalCompute(RsDe02, directRepo, RsDe02.defaultConfig)
+      const ambiguousDirect = await runSignalCompute(
+        RsDe02,
+        ambiguousDirectRepo,
+        RsDe02.defaultConfig,
+      )
+
+      expect(out.topLevelDependencies.find((entry) => entry.name === "foo")).toMatchObject({
+        maxDepth: 1,
+        reachablePackages: 2,
+      })
+      expect(out.topLevelDependencies.find((entry) => entry.name === "bar")).toMatchObject({
+        maxDepth: 2,
+        reachablePackages: 3,
+      })
+      expect(direct.topLevelDependencies).toEqual([
+        {
+          name: "shared",
+          rootInstances: 1,
+          maxDepth: 0,
+          reachablePackages: 1,
+        },
+      ])
+      expect(ambiguousDirect.topLevelDependencies).toEqual([])
+      expect(RsDe02.score(ambiguousDirect)).toBe(1)
+      expect(RsDe02.outputMetadata?.(ambiguousDirect)).toEqual({
+        applicability: "insufficient_evidence",
+      })
+      expect(RsDe02.diagnose(ambiguousDirect)[0]).toMatchObject({
+        severity: "warn",
+        message: "RS-DE-02 could not resolve direct Cargo.lock dependencies",
+        data: {
+          directDependencyCount: 1,
+          packageCount: 4,
+          dependencyPackageCount: 3,
+        },
+      })
+    } finally {
+      await cleanupWorkspace(repo)
+      await cleanupWorkspace(directRepo)
+      await cleanupWorkspace(ambiguousDirectRepo)
+    }
+  })
+
+  test("RS-DE-02 resolves workspace-inherited dependency aliases before lock matching", async () => {
+    const repo = await createRsDe02WorkspaceInheritedWorkspace()
+
+    try {
+      const out = await runSignalCompute(RsDe02, repo, RsDe02.defaultConfig)
+
       expect(out.lockfileStatus).toBe("loaded")
-      expect(out.duplicates.find((group) => group.name === "baz")?.versions).toEqual(["1.0.0", "2.0.0"])
-      expect(out.topLevelDependencies.find((entry) => entry.name === "bar")?.maxDepth).toBe(2)
+      expect(out.manifestCount).toBe(2)
+      expect(out.packageCount).toBe(5)
+      expect(out.dependencyPackageCount).toBe(4)
+      expect(out.directDependencyCount).toBe(3)
+      expect(out.topLevelDependencies).toEqual([
+        {
+          name: "bar",
+          rootInstances: 1,
+          maxDepth: 1,
+          reachablePackages: 2,
+        },
+        {
+          name: "renamed",
+          rootInstances: 1,
+          maxDepth: 1,
+          reachablePackages: 2,
+        },
+        {
+          name: "serde",
+          rootInstances: 1,
+          maxDepth: 0,
+          reachablePackages: 1,
+        },
+      ])
+      expect(RsDe02.score(out)).toBeCloseTo(0.95)
+      expect(RsDe02.outputMetadata?.(out)).toBeUndefined()
+      expect(RsDe02.diagnose(out).map((diagnostic) => diagnostic.message)).toEqual([
+        "Top-level dependency bar reaches depth 1",
+        "Top-level dependency renamed reaches depth 1",
+      ])
     } finally {
       await cleanupWorkspace(repo)
     }
