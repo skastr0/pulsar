@@ -330,6 +330,65 @@ describe("TS-LD-07 (unsafe type erosion)", () => {
     }
   })
 
+  test("exported variable function type annotations count unsafe types as boundaries", async () => {
+    await setup()
+    try {
+      await repo.write(
+        "src/typed-handler.ts",
+        [
+          "export const handler: (value: any) => any = (value) => value",
+          "",
+        ].join("\n"),
+      )
+
+      const out = await runSignal(repo.root, TsLd07, TsLd07.defaultConfig)
+
+      expect(out.totalOccurrences).toBe(2)
+      expect(out.boundaryOccurrences).toBe(2)
+      expect(out.occurrences.map((occurrence) => occurrence.target).sort()).toEqual([
+        "handler",
+        "value",
+      ])
+      expect(out.occurrences.every((occurrence) => occurrence.severity === "warn")).toBe(true)
+    } finally {
+      await cleanup()
+    }
+  })
+
+  test("exported object-value type annotations count unsafe types as boundaries", async () => {
+    await setup()
+    try {
+      await repo.write(
+        "src/typed-api.ts",
+        [
+          "export const api: {",
+          "  readonly raw: any",
+          "  handle: (value: any) => any",
+          "  parse(value: any): any",
+          "} = {",
+          "  raw: {},",
+          "  handle: (value) => value,",
+          "  parse(value) { return value },",
+          "}",
+          "",
+        ].join("\n"),
+      )
+
+      const out = await runSignal(repo.root, TsLd07, TsLd07.defaultConfig)
+      const boundaryTargets = out.occurrences
+        .filter((occurrence) => occurrence.boundary)
+        .map((occurrence) => occurrence.target)
+        .sort()
+
+      expect(out.totalOccurrences).toBe(5)
+      expect(out.boundaryOccurrences).toBe(5)
+      expect(boundaryTargets).toEqual(["handle", "parse", "raw", "value", "value"])
+      expect(out.occurrences.every((occurrence) => occurrence.severity === "warn")).toBe(true)
+    } finally {
+      await cleanup()
+    }
+  })
+
   test("object literal API functions returned from exported functions stay internal", async () => {
     await setup()
     try {

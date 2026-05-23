@@ -109,7 +109,10 @@ export const isBoundaryFunctionOwner = (
     return ts.isExportAssignment(parent)
   }
 
-  return isWithinExportedTypeSurface(owner, exportedNames)
+  return (
+    isWithinExportedTypeSurface(owner, exportedNames) ||
+    isWithinExportedValueTypeSurface(owner, exportedNames)
+  )
 }
 
 export const isBoundaryProperty = (
@@ -123,7 +126,10 @@ export const isBoundaryProperty = (
       isBoundaryClass(property.parent, exportedNames)
     )
   }
-  return isWithinExportedTypeSurface(property, exportedNames)
+  return (
+    isWithinExportedTypeSurface(property, exportedNames) ||
+    isWithinExportedValueTypeSurface(property, exportedNames)
+  )
 }
 
 export const isBoundaryVariable = (
@@ -208,6 +214,26 @@ const isWithinExportedObjectLiteralSurface = (
   return false
 }
 
+const isWithinExportedValueTypeSurface = (
+  node: ts.Node,
+  exportedNames: ReadonlySet<string>,
+): boolean => {
+  let current: ts.Node | undefined = node
+  while (current !== undefined) {
+    const parent: ts.Node | undefined = current.parent
+    if (
+      parent !== undefined &&
+      ts.isVariableDeclaration(parent) &&
+      parent.type !== undefined &&
+      isAncestorOf(parent.type, node)
+    ) {
+      return isBoundaryVariable(parent, exportedNames)
+    }
+    current = parent
+  }
+  return false
+}
+
 const objectLiteralHasBoundaryVariableRoot = (
   node: ts.ObjectLiteralExpression,
   exportedNames: ReadonlySet<string>,
@@ -234,6 +260,15 @@ const isPublicClassMember = (node: ts.Node): boolean =>
 const isTopLevelVariableDeclaration = (node: ts.VariableDeclaration): boolean => {
   const statement = node.parent.parent
   return ts.isVariableStatement(statement) && ts.isSourceFile(statement.parent)
+}
+
+const isAncestorOf = (ancestor: ts.Node, node: ts.Node): boolean => {
+  let current: ts.Node | undefined = node
+  while (current !== undefined) {
+    if (current === ancestor) return true
+    current = current.parent
+  }
+  return false
 }
 
 const hasModifier = (node: ts.Node, kind: ts.SyntaxKind): boolean =>
