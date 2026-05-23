@@ -80,7 +80,7 @@ export const RsLd04: Signal<RsLd04Config, RsLd04Output, RustProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "error-granularity-config-applicability-diagnostics-cfg-test-result-aliases-v10",
+  cacheVersion: "error-granularity-config-applicability-diagnostics-cfg-test-result-aliases-v11",
   configSchema: RsLd04Config,
   factorDefinitions: RsLd04FactorDefinitions,
   defaultConfig: {
@@ -275,10 +275,7 @@ const collectResultAliasScopes = (
   scope: ReturnType<typeof resolveRustFileScope>,
   root: Parameters<typeof walkAttributedNodes>[0],
 ): ReadonlyMap<string, ResultAliasScope> => {
-  const scopes = new Map<string, {
-    readonly importAliases: Map<string, string>
-    readonly typeAliases: Map<string, string>
-  }>()
+  const scopes = new Map<string, MutableResultAliasScope>()
   const scopeForModule = (modulePath: string): {
     readonly importAliases: Map<string, string>
     readonly typeAliases: Map<string, string>
@@ -303,7 +300,76 @@ const collectResultAliasScopes = (
       if (match !== null) moduleAliases.typeAliases.set(match[1]!, match[2]!.trim())
     }
   })
+  resolveRelativeImportAliases(scopes, `${scope.crateName}::crate`)
   return scopes
+}
+
+interface MutableResultAliasScope {
+  readonly importAliases: Map<string, string>
+  readonly typeAliases: Map<string, string>
+}
+
+const resolveRelativeImportAliases = (
+  scopes: ReadonlyMap<string, MutableResultAliasScope>,
+  crateRootModulePath: string,
+): void => {
+  for (const [modulePath, aliases] of scopes) {
+    for (const [name, target] of aliases.importAliases) {
+      aliases.importAliases.set(
+        name,
+        resolveRelativeImportTarget(modulePath, target, scopes, crateRootModulePath),
+      )
+    }
+  }
+}
+
+const resolveRelativeImportTarget = (
+  modulePath: string,
+  target: string,
+  scopes: ReadonlyMap<string, MutableResultAliasScope>,
+  crateRootModulePath: string,
+  seenTargets: ReadonlySet<string> = new Set(),
+): string => {
+  if (seenTargets.has(`${modulePath}:${target}`)) return target
+  const targetSegments = target.split("::")
+  const firstSegment = targetSegments[0]
+  if (firstSegment !== "self" && firstSegment !== "super" && firstSegment !== "crate") return target
+  const importedName = targetSegments.at(-1)
+  if (importedName === undefined) return target
+  const targetModulePath = modulePathForRelativeImport(modulePath, targetSegments.slice(0, -1), crateRootModulePath)
+  const targetScope = scopes.get(targetModulePath)
+  const aliasTarget = targetScope?.importAliases.get(importedName)
+  if (aliasTarget !== undefined) {
+    return resolveRelativeImportTarget(
+      targetModulePath,
+      aliasTarget,
+      scopes,
+      crateRootModulePath,
+      new Set([...seenTargets, `${modulePath}:${target}`]),
+    )
+  }
+  return targetScope?.typeAliases.get(importedName) ?? target
+}
+
+const modulePathForRelativeImport = (
+  modulePath: string,
+  importSegments: ReadonlyArray<string>,
+  crateRootModulePath: string,
+): string => {
+  let moduleSegments = modulePath.split("::")
+  for (const segment of importSegments) {
+    if (segment === "self") continue
+    if (segment === "crate") {
+      moduleSegments = crateRootModulePath.split("::")
+      continue
+    }
+    if (segment === "super") {
+      moduleSegments = moduleSegments.slice(0, Math.max(1, moduleSegments.length - 1))
+      continue
+    }
+    moduleSegments = [...moduleSegments, segment]
+  }
+  return moduleSegments.join("::")
 }
 
 const importAliasesFromUseDeclaration = (text: string): ReadonlyArray<readonly [string, string]> => {

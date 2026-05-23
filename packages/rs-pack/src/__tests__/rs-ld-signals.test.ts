@@ -1636,7 +1636,7 @@ describe("RS-LD-* signals", () => {
       tier: 1,
       category: "legibility-decay",
       kind: "legibility",
-      cacheVersion: "error-granularity-config-applicability-diagnostics-cfg-test-result-aliases-v10",
+      cacheVersion: "error-granularity-config-applicability-diagnostics-cfg-test-result-aliases-v11",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -1778,7 +1778,10 @@ describe("RS-LD-* signals", () => {
     const repo = await createBoundaryWorkspace("aliases", {
       "src/lib.rs": [
         "use anyhow::Error as AnyError;",
+        "pub use anyhow::Error as CrateAnyError;",
+        "pub use anyhow::Result as CrateAnyResult;",
         "pub mod errors { pub struct DomainError; }",
+        "pub use crate::errors::DomainError as PublicDomainError;",
         "type AppResult<T> = Result<T, crate::errors::DomainError>;",
         "type NestedError = AnyError;",
         "type NestedResult<T> = Result<T, NestedError>;",
@@ -1859,6 +1862,24 @@ describe("RS-LD-* signals", () => {
         "  use std::{io::{Error as IoError, ErrorKind}};",
         "  pub fn nested_grouped_io_error(value: &str) -> Result<(), IoError> { let _ = ErrorKind::Other; let _ = value; Ok(()) }",
         "}",
+        "pub mod reexports {",
+        "  pub use anyhow::Error;",
+        "  pub use anyhow::Result;",
+        "  pub mod child {",
+        "    use super::Error;",
+        "    use super::Result;",
+        "    pub fn super_result(value: &str) -> Result<()> { let _ = value; Ok(()) }",
+        "    pub fn super_error(value: &str) -> std::result::Result<(), Error> { let _ = value; Ok(()) }",
+        "  }",
+        "}",
+        "pub mod crate_reexports {",
+        "  use crate::CrateAnyError;",
+        "  use crate::CrateAnyResult;",
+        "  use crate::PublicDomainError;",
+        "  pub fn crate_result(value: &str) -> CrateAnyResult<()> { let _ = value; Ok(()) }",
+        "  pub fn crate_error(value: &str) -> Result<(), CrateAnyError> { let _ = value; Ok(()) }",
+        "  pub fn crate_domain(value: &str) -> Result<(), PublicDomainError> { let _ = value; Ok(()) }",
+        "}",
       ],
     })
 
@@ -1866,9 +1887,9 @@ describe("RS-LD-* signals", () => {
       const out = await runSignalCompute(RsLd04, repo, RsLd04.defaultConfig)
       const byName = new Map(out.boundaryFunctions.map((fn) => [fn.name, fn]))
 
-      expect(out.totalBoundaryResults).toBe(29)
-      expect(out.collapsedCount).toBe(18)
-      expect(out.granularCount).toBe(11)
+      expect(out.totalBoundaryResults).toBe(34)
+      expect(out.collapsedCount).toBe(22)
+      expect(out.granularCount).toBe(12)
       expect(byName.get("explicit_anyhow")).toMatchObject({
         errorType: "anyhow::Error",
         classification: "collapsed",
@@ -1985,7 +2006,27 @@ describe("RS-LD-* signals", () => {
         errorType: "std::io::Error",
         classification: "granular",
       })
-      expect(RsLd04.score(out)).toBeCloseTo(11 / 29)
+      expect(byName.get("super_result")).toMatchObject({
+        errorType: "anyhow::Error",
+        classification: "collapsed",
+      })
+      expect(byName.get("super_error")).toMatchObject({
+        errorType: "anyhow::Error",
+        classification: "collapsed",
+      })
+      expect(byName.get("crate_result")).toMatchObject({
+        errorType: "anyhow::Error",
+        classification: "collapsed",
+      })
+      expect(byName.get("crate_error")).toMatchObject({
+        errorType: "anyhow::Error",
+        classification: "collapsed",
+      })
+      expect(byName.get("crate_domain")).toMatchObject({
+        errorType: "crate::errors::DomainError",
+        classification: "granular",
+      })
+      expect(RsLd04.score(out)).toBeCloseTo(6 / 17)
     } finally {
       await cleanupWorkspace(repo)
     }
