@@ -381,7 +381,33 @@ export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "observer-integration.test.ts and CLI score tests: Rust observer integration carries RS-LD-03 catch-all score and diagnostics through the RS pack against a real Cargo fixture, while CLI single-signal mode executes RS-LD-03 against the repository substrate through both source and compiled CLI entrypoints.",
     },
   },
-  pendingSignalContract("RS-LD-04-error-granularity"),
+  {
+    id: "RS-LD-04-error-granularity",
+    status: "verified",
+    requiredEvidence: ["integration"],
+    evidence: {
+      identity:
+        "rs-ld-signals.test.ts: canonical id, alias, title, tier/category/kind, empty input contract, semantic cacheVersion, pack registration, registry alias lookup, config-cache hash sensitivity, default config decoding, factor ledger, score mode, and score denominator are asserted.",
+      config:
+        "rs-ld-signals.test.ts: exclude_globs and top_n_diagnostics decode through the real schema; fractional and NaN diagnostic caps are normalized through compute output.",
+      positiveFixture:
+        "rs-ld-signals.test.ts: temporary Cargo fixtures run through RustProjectLayer and real tree-sitter Rust parsing to prove public Result-returning boundary functions, granular concrete error types, collapsed anyhow/String/&str/boxed dyn Error surfaces, anyhow::Result and eyre::Result aliases, std::result::Result paths, score shares, and diagnostic payloads.",
+      negativeFixture:
+        "rs-ld-signals.test.ts: clean granular Result functions, missing Rust source, no-Result Rust source, fully excluded Rust source, cfg(test) collapsed Result functions, composite cfg(any(test,...)) collapsed Result functions, and concrete path-qualified error types return neutral or excluded evidence without false collapsed pressure.",
+      applicability:
+        "rs-ld-signals.test.ts: loaded Rust source with public Result boundary evidence is applicable, no Rust source emits insufficient_evidence metadata, and analyzed Rust source with no public Result boundaries or fully excluded source emits not_applicable metadata.",
+      score:
+        "rs-ld-signals.test.ts: score is asserted as granular result boundary share, with denominator named as public Result boundary functions; all-granular fixtures score 1, one-collapsed/two-total scores 0.5, two-collapsed/three-total scores one third, and additional collapsed boundaries lower scores monotonically.",
+      diagnostics:
+        "rs-ld-signals.test.ts: diagnostics assert severity, source locations, deterministic boundary ordering, function/module/error-type/classification payloads, score mode and denominator payloads, no-source warning payloads, and normalized diagnostic caps.",
+      factorLedger:
+        "rs-ld-signals.test.ts: registered RS pack signal emits config.exclude_globs as score-bearing evidence and config.top_n_diagnostics as non-score-bearing metadata with signal-default source.",
+      cacheSemantics:
+        "rs-ld-signals.test.ts and pack.test.ts: RS-LD-04 declares error-granularity-config-applicability-diagnostics-cfg-test-result-aliases-v3 cacheVersion, config/cacheVersion changes alter the signal config hash, and the RS pack wrapper preserves the signal-specific cacheVersion.",
+      integration:
+        "observer-integration.test.ts and CLI score tests: Rust observer integration carries RS-LD-04 error granularity score and diagnostics through the RS pack against a real Cargo fixture, while CLI single-signal mode executes RS-LD-04 against the repository substrate through both source and compiled CLI entrypoints.",
+    },
+  },
   pendingSignalContract("RS-LD-05-cyclomatic-complexity"),
   pendingSignalContract("RS-LD-06-domain-term-consistency"),
   pendingSignalContract("RS-SL-01-duplication"),

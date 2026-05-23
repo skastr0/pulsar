@@ -20,6 +20,7 @@ import { RsDe04 } from "../signals/rs-de-04-fan-in-fan-out.js"
 import { RsLd01 } from "../signals/rs-ld-01-unsafe.js"
 import { RsLd02 } from "../signals/rs-ld-02-lifetimes.js"
 import { RsLd03 } from "../signals/rs-ld-03-match-catch-all.js"
+import { RsLd04 } from "../signals/rs-ld-04-error-granularity.js"
 import { cleanupWorkspace, createRustWorkspace, referenceLayer } from "./helpers.js"
 
 describe("rs-pack integration", () => {
@@ -291,6 +292,65 @@ describe("rs-pack integration", () => {
           catchAllArmCount: 1,
           scoreMode: "double-weighted-catch-all-match-share",
           scoreDenominator: "analyzed-match-expressions",
+        }),
+      })
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  }, 120_000)
+
+  test("observer path carries RS-LD-04 error granularity score and diagnostics", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-observer-ld04-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "error-granularity-observer"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+        "[dependencies]",
+        'anyhow = "1"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub struct DomainError;",
+        "pub fn parse(value: &str) -> Result<(), DomainError> { let _ = value; Ok(()) }",
+        "pub fn load(value: &str) -> anyhow::Result<()> { let _ = value; Ok(()) }",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
+      const EnvLayer = Layer.mergeAll(
+        Layer.succeed(SignalContextTag, {
+          gitSha: "HEAD",
+          worktreePath: repo,
+          changedHunks: [],
+        }),
+        referenceLayer(),
+        InMemoryCacheLayer,
+        RustProjectLayer(repo),
+      )
+
+      const result = await Effect.runPromise(
+        Effect.provide(observe(registry, undefined), EnvLayer) as Effect.Effect<
+          ObserverOutput,
+          never,
+          never
+        >,
+      )
+      const errorGranularity = result.signalResults.get(RsLd04.id)
+
+      expect(result.categories["legibility-decay"].signals[RsLd04.id]).toBeCloseTo(0.5)
+      expect(errorGranularity?.score).toBeCloseTo(0.5)
+      expect(errorGranularity?.diagnostics[0]).toMatchObject({
+        severity: "warn",
+        message: "Boundary function load returns collapsed error type anyhow::Error",
+        data: expect.objectContaining({
+          errorType: "anyhow::Error",
+          classification: "collapsed",
+          scoreMode: "granular-result-boundary-share",
+          scoreDenominator: "public-result-boundary-functions",
         }),
       })
     } finally {
