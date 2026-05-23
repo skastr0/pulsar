@@ -283,9 +283,12 @@ const hasStructuralTypeUsage = (iface: InterfaceDeclaration): boolean => {
     ) {
       return false
     }
-    return !isImplementationReference(reference)
+    return isStructuralUsageReference(reference)
   })
 }
+
+const isStructuralUsageReference = (reference: Node): boolean =>
+  !isImplementationReference(reference) && !isNonObjectAssertionReference(reference)
 
 const isImplementationReference = (reference: Node): boolean =>
   isClassImplementsReference(reference) || isTypedObjectLiteralReference(reference)
@@ -299,13 +302,51 @@ const isClassImplementsReference = (reference: Node): boolean => {
 }
 
 const isTypedObjectLiteralReference = (reference: Node): boolean => {
+  const assertion = objectLiteralAssertionReference(reference)
+  if (assertion !== undefined) return true
+
   const variableDeclaration = reference.getFirstAncestorByKind(SyntaxKind.VariableDeclaration)
   if (variableDeclaration === undefined) return false
   const initializer = variableDeclaration.getInitializer()
-  if (!Node.isObjectLiteralExpression(initializer)) return false
+  if (
+    initializer === undefined ||
+    !Node.isObjectLiteralExpression(unwrapParenthesizedExpression(initializer))
+  ) {
+    return false
+  }
   const typeNode = variableDeclaration.getTypeNode()
   if (typeNode === undefined) return false
   return reference.getStart() >= typeNode.getStart() && reference.getEnd() <= typeNode.getEnd()
+}
+
+const isNonObjectAssertionReference = (reference: Node): boolean => {
+  const assertion = assertionReference(reference)
+  if (assertion === undefined) return false
+  const expression = unwrapParenthesizedExpression(assertion.getExpression())
+  return !Node.isObjectLiteralExpression(expression)
+}
+
+const objectLiteralAssertionReference = (
+  reference: Node,
+): AsExpression | SatisfiesExpression | undefined => {
+  const assertion = assertionReference(reference)
+  if (assertion === undefined) return undefined
+  const expression = unwrapParenthesizedExpression(assertion.getExpression())
+  return Node.isObjectLiteralExpression(expression) ? assertion : undefined
+}
+
+const assertionReference = (
+  reference: Node,
+): AsExpression | SatisfiesExpression | undefined => {
+  const assertion = reference.getFirstAncestor(
+    (node): node is AsExpression | SatisfiesExpression =>
+      Node.isAsExpression(node) || Node.isSatisfiesExpression(node),
+  )
+  const typeNode = assertion?.getTypeNode()
+  if (typeNode === undefined) return undefined
+  return reference.getStart() >= typeNode.getStart() && reference.getEnd() <= typeNode.getEnd()
+    ? assertion
+    : undefined
 }
 
 const buildImplementationIndex = (

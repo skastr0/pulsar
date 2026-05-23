@@ -133,6 +133,29 @@ describe("TS-AB-04 (interface to implementation ratio)", () => {
     expect(out.flaggedPairs).toHaveLength(1)
   })
 
+  test("non-object casts do not hide otherwise dead interfaces", async () => {
+    await repo.write(
+      "src/dead-cast.ts",
+      [
+        "export interface IService {",
+        "  run(): string",
+        "}",
+        "declare function makeFake(): unknown",
+        "export const fakeService = makeFake() as IService",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsAb04, TsAb04.defaultConfig)
+
+    expect(out.totalInterfaces).toBe(1)
+    expect(out.deadInterfaces).toEqual([
+      expect.objectContaining({
+        interfaceName: "IService",
+      }),
+    ])
+    expect(TsAb04.score(out)).toBe(0.75)
+  })
+
   test("multiple implementations are not flagged", async () => {
     await repo.write(
       "src/multi.ts",
