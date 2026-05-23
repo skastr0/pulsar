@@ -45,6 +45,7 @@ describe("TS-LD-07 (unsafe type erosion)", () => {
       const out = await runSignal(repo.root, TsLd07, TsLd07.defaultConfig)
       expect(out.totalOccurrences).toBe(0)
       expect(out.boundaryOccurrences).toBe(0)
+      expect(TsLd07.outputMetadata?.(out)).toBeUndefined()
       expect(TsLd07.score(out)).toBe(1)
       expect(TsLd07.diagnose(out)).toEqual([])
     } finally {
@@ -426,6 +427,30 @@ describe("TS-LD-07 (unsafe type erosion)", () => {
       const out = await runSignal(repo.root, TsLd07, TsLd07.defaultConfig)
       expect(out.totalOccurrences).toBe(0)
       expect(TsLd07.score(out)).toBe(1)
+    } finally {
+      await cleanup()
+    }
+  })
+
+  test("zero analyzed files are not applicable, not healthy evidence", async () => {
+    await setup()
+    try {
+      const empty = await runSignal(repo.root, TsLd07, TsLd07.defaultConfig)
+      expect(empty.analyzedFiles).toBe(0)
+      expect(empty.analyzedLines).toBe(0)
+      expect(empty.totalOccurrences).toBe(0)
+      expect(TsLd07.outputMetadata?.(empty)).toEqual({ applicability: "not_applicable" })
+      expect(TsLd07.score(empty)).toBe(1)
+      expect(TsLd07.diagnose(empty)).toEqual([])
+
+      await repo.write("src/example.test.ts", "export const raw: any = {}\n")
+      await repo.write("dist/generated.ts", "export const raw: any = {}\n")
+      const allExcluded = await runSignal(repo.root, TsLd07, TsLd07.defaultConfig)
+      expect(allExcluded.analyzedFiles).toBe(0)
+      expect(allExcluded.totalOccurrences).toBe(0)
+      expect(TsLd07.outputMetadata?.(allExcluded)).toEqual({
+        applicability: "not_applicable",
+      })
     } finally {
       await cleanup()
     }

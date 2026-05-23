@@ -71,7 +71,7 @@ export const TsLd07: Signal<TsLd07Config, TsLd07Output, TsProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "unsafe-type-erosion-v4-value-type-surfaces-v1",
+  cacheVersion: "unsafe-type-erosion-v5-applicability-v1",
   configSchema: TsLd07Config,
   defaultConfig: {
     exclude_globs: [
@@ -137,6 +137,8 @@ export const TsLd07: Signal<TsLd07Config, TsLd07Output, TsProjectTag> = {
     const pressure = Math.max(out.densityPressure, out.boundaryPressure)
     return 1 / (1 + pressure)
   },
+  outputMetadata: (out) =>
+    out.analyzedFiles === 0 ? { applicability: "not_applicable" as const } : undefined,
   diagnose: (out): ReadonlyArray<Diagnostic> =>
     out.topOccurrences.map((occurrence) => ({
       severity: occurrence.severity,
