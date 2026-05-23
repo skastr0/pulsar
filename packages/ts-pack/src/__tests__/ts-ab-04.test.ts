@@ -251,6 +251,49 @@ describe("TS-AB-04 (interface to implementation ratio)", () => {
     expect(TsAb04.score(out)).toBe(0.75)
   })
 
+  test("diagnostics honor sanitized top_n_diagnostics", async () => {
+    await repo.write(
+      "src/service-a.ts",
+      [
+        "export interface IServiceA { run(): string }",
+        "export class ServiceA implements IServiceA { run() { return 'a' } }",
+      ].join("\n"),
+    )
+    await repo.write(
+      "src/service-b.ts",
+      [
+        "export interface IServiceB { run(): string }",
+        "export class ServiceB implements IServiceB { run() { return 'b' } }",
+      ].join("\n"),
+    )
+
+    const fractional = await runSignal(repo.root, TsAb04, {
+      ...TsAb04.defaultConfig,
+      top_n_diagnostics: 1.8,
+    })
+    const negative = await runSignal(repo.root, TsAb04, {
+      ...TsAb04.defaultConfig,
+      top_n_diagnostics: -1,
+    })
+    const nan = await runSignal(repo.root, TsAb04, {
+      ...TsAb04.defaultConfig,
+      top_n_diagnostics: Number.NaN,
+    })
+    const infinite = await runSignal(repo.root, TsAb04, {
+      ...TsAb04.defaultConfig,
+      top_n_diagnostics: Number.POSITIVE_INFINITY,
+    })
+
+    expect(fractional.diagnosticLimit).toBe(1)
+    expect(TsAb04.diagnose(fractional)).toHaveLength(1)
+    expect(negative.diagnosticLimit).toBe(0)
+    expect(nan.diagnosticLimit).toBe(0)
+    expect(infinite.diagnosticLimit).toBe(0)
+    expect(TsAb04.diagnose(negative)).toEqual([])
+    expect(TsAb04.diagnose(nan)).toEqual([])
+    expect(TsAb04.diagnose(infinite)).toEqual([])
+  })
+
   test("referenced structural data interfaces are not dead implementation contracts", async () => {
     await repo.write(
       "src/options.ts",

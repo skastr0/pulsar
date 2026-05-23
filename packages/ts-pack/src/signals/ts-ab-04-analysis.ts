@@ -74,7 +74,10 @@ export const computeInterfaceImplementationRatio = (
     prodImplementations,
     testImplementations,
   )
-  return buildInterfaceImplementationOutput(accumulator, config.top_n_diagnostics)
+  return buildInterfaceImplementationOutput(
+    accumulator,
+    normalizeDiagnosticLimit(config.top_n_diagnostics),
+  )
 }
 
 const selectInterfaceAnalysisFiles = (
@@ -384,6 +387,9 @@ const resolveInterfaceKeysFromTypeNode = (
 
 const interfaceKeysFromDeclarations = (declarations: ReadonlyArray<Node>): ReadonlyArray<string> =>
   declarations.filter(Node.isInterfaceDeclaration).map(interfaceKey)
+
+const normalizeDiagnosticLimit = (limit: number): number =>
+  Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 0
 
 const compareImplementationDescriptors = (
   left: ImplementationDescriptor,
