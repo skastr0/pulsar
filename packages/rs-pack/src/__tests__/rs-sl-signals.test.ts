@@ -1281,7 +1281,7 @@ describe("RS-SL-* signals", () => {
       tier: 1,
       category: "generated-slop",
       kind: "legibility",
-      cacheVersion: "likely-expensive-score-cfg-test-gating-diagnostics-v3",
+      cacheVersion: "likely-expensive-score-cfg-test-gating-diagnostics-denominator-v4",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -1444,6 +1444,43 @@ describe("RS-SL-* signals", () => {
       await cleanupWorkspace(noSource)
       await cleanupWorkspace(excluded)
       await cleanupWorkspace(noFunctions)
+    }
+  })
+
+  test("RS-SL-04 excludes cfg-test-gated functions from clone density denominator", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-sl04-density-cfg-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "clone-density-cfg"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub fn prod() { let _ = String::from(\"hello\").clone(); }",
+        "",
+        "#[cfg(any(test, feature = \"fixture\"))]",
+        "pub fn helper_one() {}",
+        "",
+        "#[cfg(test)]",
+        "pub fn helper_two() { let _ = String::from(\"test\").clone(); }",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const out = await runSignalCompute(RsSl04, repo, RsSl04.defaultConfig)
+
+      expect(out.totalCloneCalls).toBe(1)
+      expect(out.likelyExpensiveCloneCalls).toBe(1)
+      expect(out.analyzedFunctionCount).toBe(1)
+      expect(out.modules[0]).toMatchObject({
+        cloneCalls: 1,
+        likelyExpensiveClones: 1,
+        density: 1,
+      })
+    } finally {
+      await cleanupWorkspace(repo)
     }
   })
 

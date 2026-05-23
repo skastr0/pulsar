@@ -10,7 +10,6 @@ import {
   type SignalFactorLedger,
 } from "@skastr0/pulsar-core/factors"
 import { Effect, Schema } from "effect"
-import { collectRustProjectFacts } from "../rust-analysis.js"
 import { RustProjectTag } from "../project.js"
 import { parseRustFile } from "../syn-walker.js"
 import {
@@ -77,7 +76,7 @@ export const RsSl04: Signal<RsSl04Config, RsSl04Output, RustProjectTag> = {
   tier: 1,
   category: "generated-slop",
   kind: "legibility",
-  cacheVersion: "likely-expensive-score-cfg-test-gating-diagnostics-v3",
+  cacheVersion: "likely-expensive-score-cfg-test-gating-diagnostics-denominator-v4",
   configSchema: RsSl04Config,
   factorDefinitions: RsSl04FactorDefinitions,
   defaultConfig: {
@@ -91,29 +90,29 @@ export const RsSl04: Signal<RsSl04Config, RsSl04Output, RustProjectTag> = {
       const project = yield* RustProjectTag
       return yield* Effect.tryPromise({
         try: async (): Promise<RsSl04Output> => {
-          const facts = await collectRustProjectFacts(project)
           const functionCounts = new Map<string, number>()
           const analyzedSourceFiles = project.sourceFiles.filter(
             (file) => !isExcluded(file, normalizedConfig.exclude_globs),
           )
-          for (const fn of facts.functions) {
-            if (isExcluded(fn.file, normalizedConfig.exclude_globs)) continue
-            functionCounts.set(fn.modulePath, (functionCounts.get(fn.modulePath) ?? 0) + 1)
-          }
 
           const cloneCounts = new Map<string, { file: string; count: number; likelyExpensive: number }>()
           for (const file of analyzedSourceFiles) {
             const scope = resolveRustFileScope(project, file)
             const tree = await parseRustFile(file)
             walkAttributedNodes(tree.rootNode, ({ node, ancestors, testGated }) => {
-              if (testGated || node.type !== "call_expression") return
+              if (testGated) return
+              const { modulePath } = modulePathForAncestors(scope, ancestors)
+              if (node.type === "function_item") {
+                functionCounts.set(modulePath, (functionCounts.get(modulePath) ?? 0) + 1)
+                return
+              }
+              if (node.type !== "call_expression") return
               const fieldExpression = namedChildrenOf(node)[0]
               if (fieldExpression?.type !== "field_expression") return
               const children = namedChildrenOf(fieldExpression)
               const receiver = children[0]?.text ?? ""
               const methodName = children.at(-1)?.text
               if (methodName !== "clone") return
-              const { modulePath } = modulePathForAncestors(scope, ancestors)
               const current = cloneCounts.get(modulePath) ?? {
                 file,
                 count: 0,
