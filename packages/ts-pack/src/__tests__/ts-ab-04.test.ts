@@ -314,6 +314,32 @@ describe("TS-AB-04 (interface to implementation ratio)", () => {
     expect(TsAb04.outputMetadata?.(out)?.applicability).toBe("not_applicable")
   })
 
+  test("structural data interfaces with object defaults are not implementation contracts", async () => {
+    await repo.write(
+      "src/options.ts",
+      [
+        "export interface CommandOptions {",
+        "  readonly cwd: string",
+        "  readonly verbose?: boolean",
+        "}",
+        "export const defaultOptions: CommandOptions = {",
+        "  cwd: process.cwd(),",
+        "}",
+        "export function runCommand(options: CommandOptions) {",
+        "  return options.cwd",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsAb04, TsAb04.defaultConfig)
+
+    expect(out.totalInterfaces).toBe(0)
+    expect(out.pairs).toHaveLength(0)
+    expect(out.flaggedPairs).toHaveLength(0)
+    expect(out.deadInterfaces).toHaveLength(0)
+    expect(TsAb04.score(out)).toBe(1)
+  })
+
   test("interfaces extended by another interface are treated as structural type usage", async () => {
     await repo.write(
       "src/events.ts",

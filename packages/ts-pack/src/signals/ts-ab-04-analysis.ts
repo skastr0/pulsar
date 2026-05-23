@@ -48,7 +48,13 @@ interface TsAb04AnalysisConfig {
   readonly top_n_diagnostics: number
 }
 
-type ImplementationDescriptor = { readonly file: string; readonly name: string }
+type ImplementationKind = "class" | "object-literal"
+
+type ImplementationDescriptor = {
+  readonly file: string
+  readonly name: string
+  readonly kind: ImplementationKind
+}
 
 interface SourceFileGroups {
   readonly productionFiles: ReadonlyArray<SourceFile>
@@ -135,6 +141,13 @@ const addInterfaceImplementationFinding = (
   const key = interfaceKey(iface)
   const productionImplementations = prodImplementations.get(key) ?? []
   const hasTestSubstitute = (testImplementations.get(key) ?? []).length > 0
+  if (
+    productionImplementations.length > 0 &&
+    productionImplementations.every(isObjectLiteralImplementation) &&
+    hasStructuralTypeUsage(iface)
+  ) {
+    return
+  }
   if (productionImplementations.length === 0) {
     addDeadInterfaceFinding(iface, accumulator)
     return
@@ -314,7 +327,7 @@ const buildImplementationIndex = (
       const name = classDeclaration.getName() ?? "<anonymous-class>"
       for (const heritage of classDeclaration.getImplements()) {
         for (const key of resolveInterfaceKeysFromReference(heritage)) {
-          add(key, { file, name })
+          add(key, { file, name, kind: "class" })
         }
       }
     }
@@ -326,6 +339,7 @@ const buildImplementationIndex = (
         add(key, {
           file,
           name: declaration.getName(),
+          kind: "object-literal",
         })
       }
     }
@@ -399,3 +413,6 @@ const compareImplementationDescriptors = (
   if (fileCompare !== 0) return fileCompare
   return left.name.localeCompare(right.name)
 }
+
+const isObjectLiteralImplementation = (descriptor: ImplementationDescriptor): boolean =>
+  descriptor.kind === "object-literal"
