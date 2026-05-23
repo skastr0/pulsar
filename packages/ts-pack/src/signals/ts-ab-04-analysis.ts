@@ -1,5 +1,7 @@
 import {
   type AsExpression,
+  type ClassDeclaration,
+  type ClassExpression,
   type ExpressionWithTypeArguments,
   type ExportDeclaration,
   Node,
@@ -51,6 +53,7 @@ interface TsAb04AnalysisConfig {
 }
 
 type ImplementationKind = "class" | "object-literal"
+type ClassImplementationNode = ClassDeclaration | ClassExpression
 
 type ImplementationDescriptor = {
   readonly file: string
@@ -457,8 +460,8 @@ const buildImplementationIndex = (
   for (const sourceFile of sourceFiles) {
     const file = sourceFile.getFilePath()
 
-    for (const classDeclaration of sourceFile.getClasses()) {
-      const name = classDeclaration.getName() ?? "<anonymous-class>"
+    for (const classDeclaration of classImplementationNodes(sourceFile)) {
+      const name = classImplementationName(classDeclaration)
       for (const heritage of classDeclaration.getImplements()) {
         for (const key of resolveInterfaceKeysFromReference(heritage)) {
           add(key, { file, name, kind: "class" })
@@ -485,6 +488,31 @@ const buildImplementationIndex = (
       [...descriptors.values()].sort(compareImplementationDescriptors),
     ]),
   )
+}
+
+const classImplementationNodes = (
+  sourceFile: SourceFile,
+): ReadonlyArray<ClassImplementationNode> => {
+  const classes: Array<ClassImplementationNode> = []
+  sourceFile.forEachDescendant((node) => {
+    if (Node.isClassDeclaration(node) || Node.isClassExpression(node)) {
+      classes.push(node)
+    }
+  })
+  return classes
+}
+
+const classImplementationName = (classNode: ClassImplementationNode): string => {
+  const name = classNode.getName()
+  if (name !== undefined) return name
+
+  const variableDeclaration = classNode.getFirstAncestorByKind(SyntaxKind.VariableDeclaration)
+  if (variableDeclaration === undefined) return "<anonymous-class>"
+  const initializer = variableDeclaration?.getInitializer()
+  if (initializer !== undefined && containsNode(initializer, classNode)) {
+    return variableDeclaration.getName()
+  }
+  return "<anonymous-class>"
 }
 
 const objectLiteralSubstituteTypeNode = (

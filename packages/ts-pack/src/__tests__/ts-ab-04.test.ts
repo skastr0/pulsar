@@ -249,6 +249,61 @@ describe("TS-AB-04 (interface to implementation ratio)", () => {
     expect(out.flaggedPairs).toHaveLength(0)
   })
 
+  test("class expressions count as production implementations", async () => {
+    await repo.write(
+      "src/class-expression.ts",
+      [
+        "export interface IService {",
+        "  run(): string",
+        "}",
+        "export const ServiceImpl = class implements IService {",
+        "  run() {",
+        "    return 'ok'",
+        "  }",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsAb04, TsAb04.defaultConfig)
+
+    expect(out.pairs).toEqual([
+      expect.objectContaining({
+        interfaceName: "IService",
+        implementationName: "ServiceImpl",
+      }),
+    ])
+    expect(out.deadInterfaces).toHaveLength(0)
+  })
+
+  test("nested class declarations count as production implementations", async () => {
+    await repo.write(
+      "src/factory.ts",
+      [
+        "export interface IService {",
+        "  run(): string",
+        "}",
+        "export function makeService(): IService {",
+        "  class ServiceImpl implements IService {",
+        "    run() {",
+        "      return 'ok'",
+        "    }",
+        "  }",
+        "  return new ServiceImpl()",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsAb04, TsAb04.defaultConfig)
+
+    expect(out.pairs).toEqual([
+      expect.objectContaining({
+        interfaceName: "IService",
+        implementationName: "ServiceImpl",
+      }),
+    ])
+    expect(out.deadInterfaces).toHaveLength(0)
+  })
+
   test("same-named interfaces in different files are matched independently", async () => {
     const unusedFile = await repo.write(
       "src/unused-service.ts",
