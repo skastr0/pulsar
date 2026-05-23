@@ -87,6 +87,33 @@ describe("TS-LD-07 (unsafe type erosion)", () => {
     }
   })
 
+  test("same-line unsafe generic arguments receive distinct finding ids", async () => {
+    await setup()
+    try {
+      await repo.write(
+        "src/signal.ts",
+        [
+          "interface Signal<Config, Output, Requirements> {}",
+          "export interface AnySignal extends Signal<any, any, any> {}",
+          "",
+        ].join("\n"),
+      )
+
+      const out = await runSignal(repo.root, TsLd07, TsLd07.defaultConfig)
+      const heritageOccurrences = out.occurrences.filter(
+        (occurrence) => occurrence.kind === "heritage",
+      )
+      const findingIds = heritageOccurrences.map((occurrence) => occurrence.findingId)
+
+      expect(heritageOccurrences).toHaveLength(3)
+      expect(new Set(findingIds).size).toBe(3)
+      expect(findingIds.every((id) => id.startsWith("2:"))).toBe(true)
+      expect(heritageOccurrences.every((occurrence) => occurrence.boundary)).toBe(true)
+    } finally {
+      await cleanup()
+    }
+  })
+
   test("internal any erosion is visible but lower pressure", async () => {
     await setup()
     try {
