@@ -24,6 +24,10 @@ External pull requests are not the default maintenance path while Pulsar is expe
 
 If a PR is discussed and opened, include the verification commands you ran and call out any user-facing behavior changes.
 
+Signal changes must also follow [Signal Authoring](docs/signals/authoring.md).
+New or changed production signals need real fixture evidence and an updated
+pack signal contract matrix entry in the same change.
+
 ## Local Workflow
 
 ```bash

@@ -1,0 +1,28 @@
+{
+  "name": "@skastr0/pulsar-signal-test-support",
+  "version": "0.1.1",
+  "private": true,
+  "type": "module",
+  "description": "Shared test support for Pulsar signal contract matrices",
+  "license": "MIT",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "test": "bun test ./src --pass-with-no-tests",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo"
+  },
+  "dependencies": {
+    "@skastr0/pulsar-core": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0"
+  }
+}

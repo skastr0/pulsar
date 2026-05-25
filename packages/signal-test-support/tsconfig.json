@@ -7,9 +7,5 @@
     "tsBuildInfoFile": "./tsconfig.tsbuildinfo"
   },
   "include": ["src/**/*.ts"],
-  "references": [
-    { "path": "../core" },
-    { "path": "../signal-test-support" },
-    { "path": "../shared-signals" }
-  ]
+  "references": [{ "path": "../core" }]
 }

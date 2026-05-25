@@ -8,6 +8,10 @@ judgment, or hidden project exceptions. A composite is valid when a reader can
 trace the result from named primitive outputs, through declared normalization
 and weights, into a visible score and rationale.
 
+For the current production authoring gate, use
+[Signal Authoring](../signals/authoring.md). This exploration remains the
+composite-specific design background and reference model.
+
 The current executable SDK lives in
 [packages/core/src/composite.ts](../../packages/core/src/composite.ts) and is
 tested in

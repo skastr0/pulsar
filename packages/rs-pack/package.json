@@ -50,6 +50,7 @@
     "web-tree-sitter": "^0.25.0"
   },
   "devDependencies": {
+    "@skastr0/pulsar-signal-test-support": "workspace:*",
     "@skastr0/pulsar-ts-pack": "0.1.1",
     "typescript": "^5.8.0"
   }

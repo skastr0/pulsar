@@ -107,15 +107,16 @@
       "name": "@skastr0/pulsar-rs-pack",
       "version": "0.1.1",
       "dependencies": {
-        "@skastr0/pulsar-core": "workspace:*",
-        "@skastr0/pulsar-shared-signals": "workspace:*",
+        "@skastr0/pulsar-core": "0.1.1",
+        "@skastr0/pulsar-shared-signals": "0.1.1",
         "effect": "^3.0.0",
         "simple-git": "^3.25.0",
         "tree-sitter-rust": "^0.24.0",
         "web-tree-sitter": "^0.25.0",
       },
       "devDependencies": {
-        "@skastr0/pulsar-ts-pack": "workspace:*",
+        "@skastr0/pulsar-signal-test-support": "workspace:*",
+        "@skastr0/pulsar-ts-pack": "0.1.1",
         "typescript": "^5.8.0",
       },
     },
@@ -128,6 +129,17 @@
         "yaml": "^2.9.0",
       },
       "devDependencies": {
+        "@skastr0/pulsar-signal-test-support": "workspace:*",
+        "typescript": "^5.8.0",
+      },
+    },
+    "packages/signal-test-support": {
+      "name": "@skastr0/pulsar-signal-test-support",
+      "version": "0.1.1",
+      "dependencies": {
+        "@skastr0/pulsar-core": "workspace:*",
+      },
+      "devDependencies": {
         "typescript": "^5.8.0",
       },
     },
@@ -135,13 +147,14 @@
       "name": "@skastr0/pulsar-ts-pack",
       "version": "0.1.1",
       "dependencies": {
-        "@skastr0/pulsar-core": "workspace:*",
-        "@skastr0/pulsar-shared-signals": "workspace:*",
+        "@skastr0/pulsar-core": "0.1.1",
+        "@skastr0/pulsar-shared-signals": "0.1.1",
         "effect": "^3.0.0",
         "simple-git": "^3.25.0",
         "ts-morph": "^24.0.0",
       },
       "devDependencies": {
+        "@skastr0/pulsar-signal-test-support": "workspace:*",
         "typescript": "^5.8.0",
       },
     },
@@ -178,6 +191,8 @@
     "@skastr0/pulsar-rs-pack": ["@skastr0/pulsar-rs-pack@workspace:packages/rs-pack"],
 
     "@skastr0/pulsar-shared-signals": ["@skastr0/pulsar-shared-signals@workspace:packages/shared-signals"],
+
+    "@skastr0/pulsar-signal-test-support": ["@skastr0/pulsar-signal-test-support@workspace:packages/signal-test-support"],
 
     "@skastr0/pulsar-ts-pack": ["@skastr0/pulsar-ts-pack@workspace:packages/ts-pack"],
 

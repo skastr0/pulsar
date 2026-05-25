@@ -49,6 +49,7 @@ Pulsar defaults are generic, always.
 ## Workflow Conventions
 
 - Before changing signal semantics, identify whether the change is generic signal logic, repo calibration, framework calibration, or score weighting.
+- When adding or changing production signals, follow `docs/signals/authoring.md` and update the pack signal contract matrix in the same change.
 - Do not broaden defaults to satisfy one repo unless the rule is genuinely reusable.
 - Do not promote Pulsar's self-calibration vocabulary into core unless it is a generic, conventional term a new user would reasonably expect.
 - When extracting calibration, preserve current behavior first, then move rules into the correct layer.

@@ -89,6 +89,13 @@ bun run verify
 
 `bun run verify` is the public baseline used by CI.
 
+## Signal Authoring
+
+Production signals must use real repository-shaped fixtures and cite their
+correctness evidence in the pack signal contract matrix. See
+[Signal Authoring](docs/signals/authoring.md) for the required claim contract,
+fixture substrate, evidence categories, cache expectations, and review gates.
+
 ## Configuration
 
 Repo-owned Pulsar files live under `.pulsar/`. The public, diffable files are expected to be committed when they define repository scoring behavior:

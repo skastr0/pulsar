@@ -49,6 +49,7 @@
     "ts-morph": "^24.0.0"
   },
   "devDependencies": {
+    "@skastr0/pulsar-signal-test-support": "workspace:*",
     "typescript": "^5.8.0"
   }
 }
