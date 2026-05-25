@@ -3,7 +3,10 @@ export {
   computeGitRevisionContextHash,
   computeWorktreeContentHash,
 } from "./scoring-engine-git-content-hash.js"
-export { collectWorktreeChangedHunks } from "./scoring-engine-git-diff.js"
+export {
+  collectChangedHunksForRange,
+  collectWorktreeChangedHunks,
+} from "./scoring-engine-git-diff.js"
 export { resolveRange } from "./scoring-engine-git-range.js"
 export {
   acquireWorktree,

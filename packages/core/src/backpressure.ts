@@ -4,7 +4,10 @@ import { categoryOutputOrEmpty } from "./observer-model.js"
 import { type TimeSeriesEntry } from "./time-series.js"
 import { backpressureConfigOf, type BackpressureConfig, type PulsarVector } from "./vector.js"
 
-export { projectObserverForAgent } from "./goodhart.js"
+export {
+  projectObserverForAgent,
+  selectGoodhartHoldoutSignalIds,
+} from "./goodhart.js"
 
 export type BackpressureLevel = "green" | "yellow" | "red"
 

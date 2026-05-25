@@ -42,24 +42,36 @@ export const runCoreCommand = async (
 }
 
 const runScore = async (commandArgs: ReadonlyArray<string>): Promise<void> => {
-  const flagsWithValues = new Set(["--signal", "--vector", "--category"])
+  const flagsWithValues = new Set(["--signal", "--vector", "--category", "--diff"])
   rejectUnknownFlags(
     "score",
     commandArgs,
-    new Set([...flagsWithValues, "--json", "--ci", "--profile", "--no-progress"]),
+    new Set([
+      ...flagsWithValues,
+      "--json",
+      "--ci",
+      "--profile",
+      "--changed-only",
+      "--agent-view",
+      "--no-progress",
+    ]),
   )
   const repoPath = collectPositional(commandArgs, flagsWithValues)[0] ?? "."
   const signalId = parseArg(commandArgs, "--signal")
   const vectorPath = parseArg(commandArgs, "--vector")
+  const diffRange = parseArg(commandArgs, "--diff")
   const category = parseCategory(parseArg(commandArgs, "--category"))
   const scoreOptions = {
     repoPath,
     ...(signalId !== undefined ? { signalId } : {}),
     ...(vectorPath !== undefined ? { vectorPath } : {}),
+    ...(diffRange !== undefined ? { diffRange } : {}),
     ...(category !== undefined ? { category } : {}),
     ...(commandArgs.includes("--json") ? { json: true } : {}),
     ...(commandArgs.includes("--ci") ? { ci: true } : {}),
     ...(commandArgs.includes("--profile") ? { profile: true } : {}),
+    ...(commandArgs.includes("--changed-only") ? { changedOnly: true } : {}),
+    ...(commandArgs.includes("--agent-view") ? { agentView: true } : {}),
   } satisfies Parameters<typeof runScoreCommand>[0]
 
   const exitCode = await runWithProgress("score", commandArgs, () =>

@@ -210,6 +210,73 @@ describe("pulsar score", () => {
     }
   }, 120_000)
 
+  test("score --diff --changed-only --agent-view emits diff trust JSON for worktree changes", async () => {
+    const repoPath = await initRepo(simpleRepoFiles())
+    try {
+      await writeRepoFile(
+        repoPath,
+        "src/a.ts",
+        "import { b } from './b'\nexport const a = b + 1\n",
+      )
+
+      const first = runCli(repoPath, [
+        "score",
+        "--diff",
+        "HEAD..WORKTREE",
+        "--changed-only",
+        "--agent-view",
+        "--json",
+        ".",
+      ])
+      const second = runCli(repoPath, [
+        "score",
+        "--diff",
+        "HEAD..WORKTREE",
+        "--changed-only",
+        "--agent-view",
+        "--json",
+        ".",
+      ])
+      expect([0, 2]).toContain(first.status ?? -1)
+      expect([0, 2]).toContain(second.status ?? -1)
+      const parsed = JSON.parse(String(first.stdout))
+      const repeated = JSON.parse(String(second.stdout))
+
+      expect(parsed.diff).toMatchObject({
+        range: "HEAD..WORKTREE",
+        base_ref: "HEAD",
+        head_ref: "WORKTREE",
+        changed_only: true,
+      })
+      expect(parsed.diff.changed_files).toContain("src/a.ts")
+      expect(parsed.agent_view.enabled).toBe(true)
+      expect(Array.isArray(parsed.agent_view.visible_signal_ids)).toBe(true)
+      expect(parsed.agent_view.hidden_signal_ids).toEqual(
+        repeated.agent_view.hidden_signal_ids,
+      )
+      expect(["pass", "route", "block"]).toContain(parsed.gate_decision.status)
+      expect(parsed.category_changes).toHaveProperty("security-risk")
+      expect(Array.isArray(parsed.introduced_diagnostics)).toBe(true)
+      expect(Array.isArray(parsed.changed_only_diagnostics)).toBe(true)
+      expect(parsed.changed_only_diagnostics.length).toBeGreaterThan(0)
+      expect(parsed.trust.final_status).toBe(parsed.gate_decision.status)
+      expect(parsed.changed_only_diagnostics[0]).toHaveProperty("fix_hints")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
+  test("score --diff rejects invalid range syntax", async () => {
+    const repoPath = await initRepo(simpleRepoFiles())
+    try {
+      const out = runCli(repoPath, ["score", "--diff", "HEAD...WORKTREE", "."])
+      expect(out.status).toBe(1)
+      expect(out.stderr).toContain("score --diff must be <base>..<head|WORKTREE>")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
   test("score rejects unknown flags instead of silently ignoring them", async () => {
     const repoPath = await initRepo(simpleRepoFiles())
     try {

@@ -35,6 +35,7 @@ import { Effect, Layer } from "effect"
 import { loadProjectModuleCalibrationContext } from "./runtime-calibration.js"
 import {
   readHeadSha,
+  resolveGitRef,
   resolveRepoRoot,
   withDetachedWorktreeAtRef,
 } from "./runtime-git.js"
@@ -48,6 +49,7 @@ import {
 
 export {
   readHeadSha,
+  resolveGitRef,
   resolveRepoRoot,
   withDetachedWorktreeAtRef,
   buildPulsarRegistry,

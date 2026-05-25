@@ -6,6 +6,7 @@ const HELP_SECTIONS: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [
     [
       "  pulsar score [<repo-path>]",
       "  pulsar score --signal <id> [<repo-path>]",
+      "  pulsar score --diff <base>..<head|WORKTREE> [--changed-only] [--agent-view] [<repo-path>]",
       "  pulsar baseline <set|refresh|show> [<repo-path>]",
       "  pulsar backpressure [--trend] [--vector <path>] [<repo-path>]",
       "  pulsar bisect --signal <id> --range <from>..<to> [<repo-path>]",
@@ -43,6 +44,9 @@ const HELP_SECTIONS: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [
       "  --vector <path>      Load a specific pulsar vector JSON.",
       "  --json               Emit ObserverOutput JSON plus CLI vector source metadata.",
       "  --category <name>    Human output for one category only.",
+      "  --diff <a>..<b>      Compare Observer output for a base/head range; head may be WORKTREE.",
+      "  --changed-only       Add changed-file/hunk scoped diagnostic guidance for --diff.",
+      "  --agent-view         Suppress score-chasing human output and show trust routing.",
       "  --ci                 Apply baseline ratcheting and exit 2 on new violations.",
       "  --profile            Include runtime attribution and bypass observer cache.",
     ],
@@ -148,6 +152,8 @@ const HELP_SECTIONS: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [
     [
       "  pulsar score .",
       "  pulsar score --json .",
+      "  pulsar score --diff main..HEAD --agent-view --json .",
+      "  pulsar score --diff main..WORKTREE --changed-only --agent-view .",
       "  pulsar score --profile --category generated-slop .",
       "  pulsar score --category legibility-decay .",
       "  pulsar score --ci .",

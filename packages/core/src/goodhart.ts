@@ -63,6 +63,20 @@ export const evaluateGoodhart = (
   )
 }
 
+export const selectGoodhartHoldoutSignalIds = (
+  signalIds: ReadonlyArray<string>,
+  timestamp: string,
+  vector: PulsarVector | undefined,
+): ReadonlyArray<string> => {
+  const config = backpressureConfigOf(vector).goodhart
+  return pickHiddenSignals(
+    signalIds,
+    timestamp,
+    config.rotation_period_days,
+    config.holdout_ratio,
+  )
+}
+
 type GoodhartConfig = BackpressureConfig["goodhart"]
 
 interface GoodhartScoreSlices {
