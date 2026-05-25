@@ -779,4 +779,199 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "ts-sl-02.test.ts: fixtures use real git commits with authored dates and git blame ranges, prove same-commit vs different-commit behavior, unknown blame fallback, invalid gitSha deterministic HEAD-time fallback, and cache dependency declaration for history-sensitive output.",
     },
   },
+  {
+    id: "TS-SEC-01-dangerous-capability-surface",
+    status: "verified",
+    evidence: {
+      identity:
+        "ts-trust-signals.test.ts: canonical id, alias, title, tier/category/kind, semantic cacheVersion, pack registration, registry alias lookup, and default config decoding are asserted.",
+      config:
+        "ts-trust-signals.test.ts: default config decodes and factor ledger exposes config.exclude_globs, review_route_weight, and top_n_diagnostics through config factor definitions.",
+      positiveFixture:
+        "ts-trust-signals.test.ts: real TsProject fixture flags child_process import/use and eval call as dangerous capability surface.",
+      negativeFixture:
+        "ts-trust-signals.test.ts: test fixture path containing eval is excluded by default production excludes.",
+      applicability:
+        "ts-trust-signals.test.ts: empty/value-only fixture runs through state zero with score 1 during identity/factor-ledger checks.",
+      score:
+        "ts-trust-signals.test.ts: dangerous capability fixture lowers score below 1 while excluded-only evidence does not affect score.",
+      diagnostics:
+        "ts-trust-signals.test.ts: diagnostics include severity, file/line/column, structured kind/sink payload, stable hash, and remediation fix hint.",
+      factorLedger:
+        "ts-trust-signals.test.ts: registered signal emits config.top_n_diagnostics and other default config factor-ledger entries.",
+      cacheSemantics:
+        "ts-trust-signals.test.ts and pack.test.ts: wrapped pack cache version includes the TS-SEC-01 semantic cacheVersion.",
+    },
+  },
+  {
+    id: "TS-SEC-02-untrusted-boundary-sinks",
+    status: "verified",
+    evidence: {
+      identity:
+        "ts-trust-signals.test.ts: canonical id, alias, title, tier/category/kind, semantic cacheVersion, pack registration, registry alias lookup, and default config decoding are asserted.",
+      config:
+        "ts-trust-signals.test.ts: configSchema decodes boundary_globs, parser_call_patterns, exclude_globs, and top_n_diagnostics defaults with factor-ledger coverage.",
+      positiveFixture:
+        "ts-trust-signals.test.ts: boundary route fixture flags raw JSON.parse and unconstrained fetch URL use.",
+      negativeFixture:
+        "ts-trust-signals.test.ts: schema-wrapped JSON.parse is accepted and does not produce an extra finding.",
+      applicability:
+        "ts-trust-signals.test.ts: identity/factor-ledger value-only fixture exercises no-boundary/no-finding neutral behavior; signal source distinguishes absent and not_configured boundary evidence.",
+      score:
+        "ts-trust-signals.test.ts: untrusted sink fixture lowers score below 1 and schema-covered evidence does not add pressure.",
+      diagnostics:
+        "ts-trust-signals.test.ts: diagnostics include sink kind, location, structured missingEvidence payload, stable hash, and add-boundary-parser fix hint.",
+      factorLedger:
+        "ts-trust-signals.test.ts: registered signal emits config.top_n_diagnostics and parser/boundary config factor-ledger entries.",
+      cacheSemantics:
+        "ts-trust-signals.test.ts and pack.test.ts: wrapped pack cache version includes the TS-SEC-02 semantic cacheVersion.",
+    },
+  },
+  {
+    id: "TS-SEC-03-secret-material",
+    status: "verified",
+    evidence: {
+      identity:
+        "ts-trust-signals.test.ts: canonical id, alias, title, tier/category/kind, semantic cacheVersion, pack registration, registry alias lookup, and default config decoding are asserted.",
+      config:
+        "ts-trust-signals.test.ts: configSchema decodes min_entropy, min_secret_length, exclude_globs, and top_n_diagnostics defaults with factor-ledger coverage.",
+      positiveFixture:
+        "ts-trust-signals.test.ts: source fixture with sk-prefixed literal produces a known-secret-prefix finding.",
+      negativeFixture:
+        "ts-trust-signals.test.ts: placeholder token literal is ignored and not counted as secret material.",
+      applicability:
+        "ts-trust-signals.test.ts: value-only fixture exercises zero state with score 1 during identity/factor-ledger checks.",
+      score:
+        "ts-trust-signals.test.ts: committed secret-shaped literal lowers score below 1 and produces block severity.",
+      diagnostics:
+        "ts-trust-signals.test.ts: diagnostics include redacted secret data, location, stable hash, block severity, and remove-secret-material fix hint.",
+      factorLedger:
+        "ts-trust-signals.test.ts: registered signal emits config.top_n_diagnostics plus entropy/length config factor-ledger entries.",
+      cacheSemantics:
+        "ts-trust-signals.test.ts and pack.test.ts: wrapped pack cache version includes the TS-SEC-03 semantic cacheVersion.",
+    },
+  },
+  {
+    id: "TS-CC-01-async-failure-control",
+    status: "verified",
+    evidence: {
+      identity:
+        "ts-trust-signals.test.ts: canonical id, alias, title, tier/category/kind, semantic cacheVersion, pack registration, registry alias lookup, and default config decoding are asserted.",
+      config:
+        "ts-trust-signals.test.ts: configSchema decodes async_name_patterns, exclude_globs, and top_n_diagnostics defaults with factor-ledger coverage.",
+      positiveFixture:
+        "ts-trust-signals.test.ts: fixture flags floating fetch, swallowed Promise.catch, and empty catch block.",
+      negativeFixture:
+        "ts-trust-signals.test.ts: awaited fetch in the same fixture does not produce a floating-promise finding.",
+      applicability:
+        "ts-trust-signals.test.ts: value-only fixture exercises zero state with score 1 during identity/factor-ledger checks.",
+      score:
+        "ts-trust-signals.test.ts: async failure-control findings lower score below 1.",
+      diagnostics:
+        "ts-trust-signals.test.ts: diagnostics include finding kind, expression, location, stable hash, and async-failure-control fix hint.",
+      factorLedger:
+        "ts-trust-signals.test.ts: registered signal emits config.top_n_diagnostics and async-name/exclude config factor-ledger entries.",
+      cacheSemantics:
+        "ts-trust-signals.test.ts and pack.test.ts: wrapped pack cache version includes the TS-CC-01 semantic cacheVersion.",
+    },
+  },
+  {
+    id: "TS-CC-02-unbounded-concurrency",
+    status: "verified",
+    evidence: {
+      identity:
+        "ts-trust-signals.test.ts: canonical id, alias, title, tier/category/kind, semantic cacheVersion, pack registration, registry alias lookup, and default config decoding are asserted.",
+      config:
+        "ts-trust-signals.test.ts: configSchema decodes limiter_name_patterns, exclude_globs, and top_n_diagnostics defaults with factor-ledger coverage.",
+      positiveFixture:
+        "ts-trust-signals.test.ts: Promise.all(items.map(async ...)) fixture produces unbounded fanout finding.",
+      negativeFixture:
+        "ts-trust-signals.test.ts: pLimit-wrapped Promise.all map in the same fixture is accepted.",
+      applicability:
+        "ts-trust-signals.test.ts: value-only fixture exercises zero state with score 1 during identity/factor-ledger checks.",
+      score:
+        "ts-trust-signals.test.ts: unbounded fanout finding lowers score below 1.",
+      diagnostics:
+        "ts-trust-signals.test.ts: diagnostics include iterable, expression, location, stable hash, and add-concurrency-limiter fix hint.",
+      factorLedger:
+        "ts-trust-signals.test.ts: registered signal emits config.top_n_diagnostics and limiter/exclude config factor-ledger entries.",
+      cacheSemantics:
+        "ts-trust-signals.test.ts and pack.test.ts: wrapped pack cache version includes the TS-CC-02 semantic cacheVersion.",
+    },
+  },
+  {
+    id: "TS-BP-01-public-api-signature-diff",
+    status: "verified",
+    requiredEvidence: ["gitContext"],
+    evidence: {
+      identity:
+        "ts-trust-signals.test.ts: canonical id, alias, title, tier/category/kind, semantic cacheVersion, pack registration, registry alias lookup, and default config decoding are asserted.",
+      config:
+        "ts-trust-signals.test.ts: configSchema decodes exclude_globs and top_n_diagnostics defaults with factor-ledger coverage.",
+      positiveFixture:
+        "ts-trust-signals.test.ts: changed-hunk fixture touching exported interface produces a behavior-preservation finding.",
+      negativeFixture:
+        "ts-trust-signals.test.ts: same public API file with no changed hunks has zero changedPublicSignatures and no diagnostics.",
+      applicability:
+        "ts-trust-signals.test.ts: exported-signature fixture distinguishes present changed API, zero unchanged API, and value-only not-applicable/neutral behavior.",
+      score:
+        "ts-trust-signals.test.ts: changed public signature lowers score below 1 while unchanged API scores 1.",
+      diagnostics:
+        "ts-trust-signals.test.ts: diagnostics include export name, declaration kind, signature, location, stable hash, and document-api-change fix hint.",
+      factorLedger:
+        "ts-trust-signals.test.ts: registered signal emits config.top_n_diagnostics and exclude config factor-ledger entries.",
+      cacheSemantics:
+        "ts-trust-signals.test.ts and pack.test.ts: wrapped pack cache version includes the TS-BP-01 semantic cacheVersion; output records changed-hunk cache contributor.",
+      gitContext:
+        "ts-trust-signals.test.ts: custom SignalContextTag changedHunks fixture proves diagnostics are emitted only when hunks overlap exported declarations.",
+    },
+  },
+  {
+    id: "TS-SL-05-phantom-tests",
+    status: "verified",
+    evidence: {
+      identity:
+        "ts-trust-signals.test.ts: canonical id, alias, title, tier/category/kind, semantic cacheVersion, pack registration, registry alias lookup, and default config decoding are asserted.",
+      config:
+        "ts-trust-signals.test.ts: configSchema decodes test_globs, exclude_globs, and top_n_diagnostics defaults with factor-ledger coverage.",
+      positiveFixture:
+        "ts-trust-signals.test.ts: test block with no assertion evidence produces a phantom-test finding.",
+      negativeFixture:
+        "ts-trust-signals.test.ts: test block with expect(...).toBe(...) is accepted.",
+      applicability:
+        "ts-trust-signals.test.ts: non-test fixture is not_applicable/neutral during identity checks; test fixture with blocks is applicable.",
+      score:
+        "ts-trust-signals.test.ts: phantom test lowers score according to findings/testBlocks ratio.",
+      diagnostics:
+        "ts-trust-signals.test.ts: diagnostics include runner/testName, location, stable hash, and add-test-oracle fix hint.",
+      factorLedger:
+        "ts-trust-signals.test.ts: registered signal emits config.top_n_diagnostics plus test/exclude config factor-ledger entries.",
+      cacheSemantics:
+        "ts-trust-signals.test.ts and pack.test.ts: wrapped pack cache version includes the TS-SL-05 semantic cacheVersion.",
+    },
+  },
+  {
+    id: "TS-SL-06-confidence-claim-mismatch",
+    status: "verified",
+    evidence: {
+      identity:
+        "ts-trust-signals.test.ts: canonical id, alias, title, tier/category/kind, semantic cacheVersion, pack registration, registry alias lookup, and default config decoding are asserted.",
+      config:
+        "ts-trust-signals.test.ts: configSchema decodes claim_name_patterns, exclude_globs, and top_n_diagnostics defaults with factor-ledger coverage.",
+      positiveFixture:
+        "ts-trust-signals.test.ts: validateUser returning true and parseUser casting raw input produce confidence-claim findings.",
+      negativeFixture:
+        "ts-trust-signals.test.ts: type-predicate isString with typeof guard is accepted.",
+      applicability:
+        "ts-trust-signals.test.ts: value-only fixture is not_applicable/neutral during identity checks; claim fixture is applicable.",
+      score:
+        "ts-trust-signals.test.ts: claim mismatch lowers score below 1 according to findings/claimFunctions ratio.",
+      diagnostics:
+        "ts-trust-signals.test.ts: diagnostics include symbol, claimKind, location, stable hash, and align-confidence-claim fix hint.",
+      factorLedger:
+        "ts-trust-signals.test.ts: registered signal emits config.top_n_diagnostics plus claim-name/exclude config factor-ledger entries.",
+      cacheSemantics:
+        "ts-trust-signals.test.ts and pack.test.ts: wrapped pack cache version includes the TS-SL-06 semantic cacheVersion.",
+    },
+  },
 ]

@@ -88,6 +88,9 @@ describe("Observer + TS pack integration", () => {
         "TS-AD-03-reexport-depth",
         "TS-AD-04-boundary-parser-coverage",
         "TS-AD-05-boundary-trust-breach",
+        "TS-BP-01-public-api-signature-diff",
+        "TS-CC-01-async-failure-control",
+        "TS-CC-02-unbounded-concurrency",
         "TS-DE-01-type-level-coupling",
         "TS-DE-02-fan-in-fan-out",
         "TS-DE-03-propagation-cost",
@@ -104,10 +107,15 @@ describe("Observer + TS pack integration", () => {
         "TS-LD-09-error-channel-opacity",
         "TS-RP-01-hotspots",
         "TS-RP-02-pr-size",
+        "TS-SEC-01-dangerous-capability-surface",
+        "TS-SEC-02-untrusted-boundary-sinks",
+        "TS-SEC-03-secret-material",
         "TS-SL-01-duplication",
         "TS-SL-02-inconsistent-clones",
         "TS-SL-03-suppressions",
         "TS-SL-04-unfinished-implementations",
+        "TS-SL-05-phantom-tests",
+        "TS-SL-06-confidence-claim-mismatch",
       ])
 
       // Overall shape invariants.
@@ -122,10 +130,13 @@ describe("Observer + TS pack integration", () => {
       expect(Object.keys(out.categories).sort()).toEqual([
         "abstraction-bloat",
         "architectural-drift",
+        "behavior-preservation",
+        "concurrency-safety",
         "dependency-entropy",
         "generated-slop",
         "legibility-decay",
         "review-pain",
+        "security-risk",
       ])
 
       // Hard-gate status must stay consistent with the collected

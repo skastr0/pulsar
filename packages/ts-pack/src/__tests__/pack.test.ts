@@ -9,6 +9,9 @@ import { TsAd02 } from "../signals/ts-ad-02-circular-deps.js"
 import { TsAd03 } from "../signals/ts-ad-03-reexport-depth.js"
 import { TsAd04 } from "../signals/ts-ad-04-boundary-parser-coverage.js"
 import { TsAd05 } from "../signals/ts-ad-05-boundary-trust-breach.js"
+import { TsBp01 } from "../signals/ts-bp-01-public-api-signature-diff.js"
+import { TsCc01 } from "../signals/ts-cc-01-async-failure-control.js"
+import { TsCc02 } from "../signals/ts-cc-02-unbounded-concurrency.js"
 import { TsDe01 } from "../signals/ts-de-01-type-level-coupling.js"
 import { TsDe02 } from "../signals/ts-de-02-fan-in-out.js"
 import { TsDe03 } from "../signals/ts-de-03-propagation-cost.js"
@@ -21,10 +24,15 @@ import { TsLd08 } from "../signals/ts-ld-08-exhaustiveness-erosion.js"
 import { TsLd09 } from "../signals/ts-ld-09-error-channel-opacity.js"
 import { TsRp01 } from "../signals/ts-rp-01-hotspots.js"
 import { TsRp02 } from "../signals/ts-rp-02-pr-size.js"
+import { TsSec01 } from "../signals/ts-sec-01-dangerous-capability-surface.js"
+import { TsSec02 } from "../signals/ts-sec-02-untrusted-boundary-sinks.js"
+import { TsSec03 } from "../signals/ts-sec-03-secret-material.js"
 import { TsSl01 } from "../signals/ts-sl-01-duplication.js"
 import { TsSl02 } from "../signals/ts-sl-02-inconsistent-clones.js"
 import { TsSl03 } from "../signals/ts-sl-03-suppressions.js"
 import { TsSl04 } from "../signals/ts-sl-04-empty-implementations.js"
+import { TsSl05 } from "../signals/ts-sl-05-phantom-tests.js"
+import { TsSl06 } from "../signals/ts-sl-06-confidence-claim-mismatch.js"
 
 describe("TS pack cache versions", () => {
   test("pack wrapper preserves signal-specific cache versions", () => {
@@ -32,6 +40,12 @@ describe("TS pack cache versions", () => {
     const ad03 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-AD-03"))
     const ad04 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-AD-04"))
     const ad05 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-AD-05"))
+    const sec01 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-SEC-01"))
+    const sec02 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-SEC-02"))
+    const sec03 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-SEC-03"))
+    const cc01 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-CC-01"))
+    const cc02 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-CC-02"))
+    const bp01 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-BP-01"))
     const de01 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-DE-01"))
     const de02 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-DE-02"))
     const de03 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-DE-03"))
@@ -48,6 +62,8 @@ describe("TS pack cache versions", () => {
     const sl02 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-SL-02"))
     const sl03 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-SL-03"))
     const sl04 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-SL-04"))
+    const sl05 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-SL-05"))
+    const sl06 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-SL-06"))
     const ab01 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-AB-01"))
     const ab02 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-AB-02"))
     const ab03 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-AB-03"))
@@ -58,6 +74,12 @@ describe("TS pack cache versions", () => {
     expect(ad03?.cacheVersion).toContain(TsAd03.cacheVersion)
     expect(ad04?.cacheVersion).toContain(TsAd04.cacheVersion)
     expect(ad05?.cacheVersion).toContain(TsAd05.cacheVersion)
+    expect(sec01?.cacheVersion).toContain(TsSec01.cacheVersion)
+    expect(sec02?.cacheVersion).toContain(TsSec02.cacheVersion)
+    expect(sec03?.cacheVersion).toContain(TsSec03.cacheVersion)
+    expect(cc01?.cacheVersion).toContain(TsCc01.cacheVersion)
+    expect(cc02?.cacheVersion).toContain(TsCc02.cacheVersion)
+    expect(bp01?.cacheVersion).toContain(TsBp01.cacheVersion)
     expect(de01?.cacheVersion).toContain(TsDe01.cacheVersion)
     expect(de02?.cacheVersion).toContain(TsDe02.cacheVersion)
     expect(de03?.cacheVersion).toContain(TsDe03.cacheVersion)
@@ -79,12 +101,14 @@ describe("TS pack cache versions", () => {
     expect(sl02?.cacheVersion).toContain(TsSl02.cacheVersion)
     expect(sl03?.cacheVersion).toContain(TsSl03.cacheVersion)
     expect(sl04?.cacheVersion).toContain(TsSl04.cacheVersion)
+    expect(sl05?.cacheVersion).toContain(TsSl05.cacheVersion)
+    expect(sl06?.cacheVersion).toContain(TsSl06.cacheVersion)
   })
 
   test("all TypeScript signals expose semantic ids, aliases, and titles", () => {
     for (const signal of TS_PACK_SIGNALS.filter((signal) => signal.id.startsWith("TS-"))) {
-      expect(signal.id).toMatch(/^TS-[A-Z]{2}-\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*$/)
-      expect(signal.aliases?.[0]).toMatch(/^TS-[A-Z]{2}-\d{2}$/)
+      expect(signal.id).toMatch(/^TS-[A-Z]{2,3}-\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*$/)
+      expect(signal.aliases?.[0]).toMatch(/^TS-[A-Z]{2,3}-\d{2}$/)
       expect(signal.title).toBeTruthy()
     }
   })

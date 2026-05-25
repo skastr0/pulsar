@@ -242,6 +242,19 @@ export const TsLd09: Signal<TsLd09Config, TsLd09Output, TsProjectTag> = {
         densityThreshold: out.densityThreshold,
         boundaryThreshold: out.boundaryThreshold,
       },
+      fixHints: [{
+        kind: "make-error-channel-explicit",
+        title: "Expose the failure contract",
+        summary:
+          "Map unknown throws/rejections into a domain error, return a typed Result/Either/Effect error channel, or preserve the rejection instead of collapsing it.",
+        confidence: "medium",
+        autoApplicable: false,
+        data: {
+          kind: finding.kind,
+          symbol: finding.symbol,
+          boundary: finding.boundary,
+        },
+      }],
     })),
   outputMetadata: (out) =>
     out.state === "not_applicable" ? { applicability: "not_applicable" as const } : undefined,

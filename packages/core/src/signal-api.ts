@@ -1,9 +1,10 @@
 export { CATEGORIES, type Category } from "./category.js"
 export {
-  type Diagnostic,
-  type DiagnosticFixHint,
+  Diagnostic as DiagnosticSchema,
+  DiagnosticFixHint as DiagnosticFixHintSchema,
   computeDiagnosticHash,
 } from "./diagnostic.js"
+export type { Diagnostic, DiagnosticFixHint } from "./diagnostic.js"
 export {
   ReferenceDataTag,
   SignalContextTag,

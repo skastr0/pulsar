@@ -11,8 +11,27 @@ import {
 } from "@skastr0/pulsar-project-module-sdk"
 
 export const CONVEX_PROJECT_MODULE_ID = "@skastr0/pulsar-project-module-convex" as const
+export const CONVEX_TECHNOLOGY_PACK_ID = "@skastr0/pulsar-convex-pack" as const
 export const CONVEX_GENERATED_TAXONOMY_RULE_ID = "convex.generated-artifact.v1" as const
 export const CONVEX_PUBLIC_ENTRYPOINT_RULE_ID = "convex.public-entrypoint.v1" as const
+
+export interface TechnologyPackSignalDescriptor {
+  readonly id: string
+  readonly title: string
+  readonly category: string
+  readonly enforcementCeiling: ReadonlyArray<string>
+  readonly activationEvidence: ReadonlyArray<string>
+}
+
+export const convexPackSignals: ReadonlyArray<TechnologyPackSignalDescriptor> = [
+  {
+    id: "CONVEX-TS-01-runtime-boundary-schema",
+    title: "Convex runtime boundary schema",
+    category: "security-risk",
+    enforcementCeiling: ["review-route"],
+    activationEvidence: ["package dependency: convex", "source directory: convex"],
+  },
+]
 
 export const convexProjectModule = defineProjectModule({
   id: CONVEX_PROJECT_MODULE_ID,
@@ -59,6 +78,12 @@ export const convexProjectModule = defineProjectModule({
     }),
   ],
 })
+
+export const convexTechnologyPack = {
+  id: CONVEX_TECHNOLOGY_PACK_ID,
+  projectModule: convexProjectModule,
+  signals: convexPackSignals,
+} as const
 
 export const isConvexGeneratedPath = (filePath: string): boolean => {
   const normalized = filePath.replaceAll("\\", "/")

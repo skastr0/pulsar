@@ -10,6 +10,9 @@ import { TsAd02 } from "./signals/ts-ad-02-circular-deps.js"
 import { TsAd03 } from "./signals/ts-ad-03-reexport-depth.js"
 import { TsAd04 } from "./signals/ts-ad-04-boundary-parser-coverage.js"
 import { TsAd05 } from "./signals/ts-ad-05-boundary-trust-breach.js"
+import { TsBp01 } from "./signals/ts-bp-01-public-api-signature-diff.js"
+import { TsCc01 } from "./signals/ts-cc-01-async-failure-control.js"
+import { TsCc02 } from "./signals/ts-cc-02-unbounded-concurrency.js"
 import { TsDe01 } from "./signals/ts-de-01-type-level-coupling.js"
 import { TsDe02 } from "./signals/ts-de-02-fan-in-out.js"
 import { TsDe03 } from "./signals/ts-de-03-propagation-cost.js"
@@ -25,14 +28,19 @@ import { TsLd07 } from "./signals/ts-ld-07-unsafe-type-erosion.js"
 import { TsLd08 } from "./signals/ts-ld-08-exhaustiveness-erosion.js"
 import { TsLd09 } from "./signals/ts-ld-09-error-channel-opacity.js"
 import { TsRp01 } from "./signals/ts-rp-01-hotspots.js"
+import { TsRp02 } from "./signals/ts-rp-02-pr-size.js"
+import { TsSec01 } from "./signals/ts-sec-01-dangerous-capability-surface.js"
+import { TsSec02 } from "./signals/ts-sec-02-untrusted-boundary-sinks.js"
+import { TsSec03 } from "./signals/ts-sec-03-secret-material.js"
 import { TsSl01 } from "./signals/ts-sl-01-duplication.js"
 import { TsSl02 } from "./signals/ts-sl-02-inconsistent-clones.js"
 import { TsSl03 } from "./signals/ts-sl-03-suppressions.js"
 import { TsSl04 } from "./signals/ts-sl-04-empty-implementations.js"
-import { TsRp02 } from "./signals/ts-rp-02-pr-size.js"
+import { TsSl05 } from "./signals/ts-sl-05-phantom-tests.js"
+import { TsSl06 } from "./signals/ts-sl-06-confidence-claim-mismatch.js"
 
 const TS_PACK_CACHE_VERSION =
-  "ts-pack-2026-05-06-local-pressure-1"
+  "ts-pack-2026-05-25-trust-signals-1"
 
 const withTsPackCacheVersion = <S extends AnySignal>(signal: S): S => ({
   ...signal,
@@ -58,6 +66,12 @@ export const TS_PACK_SIGNALS: ReadonlyArray<AnySignal> = [
   TsAd03,
   TsAd04,
   TsAd05,
+  TsSec01,
+  TsSec02,
+  TsSec03,
+  TsCc01,
+  TsCc02,
+  TsBp01,
   TsDe01,
   TsDe02,
   TsDe03,
@@ -76,6 +90,8 @@ export const TS_PACK_SIGNALS: ReadonlyArray<AnySignal> = [
   TsSl01,
   TsSl03,
   TsSl04,
+  TsSl05,
+  TsSl06,
   TsRp02,
   TsSl02,
 ].map(withTsPackCacheVersion)

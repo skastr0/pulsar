@@ -10,7 +10,9 @@ import {
   EFFECT_PROJECT_MODULE_ID,
   EFFECT_PROTOTYPE_FACTORY_NOOP_RULE_ID,
   EFFECT_SERVER_REACTIVE_CONTRACT_NOOP_RULE_ID,
+  EFFECT_TECHNOLOGY_PACK_ID,
   effectProjectModule,
+  effectTechnologyPack,
   isEffectOrElseSucceedNoopCandidate,
   isEffectPrototypeFactoryNoopCandidate,
   isEffectServerReactiveContractNoopCandidate,
@@ -25,6 +27,20 @@ const repoFacts: RepoFacts = {
 }
 
 describe("effect project module", () => {
+  test("exports an opt-in technology pack surface with calibration and signal descriptors", () => {
+    expect(effectTechnologyPack).toMatchObject({
+      id: EFFECT_TECHNOLOGY_PACK_ID,
+      projectModule: effectProjectModule,
+      signals: [
+        {
+          id: "EFFECT-TS-01-effect-gen-yield-shape",
+          category: "behavior-preservation",
+          enforcementCeiling: ["review-route"],
+        },
+      ],
+    })
+  })
+
   test("exports a technology-scoped noop classifier contribution", () => {
     expect(effectProjectModule.descriptor).toMatchObject({
       id: EFFECT_PROJECT_MODULE_ID,

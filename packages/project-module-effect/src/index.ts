@@ -9,10 +9,29 @@ import {
 } from "@skastr0/pulsar-project-module-sdk"
 
 export const EFFECT_PROJECT_MODULE_ID = "@skastr0/pulsar-project-module-effect" as const
+export const EFFECT_TECHNOLOGY_PACK_ID = "@skastr0/pulsar-effect-pack" as const
 export const EFFECT_OR_ELSE_SUCCEED_NOOP_RULE_ID = "effect.orElseSucceed.fallback-noop.v1" as const
 export const EFFECT_CALLBACK_CONTEXT_NAME_RULE_ID = "effect.callback-context-name.v1" as const
 export const EFFECT_SERVER_REACTIVE_CONTRACT_NOOP_RULE_ID = "effect.server-reactive.contract-noop.v1" as const
 export const EFFECT_PROTOTYPE_FACTORY_NOOP_RULE_ID = "effect.prototype-factory.noop.v1" as const
+
+export interface TechnologyPackSignalDescriptor {
+  readonly id: string
+  readonly title: string
+  readonly category: string
+  readonly enforcementCeiling: ReadonlyArray<string>
+  readonly activationEvidence: ReadonlyArray<string>
+}
+
+export const effectPackSignals: ReadonlyArray<TechnologyPackSignalDescriptor> = [
+  {
+    id: "EFFECT-TS-01-effect-gen-yield-shape",
+    title: "Effect.gen yield shape",
+    category: "behavior-preservation",
+    enforcementCeiling: ["review-route"],
+    activationEvidence: ["package dependency: effect", "source import: effect/Effect"],
+  },
+]
 
 export const effectProjectModule = defineProjectModule({
   id: EFFECT_PROJECT_MODULE_ID,
@@ -111,6 +130,12 @@ export const effectProjectModule = defineProjectModule({
     }),
   ],
 })
+
+export const effectTechnologyPack = {
+  id: EFFECT_TECHNOLOGY_PACK_ID,
+  projectModule: effectProjectModule,
+  signals: effectPackSignals,
+} as const
 
 export const isEffectOrElseSucceedNoopCandidate = (
   value: TypeScriptNoopClassificationValue,

@@ -8,7 +8,9 @@ import {
   CONVEX_PUBLIC_ENTRYPOINT_RULE_ID,
   CONVEX_GENERATED_TAXONOMY_RULE_ID,
   CONVEX_PROJECT_MODULE_ID,
+  CONVEX_TECHNOLOGY_PACK_ID,
   convexProjectModule,
+  convexTechnologyPack,
   isConvexGeneratedPath,
   isConvexPublicEntrypointExport,
   isConvexRuntimeEntrypointPath,
@@ -22,6 +24,20 @@ const repoFacts: RepoFacts = {
 }
 
 describe("convex project module", () => {
+  test("exports an opt-in technology pack surface with calibration and signal descriptors", () => {
+    expect(convexTechnologyPack).toMatchObject({
+      id: CONVEX_TECHNOLOGY_PACK_ID,
+      projectModule: convexProjectModule,
+      signals: [
+        {
+          id: "CONVEX-TS-01-runtime-boundary-schema",
+          category: "security-risk",
+          enforcementCeiling: ["review-route"],
+        },
+      ],
+    })
+  })
+
   test("exports a technology-scoped taxonomy contribution", () => {
     expect(convexProjectModule.descriptor).toMatchObject({
       id: CONVEX_PROJECT_MODULE_ID,
