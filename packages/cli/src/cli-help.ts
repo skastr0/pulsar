@@ -9,6 +9,7 @@ const HELP_SECTIONS: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [
       "  pulsar score --diff <base>..<head|WORKTREE> [--changed-only] [--agent-view] [<repo-path>]",
       "  pulsar baseline <set|refresh|show> [<repo-path>]",
       "  pulsar backpressure [--trend] [--vector <path>] [<repo-path>]",
+      "  pulsar coverage ingest <path> [--format auto|lcov|istanbul] [<repo-path>]",
       "  pulsar bisect --signal <id> --range <from>..<to> [<repo-path>]",
       "  pulsar bisect --observer --range <from>..<to> [--vector <path>] [<repo-path>]",
       "  pulsar bisect --range <from>..<to> [--vector <path>] [<repo-path>]",
@@ -28,6 +29,7 @@ const HELP_SECTIONS: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [
       "  score        Run one signal or the full Observer against a repo.",
       "  baseline     Record or inspect tolerated hard-gate debt for ratcheting.",
       "  backpressure Evaluate the score history as green/yellow/red pressure.",
+      "  coverage     Ingest repo-owned coverage facts for coverage-backed signals.",
       "  bisect       Replay a commit range into compact signal/category score curves.",
       "  calibrate    Suggest repo-owned calibration/reference-data onboarding steps.",
       "  persona      List, show, apply, or diff opt-in vector profile templates.",
@@ -64,6 +66,13 @@ const HELP_SECTIONS: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [
     [
       "  --trend              Render the persisted series as a trend table.",
       "  --vector <path>      Optional pulsar vector JSON.",
+    ],
+  ],
+  [
+    "Coverage options",
+    [
+      "  ingest <path>        Normalize a coverage report into .pulsar/coverage/coverage-facts.json.",
+      "  --format <format>    auto, lcov, or istanbul (default auto).",
     ],
   ],
   [
@@ -161,6 +170,7 @@ const HELP_SECTIONS: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [
       "  pulsar baseline show .",
       "  pulsar backpressure .",
       "  pulsar backpressure --trend .",
+      "  pulsar coverage ingest coverage/lcov.info .",
       "  pulsar bisect --signal TS-RP-01 --range HEAD~50..HEAD",
       "  pulsar bisect --observer --range HEAD~50..HEAD",
       "  pulsar bisect --range HEAD~50..HEAD --vector ./pulsar-vector.json --json /path/to/repo",

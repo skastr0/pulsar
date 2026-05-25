@@ -2,6 +2,7 @@ import { Effect } from "effect"
 import { runBackpressureCommand } from "./backpressure.js"
 import { runBaselineCommand } from "./baseline.js"
 import { runBisectCommand } from "./bisect.js"
+import { runCoverageIngestCommand, type CoverageIngestFormat } from "./coverage.js"
 import {
   collectPositional,
   fail,
@@ -36,6 +37,10 @@ export const runCoreCommand = async (
   }
   if (command === "bisect") {
     await runBisect(commandArgs)
+    return true
+  }
+  if (command === "coverage") {
+    await runCoverage(commandArgs)
     return true
   }
   return false
@@ -123,6 +128,44 @@ const runBaseline = async (commandArgs: ReadonlyArray<string>): Promise<void> =>
     ),
   )
   process.exit(exitCode)
+}
+
+const runCoverage = async (commandArgs: ReadonlyArray<string>): Promise<void> => {
+  const action = commandArgs[0]
+  if (action !== "ingest") {
+    fail("coverage requires: ingest <path> [--format auto|lcov|istanbul] [<repo-path>]")
+  }
+  const actionArgs = commandArgs.slice(1)
+  const flagsWithValues = new Set(["--format"])
+  rejectUnknownFlags("coverage", actionArgs, new Set([...flagsWithValues, "--no-progress"]))
+  const positional = collectPositional(actionArgs, flagsWithValues)
+  const reportPath = positional[0] ?? fail("coverage ingest requires a report path")
+  const repoPath = positional[1] ?? "."
+  const format = parseCoverageFormat(parseArg(actionArgs, "--format"))
+
+  const exitCode = await runWithProgress("coverage", commandArgs, () =>
+    Effect.runPromise(
+      runCoverageIngestCommand({
+        repoPath,
+        reportPath,
+        ...(format !== undefined ? { format } : {}),
+      }).pipe(
+        Effect.catchAll((err) =>
+          Effect.sync(() => {
+            console.error(`pulsar coverage failed: ${formatCliError(err)}`)
+            process.exit(1)
+          }),
+        ),
+      ),
+    ),
+  )
+  process.exit(exitCode)
+}
+
+const parseCoverageFormat = (raw: string | undefined): CoverageIngestFormat | undefined => {
+  if (raw === undefined) return undefined
+  if (raw === "auto" || raw === "lcov" || raw === "istanbul") return raw
+  fail("--format must be one of: auto, lcov, istanbul")
 }
 
 const runBackpressure = async (commandArgs: ReadonlyArray<string>): Promise<void> => {
