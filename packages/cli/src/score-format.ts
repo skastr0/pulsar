@@ -7,6 +7,9 @@ export const CATEGORY_LABELS: Record<Category, string> = {
   "legibility-decay": "Legibility Decay",
   "generated-slop": "Generated Slop",
   "review-pain": "Review Pain",
+  "security-risk": "Security Risk",
+  "concurrency-safety": "Concurrency Safety",
+  "behavior-preservation": "Behavior Preservation",
 }
 
 export const fixedWidthLabel = (value: string, width: number): string =>

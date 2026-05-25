@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { Schema } from "effect"
-import type { Category } from "../category.js"
+import { categoryRecord, type Category } from "../category.js"
 import type { Diagnostic } from "../diagnostic.js"
 import type { HardGateViolation, ObserverOutput } from "../observer.js"
 import { generateReviewPlan, ReviewPlan as ReviewPlanSchema } from "../review-plan.js"
@@ -272,14 +272,9 @@ const makeObserverOutput = (input?: {
   readonly signals?: ReadonlyArray<MockSignal>
   readonly hardGateViolations?: ReadonlyArray<HardGateViolation>
 }): ObserverOutput => {
-  const categories: ObserverOutput["categories"] = {
-    "architectural-drift": emptyCategory(input?.categoryScores?.["architectural-drift"]),
-    "dependency-entropy": emptyCategory(input?.categoryScores?.["dependency-entropy"]),
-    "abstraction-bloat": emptyCategory(input?.categoryScores?.["abstraction-bloat"]),
-    "legibility-decay": emptyCategory(input?.categoryScores?.["legibility-decay"]),
-    "generated-slop": emptyCategory(input?.categoryScores?.["generated-slop"]),
-    "review-pain": emptyCategory(input?.categoryScores?.["review-pain"]),
-  }
+  const categories: ObserverOutput["categories"] = categoryRecord((category) =>
+    emptyCategory(input?.categoryScores?.[category]),
+  )
   const signalResults = new Map<string, { signalId: string; score: number; output: unknown; diagnostics: ReadonlyArray<Diagnostic> }>()
 
   for (const signal of input?.signals ?? []) {

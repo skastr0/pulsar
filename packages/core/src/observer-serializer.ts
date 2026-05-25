@@ -1,3 +1,4 @@
+import { CATEGORIES } from "./category.js"
 import { OBSERVER_OUTPUT_SEMANTICS, type CategoryOutput } from "./observer-model.js"
 import type {
   ObserverOutput,
@@ -7,24 +8,12 @@ import type {
 
 export const toObserverJson = (output: ObserverOutput): ObserverOutputPublic => ({
   observer_semantics: OBSERVER_OUTPUT_SEMANTICS,
-  categories: {
-    "architectural-drift": toObserverCategorySnapshot(
-      output.categories["architectural-drift"],
-    ),
-    "dependency-entropy": toObserverCategorySnapshot(
-      output.categories["dependency-entropy"],
-    ),
-    "abstraction-bloat": toObserverCategorySnapshot(
-      output.categories["abstraction-bloat"],
-    ),
-    "legibility-decay": toObserverCategorySnapshot(
-      output.categories["legibility-decay"],
-    ),
-    "generated-slop": toObserverCategorySnapshot(
-      output.categories["generated-slop"],
-    ),
-    "review-pain": toObserverCategorySnapshot(output.categories["review-pain"]),
-  },
+  categories: Object.fromEntries(
+    CATEGORIES.map((category) => [
+      category,
+      toObserverCategorySnapshot(output.categories[category]),
+    ]),
+  ) as ObserverOutputPublic["categories"],
   minimum: output.minimum,
   weighted_mean: output.weighted_mean,
   ...(output.readiness !== undefined ? { readiness: output.readiness } : {}),

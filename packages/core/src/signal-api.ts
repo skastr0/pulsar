@@ -1,5 +1,9 @@
 export { CATEGORIES, type Category } from "./category.js"
-export { type Diagnostic, computeDiagnosticHash } from "./diagnostic.js"
+export {
+  type Diagnostic,
+  type DiagnosticFixHint,
+  computeDiagnosticHash,
+} from "./diagnostic.js"
 export {
   ReferenceDataTag,
   SignalContextTag,
@@ -11,10 +15,14 @@ export {
 export { InMemoryCacheLayer } from "./cache.js"
 export { summarize, type DistributionalSummary } from "./distribution.js"
 export {
+  CANONICAL_COVERAGE_FACTS_RELATIVE_PATH,
   COVERAGE_REFERENCE_DATA_KEY,
+  buildCoverageFactsArtifact,
+  decodeCoverageFactsArtifactSync,
 } from "./coverage-facts.js"
 export type {
   CoverageFacts,
+  CoverageFactsArtifactValue,
   CoverageFileFact,
   CoverageMetric,
 } from "./coverage-facts.js"

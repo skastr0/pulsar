@@ -1,5 +1,6 @@
 import type { Category } from "./category.js"
 import type { ObserverOutput, toObserverJson } from "./observer.js"
+import { categoryOutputOrEmpty } from "./observer-model.js"
 import type { WeightedEntry } from "./time-series-compaction-types.js"
 
 export const aggregateCategoryMetadata = (
@@ -7,7 +8,9 @@ export const aggregateCategoryMetadata = (
   category: Category,
   totalWeight: number,
 ): Partial<ReturnType<typeof toObserverJson>["categories"][Category]> => {
-  const snapshots = weightedEntries.map(({ entry }) => entry.observerOutput.categories[category])
+  const snapshots = weightedEntries.map(({ entry }) =>
+    categoryOutputOrEmpty(entry.observerOutput.categories, category),
+  )
   const withSignalCount = snapshots.every((snapshot) => snapshot.signalCount !== undefined)
   const withApplicableSignalCount = snapshots.every((snapshot) => snapshot.applicableSignalCount !== undefined)
   const withActiveSignalIds = snapshots.every((snapshot) => snapshot.activeSignalIds !== undefined)
@@ -18,7 +21,7 @@ export const aggregateCategoryMetadata = (
           signalCount:
             weightedEntries.reduce(
               (sum, { entry, weight }) =>
-                sum + (entry.observerOutput.categories[category].signalCount ?? 0) * weight,
+                sum + categoryOutputOrEmpty(entry.observerOutput.categories, category).signalCount * weight,
               0,
             ) / totalWeight,
         }
@@ -28,7 +31,10 @@ export const aggregateCategoryMetadata = (
           applicableSignalCount:
             weightedEntries.reduce(
               (sum, { entry, weight }) =>
-                sum + (entry.observerOutput.categories[category].applicableSignalCount ?? 0) * weight,
+                sum +
+                (categoryOutputOrEmpty(entry.observerOutput.categories, category)
+                  .applicableSignalCount ?? 0) *
+                  weight,
               0,
             ) / totalWeight,
         }

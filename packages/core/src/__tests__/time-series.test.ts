@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { Effect, Option } from "effect"
+import { categoryRecord } from "../category.js"
 import { createTimeSeriesServices, type TimeSeriesEntry } from "../time-series.js"
 
 const makeEntry = (
@@ -15,12 +16,8 @@ const makeEntry = (
   source: "raw" as const,
   observerOutput: {
     categories: {
+      ...categoryRecord(() => ({ score: 1, signals: {} })),
       "architectural-drift": { score, signals: { A: score } },
-      "dependency-entropy": { score: 1, signals: {} },
-      "abstraction-bloat": { score: 1, signals: {} },
-      "legibility-decay": { score: 1, signals: {} },
-      "generated-slop": { score: 1, signals: {} },
-      "review-pain": { score: 1, signals: {} },
     },
     minimum: { signal: "A", category: "architectural-drift", score, detail: "detail" },
     weighted_mean: score,
@@ -205,7 +202,7 @@ describe("time series persistence", () => {
         "applicable",
       )
       expect(
-        compacted?.observerOutput.categories["architectural-drift"].applicableSignalCount,
+        compacted?.observerOutput.categories["architectural-drift"]?.applicableSignalCount,
       ).toBe(1)
     } finally {
       await rm(repoPath, { recursive: true, force: true })

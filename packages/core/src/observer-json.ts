@@ -1,8 +1,12 @@
 import { Schema } from "effect"
-import { Category as CategorySchema } from "./category.js"
+import { CATEGORIES, Category as CategorySchema } from "./category.js"
 import { ProjectModuleScope } from "./calibration.js"
 import { Diagnostic as DiagnosticSchema } from "./diagnostic.js"
-import { OBSERVER_OUTPUT_SEMANTICS, type ObserverRuntimeOutput } from "./observer-model.js"
+import {
+  emptyObserverCategoryOutput,
+  OBSERVER_OUTPUT_SEMANTICS,
+  type ObserverRuntimeOutput,
+} from "./observer-model.js"
 
 const ObserverCategorySnapshot = Schema.Struct({
   score: Schema.Number,
@@ -49,14 +53,34 @@ const ObserverCategorySnapshot = Schema.Struct({
   ),
 })
 
+const legacyCategoryIds = CATEGORIES.filter(
+  (category) =>
+    category !== "security-risk" &&
+    category !== "concurrency-safety" &&
+    category !== "behavior-preservation",
+)
+const trustCategoryIds = CATEGORIES.filter(
+  (category) =>
+    category === "security-risk" ||
+    category === "concurrency-safety" ||
+    category === "behavior-preservation",
+)
+
 const ObserverCategories = Schema.Struct({
-  "architectural-drift": ObserverCategorySnapshot,
-  "dependency-entropy": ObserverCategorySnapshot,
-  "abstraction-bloat": ObserverCategorySnapshot,
-  "legibility-decay": ObserverCategorySnapshot,
-  "generated-slop": ObserverCategorySnapshot,
-  "review-pain": ObserverCategorySnapshot,
+  ...Object.fromEntries(
+    legacyCategoryIds.map((category) => [category, ObserverCategorySnapshot]),
+  ),
+  ...Object.fromEntries(
+    trustCategoryIds.map((category) => [
+      category,
+      Schema.optionalWith(ObserverCategorySnapshot, {
+        default: () => emptyObserverCategoryOutput(),
+      }),
+    ]),
+  ),
 })
+
+export const OBSERVER_CATEGORY_IDS = CATEGORIES
 
 const MinimumDimensionSnapshot = Schema.Struct({
   signal: Schema.String,

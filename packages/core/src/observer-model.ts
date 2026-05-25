@@ -55,6 +55,19 @@ export interface CategoryOutput {
   }
 }
 
+export const emptyObserverCategoryOutput = (): CategoryOutput => ({
+  score: 1,
+  signals: {},
+  signalCount: 0,
+  applicableSignalCount: 0,
+  activeSignalIds: [],
+})
+
+export const categoryOutputOrEmpty = (
+  categories: Partial<Record<Category, CategoryOutput>>,
+  category: Category,
+): CategoryOutput => categories[category] ?? emptyObserverCategoryOutput()
+
 export interface MinimumDimension {
   readonly signal: string
   readonly category: Category

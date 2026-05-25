@@ -203,8 +203,8 @@ describe("pulsar score", () => {
       expect(decoded.hard_gate_status === "pass" || decoded.hard_gate_status === "fail").toBe(
         true,
       )
-      expect(typeof decoded.categories["generated-slop"].aggregation?.aggregateScore).toBe("number")
-      expect(decoded.categories["generated-slop"].aggregation?.weights).toBeDefined()
+      expect(typeof decoded.categories["generated-slop"]?.aggregation?.aggregateScore).toBe("number")
+      expect(decoded.categories["generated-slop"]?.aggregation?.weights).toBeDefined()
     } finally {
       await rm(repoPath, { recursive: true, force: true })
     }

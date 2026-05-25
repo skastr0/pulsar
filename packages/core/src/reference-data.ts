@@ -40,18 +40,25 @@ export {
   type SchemaConventions,
 } from "./conventions.js"
 export {
+  CANONICAL_COVERAGE_FACTS_RELATIVE_PATH,
+  COVERAGE_FACTS_ARTIFACT_SCHEMA_VERSION,
   CANONICAL_ISTANBUL_RELATIVE_PATH,
   CANONICAL_LCOV_RELATIVE_PATH,
   COVERAGE_REFERENCE_DATA_KEY,
+  CoverageFactsArtifact,
+  CoverageFactsSchema,
+  buildCoverageFactsArtifact,
   CoverageFactState,
   buildAbsentCoverageFacts,
   buildUnknownCoverageFacts,
   coverageMetric,
+  decodeCoverageFactsArtifactSync,
   emptyCoverageMetric,
   parseCoverageCandidate,
   summarizeCoverageFiles,
 } from "./coverage-facts.js"
 export type {
+  CoverageFactsArtifactValue,
   CoverageFacts,
   CoverageFileFact,
   CoverageMetric,

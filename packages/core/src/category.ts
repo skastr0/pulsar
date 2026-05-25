@@ -7,6 +7,9 @@ export const CATEGORIES = [
   "legibility-decay",
   "generated-slop",
   "review-pain",
+  "security-risk",
+  "concurrency-safety",
+  "behavior-preservation",
 ] as const
 
 export const Category = Schema.Literal(...CATEGORIES)

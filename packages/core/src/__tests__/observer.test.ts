@@ -7,7 +7,7 @@ import {
   activateProjectModule,
   makeResolvedCalibrationContext,
 } from "../calibration.js"
-import type { Category } from "../category.js"
+import { CATEGORIES, type Category } from "../category.js"
 import type { Diagnostic } from "../diagnostic.js"
 import {
   SignalComputeError,
@@ -127,14 +127,9 @@ describe("Observer — category aggregation", () => {
     const b = makeLeaf({ id: "TEST-B", category: "generated-slop", score: 0.6 })
 
     const result = await run([a, b])
-    // architectural-drift, dependency-entropy, abstraction-bloat, review-pain
-    // are all empty → score 1, signalCount 0.
-    for (const cat of [
-      "architectural-drift",
-      "dependency-entropy",
-      "abstraction-bloat",
-      "review-pain",
-    ] as const) {
+    for (const cat of CATEGORIES.filter(
+      (cat) => cat !== "legibility-decay" && cat !== "generated-slop",
+    )) {
       expect(result.categories[cat].score).toBe(1)
       expect(result.categories[cat].signalCount).toBe(0)
       expect(result.categories[cat].activeSignalIds).toEqual([])
@@ -697,16 +692,7 @@ describe("Observer — JSON output shape (AC-10)", () => {
     const a = makeLeaf({ id: "TEST-A", category: "legibility-decay", score: 0.7 })
     const result = await run([a])
 
-    // Matches the shape in ARCHITECTURE.md §Score Output — all six
-    // categories are keys, even those with zero active signals.
-    expect(Object.keys(result.categories).sort()).toEqual([
-      "abstraction-bloat",
-      "architectural-drift",
-      "dependency-entropy",
-      "generated-slop",
-      "legibility-decay",
-      "review-pain",
-    ])
+    expect(Object.keys(result.categories).sort()).toEqual([...CATEGORIES].sort())
     for (const cat of Object.values(result.categories)) {
       expect(typeof cat.score).toBe("number")
       expect(typeof cat.signals).toBe("object")
@@ -779,7 +765,33 @@ describe("Observer — JSON output shape (AC-10)", () => {
       hard_gate_status: "pass",
       hard_gate_violations: [],
     })
-    expect(decoded.categories["generated-slop"].aggregation?.shapedByPressure).toBe(false)
+    expect(decoded.categories["generated-slop"]?.aggregation?.shapedByPressure).toBe(false)
+  })
+
+  test("schema decodes legacy observer JSON without trust-category records", async () => {
+    const a = makeLeaf({ id: "TEST-A", category: "legibility-decay", score: 0.7 })
+    const publicJson = toObserverJson(await run([a]))
+    const legacyJson = {
+      ...publicJson,
+      categories: Object.fromEntries(
+        Object.entries(publicJson.categories).filter(
+          ([category]) =>
+            category !== "security-risk" &&
+            category !== "concurrency-safety" &&
+            category !== "behavior-preservation",
+        ),
+      ),
+    }
+
+    const decoded = Schema.decodeUnknownSync(ObserverOutputSchema)(legacyJson)
+
+    expect(decoded.categories["legibility-decay"]?.score).toBe(0.7)
+    expect(decoded.categories["security-risk"]).toMatchObject({
+      score: 1,
+      signals: {},
+      signalCount: 0,
+      activeSignalIds: [],
+    })
   })
 
   test("public JSON preserves signal applicability metadata", async () => {
