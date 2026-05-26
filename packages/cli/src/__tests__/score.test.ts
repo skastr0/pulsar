@@ -210,6 +210,68 @@ describe("pulsar score", () => {
     }
   }, 120_000)
 
+  test("Next App Router detection activates export calibration in human and JSON score output", async () => {
+    const repoPath = await initRepo([
+      {
+        path: "package.json",
+        content: JSON.stringify(
+          {
+            name: "next-app-router-fixture",
+            dependencies: { next: "^16.0.0" },
+          },
+          null,
+          2,
+        ),
+      },
+      {
+        path: "app/page.ts",
+        content: [
+          "export const metadata = { title: 'Home' }",
+          "export const dynamic = 'force-static'",
+          "export function generateStaticParams() { return [] }",
+          "export default function Page() { return null }",
+          "export function unusedHelper() { return 1 }",
+        ].join("\n"),
+      },
+      {
+        path: "app/api/search/route.ts",
+        content: [
+          "export const runtime = 'edge'",
+          "export async function GET() { return Response.json({ ok: true }) }",
+        ].join("\n"),
+      },
+    ])
+    try {
+      const signalOut = runCli(repoPath, ["score", "--signal", "TS-AB-02", "."])
+      expect(signalOut.status).toBe(0)
+      expect(signalOut.stdout).toContain("unusedHelper")
+      expect(signalOut.stdout).toContain("Calibration Decisions")
+      expect(signalOut.stdout).toContain("mark-framework-consumed")
+      expect(signalOut.stdout).toContain("Consumed by Next App Router page export contract")
+      expect(signalOut.stdout).toContain("rule: nextjs.app-router.export-contract.v1")
+
+      const humanOut = runCli(repoPath, ["score", "--category", "abstraction-bloat", "."])
+      expect(humanOut.status).toBe(0)
+      expect(humanOut.stdout).toContain("Frameworks: nextjs-app-router high auto-active")
+      expect(humanOut.stdout).toContain("evidence: package-json=package.json")
+
+      const jsonOut = runCli(repoPath, ["score", "--json", "."])
+      expect(jsonOut.status).toBe(0)
+      const parsed = JSON.parse(String(jsonOut.stdout))
+      expect(parsed.calibration.detected_frameworks[0]).toMatchObject({
+        id: "nextjs-app-router",
+        confidence: "high",
+        activation: "auto-active",
+      })
+      expect(parsed.calibration.active_modules[0]).toMatchObject({
+        id: "@skastr0/pulsar-project-module-nextjs",
+        source: "builtin",
+      })
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
   test("score rejects unknown flags instead of silently ignoring them", async () => {
     const repoPath = await initRepo(simpleRepoFiles())
     try {

@@ -7,6 +7,10 @@ import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { SignalContextTag } from "@skastr0/pulsar-core/signal"
 import { CalibrationContextTag } from "@skastr0/pulsar-core/calibration"
+import {
+  NEXTJS_APP_ROUTER_FRAMEWORK_ID,
+  NEXTJS_PROJECT_MODULE_ID,
+} from "@skastr0/pulsar-project-module-nextjs"
 import { TsLd01, TsSl04, TsProjectLayer } from "@skastr0/pulsar-ts-pack"
 import { Effect, Layer } from "effect"
 import { loadProjectModuleCalibrationContext } from "../runtime-calibration.js"
@@ -40,6 +44,167 @@ describe("pulsar runtime project modules", () => {
     try {
       const context = await Effect.runPromise(loadProjectModuleCalibrationContext(repoPath))
       expect(context).toBeUndefined()
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("auto-activates the builtin Next module for high-confidence App Router repos", async () => {
+    const repoPath = await mkdtemp(join(tmpdir(), "pulsar-runtime-project-modules-"))
+    try {
+      await writeRepoFile(
+        repoPath,
+        "package.json",
+        JSON.stringify({ dependencies: { next: "^16.0.0" } }, null, 2),
+      )
+      await writeRepoFile(
+        repoPath,
+        "app/page.tsx",
+        "export default function Page() { return null }\n",
+      )
+
+      const context = await Effect.runPromise(loadProjectModuleCalibrationContext(repoPath))
+
+      expect(context?.activeModules.map((module) => module.id)).toEqual([
+        NEXTJS_PROJECT_MODULE_ID,
+      ])
+      expect(context?.activeModules[0]?.source).toBe("builtin")
+      expect(context?.repoFacts.detectedFrameworks?.[0]).toMatchObject({
+        id: NEXTJS_APP_ROUTER_FRAMEWORK_ID,
+        confidence: "high",
+        activation: "auto-active",
+      })
+      expect(context?.repoFacts.metadata?.autoActivatedModuleCount).toBe(1)
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("reports medium-confidence Next detection without auto-activation", async () => {
+    const repoPath = await mkdtemp(join(tmpdir(), "pulsar-runtime-project-modules-"))
+    try {
+      await writeRepoFile(
+        repoPath,
+        "package.json",
+        JSON.stringify({ dependencies: { next: "^16.0.0" } }, null, 2),
+      )
+      await writeRepoFile(repoPath, "next.config.ts", "export default {}\n")
+
+      const context = await Effect.runPromise(loadProjectModuleCalibrationContext(repoPath))
+
+      expect(context?.activeModules).toEqual([])
+      expect(context?.repoFacts.detectedFrameworks?.[0]).toMatchObject({
+        id: NEXTJS_APP_ROUTER_FRAMEWORK_ID,
+        confidence: "medium",
+        activation: "detected-inactive",
+      })
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("reports low-confidence App Router file detection without auto-activation", async () => {
+    const repoPath = await mkdtemp(join(tmpdir(), "pulsar-runtime-project-modules-"))
+    try {
+      await writeRepoFile(
+        repoPath,
+        "src/app/blog/[slug]/page.tsx",
+        "export default function Page() { return null }\n",
+      )
+
+      const context = await Effect.runPromise(loadProjectModuleCalibrationContext(repoPath))
+
+      expect(context?.activeModules).toEqual([])
+      expect(context?.repoFacts.detectedFrameworks?.[0]).toMatchObject({
+        id: NEXTJS_APP_ROUTER_FRAMEWORK_ID,
+        confidence: "low",
+        activation: "detected-inactive",
+      })
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("explicit builtin Next force-off suppresses high-confidence auto-activation", async () => {
+    const repoPath = await mkdtemp(join(tmpdir(), "pulsar-runtime-project-modules-"))
+    try {
+      await writeRepoFile(
+        repoPath,
+        "package.json",
+        JSON.stringify({ dependencies: { next: "^16.0.0" } }, null, 2),
+      )
+      await writeRepoFile(
+        repoPath,
+        "app/page.tsx",
+        "export default function Page() { return null }\n",
+      )
+      await writeRepoFile(
+        repoPath,
+        ".pulsar/project-modules.json",
+        JSON.stringify(
+          {
+            modules: [
+              {
+                id: NEXTJS_PROJECT_MODULE_ID,
+                kind: "builtin",
+                enabled: false,
+              },
+            ],
+          },
+          null,
+          2,
+        ),
+      )
+
+      const context = await Effect.runPromise(loadProjectModuleCalibrationContext(repoPath))
+
+      expect(context?.activeModules).toEqual([])
+      expect(context?.repoFacts.detectedFrameworks?.[0]).toMatchObject({
+        id: NEXTJS_APP_ROUTER_FRAMEWORK_ID,
+        confidence: "high",
+        activation: "explicit-inactive",
+      })
+      expect(context?.repoFacts.metadata?.autoActivatedModuleCount).toBe(0)
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("explicit builtin Next force-on activates without auto-detection evidence", async () => {
+    const repoPath = await mkdtemp(join(tmpdir(), "pulsar-runtime-project-modules-"))
+    try {
+      await writeRepoFile(
+        repoPath,
+        ".pulsar/project-modules.json",
+        JSON.stringify(
+          {
+            modules: [
+              {
+                id: NEXTJS_PROJECT_MODULE_ID,
+                kind: "builtin",
+                enabled: true,
+              },
+            ],
+          },
+          null,
+          2,
+        ),
+      )
+
+      const context = await Effect.runPromise(loadProjectModuleCalibrationContext(repoPath))
+
+      expect(context?.activeModules.map((module) => module.id)).toEqual([
+        NEXTJS_PROJECT_MODULE_ID,
+      ])
+      expect(context?.repoFacts.detectedFrameworks?.[0]).toMatchObject({
+        id: NEXTJS_APP_ROUTER_FRAMEWORK_ID,
+        confidence: "high",
+        activation: "explicit-active",
+      })
+      expect(context?.repoFacts.detectedFrameworks?.[0]?.evidence[0]).toMatchObject({
+        kind: "manifest",
+        value: ".pulsar/project-modules.json",
+      })
     } finally {
       await rm(repoPath, { recursive: true, force: true })
     }

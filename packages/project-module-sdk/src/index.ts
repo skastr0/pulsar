@@ -1,6 +1,7 @@
 export {
   decodeProjectModuleManifest,
   fingerprintProjectModuleManifest,
+  type BuiltinProjectModuleRef,
   type PackageProjectModuleRef,
   type ProjectModuleManifest,
   type ProjectModuleRef,
@@ -28,6 +29,7 @@ export {
   classifyArchitectureRole,
   classifyArchitecturalTier,
   classifyTypeScriptNoop,
+  markTypeScriptExportFrameworkConsumed,
   markTypeScriptExportPublicEntrypoint,
   nameTypeScriptCallbackContext,
   tuneTypeScriptUnsafeType,
@@ -37,6 +39,7 @@ export {
   type ClassifyArchitectureRoleOptions,
   type ClassifyArchitecturalTierOptions,
   type ClassifyTypeScriptNoopOptions,
+  type MarkTypeScriptExportFrameworkConsumedOptions,
   type MarkTypeScriptPublicEntrypointOptions,
   type NameTypeScriptCallbackContextOptions,
   type TuneTypeScriptUnsafeTypeOptions,

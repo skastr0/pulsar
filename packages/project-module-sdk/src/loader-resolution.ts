@@ -45,6 +45,12 @@ export const resolveProjectModuleRefTarget = (
   options: ProjectModuleLoadOptions,
 ): Effect.Effect<ResolvedProjectModuleTarget, ProjectModuleLoadError> => {
   switch (ref.kind) {
+    case "builtin":
+      return Effect.fail(new ProjectModuleLoadError({
+        refId: ref.id,
+        target: ref.id,
+        message: `Builtin project module ${ref.id} must be loaded through the builtin module registry`,
+      }))
     case "repo-local":
       return resolveRepoLocalProjectModuleTarget(ref, options)
     case "workspace":

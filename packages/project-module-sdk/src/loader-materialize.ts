@@ -161,7 +161,7 @@ const isProjectModuleSelfDependency = (
   ref: ProjectModuleRef,
   dependency: string,
 ): boolean =>
-  ref.kind !== "repo-local" && dependency === ref.packageName
+  (ref.kind === "package" || ref.kind === "workspace") && dependency === ref.packageName
 
 const linkMaterializedNodeModulesFallback = (
   ref: ProjectModuleRef,

@@ -1,5 +1,6 @@
 import type { Category } from "./category.js"
 import { ProjectModuleScope } from "./calibration.js"
+import type { CalibrationEvidenceRef, CalibrationConfidence, FrameworkActivation } from "./calibration.js"
 import type { Diagnostic } from "./diagnostic.js"
 import type { SignalRunResult } from "./runner.js"
 import type { SignalApplicability, SignalOutputMetadata } from "./signal.js"
@@ -130,9 +131,18 @@ export interface ObserverCalibrationModuleSummary {
   readonly fingerprint: string
 }
 
+export interface ObserverDetectedFrameworkSummary {
+  readonly id: string
+  readonly name: string
+  readonly confidence: CalibrationConfidence
+  readonly activation: FrameworkActivation
+  readonly evidence: ReadonlyArray<CalibrationEvidenceRef>
+}
+
 export interface ObserverCalibrationSummary {
   readonly fingerprint: string
   readonly active_modules: ReadonlyArray<ObserverCalibrationModuleSummary>
+  readonly detected_frameworks?: ReadonlyArray<ObserverDetectedFrameworkSummary>
 }
 
 export interface ObserverRuntimeOutput {

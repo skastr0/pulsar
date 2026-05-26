@@ -42,6 +42,7 @@
   },
   "dependencies": {
     "@skastr0/pulsar-core": "workspace:*",
+    "@skastr0/pulsar-project-module-nextjs": "workspace:*",
     "@skastr0/pulsar-project-module-sdk": "workspace:*",
     "@skastr0/pulsar-rs-pack": "workspace:*",
     "@skastr0/pulsar-shared-signals": "workspace:*",

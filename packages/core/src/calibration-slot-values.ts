@@ -173,6 +173,11 @@ export interface TypeScriptExportReachabilityValue {
   readonly sourceLocalBindings?: ReadonlyArray<TypeScriptLocalBindingFact>
   readonly sourceExportSpecifiers?: ReadonlyArray<TypeScriptExportSpecifierFact>
   readonly isPublicEntrypoint: boolean
+  readonly frameworkConsumer?: {
+    readonly frameworkId: string
+    readonly frameworkName: string
+    readonly contractId: string
+  }
   readonly metadata?: Readonly<Record<string, unknown>>
 }
 

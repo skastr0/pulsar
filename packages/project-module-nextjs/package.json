@@ -1,13 +1,13 @@
 {
-  "name": "@skastr0/pulsar-ts-pack",
+  "name": "@skastr0/pulsar-project-module-nextjs",
   "version": "0.1.1",
   "type": "module",
-  "description": "TypeScript signal pack for Pulsar",
+  "description": "Next.js framework project module for Pulsar calibration",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/skastr0/pulsar.git",
-    "directory": "packages/ts-pack"
+    "directory": "packages/project-module-nextjs"
   },
   "homepage": "https://github.com/skastr0/pulsar#readme",
   "bugs": {
@@ -15,9 +15,10 @@
   },
   "keywords": [
     "pulsar",
-    "typescript",
-    "signals",
-    "static-analysis"
+    "nextjs",
+    "next",
+    "calibration",
+    "project-module"
   ],
   "publishConfig": {
     "access": "public"
@@ -42,15 +43,10 @@
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
-    "@skastr0/pulsar-core": "0.1.1",
-    "@skastr0/pulsar-shared-signals": "0.1.1",
-    "effect": "^3.0.0",
-    "simple-git": "^3.25.0",
-    "ts-morph": "^24.0.0"
+    "@skastr0/pulsar-project-module-sdk": "0.1.1",
+    "effect": "^3.0.0"
   },
   "devDependencies": {
-    "@skastr0/pulsar-project-module-nextjs": "workspace:*",
-    "@skastr0/pulsar-signal-test-support": "workspace:*",
     "typescript": "^5.8.0"
   }
 }

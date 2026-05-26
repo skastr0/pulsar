@@ -427,15 +427,15 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       applicability:
         "ts-ab-02.test.ts: repositories with no exported bindings return empty exports, zero counts, no boundaryConfined entries, preserved diagnosticLimit, score 1, and no diagnostics.",
       score:
-        "ts-ab-02.test.ts: empty outputs score 1 and mixed runtime/type-only/test-hook/internal-only/cross-module fixtures prove weighted unused/internal penalties are divided by total exported bindings.",
+        "ts-ab-02.test.ts: empty outputs score 1, mixed runtime/type-only/test-hook/internal-only/cross-module fixtures prove weighted unused/internal penalties are divided by total exported bindings, and framework-consumed exports are excluded from score pressure before aggregation.",
       diagnostics:
         "ts-ab-02.test.ts: diagnostics omit healthy cross-module/cross-package exports, include block/warn/info severities, boundary hashes, locations, reference files, declaration files, classification/evidence/penalty payloads, deterministic ordering, and sanitized diagnostic caps.",
       factorLedger:
         "ts-ab-02.test.ts: registered pack signal emits config.exclude_globs, config.public_entry_globs, config.boundary_rules, and config.top_n_diagnostics factor-ledger entries with score roles.",
       cacheSemantics:
-        "ts-ab-02.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AB-02 semantic cacheVersion after diagnostic-limit and precise namespace/dynamic consumer semantics changed.",
+        "ts-ab-02.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AB-02 semantic cacheVersion after diagnostic-limit, precise namespace/dynamic consumer, and framework-consumed score semantics changed.",
       calibration:
-        "ts-ab-02.test.ts: export-reachability calibration marks a Convex runtime export public with module id, processor id, action, reason, path/symbol evidence, calibrationDecisions, and cross-package classification while ordinary unused exports remain penalized.",
+        "ts-ab-02.test.ts: export-reachability calibration marks a Convex runtime export public with module id, processor id, action, reason, path/symbol evidence, calibrationDecisions, and cross-package classification while ordinary unused exports remain penalized; Next App Router calibration marks exact route contract exports as framework-consumed while a genuinely unused helper remains penalized.",
     },
   },
   {

@@ -24,6 +24,10 @@ export const loadProjectModuleRef = (
   options: ProjectModuleLoadOptions,
 ): Effect.Effect<DefinedProjectModule, ProjectModuleLoadError> =>
   Effect.gen(function* () {
+    if (ref.kind === "builtin") {
+      return yield* loadBuiltinProjectModuleRef(ref, options)
+    }
+
     const resolvedTarget = yield* resolveProjectModuleRefTarget(ref, options)
     const target = resolvedTarget.target
     const imported = yield* Effect.tryPromise({
@@ -73,6 +77,32 @@ export const loadEnabledProjectModules = (
     (ref) => loadProjectModuleRef(ref, options),
     { concurrency: 4 },
   )
+
+const loadBuiltinProjectModuleRef = (
+  ref: ProjectModuleRef & { readonly kind: "builtin" },
+  options: ProjectModuleLoadOptions,
+): Effect.Effect<DefinedProjectModule, ProjectModuleLoadError> =>
+  Effect.gen(function* () {
+    const module = options.builtinModules?.get(ref.id)
+    if (module === undefined) {
+      return yield* new ProjectModuleLoadError({
+        refId: ref.id,
+        target: ref.id,
+        message: `Unknown builtin project module ${ref.id}`,
+      })
+    }
+
+    const descriptor: ProjectModuleDescriptor = {
+      ...module.descriptor,
+      source: "builtin",
+      sourceRef: ref.id,
+    }
+    return {
+      descriptor,
+      activeModule: activateProjectModule(descriptor),
+      processors: module.processors,
+    }
+  })
 
 const normalizeLoadedProjectModule = (
   ref: ProjectModuleRef,

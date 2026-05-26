@@ -3,6 +3,7 @@ import { Effect, Layer, Schema } from "effect"
 import { CalibrationContextTag, appendCalibrationDecision, defineCalibrationProcessor, makeResolvedCalibrationContext } from "@skastr0/pulsar-core/calibration"
 import type { RepoFacts } from "@skastr0/pulsar-core/calibration"
 import { buildRegistry } from "@skastr0/pulsar-core/scoring"
+import { nextjsProjectModule } from "@skastr0/pulsar-project-module-nextjs"
 import { TS_PACK_SIGNALS } from "../pack.js"
 import { TsAb02 } from "../signals/ts-ab-02-unused-exports-reachability.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
@@ -35,7 +36,7 @@ describe("TS-AB-02 (unused exports reachability)", () => {
       tier: 1,
       category: "abstraction-bloat",
       kind: "structural",
-      cacheVersion: "calibrated-export-reachability-v3-diagnostic-limit-v1",
+      cacheVersion: "calibrated-export-reachability-v4-framework-consumed-diagnostic-limit-v1",
       inputs: [],
     })
     expect(registered?.id).toBe(TsAb02.id)
@@ -85,6 +86,7 @@ describe("TS-AB-02 (unused exports reachability)", () => {
       "internal-only": 0,
       "cross-module": 0,
       "cross-package": 0,
+      "framework-consumed": 0,
     })
     expect(out.boundaryConfined).toEqual([])
     expect(out.diagnosticLimit).toBe(20)
@@ -452,6 +454,99 @@ describe("TS-AB-02 (unused exports reachability)", () => {
     expect(out.calibrationDecisions[0]?.evidence).toContainEqual({
       kind: "symbol",
       value: "syncLifecyclePublic",
+    })
+  })
+
+  test("Next App Router calibration excludes framework-consumed exports before scoring", async () => {
+    await repo.writeJson("tsconfig.json", {
+      compilerOptions: {
+        target: "ES2022",
+        module: "ESNext",
+        moduleResolution: "Bundler",
+        jsx: "react-jsx",
+      },
+      include: ["**/*.ts", "**/*.tsx"],
+    })
+    await repo.writeJson("package.json", {
+      name: "next-fixture",
+      private: true,
+      dependencies: { next: "^16.0.0" },
+    })
+    await repo.write(
+      "app/blog/[slug]/page.tsx",
+      [
+        "export const metadata = { title: 'Blog' }",
+        "export const dynamic = 'force-static'",
+        "export async function generateStaticParams() { return [] }",
+        "export default function Page() { return null }",
+        "export const unusedHelper = () => 'still unused'",
+        "",
+      ].join("\n"),
+    )
+    await repo.write(
+      "app/api/search/route.ts",
+      [
+        "export const runtime = 'edge'",
+        "export function GET() { return Response.json({ ok: true }) }",
+        "",
+      ].join("\n"),
+    )
+    await repo.write(
+      "app/blog/opengraph-image.tsx",
+      [
+        "export const alt = 'Blog'",
+        "export const size = { width: 1200, height: 630 }",
+        "export const contentType = 'image/png'",
+        "export default function Image() { return new Response() }",
+        "",
+      ].join("\n"),
+    )
+
+    const calibrationContext = makeResolvedCalibrationContext({
+      repoFacts: {
+        repoRoot: repo.root,
+        fingerprint: "repo-facts-nextjs-v1",
+        detectedTechnologies: ["next", "typescript"],
+        sourceExtensions: [".ts", ".tsx"],
+      } satisfies RepoFacts,
+      activeModules: [nextjsProjectModule.activeModule],
+      processors: nextjsProjectModule.processors,
+    })
+
+    const out = await Effect.runPromise(
+      TsAb02.compute(TsAb02.defaultConfig, new Map()).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            TsProjectLayer(repo.root),
+            Layer.succeed(CalibrationContextTag, calibrationContext),
+          ),
+        ),
+      ),
+    )
+    const byName = new Map(out.exports.map((entry) => [
+      `${entry.exportFile.replaceAll("\\", "/").replace(`${repo.root}/`, "")}:${entry.exportName}`,
+      entry,
+    ]))
+
+    expect(byName.get("app/blog/[slug]/page.tsx:metadata")?.classification).toBe("framework-consumed")
+    expect(byName.get("app/blog/[slug]/page.tsx:dynamic")?.classification).toBe("framework-consumed")
+    expect(byName.get("app/blog/[slug]/page.tsx:generateStaticParams")?.classification).toBe("framework-consumed")
+    expect(byName.get("app/blog/[slug]/page.tsx:default")?.classification).toBe("framework-consumed")
+    expect(byName.get("app/api/search/route.ts:GET")?.classification).toBe("framework-consumed")
+    expect(byName.get("app/api/search/route.ts:runtime")?.classification).toBe("framework-consumed")
+    expect(byName.get("app/blog/opengraph-image.tsx:alt")?.classification).toBe("framework-consumed")
+    expect(byName.get("app/blog/[slug]/page.tsx:unusedHelper")?.classification).toBe("unused")
+    expect(TsAb02.score(out)).toBe(0)
+    expect(TsAb02.diagnose(out).map((diagnostic) => diagnostic.data?.exportName)).toEqual([
+      "unusedHelper",
+    ])
+    expect(out.calibrationDecisions).toHaveLength(10)
+    expect(out.calibrationDecisions[0]).toMatchObject({
+      moduleId: "@skastr0/pulsar-project-module-nextjs",
+      processorId: "nextjs-app-router-export-contracts",
+      slot: "typescript.export-reachability",
+      action: "mark-framework-consumed",
+      ruleId: "nextjs.app-router.export-contract.v1",
     })
   })
 

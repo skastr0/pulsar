@@ -78,6 +78,18 @@ export interface MarkTypeScriptPublicEntrypointOptions {
   readonly metadata?: Readonly<Record<string, unknown>>
 }
 
+export interface MarkTypeScriptExportFrameworkConsumedOptions {
+  readonly frameworkId: string
+  readonly frameworkName: string
+  readonly contractId: string
+  readonly confidence?: CalibrationDecision["confidence"]
+  readonly action?: string
+  readonly reason: string
+  readonly ruleId?: string
+  readonly evidence?: ReadonlyArray<CalibrationEvidenceRef>
+  readonly metadata?: Readonly<Record<string, unknown>>
+}
+
 export interface NameTypeScriptCallbackContextOptions {
   readonly resolvedName: string
   readonly confidence?: CalibrationDecision["confidence"]
@@ -260,6 +272,42 @@ export const markTypeScriptExportPublicEntrypoint = (
       confidence: options.confidence ?? "high",
       reason: options.reason,
       ...(options.ruleId !== undefined ? { ruleId: options.ruleId } : {}),
+      ...(options.evidence !== undefined ? { evidence: options.evidence } : {}),
+    },
+    nextValue,
+  )
+}
+
+export const markTypeScriptExportFrameworkConsumed = (
+  current: CalibrationSlotOutput<"typescript.export-reachability">,
+  runtime: ProjectModuleProcessorRuntime<"typescript.export-reachability">,
+  options: MarkTypeScriptExportFrameworkConsumedOptions,
+): CalibrationSlotOutput<"typescript.export-reachability"> => {
+  const metadata = mergeMetadata(current.value.metadata, {
+    framework: options.frameworkId,
+    frameworkName: options.frameworkName,
+    frameworkContract: options.contractId,
+    ...options.metadata,
+  })
+  const nextValue: TypeScriptExportReachabilityValue = {
+    ...current.value,
+    frameworkConsumer: {
+      frameworkId: options.frameworkId,
+      frameworkName: options.frameworkName,
+      contractId: options.contractId,
+    },
+    ...(metadata !== undefined ? { metadata } : {}),
+  }
+  return appendProjectModuleDecision(
+    current,
+    runtime,
+    {
+      action: options.action ?? "mark-framework-consumed",
+      confidence: options.confidence ?? "high",
+      reason: options.reason,
+      ...(options.ruleId !== undefined ? { ruleId: options.ruleId } : {}),
+      before: current.value,
+      after: nextValue,
       ...(options.evidence !== undefined ? { evidence: options.evidence } : {}),
     },
     nextValue,

@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+import type { DefinedProjectModule } from "./definition.js"
 
 export class ProjectModuleLoadError extends Schema.TaggedError<ProjectModuleLoadError>()(
   "ProjectModuleLoadError",
@@ -13,4 +14,5 @@ export class ProjectModuleLoadError extends Schema.TaggedError<ProjectModuleLoad
 export interface ProjectModuleLoadOptions {
   readonly repoRoot: string
   readonly dependencyRoot?: string
+  readonly builtinModules?: ReadonlyMap<string, DefinedProjectModule>
 }

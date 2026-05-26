@@ -16,6 +16,7 @@ import {
   loadEnabledProjectModules,
   loadProjectModuleRef,
   makeResolvedCalibrationContext,
+  markTypeScriptExportFrameworkConsumed,
   markTypeScriptExportPublicEntrypoint,
   nameTypeScriptCallbackContext,
   readArchitectureRole,
@@ -355,6 +356,68 @@ describe("project module sdk", () => {
       processorId: "runtime-entrypoints",
       slot: "typescript.export-reachability",
       action: "mark-public-entrypoint",
+      confidence: "high",
+    })
+  })
+
+  test("processor runtime helpers mark TypeScript exports as framework-consumed", async () => {
+    const module = defineProjectModule({
+      id: "acme.framework",
+      version: "1.0.0",
+      scope: "framework",
+      processors: [
+        defineProcessor({
+          id: "framework-entrypoints",
+          slot: "typescript.export-reachability",
+          role: "resolver",
+          fingerprint: "framework-entrypoints-v1",
+          process: (current, _context, runtime) =>
+            Effect.sync(() =>
+              markTypeScriptExportFrameworkConsumed(current, runtime, {
+                frameworkId: "acme-router",
+                frameworkName: "Acme Router",
+                contractId: "acme-router.page.metadata",
+                reason: "Acme Router consumes this export by file convention",
+                evidence: [{ kind: "path", value: current.value.exportFile }],
+                metadata: { routeContract: true },
+              }),
+            ),
+        }),
+      ],
+    })
+    const context = makeResolvedCalibrationContext({
+      repoFacts,
+      activeModules: [module.activeModule],
+      processors: module.processors,
+    })
+
+    const result = await Effect.runPromise(
+      context.runSlot("typescript.export-reachability", {
+        exportFile: "/repo/app/page.tsx",
+        exportName: "metadata",
+        declarationFiles: ["/repo/app/page.tsx"],
+        declarationKinds: ["VariableDeclaration"],
+        isPublicEntrypoint: false,
+      }),
+    )
+
+    expect(result.value.frameworkConsumer).toEqual({
+      frameworkId: "acme-router",
+      frameworkName: "Acme Router",
+      contractId: "acme-router.page.metadata",
+    })
+    expect(result.value.isPublicEntrypoint).toBe(false)
+    expect(result.value.metadata).toMatchObject({
+      framework: "acme-router",
+      frameworkName: "Acme Router",
+      frameworkContract: "acme-router.page.metadata",
+      routeContract: true,
+    })
+    expect(result.decisions[0]).toMatchObject({
+      moduleId: "acme.framework",
+      processorId: "framework-entrypoints",
+      slot: "typescript.export-reachability",
+      action: "mark-framework-consumed",
       confidence: "high",
     })
   })
@@ -700,10 +763,15 @@ describe("project module sdk", () => {
     })
   })
 
-  test("decodes project module manifests with repo-local, workspace, and package refs", async () => {
+  test("decodes project module manifests with builtin, repo-local, workspace, and package refs", async () => {
     const manifest = await Effect.runPromise(
       decodeProjectModuleManifest({
         modules: [
+          {
+            id: "@skastr0/pulsar-project-module-nextjs",
+            kind: "builtin",
+            enabled: false,
+          },
           {
             id: "repo-convex",
             kind: "repo-local",
@@ -729,14 +797,19 @@ describe("project module sdk", () => {
 
     expect(manifest.schema).toBe("pulsar/project-modules/v1")
     expect(manifest.modules[0]).toMatchObject({
+      id: "@skastr0/pulsar-project-module-nextjs",
+      kind: "builtin",
+      enabled: false,
+    })
+    expect(manifest.modules[1]).toMatchObject({
       id: "repo-convex",
       enabled: true,
     })
-    expect(manifest.modules[1]).toMatchObject({
+    expect(manifest.modules[2]).toMatchObject({
       id: "org-effect",
       config: { strict: true },
     })
-    expect(manifest.modules[2]).toMatchObject({
+    expect(manifest.modules[3]).toMatchObject({
       id: "published-react",
       enabled: false,
     })
@@ -767,6 +840,10 @@ describe("project module sdk", () => {
             packageName: "@skastr0/pulsar-project-module-effect",
           },
           {
+            id: "c",
+            kind: "builtin",
+          },
+          {
             id: "a",
             kind: "repo-local",
             path: ".pulsar/modules/acme.ts",
@@ -783,6 +860,10 @@ describe("project module sdk", () => {
             path: ".pulsar/modules/acme.ts",
           },
           {
+            id: "c",
+            kind: "builtin",
+          },
+          {
             id: "b",
             kind: "package",
             packageName: "@skastr0/pulsar-project-module-effect",
@@ -794,6 +875,75 @@ describe("project module sdk", () => {
     expect(fingerprintProjectModuleManifest(left)).toBe(
       fingerprintProjectModuleManifest(right),
     )
+  })
+
+  test("loads builtin project modules from the provided registry", async () => {
+    const repoRoot = await mkdtemp(join(tmpdir(), "pulsar-project-module-"))
+    try {
+      const builtin = defineProjectModule({
+        id: "builtin.next",
+        version: "1.0.0",
+        scope: "framework",
+        source: "package",
+        processors: [],
+      })
+      const manifest = await Effect.runPromise(
+        decodeProjectModuleManifest({
+          modules: [
+            {
+              id: "builtin.next",
+              kind: "builtin",
+            },
+          ],
+        }),
+      )
+
+      const loaded = await Effect.runPromise(
+        loadProjectModuleRef(manifest.modules[0]!, {
+          repoRoot,
+          builtinModules: new Map([["builtin.next", builtin]]),
+        }),
+      )
+
+      expect(loaded.descriptor).toMatchObject({
+        id: "builtin.next",
+        source: "builtin",
+        sourceRef: "builtin.next",
+      })
+      expect(loaded.descriptor.sourceFingerprint).toBeUndefined()
+      expect(loaded.activeModule.fingerprint).toBe(
+        fingerprintProjectModule(loaded.descriptor),
+      )
+    } finally {
+      await rm(repoRoot, { recursive: true, force: true })
+    }
+  })
+
+  test("rejects unknown builtin project modules", async () => {
+    const repoRoot = await mkdtemp(join(tmpdir(), "pulsar-project-module-"))
+    try {
+      const manifest = await Effect.runPromise(
+        decodeProjectModuleManifest({
+          modules: [
+            {
+              id: "missing.builtin",
+              kind: "builtin",
+            },
+          ],
+        }),
+      )
+
+      const exit = await Effect.runPromiseExit(
+        loadProjectModuleRef(manifest.modules[0]!, {
+          repoRoot,
+          builtinModules: new Map(),
+        }),
+      )
+
+      expect(Exit.isFailure(exit)).toBe(true)
+    } finally {
+      await rm(repoRoot, { recursive: true, force: true })
+    }
   })
 
   test("loads repo-local project module definition exports", async () => {

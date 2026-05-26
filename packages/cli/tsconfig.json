@@ -9,6 +9,8 @@
   "include": ["src/**/*.ts"],
   "references": [
     { "path": "../core" },
+    { "path": "../project-module-sdk" },
+    { "path": "../project-module-nextjs" },
     { "path": "../rs-pack" },
     { "path": "../shared-signals" },
     { "path": "../ts-pack" }

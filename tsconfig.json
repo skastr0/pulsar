@@ -7,6 +7,7 @@
     { "path": "./packages/ts-pack" },
     { "path": "./packages/project-module-convex" },
     { "path": "./packages/project-module-effect" },
+    { "path": "./packages/project-module-nextjs" },
     { "path": "./packages/project-module-sdk" },
     { "path": "./packages/cli" }
   ]

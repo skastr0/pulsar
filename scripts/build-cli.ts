@@ -17,6 +17,7 @@ const packageBuildOrder = [
   "packages/shared-signals",
   "packages/ts-pack",
   "packages/rs-pack",
+  "packages/project-module-nextjs",
   "packages/cli",
 ] as const
 

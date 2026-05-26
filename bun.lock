@@ -22,6 +22,7 @@
       },
       "dependencies": {
         "@skastr0/pulsar-core": "workspace:*",
+        "@skastr0/pulsar-project-module-nextjs": "workspace:*",
         "@skastr0/pulsar-project-module-sdk": "workspace:*",
         "@skastr0/pulsar-rs-pack": "workspace:*",
         "@skastr0/pulsar-shared-signals": "workspace:*",
@@ -94,11 +95,22 @@
         "typescript": "^5.8.0",
       },
     },
+    "packages/project-module-nextjs": {
+      "name": "@skastr0/pulsar-project-module-nextjs",
+      "version": "0.1.1",
+      "dependencies": {
+        "@skastr0/pulsar-project-module-sdk": "0.1.1",
+        "effect": "^3.0.0",
+      },
+      "devDependencies": {
+        "typescript": "^5.8.0",
+      },
+    },
     "packages/project-module-sdk": {
       "name": "@skastr0/pulsar-project-module-sdk",
       "version": "0.1.1",
       "dependencies": {
-        "@skastr0/pulsar-core": "workspace:*",
+        "@skastr0/pulsar-core": "0.1.1",
         "effect": "^3.0.0",
         "typescript": "^5.8.0",
       },
@@ -154,6 +166,7 @@
         "ts-morph": "^24.0.0",
       },
       "devDependencies": {
+        "@skastr0/pulsar-project-module-nextjs": "workspace:*",
         "@skastr0/pulsar-signal-test-support": "workspace:*",
         "typescript": "^5.8.0",
       },
@@ -185,6 +198,8 @@
     "@skastr0/pulsar-project-module-convex": ["@skastr0/pulsar-project-module-convex@workspace:packages/project-module-convex"],
 
     "@skastr0/pulsar-project-module-effect": ["@skastr0/pulsar-project-module-effect@workspace:packages/project-module-effect"],
+
+    "@skastr0/pulsar-project-module-nextjs": ["@skastr0/pulsar-project-module-nextjs@workspace:packages/project-module-nextjs"],
 
     "@skastr0/pulsar-project-module-sdk": ["@skastr0/pulsar-project-module-sdk@workspace:packages/project-module-sdk"],
 

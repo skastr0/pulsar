@@ -131,22 +131,28 @@ const recordObserverBatchResults = (
 
 export const summarizeCalibration = (
   calibration: ResolvedCalibrationContext,
-): ObserverCalibrationSummary => ({
-  fingerprint: calibration.fingerprint,
-  active_modules: calibration.activeModules
-    .map((module) => ({
-      id: module.id,
-      version: module.version,
-      scope: module.scope,
-      source: module.source,
-      ...(module.sourceRef !== undefined ? { source_ref: module.sourceRef } : {}),
-      ...(module.sourceFingerprint !== undefined
-        ? { source_fingerprint: module.sourceFingerprint }
-        : {}),
-      fingerprint: module.fingerprint,
-    }))
-    .sort((left, right) => left.id.localeCompare(right.id) || left.version.localeCompare(right.version)),
-})
+): ObserverCalibrationSummary => {
+  const detectedFrameworks = [...(calibration.repoFacts.detectedFrameworks ?? [])]
+    .sort((left, right) => left.id.localeCompare(right.id))
+
+  return {
+    fingerprint: calibration.fingerprint,
+    active_modules: calibration.activeModules
+      .map((module) => ({
+        id: module.id,
+        version: module.version,
+        scope: module.scope,
+        source: module.source,
+        ...(module.sourceRef !== undefined ? { source_ref: module.sourceRef } : {}),
+        ...(module.sourceFingerprint !== undefined
+          ? { source_fingerprint: module.sourceFingerprint }
+          : {}),
+        fingerprint: module.fingerprint,
+      }))
+      .sort((left, right) => left.id.localeCompare(right.id) || left.version.localeCompare(right.version)),
+    ...(detectedFrameworks.length > 0 ? { detected_frameworks: detectedFrameworks } : {}),
+  }
+}
 
 /**
  * Run a single signal against the shared outputs map. Compute failures

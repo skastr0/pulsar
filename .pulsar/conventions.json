@@ -17,6 +17,7 @@
       "visibility": "public-api",
       "allowed_imports": [
         "@skastr0/pulsar-core",
+        "@skastr0/pulsar-project-module-nextjs",
         "@skastr0/pulsar-project-module-sdk",
         "@skastr0/pulsar-rs-pack",
         "@skastr0/pulsar-shared-signals",
@@ -67,6 +68,13 @@
       ]
     },
     "packages/project-module-effect": {
+      "visibility": "public-api",
+      "allowed_imports": [
+        "@skastr0/pulsar-project-module-sdk",
+        "effect"
+      ]
+    },
+    "packages/project-module-nextjs": {
       "visibility": "public-api",
       "allowed_imports": [
         "@skastr0/pulsar-project-module-sdk",

@@ -36,6 +36,23 @@ export const formatCalibrationLine = (output: ObserverOutput): string | undefine
   return `${count} ${noun} / ${output.calibration.fingerprint.slice(0, 12)}`
 }
 
+export const frameworkLines = (repoRoot: string, output: ObserverOutput): ReadonlyArray<string> => {
+  const frameworks = output.calibration?.detected_frameworks
+  if (frameworks === undefined || frameworks.length === 0) return []
+
+  return frameworks.flatMap((framework, index) => {
+    const prefix = index === 0 ? "  Frameworks:" : "             "
+    const evidence = framework.evidence
+      .slice(0, 3)
+      .map((item) => `${item.kind}=${diagnosticDisplayPath(repoRoot, item.value)}`)
+      .join("; ")
+    return [
+      `${prefix} ${framework.id} ${framework.confidence} ${framework.activation}`,
+      ...(evidence.length > 0 ? [`             evidence: ${evidence}`] : []),
+    ]
+  })
+}
+
 export const severityLabel = (diagnostic: Diagnostic): "BLOCK" | "WARN" | "INFO" =>
   diagnostic.severity === "block"
     ? "BLOCK"

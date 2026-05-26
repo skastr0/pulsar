@@ -171,6 +171,28 @@ const ObserverCalibrationSnapshot = Schema.Struct({
       fingerprint: Schema.String,
     }),
   ),
+  detected_frameworks: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        id: Schema.String,
+        name: Schema.String,
+        confidence: Schema.Literal("high", "medium", "low"),
+        activation: Schema.Literal(
+          "auto-active",
+          "explicit-active",
+          "explicit-inactive",
+          "detected-inactive",
+        ),
+        evidence: Schema.Array(
+          Schema.Struct({
+            kind: Schema.String,
+            value: Schema.String,
+            metadata: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.Unknown })),
+          }),
+        ),
+      }),
+    ),
+  ),
 })
 
 const SignalFactorLedgerEntrySnapshot = Schema.Struct({

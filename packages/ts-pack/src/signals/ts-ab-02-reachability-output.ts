@@ -1,4 +1,5 @@
 import { Node } from "ts-morph"
+import type { TypeScriptExportReachabilityValue } from "@skastr0/pulsar-core/calibration"
 import {
   countSameFileReferences,
   type ExportConsumer,
@@ -6,7 +7,12 @@ import {
 import { boundaryOfFile, type BoundaryRule } from "./shared-workspace.js"
 import type { ExportBinding } from "./ts-ab-02-reachability-analysis.js"
 
-export type ExportClassification = "unused" | "internal-only" | "cross-module" | "cross-package"
+export type ExportClassification =
+  | "unused"
+  | "internal-only"
+  | "cross-module"
+  | "cross-package"
+  | "framework-consumed"
 type ExportEvidence = "runtime" | "type-only" | "test-hook"
 
 export interface ExportReachability {
@@ -21,6 +27,7 @@ export interface ExportReachability {
   readonly sameFileReferenceCount: number
   readonly boundaryStatus: "cross-boundary" | "same-boundary" | "unmapped"
   readonly crossBoundaryFiles: ReadonlyArray<string>
+  readonly frameworkConsumer?: NonNullable<TypeScriptExportReachabilityValue["frameworkConsumer"]>
 }
 
 export const classifyExportReachability = (
@@ -28,8 +35,10 @@ export const classifyExportReachability = (
   consumers: ReadonlyArray<ExportConsumer>,
   ownPackage: string | undefined,
   boundaryRules: ReadonlyArray<BoundaryRule>,
-  isPublicEntrypoint: boolean,
+  reachability: TypeScriptExportReachabilityValue,
 ): ExportReachability => {
+  const isPublicEntrypoint = reachability.isPublicEntrypoint
+  const frameworkConsumer = reachability.frameworkConsumer
   const referenceFiles = consumers
     .map((consumer) => consumer.consumerFile)
     .filter((value, index, values) => values.indexOf(value) === index)
@@ -43,12 +52,14 @@ export const classifyExportReachability = (
   )
 
   const sameFileReferences =
-    isPublicEntrypoint || referenceFiles.length > 0
+    isPublicEntrypoint || frameworkConsumer !== undefined || referenceFiles.length > 0
       ? 0
       : countSameFileReferences(binding)
 
   const classification: ExportClassification =
-    isPublicEntrypoint
+    frameworkConsumer !== undefined
+      ? "framework-consumed"
+      : isPublicEntrypoint
       ? "cross-package"
       : referenceFiles.length > 0
       ? crossPackage
@@ -83,6 +94,7 @@ export const classifyExportReachability = (
           ? "cross-boundary"
           : "same-boundary",
     crossBoundaryFiles,
+    ...(frameworkConsumer !== undefined ? { frameworkConsumer } : {}),
   }
 }
 
@@ -135,5 +147,7 @@ const reachabilityRank = (entry: ExportReachability): number => {
       return 2
     case "cross-package":
       return 3
+    case "framework-consumed":
+      return 4
   }
 }

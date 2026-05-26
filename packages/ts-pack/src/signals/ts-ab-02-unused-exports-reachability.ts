@@ -52,7 +52,7 @@ export const TsAb02: Signal<TsAb02Config, TsAb02Output, TsProjectTag | TsPackage
   tier: 1,
   category: "abstraction-bloat",
   kind: "structural",
-  cacheVersion: "calibrated-export-reachability-v3-diagnostic-limit-v1",
+  cacheVersion: "calibrated-export-reachability-v4-framework-consumed-diagnostic-limit-v1",
   configSchema: TsAb02Config,
   defaultConfig: {
     exclude_globs: [
@@ -161,7 +161,7 @@ export const TsAb02: Signal<TsAb02Config, TsAb02Output, TsProjectTag | TsPackage
           consumers,
           analysis.packageNameByFile.get(binding.exportFile),
           config.boundary_rules,
-          reachability.value.isPublicEntrypoint,
+          reachability.value,
         ))
       }
 
@@ -174,20 +174,25 @@ export const TsAb02: Signal<TsAb02Config, TsAb02Output, TsProjectTag | TsPackage
           "internal-only": sortedEntries.filter((entry) => entry.classification === "internal-only").length,
           "cross-module": sortedEntries.filter((entry) => entry.classification === "cross-module").length,
           "cross-package": sortedEntries.filter((entry) => entry.classification === "cross-package").length,
+          "framework-consumed": sortedEntries.filter((entry) => entry.classification === "framework-consumed").length,
         },
         boundaryConfined: sortedEntries.filter(
           (entry) =>
             config.boundary_rules.length > 0 &&
             entry.boundaryStatus === "same-boundary" &&
-            entry.classification !== "cross-package",
+            entry.classification !== "cross-package" &&
+            entry.classification !== "framework-consumed",
         ),
         diagnosticLimit: normalizeDiagnosticLimit(config.top_n_diagnostics),
       }
     }),
   score: (out) => {
-    if (out.exports.length === 0) return 1
-    const weightedUnused = out.exports.reduce((sum, entry) => sum + reachabilityPenalty(entry), 0)
-    return Math.max(0, 1 - weightedUnused / out.exports.length)
+    const scoreableExports = out.exports.filter((entry) =>
+      entry.classification !== "framework-consumed"
+    )
+    if (scoreableExports.length === 0) return 1
+    const weightedUnused = scoreableExports.reduce((sum, entry) => sum + reachabilityPenalty(entry), 0)
+    return Math.max(0, 1 - weightedUnused / scoreableExports.length)
   },
   diagnose: (out): ReadonlyArray<Diagnostic> => {
     const diagnostics: Array<Diagnostic> = []

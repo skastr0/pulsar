@@ -7,6 +7,7 @@ import {
 import type { CiAssessment } from "./score.js"
 import { formatCiBaselineLine, renderGateStatus } from "./score-ci-output.js"
 import {
+  frameworkLines,
   formatCalibrationLine,
   printTopDiagnostics,
   pushTopDiagnostics,
@@ -62,6 +63,7 @@ const observerViewHeaderLines = (opts: {
   `          ${opts.aiMode.summary}`,
   ...(opts.aiMode.active ? [`          ${opts.aiMode.overrideHint}`] : []),
   ...calibrationLines(opts.output),
+  ...frameworkLines(opts.repoRoot, opts.output),
   "",
 ]
 
@@ -141,6 +143,9 @@ export const printCategoryView = (opts: {
   const calibrationLine = formatCalibrationLine(opts.output)
   if (calibrationLine !== undefined) {
     console.log(`  Calibration: ${calibrationLine}`)
+  }
+  for (const line of frameworkLines(opts.repoRoot, opts.output)) {
+    console.log(line)
   }
   console.log(`  Category: ${opts.category}`)
   console.log("")

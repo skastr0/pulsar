@@ -35,7 +35,7 @@
     "lint": "turbo run lint",
     "clean": "turbo run clean",
     "verify": "bun run typecheck && bun run test && bun run build",
-    "pack:dry-run": "bun run build && npm pack --dry-run --workspace packages/core --workspace packages/project-module-sdk --workspace packages/shared-signals --workspace packages/ts-pack --workspace packages/rs-pack --workspace packages/project-module-effect --workspace packages/project-module-convex",
+    "pack:dry-run": "bun run build && npm pack --dry-run --workspace packages/core --workspace packages/project-module-sdk --workspace packages/shared-signals --workspace packages/ts-pack --workspace packages/rs-pack --workspace packages/project-module-effect --workspace packages/project-module-convex --workspace packages/project-module-nextjs",
     "pack:npm-cli:dry-run": "bun run build:npm-cli && npm pack --dry-run --workspace packages/npm/pulsar-darwin-arm64 --workspace packages/npm/pulsar-darwin-x64 --workspace packages/npm/pulsar-linux-arm64 --workspace packages/npm/pulsar-linux-x64 --workspace packages/npm/pulsar",
     "smoke:npm-cli": "bun run build:npm-cli && node packages/npm/pulsar/bin/pulsar.js --version"
   },

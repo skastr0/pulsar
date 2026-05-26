@@ -37,6 +37,17 @@ export const computeResolvedCalibrationFingerprint = (input: {
     repoFacts: {
       fingerprint: input.repoFacts.fingerprint,
       detectedTechnologies: [...input.repoFacts.detectedTechnologies].sort(),
+      detectedFrameworks: [...(input.repoFacts.detectedFrameworks ?? [])]
+        .map((framework) => ({
+          id: framework.id,
+          name: framework.name,
+          confidence: framework.confidence,
+          activation: framework.activation,
+          evidence: [...framework.evidence].sort((left, right) =>
+            `${left.kind}:${left.value}`.localeCompare(`${right.kind}:${right.value}`),
+          ),
+        }))
+        .sort((left, right) => left.id.localeCompare(right.id)),
       sourceExtensions: [...input.repoFacts.sourceExtensions].sort(),
       metadata: input.repoFacts.metadata ?? null,
     },

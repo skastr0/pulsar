@@ -79,6 +79,20 @@ export interface CalibrationDecision {
   readonly evidence: ReadonlyArray<CalibrationEvidenceRef>
 }
 
+export type FrameworkActivation =
+  | "auto-active"
+  | "explicit-active"
+  | "explicit-inactive"
+  | "detected-inactive"
+
+export interface DetectedFramework {
+  readonly id: string
+  readonly name: string
+  readonly confidence: CalibrationConfidence
+  readonly activation: FrameworkActivation
+  readonly evidence: ReadonlyArray<CalibrationEvidenceRef>
+}
+
 export interface CalibrationSlotResult<Value> {
   readonly value: Value
   readonly decisions: ReadonlyArray<CalibrationDecision>
@@ -146,6 +160,7 @@ export interface RepoFacts {
   readonly repoRoot: string
   readonly fingerprint: string
   readonly detectedTechnologies: ReadonlyArray<string>
+  readonly detectedFrameworks?: ReadonlyArray<DetectedFramework>
   readonly sourceExtensions: ReadonlyArray<string>
   readonly metadata?: Readonly<Record<string, unknown>>
 }

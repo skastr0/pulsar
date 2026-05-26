@@ -44,7 +44,16 @@ export const PackageProjectModuleRef = Schema.extend(
 )
 export type PackageProjectModuleRef = typeof PackageProjectModuleRef.Type
 
+export const BuiltinProjectModuleRef = Schema.extend(
+  ProjectModuleRefBase,
+  Schema.Struct({
+    kind: Schema.Literal("builtin"),
+  }),
+)
+export type BuiltinProjectModuleRef = typeof BuiltinProjectModuleRef.Type
+
 export const ProjectModuleRef = Schema.Union(
+  BuiltinProjectModuleRef,
   RepoLocalProjectModuleRef,
   WorkspaceProjectModuleRef,
   PackageProjectModuleRef,
@@ -81,6 +90,8 @@ const normalizeProjectModuleRefs = (
 
 const moduleRefTarget = (ref: ProjectModuleRef): string => {
   switch (ref.kind) {
+    case "builtin":
+      return ref.id
     case "repo-local":
       return ref.path
     case "workspace":
