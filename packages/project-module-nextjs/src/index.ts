@@ -2,6 +2,7 @@ import { Effect } from "effect"
 import {
   defineProcessor,
   defineProjectModule,
+  hashCalibrationValue,
   markTypeScriptExportFrameworkConsumed,
   type TypeScriptExportReachabilityValue,
 } from "@skastr0/pulsar-project-module-sdk"
@@ -9,46 +10,9 @@ import {
 export const NEXTJS_PROJECT_MODULE_ID = "@skastr0/pulsar-project-module-nextjs" as const
 export const NEXTJS_APP_ROUTER_FRAMEWORK_ID = "nextjs-app-router" as const
 export const NEXTJS_APP_ROUTER_EXPORT_RULE_ID = "nextjs.app-router.export-contract.v1" as const
+const NEXTJS_APP_ROUTER_PROCESSOR_FINGERPRINT = "nextjs-app-router-export-contracts-v2"
 
 const NEXTJS_APP_ROUTER_FRAMEWORK_NAME = "Next App Router"
-
-export const nextjsProjectModule = defineProjectModule({
-  id: NEXTJS_PROJECT_MODULE_ID,
-  version: "0.1.1",
-  scope: "framework",
-  source: "package",
-  processors: [
-    defineProcessor({
-      id: "nextjs-app-router-export-contracts",
-      slot: "typescript.export-reachability",
-      role: "resolver",
-      priority: 20,
-      fingerprint: "nextjs-app-router-export-contracts-v1",
-      process: (current, _context, runtime) =>
-        Effect.sync(() => {
-          const contract = nextAppRouterExportContract(current.value)
-          if (contract === undefined) return current
-
-          return markTypeScriptExportFrameworkConsumed(current, runtime, {
-            frameworkId: NEXTJS_APP_ROUTER_FRAMEWORK_ID,
-            frameworkName: NEXTJS_APP_ROUTER_FRAMEWORK_NAME,
-            contractId: contract.id,
-            ruleId: NEXTJS_APP_ROUTER_EXPORT_RULE_ID,
-            reason: `Consumed by Next App Router ${contract.description}`,
-            evidence: [
-              { kind: "path", value: current.value.exportFile },
-              { kind: "symbol", value: current.value.exportName },
-              { kind: "next-app-router-contract", value: contract.id },
-            ],
-            metadata: {
-              contractKind: contract.kind,
-              fileConvention: contract.fileConvention,
-            },
-          })
-        }),
-    }),
-  ],
-})
 
 export interface NextAppRouterExportContract {
   readonly id: string
@@ -75,10 +39,10 @@ type AppRouterFileConvention =
   | "page"
   | "layout"
   | "route"
-  | "metadata-image"
+  | typeof METADATA_IMAGE_FILE_NAMES[number]
   | "sitemap"
-  | "metadata-route"
-  | "component-convention"
+  | typeof METADATA_ROUTE_FILE_NAMES[number]
+  | typeof COMPONENT_CONVENTION_FILE_NAMES[number]
 
 const contractForConvention = (
   convention: AppRouterFileConvention,
@@ -103,7 +67,7 @@ const contractForConvention = (
     )
   }
 
-  if (convention === "metadata-image" && METADATA_IMAGE_EXPORTS.has(exportName)) {
+  if (isMetadataImageConvention(convention) && METADATA_IMAGE_EXPORTS.has(exportName)) {
     return nextContract(
       exportName,
       routeSegmentConfigExports.has(exportName) ? "route-segment-config" : "metadata-image",
@@ -112,14 +76,22 @@ const contractForConvention = (
   }
 
   if (convention === "sitemap" && SITEMAP_EXPORTS.has(exportName)) {
-    return nextContract(exportName, "metadata-route", convention)
+    return nextContract(
+      exportName,
+      routeSegmentConfigExports.has(exportName) ? "route-segment-config" : "metadata-route",
+      convention,
+    )
   }
 
-  if (convention === "metadata-route" && exportName === "default") {
-    return nextContract(exportName, "metadata-route", convention)
+  if (isMetadataRouteConvention(convention) && METADATA_ROUTE_EXPORTS.has(exportName)) {
+    return nextContract(
+      exportName,
+      routeSegmentConfigExports.has(exportName) ? "route-segment-config" : "metadata-route",
+      convention,
+    )
   }
 
-  if (convention === "component-convention" && exportName === "default") {
+  if (isComponentConvention(convention) && exportName === "default") {
     return nextContract(exportName, "file-convention", convention)
   }
 
@@ -165,7 +137,6 @@ const ROUTE_EXPORTS = new Set([
   "DELETE",
   "HEAD",
   "OPTIONS",
-  "generateStaticParams",
   ...routeSegmentConfigExports,
 ])
 
@@ -178,18 +149,26 @@ const METADATA_IMAGE_EXPORTS = new Set([
   ...routeSegmentConfigExports,
 ])
 
-const SITEMAP_EXPORTS = new Set(["default", "generateSitemaps"])
+const SITEMAP_EXPORTS = new Set([
+  "default",
+  "generateSitemaps",
+  ...routeSegmentConfigExports,
+])
 
-const METADATA_IMAGE_FILES = new Set([
+const METADATA_ROUTE_EXPORTS = new Set(["default", ...routeSegmentConfigExports])
+
+const METADATA_IMAGE_FILE_NAMES = [
   "opengraph-image",
   "twitter-image",
   "icon",
   "apple-icon",
-])
+] as const
+const METADATA_IMAGE_FILES = new Set<string>(METADATA_IMAGE_FILE_NAMES)
 
-const METADATA_ROUTE_FILES = new Set(["robots", "manifest"])
+const METADATA_ROUTE_FILE_NAMES = ["robots", "manifest"] as const
+const METADATA_ROUTE_FILES = new Set<string>(METADATA_ROUTE_FILE_NAMES)
 
-const COMPONENT_CONVENTION_FILES = new Set([
+const COMPONENT_CONVENTION_FILE_NAMES = [
   "default",
   "error",
   "forbidden",
@@ -198,10 +177,12 @@ const COMPONENT_CONVENTION_FILES = new Set([
   "not-found",
   "template",
   "unauthorized",
-])
+] as const
+const COMPONENT_CONVENTION_FILES = new Set<string>(COMPONENT_CONVENTION_FILE_NAMES)
 
 const APP_ROUTER_SCRIPT_EXTENSIONS = [".tsx", ".jsx", ".ts", ".js"] as const
 const ROUTE_HANDLER_EXTENSIONS = new Set([".ts", ".js"])
+const METADATA_ROUTE_EXTENSIONS = new Set([".ts", ".js"])
 
 const appRouterFileConvention = (filePath: string): AppRouterFileConvention | undefined => {
   const normalized = filePath.replaceAll("\\", "/")
@@ -218,10 +199,16 @@ const appRouterFileConvention = (filePath: string): AppRouterFileConvention | un
   if (baseName === "page") return "page"
   if (baseName === "layout") return "layout"
   if (baseName === "route" && ROUTE_HANDLER_EXTENSIONS.has(extension)) return "route"
-  if (METADATA_IMAGE_FILES.has(baseName)) return "metadata-image"
-  if (baseName === "sitemap") return "sitemap"
-  if (METADATA_ROUTE_FILES.has(baseName)) return "metadata-route"
-  if (COMPONENT_CONVENTION_FILES.has(baseName)) return "component-convention"
+  if (METADATA_IMAGE_FILES.has(baseName)) {
+    return baseName as typeof METADATA_IMAGE_FILE_NAMES[number]
+  }
+  if (baseName === "sitemap" && METADATA_ROUTE_EXTENSIONS.has(extension)) return "sitemap"
+  if (METADATA_ROUTE_FILES.has(baseName) && METADATA_ROUTE_EXTENSIONS.has(extension)) {
+    return baseName as typeof METADATA_ROUTE_FILE_NAMES[number]
+  }
+  if (COMPONENT_CONVENTION_FILES.has(baseName)) {
+    return baseName as typeof COMPONENT_CONVENTION_FILE_NAMES[number]
+  }
   return undefined
 }
 
@@ -238,5 +225,77 @@ const stripAppRouterScriptExtension = (
   }
   return undefined
 }
+
+const isMetadataImageConvention = (
+  convention: AppRouterFileConvention,
+): convention is typeof METADATA_IMAGE_FILE_NAMES[number] =>
+  METADATA_IMAGE_FILES.has(convention)
+
+const isMetadataRouteConvention = (
+  convention: AppRouterFileConvention,
+): convention is typeof METADATA_ROUTE_FILE_NAMES[number] =>
+  METADATA_ROUTE_FILES.has(convention)
+
+const isComponentConvention = (
+  convention: AppRouterFileConvention,
+): convention is typeof COMPONENT_CONVENTION_FILE_NAMES[number] =>
+  COMPONENT_CONVENTION_FILES.has(convention)
+
+const nextAppRouterContractSourceFingerprint = (): string =>
+  hashCalibrationValue({
+    frameworkId: NEXTJS_APP_ROUTER_FRAMEWORK_ID,
+    ruleId: NEXTJS_APP_ROUTER_EXPORT_RULE_ID,
+    processorFingerprint: NEXTJS_APP_ROUTER_PROCESSOR_FINGERPRINT,
+    pageLayoutExports: [...PAGE_LAYOUT_EXPORTS].sort(),
+    routeExports: [...ROUTE_EXPORTS].sort(),
+    metadataImageFiles: [...METADATA_IMAGE_FILE_NAMES],
+    metadataImageExports: [...METADATA_IMAGE_EXPORTS].sort(),
+    sitemapExports: [...SITEMAP_EXPORTS].sort(),
+    metadataRouteFiles: [...METADATA_ROUTE_FILE_NAMES],
+    metadataRouteExports: [...METADATA_ROUTE_EXPORTS].sort(),
+    componentConventionFiles: [...COMPONENT_CONVENTION_FILE_NAMES],
+    appRouterScriptExtensions: [...APP_ROUTER_SCRIPT_EXTENSIONS],
+    routeHandlerExtensions: [...ROUTE_HANDLER_EXTENSIONS].sort(),
+    metadataRouteExtensions: [...METADATA_ROUTE_EXTENSIONS].sort(),
+  })
+
+export const nextjsProjectModule = defineProjectModule({
+  id: NEXTJS_PROJECT_MODULE_ID,
+  version: "0.1.1",
+  scope: "framework",
+  source: "package",
+  sourceFingerprint: nextAppRouterContractSourceFingerprint(),
+  processors: [
+    defineProcessor({
+      id: "nextjs-app-router-export-contracts",
+      slot: "typescript.export-reachability",
+      role: "resolver",
+      priority: 20,
+      fingerprint: NEXTJS_APP_ROUTER_PROCESSOR_FINGERPRINT,
+      process: (current, _context, runtime) =>
+        Effect.sync(() => {
+          const contract = nextAppRouterExportContract(current.value)
+          if (contract === undefined) return current
+
+          return markTypeScriptExportFrameworkConsumed(current, runtime, {
+            frameworkId: NEXTJS_APP_ROUTER_FRAMEWORK_ID,
+            frameworkName: NEXTJS_APP_ROUTER_FRAMEWORK_NAME,
+            contractId: contract.id,
+            ruleId: NEXTJS_APP_ROUTER_EXPORT_RULE_ID,
+            reason: `Consumed by Next App Router ${contract.description}`,
+            evidence: [
+              { kind: "path", value: current.value.exportFile },
+              { kind: "symbol", value: current.value.exportName },
+              { kind: "next-app-router-contract", value: contract.id },
+            ],
+            metadata: {
+              contractKind: contract.kind,
+              fileConvention: contract.fileConvention,
+            },
+          })
+        }),
+    }),
+  ],
+})
 
 export default nextjsProjectModule

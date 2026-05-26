@@ -78,6 +78,7 @@ export {
   withPolicyTagMetadata,
   withPolicyTagsMetadata,
   fingerprintProjectModule,
+  hashCalibrationValue,
   makeResolvedCalibrationContext,
   type ActiveProjectModule,
   type ArchitectureRole,

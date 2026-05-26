@@ -61,6 +61,7 @@ describe("project module sdk", () => {
       version: "1.0.0",
       scope: "repository",
       sourceRef: ".pulsar/modules/acme.ts",
+      sourceFingerprint: "source-v1",
       processors: [
         defineProcessor({
           id: "convex-generated-taxonomy",
@@ -79,6 +80,7 @@ describe("project module sdk", () => {
       scope: "repository",
       source: "repo-local",
       sourceRef: ".pulsar/modules/acme.ts",
+      sourceFingerprint: "source-v1",
       contributions: [
         {
           slot: "taxonomy.file-classifier",

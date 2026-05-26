@@ -80,6 +80,58 @@ describe("pulsar runtime project modules", () => {
     }
   })
 
+  test("ignores malformed package manifests during Next auto-detection", async () => {
+    const repoPath = await mkdtemp(join(tmpdir(), "pulsar-runtime-project-modules-"))
+    try {
+      await writeRepoFile(repoPath, "package.json", "{ not valid json")
+      await writeRepoFile(
+        repoPath,
+        "packages/web/package.json",
+        JSON.stringify({ dependencies: { next: "^16.0.0" } }, null, 2),
+      )
+      await writeRepoFile(
+        repoPath,
+        "packages/web/app/page.tsx",
+        "export default function Page() { return null }\n",
+      )
+
+      const context = await Effect.runPromise(loadProjectModuleCalibrationContext(repoPath))
+
+      expect(context?.activeModules.map((module) => module.id)).toEqual([
+        NEXTJS_PROJECT_MODULE_ID,
+      ])
+      expect(context?.repoFacts.detectedFrameworks?.[0]).toMatchObject({
+        id: NEXTJS_APP_ROUTER_FRAMEWORK_ID,
+        confidence: "high",
+        activation: "auto-active",
+      })
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("ignores unsupported JSX/TSX metadata route conventions during Next auto-detection", async () => {
+    const repoPath = await mkdtemp(join(tmpdir(), "pulsar-runtime-project-modules-"))
+    try {
+      await writeRepoFile(
+        repoPath,
+        "package.json",
+        JSON.stringify({ dependencies: { next: "^16.0.0" } }, null, 2),
+      )
+      await writeRepoFile(
+        repoPath,
+        "app/robots.tsx",
+        "export default function robots() { return {} }\n",
+      )
+
+      const context = await Effect.runPromise(loadProjectModuleCalibrationContext(repoPath))
+
+      expect(context).toBeUndefined()
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
   test("reports medium-confidence Next detection without auto-activation", async () => {
     const repoPath = await mkdtemp(join(tmpdir(), "pulsar-runtime-project-modules-"))
     try {

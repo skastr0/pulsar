@@ -64,6 +64,7 @@ export interface ProjectModuleDefinitionInput<
   readonly scope: ProjectModuleScope
   readonly source?: ProjectModuleDescriptor["source"]
   readonly sourceRef?: string
+  readonly sourceFingerprint?: string
   readonly configHash?: string
   readonly processors: Processors
 }
@@ -92,6 +93,9 @@ export const defineProjectModule = <
     scope: definition.scope,
     source: definition.source ?? "repo-local",
     ...(definition.sourceRef !== undefined ? { sourceRef: definition.sourceRef } : {}),
+    ...(definition.sourceFingerprint !== undefined
+      ? { sourceFingerprint: definition.sourceFingerprint }
+      : {}),
     ...(definition.configHash !== undefined ? { configHash: definition.configHash } : {}),
     contributions: processors.map((processor) => ({
       slot: processor.slot,

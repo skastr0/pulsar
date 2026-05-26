@@ -24,6 +24,7 @@ describe("Next.js project module", () => {
       id: "@skastr0/pulsar-project-module-nextjs",
       version: "0.1.1",
       scope: "framework",
+      sourceFingerprint: expect.any(String),
       contributions: [
         {
           slot: "typescript.export-reachability",
@@ -96,6 +97,60 @@ describe("Next.js project module", () => {
         declarationKinds: ["VariableDeclaration"],
         isPublicEntrypoint: false,
       })?.id,
-    ).toBe("nextjs-app-router.metadata-image.contentType")
+    ).toBe("nextjs-app-router.opengraph-image.contentType")
+  })
+
+  test("uses file-specific contract ids for special conventions", () => {
+    expect(
+      nextAppRouterExportContract({
+        exportFile: "/repo/app/loading.tsx",
+        exportName: "default",
+        declarationFiles: ["/repo/app/loading.tsx"],
+        declarationKinds: ["FunctionDeclaration"],
+        isPublicEntrypoint: false,
+      })?.id,
+    ).toBe("nextjs-app-router.loading.default")
+
+    expect(
+      nextAppRouterExportContract({
+        exportFile: "/repo/app/not-found.tsx",
+        exportName: "default",
+        declarationFiles: ["/repo/app/not-found.tsx"],
+        declarationKinds: ["FunctionDeclaration"],
+        isPublicEntrypoint: false,
+      })?.id,
+    ).toBe("nextjs-app-router.not-found.default")
+  })
+
+  test("covers metadata route config contracts and rejects unsupported variants", () => {
+    expect(
+      nextAppRouterExportContract({
+        exportFile: "/repo/app/robots.ts",
+        exportName: "revalidate",
+        declarationFiles: ["/repo/app/robots.ts"],
+        declarationKinds: ["VariableDeclaration"],
+        isPublicEntrypoint: false,
+      })?.id,
+    ).toBe("nextjs-app-router.robots.revalidate")
+
+    expect(
+      nextAppRouterExportContract({
+        exportFile: "/repo/app/manifest.tsx",
+        exportName: "dynamic",
+        declarationFiles: ["/repo/app/manifest.tsx"],
+        declarationKinds: ["VariableDeclaration"],
+        isPublicEntrypoint: false,
+      }),
+    ).toBeUndefined()
+
+    expect(
+      nextAppRouterExportContract({
+        exportFile: "/repo/app/sitemap.ts",
+        exportName: "generateSitemaps",
+        declarationFiles: ["/repo/app/sitemap.ts"],
+        declarationKinds: ["FunctionDeclaration"],
+        isPublicEntrypoint: false,
+      })?.id,
+    ).toBe("nextjs-app-router.sitemap.generateSitemaps")
   })
 })

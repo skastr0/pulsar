@@ -58,6 +58,7 @@ const NEXT_CONFIG_FILES = new Set([
 
 const APP_ROUTER_FILE_EXTENSIONS = [".tsx", ".jsx", ".ts", ".js"] as const
 const ROUTE_HANDLER_FILE_EXTENSIONS = new Set([".ts", ".js"])
+const METADATA_ROUTE_FILE_EXTENSIONS = new Set([".ts", ".js"])
 
 const PAGE_LAYOUT_FILES = new Set(["page", "layout"])
 const METADATA_IMAGE_FILES = new Set([
@@ -80,7 +81,7 @@ const COMPONENT_CONVENTION_FILES = new Set([
 
 export const detectNextAppRouterFramework = (
   repoRoot: string,
-): Effect.Effect<DetectedRuntimeFramework | undefined, Error, never> =>
+): Effect.Effect<DetectedRuntimeFramework | undefined, never, never> =>
   Effect.gen(function* () {
     const facts = yield* collectNextDetectionFacts(repoRoot)
     if (facts.dependencyPaths.length > 0 && facts.routeFiles.length > 0) {
@@ -107,20 +108,23 @@ const nextDetection = (
 
 const collectNextDetectionFacts = (
   repoRoot: string,
-): Effect.Effect<NextDetectionFacts, Error, never> =>
+): Effect.Effect<NextDetectionFacts, never, never> =>
   Effect.gen(function* () {
     const dependencyPaths = new Set<string>()
     const configPaths = new Set<string>()
     const routeFiles = new Map<string, string>()
 
-    const visit = (dir: string): Effect.Effect<void, Error, never> =>
+    const visit = (dir: string): Effect.Effect<void, never, never> =>
       Effect.gen(function* () {
-        const entries = yield* Effect.tryPromise({
+        const entries = yield* Effect.either(Effect.tryPromise({
           try: () => readdir(dir, { withFileTypes: true }),
           catch: (cause) => new Error(`Failed to scan ${dir}: ${String(cause)}`),
-        })
+        }))
+        if (entries._tag === "Left") return
 
-        for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+        for (const entry of entries.right.sort((left, right) =>
+          left.name.localeCompare(right.name)
+        )) {
           const fullPath = join(dir, entry.name)
           const relPath = relative(repoRoot, fullPath).replaceAll("\\", "/")
           if (entry.isDirectory()) {
@@ -151,17 +155,21 @@ const collectNextDetectionFacts = (
     }
   })
 
-const packageJsonDeclaresNext = (path: string): Effect.Effect<boolean, Error, never> =>
+const packageJsonDeclaresNext = (path: string): Effect.Effect<boolean, never, never> =>
   Effect.gen(function* () {
-    const raw = yield* Effect.tryPromise({
+    const raw = yield* Effect.either(Effect.tryPromise({
       try: () => readFile(path, "utf8"),
       catch: (cause) => new Error(`Failed to read ${path}: ${String(cause)}`),
-    })
-    const parsed = yield* Effect.try({
-      try: () => JSON.parse(raw) as Record<string, unknown>,
+    }))
+    if (raw._tag === "Left") return false
+
+    const parsed = yield* Effect.either(Effect.try({
+      try: () => JSON.parse(raw.right) as Record<string, unknown>,
       catch: (cause) => new Error(`Failed to parse ${path}: ${String(cause)}`),
-    })
-    return collectDependencyNames(parsed).has("next")
+    }))
+    if (parsed._tag === "Left") return false
+
+    return collectDependencyNames(parsed.right).has("next")
   })
 
 const collectDependencyNames = (packageJson: Record<string, unknown>): ReadonlySet<string> => {
@@ -198,7 +206,12 @@ const appRouterRouteFileConvention = (relPath: string): string | undefined => {
     return "route"
   }
   if (METADATA_IMAGE_FILES.has(parsed.baseName)) return parsed.baseName
-  if (METADATA_ROUTE_FILES.has(parsed.baseName)) return parsed.baseName
+  if (
+    METADATA_ROUTE_FILES.has(parsed.baseName) &&
+    METADATA_ROUTE_FILE_EXTENSIONS.has(parsed.extension)
+  ) {
+    return parsed.baseName
+  }
   if (COMPONENT_CONVENTION_FILES.has(parsed.baseName)) return parsed.baseName
   return undefined
 }
