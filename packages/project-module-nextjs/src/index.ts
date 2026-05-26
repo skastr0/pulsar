@@ -137,6 +137,7 @@ const ROUTE_EXPORTS = new Set([
   "DELETE",
   "HEAD",
   "OPTIONS",
+  "generateStaticParams",
   ...routeSegmentConfigExports,
 ])
 

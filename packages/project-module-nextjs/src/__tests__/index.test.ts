@@ -91,6 +91,16 @@ describe("Next.js project module", () => {
 
     expect(
       nextAppRouterExportContract({
+        exportFile: "/repo/app/api/products/[id]/route.ts",
+        exportName: "generateStaticParams",
+        declarationFiles: ["/repo/app/api/products/[id]/route.ts"],
+        declarationKinds: ["FunctionDeclaration"],
+        isPublicEntrypoint: false,
+      })?.id,
+    ).toBe("nextjs-app-router.route.generateStaticParams")
+
+    expect(
+      nextAppRouterExportContract({
         exportFile: "/repo/app/blog/opengraph-image.tsx",
         exportName: "contentType",
         declarationFiles: ["/repo/app/blog/opengraph-image.tsx"],

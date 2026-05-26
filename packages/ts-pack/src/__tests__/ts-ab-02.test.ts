@@ -487,6 +487,7 @@ describe("TS-AB-02 (unused exports reachability)", () => {
       "app/api/search/route.ts",
       [
         "export const runtime = 'edge'",
+        "export function generateStaticParams() { return [] }",
         "export function GET() { return Response.json({ ok: true }) }",
         "",
       ].join("\n"),
@@ -534,13 +535,14 @@ describe("TS-AB-02 (unused exports reachability)", () => {
     expect(byName.get("app/blog/[slug]/page.tsx:default")?.classification).toBe("framework-consumed")
     expect(byName.get("app/api/search/route.ts:GET")?.classification).toBe("framework-consumed")
     expect(byName.get("app/api/search/route.ts:runtime")?.classification).toBe("framework-consumed")
+    expect(byName.get("app/api/search/route.ts:generateStaticParams")?.classification).toBe("framework-consumed")
     expect(byName.get("app/blog/opengraph-image.tsx:alt")?.classification).toBe("framework-consumed")
     expect(byName.get("app/blog/[slug]/page.tsx:unusedHelper")?.classification).toBe("unused")
     expect(TsAb02.score(out)).toBe(0)
     expect(TsAb02.diagnose(out).map((diagnostic) => diagnostic.data?.exportName)).toEqual([
       "unusedHelper",
     ])
-    expect(out.calibrationDecisions).toHaveLength(10)
+    expect(out.calibrationDecisions).toHaveLength(11)
     expect(out.calibrationDecisions[0]).toMatchObject({
       moduleId: "@skastr0/pulsar-project-module-nextjs",
       processorId: "nextjs-app-router-export-contracts",
