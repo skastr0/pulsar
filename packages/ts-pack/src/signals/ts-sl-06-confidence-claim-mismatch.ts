@@ -224,11 +224,14 @@ const hasClaimEvidence = (
   const normalized = bodyText.toLowerCase()
   if (/\basserts\b|\sis\s/.test(returnTypeText)) return true
   if (/(throw\s+new|throw\s+\w+)/.test(bodyText)) return true
-  if (/(typeof|instanceof|\bin\b|!==|===|!=|==|Array\.isArray)/.test(bodyText)) return true
+  if (hasRuntimeGuardEvidence(bodyText)) return true
   if (/(\.safeparse\s*\(|\.parse\s*\(|decode\w*\s*\(|validate\w*\s*\(|assert\w*\s*\(|schema)/i.test(bodyText)) {
     return true
   }
-  if (claimKind === "parse" && /(JSON\.parse|Number\s*\(|String\s*\(|Boolean\s*\()/.test(bodyText)) {
+  if (claimKind === "parse" && hasParseEvidence(bodyText)) {
+    return true
+  }
+  if (claimKind === "ensure" && hasEnsureEvidence(bodyText)) {
     return true
   }
   if (/return\s+(?:true|false|value|input|raw|data)\s*;?\s*\}?$/i.test(normalized)) {
@@ -237,6 +240,19 @@ const hasClaimEvidence = (
   if (/\bas\s+[A-Za-z_$][\w$<>, ]+/.test(bodyText)) return false
   return false
 }
+
+const hasRuntimeGuardEvidence = (bodyText: string): boolean =>
+  /(typeof|instanceof|\bin\b|!==|===|!=|==|Array\.isArray)/.test(bodyText) ||
+  /\.(?:test|startsWith|endsWith|includes|has)\s*\(/.test(bodyText) ||
+  /\b(?:length|size)\s*(?:>|>=|<|<=)\s*\d+/.test(bodyText)
+
+const hasParseEvidence = (bodyText: string): boolean =>
+  /(JSON\.parse|Number\s*\(|String\s*\(|Boolean\s*\(|parseInt\s*\(|parseFloat\s*\()/.test(bodyText) ||
+  /(?:new\s+(?:Date|URL)|Date\.parse|URL\.parse)\s*\(/.test(bodyText)
+
+const hasEnsureEvidence = (bodyText: string): boolean =>
+  /\b(?:mkdir|writeFile|rename|rm)\s*\(/.test(bodyText) ||
+  /\.(?:mkdir|writeFile|rename|rm)\s*\(/.test(bodyText)
 
 const claimKindOf = (name: string): string => {
   const lower = name.toLowerCase()

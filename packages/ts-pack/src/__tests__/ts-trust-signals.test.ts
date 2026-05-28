@@ -402,6 +402,37 @@ describe("TypeScript trust-domain and AI-slop signals", () => {
     expect(TsSl06.diagnose(out)[0]?.fixHints?.[0]?.kind).toBe("align-confidence-claim")
   })
 
+  test("TS-SL-06 accepts concrete parser, guard, and ensure evidence", async () => {
+    await repo.write(
+      "src/evidence.ts",
+      [
+        "declare const mkdir: (path: string, options: { recursive: true }) => Promise<void>",
+        "export function parseUntil(raw: string): Date | undefined {",
+        "  const value = /^\\d{4}-\\d{2}-\\d{2}$/.test(raw) ? `${raw}T23:59:59.999Z` : raw",
+        "  const parsed = new Date(value)",
+        "  return Number.isNaN(parsed.getTime()) ? undefined : parsed",
+        "}",
+        "export function parseAppRouterFileName(fileName: string): string | undefined {",
+        "  return fileName.endsWith('.tsx') ? fileName.slice(0, -4) : undefined",
+        "}",
+        "export const isReservedRustSignalId = (signalId: string): boolean => signalId.startsWith('RS-')",
+        "export const hasExportedDeclaration = (code: string, symbol: string): boolean =>",
+        "  new RegExp(`export class ${symbol}`).test(code)",
+        "export const ensureProposalDirectories = (path: string): Promise<void> =>",
+        "  mkdir(path, { recursive: true })",
+        "export function ensureObserverHasActiveSignals(activeSignalIds: ReadonlyArray<string>): void {",
+        "  if (activeSignalIds.length > 0) return",
+        "  throw new Error('Observer mode has no active signals')",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsSl06, TsSl06.defaultConfig)
+
+    expect(out.findings).toEqual([])
+    expect(TsSl06.score(out)).toBe(1)
+  })
+
   const runBp = async (changedHunks: ReadonlyArray<ChangedHunk>): Promise<TsBp01Output> => {
     const layer = Layer.mergeAll(
       TsProjectLayer(repo.root),
