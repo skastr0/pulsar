@@ -11,16 +11,20 @@ import { collectRustProjectFacts } from "../rust-analysis.js"
 import type { RustAnalysis } from "../rust-analysis.js"
 import type { RustFunctionFact } from "../rust-analysis-types.js"
 import { type RustProject, RustProjectTag } from "../project.js"
-import { parseRustFile, type RustSyntaxNode } from "../syn-walker.js"
-import {
-  DEFAULT_RUST_EXCLUDE_GLOBS,
-  firstNamedChild,
-  modulePathForAncestors,
-  namedChildrenOf,
-  resolveRustFileScope,
-  walkAttributedNodes,
-} from "./shared-rust-ast.js"
+import { DEFAULT_RUST_EXCLUDE_GLOBS } from "./shared-rust-ast.js"
 import { isExcluded } from "./shared-globs.js"
+import {
+  collectFunctionCallFacts,
+  unsafePropagatingFunctionKeys,
+} from "./rs-ld-01-unsafe-calls.js"
+import {
+  type FunctionCallFacts,
+  type UnsafeModuleSummary,
+  type UnsafeSite,
+  type UnsafeSiteKind,
+  functionKey,
+} from "./rs-ld-01-unsafe-model.js"
+import { collectUnsafeSites } from "./rs-ld-01-unsafe-sites.js"
 
 const RsLd01Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
@@ -28,41 +32,6 @@ const RsLd01Config = Schema.Struct({
   top_n_diagnostics: Schema.Number,
 })
 type RsLd01Config = typeof RsLd01Config.Type
-
-type UnsafeSiteKind =
-  | "unsafe_block"
-  | "unsafe_function"
-  | "unsafe_function_signature"
-  | "unsafe_trait"
-  | "unsafe_impl"
-  | "foreign_function"
-  | "static_mut"
-
-interface UnsafeSite {
-  readonly kind: UnsafeSiteKind
-  readonly module: string
-  readonly file: string
-  readonly line: number
-  readonly name: string | undefined
-  readonly functionName: string | undefined
-}
-
-interface UnsafeModuleSummary {
-  readonly module: string
-  readonly file: string
-  readonly totalFunctions: number
-  readonly safeOnlyMatchedSelectors: ReadonlyArray<string>
-  readonly unsafeSiteCount: number
-  readonly unsafeSiteKindCounts: Partial<Record<UnsafeSiteKind, number>>
-  readonly sites: ReadonlyArray<UnsafeSite>
-  readonly unsafeBlockCount: number
-  readonly unsafeFunctionCount: number
-  readonly propagatingFunctionCount: number
-  readonly unsafePropagationShare: number
-  readonly unsafeSitesPerFunction: number
-  readonly cappedUnsafeSiteShare: number
-  readonly unsafePressure: number
-}
 
 interface RsLd01Output {
   readonly modules: ReadonlyArray<UnsafeModuleSummary>
@@ -86,18 +55,6 @@ interface RsLd01Output {
   readonly safeOnlySelectorMode: "module-subtree"
   readonly diagnosticCapPolicy: "safe-only-blocks-uncapped-warnings-capped"
   readonly sitePressureScoreCap: number
-}
-
-interface FunctionCallFacts {
-  readonly key: string
-  readonly module: string
-  readonly name: string
-  readonly callees: ReadonlyArray<CalleeRef>
-}
-
-interface CalleeRef {
-  readonly name: string
-  readonly pathSegments: ReadonlyArray<string>
 }
 
 const DEFAULT_TOP_N_DIAGNOSTICS = 10
@@ -533,236 +490,3 @@ const matchedSafeOnlySelectors = (
   selectors
     .filter((selector) => module === selector || module.startsWith(`${selector}::`))
     .sort()
-
-const collectUnsafeSites = async (
-  project: RustProject,
-  analyzedSourceFiles: ReadonlyArray<string>,
-): Promise<ReadonlyArray<UnsafeSite>> => {
-  const sites: Array<UnsafeSite> = []
-  for (const file of analyzedSourceFiles) {
-    const scope = resolveRustFileScope(project, file)
-    const tree = await parseRustFile(file)
-    walkAttributedNodes(tree.rootNode, ({ node, ancestors, testGated }) => {
-      if (testGated) return
-      const site = unsafeSiteFromNode(file, scope, node, ancestors)
-      if (site !== undefined) sites.push(site)
-    })
-  }
-  return sites.sort(
-    (left, right) =>
-      left.file.localeCompare(right.file) ||
-      left.line - right.line ||
-      left.kind.localeCompare(right.kind) ||
-      (left.name ?? "").localeCompare(right.name ?? ""),
-  )
-}
-
-const unsafeSiteFromNode = (
-  file: string,
-  scope: ReturnType<typeof resolveRustFileScope>,
-  node: RustSyntaxNode,
-  ancestors: ReadonlyArray<RustSyntaxNode>,
-): UnsafeSite | undefined => {
-  const kind = unsafeSiteKind(node, ancestors)
-  if (kind === undefined) return undefined
-  const { modulePath } = modulePathForAncestors(scope, ancestors)
-  const name = unsafeSiteName(node, kind)
-  return {
-    kind,
-    module: modulePath,
-    file,
-    line: node.startPosition.row + 1,
-    name,
-    functionName: kind === "unsafe_block" ? nearestFunctionName(ancestors) : name,
-  }
-}
-
-const unsafeSiteKind = (
-  node: RustSyntaxNode,
-  ancestors: ReadonlyArray<RustSyntaxNode>,
-): UnsafeSiteKind | undefined => {
-  if (node.type === "unsafe_block") return "unsafe_block"
-  if (node.type === "function_item" && hasUnsafeFunctionModifier(node)) return "unsafe_function"
-  if (node.type === "function_signature_item" && hasAncestor(ancestors, "foreign_mod_item")) {
-    return "foreign_function"
-  }
-  if (node.type === "function_signature_item" && hasUnsafeFunctionModifier(node)) {
-    return "unsafe_function_signature"
-  }
-  if (node.type === "trait_item" && /\bunsafe\s+trait\b/.test(node.text)) return "unsafe_trait"
-  if (node.type === "impl_item" && /^\s*unsafe\s+impl\b/.test(node.text)) return "unsafe_impl"
-  if (node.type === "static_item" && firstNamedChild(node, "mutable_specifier") !== undefined) {
-    return "static_mut"
-  }
-  return undefined
-}
-
-const unsafeSiteName = (node: RustSyntaxNode, kind: UnsafeSiteKind): string | undefined => {
-  if (kind === "unsafe_impl") return node.text.split("{")[0]?.trim()
-  return (
-    firstNamedChild(node, "identifier")?.text ??
-    firstNamedChild(node, "type_identifier")?.text
-  )
-}
-
-const hasUnsafeFunctionModifier = (node: RustSyntaxNode): boolean =>
-  (firstNamedChild(node, "function_modifiers")?.text ?? "").includes("unsafe")
-
-const hasAncestor = (ancestors: ReadonlyArray<RustSyntaxNode>, type: string): boolean =>
-  ancestors.some((ancestor) => ancestor.type === type)
-
-const nearestFunctionName = (ancestors: ReadonlyArray<RustSyntaxNode>): string | undefined => {
-  for (let index = ancestors.length - 1; index >= 0; index -= 1) {
-    const ancestor = ancestors[index]!
-    if (ancestor.type === "function_item" || ancestor.type === "function_signature_item") {
-      return firstNamedChild(ancestor, "identifier")?.text
-    }
-  }
-  return undefined
-}
-
-const collectFunctionCallFacts = async (
-  project: RustProject,
-  analyzedSourceFiles: ReadonlyArray<string>,
-): Promise<ReadonlyArray<FunctionCallFacts>> => {
-  const facts: Array<FunctionCallFacts> = []
-  for (const file of analyzedSourceFiles) {
-    const scope = resolveRustFileScope(project, file)
-    const tree = await parseRustFile(file)
-    walkAttributedNodes(tree.rootNode, ({ node, ancestors, testGated }) => {
-      if (testGated || node.type !== "function_item") return
-      const name = firstNamedChild(node, "identifier")?.text
-      if (name === undefined) return
-      const { modulePath } = modulePathForAncestors(scope, ancestors)
-      facts.push({
-        key: functionKey(modulePath, name),
-        module: modulePath,
-        name,
-        callees: collectCalledFunctionRefs(node),
-      })
-    })
-  }
-  return facts
-}
-
-const unsafePropagatingFunctionKeys = (
-  functions: ReadonlyArray<{
-    readonly modulePath: string
-    readonly name: string
-    readonly isUnsafeFn: boolean
-    readonly unsafeBlockCount: number
-  }>,
-  callFacts: ReadonlyArray<FunctionCallFacts>,
-): ReadonlySet<string> => {
-  const knownKeys = new Set(callFacts.map((fn) => fn.key))
-  const keysByName = new Map<string, Array<string>>()
-  for (const fn of callFacts) {
-    keysByName.set(fn.name, [...(keysByName.get(fn.name) ?? []), fn.key])
-  }
-
-  const propagating = new Set(
-    functions
-      .filter((fn) => fn.isUnsafeFn || fn.unsafeBlockCount > 0)
-      .map((fn) => functionKey(fn.modulePath, fn.name))
-      .filter((key) => knownKeys.has(key)),
-  )
-
-  let changed = true
-  while (changed) {
-    changed = false
-    for (const fn of callFacts) {
-      if (propagating.has(fn.key)) continue
-      const callees = fn.callees.flatMap((callee) =>
-        resolveCalleeKeys(fn.module, callee, knownKeys, keysByName),
-      )
-      if (callees.some((key) => propagating.has(key))) {
-        propagating.add(fn.key)
-        changed = true
-      }
-    }
-  }
-  return propagating
-}
-
-const resolveCalleeKeys = (
-  callerModule: string,
-  callee: CalleeRef,
-  knownKeys: ReadonlySet<string>,
-  keysByName: ReadonlyMap<string, ReadonlyArray<string>>,
-): ReadonlyArray<string> => {
-  const qualifiedKey = resolveQualifiedCalleeKey(callerModule, callee.pathSegments)
-  if (qualifiedKey !== undefined) {
-    return knownKeys.has(qualifiedKey) ? [qualifiedKey] : []
-  }
-  const localKey = functionKey(callerModule, callee.name)
-  if (knownKeys.has(localKey)) return [localKey]
-  const candidates = keysByName.get(callee.name) ?? []
-  return candidates.length === 1 ? candidates : []
-}
-
-const resolveQualifiedCalleeKey = (
-  callerModule: string,
-  pathSegments: ReadonlyArray<string>,
-): string | undefined => {
-  if (pathSegments.length <= 1) return undefined
-  const moduleSegments = callerModule.split("::")
-  const crateRoot = moduleSegments.slice(0, 2)
-  let base = [...moduleSegments]
-  let index = 0
-
-  if (pathSegments[0] === "crate") {
-    base = crateRoot
-    index = 1
-  } else if (pathSegments[0] === "self") {
-    index = 1
-  } else {
-    while (pathSegments[index] === "super") {
-      if (base.length > crateRoot.length) base = base.slice(0, -1)
-      index += 1
-    }
-  }
-
-  const calleeName = pathSegments[pathSegments.length - 1]
-  const relativeModuleSegments = pathSegments.slice(index, -1)
-  if (calleeName === undefined) return undefined
-  return [...base, ...relativeModuleSegments, calleeName].join("::")
-}
-
-const collectCalledFunctionRefs = (node: RustSyntaxNode): ReadonlyArray<CalleeRef> => {
-  const refs = new Map<string, CalleeRef>()
-  const walk = (current: RustSyntaxNode): void => {
-    if (current.type === "call_expression") {
-      const callee = namedChildrenOf(current)[0]
-      const ref = calleeRef(callee)
-      if (ref !== undefined) refs.set(ref.pathSegments.join("::"), ref)
-    }
-    for (const child of namedChildrenOf(current)) walk(child)
-  }
-  walk(node)
-  return [...refs.values()].sort((left, right) =>
-    left.pathSegments.join("::").localeCompare(right.pathSegments.join("::")),
-  )
-}
-
-const calleeRef = (node: RustSyntaxNode | undefined): CalleeRef | undefined => {
-  if (node === undefined) return undefined
-  if (node.type === "identifier") return { name: node.text, pathSegments: [node.text] }
-  if (node.type === "generic_function") return calleeRef(namedChildrenOf(node)[0])
-  if (node.type === "scoped_identifier") {
-    const pathSegments = scopedIdentifierSegments(node)
-    const name = pathSegments[pathSegments.length - 1]
-    return name === undefined ? undefined : { name, pathSegments }
-  }
-  return undefined
-}
-
-const scopedIdentifierSegments = (node: RustSyntaxNode): ReadonlyArray<string> =>
-  namedChildrenOf(node).flatMap((child) => {
-    if (child.type === "identifier" || child.type === "super" || child.type === "crate" || child.type === "self") {
-      return [child.text]
-    }
-    if (child.type === "scoped_identifier") return scopedIdentifierSegments(child)
-    return []
-  })
-
-const functionKey = (module: string, name: string): string => `${module}::${name}`
