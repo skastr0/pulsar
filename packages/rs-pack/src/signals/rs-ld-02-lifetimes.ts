@@ -11,16 +11,10 @@ import {
 import { Effect, Schema } from "effect"
 import { collectRustProjectFacts } from "../rust-analysis.js"
 import { type RustProject, RustProjectTag } from "../project.js"
-import { parseRustFile } from "../syn-walker.js"
-import {
-  DEFAULT_RUST_EXCLUDE_GLOBS,
-  firstNamedChild,
-  modulePathForAncestors,
-  resolveRustFileScope,
-  walkAttributedNodes,
-} from "./shared-rust-ast.js"
+import { DEFAULT_RUST_EXCLUDE_GLOBS } from "./shared-rust-ast.js"
 import { rustAnalysisOutputMetadata } from "./shared-applicability.js"
 import { isExcluded } from "./shared-globs.js"
+import { collectActiveRustFunctionKeys, rustFunctionKey } from "./shared-rust-function-keys.js"
 
 const RsLd02Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
@@ -114,11 +108,11 @@ export const RsLd02: Signal<RsLd02Config, RsLd02Output, RustProjectTag> = {
           const analyzedSourceFiles = project.sourceFiles.filter(
             (file) => !isExcluded(file, normalizedConfig.exclude_globs),
           )
-          const activeFunctionKeys = await collectActiveFunctionKeys(project, analyzedSourceFiles)
+          const activeFunctionKeys = await collectActiveRustFunctionKeys(project, analyzedSourceFiles)
           const analyzedFunctions = facts.functions.filter(
             (fn) =>
               !isExcluded(fn.file, normalizedConfig.exclude_globs) &&
-              activeFunctionKeys.has(lifetimeFunctionKey(fn)),
+              activeFunctionKeys.has(rustFunctionKey(fn)),
           )
           const functions = analyzedFunctions
             .map((fn) => ({
@@ -231,34 +225,3 @@ const makeRsLd02FactorLedger = (): SignalFactorLedger =>
 
 const ratio = (numerator: number, denominator: number): number =>
   denominator === 0 ? 0 : numerator / denominator
-
-const collectActiveFunctionKeys = async (
-  project: RustProject,
-  analyzedSourceFiles: ReadonlyArray<string>,
-): Promise<ReadonlySet<string>> => {
-  const keys = new Set<string>()
-  for (const file of analyzedSourceFiles) {
-    const scope = resolveRustFileScope(project, file)
-    const tree = await parseRustFile(file)
-    walkAttributedNodes(tree.rootNode, ({ node, ancestors, testGated }) => {
-      if (testGated || node.type !== "function_item") return
-      const name = firstNamedChild(node, "identifier")?.text
-      if (name === undefined) return
-      const { modulePath } = modulePathForAncestors(scope, ancestors)
-      keys.add(lifetimeFunctionKey({
-        file,
-        modulePath,
-        name,
-        line: node.startPosition.row + 1,
-      }))
-    })
-  }
-  return keys
-}
-
-const lifetimeFunctionKey = (fn: {
-  readonly file: string
-  readonly modulePath: string
-  readonly name: string
-  readonly line: number
-}): string => `${fn.file}:${fn.line}:${fn.modulePath}::${fn.name}`

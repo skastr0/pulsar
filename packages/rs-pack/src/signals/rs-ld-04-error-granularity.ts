@@ -20,6 +20,7 @@ import {
 } from "./shared-rust-ast.js"
 import { rustAnalysisOutputMetadata } from "./shared-applicability.js"
 import { isExcluded } from "./shared-globs.js"
+import { collectActiveRustFunctionKeys, rustFunctionKey } from "./shared-rust-function-keys.js"
 
 const RsLd04Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
@@ -97,16 +98,16 @@ export const RsLd04: Signal<RsLd04Config, RsLd04Output, RustProjectTag> = {
             (file) => !isExcluded(file, normalizedConfig.exclude_globs),
           )
           const analyzedSourceFileSet = new Set(analyzedSourceFiles)
-          const activeFunctionKeys = await collectActiveFunctionKeys(project, analyzedSourceFiles)
+          const activeFunctionKeys = await collectActiveRustFunctionKeys(project, analyzedSourceFiles)
           const resolvedResultErrorTypes = await collectResolvedResultErrorTypes(project, analyzedSourceFiles)
           const boundaryFunctions = facts.functions
             .filter((fn) =>
               analyzedSourceFileSet.has(fn.file) &&
-              activeFunctionKeys.has(boundaryFunctionKey(fn))
+              activeFunctionKeys.has(rustFunctionKey(fn))
             )
             .filter((fn) => fn.visibility.kind !== "private")
             .flatMap((fn) => {
-              const errorType = resolvedResultErrorTypes.get(boundaryFunctionKey(fn)) ?? fn.resultErrorType
+              const errorType = resolvedResultErrorTypes.get(rustFunctionKey(fn)) ?? fn.resultErrorType
               if (errorType === undefined) return []
               return [{
                 file: fn.file,
@@ -194,37 +195,6 @@ const makeRsLd04FactorLedger = (): SignalFactorLedger =>
 const ratio = (numerator: number, denominator: number): number =>
   denominator === 0 ? 0 : numerator / denominator
 
-const collectActiveFunctionKeys = async (
-  project: RustProject,
-  analyzedSourceFiles: ReadonlyArray<string>,
-): Promise<ReadonlySet<string>> => {
-  const keys = new Set<string>()
-  for (const file of analyzedSourceFiles) {
-    const scope = resolveRustFileScope(project, file)
-    const tree = await parseRustFile(file)
-    walkAttributedNodes(tree.rootNode, ({ node, ancestors, testGated }) => {
-      if (testGated || node.type !== "function_item") return
-      const name = firstNamedChild(node, "identifier")?.text
-      if (name === undefined) return
-      const { modulePath } = modulePathForAncestors(scope, ancestors)
-      keys.add(boundaryFunctionKey({
-        file,
-        modulePath,
-        name,
-        line: node.startPosition.row + 1,
-      }))
-    })
-  }
-  return keys
-}
-
-const boundaryFunctionKey = (fn: {
-  readonly file: string
-  readonly modulePath: string
-  readonly name: string
-  readonly line: number
-}): string => `${fn.file}:${fn.line}:${fn.modulePath}::${fn.name}`
-
 interface ResultAliasScope {
   readonly importAliases: ReadonlyMap<string, string>
   readonly typeAliases: ReadonlyMap<string, string>
@@ -248,7 +218,7 @@ const collectResolvedResultErrorTypes = async (
       const aliases = aliasesForModule(modulePath, aliasesByModule)
       const errorType = resultErrorTypeFromReturnText(returnTypeText, aliases)
       if (errorType === undefined) return
-      resultErrorTypes.set(boundaryFunctionKey({
+      resultErrorTypes.set(rustFunctionKey({
         file,
         modulePath,
         name,
