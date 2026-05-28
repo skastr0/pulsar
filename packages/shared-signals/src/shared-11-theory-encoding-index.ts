@@ -4,7 +4,6 @@ import {
   resolveCompositeInputs,
   type CompositeExplanation,
   type CompositeInputResolution,
-  type CompositeInputSpec,
   type Diagnostic,
   type Signal,
 } from "@skastr0/pulsar-core/signal"
@@ -18,22 +17,9 @@ import {
   clamp01,
   compareTheoryEncodingFactors,
   FACTOR_WEIGHTS,
-  normalizeBoundaryParserCoverage,
-  normalizeContractFreshness,
-  normalizeCoverageFacts,
-  normalizeDomainConstructionControl,
-  normalizeErrorChannelOpacity,
-  normalizeMachineFeedbackCoverage,
-  normalizeRecencyWeightedChurn,
-  summarizeBoundaryParserCoverage,
-  summarizeContractFreshness,
-  summarizeCoverageFacts,
-  summarizeDomainConstructionControl,
-  summarizeErrorChannelOpacity,
-  summarizeMachineFeedbackCoverage,
-  summarizeRecencyWeightedChurn,
   weightedTheoryGapPressure,
 } from "./shared-11-theory-encoding-factors.js"
+import { SHARED_11_COMPOSITE_INPUTS } from "./shared-11-theory-encoding-inputs.js"
 import type { SharedCov01CoverageFactsOutput } from "./shared-cov-01-coverage-facts.js"
 
 export const Shared11TheoryEncodingIndexConfig = Schema.Struct({
@@ -125,14 +111,6 @@ export interface Shared11TheoryEncodingIndexOutput {
   readonly enforcementCeiling: ReadonlyArray<string>
 }
 
-interface TheoryEncodingMeasurement {
-  readonly factors: ReadonlyArray<TheoryEncodingFactor>
-  readonly availableFactorWeight: number
-  readonly totalDeclaredFactorWeight: number
-  readonly evidenceCompleteness: number
-  readonly requiredFoundationMeasured: boolean
-}
-
 export interface BoundaryParserCoverageLikeOutput {
   readonly state:
     | "present"
@@ -177,98 +155,13 @@ const DEFAULT_TOP_N_DIAGNOSTICS = 10
 const DEFAULT_WARN_THRESHOLD = 0.35
 const DEFAULT_MIN_AVAILABLE_FACTOR_WEIGHT = 0.25
 
-export const SHARED_11_COMPOSITE_INPUTS = [
-  {
-    id: "SHARED-10-domain-construction-control",
-    aliases: ["SHARED-10"],
-    factorPath: "inputs.domain_construction_control",
-    weight: FACTOR_WEIGHTS.domainConstructionControl,
-    cacheFingerprint: "shared-11-domain-construction-control-input-v1",
-    rawValue: (value) =>
-      summarizeDomainConstructionControl(
-        value as Shared10DomainConstructionControlOutput,
-      ),
-    normalize: (value) =>
-      normalizeDomainConstructionControl(
-        value as Shared10DomainConstructionControlOutput,
-      ),
-  },
-  {
-    id: "SHARED-09-contract-freshness",
-    aliases: ["SHARED-09"],
-    factorPath: "inputs.contract_freshness",
-    weight: FACTOR_WEIGHTS.contractFreshness,
-    cacheFingerprint: "shared-11-contract-freshness-input-v1",
-    rawValue: (value) =>
-      summarizeContractFreshness(value as Shared09ContractFreshnessOutput),
-    normalize: (value) =>
-      normalizeContractFreshness(value as Shared09ContractFreshnessOutput),
-  },
-  {
-    id: "SHARED-07-machine-feedback-coverage",
-    aliases: ["SHARED-07"],
-    optional: true,
-    factorPath: "inputs.machine_feedback_coverage",
-    weight: FACTOR_WEIGHTS.machineFeedbackCoverage,
-    cacheFingerprint: "shared-11-machine-feedback-coverage-input-v1",
-    rawValue: (value) =>
-      summarizeMachineFeedbackCoverage(
-        value as Shared07MachineFeedbackCoverageOutput,
-      ),
-    normalize: (value) =>
-      normalizeMachineFeedbackCoverage(
-        value as Shared07MachineFeedbackCoverageOutput,
-      ),
-  },
-  {
-    id: "SHARED-COV-01-coverage-facts",
-    aliases: ["SHARED-COV-01"],
-    optional: true,
-    factorPath: "inputs.coverage_facts",
-    weight: FACTOR_WEIGHTS.coverageFacts,
-    cacheFingerprint: "shared-11-coverage-facts-input-v1",
-    rawValue: (value) =>
-      summarizeCoverageFacts(value as SharedCov01CoverageFactsOutput),
-    normalize: (value) =>
-      normalizeCoverageFacts(value as SharedCov01CoverageFactsOutput),
-  },
-  {
-    id: "TS-AD-04-boundary-parser-coverage",
-    aliases: ["TS-AD-04"],
-    optional: true,
-    factorPath: "inputs.boundary_parser_coverage",
-    weight: FACTOR_WEIGHTS.boundaryParserCoverage,
-    cacheFingerprint: "shared-11-boundary-parser-coverage-input-v1",
-    rawValue: (value) =>
-      summarizeBoundaryParserCoverage(value as BoundaryParserCoverageLikeOutput),
-    normalize: (value) =>
-      normalizeBoundaryParserCoverage(value as BoundaryParserCoverageLikeOutput),
-  },
-  {
-    id: "TS-LD-09-error-channel-opacity",
-    aliases: ["TS-LD-09"],
-    optional: true,
-    factorPath: "inputs.error_channel_opacity",
-    weight: FACTOR_WEIGHTS.errorChannelOpacity,
-    cacheFingerprint: "shared-11-error-channel-opacity-input-v1",
-    rawValue: (value) =>
-      summarizeErrorChannelOpacity(value as ErrorChannelOpacityLikeOutput),
-    normalize: (value) =>
-      normalizeErrorChannelOpacity(value as ErrorChannelOpacityLikeOutput),
-  },
-  {
-    id: "SHARED-CHURN-02-recency-weighted-churn",
-    aliases: ["SHARED-CHURN-02"],
-    optional: true,
-    factorPath: "inputs.recency_weighted_churn",
-    weight: FACTOR_WEIGHTS.aiChurnPressure,
-    cacheFingerprint: "shared-11-recency-weighted-churn-input-v1",
-    rawValue: (value) =>
-      summarizeRecencyWeightedChurn(value as SharedChurn02Output),
-    normalize: (value) =>
-      normalizeRecencyWeightedChurn(value as SharedChurn02Output),
-  },
-] satisfies ReadonlyArray<CompositeInputSpec>
+interface TheoryEncodingMeasurement {
+  readonly factors: ReadonlyArray<TheoryEncodingFactor>
+  readonly availableFactorWeight: number
+  readonly totalDeclaredFactorWeight: number
+  readonly evidenceCompleteness: number
+  readonly requiredFoundationMeasured: boolean
+}
 
 export const Shared11TheoryEncodingIndex: Signal<
   Shared11TheoryEncodingIndexConfig,
@@ -402,7 +295,7 @@ export const Shared11TheoryEncodingIndex: Signal<
       : undefined,
 }
 
-export const computeTheoryEncodingIndexOutput = (
+const computeTheoryEncodingIndexOutput = (
   config: Shared11TheoryEncodingIndexConfig,
   inputOutputs: ReadonlyMap<string, unknown>,
 ): Shared11TheoryEncodingIndexOutput => {
@@ -547,31 +440,31 @@ const resolveTheoryEncodingInputs = (
   inputs: CompositeInputResolution,
 ): TheoryEncodingInputs => ({
   domainConstructionControl:
-    inputs.valueOf<Shared10DomainConstructionControlOutput>(
+    inputs.valueOf<NonNullable<TheoryEncodingInputs["domainConstructionControl"]>>(
       "SHARED-10-domain-construction-control",
     ),
   contractFreshness:
-    inputs.valueOf<Shared09ContractFreshnessOutput>(
+    inputs.valueOf<NonNullable<TheoryEncodingInputs["contractFreshness"]>>(
       "SHARED-09-contract-freshness",
     ),
   machineFeedbackCoverage:
-    inputs.valueOf<Shared07MachineFeedbackCoverageOutput>(
+    inputs.valueOf<NonNullable<TheoryEncodingInputs["machineFeedbackCoverage"]>>(
       "SHARED-07-machine-feedback-coverage",
     ),
   coverageFacts:
-    inputs.valueOf<SharedCov01CoverageFactsOutput>(
+    inputs.valueOf<NonNullable<TheoryEncodingInputs["coverageFacts"]>>(
       "SHARED-COV-01-coverage-facts",
     ),
   boundaryParserCoverage:
-    inputs.valueOf<BoundaryParserCoverageLikeOutput>(
+    inputs.valueOf<NonNullable<TheoryEncodingInputs["boundaryParserCoverage"]>>(
       "TS-AD-04-boundary-parser-coverage",
     ),
   errorChannelOpacity:
-    inputs.valueOf<ErrorChannelOpacityLikeOutput>(
+    inputs.valueOf<NonNullable<TheoryEncodingInputs["errorChannelOpacity"]>>(
       "TS-LD-09-error-channel-opacity",
     ),
   recencyWeightedChurn:
-    inputs.valueOf<SharedChurn02Output>(
+    inputs.valueOf<NonNullable<TheoryEncodingInputs["recencyWeightedChurn"]>>(
       "SHARED-CHURN-02-recency-weighted-churn",
     ),
 })
@@ -733,7 +626,7 @@ const isMeasuredTheoryEncodingState = (
 ): boolean => state === "present" || state === "zero"
 
 const recencyWeightedChurnState = (
-  input: SharedChurn02Output | undefined,
+  input: TheoryEncodingInputs["recencyWeightedChurn"],
 ): TheoryEncodingInputFactState | undefined => {
   if (input === undefined) return undefined
   return input.byFile.size === 0 ? "absent" : "present"
