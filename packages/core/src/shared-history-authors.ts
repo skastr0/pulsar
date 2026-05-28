@@ -7,6 +7,7 @@ import {
 } from "./shared-history-filter.js"
 import { fileExists } from "./shared-history-files.js"
 import { execGit } from "./shared-history-git.js"
+import { resolveCurrentHistoryPath } from "./shared-history-renames.js"
 
 export const listAuthorsByTouchedFileInWindow = async (
   repoPath: string,
@@ -40,18 +41,6 @@ export const listAuthorsByTouchedFileInWindow = async (
   const filesInCommit = new Set<string>()
   const renameTargets = new Map<string, string>()
 
-  const resolvePath = (path: string): string => {
-    let current = path
-    const seen = new Set<string>()
-    while (!seen.has(current)) {
-      seen.add(current)
-      const target = renameTargets.get(current)
-      if (target === undefined) return current
-      current = target
-    }
-    return current
-  }
-
   const flushCommit = (): void => {
     if (currentAuthor === undefined) return
     for (const file of filesInCommit) {
@@ -76,16 +65,17 @@ export const listAuthorsByTouchedFileInWindow = async (
 
     if (status.startsWith("R")) {
       if (secondPath.length === 0) continue
-      const currentPath = resolvePath(secondPath)
+      const currentPath = resolveCurrentHistoryPath(secondPath, renameTargets)
       if (isIncludedHistoryPath(currentPath, config)) {
         renameTargets.set(firstPath, currentPath)
       }
       continue
     }
 
-    const currentPath = resolvePath(status.startsWith("C") && secondPath.length > 0
-      ? secondPath
-      : firstPath)
+    const currentPath = resolveCurrentHistoryPath(
+      status.startsWith("C") && secondPath.length > 0 ? secondPath : firstPath,
+      renameTargets,
+    )
     if (!isIncludedHistoryPath(currentPath, config)) continue
     filesInCommit.add(currentPath)
   }

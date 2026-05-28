@@ -6,6 +6,7 @@ import {
 } from "./shared-history-filter.js"
 import { execGit } from "./shared-history-git.js"
 import { matchesAnyGlob } from "./globs.js"
+import { resolveCurrentHistoryPath } from "./shared-history-renames.js"
 
 interface MaturePatchCursor {
   commitAddsEligible: boolean
@@ -146,7 +147,7 @@ const remapAddedLinesByCurrentPath = (
 ): ReadonlyMap<string, ReadonlyArray<string>> => {
   const remapped = new Map<string, Array<string>>()
   for (const [file, lines] of addedByFile) {
-    const currentFilePath = resolveRename(file, renameMap)
+    const currentFilePath = resolveCurrentHistoryPath(file, renameMap)
     if (!hasIncludedExtension(currentFilePath, config.includeExtensions)) continue
     if (matchesAnyGlob(currentFilePath, config.excludeGlobs)) continue
     const existing = remapped.get(currentFilePath) ?? []
@@ -189,21 +190,4 @@ export const listAddedLineCountInWindow = async (
 const parseDiffTargetPath = (line: string): string | undefined => {
   const match = /^diff --git a\/(.+) b\/(.+)$/.exec(line)
   return match?.[2]
-}
-
-const resolveRename = (
-  file: string,
-  renameMap: ReadonlyMap<string, string>,
-): string => {
-  let current = file
-  const seen = new Set<string>()
-
-  while (!seen.has(current)) {
-    seen.add(current)
-    const next = renameMap.get(current)
-    if (next === undefined) return current
-    current = next
-  }
-
-  return current
 }
