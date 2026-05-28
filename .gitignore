@@ -16,3 +16,6 @@ tsconfig.tsbuildinfo
 !.pulsar/routing-patterns/**
 
 .DS_Store
+.cmap/
+.antigravitycli/
+.idea/
