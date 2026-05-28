@@ -57,46 +57,65 @@ export const collectMachineFeedbackFacts = async (
 ): Promise<MachineFeedbackFacts> => {
   const packageScripts = await readRootPackageScripts(repoRoot)
   const workflowRuns = await readGithubWorkflowRuns(repoRoot)
-  const classFacts = new Map<MachineFeedbackClass, MutableClassFact>()
+  const classFacts = makeMutableClassFacts()
+  markUnknownFeedbackEvidence(classFacts, [...packageScripts.errors, ...workflowRuns.errors])
+  addPackageScriptFeedbackEvidence(classFacts, packageScripts.value)
+  addWorkflowFeedbackEvidence(classFacts, workflowRuns.value, packageScripts.value?.scripts)
+  const classes = finalizeMachineFeedbackClasses(classFacts)
+  return summarizeMachineFeedbackFacts(repoRoot, requiredClasses, packageScripts, workflowRuns, classes)
+}
 
-  for (const feedbackClass of MACHINE_FEEDBACK_CLASSES) {
-    classFacts.set(feedbackClass, {
-      class: feedbackClass,
-      localCommands: [],
-      ciReachable: false,
-      evidence: [],
-      unknown: false,
-    })
-  }
+const makeMutableClassFacts = (): Map<MachineFeedbackClass, MutableClassFact> =>
+  new Map(
+    MACHINE_FEEDBACK_CLASSES.map((feedbackClass) => [
+      feedbackClass,
+      {
+        class: feedbackClass,
+        localCommands: [],
+        ciReachable: false,
+        evidence: [],
+        unknown: false,
+      },
+    ]),
+  )
 
-  for (const parsed of [...packageScripts.errors, ...workflowRuns.errors]) {
-    for (const feedbackClass of MACHINE_FEEDBACK_CLASSES) {
-      const fact = classFacts.get(feedbackClass)
-      if (fact !== undefined) {
-        fact.evidence.push(parsed)
-        fact.unknown = true
-      }
+const markUnknownFeedbackEvidence = (
+  classFacts: Map<MachineFeedbackClass, MutableClassFact>,
+  evidence: ReadonlyArray<MachineFeedbackEvidence>,
+): void => {
+  for (const parsed of evidence) {
+    for (const fact of classFacts.values()) {
+      fact.evidence.push(parsed)
+      fact.unknown = true
     }
   }
+}
 
-  if (packageScripts.value !== undefined) {
-    const classesByScript = classifyScripts(packageScripts.value.scripts)
-    for (const [scriptName, classes] of classesByScript) {
-      for (const feedbackClass of classes) {
-        const fact = classFacts.get(feedbackClass)!
-        fact.localCommands.push(scriptName)
-        fact.evidence.push({
-          kind: "package-script",
-          path: packageScripts.value.path,
-          command: `npm run ${scriptName}`,
-        })
-      }
-    }
-  }
-
-  for (const workflow of workflowRuns.value) {
-    const classes = classifyCommand(workflow.command, packageScripts.value?.scripts)
+const addPackageScriptFeedbackEvidence = (
+  classFacts: Map<MachineFeedbackClass, MutableClassFact>,
+  packageScripts: PackageScripts | undefined,
+): void => {
+  if (packageScripts === undefined) return
+  for (const [scriptName, classes] of classifyScripts(packageScripts.scripts)) {
     for (const feedbackClass of classes) {
+      const fact = classFacts.get(feedbackClass)!
+      fact.localCommands.push(scriptName)
+      fact.evidence.push({
+        kind: "package-script",
+        path: packageScripts.path,
+        command: `npm run ${scriptName}`,
+      })
+    }
+  }
+}
+
+const addWorkflowFeedbackEvidence = (
+  classFacts: Map<MachineFeedbackClass, MutableClassFact>,
+  workflows: ReadonlyArray<{ readonly path: string; readonly command: string }>,
+  scripts: ReadonlyMap<string, string> | undefined,
+): void => {
+  for (const workflow of workflows) {
+    for (const feedbackClass of classifyCommand(workflow.command, scripts)) {
       const fact = classFacts.get(feedbackClass)!
       fact.ciReachable = true
       fact.evidence.push({
@@ -106,10 +125,20 @@ export const collectMachineFeedbackFacts = async (
       })
     }
   }
+}
 
-  const classes = MACHINE_FEEDBACK_CLASSES.map((feedbackClass) =>
-    finalizeClassFact(classFacts.get(feedbackClass)!),
-  )
+const finalizeMachineFeedbackClasses = (
+  classFacts: Map<MachineFeedbackClass, MutableClassFact>,
+): ReadonlyArray<MachineFeedbackClassFact> =>
+  MACHINE_FEEDBACK_CLASSES.map((feedbackClass) => finalizeClassFact(classFacts.get(feedbackClass)!))
+
+const summarizeMachineFeedbackFacts = (
+  repoRoot: string,
+  requiredClasses: ReadonlyArray<MachineFeedbackClass>,
+  packageScripts: Awaited<ReturnType<typeof readRootPackageScripts>>,
+  workflowRuns: Awaited<ReturnType<typeof readGithubWorkflowRuns>>,
+  classes: ReadonlyArray<MachineFeedbackClassFact>,
+): MachineFeedbackFacts => {
   const configuredClassCount = classes.filter((fact) => fact.state === "present").length
   const ciReachableClassCount = classes.filter((fact) => fact.ciReachable).length
   const required = new Set(requiredClasses)

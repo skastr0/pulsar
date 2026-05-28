@@ -5,8 +5,6 @@ import {
   SignalComputeError,
 } from "@skastr0/pulsar-core/signal"
 import {
-  makeFactorEntry,
-  makeFactorLedger,
   type SignalFactorLedger,
 } from "@skastr0/pulsar-core/factors"
 import {
@@ -18,6 +16,7 @@ import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { Effect, Schema } from "effect"
 import { RustProjectTag, type RustManifestInfo, type RustProject } from "../project.js"
+import { makeDefaultSignalFactorLedger } from "./shared-factor-ledger.js"
 
 const execFileAsync = promisify(execFile)
 
@@ -80,7 +79,7 @@ const DEFAULT_MEASURE_LIVE_BUILDS = false
 const RS_RP_02_SCORE_MODE = "slowest-crate-compile-duration" as const
 const RS_RP_02_SCORE_DENOMINATOR = "slowest-crate-duration-ms" as const
 
-const RsRp02FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
+const RS_RP_02_FACTOR_DEFINITIONS: ReadonlyArray<SignalFactorDefinition> = [
   {
     path: "config.top_n_diagnostics",
     title: "Config top n diagnostics",
@@ -106,7 +105,7 @@ export const RsRp02: Signal<RsRp02Config, RsRp02Output, RustProjectTag> = {
   kind: "structural",
   cacheVersion: "cargo-timings-config-applicability-diagnostics-live-build-nested-v2",
   configSchema: RsRp02Config,
-  factorDefinitions: RsRp02FactorDefinitions,
+  factorDefinitions: RS_RP_02_FACTOR_DEFINITIONS,
   defaultConfig: {
     top_n_diagnostics: DEFAULT_TOP_N_DIAGNOSTICS,
     measure_live_builds: DEFAULT_MEASURE_LIVE_BUILDS,
@@ -117,76 +116,7 @@ export const RsRp02: Signal<RsRp02Config, RsRp02Output, RustProjectTag> = {
       const normalizedConfig = normalizeRsRp02Config(config)
       const project = yield* RustProjectTag
       return yield* Effect.tryPromise({
-        try: async (): Promise<RsRp02Output> => {
-          if (project.manifests.length === 0) {
-            return emptyCompileOutput(normalizedConfig, {
-              cacheProbeMode: "unavailable",
-              manifestCount: project.manifests.length,
-              measurementMode: "existing-cargo-timings",
-              unavailableReason: "no-cargo-project",
-            })
-          }
-
-          const existingUnits = await readTimingUnits(project)
-          if (!normalizedConfig.measure_live_builds) {
-            if (existingUnits.status !== "found") {
-              return emptyCompileOutput(normalizedConfig, {
-                cacheProbeMode: "unavailable",
-                manifestCount: project.manifests.length,
-                measurementMode: "existing-cargo-timings",
-                unavailableReason: existingUnits.status === "invalid"
-                  ? "invalid-timing-data"
-                  : "missing-timing-data",
-              })
-            }
-            return measuredCompileOutput(
-              existingUnits.units,
-              normalizedConfig,
-              project.manifests,
-              new Set(),
-              "unavailable",
-              "existing-cargo-timings",
-            )
-          }
-
-          const firstBuild = await runCargoBuildWithTimings(project)
-          if (!firstBuild) {
-            return emptyCompileOutput(normalizedConfig, {
-              cacheProbeMode: "unavailable",
-              manifestCount: project.manifests.length,
-              measurementMode: "live-cargo-build",
-              unavailableReason: "cargo-build-failed",
-            })
-          }
-          const firstUnits = await readTimingUnits(project)
-          if (firstUnits.status !== "found") {
-            return emptyCompileOutput(normalizedConfig, {
-              cacheProbeMode: "unavailable",
-              manifestCount: project.manifests.length,
-              measurementMode: "live-cargo-build",
-              unavailableReason: firstBuild
-                ? firstUnits.status === "invalid"
-                  ? "invalid-timing-data"
-                  : "missing-timing-data"
-                : "cargo-build-failed",
-            })
-          }
-
-          const secondBuild = await runCargoBuildWithTimings(project)
-          const secondUnits = !secondBuild
-            ? { status: "missing" as const }
-            : await readTimingUnits(project)
-          const secondCrates = new Set(secondUnits.status === "found" ? secondUnits.units.map((unit) => unit.name) : [])
-
-          return measuredCompileOutput(
-            firstUnits.units,
-            normalizedConfig,
-            project.manifests,
-            secondCrates,
-            secondUnits.status === "found" ? "noop-second-build" : "unavailable",
-            "live-cargo-build",
-          )
-        },
+        try: () => computeRsRp02Output(project, normalizedConfig),
         catch: (cause) =>
           new SignalComputeError({ signalId: "RS-RP-02-compile-time", message: String(cause), cause }),
       })
@@ -251,6 +181,85 @@ const normalizeRsRp02Config = (config: RsRp02Config): NormalizedRsRp02Config => 
   measure_live_builds: config.measure_live_builds,
 })
 
+const computeRsRp02Output = async (
+  project: RustProject,
+  config: NormalizedRsRp02Config,
+): Promise<RsRp02Output> => {
+  if (project.manifests.length === 0) {
+    return unavailableCompileOutput(project, config, "existing-cargo-timings", "no-cargo-project")
+  }
+  return config.measure_live_builds
+    ? liveTimingCompileOutput(project, config)
+    : existingTimingCompileOutput(project, config)
+}
+
+const existingTimingCompileOutput = async (
+  project: RustProject,
+  config: NormalizedRsRp02Config,
+): Promise<RsRp02Output> => {
+  const existingUnits = await readTimingUnits(project)
+  if (existingUnits.status !== "found") {
+    return unavailableCompileOutput(
+      project,
+      config,
+      "existing-cargo-timings",
+      timingUnavailableReason(existingUnits),
+    )
+  }
+  return measuredCompileOutput(
+    existingUnits.units,
+    config,
+    project.manifests,
+    new Set(),
+    "unavailable",
+    "existing-cargo-timings",
+  )
+}
+
+const liveTimingCompileOutput = async (
+  project: RustProject,
+  config: NormalizedRsRp02Config,
+): Promise<RsRp02Output> => {
+  if (!(await runCargoBuildWithTimings(project))) {
+    return unavailableCompileOutput(project, config, "live-cargo-build", "cargo-build-failed")
+  }
+  const firstUnits = await readTimingUnits(project)
+  if (firstUnits.status !== "found") {
+    return unavailableCompileOutput(project, config, "live-cargo-build", timingUnavailableReason(firstUnits))
+  }
+
+  const secondUnits = (await runCargoBuildWithTimings(project))
+    ? await readTimingUnits(project)
+    : { status: "missing" as const }
+  const secondCrates = new Set(secondUnits.status === "found" ? secondUnits.units.map((unit) => unit.name) : [])
+  return measuredCompileOutput(
+    firstUnits.units,
+    config,
+    project.manifests,
+    secondCrates,
+    secondUnits.status === "found" ? "noop-second-build" : "unavailable",
+    "live-cargo-build",
+  )
+}
+
+const timingUnavailableReason = (
+  result: Exclude<TimingReadResult, TimingReadFound>,
+): NonNullable<RsRp02Output["unavailableReason"]> =>
+  result.status === "invalid" ? "invalid-timing-data" : "missing-timing-data"
+
+const unavailableCompileOutput = (
+  project: RustProject,
+  config: NormalizedRsRp02Config,
+  measurementMode: RsRp02Output["measurementMode"],
+  unavailableReason: NonNullable<RsRp02Output["unavailableReason"]>,
+): RsRp02Output =>
+  emptyCompileOutput(config, {
+    cacheProbeMode: "unavailable",
+    manifestCount: project.manifests.length,
+    measurementMode,
+    unavailableReason,
+  })
+
 const emptyCompileOutput = (
   config: NormalizedRsRp02Config,
   options: {
@@ -294,13 +303,9 @@ const measuredCompileOutput = (
 })
 
 const makeRsRp02FactorLedger = (): SignalFactorLedger =>
-  makeFactorLedger(
+  makeDefaultSignalFactorLedger(
     "RS-RP-02-compile-time",
-    RsRp02FactorDefinitions.map((definition) =>
-      makeFactorEntry(definition, definition.defaultValue ?? null, {
-        source: "signal-default",
-      }),
-    ),
+    RS_RP_02_FACTOR_DEFINITIONS,
   )
 
 const runCargoBuildWithTimings = async (project: RustProject): Promise<boolean> => {

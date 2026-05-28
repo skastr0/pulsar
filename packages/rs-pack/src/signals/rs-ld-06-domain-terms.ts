@@ -6,8 +6,6 @@ import {
   SignalComputeError,
 } from "@skastr0/pulsar-core/signal"
 import {
-  makeFactorEntry,
-  makeFactorLedger,
   type SignalFactorLedger,
 } from "@skastr0/pulsar-core/factors"
 import { ReferenceDataTag } from "@skastr0/pulsar-core/reference-data"
@@ -17,10 +15,12 @@ import {
   Schema,
 } from "effect"
 import { collectRustProjectFacts, tokenizeIdentifier } from "../rust-analysis.js"
+import type { RustIdentifierFact } from "../rust-analysis-types.js"
 import { type RustProject, RustProjectTag } from "../project.js"
 import { itemKind, itemName } from "../rust-analysis-syntax.js"
 import { parseRustFile, type RustSyntaxNode } from "../syn-walker.js"
 import { isExcluded } from "./shared-globs.js"
+import { makeDefaultSignalFactorLedger } from "./shared-factor-ledger.js"
 import { asUnknownRecord } from "./shared-record-guards.js"
 import {
   allNamedChildren,
@@ -97,7 +97,7 @@ const DEFAULT_TOP_N_DIAGNOSTICS = 10
 const RS_LD_06_SCORE_MODE = "weighted-domain-term-drift-share" as const
 const RS_LD_06_SCORE_DENOMINATOR = "classified-identifiers" as const
 
-const RsLd06FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
+const RS_LD_06_FACTOR_DEFINITIONS: ReadonlyArray<SignalFactorDefinition> = [
   {
     path: "config.exclude_globs",
     title: "Config exclude globs",
@@ -123,7 +123,7 @@ export const RsLd06: Signal<RsLd06Config, RsLd06Output, RustProjectTag | Referen
   kind: "legibility",
   cacheVersion: "domain-terms-config-reference-data-applicability-diagnostics-cfg-test-aliases-v4",
   configSchema: RsLd06Config,
-  factorDefinitions: RsLd06FactorDefinitions,
+  factorDefinitions: RS_LD_06_FACTOR_DEFINITIONS,
   defaultConfig: {
     exclude_globs: [...DEFAULT_RUST_EXCLUDE_GLOBS],
     top_n_diagnostics: DEFAULT_TOP_N_DIAGNOSTICS,
@@ -135,88 +135,7 @@ export const RsLd06: Signal<RsLd06Config, RsLd06Output, RustProjectTag | Referen
       const project = yield* RustProjectTag
       const referenceData = yield* ReferenceDataTag
       return yield* Effect.tryPromise({
-        try: async (): Promise<RsLd06Output> => {
-          const facts = await collectRustProjectFacts(project)
-          const analyzedSourceFiles = project.sourceFiles.filter(
-            (file) => !isExcluded(file, normalizedConfig.exclude_globs),
-          )
-          const activeIdentifierKeys = await collectActiveIdentifierKeys(project, analyzedSourceFiles)
-          const identifiers = facts.identifiers.filter((identifier) =>
-            activeIdentifierKeys.has(identifierKey(identifier)) &&
-            identifier.tokens.length > 0
-          )
-          const rawGlossary = await Effect.runPromise(referenceData.get<unknown>("glossary"))
-          if (Option.isNone(rawGlossary)) {
-            return {
-              identifiers: [],
-              totalIdentifiers: identifiers.length,
-              matchCount: 0,
-              newUniqueCount: 0,
-              duplicateCount: 0,
-              conflictCount: 0,
-              referenceDataStatus: "missing",
-              sourceFileCount: project.sourceFiles.length,
-              analyzedSourceFileCount: analyzedSourceFiles.length,
-              diagnosticLimit: normalizedConfig.top_n_diagnostics,
-              scoreMode: RS_LD_06_SCORE_MODE,
-              scoreDenominator: RS_LD_06_SCORE_DENOMINATOR,
-              weightedTermDriftPressure: 0,
-            }
-          }
-
-          const glossary = normalizeGlossary(rawGlossary.value)
-          if (glossary.length === 0) {
-            return {
-              identifiers: [],
-              totalIdentifiers: identifiers.length,
-              matchCount: 0,
-              newUniqueCount: 0,
-              duplicateCount: 0,
-              conflictCount: 0,
-              referenceDataStatus: "empty",
-              sourceFileCount: project.sourceFiles.length,
-              analyzedSourceFileCount: analyzedSourceFiles.length,
-              diagnosticLimit: normalizedConfig.top_n_diagnostics,
-              scoreMode: RS_LD_06_SCORE_MODE,
-              scoreDenominator: RS_LD_06_SCORE_DENOMINATOR,
-              weightedTermDriftPressure: 0,
-            }
-          }
-
-          const glossaryLookup = buildGlossaryLookup(glossary)
-          const classified = identifiers.map((identifier) =>
-            classifyIdentifier(identifier.name, identifier.tokens, glossaryLookup, {
-              file: identifier.file,
-              module: identifier.modulePath,
-              kind: identifier.kind,
-              line: identifier.line,
-            }),
-          )
-          const conflictCount = classified.filter((item) => item.classification === "conflicts-with-canonical").length
-          const duplicateCount = classified.filter((item) => item.classification === "duplicates-canonical").length
-          const newUniqueCount = classified.filter((item) => item.classification === "new-unique").length
-
-          return {
-            identifiers: classified,
-            totalIdentifiers: classified.length,
-            matchCount: classified.filter((item) => item.classification === "matches-glossary").length,
-            newUniqueCount,
-            duplicateCount,
-            conflictCount,
-            referenceDataStatus: "loaded",
-            sourceFileCount: project.sourceFiles.length,
-            analyzedSourceFileCount: analyzedSourceFiles.length,
-            diagnosticLimit: normalizedConfig.top_n_diagnostics,
-            scoreMode: RS_LD_06_SCORE_MODE,
-            scoreDenominator: RS_LD_06_SCORE_DENOMINATOR,
-            weightedTermDriftPressure: weightedTermDriftPressure({
-              totalIdentifiers: classified.length,
-              conflictCount,
-              duplicateCount,
-              newUniqueCount,
-            }),
-          }
-        },
+        try: () => computeRsLd06Output(project, referenceData, normalizedConfig),
         catch: (cause) =>
           new SignalComputeError({ signalId: "RS-LD-06-domain-term-consistency", message: String(cause), cause }),
       })
@@ -301,6 +220,8 @@ export const RsLd06: Signal<RsLd06Config, RsLd06Output, RustProjectTag | Referen
 
 type NormalizedRsLd06Config = RsLd06Config
 
+type ReferenceData = typeof ReferenceDataTag.Service
+
 const normalizeRsLd06Config = (config: RsLd06Config): NormalizedRsLd06Config => ({
   exclude_globs: config.exclude_globs,
   top_n_diagnostics: Number.isFinite(config.top_n_diagnostics)
@@ -309,14 +230,108 @@ const normalizeRsLd06Config = (config: RsLd06Config): NormalizedRsLd06Config => 
 })
 
 const makeRsLd06FactorLedger = (): SignalFactorLedger =>
-  makeFactorLedger(
+  makeDefaultSignalFactorLedger(
     "RS-LD-06-domain-term-consistency",
-    RsLd06FactorDefinitions.map((definition) =>
-      makeFactorEntry(definition, definition.defaultValue ?? null, {
-        source: "signal-default",
-      }),
-    ),
+    RS_LD_06_FACTOR_DEFINITIONS,
   )
+
+const computeRsLd06Output = async (
+  project: RustProject,
+  referenceData: ReferenceData,
+  config: NormalizedRsLd06Config,
+): Promise<RsLd06Output> => {
+  const analyzedSourceFiles = project.sourceFiles.filter((file) => !isExcluded(file, config.exclude_globs))
+  const identifiers = await collectAnalyzedIdentifiers(project, analyzedSourceFiles)
+  const rawGlossary = await Effect.runPromise(referenceData.get<unknown>("glossary"))
+  if (Option.isNone(rawGlossary)) {
+    return unavailableRsLd06Output(project, analyzedSourceFiles, identifiers.length, config, "missing")
+  }
+
+  const glossary = normalizeGlossary(rawGlossary.value)
+  if (glossary.length === 0) {
+    return unavailableRsLd06Output(project, analyzedSourceFiles, identifiers.length, config, "empty")
+  }
+
+  return loadedRsLd06Output(project, analyzedSourceFiles, identifiers, glossary, config)
+}
+
+const collectAnalyzedIdentifiers = async (
+  project: RustProject,
+  analyzedSourceFiles: ReadonlyArray<string>,
+): Promise<ReadonlyArray<RustIdentifierFact>> => {
+  const facts = await collectRustProjectFacts(project)
+  const activeIdentifierKeys = await collectActiveIdentifierKeys(project, analyzedSourceFiles)
+  return facts.identifiers.filter((identifier) =>
+    activeIdentifierKeys.has(identifierKey(identifier)) && identifier.tokens.length > 0
+  )
+}
+
+const unavailableRsLd06Output = (
+  project: RustProject,
+  analyzedSourceFiles: ReadonlyArray<string>,
+  totalIdentifiers: number,
+  config: NormalizedRsLd06Config,
+  referenceDataStatus: "missing" | "empty",
+): RsLd06Output => ({
+  identifiers: [],
+  totalIdentifiers,
+  matchCount: 0,
+  newUniqueCount: 0,
+  duplicateCount: 0,
+  conflictCount: 0,
+  referenceDataStatus,
+  sourceFileCount: project.sourceFiles.length,
+  analyzedSourceFileCount: analyzedSourceFiles.length,
+  diagnosticLimit: config.top_n_diagnostics,
+  scoreMode: RS_LD_06_SCORE_MODE,
+  scoreDenominator: RS_LD_06_SCORE_DENOMINATOR,
+  weightedTermDriftPressure: 0,
+})
+
+const loadedRsLd06Output = (
+  project: RustProject,
+  analyzedSourceFiles: ReadonlyArray<string>,
+  identifiers: ReadonlyArray<RustIdentifierFact>,
+  glossary: ReadonlyArray<GlossaryEntry>,
+  config: NormalizedRsLd06Config,
+): RsLd06Output => {
+  const classified = classifyDomainTermIdentifiers(identifiers, buildGlossaryLookup(glossary))
+  const counts = countIdentifierClassifications(classified)
+  return {
+    identifiers: classified,
+    ...counts,
+    referenceDataStatus: "loaded",
+    sourceFileCount: project.sourceFiles.length,
+    analyzedSourceFileCount: analyzedSourceFiles.length,
+    diagnosticLimit: config.top_n_diagnostics,
+    scoreMode: RS_LD_06_SCORE_MODE,
+    scoreDenominator: RS_LD_06_SCORE_DENOMINATOR,
+    weightedTermDriftPressure: weightedTermDriftPressure(counts),
+  }
+}
+
+const classifyDomainTermIdentifiers = (
+  identifiers: ReadonlyArray<RustIdentifierFact>,
+  glossaryLookup: GlossaryLookup,
+): ReadonlyArray<IdentifierGlossaryMatch> =>
+  identifiers.map((identifier) =>
+    classifyIdentifier(identifier.name, identifier.tokens, glossaryLookup, {
+      file: identifier.file,
+      module: identifier.modulePath,
+      kind: identifier.kind,
+      line: identifier.line,
+    }),
+  )
+
+const countIdentifierClassifications = (
+  classified: ReadonlyArray<IdentifierGlossaryMatch>,
+): Pick<RsLd06Output, "totalIdentifiers" | "matchCount" | "newUniqueCount" | "duplicateCount" | "conflictCount"> => ({
+  totalIdentifiers: classified.length,
+  matchCount: classified.filter((item) => item.classification === "matches-glossary").length,
+  newUniqueCount: classified.filter((item) => item.classification === "new-unique").length,
+  duplicateCount: classified.filter((item) => item.classification === "duplicates-canonical").length,
+  conflictCount: classified.filter((item) => item.classification === "conflicts-with-canonical").length,
+})
 
 const weightedTermDriftPressure = (counts: {
   readonly totalIdentifiers: number

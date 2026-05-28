@@ -20,84 +20,102 @@ export const parseLcovCoverage = (
   repoRoot: string,
   content: string,
 ): ParsedCoverage => {
-  const records: Array<CoverageFileFact> = []
-  let current = emptyRecord()
+  if (content.trim().length === 0) return { tool: "lcov", files: [] }
 
-  const flush = (): void => {
-    if (current.file === undefined) {
-      current = emptyRecord()
-      return
-    }
-    records.push({
-      file: resolveCoveragePath(repoRoot, current.file),
-      lines: coverageMetric(current.linesHit, current.linesFound),
-      functions: coverageMetric(current.functionsHit, current.functionsFound),
-      branches: coverageMetric(current.branchesHit, current.branchesFound),
-    })
-    current = emptyRecord()
-  }
-
+  const state: LcovParseState = { records: [], current: emptyRecord() }
   for (const rawLine of content.split(/\r?\n/u)) {
-    const line = rawLine.trim()
-    if (line.length === 0) continue
-    if (line.startsWith("SF:")) {
-      current.file = line.slice("SF:".length)
-      continue
-    }
-    if (line.startsWith("DA:")) {
-      current.linesFound += 1
-      const [, hitCount] = line.slice("DA:".length).split(",")
-      if (Number.parseInt(hitCount ?? "0", 10) > 0) current.linesHit += 1
-      continue
-    }
-    if (line.startsWith("FNDA:")) {
-      current.functionsFound += 1
-      const [hitCount] = line.slice("FNDA:".length).split(",")
-      if (Number.parseInt(hitCount ?? "0", 10) > 0) current.functionsHit += 1
-      continue
-    }
-    if (line.startsWith("BRDA:")) {
-      current.branchesFound += 1
-      const parts = line.slice("BRDA:".length).split(",")
-      const hitCount = parts[3]
-      if (hitCount !== undefined && hitCount !== "-" && Number.parseInt(hitCount, 10) > 0) {
-        current.branchesHit += 1
-      }
-      continue
-    }
-    if (line.startsWith("LF:")) {
-      current.linesFound = Number.parseInt(line.slice("LF:".length), 10) || current.linesFound
-      continue
-    }
-    if (line.startsWith("LH:")) {
-      current.linesHit = Number.parseInt(line.slice("LH:".length), 10) || current.linesHit
-      continue
-    }
-    if (line.startsWith("FNF:")) {
-      current.functionsFound =
-        Number.parseInt(line.slice("FNF:".length), 10) || current.functionsFound
-      continue
-    }
-    if (line.startsWith("FNH:")) {
-      current.functionsHit =
-        Number.parseInt(line.slice("FNH:".length), 10) || current.functionsHit
-      continue
-    }
-    if (line.startsWith("BRF:")) {
-      current.branchesFound =
-        Number.parseInt(line.slice("BRF:".length), 10) || current.branchesFound
-      continue
-    }
-    if (line.startsWith("BRH:")) {
-      current.branchesHit =
-        Number.parseInt(line.slice("BRH:".length), 10) || current.branchesHit
-      continue
-    }
-    if (line === "end_of_record") flush()
+    applyLcovLine(repoRoot, state, rawLine.trim())
   }
-  flush()
+  flushLcovRecord(repoRoot, state)
 
-  return { tool: "lcov", files: records }
+  return { tool: "lcov", files: state.records }
+}
+
+interface LcovParseState {
+  readonly records: Array<CoverageFileFact>
+  current: MutableLcovRecord
+}
+
+const flushLcovRecord = (repoRoot: string, state: LcovParseState): void => {
+  if (state.current.file !== undefined) {
+    state.records.push({
+      file: resolveCoveragePath(repoRoot, state.current.file),
+      lines: coverageMetric(state.current.linesHit, state.current.linesFound),
+      functions: coverageMetric(state.current.functionsHit, state.current.functionsFound),
+      branches: coverageMetric(state.current.branchesHit, state.current.branchesFound),
+    })
+  }
+  state.current = emptyRecord()
+}
+
+const applyLcovLine = (repoRoot: string, state: LcovParseState, line: string): void => {
+  if (line.length === 0) return
+  if (line === "end_of_record") return flushLcovRecord(repoRoot, state)
+
+  const field = splitLcovField(line)
+  if (field === undefined) return
+  switch (field.key) {
+    case "SF":
+      state.current.file = field.value
+      break
+    case "DA":
+      applyLcovCountedHit(state.current, field.value, "lines")
+      break
+    case "FNDA":
+      applyLcovCountedHit(state.current, field.value, "functions")
+      break
+    case "BRDA":
+      applyLcovBranchHit(state.current, field.value)
+      break
+    case "LF":
+      state.current.linesFound = lcovCountOr(field.value, state.current.linesFound)
+      break
+    case "LH":
+      state.current.linesHit = lcovCountOr(field.value, state.current.linesHit)
+      break
+    case "FNF":
+      state.current.functionsFound = lcovCountOr(field.value, state.current.functionsFound)
+      break
+    case "FNH":
+      state.current.functionsHit = lcovCountOr(field.value, state.current.functionsHit)
+      break
+    case "BRF":
+      state.current.branchesFound = lcovCountOr(field.value, state.current.branchesFound)
+      break
+    case "BRH":
+      state.current.branchesHit = lcovCountOr(field.value, state.current.branchesHit)
+      break
+  }
+}
+
+const splitLcovField = (line: string): { readonly key: string; readonly value: string } | undefined => {
+  const separator = line.indexOf(":")
+  return separator < 0
+    ? undefined
+    : { key: line.slice(0, separator), value: line.slice(separator + 1) }
+}
+
+const applyLcovCountedHit = (
+  record: MutableLcovRecord,
+  value: string,
+  metric: "lines" | "functions",
+): void => {
+  const hitCount = value.split(",")[metric === "lines" ? 1 : 0] ?? "0"
+  if (metric === "lines") {
+    record.linesFound += 1
+    if (lcovCountOr(hitCount, 0) > 0) record.linesHit += 1
+    return
+  }
+  record.functionsFound += 1
+  if (lcovCountOr(hitCount, 0) > 0) record.functionsHit += 1
+}
+
+const applyLcovBranchHit = (record: MutableLcovRecord, value: string): void => {
+  record.branchesFound += 1
+  const hitCount = value.split(",")[3]
+  if (hitCount !== undefined && hitCount !== "-" && lcovCountOr(hitCount, 0) > 0) {
+    record.branchesHit += 1
+  }
 }
 
 const emptyRecord = (): MutableLcovRecord => ({
@@ -108,3 +126,6 @@ const emptyRecord = (): MutableLcovRecord => ({
   branchesFound: 0,
   branchesHit: 0,
 })
+
+const lcovCountOr = (raw: string, fallback: number): number =>
+  Number.parseInt(raw, 10) || fallback
