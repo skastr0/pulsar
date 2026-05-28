@@ -3,7 +3,7 @@ import type {
   ErrorChannelCollapseMode,
   LocalErrorChannelFinding,
   TsLd09Config,
-} from "./ts-ld-09-error-channel-opacity.js"
+} from "./ts-ld-09-types.js"
 import { compilerPropertyNameText as propertyNameText } from "./shared-compiler-functions.js"
 import {
   calleeName,

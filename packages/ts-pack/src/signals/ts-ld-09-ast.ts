@@ -1,4 +1,7 @@
 import { ts } from "ts-morph"
+
+export { ts }
+export type { SourceFile } from "ts-morph"
 import {
   type FunctionBoundaryOwner,
   isBoundaryFunctionOwner,

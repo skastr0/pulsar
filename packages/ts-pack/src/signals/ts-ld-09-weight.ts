@@ -1,4 +1,4 @@
-import type { ErrorChannelOpacityKind } from "./ts-ld-09-error-channel-opacity.js"
+import type { ErrorChannelOpacityKind } from "./ts-ld-09-types.js"
 
 const BASE_WEIGHT_BY_KIND: Record<ErrorChannelOpacityKind, number> = {
   "broad-throw": 2.5,
