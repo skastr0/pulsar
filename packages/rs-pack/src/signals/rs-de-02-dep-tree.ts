@@ -12,7 +12,7 @@ import {
   findDuplicateCargoLockPackages,
   type CargoLockPackage,
 } from "../lock-file.js"
-import { RustProjectTag } from "../project.js"
+import { RustProjectTag, type RustProject } from "../project.js"
 
 const RsDe02Config = Schema.Struct({
   top_n_diagnostics: Schema.Number,
@@ -76,81 +76,8 @@ export const RsDe02: Signal<RsDe02Config, RsDe02Output, RustProjectTag> = {
       const normalizedConfig = normalizeRsDe02Config(config)
       const project = yield* RustProjectTag
       return yield* Effect.tryPromise({
-        try: async (): Promise<RsDe02Output> => {
-          const directDependencyNames = new Set(
-            project.manifests.flatMap((manifest) =>
-              (manifest.dependencies ?? []).map((dependency) => dependency.packageName),
-            ),
-          )
-          if (project.cargoLock === undefined) {
-            return {
-              duplicates: [],
-              topLevelDependencies: [],
-              duplicateCount: 0,
-              lockfileStatus: "missing",
-              packageCount: 0,
-              dependencyPackageCount: 0,
-              manifestCount: project.manifests.length,
-              directDependencyCount: directDependencyNames.size,
-              diagnosticLimit: normalizedConfig.top_n_diagnostics,
-              analysisMode: "cargo-lock",
-            }
-          }
-
-          const workspacePackages = new Set(
-            project.manifests
-              .map((manifest) => manifest.packageName)
-              .filter((name): name is string => name !== undefined),
-          )
-          const dependencyPackageCount = project.cargoLock.packages.filter(
-            (pkg) => !workspacePackages.has(pkg.name),
-          ).length
-
-          const packageByKey = new Map(
-            project.cargoLock.packages.map((pkg) => [
-              packageKey(pkg.name, pkg.version, pkg.source),
-              pkg,
-            ] as const),
-          )
-          const packagesByName = new Map<string, Array<CargoLockPackage>>()
-          for (const pkg of project.cargoLock.packages) {
-            const bucket = packagesByName.get(pkg.name) ?? []
-            bucket.push(pkg)
-            packagesByName.set(pkg.name, bucket)
-          }
-          const topLevelRoots = topLevelDependencyRoots(
-            directDependencyNames,
-            workspacePackages,
-            project.cargoLock.packages,
-            packagesByName,
-          )
-
-          const topLevelDependencies = [...topLevelRoots.entries()]
-            .map(([name, roots]) =>
-              describeTopLevelDependency(name, roots, packageByKey, packagesByName)
-            )
-            .filter((entry): entry is TopLevelDependencyDepth => entry !== undefined)
-            .sort((left, right) => right.maxDepth - left.maxDepth || left.name.localeCompare(right.name))
-
-          const duplicates = findDuplicateCargoLockPackages(project.cargoLock).map((group) => ({
-            name: group.name,
-            versions: group.versions,
-            instanceCount: group.packages.length,
-          }))
-
-          return {
-            duplicates,
-            topLevelDependencies,
-            duplicateCount: duplicates.length,
-            lockfileStatus: "loaded",
-            packageCount: project.cargoLock.packages.length,
-            dependencyPackageCount,
-            manifestCount: project.manifests.length,
-            directDependencyCount: directDependencyNames.size,
-            diagnosticLimit: normalizedConfig.top_n_diagnostics,
-            analysisMode: "cargo-lock",
-          }
-        },
+        try: async (): Promise<RsDe02Output> =>
+          computeRsDe02Output(project, normalizedConfig),
         catch: (cause) =>
           new SignalComputeError({ signalId: "RS-DE-02-dependency-tree", message: String(cause), cause }),
       })
@@ -251,6 +178,149 @@ export const RsDe02: Signal<RsDe02Config, RsDe02Output, RustProjectTag> = {
 }
 
 type NormalizedRsDe02Config = RsDe02Config
+
+const computeRsDe02Output = (
+  project: RustProject,
+  config: NormalizedRsDe02Config,
+): RsDe02Output => {
+  const directDependencyNames = collectDirectDependencyNames(project)
+  if (project.cargoLock === undefined) {
+    return missingCargoLockOutput(project, directDependencyNames, config)
+  }
+
+  const cargoLock = project.cargoLock
+  const workspacePackageNames = collectWorkspacePackageNames(project)
+  const packagesByName = groupCargoLockPackagesByName(cargoLock.packages)
+  const packageByKey = cargoLockPackagesByKey(cargoLock.packages)
+  const topLevelDependencies = topLevelDependencyDepths(
+    directDependencyNames,
+    workspacePackageNames,
+    cargoLock.packages,
+    packagesByName,
+    packageByKey,
+  )
+  const duplicates = dependencyDuplicateGroups(cargoLock)
+
+  return loadedCargoLockOutput(
+    project,
+    cargoLock,
+    config,
+    directDependencyNames,
+    workspacePackageNames,
+    topLevelDependencies,
+    duplicates,
+  )
+}
+
+const collectDirectDependencyNames = (project: RustProject): ReadonlySet<string> =>
+  new Set(
+    project.manifests.flatMap((manifest) =>
+      (manifest.dependencies ?? []).map((dependency) => dependency.packageName),
+    ),
+  )
+
+const collectWorkspacePackageNames = (project: RustProject): ReadonlySet<string> => {
+  const names = new Set<string>()
+  for (const manifest of project.manifests) {
+    if (manifest.packageName !== undefined) {
+      names.add(manifest.packageName)
+    }
+  }
+  return names
+}
+
+const missingCargoLockOutput = (
+  project: RustProject,
+  directDependencyNames: ReadonlySet<string>,
+  config: NormalizedRsDe02Config,
+): RsDe02Output => ({
+  duplicates: [],
+  topLevelDependencies: [],
+  duplicateCount: 0,
+  lockfileStatus: "missing",
+  packageCount: 0,
+  dependencyPackageCount: 0,
+  manifestCount: project.manifests.length,
+  directDependencyCount: directDependencyNames.size,
+  diagnosticLimit: config.top_n_diagnostics,
+  analysisMode: "cargo-lock",
+})
+
+const loadedCargoLockOutput = (
+  project: RustProject,
+  cargoLock: NonNullable<RustProject["cargoLock"]>,
+  config: NormalizedRsDe02Config,
+  directDependencyNames: ReadonlySet<string>,
+  workspacePackageNames: ReadonlySet<string>,
+  topLevelDependencies: ReadonlyArray<TopLevelDependencyDepth>,
+  duplicates: ReadonlyArray<DependencyDuplicateGroup>,
+): RsDe02Output => ({
+  duplicates,
+  topLevelDependencies,
+  duplicateCount: duplicates.length,
+  lockfileStatus: "loaded",
+  packageCount: cargoLock.packages.length,
+  dependencyPackageCount: countDependencyPackages(cargoLock.packages, workspacePackageNames),
+  manifestCount: project.manifests.length,
+  directDependencyCount: directDependencyNames.size,
+  diagnosticLimit: config.top_n_diagnostics,
+  analysisMode: "cargo-lock",
+})
+
+const cargoLockPackagesByKey = (
+  packages: ReadonlyArray<CargoLockPackage>,
+): ReadonlyMap<string, CargoLockPackage> =>
+  new Map(
+    packages.map((pkg) => [
+      packageKey(pkg.name, pkg.version, pkg.source),
+      pkg,
+    ] as const),
+  )
+
+const groupCargoLockPackagesByName = (
+  packages: ReadonlyArray<CargoLockPackage>,
+): ReadonlyMap<string, ReadonlyArray<CargoLockPackage>> => {
+  const packagesByName = new Map<string, Array<CargoLockPackage>>()
+  for (const pkg of packages) {
+    const bucket = packagesByName.get(pkg.name) ?? []
+    bucket.push(pkg)
+    packagesByName.set(pkg.name, bucket)
+  }
+  return packagesByName
+}
+
+const topLevelDependencyDepths = (
+  directDependencyNames: ReadonlySet<string>,
+  workspacePackageNames: ReadonlySet<string>,
+  lockPackages: ReadonlyArray<CargoLockPackage>,
+  packagesByName: ReadonlyMap<string, ReadonlyArray<CargoLockPackage>>,
+  packageByKey: ReadonlyMap<string, CargoLockPackage>,
+): ReadonlyArray<TopLevelDependencyDepth> =>
+  [...topLevelDependencyRoots(
+    directDependencyNames,
+    workspacePackageNames,
+    lockPackages,
+    packagesByName,
+  ).entries()]
+    .map(([name, roots]) =>
+      describeTopLevelDependency(name, roots, packageByKey, packagesByName)
+    )
+    .filter((entry): entry is TopLevelDependencyDepth => entry !== undefined)
+    .sort((left, right) => right.maxDepth - left.maxDepth || left.name.localeCompare(right.name))
+
+const dependencyDuplicateGroups = (
+  cargoLock: NonNullable<RustProject["cargoLock"]>,
+): ReadonlyArray<DependencyDuplicateGroup> =>
+  findDuplicateCargoLockPackages(cargoLock).map((group) => ({
+    name: group.name,
+    versions: group.versions,
+    instanceCount: group.packages.length,
+  }))
+
+const countDependencyPackages = (
+  packages: ReadonlyArray<CargoLockPackage>,
+  workspacePackageNames: ReadonlySet<string>,
+): number => packages.filter((pkg) => !workspacePackageNames.has(pkg.name)).length
 
 const normalizeRsDe02Config = (config: RsDe02Config): NormalizedRsDe02Config => ({
   top_n_diagnostics: Number.isFinite(config.top_n_diagnostics)
