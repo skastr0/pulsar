@@ -7,15 +7,36 @@ import { Effect, Schema } from "effect"
 import { type SourceFile, ts } from "ts-morph"
 import { TsProjectTag } from "../ts-project.js"
 import { isExcluded } from "./shared-globs.js"
-import { compilerPropertyNameText as propertyNameText } from "./shared-compiler-functions.js"
 import {
   collectLocalExportedNames,
   type FunctionBoundaryOwner,
   isBoundaryFunctionOwner,
-  isReturnTypeOwner,
 } from "./ts-ld-07-boundary.js"
 import { countNonEmptyLines } from "./ts-ld-07-output.js"
+import {
+  calleeName,
+  expressionName,
+  functionLikeName,
+  isEffectFailCall,
+  isEffectStaticCall,
+  isFunctionLikeNode,
+  isPromiseRejectCall,
+  nearestBoundaryOwner,
+  nearestFunctionName,
+  positionOf,
+} from "./ts-ld-09-ast.js"
+import {
+  blockReturnsFallback,
+  blockSwallowsError,
+  callbackCollapsesError,
+  callbackReturnsFallback,
+} from "./ts-ld-09-collapse.js"
+import {
+  callTextSuggestsExpectedFailure,
+  collectEffectOpacity,
+} from "./ts-ld-09-effect-opacity.js"
 import { catchHasGuardedFallbackAndPropagation } from "./ts-ld-09-guarded-catch.js"
+import { errorChannelWeight } from "./ts-ld-09-weight.js"
 
 const TsLd09Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
@@ -100,18 +121,7 @@ export interface TsLd09Output {
   readonly enforcementCeiling: ReadonlyArray<string>
 }
 
-interface LocalErrorChannelFinding extends Omit<ErrorChannelOpacityFinding, "file"> {}
-
-const BASE_WEIGHT_BY_KIND: Record<ErrorChannelOpacityKind, number> = {
-  "broad-throw": 2.5,
-  "catch-without-narrowing": 3,
-  "opaque-promise-api": 4,
-  "promise-catch-collapse": 3,
-  "effect-unknown-exception": 4,
-  "effect-error-collapse": 3.5,
-}
-
-const BOUNDARY_MULTIPLIER = 2
+export interface LocalErrorChannelFinding extends Omit<ErrorChannelOpacityFinding, "file"> {}
 
 const BUILT_IN_ERROR_NAMES = new Set([
   "AggregateError",
@@ -122,12 +132,6 @@ const BUILT_IN_ERROR_NAMES = new Set([
   "SyntaxError",
   "TypeError",
   "URIError",
-])
-
-const EFFECT_COLLAPSE_CALLEES = new Set([
-  "orDie",
-  "orDieWith",
-  "orElseSucceed",
 ])
 
 export const TsLd09: Signal<TsLd09Config, TsLd09Output, TsProjectTag> = {
@@ -396,109 +400,6 @@ const collectOpaquePromiseApi = (
   })
 }
 
-const collectEffectOpacity = (
-  node: ts.Node,
-  sourceFile: ts.SourceFile,
-  exportedNames: ReadonlySet<string>,
-  config: TsLd09Config,
-  typeChecker: ts.TypeChecker,
-): LocalErrorChannelFinding | undefined => {
-  if (!ts.isCallExpression(node)) return undefined
-  const boundary = nearestBoundaryOwner(node, exportedNames)
-  const symbol = nearestBoundarySymbol(node, sourceFile)
-  const callee = calleeName(node.expression, sourceFile)
-  if (callee === undefined) return undefined
-  const pipedCollapseCallee = pipeCollapseCallee(node, sourceFile)
-
-  if (callee === "tryPromise" && isEffectStaticCall(node.expression, "tryPromise")) {
-    const catchMapper = effectTryPromiseCatchMapper(node)
-    if (catchMapper === undefined) {
-      return localFinding({
-        sourceFile,
-        node,
-        symbol: symbol ?? "Effect.tryPromise",
-        kind: "effect-unknown-exception",
-        expressionText: node.expression.getText(sourceFile),
-        boundary,
-        expectedFailureEvidence: ["Effect.tryPromise without typed catch mapper"],
-        collapseMode: "unknown-exception",
-      })
-    }
-    if (effectTryPromiseCatchMapperCollapses(catchMapper, sourceFile, typeChecker)) {
-      const collapseMode = effectTryPromiseCatchMapperReturnsFallback(catchMapper, sourceFile, typeChecker)
-        ? "fallback"
-        : "swallowed"
-      return localFinding({
-        sourceFile,
-        node: catchMapper,
-        symbol: symbol ?? "Effect.tryPromise",
-        kind: "effect-error-collapse",
-        expressionText: catchMapper.getText(sourceFile).slice(0, 200),
-        boundary,
-        expectedFailureEvidence: ["Effect.tryPromise catch mapper returns fallback or swallows the exception"],
-        collapseMode,
-      })
-    }
-  }
-
-  if (
-    callee === "promise" &&
-    isEffectStaticCall(node.expression, "promise") &&
-    callTextSuggestsExpectedFailure(node, sourceFile, config)
-  ) {
-    return localFinding({
-      sourceFile,
-      node,
-      symbol: symbol ?? "Effect.promise",
-      kind: "effect-unknown-exception",
-      expressionText: node.expression.getText(sourceFile),
-      boundary,
-      expectedFailureEvidence: ["Effect.promise wrapping expected-failure operation"],
-      collapseMode: "promise-rejection",
-    })
-  }
-
-  if (
-    EFFECT_COLLAPSE_CALLEES.has(callee) &&
-    isEffectStaticCall(node.expression, callee) &&
-    !isPipeArgument(node, sourceFile)
-  ) {
-    const collapseMode: ErrorChannelCollapseMode = callee === "orElseSucceed"
-      ? "success-channel"
-      : "defect"
-    return localFinding({
-      sourceFile,
-      node,
-      symbol: symbol ?? `Effect.${callee}`,
-      kind: "effect-error-collapse",
-      expressionText: node.expression.getText(sourceFile),
-      boundary,
-      expectedFailureEvidence: [`Effect.${callee} collapses the typed error channel`],
-      collapseMode,
-    })
-  }
-
-  if (pipedCollapseCallee !== undefined) {
-    const collapseMode: ErrorChannelCollapseMode = pipedCollapseCallee === "orElseSucceed"
-      ? "success-channel"
-      : "defect"
-    return localFinding({
-      sourceFile,
-      node,
-      symbol: symbol ?? `Effect.${pipedCollapseCallee}`,
-      kind: "effect-error-collapse",
-      expressionText: node.getText(sourceFile).slice(0, 200),
-      boundary,
-      expectedFailureEvidence: [
-        `Effect.${pipedCollapseCallee} collapses the typed error channel in a pipe`,
-      ],
-      collapseMode,
-    })
-  }
-
-  return undefined
-}
-
 const collectPromiseCatchCollapse = (
   node: ts.Node,
   sourceFile: ts.SourceFile,
@@ -694,89 +595,6 @@ const catchEvidence = (
   ]
 }
 
-const blockReturnsFallback = (
-  block: ts.Block,
-  sourceFile: ts.SourceFile,
-): boolean => {
-  let found = false
-  const visit = (node: ts.Node): void => {
-    if (found) return
-    if (isFunctionLikeNode(node) && node !== block.parent) return
-    if (ts.isReturnStatement(node) && returnExpressionIsFallback(node.expression, sourceFile)) {
-      found = true
-      return
-    }
-    ts.forEachChild(node, visit)
-  }
-  visit(block)
-  return found
-}
-
-const callbackReturnsFallback = (
-  callback: ts.Node,
-  sourceFile: ts.SourceFile,
-  typeChecker?: ts.TypeChecker,
-): boolean => {
-  const target = callbackTarget(callback, sourceFile, typeChecker)
-  if (target !== undefined) return callbackReturnsFallback(target, sourceFile, typeChecker)
-  if (ts.isArrowFunction(callback) && callback.body !== undefined && !ts.isBlock(callback.body)) {
-    return returnExpressionIsFallback(callback.body, sourceFile)
-  }
-  if (
-    (ts.isArrowFunction(callback) ||
-      ts.isFunctionExpression(callback) ||
-      ts.isFunctionDeclaration(callback)) &&
-    callback.body !== undefined &&
-    ts.isBlock(callback.body)
-  ) {
-    return blockReturnsFallback(callback.body, sourceFile)
-  }
-  return false
-}
-
-const callbackCollapsesError = (
-  callback: ts.Node,
-  sourceFile: ts.SourceFile,
-  typeChecker?: ts.TypeChecker,
-): boolean => {
-  if (callbackReturnsFallback(callback, sourceFile, typeChecker)) return true
-  const target = callbackTarget(callback, sourceFile, typeChecker)
-  if (target !== undefined) return callbackCollapsesError(target, sourceFile, typeChecker)
-  if (
-    (ts.isArrowFunction(callback) ||
-      ts.isFunctionExpression(callback) ||
-      ts.isFunctionDeclaration(callback)) &&
-    callback.body !== undefined &&
-    ts.isBlock(callback.body)
-  ) {
-    return blockSwallowsError(callback.body)
-  }
-  return false
-}
-
-const returnExpressionIsFallback = (
-  expression: ts.Expression | undefined,
-  sourceFile: ts.SourceFile,
-): boolean => {
-  if (expression === undefined) return true
-  if (
-    ts.isStringLiteral(expression) ||
-    ts.isNumericLiteral(expression) ||
-    expression.kind === ts.SyntaxKind.TrueKeyword ||
-    expression.kind === ts.SyntaxKind.FalseKeyword ||
-    expression.kind === ts.SyntaxKind.NullKeyword ||
-    expression.kind === ts.SyntaxKind.UndefinedKeyword ||
-    ts.isVoidExpression(expression) ||
-    (ts.isIdentifier(expression) && expression.text === "undefined") ||
-    ts.isObjectLiteralExpression(expression) ||
-    ts.isArrayLiteralExpression(expression)
-  ) {
-    return true
-  }
-  const text = expression.getText(sourceFile)
-  return /(?:fallback|default|empty|nullResult|noop)/iu.test(text)
-}
-
 const blockContainsDomainErrorMapping = (block: ts.Block): boolean => {
   let found = false
   const visit = (node: ts.Node): void => {
@@ -797,75 +615,6 @@ const blockContainsDomainErrorMapping = (block: ts.Block): boolean => {
   }
   visit(block)
   return found
-}
-
-type CallbackTarget = ts.ArrowFunction | ts.FunctionDeclaration | ts.FunctionExpression
-
-const callbackTarget = (
-  callback: ts.Node,
-  sourceFile: ts.SourceFile,
-  typeChecker?: ts.TypeChecker,
-): CallbackTarget | undefined => {
-  if (!ts.isIdentifier(callback)) return undefined
-  const symbolTarget = callbackSymbolTarget(callback, typeChecker)
-  if (symbolTarget !== undefined) return symbolTarget
-  const targetName = callback.text
-  let target: CallbackTarget | undefined
-
-  const visit = (node: ts.Node): void => {
-    if (target !== undefined) return
-    if (ts.isFunctionDeclaration(node) && node.name?.text === targetName) {
-      target = node
-      return
-    }
-    if (
-      ts.isVariableDeclaration(node) &&
-      ts.isIdentifier(node.name) &&
-      node.name.text === targetName &&
-      node.initializer !== undefined &&
-      (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))
-    ) {
-      target = node.initializer
-      return
-    }
-    ts.forEachChild(node, visit)
-  }
-
-  visit(sourceFile)
-  return target
-}
-
-const callbackSymbolTarget = (
-  callback: ts.Identifier,
-  typeChecker?: ts.TypeChecker,
-): CallbackTarget | undefined => {
-  const declaration = typeChecker?.getSymbolAtLocation(callback)?.valueDeclaration
-  if (declaration === undefined) return undefined
-  if (ts.isFunctionDeclaration(declaration)) return declaration
-  if (
-    ts.isVariableDeclaration(declaration) &&
-    declaration.initializer !== undefined &&
-    (ts.isArrowFunction(declaration.initializer) || ts.isFunctionExpression(declaration.initializer))
-  ) {
-    return declaration.initializer
-  }
-  return undefined
-}
-
-const blockSwallowsError = (block: ts.Block): boolean => {
-  if (block.statements.length === 0) return true
-  let exits = false
-  const visit = (node: ts.Node): void => {
-    if (exits) return
-    if (isFunctionLikeNode(node) && node !== block.parent) return
-    if (ts.isReturnStatement(node) || ts.isThrowStatement(node)) {
-      exits = true
-      return
-    }
-    ts.forEachChild(node, visit)
-  }
-  visit(block)
-  return !exits
 }
 
 const blockContainsCatchVariableNarrowing = (
@@ -999,116 +748,6 @@ const expectedFailureEvidenceFor = (
     .map((pattern) => `name matches expected-failure pattern \`${pattern}\``)
 }
 
-type EffectTryPromiseCatchMapper =
-  | ts.MethodDeclaration
-  | ts.PropertyAssignment
-  | ts.ShorthandPropertyAssignment
-
-const effectTryPromiseCatchMapper = (
-  node: ts.CallExpression,
-): EffectTryPromiseCatchMapper | undefined => {
-  const arg = node.arguments[0]
-  if (arg === undefined || !ts.isObjectLiteralExpression(arg)) return undefined
-  for (const property of arg.properties) {
-    if (
-      ts.isPropertyAssignment(property) ||
-      ts.isShorthandPropertyAssignment(property) ||
-      ts.isMethodDeclaration(property)
-    ) {
-      if (propertyNameText(property.name) === "catch") return property
-    }
-  }
-  return undefined
-}
-
-const effectTryPromiseCatchMapperCollapses = (
-  mapper: EffectTryPromiseCatchMapper,
-  sourceFile: ts.SourceFile,
-  typeChecker?: ts.TypeChecker,
-): boolean => {
-  if (effectTryPromiseCatchMapperReturnsFallback(mapper, sourceFile, typeChecker)) return true
-  if (ts.isMethodDeclaration(mapper) && mapper.body !== undefined) {
-    return blockSwallowsError(mapper.body)
-  }
-  if (
-    ts.isPropertyAssignment(mapper) &&
-    (ts.isArrowFunction(mapper.initializer) || ts.isFunctionExpression(mapper.initializer)) &&
-    ts.isBlock(mapper.initializer.body)
-  ) {
-    return blockSwallowsError(mapper.initializer.body)
-  }
-  return false
-}
-
-const effectTryPromiseCatchMapperReturnsFallback = (
-  mapper: EffectTryPromiseCatchMapper,
-  sourceFile: ts.SourceFile,
-  typeChecker?: ts.TypeChecker,
-): boolean => {
-  if (ts.isShorthandPropertyAssignment(mapper)) return false
-  if (ts.isPropertyAssignment(mapper)) {
-    return callbackReturnsFallback(mapper.initializer, sourceFile, typeChecker)
-  }
-  return mapper.body === undefined ? false : blockReturnsFallback(mapper.body, sourceFile)
-}
-
-const callTextSuggestsExpectedFailure = (
-  node: ts.CallExpression,
-  sourceFile: ts.SourceFile,
-  config: TsLd09Config,
-): boolean =>
-  config.expected_failure_name_patterns
-    .filter((pattern) => pattern.trim() !== "")
-    .some((pattern) => node.getText(sourceFile).toLowerCase().includes(pattern.toLowerCase()))
-
-const pipeCollapseCallee = (
-  node: ts.CallExpression,
-  sourceFile: ts.SourceFile,
-): string | undefined => {
-  if (calleeName(node.expression, sourceFile) !== "pipe") return undefined
-  for (const argument of node.arguments) {
-    const name = ts.isCallExpression(argument)
-      ? calleeName(argument.expression, sourceFile)
-      : expressionName(argument)
-    if (
-      name !== undefined &&
-      EFFECT_COLLAPSE_CALLEES.has(name) &&
-      (ts.isCallExpression(argument)
-        ? isEffectStaticCall(argument.expression, name)
-        : isEffectStaticReference(argument, name))
-    ) {
-      return name
-    }
-  }
-  return undefined
-}
-
-const isPipeArgument = (
-  node: ts.CallExpression,
-  sourceFile: ts.SourceFile,
-): boolean =>
-  ts.isCallExpression(node.parent) &&
-  node.parent.arguments.some((argument) => argument === node) &&
-  calleeName(node.parent.expression, sourceFile) === "pipe"
-
-const isEffectStaticCall = (expression: ts.Expression, name: string): boolean =>
-  ts.isPropertyAccessExpression(expression) &&
-  expressionName(expression.expression) === "Effect" &&
-  propertyNameText(expression.name) === name
-
-const isEffectStaticReference = (expression: ts.Expression, name: string): boolean =>
-  ts.isPropertyAccessExpression(expression) &&
-  expressionName(expression.expression) === "Effect" &&
-  propertyNameText(expression.name) === name
-
-const isEffectFailCall = (node: ts.Node): boolean =>
-  ts.isCallExpression(node) && isEffectStaticCall(node.expression, "fail")
-
-const isPromiseRejectCall = (expression: ts.Expression): boolean =>
-  ts.isPropertyAccessExpression(expression) &&
-  expressionName(expression.expression) === "Promise" &&
-  propertyNameText(expression.name) === "reject"
-
 const isPromiseCatchCall = (node: ts.CallExpression, typeChecker: ts.TypeChecker): boolean => {
   if (!ts.isPropertyAccessExpression(node.expression)) return false
   const receiverType = typeChecker.getTypeAtLocation(node.expression.expression)
@@ -1116,134 +755,6 @@ const isPromiseCatchCall = (node: ts.CallExpression, typeChecker: ts.TypeChecker
   if (/\bPromise(?:<|$)/u.test(receiverTypeText)) return true
   return receiverType.getProperty("then") !== undefined &&
     receiverType.getProperty("catch") !== undefined
-}
-
-const calleeName = (
-  expression: ts.Expression,
-  sourceFile: ts.SourceFile,
-): string | undefined => {
-  if (ts.isIdentifier(expression)) return expression.text
-  if (ts.isPropertyAccessExpression(expression)) return propertyNameText(expression.name)
-  return expression.getText(sourceFile).match(/\.([A-Za-z_$][A-Za-z0-9_$]*)$/u)?.[1]
-}
-
-const expressionName = (expression: ts.Expression): string | undefined => {
-  if (ts.isIdentifier(expression)) return expression.text
-  if (ts.isPropertyAccessExpression(expression)) return propertyNameText(expression.name)
-  return undefined
-}
-
-const nearestBoundaryOwner = (
-  node: ts.Node,
-  exportedNames: ReadonlySet<string>,
-): boolean => {
-  const owner = nearestFunctionOwner(node)
-  if (owner !== undefined) return isBoundaryFunctionOwner(owner, exportedNames)
-  const valueName = nearestExportedValueName(node)
-  return valueName !== undefined && exportedNames.has(valueName)
-}
-
-const nearestBoundarySymbol = (
-  node: ts.Node,
-  sourceFile: ts.SourceFile,
-): string | undefined =>
-  nearestFunctionName(node, sourceFile) ?? nearestExportedValueName(node)
-
-const nearestExportedValueName = (node: ts.Node): string | undefined => {
-  let current: ts.Node | undefined = node
-  while (current !== undefined) {
-    if (ts.isVariableDeclaration(current) && ts.isIdentifier(current.name)) {
-      return current.name.text
-    }
-    current = current.parent
-  }
-  return undefined
-}
-
-const nearestFunctionOwner = (node: ts.Node): FunctionBoundaryOwner | undefined => {
-  let current: ts.Node | undefined = node
-  while (current !== undefined) {
-    if (isReturnTypeOwner(current)) return current
-    current = current.parent
-  }
-  return undefined
-}
-
-const nearestFunctionName = (
-  node: ts.Node,
-  sourceFile: ts.SourceFile,
-): string | undefined => {
-  const owner = nearestFunctionOwner(node)
-  return owner === undefined ? undefined : functionLikeName(owner, sourceFile)
-}
-
-const functionLikeName = (
-  owner: FunctionBoundaryOwner,
-  sourceFile: ts.SourceFile,
-): string => {
-  if (ts.isFunctionDeclaration(owner) || ts.isFunctionExpression(owner)) {
-    return owner.name?.text ?? nearestNamedDeclaration(owner, sourceFile) ?? "<anonymous>"
-  }
-  if (ts.isMethodDeclaration(owner) || ts.isMethodSignature(owner)) {
-    return propertyNameText(owner.name)
-  }
-  if (ts.isArrowFunction(owner) || ts.isFunctionTypeNode(owner)) {
-    return nearestNamedDeclaration(owner, sourceFile) ?? "<anonymous>"
-  }
-  if (ts.isCallSignatureDeclaration(owner)) {
-    return nearestNamedDeclaration(owner, sourceFile) ?? "<call signature>"
-  }
-  return nearestNamedDeclaration(owner, sourceFile) ?? "<construct signature>"
-}
-
-const nearestNamedDeclaration = (
-  node: ts.Node,
-  sourceFile: ts.SourceFile,
-): string | undefined => {
-  let current: ts.Node | undefined = node.parent
-  while (current !== undefined && current !== sourceFile) {
-    if (ts.isVariableDeclaration(current)) return current.name.getText(sourceFile)
-    if (
-      ts.isTypeAliasDeclaration(current) ||
-      ts.isInterfaceDeclaration(current) ||
-      ts.isClassDeclaration(current)
-    ) {
-      return current.name?.text
-    }
-    if (ts.isPropertyAssignment(current) || ts.isPropertySignature(current)) {
-      return current.name.getText(sourceFile)
-    }
-    current = current.parent
-  }
-  return undefined
-}
-
-const positionOf = (
-  node: ts.Node,
-  sourceFile: ts.SourceFile,
-): { readonly line: number; readonly column: number } => {
-  const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile))
-  return {
-    line: position.line + 1,
-    column: position.character + 1,
-  }
-}
-
-const isFunctionLikeNode = (node: ts.Node): boolean =>
-  ts.isFunctionDeclaration(node) ||
-  ts.isMethodDeclaration(node) ||
-  ts.isArrowFunction(node) ||
-  ts.isFunctionExpression(node) ||
-  ts.isConstructorDeclaration(node) ||
-  ts.isGetAccessorDeclaration(node) ||
-  ts.isSetAccessorDeclaration(node)
-
-const errorChannelWeight = (
-  kind: ErrorChannelOpacityKind,
-  boundary: boolean,
-): number => {
-  const base = BASE_WEIGHT_BY_KIND[kind]
-  return boundary ? base * BOUNDARY_MULTIPLIER : base
 }
 
 const compareErrorChannelFindings = (
