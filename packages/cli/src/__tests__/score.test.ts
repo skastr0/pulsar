@@ -267,6 +267,51 @@ describe("pulsar score", () => {
     }
   }, 120_000)
 
+  test("score --diff WORKTREE keeps whole-repo signal changes separate from changed-only scope", async () => {
+    const cloneBody = `{
+  let total = input
+  for (let index = 0; index < 5; index += 1) {
+    total += index
+  }
+  if (total > 10) {
+    return total - 1
+  }
+  return total + 1
+}
+`
+    const repoPath = await initRepo([
+      { path: "src/clone-a.ts", content: `export function cloneA(input: number): number ${cloneBody}` },
+      { path: "src/clone-b.ts", content: `export function cloneB(input: number): number ${cloneBody}` },
+      { path: "src/touched.ts", content: "export const touched = 1\n" },
+    ])
+    try {
+      await writeRepoFile(repoPath, "src/touched.ts", "export const touched = 2\n")
+
+      const out = runCli(repoPath, [
+        "score",
+        "--diff",
+        "HEAD..WORKTREE",
+        "--changed-only",
+        "--agent-view",
+        "--json",
+        ".",
+      ])
+
+      expect([0, 2]).toContain(out.status ?? -1)
+      const parsed = JSON.parse(String(out.stdout))
+      const duplicationChange = parsed.signal_changes.find(
+        (change: { readonly signal_id: string }) => change.signal_id === "TS-SL-01-duplication",
+      )
+
+      expect(duplicationChange).toBeDefined()
+      expect(duplicationChange.base_score).toBeLessThan(1)
+      expect(duplicationChange.head_score).toBe(duplicationChange.base_score)
+      expect(duplicationChange.delta).toBe(0)
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
   test("changed-only gate passes when introduced diagnostics are outside the selected scope", () => {
     const outsideScopeDiagnostic: GateDiagnosticRecord = {
       category: "generated-slop",

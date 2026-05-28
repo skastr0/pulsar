@@ -59,6 +59,7 @@ interface DiffRun {
   readonly repoRoot: string
   readonly base: DiffEndpoint
   readonly head: DiffEndpoint
+  readonly changedHead?: DiffEndpoint
   readonly changedHunks: ReadonlyArray<ChangedHunk>
 }
 
@@ -74,6 +75,18 @@ interface DiagnosticRecord extends GateDiagnosticRecord {
   readonly fix_hints: NonNullable<Diagnostic["fixHints"]>
   readonly in_changed_scope: boolean
   readonly changed_scope: "hunk" | "file" | "global" | "outside_changed_scope"
+}
+
+interface DiffDiagnosticDeltas {
+  readonly allIntroduced: ReadonlyArray<DiagnosticRecord>
+  readonly changedOnlyDiagnostics: ReadonlyArray<DiagnosticRecord>
+  readonly resolved: ReadonlyArray<DiagnosticRecord>
+}
+
+interface AgentSignalProjection {
+  readonly activeSignalIds: ReadonlyArray<string>
+  readonly visibleSignalIds: ReadonlyArray<string>
+  readonly hiddenSignalIds: ReadonlyArray<string>
 }
 
 export const parseScoreDiffRange = (
@@ -142,13 +155,19 @@ const observeDiffRun = (
 
     const baseOutput = yield* runtime.engine.observeCommit(repoRoot, baseSha)
     const headOutput = headIsWorktree
-      ? yield* runtime.engine.observeWorktree(repoRoot, currentHeadSha, { changedHunks })
+      ? yield* runtime.engine.observeWorktree(repoRoot, currentHeadSha, { changedHunks: [] })
       : yield* runtime.engine.observeCommit(repoRoot, headSha)
+    const changedHeadOutput = headIsWorktree && changedHunks.length > 0
+      ? yield* runtime.engine.observeWorktree(repoRoot, currentHeadSha, { changedHunks })
+      : undefined
 
     return {
       repoRoot,
       base: { ref: range.baseRef, sha: baseSha, output: baseOutput },
       head: { ref: range.headRef, sha: headSha, output: headOutput },
+      ...(changedHeadOutput !== undefined
+        ? { changedHead: { ref: range.headRef, sha: headSha, output: changedHeadOutput } }
+        : {}),
       changedHunks,
     }
   })
@@ -158,17 +177,71 @@ const buildDiffReport = (
   vectorContext: ScoreDiffVectorContext,
   run: DiffRun,
 ) => {
+  const diagnostics = diffDiagnosticDeltas(vectorContext.registry, run)
+  const projection = agentSignalProjection(opts, vectorContext, run.head.output)
+  const gateDecision = decideGate(
+    diagnostics.allIntroduced,
+    opts.changedOnly === true ? diagnostics.changedOnlyDiagnostics : diagnostics.allIntroduced,
+  )
+
+  return {
+    diff: diffSummary(opts, run),
+    ...(opts.agentView === true
+      ? {
+          agent_view: {
+            enabled: true,
+            score_output_suppressed: opts.json !== true,
+            visible_signal_ids: projection.visibleSignalIds,
+            hidden_signal_ids: projection.hiddenSignalIds,
+          },
+        }
+      : {}),
+    introduced_diagnostics: diagnostics.allIntroduced,
+    changed_only_diagnostics: diagnostics.changedOnlyDiagnostics,
+    resolved_diagnostics: diagnostics.resolved,
+    signal_changes: signalChanges(vectorContext.registry, run.base.output, run.head.output),
+    category_changes: categoryChanges(run.base.output, run.head.output),
+    gate_decision: gateDecision,
+    ...(opts.agentView === true
+      ? { trust: trustReadout(run.head.output, projection.activeSignalIds, projection.hiddenSignalIds, gateDecision) }
+      : {}),
+  }
+}
+
+const diffDiagnosticDeltas = (
+  registry: Registry,
+  run: DiffRun,
+): DiffDiagnosticDeltas => {
   const diagnosticDelta = compareDiagnostics(
     run.repoRoot,
-    vectorContext.registry,
+    registry,
     run.base.output,
     run.head.output,
     run.changedHunks,
   )
-  const allIntroduced = diagnosticDelta.introduced
-  const resolved = diagnosticDelta.resolved
-  const changedOnlyDiagnostics = allIntroduced.filter((diagnostic) => diagnostic.in_changed_scope)
-  const activeSignalIds = collectActiveSignalIds(run.head.output)
+  const changedDiagnosticDelta = run.changedHead === undefined
+    ? diagnosticDelta
+    : compareDiagnostics(
+        run.repoRoot,
+        registry,
+        run.base.output,
+        run.changedHead.output,
+        run.changedHunks,
+      )
+
+  return {
+    allIntroduced: diagnosticDelta.introduced,
+    changedOnlyDiagnostics: changedDiagnosticDelta.introduced.filter((diagnostic) => diagnostic.in_changed_scope),
+    resolved: diagnosticDelta.resolved,
+  }
+}
+
+const agentSignalProjection = (
+  opts: ScoreDiffOptions,
+  vectorContext: ScoreDiffVectorContext,
+  head: ObserverOutput,
+): AgentSignalProjection => {
+  const activeSignalIds = collectActiveSignalIds(head)
   const hiddenSignalIds = opts.agentView === true
     ? selectGoodhartHoldoutSignalIds(
         activeSignalIds,
@@ -176,44 +249,23 @@ const buildDiffReport = (
         vectorContext.observerVector,
       )
     : []
-  const visibleSignalIds = activeSignalIds.filter((id) => !hiddenSignalIds.includes(id))
-  const gateDecision = decideGate(
-    allIntroduced,
-    opts.changedOnly === true ? changedOnlyDiagnostics : allIntroduced,
-  )
-
   return {
-    diff: {
-      range: opts.diffRange,
-      base_ref: run.base.ref,
-      base_sha: run.base.sha,
-      head_ref: run.head.ref,
-      head_sha: run.head.sha,
-      changed_only: opts.changedOnly === true,
-      changed_files: changedFiles(run.changedHunks),
-      changed_hunks: run.changedHunks,
-    },
-    ...(opts.agentView === true
-      ? {
-          agent_view: {
-            enabled: true,
-            score_output_suppressed: opts.json !== true,
-            visible_signal_ids: visibleSignalIds,
-            hidden_signal_ids: hiddenSignalIds,
-          },
-        }
-      : {}),
-    introduced_diagnostics: allIntroduced,
-    changed_only_diagnostics: changedOnlyDiagnostics,
-    resolved_diagnostics: resolved,
-    signal_changes: signalChanges(vectorContext.registry, run.base.output, run.head.output),
-    category_changes: categoryChanges(run.base.output, run.head.output),
-    gate_decision: gateDecision,
-    ...(opts.agentView === true
-      ? { trust: trustReadout(run.head.output, activeSignalIds, hiddenSignalIds, gateDecision) }
-      : {}),
+    activeSignalIds,
+    hiddenSignalIds,
+    visibleSignalIds: activeSignalIds.filter((id) => !hiddenSignalIds.includes(id)),
   }
 }
+
+const diffSummary = (opts: ScoreDiffOptions, run: DiffRun) => ({
+  range: opts.diffRange,
+  base_ref: run.base.ref,
+  base_sha: run.base.sha,
+  head_ref: run.head.ref,
+  head_sha: run.head.sha,
+  changed_only: opts.changedOnly === true,
+  changed_files: changedFiles(run.changedHunks),
+  changed_hunks: run.changedHunks,
+})
 
 const compareDiagnostics = (
   repoRoot: string,
