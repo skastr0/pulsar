@@ -51,6 +51,43 @@ const DEFAULT_TOP_N_DIAGNOSTICS = 10
 const DEFAULT_MAX_WEIGHTED_FINDINGS = 8
 const DEFAULT_INCLUDE_EXPLICITLY_OPEN_DIAGNOSTICS = true
 
+const DOMAIN_CONSTRUCTION_COMPOSITE_CONSUMERS = [
+  "boundary trust breach",
+  "abstraction hazard",
+  "boundary integrity",
+  "theory encoding index",
+  "contract safety gap",
+] as const
+
+const DOMAIN_CONSTRUCTION_CACHE_CONTRIBUTORS = [
+  "reference-data.domain-construction",
+  ".pulsar/domain-construction.json",
+  "declared construct source hashes",
+  "declared parser/smart-constructor evidence hashes",
+  "config.top_n_diagnostics",
+  "config.max_weighted_findings",
+  "config.include_explicitly_open_diagnostics",
+] as const
+
+const DOMAIN_CONSTRUCTION_EVIDENCE_CLASS = [
+  "repo-owned manifest",
+  "sha256 declaration content",
+  "sha256 parser/smart-constructor evidence content",
+  "syntax-level constructor/export evidence",
+] as const
+
+const DOMAIN_CONSTRUCTION_KNOWN_FAILURE_MODES = [
+  "manifest omits a domain primitive",
+  "declared parser exists but does not enforce the intended invariant",
+  "factory naming differs from declared evidence symbols",
+] as const
+
+const DOMAIN_CONSTRUCTION_ENFORCEMENT_CEILING = [
+  "soft-warning",
+  "review-routing",
+  "composite-input",
+] as const
+
 export const Shared10DomainConstructionControl: Signal<
   Shared10DomainConstructionControlConfig,
   Shared10DomainConstructionControlOutput,
@@ -184,18 +221,10 @@ const buildOutput = (
   const normalizedConfig = normalizeShared10DomainConstructionControlConfig(config)
   const diagnosticLimit = normalizedConfig.top_n_diagnostics
   const maxWeightedFindings = normalizedConfig.max_weighted_findings
-  const topFindings = [...facts.findings]
-    .filter((finding) =>
-      normalizedConfig.include_explicitly_open_diagnostics ||
-      finding.kind !== "explicitly-open-construct",
-    )
-    .sort(compareFindings)
-    .slice(0, diagnosticLimit)
-  const scoreFindings = facts.findings.filter((finding) => finding.weight > 0)
-  const weightedFindings = scoreFindings.reduce(
-    (total, finding) => total + finding.weight,
-    0,
-  )
+  const topFindings = topDomainConstructionFindings(facts, normalizedConfig)
+  const scoreFindings = scoreDomainConstructionFindings(facts)
+  const weightedFindings = weightedDomainConstructionFindings(scoreFindings)
+
   return {
     ...facts,
     topFindings,
@@ -206,48 +235,69 @@ const buildOutput = (
     scorePressure: weightedFindings / maxWeightedFindings,
     diagnosticLimit,
     configuredConstructCount: facts.constructs.length,
-    explicitlyOpenConstructCount: facts.constructs.filter(
-      (construct) => construct.controlIntent === "intentionally_open",
-    ).length,
-    controlledConstructCount: facts.constructs.filter(
-      (construct) => construct.controlIntent === "controlled",
-    ).length,
-    compositeConsumers: [
-      "boundary trust breach",
-      "abstraction hazard",
-      "boundary integrity",
-      "theory encoding index",
-      "contract safety gap",
-    ],
-    cacheContributors: [
-      "reference-data.domain-construction",
-      ".pulsar/domain-construction.json",
-      "declared construct source hashes",
-      "declared parser/smart-constructor evidence hashes",
-      "config.top_n_diagnostics",
-      "config.max_weighted_findings",
-      "config.include_explicitly_open_diagnostics",
-    ],
-    calibrationSurface:
-      "repo-owned .pulsar/domain-construction.json; thresholds only affect diagnostic and pressure scaling",
-    evidenceClass: [
-      "repo-owned manifest",
-      "sha256 declaration content",
-      "sha256 parser/smart-constructor evidence content",
-      "syntax-level constructor/export evidence",
-    ],
-    claimLimit:
-      "declared domain constructs have recorded construction-control evidence and current source hashes",
-    nonClaimLimit:
-      "does not prove parser semantic correctness, invariant completeness, or all undeclared domain constructs",
-    knownFailureModes: [
-      "manifest omits a domain primitive",
-      "declared parser exists but does not enforce the intended invariant",
-      "factory naming differs from declared evidence symbols",
-    ],
-    enforcementCeiling: ["soft-warning", "review-routing", "composite-input"],
+    ...domainConstructionControlCounts(facts),
+    ...domainConstructionControlMetadata(),
   }
 }
+
+const topDomainConstructionFindings = (
+  facts: DomainConstructionFacts,
+  config: Shared10DomainConstructionControlConfig,
+): ReadonlyArray<DomainConstructionFinding> =>
+  [...facts.findings]
+    .filter((finding) =>
+      config.include_explicitly_open_diagnostics ||
+      finding.kind !== "explicitly-open-construct",
+    )
+    .sort(compareFindings)
+    .slice(0, config.top_n_diagnostics)
+
+const scoreDomainConstructionFindings = (
+  facts: DomainConstructionFacts,
+): ReadonlyArray<DomainConstructionFinding> =>
+  facts.findings.filter((finding) => finding.weight > 0)
+
+const weightedDomainConstructionFindings = (
+  findings: ReadonlyArray<DomainConstructionFinding>,
+): number => findings.reduce((total, finding) => total + finding.weight, 0)
+
+const domainConstructionControlCounts = (
+  facts: DomainConstructionFacts,
+): Pick<
+  Shared10DomainConstructionControlOutput,
+  "explicitlyOpenConstructCount" | "controlledConstructCount"
+> => ({
+  explicitlyOpenConstructCount: facts.constructs.filter(
+    (construct) => construct.controlIntent === "intentionally_open",
+  ).length,
+  controlledConstructCount: facts.constructs.filter(
+    (construct) => construct.controlIntent === "controlled",
+  ).length,
+})
+
+const domainConstructionControlMetadata = (): Pick<
+  Shared10DomainConstructionControlOutput,
+  | "compositeConsumers"
+  | "cacheContributors"
+  | "calibrationSurface"
+  | "evidenceClass"
+  | "claimLimit"
+  | "nonClaimLimit"
+  | "knownFailureModes"
+  | "enforcementCeiling"
+> => ({
+  compositeConsumers: DOMAIN_CONSTRUCTION_COMPOSITE_CONSUMERS,
+  cacheContributors: DOMAIN_CONSTRUCTION_CACHE_CONTRIBUTORS,
+  calibrationSurface:
+    "repo-owned .pulsar/domain-construction.json; thresholds only affect diagnostic and pressure scaling",
+  evidenceClass: DOMAIN_CONSTRUCTION_EVIDENCE_CLASS,
+  claimLimit:
+    "declared domain constructs have recorded construction-control evidence and current source hashes",
+  nonClaimLimit:
+    "does not prove parser semantic correctness, invariant completeness, or all undeclared domain constructs",
+  knownFailureModes: DOMAIN_CONSTRUCTION_KNOWN_FAILURE_MODES,
+  enforcementCeiling: DOMAIN_CONSTRUCTION_ENFORCEMENT_CEILING,
+})
 
 const normalizeShared10DomainConstructionControlConfig = (
   config: Shared10DomainConstructionControlConfig,

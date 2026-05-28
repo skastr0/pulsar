@@ -10,6 +10,38 @@ import type {
   TsLd09Output,
 } from "./ts-ld-09-types.js"
 
+const ERROR_CHANNEL_COMPOSITE_CONSUMERS = [
+  "contract safety gap",
+  "review shock",
+  "theory encoding index",
+] as const
+
+const ERROR_CHANNEL_CACHE_CONTRIBUTORS = [
+  "source tree",
+  "config.exclude_globs",
+  "config.expected_failure_name_patterns",
+  "config.max_weighted_opacity_per_kloc",
+  "config.max_boundary_weighted_opacity",
+  "config.top_n_diagnostics",
+] as const
+
+const ERROR_CHANNEL_EVIDENCE_CLASS = [
+  "syntax",
+  "type",
+  "runtime boundary",
+] as const
+
+const ERROR_CHANNEL_ENFORCEMENT_CEILING = ["soft-warning", "trend", "review-routing"] as const
+
+interface ErrorChannelOpacityMetrics {
+  readonly weightedOpacity: number
+  readonly boundaryFindings: number
+  readonly boundaryWeightedOpacity: number
+  readonly densityPerKloc: number
+  readonly densityPressure: number
+  readonly boundaryPressure: number
+}
+
 export const computeErrorChannelOpacityOutput = (
   sourceFiles: ReadonlyArray<SourceFile>,
   config: TsLd09Config,
@@ -52,14 +84,7 @@ const buildErrorChannelOpacityOutput = (
   analyzedLines: number,
   config: TsLd09Config,
 ): TsLd09Output => {
-  const weightedOpacity = findings.reduce((sum, finding) => sum + finding.weight, 0)
-  const boundaryFindings = findings.filter((finding) => finding.boundary).length
-  const boundaryWeightedOpacity = findings.reduce(
-    (sum, finding) => sum + (finding.boundary ? finding.weight : 0),
-    0,
-  )
-  const analyzedKloc = Math.max(1, analyzedLines / 1000)
-  const densityPerKloc = weightedOpacity / analyzedKloc
+  const metrics = measureErrorChannelOpacity(findings, analyzedLines, config)
   const diagnosticLimit = normalizeDiagnosticLimit(config.top_n_diagnostics)
 
   return {
@@ -69,49 +94,65 @@ const buildErrorChannelOpacityOutput = (
     byFile,
     byKind,
     totalFindings: findings.length,
-    boundaryFindings,
-    weightedOpacity,
-    boundaryWeightedOpacity,
+    ...metrics,
     analyzedFiles,
     analyzedLines,
+    densityThreshold: config.max_weighted_opacity_per_kloc,
+    boundaryThreshold: config.max_boundary_weighted_opacity,
+    diagnosticLimit,
+    ...errorChannelOpacityMetadata(),
+  }
+}
+
+const measureErrorChannelOpacity = (
+  findings: ReadonlyArray<ErrorChannelOpacityFinding>,
+  analyzedLines: number,
+  config: TsLd09Config,
+): ErrorChannelOpacityMetrics => {
+  const weightedOpacity = findings.reduce((sum, finding) => sum + finding.weight, 0)
+  const boundaryFindings = findings.filter((finding) => finding.boundary).length
+  const boundaryWeightedOpacity = findings.reduce(
+    (sum, finding) => sum + (finding.boundary ? finding.weight : 0),
+    0,
+  )
+  const densityPerKloc = weightedOpacity / Math.max(1, analyzedLines / 1000)
+  return {
+    weightedOpacity,
+    boundaryFindings,
+    boundaryWeightedOpacity,
     densityPerKloc,
     densityPressure: thresholdPressure(densityPerKloc, config.max_weighted_opacity_per_kloc),
     boundaryPressure: thresholdPressure(
       boundaryWeightedOpacity,
       config.max_boundary_weighted_opacity,
     ),
-    densityThreshold: config.max_weighted_opacity_per_kloc,
-    boundaryThreshold: config.max_boundary_weighted_opacity,
-    diagnosticLimit,
-    compositeConsumers: [
-      "contract safety gap",
-      "review shock",
-      "theory encoding index",
-    ],
-    cacheContributors: [
-      "source tree",
-      "config.exclude_globs",
-      "config.expected_failure_name_patterns",
-      "config.max_weighted_opacity_per_kloc",
-      "config.max_boundary_weighted_opacity",
-      "config.top_n_diagnostics",
-    ],
-    calibrationSurface:
-      "config thresholds and exclude globs; future typescript.error-channel-policy can deweight intentional adapters with provenance",
-    evidenceClass: [
-      "syntax",
-      "type",
-      "runtime boundary",
-    ],
-    claimLimit:
-      "Identifies code where expected failure semantics are hidden behind broad exceptions, opaque promises, or collapsed Effect error channels.",
-    nonClaimLimit:
-      "Does not prove the error behavior is incorrect or that every expected failure has been modeled.",
-    knownFailureMode:
-      "Name-pattern expected-failure evidence can miss domain-specific operation names or flag intentional boundary translation.",
-    enforcementCeiling: ["soft-warning", "trend", "review-routing"],
   }
 }
+
+const errorChannelOpacityMetadata = (): Pick<
+  TsLd09Output,
+  | "compositeConsumers"
+  | "cacheContributors"
+  | "calibrationSurface"
+  | "evidenceClass"
+  | "claimLimit"
+  | "nonClaimLimit"
+  | "knownFailureMode"
+  | "enforcementCeiling"
+> => ({
+  compositeConsumers: ERROR_CHANNEL_COMPOSITE_CONSUMERS,
+  cacheContributors: ERROR_CHANNEL_CACHE_CONTRIBUTORS,
+  calibrationSurface:
+    "config thresholds and exclude globs; future typescript.error-channel-policy can deweight intentional adapters with provenance",
+  evidenceClass: ERROR_CHANNEL_EVIDENCE_CLASS,
+  claimLimit:
+    "Identifies code where expected failure semantics are hidden behind broad exceptions, opaque promises, or collapsed Effect error channels.",
+  nonClaimLimit:
+    "Does not prove the error behavior is incorrect or that every expected failure has been modeled.",
+  knownFailureMode:
+    "Name-pattern expected-failure evidence can miss domain-specific operation names or flag intentional boundary translation.",
+  enforcementCeiling: ERROR_CHANNEL_ENFORCEMENT_CEILING,
+})
 
 const summarizeFileFindings = (
   findings: ReadonlyArray<ErrorChannelOpacityFinding>,
