@@ -4,7 +4,7 @@ import {
   type SignalCache,
   cacheKeyString,
 } from "./cache.js"
-import type { ChangedHunk } from "./context.js"
+import type { ChangedHunk, SignalAssessmentScope } from "./context.js"
 import type { ScoringEngineError } from "./errors.js"
 import { observe, type ObserverOutput } from "./observer.js"
 import { loadCanonicalReferenceDataEntries } from "./reference-data-loader.js"
@@ -54,7 +54,10 @@ type ObserveCommit = (
 type ObserveWorktree = (
   repoPath: string,
   headSha: string,
-  worktreeOptions?: { readonly changedHunks?: ReadonlyArray<ChangedHunk> },
+  worktreeOptions?: {
+    readonly changedHunks?: ReadonlyArray<ChangedHunk>
+    readonly assessmentScope?: SignalAssessmentScope
+  },
 ) => Effect.Effect<ObserverOutput, ScoringEngineError, never>
 
 type ObserveRange = (
@@ -151,7 +154,7 @@ const observeCommitInWorktree = (args: {
     const referenceEntries = yield* loadCanonicalReferenceDataEntries(args.worktreePath)
     const key = observerCacheKey(args, calibrationContext?.fingerprint, referenceEntries)
     const observed = yield* args.observeWithCache(key, () =>
-      args.runWithEnvironment(args.worktreePath, args.sha, [], calibrationContext, (EnvLayer) =>
+      args.runWithEnvironment(args.worktreePath, args.sha, [], undefined, calibrationContext, (EnvLayer) =>
         Effect.provide(
           observe(args.registry, args.vector, { profile: args.options?.observerProfile === true }),
           EnvLayer,
@@ -193,7 +196,10 @@ export const makeObserveWorktree = (args: {
     function* (
       repoPath: string,
       headSha: string,
-      worktreeOptions?: { readonly changedHunks?: ReadonlyArray<ChangedHunk> },
+      worktreeOptions?: {
+        readonly changedHunks?: ReadonlyArray<ChangedHunk>
+        readonly assessmentScope?: SignalAssessmentScope
+      },
     ) {
       yield* Effect.annotateCurrentSpan("sha", headSha)
       const cleanHead = yield* canUseCurrentWorktreeForCommit(repoPath, headSha)
@@ -201,7 +207,9 @@ export const makeObserveWorktree = (args: {
 
       const changedHunks =
         worktreeOptions?.changedHunks ?? (yield* collectWorktreeChangedHunks(repoPath))
-      const baseContentHash = `${yield* computeWorktreeContentHash(repoPath)}:${hashChangedHunks(changedHunks)}`
+      const assessmentScope = worktreeOptions?.assessmentScope
+      const baseContentHash =
+        `${yield* computeWorktreeContentHash(repoPath)}:${hashChangedHunks(changedHunks)}:${assessmentScope ?? "whole-repo"}`
       const contentHash = yield* appendObserverRevisionContext(args.registry, repoPath, baseContentHash)
       const calibrationContext = yield* args.internals.resolveCalibrationContext(repoPath)
       const referenceEntries = yield* loadCanonicalReferenceDataEntries(repoPath)
@@ -211,7 +219,7 @@ export const makeObserveWorktree = (args: {
         referenceEntries,
       )
       const { result, cacheHit } = yield* args.observeWithCache(key, () =>
-        args.runWithEnvironment(repoPath, headSha, changedHunks, calibrationContext, (EnvLayer) =>
+        args.runWithEnvironment(repoPath, headSha, changedHunks, assessmentScope, calibrationContext, (EnvLayer) =>
           Effect.provide(
             observe(args.registry, args.vector, { profile: args.options?.observerProfile === true }),
             EnvLayer,

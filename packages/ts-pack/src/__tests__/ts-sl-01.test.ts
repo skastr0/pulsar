@@ -1200,6 +1200,7 @@ function dup2(x: number): number { return x * 2; }
             Layer.succeed(SignalContextTag, {
               gitSha: "TEST",
               worktreePath: repo.root,
+              assessmentScope: "changed-only",
               changedHunks: [
                 { file: "utils.ts", oldStart: 3, oldLines: 0, newStart: 3, newLines: 2 },
               ],
@@ -1249,6 +1250,7 @@ export function copiedHandler(value: number): number {
             Layer.succeed(SignalContextTag, {
               gitSha: "TEST",
               worktreePath: repo.root,
+              assessmentScope: "changed-only",
               changedHunks: [
                 { file: "changed.ts", oldStart: 2, oldLines: 0, newStart: 2, newLines: 7 },
               ],
@@ -1305,6 +1307,7 @@ export function copiedHandler(value: number): number {
             Layer.succeed(SignalContextTag, {
               gitSha: "TEST",
               worktreePath: repo.root,
+              assessmentScope: "changed-only",
               changedHunks: [
                 { file: "./changed.ts", oldStart: 2, oldLines: 0, newStart: 2, newLines: 7 },
               ],
@@ -1348,6 +1351,7 @@ export function copiedHandler(value: number): number {
             Layer.succeed(SignalContextTag, {
               gitSha: "TEST",
               worktreePath: repo.root,
+              assessmentScope: "changed-only",
               changedHunks: [
                 { file: "changed.ts", oldStart: 2, oldLines: 0, newStart: 2, newLines: 4 },
               ],
@@ -1391,6 +1395,7 @@ export function copiedHandler(value: number): number {
             Layer.succeed(SignalContextTag, {
               gitSha: "TEST",
               worktreePath: repo.root,
+              assessmentScope: "changed-only",
               changedHunks: [
                 { file: "changed.ts", oldStart: 2, oldLines: 0, newStart: 2, newLines: 4 },
               ],
@@ -1431,6 +1436,7 @@ function unique(x: number): number { return x + 1; }
             Layer.succeed(SignalContextTag, {
               gitSha: "TEST",
               worktreePath: repo.root,
+              assessmentScope: "changed-only",
               changedHunks: [
                 {
                   file: `${repo.root}/changed.ts`,

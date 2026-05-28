@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { Context, Layer } from "effect"
-import type { ChangedHunk } from "./context.js"
+import type { ChangedHunk, SignalAssessmentScope } from "./context.js"
 import type {
   ScoringEngineError,
   SignalError,
@@ -40,7 +40,10 @@ export class ScoringEngineTag extends Context.Tag("@skastr0/pulsar-core/ScoringE
     readonly observeWorktree: (
       repoPath: string,
       headSha: string,
-      options?: { readonly changedHunks?: ReadonlyArray<ChangedHunk> },
+      options?: {
+        readonly changedHunks?: ReadonlyArray<ChangedHunk>
+        readonly assessmentScope?: SignalAssessmentScope
+      },
     ) => import("effect").Effect.Effect<ObserverOutput, ScoringEngineError, never>
     readonly observeRange: (
       repoPath: string,
@@ -62,7 +65,7 @@ export class ScoringEngineTag extends Context.Tag("@skastr0/pulsar-core/ScoringE
  */
 export type PackLayerFactory = (
   worktreePath: string,
-) => Layer.Layer<never, never, never> | Layer.Layer<any, unknown, never>
+) => Layer.Layer<never, unknown, never>
 
 /**
  * SHA-256 over the stable JSON encoding of a signal's resolved config.

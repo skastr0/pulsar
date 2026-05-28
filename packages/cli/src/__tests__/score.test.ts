@@ -627,6 +627,40 @@ describe("pulsar score", () => {
     }
   }, 120_000)
 
+  test("single-signal worktree scoring keeps whole-repo duplication debt with unrelated dirty hunks", async () => {
+    const cloneBody = `
+  const doubled = value * 2
+  if (doubled > 10) {
+    return doubled - 1
+  }
+  return doubled + 1
+`
+    const repoPath = await initRepo([
+      {
+        path: "src/clone-a.ts",
+        content: `export function cloneA(value: number): number {${cloneBody}}\n`,
+      },
+      {
+        path: "src/clone-b.ts",
+        content: `export function cloneB(value: number): number {${cloneBody}}\n`,
+      },
+      { path: "src/touched.ts", content: "export const touched = 1\n" },
+    ])
+    try {
+      await writeRepoFile(repoPath, "src/touched.ts", "export const touched = 2\n")
+
+      const out = runCli(repoPath, ["score", "--signal", "TS-SL-01", "."])
+
+      expect(out.status).toBe(0)
+      expect(out.stdout).toContain("Signal: TS-SL-01-duplication")
+      expect(out.stdout).toContain("cloneA")
+      expect(out.stdout).toContain("cloneB")
+      expect(out.stdout).not.toContain("Score:  1.000")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
   test("explicit pulsar vector can tighten diff scoring for small copied edits", async () => {
     const smallDuplicateBody = `
   const out = value + 1
@@ -678,23 +712,41 @@ describe("pulsar score", () => {
         ),
       )
 
-      const defaultOut = runCli(repoPath, ["score", "--category", "generated-slop", "."])
+      const defaultOut = runCli(repoPath, [
+        "score",
+        "--diff",
+        "HEAD..WORKTREE",
+        "--changed-only",
+        "--agent-view",
+        "--json",
+        ".",
+      ])
       expect(defaultOut.status).toBe(0)
-      expect(defaultOut.stdout).not.toContain("existingTiny")
-      expect(defaultOut.stdout).not.toContain("copiedTiny")
+      const defaultJson = JSON.parse(String(defaultOut.stdout))
+      const defaultDuplicationDiagnostics = defaultJson.changed_only_diagnostics.filter(
+        (diagnostic: { readonly signal_id: string }) => diagnostic.signal_id === "TS-SL-01-duplication",
+      )
+      expect(JSON.stringify(defaultDuplicationDiagnostics)).not.toContain("existingTiny")
+      expect(JSON.stringify(defaultDuplicationDiagnostics)).not.toContain("copiedTiny")
 
       const vectorOut = runCli(repoPath, [
         "score",
-        "--category",
-        "generated-slop",
+        "--diff",
+        "HEAD..WORKTREE",
+        "--changed-only",
+        "--agent-view",
+        "--json",
         "--vector",
         ".pulsar/micro-copy-defense.json",
         ".",
       ])
       expect(vectorOut.status).toBe(0)
-      expect(vectorOut.stdout).toContain("Vector:   micro-copy-defense")
-      expect(vectorOut.stdout).toContain("existingTiny")
-      expect(vectorOut.stdout).toContain("copiedTiny")
+      const vectorJson = JSON.parse(String(vectorOut.stdout))
+      const vectorDuplicationDiagnostics = vectorJson.changed_only_diagnostics.filter(
+        (diagnostic: { readonly signal_id: string }) => diagnostic.signal_id === "TS-SL-01-duplication",
+      )
+      expect(JSON.stringify(vectorDuplicationDiagnostics)).toContain("existingTiny")
+      expect(JSON.stringify(vectorDuplicationDiagnostics)).toContain("copiedTiny")
     } finally {
       await rm(repoPath, { recursive: true, force: true })
     }

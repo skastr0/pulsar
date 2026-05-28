@@ -158,7 +158,10 @@ const observeDiffRun = (
       ? yield* runtime.engine.observeWorktree(repoRoot, currentHeadSha, { changedHunks: [] })
       : yield* runtime.engine.observeCommit(repoRoot, headSha)
     const changedHeadOutput = headIsWorktree && changedHunks.length > 0
-      ? yield* runtime.engine.observeWorktree(repoRoot, currentHeadSha, { changedHunks })
+      ? yield* runtime.engine.observeWorktree(repoRoot, currentHeadSha, {
+          changedHunks,
+          assessmentScope: "changed-only",
+        })
       : undefined
 
     return {

@@ -12,6 +12,7 @@ import {
 import {
   type ChangedHunk,
   ReferenceDataTag,
+  type SignalAssessmentScope,
   SignalContextTag,
   makeReferenceData,
 } from "./context.js"
@@ -45,16 +46,18 @@ export interface EngineInternals {
     referenceEntries: ReadonlyMap<string, unknown>,
     calibrationContext: ResolvedCalibrationContext | undefined,
     changedHunks?: ReadonlyArray<ChangedHunk>,
-  ) => Layer.Layer<any, unknown, never>
+    assessmentScope?: SignalAssessmentScope,
+  ) => Layer.Layer<never, unknown, never>
 }
 
 export type RunWithEnvironment = <A, E>(
   worktreePath: string,
   sha: string,
   changedHunks: ReadonlyArray<ChangedHunk>,
+  assessmentScope: SignalAssessmentScope | undefined,
   calibrationContext: ResolvedCalibrationContext | undefined,
   runInWorktree: (
-    envLayer: Layer.Layer<any, unknown, never>,
+    envLayer: Layer.Layer<never, unknown, never>,
     referenceEntries: ReadonlyMap<string, unknown>,
   ) => Effect.Effect<A, E, never>,
 ) => Effect.Effect<A, E | ScoringEngineError, never>
@@ -110,9 +113,15 @@ const makeEnvironmentLayerFactory = (
   referenceEntries: ReadonlyMap<string, unknown>,
   calibrationContext: ResolvedCalibrationContext | undefined,
   changedHunks: ReadonlyArray<ChangedHunk> = [],
-): Layer.Layer<any, unknown, never> =>
+  assessmentScope?: SignalAssessmentScope,
+): Layer.Layer<never, unknown, never> =>
   Layer.mergeAll(
-    Layer.succeed(SignalContextTag, { gitSha: sha, worktreePath, changedHunks }),
+    Layer.succeed(SignalContextTag, {
+      gitSha: sha,
+      worktreePath,
+      changedHunks,
+      ...(assessmentScope !== undefined ? { assessmentScope } : {}),
+    }),
     Layer.succeed(ReferenceDataTag, makeReferenceData(referenceEntries)),
     Layer.succeed(SignalCacheTag, cacheRef),
     calibrationContext === undefined
@@ -125,9 +134,10 @@ export const makeRunWithEnvironment = (internals: EngineInternals): RunWithEnvir
   worktreePath: string,
   sha: string,
   changedHunks: ReadonlyArray<ChangedHunk>,
+  assessmentScope: SignalAssessmentScope | undefined,
   calibrationContext: ResolvedCalibrationContext | undefined,
   runInWorktree: (
-    envLayer: Layer.Layer<any, unknown, never>,
+    envLayer: Layer.Layer<never, unknown, never>,
     referenceEntries: ReadonlyMap<string, unknown>,
   ) => Effect.Effect<A, E, never>,
 ): Effect.Effect<A, E | ScoringEngineError, never> =>
@@ -140,6 +150,7 @@ export const makeRunWithEnvironment = (internals: EngineInternals): RunWithEnvir
       referenceEntries,
       calibrationContext,
       changedHunks,
+      assessmentScope,
     )
     return yield* runInWorktree(envLayer, referenceEntries)
   })

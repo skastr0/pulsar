@@ -164,6 +164,7 @@ const runSignalWithCache = (args: {
     args.worktreePath,
     args.sha,
     [],
+    undefined,
     args.calibrationContext,
     (EnvLayer, referenceEntries) =>
       Effect.gen(function* () {

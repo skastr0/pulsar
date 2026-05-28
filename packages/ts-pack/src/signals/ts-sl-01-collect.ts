@@ -12,7 +12,11 @@ export const collectCloneCandidates = (
   context: TsSl01Context,
   config: TsSl01Config,
 ): CloneCandidateCollection => {
-  const hunkMap = buildHunkMap(context.worktreePath, context.changedHunks)
+  const useChangedHunkScope =
+    context.assessmentScope === "changed-only" && context.changedHunks.length > 0
+  const hunkMap = useChangedHunkScope
+    ? buildHunkMap(context.worktreePath, context.changedHunks)
+    : undefined
   const structuralAnalysisCache: StructuralAnalysisCache = new Map()
   const collection = emptyCloneSourceFileCollection()
 
@@ -25,7 +29,7 @@ export const collectCloneCandidates = (
 
   return {
     ...collection,
-    scopeMode: context.changedHunks.length > 0 ? "changed-hunks" : "whole-tree",
+    scopeMode: useChangedHunkScope ? "changed-hunks" : "whole-tree",
   }
 }
 

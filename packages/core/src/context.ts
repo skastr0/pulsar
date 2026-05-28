@@ -14,6 +14,8 @@ export const ChangedHunk = Schema.Struct({
 })
 export type ChangedHunk = typeof ChangedHunk.Type
 
+export type SignalAssessmentScope = "whole-repo" | "changed-only"
+
 /**
  * Scoped reference data. A key identifies the kind (e.g. "glossary",
  * "boundary-rules"); the value is opaque and validated by each consumer.
@@ -36,6 +38,7 @@ export interface SignalContext {
   readonly gitSha: string
   readonly worktreePath: string
   readonly changedHunks: ReadonlyArray<ChangedHunk>
+  readonly assessmentScope?: SignalAssessmentScope
 }
 
 export class SignalContextTag extends Context.Tag("@skastr0/pulsar-core/SignalContext")<

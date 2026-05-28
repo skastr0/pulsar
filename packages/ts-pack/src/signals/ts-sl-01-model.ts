@@ -78,6 +78,7 @@ export interface TsSl01Context {
     readonly newStart: number
     readonly newLines: number
   }>
+  readonly assessmentScope?: "whole-repo" | "changed-only"
 }
 
 export interface CloneCandidateCollection {
