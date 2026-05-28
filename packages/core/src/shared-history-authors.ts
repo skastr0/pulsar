@@ -9,6 +9,21 @@ import { fileExists } from "./shared-history-files.js"
 import { execGit } from "./shared-history-git.js"
 import { resolveCurrentHistoryPath } from "./shared-history-renames.js"
 
+const COMMIT_AUTHOR_PREFIX = "__commit__\0"
+
+interface AuthorLogParseState {
+  currentAuthor: string | undefined
+  readonly byFile: Map<string, Array<string>>
+  readonly filesInCommit: Set<string>
+  readonly renameTargets: Map<string, string>
+}
+
+interface NameStatusEntry {
+  readonly status: string
+  readonly firstPath: string
+  readonly secondPath: string
+}
+
 export const listAuthorsByTouchedFileInWindow = async (
   repoPath: string,
   sinceIso: string,
@@ -20,68 +35,116 @@ export const listAuthorsByTouchedFileInWindow = async (
     return new Map()
   }
 
-  const raw = await execGit(repoPath, [
-    "log",
-    "--use-mailmap",
-    ...(config.maxCommits !== undefined && config.maxCommits > 0
-      ? [`--max-count=${Math.floor(config.maxCommits)}`]
-      : []),
-    `--since=${sinceIso}`,
-    `--until=${untilIso}`,
-    "--name-status",
-    "--find-renames=100%",
-    "--diff-filter=ACMRT",
-    "--format=__commit__%x00%aN <%aE>",
-    "--",
-    ...pathspecs,
-  ])
+  const raw = await execGit(
+    repoPath,
+    authorHistoryLogArgs(config, sinceIso, untilIso, pathspecs),
+  )
+  return collectTouchedFileAuthorsFromLog(raw, config)
+}
 
-  let currentAuthor: string | undefined
-  const byFile = new Map<string, Array<string>>()
-  const filesInCommit = new Set<string>()
-  const renameTargets = new Map<string, string>()
+const authorHistoryLogArgs = (
+  config: SharedHistoryFilterConfig,
+  sinceIso: string,
+  untilIso: string,
+  pathspecs: ReadonlyArray<string>,
+): ReadonlyArray<string> => [
+  "log",
+  "--use-mailmap",
+  ...(config.maxCommits !== undefined && config.maxCommits > 0
+    ? [`--max-count=${Math.floor(config.maxCommits)}`]
+    : []),
+  `--since=${sinceIso}`,
+  `--until=${untilIso}`,
+  "--name-status",
+  "--find-renames=100%",
+  "--diff-filter=ACMRT",
+  "--format=__commit__%x00%aN <%aE>",
+  "--",
+  ...pathspecs,
+]
 
-  const flushCommit = (): void => {
-    if (currentAuthor === undefined) return
-    for (const file of filesInCommit) {
-      const authors = byFile.get(file) ?? []
-      authors.push(currentAuthor)
-      byFile.set(file, authors)
-    }
-    filesInCommit.clear()
-  }
-
+const collectTouchedFileAuthorsFromLog = (
+  raw: string,
+  config: SharedHistoryFilterConfig,
+): ReadonlyMap<string, ReadonlyArray<string>> => {
+  const state = createAuthorLogParseState()
   for (const line of raw.split("\n")) {
-    if (line.startsWith("__commit__\0")) {
-      flushCommit()
-      currentAuthor = line.slice("__commit__\0".length).trim()
-      continue
-    }
+    ingestAuthorHistoryLine(state, line, config)
+  }
+  flushAuthorCommit(state)
+  return state.byFile
+}
 
-    const trimmed = line.trim()
-    if (trimmed.length === 0) continue
-    const [status = "", firstPath = "", secondPath = ""] = trimmed.split("\t")
-    if (firstPath.length === 0) continue
+const createAuthorLogParseState = (): AuthorLogParseState => ({
+  currentAuthor: undefined,
+  byFile: new Map(),
+  filesInCommit: new Set(),
+  renameTargets: new Map(),
+})
 
-    if (status.startsWith("R")) {
-      if (secondPath.length === 0) continue
-      const currentPath = resolveCurrentHistoryPath(secondPath, renameTargets)
-      if (isIncludedHistoryPath(currentPath, config)) {
-        renameTargets.set(firstPath, currentPath)
-      }
-      continue
-    }
-
-    const currentPath = resolveCurrentHistoryPath(
-      status.startsWith("C") && secondPath.length > 0 ? secondPath : firstPath,
-      renameTargets,
-    )
-    if (!isIncludedHistoryPath(currentPath, config)) continue
-    filesInCommit.add(currentPath)
+const ingestAuthorHistoryLine = (
+  state: AuthorLogParseState,
+  line: string,
+  config: SharedHistoryFilterConfig,
+): void => {
+  if (line.startsWith(COMMIT_AUTHOR_PREFIX)) {
+    flushAuthorCommit(state)
+    state.currentAuthor = line.slice(COMMIT_AUTHOR_PREFIX.length).trim()
+    return
   }
 
-  flushCommit()
-  return byFile
+  const entry = parseNameStatusEntry(line)
+  if (entry === undefined) return
+  if (entry.status.startsWith("R")) {
+    recordRenameTarget(state, entry, config)
+    return
+  }
+  recordTouchedPath(state, entry, config)
+}
+
+const flushAuthorCommit = (state: AuthorLogParseState): void => {
+  if (state.currentAuthor === undefined) return
+  for (const file of state.filesInCommit) {
+    const authors = state.byFile.get(file) ?? []
+    authors.push(state.currentAuthor)
+    state.byFile.set(file, authors)
+  }
+  state.filesInCommit.clear()
+}
+
+const parseNameStatusEntry = (line: string): NameStatusEntry | undefined => {
+  const trimmed = line.trim()
+  if (trimmed.length === 0) return undefined
+  const [status = "", firstPath = "", secondPath = ""] = trimmed.split("\t")
+  if (firstPath.length === 0) return undefined
+  return { status, firstPath, secondPath }
+}
+
+const recordRenameTarget = (
+  state: AuthorLogParseState,
+  entry: NameStatusEntry,
+  config: SharedHistoryFilterConfig,
+): void => {
+  if (entry.secondPath.length === 0) return
+  const currentPath = resolveCurrentHistoryPath(entry.secondPath, state.renameTargets)
+  if (isIncludedHistoryPath(currentPath, config)) {
+    state.renameTargets.set(entry.firstPath, currentPath)
+  }
+}
+
+const recordTouchedPath = (
+  state: AuthorLogParseState,
+  entry: NameStatusEntry,
+  config: SharedHistoryFilterConfig,
+): void => {
+  const candidatePath =
+    entry.status.startsWith("C") && entry.secondPath.length > 0
+      ? entry.secondPath
+      : entry.firstPath
+  const currentPath = resolveCurrentHistoryPath(candidatePath, state.renameTargets)
+  if (isIncludedHistoryPath(currentPath, config)) {
+    state.filesInCommit.add(currentPath)
+  }
 }
 
 export const loadAuthorAliases = async (
