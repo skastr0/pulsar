@@ -33,10 +33,38 @@ const builtinProjectModules = new Map([
   [NEXTJS_PROJECT_MODULE_ID, nextjsProjectModule],
 ])
 
+interface RuntimeProjectModuleDetection {
+  readonly manifest?: ProjectModuleManifest
+  readonly effectiveManifest: ProjectModuleManifest
+  readonly detectedFrameworks: ReadonlyArray<DetectedFramework>
+  readonly shouldAutoActivateNext: boolean
+}
+
 export const loadProjectModuleCalibrationContext = (
   repoRoot: string,
   options?: { readonly dependencyRoot?: string },
 ): Effect.Effect<ResolvedCalibrationContext | undefined, unknown, never> =>
+  Effect.gen(function* () {
+    const detection = yield* detectRuntimeProjectModules(repoRoot)
+    if (hasNoProjectModuleCalibrationEvidence(detection)) {
+      return undefined
+    }
+
+    const loadedModules = yield* loadEnabledProjectModules(detection.effectiveManifest, {
+      repoRoot,
+      ...(options?.dependencyRoot !== undefined ? { dependencyRoot: options.dependencyRoot } : {}),
+      builtinModules: builtinProjectModules,
+    })
+    return makeResolvedCalibrationContext({
+      repoFacts: projectModuleRepoFacts(repoRoot, detection, loadedModules.length),
+      activeModules: loadedModules.map((module) => module.activeModule),
+      processors: loadedModules.flatMap((module) => module.processors),
+    })
+  })
+
+const detectRuntimeProjectModules = (
+  repoRoot: string,
+): Effect.Effect<RuntimeProjectModuleDetection, unknown, never> =>
   Effect.gen(function* () {
     const manifest = yield* loadOptionalProjectModuleManifest(repoRoot)
     const detectedNext = yield* detectNextAppRouterFramework(repoRoot)
@@ -49,58 +77,78 @@ export const loadProjectModuleCalibrationContext = (
       manifest,
       shouldAutoActivateNext,
     )
-    const detectedFrameworks = detectedFrameworkSummaries(detectedNext, explicitNextRef)
 
-    if (
-      manifest === undefined &&
-      effectiveManifest.modules.length === 0 &&
-      detectedFrameworks.length === 0
-    ) {
-      return undefined
+    return {
+      ...(manifest !== undefined ? { manifest } : {}),
+      effectiveManifest,
+      detectedFrameworks: detectedFrameworkSummaries(detectedNext, explicitNextRef),
+      shouldAutoActivateNext,
     }
-
-    const loadedModules = yield* loadEnabledProjectModules(effectiveManifest, {
-      repoRoot,
-      ...(options?.dependencyRoot !== undefined ? { dependencyRoot: options.dependencyRoot } : {}),
-      builtinModules: builtinProjectModules,
-    })
-    const manifestFingerprint =
-      manifest === undefined ? undefined : fingerprintProjectModuleManifest(manifest)
-    const effectiveManifestFingerprint = fingerprintProjectModuleManifest(effectiveManifest)
-    const repoFacts: RepoFacts = {
-      repoRoot,
-      fingerprint: `project-modules:${hashCalibrationValue({
-        manifestFingerprint: manifestFingerprint ?? null,
-        effectiveManifestFingerprint,
-        detectedFrameworks,
-      })}`,
-      detectedTechnologies: detectedFrameworks.some((framework) =>
-        framework.id === NEXTJS_APP_ROUTER_FRAMEWORK_ID
-      )
-        ? ["nextjs"]
-        : [],
-      ...(detectedFrameworks.length > 0 ? { detectedFrameworks } : {}),
-      sourceExtensions: [],
-      metadata: {
-        ...(manifestFingerprint === undefined
-          ? {}
-          : {
-              manifestPath: PROJECT_MODULE_MANIFEST_SOURCE_REF,
-              manifestFingerprint,
-            }),
-        effectiveManifestFingerprint,
-        declaredModuleCount: manifest?.modules.length ?? 0,
-        activeModuleCount: loadedModules.length,
-        autoActivatedModuleCount: shouldAutoActivateNext ? 1 : 0,
-      },
-    }
-
-    return makeResolvedCalibrationContext({
-      repoFacts,
-      activeModules: loadedModules.map((module) => module.activeModule),
-      processors: loadedModules.flatMap((module) => module.processors),
-    })
   })
+
+const hasNoProjectModuleCalibrationEvidence = (
+  detection: RuntimeProjectModuleDetection,
+): boolean =>
+  detection.manifest === undefined &&
+  detection.effectiveManifest.modules.length === 0 &&
+  detection.detectedFrameworks.length === 0
+
+const projectModuleRepoFacts = (
+  repoRoot: string,
+  detection: RuntimeProjectModuleDetection,
+  activeModuleCount: number,
+): RepoFacts => {
+  const manifestFingerprint =
+    detection.manifest === undefined
+      ? undefined
+      : fingerprintProjectModuleManifest(detection.manifest)
+  const effectiveManifestFingerprint = fingerprintProjectModuleManifest(detection.effectiveManifest)
+
+  return {
+    repoRoot,
+    fingerprint: `project-modules:${hashCalibrationValue({
+      manifestFingerprint: manifestFingerprint ?? null,
+      effectiveManifestFingerprint,
+      detectedFrameworks: detection.detectedFrameworks,
+    })}`,
+    detectedTechnologies: detectedNextTechnologyIds(detection.detectedFrameworks),
+    ...(detection.detectedFrameworks.length > 0
+      ? { detectedFrameworks: detection.detectedFrameworks }
+      : {}),
+    sourceExtensions: [],
+    metadata: projectModuleRepoFactsMetadata(
+      detection,
+      activeModuleCount,
+      manifestFingerprint,
+      effectiveManifestFingerprint,
+    ),
+  }
+}
+
+const detectedNextTechnologyIds = (
+  detectedFrameworks: ReadonlyArray<DetectedFramework>,
+): ReadonlyArray<string> =>
+  detectedFrameworks.some((framework) => framework.id === NEXTJS_APP_ROUTER_FRAMEWORK_ID)
+    ? ["nextjs"]
+    : []
+
+const projectModuleRepoFactsMetadata = (
+  detection: RuntimeProjectModuleDetection,
+  activeModuleCount: number,
+  manifestFingerprint: string | undefined,
+  effectiveManifestFingerprint: string,
+): NonNullable<RepoFacts["metadata"]> => ({
+  ...(manifestFingerprint === undefined
+    ? {}
+    : {
+        manifestPath: PROJECT_MODULE_MANIFEST_SOURCE_REF,
+        manifestFingerprint,
+      }),
+  effectiveManifestFingerprint,
+  declaredModuleCount: detection.manifest?.modules.length ?? 0,
+  activeModuleCount,
+  autoActivatedModuleCount: detection.shouldAutoActivateNext ? 1 : 0,
+})
 
 const loadOptionalProjectModuleManifest = (
   repoRoot: string,
