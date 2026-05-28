@@ -361,29 +361,16 @@ const parseImportEdges = (
     )
 
     for (const declaration of dependencyDeclarations) {
-      const fromPkg = packageForFile(currentFile, packages)
-      const targetFile = declaration.getModuleSpecifierSourceFile()?.getFilePath() ??
-        resolvePackageLocalAliasFile(project, moduleSpecifier, fromPkg)
-
-      const toPkg = targetFile === undefined
-        ? packageForModuleSpecifier(moduleSpecifier, packages)
-        : packageForFile(targetFile, packages)
-      if (toPkg === undefined && targetFile === undefined) continue
-
-      const fromBoundary = boundaryOfSourceFile(currentFile, worktreePath, boundaryRules)
-      const toBoundary = targetFile === undefined
-        ? boundaryOfPackage(toPkg, worktreePath, boundaryRules)
-        : boundaryOfSourceFile(targetFile, worktreePath, boundaryRules)
-
-      const edge: ImportEdge = {
-        file: currentFile,
-        line: declaration.getStartLineNumber(),
-        fromPackage: fromPkg?.manifest?.name,
-        toPackage: toPkg?.manifest?.name,
-        isCrossBoundary: fromBoundary !== undefined && toBoundary !== undefined && fromBoundary !== toBoundary,
-        fromBoundary,
-        toBoundary,
-      }
+      const edge = dependencyEdgeFromDeclaration({
+        project,
+        packages,
+        declaration,
+        moduleSpecifier,
+        currentFile,
+        worktreePath,
+        boundaryRules,
+      })
+      if (edge === undefined) continue
 
       if (edge.fromPackage !== edge.toPackage) {
         crossPackageEdges.push(edge)
@@ -398,6 +385,48 @@ const parseImportEdges = (
   return {
     crossPackageEdges: dedupeEdges(crossPackageEdges),
     crossBoundaryEdges: dedupeEdges(crossBoundaryEdges),
+  }
+}
+
+const dependencyEdgeFromDeclaration = (args: {
+  readonly project: import("ts-morph").Project
+  readonly packages: ReadonlyArray<import("../discovery.js").PackageInfo>
+  readonly declaration: import("ts-morph").ImportDeclaration | import("ts-morph").ExportDeclaration
+  readonly moduleSpecifier: string
+  readonly currentFile: string
+  readonly worktreePath: string
+  readonly boundaryRules: ReadonlyArray<BoundaryRule>
+}): ImportEdge | undefined => {
+  const fromPkg = packageForFile(args.currentFile, args.packages)
+  const targetFile = args.declaration.getModuleSpecifierSourceFile()?.getFilePath() ??
+    resolvePackageLocalAliasFile(args.project, args.moduleSpecifier, fromPkg)
+  const targetIsExternal = targetFile !== undefined &&
+    isExternalDependencyTarget(targetFile, args.worktreePath)
+  const toPkg = targetFile === undefined || targetIsExternal
+    ? packageForModuleSpecifier(args.moduleSpecifier, args.packages)
+    : packageForFile(targetFile, args.packages)
+
+  if (toPkg === undefined && (targetFile === undefined || targetIsExternal)) return undefined
+
+  const fromBoundary = boundaryOfSourceFile(
+    args.currentFile,
+    args.worktreePath,
+    args.boundaryRules,
+  )
+  const toBoundary = targetFile === undefined || targetIsExternal
+    ? boundaryOfPackage(toPkg, args.worktreePath, args.boundaryRules)
+    : boundaryOfSourceFile(targetFile, args.worktreePath, args.boundaryRules)
+
+  return {
+    file: args.currentFile,
+    line: args.declaration.getStartLineNumber(),
+    fromPackage: fromPkg?.manifest?.name,
+    toPackage: toPkg?.manifest?.name,
+    isCrossBoundary: fromBoundary !== undefined &&
+      toBoundary !== undefined &&
+      fromBoundary !== toBoundary,
+    fromBoundary,
+    toBoundary,
   }
 }
 
@@ -443,6 +472,16 @@ const packageForModuleSpecifier = (
   const packageName = normalizePackageSpecifier(moduleSpecifier)
   if (packageName === undefined) return undefined
   return packages.find((pkg) => pkg.manifest?.name === packageName)
+}
+
+const isExternalDependencyTarget = (targetFile: string, worktreePath: string): boolean => {
+  const relativeTarget = relative(worktreePath, targetFile).replaceAll("\\", "/")
+  return relativeTarget === "node_modules" ||
+    relativeTarget.startsWith("node_modules/") ||
+    relativeTarget.includes("/node_modules/") ||
+    relativeTarget === ".bun" ||
+    relativeTarget.startsWith(".bun/") ||
+    relativeTarget.includes("/.bun/")
 }
 
 const resolvePackageLocalAliasFile = (

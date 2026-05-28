@@ -553,6 +553,59 @@ export function useHelper(): string { return helper() + extra() + legacy(); }
     ])
   }, 120_000)
 
+  test("external package imports resolved under node_modules are not workspace package edges", async () => {
+    await repo.writeJson("tsconfig.json", {
+      compilerOptions: {
+        target: "ES2022",
+        module: "ESNext",
+        moduleResolution: "Bundler",
+      },
+      include: ["packages/*/src/**/*.ts"],
+    })
+    await writePackage(repo, "app", "@repo/app")
+    await repo.writeJson("node_modules/effect/package.json", {
+      name: "effect",
+      version: "0.0.0",
+      types: "./index.d.ts",
+    })
+    await repo.write(
+      "node_modules/effect/index.d.ts",
+      "export declare const Effect: { succeed(value: number): number }\n",
+    )
+    await repo.write(
+      "packages/app/src/index.ts",
+      [
+        "export const app = 1",
+        "",
+      ].join("\n"),
+    )
+    git(repo.root, ["add", "."])
+    git(repo.root, ["commit", "-q", "-m", "Add app without external import"])
+
+    await repo.write(
+      "packages/app/src/index.ts",
+      [
+        "import { Effect } from 'effect'",
+        "export const app = Effect.succeed(1)",
+        "",
+      ].join("\n"),
+    )
+    git(repo.root, ["add", "."])
+    git(repo.root, ["commit", "-q", "-m", "Add external import"])
+
+    const out = await computeWithContext(repo, TsRp02.defaultConfig, {
+      gitSha: "HEAD",
+      changedHunks: [],
+    })
+
+    expect(out.newCrossPackageEdges).toEqual([])
+    expect(TsRp02.diagnose(out)).not.toContainEqual(
+      expect.objectContaining({
+        message: "New cross-package import: @repo/app → temp-workspace",
+      }),
+    )
+  }, 120_000)
+
   test("package-local tsconfig aliases resolve even when they are not in the seed tsconfig", async () => {
     await repo.writeJson("tsconfig.json", {
       compilerOptions: {
