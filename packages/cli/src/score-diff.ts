@@ -25,6 +25,11 @@ import {
   diagnosticMessage,
   severityLabel,
 } from "./score-diagnostics.js"
+import {
+  decideGate,
+  type GateDiagnosticRecord,
+  type GateStatus,
+} from "./score-diff-gate.js"
 import { CATEGORY_LABELS } from "./score-format.js"
 import { toScoreJson } from "./score-json.js"
 import type { DiscoveredPulsarVector } from "./vector-discovery.js"
@@ -57,9 +62,7 @@ interface DiffRun {
   readonly changedHunks: ReadonlyArray<ChangedHunk>
 }
 
-type GateStatus = "pass" | "route" | "block"
-
-interface DiagnosticRecord {
+interface DiagnosticRecord extends GateDiagnosticRecord {
   readonly signal_id: string
   readonly category: Category
   readonly tier: number
@@ -78,9 +81,16 @@ export const parseScoreDiffRange = (
 ): { readonly baseRef: string; readonly headRef: string } => {
   const match = /^([^.]+)\.\.([^.]+)$/.exec(range)
   if (match === null) {
-    throw new Error("score --diff must be <base>..<head|WORKTREE> (two dots, no three-dot syntax)")
+    throw new ScoreDiffRangeParseError()
   }
   return { baseRef: match[1]!, headRef: match[2]! }
+}
+
+class ScoreDiffRangeParseError extends Error {
+  constructor() {
+    super("score --diff must be <base>..<head|WORKTREE> (two dots, no three-dot syntax)")
+    this.name = "ScoreDiffRangeParseError"
+  }
 }
 
 export const runScoreDiffMode = (
@@ -392,55 +402,6 @@ const categoryChanges = (base: ObserverOutput, head: ObserverOutput) =>
   ) as Record<Category, { readonly base_score: number; readonly head_score: number; readonly delta: number }>
 
 const roundDelta = (value: number): number => Math.round(value * 1_000_000) / 1_000_000
-
-const decideGate = (
-  allIntroducedDiagnostics: ReadonlyArray<DiagnosticRecord>,
-  routedDiagnostics: ReadonlyArray<DiagnosticRecord>,
-): {
-  readonly status: GateStatus
-  readonly reasons: ReadonlyArray<string>
-} => {
-  const blocking = allIntroducedDiagnostics.filter(
-    (record) =>
-      record.diagnostic.severity === "block" &&
-      record.tier === 1 &&
-      record.kind === "structural" &&
-      record.enforcement_ceiling.includes("hard-gate"),
-  )
-  if (blocking.length > 0) {
-    return {
-      status: "block",
-      reasons: [`${blocking.length} new Tier-1 structural hard-gate diagnostic(s).`],
-    }
-  }
-
-  const trustRisk = routedDiagnostics.filter((record) =>
-    record.category === "security-risk" ||
-    record.category === "concurrency-safety" ||
-    record.category === "behavior-preservation",
-  )
-  if (trustRisk.length > 0) {
-    return {
-      status: "route",
-      reasons: [`${trustRisk.length} trust-domain diagnostic(s) need review routing.`],
-    }
-  }
-  if (routedDiagnostics.length > 0) {
-    return {
-      status: "route",
-      reasons: [`${routedDiagnostics.length} introduced diagnostic(s) need review routing.`],
-    }
-  }
-  if (allIntroducedDiagnostics.length > 0) {
-    return {
-      status: "route",
-      reasons: [
-        `${allIntroducedDiagnostics.length} whole-repo introduced diagnostic(s) remain outside the changed-only guidance scope.`,
-      ],
-    }
-  }
-  return { status: "pass", reasons: ["No introduced diagnostics in the selected scope."] }
-}
 
 const trustReadout = (
   output: ObserverOutput,

@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url"
 import { ObserverOutput as ObserverOutputSchema } from "@skastr0/pulsar-core/observer"
 import { createTimeSeriesServices } from "@skastr0/pulsar-core/time-series"
 import { Effect, Schema } from "effect"
+import { decideGate, type GateDiagnosticRecord } from "../score-diff-gate.js"
 
 const binPath = resolve(import.meta.dir, "../../src/bin.ts")
 const aiSlopDefensePresetPath = resolve(
@@ -265,6 +266,20 @@ describe("pulsar score", () => {
       await rm(repoPath, { recursive: true, force: true })
     }
   }, 120_000)
+
+  test("changed-only gate passes when introduced diagnostics are outside the selected scope", () => {
+    const outsideScopeDiagnostic: GateDiagnosticRecord = {
+      category: "generated-slop",
+      tier: 1,
+      kind: "structural",
+      enforcement_ceiling: ["hard-gate"],
+      diagnostic: { severity: "warn" },
+    }
+
+    expect(decideGate([outsideScopeDiagnostic], [])).toMatchObject({
+      status: "pass",
+    })
+  })
 
   test("score --diff rejects invalid range syntax", async () => {
     const repoPath = await initRepo(simpleRepoFiles())
