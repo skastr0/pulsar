@@ -3,6 +3,11 @@ import { dirname, join, relative } from "node:path"
 import { ROOT_PACKAGE_NAME, sortRootFirstPackages } from "@skastr0/pulsar-shared-signals"
 import { Context, Effect, Layer } from "effect"
 import { simpleGit } from "simple-git"
+import {
+  readCargoManifestFacts,
+  type CargoManifestFacts,
+  type ParsedRustDependencyInfo,
+} from "./cargo-manifest-facts.js"
 import { loadCargoMetadata, type CargoMetadata } from "./cargo-metadata.js"
 import { parseCargoLock, type CargoLockfile } from "./lock-file.js"
 
@@ -17,16 +22,6 @@ export interface RustManifestInfo {
 export interface RustDependencyInfo {
   readonly alias: string
   readonly packageName: string
-}
-
-interface ParsedRustDependencyInfo extends RustDependencyInfo {
-  readonly inheritedFromWorkspace: boolean
-}
-
-interface CargoManifestFacts {
-  readonly packageName: string | undefined
-  readonly dependencies: ReadonlyArray<ParsedRustDependencyInfo>
-  readonly workspaceDependencies: ReadonlyArray<ParsedRustDependencyInfo>
 }
 
 export interface RustProject {
@@ -207,137 +202,6 @@ const walkForRustSources = async (dir: string): Promise<Array<string>> => {
   return results
 }
 
-const DEPENDENCY_SECTION_PATTERN =
-  /^\[(?:target\.[^\]]+\.)?(?:dev-|build-)?dependencies\]$/
-const DEPENDENCY_TABLE_SECTION_PATTERN =
-  /^\[(?:target\.[^\]]+\.)?(?:dev-|build-)?dependencies\.([A-Za-z0-9_-]+)\]$/
-const WORKSPACE_DEPENDENCY_SECTION_PATTERN = /^\[workspace\.dependencies\]$/
-const WORKSPACE_DEPENDENCY_TABLE_SECTION_PATTERN =
-  /^\[workspace\.dependencies\.([A-Za-z0-9_-]+)\]$/
-const DEPENDENCY_KEY_PATTERN = /^([A-Za-z0-9_-]+)\s*=\s*(.+)$/
-const PACKAGE_KEY_PATTERN = /^package\s*=\s*"([^"]+)"$/
-const WORKSPACE_TRUE_KEY_PATTERN = /^workspace\s*=\s*true$/
-const PACKAGE_INLINE_PATTERN = /(?:^|[,{]\s*)package\s*=\s*"([^"]+)"/
-const WORKSPACE_TRUE_INLINE_PATTERN = /(?:^|[,{]\s*)workspace\s*=\s*true(?:\s*[,}]|$)/
-
-type DependencySectionKind = "manifest" | "workspace"
-
-const readCargoManifestFacts = (
-  manifestPath: string,
-): Effect.Effect<CargoManifestFacts, unknown> =>
-  Effect.tryPromise({
-    try: async () => parseCargoManifestFacts(await readFile(manifestPath, "utf8")),
-    catch: (error: unknown) => error,
-  })
-
-const parseCargoManifestFacts = (raw: string): CargoManifestFacts => {
-  const dependencies = new Map<string, ParsedRustDependencyInfo>()
-  const workspaceDependencies = new Map<string, ParsedRustDependencyInfo>()
-  let packageName: string | undefined
-  let inPackage = false
-  let inDependencySection = false
-  let dependencySectionKind: DependencySectionKind | undefined
-  let tableDependencySectionKind: DependencySectionKind | undefined
-  let tableAlias: string | undefined
-  let tablePackageName: string | undefined
-  let tableInheritedFromWorkspace = false
-
-  const setDependency = (
-    sectionKind: DependencySectionKind,
-    dependency: ParsedRustDependencyInfo,
-  ): void => {
-    const target = sectionKind === "workspace" ? workspaceDependencies : dependencies
-    target.set(dependency.alias, dependency)
-  }
-
-  const flushTableDependency = (): void => {
-    if (tableAlias === undefined || tableDependencySectionKind === undefined) return
-    setDependency(tableDependencySectionKind, {
-      alias: tableAlias,
-      packageName: tablePackageName ?? tableAlias,
-      inheritedFromWorkspace:
-        tableDependencySectionKind === "manifest" && tableInheritedFromWorkspace,
-    })
-    tableAlias = undefined
-    tablePackageName = undefined
-    tableInheritedFromWorkspace = false
-    tableDependencySectionKind = undefined
-  }
-
-  for (const line of raw.split(/\r?\n/)) {
-    const trimmed = stripTomlLineComment(line).trim()
-    if (trimmed.length === 0) continue
-
-    if (trimmed.startsWith("[")) {
-      flushTableDependency()
-      inPackage = trimmed === "[package]"
-      inDependencySection = false
-      dependencySectionKind = undefined
-      tableAlias = undefined
-      tablePackageName = undefined
-      tableInheritedFromWorkspace = false
-      tableDependencySectionKind = undefined
-
-      const dependencyTableMatch = DEPENDENCY_TABLE_SECTION_PATTERN.exec(trimmed)
-      if (dependencyTableMatch !== null) {
-        tableAlias = dependencyTableMatch[1]
-        tableDependencySectionKind = "manifest"
-        continue
-      }
-
-      const workspaceDependencyTableMatch =
-        WORKSPACE_DEPENDENCY_TABLE_SECTION_PATTERN.exec(trimmed)
-      if (workspaceDependencyTableMatch !== null) {
-        tableAlias = workspaceDependencyTableMatch[1]
-        tableDependencySectionKind = "workspace"
-        continue
-      }
-
-      if (DEPENDENCY_SECTION_PATTERN.test(trimmed)) {
-        inDependencySection = true
-        dependencySectionKind = "manifest"
-      } else if (WORKSPACE_DEPENDENCY_SECTION_PATTERN.test(trimmed)) {
-        inDependencySection = true
-        dependencySectionKind = "workspace"
-      }
-      continue
-    }
-
-    if (inPackage) {
-      const match = /^name\s*=\s*"([^"]+)"$/.exec(trimmed)
-      if (match !== null) packageName = match[1]
-      continue
-    }
-
-    if (tableAlias !== undefined) {
-      const packageMatch = PACKAGE_KEY_PATTERN.exec(trimmed)
-      if (packageMatch !== null) tablePackageName = packageMatch[1]
-      if (WORKSPACE_TRUE_KEY_PATTERN.test(trimmed)) tableInheritedFromWorkspace = true
-      continue
-    }
-
-    if (!inDependencySection || dependencySectionKind === undefined) continue
-    const dependencyMatch = DEPENDENCY_KEY_PATTERN.exec(trimmed)
-    if (dependencyMatch === null) continue
-    const alias = dependencyMatch[1]!
-    const value = dependencyMatch[2]!.trim()
-    const dependencyPackageName = PACKAGE_INLINE_PATTERN.exec(value)?.[1] ?? alias
-    setDependency(dependencySectionKind, {
-      alias,
-      packageName: dependencyPackageName,
-      inheritedFromWorkspace:
-        dependencySectionKind === "manifest" && WORKSPACE_TRUE_INLINE_PATTERN.test(value),
-    })
-  }
-
-  flushTableDependency()
-  return {
-    packageName,
-    dependencies: [...dependencies.values()],
-    workspaceDependencies: [...workspaceDependencies.values()],
-  }
-}
-
 const collectWorkspaceDependencies = (
   manifests: ReadonlyArray<{ readonly facts: CargoManifestFacts }>,
 ): ReadonlyMap<string, RustDependencyInfo> => {
@@ -370,28 +234,6 @@ const resolveWorkspaceDependencies = (
         workspaceDependencies.get(dependency.alias)?.packageName ?? dependency.packageName,
     }
   })
-
-const stripTomlLineComment = (line: string): string => {
-  let inString = false
-  let escaped = false
-  for (let index = 0; index < line.length; index += 1) {
-    const char = line[index]
-    if (escaped) {
-      escaped = false
-      continue
-    }
-    if (char === "\\") {
-      escaped = true
-      continue
-    }
-    if (char === "\"") {
-      inString = !inString
-      continue
-    }
-    if (char === "#" && !inString) return line.slice(0, index)
-  }
-  return line
-}
 
 const maybeReadUtf8 = (
   filePath: string,
