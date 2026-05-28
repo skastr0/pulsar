@@ -15,6 +15,7 @@ import {
   isReturnTypeOwner,
 } from "./ts-ld-07-boundary.js"
 import { countNonEmptyLines } from "./ts-ld-07-output.js"
+import { catchHasGuardedFallbackAndPropagation } from "./ts-ld-09-guarded-catch.js"
 
 const TsLd09Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
@@ -136,7 +137,7 @@ export const TsLd09: Signal<TsLd09Config, TsLd09Output, TsProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "ts-error-channel-opacity-v7-grounded-namespace-scope-v1",
+  cacheVersion: "ts-error-channel-opacity-v8-guarded-fallback-mapping-v1",
   configSchema: TsLd09Config,
   defaultConfig: {
     exclude_globs: [
@@ -673,6 +674,7 @@ const catchCollapsesErrorChannel = (
 ): boolean => {
   const block = clause.block
   if (blockContainsCatchVariableNarrowing(clause, sourceFile) && blockRethrows(block)) return false
+  if (catchHasGuardedFallbackAndPropagation(clause, sourceFile)) return false
   const collapses = blockReturnsFallback(block, sourceFile) || blockSwallowsError(block)
   if (!collapses && blockContainsDomainErrorMapping(block)) return false
   return collapses

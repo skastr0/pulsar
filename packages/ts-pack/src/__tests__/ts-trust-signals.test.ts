@@ -296,6 +296,11 @@ describe("TypeScript trust-domain and AI-slop signals", () => {
   })
 
   test("TS-BP-01 routes public API changes only when changed hunks touch exports", async () => {
+    await repo.writeJson("package.json", {
+      name: "temp-workspace",
+      private: true,
+      main: "./src/api.ts",
+    })
     await repo.write(
       "src/api.ts",
       [
@@ -320,6 +325,41 @@ describe("TypeScript trust-domain and AI-slop signals", () => {
     expect(TsBp01.score(changed)).toBeLessThan(1)
     expect(unchanged.state).toBe("zero")
     expect(TsBp01.diagnose(unchanged)).toEqual([])
+  })
+
+  test("TS-BP-01 ignores exported helpers outside public entrypoints", async () => {
+    await repo.writeJson("package.json", {
+      name: "temp-workspace",
+      private: true,
+      main: "./src/api.ts",
+    })
+    await repo.write(
+      "src/api.ts",
+      [
+        "export interface User { readonly id: string }",
+        "export function loadUser(id: string): User {",
+        "  return { id }",
+        "}",
+      ].join("\n"),
+    )
+    await repo.write(
+      "src/internal.ts",
+      [
+        "export function internalHelper(value: string | undefined): string {",
+        "  return value ?? 'fallback'",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await runBp([
+      { file: "src/internal.ts", oldStart: 1, oldLines: 1, newStart: 1, newLines: 1 },
+    ])
+
+    expect(out.state).toBe("zero")
+    expect(out.exportedSignatures.some((signature) => signature.file.endsWith("src/internal.ts"))).toBe(false)
+    expect(out.changedPublicSignatures).toEqual([])
+    expect(TsBp01.score(out)).toBe(1)
+    expect(TsBp01.diagnose(out)).toEqual([])
   })
 
   test("TS-SL-05 flags test blocks with no oracle", async () => {

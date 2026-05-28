@@ -55,9 +55,28 @@ export const readFileAtCommit = async (
 ): Promise<string | undefined> => {
   try {
     return await execGit(repoPath, ["show", `${sha}:${relativePath}`])
-  } catch {
-    return undefined
+  } catch (error) {
+    if (isGitMissingPathError(error, relativePath)) return undefined
+    throw error
   }
+}
+
+const isGitMissingPathError = (error: unknown, relativePath: string): boolean => {
+  const text = errorMessage(error)
+  return (
+    text.includes(`Path '${relativePath}' exists on disk, but not in`) ||
+    text.includes(`path '${relativePath}' does not exist in`) ||
+    text.includes(`Path '${relativePath}' does not exist in`) ||
+    text.includes("exists on disk, but not in")
+  )
+}
+
+const errorMessage = (error: unknown): string => {
+  if (typeof error === "object" && error !== null) {
+    const stderr = (error as { stderr?: unknown }).stderr
+    if (typeof stderr === "string" && stderr.length > 0) return stderr
+  }
+  return String(error)
 }
 
 export const execGit = async (

@@ -7,35 +7,58 @@ export const readResolvedPackageNames = async (
 ): Promise<ReadonlySet<string>> => {
   const packageNames = new Set<string>()
 
-  try {
-    const parsed = await readBunLockFile(join(worktreePath, "bun.lock"))
+  const bunLock = await readOptionalLockfile(
+    join(worktreePath, "bun.lock"),
+    readBunLockFile,
+  )
+  if (bunLock !== undefined) {
+    const parsed = bunLock
     for (const packageName of parsed.packageNames) {
       packageNames.add(packageName)
     }
-  } catch {
-    // Repos may use a non-Bun lockfile; fall through to the other lightweight readers.
   }
 
-  try {
-    const parsed = await readPnpmLockPackageNames(join(worktreePath, "pnpm-lock.yaml"))
+  const pnpmLock = await readOptionalLockfile(
+    join(worktreePath, "pnpm-lock.yaml"),
+    readPnpmLockPackageNames,
+  )
+  if (pnpmLock !== undefined) {
+    const parsed = pnpmLock
     for (const packageName of parsed) {
       packageNames.add(packageName)
     }
-  } catch {
-    // Missing/unsupported lockfiles should not make the signal fail.
   }
 
-  try {
-    const parsed = await readPackageLockPackageNames(join(worktreePath, "package-lock.json"))
+  const packageLock = await readOptionalLockfile(
+    join(worktreePath, "package-lock.json"),
+    readPackageLockPackageNames,
+  )
+  if (packageLock !== undefined) {
+    const parsed = packageLock
     for (const packageName of parsed) {
       packageNames.add(packageName)
     }
-  } catch {
-    // Missing/unsupported lockfiles should not make the signal fail.
   }
 
   return packageNames
 }
+
+const readOptionalLockfile = async <A>(
+  filePath: string,
+  read: (filePath: string) => Promise<A>,
+): Promise<A | undefined> => {
+  try {
+    return await read(filePath)
+  } catch (error) {
+    if (errorCodeOf(error) === "ENOENT") return undefined
+    throw error
+  }
+}
+
+const errorCodeOf = (error: unknown): string | undefined =>
+  typeof error === "object" && error !== null && "code" in error
+    ? String((error as { code?: unknown }).code)
+    : undefined
 
 const readPnpmLockPackageNames = async (filePath: string): Promise<ReadonlySet<string>> => {
   const text = await readFile(filePath, "utf8")

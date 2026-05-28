@@ -596,7 +596,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       positiveFixture:
         "ts-ld-09.test.ts: real TsProject fixtures flag broad built-in throws, opaque expected-failure Promise APIs with implementation failure evidence, catch fallback/swallow collapse, Promise.catch collapse, exported Effect value APIs, Effect.tryPromise unknown exceptions and weak catch mappers, configurable Effect.promise expected-failure wrappers, and Effect orDie/orElseSucceed channel collapse.",
       negativeFixture:
-        "ts-ld-09.test.ts: real fixtures prove domain Error throws, typed Effect failures, catch blocks that map to domain errors, async helpers without implementation failure evidence, internal async helpers without expected-failure names, typed Promise Result/Either APIs, non-Effect/non-Promise same-name APIs, lexically shadowed callbacks, generated/declaration/test/helper files, and custom expected-failure naming boundaries do not create false findings.",
+        "ts-ld-09.test.ts: real fixtures prove domain Error throws, typed Effect failures, catch blocks that map to domain errors, guarded absence fallbacks that propagate other errors, async helpers without implementation failure evidence, internal async helpers without expected-failure names, typed Promise Result/Either APIs, non-Effect/non-Promise same-name APIs, lexically shadowed callbacks, generated/declaration/test/helper files, and custom expected-failure naming boundaries do not create false findings.",
       applicability:
         "ts-ld-09.test.ts: all-excluded repositories return state not_applicable, analyzedFiles=0, score 1, no diagnostics, and not_applicable metadata; analyzed repositories with no findings return state zero.",
       score:
@@ -606,7 +606,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       factorLedger:
         "ts-ld-09.test.ts: registered pack signal emits config.exclude_globs, expected_failure_name_patterns, max_weighted_opacity_per_kloc, max_boundary_weighted_opacity, and top_n_diagnostics factor-ledger entries with score roles.",
       cacheSemantics:
-        "ts-ld-09.test.ts and pack.test.ts: wrapped pack cache version includes the TS-LD-09 semantic cacheVersion after typed Promise result, implementation-evidence, namespace, callback-scope, unique finding-id, diagnostic-limit, and exclusion semantics changed.",
+        "ts-ld-09.test.ts and pack.test.ts: wrapped pack cache version includes the TS-LD-09 semantic cacheVersion after typed Promise result, implementation-evidence, guarded fallback mapping, namespace, callback-scope, unique finding-id, diagnostic-limit, and exclusion semantics changed.",
     },
   },
   {
@@ -907,11 +907,11 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       identity:
         "ts-trust-signals.test.ts: canonical id, alias, title, tier/category/kind, semantic cacheVersion, pack registration, registry alias lookup, and default config decoding are asserted.",
       config:
-        "ts-trust-signals.test.ts: configSchema decodes exclude_globs and top_n_diagnostics defaults with factor-ledger coverage.",
+        "ts-trust-signals.test.ts: configSchema decodes exclude_globs, public_entry_globs, and top_n_diagnostics defaults with factor-ledger coverage.",
       positiveFixture:
-        "ts-trust-signals.test.ts: changed-hunk fixture touching exported interface produces a behavior-preservation finding.",
+        "ts-trust-signals.test.ts: package entrypoint changed-hunk fixture touching exported interface produces a behavior-preservation finding.",
       negativeFixture:
-        "ts-trust-signals.test.ts: same public API file with no changed hunks has zero changedPublicSignatures and no diagnostics.",
+        "ts-trust-signals.test.ts: same public API file with no changed hunks and exported internal helper changes outside public entrypoints have zero changedPublicSignatures and no diagnostics.",
       applicability:
         "ts-trust-signals.test.ts: exported-signature fixture distinguishes present changed API, zero unchanged API, and value-only not-applicable/neutral behavior.",
       score:
@@ -919,11 +919,11 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       diagnostics:
         "ts-trust-signals.test.ts: diagnostics include export name, declaration kind, signature, location, stable hash, and document-api-change fix hint.",
       factorLedger:
-        "ts-trust-signals.test.ts: registered signal emits config.top_n_diagnostics and exclude config factor-ledger entries.",
+        "ts-trust-signals.test.ts: registered signal emits config.top_n_diagnostics, public entrypoint, and exclude config factor-ledger entries.",
       cacheSemantics:
-        "ts-trust-signals.test.ts and pack.test.ts: wrapped pack cache version includes the TS-BP-01 semantic cacheVersion; output records changed-hunk cache contributor.",
+        "ts-trust-signals.test.ts and pack.test.ts: wrapped pack cache version includes the TS-BP-01 semantic cacheVersion; output records changed-hunk and public entrypoint cache contributors.",
       gitContext:
-        "ts-trust-signals.test.ts: custom SignalContextTag changedHunks fixture proves diagnostics are emitted only when hunks overlap exported declarations.",
+        "ts-trust-signals.test.ts: custom SignalContextTag changedHunks fixture proves diagnostics are emitted only when hunks overlap public entrypoint exported declarations.",
     },
   },
   {

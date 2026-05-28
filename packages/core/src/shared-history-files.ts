@@ -13,7 +13,13 @@ export const fileExists = async (absolutePath: string): Promise<boolean> => {
   try {
     await access(absolutePath, constants.F_OK)
     return true
-  } catch {
-    return false
+  } catch (error) {
+    if (errorCodeOf(error) === "ENOENT") return false
+    throw error
   }
 }
+
+const errorCodeOf = (error: unknown): string | undefined =>
+  typeof error === "object" && error !== null && "code" in error
+    ? String((error as { code?: unknown }).code)
+    : undefined

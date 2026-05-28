@@ -34,7 +34,7 @@ describe("TS-LD-09 (error channel opacity)", () => {
         tier: 1,
         category: "legibility-decay",
         kind: "legibility",
-        cacheVersion: "ts-error-channel-opacity-v7-grounded-namespace-scope-v1",
+        cacheVersion: "ts-error-channel-opacity-v8-guarded-fallback-mapping-v1",
         inputs: [],
       })
       expect(registered?.id).toBe(TsLd09.id)
@@ -182,6 +182,37 @@ describe("TS-LD-09 (error channel opacity)", () => {
         boundary: true,
         collapseMode: "fallback",
       })
+    } finally {
+      await repo.cleanup()
+    }
+  })
+
+  test("does not flag guarded absence fallbacks that propagate other errors", async () => {
+    const repo = await createTempRepo("pulsar-ts-ld-09-")
+    try {
+      await repo.write(
+        "src/optional-read.ts",
+        [
+          "class ReadConfigError extends Error {}",
+          "declare function readConfig(): string",
+          "const errorCodeOf = (error: unknown): string | undefined =>",
+          "  typeof error === 'object' && error !== null && 'code' in error",
+          "    ? String((error as { code?: unknown }).code)",
+          "    : undefined",
+          "export function readOptionalConfig(): string | undefined {",
+          "  try {",
+          "    return readConfig()",
+          "  } catch (error) {",
+          "    if (errorCodeOf(error) === 'ENOENT') return undefined",
+          "    throw new ReadConfigError(String(error))",
+          "  }",
+          "}",
+        ].join("\n"),
+      )
+
+      const out = await run(repo)
+      expect(out.findings).toEqual([])
+      expect(TsLd09.score(out)).toBe(1)
     } finally {
       await repo.cleanup()
     }

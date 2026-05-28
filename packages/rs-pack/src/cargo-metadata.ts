@@ -263,8 +263,9 @@ const execFileAsync = promisify(execFile)
 export const loadCargoMetadata = async (
   cwd: string,
 ): Promise<CargoMetadata | undefined> => {
+  let stdout: string
   try {
-    const { stdout } = await execFileAsync(
+    const result = await execFileAsync(
       "cargo",
       ["metadata", "--format-version", "1", "--all-features", "--no-deps"],
       {
@@ -272,8 +273,19 @@ export const loadCargoMetadata = async (
         maxBuffer: 10 * 1024 * 1024,
       },
     )
-    return parseCargoMetadata(stdout)
-  } catch {
-    return undefined
+    stdout = result.stdout
+  } catch (error) {
+    if (isCargoMetadataCommandFailure(error)) return undefined
+    throw error
   }
+
+  return parseCargoMetadata(stdout)
 }
+
+const isCargoMetadataCommandFailure = (error: unknown): boolean =>
+  errorCodeOf(error) !== undefined
+
+const errorCodeOf = (error: unknown): string | undefined =>
+  typeof error === "object" && error !== null && "code" in error
+    ? String((error as { code?: unknown }).code)
+    : undefined
