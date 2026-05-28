@@ -81,6 +81,7 @@ interface DiffDiagnosticDeltas {
   readonly allIntroduced: ReadonlyArray<DiagnosticRecord>
   readonly changedOnlyDiagnostics: ReadonlyArray<DiagnosticRecord>
   readonly resolved: ReadonlyArray<DiagnosticRecord>
+  readonly diagnosticProjectionChurn: ReadonlyArray<DiagnosticRecord>
 }
 
 interface AgentSignalProjection {
@@ -202,6 +203,7 @@ const buildDiffReport = (
     introduced_diagnostics: diagnostics.allIntroduced,
     changed_only_diagnostics: diagnostics.changedOnlyDiagnostics,
     resolved_diagnostics: diagnostics.resolved,
+    diagnostic_projection_churn: diagnostics.diagnosticProjectionChurn,
     signal_changes: signalChanges(vectorContext.registry, run.base.output, run.head.output),
     category_changes: categoryChanges(run.base.output, run.head.output),
     gate_decision: gateDecision,
@@ -236,6 +238,7 @@ const diffDiagnosticDeltas = (
     allIntroduced: diagnosticDelta.introduced,
     changedOnlyDiagnostics: changedDiagnosticDelta.introduced.filter((diagnostic) => diagnostic.in_changed_scope),
     resolved: diagnosticDelta.resolved,
+    diagnosticProjectionChurn: diagnosticDelta.diagnosticProjectionChurn,
   }
 }
 
@@ -279,15 +282,55 @@ const compareDiagnostics = (
 ): {
   readonly introduced: ReadonlyArray<DiagnosticRecord>
   readonly resolved: ReadonlyArray<DiagnosticRecord>
+  readonly diagnosticProjectionChurn: ReadonlyArray<DiagnosticRecord>
 } => {
   const baseRecords = diagnosticRecords(repoRoot, registry, base, changedHunks)
   const headRecords = diagnosticRecords(repoRoot, registry, head, changedHunks)
   const baseKeys = new Set(baseRecords.map((record) => diagnosticRecordKey(repoRoot, record)))
   const headKeys = new Set(headRecords.map((record) => diagnosticRecordKey(repoRoot, record)))
+  const rawIntroduced = headRecords.filter((record) => !baseKeys.has(diagnosticRecordKey(repoRoot, record)))
+  const rawResolved = baseRecords.filter((record) => !headKeys.has(diagnosticRecordKey(repoRoot, record)))
+  const diagnosticProjectionChurn = newlyVisibleProjectionChurn(
+    base,
+    head,
+    rawIntroduced,
+    rawResolved,
+  )
+  const projectionChurnKeys = new Set(
+    diagnosticProjectionChurn.map((record) => diagnosticRecordKey(repoRoot, record)),
+  )
+
   return {
-    introduced: headRecords.filter((record) => !baseKeys.has(diagnosticRecordKey(repoRoot, record))),
-    resolved: baseRecords.filter((record) => !headKeys.has(diagnosticRecordKey(repoRoot, record))),
+    introduced: rawIntroduced.filter((record) =>
+      !projectionChurnKeys.has(diagnosticRecordKey(repoRoot, record)),
+    ),
+    resolved: rawResolved,
+    diagnosticProjectionChurn,
   }
+}
+
+const newlyVisibleProjectionChurn = (
+  base: ObserverOutput,
+  head: ObserverOutput,
+  introduced: ReadonlyArray<DiagnosticRecord>,
+  resolved: ReadonlyArray<DiagnosticRecord>,
+): ReadonlyArray<DiagnosticRecord> => {
+  const resolvedSignalIds = new Set(resolved.map((record) => record.signal_id))
+  return introduced.filter((record) =>
+    !record.in_changed_scope &&
+    resolvedSignalIds.has(record.signal_id) &&
+    signalScoreDidNotRegress(base, head, record.signal_id),
+  )
+}
+
+const signalScoreDidNotRegress = (
+  base: ObserverOutput,
+  head: ObserverOutput,
+  signalId: string,
+): boolean => {
+  const baseScore = base.signalResults.get(signalId)?.score
+  const headScore = head.signalResults.get(signalId)?.score
+  return baseScore !== undefined && headScore !== undefined && headScore + 1e-9 >= baseScore
 }
 
 const diagnosticRecords = (

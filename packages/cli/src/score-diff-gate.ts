@@ -6,6 +6,7 @@ export type GateDiagnosticRecord = {
   readonly kind: string
   readonly enforcement_ceiling: ReadonlyArray<string>
   readonly diagnostic: { readonly severity: string }
+  readonly changed_scope?: "hunk" | "file" | "global" | "outside_changed_scope"
 }
 
 export const decideGate = (
@@ -47,10 +48,20 @@ export const decideGate = (
     }
   }
   if (allIntroducedDiagnostics.length > 0) {
+    const globalDiagnostics = allIntroducedDiagnostics.filter((record) =>
+      record.changed_scope === "global",
+    ).length
+    const outsideScopeDiagnostics = allIntroducedDiagnostics.length - globalDiagnostics
+    const details = [
+      ...(globalDiagnostics > 0 ? [`${globalDiagnostics} global diagnostic(s)`] : []),
+      ...(outsideScopeDiagnostics > 0
+        ? [`${outsideScopeDiagnostics} diagnostic(s) outside the selected scope`]
+        : []),
+    ].join("; ")
     return {
       status: "pass",
       reasons: [
-        `No introduced diagnostics in the selected scope; ${allIntroducedDiagnostics.length} whole-repo introduced diagnostic(s) remain outside the changed-only guidance scope.`,
+        `No introduced diagnostics in the selected changed-file/hunk scope; ${details} remain.`,
       ],
     }
   }

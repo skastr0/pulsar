@@ -322,6 +322,67 @@ describe("pulsar score", () => {
     }
   }, 120_000)
 
+  test("score --diff classifies top-N diagnostic backfill as projection churn", async () => {
+    const longFunction = (name: string, lines: number): string =>
+      [
+        `export function ${name}(): number {`,
+        ...Array.from({ length: lines }, (_, index) => `  const value${index} = ${index}`),
+        `  return value${lines - 1}`,
+        "}",
+        "",
+      ].join("\n")
+    const repoPath = await initRepo([
+      {
+        path: ".pulsar/vector.json",
+        content: JSON.stringify(
+          {
+            id: "single-size-diagnostic",
+            domain: "typescript",
+            signal_overrides: {
+              "TS-LD-02-function-size-distribution": {
+                config: { top_n_diagnostics: 1 },
+              },
+            },
+          },
+          null,
+          2,
+        ),
+      },
+      { path: "src/touched.ts", content: longFunction("touchedLarge", 90) },
+      { path: "src/untouched.ts", content: longFunction("untouchedLarge", 70) },
+    ])
+    try {
+      await writeRepoFile(repoPath, "src/touched.ts", "export const touchedLarge = 1\n")
+
+      const out = runCli(repoPath, [
+        "score",
+        "--diff",
+        "HEAD..WORKTREE",
+        "--changed-only",
+        "--agent-view",
+        "--json",
+        ".",
+      ])
+
+      expect([0, 2]).toContain(out.status ?? -1)
+      const parsed = JSON.parse(String(out.stdout))
+      const introducedSizeDiagnostics = parsed.introduced_diagnostics.filter(
+        (diagnostic: { readonly signal_id: string }) =>
+          diagnostic.signal_id === "TS-LD-02-function-size-distribution",
+      )
+      const projectionChurnSizeDiagnostics = parsed.diagnostic_projection_churn.filter(
+        (diagnostic: { readonly signal_id: string }) =>
+          diagnostic.signal_id === "TS-LD-02-function-size-distribution",
+      )
+
+      expect(introducedSizeDiagnostics).toEqual([])
+      expect(JSON.stringify(projectionChurnSizeDiagnostics)).toContain("untouchedLarge")
+      expect(JSON.stringify(parsed.resolved_diagnostics)).toContain("touchedLarge")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
   test("changed-only gate passes when introduced diagnostics are outside the selected scope", () => {
     const outsideScopeDiagnostic: GateDiagnosticRecord = {
       category: "generated-slop",
