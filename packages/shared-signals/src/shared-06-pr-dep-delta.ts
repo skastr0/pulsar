@@ -36,6 +36,25 @@ type DependencyDeltaState =
   | "missing"
   | "not_applicable"
 
+interface TsDependencyFacts {
+  readonly linesAdded: number
+  readonly linesDeleted: number
+  readonly crossBoundaryEdges: number
+  readonly crossPackageEdges: number
+  readonly diffMode: NonNullable<TsPrDeltaLike["diffMode"]>
+  readonly dependencyDeltaMode: NonNullable<TsPrDeltaLike["dependencyDeltaMode"]>
+  readonly dependencyDeltaState: DependencyDeltaState
+}
+
+interface RsDependencyFacts {
+  readonly linesAdded: number
+  readonly linesDeleted: number
+  readonly crossCrateEdges: number
+  readonly diffMode: NonNullable<RsPrDeltaLike["diffMode"]>
+  readonly dependencyDeltaMode: "measured" | "unavailable" | "missing"
+  readonly dependencyDeltaState: DependencyDeltaState
+}
+
 export interface Shared06PrDepDeltaOutput {
   readonly dependencyDeltaState: DependencyDeltaState
   readonly totalNewDependencyEdges: number
@@ -91,59 +110,7 @@ export const Shared06PrDepDelta: Signal<Shared06PrDepDeltaConfig, Shared06PrDepD
     },
   ],
   compute: (config, inputs) =>
-    Effect.sync(() => {
-      const normalizedConfig = normalizeShared06PrDepDeltaConfig(config)
-      const ts = (inputs.get("TS-RP-02-pr-size") ??
-        inputs.get("TS-RP-02")) as TsPrDeltaLike | undefined
-      const rs = (inputs.get("RS-RP-03-pr-size") ??
-        inputs.get("RS-RP-03")) as RsPrDeltaLike | undefined
-      const tsFacts = ts === undefined ? undefined : tsDependencyFacts(ts)
-      const rsFacts = rs === undefined ? undefined : rsDependencyFacts(rs)
-      const tsDependencyEdges =
-        (tsFacts?.crossPackageEdges ?? 0) + (tsFacts?.crossBoundaryEdges ?? 0)
-      const rsDependencyEdges = rsFacts?.crossCrateEdges ?? 0
-
-      return {
-        dependencyDeltaState: aggregateDependencyDeltaState([
-          tsFacts?.dependencyDeltaState,
-          rsFacts?.dependencyDeltaState,
-        ]),
-        totalNewDependencyEdges: tsDependencyEdges + rsDependencyEdges,
-        crossBoundaryEdges: tsFacts?.crossBoundaryEdges ?? 0,
-        crossPackageEdges: tsFacts?.crossPackageEdges ?? 0,
-        crossCrateEdges: rsFacts?.crossCrateEdges ?? 0,
-        linesAdded: (tsFacts?.linesAdded ?? 0) + (rsFacts?.linesAdded ?? 0),
-        linesDeleted: (tsFacts?.linesDeleted ?? 0) + (rsFacts?.linesDeleted ?? 0),
-        topDiagnostics: normalizedConfig.top_n_diagnostics,
-        byLanguage: {
-          ...(tsFacts !== undefined
-            ? {
-                typescript: {
-                  newDependencyEdges: tsDependencyEdges,
-                  crossBoundaryEdges: tsFacts.crossBoundaryEdges,
-                  crossPackageEdges: tsFacts.crossPackageEdges,
-                  linesAdded: tsFacts.linesAdded,
-                  linesDeleted: tsFacts.linesDeleted,
-                  diffMode: tsFacts.diffMode,
-                  dependencyDeltaMode: tsFacts.dependencyDeltaMode,
-                },
-              }
-            : {}),
-          ...(rsFacts !== undefined
-            ? {
-                rust: {
-                  newDependencyEdges: rsDependencyEdges,
-                  crossCrateEdges: rsFacts.crossCrateEdges,
-                  linesAdded: rsFacts.linesAdded,
-                  linesDeleted: rsFacts.linesDeleted,
-                  diffMode: rsFacts.diffMode,
-                  dependencyDeltaMode: rsFacts.dependencyDeltaMode,
-                },
-              }
-            : {}),
-        },
-      }
-    }),
+    Effect.sync(() => computePrDependencyDeltaOutput(config, inputs)),
   score: (out) => {
     if (out.totalNewDependencyEdges === 0) return 1
     const edgePenalty =
@@ -156,65 +123,162 @@ export const Shared06PrDepDelta: Signal<Shared06PrDepDeltaConfig, Shared06PrDepD
       : out.totalNewDependencyEdges === 0 && out.linesAdded === 0 && out.linesDeleted === 0
       ? { applicability: "not_applicable" as const }
       : undefined,
-  diagnose: (out): ReadonlyArray<Diagnostic> => {
-    const diagnostics: Array<Diagnostic> = [
-      {
-        severity: diagnosticSeverity(out.dependencyDeltaState, out.totalNewDependencyEdges),
-        message: `Cross-language PR dependency delta: ${out.totalNewDependencyEdges} new dependency edges (+${out.linesAdded} / -${out.linesDeleted})`,
-        data: {
-          dependencyDeltaState: out.dependencyDeltaState,
-          totalNewDependencyEdges: out.totalNewDependencyEdges,
-          crossBoundaryEdges: out.crossBoundaryEdges,
-          crossPackageEdges: out.crossPackageEdges,
-          crossCrateEdges: out.crossCrateEdges,
-          linesAdded: out.linesAdded,
-          linesDeleted: out.linesDeleted,
-        },
-      },
-    ]
-
-    if (out.byLanguage.typescript !== undefined) {
-      diagnostics.push({
-        severity: diagnosticSeverity(
-          languageDependencyDeltaState(out.byLanguage.typescript.dependencyDeltaMode),
-          out.byLanguage.typescript.newDependencyEdges,
-        ),
-        message: `TypeScript PR dependency delta: ${out.byLanguage.typescript.newDependencyEdges} new dependency edges (+${out.byLanguage.typescript.linesAdded} / -${out.byLanguage.typescript.linesDeleted})`,
-        data: {
-          language: "typescript",
-          newDependencyEdges: out.byLanguage.typescript.newDependencyEdges,
-          crossBoundaryEdges: out.byLanguage.typescript.crossBoundaryEdges,
-          crossPackageEdges: out.byLanguage.typescript.crossPackageEdges,
-          linesAdded: out.byLanguage.typescript.linesAdded,
-          linesDeleted: out.byLanguage.typescript.linesDeleted,
-          diffMode: out.byLanguage.typescript.diffMode,
-          dependencyDeltaMode: out.byLanguage.typescript.dependencyDeltaMode,
-        },
-      })
-    }
-
-    if (out.byLanguage.rust !== undefined) {
-      diagnostics.push({
-        severity: diagnosticSeverity(
-          languageDependencyDeltaState(out.byLanguage.rust.dependencyDeltaMode),
-          out.byLanguage.rust.newDependencyEdges,
-        ),
-        message: `Rust PR dependency delta: ${out.byLanguage.rust.newDependencyEdges} new dependency edges (+${out.byLanguage.rust.linesAdded} / -${out.byLanguage.rust.linesDeleted})`,
-        data: {
-          language: "rust",
-          newDependencyEdges: out.byLanguage.rust.newDependencyEdges,
-          crossCrateEdges: out.byLanguage.rust.crossCrateEdges,
-          linesAdded: out.byLanguage.rust.linesAdded,
-          linesDeleted: out.byLanguage.rust.linesDeleted,
-          diffMode: out.byLanguage.rust.diffMode,
-          dependencyDeltaMode: out.byLanguage.rust.dependencyDeltaMode,
-        },
-      })
-    }
-
-    return diagnostics.slice(0, out.topDiagnostics)
-  },
+  diagnose: (out): ReadonlyArray<Diagnostic> =>
+    prDependencyDeltaDiagnostics(out).slice(0, out.topDiagnostics),
 }
+
+const computePrDependencyDeltaOutput = (
+  config: Shared06PrDepDeltaConfig,
+  inputs: ReadonlyMap<string, unknown>,
+): Shared06PrDepDeltaOutput => {
+  const normalizedConfig = normalizeShared06PrDepDeltaConfig(config)
+  const tsInput = getPrDeltaInput<TsPrDeltaLike>(inputs, "TS-RP-02-pr-size", "TS-RP-02")
+  const rsInput = getPrDeltaInput<RsPrDeltaLike>(inputs, "RS-RP-03-pr-size", "RS-RP-03")
+  const tsFacts = tsInput === undefined ? undefined : tsDependencyFacts(tsInput)
+  const rsFacts = rsInput === undefined ? undefined : rsDependencyFacts(rsInput)
+
+  return buildPrDependencyDeltaOutput(normalizedConfig.top_n_diagnostics, tsFacts, rsFacts)
+}
+
+const buildPrDependencyDeltaOutput = (
+  topDiagnostics: number,
+  tsFacts: TsDependencyFacts | undefined,
+  rsFacts: RsDependencyFacts | undefined,
+): Shared06PrDepDeltaOutput => {
+  const tsDependencyEdges =
+    (tsFacts?.crossPackageEdges ?? 0) + (tsFacts?.crossBoundaryEdges ?? 0)
+  const rsDependencyEdges = rsFacts?.crossCrateEdges ?? 0
+
+  return {
+    dependencyDeltaState: aggregateDependencyDeltaState([
+      tsFacts?.dependencyDeltaState,
+      rsFacts?.dependencyDeltaState,
+    ]),
+    totalNewDependencyEdges: tsDependencyEdges + rsDependencyEdges,
+    crossBoundaryEdges: tsFacts?.crossBoundaryEdges ?? 0,
+    crossPackageEdges: tsFacts?.crossPackageEdges ?? 0,
+    crossCrateEdges: rsFacts?.crossCrateEdges ?? 0,
+    linesAdded: (tsFacts?.linesAdded ?? 0) + (rsFacts?.linesAdded ?? 0),
+    linesDeleted: (tsFacts?.linesDeleted ?? 0) + (rsFacts?.linesDeleted ?? 0),
+    topDiagnostics,
+    byLanguage: languageOutputs(tsFacts, rsFacts, tsDependencyEdges, rsDependencyEdges),
+  }
+}
+
+const languageOutputs = (
+  tsFacts: TsDependencyFacts | undefined,
+  rsFacts: RsDependencyFacts | undefined,
+  tsDependencyEdges: number,
+  rsDependencyEdges: number,
+): Shared06PrDepDeltaOutput["byLanguage"] => ({
+  ...(tsFacts !== undefined
+    ? { typescript: typescriptLanguageOutput(tsFacts, tsDependencyEdges) }
+    : {}),
+  ...(rsFacts !== undefined ? { rust: rustLanguageOutput(rsFacts, rsDependencyEdges) } : {}),
+})
+
+const typescriptLanguageOutput = (
+  facts: TsDependencyFacts,
+  newDependencyEdges: number,
+): NonNullable<Shared06PrDepDeltaOutput["byLanguage"]["typescript"]> => ({
+  newDependencyEdges,
+  crossBoundaryEdges: facts.crossBoundaryEdges,
+  crossPackageEdges: facts.crossPackageEdges,
+  linesAdded: facts.linesAdded,
+  linesDeleted: facts.linesDeleted,
+  diffMode: facts.diffMode,
+  dependencyDeltaMode: facts.dependencyDeltaMode,
+})
+
+const rustLanguageOutput = (
+  facts: RsDependencyFacts,
+  newDependencyEdges: number,
+): NonNullable<Shared06PrDepDeltaOutput["byLanguage"]["rust"]> => ({
+  newDependencyEdges,
+  crossCrateEdges: facts.crossCrateEdges,
+  linesAdded: facts.linesAdded,
+  linesDeleted: facts.linesDeleted,
+  diffMode: facts.diffMode,
+  dependencyDeltaMode: facts.dependencyDeltaMode,
+})
+
+const getPrDeltaInput = <T>(
+  inputs: ReadonlyMap<string, unknown>,
+  canonicalId: string,
+  alias: string,
+): T | undefined =>
+  (inputs.get(canonicalId) ?? inputs.get(alias)) as T | undefined
+
+const prDependencyDeltaDiagnostics = (
+  out: Shared06PrDepDeltaOutput,
+): ReadonlyArray<Diagnostic> => [
+  aggregateDependencyDeltaDiagnostic(out),
+  ...languageDependencyDeltaDiagnostics(out),
+]
+
+const aggregateDependencyDeltaDiagnostic = (
+  out: Shared06PrDepDeltaOutput,
+): Diagnostic => ({
+  severity: diagnosticSeverity(out.dependencyDeltaState, out.totalNewDependencyEdges),
+  message: `Cross-language PR dependency delta: ${out.totalNewDependencyEdges} new dependency edges (+${out.linesAdded} / -${out.linesDeleted})`,
+  data: {
+    dependencyDeltaState: out.dependencyDeltaState,
+    totalNewDependencyEdges: out.totalNewDependencyEdges,
+    crossBoundaryEdges: out.crossBoundaryEdges,
+    crossPackageEdges: out.crossPackageEdges,
+    crossCrateEdges: out.crossCrateEdges,
+    linesAdded: out.linesAdded,
+    linesDeleted: out.linesDeleted,
+  },
+})
+
+const languageDependencyDeltaDiagnostics = (
+  out: Shared06PrDepDeltaOutput,
+): ReadonlyArray<Diagnostic> => [
+  ...(out.byLanguage.typescript !== undefined
+    ? [typescriptDependencyDeltaDiagnostic(out.byLanguage.typescript)]
+    : []),
+  ...(out.byLanguage.rust !== undefined ? [rustDependencyDeltaDiagnostic(out.byLanguage.rust)] : []),
+]
+
+const typescriptDependencyDeltaDiagnostic = (
+  facts: NonNullable<Shared06PrDepDeltaOutput["byLanguage"]["typescript"]>,
+): Diagnostic => ({
+  severity: diagnosticSeverity(
+    languageDependencyDeltaState(facts.dependencyDeltaMode),
+    facts.newDependencyEdges,
+  ),
+  message: `TypeScript PR dependency delta: ${facts.newDependencyEdges} new dependency edges (+${facts.linesAdded} / -${facts.linesDeleted})`,
+  data: {
+    language: "typescript",
+    newDependencyEdges: facts.newDependencyEdges,
+    crossBoundaryEdges: facts.crossBoundaryEdges,
+    crossPackageEdges: facts.crossPackageEdges,
+    linesAdded: facts.linesAdded,
+    linesDeleted: facts.linesDeleted,
+    diffMode: facts.diffMode,
+    dependencyDeltaMode: facts.dependencyDeltaMode,
+  },
+})
+
+const rustDependencyDeltaDiagnostic = (
+  facts: NonNullable<Shared06PrDepDeltaOutput["byLanguage"]["rust"]>,
+): Diagnostic => ({
+  severity: diagnosticSeverity(
+    languageDependencyDeltaState(facts.dependencyDeltaMode),
+    facts.newDependencyEdges,
+  ),
+  message: `Rust PR dependency delta: ${facts.newDependencyEdges} new dependency edges (+${facts.linesAdded} / -${facts.linesDeleted})`,
+  data: {
+    language: "rust",
+    newDependencyEdges: facts.newDependencyEdges,
+    crossCrateEdges: facts.crossCrateEdges,
+    linesAdded: facts.linesAdded,
+    linesDeleted: facts.linesDeleted,
+    diffMode: facts.diffMode,
+    dependencyDeltaMode: facts.dependencyDeltaMode,
+  },
+})
 
 const normalizeShared06PrDepDeltaConfig = (
   config: Shared06PrDepDeltaConfig,
@@ -224,7 +288,7 @@ const normalizeShared06PrDepDeltaConfig = (
     : 0,
 })
 
-const tsDependencyFacts = (ts: TsPrDeltaLike) => {
+const tsDependencyFacts = (ts: TsPrDeltaLike): TsDependencyFacts => {
   const linesAdded = nonNegativeInteger(ts.linesAdded)
   const linesDeleted = nonNegativeInteger(ts.linesDeleted)
   const crossBoundaryEdges = countArray(ts.newCrossBoundaryEdges)
@@ -249,7 +313,7 @@ const tsDependencyFacts = (ts: TsPrDeltaLike) => {
   } as const
 }
 
-const rsDependencyFacts = (rs: RsPrDeltaLike) => {
+const rsDependencyFacts = (rs: RsPrDeltaLike): RsDependencyFacts => {
   const linesAdded = nonNegativeInteger(rs.linesAdded)
   const linesDeleted = nonNegativeInteger(rs.linesDeleted)
   const crossCrateEdges = countArray(rs.newCrossCrateEdges)
