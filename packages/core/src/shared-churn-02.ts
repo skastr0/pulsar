@@ -26,6 +26,22 @@ const DEFAULT_SHARED_CHURN_02_CONFIG: SharedChurn02Config = {
   top_n_diagnostics: 10,
 }
 
+const COMPOSITE_CONSUMERS = [
+  "risk hotspot",
+  "review shock",
+  "architecture decay",
+] as const
+
+const CACHE_CONTRIBUTORS = [
+  "git-revision-context",
+  "config.window_days",
+  "config.half_life_days",
+  "config.max_commits",
+  "config.include_extensions",
+  "config.exclude_globs",
+  "config.top_n_diagnostics",
+] as const
+
 export interface WeightedChurnFile {
   readonly touchCount: number
   readonly rawWindowChurn: number
@@ -105,8 +121,19 @@ const computeWeightedChurn = async (
   }
 
   const headDate = await readHeadDate(repoPath)
+  const commits = await loadWeightedChurnCommits(repoPath, headDate, config)
+  const byFile = weightedChurnByFile(commits, headDate, config)
+
+  return outputFromChurn(byFile, commits.length, commits.length >= config.max_commits, config)
+}
+
+const loadWeightedChurnCommits = (
+  repoPath: string,
+  headDate: Date,
+  config: SharedChurn02Config,
+) => {
   const sinceDate = new Date(headDate.getTime() - config.window_days * 24 * 3600 * 1000)
-  const commits = await listTouchedCommitsInWindow(
+  return listTouchedCommitsInWindow(
     repoPath,
     sinceDate.toISOString(),
     headDate.toISOString(),
@@ -116,80 +143,75 @@ const computeWeightedChurn = async (
       maxCommits: config.max_commits,
     },
   )
+}
 
+const weightedChurnByFile = (
+  commits: Awaited<ReturnType<typeof listTouchedCommitsInWindow>>,
+  headDate: Date,
+  config: SharedChurn02Config,
+): ReadonlyMap<string, WeightedChurnFile> => {
   const byFile = new Map<string, WeightedChurnFile>()
   for (const commit of commits) {
-    const ageDays = Math.max(
-      0,
-      (headDate.getTime() - commit.committedAt.getTime()) / (24 * 3600 * 1000),
-    )
-    const weight = 0.5 ** (ageDays / Math.max(1, config.half_life_days))
+    const weight = recencyWeight(headDate, commit.committedAt, config.half_life_days)
     for (const file of commit.files) {
-      const existing = byFile.get(file)
-      const committedAt = commit.committedAt.toISOString()
-      byFile.set(file, {
-        touchCount: (existing?.touchCount ?? 0) + 1,
-        rawWindowChurn: (existing?.rawWindowChurn ?? 0) + 1,
-        weightedChurn: (existing?.weightedChurn ?? 0) + weight,
-        lastTouchedAt:
-          existing === undefined || committedAt > existing.lastTouchedAt
-            ? committedAt
-            : existing.lastTouchedAt,
-      })
+      byFile.set(file, nextWeightedChurnFile(byFile.get(file), commit.committedAt, weight))
     }
   }
+  return new Map([...byFile.entries()].sort(([left], [right]) => left.localeCompare(right)))
+}
 
+const recencyWeight = (headDate: Date, committedAt: Date, halfLifeDays: number): number => {
+  const ageDays = Math.max(0, (headDate.getTime() - committedAt.getTime()) / (24 * 3600 * 1000))
+  return 0.5 ** (ageDays / Math.max(1, halfLifeDays))
+}
+
+const nextWeightedChurnFile = (
+  existing: WeightedChurnFile | undefined,
+  committedAt: Date,
+  weight: number,
+): WeightedChurnFile => {
+  const committedAtIso = committedAt.toISOString()
   return {
-    byFile: new Map([...byFile.entries()].sort(([left], [right]) => left.localeCompare(right))),
-    windowDays: config.window_days,
-    halfLifeDays: config.half_life_days,
-    totalCommits: commits.length,
-    maxCommits: config.max_commits,
-    sampled: commits.length >= config.max_commits,
-    topDiagnostics: config.top_n_diagnostics,
-    compositeConsumers: [
-      "risk hotspot",
-      "review shock",
-      "architecture decay",
-    ],
-    cacheContributors: [
-      "git-revision-context",
-      "config.window_days",
-      "config.half_life_days",
-      "config.max_commits",
-      "config.include_extensions",
-      "config.exclude_globs",
-      "config.top_n_diagnostics",
-    ],
-    calibrationSurface: "config thresholds only; downstream composites decide risk meaning",
-    enforcementCeiling: ["soft-warning", "trend"],
+    touchCount: (existing?.touchCount ?? 0) + 1,
+    rawWindowChurn: (existing?.rawWindowChurn ?? 0) + 1,
+    weightedChurn: (existing?.weightedChurn ?? 0) + weight,
+    lastTouchedAt:
+      existing === undefined || committedAtIso > existing.lastTouchedAt
+        ? committedAtIso
+        : existing.lastTouchedAt,
   }
 }
 
-const emptyOutput = (config: SharedChurn02Config): SharedChurn02Output => ({
-  byFile: new Map(),
+const outputFromChurn = (
+  byFile: ReadonlyMap<string, WeightedChurnFile>,
+  totalCommits: number,
+  sampled: boolean,
+  config: SharedChurn02Config,
+): SharedChurn02Output => ({
+  byFile,
+  totalCommits,
+  sampled,
+  ...sharedOutputMetadata(config),
+})
+
+const sharedOutputMetadata = (
+  config: SharedChurn02Config,
+): Omit<SharedChurn02Output, "byFile" | "totalCommits" | "sampled"> => ({
   windowDays: config.window_days,
   halfLifeDays: config.half_life_days,
-  totalCommits: 0,
   maxCommits: config.max_commits,
-  sampled: false,
   topDiagnostics: config.top_n_diagnostics,
-  compositeConsumers: [
-    "risk hotspot",
-    "review shock",
-    "architecture decay",
-  ],
-  cacheContributors: [
-    "git-revision-context",
-    "config.window_days",
-    "config.half_life_days",
-    "config.max_commits",
-    "config.include_extensions",
-    "config.exclude_globs",
-    "config.top_n_diagnostics",
-  ],
+  compositeConsumers: COMPOSITE_CONSUMERS,
+  cacheContributors: CACHE_CONTRIBUTORS,
   calibrationSurface: "config thresholds only; downstream composites decide risk meaning",
   enforcementCeiling: ["soft-warning", "trend"],
+})
+
+const emptyOutput = (config: SharedChurn02Config): SharedChurn02Output => ({
+  byFile: new Map(),
+  totalCommits: 0,
+  sampled: false,
+  ...sharedOutputMetadata(config),
 })
 
 const normalizeSharedChurn02Config = (
