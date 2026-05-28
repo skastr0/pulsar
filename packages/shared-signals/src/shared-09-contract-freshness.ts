@@ -177,59 +177,92 @@ const buildOutput = (
   config: Shared09ContractFreshnessConfig,
 ): Shared09ContractFreshnessOutput => {
   const normalizedConfig = normalizeShared09ContractFreshnessConfig(config)
-  const diagnosticLimit = normalizedConfig.top_n_diagnostics
-  const maxWeightedFindings = normalizedConfig.max_weighted_findings
-  const topFindings = [...facts.findings]
-    .sort(compareFindings)
-    .slice(0, diagnosticLimit)
+  const findingMetrics = contractFreshnessFindingMetrics(facts, normalizedConfig)
+  return {
+    ...facts,
+    ...findingMetrics,
+    ...contractCorpusCounts(facts),
+    ...contractFreshnessInterpretationMetadata(),
+  }
+}
+
+const contractFreshnessFindingMetrics = (
+  facts: ContractFreshnessFacts,
+  config: Shared09ContractFreshnessConfig,
+): Pick<
+  Shared09ContractFreshnessOutput,
+  "topFindings" | "totalFindings" | "weightedFindings" | "maxWeightedFindings" | "scorePressure" | "diagnosticLimit"
+> => {
   const weightedFindings = facts.findings.reduce(
     (total, finding) => total + finding.weight,
     0,
   )
   return {
-    ...facts,
-    topFindings,
+    topFindings: [...facts.findings]
+      .sort(compareFindings)
+      .slice(0, config.top_n_diagnostics),
     totalFindings: facts.findings.length,
     weightedFindings,
-    maxWeightedFindings,
-    scorePressure: weightedFindings / maxWeightedFindings,
-    diagnosticLimit,
-    configuredContractCount: facts.contracts.length,
-    sourceFileCount: uniqueCount(facts.contracts.flatMap((contract) => contract.sourcePaths)),
-    artifactFileCount: uniqueCount(facts.contracts.map((contract) => contract.artifactPath)),
-    compositeConsumers: [
-      "contract safety gap",
-      "review shock",
-      "theory encoding index",
-    ],
-    cacheContributors: [
-      "reference-data.contract-freshness",
-      ".pulsar/contract-freshness.json",
-      "declared source hashes",
-      "declared artifact hashes",
-      "config.top_n_diagnostics",
-      "config.max_weighted_findings",
-    ],
-    calibrationSurface:
-      "repo-owned .pulsar/contract-freshness.json; thresholds only affect diagnostic and pressure scaling",
-    evidenceClass: [
-      "repo-owned manifest",
-      "sha256 source content",
-      "sha256 artifact content",
-      "opt-in generated artifact globs",
-    ],
-    claimLimit:
-      "declared generated contracts are fresh relative to recorded source and artifact hashes",
-    nonClaimLimit:
-      "does not prove semantic compatibility, generator correctness, or undeclared contract coverage",
-    knownFailureModes: [
-      "manifest omitted for a generated surface",
-      "generator output is semantically stale while byte hashes match",
-      "broad generated artifact globs create orphan noise",
-    ],
-    enforcementCeiling: ["soft-warning", "review-routing", "composite-input"],
+    maxWeightedFindings: config.max_weighted_findings,
+    scorePressure: weightedFindings / config.max_weighted_findings,
+    diagnosticLimit: config.top_n_diagnostics,
   }
 }
+
+const contractCorpusCounts = (
+  facts: ContractFreshnessFacts,
+): Pick<
+  Shared09ContractFreshnessOutput,
+  "configuredContractCount" | "sourceFileCount" | "artifactFileCount"
+> => ({
+  configuredContractCount: facts.contracts.length,
+  sourceFileCount: uniqueCount(facts.contracts.flatMap((contract) => contract.sourcePaths)),
+  artifactFileCount: uniqueCount(facts.contracts.map((contract) => contract.artifactPath)),
+})
+
+const contractFreshnessInterpretationMetadata = (): Pick<
+  Shared09ContractFreshnessOutput,
+  | "compositeConsumers"
+  | "cacheContributors"
+  | "calibrationSurface"
+  | "evidenceClass"
+  | "claimLimit"
+  | "nonClaimLimit"
+  | "knownFailureModes"
+  | "enforcementCeiling"
+> => ({
+  compositeConsumers: [
+    "contract safety gap",
+    "review shock",
+    "theory encoding index",
+  ],
+  cacheContributors: [
+    "reference-data.contract-freshness",
+    ".pulsar/contract-freshness.json",
+    "declared source hashes",
+    "declared artifact hashes",
+    "config.top_n_diagnostics",
+    "config.max_weighted_findings",
+  ],
+  calibrationSurface:
+    "repo-owned .pulsar/contract-freshness.json; thresholds only affect diagnostic and pressure scaling",
+  evidenceClass: [
+    "repo-owned manifest",
+    "sha256 source content",
+    "sha256 artifact content",
+    "opt-in generated artifact globs",
+  ],
+  claimLimit:
+    "declared generated contracts are fresh relative to recorded source and artifact hashes",
+  nonClaimLimit:
+    "does not prove semantic compatibility, generator correctness, or undeclared contract coverage",
+  knownFailureModes: [
+    "manifest omitted for a generated surface",
+    "generator output is semantically stale while byte hashes match",
+    "broad generated artifact globs create orphan noise",
+  ],
+  enforcementCeiling: ["soft-warning", "review-routing", "composite-input"],
+})
 
 const normalizeShared09ContractFreshnessConfig = (
   config: Shared09ContractFreshnessConfig,
