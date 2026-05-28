@@ -90,6 +90,35 @@ export const collectWorktreeChangedHunks = Effect.fn(
   ]
 })
 
+export const collectChangedHunksForRange = Effect.fn(
+  "ScoringEngine.collectChangedHunksForRange",
+)(function* (repoPath: string, fromRef: string, toRef: string) {
+  const diff = yield* runGit(
+    repoPath,
+    [
+      "diff",
+      "--unified=0",
+      "--no-ext-diff",
+      fromRef,
+      toRef,
+      "--",
+      ".",
+      ":!.pulsar/cache",
+    ],
+    {
+      onFail: (msg) =>
+        new CommitNotFound({
+          repoPath,
+          sha: `${fromRef}..${toRef}`,
+          message: `git diff ${fromRef} ${toRef} failed: ${msg}`,
+        }),
+    },
+  )
+  return parseChangedHunksFromUnifiedDiff(diff).filter((hunk) =>
+    isPulsarSource(hunk.file),
+  )
+})
+
 const parseChangedHunksFromUnifiedDiff = (diff: string): ReadonlyArray<ChangedHunk> => {
   const hunks: Array<ChangedHunk> = []
   let currentFile: string | undefined

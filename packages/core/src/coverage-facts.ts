@@ -4,6 +4,9 @@ import { parseIstanbulCoverage } from "./coverage-istanbul.js"
 import { parseLcovCoverage } from "./coverage-lcov.js"
 
 export const COVERAGE_REFERENCE_DATA_KEY = "coverage" as const
+export const COVERAGE_FACTS_ARTIFACT_SCHEMA_VERSION = 1 as const
+export const CANONICAL_COVERAGE_FACTS_RELATIVE_PATH =
+  ".pulsar/coverage/coverage-facts.json" as const
 export const CANONICAL_LCOV_RELATIVE_PATH = "coverage/lcov.info" as const
 export const CANONICAL_ISTANBUL_RELATIVE_PATH = "coverage/coverage-final.json" as const
 
@@ -48,6 +51,64 @@ export interface CoverageCandidate {
   readonly relativePath: string
   readonly content: string
 }
+
+const CoverageMetricSchema = Schema.Struct({
+  covered: Schema.Number,
+  total: Schema.Number,
+  pct: Schema.Number,
+})
+
+const CoverageFileFactSchema = Schema.Struct({
+  file: Schema.String,
+  lines: CoverageMetricSchema,
+  functions: CoverageMetricSchema,
+  branches: CoverageMetricSchema,
+})
+
+export const CoverageFactsSchema = Schema.Struct({
+  state: CoverageFactState,
+  tool: Schema.optional(Schema.Literal("lcov", "istanbul")),
+  sourcePath: Schema.optional(Schema.String),
+  checkedPaths: Schema.Array(Schema.String),
+  files: Schema.Array(CoverageFileFactSchema),
+  summary: Schema.Struct({
+    lines: CoverageMetricSchema,
+    functions: CoverageMetricSchema,
+    branches: CoverageMetricSchema,
+  }),
+  message: Schema.optional(Schema.String),
+})
+
+export const CoverageFactsArtifact = Schema.Struct({
+  schema_version: Schema.Literal(COVERAGE_FACTS_ARTIFACT_SCHEMA_VERSION),
+  facts: CoverageFactsSchema,
+})
+
+export type CoverageFactsArtifactValue = typeof CoverageFactsArtifact.Type
+
+export const buildCoverageFactsArtifact = (
+  facts: CoverageFacts,
+): CoverageFactsArtifactValue => ({
+  schema_version: COVERAGE_FACTS_ARTIFACT_SCHEMA_VERSION,
+  facts,
+})
+
+export const decodeCoverageFactsArtifactSync = (value: unknown): CoverageFacts => {
+  const decoded = Schema.decodeUnknownSync(
+    Schema.Union(CoverageFactsArtifact, CoverageFactsSchema),
+  )(value)
+  return normalizeCoverageFacts("facts" in decoded ? decoded.facts : decoded)
+}
+
+const normalizeCoverageFacts = (facts: typeof CoverageFactsSchema.Type): CoverageFacts => ({
+  state: facts.state,
+  ...(facts.tool !== undefined ? { tool: facts.tool } : {}),
+  ...(facts.sourcePath !== undefined ? { sourcePath: facts.sourcePath } : {}),
+  checkedPaths: facts.checkedPaths,
+  files: facts.files,
+  summary: facts.summary,
+  ...(facts.message !== undefined ? { message: facts.message } : {}),
+})
 
 export const emptyCoverageMetric = (): CoverageMetric => ({
   covered: 0,

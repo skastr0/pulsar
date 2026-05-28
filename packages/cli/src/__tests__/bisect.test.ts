@@ -284,21 +284,11 @@ describe("observer bisect report helpers", () => {
       drift: 0,
       distinctLevels: 1,
     }
-    const categoryTrajectory: ObserverBisectReport["perCategory"] = {
-      "architectural-drift": healthyCategory,
-      "dependency-entropy": healthyCategory,
-      "abstraction-bloat": healthyCategory,
-      "legibility-decay": healthyCategory,
-      "generated-slop": healthyCategory,
-      "review-pain": healthyCategory,
-    }
-    const categoryCulprits: ObserverBisectReport["perCategoryCulprits"] = {
-      "architectural-drift": [],
-      "dependency-entropy": [],
-      "abstraction-bloat": [],
-      "legibility-decay": [],
-      "generated-slop": [],
-      "review-pain": [],
+    const categoryTrajectory = {} as ObserverBisectReport["perCategory"]
+    const categoryCulprits = {} as ObserverBisectReport["perCategoryCulprits"]
+    for (const category of CATEGORIES) {
+      categoryTrajectory[category] = healthyCategory
+      categoryCulprits[category] = []
     }
     const report = {
       schemaVersion: "observer-bisect/v2",

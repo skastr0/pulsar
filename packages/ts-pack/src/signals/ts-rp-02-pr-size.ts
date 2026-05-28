@@ -159,6 +159,18 @@ export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackage
           sizePenalty: out.sizePenalty,
           policyDecisions: out.calibrationDecisions ?? [],
         },
+        fixHints: [{
+          kind: "reduce-or-route-pr-surface",
+          title: "Shrink or route the change surface",
+          summary:
+            "Split independent concerns, move generated files out of the review path, or add explicit review routing for the largest changed areas.",
+          confidence: "medium",
+          autoApplicable: false,
+          data: {
+            sizeCategory: out.sizeCategory,
+            largestFiles: out.fileStats.slice(0, 5),
+          },
+        }],
       })
     }
 
@@ -173,6 +185,18 @@ export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackage
           fromBoundary: edge.fromBoundary,
           toBoundary: edge.toBoundary,
         },
+        fixHints: [{
+          kind: "review-new-boundary-edge",
+          title: "Justify the new boundary edge",
+          summary:
+            "Route this import through an existing boundary, add an explicit boundary rule, or split the PR so dependency movement is reviewed separately.",
+          confidence: "high",
+          autoApplicable: false,
+          data: {
+            fromBoundary: edge.fromBoundary,
+            toBoundary: edge.toBoundary,
+          },
+        }],
       })
     }
 
@@ -188,6 +212,18 @@ export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackage
           fromBoundary: edge.fromBoundary,
           toBoundary: edge.toBoundary,
         },
+        fixHints: [{
+          kind: "review-new-package-edge",
+          title: "Justify the new package dependency",
+          summary:
+            "Declare the dependency deliberately, route through an existing package API, or split the package-coupling change into a smaller review.",
+          confidence: "high",
+          autoApplicable: false,
+          data: {
+            fromPackage: edge.fromPackage,
+            toPackage: edge.toPackage,
+          },
+        }],
       })
     }
 

@@ -1,4 +1,5 @@
 import { CATEGORIES, type Category } from "./category.js"
+import { categoryOutputOrEmpty } from "./observer-model.js"
 import {
   OBSERVER_OUTPUT_SEMANTICS,
   toObserverJson,
@@ -156,7 +157,7 @@ const aggregateWeeklyCategory = (
   const signals: Record<string, number> = {}
 
   for (const { entry, weight } of weightedEntries) {
-    const snapshot = entry.observerOutput.categories[category]
+    const snapshot = categoryOutputOrEmpty(entry.observerOutput.categories, category)
     categorySum += snapshot.score * weight
     for (const [signalId, score] of Object.entries(snapshot.signals)) {
       const existing = signalAverages.get(signalId) ?? { category, total: 0 }

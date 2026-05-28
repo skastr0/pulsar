@@ -37,6 +37,19 @@ const missingDependencyDiagnostics = (
         files: mismatch.files.slice(),
         severityReason,
       },
+      fixHints: [{
+        kind: "declare-package-dependency",
+        title: "Declare the imported dependency",
+        summary:
+          "Add the dependency to the importing package's manifest, replace the import with an already declared dependency, or mark the package-specific exception explicitly.",
+        confidence: "high",
+        autoApplicable: false,
+        data: {
+          packageName: pkg.packageName,
+          dependencyName: mismatch.dependencyName,
+          usageKind: mismatch.usageKind,
+        },
+      }],
     }
   })
 
@@ -58,6 +71,15 @@ const unusedDependencyDiagnostics = (
       dependencyNames,
       dependencyCount: dependencyNames.length,
     },
+    fixHints: [{
+      kind: "remove-unused-dependencies",
+      title: "Remove unused manifest entries",
+      summary:
+        "Remove these dependencies from the package manifest unless another generated, runtime, or platform path uses them outside the analyzed source set.",
+      confidence: "medium",
+      autoApplicable: false,
+      data: { packageName: pkg.packageName, dependencyNames },
+    }],
   }]
 }
 
@@ -77,6 +99,15 @@ const transitiveDirectUsageDiagnostics = (
       fileCount: mismatch.files.length,
       files: mismatch.files.slice(),
     },
+    fixHints: [{
+      kind: "declare-or-replace-transitive-dependency",
+      title: "Stop relying on a transitive dependency",
+      summary:
+        "Declare the dependency directly in this package or import through the direct dependency that owns the API.",
+      confidence: "high",
+      autoApplicable: false,
+      data: { packageName: pkg.packageName, dependencyName: mismatch.dependencyName },
+    }],
   }))
 
 const devDependencyInProductionDiagnostics = (
@@ -95,6 +126,15 @@ const devDependencyInProductionDiagnostics = (
       fileCount: mismatch.files.length,
       files: mismatch.files.slice(),
     },
+    fixHints: [{
+      kind: "move-dev-dependency",
+      title: "Move runtime dependency out of devDependencies",
+      summary:
+        "Move this dependency to production dependencies, remove the production import, or add an explicit allowlist rule when the runtime path is misclassified.",
+      confidence: "high",
+      autoApplicable: false,
+      data: { packageName: pkg.packageName, dependencyName: mismatch.dependencyName },
+    }],
   }))
 
 export const compareDependencyDiagnostics = (

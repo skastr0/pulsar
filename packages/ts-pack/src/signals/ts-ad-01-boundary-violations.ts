@@ -140,6 +140,20 @@ export const TsAd01: Signal<
         ),
         ...violation,
       },
+      fixHints: [{
+        kind: "boundary-policy-remediation",
+        title: "Restore the declared boundary",
+        summary:
+          "Import through the target package's public entrypoint, move the dependency behind an allowed boundary, or explicitly update the repo-owned boundary convention if this edge is intentional.",
+        confidence: "high",
+        autoApplicable: false,
+        data: {
+          kind: violation.kind,
+          fromPackage: violation.fromPackage,
+          toPackage: violation.toPackage,
+          specifier: violation.specifier,
+        },
+      }],
     }))
   },
 }

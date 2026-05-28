@@ -6,8 +6,10 @@ const HELP_SECTIONS: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [
     [
       "  pulsar score [<repo-path>]",
       "  pulsar score --signal <id> [<repo-path>]",
+      "  pulsar score --diff <base>..<head|WORKTREE> [--changed-only] [--agent-view] [<repo-path>]",
       "  pulsar baseline <set|refresh|show> [<repo-path>]",
       "  pulsar backpressure [--trend] [--vector <path>] [<repo-path>]",
+      "  pulsar coverage ingest <path> [--format auto|lcov|istanbul] [<repo-path>]",
       "  pulsar bisect --signal <id> --range <from>..<to> [<repo-path>]",
       "  pulsar bisect --observer --range <from>..<to> [--vector <path>] [<repo-path>]",
       "  pulsar bisect --range <from>..<to> [--vector <path>] [<repo-path>]",
@@ -27,6 +29,7 @@ const HELP_SECTIONS: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [
       "  score        Run one signal or the full Observer against a repo.",
       "  baseline     Record or inspect tolerated hard-gate debt for ratcheting.",
       "  backpressure Evaluate the score history as green/yellow/red pressure.",
+      "  coverage     Ingest repo-owned coverage facts for coverage-backed signals.",
       "  bisect       Replay a commit range into compact signal/category score curves.",
       "  calibrate    Suggest repo-owned calibration/reference-data onboarding steps.",
       "  persona      List, show, apply, or diff opt-in vector profile templates.",
@@ -43,6 +46,9 @@ const HELP_SECTIONS: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [
       "  --vector <path>      Load a specific pulsar vector JSON.",
       "  --json               Emit ObserverOutput JSON plus CLI vector source metadata.",
       "  --category <name>    Human output for one category only.",
+      "  --diff <a>..<b>      Compare Observer output for a base/head range; head may be WORKTREE.",
+      "  --changed-only       Add changed-file/hunk scoped diagnostic guidance for --diff.",
+      "  --agent-view         Suppress score-chasing human output and show trust routing.",
       "  --ci                 Apply baseline ratcheting and exit 2 on new violations.",
       "  --profile            Include runtime attribution and bypass observer cache.",
     ],
@@ -60,6 +66,13 @@ const HELP_SECTIONS: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [
     [
       "  --trend              Render the persisted series as a trend table.",
       "  --vector <path>      Optional pulsar vector JSON.",
+    ],
+  ],
+  [
+    "Coverage options",
+    [
+      "  ingest <path>        Normalize a coverage report into .pulsar/coverage/coverage-facts.json.",
+      "  --format <format>    auto, lcov, or istanbul (default auto).",
     ],
   ],
   [
@@ -148,6 +161,8 @@ const HELP_SECTIONS: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [
     [
       "  pulsar score .",
       "  pulsar score --json .",
+      "  pulsar score --diff main..HEAD --agent-view --json .",
+      "  pulsar score --diff main..WORKTREE --changed-only --agent-view .",
       "  pulsar score --profile --category generated-slop .",
       "  pulsar score --category legibility-decay .",
       "  pulsar score --ci .",
@@ -155,6 +170,7 @@ const HELP_SECTIONS: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [
       "  pulsar baseline show .",
       "  pulsar backpressure .",
       "  pulsar backpressure --trend .",
+      "  pulsar coverage ingest coverage/lcov.info .",
       "  pulsar bisect --signal TS-RP-01 --range HEAD~50..HEAD",
       "  pulsar bisect --observer --range HEAD~50..HEAD",
       "  pulsar bisect --range HEAD~50..HEAD --vector ./pulsar-vector.json --json /path/to/repo",

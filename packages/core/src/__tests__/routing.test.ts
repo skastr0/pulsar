@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Effect, Schema } from "effect"
-import type { Category } from "../category.js"
+import { categoryRecord, type Category } from "../category.js"
 import type { Diagnostic } from "../diagnostic.js"
 import type { ObserverOutput } from "../observer.js"
 import {
@@ -298,14 +298,7 @@ const makeDiff = (partial: Partial<RoutingDiff>): RoutingDiff => ({
 })
 
 const makeObserverOutput = (signals: ReadonlyArray<MockSignal> = []): ObserverOutput => {
-  const categories: ObserverOutput["categories"] = {
-    "architectural-drift": emptyCategory(),
-    "dependency-entropy": emptyCategory(),
-    "abstraction-bloat": emptyCategory(),
-    "legibility-decay": emptyCategory(),
-    "generated-slop": emptyCategory(),
-    "review-pain": emptyCategory(),
-  }
+  const categories: ObserverOutput["categories"] = categoryRecord(() => emptyCategory())
   const signalResults = new Map<string, { score: number; output: unknown; diagnostics: ReadonlyArray<Diagnostic>; signalId: string }>()
 
   for (const signal of signals) {

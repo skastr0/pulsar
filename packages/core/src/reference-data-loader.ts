@@ -6,9 +6,11 @@ import { decodeSchemaConventions } from "./conventions.js"
 import {
   buildAbsentCoverageFacts,
   buildUnknownCoverageFacts,
+  CANONICAL_COVERAGE_FACTS_RELATIVE_PATH,
   CANONICAL_ISTANBUL_RELATIVE_PATH,
   CANONICAL_LCOV_RELATIVE_PATH,
   COVERAGE_REFERENCE_DATA_KEY,
+  decodeCoverageFactsArtifactSync,
   parseCoverageCandidate,
 } from "./coverage-facts.js"
 import {
@@ -27,6 +29,7 @@ import { decodeGlossary } from "./glossary.js"
 export const CANONICAL_GLOSSARY_RELATIVE_PATH = ".pulsar/glossary.json" as const
 export const CANONICAL_CONVENTIONS_RELATIVE_PATH = ".pulsar/conventions.json" as const
 const CANONICAL_COVERAGE_RELATIVE_PATHS = [
+  CANONICAL_COVERAGE_FACTS_RELATIVE_PATH,
   CANONICAL_LCOV_RELATIVE_PATH,
   CANONICAL_ISTANBUL_RELATIVE_PATH,
 ] as const
@@ -125,6 +128,15 @@ const loadCoverageReferenceEntry = (
 
       return yield* Effect.sync(() => {
         try {
+          if (relativePath === CANONICAL_COVERAGE_FACTS_RELATIVE_PATH) {
+            const artifact = JSON.parse(raw)
+            const facts = decodeCoverageFactsArtifactSync(artifact)
+            return {
+              ...facts,
+              checkedPaths,
+              sourcePath: facts.sourcePath ?? absolutePath,
+            }
+          }
           return parseCoverageCandidate(repoRoot, { relativePath, content: raw }, checkedPaths)
         } catch (cause) {
           return buildUnknownCoverageFacts(

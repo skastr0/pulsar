@@ -9,17 +9,18 @@ import {
 import {
   type ObserverOutput,
 } from "../observer.js"
+import { categoryRecord } from "../category.js"
 import {
   type SignalRunResult,
 } from "../scoring.js"
 
 const emptyCategories = () => ({
-  "architectural-drift": { score: 1, signals: {}, signalCount: 0, activeSignalIds: [] },
-  "dependency-entropy": { score: 1, signals: {}, signalCount: 0, activeSignalIds: [] },
-  "abstraction-bloat": { score: 1, signals: {}, signalCount: 0, activeSignalIds: [] },
-  "legibility-decay": { score: 1, signals: {}, signalCount: 0, activeSignalIds: [] },
-  "generated-slop": { score: 1, signals: {}, signalCount: 0, activeSignalIds: [] },
-  "review-pain": { score: 1, signals: {}, signalCount: 0, activeSignalIds: [] },
+  ...categoryRecord(() => ({
+    score: 1,
+    signals: {},
+    signalCount: 0,
+    activeSignalIds: [],
+  })),
 })
 
 const signalResult = (signalId: string, score: number): SignalRunResult => ({

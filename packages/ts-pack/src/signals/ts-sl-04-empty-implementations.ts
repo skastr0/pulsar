@@ -142,6 +142,22 @@ export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalCon
           inTestPath: stub.inTestPath,
           message: stub.message,
         },
+        fixHints: [{
+          kind: "finish-or-classify-stub",
+          title: "Finish the implementation or classify the noop",
+          summary:
+            "Replace the stub with behavior, move it behind an explicit unsupported path, or add repo-owned noop calibration when this empty implementation is intentional.",
+          confidence: stub.confidence === "high" ? "high" : "medium",
+          autoApplicable: false,
+          data: {
+            kind: stub.kind,
+            confidence: stub.confidence,
+            factorPaths: [
+              stubKindFactorPath(stub.kind, "confidence"),
+              stubKindFactorPath(stub.kind, "penalty_weight"),
+            ],
+          },
+        }],
       })
     }
 

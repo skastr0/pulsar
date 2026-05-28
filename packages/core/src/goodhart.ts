@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto"
 import { CATEGORIES, type Category } from "./category.js"
+import { categoryOutputOrEmpty } from "./observer-model.js"
 import { type TimeSeriesEntry } from "./time-series.js"
 import { backpressureConfigOf, type BackpressureConfig, type PulsarVector } from "./vector.js"
 
@@ -59,6 +60,20 @@ export const evaluateGoodhart = (
       config,
     ),
     config,
+  )
+}
+
+export const selectGoodhartHoldoutSignalIds = (
+  signalIds: ReadonlyArray<string>,
+  timestamp: string,
+  vector: PulsarVector | undefined,
+): ReadonlyArray<string> => {
+  const config = backpressureConfigOf(vector).goodhart
+  return pickHiddenSignals(
+    signalIds,
+    timestamp,
+    config.rotation_period_days,
+    config.holdout_ratio,
   )
 }
 
@@ -235,7 +250,7 @@ const collectCategoryDiagnostics = (
   if (entry?.signalDiagnostics === undefined) return []
   const messages: Array<string> = []
   for (const signalId of visibleSignalIds) {
-    if (!(signalId in entry.observerOutput.categories[category].signals)) continue
+    if (!(signalId in categoryOutputOrEmpty(entry.observerOutput.categories, category).signals)) continue
     const diagnostics = entry.signalDiagnostics[signalId] ?? []
     for (const diagnostic of diagnostics) {
       const location = diagnostic.location?.file
@@ -251,10 +266,14 @@ const collectSignalsForCategory = (
   entry: TimeSeriesEntry | undefined,
   category: Category,
 ): ReadonlyArray<string> =>
-  entry === undefined ? [] : Object.keys(entry.observerOutput.categories[category].signals)
+  entry === undefined
+    ? []
+    : Object.keys(categoryOutputOrEmpty(entry.observerOutput.categories, category).signals)
 
 const extractSignalIds = (entry: TimeSeriesEntry): ReadonlyArray<string> =>
-  CATEGORIES.flatMap((category) => Object.keys(entry.observerOutput.categories[category].signals))
+  CATEGORIES.flatMap((category) =>
+    Object.keys(categoryOutputOrEmpty(entry.observerOutput.categories, category).signals),
+  )
     .filter((signalId, index, all) => all.indexOf(signalId) === index)
     .sort((a, b) => a.localeCompare(b))
 
@@ -316,7 +335,9 @@ const findSignalScore = (
   signalId: string,
 ): number | undefined => {
   for (const category of CATEGORIES) {
-    const value = entry.observerOutput.categories[category].signals[signalId]
+    const value = categoryOutputOrEmpty(entry.observerOutput.categories, category).signals[
+      signalId
+    ]
     if (value !== undefined) return value
   }
   return undefined

@@ -1,9 +1,13 @@
 import { CATEGORIES, type Category, categoryRecord } from "./category.js"
 import { evaluateGoodhart, type GoodhartAssessment } from "./goodhart.js"
+import { categoryOutputOrEmpty } from "./observer-model.js"
 import { type TimeSeriesEntry } from "./time-series.js"
 import { backpressureConfigOf, type BackpressureConfig, type PulsarVector } from "./vector.js"
 
-export { projectObserverForAgent } from "./goodhart.js"
+export {
+  projectObserverForAgent,
+  selectGoodhartHoldoutSignalIds,
+} from "./goodhart.js"
 
 export type BackpressureLevel = "green" | "yellow" | "red"
 
@@ -107,7 +111,7 @@ const evaluateOneCategoryBackpressure = (
   category: Category,
   config: BackpressureConfig,
 ): CategoryBackpressure => {
-  const currentScore = latest.observerOutput.categories[category].score
+  const currentScore = categoryOutputOrEmpty(latest.observerOutput.categories, category).score
   const trajectorySlope = computeTrajectorySlope(windowEntries, category)
   const triggers = categoryScoreTriggers(category, currentScore, trajectorySlope, config)
   return {
@@ -239,44 +243,13 @@ const backpressureLevelFromReadiness = (
 
 const emptyCategoryOutput = (
   level: BackpressureLevel,
-): Record<Category, CategoryBackpressure> => ({
-  "architectural-drift": {
+): Record<Category, CategoryBackpressure> =>
+  categoryRecord(() => ({
     level,
     currentScore: 1,
     trajectorySlope: 0,
     triggers: ["No history yet."],
-  },
-  "dependency-entropy": {
-    level,
-    currentScore: 1,
-    trajectorySlope: 0,
-    triggers: ["No history yet."],
-  },
-  "abstraction-bloat": {
-    level,
-    currentScore: 1,
-    trajectorySlope: 0,
-    triggers: ["No history yet."],
-  },
-  "legibility-decay": {
-    level,
-    currentScore: 1,
-    trajectorySlope: 0,
-    triggers: ["No history yet."],
-  },
-  "generated-slop": {
-    level,
-    currentScore: 1,
-    trajectorySlope: 0,
-    triggers: ["No history yet."],
-  },
-  "review-pain": {
-    level,
-    currentScore: 1,
-    trajectorySlope: 0,
-    triggers: ["No history yet."],
-  },
-})
+  }))
 
 const selectWindow = (
   entries: ReadonlyArray<TimeSeriesEntry>,
@@ -297,7 +270,7 @@ const computeTrajectorySlope = (
   const firstTime = Date.parse(entries[0]!.timestamp)
   const points = entries.map((entry) => ({
     x: (Date.parse(entry.timestamp) - firstTime) / (24 * 60 * 60 * 1000),
-    y: entry.observerOutput.categories[category].score,
+    y: categoryOutputOrEmpty(entry.observerOutput.categories, category).score,
   }))
   const meanX = points.reduce((sum, point) => sum + point.x, 0) / points.length
   const meanY = points.reduce((sum, point) => sum + point.y, 0) / points.length

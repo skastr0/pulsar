@@ -4,6 +4,20 @@ import { Schema } from "effect"
 const Severity = Schema.Literal("info", "warn", "block")
 type Severity = typeof Severity.Type
 
+const DiagnosticFixHintConfidence = Schema.Literal("low", "medium", "high")
+type DiagnosticFixHintConfidence = typeof DiagnosticFixHintConfidence.Type
+
+export const DiagnosticFixHint = Schema.Struct({
+  kind: Schema.String,
+  title: Schema.String,
+  summary: Schema.String,
+  confidence: DiagnosticFixHintConfidence,
+  autoApplicable: Schema.Boolean,
+  diffHint: Schema.optional(Schema.String),
+  data: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.Unknown })),
+})
+export type DiagnosticFixHint = typeof DiagnosticFixHint.Type
+
 /**
  * A single actionable finding emitted by a signal's `diagnose` pass.
  *
@@ -26,6 +40,7 @@ export const Diagnostic = Schema.Struct({
     }),
   ),
   data: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.Unknown })),
+  fixHints: Schema.optional(Schema.Array(DiagnosticFixHint)),
 })
 export type Diagnostic = typeof Diagnostic.Type
 

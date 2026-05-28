@@ -6,6 +6,8 @@ import { join } from "node:path"
 import { Effect } from "effect"
 import { makeReferenceData } from "../context.js"
 import {
+  buildCoverageFactsArtifact,
+  CANONICAL_COVERAGE_FACTS_RELATIVE_PATH,
   COVERAGE_REFERENCE_DATA_KEY,
   type CoverageFacts,
 } from "../coverage-facts.js"
@@ -95,6 +97,7 @@ describe("loadCanonicalReferenceDataEntries", () => {
     )
     expect(coverage.state).toBe("absent")
     expect(coverage.checkedPaths).toEqual([
+      ".pulsar/coverage/coverage-facts.json",
       "coverage/lcov.info",
       "coverage/coverage-final.json",
     ])
@@ -114,6 +117,54 @@ describe("loadCanonicalReferenceDataEntries", () => {
     expect(coverage.state).toBe("present")
     expect(coverage.tool).toBe("lcov")
     expect(coverage.summary.lines).toEqual({ covered: 1, total: 2, pct: 0.5 })
+  })
+
+  test("prefers repo-owned coverage facts over canonical reports", async () => {
+    await mkdir(join(tmp, ".pulsar", "coverage"), { recursive: true })
+    await mkdir(join(tmp, "coverage"), { recursive: true })
+    await writeFile(
+      join(tmp, "coverage", "lcov.info"),
+      ["SF:src/a.ts", "DA:1,0", "DA:2,0", "end_of_record"].join("\n"),
+      "utf8",
+    )
+    await writeFile(
+      join(tmp, CANONICAL_COVERAGE_FACTS_RELATIVE_PATH),
+      `${JSON.stringify(
+        buildCoverageFactsArtifact({
+          state: "present",
+          tool: "istanbul",
+          sourcePath: "/repo/custom/coverage-final.json",
+          checkedPaths: [CANONICAL_COVERAGE_FACTS_RELATIVE_PATH],
+          files: [
+            {
+              file: "src/a.ts",
+              lines: { covered: 9, total: 10, pct: 0.9 },
+              functions: { covered: 1, total: 1, pct: 1 },
+              branches: { covered: 1, total: 2, pct: 0.5 },
+            },
+          ],
+          summary: {
+            lines: { covered: 9, total: 10, pct: 0.9 },
+            functions: { covered: 1, total: 1, pct: 1 },
+            branches: { covered: 1, total: 2, pct: 0.5 },
+          },
+        }),
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    )
+
+    const entries = await Effect.runPromise(loadCanonicalReferenceDataEntries(tmp))
+    const coverage = entries.get(COVERAGE_REFERENCE_DATA_KEY) as CoverageFacts
+
+    expect(coverage.tool).toBe("istanbul")
+    expect(coverage.summary.lines.pct).toBe(0.9)
+    expect(coverage.checkedPaths).toEqual([
+      ".pulsar/coverage/coverage-facts.json",
+      "coverage/lcov.info",
+      "coverage/coverage-final.json",
+    ])
   })
 
   test("malformed coverage is unknown instead of a reference-data load failure", async () => {

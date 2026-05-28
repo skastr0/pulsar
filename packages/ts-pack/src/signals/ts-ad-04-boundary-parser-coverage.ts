@@ -192,6 +192,18 @@ export const TsAd04: Signal<TsAd04Config, TsAd04Output, TsProjectTag> = {
         "without parse/decode evidence",
       location: { file: finding.file, line: finding.line },
       data: { ...finding },
+      fixHints: [{
+        kind: "add-boundary-parser",
+        title: "Decode weak boundary input",
+        summary:
+          "Wrap the weak parameter in a schema/parser decode near the boundary, then pass the decoded value into the rest of the function.",
+        confidence: "high",
+        autoApplicable: false,
+        data: {
+          symbol: finding.symbol,
+          weakParameters: finding.weakParameters,
+        },
+      }],
     }))
   },
   outputMetadata: (out) => {

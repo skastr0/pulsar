@@ -3,6 +3,7 @@ import { Schema } from "effect"
 import { CATEGORIES, type Category } from "./category.js"
 import { dedupeByKey } from "./dedupe-by-key.js"
 import type { ObserverOutput } from "./observer.js"
+import { categoryOutputOrEmpty } from "./observer-model.js"
 import type { RoutingOutput } from "./routing.js"
 import { reviewThresholdOf, type PulsarVector } from "./vector.js"
 
@@ -46,6 +47,9 @@ const DEFAULT_CATEGORY_REVIEWERS: Record<Category, string> = {
   "legibility-decay": "simplicity-reviewer",
   "generated-slop": "consolidation-reviewer",
   "review-pain": "verification-reviewer",
+  "security-risk": "security-reviewer",
+  "concurrency-safety": "reliability-reviewer",
+  "behavior-preservation": "contract-reviewer",
 }
 
 const PRIORITY_RANK: Record<ReviewPriority, number> = {
@@ -112,7 +116,7 @@ const scoreThresholdReviewRequests = (
   vector: PulsarVector | undefined,
 ): ReadonlyArray<ReviewRequest> =>
   CATEGORIES.flatMap((category) => {
-    const categoryOutput = observerOutput.categories[category]
+    const categoryOutput = categoryOutputOrEmpty(observerOutput.categories, category)
     const reviewerRole = DEFAULT_CATEGORY_REVIEWERS[category]
     const threshold = reviewThresholdOf(reviewerRole, vector, 0.6)
     if (categoryOutput.score >= threshold) return []

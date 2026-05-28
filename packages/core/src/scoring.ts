@@ -5,12 +5,14 @@ export {
   ObserverOutput,
   observe,
   toObserverJson,
+  type ObserverOutputPublic,
   type HardGateViolation,
   type MinimumDimension,
 } from "./observer.js"
 export {
   ScoringEngineLayer,
   ScoringEngineTag,
+  collectChangedHunksForRange,
   collectWorktreeChangedHunks,
   computeConfigHash,
   computeObserverConfigHash,

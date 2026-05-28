@@ -28,6 +28,10 @@ import {
 import { printSignalResult } from "./score-signal-output.js"
 import { toScoreJson } from "./score-json.js"
 import { assessCiMode, type CiAssessment } from "./score-ci-assessment.js"
+import {
+  parseScoreDiffRange,
+  runScoreDiffMode,
+} from "./score-diff.js"
 import { inferFallbackDomain, narrowVectorToCategory, narrowVectorToDomain } from "./score-vector.js"
 import { discoverPulsarVector, type DiscoveredPulsarVector } from "./vector-discovery.js"
 
@@ -41,6 +45,9 @@ export interface ScoreOptions {
   readonly category?: Category
   readonly ci?: boolean
   readonly profile?: boolean
+  readonly diffRange?: string
+  readonly changedOnly?: boolean
+  readonly agentView?: boolean
 }
 
 export const runScoreCommand = (opts: ScoreOptions): Effect.Effect<number, unknown, never> =>
@@ -70,6 +77,19 @@ interface ObserverScoreRun {
 const runObserverScoreMode = (opts: ScoreOptions) =>
   Effect.gen(function* () {
     const vectorContext = yield* resolveScoreVectorContext(opts)
+    if (opts.diffRange !== undefined) {
+      return yield* runScoreDiffMode(
+        {
+          repoPath: opts.repoPath,
+          diffRange: opts.diffRange,
+          ...(opts.changedOnly === true ? { changedOnly: true } : {}),
+          ...(opts.agentView === true ? { agentView: true } : {}),
+          ...(opts.json === true ? { json: true } : {}),
+          ...(opts.profile === true ? { profile: true } : {}),
+        },
+        vectorContext,
+      )
+    }
     const run = yield* observeScoreWorktree(opts, vectorContext.observerVector)
     yield* ensureObserverHasActiveSignals(run.output)
     const ciAssessment = yield* assessCiMode(
@@ -243,6 +263,25 @@ const validateScoreOptions = (opts: ScoreOptions): Effect.Effect<void, Error> =>
 
   if (opts.category !== undefined && (opts.json === true || opts.ci === true)) {
     return Effect.fail(new Error("--category cannot be combined with --json or --ci"))
+  }
+  if (opts.diffRange !== undefined) {
+    try {
+      parseScoreDiffRange(opts.diffRange)
+    } catch (cause) {
+      return Effect.fail(cause instanceof Error ? cause : new Error(String(cause)))
+    }
+    if (opts.category !== undefined) {
+      return Effect.fail(new Error("--diff cannot be combined with --category"))
+    }
+    if (opts.ci === true) {
+      return Effect.fail(new Error("--diff cannot be combined with --ci"))
+    }
+  }
+  if (opts.changedOnly === true && opts.diffRange === undefined) {
+    return Effect.fail(new Error("--changed-only requires --diff"))
+  }
+  if (opts.agentView === true && opts.signalId !== undefined) {
+    return Effect.fail(new Error("--agent-view is only supported in full Observer mode"))
   }
 
   return Effect.void
