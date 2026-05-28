@@ -1075,6 +1075,7 @@ export const aligned = true
     expect(out.filesChanged).toEqual([])
     expect(TsRp02.outputMetadata?.(out)).toEqual({ applicability: "not_applicable" })
     expect(TsRp02.score(out)).toBe(1)
+    expect(TsRp02.diagnose(out)).toEqual([])
   }, 120_000)
 
   test("diagnostics include PR summary", async () => {

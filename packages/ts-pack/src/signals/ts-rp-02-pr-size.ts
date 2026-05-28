@@ -139,6 +139,7 @@ export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackage
     if (out.diffMode === "missing") {
       return [{ severity: "warn", message: "TS-RP-02 could not inspect git diff state" }]
     }
+    if (out.filesChanged.length === 0) return []
 
     const diagnostics: Array<Diagnostic> = []
 
