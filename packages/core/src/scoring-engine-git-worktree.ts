@@ -1,12 +1,13 @@
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, readdir, rm, symlink } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join, relative } from "node:path"
 import { Effect } from "effect"
 import {
   WorktreeCreateFailed,
   WorktreeRemoveFailed,
   type ScoringEngineError,
 } from "./errors.js"
+import { hasNodeErrorCode } from "./node-error.js"
 import { runGit } from "./scoring-engine-git-run.js"
 
 export const canUseCurrentWorktreeForCommit = (
@@ -89,6 +90,15 @@ export const acquireWorktree = (
             new WorktreeCreateFailed({ repoPath, sha, message: msg }),
         },
       )
+      yield* Effect.tryPromise({
+        try: () => linkDependencyDirectories(repoPath, dir),
+        catch: (cause) =>
+          new WorktreeCreateFailed({
+            repoPath,
+            sha,
+            message: `dependency link failed: ${String(cause)}`,
+          }),
+      })
       return dir
     }),
     (dir) =>
@@ -120,3 +130,57 @@ export const acquireWorktree = (
         )
       }),
   )
+
+const linkDependencyDirectories = async (
+  repoPath: string,
+  worktreePath: string,
+): Promise<void> => {
+  const dependencyDirs = await collectDependencyDirectories(repoPath)
+  for (const dependencyDir of dependencyDirs) {
+    await linkDependencyDirectory(repoPath, worktreePath, dependencyDir)
+  }
+}
+
+const linkDependencyDirectory = async (
+  repoPath: string,
+  worktreePath: string,
+  dependencyDir: string,
+): Promise<void> => {
+  const target = join(worktreePath, relative(repoPath, dependencyDir))
+  await mkdir(dirname(target), { recursive: true })
+  try {
+    await symlink(dependencyDir, target, "dir")
+  } catch (cause) {
+    if (!hasNodeErrorCode(cause, "EEXIST")) throw cause
+  }
+}
+
+const collectDependencyDirectories = async (repoPath: string): Promise<ReadonlyArray<string>> => {
+  const directories: Array<string> = []
+  const visit = async (dir: string, depth: number): Promise<void> => {
+    if (depth > 3) return
+    const entries = await readdir(dir, { withFileTypes: true })
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      const path = join(dir, entry.name)
+      if (entry.name === "node_modules") {
+        directories.push(path)
+        continue
+      }
+      if (SKIPPED_DEPENDENCY_SCAN_DIRS.has(entry.name)) continue
+      await visit(path, depth + 1)
+    }
+  }
+  await visit(repoPath, 0)
+  return directories.sort((left, right) => left.localeCompare(right))
+}
+
+const SKIPPED_DEPENDENCY_SCAN_DIRS = new Set([
+  ".git",
+  ".pulsar",
+  ".turbo",
+  ".cache",
+  "dist",
+  "build",
+  "coverage",
+])

@@ -1,4 +1,5 @@
 import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises"
+import { existsSync, lstatSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { spawnSync } from "node:child_process"
@@ -1045,6 +1046,43 @@ describe("ScoringEngine — cache semantics", () => {
       expect(paths.length).toBe(1)
       expect(paths[0]).not.toBe(repoPath)
       expect(paths[0]).toContain("pulsar-worktree-")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("observeCommit links dependency directories into detached worktrees", async () => {
+    const { repoPath, sha } = await initRepo([
+      { path: "a.ts", content: "export const x = 1\n" },
+    ])
+    try {
+      await mkdir(join(repoPath, "packages", "app", "node_modules"), { recursive: true })
+      await writeFile(
+        join(repoPath, "packages", "app", "node_modules", "sentinel.txt"),
+        "dependency",
+      )
+      await writeFile(join(repoPath, "a.ts"), "export const x = 2\n")
+      const program = Effect.gen(function* () {
+        const counter = yield* Ref.make(0)
+        const signal = makeCountingSignal(counter)
+        const registry = yield* buildRegistry([signal])
+        const dependencyLinks: Array<boolean> = []
+        const EngineLayer = ScoringEngineLayer(registry, (worktreePath) => {
+          const dependencyPath = join(worktreePath, "packages", "app", "node_modules")
+          dependencyLinks.push(
+            existsSync(dependencyPath) && lstatSync(dependencyPath).isSymbolicLink(),
+          )
+          return Layer.empty
+        })
+        const engine = yield* ScoringEngineTag.pipe(
+          Effect.provide(EngineLayer),
+        ) as Effect.Effect<typeof ScoringEngineTag.Service, never, never>
+
+        yield* engine.observeCommit(repoPath, sha)
+        return dependencyLinks
+      })
+
+      await expect(Effect.runPromise(program)).resolves.toEqual([true])
     } finally {
       await rm(repoPath, { recursive: true, force: true })
     }

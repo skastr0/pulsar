@@ -14,6 +14,7 @@ import {
   type SignalCache,
   type TieredCacheEntry,
 } from "./cache.js"
+import { hasNodeErrorCode } from "./node-error.js"
 import { resolvePulsarRepoStatePath } from "./state-paths.js"
 
 interface PersistedCacheRecord {
@@ -79,12 +80,6 @@ const loadKnownSignalIds = async (cacheDir: string): Promise<Set<string>> => {
   )
 }
 
-const isMissingCacheFileError = (error: unknown): boolean =>
-  typeof error === "object" &&
-  error !== null &&
-  "code" in error &&
-  (error as { readonly code?: unknown }).code === "ENOENT"
-
 const malformedCacheRecordLine = (line: string, cause: unknown): CacheRecordLineRead => ({
   status: "malformed",
   error: new DiskBackedCacheError(`read malformed record line (${line.length} bytes)`, cause),
@@ -111,7 +106,7 @@ const loadBucket = async (
   try {
     raw = await readFile(path, "utf8")
   } catch (error) {
-    if (isMissingCacheFileError(error)) return createInitialBucket(signalId)
+    if (hasNodeErrorCode(error, "ENOENT")) return createInitialBucket(signalId)
     throw new DiskBackedCacheError("read bucket file", error)
   }
 
