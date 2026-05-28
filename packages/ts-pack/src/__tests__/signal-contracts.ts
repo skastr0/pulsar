@@ -788,13 +788,13 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       config:
         "ts-trust-signals.test.ts: default config decodes and factor ledger exposes config.exclude_globs, review_route_weight, and top_n_diagnostics through config factor definitions.",
       positiveFixture:
-        "ts-trust-signals.test.ts: real TsProject fixture flags child_process import/use and eval call as dangerous capability surface.",
+        "ts-trust-signals.test.ts: real TsProject fixtures flag child_process import/use, eval calls, unsafe exec, and shell-enabled spawn as dangerous capability surface.",
       negativeFixture:
-        "ts-trust-signals.test.ts: test fixture path containing eval is excluded by default production excludes.",
+        "ts-trust-signals.test.ts: test fixture path containing eval is excluded by default production excludes; capability imports, nonliteral dynamic import inventory, and constrained literal-command process launches stay visible but score-neutral by default.",
       applicability:
         "ts-trust-signals.test.ts: empty/value-only fixture runs through state zero with score 1 during identity/factor-ledger checks.",
       score:
-        "ts-trust-signals.test.ts: dangerous capability fixture lowers score below 1 while excluded-only evidence does not affect score.",
+        "ts-trust-signals.test.ts: eval, unsafe exec, and shell-enabled spawn lower score below 1 while excluded-only, dynamic import inventory, and score-neutral capability inventory evidence do not affect score.",
       diagnostics:
         "ts-trust-signals.test.ts: diagnostics include severity, file/line/column, structured kind/sink payload, stable hash, and remediation fix hint.",
       factorLedger:
@@ -862,7 +862,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       positiveFixture:
         "ts-trust-signals.test.ts: fixture flags floating fetch, swallowed Promise.catch, and empty catch block.",
       negativeFixture:
-        "ts-trust-signals.test.ts: awaited fetch in the same fixture does not produce a floating-promise finding.",
+        "ts-trust-signals.test.ts: awaited fetch in the same fixture does not produce a floating-promise finding; synchronous stream.write, Map.set/delete on loadingBuckets, Map.set returning Map<string, Promise>, handled void promise.catch, and documented fallback catches stay clean.",
       applicability:
         "ts-trust-signals.test.ts: value-only fixture exercises zero state with score 1 during identity/factor-ledger checks.",
       score:

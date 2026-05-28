@@ -60,7 +60,7 @@ export const TsCc01: Signal<TsCc01Config, TsCc01Output, TsProjectTag> = {
   tier: 1,
   category: "concurrency-safety",
   kind: "structural",
-  cacheVersion: "async-failure-control-v1",
+  cacheVersion: "async-failure-control-v2-precise-promise-and-handled-catch",
   configSchema: TsCc01Config,
   defaultConfig: {
     exclude_globs: [...PRODUCTION_EXCLUDE_GLOBS],
@@ -126,17 +126,17 @@ const computeAsyncFailureControl = (
   const findings: Array<AsyncFailureFinding> = []
   let analyzedFiles = 0
   let asyncOperationsObserved = 0
-  const asyncNamePattern = new RegExp(`(?:${config.async_name_patterns.map(escapeRegExp).join("|")})`, "i")
+  const asyncNamePatterns = config.async_name_patterns.map((pattern) => pattern.toLowerCase())
 
   for (const sourceFile of sourceFiles) {
     if (!isAnalyzableSourceFile(sourceFile, config.exclude_globs)) continue
     analyzedFiles += 1
 
     for (const call of sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-      if (isAsyncOperation(call, asyncNamePattern)) {
+      if (isAsyncOperation(call, asyncNamePatterns)) {
         asyncOperationsObserved += 1
       }
-      const floating = classifyFloatingCall(call, asyncNamePattern)
+      const floating = classifyFloatingCall(call, asyncNamePatterns)
       if (floating !== undefined) findings.push(floating)
       const swallowed = classifySwallowedCatch(call)
       if (swallowed !== undefined) findings.push(swallowed)
@@ -170,7 +170,7 @@ const computeAsyncFailureControl = (
 
 const classifyFloatingCall = (
   call: CallExpression,
-  asyncNamePattern: RegExp,
+  asyncNamePatterns: ReadonlyArray<string>,
 ): AsyncFailureFinding | undefined => {
   const statement = call.getFirstAncestorByKind(SyntaxKind.ExpressionStatement)
   const expression = statement?.getExpression()
@@ -179,7 +179,8 @@ const classifyFloatingCall = (
   const isVoidedStatement = Node.isVoidExpression(parent) && expression === parent
   if (statement === undefined || (!isDirectStatement && !isVoidedStatement)) return undefined
   const name = callName(call.getExpression())
-  if (!isAsyncOperation(call, asyncNamePattern)) return undefined
+  if (!isAsyncOperation(call, asyncNamePatterns)) return undefined
+  if (isVoidedStatement && hasObservableRejectionHandler(call)) return undefined
   if (isVoidedStatement) {
     return {
       ...locationOf(call),
@@ -228,16 +229,19 @@ const classifyEmptyCatch = (catchClause: CatchClause): AsyncFailureFinding | und
 const blockSwallows = (blockText: string): boolean => {
   const body = blockText.replace(/^\s*\{|\}\s*$/g, "").trim()
   if (body.length === 0) return true
-  if (/^(?:\/\/.*|\/\*[\s\S]*\*\/)?$/.test(body)) return true
+  if (/^(?:\/\/.*|\/\*[\s\S]*\*\/)?$/.test(body)) {
+    return !/(ignore|ignored|intentional|best[- ]?effort|fallback|fall through|missing|unsupported|permission|transient|malformed|optional)/i.test(body)
+  }
   if (/^console\.(?:log|warn|error|debug)\s*\([^)]*\)\s*;?$/.test(body)) return true
-  return !/(throw|return|await|reject|report|capture|logger|logError|onError)/.test(body)
+  return false
 }
 
-const isAsyncOperation = (call: CallExpression, asyncNamePattern: RegExp): boolean => {
+const isAsyncOperation = (call: CallExpression, asyncNamePatterns: ReadonlyArray<string>): boolean => {
   const name = callName(call.getExpression())
-  if (asyncNamePattern.test(name)) return true
   const typeText = safeTypeText(call)
-  return /\bPromise(?:Like)?\s*</.test(typeText)
+  if (isTopLevelPromiseLikeType(typeText)) return true
+  if (isKnownSynchronousType(typeText)) return false
+  return matchesAsyncNamePattern(name, asyncNamePatterns)
 }
 
 const safeTypeText = (call: CallExpression): string => {
@@ -246,6 +250,38 @@ const safeTypeText = (call: CallExpression): string => {
   } catch {
     return ""
   }
+}
+
+const isTopLevelPromiseLikeType = (typeText: string): boolean =>
+  /^(?:Promise|PromiseLike)\s*</.test(typeText)
+
+const isKnownSynchronousType = (typeText: string): boolean =>
+  typeText.length > 0 &&
+  typeText !== "any" &&
+  typeText !== "unknown" &&
+  !isTopLevelPromiseLikeType(typeText)
+
+const hasObservableRejectionHandler = (call: CallExpression): boolean => {
+  const expression = call.getExpression()
+  if (!Node.isPropertyAccessExpression(expression)) return false
+  if (expression.getName() === "catch") return true
+  return expression.getName() === "then" && call.getArguments()[1] !== undefined
+}
+
+const matchesAsyncNamePattern = (
+  name: string,
+  patterns: ReadonlyArray<string>,
+): boolean =>
+  name
+    .split(/[^A-Za-z0-9_$]+/)
+    .some((segment) => patterns.some((pattern) => segmentMatchesPattern(segment, pattern)))
+
+const segmentMatchesPattern = (segment: string, pattern: string): boolean => {
+  const lower = segment.toLowerCase()
+  if (lower === pattern) return true
+  if (!lower.startsWith(pattern) || segment.length === pattern.length) return false
+  const next = segment[pattern.length]
+  return next === "_" || next === "$" || next === "-" || /[A-Z]/.test(next ?? "")
 }
 
 const dedupeFindings = (
@@ -268,6 +304,3 @@ const compareFindings = (
   left.line - right.line ||
   left.column - right.column ||
   left.kind.localeCompare(right.kind)
-
-const escapeRegExp = (value: string): string =>
-  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")

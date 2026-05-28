@@ -156,152 +156,20 @@ const collectContractFreshnessFacts = async (
   const declaredArtifacts = new Set(manifest.contracts.map((contract) => normalizePath(contract.artifact_path)))
 
   for (const contract of manifest.contracts) {
-    const groupId = contract.group_id ?? "default"
-    const expectedSourceHashes = normalizeHashRecord(contract.source_hashes ?? {})
-    const expectedSourceHashPaths = Object.keys(expectedSourceHashes)
-    const normalizedSourcePaths = contract.source_paths.map(normalizePath)
-    for (const source of normalizedSourcePaths) checkedPathSet.add(source)
-    for (const source of expectedSourceHashPaths) checkedPathSet.add(source)
-    const artifactPath = normalizePath(contract.artifact_path)
-    checkedPathSet.add(artifactPath)
-    const sourceHashes = await currentSourceHashes(repoRoot, normalizedSourcePaths)
-    const artifactAbsolutePath = safeResolve(repoRoot, artifactPath)
-    const artifactExists = artifactAbsolutePath !== undefined && existsSync(artifactAbsolutePath)
-    const artifactHash = artifactExists ? await fileHash(artifactAbsolutePath) : undefined
-
-    contracts.push({
-      contractId: contract.id,
-      groupId,
-      artifactPath,
-      sourcePaths: normalizedSourcePaths,
-      sourceHashes,
-      expectedSourceHashes,
-      ...(artifactHash === undefined ? {} : { artifactHash }),
-      ...(contract.artifact_sha256 === undefined ? {} : { expectedArtifactHash: contract.artifact_sha256.toLowerCase() }),
-      ...(contract.generator === undefined ? {} : { generator: contract.generator }),
-    })
-
-    const expectedSourceHashPathSet = new Set(expectedSourceHashPaths)
-    const normalizedSourcePathSet = new Set(normalizedSourcePaths)
-    const missingSourceHashPaths = normalizedSourcePaths.filter((source) =>
-      !expectedSourceHashPathSet.has(source),
-    )
-    for (const source of missingSourceHashPaths) {
-      findings.push(makeFinding({
-        contractId: contract.id,
-        groupId,
-        kind: "missing-provenance",
-        file: artifactPath,
-        sourceFile: source,
-        artifactFile: artifactPath,
-        evidence: [`declared source ${source} has no recorded source hash provenance`],
-      }))
-    }
-    const undeclaredSourceHashPaths = expectedSourceHashPaths.filter((path) =>
-      !normalizedSourcePathSet.has(path),
-    )
-    for (const source of undeclaredSourceHashPaths) {
-      findings.push(makeFinding({
-        contractId: contract.id,
-        groupId,
-        kind: "missing-provenance",
-        file: artifactPath,
-        sourceFile: source,
-        artifactFile: artifactPath,
-        evidence: [`recorded source hash ${source} is not declared in source_paths`],
-      }))
-    }
-
-    if (!artifactExists) {
-      findings.push(makeFinding({
-        contractId: contract.id,
-        groupId,
-        kind: "missing-generated-artifact",
-        file: artifactPath,
-        artifactFile: artifactPath,
-        evidence: ["declared generated artifact is missing"],
-      }))
-      continue
-    }
-
-    if (normalizedSourcePaths.length === 0 && expectedSourceHashPaths.length === 0) {
-      findings.push(makeFinding({
-        contractId: contract.id,
-        groupId,
-        kind: "missing-provenance",
-        file: artifactPath,
-        artifactFile: artifactPath,
-        evidence: ["declared generated artifact has no recorded source or artifact hash provenance"],
-      }))
-    }
-
-    for (const source of normalizedSourcePaths) {
-      if (sourceHashes[source] !== undefined) continue
-      findings.push(makeFinding({
-        contractId: contract.id,
-        groupId,
-        kind: "stale-artifact",
-        file: artifactPath,
-        sourceFile: source,
-        artifactFile: artifactPath,
-        evidence: ["declared source contract is missing"],
-      }))
-    }
-
-    for (const [source, expectedHash] of Object.entries(expectedSourceHashes)) {
-      const actualHash = sourceHashes[source]
-      if (actualHash !== undefined && actualHash !== expectedHash) {
-        findings.push(makeFinding({
-          contractId: contract.id,
-          groupId,
-          kind: "stale-artifact",
-          file: artifactPath,
-          sourceFile: source,
-          artifactFile: artifactPath,
-          evidence: [
-            `expected source hash ${expectedHash}`,
-            `current source hash ${actualHash}`,
-          ],
-        }))
-      }
-    }
-
-    if (
-      contract.artifact_sha256 !== undefined &&
-      artifactHash !== undefined &&
-      artifactHash !== contract.artifact_sha256.toLowerCase()
-    ) {
-      findings.push(makeFinding({
-        contractId: contract.id,
-        groupId,
-        kind: "stale-artifact",
-        file: artifactPath,
-        artifactFile: artifactPath,
-        evidence: [
-          `expected artifact hash ${contract.artifact_sha256.toLowerCase()}`,
-          `current artifact hash ${artifactHash}`,
-        ],
-      }))
-    }
+    const collected = await collectContractFreshnessContract(repoRoot, contract)
+    for (const path of collected.checkedPaths) checkedPathSet.add(path)
+    contracts.push(collected.contract)
+    findings.push(...collected.findings)
   }
 
-  const orphanArtifacts = await collectOrphanArtifacts(
+  const orphanFindings = await collectOrphanContractFreshnessFindings(
     repoRoot,
     manifest.generated_artifact_globs ?? [],
     [...DEFAULT_EXCLUDE_GLOBS, ...(manifest.exclude_globs ?? [])],
     declaredArtifacts,
   )
-  for (const artifact of orphanArtifacts) checkedPathSet.add(artifact)
-  findings.push(...orphanArtifacts.map((artifact) =>
-    makeFinding({
-      contractId: artifact,
-      groupId: "detected",
-      kind: "orphan-generated-artifact",
-      file: artifact,
-      artifactFile: artifact,
-      evidence: ["generated artifact matched contract freshness globs but is not declared in provenance data"],
-    }),
-  ))
+  for (const finding of orphanFindings) checkedPathSet.add(finding.file)
+  findings.push(...orphanFindings)
 
   findings.sort(compareFindings)
   const state = findings.length > 0 ? "present" : "zero"
@@ -313,6 +181,234 @@ const collectContractFreshnessFacts = async (
     findings,
     sourceFingerprint: fingerprint({ contracts, findings, manifest, state }),
   }
+}
+
+interface ContractFreshnessContractContext {
+  readonly groupId: string
+  readonly artifactPath: string
+  readonly normalizedSourcePaths: ReadonlyArray<string>
+  readonly expectedSourceHashes: Readonly<Record<string, string>>
+  readonly expectedSourceHashPaths: ReadonlyArray<string>
+  readonly checkedPaths: ReadonlyArray<string>
+}
+
+interface CollectedContractFreshnessContract {
+  readonly checkedPaths: ReadonlyArray<string>
+  readonly contract: ContractFreshnessArtifactFact
+  readonly findings: ReadonlyArray<ContractFreshnessFinding>
+}
+
+const collectContractFreshnessContract = async (
+  repoRoot: string,
+  contract: ContractFreshnessContract,
+): Promise<CollectedContractFreshnessContract> => {
+  const context = prepareContractFreshnessContractContext(contract)
+  const sourceHashes = await currentSourceHashes(repoRoot, context.normalizedSourcePaths)
+  const artifactAbsolutePath = safeResolve(repoRoot, context.artifactPath)
+  const artifactExists = artifactAbsolutePath !== undefined && existsSync(artifactAbsolutePath)
+  const artifactHash = artifactExists ? await fileHash(artifactAbsolutePath) : undefined
+  return {
+    checkedPaths: context.checkedPaths,
+    contract: buildContractFreshnessArtifactFact(contract, context, sourceHashes, artifactHash),
+    findings: collectContractFreshnessFindings({
+      contract,
+      context,
+      sourceHashes,
+      artifactExists,
+      artifactHash,
+    }),
+  }
+}
+
+const prepareContractFreshnessContractContext = (
+  contract: ContractFreshnessContract,
+): ContractFreshnessContractContext => {
+  const artifactPath = normalizePath(contract.artifact_path)
+  const normalizedSourcePaths = contract.source_paths.map(normalizePath)
+  const expectedSourceHashes = normalizeHashRecord(contract.source_hashes ?? {})
+  const expectedSourceHashPaths = Object.keys(expectedSourceHashes)
+  return {
+    groupId: contract.group_id ?? "default",
+    artifactPath,
+    normalizedSourcePaths,
+    expectedSourceHashes,
+    expectedSourceHashPaths,
+    checkedPaths: unique([...normalizedSourcePaths, ...expectedSourceHashPaths, artifactPath]),
+  }
+}
+
+const buildContractFreshnessArtifactFact = (
+  contract: ContractFreshnessContract,
+  context: ContractFreshnessContractContext,
+  sourceHashes: Readonly<Record<string, string>>,
+  artifactHash: string | undefined,
+): ContractFreshnessArtifactFact => ({
+  contractId: contract.id,
+  groupId: context.groupId,
+  artifactPath: context.artifactPath,
+  sourcePaths: context.normalizedSourcePaths,
+  sourceHashes,
+  expectedSourceHashes: context.expectedSourceHashes,
+  ...(artifactHash === undefined ? {} : { artifactHash }),
+  ...(contract.artifact_sha256 === undefined ? {} : { expectedArtifactHash: contract.artifact_sha256.toLowerCase() }),
+  ...(contract.generator === undefined ? {} : { generator: contract.generator }),
+})
+
+interface ContractFreshnessFindingContext {
+  readonly contract: ContractFreshnessContract
+  readonly context: ContractFreshnessContractContext
+  readonly sourceHashes: Readonly<Record<string, string>>
+  readonly artifactExists: boolean
+  readonly artifactHash: string | undefined
+}
+
+const collectContractFreshnessFindings = (
+  input: ContractFreshnessFindingContext,
+): ReadonlyArray<ContractFreshnessFinding> => [
+  ...collectContractFreshnessProvenanceFindings(input),
+  ...collectContractFreshnessArtifactFindings(input),
+]
+
+const collectContractFreshnessProvenanceFindings = (
+  input: ContractFreshnessFindingContext,
+): ReadonlyArray<ContractFreshnessFinding> => {
+  const { contract, context } = input
+  const expectedSourceHashPathSet = new Set(context.expectedSourceHashPaths)
+  const normalizedSourcePathSet = new Set(context.normalizedSourcePaths)
+  const missingHashFindings = context.normalizedSourcePaths
+    .filter((source) => !expectedSourceHashPathSet.has(source))
+    .map((source) => makeFinding({
+      contractId: contract.id,
+      groupId: context.groupId,
+      kind: "missing-provenance" as const,
+      file: context.artifactPath,
+      sourceFile: source,
+      artifactFile: context.artifactPath,
+      evidence: [`declared source ${source} has no recorded source hash provenance`],
+    }))
+  const undeclaredHashFindings = context.expectedSourceHashPaths
+    .filter((source) => !normalizedSourcePathSet.has(source))
+    .map((source) => makeFinding({
+      contractId: contract.id,
+      groupId: context.groupId,
+      kind: "missing-provenance" as const,
+      file: context.artifactPath,
+      sourceFile: source,
+      artifactFile: context.artifactPath,
+      evidence: [`recorded source hash ${source} is not declared in source_paths`],
+    }))
+  return [...missingHashFindings, ...undeclaredHashFindings]
+}
+
+const collectContractFreshnessArtifactFindings = (
+  input: ContractFreshnessFindingContext,
+): ReadonlyArray<ContractFreshnessFinding> => {
+  const { contract, context, sourceHashes, artifactExists, artifactHash } = input
+  if (!artifactExists) {
+    return [makeFinding({
+      contractId: contract.id,
+      groupId: context.groupId,
+      kind: "missing-generated-artifact",
+      file: context.artifactPath,
+      artifactFile: context.artifactPath,
+      evidence: ["declared generated artifact is missing"],
+    })]
+  }
+  return [
+    ...missingArtifactProvenanceFindings(input),
+    ...missingContractSourceFindings(contract, context, sourceHashes),
+    ...staleContractSourceFindings(contract, context, sourceHashes),
+    ...staleContractArtifactFindings(contract, context, artifactHash),
+  ]
+}
+
+const missingArtifactProvenanceFindings = (
+  input: ContractFreshnessFindingContext,
+): ReadonlyArray<ContractFreshnessFinding> => {
+  const { contract, context } = input
+  if (context.normalizedSourcePaths.length > 0 || context.expectedSourceHashPaths.length > 0) {
+    return []
+  }
+  return [makeFinding({
+    contractId: contract.id,
+    groupId: context.groupId,
+    kind: "missing-provenance",
+    file: context.artifactPath,
+    artifactFile: context.artifactPath,
+    evidence: ["declared generated artifact has no recorded source or artifact hash provenance"],
+  })]
+}
+
+const missingContractSourceFindings = (
+  contract: ContractFreshnessContract,
+  context: ContractFreshnessContractContext,
+  sourceHashes: Readonly<Record<string, string>>,
+): ReadonlyArray<ContractFreshnessFinding> =>
+  context.normalizedSourcePaths
+    .filter((source) => sourceHashes[source] === undefined)
+    .map((source) => makeFinding({
+      contractId: contract.id,
+      groupId: context.groupId,
+      kind: "stale-artifact",
+      file: context.artifactPath,
+      sourceFile: source,
+      artifactFile: context.artifactPath,
+      evidence: ["declared source contract is missing"],
+    }))
+
+const staleContractSourceFindings = (
+  contract: ContractFreshnessContract,
+  context: ContractFreshnessContractContext,
+  sourceHashes: Readonly<Record<string, string>>,
+): ReadonlyArray<ContractFreshnessFinding> =>
+  Object.entries(context.expectedSourceHashes).flatMap(([source, expectedHash]) => {
+    const actualHash = sourceHashes[source]
+    if (actualHash === undefined || actualHash === expectedHash) return []
+    return [makeFinding({
+      contractId: contract.id,
+      groupId: context.groupId,
+      kind: "stale-artifact",
+      file: context.artifactPath,
+      sourceFile: source,
+      artifactFile: context.artifactPath,
+      evidence: [`expected source hash ${expectedHash}`, `current source hash ${actualHash}`],
+    })]
+  })
+
+const staleContractArtifactFindings = (
+  contract: ContractFreshnessContract,
+  context: ContractFreshnessContractContext,
+  artifactHash: string | undefined,
+): ReadonlyArray<ContractFreshnessFinding> => {
+  const expected = contract.artifact_sha256?.toLowerCase()
+  if (expected === undefined || artifactHash === undefined || artifactHash === expected) return []
+  return [makeFinding({
+    contractId: contract.id,
+    groupId: context.groupId,
+    kind: "stale-artifact",
+    file: context.artifactPath,
+    artifactFile: context.artifactPath,
+    evidence: [`expected artifact hash ${expected}`, `current artifact hash ${artifactHash}`],
+  })]
+}
+
+const collectOrphanContractFreshnessFindings = async (
+  repoRoot: string,
+  artifactGlobs: ReadonlyArray<string>,
+  excludeGlobs: ReadonlyArray<string>,
+  declaredArtifacts: ReadonlySet<string>,
+): Promise<ReadonlyArray<ContractFreshnessFinding>> => {
+  const orphanArtifacts = await collectOrphanArtifacts(repoRoot, artifactGlobs, excludeGlobs, declaredArtifacts)
+  return orphanArtifacts.map((artifact) =>
+    makeFinding({
+      contractId: artifact,
+      groupId: "detected",
+      kind: "orphan-generated-artifact",
+      file: artifact,
+      artifactFile: artifact,
+      evidence: ["generated artifact matched contract freshness globs but is not declared in provenance data"],
+    }),
+  )
 }
 
 const currentSourceHashes = async (
@@ -444,6 +540,8 @@ const globToRegex = (glob: string): RegExp => {
 }
 
 const normalizePath = (path: string): string => path.replace(/\\/gu, "/")
+
+const unique = <A>(items: ReadonlyArray<A>): ReadonlyArray<A> => [...new Set(items)]
 
 const compareFindings = (
   left: ContractFreshnessFinding,

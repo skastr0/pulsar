@@ -19,6 +19,7 @@ import {
   isStringLiteralLike,
   locationOf,
   normalizeDiagnosticLimit,
+  stringLiteralValue,
   type SourceLocation,
 } from "./trust-signal-helpers.js"
 
@@ -65,12 +66,12 @@ export const TsSec01: Signal<TsSec01Config, TsSec01Output, TsProjectTag> = {
   tier: 1,
   category: "security-risk",
   kind: "structural",
-  cacheVersion: "dangerous-capability-surface-v1",
+  cacheVersion: "dangerous-capability-surface-v2-inventory-neutral",
   configSchema: TsSec01Config,
   defaultConfig: {
     exclude_globs: [...PRODUCTION_EXCLUDE_GLOBS],
     top_n_diagnostics: 10,
-    review_route_weight: 0.2,
+    review_route_weight: 0,
   },
   inputs: [],
   compute: (config) =>
@@ -133,7 +134,7 @@ const computeDangerousCapabilitySurface = (
   for (const sourceFile of sourceFiles) {
     if (!isAnalyzableSourceFile(sourceFile, config.exclude_globs)) continue
     analyzedFiles += 1
-    collectImportCapabilities(sourceFile, findings, config.review_route_weight)
+    collectImportCapabilities(sourceFile, findings, normalizeReviewRouteWeight(config.review_route_weight))
     collectCallCapabilities(sourceFile, findings)
     collectSqlCapabilities(sourceFile, findings)
   }
@@ -186,11 +187,12 @@ const collectCallCapabilities = (
       continue
     }
     if (expression.getKind() === SyntaxKind.ImportKeyword && !isStringLiteralLike(call.getArguments()[0])) {
-      findings.push(findingFromCall(call, "dynamic-import", "import(non-literal)", 0.75))
+      findings.push(findingFromCall(call, "dynamic-import", "import(non-literal)", 0))
       continue
     }
-    if (/^(?:child_process\.)?(exec|execFile|execSync|execFileSync|spawn|spawnSync|fork)$/.test(name)) {
-      findings.push(findingFromCall(call, "shell-process", name, 0.75))
+    const processCall = /^(?:child_process\.)?(exec|execFile|execSync|execFileSync|spawn|spawnSync|fork)$/.exec(name)
+    if (processCall !== null) {
+      findings.push(findingFromCall(call, "shell-process", name, processCallWeight(call, processCall[1] ?? name)))
     }
   }
 
@@ -247,6 +249,29 @@ const findingFromCall = (
   reviewRoute: "security",
   weight,
 })
+
+const normalizeReviewRouteWeight = (value: number): number => {
+  if (!Number.isFinite(value)) return 0
+  return Math.max(0, Math.min(1, value))
+}
+
+const processCallWeight = (call: CallExpression, processName: string): number => {
+  if (processName === "exec" || processName === "execSync") return 0.75
+  if (hasShellTrueOption(call)) return 0.75
+
+  const command = call.getArguments()[0]
+  return stringLiteralValue(command) === undefined ? 0.75 : 0
+}
+
+const hasShellTrueOption = (call: CallExpression): boolean =>
+  call.getArguments().some((argument) => {
+    if (!Node.isObjectLiteralExpression(argument)) return false
+    return argument.getProperties().some((property) => {
+      if (!Node.isPropertyAssignment(property)) return false
+      if (property.getName().replace(/^["']|["']$/g, "") !== "shell") return false
+      return property.getInitializer()?.getKind() === SyntaxKind.TrueKeyword
+    })
+  })
 
 const moduleCapabilityKind = (specifier: string): DangerousCapabilityKind | undefined => {
   const normalized = specifier.replace(/^node:/, "")

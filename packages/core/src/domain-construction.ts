@@ -180,227 +180,10 @@ const collectDomainConstructionFacts = async (
   const findings: Array<DomainConstructionFinding> = []
 
   for (const construct of manifest.constructs) {
-    const declarationPath = normalizePath(construct.declaration_path)
-    checkedPathSet.add(declarationPath)
-    const control = construct.control
-    const smartConstructors = control.smart_constructors ?? []
-    const parsers = control.parsers ?? []
-    const controlledExports = control.controlled_exports ?? []
-    for (const evidence of [...smartConstructors, ...parsers, ...controlledExports]) {
-      checkedPathSet.add(normalizePath(evidence.path))
-    }
-    const expectedSourceHashes = normalizeHashRecord(construct.source_hashes ?? {})
-    const expectedSourceHashPaths = Object.keys(expectedSourceHashes)
-    for (const path of expectedSourceHashPaths) checkedPathSet.add(path)
-
-    const declaredSourcePaths = unique([
-      declarationPath,
-      ...smartConstructors.map((evidence) => evidence.path),
-      ...parsers.map((evidence) => evidence.path),
-      ...controlledExports.map((evidence) => evidence.path),
-    ].map(normalizePath))
-    const allEvidencePaths = unique([
-      ...declaredSourcePaths,
-      ...expectedSourceHashPaths,
-    ])
-    const sourceHashes = await currentSourceHashes(repoRoot, allEvidencePaths)
-    const declarationContent = await readSource(repoRoot, declarationPath)
-    const declarationSyntax = declarationContent === undefined
-      ? undefined
-      : analyzeSourceSyntax(declarationContent)
-    const declaredShape = declarationSyntax === undefined
-      ? emptyDeclarationShape()
-      : analyzeDeclarationShape(declarationSyntax, construct.symbol)
-    const smartConstructorFacts = await collectEvidenceFacts(
-      repoRoot,
-      smartConstructors,
-      sourceHashes,
-      "runtime-value",
-    )
-    const parserFacts = await collectEvidenceFacts(
-      repoRoot,
-      parsers,
-      sourceHashes,
-      "runtime-value",
-    )
-    const controlledExportFacts = await collectEvidenceFacts(
-      repoRoot,
-      controlledExports,
-      sourceHashes,
-      "exported-value",
-    )
-    const allowPublicConstructor = control.allow_public_constructor === true
-
-    constructs.push({
-      constructId: construct.id,
-      symbol: construct.symbol,
-      kind: construct.kind,
-      declarationPath,
-      controlIntent: control.intent,
-      ...(control.reason === undefined ? {} : { reason: control.reason }),
-      sourceHashes,
-      expectedSourceHashes,
-      exportedDeclarationDetected: declaredShape.exportedDeclarationDetected,
-      publicConstructorDetected: declaredShape.publicConstructorDetected,
-      privateConstructorDetected: declaredShape.privateConstructorDetected,
-      allowPublicConstructor,
-      smartConstructors: smartConstructorFacts,
-      parsers: parserFacts,
-      controlledExports: controlledExportFacts,
-    })
-
-    const expectedSourceHashPathSet = new Set(expectedSourceHashPaths)
-    const declaredSourcePathSet = new Set(declaredSourcePaths)
-    const missingSourceHashPaths = declaredSourcePaths.filter((path) =>
-      !expectedSourceHashPathSet.has(path),
-    )
-    for (const path of missingSourceHashPaths) {
-      findings.push(makeFinding({
-        constructId: construct.id,
-        symbol: construct.symbol,
-        kind: "missing-source-provenance",
-        file: path,
-        evidence: [`declared domain construction source ${path} has no recorded hash provenance`],
-      }))
-    }
-    const undeclaredSourceHashPaths = expectedSourceHashPaths.filter((path) =>
-      !declaredSourcePathSet.has(path),
-    )
-    for (const path of undeclaredSourceHashPaths) {
-      findings.push(makeFinding({
-        constructId: construct.id,
-        symbol: construct.symbol,
-        kind: "missing-source-provenance",
-        file: path,
-        evidence: [`recorded source hash ${path} is not declared as construction evidence`],
-      }))
-    }
-
-    if (declarationContent === undefined) {
-      findings.push(makeFinding({
-        constructId: construct.id,
-        symbol: construct.symbol,
-        kind: "stale-source",
-        file: declarationPath,
-        evidence: ["declared domain construct declaration is missing"],
-      }))
-    } else if (!declaredShape.exportedDeclarationDetected) {
-      findings.push(makeFinding({
-        constructId: construct.id,
-        symbol: construct.symbol,
-        kind: "missing-construction-evidence",
-        file: declarationPath,
-        evidence: [`declared domain construct symbol ${construct.symbol} was not found`],
-      }))
-    }
-
-    for (const [path, expectedHash] of Object.entries(expectedSourceHashes)) {
-      const actualHash = sourceHashes[path]
-      if (actualHash === undefined) {
-        if (path === declarationPath && declarationContent === undefined) continue
-        findings.push(makeFinding({
-          constructId: construct.id,
-          symbol: construct.symbol,
-          kind: "stale-source",
-          file: path,
-          evidence: ["declared domain construction source is missing"],
-        }))
-      } else if (actualHash !== expectedHash) {
-        findings.push(makeFinding({
-          constructId: construct.id,
-          symbol: construct.symbol,
-          kind: "stale-source",
-          file: path,
-          evidence: [
-            `expected source hash ${expectedHash}`,
-            `current source hash ${actualHash}`,
-          ],
-        }))
-      }
-    }
-
-    if (control.intent === "intentionally_open") {
-      findings.push(makeFinding({
-        constructId: construct.id,
-        symbol: construct.symbol,
-        kind: "explicitly-open-construct",
-        file: declarationPath,
-        evidence: [
-          control.reason ?? "construct is declared intentionally open by repo policy",
-        ],
-      }))
-      continue
-    }
-
-    if (declaredShape.publicConstructorDetected && !allowPublicConstructor) {
-      findings.push(makeFinding({
-        constructId: construct.id,
-        symbol: construct.symbol,
-        kind: "uncontrolled-constructor-export",
-        file: declarationPath,
-        evidence: [
-          `${construct.symbol} appears to expose a public constructor from its declaration file`,
-        ],
-      }))
-    }
-
-    if (smartConstructors.length === 0 && parsers.length === 0) {
-      findings.push(makeFinding({
-        constructId: construct.id,
-        symbol: construct.symbol,
-        kind: "missing-construction-evidence",
-        file: declarationPath,
-        evidence: [
-          "controlled construct declares no parser or smart-constructor evidence",
-        ],
-      }))
-    }
-    for (const evidence of [...smartConstructorFacts, ...parserFacts]) {
-      if (!evidence.present) {
-        findings.push(makeFinding({
-          constructId: construct.id,
-          symbol: construct.symbol,
-          kind: "missing-construction-evidence",
-          file: evidence.path,
-          evidence: [
-            "declared parser or smart-constructor evidence file is missing",
-          ],
-        }))
-      } else if (!evidence.matchedSymbol) {
-        findings.push(makeFinding({
-          constructId: construct.id,
-          symbol: construct.symbol,
-          kind: "missing-construction-evidence",
-          file: evidence.path,
-          evidence: [
-            `declared parser or smart-constructor symbol ${evidence.symbol ?? "<unspecified>"} was not found`,
-          ],
-        }))
-      }
-    }
-    for (const evidence of controlledExportFacts) {
-      if (!evidence.present) {
-        findings.push(makeFinding({
-          constructId: construct.id,
-          symbol: construct.symbol,
-          kind: "missing-construction-evidence",
-          file: evidence.path,
-          evidence: [
-            "declared controlled-export evidence file is missing",
-          ],
-        }))
-      } else if (!evidence.matchedSymbol) {
-        findings.push(makeFinding({
-          constructId: construct.id,
-          symbol: construct.symbol,
-          kind: "missing-construction-evidence",
-          file: evidence.path,
-          evidence: [
-            `declared controlled-export symbol ${evidence.symbol ?? "<unspecified>"} was not found`,
-          ],
-        }))
-      }
-    }
+    const collected = await collectDomainConstructionConstruct(repoRoot, construct)
+    for (const path of collected.checkedPaths) checkedPathSet.add(path)
+    constructs.push(collected.construct)
+    findings.push(...collected.findings)
   }
 
   findings.sort(compareFindings)
@@ -420,6 +203,313 @@ const collectDomainConstructionFacts = async (
     sourceFingerprint: fingerprint({ constructs, findings, manifest, state }),
   }
 }
+
+interface DomainConstructionConstructContext {
+  readonly declarationPath: string
+  readonly control: DomainConstructionControl
+  readonly smartConstructors: ReadonlyArray<DomainConstructionEvidence>
+  readonly parsers: ReadonlyArray<DomainConstructionEvidence>
+  readonly controlledExports: ReadonlyArray<DomainConstructionEvidence>
+  readonly expectedSourceHashes: Readonly<Record<string, string>>
+  readonly expectedSourceHashPaths: ReadonlyArray<string>
+  readonly declaredSourcePaths: ReadonlyArray<string>
+  readonly allEvidencePaths: ReadonlyArray<string>
+  readonly checkedPaths: ReadonlyArray<string>
+  readonly allowPublicConstructor: boolean
+}
+
+interface CollectedDomainConstructionConstruct {
+  readonly checkedPaths: ReadonlyArray<string>
+  readonly construct: DomainConstructionConstructFact
+  readonly findings: ReadonlyArray<DomainConstructionFinding>
+}
+
+const collectDomainConstructionConstruct = async (
+  repoRoot: string,
+  construct: DomainConstructionConstruct,
+): Promise<CollectedDomainConstructionConstruct> => {
+  const context = prepareDomainConstructionConstructContext(construct)
+  const sourceHashes = await currentSourceHashes(repoRoot, context.allEvidencePaths)
+  const declarationContent = await readSource(repoRoot, context.declarationPath)
+  const declaredShape = analyzeDomainConstructDeclaration(declarationContent, construct.symbol)
+  const smartConstructorFacts = await collectEvidenceFacts(
+    repoRoot,
+    context.smartConstructors,
+    sourceHashes,
+    "runtime-value",
+  )
+  const parserFacts = await collectEvidenceFacts(repoRoot, context.parsers, sourceHashes, "runtime-value")
+  const controlledExportFacts = await collectEvidenceFacts(
+    repoRoot,
+    context.controlledExports,
+    sourceHashes,
+    "exported-value",
+  )
+  const findings = collectDomainConstructionFindings({
+    construct,
+    context,
+    sourceHashes,
+    declarationContent,
+    declaredShape,
+    smartConstructorFacts,
+    parserFacts,
+    controlledExportFacts,
+  })
+  return {
+    checkedPaths: context.checkedPaths,
+    construct: buildDomainConstructionConstructFact({
+      construct,
+      context,
+      sourceHashes,
+      declaredShape,
+      smartConstructorFacts,
+      parserFacts,
+      controlledExportFacts,
+    }),
+    findings,
+  }
+}
+
+const prepareDomainConstructionConstructContext = (
+  construct: DomainConstructionConstruct,
+): DomainConstructionConstructContext => {
+  const declarationPath = normalizePath(construct.declaration_path)
+  const control = construct.control
+  const smartConstructors = control.smart_constructors ?? []
+  const parsers = control.parsers ?? []
+  const controlledExports = control.controlled_exports ?? []
+  const expectedSourceHashes = normalizeHashRecord(construct.source_hashes ?? {})
+  const expectedSourceHashPaths = Object.keys(expectedSourceHashes)
+  const declaredSourcePaths = unique([
+    declarationPath,
+    ...smartConstructors.map((evidence) => evidence.path),
+    ...parsers.map((evidence) => evidence.path),
+    ...controlledExports.map((evidence) => evidence.path),
+  ].map(normalizePath))
+  const allEvidencePaths = unique([...declaredSourcePaths, ...expectedSourceHashPaths])
+  return {
+    declarationPath,
+    control,
+    smartConstructors,
+    parsers,
+    controlledExports,
+    expectedSourceHashes,
+    expectedSourceHashPaths,
+    declaredSourcePaths,
+    allEvidencePaths,
+    checkedPaths: allEvidencePaths,
+    allowPublicConstructor: control.allow_public_constructor === true,
+  }
+}
+
+const analyzeDomainConstructDeclaration = (
+  declarationContent: string | undefined,
+  symbol: string,
+): DeclarationShape => {
+  if (declarationContent === undefined) return emptyDeclarationShape()
+  return analyzeDeclarationShape(analyzeSourceSyntax(declarationContent), symbol)
+}
+
+interface DomainConstructionFindingContext {
+  readonly construct: DomainConstructionConstruct
+  readonly context: DomainConstructionConstructContext
+  readonly sourceHashes: Readonly<Record<string, string>>
+  readonly declarationContent: string | undefined
+  readonly declaredShape: DeclarationShape
+  readonly smartConstructorFacts: ReadonlyArray<DomainConstructionEvidenceFact>
+  readonly parserFacts: ReadonlyArray<DomainConstructionEvidenceFact>
+  readonly controlledExportFacts: ReadonlyArray<DomainConstructionEvidenceFact>
+}
+
+const collectDomainConstructionFindings = (
+  input: DomainConstructionFindingContext,
+): ReadonlyArray<DomainConstructionFinding> => {
+  const findings = [
+    ...collectDomainConstructionProvenanceFindings(input),
+    ...collectDomainConstructionDeclarationFindings(input),
+  ]
+  if (input.context.control.intent === "intentionally_open") {
+    return [...findings, makeOpenConstructFinding(input.construct, input.context)]
+  }
+  return [
+    ...findings,
+    ...collectDomainConstructionControlFindings(input),
+    ...collectDomainConstructionEvidenceFindings(input),
+  ]
+}
+
+const buildDomainConstructionConstructFact = (
+  input: Omit<DomainConstructionFindingContext, "declarationContent">,
+): DomainConstructionConstructFact => ({
+  constructId: input.construct.id,
+  symbol: input.construct.symbol,
+  kind: input.construct.kind,
+  declarationPath: input.context.declarationPath,
+  controlIntent: input.context.control.intent,
+  ...(input.context.control.reason === undefined ? {} : { reason: input.context.control.reason }),
+  sourceHashes: input.sourceHashes,
+  expectedSourceHashes: input.context.expectedSourceHashes,
+  exportedDeclarationDetected: input.declaredShape.exportedDeclarationDetected,
+  publicConstructorDetected: input.declaredShape.publicConstructorDetected,
+  privateConstructorDetected: input.declaredShape.privateConstructorDetected,
+  allowPublicConstructor: input.context.allowPublicConstructor,
+  smartConstructors: input.smartConstructorFacts,
+  parsers: input.parserFacts,
+  controlledExports: input.controlledExportFacts,
+})
+
+const collectDomainConstructionProvenanceFindings = (
+  input: DomainConstructionFindingContext,
+): ReadonlyArray<DomainConstructionFinding> => {
+  const { construct, context, sourceHashes, declarationContent } = input
+  const findings: Array<DomainConstructionFinding> = []
+  const expectedSourceHashPathSet = new Set(context.expectedSourceHashPaths)
+  const declaredSourcePathSet = new Set(context.declaredSourcePaths)
+
+  for (const path of context.declaredSourcePaths.filter((item) => !expectedSourceHashPathSet.has(item))) {
+    findings.push(makeFinding({
+      constructId: construct.id,
+      symbol: construct.symbol,
+      kind: "missing-source-provenance",
+      file: path,
+      evidence: [`declared domain construction source ${path} has no recorded hash provenance`],
+    }))
+  }
+  for (const path of context.expectedSourceHashPaths.filter((item) => !declaredSourcePathSet.has(item))) {
+    findings.push(makeFinding({
+      constructId: construct.id,
+      symbol: construct.symbol,
+      kind: "missing-source-provenance",
+      file: path,
+      evidence: [`recorded source hash ${path} is not declared as construction evidence`],
+    }))
+  }
+  for (const [path, expectedHash] of Object.entries(context.expectedSourceHashes)) {
+    const actualHash = sourceHashes[path]
+    if (actualHash === undefined) {
+      if (path === context.declarationPath && declarationContent === undefined) continue
+      findings.push(makeFinding({
+        constructId: construct.id,
+        symbol: construct.symbol,
+        kind: "stale-source",
+        file: path,
+        evidence: ["declared domain construction source is missing"],
+      }))
+    } else if (actualHash !== expectedHash) {
+      findings.push(makeFinding({
+        constructId: construct.id,
+        symbol: construct.symbol,
+        kind: "stale-source",
+        file: path,
+        evidence: [`expected source hash ${expectedHash}`, `current source hash ${actualHash}`],
+      }))
+    }
+  }
+  return findings
+}
+
+const collectDomainConstructionDeclarationFindings = (
+  input: DomainConstructionFindingContext,
+): ReadonlyArray<DomainConstructionFinding> => {
+  const { construct, context, declarationContent, declaredShape } = input
+  if (declarationContent === undefined) {
+    return [makeFinding({
+      constructId: construct.id,
+      symbol: construct.symbol,
+      kind: "stale-source",
+      file: context.declarationPath,
+      evidence: ["declared domain construct declaration is missing"],
+    })]
+  }
+  if (declaredShape.exportedDeclarationDetected) return []
+  return [makeFinding({
+    constructId: construct.id,
+    symbol: construct.symbol,
+    kind: "missing-construction-evidence",
+    file: context.declarationPath,
+    evidence: [`declared domain construct symbol ${construct.symbol} was not found`],
+  })]
+}
+
+const makeOpenConstructFinding = (
+  construct: DomainConstructionConstruct,
+  context: DomainConstructionConstructContext,
+): DomainConstructionFinding =>
+  makeFinding({
+    constructId: construct.id,
+    symbol: construct.symbol,
+    kind: "explicitly-open-construct",
+    file: context.declarationPath,
+    evidence: [context.control.reason ?? "construct is declared intentionally open by repo policy"],
+  })
+
+const collectDomainConstructionControlFindings = (
+  input: DomainConstructionFindingContext,
+): ReadonlyArray<DomainConstructionFinding> => {
+  const { construct, context, declaredShape } = input
+  const findings: Array<DomainConstructionFinding> = []
+  if (declaredShape.publicConstructorDetected && !context.allowPublicConstructor) {
+    findings.push(makeFinding({
+      constructId: construct.id,
+      symbol: construct.symbol,
+      kind: "uncontrolled-constructor-export",
+      file: context.declarationPath,
+      evidence: [
+        `${construct.symbol} appears to expose a public constructor from its declaration file`,
+      ],
+    }))
+  }
+  if (context.smartConstructors.length === 0 && context.parsers.length === 0) {
+    findings.push(makeFinding({
+      constructId: construct.id,
+      symbol: construct.symbol,
+      kind: "missing-construction-evidence",
+      file: context.declarationPath,
+      evidence: ["controlled construct declares no parser or smart-constructor evidence"],
+    }))
+  }
+  return findings
+}
+
+const collectDomainConstructionEvidenceFindings = (
+  input: DomainConstructionFindingContext,
+): ReadonlyArray<DomainConstructionFinding> => [
+  ...collectEvidenceMissingSymbolFindings(
+    input.construct,
+    [...input.smartConstructorFacts, ...input.parserFacts],
+    "declared parser or smart-constructor",
+  ),
+  ...collectEvidenceMissingSymbolFindings(
+    input.construct,
+    input.controlledExportFacts,
+    "declared controlled-export",
+  ),
+]
+
+const collectEvidenceMissingSymbolFindings = (
+  construct: DomainConstructionConstruct,
+  facts: ReadonlyArray<DomainConstructionEvidenceFact>,
+  label: string,
+): ReadonlyArray<DomainConstructionFinding> =>
+  facts.flatMap((evidence) => {
+    if (!evidence.present) {
+      return [makeFinding({
+        constructId: construct.id,
+        symbol: construct.symbol,
+        kind: "missing-construction-evidence",
+        file: evidence.path,
+        evidence: [`${label} evidence file is missing`],
+      })]
+    }
+    if (evidence.matchedSymbol) return []
+    return [makeFinding({
+      constructId: construct.id,
+      symbol: construct.symbol,
+      kind: "missing-construction-evidence",
+      file: evidence.path,
+      evidence: [`${label} symbol ${evidence.symbol ?? "<unspecified>"} was not found`],
+    })]
+  })
 
 const collectEvidenceFacts = async (
   repoRoot: string,

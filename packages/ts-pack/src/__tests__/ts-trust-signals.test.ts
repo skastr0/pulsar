@@ -89,6 +89,53 @@ describe("TypeScript trust-domain and AI-slop signals", () => {
     expect(out.findings.some((finding) => finding.file.endsWith("runtime.test.ts"))).toBe(false)
   })
 
+  test("TS-SEC-01 keeps capability inventory and constrained process launches score-neutral", async () => {
+    await repo.write(
+      "src/runtime.ts",
+      [
+        "import { spawn } from 'node:child_process'",
+        "import { readFile } from 'node:fs/promises'",
+        "import { createHash } from 'node:crypto'",
+        "declare const target: string",
+        "export function runGit(args: string[]) {",
+        "  void readFile('package.json')",
+        "  void createHash('sha256')",
+        "  void import(target)",
+        "  return spawn('git', args, { shell: false })",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsSec01, TsSec01.defaultConfig)
+
+    expect(out.state).toBe("present")
+    expect(out.findings.map((finding) => finding.kind)).toEqual(
+      expect.arrayContaining(["filesystem", "crypto", "dynamic-import", "shell-process"]),
+    )
+    expect(out.findings.every((finding) => finding.weight === 0)).toBe(true)
+    expect(TsSec01.score(out)).toBe(1)
+  })
+
+  test("TS-SEC-01 still scores unsafe shell process execution", async () => {
+    await repo.write(
+      "src/runtime.ts",
+      [
+        "import { exec, spawn } from 'node:child_process'",
+        "export function run(command: string) {",
+        "  exec(command)",
+        "  spawn(command, [], { shell: true })",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsSec01, TsSec01.defaultConfig)
+
+    expect(out.findings.filter((finding) => finding.weight > 0).map((finding) => finding.sink)).toEqual(
+      expect.arrayContaining(["exec", "spawn"]),
+    )
+    expect(TsSec01.score(out)).toBeLessThan(1)
+  })
+
   test("TS-SEC-02 routes raw boundary sinks but accepts schema-wrapped parsing", async () => {
     await repo.write(
       "src/api/route.ts",
@@ -190,6 +237,38 @@ describe("TypeScript trust-domain and AI-slop signals", () => {
     )
     expect(TsCc01.score(out)).toBeLessThan(1)
     expect(TsCc01.diagnose(out)[0]?.fixHints?.[0]?.kind).toBe("async-failure-control")
+  })
+
+  test("TS-CC-01 avoids synchronous and explicitly handled async false positives", async () => {
+    await repo.write(
+      "src/async.ts",
+      [
+        "declare const stream: { write(value: string): boolean }",
+        "declare const jobs: Map<string, Promise<void>>",
+        "declare const loadingBuckets: Map<string, Promise<void>>",
+        "declare const task: Promise<void>",
+        "declare function save(): Promise<void>",
+        "export function run() {",
+        "  stream.write('ok')",
+        "  jobs.set('task', task)",
+        "  loadingBuckets.set('task', task)",
+        "  loadingBuckets.delete('task')",
+        "  void save().catch((error) => {",
+        "    console.error(error)",
+        "    process.exit(1)",
+        "  })",
+        "  try { JSON.parse('') } catch {",
+        "    // Ignore malformed cache lines; the next record can still be read.",
+        "  }",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsCc01, TsCc01.defaultConfig)
+
+    expect(out.state).toBe("zero")
+    expect(out.findings).toHaveLength(0)
+    expect(TsCc01.score(out)).toBe(1)
   })
 
   test("TS-CC-02 flags Promise fanout without limiter evidence", async () => {
