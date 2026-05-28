@@ -9,7 +9,7 @@ import {
 } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
 import { type CargoMetadataPackage, workspacePackages } from "../cargo-metadata.js"
-import { RustProjectTag } from "../project.js"
+import { RustProjectTag, type RustProject } from "../project.js"
 import { DEFAULT_RUST_EXCLUDE_GLOBS } from "./shared-rust-ast.js"
 import { isExcluded, normalizePath } from "./shared-globs.js"
 import { parseRustFile, walkRustTree } from "../syn-walker.js"
@@ -56,6 +56,13 @@ interface RsDe03Output {
   readonly warnFeatureCount: number
   readonly diagnosticLimit: number
   readonly analysisMode: "cargo-metadata-plus-cfg-scan"
+}
+
+interface FeatureSourceScan {
+  readonly conditionalSitesByCrate: ReadonlyMap<string, number>
+  readonly firstConditionalFileByCrate: ReadonlyMap<string, string>
+  readonly sourceFilesByCrate: ReadonlyMap<string, number>
+  readonly analyzedSourceFilesByCrate: ReadonlyMap<string, number>
 }
 
 const DEFAULT_WARN_FEATURE_COUNT = 8
@@ -106,108 +113,7 @@ export const RsDe03: Signal<RsDe03Config, RsDe03Output, RustProjectTag> = {
       const normalizedConfig = normalizeRsDe03Config(config)
       const project = yield* RustProjectTag
       return yield* Effect.tryPromise({
-        try: async (): Promise<RsDe03Output> => {
-          if (project.cargoMetadata === undefined) {
-            return {
-              crates: [],
-              propagationByCrate: new Map(),
-              totalConditionalCompilationSites: 0,
-              metadataStatus: "missing",
-              packageCount: 0,
-              sourceFileCount: project.sourceFiles.length,
-              analyzedSourceFileCount: 0,
-              featureDefinitionCount: 0,
-              propagationCount: 0,
-              warnFeatureCount: normalizedConfig.warn_feature_count,
-              diagnosticLimit: normalizedConfig.top_n_diagnostics,
-              analysisMode: "cargo-metadata-plus-cfg-scan",
-            }
-          }
-
-          const packages = workspacePackages(project.cargoMetadata)
-          const propagationByCrate = new Map<string, Array<FeaturePropagation>>()
-          const conditionalSitesByCrate = new Map<string, number>()
-          const firstConditionalFileByCrate = new Map<string, string>()
-          const sourceFilesByCrate = new Map<string, number>()
-          const analyzedSourceFilesByCrate = new Map<string, number>()
-          for (const manifest of project.manifests) {
-            if (manifest.packageName === undefined) continue
-            const files = project.sourceFiles.filter((file) => {
-              const normalizedFile = normalizePath(file)
-              return normalizedFile.startsWith(`${normalizePath(manifest.path)}/`)
-            })
-            sourceFilesByCrate.set(manifest.packageName, files.length)
-            let siteCount = 0
-            let analyzedFiles = 0
-            for (const file of files) {
-              if (isExcluded(file, normalizedConfig.exclude_globs)) continue
-              analyzedFiles += 1
-              const fileSiteCount = await countFeatureConditionals(file)
-              siteCount += fileSiteCount
-              if (fileSiteCount > 0 && !firstConditionalFileByCrate.has(manifest.packageName)) {
-                firstConditionalFileByCrate.set(manifest.packageName, file)
-              }
-            }
-            conditionalSitesByCrate.set(manifest.packageName, siteCount)
-            analyzedSourceFilesByCrate.set(manifest.packageName, analyzedFiles)
-          }
-
-          const crates = packages
-            .map((pkg) => {
-              const featureNames = new Set(Object.keys(pkg.features))
-              const dependencyByAlias = cargoDependenciesByAlias(pkg)
-              const propagations = Object.entries(pkg.features).flatMap(([feature, enables]) =>
-                enables.flatMap((enable) => {
-                  const parsed = parseFeatureEnable(enable, featureNames, dependencyByAlias)
-                  if (parsed === undefined) return []
-                  return [
-                    {
-                      crate: pkg.name,
-                      feature,
-                      dependencyAlias: parsed.dependencyAlias,
-                      targetCrate: parsed.targetCrate,
-                      targetFeature: parsed.targetFeature,
-                      optional: parsed.optional,
-                      activationKind: parsed.activationKind,
-                    } satisfies FeaturePropagation,
-                  ]
-                }),
-              )
-              propagationByCrate.set(pkg.name, propagations)
-              return {
-                crate: pkg.name,
-                featureCount: Object.keys(pkg.features).length,
-                conditionalCompilationSites: conditionalSitesByCrate.get(pkg.name) ?? 0,
-                propagatedFeatures: propagations.length,
-                manifestPath: pkg.manifestPath,
-                firstConditionalFile: firstConditionalFileByCrate.get(pkg.name),
-              } satisfies FeatureCrateSummary
-            })
-            .sort(compareFeatureCrateSummaries)
-          const featureDefinitionCount = crates.reduce((sum, entry) => sum + entry.featureCount, 0)
-          const propagationCount = crates.reduce((sum, entry) => sum + entry.propagatedFeatures, 0)
-
-          return {
-            crates,
-            propagationByCrate,
-            totalConditionalCompilationSites: crates.reduce(
-              (sum, entry) => sum + entry.conditionalCompilationSites,
-              0,
-            ),
-            metadataStatus: "loaded",
-            packageCount: packages.length,
-            sourceFileCount: [...sourceFilesByCrate.values()].reduce((sum, count) => sum + count, 0),
-            analyzedSourceFileCount: [...analyzedSourceFilesByCrate.values()].reduce(
-              (sum, count) => sum + count,
-              0,
-            ),
-            featureDefinitionCount,
-            propagationCount,
-            warnFeatureCount: normalizedConfig.warn_feature_count,
-            diagnosticLimit: normalizedConfig.top_n_diagnostics,
-            analysisMode: "cargo-metadata-plus-cfg-scan",
-          }
-        },
+        try: () => computeRsDe03Output(project, normalizedConfig),
         catch: (cause) =>
           new SignalComputeError({ signalId: "RS-DE-03-feature-flags", message: String(cause), cause }),
       })
@@ -297,6 +203,172 @@ export const RsDe03: Signal<RsDe03Config, RsDe03Output, RustProjectTag> = {
 }
 
 type NormalizedRsDe03Config = RsDe03Config
+
+const computeRsDe03Output = async (
+  project: RustProject,
+  config: NormalizedRsDe03Config,
+): Promise<RsDe03Output> => {
+  if (project.cargoMetadata === undefined) {
+    return missingCargoMetadataOutput(project, config)
+  }
+
+  const packages = workspacePackages(project.cargoMetadata)
+  const sourceScan = await scanFeatureSources(project, config)
+  const propagationByCrate = new Map<string, ReadonlyArray<FeaturePropagation>>()
+  const crates = packages
+    .map((pkg) => summarizeFeatureCrate(pkg, sourceScan, propagationByCrate))
+    .sort(compareFeatureCrateSummaries)
+
+  return loadedFeatureFlagOutput(packages.length, crates, propagationByCrate, sourceScan, config)
+}
+
+const missingCargoMetadataOutput = (
+  project: RustProject,
+  config: NormalizedRsDe03Config,
+): RsDe03Output => ({
+  crates: [],
+  propagationByCrate: new Map(),
+  totalConditionalCompilationSites: 0,
+  metadataStatus: "missing",
+  packageCount: 0,
+  sourceFileCount: project.sourceFiles.length,
+  analyzedSourceFileCount: 0,
+  featureDefinitionCount: 0,
+  propagationCount: 0,
+  warnFeatureCount: config.warn_feature_count,
+  diagnosticLimit: config.top_n_diagnostics,
+  analysisMode: "cargo-metadata-plus-cfg-scan",
+})
+
+const scanFeatureSources = async (
+  project: RustProject,
+  config: NormalizedRsDe03Config,
+): Promise<FeatureSourceScan> => {
+  const conditionalSitesByCrate = new Map<string, number>()
+  const firstConditionalFileByCrate = new Map<string, string>()
+  const sourceFilesByCrate = new Map<string, number>()
+  const analyzedSourceFilesByCrate = new Map<string, number>()
+
+  for (const manifest of project.manifests) {
+    if (manifest.packageName === undefined) continue
+    const files = rustFilesUnderManifest(project.sourceFiles, manifest.path)
+    const scan = await scanCrateFeatureSources(files, config.exclude_globs)
+    sourceFilesByCrate.set(manifest.packageName, files.length)
+    conditionalSitesByCrate.set(manifest.packageName, scan.conditionalCompilationSites)
+    analyzedSourceFilesByCrate.set(manifest.packageName, scan.analyzedSourceFiles)
+    if (scan.firstConditionalFile !== undefined) {
+      firstConditionalFileByCrate.set(manifest.packageName, scan.firstConditionalFile)
+    }
+  }
+
+  return {
+    conditionalSitesByCrate,
+    firstConditionalFileByCrate,
+    sourceFilesByCrate,
+    analyzedSourceFilesByCrate,
+  }
+}
+
+const rustFilesUnderManifest = (
+  sourceFiles: ReadonlyArray<string>,
+  manifestPath: string,
+): ReadonlyArray<string> => {
+  const normalizedManifestPath = `${normalizePath(manifestPath)}/`
+  return sourceFiles.filter((file) => normalizePath(file).startsWith(normalizedManifestPath))
+}
+
+const scanCrateFeatureSources = async (
+  files: ReadonlyArray<string>,
+  excludeGlobs: ReadonlyArray<string>,
+): Promise<{
+  readonly conditionalCompilationSites: number
+  readonly analyzedSourceFiles: number
+  readonly firstConditionalFile: string | undefined
+}> => {
+  let conditionalCompilationSites = 0
+  let analyzedSourceFiles = 0
+  let firstConditionalFile: string | undefined
+
+  for (const file of files) {
+    if (isExcluded(file, excludeGlobs)) continue
+    analyzedSourceFiles += 1
+    const fileSiteCount = await countFeatureConditionals(file)
+    conditionalCompilationSites += fileSiteCount
+    if (fileSiteCount > 0 && firstConditionalFile === undefined) {
+      firstConditionalFile = file
+    }
+  }
+
+  return { conditionalCompilationSites, analyzedSourceFiles, firstConditionalFile }
+}
+
+const summarizeFeatureCrate = (
+  pkg: CargoMetadataPackage,
+  sourceScan: FeatureSourceScan,
+  propagationByCrate: Map<string, ReadonlyArray<FeaturePropagation>>,
+): FeatureCrateSummary => {
+  const propagations = featurePropagationsForPackage(pkg)
+  propagationByCrate.set(pkg.name, propagations)
+  return {
+    crate: pkg.name,
+    featureCount: Object.keys(pkg.features).length,
+    conditionalCompilationSites: sourceScan.conditionalSitesByCrate.get(pkg.name) ?? 0,
+    propagatedFeatures: propagations.length,
+    manifestPath: pkg.manifestPath,
+    firstConditionalFile: sourceScan.firstConditionalFileByCrate.get(pkg.name),
+  }
+}
+
+const featurePropagationsForPackage = (
+  pkg: CargoMetadataPackage,
+): ReadonlyArray<FeaturePropagation> => {
+  const featureNames = new Set(Object.keys(pkg.features))
+  const dependencyByAlias = cargoDependenciesByAlias(pkg)
+  return Object.entries(pkg.features).flatMap(([feature, enables]) =>
+    enables.flatMap((enable) => {
+      const parsed = parseFeatureEnable(enable, featureNames, dependencyByAlias)
+      if (parsed === undefined) return []
+      return [{
+        crate: pkg.name,
+        feature,
+        dependencyAlias: parsed.dependencyAlias,
+        targetCrate: parsed.targetCrate,
+        targetFeature: parsed.targetFeature,
+        optional: parsed.optional,
+        activationKind: parsed.activationKind,
+      }]
+    }),
+  )
+}
+
+const loadedFeatureFlagOutput = (
+  packageCount: number,
+  crates: ReadonlyArray<FeatureCrateSummary>,
+  propagationByCrate: ReadonlyMap<string, ReadonlyArray<FeaturePropagation>>,
+  sourceScan: FeatureSourceScan,
+  config: NormalizedRsDe03Config,
+): RsDe03Output => ({
+  crates,
+  propagationByCrate,
+  totalConditionalCompilationSites: sumCrateField(crates, "conditionalCompilationSites"),
+  metadataStatus: "loaded",
+  packageCount,
+  sourceFileCount: sumMapValues(sourceScan.sourceFilesByCrate),
+  analyzedSourceFileCount: sumMapValues(sourceScan.analyzedSourceFilesByCrate),
+  featureDefinitionCount: sumCrateField(crates, "featureCount"),
+  propagationCount: sumCrateField(crates, "propagatedFeatures"),
+  warnFeatureCount: config.warn_feature_count,
+  diagnosticLimit: config.top_n_diagnostics,
+  analysisMode: "cargo-metadata-plus-cfg-scan",
+})
+
+const sumCrateField = (
+  crates: ReadonlyArray<FeatureCrateSummary>,
+  field: "conditionalCompilationSites" | "featureCount" | "propagatedFeatures",
+): number => crates.reduce((sum, entry) => sum + entry[field], 0)
+
+const sumMapValues = (values: ReadonlyMap<string, number>): number =>
+  [...values.values()].reduce((sum, count) => sum + count, 0)
 
 const normalizeRsDe03Config = (config: RsDe03Config): NormalizedRsDe03Config => ({
   exclude_globs: config.exclude_globs,
