@@ -73,8 +73,7 @@ export const parseSamplingMode = (
   ) {
     return raw
   }
-  fail(`--sample must be one of: auto, full, merge-only, adaptive-delta (got ${raw})`)
-  throw new Error("unreachable")
+  return fail(`--sample must be one of: auto, full, merge-only, adaptive-delta (got ${raw})`)
 }
 
 export const parseCategory = (raw: string | undefined): Category | undefined => {

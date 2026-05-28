@@ -34,6 +34,10 @@ export class SignalFactorPolicyTag extends Context.Tag(
   "@skastr0/pulsar-core/SignalFactorPolicy",
 )<SignalFactorPolicyTag, SignalFactorPolicyContext>() {}
 
+class SignalFactorDefinitionValidationError extends Error {
+  override readonly name = "SignalFactorDefinitionValidationError"
+}
+
 export const makeSignalFactorPolicyContext = (
   signal: AnySignal,
   vector?: PulsarVector,
@@ -179,7 +183,7 @@ export const assertValidFactorDefinitions = (
   const issues = validateFactorDefinitions(definitions)
   if (issues.length === 0) return
   const detail = issues.map((issue) => `${issue.path}: ${issue.message}`).join("; ")
-  throw new Error(`Invalid signal factor definitions: ${detail}`)
+  throw new SignalFactorDefinitionValidationError(`Invalid signal factor definitions: ${detail}`)
 }
 
 export const makeFactorEntry = (

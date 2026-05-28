@@ -36,8 +36,31 @@ interface LoadedSignalBucket {
 
 const RECORD_FILE = "entries.jsonl"
 
+class DiskBackedCacheError extends Error {
+  override readonly name = "DiskBackedCacheError"
+
+  constructor(operation: string, cause: unknown) {
+    super(`Disk cache ${operation} failed: ${String(cause)}`)
+  }
+}
+
+type CacheRecordLineRead =
+  | {
+      readonly status: "loaded"
+      readonly record: LoadedCacheRecord
+    }
+  | {
+      readonly status: "malformed"
+      readonly error: DiskBackedCacheError
+    }
+
 const recordPathFor = (cacheDir: string, signalId: string): string =>
   join(cacheDir, signalId, RECORD_FILE)
+
+const createInitialBucket = (signalId: string): LoadedSignalBucket => ({
+  signalId,
+  records: new Map(),
+})
 
 const serializeRecord = (record: PersistedCacheRecord): string => JSON.stringify(record)
 
@@ -56,6 +79,29 @@ const loadKnownSignalIds = async (cacheDir: string): Promise<Set<string>> => {
   )
 }
 
+const isMissingCacheFileError = (error: unknown): boolean =>
+  typeof error === "object" &&
+  error !== null &&
+  "code" in error &&
+  (error as { readonly code?: unknown }).code === "ENOENT"
+
+const malformedCacheRecordLine = (line: string, cause: unknown): CacheRecordLineRead => ({
+  status: "malformed",
+  error: new DiskBackedCacheError(`read malformed record line (${line.length} bytes)`, cause),
+})
+
+const parseCacheRecordLine = (line: string): CacheRecordLineRead => {
+  try {
+    const parsed = JSON.parse(line) as PersistedCacheRecord
+    return {
+      status: "loaded",
+      record: toLoadedRecord(parsed),
+    }
+  } catch (error) {
+    return malformedCacheRecordLine(line, error)
+  }
+}
+
 const loadBucket = async (
   cacheDir: string,
   signalId: string,
@@ -64,22 +110,22 @@ const loadBucket = async (
   let raw = ""
   try {
     raw = await readFile(path, "utf8")
-  } catch {
-    return { signalId, records: new Map() }
+  } catch (error) {
+    if (isMissingCacheFileError(error)) return createInitialBucket(signalId)
+    throw new DiskBackedCacheError("read bucket file", error)
   }
 
   const records = new Map<string, LoadedCacheRecord>()
   for (const line of raw.split("\n")) {
     const trimmed = line.trim()
     if (trimmed.length === 0) continue
-    try {
-      const parsed = JSON.parse(trimmed) as PersistedCacheRecord
-      const keyString = cacheKeyString(parsed.key)
-      if (!records.has(keyString)) {
-        records.set(keyString, toLoadedRecord(parsed))
-      }
-    } catch {
-      // Ignore malformed lines rather than failing the entire cache.
+    const loaded = parseCacheRecordLine(trimmed)
+    if (loaded.status === "malformed") {
+      continue
+    }
+    const keyString = cacheKeyString(loaded.record.key)
+    if (!records.has(keyString)) {
+      records.set(keyString, loaded.record)
     }
   }
   return { signalId, records }
@@ -136,8 +182,17 @@ const updateRecordTimestamp = (
   lastAccessedAt: at,
 })
 
+const runDiskCacheOperation = <A>(
+  operation: string,
+  evaluate: () => Promise<A>,
+): Effect.Effect<A> =>
+  Effect.tryPromise({
+    try: evaluate,
+    catch: (cause) => new DiskBackedCacheError(operation, cause),
+  }).pipe(Effect.catchAllCause((cause) => Effect.die(cause)))
+
 const makeDiskBackedCache = (config?: CacheConfig): Effect.Effect<SignalCache> =>
-  Effect.tryPromise(async () => {
+  runDiskCacheOperation("initialize", async () => {
     const cacheDir = config?.cacheDir ?? resolvePulsarRepoStatePath(process.cwd(), "cache")
     const maxSizeBytes = config?.maxSizeBytes ?? DEFAULT_CACHE_MAX_SIZE_BYTES
     const knownSignalIds = await loadKnownSignalIds(cacheDir)
@@ -185,7 +240,7 @@ const makeDiskBackedCache = (config?: CacheConfig): Effect.Effect<SignalCache> =
       return created
     }
 
-    const ensureFullIndex = async (): Promise<void> => {
+    const loadFullIndex = async (): Promise<void> => {
       if (totalBytesKnown) return
       for (const signalId of knownSignalIds) {
         await ensureBucket(signalId)
@@ -196,18 +251,18 @@ const makeDiskBackedCache = (config?: CacheConfig): Effect.Effect<SignalCache> =
 
     return {
       get: <A>(key: CacheKey) =>
-        Effect.tryPromise(async () => {
+        runDiskCacheOperation("get", async () => {
           const bucket = await ensureBucket(key.signalId)
           const entry = bucket?.records.get(cacheKeyString(key))
           if (entry === undefined) return Option.none<A>()
           const next = updateRecordTimestamp(entry, new Date().toISOString())
           bucket.records.set(cacheKeyString(key), next)
           return Option.some(next.entry.value as A)
-        }).pipe(Effect.catchAllCause((cause) => Effect.die(cause))),
+        }),
       set: <A>(key: CacheKey, value: A) =>
-        Effect.tryPromise(() =>
+        runDiskCacheOperation("set", () =>
           withWriteQueue(async () => {
-            await ensureFullIndex()
+            await loadFullIndex()
             const now = new Date().toISOString()
             const bucket = await ensureBucket(key.signalId)
             const keyString = cacheKeyString(key)
@@ -225,9 +280,9 @@ const makeDiskBackedCache = (config?: CacheConfig): Effect.Effect<SignalCache> =
             totalBytes += loaded.bytes
             await flushBucket(cacheDir, bucket)
           }),
-        ).pipe(Effect.catchAllCause((cause) => Effect.die(cause))),
+        ),
       getTiered: <A>(key: CacheKey, options?: CacheReadOptions) =>
-        Effect.tryPromise(async () => {
+        runDiskCacheOperation("getTiered", async () => {
           const bucket = await ensureBucket(key.signalId)
           const record = bucket?.records.get(cacheKeyString(key))
           if (record === undefined) {
@@ -242,11 +297,11 @@ const makeDiskBackedCache = (config?: CacheConfig): Effect.Effect<SignalCache> =
             updateRecordTimestamp(record, new Date().toISOString()),
           )
           return evaluated
-        }).pipe(Effect.catchAllCause((cause) => Effect.die(cause))),
+        }),
       setTiered: <A>(key: CacheKey, value: A, options?: CacheWriteOptions) =>
-        Effect.tryPromise(() =>
+        runDiskCacheOperation("setTiered", () =>
           withWriteQueue(async () => {
-            await ensureFullIndex()
+            await loadFullIndex()
             const bucket = await ensureBucket(key.signalId)
             const keyString = cacheKeyString(key)
             const existing = bucket.records.get(keyString)
@@ -280,17 +335,17 @@ const makeDiskBackedCache = (config?: CacheConfig): Effect.Effect<SignalCache> =
               ),
             )
           }),
-        ).pipe(Effect.catchAllCause((cause) => Effect.die(cause))),
-      size: Effect.tryPromise(async () => {
-        await ensureFullIndex()
+        ),
+      size: runDiskCacheOperation("size", async () => {
+        await loadFullIndex()
         return [...buckets.values()].reduce((sum, bucket) => sum + bucket.records.size, 0)
-      }).pipe(Effect.catchAllCause((cause) => Effect.die(cause))),
-      totalBytes: Effect.tryPromise(async () => {
-        await ensureFullIndex()
+      }),
+      totalBytes: runDiskCacheOperation("totalBytes", async () => {
+        await loadFullIndex()
         return totalBytes
-      }).pipe(Effect.catchAllCause((cause) => Effect.die(cause))),
+      }),
     }
-  }).pipe(Effect.catchAllCause((cause) => Effect.die(cause)))
+  })
 
 export const DiskBackedCacheLayer = (config?: CacheConfig): Layer.Layer<SignalCacheTag> =>
   Layer.effect(SignalCacheTag, makeDiskBackedCache(config))

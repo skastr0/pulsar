@@ -87,10 +87,14 @@ const STUB_KINDS = new Set<StubKind>([
   "mock-return",
 ])
 
+class TsSl04FactorDefinitionError extends Error {
+  override readonly name = "TsSl04FactorDefinitionError"
+}
+
 export const factorDefinitionByPath = (path: string): SignalFactorDefinition => {
   const definition = tsSl04FactorDefinitions.find((item) => item.path === path)
   if (definition === undefined) {
-    throw new Error(`Unknown TS-SL-04 factor path: ${path}`)
+    throw new TsSl04FactorDefinitionError(`Unknown TS-SL-04 factor path: ${path}`)
   }
   return definition
 }

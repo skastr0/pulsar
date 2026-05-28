@@ -26,6 +26,10 @@ interface WorkingCanonicalTerm {
   readonly provenance: Array<GlossaryProvenance>
 }
 
+class GlossaryDraftValidationError extends Error {
+  override readonly name = "GlossaryDraftValidationError"
+}
+
 export const buildCandidateTerms = (
   identifiers: ReadonlyArray<IdentifierOccurrence>,
 ): GlossaryDraft["candidate_terms"] => {
@@ -107,7 +111,7 @@ export const buildCanonicalGlossary = (draft: GlossaryDraft): ReturnType<typeof 
   for (const candidate of draft.candidate_terms) {
     const decision = candidate.decision
     if (decision === undefined) {
-      throw new Error(
+      throw new GlossaryDraftValidationError(
         [
           `Glossary draft still has undecided terms; first missing decision: '${candidate.term}'.`,
           `Edit the Pulsar state draft ${GLOSSARY_DRAFT_STATE_PATH} and set decision.action to accept, reject, or merge.`,
@@ -130,10 +134,10 @@ export const buildCanonicalGlossary = (draft: GlossaryDraft): ReturnType<typeof 
 
     const target = decision.merge_into?.trim()
     if (target === undefined || target.length === 0) {
-      throw new Error(`Candidate term '${candidate.term}' must set decision.merge_into.`)
+      throw new GlossaryDraftValidationError(`Candidate term '${candidate.term}' must set decision.merge_into.`)
     }
     if (target === candidate.term) {
-      throw new Error(`Candidate term '${candidate.term}' cannot merge into itself.`)
+      throw new GlossaryDraftValidationError(`Candidate term '${candidate.term}' cannot merge into itself.`)
     }
 
     const entry = getOrCreateCanonicalTerm(canonicalTerms, target)
