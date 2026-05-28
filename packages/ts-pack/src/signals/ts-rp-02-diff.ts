@@ -84,6 +84,45 @@ export const parseGitDiff = (
   }
 }
 
+export const includeChangedHunkOnlyFilesInDiff = (
+  worktreePath: string,
+  numstat: string,
+  diff: string,
+  changedHunks: SignalContext["changedHunks"],
+  config: TsRp02Config,
+): { readonly numstat: string; readonly diff: string } => {
+  const diffFiles = filesFromNumstat(worktreePath, numstat)
+  const syntheticFiles = [
+    ...new Set(
+      changedHunks
+        .map((hunk) => resolveChangedHunkPath(worktreePath, hunk.file))
+        .filter((file) =>
+          !diffFiles.has(file) &&
+          isTypeScriptSourcePath(file) &&
+          !matchesSourcePath(file, worktreePath, config.exclude_globs),
+        ),
+    ),
+  ].sort((left, right) => left.localeCompare(right))
+
+  if (syntheticFiles.length === 0) return { numstat, diff }
+
+  const syntheticNumstat: Array<string> = []
+  const syntheticDiff: Array<string> = []
+  for (const file of syntheticFiles) {
+    if (!existsSync(file)) continue
+    const content = readFileSync(file, "utf8")
+    const relativeFile = relative(worktreePath, file).replaceAll("\\", "/")
+    const lineCount = countTextLines(content)
+    syntheticNumstat.push(`${lineCount}\t0\t${relativeFile}`)
+    syntheticDiff.push(syntheticNewFileDiff(relativeFile, content, lineCount))
+  }
+
+  return {
+    numstat: joinDiffText(numstat, syntheticNumstat.join("\n")),
+    diff: joinDiffText(diff, syntheticDiff.join("\n")),
+  }
+}
+
 export const fromChangedHunks = (
   project: import("ts-morph").Project,
   packages: ReadonlyArray<import("../discovery.js").PackageInfo>,
@@ -157,6 +196,46 @@ const resolveChangedHunkPath = (worktreePath: string, file: string): string =>
 
 const resolveSourcePath = (worktreePath: string, file: string): string =>
   isAbsolute(file) ? file : resolve(worktreePath, file)
+
+const filesFromNumstat = (worktreePath: string, numstat: string): ReadonlySet<string> => {
+  const files = new Set<string>()
+  for (const line of numstat.split("\n")) {
+    const match = /^(\d+|-)\t(\d+|-)\t(.+)$/.exec(line.trim())
+    if (match !== null) files.add(resolveSourcePath(worktreePath, match[3]!))
+  }
+  return files
+}
+
+const syntheticNewFileDiff = (
+  relativeFile: string,
+  content: string,
+  lineCount: number,
+): string => {
+  const lines = contentLines(content)
+  return [
+    `diff --git a/${relativeFile} b/${relativeFile}`,
+    "new file mode 100644",
+    "index 0000000..0000000",
+    "--- /dev/null",
+    `+++ b/${relativeFile}`,
+    `@@ -0,0 +1,${lineCount} @@`,
+    ...lines.map((line) => `+${line}`),
+  ].join("\n")
+}
+
+const contentLines = (content: string): ReadonlyArray<string> => {
+  if (content.length === 0) return []
+  const lines = content.split(/\r\n|\r|\n/)
+  return content.endsWith("\n") || content.endsWith("\r") ? lines.slice(0, -1) : lines
+}
+
+const countTextLines = (content: string): number => contentLines(content).length
+
+const joinDiffText = (left: string, right: string): string => {
+  if (left.trim().length === 0) return right
+  if (right.trim().length === 0) return left
+  return `${left.replace(/\n*$/u, "")}\n${right.replace(/^\n*/u, "")}`
+}
 
 const classifySizeCategory = (
   totalLines: number,

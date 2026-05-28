@@ -743,7 +743,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       factorLedger:
         "ts-rp-02.test.ts: registered pack signal emits config.exclude_globs, config.test_globs, config.boundary_rules, config.top_n_diagnostics, and pr_size policy factor entries with default/module attribution and score roles.",
       cacheSemantics:
-        "ts-rp-02.test.ts and pack.test.ts: wrapped pack cache version includes the TS-RP-02 semantic cacheVersion after diagnostic-limit handling, normalized hunk/exclude paths, boundary rules, finite-safe policy output, deterministic ordering, TypeScript module extension coverage, package-local alias resolution, and added internal-import edge semantics changed.",
+        "ts-rp-02.test.ts and pack.test.ts: wrapped pack cache version includes the TS-RP-02 semantic cacheVersion after diagnostic-limit handling, normalized hunk/exclude paths, boundary rules, finite-safe policy output, deterministic ordering, TypeScript module extension coverage, package-local alias resolution, added internal-import edge semantics, and untracked worktree diff coverage changed.",
       gitContext:
         "ts-rp-02.test.ts: tests run through TsProjectLayer and SignalContextTag, proving changed-hunk fallback, dependencyDeltaMode unavailable for hunk-only evidence, committed range diffs, upstream branch range selection, clean range not_applicable behavior, and non-git fallback behavior.",
       calibration:

@@ -8,7 +8,12 @@ import type { Project } from "ts-morph"
 import { TsProjectTag, TsPackageInfoTag } from "../ts-project.js"
 import type { PackageInfo } from "../discovery.js"
 import { formatLargestFiles } from "./ts-rp-02-diagnostics.js"
-import { fromChangedHunks, parseGitDiff, TS_DIFF_PATHSPECS } from "./ts-rp-02-diff.js"
+import {
+  fromChangedHunks,
+  includeChangedHunkOnlyFilesInDiff,
+  parseGitDiff,
+  TS_DIFF_PATHSPECS,
+} from "./ts-rp-02-diff.js"
 import { applyPrSizePolicy } from "./ts-rp-02-policy.js"
 
 const BoundaryRuleSchema = Schema.Struct({
@@ -93,7 +98,7 @@ export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackage
   tier: 1,
   category: "review-pain",
   kind: "structural",
-  cacheVersion: "branch-range-factor-policy-diagnostic-limit-package-import-edges-v2",
+  cacheVersion: "branch-range-factor-policy-diagnostic-limit-package-import-edges-untracked-v1",
   cacheDependencies: ["git-revision-context"],
   configSchema: TsRp02Config,
   defaultConfig: DEFAULT_TS_RP_02_CONFIG,
@@ -336,7 +341,18 @@ const parseDiffRange = async (
   const rangeArg = range === undefined ? [] : [range]
   const numstat = await git.raw(["diff", "--numstat", "--no-renames", ...rangeArg, "--", ...TS_DIFF_PATHSPECS])
   const diff = await git.raw(["diff", "--unified=0", "--no-renames", ...rangeArg, "--", ...TS_DIFF_PATHSPECS])
-  return parseGitDiff(project, packages, context.worktreePath, numstat, diff, diffMode, config)
+  const withChangedHunkOnlyFiles = diffMode === "git-working-tree"
+    ? includeChangedHunkOnlyFilesInDiff(context.worktreePath, numstat, diff, context.changedHunks, config)
+    : { numstat, diff }
+  return parseGitDiff(
+    project,
+    packages,
+    context.worktreePath,
+    withChangedHunkOnlyFiles.numstat,
+    withChangedHunkOnlyFiles.diff,
+    diffMode,
+    config,
+  )
 }
 
 const resolveBranchDiffRange = async (

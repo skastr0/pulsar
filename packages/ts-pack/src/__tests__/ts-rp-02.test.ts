@@ -207,7 +207,7 @@ describe("TS-RP-02 PR size and dependency delta", () => {
       tier: 1,
       category: "review-pain",
       kind: "structural",
-      cacheVersion: "branch-range-factor-policy-diagnostic-limit-package-import-edges-v2",
+      cacheVersion: "branch-range-factor-policy-diagnostic-limit-package-import-edges-untracked-v1",
       inputs: [],
     })
     expect(decoded).toEqual(TsRp02.defaultConfig)
@@ -258,14 +258,6 @@ describe("TS-RP-02 PR size and dependency delta", () => {
   }, 120_000)
 
   test("computes basic PR metrics via changed hunks fallback", async () => {
-    await repo.write(
-      "file1.ts",
-      `
-export function foo(): string { return "hello"; }
-export function bar(): number { return 42; }
-`,
-    )
-
     const out = await run(repo, TsRp02.defaultConfig, [
       { file: "file1.ts", oldStart: 1, oldLines: 0, newStart: 1, newLines: 3 },
     ])
@@ -879,6 +871,31 @@ export function useHelper(): string { return helper() + extra() + legacy(); }
     expect(out.linesAdded).toBe(10)
   }, 120_000)
 
+  test("worktree diff includes untracked TypeScript files alongside tracked changes", async () => {
+    await repo.write("src/tracked.ts", "export const tracked = 1\n")
+    git(repo.root, ["add", "."])
+    git(repo.root, ["commit", "-q", "-m", "Add tracked source"])
+
+    await repo.write("src/tracked.ts", "export const tracked = 2\n")
+    await repo.write("src/untracked.ts", "export const untracked = 1\n")
+
+    const out = await computeWithContext(repo, TsRp02.defaultConfig, {
+      gitSha: "HEAD",
+      changedHunks: [
+        { file: "src/tracked.ts", oldStart: 1, oldLines: 1, newStart: 1, newLines: 1 },
+        { file: "src/untracked.ts", oldStart: 0, oldLines: 0, newStart: 1, newLines: 1 },
+      ],
+    })
+
+    expect(out.diffMode).toBe("git-working-tree")
+    expect(out.filesChanged.map((file) => file.replace(repo.root, ""))).toEqual([
+      "/src/tracked.ts",
+      "/src/untracked.ts",
+    ])
+    expect(out.linesAdded).toBe(2)
+    expect(out.linesDeleted).toBe(1)
+  }, 120_000)
+
   test("missing and empty diff evidence expose applicability explicitly", async () => {
     const nonGitRepo = await createTempRepo("ts-rp-02-nongit-")
     try {
@@ -908,8 +925,7 @@ export function useHelper(): string { return helper() + extra() + legacy(); }
   }, 120_000)
 
   test("changed hunk fallback normalizes dot-relative and absolute paths and sorts files", async () => {
-    const first = await repo.write("src/a.ts", "export const a = 1\n")
-    await repo.write("src/b.ts", "export const b = 1\n")
+    const first = `${repo.root}/src/a.ts`
 
     const out = await run(repo, TsRp02.defaultConfig, [
       { file: "src/b.ts", oldStart: 1, oldLines: 2, newStart: 1, newLines: 3 },
