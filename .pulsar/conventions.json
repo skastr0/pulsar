@@ -47,7 +47,8 @@
       "visibility": "public-api",
       "allowed_imports": [
         "@skastr0/pulsar-core",
-        "effect"
+        "effect",
+        "yaml"
       ]
     },
     "packages/ts-pack": {
