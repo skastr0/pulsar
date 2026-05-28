@@ -3,6 +3,7 @@ import { dirname, join, relative } from "node:path"
 import { ROOT_PACKAGE_NAME, sortRootFirstPackages } from "@skastr0/pulsar-shared-signals"
 import { Effect } from "effect"
 import { simpleGit } from "simple-git"
+import { mapWithConcurrency } from "./concurrency.js"
 import { nearestPackageForPath } from "./package-ownership.js"
 import { asStringRecord } from "./string-record.js"
 
@@ -207,11 +208,13 @@ const getGitTrackedFiles = (rootDir: string): Effect.Effect<ReadonlyArray<string
         .trim()
         .split("\n")
         .filter((f) => f.length > 0)
-      const existing = await Promise.all(
-        files.map(async (file) => ({
+      const existing = await mapWithConcurrency(
+        files,
+        64,
+        async (file) => ({
           file,
           exists: await fileExists(join(rootDir, file)),
-        })),
+        }),
       )
       return existing.flatMap((entry) => entry.exists ? [entry.file] : [])
     },

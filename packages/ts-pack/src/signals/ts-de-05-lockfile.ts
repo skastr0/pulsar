@@ -71,16 +71,12 @@ const resolveLockfile = async (
     return { kind: "pnpm", path: pnpmLockPath }
   }
 
-  const unsupported = (
-    await Promise.all(
-      UNSUPPORTED_LOCKFILES.map(async (filename) => ((await exists(join(worktreePath, filename))) ? filename : undefined)),
-    )
-  ).reduce<Array<string>>((acc, filename) => {
-    if (filename !== undefined) {
-      acc.push(filename)
+  const unsupported: Array<string> = []
+  for (const filename of UNSUPPORTED_LOCKFILES) {
+    if (await exists(join(worktreePath, filename))) {
+      unsupported.push(filename)
     }
-    return acc
-  }, [])
+  }
 
   if (unsupported.length > 0) {
     return { kind: "unsupported", files: unsupported }

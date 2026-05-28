@@ -3,6 +3,7 @@ import { existsSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import { isAbsolute, join, relative, resolve } from "node:path"
 import { Schema } from "effect"
+import { mapWithConcurrency } from "./concurrency.js"
 
 export const DOMAIN_CONSTRUCTION_REFERENCE_DATA_KEY = "domain-construction" as const
 export const CANONICAL_DOMAIN_CONSTRUCTION_RELATIVE_PATH =
@@ -517,8 +518,10 @@ const collectEvidenceFacts = async (
   sourceHashes: Readonly<Record<string, string>>,
   symbolMode: EvidenceSymbolMode,
 ): Promise<ReadonlyArray<DomainConstructionEvidenceFact>> =>
-  Promise.all(
-    evidence.map(async (item) => {
+  mapWithConcurrency(
+    evidence,
+    8,
+    async (item) => {
       const path = normalizePath(item.path)
       const content = await readSource(repoRoot, path)
       const syntax = content === undefined ? undefined : analyzeSourceSyntax(content)
@@ -532,7 +535,7 @@ const collectEvidenceFacts = async (
         ...(sourceHashes[path] === undefined ? {} : { hash: sourceHashes[path] }),
         matchedSymbol,
       }
-    }),
+    },
   )
 
 const currentSourceHashes = async (

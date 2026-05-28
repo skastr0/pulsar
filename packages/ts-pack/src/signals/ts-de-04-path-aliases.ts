@@ -1,6 +1,7 @@
 import { readFile, readdir } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
 import type { PackageInfo } from "../discovery.js"
+import { mapWithConcurrency } from "../concurrency.js"
 
 export type TsconfigPathAlias = {
   readonly pattern: string
@@ -16,11 +17,13 @@ type TsconfigAliasConfig = {
 export const readPathAliasesByPackage = async (
   packages: ReadonlyArray<PackageInfo>,
 ): Promise<ReadonlyMap<string, ReadonlyArray<TsconfigPathAlias>>> => {
-  const entries = await Promise.all(
-    packages.map(async (pkg): Promise<[string, ReadonlyArray<TsconfigPathAlias>]> => [
+  const entries = await mapWithConcurrency(
+    packages,
+    8,
+    async (pkg): Promise<[string, ReadonlyArray<TsconfigPathAlias>]> => [
       pkg.path,
       await readPathAliases(pkg.tsconfigPath),
-    ]),
+    ],
   )
   return new Map(entries)
 }

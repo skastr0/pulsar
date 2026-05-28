@@ -1,6 +1,7 @@
 import { readdir } from "node:fs/promises"
 import { join } from "node:path"
 import { Project, type SourceFile } from "ts-morph"
+import { mapWithConcurrency } from "../concurrency.js"
 import type { PackageInfo } from "../discovery.js"
 import { isExcluded } from "./shared-globs.js"
 
@@ -102,8 +103,10 @@ const packageRootDependencyFiles = async (
   existingPaths: ReadonlySet<string>,
 ): Promise<ReadonlyArray<string>> => {
   const dependencyFilenames = new Set<string>(PACKAGE_ROOT_DEPENDENCY_FILES)
-  const existing = await Promise.all(
-    activePackages.map(async (pkg) => {
+  const existing = await mapWithConcurrency(
+    activePackages,
+    8,
+    async (pkg) => {
       try {
         const entries = await readdir(pkg.path, { withFileTypes: true })
         return entries
@@ -113,7 +116,7 @@ const packageRootDependencyFiles = async (
       } catch {
         return []
       }
-    }),
+    },
   )
   return existing.flat().sort((left, right) => left.localeCompare(right))
 }

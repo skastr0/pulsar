@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises"
 import { join, relative, sep } from "node:path"
 import type { PackageInfo, PackageManifest } from "../discovery.js"
+import { mapWithConcurrency } from "../concurrency.js"
 import { dependencyNamesOf, normalizePackageSpecifier } from "./shared-workspace.js"
 import type { BundledPackageInfo } from "./ts-de-04-model.js"
 
@@ -35,11 +36,13 @@ const hasBundledCliBuildPipeline = (manifest: PackageManifest): boolean => {
 export const readBundledInfoByPackage = async (
   packages: ReadonlyArray<PackageInfo>,
 ): Promise<ReadonlyMap<string, BundledPackageInfo>> => {
-  const entries = await Promise.all(
-    packages.map(async (pkg): Promise<[string, BundledPackageInfo]> => [
+  const entries = await mapWithConcurrency(
+    packages,
+    8,
+    async (pkg): Promise<[string, BundledPackageInfo]> => [
       pkg.path,
       await readBundledPackageInfo(pkg.path),
-    ]),
+    ],
   )
   return new Map(entries)
 }
