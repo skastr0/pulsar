@@ -11,6 +11,9 @@ import {
   type DefaultClause,
   type Expression,
   type Node as TsMorphNode,
+  type Project,
+  type SourceFile,
+  type SwitchStatement,
   type Type,
 } from "ts-morph"
 import { TsProjectTag } from "../ts-project.js"
@@ -112,77 +115,7 @@ export const TsLd08: Signal<TsLd08Config, TsLd08Output, TsProjectTag> = {
     Effect.gen(function* () {
       const project = yield* TsProjectTag
       return yield* Effect.try({
-        try: (): TsLd08Output => {
-          const findings: Array<ExhaustivenessErosionFinding> = []
-          let analyzedSwitches = 0
-          let analyzedFiniteSwitches = 0
-
-          for (const sourceFile of project.getSourceFiles()) {
-            const file = sourceFile.getFilePath()
-            if (isExcluded(file, config.exclude_globs)) continue
-            for (const statement of sourceFile.getDescendantsOfKind(SyntaxKind.SwitchStatement)) {
-              analyzedSwitches += 1
-              const clauses = statement.getCaseBlock().getClauses()
-              const caseClauses = clauses.filter(Node.isCaseClause)
-              const caseCount = caseClauses.length
-              const defaultClause = clauses.find(
-                (clause) => clause.getKind() === SyntaxKind.DefaultClause,
-              ) as DefaultClause | undefined
-              const domain = finiteSwitchDomain(statement.getExpression())
-              if (domain === undefined) {
-                continue
-              }
-              analyzedFiniteSwitches += 1
-              if (defaultClause === undefined || caseCount < config.min_case_clauses) {
-                continue
-              }
-              if (isExhaustivenessGuardDefault(defaultClause)) {
-                continue
-              }
-              const handledVariantCount = handledVariantKeys(caseClauses, domain.variantKeys).size
-              const { line, column } = sourceFile.getLineAndColumnAtPos(statement.getStart())
-              findings.push({
-                file,
-                line,
-                column,
-                expression: statement.getExpression().getText(),
-                typeText: domain.typeText,
-                caseCount,
-                variantCount: domain.variantKeys.size,
-                handledVariantCount,
-                unhandledVariantCount: Math.max(0, domain.variantKeys.size - handledVariantCount),
-                defaultText: defaultClause.getText().slice(0, 160),
-              })
-            }
-          }
-
-          return {
-            findings: findings.sort(
-              (left, right) =>
-                right.caseCount - left.caseCount ||
-                right.unhandledVariantCount - left.unhandledVariantCount ||
-                left.file.localeCompare(right.file) ||
-                left.line - right.line ||
-                left.column - right.column,
-            ),
-            analyzedSwitches,
-            analyzedFiniteSwitches,
-            findingCount: findings.length,
-            topDiagnostics: normalizeDiagnosticLimit(config.top_n_diagnostics),
-            compositeConsumers: [
-              "contract safety gap",
-              "boundary trust breach",
-            ],
-            cacheContributors: [
-              "source tree",
-              "config.min_case_clauses",
-              "config.exclude_globs",
-              "config.top_n_diagnostics",
-            ],
-            calibrationSurface: "config.min_case_clauses and config.exclude_globs",
-            enforcementCeiling: ["soft-warning", "trend"],
-          }
-        },
+        try: (): TsLd08Output => computeExhaustivenessErosion(project, config),
         catch: (cause) =>
           new SignalComputeError({
             signalId: "TS-LD-08-exhaustiveness-erosion",
@@ -205,6 +138,137 @@ export const TsLd08: Signal<TsLd08Config, TsLd08Output, TsProjectTag> = {
   outputMetadata: (out) =>
     out.analyzedFiniteSwitches === 0 ? { applicability: "not_applicable" as const } : undefined,
 }
+
+interface ExhaustivenessScanResult {
+  readonly findings: ReadonlyArray<ExhaustivenessErosionFinding>
+  readonly analyzedSwitches: number
+  readonly analyzedFiniteSwitches: number
+}
+
+const computeExhaustivenessErosion = (
+  project: Project,
+  config: TsLd08Config,
+): TsLd08Output => {
+  const scan = project.getSourceFiles()
+    .filter((sourceFile) => !isExcluded(sourceFile.getFilePath(), config.exclude_globs))
+    .map((sourceFile) => scanSourceFile(sourceFile, config))
+    .reduce(mergeScanResults, emptyScanResult())
+  const findings = [...scan.findings].sort(compareFindings)
+
+  return {
+    findings,
+    analyzedSwitches: scan.analyzedSwitches,
+    analyzedFiniteSwitches: scan.analyzedFiniteSwitches,
+    findingCount: findings.length,
+    topDiagnostics: normalizeDiagnosticLimit(config.top_n_diagnostics),
+    compositeConsumers: [
+      "contract safety gap",
+      "boundary trust breach",
+    ],
+    cacheContributors: [
+      "source tree",
+      "config.min_case_clauses",
+      "config.exclude_globs",
+      "config.top_n_diagnostics",
+    ],
+    calibrationSurface: "config.min_case_clauses and config.exclude_globs",
+    enforcementCeiling: ["soft-warning", "trend"],
+  }
+}
+
+const scanSourceFile = (
+  sourceFile: SourceFile,
+  config: TsLd08Config,
+): ExhaustivenessScanResult => {
+  const findings: Array<ExhaustivenessErosionFinding> = []
+  let analyzedFiniteSwitches = 0
+  const switches = sourceFile.getDescendantsOfKind(SyntaxKind.SwitchStatement)
+
+  for (const statement of switches) {
+    const { finding, finite } = findingFromSwitch(sourceFile, statement, config)
+    if (finite) analyzedFiniteSwitches += 1
+    if (finding !== undefined) findings.push(finding)
+  }
+
+  return {
+    findings,
+    analyzedSwitches: switches.length,
+    analyzedFiniteSwitches,
+  }
+}
+
+const findingFromSwitch = (
+  sourceFile: SourceFile,
+  statement: SwitchStatement,
+  config: TsLd08Config,
+): { readonly finding?: ExhaustivenessErosionFinding; readonly finite: boolean } => {
+  const domain = finiteSwitchDomain(statement.getExpression())
+  if (domain === undefined) return { finite: false }
+
+  const clauses = statement.getCaseBlock().getClauses()
+  const caseClauses = clauses.filter(Node.isCaseClause)
+  const defaultClause = clauses.find(Node.isDefaultClause)
+  if (
+    defaultClause === undefined ||
+    caseClauses.length < config.min_case_clauses ||
+    isExhaustivenessGuardDefault(defaultClause)
+  ) {
+    return { finite: true }
+  }
+
+  return {
+    finite: true,
+    finding: switchFinding(sourceFile, statement, caseClauses, defaultClause, domain),
+  }
+}
+
+const switchFinding = (
+  sourceFile: SourceFile,
+  statement: SwitchStatement,
+  caseClauses: ReadonlyArray<CaseClause>,
+  defaultClause: DefaultClause,
+  domain: FiniteSwitchDomain,
+): ExhaustivenessErosionFinding => {
+  const handledVariantCount = handledVariantKeys(caseClauses, domain.variantKeys).size
+  const { line, column } = sourceFile.getLineAndColumnAtPos(statement.getStart())
+  return {
+    file: sourceFile.getFilePath(),
+    line,
+    column,
+    expression: statement.getExpression().getText(),
+    typeText: domain.typeText,
+    caseCount: caseClauses.length,
+    variantCount: domain.variantKeys.size,
+    handledVariantCount,
+    unhandledVariantCount: Math.max(0, domain.variantKeys.size - handledVariantCount),
+    defaultText: defaultClause.getText().slice(0, 160),
+  }
+}
+
+const emptyScanResult = (): ExhaustivenessScanResult => ({
+  findings: [],
+  analyzedSwitches: 0,
+  analyzedFiniteSwitches: 0,
+})
+
+const mergeScanResults = (
+  left: ExhaustivenessScanResult,
+  right: ExhaustivenessScanResult,
+): ExhaustivenessScanResult => ({
+  findings: [...left.findings, ...right.findings],
+  analyzedSwitches: left.analyzedSwitches + right.analyzedSwitches,
+  analyzedFiniteSwitches: left.analyzedFiniteSwitches + right.analyzedFiniteSwitches,
+})
+
+const compareFindings = (
+  left: ExhaustivenessErosionFinding,
+  right: ExhaustivenessErosionFinding,
+): number =>
+  right.caseCount - left.caseCount ||
+  right.unhandledVariantCount - left.unhandledVariantCount ||
+  left.file.localeCompare(right.file) ||
+  left.line - right.line ||
+  left.column - right.column
 
 interface FiniteSwitchDomain {
   readonly typeText: string
