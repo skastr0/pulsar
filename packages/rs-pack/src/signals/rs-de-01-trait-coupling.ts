@@ -1,8 +1,5 @@
-import {
-  makeFactorEntry,
-  makeFactorLedger,
-  type SignalFactorLedger,
-} from "@skastr0/pulsar-core/factors"
+import { type SignalFactorLedger } from "@skastr0/pulsar-core/factors"
+import { makeDefaultSignalFactorLedger } from "./shared-factor-ledger.js"
 import {
   type Diagnostic,
   type Signal,
@@ -23,6 +20,7 @@ import {
   resolveRustFileScope,
   walkAttributedNodes,
 } from "./shared-rust-ast.js"
+import { rustAnalysisOutputMetadata } from "./shared-applicability.js"
 import { isExcluded } from "./shared-globs.js"
 
 const RsDe01Config = Schema.Struct({
@@ -81,7 +79,7 @@ interface RsDe01Output {
 
 const DEFAULT_TOP_N_DIAGNOSTICS = 10
 
-const RsDe01FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
+const RS_DE_01_FACTOR_DEFINITIONS: ReadonlyArray<SignalFactorDefinition> = [
   {
     path: "config.exclude_globs",
     title: "Config exclude globs",
@@ -107,7 +105,7 @@ export const RsDe01: Signal<RsDe01Config, RsDe01Output, RustProjectTag> = {
   kind: "structural",
   cacheVersion: "trait-coupling-config-applicability-diagnostics-v1",
   configSchema: RsDe01Config,
-  factorDefinitions: RsDe01FactorDefinitions,
+  factorDefinitions: RS_DE_01_FACTOR_DEFINITIONS,
   defaultConfig: {
     exclude_globs: [...DEFAULT_RUST_EXCLUDE_GLOBS],
     top_n_diagnostics: DEFAULT_TOP_N_DIAGNOSTICS,
@@ -294,15 +292,12 @@ export const RsDe01: Signal<RsDe01Config, RsDe01Output, RustProjectTag> = {
         }
       })
   },
-  outputMetadata: (out) => {
-    if (out.sourceFileCount === 0) {
-      return { applicability: "insufficient_evidence" as const }
-    }
-    if (out.analyzedFileCount === 0 || out.totalTraitImpls === 0) {
-      return { applicability: "not_applicable" as const }
-    }
-    return undefined
-  },
+  outputMetadata: (out) =>
+    rustAnalysisOutputMetadata({
+      sourceFileCount: out.sourceFileCount,
+      analyzedItemCount: out.analyzedFileCount,
+      evidenceItemCount: out.totalTraitImpls,
+    }),
   factorLedger: () => makeRsDe01FactorLedger(),
 }
 
@@ -316,14 +311,7 @@ const normalizeRsDe01Config = (config: RsDe01Config): NormalizedRsDe01Config => 
 })
 
 const makeRsDe01FactorLedger = (): SignalFactorLedger =>
-  makeFactorLedger(
-    "RS-DE-01-trait-coupling",
-    RsDe01FactorDefinitions.map((definition) =>
-      makeFactorEntry(definition, definition.defaultValue ?? null, {
-        source: "signal-default",
-      }),
-    ),
-  )
+  makeDefaultSignalFactorLedger("RS-DE-01-trait-coupling", RS_DE_01_FACTOR_DEFINITIONS)
 
 const sortTraitCouplingDetails = (
   details: ReadonlyArray<TraitCouplingDetail>,

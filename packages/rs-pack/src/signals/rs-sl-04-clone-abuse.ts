@@ -4,11 +4,8 @@ import {
   type SignalFactorDefinition,
   SignalComputeError,
 } from "@skastr0/pulsar-core/signal"
-import {
-  makeFactorEntry,
-  makeFactorLedger,
-  type SignalFactorLedger,
-} from "@skastr0/pulsar-core/factors"
+import { type SignalFactorLedger } from "@skastr0/pulsar-core/factors"
+import { makeDefaultSignalFactorLedger } from "./shared-factor-ledger.js"
 import { Effect, Schema } from "effect"
 import { RustProjectTag } from "../project.js"
 import { parseRustFile, type RustSyntaxNode } from "../syn-walker.js"
@@ -19,6 +16,7 @@ import {
   resolveRustFileScope,
   walkAttributedNodes,
 } from "./shared-rust-ast.js"
+import { rustAnalyzedFunctionOutputMetadata } from "./shared-applicability.js"
 import { isExcluded } from "./shared-globs.js"
 
 const RsSl04Config = Schema.Struct({
@@ -57,7 +55,7 @@ const DEFAULT_TOP_N_DIAGNOSTICS = 10
 const RS_SL_04_SCORE_MODE = "likely-expensive-clone-pressure" as const
 const RS_SL_04_SCORE_DENOMINATOR = "likely-expensive-clone-calls" as const
 
-const RsSl04FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
+const RS_SL_04_FACTOR_DEFINITIONS: ReadonlyArray<SignalFactorDefinition> = [
   {
     path: "config.exclude_globs",
     title: "Config exclude globs",
@@ -83,7 +81,7 @@ export const RsSl04: Signal<RsSl04Config, RsSl04Output, RustProjectTag> = {
   kind: "legibility",
   cacheVersion: "likely-expensive-score-cfg-test-gating-diagnostics-denominator-bindings-ufcs-v6",
   configSchema: RsSl04Config,
-  factorDefinitions: RsSl04FactorDefinitions,
+  factorDefinitions: RS_SL_04_FACTOR_DEFINITIONS,
   defaultConfig: {
     exclude_globs: [...DEFAULT_RUST_EXCLUDE_GLOBS],
     top_n_diagnostics: DEFAULT_TOP_N_DIAGNOSTICS,
@@ -207,15 +205,7 @@ export const RsSl04: Signal<RsSl04Config, RsSl04Output, RustProjectTag> = {
             scoreDenominator: out.scoreDenominator,
           },
         })),
-  outputMetadata: (out) => {
-    if (out.sourceFileCount === 0) {
-      return { applicability: "insufficient_evidence" as const }
-    }
-    if (out.analyzedSourceFileCount === 0 || out.analyzedFunctionCount === 0) {
-      return { applicability: "not_applicable" as const }
-    }
-    return undefined
-  },
+  outputMetadata: rustAnalyzedFunctionOutputMetadata,
   factorLedger: () => makeRsSl04FactorLedger(),
 }
 
@@ -229,14 +219,7 @@ const normalizeRsSl04Config = (config: RsSl04Config): NormalizedRsSl04Config => 
 })
 
 const makeRsSl04FactorLedger = (): SignalFactorLedger =>
-  makeFactorLedger(
-    "RS-SL-04-clone-abuse",
-    RsSl04FactorDefinitions.map((definition) =>
-      makeFactorEntry(definition, definition.defaultValue ?? null, {
-        source: "signal-default",
-      }),
-    ),
-  )
+  makeDefaultSignalFactorLedger("RS-SL-04-clone-abuse", RS_SL_04_FACTOR_DEFINITIONS)
 
 const classifyClone = (receiver: string): "likely-expensive" | "cheap-likely" | "unknown" => {
   const normalized = receiver.trim()

@@ -19,6 +19,7 @@ import type { RustIdentifierFact } from "../rust-analysis-types.js"
 import { type RustProject, RustProjectTag } from "../project.js"
 import { itemKind, itemName } from "../rust-analysis-syntax.js"
 import { parseRustFile, type RustSyntaxNode } from "../syn-walker.js"
+import { rustAnalysisOutputMetadata } from "./shared-applicability.js"
 import { isExcluded } from "./shared-globs.js"
 import { makeDefaultSignalFactorLedger } from "./shared-factor-ledger.js"
 import { asUnknownRecord } from "./shared-record-guards.js"
@@ -206,15 +207,13 @@ export const RsLd06: Signal<RsLd06Config, RsLd06Output, RustProjectTag | Referen
         },
       }))
   },
-  outputMetadata: (out) => {
-    if (out.sourceFileCount === 0 || out.referenceDataStatus !== "loaded") {
-      return { applicability: "insufficient_evidence" as const }
-    }
-    if (out.analyzedSourceFileCount === 0 || out.totalIdentifiers === 0) {
-      return { applicability: "not_applicable" as const }
-    }
-    return undefined
-  },
+  outputMetadata: (out) =>
+    rustAnalysisOutputMetadata({
+      sourceFileCount: out.sourceFileCount,
+      analyzedItemCount: out.analyzedSourceFileCount,
+      evidenceItemCount: out.totalIdentifiers,
+      evidenceReady: out.referenceDataStatus === "loaded",
+    }),
   factorLedger: () => makeRsLd06FactorLedger(),
 }
 

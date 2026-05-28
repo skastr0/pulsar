@@ -1,8 +1,5 @@
-import {
-  makeFactorEntry,
-  makeFactorLedger,
-  type SignalFactorLedger,
-} from "@skastr0/pulsar-core/factors"
+import { type SignalFactorLedger } from "@skastr0/pulsar-core/factors"
+import { makeDefaultSignalFactorLedger } from "./shared-factor-ledger.js"
 import {
   type Diagnostic,
   type Signal,
@@ -109,7 +106,7 @@ const RS_LD_01_SCORE_MODE = "one-minus-max-propagation-share-or-capped-site-shar
 const SAFE_ONLY_SELECTOR_MODE = "module-subtree" as const
 const DIAGNOSTIC_CAP_POLICY = "safe-only-blocks-uncapped-warnings-capped" as const
 
-const RsLd01FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
+const RS_LD_01_FACTOR_DEFINITIONS: ReadonlyArray<SignalFactorDefinition> = [
   {
     path: "config.exclude_globs",
     title: "Config exclude globs",
@@ -142,7 +139,7 @@ export const RsLd01: Signal<RsLd01Config, RsLd01Output, RustProjectTag> = {
   kind: "legibility",
   cacheVersion: "unsafe-code-config-applicability-diagnostics-call-graph-density-sites-safe-only-qualified-v6",
   configSchema: RsLd01Config,
-  factorDefinitions: RsLd01FactorDefinitions,
+  factorDefinitions: RS_LD_01_FACTOR_DEFINITIONS,
   defaultConfig: {
     exclude_globs: [...DEFAULT_RUST_EXCLUDE_GLOBS],
     safe_only_modules: [],
@@ -454,14 +451,7 @@ const safeOnlyViolations = (
   )
 
 const makeRsLd01FactorLedger = (): SignalFactorLedger =>
-  makeFactorLedger(
-    "RS-LD-01-unsafe-code",
-    RsLd01FactorDefinitions.map((definition) =>
-      makeFactorEntry(definition, definition.defaultValue ?? null, {
-        source: "signal-default",
-      }),
-    ),
-  )
+  makeDefaultSignalFactorLedger("RS-LD-01-unsafe-code", RS_LD_01_FACTOR_DEFINITIONS)
 
 const emptyUnsafeModuleSummary = (module: string, file: string): UnsafeModuleSummary => ({
   module,

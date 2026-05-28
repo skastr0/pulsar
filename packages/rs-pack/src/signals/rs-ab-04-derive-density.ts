@@ -1,8 +1,5 @@
-import {
-  makeFactorEntry,
-  makeFactorLedger,
-  type SignalFactorLedger,
-} from "@skastr0/pulsar-core/factors"
+import { type SignalFactorLedger } from "@skastr0/pulsar-core/factors"
+import { makeDefaultSignalFactorLedger } from "./shared-factor-ledger.js"
 import {
   type Diagnostic,
   type DistributionalSummary,
@@ -22,6 +19,7 @@ import {
   resolveRustFileScope,
   walkAttributedNodes,
 } from "./shared-rust-ast.js"
+import { rustAnalysisOutputMetadata } from "./shared-applicability.js"
 import { isExcluded } from "./shared-globs.js"
 
 const RsAb04Config = Schema.Struct({
@@ -72,7 +70,7 @@ const STANDARD_DERIVES = new Set([
   "Hash",
 ])
 
-const RsAb04FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
+const RS_AB_04_FACTOR_DEFINITIONS: ReadonlyArray<SignalFactorDefinition> = [
   {
     path: "config.exclude_globs",
     title: "Config exclude globs",
@@ -112,7 +110,7 @@ export const RsAb04: Signal<RsAb04Config, RsAb04Output, RustProjectTag> = {
   kind: "legibility",
   cacheVersion: "derive-density-config-applicability-diagnostics-cfg-attr-thresholds-v4",
   configSchema: RsAb04Config,
-  factorDefinitions: RsAb04FactorDefinitions,
+  factorDefinitions: RS_AB_04_FACTOR_DEFINITIONS,
   defaultConfig: {
     exclude_globs: [...DEFAULT_RUST_EXCLUDE_GLOBS],
     max_custom_derives: DEFAULT_MAX_CUSTOM_DERIVES,
@@ -204,15 +202,12 @@ export const RsAb04: Signal<RsAb04Config, RsAb04Output, RustProjectTag> = {
       },
     }))
   },
-  outputMetadata: (out) => {
-    if (out.sourceFileCount === 0) {
-      return { applicability: "insufficient_evidence" as const }
-    }
-    if (out.analyzedSourceFileCount === 0 || out.trackedTypeCount === 0 || out.deriveBearingTypeCount === 0) {
-      return { applicability: "not_applicable" as const }
-    }
-    return undefined
-  },
+  outputMetadata: (out) =>
+    rustAnalysisOutputMetadata({
+      sourceFileCount: out.sourceFileCount,
+      analyzedItemCount: out.analyzedSourceFileCount,
+      evidenceItemCount: Math.min(out.trackedTypeCount, out.deriveBearingTypeCount),
+    }),
   factorLedger: () => makeRsAb04FactorLedger(),
 }
 
@@ -232,14 +227,7 @@ const normalizeRsAb04Config = (config: RsAb04Config): NormalizedRsAb04Config => 
 })
 
 const makeRsAb04FactorLedger = (): SignalFactorLedger =>
-  makeFactorLedger(
-    "RS-AB-04-derive-density",
-    RsAb04FactorDefinitions.map((definition) =>
-      makeFactorEntry(definition, definition.defaultValue ?? null, {
-        source: "signal-default",
-      }),
-    ),
-  )
+  makeDefaultSignalFactorLedger("RS-AB-04-derive-density", RS_AB_04_FACTOR_DEFINITIONS)
 
 const exceedsThresholds = (
   entry: DeriveDensityEntry,

@@ -1,8 +1,5 @@
-import {
-  makeFactorEntry,
-  makeFactorLedger,
-  type SignalFactorLedger,
-} from "@skastr0/pulsar-core/factors"
+import { type SignalFactorLedger } from "@skastr0/pulsar-core/factors"
+import { makeDefaultSignalFactorLedger } from "./shared-factor-ledger.js"
 import {
   type Diagnostic,
   type DistributionalSummary,
@@ -22,6 +19,7 @@ import {
   resolveRustFileScope,
   walkAttributedNodes,
 } from "./shared-rust-ast.js"
+import { rustAnalysisOutputMetadata } from "./shared-applicability.js"
 import { isExcluded } from "./shared-globs.js"
 
 const RsLd05Config = Schema.Struct({
@@ -60,7 +58,7 @@ const DEFAULT_TOP_N_DIAGNOSTICS = 10
 const RS_LD_05_SCORE_MODE = "double-weighted-over-threshold-functions" as const
 const RS_LD_05_SCORE_DENOMINATOR = "analyzed-functions" as const
 
-const RsLd05FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
+const RS_LD_05_FACTOR_DEFINITIONS: ReadonlyArray<SignalFactorDefinition> = [
   {
     path: "config.exclude_globs",
     title: "Config exclude globs",
@@ -93,7 +91,7 @@ export const RsLd05: Signal<RsLd05Config, RsLd05Output, RustProjectTag> = {
   kind: "legibility",
   cacheVersion: "cyclomatic-complexity-config-applicability-diagnostics-cfg-test-lexical-v2",
   configSchema: RsLd05Config,
-  factorDefinitions: RsLd05FactorDefinitions,
+  factorDefinitions: RS_LD_05_FACTOR_DEFINITIONS,
   defaultConfig: {
     exclude_globs: [...DEFAULT_RUST_EXCLUDE_GLOBS],
     max_complexity: DEFAULT_MAX_COMPLEXITY,
@@ -186,15 +184,12 @@ export const RsLd05: Signal<RsLd05Config, RsLd05Output, RustProjectTag> = {
       },
     }))
   },
-  outputMetadata: (out) => {
-    if (out.sourceFileCount === 0) {
-      return { applicability: "insufficient_evidence" as const }
-    }
-    if (out.analyzedSourceFileCount === 0 || out.totalFunctions === 0) {
-      return { applicability: "not_applicable" as const }
-    }
-    return undefined
-  },
+  outputMetadata: (out) =>
+    rustAnalysisOutputMetadata({
+      sourceFileCount: out.sourceFileCount,
+      analyzedItemCount: out.analyzedSourceFileCount,
+      evidenceItemCount: out.totalFunctions,
+    }),
   factorLedger: () => makeRsLd05FactorLedger(),
 }
 
@@ -211,14 +206,7 @@ const normalizeRsLd05Config = (config: RsLd05Config): NormalizedRsLd05Config => 
 })
 
 const makeRsLd05FactorLedger = (): SignalFactorLedger =>
-  makeFactorLedger(
-    "RS-LD-05-cyclomatic-complexity",
-    RsLd05FactorDefinitions.map((definition) =>
-      makeFactorEntry(definition, definition.defaultValue ?? null, {
-        source: "signal-default",
-      }),
-    ),
-  )
+  makeDefaultSignalFactorLedger("RS-LD-05-cyclomatic-complexity", RS_LD_05_FACTOR_DEFINITIONS)
 
 const ratio = (numerator: number, denominator: number): number =>
   denominator === 0 ? 0 : numerator / denominator

@@ -1,8 +1,5 @@
-import {
-  makeFactorEntry,
-  makeFactorLedger,
-  type SignalFactorLedger,
-} from "@skastr0/pulsar-core/factors"
+import { type SignalFactorLedger } from "@skastr0/pulsar-core/factors"
+import { makeDefaultSignalFactorLedger } from "./shared-factor-ledger.js"
 import {
   type Diagnostic,
   type DistributionalSummary,
@@ -22,6 +19,7 @@ import {
   resolveRustFileScope,
   walkAttributedNodes,
 } from "./shared-rust-ast.js"
+import { rustAnalysisOutputMetadata } from "./shared-applicability.js"
 import { isExcluded } from "./shared-globs.js"
 
 const RsLd02Config = Schema.Struct({
@@ -66,7 +64,7 @@ const DEFAULT_TOP_N_DIAGNOSTICS = 10
 const RS_LD_02_SCORE_MODE = "double-weighted-over-threshold-lifetime-functions" as const
 const RS_LD_02_SCORE_DENOMINATOR = "lifetime-bearing-functions" as const
 
-const RsLd02FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
+const RS_LD_02_FACTOR_DEFINITIONS: ReadonlyArray<SignalFactorDefinition> = [
   {
     path: "config.exclude_globs",
     title: "Config exclude globs",
@@ -99,7 +97,7 @@ export const RsLd02: Signal<RsLd02Config, RsLd02Output, RustProjectTag> = {
   kind: "legibility",
   cacheVersion: "lifetime-complexity-config-applicability-diagnostics-cfg-test-score-v3",
   configSchema: RsLd02Config,
-  factorDefinitions: RsLd02FactorDefinitions,
+  factorDefinitions: RS_LD_02_FACTOR_DEFINITIONS,
   defaultConfig: {
     exclude_globs: [...DEFAULT_RUST_EXCLUDE_GLOBS],
     max_lifetime_complexity: DEFAULT_MAX_LIFETIME_COMPLEXITY,
@@ -207,15 +205,12 @@ export const RsLd02: Signal<RsLd02Config, RsLd02Output, RustProjectTag> = {
       },
     }))
   },
-  outputMetadata: (out) => {
-    if (out.sourceFileCount === 0) {
-      return { applicability: "insufficient_evidence" as const }
-    }
-    if (out.analyzedSourceFileCount === 0 || out.lifetimeFunctionCount === 0) {
-      return { applicability: "not_applicable" as const }
-    }
-    return undefined
-  },
+  outputMetadata: (out) =>
+    rustAnalysisOutputMetadata({
+      sourceFileCount: out.sourceFileCount,
+      analyzedItemCount: out.analyzedSourceFileCount,
+      evidenceItemCount: out.lifetimeFunctionCount,
+    }),
   factorLedger: () => makeRsLd02FactorLedger(),
 }
 
@@ -232,14 +227,7 @@ const normalizeRsLd02Config = (config: RsLd02Config): NormalizedRsLd02Config => 
 })
 
 const makeRsLd02FactorLedger = (): SignalFactorLedger =>
-  makeFactorLedger(
-    "RS-LD-02-lifetime-complexity",
-    RsLd02FactorDefinitions.map((definition) =>
-      makeFactorEntry(definition, definition.defaultValue ?? null, {
-        source: "signal-default",
-      }),
-    ),
-  )
+  makeDefaultSignalFactorLedger("RS-LD-02-lifetime-complexity", RS_LD_02_FACTOR_DEFINITIONS)
 
 const ratio = (numerator: number, denominator: number): number =>
   denominator === 0 ? 0 : numerator / denominator

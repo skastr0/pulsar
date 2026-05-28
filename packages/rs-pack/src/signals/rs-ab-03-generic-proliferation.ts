@@ -1,8 +1,5 @@
-import {
-  makeFactorEntry,
-  makeFactorLedger,
-  type SignalFactorLedger,
-} from "@skastr0/pulsar-core/factors"
+import { type SignalFactorLedger } from "@skastr0/pulsar-core/factors"
+import { makeDefaultSignalFactorLedger } from "./shared-factor-ledger.js"
 import {
   type Diagnostic,
   type DistributionalSummary,
@@ -23,6 +20,7 @@ import {
   resolveRustFileScope,
   walkAttributedNodes,
 } from "./shared-rust-ast.js"
+import { rustAnalysisOutputMetadata } from "./shared-applicability.js"
 import { isExcluded } from "./shared-globs.js"
 
 const RsAb03Config = Schema.Struct({
@@ -61,7 +59,7 @@ const DEFAULT_MAX_GENERIC_COMPLEXITY = 8
 const DEFAULT_MAX_GENERIC_PARAMETERS = 3
 const DEFAULT_TOP_N_DIAGNOSTICS = 10
 
-const RsAb03FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
+const RS_AB_03_FACTOR_DEFINITIONS: ReadonlyArray<SignalFactorDefinition> = [
   {
     path: "config.exclude_globs",
     title: "Config exclude globs",
@@ -101,7 +99,7 @@ export const RsAb03: Signal<RsAb03Config, RsAb03Output, RustProjectTag> = {
   kind: "legibility",
   cacheVersion: "generic-proliferation-config-applicability-diagnostics-cfg-test-gating-bounds-complexity-v4",
   configSchema: RsAb03Config,
-  factorDefinitions: RsAb03FactorDefinitions,
+  factorDefinitions: RS_AB_03_FACTOR_DEFINITIONS,
   defaultConfig: {
     exclude_globs: [...DEFAULT_RUST_EXCLUDE_GLOBS],
     max_generic_complexity: DEFAULT_MAX_GENERIC_COMPLEXITY,
@@ -199,15 +197,12 @@ export const RsAb03: Signal<RsAb03Config, RsAb03Output, RustProjectTag> = {
       },
     }))
   },
-  outputMetadata: (out) => {
-    if (out.sourceFileCount === 0) {
-      return { applicability: "insufficient_evidence" as const }
-    }
-    if (out.analyzedSourceFileCount === 0 || out.declarations.length === 0) {
-      return { applicability: "not_applicable" as const }
-    }
-    return undefined
-  },
+  outputMetadata: (out) =>
+    rustAnalysisOutputMetadata({
+      sourceFileCount: out.sourceFileCount,
+      analyzedItemCount: out.analyzedSourceFileCount,
+      evidenceItemCount: out.declarations.length,
+    }),
   factorLedger: () => makeRsAb03FactorLedger(),
 }
 
@@ -227,14 +222,7 @@ const normalizeRsAb03Config = (config: RsAb03Config): NormalizedRsAb03Config => 
 })
 
 const makeRsAb03FactorLedger = (): SignalFactorLedger =>
-  makeFactorLedger(
-    "RS-AB-03-generic-proliferation",
-    RsAb03FactorDefinitions.map((definition) =>
-      makeFactorEntry(definition, definition.defaultValue ?? null, {
-        source: "signal-default",
-      }),
-    ),
-  )
+  makeDefaultSignalFactorLedger("RS-AB-03-generic-proliferation", RS_AB_03_FACTOR_DEFINITIONS)
 
 const isGenericTrackedNode = (type: string): boolean =>
   ["function_item", "struct_item", "enum_item", "trait_item", "type_item", "impl_item"].includes(type)

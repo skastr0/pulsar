@@ -9,11 +9,8 @@ import {
   type SignalFactorDefinition,
   resolveCompositeInputs,
 } from "@skastr0/pulsar-core/signal"
-import {
-  makeFactorEntry,
-  makeFactorLedger,
-  type SignalFactorLedger,
-} from "@skastr0/pulsar-core/factors"
+import { type SignalFactorLedger } from "@skastr0/pulsar-core/factors"
+import { makeDefaultSignalFactorLedger } from "./shared-factor-ledger.js"
 import type { SharedChurn01Output } from "@skastr0/pulsar-shared-signals"
 import { Effect, Schema } from "effect"
 
@@ -67,7 +64,7 @@ const RS_RP_01_ENFORCEMENT_CEILING = [
   "dashboard",
 ] as const
 
-const RsRp01FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
+const RS_RP_01_FACTOR_DEFINITIONS: ReadonlyArray<SignalFactorDefinition> = [
   {
     path: "config.top_n",
     title: "Config top n",
@@ -121,7 +118,7 @@ export const RsRp01: Signal<RsRp01Config, RsRp01Output, never> = {
   kind: "compound",
   cacheVersion: "rust-hotspot-config-compound-applicability-ranking-v2",
   configSchema: RsRp01Config,
-  factorDefinitions: RsRp01FactorDefinitions,
+  factorDefinitions: RS_RP_01_FACTOR_DEFINITIONS,
   defaultConfig: {
     top_n: DEFAULT_TOP_N,
     min_churn: DEFAULT_MIN_CHURN,
@@ -297,14 +294,7 @@ const withRsRp01Explanation = (
 }
 
 const makeRsRp01FactorLedger = (): SignalFactorLedger =>
-  makeFactorLedger(
-    "RS-RP-01-hotspots",
-    RsRp01FactorDefinitions.map((definition) =>
-      makeFactorEntry(definition, definition.defaultValue ?? null, {
-        source: "signal-default",
-      }),
-    ),
-  )
+  makeDefaultSignalFactorLedger("RS-RP-01-hotspots", RS_RP_01_FACTOR_DEFINITIONS)
 
 const median = (values: ReadonlyArray<number>): number => {
   if (values.length === 0) return 0

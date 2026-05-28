@@ -1,8 +1,5 @@
-import {
-  makeFactorEntry,
-  makeFactorLedger,
-  type SignalFactorLedger,
-} from "@skastr0/pulsar-core/factors"
+import { type SignalFactorLedger } from "@skastr0/pulsar-core/factors"
+import { makeDefaultSignalFactorLedger } from "./shared-factor-ledger.js"
 import { computeDiagnosticHash } from "@skastr0/pulsar-core/reference-data"
 import {
   type Diagnostic,
@@ -64,7 +61,7 @@ interface RsDe03Output {
 const DEFAULT_WARN_FEATURE_COUNT = 8
 const DEFAULT_TOP_N_DIAGNOSTICS = 10
 
-const RsDe03FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
+const RS_DE_03_FACTOR_DEFINITIONS: ReadonlyArray<SignalFactorDefinition> = [
   {
     path: "config.exclude_globs",
     title: "Config exclude globs",
@@ -97,7 +94,7 @@ export const RsDe03: Signal<RsDe03Config, RsDe03Output, RustProjectTag> = {
   kind: "structural",
   cacheVersion: "cargo-feature-flags-config-propagation-v1",
   configSchema: RsDe03Config,
-  factorDefinitions: RsDe03FactorDefinitions,
+  factorDefinitions: RS_DE_03_FACTOR_DEFINITIONS,
   defaultConfig: {
     exclude_globs: [...DEFAULT_RUST_EXCLUDE_GLOBS],
     warn_feature_count: DEFAULT_WARN_FEATURE_COUNT,
@@ -312,14 +309,7 @@ const normalizeRsDe03Config = (config: RsDe03Config): NormalizedRsDe03Config => 
 })
 
 const makeRsDe03FactorLedger = (): SignalFactorLedger =>
-  makeFactorLedger(
-    "RS-DE-03-feature-flags",
-    RsDe03FactorDefinitions.map((definition) =>
-      makeFactorEntry(definition, definition.defaultValue ?? null, {
-        source: "signal-default",
-      }),
-    ),
-  )
+  makeDefaultSignalFactorLedger("RS-DE-03-feature-flags", RS_DE_03_FACTOR_DEFINITIONS)
 
 const cargoDependenciesByAlias = (
   pkg: CargoMetadataPackage,

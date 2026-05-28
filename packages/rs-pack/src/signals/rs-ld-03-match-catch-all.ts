@@ -1,8 +1,5 @@
-import {
-  makeFactorEntry,
-  makeFactorLedger,
-  type SignalFactorLedger,
-} from "@skastr0/pulsar-core/factors"
+import { type SignalFactorLedger } from "@skastr0/pulsar-core/factors"
+import { makeDefaultSignalFactorLedger } from "./shared-factor-ledger.js"
 import {
   type Diagnostic,
   type Signal,
@@ -20,6 +17,7 @@ import {
   resolveRustFileScope,
   walkAttributedNodes,
 } from "./shared-rust-ast.js"
+import { rustAnalysisOutputMetadata } from "./shared-applicability.js"
 import { isExcluded, matchesAnyGlob } from "./shared-globs.js"
 
 const RsLd03Config = Schema.Struct({
@@ -56,7 +54,7 @@ const DEFAULT_TOP_N_DIAGNOSTICS = 10
 const RS_LD_03_SCORE_MODE = "double-weighted-catch-all-match-share" as const
 const RS_LD_03_SCORE_DENOMINATOR = "analyzed-match-expressions" as const
 
-const RsLd03FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
+const RS_LD_03_FACTOR_DEFINITIONS: ReadonlyArray<SignalFactorDefinition> = [
   {
     path: "config.exclude_globs",
     title: "Config exclude globs",
@@ -89,7 +87,7 @@ export const RsLd03: Signal<RsLd03Config, RsLd03Output, RustProjectTag> = {
   kind: "legibility",
   cacheVersion: "match-catch-all-config-applicability-diagnostics-cfg-test-bindings-v3",
   configSchema: RsLd03Config,
-  factorDefinitions: RsLd03FactorDefinitions,
+  factorDefinitions: RS_LD_03_FACTOR_DEFINITIONS,
   defaultConfig: {
     exclude_globs: [...DEFAULT_RUST_EXCLUDE_GLOBS],
     core_logic_globs: [],
@@ -176,15 +174,12 @@ export const RsLd03: Signal<RsLd03Config, RsLd03Output, RustProjectTag> = {
         },
       }))
   },
-  outputMetadata: (out) => {
-    if (out.sourceFileCount === 0) {
-      return { applicability: "insufficient_evidence" as const }
-    }
-    if (out.analyzedSourceFileCount === 0 || out.totalMatches === 0) {
-      return { applicability: "not_applicable" as const }
-    }
-    return undefined
-  },
+  outputMetadata: (out) =>
+    rustAnalysisOutputMetadata({
+      sourceFileCount: out.sourceFileCount,
+      analyzedItemCount: out.analyzedSourceFileCount,
+      evidenceItemCount: out.totalMatches,
+    }),
   factorLedger: () => makeRsLd03FactorLedger(),
 }
 
@@ -199,14 +194,7 @@ const normalizeRsLd03Config = (config: RsLd03Config): NormalizedRsLd03Config => 
 })
 
 const makeRsLd03FactorLedger = (): SignalFactorLedger =>
-  makeFactorLedger(
-    "RS-LD-03-match-catch-all",
-    RsLd03FactorDefinitions.map((definition) =>
-      makeFactorEntry(definition, definition.defaultValue ?? null, {
-        source: "signal-default",
-      }),
-    ),
-  )
+  makeDefaultSignalFactorLedger("RS-LD-03-match-catch-all", RS_LD_03_FACTOR_DEFINITIONS)
 
 const ratio = (numerator: number, denominator: number): number =>
   denominator === 0 ? 0 : numerator / denominator

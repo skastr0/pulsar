@@ -5,11 +5,8 @@ import {
   type SignalFactorDefinition,
   SignalComputeError,
 } from "@skastr0/pulsar-core/signal"
-import {
-  makeFactorEntry,
-  makeFactorLedger,
-  type SignalFactorLedger,
-} from "@skastr0/pulsar-core/factors"
+import { type SignalFactorLedger } from "@skastr0/pulsar-core/factors"
+import { makeDefaultSignalFactorLedger } from "./shared-factor-ledger.js"
 import { Effect, Schema } from "effect"
 import { RustProjectTag } from "../project.js"
 import { parseRustFile, type RustSyntaxNode } from "../syn-walker.js"
@@ -21,6 +18,7 @@ import {
   resolveRustFileScope,
   walkAttributedNodes,
 } from "./shared-rust-ast.js"
+import { rustAnalyzedFunctionOutputMetadata } from "./shared-applicability.js"
 import { isExcluded } from "./shared-globs.js"
 
 const RsSl01Config = Schema.Struct({
@@ -65,7 +63,7 @@ const DEFAULT_TOP_N_DIAGNOSTICS = 10
 const RS_SL_01_SCORE_MODE = "bounded-duplicate-function-pressure" as const
 const RS_SL_01_SCORE_DENOMINATOR = "analyzed-functions" as const
 
-const RsSl01FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
+const RS_SL_01_FACTOR_DEFINITIONS: ReadonlyArray<SignalFactorDefinition> = [
   {
     path: "config.exclude_globs",
     title: "Config exclude globs",
@@ -98,7 +96,7 @@ export const RsSl01: Signal<RsSl01Config, RsSl01Output, RustProjectTag | SignalC
   kind: "legibility",
   cacheVersion: "advisory-rust-duplication-cfg-test-diagnostics-changed-hunks-body-v5",
   configSchema: RsSl01Config,
-  factorDefinitions: RsSl01FactorDefinitions,
+  factorDefinitions: RS_SL_01_FACTOR_DEFINITIONS,
   defaultConfig: {
     exclude_globs: [...DEFAULT_RUST_EXCLUDE_GLOBS],
     min_tokens: DEFAULT_MIN_TOKENS,
@@ -236,15 +234,7 @@ export const RsSl01: Signal<RsSl01Config, RsSl01Output, RustProjectTag | SignalC
         scoreDenominator: out.scoreDenominator,
       },
     })),
-  outputMetadata: (out) => {
-    if (out.sourceFileCount === 0) {
-      return { applicability: "insufficient_evidence" as const }
-    }
-    if (out.analyzedSourceFileCount === 0 || out.analyzedFunctionCount === 0) {
-      return { applicability: "not_applicable" as const }
-    }
-    return undefined
-  },
+  outputMetadata: rustAnalyzedFunctionOutputMetadata,
   factorLedger: () => makeRsSl01FactorLedger(),
 }
 
@@ -261,14 +251,7 @@ const normalizeRsSl01Config = (config: RsSl01Config): NormalizedRsSl01Config => 
 })
 
 const makeRsSl01FactorLedger = (): SignalFactorLedger =>
-  makeFactorLedger(
-    "RS-SL-01-duplication",
-    RsSl01FactorDefinitions.map((definition) =>
-      makeFactorEntry(definition, definition.defaultValue ?? null, {
-        source: "signal-default",
-      }),
-    ),
-  )
+  makeDefaultSignalFactorLedger("RS-SL-01-duplication", RS_SL_01_FACTOR_DEFINITIONS)
 
 const buildGroups = (
   functions: ReadonlyArray<{

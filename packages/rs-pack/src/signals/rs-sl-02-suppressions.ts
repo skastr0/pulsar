@@ -6,11 +6,8 @@ import {
   type SignalFactorDefinition,
   SignalComputeError,
 } from "@skastr0/pulsar-core/signal"
-import {
-  makeFactorEntry,
-  makeFactorLedger,
-  type SignalFactorLedger,
-} from "@skastr0/pulsar-core/factors"
+import { type SignalFactorLedger } from "@skastr0/pulsar-core/factors"
+import { makeDefaultSignalFactorLedger } from "./shared-factor-ledger.js"
 import { readFile } from "node:fs/promises"
 import { Effect, Schema } from "effect"
 import { RustProjectTag } from "../project.js"
@@ -60,7 +57,7 @@ const DEFAULT_TOP_N_DIAGNOSTICS = 20
 const RS_SL_02_SCORE_MODE = "governed-allow-debt" as const
 const RS_SL_02_SCORE_DENOMINATOR = "governed-allow-attributes" as const
 
-const RsSl02FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
+const RS_SL_02_FACTOR_DEFINITIONS: ReadonlyArray<SignalFactorDefinition> = [
   {
     path: "config.exclude_globs",
     title: "Config exclude globs",
@@ -86,7 +83,7 @@ export const RsSl02: Signal<RsSl02Config, RsSl02Output, RustProjectTag | SignalC
   kind: "structural",
   cacheVersion: "unused-allows-ordinary-diagnostics-cfg-attr-span-v4",
   configSchema: RsSl02Config,
-  factorDefinitions: RsSl02FactorDefinitions,
+  factorDefinitions: RS_SL_02_FACTOR_DEFINITIONS,
   defaultConfig: {
     exclude_globs: [...DEFAULT_RUST_EXCLUDE_GLOBS],
     top_n_diagnostics: DEFAULT_TOP_N_DIAGNOSTICS,
@@ -239,14 +236,7 @@ const normalizeRsSl02Config = (config: RsSl02Config): NormalizedRsSl02Config => 
 })
 
 const makeRsSl02FactorLedger = (): SignalFactorLedger =>
-  makeFactorLedger(
-    "RS-SL-02-suppressions",
-    RsSl02FactorDefinitions.map((definition) =>
-      makeFactorEntry(definition, definition.defaultValue ?? null, {
-        source: "signal-default",
-      }),
-    ),
-  )
+  makeDefaultSignalFactorLedger("RS-SL-02-suppressions", RS_SL_02_FACTOR_DEFINITIONS)
 
 const extractAllowLints = (text: string): ReadonlyArray<string> => {
   const stripped = stripRustComments(text)

@@ -1,8 +1,5 @@
-import {
-  makeFactorEntry,
-  makeFactorLedger,
-  type SignalFactorLedger,
-} from "@skastr0/pulsar-core/factors"
+import { type SignalFactorLedger } from "@skastr0/pulsar-core/factors"
+import { makeDefaultSignalFactorLedger } from "./shared-factor-ledger.js"
 import { computeDiagnosticHash } from "@skastr0/pulsar-core/reference-data"
 import {
   type Diagnostic,
@@ -50,7 +47,7 @@ interface RsDe02Output {
 
 const DEFAULT_TOP_N_DIAGNOSTICS = 10
 
-const RsDe02FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
+const RS_DE_02_FACTOR_DEFINITIONS: ReadonlyArray<SignalFactorDefinition> = [
   {
     path: "config.top_n_diagnostics",
     title: "Config top n diagnostics",
@@ -69,7 +66,7 @@ export const RsDe02: Signal<RsDe02Config, RsDe02Output, RustProjectTag> = {
   kind: "structural",
   cacheVersion: "cargo-lock-dependency-tree-workspace-deps-v1",
   configSchema: RsDe02Config,
-  factorDefinitions: RsDe02FactorDefinitions,
+  factorDefinitions: RS_DE_02_FACTOR_DEFINITIONS,
   defaultConfig: {
     top_n_diagnostics: DEFAULT_TOP_N_DIAGNOSTICS,
   },
@@ -262,14 +259,7 @@ const normalizeRsDe02Config = (config: RsDe02Config): NormalizedRsDe02Config => 
 })
 
 const makeRsDe02FactorLedger = (): SignalFactorLedger =>
-  makeFactorLedger(
-    "RS-DE-02-dependency-tree",
-    RsDe02FactorDefinitions.map((definition) =>
-      makeFactorEntry(definition, definition.defaultValue ?? null, {
-        source: "signal-default",
-      }),
-    ),
-  )
+  makeDefaultSignalFactorLedger("RS-DE-02-dependency-tree", RS_DE_02_FACTOR_DEFINITIONS)
 
 const hashDuplicateGroup = (group: DependencyDuplicateGroup): string =>
   computeDiagnosticHash(

@@ -4,11 +4,8 @@ import {
   type SignalFactorDefinition,
   SignalComputeError,
 } from "@skastr0/pulsar-core/signal"
-import {
-  makeFactorEntry,
-  makeFactorLedger,
-  type SignalFactorLedger,
-} from "@skastr0/pulsar-core/factors"
+import { type SignalFactorLedger } from "@skastr0/pulsar-core/factors"
+import { makeDefaultSignalFactorLedger } from "./shared-factor-ledger.js"
 import { Effect, Schema } from "effect"
 import { RustProjectTag } from "../project.js"
 import { parseRustFile, type RustSyntaxNode } from "../syn-walker.js"
@@ -19,6 +16,7 @@ import {
   resolveRustFileScope,
   walkAttributedNodes,
 } from "./shared-rust-ast.js"
+import { rustAnalyzedFunctionOutputMetadata } from "./shared-applicability.js"
 import { isExcluded } from "./shared-globs.js"
 
 const RsSl03Config = Schema.Struct({
@@ -50,7 +48,7 @@ const DEFAULT_TOP_N_DIAGNOSTICS = 10
 const RS_SL_03_SCORE_MODE = "bounded-unwrap-expect-density" as const
 const RS_SL_03_SCORE_DENOMINATOR = "analyzed-functions-per-module" as const
 
-const RsSl03FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
+const RS_SL_03_FACTOR_DEFINITIONS: ReadonlyArray<SignalFactorDefinition> = [
   {
     path: "config.exclude_globs",
     title: "Config exclude globs",
@@ -76,7 +74,7 @@ export const RsSl03: Signal<RsSl03Config, RsSl03Output, RustProjectTag> = {
   kind: "legibility",
   cacheVersion: "advisory-density-scaled-cfg-test-gating-diagnostics-denominator-ufcs-cfg-predicate-v6",
   configSchema: RsSl03Config,
-  factorDefinitions: RsSl03FactorDefinitions,
+  factorDefinitions: RS_SL_03_FACTOR_DEFINITIONS,
   defaultConfig: {
     exclude_globs: [...DEFAULT_RUST_EXCLUDE_GLOBS],
     top_n_diagnostics: DEFAULT_TOP_N_DIAGNOSTICS,
@@ -170,15 +168,7 @@ export const RsSl03: Signal<RsSl03Config, RsSl03Output, RustProjectTag> = {
           scoreDenominator: out.scoreDenominator,
         },
       })),
-  outputMetadata: (out) => {
-    if (out.sourceFileCount === 0) {
-      return { applicability: "insufficient_evidence" as const }
-    }
-    if (out.analyzedSourceFileCount === 0 || out.analyzedFunctionCount === 0) {
-      return { applicability: "not_applicable" as const }
-    }
-    return undefined
-  },
+  outputMetadata: rustAnalyzedFunctionOutputMetadata,
   factorLedger: () => makeRsSl03FactorLedger(),
 }
 
@@ -192,14 +182,7 @@ const normalizeRsSl03Config = (config: RsSl03Config): NormalizedRsSl03Config => 
 })
 
 const makeRsSl03FactorLedger = (): SignalFactorLedger =>
-  makeFactorLedger(
-    "RS-SL-03-unwrap-expect",
-    RsSl03FactorDefinitions.map((definition) =>
-      makeFactorEntry(definition, definition.defaultValue ?? null, {
-        source: "signal-default",
-      }),
-    ),
-  )
+  makeDefaultSignalFactorLedger("RS-SL-03-unwrap-expect", RS_SL_03_FACTOR_DEFINITIONS)
 
 const unwrapExpectCallName = (node: RustSyntaxNode): "unwrap" | "expect" | undefined => {
   const callee = namedChildrenOf(node)[0]

@@ -1,8 +1,5 @@
-import {
-  makeFactorEntry,
-  makeFactorLedger,
-  type SignalFactorLedger,
-} from "@skastr0/pulsar-core/factors"
+import { type SignalFactorLedger } from "@skastr0/pulsar-core/factors"
+import { makeDefaultSignalFactorLedger } from "./shared-factor-ledger.js"
 import {
   type Diagnostic,
   type Signal,
@@ -21,6 +18,7 @@ import {
   resolveRustFileScope,
   walkAttributedNodes,
 } from "./shared-rust-ast.js"
+import { rustAnalysisOutputMetadata } from "./shared-applicability.js"
 import { isExcluded } from "./shared-globs.js"
 
 const RsLd04Config = Schema.Struct({
@@ -56,7 +54,7 @@ const DEFAULT_TOP_N_DIAGNOSTICS = 10
 const RS_LD_04_SCORE_MODE = "granular-result-boundary-share" as const
 const RS_LD_04_SCORE_DENOMINATOR = "public-result-boundary-functions" as const
 
-const RsLd04FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
+const RS_LD_04_FACTOR_DEFINITIONS: ReadonlyArray<SignalFactorDefinition> = [
   {
     path: "config.exclude_globs",
     title: "Config exclude globs",
@@ -82,7 +80,7 @@ export const RsLd04: Signal<RsLd04Config, RsLd04Output, RustProjectTag> = {
   kind: "legibility",
   cacheVersion: "error-granularity-config-applicability-diagnostics-cfg-test-result-aliases-v12",
   configSchema: RsLd04Config,
-  factorDefinitions: RsLd04FactorDefinitions,
+  factorDefinitions: RS_LD_04_FACTOR_DEFINITIONS,
   defaultConfig: {
     exclude_globs: [...DEFAULT_RUST_EXCLUDE_GLOBS],
     top_n_diagnostics: DEFAULT_TOP_N_DIAGNOSTICS,
@@ -172,15 +170,12 @@ export const RsLd04: Signal<RsLd04Config, RsLd04Output, RustProjectTag> = {
         },
       }))
   },
-  outputMetadata: (out) => {
-    if (out.sourceFileCount === 0) {
-      return { applicability: "insufficient_evidence" as const }
-    }
-    if (out.analyzedSourceFileCount === 0 || out.totalBoundaryResults === 0) {
-      return { applicability: "not_applicable" as const }
-    }
-    return undefined
-  },
+  outputMetadata: (out) =>
+    rustAnalysisOutputMetadata({
+      sourceFileCount: out.sourceFileCount,
+      analyzedItemCount: out.analyzedSourceFileCount,
+      evidenceItemCount: out.totalBoundaryResults,
+    }),
   factorLedger: () => makeRsLd04FactorLedger(),
 }
 
@@ -194,14 +189,7 @@ const normalizeRsLd04Config = (config: RsLd04Config): NormalizedRsLd04Config => 
 })
 
 const makeRsLd04FactorLedger = (): SignalFactorLedger =>
-  makeFactorLedger(
-    "RS-LD-04-error-granularity",
-    RsLd04FactorDefinitions.map((definition) =>
-      makeFactorEntry(definition, definition.defaultValue ?? null, {
-        source: "signal-default",
-      }),
-    ),
-  )
+  makeDefaultSignalFactorLedger("RS-LD-04-error-granularity", RS_LD_04_FACTOR_DEFINITIONS)
 
 const ratio = (numerator: number, denominator: number): number =>
   denominator === 0 ? 0 : numerator / denominator

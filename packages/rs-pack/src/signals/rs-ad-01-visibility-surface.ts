@@ -1,8 +1,5 @@
-import {
-  makeFactorEntry,
-  makeFactorLedger,
-  type SignalFactorLedger,
-} from "@skastr0/pulsar-core/factors"
+import { type SignalFactorLedger } from "@skastr0/pulsar-core/factors"
+import { makeDefaultSignalFactorLedger } from "./shared-factor-ledger.js"
 import {
   type Diagnostic,
   type DistributionalSummary,
@@ -48,7 +45,7 @@ export interface RsAd01Output {
 const DEFAULT_WARN_PUB_RATIO = 0.35
 const DEFAULT_TOP_N_DIAGNOSTICS = 5
 
-const RsAd01FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
+const RS_AD_01_FACTOR_DEFINITIONS: ReadonlyArray<SignalFactorDefinition> = [
   {
     path: "config.exclude_globs",
     title: "Config exclude globs",
@@ -106,7 +103,7 @@ export const RsAd01: Signal<RsAd01Config, RsAd01Output, RustProjectTag> = {
   kind: "structural",
   cacheVersion: "visibility-surface-config-thresholds-spaced-visibility-v2",
   configSchema: RsAd01Config,
-  factorDefinitions: RsAd01FactorDefinitions,
+  factorDefinitions: RS_AD_01_FACTOR_DEFINITIONS,
   defaultConfig: {
     exclude_globs: ["**/target/**", "**/tests/**", "**/examples/**", "**/benches/**"],
     warn_pub_ratio: DEFAULT_WARN_PUB_RATIO,
@@ -202,14 +199,7 @@ const computeVisibilitySurface = async (
 const clamp01 = (value: number): number => Math.max(0, Math.min(1, value))
 
 const makeRsAd01FactorLedger = (): SignalFactorLedger =>
-  makeFactorLedger(
-    "RS-AD-01-visibility-surface",
-    RsAd01FactorDefinitions.map((definition) =>
-      makeFactorEntry(definition, definition.defaultValue ?? null, {
-        source: "signal-default",
-      }),
-    ),
-  )
+  makeDefaultSignalFactorLedger("RS-AD-01-visibility-surface", RS_AD_01_FACTOR_DEFINITIONS)
 
 const recordVisibilityItem = (
   grouped: Map<string, ModuleVisibilitySurface>,

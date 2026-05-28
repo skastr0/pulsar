@@ -1,8 +1,5 @@
-import {
-  makeFactorEntry,
-  makeFactorLedger,
-  type SignalFactorLedger,
-} from "@skastr0/pulsar-core/factors"
+import { type SignalFactorLedger } from "@skastr0/pulsar-core/factors"
+import { makeDefaultSignalFactorLedger } from "./shared-factor-ledger.js"
 import { computeDiagnosticHash } from "@skastr0/pulsar-core/reference-data"
 import {
   type Diagnostic,
@@ -11,14 +8,14 @@ import {
   SignalComputeError,
 } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
-import { collectRustProjectFacts, type RustUseFact } from "../rust-analysis.js"
 import { RustProjectTag } from "../project.js"
 import {
-  resolveCrateRelativePath,
-  toLocalRelativeSegments,
-} from "./shared-rust-resolution.js"
+  computeRsDe04Output,
+  type RsDe04Output,
+  type RustModuleFan,
+} from "./rs-de-04-analysis.js"
 import { DEFAULT_RUST_EXCLUDE_GLOBS } from "./shared-rust-ast.js"
-import { isExcluded } from "./shared-globs.js"
+import { rustAnalysisOutputMetadata } from "./shared-applicability.js"
 
 const RsDe04Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
@@ -28,36 +25,11 @@ const RsDe04Config = Schema.Struct({
 })
 type RsDe04Config = typeof RsDe04Config.Type
 
-interface RustModuleFan {
-  readonly module: string
-  readonly file: string
-  readonly fanIn: number
-  readonly fanOut: number
-  readonly hubPressure: number
-}
-
-interface RsDe04Output {
-  readonly modules: ReadonlyArray<RustModuleFan>
-  readonly byModule: ReadonlyMap<string, { readonly fanIn: number; readonly fanOut: number }>
-  readonly hubs: ReadonlyArray<RustModuleFan>
-  readonly moduleCount: number
-  readonly sourceFileCount: number
-  readonly analyzedSourceFileCount: number
-  readonly useCount: number
-  readonly resolvedUseCount: number
-  readonly hubCount: number
-  readonly totalHubPressure: number
-  readonly hubFanInThreshold: number
-  readonly hubFanOutThreshold: number
-  readonly diagnosticLimit: number
-  readonly analysisMode: "explicit-use-resolution"
-}
-
 const DEFAULT_HUB_FAN_IN_THRESHOLD = 6
 const DEFAULT_HUB_FAN_OUT_THRESHOLD = 4
 const DEFAULT_TOP_N_DIAGNOSTICS = 10
 
-const RsDe04FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
+const RS_DE_04_FACTOR_DEFINITIONS: ReadonlyArray<SignalFactorDefinition> = [
   {
     path: "config.exclude_globs",
     title: "Config exclude globs",
@@ -97,7 +69,7 @@ export const RsDe04: Signal<RsDe04Config, RsDe04Output, RustProjectTag> = {
   kind: "structural",
   cacheVersion: "rust-use-fan-in-out-config-v2",
   configSchema: RsDe04Config,
-  factorDefinitions: RsDe04FactorDefinitions,
+  factorDefinitions: RS_DE_04_FACTOR_DEFINITIONS,
   defaultConfig: {
     exclude_globs: [...DEFAULT_RUST_EXCLUDE_GLOBS],
     hub_fan_in_threshold: DEFAULT_HUB_FAN_IN_THRESHOLD,
@@ -110,91 +82,7 @@ export const RsDe04: Signal<RsDe04Config, RsDe04Output, RustProjectTag> = {
       const normalizedConfig = normalizeRsDe04Config(config)
       const project = yield* RustProjectTag
       return yield* Effect.tryPromise({
-        try: async (): Promise<RsDe04Output> => {
-          const facts = await collectRustProjectFacts(project)
-          const rootNamesByCrate = new Map<string, Set<string>>()
-          for (const module of facts.modules) {
-            const bucket = rootNamesByCrate.get(module.crateName) ?? new Set<string>()
-            const segments = module.relativeModulePath.split("::")
-            const root = segments[1]
-            if (segments[0] === "crate" && root !== undefined) bucket.add(root)
-            rootNamesByCrate.set(module.crateName, bucket)
-          }
-          for (const item of facts.items) {
-            if (item.relativeModulePath !== "crate") continue
-            const bucket = rootNamesByCrate.get(item.crateName) ?? new Set<string>()
-            bucket.add(item.name)
-            rootNamesByCrate.set(item.crateName, bucket)
-          }
-
-          const incoming = new Map<string, Set<string>>()
-          const outgoing = new Map<string, Set<string>>()
-          const analyzedFiles = new Set(
-            project.sourceFiles.filter((file) => !isExcluded(file, normalizedConfig.exclude_globs)),
-          )
-          const modules = facts.modules.filter((module) =>
-            !isExcluded(module.file, normalizedConfig.exclude_globs)
-          )
-          const analyzedModulePaths = new Set(modules.map((module) => module.modulePath))
-          for (const module of modules) {
-            incoming.set(module.modulePath, new Set())
-            outgoing.set(module.modulePath, new Set())
-          }
-
-          let useCount = 0
-          const resolvedEdges = new Set<string>()
-          for (const useFact of facts.uses) {
-            if (isExcluded(useFact.file, normalizedConfig.exclude_globs)) continue
-            useCount += 1
-            const target = resolveLocalUseTarget(useFact, facts, rootNamesByCrate)
-            if (target === undefined || target === useFact.modulePath) continue
-            if (!analyzedModulePaths.has(useFact.modulePath) || !analyzedModulePaths.has(target)) {
-              continue
-            }
-            outgoing.get(useFact.modulePath)?.add(target)
-            incoming.get(target)?.add(useFact.modulePath)
-            resolvedEdges.add(`${useFact.modulePath}->${target}`)
-          }
-
-          const summaries = modules
-            .map((module) => {
-              const fanIn = incoming.get(module.modulePath)?.size ?? 0
-              const fanOut = outgoing.get(module.modulePath)?.size ?? 0
-              return {
-                module: module.modulePath,
-                file: module.file,
-                fanIn,
-                fanOut,
-                hubPressure: hubPressure(fanIn, fanOut, normalizedConfig),
-              }
-            })
-            .sort(compareModuleFan)
-          const hubs = summaries.filter(
-            (module) =>
-              module.fanIn >= normalizedConfig.hub_fan_in_threshold &&
-              module.fanOut >= normalizedConfig.hub_fan_out_threshold,
-          )
-          const totalHubPressure = hubs.reduce((sum, module) => sum + module.hubPressure, 0)
-
-          return {
-            modules: summaries,
-            byModule: new Map(
-              summaries.map((module) => [module.module, { fanIn: module.fanIn, fanOut: module.fanOut }]),
-            ),
-            hubs,
-            moduleCount: summaries.length,
-            sourceFileCount: project.sourceFiles.length,
-            analyzedSourceFileCount: analyzedFiles.size,
-            useCount,
-            resolvedUseCount: resolvedEdges.size,
-            hubCount: hubs.length,
-            totalHubPressure,
-            hubFanInThreshold: normalizedConfig.hub_fan_in_threshold,
-            hubFanOutThreshold: normalizedConfig.hub_fan_out_threshold,
-            diagnosticLimit: normalizedConfig.top_n_diagnostics,
-            analysisMode: "explicit-use-resolution",
-          }
-        },
+        try: () => computeRsDe04Output(project, normalizedConfig),
         catch: (cause) =>
           new SignalComputeError({ signalId: "RS-DE-04-fan-in-fan-out", message: String(cause), cause }),
       })
@@ -236,15 +124,12 @@ export const RsDe04: Signal<RsDe04Config, RsDe04Output, RustProjectTag> = {
       },
     }))
   },
-  outputMetadata: (out) => {
-    if (out.sourceFileCount === 0) {
-      return { applicability: "insufficient_evidence" as const }
-    }
-    if (out.moduleCount === 0 || out.resolvedUseCount === 0) {
-      return { applicability: "not_applicable" as const }
-    }
-    return undefined
-  },
+  outputMetadata: (out) =>
+    rustAnalysisOutputMetadata({
+      sourceFileCount: out.sourceFileCount,
+      analyzedItemCount: out.moduleCount,
+      evidenceItemCount: out.resolvedUseCount,
+    }),
   factorLedger: () => makeRsDe04FactorLedger(),
 }
 
@@ -264,38 +149,7 @@ const normalizeRsDe04Config = (config: RsDe04Config): NormalizedRsDe04Config => 
 })
 
 const makeRsDe04FactorLedger = (): SignalFactorLedger =>
-  makeFactorLedger(
-    "RS-DE-04-fan-in-fan-out",
-    RsDe04FactorDefinitions.map((definition) =>
-      makeFactorEntry(definition, definition.defaultValue ?? null, {
-        source: "signal-default",
-      }),
-    ),
-  )
-
-const hubPressure = (
-  fanIn: number,
-  fanOut: number,
-  config: NormalizedRsDe04Config,
-): number => {
-  if (
-    fanIn < config.hub_fan_in_threshold ||
-    fanOut < config.hub_fan_out_threshold
-  ) {
-    return 0
-  }
-  return (
-    Math.max(0, fanIn - config.hub_fan_in_threshold + 1) +
-    Math.max(0, fanOut - config.hub_fan_out_threshold + 1)
-  )
-}
-
-const compareModuleFan = (left: RustModuleFan, right: RustModuleFan): number =>
-  right.hubPressure - left.hubPressure ||
-  right.fanIn + right.fanOut - (left.fanIn + left.fanOut) ||
-  right.fanIn - left.fanIn ||
-  right.fanOut - left.fanOut ||
-  left.module.localeCompare(right.module)
+  makeDefaultSignalFactorLedger("RS-DE-04-fan-in-fan-out", RS_DE_04_FACTOR_DEFINITIONS)
 
 const hashModuleFan = (module: RustModuleFan, out: RsDe04Output): string =>
   computeDiagnosticHash(
@@ -308,17 +162,3 @@ const hashModuleFan = (module: RustModuleFan, out: RsDe04Output): string =>
       out.hubFanOutThreshold,
     ].join("|"),
   )
-
-const resolveLocalUseTarget = (
-  useFact: RustUseFact,
-  facts: Awaited<ReturnType<typeof collectRustProjectFacts>>,
-  rootNamesByCrate: ReadonlyMap<string, ReadonlySet<string>>,
-): string | undefined => {
-  const relativeSegments = toLocalRelativeSegments(
-    useFact,
-    rootNamesByCrate.get(useFact.crateName) ?? new Set(),
-  )
-  if (relativeSegments === undefined) return undefined
-  const resolved = resolveCrateRelativePath(useFact.crateName, relativeSegments, facts)
-  return resolved?.item?.modulePath ?? resolved?.module?.modulePath
-}

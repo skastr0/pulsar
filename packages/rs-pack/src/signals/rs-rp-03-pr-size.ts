@@ -6,11 +6,8 @@ import {
   type SignalFactorDefinition,
   SignalComputeError,
 } from "@skastr0/pulsar-core/signal"
-import {
-  makeFactorEntry,
-  makeFactorLedger,
-  type SignalFactorLedger,
-} from "@skastr0/pulsar-core/factors"
+import { type SignalFactorLedger } from "@skastr0/pulsar-core/factors"
+import { makeDefaultSignalFactorLedger } from "./shared-factor-ledger.js"
 import { readFile } from "node:fs/promises"
 import { join } from "node:path"
 import { Effect, Schema } from "effect"
@@ -46,7 +43,7 @@ const DEFAULT_TOP_N_DIAGNOSTICS = 10
 const RS_RP_03_SCORE_MODE = "bounded-pr-size-and-cross-crate-edge-pressure" as const
 const RS_RP_03_SCORE_DENOMINATOR = "changed-rust-lines-and-cross-crate-edges" as const
 
-const RsRp03FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
+const RS_RP_03_FACTOR_DEFINITIONS: ReadonlyArray<SignalFactorDefinition> = [
   {
     path: "config.top_n_diagnostics",
     title: "Config top n diagnostics",
@@ -66,7 +63,7 @@ export const RsRp03: Signal<RsRp03Config, RsRp03Output, RustProjectTag | SignalC
   cacheVersion: "git-diff-pr-size-git-context-aliases-rust-hunks-v3",
   cacheDependencies: ["git-revision-context"],
   configSchema: RsRp03Config,
-  factorDefinitions: RsRp03FactorDefinitions,
+  factorDefinitions: RS_RP_03_FACTOR_DEFINITIONS,
   defaultConfig: {
     top_n_diagnostics: DEFAULT_TOP_N_DIAGNOSTICS,
   },
@@ -190,14 +187,7 @@ const normalizeRsRp03Config = (config: RsRp03Config): NormalizedRsRp03Config => 
 })
 
 const makeRsRp03FactorLedger = (): SignalFactorLedger =>
-  makeFactorLedger(
-    "RS-RP-03-pr-size",
-    RsRp03FactorDefinitions.map((definition) =>
-      makeFactorEntry(definition, definition.defaultValue ?? null, {
-        source: "signal-default",
-      }),
-    ),
-  )
+  makeDefaultSignalFactorLedger("RS-RP-03-pr-size", RS_RP_03_FACTOR_DEFINITIONS)
 
 const parseGitDiff = (
   project: RustProject,

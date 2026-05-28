@@ -1,8 +1,5 @@
-import {
-  makeFactorEntry,
-  makeFactorLedger,
-  type SignalFactorLedger,
-} from "@skastr0/pulsar-core/factors"
+import { type SignalFactorLedger } from "@skastr0/pulsar-core/factors"
+import { makeDefaultSignalFactorLedger } from "./shared-factor-ledger.js"
 import { computeDiagnosticHash } from "@skastr0/pulsar-core/reference-data"
 import {
   type Diagnostic,
@@ -63,7 +60,7 @@ interface RsAb01Output {
 
 const DEFAULT_TOP_N_DIAGNOSTICS = 20
 
-const RsAb01FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
+const RS_AB_01_FACTOR_DEFINITIONS: ReadonlyArray<SignalFactorDefinition> = [
   {
     path: "config.exclude_globs",
     title: "Config exclude globs",
@@ -89,7 +86,7 @@ export const RsAb01: Signal<RsAb01Config, RsAb01Output, RustProjectTag> = {
   kind: "structural",
   cacheVersion: "rs-ab-01-public-surface-use-segments-aliases-diagnostics-reexports-private-visibility-chain-metadata-applicability-v10",
   configSchema: RsAb01Config,
-  factorDefinitions: RsAb01FactorDefinitions,
+  factorDefinitions: RS_AB_01_FACTOR_DEFINITIONS,
   defaultConfig: {
     exclude_globs: [...DEFAULT_RUST_EXCLUDE_GLOBS],
     top_n_diagnostics: DEFAULT_TOP_N_DIAGNOSTICS,
@@ -174,14 +171,7 @@ const normalizeRsAb01Config = (config: RsAb01Config): NormalizedRsAb01Config => 
 })
 
 const makeRsAb01FactorLedger = (): SignalFactorLedger =>
-  makeFactorLedger(
-    "RS-AB-01-unused-public-items",
-    RsAb01FactorDefinitions.map((definition) =>
-      makeFactorEntry(definition, definition.defaultValue ?? null, {
-        source: "signal-default",
-      }),
-    ),
-  )
+  makeDefaultSignalFactorLedger("RS-AB-01-unused-public-items", RS_AB_01_FACTOR_DEFINITIONS)
 
 const computeUnusedPublicItems = async (
   project: RustProject,

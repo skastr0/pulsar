@@ -1,8 +1,5 @@
-import {
-  makeFactorEntry,
-  makeFactorLedger,
-  type SignalFactorLedger,
-} from "@skastr0/pulsar-core/factors"
+import { type SignalFactorLedger } from "@skastr0/pulsar-core/factors"
+import { makeDefaultSignalFactorLedger } from "./shared-factor-ledger.js"
 import {
   type Diagnostic,
   type Signal,
@@ -49,7 +46,7 @@ interface RsAd03Output {
 
 const DEFAULT_TOP_N_DIAGNOSTICS = 10
 
-const RsAd03FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
+const RS_AD_03_FACTOR_DEFINITIONS: ReadonlyArray<SignalFactorDefinition> = [
   {
     path: "config.top_n_diagnostics",
     title: "Config top n diagnostics",
@@ -68,7 +65,7 @@ export const RsAd03: Signal<RsAd03Config, RsAd03Output, RustProjectTag> = {
   kind: "structural",
   cacheVersion: "cargo-metadata-cycles-config-v1",
   configSchema: RsAd03Config,
-  factorDefinitions: RsAd03FactorDefinitions,
+  factorDefinitions: RS_AD_03_FACTOR_DEFINITIONS,
   defaultConfig: {
     top_n_diagnostics: DEFAULT_TOP_N_DIAGNOSTICS,
   },
@@ -179,14 +176,7 @@ const normalizeRsAd03Config = (config: RsAd03Config): NormalizedRsAd03Config => 
 })
 
 const makeRsAd03FactorLedger = (): SignalFactorLedger =>
-  makeFactorLedger(
-    "RS-AD-03-circular-crate-dependencies",
-    RsAd03FactorDefinitions.map((definition) =>
-      makeFactorEntry(definition, definition.defaultValue ?? null, {
-        source: "signal-default",
-      }),
-    ),
-  )
+  makeDefaultSignalFactorLedger("RS-AD-03-circular-crate-dependencies", RS_AD_03_FACTOR_DEFINITIONS)
 
 const hashCycle = (cycle: CrateCycle): string =>
   computeDiagnosticHash(

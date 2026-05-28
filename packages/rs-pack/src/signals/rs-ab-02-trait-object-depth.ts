@@ -1,8 +1,5 @@
-import {
-  makeFactorEntry,
-  makeFactorLedger,
-  type SignalFactorLedger,
-} from "@skastr0/pulsar-core/factors"
+import { type SignalFactorLedger } from "@skastr0/pulsar-core/factors"
+import { makeDefaultSignalFactorLedger } from "./shared-factor-ledger.js"
 import {
   type Diagnostic,
   scoreThresholdViolationShare,
@@ -21,6 +18,7 @@ import {
   resolveRustFileScope,
   walkAttributedNodes,
 } from "./shared-rust-ast.js"
+import { rustAnalysisOutputMetadata } from "./shared-applicability.js"
 import { isExcluded } from "./shared-globs.js"
 
 const RsAb02Config = Schema.Struct({
@@ -59,7 +57,7 @@ interface RsAb02Output {
 const DEFAULT_MAX_CHAIN_DEPTH = 1
 const DEFAULT_TOP_N_DIAGNOSTICS = 10
 
-const RsAb02FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
+const RS_AB_02_FACTOR_DEFINITIONS: ReadonlyArray<SignalFactorDefinition> = [
   {
     path: "config.exclude_globs",
     title: "Config exclude globs",
@@ -92,7 +90,7 @@ export const RsAb02: Signal<RsAb02Config, RsAb02Output, RustProjectTag> = {
   kind: "legibility",
   cacheVersion: "trait-object-depth-config-applicability-diagnostics-scoped-calls-cfg-test-gating-cycles-v4",
   configSchema: RsAb02Config,
-  factorDefinitions: RsAb02FactorDefinitions,
+  factorDefinitions: RS_AB_02_FACTOR_DEFINITIONS,
   defaultConfig: {
     exclude_globs: [...DEFAULT_RUST_EXCLUDE_GLOBS],
     max_chain_depth: DEFAULT_MAX_CHAIN_DEPTH,
@@ -205,15 +203,12 @@ export const RsAb02: Signal<RsAb02Config, RsAb02Output, RustProjectTag> = {
       },
     }))
   },
-  outputMetadata: (out) => {
-    if (out.sourceFileCount === 0) {
-      return { applicability: "insufficient_evidence" as const }
-    }
-    if (out.analyzedSourceFileCount === 0 || out.functions.length === 0) {
-      return { applicability: "not_applicable" as const }
-    }
-    return undefined
-  },
+  outputMetadata: (out) =>
+    rustAnalysisOutputMetadata({
+      sourceFileCount: out.sourceFileCount,
+      analyzedItemCount: out.analyzedSourceFileCount,
+      evidenceItemCount: out.functions.length,
+    }),
   factorLedger: () => makeRsAb02FactorLedger(),
 }
 
@@ -230,14 +225,7 @@ const normalizeRsAb02Config = (config: RsAb02Config): NormalizedRsAb02Config => 
 })
 
 const makeRsAb02FactorLedger = (): SignalFactorLedger =>
-  makeFactorLedger(
-    "RS-AB-02-trait-object-depth",
-    RsAb02FactorDefinitions.map((definition) =>
-      makeFactorEntry(definition, definition.defaultValue ?? null, {
-        source: "signal-default",
-      }),
-    ),
-  )
+  makeDefaultSignalFactorLedger("RS-AB-02-trait-object-depth", RS_AB_02_FACTOR_DEFINITIONS)
 
 const detectReturnType = (node: ReturnType<typeof namedChildrenOf>[number]): string | undefined => {
   const children = namedChildrenOf(node)

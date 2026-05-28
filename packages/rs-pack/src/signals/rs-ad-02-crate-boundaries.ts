@@ -1,8 +1,5 @@
-import {
-  makeFactorEntry,
-  makeFactorLedger,
-  type SignalFactorLedger,
-} from "@skastr0/pulsar-core/factors"
+import { type SignalFactorLedger } from "@skastr0/pulsar-core/factors"
+import { makeDefaultSignalFactorLedger } from "./shared-factor-ledger.js"
 import {
   type Diagnostic,
   type Signal,
@@ -44,7 +41,7 @@ import {
 const DEFAULT_TOP_N_DIAGNOSTICS = 10
 const DEFAULT_EXCLUDE_GLOBS = ["**/target/**", "**/tests/**", "**/examples/**", "**/benches/**"] as const
 
-const RsAd02FactorDefinitions: ReadonlyArray<SignalFactorDefinition> = [
+const RS_AD_02_FACTOR_DEFINITIONS: ReadonlyArray<SignalFactorDefinition> = [
   {
     path: "config.exclude_globs",
     title: "Config exclude globs",
@@ -70,7 +67,7 @@ export const RsAd02: Signal<RsAd02ConfigType, RsAd02Output, RustProjectTag | Ref
   kind: "structural",
   cacheVersion: "crate-boundary-reference-data-config-aliases-use-segments-v3",
   configSchema: RsAd02Config,
-  factorDefinitions: RsAd02FactorDefinitions,
+  factorDefinitions: RS_AD_02_FACTOR_DEFINITIONS,
   defaultConfig: {
     exclude_globs: [...DEFAULT_EXCLUDE_GLOBS],
     top_n_diagnostics: DEFAULT_TOP_N_DIAGNOSTICS,
@@ -192,11 +189,4 @@ const hashViolation = (violation: RsAd02Violation): string =>
   )
 
 const makeRsAd02FactorLedger = (): SignalFactorLedger =>
-  makeFactorLedger(
-    "RS-AD-02-crate-boundaries",
-    RsAd02FactorDefinitions.map((definition) =>
-      makeFactorEntry(definition, definition.defaultValue ?? null, {
-        source: "signal-default",
-      }),
-    ),
-  )
+  makeDefaultSignalFactorLedger("RS-AD-02-crate-boundaries", RS_AD_02_FACTOR_DEFINITIONS)
