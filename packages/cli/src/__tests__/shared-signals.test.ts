@@ -213,6 +213,7 @@ describe("polyglot shared signals", () => {
         | undefined
       expect(coverageFacts?.state).toBe("absent")
       expect(coverageFacts?.checkedPaths).toEqual([
+        ".pulsar/coverage/coverage-facts.json",
         "coverage/lcov.info",
         "coverage/coverage-final.json",
       ])

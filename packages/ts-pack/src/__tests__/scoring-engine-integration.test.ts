@@ -26,6 +26,17 @@ const revParse = (ref: string): string => {
   return out.stdout.trim()
 }
 
+const revListCount = (fromSha: string, toSha: string): number => {
+  const out = spawnSync("git", ["rev-list", "--count", `${fromSha}..${toSha}`], {
+    cwd: REPO_ROOT,
+    encoding: "utf8",
+  })
+  if (out.status !== 0) {
+    throw new Error(`git rev-list --count ${fromSha}..${toSha} failed: ${out.stderr.trim()}`)
+  }
+  return Number.parseInt(out.stdout.trim(), 10)
+}
+
 describe("ScoringEngine + TS pack integration", () => {
   test(
     "scoreCommit(TS-RP-01) at HEAD produces a score and tears down the worktree",
@@ -73,7 +84,7 @@ describe("ScoringEngine + TS pack integration", () => {
   )
 
   test(
-    "scoreRange across the last 5 commits on main — all get scored, concurrency 2",
+    "scoreRange across a recent range on main — all get scored, concurrency 2",
     async () => {
       const head = revParse("HEAD")
       let fromSha: string
@@ -85,6 +96,7 @@ describe("ScoringEngine + TS pack integration", () => {
         console.warn("Skipping scoreRange integration — not enough history")
         return
       }
+      const expectedCount = revListCount(fromSha, head)
 
       const program = Effect.gen(function* () {
         const registry = yield* buildRegistry([...SHARED_SIGNALS, ...TS_PACK_SIGNALS])
@@ -109,7 +121,7 @@ describe("ScoringEngine + TS pack integration", () => {
       })
 
       const results = await Effect.runPromise(program)
-      expect(results.length).toBe(5)
+      expect(results.length).toBe(expectedCount)
       for (const r of results) {
         expect(r.sha).toMatch(/^[0-9a-f]{7,}$/)
         expect(r.result.signalId).toBe("TS-RP-01-hotspots")

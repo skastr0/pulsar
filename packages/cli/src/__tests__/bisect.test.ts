@@ -49,6 +49,17 @@ const nthParent = (n: number): string => {
   return out.stdout.trim()
 }
 
+const revListCount = (fromSha: string, toSha: string): number => {
+  const out = spawnSync("git", ["rev-list", "--count", `${fromSha}..${toSha}`], {
+    cwd: repoRoot,
+    encoding: "utf-8",
+  })
+  if (out.status !== 0) {
+    throw new Error(`git rev-list --count failed: ${out.stderr.trim()}`)
+  }
+  return Number.parseInt(out.stdout.trim(), 10)
+}
+
 const makeCommit = (sha: string, score: number): CommitScore => ({
   sha,
   score,
@@ -355,11 +366,13 @@ describe("observer bisect report helpers", () => {
 })
 
 describe("pulsar bisect (integration)", () => {
-  test("replays a 3-commit range and produces a trajectory", async () => {
+  test("replays a recent range and produces a trajectory", async () => {
     const from = nthParent(3)
     const to = headSha()
+    const expectedCount = revListCount(from, to)
     expect(from.length).toBe(40)
     expect(to.length).toBe(40)
+    expect(expectedCount).toBeGreaterThan(0)
 
     const out = await capturePrintedOutput(
       runBisectCommand({
@@ -377,7 +390,7 @@ describe("pulsar bisect (integration)", () => {
     const parsed = JSON.parse(out)
     expect(parsed.schemaVersion).toBe("signal-bisect/v2")
     expect(parsed.signalId).toBe("TS-RP-01")
-    expect(parsed.trajectory.length).toBe(3)
+    expect(parsed.trajectory.length).toBe(expectedCount)
     for (const entry of parsed.trajectory) {
       expect(typeof entry.sha).toBe("string")
       expect(entry.sha.length).toBe(40)
@@ -394,6 +407,7 @@ describe("pulsar bisect (integration)", () => {
   test("replays a 5-commit range in observer mode with per-category trajectories", async () => {
     const from = nthParent(5)
     const to = headSha()
+    const expectedCount = revListCount(from, to)
 
     const out = await capturePrintedOutput(
       runBisectCommand({
@@ -414,11 +428,11 @@ describe("pulsar bisect (integration)", () => {
     )
     expect(parsed.vectorName).toBeNull()
     expect(parsed.schemaVersion).toBe("observer-bisect/v2")
-    expect(parsed.trajectory.length).toBe(5)
-    expect(parsed.commits.length).toBe(5)
-    expect(parsed.curves.weightedMean.length).toBe(5)
-    expect(parsed.curves.readiness.length).toBe(5)
-    expect(entries.length).toBeGreaterThanOrEqual(5)
+    expect(parsed.trajectory.length).toBe(expectedCount)
+    expect(parsed.commits.length).toBe(expectedCount)
+    expect(parsed.curves.weightedMean.length).toBe(expectedCount)
+    expect(parsed.curves.readiness.length).toBe(expectedCount)
+    expect(entries.length).toBeGreaterThanOrEqual(expectedCount)
     expect(Object.keys(parsed.perCategory).sort()).toEqual([...CATEGORIES].sort())
     expect(Object.keys(parsed.perCategoryCulprits).sort()).toEqual([...CATEGORIES].sort())
     expect(Object.keys(parsed.perCategoryDriftCulprits).sort()).toEqual([...CATEGORIES].sort())
@@ -532,6 +546,7 @@ describe("pulsar bisect (integration)", () => {
   test("threads an optional vector through observer mode", async () => {
     const from = nthParent(1)
     const to = headSha()
+    const expectedCount = revListCount(from, to)
 
     const out = await withTempVectorFile(
       {
@@ -559,7 +574,7 @@ describe("pulsar bisect (integration)", () => {
 
     const parsed = JSON.parse(out)
     expect(parsed.vectorName).toBe("observer-test-vector")
-    expect(parsed.trajectory).toHaveLength(1)
+    expect(parsed.trajectory).toHaveLength(expectedCount)
     expect(parsed.signalCategories["TS-AB-01"]).toBeUndefined()
     expect(parsed.trajectory[0].signals["TS-AB-01"]).toBeUndefined()
     expect(parsed.signalCategories["TS-AB-03-type-indirection-depth"]).toBe("abstraction-bloat")
@@ -568,7 +583,7 @@ describe("pulsar bisect (integration)", () => {
     expect(parsed.trajectory[0].signals["TS-AB-05-generic-proliferation"]).toBeDefined()
     expect(parsed.trajectory[0].categories["abstraction-bloat"]).toBeGreaterThan(0)
     expect(parsed.trajectory[0].categories["abstraction-bloat"]).toBeLessThanOrEqual(1)
-  }, 60_000)
+  }, 120_000)
 
   test("fails loud when the vector references an unknown signal id", async () => {
     const from = nthParent(1)

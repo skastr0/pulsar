@@ -1158,6 +1158,33 @@ export const second = 2
           sizePenalty: 0.3,
           policyDecisions: [],
         },
+        fixHints: [
+          {
+            kind: "reduce-or-route-pr-surface",
+            title: "Shrink or route the change surface",
+            summary:
+              "Split independent concerns, move generated files out of the review path, or add explicit review routing for the largest changed areas.",
+            confidence: "medium",
+            autoApplicable: false,
+            data: {
+              sizeCategory: "large",
+              largestFiles: [
+                {
+                  file: "src/large.ts",
+                  linesAdded: 300,
+                  linesDeleted: 30,
+                  totalLines: 330,
+                },
+                {
+                  file: "src/other.ts",
+                  linesAdded: 60,
+                  linesDeleted: 10,
+                  totalLines: 70,
+                },
+              ],
+            },
+          },
+        ],
       },
       {
         severity: "warn",
@@ -1169,6 +1196,20 @@ export const second = 2
           fromBoundary: "app",
           toBoundary: "core",
         },
+        fixHints: [
+          {
+            kind: "review-new-boundary-edge",
+            title: "Justify the new boundary edge",
+            summary:
+              "Route this import through an existing boundary, add an explicit boundary rule, or split the PR so dependency movement is reviewed separately.",
+            confidence: "high",
+            autoApplicable: false,
+            data: {
+              fromBoundary: "app",
+              toBoundary: "core",
+            },
+          },
+        ],
       },
     ])
     expect(TsRp02.diagnose({ ...out, diagnosticLimit: -1 })).toEqual([])
