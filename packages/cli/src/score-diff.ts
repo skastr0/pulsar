@@ -282,11 +282,11 @@ const compareDiagnostics = (
 } => {
   const baseRecords = diagnosticRecords(repoRoot, registry, base, changedHunks)
   const headRecords = diagnosticRecords(repoRoot, registry, head, changedHunks)
-  const baseKeys = new Set(baseRecords.map((record) => diagnosticRecordKey(record)))
-  const headKeys = new Set(headRecords.map((record) => diagnosticRecordKey(record)))
+  const baseKeys = new Set(baseRecords.map((record) => diagnosticRecordKey(repoRoot, record)))
+  const headKeys = new Set(headRecords.map((record) => diagnosticRecordKey(repoRoot, record)))
   return {
-    introduced: headRecords.filter((record) => !baseKeys.has(diagnosticRecordKey(record))),
-    resolved: baseRecords.filter((record) => !headKeys.has(diagnosticRecordKey(record))),
+    introduced: headRecords.filter((record) => !baseKeys.has(diagnosticRecordKey(repoRoot, record))),
+    resolved: baseRecords.filter((record) => !headKeys.has(diagnosticRecordKey(repoRoot, record))),
   }
 }
 
@@ -365,10 +365,17 @@ const normalizeDiagnosticPath = (
 ): string | undefined => {
   if (file === undefined) return undefined
   const normalized = file.replace(/\\/g, "/")
+  const detachedRelative = detachedWorktreeRelativePath(normalized)
+  if (detachedRelative !== undefined) return detachedRelative
   const repoRelative = isAbsolute(normalized)
     ? relative(repoRoot, normalized).replace(/\\/g, "/")
     : normalized
   return repoRelative.replace(/^\.\//, "")
+}
+
+const detachedWorktreeRelativePath = (path: string): string | undefined => {
+  const match = /(?:^|\/)pulsar-worktree-[^/]+\/(.+)$/.exec(path)
+  return match?.[1]?.replace(/^\.\//, "")
 }
 
 const isDiagnosticMemberArray = (
@@ -390,18 +397,59 @@ const lineInHunk = (line: number, hunk: ChangedHunk): boolean => {
   return line >= hunk.newStart && line < hunk.newStart + hunk.newLines
 }
 
-const diagnosticRecordKey = (record: DiagnosticRecord): string => {
+const diagnosticRecordKey = (repoRoot: string, record: DiagnosticRecord): string => {
   const location = record.diagnostic.location
-  const stableHash = record.diagnostic.data?.hash
+  const normalizedFile = normalizeDiagnosticPath(repoRoot, location?.file)
   return [
     record.signal_id,
-    typeof stableHash === "string" ? stableHash : record.diagnostic.message,
     record.diagnostic.severity,
-    location?.file ?? "",
+    normalizedFile ?? "",
     location?.line ?? "",
     location?.column ?? "",
+    diagnosticRecordDiscriminator(repoRoot, record, normalizedFile !== undefined),
   ].join("\0")
 }
+
+const normalizeDiagnosticText = (repoRoot: string, text: string): string => {
+  const normalizedRepoRoot = repoRoot.replace(/\\/g, "/")
+  return text
+    .split(`${normalizedRepoRoot}/`)
+    .join("")
+    .replace(/\/\S*?\/pulsar-worktree-[^/\s]+\/([^\s]+)/g, "$1")
+}
+
+const diagnosticRecordDiscriminator = (
+  repoRoot: string,
+  record: DiagnosticRecord,
+  hasLocation: boolean,
+): string => {
+  if (!hasLocation) return normalizeDiagnosticText(repoRoot, record.diagnostic.message)
+  const data = record.diagnostic.data
+  if (typeof data !== "object" || data === null) return ""
+  return DIAGNOSTIC_KEY_DATA_FIELDS.flatMap((field) => {
+    const value = (data as Record<string, unknown>)[field]
+    if (typeof value === "string") {
+      return [`${field}:${normalizeDiagnosticText(repoRoot, value)}`]
+    }
+    if (typeof value === "number" || typeof value === "boolean") {
+      return [`${field}:${String(value)}`]
+    }
+    return []
+  }).join("|")
+}
+
+const DIAGNOSTIC_KEY_DATA_FIELDS = [
+  "kind",
+  "rule",
+  "symbol",
+  "name",
+  "expression",
+  "specifier",
+  "sink",
+  "groupId",
+  "findingId",
+  "displayFile",
+] as const
 
 const compareDiagnosticRecords = (left: DiagnosticRecord, right: DiagnosticRecord): number =>
   left.signal_id.localeCompare(right.signal_id) ||

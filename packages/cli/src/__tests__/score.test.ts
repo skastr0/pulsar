@@ -307,6 +307,16 @@ describe("pulsar score", () => {
       expect(duplicationChange.base_score).toBeLessThan(1)
       expect(duplicationChange.head_score).toBe(duplicationChange.base_score)
       expect(duplicationChange.delta).toBe(0)
+      const introducedDuplication = parsed.introduced_diagnostics.filter(
+        (diagnostic: { readonly signal_id: string }) =>
+          diagnostic.signal_id === "TS-SL-01-duplication",
+      )
+      const resolvedDuplication = parsed.resolved_diagnostics.filter(
+        (diagnostic: { readonly signal_id: string }) =>
+          diagnostic.signal_id === "TS-SL-01-duplication",
+      )
+      expect(introducedDuplication).toEqual([])
+      expect(resolvedDuplication).toEqual([])
     } finally {
       await rm(repoPath, { recursive: true, force: true })
     }
