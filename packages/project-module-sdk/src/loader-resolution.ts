@@ -40,6 +40,19 @@ interface ProjectModulePackageRoots {
   readonly dependencyRoot: string
 }
 
+interface ProjectModulePackageResolution {
+  readonly packageName: string
+  readonly repoRoot: string
+  readonly dependencyRoot: string
+  readonly resolutionRoot: string
+  readonly resolutionLabel: string
+}
+
+interface MaterializedProjectModulePackage {
+  readonly importTarget: string
+  readonly sourceFingerprint: string
+}
+
 export const resolveProjectModuleRefTarget = (
   ref: ProjectModuleRef,
   options: ProjectModuleLoadOptions,
@@ -124,6 +137,30 @@ const resolvePackageProjectModuleTarget = (
   options: ProjectModuleLoadOptions,
 ): Effect.Effect<ResolvedProjectModuleTarget, ProjectModuleLoadError> =>
   Effect.gen(function* () {
+    const resolution = yield* resolveProjectModulePackageResolution(ref, options)
+    const packagePath = yield* resolveProjectModulePackagePath(ref, resolution)
+    const target = yield* realpathOrLoadError(ref, packagePath, "project module package artifact")
+    const packageTarget = yield* resolveOwnedProjectModulePackageTarget(
+      ref,
+      target,
+      {
+        repoRoot: resolution.repoRoot,
+        dependencyRoot: resolution.dependencyRoot,
+      },
+    )
+    const materialized = yield* materializeResolvedProjectModulePackage(
+      ref,
+      resolution,
+      packageTarget,
+    )
+    return resolvedPackageProjectModuleTarget(ref, resolution.packageName, materialized)
+  })
+
+const resolveProjectModulePackageResolution = (
+  ref: ProjectModuleRef & { readonly kind: "workspace" | "package" },
+  options: ProjectModuleLoadOptions,
+): Effect.Effect<ProjectModulePackageResolution, ProjectModuleLoadError> =>
+  Effect.gen(function* () {
     const packageName = ref.packageName
     if (!isPackageName(packageName)) {
       return yield* new ProjectModuleLoadError({
@@ -133,68 +170,79 @@ const resolvePackageProjectModuleTarget = (
       })
     }
 
-    const resolvedRepoRoot = yield* realpathOrLoadError(ref, options.repoRoot, "repository root")
-    const resolvedDependencyRoot =
+    const repoRoot = yield* realpathOrLoadError(ref, options.repoRoot, "repository root")
+    const dependencyRoot =
       ref.kind === "package" && options.dependencyRoot !== undefined
-        ? yield* realpathOrLoadError(
-            ref,
-            options.dependencyRoot,
-            "project module dependency root",
-          )
-        : resolvedRepoRoot
-    const packageResolutionRoot =
-      ref.kind === "package" ? resolvedDependencyRoot : resolvedRepoRoot
-    const packageResolutionLabel =
-      ref.kind === "package" ? "project module dependency root" : "repository root"
-    const packagePath = yield* Effect.try({
-      try: () =>
-        createRequire(resolve(packageResolutionRoot, "package.json")).resolve(packageName),
-      catch: (cause) =>
-        new ProjectModuleLoadError({
-          refId: ref.id,
-          target: packageName,
-          message: `Failed to resolve project module package ${packageName} from ${packageResolutionLabel}`,
-          cause,
-        }),
-    })
+        ? yield* realpathOrLoadError(ref, options.dependencyRoot, "project module dependency root")
+        : repoRoot
 
-    const target = yield* realpathOrLoadError(ref, packagePath, "project module package artifact")
-    const packageTarget = yield* resolveOwnedProjectModulePackageTarget(
-      ref,
-      target,
-      {
-        repoRoot: resolvedRepoRoot,
-        dependencyRoot: resolvedDependencyRoot,
-      },
-    )
+    return {
+      packageName,
+      repoRoot,
+      dependencyRoot,
+      resolutionRoot: ref.kind === "package" ? dependencyRoot : repoRoot,
+      resolutionLabel: ref.kind === "package" ? "project module dependency root" : "repository root",
+    }
+  })
+
+const resolveProjectModulePackagePath = (
+  ref: ProjectModuleRef & { readonly kind: "workspace" | "package" },
+  resolution: ProjectModulePackageResolution,
+): Effect.Effect<string, ProjectModuleLoadError> =>
+  Effect.try({
+    try: () =>
+      createRequire(resolve(resolution.resolutionRoot, "package.json")).resolve(
+        resolution.packageName,
+      ),
+    catch: (cause) =>
+      new ProjectModuleLoadError({
+        refId: ref.id,
+        target: resolution.packageName,
+        message: `Failed to resolve project module package ${resolution.packageName} from ${resolution.resolutionLabel}`,
+        cause,
+      }),
+  })
+
+const materializeResolvedProjectModulePackage = (
+  ref: ProjectModuleRef & { readonly kind: "workspace" | "package" },
+  resolution: ProjectModulePackageResolution,
+  packageTarget: ProjectModulePackageTarget,
+): Effect.Effect<MaterializedProjectModulePackage, ProjectModuleLoadError> =>
+  Effect.gen(function* () {
     const files = yield* collectProjectModuleSourceFiles(
       ref,
       packageTarget.target,
       packageTarget.packageRoot,
-      (path) => toSourceRef(`${packageName}/${relative(packageTarget.packageRoot, path)}`),
+      (path) => toSourceRef(`${resolution.packageName}/${relative(packageTarget.packageRoot, path)}`),
     )
     const sourceFingerprint = yield* hashProjectModuleSource(ref, packageTarget.target, files)
     const importTarget = yield* materializeProjectModuleImportTarget(
       ref,
       packageTarget.target,
       packageTarget.packageRoot,
-      resolvedRepoRoot,
+      resolution.repoRoot,
       packageTarget.packageRoot,
       sourceFingerprint,
       files,
-      ["node_modules", ...packageName.split("/")],
+      ["node_modules", ...resolution.packageName.split("/")],
       false,
     )
-    return {
-      target: withSourceFingerprintQuery(
-        pathToFileURL(importTarget).href,
-        sourceFingerprint,
-      ),
-      source: ref.kind,
-      sourceRef: packageName,
-      sourceFingerprint,
-    }
+    return { importTarget, sourceFingerprint }
   })
+
+const resolvedPackageProjectModuleTarget = (
+  ref: ProjectModuleRef & { readonly kind: "workspace" | "package" },
+  packageName: string,
+  materialized: MaterializedProjectModulePackage,
+): ResolvedProjectModuleTarget => ({
+  target: withSourceFingerprintQuery(
+    pathToFileURL(materialized.importTarget).href,
+    materialized.sourceFingerprint,
+  ),
+  source: ref.kind,
+  sourceRef: packageName,
+  sourceFingerprint: materialized.sourceFingerprint,
+})
 
 const resolveOwnedProjectModulePackageTarget = (
   ref: ProjectModuleRef & { readonly kind: "workspace" | "package" },
