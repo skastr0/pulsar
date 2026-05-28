@@ -207,7 +207,7 @@ describe("TS-RP-02 PR size and dependency delta", () => {
       tier: 1,
       category: "review-pain",
       kind: "structural",
-      cacheVersion: "branch-range-factor-policy-diagnostic-limit-package-import-edges-untracked-v1",
+      cacheVersion: "branch-range-factor-policy-diagnostic-limit-package-import-edges-untracked-upstream-aligned-v1",
       inputs: [],
     })
     expect(decoded).toEqual(TsRp02.defaultConfig)
@@ -1052,6 +1052,29 @@ export const second = 2
       "/src/first.ts",
       "/src/second.ts",
     ])
+  }, 120_000)
+
+  test("aligned upstream branch does not rescore the latest commit as PR surface", async () => {
+    await repo.write(
+      "src/aligned.ts",
+      `
+export const aligned = true
+`,
+    )
+    git(repo.root, ["add", "."])
+    git(repo.root, ["commit", "-q", "-m", "Add aligned file"])
+    git(repo.root, ["branch", "origin/main"])
+    git(repo.root, ["branch", "--set-upstream-to", "origin/main", "main"])
+
+    const out = await computeWithContext(repo, TsRp02.defaultConfig, {
+      gitSha: "HEAD",
+      changedHunks: [],
+    })
+
+    expect(out.diffMode).toBe("git-branch-range")
+    expect(out.filesChanged).toEqual([])
+    expect(TsRp02.outputMetadata?.(out)).toEqual({ applicability: "not_applicable" })
+    expect(TsRp02.score(out)).toBe(1)
   }, 120_000)
 
   test("diagnostics include PR summary", async () => {

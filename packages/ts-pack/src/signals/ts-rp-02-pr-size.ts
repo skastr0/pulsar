@@ -98,7 +98,7 @@ export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackage
   tier: 1,
   category: "review-pain",
   kind: "structural",
-  cacheVersion: "branch-range-factor-policy-diagnostic-limit-package-import-edges-untracked-v1",
+  cacheVersion: "branch-range-factor-policy-diagnostic-limit-package-import-edges-untracked-upstream-aligned-v1",
   cacheDependencies: ["git-revision-context"],
   configSchema: TsRp02Config,
   defaultConfig: DEFAULT_TS_RP_02_CONFIG,
@@ -300,15 +300,40 @@ const computeGitPrSizeOutput = async (
 
   const workingTree = await parseDiffRange(project, packages, context, config, git, undefined, "git-working-tree")
   if (workingTree !== undefined && workingTree.filesChanged.length > 0) return workingTree
+  if (await hasWorktreeChanges(git)) {
+    return emptyPrSizeOutput("git-working-tree", config)
+  }
 
   const branchRange = await resolveBranchDiffRange(git)
-  const branch = branchRange === undefined
-    ? undefined
-    : await parseDiffRange(project, packages, context, config, git, branchRange, "git-branch-range")
-  if (branch !== undefined && branch.filesChanged.length > 0) return branch
+  if (branchRange?.kind === "aligned") {
+    return emptyPrSizeOutput("git-branch-range", config)
+  }
+  if (branchRange?.kind === "range") {
+    return await parseDiffRange(project, packages, context, config, git, branchRange.range, "git-branch-range")
+  }
 
   return await computeCommitRangeOutput(project, packages, context, config, git)
 }
+
+const emptyPrSizeOutput = (
+  diffMode: TsRp02Output["diffMode"],
+  config: TsRp02Config,
+): TsRp02Output => ({
+  linesAdded: 0,
+  linesDeleted: 0,
+  filesChanged: [],
+  fileStats: [],
+  packagesTouched: [],
+  newCrossPackageEdges: [],
+  newCrossBoundaryEdges: [],
+  diffMode,
+  dependencyDeltaMode: diffMode === "changed-hunks-fallback" || diffMode === "missing"
+    ? "unavailable"
+    : "measured",
+  sizeCategory: "small",
+  sizePenalty: 0,
+  diagnosticLimit: config.top_n_diagnostics,
+})
 
 const computeCommitRangeOutput = async (
   project: Project,
@@ -355,9 +380,13 @@ const parseDiffRange = async (
   )
 }
 
+type BranchDiffRange =
+  | { readonly kind: "range"; readonly range: string }
+  | { readonly kind: "aligned" }
+
 const resolveBranchDiffRange = async (
   git: GitClient,
-): Promise<string | undefined> => {
+): Promise<BranchDiffRange | undefined> => {
   try {
     const upstream = (await git.raw([
       "rev-parse",
@@ -374,11 +403,27 @@ const resolveBranchDiffRange = async (
     const headSha = head.trim()
     const mergeBaseSha = mergeBase.trim()
     if (headSha.length === 0 || mergeBaseSha.length === 0 || headSha === mergeBaseSha) {
-      return undefined
+      return { kind: "aligned" }
     }
-    return `${mergeBaseSha}..HEAD`
+    return { kind: "range", range: `${mergeBaseSha}..HEAD` }
   } catch {
     return undefined
+  }
+}
+
+const hasWorktreeChanges = async (git: GitClient): Promise<boolean> => {
+  try {
+    const status = await git.raw([
+      "status",
+      "--porcelain=v1",
+      "--untracked-files=all",
+      "--",
+      ".",
+      ":!.pulsar/cache",
+    ])
+    return status.trim().length > 0
+  } catch {
+    return false
   }
 }
 
