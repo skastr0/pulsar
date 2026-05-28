@@ -138,6 +138,34 @@ describe("TypeScript trust-domain and AI-slop signals", () => {
     })
   })
 
+  test("TS-SEC-03 ignores detector patterns and human metadata keys", async () => {
+    await repo.write(
+      "src/scanner.ts",
+      [
+        "export const privateKeyPattern = /-----BEGIN [A-Z ]*PRIVATE KEY-----/",
+        "export const metadataKeys = [",
+        "  'applicableSignalCount',",
+        "  'weightedMeanDriftCulprits',",
+        "  'pulsar/calibration/suggestions/v1',",
+        "  '--auto-accept-above-frequency',",
+        "  'behavior-preservation',",
+        "  'SHARED-COV-01-coverage-facts',",
+        "  'observer-baseline-mismatch',",
+        "]",
+        "export const opaqueSession = 'mF9xQ2LzP8aB4vN7rT1yC6sD3hK0wE5='",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsSec03, TsSec03.defaultConfig)
+
+    expect(out.state).toBe("present")
+    expect(out.findings).toHaveLength(1)
+    expect(out.findings[0]).toMatchObject({
+      kind: "high-entropy-literal",
+      identifier: "opaqueSession",
+    })
+  })
+
   test("TS-CC-01 flags floating promises and swallowed rejection paths", async () => {
     await repo.write(
       "src/async.ts",

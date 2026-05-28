@@ -24,6 +24,8 @@ describe("TS-AD-04 (boundary parser coverage)", () => {
     const decoded = Schema.decodeUnknownSync(TsAd04.configSchema)(TsAd04.defaultConfig)
 
     expect(decoded.boundary_globs).toContain("**/api/*.ts")
+    expect(decoded.boundary_globs).toContain("**/src/cli/*.ts")
+    expect(decoded.boundary_globs).not.toContain("**/cli/**/*.ts")
     expect(decoded.parser_call_patterns).toContain("decode")
     expect(decoded.exclude_globs).toContain("**/*.test.ts")
     expect(decoded.top_n_diagnostics).toBe(10)
@@ -94,6 +96,24 @@ describe("TS-AD-04 (boundary parser coverage)", () => {
       severity: "warn",
       message: expect.stringContaining("without parse/decode evidence"),
     })
+  })
+
+  test("does not treat every file in a package named cli as a process boundary", async () => {
+    await repo.write(
+      "packages/cli/src/format.ts",
+      [
+        "export function formatCliError(err: unknown): string {",
+        "  return String(err)",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await run()
+
+    expect(out.state).toBe("absent")
+    expect(out.boundaryFilesMatched).toBe(0)
+    expect(out.findings).toEqual([])
+    expect(TsAd04.score(out)).toBe(1)
   })
 
   test("records zero findings when weak boundary inputs have Effect Schema decode evidence", async () => {

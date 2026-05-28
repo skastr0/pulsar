@@ -218,11 +218,11 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       identity:
         "ts-ad-04.test.ts: pack registration exposes canonical id, alias, title, and wrapped cache version.",
       config:
-        "ts-ad-04.test.ts: configSchema decodes defaults, custom parser_call_patterns affect parser evidence, and diagnostics honor sanitized top_n_diagnostics.",
+        "ts-ad-04.test.ts: configSchema decodes narrowed CLI boundary defaults, custom parser_call_patterns affect parser evidence, and diagnostics honor sanitized top_n_diagnostics.",
       positiveFixture:
         "ts-ad-04.test.ts: fixtures detect weak any, unknown, untyped, request-like, anonymous default-export, and default-export function boundary parameters without parser evidence.",
       negativeFixture:
-        "ts-ad-04.test.ts: parser pattern names in call arguments, parser-pattern substrings, parser calls that do not reference weak input, and parser calls outside the boundary function body do not count as parser evidence.",
+        "ts-ad-04.test.ts: package directories named cli are not process boundaries by default; parser pattern names in call arguments, parser-pattern substrings, parser calls that do not reference weak input, and parser calls outside the boundary function body do not count as parser evidence.",
       applicability:
         "ts-ad-04.test.ts: absent boundary files, not_configured boundary_globs, and boundary files with no weak external inputs produce distinct applicability states.",
       score:
@@ -838,7 +838,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       positiveFixture:
         "ts-trust-signals.test.ts: source fixture with sk-prefixed literal produces a known-secret-prefix finding.",
       negativeFixture:
-        "ts-trust-signals.test.ts: placeholder token literal is ignored and not counted as secret material.",
+        "ts-trust-signals.test.ts: placeholder token literals, detector regex patterns, human metadata keys, and path-like calibration ids are ignored and not counted as secret material.",
       applicability:
         "ts-trust-signals.test.ts: value-only fixture exercises zero state with score 1 during identity/factor-ledger checks.",
       score:

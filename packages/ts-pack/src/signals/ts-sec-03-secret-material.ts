@@ -5,7 +5,7 @@ import {
   type Signal,
 } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
-import type { SourceFile } from "ts-morph"
+import { Node, type SourceFile } from "ts-morph"
 import { TsProjectTag } from "../ts-project.js"
 import {
   PRODUCTION_EXCLUDE_GLOBS,
@@ -56,7 +56,7 @@ export const TsSec03: Signal<TsSec03Config, TsSec03Output, TsProjectTag> = {
   tier: 1,
   category: "security-risk",
   kind: "structural",
-  cacheVersion: "secret-material-v1",
+  cacheVersion: "secret-material-v2-literal-ast-and-token-shape",
   configSchema: TsSec03Config,
   defaultConfig: {
     exclude_globs: [...PRODUCTION_EXCLUDE_GLOBS],
@@ -116,14 +116,14 @@ const computeSecretMaterial = (
     if (!isAnalyzableSourceFile(sourceFile, config.exclude_globs)) continue
     analyzedFiles += 1
     const text = sourceFile.getFullText()
-    for (const match of text.matchAll(STRING_LITERAL_PATTERN)) {
-      const value = (match[3] ?? "").trim()
+    for (const literal of collectStringLiterals(sourceFile)) {
+      const value = literal.value.trim()
       if (value.length === 0) continue
       literalsScanned += 1
-      const identifier = nearbyIdentifier(text, match.index ?? 0)
+      const identifier = nearbyIdentifier(text, literal.index)
       const kind = classifySecretLiteral(identifier, value, config)
       if (kind === undefined) continue
-      const { line, column } = sourceFile.getLineAndColumnAtPos(match.index ?? 0)
+      const { line, column } = sourceFile.getLineAndColumnAtPos(literal.index)
       findings.push({
         file: sourceFile.getFilePath(),
         line,
@@ -132,19 +132,6 @@ const computeSecretMaterial = (
         identifier,
         redacted: redactSecret(value),
         entropy: round(shannonEntropy(value)),
-      })
-    }
-    if (/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(text)) {
-      const index = text.search(/-----BEGIN [A-Z ]*PRIVATE KEY-----/)
-      const { line, column } = sourceFile.getLineAndColumnAtPos(index)
-      findings.push({
-        file: sourceFile.getFilePath(),
-        line,
-        column,
-        kind: "private-key-block",
-        identifier: "private key block",
-        redacted: "-----BEGIN ... PRIVATE KEY-----",
-        entropy: 0,
       })
     }
   }
@@ -168,11 +155,24 @@ const computeSecretMaterial = (
   }
 }
 
-const STRING_LITERAL_PATTERN = /([A-Za-z_$][\w$-]*)?\s*(?::|=|,|\()?\s*(["'`])([^"'`\n]{8,}|[^"'`]*BEGIN [A-Z ]*PRIVATE KEY[^"'`]*)\2/g
-
 const SECRET_NAME_PATTERN = /(secret|token|apikey|api_key|password|passwd|privatekey|private_key|clientsecret|client_secret)/i
 const KNOWN_SECRET_PREFIX = /^(sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9_]{16,}|xox[baprs]-[A-Za-z0-9-]{16,}|AKIA[0-9A-Z]{16})/
 const PLACEHOLDER_PATTERN = /^(?:changeme|example|placeholder|test|dummy|fake|mock|sample|todo|xxx|your[_-]?)/i
+
+interface StringLiteralScanTarget {
+  readonly value: string
+  readonly index: number
+}
+
+const collectStringLiterals = (sourceFile: SourceFile): ReadonlyArray<StringLiteralScanTarget> => {
+  const targets: Array<StringLiteralScanTarget> = []
+  sourceFile.forEachDescendant((node) => {
+    if (Node.isStringLiteral(node) || Node.isNoSubstitutionTemplateLiteral(node)) {
+      targets.push({ value: node.getLiteralText(), index: node.getStart() })
+    }
+  })
+  return targets
+}
 
 const classifySecretLiteral = (
   identifier: string,
@@ -193,11 +193,30 @@ const classifySecretLiteral = (
   if (
     value.length >= config.min_secret_length &&
     entropy >= config.min_entropy &&
-    /^[A-Za-z0-9_+/=-]+$/.test(value)
+    hasHighEntropySecretTokenShape(value)
   ) {
     return "high-entropy-literal"
   }
   return undefined
+}
+
+const hasHighEntropySecretTokenShape = (value: string): boolean => {
+  if (!/^[A-Za-z0-9_+/=-]+$/.test(value)) return false
+  if (value.startsWith("--")) return false
+  if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(value)) return false
+  if (/^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)+$/.test(value)) return false
+  if (value.includes("/") && /^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)+$/.test(value)) {
+    return false
+  }
+
+  const classes = [
+    /[a-z]/.test(value),
+    /[A-Z]/.test(value),
+    /[0-9]/.test(value),
+    /[_+/=-]/.test(value),
+  ].filter(Boolean).length
+
+  return classes >= 2 && (/[0-9]/.test(value) || /[_+/=-]/.test(value))
 }
 
 const nearbyIdentifier = (text: string, index: number): string => {
