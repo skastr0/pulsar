@@ -2,7 +2,7 @@
  * @skastr0/pulsar-shared-signals — language-agnostic shared pack.
  */
 
-export const SHARED_SIGNALS_VERSION = "0.1.1" as const
+export const SHARED_SIGNALS_VERSION = "0.1.2" as const
 
 export {
   compareRootFirstPackageNames,

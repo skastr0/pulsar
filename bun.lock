@@ -16,7 +16,7 @@
     },
     "packages/cli": {
       "name": "@skastr0/pulsar-cli",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "bin": {
         "pulsar": "./dist/bin.js",
       },
@@ -36,7 +36,7 @@
     },
     "packages/core": {
       "name": "@skastr0/pulsar-core",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "dependencies": {
         "effect": "^3.0.0",
       },
@@ -46,7 +46,7 @@
     },
     "packages/npm/pulsar": {
       "name": "@skastr0/pulsar",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "bin": {
         "pulsar": "./bin/pulsar.js",
       },
@@ -59,23 +59,23 @@
     },
     "packages/npm/pulsar-darwin-arm64": {
       "name": "@skastr0/pulsar-darwin-arm64",
-      "version": "0.1.1",
+      "version": "0.1.2",
     },
     "packages/npm/pulsar-darwin-x64": {
       "name": "@skastr0/pulsar-darwin-x64",
-      "version": "0.1.1",
+      "version": "0.1.2",
     },
     "packages/npm/pulsar-linux-arm64": {
       "name": "@skastr0/pulsar-linux-arm64",
-      "version": "0.1.1",
+      "version": "0.1.2",
     },
     "packages/npm/pulsar-linux-x64": {
       "name": "@skastr0/pulsar-linux-x64",
-      "version": "0.1.1",
+      "version": "0.1.2",
     },
     "packages/project-module-convex": {
       "name": "@skastr0/pulsar-project-module-convex",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "dependencies": {
         "@skastr0/pulsar-project-module-sdk": "workspace:*",
         "effect": "^3.0.0",
@@ -86,7 +86,7 @@
     },
     "packages/project-module-effect": {
       "name": "@skastr0/pulsar-project-module-effect",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "dependencies": {
         "@skastr0/pulsar-project-module-sdk": "workspace:*",
         "effect": "^3.0.0",
@@ -97,9 +97,9 @@
     },
     "packages/project-module-nextjs": {
       "name": "@skastr0/pulsar-project-module-nextjs",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "dependencies": {
-        "@skastr0/pulsar-project-module-sdk": "0.1.1",
+        "@skastr0/pulsar-project-module-sdk": "0.1.2",
         "effect": "^3.0.0",
       },
       "devDependencies": {
@@ -108,19 +108,19 @@
     },
     "packages/project-module-sdk": {
       "name": "@skastr0/pulsar-project-module-sdk",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "dependencies": {
-        "@skastr0/pulsar-core": "0.1.1",
+        "@skastr0/pulsar-core": "0.1.2",
         "effect": "^3.0.0",
         "typescript": "^5.8.0",
       },
     },
     "packages/rs-pack": {
       "name": "@skastr0/pulsar-rs-pack",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "dependencies": {
-        "@skastr0/pulsar-core": "0.1.1",
-        "@skastr0/pulsar-shared-signals": "0.1.1",
+        "@skastr0/pulsar-core": "0.1.2",
+        "@skastr0/pulsar-shared-signals": "0.1.2",
         "effect": "^3.0.0",
         "simple-git": "^3.25.0",
         "tree-sitter-rust": "^0.24.0",
@@ -128,15 +128,15 @@
       },
       "devDependencies": {
         "@skastr0/pulsar-signal-test-support": "workspace:*",
-        "@skastr0/pulsar-ts-pack": "0.1.1",
+        "@skastr0/pulsar-ts-pack": "0.1.2",
         "typescript": "^5.8.0",
       },
     },
     "packages/shared-signals": {
       "name": "@skastr0/pulsar-shared-signals",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "dependencies": {
-        "@skastr0/pulsar-core": "0.1.1",
+        "@skastr0/pulsar-core": "0.1.2",
         "effect": "^3.0.0",
         "yaml": "^2.9.0",
       },
@@ -147,7 +147,7 @@
     },
     "packages/signal-test-support": {
       "name": "@skastr0/pulsar-signal-test-support",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "dependencies": {
         "@skastr0/pulsar-core": "workspace:*",
       },
@@ -157,10 +157,10 @@
     },
     "packages/ts-pack": {
       "name": "@skastr0/pulsar-ts-pack",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "dependencies": {
-        "@skastr0/pulsar-core": "0.1.1",
-        "@skastr0/pulsar-shared-signals": "0.1.1",
+        "@skastr0/pulsar-core": "0.1.2",
+        "@skastr0/pulsar-shared-signals": "0.1.2",
         "effect": "^3.0.0",
         "simple-git": "^3.25.0",
         "ts-morph": "^24.0.0",

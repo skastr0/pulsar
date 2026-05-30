@@ -1,6 +1,6 @@
 {
   "name": "@skastr0/pulsar-project-module-nextjs",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "description": "Next.js framework project module for Pulsar calibration",
   "license": "MIT",
@@ -43,7 +43,7 @@
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
-    "@skastr0/pulsar-project-module-sdk": "0.1.1",
+    "@skastr0/pulsar-project-module-sdk": "0.1.2",
     "effect": "^3.0.0"
   },
   "devDependencies": {

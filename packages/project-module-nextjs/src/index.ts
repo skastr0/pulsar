@@ -262,7 +262,7 @@ const nextAppRouterContractSourceFingerprint = (): string =>
 
 export const nextjsProjectModule = defineProjectModule({
   id: NEXTJS_PROJECT_MODULE_ID,
-  version: "0.1.1",
+  version: "0.1.2",
   scope: "framework",
   source: "package",
   sourceFingerprint: nextAppRouterContractSourceFingerprint(),

@@ -22,7 +22,7 @@ describe("Next.js project module", () => {
   test("declares framework identity and export-reachability contribution", () => {
     expect(nextjsProjectModule.descriptor).toMatchObject({
       id: "@skastr0/pulsar-project-module-nextjs",
-      version: "0.1.1",
+      version: "0.1.2",
       scope: "framework",
       sourceFingerprint: expect.any(String),
       contributions: [

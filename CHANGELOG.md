@@ -6,6 +6,20 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-05-30
+
+### Added
+
+- Added the Next.js project module to the npm publish workflow and documented package order.
+
+### Changed
+
+- Split shared theory-encoding output/model assembly into focused modules.
+
+### Fixed
+
+- Aligned persona scoring coverage with explicit changed-only diff mode.
+
 ## [0.1.1] - 2026-05-17
 
 ### Added
