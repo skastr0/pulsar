@@ -18,6 +18,22 @@ const binPath = resolve(import.meta.dir, "../../src/bin.ts")
 const TS_SL_01_SIGNAL_ID = "TS-SL-01-duplication"
 const TS_AD_02_SIGNAL_ID = "TS-AD-02-circular-dependencies"
 
+type ScoreDiffJson = {
+  readonly vector: {
+    readonly id: string
+    readonly source: string
+  }
+  readonly changed_only_diagnostics: ReadonlyArray<{
+    readonly signal_id: string
+    readonly diagnostic: {
+      readonly message: string
+    }
+  }>
+  readonly gate_decision: {
+    readonly status: string
+  }
+}
+
 const sh = (cmd: string, args: ReadonlyArray<string>, cwd: string): void => {
   const result = spawnSync(cmd, args as Array<string>, { cwd, encoding: "utf8" })
   if (result.status !== 0) {
@@ -68,6 +84,27 @@ const runCli = (
     encoding: "utf8",
     env: { ...process.env, ...env },
   })
+
+const runChangedOnlyDiffJson = (repoPath: string): ScoreDiffJson => {
+  const out = runCli(repoPath, [
+    "score",
+    "--diff",
+    "HEAD..WORKTREE",
+    "--changed-only",
+    "--agent-view",
+    "--json",
+    ".",
+  ])
+  expect(out.status).toBe(0)
+  return JSON.parse(String(out.stdout)) as ScoreDiffJson
+}
+
+const changedDuplicationDiagnostics = (
+  json: ScoreDiffJson,
+): ReadonlyArray<ScoreDiffJson["changed_only_diagnostics"][number]> =>
+  json.changed_only_diagnostics.filter(
+    (diagnostic) => diagnostic.signal_id === TS_SL_01_SIGNAL_ID,
+  )
 
 describe("pulsar persona", () => {
   test("shipped presets and quiz items reference known registry signals", async () => {
@@ -233,12 +270,14 @@ describe("pulsar persona", () => {
       expect(written.signal_overrides["SHARED-03"].weight).toBeGreaterThan(1)
       expect(written.provenance[0].source).toBe("preset")
 
-      const vectorScore = runCli(repoPath, ["score", "--category", "generated-slop", "."])
-      expect(vectorScore.status).toBe(0)
-      expect(vectorScore.stdout).toContain("Vector:   ai-slop-defense")
-      expect(vectorScore.stdout).toContain("AI Mode:  active")
-      expect(vectorScore.stdout).toContain("existingTiny")
-      expect(vectorScore.stdout).toContain("copiedTiny")
+      const vectorScore = runChangedOnlyDiffJson(repoPath)
+      const duplicationDiagnostics = changedDuplicationDiagnostics(vectorScore)
+      const diagnosticsText = JSON.stringify(duplicationDiagnostics)
+      expect(vectorScore.vector.id).toBe("ai-slop-defense")
+      expect(vectorScore.vector.source).toBe("worktree")
+      expect(duplicationDiagnostics.length).toBeGreaterThan(0)
+      expect(diagnosticsText).toContain("existingTiny")
+      expect(diagnosticsText).toContain("copiedTiny")
     } finally {
       await rm(repoPath, { recursive: true, force: true })
     }
@@ -279,9 +318,8 @@ describe("pulsar persona", () => {
         `export function copiedTiny(value: number): number {${copiedBody}}\n`,
       )
 
-      const defaultDirty = runCli(dirtyRepoPath, ["score", "--json", "."])
-      expect(defaultDirty.status).toBe(0)
-      const defaultDirtyScore = JSON.parse(defaultDirty.stdout).categories["generated-slop"].score
+      const defaultDirty = runChangedOnlyDiffJson(dirtyRepoPath)
+      expect(changedDuplicationDiagnostics(defaultDirty)).toHaveLength(0)
 
       for (const repoPath of [dirtyRepoPath, cleanRepoPath]) {
         const apply = runCli(repoPath, [
@@ -307,19 +345,15 @@ export function formattedTiny(value: number): number {
 `,
       )
 
-      const dirtyVector = runCli(dirtyRepoPath, ["score", "--json", "."])
-      const cleanVector = runCli(cleanRepoPath, ["score", "--json", "."])
-      expect(dirtyVector.status).toBe(0)
-      expect(cleanVector.status).toBe(0)
+      const dirtyVector = runChangedOnlyDiffJson(dirtyRepoPath)
+      const cleanVector = runChangedOnlyDiffJson(cleanRepoPath)
+      const dirtyDiagnostics = changedDuplicationDiagnostics(dirtyVector)
+      const cleanDiagnostics = changedDuplicationDiagnostics(cleanVector)
 
-      const dirtyGeneratedSlop = JSON.parse(dirtyVector.stdout).categories["generated-slop"]
-      const cleanGeneratedSlop = JSON.parse(cleanVector.stdout).categories["generated-slop"]
-
-      expect(dirtyGeneratedSlop.score).toBeLessThan(defaultDirtyScore)
-      expect(dirtyGeneratedSlop.score).toBeLessThan(cleanGeneratedSlop.score)
-      expect(dirtyGeneratedSlop.signals[TS_SL_01_SIGNAL_ID]).toBeLessThan(1)
-      expect(cleanGeneratedSlop.signals[TS_SL_01_SIGNAL_ID]).toBe(1)
-      expect(cleanGeneratedSlop.score).toBeGreaterThanOrEqual(0.99)
+      expect(dirtyDiagnostics.length).toBeGreaterThan(0)
+      expect(JSON.stringify(dirtyDiagnostics)).toContain("copiedTiny")
+      expect(cleanDiagnostics).toHaveLength(0)
+      expect(dirtyVector.gate_decision.status).toBe("route")
     } finally {
       await rm(dirtyRepoPath, { recursive: true, force: true })
       await rm(cleanRepoPath, { recursive: true, force: true })
@@ -351,14 +385,8 @@ export function formattedTiny(value: number): number {
         `export function copiedTiny(value: number): number {${smallDuplicateBody}}\n`,
       )
 
-      const baseline = runCli(repoPath, [
-        "score",
-        "--json",
-        ".",
-      ])
-      expect(baseline.status).toBe(0)
-      const baselineGeneratedSlop = JSON.parse(baseline.stdout).categories["generated-slop"]
-      const baselineCloneScore = baselineGeneratedSlop.signals[TS_SL_01_SIGNAL_ID]
+      const baseline = runChangedOnlyDiffJson(repoPath)
+      expect(changedDuplicationDiagnostics(baseline)).toHaveLength(0)
 
       const apply = runCli(repoPath, [
         "persona",
@@ -369,21 +397,20 @@ export function formattedTiny(value: number): number {
       ])
       expect(apply.status).toBe(0)
 
-      const vectorScore = runCli(repoPath, [
+      const vectorScore = runChangedOnlyDiffJson(repoPath)
+      const vectorDiagnostics = changedDuplicationDiagnostics(vectorScore)
+      expect(vectorDiagnostics.length).toBeGreaterThan(0)
+      expect(JSON.stringify(vectorDiagnostics)).toContain("copiedTiny")
+
+      const human = runCli(repoPath, [
         "score",
-        "--json",
+        "--diff",
+        "HEAD..WORKTREE",
+        "--changed-only",
+        "--agent-view",
         ".",
       ])
-      expect(vectorScore.status).toBe(0)
-      const generatedSlop = JSON.parse(vectorScore.stdout).categories["generated-slop"]
-      expect(generatedSlop.score).toBeLessThan(baselineGeneratedSlop.score)
-      expect(generatedSlop.signals[TS_SL_01_SIGNAL_ID]).toBeLessThan(baselineCloneScore)
-      expect(generatedSlop.signals[TS_SL_01_SIGNAL_ID]).toBeLessThan(1)
-
-      const human = runCli(repoPath, ["score", "--category", "generated-slop", "."])
       expect(human.status).toBe(0)
-      expect(human.stdout).toContain("Vector:   ai-slop-defense")
-      expect(human.stdout).toContain("AI Mode:  active")
       expect(human.stdout).toContain("TS-SL-01")
     } finally {
       await rm(repoPath, { recursive: true, force: true })
