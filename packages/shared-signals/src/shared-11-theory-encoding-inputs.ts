@@ -22,7 +22,7 @@ import type {
   BoundaryParserCoverageLikeOutput,
   ErrorChannelOpacityLikeOutput,
   TheoryEncodingInputs,
-} from "./shared-11-theory-encoding-index.js"
+} from "./shared-11-theory-encoding-model.js"
 import type { SharedCov01CoverageFactsOutput } from "./shared-cov-01-coverage-facts.js"
 
 export const SHARED_11_COMPOSITE_INPUTS = [

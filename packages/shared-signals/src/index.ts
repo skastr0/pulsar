@@ -71,13 +71,15 @@ export {
 export {
   Shared11TheoryEncodingIndex,
   Shared11TheoryEncodingIndexConfig,
-  type Shared11TheoryEncodingIndexOutput,
-  type TheoryEncodingFactor,
-  type TheoryEncodingGap,
-  type TheoryEncodingIndexState,
-  type TheoryEncodingInputFactState,
-  type TheoryEncodingInputFactStates,
 } from "./shared-11-theory-encoding-index.js"
+export type {
+  Shared11TheoryEncodingIndexOutput,
+  TheoryEncodingFactor,
+  TheoryEncodingGap,
+  TheoryEncodingIndexState,
+  TheoryEncodingInputFactState,
+  TheoryEncodingInputFactStates,
+} from "./shared-11-theory-encoding-model.js"
 export {
   SharedCov01CoverageFacts,
   SharedCov01CoverageFactsConfig,

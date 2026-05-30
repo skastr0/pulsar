@@ -1,26 +1,30 @@
 import {
-  buildCompositeExplanation,
   compositeSignalInputs,
   resolveCompositeInputs,
-  type CompositeExplanation,
   type CompositeInputResolution,
   type Diagnostic,
   type Signal,
 } from "@skastr0/pulsar-core/signal"
-import type { SharedChurn02Output } from "@skastr0/pulsar-core/shared-signals"
 import { Effect, Schema } from "effect"
-import type { Shared07MachineFeedbackCoverageOutput } from "./shared-07-machine-feedback-coverage.js"
-import type { Shared09ContractFreshnessOutput } from "./shared-09-contract-freshness.js"
-import type { Shared10DomainConstructionControlOutput } from "./shared-10-domain-construction-control.js"
 import {
-  buildTheoryEncodingFactors,
-  clamp01,
-  compareTheoryEncodingFactors,
-  FACTOR_WEIGHTS,
-  weightedTheoryGapPressure,
-} from "./shared-11-theory-encoding-factors.js"
+  DEFAULT_MIN_AVAILABLE_FACTOR_WEIGHT,
+  DEFAULT_TOP_N_DIAGNOSTICS,
+  DEFAULT_WARN_THRESHOLD,
+  insufficientTheoryEncodingOutput,
+  measureTheoryEncoding,
+  measuredTheoryEncodingOutput,
+  needsInsufficientTheoryEncodingOutput,
+  THEORY_ENCODING_ENFORCEMENT_CEILING,
+  theoryEncodingConfigContext,
+  theoryOutputContext,
+} from "./shared-11-theory-encoding-output.js"
 import { SHARED_11_COMPOSITE_INPUTS } from "./shared-11-theory-encoding-inputs.js"
-import type { SharedCov01CoverageFactsOutput } from "./shared-cov-01-coverage-facts.js"
+import type {
+  Shared11TheoryEncodingIndexOutput,
+  TheoryEncodingInputFactState,
+  TheoryEncodingInputFactStates,
+  TheoryEncodingInputs,
+} from "./shared-11-theory-encoding-model.js"
 
 export const Shared11TheoryEncodingIndexConfig = Schema.Struct({
   top_n_diagnostics: Schema.Number,
@@ -29,139 +33,6 @@ export const Shared11TheoryEncodingIndexConfig = Schema.Struct({
 })
 export type Shared11TheoryEncodingIndexConfig =
   typeof Shared11TheoryEncodingIndexConfig.Type
-
-export type TheoryEncodingIndexState =
-  | "present"
-  | "zero"
-  | "insufficient_evidence"
-
-export type TheoryEncodingInputFactState =
-  | "present"
-  | "zero"
-  | "absent"
-  | "unknown"
-  | "not_configured"
-  | "not_applicable"
-  | "missing_required"
-  | "missing_optional"
-
-export interface TheoryEncodingInputFactStates {
-  readonly domainConstructionControl: TheoryEncodingInputFactState
-  readonly contractFreshness: TheoryEncodingInputFactState
-  readonly machineFeedbackCoverage: TheoryEncodingInputFactState
-  readonly coverageFacts: TheoryEncodingInputFactState
-  readonly boundaryParserCoverage: TheoryEncodingInputFactState
-  readonly errorChannelOpacity: TheoryEncodingInputFactState
-  readonly recencyWeightedChurn: TheoryEncodingInputFactState
-}
-
-export interface TheoryEncodingFactor {
-  readonly id:
-    | "domain-construction-control"
-    | "contract-freshness"
-    | "machine-feedback-coverage"
-    | "coverage-facts"
-    | "boundary-parser-coverage"
-    | "error-channel-opacity"
-    | "property-spec-presence"
-    | "ai-churn-pressure"
-  readonly label: string
-  readonly state: TheoryEncodingInputFactState
-  readonly weight: number
-  readonly pressure?: number | undefined
-  readonly contribution?: number | undefined
-  readonly evidence: Readonly<Record<string, unknown>>
-  readonly claimLimit: string
-  readonly nonClaimLimit: string
-}
-
-export interface TheoryEncodingGap {
-  readonly rank: number
-  readonly factorId: TheoryEncodingFactor["id"]
-  readonly label: string
-  readonly pressure: number
-  readonly contribution: number
-  readonly state: TheoryEncodingInputFactState
-  readonly evidence: Readonly<Record<string, unknown>>
-}
-
-export interface Shared11TheoryEncodingIndexOutput {
-  readonly state: TheoryEncodingIndexState
-  readonly factors: ReadonlyArray<TheoryEncodingFactor>
-  readonly gaps: ReadonlyArray<TheoryEncodingGap>
-  readonly explanation: CompositeExplanation
-  readonly diagnosticLimit: number
-  readonly inputFactStates: TheoryEncodingInputFactStates
-  readonly requiredFoundationMeasured: boolean
-  readonly availableFactorWeight: number
-  readonly totalDeclaredFactorWeight: number
-  readonly evidenceCompleteness: number
-  readonly theoryGapPressure: number
-  readonly theoryEncodingScore: number
-  readonly warnThreshold: number
-  readonly minAvailableFactorWeight: number
-  readonly riskModel: "theory-encoding-index-v1"
-  readonly compositeConsumers: ReadonlyArray<string>
-  readonly cacheContributors: ReadonlyArray<string>
-  readonly calibrationSurface: string
-  readonly evidenceClass: ReadonlyArray<string>
-  readonly claimLimit: string
-  readonly nonClaimLimit: string
-  readonly knownFailureModes: ReadonlyArray<string>
-  readonly enforcementCeiling: ReadonlyArray<string>
-}
-
-export interface BoundaryParserCoverageLikeOutput {
-  readonly state:
-    | "present"
-    | "zero"
-    | "absent"
-    | "not_configured"
-    | "not_applicable"
-  readonly boundaryFilesMatched: number
-  readonly weakBoundaryFunctions: number
-  readonly coveredWeakBoundaryFunctions: number
-  readonly findings: ReadonlyArray<unknown>
-}
-
-export interface ErrorChannelOpacityLikeOutput {
-  readonly state: "present" | "zero" | "not_applicable"
-  readonly topFindings?: ReadonlyArray<Readonly<Record<string, unknown>>>
-  readonly totalFindings: number
-  readonly boundaryFindings: number
-  readonly weightedOpacity: number
-  readonly boundaryWeightedOpacity: number
-  readonly densityPressure: number
-  readonly boundaryPressure: number
-}
-
-export interface TheoryEncodingInputs {
-  readonly domainConstructionControl?: Shared10DomainConstructionControlOutput | undefined
-  readonly contractFreshness?: Shared09ContractFreshnessOutput | undefined
-  readonly machineFeedbackCoverage?: Shared07MachineFeedbackCoverageOutput | undefined
-  readonly coverageFacts?: SharedCov01CoverageFactsOutput | undefined
-  readonly boundaryParserCoverage?: BoundaryParserCoverageLikeOutput | undefined
-  readonly errorChannelOpacity?: ErrorChannelOpacityLikeOutput | undefined
-  readonly recencyWeightedChurn?: SharedChurn02Output | undefined
-}
-
-const THEORY_ENCODING_ENFORCEMENT_CEILING = [
-  "trend",
-  "review-routing",
-  "dashboard",
-] as const
-
-const DEFAULT_TOP_N_DIAGNOSTICS = 10
-const DEFAULT_WARN_THRESHOLD = 0.35
-const DEFAULT_MIN_AVAILABLE_FACTOR_WEIGHT = 0.25
-
-interface TheoryEncodingMeasurement {
-  readonly factors: ReadonlyArray<TheoryEncodingFactor>
-  readonly availableFactorWeight: number
-  readonly totalDeclaredFactorWeight: number
-  readonly evidenceCompleteness: number
-  readonly requiredFoundationMeasured: boolean
-}
 
 export const Shared11TheoryEncodingIndex: Signal<
   Shared11TheoryEncodingIndexConfig,
@@ -299,142 +170,32 @@ const computeTheoryEncodingIndexOutput = (
   config: Shared11TheoryEncodingIndexConfig,
   inputOutputs: ReadonlyMap<string, unknown>,
 ): Shared11TheoryEncodingIndexOutput => {
-  const normalizedConfig = normalizeShared11TheoryEncodingIndexConfig(config)
+  const configContext = theoryEncodingConfigContext(config)
   const resolution = resolveCompositeInputs(SHARED_11_COMPOSITE_INPUTS, inputOutputs)
   const inputs = resolveTheoryEncodingInputs(resolution)
   const inputFactStates = theoryEncodingInputFactStates(resolution, inputs)
-  const diagnosticLimit = normalizedConfig.top_n_diagnostics
-  const warnThreshold = normalizedConfig.warn_threshold
-  const minAvailableFactorWeight = normalizedConfig.min_available_factor_weight
   const measurement = measureTheoryEncoding(inputFactStates, inputs)
 
-  if (
-    resolution.hasMissingRequiredInputs ||
-    !measurement.requiredFoundationMeasured ||
-    !hasConfiguredTheoryEvidence(measurement, minAvailableFactorWeight)
-  ) {
+  if (needsInsufficientTheoryEncodingOutput(resolution, measurement, configContext)) {
     return insufficientTheoryEncodingOutput(
       theoryOutputContext({
         measurement,
-        diagnosticLimit,
+        diagnosticLimit: configContext.diagnosticLimit,
         inputFactStates,
-        warnThreshold,
-        minAvailableFactorWeight,
+        warnThreshold: configContext.warnThreshold,
+        minAvailableFactorWeight: configContext.minAvailableFactorWeight,
       }),
       resolution,
     )
   }
 
-  const theoryGapPressure = weightedTheoryGapPressure(
-    measurement.factors,
-    measurement.availableFactorWeight,
-  )
-  const gaps = theoryEncodingGaps(measurement.factors)
-  const state = theoryGapPressure === 0 ? "zero" as const : "present" as const
-
-  return withTheoryEncodingExplanation(
-    baseTheoryEncodingOutput({
-      state,
-      factors: measurement.factors,
-      gaps,
-      diagnosticLimit,
-      inputFactStates,
-      availableFactorWeight: measurement.availableFactorWeight,
-      totalDeclaredFactorWeight: measurement.totalDeclaredFactorWeight,
-      evidenceCompleteness: measurement.evidenceCompleteness,
-      theoryGapPressure,
-      warnThreshold,
-      minAvailableFactorWeight,
-      requiredFoundationMeasured: measurement.requiredFoundationMeasured,
-    }),
+  return measuredTheoryEncodingOutput(
+    measurement,
+    inputFactStates,
     resolution,
-    state === "present"
-      ? "Combines deterministic construction, contract, property/spec, machine feedback, coverage, boundary parsing, typed error, and churn-pressure facts into one theory-encoding pressure."
-      : "Theory encoding index is measured and no configured deterministic theory gap was found.",
+    configContext,
   )
 }
-
-const measureTheoryEncoding = (
-  inputFactStates: TheoryEncodingInputFactStates,
-  inputs: TheoryEncodingInputs,
-): TheoryEncodingMeasurement => {
-  const factors = buildTheoryEncodingFactors(inputFactStates, inputs)
-  const availableFactorWeight = factors.reduce(
-    (total, factor) => total + (factor.pressure === undefined ? 0 : factor.weight),
-    0,
-  )
-  const totalDeclaredFactorWeight = Object.values(FACTOR_WEIGHTS).reduce(
-    (total, weight) => total + weight,
-    0,
-  )
-  return {
-    factors,
-    availableFactorWeight,
-    totalDeclaredFactorWeight,
-    evidenceCompleteness: clamp01(availableFactorWeight / totalDeclaredFactorWeight),
-    requiredFoundationMeasured: requiredFoundationInputsMeasured(inputFactStates),
-  }
-}
-
-const hasConfiguredTheoryEvidence = (
-  measurement: TheoryEncodingMeasurement,
-  minAvailableFactorWeight: number,
-): boolean => measurement.availableFactorWeight >= minAvailableFactorWeight
-
-const insufficientTheoryEncodingOutput = (
-  context: ReturnType<typeof theoryOutputContext>,
-  resolution: CompositeInputResolution,
-): Shared11TheoryEncodingIndexOutput =>
-  withTheoryEncodingExplanation(
-    baseTheoryEncodingOutput({
-      ...context,
-      state: "insufficient_evidence",
-      gaps: [],
-      theoryGapPressure: 0,
-    }),
-    resolution,
-    resolution.hasMissingRequiredInputs || !context.requiredFoundationMeasured
-      ? "Theory encoding index is not measured because required shared theory facts are missing or not measured."
-      : "Theory encoding index is not measured because configured deterministic evidence is below the minimum available factor weight.",
-  )
-
-const theoryOutputContext = (args: {
-  readonly measurement: TheoryEncodingMeasurement
-  readonly diagnosticLimit: number
-  readonly inputFactStates: TheoryEncodingInputFactStates
-  readonly warnThreshold: number
-  readonly minAvailableFactorWeight: number
-}) => ({
-  factors: args.measurement.factors,
-  diagnosticLimit: args.diagnosticLimit,
-  inputFactStates: args.inputFactStates,
-  availableFactorWeight: args.measurement.availableFactorWeight,
-  totalDeclaredFactorWeight: args.measurement.totalDeclaredFactorWeight,
-  evidenceCompleteness: args.measurement.evidenceCompleteness,
-  warnThreshold: args.warnThreshold,
-  minAvailableFactorWeight: args.minAvailableFactorWeight,
-  requiredFoundationMeasured: args.measurement.requiredFoundationMeasured,
-})
-
-const theoryEncodingGaps = (
-  factors: ReadonlyArray<TheoryEncodingFactor>,
-): ReadonlyArray<TheoryEncodingGap> =>
-  factors
-    .filter((factor): factor is TheoryEncodingFactor & {
-      readonly pressure: number
-      readonly contribution: number
-    } => factor.pressure !== undefined && factor.contribution !== undefined)
-    .filter((factor) => factor.pressure > 0)
-    .sort(compareTheoryEncodingFactors)
-    .map((factor, index) => ({
-      rank: index + 1,
-      factorId: factor.id,
-      label: factor.label,
-      pressure: factor.pressure,
-      contribution: factor.contribution,
-      state: factor.state,
-      evidence: factor.evidence,
-    }))
 
 const resolveTheoryEncodingInputs = (
   inputs: CompositeInputResolution,
@@ -467,100 +228,6 @@ const resolveTheoryEncodingInputs = (
     inputs.valueOf<NonNullable<TheoryEncodingInputs["recencyWeightedChurn"]>>(
       "SHARED-CHURN-02-recency-weighted-churn",
     ),
-})
-
-const normalizeShared11TheoryEncodingIndexConfig = (
-  config: Shared11TheoryEncodingIndexConfig,
-): Shared11TheoryEncodingIndexConfig => ({
-  top_n_diagnostics: Number.isFinite(config.top_n_diagnostics)
-    ? Math.max(0, Math.floor(config.top_n_diagnostics))
-    : 0,
-  warn_threshold: Number.isFinite(config.warn_threshold)
-    ? clamp01(config.warn_threshold)
-    : DEFAULT_WARN_THRESHOLD,
-  min_available_factor_weight: Number.isFinite(config.min_available_factor_weight)
-    ? clamp01(config.min_available_factor_weight)
-    : DEFAULT_MIN_AVAILABLE_FACTOR_WEIGHT,
-})
-
-const baseTheoryEncodingOutput = (args: {
-  readonly state: TheoryEncodingIndexState
-  readonly factors: ReadonlyArray<TheoryEncodingFactor>
-  readonly gaps: ReadonlyArray<TheoryEncodingGap>
-  readonly diagnosticLimit: number
-  readonly inputFactStates: TheoryEncodingInputFactStates
-  readonly requiredFoundationMeasured: boolean
-  readonly availableFactorWeight: number
-  readonly totalDeclaredFactorWeight: number
-  readonly evidenceCompleteness: number
-  readonly theoryGapPressure: number
-  readonly warnThreshold: number
-  readonly minAvailableFactorWeight: number
-}): Omit<Shared11TheoryEncodingIndexOutput, "explanation"> => {
-  const theoryEncodingScore = Math.max(0, 1 - Math.min(1, args.theoryGapPressure))
-  return {
-    ...args,
-    theoryEncodingScore,
-    riskModel: "theory-encoding-index-v1",
-    compositeConsumers: [
-      "constraint ecosystem overview",
-      "architecture review routing",
-      "AI code triage",
-    ],
-    cacheContributors: [
-      "input.SHARED-10-domain-construction-control",
-      "input.SHARED-09-contract-freshness",
-      "input.SHARED-07-machine-feedback-coverage",
-      "input.SHARED-COV-01-coverage-facts",
-      "input.TS-AD-04-boundary-parser-coverage",
-      "input.TS-LD-09-error-channel-opacity",
-      "input.SHARED-CHURN-02-recency-weighted-churn",
-      "derived.property-spec-presence",
-      "config.top_n_diagnostics",
-      "config.warn_threshold",
-      "config.min_available_factor_weight",
-    ],
-    calibrationSurface:
-      "input signal calibration and repo-owned reference data; future shared.theory-encoding-policy can tune factor weights by repository taste",
-    evidenceClass: [
-      "repo-owned manifest",
-      "machine feedback discovery",
-      "coverage report",
-      "runtime boundary",
-      "type",
-      "generated artifact freshness",
-      "property/spec evidence",
-      "temporal history",
-    ],
-    claimLimit:
-      "Summarizes how much declared domain theory, generated contracts, property/spec artifacts, validation feedback, boundary parsing, typed failure evidence, and churn pressure are present in deterministic facts.",
-    nonClaimLimit:
-      "Does not prove semantic correctness, invariant completeness, test meaningfulness, or that undeclared theory is absent.",
-    knownFailureModes: [
-      "missing manifests can hide theory that lives only in code or prose",
-      "coverage percentages do not prove behavioral assertions",
-      "syntactic parser and error-channel evidence can miss project-specific conventions",
-      "churn can be human or agent-authored unless a committed AI fact source is present",
-      "repositories without declared construction or contract artifacts may be correctly outside this signal's scope",
-    ],
-    enforcementCeiling: [...THEORY_ENCODING_ENFORCEMENT_CEILING],
-  }
-}
-
-const withTheoryEncodingExplanation = (
-  output: Omit<Shared11TheoryEncodingIndexOutput, "explanation">,
-  inputs: CompositeInputResolution,
-  rationale: string,
-): Shared11TheoryEncodingIndexOutput => ({
-  ...output,
-  explanation: buildCompositeExplanation({
-    inputs,
-    finalScore: Shared11TheoryEncodingIndex.score(
-      output as Shared11TheoryEncodingIndexOutput,
-    ),
-    rationale,
-    enforcementCeiling: [...THEORY_ENCODING_ENFORCEMENT_CEILING],
-  }),
 })
 
 const theoryEncodingInputFactStates = (
@@ -614,16 +281,6 @@ const inputFactState = (
     : resolution.missingInputs.includes(id)
       ? "missing_optional"
       : state ?? "unknown"
-
-const requiredFoundationInputsMeasured = (
-  states: TheoryEncodingInputFactStates,
-): boolean =>
-  isMeasuredTheoryEncodingState(states.domainConstructionControl) &&
-  isMeasuredTheoryEncodingState(states.contractFreshness)
-
-const isMeasuredTheoryEncodingState = (
-  state: TheoryEncodingInputFactState,
-): boolean => state === "present" || state === "zero"
 
 const recencyWeightedChurnState = (
   input: TheoryEncodingInputs["recencyWeightedChurn"],
