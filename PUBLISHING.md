@@ -31,11 +31,12 @@ Publish these npm packages in dependency order:
 5. `@skastr0/pulsar-rs-pack`
 6. `@skastr0/pulsar-project-module-effect`
 7. `@skastr0/pulsar-project-module-convex`
-8. `@skastr0/pulsar-darwin-arm64`
-9. `@skastr0/pulsar-darwin-x64`
-10. `@skastr0/pulsar-linux-arm64`
-11. `@skastr0/pulsar-linux-x64`
-12. `@skastr0/pulsar`
+8. `@skastr0/pulsar-project-module-nextjs`
+9. `@skastr0/pulsar-darwin-arm64`
+10. `@skastr0/pulsar-darwin-x64`
+11. `@skastr0/pulsar-linux-arm64`
+12. `@skastr0/pulsar-linux-x64`
+13. `@skastr0/pulsar`
 
 Keep these private to npm or unpublished:
 
@@ -74,6 +75,7 @@ npm pack --dry-run --workspace packages/ts-pack
 npm pack --dry-run --workspace packages/rs-pack
 npm pack --dry-run --workspace packages/project-module-effect
 npm pack --dry-run --workspace packages/project-module-convex
+npm pack --dry-run --workspace packages/project-module-nextjs
 ```
 
 Before the npm runner package publish, build and inspect the launcher/platform packages:

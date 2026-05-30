@@ -45,6 +45,7 @@ jobs:
             packages/rs-pack \
             packages/project-module-effect \
             packages/project-module-convex \
+            packages/project-module-nextjs \
             packages/npm/pulsar-darwin-arm64 \
             packages/npm/pulsar-darwin-x64 \
             packages/npm/pulsar-linux-arm64 \
