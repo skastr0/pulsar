@@ -112,6 +112,7 @@ Before npm publishing:
 - confirm each scoped package publishes with public access
 - configure the trusted publisher for every package, including `@skastr0/pulsar` and the platform packages
 - if npm cannot configure trusted publishing before the first publish, create a temporary granular npm token with package/scope read-write access and npm's 2FA-bypass option enabled, store it as a `release` environment secret named `NPM_CONFIG_TOKEN`, publish once through CI, configure trusted publishing for the now-existing packages, then revoke the token
+- if a CI publish stops partway through a monorepo release, identify which exact package versions reached npm before rerunning; the npm workflow skips already-published exact versions so the remaining packages can be resumed after the blocker is fixed
 
 ## First Release Sequence
 
