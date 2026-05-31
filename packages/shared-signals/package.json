@@ -1,6 +1,6 @@
 {
   "name": "@skastr0/pulsar-shared-signals",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "type": "module",
   "description": "Language-agnostic shared signals for Pulsar",
   "license": "MIT",
@@ -42,7 +42,7 @@
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
-    "@skastr0/pulsar-core": "0.1.2",
+    "@skastr0/pulsar-core": "0.1.3",
     "effect": "^3.0.0",
     "yaml": "^2.9.0"
   },
