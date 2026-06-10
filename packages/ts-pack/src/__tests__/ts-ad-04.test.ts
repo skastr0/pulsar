@@ -91,7 +91,9 @@ describe("TS-AD-04 (boundary parser coverage)", () => {
         ],
       },
     ])
-    expect(TsAd04.score(out)).toBe(0)
+    // The finding is reported at full fidelity, but a single weak function
+    // is below the evidence floor: ratio 1 scaled by 1/4.
+    expect(TsAd04.score(out)).toBeCloseTo(0.75)
     expect(TsAd04.diagnose(out)[0]).toMatchObject({
       severity: "warn",
       message: expect.stringContaining("without parse/decode evidence"),
@@ -187,7 +189,9 @@ describe("TS-AD-04 (boundary parser coverage)", () => {
         ],
       },
     ])
-    expect(TsAd04.score(out)).toBeCloseTo(1 / 3)
+    // ratio 2/3 scaled by the evidence factor min(1, 3/4): below the
+    // 4-function evidence floor, pressure shrinks proportionally.
+    expect(TsAd04.score(out)).toBeCloseTo(1 - (2 / 3) * (3 / 4))
     expect(diagnostics).toHaveLength(1)
     expect(diagnostics[0]).toMatchObject({
       severity: "warn",
@@ -468,6 +472,65 @@ describe("TS-AD-04 (boundary parser coverage)", () => {
     })
     expect(TsAd04.score(out)).toBe(1)
     expect(TsAd04.diagnose(out)).toEqual([])
+  })
+
+  test("does not treat decoder-callback parameters as weak external input", async () => {
+    // probe-cli regression: readOptionalJsonInput(decode: (value: unknown) => T)
+    // was reported as accepting weak external input without parse evidence,
+    // and as the only candidate it scored the signal 0.00. The unknown in a
+    // function-typed parameter is consumed by the callback, not received
+    // through the boundary.
+    await repo.write(
+      "src/cli/json.ts",
+      [
+        "const decodeJsonText = <T>(decode: (value: unknown) => T, raw: string): T =>",
+        "  decode(JSON.parse(raw))",
+        "export const readOptionalJsonInput = <T>(",
+        "  decode: (value: unknown) => T,",
+        "  raw: string | undefined,",
+        "): T | undefined => (raw === undefined ? undefined : decodeJsonText(decode, raw))",
+      ].join("\n"),
+    )
+
+    const out = await run()
+
+    expect(out.findings).toEqual([])
+    expect(out.weakBoundaryFunctions).toBe(0)
+    expect(TsAd04.score(out)).toBe(1)
+  })
+
+  test("does not treat default-initialized parameters as weak external input", async () => {
+    // flare regression: saveAuthKey(authPath = getAuthPath()) was classified
+    // "untyped" weak input; the inferred type comes from an internal
+    // initializer, not from untrusted callers.
+    await repo.write(
+      "src/cli/auth.ts",
+      [
+        "const getAuthPath = () => \"/tmp/auth.json\"",
+        "export function saveAuthKey(key: string, authPath = getAuthPath()) {",
+        "  return `${authPath}:${key}`",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await run()
+
+    expect(out.findings).toEqual([])
+    expect(out.weakBoundaryFunctions).toBe(0)
+  })
+
+  test("a single uncovered weak function cannot zero the signal", async () => {
+    await repo.write(
+      "src/api/user.ts",
+      "export function POST(input: unknown) { return input }\n",
+    )
+
+    const out = await run()
+
+    expect(out.weakBoundaryFunctions).toBe(1)
+    expect(out.findings).toHaveLength(1)
+    // ratio 1 scaled by evidence factor 1/4
+    expect(TsAd04.score(out)).toBeCloseTo(0.75)
   })
 
   test("declares composite consumers and conservative enforcement", async () => {

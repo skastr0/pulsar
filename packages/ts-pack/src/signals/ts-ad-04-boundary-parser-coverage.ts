@@ -83,6 +83,10 @@ type BoundaryFunctionNode =
   | ArrowFunction
   | FunctionExpression
 
+// Ratio denominators below this count scale pressure down proportionally:
+// a single weak function cannot zero the signal on its own.
+const MIN_WEAK_BOUNDARY_EVIDENCE = 4
+
 const REQUEST_LIKE_TYPE_NAMES = [
   "Request",
   "NextRequest",
@@ -103,7 +107,7 @@ export const TsAd04: Signal<TsAd04Config, TsAd04Output, TsProjectTag> = {
   category: "architectural-drift",
   kind: "structural",
   cacheVersion:
-    "ts-boundary-parser-evidence-v1-diagnostic-limit-v1-parser-attribution-v2",
+    "ts-boundary-parser-evidence-v2-weak-param-shape-evidence-floor",
   configSchema: TsAd04Config,
   defaultConfig: {
     boundary_globs: [
@@ -170,7 +174,15 @@ export const TsAd04: Signal<TsAd04Config, TsAd04Output, TsProjectTag> = {
   score: (out) => {
     if (out.state !== "present" && out.state !== "zero") return 1
     if (out.weakBoundaryFunctions === 0) return 1
-    return Math.max(0, 1 - out.findings.length / out.weakBoundaryFunctions)
+    // Below the evidence floor a ratio is one misclassification away from a
+    // cliff (1 finding / 1 weak function scored 0.00 and poisoned a whole
+    // category); pressure scales with how much evidence actually exists.
+    const ratio = Math.min(1, out.findings.length / out.weakBoundaryFunctions)
+    const evidenceFactor = Math.min(
+      1,
+      out.weakBoundaryFunctions / MIN_WEAK_BOUNDARY_EVIDENCE,
+    )
+    return Math.max(0, 1 - ratio * evidenceFactor)
   },
   diagnose: (out): ReadonlyArray<Diagnostic> => {
     if (out.state === "not_configured") {
@@ -382,8 +394,16 @@ const classifyWeakParameter = (
   const typeNode = parameter.getTypeNode()
   const typeText = typeNode?.getText() ?? "<untyped>"
   const normalized = typeText.toLowerCase()
+  // A default initializer means the inferred type comes from an internal
+  // expression (`authPath = getAuthPath()`), not from untrusted callers.
   if (typeNode === undefined) {
-    return [{ name, typeText, reason: "untyped" }]
+    return parameter.hasInitializer() ? [] : [{ name, typeText, reason: "untyped" }]
+  }
+  // Function-typed parameters (`decode: (value: unknown) => T`) CONSUME
+  // unknown; the unknown in their signature is not data entering through
+  // this boundary.
+  if (isFunctionShapedTypeNode(typeNode)) {
+    return []
   }
   if (/\bany\b/u.test(normalized)) {
     return [{ name, typeText, reason: "any" }]
@@ -395,6 +415,16 @@ const classifyWeakParameter = (
     return [{ name, typeText, reason: "request-like" }]
   }
   return []
+}
+
+const isFunctionShapedTypeNode = (typeNode: Node): boolean => {
+  if (Node.isParenthesizedTypeNode(typeNode)) {
+    return isFunctionShapedTypeNode(typeNode.getTypeNode())
+  }
+  if (Node.isUnionTypeNode(typeNode) || Node.isIntersectionTypeNode(typeNode)) {
+    return typeNode.getTypeNodes().every(isFunctionShapedTypeNode)
+  }
+  return Node.isFunctionTypeNode(typeNode) || Node.isConstructorTypeNode(typeNode)
 }
 
 const collectParserEvidence = (
