@@ -87,5 +87,20 @@ regression tests.
 - `.fleet-baselines/` (git-excluded): pre/post-batch3 score JSON for the
   9-repo fleet; the comparison loop in the batch-3 close-out is reusable.
 - The adversarial-review workflow journal (resumable, find-phase cached) is
-  the template for reviewing future pack commits: 3 lenses × commits, then
-  3-voter adversarial verification per finding.
+  the template for reviewing future pack commits — with the cost lesson
+  baked in. The first run (3 lenses × commits → 3 frontier voters per
+  finding) burned ~300 agents because every voter re-read the same files.
+  The canonical cheap shape, validated at batch-3 close:
+  1. **Find** with few frontier agents (judgment-heavy; ~3 per commit).
+  2. **Verify by file-cluster, not per finding**: one voter judges ALL
+     findings against a file in a single read; 2 voters per cluster on
+     `model: "haiku"`; escalate only split/uncertain verdicts to the main
+     model. ~45 mostly-haiku agents replace ~280 frontier agents.
+  3. **Prefer probe-tests over reader-votes** where a finding reduces to
+     "delete X / feed Y, does the suite notice" — one builder writing
+     throwaway probes verified 9 behaviors (and caught a live bug) for a
+     fraction of the reader-vote cost, and every confirmed finding becomes
+     a permanent fixture that re-runs for free.
+  4. Verifiers must be explicitly READ-ONLY — two probe agents edited
+     source mid-review (deleted the DE-02 score floor, rewrote RS-AD-01's
+     pressure max); only explicit staging and the floor pin caught it.
