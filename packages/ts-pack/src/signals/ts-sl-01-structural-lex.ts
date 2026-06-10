@@ -28,13 +28,27 @@ const TWO_CHAR_OPERATORS = new Set([
   ">>",
 ])
 
+export interface StructuralScanOptions {
+  /**
+   * "abstract" (default) erases literal content — numbers become NUM and
+   * template literals become TMPL — so structurally-equal clones compare
+   * equal. "preserve" keeps numeric text and template chunks and scans
+   * interpolation expressions recursively; divergence measurement needs
+   * literal content because a changed constant or message IS the drift.
+   */
+  readonly literals?: "abstract" | "preserve"
+}
+
+const DEFAULT_SCAN_OPTIONS: StructuralScanOptions = {}
+
 export const scanStructuralSource = (
   source: string,
   accept: (token: string) => void,
+  options: StructuralScanOptions = DEFAULT_SCAN_OPTIONS,
 ): void => {
   let index = 0
   while (index < source.length) {
-    index = scanStructuralToken(source, index, accept)
+    index = scanStructuralToken(source, index, accept, options)
   }
 }
 
@@ -42,6 +56,7 @@ const scanStructuralToken = (
   source: string,
   index: number,
   accept: (token: string) => void,
+  options: StructuralScanOptions,
 ): number => {
   const char = source[index]!
   const charCode = source.charCodeAt(index)
@@ -49,9 +64,17 @@ const scanStructuralToken = (
   if (char === "/" && source[index + 1] === "/") return skipLineComment(source, index + 2)
   if (char === "/" && source[index + 1] === "*") return skipBlockComment(source, index + 2)
   if (char === "\"" || char === "'") return acceptQuotedString(source, index, char, accept)
-  if (char === "`") return acceptTemplateLiteral(source, index, accept)
+  if (char === "`") {
+    return options.literals === "preserve"
+      ? scanTemplateLiteralPreserving(source, index, accept, options)
+      : acceptTemplateLiteral(source, index, accept)
+  }
   if (isIdentifierStartCharCode(charCode)) return acceptIdentifier(source, index, accept)
-  if (isDigitCharCode(charCode)) return acceptNumber(source, index, accept)
+  if (isDigitCharCode(charCode)) {
+    return options.literals === "preserve"
+      ? acceptNumberPreserving(source, index, accept)
+      : acceptNumber(source, index, accept)
+  }
   return acceptOperatorOrPunctuation(source, index, char, accept)
 }
 
@@ -92,6 +115,97 @@ const acceptNumber = (
 ): number => {
   accept("NUM")
   return scanNumberEnd(source, index)
+}
+
+const acceptNumberPreserving = (
+  source: string,
+  index: number,
+  accept: (token: string) => void,
+): number => {
+  const end = scanNumberEnd(source, index)
+  accept(source.slice(index, end))
+  return end
+}
+
+// Preserve-mode template scanning: cooked chunks become backtick-wrapped
+// tokens (content kept) and interpolation expressions are scanned with the
+// normal token rules, so identifier canonicalization downstream still applies
+// inside `${...}` and consistent renames do not read as divergence.
+const scanTemplateLiteralPreserving = (
+  source: string,
+  index: number,
+  accept: (token: string) => void,
+  options: StructuralScanOptions,
+): number => {
+  let cursor = index + 1
+  let chunkStart = cursor
+  const emitChunk = (end: number): void => {
+    accept(`\`${source.slice(chunkStart, end)}\``)
+  }
+  while (cursor < source.length) {
+    const char = source[cursor]
+    if (char === "\\") {
+      cursor += 2
+      continue
+    }
+    if (char === "`") {
+      emitChunk(cursor)
+      return cursor + 1
+    }
+    if (char === "$" && source[cursor + 1] === "{") {
+      emitChunk(cursor)
+      const close = findInterpolationEnd(source, cursor + 2)
+      accept("${")
+      scanStructuralRange(source, cursor + 2, close, accept, options)
+      accept("}")
+      cursor = Math.min(close + 1, source.length)
+      chunkStart = cursor
+      continue
+    }
+    cursor++
+  }
+  emitChunk(source.length)
+  return source.length
+}
+
+const findInterpolationEnd = (source: string, index: number): number => {
+  let depth = 1
+  let cursor = index
+  while (cursor < source.length) {
+    const char = source[cursor]!
+    if (char === "\\") {
+      cursor += 2
+      continue
+    }
+    if (char === "\"" || char === "'") {
+      cursor = skipQuotedString(source, cursor, char)
+      continue
+    }
+    if (char === "`") {
+      cursor = skipTemplateLiteral(source, cursor + 1)
+      continue
+    }
+    if (char === "{") depth++
+    if (char === "}") {
+      depth--
+      if (depth === 0) return cursor
+    }
+    cursor++
+  }
+  return source.length
+}
+
+const scanStructuralRange = (
+  source: string,
+  start: number,
+  end: number,
+  accept: (token: string) => void,
+  options: StructuralScanOptions,
+): void => {
+  let cursor = start
+  while (cursor < end) {
+    cursor = scanStructuralToken(source, cursor, accept, options)
+  }
 }
 
 const acceptOperatorOrPunctuation = (

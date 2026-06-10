@@ -137,7 +137,7 @@ describe("TS-SL-02 Inconsistent clone detection", () => {
       tier: 1.5,
       category: "generated-slop",
       kind: "compound",
-      cacheVersion: "history-context-normalized-config-v1",
+      cacheVersion: "content-grounded-divergence-v2",
       cacheDependencies: ["git-revision-context"],
     })
     expect(TsSl02.inputs).toEqual([
@@ -379,7 +379,7 @@ describe("TS-SL-02 Inconsistent clone detection", () => {
     expect(TsSl02.score(out)).toBe(1)
   })
 
-  test("detects divergent clones with different modification history", async () => {
+  test("detects divergent clones whose members measurably differ in content", async () => {
     const cloneGroups = [
       {
         groupId: "test-1",
@@ -406,8 +406,18 @@ describe("TS-SL-02 Inconsistent clone detection", () => {
     ])
 
     makeCommit(repo, "seed.ts", "export const seed = 1;", "2024-01-01T00:00:00Z")
-    makeCommit(repo, "handler-a.ts", "export function handleA() { return 1; }", "2024-06-01T00:00:00Z")
-    makeCommit(repo, "handler-b.ts", "export function handleB() { return 2; }", "2024-07-01T00:00:00Z")
+    makeCommit(
+      repo,
+      "handler-a.ts",
+      "export function handleA(value: number) {\n  return value + 1\n}\n",
+      "2024-06-01T00:00:00Z",
+    )
+    makeCommit(
+      repo,
+      "handler-b.ts",
+      "export function handleB(value: number) {\n  if (value < 0) {\n    return 0\n  }\n  return value + 1\n}\n",
+      "2024-07-01T00:00:00Z",
+    )
 
     const out = await Effect.runPromise(
       TsSl02.compute(TsSl02.defaultConfig, inputs).pipe(
@@ -432,7 +442,10 @@ describe("TS-SL-02 Inconsistent clone detection", () => {
       sampledMemberCount: 2,
       totalMemberCount: 2,
       divergenceScore: 1,
+      comparedMemberCount: 2,
+      contentVariantCount: 2,
     })
+    expect(out.divergentGroups[0]?.maxTokenDelta).toBeGreaterThan(0)
     expect(TsSl02.score(out)).toBeLessThan(1)
   })
 
@@ -461,12 +474,22 @@ describe("TS-SL-02 Inconsistent clone detection", () => {
       ],
     ])
 
-    const body = (name: string, value: number) =>
+    const body = (name: string, firstLine: string) =>
       Array.from({ length: 10 }, (_, index) =>
-        index === 0 ? `export function ${name}() { return ${value}; }` : `export const ${name}${index} = ${index}`,
+        index === 0 ? firstLine : `export const ${name}${index} = ${index}`,
       ).join("\n")
-    makeCommit(repo, "handler-a.ts", body("handleA", 1), "2024-06-01T00:00:00Z")
-    makeCommit(repo, "handler-b.ts", body("handleB", 2), "2024-06-20T00:00:00Z")
+    makeCommit(
+      repo,
+      "handler-a.ts",
+      body("handleA", "export function handleA(value: number) { return value; }"),
+      "2024-06-01T00:00:00Z",
+    )
+    makeCommit(
+      repo,
+      "handler-b.ts",
+      body("handleB", "export function handleB(value: number) { if (value < 0) { return 0; } return value; }"),
+      "2024-06-20T00:00:00Z",
+    )
 
     const out = await runTsSl02(repo, inputs, {
       gitSha: "not-a-real-ref",
@@ -610,8 +633,18 @@ describe("TS-SL-02 Inconsistent clone detection", () => {
       ],
       "2024-05-01T00:00:00Z",
     )
-    makeCommit(repo, "provider-a.ts", "export function providerA() {\n  return 1\n}\n", "2024-06-01T00:00:00Z")
-    makeCommit(repo, "provider-b.ts", "export function providerB() {\n  return 2\n}\n", "2024-06-20T00:00:00Z")
+    makeCommit(
+      repo,
+      "provider-a.ts",
+      "export function providerA(input: number) {\n  return input\n}\n",
+      "2024-06-01T00:00:00Z",
+    )
+    makeCommit(
+      repo,
+      "provider-b.ts",
+      "export function providerB(input: number) {\n  return input >= 0 ? input : 0\n}\n",
+      "2024-06-20T00:00:00Z",
+    )
 
     const out = await Effect.runPromise(
       TsSl02.compute(
@@ -672,7 +705,14 @@ describe("TS-SL-02 Inconsistent clone detection", () => {
     ])
 
     makeCommit(repo, "provider-a.ts", Array.from({ length: 20 }, (_, i) => `export const a${i} = ${i}`).join("\n"), "2024-06-01T00:00:00Z")
-    makeCommit(repo, "provider-b.ts", Array.from({ length: 20 }, (_, i) => `export const b${i} = ${i}`).join("\n"), "2024-06-20T00:00:00Z")
+    makeCommit(
+      repo,
+      "provider-b.ts",
+      Array.from({ length: 20 }, (_, i) =>
+        i === 8 ? "export const b8 = clamp(8)" : `export const b${i} = ${i}`,
+      ).join("\n"),
+      "2024-06-20T00:00:00Z",
+    )
 
     const out = await Effect.runPromise(
       TsSl02.compute(
@@ -719,7 +759,14 @@ describe("TS-SL-02 Inconsistent clone detection", () => {
     }
 
     makeCommit(repo, "provider-a.ts", Array.from({ length: 20 }, (_, i) => `export const a${i} = ${i}`).join("\n"), "2024-06-01T00:00:00Z")
-    makeCommit(repo, "provider-b.ts", Array.from({ length: 20 }, (_, i) => `export const b${i} = ${i}`).join("\n"), "2024-06-20T00:00:00Z")
+    makeCommit(
+      repo,
+      "provider-b.ts",
+      Array.from({ length: 20 }, (_, i) =>
+        i === 8 ? "export const b8 = clamp(8)" : `export const b${i} = ${i}`,
+      ).join("\n"),
+      "2024-06-20T00:00:00Z",
+    )
 
     const outputForGroups = async (groups: ReadonlyArray<typeof outer | typeof inner>) =>
       runTsSl02(
@@ -903,8 +950,18 @@ describe("TS-SL-02 Inconsistent clone detection", () => {
         "2024-06-01T00:00:00Z",
       )
     }
-    makeCommit(repo, "late-4-a.ts", "export function lateA4() {\n  return 1\n}\n", "2024-06-01T00:00:00Z")
-    makeCommit(repo, "late-4-b.ts", "export function lateB4() {\n  return 2\n}\n", "2024-06-20T00:00:00Z")
+    makeCommit(
+      repo,
+      "late-4-a.ts",
+      "export function lateA4() {\n  return compute()\n}\n",
+      "2024-06-01T00:00:00Z",
+    )
+    makeCommit(
+      repo,
+      "late-4-b.ts",
+      "export function lateB4() {\n  if (cached) {\n    return cached\n  }\n  return compute()\n}\n",
+      "2024-06-20T00:00:00Z",
+    )
 
     const out = await Effect.runPromise(
       TsSl02.compute(TsSl02.defaultConfig, inputs).pipe(
@@ -1171,8 +1228,18 @@ describe("TS-SL-02 Inconsistent clone detection", () => {
       ],
     ])
 
-    makeCommit(repo, "cargo.ts", "export function walkForCargoTomls() {\n  return []\n}\n", "2024-06-01T00:00:00Z")
-    makeCommit(repo, "tsconfig.ts", "export function walkForTsconfigs() {\n  return []\n}\n", "2024-06-20T00:00:00Z")
+    makeCommit(
+      repo,
+      "cargo.ts",
+      "export function walkForCargoTomls(root: string) {\n  return walk(root, \"Cargo.toml\")\n}\n",
+      "2024-06-01T00:00:00Z",
+    )
+    makeCommit(
+      repo,
+      "tsconfig.ts",
+      "export function walkForTsconfigs(root: string) {\n  return walk(root, \"tsconfig.json\").filter(isWorkspace)\n}\n",
+      "2024-06-20T00:00:00Z",
+    )
 
     const out = await Effect.runPromise(
       TsSl02.compute(TsSl02.defaultConfig, inputs).pipe(
@@ -1294,12 +1361,12 @@ describe("TS-SL-02 Inconsistent clone detection", () => {
       ],
     ])
 
-    const body = (name: string, value: number) =>
+    const body = (name: string, compute: string) =>
       [
-        `export function ${name}() {`,
-        `  const value = ${value}`,
-        "  if (value > 0) {",
-        "    return value",
+        `export function ${name}(value: number) {`,
+        `  const limit = ${compute}`,
+        "  if (limit > 0) {",
+        "    return limit",
         "  }",
         "  return 0",
         "}",
@@ -1307,9 +1374,9 @@ describe("TS-SL-02 Inconsistent clone detection", () => {
         "export const marker = true",
         "",
       ].join("\n")
-    makeCommit(repo, "a.ts", body("fnA", 1), "2024-06-01T00:00:00Z")
-    makeCommit(repo, "b.ts", body("fnB", 2), "2024-07-01T00:00:00Z")
-    makeCommit(repo, "c.ts", body("fnC", 3), "2024-07-15T00:00:00Z")
+    makeCommit(repo, "a.ts", body("fnA", "value"), "2024-06-01T00:00:00Z")
+    makeCommit(repo, "b.ts", body("fnB", "value + value"), "2024-07-01T00:00:00Z")
+    makeCommit(repo, "c.ts", body("fnC", "shift(value)"), "2024-07-15T00:00:00Z")
 
     const out = await runTsSl02(repo, inputs)
 

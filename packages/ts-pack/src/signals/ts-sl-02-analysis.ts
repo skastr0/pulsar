@@ -1,5 +1,6 @@
 import { simpleGit } from "simple-git"
 import type { TsSl01Output, CloneGroup } from "./ts-sl-01-model.js"
+import { compareCloneMemberContent } from "./ts-sl-02-content.js"
 import { classifyCloneEvidence } from "./ts-sl-02-evidence.js"
 import {
   calculateDistribution,
@@ -37,11 +38,12 @@ export const analyzeInconsistentClones = async (
   const divergentGroups: Array<DivergentClone> = []
 
   for (const group of groupsToAnalyze) {
-    const divergentGroup = buildDivergentCloneGroup(
+    const divergentGroup = await buildDivergentCloneGroup(
       group,
       membersByGroup.get(group.groupId) ?? [],
       referenceTime,
       config,
+      worktreePath,
     )
     if (divergentGroup !== undefined) divergentGroups.push(divergentGroup)
   }
@@ -62,19 +64,25 @@ export const analyzeInconsistentClones = async (
 }
 
 
-const buildDivergentCloneGroup = (
+const buildDivergentCloneGroup = async (
   group: CloneGroup,
   membersWithHistory: ReadonlyArray<CloneMemberWithHistory>,
   referenceTime: number,
   config: TsSl02Config,
-): DivergentClone | undefined => {
+  worktreePath: string,
+): Promise<DivergentClone | undefined> => {
+  const content = await compareCloneMemberContent(worktreePath, membersWithHistory)
+  // Fewer than two readable members means no content claim is possible in
+  // either direction — distinct from "compared and found consistent".
+  if (content.comparedMemberCount < 2) return undefined
+  if (content.contentVariantCount <= 1) return undefined
+
   const membersWithKnownHistory = membersWithHistory.filter((member) => member.historyStatus === "ok")
-  const divergenceScore = cloneDivergenceScore(membersWithKnownHistory)
   const lastModifiedWindow = cloneLastModifiedWindow(membersWithKnownHistory)
   const hasRecentModification = membersWithKnownHistory.some(
     (member) => referenceTime - member.timestamp < config.min_window_days * 24 * 60 * 60 * 1000,
   )
-  if (divergenceScore < config.divergence_threshold || !hasRecentModification) return undefined
+  if (content.divergenceScore < config.divergence_threshold || !hasRecentModification) return undefined
 
   const members = membersWithHistory.map(toCloneMember)
   const evidence = classifyCloneEvidence(members)
@@ -83,19 +91,23 @@ const buildDivergentCloneGroup = (
     kind: group.kind,
     tokenCount: group.tokenCount,
     members,
-    confidence: evidence.confidence,
+    confidence: historyCorroboratesIndependentEdits(membersWithKnownHistory)
+      ? evidence.confidence
+      : "medium",
     evidenceKind: evidence.kind,
     sampledMemberCount: membersWithHistory.length,
     totalMemberCount: group.members.length,
-    divergenceScore,
+    divergenceScore: content.divergenceScore,
     lastModifiedWindow,
+    comparedMemberCount: content.comparedMemberCount,
+    contentVariantCount: content.contentVariantCount,
+    maxTokenDelta: content.maxTokenDelta,
   }
 }
 
-const cloneDivergenceScore = (members: ReadonlyArray<CloneMemberWithHistory>): number => {
-  const distinctShas = new Set(members.map((member) => member.lastModifiedSha))
-  return members.length <= 1 ? 0 : (distinctShas.size - 1) / (members.length - 1)
-}
+const historyCorroboratesIndependentEdits = (
+  members: ReadonlyArray<CloneMemberWithHistory>,
+): boolean => new Set(members.map((member) => member.lastModifiedSha)).size > 1
 
 const cloneLastModifiedWindow = (members: ReadonlyArray<CloneMemberWithHistory>): number => {
   const timestamps = members.map((member) => member.timestamp).sort((left, right) => left - right)

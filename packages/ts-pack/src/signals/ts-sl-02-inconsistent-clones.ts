@@ -56,6 +56,9 @@ export interface DivergentClone {
   readonly totalMemberCount?: number
   readonly divergenceScore: number
   readonly lastModifiedWindow: number
+  readonly comparedMemberCount?: number
+  readonly contentVariantCount?: number
+  readonly maxTokenDelta?: number
 }
 
 export interface TsSl02Output {
@@ -81,7 +84,7 @@ export const TsSl02: Signal<TsSl02Config, TsSl02Output, SignalContextTag> = {
   tier: 1.5,
   category: "generated-slop",
   kind: "compound",
-  cacheVersion: "history-context-normalized-config-v1",
+  cacheVersion: "content-grounded-divergence-v2",
   cacheDependencies: ["git-revision-context"],
   configSchema: TsSl02Config,
   defaultConfig: DEFAULT_TS_SL_02_CONFIG,
@@ -206,9 +209,11 @@ const divergentCloneDiagnostic = (group: DivergentClone): Diagnostic => ({
     `Divergent ${group.kind ?? "structural"} clone group` +
     `${group.tokenCount !== undefined ? ` (${group.tokenCount} tokens)` : ""}: ` +
     `${group.sampledMemberCount ?? group.members.length}/${group.totalMemberCount ?? group.members.length} members, ` +
+    contentDeltaFragment(group) +
     `divergence=${group.divergenceScore.toFixed(2)}, ` +
     `confidence=${group.confidence ?? "high"}` +
     `${group.evidenceKind !== undefined ? `, evidence=${group.evidenceKind}` : ""}` +
+    `, last edits ${group.lastModifiedWindow.toFixed(0)} days apart` +
     ` — ${cloneMemberSummary(group.members)}`,
   location: {
     file: group.members[0]?.file ?? "unknown",
@@ -222,9 +227,18 @@ const divergentCloneDiagnostic = (group: DivergentClone): Diagnostic => ({
     confidence: group.confidence ?? "high",
     evidenceKind: group.evidenceKind ?? "clone-drift",
     lastModifiedWindow: group.lastModifiedWindow,
+    comparedMemberCount: group.comparedMemberCount,
+    contentVariantCount: group.contentVariantCount,
+    maxTokenDelta: group.maxTokenDelta,
     members: group.members,
   },
 })
+
+const contentDeltaFragment = (group: DivergentClone): string =>
+  group.contentVariantCount !== undefined && group.maxTokenDelta !== undefined
+    ? `${group.contentVariantCount} content variants differing by up to ` +
+      `${group.maxTokenDelta} normalized tokens, `
+    : ""
 
 const analysisLimitOnlyDiagnostics = (out: TsSl02Output): ReadonlyArray<Diagnostic> => {
   if (!out.analysisLimitHit || out.divergentGroups.length > 0) return []
