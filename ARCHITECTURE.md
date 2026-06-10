@@ -430,7 +430,7 @@ The primary output is a **dimension vector grouped by taxonomy category**, plus 
 
 ```json
 {
-  "observer_semantics": "applicability-aware-readiness-v1",
+  "observer_semantics": "applicability-aware-readiness-v2",
   "categories": {
     "architectural-drift": { "score": 0.92, "signals": { "TS-AD-01": 1.0, "TS-AD-02": 0.85 } },
     "dependency-entropy": { "score": 0.71, "signals": { "TS-DE-01": 0.65, "TS-DE-02": 0.78 } },
@@ -447,7 +447,7 @@ The primary output is a **dimension vector grouped by taxonomy category**, plus 
 }
 ```
 
-`observer_semantics` is part of the public contract. `applicability-aware-readiness-v1` means `weighted_mean` and `minimum` are computed from applicable evidence instead of treating missing or failed evidence as healthy scalar data; readiness pressure carries the severe local and failed-signal backpressure. The minimum signal is often more actionable than any aggregate. Hard gate status is computed separately from the pulsar-weighted score — structural violations fail the gate regardless of weight.
+`observer_semantics` is part of the public contract. `applicability-aware-readiness-v2` means: `weighted_mean` and `minimum` are computed from applicable evidence instead of treating missing or failed evidence as healthy scalar data; readiness pressure is `max(p-norm, poison grade, hard-gate pressure)` where the poison grade is a continuous ramp computed only over signals with poison authority (proof-grade tier and hard-gate ceiling — see Enforcement Policy Matrix); signal failures degrade `status` (never `green`) but never zero the score — the score keeps describing what WAS measured, and `band` is omitted when nothing applicable was measured (consumers must treat a missing band as "no verdict", not healthy). The aggregation block names its `dominant_pressure_source` and exposes `band_margin` so thin band decisions are visible. Decoders accept v1 documents for persisted history. The minimum signal is often more actionable than any aggregate. Hard gate status is computed separately from the pulsar-weighted score — structural violations fail the gate regardless of weight.
 
 ---
 
