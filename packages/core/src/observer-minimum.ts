@@ -71,9 +71,12 @@ export const findMinimum = (
 const buildMinimumDetail = (
   diagnostics: ReadonlyArray<Diagnostic>,
 ): string => {
-  if (diagnostics.length === 0) return ""
-  if (diagnostics.length === 1) return diagnostics[0]!.message
-  return `${diagnostics[0]!.message}; ${diagnostics[1]!.message}`
+  const first = diagnostics[0]?.message
+  if (first === undefined) return ""
+  // Skip past diagnostics that repeat the first message (same finding at
+  // multiple sites) so the detail line never reads "X; X".
+  const second = diagnostics.slice(1).find((d) => d.message !== first)?.message
+  return second === undefined ? first : `${first}; ${second}`
 }
 
 /**
