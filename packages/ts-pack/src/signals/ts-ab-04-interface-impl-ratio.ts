@@ -13,6 +13,7 @@ const TsAb04Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   test_globs: Schema.Array(Schema.String),
   public_entry_globs: Schema.Array(Schema.String),
+  min_interface_evidence: Schema.Number,
   top_n_diagnostics: Schema.Number,
 })
 type TsAb04Config = typeof TsAb04Config.Type
@@ -24,12 +25,13 @@ export const TsAb04: Signal<TsAb04Config, TsAb04Output, TsProjectTag | TsPackage
   tier: 1,
   category: "abstraction-bloat",
   kind: "legibility",
-  cacheVersion: "interface-implementation-ratio-v15-composed-substitutes-v1",
+  cacheVersion: "interface-implementation-ratio-v17-shared-evidence-floor",
   configSchema: TsAb04Config,
   defaultConfig: {
     exclude_globs: ["**/node_modules/**", "**/dist/**", "**/.turbo/**"],
     test_globs: ["**/*.test.ts", "**/*.spec.ts", "**/__tests__/**"],
     public_entry_globs: ["**/src/index.ts", "**/index.ts"],
+    min_interface_evidence: 5,
     top_n_diagnostics: 20,
   },
   inputs: [],
@@ -83,6 +85,30 @@ export const TsAb04: Signal<TsAb04Config, TsAb04Output, TsProjectTag | TsPackage
         },
       })),
     )
-    return diagnostics.slice(0, out.diagnosticLimit)
+    const limited = diagnostics.slice(0, out.diagnosticLimit)
+    // The evidence-floor explanation must survive the top_n cut: it explains
+    // why pressure was reduced, which matters most exactly when finding
+    // diagnostics fill the limit.
+    const hasFloorRelevantFindings =
+      out.deadInterfaces.length > 0 || out.flaggedPairs.length > 0
+    if (
+      out.diagnosticLimit > 0 &&
+      hasFloorRelevantFindings &&
+      out.totalInterfaces < out.minInterfaceEvidence
+    ) {
+      limited.push({
+        severity: "info" as const,
+        message:
+          `Interface ratios are measured from only ${out.totalInterfaces} candidate ` +
+          `interface(s), below the ${out.minInterfaceEvidence}-interface evidence floor; ` +
+          "dead-interface and single-implementation pressure are reduced for insufficient evidence",
+        data: {
+          totalInterfaces: out.totalInterfaces,
+          minInterfaceEvidence: out.minInterfaceEvidence,
+          deadInterfaceEvidenceFactor: out.deadInterfaceEvidenceFactor,
+        },
+      })
+    }
+    return limited
   },
 }

@@ -15,6 +15,8 @@ const stableTsAb04Output = (out: TsAb04Result): unknown => ({
   ratio: out.ratio,
   deadInterfaces: out.deadInterfaces,
   deadInterfaceRatio: out.deadInterfaceRatio,
+  minInterfaceEvidence: out.minInterfaceEvidence,
+  deadInterfaceEvidenceFactor: out.deadInterfaceEvidenceFactor,
   singleImplementationPressure: out.singleImplementationPressure,
   deadInterfacePressure: out.deadInterfacePressure,
   diagnosticLimit: out.diagnosticLimit,
@@ -46,7 +48,7 @@ describe("TS-AB-04 (interface to implementation ratio)", () => {
       tier: 1,
       category: "abstraction-bloat",
       kind: "legibility",
-      cacheVersion: "interface-implementation-ratio-v15-composed-substitutes-v1",
+      cacheVersion: "interface-implementation-ratio-v17-shared-evidence-floor",
       inputs: [],
     })
     expect(registered?.id).toBe(TsAb04.id)
@@ -73,6 +75,14 @@ describe("TS-AB-04 (interface to implementation ratio)", () => {
         path: "config.public_entry_globs",
         source: "signal-default",
         scoreRole: "metadata",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.min_interface_evidence",
+        value: 5,
+        source: "signal-default",
+        scoreRole: "threshold",
       }),
     )
     expect(factorLedger?.entries).toContainEqual(
@@ -283,7 +293,8 @@ describe("TS-AB-04 (interface to implementation ratio)", () => {
         interfaceName: "IService",
       }),
     ])
-    expect(TsAb04.score(out)).toBe(0.75)
+    expect(out.deadInterfaceEvidenceFactor).toBeCloseTo(0.2)
+    expect(TsAb04.score(out)).toBeCloseTo(0.95)
   })
 
   test("type-only references to non-object cast bindings do not hide dead interfaces", async () => {
@@ -307,7 +318,8 @@ describe("TS-AB-04 (interface to implementation ratio)", () => {
         interfaceName: "Payload",
       }),
     ])
-    expect(TsAb04.score(out)).toBe(0.75)
+    expect(out.deadInterfaceEvidenceFactor).toBeCloseTo(0.2)
+    expect(TsAb04.score(out)).toBeCloseTo(0.95)
   })
 
   test("consumed non-object casts count as structural data usage", async () => {
@@ -427,6 +439,135 @@ describe("TS-AB-04 (interface to implementation ratio)", () => {
 
     expect(out.totalInterfaces).toBe(0)
     expect(out.deadInterfaces).toHaveLength(0)
+  })
+
+  test("inline satisfies object literals in call arguments are usage, not dead interfaces", async () => {
+    await repo.write(
+      "src/output.ts",
+      [
+        "interface SuccessEnvelope {",
+        "  readonly ok: true",
+        "  readonly result: unknown",
+        "}",
+        "export function printSuccess(result: unknown) {",
+        "  console.log(JSON.stringify({ ok: true, result } satisfies SuccessEnvelope))",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsAb04, TsAb04.defaultConfig)
+
+    expect(out.deadInterfaces).toHaveLength(0)
+    expect(out.flaggedPairs).toHaveLength(0)
+    expect(out.totalInterfaces).toBe(0)
+    expect(TsAb04.score(out)).toBe(1)
+  })
+
+  test("inline as object literals in call arguments are usage, not dead interfaces", async () => {
+    await repo.write(
+      "src/send.ts",
+      [
+        "export interface Message {",
+        "  readonly kind: string",
+        "}",
+        "declare function emit(message: unknown): void",
+        "export function send() {",
+        "  emit({ kind: 'ok' } as Message)",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsAb04, TsAb04.defaultConfig)
+
+    expect(out.deadInterfaces).toHaveLength(0)
+    expect(out.flaggedPairs).toHaveLength(0)
+    expect(out.totalInterfaces).toBe(0)
+    expect(TsAb04.score(out)).toBe(1)
+  })
+
+  test("non-consumed inline satisfies literals are implementations, not dead interfaces", async () => {
+    await repo.write(
+      "src/fixtures.ts",
+      [
+        "export interface ScenarioFixture {",
+        "  readonly name: string",
+        "}",
+        "export const fixtures = [",
+        "  { name: 'a' } satisfies ScenarioFixture,",
+        "]",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsAb04, TsAb04.defaultConfig)
+
+    expect(out.deadInterfaces).toHaveLength(0)
+    expect(out.pairs).toEqual([
+      expect.objectContaining({
+        interfaceName: "ScenarioFixture",
+        implementationName: "fixtures",
+      }),
+    ])
+  })
+
+  test("typed object literals nested in functions are implementations, not dead interfaces", async () => {
+    await repo.write(
+      "src/routes.ts",
+      [
+        "export interface RouteSpec {",
+        "  readonly path: string",
+        "}",
+        "export function registerRoutes(register: (spec: unknown) => void) {",
+        "  const spec: RouteSpec = { path: '/' }",
+        "  register(spec)",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsAb04, TsAb04.defaultConfig)
+
+    expect(out.deadInterfaces).toHaveLength(0)
+    expect(out.pairs).toEqual([
+      expect.objectContaining({
+        interfaceName: "RouteSpec",
+        implementationName: "spec",
+      }),
+    ])
+  })
+
+  test("return-annotated factory object literals count as implementations", async () => {
+    await repo.write(
+      "src/service.ts",
+      [
+        "export interface IService { run(): string }",
+        "export class ServiceImpl implements IService { run() { return 'a' } }",
+        "export function makeService(): IService {",
+        "  return { run() { return 'b' } }",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsAb04, TsAb04.defaultConfig)
+
+    expect(out.deadInterfaces).toHaveLength(0)
+    expect(out.flaggedPairs).toHaveLength(0)
+    expect(out.totalInterfaces).toBe(1)
+  })
+
+  test("arrow factories returning object literals count as implementations", async () => {
+    await repo.write(
+      "src/clock.ts",
+      [
+        "export interface IClock { now(): number }",
+        "export class SystemClock implements IClock { now() { return Date.now() } }",
+        "export const makeClock = (): IClock => ({ now: () => 0 })",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsAb04, TsAb04.defaultConfig)
+
+    expect(out.deadInterfaces).toHaveLength(0)
+    expect(out.flaggedPairs).toHaveLength(0)
+    expect(out.totalInterfaces).toBe(1)
   })
 
   test("multiple implementations are not flagged", async () => {
@@ -691,7 +832,118 @@ describe("TS-AB-04 (interface to implementation ratio)", () => {
     const out = await runSignal(repo.root, TsAb04, TsAb04.defaultConfig)
     expect(out.deadInterfaces[0]?.interfaceName).toBe("IDead")
     expect(out.deadInterfaceRatio).toBe(1)
-    expect(TsAb04.score(out)).toBe(0.75)
+    expect(out.deadInterfaceEvidenceFactor).toBeCloseTo(0.2)
+    expect(out.deadInterfacePressure).toBeCloseTo(0.05)
+    expect(TsAb04.score(out)).toBeCloseTo(0.95)
+  })
+
+  test("dead-interface pressure degrades below the minimum interface evidence floor", async () => {
+    await repo.write("src/dead.ts", "export interface IDeadContract { run(): void }\n")
+    await repo.write(
+      "src/handlers.ts",
+      [
+        "export interface IHandler { handle(): string }",
+        "export class One implements IHandler { handle() { return '1' } }",
+        "export class Two implements IHandler { handle() { return '2' } }",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsAb04, TsAb04.defaultConfig)
+
+    expect(out.totalInterfaces).toBe(2)
+    expect(out.deadInterfaces).toEqual([
+      expect.objectContaining({ interfaceName: "IDeadContract" }),
+    ])
+    expect(out.deadInterfaceRatio).toBeCloseTo(0.5)
+    expect(out.minInterfaceEvidence).toBe(5)
+    expect(out.deadInterfaceEvidenceFactor).toBeCloseTo(0.4)
+    expect(out.deadInterfacePressure).toBeCloseTo(0.05)
+    expect(TsAb04.score(out)).toBeCloseTo(0.95)
+    expect(TsAb04.diagnose(out)).toContainEqual(
+      expect.objectContaining({
+        severity: "info",
+        message: expect.stringContaining("evidence floor"),
+        data: expect.objectContaining({
+          totalInterfaces: 2,
+          minInterfaceEvidence: 5,
+        }),
+      }),
+    )
+  })
+
+  test("min_interface_evidence config disables the floor when lowered", async () => {
+    await repo.write("src/dead.ts", "export interface IDeadContract { run(): void }\n")
+    await repo.write(
+      "src/handlers.ts",
+      [
+        "export interface IHandler { handle(): string }",
+        "export class One implements IHandler { handle() { return '1' } }",
+        "export class Two implements IHandler { handle() { return '2' } }",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsAb04, {
+      ...TsAb04.defaultConfig,
+      min_interface_evidence: 1,
+    })
+
+    expect(out.minInterfaceEvidence).toBe(1)
+    expect(out.deadInterfaceEvidenceFactor).toBe(1)
+    expect(out.deadInterfacePressure).toBeCloseTo(0.125)
+    expect(TsAb04.score(out)).toBeCloseTo(0.875)
+    expect(
+      TsAb04.diagnose(out).filter((diagnostic) => diagnostic.severity === "info"),
+    ).toHaveLength(0)
+  })
+
+  test("invalid min_interface_evidence values degrade to a neutral floor", async () => {
+    await repo.write("src/dead.ts", "export interface IDeadContract { run(): void }\n")
+
+    const nan = await runSignal(repo.root, TsAb04, {
+      ...TsAb04.defaultConfig,
+      min_interface_evidence: Number.NaN,
+    })
+    const zero = await runSignal(repo.root, TsAb04, {
+      ...TsAb04.defaultConfig,
+      min_interface_evidence: 0,
+    })
+
+    expect(nan.minInterfaceEvidence).toBe(1)
+    expect(zero.minInterfaceEvidence).toBe(1)
+    expect(nan.deadInterfaceEvidenceFactor).toBe(1)
+    expect(nan.deadInterfacePressure).toBeCloseTo(0.25)
+    expect(TsAb04.score(nan)).toBeCloseTo(0.75)
+  })
+
+  test("a dead interface keeps full ratio pressure once the evidence floor is met", async () => {
+    await repo.write("src/dead.ts", "export interface IDeadContract { run(): void }\n")
+    for (const suffix of ["a", "b", "c", "d"]) {
+      await repo.write(
+        `src/handler-${suffix}.ts`,
+        [
+          `export interface IHandler_${suffix} { handle(): string }`,
+          `export class One_${suffix} implements IHandler_${suffix} { handle() { return '1' } }`,
+          `export class Two_${suffix} implements IHandler_${suffix} { handle() { return '2' } }`,
+        ].join("\n"),
+      )
+    }
+
+    const out = await runSignal(repo.root, TsAb04, TsAb04.defaultConfig)
+
+    expect(out.totalInterfaces).toBe(5)
+    expect(out.deadInterfaceRatio).toBeCloseTo(0.2)
+    expect(out.deadInterfaceEvidenceFactor).toBe(1)
+    expect(out.deadInterfacePressure).toBeCloseTo(0.05)
+    expect(TsAb04.score(out)).toBeCloseTo(0.95)
+    expect(TsAb04.diagnose(out)).toContainEqual(
+      expect.objectContaining({
+        severity: "warn",
+        message: "Dead interface with no implementation: IDeadContract",
+      }),
+    )
+    expect(
+      TsAb04.diagnose(out).filter((diagnostic) => diagnostic.severity === "info"),
+    ).toHaveLength(0)
   })
 
   test("score uses the maximum of single-implementation and dead-interface pressure", async () => {
@@ -816,6 +1068,14 @@ describe("TS-AB-04 (interface to implementation ratio)", () => {
           interfaceName: "IBDead",
         },
       }),
+      expect.objectContaining({
+        severity: "info",
+        data: {
+          totalInterfaces: 4,
+          minInterfaceEvidence: 5,
+          deadInterfaceEvidenceFactor: 0.8,
+        },
+      }),
     ])
   })
 
@@ -853,7 +1113,11 @@ describe("TS-AB-04 (interface to implementation ratio)", () => {
     })
 
     expect(fractional.diagnosticLimit).toBe(1)
-    expect(TsAb04.diagnose(fractional)).toHaveLength(1)
+    // 1 capped finding plus the evidence-floor info, which rides above the
+    // cap so the score explanation survives exactly when findings fill it.
+    const fractionalDiagnostics = TsAb04.diagnose(fractional)
+    expect(fractionalDiagnostics).toHaveLength(2)
+    expect(fractionalDiagnostics[1]?.severity).toBe("info")
     expect(negative.diagnosticLimit).toBe(0)
     expect(nan.diagnosticLimit).toBe(0)
     expect(infinite.diagnosticLimit).toBe(0)
@@ -995,6 +1259,7 @@ describe("TS-AB-04 (interface to implementation ratio)", () => {
     expect(decoded.exclude_globs).toContain("**/node_modules/**")
     expect(decoded.test_globs).toContain("**/*.test.ts")
     expect(decoded.public_entry_globs).toContain("**/src/index.ts")
+    expect(decoded.min_interface_evidence).toBe(5)
     expect(decoded.top_n_diagnostics).toBe(20)
   })
 })

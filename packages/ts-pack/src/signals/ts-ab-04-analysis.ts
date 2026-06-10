@@ -1,10 +1,14 @@
 import {
+  type ArrowFunction,
   type AsExpression,
   type ClassDeclaration,
   type ClassExpression,
   type ExpressionWithTypeArguments,
   type ExportDeclaration,
   type ExportSpecifier,
+  type FunctionDeclaration,
+  type FunctionExpression,
+  type MethodDeclaration,
   Node,
   type Project,
   type SatisfiesExpression,
@@ -41,6 +45,8 @@ export interface TsAb04Output {
   readonly ratio: number
   readonly deadInterfaces: ReadonlyArray<DeadInterface>
   readonly deadInterfaceRatio: number
+  readonly minInterfaceEvidence: number
+  readonly deadInterfaceEvidenceFactor: number
   readonly singleImplementationPressure: number
   readonly deadInterfacePressure: number
   readonly diagnosticLimit: number
@@ -50,11 +56,17 @@ interface TsAb04AnalysisConfig {
   readonly exclude_globs: ReadonlyArray<string>
   readonly test_globs: ReadonlyArray<string>
   readonly public_entry_globs: ReadonlyArray<string>
+  readonly min_interface_evidence: number
   readonly top_n_diagnostics: number
 }
 
 type ImplementationKind = "class" | "object-literal"
 type ClassImplementationNode = ClassDeclaration | ClassExpression
+type CallableImplementationNode =
+  | ArrowFunction
+  | FunctionDeclaration
+  | FunctionExpression
+  | MethodDeclaration
 
 type ImplementationDescriptor = {
   readonly file: string
@@ -90,6 +102,7 @@ export const computeInterfaceImplementationRatio = (
   return buildInterfaceImplementationOutput(
     accumulator,
     normalizeDiagnosticLimit(config.top_n_diagnostics),
+    normalizeMinInterfaceEvidence(config.min_interface_evidence),
   )
 }
 
@@ -190,6 +203,7 @@ const addDeadInterfaceFinding = (
 const buildInterfaceImplementationOutput = (
   accumulator: InterfaceImplementationAccumulator,
   diagnosticLimit: number,
+  minInterfaceEvidence: number,
 ): TsAb04Output => {
   const flaggedPairs = accumulator.pairs
     .filter((pair) => !pair.hasTestSubstitute)
@@ -198,6 +212,7 @@ const buildInterfaceImplementationOutput = (
   const ratio = totalInterfaces === 0 ? 0 : flaggedPairs.length / totalInterfaces
   const deadInterfaceRatio =
     totalInterfaces === 0 ? 0 : accumulator.deadInterfaces.length / totalInterfaces
+  const deadInterfaceEvidenceFactor = Math.min(1, totalInterfaces / minInterfaceEvidence)
 
   return {
     pairs: accumulator.pairs,
@@ -206,8 +221,17 @@ const buildInterfaceImplementationOutput = (
     ratio,
     deadInterfaces: accumulator.deadInterfaces.sort(compareDeadInterfaces),
     deadInterfaceRatio,
-    singleImplementationPressure: Math.min(1, ratio / 0.5),
-    deadInterfacePressure: Math.min(0.25, deadInterfaceRatio * 0.25),
+    minInterfaceEvidence,
+    deadInterfaceEvidenceFactor,
+    // Both ratios share the evidence floor: in a codebase with one or two
+    // interfaces total, a single flagged pair is a style observation, not a
+    // repo-zeroing architecture verdict.
+    singleImplementationPressure:
+      Math.min(1, ratio / 0.5) * deadInterfaceEvidenceFactor,
+    deadInterfacePressure: Math.min(
+      0.25,
+      deadInterfaceRatio * 0.25 * deadInterfaceEvidenceFactor,
+    ),
     diagnosticLimit,
   }
 }
@@ -383,7 +407,7 @@ const isClassImplementsReference = (reference: Node): boolean => {
 
 const isTypedObjectLiteralReference = (reference: Node): boolean => {
   const assertion = objectLiteralAssertionReference(reference)
-  if (assertion !== undefined) return true
+  if (assertion !== undefined) return !isConsumedAssertion(assertion)
 
   const variableDeclaration = reference.getFirstAncestorByKind(SyntaxKind.VariableDeclaration)
   if (variableDeclaration === undefined) return false
@@ -494,27 +518,9 @@ const buildImplementationIndex = (
 
   for (const sourceFile of sourceFiles) {
     const file = sourceFile.getFilePath()
-
-    for (const classDeclaration of classImplementationNodes(sourceFile)) {
-      const name = classImplementationName(classDeclaration)
-      for (const heritage of classDeclaration.getImplements()) {
-        for (const key of resolveInterfaceKeysFromReference(heritage)) {
-          add(key, { file, name, kind: "class" })
-        }
-      }
-    }
-
-    for (const declaration of sourceFile.getVariableDeclarations()) {
-      const substituteType = objectLiteralSubstituteTypeNode(declaration)
-      if (substituteType === undefined) continue
-      for (const key of resolveInterfaceKeysFromTypeNode(substituteType)) {
-        add(key, {
-          file,
-          name: declaration.getName(),
-          kind: "object-literal",
-        })
-      }
-    }
+    sourceFile.forEachDescendant((node) => {
+      indexImplementationNode(node, file, add)
+    })
   }
 
   return new Map(
@@ -525,16 +531,110 @@ const buildImplementationIndex = (
   )
 }
 
-const classImplementationNodes = (
-  sourceFile: SourceFile,
-): ReadonlyArray<ClassImplementationNode> => {
-  const classes: Array<ClassImplementationNode> = []
-  sourceFile.forEachDescendant((node) => {
-    if (Node.isClassDeclaration(node) || Node.isClassExpression(node)) {
-      classes.push(node)
+const indexImplementationNode = (
+  node: Node,
+  file: string,
+  add: (interfaceKey: string, descriptor: ImplementationDescriptor) => void,
+): void => {
+  if (Node.isClassDeclaration(node) || Node.isClassExpression(node)) {
+    const name = classImplementationName(node)
+    for (const heritage of node.getImplements()) {
+      for (const key of resolveInterfaceKeysFromReference(heritage)) {
+        add(key, { file, name, kind: "class" })
+      }
     }
-  })
-  return classes
+    return
+  }
+
+  if (Node.isVariableDeclaration(node)) {
+    const substituteType = objectLiteralSubstituteTypeNode(node)
+    for (const key of resolveInterfaceKeysFromTypeNode(substituteType)) {
+      add(key, { file, name: node.getName(), kind: "object-literal" })
+    }
+    return
+  }
+
+  const assertion = objectLiteralAssertionExpression(node)
+  if (assertion !== undefined) {
+    for (const key of resolveInterfaceKeysFromTypeNode(assertion.getTypeNode())) {
+      add(key, {
+        file,
+        name: objectLiteralAssertionImplementationName(assertion),
+        kind: "object-literal",
+      })
+    }
+    return
+  }
+
+  const annotatedReturn = returnAnnotatedObjectLiteralSource(node)
+  if (annotatedReturn !== undefined) {
+    for (const key of resolveInterfaceKeysFromTypeNode(annotatedReturn.typeNode)) {
+      add(key, { file, name: annotatedReturn.name, kind: "object-literal" })
+    }
+  }
+}
+
+const objectLiteralAssertionImplementationName = (
+  assertion: AsExpression | SatisfiesExpression,
+): string => {
+  const variableDeclaration = assertion.getFirstAncestorByKind(SyntaxKind.VariableDeclaration)
+  if (variableDeclaration !== undefined) {
+    const initializer = variableDeclaration.getInitializer()
+    if (initializer !== undefined && containsNode(initializer, assertion)) {
+      return variableDeclaration.getName()
+    }
+  }
+  return `<object-literal:L${assertion.getStartLineNumber()}>`
+}
+
+interface AnnotatedReturnSource {
+  readonly typeNode: TypeNode
+  readonly name: string
+}
+
+const returnAnnotatedObjectLiteralSource = (node: Node): AnnotatedReturnSource | undefined => {
+  const callable = returnedObjectLiteralCallable(node)
+  const typeNode = callable?.getReturnTypeNode()
+  if (callable === undefined || typeNode === undefined) return undefined
+  return { typeNode, name: callableImplementationName(callable) }
+}
+
+const returnedObjectLiteralCallable = (node: Node): CallableImplementationNode | undefined => {
+  if (Node.isReturnStatement(node)) {
+    const expression = node.getExpression()
+    if (expression === undefined) return undefined
+    if (!Node.isObjectLiteralExpression(unwrapParenthesizedExpression(expression))) {
+      return undefined
+    }
+    return node.getFirstAncestor(isCallableImplementationNode)
+  }
+  if (Node.isArrowFunction(node)) {
+    return Node.isObjectLiteralExpression(unwrapParenthesizedExpression(node.getBody()))
+      ? node
+      : undefined
+  }
+  return undefined
+}
+
+const isCallableImplementationNode = (node: Node): node is CallableImplementationNode =>
+  Node.isFunctionDeclaration(node) ||
+  Node.isFunctionExpression(node) ||
+  Node.isArrowFunction(node) ||
+  Node.isMethodDeclaration(node)
+
+const callableImplementationName = (callable: CallableImplementationNode): string => {
+  if (!Node.isArrowFunction(callable)) {
+    const name = callable.getName()
+    if (name !== undefined) return name
+  }
+  const variableDeclaration = callable.getFirstAncestorByKind(SyntaxKind.VariableDeclaration)
+  if (variableDeclaration !== undefined) {
+    const initializer = variableDeclaration.getInitializer()
+    if (initializer !== undefined && containsNode(initializer, callable)) {
+      return variableDeclaration.getName()
+    }
+  }
+  return `<function:L${callable.getStartLineNumber()}>`
 }
 
 const classImplementationName = (classNode: ClassImplementationNode): string => {
@@ -604,6 +704,13 @@ const interfaceKeysFromDeclarations = (declarations: ReadonlyArray<Node>): Reado
 
 const normalizeDiagnosticLimit = (limit: number): number =>
   Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 0
+
+/**
+ * An invalid floor degrades to 1, which keeps the dead-interface ratio at
+ * full strength for any non-empty interface population (no evidence floor).
+ */
+const normalizeMinInterfaceEvidence = (minimum: number): number =>
+  Number.isFinite(minimum) && minimum >= 1 ? Math.floor(minimum) : 1
 
 const compareImplementationDescriptors = (
   left: ImplementationDescriptor,
