@@ -37,6 +37,7 @@ export interface CategoryOutput {
       readonly meanPressure: number
       readonly pnormPressure: number
       readonly maxLocalPressure: number
+      readonly authorityMaxLocalPressure?: number
       readonly localPressure: number
       readonly finalPressure: number
     }

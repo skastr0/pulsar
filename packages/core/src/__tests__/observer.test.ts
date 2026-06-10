@@ -100,6 +100,46 @@ describe("Observer — category aggregation", () => {
     })
   })
 
+  test("category poison requires authority: a tier-2 heuristic cannot zero its category", async () => {
+    const heuristic = makeLeaf({
+      id: "TEST-HEURISTIC",
+      tier: 2,
+      category: "legibility-decay",
+      score: 0.05,
+    })
+    const clean = makeLeaf({ id: "TEST-CLEAN", category: "legibility-decay", score: 1 })
+
+    const result = await run([heuristic, clean])
+    const aggregation = result.categories["legibility-decay"].aggregation
+
+    // Effective pressure 0.95 * 0.85 ≈ 0.8075 would have poisoned via
+    // passthrough before; without authority it only reaches the p-norm.
+    expect(aggregation?.pressure.maxLocalPressure).toBeCloseTo(0.8075, 4)
+    expect(aggregation?.pressure.authorityMaxLocalPressure).toBe(0)
+    expect(aggregation?.pressure.localPressure).toBe(0)
+    expect(aggregation?.pressure.finalPressure).toBe(aggregation?.pressure.pnormPressure ?? -1)
+    // The same severity from a tier-1 signal poisons the category.
+    const proof = makeLeaf({
+      id: "TEST-PROOF",
+      tier: 1,
+      category: "legibility-decay",
+      score: 0.05,
+    })
+    const proofRun = await run([proof, clean])
+    const proofAggregation = proofRun.categories["legibility-decay"].aggregation
+    expect(proofAggregation?.pressure.authorityMaxLocalPressure).toBeCloseTo(0.95, 5)
+    expect(proofAggregation?.pressure.localPressure).toBeCloseTo(0.95, 5)
+  })
+
+  test("displayed category score always equals the aggregation finalScore", async () => {
+    const low = makeLeaf({ id: "TEST-LOW", tier: 1, category: "generated-slop", score: 0.2 })
+    const high = makeLeaf({ id: "TEST-HIGH", category: "generated-slop", score: 1 })
+    const result = await run([low, high])
+    const category = result.categories["generated-slop"]
+    expect(category.score).toBe(category.aggregation?.finalScore ?? -1)
+    expect(category.aggregation?.shapedByPressure).toBe(true)
+  })
+
   test("generated-slop score keeps the weakest active signal visible through generic pressure", async () => {
     const a = makeLeaf({ id: "TS-SL-LOW", category: "generated-slop", score: 0.2 })
     const b = makeLeaf({ id: "TS-SL-HIGH", category: "generated-slop", score: 1 })

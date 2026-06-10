@@ -31,6 +31,7 @@ const ObserverCategorySnapshot = Schema.Struct({
         meanPressure: Schema.Number,
         pnormPressure: Schema.Number,
         maxLocalPressure: Schema.Number,
+        authorityMaxLocalPressure: Schema.optional(Schema.Number),
         localPressure: Schema.Number,
         finalPressure: Schema.Number,
       }),

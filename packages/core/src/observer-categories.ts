@@ -1,10 +1,11 @@
 import { type Category, categoryRecord } from "./category.js"
+import { hasPoisonAuthority } from "./enforcement.js"
 import type { Registry } from "./registry.js"
 import type { SignalRunResult } from "./runner.js"
 import type { ResolvedSignal } from "./signal.js"
 import { categoryAggregationConfigOf, type CategoryAggregationObserverConfig, type PulsarVector, weightOf as vectorWeightOf } from "./vector.js"
 import type { CategoryOutput } from "./observer-model.js"
-import { localSignalPressure } from "./observer-local-pressure.js"
+import { poisonRampPressure } from "./observer-local-pressure.js"
 import { clamp01, confidenceForSignal, roundScore, signalApplicabilityOf } from "./observer-score-utils.js"
 
 export const aggregateCategories = (
@@ -38,6 +39,7 @@ type PressureInput = {
   readonly score: number
   readonly weight: number
   readonly confidence: number
+  readonly poisonAuthority: boolean
 }
 
 const aggregateOneCategory = (
@@ -57,7 +59,6 @@ const aggregateOneCategory = (
   const pressure = aggregateCategoryPressure(
     inputs.pressureInputs,
     categoryAggregationConfigOf(vector),
-    inputs.pressureInputs,
   )
   const pressureScore = clamp01(1 - pressure.finalPressure)
   const score = roundScore(Math.min(normalizedScore, pressureScore))
@@ -132,7 +133,12 @@ const addCategorySignalInput = (
   inputs.applicableSignalCount += 1
   inputs.weightedSum += weight * effectiveScore
   inputs.weightTotal += weight
-  inputs.pressureInputs.push({ score: result.score, weight, confidence })
+  inputs.pressureInputs.push({
+    score: result.score,
+    weight,
+    confidence,
+    poisonAuthority: hasPoisonAuthority(signal),
+  })
   inputs.applicableScores.push(result.score)
   addCategoryNormalizationInput(signal, weight, effectiveScore, inputs)
 }
@@ -210,21 +216,14 @@ const isLanguageNormalizationGroup = (group: string): boolean =>
   group === "typescript" || group === "rust"
 
 const aggregateCategoryPressure = (
-  inputs: ReadonlyArray<{
-    readonly score: number
-    readonly weight: number
-    readonly confidence: number
-  }>,
+  inputs: ReadonlyArray<PressureInput>,
   config: CategoryAggregationObserverConfig,
-  localInputs: ReadonlyArray<{
-    readonly score: number
-    readonly weight: number
-    readonly confidence: number
-  }> = inputs,
 ): NonNullable<CategoryOutput["aggregation"]>["pressure"] => {
   let weightedPressureSum = 0
   let weightedPnormSum = 0
   let weightTotal = 0
+  let maxLocalPressure = 0
+  let maxAuthorityLocalPressure = 0
 
   for (const input of inputs) {
     const weight = input.weight
@@ -232,14 +231,10 @@ const aggregateCategoryPressure = (
     weightedPressureSum += weight * pressure
     weightedPnormSum += weight * Math.pow(pressure, config.p_norm)
     weightTotal += weight
-  }
-
-  let maxLocalPressure = 0
-  for (const input of localInputs) {
-    maxLocalPressure = Math.max(
-      maxLocalPressure,
-      confidenceAdjustedPressure(input.score, input.confidence),
-    )
+    maxLocalPressure = Math.max(maxLocalPressure, pressure)
+    if (input.poisonAuthority) {
+      maxAuthorityLocalPressure = Math.max(maxAuthorityLocalPressure, pressure)
+    }
   }
 
   const meanPressure = weightTotal === 0 ? 0 : weightedPressureSum / weightTotal
@@ -247,7 +242,9 @@ const aggregateCategoryPressure = (
     weightTotal === 0
       ? 0
       : Math.pow(weightedPnormSum / weightTotal, 1 / config.p_norm)
-  const localPressure = localSignalPressure(maxLocalPressure, config)
+  // Same authority doctrine as readiness: only proof-grade signals (tier
+  // 1/1.5) reach the poison ramp; heuristic severity rides the p-norm.
+  const localPressure = poisonRampPressure(maxAuthorityLocalPressure, config)
   const finalPressure = clamp01(Math.max(pnormPressure, localPressure))
 
   return {
@@ -256,6 +253,7 @@ const aggregateCategoryPressure = (
     meanPressure: roundScore(meanPressure),
     pnormPressure: roundScore(pnormPressure),
     maxLocalPressure: roundScore(maxLocalPressure),
+    authorityMaxLocalPressure: roundScore(maxAuthorityLocalPressure),
     localPressure: roundScore(localPressure),
     finalPressure: roundScore(finalPressure),
   }
