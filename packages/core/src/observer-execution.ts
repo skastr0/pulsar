@@ -1,6 +1,7 @@
 import { Effect } from "effect"
 import type { ResolvedCalibrationContext } from "./calibration.js"
 import type { Diagnostic } from "./diagnostic.js"
+import { enforceSeverityCeiling } from "./enforcement.js"
 import { applySignalFactorPolicy, makeSignalFactorPolicyContext, SignalFactorPolicyTag } from "./factor-ledger.js"
 import { buildInputOutputs } from "./input-outputs.js"
 import type { Registry } from "./registry.js"
@@ -201,7 +202,7 @@ const runOneSignal = (
       signalId: signal.id,
       score: signal.score(out),
       output: out,
-      diagnostics: signal.diagnose(out),
+      diagnostics: enforceSeverityCeiling(signal.enforcement, signal.diagnose(out)),
       ...(metadata !== undefined ? { metadata } : {}),
       ...(factorLedger !== undefined ? { factorLedger } : {}),
     }

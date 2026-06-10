@@ -1,5 +1,6 @@
 import { Effect } from "effect"
 import type { Diagnostic } from "./diagnostic.js"
+import { enforceSeverityCeiling } from "./enforcement.js"
 import { UnknownSignalIdError, type SignalError } from "./errors.js"
 import {
   applySignalFactorPolicy,
@@ -87,7 +88,7 @@ export const runSignal = (
       signalId: target.id,
       score: target.score(out),
       output: out,
-      diagnostics: target.diagnose(out),
+      diagnostics: enforceSeverityCeiling(target.enforcement, target.diagnose(out)),
       ...(metadata !== undefined ? { metadata } : {}),
       ...(factorLedger !== undefined ? { factorLedger } : {}),
     }

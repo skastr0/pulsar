@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+import type { Diagnostic } from "./diagnostic.js"
 import type { SignalKind, Tier } from "./tier.js"
 
 const EnforcementLevel = Schema.Literal(
@@ -35,6 +36,30 @@ export type EnforcementCeiling = typeof EnforcementCeiling.Type
  */
 export const hasPoisonAuthority = (signal: { readonly tier: Tier }): boolean =>
   signal.tier === 1 || signal.tier === 1.5
+
+/**
+ * Engine-level severity ceiling. Block-severity findings are gate inputs,
+ * so only signals whose enforcement ceiling includes "hard-gate" may emit
+ * them; anything else is downgraded to warn with an explicit note. A
+ * signal cannot claim authority its evidence class does not license —
+ * regardless of what its diagnose() pass writes.
+ */
+export const enforceSeverityCeiling = (
+  enforcement: EnforcementCeiling,
+  diagnostics: ReadonlyArray<Diagnostic>,
+): ReadonlyArray<Diagnostic> => {
+  if (enforcement.includes("hard-gate")) return diagnostics
+  if (!diagnostics.some((diagnostic) => diagnostic.severity === "block")) return diagnostics
+  return diagnostics.map((diagnostic) =>
+    diagnostic.severity === "block"
+      ? {
+          ...diagnostic,
+          severity: "warn" as const,
+          message: `${diagnostic.message} [severity capped to warn: signal enforcement ceiling lacks hard-gate authority]`,
+        }
+      : diagnostic,
+  )
+}
 
 export const deriveEnforcement = (
   tier: Tier,

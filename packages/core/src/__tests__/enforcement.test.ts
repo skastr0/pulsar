@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { deriveEnforcement, hasPoisonAuthority } from "../enforcement.js"
+import {
+  deriveEnforcement,
+  enforceSeverityCeiling,
+  hasPoisonAuthority,
+} from "../enforcement.js"
 
 describe("deriveEnforcement", () => {
   test("Tier 1 structural → hard gate", () => {
@@ -32,6 +36,31 @@ describe("deriveEnforcement", () => {
 
   test("Tier 3 structural → never (empty)", () => {
     expect(deriveEnforcement(3, "structural")).toEqual([])
+  })
+})
+
+describe("enforceSeverityCeiling", () => {
+  test("hard-gate signals keep block severity untouched", () => {
+    const diagnostics = [{ severity: "block" as const, message: "real violation" }]
+    expect(enforceSeverityCeiling(["hard-gate"], diagnostics)).toBe(diagnostics)
+  })
+
+  test("non-gate signals get block downgraded to warn with an explicit note", () => {
+    const capped = enforceSeverityCeiling(
+      ["soft-warning", "trend"],
+      [
+        { severity: "block", message: "overclaimed finding" },
+        { severity: "info", message: "context" },
+      ],
+    )
+    expect(capped[0]?.severity).toBe("warn")
+    expect(capped[0]?.message).toContain("severity capped to warn")
+    expect(capped[1]).toEqual({ severity: "info", message: "context" })
+  })
+
+  test("non-gate signals without block findings pass through unchanged", () => {
+    const diagnostics = [{ severity: "warn" as const, message: "plain warning" }]
+    expect(enforceSeverityCeiling([], diagnostics)).toBe(diagnostics)
   })
 })
 

@@ -422,6 +422,12 @@ describe("Observer — hard gate routing (AC-6)", () => {
     const result = await run([a])
     expect(result.hard_gate_status).toBe("pass")
     expect(result.hard_gate_violations).toEqual([])
+    // The severity ceiling rewrites the emitted diagnostic too: the block
+    // claim never reaches JSON/display consumers as a block.
+    const emitted = result.signalResults.get("TEST-LEG")?.diagnostics ?? []
+    expect(emitted).toHaveLength(1)
+    expect(emitted[0]?.severity).toBe("warn")
+    expect(emitted[0]?.message).toContain("severity capped to warn")
   })
 
   test("tier-3 AI-classified facts cannot hard-gate even with block diagnostics", async () => {
