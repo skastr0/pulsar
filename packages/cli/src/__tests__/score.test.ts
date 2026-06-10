@@ -505,7 +505,7 @@ describe("pulsar score", () => {
       expect(out.status).toBe(0)
       const parsed = JSON.parse(String(out.stdout))
       const decoded = Schema.decodeUnknownSync(ObserverOutputSchema)(parsed)
-      expect(decoded.observer_semantics).toBe("applicability-aware-readiness-v1")
+      expect(decoded.observer_semantics).toBe("applicability-aware-readiness-v2")
       expect(parsed.vector.trust_boundary).toBe("built-in-defaults")
       expect(decoded.runtime_profile?.total_ms).toBeGreaterThanOrEqual(0)
       expect(decoded.runtime_profile?.stages?.["environment-setup"]?.duration_ms).toBeGreaterThanOrEqual(0)

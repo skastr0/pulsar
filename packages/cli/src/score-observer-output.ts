@@ -72,11 +72,12 @@ const calibrationLines = (output: ObserverOutput): ReadonlyArray<string> => {
   return calibrationLine === undefined ? [] : [`  Calibration: ${calibrationLine}`]
 }
 
-const observerViewCategoryLines = (output: ObserverOutput): ReadonlyArray<string> => [
+export const observerViewCategoryLines = (output: ObserverOutput): ReadonlyArray<string> => [
   ...CATEGORIES.map((category) => {
     const label = CATEGORY_LABELS[category].padEnd(22, " ")
-    const score = output.categories[category].score
-    return `  ${label} ${score.toFixed(2)}  ${renderScoreBar(score)}`
+    const entry = output.categories[category]
+    const marker = entry.aggregation?.shapedByPressure === true ? "  ◂ pressure" : ""
+    return `  ${label} ${entry.score.toFixed(2)}  ${renderScoreBar(entry.score)}${marker}`
   }),
   "  ───────────────────────────────────────────────",
 ]
@@ -93,12 +94,60 @@ const observerViewSummaryLines = (opts: {
   ...ciBaselineLines(opts.ciAssessment, opts.output),
 ]
 
-const readinessSummaryLines = (output: ObserverOutput): ReadonlyArray<string> =>
-  output.readiness === undefined
-    ? []
-    : [
-        `  Readiness             ${output.readiness.score.toFixed(2)}  ${renderScoreBar(output.readiness.score)}  ${output.readiness.status} / pressure=${output.readiness.pressure.toFixed(2)}`,
-      ]
+export const readinessSummaryLines = (output: ObserverOutput): ReadonlyArray<string> => {
+  const readiness = output.readiness
+  if (readiness === undefined) return []
+  const aggregation = readiness.aggregation
+  const failedCount = aggregation.failed_signal_count ?? 0
+
+  if (aggregation.applicable_signal_count === 0 && failedCount > 0) {
+    return [
+      `  Readiness             n/a   failed / no measured signals (${formatSignalCount(failedCount)} failed to run)`,
+    ]
+  }
+
+  const score = `${readiness.score.toFixed(2)}  ${renderScoreBar(readiness.score)}`
+  const pressure = `pressure=${readiness.pressure.toFixed(2)}`
+  const driver =
+    aggregation.dominant_pressure_source === undefined
+      ? undefined
+      : `driver=${aggregation.dominant_pressure_source.replace("_", "-")}`
+  const margin = thinMarginNote(readiness)
+
+  if (readiness.status === "failed") {
+    const band = readiness.band === undefined ? "" : ` / band=${readiness.band}`
+    return [
+      `  Readiness             ${score}  degraded${band} / ${pressure} (${formatSignalCount(failedCount)} failed; score reflects measured signals)`,
+    ]
+  }
+
+  const parts = [readiness.status, pressure, ...(driver === undefined ? [] : [driver])]
+  return [
+    `  Readiness             ${score}  ${parts.join(" / ")}${margin === undefined ? "" : ` (${margin})`}`,
+  ]
+}
+
+const THIN_MARGIN = 0.05
+
+/**
+ * Names the band on the other side of the nearest edge when the verdict
+ * was decided by a thin margin — the honesty note for cases like quartz,
+ * where 0.0014 of pressure picked the headline color.
+ */
+const thinMarginNote = (
+  readiness: NonNullable<ObserverOutput["readiness"]>,
+): string | undefined => {
+  const margin = readiness.aggregation.band_margin
+  const band = readiness.band
+  if (margin === undefined || band === undefined) return undefined
+  if (Math.abs(margin) >= THIN_MARGIN) return undefined
+  const adjacent =
+    band === "green" ? "yellow" : band === "red" ? "yellow" : margin > 0 ? "red" : "green"
+  return `${Math.abs(margin).toFixed(3)} from ${adjacent}`
+}
+
+const formatSignalCount = (count: number): string =>
+  count === 1 ? "1 signal" : `${count} signals`
 
 const minimumSummaryLines = (output: ObserverOutput): ReadonlyArray<string> => {
   if (output.minimum === undefined) return ["  Minimum               none"]
