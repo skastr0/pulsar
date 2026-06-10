@@ -433,6 +433,85 @@ describe("TypeScript trust-domain and AI-slop signals", () => {
     expect(TsSl06.score(out)).toBe(1)
   })
 
+  test("TS-SL-06 accepts delegation to a local parse function as validation evidence", async () => {
+    await repo.write(
+      "src/delegation.ts",
+      [
+        "const parseJson = (raw: string): unknown => JSON.parse(raw)",
+        "export const parseConfig = (raw: string) => parseJson(raw)",
+        "export const parseLegacy = (raw: string) => raw as { id: string }",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsSl06, TsSl06.defaultConfig)
+
+    // regression: parseConfig delegates to a validating parse function and must not flag;
+    // positive control: parseLegacy has no validation evidence and must keep flagging
+    expect(out.findings.map((finding) => finding.symbol)).toEqual(["parseLegacy"])
+  })
+
+  test("TS-SL-06 accepts Either.isRight/Option.isSome guards as verification evidence", async () => {
+    await repo.write(
+      "src/fp-guards.ts",
+      [
+        "declare namespace Either { function isRight(value: unknown): boolean }",
+        "declare namespace Option { function isSome(value: unknown): boolean }",
+        "declare const loadOutcome: (raw: string) => { right: string }",
+        "export const validatePayload = (raw: string) => {",
+        "  const outcome = loadOutcome(raw)",
+        "  if (Either.isRight(outcome)) {",
+        "    return outcome.right",
+        "  }",
+        "  return undefined",
+        "}",
+        "export const isConfigured = (value: { flag?: string }) => Option.isSome(value.flag)",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsSl06, TsSl06.defaultConfig)
+
+    expect(out.findings).toEqual([])
+    expect(TsSl06.score(out)).toBe(1)
+  })
+
+  test("TS-SL-06 does not treat conflict-tolerant SQL strings as unverified claims", async () => {
+    await repo.write(
+      "src/sql.ts",
+      [
+        "declare const db: { exec: (sql: string) => void }",
+        "export function ensureDefaultSettings(): void {",
+        "  db.exec(\"INSERT OR IGNORE INTO settings (key, value) VALUES ('mode', 'dark')\")",
+        "}",
+        "export function ensureMembershipRow(): void {",
+        "  db.exec('INSERT INTO members (id) VALUES (1) ON CONFLICT (id) DO NOTHING')",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsSl06, TsSl06.defaultConfig)
+
+    expect(out.findings).toEqual([])
+    expect(TsSl06.score(out)).toBe(1)
+  })
+
+  test("TS-SL-06 still flags ensure claims backed only by an ignore-errors comment", async () => {
+    await repo.write(
+      "src/comment-claims.ts",
+      [
+        "declare const db: { exec: (sql: string) => void }",
+        "export function ensureAuditTrail(): void {",
+        "  // ignore errors",
+        "  db.exec('DELETE FROM audit')",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsSl06, TsSl06.defaultConfig)
+
+    expect(out.findings.map((finding) => finding.symbol)).toEqual(["ensureAuditTrail"])
+    expect(TsSl06.score(out)).toBeLessThan(1)
+  })
+
   const runBp = async (changedHunks: ReadonlyArray<ChangedHunk>): Promise<TsBp01Output> => {
     const layer = Layer.mergeAll(
       TsProjectLayer(repo.root),

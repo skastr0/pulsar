@@ -55,7 +55,7 @@ export const TsSl06: Signal<TsSl06Config, TsSl06Output, TsProjectTag> = {
   tier: 1,
   category: "generated-slop",
   kind: "structural",
-  cacheVersion: "confidence-claim-mismatch-v1",
+  cacheVersion: "confidence-claim-mismatch-v2",
   configSchema: TsSl06Config,
   defaultConfig: {
     exclude_globs: [...PRODUCTION_EXCLUDE_GLOBS],
@@ -225,7 +225,9 @@ const hasClaimEvidence = (
   if (/\basserts\b|\sis\s/.test(returnTypeText)) return true
   if (/(throw\s+new|throw\s+\w+)/.test(bodyText)) return true
   if (hasRuntimeGuardEvidence(bodyText)) return true
-  if (/(\.safeparse\s*\(|\.parse\s*\(|decode\w*\s*\(|validate\w*\s*\(|assert\w*\s*\(|schema)/i.test(bodyText)) {
+  // Delegating to a parse*/validate*/decode*/assert* call target (local or member) is
+  // validation evidence: the callee carries the verification.
+  if (/(\.safeparse\s*\(|\bparse\w*\s*\(|\bdecode\w*\s*\(|\bvalidate\w*\s*\(|\bassert\w*\s*\(|schema)/i.test(bodyText)) {
     return true
   }
   if (claimKind === "parse" && hasParseEvidence(bodyText)) {
@@ -244,6 +246,9 @@ const hasClaimEvidence = (
 const hasRuntimeGuardEvidence = (bodyText: string): boolean =>
   /(typeof|instanceof|\bin\b|!==|===|!=|==|Array\.isArray)/.test(bodyText) ||
   /\.(?:test|startsWith|endsWith|includes|has)\s*\(/.test(bodyText) ||
+  // Either.isRight / Option.isSome style guards (Effect/fp-ts idioms) are checked-branch
+  // verification, whether module-qualified or imported standalone.
+  /\bis(?:Right|Left|Some|None|Ok|Err|Success|Failure)\s*\(/.test(bodyText) ||
   /\b(?:length|size)\s*(?:>|>=|<|<=)\s*\d+/.test(bodyText)
 
 const hasParseEvidence = (bodyText: string): boolean =>
@@ -252,7 +257,15 @@ const hasParseEvidence = (bodyText: string): boolean =>
 
 const hasEnsureEvidence = (bodyText: string): boolean =>
   /\b(?:mkdir|writeFile|rename|rm)\s*\(/.test(bodyText) ||
-  /\.(?:mkdir|writeFile|rename|rm)\s*\(/.test(bodyText)
+  /\.(?:mkdir|writeFile|rename|rm)\s*\(/.test(bodyText) ||
+  hasConflictTolerantSqlEvidence(bodyText)
+
+// SQL keywords inside embedded query strings are not code-level confidence claims:
+// INSERT OR IGNORE / ON CONFLICT DO NOTHING are database-enforced idempotent writes,
+// which is exactly the guarantee an ensure* claim promises.
+const hasConflictTolerantSqlEvidence = (bodyText: string): boolean =>
+  /\binsert\s+or\s+ignore\b/i.test(bodyText) ||
+  /\bon\s+conflict\b[\s\S]{0,120}?\bdo\s+nothing\b/i.test(bodyText)
 
 const claimKindOf = (name: string): string => {
   const lower = name.toLowerCase()

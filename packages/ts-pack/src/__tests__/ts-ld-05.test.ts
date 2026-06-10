@@ -116,6 +116,46 @@ describe("TS-LD-05 (domain term consistency)", () => {
     )
   })
 
+  test("exempts function-local consts while still flagging module-level consts", async () => {
+    await repo.write(
+      "src/locals.ts",
+      [
+        "export const ordrLine = 1",
+        "export function parseValue() {",
+        "  const ordrLine = 2",
+        "  return ordrLine",
+        "}",
+        "",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsLd05, TsLd05.defaultConfig, {
+      glossary: GLOSSARY,
+    })
+
+    expect(out.referenceDataStatus).toBe("loaded")
+    const constIdentifiers = out.identifiers.filter((item) => item.kind === "const")
+    // regression: the function-local `const ordrLine` (line 3) is exempt
+    expect(constIdentifiers).toHaveLength(1)
+    expect(constIdentifiers[0]).toMatchObject({
+      line: 1,
+      name: "ordrLine",
+      classification: "conflicts-with-canonical",
+      suggestedCanonical: "order line",
+    })
+    expect(out.totalIdentifiers).toBe(2)
+    expect(out.conflictCount).toBe(1)
+
+    const diagnostics = TsLd05.diagnose(out)
+    // positive control: the module-level const with the same violation keeps firing
+    expect(
+      diagnostics.some(
+        (diagnostic) => diagnostic.severity === "warn" && diagnostic.location?.line === 1,
+      ),
+    ).toBe(true)
+    expect(diagnostics.some((diagnostic) => diagnostic.location?.line === 3)).toBe(false)
+  })
+
   test("weights conflicts more harshly than novel but unique terms", () => {
     const conflictOutput: TsLd05Result = {
       identifiers: [

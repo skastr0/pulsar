@@ -67,7 +67,7 @@ export const TsLd05: Signal<TsLd05Config, TsLd05Output, TsProjectTag | Reference
   tier: 2,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "reference-data-applicability-v2",
+  cacheVersion: "local-const-exemption-v3",
   configSchema: TsLd05Config,
   defaultConfig: {
     exclude_globs: [
@@ -87,7 +87,10 @@ export const TsLd05: Signal<TsLd05Config, TsLd05Output, TsProjectTag | Reference
 
       return yield* Effect.try({
         try: (): TsLd05Output => {
+          // Domain-term consistency governs the module-level/exported naming surface;
+          // function-local const temporaries are exempt from glossary enforcement.
           const identifiers = collectIdentifierDeclarations(project, config.exclude_globs)
+            .filter((identifier) => identifier.constContext !== "local")
           const rawGlossary = Effect.runSync(referenceData.get<Glossary>("glossary"))
 
           if (Option.isNone(rawGlossary)) {
