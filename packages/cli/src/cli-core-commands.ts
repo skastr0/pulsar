@@ -1,4 +1,5 @@
 import { Effect } from "effect"
+import { runCliEffect } from "./cli-effect-runtime.js"
 import { runBackpressureCommand } from "./backpressure.js"
 import { runBaselineCommand } from "./baseline.js"
 import { runBisectCommand } from "./bisect.js"
@@ -80,7 +81,7 @@ const runScore = async (commandArgs: ReadonlyArray<string>): Promise<void> => {
   } satisfies Parameters<typeof runScoreCommand>[0]
 
   const exitCode = await runWithProgress("score", commandArgs, () =>
-    Effect.runPromise(
+    runCliEffect(
       runScoreCommand(scoreOptions).pipe(
         Effect.catchAll((err) =>
           Effect.sync(() => {
@@ -116,7 +117,7 @@ const runBaseline = async (commandArgs: ReadonlyArray<string>): Promise<void> =>
   } satisfies Parameters<typeof runBaselineCommand>[0]
 
   const exitCode = await runWithProgress("baseline", commandArgs, () =>
-    Effect.runPromise(
+    runCliEffect(
       runBaselineCommand(baselineOptions).pipe(
         Effect.catchAll((err) =>
           Effect.sync(() => {
@@ -144,7 +145,7 @@ const runCoverage = async (commandArgs: ReadonlyArray<string>): Promise<void> =>
   const format = parseCoverageFormat(parseArg(actionArgs, "--format"))
 
   const exitCode = await runWithProgress("coverage", commandArgs, () =>
-    Effect.runPromise(
+    runCliEffect(
       runCoverageIngestCommand({
         repoPath,
         reportPath,
@@ -173,7 +174,7 @@ const runBackpressure = async (commandArgs: ReadonlyArray<string>): Promise<void
   const repoPath = collectPositional(commandArgs, flagsWithValues)[0] ?? "."
   const vectorPath = parseArg(commandArgs, "--vector")
   const exitCode = await runWithProgress("backpressure", commandArgs, () =>
-    Effect.runPromise(
+    runCliEffect(
       runBackpressureCommand({
         repoPath,
         ...(vectorPath !== undefined ? { vectorPath } : {}),
@@ -232,7 +233,7 @@ const runBisect = async (commandArgs: ReadonlyArray<string>): Promise<void> => {
   const repoPath = collectPositional(commandArgs, flagsWithValues)[0] ?? "."
 
   await runWithProgress("bisect", commandArgs, () =>
-    Effect.runPromise(
+    runCliEffect(
       runBisectCommand({
         ...(signalId !== undefined ? { signalId } : {}),
         ...(observer ? { observer: true } : {}),
