@@ -90,8 +90,9 @@ describe("Observer — category aggregation", () => {
     // Weighted mean remains visible as the evidence average:
     // (1 * 0.9 + 0.5 * 0.6) / (1 + 0.5) = 0.8.
     expect(category.aggregation?.aggregateScore).toBeCloseTo(0.8, 5)
-    // Public category health is pressure-shaped so the 0.6 local signal is not averaged away.
-    expect(category.score).toBeCloseTo(0.6349940944697947, 5)
+    // Public category health is pressure-shaped so the 0.6 local signal is
+    // not averaged away: pnorm(p=4) over pressures {1: 0.1, 0.5: 0.4}.
+    expect(category.score).toBeCloseTo(0.6954738353520658, 5)
     expect(category.aggregation?.shapedByPressure).toBe(true)
     expect(category.signalCount).toBe(2)
     expect(category.signals).toEqual({
@@ -232,7 +233,7 @@ describe("Observer — category aggregation", () => {
     expect(category.normalization).toBeUndefined()
     expect(category.aggregation?.strategy).toBe("weighted-mean")
     expect(category.aggregation?.rawScore).toBeCloseTo(5 / 6, 5)
-    expect(category.score).toBeCloseTo(0.543742622619753, 5)
+    expect(category.score).toBeCloseTo(0.6200821571743557, 5)
     expect(category.aggregation?.shapedByPressure).toBe(true)
   })
 
@@ -893,7 +894,7 @@ describe("Observer — JSON output shape (AC-10)", () => {
             shapedByPressure: false,
             pressure: {
               strategy: "pressure-pnorm-local-max",
-              p: 12,
+              p: 4,
               meanPressure: 0.3,
               pnormPressure: 0.3,
               maxLocalPressure: 0.3,

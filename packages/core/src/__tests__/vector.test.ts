@@ -324,7 +324,7 @@ describe("PulsarVector", () => {
 
   test("readinessConfigOf returns explicit operational defaults", () => {
     expect(readinessConfigOf(undefined)).toEqual({
-      p_norm: 12,
+      p_norm: 4,
       local_warning_threshold: 0.4,
       local_poison_threshold: 0.75,
       local_warning_gain: 0.75,
@@ -337,7 +337,7 @@ describe("PulsarVector", () => {
 
   test("categoryAggregationConfigOf returns explicit mixer defaults", () => {
     expect(categoryAggregationConfigOf(undefined)).toEqual({
-      p_norm: 12,
+      p_norm: 4,
       local_warning_threshold: 0.4,
       local_poison_threshold: 0.75,
       local_warning_gain: 0.75,

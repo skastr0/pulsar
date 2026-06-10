@@ -27,8 +27,10 @@ export const ObserverConfig = Schema.Struct({
   }),
   readiness: Schema.optional(
     Schema.Struct({
+      // Default 4: the headline sits between mean and max — sensitive to a
+      // bad tail without duplicating the separately-displayed minimum.
       p_norm: Schema.optionalWith(Schema.Number.pipe(Schema.between(1, 32)), {
-        default: () => 12,
+        default: () => 4,
       }),
       local_warning_threshold: Schema.optionalWith(
         Schema.Number.pipe(Schema.between(0, 1)),
@@ -42,6 +44,7 @@ export const ObserverConfig = Schema.Struct({
           default: () => 0.75,
         },
       ),
+      /** @deprecated unused since the poison ramp; retained for vector and time-series compatibility. */
       local_warning_gain: Schema.optionalWith(Schema.Number.pipe(Schema.between(0, 1)), {
         default: () => 0.75,
       }),
@@ -65,7 +68,7 @@ export const ObserverConfig = Schema.Struct({
   category_aggregation: Schema.optional(
     Schema.Struct({
       p_norm: Schema.optionalWith(Schema.Number.pipe(Schema.between(1, 32)), {
-        default: () => 12,
+        default: () => 4,
       }),
       local_warning_threshold: Schema.optionalWith(
         Schema.Number.pipe(Schema.between(0, 1)),
@@ -79,6 +82,7 @@ export const ObserverConfig = Schema.Struct({
           default: () => 0.75,
         },
       ),
+      /** @deprecated unused since the poison ramp; retained for vector and time-series compatibility. */
       local_warning_gain: Schema.optionalWith(Schema.Number.pipe(Schema.between(0, 1)), {
         default: () => 0.75,
       }),

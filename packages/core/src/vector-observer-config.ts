@@ -17,7 +17,7 @@ export const diffTimeIntegrationEnabled = (
 export const readinessConfigOf = (
   vector: PulsarVector | undefined,
 ): ReadinessObserverConfig => ({
-  p_norm: vector?.observer?.readiness?.p_norm ?? 12,
+  p_norm: vector?.observer?.readiness?.p_norm ?? 4,
   local_warning_threshold: vector?.observer?.readiness?.local_warning_threshold ?? 0.4,
   local_poison_threshold: vector?.observer?.readiness?.local_poison_threshold ?? 0.75,
   local_warning_gain: vector?.observer?.readiness?.local_warning_gain ?? 0.75,
@@ -30,7 +30,7 @@ export const readinessConfigOf = (
 export const categoryAggregationConfigOf = (
   vector: PulsarVector | undefined,
 ): CategoryAggregationObserverConfig => ({
-  p_norm: vector?.observer?.category_aggregation?.p_norm ?? 12,
+  p_norm: vector?.observer?.category_aggregation?.p_norm ?? 4,
   local_warning_threshold:
     vector?.observer?.category_aggregation?.local_warning_threshold ?? 0.4,
   local_poison_threshold:
