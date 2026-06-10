@@ -28,6 +28,7 @@ interface FileChurnRate {
   readonly introduced: number
   readonly churned: number
   readonly rate: number
+  readonly deleted: boolean
 }
 
 export const computeChurnRateOutput = async (
@@ -120,6 +121,7 @@ const neutralChurnOutput = (
   topDiagnostics: config.top_n_diagnostics,
   insufficientHistory: true,
   skippedReason,
+  deletedFileCount: 0,
 })
 
 const collectFileChurnRates = async (
@@ -140,11 +142,24 @@ const computeFileChurnRate = async (
   relativePath: string,
   introducedLines: ReadonlyArray<string>,
 ): Promise<FileChurnRate> => {
-  const targetContent = (await readFileAtCommit(
+  const targetContent = await readFileAtCommit(
     ctx.worktreePath,
     ctx.gitSha === "HEAD" ? "HEAD" : ctx.gitSha,
     relativePath,
-  )) ?? ""
+  )
+  if (targetContent === undefined) {
+    // The whole file is gone at the target commit. Deleting a file is
+    // cleanup, not rework-thrash of retained code — and a churn diagnostic
+    // citing a path that no longer exists is incoherent. Excluded from the
+    // churn ratio; surfaced separately via deletedFileCount.
+    return {
+      absolutePath: join(ctx.worktreePath, relativePath),
+      introduced: introducedLines.length,
+      churned: 0,
+      rate: 0,
+      deleted: true,
+    }
+  }
   const retained = countRetainedLines(
     introducedLines,
     targetContent.split("\n"),
@@ -157,6 +172,7 @@ const computeFileChurnRate = async (
     introduced,
     churned,
     rate: introduced === 0 ? 0 : churned / introduced,
+    deleted: false,
   }
 }
 
@@ -167,9 +183,14 @@ const summarizeChurnRates = (
   const byFile = new Map<string, Shared03FileRate>()
   let introducedLineCount = 0
   let churnedLineCount = 0
+  let deletedFileCount = 0
 
   for (const fileRate of fileRates) {
     if (fileRate.introduced === 0) continue
+    if (fileRate.deleted) {
+      deletedFileCount += 1
+      continue
+    }
     byFile.set(fileRate.absolutePath, {
       introduced: fileRate.introduced,
       churned: fileRate.churned,
@@ -188,5 +209,6 @@ const summarizeChurnRates = (
     windowDays: config.window_days,
     topDiagnostics: config.top_n_diagnostics,
     insufficientHistory,
+    deletedFileCount,
   }
 }

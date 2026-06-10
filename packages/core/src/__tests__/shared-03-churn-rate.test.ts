@@ -294,12 +294,17 @@ describe("SHARED-03 churn rate", () => {
     }
   }, 120_000)
 
-  test("counts mature files deleted before HEAD as fully churned", async () => {
+  test("excludes whole-file deletions from churn and reports them separately", async () => {
+    // Fleet regression: a deleted file used to score churn 1.0 and produce
+    // diagnostics citing a path that no longer exists. Deleting a file is
+    // cleanup, not rework-thrash of retained code. Lines reverted within a
+    // still-existing file remain churn (pinned by the revert test above).
     const repo = await createGitTestRepo("pulsar-shared-03-deleted-")
     try {
       await repo.write("src/deleted.ts", churnLines("deleted"))
+      await repo.write("src/kept.ts", churnLines("kept"))
       await repo.commitAll({
-        message: "introduce deleted file",
+        message: "introduce files",
         dateIso: "2024-01-01T00:00:00Z",
       })
 
@@ -327,13 +332,31 @@ describe("SHARED-03 churn rate", () => {
         ) as Effect.Effect<any, any, never>,
       )
 
-      expect(output.byFile.get(join(repo.root, "src/deleted.ts"))).toEqual({
+      // The deleted file is not part of the churn ratio at all.
+      expect(output.byFile.get(join(repo.root, "src/deleted.ts"))).toBeUndefined()
+      expect(output.deletedFileCount).toBe(1)
+      // The surviving file's untouched lines keep the ratio honest.
+      expect(output.byFile.get(join(repo.root, "src/kept.ts"))).toEqual({
         introduced: 3,
-        churned: 3,
-        rate: 1,
+        churned: 0,
+        rate: 0,
       })
-      expect(output.churnRate).toBe(1)
-      expect(Shared03ChurnRate.score(output)).toBe(0)
+      expect(output.churnRate).toBe(0)
+      expect(Shared03ChurnRate.score(output)).toBe(1)
+
+      // No diagnostic may cite the nonexistent path; the deletion count is
+      // surfaced as an info note instead.
+      const diagnostics = Shared03ChurnRate.diagnose(output)
+      expect(
+        diagnostics.some((diagnostic) => diagnostic.location?.file.includes("deleted.ts")),
+      ).toBe(false)
+      const deletionNote = diagnostics.find((diagnostic) =>
+        diagnostic.message.includes("deleted before the target commit"),
+      )
+      expect(deletionNote).toMatchObject({
+        severity: "info",
+        data: { deletedFileCount: 1 },
+      })
     } finally {
       await repo.cleanup()
     }
@@ -524,6 +547,7 @@ describe("SHARED-03 churn rate", () => {
       windowDays: 14,
       topDiagnostics: 10,
       insufficientHistory: false,
+      deletedFileCount: 0,
       byFile: new Map([
         [
           join(root, "tiny.ts"),

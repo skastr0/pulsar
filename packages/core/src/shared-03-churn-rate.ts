@@ -47,6 +47,12 @@ export interface Shared03ChurnRateOutput {
   readonly topDiagnostics: number
   readonly insufficientHistory: boolean
   readonly skippedReason?: string
+  /**
+   * Files introduced in the window but deleted by the target commit.
+   * Excluded from the churn ratio (deleting a file is cleanup, not
+   * rework-thrash) and reported as an informational count.
+   */
+  readonly deletedFileCount: number
   readonly effectiveFiles?: ReadonlyArray<Shared03EffectiveFileRate>
   readonly calibrationDecisions?: ReadonlyArray<CalibrationDecision>
   readonly factorLedger?: SignalFactorLedger
@@ -87,7 +93,7 @@ export const Shared03ChurnRate: Signal<
   tier: 1.5,
   category: "review-pain",
   kind: "legibility",
-  cacheVersion: "applicability-v3-normalized-config-git-context-factor-policy",
+  cacheVersion: "applicability-v4-deleted-files-excluded",
   cacheDependencies: ["git-revision-context"],
   configSchema: Shared03ChurnRateConfig,
   defaultConfig: DEFAULT_SHARED_03_CHURN_RATE_CONFIG,
@@ -148,7 +154,7 @@ export const Shared03ChurnRate: Signal<
       )
       .slice(0, out.topDiagnostics)
 
-    return noisiestFiles.map((entry) => ({
+    const fileDiagnostics = noisiestFiles.map((entry): Diagnostic => ({
       severity: entry.severity,
       message:
         `Recent churn candidate: ${entry.file} churned ${entry.churned}/${entry.introduced} introduced lines ` +
@@ -165,6 +171,17 @@ export const Shared03ChurnRate: Signal<
         policyDecisions: entry.policyDecisions,
       },
     }))
+
+    if (out.deletedFileCount > 0) {
+      fileDiagnostics.push({
+        severity: "info",
+        message:
+          `${out.deletedFileCount} file(s) introduced within ${out.windowDays} days were deleted before the ` +
+          "target commit; excluded from the churn ratio (deletion is cleanup, not rework)",
+        data: { deletedFileCount: out.deletedFileCount },
+      })
+    }
+    return fileDiagnostics
   },
   factorLedger: (out) => out.factorLedger,
 }
