@@ -220,7 +220,7 @@ const summarizeReadinessPressure = (
   }
 }
 
-const dominantPressureSource = (
+export const dominantPressureSource = (
   pnorm: number,
   poison: number,
   hardGate: number,

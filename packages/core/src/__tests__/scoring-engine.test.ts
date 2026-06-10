@@ -13,6 +13,7 @@ import {
 } from "../calibration.js"
 import { buildRegistry } from "../registry.js"
 import {
+  OBSERVER_AGGREGATION_CACHE_VERSION,
   ScoringEngineLayer,
   ScoringEngineTag,
   computeConfigHash,
@@ -1460,6 +1461,45 @@ describe("ScoringEngine — cache semantics", () => {
     expect(inactive).not.toBe(base)
     expect(weighted).not.toBe(base)
     expect(readinessConfigured).not.toBe(base)
+  })
+
+  test("observer cache config hash changes when poison thresholds move", async () => {
+    const program = Effect.gen(function* () {
+      const counter = yield* Ref.make(0)
+      const signal = makeCountingSignal(counter)
+      const registry = yield* buildRegistry([signal])
+      const base = computeObserverConfigHash(registry, undefined)
+      const poisonTuned = computeObserverConfigHash(registry, {
+        id: "poison-tuned",
+        domain: "typescript",
+        signal_overrides: {},
+        observer: {
+          diffTimeIntegration: true,
+          readiness: {
+            p_norm: 4,
+            local_warning_threshold: 0.4,
+            local_poison_threshold: 0.8,
+            local_warning_gain: 0.75,
+            hard_gate_score_cap: 0.2,
+            green_max_pressure: 0.15,
+            red_min_pressure: 0.4,
+            top_pressures: 10,
+          },
+        },
+      } satisfies PulsarVector)
+      return { base, poisonTuned }
+    })
+
+    const { base, poisonTuned } = await Effect.runPromise(program)
+    expect(poisonTuned).not.toBe(base)
+  })
+
+  test("aggregation cache version is pinned so semantic changes force a conscious bump", () => {
+    // If this fails you changed aggregation semantics: bump the version
+    // (and this pin) so stale observer outputs cannot be served.
+    expect(OBSERVER_AGGREGATION_CACHE_VERSION).toBe(
+      "observer-aggregation-v6-poison-ramp-authority",
+    )
   })
 
   test("cache config hashes include calibration fingerprint only when supplied", async () => {

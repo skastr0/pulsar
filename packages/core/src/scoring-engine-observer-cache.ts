@@ -36,8 +36,8 @@ export interface CachedObserverOutput {
   readonly calibration?: ObserverOutput["calibration"]
 }
 
-const OBSERVER_AGGREGATION_CACHE_VERSION =
-  "observer-aggregation-v5-pinned-type-environment"
+export const OBSERVER_AGGREGATION_CACHE_VERSION =
+  "observer-aggregation-v6-poison-ramp-authority"
 
 export const computeObserverConfigHash = (
   registry: Registry,

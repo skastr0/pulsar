@@ -209,6 +209,71 @@ describe("time series persistence", () => {
     }
   })
 
+  test("compaction merges v1 and v2 readiness entries without fabricating new fields", async () => {
+    const repoPath = await mkdtemp(join(tmpdir(), "pulsar-ts-mixed-era-compact-"))
+    try {
+      const services = createTimeSeriesServices(repoPath, {
+        compactionThreshold: 5,
+        rawRetentionDays: 30,
+      })
+
+      const v2Entry = (sha: string, timestamp: string, score: number): TimeSeriesEntry => {
+        const base = makeReadinessEntry(sha, timestamp, score)
+        const readiness = base.observerOutput.readiness
+        if (readiness === undefined) throw new Error("fixture must carry readiness")
+        const { failed_signal_pressure: _dropped, ...v1Aggregation } = readiness.aggregation
+        return {
+          ...base,
+          observerOutput: {
+            ...base.observerOutput,
+            readiness: {
+              ...readiness,
+              band: score >= 0.85 ? ("green" as const) : ("yellow" as const),
+              aggregation: {
+                ...v1Aggregation,
+                local_poison_pressure: 0,
+                authority_max_local_pressure: 1 - score,
+                evidence_mean: score,
+                band_margin: 0.05,
+                dominant_pressure_source: "pnorm" as const,
+              },
+            },
+          },
+        }
+      }
+
+      // Same compaction bucket: two v1-era entries and one v2-era entry.
+      for (const entry of [
+        makeReadinessEntry("a1", "2026-01-01T10:00:00.000Z", 0.7),
+        makeReadinessEntry("a2", "2026-01-02T10:00:00.000Z", 0.9),
+        v2Entry("a3", "2026-01-03T10:00:00.000Z", 0.8),
+        makeReadinessEntry("b1", "2026-04-10T10:00:00.000Z", 0.95),
+        makeReadinessEntry("b2", "2026-04-15T10:00:00.000Z", 0.96),
+        makeReadinessEntry("b3", "2026-04-16T10:00:00.000Z", 0.97),
+      ]) {
+        await Effect.runPromise(services.writer.append(entry))
+      }
+
+      const compacted = (await Effect.runPromise(services.reader.entries())).find(
+        (entry) => entry.source === "weekly-average",
+      )
+      const readiness = compacted?.observerOutput.readiness
+
+      expect(readiness).toBeDefined()
+      // v1 entries carry no band, so the merged bucket must not claim one.
+      expect(readiness?.band).toBeUndefined()
+      expect(readiness?.aggregation.band_margin).toBeUndefined()
+      // evidence_mean falls back to 1 - mean_pressure for v1 entries.
+      expect(readiness?.aggregation.evidence_mean).toBeDefined()
+      expect(readiness?.aggregation.dominant_pressure_source).toBe("pnorm")
+      // The v1 fixtures carried failed_signal_pressure 0; max over present is 0.
+      expect(readiness?.aggregation.failed_signal_pressure).toBe(0)
+      expect(readiness?.aggregation.local_poison_pressure).toBe(0)
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
   test("compaction marks mixed readiness and legacy buckets as compatibility output", async () => {
     const repoPath = await mkdtemp(join(tmpdir(), "pulsar-ts-mixed-compact-"))
     try {

@@ -1,7 +1,9 @@
 import type {
+  ReadinessBand,
   ReadinessOutput,
   ReadinessPressure,
 } from "./observer.js"
+import { dominantPressureSource } from "./observer-readiness.js"
 import type { WeightedEntry } from "./time-series-compaction-types.js"
 
 export const aggregateReadiness = (
@@ -24,28 +26,79 @@ export const aggregateReadiness = (
     0,
   )
 
+  const pnormPressure = weightedAverage(readinessEntries, ({ readiness }) => readiness.aggregation.pnorm_pressure, totalWeight)
+  const poisonPressure = maxOverPresent(readinessEntries, ({ readiness }) => readiness.aggregation.local_poison_pressure)
+  const failedPressure = maxOverPresent(readinessEntries, ({ readiness }) => readiness.aggregation.failed_signal_pressure)
+  const authorityMaxLocalPressure = maxOverPresent(readinessEntries, ({ readiness }) => readiness.aggregation.authority_max_local_pressure)
+  const hardGatePressure = Math.max(...readinessEntries.map(({ readiness }) => readiness.aggregation.hard_gate_pressure))
+  const bands = readinessEntries.map(({ readiness }) => readiness.band)
+  const bandMargins = readinessEntries.map(({ readiness }) => readiness.aggregation.band_margin)
+
   return {
     score: weightedAverage(readinessEntries, ({ readiness }) => readiness.score, totalWeight),
     pressure: weightedAverage(readinessEntries, ({ readiness }) => readiness.pressure, totalWeight),
     status: worstReadinessStatus(readinessEntries.map(({ readiness }) => readiness.status)),
+    ...(bands.every((band): band is ReadinessBand => band !== undefined)
+      ? { band: worstReadinessBand(bands) }
+      : {}),
     aggregation: {
       strategy: "pressure-pnorm-local-max",
       p: weightedAverage(readinessEntries, ({ readiness }) => readiness.aggregation.p, totalWeight),
       mean_pressure: weightedAverage(readinessEntries, ({ readiness }) => readiness.aggregation.mean_pressure, totalWeight),
-      pnorm_pressure: weightedAverage(readinessEntries, ({ readiness }) => readiness.aggregation.pnorm_pressure, totalWeight),
+      pnorm_pressure: pnormPressure,
       max_local_pressure: Math.max(...readinessEntries.map(({ readiness }) => readiness.aggregation.max_local_pressure)),
-      failed_signal_pressure: Math.max(...readinessEntries.map(({ readiness }) => readiness.aggregation.failed_signal_pressure ?? 0)),
-      hard_gate_pressure: Math.max(...readinessEntries.map(({ readiness }) => readiness.aggregation.hard_gate_pressure)),
+      ...(authorityMaxLocalPressure !== undefined
+        ? { authority_max_local_pressure: authorityMaxLocalPressure }
+        : {}),
+      ...(poisonPressure !== undefined ? { local_poison_pressure: poisonPressure } : {}),
+      // Only emitted when v1-era entries carried it; v2 entries never do.
+      ...(failedPressure !== undefined ? { failed_signal_pressure: failedPressure } : {}),
+      hard_gate_pressure: hardGatePressure,
       hard_gate_score_cap: weightedAverage(readinessEntries, ({ readiness }) => readiness.aggregation.hard_gate_score_cap, totalWeight),
       local_warning_threshold: weightedAverage(readinessEntries, ({ readiness }) => readiness.aggregation.local_warning_threshold, totalWeight),
       local_poison_threshold: weightedAverage(readinessEntries, ({ readiness }) => readiness.aggregation.local_poison_threshold, totalWeight),
       local_warning_gain: weightedAverage(readinessEntries, ({ readiness }) => readiness.aggregation.local_warning_gain, totalWeight),
+      dominant_pressure_source: dominantPressureSource(pnormPressure, poisonPressure ?? 0, hardGatePressure),
+      ...(bandMargins.every((margin): margin is number => margin !== undefined)
+        ? {
+            band_margin: weightedAverage(
+              readinessEntries.map(({ readiness, weight }) => ({
+                margin: readiness.aggregation.band_margin ?? 0,
+                weight,
+              })),
+              ({ margin }) => margin,
+              totalWeight,
+            ),
+          }
+        : {}),
+      evidence_mean: weightedAverage(
+        readinessEntries,
+        ({ readiness }) =>
+          readiness.aggregation.evidence_mean ?? 1 - readiness.aggregation.mean_pressure,
+        totalWeight,
+      ),
       applicable_signal_count: weightedAverage(readinessEntries, ({ readiness }) => readiness.aggregation.applicable_signal_count, totalWeight),
       ignored_signal_count: weightedAverage(readinessEntries, ({ readiness }) => readiness.aggregation.ignored_signal_count, totalWeight),
       failed_signal_count: weightedAverage(readinessEntries, ({ readiness }) => readiness.aggregation.failed_signal_count ?? 0, totalWeight),
     },
     top_pressures: aggregateTopPressures(readinessEntries, maxPressureCount),
   }
+}
+
+const maxOverPresent = <A>(
+  entries: ReadonlyArray<A>,
+  value: (entry: A) => number | undefined,
+): number | undefined => {
+  const present = entries.map(value).filter((candidate): candidate is number => candidate !== undefined)
+  return present.length === 0 ? undefined : Math.max(...present)
+}
+
+const worstReadinessBand = (bands: ReadonlyArray<ReadinessBand>): ReadinessBand => {
+  const rank: Record<ReadinessBand, number> = { green: 0, yellow: 1, red: 2 }
+  return bands.reduce<ReadinessBand>(
+    (worst, band) => (rank[band] > rank[worst] ? band : worst),
+    "green",
+  )
 }
 
 const weightedAverage = <A>(
