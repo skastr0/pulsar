@@ -110,7 +110,7 @@ describe("SHARED-03 churn rate", () => {
       tier: 1.5,
       category: "review-pain",
       kind: "legibility",
-      cacheVersion: "applicability-v3-normalized-config-git-context-factor-policy",
+      cacheVersion: "applicability-v4-deleted-files-excluded",
       cacheDependencies: ["git-revision-context"],
       inputs: [],
     })
@@ -379,7 +379,7 @@ describe("SHARED-03 churn rate", () => {
     }
   }, 120_000)
 
-  test("deleted mature files count as churn instead of disappearing", async () => {
+  test("deleted mature files leave the churn ratio and surface as a count", async () => {
     const repo = await createRepo("pulsar-shared-03-deleted-")
     try {
       await repo.write("src/deleted.ts", sourceLines("deleted", 3))
@@ -400,13 +400,13 @@ describe("SHARED-03 churn rate", () => {
 
       const output = await runChurnRate(repo)
 
-      expect(output.byFile.get(join(repo.root, "src/deleted.ts"))).toEqual({
-        introduced: 3,
-        churned: 3,
-        rate: 1,
-      })
-      expect(output.churnRate).toBe(1)
-      expect(Shared03ChurnRate.score(output)).toBe(0)
+      // Whole-file deletion is cleanup, not rework: the file is excluded
+      // from the ratio (no diagnostic can cite the nonexistent path) and
+      // reported through deletedFileCount instead.
+      expect(output.byFile.get(join(repo.root, "src/deleted.ts"))).toBeUndefined()
+      expect(output.deletedFileCount).toBe(1)
+      expect(output.insufficientHistory).toBe(true)
+      expect(Shared03ChurnRate.score(output)).toBe(1)
     } finally {
       await repo.cleanup()
     }

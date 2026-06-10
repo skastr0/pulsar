@@ -133,7 +133,7 @@ export const SHARED_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       factorLedger:
         "shared-03-churn-rate.test.ts and core shared-03-churn-rate.test.ts: registered shared-pack signal emits config.window_days, config.similarity_threshold, and config.include_extensions factor entries; core calibration test proves module-attributed churn_rate.*.penalty_weight factor entries.",
       cacheSemantics:
-        "shared-03-churn-rate.test.ts and pack.test.ts: SHARED-03 declares git-revision-context and applicability-v3-normalized-config-git-context-factor-policy cacheVersion; wrapped shared-pack cache version preserves the signal cacheVersion after config normalization, TS module-extension semantics, and cache dependency changed.",
+        "shared-03-churn-rate.test.ts and pack.test.ts: SHARED-03 declares git-revision-context and applicability-v4-deleted-files-excluded cacheVersion; wrapped shared-pack cache version preserves the signal cacheVersion after config normalization, TS module-extension semantics, and cache dependency changed.",
       gitContext:
         "shared-03-churn-rate.test.ts and core shared-03-churn-rate.test.ts: tests run against real git repositories with authored commit dates, proving HEAD-relative mature windows, revert-window line survival, deleted-file survival failure, source-pathspec commit caps, rename-plus-edit interpretation, dirty worktree isolation, and deterministic repeated history interpretation.",
       calibration:
