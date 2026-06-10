@@ -19,7 +19,7 @@ export const TsLd09: Signal<TsLd09Config, TsLd09Output, TsProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "ts-error-channel-opacity-v8-guarded-fallback-mapping-v1",
+  cacheVersion: "ts-error-channel-opacity-v9-surfaced-error-classification-v1",
   configSchema: TsLd09Config,
   defaultConfig: {
     exclude_globs: [

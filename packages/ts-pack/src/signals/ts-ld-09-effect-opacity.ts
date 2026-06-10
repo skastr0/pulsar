@@ -19,6 +19,7 @@ import {
   blockReturnsFallback,
   blockSwallowsError,
   callbackReturnsFallback,
+  firstParameterBinding,
 } from "./ts-ld-09-collapse.js"
 import { errorChannelWeight } from "./ts-ld-09-weight.js"
 
@@ -255,7 +256,9 @@ const effectTryPromiseCatchMapperReturnsFallback = (
   if (ts.isPropertyAssignment(mapper)) {
     return callbackReturnsFallback(mapper.initializer, sourceFile, typeChecker)
   }
-  return mapper.body === undefined ? false : blockReturnsFallback(mapper.body, sourceFile)
+  return mapper.body === undefined
+    ? false
+    : blockReturnsFallback(mapper.body, sourceFile, firstParameterBinding(mapper))
 }
 
 const pipeCollapseCallee = (

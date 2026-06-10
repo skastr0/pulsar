@@ -34,7 +34,7 @@ describe("TS-LD-09 (error channel opacity)", () => {
         tier: 1,
         category: "legibility-decay",
         kind: "legibility",
-        cacheVersion: "ts-error-channel-opacity-v8-guarded-fallback-mapping-v1",
+        cacheVersion: "ts-error-channel-opacity-v9-surfaced-error-classification-v1",
         inputs: [],
       })
       expect(registered?.id).toBe(TsLd09.id)

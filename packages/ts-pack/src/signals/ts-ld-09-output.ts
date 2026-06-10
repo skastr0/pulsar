@@ -150,7 +150,7 @@ const errorChannelOpacityMetadata = (): Pick<
   nonClaimLimit:
     "Does not prove the error behavior is incorrect or that every expected failure has been modeled.",
   knownFailureMode:
-    "Name-pattern expected-failure evidence can miss domain-specific operation names or flag intentional boundary translation.",
+    "Name-pattern expected-failure evidence can miss domain-specific operation names or flag intentional boundary translation. Handled modes: fallback keyword matching is identifier-shape only and never reads string/template contents, error-constructing or error-referencing catch returns are classified as surfaced rather than fallback, and process.exit/process.abort terminate instead of swallowing; identifier-shape matching can now miss fallback values hidden behind unrelated helper names or string contents.",
   enforcementCeiling: ERROR_CHANNEL_ENFORCEMENT_CEILING,
 })
 

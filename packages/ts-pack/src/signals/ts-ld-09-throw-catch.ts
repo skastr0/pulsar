@@ -9,6 +9,7 @@ import {
 import {
   blockReturnsFallback,
   blockSwallowsError,
+  catchClauseErrorBinding,
 } from "./ts-ld-09-collapse.js"
 import { localErrorChannelFinding } from "./ts-ld-09-finding.js"
 import { catchHasGuardedFallbackAndPropagation } from "./ts-ld-09-guarded-catch.js"
@@ -51,7 +52,9 @@ export const collectCatchCollapse = (
 
   const boundary = nearestBoundaryOwner(node, exportedNames)
   const symbol = nearestFunctionName(node, sourceFile) ?? "<catch>"
-  const collapseMode = blockReturnsFallback(node.block, sourceFile) ? "fallback" : "swallowed"
+  const collapseMode = blockReturnsFallback(node.block, sourceFile, catchClauseErrorBinding(node))
+    ? "fallback"
+    : "swallowed"
   return localErrorChannelFinding({
     sourceFile,
     node,
@@ -90,7 +93,9 @@ export const catchCollapsesErrorChannel = (
   const block = clause.block
   if (blockContainsCatchVariableNarrowing(clause, sourceFile) && blockRethrows(block)) return false
   if (catchHasGuardedFallbackAndPropagation(clause, sourceFile)) return false
-  const collapses = blockReturnsFallback(block, sourceFile) || blockSwallowsError(block)
+  const collapses =
+    blockReturnsFallback(block, sourceFile, catchClauseErrorBinding(clause)) ||
+    blockSwallowsError(block)
   if (!collapses && blockContainsDomainErrorMapping(block)) return false
   return collapses
 }
