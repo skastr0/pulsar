@@ -10,6 +10,7 @@ import {
   SyntaxKind,
   type CallExpression,
   type CatchClause,
+  type Node as TsMorphNode,
   type SourceFile,
 } from "ts-morph"
 import { TsProjectTag } from "../ts-project.js"
@@ -34,6 +35,7 @@ export type AsyncFailureFindingKind =
   | "fire-and-forget"
   | "swallowed-rejection"
   | "empty-catch"
+  | "log-only-handler"
 
 export interface AsyncFailureFinding extends SourceLocation {
   readonly kind: AsyncFailureFindingKind
@@ -60,7 +62,7 @@ export const TsCc01: Signal<TsCc01Config, TsCc01Output, TsProjectTag> = {
   tier: 1,
   category: "concurrency-safety",
   kind: "structural",
-  cacheVersion: "async-failure-control-v2-precise-promise-and-handled-catch",
+  cacheVersion: "async-failure-control-v3-syntactic-promise-evidence-documented-catch",
   configSchema: TsCc01Config,
   defaultConfig: {
     exclude_globs: [...PRODUCTION_EXCLUDE_GLOBS],
@@ -75,7 +77,6 @@ export const TsCc01: Signal<TsCc01Config, TsCc01Output, TsProjectTag> = {
       "save",
       "send",
       "publish",
-      "write",
       "read",
     ],
   },
@@ -93,11 +94,14 @@ export const TsCc01: Signal<TsCc01Config, TsCc01Output, TsProjectTag> = {
           }),
       })
     }),
-  score: (out) => out.state === "present" ? 1 / (1 + out.findings.length / 5) : 1,
+  score: (out) => {
+    const pressure = out.findings.filter((finding) => finding.kind !== "log-only-handler").length
+    return pressure > 0 ? 1 / (1 + pressure / 5) : 1
+  },
   diagnose: (out): ReadonlyArray<Diagnostic> =>
     out.findings.slice(0, out.diagnosticLimit).map((finding) => ({
-      severity: "warn",
-      message: `${finding.kind} leaves async failure handling implicit`,
+      severity: finding.kind === "log-only-handler" ? "info" : "warn",
+      message: findingMessage(finding.kind),
       location: { file: finding.file, line: finding.line, column: finding.column },
       data: {
         hash: computeDiagnosticHash(
@@ -107,9 +111,12 @@ export const TsCc01: Signal<TsCc01Config, TsCc01Output, TsProjectTag> = {
       },
       fixHints: [{
         kind: "async-failure-control",
-        title: "Make the failure path explicit",
-        summary:
-          "Await, return, or deliberately detach the async work with an observable rejection handler and cancellation path.",
+        title: finding.kind === "log-only-handler"
+          ? "Confirm log-and-continue is the intended recovery"
+          : "Make the failure path explicit",
+        summary: finding.kind === "log-only-handler"
+          ? "The failure is logged explicitly and execution continues; escalate or recover instead if the failure must stop the flow."
+          : "Await, return, or deliberately detach the async work with an observable rejection handler and cancellation path.",
         confidence: "medium",
         autoApplicable: false,
         data: { kind: finding.kind },
@@ -118,6 +125,11 @@ export const TsCc01: Signal<TsCc01Config, TsCc01Output, TsProjectTag> = {
   outputMetadata: (out) =>
     out.state === "not_applicable" ? { applicability: "not_applicable" as const } : undefined,
 }
+
+const findingMessage = (kind: AsyncFailureFindingKind): string =>
+  kind === "log-only-handler"
+    ? "log-only-handler handles the async failure explicitly by logging and continuing"
+    : `${kind} leaves async failure handling implicit`
 
 const computeAsyncFailureControl = (
   sourceFiles: ReadonlyArray<SourceFile>,
@@ -136,7 +148,7 @@ const computeAsyncFailureControl = (
       if (isAsyncOperation(call, asyncNamePatterns)) {
         asyncOperationsObserved += 1
       }
-      const floating = classifyFloatingCall(call, asyncNamePatterns)
+      const floating = classifyFloatingCall(call)
       if (floating !== undefined) findings.push(floating)
       const swallowed = classifySwallowedCatch(call)
       if (swallowed !== undefined) findings.push(swallowed)
@@ -163,14 +175,14 @@ const computeAsyncFailureControl = (
       "config.async_name_patterns",
       "config.top_n_diagnostics",
     ],
-    calibrationSurface: "config.async_name_patterns and config.exclude_globs",
+    calibrationSurface:
+      "config.exclude_globs scopes analysis; config.async_name_patterns is observational only — it feeds asyncOperationsObserved and never findings or score",
     enforcementCeiling: ["review-route"],
   }
 }
 
 const classifyFloatingCall = (
   call: CallExpression,
-  asyncNamePatterns: ReadonlyArray<string>,
 ): AsyncFailureFinding | undefined => {
   const statement = call.getFirstAncestorByKind(SyntaxKind.ExpressionStatement)
   const expression = statement?.getExpression()
@@ -178,9 +190,9 @@ const classifyFloatingCall = (
   const isDirectStatement = expression === call
   const isVoidedStatement = Node.isVoidExpression(parent) && expression === parent
   if (statement === undefined || (!isDirectStatement && !isVoidedStatement)) return undefined
+  if (!hasPromiseEvidence(call)) return undefined
+  if (hasTerminalRejectionHandler(call)) return undefined
   const name = callName(call.getExpression())
-  if (!isAsyncOperation(call, asyncNamePatterns)) return undefined
-  if (isVoidedStatement && hasObservableRejectionHandler(call)) return undefined
   if (isVoidedStatement) {
     return {
       ...locationOf(call),
@@ -203,46 +215,148 @@ const classifySwallowedCatch = (call: CallExpression): AsyncFailureFinding | und
     return undefined
   }
   const handler = call.getArguments()[0]
-  if (handler === undefined || !Node.isArrowFunction(handler)) return undefined
+  if (handler === undefined) return undefined
+  if (isConsoleLogReference(handler)) return catchHandlerFinding(call, "log-only-handler")
+  if (!Node.isArrowFunction(handler) && !Node.isFunctionExpression(handler)) return undefined
   const body = handler.getBody()
-  if (!Node.isBlock(body)) return undefined
-  if (!blockSwallows(body.getText())) return undefined
-  return {
-    ...locationOf(call),
-    kind: "swallowed-rejection",
-    expression: callName(expression),
-    evidence: call.getText().slice(0, 160),
+  if (!Node.isBlock(body)) {
+    return Node.isCallExpression(body) && isConsoleLogReference(body.getExpression())
+      ? catchHandlerFinding(call, "log-only-handler")
+      : undefined
   }
+  const bodyKind = classifyCatchBody(body.getText())
+  if (bodyKind === "silent") return catchHandlerFinding(call, "swallowed-rejection")
+  if (bodyKind === "log-only") return catchHandlerFinding(call, "log-only-handler")
+  return undefined
 }
+
+const catchHandlerFinding = (
+  call: CallExpression,
+  kind: AsyncFailureFindingKind,
+): AsyncFailureFinding => ({
+  ...locationOf(call),
+  kind,
+  expression: callName(call.getExpression()),
+  evidence: call.getText().slice(0, 160),
+})
 
 const classifyEmptyCatch = (catchClause: CatchClause): AsyncFailureFinding | undefined => {
   const blockText = catchClause.getBlock().getText()
-  if (!blockSwallows(blockText)) return undefined
+  const bodyKind = classifyCatchBody(blockText)
+  if (bodyKind === "documented" || bodyKind === "substantive") return undefined
+  if (bodyKind === "silent" && hasDocumentingComment(catchClause)) return undefined
   return {
     ...locationOf(catchClause),
-    kind: "empty-catch",
+    kind: bodyKind === "log-only" ? "log-only-handler" : "empty-catch",
     expression: "catch",
     evidence: blockText.slice(0, 160),
   }
 }
 
-const blockSwallows = (blockText: string): boolean => {
+type CatchBodyKind = "silent" | "documented" | "log-only" | "substantive"
+
+const classifyCatchBody = (blockText: string): CatchBodyKind => {
   const body = blockText.replace(/^\s*\{|\}\s*$/g, "").trim()
-  if (body.length === 0) return true
-  if (/^(?:\/\/.*|\/\*[\s\S]*\*\/)?$/.test(body)) {
-    return !/(ignore|ignored|intentional|best[- ]?effort|fallback|fall through|missing|unsupported|permission|transient|malformed|optional)/i.test(body)
-  }
-  if (/^console\.(?:log|warn|error|debug)\s*\([^)]*\)\s*;?$/.test(body)) return true
-  return false
+  if (body.length === 0) return "silent"
+  const code = stripComments(body).trim()
+  if (code.length === 0) return hasCommentContent(body) ? "documented" : "silent"
+  if (/^console\.(?:log|warn|error|debug)\s*\([^)]*\)\s*;?$/.test(code)) return "log-only"
+  return "substantive"
 }
 
+const stripComments = (text: string): string =>
+  text.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ")
+
+const hasCommentContent = (text: string): boolean =>
+  /[A-Za-z0-9]/.test(text.replace(/\/\*|\*\/|\/\//g, " "))
+
+// TODO/FIXME-only markers document unfinishedness, not a decision to swallow.
+const isUnfinishedMarkerComment = (text: string): boolean =>
+  /^\s*(?:todo|fixme|xxx)\b[\s.:!-]*$/i.test(text.replace(/\/\*|\*\/|\/\//g, " ").trim())
+
+const hasDocumentingComment = (catchClause: CatchClause): boolean =>
+  [...catchClause.getLeadingCommentRanges(), ...catchClause.getBlock().getLeadingCommentRanges()]
+    .some((range) => hasCommentContent(range.getText()) && !isUnfinishedMarkerComment(range.getText()))
+
 const isAsyncOperation = (call: CallExpression, asyncNamePatterns: ReadonlyArray<string>): boolean => {
-  const name = callName(call.getExpression())
   const typeText = safeTypeText(call)
   if (isTopLevelPromiseLikeType(typeText)) return true
   if (isKnownSynchronousType(typeText)) return false
-  return matchesAsyncNamePattern(name, asyncNamePatterns)
+  return hasSyntacticPromiseEvidence(call) ||
+    matchesAsyncNamePattern(callName(call.getExpression()), asyncNamePatterns)
 }
+
+const hasPromiseEvidence = (call: CallExpression): boolean => {
+  const typeText = safeTypeText(call)
+  if (isTopLevelPromiseLikeType(typeText)) return true
+  if (isKnownSynchronousType(typeText)) return false
+  return hasSyntacticPromiseEvidence(call)
+}
+
+const KNOWN_PROMISE_GLOBALS: ReadonlySet<string> = new Set(["fetch"])
+const PROMISE_CHAIN_MEMBERS: ReadonlySet<string> = new Set(["then", "catch", "finally"])
+const PROMISE_STATIC_MEMBERS: ReadonlySet<string> = new Set([
+  "resolve",
+  "reject",
+  "all",
+  "allSettled",
+  "race",
+  "any",
+])
+
+const hasSyntacticPromiseEvidence = (call: CallExpression): boolean => {
+  const expression = call.getExpression()
+  if (expression.getKind() === SyntaxKind.ImportKeyword) return true
+  if (Node.isIdentifier(expression) && KNOWN_PROMISE_GLOBALS.has(expression.getText())) return true
+  if (Node.isPropertyAccessExpression(expression)) {
+    if (PROMISE_CHAIN_MEMBERS.has(expression.getName())) return true
+    const receiver = expression.getExpression()
+    if (
+      Node.isIdentifier(receiver) &&
+      receiver.getText() === "Promise" &&
+      PROMISE_STATIC_MEMBERS.has(expression.getName())
+    ) {
+      return true
+    }
+  }
+  return declarationsOf(expression).some(isPromiseReturningDeclaration)
+}
+
+const declarationsOf = (expression: TsMorphNode): ReadonlyArray<TsMorphNode> => {
+  try {
+    return expression.getSymbol()?.getDeclarations() ?? []
+  } catch {
+    return []
+  }
+}
+
+const isPromiseReturningDeclaration = (declaration: TsMorphNode): boolean => {
+  if (Node.isVariableDeclaration(declaration) || Node.isPropertyDeclaration(declaration)) {
+    const initializer = declaration.getInitializer()
+    return initializer !== undefined && isPromiseReturningDeclaration(initializer)
+  }
+  if (
+    Node.isFunctionDeclaration(declaration) ||
+    Node.isMethodDeclaration(declaration) ||
+    Node.isFunctionExpression(declaration) ||
+    Node.isArrowFunction(declaration)
+  ) {
+    if (declaration.isAsync()) return true
+    const returnTypeNode = declaration.getReturnTypeNode()
+    return returnTypeNode !== undefined && isTopLevelPromiseLikeType(returnTypeNode.getText())
+  }
+  if (Node.isMethodSignature(declaration)) {
+    const returnTypeNode = declaration.getReturnTypeNode()
+    return returnTypeNode !== undefined && isTopLevelPromiseLikeType(returnTypeNode.getText())
+  }
+  return false
+}
+
+const isConsoleLogReference = (node: TsMorphNode): boolean =>
+  Node.isPropertyAccessExpression(node) &&
+  Node.isIdentifier(node.getExpression()) &&
+  node.getExpression().getText() === "console" &&
+  ["log", "warn", "error", "debug"].includes(node.getName())
 
 const safeTypeText = (call: CallExpression): string => {
   try {
@@ -261,11 +375,17 @@ const isKnownSynchronousType = (typeText: string): boolean =>
   typeText !== "unknown" &&
   !isTopLevelPromiseLikeType(typeText)
 
-const hasObservableRejectionHandler = (call: CallExpression): boolean => {
+const hasTerminalRejectionHandler = (call: CallExpression): boolean => {
   const expression = call.getExpression()
   if (!Node.isPropertyAccessExpression(expression)) return false
-  if (expression.getName() === "catch") return true
-  return expression.getName() === "then" && call.getArguments()[1] !== undefined
+  const member = expression.getName()
+  if (member === "catch") return call.getArguments().length > 0
+  if (member === "then") return call.getArguments()[1] !== undefined
+  if (member === "finally") {
+    const receiver = expression.getExpression()
+    return Node.isCallExpression(receiver) && hasTerminalRejectionHandler(receiver)
+  }
+  return false
 }
 
 const matchesAsyncNamePattern = (
