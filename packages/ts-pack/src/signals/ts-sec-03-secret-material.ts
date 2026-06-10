@@ -5,7 +5,7 @@ import {
   type Signal,
 } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
-import { Node, type SourceFile } from "ts-morph"
+import { Node, SyntaxKind, type Node as TsMorphNode, type SourceFile } from "ts-morph"
 import { TsProjectTag } from "../ts-project.js"
 import {
   PRODUCTION_EXCLUDE_GLOBS,
@@ -30,6 +30,16 @@ export type SecretMaterialKind =
   | "secret-named-literal"
   | "high-entropy-literal"
 
+export type SecretFindingSeverity = "block" | "warn"
+
+/**
+ * Known-format detections (PEM blocks and provider token formats) are the only
+ * block-severity path. Heuristic detections (secret-named and high-entropy
+ * literals) can only warn: their evidence cannot prove the literal is a secret.
+ */
+export const secretFindingSeverity = (kind: SecretMaterialKind): SecretFindingSeverity =>
+  kind === "private-key-block" || kind === "known-secret-prefix" ? "block" : "warn"
+
 export interface SecretMaterialFinding extends SourceLocation {
   readonly kind: SecretMaterialKind
   readonly identifier: string
@@ -49,6 +59,8 @@ export interface TsSec03Output {
   readonly enforcementCeiling: ReadonlyArray<string>
 }
 
+const WARN_ONLY_SCORE_FLOOR = 0.6
+
 export const TsSec03: Signal<TsSec03Config, TsSec03Output, TsProjectTag> = {
   id: "TS-SEC-03-secret-material",
   title: "Secret material",
@@ -56,7 +68,7 @@ export const TsSec03: Signal<TsSec03Config, TsSec03Output, TsProjectTag> = {
   tier: 1,
   category: "security-risk",
   kind: "structural",
-  cacheVersion: "secret-material-v2-literal-ast-and-token-shape",
+  cacheVersion: "secret-material-v3-known-format-block-warn-severity",
   configSchema: TsSec03Config,
   defaultConfig: {
     exclude_globs: [...PRODUCTION_EXCLUDE_GLOBS],
@@ -78,10 +90,17 @@ export const TsSec03: Signal<TsSec03Config, TsSec03Output, TsProjectTag> = {
           }),
       })
     }),
-  score: (out) => out.state === "present" ? Math.max(0, 1 - out.findings.length / 5) : 1,
+  score: (out) => {
+    if (out.state !== "present") return 1
+    const blockCount = out.findings
+      .filter((finding) => secretFindingSeverity(finding.kind) === "block")
+      .length
+    if (blockCount > 0) return Math.max(0, 1 - out.findings.length / 5)
+    return Math.max(WARN_ONLY_SCORE_FLOOR, 1 - out.findings.length / 10)
+  },
   diagnose: (out): ReadonlyArray<Diagnostic> =>
     out.findings.slice(0, out.diagnosticLimit).map((finding) => ({
-      severity: "block",
+      severity: secretFindingSeverity(finding.kind),
       message: `${finding.kind} resembles committed secret material (${finding.redacted})`,
       location: { file: finding.file, line: finding.line, column: finding.column },
       data: {
@@ -115,13 +134,11 @@ const computeSecretMaterial = (
   for (const sourceFile of sourceFiles) {
     if (!isAnalyzableSourceFile(sourceFile, config.exclude_globs)) continue
     analyzedFiles += 1
-    const text = sourceFile.getFullText()
     for (const literal of collectStringLiterals(sourceFile)) {
       const value = literal.value.trim()
       if (value.length === 0) continue
       literalsScanned += 1
-      const identifier = nearbyIdentifier(text, literal.index)
-      const kind = classifySecretLiteral(identifier, value, config)
+      const kind = classifySecretLiteral(literal.identifier, value, config)
       if (kind === undefined) continue
       const { line, column } = sourceFile.getLineAndColumnAtPos(literal.index)
       findings.push({
@@ -129,7 +146,7 @@ const computeSecretMaterial = (
         line,
         column,
         kind,
-        identifier,
+        identifier: literal.identifier,
         redacted: redactSecret(value),
         entropy: round(shannonEntropy(value)),
       })
@@ -156,22 +173,109 @@ const computeSecretMaterial = (
 }
 
 const SECRET_NAME_PATTERN = /(secret|token|apikey|api_key|password|passwd|privatekey|private_key|clientsecret|client_secret)/i
-const KNOWN_SECRET_PREFIX = /^(sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9_]{16,}|xox[baprs]-[A-Za-z0-9-]{16,}|AKIA[0-9A-Z]{16})/
+// Design-system vocabulary: "token" preceded by color/design/theme/style context
+// names a design token, not a credential.
+const DESIGN_TOKEN_CONTEXT_PATTERN = /(color|colour|design|theme|style|styling|brand)token/gi
 const PLACEHOLDER_PATTERN = /^(?:changeme|example|placeholder|test|dummy|fake|mock|sample|todo|xxx|your[_-]?)/i
+
+// Known secret formats are the only block-severity detections. Each pattern
+// encodes a provider-published token format, not a statistical heuristic.
+const PRIVATE_KEY_BLOCK_PATTERN = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/
+const KNOWN_SECRET_FORMAT_PATTERNS: ReadonlyArray<RegExp> = [
+  /\bAKIA[0-9A-Z]{16}(?![0-9A-Z])/,
+  /\bgh[pousr]_[A-Za-z0-9]{16,}/,
+  /\bxox[baprs]-[A-Za-z0-9][A-Za-z0-9-]{14,}/,
+  /\bAIza[0-9A-Za-z_-]{35}/,
+  /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/,
+]
+const OPENAI_KEY_PATTERN = /(?:^|[^A-Za-z0-9])(sk-[A-Za-z0-9_-]{16,})/
+// Rejects all-same-character documentation placeholders like ghp_xxxxxxxx...
+const KNOWN_FORMAT_MIN_ENTROPY = 2.5
+// A secret-shaped name is itself evidence, so the value needs less entropy
+// evidence than anonymous literals: word-based passphrases (Shannon ~2.5-3.3)
+// assigned to password/apiSecret identifiers must still fire. Identifier- and
+// structure-shaped values are already excluded separately.
+const SECRET_NAMED_MIN_ENTROPY = 2.5
+
+// Checksum context: hash-named identifiers holding pure-hex values are
+// checksums (git object ids, digests), not secrets. Matching is per word
+// segment, not substring — "sha" inside "sharedSecret" is not checksum
+// context — and secret-named identifiers take precedence over checksum
+// context so `sharedSecret`/`hashedApiKey` stay eligible.
+const CHECKSUM_NAME_SEGMENTS = new Set([
+  "hash", "sha", "sha1", "sha256", "sha384", "sha512", "md5",
+  "digest", "checksum", "crc", "crc32", "tree", "etag", "fingerprint",
+])
+const PURE_HEX_PATTERN = /^[0-9a-fA-F]{16,}$/
+
+const identifierWordSegments = (identifier: string): ReadonlyArray<string> =>
+  identifier
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+    .split(/[^A-Za-z0-9]+/)
+    .map((segment) => segment.toLowerCase())
+    .filter((segment) => segment.length > 0)
+
+const isChecksumName = (identifier: string): boolean =>
+  identifierWordSegments(identifier).some((segment) => CHECKSUM_NAME_SEGMENTS.has(segment))
+
+const IDENTIFIER_SHAPE_PATTERN = /^[A-Za-z_$][A-Za-z0-9_$]*$/
+const COMMAND_FLAG_PATTERN = /^--?[A-Za-z][A-Za-z0-9_-]*$/
+const PATH_SHAPE_PATTERN = /^\/?[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)+\/?$/
+const KEY_VALUE_SETTING_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*(?:\/[A-Za-z_][A-Za-z0-9_]*)*=[^=]+$/
+const SEPARATED_VALUE_PATTERN = /^[A-Za-z0-9]+(?:[-_][A-Za-z0-9]*)+$/
+const WORD_CHUNK_PATTERNS: ReadonlyArray<RegExp> = [
+  /^[0-9]{1,6}$/,
+  /^[A-Za-z]+$/,
+  /^[A-Za-z]+[0-9]{1,3}$/,
+]
 
 interface StringLiteralScanTarget {
   readonly value: string
   readonly index: number
+  readonly identifier: string
 }
 
 const collectStringLiterals = (sourceFile: SourceFile): ReadonlyArray<StringLiteralScanTarget> => {
   const targets: Array<StringLiteralScanTarget> = []
   sourceFile.forEachDescendant((node) => {
     if (Node.isStringLiteral(node) || Node.isNoSubstitutionTemplateLiteral(node)) {
-      targets.push({ value: node.getLiteralText(), index: node.getStart() })
+      targets.push({
+        value: node.getLiteralText(),
+        index: node.getStart(),
+        identifier: enclosingBindingName(node),
+      })
     }
   })
   return targets
+}
+
+/**
+ * Attribute a literal to its nearest enclosing binding: the property name,
+ * variable name, class property name, or assignment target that owns it.
+ * Text-proximity attribution misreports unrelated identifiers (for example a
+ * module specifier in a preceding import).
+ */
+const enclosingBindingName = (node: TsMorphNode): string => {
+  let current: TsMorphNode | undefined = node.getParent()
+  while (current !== undefined) {
+    if (
+      Node.isPropertyAssignment(current) ||
+      Node.isPropertyDeclaration(current) ||
+      Node.isVariableDeclaration(current)
+    ) {
+      return current.getName()
+    }
+    if (
+      Node.isBinaryExpression(current) &&
+      current.getOperatorToken().getKind() === SyntaxKind.EqualsToken
+    ) {
+      const left = current.getLeft().getText()
+      return left.split(".").pop() ?? left
+    }
+    current = current.getParent()
+  }
+  return "literal"
 }
 
 const classifySecretLiteral = (
@@ -180,13 +284,17 @@ const classifySecretLiteral = (
   config: TsSec03Config,
 ): SecretMaterialKind | undefined => {
   if (PLACEHOLDER_PATTERN.test(value)) return undefined
-  if (value.includes("BEGIN") && value.includes("PRIVATE KEY")) return "private-key-block"
-  if (KNOWN_SECRET_PREFIX.test(value)) return "known-secret-prefix"
-  const entropy = shannonEntropy(value)
+  if (PRIVATE_KEY_BLOCK_PATTERN.test(value)) return "private-key-block"
+  if (matchesKnownSecretFormat(value)) return "known-secret-prefix"
   const normalizedName = normalizeIdentifier(identifier)
+  const secretNamed = isSecretName(normalizedName)
+  if (!secretNamed && isChecksumName(identifier) && PURE_HEX_PATTERN.test(value)) return undefined
+  const entropy = shannonEntropy(value)
   if (
-    SECRET_NAME_PATTERN.test(normalizedName) &&
-    value.length >= Math.max(8, config.min_secret_length / 2)
+    secretNamed &&
+    value.length >= Math.max(8, config.min_secret_length / 2) &&
+    entropy >= SECRET_NAMED_MIN_ENTROPY &&
+    !isStructuredNonSecretShape(value)
   ) {
     return "secret-named-literal"
   }
@@ -200,14 +308,45 @@ const classifySecretLiteral = (
   return undefined
 }
 
+const matchesKnownSecretFormat = (value: string): boolean => {
+  for (const pattern of KNOWN_SECRET_FORMAT_PATTERNS) {
+    const matched = pattern.exec(value)?.[0]
+    if (matched !== undefined && shannonEntropy(matched) >= KNOWN_FORMAT_MIN_ENTROPY) return true
+  }
+  // "sk-" also prefixes ordinary kebab-case words, so the OpenAI format only
+  // applies when the literal is not a separated-words identifier.
+  if (isSeparatedWordsValue(value)) return false
+  const openAiKey = OPENAI_KEY_PATTERN.exec(value)?.[1]
+  return openAiKey !== undefined && shannonEntropy(openAiKey) >= KNOWN_FORMAT_MIN_ENTROPY
+}
+
+const isSecretName = (normalizedIdentifier: string): boolean =>
+  SECRET_NAME_PATTERN.test(normalizedIdentifier.replace(DESIGN_TOKEN_CONTEXT_PATTERN, ""))
+
+/**
+ * Identifier-shaped values built from dictionary-word chunks joined by `-` or
+ * `_` (migration ids, mkdtemp prefixes with trailing separators, env var
+ * names) are names, not secrets, even when raw entropy clears the threshold.
+ */
+const isSeparatedWordsValue = (value: string): boolean =>
+  SEPARATED_VALUE_PATTERN.test(value) &&
+  value
+    .split(/[-_]/)
+    .every((chunk) =>
+      chunk.length === 0 || WORD_CHUNK_PATTERNS.some((pattern) => pattern.test(chunk))
+    )
+
+const isStructuredNonSecretShape = (value: string): boolean =>
+  value.startsWith("--") ||
+  COMMAND_FLAG_PATTERN.test(value) ||
+  PATH_SHAPE_PATTERN.test(value) ||
+  KEY_VALUE_SETTING_PATTERN.test(value) ||
+  isSeparatedWordsValue(value)
+
 const hasHighEntropySecretTokenShape = (value: string): boolean => {
   if (!/^[A-Za-z0-9_+/=-]+$/.test(value)) return false
-  if (value.startsWith("--")) return false
-  if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(value)) return false
-  if (/^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)+$/.test(value)) return false
-  if (value.includes("/") && /^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)+$/.test(value)) {
-    return false
-  }
+  if (IDENTIFIER_SHAPE_PATTERN.test(value)) return false
+  if (isStructuredNonSecretShape(value)) return false
 
   const classes = [
     /[a-z]/.test(value),
@@ -217,13 +356,6 @@ const hasHighEntropySecretTokenShape = (value: string): boolean => {
   ].filter(Boolean).length
 
   return classes >= 2 && (/[0-9]/.test(value) || /[_+/=-]/.test(value))
-}
-
-const nearbyIdentifier = (text: string, index: number): string => {
-  const prefix = text.slice(Math.max(0, index - 80), index)
-  const match = /([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=\s*$/.exec(prefix) ??
-    /([A-Za-z_$][\w$]*)\s*:\s*$/.exec(prefix)
-  return match?.[1] ?? "literal"
 }
 
 const redactSecret = (value: string): string =>
