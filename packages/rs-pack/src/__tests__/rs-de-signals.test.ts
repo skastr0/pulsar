@@ -1158,7 +1158,7 @@ describe("RS-DE-* signals", () => {
       tier: 1,
       category: "dependency-entropy",
       kind: "structural",
-      cacheVersion: "trait-coupling-ratio-score-workspace-locality-test-gating-v2",
+      cacheVersion: "trait-coupling-ratio-score-workspace-locality-test-gating-v3-nested-path-roots",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -1359,6 +1359,60 @@ describe("RS-DE-* signals", () => {
       await cleanupWorkspace(noSourceRepo)
       await cleanupWorkspace(noTraitRepo)
       await cleanupWorkspace(excludedRepo)
+    }
+  })
+
+  test("RS-DE-01 treats module-qualified local trait paths as local", async () => {
+    // adversarial-review regression: symbolRoot took the raw text of the
+    // first child of a scoped path, so `impl crate::traits::Renderer` read
+    // its root as "crate::traits" and every 3+ segment LOCAL path was
+    // scored as foreign coupling. Locality must follow the path root.
+    const repo = await createRustWorkspace("pulsar-rs-de01-nested-local-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "de-nested-local-fixture"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub mod traits {",
+        "    pub trait Renderer { fn render(&self) -> &'static str; }",
+        "}",
+        "pub mod widgets {",
+        "    pub struct Button;",
+        "}",
+        "",
+        "impl crate::traits::Renderer for widgets::Button {",
+        "    fn render(&self) -> &'static str { \"button\" }",
+        "}",
+        "",
+        "pub struct Panel;",
+        "impl self::traits::Renderer for Panel {",
+        "    fn render(&self) -> &'static str { \"panel\" }",
+        "}",
+        "",
+        "// Positive control: a genuinely foreign 3-segment trait path must",
+        "// still be scored as foreign coupling.",
+        "pub struct Adapter;",
+        "impl external_crate::adapters::ForeignTrait for Adapter {",
+        "    fn adapt(&self) {}",
+        "}",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const out = await runSignalCompute(RsDe01, repo, RsDe01.defaultConfig)
+
+      expect(out.totalTraitImpls).toBe(3)
+      expect(out.totalForeignTraitImpls).toBe(1)
+      const details = [...out.byModule.values()].flatMap((module) => module.details)
+      expect(details.map((detail) => detail.trait)).toEqual([
+        "external_crate::adapters::ForeignTrait",
+      ])
+    } finally {
+      await cleanupWorkspace(repo)
     }
   })
 

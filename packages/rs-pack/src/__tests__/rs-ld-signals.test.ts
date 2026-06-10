@@ -1366,7 +1366,7 @@ describe("RS-LD-* signals", () => {
       tier: 1,
       category: "legibility-decay",
       kind: "legibility",
-      cacheVersion: "match-catch-all-open-domain-guarded-arms-v4",
+      cacheVersion: "match-catch-all-open-domain-guarded-arms-v5-byte-literals",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -1574,6 +1574,43 @@ describe("RS-LD-* signals", () => {
 
       expect(out.totalMatches).toBe(3)
       expect(out.openDomainExemptMatches).toBe(3)
+      expect(out.matchesWithCatchAll).toBe(0)
+      expect(RsLd03.score(out)).toBe(1)
+      expect(RsLd03.diagnose(out)).toEqual([])
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-LD-03 recognizes byte-char literals as open-domain evidence", async () => {
+    // adversarial-review regression: byte-level parsers match over u8 with
+    // b'x' arms — an open domain where the compiler requires the catch-all.
+    // The literal detector previously only knew 'x', so every byte parser
+    // was flagged as exhaustiveness erosion.
+    const repo = await createMatchWorkspace("byte-open-domain", {
+      "src/lib.rs": [
+        "pub fn classify_byte(byte: u8) -> u8 {",
+        "    match byte {",
+        "        b'a' => 1,",
+        "        b'0'..=b'9' => 2,",
+        "        _ => 0,",
+        "    }",
+        "}",
+        "",
+        "pub fn hex_bucket(value: u32) -> u8 {",
+        "    match value {",
+        "        0x10..=0x1F => 1,",
+        "        _ => 0,",
+        "    }",
+        "}",
+      ],
+    })
+
+    try {
+      const out = await runSignalCompute(RsLd03, repo, RsLd03.defaultConfig)
+
+      expect(out.totalMatches).toBe(2)
+      expect(out.openDomainExemptMatches).toBe(2)
       expect(out.matchesWithCatchAll).toBe(0)
       expect(RsLd03.score(out)).toBe(1)
       expect(RsLd03.diagnose(out)).toEqual([])

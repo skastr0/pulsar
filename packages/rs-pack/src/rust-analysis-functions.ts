@@ -196,6 +196,9 @@ const isLiteralMatchArm = (arm: RustSyntaxNode): boolean => {
   const pattern = firstNamedChild(arm, "match_pattern")
   if (pattern === undefined) return false
   const stripGuard = pattern.text.trim().replace(/\s+if\b[\s\S]*$/, "").trim()
+  // Whole-text check first so literals containing `|` (e.g. `"a|b"`) are
+  // not mangled by alternation splitting.
+  if (isLiteralPatternText(stripGuard)) return true
   return stripGuard
     .split("|")
     .map((alternative) => alternative.trim())
@@ -203,11 +206,17 @@ const isLiteralMatchArm = (arm: RustSyntaxNode): boolean => {
     .some(isLiteralPatternText)
 }
 
+// `b?` covers byte-char literals (b'a') — byte-level parsers match over
+// u8, an open domain, exactly like char/str matches.
+const CHAR_LITERAL = "b?'(?:[^'\\\\]|\\\\.)+'"
+const NUMERIC_LITERAL = "-?(?:\\d[\\d_]*|0x[\\da-fA-F_]+|0o[0-7_]+|0b[01_]+)"
+const RANGE_ENDPOINT = `(?:${NUMERIC_LITERAL}|${CHAR_LITERAL})`
+
 const isLiteralPatternText = (text: string): boolean =>
-  /^'(?:[^'\\]|\\.)+'$/.test(text) ||
+  new RegExp(`^${CHAR_LITERAL}$`).test(text) ||
   /^b?"(?:[^"\\]|\\.)*"$/.test(text) ||
-  /^-?(?:\d[\d_]*|0x[\da-fA-F_]+|0o[0-7_]+|0b[01_]+)$/.test(text) ||
-  /^-?(?:\d[\d_]*|'(?:[^'\\]|\\.)+')\s*\.\.=?\s*-?(?:\d[\d_]*|'(?:[^'\\]|\\.)+')$/.test(text)
+  new RegExp(`^${NUMERIC_LITERAL}$`).test(text) ||
+  new RegExp(`^${RANGE_ENDPOINT}\\s*\\.\\.=?\\s*${RANGE_ENDPOINT}$`).test(text)
 
 const lifetimeBoundCountOfFunction = (node: RustSyntaxNode): number =>
   allNamedChildren(firstNamedChild(node, "type_parameters") ?? node, "lifetime_parameter")

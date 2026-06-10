@@ -117,7 +117,7 @@ export const RsDe01: Signal<RsDe01Config, RsDe01Output, RustProjectTag> = {
   tier: 1,
   category: "dependency-entropy",
   kind: "structural",
-  cacheVersion: "trait-coupling-ratio-score-workspace-locality-test-gating-v2",
+  cacheVersion: "trait-coupling-ratio-score-workspace-locality-test-gating-v3-nested-path-roots",
   configSchema: RsDe01Config,
   factorDefinitions: RS_DE_01_FACTOR_DEFINITIONS,
   defaultConfig: {
@@ -520,8 +520,14 @@ const symbolRoot = (node: ReturnType<typeof namedChildrenOf>[number]): string | 
     case "super":
       return node.text
     case "scoped_identifier":
-    case "scoped_type_identifier":
-      return namedChildrenOf(node)[0]?.text
+    case "scoped_type_identifier": {
+      // Recurse: for `crate::module::Trait` the first child is the nested
+      // scoped path `crate::module`, whose own root is what locality is
+      // judged on. Taking .text here would yield "crate::module" and
+      // misclassify every 3+ segment local path as foreign.
+      const first = namedChildrenOf(node)[0]
+      return first === undefined ? undefined : symbolRoot(first)
+    }
     case "generic_type":
     case "reference_type":
     case "pointer_type":
