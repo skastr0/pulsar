@@ -1,0 +1,8 @@
+{
+  "name": "pulsar-methods",
+  "version": "0.1.0",
+  "description": "Pulsar working methods: the signal truth-pass loop, detector change checklist, cheap agent validation harness, and release acceptance gates extracted from the 2026 truth-pass batches.",
+  "targets": {
+    "skills": ["coding-harness"]
+  }
+}
