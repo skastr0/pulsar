@@ -79,7 +79,7 @@ export const RsSl04: Signal<RsSl04Config, RsSl04Output, RustProjectTag> = {
   tier: 1,
   category: "generated-slop",
   kind: "legibility",
-  cacheVersion: "likely-expensive-score-cfg-test-gating-diagnostics-denominator-bindings-ufcs-coherent-counts-v7",
+  cacheVersion: "likely-expensive-score-cfg-test-gating-diagnostics-denominator-bindings-ufcs-coherent-counts-v8-inner-attr-gating",
   configSchema: RsSl04Config,
   factorDefinitions: RS_SL_04_FACTOR_DEFINITIONS,
   defaultConfig: {

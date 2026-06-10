@@ -122,7 +122,7 @@ export const RsAb04: Signal<RsAb04Config, RsAb04Output, RustProjectTag> = {
   tier: 1,
   category: "abstraction-bloat",
   kind: "legibility",
-  cacheVersion: "derive-density-config-applicability-diagnostics-cfg-attr-thresholds-serde-standard-idiomatic-defaults-v5",
+  cacheVersion: "derive-density-config-applicability-diagnostics-cfg-attr-thresholds-serde-standard-idiomatic-defaults-v6-inner-attr-gating",
   configSchema: RsAb04Config,
   factorDefinitions: RS_AB_04_FACTOR_DEFINITIONS,
   defaultConfig: {

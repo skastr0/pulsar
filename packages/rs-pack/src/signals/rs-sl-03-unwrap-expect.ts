@@ -72,7 +72,7 @@ export const RsSl03: Signal<RsSl03Config, RsSl03Output, RustProjectTag> = {
   tier: 1,
   category: "generated-slop",
   kind: "legibility",
-  cacheVersion: "advisory-density-scaled-cfg-test-gating-diagnostics-denominator-ufcs-cfg-predicate-v6",
+  cacheVersion: "advisory-density-scaled-cfg-test-gating-diagnostics-denominator-ufcs-cfg-predicate-v7-inner-attr-gating",
   configSchema: RsSl03Config,
   factorDefinitions: RS_SL_03_FACTOR_DEFINITIONS,
   defaultConfig: {

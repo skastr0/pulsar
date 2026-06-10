@@ -81,7 +81,7 @@ export const RsSl02: Signal<RsSl02Config, RsSl02Output, RustProjectTag | SignalC
   tier: 1,
   category: "generated-slop",
   kind: "structural",
-  cacheVersion: "unused-allows-ordinary-diagnostics-cfg-attr-span-v4",
+  cacheVersion: "unused-allows-ordinary-diagnostics-cfg-attr-span-v5-inner-attr-gating",
   configSchema: RsSl02Config,
   factorDefinitions: RS_SL_02_FACTOR_DEFINITIONS,
   defaultConfig: {

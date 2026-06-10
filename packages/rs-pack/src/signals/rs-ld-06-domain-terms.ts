@@ -122,7 +122,7 @@ export const RsLd06: Signal<RsLd06Config, RsLd06Output, RustProjectTag | Referen
   tier: 2,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "domain-terms-config-reference-data-applicability-diagnostics-cfg-test-aliases-v4",
+  cacheVersion: "domain-terms-config-reference-data-applicability-diagnostics-cfg-test-aliases-v5-inner-attr-gating",
   configSchema: RsLd06Config,
   factorDefinitions: RS_LD_06_FACTOR_DEFINITIONS,
   defaultConfig: {

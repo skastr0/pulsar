@@ -2,7 +2,10 @@ import { buildRegistry, computeConfigHash } from "@skastr0/pulsar-core/scoring"
 import { SHARED_SIGNALS } from "@skastr0/pulsar-shared-signals"
 import { describe, expect, test } from "bun:test"
 import { Effect, Schema } from "effect"
+import { join } from "node:path"
+import type { CargoMetadata } from "../cargo-metadata.js"
 import { RS_PACK_SIGNALS } from "../pack.js"
+import { makeRustProject } from "../project.js"
 import { RsDe01 } from "../signals/rs-de-01-trait-coupling.js"
 import { RsDe02 } from "../signals/rs-de-02-dep-tree.js"
 import { RsDe03 } from "../signals/rs-de-03-feature-flags.js"
@@ -11,6 +14,7 @@ import {
   cleanupWorkspace,
   createRustWorkspace,
   runSignalCompute,
+  runSignalComputeWithProject,
 } from "./helpers.js"
 
 const rsDe01TraitWorkspaceFiles = (): Readonly<Record<string, string>> => ({
@@ -295,6 +299,110 @@ const createRsDe01ConcerningSpreadWorkspace = () =>
         "}",
         "",
       ].join("\n")),
+    ].join("\n"),
+  })
+
+const createRsDe01IdiomaticAllowlistWorkspace = () =>
+  createRustWorkspace("pulsar-rs-de01-idiomatic-", {
+    "Cargo.toml": [
+      "[package]",
+      'name = "de-idiomatic-fixture"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+    ].join("\n"),
+    "src/lib.rs": [
+      "pub struct Point;",
+      "pub struct IdVisitor;",
+      "",
+      // Qualified trait paths keep these impls visibly foreign: a bare
+      // `impl Add for Point` at crate root registers `Add` as a local root
+      // token and never reaches foreign-trait classification at all.
+      "impl std::ops::Add for Point {",
+      "    type Output = Point;",
+      "    fn add(self, _rhs: Point) -> Point { Point }",
+      "}",
+      "",
+      "impl std::ops::Mul<i32> for Point {",
+      "    type Output = Point;",
+      "    fn mul(self, _rhs: i32) -> Point { Point }",
+      "}",
+      "",
+      "unsafe impl std::marker::Send for Point {}",
+      "",
+      "impl<'de> serde::de::Visitor<'de> for IdVisitor {",
+      "    type Value = u64;",
+      "    fn expecting(&self, _formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {",
+      "        Ok(())",
+      "    }",
+      "}",
+      "",
+      "impl external_crate::ExternalTrait for Point {",
+      "    fn external(&self) {}",
+      "}",
+      "",
+    ].join("\n"),
+  })
+
+const createRsDe01InnerCfgTestWorkspace = () =>
+  createRustWorkspace("pulsar-rs-de01-inner-cfg-test-", {
+    "Cargo.toml": [
+      "[package]",
+      'name = "de-inner-cfg-fixture"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+    ].join("\n"),
+    "src/lib.rs": [
+      "pub mod harness;",
+      "",
+      "pub struct Local;",
+      "pub trait LocalTrait { fn go(&self) -> u8; }",
+      "",
+      "impl LocalTrait for Local {",
+      "    fn go(&self) -> u8 { 1 }",
+      "}",
+      "",
+    ].join("\n"),
+    "src/harness.rs": [
+      "#![cfg(test)]",
+      "",
+      "pub struct Harness;",
+      "",
+      "impl external_crate::ExternalTrait for Harness {",
+      "    fn external(&self) {}",
+      "}",
+      "",
+      "impl other_crate::OtherTrait for Harness {",
+      "    fn other(&self) {}",
+      "}",
+      "",
+    ].join("\n"),
+  })
+
+const createRsDe01CommentGapWorkspace = () =>
+  createRustWorkspace("pulsar-rs-de01-comment-gap-", {
+    "Cargo.toml": [
+      "[package]",
+      'name = "de-comment-gap-fixture"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+    ].join("\n"),
+    "src/lib.rs": [
+      "pub struct Gated;",
+      "pub struct Ungated;",
+      "",
+      "#[cfg(test)]",
+      "// test-only adapter referenced by the suite below",
+      "impl external_crate::ExternalTrait for Gated {",
+      "    fn external(&self) {}",
+      "}",
+      "",
+      "impl external_crate::ExternalTrait for Ungated {",
+      "    fn external(&self) {}",
+      "}",
+      "",
     ].join("\n"),
   })
 
@@ -790,6 +898,215 @@ const createRsDe02WorkspaceInheritedWorkspace = () =>
     "crates/app/src/lib.rs": "use serde_alias as _;\nuse bar as _;\nuse renamed_table as _;\npub fn fixture() {}\n",
   })
 
+const createRsDe02RenamedLibTargetWorkspace = () =>
+  createRustWorkspace("pulsar-rs-de02-renamed-lib-", {
+    "Cargo.toml": [
+      "[workspace]",
+      'members = ["crates/hash-utils", "crates/app"]',
+      'resolver = "2"',
+      "",
+    ].join("\n"),
+    "crates/hash-utils/Cargo.toml": [
+      "[package]",
+      'name = "hash-utils"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+      "[lib]",
+      'name = "hashing"',
+      "",
+    ].join("\n"),
+    "crates/hash-utils/src/lib.rs": "pub fn digest() {}\n",
+    "crates/app/Cargo.toml": [
+      "[package]",
+      'name = "renamed-lib-app"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+      "[dependencies]",
+      'hash-utils = { path = "../hash-utils" }',
+      'dead-weight = "1"',
+      "",
+    ].join("\n"),
+    "crates/app/src/lib.rs": "pub fn run() {\n    hashing::digest();\n}\n",
+  })
+
+const createRsDe02DottedKeyWorkspace = () =>
+  createRustWorkspace("pulsar-rs-de02-dotted-", {
+    "Cargo.toml": [
+      "[package]",
+      'name = "dotted-keys-fixture"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+      "[dependencies]",
+      'tracing.version = "0.1"',
+      "serde.workspace = true",
+      "",
+    ].join("\n"),
+    "src/lib.rs": "use tracing::info as _;\npub fn fixture() {}\n",
+  })
+
+const createRsDe02UnusedDependencyWorkspace = (referenceBar: boolean) =>
+  createRustWorkspace("pulsar-rs-de02-unused-dep-", {
+    "Cargo.toml": [
+      "[package]",
+      'name = "dep-unused-fixture"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+      "[dependencies]",
+      'foo = "1"',
+      'bar = "1"',
+      "",
+    ].join("\n"),
+    "Cargo.lock": [
+      "version = 3",
+      "",
+      "[[package]]",
+      'name = "dep-unused-fixture"',
+      'version = "0.1.0"',
+      "dependencies = [",
+      ' "bar",',
+      ' "foo",',
+      "]",
+      "",
+      "[[package]]",
+      'name = "bar"',
+      'version = "1.0.0"',
+      "",
+      "[[package]]",
+      'name = "foo"',
+      'version = "1.0.0"',
+      "",
+    ].join("\n"),
+    "src/lib.rs": referenceBar
+      ? "use foo as _;\nuse bar as _;\npub fn fixture() {}\n"
+      : "use foo as _;\npub fn fixture() {}\n",
+  })
+
+const createRsDe02DuplicateGroupWorkspace = (duplicateName: string) =>
+  createRustWorkspace("pulsar-rs-de02-duplicate-group-", {
+    "Cargo.toml": [
+      "[package]",
+      'name = "duplicate-group-fixture"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+      "[dependencies]",
+      'foo = "1"',
+      "",
+    ].join("\n"),
+    "Cargo.lock": [
+      "version = 3",
+      "",
+      "[[package]]",
+      'name = "duplicate-group-fixture"',
+      'version = "0.1.0"',
+      'dependencies = ["foo 1.0.0"]',
+      "",
+      "[[package]]",
+      'name = "foo"',
+      'version = "1.0.0"',
+      `dependencies = ["${duplicateName} 0.48.0"]`,
+      "",
+      "[[package]]",
+      `name = "${duplicateName}"`,
+      'version = "0.48.0"',
+      "",
+      "[[package]]",
+      `name = "${duplicateName}"`,
+      'version = "0.52.0"',
+      "",
+    ].join("\n"),
+    "src/lib.rs": "use foo as _;\npub fn fixture() {}\n",
+  })
+
+const rsDe02DepthChainLock = (linked: boolean): string => [
+  "version = 3",
+  "",
+  "[[package]]",
+  'name = "depth-chain-fixture"',
+  'version = "0.1.0"',
+  'dependencies = ["chain0 1.0.0"]',
+  "",
+  ...Array.from({ length: 12 }, (_, index) => [
+    "[[package]]",
+    `name = "chain${index}"`,
+    'version = "1.0.0"',
+    ...(linked && index < 11 ? [`dependencies = ["chain${index + 1} 1.0.0"]`] : []),
+    "",
+  ]).flat(),
+].join("\n")
+
+const createRsDe02DepthChainWorkspace = (linked: boolean) =>
+  createRustWorkspace("pulsar-rs-de02-depth-chain-", {
+    "Cargo.toml": [
+      "[package]",
+      'name = "depth-chain-fixture"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+      "[dependencies]",
+      'chain0 = "1"',
+      "",
+    ].join("\n"),
+    "Cargo.lock": rsDe02DepthChainLock(linked),
+    "src/lib.rs": "use chain0 as _;\npub fn fixture() {}\n",
+  })
+
+// Pathological lock engineered to saturate every pressure component:
+// 80 non-shim duplicate groups (duplicate cap 0.45), a 15-package chain
+// (depth 14, depth cap 0.25), 310 dependency packages (breadth cap 0.25),
+// and 5 unused declared dependencies (unused cap 0.2) — total pressure 1.15.
+const rsDe02PathologicalLock = (): string => {
+  const lines = [
+    "version = 3",
+    "",
+    "[[package]]",
+    'name = "floor-fixture"',
+    'version = "0.1.0"',
+    "dependencies = [",
+    ' "chain0 1.0.0",',
+    ...Array.from({ length: 5 }, (_, index) => ` "ghost${index} 1.0.0",`),
+    "]",
+    "",
+  ]
+  for (let index = 0; index < 15; index += 1) {
+    lines.push("[[package]]", `name = "chain${index}"`, 'version = "1.0.0"')
+    if (index < 14) lines.push(`dependencies = ["chain${index + 1} 1.0.0"]`)
+    lines.push("")
+  }
+  for (let index = 0; index < 5; index += 1) {
+    lines.push("[[package]]", `name = "ghost${index}"`, 'version = "1.0.0"', "")
+  }
+  for (let group = 0; group < 80; group += 1) {
+    lines.push("[[package]]", `name = "dup${group}"`, 'version = "1.0.0"', "")
+    lines.push("[[package]]", `name = "dup${group}"`, 'version = "2.0.0"', "")
+  }
+  for (let index = 0; index < 130; index += 1) {
+    lines.push("[[package]]", `name = "filler${index}"`, 'version = "1.0.0"', "")
+  }
+  return lines.join("\n")
+}
+
+const createRsDe02ScoreFloorWorkspace = () =>
+  createRustWorkspace("pulsar-rs-de02-score-floor-", {
+    "Cargo.toml": [
+      "[package]",
+      'name = "floor-fixture"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+      "[dependencies]",
+      'chain0 = "1"',
+      ...Array.from({ length: 5 }, (_, index) => `ghost${index} = "1"`),
+      "",
+    ].join("\n"),
+    "Cargo.lock": rsDe02PathologicalLock(),
+    "src/lib.rs": "use chain0 as _;\npub fn fixture() {}\n",
+  })
+
 const rsDe03FeatureWorkspaceFiles = (): Readonly<Record<string, string>> => ({
   "Cargo.toml": [
     "[workspace]",
@@ -1158,7 +1475,7 @@ describe("RS-DE-* signals", () => {
       tier: 1,
       category: "dependency-entropy",
       kind: "structural",
-      cacheVersion: "trait-coupling-ratio-score-workspace-locality-test-gating-v3-nested-path-roots",
+      cacheVersion: "trait-coupling-ratio-score-workspace-locality-test-gating-v4-idiomatic-allowlists-inner-attr-gating",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -1610,6 +1927,80 @@ describe("RS-DE-* signals", () => {
     }
   })
 
+  test("RS-DE-01 keeps std-ops, marker, and serde-infrastructure trait impls non-concerning", async () => {
+    const repo = await createRsDe01IdiomaticAllowlistWorkspace()
+
+    try {
+      const out = await runSignalCompute(RsDe01, repo, RsDe01.defaultConfig)
+      const module = out.byModule.get("de-idiomatic-fixture::crate")
+      const familyByTrait = new Map(
+        (module?.details ?? []).map((detail) => [detail.trait, detail.family]),
+      )
+
+      expect(out.totalTraitImpls).toBe(5)
+      expect(out.totalForeignTraitImpls).toBe(5)
+      expect(out.totalConcerningForeignTraitImpls).toBe(1)
+      expect(module?.ordinaryForeignTraitImpls).toBe(4)
+      expect(module?.concerningForeignTraitImpls).toBe(1)
+      expect(familyByTrait.get("std::ops::Add")).toBe("standard-library-ergonomic")
+      expect(familyByTrait.get("std::ops::Mul<i32>")).toBe("standard-library-ergonomic")
+      expect(familyByTrait.get("std::marker::Send")).toBe("standard-library-ergonomic")
+      expect(familyByTrait.get("serde::de::Visitor<'de>")).toBe("serialization")
+      expect(familyByTrait.get("external_crate::ExternalTrait")).toBe("application-external")
+      expect(
+        module?.details
+          .filter((detail) => detail.concerning)
+          .map((detail) => detail.trait),
+      ).toEqual(["external_crate::ExternalTrait"])
+      // 1 concerning of 5 measured impls, floored to 10 evidence: 1 - 1/10.
+      expect(RsDe01.score(out)).toBe(0.9)
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-DE-01 treats #![cfg(test)] inner attributes as gating the entire file", async () => {
+    const repo = await createRsDe01InnerCfgTestWorkspace()
+
+    try {
+      const out = await runSignalCompute(RsDe01, repo, RsDe01.defaultConfig)
+
+      expect(out.sourceFileCount).toBe(2)
+      expect(out.analyzedFileCount).toBe(2)
+      // Both foreign impls below the file-level `#![cfg(test)]` are
+      // test scaffolding, not production coupling.
+      expect(out.testGatedTraitImpls).toBe(2)
+      expect(out.totalTraitImpls).toBe(1)
+      expect(out.totalForeignTraitImpls).toBe(0)
+      expect(out.totalConcerningForeignTraitImpls).toBe(0)
+      expect(out.modules).toEqual([])
+      expect(RsDe01.score(out)).toBe(1)
+      expect(RsDe01.diagnose(out)).toEqual([])
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-DE-01 keeps #[cfg(test)] gating intact across a comment gap", async () => {
+    const repo = await createRsDe01CommentGapWorkspace()
+
+    try {
+      const out = await runSignalCompute(RsDe01, repo, RsDe01.defaultConfig)
+      const details = [...out.byModule.values()].flatMap((module) => module.details)
+
+      // The comment between `#[cfg(test)]` and the impl must not consume
+      // the attribute: the gated impl stays test scaffolding while the
+      // ungated positive control remains concerning.
+      expect(out.testGatedTraitImpls).toBe(1)
+      expect(out.totalTraitImpls).toBe(1)
+      expect(out.totalConcerningForeignTraitImpls).toBe(1)
+      expect(details.map((detail) => detail.type)).toEqual(["Ungated"])
+      expect(RsDe01.score(out)).toBe(0.9)
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
   test("RS-DE-02 declares identity, config, cache, pack registration, and factor ledger", async () => {
     const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
     const versionedRegistry = await Effect.runPromise(buildRegistry([
@@ -1644,7 +2035,7 @@ describe("RS-DE-* signals", () => {
       tier: 1,
       category: "dependency-entropy",
       kind: "structural",
-      cacheVersion: "cargo-lock-dependency-tree-ratio-curve-unused-deps-v2",
+      cacheVersion: "cargo-lock-dependency-tree-ratio-curve-unused-deps-v3-lib-target-names-dotted-keys",
       inputs: [],
     })
     expect(decoded).toEqual({ top_n_diagnostics: 10 })
@@ -1947,6 +2338,246 @@ describe("RS-DE-* signals", () => {
         "Top-level dependency bar reaches depth 1",
         "Top-level dependency renamed reaches depth 1",
       ])
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-DE-02 resolves renamed lib targets from cargo metadata before flagging unused dependencies", async () => {
+    const repo = await createRsDe02RenamedLibTargetWorkspace()
+
+    try {
+      const baseProject = await Effect.runPromise(makeRustProject(repo))
+      // Deterministic stand-in for `cargo metadata`: the hash-utils package
+      // exposes its library as `hashing`, so alias munging alone would
+      // falsely flag it as unused.
+      const cargoMetadata: CargoMetadata = {
+        version: 1,
+        workspaceRoot: repo,
+        targetDirectory: join(repo, "target"),
+        workspaceMembers: ["hash-utils 0.1.0", "renamed-lib-app 0.1.0"],
+        packages: [
+          {
+            id: "hash-utils 0.1.0",
+            name: "hash-utils",
+            version: "0.1.0",
+            edition: "2021",
+            manifestPath: join(repo, "crates/hash-utils/Cargo.toml"),
+            dependencies: [],
+            features: {},
+            targets: [
+              {
+                name: "hashing",
+                kind: ["lib"],
+                crateTypes: ["lib"],
+                srcPath: join(repo, "crates/hash-utils/src/lib.rs"),
+                edition: "2021",
+              },
+            ],
+          },
+          {
+            id: "renamed-lib-app 0.1.0",
+            name: "renamed-lib-app",
+            version: "0.1.0",
+            edition: "2021",
+            manifestPath: join(repo, "crates/app/Cargo.toml"),
+            dependencies: [],
+            features: {},
+            targets: [
+              {
+                name: "renamed-lib-app",
+                kind: ["lib"],
+                crateTypes: ["lib"],
+                srcPath: join(repo, "crates/app/src/lib.rs"),
+                edition: "2021",
+              },
+            ],
+          },
+        ],
+        resolve: undefined,
+      }
+      const out = await runSignalComputeWithProject(
+        RsDe02,
+        { ...baseProject, cargoMetadata },
+        RsDe02.defaultConfig,
+      )
+
+      expect(out.scannedSourceFileCount).toBe(1)
+      // hash-utils is referenced through its renamed lib target `hashing`;
+      // only the genuinely unreferenced dependency stays flagged.
+      expect(out.unusedDependencies.map((entry) => entry.alias)).toEqual(["dead-weight"])
+      expect(out.unusedDependencyCount).toBe(1)
+      expect(out.unusedDependencies[0]).toMatchObject({
+        alias: "dead-weight",
+        packageName: "dead-weight",
+        libName: "dead_weight",
+      })
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-DE-02 parses dotted-key dependency declarations for unused-dependency analysis", async () => {
+    const repo = await createRsDe02DottedKeyWorkspace()
+
+    try {
+      const out = await runSignalCompute(RsDe02, repo, RsDe02.defaultConfig)
+
+      expect(out.scannedSourceFileCount).toBe(1)
+      // `tracing.version = "0.1"` is declared and referenced: not flagged.
+      // `serde.workspace = true` is declared and unreferenced: flagged.
+      expect(out.unusedDependencies.map((entry) => entry.alias)).toEqual(["serde"])
+      expect(out.unusedDependencyCount).toBe(1)
+      expect(out.unusedDependencies[0]).toMatchObject({
+        alias: "serde",
+        packageName: "serde",
+        libName: "serde",
+        manifestFile: "Cargo.toml",
+      })
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-DE-02 flags declared dependencies without source references and scores them down", async () => {
+    const unusedRepo = await createRsDe02UnusedDependencyWorkspace(false)
+    const usedRepo = await createRsDe02UnusedDependencyWorkspace(true)
+
+    try {
+      const unused = await runSignalCompute(RsDe02, unusedRepo, RsDe02.defaultConfig)
+      const used = await runSignalCompute(RsDe02, usedRepo, RsDe02.defaultConfig)
+
+      expect(unused.lockfileStatus).toBe("loaded")
+      expect(unused.unusedDependencyCount).toBe(1)
+      expect(unused.unusedDependencies).toEqual([
+        {
+          manifestName: "(root)",
+          manifestFile: "Cargo.toml",
+          alias: "bar",
+          packageName: "bar",
+          libName: "bar",
+        },
+      ])
+
+      const diagnostics = RsDe02.diagnose(unused)
+      expect(diagnostics).toHaveLength(2)
+      expect(diagnostics[0]?.data?.kind).toBe("score-breakdown")
+      expect(diagnostics[0]?.data?.unusedDependencyPressure).toBeCloseTo(0.04)
+      expect(diagnostics[1]).toMatchObject({
+        severity: "warn",
+        message: "Declared dependency bar (crate bar) has no source references in (root)",
+        location: { file: "Cargo.toml" },
+        data: {
+          alias: "bar",
+          packageName: "bar",
+          libName: "bar",
+          manifestName: "(root)",
+        },
+      })
+
+      expect(used.unusedDependencyCount).toBe(0)
+      expect(RsDe02.score(used)).toBe(1)
+      expect(RsDe02.score(unused)).toBeCloseTo(0.96)
+      expect(RsDe02.score(unused)).toBeLessThan(RsDe02.score(used))
+    } finally {
+      await cleanupWorkspace(unusedRepo)
+      await cleanupWorkspace(usedRepo)
+    }
+  })
+
+  test("RS-DE-02 excludes platform-shim duplicate families from score pressure", async () => {
+    const shimRepo = await createRsDe02DuplicateGroupWorkspace("windows-sys")
+    const nonShimRepo = await createRsDe02DuplicateGroupWorkspace("left-pad")
+
+    try {
+      const shim = await runSignalCompute(RsDe02, shimRepo, RsDe02.defaultConfig)
+      const nonShim = await runSignalCompute(RsDe02, nonShimRepo, RsDe02.defaultConfig)
+
+      expect(shim.duplicates).toEqual([
+        {
+          name: "windows-sys",
+          versions: ["0.48.0", "0.52.0"],
+          instanceCount: 2,
+          platformShim: true,
+        },
+      ])
+      // The duplicate group is reported but exerts no score pressure.
+      expect(RsDe02.score(shim)).toBe(1)
+      const shimDuplicateDiagnostic = RsDe02.diagnose(shim).find(
+        (diagnostic) => diagnostic.data?.name === "windows-sys",
+      )
+      expect(shimDuplicateDiagnostic).toMatchObject({
+        severity: "info",
+        message:
+          "Duplicate crate versions for windows-sys: 0.48.0, 0.52.0 (platform-shim family, excluded from score pressure)",
+      })
+
+      // Positive control: the identical lock shape with a non-shim crate
+      // keeps full duplicate pressure and warn severity.
+      expect(nonShim.duplicates[0]).toMatchObject({
+        name: "left-pad",
+        platformShim: false,
+      })
+      expect(RsDe02.score(nonShim)).toBeLessThan(1)
+      expect(
+        RsDe02.diagnose(nonShim).find((diagnostic) => diagnostic.data?.name === "left-pad")
+          ?.severity,
+      ).toBe("warn")
+    } finally {
+      await cleanupWorkspace(shimRepo)
+      await cleanupWorkspace(nonShimRepo)
+    }
+  })
+
+  test("RS-DE-02 applies depth pressure beyond the ecosystem-normal range", async () => {
+    const deepRepo = await createRsDe02DepthChainWorkspace(true)
+    const shallowRepo = await createRsDe02DepthChainWorkspace(false)
+
+    try {
+      const deep = await runSignalCompute(RsDe02, deepRepo, RsDe02.defaultConfig)
+      const shallow = await runSignalCompute(RsDe02, shallowRepo, RsDe02.defaultConfig)
+
+      // Identical breadth, so only chain depth differentiates the scores.
+      expect(deep.dependencyPackageCount).toBe(12)
+      expect(shallow.dependencyPackageCount).toBe(12)
+      expect(deep.maxDependencyDepth).toBe(11)
+      expect(shallow.maxDependencyDepth).toBe(0)
+      expect(RsDe02.score(deep)).toBeLessThan(RsDe02.score(shallow))
+
+      const diagnostics = RsDe02.diagnose(deep)
+      expect(diagnostics[0]?.data?.kind).toBe("score-breakdown")
+      // Two levels past DEPTH_PRESSURE_START at 0.05 per level.
+      expect(diagnostics[0]?.data?.depthPressure).toBeCloseTo(0.1)
+      expect(diagnostics).toContainEqual(
+        expect.objectContaining({
+          severity: "warn",
+          message: "Top-level dependency chain0 reaches depth 11",
+        }),
+      )
+    } finally {
+      await cleanupWorkspace(deepRepo)
+      await cleanupWorkspace(shallowRepo)
+    }
+  })
+
+  test("RS-DE-02 floors the score at 0.15 when total pressure exceeds 1", async () => {
+    const repo = await createRsDe02ScoreFloorWorkspace()
+
+    try {
+      const out = await runSignalCompute(RsDe02, repo, RsDe02.defaultConfig)
+      const breakdown = RsDe02.diagnose(out)[0]
+
+      expect(out.duplicateCount).toBe(80)
+      expect(out.maxDependencyDepth).toBe(14)
+      expect(out.dependencyPackageCount).toBe(310)
+      expect(out.unusedDependencyCount).toBe(5)
+      expect(breakdown?.data?.kind).toBe("score-breakdown")
+      // Every pressure component saturates its cap: 0.45 + 0.25 + 0.25 + 0.2.
+      expect(breakdown?.data?.totalPressure).toBeCloseTo(1.15)
+      expect(breakdown?.data?.scoreFloor).toBe(0.15)
+      // The advertised floor must hold: pressure beyond 1 cannot push the
+      // signal below 0.15, so it can never single-handedly zero a repository.
+      expect(RsDe02.score(out)).toBe(0.15)
     } finally {
       await cleanupWorkspace(repo)
     }

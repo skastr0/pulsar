@@ -783,7 +783,7 @@ describe("RS-AB-* signals", () => {
       tier: 1,
       category: "abstraction-bloat",
       kind: "legibility",
-      cacheVersion: "trait-object-depth-config-applicability-diagnostics-scoped-calls-cfg-test-gating-cycles-external-inventory-evidence-floor-v5",
+      cacheVersion: "trait-object-depth-config-applicability-diagnostics-scoped-calls-cfg-test-gating-cycles-external-inventory-evidence-floor-v6-inner-attr-gating",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -1489,7 +1489,7 @@ describe("RS-AB-* signals", () => {
       tier: 1,
       category: "abstraction-bloat",
       kind: "legibility",
-      cacheVersion: "generic-proliferation-config-applicability-diagnostics-cfg-test-gating-bounds-complexity-v4",
+      cacheVersion: "generic-proliferation-config-applicability-diagnostics-cfg-test-gating-bounds-complexity-v5-inner-attr-gating",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -1971,7 +1971,7 @@ describe("RS-AB-* signals", () => {
       tier: 1,
       category: "abstraction-bloat",
       kind: "legibility",
-      cacheVersion: "derive-density-config-applicability-diagnostics-cfg-attr-thresholds-serde-standard-idiomatic-defaults-v5",
+      cacheVersion: "derive-density-config-applicability-diagnostics-cfg-attr-thresholds-serde-standard-idiomatic-defaults-v6-inner-attr-gating",
       inputs: [],
     })
     expect(decoded).toEqual({

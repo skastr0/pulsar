@@ -102,7 +102,7 @@ export const RsLd04: Signal<RsLd04Config, RsLd04Output, RustProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "error-granularity-uniform-posture-floor-v13",
+  cacheVersion: "error-granularity-uniform-posture-floor-v14-inner-attr-gating",
   configSchema: RsLd04Config,
   factorDefinitions: RS_LD_04_FACTOR_DEFINITIONS,
   defaultConfig: {

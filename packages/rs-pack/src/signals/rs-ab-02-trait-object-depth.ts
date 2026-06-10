@@ -104,7 +104,7 @@ export const RsAb02: Signal<RsAb02Config, RsAb02Output, RustProjectTag> = {
   tier: 1,
   category: "abstraction-bloat",
   kind: "legibility",
-  cacheVersion: "trait-object-depth-config-applicability-diagnostics-scoped-calls-cfg-test-gating-cycles-external-inventory-evidence-floor-v5",
+  cacheVersion: "trait-object-depth-config-applicability-diagnostics-scoped-calls-cfg-test-gating-cycles-external-inventory-evidence-floor-v6-inner-attr-gating",
   configSchema: RsAb02Config,
   factorDefinitions: RS_AB_02_FACTOR_DEFINITIONS,
   defaultConfig: {

@@ -104,14 +104,26 @@ export const walkAttributedNodes = (
     inheritedTestGated: boolean,
   ): void => {
     let pendingAttributes: Array<RustSyntaxNode> = []
+    let containerTestGated = inheritedTestGated
     for (const child of namedChildrenOf(node)) {
-      if (child.type === "attribute_item" || child.type === "inner_attribute_item") {
+      if (child.type === "attribute_item") {
         pendingAttributes.push(child)
+        continue
+      }
+      if (child.type === "inner_attribute_item") {
+        // `#![cfg(test)]` gates its entire enclosing container (file or
+        // module body), not the next sibling item.
+        if (isCfgTestAttribute(child)) containerTestGated = true
+        continue
+      }
+      if (child.type === "line_comment" || child.type === "block_comment") {
+        // A comment between `#[cfg(test)]` and the gated item must not
+        // consume the pending attribute.
         continue
       }
 
       const childAncestors = [...ancestors, node]
-      const testGated = inheritedTestGated || pendingAttributes.some(isCfgTestAttribute)
+      const testGated = containerTestGated || pendingAttributes.some(isCfgTestAttribute)
       visit({
         node: child,
         ancestors: childAncestors,

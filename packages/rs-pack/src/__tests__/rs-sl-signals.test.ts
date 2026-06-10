@@ -50,7 +50,7 @@ describe("RS-SL-* signals", () => {
       tier: 1,
       category: "generated-slop",
       kind: "legibility",
-      cacheVersion: "advisory-rust-duplication-cfg-test-diagnostics-changed-hunks-body-v5",
+      cacheVersion: "advisory-rust-duplication-cfg-test-diagnostics-changed-hunks-body-v6-inner-attr-gating",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -502,7 +502,7 @@ describe("RS-SL-* signals", () => {
       tier: 1,
       category: "generated-slop",
       kind: "structural",
-      cacheVersion: "unused-allows-ordinary-diagnostics-cfg-attr-span-v4",
+      cacheVersion: "unused-allows-ordinary-diagnostics-cfg-attr-span-v5-inner-attr-gating",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -922,7 +922,7 @@ describe("RS-SL-* signals", () => {
       tier: 1,
       category: "generated-slop",
       kind: "legibility",
-      cacheVersion: "advisory-density-scaled-cfg-test-gating-diagnostics-denominator-ufcs-cfg-predicate-v6",
+      cacheVersion: "advisory-density-scaled-cfg-test-gating-diagnostics-denominator-ufcs-cfg-predicate-v7-inner-attr-gating",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -1281,7 +1281,7 @@ describe("RS-SL-* signals", () => {
       tier: 1,
       category: "generated-slop",
       kind: "legibility",
-      cacheVersion: "likely-expensive-score-cfg-test-gating-diagnostics-denominator-bindings-ufcs-coherent-counts-v7",
+      cacheVersion: "likely-expensive-score-cfg-test-gating-diagnostics-denominator-bindings-ufcs-coherent-counts-v8-inner-attr-gating",
       inputs: [],
     })
     expect(decoded).toEqual({

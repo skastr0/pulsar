@@ -129,7 +129,7 @@ export const RsDe02: Signal<RsDe02Config, RsDe02Output, RustProjectTag> = {
   tier: 1,
   category: "dependency-entropy",
   kind: "structural",
-  cacheVersion: "cargo-lock-dependency-tree-ratio-curve-unused-deps-v2",
+  cacheVersion: "cargo-lock-dependency-tree-ratio-curve-unused-deps-v3-lib-target-names-dotted-keys",
   configSchema: RsDe02Config,
   factorDefinitions: RS_DE_02_FACTOR_DEFINITIONS,
   defaultConfig: {
@@ -403,6 +403,7 @@ interface DeclaredNormalDependency {
 const PLAIN_DEPENDENCIES_SECTION_PATTERN = /^\[dependencies\]$/
 const PLAIN_DEPENDENCY_TABLE_SECTION_PATTERN = /^\[dependencies\.([A-Za-z0-9_-]+)\]$/
 const MANIFEST_DEPENDENCY_KEY_PATTERN = /^([A-Za-z0-9_-]+)\s*=\s*(.+)$/
+const MANIFEST_DOTTED_DEPENDENCY_KEY_PATTERN = /^([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)\s*=\s*(.+)$/
 const MANIFEST_PACKAGE_INLINE_PATTERN = /(?:^|[,{]\s*)package\s*=\s*"([^"]+)"/
 const MANIFEST_PACKAGE_KEY_PATTERN = /^package\s*=\s*"([^"]+)"$/
 
@@ -431,10 +432,22 @@ const parsePlainDependencies = (raw: string): ReadonlyArray<DeclaredNormalDepend
     }
     if (!inPlainSection) continue
     const dependencyMatch = MANIFEST_DEPENDENCY_KEY_PATTERN.exec(trimmed)
-    if (dependencyMatch === null) continue
-    const alias = dependencyMatch[1]!
-    const value = dependencyMatch[2]!.trim()
-    declared.set(alias, MANIFEST_PACKAGE_INLINE_PATTERN.exec(value)?.[1] ?? alias)
+    if (dependencyMatch !== null) {
+      const alias = dependencyMatch[1]!
+      const value = dependencyMatch[2]!.trim()
+      declared.set(alias, MANIFEST_PACKAGE_INLINE_PATTERN.exec(value)?.[1] ?? alias)
+      continue
+    }
+    // Dotted-key declarations (`serde.workspace = true`, `foo.version = "1"`,
+    // `bar.package = "real-name"`) were previously invisible to the parser.
+    const dottedMatch = MANIFEST_DOTTED_DEPENDENCY_KEY_PATTERN.exec(trimmed)
+    if (dottedMatch === null) continue
+    const alias = dottedMatch[1]!
+    const packageName =
+      dottedMatch[2] === "package"
+        ? /^"([^"]+)"$/.exec(dottedMatch[3]!.trim())?.[1]
+        : undefined
+    declared.set(alias, packageName ?? declared.get(alias) ?? alias)
   }
   return [...declared.entries()].map(([alias, packageName]) => ({ alias, packageName }))
 }
@@ -466,6 +479,20 @@ const detectUnusedDependencies = async (
 ): Promise<UnusedDependencyAnalysis> => {
   const unused: Array<UnusedDependencyInfo> = []
   let scannedSourceFileCount = 0
+  // Packages whose lib target name differs from the package name (md-5
+  // imports as `md5`, any `[lib] name =` rename) are resolvable from cargo
+  // metadata — alias munging alone falsely flags them as unused.
+  const libTargetNameByPackage = new Map<string, string>()
+  for (const pkg of project.cargoMetadata?.packages ?? []) {
+    const libTarget = pkg.targets.find((target) =>
+      target.kind.some((kind) =>
+        ["lib", "rlib", "dylib", "cdylib", "staticlib", "proc-macro"].includes(kind),
+      ),
+    )
+    if (libTarget !== undefined) {
+      libTargetNameByPackage.set(pkg.name, libTarget.name.replace(/-/g, "_"))
+    }
+  }
   for (const manifest of project.manifests) {
     const declared = parsePlainDependencies(
       await readFile(manifest.manifestPath, "utf8"),
@@ -479,13 +506,21 @@ const detectUnusedDependencies = async (
     if (sourceFiles.length === 0) continue
     const pending = new Map(
       declared.map((dependency) => {
-        const libName = dependency.alias.replace(/-/g, "_")
+        const aliasLibName = dependency.alias.replace(/-/g, "_")
+        const metadataLibName = libTargetNameByPackage.get(
+          resolveDeclaredPackageName(manifest, dependency),
+        )
+        const candidates = [
+          ...new Set([aliasLibName, metadataLibName]),
+        ].filter((candidate): candidate is string => candidate !== undefined)
         return [
           dependency.alias,
           {
             ...dependency,
-            libName,
-            pattern: new RegExp(`\\b${libName}\\b`),
+            libName: metadataLibName ?? aliasLibName,
+            pattern: new RegExp(
+              candidates.map((candidate) => `\\b${candidate}\\b`).join("|"),
+            ),
           },
         ] as const
       }),

@@ -475,7 +475,7 @@ describe("RS-LD-* signals", () => {
       tier: 1,
       category: "legibility-decay",
       kind: "legibility",
-      cacheVersion: "unsafe-code-config-applicability-diagnostics-call-graph-density-sites-safe-only-qualified-v6",
+      cacheVersion: "unsafe-code-config-applicability-diagnostics-call-graph-density-sites-safe-only-qualified-v6-inner-attr-gating",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -1366,7 +1366,7 @@ describe("RS-LD-* signals", () => {
       tier: 1,
       category: "legibility-decay",
       kind: "legibility",
-      cacheVersion: "match-catch-all-open-domain-guarded-arms-v5-byte-literals",
+      cacheVersion: "match-catch-all-open-domain-guarded-arms-v6-inner-attr-gating",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -1865,7 +1865,7 @@ describe("RS-LD-* signals", () => {
       tier: 1,
       category: "legibility-decay",
       kind: "legibility",
-      cacheVersion: "error-granularity-uniform-posture-floor-v13",
+      cacheVersion: "error-granularity-uniform-posture-floor-v14-inner-attr-gating",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -2658,7 +2658,7 @@ describe("RS-LD-* signals", () => {
       tier: 2,
       category: "legibility-decay",
       kind: "legibility",
-      cacheVersion: "domain-terms-config-reference-data-applicability-diagnostics-cfg-test-aliases-v4",
+      cacheVersion: "domain-terms-config-reference-data-applicability-diagnostics-cfg-test-aliases-v5-inner-attr-gating",
       inputs: [],
     })
     expect(decoded).toEqual({

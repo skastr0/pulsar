@@ -94,7 +94,7 @@ export const RsSl01: Signal<RsSl01Config, RsSl01Output, RustProjectTag | SignalC
   tier: 1,
   category: "generated-slop",
   kind: "legibility",
-  cacheVersion: "advisory-rust-duplication-cfg-test-diagnostics-changed-hunks-body-v5",
+  cacheVersion: "advisory-rust-duplication-cfg-test-diagnostics-changed-hunks-body-v6-inner-attr-gating",
   configSchema: RsSl01Config,
   factorDefinitions: RS_SL_01_FACTOR_DEFINITIONS,
   defaultConfig: {

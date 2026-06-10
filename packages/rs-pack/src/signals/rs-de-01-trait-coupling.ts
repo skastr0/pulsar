@@ -117,7 +117,7 @@ export const RsDe01: Signal<RsDe01Config, RsDe01Output, RustProjectTag> = {
   tier: 1,
   category: "dependency-entropy",
   kind: "structural",
-  cacheVersion: "trait-coupling-ratio-score-workspace-locality-test-gating-v3-nested-path-roots",
+  cacheVersion: "trait-coupling-ratio-score-workspace-locality-test-gating-v4-idiomatic-allowlists-inner-attr-gating",
   configSchema: RsDe01Config,
   factorDefinitions: RS_DE_01_FACTOR_DEFINITIONS,
   defaultConfig: {
@@ -466,9 +466,66 @@ const STANDARD_ERGONOMIC_TRAITS = new Set([
   "TryFrom",
   "TryInto",
   "Write",
+  // std::ops operators — math/time/money types implement these by design.
+  "Add",
+  "AddAssign",
+  "BitAnd",
+  "BitAndAssign",
+  "BitOr",
+  "BitOrAssign",
+  "BitXor",
+  "BitXorAssign",
+  "Div",
+  "DivAssign",
+  "Mul",
+  "MulAssign",
+  "Neg",
+  "Not",
+  "Rem",
+  "RemAssign",
+  "Shl",
+  "ShlAssign",
+  "Shr",
+  "ShrAssign",
+  "Sub",
+  "SubAssign",
+  // Marker traits — `unsafe impl Send/Sync` is a deliberate, reviewed act,
+  // not foreign-trait coupling debt.
+  "Send",
+  "Sync",
+  "Unpin",
+  // std::fmt beyond Display/Debug.
+  "Binary",
+  "LowerExp",
+  "LowerHex",
+  "Octal",
+  "Pointer",
+  "UpperExp",
+  "UpperHex",
+  // std::iter aggregation extension points.
+  "Product",
+  "Sum",
 ])
 
-const SERIALIZATION_TRAITS = new Set(["Deserialize", "DeserializeOwned", "Serialize"])
+// serde's manual-implementation infrastructure: hand-written Deserialize
+// impls REQUIRE a Visitor; Serializer/Deserializer and the Serialize*
+// helper traits are the canonical extension surface.
+const SERIALIZATION_TRAITS = new Set([
+  "Deserialize",
+  "DeserializeOwned",
+  "DeserializeSeed",
+  "Deserializer",
+  "Serialize",
+  "SerializeMap",
+  "SerializeSeq",
+  "SerializeStruct",
+  "SerializeStructVariant",
+  "SerializeTuple",
+  "SerializeTupleStruct",
+  "SerializeTupleVariant",
+  "Serializer",
+  "Visitor",
+])
 const FRAMEWORK_ADAPTER_TRAITS = new Set(["IntoResponse"])
 // Canonical async/IO ecosystem extension points (futures, tokio, std::future):
 // implementing these on local wrappers is idiomatic interop, not coupling debt.
