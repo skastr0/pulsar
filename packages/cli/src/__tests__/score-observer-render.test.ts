@@ -140,15 +140,28 @@ describe("observerViewCategoryLines", () => {
     const shaped = {
       ...categories["legibility-decay"],
       score: 0.45,
-      aggregation: { shapedByPressure: true },
+      aggregation: { shapedByPressure: true, aggregateScore: 0.78 },
+    }
+    // Shaped by only an epsilon: the marker must stay silent or it would
+    // appear on every line and carry no information.
+    const epsilonShaped = {
+      ...categories["review-pain"],
+      score: 0.79,
+      aggregation: { shapedByPressure: true, aggregateScore: 0.8 },
     }
     const output = {
-      categories: { ...categories, "legibility-decay": shaped },
+      categories: {
+        ...categories,
+        "legibility-decay": shaped,
+        "review-pain": epsilonShaped,
+      },
     } as unknown as ObserverOutput
 
     const lines = observerViewCategoryLines(output)
     const legibility = lines.find((line) => line.includes("0.45"))
     expect(legibility).toContain("◂ pressure")
+    const epsilon = lines.find((line) => line.includes("0.79"))
+    expect(epsilon).not.toContain("◂ pressure")
     const unshaped = lines.filter((line) => line.includes("0.80"))
     for (const line of unshaped) {
       expect(line).not.toContain("◂ pressure")

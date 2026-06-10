@@ -76,11 +76,26 @@ export const observerViewCategoryLines = (output: ObserverOutput): ReadonlyArray
   ...CATEGORIES.map((category) => {
     const label = CATEGORY_LABELS[category].padEnd(22, " ")
     const entry = output.categories[category]
-    const marker = entry.aggregation?.shapedByPressure === true ? "  ◂ pressure" : ""
-    return `  ${label} ${entry.score.toFixed(2)}  ${renderScoreBar(entry.score)}${marker}`
+    return `  ${label} ${entry.score.toFixed(2)}  ${renderScoreBar(entry.score)}${pressureMarker(entry)}`
   }),
   "  ───────────────────────────────────────────────",
 ]
+
+const MATERIAL_PRESSURE_GAP = 0.05
+
+/**
+ * Marks categories whose displayed score sits materially below their
+ * evidence mean because pressure shaped it. The p-norm shapes almost every
+ * category by an epsilon, so an unconditional marker would carry no
+ * information — only material gaps earn the flag.
+ */
+const pressureMarker = (entry: ObserverOutput["categories"][Category]): string => {
+  const aggregation = entry.aggregation
+  if (aggregation === undefined || !aggregation.shapedByPressure) return ""
+  return aggregation.aggregateScore - entry.score >= MATERIAL_PRESSURE_GAP
+    ? "  ◂ pressure"
+    : ""
+}
 
 const observerViewSummaryLines = (opts: {
   readonly output: ObserverOutput

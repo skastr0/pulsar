@@ -492,6 +492,7 @@ describe("SHARED-03 churn rate", () => {
       introducedLineCount: 40,
       churnRate: 0.375,
       windowDays: 14,
+      deletedFileCount: 0,
       topDiagnostics: 2,
       insufficientHistory: false,
       byFile: new Map([

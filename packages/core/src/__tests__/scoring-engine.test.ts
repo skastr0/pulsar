@@ -1498,7 +1498,7 @@ describe("ScoringEngine — cache semantics", () => {
     // If this fails you changed aggregation semantics: bump the version
     // (and this pin) so stale observer outputs cannot be served.
     expect(OBSERVER_AGGREGATION_CACHE_VERSION).toBe(
-      "observer-aggregation-v6-poison-ramp-authority",
+      "observer-aggregation-v7-poison-requires-gate-grade-authority",
     )
   })
 

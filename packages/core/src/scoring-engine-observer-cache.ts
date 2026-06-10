@@ -37,7 +37,7 @@ export interface CachedObserverOutput {
 }
 
 export const OBSERVER_AGGREGATION_CACHE_VERSION =
-  "observer-aggregation-v6-poison-ramp-authority"
+  "observer-aggregation-v7-poison-requires-gate-grade-authority"
 
 export const computeObserverConfigHash = (
   registry: Registry,

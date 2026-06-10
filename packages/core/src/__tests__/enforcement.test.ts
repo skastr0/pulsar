@@ -65,19 +65,29 @@ describe("enforceSeverityCeiling", () => {
 })
 
 describe("hasPoisonAuthority", () => {
-  test("tier 1 may set the headline alone", () => {
-    expect(hasPoisonAuthority({ tier: 1 })).toBe(true)
+  const signal = (tier: 1 | 1.5 | 2 | 3, kind: "structural" | "legibility" | "compound") => ({
+    tier,
+    enforcement: deriveEnforcement(tier, kind),
   })
 
-  test("tier 1.5 may set the headline alone", () => {
-    expect(hasPoisonAuthority({ tier: 1.5 })).toBe(true)
+  test("tier-1 structural may set the headline alone", () => {
+    expect(hasPoisonAuthority(signal(1, "structural"))).toBe(true)
   })
 
-  test("tier 2 may not — even though tier-2 structural can hard-gate", () => {
-    expect(hasPoisonAuthority({ tier: 2 })).toBe(false)
+  test("tier-1 legibility may not — its ceiling cannot even gate a diff", () => {
+    expect(hasPoisonAuthority(signal(1, "legibility"))).toBe(false)
+  })
+
+  test("tier-1.5 compound may not", () => {
+    expect(hasPoisonAuthority(signal(1.5, "compound"))).toBe(false)
+  })
+
+  test("tier-2 structural may not — hard-gate-capable but not proof-grade", () => {
+    expect(hasPoisonAuthority(signal(2, "structural"))).toBe(false)
   })
 
   test("tier 3 may not", () => {
-    expect(hasPoisonAuthority({ tier: 3 })).toBe(false)
+    expect(hasPoisonAuthority(signal(3, "structural"))).toBe(false)
+    expect(hasPoisonAuthority(signal(3, "legibility"))).toBe(false)
   })
 })

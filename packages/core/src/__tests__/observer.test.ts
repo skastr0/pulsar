@@ -148,10 +148,11 @@ describe("Observer — category aggregation", () => {
     expect(aggregation?.pressure.authorityMaxLocalPressure).toBe(0)
     expect(aggregation?.pressure.localPressure).toBe(0)
     expect(aggregation?.pressure.finalPressure).toBe(aggregation?.pressure.pnormPressure ?? -1)
-    // The same severity from a tier-1 signal poisons the category.
+    // The same severity from a tier-1 structural signal poisons the category.
     const proof = makeLeaf({
       id: "TEST-PROOF",
       tier: 1,
+      kind: "structural",
       category: "legibility-decay",
       score: 0.05,
     })
@@ -171,7 +172,7 @@ describe("Observer — category aggregation", () => {
   })
 
   test("generated-slop score keeps the weakest active signal visible through generic pressure", async () => {
-    const a = makeLeaf({ id: "TS-SL-LOW", category: "generated-slop", score: 0.2 })
+    const a = makeLeaf({ id: "TS-SL-LOW", kind: "structural", category: "generated-slop", score: 0.2 })
     const b = makeLeaf({ id: "TS-SL-HIGH", category: "generated-slop", score: 1 })
 
     const result = await run([a, b])
@@ -183,7 +184,7 @@ describe("Observer — category aggregation", () => {
   })
 
   test("dependency-entropy score keeps the weakest active signal visible through generic pressure", async () => {
-    const a = makeLeaf({ id: "TS-DE-LOW", category: "dependency-entropy", score: 0 })
+    const a = makeLeaf({ id: "TS-DE-LOW", kind: "structural", category: "dependency-entropy", score: 0 })
     const b = makeLeaf({ id: "TS-DE-HIGH", category: "dependency-entropy", score: 1 })
 
     const result = await run([a, b])
@@ -224,7 +225,7 @@ describe("Observer — category aggregation", () => {
   })
 
   test("uses language-group mean when TS and Rust share a category", async () => {
-    const tsA = makeLeaf({ id: "TS-LOW", category: "legibility-decay", score: 0.2 })
+    const tsA = makeLeaf({ id: "TS-LOW", kind: "structural", category: "legibility-decay", score: 0.2 })
     const tsB = makeLeaf({ id: "TS-MID", category: "legibility-decay", score: 0.4 })
     const rs = makeLeaf({ id: "RS-HIGH", category: "legibility-decay", score: 1 })
 
@@ -269,6 +270,7 @@ describe("Observer — category aggregation", () => {
   test("polyglot category pressure keeps per-signal local failures visible", async () => {
     const tsBad = makeLeaf({
       id: "TS-BAD",
+      kind: "structural",
       category: "legibility-decay",
       score: 0.1,
     })
@@ -528,6 +530,7 @@ describe("Observer — readiness pressure", () => {
   test("keeps serious applicable defects visible beside weighted_mean", async () => {
     const poison = makeLeaf({
       id: "TEST-POISON",
+      kind: "structural",
       category: "abstraction-bloat",
       score: 0.1,
     })
@@ -684,10 +687,13 @@ describe("Observer — readiness pressure", () => {
     expect(heuristicRun.readiness?.pressure).toBeCloseTo(0.478, 2)
     expect(heuristicRun.readiness?.top_pressures[0]?.poison_authority).toBe(false)
 
-    // Tier-1 proof at score 0.1: full poison passthrough sets the verdict.
+    // Tier-1 structural proof at score 0.1: full poison passthrough sets
+    // the verdict. (Structural kind required: poison needs gate-grade
+    // authority, not just a proof-grade tier.)
     const proof = makeLeaf({
       id: "TEST-PROOF",
       tier: 1,
+      kind: "structural",
       category: "legibility-decay",
       score: 0.1,
     })
@@ -705,6 +711,7 @@ describe("Observer — readiness pressure", () => {
     const mid = makeLeaf({
       id: "TEST-MID",
       tier: 1,
+      kind: "structural",
       category: "legibility-decay",
       score: 0.425,
     })
@@ -722,6 +729,7 @@ describe("Observer — readiness pressure", () => {
     const proof = makeLeaf({
       id: "TEST-PROOF",
       tier: 1,
+      kind: "structural",
       category: "legibility-decay",
       score: 0.1,
     })
@@ -958,7 +966,9 @@ describe("Observer — JSON output shape (AC-10)", () => {
       hard_gate_violations: [],
     })
     expect(decoded.categories["generated-slop"]?.aggregation?.shapedByPressure).toBe(false)
-    expect(decoded.readiness?.top_pressures[0]?.poison_authority).toBe(true)
+    // TEST-A is tier-1 legibility: proof-grade but not gate-grade, so it
+    // carries no solo-verdict authority.
+    expect(decoded.readiness?.top_pressures[0]?.poison_authority).toBe(false)
   })
 
   test("schema still decodes v1 observer semantics from persisted history", async () => {

@@ -26,16 +26,30 @@ export type EnforcementCeiling = typeof EnforcementCeiling.Type
  * repo-level readiness/category headline (the "poison" rule in the
  * observer aggregators).
  *
- * Poison authority is deliberately STRICTER than hard-gate authority. A
- * hard gate blocks with cited violations and fix hints, and tier-2
- * structural signals earn it conditionally ("given reference data" — the
- * signal must withhold block findings when its reference data is missing
- * or stale). Poisoning a headline is a silent verdict with no citation
- * obligation, so it is reserved for proof-grade evidence: tier 1 (pure
- * computation) and tier 1.5 (deterministically derived from tier 1).
+ * Poison authority is deliberately STRICTER than hard-gate authority — it
+ * requires both:
+ *
+ * - proof-grade evidence (tier 1 pure computation, or tier 1.5 derived
+ *   deterministically from it) — tier-2 structural signals may hard-gate
+ *   "given reference data", but a reference-backed heuristic may not be
+ *   the verdict alone; and
+ * - a hard-gate enforcement ceiling (structural kind). A signal whose
+ *   ceiling is soft-warning cannot block a single diff; letting it
+ *   single-handedly red an entire repo would invert the enforcement
+ *   ladder. Fleet evidence pinned this: a tier-1 function-size
+ *   distribution at 0.75 effective pressure set a repo verdict its own
+ *   auditor rejected, while the evidence mean read 0.72.
+ *
+ * Severe heuristic and legibility findings still reach the headline
+ * through the p-norm and stay visible as the minimum line and top
+ * pressures; they just cannot be the verdict by themselves.
  */
-export const hasPoisonAuthority = (signal: { readonly tier: Tier }): boolean =>
-  signal.tier === 1 || signal.tier === 1.5
+export const hasPoisonAuthority = (signal: {
+  readonly tier: Tier
+  readonly enforcement: EnforcementCeiling
+}): boolean =>
+  (signal.tier === 1 || signal.tier === 1.5) &&
+  signal.enforcement.includes("hard-gate")
 
 /**
  * Engine-level severity ceiling. Block-severity findings are gate inputs,
