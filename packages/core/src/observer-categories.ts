@@ -90,7 +90,12 @@ const collectCategoryAggregationInputs = (
   vector: PulsarVector | undefined,
 ): CategoryAggregationInputs => {
   const signalsInCategory = registry.sorted.filter(
-    (signal) => signal.category === category && signalResults.has(signal.id),
+    (signal) =>
+      signal.category === category &&
+      // Providers feed composites; they are not evaluable category members
+      // and rendering them as "not applicable" misreads as a failure.
+      signal.role !== "provider" &&
+      signalResults.has(signal.id),
   )
   const inputs = makeEmptyCategoryAggregationInputs(signalsInCategory)
   for (const signal of signalsInCategory) {

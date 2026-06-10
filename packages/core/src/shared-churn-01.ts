@@ -45,6 +45,7 @@ export const SharedChurn01: Signal<SharedChurn01Config, SharedChurn01Output, Sig
   tier: 1,
   category: "review-pain",
   kind: "legibility",
+  role: "provider",
   cacheVersion: "provider-not-applicable-git-context-v1",
   cacheDependencies: ["git-revision-context"],
   configSchema: SharedChurn01Config,

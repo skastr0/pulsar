@@ -117,6 +117,9 @@ const collectReadinessPressures = (
   let failedSignalCount = 0
 
   for (const signal of registry.sorted) {
+    // Providers never score; counting them as permanently-ignored signals
+    // would distort the applicability picture.
+    if (signal.role === "provider") continue
     const result = signalResults.get(signal.id)
     if (result === undefined) continue
 

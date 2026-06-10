@@ -83,6 +83,15 @@ export interface Signal<Config, Output, R = SignalRequirements> {
   readonly normalizationGroup?: string
 
   /**
+   * Providers compute data for downstream composite signals and never
+   * score anything themselves. They are excluded from scoring (their
+   * applicability stays not_applicable) and from per-signal displays —
+   * rendering them as evaluable-but-skipped signals misreads as "pulsar
+   * couldn't evaluate this".
+   */
+  readonly role?: "provider"
+
+  /**
    * Included in score/observer cache keys. Packs should bump this whenever
    * signal implementation or scoring semantics change without a corresponding
    * default-config change.

@@ -24,6 +24,7 @@ interface LeafOpts {
   readonly id: string
   readonly tier?: 1 | 1.5 | 2 | 3
   readonly kind?: "structural" | "legibility" | "compound"
+  readonly role?: "provider"
   readonly category: Category
   readonly score: number
   readonly diagnostics?: ReadonlyArray<Diagnostic>
@@ -43,6 +44,7 @@ const makeLeaf = (opts: LeafOpts): Signal<{}, { readonly n: number }, never> => 
   tier: opts.tier ?? 1,
   category: opts.category,
   kind: opts.kind ?? "legibility",
+  ...(opts.role !== undefined ? { role: opts.role } : {}),
   configSchema: Schema.Struct({}),
   defaultConfig: {},
   inputs: [],
@@ -99,6 +101,33 @@ describe("Observer — category aggregation", () => {
       "TEST-A": 0.9,
       "TEST-B": 0.6,
     })
+  })
+
+  test("provider signals are invisible to categories and readiness", async () => {
+    // Providers compute data for composites and never score. They used to
+    // surface as "not applicable" beside scoring siblings consuming the
+    // same evidence — reading as the framework disagreeing with itself.
+    const provider = makeLeaf({
+      id: "TEST-PROVIDER",
+      role: "provider",
+      category: "review-pain",
+      score: 1,
+      metadata: { applicability: "not_applicable" },
+    })
+    const scoring = makeLeaf({ id: "TEST-SCORING", category: "review-pain", score: 0.9 })
+
+    const result = await run([provider, scoring])
+    const category = result.categories["review-pain"]
+
+    expect(Object.keys(category.signals)).toEqual(["TEST-SCORING"])
+    expect(category.activeSignalIds).toEqual(["TEST-SCORING"])
+    expect(category.signalCount).toBe(1)
+    expect(
+      result.readiness?.top_pressures.some((entry) => entry.signal_id === "TEST-PROVIDER"),
+    ).toBe(false)
+    expect(result.readiness?.aggregation.ignored_signal_count).toBe(0)
+    // The provider still ran — its output stays available to composites.
+    expect(result.signalResults.get("TEST-PROVIDER")).toBeDefined()
   })
 
   test("category poison requires authority: a tier-2 heuristic cannot zero its category", async () => {

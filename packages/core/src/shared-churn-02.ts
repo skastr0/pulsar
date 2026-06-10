@@ -74,6 +74,7 @@ export const SharedChurn02: Signal<
   tier: 1,
   category: "review-pain",
   kind: "legibility",
+  role: "provider",
   cacheVersion: "exponential-decay-normalized-history-v1",
   cacheDependencies: ["git-revision-context"],
   configSchema: SharedChurn02Config,
