@@ -9,6 +9,8 @@ import {
   Node,
   SyntaxKind,
   type CallExpression,
+  type Identifier,
+  type NewExpression,
   type SourceFile,
 } from "ts-morph"
 import { TsProjectTag } from "../ts-project.js"
@@ -66,7 +68,7 @@ export const TsSec01: Signal<TsSec01Config, TsSec01Output, TsProjectTag> = {
   tier: 1,
   category: "security-risk",
   kind: "structural",
-  cacheVersion: "dangerous-capability-surface-v2-inventory-neutral",
+  cacheVersion: "dangerous-capability-surface-v3-binding-resolved-bounded-info",
   configSchema: TsSec01Config,
   defaultConfig: {
     exclude_globs: [...PRODUCTION_EXCLUDE_GLOBS],
@@ -90,14 +92,25 @@ export const TsSec01: Signal<TsSec01Config, TsSec01Output, TsProjectTag> = {
     }),
   score: (out) => {
     if (out.state !== "present") return 1
-    const pressure = out.findings.reduce((sum, finding) => sum + finding.weight, 0)
-    return 1 / (1 + pressure)
+    // Warn-class findings (eval, Function constructor) carry absolute
+    // pressure: they are dangerous regardless of how big the repo is.
+    // Info-class findings are capability inventory: their pressure is
+    // normalized by analyzed-file density and bounded so a repo whose
+    // purpose is process/db access never scores below ~0.5 on inventory
+    // alone.
+    const warnPressure = out.findings
+      .filter((finding) => findingSeverity(finding.kind) === "warn")
+      .reduce((sum, finding) => sum + finding.weight, 0)
+    const infoPressure = out.findings
+      .filter((finding) => findingSeverity(finding.kind) === "info")
+      .reduce((sum, finding) => sum + finding.weight, 0)
+    const infoDensity = infoPressure / Math.max(1, out.analyzedFiles)
+    const infoScore = 1 - INFO_SCORE_SPAN * (infoDensity / (1 + infoDensity))
+    return (1 / (1 + warnPressure)) * infoScore
   },
   diagnose: (out): ReadonlyArray<Diagnostic> =>
     out.findings.slice(0, out.diagnosticLimit).map((finding) => ({
-      severity: finding.kind === "eval" || finding.kind === "function-constructor"
-        ? "warn"
-        : "info",
+      severity: findingSeverity(finding.kind),
       message: `${finding.sink} exposes ${finding.kind} capability and should be reviewed as a security boundary`,
       location: {
         file: finding.file,
@@ -145,7 +158,12 @@ const computeDangerousCapabilitySurface = (
     findings: findings.sort(compareFindings),
     diagnosticLimit: normalizeDiagnosticLimit(config.top_n_diagnostics),
     compositeConsumers: ["security review route", "agent trust readout"],
-    cacheContributors: ["source tree", "config.exclude_globs", "config.top_n_diagnostics"],
+    cacheContributors: [
+      "source tree",
+      "config.exclude_globs",
+      "config.top_n_diagnostics",
+      "config.review_route_weight",
+    ],
     calibrationSurface: "config.exclude_globs only; generic capability categories are non-taste defaults",
     enforcementCeiling: ["review-route"],
   }
@@ -177,27 +195,42 @@ const collectCallCapabilities = (
 ): void => {
   for (const call of sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)) {
     const expression = call.getExpression()
-    const name = callName(expression)
-    if (name === "eval") {
-      findings.push(findingFromCall(call, "eval", name, 1))
-      continue
-    }
-    if (name === "Function") {
-      findings.push(findingFromCall(call, "function-constructor", name, 1))
+    if (Node.isIdentifier(expression)) {
+      const name = expression.getText()
+      if (name === "eval" && isAmbientGlobalReference(expression)) {
+        findings.push(findingFromCall(call, "eval", name, 1))
+        continue
+      }
+      if (name === "Function" && isAmbientGlobalReference(expression)) {
+        findings.push(findingFromCall(call, "function-constructor", name, 1))
+        continue
+      }
+      // Name matches alone never fire: a bare exec/spawn/... call is a
+      // capability only when its binding resolves to child_process. Local
+      // helpers that reuse those names, and unresolvable bindings, emit
+      // nothing.
+      if (PROCESS_FUNCTION_NAMES.has(name) && isChildProcessValueBinding(expression)) {
+        findings.push(findingFromCall(call, "shell-process", name, processCallWeight(call, name)))
+      }
       continue
     }
     if (expression.getKind() === SyntaxKind.ImportKeyword && !isStringLiteralLike(call.getArguments()[0])) {
       findings.push(findingFromCall(call, "dynamic-import", "import(non-literal)", 0))
       continue
     }
-    const processCall = /^(?:child_process\.)?(exec|execFile|execSync|execFileSync|spawn|spawnSync|fork)$/.exec(name)
-    if (processCall !== null) {
-      findings.push(findingFromCall(call, "shell-process", name, processCallWeight(call, processCall[1] ?? name)))
+    const member = resolveDangerousMemberCallee(expression)
+    if (member !== undefined) {
+      findings.push(findingFromCall(call, "shell-process", member.sink, memberCallWeight(call, member)))
     }
   }
 
   for (const expression of sourceFile.getDescendantsOfKind(SyntaxKind.NewExpression)) {
-    if (callName(expression.getExpression()) === "Function") {
+    const callee = expression.getExpression()
+    if (
+      Node.isIdentifier(callee) &&
+      callee.getText() === "Function" &&
+      isAmbientGlobalReference(callee)
+    ) {
       findings.push({
         ...locationOf(expression),
         kind: "function-constructor",
@@ -205,6 +238,32 @@ const collectCallCapabilities = (
         evidence: expression.getText().slice(0, 160),
         reviewRoute: "security",
         weight: 1,
+      })
+      continue
+    }
+    const member = resolveDangerousMemberCallee(callee)
+    if (member !== undefined) {
+      findings.push({
+        ...locationOf(expression),
+        kind: "shell-process",
+        sink: `new ${member.sink}`,
+        evidence: expression.getText().slice(0, 160),
+        reviewRoute: "security",
+        weight: newExpressionWeight(expression),
+      })
+    }
+  }
+
+  for (const tagged of sourceFile.getDescendantsOfKind(SyntaxKind.TaggedTemplateExpression)) {
+    const member = resolveDangerousMemberCallee(tagged.getTag())
+    if (member !== undefined) {
+      findings.push({
+        ...locationOf(tagged),
+        kind: "shell-process",
+        sink: member.sink,
+        evidence: tagged.getText().slice(0, 160),
+        reviewRoute: "security",
+        weight: 0.75,
       })
     }
   }
@@ -255,12 +314,126 @@ const normalizeReviewRouteWeight = (value: number): number => {
   return Math.max(0, Math.min(1, value))
 }
 
-const processCallWeight = (call: CallExpression, processName: string): number => {
-  if (processName === "exec" || processName === "execSync") return 0.75
-  if (hasShellTrueOption(call)) return 0.75
+const INFO_SCORE_SPAN = 0.5
 
-  const command = call.getArguments()[0]
-  return stringLiteralValue(command) === undefined ? 0.75 : 0
+const findingSeverity = (kind: DangerousCapabilityKind): "warn" | "info" =>
+  kind === "eval" || kind === "function-constructor" ? "warn" : "info"
+
+const PROCESS_FUNCTION_NAMES: ReadonlySet<string> = new Set([
+  "exec",
+  "execFile",
+  "execSync",
+  "execFileSync",
+  "spawn",
+  "spawnSync",
+  "fork",
+])
+
+const SHELL_PARSING_PROCESS_FUNCTIONS: ReadonlySet<string> = new Set(["exec", "execSync"])
+
+const DANGEROUS_GLOBAL_MEMBERS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  ["Bun", new Set(["spawn", "spawnSync", "$"])],
+  ["Deno", new Set(["run", "Command"])],
+])
+
+interface DangerousMemberCallee {
+  readonly sink: string
+  readonly method: string
+}
+
+const resolveDangerousMemberCallee = (expression: Node): DangerousMemberCallee | undefined => {
+  if (!Node.isPropertyAccessExpression(expression)) return undefined
+  const method = expression.getName()
+  const base = expression.getExpression()
+  if (Node.isIdentifier(base)) {
+    const baseName = base.getText()
+    const globalMembers = DANGEROUS_GLOBAL_MEMBERS.get(baseName)
+    if (globalMembers?.has(method) === true && isAmbientGlobalReference(base)) {
+      return { sink: `${baseName}.${method}`, method }
+    }
+    if (PROCESS_FUNCTION_NAMES.has(method) && isChildProcessModuleBinding(base)) {
+      return { sink: `${baseName}.${method}`, method }
+    }
+    return undefined
+  }
+  if (PROCESS_FUNCTION_NAMES.has(method) && isChildProcessRequireCall(base)) {
+    return { sink: `require("child_process").${method}`, method }
+  }
+  return undefined
+}
+
+/**
+ * True when every declaration of the identifier lives in ambient or
+ * vendored code (lib/.d.ts/node_modules), or the binding does not resolve
+ * at all — the cases where the name can only be the runtime global.
+ * A declaration in analyzed user source means the global is shadowed.
+ */
+const isAmbientGlobalReference = (identifier: Identifier): boolean =>
+  declarationsOf(identifier).every((declaration) => {
+    const declarationFile = declaration.getSourceFile()
+    return declarationFile.isDeclarationFile() || declarationFile.isInNodeModules()
+  })
+
+const isChildProcessValueBinding = (identifier: Identifier): boolean =>
+  declarationsOf(identifier).some((declaration) => {
+    if (Node.isImportSpecifier(declaration)) {
+      return isChildProcessSpecifier(declaration.getImportDeclaration().getModuleSpecifierValue())
+    }
+    if (Node.isBindingElement(declaration)) {
+      const variable = declaration.getFirstAncestorByKind(SyntaxKind.VariableDeclaration)
+      return variable !== undefined && isChildProcessRequireCall(variable.getInitializer())
+    }
+    return false
+  })
+
+const isChildProcessModuleBinding = (identifier: Identifier): boolean =>
+  declarationsOf(identifier).some((declaration) => {
+    if (Node.isNamespaceImport(declaration) || Node.isImportClause(declaration)) {
+      const moduleSpecifier = declaration
+        .getFirstAncestorByKind(SyntaxKind.ImportDeclaration)
+        ?.getModuleSpecifierValue()
+      return moduleSpecifier !== undefined && isChildProcessSpecifier(moduleSpecifier)
+    }
+    if (Node.isVariableDeclaration(declaration)) {
+      return isChildProcessRequireCall(declaration.getInitializer())
+    }
+    return false
+  })
+
+const declarationsOf = (identifier: Identifier): ReadonlyArray<Node> =>
+  identifier.getSymbol()?.getDeclarations() ?? []
+
+const isChildProcessRequireCall = (node: Node | undefined): boolean => {
+  if (node === undefined || !Node.isCallExpression(node)) return false
+  if (node.getExpression().getText() !== "require") return false
+  return isChildProcessSpecifier(stringLiteralValue(node.getArguments()[0]) ?? "")
+}
+
+const isChildProcessSpecifier = (specifier: string): boolean =>
+  specifier.replace(/^node:/, "") === "child_process"
+
+const processCallWeight = (call: CallExpression, processName: string): number => {
+  if (SHELL_PARSING_PROCESS_FUNCTIONS.has(processName)) return 0.75
+  if (hasShellTrueOption(call)) return 0.75
+  return isConstrainedCommandArgument(call.getArguments()[0]) ? 0 : 0.75
+}
+
+const memberCallWeight = (call: CallExpression, member: DangerousMemberCallee): number => {
+  if (member.method === "$" || member.method === "run") return 0.75
+  return processCallWeight(call, member.method)
+}
+
+const newExpressionWeight = (expression: NewExpression): number =>
+  isConstrainedCommandArgument(expression.getArguments()[0]) ? 0 : 0.75
+
+const isConstrainedCommandArgument = (node: Node | undefined): boolean => {
+  if (stringLiteralValue(node) !== undefined) return true
+  if (node !== undefined && Node.isArrayLiteralExpression(node)) {
+    const elements = node.getElements()
+    return elements.length > 0 &&
+      elements.every((element) => stringLiteralValue(element) !== undefined)
+  }
+  return false
 }
 
 const hasShellTrueOption = (call: CallExpression): boolean =>
