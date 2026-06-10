@@ -196,6 +196,85 @@ describe("TS-SEC-01 binding-aware capability resolution and bounded inventory sc
     expect(TsSec01.score(out)).toBeGreaterThanOrEqual(0.5)
   })
 
+  test("does not flag parameterized sql tagged templates as raw sql", async () => {
+    await repo.write(
+      "src/repository.ts",
+      [
+        "declare const sql: {",
+        "  (strings: TemplateStringsArray, ...values: ReadonlyArray<unknown>): Promise<unknown>",
+        "}",
+        "declare const z: { literal(value: string): unknown }",
+        "export const findUser = (id: string) => sql`SELECT * FROM users WHERE id = ${id}`",
+        "export const countUsers = () => sql`SELECT count(*) FROM users`",
+        "export const shape = z.literal('active')",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsSec01, TsSec01.defaultConfig)
+
+    expect(out.state).toBe("zero")
+    expect(out.findings).toEqual([])
+    expect(TsSec01.score(out)).toBe(1)
+  })
+
+  test("keeps flagging sql.unsafe, sql.literal, and concatenated query strings", async () => {
+    await repo.write(
+      "src/dangerous.ts",
+      [
+        "declare const sql: {",
+        "  unsafe(query: string): Promise<unknown>",
+        "  literal(fragment: string): unknown",
+        "}",
+        "declare const db: { query(text: string): Promise<unknown> }",
+        "export const run = (query: string) => sql.unsafe(query)",
+        "export const fragment = (raw: string) => sql.literal(raw)",
+        "export const search = (term: string) =>",
+        "  db.query('SELECT * FROM docs WHERE body LIKE ' + term)",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsSec01, TsSec01.defaultConfig)
+    const rawSql = out.findings.filter((finding) => finding.kind === "raw-sql")
+
+    expect(out.state).toBe("present")
+    expect(rawSql.map((finding) => finding.sink)).toEqual(
+      expect.arrayContaining(["sql.unsafe", "sql.literal", "db.query"]),
+    )
+    expect(rawSql.find((finding) => finding.sink === "sql.unsafe")?.weight).toBe(1)
+    expect(rawSql.find((finding) => finding.sink === "sql.literal")?.weight).toBe(1)
+    expect(rawSql.find((finding) => finding.sink === "db.query")?.weight).toBe(0.75)
+    expect(TsSec01.score(out)).toBeLessThan(1)
+  })
+
+  test("unsafe escape hatch outranks benign inventory under a small top_n cap", async () => {
+    const lines = [
+      "declare const db: { query(text: string): Promise<unknown> }",
+      "export async function report(id: string) {",
+    ]
+    for (let index = 0; index < 10; index += 1) {
+      lines.push(`  await db.query(\`select c${index} from t${index} where id = \${id}\`)`)
+    }
+    lines.push("}")
+    await repo.write("src/a-inventory.ts", lines.join("\n"))
+    await repo.write(
+      "src/z-unsafe.ts",
+      [
+        "declare const sql: { unsafe(query: string): Promise<unknown> }",
+        "export const drop = (table: string) => sql.unsafe(`DROP TABLE ${table}`)",
+      ].join("\n"),
+    )
+
+    const out = await runSignal(repo.root, TsSec01, {
+      ...TsSec01.defaultConfig,
+      top_n_diagnostics: 3,
+    })
+    const diagnostics = TsSec01.diagnose(out)
+
+    expect(out.findings).toHaveLength(11)
+    expect(diagnostics).toHaveLength(3)
+    expect(diagnostics[0]?.data).toMatchObject({ kind: "raw-sql", sink: "sql.unsafe" })
+  })
+
   test("eval keeps warn-class pressure that can push the score below the inventory floor", async () => {
     await repo.write(
       "src/runtime.ts",

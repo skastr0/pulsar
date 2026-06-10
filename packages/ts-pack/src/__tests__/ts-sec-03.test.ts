@@ -168,6 +168,51 @@ describe("TS-SEC-03 secret material", () => {
     expect(TsSec03.diagnose(out)[0]?.severity).toBe("warn")
   })
 
+  test("ignores fused YYYYMMDD date chunks in model identifiers", async () => {
+    await repo.write(
+      "src/models.ts",
+      [
+        "export const MODEL_ID = 'claude-sonnet-4-20250514'",
+        "export const FALLBACK_MODEL_ID = 'claude-3-5-haiku-20241022'",
+      ].join("\n"),
+    )
+
+    const out = await run()
+
+    expect(out.findings).toEqual([])
+    expect(out.state).toBe("zero")
+  })
+
+  test("positive control: random material on a non-secret name still flags", async () => {
+    await repo.write(
+      "src/blob.ts",
+      "export const opaqueBlob = 'mQ9zX2kP7vL4nR8tW1yC5sD3hJ6gF0bE9aU4iO7e='\n",
+    )
+
+    const out = await run()
+
+    expect(out.findings).toHaveLength(1)
+    expect(out.findings[0]).toMatchObject({
+      kind: "high-entropy-literal",
+      identifier: "opaqueBlob",
+    })
+  })
+
+  test("positive control: secret-named identifier holding a date-bearing value still flags", async () => {
+    await repo.write(
+      "src/config.ts",
+      "export const apiKey = 'claude-sonnet-4-20250514'\n",
+    )
+
+    const out = await run()
+
+    expect(out.findings).toHaveLength(1)
+    expect(out.findings[0]).toMatchObject({
+      kind: "secret-named-literal",
+      identifier: "apiKey",
+    })
+  })
+
   test("true-secret corpus: every known format is detected at block severity", async () => {
     await repo.write(
       "src/leaked.ts",

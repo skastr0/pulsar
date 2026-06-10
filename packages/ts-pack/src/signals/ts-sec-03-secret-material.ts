@@ -68,7 +68,7 @@ export const TsSec03: Signal<TsSec03Config, TsSec03Output, TsProjectTag> = {
   tier: 1,
   category: "security-risk",
   kind: "structural",
-  cacheVersion: "secret-material-v3-known-format-block-warn-severity",
+  cacheVersion: "secret-material-v4-fused-date-chunk-vocabulary",
   configSchema: TsSec03Config,
   defaultConfig: {
     exclude_globs: [...PRODUCTION_EXCLUDE_GLOBS],
@@ -229,6 +229,16 @@ const WORD_CHUNK_PATTERNS: ReadonlyArray<RegExp> = [
   /^[A-Za-z]+$/,
   /^[A-Za-z]+[0-9]{1,3}$/,
 ]
+// Fused 8-digit YYYYMMDD dates appear in model ids ("claude-sonnet-4-20250514"),
+// build stamps, and release tags: calendar vocabulary, not secret entropy.
+// The date chunk only joins the anonymous-literal vocabulary — secret-named
+// identifiers keep the stricter base vocabulary so an apiKey/token holding a
+// date-bearing value stays eligible (secret-name precedence).
+const FUSED_DATE_CHUNK_PATTERN = /^(?:19|20)[0-9]{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12][0-9]|3[01])$/
+const ANONYMOUS_WORD_CHUNK_PATTERNS: ReadonlyArray<RegExp> = [
+  ...WORD_CHUNK_PATTERNS,
+  FUSED_DATE_CHUNK_PATTERN,
+]
 
 interface StringLiteralScanTarget {
   readonly value: string
@@ -328,25 +338,31 @@ const isSecretName = (normalizedIdentifier: string): boolean =>
  * `_` (migration ids, mkdtemp prefixes with trailing separators, env var
  * names) are names, not secrets, even when raw entropy clears the threshold.
  */
-const isSeparatedWordsValue = (value: string): boolean =>
+const isSeparatedWordsValue = (
+  value: string,
+  chunkPatterns: ReadonlyArray<RegExp> = WORD_CHUNK_PATTERNS,
+): boolean =>
   SEPARATED_VALUE_PATTERN.test(value) &&
   value
     .split(/[-_]/)
     .every((chunk) =>
-      chunk.length === 0 || WORD_CHUNK_PATTERNS.some((pattern) => pattern.test(chunk))
+      chunk.length === 0 || chunkPatterns.some((pattern) => pattern.test(chunk))
     )
 
-const isStructuredNonSecretShape = (value: string): boolean =>
+const isStructuredNonSecretShape = (
+  value: string,
+  chunkPatterns: ReadonlyArray<RegExp> = WORD_CHUNK_PATTERNS,
+): boolean =>
   value.startsWith("--") ||
   COMMAND_FLAG_PATTERN.test(value) ||
   PATH_SHAPE_PATTERN.test(value) ||
   KEY_VALUE_SETTING_PATTERN.test(value) ||
-  isSeparatedWordsValue(value)
+  isSeparatedWordsValue(value, chunkPatterns)
 
 const hasHighEntropySecretTokenShape = (value: string): boolean => {
   if (!/^[A-Za-z0-9_+/=-]+$/.test(value)) return false
   if (IDENTIFIER_SHAPE_PATTERN.test(value)) return false
-  if (isStructuredNonSecretShape(value)) return false
+  if (isStructuredNonSecretShape(value, ANONYMOUS_WORD_CHUNK_PATTERNS)) return false
 
   const classes = [
     /[a-z]/.test(value),

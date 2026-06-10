@@ -68,7 +68,7 @@ export const TsSec01: Signal<TsSec01Config, TsSec01Output, TsProjectTag> = {
   tier: 1,
   category: "security-risk",
   kind: "structural",
-  cacheVersion: "dangerous-capability-surface-v3-binding-resolved-bounded-info",
+  cacheVersion: "dangerous-capability-surface-v4-parameterized-sql-tags-risk-sorted-diagnostics",
   configSchema: TsSec01Config,
   defaultConfig: {
     exclude_globs: [...PRODUCTION_EXCLUDE_GLOBS],
@@ -108,8 +108,11 @@ export const TsSec01: Signal<TsSec01Config, TsSec01Output, TsProjectTag> = {
     const infoScore = 1 - INFO_SCORE_SPAN * (infoDensity / (1 + infoDensity))
     return (1 / (1 + warnPressure)) * infoScore
   },
+  // Risk-sorted before the top_n slice: warn-class findings first, then
+  // descending weight, so a single unsafe escape hatch can never be crowded
+  // out of the default output by benign capability inventory.
   diagnose: (out): ReadonlyArray<Diagnostic> =>
-    out.findings.slice(0, out.diagnosticLimit).map((finding) => ({
+    [...out.findings].sort(compareFindings).slice(0, out.diagnosticLimit).map((finding) => ({
       severity: findingSeverity(finding.kind),
       message: `${finding.sink} exposes ${finding.kind} capability and should be reviewed as a security boundary`,
       location: {
@@ -275,25 +278,63 @@ const collectSqlCapabilities = (
 ): void => {
   for (const tag of sourceFile.getDescendantsOfKind(SyntaxKind.TaggedTemplateExpression)) {
     const tagName = callName(tag.getTag())
-    if (/(\bsql\b|raw|unsafe)/i.test(tagName)) {
-      findings.push({
-        ...locationOf(tag),
-        kind: "raw-sql",
-        sink: tagName,
-        evidence: tag.getText().slice(0, 160),
-        reviewRoute: "security",
-        weight: 0.75,
-      })
-    }
+    if (!/(\bsql\b|raw|unsafe)/i.test(tagName)) continue
+    // Tagged-template invocation of an sql-like tag (sql`... ${id}`) is the
+    // parameterized pattern: the library escapes interpolations by
+    // construction, so it is not raw SQL. Only tags that name an explicit
+    // escape hatch (raw/unsafe/literal) expose raw query material.
+    if (!SQL_ESCAPE_HATCH_MARKER.test(tagName)) continue
+    findings.push({
+      ...locationOf(tag),
+      kind: "raw-sql",
+      sink: tagName,
+      evidence: tag.getText().slice(0, 160),
+      reviewRoute: "security",
+      weight: SQL_ESCAPE_HATCH_WEIGHT,
+    })
   }
 
   for (const call of sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)) {
     const name = callName(call.getExpression())
-    if (!/(^|\.)(query|execute|raw|unsafe|sql)$/i.test(name)) continue
-    if (!call.getArguments().some((arg) => Node.isTemplateExpression(arg))) continue
+    // Explicit escape hatches (sql.unsafe(...), sql.literal(...), db.raw(...))
+    // bypass parameterization regardless of argument shape.
+    if (isSqlEscapeHatchCall(name) && call.getArguments().length > 0) {
+      findings.push(findingFromCall(call, "raw-sql", name, SQL_ESCAPE_HATCH_WEIGHT))
+      continue
+    }
+    if (!/(^|\.)(query|execute|raw|unsafe|literal|sql)$/i.test(name)) continue
+    if (!call.getArguments().some(isDynamicQueryArgument)) continue
     findings.push(findingFromCall(call, "raw-sql", name, 0.75))
   }
 }
+
+// Escape hatches outrank interpolated query inventory (0.75) in both score
+// pressure and diagnostic ordering.
+const SQL_ESCAPE_HATCH_WEIGHT = 1
+const SQL_ESCAPE_HATCH_MARKER = /(raw|unsafe|literal)/i
+// `.literal`/`.raw`/`.unsafe` member names are only escape hatches on an
+// sql-like receiver: z.literal(...) or express.raw(...) are unrelated APIs.
+const SQLISH_RECEIVER_PATTERN = /(^|\.)(sql|db|database|knex|sequelize|pg|client|connection|conn)$/i
+
+const isSqlEscapeHatchCall = (name: string): boolean => {
+  const match = /^(.+)\.(unsafe|literal|raw)$/i.exec(name)
+  return match !== null && SQLISH_RECEIVER_PATTERN.test(match[1]!)
+}
+
+const isDynamicQueryArgument = (node: Node): boolean =>
+  Node.isTemplateExpression(node) || isStringConcatenation(node)
+
+const isStringConcatenation = (node: Node): boolean => {
+  if (!Node.isBinaryExpression(node)) return false
+  if (node.getOperatorToken().getKind() !== SyntaxKind.PlusToken) return false
+  return hasStringOperand(node.getLeft()) || hasStringOperand(node.getRight())
+}
+
+const hasStringOperand = (node: Node): boolean =>
+  Node.isStringLiteral(node) ||
+  Node.isNoSubstitutionTemplateLiteral(node) ||
+  Node.isTemplateExpression(node) ||
+  isStringConcatenation(node)
 
 const findingFromCall = (
   call: CallExpression,
@@ -457,12 +498,19 @@ const moduleCapabilityKind = (specifier: string): DangerousCapabilityKind | unde
   return undefined
 }
 
+// Descending risk class — warn-class findings (eval, Function constructor)
+// first, then escape hatches and inventory by descending weight — with
+// file/line/column/sink as the deterministic tie-breaker.
 const compareFindings = (
   left: DangerousCapabilityFinding,
   right: DangerousCapabilityFinding,
 ): number =>
+  severityRankOf(left.kind) - severityRankOf(right.kind) ||
   right.weight - left.weight ||
   left.file.localeCompare(right.file) ||
   left.line - right.line ||
   left.column - right.column ||
   left.sink.localeCompare(right.sink)
+
+const severityRankOf = (kind: DangerousCapabilityKind): number =>
+  findingSeverity(kind) === "warn" ? 0 : 1
