@@ -37,11 +37,14 @@ interface BoundaryErrorSurface {
   readonly classification: "granular" | "collapsed"
 }
 
+type ErrorPosture = "none" | "granular" | "uniform-collapsed" | "mixed"
+
 interface RsLd04Output {
   readonly boundaryFunctions: ReadonlyArray<BoundaryErrorSurface>
   readonly granularCount: number
   readonly collapsedCount: number
   readonly totalBoundaryResults: number
+  readonly errorPosture: ErrorPosture
   readonly sourceFileCount: number
   readonly analyzedSourceFileCount: number
   readonly diagnosticLimit: number
@@ -54,6 +57,26 @@ interface RsLd04Output {
 const DEFAULT_TOP_N_DIAGNOSTICS = 10
 const RS_LD_04_SCORE_MODE = "granular-result-boundary-share" as const
 const RS_LD_04_SCORE_DENOMINATOR = "public-result-boundary-functions" as const
+
+/**
+ * A codebase that uniformly returns anyhow/eyre-style collapsed errors made a
+ * single application-style design decision — the recommended posture for
+ * binaries and internal tooling. That is a style posture, not decay, so its
+ * score floors here instead of falling to 0.00 and zeroing the legibility
+ * category (the atlas failure mode: a raw granular/total ratio cannot tell
+ * "uniform anyhow by design" apart from chaotic stringly-typed errors).
+ * MIXED postures keep the raw ratio, below the floor when collapse dominates:
+ * granular types exist, so boundaries that still collapse are inconsistency —
+ * the actual decay signal this measures.
+ */
+const UNIFORM_COLLAPSED_SCORE_FLOOR = 0.5
+
+const errorPostureOf = (granularCount: number, collapsedCount: number): ErrorPosture => {
+  if (granularCount === 0 && collapsedCount === 0) return "none"
+  if (collapsedCount === 0) return "granular"
+  if (granularCount === 0) return "uniform-collapsed"
+  return "mixed"
+}
 
 const RS_LD_04_FACTOR_DEFINITIONS: ReadonlyArray<SignalFactorDefinition> = [
   {
@@ -79,7 +102,7 @@ export const RsLd04: Signal<RsLd04Config, RsLd04Output, RustProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "error-granularity-config-applicability-diagnostics-cfg-test-result-aliases-v12",
+  cacheVersion: "error-granularity-uniform-posture-floor-v13",
   configSchema: RsLd04Config,
   factorDefinitions: RS_LD_04_FACTOR_DEFINITIONS,
   defaultConfig: {
@@ -126,6 +149,7 @@ export const RsLd04: Signal<RsLd04Config, RsLd04Output, RustProjectTag> = {
             granularCount,
             collapsedCount,
             totalBoundaryResults: boundaryFunctions.length,
+            errorPosture: errorPostureOf(granularCount, collapsedCount),
             boundaryFunctions,
             sourceFileCount: project.sourceFiles.length,
             analyzedSourceFileCount: analyzedSourceFiles.length,
@@ -140,7 +164,11 @@ export const RsLd04: Signal<RsLd04Config, RsLd04Output, RustProjectTag> = {
           new SignalComputeError({ signalId: "RS-LD-04-error-granularity", message: String(cause), cause }),
       })
     }),
-  score: (out) => out.totalBoundaryResults === 0 ? 1 : out.granularBoundaryShare,
+  score: (out) => {
+    if (out.totalBoundaryResults === 0) return 1
+    if (out.errorPosture === "uniform-collapsed") return UNIFORM_COLLAPSED_SCORE_FLOOR
+    return out.granularBoundaryShare
+  },
   diagnose: (out): ReadonlyArray<Diagnostic> => {
     if (out.sourceFileCount === 0) {
       return [{
@@ -157,19 +185,42 @@ export const RsLd04: Signal<RsLd04Config, RsLd04Output, RustProjectTag> = {
         },
       }].slice(0, out.diagnosticLimit)
     }
-    return out.boundaryFunctions
+    if (out.diagnosticLimit <= 0) return []
+    const uniform = out.errorPosture === "uniform-collapsed"
+    const collapsedDiagnostics = out.boundaryFunctions
       .filter((fn) => fn.classification === "collapsed")
       .slice(0, out.diagnosticLimit)
       .map((fn) => ({
-        severity: "warn" as const,
+        // Under a uniform posture each boundary is an instance of one design
+        // decision, not an individually actionable warning; in a mixed
+        // posture each collapsed boundary is inconsistency worth flagging.
+        severity: uniform ? ("info" as const) : ("warn" as const),
         message: `Boundary function ${fn.name} returns collapsed error type ${fn.errorType}`,
         location: { file: fn.file, line: fn.line },
         data: {
           ...fn,
+          errorPosture: out.errorPosture,
           scoreMode: out.scoreMode,
           scoreDenominator: out.scoreDenominator,
         },
       }))
+    if (!uniform) return collapsedDiagnostics
+    return [{
+      severity: "info" as const,
+      message:
+        `Uniform application-style error posture: all ${out.collapsedCount} public Result ` +
+        "boundaries return collapsed error types (anyhow/eyre/dyn Error style); score is " +
+        `floored at ${UNIFORM_COLLAPSED_SCORE_FLOOR} because a consistent posture is a design ` +
+        "choice, not decay",
+      data: {
+        errorPosture: out.errorPosture,
+        totalBoundaryResults: out.totalBoundaryResults,
+        collapsedCount: out.collapsedCount,
+        scoreFloor: UNIFORM_COLLAPSED_SCORE_FLOOR,
+        scoreMode: out.scoreMode,
+        scoreDenominator: out.scoreDenominator,
+      },
+    }, ...collapsedDiagnostics]
   },
   outputMetadata: (out) =>
     rustAnalysisOutputMetadata({

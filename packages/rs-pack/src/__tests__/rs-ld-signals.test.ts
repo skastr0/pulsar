@@ -46,8 +46,8 @@ const createLegibilityWorkspace = () =>
       "    use super::ParseError;",
       "",
       "    pub fn parse<'a: 'b, 'b>(value: &'a str) -> Result<(), ParseError> {",
-      "        match value.len() {",
-      "            0 => Ok(()),",
+      "        match value.chars().next() {",
+      "            None => Ok(()),",
       "            _ => Err(ParseError),",
       "        }",
       "    }",
@@ -1366,7 +1366,7 @@ describe("RS-LD-* signals", () => {
       tier: 1,
       category: "legibility-decay",
       kind: "legibility",
-      cacheVersion: "match-catch-all-config-applicability-diagnostics-cfg-test-bindings-v3",
+      cacheVersion: "match-catch-all-open-domain-guarded-arms-v4",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -1411,7 +1411,7 @@ describe("RS-LD-* signals", () => {
       expect(out.totalCatchAllArms).toBe(1)
       expect(out.sourceFileCount).toBe(1)
       expect(out.analyzedSourceFileCount).toBe(1)
-      expect(out.scoreMode).toBe("double-weighted-catch-all-match-share")
+      expect(out.scoreMode).toBe("closed-domain-catch-all-match-share")
       expect(out.scoreDenominator).toBe("analyzed-match-expressions")
       expect(out.catchAllMatchShare).toBe(1)
       expect(out.weightedCatchAllPressure).toBe(1)
@@ -1421,7 +1421,7 @@ describe("RS-LD-* signals", () => {
         severity: "warn",
         message: "Match in parse uses 1 catch-all arm(s)",
         data: expect.objectContaining({
-          scoreMode: "double-weighted-catch-all-match-share",
+          scoreMode: "closed-domain-catch-all-match-share",
           scoreDenominator: "analyzed-match-expressions",
         }),
       })
@@ -1431,31 +1431,36 @@ describe("RS-LD-* signals", () => {
   })
 
   test("RS-LD-03 scores catch-all pressure monotonically over analyzed matches", async () => {
+    // Enum scrutinees: literal (u8/char/&str) matches are compiler-mandated
+    // wildcards and exempt, so erosion fixtures must use closed domains.
+    const matchEnum = [
+      "pub enum Tri { A, B, C }",
+    ].join("\n")
     const cleanMatch = [
-      "pub fn clean(value: u8) -> u8 {",
+      "pub fn clean(value: Tri) -> u8 {",
       "    match value {",
-      "        0 => 0,",
-      "        1 => 1,",
-      "        2 => 2,",
+      "        Tri::A => 0,",
+      "        Tri::B => 1,",
+      "        Tri::C => 2,",
       "    }",
       "}",
     ].join("\n")
     const catchAllMatch = (name: string) => [
-      `pub fn ${name}(value: u8) -> u8 {`,
+      `pub fn ${name}(value: Tri) -> u8 {`,
       "    match value {",
-      "        0 => 0,",
+      "        Tri::A => 0,",
       "        _ => 1,",
       "    }",
       "}",
     ].join("\n")
     const clean = await createMatchWorkspace("clean", {
-      "src/lib.rs": [cleanMatch, cleanMatch.replace("clean", "also_clean")].join("\n\n"),
+      "src/lib.rs": [matchEnum, cleanMatch, cleanMatch.replace("clean", "also_clean")].join("\n\n"),
     })
     const oneOver = await createMatchWorkspace("one-over", {
-      "src/lib.rs": [catchAllMatch("fallback_one"), cleanMatch, cleanMatch.replace("clean", "also_clean")].join("\n\n"),
+      "src/lib.rs": [matchEnum, catchAllMatch("fallback_one"), cleanMatch, cleanMatch.replace("clean", "also_clean")].join("\n\n"),
     })
     const twoOver = await createMatchWorkspace("two-over", {
-      "src/lib.rs": [catchAllMatch("fallback_one"), catchAllMatch("fallback_two"), cleanMatch].join("\n\n"),
+      "src/lib.rs": [matchEnum, catchAllMatch("fallback_one"), catchAllMatch("fallback_two"), cleanMatch].join("\n\n"),
     })
 
     try {
@@ -1471,12 +1476,12 @@ describe("RS-LD-* signals", () => {
       expect(oneOverOut.totalMatches).toBe(3)
       expect(oneOverOut.matchesWithCatchAll).toBe(1)
       expect(oneOverOut.catchAllMatchShare).toBe(1 / 3)
-      expect(oneOverOut.weightedCatchAllPressure).toBe(2 / 3)
-      expect(RsLd03.score(oneOverOut)).toBeCloseTo(1 / 3)
+      expect(oneOverOut.weightedCatchAllPressure).toBeCloseTo(1 / 3)
+      expect(RsLd03.score(oneOverOut)).toBeCloseTo(2 / 3)
       expect(twoOverOut.totalMatches).toBe(3)
       expect(twoOverOut.matchesWithCatchAll).toBe(2)
-      expect(twoOverOut.weightedCatchAllPressure).toBe(1)
-      expect(RsLd03.score(twoOverOut)).toBe(0)
+      expect(twoOverOut.weightedCatchAllPressure).toBeCloseTo(2 / 3)
+      expect(RsLd03.score(twoOverOut)).toBeCloseTo(1 / 3)
       expect(RsLd03.score(cleanOut)).toBeGreaterThan(RsLd03.score(oneOverOut))
       expect(RsLd03.score(oneOverOut)).toBeGreaterThan(RsLd03.score(twoOverOut))
     } finally {
@@ -1532,31 +1537,110 @@ describe("RS-LD-* signals", () => {
     }
   })
 
+  test("RS-LD-03 exempts compiler-mandated wildcards on open-domain scrutinees", async () => {
+    // atlas regression: escape_html-style char matches and &str matches were
+    // flagged as exhaustiveness erosion although the compiler rejects them
+    // without a catch-all arm.
+    const repo = await createMatchWorkspace("open-domain", {
+      "src/lib.rs": [
+        "pub fn escape_char(ch: char) -> u8 {",
+        "    match ch {",
+        "        '&' => 1,",
+        "        '<' => 2,",
+        "        _ => 0,",
+        "    }",
+        "}",
+        "",
+        "pub fn classify(kind: &str) -> u8 {",
+        "    match kind {",
+        "        \"heading\" => 1,",
+        "        \"list\" => 2,",
+        "        _ => 0,",
+        "    }",
+        "}",
+        "",
+        "pub fn bucket(value: u32) -> u8 {",
+        "    match value {",
+        "        0..=9 => 1,",
+        "        10 => 2,",
+        "        _ => 0,",
+        "    }",
+        "}",
+      ],
+    })
+
+    try {
+      const out = await runSignalCompute(RsLd03, repo, RsLd03.defaultConfig)
+
+      expect(out.totalMatches).toBe(3)
+      expect(out.openDomainExemptMatches).toBe(3)
+      expect(out.matchesWithCatchAll).toBe(0)
+      expect(RsLd03.score(out)).toBe(1)
+      expect(RsLd03.diagnose(out)).toEqual([])
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-LD-04 floors uniform application-style error posture instead of zeroing", async () => {
+    // atlas regression: a crate that uniformly returns anyhow::Result from
+    // every public boundary scored 0.00 and zeroed legibility-decay although
+    // uniform anyhow is the recommended application-crate posture.
+    const repo = await createMatchWorkspace("uniform-anyhow", {
+      "src/lib.rs": [
+        "pub fn load(path: &str) -> anyhow::Result<u8> {",
+        "    Ok(path.len() as u8)",
+        "}",
+        "",
+        "pub fn save(path: &str) -> anyhow::Result<()> {",
+        "    let _ = path;",
+        "    Ok(())",
+        "}",
+      ],
+    })
+
+    try {
+      const out = await runSignalCompute(RsLd04, repo, RsLd04.defaultConfig)
+
+      expect(out.errorPosture).toBe("uniform-collapsed")
+      expect(out.collapsedCount).toBe(2)
+      expect(RsLd04.score(out)).toBe(0.5)
+      const diagnostics = RsLd04.diagnose(out)
+      expect(diagnostics[0]).toMatchObject({
+        severity: "info",
+        message: expect.stringContaining("Uniform application-style error posture"),
+      })
+      expect(diagnostics.slice(1).every((diagnostic) => diagnostic.severity === "info")).toBe(true)
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
   test("RS-LD-03 recognizes binding catch-all match arms deliberately", async () => {
     const repo = await createMatchWorkspace("bindings", {
       "src/lib.rs": [
-        "pub enum Kind { Specific, Other }",
+        "pub enum Kind { Specific, Other, Third }",
         "",
-        "pub fn binding_default(value: u8) -> u8 {",
+        "pub fn binding_default(value: Kind) -> u8 {",
         "    match value {",
-        "        0 => 0,",
-        "        other => other,",
+        "        Kind::Specific => 0,",
+        "        other => 1,",
         "    }",
         "}",
         "",
-        "pub fn guarded_binding(value: u8) -> u8 {",
+        "pub fn guarded_binding(value: Kind) -> u8 {",
         "    match value {",
-        "        0 => 0,",
-        "        rest if rest > 10 => rest,",
-        "        _ => 0,",
+        "        Kind::Specific => 0,",
+        "        rest if matches!(rest, Kind::Third) => 2,",
+        "        _ => 1,",
         "    }",
         "}",
         "",
-        "pub fn guarded_underscore(value: u8) -> u8 {",
+        "pub fn guarded_underscore(value: Kind) -> u8 {",
         "    match value {",
-        "        0 => 0,",
-        "        _ if value > 10 => 1,",
-        "        _ => 0,",
+        "        Kind::Specific => 0,",
+        "        _ if matches!(value, Kind::Third) => 2,",
+        "        _ => 1,",
         "    }",
         "}",
         "",
@@ -1575,15 +1659,18 @@ describe("RS-LD-* signals", () => {
 
       expect(out.totalMatches).toBe(4)
       expect(out.matchesWithCatchAll).toBe(3)
-      expect(out.totalCatchAllArms).toBe(5)
+      // Guarded arms (`_ if cond`, `rest if cond`) are selective, not
+      // catch-alls (fractals regression: a guarded arm was double-billed as
+      // a second catch-all); only the final bare arm counts.
+      expect(out.totalCatchAllArms).toBe(3)
       expect(byFunction.get("binding_default")?.catchAllArmCount).toBe(1)
-      expect(byFunction.get("guarded_binding")?.catchAllArmCount).toBe(2)
-      expect(byFunction.get("guarded_underscore")?.catchAllArmCount).toBe(2)
+      expect(byFunction.get("guarded_binding")?.catchAllArmCount).toBe(1)
+      expect(byFunction.get("guarded_underscore")?.catchAllArmCount).toBe(1)
       expect(byFunction.get("specific_patterns")?.catchAllArmCount).toBe(0)
-      expect(RsLd03.score(out)).toBe(0)
+      expect(RsLd03.score(out)).toBeCloseTo(1 / 4)
       expect(RsLd03.diagnose(out)[0]).toMatchObject({
         severity: "warn",
-        message: "Match in guarded_binding uses 2 catch-all arm(s)",
+        message: "Match in binding_default uses 1 catch-all arm(s)",
       })
     } finally {
       await cleanupWorkspace(repo)
@@ -1594,19 +1681,20 @@ describe("RS-LD-* signals", () => {
     const scoped = await createMatchWorkspace("scoped", {
       "src/lib.rs": [
         "pub mod core;",
-        "pub fn fallback(value: u8) -> u8 {",
+        "pub enum Tri { A, B, C }",
+        "pub fn fallback(value: Tri) -> u8 {",
         "    match value {",
-        "        0 => 0,",
+        "        Tri::A => 0,",
         "        _ => 1,",
         "    }",
         "}",
       ],
       "src/core.rs": [
-        "pub fn explicit(value: u8) -> u8 {",
+        "pub fn explicit(value: crate::Tri) -> u8 {",
         "    match value {",
-        "        0 => 0,",
-        "        1 => 1,",
-        "        2 => 2,",
+        "        crate::Tri::A => 0,",
+        "        crate::Tri::B => 1,",
+        "        crate::Tri::C => 2,",
         "    }",
         "}",
       ],
@@ -1617,9 +1705,10 @@ describe("RS-LD-* signals", () => {
     })
     const excluded = await createMatchWorkspace("excluded", {
       "src/lib.rs": [
-        "pub fn fallback(value: u8) -> u8 {",
+        "pub enum Bi { A, B }",
+        "pub fn fallback(value: Bi) -> u8 {",
         "    match value {",
-        "        0 => 0,",
+        "        Bi::A => 0,",
         "        _ => 1,",
         "    }",
         "}",
@@ -1675,7 +1764,7 @@ describe("RS-LD-* signals", () => {
             analyzedSourceFileCount: 0,
             totalMatches: 0,
             matchesWithCatchAll: 0,
-            scoreMode: "double-weighted-catch-all-match-share",
+            scoreMode: "closed-domain-catch-all-match-share",
             scoreDenominator: "analyzed-match-expressions",
           }),
         }),
@@ -1739,7 +1828,7 @@ describe("RS-LD-* signals", () => {
       tier: 1,
       category: "legibility-decay",
       kind: "legibility",
-      cacheVersion: "error-granularity-config-applicability-diagnostics-cfg-test-result-aliases-v12",
+      cacheVersion: "error-granularity-uniform-posture-floor-v13",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -2200,7 +2289,11 @@ describe("RS-LD-* signals", () => {
       )
 
       expect(capped.diagnosticLimit).toBe(1)
-      expect(RsLd04.diagnose(capped)).toHaveLength(1)
+      // Uniform posture: the posture summary leads, then the capped detail.
+      const cappedDiagnostics = RsLd04.diagnose(capped)
+      expect(cappedDiagnostics).toHaveLength(2)
+      expect(cappedDiagnostics[0]?.severity).toBe("info")
+      expect(cappedDiagnostics[0]?.message).toContain("Uniform application-style error posture")
       expect(hidden.diagnosticLimit).toBe(0)
       expect(RsLd04.diagnose(hidden)).toHaveLength(0)
 

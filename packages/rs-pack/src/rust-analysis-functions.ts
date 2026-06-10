@@ -161,6 +161,7 @@ const matchFactFromNode = (
 ): RustMatchFact => {
   const arms = allNamedChildren(firstNamedChild(node, "match_block") ?? node, "match_arm")
   const catchAllArmCount = arms.filter(isCatchAllMatchArm).length
+  const literalArmCount = arms.filter(isLiteralMatchArm).length
   return {
     crateName,
     file,
@@ -171,6 +172,7 @@ const matchFactFromNode = (
     armCount: arms.length,
     catchAllArmCount,
     hasCatchAll: catchAllArmCount > 0,
+    literalArmCount,
   }
 }
 
@@ -180,12 +182,32 @@ const isCatchAllMatchArm = (arm: RustSyntaxNode): boolean => {
   return isCatchAllPatternText(pattern.text.trim())
 }
 
+// A guarded arm (`_ if cond => ...`) is selective, not a catch-all: it
+// handles a predicate-defined subset, and the compiler still requires a real
+// catch-all after it.
 const isCatchAllPatternText = (text: string): boolean => {
-  const binding = /^(?:ref\s+)?(?:mut\s+)?([_a-z][A-Za-z0-9_]*)(?:\s+if\b[\s\S]*)?$/.exec(text)
+  const binding = /^(?:ref\s+)?(?:mut\s+)?([_a-z][A-Za-z0-9_]*)$/.exec(text)
   if (binding === null) return false
   const name = binding[1]
   return name !== "true" && name !== "false"
 }
+
+const isLiteralMatchArm = (arm: RustSyntaxNode): boolean => {
+  const pattern = firstNamedChild(arm, "match_pattern")
+  if (pattern === undefined) return false
+  const stripGuard = pattern.text.trim().replace(/\s+if\b[\s\S]*$/, "").trim()
+  return stripGuard
+    .split("|")
+    .map((alternative) => alternative.trim())
+    .filter((alternative) => alternative.length > 0)
+    .some(isLiteralPatternText)
+}
+
+const isLiteralPatternText = (text: string): boolean =>
+  /^'(?:[^'\\]|\\.)+'$/.test(text) ||
+  /^b?"(?:[^"\\]|\\.)*"$/.test(text) ||
+  /^-?(?:\d[\d_]*|0x[\da-fA-F_]+|0o[0-7_]+|0b[01_]+)$/.test(text) ||
+  /^-?(?:\d[\d_]*|'(?:[^'\\]|\\.)+')\s*\.\.=?\s*-?(?:\d[\d_]*|'(?:[^'\\]|\\.)+')$/.test(text)
 
 const lifetimeBoundCountOfFunction = (node: RustSyntaxNode): number =>
   allNamedChildren(firstNamedChild(node, "type_parameters") ?? node, "lifetime_parameter")

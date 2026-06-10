@@ -34,24 +34,26 @@ interface MatchCatchAllSite {
   readonly line: number
   readonly armCount: number
   readonly catchAllArmCount: number
+  readonly openDomainScrutinee: boolean
 }
 
 interface RsLd03Output {
   readonly matchSites: ReadonlyArray<MatchCatchAllSite>
   readonly totalMatches: number
   readonly matchesWithCatchAll: number
+  readonly openDomainExemptMatches: number
   readonly totalCatchAllArms: number
   readonly sourceFileCount: number
   readonly analyzedSourceFileCount: number
   readonly diagnosticLimit: number
-  readonly scoreMode: "double-weighted-catch-all-match-share"
+  readonly scoreMode: "closed-domain-catch-all-match-share"
   readonly scoreDenominator: "analyzed-match-expressions"
   readonly catchAllMatchShare: number
   readonly weightedCatchAllPressure: number
 }
 
 const DEFAULT_TOP_N_DIAGNOSTICS = 10
-const RS_LD_03_SCORE_MODE = "double-weighted-catch-all-match-share" as const
+const RS_LD_03_SCORE_MODE = "closed-domain-catch-all-match-share" as const
 const RS_LD_03_SCORE_DENOMINATOR = "analyzed-match-expressions" as const
 
 const RS_LD_03_FACTOR_DEFINITIONS: ReadonlyArray<SignalFactorDefinition> = [
@@ -85,7 +87,7 @@ export const RsLd03: Signal<RsLd03Config, RsLd03Output, RustProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
-  cacheVersion: "match-catch-all-config-applicability-diagnostics-cfg-test-bindings-v3",
+  cacheVersion: "match-catch-all-open-domain-guarded-arms-v4",
   configSchema: RsLd03Config,
   factorDefinitions: RS_LD_03_FACTOR_DEFINITIONS,
   defaultConfig: {
@@ -121,15 +123,21 @@ export const RsLd03: Signal<RsLd03Config, RsLd03Output, RustProjectTag> = {
               line: site.line,
               armCount: site.armCount,
               catchAllArmCount: site.catchAllArmCount,
+              // Literal arms (chars, strings, numbers) mean an open-domain
+              // scrutinee where the compiler requires the catch-all; only
+              // closed-domain (enum-style) wildcards erode exhaustiveness.
+              openDomainScrutinee: site.literalArmCount > 0,
             }))
             .sort((a, b) => b.catchAllArmCount - a.catchAllArmCount || a.file.localeCompare(b.file))
-          const matchesWithCatchAll = matchSites.filter((site) => site.catchAllArmCount > 0).length
+          const scoringSites = matchSites.filter((site) => !site.openDomainScrutinee)
+          const matchesWithCatchAll = scoringSites.filter((site) => site.catchAllArmCount > 0).length
           const catchAllMatchShare = ratio(matchesWithCatchAll, matchSites.length)
 
           return {
             matchSites,
             totalMatches: matchSites.length,
             matchesWithCatchAll,
+            openDomainExemptMatches: matchSites.length - scoringSites.length,
             totalCatchAllArms: matchSites.reduce((sum, site) => sum + site.catchAllArmCount, 0),
             sourceFileCount: project.sourceFiles.length,
             analyzedSourceFileCount: analyzedSourceFiles.length,
@@ -137,7 +145,9 @@ export const RsLd03: Signal<RsLd03Config, RsLd03Output, RustProjectTag> = {
             scoreMode: RS_LD_03_SCORE_MODE,
             scoreDenominator: RS_LD_03_SCORE_DENOMINATOR,
             catchAllMatchShare,
-            weightedCatchAllPressure: Math.min(1, catchAllMatchShare * 2),
+            // 1x share: catch-all prevalence is taste-grade evidence; the old
+            // 2x multiplier doubled damage on a heuristic measurement.
+            weightedCatchAllPressure: Math.min(1, catchAllMatchShare),
           }
         },
         catch: (cause) =>
@@ -161,7 +171,7 @@ export const RsLd03: Signal<RsLd03Config, RsLd03Output, RustProjectTag> = {
       }].slice(0, out.diagnosticLimit)
     }
     return out.matchSites
-      .filter((site) => site.catchAllArmCount > 0)
+      .filter((site) => site.catchAllArmCount > 0 && !site.openDomainScrutinee)
       .slice(0, out.diagnosticLimit)
       .map((site) => ({
         severity: "warn" as const,

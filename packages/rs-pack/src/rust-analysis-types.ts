@@ -58,6 +58,13 @@ export interface RustMatchFact {
   readonly armCount: number
   readonly catchAllArmCount: number
   readonly hasCatchAll: boolean
+  /**
+   * Arms whose pattern is a literal (char, string, numeric, or a range or
+   * alternation of literals). A literal arm means the scrutinee is an open
+   * domain (char, &str, integers) where the compiler REQUIRES a catch-all
+   * arm — such matches are not exhaustiveness erosion.
+   */
+  readonly literalArmCount: number
 }
 
 export interface RustIdentifierFact {
