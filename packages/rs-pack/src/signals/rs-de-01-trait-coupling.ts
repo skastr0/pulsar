@@ -26,6 +26,7 @@ import { isExcluded } from "./shared-globs.js"
 const RsDe01Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   top_n_diagnostics: Schema.Number,
+  min_trait_impl_evidence: Schema.Number,
 })
 type RsDe01Config = typeof RsDe01Config.Type
 
@@ -46,6 +47,7 @@ type TraitCouplingFamily =
   | "standard-library-ergonomic"
   | "serialization"
   | "framework-adapter"
+  | "async-io-ecosystem"
   | "application-external"
 
 interface TraitCouplingModuleSummary {
@@ -71,13 +73,16 @@ interface RsDe01Output {
   readonly sourceFileCount: number
   readonly analyzedFileCount: number
   readonly totalTraitImpls: number
+  readonly testGatedTraitImpls: number
   readonly totalForeignTraitImpls: number
   readonly totalConcerningForeignTraitImpls: number
+  readonly evidenceFloor: number
   readonly diagnosticLimit: number
-  readonly analysisMode: "syntax-and-local-name-resolution"
+  readonly analysisMode: "syntax-and-workspace-name-resolution"
 }
 
 const DEFAULT_TOP_N_DIAGNOSTICS = 10
+const DEFAULT_MIN_TRAIT_IMPL_EVIDENCE = 10
 
 const RS_DE_01_FACTOR_DEFINITIONS: ReadonlyArray<SignalFactorDefinition> = [
   {
@@ -94,6 +99,15 @@ const RS_DE_01_FACTOR_DEFINITIONS: ReadonlyArray<SignalFactorDefinition> = [
     scoreRole: "metadata",
     defaultValue: DEFAULT_TOP_N_DIAGNOSTICS,
   },
+  {
+    path: "config.min_trait_impl_evidence",
+    title: "Config min trait impl evidence",
+    valueKind: "number",
+    scoreRole: "threshold",
+    description:
+      "Minimum trait-impl evidence used as the score denominator floor; repositories with fewer trait impls than this cannot be zeroed by a handful of flagged impls.",
+    defaultValue: DEFAULT_MIN_TRAIT_IMPL_EVIDENCE,
+  },
 ]
 
 export const RsDe01: Signal<RsDe01Config, RsDe01Output, RustProjectTag> = {
@@ -103,12 +117,13 @@ export const RsDe01: Signal<RsDe01Config, RsDe01Output, RustProjectTag> = {
   tier: 1,
   category: "dependency-entropy",
   kind: "structural",
-  cacheVersion: "trait-coupling-config-applicability-diagnostics-v1",
+  cacheVersion: "trait-coupling-ratio-score-workspace-locality-test-gating-v2",
   configSchema: RsDe01Config,
   factorDefinitions: RS_DE_01_FACTOR_DEFINITIONS,
   defaultConfig: {
     exclude_globs: [...DEFAULT_RUST_EXCLUDE_GLOBS],
     top_n_diagnostics: DEFAULT_TOP_N_DIAGNOSTICS,
+    min_trait_impl_evidence: DEFAULT_MIN_TRAIT_IMPL_EVIDENCE,
   },
   inputs: [],
   compute: (config) =>
@@ -141,16 +156,46 @@ export const RsDe01: Signal<RsDe01Config, RsDe01Output, RustProjectTag> = {
             crateRootNames.set(module.crateName, rootBucket)
           }
 
+          // Traits and types defined anywhere in the workspace are local:
+          // implementing a sibling crate's trait is intra-workspace wiring,
+          // not foreign-trait coupling.
+          const workspaceTraitNames = unionOfSets(localTraitNames.values())
+          const workspaceTypeNames = unionOfSets(localTypeNames.values())
+          const workspaceCrateTokens = new Set<string>()
+          for (const crateName of [
+            ...project.manifests
+              .map((manifest) => manifest.packageName ?? manifest.name)
+              .filter((name): name is string => name !== undefined),
+            ...crateRootNames.keys(),
+          ]) {
+            workspaceCrateTokens.add(crateName)
+            workspaceCrateTokens.add(crateName.replace(/-/g, "_"))
+          }
+          const rootTokensByCrate = new Map<string, ReadonlySet<string>>()
+          const rootTokensFor = (crateName: string): ReadonlySet<string> => {
+            const cached = rootTokensByCrate.get(crateName)
+            if (cached !== undefined) return cached
+            const tokens = new Set<string>([
+              crateName,
+              crateName.replace(/-/g, "_"),
+              ...workspaceCrateTokens,
+              ...(crateRootNames.get(crateName) ?? []),
+            ])
+            rootTokensByCrate.set(crateName, tokens)
+            return tokens
+          }
+
           const sourceFiles = project.sourceFiles
           const analyzedFiles = sourceFiles.filter((file) =>
             !isExcluded(file, normalizedConfig.exclude_globs)
           )
           let totalTraitImpls = 0
+          let testGatedTraitImpls = 0
           const grouped = new Map<string, TraitCouplingModuleSummary>()
           for (const file of analyzedFiles) {
             const scope = resolveRustFileScope(project, file)
             const tree = await parseRustFile(file)
-            walkAttributedNodes(tree.rootNode, ({ node, ancestors }) => {
+            walkAttributedNodes(tree.rootNode, ({ node, ancestors, testGated }) => {
               if (node.type !== "impl_item") return
               const filteredChildren = namedChildrenOf(node).filter(
                 (child) =>
@@ -164,21 +209,19 @@ export const RsDe01: Signal<RsDe01Config, RsDe01Output, RustProjectTag> = {
               const typeNode = filteredChildren[1]
               if (traitNode === undefined || typeNode === undefined) return
 
+              if (testGated) {
+                // #[cfg(test)] impls are test scaffolding, not production
+                // trait coupling; they neither add pressure nor evidence.
+                testGatedTraitImpls += 1
+                return
+              }
+
               totalTraitImpls += 1
-              const traitLocal = isLocalPath(
-                traitNode,
-                scope.crateName,
-                localTraitNames.get(scope.crateName) ?? new Set(),
-                crateRootNames.get(scope.crateName) ?? new Set(),
-              )
+              const rootTokens = rootTokensFor(scope.crateName)
+              const traitLocal = isLocalPath(traitNode, workspaceTraitNames, rootTokens)
               if (traitLocal) return
 
-              const typeLocal = isLocalPath(
-                typeNode,
-                scope.crateName,
-                localTypeNames.get(scope.crateName) ?? new Set(),
-                crateRootNames.get(scope.crateName) ?? new Set(),
-              )
+              const typeLocal = isLocalPath(typeNode, workspaceTypeNames, rootTokens)
               const { modulePath } = modulePathForAncestors(scope, ancestors)
               const family = classifyForeignTrait(traitNode.text)
               const detail: TraitCouplingDetail = {
@@ -229,6 +272,7 @@ export const RsDe01: Signal<RsDe01Config, RsDe01Output, RustProjectTag> = {
             sourceFileCount: sourceFiles.length,
             analyzedFileCount: analyzedFiles.length,
             totalTraitImpls,
+            testGatedTraitImpls,
             totalForeignTraitImpls: modules.reduce(
               (sum, module) => sum + module.foreignTraitImpls,
               0,
@@ -237,18 +281,16 @@ export const RsDe01: Signal<RsDe01Config, RsDe01Output, RustProjectTag> = {
               (sum, module) => sum + module.concerningForeignTraitImpls,
               0,
             ),
+            evidenceFloor: normalizedConfig.min_trait_impl_evidence,
             diagnosticLimit: normalizedConfig.top_n_diagnostics,
-            analysisMode: "syntax-and-local-name-resolution",
+            analysisMode: "syntax-and-workspace-name-resolution",
           }
         },
         catch: (cause) =>
           new SignalComputeError({ signalId: "RS-DE-01-trait-coupling", message: String(cause), cause }),
       })
     }),
-  score: (out) => {
-    if (out.totalConcerningForeignTraitImpls === 0) return 1
-    return Math.max(0, 1 - Math.min(1, out.totalConcerningForeignTraitImpls / 2))
-  },
+  score: (out) => Math.max(0, 1 - scorePenaltyForOutput(out)),
   diagnose: (out): ReadonlyArray<Diagnostic> => {
     if (out.sourceFileCount === 0) {
       return [{
@@ -258,6 +300,7 @@ export const RsDe01: Signal<RsDe01Config, RsDe01Output, RustProjectTag> = {
           sourceFileCount: out.sourceFileCount,
           analyzedFileCount: out.analyzedFileCount,
           totalTraitImpls: out.totalTraitImpls,
+          testGatedTraitImpls: out.testGatedTraitImpls,
           analysisMode: out.analysisMode,
         },
       }].slice(0, out.diagnosticLimit)
@@ -272,7 +315,7 @@ export const RsDe01: Signal<RsDe01Config, RsDe01Output, RustProjectTag> = {
           severity: concerningDetails.some((detail) => detail.orphanWorkaroundCandidate)
             ? ("warn" as const)
             : ("info" as const),
-          message: `Module ${module.module} implements ${module.concerningForeignTraitImpls} concerning foreign traits (${module.ordinaryForeignTraitImpls} ordinary)`,
+          message: `Module ${module.module}: ${module.concerningForeignTraitImpls} of ${module.foreignTraitImpls} foreign trait impls flagged (trait family outside the recognized allowlists, or foreign trait implemented for a foreign type)`,
           location: {
             file: firstConcerning?.file ?? module.file,
             ...(firstConcerning === undefined ? {} : { line: firstConcerning.line }),
@@ -287,6 +330,14 @@ export const RsDe01: Signal<RsDe01Config, RsDe01Output, RustProjectTag> = {
               (detail) => detail.orphanWorkaroundCandidate,
             ).length,
             details: concerningDetails.map((detail) => diagnosticDetail(detail)),
+            scoring: {
+              totalTraitImpls: out.totalTraitImpls,
+              testGatedTraitImpls: out.testGatedTraitImpls,
+              totalConcerningForeignTraitImpls: out.totalConcerningForeignTraitImpls,
+              evidenceFloor: out.evidenceFloor,
+              scoreDenominator: scoreDenominatorForOutput(out),
+              scorePenalty: scorePenaltyForOutput(out),
+            },
             analysisMode: out.analysisMode,
           },
         }
@@ -308,7 +359,24 @@ const normalizeRsDe01Config = (config: RsDe01Config): NormalizedRsDe01Config => 
   top_n_diagnostics: Number.isFinite(config.top_n_diagnostics)
     ? Math.max(0, Math.floor(config.top_n_diagnostics))
     : 0,
+  min_trait_impl_evidence: Number.isFinite(config.min_trait_impl_evidence)
+    ? Math.max(1, Math.floor(config.min_trait_impl_evidence))
+    : DEFAULT_MIN_TRAIT_IMPL_EVIDENCE,
 })
+
+const scoreDenominatorForOutput = (out: RsDe01Output): number =>
+  Math.max(out.totalTraitImpls, out.evidenceFloor, 1)
+
+const scorePenaltyForOutput = (out: RsDe01Output): number => {
+  if (out.totalConcerningForeignTraitImpls === 0) return 0
+  return Math.min(1, out.totalConcerningForeignTraitImpls / scoreDenominatorForOutput(out))
+}
+
+const unionOfSets = (sets: Iterable<ReadonlySet<string>>): ReadonlySet<string> => {
+  const union = new Set<string>()
+  for (const set of sets) for (const value of set) union.add(value)
+  return union
+}
 
 const makeRsDe01FactorLedger = (): SignalFactorLedger =>
   makeDefaultSignalFactorLedger("RS-DE-01-trait-coupling", RS_DE_01_FACTOR_DEFINITIONS)
@@ -363,6 +431,9 @@ const hashTraitCouplingModule = (module: TraitCouplingModuleSummary): string =>
 const STANDARD_ERGONOMIC_TRAITS = new Set([
   "AsMut",
   "AsRef",
+  "Borrow",
+  "BorrowMut",
+  "BufRead",
   "Clone",
   "Copy",
   "Debug",
@@ -370,13 +441,16 @@ const STANDARD_ERGONOMIC_TRAITS = new Set([
   "Deref",
   "DerefMut",
   "Display",
+  "DoubleEndedIterator",
   "Drop",
   "Eq",
   "Error",
+  "ExactSizeIterator",
   "Extend",
   "From",
   "FromIterator",
   "FromStr",
+  "FusedIterator",
   "Hash",
   "Index",
   "IndexMut",
@@ -386,19 +460,37 @@ const STANDARD_ERGONOMIC_TRAITS = new Set([
   "Ord",
   "PartialEq",
   "PartialOrd",
+  "Read",
+  "Seek",
   "ToString",
   "TryFrom",
   "TryInto",
+  "Write",
 ])
 
-const SERIALIZATION_TRAITS = new Set(["Deserialize", "Serialize"])
+const SERIALIZATION_TRAITS = new Set(["Deserialize", "DeserializeOwned", "Serialize"])
 const FRAMEWORK_ADAPTER_TRAITS = new Set(["IntoResponse"])
+// Canonical async/IO ecosystem extension points (futures, tokio, std::future):
+// implementing these on local wrappers is idiomatic interop, not coupling debt.
+const ASYNC_IO_ECOSYSTEM_TRAITS = new Set([
+  "AsyncBufRead",
+  "AsyncRead",
+  "AsyncSeek",
+  "AsyncWrite",
+  "FusedFuture",
+  "FusedStream",
+  "Future",
+  "Sink",
+  "Stream",
+  "TryStream",
+])
 
 const classifyForeignTrait = (traitName: string): TraitCouplingFamily => {
   const segment = finalTraitSegment(traitName)
   if (STANDARD_ERGONOMIC_TRAITS.has(segment)) return "standard-library-ergonomic"
   if (SERIALIZATION_TRAITS.has(segment)) return "serialization"
   if (FRAMEWORK_ADAPTER_TRAITS.has(segment)) return "framework-adapter"
+  if (ASYNC_IO_ECOSYSTEM_TRAITS.has(segment)) return "async-io-ecosystem"
   return "application-external"
 }
 
@@ -409,14 +501,13 @@ const finalTraitSegment = (traitName: string): string => {
 
 const isLocalPath = (
   node: ReturnType<typeof namedChildrenOf>[number],
-  crateName: string,
-  localNames: ReadonlySet<string>,
-  crateRootNames: ReadonlySet<string>,
+  workspaceNames: ReadonlySet<string>,
+  rootTokens: ReadonlySet<string>,
 ): boolean => {
   const root = symbolRoot(node)
   if (root === undefined) return false
-  if (["crate", "self", "super", crateName].includes(root)) return true
-  return localNames.has(root) || crateRootNames.has(root)
+  if (["crate", "self", "super"].includes(root)) return true
+  return workspaceNames.has(root) || rootTokens.has(root)
 }
 
 const symbolRoot = (node: ReturnType<typeof namedChildrenOf>[number]): string | undefined => {

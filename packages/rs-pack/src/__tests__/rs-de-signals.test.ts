@@ -142,6 +142,162 @@ const createRsDe01MultiModuleWorkspace = () =>
     ].join("\n"),
   })
 
+const createRsDe01TestGatedWorkspace = () =>
+  createRustWorkspace("pulsar-rs-de01-test-gated-", {
+    "Cargo.toml": [
+      "[package]",
+      'name = "de-test-gated-fixture"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+    ].join("\n"),
+    "src/api.rs": [
+      "pub struct Handler;",
+      "pub trait Render { fn render(&self) -> &'static str; }",
+      "",
+      "impl Render for Handler {",
+      "    fn render(&self) -> &'static str { \"handler\" }",
+      "}",
+      "",
+      "#[cfg(test)]",
+      "mod tests {",
+      "    pub struct LogCapture;",
+      "    pub struct LogLayer;",
+      "",
+      "    impl tracing::field::Visit for LogCapture {",
+      "        fn record_debug(&mut self, _field: &str, _value: &str) {}",
+      "    }",
+      "",
+      "    impl tracing_subscriber::Layer for LogLayer {",
+      "        fn enabled(&self) -> bool { true }",
+      "    }",
+      "}",
+      "",
+      "#[cfg(test)]",
+      "impl external_crate::TestHarness for Handler {",
+      "    fn harness(&self) {}",
+      "}",
+      "",
+    ].join("\n"),
+    "src/lib.rs": "pub mod api;\n",
+  })
+
+const createRsDe01AsyncEcosystemWorkspace = () =>
+  createRustWorkspace("pulsar-rs-de01-async-", {
+    "Cargo.toml": [
+      "[package]",
+      'name = "de-async-fixture"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+    ].join("\n"),
+    "src/lib.rs": [
+      "pub struct LocalReceiver;",
+      "pub struct LocalSender;",
+      "pub struct LocalIo;",
+      "",
+      "impl futures::Stream for LocalReceiver {",
+      "    type Item = u8;",
+      "    fn poll_next(self: std::pin::Pin<&mut Self>, _cx: &mut std::task::Context<'_>) -> std::task::Poll<Option<u8>> {",
+      "        std::task::Poll::Pending",
+      "    }",
+      "}",
+      "",
+      "impl futures::Sink<String> for LocalSender {",
+      "    type Error = std::io::Error;",
+      "    fn start_send(self: std::pin::Pin<&mut Self>, _item: String) -> Result<(), Self::Error> {",
+      "        Ok(())",
+      "    }",
+      "}",
+      "",
+      "impl tokio::io::AsyncRead for LocalIo {",
+      "    fn poll_read(self: std::pin::Pin<&mut Self>, _cx: &mut std::task::Context<'_>, _buf: &mut [u8]) -> std::task::Poll<std::io::Result<()>> {",
+      "        std::task::Poll::Pending",
+      "    }",
+      "}",
+      "",
+    ].join("\n"),
+  })
+
+const createRsDe01WorkspaceTraitWorkspace = () =>
+  createRustWorkspace("pulsar-rs-de01-workspace-", {
+    "Cargo.toml": [
+      "[workspace]",
+      'members = ["crates/dsl", "crates/server"]',
+      'resolver = "2"',
+      "",
+    ].join("\n"),
+    "crates/dsl/Cargo.toml": [
+      "[package]",
+      'name = "bridge-dsl"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+    ].join("\n"),
+    "crates/dsl/src/lib.rs": [
+      "pub trait BuiltinBridge {",
+      "    fn invoke(&self) -> u32;",
+      "}",
+      "",
+    ].join("\n"),
+    "crates/server/Cargo.toml": [
+      "[package]",
+      'name = "bridge-server"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+      "[dependencies]",
+      'bridge-dsl = { path = "../dsl" }',
+      "",
+    ].join("\n"),
+    "crates/server/src/lib.rs": [
+      "use bridge_dsl::BuiltinBridge;",
+      "",
+      "pub struct ServerHandler;",
+      "pub struct OtherHandler;",
+      "",
+      "impl bridge_dsl::BuiltinBridge for ServerHandler {",
+      "    fn invoke(&self) -> u32 { 1 }",
+      "}",
+      "",
+      "impl BuiltinBridge for OtherHandler {",
+      "    fn invoke(&self) -> u32 { 2 }",
+      "}",
+      "",
+    ].join("\n"),
+  })
+
+const createRsDe01ConcerningSpreadWorkspace = () =>
+  createRustWorkspace("pulsar-rs-de01-spread-", {
+    "Cargo.toml": [
+      "[package]",
+      'name = "de-spread-fixture"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      "",
+    ].join("\n"),
+    "src/lib.rs": "pub mod plugins;\npub mod local;\n",
+    "src/plugins.rs": [
+      ...Array.from({ length: 12 }, (_, index) => [
+        `pub struct Plugin${String(index).padStart(2, "0")};`,
+        `impl external_plugin::Plugin for Plugin${String(index).padStart(2, "0")} {`,
+        "    fn install(&self) {}",
+        "}",
+        "",
+      ].join("\n")),
+    ].join("\n"),
+    "src/local.rs": [
+      "pub trait LocalBehavior { fn go(&self) -> u8; }",
+      ...Array.from({ length: 4 }, (_, index) => [
+        `pub struct Local${index};`,
+        `impl LocalBehavior for Local${index} {`,
+        `    fn go(&self) -> u8 { ${index} }`,
+        "}",
+        "",
+      ].join("\n")),
+    ].join("\n"),
+  })
+
 const rsDe02ProblemWorkspaceFiles = (): Readonly<Record<string, string>> => ({
   "Cargo.toml": [
     "[package]",
@@ -192,7 +348,7 @@ const rsDe02ProblemWorkspaceFiles = (): Readonly<Record<string, string>> => ({
     'version = "2.0.0"',
     "",
   ].join("\n"),
-  "src/lib.rs": "pub fn fixture() {}\n",
+  "src/lib.rs": "use foo as _;\nuse bar as _;\npub fn fixture() {}\n",
 })
 
 const createRsDe02ProblemWorkspace = () =>
@@ -223,7 +379,7 @@ const createRsDe02CleanWorkspace = () =>
       'version = "1.0.0"',
       "",
     ].join("\n"),
-    "src/lib.rs": "pub fn fixture() {}\n",
+    "src/lib.rs": "use foo as _;\npub fn fixture() {}\n",
   })
 
 const createRsDe02NoDependencyWorkspace = () =>
@@ -318,7 +474,7 @@ const createRsDe02WorseWorkspace = () =>
       'version = "2.0.0"',
       "",
     ].join("\n"),
-    "src/lib.rs": "pub fn fixture() {}\n",
+    "src/lib.rs": "use foo as _;\nuse bar as _;\npub fn fixture() {}\n",
   })
 
 const createRsDe02BroaderWorkspace = () =>
@@ -390,7 +546,7 @@ const createRsDe02BroaderWorkspace = () =>
         "",
       ]),
     ].join("\n"),
-    "src/lib.rs": "pub fn fixture() {}\n",
+    "src/lib.rs": "use bar as _;\nuse foo as _;\npub fn fixture() {}\n",
   })
 
 const createRsDe02SourceCollisionWorkspace = () =>
@@ -443,7 +599,7 @@ const createRsDe02SourceCollisionWorkspace = () =>
       'version = "1.0.0"',
       "",
     ].join("\n"),
-    "src/lib.rs": "pub fn fixture() {}\n",
+    "src/lib.rs": "use foo as _;\nuse bar as _;\npub fn fixture() {}\n",
   })
 
 const createRsDe02DirectSourceCollisionWorkspace = () =>
@@ -482,7 +638,7 @@ const createRsDe02DirectSourceCollisionWorkspace = () =>
       'version = "1.0.0"',
       "",
     ].join("\n"),
-    "src/lib.rs": "pub fn fixture() {}\n",
+    "src/lib.rs": "use shared as _;\npub fn fixture() {}\n",
   })
 
 const createRsDe02AmbiguousDirectSourceWorkspace = () =>
@@ -521,7 +677,7 @@ const createRsDe02AmbiguousDirectSourceWorkspace = () =>
       'version = "1.0.0"',
       "",
     ].join("\n"),
-    "src/lib.rs": "pub fn fixture() {}\n",
+    "src/lib.rs": "use shared as _;\npub fn fixture() {}\n",
   })
 
 const createRsDe02EqualDepthWorkspace = () =>
@@ -567,7 +723,7 @@ const createRsDe02EqualDepthWorkspace = () =>
       'version = "1.0.0"',
       "",
     ].join("\n"),
-    "src/lib.rs": "pub fn fixture() {}\n",
+    "src/lib.rs": "use alpha as _;\nuse beta as _;\npub fn fixture() {}\n",
   })
 
 const createRsDe02WorkspaceInheritedWorkspace = () =>
@@ -631,7 +787,7 @@ const createRsDe02WorkspaceInheritedWorkspace = () =>
       'version = "1.0.0"',
       "",
     ].join("\n"),
-    "crates/app/src/lib.rs": "pub fn fixture() {}\n",
+    "crates/app/src/lib.rs": "use serde_alias as _;\nuse bar as _;\nuse renamed_table as _;\npub fn fixture() {}\n",
   })
 
 const rsDe03FeatureWorkspaceFiles = (): Readonly<Record<string, string>> => ({
@@ -1002,12 +1158,13 @@ describe("RS-DE-* signals", () => {
       tier: 1,
       category: "dependency-entropy",
       kind: "structural",
-      cacheVersion: "trait-coupling-config-applicability-diagnostics-v1",
+      cacheVersion: "trait-coupling-ratio-score-workspace-locality-test-gating-v2",
       inputs: [],
     })
     expect(decoded).toEqual({
       exclude_globs: ["**/target/**", "**/tests/**", "**/examples/**", "**/benches/**"],
       top_n_diagnostics: 10,
+      min_trait_impl_evidence: 10,
     })
     expect(registered?.id).toBe(RsDe01.id)
     expect(registered?.cacheVersion).toBe(RsDe01.cacheVersion)
@@ -1028,6 +1185,15 @@ describe("RS-DE-* signals", () => {
         source: "signal-default",
         affectsScore: false,
         scoreRole: "metadata",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
+        path: "config.min_trait_impl_evidence",
+        source: "signal-default",
+        affectsScore: true,
+        scoreRole: "threshold",
+        value: 10,
       }),
     )
   })
@@ -1057,22 +1223,34 @@ describe("RS-DE-* signals", () => {
       expect(module?.details.find((detail) => detail.trait === "external_crate::ExternalTrait")?.family).toBe(
         "application-external",
       )
-      expect(out.analysisMode).toBe("syntax-and-local-name-resolution")
-      expect(RsDe01.score(out)).toBe(0)
+      expect(out.analysisMode).toBe("syntax-and-workspace-name-resolution")
+      expect(out.testGatedTraitImpls).toBe(0)
+      expect(out.evidenceFloor).toBe(10)
+      // 2 concerning of 7 measured impls, floored to 10 evidence: 1 - 2/10.
+      expect(RsDe01.score(out)).toBe(0.8)
       expect(RsDe01.outputMetadata?.(out)).toBeUndefined()
 
       const diagnostics = RsDe01.diagnose(out)
       expect(diagnostics).toHaveLength(1)
       expect(diagnostics[0]).toMatchObject({
         severity: "warn",
-        message: "Module de-trait-fixture::crate implements 2 concerning foreign traits (3 ordinary)",
+        message:
+          "Module de-trait-fixture::crate: 2 of 5 foreign trait impls flagged (trait family outside the recognized allowlists, or foreign trait implemented for a foreign type)",
         data: {
           module: "de-trait-fixture::crate",
           foreignTraitImpls: 5,
           concerningForeignTraitImpls: 2,
           ordinaryForeignTraitImpls: 3,
           orphanWorkaroundCandidates: 1,
-          analysisMode: "syntax-and-local-name-resolution",
+          scoring: {
+            totalTraitImpls: 7,
+            testGatedTraitImpls: 0,
+            totalConcerningForeignTraitImpls: 2,
+            evidenceFloor: 10,
+            scoreDenominator: 10,
+            scorePenalty: 0.2,
+          },
+          analysisMode: "syntax-and-workspace-name-resolution",
         },
       })
       expect(diagnostics[0]?.location?.file).toEndWith("/src/lib.rs")
@@ -1216,10 +1394,165 @@ describe("RS-DE-* signals", () => {
       expect(RsDe01.diagnose(hiddenNegative)).toEqual([])
       expect(RsDe01.diagnose(hiddenNaN)).toEqual([])
       expect(oneConcerning.totalConcerningForeignTraitImpls).toBe(1)
+      // Evidence floor: a tiny repo with one or two flagged impls is scored
+      // down proportionally, never cliffed to zero.
+      expect(RsDe01.score(oneConcerning)).toBe(0.9)
+      expect(RsDe01.score(capped)).toBe(0.8)
       expect(RsDe01.score(capped)).toBeLessThan(RsDe01.score(oneConcerning))
     } finally {
       await cleanupWorkspace(oneConcerningRepo)
       await cleanupWorkspace(multiModuleRepo)
+    }
+  })
+
+  test("RS-DE-01 normalizes the evidence floor config and lets it tighten small-repo scoring", async () => {
+    const oneConcerningRepo = await createRsDe01OneConcerningWorkspace()
+
+    try {
+      const tightened = await runSignalCompute(RsDe01, oneConcerningRepo, {
+        ...RsDe01.defaultConfig,
+        min_trait_impl_evidence: 1,
+      })
+      const fractional = await runSignalCompute(RsDe01, oneConcerningRepo, {
+        ...RsDe01.defaultConfig,
+        min_trait_impl_evidence: 4.9,
+      })
+      const invalid = await runSignalCompute(RsDe01, oneConcerningRepo, {
+        ...RsDe01.defaultConfig,
+        min_trait_impl_evidence: Number.NaN,
+      })
+      const belowOne = await runSignalCompute(RsDe01, oneConcerningRepo, {
+        ...RsDe01.defaultConfig,
+        min_trait_impl_evidence: -3,
+      })
+
+      expect(tightened.evidenceFloor).toBe(1)
+      expect(RsDe01.score(tightened)).toBe(0)
+      expect(fractional.evidenceFloor).toBe(4)
+      expect(RsDe01.score(fractional)).toBe(0.75)
+      expect(invalid.evidenceFloor).toBe(10)
+      expect(RsDe01.score(invalid)).toBe(0.9)
+      expect(belowOne.evidenceFloor).toBe(1)
+      expect(RsDe01.score(belowOne)).toBe(0)
+    } finally {
+      await cleanupWorkspace(oneConcerningRepo)
+    }
+  })
+
+  test("RS-DE-01 ignores #[cfg(test)] trait impls as production coupling evidence", async () => {
+    const repo = await createRsDe01TestGatedWorkspace()
+
+    try {
+      const out = await runSignalCompute(RsDe01, repo, RsDe01.defaultConfig)
+
+      expect(out.sourceFileCount).toBe(2)
+      expect(out.analyzedFileCount).toBe(2)
+      expect(out.testGatedTraitImpls).toBe(3)
+      expect(out.totalTraitImpls).toBe(1)
+      expect(out.totalForeignTraitImpls).toBe(0)
+      expect(out.totalConcerningForeignTraitImpls).toBe(0)
+      expect(out.modules).toEqual([])
+      expect(RsDe01.score(out)).toBe(1)
+      expect(RsDe01.diagnose(out)).toEqual([])
+      expect(RsDe01.outputMetadata?.(out)).toBeUndefined()
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-DE-01 treats canonical async/IO ecosystem traits on local wrappers as ordinary interop", async () => {
+    const repo = await createRsDe01AsyncEcosystemWorkspace()
+
+    try {
+      const out = await runSignalCompute(RsDe01, repo, RsDe01.defaultConfig)
+      const module = out.byModule.get("de-async-fixture::crate")
+
+      expect(out.totalTraitImpls).toBe(3)
+      expect(out.totalForeignTraitImpls).toBe(3)
+      expect(out.totalConcerningForeignTraitImpls).toBe(0)
+      expect(module?.foreignTraitImpls).toBe(3)
+      expect(module?.concerningForeignTraitImpls).toBe(0)
+      expect(module?.ordinaryForeignTraitImpls).toBe(3)
+      expect(module?.details.map((detail) => detail.family)).toEqual([
+        "async-io-ecosystem",
+        "async-io-ecosystem",
+        "async-io-ecosystem",
+      ])
+      expect(module?.details.every((detail) => !detail.concerning)).toBe(true)
+      expect(RsDe01.score(out)).toBe(1)
+      expect(RsDe01.diagnose(out)).toEqual([])
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-DE-01 treats traits defined in sibling workspace crates as local", async () => {
+    const repo = await createRsDe01WorkspaceTraitWorkspace()
+
+    try {
+      const out = await runSignalCompute(RsDe01, repo, RsDe01.defaultConfig)
+
+      expect(out.sourceFileCount).toBe(2)
+      expect(out.totalTraitImpls).toBe(2)
+      expect(out.totalForeignTraitImpls).toBe(0)
+      expect(out.totalConcerningForeignTraitImpls).toBe(0)
+      expect(out.modules).toEqual([])
+      expect(RsDe01.score(out)).toBe(1)
+      expect(RsDe01.diagnose(out)).toEqual([])
+      expect(RsDe01.outputMetadata?.(out)).toBeUndefined()
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-DE-01 keeps scoring down genuine foreign-trait spread, scaled by measured evidence", async () => {
+    const repo = await createRsDe01ConcerningSpreadWorkspace()
+
+    try {
+      const mixed = await runSignalCompute(RsDe01, repo, RsDe01.defaultConfig)
+      const saturated = await runSignalCompute(RsDe01, repo, {
+        ...RsDe01.defaultConfig,
+        exclude_globs: ["**/local.rs"],
+      })
+
+      expect(mixed.totalTraitImpls).toBe(16)
+      expect(mixed.totalConcerningForeignTraitImpls).toBe(12)
+      // Ratio semantics: 12 flagged of 16 measured impls.
+      expect(RsDe01.score(mixed)).toBe(0.25)
+
+      expect(saturated.totalTraitImpls).toBe(12)
+      expect(saturated.totalConcerningForeignTraitImpls).toBe(12)
+      // Fully concerning above the evidence floor still zeroes the signal.
+      expect(RsDe01.score(saturated)).toBe(0)
+
+      const diagnostics = RsDe01.diagnose(mixed)
+      expect(diagnostics).toHaveLength(1)
+      expect(diagnostics[0]?.severity).toBe("info")
+      expect(diagnostics[0]?.data?.module).toBe("de-spread-fixture::crate::plugins")
+      const scoring = diagnostics[0]?.data?.scoring as {
+        totalTraitImpls: number
+        testGatedTraitImpls: number
+        totalConcerningForeignTraitImpls: number
+        evidenceFloor: number
+        scoreDenominator: number
+        scorePenalty: number
+      }
+      expect(scoring).toEqual({
+        totalTraitImpls: 16,
+        testGatedTraitImpls: 0,
+        totalConcerningForeignTraitImpls: 12,
+        evidenceFloor: 10,
+        scoreDenominator: 16,
+        scorePenalty: 0.75,
+      })
+      // Diagnostics expose every score-bearing component: the published
+      // score is reconstructible from the scoring payload alone.
+      expect(Math.max(0, 1 - scoring.scorePenalty)).toBe(RsDe01.score(mixed))
+      expect(scoring.scoreDenominator).toBe(
+        Math.max(scoring.totalTraitImpls, scoring.evidenceFloor, 1),
+      )
+    } finally {
+      await cleanupWorkspace(repo)
     }
   })
 
@@ -1257,7 +1590,7 @@ describe("RS-DE-* signals", () => {
       tier: 1,
       category: "dependency-entropy",
       kind: "structural",
-      cacheVersion: "cargo-lock-dependency-tree-workspace-deps-v1",
+      cacheVersion: "cargo-lock-dependency-tree-ratio-curve-unused-deps-v2",
       inputs: [],
     })
     expect(decoded).toEqual({ top_n_diagnostics: 10 })
@@ -1292,6 +1625,7 @@ describe("RS-DE-* signals", () => {
           name: "baz",
           versions: ["1.0.0", "2.0.0"],
           instanceCount: 2,
+          platformShim: false,
         },
       ])
       expect(out.topLevelDependencies.map((entry) => entry.name)).toEqual(["bar", "foo"])
@@ -1301,12 +1635,15 @@ describe("RS-DE-* signals", () => {
         rootInstances: 1,
       })
       expect(out.topLevelDependencies.find((entry) => entry.name === "foo")?.maxDepth).toBe(1)
-      expect(RsDe02.score(out)).toBeCloseTo(0.8)
+      // One non-shim duplicate group against the 50-package ratio floor.
+      expect(RsDe02.score(out)).toBeCloseTo(0.96)
       expect(RsDe02.outputMetadata?.(out)).toBeUndefined()
 
       const diagnostics = RsDe02.diagnose(out)
-      expect(diagnostics).toHaveLength(3)
-      expect(diagnostics[0]).toMatchObject({
+      // Score-breakdown summary leads, then duplicate + two depth details.
+      expect(diagnostics).toHaveLength(4)
+      expect(diagnostics[0]?.message).toContain("total pressure")
+      expect(diagnostics[1]).toMatchObject({
         severity: "warn",
         message: "Duplicate crate versions for baz: 1.0.0, 2.0.0",
         location: { file: "Cargo.lock" },
@@ -1316,7 +1653,7 @@ describe("RS-DE-* signals", () => {
           instanceCount: 2,
         },
       })
-      expect(diagnostics[1]).toMatchObject({
+      expect(diagnostics[2]).toMatchObject({
         severity: "info",
         message: "Top-level dependency bar reaches depth 2",
         data: {
@@ -1326,8 +1663,8 @@ describe("RS-DE-* signals", () => {
           rootInstances: 1,
         },
       })
-      expect(typeof diagnostics[0]?.data?.hash).toBe("string")
       expect(typeof diagnostics[1]?.data?.hash).toBe("string")
+      expect(typeof diagnostics[2]?.data?.hash).toBe("string")
     } finally {
       await cleanupWorkspace(repo)
     }
@@ -1441,8 +1778,10 @@ describe("RS-DE-* signals", () => {
       )
       expect(RsDe02.score(broader)).toBeLessThan(RsDe02.score(problem))
       expect(capped.diagnosticLimit).toBe(1)
-      expect(RsDe02.diagnose(capped)).toHaveLength(1)
-      expect(RsDe02.diagnose(capped)[0]?.data?.name).toBe("baz")
+      // The breakdown summary rides above the cap; the capped detail follows.
+      expect(RsDe02.diagnose(capped)).toHaveLength(2)
+      expect(RsDe02.diagnose(capped)[0]?.message).toContain("total pressure")
+      expect(RsDe02.diagnose(capped)[1]?.data?.name).toBe("baz")
       expect(equalDepth.diagnosticLimit).toBe(2)
       expect(RsDe02.diagnose(equalDepth).map((diagnostic) => diagnostic.data?.name)).toEqual([
         "alpha",
@@ -1547,7 +1886,8 @@ describe("RS-DE-* signals", () => {
           reachablePackages: 1,
         },
       ])
-      expect(RsDe02.score(out)).toBeCloseTo(0.95)
+      // Depth-1 chains are ecosystem-normal under the ratio curve: no pressure.
+      expect(RsDe02.score(out)).toBe(1)
       expect(RsDe02.outputMetadata?.(out)).toBeUndefined()
       expect(RsDe02.diagnose(out).map((diagnostic) => diagnostic.message)).toEqual([
         "Top-level dependency bar reaches depth 1",

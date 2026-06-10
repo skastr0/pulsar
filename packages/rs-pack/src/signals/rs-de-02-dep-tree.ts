@@ -7,12 +7,14 @@ import {
   type SignalFactorDefinition,
   SignalComputeError,
 } from "@skastr0/pulsar-core/signal"
+import { readFile } from "node:fs/promises"
+import { relative, sep } from "node:path"
 import { Effect, Schema } from "effect"
 import {
   findDuplicateCargoLockPackages,
   type CargoLockPackage,
 } from "../lock-file.js"
-import { RustProjectTag, type RustProject } from "../project.js"
+import { RustProjectTag, type RustManifestInfo, type RustProject } from "../project.js"
 
 const RsDe02Config = Schema.Struct({
   top_n_diagnostics: Schema.Number,
@@ -23,6 +25,7 @@ interface DependencyDuplicateGroup {
   readonly name: string
   readonly versions: ReadonlyArray<string>
   readonly instanceCount: number
+  readonly platformShim: boolean
 }
 
 interface TopLevelDependencyDepth {
@@ -32,6 +35,14 @@ interface TopLevelDependencyDepth {
   readonly reachablePackages: number
 }
 
+interface UnusedDependencyInfo {
+  readonly manifestName: string
+  readonly manifestFile: string
+  readonly alias: string
+  readonly packageName: string
+  readonly libName: string
+}
+
 interface RsDe02Output {
   readonly duplicates: ReadonlyArray<DependencyDuplicateGroup>
   readonly topLevelDependencies: ReadonlyArray<TopLevelDependencyDepth>
@@ -39,13 +50,67 @@ interface RsDe02Output {
   readonly lockfileStatus: "loaded" | "missing"
   readonly packageCount: number
   readonly dependencyPackageCount: number
+  readonly maxDependencyDepth: number
+  readonly unusedDependencies: ReadonlyArray<UnusedDependencyInfo>
+  readonly unusedDependencyCount: number
+  readonly scannedSourceFileCount: number
   readonly manifestCount: number
   readonly directDependencyCount: number
   readonly diagnosticLimit: number
   readonly analysisMode: "cargo-lock"
 }
 
+interface RsDe02ScoreBreakdown {
+  readonly duplicateGroupCount: number
+  readonly platformShimDuplicateGroupCount: number
+  readonly scoredDuplicateGroupCount: number
+  readonly dependencyPackageCount: number
+  readonly duplicateRatio: number
+  readonly duplicatePressure: number
+  readonly maxDependencyDepth: number
+  readonly depthPressure: number
+  readonly breadthPressure: number
+  readonly unusedDependencyCount: number
+  readonly unusedDependencyPressure: number
+  readonly totalPressure: number
+  readonly scoreFloor: number
+  readonly score: number
+}
+
 const DEFAULT_TOP_N_DIAGNOSTICS = 10
+
+// Score-curve constants. Duplicate pressure is a ratio of non-platform-shim
+// duplicate groups to lockfile dependency packages (floored denominator so a
+// single endemic duplicate in a small lockfile does not dominate). Depth
+// pressure starts beyond the ecosystem-normal range (clap-style depth 5 and
+// tantivy-style depth 9 stay pressure-free). Breadth saturates at a realistic
+// Rust scale (hundreds of lock packages) with a small weight. Per-component
+// caps plus the score floor guarantee this signal can never single-handedly
+// zero a repository.
+const DUPLICATE_RATIO_PACKAGE_FLOOR = 50
+const DUPLICATE_PRESSURE_WEIGHT = 2
+const DUPLICATE_PRESSURE_CAP = 0.45
+const DEPTH_WARN_THRESHOLD = 8
+const DEPTH_PRESSURE_START = 10
+const DEPTH_PRESSURE_PER_LEVEL = 0.05
+const DEPTH_PRESSURE_CAP = 0.25
+const BREADTH_PRESSURE_START = 5
+const BREADTH_PRESSURE_SCALE = 1200
+const BREADTH_PRESSURE_CAP = 0.25
+const UNUSED_PRESSURE_PER_DEPENDENCY = 0.04
+const UNUSED_PRESSURE_CAP = 0.2
+const SCORE_FLOOR = 0.15
+
+// Platform-shim duplicate families every tokio/wasm-adjacent project carries
+// transitively. They still appear as informational duplicate diagnostics but
+// are excluded from duplicate score pressure.
+const PLATFORM_SHIM_PATTERNS: ReadonlyArray<RegExp> = [
+  /^windows-sys$/,
+  /^windows-targets$/,
+  /^windows_[a-z0-9_]+$/,
+  /^wasi$/,
+  /^redox_syscall$/,
+]
 
 const RS_DE_02_FACTOR_DEFINITIONS: ReadonlyArray<SignalFactorDefinition> = [
   {
@@ -64,7 +129,7 @@ export const RsDe02: Signal<RsDe02Config, RsDe02Output, RustProjectTag> = {
   tier: 1,
   category: "dependency-entropy",
   kind: "structural",
-  cacheVersion: "cargo-lock-dependency-tree-workspace-deps-v1",
+  cacheVersion: "cargo-lock-dependency-tree-ratio-curve-unused-deps-v2",
   configSchema: RsDe02Config,
   factorDefinitions: RS_DE_02_FACTOR_DEFINITIONS,
   defaultConfig: {
@@ -84,16 +149,7 @@ export const RsDe02: Signal<RsDe02Config, RsDe02Output, RustProjectTag> = {
     }),
   score: (out) => {
     if (out.lockfileStatus === "missing") return 1
-    const depthPenalty = Math.min(
-      0.5,
-      out.topLevelDependencies.reduce((max, entry) => Math.max(max, entry.maxDepth), 0) / 20,
-    )
-    const duplicatePenalty = Math.min(0.5, out.duplicateCount / 10)
-    const breadthPenalty = Math.min(
-      0.2,
-      Math.max(0, out.dependencyPackageCount - 5) / 100,
-    )
-    return Math.max(0, 1 - depthPenalty - duplicatePenalty - breadthPenalty)
+    return computeRsDe02ScoreBreakdown(out).score
   },
   diagnose: (out): ReadonlyArray<Diagnostic> => {
     if (out.lockfileStatus === "missing") {
@@ -127,22 +183,26 @@ export const RsDe02: Signal<RsDe02Config, RsDe02Output, RustProjectTag> = {
         },
       }].slice(0, out.diagnosticLimit)
     }
+    if (out.diagnosticLimit <= 0) return []
 
     const duplicateDiagnostics = out.duplicates.map((group) => ({
-      severity: "warn" as const,
-      message: `Duplicate crate versions for ${group.name}: ${group.versions.join(", ")}`,
+      severity: group.platformShim ? ("info" as const) : ("warn" as const),
+      message: group.platformShim
+        ? `Duplicate crate versions for ${group.name}: ${group.versions.join(", ")} (platform-shim family, excluded from score pressure)`
+        : `Duplicate crate versions for ${group.name}: ${group.versions.join(", ")}`,
       location: { file: "Cargo.lock" },
       data: {
         hash: hashDuplicateGroup(group),
         name: group.name,
         versions: group.versions,
         instanceCount: group.instanceCount,
+        platformShim: group.platformShim,
       },
     }))
     const depthDiagnostics = out.topLevelDependencies
       .filter((entry) => entry.maxDepth > 0)
       .map((entry) => ({
-        severity: entry.maxDepth >= 5 ? ("warn" as const) : ("info" as const),
+        severity: entry.maxDepth >= DEPTH_WARN_THRESHOLD ? ("warn" as const) : ("info" as const),
         message: `Top-level dependency ${entry.name} reaches depth ${entry.maxDepth}`,
         location: { file: "Cargo.lock" },
         data: {
@@ -153,7 +213,30 @@ export const RsDe02: Signal<RsDe02Config, RsDe02Output, RustProjectTag> = {
           rootInstances: entry.rootInstances,
         },
       }))
-    return [...duplicateDiagnostics, ...depthDiagnostics].slice(0, out.diagnosticLimit)
+    const unusedDiagnostics = out.unusedDependencies.map((entry) => ({
+      severity: "warn" as const,
+      message: `Declared dependency ${entry.alias} (crate ${entry.packageName}) has no source references in ${entry.manifestName}`,
+      location: { file: entry.manifestFile },
+      data: {
+        hash: hashUnusedDependency(entry),
+        alias: entry.alias,
+        packageName: entry.packageName,
+        libName: entry.libName,
+        manifestName: entry.manifestName,
+      },
+    }))
+    const details = [
+      ...duplicateDiagnostics,
+      ...depthDiagnostics,
+      ...unusedDiagnostics,
+    ].slice(0, out.diagnosticLimit)
+    const breakdown = computeRsDe02ScoreBreakdown(out)
+    // The score-breakdown summary rides above the top_n cap so every
+    // score-bearing penalty component stays reconstructible even when detail
+    // diagnostics overflow the limit.
+    return breakdown.totalPressure > 0
+      ? [scoreBreakdownDiagnostic(breakdown), ...details]
+      : details
   },
   outputMetadata: (out) => {
     if (out.lockfileStatus === "missing") {
@@ -179,13 +262,90 @@ export const RsDe02: Signal<RsDe02Config, RsDe02Output, RustProjectTag> = {
 
 type NormalizedRsDe02Config = RsDe02Config
 
-const computeRsDe02Output = (
+const computeRsDe02ScoreBreakdown = (out: RsDe02Output): RsDe02ScoreBreakdown => {
+  const platformShimDuplicateGroupCount = out.duplicates
+    .filter((group) => group.platformShim)
+    .length
+  const scoredDuplicateGroupCount = out.duplicateCount - platformShimDuplicateGroupCount
+  const duplicateRatio =
+    scoredDuplicateGroupCount /
+    Math.max(DUPLICATE_RATIO_PACKAGE_FLOOR, out.dependencyPackageCount)
+  const duplicatePressure = Math.min(
+    DUPLICATE_PRESSURE_CAP,
+    duplicateRatio * DUPLICATE_PRESSURE_WEIGHT,
+  )
+  const depthPressure = Math.min(
+    DEPTH_PRESSURE_CAP,
+    Math.max(0, out.maxDependencyDepth - (DEPTH_PRESSURE_START - 1)) *
+      DEPTH_PRESSURE_PER_LEVEL,
+  )
+  const breadthPressure = Math.min(
+    BREADTH_PRESSURE_CAP,
+    Math.max(0, out.dependencyPackageCount - BREADTH_PRESSURE_START) /
+      BREADTH_PRESSURE_SCALE,
+  )
+  const unusedDependencyPressure = Math.min(
+    UNUSED_PRESSURE_CAP,
+    out.unusedDependencyCount * UNUSED_PRESSURE_PER_DEPENDENCY,
+  )
+  const totalPressure =
+    duplicatePressure + depthPressure + breadthPressure + unusedDependencyPressure
+  return {
+    duplicateGroupCount: out.duplicateCount,
+    platformShimDuplicateGroupCount,
+    scoredDuplicateGroupCount,
+    dependencyPackageCount: out.dependencyPackageCount,
+    duplicateRatio,
+    duplicatePressure,
+    maxDependencyDepth: out.maxDependencyDepth,
+    depthPressure,
+    breadthPressure,
+    unusedDependencyCount: out.unusedDependencyCount,
+    unusedDependencyPressure,
+    totalPressure,
+    scoreFloor: SCORE_FLOOR,
+    score: Math.max(SCORE_FLOOR, 1 - totalPressure),
+  }
+}
+
+const scoreBreakdownDiagnostic = (breakdown: RsDe02ScoreBreakdown): Diagnostic => ({
+  severity: "info" as const,
+  message: [
+    `RS-DE-02 score ${breakdown.score.toFixed(3)} (total pressure ${breakdown.totalPressure.toFixed(3)}, floor ${breakdown.scoreFloor.toFixed(2)}):`,
+    `duplicates ${breakdown.scoredDuplicateGroupCount} scored of ${breakdown.duplicateGroupCount} groups (${breakdown.platformShimDuplicateGroupCount} platform-shim) across ${breakdown.dependencyPackageCount} packages (+${breakdown.duplicatePressure.toFixed(3)}),`,
+    `max depth ${breakdown.maxDependencyDepth} (+${breakdown.depthPressure.toFixed(3)}),`,
+    `breadth ${breakdown.dependencyPackageCount} packages (+${breakdown.breadthPressure.toFixed(3)}),`,
+    `unused dependencies ${breakdown.unusedDependencyCount} (+${breakdown.unusedDependencyPressure.toFixed(3)})`,
+  ].join(" "),
+  location: { file: "Cargo.lock" },
+  data: {
+    hash: hashScoreBreakdown(breakdown),
+    kind: "score-breakdown",
+    duplicateGroupCount: breakdown.duplicateGroupCount,
+    platformShimDuplicateGroupCount: breakdown.platformShimDuplicateGroupCount,
+    scoredDuplicateGroupCount: breakdown.scoredDuplicateGroupCount,
+    dependencyPackageCount: breakdown.dependencyPackageCount,
+    duplicateRatio: breakdown.duplicateRatio,
+    duplicatePressure: breakdown.duplicatePressure,
+    maxDependencyDepth: breakdown.maxDependencyDepth,
+    depthPressure: breakdown.depthPressure,
+    breadthPressure: breakdown.breadthPressure,
+    unusedDependencyCount: breakdown.unusedDependencyCount,
+    unusedDependencyPressure: breakdown.unusedDependencyPressure,
+    totalPressure: breakdown.totalPressure,
+    scoreFloor: breakdown.scoreFloor,
+    score: breakdown.score,
+  },
+})
+
+const computeRsDe02Output = async (
   project: RustProject,
   config: NormalizedRsDe02Config,
-): RsDe02Output => {
+): Promise<RsDe02Output> => {
   const directDependencyNames = collectDirectDependencyNames(project)
+  const unusedAnalysis = await detectUnusedDependencies(project)
   if (project.cargoLock === undefined) {
-    return missingCargoLockOutput(project, directDependencyNames, config)
+    return missingCargoLockOutput(project, directDependencyNames, unusedAnalysis, config)
   }
 
   const cargoLock = project.cargoLock
@@ -209,6 +369,7 @@ const computeRsDe02Output = (
     workspacePackageNames,
     topLevelDependencies,
     duplicates,
+    unusedAnalysis,
   )
 }
 
@@ -229,9 +390,145 @@ const collectWorkspacePackageNames = (project: RustProject): ReadonlySet<string>
   return names
 }
 
+interface UnusedDependencyAnalysis {
+  readonly unusedDependencies: ReadonlyArray<UnusedDependencyInfo>
+  readonly scannedSourceFileCount: number
+}
+
+interface DeclaredNormalDependency {
+  readonly alias: string
+  readonly packageName: string
+}
+
+const PLAIN_DEPENDENCIES_SECTION_PATTERN = /^\[dependencies\]$/
+const PLAIN_DEPENDENCY_TABLE_SECTION_PATTERN = /^\[dependencies\.([A-Za-z0-9_-]+)\]$/
+const MANIFEST_DEPENDENCY_KEY_PATTERN = /^([A-Za-z0-9_-]+)\s*=\s*(.+)$/
+const MANIFEST_PACKAGE_INLINE_PATTERN = /(?:^|[,{]\s*)package\s*=\s*"([^"]+)"/
+const MANIFEST_PACKAGE_KEY_PATTERN = /^package\s*=\s*"([^"]+)"$/
+
+// Parses only plain `[dependencies]` entries (not dev-, build-, or
+// target-specific dependencies) so unused-dependency claims stay conservative:
+// dev/build/conditional dependencies legitimately have no `src/` references.
+const parsePlainDependencies = (raw: string): ReadonlyArray<DeclaredNormalDependency> => {
+  const declared = new Map<string, string>()
+  let inPlainSection = false
+  let tableAlias: string | undefined
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = stripManifestLineComment(line).trim()
+    if (trimmed.length === 0) continue
+    if (trimmed.startsWith("[")) {
+      inPlainSection = PLAIN_DEPENDENCIES_SECTION_PATTERN.test(trimmed)
+      tableAlias = PLAIN_DEPENDENCY_TABLE_SECTION_PATTERN.exec(trimmed)?.[1]
+      if (tableAlias !== undefined && !declared.has(tableAlias)) {
+        declared.set(tableAlias, tableAlias)
+      }
+      continue
+    }
+    if (tableAlias !== undefined) {
+      const packageMatch = MANIFEST_PACKAGE_KEY_PATTERN.exec(trimmed)
+      if (packageMatch !== null) declared.set(tableAlias, packageMatch[1]!)
+      continue
+    }
+    if (!inPlainSection) continue
+    const dependencyMatch = MANIFEST_DEPENDENCY_KEY_PATTERN.exec(trimmed)
+    if (dependencyMatch === null) continue
+    const alias = dependencyMatch[1]!
+    const value = dependencyMatch[2]!.trim()
+    declared.set(alias, MANIFEST_PACKAGE_INLINE_PATTERN.exec(value)?.[1] ?? alias)
+  }
+  return [...declared.entries()].map(([alias, packageName]) => ({ alias, packageName }))
+}
+
+const stripManifestLineComment = (line: string): string => {
+  let inString = false
+  let escaped = false
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index]
+    if (escaped) {
+      escaped = false
+      continue
+    }
+    if (char === "\\") {
+      escaped = true
+      continue
+    }
+    if (char === '"') {
+      inString = !inString
+      continue
+    }
+    if (char === "#" && !inString) return line.slice(0, index)
+  }
+  return line
+}
+
+const detectUnusedDependencies = async (
+  project: RustProject,
+): Promise<UnusedDependencyAnalysis> => {
+  const unused: Array<UnusedDependencyInfo> = []
+  let scannedSourceFileCount = 0
+  for (const manifest of project.manifests) {
+    const declared = parsePlainDependencies(
+      await readFile(manifest.manifestPath, "utf8"),
+    )
+    if (declared.length === 0) continue
+    const sourceFiles = project.sourceFiles.filter((file) =>
+      file.startsWith(`${manifest.path}${sep}`),
+    )
+    // No scannable sources means absence of references cannot be proven, so
+    // no unused-dependency claim is made for this manifest.
+    if (sourceFiles.length === 0) continue
+    const pending = new Map(
+      declared.map((dependency) => {
+        const libName = dependency.alias.replace(/-/g, "_")
+        return [
+          dependency.alias,
+          {
+            ...dependency,
+            libName,
+            pattern: new RegExp(`\\b${libName}\\b`),
+          },
+        ] as const
+      }),
+    )
+    for (const file of sourceFiles) {
+      if (pending.size === 0) break
+      const content = await readFile(file, "utf8")
+      scannedSourceFileCount += 1
+      for (const [alias, dependency] of [...pending]) {
+        if (dependency.pattern.test(content)) pending.delete(alias)
+      }
+    }
+    const manifestFile = relative(project.worktreePath, manifest.manifestPath)
+    for (const dependency of [...pending.values()].sort((left, right) =>
+      left.alias.localeCompare(right.alias),
+    )) {
+      unused.push({
+        manifestName: manifest.name,
+        manifestFile,
+        alias: dependency.alias,
+        packageName: resolveDeclaredPackageName(manifest, dependency),
+        libName: dependency.libName,
+      })
+    }
+  }
+  return { unusedDependencies: unused, scannedSourceFileCount }
+}
+
+const resolveDeclaredPackageName = (
+  manifest: RustManifestInfo,
+  dependency: DeclaredNormalDependency,
+): string => {
+  if (dependency.packageName !== dependency.alias) return dependency.packageName
+  const resolved = (manifest.dependencies ?? []).find(
+    (entry) => entry.alias === dependency.alias,
+  )
+  return resolved?.packageName ?? dependency.packageName
+}
+
 const missingCargoLockOutput = (
   project: RustProject,
   directDependencyNames: ReadonlySet<string>,
+  unusedAnalysis: UnusedDependencyAnalysis,
   config: NormalizedRsDe02Config,
 ): RsDe02Output => ({
   duplicates: [],
@@ -240,6 +537,10 @@ const missingCargoLockOutput = (
   lockfileStatus: "missing",
   packageCount: 0,
   dependencyPackageCount: 0,
+  maxDependencyDepth: 0,
+  unusedDependencies: unusedAnalysis.unusedDependencies,
+  unusedDependencyCount: unusedAnalysis.unusedDependencies.length,
+  scannedSourceFileCount: unusedAnalysis.scannedSourceFileCount,
   manifestCount: project.manifests.length,
   directDependencyCount: directDependencyNames.size,
   diagnosticLimit: config.top_n_diagnostics,
@@ -254,6 +555,7 @@ const loadedCargoLockOutput = (
   workspacePackageNames: ReadonlySet<string>,
   topLevelDependencies: ReadonlyArray<TopLevelDependencyDepth>,
   duplicates: ReadonlyArray<DependencyDuplicateGroup>,
+  unusedAnalysis: UnusedDependencyAnalysis,
 ): RsDe02Output => ({
   duplicates,
   topLevelDependencies,
@@ -261,6 +563,13 @@ const loadedCargoLockOutput = (
   lockfileStatus: "loaded",
   packageCount: cargoLock.packages.length,
   dependencyPackageCount: countDependencyPackages(cargoLock.packages, workspacePackageNames),
+  maxDependencyDepth: topLevelDependencies.reduce(
+    (max, entry) => Math.max(max, entry.maxDepth),
+    0,
+  ),
+  unusedDependencies: unusedAnalysis.unusedDependencies,
+  unusedDependencyCount: unusedAnalysis.unusedDependencies.length,
+  scannedSourceFileCount: unusedAnalysis.scannedSourceFileCount,
   manifestCount: project.manifests.length,
   directDependencyCount: directDependencyNames.size,
   diagnosticLimit: config.top_n_diagnostics,
@@ -308,6 +617,9 @@ const topLevelDependencyDepths = (
     .filter((entry): entry is TopLevelDependencyDepth => entry !== undefined)
     .sort((left, right) => right.maxDepth - left.maxDepth || left.name.localeCompare(right.name))
 
+const isPlatformShimCrate = (name: string): boolean =>
+  PLATFORM_SHIM_PATTERNS.some((pattern) => pattern.test(name))
+
 const dependencyDuplicateGroups = (
   cargoLock: NonNullable<RustProject["cargoLock"]>,
 ): ReadonlyArray<DependencyDuplicateGroup> =>
@@ -315,6 +627,7 @@ const dependencyDuplicateGroups = (
     name: group.name,
     versions: group.versions,
     instanceCount: group.packages.length,
+    platformShim: isPlatformShimCrate(group.name),
   }))
 
 const countDependencyPackages = (
@@ -349,6 +662,30 @@ const hashDependencyDepth = (entry: TopLevelDependencyDepth): string =>
       entry.rootInstances,
       entry.maxDepth,
       entry.reachablePackages,
+    ].join("|"),
+  )
+
+const hashUnusedDependency = (entry: UnusedDependencyInfo): string =>
+  computeDiagnosticHash(
+    [
+      "unused-dependency",
+      entry.manifestName,
+      entry.alias,
+      entry.packageName,
+      entry.libName,
+    ].join("|"),
+  )
+
+const hashScoreBreakdown = (breakdown: RsDe02ScoreBreakdown): string =>
+  computeDiagnosticHash(
+    [
+      "score-breakdown",
+      breakdown.duplicateGroupCount,
+      breakdown.platformShimDuplicateGroupCount,
+      breakdown.scoredDuplicateGroupCount,
+      breakdown.dependencyPackageCount,
+      breakdown.maxDependencyDepth,
+      breakdown.unusedDependencyCount,
     ].join("|"),
   )
 
