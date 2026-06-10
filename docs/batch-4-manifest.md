@@ -1,5 +1,53 @@
 # Batch 4 manifest — carried forward from the aggregation truth pass
 
+## rs-pack second hardening pass (confirmed by cheap cluster verification)
+
+81 verdicts confirmed by the haiku cluster harness (calibrated at 22/22
+agreement with frontier ground truth, 0 false refutes). Unique defect
+clusters, by signal:
+
+- **RS-LD-03**: numerator counts closed-domain catch-alls but the share
+  denominator counts ALL matches including open-domain-exempt ones
+  (lines 133–134) — erosion diluted by primitive matches, and a stringly
+  refactor of an enum match RAISES the score; no evidence floor (one
+  closed-domain catch-all zeroes the signal); totalCatchAllArms sums a
+  different population than matchesWithCatchAll; open-domain detection
+  misses #[non_exhaustive] enums, guards-only matches, and nested literals
+  (`Some(0)` vs `Some(_)`).
+- **RS-LD-04**: the 0.5 uniform-collapsed floor is a step, not a scale —
+  99 collapsed + 1 granular scores 0.01 while fully collapsed scores 0.5
+  (monotonicity inversion: collapsing the last granular error RAISES the
+  score); uniform-posture diagnose() returns top_n + 1 entries.
+- **RS-AB-02**: classifyTraitOrigin sends module-qualified LOCAL trait
+  paths to "external" (same defect class as the fixed DE-01 symbolRoot
+  bug — needs the same recursive root resolution); DYN_TRAIT_REF_PATTERN
+  extracts "for" as the trait name on HRTB objects; inventory entries
+  dilute the score denominator while their diagnostics claim "not
+  score-bearing".
+- **RS-AB-01**: referenceScope cliff at the second workspace crate;
+  single-crate detection misses proc-macro/cdylib lib targets; cross-crate
+  mode has no evidence floor.
+- **RS-AB-04**: max_derive_count=8 still flags the fully-standard
+  idiomatic derive stack; bare Serialize/Deserialize treated as
+  serde-standard regardless of provenance; no evidence floor (1–3 tracked
+  types crater the score); reconstruction payload fields never asserted.
+- **RS-SL-04**: "(driving score)" labels the module-local count but the
+  score is driven by the repo total over a constant 25; Arc/Rc
+  short-circuit overrides container typing; payload keys unasserted.
+- **RS-AD-01**: averageExcessRatio arm of visibilityPressure is dead
+  code; warn_pub_ratio=0 scores 0.7 with nonsense warnings;
+  warnModuleShare is a step function; warn-share penalizes idiomatic
+  facade-root visibility.
+- **RS-DE-02 residue**: depth diagnostics warn at 8–9 while pressure
+  starts at 10; top_n_diagnostics=0 drops the score-breakdown diagnostic
+  the code comment guarantees.
+- **Test honesty**: observer-integration's rewritten AB-04 derive
+  fixtures are impossible Rust; AB-01's test pair enshrines opposite
+  verdicts for identical code; SL-04's loop-pressure test asserts nothing
+  about loops; signal-contracts certifies CLI tests for RS-LD-03 that do
+  not exist; the cfg-test exclusion fixture became open-domain-exempt,
+  weakening what it pins.
+
 Accumulated from the batch-3 fleet validation and the adversarial review of the
 rs-pack truth-pass commits (22 findings confirmed at 3/3 verifier votes; the
 well-scoped ones were fixed in batch 3, the design-grade ones live here with
