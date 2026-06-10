@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import { Effect, Schema } from "effect"
 import {
+  applySignalFactorPolicy,
+  configFactorOverridesOf,
+  makeSignalFactorPolicyContext,
+} from "../factor-ledger.js"
+import {
   assertValidFactorDefinitions,
   applyFactorOverrides,
   makeFactorEntry,
@@ -8,6 +13,7 @@ import {
   SignalFactorPolicyTag,
   overriddenFactorValue,
   validateFactorDefinitions,
+  withConfigFactorLedger,
 } from "../factors.js"
 import {
   buildRegistry,
@@ -18,6 +24,15 @@ import {
   type Signal,
   type SignalFactorDefinition,
 } from "../signal-api.js"
+import type {
+  SignalFactorLedger,
+  SignalFactorValue,
+} from "../signal-factor-model.js"
+import {
+  decodePulsarVector,
+  resolvedConfig,
+  type PulsarVector,
+} from "../vector.js"
 
 const FactorConfig = Schema.Struct({})
 type FactorConfig = typeof FactorConfig.Type
@@ -244,5 +259,281 @@ describe("factor ledger", () => {
         ],
       },
     ])
+  })
+})
+
+const makeConfigSignal = (options: {
+  readonly id: string
+  readonly aliases?: ReadonlyArray<string>
+  readonly defaultConfig: Record<string, unknown>
+}): Signal<Record<string, unknown>, { readonly count: number }, any> =>
+  withConfigFactorLedger({
+    id: options.id,
+    ...(options.aliases !== undefined ? { aliases: options.aliases } : {}),
+    title: `${options.id} config provenance signal`,
+    tier: 1,
+    category: "generated-slop",
+    kind: "structural",
+    configSchema: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
+    defaultConfig: options.defaultConfig,
+    inputs: [],
+    compute: () => Effect.succeed({ count: 1 }),
+    score: () => 1,
+    diagnose: () => [],
+  })
+
+const ledgerEntry = (ledger: SignalFactorLedger | undefined, path: string) =>
+  ledger?.entries.find((entry) => entry.path === path)
+
+const configLedgerOf = (
+  signal: Signal<Record<string, unknown>, { readonly count: number }, any>,
+): SignalFactorLedger => signal.factorLedger!({ count: 1 })!
+
+describe("factor ledger config provenance", () => {
+  test("vector override.config values appear in the ledger with vector provenance", async () => {
+    const registry = await Effect.runPromise(
+      buildRegistry([
+        makeConfigSignal({
+          id: "TEST-CONFIG-PROVENANCE",
+          defaultConfig: { max_complexity: 20, allow_recursion: true },
+        }),
+      ]),
+    )
+    const vector = await Effect.runPromise(
+      decodePulsarVector({
+        id: "v1",
+        domain: "typescript",
+        signal_overrides: {
+          "TEST-CONFIG-PROVENANCE": {
+            config: { max_complexity: 15, unknown_knob: 4 },
+          },
+        },
+      }),
+    )
+
+    const result = await Effect.runPromise(
+      runSignal(registry, "TEST-CONFIG-PROVENANCE", vector) as Effect.Effect<any, any, never>,
+    )
+
+    expect(ledgerEntry(result.factorLedger, "config.max_complexity")).toMatchObject({
+      value: 15,
+      source: "vector",
+      affectsScore: true,
+      attribution: { ruleId: "vector.config-override" },
+      mutations: [
+        {
+          path: "config.max_complexity",
+          source: "vector",
+          action: "override-factor",
+          before: 20,
+          after: 15,
+          ruleId: "vector.config-override",
+        },
+      ],
+    })
+    expect(ledgerEntry(result.factorLedger, "config.allow_recursion")).toMatchObject({
+      value: true,
+      source: "signal-default",
+    })
+    expect(ledgerEntry(result.factorLedger, "config.unknown_knob")).toBeUndefined()
+  })
+
+  test("reports the enforced config for the groundwork-shaped vector, not signal defaults", async () => {
+    const signals = [
+      makeConfigSignal({
+        id: "TS-LD-01-cyclomatic-complexity",
+        aliases: ["TS-LD-01"],
+        defaultConfig: { max_complexity: 20 },
+      }),
+      makeConfigSignal({
+        id: "TS-LD-02-file-length",
+        aliases: ["TS-LD-02"],
+        defaultConfig: { max_file_loc: 300 },
+      }),
+      makeConfigSignal({
+        id: "TS-SL-01-comment-noise",
+        aliases: ["TS-SL-01"],
+        defaultConfig: { min_tokens: 12 },
+      }),
+      makeConfigSignal({
+        id: "TS-RP-01-churn",
+        aliases: ["TS-RP-01"],
+        defaultConfig: { min_churn: 2 },
+      }),
+    ]
+    const registry = await Effect.runPromise(buildRegistry(signals))
+    const vector = await Effect.runPromise(
+      decodePulsarVector({
+        id: "groundwork",
+        domain: "typescript",
+        signal_overrides: {
+          "TS-LD-01": { config: { max_complexity: 15 } },
+          "TS-LD-02": { config: { max_file_loc: 500 } },
+          "TS-SL-01": { config: { min_tokens: 8 } },
+          "TS-RP-01": { config: { min_churn: 1 } },
+        },
+      }),
+    )
+    const expected = [
+      ["TS-LD-01-cyclomatic-complexity", "config.max_complexity", "max_complexity", 15],
+      ["TS-LD-02-file-length", "config.max_file_loc", "max_file_loc", 500],
+      ["TS-SL-01-comment-noise", "config.min_tokens", "min_tokens", 8],
+      ["TS-RP-01-churn", "config.min_churn", "min_churn", 1],
+    ] as const
+
+    for (const [signalId, factorPath, configKey, value] of expected) {
+      const result = await Effect.runPromise(
+        runSignal(registry, signalId, vector) as Effect.Effect<any, any, never>,
+      )
+      const signal = registry.byId.get(signalId)!
+      const effective = resolvedConfig(signal, signal.defaultConfig, vector) as Record<
+        string,
+        unknown
+      >
+
+      expect(effective[configKey]).toBe(value)
+      expect(ledgerEntry(result.factorLedger, factorPath)).toMatchObject({
+        value,
+        source: "vector",
+        attribution: { ruleId: "vector.config-override" },
+      })
+    }
+  })
+
+  test("factor-form overrides keep winning over config-form overrides for the same key", () => {
+    const signal = makeConfigSignal({
+      id: "TEST-CONFIG-LAYERING",
+      defaultConfig: { max_complexity: 20 },
+    })
+    const vector: PulsarVector = {
+      id: "v1",
+      domain: "typescript",
+      signal_overrides: {
+        "TEST-CONFIG-LAYERING": {
+          config: { max_complexity: 15 },
+          factors: { "config.max_complexity": 11 },
+        },
+      },
+    }
+
+    const effective = resolvedConfig(signal, signal.defaultConfig, vector) as Record<
+      string,
+      unknown
+    >
+    const ledger = applySignalFactorPolicy(
+      configLedgerOf(signal),
+      makeSignalFactorPolicyContext(signal, vector),
+    )
+
+    expect(effective["max_complexity"]).toBe(11)
+    expect(ledgerEntry(ledger, "config.max_complexity")).toMatchObject({
+      value: 11,
+      source: "vector",
+      attribution: { ruleId: "vector.factor-override" },
+      mutations: [
+        {
+          action: "override-factor",
+          before: 20,
+          after: 11,
+          ruleId: "vector.factor-override",
+        },
+      ],
+    })
+    expect(configFactorOverridesOf(signal, vector)).toEqual({})
+  })
+
+  test("config-form mutations carry the vector source ref", () => {
+    const signal = makeConfigSignal({
+      id: "TEST-CONFIG-SOURCE-REF",
+      defaultConfig: { max_complexity: 20 },
+    })
+    const vector: PulsarVector = {
+      id: "v1",
+      domain: "typescript",
+      signal_overrides: {
+        "TEST-CONFIG-SOURCE-REF": { config: { max_complexity: 15 } },
+      },
+    }
+
+    const ledger = applySignalFactorPolicy(
+      configLedgerOf(signal),
+      makeSignalFactorPolicyContext(signal, vector, {
+        vectorSourceRef: ".pulsar/vector.json",
+      }),
+    )
+
+    expect(ledgerEntry(ledger, "config.max_complexity")).toMatchObject({
+      value: 15,
+      source: "vector",
+      attribution: {
+        ruleId: "vector.config-override",
+        sourceRef: ".pulsar/vector.json",
+      },
+      mutations: [{ sourceRef: ".pulsar/vector.json" }],
+    })
+  })
+
+  test("ledger effective values equal resolvedConfig for every override combination", () => {
+    const defaults = {
+      max_complexity: 20,
+      min_tokens: 12,
+      strictness: "balanced",
+    } as const
+    const configFormValues = {
+      max_complexity: 15,
+      min_tokens: 8,
+      strictness: "high",
+    } as const
+    const factorFormValues = {
+      max_complexity: 11,
+      min_tokens: 6,
+      strictness: "low",
+    } as const
+    const keys = Object.keys(defaults) as ReadonlyArray<keyof typeof defaults>
+    const modes = ["none", "config", "factor", "both"] as const
+
+    const combinations = modes.flatMap((first) =>
+      modes.flatMap((second) => modes.map((third) => [first, second, third] as const)),
+    )
+
+    for (const combination of combinations) {
+      const config: Record<string, unknown> = {}
+      const factors: Record<string, unknown> = {}
+      keys.forEach((key, index) => {
+        const mode = combination[index]!
+        if (mode === "config" || mode === "both") config[key] = configFormValues[key]
+        if (mode === "factor" || mode === "both") factors[`config.${key}`] = factorFormValues[key]
+      })
+      const signal = makeConfigSignal({
+        id: "TEST-CONFIG-PROPERTY",
+        defaultConfig: { ...defaults },
+      })
+      const vector: PulsarVector = {
+        id: `property-${combination.join("-")}`,
+        domain: "typescript",
+        signal_overrides: {
+          "TEST-CONFIG-PROPERTY": {
+            ...(Object.keys(config).length > 0 ? { config } : {}),
+            ...(Object.keys(factors).length > 0 ? { factors } : {}),
+          },
+        },
+      }
+
+      const effective = resolvedConfig(signal, signal.defaultConfig, vector) as Record<
+        string,
+        unknown
+      >
+      const ledger = applySignalFactorPolicy(
+        configLedgerOf(signal),
+        makeSignalFactorPolicyContext(signal, vector),
+      )
+
+      keys.forEach((key, index) => {
+        const entry = ledgerEntry(ledger, `config.${key}`)
+        const mode = combination[index]!
+        expect(entry?.value).toEqual(effective[key] as SignalFactorValue)
+        expect(entry?.source).toBe(mode === "none" ? "signal-default" : "vector")
+      })
+    }
   })
 })

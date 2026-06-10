@@ -11,6 +11,8 @@ import type {
 } from "./signal.js"
 import {
   factorOverridesOf,
+  resolvedConfig,
+  signalOverrideOf,
   type PulsarVector,
   type SignalFactorOverrideMap,
 } from "./vector.js"
@@ -27,6 +29,13 @@ interface SignalFactorPolicyContext {
   readonly signalId: string
   readonly precedence: typeof SIGNAL_FACTOR_POLICY_PRECEDENCE
   readonly vectorOverrides: SignalFactorOverrideMap
+  /**
+   * Vector `override.config` entries projected onto `config.*` factor paths.
+   * Values are read back from the same `resolvedConfig` resolution the
+   * scoring path enforces, so ledger provenance cannot drift from the
+   * effective config.
+   */
+  readonly vectorConfigOverrides?: SignalFactorOverrideMap
   readonly vectorSourceRef?: string
 }
 
@@ -46,10 +55,50 @@ export const makeSignalFactorPolicyContext = (
   signalId: signal.id,
   precedence: SIGNAL_FACTOR_POLICY_PRECEDENCE,
   vectorOverrides: factorOverridesOf(signal, vector),
+  vectorConfigOverrides: configFactorOverridesOf(signal, vector),
   ...(options?.vectorSourceRef !== undefined
     ? { vectorSourceRef: options.vectorSourceRef }
     : {}),
 })
+
+/**
+ * Project vector `override.config` entries onto `config.*` factor paths so
+ * the factor ledger reports the same effective values scoring enforces.
+ *
+ * Values are not read from the raw override — they are read back from
+ * `resolvedConfig`, the single resolution function the scoring path uses,
+ * so the audit trail and the enforced config cannot drift apart. Keys that
+ * are also overridden through the explicit `factors` form are skipped here;
+ * the factor-form pass owns their attribution (matching `resolvedConfig`,
+ * where factor overrides layer after config overrides).
+ */
+export const configFactorOverridesOf = (
+  signal: AnySignal,
+  vector: PulsarVector | undefined,
+): SignalFactorOverrideMap => {
+  const overrideConfig = signalOverrideOf(signal, vector)?.config
+  if (overrideConfig === undefined) return {}
+  const factorOverrides = factorOverridesOf(signal, vector)
+  const effectiveConfig = resolvedConfig(
+    signal,
+    asConfigRecord(signal.defaultConfig),
+    vector,
+  )
+  const overrides: Record<string, SignalFactorValue> = {}
+  for (const key of Object.keys(overrideConfig)) {
+    const path = `config.${normalizeFactorPathSegment(key)}`
+    if (Object.hasOwn(factorOverrides, path)) continue
+    const factorValue = toSignalFactorValue(effectiveConfig[key])
+    if (factorValue === undefined) continue
+    overrides[path] = factorValue
+  }
+  return overrides
+}
+
+const asConfigRecord = (config: unknown): Record<string, unknown> =>
+  config !== null && typeof config === "object" && !Array.isArray(config)
+    ? (config as Record<string, unknown>)
+    : {}
 
 export const withConfigFactorLedger = <S extends AnySignal>(signal: S): S => {
   const configDefinitions = configFactorDefinitions(signal)
@@ -252,12 +301,21 @@ export const applyFactorOverrides = (
 export const applySignalFactorPolicy = (
   ledger: SignalFactorLedger,
   policy: SignalFactorPolicyContext,
-): SignalFactorLedger => ({
-  signalId: ledger.signalId,
-  entries: applyFactorOverrides(ledger.entries, policy.vectorOverrides, {
-    ...(policy.vectorSourceRef !== undefined ? { sourceRef: policy.vectorSourceRef } : {}),
-  }),
-})
+): SignalFactorLedger => {
+  const sourceRef =
+    policy.vectorSourceRef !== undefined ? { sourceRef: policy.vectorSourceRef } : {}
+  return {
+    signalId: ledger.signalId,
+    entries: applyFactorOverrides(
+      applyFactorOverrides(ledger.entries, policy.vectorConfigOverrides ?? {}, {
+        ...sourceRef,
+        ruleId: "vector.config-override",
+      }),
+      policy.vectorOverrides,
+      sourceRef,
+    ),
+  }
+}
 
 export const overriddenFactorValue = <Value extends SignalFactorValue>(
   path: string,
