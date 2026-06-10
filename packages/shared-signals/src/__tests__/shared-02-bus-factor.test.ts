@@ -112,7 +112,7 @@ describe("SHARED-02 bus factor", () => {
       tier: 1.5,
       category: "review-pain",
       kind: "legibility",
-      cacheVersion: "bounded-history-v5-normalized-config-git-context-factor-policy",
+      cacheVersion: "bounded-history-v6-solo-window-not-applicable",
       cacheDependencies: ["git-revision-context"],
       inputs: [],
     })
@@ -184,8 +184,12 @@ describe("SHARED-02 bus factor", () => {
         penaltyWeight: 0.45,
       })
       expect(output.topDiagnostics).toBe(10)
-      expect(Shared02BusFactor.score(output)).toBe(0.65)
-      expect(Shared02BusFactor.outputMetadata?.(output)).toBeUndefined()
+      // Solo window: not measurable, declared not applicable (a constant
+      // 0.65 on every single-author repo was not a measurement).
+      expect(Shared02BusFactor.score(output)).toBe(1)
+      expect(Shared02BusFactor.outputMetadata?.(output)).toEqual({
+        applicability: "not_applicable",
+      })
       expect(Shared02BusFactor.diagnose(output)[0]?.message).toContain("single-author corpus")
     } finally {
       await repo.cleanup()
@@ -223,10 +227,14 @@ describe("SHARED-02 bus factor", () => {
       expect(sharedOutput.siloed).toEqual([])
       expect(sharedOutput.repoAuthors).toEqual(["Alice", "Bob"])
       expect(sharedOutput.byFile.get(join(shared.root, "src/service.ts"))?.busFactor).toBe(2)
-      expect(Shared02BusFactor.score(sharedOutput)).toBeGreaterThan(
-        Shared02BusFactor.score(soloOutput),
-      )
+      // Both score 1, but for different reasons: the shared repo is a real
+      // measurement (multi-author, no silos); the solo repo is not
+      // applicable. The applicability metadata carries the distinction.
       expect(Shared02BusFactor.score(sharedOutput)).toBe(1)
+      expect(Shared02BusFactor.outputMetadata?.(sharedOutput)).toBeUndefined()
+      expect(Shared02BusFactor.outputMetadata?.(soloOutput)).toEqual({
+        applicability: "not_applicable",
+      })
     } finally {
       await solo.cleanup()
       await shared.cleanup()

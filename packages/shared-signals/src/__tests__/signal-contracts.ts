@@ -104,7 +104,7 @@ export const SHARED_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       factorLedger:
         "shared-02-bus-factor.test.ts and core shared-02-bus-factor.test.ts: registered shared-pack signal emits config.window_days, config.min_loc, and config.include_extensions factor entries; core calibration test proves module-attributed bus_factor.*.penalty_weight factor entries.",
       cacheSemantics:
-        "shared-02-bus-factor.test.ts and pack.test.ts: SHARED-02 declares git-revision-context and bounded-history-v5-normalized-config-git-context-factor-policy cacheVersion; wrapped shared-pack cache version preserves the signal cacheVersion after config normalization, TS module-extension semantics, and cache dependency changed.",
+        "shared-02-bus-factor.test.ts and pack.test.ts: SHARED-02 declares git-revision-context and bounded-history-v6-solo-window-not-applicable cacheVersion; wrapped shared-pack cache version preserves the signal cacheVersion after config normalization, TS module-extension semantics, and cache dependency changed.",
       gitContext:
         "shared-02-bus-factor.test.ts and core shared-02-bus-factor.test.ts: tests run against real git repositories with authored commit dates and authors, proving HEAD-relative ownership windows, max-count sampling, extension pathspecs, excluded-glob behavior, mailmap/alias interpretation, and deterministic repeated history interpretation.",
       calibration:

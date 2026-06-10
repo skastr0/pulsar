@@ -88,7 +88,7 @@ export const Shared02BusFactor: Signal<
   tier: 1.5,
   category: "review-pain",
   kind: "legibility",
-  cacheVersion: "bounded-history-v5-normalized-config-git-context-factor-policy",
+  cacheVersion: "bounded-history-v6-solo-window-not-applicable",
   cacheDependencies: ["git-revision-context"],
   configSchema: Shared02BusFactorConfig,
   defaultConfig: DEFAULT_SHARED_02_BUS_FACTOR_CONFIG,
@@ -115,6 +115,11 @@ export const Shared02BusFactor: Signal<
   score: (out) => {
     if (out.touchedFileCount === 0) return 1
     if (out.touchedLoc === 0) return 1
+    // A single-author window cannot measure knowledge concentration —
+    // every file is definitionally siloed, so the old behavior saturated
+    // at a constant 0.65 on every solo repo. Constants are not
+    // measurements; the signal declares itself not applicable instead.
+    if (out.repoAuthors.length < 2) return 1
     const penalty = effectiveSiloed(out).reduce(
       (sum, entry) =>
         entry.visible ? sum + Math.max(0, entry.penaltyWeight) : sum,
@@ -125,6 +130,9 @@ export const Shared02BusFactor: Signal<
   outputMetadata: (out) => {
     if (out.touchedFileCount === 0 || out.touchedLoc === 0) {
       return { applicability: "insufficient_evidence" as const }
+    }
+    if (out.repoAuthors.length < 2) {
+      return { applicability: "not_applicable" as const }
     }
     return undefined
   },
@@ -144,7 +152,7 @@ export const Shared02BusFactor: Signal<
           severity: "info",
           message:
             `SHARED-02 found a single-author corpus in the last ${out.windowDays} days; ` +
-            "treating touched production LOC as concentrated ownership",
+            "bus factor is not measurable when every file is definitionally single-author (not applicable)",
           data: { authors: out.repoAuthors, windowDays: out.windowDays },
         },
       ]

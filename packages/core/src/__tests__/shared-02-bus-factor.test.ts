@@ -67,9 +67,15 @@ describe("SHARED-02 bus factor", () => {
       expect(output.maxCommits).toBe(Shared02BusFactor.defaultConfig.max_commits)
       expect(output.siloed).toEqual([{ file: soloPath, author: "Alice", loc: 61 }])
       expect(output.touchedLoc).toBe(61)
-      expect(Shared02BusFactor.score(output)).toBe(0.65)
-      expect(Shared02BusFactor.outputMetadata?.(output)).toBeUndefined()
+      // Solo-window regression: bus factor used to saturate at a constant
+      // 0.65 on every single-author repo — a constant, not a measurement.
+      // The signal now declares itself not applicable instead.
+      expect(Shared02BusFactor.score(output)).toBe(1)
+      expect(Shared02BusFactor.outputMetadata?.(output)).toEqual({
+        applicability: "not_applicable",
+      })
       expect(Shared02BusFactor.diagnose(output)[0]?.message).toContain("single-author corpus")
+      expect(Shared02BusFactor.diagnose(output)[0]?.message).toContain("not applicable")
     } finally {
       await repo.cleanup()
     }
