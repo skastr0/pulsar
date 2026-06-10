@@ -37,7 +37,7 @@ export interface CachedObserverOutput {
 }
 
 const OBSERVER_AGGREGATION_CACHE_VERSION =
-  "observer-aggregation-v4-category-pressure-applicability"
+  "observer-aggregation-v5-pinned-type-environment"
 
 export const computeObserverConfigHash = (
   registry: Registry,

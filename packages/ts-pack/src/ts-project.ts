@@ -172,6 +172,7 @@ const buildMergedProject = (
     skipFileDependencyResolution: true,
     skipLoadingLibFiles: true,
     tsConfigFilePath: seed!.tsconfigPath,
+    compilerOptions: PINNED_TYPE_ENVIRONMENT,
   })
   for (const pkg of rest) {
     project.addSourceFilesFromTsConfig(pkg.tsconfigPath)
@@ -183,6 +184,19 @@ const buildMergedProject = (
   return project
 }
 
+/**
+ * Scores must be a pure function of worktree content. When
+ * compilerOptions.types is unspecified, TypeScript's automatic type-directive
+ * resolution walks UP from the host process cwd to find node_modules/@types,
+ * injecting whatever ambient declarations the LAUNCH directory happens to
+ * have into the program being scored — the same repo then classifies
+ * differently depending on where the CLI was invoked, and the observer cache
+ * freezes whichever environment computed first. `types: []` disables
+ * automatic ambient inclusion entirely; worktree install state is not part of
+ * the observer content hash, so it is the only cwd-stable choice.
+ */
+const PINNED_TYPE_ENVIRONMENT: { readonly types: string[] } = { types: [] }
+
 const buildUntypedProject = (
   worktreePath: string,
   options?: TsProjectOptions,
@@ -192,6 +206,7 @@ const buildUntypedProject = (
     skipAddingFilesFromTsConfig: true,
     skipFileDependencyResolution: true,
     skipLoadingLibFiles: true,
+    compilerOptions: PINNED_TYPE_ENVIRONMENT,
   })
   addSourceFiles(project, worktreePath, options, sourceFilePaths)
   return project
