@@ -1,4 +1,6 @@
 import { expect } from "bun:test"
+import { readdirSync, readFileSync } from "node:fs"
+import { join } from "node:path"
 import type { AnySignal } from "@skastr0/pulsar-core/signal"
 
 export const REQUIRED_SIGNAL_CONTRACT_EVIDENCE = [
@@ -84,6 +86,40 @@ export const assertSignalContractMatrix = (
       expectEvidence(signal.id, contract, category)
     }
   }
+}
+
+/**
+ * Tier honesty floor: a signal whose compute consumes reference data is not
+ * pure computation, so it may not claim tier 1 or 1.5 — the tiers that
+ * carry proof-grade authority (headline poison; hard gates for structural
+ * kind without the "given reference data" condition).
+ *
+ * Detection scans the pack's signal sources for ReferenceDataTag usage and
+ * checks the declared tier of every signal registered from a matching file.
+ */
+export const assertReferenceDataTierFloor = (
+  packName: string,
+  signalsDir: string,
+  signals: ReadonlyArray<AnySignal>,
+): void => {
+  const offenders: string[] = []
+  for (const entry of readdirSync(signalsDir)) {
+    if (!entry.endsWith(".ts") || entry.endsWith(".test.ts") || entry.endsWith(".d.ts")) continue
+    const source = readFileSync(join(signalsDir, entry), "utf8")
+    if (!source.includes("ReferenceDataTag")) continue
+    for (const signal of signals) {
+      if (!source.includes(`id: "${signal.id}"`)) continue
+      if (signal.tier < 2) {
+        offenders.push(
+          `${signal.id} (${entry}) declares tier ${signal.tier} but consumes reference data`,
+        )
+      }
+    }
+  }
+  expect(
+    offenders,
+    `${packName}: signals consuming reference data must declare tier >= 2`,
+  ).toEqual([])
 }
 
 const expectEvidence = (

@@ -464,6 +464,8 @@ Provability tier and taxonomy category together determine the enforcement ceilin
 
 The ratcheting pattern applies to all hard gates: record existing violations as baseline, only block new introductions. This is the same pattern as pulsar bisect's "freeze reference at a healthy commit."
 
+**Headline poison authority is stricter than gate authority.** A hard gate blocks with cited violations and fix hints, and Tier 2 structural signals earn it conditionally — "given reference data" means the signal must withhold block findings when its reference data is missing or stale. Single-handedly setting the repo-level readiness or category headline (the observer's poison rule) is a silent verdict with no citation obligation, so it is reserved for proof-grade evidence: Tier 1 and Tier 1.5 (`hasPoisonAuthority` in `packages/core/src/enforcement.ts`). Heuristic and reference-backed signals still contribute to the p-norm, evidence mean, and top pressures; they cannot be the verdict alone. A companion contract test (`assertReferenceDataTierFloor`) keeps tiers honest: a signal that consumes reference data may not declare Tier 1 or 1.5.
+
 ---
 
 ## Pulsar Bisect

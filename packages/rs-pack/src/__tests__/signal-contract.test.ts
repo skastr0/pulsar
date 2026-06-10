@@ -3,6 +3,7 @@ import type { AnySignal } from "@skastr0/pulsar-core/signal"
 import { RS_PACK_SIGNALS } from "../pack.js"
 import {
   REQUIRED_SIGNAL_CONTRACT_EVIDENCE,
+  assertReferenceDataTierFloor,
   assertSignalContractMatrix,
   type SignalContract,
   type SignalContractEvidence,
@@ -35,6 +36,14 @@ describe("Rust signal correctness contracts", () => {
       requiredEvidence: ["referenceData"],
       evidence: completeEvidence(),
     })
+  })
+
+  test("signals consuming reference data never claim proof-grade tiers", () => {
+    assertReferenceDataTierFloor(
+      "Rust",
+      new URL("../signals/", import.meta.url).pathname,
+      RS_PACK_SIGNALS,
+    )
   })
 })
 

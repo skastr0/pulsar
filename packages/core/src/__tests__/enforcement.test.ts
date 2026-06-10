@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { deriveEnforcement } from "../enforcement.js"
+import { deriveEnforcement, hasPoisonAuthority } from "../enforcement.js"
 
 describe("deriveEnforcement", () => {
   test("Tier 1 structural → hard gate", () => {
@@ -32,5 +32,23 @@ describe("deriveEnforcement", () => {
 
   test("Tier 3 structural → never (empty)", () => {
     expect(deriveEnforcement(3, "structural")).toEqual([])
+  })
+})
+
+describe("hasPoisonAuthority", () => {
+  test("tier 1 may set the headline alone", () => {
+    expect(hasPoisonAuthority({ tier: 1 })).toBe(true)
+  })
+
+  test("tier 1.5 may set the headline alone", () => {
+    expect(hasPoisonAuthority({ tier: 1.5 })).toBe(true)
+  })
+
+  test("tier 2 may not — even though tier-2 structural can hard-gate", () => {
+    expect(hasPoisonAuthority({ tier: 2 })).toBe(false)
+  })
+
+  test("tier 3 may not", () => {
+    expect(hasPoisonAuthority({ tier: 3 })).toBe(false)
   })
 })
