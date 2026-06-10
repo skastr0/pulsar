@@ -40,7 +40,7 @@ import { TsSl05 } from "./signals/ts-sl-05-phantom-tests.js"
 import { TsSl06 } from "./signals/ts-sl-06-confidence-claim-mismatch.js"
 
 const TS_PACK_CACHE_VERSION =
-  "ts-pack-2026-05-25-trust-signals-1"
+  "ts-pack-2026-06-10-truth-pass-1"
 
 const withTsPackCacheVersion = <S extends AnySignal>(signal: S): S => ({
   ...signal,

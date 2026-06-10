@@ -760,7 +760,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       config:
         "ts-sl-02.test.ts: normalizeTsSl02Config proves finite-safe divergence thresholds, min-window fallback, diagnostic caps, analysis group/member budgets, and analysis-limit score caps; compute fixtures prove configured analysis budget and cap effects.",
       positiveFixture:
-        "ts-sl-02.test.ts: real git fixture commits prove structural clone groups with different blame history become divergent clone evidence, invalid gitSha falls back deterministically to HEAD time, parallel families and paired variants are classified with medium confidence, and default analysis budget reaches late divergent candidates.",
+        "ts-sl-02.test.ts and ts-sl-02-content-divergence.test.ts: real git fixture commits prove clone groups with measured normalized-token content drift (guards, messages, numeric constants) become divergent clone evidence, invalid gitSha falls back deterministically to HEAD time, parallel families and paired variants are classified with medium confidence, and default analysis budget reaches late divergent candidates.",
       negativeFixture:
         "ts-sl-02.test.ts: no TS-SL-01 groups, exact clones, tiny structural clones, same-commit structural clones, TS-SL-01 policy-excluded groups, unknown blame history, and borderline non-actionable divergence remain neutral instead of producing false pressure.",
       applicability:
@@ -772,7 +772,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       factorLedger:
         "ts-sl-02.test.ts: factor ledger entries assert analysis limit facts, candidate/analyzed counts, config.analysis_limit_score_cap value/source/score role, default-vs-vector provenance, and conditional affectsScore behavior.",
       cacheSemantics:
-        "ts-sl-02.test.ts and pack.test.ts: TS-SL-02 declares git-revision-context dependency and history-context-normalized-config-v1 cacheVersion; wrapped pack cache version includes the signal cacheVersion after history fallback, normalized config, score cap, and candidate ordering semantics changed.",
+        "ts-sl-02.test.ts and pack.test.ts: TS-SL-02 declares git-revision-context dependency and content-grounded-divergence-v2 cacheVersion; wrapped pack cache version includes the signal cacheVersion after divergence became content-measured (git history only gates recency and modulates confidence).",
       compoundInputs:
         "ts-sl-02.test.ts: TS-SL-02 consumes the real TS-SL-01-duplication output shape by canonical id and legacy alias, filters groups through TS-SL-01 policy impact, ignores exact/tiny clone candidates, and registry construction verifies the required TS-SL-01 dependency fingerprint.",
       gitContext:
@@ -860,15 +860,15 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       config:
         "ts-trust-signals.test.ts: configSchema decodes async_name_patterns, exclude_globs, and top_n_diagnostics defaults with factor-ledger coverage.",
       positiveFixture:
-        "ts-trust-signals.test.ts: fixture flags floating fetch, swallowed Promise.catch, and empty catch block.",
+        "ts-trust-signals.test.ts and ts-cc-01-regressions.test.ts: fixtures flag floating fetch, swallowed Promise.catch, empty catch block, bare calls with resolved Promise return types or async project declarations, and unhandled .then chains when lib types do not resolve.",
       negativeFixture:
-        "ts-trust-signals.test.ts: awaited fetch in the same fixture does not produce a floating-promise finding; synchronous stream.write, Map.set/delete on loadingBuckets, Map.set returning Map<string, Promise>, handled void promise.catch, and documented fallback catches stay clean.",
+        "ts-trust-signals.test.ts and ts-cc-01-regressions.test.ts: awaited fetch, synchronous stream.write, Map.set/delete on loadingBuckets, handled void promise.catch, writeFileSync/socket.write/process.stdout.write with unresolved lib types, terminal .catch(handler) and .catch().finally() statements, and empty catches documented by any non-empty comment (metamorphic wording pair) stay clean; floating classification never falls back to name heuristics when the return type does not resolve to Promise.",
       applicability:
         "ts-trust-signals.test.ts: value-only fixture exercises zero state with score 1 during identity/factor-ledger checks.",
       score:
-        "ts-trust-signals.test.ts: async failure-control findings lower score below 1.",
+        "ts-trust-signals.test.ts and ts-cc-01-regressions.test.ts: warn-grade async failure-control findings lower score below 1; info-grade log-only-handler findings are score-neutral.",
       diagnostics:
-        "ts-trust-signals.test.ts: diagnostics include finding kind, expression, location, stable hash, and async-failure-control fix hint.",
+        "ts-trust-signals.test.ts and ts-cc-01-regressions.test.ts: diagnostics include finding kind, expression, location, stable hash, and async-failure-control fix hint; console-handled rejections are reported as info-grade log-only-handler diagnostics with explicit log-and-continue wording.",
       factorLedger:
         "ts-trust-signals.test.ts: registered signal emits config.top_n_diagnostics and async-name/exclude config factor-ledger entries.",
       cacheSemantics:
