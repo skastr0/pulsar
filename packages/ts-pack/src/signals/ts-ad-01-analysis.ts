@@ -8,6 +8,7 @@ import {
   type DiagnosticOrderProperties,
 } from "./shared-diagnostic-order.js"
 import {
+  externalPackageNameForFile,
   isBuiltinModuleName,
   normalizePackageSpecifier,
   packageDisplayName,
@@ -26,6 +27,7 @@ interface TargetResolution {
   readonly specifier: string
   readonly resolvedFilePath: string | undefined
   readonly targetPackage: PackageInfo | undefined
+  readonly externalPackageName: string | undefined
   readonly targetName: string
   readonly candidateKeys: ReadonlySet<string>
   readonly builtin: boolean
@@ -159,6 +161,9 @@ const classifyDeepReachViolation = (
   context: BoundaryViolationContext,
 ): BoundaryViolation | undefined => {
   if (context.samePackage) return undefined
+  // Imports resolving to external packages (node_modules) are dependency
+  // edges, never internal workspace boundary violations.
+  if (context.target.externalPackageName !== undefined) return undefined
   if (context.sourcePackage === undefined || context.target.targetPackage === undefined) {
     return undefined
   }
@@ -239,14 +244,18 @@ const resolveTargetResolution = (
   const builtin =
     normalizedPackageName !== undefined && isBuiltinModuleName(normalizedPackageName)
   const resolvedFilePath = declaration.getModuleSpecifierSourceFile()?.getFilePath()
-  const targetPackage =
-    (resolvedFilePath === undefined ? undefined : packageForFile(resolvedFilePath, packages)) ??
-    (normalizedPackageName === undefined
-      ? undefined
-      : lookup.packagesByManifestName.get(normalizedPackageName))
+  const externalPackageName =
+    resolvedFilePath === undefined ? undefined : externalPackageNameForFile(resolvedFilePath)
+  const targetPackage = externalPackageName !== undefined
+    ? undefined
+    : (resolvedFilePath === undefined ? undefined : packageForFile(resolvedFilePath, packages)) ??
+      (normalizedPackageName === undefined
+        ? undefined
+        : lookup.packagesByManifestName.get(normalizedPackageName))
 
   const candidateKeys = new Set<string>()
   if (normalizedPackageName !== undefined) candidateKeys.add(normalizedPackageName)
+  if (externalPackageName !== undefined) candidateKeys.add(externalPackageName)
   if (targetPackage !== undefined) {
     const relativePackagePath = normalizePath(relative(lookup.worktreePath, targetPackage.path) || ".")
     candidateKeys.add(relativePackagePath)
@@ -259,7 +268,9 @@ const resolveTargetResolution = (
     specifier,
     resolvedFilePath,
     targetPackage,
-    targetName: packageDisplayName(targetPackage) ?? normalizedPackageName ?? specifier,
+    externalPackageName,
+    targetName:
+      packageDisplayName(targetPackage) ?? normalizedPackageName ?? externalPackageName ?? specifier,
     candidateKeys,
     builtin,
   }
@@ -312,5 +323,38 @@ const matchesExportPattern = (pattern: string, subpath: string): boolean => {
   const suffix = pattern.slice(wildcardIndex + 1)
   return subpath.startsWith(prefix) && subpath.endsWith(suffix)
 }
+
+/**
+ * The boundary keys recorded at extraction time double as a fingerprint of
+ * the workspace package set the conventions were extracted against. The data
+ * is stale only when NO recorded key resolves to an existing package (by
+ * relative path or manifest name) — every anchor is dangling, so the layout
+ * the conventions describe no longer exists. Root-keyed (".") conventions
+ * always resolve: the repo root is a permanent anchor, and repo-wide rules
+ * keyed by "." remain intentional in monorepos rather than evidence of a
+ * pre-split extraction.
+ */
+export const isBoundaryReferenceStale = (
+  boundaries: Readonly<Record<string, BoundaryConvention>>,
+  packages: ReadonlyArray<PackageInfo>,
+  worktreePath: string,
+): boolean => {
+  const boundaryKeys = new Set(Object.keys(boundaries).map(normalizePath))
+  if (boundaryKeys.size === 0) return false
+  return !packages.some((pkg) =>
+    packageMatchesBoundaryKey(pkg, boundaryKeys, worktreePath),
+  )
+}
+
+const packageMatchesBoundaryKey = (
+  pkg: PackageInfo,
+  boundaryKeys: ReadonlySet<string>,
+  worktreePath: string,
+): boolean =>
+  boundaryKeys.has(relativePackagePathOf(pkg, worktreePath)) ||
+  (pkg.manifest?.name !== undefined && boundaryKeys.has(pkg.manifest.name))
+
+const relativePackagePathOf = (pkg: PackageInfo, worktreePath: string): string =>
+  normalizePath(relative(worktreePath, pkg.path) || ".")
 
 const normalizePath = (value: string): string => value.replaceAll("\\", "/")

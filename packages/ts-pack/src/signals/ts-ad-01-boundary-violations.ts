@@ -11,6 +11,7 @@ import {
   collectBoundaryViolations,
   collectImportLikeDeclarations,
   compareBoundaryViolations,
+  isBoundaryReferenceStale,
   summarizeViolationsByPackage,
 } from "./ts-ad-01-analysis.js"
 
@@ -33,7 +34,15 @@ interface TsAd01Output {
   readonly violations: ReadonlyArray<BoundaryViolation>
   readonly totalImports: number
   readonly violationsByPackage: ReadonlyMap<string, number>
-  readonly referenceDataStatus: "loaded" | "missing"
+  /**
+   * - `loaded`: conventions anchor to the current workspace package set.
+   * - `missing`: no schema-conventions reference data is configured.
+   * - `stale`: conventions exist but were extracted against a workspace
+   *   layout that no longer matches; findings are withheld as
+   *   stale_reference instead of blocking.
+   */
+  readonly referenceDataStatus: "loaded" | "missing" | "stale"
+  readonly staleSuppressedViolations?: number
   readonly diagnosticLimit: number
 }
 
@@ -48,7 +57,7 @@ export const TsAd01: Signal<
   tier: 2,
   category: "architectural-drift",
   kind: "structural",
-  cacheVersion: "reference-data-applicability-v2",
+  cacheVersion: "external-attribution-stale-reference-v3",
   configSchema: TsAd01Config,
   defaultConfig: {
     exclude_globs: [
@@ -108,17 +117,30 @@ export const TsAd01: Signal<
     }),
   score: (out) =>
     scoreReferenceBackedViolationRatio({
-      referenceDataStatus: out.referenceDataStatus,
+      referenceDataStatus: out.referenceDataStatus === "loaded" ? "loaded" : "missing",
       violationCount: out.violations.length,
       totalCount: out.totalImports,
     }),
   outputMetadata: (out) =>
     out.referenceDataStatus === "missing"
       ? { applicability: "insufficient_evidence" as const }
-      : undefined,
+      : out.referenceDataStatus === "stale"
+        ? { applicability: "insufficient_evidence" as const, stale: true }
+        : undefined,
   diagnose: (out): ReadonlyArray<Diagnostic> => {
     if (out.referenceDataStatus === "missing") {
       return [{ severity: "warn", message: "no conventions configured" }]
+    }
+    if (out.referenceDataStatus === "stale") {
+      const suppressed = out.staleSuppressedViolations ?? 0
+      return [{
+        severity: "warn",
+        message:
+          "boundary conventions are stale: no current workspace package matches the package set " +
+          `recorded at extraction; ${suppressed} boundary finding(s) withheld as stale_reference. ` +
+          "Re-extract conventions with `pulsar conventions extract`.",
+        data: { reason: "stale_reference", suppressedViolations: suppressed },
+      }]
     }
 
     return out.violations.slice(0, out.diagnosticLimit).map((violation) => ({
@@ -206,6 +228,17 @@ const computeBoundaryOutput = ({
     conventions.boundaries,
     worktreePath,
   ).sort(compareBoundaryViolations)
+
+  if (isBoundaryReferenceStale(conventions.boundaries, packages, worktreePath)) {
+    return {
+      violations: [],
+      totalImports,
+      violationsByPackage: new Map(),
+      referenceDataStatus: "stale",
+      staleSuppressedViolations: sortedViolations.length,
+      diagnosticLimit,
+    }
+  }
 
   return {
     violations: sortedViolations,

@@ -27,10 +27,40 @@ const NODE_BUILTINS = new Set(
   ],
 )
 
+const NODE_MODULES_SEGMENT = "/node_modules/"
+
 export const packageForFile = (
   filePath: string,
   packages: ReadonlyArray<PackageInfo>,
-): PackageInfo | undefined => nearestPackageForPath(filePath, packages)
+): PackageInfo | undefined =>
+  // Files under node_modules belong to the external package installed
+  // there (hoisted dependencies resolve to <root>/node_modules/*), never
+  // to the workspace package whose directory happens to contain them.
+  externalPackageNameForFile(filePath) === undefined
+    ? nearestPackageForPath(filePath, packages)
+    : undefined
+
+/**
+ * The external package that owns a file under node_modules, derived from
+ * the path segments after the last node_modules directory (which is how
+ * the module resolver attributes the file, including pnpm-style layouts).
+ * Returns undefined for files outside node_modules.
+ */
+export const externalPackageNameForFile = (filePath: string): string | undefined => {
+  const normalized = filePath.replaceAll("\\", "/")
+  const markerIndex = normalized.lastIndexOf(NODE_MODULES_SEGMENT)
+  if (markerIndex === -1) return undefined
+  const segments = normalized
+    .slice(markerIndex + NODE_MODULES_SEGMENT.length)
+    .split("/")
+    .filter((segment) => segment.length > 0)
+  const [scopeOrName, scopedName] = segments
+  if (scopeOrName === undefined) return undefined
+  if (scopeOrName.startsWith("@")) {
+    return scopedName === undefined ? undefined : `${scopeOrName}/${scopedName}`
+  }
+  return scopeOrName
+}
 
 export const packageDisplayName = (pkg: PackageInfo | undefined): string | undefined =>
   pkg?.manifest?.name ?? pkg?.name
