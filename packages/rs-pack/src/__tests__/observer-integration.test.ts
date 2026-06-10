@@ -249,26 +249,27 @@ describe("rs-pack integration", () => {
         "",
       ].join("\n"),
       "src/lib.rs": [
-        "pub fn fallback(value: u8) -> u8 {",
+        "pub enum Tri { A, B, C }",
+        "pub fn fallback(value: Tri) -> u8 {",
         "    match value {",
-        "        0 => 0,",
-        "        other => other,",
+        "        Tri::A => 0,",
+        "        other => 1,",
         "    }",
         "}",
         "",
-        "pub fn clean_a(value: u8) -> u8 {",
+        "pub fn clean_a(value: Tri) -> u8 {",
         "    match value {",
-        "        0 => 0,",
-        "        1 => 1,",
-        "        2 => 2,",
+        "        Tri::A => 0,",
+        "        Tri::B => 1,",
+        "        Tri::C => 2,",
         "    }",
         "}",
         "",
-        "pub fn clean_b(value: u8) -> u8 {",
+        "pub fn clean_b(value: Tri) -> u8 {",
         "    match value {",
-        "        3 => 3,",
-        "        4 => 4,",
-        "        5 => 5,",
+        "        Tri::A => 3,",
+        "        Tri::B => 4,",
+        "        Tri::C => 5,",
         "    }",
         "}",
         "",
@@ -297,14 +298,15 @@ describe("rs-pack integration", () => {
       )
       const matchCatchAll = result.signalResults.get(RsLd03.id)
 
-      expect(result.categories["legibility-decay"].signals[RsLd03.id]).toBeCloseTo(1 / 3)
-      expect(matchCatchAll?.score).toBeCloseTo(1 / 3)
+      // 1 of 3 closed-domain matches uses a catch-all; 1x share pressure.
+      expect(result.categories["legibility-decay"].signals[RsLd03.id]).toBeCloseTo(2 / 3)
+      expect(matchCatchAll?.score).toBeCloseTo(2 / 3)
       expect(matchCatchAll?.diagnostics[0]).toMatchObject({
         severity: "warn",
         message: "Match in fallback uses 1 catch-all arm(s)",
         data: expect.objectContaining({
           catchAllArmCount: 1,
-          scoreMode: "double-weighted-catch-all-match-share",
+          scoreMode: "closed-domain-catch-all-match-share",
           scoreDenominator: "analyzed-match-expressions",
         }),
       })
@@ -734,11 +736,13 @@ describe("rs-pack integration", () => {
       expect(cloneUsage?.score).toBeCloseTo(0.96)
       expect(cloneUsage?.diagnostics[0]).toMatchObject({
         severity: "warn",
-        message: "clone-observer::crate contains 1 clone() calls",
+        message: "clone-observer::crate contains 1 clone() calls, 1 likely expensive (driving score)",
         data: expect.objectContaining({
           cloneCalls: 1,
           likelyExpensiveClones: 1,
           density: 1,
+          totalCloneCalls: 1,
+          likelyExpensiveCloneCalls: 1,
           scoreMode: "likely-expensive-clone-pressure",
           scoreDenominator: "likely-expensive-clone-calls",
         }),
@@ -971,17 +975,38 @@ describe("rs-pack integration", () => {
   test("observer path carries RS-AB-01 unused public item score and diagnostics", async () => {
     const repo = await createRustWorkspace("pulsar-rs-observer-ab01-", {
       "Cargo.toml": [
+        "[workspace]",
+        'members = ["crates/core", "crates/app"]',
+        'resolver = "2"',
+        "",
+      ].join("\n"),
+      "crates/core/Cargo.toml": [
         "[package]",
         'name = "unused-observer"',
         'version = "0.1.0"',
         'edition = "2021"',
         "",
       ].join("\n"),
-      "src/lib.rs": [
+      "crates/core/src/lib.rs": [
         "pub struct Api;",
         "mod internal {",
         "    pub struct Hidden;",
         "}",
+        "",
+      ].join("\n"),
+      "crates/app/Cargo.toml": [
+        "[package]",
+        'name = "observer-app"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+        "[dependencies]",
+        'unused-observer = { path = "../core" }',
+        "",
+      ].join("\n"),
+      "crates/app/src/main.rs": [
+        "use unused_observer::Api;",
+        "fn main() { let _ = Api; }",
         "",
       ].join("\n"),
     })
@@ -1029,10 +1054,12 @@ describe("rs-pack integration", () => {
         "",
       ].join("\n"),
       "src/lib.rs": [
-        "use std::fmt::Debug;",
-        "pub fn leaf() -> Box<dyn Debug> { Box::new(1_u8) }",
-        "pub fn middle() -> Box<dyn Debug> { leaf() }",
-        "pub fn top() -> Box<dyn Debug> { middle() }",
+        "pub trait Step { fn run(&self); }",
+        "pub struct Walker;",
+        "impl Step for Walker { fn run(&self) {} }",
+        "pub fn leaf() -> Box<dyn Step> { Box::new(Walker) }",
+        "pub fn middle() -> Box<dyn Step> { leaf() }",
+        "pub fn top() -> Box<dyn Step> { middle() }",
         "",
       ].join("\n"),
     })
@@ -1059,8 +1086,11 @@ describe("rs-pack integration", () => {
       )
       const traitObjectDepth = result.signalResults.get(RsAb02.id)
 
-      expect(result.categories["abstraction-bloat"].signals[RsAb02.id]).toBeCloseTo(1 / 3)
-      expect(traitObjectDepth?.score).toBeCloseTo(1 / 3)
+      // Local-trait chains middle (depth 2) and top (depth 3) are warn-grade
+      // out of 3 dyn-returning functions; the 5-function evidence floor
+      // scales pressure: 1 - (2/3) * (3/5).
+      expect(result.categories["abstraction-bloat"].signals[RsAb02.id]).toBeCloseTo(0.6)
+      expect(traitObjectDepth?.score).toBeCloseTo(0.6)
       expect(traitObjectDepth?.diagnostics[0]).toMatchObject({
         severity: "warn",
         message: "Trait-object chain depth 3 in top",
@@ -1135,9 +1165,9 @@ describe("rs-pack integration", () => {
       ].join("\n"),
       "src/lib.rs": [
         "pub struct Clean;",
-        "#[derive(Clone, Debug, Default, Eq, PartialEq)]",
+        "#[derive(Clone, Debug, Default, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize)]",
         "pub struct TotalHeavy;",
-        "#[derive(Clone, Serialize, Deserialize)]",
+        "#[derive(Clone, Builder, Display, EnumIter, IntoPrimitive)]",
         "pub struct CustomHeavy;",
         "",
       ].join("\n"),
@@ -1169,7 +1199,7 @@ describe("rs-pack integration", () => {
       expect(deriveDensity?.score).toBeCloseTo(1 / 3)
       expect(deriveDensity?.diagnostics[0]).toMatchObject({
         severity: "warn",
-        message: "TotalHeavy derives 5 macros",
+        message: "TotalHeavy derives 9 macros",
       })
     } finally {
       await cleanupWorkspace(repo)

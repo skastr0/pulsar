@@ -1685,8 +1685,11 @@ export function stubF() { throw new Error("Not implemented") }
       const out = runCli(repoPath, ["score", "--signal", "RS-DE-01", "."])
       expect(out.status).toBe(0)
       expect(out.stdout).toContain("Signal: RS-DE-01-trait-coupling")
-      expect(out.stdout).toContain("WARN  Module de-cli::crate implements 1 concerning foreign traits (0 ordinary)")
-      expect(out.stdout).toContain("Score:  0.500")
+      expect(out.stdout).toContain(
+        "WARN  Module de-cli::crate: 1 of 1 foreign trait impls flagged (trait family outside the recognized allowlists, or foreign trait implemented for a foreign type)",
+      )
+      // Ratio + 10-impl evidence floor replaces the old any-2-impls cliff.
+      expect(out.stdout).toContain("Score:  0.900")
       expect(out.stdout).not.toContain("config.top_n_diagnostics=10 threshold")
       expect(out.stdout).not.toContain("config.exclude_globs=")
     } finally {
@@ -1721,8 +1724,10 @@ export function stubF() { throw new Error("Not implemented") }
       const out = runCli(repoPath, ["score", "--signal", "RS-AB-01", "."])
       expect(out.status).toBe(0)
       expect(out.stdout).toContain("Signal: RS-AB-01-unused-public-items")
-      expect(out.stdout).toContain("WARN  Public struct Hidden is not referenced from other workspace crates")
-      expect(out.stdout).toContain("Score:  0.500")
+      expect(out.stdout).toContain(
+        "INFO  RS-AB-01 cross-crate usage cannot be observed in a single-crate workspace; the library's pub surface is treated as intentional published API",
+      )
+      expect(out.stdout).toContain("Score:  1.000")
       expect(out.stdout).toContain("Factor Audit (1 score-bearing)")
       expect(out.stdout).toContain("config.exclude_globs=")
       expect(out.stdout).not.toContain("config.top_n_diagnostics=20 threshold")
@@ -1759,8 +1764,13 @@ export function stubF() { throw new Error("Not implemented") }
       expect(out.status).toBe(0)
       expect(out.stdout).toContain("Signal: RS-AB-02-trait-object-depth")
       expect(out.stdout).toContain("WARN  Trait-object chain depth 3 in top")
-      expect(out.stdout).toContain("Score:  0.333")
-      expect(out.stdout).toContain("Factor Audit (2 score-bearing)")
+      expect(out.stdout).toContain(
+        "INFO  Trait-object chain depth 2 in middle passes through external trait Debug (inventory, not score-bearing)",
+      )
+      // Depth-3 warn scaled by the 5-function evidence floor: 1 - (1/3) * (3/5).
+      expect(out.stdout).toContain("Score:  0.800")
+      expect(out.stdout).toContain("Factor Audit (3 score-bearing)")
+      expect(out.stdout).toContain("config.min_function_evidence=5")
       expect(out.stdout).toContain("config.max_chain_depth=1")
       expect(out.stdout).toContain("config.exclude_globs=")
       expect(out.stdout).not.toContain("config.top_n_diagnostics=10 threshold")
@@ -1827,9 +1837,9 @@ export function stubF() { throw new Error("Not implemented") }
         path: "src/lib.rs",
         content: [
           "pub struct Clean;",
-          "#[derive(Clone, Debug, Default, Eq, PartialEq)]",
+          "#[derive(Clone, Debug, Default, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize)]",
           "pub struct TotalHeavy;",
-          "#[derive(Clone, Serialize, Deserialize)]",
+          "#[derive(Clone, Builder, Display, EnumIter, IntoPrimitive)]",
           "pub struct CustomHeavy;",
           "",
         ].join("\n"),
@@ -1839,12 +1849,12 @@ export function stubF() { throw new Error("Not implemented") }
       const out = runCli(repoPath, ["score", "--signal", "RS-AB-04", "."])
       expect(out.status).toBe(0)
       expect(out.stdout).toContain("Signal: RS-AB-04-derive-density")
-      expect(out.stdout).toContain("WARN  TotalHeavy derives 5 macros")
-      expect(out.stdout).toContain("WARN  CustomHeavy derives 2 custom macros")
+      expect(out.stdout).toContain("WARN  TotalHeavy derives 9 macros")
+      expect(out.stdout).toContain("WARN  CustomHeavy derives 4 custom macros")
       expect(out.stdout).toContain("Score:  0.333")
       expect(out.stdout).toContain("Factor Audit (3 score-bearing)")
-      expect(out.stdout).toContain("config.max_custom_derives=1")
-      expect(out.stdout).toContain("config.max_derive_count=4")
+      expect(out.stdout).toContain("config.max_custom_derives=3")
+      expect(out.stdout).toContain("config.max_derive_count=8")
       expect(out.stdout).toContain("config.exclude_globs=")
       expect(out.stdout).not.toContain("config.top_n_diagnostics=10 threshold")
     } finally {
@@ -1917,7 +1927,8 @@ export function stubF() { throw new Error("Not implemented") }
       expect(out.stdout).toContain("Signal: RS-DE-02-dependency-tree")
       expect(out.stdout).toContain("WARN  Duplicate crate versions for baz: 1.0.0, 2.0.0")
       expect(out.stdout).toContain("INFO  Top-level dependency bar reaches depth 2")
-      expect(out.stdout).toContain("Score:  0.800")
+      expect(out.stdout).toContain("RS-DE-02 score 0.880 (total pressure 0.120, floor 0.15)")
+      expect(out.stdout).toContain("Score:  0.880")
       expect(out.stdout).not.toContain("config.top_n_diagnostics=10 threshold")
     } finally {
       await rm(repoPath, { recursive: true, force: true })

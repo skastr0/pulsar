@@ -370,13 +370,13 @@ export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       applicability:
         "rs-ld-signals.test.ts: loaded Rust source with analyzed match expressions is applicable, no Rust source emits insufficient_evidence metadata, and analyzed Rust source with no match expressions or fully excluded source emits not_applicable metadata.",
       score:
-        "rs-ld-signals.test.ts: score is asserted as one-minus double-weighted catch-all match share, with denominator named as analyzed match expressions; clean fixtures score 1, one-over-three scores one third, two-over-three clamps to 0, and additional catch-all-bearing matches lower scores monotonically.",
+        "rs-ld-signals.test.ts: score is asserted as one-minus closed-domain catch-all match share (1x, open-domain literal matches exempt as compiler-mandated wildcards, guarded arms not counted), with denominator named as analyzed match expressions; clean fixtures score 1 and additional catch-all-bearing matches lower scores monotonically.",
       diagnostics:
         "rs-ld-signals.test.ts: diagnostics assert severity, source locations, deterministic catch-all count ordering, function/module/match-arm payloads, score mode and denominator payloads, no-source warning payloads, and normalized diagnostic caps.",
       factorLedger:
         "rs-ld-signals.test.ts: registered RS pack signal emits config.exclude_globs and config.core_logic_globs as score-bearing evidence and config.top_n_diagnostics as non-score-bearing metadata with signal-default source.",
       cacheSemantics:
-        "rs-ld-signals.test.ts and pack.test.ts: RS-LD-03 declares match-catch-all-config-applicability-diagnostics-cfg-test-bindings-v3 cacheVersion, config/cacheVersion changes alter the signal config hash, and the RS pack wrapper preserves the signal-specific cacheVersion.",
+        "rs-ld-signals.test.ts and pack.test.ts: RS-LD-03 declares match-catch-all-open-domain-guarded-arms-v4 cacheVersion, config/cacheVersion changes alter the signal config hash, and the RS pack wrapper preserves the signal-specific cacheVersion.",
       integration:
         "observer-integration.test.ts and CLI score tests: Rust observer integration carries RS-LD-03 catch-all score and diagnostics through the RS pack against a real Cargo fixture, while CLI single-signal mode executes RS-LD-03 against the repository substrate through both source and compiled CLI entrypoints.",
     },
@@ -403,7 +403,7 @@ export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       factorLedger:
         "rs-ld-signals.test.ts: registered RS pack signal emits config.exclude_globs as score-bearing evidence and config.top_n_diagnostics as non-score-bearing metadata with signal-default source.",
       cacheSemantics:
-        "rs-ld-signals.test.ts and pack.test.ts: RS-LD-04 declares error-granularity-config-applicability-diagnostics-cfg-test-result-aliases-v12 cacheVersion, config/cacheVersion changes alter the signal config hash, and the RS pack wrapper preserves the signal-specific cacheVersion.",
+        "rs-ld-signals.test.ts and pack.test.ts: RS-LD-04 declares error-granularity-uniform-posture-floor-v13 cacheVersion, config/cacheVersion changes alter the signal config hash, and the RS pack wrapper preserves the signal-specific cacheVersion.",
       integration:
         "observer-integration.test.ts and CLI score tests: Rust observer integration carries RS-LD-04 error granularity score and diagnostics through the RS pack against a real Cargo fixture, while CLI single-signal mode executes RS-LD-04 against the repository substrate through both source and compiled CLI entrypoints.",
     },
@@ -561,17 +561,17 @@ export const RS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       positiveFixture:
         "rs-sl-signals.test.ts: temporary Cargo fixtures run through RustProjectLayer and real tree-sitter Rust parsing to prove syntax-likely expensive clone expressions, local owned Vec/String binding clones, UFCS Clone::clone and typed <Vec as Clone>::clone calls, module attribution, per-module density, diagnostics, and score pressure.",
       negativeFixture:
-        "rs-sl-signals.test.ts: cheap Arc/Rc-style shared clones, cfg(test)-gated clones/functions, no Rust source, fully excluded Rust source, Rust source with no functions, strings/comments/macros outside call expressions, and functionless Rust source remain correctly classified without false clone pressure.",
+        "rs-sl-signals.test.ts: cheap Arc/Rc-style shared clones, &str reference clones, cheap-clone-dominated modules, cfg(test)-gated clones/functions, no Rust source, fully excluded Rust source, Rust source with no functions, strings/comments/macros outside call expressions, and functionless Rust source remain correctly classified without false clone pressure.",
       applicability:
         "rs-sl-signals.test.ts: loaded Rust source with analyzed functions is applicable, no Rust source emits insufficient_evidence metadata, and fully excluded or functionless Rust source emits not_applicable metadata.",
       score:
         "rs-sl-signals.test.ts: score is asserted as bounded likely-expensive-clone pressure, cheap clone-only output remains neutral, mild/risky/broad likely-expensive clone counts lower scores monotonically, and the bounded score floor is asserted.",
       diagnostics:
-        "rs-sl-signals.test.ts: diagnostics assert severity, module/file payloads, clone counts, likely-expensive clone counts, density, normalized diagnostic caps, density ordering before truncation, no-source warnings, score mode, and denominator payloads.",
+        "rs-sl-signals.test.ts: diagnostics assert severity, module/file payloads, coherent dual-count messages reporting total clone calls alongside the likely-expensive subset that drives score, per-module and repo-wide clone count payloads enabling score reconstruction, density, normalized diagnostic caps, density ordering before truncation, no-source warnings, score mode, and denominator payloads.",
       factorLedger:
         "rs-sl-signals.test.ts: registered RS pack signal emits config.exclude_globs as score-bearing evidence and config.top_n_diagnostics as non-score-bearing metadata with signal-default source.",
       cacheSemantics:
-        "rs-sl-signals.test.ts and pack.test.ts: RS-SL-04 declares likely-expensive-score-cfg-test-gating-diagnostics-denominator-bindings-ufcs-v6 cacheVersion, config/cacheVersion changes alter the signal config hash, and the RS pack wrapper preserves the signal-specific cacheVersion.",
+        "rs-sl-signals.test.ts and pack.test.ts: RS-SL-04 declares likely-expensive-score-cfg-test-gating-diagnostics-denominator-bindings-ufcs-coherent-counts-v7 cacheVersion, config/cacheVersion changes alter the signal config hash, and the RS pack wrapper preserves the signal-specific cacheVersion.",
       integration:
         "observer-integration.test.ts and CLI score tests: Rust observer integration carries RS-SL-04 clone score and diagnostics through the RS pack against a real Cargo fixture, while CLI single-signal mode executes RS-SL-04 against the repository substrate through the source CLI path.",
     },
