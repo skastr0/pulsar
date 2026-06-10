@@ -1281,7 +1281,7 @@ describe("RS-SL-* signals", () => {
       tier: 1,
       category: "generated-slop",
       kind: "legibility",
-      cacheVersion: "likely-expensive-score-cfg-test-gating-diagnostics-denominator-bindings-ufcs-v6",
+      cacheVersion: "likely-expensive-score-cfg-test-gating-diagnostics-denominator-bindings-ufcs-coherent-counts-v7",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -1409,11 +1409,13 @@ describe("RS-SL-* signals", () => {
       expect(diagnostics).toHaveLength(1)
       expect(diagnostics[0]).toMatchObject({
         severity: "warn",
-        message: "clone-diagnostics::crate contains 2 clone() calls",
+        message: "clone-diagnostics::crate contains 2 clone() calls, 2 likely expensive (driving score)",
         data: expect.objectContaining({
           cloneCalls: 2,
           likelyExpensiveClones: 2,
           density: 1,
+          totalCloneCalls: 2,
+          likelyExpensiveCloneCalls: 2,
           analysisMode: "syntax-heuristic-clone-scan",
           scoreMode: "likely-expensive-clone-pressure",
           scoreDenominator: "likely-expensive-clone-calls",
@@ -1640,7 +1642,125 @@ describe("RS-SL-* signals", () => {
       })
       expect(diagnostics).toHaveLength(1)
       expect(diagnostics[0]).toMatchObject({
-        message: expect.stringContaining("::high contains 2 clone() calls"),
+        message: expect.stringContaining("::high contains 2 clone() calls, 2 likely expensive (driving score)"),
+      })
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-SL-04 keeps message, data, and score coherent when cheap clones dominate", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-sl04-cheap-heavy-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "clone-cheap-heavy"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub fn fanout() {",
+        "    let shared = std::sync::Arc::new(vec![1, 2, 3]);",
+        "    let counted = std::rc::Rc::new(7);",
+        "    let label: &str = \"ready\";",
+        "    let _a = shared.clone();",
+        "    let _b = shared.clone();",
+        "    let _c = shared.clone();",
+        "    let _d = counted.clone();",
+        "    let _e = counted.clone();",
+        "    let _f = label.clone();",
+        "    let _expensive = String::from(\"pulsar\").clone();",
+        "}",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const out = await runSignalCompute(RsSl04, repo, RsSl04.defaultConfig)
+      const diagnostics = RsSl04.diagnose(out)
+
+      expect(out.totalCloneCalls).toBe(7)
+      expect(out.likelyExpensiveCloneCalls).toBe(1)
+      expect(out.modules[0]).toMatchObject({
+        cloneCalls: 7,
+        likelyExpensiveClones: 1,
+      })
+      expect(RsSl04.score(out)).toBeCloseTo(0.96)
+      expect(diagnostics).toHaveLength(1)
+
+      const payload = diagnostics[0]?.data as {
+        likelyExpensiveCloneCalls?: number
+      } | undefined
+      const scoreFromPayload = 1 -
+        Math.min(0.8, (payload?.likelyExpensiveCloneCalls ?? Number.NaN) / 25)
+
+      expect(diagnostics[0]?.severity).toBe("warn")
+      expect(diagnostics[0]?.message).toBe(
+        "clone-cheap-heavy::crate contains 7 clone() calls, 1 likely expensive (driving score)",
+      )
+      expect(diagnostics[0]?.data).toMatchObject({
+        cloneCalls: 7,
+        likelyExpensiveClones: 1,
+        totalCloneCalls: 7,
+        likelyExpensiveCloneCalls: 1,
+        scoreMode: "likely-expensive-clone-pressure",
+        scoreDenominator: "likely-expensive-clone-calls",
+      })
+      expect(RsSl04.score(out)).toBeCloseTo(scoreFromPayload)
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-SL-04 keeps firing on genuine large-struct clones inside loops", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-sl04-loop-pressure-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "clone-loop-pressure"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "#[derive(Clone)]",
+        "pub struct Snapshot {",
+        "    pub frames: Vec<u64>,",
+        "    pub label: String,",
+        "}",
+        "",
+        "pub fn scheduler(iterations: usize) {",
+        "    let snapshots: Vec<Snapshot> = Vec::with_capacity(4096);",
+        "    let label: String = String::from(\"scheduler\");",
+        "    for _ in 0..iterations {",
+        "        let _replayed = snapshots.clone();",
+        "        let _tag = label.clone();",
+        "    }",
+        "}",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const out = await runSignalCompute(RsSl04, repo, RsSl04.defaultConfig)
+      const diagnostics = RsSl04.diagnose(out)
+
+      expect(out.totalCloneCalls).toBe(2)
+      expect(out.likelyExpensiveCloneCalls).toBe(2)
+      expect(out.modules[0]).toMatchObject({
+        cloneCalls: 2,
+        likelyExpensiveClones: 2,
+      })
+      expect(RsSl04.score(out)).toBeCloseTo(0.92)
+      expect(diagnostics).toHaveLength(1)
+      expect(diagnostics[0]?.severity).toBe("warn")
+      expect(diagnostics[0]?.message).toBe(
+        "clone-loop-pressure::crate contains 2 clone() calls, 2 likely expensive (driving score)",
+      )
+      expect(diagnostics[0]?.data).toMatchObject({
+        cloneCalls: 2,
+        likelyExpensiveClones: 2,
+        totalCloneCalls: 2,
+        likelyExpensiveCloneCalls: 2,
       })
     } finally {
       await cleanupWorkspace(repo)

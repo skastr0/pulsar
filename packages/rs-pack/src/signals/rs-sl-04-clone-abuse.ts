@@ -79,7 +79,7 @@ export const RsSl04: Signal<RsSl04Config, RsSl04Output, RustProjectTag> = {
   tier: 1,
   category: "generated-slop",
   kind: "legibility",
-  cacheVersion: "likely-expensive-score-cfg-test-gating-diagnostics-denominator-bindings-ufcs-v6",
+  cacheVersion: "likely-expensive-score-cfg-test-gating-diagnostics-denominator-bindings-ufcs-coherent-counts-v7",
   configSchema: RsSl04Config,
   factorDefinitions: RS_SL_04_FACTOR_DEFINITIONS,
   defaultConfig: {
@@ -192,14 +192,16 @@ export const RsSl04: Signal<RsSl04Config, RsSl04Output, RustProjectTag> = {
       : out.modules.filter((module) => module.likelyExpensiveClones > 0)
         .slice(0, out.diagnosticLimit)
         .map((module) => ({
-          severity: module.likelyExpensiveClones > 0 ? ("warn" as const) : ("info" as const),
-          message: `${module.module} contains ${module.cloneCalls} clone() calls`,
+          severity: "warn" as const,
+          message: `${module.module} contains ${module.cloneCalls} clone() calls, ${module.likelyExpensiveClones} likely expensive (driving score)`,
           location: { file: module.file },
           data: {
             module: module.module,
             cloneCalls: module.cloneCalls,
             likelyExpensiveClones: module.likelyExpensiveClones,
             density: module.density,
+            totalCloneCalls: out.totalCloneCalls,
+            likelyExpensiveCloneCalls: out.likelyExpensiveCloneCalls,
             analysisMode: out.analysisMode,
             scoreMode: out.scoreMode,
             scoreDenominator: out.scoreDenominator,
