@@ -456,7 +456,7 @@ describe("RS-AD-* signals", () => {
       tier: 1,
       category: "architectural-drift",
       kind: "structural",
-      cacheVersion: "visibility-surface-config-thresholds-spaced-visibility-v2",
+      cacheVersion: "visibility-surface-warn-share-capped-pressure-v3",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -518,16 +518,32 @@ describe("RS-AD-* signals", () => {
         pubRatio: 0.125,
       })
       expect(out.byModule.get("ad-visibility-fixture::crate::api")?.avg).toBeCloseTo(0.125)
+      expect(out.warnModuleCount).toBe(2)
+      expect(out.warnModuleShare).toBeCloseTo(2 / 3)
+      expect(out.averageExcessRatio).toBeCloseTo((0.375 - 0.35) / 0.65)
+      expect(out.visibilityPressureCap).toBe(0.3)
       expect(RsAd01.outputMetadata?.(out)).toBeUndefined()
-      expect(RsAd01.score(out)).toBeCloseTo(1 - (0.375 - 0.35) / 0.65)
+      expect(RsAd01.score(out)).toBeCloseTo(1 - 0.3 * (2 / 3))
 
       const diagnostics = RsAd01.diagnose(out)
-      expect(diagnostics.map((diagnostic) => diagnostic.data?.module)).toEqual([
+      expect(diagnostics[0]).toMatchObject({
+        severity: "warn",
+        data: {
+          moduleCount: 3,
+          warnModuleCount: 2,
+          warnModuleShare: 2 / 3,
+          warnPubRatio: 0.35,
+          visibilityPressureCap: 0.3,
+          scorePenalty: 0.3 * (2 / 3),
+        },
+      })
+      expect(1 - (diagnostics[0]?.data?.scorePenalty as number)).toBeCloseTo(RsAd01.score(out))
+      expect(diagnostics.slice(1).map((diagnostic) => diagnostic.data?.module)).toEqual([
         "ad-visibility-fixture::crate",
         "ad-visibility-fixture::crate::internal",
         "ad-visibility-fixture::crate::api",
       ])
-      expect(diagnostics[0]).toMatchObject({
+      expect(diagnostics[1]).toMatchObject({
         severity: "warn",
         message: "Module ad-visibility-fixture::crate exposes 50% of its items as pub",
         data: {
@@ -536,7 +552,7 @@ describe("RS-AD-* signals", () => {
           counts: { pub: 1, pubCrate: 0, pubSuper: 0, pubInPath: 0, private: 1 },
         },
       })
-      expect(diagnostics[2]).toMatchObject({ severity: "info" })
+      expect(diagnostics[3]).toMatchObject({ severity: "info" })
     } finally {
       await cleanupWorkspace(repo)
     }
@@ -565,8 +581,11 @@ describe("RS-AD-* signals", () => {
       expect(strict.warnPubRatio).toBe(0.1)
       expect(strict.topDiagnostics).toBe(1)
       expect(RsAd01.score(strict)).toBeLessThan(RsAd01.score(lenient))
-      expect(RsAd01.diagnose(strict)).toHaveLength(1)
-      expect(RsAd01.diagnose(strict)[0]?.severity).toBe("warn")
+      // Warn evidence adds the pressure-summary diagnostic above the cap so
+      // the capped detail list still reconstructs the score.
+      expect(RsAd01.diagnose(strict)).toHaveLength(2)
+      expect(RsAd01.diagnose(strict)[0]?.message).toContain("visibility score penalty")
+      expect(RsAd01.diagnose(strict)[1]?.severity).toBe("warn")
       expect(lenient.warnPubRatio).toBe(0.9)
       expect(RsAd01.score(lenient)).toBe(1)
       expect(RsAd01.diagnose(lenient).every((diagnostic) => diagnostic.severity === "info")).toBe(true)

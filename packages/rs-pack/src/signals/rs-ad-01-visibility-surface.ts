@@ -38,12 +38,28 @@ export interface RsAd01Output {
   readonly totalItems: number
   readonly overallPubRatio: number
   readonly averagePubRatio: number
+  readonly warnModuleCount: number
+  readonly warnModuleShare: number
+  readonly averageExcessRatio: number
+  readonly visibilityPressureCap: number
   readonly warnPubRatio: number
   readonly topDiagnostics: number
 }
 
 const DEFAULT_WARN_PUB_RATIO = 0.35
 const DEFAULT_TOP_N_DIAGNOSTICS = 5
+
+/**
+ * Visibility surface is inventory-grade evidence: a broad pub surface is a
+ * prompt to inspect module boundaries, not proof of architectural damage.
+ * Score pressure is therefore capped at this value so that warn-level
+ * evidence always moves the score (no perfect score while warn diagnostics
+ * are emitted) without letting an inventory signal dominate a category.
+ * Non-tunable by design; the cap is exposed in the output and in the
+ * summary diagnostic so the score can be reconstructed from diagnostics:
+ * score = 1 - visibilityPressureCap * max(warnModuleShare, averageExcessRatio).
+ */
+const MAX_VISIBILITY_PRESSURE = 0.3
 
 const RS_AD_01_FACTOR_DEFINITIONS: ReadonlyArray<SignalFactorDefinition> = [
   {
@@ -75,6 +91,10 @@ const emptyVisibilitySurfaceOutput = (config: NormalizedRsAd01Config): RsAd01Out
   totalItems: 0,
   overallPubRatio: 0,
   averagePubRatio: 0,
+  warnModuleCount: 0,
+  warnModuleShare: 0,
+  averageExcessRatio: 0,
+  visibilityPressureCap: MAX_VISIBILITY_PRESSURE,
   warnPubRatio: config.warn_pub_ratio,
   topDiagnostics: config.top_n_diagnostics,
 })
@@ -101,7 +121,7 @@ export const RsAd01: Signal<RsAd01Config, RsAd01Output, RustProjectTag> = {
   tier: 1,
   category: "architectural-drift",
   kind: "structural",
-  cacheVersion: "visibility-surface-config-thresholds-spaced-visibility-v2",
+  cacheVersion: "visibility-surface-warn-share-capped-pressure-v3",
   configSchema: RsAd01Config,
   factorDefinitions: RS_AD_01_FACTOR_DEFINITIONS,
   defaultConfig: {
@@ -126,12 +146,11 @@ export const RsAd01: Signal<RsAd01Config, RsAd01Output, RustProjectTag> = {
     }),
   score: (out) => {
     if (out.modules.length === 0) return 1
-    if (out.averagePubRatio <= out.warnPubRatio) return 1
-    const headroom = Math.max(1 - out.warnPubRatio, 0.000001)
-    return Math.max(0, 1 - (out.averagePubRatio - out.warnPubRatio) / headroom)
+    return 1 - out.visibilityPressureCap * visibilityPressure(out)
   },
-  diagnose: (out): ReadonlyArray<Diagnostic> =>
-    out.modules.slice(0, out.topDiagnostics).map((module) => ({
+  diagnose: (out): ReadonlyArray<Diagnostic> => {
+    if (out.topDiagnostics <= 0) return []
+    const moduleDiagnostics = out.modules.slice(0, out.topDiagnostics).map((module) => ({
       severity: module.pubRatio >= out.warnPubRatio ? ("warn" as const) : ("info" as const),
       message: `Module ${module.module} exposes ${(module.pubRatio * 100).toFixed(0)}% of its items as pub`,
       location: { file: module.file },
@@ -147,7 +166,10 @@ export const RsAd01: Signal<RsAd01Config, RsAd01Output, RustProjectTag> = {
           private: module.private,
         },
       },
-    })),
+    }))
+    if (out.warnModuleCount === 0) return moduleDiagnostics
+    return [visibilityPressureSummary(out), ...moduleDiagnostics]
+  },
   outputMetadata: (out) =>
     out.totalItems === 0 ? { applicability: "insufficient_evidence" as const } : undefined,
   factorLedger: () => makeRsAd01FactorLedger(),
@@ -185,14 +207,56 @@ const computeVisibilitySurface = async (
   const averagePubRatio = modules.length === 0
     ? 0
     : modules.reduce((sum, module) => sum + module.pubRatio, 0) / modules.length
+  const warnModuleCount = modules.filter(
+    (module) => module.pubRatio >= config.warn_pub_ratio,
+  ).length
+  const headroom = Math.max(1 - config.warn_pub_ratio, 0.000001)
   return {
     modules,
     byModule: summarizeVisibilityByModule(modules),
     totalItems,
     overallPubRatio: totalItems === 0 ? 0 : publicItems / totalItems,
     averagePubRatio,
+    warnModuleCount,
+    warnModuleShare: modules.length === 0 ? 0 : warnModuleCount / modules.length,
+    averageExcessRatio: clamp01(
+      Math.max(0, averagePubRatio - config.warn_pub_ratio) / headroom,
+    ),
+    visibilityPressureCap: MAX_VISIBILITY_PRESSURE,
     warnPubRatio: config.warn_pub_ratio,
     topDiagnostics: config.top_n_diagnostics,
+  }
+}
+
+/**
+ * Score-bearing pressure in 0..1. The warn-module share keeps the score
+ * coherent with warn diagnostics (any warn-level module produces pressure);
+ * the normalized average excess preserves monotonic movement when the whole
+ * surface drifts above the configured warn ratio.
+ */
+const visibilityPressure = (out: RsAd01Output): number =>
+  clamp01(Math.max(out.warnModuleShare, out.averageExcessRatio))
+
+const visibilityPressureSummary = (out: RsAd01Output): Diagnostic => {
+  const pressure = visibilityPressure(out)
+  const scorePenalty = out.visibilityPressureCap * pressure
+  return {
+    severity: "warn",
+    message:
+      `${out.warnModuleCount} of ${out.modules.length} modules expose at least ` +
+      `${(out.warnPubRatio * 100).toFixed(0)}% of their items as pub; ` +
+      `visibility score penalty ${scorePenalty.toFixed(3)} ` +
+      `(inventory-grade pressure capped at ${out.visibilityPressureCap})`,
+    data: {
+      moduleCount: out.modules.length,
+      warnModuleCount: out.warnModuleCount,
+      warnModuleShare: out.warnModuleShare,
+      averagePubRatio: out.averagePubRatio,
+      averageExcessRatio: out.averageExcessRatio,
+      warnPubRatio: out.warnPubRatio,
+      visibilityPressureCap: out.visibilityPressureCap,
+      scorePenalty,
+    },
   }
 }
 

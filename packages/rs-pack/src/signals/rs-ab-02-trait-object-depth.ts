@@ -2,7 +2,6 @@ import { type SignalFactorLedger } from "@skastr0/pulsar-core/factors"
 import { makeDefaultSignalFactorLedger } from "./shared-factor-ledger.js"
 import {
   type Diagnostic,
-  scoreThresholdViolationShare,
   type Signal,
   type SignalFactorDefinition,
   SignalComputeError,
@@ -24,9 +23,12 @@ import { isExcluded } from "./shared-globs.js"
 const RsAb02Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   max_chain_depth: Schema.Number,
+  min_function_evidence: Schema.Number,
   top_n_diagnostics: Schema.Number,
 })
 type RsAb02Config = typeof RsAb02Config.Type
+
+type TraitOrigin = "local" | "external"
 
 interface TraitObjectChainEntry {
   readonly file: string
@@ -36,6 +38,8 @@ interface TraitObjectChainEntry {
   readonly returnType: string
   readonly chainDepth: number
   readonly calleeNames: ReadonlyArray<string>
+  readonly dynTraits: ReadonlyArray<string>
+  readonly traitOrigin: TraitOrigin
 }
 
 interface CalledFunctionRef {
@@ -47,14 +51,19 @@ interface CalledFunctionRef {
 interface RsAb02Output {
   readonly functions: ReadonlyArray<TraitObjectChainEntry>
   readonly overThreshold: ReadonlyArray<TraitObjectChainEntry>
+  readonly warnGrade: ReadonlyArray<TraitObjectChainEntry>
+  readonly inventory: ReadonlyArray<TraitObjectChainEntry>
   readonly sourceFileCount: number
   readonly analyzedSourceFileCount: number
   readonly maxChainDepth: number
+  readonly minFunctionEvidence: number
+  readonly evidenceFactor: number
   readonly diagnosticLimit: number
   readonly analysisMode: "local-dyn-return-call-graph"
 }
 
 const DEFAULT_MAX_CHAIN_DEPTH = 1
+const DEFAULT_MIN_FUNCTION_EVIDENCE = 5
 const DEFAULT_TOP_N_DIAGNOSTICS = 10
 
 const RS_AB_02_FACTOR_DEFINITIONS: ReadonlyArray<SignalFactorDefinition> = [
@@ -73,6 +82,13 @@ const RS_AB_02_FACTOR_DEFINITIONS: ReadonlyArray<SignalFactorDefinition> = [
     defaultValue: DEFAULT_MAX_CHAIN_DEPTH,
   },
   {
+    path: "config.min_function_evidence",
+    title: "Config min function evidence",
+    valueKind: "number",
+    scoreRole: "threshold",
+    defaultValue: DEFAULT_MIN_FUNCTION_EVIDENCE,
+  },
+  {
     path: "config.top_n_diagnostics",
     title: "Config top n diagnostics",
     valueKind: "number",
@@ -88,12 +104,13 @@ export const RsAb02: Signal<RsAb02Config, RsAb02Output, RustProjectTag> = {
   tier: 1,
   category: "abstraction-bloat",
   kind: "legibility",
-  cacheVersion: "trait-object-depth-config-applicability-diagnostics-scoped-calls-cfg-test-gating-cycles-v4",
+  cacheVersion: "trait-object-depth-config-applicability-diagnostics-scoped-calls-cfg-test-gating-cycles-external-inventory-evidence-floor-v5",
   configSchema: RsAb02Config,
   factorDefinitions: RS_AB_02_FACTOR_DEFINITIONS,
   defaultConfig: {
     exclude_globs: [...DEFAULT_RUST_EXCLUDE_GLOBS],
     max_chain_depth: DEFAULT_MAX_CHAIN_DEPTH,
+    min_function_evidence: DEFAULT_MIN_FUNCTION_EVIDENCE,
     top_n_diagnostics: DEFAULT_TOP_N_DIAGNOSTICS,
   },
   inputs: [],
@@ -116,6 +133,8 @@ export const RsAb02: Signal<RsAb02Config, RsAb02Output, RustProjectTag> = {
             }
           >()
           const fnKeysByName = new Map<string, Array<string>>()
+          const workspaceTraitNames = new Set<string>()
+          const workspaceCrateNames = collectWorkspaceCrateNames(project.manifests)
 
           const analyzedSourceFiles = project.sourceFiles.filter(
             (file) => !isExcluded(file, normalizedConfig.exclude_globs),
@@ -125,7 +144,13 @@ export const RsAb02: Signal<RsAb02Config, RsAb02Output, RustProjectTag> = {
             const scope = resolveRustFileScope(project, file)
             const tree = await parseRustFile(file)
             walkAttributedNodes(tree.rootNode, ({ node, ancestors, testGated }) => {
-              if (testGated || node.type !== "function_item") return
+              if (testGated) return
+              if (node.type === "trait_item") {
+                const traitName = firstNamedChild(node, "type_identifier")?.text
+                if (traitName !== undefined) workspaceTraitNames.add(traitName)
+                return
+              }
+              if (node.type !== "function_item") return
               const name = firstNamedChild(node, "identifier")?.text
               const returnType = detectReturnType(node)
               if (name === undefined || returnType === undefined || !returnType.includes("dyn ")) return
@@ -149,23 +174,46 @@ export const RsAb02: Signal<RsAb02Config, RsAb02Output, RustProjectTag> = {
 
           const memo = new Map<string, number>()
           const entries = [...dynFns.entries()]
-            .map(([key, fn]) => ({
-              file: fn.file,
-              module: fn.module,
-              name: fn.name,
-              line: fn.line,
-              returnType: fn.returnType,
-              chainDepth: measureChainDepth(key, dynFns, fnKeysByName, memo, new Set()),
-              calleeNames: fn.calleeRefs.map((ref) => ref.displayName),
-            }))
+            .map(([key, fn]) => {
+              const dynTraits = extractDynTraitRefs(fn.returnType)
+              return {
+                file: fn.file,
+                module: fn.module,
+                name: fn.name,
+                line: fn.line,
+                returnType: fn.returnType,
+                chainDepth: measureChainDepth(key, dynFns, fnKeysByName, memo, new Set()),
+                calleeNames: fn.calleeRefs.map((ref) => ref.displayName),
+                dynTraits,
+                traitOrigin: classifyTraitOrigin(dynTraits, workspaceTraitNames, workspaceCrateNames),
+              }
+            })
             .sort((left, right) => right.chainDepth - left.chainDepth || left.file.localeCompare(right.file))
+
+          const maxChainDepth = normalizedConfig.max_chain_depth
+          const overThreshold = entries.filter((entry) => entry.chainDepth > maxChainDepth)
+          // A repository cannot change an upstream API's trait-object type:
+          // a single passthrough layer (threshold + 1) wrapping an external
+          // trait is inventory-grade evidence, not warn-grade pressure.
+          const inventory = overThreshold.filter(
+            (entry) => entry.traitOrigin === "external" && entry.chainDepth <= maxChainDepth + 1,
+          )
+          const warnGrade = overThreshold.filter(
+            (entry) => !(entry.traitOrigin === "external" && entry.chainDepth <= maxChainDepth + 1),
+          )
 
           return {
             functions: entries,
-            overThreshold: entries.filter((entry) => entry.chainDepth > normalizedConfig.max_chain_depth),
+            overThreshold,
+            warnGrade,
+            inventory,
             sourceFileCount: project.sourceFiles.length,
             analyzedSourceFileCount: analyzedSourceFiles.length,
-            maxChainDepth: normalizedConfig.max_chain_depth,
+            maxChainDepth,
+            minFunctionEvidence: normalizedConfig.min_function_evidence,
+            evidenceFactor: entries.length === 0
+              ? 1
+              : Math.min(1, entries.length / normalizedConfig.min_function_evidence),
             diagnosticLimit: normalizedConfig.top_n_diagnostics,
             analysisMode: "local-dyn-return-call-graph",
           }
@@ -175,7 +223,12 @@ export const RsAb02: Signal<RsAb02Config, RsAb02Output, RustProjectTag> = {
       })
     }),
   score: (out) => {
-    return scoreThresholdViolationShare(out.functions.length, out.overThreshold.length)
+    // score = 1 - (warnGradeCount / functionCount) * evidenceFactor
+    // Inventory entries (external-trait passthrough at threshold + 1) carry
+    // zero penalty; the evidence factor scales pressure down when the
+    // dyn-returning function population is below the evidence floor.
+    if (out.functions.length === 0) return 1
+    return Math.max(0, 1 - (out.warnGrade.length / out.functions.length) * out.evidenceFactor)
   },
   diagnose: (out): ReadonlyArray<Diagnostic> => {
     if (out.sourceFileCount === 0) {
@@ -190,7 +243,7 @@ export const RsAb02: Signal<RsAb02Config, RsAb02Output, RustProjectTag> = {
         },
       }].slice(0, out.diagnosticLimit)
     }
-    return out.overThreshold.slice(0, out.diagnosticLimit).map((entry) => ({
+    const warnDiagnostics = out.warnGrade.map((entry) => ({
       severity: "warn" as const,
       message: `Trait-object chain depth ${entry.chainDepth} in ${entry.name}`,
       location: { file: entry.file, line: entry.line },
@@ -199,9 +252,61 @@ export const RsAb02: Signal<RsAb02Config, RsAb02Output, RustProjectTag> = {
         name: entry.name,
         returnType: entry.returnType,
         calleeNames: entry.calleeNames,
+        dynTraits: entry.dynTraits,
+        traitOrigin: entry.traitOrigin,
+        chainDepth: entry.chainDepth,
+        maxChainDepth: out.maxChainDepth,
+        scoreBearing: true,
+        functionCount: out.functions.length,
+        warnGradeCount: out.warnGrade.length,
+        evidenceFactor: out.evidenceFactor,
         analysisMode: out.analysisMode,
       },
     }))
+    const inventoryDiagnostics = out.inventory.map((entry) => ({
+      severity: "info" as const,
+      message:
+        `Trait-object chain depth ${entry.chainDepth} in ${entry.name} passes through ` +
+        `external trait ${entry.dynTraits.join(" + ") || "<unknown>"} (inventory, not score-bearing)`,
+      location: { file: entry.file, line: entry.line },
+      data: {
+        module: entry.module,
+        name: entry.name,
+        returnType: entry.returnType,
+        calleeNames: entry.calleeNames,
+        dynTraits: entry.dynTraits,
+        traitOrigin: entry.traitOrigin,
+        chainDepth: entry.chainDepth,
+        maxChainDepth: out.maxChainDepth,
+        scoreBearing: false,
+        analysisMode: out.analysisMode,
+      },
+    }))
+    const limited: Array<Diagnostic> = [...warnDiagnostics, ...inventoryDiagnostics]
+      .slice(0, out.diagnosticLimit)
+    // The evidence-floor explanation must survive the top_n cut: it explains
+    // why pressure was reduced, which matters most exactly when finding
+    // diagnostics fill the limit.
+    if (
+      out.diagnosticLimit > 0 &&
+      out.warnGrade.length > 0 &&
+      out.functions.length < out.minFunctionEvidence
+    ) {
+      limited.push({
+        severity: "info" as const,
+        message:
+          `Trait-object chains are measured from only ${out.functions.length} dyn-returning ` +
+          `function(s), below the ${out.minFunctionEvidence}-function evidence floor; ` +
+          `chain-depth pressure is scaled by ${out.evidenceFactor}`,
+        data: {
+          functionCount: out.functions.length,
+          minFunctionEvidence: out.minFunctionEvidence,
+          evidenceFactor: out.evidenceFactor,
+          warnGradeCount: out.warnGrade.length,
+        },
+      })
+    }
+    return limited
   },
   outputMetadata: (out) =>
     rustAnalysisOutputMetadata({
@@ -219,10 +324,58 @@ const normalizeRsAb02Config = (config: RsAb02Config): NormalizedRsAb02Config => 
   max_chain_depth: Number.isFinite(config.max_chain_depth)
     ? Math.max(0, Math.floor(config.max_chain_depth))
     : DEFAULT_MAX_CHAIN_DEPTH,
+  min_function_evidence: Number.isFinite(config.min_function_evidence)
+    ? Math.max(1, Math.floor(config.min_function_evidence))
+    : DEFAULT_MIN_FUNCTION_EVIDENCE,
   top_n_diagnostics: Number.isFinite(config.top_n_diagnostics)
     ? Math.max(0, Math.floor(config.top_n_diagnostics))
     : 0,
 })
+
+const collectWorkspaceCrateNames = (
+  manifests: ReadonlyArray<{ readonly name: string; readonly packageName: string | undefined }>,
+): ReadonlySet<string> => {
+  const names = new Set<string>()
+  for (const manifest of manifests) {
+    for (const name of [manifest.name, manifest.packageName]) {
+      if (name === undefined || name.length === 0) continue
+      names.add(name)
+      names.add(name.replace(/-/g, "_"))
+    }
+  }
+  return names
+}
+
+const DYN_TRAIT_REF_PATTERN =
+  /(?:^|[^A-Za-z0-9_])dyn\s+([A-Za-z_][A-Za-z0-9_]*(?:\s*::\s*[A-Za-z_][A-Za-z0-9_]*)*)/g
+
+const extractDynTraitRefs = (returnType: string): ReadonlyArray<string> => {
+  const refs = new Set<string>()
+  for (const match of returnType.matchAll(DYN_TRAIT_REF_PATTERN)) {
+    const path = match[1]?.replace(/\s+/g, "")
+    if (path !== undefined && path.length > 0) refs.add(path)
+  }
+  return [...refs]
+}
+
+const classifyTraitOrigin = (
+  dynTraits: ReadonlyArray<string>,
+  workspaceTraitNames: ReadonlySet<string>,
+  workspaceCrateNames: ReadonlySet<string>,
+): TraitOrigin => {
+  // Unresolvable dyn references stay "local" so the prior warn behavior is
+  // preserved; only positively-external trait objects are downgraded.
+  if (dynTraits.length === 0) return "local"
+  const isLocalRef = (path: string): boolean => {
+    const segments = path.split("::")
+    const head = segments[0]
+    if (head === undefined) return false
+    if (segments.length === 1) return workspaceTraitNames.has(head)
+    if (head === "crate" || head === "self" || head === "super") return true
+    return workspaceCrateNames.has(head)
+  }
+  return dynTraits.some(isLocalRef) ? "local" : "external"
+}
 
 const makeRsAb02FactorLedger = (): SignalFactorLedger =>
   makeDefaultSignalFactorLedger("RS-AB-02-trait-object-depth", RS_AB_02_FACTOR_DEFINITIONS)

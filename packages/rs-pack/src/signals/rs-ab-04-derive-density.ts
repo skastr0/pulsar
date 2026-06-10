@@ -54,8 +54,12 @@ interface RsAb04Output {
   readonly analysisMode: "attribute-attached-derive-count"
 }
 
-const DEFAULT_MAX_CUSTOM_DERIVES = 1
-const DEFAULT_MAX_DERIVE_COUNT = 4
+// Idiomatic Rust types routinely stack Debug + Clone + PartialEq + Eq +
+// Serialize + Deserialize; thresholds below that baseline flag the bulk of a
+// serde-centric codebase as bloat. The defaults leave headroom above the
+// idiomatic baseline while keeping genuinely exotic derive stacking visible.
+const DEFAULT_MAX_CUSTOM_DERIVES = 3
+const DEFAULT_MAX_DERIVE_COUNT = 8
 const DEFAULT_TOP_N_DIAGNOSTICS = 10
 
 const STANDARD_DERIVES = new Set([
@@ -68,7 +72,17 @@ const STANDARD_DERIVES = new Set([
   "Ord",
   "PartialOrd",
   "Hash",
+  // serde's Serialize/Deserialize are the most ubiquitous ecosystem derives;
+  // counting them as "custom" turns every round-trip serde type into a
+  // violation. Both bare and path-qualified forms are standard.
+  "Serialize",
+  "Deserialize",
+  "serde::Serialize",
+  "serde::Deserialize",
 ])
+
+const isStandardDerive = (derive: string): boolean =>
+  STANDARD_DERIVES.has(derive.replace(/\s+/g, ""))
 
 const RS_AB_04_FACTOR_DEFINITIONS: ReadonlyArray<SignalFactorDefinition> = [
   {
@@ -108,7 +122,7 @@ export const RsAb04: Signal<RsAb04Config, RsAb04Output, RustProjectTag> = {
   tier: 1,
   category: "abstraction-bloat",
   kind: "legibility",
-  cacheVersion: "derive-density-config-applicability-diagnostics-cfg-attr-thresholds-v4",
+  cacheVersion: "derive-density-config-applicability-diagnostics-cfg-attr-thresholds-serde-standard-idiomatic-defaults-v5",
   configSchema: RsAb04Config,
   factorDefinitions: RS_AB_04_FACTOR_DEFINITIONS,
   defaultConfig: {
@@ -141,8 +155,8 @@ export const RsAb04: Signal<RsAb04Config, RsAb04Output, RustProjectTag> = {
                 name: firstNamedChild(node, "type_identifier")?.text ?? "<anonymous>",
                 line: node.startPosition.row + 1,
                 deriveCount: derives.length,
-                standardDerives: derives.filter((derive) => STANDARD_DERIVES.has(derive)),
-                customDerives: derives.filter((derive) => !STANDARD_DERIVES.has(derive)),
+                standardDerives: derives.filter((derive) => isStandardDerive(derive)),
+                customDerives: derives.filter((derive) => !isStandardDerive(derive)),
               })
             })
           }
@@ -198,6 +212,10 @@ export const RsAb04: Signal<RsAb04Config, RsAb04Output, RustProjectTag> = {
         maxCustomDerives: out.maxCustomDerives,
         maxDeriveCount: out.maxDeriveCount,
         thresholdsExceeded: thresholdsExceeded(entry, out),
+        // score = 1 - overThresholdCount / trackedTypeCount; both components
+        // are surfaced so the score is reconstructable from diagnostics.
+        trackedTypeCount: out.trackedTypeCount,
+        overThresholdCount: out.overThreshold.length,
         analysisMode: out.analysisMode,
       },
     }))

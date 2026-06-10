@@ -54,11 +54,24 @@ interface RsAb01Output {
   readonly sourceFileCount: number
   readonly analyzedSourceFileCount: number
   readonly cargoMetadataStatus: "loaded" | "missing"
+  readonly workspaceCrateCount: number
+  readonly libraryCrateCount: number
+  readonly referenceScope: "cross-crate" | "single-crate-library"
   readonly diagnosticLimit: number
   readonly analysisMode: "explicit-use-and-reexport-resolution"
 }
 
 const DEFAULT_TOP_N_DIAGNOSTICS = 20
+
+/**
+ * Confidence reported for single-crate library workspaces. The signal's claim
+ * is cross-crate unusedness; with a single workspace crate no item can ever be
+ * referenced from another workspace crate, so the claim is structurally
+ * unverifiable inside the repository. The lib crate's pub surface is treated
+ * as intentional published API and the signal downgrades to a not-applicable
+ * inventory at reduced confidence instead of warning at full confidence.
+ */
+const SINGLE_CRATE_LIBRARY_BASE_CONFIDENCE = 0.25
 
 const RS_AB_01_FACTOR_DEFINITIONS: ReadonlyArray<SignalFactorDefinition> = [
   {
@@ -84,7 +97,7 @@ export const RsAb01: Signal<RsAb01Config, RsAb01Output, RustProjectTag> = {
   tier: 1,
   category: "abstraction-bloat",
   kind: "structural",
-  cacheVersion: "rs-ab-01-public-surface-use-segments-aliases-diagnostics-reexports-private-visibility-chain-metadata-applicability-v10",
+  cacheVersion: "rs-ab-01-public-surface-use-segments-aliases-diagnostics-reexports-private-visibility-chain-metadata-applicability-single-crate-scope-v11",
   configSchema: RsAb01Config,
   factorDefinitions: RS_AB_01_FACTOR_DEFINITIONS,
   defaultConfig: {
@@ -103,6 +116,7 @@ export const RsAb01: Signal<RsAb01Config, RsAb01Output, RustProjectTag> = {
       })
     }),
   score: (out) => {
+    if (out.referenceScope === "single-crate-library") return 1
     return scoreThresholdViolationShare(out.publicItemCount, out.deadPublicItems.length)
   },
   diagnose: (out): ReadonlyArray<Diagnostic> => {
@@ -129,6 +143,25 @@ export const RsAb01: Signal<RsAb01Config, RsAb01Output, RustProjectTag> = {
         },
       }].slice(0, out.diagnosticLimit)
     }
+    if (out.referenceScope === "single-crate-library") {
+      if (out.publicItemCount === 0) return []
+      return [{
+        severity: "info" as const,
+        message:
+          "RS-AB-01 cross-crate usage cannot be observed in a single-crate workspace; " +
+          "the library's pub surface is treated as intentional published API",
+        data: {
+          referenceScope: out.referenceScope,
+          workspaceCrateCount: out.workspaceCrateCount,
+          libraryCrateCount: out.libraryCrateCount,
+          publicItemCount: out.publicItemCount,
+          internalOverpublicCount: out.deadPublicItems.length,
+          claimLimit:
+            "no other workspace crate exists that could reference these items, so unused-pub pressure is not scored",
+          analysisMode: out.analysisMode,
+        },
+      }].slice(0, out.diagnosticLimit)
+    }
     return out.deadPublicItems.slice(0, out.diagnosticLimit).map((item) => ({
       severity: "warn" as const,
       message: `Public ${item.kind} ${item.name} is not referenced from other workspace crates`,
@@ -142,6 +175,7 @@ export const RsAb01: Signal<RsAb01Config, RsAb01Output, RustProjectTag> = {
         surface: item.surface,
         reexported: item.reexported,
         crossCrateUses: item.crossCrateUses,
+        referenceScope: out.referenceScope,
         analysisMode: out.analysisMode,
       },
     }))
@@ -155,6 +189,12 @@ export const RsAb01: Signal<RsAb01Config, RsAb01Output, RustProjectTag> = {
     }
     if (out.analyzedSourceFileCount === 0 || out.publicItemCount === 0) {
       return { applicability: "not_applicable" as const }
+    }
+    if (out.referenceScope === "single-crate-library") {
+      return {
+        applicability: "not_applicable" as const,
+        baseConfidence: SINGLE_CRATE_LIBRARY_BASE_CONFIDENCE,
+      }
     }
     return undefined
   },
@@ -223,6 +263,11 @@ const computeUnusedPublicItems = async (
     sourceFileCount: project.sourceFiles.length,
     analyzedSourceFileCount: analyzedSourceFiles.length,
     cargoMetadataStatus: project.cargoMetadata === undefined ? "missing" : "loaded",
+    workspaceCrateCount: workspaceCrates.size,
+    libraryCrateCount: libraryCrates.size,
+    referenceScope: workspaceCrates.size <= 1 && libraryCrates.size > 0
+      ? ("single-crate-library" as const)
+      : ("cross-crate" as const),
     diagnosticLimit: config.top_n_diagnostics,
     analysisMode: "explicit-use-and-reexport-resolution",
   }

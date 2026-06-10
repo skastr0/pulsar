@@ -51,7 +51,7 @@ describe("RS-AB-* signals", () => {
       tier: 1,
       category: "abstraction-bloat",
       kind: "structural",
-      cacheVersion: "rs-ab-01-public-surface-use-segments-aliases-diagnostics-reexports-private-visibility-chain-metadata-applicability-v10",
+      cacheVersion: "rs-ab-01-public-surface-use-segments-aliases-diagnostics-reexports-private-visibility-chain-metadata-applicability-single-crate-scope-v11",
       inputs: [],
     })
     expect(decoded).toEqual({
@@ -372,15 +372,24 @@ describe("RS-AB-* signals", () => {
   })
 
   test("RS-AB-01 normalizes diagnostic caps and classifies config factors", async () => {
+    // Multi-crate workspace: cross-crate reference scope, so
+    // internal-overpublic counting (this test's subject) keeps firing;
+    // single-crate LIBRARY workspaces are exercised separately.
     const repo = await createRustWorkspace("pulsar-rs-ab01-diagnostics-", {
       "Cargo.toml": [
+        "[workspace]",
+        'members = ["crates/core", "crates/app"]',
+        'resolver = "2"',
+        "",
+      ].join("\n"),
+      "crates/core/Cargo.toml": [
         "[package]",
         'name = "unused-public"',
         'version = "0.1.0"',
         'edition = "2021"',
         "",
       ].join("\n"),
-      "src/lib.rs": [
+      "crates/core/src/lib.rs": [
         "mod internal {",
         "    pub struct Alpha;",
         "    pub struct Beta;",
@@ -388,6 +397,17 @@ describe("RS-AB-* signals", () => {
         "}",
         "",
       ].join("\n"),
+      "crates/app/Cargo.toml": [
+        "[package]",
+        'name = "consumer-app"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+        "[dependencies]",
+        'unused-public = { path = "../core" }',
+        "",
+      ].join("\n"),
+      "crates/app/src/main.rs": "fn main() {}\n",
     })
 
     try {
@@ -576,8 +596,23 @@ describe("RS-AB-* signals", () => {
 
       expect(cleanOut.deadPublicItems).toEqual([])
       expect(RsAb01.score(cleanOut)).toBe(1)
-      expect(RsAb01.diagnose(cleanOut)).toEqual([])
-      expect(RsAb01.outputMetadata?.(cleanOut)).toBeUndefined()
+      // Single-crate library: cross-crate usage is structurally unobservable,
+      // so the pub surface is intentional published API — one info inventory
+      // diagnostic with the claim limit, not_applicable at reduced confidence.
+      expect(cleanOut.referenceScope).toBe("single-crate-library")
+      const cleanDiagnostics = RsAb01.diagnose(cleanOut)
+      expect(cleanDiagnostics).toHaveLength(1)
+      expect(cleanDiagnostics[0]).toMatchObject({
+        severity: "info",
+        data: {
+          referenceScope: "single-crate-library",
+          publicItemCount: 1,
+        },
+      })
+      expect(RsAb01.outputMetadata?.(cleanOut)).toEqual({
+        applicability: "not_applicable",
+        baseConfidence: 0.25,
+      })
 
       expect(missingOut.sourceFileCount).toBe(0)
       expect(RsAb01.outputMetadata?.(missingOut)).toEqual({
@@ -620,13 +655,19 @@ describe("RS-AB-* signals", () => {
   test("RS-AB-01 scores additional dead public items as higher pressure", async () => {
     const lowPressure = await createRustWorkspace("pulsar-rs-ab01-low-pressure-", {
       "Cargo.toml": [
+        "[workspace]",
+        'members = ["crates/core", "crates/app"]',
+        'resolver = "2"',
+        "",
+      ].join("\n"),
+      "crates/core/Cargo.toml": [
         "[package]",
         'name = "low-pressure"',
         'version = "0.1.0"',
         'edition = "2021"',
         "",
       ].join("\n"),
-      "src/lib.rs": [
+      "crates/core/src/lib.rs": [
         "pub struct ApiOne;",
         "pub struct ApiTwo;",
         "pub struct ApiThree;",
@@ -635,22 +676,58 @@ describe("RS-AB-* signals", () => {
         "}",
         "",
       ].join("\n"),
+      "crates/app/Cargo.toml": [
+        "[package]",
+        'name = "consumer-app"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+        "[dependencies]",
+        'low-pressure = { path = "../core" }',
+        "",
+      ].join("\n"),
+      "crates/app/src/main.rs": [
+        "use low_pressure::{ApiOne, ApiTwo, ApiThree};",
+        "fn main() { let _ = (ApiOne, ApiTwo, ApiThree); }",
+        "",
+      ].join("\n"),
     })
     const highPressure = await createRustWorkspace("pulsar-rs-ab01-high-pressure-", {
       "Cargo.toml": [
+        "[workspace]",
+        'members = ["crates/core", "crates/app"]',
+        'resolver = "2"',
+        "",
+      ].join("\n"),
+      "crates/core/Cargo.toml": [
         "[package]",
         'name = "high-pressure"',
         'version = "0.1.0"',
         'edition = "2021"',
         "",
       ].join("\n"),
-      "src/lib.rs": [
+      "crates/core/src/lib.rs": [
         "pub struct ApiOne;",
         "pub struct ApiTwo;",
         "mod internal {",
         "    pub struct DeadOne;",
         "    pub struct DeadTwo;",
         "}",
+        "",
+      ].join("\n"),
+      "crates/app/Cargo.toml": [
+        "[package]",
+        'name = "consumer-app"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+        "[dependencies]",
+        'high-pressure = { path = "../core" }',
+        "",
+      ].join("\n"),
+      "crates/app/src/main.rs": [
+        "use high_pressure::{ApiOne, ApiTwo};",
+        "fn main() { let _ = (ApiOne, ApiTwo); }",
         "",
       ].join("\n"),
     })
@@ -706,12 +783,13 @@ describe("RS-AB-* signals", () => {
       tier: 1,
       category: "abstraction-bloat",
       kind: "legibility",
-      cacheVersion: "trait-object-depth-config-applicability-diagnostics-scoped-calls-cfg-test-gating-cycles-v4",
+      cacheVersion: "trait-object-depth-config-applicability-diagnostics-scoped-calls-cfg-test-gating-cycles-external-inventory-evidence-floor-v5",
       inputs: [],
     })
     expect(decoded).toEqual({
       exclude_globs: ["**/target/**", "**/tests/**", "**/examples/**", "**/benches/**"],
       max_chain_depth: 1,
+      min_function_evidence: 5,
       top_n_diagnostics: 10,
     })
     expect(registered?.id).toBe(RsAb02.id)
@@ -723,6 +801,7 @@ describe("RS-AB-* signals", () => {
       expect.arrayContaining([
         expect.objectContaining({ path: "config.exclude_globs", source: "signal-default" }),
         expect.objectContaining({ path: "config.max_chain_depth", source: "signal-default" }),
+        expect.objectContaining({ path: "config.min_function_evidence", source: "signal-default" }),
         expect.objectContaining({ path: "config.top_n_diagnostics", source: "signal-default" }),
       ]),
     )
@@ -742,6 +821,13 @@ describe("RS-AB-* signals", () => {
     )
     expect(factorLedger?.entries).toContainEqual(
       expect.objectContaining({
+        path: "config.min_function_evidence",
+        affectsScore: true,
+        scoreRole: "threshold",
+      }),
+    )
+    expect(factorLedger?.entries).toContainEqual(
+      expect.objectContaining({
         path: "config.top_n_diagnostics",
         affectsScore: false,
         scoreRole: "metadata",
@@ -749,7 +835,7 @@ describe("RS-AB-* signals", () => {
     )
   })
 
-  test("RS-AB-02 measures local trait-object call-chain depth", async () => {
+  test("RS-AB-02 measures deep local trait-object call-chain depth as warn-grade", async () => {
     const repo = await createRustWorkspace("pulsar-rs-ab02-", {
       "Cargo.toml": [
         "[package]",
@@ -759,10 +845,12 @@ describe("RS-AB-* signals", () => {
         "",
       ].join("\n"),
       "src/lib.rs": [
-        "use std::fmt::Display;",
-        "pub fn leaf() -> Box<dyn Display> { Box::new(String::from(\"leaf\")) }",
-        "pub fn middle() -> Box<dyn Display> { leaf() }",
-        "pub fn top() -> Box<dyn Display> { middle() }",
+        "pub trait Step { fn run(&self); }",
+        "pub struct Walker;",
+        "impl Step for Walker { fn run(&self) {} }",
+        "pub fn leaf() -> Box<dyn Step> { Box::new(Walker) }",
+        "pub fn middle() -> Box<dyn Step> { leaf() }",
+        "pub fn top() -> Box<dyn Step> { middle() }",
         "",
       ].join("\n"),
     })
@@ -776,39 +864,246 @@ describe("RS-AB-* signals", () => {
         ["middle", 2],
         ["leaf", 1],
       ])
-      expect(out.functions.find((entry) => entry.name === "leaf")?.chainDepth).toBe(1)
-      expect(out.functions.find((entry) => entry.name === "top")?.chainDepth).toBeGreaterThanOrEqual(3)
+      expect(out.functions.every((entry) => entry.traitOrigin === "local")).toBe(true)
+      expect(out.functions.every((entry) => entry.dynTraits.join() === "Step")).toBe(true)
       expect(out.overThreshold.map((entry) => entry.name)).toEqual(["top", "middle"])
+      // Workspace-defined trait: depth-2 layering is locally fixable, so both
+      // over-threshold entries stay warn-grade (positive control for deep
+      // local trait-object nesting).
+      expect(out.warnGrade.map((entry) => entry.name)).toEqual(["top", "middle"])
+      expect(out.inventory).toEqual([])
       expect(out.maxChainDepth).toBe(1)
+      expect(out.minFunctionEvidence).toBe(5)
+      expect(out.evidenceFactor).toBeCloseTo(3 / 5)
       expect(out.diagnosticLimit).toBe(10)
       expect(RsAb02.outputMetadata?.(out)).toBeUndefined()
-      expect(RsAb02.score(out)).toBeCloseTo(1 / 3)
+      // score = 1 - (warnGrade 2 / functions 3) * evidenceFactor 0.6
+      expect(RsAb02.score(out)).toBeCloseTo(1 - (2 / 3) * (3 / 5))
       expect(diagnostics).toMatchObject([
         {
           severity: "warn",
           message: "Trait-object chain depth 3 in top",
-          location: { file: expect.stringMatching(/src\/lib\.rs$/), line: 4 },
+          location: { file: expect.stringMatching(/src\/lib\.rs$/), line: 6 },
           data: {
             module: "trait-object-fixture::crate",
             name: "top",
-            returnType: "Box<dyn Display>",
+            returnType: "Box<dyn Step>",
             calleeNames: ["middle"],
+            dynTraits: ["Step"],
+            traitOrigin: "local",
+            chainDepth: 3,
+            maxChainDepth: 1,
+            scoreBearing: true,
+            functionCount: 3,
+            warnGradeCount: 2,
+            evidenceFactor: 3 / 5,
             analysisMode: "local-dyn-return-call-graph",
           },
         },
         {
           severity: "warn",
           message: "Trait-object chain depth 2 in middle",
-          location: { file: expect.stringMatching(/src\/lib\.rs$/), line: 3 },
+          location: { file: expect.stringMatching(/src\/lib\.rs$/), line: 5 },
           data: {
             module: "trait-object-fixture::crate",
             name: "middle",
-            returnType: "Box<dyn Display>",
+            returnType: "Box<dyn Step>",
             calleeNames: ["leaf"],
+            dynTraits: ["Step"],
+            traitOrigin: "local",
+            chainDepth: 2,
+            maxChainDepth: 1,
+            scoreBearing: true,
+            functionCount: 3,
+            warnGradeCount: 2,
+            evidenceFactor: 3 / 5,
             analysisMode: "local-dyn-return-call-graph",
           },
         },
+        {
+          severity: "info",
+          message:
+            "Trait-object chains are measured from only 3 dyn-returning function(s), " +
+            "below the 5-function evidence floor; chain-depth pressure is scaled by 0.6",
+          data: {
+            functionCount: 3,
+            minFunctionEvidence: 5,
+            evidenceFactor: 3 / 5,
+            warnGradeCount: 2,
+          },
+        },
       ])
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-AB-02 treats depth-2 external trait-object API passthrough as inventory", async () => {
+    // Atlas shape: compose_query passes through tantivy's mandatory
+    // Box<dyn Query> API type; the repository cannot change the upstream
+    // trait, so the single passthrough layer must not warn or score.
+    const repo = await createRustWorkspace("pulsar-rs-ab02-external-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "trait-object-external"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/cli/mod.rs": [
+        "pub mod search;",
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub mod cli;",
+        "",
+      ].join("\n"),
+      "src/cli/search.rs": [
+        "use tantivy::query::Query;",
+        "fn term_query(term: &str) -> Box<dyn Query> { tantivy::query::term(term) }",
+        "pub fn compose_query(term: &str) -> Box<dyn Query> { term_query(term) }",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const out = await runSignalCompute(RsAb02, repo, RsAb02.defaultConfig)
+      const diagnostics = RsAb02.diagnose(out)
+      const composeQuery = out.functions.find((entry) => entry.name === "compose_query")
+
+      expect(composeQuery).toMatchObject({
+        chainDepth: 2,
+        dynTraits: ["Query"],
+        traitOrigin: "external",
+      })
+      expect(out.overThreshold.map((entry) => entry.name)).toEqual(["compose_query"])
+      expect(out.warnGrade).toEqual([])
+      expect(out.inventory.map((entry) => entry.name)).toEqual(["compose_query"])
+      // No warn-grade findings -> no score pressure (pre-fix this single
+      // finding halved the signal to 0.5).
+      expect(RsAb02.score(out)).toBe(1)
+      expect(diagnostics).toHaveLength(1)
+      expect(diagnostics[0]).toMatchObject({
+        severity: "info",
+        message:
+          "Trait-object chain depth 2 in compose_query passes through external trait Query " +
+          "(inventory, not score-bearing)",
+        location: { file: expect.stringMatching(/src\/cli\/search\.rs$/), line: 3 },
+        data: {
+          name: "compose_query",
+          returnType: "Box<dyn Query>",
+          dynTraits: ["Query"],
+          traitOrigin: "external",
+          chainDepth: 2,
+          maxChainDepth: 1,
+          scoreBearing: false,
+          analysisMode: "local-dyn-return-call-graph",
+        },
+      })
+      expect(diagnostics.some((diagnostic) => diagnostic.severity === "warn")).toBe(false)
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-AB-02 keeps path-qualified external dyn traits inventory while local traits warn", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-ab02-origin-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "trait-object-origin"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub trait Local { fn go(&self); }",
+        "pub struct Impl;",
+        "impl Local for Impl { fn go(&self) {} }",
+        "fn external_leaf() -> Box<dyn tantivy::query::Query> { tantivy::query::all() }",
+        "pub fn external_wrap() -> Box<dyn tantivy::query::Query> { external_leaf() }",
+        "fn crate_leaf() -> Box<dyn crate::Local> { Box::new(Impl) }",
+        "pub fn crate_wrap() -> Box<dyn crate::Local> { crate_leaf() }",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const out = await runSignalCompute(RsAb02, repo, RsAb02.defaultConfig)
+      const byName = new Map(out.functions.map((entry) => [entry.name, entry]))
+
+      expect(byName.get("external_wrap")).toMatchObject({
+        chainDepth: 2,
+        dynTraits: ["tantivy::query::Query"],
+        traitOrigin: "external",
+      })
+      // crate::-qualified dyn trait resolves to the workspace -> local.
+      expect(byName.get("crate_wrap")).toMatchObject({
+        chainDepth: 2,
+        dynTraits: ["crate::Local"],
+        traitOrigin: "local",
+      })
+      expect(out.inventory.map((entry) => entry.name)).toEqual(["external_wrap"])
+      expect(out.warnGrade.map((entry) => entry.name)).toEqual(["crate_wrap"])
+      // score = 1 - (warnGrade 1 / functions 4) * evidenceFactor (4/5)
+      expect(RsAb02.score(out)).toBeCloseTo(1 - (1 / 4) * (4 / 5))
+    } finally {
+      await cleanupWorkspace(repo)
+    }
+  })
+
+  test("RS-AB-02 evidence floor scales sparse warn-grade pressure down", async () => {
+    const repo = await createRustWorkspace("pulsar-rs-ab02-floor-", {
+      "Cargo.toml": [
+        "[package]",
+        'name = "trait-object-floor"',
+        'version = "0.1.0"',
+        'edition = "2021"',
+        "",
+      ].join("\n"),
+      "src/lib.rs": [
+        "pub trait Step { fn run(&self); }",
+        "pub struct Walker;",
+        "impl Step for Walker { fn run(&self) {} }",
+        "pub fn leaf() -> Box<dyn Step> { Box::new(Walker) }",
+        "pub fn wrap() -> Box<dyn Step> { leaf() }",
+        "",
+      ].join("\n"),
+    })
+
+    try {
+      const floored = await runSignalCompute(RsAb02, repo, RsAb02.defaultConfig)
+      const unfloored = await runSignalCompute(
+        RsAb02,
+        repo,
+        { ...RsAb02.defaultConfig, min_function_evidence: 1 },
+      )
+      const flooredDiagnostics = RsAb02.diagnose(floored)
+      const unflooredDiagnostics = RsAb02.diagnose(unfloored)
+
+      expect(floored.warnGrade.map((entry) => entry.name)).toEqual(["wrap"])
+      expect(floored.evidenceFactor).toBeCloseTo(2 / 5)
+      // Pre-fix this single local finding halved the signal to 0.5; the
+      // 5-function evidence floor scales the pressure to 0.2.
+      expect(RsAb02.score(floored)).toBeCloseTo(1 - (1 / 2) * (2 / 5))
+      expect(flooredDiagnostics).toMatchObject([
+        {
+          severity: "warn",
+          message: "Trait-object chain depth 2 in wrap",
+          data: { functionCount: 2, warnGradeCount: 1, evidenceFactor: 2 / 5 },
+        },
+        {
+          severity: "info",
+          message:
+            "Trait-object chains are measured from only 2 dyn-returning function(s), " +
+            "below the 5-function evidence floor; chain-depth pressure is scaled by 0.4",
+          data: { functionCount: 2, minFunctionEvidence: 5, evidenceFactor: 2 / 5 },
+        },
+      ])
+
+      expect(unfloored.evidenceFactor).toBe(1)
+      expect(RsAb02.score(unfloored)).toBeCloseTo(0.5)
+      expect(unflooredDiagnostics.every((diagnostic) => diagnostic.severity === "warn")).toBe(true)
+      expect(RsAb02.score(unfloored)).toBeLessThan(RsAb02.score(floored))
     } finally {
       await cleanupWorkspace(repo)
     }
@@ -872,12 +1167,22 @@ describe("RS-AB-* signals", () => {
       const capped = await runSignalCompute(
         RsAb02,
         chain,
-        { ...RsAb02.defaultConfig, max_chain_depth: 1.8, top_n_diagnostics: 1.8 },
+        {
+          ...RsAb02.defaultConfig,
+          max_chain_depth: 1.8,
+          min_function_evidence: 4.8,
+          top_n_diagnostics: 1.8,
+        },
       )
       const hidden = await runSignalCompute(
         RsAb02,
         chain,
-        { ...RsAb02.defaultConfig, max_chain_depth: Number.NaN, top_n_diagnostics: Number.NaN },
+        {
+          ...RsAb02.defaultConfig,
+          max_chain_depth: Number.NaN,
+          min_function_evidence: Number.NaN,
+          top_n_diagnostics: Number.NaN,
+        },
       )
       const strict = await runSignalCompute(
         RsAb02,
@@ -893,13 +1198,27 @@ describe("RS-AB-* signals", () => {
       )
 
       expect(capped.maxChainDepth).toBe(1)
+      expect(capped.minFunctionEvidence).toBe(4)
+      expect(capped.evidenceFactor).toBeCloseTo(3 / 4)
       expect(capped.diagnosticLimit).toBe(1)
-      expect(RsAb02.diagnose(capped)).toHaveLength(1)
+      // std Debug is external: depth-2 middle is inventory, only depth-3 top
+      // is warn-grade; the floor explanation survives the top_n cut.
+      expect(capped.warnGrade.map((entry) => entry.name)).toEqual(["top"])
+      expect(capped.inventory.map((entry) => entry.name)).toEqual(["middle"])
+      expect(RsAb02.diagnose(capped)).toHaveLength(2)
       expect(RsAb02.diagnose(capped)[0]?.data?.name).toBe("top")
+      expect(RsAb02.diagnose(capped)[0]?.severity).toBe("warn")
+      expect(RsAb02.diagnose(capped)[1]).toMatchObject({
+        severity: "info",
+        data: { functionCount: 3, minFunctionEvidence: 4, evidenceFactor: 3 / 4 },
+      })
       expect(hidden.maxChainDepth).toBe(1)
+      expect(hidden.minFunctionEvidence).toBe(5)
       expect(hidden.diagnosticLimit).toBe(0)
       expect(RsAb02.diagnose(hidden)).toHaveLength(0)
       expect(strict.overThreshold).toHaveLength(3)
+      expect(strict.warnGrade.map((entry) => entry.name)).toEqual(["top", "middle"])
+      expect(strict.inventory.map((entry) => entry.name)).toEqual(["leaf"])
       expect(RsAb02.score(strict)).toBeLessThan(RsAb02.score(capped))
 
       expect(missingOut.sourceFileCount).toBe(0)
@@ -1111,7 +1430,13 @@ describe("RS-AB-* signals", () => {
       expect(entriesByName.get("top")?.chainDepth).toBe(3)
       expect(entriesByName.get("middle")?.chainDepth).toBe(2)
       expect(entriesByName.get("leaf")?.chainDepth).toBe(1)
-      expect(RsAb02.score(out)).toBeCloseTo(0.2)
+      // std Debug is external: depth-2 entries (alpha, beta, middle) are
+      // inventory; only depth-3 top is warn-grade. At 5 functions the
+      // evidence floor is met, so score = 1 - 1/5.
+      expect(out.warnGrade.map((entry) => entry.name)).toEqual(["top"])
+      expect(out.inventory.map((entry) => entry.name).sort()).toEqual(["alpha", "beta", "middle"])
+      expect(out.evidenceFactor).toBe(1)
+      expect(RsAb02.score(out)).toBeCloseTo(0.8)
     } finally {
       await cleanupWorkspace(repo)
     }
@@ -1646,13 +1971,13 @@ describe("RS-AB-* signals", () => {
       tier: 1,
       category: "abstraction-bloat",
       kind: "legibility",
-      cacheVersion: "derive-density-config-applicability-diagnostics-cfg-attr-thresholds-v4",
+      cacheVersion: "derive-density-config-applicability-diagnostics-cfg-attr-thresholds-serde-standard-idiomatic-defaults-v5",
       inputs: [],
     })
     expect(decoded).toEqual({
       exclude_globs: ["**/target/**", "**/tests/**", "**/examples/**", "**/benches/**"],
-      max_custom_derives: 1,
-      max_derive_count: 4,
+      max_custom_derives: 3,
+      max_derive_count: 8,
       top_n_diagnostics: 10,
     })
     expect(registered?.id).toBe(RsAb04.id)
@@ -1705,6 +2030,8 @@ describe("RS-AB-* signals", () => {
         "pub struct Plain;",
         "#[derive(Default)]",
         "pub enum Choice { A }",
+        "#[derive(Clone, Builder, Display, EnumIter, IntoPrimitive)]",
+        "pub struct Exotic;",
         "#[cfg(any(test, feature = \"probe\"))]",
         "#[derive(Clone, Debug, Serialize, Deserialize)]",
         "pub struct TestOnly;",
@@ -1720,12 +2047,15 @@ describe("RS-AB-* signals", () => {
 
       expect(out.sourceFileCount).toBe(1)
       expect(out.analyzedSourceFileCount).toBe(1)
-      expect(out.trackedTypeCount).toBe(3)
-      expect(out.deriveBearingTypeCount).toBe(2)
-      expect(out.maxCustomDerives).toBe(1)
-      expect(out.maxDeriveCount).toBe(4)
+      expect(out.trackedTypeCount).toBe(4)
+      expect(out.deriveBearingTypeCount).toBe(3)
+      expect(out.maxCustomDerives).toBe(3)
+      expect(out.maxDeriveCount).toBe(8)
+      // serde Serialize/Deserialize are standard ecosystem derives (atlas
+      // regression: a serde round-trip type is not derive bloat).
       expect(model?.deriveCount).toBe(4)
-      expect(model?.customDerives).toEqual(["Serialize", "Deserialize"])
+      expect(model?.standardDerives).toEqual(["Clone", "Debug", "Serialize", "Deserialize"])
+      expect(model?.customDerives).toEqual([])
       expect(plain).toMatchObject({
         deriveCount: 0,
         standardDerives: [],
@@ -1733,19 +2063,19 @@ describe("RS-AB-* signals", () => {
       })
       expect(out.types.some((entry) => entry.name === "TestOnly")).toBe(false)
       expect(RsAb04.outputMetadata?.(out)).toBeUndefined()
-      expect(RsAb04.score(out)).toBeCloseTo(2 / 3)
+      expect(RsAb04.score(out)).toBeCloseTo(3 / 4)
       expect(diagnostics).toMatchObject([
         {
           severity: "warn",
-          message: "Model derives 2 custom macros",
-          location: { file: expect.stringMatching(/src\/lib\.rs$/), line: 2 },
+          message: "Exotic derives 4 custom macros",
+          location: { file: expect.stringMatching(/src\/lib\.rs$/), line: 7 },
           data: {
             module: "derive-fixture::crate",
-            deriveCount: 4,
-            standardDerives: ["Clone", "Debug"],
-            customDerives: ["Serialize", "Deserialize"],
-            maxCustomDerives: 1,
-            maxDeriveCount: 4,
+            deriveCount: 5,
+            standardDerives: ["Clone"],
+            customDerives: ["Builder", "Display", "EnumIter", "IntoPrimitive"],
+            maxCustomDerives: 3,
+            maxDeriveCount: 8,
             thresholdsExceeded: ["custom_derives"],
             analysisMode: "attribute-attached-derive-count",
           },
@@ -1769,7 +2099,7 @@ describe("RS-AB-* signals", () => {
         "pub struct Clean;",
         "#[derive(Clone, Debug, Default, Eq, PartialEq)]",
         "pub struct TotalHeavy;",
-        "#[derive(Clone, Serialize, Deserialize)]",
+        "#[derive(Clone, Builder, Display)]",
         "pub struct CustomHeavy;",
         "",
       ].join("\n"),
@@ -1808,7 +2138,7 @@ describe("RS-AB-* signals", () => {
           message: "CustomHeavy derives 2 custom macros",
           data: {
             deriveCount: 3,
-            customDerives: ["Serialize", "Deserialize"],
+            customDerives: ["Builder", "Display"],
             thresholdsExceeded: ["custom_derives"],
           },
         },
@@ -1849,13 +2179,13 @@ describe("RS-AB-* signals", () => {
 
       expect(byName.get("Direct")).toMatchObject({
         deriveCount: 3,
-        standardDerives: ["Clone"],
-        customDerives: ["serde::Serialize", "Deserialize"],
+        standardDerives: ["Clone", "serde::Serialize", "Deserialize"],
+        customDerives: [],
       })
       expect(byName.get("FeatureDerived")).toMatchObject({
         deriveCount: 2,
-        standardDerives: [],
-        customDerives: ["Serialize", "Deserialize"],
+        standardDerives: ["Serialize", "Deserialize"],
+        customDerives: [],
       })
       expect(byName.get("TestOnlyConditional")).toMatchObject({
         deriveCount: 0,
@@ -1979,8 +2309,8 @@ describe("RS-AB-* signals", () => {
       expect(capped.maxDeriveCount).toBe(3)
       expect(capped.diagnosticLimit).toBe(1)
       expect(RsAb04.diagnose(capped)).toHaveLength(1)
-      expect(hidden.maxCustomDerives).toBe(1)
-      expect(hidden.maxDeriveCount).toBe(4)
+      expect(hidden.maxCustomDerives).toBe(3)
+      expect(hidden.maxDeriveCount).toBe(8)
       expect(hidden.diagnosticLimit).toBe(0)
       expect(RsAb04.diagnose(hidden)).toHaveLength(0)
 
