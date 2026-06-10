@@ -191,7 +191,7 @@ describe("time series persistence", () => {
       expect(compacted?.aggregate?.observer_semantics).toBe("readiness-aware")
       expect(compacted?.aggregate?.readiness_sample_count).toBe(2)
       expect(compacted?.observerOutput.observer_semantics).toBe(
-        "applicability-aware-readiness-v1",
+        "applicability-aware-readiness-v2",
       )
       expect(compacted?.observerOutput.readiness?.score).toBeCloseTo(0.8, 5)
       expect(compacted?.observerOutput.readiness?.top_pressures[0]).toMatchObject({

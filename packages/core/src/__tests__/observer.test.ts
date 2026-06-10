@@ -519,9 +519,12 @@ describe("Observer — readiness pressure", () => {
     expect(result.categories["legibility-decay"].applicableSignalCount).toBe(0)
     expect(result.categories["legibility-decay"].score).toBe(1)
     expect(result.minimum).toBeUndefined()
-    expect(result.readiness?.score).toBe(0)
+    // Nothing was measured: the score is vacuous (mirrors the `unknown`
+    // convention) and the band is withheld — `status` carries the fault.
+    expect(result.readiness?.score).toBe(1)
     expect(result.readiness?.status).toBe("failed")
-    expect(result.readiness?.aggregation.failed_signal_pressure).toBe(1)
+    expect(result.readiness?.band).toBeUndefined()
+    expect(result.readiness?.aggregation.failed_signal_pressure).toBeUndefined()
     expect(result.readiness?.aggregation.failed_signal_count).toBe(1)
     expect(result.readiness?.top_pressures[0]).toMatchObject({
       signal_id: "TEST-BAD",
@@ -531,7 +534,7 @@ describe("Observer — readiness pressure", () => {
     })
   })
 
-  test("compute failures force failed readiness even beside clean evidence", async () => {
+  test("compute failures degrade status but the score reports measured evidence", async () => {
     const ok = makeLeaf({ id: "TEST-OK", category: "legibility-decay", score: 1 })
     const bad = makeLeaf({
       id: "TEST-BAD",
@@ -542,17 +545,125 @@ describe("Observer — readiness pressure", () => {
 
     const result = await run([ok, bad])
 
-    expect(result.readiness?.score).toBe(0)
+    // The engine fault shapes status; the score keeps describing what WAS
+    // measured (TEST-OK at 1.0) instead of reporting the fault as zero
+    // code quality.
+    expect(result.readiness?.score).toBe(1)
     expect(result.readiness?.status).toBe("failed")
+    expect(result.readiness?.band).toBe("green")
     expect(result.readiness?.aggregation.applicable_signal_count).toBe(1)
     expect(result.readiness?.aggregation.failed_signal_count).toBe(1)
-    expect(result.readiness?.aggregation.failed_signal_pressure).toBe(1)
+    expect(result.readiness?.aggregation.failed_signal_pressure).toBeUndefined()
     expect(result.readiness?.top_pressures[0]).toMatchObject({
       signal_id: "TEST-BAD",
       raw_pressure: 1,
       effective_pressure: 0,
       applicability: "failed",
     })
+  })
+
+  test("compute failures beside imperfect evidence report the measured score", async () => {
+    const ok = makeLeaf({
+      id: "TEST-OK",
+      category: "legibility-decay",
+      tier: 2,
+      score: 0.8,
+    })
+    const bad = makeLeaf({
+      id: "TEST-BAD",
+      category: "legibility-decay",
+      score: 0.5,
+      fail: true,
+    })
+
+    const result = await run([ok, bad])
+
+    expect(result.readiness?.status).toBe("failed")
+    // Tier-2 confidence 0.85 over pressure 0.2 → effective pressure 0.17;
+    // the sole measured signal also drives the p-norm.
+    expect(result.readiness?.pressure).toBeCloseTo(0.17, 5)
+    expect(result.readiness?.score).toBeCloseTo(0.83, 5)
+    expect(result.readiness?.band).toBe("yellow")
+    expect(result.readiness?.aggregation.dominant_pressure_source).toBe("pnorm")
+  })
+
+  test("tier-2 severity cannot poison the headline; tier-1 severity can", async () => {
+    const cleanIds = ["T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9"]
+    const clean = cleanIds.map((id) =>
+      makeLeaf({ id, category: "legibility-decay", score: 1 }),
+    )
+    const vector = {
+      id: "v1",
+      domain: "typescript",
+      signal_overrides: {},
+      observer: { readiness: { p_norm: 4 } },
+    }
+
+    // Tier-2 heuristic at score 0: severe, but only p-norm grade — it may
+    // not be the verdict alone.
+    const heuristic = makeLeaf({
+      id: "TEST-HEURISTIC",
+      tier: 2,
+      category: "legibility-decay",
+      score: 0,
+    })
+    const heuristicRun = await run([heuristic, ...clean], vector)
+    expect(heuristicRun.readiness?.aggregation.local_poison_pressure).toBe(0)
+    expect(heuristicRun.readiness?.aggregation.dominant_pressure_source).toBe("pnorm")
+    // Effective pressure 0.85 diluted by the p-norm: (0.85^4 / 10)^(1/4).
+    expect(heuristicRun.readiness?.pressure).toBeCloseTo(0.478, 2)
+    expect(heuristicRun.readiness?.top_pressures[0]?.poison_authority).toBe(false)
+
+    // Tier-1 proof at score 0.1: full poison passthrough sets the verdict.
+    const proof = makeLeaf({
+      id: "TEST-PROOF",
+      tier: 1,
+      category: "legibility-decay",
+      score: 0.1,
+    })
+    const proofRun = await run([proof, ...clean], vector)
+    expect(proofRun.readiness?.aggregation.local_poison_pressure).toBeCloseTo(0.9, 5)
+    expect(proofRun.readiness?.aggregation.dominant_pressure_source).toBe("local_poison")
+    expect(proofRun.readiness?.pressure).toBeCloseTo(0.9, 5)
+    expect(proofRun.readiness?.top_pressures[0]?.poison_authority).toBe(true)
+  })
+
+  test("the poison ramp grades the warning region instead of cliffing", async () => {
+    // Tier-1 signal with effective pressure 0.575 — the midpoint of the
+    // default warn(0.4)..poison(0.75) ramp. The old cliff gave 0.43; a
+    // hair above 0.75 it jumped to full passthrough. The ramp grades it.
+    const mid = makeLeaf({
+      id: "TEST-MID",
+      tier: 1,
+      category: "legibility-decay",
+      score: 0.425,
+    })
+    const clean = ["T1", "T2", "T3"].map((id) =>
+      makeLeaf({ id, category: "legibility-decay", score: 1 }),
+    )
+    const result = await run([mid, ...clean])
+    expect(result.readiness?.aggregation.authority_max_local_pressure).toBeCloseTo(0.575, 5)
+    expect(result.readiness?.aggregation.local_poison_pressure).toBeCloseTo(0.2875, 4)
+  })
+
+  test("weights cannot wash out poison authority", async () => {
+    // Mirrors the hard-gate doctrine: a vector weight shrinks a signal's
+    // share of the mean, never its license to set the verdict.
+    const proof = makeLeaf({
+      id: "TEST-PROOF",
+      tier: 1,
+      category: "legibility-decay",
+      score: 0.1,
+    })
+    const clean = makeLeaf({ id: "TEST-OK", category: "legibility-decay", score: 1 })
+    const result = await run([proof, clean], {
+      id: "v1",
+      domain: "typescript",
+      signal_overrides: { "TEST-PROOF": { active: true, weight: 0 } },
+    })
+    expect(result.readiness?.aggregation.pnorm_pressure).toBe(0)
+    expect(result.readiness?.aggregation.local_poison_pressure).toBeCloseTo(0.9, 5)
+    expect(result.readiness?.pressure).toBeCloseTo(0.9, 5)
   })
 
   test("non-applicable and insufficient-evidence signals are visible but ignored by aggregate pressure", async () => {
@@ -725,7 +836,7 @@ describe("Observer — JSON output shape (AC-10)", () => {
 
     expect(decoded).toEqual(publicJson)
     expect(decoded).toMatchObject({
-      observer_semantics: "applicability-aware-readiness-v1",
+      observer_semantics: "applicability-aware-readiness-v2",
       categories: {
         "architectural-drift": { score: 1, signals: {} },
         "dependency-entropy": { score: 1, signals: {} },
@@ -767,11 +878,29 @@ describe("Observer — JSON output shape (AC-10)", () => {
         score: 0.7,
         pressure: 0.3,
         status: "yellow",
+        band: "yellow",
+        aggregation: {
+          dominant_pressure_source: "pnorm",
+          evidence_mean: 0.7,
+        },
       },
       hard_gate_status: "pass",
       hard_gate_violations: [],
     })
     expect(decoded.categories["generated-slop"]?.aggregation?.shapedByPressure).toBe(false)
+    expect(decoded.readiness?.top_pressures[0]?.poison_authority).toBe(true)
+  })
+
+  test("schema still decodes v1 observer semantics from persisted history", async () => {
+    const a = makeLeaf({ id: "TEST-A", category: "legibility-decay", score: 0.7 })
+    const publicJson = toObserverJson(await run([a]))
+    const v1Json = JSON.parse(JSON.stringify({
+      ...publicJson,
+      observer_semantics: "applicability-aware-readiness-v1",
+    }))
+
+    const decoded = Schema.decodeUnknownSync(ObserverOutputSchema)(v1Json)
+    expect(decoded.observer_semantics).toBe("applicability-aware-readiness-v1")
   })
 
   test("schema decodes legacy observer JSON without trust-category records", async () => {

@@ -5,7 +5,7 @@ import type { Diagnostic } from "./diagnostic.js"
 import type { SignalRunResult } from "./runner.js"
 import type { SignalApplicability, SignalOutputMetadata } from "./signal.js"
 
-export const OBSERVER_OUTPUT_SEMANTICS = "applicability-aware-readiness-v1" as const
+export const OBSERVER_OUTPUT_SEMANTICS = "applicability-aware-readiness-v2" as const
 export type ObserverOutputSemantics = typeof OBSERVER_OUTPUT_SEMANTICS
 
 /**
@@ -91,24 +91,57 @@ export interface ReadinessPressure {
   readonly weight: number
   readonly confidence: number
   readonly applicability: SignalApplicability
+  /**
+   * Whether this signal's evidence class licenses it to set the headline
+   * alone (tier 1/1.5). Signals without it still contribute to the p-norm
+   * and appear here; the flag explains why a severe one didn't poison.
+   */
+  readonly poison_authority?: boolean
 }
 
+export type ReadinessBand = "green" | "yellow" | "red"
+
+export type ReadinessPressureSource = "pnorm" | "local_poison" | "hard_gate"
+
 export interface ReadinessOutput {
+  /**
+   * Measured-evidence score (1 - pressure). Signal failures never zero
+   * this — they surface through `status` and `failed_signal_count`; the
+   * score keeps describing what WAS measured.
+   */
   readonly score: number
   readonly pressure: number
   readonly status: "green" | "yellow" | "red" | "blocked" | "unknown" | "failed"
+  /**
+   * Quality band from measured pressure, independent of operational
+   * status. Omitted when nothing applicable was measured — consumers must
+   * treat a missing band as "no verdict", not as healthy.
+   */
+  readonly band?: ReadinessBand
   readonly aggregation: {
     readonly strategy: "pressure-pnorm-local-max"
     readonly p: number
     readonly mean_pressure: number
     readonly pnorm_pressure: number
     readonly max_local_pressure: number
-    readonly failed_signal_pressure: number
+    readonly authority_max_local_pressure?: number
+    readonly local_poison_pressure?: number
+    /** No longer emitted since v2; optional for decoding v1 history. */
+    readonly failed_signal_pressure?: number
     readonly hard_gate_pressure: number
     readonly hard_gate_score_cap: number
     readonly local_warning_threshold: number
     readonly local_poison_threshold: number
+    /** @deprecated unused since the poison ramp; echoed for compatibility. */
     readonly local_warning_gain: number
+    readonly dominant_pressure_source?: ReadinessPressureSource
+    /**
+     * Signed distance from the nearest band edge: positive means pressure
+     * sits below that edge. Small magnitudes mean the band was decided by
+     * a thin margin — display layers should say so.
+     */
+    readonly band_margin?: number
+    readonly evidence_mean?: number
     readonly applicable_signal_count: number
     readonly ignored_signal_count: number
     readonly failed_signal_count: number

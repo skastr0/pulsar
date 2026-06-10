@@ -109,6 +109,7 @@ const ReadinessPressureSnapshot = Schema.Struct({
     Schema.Literal("insufficient_evidence"),
     Schema.Literal("failed"),
   ),
+  poison_authority: Schema.optional(Schema.Boolean),
 })
 
 const ReadinessSnapshot = Schema.Struct({
@@ -122,18 +123,36 @@ const ReadinessSnapshot = Schema.Struct({
     Schema.Literal("unknown"),
     Schema.Literal("failed"),
   ),
+  band: Schema.optional(
+    Schema.Union(
+      Schema.Literal("green"),
+      Schema.Literal("yellow"),
+      Schema.Literal("red"),
+    ),
+  ),
   aggregation: Schema.Struct({
     strategy: Schema.Literal("pressure-pnorm-local-max"),
     p: Schema.Number,
     mean_pressure: Schema.Number,
     pnorm_pressure: Schema.Number,
     max_local_pressure: Schema.Number,
+    authority_max_local_pressure: Schema.optional(Schema.Number),
+    local_poison_pressure: Schema.optional(Schema.Number),
     failed_signal_pressure: Schema.optional(Schema.Number),
     hard_gate_pressure: Schema.Number,
     hard_gate_score_cap: Schema.Number,
     local_warning_threshold: Schema.Number,
     local_poison_threshold: Schema.Number,
     local_warning_gain: Schema.Number,
+    dominant_pressure_source: Schema.optional(
+      Schema.Union(
+        Schema.Literal("pnorm"),
+        Schema.Literal("local_poison"),
+        Schema.Literal("hard_gate"),
+      ),
+    ),
+    band_margin: Schema.optional(Schema.Number),
+    evidence_mean: Schema.optional(Schema.Number),
     applicable_signal_count: Schema.Number,
     ignored_signal_count: Schema.Number,
     failed_signal_count: Schema.optional(Schema.Number),
@@ -244,7 +263,12 @@ export type SignalFactorLedgerEntrySnapshotValue =
   typeof SignalFactorLedgerEntrySnapshot.Type
 
 export const ObserverOutput = Schema.Struct({
-  observer_semantics: Schema.optional(Schema.Literal(OBSERVER_OUTPUT_SEMANTICS)),
+  // Decode accepts v1 so persisted time-series history predating the
+  // failed-signal/poison-authority rework keeps loading; v2 is what the
+  // engine emits today.
+  observer_semantics: Schema.optional(
+    Schema.Literal("applicability-aware-readiness-v1", OBSERVER_OUTPUT_SEMANTICS),
+  ),
   categories: ObserverCategories,
   minimum: Schema.Union(MinimumDimensionSnapshot, Schema.Undefined),
   weighted_mean: Schema.Number,
