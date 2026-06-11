@@ -493,7 +493,10 @@ describe("pulsar bisect (integration)", () => {
       expect(parsed.perSignal[signalId].scores.length).toBe(parsed.trajectory.length)
       expect(parsed.perSignal[signalId].category).toBe(parsed.signalCategories[signalId])
     }
-  }, 120_000)
+    // CI runners score this range in ~118s on a good day; 120s budgets flake,
+    // and the timeout kill leaves orphaned scoring processes that starve the
+    // tests after it. Budget for the slow-runner tail, not the median.
+  }, 360_000)
 
   test("supports first-crossing queries and selected signal/category scope", async () => {
     const from = nthParent(3)
