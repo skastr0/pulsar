@@ -4,6 +4,7 @@ const HELP_SECTIONS: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [
   [
     "Usage",
     [
+      "  pulsar onboard [--json|--agent|--no-tui] [<repo-path>]",
       "  pulsar score [<repo-path>]",
       "  pulsar score --signal <id> [<repo-path>]",
       "  pulsar score --diff <base>..<head|WORKTREE> [--changed-only] [--agent-view] [<repo-path>]",
@@ -26,6 +27,7 @@ const HELP_SECTIONS: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [
   [
     "Commands",
     [
+      "  onboard      Guided TUI: scan, calibrate each signal, write .pulsar/ (--json/--agent: headless).",
       "  score        Run one signal or the full Observer against a repo.",
       "  baseline     Record or inspect tolerated hard-gate debt for ratcheting.",
       "  backpressure Evaluate the score history as green/yellow/red pressure.",
@@ -159,6 +161,8 @@ const HELP_SECTIONS: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [
   [
     "Examples",
     [
+      "  pulsar onboard .",
+      "  pulsar onboard --json .",
       "  pulsar score .",
       "  pulsar score --json .",
       "  pulsar score --diff main..HEAD --agent-view --json .",

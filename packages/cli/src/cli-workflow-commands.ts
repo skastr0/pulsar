@@ -13,6 +13,7 @@ import { runConventionsCommand } from "./conventions.js"
 import { runElicitCommand } from "./elicit.js"
 import { parseElicitOptions, type ElicitAction } from "./elicit-options.js"
 import { runGlossaryCommand } from "./glossary.js"
+import { runOnboardCli } from "./onboard.js"
 import { runPersonaCommand } from "./persona.js"
 
 export const runWorkflowCommand = async (
@@ -37,6 +38,10 @@ export const runWorkflowCommand = async (
   }
   if (command === "elicit") {
     await runElicit(commandArgs)
+    return true
+  }
+  if (command === "onboard") {
+    await runOnboardCli(commandArgs)
     return true
   }
   return false
