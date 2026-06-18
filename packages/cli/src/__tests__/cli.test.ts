@@ -1,14 +1,24 @@
 import { describe, expect, test } from "bun:test"
 import { spawnSync } from "node:child_process"
+import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { CLI_VERSION } from "../index.js"
 
 const binPath = resolve(import.meta.dir, "../../src/bin.ts")
+const packageJsonPath = resolve(import.meta.dir, "../../package.json")
 const repoRoot = resolve(import.meta.dir, "../../../../")
+const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8")) as { readonly version: string }
 
 describe("cli", () => {
-  test("exports a version string", () => {
-    expect(typeof CLI_VERSION).toBe("string")
+  test("reports the package version", () => {
+    expect(String(CLI_VERSION)).toBe(packageJson.version)
+
+    const out = spawnSync("bun", [binPath, "--version"], {
+      encoding: "utf-8",
+    })
+
+    expect(out.status).toBe(0)
+    expect(out.stdout.trim()).toBe(packageJson.version)
   })
 
   test("documents score, baseline, backpressure, bisect, calibrate, persona, elicit, glossary, and conventions help text", () => {

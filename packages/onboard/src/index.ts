@@ -1,0 +1,6 @@
+export { runOnboardTui } from "./mount.js"
+export { runOnboardHeadless } from "./headless.js"
+export { loadCatalog, SEED_CATALOG, catalogById } from "./catalog.js"
+export { demoScan, demoDetection, demoPacks } from "./demo.js"
+export { makeDemoWriteConfig } from "./demo-write.js"
+export * from "./types.js"

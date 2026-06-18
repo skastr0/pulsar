@@ -1,0 +1,26 @@
+{
+  "name": "@skastr0/pulsar-onboard",
+  "version": "0.1.4",
+  "private": true,
+  "type": "module",
+  "description": "Pulsar onboarding TUI — pulsar onboard",
+  "license": "MIT",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo"
+  },
+  "dependencies": {
+    "@opentui/core": "^0.3.0",
+    "@opentui/react": "^0.3.0",
+    "react": "^19.2.6"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.15",
+    "bun-types": "^1.3.14",
+    "typescript": "^5.8.0"
+  }
+}
