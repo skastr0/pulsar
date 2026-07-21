@@ -275,6 +275,97 @@ describe("TS-AD-04 (boundary parser coverage)", () => {
     expect(TsAd04.score(out)).toBe(1)
   })
 
+  test("follows one stable local alias from weak input to parser evidence", async () => {
+    await repo.write(
+      "src/routes/webhook.ts",
+      [
+        "const WebhookSchema = { safeParse: (value: unknown) => ({ success: true, data: value }) }",
+        "export async function POST(input: APIEvent) {",
+        "  const body = await input.request.json()",
+        "  return WebhookSchema.safeParse(body)",
+        "}",
+        "export function PUT(input: unknown) {",
+        "  let payload = input",
+        "  return WebhookSchema.safeParse(payload)",
+        "}",
+        "export function PATCH(input: unknown) {",
+        "  return WebhookSchema.safeParse(input)",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await run()
+
+    expect(out.state).toBe("zero")
+    expect(out.findings).toEqual([])
+    expect(out.covered).toMatchObject([
+      { symbol: "POST", parserEvidence: ["WebhookSchema.safeParse"] },
+      { symbol: "PUT", parserEvidence: ["WebhookSchema.safeParse"] },
+      { symbol: "PATCH", parserEvidence: ["WebhookSchema.safeParse"] },
+    ])
+  })
+
+  test("rejects reassigned, shadowed, two-hop, and unrelated aliases", async () => {
+    await repo.write(
+      "src/routes/webhook.ts",
+      [
+        "const WebhookSchema = { safeParse: (value: unknown) => ({ success: true, data: value }) }",
+        "export function POST(input: unknown) {",
+        "  let body = input",
+        "  body = { unrelated: true }",
+        "  return WebhookSchema.safeParse(body)",
+        "}",
+        "export function PUT(input: unknown) {",
+        "  const body = input",
+        "  const payload = body",
+        "  return WebhookSchema.safeParse(payload)",
+        "}",
+        "export function PATCH(input: unknown) {",
+        "  const body = { unrelated: true }",
+        "  WebhookSchema.safeParse(body)",
+        "  return input",
+        "}",
+        "export function DELETE(input: unknown) {",
+        "  const body = input",
+        "  {",
+        "    const body = { unrelated: true }",
+        "    WebhookSchema.safeParse(body)",
+        "  }",
+        "  return input",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await run()
+
+    expect(out.state).toBe("present")
+    expect(out.covered).toEqual([])
+    expect(out.findings).toMatchObject([
+      { symbol: "POST" },
+      { symbol: "PUT" },
+      { symbol: "PATCH" },
+      { symbol: "DELETE" },
+    ])
+  })
+
+  test("keeps cast-only boundary body aliases uncovered", async () => {
+    await repo.write(
+      "src/routes/enterprise.ts",
+      [
+        "export async function POST(event: APIEvent) {",
+        "  const body = (await event.request.json()) as EnterpriseFormData",
+        "  return body",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await run()
+
+    expect(out.state).toBe("present")
+    expect(out.covered).toEqual([])
+    expect(out.findings).toMatchObject([{ symbol: "POST" }])
+  })
+
   test("does not treat parser pattern names in call arguments as parser evidence", async () => {
     await repo.write(
       "src/api/user.ts",

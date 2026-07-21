@@ -220,9 +220,9 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       config:
         "ts-ad-04.test.ts: configSchema decodes narrowed CLI boundary defaults, custom parser_call_patterns affect parser evidence, and diagnostics honor sanitized top_n_diagnostics.",
       positiveFixture:
-        "ts-ad-04.test.ts: fixtures detect weak any, unknown, untyped, request-like, anonymous default-export, and default-export function boundary parameters without parser evidence.",
+        "ts-ad-04.test.ts: fixtures detect weak any, unknown, untyped, request-like, anonymous default-export, default-export function, and cast-only aliased boundary parameters without parser evidence.",
       negativeFixture:
-        "ts-ad-04.test.ts: package directories named cli are not process boundaries by default; parser pattern names in call arguments, parser-pattern substrings, parser calls that do not reference weak input, and parser calls outside the boundary function body do not count as parser evidence.",
+        "ts-ad-04.test.ts: package directories named cli are not process boundaries by default; direct and stable one-hop local aliases into parser calls count as evidence; parser pattern names in call arguments, parser-pattern substrings, reassigned, shadowed, two-hop, and unrelated aliases, parser calls that do not reference weak input, and parser calls outside the boundary function body do not count as parser evidence.",
       applicability:
         "ts-ad-04.test.ts: absent boundary files, not_configured boundary_globs, and boundary files with no weak external inputs produce distinct applicability states.",
       score:
@@ -232,7 +232,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       factorLedger:
         "ts-ad-04.test.ts: registered pack signal emits parser_call_patterns and top_n_diagnostics factor-ledger entries.",
       cacheSemantics:
-        "ts-ad-04.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AD-04 semantic cacheVersion after diagnostic-limit and parser-attribution semantics changed.",
+        "ts-ad-04.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AD-04 semantic cacheVersion after diagnostic-limit, parser-attribution, and one-hop local alias semantics changed.",
     },
   },
   {

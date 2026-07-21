@@ -108,7 +108,7 @@ export const TsAd04: Signal<TsAd04Config, TsAd04Output, TsProjectTag> = {
   kind: "structural",
   evidenceClass: "heuristic-pattern",
   cacheVersion:
-    "ts-boundary-parser-evidence-v2-weak-param-shape-evidence-floor",
+    "ts-boundary-parser-evidence-v3-one-hop-local-alias-weak-param-shape-evidence-floor",
   configSchema: TsAd04Config,
   defaultConfig: {
     boundary_globs: [
@@ -436,6 +436,7 @@ const collectParserEvidence = (
   const patterns = parserPatterns.map((pattern) => normalizeCallText(pattern))
   const weakParameterNames = new Set(weakParameters.map((parameter) => parameter.name))
   if (patterns.length === 0 || weakParameterNames.size === 0) return []
+  const localAliases = collectStableOneHopAliases(fn, weakParameterNames)
   const calls = fn.getDescendantsOfKind(SyntaxKind.CallExpression)
   const evidence = new Set<string>()
   for (const call of calls) {
@@ -444,7 +445,11 @@ const collectParserEvidence = (
     const normalizedCallee = normalizeCallText(calleeText(expression))
     if (
       patterns.some((pattern) => parserPatternMatchesCallee(pattern, normalizedCallee)) &&
-      callReferencesWeakParameter(call, weakParameterNames)
+      callReferencesWeakParameter(
+        call,
+        weakParameterNames,
+        isDirectlyWithinFunction(call, fn) ? localAliases : EMPTY_LOCAL_ALIASES,
+      )
     ) {
       evidence.add(expressionText)
     }
@@ -489,36 +494,105 @@ const parserPatternMatchesSegment = (
 const callReferencesWeakParameter = (
   call: CallExpression,
   weakParameterNames: ReadonlySet<string>,
+  localAliases: ReadonlySet<VariableDeclaration>,
 ): boolean =>
   call.getArguments().some((argument) =>
-    nodeReferencesWeakParameter(argument, weakParameterNames),
+    nodeReferencesWeakParameter(argument, weakParameterNames, localAliases),
   )
 
 const nodeReferencesWeakParameter = (
   node: Node,
   weakParameterNames: ReadonlySet<string>,
+  localAliases: ReadonlySet<VariableDeclaration> = EMPTY_LOCAL_ALIASES,
 ): boolean => {
   if (isFunctionScopeNode(node)) return false
-  if (Node.isIdentifier(node) && weakParameterNames.has(node.getText())) return true
+  if (Node.isIdentifier(node)) {
+    if (weakParameterNames.has(node.getText())) return true
+    if (identifierReferencesDeclaration(node, localAliases)) return true
+  }
   return node.getChildren().some((child) =>
-    nodeReferencesWeakParameter(child, weakParameterNames),
+    nodeReferencesWeakParameter(child, weakParameterNames, localAliases),
   )
 }
 
-const isFunctionScopeNode = (node: Node): boolean => {
-  switch (node.getKind()) {
-    case SyntaxKind.ArrowFunction:
-    case SyntaxKind.FunctionExpression:
-    case SyntaxKind.FunctionDeclaration:
-    case SyntaxKind.MethodDeclaration:
-    case SyntaxKind.Constructor:
-    case SyntaxKind.GetAccessor:
-    case SyntaxKind.SetAccessor:
-      return true
-    default:
-      return false
+const EMPTY_LOCAL_ALIASES: ReadonlySet<VariableDeclaration> = new Set()
+
+const collectStableOneHopAliases = (
+  fn: BoundaryFunctionNode,
+  weakParameterNames: ReadonlySet<string>,
+): ReadonlySet<VariableDeclaration> => {
+  // Intentionally bounded data flow: parameter -> one local initializer ->
+  // parser argument. Symbols keep shadowed names from becoming evidence.
+  const weakParameterDeclarations = new Set<Node>(
+    fn.getParameters().filter((parameter) =>
+      weakParameterNames.has(parameter.getName()),
+    ),
+  )
+  const aliases = new Set<VariableDeclaration>()
+
+  for (const declaration of fn.getDescendantsOfKind(SyntaxKind.VariableDeclaration)) {
+    if (!isDirectlyWithinFunction(declaration, fn)) continue
+    const declarationKind = declaration.getVariableStatement()?.getDeclarationKind()
+    if (declarationKind !== "const" && declarationKind !== "let") continue
+    if (!Node.isIdentifier(declaration.getNameNode())) continue
+    const initializer = declaration.getInitializer()
+    if (initializer === undefined) continue
+    if (!nodeReferencesDeclaration(initializer, weakParameterDeclarations)) continue
+    // `let` is evidence only when language-service references prove the
+    // initializer remains its sole assignment.
+    if (declarationKind === "let" && hasNonDefinitionWrite(declaration)) continue
+    aliases.add(declaration)
   }
+
+  return aliases
 }
+
+const nodeReferencesDeclaration = (
+  node: Node,
+  declarations: ReadonlySet<Node>,
+): boolean => {
+  if (isFunctionScopeNode(node)) return false
+  if (Node.isIdentifier(node) && identifierReferencesDeclaration(node, declarations)) {
+    return true
+  }
+  return node.getChildren().some((child) =>
+    nodeReferencesDeclaration(child, declarations),
+  )
+}
+
+const identifierReferencesDeclaration = (
+  identifier: Node,
+  declarations: ReadonlySet<Node>,
+): boolean =>
+  Node.isIdentifier(identifier) &&
+  (identifier.getSymbol()?.getDeclarations() ?? []).some((declaration) =>
+    declarations.has(declaration),
+  )
+
+const hasNonDefinitionWrite = (declaration: VariableDeclaration): boolean =>
+  declaration.findReferences().some((reference) =>
+    reference.getReferences().some((entry) =>
+      entry.isWriteAccess() && entry.isDefinition() !== true,
+    ),
+  )
+
+const isDirectlyWithinFunction = (
+  node: Node,
+  fn: BoundaryFunctionNode,
+): boolean => node.getFirstAncestor(isFunctionScopeNode) === fn
+
+const FUNCTION_SCOPE_KINDS: ReadonlySet<SyntaxKind> = new Set([
+  SyntaxKind.ArrowFunction,
+  SyntaxKind.FunctionExpression,
+  SyntaxKind.FunctionDeclaration,
+  SyntaxKind.MethodDeclaration,
+  SyntaxKind.Constructor,
+  SyntaxKind.GetAccessor,
+  SyntaxKind.SetAccessor,
+])
+
+const isFunctionScopeNode = (node: Node): boolean =>
+  FUNCTION_SCOPE_KINDS.has(node.getKind())
 
 const normalizeDiagnosticLimit = (value: number): number => {
   if (!Number.isFinite(value)) return 0
