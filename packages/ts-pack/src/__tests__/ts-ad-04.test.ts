@@ -192,7 +192,7 @@ describe("TS-AD-04 (boundary parser coverage)", () => {
     // ratio 2/3 scaled by the evidence factor min(1, 3/4): below the
     // 4-function evidence floor, pressure shrinks proportionally.
     expect(TsAd04.score(out)).toBeCloseTo(1 - (2 / 3) * (3 / 4))
-    expect(diagnostics).toHaveLength(1)
+    expect(diagnostics).toHaveLength(2)
     expect(diagnostics[0]).toMatchObject({
       severity: "warn",
       message: expect.stringContaining("PATCH"),
@@ -204,6 +204,14 @@ describe("TS-AD-04 (boundary parser coverage)", () => {
         symbol: "PATCH",
         missingEvidence: expect.stringContaining("No parse/decode/schema/assertion call"),
       }),
+    })
+    expect(diagnostics[1]).toMatchObject({
+      severity: "info",
+      data: {
+        kind: "boundary-parser-coverage-audit",
+        covered: [expect.objectContaining({ symbol: "POST" })],
+        excluded: [],
+      },
     })
   })
 
@@ -702,6 +710,31 @@ describe("TS-AD-04 (boundary parser coverage)", () => {
     )).toBe(true)
   })
 
+  test("requires symbol-proven JSON, environment, and subprocess ingress", async () => {
+    await repo.write(
+      "src/adapters/local-lookalikes.ts",
+      [
+        "type Domain = { readonly id: string }",
+        "type Handle = { readonly pid: number }",
+        "const model = { json: (): Domain => ({ id: 'local' }) }",
+        "const JSON = { parse: (_text: string): Domain => ({ id: 'local' }) }",
+        "const Bun = { spawn: (_cmd: string): Handle => ({ pid: 1 }) }",
+        "const process = { env: { DOMAIN_ID: 'local' } }",
+        "export const typedAccessor = (): Domain => model.json()",
+        "export const shadowedJson = (): Domain => JSON.parse('local')",
+        "export const shadowedSpawn = (): Handle => Bun.spawn('local')",
+        "export const shadowedEnvironment = (): Domain => ({ id: process.env.DOMAIN_ID })",
+      ].join("\n"),
+    )
+
+    const out = await run()
+
+    expect(out.state).toBe("not_applicable")
+    expect(out.findings).toEqual([])
+    expect(out.covered).toEqual([])
+    expect(out.excluded).toEqual([])
+  })
+
   test("excludes semantic non-ingress shapes while paired raw-domain controls remain findings", async () => {
     await repo.write(
       "src/adapters/projections.ts",
@@ -773,6 +806,12 @@ describe("TS-AD-04 (boundary parser coverage)", () => {
         "  if (parsed === null || typeof parsed !== 'object' || !('id' in parsed)) return undefined",
         "  return parsed as Domain",
         "}",
+        "type ParsedDomain = { readonly ok: true; readonly value: Domain } | { readonly ok: false; readonly error: string }",
+        "export const parseTaggedDomain = (text: string): ParsedDomain => {",
+        "  const parsed: unknown = JSON.parse(text)",
+        "  if (parsed === null || typeof parsed !== 'object' || !('id' in parsed)) return { ok: false, error: 'invalid' }",
+        "  return { ok: true, value: parsed as Domain }",
+        "}",
       ].join("\n"),
     )
 
@@ -786,6 +825,11 @@ describe("TS-AD-04 (boundary parser coverage)", () => {
     expect(out.covered).toMatchObject([
       {
         symbol: "parseDomain",
+        ingressSources: [{ kind: "parsed-wire" }],
+        parserEvidence: ["runtime-refinement"],
+      },
+      {
+        symbol: "parseTaggedDomain",
         ingressSources: [{ kind: "parsed-wire" }],
         parserEvidence: ["runtime-refinement"],
       },
@@ -844,6 +888,74 @@ describe("TS-AD-04 (boundary parser coverage)", () => {
     expect(out.covered).toMatchObject([{ symbol: "decodedPath" }])
   })
 
+  test("lets a raw caller outside boundary globs poison decoded-stage inheritance", async () => {
+    await repo.write(
+      "src/adapters/domain.ts",
+      [
+        "export type Domain = { readonly id: string }",
+        "const parse = (value: unknown): Domain => value as Domain",
+        "export const adapt = (value: unknown): Domain => value as Domain",
+        "export const decodedPath = (input: unknown): Domain => adapt(parse(input))",
+      ].join("\n"),
+    )
+    await repo.write(
+      "src/services/raw.ts",
+      [
+        "import { adapt, type Domain } from '../adapters/domain'",
+        "export const rawPath = (input: unknown): Domain => adapt(input)",
+      ].join("\n"),
+    )
+
+    const out = await run()
+
+    expect(out.excluded.some((entry) => entry.symbol === "adapt")).toBe(false)
+    expect(out.findings).toMatchObject([{ symbol: "adapt" }])
+    expect(out.covered).toMatchObject([{ symbol: "decodedPath" }])
+  })
+
+  test("does not inherit decoder evidence through a reassigned caller alias", async () => {
+    await repo.write(
+      "src/adapters/reassigned-domain.ts",
+      [
+        "type Domain = { readonly id: string }",
+        "const parse = (value: unknown): Domain => value as Domain",
+        "export const adapt = (value: unknown): Domain => value as Domain",
+        "export const handle = (input: unknown): Domain => {",
+        "  let decoded = parse(input)",
+        "  decoded = input as Domain",
+        "  return adapt(decoded)",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await run()
+
+    expect(out.excluded.some((entry) => entry.symbol === "adapt")).toBe(false)
+    expect(out.findings).toMatchObject([{ symbol: "adapt" }])
+    expect(out.covered).toMatchObject([{ symbol: "handle" }])
+  })
+
+  test("does not treat a successful refinement branch as rejection evidence", async () => {
+    await repo.write(
+      "src/adapters/non-rejecting-refinement.ts",
+      [
+        "type Domain = { readonly id: string }",
+        "export const convert = (input: unknown): Domain => {",
+        "  if (typeof input === 'string') return input as unknown as Domain",
+        "  return input as Domain",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await run()
+
+    expect(out.covered).toEqual([])
+    expect(out.findings).toMatchObject([{
+      symbol: "convert",
+      parserEvidence: [],
+    }])
+  })
+
   test("reports ingress and parser attribution in diagnostic data", async () => {
     await repo.write(
       "src/api/domain.ts",
@@ -861,6 +973,41 @@ describe("TS-AD-04 (boundary parser coverage)", () => {
         },
       ],
       parserEvidence: [],
+    })
+  })
+
+  test("publishes covered and excluded classification evidence in one audit diagnostic", async () => {
+    await repo.write(
+      "src/adapters/audit.ts",
+      [
+        "type Domain = { readonly id: string }",
+        "const parse = (value: unknown): Domain => value as Domain",
+        "export const decoded = (input: unknown): Domain => parse(input)",
+        "export const isDomain = (input: unknown): input is Domain =>",
+        "  typeof input === 'object' && input !== null && 'id' in input",
+      ].join("\n"),
+    )
+
+    const out = await run()
+    const diagnostics = TsAd04.diagnose(out)
+
+    expect(diagnostics).toHaveLength(1)
+    expect(diagnostics[0]).toMatchObject({
+      severity: "info",
+      data: {
+        kind: "boundary-parser-coverage-audit",
+        covered: [{
+          symbol: "decoded",
+          candidateReason: "supported-untrusted-ingress",
+          ingressSources: [{ kind: "unknown" }],
+          parserEvidence: ["parse"],
+        }],
+        excluded: [{
+          symbol: "isDomain",
+          exclusionReason: "runtime-type-refinement",
+          ingressSources: [{ kind: "unknown" }],
+        }],
+      },
     })
   })
 

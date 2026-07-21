@@ -28,6 +28,8 @@ describe("diagnostic fix hints", () => {
       ...TsAd04.diagnose({
         state: "present",
         diagnosticLimit: 1,
+        covered: [],
+        excluded: [],
         findings: [{
           file: "/repo/src/api/route.ts",
           line: 1,

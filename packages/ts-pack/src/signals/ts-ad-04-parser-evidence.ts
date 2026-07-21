@@ -64,7 +64,7 @@ const hasRejectingRuntimeRefinement = (
     if (!isDirectlyWithinFunction(statement, fn)) return false
     const condition = statement.getExpression()
     if (!nodeReferencesDeclaration(condition, ingressDeclarations)) return false
-    const hasGuard = condition.getDescendants().some((node) =>
+    const hasGuard = [condition, ...condition.getDescendants()].some((node) =>
       Node.isTypeOfExpression(node) ||
       (
         Node.isBinaryExpression(node) &&
@@ -79,20 +79,59 @@ const hasRejectingRuntimeRefinement = (
       )
     )
     if (!hasGuard) return false
-    const rejection = statement.getThenStatement()
-    return Node.isReturnStatement(rejection) || Node.isThrowStatement(rejection) ||
-      rejection.getDescendants().some((node) =>
-        Node.isReturnStatement(node) || Node.isThrowStatement(node)
+    return [statement.getThenStatement(), statement.getElseStatement()]
+      .some((branch) =>
+        branch !== undefined && branchContainsExplicitRejection(branch, fn)
       )
   })
 
+const branchContainsExplicitRejection = (
+  branch: Node,
+  fn: BoundaryFunctionNode,
+): boolean => [branch, ...branch.getDescendants()].some((node) => {
+  if (!isDirectlyWithinFunction(node, fn)) return false
+  if (Node.isThrowStatement(node)) return true
+  if (!Node.isReturnStatement(node)) return false
+  const expression = node.getExpression()
+  if (expression === undefined) return true
+  const value = unwrapValueExpression(expression)
+  return isExplicitRejectionValue(value)
+})
+
+const isExplicitRejectionValue = (value: Node): boolean => {
+  if (
+    value.getKind() === SyntaxKind.NullKeyword ||
+    value.getKind() === SyntaxKind.FalseKeyword ||
+    (Node.isIdentifier(value) && value.getText() === "undefined")
+  ) return true
+  if (Node.isObjectLiteralExpression(value)) {
+    return value.getProperties().some((property) => {
+      if (!Node.isPropertyAssignment(property)) return false
+      const name = property.getName()
+      const initializer = unwrapValueExpression(property.getInitializerOrThrow())
+      if (name === "error") return true
+      if (["ok", "success", "valid"].includes(name)) {
+        return initializer.getKind() === SyntaxKind.FalseKeyword
+      }
+      if (name !== "_tag" || !Node.isStringLiteral(initializer)) return false
+      return ["Error", "Failure", "Left", "None"].includes(initializer.getLiteralValue())
+    })
+  }
+  if (!Node.isCallExpression(value)) return false
+  const terminal = calleeSegments(normalizeCallText(value.getExpression().getText())).at(-1)
+  return terminal !== undefined &&
+    ["fail", "failure", "left", "none", "reject"].includes(terminal)
+}
+
 export const collectInheritedParserEvidence = (
-  sourceFile: SourceFile,
+  sourceFiles: ReadonlyArray<SourceFile>,
   callee: ParserEvidenceCandidate,
   parserPatterns: ReadonlyArray<string>,
 ): ReadonlyArray<string> => {
-  const calls = sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression).filter((call) =>
-    callTargetsDeclaration(call, callee.declaration)
+  const calls = sourceFiles.flatMap((sourceFile) =>
+    sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression).filter((call) =>
+      callTargetsDeclaration(call, callee.declaration)
+    )
   )
   if (calls.length === 0) return []
 
@@ -132,6 +171,9 @@ const decodedArgumentEvidence = (
   const symbol = argument.getSymbol()?.getAliasedSymbol() ?? argument.getSymbol()
   for (const declaration of symbol?.getDeclarations() ?? []) {
     if (!Node.isVariableDeclaration(declaration)) continue
+    const declarationKind = declaration.getVariableStatement()?.getDeclarationKind()
+    if (declarationKind !== "const" && declarationKind !== "let") continue
+    if (declarationKind === "let" && hasNonDefinitionWrite(declaration)) continue
     const initializer = declaration.getInitializer()
     if (initializer === undefined) continue
     const evidence = parserCallEvidence(unwrapValueExpression(initializer), parserPatterns)

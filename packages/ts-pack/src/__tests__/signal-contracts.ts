@@ -232,7 +232,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       factorLedger:
         "ts-ad-04.test.ts: registered pack signal emits parser_call_patterns and top_n_diagnostics factor-ledger entries.",
       cacheSemantics:
-        "ts-ad-04.test.ts, ts-ad-05.test.ts, and pack.test.ts: TS-AD-04 cache v5 covers proven-ingress discovery, semantic exclusions, runtime validation, and bounded decoded-stage inheritance; TS-AD-05 pins the changed primitive input fingerprint.",
+        "ts-ad-04.test.ts, ts-ad-05.test.ts, and pack.test.ts: TS-AD-04 cache v7 covers symbol-proven ingress discovery, semantic exclusions, explicit rejection evidence, project-wide stable decoded-stage inheritance, and audit diagnostics; TS-AD-05 pins the changed primitive input fingerprint.",
     },
   },
   {

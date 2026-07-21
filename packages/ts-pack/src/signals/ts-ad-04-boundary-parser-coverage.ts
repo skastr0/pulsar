@@ -119,7 +119,7 @@ export const TsAd04: Signal<TsAd04Config, TsAd04Output, TsProjectTag> = {
   kind: "structural",
   evidenceClass: "heuristic-pattern",
   cacheVersion:
-    "ts-boundary-parser-evidence-v5-proven-ingress-semantic-exclusions-one-hop-decoded-stage",
+    "ts-boundary-parser-evidence-v7-symbol-proven-ingress-project-callers-auditable-exclusions",
   configSchema: TsAd04Config,
   defaultConfig: {
     boundary_globs: [
@@ -210,28 +210,47 @@ export const TsAd04: Signal<TsAd04Config, TsAd04Output, TsProjectTag> = {
         data: { state: out.state },
       }]
     }
-    return out.findings.slice(0, out.diagnosticLimit).map((finding) => ({
-      severity: "warn" as const,
-      message:
-        `Boundary function \`${finding.symbol}\` receives supported untrusted ingress ` +
-        "without parse/decode evidence",
-      location: { file: finding.file, line: finding.line },
-      data: { ...finding },
-      fixHints: [{
-        kind: "add-boundary-parser",
-        title: "Validate untrusted boundary ingress",
-        summary:
-          "Validate the cited ingress source near the boundary, then pass only decoded data into domain logic.",
-        confidence: "high",
-        autoApplicable: false,
+    const findings: ReadonlyArray<Diagnostic> = out.findings
+      .slice(0, out.diagnosticLimit)
+      .map((finding) => ({
+        severity: "warn" as const,
+        message:
+          `Boundary function \`${finding.symbol}\` receives supported untrusted ingress ` +
+          "without parse/decode evidence",
+        location: { file: finding.file, line: finding.line },
+        data: { ...finding },
+        fixHints: [{
+          kind: "add-boundary-parser",
+          title: "Validate untrusted boundary ingress",
+          summary:
+            "Validate the cited ingress source near the boundary, then pass only decoded data into domain logic.",
+          confidence: "high",
+          autoApplicable: false,
+          data: {
+            symbol: finding.symbol,
+            weakParameters: finding.weakParameters,
+            ingressSources: finding.ingressSources,
+            candidateReason: finding.candidateReason,
+          },
+        }],
+      }))
+    if (
+      out.diagnosticLimit === 0 ||
+      (out.covered.length === 0 && out.excluded.length === 0)
+    ) return findings
+    return [
+      ...findings,
+      {
+        severity: "info" as const,
+        message:
+          `Boundary parser coverage audit: ${out.covered.length} covered, ${out.excluded.length} excluded`,
         data: {
-          symbol: finding.symbol,
-          weakParameters: finding.weakParameters,
-          ingressSources: finding.ingressSources,
-          candidateReason: finding.candidateReason,
+          kind: "boundary-parser-coverage-audit",
+          covered: out.covered,
+          excluded: out.excluded,
         },
-      }],
-    }))
+      },
+    ]
   },
   outputMetadata: (out) => {
     if (out.state === "not_configured" || out.state === "absent") {
@@ -260,8 +279,15 @@ const computeBoundaryParserCoverage = (
     return baseOutput("absent", 0, 0, [], [], [], diagnosticLimit)
   }
 
+  const callSiteSourceFiles = sourceFiles.filter((sourceFile) =>
+    isAnalyzedSourceFile(sourceFile, config),
+  )
   const candidates = boundaryFiles.flatMap((sourceFile) =>
-    collectBoundaryFunctionCandidates(sourceFile, config.parser_call_patterns),
+    collectBoundaryFunctionCandidates(
+      sourceFile,
+      config.parser_call_patterns,
+      callSiteSourceFiles,
+    ),
   )
   const excluded = candidates
     .filter((candidate): candidate is BoundaryFunctionAnalysis & {
@@ -375,6 +401,13 @@ const isBoundarySourceFile = (
     isExcluded(file, config.boundary_globs)
   )
 }
+
+const isAnalyzedSourceFile = (
+  sourceFile: SourceFile,
+  config: TsAd04Config,
+): boolean =>
+  !sourceFile.isDeclarationFile() &&
+  !isExcluded(sourceFile.getFilePath(), config.exclude_globs)
 
 
 const normalizeDiagnosticLimit = (value: number): number => {

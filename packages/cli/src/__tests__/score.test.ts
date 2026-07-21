@@ -623,6 +623,46 @@ describe("pulsar score", () => {
     }
   }, 120_000)
 
+  test("--json exposes TS-AD-04 covered and excluded audit evidence", async () => {
+    const repoPath = await initRepo([{
+      path: "src/adapters/audit.ts",
+      content: [
+        "type Domain = { readonly id: string }",
+        "const parse = (value: unknown): Domain => value as Domain",
+        "export const decoded = (input: unknown): Domain => parse(input)",
+        "export const isDomain = (input: unknown): input is Domain =>",
+        "  typeof input === 'object' && input !== null && 'id' in input",
+      ].join("\n"),
+    }])
+    try {
+      const out = runCli(repoPath, ["score", "--json", "."])
+      expect(out.status, String(out.stderr || out.stdout)).toBe(0)
+      const parsed = JSON.parse(String(out.stdout))
+      const snapshot = parsed.signal_diagnostics?.["TS-AD-04-boundary-parser-coverage"]
+      const audit = snapshot?.diagnostics.find(
+        (diagnostic: { readonly data?: { readonly kind?: string } }) =>
+          diagnostic.data?.kind === "boundary-parser-coverage-audit",
+      )
+
+      expect(audit).toMatchObject({
+        severity: "info",
+        data: {
+          covered: [{
+            symbol: "decoded",
+            candidateReason: "supported-untrusted-ingress",
+            parserEvidence: ["parse"],
+          }],
+          excluded: [{
+            symbol: "isDomain",
+            exclusionReason: "runtime-type-refinement",
+          }],
+        },
+      })
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
   test("--category narrows human output and omits aggregate summary plus passing gate", async () => {
     const repoPath = await initRepo(simpleRepoFiles())
     try {

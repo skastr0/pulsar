@@ -26,7 +26,7 @@ describe("TS-AD-05 (boundary trust breach)", () => {
     expect(TsAd05.inputs).toEqual([
       {
         id: "TS-AD-04-boundary-parser-coverage",
-        cacheFingerprint: "6a6b0faa2b71e36e844a09d9ed23e74d07b7908b8568089ca70fdbedbfced0b2",
+        cacheFingerprint: "ac16a0d26408ce45c80bad550bdbfcecbeae9dd0d419e0e664b4d4dc407fe78a",
       },
       {
         id: "TS-LD-07-unsafe-type-erosion",

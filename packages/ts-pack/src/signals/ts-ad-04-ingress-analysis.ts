@@ -72,6 +72,7 @@ const REQUEST_LIKE_TYPE_NAMES = [
 export const collectBoundaryFunctionCandidates = (
   sourceFile: SourceFile,
   parserPatterns: ReadonlyArray<string>,
+  callSiteSourceFiles: ReadonlyArray<SourceFile> = [sourceFile],
 ): ReadonlyArray<BoundaryFunctionAnalysis> => {
   const descriptors = collectBoundaryFunctionDescriptors(sourceFile)
   const analyses = descriptors.map((descriptor) =>
@@ -86,7 +87,7 @@ export const collectBoundaryFunctionCandidates = (
     ) return analysis
 
     const inherited = collectInheritedParserEvidence(
-      sourceFile,
+      callSiteSourceFiles,
       analysis,
       parserPatterns,
     )
@@ -167,7 +168,10 @@ const candidateFromFunction = (
   const fn = descriptor.node
   const weakParameters = fn.getParameters().flatMap(classifyWeakParameter)
   const parameterIngress = collectParameterIngressSources(fn, weakParameters)
-  const bodyIngress = collectBodyIngressSources(fn)
+  const parameterIngressDeclarations = new Set<Node>(
+    parameterIngress.map((source) => source.declaration).filter(isPresent),
+  )
+  const bodyIngress = collectBodyIngressSources(fn, parameterIngressDeclarations)
   const ingressSources = dedupeIngressSources([
     ...parameterIngress.map((source) => source.public),
     ...bodyIngress.map((source) => source.public),
@@ -326,6 +330,7 @@ const collectParameterIngressSources = (
 
 const collectBodyIngressSources = (
   fn: BoundaryFunctionNode,
+  parameterIngressDeclarations: ReadonlySet<Node>,
 ): ReadonlyArray<InternalIngressSource> => {
   const sources: Array<InternalIngressSource> = []
   for (const access of fn.getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)) {
@@ -336,7 +341,7 @@ const collectBodyIngressSources = (
   }
   for (const call of fn.getDescendantsOfKind(SyntaxKind.CallExpression)) {
     if (!isDirectlyWithinFunction(call, fn)) continue
-    const kind = classifyIngressCall(call)
+    const kind = classifyIngressCall(call, parameterIngressDeclarations)
     if (kind !== undefined) sources.push(internalIngressSource(kind, call, fn))
   }
   return sources.sort((left, right) => left.node.getStart() - right.node.getStart())
@@ -365,18 +370,29 @@ const sourceHoldingDeclaration = (
     : undefined
 }
 
-const isEnvironmentAccess = (node: Node): boolean => {
+const isEnvironmentAccess = (node: Expression): boolean => {
   const text = node.getText()
-  return text === "process.env" || text.startsWith("process.env.") ||
-    text === "Bun.env" || text.startsWith("Bun.env.")
+  const root = calleeRootIdentifier(node)
+  if (root === undefined) return false
+  if (text === "process.env" || text.startsWith("process.env.")) {
+    return root.getText() === "process" &&
+      (
+        isUnshadowedAmbientGlobal(root) ||
+        ["process", "node:process"].includes(importModuleSpecifier(root) ?? "")
+      )
+  }
+  if (text === "Bun.env" || text.startsWith("Bun.env.")) {
+    return root.getText() === "Bun" && isUnshadowedAmbientGlobal(root)
+  }
+  return false
 }
 
 const classifyIngressCall = (
   call: CallExpression,
+  parameterIngressDeclarations: ReadonlySet<Node>,
 ): BoundaryIngressKind | undefined => {
   const callee = normalizeCallText(call.getExpression().getText())
-  if (callee === "json.parse" || callee.endsWith(".json")) return "parsed-wire"
-  if (callee === "bun.spawn" || callee === "bun.spawnsync") return "subprocess"
+  if (isParsedWireIngressCall(call, parameterIngressDeclarations)) return "parsed-wire"
 
   const moduleSpecifier = importModuleSpecifier(call.getExpression())
   const member = calleeSegments(callee).at(-1) ?? ""
@@ -390,13 +406,47 @@ const classifyIngressCall = (
     isChildProcessSpecifier(moduleSpecifier) &&
     SUBPROCESS_MEMBERS.has(member)
   ) return "subprocess"
-  if (moduleSpecifier === "electron") return "ipc"
+  if (moduleSpecifier === "electron" && IPC_READ_MEMBERS.has(member)) return "ipc"
   if (
     moduleSpecifier !== undefined &&
     isExternalPackageSpecifier(moduleSpecifier) &&
     callReturnsUntrustedData(call)
   ) return "external-sdk"
   return undefined
+}
+
+const isParsedWireIngressCall = (
+  call: CallExpression,
+  parameterIngressDeclarations: ReadonlySet<Node>,
+): boolean => {
+  const expression = call.getExpression()
+  if (!Node.isPropertyAccessExpression(expression)) return false
+  const member = normalizeCallText(expression.getName())
+  if (
+    member === "parse" &&
+    normalizeCallText(expression.getExpression().getText()) === "json" &&
+    hasUnshadowedGlobalRoot(expression, "JSON")
+  ) return true
+  if (member !== "json") return false
+  const receiver = expression.getExpression()
+  if (nodeReferencesDeclaration(receiver, parameterIngressDeclarations)) return true
+  const receiverType = receiver.getType().getText(receiver)
+  return /(?:^|[.<(, ])(?:Body|Request|Response)(?:$|[.>,) ])/u.test(receiverType)
+}
+
+const hasUnshadowedGlobalRoot = (
+  expression: Expression,
+  expectedName: string,
+): boolean => {
+  const root = calleeRootIdentifier(expression)
+  return root?.getText() === expectedName && isUnshadowedAmbientGlobal(root)
+}
+
+const isUnshadowedAmbientGlobal = (identifier: Identifier): boolean => {
+  const symbol = identifier.getSymbol()?.getAliasedSymbol() ?? identifier.getSymbol()
+  return (symbol?.getDeclarations() ?? []).every((declaration) =>
+    declaration.getSourceFile().isDeclarationFile()
+  )
 }
 
 const FILESYSTEM_READ_MEMBERS: ReadonlySet<string> = new Set([
@@ -409,13 +459,13 @@ const FILESYSTEM_READ_MEMBERS: ReadonlySet<string> = new Set([
 ])
 
 const SUBPROCESS_MEMBERS: ReadonlySet<string> = new Set([
-  "exec",
-  "execfile",
   "execfilesync",
   "execsync",
-  "fork",
-  "spawn",
-  "spawnsync",
+])
+
+const IPC_READ_MEMBERS: ReadonlySet<string> = new Set([
+  "invoke",
+  "sendsync",
 ])
 
 const isFileSystemSpecifier = (specifier: string): boolean =>
