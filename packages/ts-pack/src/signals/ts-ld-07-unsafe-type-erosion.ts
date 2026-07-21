@@ -71,6 +71,7 @@ export const TsLd07: Signal<TsLd07Config, TsLd07Output, TsProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
+  evidenceClass: "deterministic-ast",
   cacheVersion: "unsafe-type-erosion-v8-test-helper-exclusions-v1",
   configSchema: TsLd07Config,
   defaultConfig: {

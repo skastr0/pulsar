@@ -47,6 +47,7 @@ export const Shared07MachineFeedbackCoverage: Signal<
   tier: 1,
   category: "review-pain",
   kind: "legibility",
+  evidenceClass: "manifest-fact",
   cacheVersion: "scripts-and-github-workflows-v2-yaml-parser-stable-fingerprint",
   configSchema: Shared07MachineFeedbackCoverageConfig,
   defaultConfig: {

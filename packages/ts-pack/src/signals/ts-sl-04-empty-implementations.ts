@@ -76,6 +76,23 @@ export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalCon
   tier: 1,
   category: "generated-slop",
   kind: "structural",
+  evidenceClass: "mixed",
+  knownFailureModes: [
+    {
+      description: "Empty implementation bodies can encode intentional lifecycle or null-object behavior.",
+      fixture: {
+        file: "packages/ts-pack/src/__tests__/ts-sl-04.test.ts",
+        testName: "does not classify explicit no-op handlers as suspicious empty implementations",
+      },
+    },
+    {
+      description: "Placeholder literal returns can be legitimate product content surfaces.",
+      fixture: {
+        file: "packages/ts-pack/src/__tests__/ts-sl-04.test.ts",
+        testName: "does not classify ordinary literal-return content surfaces as mock returns",
+      },
+    },
+  ],
   cacheVersion: "factor-policy-hunks-stable-hash-generic-noops-globs-finite-v1",
   configSchema: tsSl04ConfigSchema,
   defaultConfig: defaultTsSl04Config,
@@ -122,6 +139,7 @@ export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalCon
     for (const stub of topN) {
       diagnostics.push({
         severity: stub.severity,
+        evidenceClass: stubEvidenceClass(stub.kind),
         message: `${stub.name}: ${stub.kind} (${stub.confidence} confidence)${stub.message ? ` — "${stub.message}"` : ""}`,
         location: { file: stub.file, line: stub.line },
         data: {
@@ -165,6 +183,13 @@ export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalCon
   },
   factorLedger: (out) => out.factorLedger,
 }
+
+const stubEvidenceClass = (
+  kind: StubKind,
+): "deterministic-ast" | "heuristic-pattern" =>
+  kind === "throw-not-implemented" || kind === "todo-comment"
+    ? "deterministic-ast"
+    : "heuristic-pattern"
 
 const computeTsSl04Output = (
   config: TsSl04Config,

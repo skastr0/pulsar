@@ -38,6 +38,7 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
   tier: 1,
   category: "generated-slop",
   kind: "legibility",
+  evidenceClass: "statistical",
   cacheVersion: "exact-source-hunks-generic-defaults-v1",
   configSchema: TsSl01Config,
   defaultConfig: {

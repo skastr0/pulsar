@@ -52,9 +52,10 @@ export const TsSl06: Signal<TsSl06Config, TsSl06Output, TsProjectTag> = {
   id: "TS-SL-06-confidence-claim-mismatch",
   title: "Confidence claim mismatch",
   aliases: ["TS-SL-06"],
-  tier: 1,
+  tier: 2,
   category: "generated-slop",
   kind: "structural",
+  evidenceClass: "heuristic-pattern",
   cacheVersion: "confidence-claim-mismatch-v2",
   configSchema: TsSl06Config,
   defaultConfig: {

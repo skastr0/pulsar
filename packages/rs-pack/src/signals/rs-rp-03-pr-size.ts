@@ -60,6 +60,7 @@ export const RsRp03: Signal<RsRp03Config, RsRp03Output, RustProjectTag | SignalC
   tier: 1,
   category: "review-pain",
   kind: "structural",
+  evidenceClass: "historical-fact",
   cacheVersion: "git-diff-pr-size-git-context-aliases-rust-hunks-v3",
   cacheDependencies: ["git-revision-context"],
   configSchema: RsRp03Config,

@@ -811,6 +811,7 @@ export function notImplemented() {
     const diagnostics = TsSl04.diagnose(out)
     const blockDiagnostics = diagnostics.filter((d) => d.severity === "block")
     expect(blockDiagnostics.length).toBeGreaterThan(0)
+    expect(blockDiagnostics[0]?.evidenceClass).toBe("deterministic-ast")
     expect(blockDiagnostics[0]?.data?.confidence).toBe("high")
   })
 
@@ -969,6 +970,7 @@ export function empty() {}
     const diagnostics = TsSl04.diagnose(out)
     expect(diagnostics).toHaveLength(1)
     expect(diagnostics[0]?.severity).toBe("warn")
+    expect(diagnostics[0]?.evidenceClass).toBe("heuristic-pattern")
     expect(diagnostics[0]?.data?.confidence).toBe("low")
     expect(diagnostics[0]?.data?.penaltyWeight).toBe(0.25)
   })

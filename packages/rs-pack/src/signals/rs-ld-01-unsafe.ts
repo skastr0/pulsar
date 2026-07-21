@@ -94,6 +94,7 @@ export const RsLd01: Signal<RsLd01Config, RsLd01Output, RustProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
+  evidenceClass: "deterministic-ast",
   cacheVersion: "unsafe-code-config-applicability-diagnostics-call-graph-density-sites-safe-only-qualified-v6-inner-attr-gating",
   configSchema: RsLd01Config,
   factorDefinitions: RS_LD_01_FACTOR_DEFINITIONS,

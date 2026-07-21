@@ -121,6 +121,7 @@ export const RsAd01: Signal<RsAd01Config, RsAd01Output, RustProjectTag> = {
   tier: 1,
   category: "architectural-drift",
   kind: "structural",
+  evidenceClass: "statistical",
   cacheVersion: "visibility-surface-warn-share-capped-pressure-v3",
   configSchema: RsAd01Config,
   factorDefinitions: RS_AD_01_FACTOR_DEFINITIONS,

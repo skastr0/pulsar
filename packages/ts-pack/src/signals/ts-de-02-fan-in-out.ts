@@ -53,6 +53,7 @@ export const TsDe02: Signal<TsDe02Config, TsDe02Output, TsProjectTag | TsPackage
   tier: 1,
   category: "dependency-entropy",
   kind: "structural",
+  evidenceClass: "deterministic-ast",
   cacheVersion: "module-resolution-and-export-type-only-v1",
   configSchema: TsDe02Config,
   defaultConfig: {

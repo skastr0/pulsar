@@ -52,6 +52,7 @@ export const TsAb02: Signal<TsAb02Config, TsAb02Output, TsProjectTag | TsPackage
   tier: 1,
   category: "abstraction-bloat",
   kind: "structural",
+  evidenceClass: "deterministic-ast",
   cacheVersion: "calibrated-export-reachability-v4-framework-consumed-diagnostic-limit-v1",
   configSchema: TsAb02Config,
   defaultConfig: {

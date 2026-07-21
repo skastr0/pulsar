@@ -36,6 +36,7 @@ export const TsAb05: Signal<TsAb05Config, TsAb05Output, TsProjectTag> = {
   tier: 1,
   category: "abstraction-bloat",
   kind: "legibility",
+  evidenceClass: "statistical",
   cacheVersion: "generic-proliferation-v3-signature-declarations-v1",
   configSchema: TsAb05Config,
   defaultConfig: {

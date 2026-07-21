@@ -51,9 +51,10 @@ export const TsCc02: Signal<TsCc02Config, TsCc02Output, TsProjectTag> = {
   id: "TS-CC-02-unbounded-concurrency",
   title: "Unbounded concurrency",
   aliases: ["TS-CC-02"],
-  tier: 1,
+  tier: 2,
   category: "concurrency-safety",
   kind: "structural",
+  evidenceClass: "heuristic-pattern",
   cacheVersion: "unbounded-concurrency-v1",
   configSchema: TsCc02Config,
   defaultConfig: {

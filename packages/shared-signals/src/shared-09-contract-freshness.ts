@@ -60,6 +60,30 @@ export const Shared09ContractFreshness: Signal<
   tier: 2,
   category: "review-pain",
   kind: "legibility",
+  evidenceClass: "reference-backed",
+  knownFailureModes: [
+    {
+      description: "A generated surface omitted from the manifest is outside the measured set.",
+      fixture: {
+        file: "packages/shared-signals/src/__tests__/shared-09-contract-freshness.test.ts",
+        testName: "uses an explicit not-configured fallback when reference data omits contract freshness",
+      },
+    },
+    {
+      description: "Byte-identical source and artifacts can still be semantically incompatible.",
+      fixture: {
+        file: "packages/shared-signals/src/__tests__/shared-09-contract-freshness.test.ts",
+        testName: "reports zero when declared source and artifact hashes are fresh",
+      },
+    },
+    {
+      description: "Broad opt-in generated globs can classify unrelated artifacts as orphans.",
+      fixture: {
+        file: "packages/shared-signals/src/__tests__/shared-09-contract-freshness.test.ts",
+        testName: "flags generated artifacts matched by opt-in orphan globs",
+      },
+    },
+  ],
   cacheVersion: "reference-data-v2-normalized-config-source-provenance",
   configSchema: Shared09ContractFreshnessConfig,
   defaultConfig: {

@@ -67,6 +67,7 @@ export const TsLd05: Signal<TsLd05Config, TsLd05Output, TsProjectTag | Reference
   tier: 2,
   category: "legibility-decay",
   kind: "legibility",
+  evidenceClass: "reference-backed",
   cacheVersion: "local-const-exemption-v3",
   configSchema: TsLd05Config,
   defaultConfig: {

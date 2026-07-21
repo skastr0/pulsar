@@ -47,6 +47,7 @@ export const TsAd02: Signal<TsAd02Config, TsAd02Output, TsProjectTag | TsPackage
   tier: 1,
   category: "architectural-drift",
   kind: "structural",
+  evidenceClass: "deterministic-ast",
   cacheVersion: "semantic-type-only-imports-v3",
   configSchema: TsAd02Config,
   defaultConfig: {

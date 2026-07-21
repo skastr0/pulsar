@@ -98,6 +98,7 @@ export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackage
   tier: 1,
   category: "review-pain",
   kind: "structural",
+  evidenceClass: "historical-fact",
   cacheVersion: "branch-range-factor-policy-diagnostic-limit-package-import-edges-untracked-upstream-aligned-v1",
   cacheDependencies: ["git-revision-context"],
   configSchema: TsRp02Config,

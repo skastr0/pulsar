@@ -25,6 +25,7 @@ export const TsAb04: Signal<TsAb04Config, TsAb04Output, TsProjectTag | TsPackage
   tier: 1,
   category: "abstraction-bloat",
   kind: "legibility",
+  evidenceClass: "statistical",
   cacheVersion: "interface-implementation-ratio-v17-shared-evidence-floor",
   configSchema: TsAb04Config,
   defaultConfig: {

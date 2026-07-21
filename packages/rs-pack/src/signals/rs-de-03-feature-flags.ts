@@ -99,6 +99,7 @@ export const RsDe03: Signal<RsDe03Config, RsDe03Output, RustProjectTag> = {
   tier: 1,
   category: "dependency-entropy",
   kind: "structural",
+  evidenceClass: "manifest-fact",
   cacheVersion: "cargo-feature-flags-config-propagation-v1",
   configSchema: RsDe03Config,
   factorDefinitions: RS_DE_03_FACTOR_DEFINITIONS,

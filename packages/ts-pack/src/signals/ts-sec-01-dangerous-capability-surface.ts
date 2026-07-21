@@ -68,6 +68,7 @@ export const TsSec01: Signal<TsSec01Config, TsSec01Output, TsProjectTag> = {
   tier: 1,
   category: "security-risk",
   kind: "structural",
+  evidenceClass: "deterministic-ast",
   cacheVersion: "dangerous-capability-surface-v4-parameterized-sql-tags-risk-sorted-diagnostics",
   configSchema: TsSec01Config,
   defaultConfig: {

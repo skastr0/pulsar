@@ -1278,7 +1278,7 @@ describe("RS-SL-* signals", () => {
       id: "RS-SL-04-clone-abuse",
       aliases: ["RS-SL-04"],
       title: "Clone abuse",
-      tier: 1,
+      tier: 2,
       category: "generated-slop",
       kind: "legibility",
       cacheVersion: "likely-expensive-score-cfg-test-gating-diagnostics-denominator-bindings-ufcs-coherent-counts-v8-inner-attr-gating",

@@ -47,9 +47,10 @@ export const TsSl05: Signal<TsSl05Config, TsSl05Output, TsProjectTag> = {
   id: "TS-SL-05-phantom-tests",
   title: "Phantom tests",
   aliases: ["TS-SL-05"],
-  tier: 1,
+  tier: 2,
   category: "generated-slop",
   kind: "structural",
+  evidenceClass: "heuristic-pattern",
   cacheVersion: "phantom-tests-v1",
   configSchema: TsSl05Config,
   defaultConfig: {

@@ -19,6 +19,16 @@ export const TsLd09: Signal<TsLd09Config, TsLd09Output, TsProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
+  evidenceClass: "mixed",
+  knownFailureModes: [
+    {
+      description: "Expected-failure name patterns can miss project-specific operation names.",
+      fixture: {
+        file: "packages/ts-pack/src/__tests__/ts-ld-09.test.ts",
+        testName: "expected-failure name patterns are configurable",
+      },
+    },
+  ],
   cacheVersion: "ts-error-channel-opacity-v9-surfaced-error-classification-v1",
   configSchema: TsLd09Config,
   defaultConfig: {

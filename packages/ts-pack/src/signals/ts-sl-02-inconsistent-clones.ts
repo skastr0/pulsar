@@ -84,6 +84,7 @@ export const TsSl02: Signal<TsSl02Config, TsSl02Output, SignalContextTag> = {
   tier: 1.5,
   category: "generated-slop",
   kind: "compound",
+  evidenceClass: "mixed",
   cacheVersion: "content-grounded-divergence-v2",
   cacheDependencies: ["git-revision-context"],
   configSchema: TsSl02Config,

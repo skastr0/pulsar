@@ -51,6 +51,7 @@ export const Shared05Suppression: Signal<Shared05SuppressionConfig, Shared05Supp
   tier: 1.5,
   category: "generated-slop",
   kind: "compound",
+  evidenceClass: "mixed",
   cacheVersion: "single-language-applicability-v2-normalized-diagnostics",
   configSchema: Shared05SuppressionConfig,
   defaultConfig: {

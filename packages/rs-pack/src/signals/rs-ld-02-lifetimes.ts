@@ -89,6 +89,7 @@ export const RsLd02: Signal<RsLd02Config, RsLd02Output, RustProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
+  evidenceClass: "statistical",
   cacheVersion: "lifetime-complexity-config-applicability-diagnostics-cfg-test-score-v3",
   configSchema: RsLd02Config,
   factorDefinitions: RS_LD_02_FACTOR_DEFINITIONS,

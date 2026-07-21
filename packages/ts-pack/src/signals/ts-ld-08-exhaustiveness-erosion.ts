@@ -58,6 +58,7 @@ export const TsLd08: Signal<TsLd08Config, TsLd08Output, TsProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
+  evidenceClass: "deterministic-ast",
   cacheVersion: "switch-default-v4-finite-domain-never-guard-exclusions-v1",
   configSchema: TsLd08Config,
   defaultConfig: {

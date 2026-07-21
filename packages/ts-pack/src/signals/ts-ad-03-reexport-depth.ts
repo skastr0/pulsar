@@ -53,6 +53,7 @@ export const TsAd03: Signal<
   tier: 1,
   category: "architectural-drift",
   kind: "structural",
+  evidenceClass: "deterministic-ast",
   cacheVersion: "diagnostic-limit-v1-package-resolution-v1",
   configSchema: TsAd03Config,
   defaultConfig: {

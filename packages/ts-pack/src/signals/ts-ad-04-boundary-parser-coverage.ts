@@ -103,9 +103,10 @@ export const TsAd04: Signal<TsAd04Config, TsAd04Output, TsProjectTag> = {
   id: "TS-AD-04-boundary-parser-coverage",
   title: "Boundary parser coverage",
   aliases: ["TS-AD-04"],
-  tier: 1,
+  tier: 2,
   category: "architectural-drift",
   kind: "structural",
+  evidenceClass: "heuristic-pattern",
   cacheVersion:
     "ts-boundary-parser-evidence-v2-weak-param-shape-evidence-floor",
   configSchema: TsAd04Config,

@@ -59,9 +59,10 @@ export const TsCc01: Signal<TsCc01Config, TsCc01Output, TsProjectTag> = {
   id: "TS-CC-01-async-failure-control",
   title: "Async failure control",
   aliases: ["TS-CC-01"],
-  tier: 1,
+  tier: 2,
   category: "concurrency-safety",
   kind: "structural",
+  evidenceClass: "heuristic-pattern",
   cacheVersion: "async-failure-control-v3-syntactic-promise-evidence-documented-catch",
   configSchema: TsCc01Config,
   defaultConfig: {

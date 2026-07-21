@@ -116,6 +116,7 @@ export const RsRp01: Signal<RsRp01Config, RsRp01Output, never> = {
   tier: 1.5,
   category: "review-pain",
   kind: "compound",
+  evidenceClass: "mixed",
   cacheVersion: "rust-hotspot-config-compound-applicability-ranking-v2",
   configSchema: RsRp01Config,
   factorDefinitions: RS_RP_01_FACTOR_DEFINITIONS,

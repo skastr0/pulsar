@@ -129,6 +129,7 @@ export const RsDe02: Signal<RsDe02Config, RsDe02Output, RustProjectTag> = {
   tier: 1,
   category: "dependency-entropy",
   kind: "structural",
+  evidenceClass: "manifest-fact",
   cacheVersion: "cargo-lock-dependency-tree-ratio-curve-unused-deps-v3-lib-target-names-dotted-keys",
   configSchema: RsDe02Config,
   factorDefinitions: RS_DE_02_FACTOR_DEFINITIONS,

@@ -1,5 +1,21 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import { TsSec03, secretFindingSeverity } from "../signals/ts-sec-03-secret-material.js"
+import {
+  InMemoryCacheLayer,
+  ReferenceDataTag,
+  SignalContextTag,
+  makeReferenceData,
+} from "@skastr0/pulsar-core/signal"
+import {
+  buildRegistry,
+  runSignal as runRegisteredSignal,
+} from "@skastr0/pulsar-core/scoring"
+import { Effect, Layer } from "effect"
+import {
+  TsSec03,
+  secretFindingEvidenceClass,
+  secretFindingSeverity,
+} from "../signals/ts-sec-03-secret-material.js"
+import { TsProjectLayer } from "../ts-project.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
 
 // Scanner-grade fixture tokens are assembled at runtime so this SOURCE file
@@ -79,6 +95,23 @@ describe("TS-SEC-03 secret material", () => {
   })
 
   const run = () => runSignal(repo.root, TsSec03, TsSec03.defaultConfig)
+
+  const runEnforced = async () => {
+    const registry = await Effect.runPromise(buildRegistry([TsSec03]))
+    const layer = Layer.mergeAll(
+      TsProjectLayer(repo.root),
+      InMemoryCacheLayer,
+      Layer.succeed(SignalContextTag, {
+        gitSha: "TEST",
+        worktreePath: repo.root,
+        changedHunks: [],
+      }),
+      Layer.succeed(ReferenceDataTag, makeReferenceData(new Map())),
+    )
+    return Effect.runPromise(
+      runRegisteredSignal(registry, TsSec03.id).pipe(Effect.provide(layer)),
+    )
+  }
 
   const writeFixture = async (path: string) => {
     const fixture = BENIGN_FIXTURES.find(([file]) => file === path)
@@ -248,6 +281,8 @@ describe("TS-SEC-03 secret material", () => {
     expect(out.findings.filter((finding) => finding.kind === "known-secret-prefix")).toHaveLength(6)
     expect(diagnostics).toHaveLength(7)
     expect(diagnostics.every((diagnostic) => diagnostic.severity === "block")).toBe(true)
+    expect(diagnostics.every((diagnostic) => diagnostic.evidenceClass === "deterministic-ast"))
+      .toBe(true)
     expect(TsSec03.score(out)).toBe(0)
   })
 
@@ -266,6 +301,7 @@ describe("TS-SEC-03 secret material", () => {
       identifier: "apiSecret",
     })
     expect(diagnostics[0]?.severity).toBe("warn")
+    expect(diagnostics[0]?.evidenceClass).toBe("heuristic-pattern")
     expect(TsSec03.score(out)).toBeCloseTo(0.9)
   })
 
@@ -301,15 +337,46 @@ describe("TS-SEC-03 secret material", () => {
     )
 
     const out = await run()
-    const severities = TsSec03.diagnose(out).map((diagnostic) => diagnostic.severity)
+    const diagnostics = TsSec03.diagnose(out)
+    const severities = diagnostics.map((diagnostic) => diagnostic.severity)
 
     expect(out.findings).toHaveLength(3)
     expect(severities).toEqual(["block", "block", "warn"])
+    expect(diagnostics.map((diagnostic) => diagnostic.evidenceClass)).toEqual([
+      "deterministic-ast",
+      "deterministic-ast",
+      "heuristic-pattern",
+    ])
     expect(TsSec03.score(out)).toBeCloseTo(0.4)
     expect(out.findings.map((finding) => secretFindingSeverity(finding.kind))).toEqual([
       "block",
       "block",
       "warn",
+    ])
+    expect(out.findings.map((finding) => secretFindingEvidenceClass(finding.kind))).toEqual([
+      "deterministic-ast",
+      "deterministic-ast",
+      "heuristic-pattern",
+    ])
+  })
+
+  test("resolved enforcement preserves proof blocks and keeps heuristic findings advisory", async () => {
+    await repo.write(
+      "src/enforcement.ts",
+      [
+        "export const awsAccessKeyId = 'AKIAIOSFODNN7EXAMPLE'",
+        "export const opaqueBlob = 'mQ9zX2kP7vL4nR8tW1yC5sD3hJ6gF0bE9aU4iO7e='",
+      ].join("\n"),
+    )
+
+    const result = await runEnforced()
+
+    expect(result.diagnostics.map(({ severity, evidenceClass }) => ({
+      severity,
+      evidenceClass,
+    }))).toEqual([
+      { severity: "block", evidenceClass: "deterministic-ast" },
+      { severity: "warn", evidenceClass: "heuristic-pattern" },
     ])
   })
 })

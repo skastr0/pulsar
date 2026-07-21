@@ -60,6 +60,7 @@ export const TsAb01: Signal<TsAb01Config, TsAb01Output, TsProjectTag> = {
   tier: 1,
   category: "abstraction-bloat",
   kind: "legibility",
+  evidenceClass: "statistical",
   cacheVersion: "diagnostic-limit-weighted-surface-v1",
   configSchema: TsAb01Config,
   defaultConfig: {

@@ -99,6 +99,30 @@ export const Shared10DomainConstructionControl: Signal<
   tier: 2,
   category: "abstraction-bloat",
   kind: "legibility",
+  evidenceClass: "reference-backed",
+  knownFailureModes: [
+    {
+      description: "Domain primitives omitted from the repo manifest are outside the measured set.",
+      fixture: {
+        file: "packages/shared-signals/src/__tests__/shared-10-domain-construction-control.test.ts",
+        testName: "treats an empty manifest as not applicable instead of measured zero",
+      },
+    },
+    {
+      description: "Parser presence and current hashes do not prove the intended invariant.",
+      fixture: {
+        file: "packages/shared-signals/src/__tests__/shared-10-domain-construction-control.test.ts",
+        testName: "reports zero for a controlled construct with parser evidence and current hashes",
+      },
+    },
+    {
+      description: "Declared evidence symbols can drift from project-specific factory naming.",
+      fixture: {
+        file: "packages/shared-signals/src/__tests__/shared-10-domain-construction-control.test.ts",
+        testName: "flags declared parser evidence that is missing or symbol-mismatched",
+      },
+    },
+  ],
   cacheVersion: "reference-data-v2-normalized-config-source-provenance",
   configSchema: Shared10DomainConstructionControlConfig,
   defaultConfig: {

@@ -55,6 +55,7 @@ export const TsLd04: Signal<TsLd04Config, TsLd04Output, TsProjectTag | Reference
   tier: 2,
   category: "legibility-decay",
   kind: "legibility",
+  evidenceClass: "reference-backed",
   cacheVersion: "type-level-values-v3",
   configSchema: TsLd04Config,
   defaultConfig: {

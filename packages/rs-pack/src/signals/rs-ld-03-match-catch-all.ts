@@ -87,6 +87,7 @@ export const RsLd03: Signal<RsLd03Config, RsLd03Output, RustProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
+  evidenceClass: "deterministic-ast",
   cacheVersion: "match-catch-all-open-domain-guarded-arms-v6-inner-attr-gating",
   configSchema: RsLd03Config,
   factorDefinitions: RS_LD_03_FACTOR_DEFINITIONS,

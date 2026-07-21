@@ -27,6 +27,7 @@ export const TsDe04: Signal<
   tier: 1,
   category: "dependency-entropy",
   kind: "structural",
+  evidenceClass: "manifest-fact",
   cacheVersion: "diagnostic-limit-bundled-source-and-npm-alias-v2",
   configSchema: TsDe04Config,
   defaultConfig: {

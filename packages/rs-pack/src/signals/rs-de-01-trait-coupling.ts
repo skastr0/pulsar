@@ -117,6 +117,7 @@ export const RsDe01: Signal<RsDe01Config, RsDe01Output, RustProjectTag> = {
   tier: 1,
   category: "dependency-entropy",
   kind: "structural",
+  evidenceClass: "mixed",
   cacheVersion: "trait-coupling-ratio-score-workspace-locality-test-gating-v4-idiomatic-allowlists-inner-attr-gating",
   configSchema: RsDe01Config,
   factorDefinitions: RS_DE_01_FACTOR_DEFINITIONS,

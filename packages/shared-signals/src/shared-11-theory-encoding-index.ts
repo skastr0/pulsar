@@ -45,6 +45,44 @@ export const Shared11TheoryEncodingIndex: Signal<
   tier: 1.5,
   category: "architectural-drift",
   kind: "compound",
+  evidenceClass: "mixed",
+  knownFailureModes: [
+    {
+      description: "Missing manifests can hide theory encoded only in code or prose.",
+      fixture: {
+        file: "packages/shared-signals/src/__tests__/shared-11-theory-encoding-index.test.ts",
+        testName: "does not score not-configured foundation facts as measured zero",
+      },
+    },
+    {
+      description: "Coverage percentages are presence evidence, not proof of meaningful assertions.",
+      fixture: {
+        file: "packages/shared-signals/src/__tests__/shared-11-theory-encoding-index.test.ts",
+        testName: "combines foundation and optional facts into weighted theory pressure",
+      },
+    },
+    {
+      description: "Syntactic parser and error-channel facts can miss project conventions.",
+      fixture: {
+        file: "packages/shared-signals/src/__tests__/shared-11-theory-encoding-index.test.ts",
+        testName: "combines foundation and optional facts into weighted theory pressure",
+      },
+    },
+    {
+      description: "Churn provenance is unknown without a committed authorship fact source.",
+      fixture: {
+        file: "packages/shared-signals/src/__tests__/shared-11-theory-encoding-index.test.ts",
+        testName: "unavailable optional coverage and churn facts do not dilute measured pressure",
+      },
+    },
+    {
+      description: "Repositories without declared construction or contract artifacts can be out of scope.",
+      fixture: {
+        file: "packages/shared-signals/src/__tests__/shared-11-theory-encoding-index.test.ts",
+        testName: "reports insufficient evidence when required shared facts are missing",
+      },
+    },
+  ],
   cacheVersion: "theory-encoding-index-composite-v4-grounded-optionals",
   configSchema: Shared11TheoryEncodingIndexConfig,
   defaultConfig: {

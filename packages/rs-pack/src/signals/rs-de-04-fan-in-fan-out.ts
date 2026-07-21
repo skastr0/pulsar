@@ -67,6 +67,7 @@ export const RsDe04: Signal<RsDe04Config, RsDe04Output, RustProjectTag> = {
   tier: 1,
   category: "dependency-entropy",
   kind: "structural",
+  evidenceClass: "deterministic-ast",
   cacheVersion: "rust-use-fan-in-out-config-v2",
   configSchema: RsDe04Config,
   factorDefinitions: RS_DE_04_FACTOR_DEFINITIONS,

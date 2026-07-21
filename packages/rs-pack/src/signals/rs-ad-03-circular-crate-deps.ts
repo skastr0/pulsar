@@ -63,6 +63,7 @@ export const RsAd03: Signal<RsAd03Config, RsAd03Output, RustProjectTag> = {
   tier: 1,
   category: "architectural-drift",
   kind: "structural",
+  evidenceClass: "manifest-fact",
   cacheVersion: "cargo-metadata-cycles-config-v1",
   configSchema: RsAd03Config,
   factorDefinitions: RS_AD_03_FACTOR_DEFINITIONS,

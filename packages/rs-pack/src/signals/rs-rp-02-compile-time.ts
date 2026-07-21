@@ -103,6 +103,7 @@ export const RsRp02: Signal<RsRp02Config, RsRp02Output, RustProjectTag> = {
   tier: 1,
   category: "review-pain",
   kind: "structural",
+  evidenceClass: "manifest-fact",
   cacheVersion: "cargo-timings-config-applicability-diagnostics-live-build-nested-v2",
   configSchema: RsRp02Config,
   factorDefinitions: RS_RP_02_FACTOR_DEFINITIONS,

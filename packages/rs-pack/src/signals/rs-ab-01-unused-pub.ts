@@ -97,6 +97,7 @@ export const RsAb01: Signal<RsAb01Config, RsAb01Output, RustProjectTag> = {
   tier: 1,
   category: "abstraction-bloat",
   kind: "structural",
+  evidenceClass: "deterministic-ast",
   cacheVersion: "rs-ab-01-public-surface-use-segments-aliases-diagnostics-reexports-private-visibility-chain-metadata-applicability-single-crate-scope-v11",
   configSchema: RsAb01Config,
   factorDefinitions: RS_AB_01_FACTOR_DEFINITIONS,

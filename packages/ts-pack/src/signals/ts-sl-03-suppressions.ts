@@ -50,6 +50,7 @@ export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalCon
   tier: 1,
   category: "generated-slop",
   kind: "structural",
+  evidenceClass: "deterministic-ast",
   cacheVersion: "comment-directives-target-hunks-stable-hash-v1",
   configSchema: TsSl03Config,
   defaultConfig: {

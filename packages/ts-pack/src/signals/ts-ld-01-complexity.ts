@@ -45,6 +45,7 @@ export const TsLd01: Signal<TsLd01Config, TsLd01Output, TsProjectTag> = {
   tier: 1,
   category: "legibility-decay",
   kind: "legibility",
+  evidenceClass: "statistical",
   cacheVersion: "callback-context-calibration-v4",
   configSchema: TsLd01Config,
   defaultConfig: {

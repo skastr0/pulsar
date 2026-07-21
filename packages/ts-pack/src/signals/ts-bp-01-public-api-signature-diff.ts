@@ -66,6 +66,7 @@ export const TsBp01: Signal<TsBp01Config, TsBp01Output, TsProjectTag | TsPackage
   tier: 1,
   category: "behavior-preservation",
   kind: "structural",
+  evidenceClass: "deterministic-ast",
   cacheVersion: "public-api-signature-diff-v2-entrypoints",
   configSchema: TsBp01Config,
   defaultConfig: {

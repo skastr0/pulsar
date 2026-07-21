@@ -182,6 +182,16 @@ export const TsAd05: Signal<TsAd05Config, BoundaryTrustBreachOutput, never> = {
   tier: 1.5,
   category: "architectural-drift",
   kind: "compound",
+  evidenceClass: "mixed",
+  knownFailureModes: [
+    {
+      description: "Syntactic parser coverage can miss custom construction helpers.",
+      fixture: {
+        file: "packages/ts-pack/src/__tests__/ts-ad-05.test.ts",
+        testName: "parser coverage ratio changes breach pressure with other factors held constant",
+      },
+    },
+  ],
   cacheVersion:
     "boundary-trust-breach-composite-policy-v1-diagnostic-limit-v1-warn-threshold-v1",
   configSchema: TsAd05Config,

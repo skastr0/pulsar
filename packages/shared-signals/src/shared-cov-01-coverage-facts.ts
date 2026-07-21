@@ -49,6 +49,7 @@ export const SharedCov01CoverageFacts: Signal<
   tier: 2,
   category: "review-pain",
   kind: "legibility",
+  evidenceClass: "reference-backed",
   cacheVersion: "reference-data-v3-unavailable-unmeasured-config",
   configSchema: SharedCov01CoverageFactsConfig,
   defaultConfig: {

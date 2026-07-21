@@ -41,6 +41,7 @@ export const TsRp01: Signal<TsRp01Config, TsRp01Output, never> = {
   tier: 1.5,
   category: "review-pain",
   kind: "compound",
+  evidenceClass: "mixed",
   cacheVersion: "risk-hotspot-v2-grounded-config-ranking-v1",
   configSchema: TsRp01Config,
   defaultConfig: TS_RP_01_DEFAULT_CONFIG,

@@ -97,6 +97,7 @@ export const RsAb03: Signal<RsAb03Config, RsAb03Output, RustProjectTag> = {
   tier: 1,
   category: "abstraction-bloat",
   kind: "legibility",
+  evidenceClass: "statistical",
   cacheVersion: "generic-proliferation-config-applicability-diagnostics-cfg-test-gating-bounds-complexity-v5-inner-attr-gating",
   configSchema: RsAb03Config,
   factorDefinitions: RS_AB_03_FACTOR_DEFINITIONS,

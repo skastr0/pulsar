@@ -40,6 +40,13 @@ export type SecretFindingSeverity = "block" | "warn"
 export const secretFindingSeverity = (kind: SecretMaterialKind): SecretFindingSeverity =>
   kind === "private-key-block" || kind === "known-secret-prefix" ? "block" : "warn"
 
+export const secretFindingEvidenceClass = (
+  kind: SecretMaterialKind,
+): "deterministic-ast" | "heuristic-pattern" =>
+  kind === "private-key-block" || kind === "known-secret-prefix"
+    ? "deterministic-ast"
+    : "heuristic-pattern"
+
 export interface SecretMaterialFinding extends SourceLocation {
   readonly kind: SecretMaterialKind
   readonly identifier: string
@@ -68,6 +75,23 @@ export const TsSec03: Signal<TsSec03Config, TsSec03Output, TsProjectTag> = {
   tier: 1,
   category: "security-risk",
   kind: "structural",
+  evidenceClass: "mixed",
+  knownFailureModes: [
+    {
+      description: "Entropy and identifier-name heuristics can resemble secret material without proving it.",
+      fixture: {
+        file: "packages/ts-pack/src/__tests__/ts-sec-03.test.ts",
+        testName: "positive control: random material on a non-secret name still flags",
+      },
+    },
+    {
+      description: "Dictionary-like ids and design tokens can cross naive entropy or name thresholds.",
+      fixture: {
+        file: "packages/ts-pack/src/__tests__/ts-sec-03.test.ts",
+        testName: "benign corpus produces zero findings at any severity",
+      },
+    },
+  ],
   cacheVersion: "secret-material-v4-fused-date-chunk-vocabulary",
   configSchema: TsSec03Config,
   defaultConfig: {
@@ -101,6 +125,7 @@ export const TsSec03: Signal<TsSec03Config, TsSec03Output, TsProjectTag> = {
   diagnose: (out): ReadonlyArray<Diagnostic> =>
     out.findings.slice(0, out.diagnosticLimit).map((finding) => ({
       severity: secretFindingSeverity(finding.kind),
+      evidenceClass: secretFindingEvidenceClass(finding.kind),
       message: `${finding.kind} resembles committed secret material (${finding.redacted})`,
       location: { file: finding.file, line: finding.line, column: finding.column },
       data: {

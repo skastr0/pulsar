@@ -92,6 +92,7 @@ export const Shared06PrDepDelta: Signal<Shared06PrDepDeltaConfig, Shared06PrDepD
   tier: 1.5,
   category: "review-pain",
   kind: "compound",
+  evidenceClass: "mixed",
   cacheVersion: "empty-diff-applicability-v2-evidence-state-diagnostics",
   configSchema: Shared06PrDepDeltaConfig,
   defaultConfig: {

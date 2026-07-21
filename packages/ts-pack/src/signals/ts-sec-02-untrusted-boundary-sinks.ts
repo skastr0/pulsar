@@ -55,9 +55,10 @@ export const TsSec02: Signal<TsSec02Config, TsSec02Output, TsProjectTag> = {
   id: "TS-SEC-02-untrusted-boundary-sinks",
   title: "Untrusted boundary sinks",
   aliases: ["TS-SEC-02"],
-  tier: 1,
+  tier: 2,
   category: "security-risk",
   kind: "structural",
+  evidenceClass: "heuristic-pattern",
   cacheVersion: "untrusted-boundary-sinks-v1",
   configSchema: TsSec02Config,
   defaultConfig: {

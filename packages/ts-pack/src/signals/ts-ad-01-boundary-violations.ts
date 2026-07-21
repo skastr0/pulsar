@@ -57,6 +57,7 @@ export const TsAd01: Signal<
   tier: 2,
   category: "architectural-drift",
   kind: "structural",
+  evidenceClass: "reference-backed",
   cacheVersion: "external-attribution-stale-reference-v3",
   configSchema: TsAd01Config,
   defaultConfig: {
