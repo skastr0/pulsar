@@ -2,7 +2,7 @@ import type { SelectOption } from "@opentui/core"
 import { useKeyboard } from "@opentui/react"
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react"
 import { actionForOption } from "./actions.js"
-import { buildPlan, survivingFindings } from "./calibration.js"
+import { buildPlan } from "./calibration.js"
 import { catalogById } from "./catalog.js"
 import { bandColor, palette, scoreBand } from "./palette.js"
 import type {
@@ -598,16 +598,7 @@ export function OnboardApp({ input }: { readonly input: OnboardInput }) {
       )
     }
     const { sig, entry } = target
-    const survivors = survivingFindings(entry, sig.findings, selIdx)
-    const survivorSet = new Set(survivors)
-    const option = entry.options[selIdx]
-    const after =
-      option?.framing === "accept"
-        ? 0
-        : option?.framing === "keep"
-          ? sig.findingCount
-          : Math.round((sig.findingCount * survivors.length) / Math.max(1, sig.findings.length))
-    const top = survivors[0] ?? sig.findings[0]
+    const top = sig.findings[0]
     const options: SelectOption[] = entry.options.map((o) => ({
       name: `${o.framing === "keep" ? "›" : o.framing === "accept" ? "+" : "~"} ${o.label}`,
       description: o.summary,
@@ -629,7 +620,7 @@ export function OnboardApp({ input }: { readonly input: OnboardInput }) {
         </text>
         {/* evidence: full width, fixed height, truncated so it never garbles */}
         <box
-          title={`in your repo · ${sig.findingCount} flagged → ${after}`}
+          title={`in your repo · ${sig.findingCount} currently flagged`}
           style={{ height: 9, border: true, borderColor: palette.border, backgroundColor: palette.panelRaised, padding: 1, flexDirection: "column" }}
         >
           {top?.snippet ? (
@@ -646,15 +637,11 @@ export function OnboardApp({ input }: { readonly input: OnboardInput }) {
               })}
             </box>
           ) : (
-            sig.findings.slice(0, 5).map((f, i) => {
-              const live = survivorSet.has(f)
-              return (
-                <text key={`${f.file}:${f.line ?? i}`} fg={live ? palette.textDim : palette.muted}>
-                  {live ? "✗ " : "✓ "}
-                  {trunc(`${f.file}${f.line ? `:${f.line}` : ""} — ${live ? f.detail : "calibrated"}`, evidenceWidth - 2)}
-                </text>
-              )
-            })
+            sig.findings.slice(0, 5).map((f, i) => (
+              <text key={`${f.file}:${f.line ?? i}`} fg={palette.textDim}>
+                ✗ {trunc(`${f.file}${f.line ? `:${f.line}` : ""} — ${f.detail}`, evidenceWidth - 2)}
+              </text>
+            ))
           )}
         </box>
         <text fg={palette.amber}>{entry.question}</text>

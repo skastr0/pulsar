@@ -37,12 +37,6 @@ export interface CatalogEntry {
   readonly options: ReadonlyArray<CatalogOption>
   readonly defaultOptionIndex: number
   readonly packGate?: string
-  // Seed-only hint that makes the live re-filter feel real in the demo.
-  // The generated catalog omits this and falls back to a generic heuristic.
-  readonly demoFilter?: {
-    readonly dropFilesMatching?: ReadonlyArray<string>
-    readonly surviving?: number
-  }
 }
 
 export interface Finding {

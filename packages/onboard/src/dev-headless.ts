@@ -3,7 +3,7 @@
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { loadCatalog } from "./catalog.js"
-import { demoDetection, demoPacks, demoScan, withDemoFilters } from "./demo.js"
+import { demoDetection, demoPacks, demoScan } from "./demo.js"
 import { makeDemoWriteConfig } from "./demo-write.js"
 import { runOnboardHeadless } from "./headless.js"
 import type { OnboardInput } from "./types.js"
@@ -14,7 +14,7 @@ const input: OnboardInput = {
   repoPath: root,
   detection: demoDetection,
   detectedPacks: demoPacks,
-  catalog: withDemoFilters(loadCatalog()),
+  catalog: loadCatalog(),
   scan: demoScan,
   preview: async () => {
     const scan = await demoScan()

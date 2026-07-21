@@ -45,7 +45,6 @@ export const SEED_CATALOG: ReadonlyArray<CatalogEntry> = [
     ],
     defaultOptionIndex: 0,
     packGate: "nextjs",
-    demoFilter: { dropFilesMatching: ["app/api/honeycomb", "app/api/auth"] },
   },
   {
     id: "TS-CC-01",
@@ -82,7 +81,6 @@ export const SEED_CATALOG: ReadonlyArray<CatalogEntry> = [
       },
     ],
     defaultOptionIndex: 0,
-    demoFilter: { dropFilesMatching: ["components/", "dialog"] },
   },
   {
     id: "TS-LD-02",
@@ -126,7 +124,6 @@ export const SEED_CATALOG: ReadonlyArray<CatalogEntry> = [
       },
     ],
     defaultOptionIndex: 0,
-    demoFilter: { dropFilesMatching: ["legal", "theme/"] },
   },
   {
     id: "TS-RP-01",
@@ -183,7 +180,6 @@ export const SEED_CATALOG: ReadonlyArray<CatalogEntry> = [
       },
     ],
     defaultOptionIndex: 0,
-    demoFilter: { dropFilesMatching: ["settings-v2", "v2"] },
   },
   {
     id: "TS-SEC-03",
@@ -213,7 +209,6 @@ export const SEED_CATALOG: ReadonlyArray<CatalogEntry> = [
       },
     ],
     defaultOptionIndex: 0,
-    demoFilter: { dropFilesMatching: ["infra/", "secret.ts"] },
   },
 ]
 

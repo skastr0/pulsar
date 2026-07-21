@@ -1,8 +1,7 @@
 // Realistic demo scan, grounded in docs/explorations/opencode-pulsar-assessment.md.
 // Used for standalone TUI dev runs and as a safe fallback when the live scan
 // cannot be wired. The CLI replaces `scan` with the real observeWorktree adapter.
-import { SEED_CATALOG } from "./catalog.js"
-import type { CatalogEntry, DetectedPack, RepoDetection, ScanResult } from "./types.js"
+import type { DetectedPack, RepoDetection, ScanResult } from "./types.js"
 
 export const demoDetection: RepoDetection = {
   languages: ["TypeScript"],
@@ -213,12 +212,3 @@ export const demoScan = async (): Promise<ScanResult> => ({
     },
   ],
 })
-
-// Graft the seed's curated demo re-filter hints onto the (full, generated)
-// catalog by signal id, so the demo's split-screen shows real false positives
-// clearing while genuine debt stays lit. No-op for signals without a seed hint.
-export const withDemoFilters = (catalog: ReadonlyArray<CatalogEntry>): ReadonlyArray<CatalogEntry> =>
-  catalog.map((entry) => {
-    const seed = SEED_CATALOG.find((s) => s.id === entry.id)
-    return seed?.demoFilter ? { ...entry, demoFilter: seed.demoFilter } : entry
-  })
