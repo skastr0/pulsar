@@ -166,6 +166,11 @@ const parseCoverageFormat = (raw: string | undefined): CoverageIngestFormat | un
 
 const runBackpressure = async (commandArgs: ReadonlyArray<string>): Promise<number> => {
   const flagsWithValues = new Set(["--vector"])
+  rejectUnknownFlags(
+    "backpressure",
+    commandArgs,
+    new Set([...flagsWithValues, "--trend", "--json", "--no-progress"]),
+  )
   const repoPath = collectPositional(commandArgs, flagsWithValues)[0] ?? "."
   const vectorPath = parseArg(commandArgs, "--vector")
   const exitCode = await runWithProgress("backpressure", commandArgs, () =>
@@ -174,6 +179,7 @@ const runBackpressure = async (commandArgs: ReadonlyArray<string>): Promise<numb
         repoPath,
         ...(vectorPath !== undefined ? { vectorPath } : {}),
         ...(commandArgs.includes("--trend") ? { trend: true } : {}),
+        ...(commandArgs.includes("--json") ? { json: true } : {}),
       }).pipe(
         Effect.catchAll((err) =>
           Effect.sync(() => {
