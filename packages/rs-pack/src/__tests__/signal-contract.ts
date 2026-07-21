@@ -1,6 +1,8 @@
 export {
   CONDITIONAL_SIGNAL_CONTRACT_EVIDENCE,
   REQUIRED_SIGNAL_CONTRACT_EVIDENCE,
+  assertEvidenceClassContracts,
+  assertKnownFailureModeReferences,
   assertReferenceDataTierFloor,
   assertSignalContractMatrix,
   pendingSignalContract,

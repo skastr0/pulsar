@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test"
+import { fileURLToPath } from "node:url"
 import type { AnySignal } from "@skastr0/pulsar-core/signal"
 import { SHARED_SIGNALS } from "../pack.js"
 import {
   REQUIRED_SIGNAL_CONTRACT_EVIDENCE,
+  assertEvidenceClassContracts,
+  assertKnownFailureModeReferences,
   assertSignalContractMatrix,
   type SignalContract,
   type SignalContractEvidence,
@@ -35,6 +38,15 @@ describe("Shared signal correctness contracts", () => {
       requiredEvidence: ["referenceData"],
       evidence: completeEvidence(),
     })
+  })
+
+  test("signal evidence declarations satisfy authority and fixture contracts", () => {
+    assertEvidenceClassContracts("Shared", SHARED_SIGNALS)
+    assertKnownFailureModeReferences(
+      "Shared",
+      fileURLToPath(new URL("../../../../", import.meta.url)),
+      SHARED_SIGNALS,
+    )
   })
 })
 

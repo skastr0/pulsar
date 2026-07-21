@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test"
+import { fileURLToPath } from "node:url"
 import type { AnySignal } from "@skastr0/pulsar-core/signal"
 import { TS_PACK_SIGNALS } from "../pack.js"
 import {
   REQUIRED_SIGNAL_CONTRACT_EVIDENCE,
+  assertEvidenceClassContracts,
+  assertKnownFailureModeReferences,
   assertReferenceDataTierFloor,
   assertSignalContractMatrix,
   type SignalContract,
@@ -42,6 +45,15 @@ describe("TypeScript signal correctness contracts", () => {
     assertReferenceDataTierFloor(
       "TypeScript",
       new URL("../signals/", import.meta.url).pathname,
+      TS_PACK_SIGNALS,
+    )
+  })
+
+  test("signal evidence declarations satisfy authority and fixture contracts", () => {
+    assertEvidenceClassContracts("TypeScript", TS_PACK_SIGNALS)
+    assertKnownFailureModeReferences(
+      "TypeScript",
+      fileURLToPath(new URL("../../../../", import.meta.url)),
       TS_PACK_SIGNALS,
     )
   })

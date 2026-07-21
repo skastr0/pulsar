@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test"
+import { fileURLToPath } from "node:url"
 import type { AnySignal } from "@skastr0/pulsar-core/signal"
 import { RS_PACK_SIGNALS } from "../pack.js"
 import {
   REQUIRED_SIGNAL_CONTRACT_EVIDENCE,
+  assertEvidenceClassContracts,
+  assertKnownFailureModeReferences,
   assertReferenceDataTierFloor,
   assertSignalContractMatrix,
   type SignalContract,
@@ -42,6 +45,15 @@ describe("Rust signal correctness contracts", () => {
     assertReferenceDataTierFloor(
       "Rust",
       new URL("../signals/", import.meta.url).pathname,
+      RS_PACK_SIGNALS,
+    )
+  })
+
+  test("signal evidence declarations satisfy authority and fixture contracts", () => {
+    assertEvidenceClassContracts("Rust", RS_PACK_SIGNALS)
+    assertKnownFailureModeReferences(
+      "Rust",
+      fileURLToPath(new URL("../../../../", import.meta.url)),
       RS_PACK_SIGNALS,
     )
   })
