@@ -17,6 +17,8 @@
       "visibility": "public-api",
       "allowed_imports": [
         "@skastr0/pulsar-core",
+        "@skastr0/pulsar-project-module-convex",
+        "@skastr0/pulsar-project-module-effect",
         "@skastr0/pulsar-project-module-nextjs",
         "@skastr0/pulsar-project-module-sdk",
         "@skastr0/pulsar-rs-pack",
