@@ -282,6 +282,55 @@ describe("pulsar backpressure", () => {
     }
   }, 120_000)
 
+  test("unknown latest observation is unavailable in human and JSON output", async () => {
+    const repo = await initRepo()
+    try {
+      await appendEntries(repo, [
+        makeEntry("a", "2026-04-01T10:00:00.000Z", 0.92),
+        makeEntry(
+          "b",
+          "2026-04-10T10:00:00.000Z",
+          0.99,
+          makeReadiness("unknown"),
+        ),
+      ])
+
+      const humanOut = runCli(repo, ["backpressure", "."])
+      expect(humanOut.status).toBe(0)
+      expect(humanOut.stdout).toContain("Overall:         unavailable")
+      expect(humanOut.stdout).toContain(
+        "Evidence State:  insufficient-evidence",
+      )
+      expect(humanOut.stdout).toContain(
+        "Reason:          latest-readiness-unknown",
+      )
+      expect(humanOut.stdout).not.toContain("score=0.99")
+      expect(humanOut.stdout).not.toContain("slope=0.000")
+
+      const jsonOut = runCli(repo, ["backpressure", "--json", "."])
+      expect(jsonOut.status).toBe(0)
+      const json = JSON.parse(jsonOut.stdout) as Record<string, unknown> & {
+        categories: Record<string, Record<string, unknown>>
+      }
+      expect(json).toMatchObject({
+        overall: "unavailable",
+        evidence_state: "insufficient-evidence",
+        evidence_reason: "latest-readiness-unknown",
+        observation_count: 2,
+        evidence_observation_count: 1,
+      })
+      expect(json).not.toHaveProperty("goodhart")
+      expect(json.categories["architectural-drift"]).not.toHaveProperty(
+        "current_score",
+      )
+      expect(json.categories["architectural-drift"]).not.toHaveProperty(
+        "trajectory_slope",
+      )
+    } finally {
+      await rm(repo.rootPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
   test("--json emits deterministic unavailable evidence without numeric placeholders", async () => {
     const repo = await initRepo()
     try {

@@ -1,3 +1,4 @@
+import { createTimeSeriesServices } from "@skastr0/pulsar-core/time-series"
 import {
   type BackpressureOutput,
   type BackpressureTrendEntry,
@@ -6,7 +7,6 @@ import {
   evaluateBackpressureTrend,
 } from "@skastr0/pulsar-core/backpressure"
 import { CATEGORIES } from "@skastr0/pulsar-core/signal"
-import { createTimeSeriesServices } from "@skastr0/pulsar-core/time-series"
 import { Effect } from "effect"
 import { writeJsonToStdout } from "./cli-output.js"
 import { buildPulsarRegistry, resolveRepoRoot } from "./runtime.js"
@@ -24,7 +24,7 @@ interface BackpressureCommandOptions {
 
 export const runBackpressureCommand = (
   opts: BackpressureCommandOptions,
-): Effect.Effect<number, unknown, never> =>
+): Effect.Effect<number, Error, never> =>
   Effect.gen(function* () {
     const repoRoot = yield* resolveRepoRoot(opts.repoPath)
     const registry = yield* buildPulsarRegistry(repoRoot)
@@ -42,11 +42,14 @@ export const runBackpressureCommand = (
         : undefined
 
     if (opts.json === true) {
-      yield* Effect.tryPromise(() =>
-        writeJsonToStdout(
-          toBackpressureJson(repoRoot, vectorSelection, output, trend),
-        ),
-      )
+      yield* Effect.tryPromise({
+        try: () =>
+          writeJsonToStdout(
+            toBackpressureJson(repoRoot, vectorSelection, output, trend),
+          ),
+        catch: (cause) =>
+          new Error(`Failed to write backpressure JSON: ${String(cause)}`),
+      })
       return 0
     }
 

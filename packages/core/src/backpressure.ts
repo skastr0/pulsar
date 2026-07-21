@@ -164,7 +164,27 @@ export const evaluateBackpressure = (
     })
   }
 
-  const byCategory = evaluateCategoryBackpressure(latest, qualityEntries, config)
+  return evaluateQualifiedBackpressure({
+    latest,
+    windowEntries,
+    qualityEntries,
+    config,
+    vector,
+  })
+}
+
+const evaluateQualifiedBackpressure = (args: {
+  readonly latest: TimeSeriesEntry
+  readonly windowEntries: ReadonlyArray<TimeSeriesEntry>
+  readonly qualityEntries: ReadonlyArray<TimeSeriesEntry>
+  readonly config: BackpressureConfig
+  readonly vector: PulsarVector | undefined
+}): BackpressureOutput => {
+  const byCategory = evaluateCategoryBackpressure(
+    args.latest,
+    args.qualityEntries,
+    args.config,
+  )
   const categoryLevels = CATEGORIES.flatMap((category) => {
     const entry = byCategory[category]
     return entry.evidenceState === "available" ? [entry.level] : []
@@ -174,10 +194,10 @@ export const evaluateBackpressure = (
       (category) => byCategory[category].observationCount > 0,
     )
     return unavailableBackpressureOutput({
-      entries: windowEntries,
-      latest,
-      qualityEntries,
-      config,
+      entries: args.windowEntries,
+      latest: args.latest,
+      qualityEntries: args.qualityEntries,
+      config: args.config,
       evidenceState: "insufficient-evidence",
       evidenceReason: hasCategoryEvidence
         ? "insufficient-category-history"
@@ -185,49 +205,59 @@ export const evaluateBackpressure = (
     })
   }
 
-  const goodhart = evaluateGoodhart(qualityEntries, vector)
+  const goodhart = evaluateGoodhart(args.qualityEntries, args.vector)
   const rationale = buildBackpressureRationale(
-    latest,
-    qualityEntries,
+    args.latest,
+    args.qualityEntries,
     byCategory,
-    config,
+    args.config,
     goodhart,
   )
-  let overall = worstLevel(categoryLevels)
-
-  const readinessLevel = qualityLevelFromReadiness(latest)
-  if (readinessLevel !== undefined) {
-    overall = worstLevel([overall, readinessLevel])
-  }
-
-  if (latest.observerOutput.hard_gate_status === "fail") {
-    overall = "red"
-  }
-
-  if (
-    latest.observerOutput.minimum !== undefined &&
-    latest.observerOutput.minimum.score < config.thresholds.red_min_dimension
-  ) {
-    overall = "red"
-  }
-
-  if (goodhart.suspicion === "high") {
-    overall = "red"
-  } else if (goodhart.suspicion === "elevated") {
-    overall = overall === "green" ? "yellow" : overall
-  }
 
   return {
     backpressureSemantics: BACKPRESSURE_OUTPUT_SEMANTICS,
-    overall,
+    overall: resolveOverallLevel(
+      args.latest,
+      categoryLevels,
+      args.config,
+      goodhart,
+    ),
     evidenceState: "available",
     byCategory,
     rationale,
-    trajectoryDays: config.trajectory_days,
-    observationCount: windowEntries.length,
-    evidenceObservationCount: qualityEntries.length,
+    trajectoryDays: args.config.trajectory_days,
+    observationCount: args.windowEntries.length,
+    evidenceObservationCount: args.qualityEntries.length,
     goodhart,
   }
+}
+
+const resolveOverallLevel = (
+  latest: TimeSeriesEntry,
+  categoryLevels: ReadonlyArray<BackpressureLevel>,
+  config: BackpressureConfig,
+  goodhart: GoodhartAssessment,
+): BackpressureLevel => {
+  const readinessLevel = qualityLevelFromReadiness(latest)
+  let overall = worstLevel(
+    readinessLevel === undefined
+      ? categoryLevels
+      : [...categoryLevels, readinessLevel],
+  )
+
+  if (
+    latest.observerOutput.hard_gate_status === "fail" ||
+    (latest.observerOutput.minimum !== undefined &&
+      latest.observerOutput.minimum.score < config.thresholds.red_min_dimension) ||
+    goodhart.suspicion === "high"
+  ) {
+    return "red"
+  }
+
+  if (goodhart.suspicion === "elevated" && overall === "green") {
+    overall = "yellow"
+  }
+  return overall
 }
 
 const unavailableBackpressureOutput = (args: {
