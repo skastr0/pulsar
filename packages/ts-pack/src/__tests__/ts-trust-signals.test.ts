@@ -291,8 +291,27 @@ describe("TypeScript trust-domain and AI-slop signals", () => {
 
     expect(out.state).toBe("present")
     expect(out.findings).toHaveLength(1)
-    expect(out.findings[0]?.kind).toBe("promise-all-map")
-    expect(TsCc02.diagnose(out)[0]?.fixHints?.[0]?.kind).toBe("add-concurrency-limiter")
+    expect(out.findings[0]).toMatchObject({
+      kind: "promise-all-map",
+      boundExpression: "items",
+      resolvedUpperBound: null,
+      inferenceStoppedReason: "No finite local bound was found for items",
+    })
+    expect(out.boundedFanouts).toEqual([
+      expect.objectContaining({
+        boundExpression: "2",
+        resolvedUpperBound: 2,
+        boundReason: "limiter-constant",
+      }),
+    ])
+    expect(TsCc02.diagnose(out)[0]).toMatchObject({
+      data: expect.objectContaining({
+        boundExpression: "items",
+        resolvedUpperBound: null,
+        inferenceStoppedReason: "No finite local bound was found for items",
+      }),
+      fixHints: [expect.objectContaining({ kind: "add-concurrency-limiter" })],
+    })
   })
 
   test("TS-BP-01 routes public API changes only when changed hunks touch exports", async () => {

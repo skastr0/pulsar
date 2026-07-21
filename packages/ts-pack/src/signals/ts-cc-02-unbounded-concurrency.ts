@@ -8,6 +8,15 @@ import { Effect, Schema } from "effect"
 import { Node, SyntaxKind, type CallExpression, type SourceFile } from "ts-morph"
 import { TsProjectTag } from "../ts-project.js"
 import {
+  inferConcurrencyBound,
+  type ConcurrencyBoundInference,
+  type ConcurrencyBoundReason,
+} from "./ts-cc-02-concurrency-bounds.js"
+import {
+  compareDiagnosticOrderProperties,
+  type DiagnosticOrderProperties,
+} from "./shared-diagnostic-order.js"
+import {
   PRODUCTION_EXCLUDE_GLOBS,
   callName,
   isAnalyzableSourceFile,
@@ -33,6 +42,18 @@ export interface UnboundedConcurrencyFinding extends SourceLocation {
   readonly expression: string
   readonly iterable: string
   readonly missingEvidence: string
+  readonly boundExpression: string
+  readonly resolvedUpperBound: null
+  readonly inferenceStoppedReason: string
+}
+
+export interface BoundedConcurrencyFanout extends SourceLocation {
+  readonly kind: UnboundedConcurrencyKind
+  readonly expression: string
+  readonly iterable: string
+  readonly boundExpression: string
+  readonly resolvedUpperBound: number
+  readonly boundReason: ConcurrencyBoundReason
 }
 
 export interface TsCc02Output {
@@ -40,6 +61,7 @@ export interface TsCc02Output {
   readonly analyzedFiles: number
   readonly fanoutsObserved: number
   readonly findings: ReadonlyArray<UnboundedConcurrencyFinding>
+  readonly boundedFanouts: ReadonlyArray<BoundedConcurrencyFanout>
   readonly diagnosticLimit: number
   readonly compositeConsumers: ReadonlyArray<string>
   readonly cacheContributors: ReadonlyArray<string>
@@ -55,7 +77,17 @@ export const TsCc02: Signal<TsCc02Config, TsCc02Output, TsProjectTag> = {
   category: "concurrency-safety",
   kind: "structural",
   evidenceClass: "heuristic-pattern",
-  cacheVersion: "unbounded-concurrency-v1",
+  knownFailureModes: [
+    {
+      description:
+        "Imported, mutable, or runtime-computed concurrency bounds remain unresolved by design.",
+      fixture: {
+        file: "packages/ts-pack/src/__tests__/ts-cc-02.test.ts",
+        testName: "keeps unknown collections, caps, and limiter sizes unbounded",
+      },
+    },
+  ],
+  cacheVersion: "unbounded-concurrency-v2-local-symbolic-bounds-v1",
   configSchema: TsCc02Config,
   defaultConfig: {
     exclude_globs: [...PRODUCTION_EXCLUDE_GLOBS],
@@ -80,7 +112,9 @@ export const TsCc02: Signal<TsCc02Config, TsCc02Output, TsProjectTag> = {
   diagnose: (out): ReadonlyArray<Diagnostic> =>
     out.findings.slice(0, out.diagnosticLimit).map((finding) => ({
       severity: "warn",
-      message: `${finding.expression} fans out over ${finding.iterable} without limiter evidence`,
+      message:
+        `${finding.expression} fans out over ${finding.iterable}; upper bound unresolved: ` +
+        finding.inferenceStoppedReason,
       location: { file: finding.file, line: finding.line, column: finding.column },
       data: {
         hash: computeDiagnosticHash(
@@ -107,6 +141,7 @@ const computeUnboundedConcurrency = (
   config: TsCc02Config,
 ): TsCc02Output => {
   const findings: Array<UnboundedConcurrencyFinding> = []
+  const boundedFanouts: Array<BoundedConcurrencyFanout> = []
   let analyzedFiles = 0
   let fanoutsObserved = 0
   const limiterPattern = new RegExp(
@@ -121,7 +156,23 @@ const computeUnboundedConcurrency = (
       const finding = classifyFanout(call, limiterPattern)
       if (finding === undefined) continue
       fanoutsObserved += 1
-      if (!finding.limited) findings.push(finding.finding)
+      if (finding.bound.state === "bounded") {
+        boundedFanouts.push({
+          ...finding.fanout,
+          boundExpression: finding.bound.boundExpression,
+          resolvedUpperBound: finding.bound.resolvedUpperBound,
+          boundReason: finding.bound.boundReason,
+        })
+      } else {
+        findings.push({
+          ...finding.fanout,
+          missingEvidence:
+            "Expected a finite local collection, slice/window cap, or concurrency limiter bound",
+          boundExpression: finding.bound.boundExpression,
+          resolvedUpperBound: finding.bound.resolvedUpperBound,
+          inferenceStoppedReason: finding.bound.inferenceStoppedReason,
+        })
+      }
     }
   }
 
@@ -132,6 +183,7 @@ const computeUnboundedConcurrency = (
     analyzedFiles,
     fanoutsObserved,
     findings: findings.sort(compareFindings),
+    boundedFanouts: boundedFanouts.sort(compareFindings),
     diagnosticLimit: normalizeDiagnosticLimit(config.top_n_diagnostics),
     compositeConsumers: ["concurrency review route", "agent trust readout"],
     cacheContributors: [
@@ -148,7 +200,7 @@ const computeUnboundedConcurrency = (
 const classifyFanout = (
   call: CallExpression,
   limiterPattern: RegExp,
-): { readonly limited: boolean; readonly finding: UnboundedConcurrencyFinding } | undefined => {
+): ClassifiedFanout | undefined => {
   const name = callName(call.getExpression())
   if (name === "Promise.all" || name === "Promise.allSettled") {
     const arg = call.getArguments()[0]
@@ -159,15 +211,14 @@ const classifyFanout = (
     }
     const iterable = innerExpression.getExpression().getText()
     const callback = arg.getArguments()[0]
-    if (callback === undefined || !Node.isArrowFunction(callback)) return undefined
+    if (callback === undefined) return undefined
     return {
-      limited: hasLimiterEvidence(call, limiterPattern) || isLiteralBoundedIterable(innerExpression.getExpression()),
-      finding: {
+      bound: inferConcurrencyBound(innerExpression.getExpression(), callback, limiterPattern),
+      fanout: {
         ...locationOf(call),
         kind: name === "Promise.all" ? "promise-all-map" : "promise-all-settled-map",
         expression: name,
         iterable,
-        missingEvidence: "Expected limiter/pool/queue evidence or a statically bounded tuple",
       },
     }
   }
@@ -182,13 +233,16 @@ const classifyFanout = (
       ? property.getExpression().getText()
       : "iterable"
     return {
-      limited: hasLimiterEvidence(call, limiterPattern),
-      finding: {
+      bound: inferConcurrencyBound(
+        Node.isPropertyAccessExpression(property) ? property.getExpression() : call,
+        callback,
+        limiterPattern,
+      ),
+      fanout: {
         ...locationOf(call),
         kind: "async-foreach",
         expression: name,
         iterable,
-        missingEvidence: "Expected an awaited bounded loop or limiter instead of async forEach fanout",
       },
     }
   }
@@ -196,28 +250,28 @@ const classifyFanout = (
   return undefined
 }
 
-const hasLimiterEvidence = (call: CallExpression, limiterPattern: RegExp): boolean => {
-  let current: Node | undefined = call
-  let depth = 0
-  while (current !== undefined && depth < 5) {
-    if (limiterPattern.test(current.getText().slice(0, 240))) return true
-    current = current.getParent()
-    depth += 1
-  }
-  return false
+interface ClassifiedFanout {
+  readonly fanout: FanoutIdentity
+  readonly bound: ConcurrencyBoundInference
 }
 
-const isLiteralBoundedIterable = (node: Node): boolean =>
-  Node.isArrayLiteralExpression(node) && node.getElements().length <= 8
+interface FanoutIdentity extends SourceLocation {
+  readonly kind: UnboundedConcurrencyKind
+  readonly expression: string
+  readonly iterable: string
+}
 
 const compareFindings = (
-  left: UnboundedConcurrencyFinding,
-  right: UnboundedConcurrencyFinding,
-): number =>
-  left.file.localeCompare(right.file) ||
-  left.line - right.line ||
-  left.column - right.column ||
-  left.kind.localeCompare(right.kind)
+  left: FanoutIdentity,
+  right: FanoutIdentity,
+): number => compareDiagnosticOrderProperties(left, right, FANOUT_ORDER)
+
+const FANOUT_ORDER = {
+  file: "file",
+  line: "line",
+  kind: "kind",
+  label: "iterable",
+} satisfies DiagnosticOrderProperties<FanoutIdentity>
 
 const escapeRegExp = (value: string): string =>
   value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")

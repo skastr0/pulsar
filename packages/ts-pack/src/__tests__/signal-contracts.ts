@@ -887,19 +887,19 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       config:
         "ts-trust-signals.test.ts: configSchema decodes limiter_name_patterns, exclude_globs, and top_n_diagnostics defaults with factor-ledger coverage.",
       positiveFixture:
-        "ts-trust-signals.test.ts: Promise.all(items.map(async ...)) fixture produces unbounded fanout finding.",
+        "ts-trust-signals.test.ts and ts-cc-02.test.ts: dynamic Promise.all/Promise.allSettled/async-forEach collections, unresolved slice caps/windows, non-const arrays, mutated const arrays, direct aliases with cardinality writes, runtime limiter sizes, and limiter calls hidden in uninvoked nested functions produce unbounded fanout findings.",
       negativeFixture:
-        "ts-trust-signals.test.ts: pLimit-wrapped Promise.all map in the same fixture is accepted.",
+        "ts-trust-signals.test.ts and ts-cc-02.test.ts: six Vellum-shaped cases prove literal arrays, stable local const arrays, tuple-like collections, slice(0, N) caps including 400 entries, slice(i, i + N) hydration windows of four, fixed HOSTS iteration, and pLimit bounds from finite local constants; paired mutation fixtures revoke every proof form when its bound becomes dynamic.",
       applicability:
         "ts-trust-signals.test.ts: value-only fixture exercises zero state with score 1 during identity/factor-ledger checks.",
       score:
         "ts-trust-signals.test.ts: unbounded fanout finding lowers score below 1.",
       diagnostics:
-        "ts-trust-signals.test.ts: diagnostics include iterable, expression, location, stable hash, and add-concurrency-limiter fix hint.",
+        "ts-trust-signals.test.ts and ts-cc-02.test.ts: diagnostics include iterable, expression, bound expression, null resolved upper bound, exact inference-stopped reason, location, stable hash, and add-concurrency-limiter fix hint; boundedFanouts expose the resolved upper bound and inference reason without emitting an unbounded diagnostic.",
       factorLedger:
         "ts-trust-signals.test.ts: registered signal emits config.top_n_diagnostics and limiter/exclude config factor-ledger entries.",
       cacheSemantics:
-        "ts-trust-signals.test.ts and pack.test.ts: wrapped pack cache version includes the TS-CC-02 semantic cacheVersion.",
+        "ts-trust-signals.test.ts and pack.test.ts: wrapped pack cache version includes the TS-CC-02 v2 local-symbolic-bounds semantic cacheVersion.",
     },
   },
   {
