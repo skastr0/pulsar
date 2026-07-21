@@ -1470,7 +1470,7 @@
     "defaultOptionIndex": 0
   },
   {
-    "id": "ts-sl-04-onboarding-calibration",
+    "id": "TS-SL-04",
     "title": "TS-SL-04 — Unfinished implementations",
     "pack": "ts",
     "category": "generated-slop",

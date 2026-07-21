@@ -152,6 +152,20 @@ export const demoScan = async (): Promise<ScanResult> => ({
       ],
     },
     {
+      id: "TS-SL-04-unfinished-implementations",
+      title: "Unfinished implementations",
+      category: "generated-slop",
+      score: 0.72,
+      findingCount: 1,
+      findings: [
+        {
+          file: "src/adapter.ts",
+          line: 42,
+          detail: "function body throws a not-implemented placeholder",
+        },
+      ],
+    },
+    {
       id: "TS-SEC-03",
       title: "Secret material",
       category: "security-risk",
