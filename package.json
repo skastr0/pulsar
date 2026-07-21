@@ -28,6 +28,7 @@
     "dev": "bun scripts/pulsar-dev.ts",
     "smoke:dev": "bun scripts/dev-shim-smoke.ts",
     "smoke:release": "bun scripts/release-smoke.ts --npm",
+    "release:preflight": "bun scripts/release-preflight.ts",
     "test:release-contracts": "bun test scripts/__tests__/release-contracts.test.ts",
     "build": "turbo run build",
     "build:cli": "bun scripts/build-cli.ts",
