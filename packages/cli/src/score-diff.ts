@@ -25,6 +25,7 @@ import {
   diagnosticMessage,
   severityLabel,
 } from "./score-diagnostics.js"
+import { writeJsonToStdout } from "./cli-output.js"
 import {
   decideGate,
   type GateDiagnosticRecord,
@@ -120,10 +121,12 @@ export const runScoreDiffMode = (
     const report = buildDiffReport(opts, vectorContext, run)
 
     if (opts.json === true) {
-      console.log(JSON.stringify({
-        ...toScoreJson(run.head.output, vectorContext.vectorSelection),
-        ...report,
-      }, null, 2))
+      yield* Effect.tryPromise(() =>
+        writeJsonToStdout({
+          ...toScoreJson(run.head.output, vectorContext.vectorSelection),
+          ...report,
+        }),
+      )
     } else if (opts.agentView === true) {
       printAgentDiffReport(run.repoRoot, report)
     } else {

@@ -66,7 +66,10 @@ const runObserverBisect = (
       (sha) => runtime.engine.observeCommit(runtime.repoPath, sha),
     )
     const report = buildObserverReport(sampled.trajectory, observerReportOptions(opts, runtime, sampled.sampling))
-    if (opts.json) return printJsonReport(report)
+    if (opts.json) {
+      yield* Effect.tryPromise(() => printJsonReport(report))
+      return
+    }
     printObserverHumanReport(report, Date.now() - started, report.finalApplicableSignalCount)
   })
 
@@ -85,7 +88,10 @@ const runSignalBisect = (
       (sha) => runtime.engine.scoreCommit(runtime.repoPath, sha, opts.signalId),
     )
     const report = buildSignalBisectReport(opts, runtime.repoPath, sampled)
-    if (opts.json) return printJsonReport(report)
+    if (opts.json) {
+      yield* Effect.tryPromise(() => printJsonReport(report))
+      return
+    }
     printHumanReport(report, Date.now() - started)
   })
 

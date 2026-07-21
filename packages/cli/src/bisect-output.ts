@@ -7,11 +7,12 @@ import type {
   BisectReport,
   Culprit,
 } from "./bisect-signal-types.js"
+import { writeJsonToStdout } from "./cli-output.js"
 import { renderScoreBar } from "./score-format.js"
 
-export const printJsonReport = (report: BisectReport | ObserverBisectReport): void => {
-  console.log(JSON.stringify(report, null, 2))
-}
+export const printJsonReport = (
+  report: BisectReport | ObserverBisectReport,
+): Promise<void> => writeJsonToStdout(report)
 
 export const printHumanReport = (report: BisectReport, elapsedMs: number): void => {
   const lines = [

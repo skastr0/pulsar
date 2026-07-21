@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { spawnSync } from "node:child_process"
@@ -33,31 +33,89 @@ const activeRegistrySignalIds = async (): Promise<ReadonlyArray<string>> => {
   return registry.sorted.map((signal) => signal.id)
 }
 
-const headSha = (): string => {
-  const out = spawnSync("git", ["rev-parse", "HEAD"], {
-    cwd: repoRoot,
+const git = (repoPath: string, args: ReadonlyArray<string>): string => {
+  const out = spawnSync("git", [...args], {
+    cwd: repoPath,
     encoding: "utf-8",
   })
+  if (out.status !== 0) {
+    throw new Error(`git ${args.join(" ")} failed: ${out.stderr.trim()}`)
+  }
   return out.stdout.trim()
 }
 
-const nthParent = (n: number): string => {
-  const out = spawnSync("git", ["rev-parse", `HEAD~${n}`], {
-    cwd: repoRoot,
-    encoding: "utf-8",
-  })
-  return out.stdout.trim()
-}
-
-const revListCount = (fromSha: string, toSha: string): number => {
+const revListCount = (repoPath: string, fromSha: string, toSha: string): number => {
   const out = spawnSync("git", ["rev-list", "--count", `${fromSha}..${toSha}`], {
-    cwd: repoRoot,
+    cwd: repoPath,
     encoding: "utf-8",
   })
   if (out.status !== 0) {
     throw new Error(`git rev-list --count failed: ${out.stderr.trim()}`)
   }
   return Number.parseInt(out.stdout.trim(), 10)
+}
+
+interface BisectFixture {
+  readonly repoPath: string
+  readonly fromSha: string
+  readonly toSha: string
+  readonly commitCount: number
+  readonly cleanup: () => Promise<void>
+}
+
+const fixtureSource = (revision: number): string =>
+  Array.from(
+    { length: 12 },
+    (_, index) => [
+      `export function task${index}(input: number): number {`,
+      `  const revision = ${revision}`,
+      `  return input + revision + ${index}`,
+      `}`,
+    ].join("\n"),
+  ).join("\n\n")
+
+const initBisectFixture = async (commitCount: number): Promise<BisectFixture> => {
+  const repoPath = await mkdtemp(join(tmpdir(), "pulsar-bisect-cli-"))
+  git(repoPath, ["init", "-q", "-b", "main"])
+  git(repoPath, ["config", "user.email", "test@test.test"])
+  git(repoPath, ["config", "user.name", "Pulsar Test"])
+  git(repoPath, ["config", "commit.gpgsign", "false"])
+
+  await mkdir(join(repoPath, "src"), { recursive: true })
+  await writeFile(
+    join(repoPath, "tsconfig.json"),
+    JSON.stringify(
+      {
+        compilerOptions: {
+          target: "ES2022",
+          module: "ESNext",
+          moduleResolution: "Bundler",
+        },
+        include: ["src/**/*.ts"],
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  )
+  await writeFile(join(repoPath, "src", "index.ts"), fixtureSource(0), "utf8")
+  git(repoPath, ["add", "."])
+  git(repoPath, ["commit", "-q", "-m", "base"])
+  const fromSha = git(repoPath, ["rev-parse", "HEAD"])
+
+  for (let revision = 1; revision <= commitCount; revision += 1) {
+    await writeFile(join(repoPath, "src", "index.ts"), fixtureSource(revision), "utf8")
+    git(repoPath, ["add", "src/index.ts"])
+    git(repoPath, ["commit", "-q", "-m", `revision ${revision}`])
+  }
+
+  return {
+    repoPath,
+    fromSha,
+    toSha: git(repoPath, ["rev-parse", "HEAD"]),
+    commitCount,
+    cleanup: () => rm(repoPath, { recursive: true, force: true }),
+  }
 }
 
 const makeCommit = (sha: string, score: number): CommitScore => ({
@@ -72,15 +130,27 @@ const capturePrintedOutput = async (
 ): Promise<string> => {
   const spy = { printed: [] as Array<string> }
   const origLog = console.log
+  const origWrite = process.stdout.write
   console.log = (...args: Array<unknown>) => {
-    spy.printed.push(args.map(String).join(" "))
+    spy.printed.push(`${args.map(String).join(" ")}\n`)
   }
+  process.stdout.write = ((
+    chunk: string | Uint8Array,
+    encodingOrCallback?: BufferEncoding | ((error?: Error | null) => void),
+    callback?: (error?: Error | null) => void,
+  ): boolean => {
+    spy.printed.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString())
+    const onComplete = typeof encodingOrCallback === "function" ? encodingOrCallback : callback
+    onComplete?.()
+    return true
+  }) as typeof process.stdout.write
   try {
     await Effect.runPromise(effect)
   } finally {
     console.log = origLog
+    process.stdout.write = origWrite
   }
-  return spy.printed.join("\n")
+  return spy.printed.join("")
 }
 
 const withTempVectorFile = async <A>(
@@ -366,295 +436,308 @@ describe("observer bisect report helpers", () => {
 })
 
 describe("pulsar bisect (integration)", () => {
-  test("replays a recent range and produces a trajectory", async () => {
-    const from = nthParent(3)
-    const to = headSha()
-    const expectedCount = revListCount(from, to)
-    expect(from.length).toBe(40)
-    expect(to.length).toBe(40)
-    expect(expectedCount).toBeGreaterThan(0)
+  test("replays a fabricated range and produces a trajectory", async () => {
+    const fixture = await initBisectFixture(3)
+    try {
+      const expectedCount = revListCount(fixture.repoPath, fixture.fromSha, fixture.toSha)
+      expect(fixture.fromSha.length).toBe(40)
+      expect(fixture.toSha.length).toBe(40)
+      expect(expectedCount).toBe(fixture.commitCount)
 
-    const out = await capturePrintedOutput(
-      runBisectCommand({
-        signalId: "TS-RP-01",
-        fromSha: from,
-        toSha: to,
-        repoPath: repoRoot,
-        concurrency: 2,
-        topCulprits: 3,
-        sampling: "full",
-        json: true,
-      }),
-    )
+      const out = await capturePrintedOutput(
+        runBisectCommand({
+          signalId: "TS-RP-01",
+          fromSha: fixture.fromSha,
+          toSha: fixture.toSha,
+          repoPath: fixture.repoPath,
+          concurrency: 2,
+          topCulprits: 3,
+          sampling: "full",
+          json: true,
+        }),
+      )
 
-    const parsed = JSON.parse(out)
-    expect(parsed.schemaVersion).toBe("signal-bisect/v2")
-    expect(parsed.signalId).toBe("TS-RP-01")
-    expect(parsed.trajectory.length).toBe(expectedCount)
-    for (const entry of parsed.trajectory) {
-      expect(typeof entry.sha).toBe("string")
-      expect(entry.sha.length).toBe(40)
-      expect(typeof entry.score).toBe("number")
-      expect(entry.score).toBeGreaterThanOrEqual(0)
-      expect(entry.score).toBeLessThanOrEqual(1)
+      const parsed = JSON.parse(out)
+      expect(parsed.schemaVersion).toBe("signal-bisect/v2")
+      expect(parsed.signalId).toBe("TS-RP-01")
+      expect(parsed.trajectory.length).toBe(expectedCount)
+      for (const entry of parsed.trajectory) {
+        expect(typeof entry.sha).toBe("string")
+        expect(entry.sha.length).toBe(40)
+        expect(typeof entry.score).toBe("number")
+        expect(entry.score).toBeGreaterThanOrEqual(0)
+        expect(entry.score).toBeLessThanOrEqual(1)
+      }
+      expect(Array.isArray(parsed.culprits)).toBe(true)
+      expect(Array.isArray(parsed.driftCulprits)).toBe(true)
+      expect(parsed.sampling.applied).toBe("full")
+      expect(parsed.minScore).toBeLessThanOrEqual(parsed.maxScore)
+    } finally {
+      await fixture.cleanup()
     }
-    expect(Array.isArray(parsed.culprits)).toBe(true)
-    expect(Array.isArray(parsed.driftCulprits)).toBe(true)
-    expect(parsed.sampling.applied).toBe("full")
-    expect(parsed.minScore).toBeLessThanOrEqual(parsed.maxScore)
   }, 60_000)
 
   test("replays a 5-commit range in observer mode with per-category trajectories", async () => {
-    const from = nthParent(5)
-    const to = headSha()
-    const expectedCount = revListCount(from, to)
+    const fixture = await initBisectFixture(5)
+    const expectedCount = revListCount(fixture.repoPath, fixture.fromSha, fixture.toSha)
 
-    const out = await capturePrintedOutput(
-      runBisectCommand({
-        observer: true,
-        fromSha: from,
-        toSha: to,
-        repoPath: repoRoot,
-        concurrency: 2,
-        topCulprits: 3,
-        sampling: "full",
-        json: true,
-      }),
-    )
-
-    const parsed = JSON.parse(out)
-    const entries = await Effect.runPromise(
-      createTimeSeriesServices(repoRoot).reader.entries(),
-    )
-    expect(parsed.vectorName).toBeNull()
-    expect(parsed.schemaVersion).toBe("observer-bisect/v2")
-    expect(parsed.trajectory.length).toBe(expectedCount)
-    expect(parsed.commits.length).toBe(expectedCount)
-    expect(parsed.curves.weightedMean.length).toBe(expectedCount)
-    expect(parsed.curves.readiness.length).toBe(expectedCount)
-    expect(entries.length).toBeGreaterThanOrEqual(expectedCount)
-    expect(Object.keys(parsed.perCategory).sort()).toEqual([...CATEGORIES].sort())
-    expect(Object.keys(parsed.perCategoryCulprits).sort()).toEqual([...CATEGORIES].sort())
-    expect(Object.keys(parsed.perCategoryDriftCulprits).sort()).toEqual([...CATEGORIES].sort())
-    expect(Array.isArray(parsed.weightedMeanDriftCulprits)).toBe(true)
-    expect(Array.isArray(parsed.readinessCulprits)).toBe(true)
-    expect(Array.isArray(parsed.readinessDriftCulprits)).toBe(true)
-    expect(parsed.sampling.applied).toBe("full")
-    expect(typeof parsed.finalWeightedMean).toBe("number")
-    expect(parsed.minWeightedMean).toBeLessThanOrEqual(parsed.maxWeightedMean)
-    expect(typeof parsed.finalReadinessScore).toBe("number")
-    expect(typeof parsed.finalApplicableSignalCount).toBe("number")
-    expect(parsed.finalApplicableSignalCount).toBeGreaterThan(0)
-    expect(parsed.minReadinessScore).toBeLessThanOrEqual(parsed.maxReadinessScore)
-    expect(["pass", "fail"]).toContain(parsed.hardGateStatusAtFinal)
-    expect(Object.keys(parsed.signalCategories).length).toBeGreaterThan(0)
-    expect(Object.keys(parsed.perSignal).sort()).toEqual(
-      Object.keys(parsed.signalCategories).sort(),
-    )
-    expect(Object.keys(parsed.perSignalCulprits).sort()).toEqual(
-      Object.keys(parsed.signalCategories).sort(),
-    )
-    expect(Object.keys(parsed.perSignalDriftCulprits).sort()).toEqual(
-      Object.keys(parsed.signalCategories).sort(),
-    )
-
-    for (const entry of parsed.trajectory) {
-      expect(typeof entry.sha).toBe("string")
-      expect(entry.sha.length).toBe(40)
-      expect(typeof entry.weightedMean).toBe("number")
-      expect(typeof entry.readinessScore).toBe("number")
-      expect(typeof entry.readinessPressure).toBe("number")
-      expect(["green", "yellow", "red", "blocked", "unknown"]).toContain(entry.readinessStatus)
-      expect(Object.keys(entry.categories).sort()).toEqual([...CATEGORIES].sort())
-      expect(Object.keys(entry.categorySignalCounts).sort()).toEqual([...CATEGORIES].sort())
-      expect(Object.keys(entry.categoryApplicableSignalCounts).sort()).toEqual(
-        [...CATEGORIES].sort(),
+    try {
+      const out = await capturePrintedOutput(
+        runBisectCommand({
+          observer: true,
+          fromSha: fixture.fromSha,
+          toSha: fixture.toSha,
+          repoPath: fixture.repoPath,
+          concurrency: 2,
+          topCulprits: 3,
+          sampling: "full",
+          json: true,
+        }),
       )
-      expect(typeof entry.applicableSignalCount).toBe("number")
-      expect(entry.applicableSignalCount).toBeGreaterThan(0)
-      expect(entry.observer).toBeUndefined()
-      expect(typeof entry.signals).toBe("object")
-      expect(Object.keys(entry.signals).length).toBeGreaterThan(0)
-      for (const [signalId, score] of Object.entries(entry.signals)) {
-        expect(parsed.signalCategories[signalId]).toBeDefined()
-        expect(typeof score).toBe("number")
-        expect(score as number).toBeGreaterThanOrEqual(0)
-        expect(score as number).toBeLessThanOrEqual(1)
-      }
-      expect(typeof entry.hardGateViolationCount).toBe("number")
-      expect(["pass", "fail"]).toContain(entry.hardGateStatus)
-    }
 
-    for (const category of CATEGORIES) {
-      expect(parsed.perCategory[category].scores.length).toBe(parsed.trajectory.length)
-      expect(Array.isArray(parsed.perCategoryCulprits[category])).toBe(true)
+      const parsed = JSON.parse(out)
+      const entries = await Effect.runPromise(
+        createTimeSeriesServices(fixture.repoPath).reader.entries(),
+      )
+      expect(parsed.vectorName).toBeNull()
+      expect(parsed.schemaVersion).toBe("observer-bisect/v2")
+      expect(parsed.trajectory.length).toBe(expectedCount)
+      expect(parsed.commits.length).toBe(expectedCount)
+      expect(parsed.curves.weightedMean.length).toBe(expectedCount)
+      expect(parsed.curves.readiness.length).toBe(expectedCount)
+      expect(entries.length).toBeGreaterThanOrEqual(expectedCount)
+      expect(Object.keys(parsed.perCategory).sort()).toEqual([...CATEGORIES].sort())
+      expect(Object.keys(parsed.perCategoryCulprits).sort()).toEqual([...CATEGORIES].sort())
+      expect(Object.keys(parsed.perCategoryDriftCulprits).sort()).toEqual([...CATEGORIES].sort())
+      expect(Array.isArray(parsed.weightedMeanDriftCulprits)).toBe(true)
+      expect(Array.isArray(parsed.readinessCulprits)).toBe(true)
+      expect(Array.isArray(parsed.readinessDriftCulprits)).toBe(true)
+      expect(parsed.sampling.applied).toBe("full")
+      expect(typeof parsed.finalWeightedMean).toBe("number")
+      expect(parsed.minWeightedMean).toBeLessThanOrEqual(parsed.maxWeightedMean)
+      expect(typeof parsed.finalReadinessScore).toBe("number")
+      expect(typeof parsed.finalApplicableSignalCount).toBe("number")
+      expect(parsed.finalApplicableSignalCount).toBeGreaterThan(0)
+      expect(parsed.minReadinessScore).toBeLessThanOrEqual(parsed.maxReadinessScore)
+      expect(["pass", "fail"]).toContain(parsed.hardGateStatusAtFinal)
+      expect(Object.keys(parsed.signalCategories).length).toBeGreaterThan(0)
+      expect(Object.keys(parsed.perSignal).sort()).toEqual(
+        Object.keys(parsed.signalCategories).sort(),
+      )
+      expect(Object.keys(parsed.perSignalCulprits).sort()).toEqual(
+        Object.keys(parsed.signalCategories).sort(),
+      )
+      expect(Object.keys(parsed.perSignalDriftCulprits).sort()).toEqual(
+        Object.keys(parsed.signalCategories).sort(),
+      )
+
+      for (const entry of parsed.trajectory) {
+        expect(typeof entry.sha).toBe("string")
+        expect(entry.sha.length).toBe(40)
+        expect(typeof entry.weightedMean).toBe("number")
+        expect(typeof entry.readinessScore).toBe("number")
+        expect(typeof entry.readinessPressure).toBe("number")
+        expect(["green", "yellow", "red", "blocked", "unknown"]).toContain(entry.readinessStatus)
+        expect(Object.keys(entry.categories).sort()).toEqual([...CATEGORIES].sort())
+        expect(Object.keys(entry.categorySignalCounts).sort()).toEqual([...CATEGORIES].sort())
+        expect(Object.keys(entry.categoryApplicableSignalCounts).sort()).toEqual(
+          [...CATEGORIES].sort(),
+        )
+        expect(typeof entry.applicableSignalCount).toBe("number")
+        expect(entry.applicableSignalCount).toBeGreaterThan(0)
+        expect(entry.observer).toBeUndefined()
+        expect(typeof entry.signals).toBe("object")
+        expect(Object.keys(entry.signals).length).toBeGreaterThan(0)
+        for (const [signalId, score] of Object.entries(entry.signals)) {
+          expect(parsed.signalCategories[signalId]).toBeDefined()
+          expect(typeof score).toBe("number")
+          expect(score as number).toBeGreaterThanOrEqual(0)
+          expect(score as number).toBeLessThanOrEqual(1)
+        }
+        expect(typeof entry.hardGateViolationCount).toBe("number")
+        expect(["pass", "fail"]).toContain(entry.hardGateStatus)
+      }
+
+      for (const category of CATEGORIES) {
+        expect(parsed.perCategory[category].scores.length).toBe(parsed.trajectory.length)
+        expect(Array.isArray(parsed.perCategoryCulprits[category])).toBe(true)
+      }
+      for (const signalId of Object.keys(parsed.signalCategories)) {
+        expect(parsed.perSignal[signalId].scores.length).toBe(parsed.trajectory.length)
+        expect(parsed.perSignal[signalId].category).toBe(parsed.signalCategories[signalId])
+      }
+    } finally {
+      await fixture.cleanup()
     }
-    for (const signalId of Object.keys(parsed.signalCategories)) {
-      expect(parsed.perSignal[signalId].scores.length).toBe(parsed.trajectory.length)
-      expect(parsed.perSignal[signalId].category).toBe(parsed.signalCategories[signalId])
-    }
-    // CI runners score this range in ~118s on a good day; 120s budgets flake,
-    // and the timeout kill leaves orphaned scoring processes that starve the
-    // tests after it. Budget for the slow-runner tail, not the median.
-  }, 360_000)
+  }, 120_000)
 
   test("supports first-crossing queries and selected signal/category scope", async () => {
-    const from = nthParent(3)
-    const to = headSha()
+    const fixture = await initBisectFixture(3)
+    try {
+      const out = await capturePrintedOutput(
+        runBisectCommand({
+          observer: true,
+          selectedSignals: ["TS-LD-02"],
+          selectedCategories: ["legibility-decay"],
+          firstCrossing: { target: "TS-LD-02", op: "<=", threshold: 1 },
+          fromSha: fixture.fromSha,
+          toSha: fixture.toSha,
+          repoPath: fixture.repoPath,
+          concurrency: 2,
+          topCulprits: 2,
+          sampling: "full",
+          json: true,
+        }),
+      )
 
-    const out = await capturePrintedOutput(
-      runBisectCommand({
-        observer: true,
-        selectedSignals: ["TS-LD-02"],
-        selectedCategories: ["legibility-decay"],
-        firstCrossing: { target: "TS-LD-02", op: "<=", threshold: 1 },
-        fromSha: from,
-        toSha: to,
-        repoPath: repoRoot,
-        concurrency: 2,
-        topCulprits: 2,
-        sampling: "full",
-        json: true,
-      }),
-    )
-
-    const parsed = JSON.parse(out)
-    expect(parsed.firstCrossing?.target).toBe("TS-LD-02-function-size-distribution")
-    expect(parsed.firstCrossing?.sha.length).toBe(40)
-    expect(Object.keys(parsed.curves.signals)).toEqual(["TS-LD-02-function-size-distribution"])
-    expect(Object.keys(parsed.signalCategories)).toEqual(["TS-LD-02-function-size-distribution"])
-    expect(Object.keys(parsed.curves.categories)).toEqual(["legibility-decay"])
-    expect(Object.keys(parsed.trajectory[0].signals)).toEqual([
-      "TS-LD-02-function-size-distribution",
-    ])
-    expect(Object.keys(parsed.trajectory[0].categories)).toEqual(["legibility-decay"])
-    expect(parsed.curves.signals["TS-LD-02-function-size-distribution"]).toEqual(
-      parsed.trajectory.map(
-        (entry: { signals: Record<string, number> }) =>
-          entry.signals["TS-LD-02-function-size-distribution"],
-      ),
-    )
-    expect(parsed.curves.categories["legibility-decay"]).toEqual(
-      parsed.trajectory.map(
-        (entry: { categories: Record<string, number> }) => entry.categories["legibility-decay"],
-      ),
-    )
-    expect(parsed.firstCrossing?.sha).toBe(parsed.trajectory[0].sha)
-    expect(parsed.firstCrossing?.previousSha).toBeUndefined()
-    expect(parsed.firstCrossing?.score).toBe(
-      parsed.curves.signals["TS-LD-02-function-size-distribution"][0],
-    )
+      const parsed = JSON.parse(out)
+      expect(parsed.firstCrossing?.target).toBe("TS-LD-02-function-size-distribution")
+      expect(parsed.firstCrossing?.sha.length).toBe(40)
+      expect(Object.keys(parsed.curves.signals)).toEqual(["TS-LD-02-function-size-distribution"])
+      expect(Object.keys(parsed.signalCategories)).toEqual(["TS-LD-02-function-size-distribution"])
+      expect(Object.keys(parsed.curves.categories)).toEqual(["legibility-decay"])
+      expect(Object.keys(parsed.trajectory[0].signals)).toEqual([
+        "TS-LD-02-function-size-distribution",
+      ])
+      expect(Object.keys(parsed.trajectory[0].categories)).toEqual(["legibility-decay"])
+      expect(parsed.curves.signals["TS-LD-02-function-size-distribution"]).toEqual(
+        parsed.trajectory.map(
+          (entry: { signals: Record<string, number> }) =>
+            entry.signals["TS-LD-02-function-size-distribution"],
+        ),
+      )
+      expect(parsed.curves.categories["legibility-decay"]).toEqual(
+        parsed.trajectory.map(
+          (entry: { categories: Record<string, number> }) => entry.categories["legibility-decay"],
+        ),
+      )
+      expect(parsed.firstCrossing?.sha).toBe(parsed.trajectory[0].sha)
+      expect(parsed.firstCrossing?.previousSha).toBeUndefined()
+      expect(parsed.firstCrossing?.score).toBe(
+        parsed.curves.signals["TS-LD-02-function-size-distribution"][0],
+      )
+    } finally {
+      await fixture.cleanup()
+    }
   }, 120_000)
 
   test("threads an optional vector through observer mode", async () => {
-    const from = nthParent(1)
-    const to = headSha()
-    const expectedCount = revListCount(from, to)
+    const fixture = await initBisectFixture(1)
+    try {
+      const expectedCount = revListCount(fixture.repoPath, fixture.fromSha, fixture.toSha)
 
-    const out = await withTempVectorFile(
-      {
-        id: "observer-test-vector",
-        domain: "typescript",
-        signal_overrides: {
-          "TS-AB-01": { active: false },
+      const out = await withTempVectorFile(
+        {
+          id: "observer-test-vector",
+          domain: "typescript",
+          signal_overrides: {
+            "TS-AB-01": { active: false },
+          },
         },
-      },
-      async (vectorPath) =>
-        capturePrintedOutput(
-          runBisectCommand({
-            observer: true,
-            vectorPath,
-            fromSha: from,
-            toSha: to,
-            repoPath: repoRoot,
-            concurrency: 1,
-            topCulprits: 1,
-            sampling: "full",
-            json: true,
-          }),
-        ),
-    )
+        async (vectorPath) =>
+          capturePrintedOutput(
+            runBisectCommand({
+              observer: true,
+              vectorPath,
+              fromSha: fixture.fromSha,
+              toSha: fixture.toSha,
+              repoPath: fixture.repoPath,
+              concurrency: 1,
+              topCulprits: 1,
+              sampling: "full",
+              json: true,
+            }),
+          ),
+      )
 
-    const parsed = JSON.parse(out)
-    expect(parsed.vectorName).toBe("observer-test-vector")
-    expect(parsed.trajectory).toHaveLength(expectedCount)
-    expect(parsed.signalCategories["TS-AB-01"]).toBeUndefined()
-    expect(parsed.trajectory[0].signals["TS-AB-01"]).toBeUndefined()
-    expect(parsed.signalCategories["TS-AB-03-type-indirection-depth"]).toBe("abstraction-bloat")
-    expect(parsed.signalCategories["TS-AB-05-generic-proliferation"]).toBe("abstraction-bloat")
-    expect(parsed.trajectory[0].signals["TS-AB-03-type-indirection-depth"]).toBeDefined()
-    expect(parsed.trajectory[0].signals["TS-AB-05-generic-proliferation"]).toBeDefined()
-    expect(parsed.trajectory[0].categories["abstraction-bloat"]).toBeGreaterThan(0)
-    expect(parsed.trajectory[0].categories["abstraction-bloat"]).toBeLessThanOrEqual(1)
+      const parsed = JSON.parse(out)
+      expect(parsed.vectorName).toBe("observer-test-vector")
+      expect(parsed.trajectory).toHaveLength(expectedCount)
+      expect(parsed.signalCategories["TS-AB-01"]).toBeUndefined()
+      expect(parsed.trajectory[0].signals["TS-AB-01"]).toBeUndefined()
+      expect(parsed.signalCategories["TS-AB-03-type-indirection-depth"]).toBe("abstraction-bloat")
+      expect(parsed.signalCategories["TS-AB-05-generic-proliferation"]).toBe("abstraction-bloat")
+      expect(parsed.trajectory[0].signals["TS-AB-03-type-indirection-depth"]).toBeDefined()
+      expect(parsed.trajectory[0].signals["TS-AB-05-generic-proliferation"]).toBeDefined()
+      expect(parsed.trajectory[0].categories["abstraction-bloat"]).toBeGreaterThan(0)
+      expect(parsed.trajectory[0].categories["abstraction-bloat"]).toBeLessThanOrEqual(1)
+    } finally {
+      await fixture.cleanup()
+    }
   }, 120_000)
 
   test("fails loud when the vector references an unknown signal id", async () => {
-    const from = nthParent(1)
-    const to = headSha()
-
-    const exit = await withTempVectorFile(
-      {
-        id: "bad-vector",
-        domain: "typescript",
-        signal_overrides: {
-          "DOES-NOT-EXIST": { active: true },
+    const fixture = await initBisectFixture(1)
+    try {
+      const exit = await withTempVectorFile(
+        {
+          id: "bad-vector",
+          domain: "typescript",
+          signal_overrides: {
+            "DOES-NOT-EXIST": { active: true },
+          },
         },
-      },
-      (vectorPath) =>
-        Effect.runPromiseExit(
-          runBisectCommand({
-            observer: true,
-            vectorPath,
-            fromSha: from,
-            toSha: to,
-            repoPath: repoRoot,
-            concurrency: 1,
-            topCulprits: 1,
-            sampling: "full",
-            json: true,
-          }),
-        ),
-    )
+        (vectorPath) =>
+          Effect.runPromiseExit(
+            runBisectCommand({
+              observer: true,
+              vectorPath,
+              fromSha: fixture.fromSha,
+              toSha: fixture.toSha,
+              repoPath: fixture.repoPath,
+              concurrency: 1,
+              topCulprits: 1,
+              sampling: "full",
+              json: true,
+            }),
+          ),
+      )
 
-    expect(Exit.isFailure(exit)).toBe(true)
-    if (Exit.isFailure(exit)) {
-      const err = exit.cause._tag === "Fail" ? exit.cause.error : null
-      expect((err as { _tag?: string } | null)?._tag).toBe("UnknownSignalIdError")
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        const err = exit.cause._tag === "Fail" ? exit.cause.error : null
+        expect((err as { _tag?: string } | null)?._tag).toBe("UnknownSignalIdError")
+      }
+    } finally {
+      await fixture.cleanup()
     }
   }, 60_000)
 
   test("fails loud when observer mode has no active signals", async () => {
-    const from = nthParent(1)
-    const to = headSha()
-    const signalIds = await activeRegistrySignalIds()
+    const fixture = await initBisectFixture(1)
+    try {
+      const signalIds = await activeRegistrySignalIds()
 
-    const exit = await withTempVectorFile(
-      {
-        id: "inactive-vector",
-        domain: "typescript",
-        signal_overrides: Object.fromEntries(signalIds.map((id) => [id, { active: false }])),
-      },
-      (vectorPath) =>
-        Effect.runPromiseExit(
-          runBisectCommand({
-            observer: true,
-            vectorPath,
-            fromSha: from,
-            toSha: to,
-            repoPath: repoRoot,
-            concurrency: 1,
-            topCulprits: 1,
-            sampling: "full",
-            json: true,
-          }),
-        ),
-    )
+      const exit = await withTempVectorFile(
+        {
+          id: "inactive-vector",
+          domain: "typescript",
+          signal_overrides: Object.fromEntries(signalIds.map((id) => [id, { active: false }])),
+        },
+        (vectorPath) =>
+          Effect.runPromiseExit(
+            runBisectCommand({
+              observer: true,
+              vectorPath,
+              fromSha: fixture.fromSha,
+              toSha: fixture.toSha,
+              repoPath: fixture.repoPath,
+              concurrency: 1,
+              topCulprits: 1,
+              sampling: "full",
+              json: true,
+            }),
+          ),
+      )
 
-    expect(Exit.isFailure(exit)).toBe(true)
-    if (Exit.isFailure(exit)) {
-      const err = exit.cause._tag === "Fail" ? exit.cause.error : null
-      expect(err).toBeInstanceOf(Error)
-      expect((err as Error).message).toContain("Observer mode has no active signals")
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        const err = exit.cause._tag === "Fail" ? exit.cause.error : null
+        expect(err).toBeInstanceOf(Error)
+        expect((err as Error).message).toContain("Observer mode has no active signals")
+      }
+    } finally {
+      await fixture.cleanup()
     }
   }, 60_000)
 })
