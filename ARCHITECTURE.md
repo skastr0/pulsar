@@ -432,20 +432,44 @@ The primary output is a **dimension vector grouped by taxonomy category**, plus 
 {
   "observer_semantics": "applicability-aware-readiness-v2",
   "categories": {
-    "architectural-drift": { "score": 0.92, "signals": { "TS-AD-01": 1.0, "TS-AD-02": 0.85 } },
-    "dependency-entropy": { "score": 0.71, "signals": { "TS-DE-01": 0.65, "TS-DE-02": 0.78 } },
-    "abstraction-bloat": { "score": 0.83, "signals": { "TS-AB-01": 0.90, "TS-AB-03": 0.76 } },
-    "legibility-decay": { "score": 0.68, "signals": { "TS-LD-01": 0.72, "TS-LD-05": 0.43 } },
-    "generated-slop": { "score": 0.88, "signals": { "TS-SL-01": 0.85, "TS-SL-03": 0.91 } },
-    "review-pain": { "score": 0.75, "signals": { "TS-RP-01": 0.62, "TS-RP-02": 0.88 } }
+    "architectural-drift": { "score": 0.92, "signals": { "TS-AD-01-boundary-violations": 1.0, "TS-AD-02-circular-dependencies": 0.85 } },
+    "dependency-entropy": { "score": 0.71, "signals": { "TS-DE-01-type-level-coupling": 0.65, "TS-DE-02-fan-in-fan-out": 0.78 } },
+    "abstraction-bloat": { "score": 0.83, "signals": { "TS-AB-01-public-export-surface": 0.90, "TS-AB-03-type-indirection-depth": 0.76 } },
+    "legibility-decay": { "score": 0.68, "signals": { "TS-LD-01-cyclomatic-complexity": 0.72, "TS-LD-05-domain-term-consistency": 0.43 } },
+    "generated-slop": { "score": 0.88, "signals": { "TS-SL-01-duplication": 0.85, "TS-SL-03-suppressions": 0.91 } },
+    "review-pain": { "score": 0.75, "signals": { "TS-RP-01-hotspots": 0.62, "TS-RP-02-pr-size": 0.88 } }
   },
-  "minimum": { "signal": "TS-LD-05", "category": "legibility-decay", "score": 0.43,
+  "signal_diagnostics": {
+    "TS-LD-05-domain-term-consistency": {
+      "score": 0.43,
+      "applicability": "applicable",
+      "emitted_count": 1,
+      "diagnostics": [
+        {
+          "severity": "warn",
+          "message": "7 new identifiers not in glossary",
+          "location": { "file": "src/domain/order.ts", "line": 18 }
+        }
+      ]
+    }
+  },
+  "minimum": { "signal": "TS-LD-05-domain-term-consistency", "category": "legibility-decay", "score": 0.43,
                "detail": "Domain term consistency — 7 new identifiers not in glossary" },
   "weighted_mean": 0.79,
   "hard_gate_status": "pass",
   "hard_gate_violations": []
 }
 ```
+
+`signal_diagnostics` is an additive machine-readable map keyed by canonical
+signal id. Every scored signal reports its score, normalized applicability,
+the number of diagnostics emitted in that run, and the existing structured
+`Diagnostic` objects (`severity`, `message`, optional `location`, `data`, and
+`fixHints`). CLI file locations are repository-relative and signal ids are
+ordered deterministically. `emitted_count` describes the serialized array; it
+does not claim an uncapped total. Signal-owned `top_n_diagnostics` limits still
+apply before Observer serialization. Older persisted documents may omit the
+field and remain decodable.
 
 `observer_semantics` is part of the public contract. `applicability-aware-readiness-v2` means: `weighted_mean` and `minimum` are computed from applicable evidence instead of treating missing or failed evidence as healthy scalar data; readiness pressure is `max(p-norm, poison grade, hard-gate pressure)` where the poison grade is a continuous ramp computed only over signals with poison authority (proof-grade tier and hard-gate ceiling — see Enforcement Policy Matrix); signal failures degrade `status` (never `green`) but never zero the score — the score keeps describing what WAS measured, and `band` is omitted when nothing applicable was measured (consumers must treat a missing band as "no verdict", not healthy). The aggregation block names its `dominant_pressure_source` and exposes `band_margin` so thin band decisions are visible. Decoders accept v1 documents for persisted history. The minimum signal is often more actionable than any aggregate. Hard gate status is computed separately from the pulsar-weighted score — structural violations fail the gate regardless of weight.
 
