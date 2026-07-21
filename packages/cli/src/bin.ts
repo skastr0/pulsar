@@ -5,27 +5,30 @@ import { printHelp } from "./cli-help.js"
 import { runWorkflowCommand } from "./cli-workflow-commands.js"
 import { CLI_VERSION } from "./index.js"
 
-const argv = process.argv.slice(2)
+const main = async (argv: ReadonlyArray<string>): Promise<number> => {
+  if (argv.length === 0 || argv.includes("--help") || argv.includes("-h")) {
+    printHelp()
+    return 0
+  }
 
-if (argv.length === 0 || argv.includes("--help") || argv.includes("-h")) {
-  printHelp()
-  process.exit(0)
+  if (argv[0] === "--version" || argv[0] === "-v") {
+    console.log(CLI_VERSION)
+    return 0
+  }
+
+  const command = argv[0]
+  const commandArgs = argv.slice(1)
+
+  const coreExitCode = await runCoreCommand(command, commandArgs)
+  if (coreExitCode !== undefined) {
+    return coreExitCode
+  }
+
+  if (await runWorkflowCommand(command, commandArgs)) {
+    return 0
+  }
+
+  return fail(`unknown command: ${command}`)
 }
 
-if (argv[0] === "--version" || argv[0] === "-v") {
-  console.log(CLI_VERSION)
-  process.exit(0)
-}
-
-const command = argv[0]
-const commandArgs = argv.slice(1)
-
-if (await runCoreCommand(command, commandArgs)) {
-  process.exit(0)
-}
-
-if (await runWorkflowCommand(command, commandArgs)) {
-  process.exit(0)
-}
-
-fail(`unknown command: ${command}`)
+process.exitCode = await main(process.argv.slice(2))

@@ -32,6 +32,7 @@ import {
   parseScoreDiffRange,
   runScoreDiffMode,
 } from "./score-diff.js"
+import { writeJsonToStdout } from "./cli-output.js"
 import { inferFallbackDomain, narrowVectorToCategory, narrowVectorToDomain } from "./score-vector.js"
 import { discoverPulsarVector, type DiscoveredPulsarVector } from "./vector-discovery.js"
 
@@ -100,7 +101,7 @@ const runObserverScoreMode = (opts: ScoreOptions) =>
       vectorContext.observerVector,
       run.calibrationFingerprint,
     )
-    printScoreCommandOutput(opts, vectorContext, run, ciAssessment)
+    yield* printScoreCommandOutput(opts, vectorContext, run, ciAssessment)
     return scoreCommandExitCode(opts, run, ciAssessment)
   })
 
@@ -156,41 +157,44 @@ const printScoreCommandOutput = (
   vectorContext: ScoreVectorContext,
   run: ObserverScoreRun,
   ciAssessment: CiAssessment,
-): void => {
-  const paidDebt = ciAssessment.mode === "ratcheted"
-    ? ciAssessment.comparison?.paidDebt ?? []
-    : []
-  if (!opts.json && paidDebt.length > 0) {
-    printPaidDebt(paidDebt)
-  }
+) =>
+  Effect.gen(function* () {
+    const paidDebt = ciAssessment.mode === "ratcheted"
+      ? ciAssessment.comparison?.paidDebt ?? []
+      : []
+    if (!opts.json && paidDebt.length > 0) {
+      printPaidDebt(paidDebt)
+    }
 
-  if (opts.json) {
-    console.log(JSON.stringify(toScoreJson(run.output, vectorContext.vectorSelection), null, 2))
-  } else if (opts.category !== undefined) {
-    printCategoryView({
-      repoRoot: run.repoRoot,
-      gitSha: run.gitSha,
-      category: opts.category,
-      output: run.output,
-      vectorLabel: vectorContext.vectorSelection.label,
-      vectorSourceLabel: vectorContext.vectorSelection.sourceLabel,
-      aiMode: explainAiAssistedMode(vectorContext.vectorSelection.vector),
-      profile: opts.profile === true,
-    })
-  } else {
-    printObserverView({
-      repoRoot: run.repoRoot,
-      gitSha: run.gitSha,
-      output: run.output,
-      vectorLabel: vectorContext.vectorSelection.label,
-      vectorSourceLabel: vectorContext.vectorSelection.sourceLabel,
-      aiMode: explainAiAssistedMode(vectorContext.vectorSelection.vector),
-      ciAssessment,
-      colorize: process.stdout.isTTY === true && opts.ci !== true,
-      profile: opts.profile === true,
-    })
-  }
-}
+    if (opts.json) {
+      yield* Effect.tryPromise(() =>
+        writeJsonToStdout(toScoreJson(run.output, vectorContext.vectorSelection)),
+      )
+    } else if (opts.category !== undefined) {
+      printCategoryView({
+        repoRoot: run.repoRoot,
+        gitSha: run.gitSha,
+        category: opts.category,
+        output: run.output,
+        vectorLabel: vectorContext.vectorSelection.label,
+        vectorSourceLabel: vectorContext.vectorSelection.sourceLabel,
+        aiMode: explainAiAssistedMode(vectorContext.vectorSelection.vector),
+        profile: opts.profile === true,
+      })
+    } else {
+      printObserverView({
+        repoRoot: run.repoRoot,
+        gitSha: run.gitSha,
+        output: run.output,
+        vectorLabel: vectorContext.vectorSelection.label,
+        vectorSourceLabel: vectorContext.vectorSelection.sourceLabel,
+        aiMode: explainAiAssistedMode(vectorContext.vectorSelection.vector),
+        ciAssessment,
+        colorize: process.stdout.isTTY === true && opts.ci !== true,
+        profile: opts.profile === true,
+      })
+    }
+  })
 
 const scoreCommandExitCode = (
   opts: ScoreOptions,

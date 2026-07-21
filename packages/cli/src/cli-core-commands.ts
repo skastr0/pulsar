@@ -23,31 +23,26 @@ import { runScoreCommand } from "./score.js"
 export const runCoreCommand = async (
   command: string | undefined,
   commandArgs: ReadonlyArray<string>,
-): Promise<boolean> => {
+): Promise<number | undefined> => {
   if (command === "score") {
-    await runScore(commandArgs)
-    return true
+    return await runScore(commandArgs)
   }
   if (command === "baseline") {
-    await runBaseline(commandArgs)
-    return true
+    return await runBaseline(commandArgs)
   }
   if (command === "backpressure") {
-    await runBackpressure(commandArgs)
-    return true
+    return await runBackpressure(commandArgs)
   }
   if (command === "bisect") {
-    await runBisect(commandArgs)
-    return true
+    return await runBisect(commandArgs)
   }
   if (command === "coverage") {
-    await runCoverage(commandArgs)
-    return true
+    return await runCoverage(commandArgs)
   }
-  return false
+  return undefined
 }
 
-const runScore = async (commandArgs: ReadonlyArray<string>): Promise<void> => {
+const runScore = async (commandArgs: ReadonlyArray<string>): Promise<number> => {
   const flagsWithValues = new Set(["--signal", "--vector", "--category", "--diff"])
   rejectUnknownFlags(
     "score",
@@ -86,16 +81,16 @@ const runScore = async (commandArgs: ReadonlyArray<string>): Promise<void> => {
         Effect.catchAll((err) =>
           Effect.sync(() => {
             console.error(`pulsar score failed: ${formatCliError(err)}`)
-            process.exit(1)
+            return 1
           }),
         ),
       ),
     ),
   )
-  process.exit(exitCode)
+  return exitCode
 }
 
-const runBaseline = async (commandArgs: ReadonlyArray<string>): Promise<void> => {
+const runBaseline = async (commandArgs: ReadonlyArray<string>): Promise<number> => {
   const actionArg = commandArgs[0]
   if (actionArg !== "set" && actionArg !== "refresh" && actionArg !== "show") {
     fail("baseline requires one of: set, refresh, show")
@@ -122,16 +117,16 @@ const runBaseline = async (commandArgs: ReadonlyArray<string>): Promise<void> =>
         Effect.catchAll((err) =>
           Effect.sync(() => {
             console.error(`pulsar baseline failed: ${formatCliError(err)}`)
-            process.exit(1)
+            return 1
           }),
         ),
       ),
     ),
   )
-  process.exit(exitCode)
+  return exitCode
 }
 
-const runCoverage = async (commandArgs: ReadonlyArray<string>): Promise<void> => {
+const runCoverage = async (commandArgs: ReadonlyArray<string>): Promise<number> => {
   const action = commandArgs[0]
   if (action !== "ingest") {
     fail("coverage requires: ingest <path> [--format auto|lcov|istanbul] [<repo-path>]")
@@ -154,13 +149,13 @@ const runCoverage = async (commandArgs: ReadonlyArray<string>): Promise<void> =>
         Effect.catchAll((err) =>
           Effect.sync(() => {
             console.error(`pulsar coverage failed: ${formatCliError(err)}`)
-            process.exit(1)
+            return 1
           }),
         ),
       ),
     ),
   )
-  process.exit(exitCode)
+  return exitCode
 }
 
 const parseCoverageFormat = (raw: string | undefined): CoverageIngestFormat | undefined => {
@@ -169,7 +164,7 @@ const parseCoverageFormat = (raw: string | undefined): CoverageIngestFormat | un
   fail("--format must be one of: auto, lcov, istanbul")
 }
 
-const runBackpressure = async (commandArgs: ReadonlyArray<string>): Promise<void> => {
+const runBackpressure = async (commandArgs: ReadonlyArray<string>): Promise<number> => {
   const flagsWithValues = new Set(["--vector"])
   const repoPath = collectPositional(commandArgs, flagsWithValues)[0] ?? "."
   const vectorPath = parseArg(commandArgs, "--vector")
@@ -183,16 +178,16 @@ const runBackpressure = async (commandArgs: ReadonlyArray<string>): Promise<void
         Effect.catchAll((err) =>
           Effect.sync(() => {
             console.error(`pulsar backpressure failed: ${formatCliError(err)}`)
-            process.exit(1)
+            return 1
           }),
         ),
       ),
     ),
   )
-  process.exit(exitCode)
+  return exitCode
 }
 
-const runBisect = async (commandArgs: ReadonlyArray<string>): Promise<void> => {
+const runBisect = async (commandArgs: ReadonlyArray<string>): Promise<number> => {
   const flagsWithValues = new Set([
     "--signal",
     "--vector",
@@ -232,7 +227,7 @@ const runBisect = async (commandArgs: ReadonlyArray<string>): Promise<void> => {
   const selectedSignals = parseRepeatedArgs(commandArgs, "--scope")
   const repoPath = collectPositional(commandArgs, flagsWithValues)[0] ?? "."
 
-  await runWithProgress("bisect", commandArgs, () =>
+  const exitCode = await runWithProgress("bisect", commandArgs, () =>
     runCliEffect(
       runBisectCommand({
         ...(signalId !== undefined ? { signalId } : {}),
@@ -251,14 +246,15 @@ const runBisect = async (commandArgs: ReadonlyArray<string>): Promise<void> => {
         sampling,
         json: commandArgs.includes("--json"),
       }).pipe(
+        Effect.as(0),
         Effect.catchAll((err) =>
           Effect.sync(() => {
             console.error(`pulsar bisect failed: ${formatCliError(err)}`)
-            process.exit(1)
+            return 1
           }),
         ),
       ),
     ),
   )
-  process.exit(0)
+  return exitCode
 }
