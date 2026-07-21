@@ -3,7 +3,7 @@ import { fail } from "./cli-args.js"
 import { runCoreCommand } from "./cli-core-commands.js"
 import { printHelp } from "./cli-help.js"
 import { runWorkflowCommand } from "./cli-workflow-commands.js"
-import { CLI_VERSION } from "./index.js"
+import { CLI_BUILD_INFO, CLI_VERSION } from "./index.js"
 
 const main = async (argv: ReadonlyArray<string>): Promise<number> => {
   if (argv.length === 0 || argv.includes("--help") || argv.includes("-h")) {
@@ -13,6 +13,11 @@ const main = async (argv: ReadonlyArray<string>): Promise<number> => {
 
   if (argv[0] === "--version" || argv[0] === "-v") {
     console.log(CLI_VERSION)
+    return 0
+  }
+
+  if (argv[0] === "--build-info") {
+    console.log(JSON.stringify(CLI_BUILD_INFO))
     return 0
   }
 

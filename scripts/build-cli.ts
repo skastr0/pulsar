@@ -6,11 +6,6 @@ import { dirname, join, resolve } from "node:path"
 
 const REPO_ROOT = resolve(import.meta.dir, "..")
 const DIST_DIR = join(REPO_ROOT, "dist")
-const packageJson = JSON.parse(readFileSync(join(REPO_ROOT, "package.json"), "utf8")) as {
-  readonly version?: string
-}
-const version = packageJson.version ?? "0.0.0"
-
 const packageBuildOrder = [
   "packages/core",
   "packages/project-module-sdk",
@@ -23,6 +18,62 @@ const packageBuildOrder = [
   "packages/onboard",
   "packages/cli",
 ] as const
+
+const versionedPackageDirs = [
+  ...packageBuildOrder,
+  "packages/signal-test-support",
+  "packages/npm/pulsar",
+  "packages/npm/pulsar-darwin-arm64",
+  "packages/npm/pulsar-darwin-x64",
+  "packages/npm/pulsar-linux-arm64",
+  "packages/npm/pulsar-linux-x64",
+] as const
+
+interface VersionedManifest {
+  readonly name: string
+  readonly version: string
+}
+
+const readManifest = (packageDir: string): VersionedManifest => {
+  const manifest = JSON.parse(
+    readFileSync(join(REPO_ROOT, packageDir, "package.json"), "utf8"),
+  ) as Partial<VersionedManifest>
+  if (manifest.name === undefined || manifest.version === undefined) {
+    throw new Error(`${packageDir}/package.json must declare name and version`)
+  }
+  return { name: manifest.name, version: manifest.version }
+}
+
+const rootManifest = readManifest(".")
+const version = rootManifest.version
+const versionMismatches = versionedPackageDirs
+  .map((packageDir) => ({ packageDir, manifest: readManifest(packageDir) }))
+  .filter(({ manifest }) => manifest.version !== version)
+if (versionMismatches.length > 0) {
+  throw new Error(
+    `Release version ${version} does not match:\n${versionMismatches
+      .map(({ packageDir, manifest }) => `- ${manifest.name}@${manifest.version} (${packageDir})`)
+      .join("\n")}`,
+  )
+}
+
+const git = (args: ReadonlyArray<string>): string => {
+  const result = Bun.spawnSync(["git", ...args], {
+    cwd: REPO_ROOT,
+    stdout: "pipe",
+    stderr: "pipe",
+  })
+  if (result.exitCode !== 0) {
+    throw new Error(`git ${args.join(" ")} failed: ${result.stderr.toString()}`)
+  }
+  return result.stdout.toString().trim()
+}
+
+const buildCommit = git(["rev-parse", "HEAD"])
+if (!/^[0-9a-f]{40}$/.test(buildCommit)) {
+  throw new Error(`Build commit is not a full Git SHA: ${buildCommit}`)
+}
+const buildDirty = git(["status", "--porcelain"]) !== ""
 
 const binaryTargets = [
   { platform: "darwin", arch: "x64", nativeLibrary: "libopentui.dylib" },
@@ -104,6 +155,23 @@ const assertNativeLibraryEmbedded = async (
   console.log(`Verified embedded OpenTUI native library for ${target}`)
 }
 
+const assertBuildIdentityEmbedded = async (
+  outfile: string,
+  target: string,
+): Promise<void> => {
+  const executable = await readFile(outfile)
+  for (const [label, value] of [
+    ["version", version],
+    ["commit", buildCommit],
+    ["target", target],
+  ] as const) {
+    if (executable.indexOf(Buffer.from(value)) === -1) {
+      throw new Error(`${target} executable does not embed build ${label} ${value}`)
+    }
+  }
+  console.log(`Verified embedded build identity for ${target}`)
+}
+
 console.log("Cleaning CLI package dependency outputs...")
 await rm(DIST_DIR, { recursive: true, force: true })
 await mkdir(DIST_DIR, { recursive: true })
@@ -116,7 +184,9 @@ for (const packagePath of packageBuildOrder) {
   await run(`Building ${packagePath}`, ["bun", "run", "build"], join(REPO_ROOT, packagePath))
 }
 
-console.log(`\nCompiling Pulsar CLI v${version} binaries...`)
+console.log(
+  `\nCompiling Pulsar CLI v${version} binaries from ${buildCommit}${buildDirty ? " (dirty)" : ""}...`,
+)
 for (const targetConfig of binaryTargets) {
   const { platform, arch } = targetConfig
   const target = `${platform}-${arch}`
@@ -131,6 +201,12 @@ for (const targetConfig of binaryTargets) {
     },
     entrypoints: [join(REPO_ROOT, "packages", "cli", "src", "bin.ts")],
     minify: true,
+    define: {
+      __PULSAR_BUILD_COMMIT__: JSON.stringify(buildCommit),
+      __PULSAR_BUILD_DIRTY__: JSON.stringify(buildDirty),
+      __PULSAR_BUILD_TARGET__: JSON.stringify(target),
+      __PULSAR_ARTIFACT_KIND__: JSON.stringify("native"),
+    },
   })
 
   if (!buildResult.success) {
@@ -143,6 +219,7 @@ for (const targetConfig of binaryTargets) {
 
   await run(`Marking executable ${target}`, ["chmod", "+x", outfile])
   await assertNativeLibraryEmbedded(outfile, nativePath, target)
+  await assertBuildIdentityEmbedded(outfile, target)
 }
 
 await run("Smoke-testing source/native onboarding parity and native TUI", [

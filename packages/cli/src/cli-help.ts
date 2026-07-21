@@ -22,6 +22,7 @@ const HELP_SECTIONS: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [
       "  pulsar conventions extract --sha <ref> [<repo-path>]",
       "  pulsar conventions confirm [<repo-path>]",
       "  pulsar --version",
+      "  pulsar --build-info",
     ],
   ],
   [

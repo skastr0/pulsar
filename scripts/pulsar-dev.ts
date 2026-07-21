@@ -69,6 +69,34 @@ const runPreparation = async (
   }
 }
 
+const capture = async (
+  command: ReadonlyArray<string>,
+): Promise<{ readonly value: string } | undefined> => {
+  const proc = Bun.spawn(command, {
+    cwd: REPO_ROOT,
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "ignore",
+  })
+  const [stdout, exitCode] = await Promise.all([
+    new Response(proc.stdout).text(),
+    proc.exited,
+  ])
+  if (exitCode !== 0) return undefined
+  return { value: stdout.trim() }
+}
+
+const sourceProvenance = async (): Promise<Record<string, string>> => {
+  const [commit, status] = await Promise.all([
+    capture(["git", "rev-parse", "HEAD"]),
+    capture(["git", "status", "--porcelain"]),
+  ])
+  return {
+    PULSAR_SOURCE_COMMIT: commit?.value || "unknown",
+    PULSAR_SOURCE_DIRTY: status === undefined ? "unknown" : String(status.value !== ""),
+  }
+}
+
 const prepareWorkspace = async (): Promise<void> => {
   if (!existsSync(TYPESCRIPT_ENTRY)) {
     await runPreparation("installing locked workspace dependencies", [
@@ -104,9 +132,10 @@ const prepareWorkspace = async (): Promise<void> => {
 
 const runCli = async (): Promise<number> => {
   await prepareWorkspace()
+  const provenance = await sourceProvenance()
   const proc = Bun.spawn([process.execPath, CLI_ENTRY, ...process.argv.slice(2)], {
     cwd: process.cwd(),
-    env: process.env,
+    env: { ...process.env, ...provenance },
     stdin: "inherit",
     stdout: "inherit",
     stderr: "inherit",

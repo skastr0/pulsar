@@ -40,6 +40,7 @@ if (!existsSync(binaryPath)) {
 }
 
 const result = spawnSync(binaryPath, process.argv.slice(2), {
+  env: { ...process.env, PULSAR_DISTRIBUTION: "npm" },
   stdio: "inherit",
 })
 

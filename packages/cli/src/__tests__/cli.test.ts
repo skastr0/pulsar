@@ -2,16 +2,20 @@ import { describe, expect, test } from "bun:test"
 import { spawnSync } from "node:child_process"
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { CLI_VERSION } from "../index.js"
+import { CLI_BUILD_INFO, CLI_VERSION } from "../index.js"
 
 const binPath = resolve(import.meta.dir, "../../src/bin.ts")
 const packageJsonPath = resolve(import.meta.dir, "../../package.json")
 const repoRoot = resolve(import.meta.dir, "../../../../")
 const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8")) as { readonly version: string }
+const rootPackageJson = JSON.parse(
+  readFileSync(resolve(repoRoot, "package.json"), "utf8"),
+) as { readonly version: string }
 
 describe("cli", () => {
   test("reports the package version", () => {
     expect(String(CLI_VERSION)).toBe(packageJson.version)
+    expect(packageJson.version).toBe(rootPackageJson.version)
 
     const out = spawnSync("bun", [binPath, "--version"], {
       encoding: "utf-8",
@@ -19,6 +23,30 @@ describe("cli", () => {
 
     expect(out.status).toBe(0)
     expect(out.stdout.trim()).toBe(packageJson.version)
+  })
+
+  test("reports source artifact provenance as structured build info", () => {
+    const commit = "0123456789abcdef0123456789abcdef01234567"
+    const out = spawnSync("bun", [binPath, "--build-info"], {
+      encoding: "utf-8",
+      env: {
+        ...process.env,
+        PULSAR_SOURCE_COMMIT: commit,
+        PULSAR_SOURCE_DIRTY: "false",
+      },
+    })
+
+    expect(out.status).toBe(0)
+    expect(JSON.parse(out.stdout)).toEqual({
+      schema_version: "pulsar/build-info/v1",
+      version: packageJson.version,
+      commit,
+      dirty: false,
+      artifact: "source",
+      distribution: "source",
+      target: `${process.platform}-${process.arch}`,
+    })
+    expect(CLI_BUILD_INFO.schema_version).toBe("pulsar/build-info/v1")
   })
 
   test("documents score, baseline, backpressure, bisect, calibrate, persona, elicit, glossary, and conventions help text", () => {
@@ -48,6 +76,7 @@ describe("cli", () => {
     expect(out.stdout).toContain("Optional opt-in preset prior")
     expect(out.stdout).toContain("--no-parameters")
     expect(out.stdout).toContain("pulsar bisect --range <from>..<to>")
+    expect(out.stdout).toContain("pulsar --build-info")
   })
 
   test("reports unknown reserved Rust ids as scaffolded placeholders", () => {
