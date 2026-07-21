@@ -246,8 +246,12 @@ export const TsAd04: Signal<TsAd04Config, TsAd04Output, TsProjectTag> = {
           `Boundary parser coverage audit: ${out.covered.length} covered, ${out.excluded.length} excluded`,
         data: {
           kind: "boundary-parser-coverage-audit",
-          covered: out.covered,
-          excluded: out.excluded,
+          coveredTotal: out.covered.length,
+          excludedTotal: out.excluded.length,
+          coveredTruncated: out.covered.length > out.diagnosticLimit,
+          excludedTruncated: out.excluded.length > out.diagnosticLimit,
+          covered: out.covered.slice(0, out.diagnosticLimit),
+          excluded: out.excluded.slice(0, out.diagnosticLimit),
         },
       },
     ]

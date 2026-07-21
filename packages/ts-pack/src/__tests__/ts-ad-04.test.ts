@@ -209,6 +209,10 @@ describe("TS-AD-04 (boundary parser coverage)", () => {
       severity: "info",
       data: {
         kind: "boundary-parser-coverage-audit",
+        coveredTotal: 1,
+        excludedTotal: 0,
+        coveredTruncated: false,
+        excludedTruncated: false,
         covered: [expect.objectContaining({ symbol: "POST" })],
         excluded: [],
       },
@@ -996,6 +1000,10 @@ describe("TS-AD-04 (boundary parser coverage)", () => {
       severity: "info",
       data: {
         kind: "boundary-parser-coverage-audit",
+        coveredTotal: 1,
+        excludedTotal: 1,
+        coveredTruncated: false,
+        excludedTruncated: false,
         covered: [{
           symbol: "decoded",
           candidateReason: "supported-untrusted-ingress",
@@ -1008,6 +1016,46 @@ describe("TS-AD-04 (boundary parser coverage)", () => {
           ingressSources: [{ kind: "unknown" }],
         }],
       },
+    })
+  })
+
+  test("bounds audit evidence and exposes deterministic truncation totals", async () => {
+    await repo.write(
+      "src/adapters/bounded-audit.ts",
+      [
+        "type Domain = { readonly id: string }",
+        "const parse = (value: unknown): Domain => value as Domain",
+        ...Array.from(
+          { length: 3 },
+          (_, index) =>
+            `export const decoded${index} = (input: unknown): Domain => parse(input)`,
+        ),
+        ...Array.from(
+          { length: 3 },
+          (_, index) => [
+            `export const isDomain${index} = (input: unknown): input is Domain =>`,
+            "  typeof input === 'object' && input !== null && 'id' in input",
+          ].join("\n"),
+        ),
+      ].join("\n"),
+    )
+
+    const out = await run({
+      ...TsAd04.defaultConfig,
+      top_n_diagnostics: 1,
+    })
+    const audit = TsAd04.diagnose(out).find((diagnostic) =>
+      diagnostic.data?.kind === "boundary-parser-coverage-audit"
+    )
+
+    expect(audit?.data).toMatchObject({
+      kind: "boundary-parser-coverage-audit",
+      coveredTotal: 3,
+      excludedTotal: 3,
+      coveredTruncated: true,
+      excludedTruncated: true,
+      covered: [expect.objectContaining({ symbol: "decoded0" })],
+      excluded: [expect.objectContaining({ symbol: "isDomain0" })],
     })
   })
 
