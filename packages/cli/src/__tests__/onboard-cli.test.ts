@@ -165,8 +165,20 @@ test("bare and equals-form --answers fail before scan or write", async () => {
   }
 }, 30_000)
 
-test("headless onboarding without --answers is preview-only and writes no repo artifacts", async () => {
+test("headless onboarding without --answers observes the current repo vector without writing", async () => {
   const repo = await makeRepo()
+  await mkdir(join(repo, ".pulsar"), { recursive: true })
+  const vectorPath = join(repo, ".pulsar/vector.json")
+  const vectorContents = `${JSON.stringify(
+    {
+      id: "existing-repo-vector",
+      domain: "app",
+      signal_overrides: { "TS-LD-01": { config: { max_complexity: 100 } } },
+    },
+    null,
+    2,
+  )}\n`
+  await writeFile(vectorPath, vectorContents)
   const result = spawnSync("bun", [binPath, "onboard", "--json", repo], {
     cwd: repo,
     encoding: "utf8",
@@ -175,14 +187,22 @@ test("headless onboarding without --answers is preview-only and writes no repo a
 
   expect(result.status).toBe(0)
   expect(result.stderr).toBe("")
-  expect(JSON.parse(result.stdout)).toMatchObject({
+  const output = JSON.parse(result.stdout) as {
+    before: { band: string; score: number; driver: string }
+    after: { band: string; score: number; driver: string }
+  }
+  expect(output).toMatchObject({
     mode: "preview-only",
     choices: [],
     enabledPacks: [],
     baseline: "not-provided",
     written: [],
   })
-  await expect(readFile(join(repo, ".pulsar/vector.json"), "utf8")).rejects.toThrow()
-  await expect(readFile(join(repo, ".pulsar/pulsar-baseline.json"), "utf8")).rejects.toThrow()
+  expect(output.after).toEqual(output.before)
+  expect(await readFile(vectorPath, "utf8")).toBe(vectorContents)
+  await expect(readFile(join(repo, "pulsar-baseline.json"), "utf8")).rejects.toThrow()
   await expect(readFile(join(repo, ".pulsar/project-modules.json"), "utf8")).rejects.toThrow()
+  await expect(readFile(join(repo, ".pulsar/onboard-preview/vector.json"), "utf8")).rejects.toThrow()
+  await expect(readFile(join(repo, ".pulsar/onboard-preview/pulsar-baseline.json"), "utf8")).rejects.toThrow()
+  await expect(readFile(join(repo, ".pulsar/onboard-preview/project-modules.json"), "utf8")).rejects.toThrow()
 }, 120_000)

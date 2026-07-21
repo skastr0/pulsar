@@ -14,6 +14,8 @@ test("headless onboarding applies no catalog defaults and awaits structured outp
   let output = ""
   let outputFinished = false
   let writeCalled = false
+  let scanCalls = 0
+  let previewCalled = false
   const input: OnboardInput = {
     repoPath: "/repo",
     detection: {
@@ -26,11 +28,12 @@ test("headless onboarding applies no catalog defaults and awaits structured outp
     },
     detectedPacks: [{ id: "nextjs", label: "Next", reason: "detected" }],
     catalog: [],
-    scan: async () => scan,
+    scan: async () => {
+      scanCalls += 1
+      return scan
+    },
     preview: async (plan) => {
-      expect(plan.choices).toEqual([])
-      expect(plan.enabledPacks).toEqual([])
-      expect(plan.baseline).toBe("not-provided")
+      previewCalled = true
       return { before: scan, after: scan, receipts: [] }
     },
     writeConfig: async (plan) => {
@@ -49,6 +52,8 @@ test("headless onboarding applies no catalog defaults and awaits structured outp
   expect(await runOnboardHeadless(input)).toBe(0)
   expect(outputFinished).toBe(true)
   expect(writeCalled).toBe(false)
+  expect(previewCalled).toBe(false)
+  expect(scanCalls).toBe(1)
   expect(JSON.parse(output)).toMatchObject({
     mode: "preview-only",
     choices: [],

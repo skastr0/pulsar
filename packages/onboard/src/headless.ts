@@ -16,7 +16,9 @@ export const runOnboardHeadless = async (input: OnboardInput): Promise<number> =
     seed: answers.seed ?? {},
     detection: input.detection,
   })
-  const preview = await input.preview(plan)
+  const preview = previewOnly
+    ? await input.scan().then((current) => ({ before: current, after: current, receipts: [] }))
+    : await input.preview(plan)
   const result = previewOnly
     ? { written: [], receipts: preview.receipts, baseline: plan.baseline }
     : await input.writeConfig(plan)
