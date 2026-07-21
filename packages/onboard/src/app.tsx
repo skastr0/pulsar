@@ -679,6 +679,9 @@ export function OnboardApp({ input }: { readonly input: OnboardInput }) {
         <text fg={palette.muted} wrapMode="word">
           {prompt}
         </text>
+        <text fg={palette.amber} wrapMode="word">
+          Catalog target (display only): {option.calibrationTarget}
+        </text>
         <text fg={palette.textDim} wrapMode="word">
           The catalog target is display context only. Pulsar validates this value against the registered signal before any write.
         </text>
