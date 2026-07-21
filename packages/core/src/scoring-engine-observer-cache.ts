@@ -37,7 +37,7 @@ export interface CachedObserverOutput {
 }
 
 export const OBSERVER_AGGREGATION_CACHE_VERSION =
-  "observer-aggregation-v7-poison-requires-gate-grade-authority"
+  "observer-aggregation-v8-evidence-bounded-authority"
 
 export const computeObserverConfigHash = (
   registry: Registry,
@@ -53,6 +53,7 @@ export const computeObserverConfigHash = (
         category: signal.category,
         config: vectorResolvedConfig(signal, signal.defaultConfig, vector),
         cacheVersion: signal.cacheVersion ?? null,
+        evidenceClass: signal.evidenceClass,
         enforcement: signal.enforcement,
         factorDefinitions: signal.factorDefinitions ?? [],
         factorOverrides: factorOverridesOf(signal, vector),
@@ -112,6 +113,7 @@ const observerSignalConfigPayload = (
     category: signal.category,
     config: vectorResolvedConfig(signal, signal.defaultConfig, vector),
     cacheVersion: signal.cacheVersion ?? null,
+    evidenceClass: signal.evidenceClass,
     enforcement: signal.enforcement,
     factorDefinitions: signal.factorDefinitions ?? [],
     factorOverrides: factorOverridesOf(signal, vector),

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto"
 import { Schema } from "effect"
+import { SignalEvidenceClass } from "./evidence.js"
 
 const Severity = Schema.Literal("info", "warn", "block")
 type Severity = typeof Severity.Type
@@ -31,6 +32,7 @@ export type DiagnosticFixHint = typeof DiagnosticFixHint.Type
  */
 export const Diagnostic = Schema.Struct({
   severity: Severity,
+  evidenceClass: Schema.optional(SignalEvidenceClass),
   message: Schema.String,
   location: Schema.optional(
     Schema.Struct({

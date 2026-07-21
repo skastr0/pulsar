@@ -54,6 +54,7 @@ export const SharedCochange01: Signal<
   tier: 1,
   category: "architectural-drift",
   kind: "legibility",
+  evidenceClass: "historical-fact",
   cacheVersion: "history-pairs-normalized-config-v1",
   cacheDependencies: ["git-revision-context"],
   configSchema: SharedCochange01Config,

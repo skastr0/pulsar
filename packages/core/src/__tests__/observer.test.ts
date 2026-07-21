@@ -9,6 +9,7 @@ import {
 } from "../calibration.js"
 import { CATEGORIES, type Category } from "../category.js"
 import type { Diagnostic } from "../diagnostic.js"
+import type { SignalEvidenceClass } from "../evidence.js"
 import {
   SignalComputeError,
   type SignalError,
@@ -24,6 +25,7 @@ interface LeafOpts {
   readonly id: string
   readonly tier?: 1 | 1.5 | 2 | 3
   readonly kind?: "structural" | "legibility" | "compound"
+  readonly evidenceClass?: SignalEvidenceClass
   readonly role?: "provider"
   readonly category: Category
   readonly score: number
@@ -44,6 +46,7 @@ const makeLeaf = (opts: LeafOpts): Signal<{}, { readonly n: number }, never> => 
   tier: opts.tier ?? 1,
   category: opts.category,
   kind: opts.kind ?? "legibility",
+  evidenceClass: opts.evidenceClass ?? "deterministic-ast",
   ...(opts.role !== undefined ? { role: opts.role } : {}),
   configSchema: Schema.Struct({}),
   defaultConfig: {},
@@ -137,6 +140,7 @@ describe("Observer — category aggregation", () => {
     const heuristic = makeLeaf({
       id: "TEST-HEURISTIC",
       tier: 2,
+      evidenceClass: "heuristic-pattern",
       category: "legibility-decay",
       score: 0.05,
     })
@@ -680,6 +684,7 @@ describe("Observer — readiness pressure", () => {
     const heuristic = makeLeaf({
       id: "TEST-HEURISTIC",
       tier: 2,
+      evidenceClass: "heuristic-pattern",
       category: "legibility-decay",
       score: 0,
     })

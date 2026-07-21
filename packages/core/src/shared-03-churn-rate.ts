@@ -93,6 +93,7 @@ export const Shared03ChurnRate: Signal<
   tier: 1.5,
   category: "review-pain",
   kind: "legibility",
+  evidenceClass: "historical-fact",
   cacheVersion: "applicability-v4-deleted-files-excluded",
   cacheDependencies: ["git-revision-context"],
   configSchema: Shared03ChurnRateConfig,

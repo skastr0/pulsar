@@ -6,6 +6,16 @@ export {
 } from "./diagnostic.js"
 export type { Diagnostic, DiagnosticFixHint } from "./diagnostic.js"
 export {
+  SignalEvidenceClass as SignalEvidenceClassSchema,
+  evidenceClassAllowsHardGate,
+  evidenceClassAllowsPoison,
+} from "./evidence.js"
+export type {
+  KnownFailureMode,
+  SignalEvidenceClass,
+  SignalTestReference,
+} from "./evidence.js"
+export {
   ReferenceDataTag,
   SignalContextTag,
   makeReferenceData,

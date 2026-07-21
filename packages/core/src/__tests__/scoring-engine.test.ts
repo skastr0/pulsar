@@ -1498,7 +1498,7 @@ describe("ScoringEngine — cache semantics", () => {
     // If this fails you changed aggregation semantics: bump the version
     // (and this pin) so stale observer outputs cannot be served.
     expect(OBSERVER_AGGREGATION_CACHE_VERSION).toBe(
-      "observer-aggregation-v7-poison-requires-gate-grade-authority",
+      "observer-aggregation-v8-evidence-bounded-authority",
     )
   })
 
@@ -1634,6 +1634,49 @@ describe("ScoringEngine — cache semantics", () => {
     const result = await Effect.runPromise(program)
     expect(result.observerVersioned).not.toBe(result.observerBase)
     expect(result.signalVersioned).not.toBe(result.signalBase)
+  })
+
+  test("observer and signal cache identities include authority-bearing signal metadata", async () => {
+    const program = Effect.gen(function* () {
+      const counter = yield* Ref.make(0)
+      const baseSignal = {
+        ...makeCountingSignal(counter),
+        evidenceClass: "deterministic-ast",
+        enforcement: ["hard-gate"],
+      } satisfies Signal<{}, { readonly n: number }, never>
+      const variants = {
+        base: baseSignal,
+        evidenceClass: {
+          ...baseSignal,
+          evidenceClass: "heuristic-pattern",
+        },
+        enforcement: {
+          ...baseSignal,
+          enforcement: ["soft-warning", "trend"],
+        },
+        tier: {
+          ...baseSignal,
+          tier: 2,
+        },
+      } satisfies Record<string, Signal<{}, { readonly n: number }, never>>
+
+      const hashes = new Map<string, { readonly observer: string; readonly signal: string }>()
+      for (const [name, signal] of Object.entries(variants)) {
+        const registry = yield* buildRegistry([signal])
+        hashes.set(name, {
+          observer: computeObserverConfigHash(registry, undefined),
+          signal: computeConfigHash(signal.id, registry, undefined),
+        })
+      }
+      return hashes
+    })
+
+    const hashes = await Effect.runPromise(program)
+    const base = hashes.get("base")!
+    for (const variant of ["evidenceClass", "enforcement", "tier"] as const) {
+      expect(hashes.get(variant)?.observer).not.toBe(base.observer)
+      expect(hashes.get(variant)?.signal).not.toBe(base.signal)
+    }
   })
 
   test("observer cache config hash changes with compound input policy", async () => {

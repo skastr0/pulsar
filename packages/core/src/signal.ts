@@ -2,6 +2,10 @@ import type { Effect, Schema } from "effect"
 import type { Category } from "./category.js"
 import type { Diagnostic } from "./diagnostic.js"
 import type { EnforcementCeiling } from "./enforcement.js"
+import type {
+  KnownFailureMode,
+  SignalEvidenceClass,
+} from "./evidence.js"
 import type { SignalError } from "./errors.js"
 import type { SignalKind, Tier } from "./tier.js"
 import type {
@@ -80,7 +84,22 @@ export interface Signal<Config, Output, R = SignalRequirements> {
   readonly tier: Tier
   readonly category: Category
   readonly kind: SignalKind
+  /**
+   * Required for production registrations by the pack contract. Direct test
+   * and third-party signals that omit it resolve fail-closed to `mixed`.
+   */
+  readonly evidenceClass?: SignalEvidenceClass
   readonly normalizationGroup?: string
+
+  /**
+   * Explicit product-authority ceiling. When omitted, the registry derives the
+   * conventional ceiling from tier and kind. Evidence class is intersected at
+   * runtime and can only reduce this ceiling.
+   */
+  readonly enforcement?: EnforcementCeiling
+
+  /** Known claim boundaries with executable fixture receipts. */
+  readonly knownFailureModes?: ReadonlyArray<KnownFailureMode>
 
   /**
    * Providers compute data for downstream composite signals and never
@@ -156,5 +175,6 @@ export interface Signal<Config, Output, R = SignalRequirements> {
 export interface AnySignal extends Signal<any, any, any> {}
 
 export interface ResolvedSignal extends AnySignal {
+  readonly evidenceClass: SignalEvidenceClass
   readonly enforcement: EnforcementCeiling
 }

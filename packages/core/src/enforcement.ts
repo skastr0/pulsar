@@ -1,5 +1,10 @@
 import { Schema } from "effect"
 import type { Diagnostic } from "./diagnostic.js"
+import {
+  evidenceClassAllowsHardGate,
+  evidenceClassAllowsPoison,
+  type SignalEvidenceClass,
+} from "./evidence.js"
 import type { SignalKind, Tier } from "./tier.js"
 
 const EnforcementLevel = Schema.Literal(
@@ -46,9 +51,11 @@ export type EnforcementCeiling = typeof EnforcementCeiling.Type
  */
 export const hasPoisonAuthority = (signal: {
   readonly tier: Tier
+  readonly evidenceClass: SignalEvidenceClass
   readonly enforcement: EnforcementCeiling
 }): boolean =>
   (signal.tier === 1 || signal.tier === 1.5) &&
+  evidenceClassAllowsPoison(signal.evidenceClass) &&
   signal.enforcement.includes("hard-gate")
 
 /**
@@ -59,17 +66,22 @@ export const hasPoisonAuthority = (signal: {
  * regardless of what its diagnose() pass writes.
  */
 export const enforceSeverityCeiling = (
-  enforcement: EnforcementCeiling,
+  signal: {
+    readonly evidenceClass: SignalEvidenceClass
+    readonly enforcement: EnforcementCeiling
+  },
   diagnostics: ReadonlyArray<Diagnostic>,
 ): ReadonlyArray<Diagnostic> => {
-  if (enforcement.includes("hard-gate")) return diagnostics
   if (!diagnostics.some((diagnostic) => diagnostic.severity === "block")) return diagnostics
   return diagnostics.map((diagnostic) =>
-    diagnostic.severity === "block"
+    diagnostic.severity === "block" &&
+    (!signal.enforcement.includes("hard-gate") ||
+      !evidenceClassAllowsHardGate(diagnostic.evidenceClass ?? signal.evidenceClass))
       ? {
           ...diagnostic,
           severity: "warn" as const,
-          message: `${diagnostic.message} [severity capped to warn: signal enforcement ceiling lacks hard-gate authority]`,
+          message:
+            `${diagnostic.message} [severity capped to warn: signal enforcement and evidence class do not jointly license hard-gate authority]`,
         }
       : diagnostic,
   )

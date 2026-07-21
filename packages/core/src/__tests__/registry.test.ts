@@ -117,6 +117,17 @@ describe("Registry", () => {
     expect(resolved?.enforcement).toEqual(["soft-warning", "trend"])
   })
 
+  test("preserves explicit soft enforcement and resolves missing evidence fail-closed", async () => {
+    const registry = await Effect.runPromise(buildRegistry([{
+      ...MockLeaf,
+      enforcement: ["soft-warning", "trend", "review-routing"],
+    }]))
+    const resolved = registry.byId.get("MOCK-01")
+
+    expect(resolved?.enforcement).toEqual(["soft-warning", "trend", "review-routing"])
+    expect(resolved?.evidenceClass).toBe("mixed")
+  })
+
   test("topologically sorts compound signals after their inputs", async () => {
     const registry = await Effect.runPromise(buildRegistry([MockCompound, MockLeaf]))
     expect(registry.sorted.map((s) => s.id)).toEqual(["MOCK-01", "MOCK-02"])

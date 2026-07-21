@@ -183,7 +183,8 @@ export const buildRegistry = (
     const resolved: Array<ResolvedSignal> = sorted.map((s) => ({
       ...s,
       inputs: normalizeInputs(s.inputs, canonicalByIdentifier),
-      enforcement: deriveEnforcement(s.tier, s.kind),
+      evidenceClass: s.evidenceClass ?? "mixed",
+      enforcement: s.enforcement ?? deriveEnforcement(s.tier, s.kind),
     }))
     const byId = new Map<string, ResolvedSignal>()
     for (const signal of resolved) {

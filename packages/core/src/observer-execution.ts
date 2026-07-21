@@ -202,7 +202,7 @@ const runOneSignal = (
       signalId: signal.id,
       score: signal.score(out),
       output: out,
-      diagnostics: enforceSeverityCeiling(signal.enforcement, signal.diagnose(out)),
+      diagnostics: enforceSeverityCeiling(signal, signal.diagnose(out)),
       ...(metadata !== undefined ? { metadata } : {}),
       ...(factorLedger !== undefined ? { factorLedger } : {}),
     }

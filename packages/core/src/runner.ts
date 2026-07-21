@@ -88,7 +88,7 @@ export const runSignal = (
       signalId: target.id,
       score: target.score(out),
       output: out,
-      diagnostics: enforceSeverityCeiling(target.enforcement, target.diagnose(out)),
+      diagnostics: enforceSeverityCeiling(target, target.diagnose(out)),
       ...(metadata !== undefined ? { metadata } : {}),
       ...(factorLedger !== undefined ? { factorLedger } : {}),
     }

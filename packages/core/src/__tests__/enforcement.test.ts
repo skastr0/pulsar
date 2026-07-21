@@ -42,12 +42,18 @@ describe("deriveEnforcement", () => {
 describe("enforceSeverityCeiling", () => {
   test("hard-gate signals keep block severity untouched", () => {
     const diagnostics = [{ severity: "block" as const, message: "real violation" }]
-    expect(enforceSeverityCeiling(["hard-gate"], diagnostics)).toBe(diagnostics)
+    expect(enforceSeverityCeiling({
+      evidenceClass: "deterministic-ast",
+      enforcement: ["hard-gate"],
+    }, diagnostics)).toEqual(diagnostics)
   })
 
   test("non-gate signals get block downgraded to warn with an explicit note", () => {
     const capped = enforceSeverityCeiling(
-      ["soft-warning", "trend"],
+      {
+        evidenceClass: "deterministic-ast",
+        enforcement: ["soft-warning", "trend"],
+      },
       [
         { severity: "block", message: "overclaimed finding" },
         { severity: "info", message: "context" },
@@ -60,13 +66,57 @@ describe("enforceSeverityCeiling", () => {
 
   test("non-gate signals without block findings pass through unchanged", () => {
     const diagnostics = [{ severity: "warn" as const, message: "plain warning" }]
-    expect(enforceSeverityCeiling([], diagnostics)).toBe(diagnostics)
+    expect(enforceSeverityCeiling({
+      evidenceClass: "heuristic-pattern",
+      enforcement: [],
+    }, diagnostics)).toBe(diagnostics)
+  })
+
+  test("heuristic findings cannot hard-gate even under a hard-gate signal ceiling", () => {
+    const capped = enforceSeverityCeiling(
+      {
+        evidenceClass: "heuristic-pattern",
+        enforcement: ["hard-gate"],
+      },
+      [{ severity: "block", message: "pattern matched" }],
+    )
+
+    expect(capped[0]?.severity).toBe("warn")
+  })
+
+  test("mixed signals intersect per-finding evidence with the signal ceiling", () => {
+    const diagnostics = enforceSeverityCeiling(
+      {
+        evidenceClass: "mixed",
+        enforcement: ["hard-gate"],
+      },
+      [
+        {
+          severity: "block",
+          evidenceClass: "deterministic-ast",
+          message: "known token prefix",
+        },
+        {
+          severity: "block",
+          evidenceClass: "heuristic-pattern",
+          message: "high entropy literal",
+        },
+        { severity: "block", message: "unclassified mixed evidence" },
+      ],
+    )
+
+    expect(diagnostics.map((diagnostic) => diagnostic.severity)).toEqual([
+      "block",
+      "warn",
+      "warn",
+    ])
   })
 })
 
 describe("hasPoisonAuthority", () => {
   const signal = (tier: 1 | 1.5 | 2 | 3, kind: "structural" | "legibility" | "compound") => ({
     tier,
+    evidenceClass: "deterministic-ast" as const,
     enforcement: deriveEnforcement(tier, kind),
   })
 
@@ -89,5 +139,18 @@ describe("hasPoisonAuthority", () => {
   test("tier 3 may not", () => {
     expect(hasPoisonAuthority(signal(3, "structural"))).toBe(false)
     expect(hasPoisonAuthority(signal(3, "legibility"))).toBe(false)
+  })
+
+  test("heuristic and mixed evidence never get score-level poison authority", () => {
+    expect(hasPoisonAuthority({
+      tier: 1,
+      evidenceClass: "heuristic-pattern",
+      enforcement: ["hard-gate"],
+    })).toBe(false)
+    expect(hasPoisonAuthority({
+      tier: 1,
+      evidenceClass: "mixed",
+      enforcement: ["hard-gate"],
+    })).toBe(false)
   })
 })

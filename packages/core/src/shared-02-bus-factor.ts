@@ -88,6 +88,7 @@ export const Shared02BusFactor: Signal<
   tier: 1.5,
   category: "review-pain",
   kind: "legibility",
+  evidenceClass: "historical-fact",
   cacheVersion: "bounded-history-v6-solo-window-not-applicable",
   cacheDependencies: ["git-revision-context"],
   configSchema: Shared02BusFactorConfig,
