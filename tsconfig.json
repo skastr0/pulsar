@@ -9,6 +9,7 @@
     { "path": "./packages/project-module-effect" },
     { "path": "./packages/project-module-nextjs" },
     { "path": "./packages/project-module-sdk" },
+    { "path": "./packages/onboard" },
     { "path": "./packages/cli" }
   ]
 }

@@ -20,6 +20,7 @@ const packageBuildOrder = [
   "packages/ts-pack",
   "packages/rs-pack",
   "packages/project-module-nextjs",
+  "packages/onboard",
   "packages/cli",
 ] as const
 

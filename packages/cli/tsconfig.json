@@ -8,6 +8,7 @@
   },
   "include": ["src/**/*.ts"],
   "references": [
+    { "path": "../onboard" },
     { "path": "../core" },
     { "path": "../project-module-convex" },
     { "path": "../project-module-effect" },

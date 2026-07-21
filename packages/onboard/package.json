@@ -5,13 +5,19 @@
   "type": "module",
   "description": "Pulsar onboarding TUI — pulsar onboard",
   "license": "MIT",
-  "main": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "bun": "./src/index.ts",
+      "import": "./dist/index.js"
+    }
   },
   "scripts": {
+    "build": "tsc -b",
     "test": "bun test ./src",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc -b",
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
