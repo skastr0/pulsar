@@ -7,6 +7,7 @@ import {
 } from "@skastr0/pulsar-core/signal"
 import {
   buildRegistry,
+  observe,
   runSignal as runRegisteredSignal,
 } from "@skastr0/pulsar-core/scoring"
 import { Effect, Layer } from "effect"
@@ -113,6 +114,21 @@ describe("TS-SEC-03 secret material", () => {
     )
   }
 
+  const runObserved = async () => {
+    const registry = await Effect.runPromise(buildRegistry([TsSec03]))
+    const layer = Layer.mergeAll(
+      TsProjectLayer(repo.root),
+      InMemoryCacheLayer,
+      Layer.succeed(SignalContextTag, {
+        gitSha: "TEST",
+        worktreePath: repo.root,
+        changedHunks: [],
+      }),
+      Layer.succeed(ReferenceDataTag, makeReferenceData(new Map())),
+    )
+    return Effect.runPromise(observe(registry, undefined).pipe(Effect.provide(layer)))
+  }
+
   const writeFixture = async (path: string) => {
     const fixture = BENIGN_FIXTURES.find(([file]) => file === path)
     expect(fixture).toBeDefined()
@@ -170,6 +186,51 @@ describe("TS-SEC-03 secret material", () => {
     const out = await run()
 
     expect(out.findings).toEqual([])
+  })
+
+  test("Vellum lookup-key aliases and explicit fixture labels stay clean", async () => {
+    await repo.write(
+      "src/chat-state.ts",
+      [
+        "export const tokenUsageFields = [",
+        "  'inputTokens',",
+        "  'outputTokens',",
+        "  'promptTokens',",
+        "  'completionTokens',",
+        "  'totalTokens',",
+        "] as const",
+        "export const readApiToken = (usage: Record<string, number>) => usage['apiToken']",
+        "export const kernelProbeToken = '__kernel-probe-fixture__'",
+      ].join("\n"),
+    )
+
+    const out = await run()
+
+    expect(out.findings).toEqual([])
+    expect(out.state).toBe("zero")
+    expect(TsSec03.score(out)).toBe(1)
+  })
+
+  test("SST-style constructor labels stay clean without suppressing proof material", async () => {
+    await repo.write(
+      "infra/secret.ts",
+      [
+        "declare const sst: { Secret: new (name: string, value?: string) => unknown }",
+        "export const R2SecretKey = new sst.Secret('R2SecretKey')",
+        "export const consoleSecret = new sst.Secret('GITHUB_CLIENT_SECRET_CONSOLE')",
+        `export const leakedSecret = new sst.Secret('LEAKED_SECRET_RESOURCE', '${FIXTURE_GITHUB_PAT}')`,
+      ].join("\n"),
+    )
+
+    const out = await run()
+
+    expect(out.findings).toHaveLength(1)
+    expect(out.findings[0]).toMatchObject({
+      kind: "known-secret-prefix",
+      identifier: "leakedSecret",
+      evidencePath: "proof",
+    })
+    expect(TsSec03.score(out)).toBe(0.8)
   })
 
   test("attributes findings to the nearest enclosing binding, not nearby imports", async () => {
@@ -283,6 +344,28 @@ describe("TS-SEC-03 secret material", () => {
     expect(diagnostics.every((diagnostic) => diagnostic.severity === "block")).toBe(true)
     expect(diagnostics.every((diagnostic) => diagnostic.evidenceClass === "deterministic-ast"))
       .toBe(true)
+    expect(out.findings.every((finding) => finding.evidencePath === "proof")).toBe(true)
+    expect(out.findings.every((finding) => finding.scoreDenominator === 5)).toBe(true)
+    expect(out.findings.every((finding) => finding.affectsSignalScore)).toBe(true)
+    expect(out.findings.every((finding) =>
+      finding.enforcementCeiling.length === 1 && finding.enforcementCeiling[0] === "hard-gate"
+    )).toBe(true)
+    expect(out.scoreChannels).toEqual({
+      proof: {
+        findingCount: 7,
+        denominator: 5,
+        score: 0,
+        affectsSignalScore: true,
+        enforcementCeiling: ["hard-gate"],
+      },
+      advisory: {
+        findingCount: 0,
+        denominator: 10,
+        score: 1,
+        affectsSignalScore: false,
+        enforcementCeiling: ["review-routing"],
+      },
+    })
     expect(TsSec03.score(out)).toBe(0)
   })
 
@@ -302,10 +385,18 @@ describe("TS-SEC-03 secret material", () => {
     })
     expect(diagnostics[0]?.severity).toBe("warn")
     expect(diagnostics[0]?.evidenceClass).toBe("heuristic-pattern")
-    expect(TsSec03.score(out)).toBeCloseTo(0.9)
+    expect(out.findings[0]).toMatchObject({
+      evidencePath: "advisory",
+      detectorReason: "secret-name-and-entropy",
+      enforcementCeiling: ["review-routing"],
+      scoreDenominator: 10,
+      affectsSignalScore: false,
+    })
+    expect(TsSec03.score(out)).toBe(1)
+    expect(out.scoreChannels.advisory.score).toBeCloseTo(0.9)
   })
 
-  test("warn-only findings never drop the score below the 0.6 floor", async () => {
+  test("heuristic-only findings keep the proof score clean and retain an advisory floor", async () => {
     await repo.write(
       "src/blobs.ts",
       [
@@ -323,10 +414,77 @@ describe("TS-SEC-03 secret material", () => {
 
     expect(out.findings).toHaveLength(6)
     expect(diagnostics.every((diagnostic) => diagnostic.severity === "warn")).toBe(true)
-    expect(TsSec03.score(out)).toBe(0.6)
+    expect(diagnostics.every((diagnostic) => diagnostic.evidenceClass === "heuristic-pattern"))
+      .toBe(true)
+    expect(TsSec03.score(out)).toBe(1)
+    expect(out.scoreChannels).toEqual({
+      proof: {
+        findingCount: 0,
+        denominator: 5,
+        score: 1,
+        affectsSignalScore: true,
+        enforcementCeiling: ["hard-gate"],
+      },
+      advisory: {
+        findingCount: 6,
+        denominator: 10,
+        score: 0.6,
+        affectsSignalScore: false,
+        enforcementCeiling: ["review-routing"],
+      },
+    })
   })
 
-  test("block findings keep the aggressive curve even when mixed with warns", async () => {
+  test("registered heuristic-only evidence is score-neutral, ungated, and non-poisoning", async () => {
+    await repo.write(
+      "src/blob.ts",
+      "export const sessionToken = 'Qm7vXz3kRp9LbT2wYs8HdJ4cN6fAu0eGi5oM1xE+'\n",
+    )
+
+    const observation = await runObserved()
+    const result = observation.signalResults.get(TsSec03.id)
+    const pressure = observation.readiness?.top_pressures.find(
+      (candidate) => candidate.signal_id === TsSec03.id,
+    )
+
+    expect(result?.score).toBe(1)
+    expect(result?.diagnostics).toHaveLength(1)
+    expect(result?.diagnostics[0]).toMatchObject({
+      severity: "warn",
+      evidenceClass: "heuristic-pattern",
+    })
+    expect(observation.hard_gate_status).toBe("pass")
+    expect(observation.hard_gate_violations).toEqual([])
+    expect(pressure).toMatchObject({
+      raw_pressure: 0,
+      poison_authority: false,
+    })
+  })
+
+  test("registered proof-only evidence follows the proof curve and hard-gates", async () => {
+    await repo.write(
+      "src/leaked.ts",
+      "export const awsAccessKeyId = 'AKIAIOSFODNN7EXAMPLE'\n",
+    )
+
+    const observation = await runObserved()
+    const result = observation.signalResults.get(TsSec03.id)
+
+    expect(result?.score).toBe(0.8)
+    expect(result?.diagnostics).toHaveLength(1)
+    expect(result?.diagnostics[0]).toMatchObject({
+      severity: "block",
+      evidenceClass: "deterministic-ast",
+    })
+    expect(observation.hard_gate_status).toBe("fail")
+    expect(observation.hard_gate_violations).toHaveLength(1)
+    expect(observation.hard_gate_violations[0]).toMatchObject({
+      signalId: TsSec03.id,
+      diagnostic: { severity: "block", evidenceClass: "deterministic-ast" },
+    })
+  })
+
+  test("mixed proof and heuristic findings use independent score denominators", async () => {
     await repo.write(
       "src/mixed.ts",
       [
@@ -347,7 +505,23 @@ describe("TS-SEC-03 secret material", () => {
       "deterministic-ast",
       "heuristic-pattern",
     ])
-    expect(TsSec03.score(out)).toBeCloseTo(0.4)
+    expect(TsSec03.score(out)).toBeCloseTo(0.6)
+    expect(out.scoreChannels).toEqual({
+      proof: {
+        findingCount: 2,
+        denominator: 5,
+        score: 0.6,
+        affectsSignalScore: true,
+        enforcementCeiling: ["hard-gate"],
+      },
+      advisory: {
+        findingCount: 1,
+        denominator: 10,
+        score: 0.9,
+        affectsSignalScore: false,
+        enforcementCeiling: ["review-routing"],
+      },
+    })
     expect(out.findings.map((finding) => secretFindingSeverity(finding.kind))).toEqual([
       "block",
       "block",
@@ -378,5 +552,24 @@ describe("TS-SEC-03 secret material", () => {
       { severity: "block", evidenceClass: "deterministic-ast" },
       { severity: "warn", evidenceClass: "heuristic-pattern" },
     ])
+    expect(result.score).toBe(0.8)
+    expect(result.output).toMatchObject({
+      scoreChannels: {
+        proof: { findingCount: 1, score: 0.8, affectsSignalScore: true },
+        advisory: { findingCount: 1, score: 0.9, affectsSignalScore: false },
+      },
+    })
+
+    const observation = await runObserved()
+    expect(observation.signalResults.get(TsSec03.id)?.score).toBe(0.8)
+    expect(observation.hard_gate_violations).toHaveLength(1)
+    expect(observation.hard_gate_violations[0]?.diagnostic).toMatchObject({
+      severity: "block",
+      evidenceClass: "deterministic-ast",
+    })
+    expect(observation.signalResults.get(TsSec03.id)?.diagnostics[1]).toMatchObject({
+      severity: "warn",
+      evidenceClass: "heuristic-pattern",
+    })
   })
 })

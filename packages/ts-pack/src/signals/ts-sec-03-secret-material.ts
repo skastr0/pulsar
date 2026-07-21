@@ -32,6 +32,24 @@ export type SecretMaterialKind =
 
 export type SecretFindingSeverity = "block" | "warn"
 
+export type SecretEvidencePath = "proof" | "advisory"
+
+export type SecretDetectorReason =
+  | "private-key-header"
+  | "published-token-format"
+  | "secret-name-and-entropy"
+  | "entropy-and-token-shape"
+
+export type SecretFindingEnforcement = "hard-gate" | "review-routing"
+
+export interface SecretScoreChannel {
+  readonly findingCount: number
+  readonly denominator: number
+  readonly score: number
+  readonly affectsSignalScore: boolean
+  readonly enforcementCeiling: ReadonlyArray<SecretFindingEnforcement>
+}
+
 /**
  * Known-format detections (PEM blocks and provider token formats) are the only
  * block-severity path. Heuristic detections (secret-named and high-entropy
@@ -47,11 +65,40 @@ export const secretFindingEvidenceClass = (
     ? "deterministic-ast"
     : "heuristic-pattern"
 
+export const secretFindingEvidencePath = (kind: SecretMaterialKind): SecretEvidencePath =>
+  secretFindingSeverity(kind) === "block" ? "proof" : "advisory"
+
+export const secretFindingDetectorReason = (
+  kind: SecretMaterialKind,
+): SecretDetectorReason => {
+  switch (kind) {
+    case "private-key-block":
+      return "private-key-header"
+    case "known-secret-prefix":
+      return "published-token-format"
+    case "secret-named-literal":
+      return "secret-name-and-entropy"
+    case "high-entropy-literal":
+      return "entropy-and-token-shape"
+  }
+}
+
+export const secretFindingEnforcementCeiling = (
+  kind: SecretMaterialKind,
+): ReadonlyArray<SecretFindingEnforcement> =>
+  secretFindingSeverity(kind) === "block" ? ["hard-gate"] : ["review-routing"]
+
 export interface SecretMaterialFinding extends SourceLocation {
   readonly kind: SecretMaterialKind
   readonly identifier: string
   readonly redacted: string
   readonly entropy: number
+  readonly evidenceClass: "deterministic-ast" | "heuristic-pattern"
+  readonly evidencePath: SecretEvidencePath
+  readonly detectorReason: SecretDetectorReason
+  readonly enforcementCeiling: ReadonlyArray<SecretFindingEnforcement>
+  readonly scoreDenominator: number
+  readonly affectsSignalScore: boolean
 }
 
 export interface TsSec03Output {
@@ -59,6 +106,10 @@ export interface TsSec03Output {
   readonly analyzedFiles: number
   readonly literalsScanned: number
   readonly findings: ReadonlyArray<SecretMaterialFinding>
+  readonly scoreChannels: {
+    readonly proof: SecretScoreChannel
+    readonly advisory: SecretScoreChannel
+  }
   readonly diagnosticLimit: number
   readonly compositeConsumers: ReadonlyArray<string>
   readonly cacheContributors: ReadonlyArray<string>
@@ -66,7 +117,9 @@ export interface TsSec03Output {
   readonly enforcementCeiling: ReadonlyArray<string>
 }
 
-const WARN_ONLY_SCORE_FLOOR = 0.6
+const PROOF_SCORE_DENOMINATOR = 5
+const ADVISORY_SCORE_DENOMINATOR = 10
+const ADVISORY_SCORE_FLOOR = 0.6
 
 export const TsSec03: Signal<TsSec03Config, TsSec03Output, TsProjectTag> = {
   id: "TS-SEC-03-secret-material",
@@ -76,23 +129,31 @@ export const TsSec03: Signal<TsSec03Config, TsSec03Output, TsProjectTag> = {
   category: "security-risk",
   kind: "structural",
   evidenceClass: "mixed",
+  enforcement: ["hard-gate", "review-routing"],
   knownFailureModes: [
     {
       description: "Entropy and identifier-name heuristics can resemble secret material without proving it.",
       fixture: {
         file: "packages/ts-pack/src/__tests__/ts-sec-03.test.ts",
-        testName: "positive control: random material on a non-secret name still flags",
+        testName: "heuristic-only findings keep the proof score clean and retain an advisory floor",
       },
     },
     {
-      description: "Dictionary-like ids and design tokens can cross naive entropy or name thresholds.",
+      description: "Lookup keys, explicit fixture labels, and design tokens can cross naive entropy or name thresholds.",
       fixture: {
         file: "packages/ts-pack/src/__tests__/ts-sec-03.test.ts",
-        testName: "benign corpus produces zero findings at any severity",
+        testName: "Vellum lookup-key aliases and explicit fixture labels stay clean",
+      },
+    },
+    {
+      description: "Infrastructure resource names declare secret handles without embedding secret material.",
+      fixture: {
+        file: "packages/ts-pack/src/__tests__/ts-sec-03.test.ts",
+        testName: "SST-style constructor labels stay clean without suppressing proof material",
       },
     },
   ],
-  cacheVersion: "secret-material-v4-fused-date-chunk-vocabulary",
+  cacheVersion: "secret-material-v5-evidence-channel-denominators",
   configSchema: TsSec03Config,
   defaultConfig: {
     exclude_globs: [...PRODUCTION_EXCLUDE_GLOBS],
@@ -114,19 +175,15 @@ export const TsSec03: Signal<TsSec03Config, TsSec03Output, TsProjectTag> = {
           }),
       })
     }),
-  score: (out) => {
-    if (out.state !== "present") return 1
-    const blockCount = out.findings
-      .filter((finding) => secretFindingSeverity(finding.kind) === "block")
-      .length
-    if (blockCount > 0) return Math.max(0, 1 - out.findings.length / 5)
-    return Math.max(WARN_ONLY_SCORE_FLOOR, 1 - out.findings.length / 10)
-  },
+  score: (out) => (out.state === "present" ? out.scoreChannels.proof.score : 1),
   diagnose: (out): ReadonlyArray<Diagnostic> =>
     out.findings.slice(0, out.diagnosticLimit).map((finding) => ({
       severity: secretFindingSeverity(finding.kind),
-      evidenceClass: secretFindingEvidenceClass(finding.kind),
-      message: `${finding.kind} resembles committed secret material (${finding.redacted})`,
+      evidenceClass: finding.evidenceClass,
+      message:
+        finding.evidencePath === "proof"
+          ? `${finding.kind} proves committed secret material (${finding.redacted})`
+          : `${finding.kind} is suspicious and needs secret-material review (${finding.redacted})`,
       location: { file: finding.file, line: finding.line, column: finding.column },
       data: {
         hash: computeDiagnosticHash(
@@ -138,8 +195,10 @@ export const TsSec03: Signal<TsSec03Config, TsSec03Output, TsProjectTag> = {
         kind: "remove-secret-material",
         title: "Move the secret out of source",
         summary:
-          "Revoke this value if real, replace it with a configuration reference, and keep only test-safe placeholders in source.",
-        confidence: "high",
+          finding.evidencePath === "proof"
+            ? "Revoke this value, replace it with a configuration reference, and keep only test-safe placeholders in source."
+            : "Review whether this suspicious literal is a credential before replacing or revoking anything.",
+        confidence: finding.evidencePath === "proof" ? "high" : "medium",
         autoApplicable: false,
         data: { kind: finding.kind, identifier: finding.identifier },
       }],
@@ -163,7 +222,7 @@ const computeSecretMaterial = (
       const value = literal.value.trim()
       if (value.length === 0) continue
       literalsScanned += 1
-      const kind = classifySecretLiteral(literal.identifier, value, config)
+      const kind = classifySecretLiteral(literal.node, literal.identifier, value, config)
       if (kind === undefined) continue
       const { line, column } = sourceFile.getLineAndColumnAtPos(literal.index)
       findings.push({
@@ -174,15 +233,27 @@ const computeSecretMaterial = (
         identifier: literal.identifier,
         redacted: redactSecret(value),
         entropy: round(shannonEntropy(value)),
+        evidenceClass: secretFindingEvidenceClass(kind),
+        evidencePath: secretFindingEvidencePath(kind),
+        detectorReason: secretFindingDetectorReason(kind),
+        enforcementCeiling: secretFindingEnforcementCeiling(kind),
+        scoreDenominator:
+          secretFindingEvidencePath(kind) === "proof"
+            ? PROOF_SCORE_DENOMINATOR
+            : ADVISORY_SCORE_DENOMINATOR,
+        affectsSignalScore: secretFindingEvidencePath(kind) === "proof",
       })
     }
   }
+
+  const resolvedFindings = [...dedupeFindings(findings)].sort(compareFindings)
 
   return {
     state: analyzedFiles === 0 ? "not_applicable" : findings.length === 0 ? "zero" : "present",
     analyzedFiles,
     literalsScanned,
-    findings: [...dedupeFindings(findings)].sort(compareFindings),
+    findings: resolvedFindings,
+    scoreChannels: secretScoreChannels(resolvedFindings),
     diagnosticLimit: normalizeDiagnosticLimit(config.top_n_diagnostics),
     compositeConsumers: ["security review route"],
     cacheContributors: [
@@ -193,7 +264,7 @@ const computeSecretMaterial = (
       "config.top_n_diagnostics",
     ],
     calibrationSurface: "config.exclude_globs and entropy/length thresholds",
-    enforcementCeiling: ["hard-gate", "review-route"],
+    enforcementCeiling: ["hard-gate", "review-routing"],
   }
 }
 
@@ -269,6 +340,7 @@ interface StringLiteralScanTarget {
   readonly value: string
   readonly index: number
   readonly identifier: string
+  readonly node: TsMorphNode
 }
 
 const collectStringLiterals = (sourceFile: SourceFile): ReadonlyArray<StringLiteralScanTarget> => {
@@ -279,6 +351,7 @@ const collectStringLiterals = (sourceFile: SourceFile): ReadonlyArray<StringLite
         value: node.getLiteralText(),
         index: node.getStart(),
         identifier: enclosingBindingName(node),
+        node,
       })
     }
   })
@@ -314,6 +387,7 @@ const enclosingBindingName = (node: TsMorphNode): string => {
 }
 
 const classifySecretLiteral = (
+  node: TsMorphNode,
   identifier: string,
   value: string,
   config: TsSec03Config,
@@ -321,6 +395,7 @@ const classifySecretLiteral = (
   if (PLACEHOLDER_PATTERN.test(value)) return undefined
   if (PRIVATE_KEY_BLOCK_PATTERN.test(value)) return "private-key-block"
   if (matchesKnownSecretFormat(value)) return "known-secret-prefix"
+  if (hasExplicitNonSecretSemanticRole(node, identifier, value)) return undefined
   const normalizedName = normalizeIdentifier(identifier)
   const secretNamed = isSecretName(normalizedName)
   if (!secretNamed && isChecksumName(identifier) && PURE_HEX_PATTERN.test(value)) return undefined
@@ -341,6 +416,93 @@ const classifySecretLiteral = (
     return "high-entropy-literal"
   }
   return undefined
+}
+
+const LOOKUP_COLLECTION_SEGMENTS = new Set([
+  "alias",
+  "aliases",
+  "attribute",
+  "attributes",
+  "field",
+  "fields",
+  "key",
+  "keys",
+  "name",
+  "names",
+  "property",
+  "properties",
+])
+
+const EXPLICIT_FIXTURE_SEGMENTS = new Set(["example", "fixture", "mock", "sample", "test"])
+const ALL_CAPS_RESOURCE_LABEL_PATTERN = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/
+
+/**
+ * Exclude literals whose AST position proves they are labels rather than
+ * credential values. Known secret formats are checked before this function,
+ * so a provider token or private-key block cannot be suppressed by its role.
+ */
+const hasExplicitNonSecretSemanticRole = (
+  node: TsMorphNode,
+  identifier: string,
+  value: string,
+): boolean =>
+  isDirectLookupKey(node, value) ||
+  isLookupKeyCollectionMember(node, identifier, value) ||
+  isResourceDeclarationLabel(node, identifier, value) ||
+  isExplicitFixtureLabel(value)
+
+const isDirectLookupKey = (node: TsMorphNode, value: string): boolean => {
+  const parent = node.getParent()
+  return parent !== undefined &&
+    Node.isElementAccessExpression(parent) &&
+    parent.getArgumentExpression() === node &&
+    IDENTIFIER_SHAPE_PATTERN.test(value)
+}
+
+const isLookupKeyCollectionMember = (
+  node: TsMorphNode,
+  identifier: string,
+  value: string,
+): boolean => {
+  if (!IDENTIFIER_SHAPE_PATTERN.test(value)) return false
+  if (!hasAncestor(node, Node.isArrayLiteralExpression)) return false
+  return identifierWordSegments(identifier)
+    .some((segment) => LOOKUP_COLLECTION_SEGMENTS.has(segment))
+}
+
+const isResourceDeclarationLabel = (
+  node: TsMorphNode,
+  identifier: string,
+  value: string,
+): boolean => {
+  const parent = node.getParent()
+  if (parent === undefined || !Node.isNewExpression(parent)) return false
+  if (parent.getArguments()[0] !== node) return false
+
+  const normalizedValue = normalizeIdentifier(value)
+  const normalizedBinding = normalizeIdentifier(identifier)
+  return (
+    normalizedBinding.length > 0 && normalizedValue === normalizedBinding
+  ) || ALL_CAPS_RESOURCE_LABEL_PATTERN.test(value)
+}
+
+const isExplicitFixtureLabel = (value: string): boolean => {
+  const segments = identifierWordSegments(value)
+  return segments.length > 1 &&
+    segments.some((segment) => EXPLICIT_FIXTURE_SEGMENTS.has(segment)) &&
+    /^_*[A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)+_*$/u.test(value)
+}
+
+const hasAncestor = (
+  node: TsMorphNode,
+  predicate: (candidate: TsMorphNode) => boolean,
+): boolean => {
+  let current = node.getParent()
+  while (current !== undefined) {
+    if (predicate(current)) return true
+    current = current.getParent()
+  }
+  return false
 }
 
 const matchesKnownSecretFormat = (value: string): boolean => {
@@ -403,6 +565,32 @@ const redactSecret = (value: string): string =>
   value.length <= 8 ? "<redacted>" : `${value.slice(0, 4)}...${value.slice(-4)}`
 
 const round = (value: number): number => Math.round(value * 100) / 100
+
+const secretScoreChannels = (
+  findings: ReadonlyArray<SecretMaterialFinding>,
+): TsSec03Output["scoreChannels"] => {
+  const proofCount = findings.filter((finding) => finding.evidencePath === "proof").length
+  const advisoryCount = findings.length - proofCount
+  return {
+    proof: {
+      findingCount: proofCount,
+      denominator: PROOF_SCORE_DENOMINATOR,
+      score: Math.max(0, 1 - proofCount / PROOF_SCORE_DENOMINATOR),
+      affectsSignalScore: true,
+      enforcementCeiling: ["hard-gate"],
+    },
+    advisory: {
+      findingCount: advisoryCount,
+      denominator: ADVISORY_SCORE_DENOMINATOR,
+      score: Math.max(
+        ADVISORY_SCORE_FLOOR,
+        1 - advisoryCount / ADVISORY_SCORE_DENOMINATOR,
+      ),
+      affectsSignalScore: false,
+      enforcementCeiling: ["review-routing"],
+    },
+  }
+}
 
 const dedupeFindings = (
   findings: ReadonlyArray<SecretMaterialFinding>,

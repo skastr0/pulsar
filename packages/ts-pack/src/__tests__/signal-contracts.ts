@@ -830,25 +830,28 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
   {
     id: "TS-SEC-03-secret-material",
     status: "verified",
+    requiredEvidence: ["integration"],
     evidence: {
       identity:
         "ts-trust-signals.test.ts: canonical id, alias, title, tier/category/kind, semantic cacheVersion, pack registration, registry alias lookup, and default config decoding are asserted.",
       config:
         "ts-trust-signals.test.ts: configSchema decodes min_entropy, min_secret_length, exclude_globs, and top_n_diagnostics defaults with factor-ledger coverage.",
       positiveFixture:
-        "ts-trust-signals.test.ts: source fixture with sk-prefixed literal produces a known-secret-prefix finding.",
+        "ts-sec-03.test.ts and ts-trust-signals.test.ts: provider token formats and private-key material produce proof-path block findings while entropy/name controls remain advisory.",
       negativeFixture:
-        "ts-trust-signals.test.ts: placeholder token literals, detector regex patterns, human metadata keys, and path-like calibration ids are ignored and not counted as secret material.",
+        "ts-sec-03.test.ts and ts-trust-signals.test.ts: Vellum lookup keys, explicit fixture labels, design tokens, SST-style resource labels, placeholders, detector regexes, metadata keys, and path-like ids do not become secret findings.",
       applicability:
         "ts-trust-signals.test.ts: value-only fixture exercises zero state with score 1 during identity/factor-ledger checks.",
       score:
-        "ts-trust-signals.test.ts: committed secret-shaped literal lowers score below 1 and produces block severity.",
+        "ts-sec-03.test.ts: proof-only, heuristic-only, and mixed fixtures prove independent denominators; heuristic findings retain an advisory floor but cannot lower the proof-bearing signal score.",
       diagnostics:
-        "ts-trust-signals.test.ts: diagnostics include redacted secret data, location, stable hash, block severity, and remove-secret-material fix hint.",
+        "ts-sec-03.test.ts and ts-trust-signals.test.ts: every finding and diagnostic carries evidence path/class, detector reason, enforcement ceiling, score denominator, redaction, location, stable hash, severity, and fix guidance.",
       factorLedger:
         "ts-trust-signals.test.ts: registered signal emits config.top_n_diagnostics plus entropy/length config factor-ledger entries.",
       cacheSemantics:
-        "ts-trust-signals.test.ts and pack.test.ts: wrapped pack cache version includes the TS-SEC-03 semantic cacheVersion.",
+        "ts-trust-signals.test.ts and pack.test.ts: the evidence-channel semantic cacheVersion is wrapped into pack cache identity.",
+      integration:
+        "ts-sec-03.test.ts: the real registry/runner path preserves proof blocks, keeps heuristic findings warn-only, and reports the proof-only score for mixed output.",
     },
   },
   {
