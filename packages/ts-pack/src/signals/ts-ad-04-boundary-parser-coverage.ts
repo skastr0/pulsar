@@ -108,7 +108,7 @@ export const TsAd04: Signal<TsAd04Config, TsAd04Output, TsProjectTag> = {
   kind: "structural",
   evidenceClass: "heuristic-pattern",
   cacheVersion:
-    "ts-boundary-parser-evidence-v3-one-hop-local-alias-weak-param-shape-evidence-floor",
+    "ts-boundary-parser-evidence-v4-symbol-scoped-one-hop-local-alias-evidence-floor",
   configSchema: TsAd04Config,
   defaultConfig: {
     boundary_globs: [
@@ -436,20 +436,25 @@ const collectParserEvidence = (
   const patterns = parserPatterns.map((pattern) => normalizeCallText(pattern))
   const weakParameterNames = new Set(weakParameters.map((parameter) => parameter.name))
   if (patterns.length === 0 || weakParameterNames.size === 0) return []
-  const localAliases = collectStableOneHopAliases(fn, weakParameterNames)
+  const weakParameterDeclarations = new Set<Node>(
+    fn.getParameters().filter((parameter) =>
+      weakParameterNames.has(parameter.getName()),
+    ),
+  )
+  const evidenceDeclarations = new Set<Node>([
+    ...weakParameterDeclarations,
+    ...collectStableOneHopAliases(fn, weakParameterDeclarations),
+  ])
   const calls = fn.getDescendantsOfKind(SyntaxKind.CallExpression)
   const evidence = new Set<string>()
   for (const call of calls) {
+    if (!isDirectlyWithinFunction(call, fn)) continue
     const expression = call.getExpression()
     const expressionText = expression.getText()
     const normalizedCallee = normalizeCallText(calleeText(expression))
     if (
       patterns.some((pattern) => parserPatternMatchesCallee(pattern, normalizedCallee)) &&
-      callReferencesWeakParameter(
-        call,
-        weakParameterNames,
-        isDirectlyWithinFunction(call, fn) ? localAliases : EMPTY_LOCAL_ALIASES,
-      )
+      callReferencesDeclaration(call, evidenceDeclarations)
     ) {
       evidence.add(expressionText)
     }
@@ -491,43 +496,20 @@ const parserPatternMatchesSegment = (
     segment.startsWith(normalizedPattern)
 }
 
-const callReferencesWeakParameter = (
+const callReferencesDeclaration = (
   call: CallExpression,
-  weakParameterNames: ReadonlySet<string>,
-  localAliases: ReadonlySet<VariableDeclaration>,
+  declarations: ReadonlySet<Node>,
 ): boolean =>
   call.getArguments().some((argument) =>
-    nodeReferencesWeakParameter(argument, weakParameterNames, localAliases),
+    nodeReferencesDeclaration(argument, declarations),
   )
-
-const nodeReferencesWeakParameter = (
-  node: Node,
-  weakParameterNames: ReadonlySet<string>,
-  localAliases: ReadonlySet<VariableDeclaration> = EMPTY_LOCAL_ALIASES,
-): boolean => {
-  if (isFunctionScopeNode(node)) return false
-  if (Node.isIdentifier(node)) {
-    if (weakParameterNames.has(node.getText())) return true
-    if (identifierReferencesDeclaration(node, localAliases)) return true
-  }
-  return node.getChildren().some((child) =>
-    nodeReferencesWeakParameter(child, weakParameterNames, localAliases),
-  )
-}
-
-const EMPTY_LOCAL_ALIASES: ReadonlySet<VariableDeclaration> = new Set()
 
 const collectStableOneHopAliases = (
   fn: BoundaryFunctionNode,
-  weakParameterNames: ReadonlySet<string>,
+  weakParameterDeclarations: ReadonlySet<Node>,
 ): ReadonlySet<VariableDeclaration> => {
   // Intentionally bounded data flow: parameter -> one local initializer ->
   // parser argument. Symbols keep shadowed names from becoming evidence.
-  const weakParameterDeclarations = new Set<Node>(
-    fn.getParameters().filter((parameter) =>
-      weakParameterNames.has(parameter.getName()),
-    ),
-  )
   const aliases = new Set<VariableDeclaration>()
 
   for (const declaration of fn.getDescendantsOfKind(SyntaxKind.VariableDeclaration)) {

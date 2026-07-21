@@ -457,6 +457,42 @@ describe("TS-AD-04 (boundary parser coverage)", () => {
     ])
   })
 
+  test("requires direct parser evidence to resolve to the weak parameter in the same function", async () => {
+    await repo.write(
+      "src/api/user.ts",
+      [
+        "const UserSchema = { safeParse: (value: unknown) => value }",
+        "export function POST(input: unknown) {",
+        "  {",
+        "    const input = { unrelated: true }",
+        "    UserSchema.safeParse(input)",
+        "  }",
+        "  return input",
+        "}",
+        "export function PUT(input: unknown) {",
+        "  function deferred() {",
+        "    return UserSchema.safeParse(input)",
+        "  }",
+        "  return input",
+        "}",
+        "export function PATCH(input: unknown) {",
+        "  const deferred = () => UserSchema.safeParse(input)",
+        "  return input",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await run()
+
+    expect(out.state).toBe("present")
+    expect(out.covered).toEqual([])
+    expect(out.findings).toMatchObject([
+      { symbol: "POST" },
+      { symbol: "PUT" },
+      { symbol: "PATCH" },
+    ])
+  })
+
   test("requires parser evidence inside the boundary function body", async () => {
     await repo.write(
       "src/api/user.ts",

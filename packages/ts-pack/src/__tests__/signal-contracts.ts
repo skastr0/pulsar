@@ -222,7 +222,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       positiveFixture:
         "ts-ad-04.test.ts: fixtures detect weak any, unknown, untyped, request-like, anonymous default-export, default-export function, and cast-only aliased boundary parameters without parser evidence.",
       negativeFixture:
-        "ts-ad-04.test.ts: package directories named cli are not process boundaries by default; direct and stable one-hop local aliases into parser calls count as evidence; parser pattern names in call arguments, parser-pattern substrings, reassigned, shadowed, two-hop, and unrelated aliases, parser calls that do not reference weak input, and parser calls outside the boundary function body do not count as parser evidence.",
+        "ts-ad-04.test.ts: package directories named cli are not process boundaries by default; direct and stable one-hop local aliases into parser calls count as evidence; parser pattern names in call arguments, parser-pattern substrings, reassigned, shadowed, two-hop, and unrelated aliases, block-shadowed weak-parameter names, and parser calls in nested functions or outside the boundary function body do not count as parser evidence.",
       applicability:
         "ts-ad-04.test.ts: absent boundary files, not_configured boundary_globs, and boundary files with no weak external inputs produce distinct applicability states.",
       score:
@@ -232,7 +232,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       factorLedger:
         "ts-ad-04.test.ts: registered pack signal emits parser_call_patterns and top_n_diagnostics factor-ledger entries.",
       cacheSemantics:
-        "ts-ad-04.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AD-04 semantic cacheVersion after diagnostic-limit, parser-attribution, and one-hop local alias semantics changed.",
+        "ts-ad-04.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AD-04 semantic cacheVersion after diagnostic-limit, symbol-scoped parser-attribution, and one-hop local alias semantics changed.",
     },
   },
   {
