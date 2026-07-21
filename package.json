@@ -25,7 +25,8 @@
     "packages/npm/*"
   ],
   "scripts": {
-    "dev": "bun packages/cli/src/bin.ts",
+    "dev": "bun scripts/pulsar-dev.ts",
+    "smoke:dev": "bun scripts/dev-shim-smoke.ts",
     "build": "turbo run build",
     "build:cli": "bun scripts/build-cli.ts",
     "build:npm-cli": "bun scripts/build-npm-cli-packages.ts",
