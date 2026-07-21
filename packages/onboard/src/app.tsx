@@ -1,10 +1,20 @@
 import type { SelectOption } from "@opentui/core"
 import { useKeyboard } from "@opentui/react"
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react"
-import { buildPlan, rescore, survivingFindings } from "./calibration.js"
+import { actionForOption } from "./actions.js"
+import { buildPlan, survivingFindings } from "./calibration.js"
 import { catalogById } from "./catalog.js"
 import { bandColor, palette, scoreBand } from "./palette.js"
-import type { CalibrationChoice, CatalogEntry, Finding, OnboardInput, ScanResult, SignalScan } from "./types.js"
+import type {
+  BaselineDecision,
+  CalibrationChoice,
+  CalibrationPreview,
+  CalibrationWriteResult,
+  CatalogEntry,
+  OnboardInput,
+  ScanResult,
+  SignalScan,
+} from "./types.js"
 import { normalizeSignalId } from "./util.js"
 
 const SEED_Q: ReadonlyArray<{ key: string; q: string; options: SelectOption[] }> = [
@@ -37,7 +47,18 @@ const SEED_Q: ReadonlyArray<{ key: string; q: string; options: SelectOption[] }>
   },
 ]
 
-type Beat = "welcome" | "frame" | "consent" | "seed" | "scanstats" | "calibrate" | "reveal" | "commit" | "handoff" | "gate"
+type Beat =
+  | "welcome"
+  | "frame"
+  | "consent"
+  | "seed"
+  | "scanstats"
+  | "calibrate"
+  | "calibration-value"
+  | "reveal"
+  | "commit"
+  | "handoff"
+  | "gate"
 
 const FLOW: ReadonlyArray<Beat> = [
   "welcome",
@@ -46,6 +67,7 @@ const FLOW: ReadonlyArray<Beat> = [
   "seed",
   "scanstats",
   "calibrate",
+  "calibration-value",
   "reveal",
   "commit",
   "handoff",
@@ -124,10 +146,16 @@ export function OnboardApp({ input }: { readonly input: OnboardInput }) {
   const startedRef = useRef(input.__debugScan !== undefined)
   const [calibIdx, setCalibIdx] = useState(0)
   const [selIdx, setSelIdx] = useState(0)
-  const [choices, setChoices] = useState<Record<string, number>>({})
+  const [choices, setChoices] = useState<Record<string, CalibrationChoice>>({})
   const [enabledPacks, setEnabledPacks] = useState<string[]>([])
-  const [baseline, setBaseline] = useState(false)
-  const [written, setWritten] = useState<ReadonlyArray<string> | null>(null)
+  const [baseline, setBaseline] = useState<BaselineDecision>("not-provided")
+  const [valueText, setValueText] = useState("")
+  const [valueError, setValueError] = useState<string | null>(null)
+  const [preview, setPreview] = useState<CalibrationPreview | null>(null)
+  const [previewError, setPreviewError] = useState<string | null>(null)
+  const [previewing, setPreviewing] = useState(false)
+  const [written, setWritten] = useState<CalibrationWriteResult | null>(null)
+  const [writeError, setWriteError] = useState<string | null>(null)
 
   // EVERY active signal gets a page. Pre-calibration scores are NOT a selector —
   // they're meaningless until the user confirms what's true, so we never filter
@@ -178,7 +206,7 @@ export function OnboardApp({ input }: { readonly input: OnboardInput }) {
     if (step !== "handoff" || !scan) return
     let cancelled = false
     const plan = buildPlan({
-      choices: Object.entries(choices).map<CalibrationChoice>(([signalId, optionIndex]) => ({ signalId, optionIndex })),
+      choices: Object.values(choices),
       enabledPacks,
       baseline,
       seed,
@@ -186,11 +214,11 @@ export function OnboardApp({ input }: { readonly input: OnboardInput }) {
     })
     input
       .writeConfig(plan)
-      .then((paths) => {
-        if (!cancelled) setWritten(paths)
+      .then((result) => {
+        if (!cancelled) setWritten(result)
       })
-      .catch(() => {
-        if (!cancelled) setWritten(["(write failed — see logs)"])
+      .catch((cause) => {
+        if (!cancelled) setWriteError(String(cause))
       })
     return () => {
       cancelled = true
@@ -201,10 +229,41 @@ export function OnboardApp({ input }: { readonly input: OnboardInput }) {
 
   const liveElapsed = (): number => (scanning ? Date.now() - scanStartRef.current : elapsedMs)
 
+  const planOf = (
+    nextChoices: Record<string, CalibrationChoice>,
+    nextPacks: ReadonlyArray<string>,
+    nextBaseline: BaselineDecision,
+  ) =>
+    buildPlan({
+      choices: Object.values(nextChoices),
+      enabledPacks: nextPacks,
+      baseline: nextBaseline,
+      seed,
+      detection: input.detection,
+    })
+
+  const beginPreview = (
+    nextChoices: Record<string, CalibrationChoice>,
+    nextPacks: ReadonlyArray<string>,
+    nextBaseline: BaselineDecision,
+  ): void => {
+    const plan = planOf(nextChoices, nextPacks, nextBaseline)
+    setPreview(null)
+    setPreviewError(null)
+    setPreviewing(true)
+    goTo("reveal")
+    input
+      .preview(plan)
+      .then(setPreview)
+      .catch((cause) => setPreviewError(String(cause)))
+      .finally(() => setPreviewing(false))
+  }
+
   const enterCalibrate = () => {
     setCalibIdx(0)
     setSelIdx(targets[0]?.entry.defaultOptionIndex ?? 0)
-    goTo(targets.length > 0 ? "calibrate" : "reveal")
+    if (targets.length > 0) goTo("calibrate")
+    else beginPreview(choices, enabledPacks, baseline)
   }
 
   const advance = () => {
@@ -222,6 +281,7 @@ export function OnboardApp({ input }: { readonly input: OnboardInput }) {
         if (scanning) return
         return enterCalibrate()
       case "reveal":
+        if (previewing || preview === null) return
         setSelIdx(0)
         return goTo("commit")
       case "handoff":
@@ -234,10 +294,60 @@ export function OnboardApp({ input }: { readonly input: OnboardInput }) {
   }
 
   const back = () => {
+    if (step === "calibration-value") {
+      setValueError(null)
+      return goTo("calibrate")
+    }
+    if (step === "commit") {
+      return goTo("reveal")
+    }
     if (step === "calibrate" && calibIdx > 0) {
       const prev = calibIdx - 1
       setCalibIdx(prev)
       setSelIdx(targets[prev]?.entry.defaultOptionIndex ?? 0)
+    }
+  }
+
+  const finishCalibrationChoice = (choice: CalibrationChoice): void => {
+    const nextChoices = { ...choices, [choice.signalId]: choice }
+    const nextPacks = [
+      ...new Set(
+        Object.values(nextChoices).flatMap((candidate) =>
+          candidate.action.kind === "enable-pack" ? [candidate.action.packId] : [],
+        ),
+      ),
+    ].sort()
+    const nextBaseline: BaselineDecision = Object.values(nextChoices).some(
+      (candidate) => candidate.action.kind === "baseline-accept",
+    )
+      ? "accept"
+      : "not-provided"
+    setChoices(nextChoices)
+    setEnabledPacks(nextPacks)
+    setBaseline(nextBaseline)
+    setValueText("")
+    setValueError(null)
+    if (calibIdx < targets.length - 1) {
+      const next = calibIdx + 1
+      setCalibIdx(next)
+      setSelIdx(targets[next]?.entry.defaultOptionIndex ?? 0)
+      goTo("calibrate")
+    } else {
+      beginPreview(nextChoices, nextPacks, nextBaseline)
+    }
+  }
+
+  const submitCalibrationValue = (): void => {
+    const target = targets[calibIdx]
+    if (target === undefined) return
+    try {
+      finishCalibrationChoice({
+        signalId: target.entry.id,
+        optionIndex: selIdx,
+        action: actionForOption(target.entry, selIdx, valueText),
+      })
+    } catch (cause) {
+      setValueError(String(cause))
     }
   }
 
@@ -257,25 +367,32 @@ export function OnboardApp({ input }: { readonly input: OnboardInput }) {
     if (step === "calibrate") {
       const target = targets[calibIdx]
       if (target) {
-        const norm = normalizeSignalId(target.sig.id)
-        setChoices((c) => ({ ...c, [norm]: selIdx }))
         const opt = target.entry.options[selIdx]
-        if (opt && (opt.calibrationKind === "project-module" || opt.calibrationKind === "pack-toggle") && target.entry.packGate) {
-          setEnabledPacks((p) => (p.includes(target.entry.packGate!) ? p : [...p, target.entry.packGate!]))
+        if (
+          opt?.calibrationKind === "vector-config" ||
+          opt?.calibrationKind === "vector-weight" ||
+          opt?.calibrationKind === "vector-active"
+        ) {
+          setValueText("")
+          setValueError(null)
+          goTo("calibration-value")
+          return
         }
-      }
-      if (calibIdx < targets.length - 1) {
-        const next = calibIdx + 1
-        setCalibIdx(next)
-        setSelIdx(targets[next]?.entry.defaultOptionIndex ?? 0)
-      } else {
-        goTo("reveal")
+        finishCalibrationChoice({
+          signalId: target.entry.id,
+          optionIndex: selIdx,
+          action: actionForOption(target.entry, selIdx),
+        })
       }
       return
     }
     if (step === "commit") {
-      setBaseline(selIdx === 0)
+      const requiredByChoice = Object.values(choices).some(
+        (choice) => choice.action.kind === "baseline-accept",
+      )
+      setBaseline(requiredByChoice || selIdx === 0 ? "accept" : "reject")
       setWritten(null)
+      setWriteError(null)
       goTo("handoff")
       return
     }
@@ -285,7 +402,7 @@ export function OnboardApp({ input }: { readonly input: OnboardInput }) {
     const name = (key as { name?: string }).name ?? ""
     const ctrl = (key as { ctrl?: boolean }).ctrl ?? false
     if (ctrl && name === "c") return input.onExit()
-    if (SELECT_BEATS.has(step)) return
+    if (SELECT_BEATS.has(step) || step === "calibration-value") return
     if (name === "q" || name === "escape") return input.onExit()
     if (name === "return" || name === "enter") return advance()
     if (name === "b" || name === "backspace") return back()
@@ -364,23 +481,40 @@ export function OnboardApp({ input }: { readonly input: OnboardInput }) {
         return renderScanStats()
       case "calibrate":
         return renderCalibrate()
+      case "calibration-value":
+        return renderCalibrationValue()
       case "reveal":
         return renderReveal()
-      case "commit":
+      case "commit": {
+        const requiredByChoice = Object.values(choices).some(
+          (choice) => choice.action.kind === "baseline-accept",
+        )
         return (
           <Panel title="commit">
             <text fg={palette.text} wrapMode="word">
-              Accept today's debt as the floor. From here, CI fails only on new violations — never inherited ones.
+              {requiredByChoice
+                ? "A signal choice explicitly accepted today's debt. Confirm the production baseline snapshot."
+                : "Choose explicitly whether to accept today's debt as the floor. Pulsar never assumes this in headless or interactive mode."}
             </text>
             <box style={{ flexGrow: 1, marginTop: 1 }}>
               <select
                 focused
                 width="100%"
                 height="100%"
-                options={[
-                  { name: "Accept the baseline — never worse", description: "records pulsar-baseline.json", value: "yes" },
-                  { name: "Skip for now", description: "calibrate without recording a baseline", value: "no" },
-                ]}
+                options={
+                  requiredByChoice
+                    ? [
+                        {
+                          name: "Confirm the baseline — never worse",
+                          description: "records the explicitly selected baseline with the production serializer",
+                          value: "yes",
+                        },
+                      ]
+                    : [
+                        { name: "Accept the baseline — never worse", description: "records pulsar-baseline.json", value: "yes" },
+                        { name: "Reject baseline creation", description: "persists calibration without a baseline", value: "no" },
+                      ]
+                }
                 selectedIndex={selIdx}
                 onChange={setSelIdx}
                 onSelect={choose}
@@ -389,20 +523,30 @@ export function OnboardApp({ input }: { readonly input: OnboardInput }) {
             </box>
           </Panel>
         )
+      }
       case "handoff":
         return (
           <Panel title="your .pulsar">
             <text fg={palette.text}>Co-authored, repo-owned, attributable. Commit it.</text>
             <text fg={palette.muted}> </text>
-            {written === null ? (
+            {writeError !== null ? (
+              <text fg={palette.red}>{trunc(writeError, cols - 4)}</text>
+            ) : written === null ? (
               <text fg={palette.muted}>writing…</text>
             ) : (
-              written.map((p) => (
+              written.written.map((p) => (
                 <text key={p} fg={palette.green}>
                   ✓ {trunc(p, cols - 4)}
                 </text>
               ))
             )}
+            {written?.receipts
+              .filter((receipt) => receipt.status === "unapplied")
+              .map((receipt) => (
+                <text key={`${receipt.signalId}:${receipt.optionIndex}`} fg={palette.amber}>
+                  ! {receipt.signalId} unapplied · {trunc(receipt.detail, cols - 28)}
+                </text>
+              ))}
           </Panel>
         )
       case "gate":
@@ -530,30 +674,71 @@ export function OnboardApp({ input }: { readonly input: OnboardInput }) {
     )
   }
 
-  function renderReveal() {
-    if (!scan) return null
-    const calibratedIds = new Set(
-      Object.entries(choices)
-        .filter(([id, idx]) => {
-          const o = byId.get(id)?.options[idx]
-          return o !== undefined && o.framing !== "keep"
-        })
-        .map(([id]) => id),
+  function renderCalibrationValue() {
+    const target = targets[calibIdx]
+    const option = target?.entry.options[selIdx]
+    if (target === undefined || option === undefined) return null
+    const prompt =
+      option.calibrationKind === "vector-config"
+        ? 'Enter typed JSON: {"key":"actual_config_key","value":...}'
+        : option.calibrationKind === "vector-weight"
+          ? "Enter a JSON number from 0 through 2"
+          : "Enter true or false"
+    return (
+      <Panel title={`typed calibration · ${target.entry.id}`}>
+        <text fg={palette.text}>{option.label}</text>
+        <text fg={palette.muted} wrapMode="word">
+          {prompt}
+        </text>
+        <text fg={palette.textDim} wrapMode="word">
+          The catalog target is display context only. Pulsar validates this value against the registered signal before any write.
+        </text>
+        <box style={{ height: 3, marginTop: 1, border: true, borderColor: palette.border }}>
+          <input
+            focused
+            width="100%"
+            value={valueText}
+            placeholder={prompt}
+            onInput={setValueText}
+            onSubmit={submitCalibrationValue}
+          />
+        </box>
+        {valueError === null ? null : <text fg={palette.red}>{trunc(valueError, cols - 4)}</text>}
+      </Panel>
     )
-    const calibratedList = Object.entries(choices)
-      .map(([id, idx]) => {
-        const o = byId.get(id)?.options[idx]
-        return o && o.framing !== "keep" ? { id, label: o.label } : null
+  }
+
+  function renderReveal() {
+    if (scan === null) return null
+    if (previewing) {
+      return (
+        <Centered>
+          <text fg={palette.amber}>scoring the proposed vector…</text>
+          <text fg={palette.muted}>real observer run; the repository remains unchanged</text>
+        </Centered>
+      )
+    }
+    if (previewError !== null || preview === null) {
+      return (
+        <Panel title="preview failed">
+          <text fg={palette.red}>{previewError ?? "No preview result"}</text>
+        </Panel>
+      )
+    }
+    const calibratedList = Object.values(choices)
+      .map((choice) => {
+        const option = byId.get(choice.signalId)?.options[choice.optionIndex]
+        return option !== undefined && choice.action.kind !== "keep-default"
+          ? { id: choice.signalId, label: option.label, status: choice.action.kind === "unsupported" ? "unapplied" : "applied" }
+          : null
       })
-      .filter((x): x is { id: string; label: string } => x !== null)
-    const after = rescore(scan, calibratedIds)
+      .filter((item): item is { id: string; label: string; status: "applied" | "unapplied" } => item !== null)
     // Post-calibration, "real debt" is meaningful: signals you kept the default
     // on (acknowledged as-is) whose measurement is still low.
     const keptDebt = targets
       .filter((t) => {
-        const idx = choices[normalizeSignalId(t.sig.id)]
-        const opt = idx !== undefined ? t.entry.options[idx] : undefined
-        return (opt?.framing ?? "keep") === "keep" && t.sig.score < 0.6
+        const choice = choices[normalizeSignalId(t.sig.id)]
+        return (choice?.action.kind ?? "keep-default") === "keep-default" && t.sig.score < 0.6
       })
       .sort((a, b) => a.sig.score - b.sig.score)
       .slice(0, 6)
@@ -562,19 +747,19 @@ export function OnboardApp({ input }: { readonly input: OnboardInput }) {
         <box style={{ flexDirection: "row", gap: 4 }}>
           <box style={{ flexDirection: "column" }}>
             <text fg={palette.muted}>before</text>
-            <text fg={bandColor(scan.band)}>
-              {scan.band.toUpperCase()} · {scan.score.toFixed(2)}
+            <text fg={bandColor(preview.before.band)}>
+              {preview.before.band.toUpperCase()} · {preview.before.score.toFixed(2)}
             </text>
           </box>
           <box style={{ flexDirection: "column" }}>
-            <text fg={palette.muted}>after calibration (est.)</text>
-            <text fg={bandColor(after.band)}>
-              {after.band.toUpperCase()} · {after.score.toFixed(2)}
+            <text fg={palette.muted}>after calibration (observed)</text>
+            <text fg={bandColor(preview.after.band)}>
+              {preview.after.band.toUpperCase()} · {preview.after.score.toFixed(2)}
             </text>
           </box>
           <box style={{ flexDirection: "column" }}>
             <text fg={palette.muted}>driver</text>
-            <text fg={palette.text}>{trunc(titleOf(normalizeSignalId(scan.topPressures[0]?.id ?? "")), cols - 40)}</text>
+            <text fg={palette.text}>{trunc(preview.after.driver, cols - 40)}</text>
           </box>
         </box>
         <box
@@ -586,7 +771,7 @@ export function OnboardApp({ input }: { readonly input: OnboardInput }) {
           ) : (
             calibratedList.map((c) => (
               <box key={c.id} style={{ flexDirection: "row", gap: 1 }}>
-                <text fg={palette.green}>✓</text>
+                <text fg={c.status === "applied" ? palette.green : palette.amber}>{c.status === "applied" ? "✓" : "!"}</text>
                 <text fg={palette.text}>{trunc(titleOf(c.id), 32)}</text>
                 <text fg={palette.muted}>{trunc(c.label, cols - 42)}</text>
               </box>

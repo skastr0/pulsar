@@ -1,45 +1,44 @@
 import { buildPlan } from "./calibration.js"
-import { catalogById } from "./catalog.js"
-import type { CalibrationChoice, OnboardInput } from "./types.js"
+import type { OnboardInput } from "./types.js"
 import { normalizeSignalId } from "./util.js"
 
-// Agent / non-TTY path: run the scan, apply default calibration for the
-// top-pressure signals (the engine's own ranking), write .pulsar, emit JSON.
+// Agent / non-TTY path: apply only explicitly supplied answers, preview the
+// exact vector through the real observer, persist it, then await JSON output.
 export const runOnboardHeadless = async (input: OnboardInput): Promise<number> => {
-  const byId = catalogById(input.catalog)
-  const scan = await input.scan()
-
-  // Default-calibrate EVERY active signal — a complete vector, not a top-N.
-  const choices: CalibrationChoice[] = []
-  const seen = new Set<string>()
-  for (const s of scan.signals) {
-    const norm = normalizeSignalId(s.id)
-    if (seen.has(norm)) continue
-    seen.add(norm)
-    choices.push({ signalId: norm, optionIndex: byId.get(norm)?.defaultOptionIndex ?? 0 })
-  }
+  const answers = input.headlessAnswers ?? {}
 
   const plan = buildPlan({
-    choices,
-    enabledPacks: input.detectedPacks.map((p) => p.id),
-    baseline: true,
-    seed: {},
+    choices: answers.choices ?? [],
+    enabledPacks: answers.enabledPacks ?? [],
+    baseline: answers.baseline ?? "not-provided",
+    seed: answers.seed ?? {},
     detection: input.detection,
   })
-  const written = await input.writeConfig(plan)
+  const preview = await input.preview(plan)
+  const result = await input.writeConfig(plan)
 
-  process.stdout.write(
+  await input.writeOutput(
     JSON.stringify(
       {
-        band: scan.band,
-        score: scan.score,
-        driver: scan.driver,
-        activeSignals: scan.signals.length,
-        topPressures: scan.topPressures.slice(0, 10).map((p) => ({ id: normalizeSignalId(p.id), score: p.score })),
-        calibratedSignals: choices.map((c) => c.signalId),
+        before: {
+          band: preview.before.band,
+          score: preview.before.score,
+          driver: preview.before.driver,
+        },
+        after: {
+          band: preview.after.band,
+          score: preview.after.score,
+          driver: preview.after.driver,
+        },
+        activeSignals: preview.before.signals.length,
+        topPressures: preview.before.topPressures
+          .slice(0, 10)
+          .map((p) => ({ id: normalizeSignalId(p.id), score: p.score })),
+        choices: plan.choices,
+        receipts: result.receipts,
         enabledPacks: plan.enabledPacks,
-        baseline: plan.baseline,
-        written,
+        baseline: result.baseline,
+        written: result.written,
       },
       null,
       2,

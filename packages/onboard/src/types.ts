@@ -92,17 +92,64 @@ export interface DetectedPack {
   readonly reason: string
 }
 
+export type JsonValue =
+  | null
+  | boolean
+  | number
+  | string
+  | ReadonlyArray<JsonValue>
+  | { readonly [key: string]: JsonValue }
+
+export type CalibrationAction =
+  | { readonly kind: "keep-default" }
+  | { readonly kind: "vector-config"; readonly key: string; readonly value: JsonValue }
+  | { readonly kind: "vector-weight"; readonly value: number }
+  | { readonly kind: "vector-active"; readonly value: boolean }
+  | { readonly kind: "baseline-accept" }
+  | { readonly kind: "enable-pack"; readonly packId: string }
+  | { readonly kind: "unsupported"; readonly reason: string }
+
 export interface CalibrationChoice {
   readonly signalId: string
   readonly optionIndex: number
+  readonly action: CalibrationAction
 }
+
+export type BaselineDecision = "accept" | "reject" | "not-provided"
 
 export interface CalibrationPlan {
   readonly choices: ReadonlyArray<CalibrationChoice>
   readonly enabledPacks: ReadonlyArray<string>
-  readonly baseline: boolean
+  readonly baseline: BaselineDecision
   readonly seed: Record<string, string>
   readonly detection: RepoDetection
+}
+
+export interface CalibrationReceipt {
+  readonly signalId: string
+  readonly optionIndex: number
+  readonly action: CalibrationAction
+  readonly status: "applied" | "kept" | "unapplied"
+  readonly detail: string
+}
+
+export interface CalibrationPreview {
+  readonly before: ScanResult
+  readonly after: ScanResult
+  readonly receipts: ReadonlyArray<CalibrationReceipt>
+}
+
+export interface CalibrationWriteResult {
+  readonly written: ReadonlyArray<string>
+  readonly receipts: ReadonlyArray<CalibrationReceipt>
+  readonly baseline: BaselineDecision
+}
+
+export interface HeadlessAnswers {
+  readonly choices?: ReadonlyArray<CalibrationChoice>
+  readonly enabledPacks?: ReadonlyArray<string>
+  readonly baseline?: BaselineDecision
+  readonly seed?: Record<string, string>
 }
 
 export type OnboardPhase = "beta" | "private-license" | "enterprise"
@@ -113,7 +160,10 @@ export interface OnboardInput {
   readonly detectedPacks: ReadonlyArray<DetectedPack>
   readonly catalog: ReadonlyArray<CatalogEntry>
   readonly scan: () => Promise<ScanResult>
-  readonly writeConfig: (plan: CalibrationPlan) => Promise<ReadonlyArray<string>>
+  readonly preview: (plan: CalibrationPlan) => Promise<CalibrationPreview>
+  readonly writeConfig: (plan: CalibrationPlan) => Promise<CalibrationWriteResult>
+  readonly writeOutput: (contents: string) => Promise<void>
+  readonly headlessAnswers?: HeadlessAnswers
   readonly phase: OnboardPhase
   readonly onExit: () => void
   // Test seam: jump straight to a beat with a pre-resolved scan (render checks).

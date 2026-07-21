@@ -16,10 +16,18 @@ const input: OnboardInput = {
   detectedPacks: demoPacks,
   catalog: withDemoFilters(loadCatalog()),
   scan: demoScan,
+  preview: async () => {
+    const scan = await demoScan()
+    return { before: scan, after: scan, receipts: [] }
+  },
   writeConfig: makeDemoWriteConfig(root),
+  writeOutput: async (contents) => {
+    await new Promise<void>((resolve, reject) => {
+      process.stdout.write(contents, (error) => error ? reject(error) : resolve())
+    })
+  },
   phase: "beta",
   onExit: () => {},
 }
 
 await runOnboardTui(input)
-process.exit(0)

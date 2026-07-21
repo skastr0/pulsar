@@ -4,15 +4,11 @@
 import type {
   CalibrationChoice,
   CalibrationPlan,
+  BaselineDecision,
   CatalogEntry,
   Finding,
   RepoDetection,
-  ScanResult,
-  SignalScan,
 } from "./types.js"
-import { normalizeSignalId } from "./util.js"
-
-const CALIBRATED_FLOOR = 0.7
 
 // Findings that remain real after applying option `optionIndex` of `entry`.
 export const survivingFindings = (
@@ -51,38 +47,26 @@ export const isCalibrated = (entry: CatalogEntry, optionIndex: number): boolean 
   return option !== undefined && option.framing !== "keep"
 }
 
-export interface Rescore {
-  readonly band: "green" | "yellow" | "red"
-  readonly score: number
-  readonly driverId: string
-}
-
-// Approximate re-score after calibration: lift calibrated signals to a healthy
-// floor and re-aggregate. Demonstrates the before/after; the real engine
-// re-weights cached evidence exactly.
-export const rescore = (scan: ScanResult, calibratedIds: ReadonlySet<string>): Rescore => {
-  const lifted: SignalScan[] = scan.signals.map((s) =>
-    calibratedIds.has(normalizeSignalId(s.id)) ? { ...s, score: Math.max(s.score, CALIBRATED_FLOOR) } : s,
-  )
-  const scores = lifted.map((s) => s.score)
-  const worst = scores.length > 0 ? Math.min(...scores) : 0
-  const mean = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0
-  const score = 0.4 * worst + 0.6 * mean
-  const band = score >= 0.6 ? "green" : score >= 0.35 ? "yellow" : "red"
-  const driver = [...lifted].sort((a, b) => a.score - b.score)[0]
-  return { band, score, driverId: driver?.id ?? scan.driver }
-}
-
 export const buildPlan = (args: {
   choices: ReadonlyArray<CalibrationChoice>
   enabledPacks: ReadonlyArray<string>
-  baseline: boolean
+  baseline: BaselineDecision
   seed: Record<string, string>
   detection: RepoDetection
-}): CalibrationPlan => ({
-  choices: args.choices,
-  enabledPacks: args.enabledPacks,
-  baseline: args.baseline,
-  seed: args.seed,
-  detection: args.detection,
-})
+}): CalibrationPlan => {
+  if (
+    args.choices.some((choice) => choice.action.kind === "baseline-accept") &&
+    args.baseline !== "accept"
+  ) {
+    throw new Error("A baseline-accept action requires plan baseline=accept")
+  }
+  return {
+    choices: [...args.choices].sort(
+      (a, b) => a.signalId.localeCompare(b.signalId) || a.optionIndex - b.optionIndex,
+    ),
+    enabledPacks: [...new Set(args.enabledPacks)].sort(),
+    baseline: args.baseline,
+    seed: Object.fromEntries(Object.entries(args.seed).sort(([a], [b]) => a.localeCompare(b))),
+    detection: args.detection,
+  }
+}
