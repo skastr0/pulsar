@@ -219,6 +219,51 @@ describe("pulsar score", () => {
     }
   }, 120_000)
 
+  test("source score JSON is byte-identical across cwd and cold-warm cache matrix", async () => {
+    const repoPath = await initRepo(simpleRepoFiles())
+    const homePath = await mkdtemp(join(tmpdir(), "pulsar-score-home-"))
+    const rootStateHome = await mkdtemp(join(tmpdir(), "pulsar-score-root-state-"))
+    const alternateStateHome = await mkdtemp(join(tmpdir(), "pulsar-score-alt-state-"))
+    try {
+      const rootCold = runCli(repoPath, ["score", "--json", "."], {
+        HOME: homePath,
+        PULSAR_STATE_HOME: rootStateHome,
+      })
+      const rootWarm = runCli(repoPath, ["score", "--json", "."], {
+        HOME: homePath,
+        PULSAR_STATE_HOME: rootStateHome,
+      })
+      const alternateCwd = join(repoPath, "src")
+      const alternateCold = runCli(alternateCwd, ["score", "--json", ".."], {
+        HOME: homePath,
+        PULSAR_STATE_HOME: alternateStateHome,
+      })
+      const alternateWarm = runCli(alternateCwd, ["score", "--json", ".."], {
+        HOME: homePath,
+        PULSAR_STATE_HOME: alternateStateHome,
+      })
+
+      const matrix = [rootCold, rootWarm, alternateCold, alternateWarm]
+      for (const result of matrix) {
+        expect(result.status).toBe(0)
+        expect(result.stderr).toBe("")
+        expect(
+          Schema.decodeUnknownSync(ObserverOutputSchema)(JSON.parse(String(result.stdout))),
+        ).toBeDefined()
+      }
+
+      expect(rootCold.stdout).toBe(rootWarm.stdout)
+      expect(rootCold.stdout).toBe(alternateCold.stdout)
+      expect(rootCold.stdout).toBe(alternateWarm.stdout)
+      expect(Buffer.byteLength(String(rootCold.stdout))).toBeGreaterThan(0)
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+      await rm(homePath, { recursive: true, force: true })
+      await rm(rootStateHome, { recursive: true, force: true })
+      await rm(alternateStateHome, { recursive: true, force: true })
+    }
+  }, 120_000)
+
   test("score --diff --changed-only --agent-view emits diff trust JSON for worktree changes", async () => {
     const repoPath = await initRepo(simpleRepoFiles())
     try {
