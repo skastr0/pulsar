@@ -128,6 +128,9 @@ describe("Observer — category aggregation", () => {
     expect(result.readiness?.aggregation.ignored_signal_count).toBe(0)
     // The provider still ran — its output stays available to composites.
     expect(result.signalResults.get("TEST-PROVIDER")).toBeDefined()
+    expect(Object.keys(toObserverJson(result).signal_diagnostics ?? {})).toEqual([
+      "TEST-SCORING",
+    ])
   })
 
   test("category poison requires authority: a tier-2 heuristic cannot zero its category", async () => {
@@ -971,6 +974,76 @@ describe("Observer — JSON output shape (AC-10)", () => {
     expect(decoded.readiness?.top_pressures[0]?.poison_authority).toBe(false)
   })
 
+  test("public JSON emits deterministic per-signal diagnostics with portable locations", async () => {
+    const later = makeLeaf({
+      id: "TEST-Z",
+      category: "generated-slop",
+      score: 0,
+      metadata: { applicability: "not_applicable" },
+    })
+    const earlier = makeLeaf({
+      id: "TEST-A",
+      category: "legibility-decay",
+      score: 0.7,
+      diagnostics: [
+        {
+          severity: "warn",
+          message: "unstable boundary",
+          location: { file: "src/boundary.ts", line: 12, column: 4 },
+          data: { hash: "boundary-12", evidence: "syntax" },
+          fixHints: [
+            {
+              kind: "edit",
+              title: "Validate the boundary",
+              summary: "Parse input before use",
+              confidence: "high",
+              autoApplicable: false,
+              diffHint: "insert parser",
+              data: { parser: "schema" },
+            },
+          ],
+        },
+        { severity: "info", message: "supporting context" },
+      ],
+    })
+
+    const publicJson = toObserverJson(await run([later, earlier]))
+    const decoded = Schema.decodeUnknownSync(ObserverOutputSchema)(publicJson)
+
+    expect(Object.keys(decoded.signal_diagnostics ?? {})).toEqual(["TEST-A", "TEST-Z"])
+    expect(decoded.signal_diagnostics?.["TEST-A"]).toEqual({
+      score: 0.7,
+      applicability: "applicable",
+      emitted_count: 2,
+      diagnostics: [
+        {
+          severity: "warn",
+          message: "unstable boundary",
+          location: { file: "src/boundary.ts", line: 12, column: 4 },
+          data: { hash: "boundary-12", evidence: "syntax" },
+          fixHints: [
+            {
+              kind: "edit",
+              title: "Validate the boundary",
+              summary: "Parse input before use",
+              confidence: "high",
+              autoApplicable: false,
+              diffHint: "insert parser",
+              data: { parser: "schema" },
+            },
+          ],
+        },
+        { severity: "info", message: "supporting context" },
+      ],
+    })
+    expect(decoded.signal_diagnostics?.["TEST-Z"]).toEqual({
+      score: 0,
+      applicability: "not_applicable",
+      emitted_count: 0,
+      diagnostics: [],
+    })
+  })
+
   test("schema still decodes v1 observer semantics from persisted history", async () => {
     const a = makeLeaf({ id: "TEST-A", category: "legibility-decay", score: 0.7 })
     const publicJson = toObserverJson(await run([a]))
@@ -981,6 +1054,17 @@ describe("Observer — JSON output shape (AC-10)", () => {
 
     const decoded = Schema.decodeUnknownSync(ObserverOutputSchema)(v1Json)
     expect(decoded.observer_semantics).toBe("applicability-aware-readiness-v1")
+  })
+
+  test("schema decodes observer JSON written before per-signal diagnostics", async () => {
+    const a = makeLeaf({ id: "TEST-A", category: "legibility-decay", score: 0.7 })
+    const legacyJson = JSON.parse(JSON.stringify(toObserverJson(await run([a]))))
+    delete legacyJson.signal_diagnostics
+
+    const decoded = Schema.decodeUnknownSync(ObserverOutputSchema)(legacyJson)
+
+    expect(decoded.signal_diagnostics).toBeUndefined()
+    expect(decoded.categories["legibility-decay"]?.signals).toEqual({ "TEST-A": 0.7 })
   })
 
   test("schema decodes legacy observer JSON without trust-category records", async () => {

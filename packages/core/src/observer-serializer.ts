@@ -1,5 +1,8 @@
 import { CATEGORIES } from "./category.js"
+import type { Diagnostic } from "./diagnostic.js"
 import { OBSERVER_OUTPUT_SEMANTICS, type CategoryOutput } from "./observer-model.js"
+import { compareAscii, signalApplicabilityOf } from "./observer-score-utils.js"
+import type { SignalApplicability } from "./signal.js"
 import type {
   ObserverOutput,
   ObserverOutputPublic,
@@ -22,6 +25,9 @@ export const toObserverJson = (output: ObserverOutput): ObserverOutputPublic => 
   ...(output.calibration !== undefined ? { calibration: output.calibration } : {}),
   ...(output.signalMetadata !== undefined && Object.keys(output.signalMetadata).length > 0
     ? { signal_metadata: output.signalMetadata }
+    : {}),
+  ...(output.signalResults.size > 0
+    ? { signal_diagnostics: signalDiagnosticsJson(output) }
     : {}),
   ...(output.runtimeProfile !== undefined
     ? {
@@ -55,6 +61,35 @@ export const toObserverJson = (output: ObserverOutput): ObserverOutputPublic => 
     : {}),
 })
 
+interface ObserverSignalDiagnosticsSnapshot {
+  readonly score: number
+  readonly applicability: SignalApplicability
+  readonly emitted_count: number
+  readonly diagnostics: ReadonlyArray<Diagnostic>
+}
+
+const signalDiagnosticsJson = (
+  output: ObserverOutput,
+): Readonly<Record<string, ObserverSignalDiagnosticsSnapshot>> => {
+  const scoredSignalIds = new Set(
+    CATEGORIES.flatMap((category) => Object.keys(output.categories[category].signals)),
+  )
+  return Object.fromEntries(
+    [...output.signalResults.entries()]
+      .filter(([signalId]) => scoredSignalIds.has(signalId))
+      .sort(([left], [right]) => compareAscii(left, right))
+      .map(([signalId, result]) => [
+        signalId,
+        {
+          score: result.score,
+          applicability: signalApplicabilityOf(result),
+          emitted_count: result.diagnostics.length,
+          diagnostics: result.diagnostics,
+        },
+      ]),
+  )
+}
+
 const signalFactorsJson = (
   output: ObserverOutput,
 ): ReadonlyArray<readonly [string, ReadonlyArray<SignalFactorLedgerEntrySnapshotValue>]> =>
@@ -64,7 +99,7 @@ const signalFactorsJson = (
         ? []
         : [[signalId, result.factorLedger.entries] as const],
     )
-    .sort(([left], [right]) => left.localeCompare(right))
+    .sort(([left], [right]) => compareAscii(left, right))
 
 const toObserverCategorySnapshot = (
   category: CategoryOutput,

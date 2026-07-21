@@ -96,6 +96,13 @@ const HardGateViolationSnapshot = Schema.Struct({
   diagnostic: DiagnosticSchema,
 })
 
+const SignalApplicabilitySnapshot = Schema.Literal(
+  "applicable",
+  "not_applicable",
+  "insufficient_evidence",
+  "failed",
+)
+
 const ReadinessPressureSnapshot = Schema.Struct({
   signal_id: Schema.String,
   category: CategorySchema,
@@ -104,12 +111,7 @@ const ReadinessPressureSnapshot = Schema.Struct({
   effective_pressure: Schema.Number,
   weight: Schema.Number,
   confidence: Schema.Number,
-  applicability: Schema.Union(
-    Schema.Literal("applicable"),
-    Schema.Literal("not_applicable"),
-    Schema.Literal("insufficient_evidence"),
-    Schema.Literal("failed"),
-  ),
+  applicability: SignalApplicabilitySnapshot,
   poison_authority: Schema.optional(Schema.Boolean),
 })
 
@@ -172,14 +174,14 @@ const ObserverSignalMetadataSnapshot = Schema.Struct({
       Schema.Literal("ai_classified"),
     ),
   ),
-  applicability: Schema.optional(
-    Schema.Union(
-      Schema.Literal("applicable"),
-      Schema.Literal("not_applicable"),
-      Schema.Literal("insufficient_evidence"),
-      Schema.Literal("failed"),
-    ),
-  ),
+  applicability: Schema.optional(SignalApplicabilitySnapshot),
+})
+
+const ObserverSignalDiagnosticsSnapshot = Schema.Struct({
+  score: Schema.Number,
+  applicability: SignalApplicabilitySnapshot,
+  emitted_count: Schema.Number,
+  diagnostics: Schema.Array(DiagnosticSchema),
 })
 
 const ObserverRuntimeProfileSnapshot = Schema.Struct({
@@ -278,6 +280,9 @@ export const ObserverOutput = Schema.Struct({
   hard_gate_violations: Schema.Array(HardGateViolationSnapshot),
   signal_metadata: Schema.optional(
     Schema.Record({ key: Schema.String, value: ObserverSignalMetadataSnapshot }),
+  ),
+  signal_diagnostics: Schema.optional(
+    Schema.Record({ key: Schema.String, value: ObserverSignalDiagnosticsSnapshot }),
   ),
   runtime_profile: Schema.optional(ObserverRuntimeProfileSnapshot),
   calibration: Schema.optional(ObserverCalibrationSnapshot),
