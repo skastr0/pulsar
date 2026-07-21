@@ -13,6 +13,7 @@ const scan: ScanResult = {
 test("headless onboarding applies no catalog defaults and awaits structured output", async () => {
   let output = ""
   let outputFinished = false
+  let writeCalled = false
   const input: OnboardInput = {
     repoPath: "/repo",
     detection: {
@@ -32,7 +33,10 @@ test("headless onboarding applies no catalog defaults and awaits structured outp
       expect(plan.baseline).toBe("not-provided")
       return { before: scan, after: scan, receipts: [] }
     },
-    writeConfig: async (plan) => ({ written: ["/repo/.pulsar/vector.json"], receipts: [], baseline: plan.baseline }),
+    writeConfig: async (plan) => {
+      writeCalled = true
+      return { written: ["/repo/.pulsar/vector.json"], receipts: [], baseline: plan.baseline }
+    },
     writeOutput: async (contents) => {
       await new Promise((resolve) => setTimeout(resolve, 5))
       output = contents
@@ -44,11 +48,14 @@ test("headless onboarding applies no catalog defaults and awaits structured outp
 
   expect(await runOnboardHeadless(input)).toBe(0)
   expect(outputFinished).toBe(true)
+  expect(writeCalled).toBe(false)
   expect(JSON.parse(output)).toMatchObject({
+    mode: "preview-only",
     choices: [],
     enabledPacks: [],
     baseline: "not-provided",
     before: { score: 0.42 },
     after: { score: 0.42 },
+    written: [],
   })
 })

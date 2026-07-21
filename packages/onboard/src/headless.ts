@@ -2,10 +2,12 @@ import { buildPlan } from "./calibration.js"
 import type { OnboardInput } from "./types.js"
 import { normalizeSignalId } from "./util.js"
 
-// Agent / non-TTY path: apply only explicitly supplied answers, preview the
-// exact vector through the real observer, persist it, then await JSON output.
+// Agent / non-TTY path: preview the exact vector through the real observer.
+// Persistence requires an explicit answers file; an implicit non-TTY run is
+// evidence-only and cannot create repo-owned calibration state.
 export const runOnboardHeadless = async (input: OnboardInput): Promise<number> => {
   const answers = input.headlessAnswers ?? {}
+  const previewOnly = input.headlessAnswers === undefined
 
   const plan = buildPlan({
     choices: answers.choices ?? [],
@@ -15,7 +17,9 @@ export const runOnboardHeadless = async (input: OnboardInput): Promise<number> =
     detection: input.detection,
   })
   const preview = await input.preview(plan)
-  const result = await input.writeConfig(plan)
+  const result = previewOnly
+    ? { written: [], receipts: preview.receipts, baseline: plan.baseline }
+    : await input.writeConfig(plan)
 
   await input.writeOutput(
     JSON.stringify(
@@ -36,6 +40,7 @@ export const runOnboardHeadless = async (input: OnboardInput): Promise<number> =
           .map((p) => ({ id: normalizeSignalId(p.id), score: p.score })),
         choices: plan.choices,
         receipts: result.receipts,
+        mode: previewOnly ? "preview-only" : "persisted",
         enabledPacks: plan.enabledPacks,
         baseline: result.baseline,
         written: result.written,

@@ -164,3 +164,25 @@ test("bare and equals-form --answers fail before scan or write", async () => {
     await expect(readFile(join(repo, ".pulsar/vector.json"), "utf8")).rejects.toThrow()
   }
 }, 30_000)
+
+test("headless onboarding without --answers is preview-only and writes no repo artifacts", async () => {
+  const repo = await makeRepo()
+  const result = spawnSync("bun", [binPath, "onboard", "--json", repo], {
+    cwd: repo,
+    encoding: "utf8",
+    maxBuffer: 16 * 1024 * 1024,
+  })
+
+  expect(result.status).toBe(0)
+  expect(result.stderr).toBe("")
+  expect(JSON.parse(result.stdout)).toMatchObject({
+    mode: "preview-only",
+    choices: [],
+    enabledPacks: [],
+    baseline: "not-provided",
+    written: [],
+  })
+  await expect(readFile(join(repo, ".pulsar/vector.json"), "utf8")).rejects.toThrow()
+  await expect(readFile(join(repo, ".pulsar/pulsar-baseline.json"), "utf8")).rejects.toThrow()
+  await expect(readFile(join(repo, ".pulsar/project-modules.json"), "utf8")).rejects.toThrow()
+}, 120_000)

@@ -4,6 +4,7 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from "react"
 import { actionForOption } from "./actions.js"
 import { buildPlan } from "./calibration.js"
 import { catalogById } from "./catalog.js"
+import { canAdvanceFromHandoff } from "./lifecycle.js"
 import { bandColor, palette, scoreBand } from "./palette.js"
 import type {
   BaselineDecision,
@@ -285,6 +286,7 @@ export function OnboardApp({ input }: { readonly input: OnboardInput }) {
         setSelIdx(0)
         return goTo("commit")
       case "handoff":
+        if (!canAdvanceFromHandoff(written, writeError)) return
         return goTo("gate")
       case "gate":
         return input.onExit()
@@ -412,7 +414,7 @@ export function OnboardApp({ input }: { readonly input: OnboardInput }) {
     <box style={{ width: "100%", height: "100%", flexDirection: "column", backgroundColor: palette.bg, padding: 1, gap: 1 }}>
       <Header step={step} seedIdx={seedIdx} calibIdx={calibIdx} total={targets.length} scanning={scanning} phase={input.phase} />
       <box style={{ flexGrow: 1, flexDirection: "column" }}>{renderBody()}</box>
-      <Footer step={step} scanning={scanning} />
+      <Footer step={step} scanning={scanning} written={written} writeError={writeError} />
     </box>
   )
 
@@ -866,10 +868,24 @@ function Header({
   )
 }
 
-function Footer({ step, scanning }: { readonly step: Beat; readonly scanning: boolean }) {
+function Footer({
+  step,
+  scanning,
+  written,
+  writeError,
+}: {
+  readonly step: Beat
+  readonly scanning: boolean
+  readonly written: CalibrationWriteResult | null
+  readonly writeError: string | null
+}) {
   const hint =
     step === "scanstats" && scanning
       ? "analyzing… (this can take a moment on a cold scan)"
+      : step === "handoff" && writeError !== null
+        ? "write failed · fix the error before continuing   ⌃C quit"
+        : step === "handoff" && written === null
+          ? "writing…   ⌃C quit"
       : SELECT_BEATS.has(step)
         ? "↑↓ move   ⏎ choose   b back   ⌃C quit"
         : "⏎ continue   ⌃C quit"
