@@ -47,7 +47,7 @@ const HELP_SECTIONS: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [
     [
       "  --signal <id>        Single-signal mode (existing TC-003 path).",
       "  --vector <path>      Load a specific pulsar vector JSON.",
-      "  --json               Emit ObserverOutput JSON plus CLI vector source metadata.",
+      "  --json               Emit ObserverOutput JSON with bounded per-signal diagnostics and vector provenance.",
       "  --category <name>    Human output for one category only.",
       "  --diff <a>..<b>      Compare Observer output for a base/head range; head may be WORKTREE.",
       "  --changed-only       Add changed-file/hunk scoped diagnostic guidance for --diff.",
