@@ -23,7 +23,8 @@ import {
 } from "@skastr0/pulsar-project-module-sdk"
 import { Effect } from "effect"
 import {
-  detectNextAppRouterFramework,
+  detectRuntimeFrameworks,
+  SOLIDJS_START_FRAMEWORK_ID,
   type DetectedRuntimeFramework,
 } from "./runtime-framework-detection.js"
 
@@ -37,6 +38,7 @@ interface RuntimeProjectModuleDetection {
   readonly manifest?: ProjectModuleManifest
   readonly effectiveManifest: ProjectModuleManifest
   readonly detectedFrameworks: ReadonlyArray<DetectedFramework>
+  readonly frameworkDetectionConflict: boolean
   readonly shouldAutoActivateNext: boolean
 }
 
@@ -67,12 +69,18 @@ const detectRuntimeProjectModules = (
 ): Effect.Effect<RuntimeProjectModuleDetection, unknown, never> =>
   Effect.gen(function* () {
     const manifest = yield* loadOptionalProjectModuleManifest(repoRoot)
-    const detectedNext = yield* detectNextAppRouterFramework(repoRoot)
+    const detectedFrameworks = yield* detectRuntimeFrameworks(repoRoot)
+    const detectedNext = detectedFrameworks.find((framework) =>
+      framework.id === NEXTJS_APP_ROUTER_FRAMEWORK_ID
+    )
     const explicitNextRef = manifest?.modules.find((ref) =>
       ref.id === NEXTJS_PROJECT_MODULE_ID
     )
+    const frameworkDetectionConflict = detectedFrameworks.length > 1
     const shouldAutoActivateNext =
-      explicitNextRef === undefined && detectedNext?.confidence === "high"
+      explicitNextRef === undefined &&
+      !frameworkDetectionConflict &&
+      detectedNext?.confidence === "high"
     const effectiveManifest = makeEffectiveProjectModuleManifest(
       manifest,
       shouldAutoActivateNext,
@@ -81,7 +89,12 @@ const detectRuntimeProjectModules = (
     return {
       ...(manifest !== undefined ? { manifest } : {}),
       effectiveManifest,
-      detectedFrameworks: detectedFrameworkSummaries(detectedNext, explicitNextRef),
+      detectedFrameworks: detectedFrameworkSummaries(
+        detectedFrameworks,
+        explicitNextRef,
+        shouldAutoActivateNext,
+      ),
+      frameworkDetectionConflict,
       shouldAutoActivateNext,
     }
   })
@@ -111,7 +124,7 @@ const projectModuleRepoFacts = (
       effectiveManifestFingerprint,
       detectedFrameworks: detection.detectedFrameworks,
     })}`,
-    detectedTechnologies: detectedNextTechnologyIds(detection.detectedFrameworks),
+    detectedTechnologies: detectedTechnologyIds(detection.detectedFrameworks),
     ...(detection.detectedFrameworks.length > 0
       ? { detectedFrameworks: detection.detectedFrameworks }
       : {}),
@@ -125,12 +138,16 @@ const projectModuleRepoFacts = (
   }
 }
 
-const detectedNextTechnologyIds = (
+const detectedTechnologyIds = (
   detectedFrameworks: ReadonlyArray<DetectedFramework>,
-): ReadonlyArray<string> =>
-  detectedFrameworks.some((framework) => framework.id === NEXTJS_APP_ROUTER_FRAMEWORK_ID)
-    ? ["nextjs"]
-    : []
+): ReadonlyArray<string> => [
+  ...(detectedFrameworks.some((framework) =>
+    framework.id === NEXTJS_APP_ROUTER_FRAMEWORK_ID
+  ) ? ["nextjs"] : []),
+  ...(detectedFrameworks.some((framework) =>
+    framework.id === SOLIDJS_START_FRAMEWORK_ID
+  ) ? [SOLIDJS_START_FRAMEWORK_ID] : []),
+]
 
 const projectModuleRepoFactsMetadata = (
   detection: RuntimeProjectModuleDetection,
@@ -148,6 +165,14 @@ const projectModuleRepoFactsMetadata = (
   declaredModuleCount: detection.manifest?.modules.length ?? 0,
   activeModuleCount,
   autoActivatedModuleCount: detection.shouldAutoActivateNext ? 1 : 0,
+  ...(detection.frameworkDetectionConflict
+    ? {
+        frameworkDetectionConflict: true,
+        frameworkDetectionConflictIds: detection.detectedFrameworks.map(
+          (framework) => framework.id,
+        ),
+      }
+    : {}),
 })
 
 const loadOptionalProjectModuleManifest = (
@@ -190,17 +215,40 @@ const makeEffectiveProjectModuleManifest = (
 })
 
 const detectedFrameworkSummaries = (
-  detectedNext: DetectedRuntimeFramework | undefined,
+  detectedFrameworks: ReadonlyArray<DetectedRuntimeFramework>,
   explicitNextRef: ProjectModuleRef | undefined,
+  shouldAutoActivateNext: boolean,
 ): ReadonlyArray<DetectedFramework> => {
-  const summary = nextDetectedFrameworkSummary(detectedNext, explicitNextRef)
-  return summary === undefined ? [] : [summary]
+  const summaries = detectedFrameworks.map((framework): DetectedFramework => {
+    if (framework.id === NEXTJS_APP_ROUTER_FRAMEWORK_ID) {
+      return nextDetectedFrameworkSummary(
+        framework,
+        explicitNextRef,
+        shouldAutoActivateNext,
+      )
+    }
+    return detectedInactiveFrameworkSummary(framework)
+  })
+
+  if (
+    explicitNextRef !== undefined &&
+    !detectedFrameworks.some((framework) =>
+      framework.id === NEXTJS_APP_ROUTER_FRAMEWORK_ID
+    )
+  ) {
+    summaries.push(explicitNextFrameworkSummary(explicitNextRef))
+  }
+
+  return summaries.sort((left, right) =>
+    left.id < right.id ? -1 : left.id > right.id ? 1 : 0
+  )
 }
 
 const nextDetectedFrameworkSummary = (
-  detectedNext: DetectedRuntimeFramework | undefined,
+  detectedNext: DetectedRuntimeFramework,
   explicitNextRef: ProjectModuleRef | undefined,
-): DetectedFramework | undefined => {
+  shouldAutoActivateNext: boolean,
+): DetectedFramework => {
   if (explicitNextRef !== undefined) {
     return {
       id: NEXTJS_APP_ROUTER_FRAMEWORK_ID,
@@ -214,15 +262,34 @@ const nextDetectedFrameworkSummary = (
     }
   }
 
-  if (detectedNext === undefined) return undefined
   return {
     id: detectedNext.id,
     name: detectedNext.name,
     confidence: detectedNext.confidence,
-    activation: detectedNext.confidence === "high" ? "auto-active" : "detected-inactive",
+    activation: shouldAutoActivateNext ? "auto-active" : "detected-inactive",
     evidence: detectedNext.evidence,
   }
 }
+
+const explicitNextFrameworkSummary = (
+  explicitNextRef: ProjectModuleRef,
+): DetectedFramework => ({
+  id: NEXTJS_APP_ROUTER_FRAMEWORK_ID,
+  name: "Next App Router",
+  confidence: "high",
+  activation: explicitNextRef.enabled ? "explicit-active" : "explicit-inactive",
+  evidence: manifestRefEvidence(explicitNextRef),
+})
+
+const detectedInactiveFrameworkSummary = (
+  detectedFramework: DetectedRuntimeFramework,
+): DetectedFramework => ({
+  id: detectedFramework.id,
+  name: detectedFramework.name,
+  confidence: detectedFramework.confidence,
+  activation: "detected-inactive",
+  evidence: detectedFramework.evidence,
+})
 
 const manifestRefEvidence = (
   ref: ProjectModuleRef,

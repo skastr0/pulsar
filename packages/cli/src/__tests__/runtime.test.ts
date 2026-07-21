@@ -14,6 +14,7 @@ import {
 import { TsLd01, TsSl04, TsProjectLayer } from "@skastr0/pulsar-ts-pack"
 import { Effect, Layer } from "effect"
 import { loadProjectModuleCalibrationContext } from "../runtime-calibration.js"
+import { SOLIDJS_START_FRAMEWORK_ID } from "../runtime-framework-detection.js"
 import {
   makePulsarRuntime,
   withDetachedWorktreeAtRef,
@@ -110,7 +111,7 @@ describe("pulsar runtime project modules", () => {
     }
   })
 
-  test("ignores unsupported JSX/TSX metadata route conventions during Next auto-detection", async () => {
+  test("reports low-confidence Next dependency evidence without treating unsupported routes as App Router evidence", async () => {
     const repoPath = await mkdtemp(join(tmpdir(), "pulsar-runtime-project-modules-"))
     try {
       await writeRepoFile(
@@ -126,7 +127,19 @@ describe("pulsar runtime project modules", () => {
 
       const context = await Effect.runPromise(loadProjectModuleCalibrationContext(repoPath))
 
-      expect(context).toBeUndefined()
+      expect(context?.activeModules).toEqual([])
+      expect(context?.repoFacts.detectedFrameworks?.[0]).toMatchObject({
+        id: NEXTJS_APP_ROUTER_FRAMEWORK_ID,
+        confidence: "low",
+        activation: "detected-inactive",
+        evidence: [
+          {
+            kind: "package-json",
+            value: "package.json",
+            metadata: { dependency: "next" },
+          },
+        ],
+      })
     } finally {
       await rm(repoPath, { recursive: true, force: true })
     }
@@ -155,7 +168,7 @@ describe("pulsar runtime project modules", () => {
     }
   })
 
-  test("reports low-confidence App Router file detection without auto-activation", async () => {
+  test("does not classify an unrelated app directory as Next without dependency evidence", async () => {
     const repoPath = await mkdtemp(join(tmpdir(), "pulsar-runtime-project-modules-"))
     try {
       await writeRepoFile(
@@ -166,14 +179,260 @@ describe("pulsar runtime project modules", () => {
 
       const context = await Effect.runPromise(loadProjectModuleCalibrationContext(repoPath))
 
+      expect(context).toBeUndefined()
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("detects SolidStart from exact dependency, config import, and route evidence without classifying app files as Next", async () => {
+    const repoPath = await mkdtemp(join(tmpdir(), "pulsar-runtime-project-modules-"))
+    try {
+      await writeRepoFile(
+        repoPath,
+        "package.json",
+        JSON.stringify({ dependencies: { "@solidjs/start": "^1.2.0" } }, null, 2),
+      )
+      await writeRepoFile(
+        repoPath,
+        "vite.config.ts",
+        [
+          'import { defineConfig } from "vite"',
+          'import { solidStart } from "@solidjs/start/config"',
+          "export default defineConfig({ plugins: [solidStart()] })",
+        ].join("\n"),
+      )
+      await writeRepoFile(
+        repoPath,
+        "src/routes/index.tsx",
+        "export default function Home() { return null }\n",
+      )
+      await writeRepoFile(
+        repoPath,
+        "app/page.tsx",
+        "export default function UnrelatedAppPage() { return null }\n",
+      )
+
+      const context = await Effect.runPromise(loadProjectModuleCalibrationContext(repoPath))
+
       expect(context?.activeModules).toEqual([])
+      expect(context?.repoFacts.detectedTechnologies).toEqual(["solidjs-start"])
+      expect(context?.repoFacts.detectedFrameworks).toHaveLength(1)
       expect(context?.repoFacts.detectedFrameworks?.[0]).toMatchObject({
-        id: NEXTJS_APP_ROUTER_FRAMEWORK_ID,
-        confidence: "low",
+        id: SOLIDJS_START_FRAMEWORK_ID,
+        name: "SolidStart",
+        confidence: "high",
         activation: "detected-inactive",
+        evidence: [
+          {
+            kind: "package-json",
+            value: "package.json",
+            metadata: { dependency: "@solidjs/start" },
+          },
+          {
+            kind: "path",
+            value: "src/routes/index.tsx",
+            metadata: { convention: "solid-start-file-route" },
+          },
+          {
+            kind: "path",
+            value: "vite.config.ts",
+            metadata: { moduleSpecifier: "@solidjs/start/config" },
+          },
+        ],
+      })
+      expect(context?.repoFacts.detectedFrameworks?.some((framework) =>
+        framework.id === NEXTJS_APP_ROUTER_FRAMEWORK_ID
+      )).toBe(false)
+      expect(context?.repoFacts.metadata?.autoActivatedModuleCount).toBe(0)
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("does not infer SolidStart from shared app.config and src/routes layout conventions alone", async () => {
+    const repoPath = await mkdtemp(join(tmpdir(), "pulsar-runtime-project-modules-"))
+    try {
+      await writeRepoFile(
+        repoPath,
+        "app.config.ts",
+        'import { defineConfig } from "@tanstack/react-start/config"\nexport default defineConfig({})\n',
+      )
+      await writeRepoFile(
+        repoPath,
+        "src/routes/index.tsx",
+        "export default function Home() { return null }\n",
+      )
+
+      const context = await Effect.runPromise(loadProjectModuleCalibrationContext(repoPath))
+
+      expect(context).toBeUndefined()
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("does not treat commented or string-only SolidStart imports as activation evidence", async () => {
+    const repoPath = await mkdtemp(join(tmpdir(), "pulsar-runtime-project-modules-"))
+    try {
+      await writeRepoFile(
+        repoPath,
+        "app.config.ts",
+        [
+          '// import { defineConfig } from "@solidjs/start/config"',
+          '/* const start = require("solid-start/vite") */',
+          'const example = \'import { solidStart } from "@solidjs/start/config"\'',
+          "export default {}",
+        ].join("\n"),
+      )
+      await writeRepoFile(
+        repoPath,
+        "src/routes/index.tsx",
+        "export default function Home() { return null }\n",
+      )
+
+      const context = await Effect.runPromise(loadProjectModuleCalibrationContext(repoPath))
+
+      expect(context).toBeUndefined()
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("retains mixed strong framework evidence but conservatively auto-activates neither module", async () => {
+    const repoPath = await mkdtemp(join(tmpdir(), "pulsar-runtime-project-modules-"))
+    try {
+      await writeRepoFile(
+        repoPath,
+        "package.json",
+        JSON.stringify(
+          { dependencies: { next: "^16.0.0", "@solidjs/start": "^1.2.0" } },
+          null,
+          2,
+        ),
+      )
+      await writeRepoFile(
+        repoPath,
+        "app/page.tsx",
+        "export default function Page() { return null }\n",
+      )
+      await writeRepoFile(
+        repoPath,
+        "app.config.ts",
+        'import { defineConfig } from "@solidjs/start/config"\nexport default defineConfig({})\n',
+      )
+      await writeRepoFile(
+        repoPath,
+        "src/routes/index.tsx",
+        "export default function Home() { return null }\n",
+      )
+
+      const context = await Effect.runPromise(loadProjectModuleCalibrationContext(repoPath))
+
+      expect(context?.activeModules).toEqual([])
+      expect(context?.repoFacts.detectedTechnologies).toEqual(["nextjs", "solidjs-start"])
+      expect(context?.repoFacts.detectedFrameworks?.map((framework) => ({
+        id: framework.id,
+        confidence: framework.confidence,
+        activation: framework.activation,
+      }))).toEqual([
+        {
+          id: NEXTJS_APP_ROUTER_FRAMEWORK_ID,
+          confidence: "high",
+          activation: "detected-inactive",
+        },
+        {
+          id: SOLIDJS_START_FRAMEWORK_ID,
+          confidence: "high",
+          activation: "detected-inactive",
+        },
+      ])
+      expect(context?.repoFacts.detectedFrameworks?.every(
+        (framework) => framework.evidence.length > 0,
+      )).toBe(true)
+      expect(context?.repoFacts.metadata?.autoActivatedModuleCount).toBe(0)
+      expect(context?.repoFacts.metadata?.frameworkDetectionConflict).toBe(true)
+      expect(context?.repoFacts.metadata?.frameworkDetectionConflictIds).toEqual([
+        NEXTJS_APP_ROUTER_FRAMEWORK_ID,
+        SOLIDJS_START_FRAMEWORK_ID,
+      ])
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("supports the legacy solid-start package with route evidence", async () => {
+    const repoPath = await mkdtemp(join(tmpdir(), "pulsar-runtime-project-modules-"))
+    try {
+      await writeRepoFile(
+        repoPath,
+        "package.json",
+        JSON.stringify({ devDependencies: { "solid-start": "^0.3.0" } }, null, 2),
+      )
+      await writeRepoFile(
+        repoPath,
+        "src/routes/index.tsx",
+        "export default function Home() { return null }\n",
+      )
+
+      const context = await Effect.runPromise(loadProjectModuleCalibrationContext(repoPath))
+
+      expect(context?.repoFacts.detectedFrameworks?.[0]).toMatchObject({
+        id: SOLIDJS_START_FRAMEWORK_ID,
+        confidence: "high",
+        activation: "detected-inactive",
+      })
+      expect(context?.repoFacts.detectedFrameworks?.[0]?.evidence[0]).toMatchObject({
+        kind: "package-json",
+        value: "package.json",
+        metadata: { dependency: "solid-start" },
       })
     } finally {
       await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("keeps SolidStart detection fingerprints checkout-stable and changes them with evidence", async () => {
+    const firstRepoPath = await mkdtemp(join(tmpdir(), "pulsar-runtime-project-modules-"))
+    const secondRepoPath = await mkdtemp(join(tmpdir(), "pulsar-runtime-project-modules-"))
+    try {
+      const writeSolidStartRepo = async (repoPath: string) => {
+        await writeRepoFile(
+          repoPath,
+          "package.json",
+          JSON.stringify({ dependencies: { "@solidjs/start": "^1.2.0" } }, null, 2),
+        )
+        await writeRepoFile(
+          repoPath,
+          "src/routes/index.tsx",
+          "export default function Home() { return null }\n",
+        )
+      }
+
+      await writeSolidStartRepo(firstRepoPath)
+      await writeSolidStartRepo(secondRepoPath)
+
+      const first = await Effect.runPromise(loadProjectModuleCalibrationContext(firstRepoPath))
+      const second = await Effect.runPromise(loadProjectModuleCalibrationContext(secondRepoPath))
+
+      expect(first?.fingerprint).toBe(second?.fingerprint)
+      expect(first?.repoFacts.fingerprint).toBe(second?.repoFacts.fingerprint)
+
+      await writeRepoFile(
+        secondRepoPath,
+        "app.config.ts",
+        'import { defineConfig } from "@solidjs/start/config"\nexport default defineConfig({})\n',
+      )
+      const withConfigEvidence = await Effect.runPromise(
+        loadProjectModuleCalibrationContext(secondRepoPath),
+      )
+
+      expect(withConfigEvidence?.repoFacts.detectedFrameworks?.[0]?.evidence).toHaveLength(3)
+      expect(withConfigEvidence?.repoFacts.fingerprint).not.toBe(first?.repoFacts.fingerprint)
+      expect(withConfigEvidence?.fingerprint).not.toBe(first?.fingerprint)
+    } finally {
+      await rm(firstRepoPath, { recursive: true, force: true })
+      await rm(secondRepoPath, { recursive: true, force: true })
     }
   })
 
