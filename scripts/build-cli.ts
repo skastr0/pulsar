@@ -145,6 +145,12 @@ for (const targetConfig of binaryTargets) {
   await assertNativeLibraryEmbedded(outfile, nativePath, target)
 }
 
+await run("Smoke-testing source/native onboarding parity and native TUI", [
+  "bun",
+  "scripts/onboard-smoke.ts",
+  "--tui",
+])
+
 console.log(`
 Build complete.
 

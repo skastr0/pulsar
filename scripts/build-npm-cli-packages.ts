@@ -51,3 +51,9 @@ for (const { target, packageDir } of platformPackages) {
 
   console.log(`Copied ${source} -> ${destination}`)
 }
+
+await run("Smoke-testing source/native/npm onboarding parity", [
+  "bun",
+  "scripts/onboard-smoke.ts",
+  "--npm",
+])
