@@ -202,16 +202,17 @@ Instrument from day one, pre-users.
 - **The bet that makes "live" cheap:** the split-screen right-pane reaction and the beat-7 reveal are both **re-filtering / re-weighting already-computed evidence, never a re-scan.** Beat 4 computes each signal's findings once into a cached evidence set; a calibration answer mutates an in-memory vector draft and the affected signal's surviving findings are re-derived from cache. Keep that caching boundary clean and the magic is effectively free.
 - **Hold-to-confirm (beat 8):** no built-in; compose `useKeyboard` keydown/keyup (`release` option) with a `useTimeline`-driven width fill on a box (~800ms). Genuine commitment friction.
 
-## 7. Implementation status (2026-06-17)
+## 7. Implementation status (2026-07-21)
 
 Shipped as the command **`pulsar onboard`** (built with OpenTUI, `~/Playground/opentui` → `@opentui/react`). TUI by default; `--json` / `--agent` / non-TTY → headless agent path.
 
-- **`packages/onboard`** (`@skastr0/pulsar-onboard`) — the TUI: `app.tsx` (all beats incl. the live split-screen calibrate), `catalog.ts` (+ generated `catalog.generated.json`, all **74 signals**), `calibration.ts` (live re-filter + approximate re-score), `demo.ts` (assessment-grounded demo dataset), `mount.tsx`, `headless.ts`.
-- **`packages/cli/src/onboard.ts`** — TTY gate, real `observeWorktree` → `ScanResult` adapter (demo fallback), non-destructive `.pulsar/` writer (→ `onboard-preview/` if already calibrated). Lazy-imported via a variable specifier so it never enters cli's `tsc -b` or compiled binary.
+- **`packages/onboard`** (`@skastr0/pulsar-onboard`) — a composite workspace package containing the TUI, typed calibration actions, generated catalog, awaited headless lifecycle, and exact write handoff. Demo data remains development-only.
+- **`packages/cli/src/onboard.ts`** — statically imports the onboarding package so Bun includes it in every standalone binary. Source, native, and npm entry paths use the same real `observeWorktree` adapter; scan failures surface instead of substituting demo evidence. Exact typed plans are validated, previewed through the real observer, and persisted atomically under `.pulsar/` (or guarded `.pulsar/onboard-preview/`).
+- **Binary packaging gate:** `bun run build:cli` installs OpenTUI's optional native dependency for each target with Bun's `--cpu` / `--os` selection, compiles the target, and verifies the exact `libopentui` bytes are embedded. The native host then runs source/native headless parity plus a PTY first-frame TUI smoke. `bun run build:npm-cli` additionally proves source/native/npm headless parity on a deterministic git fixture.
 - **Dev build:** `pulsar-dev` source shim in `~/.local/bin` (runs from source via Bun; never touches the npm `pulsar`).
 - **Catalog generation:** a Workflow (sonnet draft → haiku deterministic verify → opus review) drafted a grounded calibration entry per signal — explanation, "what's true here" question, real calibration target (`signal_overrides[id].config.<key>`, conventions, project-module, baseline), and evidence type. Zero suppression-word violations across all 74 × options.
 - **Visualize:** `bun packages/onboard/src/dev.tsx` (curated demo) or `pulsar onboard` on a repo.
-- **Deferred:** wiring onboard into the compiled production binary; confirming builtin project-module ids; real engine re-weight on calibration (currently approximated for the reveal).
+- **Deferred:** server-driven flow configuration and progress-event rendering remain separate product work; production persistence, project-module activation, real before/after observation, compiled reachability, and native packaging are wired.
 - **`pulsar init` is an orchestrator, not a reimplementation.** It calls the existing verbs (`persona apply`, `score`, `conventions/glossary extract`, `elicit`, `baseline set`). The per-signal loop already has a backend in `elicit quiz` — dramatize it, don't rebuild it.
 - **Server-driven flow config.** Beat order, copy, and which signals get elicited live in a JSON config the CLI reads — not hardcoded. Iterate the funnel and the copy without a CLI release, and A/B the flow.
 - **Live scan:** drive the beat-4 signal feed off the real scoring pipeline's progress events via `useTimeline`; the progress must be genuine, never a fake spinner.
