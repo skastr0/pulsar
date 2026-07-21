@@ -10,6 +10,14 @@ import {
   type ResolvedCalibrationContext,
 } from "@skastr0/pulsar-core/calibration"
 import {
+  CONVEX_PROJECT_MODULE_ID,
+  convexProjectModule,
+} from "@skastr0/pulsar-project-module-convex"
+import {
+  EFFECT_PROJECT_MODULE_ID,
+  effectProjectModule,
+} from "@skastr0/pulsar-project-module-effect"
+import {
   NEXTJS_APP_ROUTER_FRAMEWORK_ID,
   NEXTJS_PROJECT_MODULE_ID,
   nextjsProjectModule,
@@ -32,6 +40,8 @@ const PROJECT_MODULE_MANIFEST_SOURCE_REF = ".pulsar/project-modules.json"
 
 const builtinProjectModules = new Map([
   [NEXTJS_PROJECT_MODULE_ID, nextjsProjectModule],
+  [EFFECT_PROJECT_MODULE_ID, effectProjectModule],
+  [CONVEX_PROJECT_MODULE_ID, convexProjectModule],
 ])
 
 interface RuntimeProjectModuleDetection {
@@ -44,10 +54,13 @@ interface RuntimeProjectModuleDetection {
 
 export const loadProjectModuleCalibrationContext = (
   repoRoot: string,
-  options?: { readonly dependencyRoot?: string },
+  options?: {
+    readonly dependencyRoot?: string
+    readonly manifest?: ProjectModuleManifest
+  },
 ): Effect.Effect<ResolvedCalibrationContext | undefined, unknown, never> =>
   Effect.gen(function* () {
-    const detection = yield* detectRuntimeProjectModules(repoRoot)
+    const detection = yield* detectRuntimeProjectModules(repoRoot, options?.manifest)
     if (hasNoProjectModuleCalibrationEvidence(detection)) {
       return undefined
     }
@@ -66,9 +79,10 @@ export const loadProjectModuleCalibrationContext = (
 
 const detectRuntimeProjectModules = (
   repoRoot: string,
+  proposedManifest?: ProjectModuleManifest,
 ): Effect.Effect<RuntimeProjectModuleDetection, unknown, never> =>
   Effect.gen(function* () {
-    const manifest = yield* loadOptionalProjectModuleManifest(repoRoot)
+    const manifest = proposedManifest ?? (yield* loadOptionalProjectModuleManifest(repoRoot))
     const detectedFrameworks = yield* detectRuntimeFrameworks(repoRoot)
     const detectedNext = detectedFrameworks.find((framework) =>
       framework.id === NEXTJS_APP_ROUTER_FRAMEWORK_ID

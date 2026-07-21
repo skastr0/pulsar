@@ -14,6 +14,8 @@ const version = packageJson.version ?? "0.0.0"
 const packageBuildOrder = [
   "packages/core",
   "packages/project-module-sdk",
+  "packages/project-module-effect",
+  "packages/project-module-convex",
   "packages/shared-signals",
   "packages/ts-pack",
   "packages/rs-pack",

@@ -1,11 +1,20 @@
 import { execFile, execFileSync } from "node:child_process"
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
-import { Effect } from "effect"
-import { collectPositional, rejectUnknownFlags } from "./cli-args.js"
-import { observeWorktree } from "./runtime.js"
+import { collectPositional, parseArg, rejectUnknownFlags } from "./cli-args.js"
+import { writeStdout } from "./cli-output.js"
+import {
+  parseOnboardAnswers,
+  previewOnboardPlan,
+  scanCurrentOnboardRepo,
+  writeOnboardPlan,
+  type OnboardBaselineDecision,
+  type OnboardCalibrationAction,
+  type OnboardCalibrationReceipt,
+  type OnboardCatalogEntry,
+} from "./onboard-persistence.js"
 
 const execFileP = promisify(execFile)
 
@@ -50,22 +59,42 @@ interface LocalInput {
   readonly repoPath: string
   readonly detection: LocalDetection
   readonly detectedPacks: ReadonlyArray<LocalPack>
-  readonly catalog: ReadonlyArray<unknown>
+  readonly catalog: ReadonlyArray<OnboardCatalogEntry>
   readonly scan: () => Promise<LocalScanResult>
-  readonly writeConfig: (plan: OnboardPlan) => Promise<string[]>
+  readonly preview: (plan: OnboardPlan) => Promise<{
+    readonly before: LocalScanResult
+    readonly after: LocalScanResult
+    readonly receipts: ReadonlyArray<OnboardCalibrationReceipt>
+  }>
+  readonly writeConfig: (plan: OnboardPlan) => Promise<{
+    readonly written: ReadonlyArray<string>
+    readonly receipts: ReadonlyArray<OnboardCalibrationReceipt>
+    readonly baseline: OnboardBaselineDecision
+  }>
+  readonly writeOutput: (contents: string) => Promise<void>
+  readonly headlessAnswers?: {
+    readonly choices?: ReadonlyArray<OnboardPlan["choices"][number]>
+    readonly enabledPacks?: ReadonlyArray<string>
+    readonly baseline?: OnboardBaselineDecision
+    readonly seed?: Record<string, string>
+  }
   readonly phase: "beta" | "private-license" | "enterprise"
   readonly onExit: () => void
 }
 interface OnboardPlan {
-  readonly choices: ReadonlyArray<{ readonly signalId: string; readonly optionIndex: number }>
+  readonly choices: ReadonlyArray<{
+    readonly signalId: string
+    readonly optionIndex: number
+    readonly action: OnboardCalibrationAction
+  }>
   readonly enabledPacks: ReadonlyArray<string>
-  readonly baseline: boolean
+  readonly baseline: OnboardBaselineDecision
   readonly seed: Record<string, string>
 }
 interface OnboardModule {
   runOnboardTui(input: LocalInput): Promise<void>
   runOnboardHeadless(input: LocalInput): Promise<number>
-  loadCatalog(): ReadonlyArray<unknown>
+  loadCatalog(): ReadonlyArray<OnboardCatalogEntry>
   demoScan(): Promise<LocalScanResult>
 }
 
@@ -74,15 +103,13 @@ const PACK_DEFS: Record<string, LocalPack> = {
   Effect: { id: "effect", label: "Effect calibration pack", reason: "effect dependency detected" },
   Convex: { id: "convex", label: "Convex calibration pack", reason: "convex dependency detected" },
 }
-const PACK_MODULE: Record<string, string> = {
-  nextjs: "@skastr0/pulsar-project-module-nextjs",
-  effect: "@skastr0/pulsar-project-module-effect",
-  convex: "@skastr0/pulsar-project-module-convex",
-}
-
 const sh = (repoPath: string, command: string): string => {
   try {
-    return execFileSync("bash", ["-c", command], { cwd: repoPath, encoding: "utf8" }).trim()
+    return execFileSync("bash", ["-c", command], {
+      cwd: repoPath,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim()
   } catch {
     return ""
   }
@@ -118,57 +145,7 @@ const detect = (repoPath: string): LocalDetection => {
 const buildScan =
   (repoPath: string, fallback: () => Promise<LocalScanResult>) => async (): Promise<LocalScanResult> => {
     try {
-      const run = (await Effect.runPromise(observeWorktree(repoPath, undefined))) as {
-        result: {
-          readiness?: {
-            band?: "green" | "yellow" | "red"
-            score?: number
-            top_pressures?: ReadonlyArray<{ signal_id?: string; score?: number; category?: string }>
-          }
-          weighted_mean?: number
-          hard_gate_violations?: ReadonlyArray<{ signalId?: string }>
-          signalResults?: ReadonlyMap<string, { score?: number; diagnostics?: ReadonlyArray<{ message?: string; location?: { file?: string; line?: number } }> }>
-        }
-        registry?: { byId?: { get?: (id: string) => { title?: string; category?: string } | undefined } }
-      }
-      const out = run.result
-      const reg = run.registry?.byId
-      const readiness = out.readiness
-      const band = readiness?.band ?? "unknown"
-      const score = typeof readiness?.score === "number" ? readiness.score : (out.weighted_mean ?? 0)
-      const driverId =
-        readiness?.top_pressures?.[0]?.signal_id ?? out.hard_gate_violations?.[0]?.signalId ?? "—"
-      const driverTitle = reg?.get?.(driverId)?.title
-      const signals: LocalSignalScan[] = []
-      const results = out.signalResults
-      if (results) {
-        for (const [id, res] of results) {
-          const diags = res.diagnostics ?? []
-          const meta = reg?.get?.(id)
-          signals.push({
-            id,
-            score: typeof res.score === "number" ? res.score : 0,
-            findingCount: diags.length,
-            findings: diags.slice(0, 8).map((d) => ({
-              file: d.location?.file ?? "—",
-              line: d.location?.line,
-              detail: d.message ?? "",
-            })),
-            category: meta?.category,
-            title: meta?.title,
-          })
-        }
-      }
-      const topPressures = (readiness?.top_pressures ?? [])
-        .filter((p): p is { signal_id: string; score?: number; category?: string } => typeof p.signal_id === "string")
-        .map((p) => ({ id: p.signal_id, score: typeof p.score === "number" ? p.score : 0, category: p.category ?? "—" }))
-      return {
-        band,
-        score,
-        driver: driverTitle ? `${driverId} · ${driverTitle}` : driverId,
-        topPressures,
-        signals,
-      }
+      return scanCurrentOnboardRepo(repoPath)
     } catch {
       return fallback()
     }
@@ -190,44 +167,24 @@ const spawnScan =
     }
   }
 
-const buildWriteConfig = (repoPath: string) => async (plan: OnboardPlan): Promise<string[]> => {
-  const baseDir = join(repoPath, ".pulsar")
-  // Non-destructive: never overwrite an already-calibrated repo's config.
-  const dir = existsSync(join(baseDir, "vector.json")) ? join(baseDir, "onboard-preview") : baseDir
-  mkdirSync(dir, { recursive: true })
-  const files: string[] = []
-
-  const vector = {
-    id: "repo",
-    domain: plan.seed["shape"] ?? "app",
-    description: "Calibrated via pulsar onboard",
-    signal_overrides: Object.fromEntries(plan.choices.map((c) => [c.signalId, {}])),
+export const runOnboardCli = async (commandArgs: ReadonlyArray<string>): Promise<number> => {
+  const flagsWithValues = new Set(["--answers"])
+  rejectUnknownFlags(
+    "onboard",
+    commandArgs,
+    new Set(["--json", "--agent", "--no-tui", "--no-progress", "--scan-json", ...flagsWithValues]),
+  )
+  if (commandArgs.some((arg) => arg.startsWith("--answers="))) {
+    throw new Error("pulsar: --answers=path is not supported; use --answers <path>")
   }
-  const vectorPath = join(dir, "vector.json")
-  writeFileSync(vectorPath, JSON.stringify(vector, null, 2))
-  files.push(vectorPath)
-
-  if (plan.enabledPacks.length > 0) {
-    const modulesPath = join(dir, "project-modules.json")
-    writeFileSync(
-      modulesPath,
-      JSON.stringify(
-        {
-          schema: "pulsar/project-modules/v1",
-          modules: plan.enabledPacks.map((id) => ({ kind: "builtin", id: PACK_MODULE[id] ?? id, enabled: true })),
-        },
-        null,
-        2,
-      ),
-    )
-    files.push(modulesPath)
+  const answersFlagIndex = commandArgs.indexOf("--answers")
+  if (
+    answersFlagIndex !== -1 &&
+    (commandArgs[answersFlagIndex + 1] === undefined || commandArgs[answersFlagIndex + 1]!.startsWith("--"))
+  ) {
+    throw new Error("pulsar: --answers requires a file path")
   }
-  return files
-}
-
-export const runOnboardCli = async (commandArgs: ReadonlyArray<string>): Promise<void> => {
-  rejectUnknownFlags("onboard", commandArgs, new Set(["--json", "--agent", "--no-tui", "--no-progress", "--scan-json"]))
-  const repoPath = resolve(collectPositional(commandArgs, new Set<string>())[0] ?? ".")
+  const repoPath = resolve(collectPositional(commandArgs, flagsWithValues)[0] ?? ".")
 
   // Scan-only mode: the TUI spawns this as a child process so the heavy scan
   // never blocks the interactive event loop. Prints the full ScanResult JSON.
@@ -236,14 +193,15 @@ export const runOnboardCli = async (commandArgs: ReadonlyArray<string>): Promise
       repoPath,
       async (): Promise<LocalScanResult> => ({ band: "unknown", score: 0, driver: "—", topPressures: [], signals: [] }),
     )()
-    process.stdout.write(JSON.stringify(result))
-    process.exit(0)
+    await writeStdout(JSON.stringify(result))
+    return 0
   }
 
   const headless =
     commandArgs.includes("--json") ||
     commandArgs.includes("--agent") ||
     commandArgs.includes("--no-tui") ||
+    commandArgs.includes("--answers") ||
     !(process.stdin.isTTY === true && process.stdout.isTTY === true)
 
   const onboardSpecifier = ["@skastr0", "pulsar-onboard"].join("/")
@@ -260,21 +218,30 @@ export const runOnboardCli = async (commandArgs: ReadonlyArray<string>): Promise
     ? buildScan(repoPath, () => onboard.demoScan())
     : spawnScan(binPath, repoPath, () => onboard.demoScan())
 
+  const catalog = onboard.loadCatalog()
+  const answersPath = parseArg(commandArgs, "--answers")
+  const headlessAnswers =
+    answersPath === undefined
+      ? undefined
+      : parseOnboardAnswers(JSON.parse(readFileSync(resolve(answersPath), "utf8")))
+
   const input: LocalInput = {
     repoPath,
     detection,
     detectedPacks,
-    catalog: onboard.loadCatalog(),
+    catalog,
     scan: scanFn,
-    writeConfig: buildWriteConfig(repoPath),
+    preview: (plan) => previewOnboardPlan(repoPath, plan, catalog),
+    writeConfig: (plan) => writeOnboardPlan(repoPath, plan, catalog),
+    writeOutput: writeStdout,
+    ...(headlessAnswers === undefined ? {} : { headlessAnswers }),
     phase: "beta",
     onExit: () => {},
   }
 
   if (headless) {
-    const code = await onboard.runOnboardHeadless(input)
-    process.exit(code)
+    return onboard.runOnboardHeadless(input)
   }
   await onboard.runOnboardTui(input)
-  process.exit(0)
+  return 0
 }

@@ -43,6 +43,8 @@
   "dependencies": {
     "@skastr0/pulsar-core": "workspace:*",
     "@skastr0/pulsar-onboard": "workspace:*",
+    "@skastr0/pulsar-project-module-convex": "workspace:*",
+    "@skastr0/pulsar-project-module-effect": "workspace:*",
     "@skastr0/pulsar-project-module-nextjs": "workspace:*",
     "@skastr0/pulsar-project-module-sdk": "workspace:*",
     "@skastr0/pulsar-rs-pack": "workspace:*",

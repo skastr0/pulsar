@@ -19,32 +19,31 @@ import { runPersonaCommand } from "./persona.js"
 export const runWorkflowCommand = async (
   command: string | undefined,
   commandArgs: ReadonlyArray<string>,
-): Promise<boolean> => {
+): Promise<number | undefined> => {
   if (command === "calibrate") {
     await runCalibrate(commandArgs)
-    return true
+    return 0
   }
   if (command === "glossary") {
     await runGlossary(commandArgs)
-    return true
+    return 0
   }
   if (command === "conventions") {
     await runConventions(commandArgs)
-    return true
+    return 0
   }
   if (command === "persona") {
     await runPersona(commandArgs)
-    return true
+    return 0
   }
   if (command === "elicit") {
     await runElicit(commandArgs)
-    return true
+    return 0
   }
   if (command === "onboard") {
-    await runOnboardCli(commandArgs)
-    return true
+    return runOnboardCli(commandArgs)
   }
-  return false
+  return undefined
 }
 
 const runCalibrate = async (commandArgs: ReadonlyArray<string>): Promise<void> => {

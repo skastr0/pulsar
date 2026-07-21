@@ -67,6 +67,7 @@ interface PulsarRuntimeOptions {
   readonly observer?: {
     readonly profile?: boolean
   }
+  readonly calibrationContext?: ResolvedCalibrationContext
 }
 
 interface SignalWorktreeRun {
@@ -174,7 +175,8 @@ export const makePulsarRuntime = (
       options?.timeSeries?.enabled === true
         ? createTimeSeriesServices(repoRoot)
         : undefined
-    const calibrationContext = yield* loadProjectModuleCalibrationContext(repoRoot)
+    const calibrationContext =
+      options?.calibrationContext ?? (yield* loadProjectModuleCalibrationContext(repoRoot))
 
     const activePacks = collectActiveLanguagePacks(registry, vector)
     const scoringEngineLayer = ScoringEngineLayer(
@@ -193,7 +195,9 @@ export const makePulsarRuntime = (
         ...(options?.observer?.profile === true ? { observerProfile: true } : {}),
         ...(calibrationContext === undefined ? {} : { calibrationContext }),
         calibrationContextForWorktree: (worktreePath) =>
-          loadProjectModuleCalibrationContext(worktreePath, { dependencyRoot: repoRoot }),
+          options?.calibrationContext === undefined
+            ? loadProjectModuleCalibrationContext(worktreePath, { dependencyRoot: repoRoot })
+            : Effect.succeed(options.calibrationContext),
       },
     )
     const engine = yield* Effect.provide(ScoringEngineTag, scoringEngineLayer)

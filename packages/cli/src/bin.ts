@@ -24,8 +24,9 @@ const main = async (argv: ReadonlyArray<string>): Promise<number> => {
     return coreExitCode
   }
 
-  if (await runWorkflowCommand(command, commandArgs)) {
-    return 0
+  const workflowExitCode = await runWorkflowCommand(command, commandArgs)
+  if (workflowExitCode !== undefined) {
+    return workflowExitCode
   }
 
   return fail(`unknown command: ${command}`)
