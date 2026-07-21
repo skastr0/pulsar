@@ -16,13 +16,10 @@ const REGISTERED_SIGNALS = [
 const CATALOG_SIGNAL_ID_PATTERN = /^[A-Z]+(?:-[A-Z]+)*-\d+$/
 
 const inspectCatalogIntegrity = (catalog: ReadonlyArray<CatalogEntry>) => {
-  const canonicalIdByCatalogId = new Map<string, string>()
+  const canonicalIdByRegisteredIdentifier = new Map<string, string>()
   for (const signal of REGISTERED_SIGNALS) {
     for (const identifier of [signal.id, ...(signal.aliases ?? [])]) {
-      const catalogId = normalizeSignalId(identifier)
-      if (CATALOG_SIGNAL_ID_PATTERN.test(catalogId)) {
-        canonicalIdByCatalogId.set(catalogId, signal.id)
-      }
+      canonicalIdByRegisteredIdentifier.set(identifier, signal.id)
     }
   }
 
@@ -30,7 +27,7 @@ const inspectCatalogIntegrity = (catalog: ReadonlyArray<CatalogEntry>) => {
   const matchedCounts = new Map<string, number>()
   for (const entry of catalog) {
     const catalogId = normalizeSignalId(entry.id)
-    const canonicalId = canonicalIdByCatalogId.get(catalogId)
+    const canonicalId = canonicalIdByRegisteredIdentifier.get(entry.id)
     if (!CATALOG_SIGNAL_ID_PATTERN.test(catalogId) || canonicalId === undefined) {
       invalidEntryIds.push(entry.id)
       continue
@@ -92,6 +89,23 @@ describe("onboarding catalog identity", () => {
       registryCount: 74,
       resolvedCount: 73,
       invalidEntryIds: ["ts-sl-04-onboarding-calibration"],
+      missingSignalIds: ["TS-SL-04-unfinished-implementations"],
+    })
+  })
+
+  test("rejects an undeclared uppercase suffix that normalizes to a registered alias", () => {
+    const drifted = loadCatalog().map((entry) =>
+      entry.id === "TS-SL-04"
+        ? { ...entry, id: "TS-SL-04-UNREGISTERED-SUFFIX" }
+        : entry,
+    )
+
+    expect(inspectCatalogIntegrity(drifted)).toMatchObject({
+      valid: false,
+      catalogCount: 74,
+      registryCount: 74,
+      resolvedCount: 73,
+      invalidEntryIds: ["TS-SL-04-UNREGISTERED-SUFFIX"],
       missingSignalIds: ["TS-SL-04-unfinished-implementations"],
     })
   })
