@@ -4,6 +4,7 @@ import { cp, lstat, mkdir, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import {
+  SCORE_PARITY_PROVENANCE_NORMALIZATION,
   assertCompleteScoreParity,
   assertNpmPlatformContract,
   assertPublishedExportContract,
@@ -457,7 +458,8 @@ try {
   console.log(
     `Release smoke passed: ${variants.map(({ label }) => label).join(" = ")}; ` +
       `${reference.registry.length} registry signals; ${publishedExportTargetCount} packed export targets; ` +
-      `complete score JSON identical; ` +
+      `complete score JSON identical; provenance normalization: ` +
+      `${SCORE_PARITY_PROVENANCE_NORMALIZATION.length === 0 ? "none" : SCORE_PARITY_PROVENANCE_NORMALIZATION.join(", ")}; ` +
       `${rootManifest.version}@${commit.slice(0, 12)}${dirty ? " dirty" : " clean"}`,
   )
 } finally {
