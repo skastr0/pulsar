@@ -201,6 +201,9 @@ describe("TS-SEC-03 secret material", () => {
         "] as const",
         "export const readApiToken = (usage: Record<string, number>) => usage['apiToken']",
         "export const kernelProbeToken = '__kernel-probe-fixture__'",
+        "type SecretChannelOutput = { scoreChannels: unknown }",
+        "export const secretScoreChannels = (): SecretChannelOutput['scoreChannels'] => undefined",
+        "export const redactSecret = () => '<redacted>'",
       ].join("\n"),
     )
 

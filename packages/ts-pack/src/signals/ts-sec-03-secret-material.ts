@@ -435,6 +435,7 @@ const LOOKUP_COLLECTION_SEGMENTS = new Set([
 
 const EXPLICIT_FIXTURE_SEGMENTS = new Set(["example", "fixture", "mock", "sample", "test"])
 const ALL_CAPS_RESOURCE_LABEL_PATTERN = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/
+const EXPLICIT_REDACTION_MARKER_PATTERN = /^<redacted>$/i
 
 /**
  * Exclude literals whose AST position proves they are labels rather than
@@ -449,14 +450,17 @@ const hasExplicitNonSecretSemanticRole = (
   isDirectLookupKey(node, value) ||
   isLookupKeyCollectionMember(node, identifier, value) ||
   isResourceDeclarationLabel(node, identifier, value) ||
-  isExplicitFixtureLabel(value)
+  isExplicitFixtureLabel(value) ||
+  EXPLICIT_REDACTION_MARKER_PATTERN.test(value)
 
 const isDirectLookupKey = (node: TsMorphNode, value: string): boolean => {
   const parent = node.getParent()
-  return parent !== undefined &&
+  if (!IDENTIFIER_SHAPE_PATTERN.test(value)) return false
+  return (
+    parent !== undefined &&
     Node.isElementAccessExpression(parent) &&
-    parent.getArgumentExpression() === node &&
-    IDENTIFIER_SHAPE_PATTERN.test(value)
+    parent.getArgumentExpression() === node
+  ) || hasAncestor(node, Node.isIndexedAccessTypeNode)
 }
 
 const isLookupKeyCollectionMember = (
