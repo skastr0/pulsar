@@ -22,6 +22,14 @@ const sh = (cmd: string, args: ReadonlyArray<string>, cwd: string): void => {
   }
 }
 
+const shOutput = (cmd: string, args: ReadonlyArray<string>, cwd: string): string => {
+  const result = spawnSync(cmd, args as Array<string>, { cwd, encoding: "utf8" })
+  if (result.status !== 0) {
+    throw new Error(`${cmd} ${args.join(" ")} failed: ${result.stderr || result.stdout}`)
+  }
+  return result.stdout.trim()
+}
+
 const writeRepoFile = async (repoPath: string, relPath: string, content: string): Promise<void> => {
   const full = join(repoPath, relPath)
   await mkdir(join(full, ".."), { recursive: true })
@@ -1334,6 +1342,106 @@ export function stubF() { throw new Error("Not implemented") }
       expect(ratchetedFail.stderr).toContain("new=")
     } finally {
       await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
+  test("baseline refresh moves the ratchet while only new finding identities block", async () => {
+    const repoPath = await initRepo(broadCycleRepoFiles())
+    const stateHome = await mkdtemp(join(tmpdir(), "pulsar-score-state-"))
+    const env = { PULSAR_STATE_HOME: stateHome }
+    try {
+      await writeRepoFile(
+        repoPath,
+        ".pulsar/vector.json",
+        JSON.stringify(
+          {
+            id: "moving-ratchet-fixture",
+            domain: "typescript",
+            signal_overrides: {
+              "TS-AD-02-circular-dependencies": {
+                config: { top_n_diagnostics: 100 },
+              },
+            },
+          },
+          null,
+          2,
+        ),
+      )
+      sh("git", ["add", "."], repoPath)
+      sh("git", ["commit", "-q", "-m", "configure ratchet fixture"], repoPath)
+
+      const initialSha = shOutput("git", ["rev-parse", "HEAD"], repoPath)
+      const baselineSet = runCli(repoPath, ["baseline", "set", "."], env)
+      expect(baselineSet.status).toBe(0)
+
+      const initialBaseline = JSON.parse(
+        await readFile(join(repoPath, "pulsar-baseline.json"), "utf8"),
+      )
+      expect(initialBaseline.baseline_sha).toBe(initialSha)
+      expect(Object.values(initialBaseline.violations).flat()).toHaveLength(10)
+
+      await writeRepoFile(
+        repoPath,
+        "src/new-cycle/a.ts",
+        "import { b } from './b'\nexport const newA = b + 1\n",
+      )
+      await writeRepoFile(
+        repoPath,
+        "src/new-cycle/b.ts",
+        "import { newA } from './a'\nexport const b = newA + 1\n",
+      )
+      sh("git", ["add", "."], repoPath)
+      sh("git", ["commit", "-q", "-m", "add new cycle"], repoPath)
+      const movedSha = shOutput("git", ["rev-parse", "HEAD"], repoPath)
+
+      const beforeRefresh = runCli(repoPath, ["score", "--ci", "."], env)
+      expect(beforeRefresh.stderr).toContain("status=fail")
+      expect(beforeRefresh.status).toBe(2)
+      expect(beforeRefresh.stderr).toContain("new=1 tolerated=10 paid=0")
+
+      const baselineRefresh = runCli(repoPath, ["baseline", "refresh", "."], env)
+      expect(baselineRefresh.status).toBe(0)
+      const movedBaseline = JSON.parse(
+        await readFile(join(repoPath, "pulsar-baseline.json"), "utf8"),
+      )
+      expect(movedBaseline.baseline_sha).toBe(movedSha)
+      expect(movedBaseline.baseline_sha).not.toBe(initialBaseline.baseline_sha)
+      expect(Object.values(movedBaseline.violations).flat()).toHaveLength(11)
+
+      const afterRefresh = runCli(repoPath, ["score", "--ci", "."], env)
+      expect(afterRefresh.status).toBe(0)
+      expect(afterRefresh.stderr).toContain("status=pass")
+      expect(afterRefresh.stderr).toContain("new=0 tolerated=11 paid=0")
+
+      await writeRepoFile(repoPath, "src/cycle-0/a.ts", "export const a0 = 1\n")
+      sh("git", ["add", "."], repoPath)
+      sh("git", ["commit", "-q", "-m", "pay down one cycle"], repoPath)
+
+      const paidDebt = runCli(repoPath, ["score", "--ci", "."], env)
+      expect(paidDebt.status).toBe(0)
+      expect(paidDebt.stderr).toContain("status=pass")
+      expect(paidDebt.stderr).toContain("new=0 tolerated=10 paid=1")
+
+      await writeRepoFile(
+        repoPath,
+        "src/post-refresh-cycle/a.ts",
+        "import { b } from './b'\nexport const postRefreshA = b + 1\n",
+      )
+      await writeRepoFile(
+        repoPath,
+        "src/post-refresh-cycle/b.ts",
+        "import { postRefreshA } from './a'\nexport const b = postRefreshA + 1\n",
+      )
+      sh("git", ["add", "."], repoPath)
+      sh("git", ["commit", "-q", "-m", "add post-refresh cycle"], repoPath)
+
+      const newAfterMove = runCli(repoPath, ["score", "--ci", "."], env)
+      expect(newAfterMove.status).toBe(2)
+      expect(newAfterMove.stderr).toContain("status=fail")
+      expect(newAfterMove.stderr).toContain("new=1 tolerated=10 paid=1")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+      await rm(stateHome, { recursive: true, force: true })
     }
   }, 120_000)
 
