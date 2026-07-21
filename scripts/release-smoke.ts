@@ -1,8 +1,18 @@
 #!/usr/bin/env bun
 
-import { cp, mkdir, mkdtemp, rm } from "node:fs/promises"
+import { cp, lstat, mkdir, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
+import {
+  assertCompleteScoreParity,
+  assertNpmPlatformContract,
+  assertPublishedExportContract,
+  type MetaPackageManifest,
+  type NpmPackMetadata,
+  type PlatformPackageManifest,
+  type PublishedExportsContract,
+  type PublishedPackageManifest,
+} from "./release-contracts.ts"
 
 const REPO_ROOT = resolve(import.meta.dir, "..")
 const SOURCE_ENTRY = join(REPO_ROOT, "packages", "cli", "src", "bin.ts")
@@ -27,12 +37,11 @@ const publishedLibraryDirs = [
   "packages/project-module-nextjs",
 ] as const
 
-const npmPackageDirs = [
+const platformPackageDirs = [
   "packages/npm/pulsar-darwin-arm64",
   "packages/npm/pulsar-darwin-x64",
   "packages/npm/pulsar-linux-arm64",
   "packages/npm/pulsar-linux-x64",
-  "packages/npm/pulsar",
 ] as const
 
 const hostPackageName = `@skastr0/pulsar-${HOST_TARGET}`
@@ -56,24 +65,14 @@ interface BuildInfo {
 interface ScoreJson {
   readonly observer_semantics?: unknown
   readonly categories?: unknown
+  readonly readiness?: unknown
+  readonly weighted_mean?: unknown
+  readonly minimum?: unknown
   readonly signal_metadata?: unknown
   readonly signal_diagnostics?: unknown
   readonly hard_gate_status?: unknown
   readonly hard_gate_violations?: unknown
   readonly [key: string]: unknown
-}
-
-interface SemanticContract {
-  readonly schema: {
-    readonly observer_semantics: unknown
-    readonly fields: ReadonlyArray<string>
-  }
-  readonly registry: ReadonlyArray<string>
-  readonly findings: unknown
-  readonly enforcement: {
-    readonly status: unknown
-    readonly violations: unknown
-  }
 }
 
 const run = async (
@@ -119,67 +118,29 @@ const git = async (args: ReadonlyArray<string>): Promise<string> =>
 const readJson = async <A>(path: string): Promise<A> =>
   JSON.parse(await Bun.file(path).text()) as A
 
-const stable = (value: unknown): unknown => {
-  if (Array.isArray(value)) return value.map(stable)
-  if (typeof value !== "object" || value === null) return value
-  return Object.fromEntries(
-    Object.entries(value)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, nested]) => [key, stable(nested)]),
-  )
-}
-
-const stableJson = (value: unknown): string => JSON.stringify(stable(value))
-
-const assertEqual = (
-  label: string,
-  expectedLabel: string,
-  expected: unknown,
-  actual: unknown,
-): void => {
-  if (stableJson(actual) !== stableJson(expected)) {
-    throw new Error(
-      `${label} diverged from ${expectedLabel}\nexpected: ${stableJson(expected)}\nactual:   ${stableJson(actual)}`,
-    )
-  }
-}
-
-const defaultExportMap = (exports: unknown): Readonly<Record<string, string>> => {
-  if (typeof exports !== "object" || exports === null) return {}
-  return Object.fromEntries(
-    Object.entries(exports).flatMap(([subpath, conditions]) => {
-      if (typeof conditions !== "object" || conditions === null) return []
-      const target = (conditions as { readonly default?: unknown }).default
-      return typeof target === "string" ? [[subpath, target] as const] : []
-    }),
-  )
-}
-
-const assertPublishedExports = async (): Promise<void> => {
-  const contract = await readJson<{
-    readonly schema_version: string
-    readonly packages: Readonly<Record<string, Readonly<Record<string, string>>>>
-  }>(EXPORT_CONTRACT_PATH)
-  if (contract.schema_version !== "pulsar/published-default-exports/v1") {
-    throw new Error(`Unsupported export contract ${contract.schema_version}`)
-  }
-
-  const actual: Record<string, Readonly<Record<string, string>>> = {}
+const assertPublishedExports = async (): Promise<number> => {
+  const contract = await readJson<PublishedExportsContract>(EXPORT_CONTRACT_PATH)
+  const packages: Array<{
+    readonly manifest: PublishedPackageManifest
+    readonly pack: NpmPackMetadata
+  }> = []
   for (const packageDir of publishedLibraryDirs) {
-    const manifest = await readJson<{
-      readonly name: string
-      readonly exports: unknown
-    }>(join(REPO_ROOT, packageDir, "package.json"))
-    const defaults = defaultExportMap(manifest.exports)
-    actual[manifest.name] = defaults
-    for (const target of Object.values(defaults)) {
-      const artifact = join(REPO_ROOT, packageDir, target)
-      if (!Bun.file(artifact).size) {
-        throw new Error(`${manifest.name} export ${target} is missing from built output`)
-      }
-    }
+    const manifest = await readJson<PublishedPackageManifest>(
+      join(REPO_ROOT, packageDir, "package.json"),
+    )
+    const result = await runChecked(
+      `dry-run pack ${manifest.name}`,
+      ["npm", "pack", "--json", "--dry-run", `./${packageDir}`],
+      { cwd: REPO_ROOT },
+    )
+    const packed = parseJson<ReadonlyArray<NpmPackMetadata>>(
+      `dry-run pack ${manifest.name}`,
+      result,
+    )[0]
+    if (packed === undefined) throw new Error(`npm pack returned no metadata for ${manifest.name}`)
+    packages.push({ manifest, pack: packed })
   }
-  assertEqual("published default exports", "checked-in contract", contract.packages, actual)
+  return assertPublishedExportContract(contract, packages)
 }
 
 const initializeFixture = async (root: string): Promise<string> => {
@@ -228,7 +189,7 @@ const registryIds = (score: ScoreJson): ReadonlyArray<string> => {
   return [...new Set([...metadataIds, ...categoryIds])].sort()
 }
 
-const semanticContract = (label: string, score: ScoreJson): SemanticContract => {
+const assertScoreContract = (label: string, score: ScoreJson): ReadonlyArray<string> => {
   const registry = registryIds(score)
   if (score.observer_semantics !== "applicability-aware-readiness-v2") {
     throw new Error(`${label} emitted unsupported observer semantics ${String(score.observer_semantics)}`)
@@ -245,56 +206,69 @@ const semanticContract = (label: string, score: ScoreJson): SemanticContract => 
   if (!Array.isArray(score.hard_gate_violations)) {
     throw new Error(`${label} omitted hard-gate violations`)
   }
-  return {
-    schema: {
-      observer_semantics: score.observer_semantics,
-      fields: Object.keys(score).sort(),
-    },
-    registry,
-    findings: score.signal_diagnostics,
-    enforcement: {
-      status: score.hard_gate_status,
-      violations: score.hard_gate_violations,
-    },
+  if (typeof score.categories !== "object" || score.categories === null) {
+    throw new Error(`${label} omitted category scores`)
   }
+  if (
+    typeof score.readiness !== "object" ||
+    score.readiness === null ||
+    typeof (score.readiness as { readonly score?: unknown }).score !== "number"
+  ) {
+    throw new Error(`${label} omitted readiness score`)
+  }
+  if (
+    typeof score.weighted_mean !== "number" ||
+    typeof score.minimum !== "object" ||
+    score.minimum === null ||
+    typeof (score.minimum as { readonly score?: unknown }).score !== "number"
+  ) {
+    throw new Error(`${label} omitted aggregate score values`)
+  }
+  return registry
 }
 
-const packNpmArtifacts = async (root: string): Promise<Readonly<Record<string, string>>> => {
+const packNpmArtifact = async (
+  packageDir: string,
+  packDir: string,
+): Promise<{ readonly manifest: { readonly name: string }; readonly tarball: string }> => {
+  const manifest = await readJson<{ readonly name: string }>(
+    join(REPO_ROOT, packageDir, "package.json"),
+  )
+  const result = await runChecked(
+    `pack ${manifest.name}`,
+    ["npm", "pack", "--json", "--pack-destination", packDir, `./${packageDir}`],
+    { cwd: REPO_ROOT },
+  )
+  const packed = parseJson<ReadonlyArray<NpmPackMetadata>>(`pack ${manifest.name}`, result)[0]
+  const filename = packed?.filename
+  if (filename === undefined) throw new Error(`npm pack returned no filename for ${manifest.name}`)
+  return { manifest, tarball: join(packDir, filename) }
+}
+
+const packNpmArtifacts = async (
+  root: string,
+): Promise<{ readonly metaTarball: string; readonly hostTarball: string }> => {
   const packDir = join(root, "packs")
   await mkdir(packDir, { recursive: true })
-  const tarballs: Record<string, string> = {}
-  for (const packageDir of npmPackageDirs) {
-    const manifest = await readJson<{ readonly name: string }>(
-      join(REPO_ROOT, packageDir, "package.json"),
-    )
-    const result = await runChecked(
-      `pack ${manifest.name}`,
-      [
-        "npm",
-        "pack",
-        "--json",
-        "--pack-destination",
-        packDir,
-        `./${packageDir}`,
-      ],
-      { cwd: REPO_ROOT },
-    )
-    const packed = JSON.parse(result.stdout) as ReadonlyArray<{ readonly filename?: string }>
-    const filename = packed[0]?.filename
-    if (filename === undefined) throw new Error(`npm pack returned no filename for ${manifest.name}`)
-    tarballs[manifest.name] = join(packDir, filename)
+  const hostPackageDir = platformPackageDirs.find((packageDir) => packageDir.endsWith(HOST_TARGET))
+  if (hostPackageDir === undefined) {
+    throw new Error(`No npm platform package directory supports ${HOST_TARGET}`)
   }
-  return tarballs
+  const [meta, host] = await Promise.all([
+    packNpmArtifact("packages/npm/pulsar", packDir),
+    packNpmArtifact(hostPackageDir, packDir),
+  ])
+  if (meta.manifest.name !== "@skastr0/pulsar" || host.manifest.name !== hostPackageName) {
+    throw new Error(`Packed unexpected npm artifacts ${meta.manifest.name} and ${host.manifest.name}`)
+  }
+  return { metaTarball: meta.tarball, hostTarball: host.tarball }
 }
 
-const installNpmArtifact = async (root: string): Promise<string> => {
-  const tarballs = await packNpmArtifacts(root)
-  const metaTarball = tarballs["@skastr0/pulsar"]
-  const hostTarball = tarballs[hostPackageName]
-  if (metaTarball === undefined || hostTarball === undefined) {
-    throw new Error(`Missing packed npm artifact for @skastr0/pulsar or ${hostPackageName}`)
-  }
-
+const installNpmArtifact = async (
+  root: string,
+  supportedPlatformPackages: ReadonlyArray<string>,
+): Promise<string> => {
+  const { metaTarball, hostTarball } = await packNpmArtifacts(root)
   const installRoot = join(root, "clean-install")
   await mkdir(installRoot, { recursive: true })
   await Bun.write(
@@ -306,6 +280,8 @@ const installNpmArtifact = async (root: string): Promise<string> => {
         version: "0.0.0",
         dependencies: {
           "@skastr0/pulsar": `file:${metaTarball}`,
+        },
+        overrides: {
           [hostPackageName]: `file:${hostTarball}`,
         },
       },
@@ -314,20 +290,53 @@ const installNpmArtifact = async (root: string): Promise<string> => {
     )}\n`,
   )
   await runChecked(
-    "clean npm artifact install",
-    ["npm", "install", "--offline", "--ignore-scripts", "--no-audit", "--no-fund"],
+    "clean npm optional-dependency install",
+    [
+      "npm",
+      "install",
+      "--offline",
+      "--ignore-scripts",
+      "--no-audit",
+      "--no-fund",
+      "--cache",
+      join(root, "npm-cache"),
+    ],
     { cwd: installRoot },
   )
-  const launcher = join(
-    installRoot,
-    "node_modules",
-    "@skastr0",
-    "pulsar",
-    "bin",
-    "pulsar.js",
-  )
-  if (!Bun.file(launcher).size) throw new Error("Clean npm install omitted the Pulsar launcher")
-  return launcher
+
+  const lock = await readJson<{
+    readonly packages?: Readonly<
+      Record<
+        string,
+        {
+          readonly optional?: unknown
+          readonly optionalDependencies?: Readonly<Record<string, unknown>>
+        }
+      >
+    >
+  }>(join(installRoot, "package-lock.json"))
+  const metaLock = lock.packages?.["node_modules/@skastr0/pulsar"]
+  const hostLock = lock.packages?.[`node_modules/${hostPackageName}`]
+  if (metaLock?.optionalDependencies?.[hostPackageName] === undefined || hostLock?.optional !== true) {
+    throw new Error(`npm did not resolve ${hostPackageName} through the meta optional dependency`)
+  }
+  for (const packageName of supportedPlatformPackages) {
+    const installedManifest = join(
+      installRoot,
+      "node_modules",
+      ...packageName.split("/"),
+      "package.json",
+    )
+    if ((await Bun.file(installedManifest).exists()) !== (packageName === hostPackageName)) {
+      throw new Error(`Clean npm install selected an unexpected platform package ${packageName}`)
+    }
+  }
+
+  const publicBin = join(installRoot, "node_modules", ".bin", "pulsar")
+  if (!(await lstat(publicBin)).isSymbolicLink()) {
+    throw new Error("Clean npm install did not create the public node_modules/.bin/pulsar link")
+  }
+  return publicBin
 }
 
 if (!Bun.file(HOST_BINARY).size) {
@@ -342,14 +351,32 @@ if (!(["arm64", "x64"] as ReadonlyArray<string>).includes(process.arch)) {
 
 const tempRoot = await mkdtemp(join(tmpdir(), "pulsar-release-smoke-"))
 try {
-  await assertPublishedExports()
   const rootManifest = await readJson<{ readonly version: string }>(
     join(REPO_ROOT, "package.json"),
   )
+  const publishedExportTargetCount = await assertPublishedExports()
+  const metaManifest = await readJson<MetaPackageManifest>(
+    join(REPO_ROOT, "packages", "npm", "pulsar", "package.json"),
+  )
+  const platformManifests = await Promise.all(
+    platformPackageDirs.map((packageDir) =>
+      readJson<PlatformPackageManifest>(join(REPO_ROOT, packageDir, "package.json")),
+    ),
+  )
+  const supportedPlatformPackages = assertNpmPlatformContract({
+    rootVersion: rootManifest.version,
+    meta: metaManifest,
+    platforms: platformManifests,
+  })
+  if (!supportedPlatformPackages.includes(hostPackageName)) {
+    throw new Error(`Supported npm platform packages omit host target ${hostPackageName}`)
+  }
   const commit = await git(["rev-parse", "HEAD"])
   const dirty = (await git(["status", "--porcelain"])) !== ""
   const fixturePath = await initializeFixture(tempRoot)
-  const npmLauncher = RUN_NPM ? await installNpmArtifact(tempRoot) : undefined
+  const npmLauncher = RUN_NPM
+    ? await installNpmArtifact(tempRoot, supportedPlatformPackages)
+    : undefined
 
   const baseEnv = { CI: "1", NO_COLOR: "1" }
   const variants: ReadonlyArray<{
@@ -368,10 +395,16 @@ try {
     { label: "native", command: [HOST_BINARY] },
     ...(npmLauncher === undefined
       ? []
-      : [{ label: "npm", command: ["node", npmLauncher] }]),
+      : [{ label: "npm", command: [npmLauncher] }]),
   ]
 
-  let reference: { readonly label: string; readonly semantics: SemanticContract } | undefined
+  let reference:
+    | {
+        readonly label: string
+        readonly score: ScoreJson
+        readonly registry: ReadonlyArray<string>
+      }
+    | undefined
   for (const variant of variants) {
     const buildInfoResult = await runChecked(
       `${variant.label} build info`,
@@ -407,18 +440,24 @@ try {
         },
       },
     )
-    const semantics = semanticContract(
-      variant.label,
-      parseJson<ScoreJson>(`${variant.label} semantic score`, scoreResult),
-    )
-    if (reference === undefined) reference = { label: variant.label, semantics }
-    else assertEqual(`${variant.label} semantics`, reference.label, reference.semantics, semantics)
+    const score = parseJson<ScoreJson>(`${variant.label} semantic score`, scoreResult)
+    const registry = assertScoreContract(variant.label, score)
+    if (reference === undefined) reference = { label: variant.label, score, registry }
+    else {
+      assertCompleteScoreParity(variant.label, reference.label, reference.score, score)
+      if (registry.length !== reference.registry.length) {
+        throw new Error(
+          `${variant.label} registry count ${registry.length} diverged from ${reference.label} ${reference.registry.length}`,
+        )
+      }
+    }
   }
 
   if (reference === undefined) throw new Error("Release smoke ran no variants")
   console.log(
     `Release smoke passed: ${variants.map(({ label }) => label).join(" = ")}; ` +
-      `${reference.semantics.registry.length} registry signals; schema/findings/enforcement identical; ` +
+      `${reference.registry.length} registry signals; ${publishedExportTargetCount} packed export targets; ` +
+      `complete score JSON identical; ` +
       `${rootManifest.version}@${commit.slice(0, 12)}${dirty ? " dirty" : " clean"}`,
   )
 } finally {

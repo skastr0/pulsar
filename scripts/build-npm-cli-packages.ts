@@ -34,6 +34,12 @@ const run = async (label: string, command: ReadonlyArray<string>): Promise<void>
   }
 }
 
+await run("Testing release contract failure paths", [
+  "bun",
+  "test",
+  "scripts/__tests__/release-contracts.test.ts",
+])
+
 await run("Building standalone CLI binaries", ["bun", "run", "build:cli"])
 
 for (const packageDir of npmPackageDirs) {

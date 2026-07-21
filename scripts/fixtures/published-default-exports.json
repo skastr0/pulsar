@@ -1,43 +1,109 @@
 {
-  "schema_version": "pulsar/published-default-exports/v1",
+  "schema_version": "pulsar/published-exports/v2",
   "packages": {
     "@skastr0/pulsar-core": {
-      ".": "./dist/index.js",
-      "./backpressure": "./dist/backpressure.js",
-      "./calibration": "./dist/calibration.js",
-      "./factors": "./dist/factors.js",
-      "./elicitation": "./dist/elicitation.js",
-      "./observer": "./dist/observer.js",
-      "./reference-data": "./dist/reference-data.js",
-      "./ai-facts": "./dist/ai-facts.js",
-      "./routing": "./dist/routing.js",
-      "./scoring": "./dist/scoring.js",
-      "./state": "./dist/state-paths.js",
-      "./shared-signals": "./dist/shared-signals.js",
-      "./signal": "./dist/signal-api.js",
-      "./time-series": "./dist/time-series.js",
-      "./vector": "./dist/vector.js"
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./backpressure": {
+        "types": "./dist/backpressure.d.ts",
+        "default": "./dist/backpressure.js"
+      },
+      "./calibration": {
+        "types": "./dist/calibration.d.ts",
+        "default": "./dist/calibration.js"
+      },
+      "./factors": {
+        "types": "./dist/factors.d.ts",
+        "default": "./dist/factors.js"
+      },
+      "./elicitation": {
+        "types": "./dist/elicitation.d.ts",
+        "default": "./dist/elicitation.js"
+      },
+      "./observer": {
+        "types": "./dist/observer.d.ts",
+        "default": "./dist/observer.js"
+      },
+      "./reference-data": {
+        "types": "./dist/reference-data.d.ts",
+        "default": "./dist/reference-data.js"
+      },
+      "./ai-facts": {
+        "types": "./dist/ai-facts.d.ts",
+        "default": "./dist/ai-facts.js"
+      },
+      "./routing": {
+        "types": "./dist/routing.d.ts",
+        "default": "./dist/routing.js"
+      },
+      "./scoring": {
+        "types": "./dist/scoring.d.ts",
+        "default": "./dist/scoring.js"
+      },
+      "./state": {
+        "types": "./dist/state-paths.d.ts",
+        "default": "./dist/state-paths.js"
+      },
+      "./shared-signals": {
+        "types": "./dist/shared-signals.d.ts",
+        "default": "./dist/shared-signals.js"
+      },
+      "./signal": {
+        "types": "./dist/signal-api.d.ts",
+        "default": "./dist/signal-api.js"
+      },
+      "./time-series": {
+        "types": "./dist/time-series.d.ts",
+        "default": "./dist/time-series.js"
+      },
+      "./vector": {
+        "types": "./dist/vector.d.ts",
+        "default": "./dist/vector.js"
+      }
     },
     "@skastr0/pulsar-project-module-convex": {
-      ".": "./dist/index.js"
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
     },
     "@skastr0/pulsar-project-module-effect": {
-      ".": "./dist/index.js"
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
     },
     "@skastr0/pulsar-project-module-nextjs": {
-      ".": "./dist/index.js"
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
     },
     "@skastr0/pulsar-project-module-sdk": {
-      ".": "./dist/index.js"
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
     },
     "@skastr0/pulsar-rs-pack": {
-      ".": "./dist/index.js"
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
     },
     "@skastr0/pulsar-shared-signals": {
-      ".": "./dist/index.js"
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
     },
     "@skastr0/pulsar-ts-pack": {
-      ".": "./dist/index.js"
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
     }
   }
 }
