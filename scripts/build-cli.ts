@@ -228,6 +228,16 @@ await run("Smoke-testing source/native onboarding parity and native TUI", [
   "--tui",
 ])
 
+await run("Smoke-testing dist-less development execution", [
+  "bun",
+  "scripts/dev-shim-smoke.ts",
+])
+
+await run("Smoke-testing source/native release semantics and provenance", [
+  "bun",
+  "scripts/release-smoke.ts",
+])
+
 console.log(`
 Build complete.
 

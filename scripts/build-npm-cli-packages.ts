@@ -57,3 +57,9 @@ await run("Smoke-testing source/native/npm onboarding parity", [
   "scripts/onboard-smoke.ts",
   "--npm",
 ])
+
+await run("Smoke-testing clean-installed npm release parity", [
+  "bun",
+  "scripts/release-smoke.ts",
+  "--npm",
+])
