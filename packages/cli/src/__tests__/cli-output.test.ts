@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { spawnSync } from "node:child_process"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { pathToFileURL } from "node:url"
@@ -8,9 +8,18 @@ import { pathToFileURL } from "node:url"
 const PREVIOUS_LARGE_SCORE_BYTES = 1_040_852
 const REGRESSION_PAYLOAD_BYTES = 1_100_000
 const binPath = resolve(import.meta.dir, "../bin.ts")
-const repoRoot = resolve(import.meta.dir, "../../../..")
 
 const shellQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`
+
+const runGit = (repoPath: string, args: ReadonlyArray<string>): void => {
+  const result = spawnSync("git", args as Array<string>, {
+    cwd: repoPath,
+    encoding: "utf8",
+  })
+  if (result.status !== 0) {
+    throw new Error(`git ${args.join(" ")} failed: ${result.stderr || result.stdout}`)
+  }
+}
 
 test("large JSON drains through a backpressured stdout pipe", async () => {
   const fixtureDir = await mkdtemp(join(tmpdir(), "pulsar-cli-output-"))
@@ -83,8 +92,34 @@ test("real score CLI drains profile JSON larger than the prior regression", asyn
   const fixtureDir = await mkdtemp(join(tmpdir(), "pulsar-cli-score-output-"))
   try {
     const consumerPath = join(fixtureDir, "consumer.ts")
+    const repoPath = join(fixtureDir, "repo")
     const vectorPath = join(fixtureDir, "vector.json")
     const statePath = join(fixtureDir, "state")
+
+    await mkdir(join(repoPath, "src"), { recursive: true })
+    await writeFile(
+      join(repoPath, "tsconfig.json"),
+      JSON.stringify({
+        compilerOptions: {
+          target: "ES2022",
+          module: "ESNext",
+          moduleResolution: "Bundler",
+        },
+        include: ["src/**/*.ts"],
+      }),
+      "utf8",
+    )
+    await writeFile(
+      join(repoPath, "src/index.ts"),
+      "export const answer: number = 42\n",
+      "utf8",
+    )
+    runGit(repoPath, ["init", "-q", "-b", "main"])
+    runGit(repoPath, ["config", "user.email", "test@test.test"])
+    runGit(repoPath, ["config", "user.name", "test"])
+    runGit(repoPath, ["config", "commit.gpgsign", "false"])
+    runGit(repoPath, ["add", "."])
+    runGit(repoPath, ["commit", "-q", "-m", "fixture"])
 
     await writeFile(
       vectorPath,
@@ -126,7 +161,7 @@ test("real score CLI drains profile JSON larger than the prior regression", asyn
       "--profile",
       "--vector",
       shellQuote(vectorPath),
-      shellQuote(repoRoot),
+      shellQuote(repoPath),
       "|",
       "bun",
       shellQuote(consumerPath),
@@ -135,7 +170,7 @@ test("real score CLI drains profile JSON larger than the prior regression", asyn
       "bash",
       ["-o", "pipefail", "-c", command],
       {
-        cwd: repoRoot,
+        cwd: repoPath,
         encoding: "utf8",
         maxBuffer: REGRESSION_PAYLOAD_BYTES * 2,
       },
