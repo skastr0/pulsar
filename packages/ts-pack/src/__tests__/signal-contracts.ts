@@ -962,19 +962,19 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       config:
         "ts-trust-signals.test.ts: configSchema decodes claim_name_patterns, exclude_globs, and top_n_diagnostics defaults with factor-ledger coverage.",
       positiveFixture:
-        "ts-trust-signals.test.ts: validateUser returning true and parseUser casting raw input produce confidence-claim findings.",
+        "ts-trust-signals.test.ts and ts-sl-06.test.ts: validateUser returning true, all-success guarded branches, parseUser casting raw input, non-null assertions, ignored checks, uninvoked nested helpers, constant-only validator delegation, and opaque parse/transform delegation produce confidence-claim findings.",
       negativeFixture:
-        "ts-trust-signals.test.ts: type-predicate isString with typeof guard is accepted.",
+        "ts-trust-signals.test.ts and ts-sl-06.test.ts: type guards plus Vellum-shaped existsSync presence, truthy regex match/test, finite positive/bounded ranges, regex replacement sanitization, and direct checked-validator delegation are accepted.",
       applicability:
         "ts-trust-signals.test.ts: value-only fixture is not_applicable/neutral during identity checks; claim fixture is applicable.",
       score:
         "ts-trust-signals.test.ts: claim mismatch lowers score below 1 according to findings/claimFunctions ratio.",
       diagnostics:
-        "ts-trust-signals.test.ts: diagnostics include symbol, claimKind, location, stable hash, and align-confidence-claim fix hint.",
+        "ts-sl-06.test.ts and ts-trust-signals.test.ts: diagnostics name the claimed guarantee plus supporting, observed, and missing behavior and include symbol, claimKind, location, stable hash, and align-confidence-claim fix hint.",
       factorLedger:
         "ts-trust-signals.test.ts: registered signal emits config.top_n_diagnostics plus claim-name/exclude config factor-ledger entries.",
       cacheSemantics:
-        "ts-trust-signals.test.ts and pack.test.ts: wrapped pack cache version includes the TS-SL-06 semantic cacheVersion.",
+        "ts-trust-signals.test.ts and pack.test.ts: TS-SL-06 uses confidence-claim-mismatch-v3 and the wrapped pack cache version includes that semantic cacheVersion.",
     },
   },
 ]

@@ -21,6 +21,12 @@ import {
   normalizeDiagnosticLimit,
   type SourceLocation,
 } from "./trust-signal-helpers.js"
+import {
+  claimKindOf,
+  summarizeClaimBehavior,
+  type ClaimFunctionNode,
+  type ClaimKind,
+} from "./ts-sl-06-behavior-summary.js"
 
 const TsSl06Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
@@ -31,7 +37,11 @@ export type TsSl06Config = typeof TsSl06Config.Type
 
 export interface ConfidenceClaimMismatchFinding extends SourceLocation {
   readonly symbol: string
-  readonly claimKind: string
+  readonly claimKind: ClaimKind
+  readonly claimedGuarantee: string
+  readonly supportingBehavior: ReadonlyArray<string>
+  readonly observedBehavior: ReadonlyArray<string>
+  readonly missingBehavior: ReadonlyArray<string>
   readonly bodySummary: string
   readonly missingEvidence: string
 }
@@ -56,7 +66,7 @@ export const TsSl06: Signal<TsSl06Config, TsSl06Output, TsProjectTag> = {
   category: "generated-slop",
   kind: "structural",
   evidenceClass: "heuristic-pattern",
-  cacheVersion: "confidence-claim-mismatch-v2",
+  cacheVersion: "confidence-claim-mismatch-v3",
   configSchema: TsSl06Config,
   defaultConfig: {
     exclude_globs: [...PRODUCTION_EXCLUDE_GLOBS],
@@ -85,7 +95,11 @@ export const TsSl06: Signal<TsSl06Config, TsSl06Output, TsProjectTag> = {
   diagnose: (out): ReadonlyArray<Diagnostic> =>
     out.findings.slice(0, out.diagnosticLimit).map((finding) => ({
       severity: "warn",
-      message: `${finding.symbol} claims to ${finding.claimKind} but has no validation/narrowing evidence`,
+      message:
+        `${finding.symbol} claims ${finding.claimedGuarantee}; ` +
+        `supporting behavior: ${formatBehavior(finding.supportingBehavior, "none")}; ` +
+        `observed behavior: ${formatBehavior(finding.observedBehavior, "no relevant runtime behavior")}; ` +
+        `missing behavior: ${finding.missingBehavior.join(", ")}`,
       location: { file: finding.file, line: finding.line, column: finding.column },
       data: {
         hash: computeDiagnosticHash(
@@ -121,15 +135,18 @@ const computeConfidenceClaimMismatch = (
     analyzedFiles += 1
     for (const candidate of collectClaimCandidates(sourceFile, claimPattern)) {
       claimFunctionsAnalyzed += 1
-      if (hasClaimEvidence(candidate.bodyText, candidate.returnTypeText, candidate.claimKind)) {
-        continue
-      }
+      const behavior = summarizeClaimBehavior(candidate.fn, candidate.claimKind)
+      if (behavior.supportsClaim) continue
       findings.push({
         ...candidate.location,
         symbol: candidate.symbol,
         claimKind: candidate.claimKind,
+        claimedGuarantee: behavior.claimedGuarantee,
+        supportingBehavior: behavior.supportingBehavior,
+        observedBehavior: behavior.observedBehavior,
+        missingBehavior: behavior.missingBehavior,
         bodySummary: candidate.bodyText.slice(0, 160),
-        missingEvidence: "Expected schema/parser call, runtime guard, assertion throw, or type predicate evidence",
+        missingEvidence: behavior.missingBehavior.join("; "),
       })
     }
   }
@@ -156,9 +173,9 @@ const computeConfidenceClaimMismatch = (
 
 interface ClaimCandidate {
   readonly symbol: string
-  readonly claimKind: string
+  readonly claimKind: ClaimKind
+  readonly fn: ClaimFunctionNode
   readonly bodyText: string
-  readonly returnTypeText: string
   readonly location: SourceLocation
 }
 
@@ -188,8 +205,8 @@ const candidateFromFunction = (
   return [{
     symbol: name,
     claimKind: claimKindOf(name),
+    fn: node,
     bodyText: body.getText(),
-    returnTypeText: node.getReturnType().getText(node),
     location: locationOf(node),
   }]
 }
@@ -211,73 +228,14 @@ const candidateFromVariable = (
   return [{
     symbol: name,
     claimKind: claimKindOf(name),
+    fn: initializer,
     bodyText: body.getText(),
-    returnTypeText: initializer.getReturnType().getText(initializer),
     location: locationOf(node),
   }]
 }
 
-const hasClaimEvidence = (
-  bodyText: string,
-  returnTypeText: string,
-  claimKind: string,
-): boolean => {
-  const normalized = bodyText.toLowerCase()
-  if (/\basserts\b|\sis\s/.test(returnTypeText)) return true
-  if (/(throw\s+new|throw\s+\w+)/.test(bodyText)) return true
-  if (hasRuntimeGuardEvidence(bodyText)) return true
-  // Delegating to a parse*/validate*/decode*/assert* call target (local or member) is
-  // validation evidence: the callee carries the verification.
-  if (/(\.safeparse\s*\(|\bparse\w*\s*\(|\bdecode\w*\s*\(|\bvalidate\w*\s*\(|\bassert\w*\s*\(|schema)/i.test(bodyText)) {
-    return true
-  }
-  if (claimKind === "parse" && hasParseEvidence(bodyText)) {
-    return true
-  }
-  if (claimKind === "ensure" && hasEnsureEvidence(bodyText)) {
-    return true
-  }
-  if (/return\s+(?:true|false|value|input|raw|data)\s*;?\s*\}?$/i.test(normalized)) {
-    return false
-  }
-  if (/\bas\s+[A-Za-z_$][\w$<>, ]+/.test(bodyText)) return false
-  return false
-}
-
-const hasRuntimeGuardEvidence = (bodyText: string): boolean =>
-  /(typeof|instanceof|\bin\b|!==|===|!=|==|Array\.isArray)/.test(bodyText) ||
-  /\.(?:test|startsWith|endsWith|includes|has)\s*\(/.test(bodyText) ||
-  // Either.isRight / Option.isSome style guards (Effect/fp-ts idioms) are checked-branch
-  // verification, whether module-qualified or imported standalone.
-  /\bis(?:Right|Left|Some|None|Ok|Err|Success|Failure)\s*\(/.test(bodyText) ||
-  /\b(?:length|size)\s*(?:>|>=|<|<=)\s*\d+/.test(bodyText)
-
-const hasParseEvidence = (bodyText: string): boolean =>
-  /(JSON\.parse|Number\s*\(|String\s*\(|Boolean\s*\(|parseInt\s*\(|parseFloat\s*\()/.test(bodyText) ||
-  /(?:new\s+(?:Date|URL)|Date\.parse|URL\.parse)\s*\(/.test(bodyText)
-
-const hasEnsureEvidence = (bodyText: string): boolean =>
-  /\b(?:mkdir|writeFile|rename|rm)\s*\(/.test(bodyText) ||
-  /\.(?:mkdir|writeFile|rename|rm)\s*\(/.test(bodyText) ||
-  hasConflictTolerantSqlEvidence(bodyText)
-
-// SQL keywords inside embedded query strings are not code-level confidence claims:
-// INSERT OR IGNORE / ON CONFLICT DO NOTHING are database-enforced idempotent writes,
-// which is exactly the guarantee an ensure* claim promises.
-const hasConflictTolerantSqlEvidence = (bodyText: string): boolean =>
-  /\binsert\s+or\s+ignore\b/i.test(bodyText) ||
-  /\bon\s+conflict\b[\s\S]{0,120}?\bdo\s+nothing\b/i.test(bodyText)
-
-const claimKindOf = (name: string): string => {
-  const lower = name.toLowerCase()
-  if (lower.startsWith("parse")) return "parse"
-  if (lower.startsWith("assert")) return "assert"
-  if (lower.startsWith("ensure")) return "ensure"
-  if (lower.startsWith("validate")) return "validate"
-  if (lower.startsWith("is")) return "narrow"
-  if (lower.startsWith("has")) return "presence-check"
-  return "validate"
-}
+const formatBehavior = (behavior: ReadonlyArray<string>, fallback: string): string =>
+  behavior.length === 0 ? fallback : behavior.join(", ")
 
 const compareFindings = (
   left: ConfidenceClaimMismatchFinding,
