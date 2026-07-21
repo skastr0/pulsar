@@ -516,6 +516,36 @@ describe("pulsar score", () => {
     }
   }, 120_000)
 
+  test("--json includes stable per-signal diagnostic records", async () => {
+    const repoPath = await initRepo(cycleRepoFiles())
+    try {
+      const out = runCli(repoPath, ["score", "--json", "."])
+      expect(out.status).toBe(0)
+      const parsed = JSON.parse(String(out.stdout))
+      const decoded = Schema.decodeUnknownSync(ObserverOutputSchema)(parsed)
+      const signalIds = Object.keys(decoded.signal_diagnostics ?? {})
+      expect(signalIds).toEqual([...signalIds].sort())
+
+      const cycle = decoded.signal_diagnostics?.["TS-AD-02-circular-dependencies"]
+      const rawCycle = parsed.signal_diagnostics?.["TS-AD-02-circular-dependencies"]
+      expect(cycle).toBeDefined()
+      expect(cycle?.score).toBeLessThan(1)
+      expect(cycle?.applicability).toBe("applicable")
+      expect(cycle?.emitted_count).toBe(cycle?.diagnostics.length)
+      expect(cycle?.diagnostics.length).toBeGreaterThan(0)
+      expect(cycle?.diagnostics[0]).toMatchObject({
+        severity: expect.any(String),
+        message: expect.any(String),
+        location: { file: expect.stringContaining("src/") },
+        data: expect.any(Object),
+      })
+      expect(typeof rawCycle?.diagnostics[0]?.location?.file).toBe("string")
+      expect(rawCycle?.diagnostics[0]?.location?.file.startsWith(repoPath)).toBe(false)
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
   test("--category narrows human output and omits aggregate summary plus passing gate", async () => {
     const repoPath = await initRepo(simpleRepoFiles())
     try {

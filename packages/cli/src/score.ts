@@ -168,7 +168,9 @@ const printScoreCommandOutput = (
 
     if (opts.json) {
       yield* Effect.tryPromise(() =>
-        writeJsonToStdout(toScoreJson(run.output, vectorContext.vectorSelection)),
+        writeJsonToStdout(
+          toScoreJson(run.output, vectorContext.vectorSelection, run.repoRoot),
+        ),
       )
     } else if (opts.category !== undefined) {
       printCategoryView({

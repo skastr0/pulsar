@@ -123,7 +123,7 @@ export const runScoreDiffMode = (
     if (opts.json === true) {
       yield* Effect.tryPromise(() =>
         writeJsonToStdout({
-          ...toScoreJson(run.head.output, vectorContext.vectorSelection),
+          ...toScoreJson(run.head.output, vectorContext.vectorSelection, run.repoRoot),
           ...report,
         }),
       )
