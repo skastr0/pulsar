@@ -19,6 +19,7 @@
         "@skastr0/pulsar-core",
         "@skastr0/pulsar-project-module-convex",
         "@skastr0/pulsar-project-module-effect",
+        "@skastr0/pulsar-onboard",
         "@skastr0/pulsar-project-module-nextjs",
         "@skastr0/pulsar-project-module-sdk",
         "@skastr0/pulsar-rs-pack",
@@ -32,6 +33,14 @@
       "visibility": "public-api",
       "allowed_imports": [
         "effect"
+      ]
+    },
+    "packages/onboard": {
+      "visibility": "public-api",
+      "allowed_imports": [
+        "@opentui/core",
+        "@opentui/react",
+        "react"
       ]
     },
     "packages/rs-pack": {

@@ -118,7 +118,7 @@ export const runOnboardCli = async (commandArgs: ReadonlyArray<string>): Promise
     writeOutput: writeStdout,
     ...(headlessAnswers === undefined ? {} : { headlessAnswers }),
     phase: "beta",
-    onExit: () => {},
+    onExit: () => undefined,
   }
 
   if (headless) {
