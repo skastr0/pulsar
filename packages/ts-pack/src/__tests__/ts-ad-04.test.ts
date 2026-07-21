@@ -646,6 +646,224 @@ describe("TS-AD-04 (boundary parser coverage)", () => {
     expect(out.weakBoundaryFunctions).toBe(0)
   })
 
+  test("limits candidates to supported untrusted ingress sources", async () => {
+    await repo.write(
+      "node_modules/vendor-sdk/package.json",
+      JSON.stringify({ name: "vendor-sdk", version: "1.0.0", types: "index.d.ts" }),
+    )
+    await repo.write(
+      "node_modules/vendor-sdk/index.d.ts",
+      "export function fetchRaw(): unknown\n",
+    )
+    await repo.write(
+      "src/adapters/ingress.ts",
+      [
+        "import { readFileSync } from 'node:fs'",
+        "import { execSync } from 'node:child_process'",
+        "import { ipcRenderer } from 'electron'",
+        "import { fetchRaw } from 'vendor-sdk'",
+        "type Domain = { readonly id: string }",
+        "export function fromUnknown(input: unknown): Domain { return input as Domain }",
+        "export function fromUntyped(input): Domain { return input as Domain }",
+        "export function fromWire(text: string): Domain { return JSON.parse(text) as Domain }",
+        "export function fromEnvironment(): Domain { return { id: process.env.DOMAIN_ID as string } }",
+        "export function fromFilesystem(): Domain { return readFileSync('/tmp/domain.json') as unknown as Domain }",
+        "export function fromSubprocess(): Domain { return execSync('domain') as unknown as Domain }",
+        "export async function fromIpc(): Promise<Domain> { return await ipcRenderer.invoke('domain') as Domain }",
+        "export function fromSdk(): Domain { return fetchRaw() as Domain }",
+      ].join("\n"),
+    )
+
+    const out = await run()
+
+    expect(out.findings.map((finding) => finding.symbol)).toEqual([
+      "fromUnknown",
+      "fromUntyped",
+      "fromWire",
+      "fromEnvironment",
+      "fromFilesystem",
+      "fromSubprocess",
+      "fromIpc",
+      "fromSdk",
+    ])
+    expect(out.findings.map((finding) => finding.ingressSources[0]?.kind)).toEqual([
+      "unknown",
+      "untyped",
+      "parsed-wire",
+      "environment",
+      "filesystem",
+      "subprocess",
+      "ipc",
+      "external-sdk",
+    ])
+    expect(out.findings.every((finding) =>
+      finding.candidateReason === "supported-untrusted-ingress" &&
+      finding.parserEvidence.length === 0
+    )).toBe(true)
+  })
+
+  test("excludes semantic non-ingress shapes while paired raw-domain controls remain findings", async () => {
+    await repo.write(
+      "src/adapters/projections.ts",
+      [
+        "type Domain = { readonly id: string }",
+        "type Snapshot = { readonly entities: ReadonlyArray<Domain> }",
+        "declare namespace Either { type Either<R, L> = { readonly _tag: 'Right'; readonly right: R } | { readonly _tag: 'Left'; readonly left: L } }",
+        "declare namespace Effect { type Effect<A, E, R> = { readonly _A: A; readonly _E: E; readonly _R: R } }",
+        "type CreativeRequest = { readonly requestId: string }",
+        "type RequestRow = { readonly id: string }",
+        "export const mapBoothRequestRows = (rows: ReadonlyArray<CreativeRequest>): ReadonlyArray<RequestRow> =>",
+        "  rows.map((row) => ({ id: row.requestId }))",
+        "export const buildBoothBundle = (result: Either.Either<ReadonlyArray<Domain>, unknown>): Snapshot =>",
+        "  result._tag === 'Left' ? { entities: [] } : { entities: result.right }",
+        "export const isSdkError = (value: unknown): value is Domain =>",
+        "  typeof value === 'object' && value !== null && 'id' in value",
+        "export const describeSdkError = (error: unknown): string =>",
+        "  error instanceof Error ? error.message : 'failed'",
+        "export const formatPayloadJson = (payload: unknown): string | undefined =>",
+        "  payload === undefined ? undefined : JSON.stringify(payload)",
+        "export const resolved = <A, E>(effect: Effect.Effect<A, E, any>): Effect.Effect<A, E, never> =>",
+        "  effect as Effect.Effect<A, E, never>",
+        "export const buildTowerBundle = (result: Either.Either<ReadonlyArray<Domain>, unknown>): Snapshot =>",
+        "  result._tag === 'Left' ? { entities: [] } : { entities: result.right }",
+        "export const unsafeMapper = (rows: ReadonlyArray<unknown>): ReadonlyArray<Domain> =>",
+        "  rows as ReadonlyArray<Domain>",
+        "export const unsafeEnvelope = (result: unknown): Snapshot => result as Snapshot",
+        "export const dishonestPredicate = (_value: unknown): _value is Domain => true",
+        "export const unsafeGuard = (value: unknown): Domain =>",
+        "  value instanceof Error ? value as unknown as Domain : value as Domain",
+        "export const unsafeProjection = (value: unknown): Domain => value as Domain",
+        "export const unsafeEffectPayload = (effect: Effect.Effect<any, never, never>): Domain =>",
+        "  effect as unknown as Domain",
+      ].join("\n"),
+    )
+
+    const out = await run()
+
+    expect(out.excluded).toMatchObject([
+      { symbol: "mapBoothRequestRows", exclusionReason: "typed-input-projection" },
+      { symbol: "buildBoothBundle", exclusionReason: "typed-error-envelope" },
+      { symbol: "isSdkError", exclusionReason: "runtime-type-refinement" },
+      { symbol: "describeSdkError", exclusionReason: "terminal-output-projection" },
+      { symbol: "formatPayloadJson", exclusionReason: "terminal-output-projection" },
+      { symbol: "resolved", exclusionReason: "effect-requirement-wrapper" },
+      { symbol: "buildTowerBundle", exclusionReason: "typed-error-envelope" },
+    ])
+    expect(out.findings.map((finding) => finding.symbol)).toEqual([
+      "unsafeMapper",
+      "unsafeEnvelope",
+      "dishonestPredicate",
+      "unsafeGuard",
+      "unsafeProjection",
+      "unsafeEffectPayload",
+    ])
+  })
+
+  test("keeps raw carriers and primitive formatters out of the denominator but counts runtime validation", async () => {
+    await repo.write(
+      "src/adapters/body-ingress.ts",
+      [
+        "import { readFileSync } from 'node:fs'",
+        "declare namespace NodeJS { interface ProcessEnv { readonly [key: string]: string | undefined } }",
+        "type Domain = { readonly id: string }",
+        "export const copyEnvironment = (): NodeJS.ProcessEnv => ({ ...process.env })",
+        "export const renderAvatar = (): string => readFileSync('/tmp/avatar.png').toString('base64')",
+        "export const parseDomain = (text: string): Domain | undefined => {",
+        "  const parsed: unknown = JSON.parse(text)",
+        "  if (parsed === null || typeof parsed !== 'object' || !('id' in parsed)) return undefined",
+        "  return parsed as Domain",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await run()
+
+    expect(out.findings).toEqual([])
+    expect(out.excluded).toMatchObject([
+      { symbol: "copyEnvironment", exclusionReason: "raw-ingress-carrier" },
+      { symbol: "renderAvatar", exclusionReason: "terminal-output-projection" },
+    ])
+    expect(out.covered).toMatchObject([
+      {
+        symbol: "parseDomain",
+        ingressSources: [{ kind: "parsed-wire" }],
+        parserEvidence: ["runtime-refinement"],
+      },
+    ])
+  })
+
+  test("inherits parser evidence into an already-decoded one-hop adapter stage", async () => {
+    await repo.write(
+      "src/adapters/domain.ts",
+      [
+        "type Domain = { readonly id: string }",
+        "const parse = (value: unknown): Domain => value as Domain",
+        "export const adapt = (value: unknown): Domain => value as Domain",
+        "export const handle = (input: unknown): Domain => {",
+        "  const decoded = parse(input)",
+        "  return adapt(decoded)",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await run()
+
+    expect(out.findings).toEqual([])
+    expect(out.covered).toMatchObject([
+      {
+        symbol: "handle",
+        candidateReason: "supported-untrusted-ingress",
+        parserEvidence: ["parse"],
+      },
+    ])
+    expect(out.excluded).toMatchObject([
+      {
+        symbol: "adapt",
+        exclusionReason: "already-decoded-input",
+        parserEvidence: ["caller:parse"],
+      },
+    ])
+  })
+
+  test("does not inherit decoder evidence when any local call site passes raw input", async () => {
+    await repo.write(
+      "src/adapters/mixed-domain.ts",
+      [
+        "type Domain = { readonly id: string }",
+        "const parse = (value: unknown): Domain => value as Domain",
+        "export const adapt = (value: unknown): Domain => value as Domain",
+        "export const decodedPath = (input: unknown): Domain => adapt(parse(input))",
+        "export const rawPath = (input: unknown): Domain => adapt(input)",
+      ].join("\n"),
+    )
+
+    const out = await run()
+
+    expect(out.excluded.some((entry) => entry.symbol === "adapt")).toBe(false)
+    expect(out.findings).toMatchObject([{ symbol: "adapt" }, { symbol: "rawPath" }])
+    expect(out.covered).toMatchObject([{ symbol: "decodedPath" }])
+  })
+
+  test("reports ingress and parser attribution in diagnostic data", async () => {
+    await repo.write(
+      "src/api/domain.ts",
+      "export function POST(input: unknown) { return input as { id: string } }\n",
+    )
+
+    const out = await run()
+    expect(TsAd04.diagnose(out)[0]?.data).toMatchObject({
+      symbol: "POST",
+      candidateReason: "supported-untrusted-ingress",
+      ingressSources: [
+        {
+          kind: "unknown",
+          evidence: "parameter input: unknown",
+        },
+      ],
+      parserEvidence: [],
+    })
+  })
+
   test("a single uncovered weak function cannot zero the signal", async () => {
     await repo.write(
       "src/api/user.ts",

@@ -139,7 +139,7 @@ export const TS_AD_05_COMPOSITE_INPUTS = [
     aliases: ["TS-AD-04"],
     factorPath: "inputs.boundary_parser_coverage",
     weight: FACTOR_WEIGHTS.parserCoverage,
-    cacheFingerprint: "ts-ad-05-boundary-parser-coverage-input-v1",
+    cacheFingerprint: "ts-ad-05-boundary-parser-coverage-input-v2-proven-ingress-audit",
     rawValue: (value) => summarizeBoundaryParserCoverage(value as TsAd04Output),
     normalize: (value) => normalizeBoundaryParserCoverage(value as TsAd04Output),
   },

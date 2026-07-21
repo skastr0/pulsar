@@ -4,19 +4,13 @@ import {
   type Signal,
 } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
-import {
-  ArrowFunction,
-  type CallExpression,
-  FunctionDeclaration,
-  FunctionExpression,
-  Node,
-  type ParameterDeclaration,
-  SyntaxKind,
-  VariableDeclaration,
-  type SourceFile,
-} from "ts-morph"
+import type { SourceFile } from "ts-morph"
 import { TsProjectTag } from "../ts-project.js"
 import { isExcluded } from "./shared-globs.js"
+import {
+  collectBoundaryFunctionCandidates,
+  type BoundaryFunctionAnalysis,
+} from "./ts-ad-04-ingress-analysis.js"
 
 const TsAd04Config = Schema.Struct({
   boundary_globs: Schema.Array(Schema.String),
@@ -39,11 +33,49 @@ export interface WeakBoundaryParameter {
   readonly reason: "any" | "unknown" | "untyped" | "request-like"
 }
 
+export type BoundaryIngressKind =
+  | "unknown"
+  | "untyped"
+  | "parsed-wire"
+  | "environment"
+  | "filesystem"
+  | "subprocess"
+  | "ipc"
+  | "external-sdk"
+
+export interface BoundaryIngressSource {
+  readonly kind: BoundaryIngressKind
+  readonly evidence: string
+  readonly parameter?: string
+}
+
+export type BoundaryFunctionExclusionReason =
+  | "already-decoded-input"
+  | "typed-input-projection"
+  | "typed-error-envelope"
+  | "runtime-type-refinement"
+  | "terminal-output-projection"
+  | "raw-ingress-carrier"
+  | "effect-requirement-wrapper"
+
+export interface BoundaryParserExcludedFunction {
+  readonly file: string
+  readonly line: number
+  readonly symbol: string
+  readonly exclusionReason: BoundaryFunctionExclusionReason
+  readonly exclusionEvidence: ReadonlyArray<string>
+  readonly ingressSources: ReadonlyArray<BoundaryIngressSource>
+  readonly parserEvidence: ReadonlyArray<string>
+}
+
 export interface BoundaryParserFinding {
   readonly file: string
   readonly line: number
   readonly symbol: string
   readonly weakParameters: ReadonlyArray<WeakBoundaryParameter>
+  readonly ingressSources: ReadonlyArray<BoundaryIngressSource>
+  readonly candidateReason: "supported-untrusted-ingress"
+  readonly parserEvidence: ReadonlyArray<string>
   readonly missingEvidence: string
 }
 
@@ -53,6 +85,8 @@ export interface BoundaryParserCoveredFunction {
   readonly symbol: string
   readonly parserEvidence: ReadonlyArray<string>
   readonly weakParameters: ReadonlyArray<WeakBoundaryParameter>
+  readonly ingressSources: ReadonlyArray<BoundaryIngressSource>
+  readonly candidateReason: "supported-untrusted-ingress"
 }
 
 export interface TsAd04Output {
@@ -63,6 +97,8 @@ export interface TsAd04Output {
   readonly coveredWeakBoundaryFunctions: number
   readonly findings: ReadonlyArray<BoundaryParserFinding>
   readonly covered: ReadonlyArray<BoundaryParserCoveredFunction>
+  readonly excludedBoundaryFunctions: number
+  readonly excluded: ReadonlyArray<BoundaryParserExcludedFunction>
   readonly diagnosticLimit: number
   readonly compositeConsumers: ReadonlyArray<string>
   readonly cacheContributors: ReadonlyArray<string>
@@ -70,34 +106,9 @@ export interface TsAd04Output {
   readonly enforcementCeiling: ReadonlyArray<string>
 }
 
-interface BoundaryFunctionCandidate {
-  readonly file: string
-  readonly line: number
-  readonly symbol: string
-  readonly weakParameters: ReadonlyArray<WeakBoundaryParameter>
-  readonly parserEvidence: ReadonlyArray<string>
-}
-
-type BoundaryFunctionNode =
-  | FunctionDeclaration
-  | ArrowFunction
-  | FunctionExpression
-
 // Ratio denominators below this count scale pressure down proportionally:
 // a single weak function cannot zero the signal on its own.
 const MIN_WEAK_BOUNDARY_EVIDENCE = 4
-
-const REQUEST_LIKE_TYPE_NAMES = [
-  "Request",
-  "NextRequest",
-  "IncomingMessage",
-  "APIGatewayProxyEvent",
-  "APIGatewayEvent",
-  "MessageEvent",
-  "Event",
-  "FormData",
-  "URLSearchParams",
-] as const
 
 export const TsAd04: Signal<TsAd04Config, TsAd04Output, TsProjectTag> = {
   id: "TS-AD-04-boundary-parser-coverage",
@@ -108,7 +119,7 @@ export const TsAd04: Signal<TsAd04Config, TsAd04Output, TsProjectTag> = {
   kind: "structural",
   evidenceClass: "heuristic-pattern",
   cacheVersion:
-    "ts-boundary-parser-evidence-v4-symbol-scoped-one-hop-local-alias-evidence-floor",
+    "ts-boundary-parser-evidence-v5-proven-ingress-semantic-exclusions-one-hop-decoded-stage",
   configSchema: TsAd04Config,
   defaultConfig: {
     boundary_globs: [
@@ -139,7 +150,6 @@ export const TsAd04: Signal<TsAd04Config, TsAd04Output, TsProjectTag> = {
       "validate",
       "assert",
       "schema",
-      "json.parse",
     ],
     exclude_globs: [
       "**/*.test.ts",
@@ -203,20 +213,22 @@ export const TsAd04: Signal<TsAd04Config, TsAd04Output, TsProjectTag> = {
     return out.findings.slice(0, out.diagnosticLimit).map((finding) => ({
       severity: "warn" as const,
       message:
-        `Boundary function \`${finding.symbol}\` accepts weak external input ` +
+        `Boundary function \`${finding.symbol}\` receives supported untrusted ingress ` +
         "without parse/decode evidence",
       location: { file: finding.file, line: finding.line },
       data: { ...finding },
       fixHints: [{
         kind: "add-boundary-parser",
-        title: "Decode weak boundary input",
+        title: "Validate untrusted boundary ingress",
         summary:
-          "Wrap the weak parameter in a schema/parser decode near the boundary, then pass the decoded value into the rest of the function.",
+          "Validate the cited ingress source near the boundary, then pass only decoded data into domain logic.",
         confidence: "high",
         autoApplicable: false,
         data: {
           symbol: finding.symbol,
           weakParameters: finding.weakParameters,
+          ingressSources: finding.ingressSources,
+          candidateReason: finding.candidateReason,
         },
       }],
     }))
@@ -238,22 +250,46 @@ const computeBoundaryParserCoverage = (
 ): TsAd04Output => {
   const diagnosticLimit = normalizeDiagnosticLimit(config.top_n_diagnostics)
   if (config.boundary_globs.length === 0) {
-    return baseOutput("not_configured", 0, 0, [], [], diagnosticLimit)
+    return baseOutput("not_configured", 0, 0, [], [], [], diagnosticLimit)
   }
 
   const boundaryFiles = sourceFiles.filter((sourceFile) =>
     isBoundarySourceFile(sourceFile, config),
   )
   if (boundaryFiles.length === 0) {
-    return baseOutput("absent", 0, 0, [], [], diagnosticLimit)
+    return baseOutput("absent", 0, 0, [], [], [], diagnosticLimit)
   }
 
   const candidates = boundaryFiles.flatMap((sourceFile) =>
     collectBoundaryFunctionCandidates(sourceFile, config.parser_call_patterns),
   )
-  const weakCandidates = candidates.filter((candidate) => candidate.weakParameters.length > 0)
+  const excluded = candidates
+    .filter((candidate): candidate is BoundaryFunctionAnalysis & {
+      readonly exclusionReason: BoundaryFunctionExclusionReason
+    } => candidate.exclusionReason !== undefined)
+    .map((candidate) => ({
+      file: candidate.file,
+      line: candidate.line,
+      symbol: candidate.symbol,
+      exclusionReason: candidate.exclusionReason,
+      exclusionEvidence: candidate.exclusionEvidence,
+      ingressSources: candidate.ingressSources,
+      parserEvidence: candidate.parserEvidence,
+    }))
+    .sort(compareBoundaryFunctionLocation)
+  const weakCandidates = candidates.filter((candidate) =>
+    candidate.exclusionReason === undefined && candidate.ingressSources.length > 0
+  )
   if (weakCandidates.length === 0) {
-    return baseOutput("not_applicable", boundaryFiles.length, candidates.length, [], [], diagnosticLimit)
+    return baseOutput(
+      "not_applicable",
+      boundaryFiles.length,
+      candidates.length,
+      [],
+      [],
+      excluded,
+      diagnosticLimit,
+    )
   }
 
   const covered = weakCandidates
@@ -264,6 +300,8 @@ const computeBoundaryParserCoverage = (
       symbol: candidate.symbol,
       parserEvidence: candidate.parserEvidence,
       weakParameters: candidate.weakParameters,
+      ingressSources: candidate.ingressSources,
+      candidateReason: "supported-untrusted-ingress" as const,
     }))
   const findings = weakCandidates
     .filter((candidate) => candidate.parserEvidence.length === 0)
@@ -272,16 +310,20 @@ const computeBoundaryParserCoverage = (
       line: candidate.line,
       symbol: candidate.symbol,
       weakParameters: candidate.weakParameters,
+      ingressSources: candidate.ingressSources,
+      candidateReason: "supported-untrusted-ingress" as const,
+      parserEvidence: candidate.parserEvidence,
       missingEvidence: "No parse/decode/schema/assertion call matched parser_call_patterns.",
     }))
-    .sort(compareBoundaryParserFindings)
+    .sort(compareBoundaryFunctionLocation)
   const state = findings.length === 0 ? "zero" : "present"
   return baseOutput(
     state,
     boundaryFiles.length,
     candidates.length,
     findings,
-    covered.sort(compareCoveredBoundaryFunctions),
+    covered.sort(compareBoundaryFunctionLocation),
+    excluded,
     diagnosticLimit,
   )
 }
@@ -292,6 +334,7 @@ const baseOutput = (
   boundaryFunctionsAnalyzed: number,
   findings: ReadonlyArray<BoundaryParserFinding>,
   covered: ReadonlyArray<BoundaryParserCoveredFunction>,
+  excluded: ReadonlyArray<BoundaryParserExcludedFunction>,
   diagnosticLimit: number,
 ): TsAd04Output => ({
   state,
@@ -301,6 +344,8 @@ const baseOutput = (
   coveredWeakBoundaryFunctions: covered.length,
   findings,
   covered,
+  excludedBoundaryFunctions: excluded.length,
+  excluded,
   diagnosticLimit,
   compositeConsumers: [
     "boundary trust breach",
@@ -331,267 +376,15 @@ const isBoundarySourceFile = (
   )
 }
 
-const collectBoundaryFunctionCandidates = (
-  sourceFile: SourceFile,
-  parserPatterns: ReadonlyArray<string>,
-): ReadonlyArray<BoundaryFunctionCandidate> => [
-  ...sourceFile.getFunctions().flatMap((fn) =>
-    isBoundaryFunctionDeclaration(fn) ? [candidateFromFunction(sourceFile, fn, fn.getName() ?? "default", parserPatterns)] : [],
-  ),
-  ...sourceFile.getVariableDeclarations().flatMap((declaration) =>
-    boundaryVariableFunction(declaration).map((fn) =>
-      candidateFromFunction(sourceFile, fn, declaration.getName(), parserPatterns),
-    ),
-  ),
-  ...sourceFile.getExportAssignments().flatMap((assignment) => {
-    const expression = assignment.getExpression()
-    if (!Node.isArrowFunction(expression) && !Node.isFunctionExpression(expression)) return []
-    return [candidateFromFunction(sourceFile, expression, "default", parserPatterns)]
-  }),
-]
-
-const isBoundaryFunctionDeclaration = (fn: FunctionDeclaration): boolean =>
-  fn.isExported() || fn.isDefaultExport() || isHandlerName(fn.getName() ?? "")
-
-const boundaryVariableFunction = (
-  declaration: VariableDeclaration,
-): Array<BoundaryFunctionNode> => {
-  const initializer = declaration.getInitializer()
-  if (initializer === undefined) return []
-  const variableStatement = declaration.getVariableStatement()
-  const boundaryLike =
-    variableStatement?.isExported() === true ||
-    isHandlerName(declaration.getName())
-  if (!boundaryLike) return []
-  if (Node.isArrowFunction(initializer) || Node.isFunctionExpression(initializer)) {
-    return [initializer]
-  }
-  return []
-}
-
-const isHandlerName = (name: string): boolean =>
-  /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|handler|handle|loader|action|fetch|main|run)$/u.test(name)
-
-const candidateFromFunction = (
-  sourceFile: SourceFile,
-  fn: BoundaryFunctionNode,
-  symbol: string,
-  parserPatterns: ReadonlyArray<string>,
-): BoundaryFunctionCandidate => {
-  const weakParameters = fn.getParameters().flatMap(classifyWeakParameter)
-  return {
-    file: sourceFile.getFilePath(),
-    line: fn.getStartLineNumber(),
-    symbol,
-    weakParameters,
-    parserEvidence: collectParserEvidence(fn, parserPatterns, weakParameters),
-  }
-}
-
-const classifyWeakParameter = (
-  parameter: ParameterDeclaration,
-): ReadonlyArray<WeakBoundaryParameter> => {
-  const name = parameter.getName()
-  const typeNode = parameter.getTypeNode()
-  const typeText = typeNode?.getText() ?? "<untyped>"
-  const normalized = typeText.toLowerCase()
-  // A default initializer means the inferred type comes from an internal
-  // expression (`authPath = getAuthPath()`), not from untrusted callers.
-  if (typeNode === undefined) {
-    return parameter.hasInitializer() ? [] : [{ name, typeText, reason: "untyped" }]
-  }
-  // Function-typed parameters (`decode: (value: unknown) => T`) CONSUME
-  // unknown; the unknown in their signature is not data entering through
-  // this boundary.
-  if (isFunctionShapedTypeNode(typeNode)) {
-    return []
-  }
-  if (/\bany\b/u.test(normalized)) {
-    return [{ name, typeText, reason: "any" }]
-  }
-  if (/\bunknown\b/u.test(normalized)) {
-    return [{ name, typeText, reason: "unknown" }]
-  }
-  if (REQUEST_LIKE_TYPE_NAMES.some((requestType) => typeText.includes(requestType))) {
-    return [{ name, typeText, reason: "request-like" }]
-  }
-  return []
-}
-
-const isFunctionShapedTypeNode = (typeNode: Node): boolean => {
-  if (Node.isParenthesizedTypeNode(typeNode)) {
-    return isFunctionShapedTypeNode(typeNode.getTypeNode())
-  }
-  if (Node.isUnionTypeNode(typeNode) || Node.isIntersectionTypeNode(typeNode)) {
-    return typeNode.getTypeNodes().every(isFunctionShapedTypeNode)
-  }
-  return Node.isFunctionTypeNode(typeNode) || Node.isConstructorTypeNode(typeNode)
-}
-
-const collectParserEvidence = (
-  fn: BoundaryFunctionNode,
-  parserPatterns: ReadonlyArray<string>,
-  weakParameters: ReadonlyArray<WeakBoundaryParameter>,
-): ReadonlyArray<string> => {
-  const patterns = parserPatterns.map((pattern) => normalizeCallText(pattern))
-  const weakParameterNames = new Set(weakParameters.map((parameter) => parameter.name))
-  if (patterns.length === 0 || weakParameterNames.size === 0) return []
-  const weakParameterDeclarations = new Set<Node>(
-    fn.getParameters().filter((parameter) =>
-      weakParameterNames.has(parameter.getName()),
-    ),
-  )
-  const evidenceDeclarations = new Set<Node>([
-    ...weakParameterDeclarations,
-    ...collectStableOneHopAliases(fn, weakParameterDeclarations),
-  ])
-  const calls = fn.getDescendantsOfKind(SyntaxKind.CallExpression)
-  const evidence = new Set<string>()
-  for (const call of calls) {
-    if (!isDirectlyWithinFunction(call, fn)) continue
-    const expression = call.getExpression()
-    const expressionText = expression.getText()
-    const normalizedCallee = normalizeCallText(calleeText(expression))
-    if (
-      patterns.some((pattern) => parserPatternMatchesCallee(pattern, normalizedCallee)) &&
-      callReferencesDeclaration(call, evidenceDeclarations)
-    ) {
-      evidence.add(expressionText)
-    }
-  }
-  return [...evidence].sort()
-}
-
-const calleeText = (node: Node): string => {
-  if (Node.isCallExpression(node)) return calleeText(node.getExpression())
-  return node.getText()
-}
-
-const normalizeCallText = (text: string): string =>
-  text.toLowerCase().replace(/\s+/gu, "")
-
-const parserPatternMatchesCallee = (
-  normalizedPattern: string,
-  normalizedCallee: string,
-): boolean => {
-  if (normalizedPattern.includes(".")) {
-    return normalizedCallee === normalizedPattern ||
-      normalizedCallee.endsWith(`.${normalizedPattern}`)
-  }
-  return calleeSegments(normalizedCallee).some((segment) =>
-    parserPatternMatchesSegment(normalizedPattern, segment),
-  )
-}
-
-const calleeSegments = (normalizedCallee: string): ReadonlyArray<string> =>
-  normalizedCallee.split(/[^a-z0-9_$]+/u).filter((segment) => segment.length > 0)
-
-const parserPatternMatchesSegment = (
-  normalizedPattern: string,
-  segment: string,
-): boolean => {
-  if (segment === normalizedPattern) return true
-  const suffix = segment.slice(normalizedPattern.length)
-  return (suffix === "sync" || suffix === "async") &&
-    segment.startsWith(normalizedPattern)
-}
-
-const callReferencesDeclaration = (
-  call: CallExpression,
-  declarations: ReadonlySet<Node>,
-): boolean =>
-  call.getArguments().some((argument) =>
-    nodeReferencesDeclaration(argument, declarations),
-  )
-
-const collectStableOneHopAliases = (
-  fn: BoundaryFunctionNode,
-  weakParameterDeclarations: ReadonlySet<Node>,
-): ReadonlySet<VariableDeclaration> => {
-  // Intentionally bounded data flow: parameter -> one local initializer ->
-  // parser argument. Symbols keep shadowed names from becoming evidence.
-  const aliases = new Set<VariableDeclaration>()
-
-  for (const declaration of fn.getDescendantsOfKind(SyntaxKind.VariableDeclaration)) {
-    if (!isDirectlyWithinFunction(declaration, fn)) continue
-    const declarationKind = declaration.getVariableStatement()?.getDeclarationKind()
-    if (declarationKind !== "const" && declarationKind !== "let") continue
-    if (!Node.isIdentifier(declaration.getNameNode())) continue
-    const initializer = declaration.getInitializer()
-    if (initializer === undefined) continue
-    if (!nodeReferencesDeclaration(initializer, weakParameterDeclarations)) continue
-    // `let` is evidence only when language-service references prove the
-    // initializer remains its sole assignment.
-    if (declarationKind === "let" && hasNonDefinitionWrite(declaration)) continue
-    aliases.add(declaration)
-  }
-
-  return aliases
-}
-
-const nodeReferencesDeclaration = (
-  node: Node,
-  declarations: ReadonlySet<Node>,
-): boolean => {
-  if (isFunctionScopeNode(node)) return false
-  if (Node.isIdentifier(node) && identifierReferencesDeclaration(node, declarations)) {
-    return true
-  }
-  return node.getChildren().some((child) =>
-    nodeReferencesDeclaration(child, declarations),
-  )
-}
-
-const identifierReferencesDeclaration = (
-  identifier: Node,
-  declarations: ReadonlySet<Node>,
-): boolean =>
-  Node.isIdentifier(identifier) &&
-  (identifier.getSymbol()?.getDeclarations() ?? []).some((declaration) =>
-    declarations.has(declaration),
-  )
-
-const hasNonDefinitionWrite = (declaration: VariableDeclaration): boolean =>
-  declaration.findReferences().some((reference) =>
-    reference.getReferences().some((entry) =>
-      entry.isWriteAccess() && entry.isDefinition() !== true,
-    ),
-  )
-
-const isDirectlyWithinFunction = (
-  node: Node,
-  fn: BoundaryFunctionNode,
-): boolean => node.getFirstAncestor(isFunctionScopeNode) === fn
-
-const FUNCTION_SCOPE_KINDS: ReadonlySet<SyntaxKind> = new Set([
-  SyntaxKind.ArrowFunction,
-  SyntaxKind.FunctionExpression,
-  SyntaxKind.FunctionDeclaration,
-  SyntaxKind.MethodDeclaration,
-  SyntaxKind.Constructor,
-  SyntaxKind.GetAccessor,
-  SyntaxKind.SetAccessor,
-])
-
-const isFunctionScopeNode = (node: Node): boolean =>
-  FUNCTION_SCOPE_KINDS.has(node.getKind())
 
 const normalizeDiagnosticLimit = (value: number): number => {
   if (!Number.isFinite(value)) return 0
   return Math.max(0, Math.floor(value))
 }
 
-const compareBoundaryParserFindings = (
-  left: BoundaryParserFinding,
-  right: BoundaryParserFinding,
-): number =>
-  left.file.localeCompare(right.file) ||
-  left.line - right.line ||
-  left.symbol.localeCompare(right.symbol)
-
-const compareCoveredBoundaryFunctions = (
-  left: BoundaryParserCoveredFunction,
-  right: BoundaryParserCoveredFunction,
+const compareBoundaryFunctionLocation = (
+  left: { readonly file: string; readonly line: number; readonly symbol: string },
+  right: { readonly file: string; readonly line: number; readonly symbol: string },
 ): number =>
   left.file.localeCompare(right.file) ||
   left.line - right.line ||

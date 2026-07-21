@@ -220,19 +220,19 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       config:
         "ts-ad-04.test.ts: configSchema decodes narrowed CLI boundary defaults, custom parser_call_patterns affect parser evidence, and diagnostics honor sanitized top_n_diagnostics.",
       positiveFixture:
-        "ts-ad-04.test.ts: fixtures detect weak any, unknown, untyped, request-like, anonymous default-export, default-export function, and cast-only aliased boundary parameters without parser evidence.",
+        "ts-ad-04.test.ts: fixtures detect unknown/untyped parameters plus parsed-wire, environment, filesystem, subprocess, IPC, and raw external-package ingress; paired controls preserve findings when raw data is cast into domain types.",
       negativeFixture:
-        "ts-ad-04.test.ts: package directories named cli are not process boundaries by default; direct and stable one-hop local aliases into parser calls count as evidence; parser pattern names in call arguments, parser-pattern substrings, reassigned, shadowed, two-hop, and unrelated aliases, block-shadowed weak-parameter names, and parser calls in nested functions or outside the boundary function body do not count as parser evidence.",
+        "ts-ad-04.test.ts: typed mappers, typed Either error envelopes, grounded type predicates/instanceof refinements, primitive output serializers, raw carrier projections, and Effect requirement wrappers are excluded by semantic reason; direct/stable aliases and bounded one-hop decoded adapter stages carry parser evidence, while reassigned, shadowed, two-hop, unrelated, nested, and out-of-function parser references do not.",
       applicability:
         "ts-ad-04.test.ts: absent boundary files, not_configured boundary_globs, and boundary files with no weak external inputs produce distinct applicability states.",
       score:
-        "ts-ad-04.test.ts: score is 0 for all uncovered weak boundary functions, 1 for covered/not-applicable states, and proportional for partial parser coverage.",
+        "ts-ad-04.test.ts: score pressure uses only proven untrusted-ingress candidates, preserves the four-function evidence floor, and remains neutral for covered/not-applicable states.",
       diagnostics:
-        "ts-ad-04.test.ts: diagnostics include warning severity, compact message, absolute location, finding data, missing-evidence text, and sanitized finding cap.",
+        "ts-ad-04.test.ts: finding diagnostics expose ingress source, candidate reason, parser evidence, missing-evidence text, absolute location, and sanitized cap; output audits every semantic exclusion with reason and evidence.",
       factorLedger:
         "ts-ad-04.test.ts: registered pack signal emits parser_call_patterns and top_n_diagnostics factor-ledger entries.",
       cacheSemantics:
-        "ts-ad-04.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AD-04 semantic cacheVersion after diagnostic-limit, symbol-scoped parser-attribution, and one-hop local alias semantics changed.",
+        "ts-ad-04.test.ts, ts-ad-05.test.ts, and pack.test.ts: TS-AD-04 cache v5 covers proven-ingress discovery, semantic exclusions, runtime validation, and bounded decoded-stage inheritance; TS-AD-05 pins the changed primitive input fingerprint.",
     },
   },
   {

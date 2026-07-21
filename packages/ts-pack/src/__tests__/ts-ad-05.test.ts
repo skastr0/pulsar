@@ -26,7 +26,7 @@ describe("TS-AD-05 (boundary trust breach)", () => {
     expect(TsAd05.inputs).toEqual([
       {
         id: "TS-AD-04-boundary-parser-coverage",
-        cacheFingerprint: "ee0ea0ab51fc1be46f41035e0a9ffee05051d1f9991e0759c939802a65187cd2",
+        cacheFingerprint: "6a6b0faa2b71e36e844a09d9ed23e74d07b7908b8568089ca70fdbedbfced0b2",
       },
       {
         id: "TS-LD-07-unsafe-type-erosion",
@@ -539,6 +539,13 @@ const parserFinding = (file: string, symbol: string) => ({
     typeText: "unknown",
     reason: "unknown" as const,
   }],
+  ingressSources: [{
+    kind: "unknown" as const,
+    evidence: "parameter input: unknown",
+    parameter: "input",
+  }],
+  candidateReason: "supported-untrusted-ingress" as const,
+  parserEvidence: [],
   missingEvidence: "No parse/decode/schema/assertion call matched parser_call_patterns.",
 })
 
@@ -563,7 +570,15 @@ const parserCoverage = (args: {
       typeText: "unknown",
       reason: "unknown" as const,
     }],
+    ingressSources: [{
+      kind: "unknown" as const,
+      evidence: "parameter input: unknown",
+      parameter: "input",
+    }],
+    candidateReason: "supported-untrusted-ingress" as const,
   })),
+  excludedBoundaryFunctions: 0,
+  excluded: [],
   diagnosticLimit: 10,
   compositeConsumers: ["boundary trust breach"],
   cacheContributors: ["test"],
