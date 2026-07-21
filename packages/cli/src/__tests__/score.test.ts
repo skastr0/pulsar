@@ -125,6 +125,30 @@ const healthyCoupledRepoFiles = (): ReadonlyArray<{ path: string; content: strin
 ]
 
 describe("pulsar score", () => {
+  test("built-in default human score modes frame output as uncalibrated evidence", async () => {
+    const repoPath = await initRepo(simpleRepoFiles())
+    const homePath = await mkdtemp(join(tmpdir(), "pulsar-score-home-"))
+    try {
+      const modes = [
+        ["score", "."],
+        ["score", "--category", "generated-slop", "."],
+        ["score", "--signal", "TS-DE-01", "."],
+      ] as const
+
+      for (const args of modes) {
+        const out = runCli(repoPath, args, { HOME: homePath })
+        expect(out.status).toBe(0)
+        expect(out.stdout).toContain("Vector Source: built-in defaults")
+        expect(out.stdout).toContain(
+          "Score Context: uncalibrated evidence, not a verdict",
+        )
+      }
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+      await rm(homePath, { recursive: true, force: true })
+    }
+  }, 120_000)
+
   test("full observer mode prints the category table, minimum, and gate", async () => {
     const repoPath = await initRepo(simpleRepoFiles())
     try {
@@ -1245,6 +1269,9 @@ export function stubF() { throw new Error("Not implemented") }
         "Vector Source: repo-local .pulsar/vector.json",
       )
       expect(worktreeOut.stdout).not.toContain("organization fallback")
+      expect(worktreeOut.stdout).not.toContain(
+        "uncalibrated evidence, not a verdict",
+      )
 
       await rm(join(repoPath, ".pulsar"), { recursive: true, force: true })
       const organizationOut = runCli(repoPath, ["score", "."], { HOME: homePath })
@@ -1252,6 +1279,9 @@ export function stubF() { throw new Error("Not implemented") }
       expect(organizationOut.stdout).toContain("Vector: organization-default")
       expect(organizationOut.stdout).toContain(
         "Vector Source: organization fallback ~/.config/pulsar/vector.json",
+      )
+      expect(organizationOut.stdout).not.toContain(
+        "uncalibrated evidence, not a verdict",
       )
       const organizationSignalOut = runCli(repoPath, ["score", "--signal", "TS-AB-01", "."], {
         HOME: homePath,

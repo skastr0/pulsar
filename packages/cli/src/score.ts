@@ -180,6 +180,7 @@ const printScoreCommandOutput = (
         output: run.output,
         vectorLabel: vectorContext.vectorSelection.label,
         vectorSourceLabel: vectorContext.vectorSelection.sourceLabel,
+        vectorTrustBoundary: vectorContext.vectorSelection.trustBoundary,
         aiMode: explainAiAssistedMode(vectorContext.vectorSelection.vector),
         profile: opts.profile === true,
       })
@@ -190,6 +191,7 @@ const printScoreCommandOutput = (
         output: run.output,
         vectorLabel: vectorContext.vectorSelection.label,
         vectorSourceLabel: vectorContext.vectorSelection.sourceLabel,
+        vectorTrustBoundary: vectorContext.vectorSelection.trustBoundary,
         aiMode: explainAiAssistedMode(vectorContext.vectorSelection.vector),
         ciAssessment,
         colorize: process.stdout.isTTY === true && opts.ci !== true,
@@ -247,6 +249,7 @@ const runSingleSignalMode = (opts: ScoreOptions) =>
       repoRoot,
       gitSha,
       vectorSelection.sourceLabel,
+      vectorSelection.trustBoundary,
     )
     return 0
   })

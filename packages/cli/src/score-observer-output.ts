@@ -22,6 +22,10 @@ import {
   printRuntimeProfile,
   pushRuntimeProfile,
 } from "./score-runtime-profile.js"
+import {
+  scoreVectorSourceLines,
+} from "./score-vector-source-output.js"
+import type { DiscoveredPulsarVector } from "./vector-discovery.js"
 
 export const printObserverView = (opts: {
   readonly repoRoot: string
@@ -29,6 +33,7 @@ export const printObserverView = (opts: {
   readonly output: ObserverOutput
   readonly vectorLabel: string
   readonly vectorSourceLabel: string
+  readonly vectorTrustBoundary: DiscoveredPulsarVector["trustBoundary"]
   readonly aiMode: AiAssistedModeExplanation
   readonly ciAssessment: CiAssessment
   readonly colorize: boolean
@@ -52,13 +57,14 @@ const observerViewHeaderLines = (opts: {
   readonly output: ObserverOutput
   readonly vectorLabel: string
   readonly vectorSourceLabel: string
+  readonly vectorTrustBoundary: DiscoveredPulsarVector["trustBoundary"]
   readonly aiMode: AiAssistedModeExplanation
 }): ReadonlyArray<string> => [
   "",
   `  Repo:   ${opts.repoRoot}`,
   `  SHA:    ${opts.gitSha}`,
   `  Vector: ${opts.vectorLabel}`,
-  `  Vector Source: ${opts.vectorSourceLabel}`,
+  ...scoreVectorSourceLines(opts.vectorSourceLabel, opts.vectorTrustBoundary),
   `  AI Mode:${opts.aiMode.active ? " active" : " inactive"}`,
   `          ${opts.aiMode.summary}`,
   ...(opts.aiMode.active ? [`          ${opts.aiMode.overrideHint}`] : []),
@@ -189,6 +195,7 @@ export const printCategoryView = (opts: {
   readonly output: ObserverOutput
   readonly vectorLabel: string
   readonly vectorSourceLabel: string
+  readonly vectorTrustBoundary: DiscoveredPulsarVector["trustBoundary"]
   readonly aiMode: AiAssistedModeExplanation
   readonly profile: boolean
 }): void => {
@@ -201,7 +208,12 @@ export const printCategoryView = (opts: {
   console.log(`  Repo:     ${opts.repoRoot}`)
   console.log(`  SHA:      ${opts.gitSha}`)
   console.log(`  Vector:   ${opts.vectorLabel}`)
-  console.log(`  Vector Source: ${opts.vectorSourceLabel}`)
+  for (const line of scoreVectorSourceLines(
+    opts.vectorSourceLabel,
+    opts.vectorTrustBoundary,
+  )) {
+    console.log(line)
+  }
   console.log(`  AI Mode:  ${opts.aiMode.active ? "active" : "inactive"}`)
   console.log(`            ${opts.aiMode.summary}`)
   const calibrationLine = formatCalibrationLine(opts.output)

@@ -11,6 +11,8 @@ import {
   severityLabel,
 } from "./score-diagnostics.js"
 import { renderScoreBar } from "./score-format.js"
+import { scoreVectorSourceLines } from "./score-vector-source-output.js"
+import type { DiscoveredPulsarVector } from "./vector-discovery.js"
 
 export const printSignalResult = (
   signalId: string,
@@ -21,12 +23,18 @@ export const printSignalResult = (
   repoPath: string,
   sha: string,
   vectorSourceLabel: string,
+  vectorTrustBoundary: DiscoveredPulsarVector["trustBoundary"],
 ): void => {
   const scoreBar = renderScoreBar(score)
   console.log("")
   console.log(`  Repo:   ${repoPath}`)
   console.log(`  SHA:    ${sha}`)
-  console.log(`  Vector Source: ${vectorSourceLabel}`)
+  for (const line of scoreVectorSourceLines(
+    vectorSourceLabel,
+    vectorTrustBoundary,
+  )) {
+    console.log(line)
+  }
   console.log(`  Signal: ${signalId}`)
   console.log(`  Score:  ${score.toFixed(3)}  ${scoreBar}`)
   console.log("")
