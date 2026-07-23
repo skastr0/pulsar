@@ -1400,12 +1400,14 @@ export function stubF() { throw new Error("Not implemented") }
     }
   }, 120_000)
 
-  test("--ci without a baseline warns and exits 0", async () => {
+  test("--ci without a baseline fails closed with recovery guidance", async () => {
     const repoPath = await initRepo(cycleRepoFiles())
     try {
       const out = runCli(repoPath, ["score", "--ci", "."])
-      expect(out.status).toBe(0)
+      expect(out.status).toBe(2)
+      expect(out.stderr).toContain("status=fail")
       expect(out.stderr).toContain("baseline=missing")
+      expect(out.stderr).toContain("reason=missing-baseline")
       expect(out.stderr).toContain("pulsar baseline set")
       const entries = await Effect.runPromise(
         createTimeSeriesServices(repoPath).reader.entries(),

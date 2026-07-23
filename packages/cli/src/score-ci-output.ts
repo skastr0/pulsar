@@ -23,7 +23,7 @@ export const printCiSummary = (opts: {
 }): void => {
   if (opts.ciAssessment.mode === "missing-baseline") {
     console.error(
-      `pulsar-ci status=pass baseline=missing sha=${opts.gitSha} current=${opts.output.hard_gate_violations.length}`,
+      `pulsar-ci status=fail baseline=missing sha=${opts.gitSha} reason=missing-baseline current=${opts.output.hard_gate_violations.length}`,
     )
     console.error(
       `pulsar-ci warning=no-baseline path=${opts.ciAssessment.baselinePath} action="pulsar baseline set"`,

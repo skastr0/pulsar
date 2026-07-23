@@ -46,7 +46,7 @@ export const assessCiMode = (
     if (baseline === undefined) {
       return {
         mode: "missing-baseline",
-        effectiveStatus: "pass",
+        effectiveStatus: "fail",
         baselinePath: resolveBaselinePath(repoRoot),
       } satisfies CiAssessment
     }
