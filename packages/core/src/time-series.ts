@@ -113,7 +113,7 @@ export const createTimeSeriesServices = (
           })
           if (result.status === "written") {
             for (const subscriber of subscribers) {
-              await subscriber(result.entry)
+              await subscriber(structuredClone(result.entry))
             }
           }
           return result

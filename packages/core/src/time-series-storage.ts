@@ -63,7 +63,7 @@ export const appendTimeSeriesEntry = async (args: {
         return { status: "duplicate", entry: duplicate }
       }
 
-      const cacheOwnedEntry = freezeTimeSeriesEntry(structuredClone(args.entry))
+      const cacheOwnedEntry = freezeTimeSeriesEntry(args.entry)
       const next = [...existing, cacheOwnedEntry].sort(compareTimeSeriesEntries)
       let nextStored: ReadonlyArray<TimeSeriesEntry> = Object.freeze(next)
       let nextRaw: string
