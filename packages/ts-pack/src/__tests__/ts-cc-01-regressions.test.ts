@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import { TsCc01 } from "../signals/ts-cc-01-async-failure-control.js"
+import { Project, SyntaxKind } from "ts-morph"
+import {
+  computeAsyncFailureControl,
+  TsCc01,
+} from "../signals/ts-cc-01-async-failure-control.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
 
 describe("TS-CC-01 regressions", () => {
@@ -185,5 +189,49 @@ describe("TS-CC-01 regressions", () => {
     expect(out.findings[0]?.kind).toBe("empty-catch")
     expect(TsCc01.score(out)).toBeLessThan(1)
     expect(TsCc01.diagnose(out)[0]?.severity).toBe("warn")
+  })
+
+  test("uses one AST walk and one compiler type query per call", () => {
+    const project = new Project({ useInMemoryFileSystem: true })
+    const sourceFile = project.createSourceFile(
+      "/src/perf.ts",
+      [
+        "declare function send(): Promise<void>",
+        "export function run() {",
+        "  send()",
+        "  void send()",
+        "  Promise.resolve().then(() => {})",
+        "  try { throw new Error('x') } catch {}",
+        "}",
+      ].join("\n"),
+    )
+    const calls = sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)
+    let typeQueries = 0
+    for (const call of calls) {
+      const getType = call.getType.bind(call)
+      Object.defineProperty(call, "getType", {
+        configurable: true,
+        value: () => {
+          typeQueries += 1
+          return getType()
+        },
+      })
+    }
+
+    let kindSpecificWalks = 0
+    const getDescendantsOfKind = sourceFile.getDescendantsOfKind.bind(sourceFile)
+    Object.defineProperty(sourceFile, "getDescendantsOfKind", {
+      configurable: true,
+      value: (...args: Parameters<typeof sourceFile.getDescendantsOfKind>) => {
+        kindSpecificWalks += 1
+        return getDescendantsOfKind(...args)
+      },
+    })
+
+    const out = computeAsyncFailureControl([sourceFile], TsCc01.defaultConfig)
+
+    expect(out.analyzedFiles).toBe(1)
+    expect(typeQueries).toBe(calls.length)
+    expect(kindSpecificWalks).toBe(0)
   })
 })

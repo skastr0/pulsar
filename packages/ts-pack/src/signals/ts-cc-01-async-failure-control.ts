@@ -132,7 +132,7 @@ const findingMessage = (kind: AsyncFailureFindingKind): string =>
     ? "log-only-handler handles the async failure explicitly by logging and continuing"
     : `${kind} leaves async failure handling implicit`
 
-const computeAsyncFailureControl = (
+export const computeAsyncFailureControl = (
   sourceFiles: ReadonlyArray<SourceFile>,
   config: TsCc01Config,
 ): TsCc01Output => {
@@ -145,20 +145,24 @@ const computeAsyncFailureControl = (
     if (!isAnalyzableSourceFile(sourceFile, config.exclude_globs)) continue
     analyzedFiles += 1
 
-    for (const call of sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-      if (isAsyncOperation(call, asyncNamePatterns)) {
-        asyncOperationsObserved += 1
+    sourceFile.forEachDescendant((node) => {
+      if (Node.isCallExpression(node)) {
+        const analysis = analyzeCall(node, asyncNamePatterns)
+        if (analysis.isAsyncOperation) {
+          asyncOperationsObserved += 1
+        }
+        const floating = classifyFloatingCall(node, analysis.hasPromiseEvidence)
+        if (floating !== undefined) findings.push(floating)
+        const swallowed = classifySwallowedCatch(node)
+        if (swallowed !== undefined) findings.push(swallowed)
+        return
       }
-      const floating = classifyFloatingCall(call)
-      if (floating !== undefined) findings.push(floating)
-      const swallowed = classifySwallowedCatch(call)
-      if (swallowed !== undefined) findings.push(swallowed)
-    }
 
-    for (const catchClause of sourceFile.getDescendantsOfKind(SyntaxKind.CatchClause)) {
-      const finding = classifyEmptyCatch(catchClause)
-      if (finding !== undefined) findings.push(finding)
-    }
+      if (Node.isCatchClause(node)) {
+        const finding = classifyEmptyCatch(node)
+        if (finding !== undefined) findings.push(finding)
+      }
+    })
   }
 
   return {
@@ -184,6 +188,7 @@ const computeAsyncFailureControl = (
 
 const classifyFloatingCall = (
   call: CallExpression,
+  hasPromiseEvidence: boolean,
 ): AsyncFailureFinding | undefined => {
   const statement = call.getFirstAncestorByKind(SyntaxKind.ExpressionStatement)
   const expression = statement?.getExpression()
@@ -191,7 +196,7 @@ const classifyFloatingCall = (
   const isDirectStatement = expression === call
   const isVoidedStatement = Node.isVoidExpression(parent) && expression === parent
   if (statement === undefined || (!isDirectStatement && !isVoidedStatement)) return undefined
-  if (!hasPromiseEvidence(call)) return undefined
+  if (!hasPromiseEvidence) return undefined
   if (hasTerminalRejectionHandler(call)) return undefined
   const name = callName(call.getExpression())
   if (isVoidedStatement) {
@@ -279,19 +284,28 @@ const hasDocumentingComment = (catchClause: CatchClause): boolean =>
   [...catchClause.getLeadingCommentRanges(), ...catchClause.getBlock().getLeadingCommentRanges()]
     .some((range) => hasCommentContent(range.getText()) && !isUnfinishedMarkerComment(range.getText()))
 
-const isAsyncOperation = (call: CallExpression, asyncNamePatterns: ReadonlyArray<string>): boolean => {
-  const typeText = safeTypeText(call)
-  if (isTopLevelPromiseLikeType(typeText)) return true
-  if (isKnownSynchronousType(typeText)) return false
-  return hasSyntacticPromiseEvidence(call) ||
-    matchesAsyncNamePattern(callName(call.getExpression()), asyncNamePatterns)
+interface CallAnalysis {
+  readonly isAsyncOperation: boolean
+  readonly hasPromiseEvidence: boolean
 }
 
-const hasPromiseEvidence = (call: CallExpression): boolean => {
+const analyzeCall = (
+  call: CallExpression,
+  asyncNamePatterns: ReadonlyArray<string>,
+): CallAnalysis => {
   const typeText = safeTypeText(call)
-  if (isTopLevelPromiseLikeType(typeText)) return true
-  if (isKnownSynchronousType(typeText)) return false
-  return hasSyntacticPromiseEvidence(call)
+  if (isTopLevelPromiseLikeType(typeText)) {
+    return { isAsyncOperation: true, hasPromiseEvidence: true }
+  }
+  if (isKnownSynchronousType(typeText)) {
+    return { isAsyncOperation: false, hasPromiseEvidence: false }
+  }
+  const syntacticPromiseEvidence = hasSyntacticPromiseEvidence(call)
+  return {
+    isAsyncOperation: syntacticPromiseEvidence ||
+      matchesAsyncNamePattern(callName(call.getExpression()), asyncNamePatterns),
+    hasPromiseEvidence: syntacticPromiseEvidence,
+  }
 }
 
 const KNOWN_PROMISE_GLOBALS: ReadonlySet<string> = new Set(["fetch"])
