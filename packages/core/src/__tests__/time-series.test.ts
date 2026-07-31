@@ -159,6 +159,74 @@ describe("time series persistence", () => {
     }
   })
 
+  test("subscriber and reader mutation cannot poison cached or persisted entries", async () => {
+    const repoPath = await mkdtemp(join(tmpdir(), "pulsar-ts-cache-ownership-"))
+    try {
+      const services = createTimeSeriesServices(repoPath, {
+        compactionThreshold: 1,
+        rawRetentionDays: 3_650,
+      })
+      services.writer.onEntry((entry) => {
+        ;(entry as { sha: string }).sha = "mutated-by-subscriber"
+      })
+
+      await Effect.runPromise(
+        services.writer.append(makeEntry("disk-first", "2026-04-15T10:00:00.000Z", 0.9)),
+      )
+      const cached = await Effect.runPromise(services.reader.entries())
+      expect(cached.map((entry) => entry.sha)).toEqual(["disk-first"])
+      expect(Object.isFrozen(cached)).toBe(true)
+      expect(Object.isFrozen(cached[0])).toBe(true)
+      expect(() => {
+        ;(cached[0] as { sha: string }).sha = "mutated-by-reader"
+      }).toThrow()
+
+      await Effect.runPromise(
+        services.writer.append(makeEntry("disk-second", "2026-04-16T10:00:00.000Z", 0.8)),
+      )
+      const reloaded = createTimeSeriesServices(repoPath, {
+        compactionThreshold: 1,
+        rawRetentionDays: 3_650,
+      })
+      const persisted = await Effect.runPromise(reloaded.reader.entries())
+      expect(persisted.map((entry) => entry.sha)).toEqual(["disk-first", "disk-second"])
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("a stale service cache observes another writer before compaction", async () => {
+    const repoPath = await mkdtemp(join(tmpdir(), "pulsar-ts-cross-service-"))
+    try {
+      const first = createTimeSeriesServices(repoPath, {
+        compactionThreshold: 2,
+        rawRetentionDays: 3_650,
+      })
+      const second = createTimeSeriesServices(repoPath, {
+        compactionThreshold: 2,
+        rawRetentionDays: 3_650,
+      })
+
+      await Effect.runPromise(
+        first.writer.append(makeEntry("first", "2026-04-14T10:00:00.000Z", 0.9)),
+      )
+      await Effect.runPromise(first.reader.entries())
+      await Effect.runPromise(
+        second.writer.append(makeEntry("second", "2026-04-15T10:00:00.000Z", 0.8)),
+      )
+      await Effect.runPromise(
+        first.writer.append(makeEntry("third", "2026-04-16T10:00:00.000Z", 0.7)),
+      )
+
+      const persisted = await Effect.runPromise(
+        createTimeSeriesServices(repoPath).reader.entries(),
+      )
+      expect(persisted.map((entry) => entry.sha)).toEqual(["first", "second", "third"])
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
   test("compacts older raw entries into weekly averages while preserving recent raw data", async () => {
     const repoPath = await mkdtemp(join(tmpdir(), "pulsar-ts-compact-"))
     try {

@@ -63,12 +63,13 @@ export const appendTimeSeriesEntry = async (args: {
         return { status: "duplicate", entry: duplicate }
       }
 
-      const next = [...existing, args.entry].sort(compareTimeSeriesEntries)
-      let nextStored: ReadonlyArray<TimeSeriesEntry> = next
+      const cacheOwnedEntry = freezeTimeSeriesEntry(structuredClone(args.entry))
+      const next = [...existing, cacheOwnedEntry].sort(compareTimeSeriesEntries)
+      let nextStored: ReadonlyArray<TimeSeriesEntry> = Object.freeze(next)
       let nextRaw: string
       if (next.length > args.compactionThreshold) {
         const compacted = compactTimeSeriesEntries(next, args.rawRetentionDays)
-        nextStored = compacted
+        nextStored = freezeTimeSeriesEntries(compacted)
         nextRaw = encodeTimeSeriesEntries(compacted)
         await writeFile(args.filePath, nextRaw, "utf8")
       } else {
@@ -137,7 +138,21 @@ const decodeTimeSeriesEntries = (
       })
     }
   }
-  return entries.sort(compareTimeSeriesEntries)
+  return freezeTimeSeriesEntries(entries.sort(compareTimeSeriesEntries))
+}
+
+const freezeTimeSeriesEntries = (
+  entries: ReadonlyArray<TimeSeriesEntry>,
+): ReadonlyArray<TimeSeriesEntry> =>
+  Object.freeze(entries.map(freezeTimeSeriesEntry))
+
+const freezeTimeSeriesEntry = (entry: TimeSeriesEntry): TimeSeriesEntry =>
+  freezeJsonValue(entry) as TimeSeriesEntry
+
+const freezeJsonValue = (value: unknown): unknown => {
+  if (typeof value !== "object" || value === null || Object.isFrozen(value)) return value
+  for (const child of Object.values(value)) freezeJsonValue(child)
+  return Object.freeze(value)
 }
 
 export const normalizeTimeSeriesError = (

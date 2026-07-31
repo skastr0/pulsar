@@ -49,12 +49,14 @@ export const createTimeSeriesServices = (
   let cachedState: TimeSeriesEntriesState | undefined
 
   const applyReadState = async (range?: TimeSeriesRange): Promise<ReadonlyArray<TimeSeriesEntry>> => {
-    cachedState = await readTimeSeriesEntriesWithState(
+    const stateAtReadStart = cachedState
+    const observedState = await readTimeSeriesEntriesWithState(
       canonicalRepoPath,
       filePath,
-      cachedState,
+      stateAtReadStart,
     )
-    return applyTimeRange(cachedState.entries, range)
+    if (cachedState === stateAtReadStart) cachedState = observedState
+    return applyTimeRange(cachedState?.entries ?? observedState.entries, range)
   }
 
   const readEntriesEffect = (range?: TimeSeriesRange) =>
