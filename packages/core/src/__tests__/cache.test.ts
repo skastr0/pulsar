@@ -58,4 +58,21 @@ describe("SignalCache (in-memory)", () => {
     })
     await Effect.runPromise(program.pipe(Effect.provide(InMemoryCacheLayer)))
   })
+
+  test("tiered signal budgets reject an entry that exceeds the hard limit", async () => {
+    const program = Effect.gen(function* () {
+      const cache = yield* SignalCacheTag
+      const key = { signalId: "BOUNDED", contentHash: "oversized", configHash: "v1" }
+
+      yield* cache.setTiered(key, { payload: "x".repeat(2_000) }, {
+        tier: 1,
+        maxSignalBytes: 100,
+      })
+
+      expect((yield* cache.getTiered(key, { tier: 1 })).status).toBe("miss")
+      expect(yield* cache.size).toBe(0)
+      expect(yield* cache.totalBytes).toBe(0)
+    })
+    await Effect.runPromise(program.pipe(Effect.provide(InMemoryCacheLayer)))
+  })
 })

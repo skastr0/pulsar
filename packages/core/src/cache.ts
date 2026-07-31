@@ -177,6 +177,9 @@ const trimSignalEntriesToBudget = (
     store.delete(key)
     signalBytes -= entryByteSize(entry)
   }
+  if (signalBytes > budget) {
+    store.delete(protectedKey)
+  }
 }
 
 const makeInMemoryCache: Effect.Effect<SignalCache> = Effect.gen(function* () {

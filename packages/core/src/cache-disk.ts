@@ -152,6 +152,13 @@ const trimBucketToBudget = (
     bytes -= record.bytes
     removedBytes += record.bytes
   }
+  if (bytes > budget) {
+    const protectedRecord = bucket.records.get(protectedKey)
+    if (protectedRecord !== undefined) {
+      bucket.records.delete(protectedKey)
+      removedBytes += protectedRecord.bytes
+    }
+  }
   return removedBytes
 }
 

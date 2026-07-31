@@ -238,7 +238,7 @@ describe("tiered disk cache", () => {
     }
   })
 
-  test("retains the just-written entry when it alone exceeds the signal budget", async () => {
+  test("rejects the just-written entry when it alone exceeds the signal budget", async () => {
     const cacheDir = await mkdtemp(join(tmpdir(), "pulsar-cache-signal-budget-entry-"))
     const makeKey = (name: string): CacheKey => ({
       signalId: "BOUNDED",
@@ -265,9 +265,10 @@ describe("tiered disk cache", () => {
       ).toBe("miss")
       expect(
         (await Effect.runPromise(reloaded.getTiered(makeKey("new"), { tier: 1 }))).status,
-      ).toBe("hit")
-      expect((await readFile(join(cacheDir, "BOUNDED", "entries.jsonl"), "utf8"))
-        .trim().split("\n")).toHaveLength(1)
+      ).toBe("miss")
+      expect(await readFile(join(cacheDir, "BOUNDED", "entries.jsonl"), "utf8"))
+        .toBe("")
+      expect(await Effect.runPromise(reloaded.totalBytes)).toBe(0)
     } finally {
       await rm(cacheDir, { recursive: true, force: true })
     }
