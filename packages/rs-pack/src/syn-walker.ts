@@ -29,12 +29,16 @@ let rustLanguagePromise: Promise<Language> | undefined
 const parseRustSource = async (source: string): Promise<RustSyntaxTree> => {
   const language = await loadRustLanguage()
   const parser = new Parser()
-  parser.setLanguage(language)
-  const tree = parser.parse(source)
-  if (tree === null) {
-    throw new RustSyntaxParserError("tree-sitter failed to parse the Rust source")
+  try {
+    parser.setLanguage(language)
+    const tree = parser.parse(source)
+    if (tree === null) {
+      throw new RustSyntaxParserError("tree-sitter failed to parse the Rust source")
+    }
+    return tree
+  } finally {
+    parser.delete()
   }
-  return tree
 }
 
 export const parseRustFile = async (filePath: string): Promise<RustSyntaxTree> => {

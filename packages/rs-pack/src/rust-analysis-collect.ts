@@ -24,6 +24,20 @@ const ROOT_VISIBILITY: RustVisibility = { kind: "pub" }
 export const collectRustProjectFacts = async (
   project: RustProject,
 ): Promise<RustAnalysis> => {
+  const cached = rustProjectFactsCache.get(project)
+  if (cached !== undefined) return cached
+
+  const promise = collectRustProjectFactsUncached(project).catch((error) => {
+    rustProjectFactsCache.delete(project)
+    throw error
+  })
+  rustProjectFactsCache.set(project, promise)
+  return promise
+}
+
+const collectRustProjectFactsUncached = async (
+  project: RustProject,
+): Promise<RustAnalysis> => {
   const manifests = project.manifests.filter(
     (manifest) => manifest.packageName !== undefined,
   )
@@ -45,6 +59,8 @@ export const collectRustProjectFacts = async (
   }
 }
 
+const rustProjectFactsCache = new WeakMap<RustProject, Promise<RustAnalysis>>()
+
 const emptyRustFactCollections = (): RustFactCollections => ({
   modules: [],
   items: [],
@@ -64,9 +80,13 @@ const collectRustFileFacts = async (
   const context = rustFileFactContext(file, manifests)
   ensureRootModule(context, collections)
   const tree = await parseRustFile(file)
-  walkRustTree(tree, (node, ancestors) =>
-    recordRustNodeFacts(node, rustNodeFactContext(context, ancestors), collections),
-  )
+  try {
+    walkRustTree(tree, (node, ancestors) =>
+      recordRustNodeFacts(node, rustNodeFactContext(context, ancestors), collections),
+    )
+  } finally {
+    tree.delete()
+  }
 }
 
 const rustFileFactContext = (
