@@ -37,6 +37,11 @@ import type {
 import type { PulsarVector } from "./vector.js"
 
 const GIT_REVISION_CONTEXT_CACHE_DEPENDENCY = "git-revision-context"
+const OBSERVER_PROFILE_BYPASS_KEY: CacheKey = {
+  signalId: OBSERVER_CACHE_SIGNAL_ID,
+  contentHash: "profile-cache-bypass",
+  configHash: "profile-cache-bypass",
+}
 
 type ObserveWithCache = (
   key: CacheKey,
@@ -133,12 +138,13 @@ export const makeObserveCommit = (args: {
     function* (repoPath: string, sha: string) {
       yield* Effect.annotateCurrentSpan("sha", sha)
       const { result, cacheHit, key } = yield* args.withCommitWorktree(repoPath, sha, (worktreePath) =>
-        Effect.gen(function* () {
-          const contentHash = yield* observerContentHash(args.registry, repoPath, worktreePath, sha)
-          return yield* observeCommitInWorktree({ ...args, repoPath, sha, worktreePath, contentHash })
-        }),
+        observeCommitInWorktree({ ...args, repoPath, sha, worktreePath }),
       )
-      yield* Effect.annotateCurrentSpan("cacheKey", cacheKeyString(key))
+      if (args.options?.observerProfile === true) {
+        yield* Effect.annotateCurrentSpan("cacheBypassed", true)
+      } else {
+        yield* Effect.annotateCurrentSpan("cacheKey", cacheKeyString(key))
+      }
       yield* Effect.annotateCurrentSpan("cacheHit", cacheHit)
       if (args.options?.timeSeriesWriter !== undefined) {
         yield* args.options.timeSeriesWriter.appendObservation(sha, result)
@@ -157,12 +163,26 @@ const observeCommitInWorktree = (args: {
   readonly repoPath: string
   readonly sha: string
   readonly worktreePath: string
-  readonly contentHash: string
 }) =>
   Effect.gen(function* () {
     const calibrationContext = yield* args.internals.resolveCalibrationContext(args.worktreePath)
-    const referenceEntries = yield* loadCanonicalReferenceDataEntries(args.worktreePath)
-    const key = observerCacheKey(args, calibrationContext?.fingerprint, referenceEntries)
+    const profile = args.options?.observerProfile === true
+    const key = profile
+      ? OBSERVER_PROFILE_BYPASS_KEY
+      : yield* Effect.gen(function* () {
+          const contentHash = yield* observerContentHash(
+            args.registry,
+            args.repoPath,
+            args.worktreePath,
+            args.sha,
+          )
+          const referenceEntries = yield* loadCanonicalReferenceDataEntries(args.worktreePath)
+          return observerCacheKey(
+            { ...args, contentHash },
+            calibrationContext?.fingerprint,
+            referenceEntries,
+          )
+        })
     const observed = yield* args.observeWithCache(key, () =>
       args.runWithEnvironment(args.worktreePath, args.sha, [], undefined, calibrationContext, (EnvLayer) =>
         Effect.provide(
@@ -218,16 +238,25 @@ export const makeObserveWorktree = (args: {
       const changedHunks =
         worktreeOptions?.changedHunks ?? (yield* collectWorktreeChangedHunks(repoPath))
       const assessmentScope = worktreeOptions?.assessmentScope
-      const baseContentHash =
-        `${yield* computeWorktreeContentHash(repoPath)}:${hashChangedHunks(changedHunks)}:${assessmentScope ?? "whole-repo"}`
-      const contentHash = yield* appendObserverRevisionContext(args.registry, repoPath, baseContentHash)
       const calibrationContext = yield* args.internals.resolveCalibrationContext(repoPath)
-      const referenceEntries = yield* loadCanonicalReferenceDataEntries(repoPath)
-      const key = observerCacheKey(
-        { ...args, contentHash },
-        calibrationContext?.fingerprint,
-        referenceEntries,
-      )
+      const profile = args.options?.observerProfile === true
+      const key = profile
+        ? OBSERVER_PROFILE_BYPASS_KEY
+        : yield* Effect.gen(function* () {
+            const baseContentHash =
+              `${yield* computeWorktreeContentHash(repoPath)}:${hashChangedHunks(changedHunks)}:${assessmentScope ?? "whole-repo"}`
+            const contentHash = yield* appendObserverRevisionContext(
+              args.registry,
+              repoPath,
+              baseContentHash,
+            )
+            const referenceEntries = yield* loadCanonicalReferenceDataEntries(repoPath)
+            return observerCacheKey(
+              { ...args, contentHash },
+              calibrationContext?.fingerprint,
+              referenceEntries,
+            )
+          })
       const { result, cacheHit } = yield* args.observeWithCache(key, () =>
         args.runWithEnvironment(repoPath, headSha, changedHunks, assessmentScope, calibrationContext, (EnvLayer) =>
           Effect.provide(
@@ -237,7 +266,11 @@ export const makeObserveWorktree = (args: {
         ),
       )
 
-      yield* Effect.annotateCurrentSpan("cacheKey", cacheKeyString(key))
+      if (profile) {
+        yield* Effect.annotateCurrentSpan("cacheBypassed", true)
+      } else {
+        yield* Effect.annotateCurrentSpan("cacheKey", cacheKeyString(key))
+      }
       yield* Effect.annotateCurrentSpan("cacheHit", cacheHit)
       return result
     },

@@ -1426,6 +1426,47 @@ describe("ScoringEngine — cache semantics", () => {
     expect(cacheWrites).toBe(0)
   })
 
+  test("observer profile public paths skip cache-key content hashing", async () => {
+    const { repoPath, sha } = await initRepo([
+      { path: "a.ts", content: "export const x = 1\n" },
+    ])
+    const shimDir = await mkdtemp(join(tmpdir(), "pulsar-git-shim-"))
+    const commandLog = join(shimDir, "commands.log")
+    const realGit = spawnSync("which", ["git"], { encoding: "utf8" }).stdout.trim()
+    const originalPath = process.env.PATH ?? ""
+    await writeFile(
+      join(shimDir, "git"),
+      `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(commandLog)}\nexec ${JSON.stringify(realGit)} "$@"\n`,
+      { mode: 0o755 },
+    )
+
+    try {
+      process.env.PATH = `${shimDir}:${originalPath}`
+      const program = Effect.gen(function* () {
+        const counter = yield* Ref.make(0)
+        const registry = yield* buildRegistry([makeCountingSignal(counter)])
+        const EngineLayer = ScoringEngineLayer(registry, () => Layer.empty, undefined, {
+          observerProfile: true,
+        })
+        const engine = yield* ScoringEngineTag.pipe(
+          Effect.provide(EngineLayer),
+        ) as Effect.Effect<typeof ScoringEngineTag.Service, never, never>
+
+        yield* engine.observeCommit(repoPath, sha)
+        yield* Effect.promise(() => writeFile(join(repoPath, "a.ts"), "export const x = 2\n"))
+        yield* engine.observeWorktree(repoPath, sha)
+      })
+
+      await Effect.runPromise(program)
+      const commands = (await readFile(commandLog, "utf8")).trim().split("\n")
+      expect(commands.some((command) => command.startsWith("ls-tree -r "))).toBe(false)
+    } finally {
+      process.env.PATH = originalPath
+      await rm(repoPath, { recursive: true, force: true })
+      await rm(shimDir, { recursive: true, force: true })
+    }
+  })
+
   test("observer cache writes enforce the 50 MiB signal bucket budget", async () => {
     let writeOptions: CacheWriteOptions | undefined
     const cache: SignalCache = {
