@@ -23,6 +23,8 @@ import {
 import {
   OBSERVER_CACHE_MAX_SIGNAL_BYTES,
   OBSERVER_CACHE_SIGNAL_ID,
+  fromCachedObserverOutput,
+  toCachedObserverOutput,
 } from "../scoring-engine-observer-cache.js"
 import { makeObserveWithCache } from "../scoring-engine-observe.js"
 import { toObserverJson } from "../observer-serializer.js"
@@ -1612,6 +1614,79 @@ describe("ScoringEngine — cache semantics", () => {
       await rm(repoPath, { recursive: true, force: true })
       await rm(cacheDir, { recursive: true, force: true })
     }
+  })
+
+  test("observer cache keeps incompressible output raw", () => {
+    let state = 0x12345678
+    const bytes = Buffer.alloc(4_096)
+    for (let index = 0; index < bytes.length; index += 1) {
+      state = (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0
+      bytes[index] = state >>> 24
+    }
+    const output = { payload: bytes.toString("base64") }
+    const fresh: ObserverOutput = {
+      observer_semantics: OBSERVER_OUTPUT_SEMANTICS,
+      categories: categoryRecord(() => emptyObserverCategoryOutput()),
+      minimum: undefined,
+      weighted_mean: 1,
+      hard_gate_status: "pass",
+      hard_gate_violations: [],
+      inactiveSignals: [],
+      signalResults: new Map([
+        [
+          "MOCK-INCOMPRESSIBLE-OUTPUT",
+          {
+            signalId: "MOCK-INCOMPRESSIBLE-OUTPUT",
+            score: 1,
+            diagnostics: [],
+            output,
+          },
+        ],
+      ]),
+    }
+
+    const cached = toCachedObserverOutput(fresh)
+
+    expect(cached.signalResults[0]).toHaveProperty("output")
+    expect(cached.signalResults[0]).not.toHaveProperty("compressedOutput")
+    expect(fromCachedObserverOutput(cached).signalResults.get("MOCK-INCOMPRESSIBLE-OUTPUT")?.output)
+      .toEqual(output)
+  })
+
+  test("observer cache fails closed on corrupted compressed output", () => {
+    const fresh: ObserverOutput = {
+      observer_semantics: OBSERVER_OUTPUT_SEMANTICS,
+      categories: categoryRecord(() => emptyObserverCategoryOutput()),
+      minimum: undefined,
+      weighted_mean: 1,
+      hard_gate_status: "pass",
+      hard_gate_violations: [],
+      inactiveSignals: [],
+      signalResults: new Map([
+        [
+          "MOCK-CORRUPTED-OUTPUT",
+          {
+            signalId: "MOCK-CORRUPTED-OUTPUT",
+            score: 1,
+            diagnostics: [],
+            output: { payload: "x".repeat(4_096) },
+          },
+        ],
+      ]),
+    }
+    const cached = toCachedObserverOutput(fresh)
+    const corrupted = {
+      ...cached,
+      signalResults: cached.signalResults.map((result) => ({
+        ...result,
+        compressedOutput: "not-a-brotli-payload",
+      })),
+    }
+    const restored = fromCachedObserverOutput(corrupted)
+
+    expect(() => restored.signalResults.get("MOCK-CORRUPTED-OUTPUT")?.output).toThrow(
+      "Failed to decode cached observer signal output",
+    )
   })
 
   test("observer cache config hash changes with active vector config", async () => {

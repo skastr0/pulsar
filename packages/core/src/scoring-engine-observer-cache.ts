@@ -193,11 +193,13 @@ const cachedSignalRunResultOutput = (
   ) {
     return { output }
   }
-  return {
-    compressedOutput: brotliCompressSync(Buffer.from(serialized, "utf8"), {
-      params: { [constants.BROTLI_PARAM_QUALITY]: OUTPUT_COMPRESSION_QUALITY },
-    }).toString("base64"),
-  }
+  const compressedOutput = brotliCompressSync(Buffer.from(serialized, "utf8"), {
+    params: { [constants.BROTLI_PARAM_QUALITY]: OUTPUT_COMPRESSION_QUALITY },
+  }).toString("base64")
+  return Buffer.byteLength(JSON.stringify(compressedOutput), "utf8") <
+    Buffer.byteLength(serialized, "utf8")
+    ? { compressedOutput }
+    : { output }
 }
 
 const decodeSignalRunResultOutput = (encodedOutput: unknown): unknown | undefined => {
@@ -206,8 +208,10 @@ const decodeSignalRunResultOutput = (encodedOutput: unknown): unknown | undefine
     return JSON.parse(
       brotliDecompressSync(Buffer.from(encodedOutput, "base64")).toString("utf8"),
     )
-  } catch (_error) {
-    return undefined
+  } catch (cause) {
+    const error = new Error("Failed to decode cached observer signal output")
+    error.cause = cause
+    throw error
   }
 }
 
