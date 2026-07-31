@@ -31,6 +31,7 @@ import {
   type GateDiagnosticRecord,
   type GateStatus,
 } from "./score-diff-gate.js"
+import { requiresChangedScopeObservation } from "./score-diff-observation-plan.js"
 import { CATEGORY_LABELS } from "./score-format.js"
 import { toScoreJson } from "./score-json.js"
 import type { DiscoveredPulsarVector } from "./vector-discovery.js"
@@ -161,7 +162,11 @@ const observeDiffRun = (
     const headOutput = headIsWorktree
       ? yield* runtime.engine.observeWorktree(repoRoot, currentHeadSha, { changedHunks: [] })
       : yield* runtime.engine.observeCommit(repoRoot, headSha)
-    const changedHeadOutput = headIsWorktree && changedHunks.length > 0
+    const changedHeadOutput = requiresChangedScopeObservation(
+      opts.changedOnly === true,
+      headIsWorktree,
+      changedHunks.length,
+    )
       ? yield* runtime.engine.observeWorktree(repoRoot, currentHeadSha, {
           changedHunks,
           assessmentScope: "changed-only",
