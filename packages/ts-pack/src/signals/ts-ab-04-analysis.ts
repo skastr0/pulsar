@@ -22,7 +22,11 @@ import type { PackageInfo } from "../discovery.js"
 import { createModuleResolver, type ModuleResolver } from "../graph/module-graph.js"
 import { isExcluded, matchesAnyGlob } from "./shared-globs.js"
 import { hasExportModifier } from "./shared-ts-morph-modifiers.js"
-import { declarationKey, resolveReferenceLikeDeclarations } from "./shared-type-analysis.js"
+import {
+  collectTypeReferenceLikeNodes,
+  declarationKey,
+  resolveReferenceLikeDeclarations,
+} from "./shared-type-analysis.js"
 
 export interface SingleImplPair {
   readonly interfaceFile: string
@@ -94,10 +98,15 @@ export const computeInterfaceImplementationRatio = (
   const candidateInterfaces = collectCandidateInterfaces(productionFiles, config, packages)
   const prodImplementations = buildImplementationIndex(productionFiles)
   const testImplementations = buildImplementationIndex(testFiles)
+  const knownStructuralUsageKeys = collectKnownStructuralUsageKeys([
+    ...productionFiles,
+    ...testFiles,
+  ])
   const accumulator = buildInterfaceImplementationAccumulator(
     candidateInterfaces,
     prodImplementations,
     testImplementations,
+    knownStructuralUsageKeys,
   )
   return buildInterfaceImplementationOutput(
     accumulator,
@@ -142,6 +151,7 @@ const buildInterfaceImplementationAccumulator = (
   candidateInterfaces: ReadonlyArray<InterfaceDeclaration>,
   prodImplementations: ReadonlyMap<string, ReadonlyArray<ImplementationDescriptor>>,
   testImplementations: ReadonlyMap<string, ReadonlyArray<ImplementationDescriptor>>,
+  knownStructuralUsageKeys: ReadonlySet<string>,
 ): InterfaceImplementationAccumulator => {
   const accumulator: InterfaceImplementationAccumulator = {
     pairs: [],
@@ -149,7 +159,13 @@ const buildInterfaceImplementationAccumulator = (
     totalInterfaces: 0,
   }
   for (const iface of candidateInterfaces) {
-    addInterfaceImplementationFinding(iface, prodImplementations, testImplementations, accumulator)
+    addInterfaceImplementationFinding(
+      iface,
+      prodImplementations,
+      testImplementations,
+      knownStructuralUsageKeys,
+      accumulator,
+    )
   }
   return accumulator
 }
@@ -158,6 +174,7 @@ const addInterfaceImplementationFinding = (
   iface: InterfaceDeclaration,
   prodImplementations: ReadonlyMap<string, ReadonlyArray<ImplementationDescriptor>>,
   testImplementations: ReadonlyMap<string, ReadonlyArray<ImplementationDescriptor>>,
+  knownStructuralUsageKeys: ReadonlySet<string>,
   accumulator: InterfaceImplementationAccumulator,
 ): void => {
   const key = interfaceKey(iface)
@@ -166,12 +183,12 @@ const addInterfaceImplementationFinding = (
   if (
     productionImplementations.length > 0 &&
     productionImplementations.every(isObjectLiteralImplementation) &&
-    hasStructuralTypeUsage(iface)
+    hasStructuralTypeUsage(iface, knownStructuralUsageKeys)
   ) {
     return
   }
   if (productionImplementations.length === 0) {
-    addDeadInterfaceFinding(iface, accumulator)
+    addDeadInterfaceFinding(iface, knownStructuralUsageKeys, accumulator)
     return
   }
 
@@ -189,9 +206,10 @@ const addInterfaceImplementationFinding = (
 
 const addDeadInterfaceFinding = (
   iface: InterfaceDeclaration,
+  knownStructuralUsageKeys: ReadonlySet<string>,
   accumulator: InterfaceImplementationAccumulator,
 ): void => {
-  if (hasStructuralTypeUsage(iface)) return
+  if (hasStructuralTypeUsage(iface, knownStructuralUsageKeys)) return
   accumulator.totalInterfaces += 1
   accumulator.deadInterfaces.push({
     interfaceFile: iface.getSourceFile().getFilePath(),
@@ -378,7 +396,37 @@ const matchingNamedExport = (
   return undefined
 }
 
-const hasStructuralTypeUsage = (iface: InterfaceDeclaration): boolean => {
+const collectKnownStructuralUsageKeys = (
+  sourceFiles: ReadonlyArray<SourceFile>,
+): ReadonlySet<string> => {
+  const keys = new Set<string>()
+  for (const sourceFile of sourceFiles) {
+    for (const reference of collectTypeReferenceLikeNodes(sourceFile)) {
+      if (!isStructuralUsageReference(referenceOccurrenceNode(reference))) continue
+      for (const declaration of resolveReferenceLikeDeclarations(reference)) {
+        if (Node.isInterfaceDeclaration(declaration)) {
+          keys.add(interfaceKey(declaration))
+        }
+      }
+    }
+  }
+  return keys
+}
+
+type TypeReferenceLikeNode = ReturnType<typeof collectTypeReferenceLikeNodes>[number]
+
+const referenceOccurrenceNode = (reference: TypeReferenceLikeNode): Node => {
+  if (Node.isTypeReference(reference)) return reference.getTypeName()
+  if (Node.isExpressionWithTypeArguments(reference)) return reference.getExpression()
+  if (Node.isImportTypeNode(reference)) return reference.getQualifier() ?? reference
+  return reference.getExprName()
+}
+
+const hasStructuralTypeUsage = (
+  iface: InterfaceDeclaration,
+  knownStructuralUsageKeys: ReadonlySet<string>,
+): boolean => {
+  if (knownStructuralUsageKeys.has(interfaceKey(iface))) return true
   const nameNode = iface.getNameNode()
   return iface.findReferencesAsNodes().some((reference) => {
     if (
