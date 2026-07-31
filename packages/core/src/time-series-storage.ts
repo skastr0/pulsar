@@ -93,14 +93,6 @@ export const readTimeSeriesEntriesWithState = async (
   return readTimeSeriesEntriesUsingState(repoPath, filePath, existingState)
 }
 
-export const readTimeSeriesEntries = async (
-  repoPath: string,
-  filePath: string,
-): Promise<ReadonlyArray<TimeSeriesEntry>> => {
-  const raw = await readTimeSeriesRaw(repoPath, filePath)
-  return decodeTimeSeriesEntries(repoPath, filePath, raw)
-}
-
 const readTimeSeriesRaw = async (
   repoPath: string,
   filePath: string,
