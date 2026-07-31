@@ -1,6 +1,16 @@
 import type { SignalRunResult } from "./runner.js"
 import type { ResolvedSignal, SignalApplicability } from "./signal.js"
 
+const cachedApplicability = new WeakMap<SignalRunResult, SignalApplicability>()
+
+export const rememberCachedSignalApplicability = (
+  result: SignalRunResult,
+  applicability: SignalApplicability | undefined,
+): SignalRunResult => {
+  if (applicability !== undefined) cachedApplicability.set(result, applicability)
+  return result
+}
+
 export const confidenceForSignal = (
   signal: ResolvedSignal,
   result: SignalRunResult,
@@ -12,7 +22,9 @@ export const confidenceForSignal = (
   )
 
 export const signalApplicabilityOf = (result: SignalRunResult): SignalApplicability =>
-  result.metadata?.applicability ?? (result.output === undefined ? "failed" : "applicable")
+  result.metadata?.applicability ??
+  cachedApplicability.get(result) ??
+  (result.output === undefined ? "failed" : "applicable")
 
 const defaultConfidenceForTier = (tier: ResolvedSignal["tier"]): number => {
   if (tier === 1) return 1

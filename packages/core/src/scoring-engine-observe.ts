@@ -93,18 +93,24 @@ export const makeObserveWithCache = (
   never
 > =>
   Effect.gen(function* () {
-    const cached = yield* cacheRef.getTiered<CachedObserverOutput>(key, { tier: 1 })
     const profile = options?.observerProfile === true
-    const cacheHit = !profile && (cached.status === "hit" || cached.status === "stale")
+    const runtimeStartedAt = nowMs()
+    if (profile) {
+      const result = yield* runFresh().pipe(
+        Effect.map((fresh) =>
+          withRuntimeEnvironmentProfile(fresh, nowMs() - runtimeStartedAt),
+        ),
+      )
+      return { result, cacheHit: false }
+    }
+
+    const cached = yield* cacheRef.getTiered<CachedObserverOutput>(key, { tier: 1 })
+    const cacheHit = cached.status === "hit" || cached.status === "stale"
     if (cacheHit) return { result: fromCachedObserverOutput(cached.value!), cacheHit }
 
-    const runtimeStartedAt = nowMs()
     const result = yield* runFresh().pipe(
-      Effect.map((fresh) =>
-        profile ? withRuntimeEnvironmentProfile(fresh, nowMs() - runtimeStartedAt) : fresh,
-      ),
       Effect.tap((fresh) =>
-        profile ? Effect.void : cacheRef.setTiered(key, toCachedObserverOutput(fresh), { tier: 1 }),
+        cacheRef.setTiered(key, toCachedObserverOutput(fresh), { tier: 1 }),
       ),
     )
     return { result, cacheHit }

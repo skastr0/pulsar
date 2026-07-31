@@ -1,3 +1,4 @@
+import { brotliCompressSync, brotliDecompressSync, constants } from "node:zlib"
 import { createHash } from "node:crypto"
 import type { ChangedHunk } from "./context.js"
 import {
@@ -17,6 +18,8 @@ import {
   weightOf as vectorWeightOf,
   type PulsarVector,
 } from "./vector.js"
+import type { SignalApplicability } from "./signal.js"
+import { rememberCachedSignalApplicability } from "./observer-score-utils.js"
 
 export const OBSERVER_CACHE_SIGNAL_ID = "__observer__"
 
@@ -31,13 +34,27 @@ export interface CachedObserverOutput {
   readonly hard_gate_status: ObserverOutput["hard_gate_status"]
   readonly hard_gate_violations: ObserverOutput["hard_gate_violations"]
   readonly inactiveSignals: ObserverOutput["inactiveSignals"]
-  readonly signalResults: ReadonlyArray<SignalRunResult>
+  readonly signalResults: ReadonlyArray<CachedSignalRunResult>
   readonly signalMetadata?: ObserverOutput["signalMetadata"]
   readonly calibration?: ObserverOutput["calibration"]
 }
 
+interface CachedSignalRunResult {
+  readonly signalId: string
+  readonly score: number
+  readonly diagnostics: SignalRunResult["diagnostics"]
+  readonly metadata?: SignalRunResult["metadata"]
+  readonly applicability?: SignalApplicability
+  readonly factorLedger?: SignalRunResult["factorLedger"]
+  readonly output?: SignalRunResult["output"]
+  readonly compressedOutput?: string
+}
+
+const OUTPUT_COMPRESSION_THRESHOLD_BYTES = 1_024
+const OUTPUT_COMPRESSION_QUALITY = 4
+
 export const OBSERVER_AGGREGATION_CACHE_VERSION =
-  "observer-aggregation-v8-evidence-bounded-authority"
+  "observer-aggregation-v10-evidence-bounded-authority-compact-results"
 
 export const computeObserverConfigHash = (
   registry: Registry,
@@ -147,10 +164,65 @@ export const toCachedObserverOutput = (result: ObserverOutput): CachedObserverOu
   hard_gate_status: result.hard_gate_status,
   hard_gate_violations: result.hard_gate_violations,
   inactiveSignals: result.inactiveSignals,
-  signalResults: [...result.signalResults.values()],
+  signalResults: [...result.signalResults.values()].map(toCachedSignalRunResult),
   ...(result.signalMetadata !== undefined ? { signalMetadata: result.signalMetadata } : {}),
   ...(result.calibration !== undefined ? { calibration: result.calibration } : {}),
 })
+
+const toCachedSignalRunResult = (result: SignalRunResult): CachedSignalRunResult => ({
+  signalId: result.signalId,
+  score: result.score,
+  diagnostics: result.diagnostics,
+  ...(result.metadata !== undefined ? { metadata: result.metadata } : {}),
+  applicability:
+    result.metadata?.applicability ??
+    (result.output === undefined ? "failed" : "applicable"),
+  ...(result.factorLedger !== undefined ? { factorLedger: result.factorLedger } : {}),
+  ...cachedSignalRunResultOutput(result.output),
+})
+
+const cachedSignalRunResultOutput = (
+  output: SignalRunResult["output"],
+): Pick<CachedSignalRunResult, "output" | "compressedOutput"> => {
+  if (output === undefined) return {}
+  const serialized = JSON.stringify(output)
+  if (
+    serialized === undefined ||
+    Buffer.byteLength(serialized, "utf8") < OUTPUT_COMPRESSION_THRESHOLD_BYTES
+  ) {
+    return { output }
+  }
+  return {
+    compressedOutput: brotliCompressSync(Buffer.from(serialized, "utf8"), {
+      params: { [constants.BROTLI_PARAM_QUALITY]: OUTPUT_COMPRESSION_QUALITY },
+    }).toString("base64"),
+  }
+}
+
+const decodeSignalRunResultOutput = (encodedOutput: unknown): unknown | undefined => {
+  if (typeof encodedOutput !== "string") return encodedOutput
+  try {
+    return JSON.parse(
+      brotliDecompressSync(Buffer.from(encodedOutput, "base64")).toString("utf8"),
+    )
+  } catch (_error) {
+    return undefined
+  }
+}
+
+const makeSignalRunResultOutput = (cached: CachedSignalRunResult): (() => unknown) => {
+  let output: unknown
+  let loaded = false
+  return () => {
+    if (!loaded) {
+      output = cached.compressedOutput === undefined
+        ? cached.output
+        : decodeSignalRunResultOutput(cached.compressedOutput)
+      loaded = true
+    }
+    return output
+  }
+}
 
 export const fromCachedObserverOutput = (cached: CachedObserverOutput): ObserverOutput => ({
   observer_semantics: cached.observer_semantics ?? OBSERVER_OUTPUT_SEMANTICS,
@@ -161,7 +233,25 @@ export const fromCachedObserverOutput = (cached: CachedObserverOutput): Observer
   hard_gate_status: cached.hard_gate_status,
   hard_gate_violations: cached.hard_gate_violations,
   inactiveSignals: cached.inactiveSignals,
-  signalResults: new Map(cached.signalResults.map((result) => [result.signalId, result])),
+  signalResults: new Map(
+    cached.signalResults.map((result) => [
+      result.signalId,
+      (() => {
+        const getOutput = makeSignalRunResultOutput(result)
+        const restored: SignalRunResult = {
+          signalId: result.signalId,
+          score: result.score,
+          get output() {
+            return getOutput()
+          },
+          diagnostics: result.diagnostics,
+          ...(result.metadata !== undefined ? { metadata: result.metadata } : {}),
+          ...(result.factorLedger !== undefined ? { factorLedger: result.factorLedger } : {}),
+        }
+        return rememberCachedSignalApplicability(restored, result.applicability)
+      })(),
+    ]),
+  ),
   ...(cached.signalMetadata !== undefined ? { signalMetadata: cached.signalMetadata } : {}),
   ...(cached.calibration !== undefined ? { calibration: cached.calibration } : {}),
 })

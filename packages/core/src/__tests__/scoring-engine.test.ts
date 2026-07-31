@@ -1,10 +1,10 @@
-import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises"
+import { mkdtemp, rm, writeFile, mkdir, readFile } from "node:fs/promises"
 import { existsSync, lstatSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { spawnSync } from "node:child_process"
 import { describe, expect, test } from "bun:test"
-import { Effect, Layer, Ref, Schema } from "effect"
+import { Effect, Layer, Option, Ref, Schema } from "effect"
 import {
   CalibrationContextTag,
   activateProjectModule,
@@ -20,6 +20,11 @@ import {
   computeObserverConfigHash,
   collectWorktreeChangedHunks,
 } from "../scoring-engine.js"
+import { OBSERVER_CACHE_SIGNAL_ID } from "../scoring-engine-observer-cache.js"
+import { makeObserveWithCache } from "../scoring-engine-observe.js"
+import { toObserverJson } from "../observer-serializer.js"
+import { categoryRecord } from "../category.js"
+import { emptyObserverCategoryOutput, OBSERVER_OUTPUT_SEMANTICS } from "../observer-model.js"
 import {
   computeContentHash,
   computeGitRevisionContextHash,
@@ -28,6 +33,8 @@ import {
 import { ReferenceDataTag, SignalContextTag } from "../context.js"
 import type { Glossary } from "../glossary.js"
 import type { Signal } from "../signal.js"
+import type { SignalCache } from "../cache.js"
+import type { ObserverOutput } from "../observer.js"
 import type { PulsarVector } from "../vector.js"
 
 /**
@@ -109,6 +116,28 @@ const makeCountingSignal = (
       return { n }
     }),
   score: (out) => 1 - out.n * 0.01,
+  diagnose: () => [],
+})
+
+const makeLargeOutputSignal = (
+  counter: Ref.Ref<number>,
+  payloadByteLength = 4_096,
+  id = "MOCK-LARGE-OUTPUT",
+): Signal<{}, { readonly payload: string }, never> => ({
+  id,
+  tier: 1,
+  category: "legibility-decay",
+  kind: "legibility",
+  configSchema: Schema.Struct({}),
+  defaultConfig: {},
+  inputs: [],
+  compute: () =>
+    Effect.gen(function* () {
+      yield* Ref.update(counter, (n) => n + 1)
+      const output = { payload: `${"x".repeat(payloadByteLength)}` }
+      return output
+    }),
+  score: () => 1,
   diagnose: () => [],
 })
 
@@ -1349,6 +1378,49 @@ describe("ScoringEngine — cache semantics", () => {
     }
   })
 
+  test("observer profile does not read or write the observer cache", async () => {
+    let cacheReads = 0
+    let cacheWrites = 0
+    const cache: SignalCache = {
+      get: <A>() => Effect.succeed(Option.none<A>()),
+      set: () => Effect.void,
+      getTiered: () =>
+        Effect.sync(() => {
+          cacheReads += 1
+          return { status: "miss" as const }
+        }),
+      setTiered: () =>
+        Effect.sync(() => {
+          cacheWrites += 1
+        }),
+      size: Effect.succeed(0),
+      totalBytes: Effect.succeed(0),
+    }
+    const fresh: ObserverOutput = {
+      observer_semantics: OBSERVER_OUTPUT_SEMANTICS,
+      categories: categoryRecord(() => emptyObserverCategoryOutput()),
+      minimum: undefined,
+      weighted_mean: 1,
+      hard_gate_status: "pass",
+      hard_gate_violations: [],
+      inactiveSignals: [],
+      signalResults: new Map(),
+    }
+    const observeWithCache = makeObserveWithCache(cache, { observerProfile: true })
+
+    const observed = await Effect.runPromise(
+      observeWithCache(
+        { signalId: OBSERVER_CACHE_SIGNAL_ID, contentHash: "content", configHash: "config" },
+        () => Effect.succeed(fresh),
+      ),
+    )
+
+    expect(observed.cacheHit).toBe(false)
+    expect(observed.result).toBe(fresh)
+    expect(cacheReads).toBe(0)
+    expect(cacheWrites).toBe(0)
+  })
+
   test("observeCommit disk cache round-trips signalResults as a Map", async () => {
     const { repoPath, sha } = await initRepo([
       { path: "a.ts", content: "export const x = 1\n" },
@@ -1374,33 +1446,127 @@ describe("ScoringEngine — cache semantics", () => {
           ],
         })
 
-        const FirstEngineLayer = ScoringEngineLayer(registry, () => Layer.empty, undefined, {
+        const firstEngineLayer = ScoringEngineLayer(registry, () => Layer.empty, undefined, {
           cacheConfig: { cacheDir },
           calibrationContext,
         })
-        const first = yield* ScoringEngineTag.pipe(
-          Effect.provide(FirstEngineLayer),
+        const firstEngine = yield* ScoringEngineTag.pipe(
+          Effect.provide(firstEngineLayer),
         ) as Effect.Effect<typeof ScoringEngineTag.Service, never, never>
-        yield* first.observeCommit(repoPath, sha)
+        const first = yield* firstEngine.observeCommit(repoPath, sha)
 
-        const SecondEngineLayer = ScoringEngineLayer(registry, () => Layer.empty, undefined, {
+        const secondEngineLayer = ScoringEngineLayer(registry, () => Layer.empty, undefined, {
           cacheConfig: { cacheDir },
           calibrationContext,
         })
-        const second = yield* ScoringEngineTag.pipe(
-          Effect.provide(SecondEngineLayer),
+        const secondEngine = yield* ScoringEngineTag.pipe(
+          Effect.provide(secondEngineLayer),
         ) as Effect.Effect<typeof ScoringEngineTag.Service, never, never>
-        const cached = yield* second.observeCommit(repoPath, sha)
+        const second = yield* secondEngine.observeCommit(repoPath, sha)
 
-        return { cached, count: yield* Ref.get(counter) }
+        return { first, second, count: yield* Ref.get(counter) }
       })
 
-      const { cached, count } = await Effect.runPromise(program)
+      const { first, second, count } = await Effect.runPromise(program)
+      const raw = await readFile(
+        join(cacheDir, OBSERVER_CACHE_SIGNAL_ID, "entries.jsonl"),
+        "utf8",
+      )
+      const parsed = JSON.parse(raw.trim()) as {
+        readonly entry: {
+          readonly value: {
+            readonly signalResults: ReadonlyArray<{
+              readonly signalId: string
+              readonly output?: unknown
+              readonly compressedOutput?: string
+              readonly applicability?: string
+            }>
+          }
+        }
+      }
       expect(count).toBe(1)
-      expect(cached.signalResults).toBeInstanceOf(Map)
-      expect(cached.signalResults.get("MOCK-ENG-01")?.output).toEqual({ n: 1 })
-      expect(cached.calibration?.fingerprint).toBeDefined()
-      expect(cached.calibration?.active_modules[0]?.id).toBe("repo.module")
+      expect(first.signalResults).toBeInstanceOf(Map)
+      expect(first.signalResults.get("MOCK-ENG-01")?.output).toEqual({
+        n: 1,
+      })
+      expect(second.signalResults.get("MOCK-ENG-01")?.output).toEqual({
+        n: 1,
+      })
+      expect(first.signalResults.get("MOCK-ENG-01")?.output).toEqual(
+        second.signalResults.get("MOCK-ENG-01")?.output,
+      )
+      expect(toObserverJson(first)).toEqual(toObserverJson(second))
+      expect(second.signalResults.get("MOCK-ENG-01")?.metadata).toEqual(
+        first.signalResults.get("MOCK-ENG-01")?.metadata,
+      )
+      expect(parsed.entry.value.signalResults[0]?.applicability).toBe("applicable")
+      expect(parsed.entry.value.signalResults[0]).toHaveProperty("output")
+      expect(parsed.entry.value.signalResults[0]).not.toHaveProperty("compressedOutput")
+      expect(parsed.entry.value.signalResults[0]?.output).toEqual({ n: 1 })
+      expect(first.calibration?.fingerprint).toBeDefined()
+      expect(first.calibration?.active_modules[0]?.id).toBe("repo.module")
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+      await rm(cacheDir, { recursive: true, force: true })
+    }
+  })
+
+  test("observeCommit compresses and reloads large cached signal output payloads", async () => {
+    const payloadSize = 4_096
+    const { repoPath, sha } = await initRepo([
+      { path: "a.ts", content: "export const x = 1\n" },
+    ])
+    const cacheDir = await mkdtemp(join(tmpdir(), "pulsar-observer-cache-large-"))
+    const largePayload = `x`.repeat(payloadSize)
+    try {
+      const program = Effect.gen(function* () {
+        const counter = yield* Ref.make(0)
+        const signal = makeLargeOutputSignal(counter, largePayload.length)
+        const registry = yield* buildRegistry([signal])
+        const EngineLayer = ScoringEngineLayer(registry, () => Layer.empty, undefined, {
+          cacheConfig: { cacheDir },
+        })
+        const engine = yield* ScoringEngineTag.pipe(
+          Effect.provide(EngineLayer),
+        ) as Effect.Effect<typeof ScoringEngineTag.Service, never, never>
+
+        const first = yield* engine.observeCommit(repoPath, sha)
+        const second = yield* engine.observeCommit(repoPath, sha)
+        return { first, second, count: yield* Ref.get(counter) }
+      })
+
+      const { first, second, count } = await Effect.runPromise(program)
+      const raw = await readFile(
+        join(cacheDir, OBSERVER_CACHE_SIGNAL_ID, "entries.jsonl"),
+        "utf8",
+      )
+      const line = raw.trim()
+      const parsed = JSON.parse(line) as {
+        readonly entry: {
+          readonly value: {
+            readonly signalResults: ReadonlyArray<{
+              readonly signalId: string
+              readonly output?: unknown
+              readonly compressedOutput?: string
+              readonly applicability?: string
+            }>
+          }
+        }
+      }
+
+      expect(count).toBe(1)
+      expect(first.signalResults.get("MOCK-LARGE-OUTPUT")?.output).toEqual({
+        payload: largePayload,
+      })
+      expect(second.signalResults.get("MOCK-LARGE-OUTPUT")?.output).toEqual({
+        payload: largePayload,
+      })
+      expect(line.includes(largePayload)).toBe(false)
+      expect(parsed.entry.value.signalResults[0]).not.toHaveProperty("output")
+      expect(parsed.entry.value.signalResults[0]).toHaveProperty("applicability")
+      const compressedOutput = parsed.entry.value.signalResults[0]?.compressedOutput
+      expect(typeof compressedOutput).toBe("string")
+      expect(compressedOutput?.length ?? payloadSize).toBeLessThan(payloadSize / 2)
     } finally {
       await rm(repoPath, { recursive: true, force: true })
       await rm(cacheDir, { recursive: true, force: true })
@@ -1498,7 +1664,7 @@ describe("ScoringEngine — cache semantics", () => {
     // If this fails you changed aggregation semantics: bump the version
     // (and this pin) so stale observer outputs cannot be served.
     expect(OBSERVER_AGGREGATION_CACHE_VERSION).toBe(
-      "observer-aggregation-v8-evidence-bounded-authority",
+      "observer-aggregation-v10-evidence-bounded-authority-compact-results",
     )
   })
 
