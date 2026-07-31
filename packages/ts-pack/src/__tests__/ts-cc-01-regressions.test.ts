@@ -205,21 +205,11 @@ describe("TS-CC-01 regressions", () => {
         "}",
       ].join("\n"),
     )
-    const calls = sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)
+    let descendantWalks = 0
+    let callExpressions = 0
     let typeQueries = 0
-    for (const call of calls) {
-      const getType = call.getType.bind(call)
-      Object.defineProperty(call, "getType", {
-        configurable: true,
-        value: () => {
-          typeQueries += 1
-          return getType()
-        },
-      })
-    }
-
-    let kindSpecificWalks = 0
     const getDescendantsOfKind = sourceFile.getDescendantsOfKind.bind(sourceFile)
+    let kindSpecificWalks = 0
     Object.defineProperty(sourceFile, "getDescendantsOfKind", {
       configurable: true,
       value: (...args: Parameters<typeof sourceFile.getDescendantsOfKind>) => {
@@ -228,10 +218,36 @@ describe("TS-CC-01 regressions", () => {
       },
     })
 
+    const forEachDescendant = sourceFile.forEachDescendant.bind(sourceFile)
+    Object.defineProperty(sourceFile, "forEachDescendant", {
+      configurable: true,
+      value: (
+        callback: Parameters<typeof sourceFile.forEachDescendant>[0],
+        callbackArray?: Parameters<typeof sourceFile.forEachDescendant>[1],
+      ) => {
+        descendantWalks += 1
+        return forEachDescendant((node, traversal) => {
+          if (node.getKind() === SyntaxKind.CallExpression) {
+            callExpressions += 1
+            const getType = node.getType.bind(node)
+            Object.defineProperty(node, "getType", {
+              configurable: true,
+              value: () => {
+                typeQueries += 1
+                return getType()
+              },
+            })
+          }
+          return callback(node, traversal)
+        }, callbackArray)
+      },
+    })
+
     const out = computeAsyncFailureControl([sourceFile], TsCc01.defaultConfig)
 
     expect(out.analyzedFiles).toBe(1)
-    expect(typeQueries).toBe(calls.length)
+    expect(descendantWalks).toBe(1)
+    expect(typeQueries).toBe(callExpressions)
     expect(kindSpecificWalks).toBe(0)
   })
 })
