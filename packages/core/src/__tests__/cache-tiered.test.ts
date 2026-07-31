@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
-import { describe, expect, test } from "bun:test"
+import { describe, expect, spyOn, test } from "bun:test"
 import { Effect } from "effect"
 import {
   SignalCacheTag,
@@ -17,6 +17,22 @@ const makeDiskCache = (config?: CacheConfig): Promise<SignalCache> =>
       return yield* SignalCacheTag
     }).pipe(Effect.provide(DiskBackedCacheLayer(config))),
   )
+
+const persistedTierOneRecord = (
+  key: CacheKey,
+  value: unknown,
+  computedAt = "2026-04-19T00:00:00.000Z",
+): string =>
+  JSON.stringify({
+    key,
+    entry: {
+      value,
+      computedAt,
+      tier: 1,
+      baseConfidence: 1,
+    },
+    lastAccessedAt: computedAt,
+  })
 
 describe("tiered disk cache", () => {
   test("round-trips tiered entries through JSONL persistence", async () => {
@@ -233,6 +249,102 @@ describe("tiered disk cache", () => {
           reloaded.getTiered<{ payload: string }>(unrelatedKey, { tier: 1 }),
         )).value?.payload,
       ).toBe("unchanged")
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true })
+    }
+  })
+
+  test("replaces an oversized legacy bucket without parsing it on a bounded read/write", async () => {
+    const cacheDir = await mkdtemp(join(tmpdir(), "pulsar-cache-legacy-budget-"))
+    const signalId = "BOUNDED-LEGACY"
+    const signalDir = join(cacheDir, signalId)
+    const filePath = join(signalDir, "entries.jsonl")
+    const maxSignalBytes = 700
+    const legacyKey: CacheKey = {
+      signalId,
+      contentHash: "legacy",
+      configHash: "legacy",
+    }
+    const newestKey: CacheKey = {
+      signalId,
+      contentHash: "newest",
+      configHash: "newest",
+    }
+    const legacyMarker = "legacy-record-must-not-be-parsed"
+
+    try {
+      await mkdir(signalDir, { recursive: true })
+      const legacyLine = persistedTierOneRecord(
+        legacyKey,
+        { payload: `${legacyMarker}:${"x".repeat(4_000)}` },
+      )
+      const malformedLine = `{"marker":"${legacyMarker}","payload":"${"y".repeat(1_000)}`
+      await writeFile(filePath, `${legacyLine}\n${malformedLine}`)
+      expect(Buffer.byteLength(await readFile(filePath, "utf8"), "utf8"))
+        .toBeGreaterThan(maxSignalBytes)
+
+      const cache = await makeDiskCache({ cacheDir, maxSizeBytes: 10_000_000 })
+      const originalParse = JSON.parse
+      let legacyParseCount = 0
+      const parseSpy = spyOn(JSON, "parse").mockImplementation((text, reviver) => {
+        if (text.includes(legacyMarker)) legacyParseCount += 1
+        return originalParse(text, reviver)
+      })
+      try {
+        const boundedMiss = await Effect.runPromise(
+          cache.getTiered(legacyKey, { tier: 1, maxSignalBytes }),
+        )
+        expect(boundedMiss.status).toBe("miss")
+        await Effect.runPromise(
+          cache.setTiered(newestKey, { payload: "new" }, {
+            tier: 1,
+            maxSignalBytes,
+          }),
+        )
+      } finally {
+        parseSpy.mockRestore()
+      }
+
+      expect(legacyParseCount).toBe(0)
+      const persisted = await readFile(filePath, "utf8")
+      expect(Buffer.byteLength(persisted, "utf8")).toBeLessThanOrEqual(maxSignalBytes)
+      expect(persisted).not.toContain(legacyMarker)
+
+      const reloaded = await makeDiskCache({ cacheDir, maxSizeBytes: 10_000_000 })
+      expect(
+        (await Effect.runPromise(reloaded.getTiered(newestKey, { tier: 1 }))).status,
+      ).toBe("hit")
+      expect(
+        (await Effect.runPromise(reloaded.getTiered(legacyKey, { tier: 1 }))).status,
+      ).toBe("miss")
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true })
+    }
+  })
+
+  test("preserves oversized legacy buckets for unbudgeted reads", async () => {
+    const cacheDir = await mkdtemp(join(tmpdir(), "pulsar-cache-legacy-read-"))
+    const signalId = "UNBOUNDED-LEGACY"
+    const signalDir = join(cacheDir, signalId)
+    const filePath = join(signalDir, "entries.jsonl")
+    const key: CacheKey = {
+      signalId,
+      contentHash: "legacy",
+      configHash: "legacy",
+    }
+
+    try {
+      await mkdir(signalDir, { recursive: true })
+      const persisted = persistedTierOneRecord(key, { payload: "x".repeat(4_000) })
+      await writeFile(filePath, persisted)
+
+      const cache = await makeDiskCache({ cacheDir })
+      const hit = await Effect.runPromise(
+        cache.getTiered<{ payload: string }>(key, { tier: 1 }),
+      )
+
+      expect(hit.status).toBe("hit")
+      expect(hit.value?.payload).toHaveLength(4_000)
     } finally {
       await rm(cacheDir, { recursive: true, force: true })
     }

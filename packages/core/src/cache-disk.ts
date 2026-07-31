@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises"
+import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { Effect, Layer, Option } from "effect"
 import {
@@ -63,6 +63,13 @@ const createInitialBucket = (signalId: string): LoadedSignalBucket => ({
   records: new Map(),
 })
 
+const normalizeSignalByteBudget = (
+  maxSignalBytes: number | undefined,
+): number | undefined =>
+  maxSignalBytes !== undefined && Number.isFinite(maxSignalBytes)
+    ? Math.max(0, Math.floor(maxSignalBytes))
+    : undefined
+
 const serializeRecord = (record: PersistedCacheRecord): string => JSON.stringify(record)
 
 const toLoadedRecord = (record: PersistedCacheRecord): LoadedCacheRecord => ({
@@ -100,8 +107,22 @@ const parseCacheRecordLine = (line: string): CacheRecordLineRead => {
 const loadBucket = async (
   cacheDir: string,
   signalId: string,
+  maxSignalBytes?: number,
 ): Promise<LoadedSignalBucket> => {
   const path = recordPathFor(cacheDir, signalId)
+  const budget = normalizeSignalByteBudget(maxSignalBytes)
+  if (budget !== undefined) {
+    try {
+      const file = await stat(path)
+      if (file.size > budget) {
+        return createInitialBucket(signalId)
+      }
+    } catch (error) {
+      if (hasNodeErrorCode(error, "ENOENT")) return createInitialBucket(signalId)
+      throw new DiskBackedCacheError("stat bucket file", error)
+    }
+  }
+
   let raw = ""
   try {
     raw = await readFile(path, "utf8")
@@ -134,9 +155,9 @@ const trimBucketToBudget = (
   protectedKey: string,
   maxSignalBytes: number | undefined,
 ): number => {
-  if (maxSignalBytes === undefined || !Number.isFinite(maxSignalBytes)) return 0
+  const budget = normalizeSignalByteBudget(maxSignalBytes)
+  if (budget === undefined) return 0
 
-  const budget = Math.max(0, Math.floor(maxSignalBytes))
   let bytes = bucketBytes(bucket)
   if (bytes <= budget) return 0
 
@@ -230,6 +251,20 @@ const makeDiskBackedCache = (config?: CacheConfig): Effect.Effect<SignalCache> =
     let totalBytesKnown = false
     let writeQueue = Promise.resolve()
 
+    const discardLoadedBucketBeyondBudget = (
+      bucket: LoadedSignalBucket,
+      maxSignalBytes: number | undefined,
+    ): LoadedSignalBucket => {
+      const budget = normalizeSignalByteBudget(maxSignalBytes)
+      if (budget === undefined) return bucket
+
+      const bytes = bucketBytes(bucket)
+      if (bytes <= budget) return bucket
+      bucket.records.clear()
+      totalBytes -= bytes
+      return bucket
+    }
+
     const withWriteQueue = async <T>(operation: () => Promise<T>): Promise<T> => {
       const prior = writeQueue
       let release!: () => void
@@ -244,16 +279,23 @@ const makeDiskBackedCache = (config?: CacheConfig): Effect.Effect<SignalCache> =
       }
     }
 
-    const ensureBucket = async (signalId: string): Promise<LoadedSignalBucket> => {
+    const ensureBucket = async (
+      signalId: string,
+      maxSignalBytes?: number,
+    ): Promise<LoadedSignalBucket> => {
       const existing = buckets.get(signalId)
-      if (existing !== undefined) return existing
+      if (existing !== undefined) {
+        return discardLoadedBucketBeyondBudget(existing, maxSignalBytes)
+      }
 
       const inFlight = loadingBuckets.get(signalId)
-      if (inFlight !== undefined) return inFlight
+      if (inFlight !== undefined) {
+        return discardLoadedBucketBeyondBudget(await inFlight, maxSignalBytes)
+      }
 
       const load = (async () => {
         const created = knownSignalIds.has(signalId)
-          ? await loadBucket(cacheDir, signalId)
+          ? await loadBucket(cacheDir, signalId, maxSignalBytes)
           : { signalId, records: new Map() }
         buckets.set(signalId, created)
         knownSignalIds.add(signalId)
@@ -311,7 +353,7 @@ const makeDiskBackedCache = (config?: CacheConfig): Effect.Effect<SignalCache> =
         ),
       getTiered: <A>(key: CacheKey, options?: CacheReadOptions) =>
         runDiskCacheOperation("getTiered", async () => {
-          const bucket = await ensureBucket(key.signalId)
+          const bucket = await ensureBucket(key.signalId, options?.maxSignalBytes)
           const record = bucket?.records.get(cacheKeyString(key))
           if (record === undefined) {
             return evaluateTieredCacheEntry<A>(undefined, options)
@@ -329,8 +371,8 @@ const makeDiskBackedCache = (config?: CacheConfig): Effect.Effect<SignalCache> =
       setTiered: <A>(key: CacheKey, value: A, options?: CacheWriteOptions) =>
         runDiskCacheOperation("setTiered", () =>
           withWriteQueue(async () => {
+            const bucket = await ensureBucket(key.signalId, options?.maxSignalBytes)
             await loadFullIndex()
-            const bucket = await ensureBucket(key.signalId)
             const keyString = cacheKeyString(key)
             const existing = bucket.records.get(keyString)
             if (existing !== undefined) {

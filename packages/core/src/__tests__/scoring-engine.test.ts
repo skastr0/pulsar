@@ -38,7 +38,7 @@ import {
 import { ReferenceDataTag, SignalContextTag } from "../context.js"
 import type { Glossary } from "../glossary.js"
 import type { Signal } from "../signal.js"
-import type { CacheWriteOptions, SignalCache } from "../cache.js"
+import type { CacheReadOptions, CacheWriteOptions, SignalCache } from "../cache.js"
 import type { ObserverOutput } from "../observer.js"
 import type { PulsarVector } from "../vector.js"
 
@@ -1467,12 +1467,17 @@ describe("ScoringEngine — cache semantics", () => {
     }
   })
 
-  test("observer cache writes enforce the 50 MiB signal bucket budget", async () => {
+  test("observer cache reads and writes enforce the 50 MiB signal bucket budget", async () => {
+    let readOptions: CacheReadOptions | undefined
     let writeOptions: CacheWriteOptions | undefined
     const cache: SignalCache = {
       get: <A>() => Effect.succeed(Option.none<A>()),
       set: () => Effect.void,
-      getTiered: () => Effect.succeed({ status: "miss" as const }),
+      getTiered: (_key, options) =>
+        Effect.sync(() => {
+          readOptions = options
+          return { status: "miss" as const }
+        }),
       setTiered: (_key, _value, options) =>
         Effect.sync(() => {
           writeOptions = options
@@ -1499,6 +1504,10 @@ describe("ScoringEngine — cache semantics", () => {
     )
 
     expect(OBSERVER_CACHE_MAX_SIGNAL_BYTES).toBe(50 * 1024 * 1024)
+    expect(readOptions).toEqual({
+      tier: 1,
+      maxSignalBytes: OBSERVER_CACHE_MAX_SIGNAL_BYTES,
+    })
     expect(writeOptions).toEqual({
       tier: 1,
       maxSignalBytes: OBSERVER_CACHE_MAX_SIGNAL_BYTES,

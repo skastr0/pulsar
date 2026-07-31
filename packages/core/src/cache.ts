@@ -21,6 +21,7 @@ export interface CacheReadOptions {
   readonly confidenceThreshold?: number
   readonly staleMode?: "miss" | "mark-stale"
   readonly now?: Date
+  readonly maxSignalBytes?: number
 }
 
 export interface CacheWriteOptions {

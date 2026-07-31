@@ -110,7 +110,10 @@ export const makeObserveWithCache = (
       return { result, cacheHit: false }
     }
 
-    const cached = yield* cacheRef.getTiered<CachedObserverOutput>(key, { tier: 1 })
+    const cached = yield* cacheRef.getTiered<CachedObserverOutput>(key, {
+      tier: 1,
+      maxSignalBytes: OBSERVER_CACHE_MAX_SIGNAL_BYTES,
+    })
     const cacheHit = cached.status === "hit" || cached.status === "stale"
     if (cacheHit) return { result: fromCachedObserverOutput(cached.value!), cacheHit }
 
