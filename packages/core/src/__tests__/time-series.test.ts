@@ -1,10 +1,10 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, spyOn, test } from "bun:test"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
-import { Effect, Option } from "effect"
+import { Effect, Option, Schema } from "effect"
 import { categoryRecord } from "../category.js"
-import { createTimeSeriesServices, type TimeSeriesEntry } from "../time-series.js"
+import { createTimeSeriesServices, TimeSeriesEntry } from "../time-series.js"
 import { readTimeSeriesEntriesWithState } from "../time-series-storage.js"
 
 const makeEntry = (
@@ -442,6 +442,43 @@ describe("time series persistence", () => {
         "sha-7",
       ])
     } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("reuses service-local decoded state across concurrent appends", async () => {
+    const repoPath = await mkdtemp(join(tmpdir(), "pulsar-ts-concurrent-state-"))
+    const decodeUnknownSync = spyOn(Schema, "decodeUnknownSync")
+    try {
+      const services = createTimeSeriesServices(repoPath, {
+        compactionThreshold: 1_000,
+        rawRetentionDays: 3_650,
+        lockRetryMs: 1,
+      })
+
+      await Promise.all(
+        Array.from({ length: 8 }, (_, index) =>
+          Effect.runPromise(
+            services.writer.append(
+              makeEntry(
+                `sha-${index}`,
+                `2026-04-${String(index + 1).padStart(2, "0")}T10:00:00.000Z`,
+                0.9,
+              ),
+            ),
+          ),
+        ),
+      )
+
+      const entryDecodes = decodeUnknownSync.mock.calls.filter(
+        ([schema]) => schema === TimeSeriesEntry,
+      )
+      expect(entryDecodes).toHaveLength(8)
+      expect(
+        (await Effect.runPromise(services.reader.entries())).map((entry) => entry.sha),
+      ).toEqual(Array.from({ length: 8 }, (_, index) => `sha-${index}`))
+    } finally {
+      decodeUnknownSync.mockRestore()
       await rm(repoPath, { recursive: true, force: true })
     }
   })

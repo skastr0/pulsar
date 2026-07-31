@@ -34,7 +34,7 @@ export const appendTimeSeriesEntry = async (args: {
   readonly rawRetentionDays: number
   readonly lockTimeoutMs: number
   readonly lockRetryMs: number
-  readonly existingState?: TimeSeriesEntriesState
+  readonly getExistingState?: () => TimeSeriesEntriesState | undefined
   readonly onEntriesRead?: OnEntriesRead
   readonly onPersistedState?: OnPersistedState
 }): Promise<TimeSeriesAppendResult> => {
@@ -48,7 +48,7 @@ export const appendTimeSeriesEntry = async (args: {
       const existingState = await readTimeSeriesEntriesUsingState(
         args.repoPath,
         args.filePath,
-        args.existingState,
+        args.getExistingState?.(),
         args.onEntriesRead === undefined
           ? undefined
           : { onEntriesRead: args.onEntriesRead },

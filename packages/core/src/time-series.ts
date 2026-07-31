@@ -103,7 +103,7 @@ export const createTimeSeriesServices = (
               options?.rawRetentionDays ?? DEFAULT_TIME_SERIES_RAW_RETENTION_DAYS,
             lockTimeoutMs: options?.lockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS,
             lockRetryMs: options?.lockRetryMs ?? DEFAULT_LOCK_RETRY_MS,
-            ...(cachedState !== undefined ? { existingState: cachedState } : {}),
+            getExistingState: () => cachedState,
             onEntriesRead: (nextState) => {
               cachedState = nextState
             },
