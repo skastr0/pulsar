@@ -20,7 +20,10 @@ import {
   computeObserverConfigHash,
   collectWorktreeChangedHunks,
 } from "../scoring-engine.js"
-import { OBSERVER_CACHE_SIGNAL_ID } from "../scoring-engine-observer-cache.js"
+import {
+  OBSERVER_CACHE_MAX_SIGNAL_BYTES,
+  OBSERVER_CACHE_SIGNAL_ID,
+} from "../scoring-engine-observer-cache.js"
 import { makeObserveWithCache } from "../scoring-engine-observe.js"
 import { toObserverJson } from "../observer-serializer.js"
 import { categoryRecord } from "../category.js"
@@ -33,7 +36,7 @@ import {
 import { ReferenceDataTag, SignalContextTag } from "../context.js"
 import type { Glossary } from "../glossary.js"
 import type { Signal } from "../signal.js"
-import type { SignalCache } from "../cache.js"
+import type { CacheWriteOptions, SignalCache } from "../cache.js"
 import type { ObserverOutput } from "../observer.js"
 import type { PulsarVector } from "../vector.js"
 
@@ -1419,6 +1422,44 @@ describe("ScoringEngine — cache semantics", () => {
     expect(observed.result).toBe(fresh)
     expect(cacheReads).toBe(0)
     expect(cacheWrites).toBe(0)
+  })
+
+  test("observer cache writes enforce the 50 MiB signal bucket budget", async () => {
+    let writeOptions: CacheWriteOptions | undefined
+    const cache: SignalCache = {
+      get: <A>() => Effect.succeed(Option.none<A>()),
+      set: () => Effect.void,
+      getTiered: () => Effect.succeed({ status: "miss" as const }),
+      setTiered: (_key, _value, options) =>
+        Effect.sync(() => {
+          writeOptions = options
+        }),
+      size: Effect.succeed(0),
+      totalBytes: Effect.succeed(0),
+    }
+    const fresh: ObserverOutput = {
+      observer_semantics: OBSERVER_OUTPUT_SEMANTICS,
+      categories: categoryRecord(() => emptyObserverCategoryOutput()),
+      minimum: undefined,
+      weighted_mean: 1,
+      hard_gate_status: "pass",
+      hard_gate_violations: [],
+      inactiveSignals: [],
+      signalResults: new Map(),
+    }
+
+    await Effect.runPromise(
+      makeObserveWithCache(cache)(
+        { signalId: OBSERVER_CACHE_SIGNAL_ID, contentHash: "content", configHash: "config" },
+        () => Effect.succeed(fresh),
+      ),
+    )
+
+    expect(OBSERVER_CACHE_MAX_SIGNAL_BYTES).toBe(50 * 1024 * 1024)
+    expect(writeOptions).toEqual({
+      tier: 1,
+      maxSignalBytes: OBSERVER_CACHE_MAX_SIGNAL_BYTES,
+    })
   })
 
   test("observeCommit disk cache round-trips signalResults as a Map", async () => {

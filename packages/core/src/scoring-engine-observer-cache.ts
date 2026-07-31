@@ -22,6 +22,7 @@ import type { SignalApplicability } from "./signal.js"
 import { rememberCachedSignalApplicability } from "./observer-score-utils.js"
 
 export const OBSERVER_CACHE_SIGNAL_ID = "__observer__"
+export const OBSERVER_CACHE_MAX_SIGNAL_BYTES = 50 * 1024 * 1024
 
 export { nowMs } from "./observer-time.js"
 

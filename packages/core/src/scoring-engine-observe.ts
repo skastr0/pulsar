@@ -14,6 +14,7 @@ import {
   computeReferenceVersionHash,
   fromCachedObserverOutput,
   hashChangedHunks,
+  OBSERVER_CACHE_MAX_SIGNAL_BYTES,
   OBSERVER_CACHE_SIGNAL_ID,
   toCachedObserverOutput,
   type CachedObserverOutput,
@@ -110,7 +111,10 @@ export const makeObserveWithCache = (
 
     const result = yield* runFresh().pipe(
       Effect.tap((fresh) =>
-        cacheRef.setTiered(key, toCachedObserverOutput(fresh), { tier: 1 }),
+        cacheRef.setTiered(key, toCachedObserverOutput(fresh), {
+          tier: 1,
+          maxSignalBytes: OBSERVER_CACHE_MAX_SIGNAL_BYTES,
+        }),
       ),
     )
     return { result, cacheHit }

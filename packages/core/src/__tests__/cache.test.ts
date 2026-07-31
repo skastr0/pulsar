@@ -32,4 +32,30 @@ describe("SignalCache (in-memory)", () => {
     })
     await Effect.runPromise(program.pipe(Effect.provide(InMemoryCacheLayer)))
   })
+
+  test("tiered signal budgets evict only older entries from the same signal", async () => {
+    const program = Effect.gen(function* () {
+      const cache = yield* SignalCacheTag
+      const oldKey = { signalId: "BOUNDED", contentHash: "old", configHash: "v1" }
+      const newKey = { signalId: "BOUNDED", contentHash: "new", configHash: "v1" }
+      const otherKey = { signalId: "OTHER", contentHash: "stable", configHash: "v1" }
+
+      yield* cache.setTiered(oldKey, { payload: "x".repeat(1_000) }, {
+        tier: 1,
+        computedAt: "2026-04-19T00:00:00.000Z",
+      })
+      yield* cache.setTiered(otherKey, { payload: "stable" }, { tier: 1 })
+      yield* cache.setTiered(newKey, { payload: "new" }, {
+        tier: 1,
+        computedAt: "2026-04-19T00:00:01.000Z",
+        maxSignalBytes: 400,
+      })
+
+      expect((yield* cache.getTiered(oldKey, { tier: 1 })).status).toBe("miss")
+      expect((yield* cache.getTiered(newKey, { tier: 1 })).status).toBe("hit")
+      expect((yield* cache.getTiered(otherKey, { tier: 1 })).status).toBe("hit")
+      expect(yield* cache.size).toBe(2)
+    })
+    await Effect.runPromise(program.pipe(Effect.provide(InMemoryCacheLayer)))
+  })
 })

@@ -129,6 +129,32 @@ const loadBucket = async (
 const bucketBytes = (bucket: LoadedSignalBucket): number =>
   [...bucket.records.values()].reduce((sum, record) => sum + record.bytes, 0)
 
+const trimBucketToBudget = (
+  bucket: LoadedSignalBucket,
+  protectedKey: string,
+  maxSignalBytes: number | undefined,
+): number => {
+  if (maxSignalBytes === undefined || !Number.isFinite(maxSignalBytes)) return 0
+
+  const budget = Math.max(0, Math.floor(maxSignalBytes))
+  let bytes = bucketBytes(bucket)
+  if (bytes <= budget) return 0
+
+  let removedBytes = 0
+  const evictionCandidates = [...bucket.records.entries()]
+    .filter(([keyString]) => keyString !== protectedKey)
+    .sort(([, left], [, right]) =>
+      left.lastAccessedAt.localeCompare(right.lastAccessedAt),
+    )
+  for (const [keyString, record] of evictionCandidates) {
+    if (bytes <= budget) break
+    bucket.records.delete(keyString)
+    bytes -= record.bytes
+    removedBytes += record.bytes
+  }
+  return removedBytes
+}
+
 const totalBytesOf = (buckets: ReadonlyMap<string, LoadedSignalBucket>): number =>
   [...buckets.values()].reduce((sum, bucket) => sum + bucketBytes(bucket), 0)
 
@@ -314,6 +340,11 @@ const makeDiskBackedCache = (config?: CacheConfig): Effect.Effect<SignalCache> =
             totalBytes += loaded.bytes
 
             const dirtyBuckets = new Set<string>([key.signalId])
+            totalBytes -= trimBucketToBudget(
+              bucket,
+              keyString,
+              options?.maxSignalBytes,
+            )
             while (totalBytes > maxSizeBytes) {
               const oldest = findOldestRecord(buckets)
               if (oldest === undefined) break

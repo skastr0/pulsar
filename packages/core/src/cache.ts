@@ -30,6 +30,7 @@ export interface CacheWriteOptions {
   readonly baseConfidence?: number
   readonly halfLifeDays?: number
   readonly computedAt?: string
+  readonly maxSignalBytes?: number
 }
 
 export interface TieredCacheEntry<T> {
@@ -151,6 +152,33 @@ export class SignalCacheTag extends Context.Tag("@skastr0/pulsar-core/SignalCach
 const entryByteSize = (entry: TieredCacheEntry<unknown>): number =>
   Buffer.byteLength(JSON.stringify(entry), "utf8")
 
+const trimSignalEntriesToBudget = (
+  store: Map<string, TieredCacheEntry<unknown>>,
+  signalId: string,
+  protectedKey: string,
+  maxSignalBytes: number | undefined,
+): void => {
+  if (maxSignalBytes === undefined || !Number.isFinite(maxSignalBytes)) return
+
+  const budget = Math.max(0, Math.floor(maxSignalBytes))
+  const prefix = `${signalId}::`
+  const signalEntries = [...store.entries()].filter(([key]) => key.startsWith(prefix))
+  let signalBytes = signalEntries.reduce(
+    (sum, [, entry]) => sum + entryByteSize(entry),
+    0,
+  )
+  if (signalBytes <= budget) return
+
+  const evictionCandidates = signalEntries
+    .filter(([key]) => key !== protectedKey)
+    .sort(([, left], [, right]) => left.computedAt.localeCompare(right.computedAt))
+  for (const [key, entry] of evictionCandidates) {
+    if (signalBytes <= budget) break
+    store.delete(key)
+    signalBytes -= entryByteSize(entry)
+  }
+}
+
 const makeInMemoryCache: Effect.Effect<SignalCache> = Effect.gen(function* () {
   const store = yield* Ref.make(new Map<string, TieredCacheEntry<unknown>>())
   return {
@@ -179,7 +207,14 @@ const makeInMemoryCache: Effect.Effect<SignalCache> = Effect.gen(function* () {
     setTiered: <A>(key: CacheKey, value: A, options?: CacheWriteOptions) =>
       Ref.update(store, (map) => {
         const next = new Map(map)
-        next.set(cacheKeyString(key), buildTieredCacheEntry(value, options))
+        const keyString = cacheKeyString(key)
+        next.set(keyString, buildTieredCacheEntry(value, options))
+        trimSignalEntriesToBudget(
+          next,
+          key.signalId,
+          keyString,
+          options?.maxSignalBytes,
+        )
         return next
       }),
     size: Ref.get(store).pipe(Effect.map((map) => map.size)),

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { describe, expect, test } from "bun:test"
@@ -162,6 +162,112 @@ describe("tiered disk cache", () => {
       expect(b.status).toBe("hit")
       expect(c.status).toBe("miss")
       expect(d.status).toBe("hit")
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true })
+    }
+  })
+
+  test("compacts an oversized signal bucket without rewriting other buckets", async () => {
+    const cacheDir = await mkdtemp(join(tmpdir(), "pulsar-cache-signal-budget-"))
+    const maxSignalBytes = 1_500
+    const makeKey = (signalId: string, name: string): CacheKey => ({
+      signalId,
+      contentHash: `content-${name}`,
+      configHash: `config-${name}`,
+    })
+
+    try {
+      const cache = await makeDiskCache({ cacheDir, maxSizeBytes: 10_000_000 })
+      const unrelatedKey = makeKey("OTHER", "stable")
+      await Effect.runPromise(
+        cache.setTiered(unrelatedKey, { payload: "unchanged" }, {
+          tier: 1,
+          computedAt: "2026-04-19T00:00:00.000Z",
+        }),
+      )
+      const unrelatedPath = join(cacheDir, "OTHER", "entries.jsonl")
+      const unrelatedBefore = await readFile(unrelatedPath, "utf8")
+
+      const legacyKeys = Array.from({ length: 3 }, (_, index) =>
+        makeKey("BOUNDED", `legacy-${index}`),
+      )
+      for (const [index, key] of legacyKeys.entries()) {
+        await Effect.runPromise(
+          cache.setTiered(key, { payload: "x".repeat(2_000) }, {
+            tier: 1,
+            computedAt: `2026-04-19T00:00:0${index + 1}.000Z`,
+          }),
+        )
+      }
+      const boundedPath = join(cacheDir, "BOUNDED", "entries.jsonl")
+      expect(Buffer.byteLength(await readFile(boundedPath, "utf8"), "utf8"))
+        .toBeGreaterThan(maxSignalBytes)
+
+      const newestKey = makeKey("BOUNDED", "newest")
+      await Effect.runPromise(
+        cache.setTiered(newestKey, { payload: "new" }, {
+          tier: 1,
+          computedAt: "2026-04-19T00:00:10.000Z",
+          maxSignalBytes,
+        }),
+      )
+
+      const boundedAfter = await readFile(boundedPath, "utf8")
+      expect(Buffer.byteLength(boundedAfter, "utf8")).toBeLessThanOrEqual(maxSignalBytes)
+      expect(await readFile(unrelatedPath, "utf8")).toBe(unrelatedBefore)
+
+      const reloaded = await makeDiskCache({ cacheDir, maxSizeBytes: 10_000_000 })
+      const newest = await Effect.runPromise(
+        reloaded.getTiered<{ payload: string }>(newestKey, { tier: 1 }),
+      )
+      expect(newest.status).toBe("hit")
+      expect(newest.value?.payload).toBe("new")
+      for (const legacyKey of legacyKeys) {
+        const legacy = await Effect.runPromise(
+          reloaded.getTiered(legacyKey, { tier: 1 }),
+        )
+        expect(legacy.status).toBe("miss")
+      }
+      expect(
+        (await Effect.runPromise(
+          reloaded.getTiered<{ payload: string }>(unrelatedKey, { tier: 1 }),
+        )).value?.payload,
+      ).toBe("unchanged")
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true })
+    }
+  })
+
+  test("retains the just-written entry when it alone exceeds the signal budget", async () => {
+    const cacheDir = await mkdtemp(join(tmpdir(), "pulsar-cache-signal-budget-entry-"))
+    const makeKey = (name: string): CacheKey => ({
+      signalId: "BOUNDED",
+      contentHash: `content-${name}`,
+      configHash: `config-${name}`,
+    })
+
+    try {
+      const cache = await makeDiskCache({ cacheDir, maxSizeBytes: 10_000_000 })
+      await Effect.runPromise(
+        cache.setTiered(makeKey("old"), { payload: "old" }, { tier: 1 }),
+      )
+      await Effect.runPromise(
+        cache.setTiered(
+          makeKey("new"),
+          { payload: "x".repeat(2_000) },
+          { tier: 1, maxSignalBytes: 100 },
+        ),
+      )
+
+      const reloaded = await makeDiskCache({ cacheDir, maxSizeBytes: 10_000_000 })
+      expect(
+        (await Effect.runPromise(reloaded.getTiered(makeKey("old"), { tier: 1 }))).status,
+      ).toBe("miss")
+      expect(
+        (await Effect.runPromise(reloaded.getTiered(makeKey("new"), { tier: 1 }))).status,
+      ).toBe("hit")
+      expect((await readFile(join(cacheDir, "BOUNDED", "entries.jsonl"), "utf8"))
+        .trim().split("\n")).toHaveLength(1)
     } finally {
       await rm(cacheDir, { recursive: true, force: true })
     }
