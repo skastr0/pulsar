@@ -1,4 +1,4 @@
-import { appendFile, mkdir, open, readFile, rm, writeFile } from "node:fs/promises"
+import { appendFile, mkdir, open, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { dirname } from "node:path"
 import { Schema } from "effect"
 import { compactTimeSeriesEntries } from "./time-series-compaction.js"
@@ -14,6 +14,20 @@ import {
   type TimeSeriesError,
 } from "./time-series-model.js"
 
+export type FileFingerprint = {
+  readonly size: number | undefined
+  readonly mtimeMs: number | undefined
+}
+
+export type TimeSeriesEntriesState = {
+  readonly entries: ReadonlyArray<TimeSeriesEntry>
+  readonly fingerprint: FileFingerprint
+}
+
+export type OnEntriesRead = (state: FileFingerprint) => void
+
+export type OnPersistedState = (state: TimeSeriesEntriesState) => void
+
 export const DEFAULT_LOCK_TIMEOUT_MS = 5_000
 export const DEFAULT_LOCK_RETRY_MS = 25
 
@@ -25,6 +39,9 @@ export const appendTimeSeriesEntry = async (args: {
   readonly rawRetentionDays: number
   readonly lockTimeoutMs: number
   readonly lockRetryMs: number
+  readonly existingState?: TimeSeriesEntriesState
+  readonly onEntriesRead?: OnEntriesRead
+  readonly onPersistedState?: OnPersistedState
 }): Promise<TimeSeriesAppendResult> => {
   await mkdir(dirname(args.filePath), { recursive: true })
   return withTimeSeriesLock(
@@ -33,7 +50,14 @@ export const appendTimeSeriesEntry = async (args: {
     args.lockTimeoutMs,
     args.lockRetryMs,
     async () => {
-      const existing = await readTimeSeriesEntries(args.repoPath, args.filePath)
+      const existing = await readTimeSeriesEntriesUsingState(
+        args.repoPath,
+        args.filePath,
+        args.existingState,
+        {
+          onEntriesRead: args.onEntriesRead,
+        },
+      )
       const duplicate = existing.find(
         (entry) =>
           entry.sha === args.entry.sha ||
@@ -44,16 +68,30 @@ export const appendTimeSeriesEntry = async (args: {
       }
 
       const next = [...existing, args.entry].sort(compareTimeSeriesEntries)
+      let nextStored = next
       if (next.length > args.compactionThreshold) {
         const compacted = compactTimeSeriesEntries(next, args.rawRetentionDays)
+        nextStored = compacted
         await writeTimeSeriesEntries(args.filePath, compacted)
       } else {
         await appendFile(args.filePath, `${JSON.stringify(args.entry)}\n`, "utf8")
       }
 
+      const fingerprint = await readFileFingerprint(args.filePath)
+      args.onPersistedState?.({ entries: nextStored, fingerprint })
+
       return { status: "written", entry: args.entry }
     },
   )
+}
+
+export const readTimeSeriesEntriesWithState = async (
+  repoPath: string,
+  filePath: string,
+): Promise<TimeSeriesEntriesState> => {
+  const entries = await readTimeSeriesEntries(repoPath, filePath)
+  const fingerprint = await readFileFingerprint(filePath)
+  return { entries, fingerprint }
 }
 
 export const readTimeSeriesEntries = async (
@@ -173,6 +211,42 @@ const writeTimeSeriesEntries = async (
 
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms))
+
+const readFileFingerprint = async (filePath: string): Promise<FileFingerprint> => {
+  try {
+    const metadata = await stat(filePath)
+    return { size: metadata.size, mtimeMs: metadata.mtimeMs }
+  } catch (error) {
+    if (errorCodeOf(error) === "ENOENT") return { size: undefined, mtimeMs: undefined }
+    throw error
+  }
+}
+
+const readTimeSeriesEntriesUsingState = async (
+  repoPath: string,
+  filePath: string,
+  existingState: TimeSeriesEntriesState | undefined,
+  options?: {
+    readonly onEntriesRead?: OnEntriesRead
+  },
+): Promise<ReadonlyArray<TimeSeriesEntry>> => {
+  if (existingState === undefined) {
+    const fingerprint = await readFileFingerprint(filePath)
+    options?.onEntriesRead?.(fingerprint)
+    return readTimeSeriesEntries(repoPath, filePath)
+  }
+
+  const fingerprint = await readFileFingerprint(filePath)
+  if (
+    existingState.fingerprint.size === fingerprint.size &&
+    existingState.fingerprint.mtimeMs === fingerprint.mtimeMs
+  ) {
+    return existingState.entries
+  }
+
+  options?.onEntriesRead?.(fingerprint)
+  return readTimeSeriesEntries(repoPath, filePath)
+}
 
 const errorCodeOf = (error: unknown): string | undefined =>
   typeof error === "object" && error !== null && "code" in error
