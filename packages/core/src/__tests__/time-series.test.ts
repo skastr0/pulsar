@@ -5,6 +5,7 @@ import { dirname, join } from "node:path"
 import { Effect, Option } from "effect"
 import { categoryRecord } from "../category.js"
 import { createTimeSeriesServices, type TimeSeriesEntry } from "../time-series.js"
+import { readTimeSeriesEntriesWithState } from "../time-series-storage.js"
 
 const makeEntry = (
   sha: string,
@@ -98,6 +99,41 @@ const makeReadinessEntry = (
 }
 
 describe("time series persistence", () => {
+  test("reuses decoded entries until the exact persisted bytes change", async () => {
+    const repoPath = await mkdtemp(join(tmpdir(), "pulsar-ts-state-"))
+    try {
+      const services = createTimeSeriesServices(repoPath)
+      const firstRaw = `${JSON.stringify(
+        makeEntry("external-a", "2026-04-15T10:00:00.000Z", 0.8),
+      )}\n`
+      const secondRaw = `${JSON.stringify(
+        makeEntry("external-b", "2026-04-15T10:00:00.000Z", 0.9),
+      )}\n`
+      expect(secondRaw.length).toBe(firstRaw.length)
+
+      await mkdir(dirname(services.filePath), { recursive: true })
+      await writeFile(services.filePath, firstRaw, "utf8")
+      const first = await readTimeSeriesEntriesWithState(repoPath, services.filePath)
+      const reused = await readTimeSeriesEntriesWithState(
+        repoPath,
+        services.filePath,
+        first,
+      )
+      expect(reused).toBe(first)
+
+      await writeFile(services.filePath, secondRaw, "utf8")
+      const refreshed = await readTimeSeriesEntriesWithState(
+        repoPath,
+        services.filePath,
+        reused,
+      )
+      expect(refreshed).not.toBe(reused)
+      expect(refreshed.entries.map((entry) => entry.sha)).toEqual(["external-b"])
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
   test("writes then reads entries and keeps same-sha writes idempotent", async () => {
     const repoPath = await mkdtemp(join(tmpdir(), "pulsar-ts-series-"))
     try {

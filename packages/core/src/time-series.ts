@@ -26,7 +26,8 @@ import {
   DEFAULT_LOCK_RETRY_MS,
   DEFAULT_LOCK_TIMEOUT_MS,
   normalizeTimeSeriesError,
-  readTimeSeriesEntries,
+  readTimeSeriesEntriesWithState,
+  type TimeSeriesEntriesState,
 } from "./time-series-storage.js"
 
 const execFileAsync = promisify(execFile)
@@ -45,12 +46,22 @@ export const createTimeSeriesServices = (
   const repoId = options?.repoId ?? defaultTimeSeriesRepoId(canonicalRepoPath)
   const filePath = resolveTimeSeriesPath(canonicalRepoPath, repoId)
   const subscribers: Array<TimeSeriesEntrySubscriber> = []
+  let cachedState: TimeSeriesEntriesState | undefined
+
+  const applyReadState = async (range?: TimeSeriesRange): Promise<ReadonlyArray<TimeSeriesEntry>> => {
+    cachedState = await readTimeSeriesEntriesWithState(
+      canonicalRepoPath,
+      filePath,
+      cachedState,
+    )
+    return applyTimeRange(cachedState.entries, range)
+  }
 
   const readEntriesEffect = (range?: TimeSeriesRange) =>
     Effect.tryPromise({
       try: async () => {
-        const entries = await readTimeSeriesEntries(canonicalRepoPath, filePath)
-        return applyTimeRange(entries, range)
+        const entries = await applyReadState(range)
+        return entries
       },
       catch: (cause) =>
         normalizeTimeSeriesError(canonicalRepoPath, filePath, cause, "read"),
@@ -90,6 +101,13 @@ export const createTimeSeriesServices = (
               options?.rawRetentionDays ?? DEFAULT_TIME_SERIES_RAW_RETENTION_DAYS,
             lockTimeoutMs: options?.lockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS,
             lockRetryMs: options?.lockRetryMs ?? DEFAULT_LOCK_RETRY_MS,
+            ...(cachedState !== undefined ? { existingState: cachedState } : {}),
+            onEntriesRead: (nextState) => {
+              cachedState = nextState
+            },
+            onPersistedState: (nextState) => {
+              cachedState = nextState
+            },
           })
           if (result.status === "written") {
             for (const subscriber of subscribers) {

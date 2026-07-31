@@ -1,4 +1,4 @@
-import { appendFile, mkdir, open, readFile, rm, stat, writeFile } from "node:fs/promises"
+import { appendFile, mkdir, open, readFile, rm, writeFile } from "node:fs/promises"
 import { dirname } from "node:path"
 import { Schema } from "effect"
 import { compactTimeSeriesEntries } from "./time-series-compaction.js"
@@ -14,17 +14,12 @@ import {
   type TimeSeriesError,
 } from "./time-series-model.js"
 
-export type FileFingerprint = {
-  readonly size: number | undefined
-  readonly mtimeMs: number | undefined
-}
-
 export type TimeSeriesEntriesState = {
   readonly entries: ReadonlyArray<TimeSeriesEntry>
-  readonly fingerprint: FileFingerprint
+  readonly raw: string
 }
 
-export type OnEntriesRead = (state: FileFingerprint) => void
+export type OnEntriesRead = (state: TimeSeriesEntriesState) => void
 
 export type OnPersistedState = (state: TimeSeriesEntriesState) => void
 
@@ -50,14 +45,15 @@ export const appendTimeSeriesEntry = async (args: {
     args.lockTimeoutMs,
     args.lockRetryMs,
     async () => {
-      const existing = await readTimeSeriesEntriesUsingState(
+      const existingState = await readTimeSeriesEntriesUsingState(
         args.repoPath,
         args.filePath,
         args.existingState,
-        {
-          onEntriesRead: args.onEntriesRead,
-        },
+        args.onEntriesRead === undefined
+          ? undefined
+          : { onEntriesRead: args.onEntriesRead },
       )
+      const existing = existingState.entries
       const duplicate = existing.find(
         (entry) =>
           entry.sha === args.entry.sha ||
@@ -68,17 +64,20 @@ export const appendTimeSeriesEntry = async (args: {
       }
 
       const next = [...existing, args.entry].sort(compareTimeSeriesEntries)
-      let nextStored = next
+      let nextStored: ReadonlyArray<TimeSeriesEntry> = next
+      let nextRaw: string
       if (next.length > args.compactionThreshold) {
         const compacted = compactTimeSeriesEntries(next, args.rawRetentionDays)
         nextStored = compacted
-        await writeTimeSeriesEntries(args.filePath, compacted)
+        nextRaw = encodeTimeSeriesEntries(compacted)
+        await writeFile(args.filePath, nextRaw, "utf8")
       } else {
-        await appendFile(args.filePath, `${JSON.stringify(args.entry)}\n`, "utf8")
+        const appendedRaw = `${JSON.stringify(args.entry)}\n`
+        await appendFile(args.filePath, appendedRaw, "utf8")
+        nextRaw = existingState.raw + appendedRaw
       }
 
-      const fingerprint = await readFileFingerprint(args.filePath)
-      args.onPersistedState?.({ entries: nextStored, fingerprint })
+      args.onPersistedState?.({ entries: nextStored, raw: nextRaw })
 
       return { status: "written", entry: args.entry }
     },
@@ -88,28 +87,42 @@ export const appendTimeSeriesEntry = async (args: {
 export const readTimeSeriesEntriesWithState = async (
   repoPath: string,
   filePath: string,
+  existingState?: TimeSeriesEntriesState,
 ): Promise<TimeSeriesEntriesState> => {
-  const entries = await readTimeSeriesEntries(repoPath, filePath)
-  const fingerprint = await readFileFingerprint(filePath)
-  return { entries, fingerprint }
+  return readTimeSeriesEntriesUsingState(repoPath, filePath, existingState)
 }
 
 export const readTimeSeriesEntries = async (
   repoPath: string,
   filePath: string,
 ): Promise<ReadonlyArray<TimeSeriesEntry>> => {
+  const raw = await readTimeSeriesRaw(repoPath, filePath)
+  return decodeTimeSeriesEntries(repoPath, filePath, raw)
+}
+
+const readTimeSeriesRaw = async (
+  repoPath: string,
+  filePath: string,
+): Promise<string> => {
   let raw: string
   try {
     raw = await readFile(filePath, "utf8")
   } catch (error) {
-    if (errorCodeOf(error) === "ENOENT") return []
+    if (errorCodeOf(error) === "ENOENT") return ""
     throw new TimeSeriesReadFailed({
       repoPath,
       filePath,
       message: String(error),
     })
   }
+  return raw
+}
 
+const decodeTimeSeriesEntries = (
+  repoPath: string,
+  filePath: string,
+  raw: string,
+): ReadonlyArray<TimeSeriesEntry> => {
   const entries: Array<TimeSeriesEntry> = []
   for (const line of raw.split("\n")) {
     const trimmed = line.trim()
@@ -198,29 +211,11 @@ const withTimeSeriesLock = async <A>(
   }
 }
 
-const writeTimeSeriesEntries = async (
-  filePath: string,
-  entries: ReadonlyArray<TimeSeriesEntry>,
-): Promise<void> => {
-  await writeFile(
-    filePath,
-    entries.map((entry) => JSON.stringify(entry)).join("\n") + "\n",
-    "utf8",
-  )
-}
+const encodeTimeSeriesEntries = (entries: ReadonlyArray<TimeSeriesEntry>): string =>
+  entries.map((entry) => JSON.stringify(entry)).join("\n") + "\n"
 
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms))
-
-const readFileFingerprint = async (filePath: string): Promise<FileFingerprint> => {
-  try {
-    const metadata = await stat(filePath)
-    return { size: metadata.size, mtimeMs: metadata.mtimeMs }
-  } catch (error) {
-    if (errorCodeOf(error) === "ENOENT") return { size: undefined, mtimeMs: undefined }
-    throw error
-  }
-}
 
 const readTimeSeriesEntriesUsingState = async (
   repoPath: string,
@@ -229,23 +224,14 @@ const readTimeSeriesEntriesUsingState = async (
   options?: {
     readonly onEntriesRead?: OnEntriesRead
   },
-): Promise<ReadonlyArray<TimeSeriesEntry>> => {
-  if (existingState === undefined) {
-    const fingerprint = await readFileFingerprint(filePath)
-    options?.onEntriesRead?.(fingerprint)
-    return readTimeSeriesEntries(repoPath, filePath)
-  }
+): Promise<TimeSeriesEntriesState> => {
+  const raw = await readTimeSeriesRaw(repoPath, filePath)
+  if (existingState !== undefined && existingState.raw === raw) return existingState
 
-  const fingerprint = await readFileFingerprint(filePath)
-  if (
-    existingState.fingerprint.size === fingerprint.size &&
-    existingState.fingerprint.mtimeMs === fingerprint.mtimeMs
-  ) {
-    return existingState.entries
-  }
-
-  options?.onEntriesRead?.(fingerprint)
-  return readTimeSeriesEntries(repoPath, filePath)
+  const entries = decodeTimeSeriesEntries(repoPath, filePath, raw)
+  const nextState: TimeSeriesEntriesState = { entries, raw }
+  options?.onEntriesRead?.(nextState)
+  return nextState
 }
 
 const errorCodeOf = (error: unknown): string | undefined =>
