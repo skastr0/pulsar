@@ -1,6 +1,6 @@
 {
   "name": "@skastr0/pulsar-signal-test-support",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "type": "module",
   "description": "Shared test support for Pulsar signal contract matrices",

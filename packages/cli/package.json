@@ -1,6 +1,6 @@
 {
   "name": "@skastr0/pulsar-cli",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "type": "module",
   "description": "Pulsar CLI — pulsar score, pulsar bisect",
