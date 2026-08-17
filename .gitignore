@@ -19,3 +19,4 @@ tsconfig.tsbuildinfo
 .cmap/
 .antigravitycli/
 .idea/
+.atlas/
