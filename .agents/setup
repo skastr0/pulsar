@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly BUN_VERSION="1.3.14"
+readonly REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+
+step() {
+  printf '\n[%(%H:%M:%S)T] %s\n' -1 "$1"
+}
+
+step "Checking system prerequisites"
+packages=()
+command -v cc >/dev/null 2>&1 || packages+=(build-essential)
+command -v curl >/dev/null 2>&1 || packages+=(curl)
+command -v git >/dev/null 2>&1 || packages+=(git)
+command -v script >/dev/null 2>&1 || packages+=(util-linux)
+command -v unzip >/dev/null 2>&1 || packages+=(unzip)
+
+if (( ${#packages[@]} > 0 )); then
+  if (( EUID == 0 )); then
+    apt-get update
+    apt-get install -y --no-install-recommends "${packages[@]}"
+  else
+    sudo apt-get update
+    sudo apt-get install -y --no-install-recommends "${packages[@]}"
+  fi
+fi
+
+profile_marker="# Pulsar orb toolchain"
+if ! grep -Fqx "$profile_marker" "$HOME/.bash_profile" 2>/dev/null; then
+  cat >> "$HOME/.bash_profile" <<'EOF'
+
+# Pulsar orb toolchain
+case ":$PATH:" in
+  *":$HOME/.local/bin:"*) ;;
+  *) export PATH="$HOME/.local/bin:$PATH" ;;
+esac
+EOF
+fi
+export PATH="$HOME/.local/bin:$PATH"
+
+step "Ensuring Bun ${BUN_VERSION}"
+if ! command -v bun >/dev/null 2>&1 || [[ "$(bun --version)" != "$BUN_VERSION" ]]; then
+  export BUN_INSTALL="$HOME/.local"
+  curl -fsSL https://bun.com/install | bash -s "bun-v${BUN_VERSION}"
+  export PATH="$BUN_INSTALL/bin:$PATH"
+fi
+
+if [[ "$(bun --version)" != "$BUN_VERSION" ]]; then
+  printf 'Expected Bun %s, found %s\n' "$BUN_VERSION" "$(bun --version)" >&2
+  exit 1
+fi
+
+rust_profile_marker="# Pulsar Rust toolchain"
+if ! grep -Fqx "$rust_profile_marker" "$HOME/.bash_profile" 2>/dev/null; then
+  cat >> "$HOME/.bash_profile" <<'EOF'
+
+# Pulsar Rust toolchain
+case ":$PATH:" in
+  *":$HOME/.cargo/bin:"*) ;;
+  *) export PATH="$HOME/.cargo/bin:$PATH" ;;
+esac
+EOF
+fi
+export PATH="$HOME/.cargo/bin:$PATH"
+
+step "Ensuring the Rust toolchain for Rust signal validation"
+if ! command -v cargo >/dev/null 2>&1 || ! command -v rustc >/dev/null 2>&1; then
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+    | sh -s -- -y --profile minimal --default-toolchain stable
+fi
+
+step "Ensuring Node.js >=18 and npm for npm-package validation"
+node_major=0
+if command -v node >/dev/null 2>&1; then
+  node_major="$(node -p 'Number(process.versions.node.split(".")[0])')"
+fi
+if (( node_major < 18 )) || ! command -v npm >/dev/null 2>&1; then
+  if (( EUID == 0 )); then
+    apt-get update
+    apt-get install -y --no-install-recommends nodejs npm
+  else
+    sudo apt-get update
+    sudo apt-get install -y --no-install-recommends nodejs npm
+  fi
+fi
+
+node_major="$(node -p 'Number(process.versions.node.split(".")[0])')"
+if (( node_major < 18 )); then
+  printf 'Pulsar npm validation requires Node.js >=18; found %s\n' "$(node --version)" >&2
+  exit 1
+fi
+
+cd "$REPO_ROOT"
+
+step "Ensuring complete repository history"
+if [[ "$(git rev-parse --is-shallow-repository)" == "true" ]]; then
+  git fetch --unshallow --tags origin
+fi
+
+step "Installing locked workspace dependencies"
+bun install --frozen-lockfile
+
+step "Pulsar orb setup complete"
+printf 'Bun %s; Rust %s; Node.js %s; npm %s; Git history complete\n' \
+  "$(bun --version)" "$(rustc --version | awk '{print $2}')" \
+  "$(node --version)" "$(npm --version)"

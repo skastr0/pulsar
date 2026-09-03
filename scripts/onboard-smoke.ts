@@ -85,7 +85,7 @@ const initializeFixture = async (root: string): Promise<string> => {
     env: gitEnv,
   })
   await runChecked("fixture git add", ["git", "add", "."], { cwd: repoPath, env: gitEnv })
-  await runChecked("fixture git commit", ["git", "commit", "-qm", "fixture"], {
+  await runChecked("fixture git commit", ["git", "-c", "commit.gpgsign=false", "commit", "-qm", "fixture"], {
     cwd: repoPath,
     env: gitEnv,
   })

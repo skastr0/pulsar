@@ -1,7 +1,13 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
   "ui": "tui",
-  "globalPassThroughEnv": ["PULSAR_STATE_HOME", "XDG_CONFIG_HOME"],
+  "globalPassThroughEnv": [
+    "PULSAR_STATE_HOME",
+    "XDG_CONFIG_HOME",
+    "GIT_CONFIG_COUNT",
+    "GIT_CONFIG_KEY_0",
+    "GIT_CONFIG_VALUE_0"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

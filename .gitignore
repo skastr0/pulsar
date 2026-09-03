@@ -20,3 +20,5 @@ tsconfig.tsbuildinfo
 .antigravitycli/
 .idea/
 .atlas/
+
+.amp/portals/*

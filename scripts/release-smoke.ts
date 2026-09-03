@@ -85,7 +85,11 @@ const run = async (
 ): Promise<CommandResult> => {
   const proc = Bun.spawn(command, {
     cwd: options.cwd,
-    env: { ...process.env, ...(options.env ?? {}) },
+    env: {
+      ...process.env,
+      npm_config_update_notifier: "false",
+      ...(options.env ?? {}),
+    },
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
@@ -156,7 +160,7 @@ const initializeFixture = async (root: string): Promise<string> => {
     ["fixture git email", ["git", "config", "user.email", "pulsar@example.test"]],
     ["fixture git name", ["git", "config", "user.name", "Pulsar Fixture"]],
     ["fixture git add", ["git", "add", "."]],
-    ["fixture git commit", ["git", "commit", "-qm", "fixture"]],
+    ["fixture git commit", ["git", "-c", "commit.gpgsign=false", "commit", "-qm", "fixture"]],
   ] as const) {
     await runChecked(label, command, { cwd: repoPath, env: gitEnv })
   }
