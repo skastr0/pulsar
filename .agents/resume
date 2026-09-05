@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Authenticate only after Amp applies the current user's runtime environment.
+set +x
+set -euo pipefail
+export PATH="$HOME/.local/bin:$PATH"
+
+: "${TAILSCALE_CLIENT_ID:?Refresh the orb environment with amp orb restart-processes}"
+: "${TAILSCALE_AUDIENCE:?Refresh the orb environment with amp orb restart-processes}"
+: "${QUASAR_SERVER_URL:?Refresh the orb environment with amp orb restart-processes}"
+if [[ "$QUASAR_SERVER_URL" != https://* ]]; then
+  printf 'QUASAR_SERVER_URL must use HTTPS\n' >&2
+  exit 1
+fi
+
+# Preserve an existing connection; never restart an already-running daemon.
+sudo systemctl enable --now tailscaled
+token="$(amp orb id-token --audience "$TAILSCALE_AUDIENCE" --subject-scope project)"
+trap 'unset token' EXIT
+sudo tailscale up \
+  --client-id="${TAILSCALE_CLIENT_ID}?ephemeral=true&preauthorized=true" \
+  --id-token="$token" \
+  --advertise-tags=tag:amp-orb \
+  --hostname="amp-orb-$(hostname | cut -c1-40)" \
+  --timeout=60s
+unset token
+curl --fail --silent --show-error --proto '=https' --max-time 60 \
+  "${QUASAR_SERVER_URL%/}/health"
+printf '\nquasar: reachable over Tailscale\n'

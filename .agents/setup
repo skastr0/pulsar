@@ -101,6 +101,27 @@ fi
 step "Installing locked workspace dependencies"
 bun install --frozen-lockfile
 
+step "Ensuring Tailscale for Quasar access"
+# Install only: authentication belongs in resume, never in a shared snapshot.
+sudo install -d /etc/systemd/system/tailscaled.service.d
+sudo tee /etc/systemd/system/tailscaled.service.d/amp-orb.conf >/dev/null <<'EOF'
+[Service]
+Environment=TS_ASSUME_NETWORK_UP_FOR_TEST=true
+EOF
+if ! command -v tailscale >/dev/null 2>&1; then
+  curl -fsSL https://tailscale.com/install.sh | sh
+fi
+sudo systemctl daemon-reload
+# Starting an inactive daemon is safe; restarting an active one breaks reconnects.
+sudo systemctl enable --now tailscaled
+
+step "Ensuring published Quasar CLI 0.5.3"
+quasar_manifest="$HOME/.local/install/global/node_modules/@skastr0/quasar-cli/package.json"
+if [[ ! -x "$HOME/.local/bin/quasar" ]] ||
+   [[ "$(node -p 'try { require(process.argv[1]).version } catch { "" }' "$quasar_manifest")" != "0.5.3" ]]; then
+  BUN_INSTALL="$HOME/.local" bun add --global @skastr0/quasar-cli@0.5.3
+fi
+
 step "Pulsar orb setup complete"
 printf 'Bun %s; Rust %s; Node.js %s; npm %s; Git history complete\n' \
   "$(bun --version)" "$(rustc --version | awk '{print $2}')" \
