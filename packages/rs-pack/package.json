@@ -44,7 +44,7 @@
   "dependencies": {
     "@skastr0/pulsar-core": "0.1.5",
     "@skastr0/pulsar-shared-signals": "0.1.5",
-    "effect": "^3.0.0",
+    "effect": "4.0.0-rc.112",
     "simple-git": "^3.25.0",
     "tree-sitter-rust": "^0.24.0",
     "web-tree-sitter": "^0.25.0"
@@ -52,6 +52,6 @@
   "devDependencies": {
     "@skastr0/pulsar-signal-test-support": "workspace:*",
     "@skastr0/pulsar-ts-pack": "0.1.5",
-    "typescript": "^5.8.0"
+    "typescript": "7.0.2"
   }
 }

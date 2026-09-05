@@ -9,10 +9,10 @@ import {
 import typescriptQuizItems from "../../quiz-items/typescript.json" with { type: "json" }
 import { clampWeight } from "./proposal-utils.js"
 
-export const QuizSignalScores = Schema.Record({
-  key: Schema.String,
-  value: Schema.Number.pipe(Schema.between(0, 2)),
-})
+export const QuizSignalScores = Schema.Record(
+  Schema.String,
+  Schema.Number.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: 2 }))),
+)
 export type QuizSignalScores = typeof QuizSignalScores.Type
 
 export const QuizItem = Schema.Struct({
@@ -29,7 +29,7 @@ export const QuizItem = Schema.Struct({
 })
 export type QuizItem = typeof QuizItem.Type
 
-export const QuizAnswer = Schema.Literal("a", "b", "equal", "skip")
+export const QuizAnswer = Schema.Literals(["a", "b", "equal", "skip"])
 export type QuizAnswer = typeof QuizAnswer.Type
 
 export const QuizResponse = Schema.Struct({
@@ -90,8 +90,8 @@ export const loadQuizItems = (
 
 const decodeQuizItemFile = (parsed: unknown) =>
   Array.isArray(parsed)
-    ? Effect.forEach(parsed, (item) => Schema.decodeUnknown(QuizItem)(item))
-    : Effect.map(Schema.decodeUnknown(QuizItem)(parsed), (item) => [item])
+    ? Effect.forEach(parsed, (item) => Schema.decodeUnknownEffect(QuizItem)(item))
+    : Effect.map(Schema.decodeUnknownEffect(QuizItem)(parsed), (item) => [item])
 
 export const accumulateQuizInference = (
   items: ReadonlyArray<QuizItem>,
@@ -224,7 +224,9 @@ export const inferPulsarVectorFromQuiz = (input: {
 
 export const decodeQuizSession = (value: unknown): Effect.Effect<QuizSession, Error, never> =>
   Effect.gen(function* () {
-    const decoded = yield* Schema.decodeUnknown(QuizSession)(value).pipe(Effect.mapError(asError))
+    const decoded = yield* Schema.decodeUnknownEffect(QuizSession)(value).pipe(
+      Effect.mapError(asError),
+    )
     const baseVector = yield* decodePulsarVector(decoded.base_vector).pipe(Effect.mapError(asError))
     return {
       ...decoded,

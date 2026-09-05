@@ -14,12 +14,12 @@ import { DEFAULT_RUST_EXCLUDE_GLOBS } from "./shared-rust-ast.js"
 import { isExcluded, normalizePath } from "./shared-globs.js"
 import { parseRustFile, walkRustTree } from "../syn-walker.js"
 
-const RsDe03Config = Schema.Struct({
+export const RsDe03Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   warn_feature_count: Schema.Number,
   top_n_diagnostics: Schema.Number,
 })
-type RsDe03Config = typeof RsDe03Config.Type
+export type RsDe03Config = typeof RsDe03Config.Type
 
 interface FeaturePropagation {
   readonly crate: string

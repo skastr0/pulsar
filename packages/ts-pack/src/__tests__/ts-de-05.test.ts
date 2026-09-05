@@ -8,7 +8,7 @@ import {
   makeResolvedCalibrationContext,
 } from "@skastr0/pulsar-core/calibration"
 import { TS_PACK_SIGNALS } from "../pack.js"
-import { TsDe05 } from "../signals/ts-de-05-duplicate-versions.js"
+import { TsDe05, TsDe05Config } from "../signals/ts-de-05-duplicate-versions.js"
 import { createTempRepo, type TempRepo } from "./test-repo.js"
 
 let repo: TempRepo
@@ -89,7 +89,7 @@ describe("TS-DE-05 (duplicate dependency versions)", () => {
   })
 
   test("configSchema decodes defaults round-trip", () => {
-    const decoded = Schema.decodeUnknownSync(TsDe05.configSchema)(TsDe05.defaultConfig)
+    const decoded = Schema.decodeSync(TsDe05Config)(TsDe05.defaultConfig)
 
     expect(decoded.top_n_diagnostics).toBe(10)
   })

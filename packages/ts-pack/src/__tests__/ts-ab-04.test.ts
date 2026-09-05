@@ -4,7 +4,7 @@ import { Effect, Schema } from "effect"
 import { discoverPackages } from "../discovery.js"
 import { TS_PACK_SIGNALS } from "../pack.js"
 import { computeInterfaceImplementationRatio } from "../signals/ts-ab-04-analysis.js"
-import { TsAb04 } from "../signals/ts-ab-04-interface-impl-ratio.js"
+import { TsAb04, TsAb04Config } from "../signals/ts-ab-04-interface-impl-ratio.js"
 import { makeTsProject } from "../ts-project.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
 
@@ -1292,7 +1292,7 @@ describe("TS-AB-04 (interface to implementation ratio)", () => {
   })
 
   test("config schema decodes the default contract", () => {
-    const decoded = Schema.decodeUnknownSync(TsAb04.configSchema)(TsAb04.defaultConfig)
+    const decoded = Schema.decodeSync(TsAb04Config)(TsAb04.defaultConfig)
 
     expect(decoded.exclude_globs).toContain("**/node_modules/**")
     expect(decoded.test_globs).toContain("**/*.test.ts")

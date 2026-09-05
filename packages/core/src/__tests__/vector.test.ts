@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { Effect, Exit, Schema } from "effect"
+import { Effect, Exit, Option, Schema } from "effect"
 import { buildRegistry } from "../registry.js"
 import type { Signal } from "../signal.js"
 import {
@@ -161,8 +161,8 @@ describe("PulsarVector", () => {
     const exit = await Effect.runPromiseExit(validateVectorAgainstRegistry(vector, registry))
     expect(Exit.isFailure(exit)).toBe(true)
     if (Exit.isFailure(exit)) {
-      const err = exit.cause._tag === "Fail" ? exit.cause.error : null
-      expect((err as any)?._tag).toBe("UnknownSignalIdError")
+      const err = Option.getOrNull(Exit.findErrorOption(exit))
+      expect(err?._tag).toBe("UnknownSignalIdError")
     }
   })
 
@@ -190,10 +190,12 @@ describe("PulsarVector", () => {
     const exit = await Effect.runPromiseExit(validateVectorAgainstRegistry(vector, registry))
     expect(Exit.isFailure(exit)).toBe(true)
     if (Exit.isFailure(exit)) {
-      const err = exit.cause._tag === "Fail" ? exit.cause.error : null
-      expect((err as any)?._tag).toBe("UnknownSignalFactorError")
-      expect((err as any)?.signalId).toBe("MOCK-01")
-      expect((err as any)?.factorPath).toBe("thresholds.missing")
+      const err = Option.getOrNull(Exit.findErrorOption(exit))
+      expect(err?._tag).toBe("UnknownSignalFactorError")
+      if (err?._tag === "UnknownSignalFactorError") {
+        expect(err.signalId).toBe("MOCK-01")
+        expect(err.factorPath).toBe("thresholds.missing")
+      }
     }
   })
 

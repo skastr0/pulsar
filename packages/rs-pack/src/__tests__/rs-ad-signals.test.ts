@@ -18,13 +18,14 @@ import {
 } from "../project.js"
 import {
   RsAd01,
+  RsAd01Config,
   type RsAd01Output,
 } from "../signals/rs-ad-01-visibility-surface.js"
 import {
   RsAd02,
 } from "../signals/rs-ad-02-crate-boundaries.js"
-import type { RsAd02Output } from "../signals/rs-ad-02-types.js"
-import { RsAd03 } from "../signals/rs-ad-03-circular-crate-deps.js"
+import { RsAd02Config, type RsAd02Output } from "../signals/rs-ad-02-types.js"
+import { RsAd03, RsAd03Config } from "../signals/rs-ad-03-circular-crate-deps.js"
 import {
   cleanupWorkspace,
   createRustWorkspace,
@@ -446,7 +447,7 @@ describe("RS-AD-* signals", () => {
   test("RS-AD-01 declares identity, config, cache, pack registration, and factor ledger", async () => {
     const registry = await Effect.runPromise(buildRegistry([...SHARED_SIGNALS, ...RS_PACK_SIGNALS]))
     const registered = registry.byId.get("RS-AD-01")
-    const decoded = Schema.decodeUnknownSync(RsAd01.configSchema)(RsAd01.defaultConfig)
+    const decoded = Schema.decodeSync(RsAd01Config)(RsAd01.defaultConfig)
     const factorLedger = registered?.factorLedger?.({} as RsAd01Output)
 
     expect(RsAd01).toMatchObject({
@@ -649,7 +650,7 @@ describe("RS-AD-* signals", () => {
       ),
     ]))
     const registered = registry.byId.get("RS-AD-02")
-    const decoded = Schema.decodeUnknownSync(RsAd02.configSchema)(RsAd02.defaultConfig)
+    const decoded = Schema.decodeSync(RsAd02Config)(RsAd02.defaultConfig)
     const factorLedger = registered?.factorLedger?.({} as RsAd02Output)
     const baseCacheHash = computeConfigHash(RsAd02.id, registry, undefined)
     const versionedCacheHash = computeConfigHash(RsAd02.id, versionedRegistry, undefined)
@@ -1044,7 +1045,7 @@ describe("RS-AD-* signals", () => {
       ),
     ]))
     const registered = registry.byId.get("RS-AD-03")
-    const decoded = Schema.decodeUnknownSync(RsAd03.configSchema)(RsAd03.defaultConfig)
+    const decoded = Schema.decodeSync(RsAd03Config)(RsAd03.defaultConfig)
     const factorLedger = registered?.factorLedger?.({ cycles: [] })
     const baseCacheHash = computeConfigHash(RsAd03.id, registry, undefined)
     const versionedCacheHash = computeConfigHash(RsAd03.id, versionedRegistry, undefined)

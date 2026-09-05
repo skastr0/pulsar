@@ -12,7 +12,7 @@ import {
   type ResolvedCalibrationContext,
 } from "@skastr0/pulsar-core/calibration"
 import { TS_PACK_SIGNALS } from "../pack.js"
-import { TsDe01 } from "../signals/ts-de-01-type-level-coupling.js"
+import { TsDe01, TsDe01Config } from "../signals/ts-de-01-type-level-coupling.js"
 import type { TsDe01Output } from "../signals/ts-de-01-coupling-output.js"
 import { TsProjectLayer } from "../ts-project.js"
 import { makePulsarSelfCalibrationContext } from "./pulsar-self-calibration.js"
@@ -795,7 +795,7 @@ describe("TS-DE-01 (type-level coupling)", () => {
   })
 
   test("configSchema decodes defaults round-trip", () => {
-    const decoded = Schema.decodeUnknownSync(TsDe01.configSchema)(TsDe01.defaultConfig)
+    const decoded = Schema.decodeSync(TsDe01Config)(TsDe01.defaultConfig)
     expect(decoded.top_n_diagnostics).toBe(10)
     expect(decoded.precise_module_limit).toBe(1_000)
     expect(decoded.exclude_globs.length).toBeGreaterThan(0)

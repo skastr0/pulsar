@@ -96,10 +96,11 @@ const makeCalibrationResolver = (
     const factory = options?.calibrationContextForWorktree
     if (factory === undefined) return options?.calibrationContext
     const resolved = yield* factory(worktreePath).pipe(
-      Effect.orDieWith(
+      Effect.mapError(
         (cause) =>
           new Error(`Failed to resolve calibration context for ${worktreePath}: ${String(cause)}`),
       ),
+      Effect.orDie,
     )
     return resolved
   })

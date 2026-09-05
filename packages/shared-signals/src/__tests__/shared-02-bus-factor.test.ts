@@ -7,7 +7,11 @@ import { SignalContextTag, summarize } from "@skastr0/pulsar-core/signal"
 import { buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { Effect, Layer, Schema } from "effect"
 import { SHARED_SIGNALS } from "../pack.js"
-import { Shared02BusFactor, type Shared02BusFactorOutput } from "../index.js"
+import {
+  Shared02BusFactor,
+  Shared02BusFactorConfig,
+  type Shared02BusFactorOutput,
+} from "../index.js"
 
 interface CommitOptions {
   readonly message: string
@@ -100,7 +104,7 @@ describe("SHARED-02 bus factor", () => {
     expect(packRegistered).toBeDefined()
     const registry = await Effect.runPromise(buildRegistry([packRegistered!]))
     const registered = registry.byId.get("SHARED-02")
-    const decoded = Schema.decodeUnknownSync(Shared02BusFactor.configSchema)(
+    const decoded = Schema.decodeSync(Shared02BusFactorConfig)(
       Shared02BusFactor.defaultConfig,
     )
     const factorLedger = registered?.factorLedger?.({} as Shared02BusFactorOutput)

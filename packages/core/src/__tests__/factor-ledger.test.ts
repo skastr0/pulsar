@@ -274,7 +274,7 @@ const makeConfigSignal = (options: {
     tier: 1,
     category: "generated-slop",
     kind: "structural",
-    configSchema: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
+    configSchema: Schema.Record(Schema.String, Schema.Unknown),
     defaultConfig: options.defaultConfig,
     inputs: [],
     compute: () => Effect.succeed({ count: 1 }),

@@ -11,6 +11,7 @@ import { Effect, Layer, Schema } from "effect"
 import { SHARED_SIGNALS } from "../pack.js"
 import {
   SharedCov01CoverageFacts,
+  SharedCov01CoverageFactsConfig,
   type SharedCov01CoverageFactsOutput,
 } from "../shared-cov-01-coverage-facts.js"
 
@@ -28,7 +29,7 @@ describe("SHARED-COV-01 coverage facts", () => {
   test("declares identity, config, cache, pack registration, and factor ledger", async () => {
     const registry = await Effect.runPromise(buildRegistry(SHARED_SIGNALS))
     const registered = registry.byId.get("SHARED-COV-01")
-    const decoded = Schema.decodeUnknownSync(SharedCov01CoverageFacts.configSchema)(
+    const decoded = Schema.decodeSync(SharedCov01CoverageFactsConfig)(
       SharedCov01CoverageFacts.defaultConfig,
     )
     const factorLedger = registered?.factorLedger?.({} as SharedCov01CoverageFactsOutput)

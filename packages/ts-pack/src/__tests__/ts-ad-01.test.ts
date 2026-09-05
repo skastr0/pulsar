@@ -5,7 +5,7 @@ import type { ObserverOutput } from "@skastr0/pulsar-core/observer"
 import { buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { Effect, Layer, Schema } from "effect"
 import { TS_PACK_SIGNALS } from "../pack.js"
-import { TsAd01 } from "../signals/ts-ad-01-boundary-violations.js"
+import { TsAd01, TsAd01Config } from "../signals/ts-ad-01-boundary-violations.js"
 import { TsProjectLayer } from "../ts-project.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
 
@@ -367,7 +367,7 @@ describe("TS-AD-01 (module boundary violations)", () => {
   })
 
   test("configSchema decodes defaults round-trip", () => {
-    const decoded = Schema.decodeUnknownSync(TsAd01.configSchema)(TsAd01.defaultConfig)
+    const decoded = Schema.decodeSync(TsAd01Config)(TsAd01.defaultConfig)
 
     expect(decoded.top_n_diagnostics).toBe(20)
     expect(decoded.exclude_globs).toContain("**/*.test.ts")

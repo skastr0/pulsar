@@ -14,12 +14,12 @@ import { makeDefaultSignalFactorLedger } from "./shared-factor-ledger.js"
 import type { SharedChurn01Output } from "@skastr0/pulsar-shared-signals"
 import { Effect, Schema } from "effect"
 
-const RsRp01Config = Schema.Struct({
+export const RsRp01Config = Schema.Struct({
   top_n: Schema.Number,
   min_churn: Schema.Number,
   min_complexity: Schema.Number,
 })
-type RsRp01Config = typeof RsRp01Config.Type
+export type RsRp01Config = typeof RsRp01Config.Type
 
 type RustQuadrant = "top-right" | "top-left" | "bottom-right" | "bottom-left"
 

@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { Effect, Schema } from "effect"
 import { TS_PACK_SIGNALS } from "../pack.js"
-import { TsAb05 } from "../signals/ts-ab-05-generic-proliferation.js"
+import { TsAb05, TsAb05Config } from "../signals/ts-ab-05-generic-proliferation.js"
 import { TsProjectLayer } from "../ts-project.js"
 
 let repo: string
@@ -400,7 +400,7 @@ describe("TS-AB-05 (generic parameter proliferation)", () => {
   })
 
   test("configSchema decodes defaults round-trip", () => {
-    const decoded = Schema.decodeUnknownSync(TsAb05.configSchema)(TsAb05.defaultConfig)
+    const decoded = Schema.decodeSync(TsAb05Config)(TsAb05.defaultConfig)
     expect(decoded.exclude_globs).toContain("**/node_modules/**")
     expect(decoded.exclude_globs).toContain("**/*.test.ts")
     expect(decoded.max_generic_parameters).toBe(3)

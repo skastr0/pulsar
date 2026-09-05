@@ -64,13 +64,13 @@ export const collectWorktreeChangedHunks = Effect.fn(
     ].sort((left, right) => left.localeCompare(right)),
     (file) =>
       Effect.gen(function* () {
-        const content = yield* Effect.either(
+        const content = yield* Effect.result(
           Effect.tryPromise({
             try: () => readFile(join(repoPath, file), "utf8"),
             catch: (cause) => cause,
           }),
         )
-        if (content._tag === "Left") {
+        if (content._tag === "Failure") {
           return undefined
         }
         return {
@@ -78,7 +78,7 @@ export const collectWorktreeChangedHunks = Effect.fn(
           oldStart: 0,
           oldLines: 0,
           newStart: 1,
-          newLines: countTextLines(content.right),
+          newLines: countTextLines(content.success),
         } satisfies ChangedHunk
       }),
     { concurrency: 8 },

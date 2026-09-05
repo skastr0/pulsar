@@ -15,15 +15,15 @@ export const canUseCurrentWorktreeForCommit = (
   sha: string,
 ): Effect.Effect<boolean> =>
   Effect.gen(function* () {
-    const head = yield* Effect.either(
+    const head = yield* Effect.result(
       runGit(repoPath, ["rev-parse", "HEAD"], {
         onFail: (message) => new Error(message),
       }),
     )
-    if (head._tag === "Left") return false
-    if (head.right.trim() !== sha) return false
+    if (head._tag === "Failure") return false
+    if (head.success.trim() !== sha) return false
 
-    const status = yield* Effect.either(
+    const status = yield* Effect.result(
       runGit(
         repoPath,
         [
@@ -39,8 +39,8 @@ export const canUseCurrentWorktreeForCommit = (
         },
       ),
     )
-    if (status._tag === "Left") return false
-    return status.right.trim().length === 0
+    if (status._tag === "Failure") return false
+    return status.success.trim().length === 0
   })
 
 /**
@@ -105,21 +105,21 @@ export const acquireWorktree = (
       Effect.gen(function* () {
         // Release must not fail loudly — swallow so interruption still
         // finalizes. We log a warning on remove failure.
-        const removed = yield* Effect.either(
+        const removed = yield* Effect.result(
           runGit(repoPath, ["worktree", "remove", "--force", dir], {
             onFail: (msg) =>
               new WorktreeRemoveFailed({ worktreePath: dir, message: msg }),
           }),
         )
-        if (removed._tag === "Left") {
+        if (removed._tag === "Failure") {
           yield* Effect.logWarning(
-            `worktree remove failed for ${dir}: ${removed.left.message}`,
+            `worktree remove failed for ${dir}: ${removed.failure.message}`,
           )
           // Best-effort filesystem cleanup when `git worktree remove` fails
           // (e.g. the worktree directory is gone already).
           yield* Effect.promise(() => rm(dir, { recursive: true, force: true }))
         }
-        yield* Effect.either(
+        yield* Effect.result(
           runGit(repoPath, ["worktree", "prune"], {
             onFail: (msg) =>
               new WorktreeRemoveFailed({

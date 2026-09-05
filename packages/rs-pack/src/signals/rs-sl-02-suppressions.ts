@@ -21,11 +21,11 @@ import {
 } from "./shared-rust-ast.js"
 import { isExcluded } from "./shared-globs.js"
 
-const RsSl02Config = Schema.Struct({
+export const RsSl02Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   top_n_diagnostics: Schema.Number,
 })
-type RsSl02Config = typeof RsSl02Config.Type
+export type RsSl02Config = typeof RsSl02Config.Type
 
 interface RustSuppression {
   readonly file: string

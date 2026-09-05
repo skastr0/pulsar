@@ -22,13 +22,13 @@ import {
 import { rustAnalysisOutputMetadata } from "./shared-applicability.js"
 import { isExcluded } from "./shared-globs.js"
 
-const RsAb04Config = Schema.Struct({
+export const RsAb04Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   max_custom_derives: Schema.Number,
   max_derive_count: Schema.Number,
   top_n_diagnostics: Schema.Number,
 })
-type RsAb04Config = typeof RsAb04Config.Type
+export type RsAb04Config = typeof RsAb04Config.Type
 
 interface DeriveDensityEntry {
   readonly file: string

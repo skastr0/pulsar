@@ -7,7 +7,7 @@ import {
   weightedBoundaryCoverage,
 } from "./ts-ld-06-coverage.js"
 
-const TsLd06Config = Schema.Struct({
+export const TsLd06Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   top_n_diagnostics: Schema.Number,
 })

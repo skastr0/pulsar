@@ -13,7 +13,7 @@ import {
   analyzeInconsistentClones,
 } from "./ts-sl-02-analysis.js"
 
-const TsSl02Config = Schema.Struct({
+export const TsSl02Config = Schema.Struct({
   divergence_threshold: Schema.Number,
   min_window_days: Schema.Number,
   top_n_diagnostics: Schema.Number,

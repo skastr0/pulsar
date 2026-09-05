@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Schema } from "effect"
 import { TS_PACK_SIGNALS } from "../pack.js"
-import { TsAd04 } from "../signals/ts-ad-04-boundary-parser-coverage.js"
+import { TsAd04, TsAd04Config } from "../signals/ts-ad-04-boundary-parser-coverage.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
 
 let repo: TempRepo
@@ -21,7 +21,7 @@ const run = async (
 
 describe("TS-AD-04 (boundary parser coverage)", () => {
   test("configSchema decodes defaults round-trip", () => {
-    const decoded = Schema.decodeUnknownSync(TsAd04.configSchema)(TsAd04.defaultConfig)
+    const decoded = Schema.decodeSync(TsAd04Config)(TsAd04.defaultConfig)
 
     expect(decoded.boundary_globs).toContain("**/api/*.ts")
     expect(decoded.boundary_globs).toContain("**/src/cli/*.ts")

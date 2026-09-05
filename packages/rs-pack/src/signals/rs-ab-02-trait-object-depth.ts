@@ -20,13 +20,13 @@ import {
 import { rustAnalysisOutputMetadata } from "./shared-applicability.js"
 import { isExcluded } from "./shared-globs.js"
 
-const RsAb02Config = Schema.Struct({
+export const RsAb02Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   max_chain_depth: Schema.Number,
   min_function_evidence: Schema.Number,
   top_n_diagnostics: Schema.Number,
 })
-type RsAb02Config = typeof RsAb02Config.Type
+export type RsAb02Config = typeof RsAb02Config.Type
 
 type TraitOrigin = "local" | "external"
 

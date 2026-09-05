@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, test } from "bun:test"
-import { Effect, Exit } from "effect"
+import { Effect, Exit, Option } from "effect"
 import {
   addPolicyTag,
   addSourceCategory,
@@ -25,6 +25,7 @@ import {
   tuneFactorPolicy,
   tuneTypeScriptUnfinishedImplementation,
 } from "../index.js"
+import { collectProjectModuleSourceFiles } from "../loader-source-files.js"
 
 const repoFacts: RepoFacts = {
   repoRoot: "/repo",
@@ -1348,6 +1349,78 @@ describe("project module sdk", () => {
     }
   })
 
+  test("collects the legacy preProcessFile import forms used for source fingerprints", async () => {
+    const repoRoot = await mkdtemp(join(tmpdir(), "pulsar-project-module-imports-"))
+    try {
+      const target = join(repoRoot, "module.ts")
+      const dependencyNames = [
+        "reference.ts",
+        "static.ts",
+        "exported.ts",
+        "dynamic.ts",
+        "required.ts",
+        "equals.ts",
+        "amd.ts",
+        "nested.ts",
+        "block.ts",
+        "object.ts",
+        "property-required.ts",
+        "property-amd.ts",
+        "escaped.ts",
+        "ignored.ts",
+      ] as const
+      await Promise.all(
+        dependencyNames.map((name) => writeFile(join(repoRoot, name), "", "utf8")),
+      )
+      await writeFile(
+        target,
+        [
+          '/// <reference path="./reference.ts" />',
+          'import "./static.ts"',
+          'export { value } from "./exported.ts"',
+          'void import(`./dynamic.ts`)',
+          'const required = require(`./required.ts`)',
+          'import equals = require("./equals.ts")',
+          'define(["./amd.ts"], () => {})',
+          'const nested = `${import("./nested.ts")}`',
+          'function load() { return import("./block.ts") }',
+          'const dependencies = { object: require("./object.ts") }',
+          'module.require("./property-required.ts")',
+          'loader.define(["./property-amd.ts"], () => {})',
+          'void import(".\\u002fescaped.ts")',
+          'const ignored = `import("./ignored.ts")`',
+          '// require("./ignored.ts")',
+          '// <reference path="./ignored.ts" />',
+        ].join("\n"),
+        "utf8",
+      )
+
+      const files = await Effect.runPromise(
+        collectProjectModuleSourceFiles(
+          {
+            id: "scanner-contract",
+            kind: "repo-local",
+            path: "module.ts",
+            enabled: true,
+          },
+          target,
+          repoRoot,
+          (path) => path,
+        ),
+      )
+      const paths = new Set(files.map((file) => file.path))
+
+      expect(paths).toEqual(new Set([
+        target,
+        ...dependencyNames
+          .filter((name) => name !== "ignored.ts")
+          .map((name) => join(repoRoot, name)),
+      ]))
+    } finally {
+      await rm(repoRoot, { recursive: true, force: true })
+    }
+  })
+
   test("loads package project modules relative to the target repo root", async () => {
     const repoRoot = await mkdtemp(join(tmpdir(), "pulsar-project-module-"))
     try {
@@ -1658,9 +1731,9 @@ describe("project module sdk", () => {
 
       expect(Exit.isFailure(exit)).toBe(true)
       if (Exit.isFailure(exit)) {
-        const err = exit.cause._tag === "Fail" ? exit.cause.error : null
-        expect((err as { _tag?: string } | null)?._tag).toBe("ProjectModuleLoadError")
-        expect((err as { message?: string } | null)?.message).toContain(
+        const err = Option.getOrNull(Exit.findErrorOption(exit))
+        expect(err?._tag).toBe("ProjectModuleLoadError")
+        expect(err?.message).toContain(
           "repository package graph",
         )
       }
@@ -1716,9 +1789,9 @@ describe("project module sdk", () => {
 
       expect(Exit.isFailure(exit)).toBe(true)
       if (Exit.isFailure(exit)) {
-        const err = exit.cause._tag === "Fail" ? exit.cause.error : null
-        expect((err as { _tag?: string } | null)?._tag).toBe("ProjectModuleLoadError")
-        expect((err as { message?: string } | null)?.message).toContain(
+        const err = Option.getOrNull(Exit.findErrorOption(exit))
+        expect(err?._tag).toBe("ProjectModuleLoadError")
+        expect(err?.message).toContain(
           "inside the repository root",
         )
       }
@@ -1755,9 +1828,9 @@ describe("project module sdk", () => {
 
       expect(Exit.isFailure(exit)).toBe(true)
       if (Exit.isFailure(exit)) {
-        const err = exit.cause._tag === "Fail" ? exit.cause.error : null
-        expect((err as { _tag?: string } | null)?._tag).toBe("ProjectModuleLoadError")
-        expect((err as { message?: string } | null)?.message).toContain(
+        const err = Option.getOrNull(Exit.findErrorOption(exit))
+        expect(err?._tag).toBe("ProjectModuleLoadError")
+        expect(err?.message).toContain(
           "outside the repository root",
         )
       }
@@ -1788,10 +1861,10 @@ describe("project module sdk", () => {
 
       expect(Exit.isFailure(exit)).toBe(true)
       if (Exit.isFailure(exit)) {
-        const err = exit.cause._tag === "Fail" ? exit.cause.error : null
-        expect((err as { _tag?: string } | null)?._tag).toBe("ProjectModuleLoadError")
-        expect((err as { refId?: string } | null)?.refId).toBe("data-ref")
-        expect((err as { message?: string } | null)?.message).toContain(
+        const err = Option.getOrNull(Exit.findErrorOption(exit))
+        expect(err?._tag).toBe("ProjectModuleLoadError")
+        expect(err?.refId).toBe("data-ref")
+        expect(err?.message).toContain(
           "not a valid package name",
         )
       }
@@ -1823,8 +1896,8 @@ describe("project module sdk", () => {
 
       expect(Exit.isFailure(exit)).toBe(true)
       if (Exit.isFailure(exit)) {
-        const err = exit.cause._tag === "Fail" ? exit.cause.error : null
-        expect((err as { _tag?: string } | null)?._tag).toBe("ProjectModuleLoadError")
+        const err = Option.getOrNull(Exit.findErrorOption(exit))
+        expect(err?._tag).toBe("ProjectModuleLoadError")
       }
     } finally {
       await rm(repoRoot, { recursive: true, force: true })

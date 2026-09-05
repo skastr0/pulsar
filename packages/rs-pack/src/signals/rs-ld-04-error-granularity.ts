@@ -22,11 +22,11 @@ import { rustAnalysisOutputMetadata } from "./shared-applicability.js"
 import { isExcluded } from "./shared-globs.js"
 import { collectActiveRustFunctionKeys, rustFunctionKey } from "./shared-rust-function-keys.js"
 
-const RsLd04Config = Schema.Struct({
+export const RsLd04Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   top_n_diagnostics: Schema.Number,
 })
-type RsLd04Config = typeof RsLd04Config.Type
+export type RsLd04Config = typeof RsLd04Config.Type
 
 interface BoundaryErrorSurface {
   readonly file: string

@@ -4,6 +4,7 @@ import { Effect, Schema } from "effect"
 import { TS_PACK_SIGNALS } from "../pack.js"
 import {
   TsLd08,
+  TsLd08Config,
   type TsLd08Output,
 } from "../signals/ts-ld-08-exhaustiveness-erosion.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
@@ -79,7 +80,7 @@ describe("TS-LD-08 (exhaustiveness erosion)", () => {
     expect(packRegistered).toBeDefined()
     const registry = await Effect.runPromise(buildRegistry([packRegistered!]))
     const registered = registry.byId.get("TS-LD-08")
-    const decoded = Schema.decodeUnknownSync(TsLd08.configSchema)(TsLd08.defaultConfig)
+    const decoded = Schema.decodeSync(TsLd08Config)(TsLd08.defaultConfig)
     const out = await run()
     const factorLedger = registered?.factorLedger?.(out)
 

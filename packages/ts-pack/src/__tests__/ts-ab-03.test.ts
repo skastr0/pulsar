@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { Effect, Schema } from "effect"
 import { buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { TS_PACK_SIGNALS } from "../pack.js"
-import { TsAb03 } from "../signals/ts-ab-03-type-indirection-depth.js"
+import { TsAb03, TsAb03Config } from "../signals/ts-ab-03-type-indirection-depth.js"
 import { TsProjectLayer } from "../ts-project.js"
 
 let repo: string
@@ -439,7 +439,7 @@ describe("TS-AB-03 (type indirection depth)", () => {
   })
 
   test("configSchema decodes defaults round-trip", () => {
-    const decoded = Schema.decodeUnknownSync(TsAb03.configSchema)(TsAb03.defaultConfig)
+    const decoded = Schema.decodeSync(TsAb03Config)(TsAb03.defaultConfig)
     expect(decoded.exclude_globs).toContain("**/node_modules/**")
     expect(decoded.max_depth).toBe(4)
     expect(decoded.max_traversal_steps).toBe(16)

@@ -78,7 +78,7 @@ const runScore = async (commandArgs: ReadonlyArray<string>): Promise<number> => 
   const exitCode = await runWithProgress("score", commandArgs, () =>
     runCliEffect(
       runScoreCommand(scoreOptions).pipe(
-        Effect.catchAll((err) =>
+        Effect.catch((err) =>
           Effect.sync(() => {
             console.error(`pulsar score failed: ${formatCliError(err)}`)
             return 1
@@ -114,7 +114,7 @@ const runBaseline = async (commandArgs: ReadonlyArray<string>): Promise<number> 
   const exitCode = await runWithProgress("baseline", commandArgs, () =>
     runCliEffect(
       runBaselineCommand(baselineOptions).pipe(
-        Effect.catchAll((err) =>
+        Effect.catch((err) =>
           Effect.sync(() => {
             console.error(`pulsar baseline failed: ${formatCliError(err)}`)
             return 1
@@ -146,7 +146,7 @@ const runCoverage = async (commandArgs: ReadonlyArray<string>): Promise<number> 
         reportPath,
         ...(format !== undefined ? { format } : {}),
       }).pipe(
-        Effect.catchAll((err) =>
+        Effect.catch((err) =>
           Effect.sync(() => {
             console.error(`pulsar coverage failed: ${formatCliError(err)}`)
             return 1
@@ -181,7 +181,7 @@ const runBackpressure = async (commandArgs: ReadonlyArray<string>): Promise<numb
         ...(commandArgs.includes("--trend") ? { trend: true } : {}),
         ...(commandArgs.includes("--json") ? { json: true } : {}),
       }).pipe(
-        Effect.catchAll((err) =>
+        Effect.catch((err) =>
           Effect.sync(() => {
             console.error(`pulsar backpressure failed: ${formatCliError(err)}`)
             return 1
@@ -253,7 +253,7 @@ const runBisect = async (commandArgs: ReadonlyArray<string>): Promise<number> =>
         json: commandArgs.includes("--json"),
       }).pipe(
         Effect.as(0),
-        Effect.catchAll((err) =>
+        Effect.catch((err) =>
           Effect.sync(() => {
             console.error(`pulsar bisect failed: ${formatCliError(err)}`)
             return 1

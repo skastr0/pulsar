@@ -371,7 +371,7 @@ export const compileOnboardPlan = async (
         }
         const candidate = { ...(defaults as Record<string, unknown>), [action.key]: action.value }
         try {
-          Schema.decodeUnknownSync(signal.configSchema)(candidate)
+          Schema.asserts(signal.configSchema, candidate)
         } catch (cause) {
           throw new Error(`Invalid ${choice.signalId}.config.${action.key}: ${String(cause)}`)
         }
@@ -459,7 +459,7 @@ const observeCurrentOnboardWorktree = async (repoPath: string): Promise<Observat
 export const scanCurrentOnboardRepo = async (repoPath: string): Promise<OnboardScanResult> =>
   scanResultOf(await observeCurrentOnboardWorktree(repoPath))
 
-type Observation = Effect.Effect.Success<ReturnType<typeof observeWorktree>>
+type Observation = Effect.Success<ReturnType<typeof observeWorktree>>
 
 export const scanResultOf = (run: Observation): OnboardScanResult => {
   const output = run.result

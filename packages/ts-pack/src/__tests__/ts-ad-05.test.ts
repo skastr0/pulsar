@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { Effect, Schema } from "effect"
 import { TS_PACK_SIGNALS } from "../pack.js"
-import { TsAd05 } from "../signals/ts-ad-05-boundary-trust-breach.js"
+import { TsAd05, TsAd05Config } from "../signals/ts-ad-05-boundary-trust-breach.js"
 import { TsAd04, type TsAd04Output } from "../signals/ts-ad-04-boundary-parser-coverage.js"
 import type { TsLd07Output } from "../signals/ts-ld-07-unsafe-type-erosion.js"
 
@@ -48,7 +48,7 @@ describe("TS-AD-05 (boundary trust breach)", () => {
   })
 
   test("configSchema decodes defaults round-trip", () => {
-    const decoded = Schema.decodeUnknownSync(TsAd05.configSchema)(TsAd05.defaultConfig)
+    const decoded = Schema.decodeSync(TsAd05Config)(TsAd05.defaultConfig)
 
     expect(decoded.top_n_diagnostics).toBe(10)
     expect(decoded.warn_threshold).toBe(0.35)

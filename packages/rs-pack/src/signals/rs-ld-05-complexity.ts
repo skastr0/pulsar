@@ -16,12 +16,12 @@ import { rustAnalysisOutputMetadata } from "./shared-applicability.js"
 import { isExcluded } from "./shared-globs.js"
 import { collectActiveRustFunctionKeys, rustFunctionKey } from "./shared-rust-function-keys.js"
 
-const RsLd05Config = Schema.Struct({
+export const RsLd05Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   max_complexity: Schema.Number,
   top_n_diagnostics: Schema.Number,
 })
-type RsLd05Config = typeof RsLd05Config.Type
+export type RsLd05Config = typeof RsLd05Config.Type
 
 interface RustFunctionComplexity {
   readonly file: string

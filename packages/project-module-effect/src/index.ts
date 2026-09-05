@@ -110,7 +110,7 @@ export const effectProjectModule = defineProjectModule({
       slot: "typescript.callback-context-namer",
       role: "enricher",
       priority: 20,
-      fingerprint: "effect-callback-context-names-v1",
+      fingerprint: "effect-callback-context-names-v2",
       process: (current, _context, runtime) =>
         Effect.sync(() => {
           const resolvedName = resolveEffectCallbackContextName(current.value)
@@ -263,10 +263,16 @@ const effectCallbackContextEvidence = (
   return evidence
 }
 
+// Analyzed API-pattern vocabulary. `Effect.async` and `Layer.scoped` are v3-era
+// names retained deliberately: the classifier matches source text in analyzed
+// repos, which may still target Effect v3. Their v4 successors are recognized
+// too — `Effect.callback` (the v4 rename of `Effect.async`, below) and
+// `Layer.effect` (which in v4 accepts scoped effects and strips `Scope`).
 const EFFECT_CALLEE_NAMES = new Set([
   "Effect.acquireUseRelease",
   "Effect.all",
   "Effect.async",
+  "Effect.callback",
   "Effect.fn",
   "Effect.forEach",
   "Effect.gen",
@@ -296,7 +302,9 @@ const effectArgumentRole = (
     if (argumentIndex === 1) return "use"
     if (argumentIndex === 2) return "release"
   }
-  if (callee === "Effect.async" || callee === "Effect.promise") return "register"
+  if (callee === "Effect.async" || callee === "Effect.callback" || callee === "Effect.promise") {
+    return "register"
+  }
   return undefined
 }
 

@@ -12,7 +12,7 @@ import {
   type IdentifierDeclarationKind,
 } from "./shared-identifiers.js"
 
-const TsLd04Config = Schema.Struct({
+export const TsLd04Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   top_n_diagnostics: Schema.Number,
 })

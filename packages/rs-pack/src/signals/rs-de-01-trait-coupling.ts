@@ -23,12 +23,12 @@ import {
 import { rustAnalysisOutputMetadata } from "./shared-applicability.js"
 import { isExcluded } from "./shared-globs.js"
 
-const RsDe01Config = Schema.Struct({
+export const RsDe01Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   top_n_diagnostics: Schema.Number,
   min_trait_impl_evidence: Schema.Number,
 })
-type RsDe01Config = typeof RsDe01Config.Type
+export type RsDe01Config = typeof RsDe01Config.Type
 
 interface TraitCouplingDetail {
   readonly trait: string

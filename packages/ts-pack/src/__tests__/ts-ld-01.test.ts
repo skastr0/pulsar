@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
 import { TS_PACK_SIGNALS } from "../pack.js"
-import { TsLd01 } from "../signals/ts-ld-01-complexity.js"
+import { TsLd01, TsLd01Config } from "../signals/ts-ld-01-complexity.js"
 import { Effect, Layer, Schema } from "effect"
 import { CalibrationContextTag, defineCalibrationProcessor, makeResolvedCalibrationContext, appendCalibrationDecision } from "@skastr0/pulsar-core/calibration"
 import type { RepoFacts } from "@skastr0/pulsar-core/calibration"
@@ -275,7 +275,7 @@ export function knotted(value: number, enabled: boolean) {
   })
 
   test("configSchema decodes defaults round-trip", () => {
-    const decoded = Schema.decodeUnknownSync(TsLd01.configSchema)(TsLd01.defaultConfig)
+    const decoded = Schema.decodeSync(TsLd01Config)(TsLd01.defaultConfig)
 
     expect(decoded.max_complexity).toBe(20)
     expect(decoded.top_n_diagnostics).toBe(10)

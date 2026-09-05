@@ -5,7 +5,7 @@ export const TsDe04Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   test_globs: Schema.Array(Schema.String),
   top_n_diagnostics: Schema.Number,
-  dependency_aliases: Schema.Record({ key: Schema.String, value: Schema.String }),
+  dependency_aliases: Schema.Record(Schema.String, Schema.String),
   allow_dev_dependency_in_prod: Schema.Array(Schema.String),
 })
 export type TsDe04Config = typeof TsDe04Config.Type

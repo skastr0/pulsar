@@ -20,12 +20,12 @@ import {
 import { rustAnalysisOutputMetadata } from "./shared-applicability.js"
 import { isExcluded, matchesAnyGlob } from "./shared-globs.js"
 
-const RsLd03Config = Schema.Struct({
+export const RsLd03Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   core_logic_globs: Schema.Array(Schema.String),
   top_n_diagnostics: Schema.Number,
 })
-type RsLd03Config = typeof RsLd03Config.Type
+export type RsLd03Config = typeof RsLd03Config.Type
 
 interface MatchCatchAllSite {
   readonly file: string

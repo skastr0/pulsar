@@ -12,7 +12,7 @@ import { Effect, Schema } from "effect"
 import type { TsAd04Output } from "./ts-ad-04-boundary-parser-coverage.js"
 import type { TsLd07Output } from "./ts-ld-07-unsafe-type-erosion.js"
 
-const TsAd05Config = Schema.Struct({
+export const TsAd05Config = Schema.Struct({
   top_n_diagnostics: Schema.Number,
   warn_threshold: Schema.Number,
 })

@@ -19,7 +19,7 @@ import {
 import { TsProjectTag } from "../ts-project.js"
 import { isExcluded } from "./shared-globs.js"
 
-const TsLd08Config = Schema.Struct({
+export const TsLd08Config = Schema.Struct({
   min_case_clauses: Schema.Number,
   top_n_diagnostics: Schema.Number,
   exclude_globs: Schema.Array(Schema.String),

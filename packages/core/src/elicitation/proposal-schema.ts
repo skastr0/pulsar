@@ -1,18 +1,18 @@
-import { Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { PulsarVectorEvidence } from "../vector.js"
 
-export const PulsarVectorProposalSource = Schema.Literal(
+export const PulsarVectorProposalSource = Schema.Literals([
   "passive-extraction",
   "revealed-preference",
   "ai-assisted-detection",
-)
+])
 export type PulsarVectorProposalSource = typeof PulsarVectorProposalSource.Type
 
-export const PulsarVectorProposalStatus = Schema.Literal(
+export const PulsarVectorProposalStatus = Schema.Literals([
   "pending-confirmation",
   "accepted",
   "rejected",
-)
+])
 export type PulsarVectorProposalStatus = typeof PulsarVectorProposalStatus.Type
 
 export const PulsarVectorProposalDelta = Schema.Struct({
@@ -21,7 +21,9 @@ export const PulsarVectorProposalDelta = Schema.Struct({
   current_score: Schema.optional(Schema.Number),
   previous_weight: Schema.Number,
   proposed_weight: Schema.Number,
-  support: Schema.optional(Schema.Number.pipe(Schema.between(-1, 1))),
+  support: Schema.optional(
+    Schema.Number.pipe(Schema.check(Schema.isBetween({ minimum: -1, maximum: 1 }))),
+  ),
   rationale: Schema.String,
 })
 export type PulsarVectorProposalDelta = typeof PulsarVectorProposalDelta.Type
@@ -41,16 +43,17 @@ export const PulsarVectorProposal = Schema.Struct({
   domain: Schema.String,
   created_at: Schema.String,
   status: PulsarVectorProposalStatus,
-  confidence: Schema.optionalWith(Schema.Number.pipe(Schema.between(0, 1)), {
-    default: () => 1,
-  }),
+  confidence: Schema.Number.pipe(
+    Schema.check(Schema.isBetween({ minimum: 0, maximum: 1 })),
+    Schema.withDecodingDefaultType(Effect.succeed(1)),
+  ),
   reviewed_at: Schema.optional(Schema.String),
   summary: Schema.String,
   changed_files: Schema.Array(Schema.String),
   evidence: Schema.Array(PulsarVectorEvidence),
   deltas: Schema.Array(PulsarVectorProposalDelta),
-  mode_deltas: Schema.optionalWith(Schema.Array(PulsarVectorProposalModeDelta), {
-    default: () => [],
-  }),
+  mode_deltas: Schema.Array(PulsarVectorProposalModeDelta).pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => [])),
+  ),
 })
 export type PulsarVectorProposal = typeof PulsarVectorProposal.Type

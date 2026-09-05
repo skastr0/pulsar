@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { CATEGORIES, Category as CategorySchema } from "./category.js"
 import { ProjectModuleScope } from "./calibration.js"
 import { Diagnostic as DiagnosticSchema } from "./diagnostic.js"
@@ -10,16 +10,16 @@ import {
 
 const ObserverCategorySnapshot = Schema.Struct({
   score: Schema.Number,
-  signals: Schema.Record({ key: Schema.String, value: Schema.Number }),
+  signals: Schema.Record(Schema.String, Schema.Number),
   signalCount: Schema.optional(Schema.Number),
   applicableSignalCount: Schema.optional(Schema.Number),
   activeSignalIds: Schema.optional(Schema.Array(Schema.String)),
   aggregation: Schema.optional(
     Schema.Struct({
-      strategy: Schema.Union(
+      strategy: Schema.Union([
         Schema.Literal("weighted-mean"),
         Schema.Literal("language-group-mean"),
-      ),
+      ]),
       rawScore: Schema.Number,
       aggregateScore: Schema.Number,
       lowestSignalScore: Schema.Number,
@@ -36,20 +36,20 @@ const ObserverCategorySnapshot = Schema.Struct({
         finalPressure: Schema.Number,
       }),
       weightTotal: Schema.Number,
-      weights: Schema.Record({ key: Schema.String, value: Schema.Number }),
+      weights: Schema.Record(Schema.String, Schema.Number),
     }),
   ),
   normalization: Schema.optional(
     Schema.Struct({
       strategy: Schema.Literal("language-group-mean"),
-      groups: Schema.Record({
-        key: Schema.String,
-        value: Schema.Struct({
+      groups: Schema.Record(
+        Schema.String,
+        Schema.Struct({
           score: Schema.Number,
           signals: Schema.Array(Schema.String),
           signalCount: Schema.Number,
         }),
-      }),
+      ),
     }),
   ),
 })
@@ -74,9 +74,9 @@ const ObserverCategories = Schema.Struct({
   ...Object.fromEntries(
     trustCategoryIds.map((category) => [
       category,
-      Schema.optionalWith(ObserverCategorySnapshot, {
-        default: () => emptyObserverCategoryOutput(),
-      }),
+      ObserverCategorySnapshot.pipe(
+        Schema.withDecodingDefaultType(Effect.sync(() => emptyObserverCategoryOutput())),
+      ),
     ]),
   ),
 })
@@ -96,12 +96,12 @@ const HardGateViolationSnapshot = Schema.Struct({
   diagnostic: DiagnosticSchema,
 })
 
-const SignalApplicabilitySnapshot = Schema.Literal(
+const SignalApplicabilitySnapshot = Schema.Literals([
   "applicable",
   "not_applicable",
   "insufficient_evidence",
   "failed",
-)
+])
 
 const ReadinessPressureSnapshot = Schema.Struct({
   signal_id: Schema.String,
@@ -118,20 +118,20 @@ const ReadinessPressureSnapshot = Schema.Struct({
 const ReadinessSnapshot = Schema.Struct({
   score: Schema.Number,
   pressure: Schema.Number,
-  status: Schema.Union(
+  status: Schema.Union([
     Schema.Literal("green"),
     Schema.Literal("yellow"),
     Schema.Literal("red"),
     Schema.Literal("blocked"),
     Schema.Literal("unknown"),
     Schema.Literal("failed"),
-  ),
+  ]),
   band: Schema.optional(
-    Schema.Union(
+    Schema.Union([
       Schema.Literal("green"),
       Schema.Literal("yellow"),
       Schema.Literal("red"),
-    ),
+    ]),
   ),
   aggregation: Schema.Struct({
     strategy: Schema.Literal("pressure-pnorm-local-max"),
@@ -148,11 +148,11 @@ const ReadinessSnapshot = Schema.Struct({
     local_poison_threshold: Schema.Number,
     local_warning_gain: Schema.Number,
     dominant_pressure_source: Schema.optional(
-      Schema.Union(
+      Schema.Union([
         Schema.Literal("pnorm"),
         Schema.Literal("local_poison"),
         Schema.Literal("hard_gate"),
-      ),
+      ]),
     ),
     band_margin: Schema.optional(Schema.Number),
     evidence_mean: Schema.optional(Schema.Number),
@@ -169,10 +169,10 @@ const ObserverSignalMetadataSnapshot = Schema.Struct({
   computedAt: Schema.optional(Schema.String),
   stale: Schema.optional(Schema.Boolean),
   factSource: Schema.optional(
-    Schema.Union(
+    Schema.Union([
       Schema.Literal("deterministic"),
       Schema.Literal("ai_classified"),
-    ),
+    ]),
   ),
   applicability: Schema.optional(SignalApplicabilitySnapshot),
 })
@@ -187,21 +187,21 @@ const ObserverSignalDiagnosticsSnapshot = Schema.Struct({
 const ObserverRuntimeProfileSnapshot = Schema.Struct({
   total_ms: Schema.Number,
   stages: Schema.optional(
-    Schema.Record({
-      key: Schema.String,
-      value: Schema.Struct({
+    Schema.Record(
+      Schema.String,
+      Schema.Struct({
         duration_ms: Schema.Number,
       }),
-    }),
+    ),
   ),
-  signals: Schema.Record({
-    key: Schema.String,
-    value: Schema.Struct({
+  signals: Schema.Record(
+    Schema.String,
+    Schema.Struct({
       duration_ms: Schema.Number,
       score: Schema.Number,
       diagnostics: Schema.Number,
     }),
-  }),
+  ),
 })
 
 const ObserverCalibrationSnapshot = Schema.Struct({
@@ -211,7 +211,7 @@ const ObserverCalibrationSnapshot = Schema.Struct({
       id: Schema.String,
       version: Schema.String,
       scope: ProjectModuleScope,
-      source: Schema.Literal("builtin", "package", "workspace", "repo-local"),
+      source: Schema.Literals(["builtin", "package", "workspace", "repo-local"]),
       source_ref: Schema.optional(Schema.String),
       source_fingerprint: Schema.optional(Schema.String),
       fingerprint: Schema.String,
@@ -222,18 +222,18 @@ const ObserverCalibrationSnapshot = Schema.Struct({
       Schema.Struct({
         id: Schema.String,
         name: Schema.String,
-        confidence: Schema.Literal("high", "medium", "low"),
-        activation: Schema.Literal(
+        confidence: Schema.Literals(["high", "medium", "low"]),
+        activation: Schema.Literals([
           "auto-active",
           "explicit-active",
           "explicit-inactive",
           "detected-inactive",
-        ),
+        ]),
         evidence: Schema.Array(
           Schema.Struct({
             kind: Schema.String,
             value: Schema.String,
-            metadata: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.Unknown })),
+            metadata: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
           }),
         ),
       }),
@@ -244,11 +244,11 @@ const ObserverCalibrationSnapshot = Schema.Struct({
 const SignalFactorLedgerEntrySnapshot = Schema.Struct({
   path: Schema.String,
   value: Schema.Unknown,
-  source: Schema.Literal("signal-default", "computed", "vector", "module"),
+  source: Schema.Literals(["signal-default", "computed", "vector", "module"]),
   affectsScore: Schema.Boolean,
   title: Schema.optional(Schema.String),
   scoreRole: Schema.optional(
-    Schema.Literal(
+    Schema.Literals([
       "evidence",
       "threshold",
       "penalty",
@@ -256,7 +256,7 @@ const SignalFactorLedgerEntrySnapshot = Schema.Struct({
       "confidence",
       "score-cap",
       "metadata",
-    ),
+    ]),
   ),
   attribution: Schema.optional(Schema.Unknown),
   mutations: Schema.optional(Schema.Array(Schema.Unknown)),
@@ -270,24 +270,24 @@ export const ObserverOutput = Schema.Struct({
   // failed-signal/poison-authority rework keeps loading; v2 is what the
   // engine emits today.
   observer_semantics: Schema.optional(
-    Schema.Literal("applicability-aware-readiness-v1", OBSERVER_OUTPUT_SEMANTICS),
+    Schema.Literals(["applicability-aware-readiness-v1", OBSERVER_OUTPUT_SEMANTICS]),
   ),
   categories: ObserverCategories,
-  minimum: Schema.Union(MinimumDimensionSnapshot, Schema.Undefined),
+  minimum: Schema.Union([MinimumDimensionSnapshot, Schema.Undefined]),
   weighted_mean: Schema.Number,
   readiness: Schema.optional(ReadinessSnapshot),
-  hard_gate_status: Schema.Literal("pass", "fail"),
+  hard_gate_status: Schema.Literals(["pass", "fail"]),
   hard_gate_violations: Schema.Array(HardGateViolationSnapshot),
   signal_metadata: Schema.optional(
-    Schema.Record({ key: Schema.String, value: ObserverSignalMetadataSnapshot }),
+    Schema.Record(Schema.String, ObserverSignalMetadataSnapshot),
   ),
   signal_diagnostics: Schema.optional(
-    Schema.Record({ key: Schema.String, value: ObserverSignalDiagnosticsSnapshot }),
+    Schema.Record(Schema.String, ObserverSignalDiagnosticsSnapshot),
   ),
   runtime_profile: Schema.optional(ObserverRuntimeProfileSnapshot),
   calibration: Schema.optional(ObserverCalibrationSnapshot),
   signal_factors: Schema.optional(
-    Schema.Record({ key: Schema.String, value: Schema.Array(SignalFactorLedgerEntrySnapshot) }),
+    Schema.Record(Schema.String, Schema.Array(SignalFactorLedgerEntrySnapshot)),
   ),
 })
 

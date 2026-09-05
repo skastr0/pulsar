@@ -12,13 +12,13 @@ import {
   type MachineFeedbackFacts,
 } from "./machine-feedback-facts.js"
 
-const MachineFeedbackClassSchema = Schema.Literal(
+const MachineFeedbackClassSchema = Schema.Literals([
   "build",
   "typecheck",
   "test",
   "static_analysis",
   "coverage",
-)
+])
 
 export const Shared07MachineFeedbackCoverageConfig = Schema.Struct({
   required_classes: Schema.Array(MachineFeedbackClassSchema),

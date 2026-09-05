@@ -23,10 +23,9 @@ export interface Registry {
   readonly aliasesOf: (id: string) => ReadonlyArray<string>
 }
 
-class RegistryTag extends Context.Tag("@skastr0/pulsar-core/Registry")<
-  RegistryTag,
-  Registry
->() {}
+class RegistryTag extends Context.Service<RegistryTag, Registry>()(
+  "@skastr0/pulsar-core/Registry",
+) {}
 
 const validateNoDuplicates = (
   signals: ReadonlyArray<AnySignal>,

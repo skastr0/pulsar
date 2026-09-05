@@ -23,6 +23,6 @@
     "@skastr0/pulsar-core": "workspace:*"
   },
   "devDependencies": {
-    "typescript": "^5.8.0"
+    "typescript": "7.0.2"
   }
 }

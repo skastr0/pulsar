@@ -1,42 +1,41 @@
-import { Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { hashCalibrationValue } from "@skastr0/pulsar-core/calibration"
 
-const NonEmptyString = Schema.String.pipe(Schema.pattern(/.+/))
+const NonEmptyString = Schema.String.pipe(Schema.check(Schema.isPattern(/.+/)))
 
-export const ProjectModuleRefConfig = Schema.Record({
-  key: Schema.String,
-  value: Schema.Unknown,
-})
+export const ProjectModuleRefConfig = Schema.Record(
+  Schema.String,
+  Schema.Unknown,
+)
 export type ProjectModuleRefConfig = typeof ProjectModuleRefConfig.Type
 
 const ProjectModuleRefBase = Schema.Struct({
   id: NonEmptyString,
-  enabled: Schema.optionalWith(Schema.Boolean, { default: () => true }),
+  enabled: Schema.Boolean.pipe(
+    Schema.withDecodingDefaultType(Effect.succeed(true)),
+  ),
   exportName: Schema.optional(NonEmptyString),
   config: Schema.optional(ProjectModuleRefConfig),
 })
 
-export const RepoLocalProjectModuleRef = Schema.extend(
-  ProjectModuleRefBase,
-  Schema.Struct({
+export const RepoLocalProjectModuleRef = ProjectModuleRefBase.pipe(
+  Schema.fieldsAssign({
     kind: Schema.Literal("repo-local"),
     path: NonEmptyString,
   }),
 )
 export type RepoLocalProjectModuleRef = typeof RepoLocalProjectModuleRef.Type
 
-export const WorkspaceProjectModuleRef = Schema.extend(
-  ProjectModuleRefBase,
-  Schema.Struct({
+export const WorkspaceProjectModuleRef = ProjectModuleRefBase.pipe(
+  Schema.fieldsAssign({
     kind: Schema.Literal("workspace"),
     packageName: NonEmptyString,
   }),
 )
 export type WorkspaceProjectModuleRef = typeof WorkspaceProjectModuleRef.Type
 
-export const PackageProjectModuleRef = Schema.extend(
-  ProjectModuleRefBase,
-  Schema.Struct({
+export const PackageProjectModuleRef = ProjectModuleRefBase.pipe(
+  Schema.fieldsAssign({
     kind: Schema.Literal("package"),
     packageName: NonEmptyString,
     version: Schema.optional(NonEmptyString),
@@ -44,32 +43,31 @@ export const PackageProjectModuleRef = Schema.extend(
 )
 export type PackageProjectModuleRef = typeof PackageProjectModuleRef.Type
 
-export const BuiltinProjectModuleRef = Schema.extend(
-  ProjectModuleRefBase,
-  Schema.Struct({
+export const BuiltinProjectModuleRef = ProjectModuleRefBase.pipe(
+  Schema.fieldsAssign({
     kind: Schema.Literal("builtin"),
   }),
 )
 export type BuiltinProjectModuleRef = typeof BuiltinProjectModuleRef.Type
 
-export const ProjectModuleRef = Schema.Union(
+export const ProjectModuleRef = Schema.Union([
   BuiltinProjectModuleRef,
   RepoLocalProjectModuleRef,
   WorkspaceProjectModuleRef,
   PackageProjectModuleRef,
-)
+])
 export type ProjectModuleRef = typeof ProjectModuleRef.Type
 
 export const ProjectModuleManifest = Schema.Struct({
-  schema: Schema.optionalWith(Schema.Literal("pulsar/project-modules/v1"), {
-    default: () => "pulsar/project-modules/v1" as const,
-  }),
+  schema: Schema.Literal("pulsar/project-modules/v1").pipe(
+    Schema.withDecodingDefaultType(Effect.succeed("pulsar/project-modules/v1")),
+  ),
   modules: Schema.Array(ProjectModuleRef),
 })
 export type ProjectModuleManifest = typeof ProjectModuleManifest.Type
 
 export const decodeProjectModuleManifest =
-  Schema.decodeUnknown(ProjectModuleManifest)
+  Schema.decodeUnknownEffect(ProjectModuleManifest)
 
 export const fingerprintProjectModuleManifest = (
   manifest: ProjectModuleManifest,

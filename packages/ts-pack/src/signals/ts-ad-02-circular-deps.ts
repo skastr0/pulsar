@@ -9,7 +9,7 @@ import {
 } from "./ts-ad-02-cycle-graph.js"
 import { diagnoseCircularDependencies } from "./ts-ad-02-diagnostics.js"
 
-const TsAd02Config = Schema.Struct({
+export const TsAd02Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   // Cap on number of cycles reported in diagnostics; the raw output
   // includes all detected cycles regardless.

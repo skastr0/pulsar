@@ -123,14 +123,14 @@ const NON_PRODUCTION_PATH_SEGMENTS = [
  * richer shape — one Project per tsconfig, lifecycle-managed — belongs
  * to TC-017's scoring engine.
  */
-export class TsProjectTag extends Context.Tag("@skastr0/pulsar-ts-pack/TsProject")<
-  TsProjectTag,
-  Project
->() {}
+export class TsProjectTag extends Context.Service<TsProjectTag, Project>()(
+  "@skastr0/pulsar-ts-pack/TsProject",
+) {}
 
-export class TsPackageInfoTag extends Context.Tag(
-  "@skastr0/pulsar-ts-pack/TsPackageInfo",
-)<TsPackageInfoTag, ReadonlyArray<PackageInfo>>() {}
+export class TsPackageInfoTag extends Context.Service<
+  TsPackageInfoTag,
+  ReadonlyArray<PackageInfo>
+>()("@skastr0/pulsar-ts-pack/TsPackageInfo") {}
 
 export const makeTsProject = (worktreePath: string): Effect.Effect<Project> =>
   Effect.gen(function* () {
@@ -343,7 +343,7 @@ export const TsProjectLayer = (
   worktreePath: string,
   options?: TsProjectOptions,
 ): Layer.Layer<TsProjectTag | TsPackageInfoTag, CalibrationProcessorError> =>
-  Layer.unwrapEffect(
+  Layer.unwrap(
     Effect.gen(function* () {
       const packages = yield* discoverPackages(worktreePath)
       const currentSourceFiles =

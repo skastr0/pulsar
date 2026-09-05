@@ -170,13 +170,13 @@ const runOneSignal = (
     const config = vectorResolvedConfig(signal, signal.defaultConfig, vector)
     const factorPolicy = makeSignalFactorPolicyContext(signal, vector)
 
-    const either = yield* Effect.either(
+    const result = yield* Effect.result(
       signal.compute(config, inputOutputs).pipe(
         Effect.provideService(SignalFactorPolicyTag, factorPolicy),
       ),
     )
-    if (either._tag === "Left") {
-      const err = either.left
+    if (result._tag === "Failure") {
+      const err = result.failure
       const message = (err as { message?: string }).message ?? String(err)
       const failureDiagnostic: Diagnostic = {
         severity: "warn",
@@ -191,7 +191,7 @@ const runOneSignal = (
       }
     }
 
-    const out = either.right
+    const out = result.success
     const metadata = signal.outputMetadata?.(out)
     const rawFactorLedger = signal.factorLedger?.(out)
     const factorLedger =

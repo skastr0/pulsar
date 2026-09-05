@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { Effect, Schema } from "effect"
 import { buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { TS_PACK_SIGNALS } from "../pack.js"
-import { TsAb01 } from "../signals/ts-ab-01-public-export-surface.js"
+import { TsAb01, TsAb01Config } from "../signals/ts-ab-01-public-export-surface.js"
 import { TsProjectLayer } from "../ts-project.js"
 
 let repo: string
@@ -375,7 +375,7 @@ describe("TS-AB-01 (public export surface)", () => {
   })
 
   test("configSchema decodes defaults round-trip", () => {
-    const decoded = Schema.decodeUnknownSync(TsAb01.configSchema)(TsAb01.defaultConfig)
+    const decoded = Schema.decodeSync(TsAb01Config)(TsAb01.defaultConfig)
     expect(decoded.public_export_globs).toContain("**/src/index.ts")
     expect(decoded.exclude_globs).toContain("**/node_modules/**")
     expect(decoded.surface_threshold).toBe(50)

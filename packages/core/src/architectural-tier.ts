@@ -7,11 +7,11 @@ export const POLICY_TAGS_METADATA_KEY = "policy_tags"
 export type ArchitectureRole = string
 export type PolicyTag = string
 
-export const ArchitecturalTier = Schema.Literal(
+export const ArchitecturalTier = Schema.Literals([
   "pure_utility",
   "shared_contextual",
   "integration",
-)
+])
 export type ArchitecturalTier = typeof ArchitecturalTier.Type
 
 export const ARCHITECTURAL_TIERS: ReadonlyArray<ArchitecturalTier> = [

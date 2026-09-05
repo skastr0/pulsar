@@ -14,7 +14,7 @@ import {
   type Quadrant,
 } from "./ts-rp-01-hotspot-model.js"
 
-const TsRp01Config = Schema.Struct({
+export const TsRp01Config = Schema.Struct({
   top_n: Schema.Number,
   min_churn: Schema.Number,
   min_complexity: Schema.Number,

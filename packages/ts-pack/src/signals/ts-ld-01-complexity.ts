@@ -11,7 +11,7 @@ import {
   type FunctionComplexityCandidate,
 } from "./ts-ld-01-collection.js"
 
-const TsLd01Config = Schema.Struct({
+export const TsLd01Config = Schema.Struct({
   max_complexity: Schema.Number,
   top_n_diagnostics: Schema.Number,
   exclude_globs: Schema.Array(Schema.String),

@@ -17,18 +17,18 @@ const baselineSchema = Schema.Struct({
   created_at: Schema.String,
   vector_id: Schema.optional(Schema.String),
   vector_source: Schema.optional(Schema.String),
-  vector_trust_boundary: Schema.optional(Schema.Literal(
+  vector_trust_boundary: Schema.optional(Schema.Literals([
     "explicit-path",
     "repo-local",
     "organization-standard-fallback",
     "built-in-defaults",
-  )),
+  ])),
   observer_config_hash: Schema.optional(Schema.String),
-  violations: Schema.Record({ key: Schema.String, value: Schema.Array(baselineViolationSchema) }),
+  violations: Schema.Record(Schema.String, Schema.Array(baselineViolationSchema)),
 })
 export type Baseline = typeof baselineSchema.Type
 
-export const decodeBaseline = Schema.decodeUnknown(baselineSchema)
+export const decodeBaseline = Schema.decodeUnknownEffect(baselineSchema)
 export const decodeBaselineSync = Schema.decodeUnknownSync(baselineSchema)
 
 interface CurrentViolationSnapshot extends BaselineViolation {

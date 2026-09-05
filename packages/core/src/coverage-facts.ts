@@ -10,14 +10,14 @@ export const CANONICAL_COVERAGE_FACTS_RELATIVE_PATH =
 export const CANONICAL_LCOV_RELATIVE_PATH = "coverage/lcov.info" as const
 export const CANONICAL_ISTANBUL_RELATIVE_PATH = "coverage/coverage-final.json" as const
 
-export const CoverageFactState = Schema.Literal(
+export const CoverageFactState = Schema.Literals([
   "present",
   "zero",
   "absent",
   "unknown",
   "not_configured",
   "not_applicable",
-)
+])
 export type CoverageFactState = typeof CoverageFactState.Type
 
 export interface CoverageMetric {
@@ -67,7 +67,7 @@ const CoverageFileFactSchema = Schema.Struct({
 
 export const CoverageFactsSchema = Schema.Struct({
   state: CoverageFactState,
-  tool: Schema.optional(Schema.Literal("lcov", "istanbul")),
+  tool: Schema.optional(Schema.Literals(["lcov", "istanbul"])),
   sourcePath: Schema.optional(Schema.String),
   checkedPaths: Schema.Array(Schema.String),
   files: Schema.Array(CoverageFileFactSchema),
@@ -95,7 +95,7 @@ export const buildCoverageFactsArtifact = (
 
 export const decodeCoverageFactsArtifactSync = (value: unknown): CoverageFacts => {
   const decoded = Schema.decodeUnknownSync(
-    Schema.Union(CoverageFactsArtifact, CoverageFactsSchema),
+    Schema.Union([CoverageFactsArtifact, CoverageFactsSchema]),
   )(value)
   return normalizeCoverageFacts("facts" in decoded ? decoded.facts : decoded)
 }

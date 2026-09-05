@@ -10,7 +10,7 @@ import {
 import { buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { createTempRepo } from "./test-repo.js"
 import { TS_PACK_SIGNALS } from "../pack.js"
-import { TsRp02, type ImportEdge, type TsRp02Output } from "../signals/ts-rp-02-pr-size.js"
+import { TsRp02, TsRp02Config, type ImportEdge, type TsRp02Output } from "../signals/ts-rp-02-pr-size.js"
 import { TsProjectLayer } from "../ts-project.js"
 import type { TempRepo } from "./test-repo.js"
 
@@ -192,7 +192,7 @@ describe("TS-RP-02 PR size and dependency delta", () => {
     expect(packRegistered).toBeDefined()
     const registry = await Effect.runPromise(buildRegistry([packRegistered!]))
     const registered = registry.byId.get("TS-RP-02")
-    const decoded = Schema.decodeUnknownSync(TsRp02.configSchema)(TsRp02.defaultConfig)
+    const decoded = Schema.decodeSync(TsRp02Config)(TsRp02.defaultConfig)
     const out = await computeWithContext(repo, TsRp02.defaultConfig, {
       changedHunks: [
         { file: "src/value.ts", oldStart: 1, oldLines: 0, newStart: 1, newLines: 1 },

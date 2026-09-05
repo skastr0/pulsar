@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { Effect, Schema } from "effect"
 import { TS_PACK_SIGNALS } from "../pack.js"
-import { TsDe03 } from "../signals/ts-de-03-propagation-cost.js"
+import { TsDe03, TsDe03Config } from "../signals/ts-de-03-propagation-cost.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
 
 let repo: TempRepo
@@ -360,7 +360,7 @@ describe("TS-DE-03 (propagation cost)", () => {
   })
 
   test("configSchema decodes defaults round-trip", () => {
-    const decoded = Schema.decodeUnknownSync(TsDe03.configSchema)(TsDe03.defaultConfig)
+    const decoded = Schema.decodeSync(TsDe03Config)(TsDe03.defaultConfig)
     expect(decoded.target).toBe(0.3)
     expect(decoded.scale).toBe(0.4)
     expect(decoded.small_sample_threshold).toBe(20)

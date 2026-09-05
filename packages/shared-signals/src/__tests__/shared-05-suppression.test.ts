@@ -4,6 +4,7 @@ import { Effect, Schema } from "effect"
 import { SHARED_SIGNALS } from "../pack.js"
 import {
   Shared05Suppression,
+  Shared05SuppressionConfig,
   type Shared05SuppressionOutput,
 } from "../shared-05-suppression.js"
 
@@ -71,7 +72,7 @@ describe("SHARED-05 suppression governance", () => {
     expect(packRegistered).toBeDefined()
     const registry = await Effect.runPromise(buildRegistry([packRegistered!]))
     const registered = registry.byId.get("SHARED-05")
-    const decoded = Schema.decodeUnknownSync(Shared05Suppression.configSchema)(
+    const decoded = Schema.decodeSync(Shared05SuppressionConfig)(
       Shared05Suppression.defaultConfig,
     )
     const factorLedger = registered?.factorLedger?.({} as Shared05SuppressionOutput)

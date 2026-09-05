@@ -13,7 +13,7 @@ const ContractFreshnessContract = Schema.Struct({
   group_id: Schema.optional(Schema.String),
   source_paths: Schema.Array(Schema.String),
   artifact_path: Schema.String,
-  source_hashes: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.String })),
+  source_hashes: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   artifact_sha256: Schema.optional(Schema.String),
   generator: Schema.optional(Schema.String),
   provenance_path: Schema.optional(Schema.String),

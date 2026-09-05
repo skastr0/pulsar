@@ -15,6 +15,7 @@ import { Effect, Layer, Schema } from "effect"
 import { SHARED_SIGNALS } from "../pack.js"
 import {
   Shared10DomainConstructionControl,
+  Shared10DomainConstructionControlConfig,
   type Shared10DomainConstructionControlOutput,
 } from "../shared-10-domain-construction-control.js"
 
@@ -48,7 +49,7 @@ describe("SHARED-10 domain construction control", () => {
     expect(packRegistered).toBeDefined()
     const registry = await Effect.runPromise(buildRegistry([packRegistered!]))
     const registered = registry.byId.get("SHARED-10")
-    const decoded = Schema.decodeUnknownSync(Shared10DomainConstructionControl.configSchema)(
+    const decoded = Schema.decodeSync(Shared10DomainConstructionControlConfig)(
       Shared10DomainConstructionControl.defaultConfig,
     )
     const factorLedger = registered?.factorLedger?.({} as Shared10DomainConstructionControlOutput)

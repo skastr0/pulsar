@@ -43,9 +43,9 @@
   },
   "dependencies": {
     "@skastr0/pulsar-project-module-sdk": "0.1.5",
-    "effect": "^3.0.0"
+    "effect": "4.0.0-rc.112"
   },
   "devDependencies": {
-    "typescript": "^5.8.0"
+    "typescript": "7.0.2"
   }
 }

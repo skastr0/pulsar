@@ -33,10 +33,10 @@ export interface RustProject {
   readonly cargoMetadata: CargoMetadata | undefined
 }
 
-export class RustProjectTag extends Context.Tag("@skastr0/pulsar-rs-pack/RustProject")<
+export class RustProjectTag extends Context.Service<
   RustProjectTag,
   RustProject
->() {}
+>()("@skastr0/pulsar-rs-pack/RustProject") {}
 
 export const isRustSignalPath = (file: string): boolean => {
   if (!(file.endsWith(".rs") || file.endsWith("Cargo.toml") || file.endsWith("Cargo.lock"))) {
@@ -242,7 +242,7 @@ const maybeReadUtf8 = (
     try: () => readFile(filePath, "utf8"),
     catch: (error: unknown) => error,
   }).pipe(
-    Effect.catchAll((error: unknown) => {
+    Effect.catch((error: unknown) => {
       const code =
         typeof error === "object" && error !== null
           ? (error as { code?: string }).code

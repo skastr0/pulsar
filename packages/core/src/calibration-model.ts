@@ -25,10 +25,10 @@ export const CALIBRATION_SLOT_IDS = [
   "mixer.category-policy",
 ] as const
 
-export const CalibrationSlotId = Schema.Literal(...CALIBRATION_SLOT_IDS)
+export const CalibrationSlotId = Schema.Literals(CALIBRATION_SLOT_IDS)
 export type CalibrationSlotId = typeof CalibrationSlotId.Type
 
-export const CalibrationProcessorRole = Schema.Literal(
+export const CalibrationProcessorRole = Schema.Literals([
   "filter",
   "resolver",
   "normalizer",
@@ -36,13 +36,13 @@ export const CalibrationProcessorRole = Schema.Literal(
   "enricher",
   "factor-policy",
   "mixer-policy",
-)
+])
 export type CalibrationProcessorRole = typeof CalibrationProcessorRole.Type
 
-export const CalibrationConfidence = Schema.Literal("high", "medium", "low")
+export const CalibrationConfidence = Schema.Literals(["high", "medium", "low"])
 export type CalibrationConfidence = typeof CalibrationConfidence.Type
 
-export const SourceCategory = Schema.Literal(
+export const SourceCategory = Schema.Literals([
   "production_source",
   "test_code",
   "test_utility",
@@ -56,7 +56,7 @@ export const SourceCategory = Schema.Literal(
   "documentation",
   "stories",
   "unknown",
-)
+])
 export type SourceCategory = typeof SourceCategory.Type
 
 export interface CalibrationEvidenceRef {
@@ -122,7 +122,7 @@ export type CalibrationSlotInput<Slot extends CalibrationSlotId> =
 export type CalibrationSlotOutput<Slot extends CalibrationSlotId> =
   CalibrationSlotResult<CalibrationSlots[Slot]>
 
-export const ProjectModuleScope = Schema.Literal(
+export const ProjectModuleScope = Schema.Literals([
   "core",
   "language",
   "ecosystem",
@@ -130,7 +130,7 @@ export const ProjectModuleScope = Schema.Literal(
   "framework",
   "organization",
   "repository",
-)
+])
 export type ProjectModuleScope = typeof ProjectModuleScope.Type
 
 export interface ProjectModuleContribution {
@@ -221,9 +221,10 @@ export interface ResolvedCalibrationContext {
   ) => Effect.Effect<CalibrationSlotOutput<Slot>, CalibrationProcessorError, never>
 }
 
-export class CalibrationContextTag extends Context.Tag(
-  "@skastr0/pulsar-core/CalibrationContext",
-)<CalibrationContextTag, ResolvedCalibrationContext>() {}
+export class CalibrationContextTag extends Context.Service<
+  CalibrationContextTag,
+  ResolvedCalibrationContext
+>()("@skastr0/pulsar-core/CalibrationContext") {}
 
 export const defineCalibrationProcessor = <Slot extends CalibrationSlotId>(
   processor: CalibrationProcessor<Slot>,

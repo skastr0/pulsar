@@ -12,7 +12,7 @@ import {
   type BoundaryFunctionAnalysis,
 } from "./ts-ad-04-ingress-analysis.js"
 
-const TsAd04Config = Schema.Struct({
+export const TsAd04Config = Schema.Struct({
   boundary_globs: Schema.Array(Schema.String),
   parser_call_patterns: Schema.Array(Schema.String),
   exclude_globs: Schema.Array(Schema.String),

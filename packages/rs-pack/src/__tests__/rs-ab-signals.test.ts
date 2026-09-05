@@ -5,10 +5,10 @@ import { describe, expect, test } from "bun:test"
 import { Effect, Schema } from "effect"
 import { RS_PACK_SIGNALS } from "../pack.js"
 import { makeRustProject } from "../project.js"
-import { RsAb01 } from "../signals/rs-ab-01-unused-pub.js"
-import { RsAb02 } from "../signals/rs-ab-02-trait-object-depth.js"
-import { RsAb03 } from "../signals/rs-ab-03-generic-proliferation.js"
-import { RsAb04 } from "../signals/rs-ab-04-derive-density.js"
+import { RsAb01, RsAb01Config } from "../signals/rs-ab-01-unused-pub.js"
+import { RsAb02, RsAb02Config } from "../signals/rs-ab-02-trait-object-depth.js"
+import { RsAb03, RsAb03Config } from "../signals/rs-ab-03-generic-proliferation.js"
+import { RsAb04, RsAb04Config } from "../signals/rs-ab-04-derive-density.js"
 import {
   cleanupWorkspace,
   createRustWorkspace,
@@ -27,7 +27,7 @@ describe("RS-AB-* signals", () => {
       ]),
     )
     const registered = registry.byId.get("RS-AB-01")
-    const decoded = Schema.decodeUnknownSync(RsAb01.configSchema)(RsAb01.defaultConfig)
+    const decoded = Schema.decodeSync(RsAb01Config)(RsAb01.defaultConfig)
     const factorLedger = registered?.factorLedger?.({})
     const baseCacheHash = computeConfigHash(RsAb01.id, registry, undefined)
     const versionedCacheHash = computeConfigHash(RsAb01.id, versionedRegistry, undefined)
@@ -759,7 +759,7 @@ describe("RS-AB-* signals", () => {
       ]),
     )
     const registered = registry.byId.get("RS-AB-02")
-    const decoded = Schema.decodeUnknownSync(RsAb02.configSchema)(RsAb02.defaultConfig)
+    const decoded = Schema.decodeSync(RsAb02Config)(RsAb02.defaultConfig)
     const factorLedger = registered?.factorLedger?.({})
     const baseCacheHash = computeConfigHash(RsAb02.id, registry, undefined)
     const versionedCacheHash = computeConfigHash(RsAb02.id, versionedRegistry, undefined)
@@ -1452,7 +1452,7 @@ describe("RS-AB-* signals", () => {
       ]),
     )
     const registered = registry.byId.get("RS-AB-03")
-    const decoded = Schema.decodeUnknownSync(RsAb03.configSchema)(RsAb03.defaultConfig)
+    const decoded = Schema.decodeSync(RsAb03Config)(RsAb03.defaultConfig)
     const factorLedger = registered?.factorLedger?.({})
     const baseCacheHash = computeConfigHash(RsAb03.id, registry, undefined)
     const versionedCacheHash = computeConfigHash(RsAb03.id, versionedRegistry, undefined)
@@ -1945,7 +1945,7 @@ describe("RS-AB-* signals", () => {
       ]),
     )
     const registered = registry.byId.get("RS-AB-04")
-    const decoded = Schema.decodeUnknownSync(RsAb04.configSchema)(RsAb04.defaultConfig)
+    const decoded = Schema.decodeSync(RsAb04Config)(RsAb04.defaultConfig)
     const factorLedger = registered?.factorLedger?.({})
     const baseCacheHash = computeConfigHash(RsAb04.id, registry, undefined)
     const versionedCacheHash = computeConfigHash(RsAb04.id, versionedRegistry, undefined)

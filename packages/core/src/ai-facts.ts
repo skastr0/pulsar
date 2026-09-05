@@ -5,24 +5,24 @@ import { stableCalibrationStringify } from "./calibration-fingerprint.js"
 export const AI_FACT_ARTIFACT_SCHEMA_VERSION = "pulsar.ai_fact_label.v1" as const
 export const AI_FACT_REPLAY_OUTPUT_SCHEMA_VERSION = "pulsar.ai_fact_replay_output.v1" as const
 
-export const AiFactInputScope = Schema.Literal(
+export const AiFactInputScope = Schema.Literals([
   "file",
   "symbol",
   "module",
   "diff",
   "commit",
   "repository",
-)
+])
 export type AiFactInputScope = typeof AiFactInputScope.Type
 
-export const AiFactEnforcementCeiling = Schema.Literal(
+export const AiFactEnforcementCeiling = Schema.Literals([
   "informational",
   "review-route",
   "soft-warning",
-)
+])
 export type AiFactEnforcementCeiling = typeof AiFactEnforcementCeiling.Type
 
-export const AiFactArtifactMode = Schema.Literal("model-run", "offline-replay")
+export const AiFactArtifactMode = Schema.Literals(["model-run", "offline-replay"])
 export type AiFactArtifactMode = typeof AiFactArtifactMode.Type
 
 export const AiFactEvidenceRef = Schema.Struct({
@@ -57,7 +57,9 @@ export type AiFactInputDescriptor = typeof AiFactInputDescriptor.Type
 export const AiFactLabel = Schema.Struct({
   kind: Schema.String,
   value: Schema.Unknown,
-  confidence: Schema.Number.pipe(Schema.between(0, 1)),
+  confidence: Schema.Number.pipe(
+    Schema.check(Schema.isBetween({ minimum: 0, maximum: 1 })),
+  ),
   rationale: Schema.String,
   evidence: Schema.Array(AiFactEvidenceRef),
 })
@@ -65,7 +67,7 @@ export type AiFactLabel = typeof AiFactLabel.Type
 
 export const AiFactPolicy = Schema.Struct({
   enforcement_ceiling: AiFactEnforcementCeiling,
-  missing_label_behavior: Schema.Literal("fail-open", "ignore", "soft-warn"),
+  missing_label_behavior: Schema.Literals(["fail-open", "ignore", "soft-warn"]),
   stale_after_days: Schema.optional(Schema.Number),
   expires_at: Schema.optional(Schema.String),
   review_route: Schema.optional(Schema.String),
@@ -76,7 +78,7 @@ export const AiFactProvenance = Schema.Struct({
   mode: AiFactArtifactMode,
   created_at: Schema.String,
   created_by: Schema.String,
-  source: Schema.Literal("committed-fixture", "repo-artifact", "generated-cache"),
+  source: Schema.Literals(["committed-fixture", "repo-artifact", "generated-cache"]),
 })
 export type AiFactProvenance = typeof AiFactProvenance.Type
 

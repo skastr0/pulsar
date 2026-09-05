@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Schema } from "effect"
 import { TS_PACK_SIGNALS } from "../pack.js"
-import { TsLd05 } from "../signals/ts-ld-05-domain-term-consistency.js"
+import { TsLd05, TsLd05Config } from "../signals/ts-ld-05-domain-term-consistency.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
 
 let repo: TempRepo
@@ -196,7 +196,7 @@ describe("TS-LD-05 (domain term consistency)", () => {
   })
 
   test("configSchema decodes defaults round-trip", () => {
-    const decoded = Schema.decodeUnknownSync(TsLd05.configSchema)(TsLd05.defaultConfig)
+    const decoded = Schema.decodeSync(TsLd05Config)(TsLd05.defaultConfig)
 
     expect(decoded.top_n_diagnostics).toBe(20)
     expect(decoded.exclude_globs).toContain("**/*.test.ts")

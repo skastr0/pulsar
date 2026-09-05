@@ -7,7 +7,7 @@ import { writeFileSync } from "node:fs"
 import { mkdtemp } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { TsSl02, normalizeTsSl02Config } from "../signals/ts-sl-02-inconsistent-clones.js"
+import { TsSl02, TsSl02Config, normalizeTsSl02Config } from "../signals/ts-sl-02-inconsistent-clones.js"
 import { TsSl01 } from "../signals/ts-sl-01-duplication.js"
 import type { TsSl01Output } from "../signals/ts-sl-01-model.js"
 import { TS_PACK_SIGNALS } from "../pack.js"
@@ -128,7 +128,7 @@ describe("TS-SL-02 Inconsistent clone detection", () => {
     expect(packRegistered).toBeDefined()
     const registry = await Effect.runPromise(buildRegistry([TsSl01, packRegistered!]))
     const registered = registry.byId.get("TS-SL-02")
-    const decoded = Schema.decodeUnknownSync(TsSl02.configSchema)(TsSl02.defaultConfig)
+    const decoded = Schema.decodeSync(TsSl02Config)(TsSl02.defaultConfig)
 
     expect(TsSl02).toMatchObject({
       id: "TS-SL-02-inconsistent-clones",

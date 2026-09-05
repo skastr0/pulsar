@@ -16,10 +16,10 @@ import { RustProjectTag, type RustProject } from "../project.js"
 import { resolveManifestForFile } from "../rust-analysis-modules.js"
 import { normalizePath } from "./shared-globs.js"
 
-const RsRp03Config = Schema.Struct({
+export const RsRp03Config = Schema.Struct({
   top_n_diagnostics: Schema.Number,
 })
-type RsRp03Config = typeof RsRp03Config.Type
+export type RsRp03Config = typeof RsRp03Config.Type
 
 interface CrossCrateEdge {
   readonly file: string

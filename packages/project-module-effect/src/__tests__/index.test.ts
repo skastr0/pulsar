@@ -73,7 +73,7 @@ describe("effect project module", () => {
           processorId: "effect-callback-context-names",
           role: "enricher",
           priority: 20,
-          fingerprint: "effect-callback-context-names-v1",
+          fingerprint: "effect-callback-context-names-v2",
         },
       ],
     })
@@ -360,6 +360,17 @@ describe("effect project module", () => {
         argumentIndex: 1,
       },
     })).toBe("load/Effect.forEach/each")
+
+    expect(resolveEffectCallbackContextName({
+      file: "/repo/src/poll.ts",
+      line: 4,
+      fallbackName: "<anonymous>",
+      resolvedName: "poll/Effect.callback",
+      metadata: {
+        calleeText: "Effect.callback",
+        ownerName: "poll",
+      },
+    })).toBe("poll/Effect.callback/register")
 
     expect(resolveEffectCallbackContextName({
       file: "/repo/src/session.ts",

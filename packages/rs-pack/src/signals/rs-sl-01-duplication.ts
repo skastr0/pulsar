@@ -21,12 +21,12 @@ import {
 import { rustAnalyzedFunctionOutputMetadata } from "./shared-applicability.js"
 import { isExcluded } from "./shared-globs.js"
 
-const RsSl01Config = Schema.Struct({
+export const RsSl01Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   min_tokens: Schema.Number,
   top_n_diagnostics: Schema.Number,
 })
-type RsSl01Config = typeof RsSl01Config.Type
+export type RsSl01Config = typeof RsSl01Config.Type
 
 interface DuplicateGroupMember {
   readonly file: string

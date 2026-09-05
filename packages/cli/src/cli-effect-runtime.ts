@@ -8,17 +8,14 @@ import { Effect, Logger } from "effect"
  * this, 585 WARN lines on groundwork made `pulsar score --json`
  * unparseable.
  */
-const stderrLogger = Logger.replace(
-  Logger.defaultLogger,
-  Logger.make((options) => {
-    const message = Array.isArray(options.message)
-      ? options.message.map(String).join(" ")
-      : String(options.message)
-    process.stderr.write(
-      `timestamp=${options.date.toISOString()} level=${options.logLevel.label} fiber=${options.fiberId} message=${JSON.stringify(message)}\n`,
-    )
-  }),
-)
+const stderrLogger = Logger.make((options) => {
+  const message = Array.isArray(options.message)
+    ? options.message.map(String).join(" ")
+    : String(options.message)
+  process.stderr.write(
+    `timestamp=${options.date.toISOString()} level=${options.logLevel} fiber=${options.fiber.id} message=${JSON.stringify(message)}\n`,
+  )
+})
 
 export const runCliEffect = <A>(effect: Effect.Effect<A, never, never>): Promise<A> =>
-  Effect.runPromise(Effect.provide(effect, stderrLogger))
+  Effect.runPromise(Effect.provide(effect, Logger.layer([stderrLogger])))

@@ -66,17 +66,17 @@ export const computeWorktreeContentHash = Effect.fn(
 
   const changedPaths = yield* collectDirtyPulsarPaths(repoPath)
   for (const path of changedPaths) {
-    const content = yield* Effect.either(
+    const content = yield* Effect.result(
       Effect.tryPromise({
         try: () => readFile(join(repoPath, path)),
         catch: (cause) => cause,
       }),
     )
-    if (content._tag === "Left") {
+    if (content._tag === "Failure") {
       entriesByPath.delete(path)
       continue
     }
-    entriesByPath.set(path, `worktree:${createHash("sha256").update(content.right).digest("hex")}`)
+    entriesByPath.set(path, `worktree:${createHash("sha256").update(content.success).digest("hex")}`)
   }
 
   const entries = [...entriesByPath.entries()]
@@ -122,11 +122,11 @@ const optionalGit = (
   args: ReadonlyArray<string>,
 ): Effect.Effect<string | undefined> =>
   Effect.gen(function* () {
-    const result = yield* Effect.either(
+    const result = yield* Effect.result(
       runGit(repoPath, args, { onFail: (message) => new Error(message) }),
     )
-    if (result._tag === "Left") return undefined
-    const value = result.right.trim()
+    if (result._tag === "Failure") return undefined
+    const value = result.success.trim()
     return value.length === 0 ? undefined : value
   })
 

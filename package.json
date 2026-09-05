@@ -38,20 +38,22 @@
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
     "clean": "turbo run clean",
+    "prepare": "effect-tsgo patch --typescript --no-oxlint",
     "verify": "bun run typecheck && bun run test && bun run build",
     "pack:dry-run": "bun run build && npm pack --dry-run --workspace packages/core --workspace packages/project-module-sdk --workspace packages/shared-signals --workspace packages/ts-pack --workspace packages/rs-pack --workspace packages/project-module-effect --workspace packages/project-module-convex --workspace packages/project-module-nextjs",
     "pack:npm-cli:dry-run": "bun run build:npm-cli && npm pack --dry-run --workspace packages/npm/pulsar-darwin-arm64 --workspace packages/npm/pulsar-darwin-x64 --workspace packages/npm/pulsar-linux-arm64 --workspace packages/npm/pulsar-linux-x64 --workspace packages/npm/pulsar",
     "smoke:npm-cli": "bun run build:npm-cli && node packages/npm/pulsar/bin/pulsar.js --version"
   },
   "devDependencies": {
+    "@effect/tsgo": "0.40.0",
     "@types/bun": "latest",
     "turbo": "^2.3.0",
-    "typescript": "^5.8.0"
+    "typescript": "7.0.2"
   },
   "packageManager": "bun@1.3.14",
   "dependencies": {
     "@skastr0/pulsar-project-module-sdk": "workspace:*",
-    "effect": "^3.0.0"
+    "effect": "4.0.0-rc.112"
   },
   "engines": {
     "bun": ">=1.3.0"

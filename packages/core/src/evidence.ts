@@ -6,7 +6,7 @@ import { Schema } from "effect"
  * This is intentionally separate from `tier`: tier describes execution and
  * cache semantics, while evidence class bounds what the result may claim.
  */
-export const SignalEvidenceClass = Schema.Literal(
+export const SignalEvidenceClass = Schema.Literals([
   "deterministic-ast",
   "manifest-fact",
   "reference-backed",
@@ -14,7 +14,7 @@ export const SignalEvidenceClass = Schema.Literal(
   "statistical",
   "heuristic-pattern",
   "mixed",
-)
+])
 export type SignalEvidenceClass = typeof SignalEvidenceClass.Type
 
 export interface SignalTestReference {

@@ -25,10 +25,10 @@ export interface ReferenceData {
   readonly require: <A>(signalId: string, key: string) => Effect.Effect<A, ReferenceDataMissingError>
 }
 
-export class ReferenceDataTag extends Context.Tag("@skastr0/pulsar-core/ReferenceData")<
+export class ReferenceDataTag extends Context.Service<
   ReferenceDataTag,
   ReferenceData
->() {}
+>()("@skastr0/pulsar-core/ReferenceData") {}
 
 /**
  * The scoring context — the spine that threads through every signal's
@@ -41,15 +41,15 @@ export interface SignalContext {
   readonly assessmentScope?: SignalAssessmentScope
 }
 
-export class SignalContextTag extends Context.Tag("@skastr0/pulsar-core/SignalContext")<
+export class SignalContextTag extends Context.Service<
   SignalContextTag,
   SignalContext
->() {}
+>()("@skastr0/pulsar-core/SignalContext") {}
 
 export const makeReferenceData = (
   entries: ReadonlyMap<string, unknown>,
 ): ReferenceData => ({
-  get: <A>(key: string) => Effect.sync(() => Option.fromNullable(entries.get(key) as A | undefined)),
+  get: <A>(key: string) => Effect.sync(() => Option.fromNullishOr(entries.get(key) as A | undefined)),
   require: <A>(signalId: string, key: string) =>
     Effect.gen(function* () {
       const value = entries.get(key)

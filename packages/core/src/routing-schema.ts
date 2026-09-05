@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { ChangedHunk } from "./context.js"
 
 export const Location = Schema.Struct({
@@ -10,9 +10,8 @@ export type Location = typeof Location.Type
 
 export const SignalRef = Schema.Struct({
   signalId: Schema.String,
-  include: Schema.optionalWith(
-    Schema.Literal("score", "diagnostics", "output", "all"),
-    { default: () => "all" },
+  include: Schema.Literals(["score", "diagnostics", "output", "all"]).pipe(
+    Schema.withDecodingDefaultType(Effect.succeed("all")),
   ),
 })
 export type SignalRef = typeof SignalRef.Type
@@ -36,27 +35,31 @@ const AstMatchCondition = Schema.Struct({
 const SignalThresholdCondition = Schema.Struct({
   kind: Schema.Literal("signal-threshold"),
   signalId: Schema.String,
-  below: Schema.optional(Schema.Number.pipe(Schema.between(0, 1))),
-  changeRatioAbove: Schema.optional(Schema.Number.pipe(Schema.greaterThanOrEqualTo(0))),
+  below: Schema.optional(
+    Schema.Number.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: 1 }))),
+  ),
+  changeRatioAbove: Schema.optional(
+    Schema.Number.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0))),
+  ),
 })
 
-export const PatternCondition = Schema.Union(
+export const PatternCondition = Schema.Union([
   FilePathCondition,
   ImportAddedCondition,
   AstMatchCondition,
   SignalThresholdCondition,
-)
+])
 export type PatternCondition = typeof PatternCondition.Type
 
 export const RoutingPattern = Schema.Struct({
   id: Schema.String,
   displayName: Schema.String,
-  triggerKind: Schema.Literal(
+  triggerKind: Schema.Literals([
     "file-path",
     "import-added",
     "ast-match",
     "signal-threshold",
-  ),
+  ]),
   condition: PatternCondition,
   reviewerRole: Schema.String,
   contextPayload: Schema.Array(SignalRef),
@@ -74,7 +77,7 @@ export const AstMatch = Schema.Struct({
   signalId: Schema.String,
   outputKey: Schema.String,
   location: Location,
-  data: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.Unknown })),
+  data: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
 })
 export type AstMatch = typeof AstMatch.Type
 
@@ -89,13 +92,20 @@ export type SignalChange = typeof SignalChange.Type
 
 export const RoutingDiff = Schema.Struct({
   changedFiles: Schema.Array(Schema.String),
-  changedHunks: Schema.optionalWith(Schema.Array(ChangedHunk), { default: () => [] }),
-  addedFiles: Schema.optionalWith(Schema.Array(Schema.String), { default: () => [] }),
-  addedImports: Schema.optionalWith(Schema.Array(ImportAddition), { default: () => [] }),
-  astMatches: Schema.optionalWith(Schema.Array(AstMatch), { default: () => [] }),
-  signalChanges: Schema.optionalWith(
-    Schema.Record({ key: Schema.String, value: SignalChange }),
-    { default: () => ({}) },
+  changedHunks: Schema.Array(ChangedHunk).pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => [])),
+  ),
+  addedFiles: Schema.Array(Schema.String).pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => [])),
+  ),
+  addedImports: Schema.Array(ImportAddition).pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => [])),
+  ),
+  astMatches: Schema.Array(AstMatch).pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => [])),
+  ),
+  signalChanges: Schema.Record(Schema.String, SignalChange).pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => ({}))),
   ),
 })
 export type RoutingDiff = typeof RoutingDiff.Type
@@ -103,7 +113,7 @@ export type RoutingDiff = typeof RoutingDiff.Type
 export const RoutingTrigger = Schema.Struct({
   patternId: Schema.String,
   reviewerRole: Schema.String,
-  contextPayload: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
+  contextPayload: Schema.Record(Schema.String, Schema.Unknown),
   sourceLocations: Schema.Array(Location),
 })
 export type RoutingTrigger = typeof RoutingTrigger.Type

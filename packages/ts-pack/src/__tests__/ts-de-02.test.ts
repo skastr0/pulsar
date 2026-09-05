@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { Effect, Schema } from "effect"
 import { buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { TS_PACK_SIGNALS } from "../pack.js"
-import { TsDe02 } from "../signals/ts-de-02-fan-in-out.js"
+import { TsDe02, TsDe02Config } from "../signals/ts-de-02-fan-in-out.js"
 import { TsProjectLayer } from "../ts-project.js"
 
 let repo: string
@@ -396,7 +396,7 @@ describe("TS-DE-02 (fan-in / fan-out)", () => {
   })
 
   test("configSchema decodes defaults round-trip", () => {
-    const decoded = Schema.decodeUnknownSync(TsDe02.configSchema)(TsDe02.defaultConfig)
+    const decoded = Schema.decodeSync(TsDe02Config)(TsDe02.defaultConfig)
     expect(decoded.hub_fan_in_threshold).toBe(10)
     expect(decoded.hub_fan_out_threshold).toBe(5)
     expect(decoded.top_n_diagnostics).toBe(10)

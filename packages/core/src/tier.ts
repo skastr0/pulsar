@@ -8,8 +8,8 @@ import { Schema } from "effect"
  * - 2:   Computation + reference data
  * - 3:   LLM with grounded context (soft warning only; never a hard gate)
  */
-export const Tier = Schema.Literal(1, 1.5, 2, 3)
+export const Tier = Schema.Literals([1, 1.5, 2, 3])
 export type Tier = typeof Tier.Type
 
-export const SignalKind = Schema.Literal("structural", "legibility", "compound")
+export const SignalKind = Schema.Literals(["structural", "legibility", "compound"])
 export type SignalKind = typeof SignalKind.Type

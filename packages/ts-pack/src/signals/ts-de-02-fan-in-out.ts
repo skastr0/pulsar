@@ -4,7 +4,7 @@ import { Effect, Schema } from "effect"
 import { buildModuleGraph } from "../graph/module-graph.js"
 import { TsPackageInfoTag, TsProjectTag } from "../ts-project.js"
 
-const TsDe02Config = Schema.Struct({
+export const TsDe02Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   hub_fan_in_threshold: Schema.Number,
   hub_fan_out_threshold: Schema.Number,

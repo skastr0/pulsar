@@ -16,23 +16,30 @@ export const readBaselineFile = (
 ): Effect.Effect<Baseline | undefined, Error, never> =>
   Effect.gen(function* () {
     const baselinePath = resolveBaselinePath(repoRoot)
-    const raw = yield* Effect.either(
+    const raw = yield* Effect.result(
       Effect.tryPromise({
         try: () => readFile(baselinePath, "utf8"),
         catch: (cause) => cause,
       }),
     )
 
-    if (raw._tag === "Left") {
-      const err = raw.left as NodeJS.ErrnoException
-      if (err.code === "ENOENT") return undefined
+    if (raw._tag === "Failure") {
+      const err = raw.failure
+      if (
+        typeof err === "object" &&
+        err !== null &&
+        "code" in err &&
+        err.code === "ENOENT"
+      ) {
+        return undefined
+      }
       return yield* Effect.fail(
-        new Error(`Failed to read baseline at ${baselinePath}: ${String(raw.left)}`),
+        new Error(`Failed to read baseline at ${baselinePath}: ${String(raw.failure)}`),
       )
     }
 
     const parsed = yield* Effect.try({
-      try: () => JSON.parse(raw.right),
+      try: () => JSON.parse(raw.success),
       catch: (cause) =>
         new Error(`Failed to parse baseline JSON at ${baselinePath}: ${String(cause)}`),
     })

@@ -30,7 +30,7 @@ type MutableFunctionNesting = {
   maxNesting: number
 }
 
-const TsLd03Config = Schema.Struct({
+export const TsLd03Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   max_nesting: Schema.Number,
   top_n_diagnostics: Schema.Number,

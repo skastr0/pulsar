@@ -4,6 +4,7 @@ import { Effect, Schema } from "effect"
 import { SHARED_SIGNALS } from "../pack.js"
 import {
   Shared06PrDepDelta,
+  Shared06PrDepDeltaConfig,
   type Shared06PrDepDeltaOutput,
 } from "../shared-06-pr-dep-delta.js"
 
@@ -72,7 +73,7 @@ describe("SHARED-06 PR dependency delta", () => {
     expect(packRegistered).toBeDefined()
     const registry = await Effect.runPromise(buildRegistry([packRegistered!]))
     const registered = registry.byId.get("SHARED-06")
-    const decoded = Schema.decodeUnknownSync(Shared06PrDepDelta.configSchema)(
+    const decoded = Schema.decodeSync(Shared06PrDepDeltaConfig)(
       Shared06PrDepDelta.defaultConfig,
     )
     const factorLedger = registered?.factorLedger?.({} as Shared06PrDepDeltaOutput)

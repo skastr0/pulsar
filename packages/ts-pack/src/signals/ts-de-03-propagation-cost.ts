@@ -7,7 +7,7 @@ import { condenseGraph, tarjanSccs } from "../graph/tarjan.js"
 import { TsPackageInfoTag, TsProjectTag } from "../ts-project.js"
 import { compareDescendingMetricByFile } from "./shared-rank-order.js"
 
-const TsDe03Config = Schema.Struct({
+export const TsDe03Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   target: Schema.Number,
   scale: Schema.Number,

@@ -12,7 +12,7 @@ export const DomainConstructionEvidence = Schema.Struct({
 export type DomainConstructionEvidence = typeof DomainConstructionEvidence.Type
 
 export const DomainConstructionControl = Schema.Struct({
-  intent: Schema.Literal("controlled", "intentionally_open"),
+  intent: Schema.Literals(["controlled", "intentionally_open"]),
   reason: Schema.optional(Schema.String),
   smart_constructors: Schema.optional(Schema.Array(DomainConstructionEvidence)),
   parsers: Schema.optional(Schema.Array(DomainConstructionEvidence)),
@@ -21,14 +21,14 @@ export const DomainConstructionControl = Schema.Struct({
 })
 export type DomainConstructionControl = typeof DomainConstructionControl.Type
 
-export const DomainConstructKind = Schema.Literal(
+export const DomainConstructKind = Schema.Literals([
   "brand",
   "newtype",
   "value-object",
   "opaque-type",
   "wrapper",
   "domain-primitive",
-)
+])
 export type DomainConstructKind = typeof DomainConstructKind.Type
 
 export const DomainConstructionConstruct = Schema.Struct({
@@ -36,7 +36,7 @@ export const DomainConstructionConstruct = Schema.Struct({
   symbol: Schema.String,
   kind: DomainConstructKind,
   declaration_path: Schema.String,
-  source_hashes: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.String })),
+  source_hashes: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   control: DomainConstructionControl,
 })
 export type DomainConstructionConstruct = typeof DomainConstructionConstruct.Type

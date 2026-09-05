@@ -16,10 +16,10 @@ import {
 } from "../lock-file.js"
 import { RustProjectTag, type RustManifestInfo, type RustProject } from "../project.js"
 
-const RsDe02Config = Schema.Struct({
+export const RsDe02Config = Schema.Struct({
   top_n_diagnostics: Schema.Number,
 })
-type RsDe02Config = typeof RsDe02Config.Type
+export type RsDe02Config = typeof RsDe02Config.Type
 
 interface DependencyDuplicateGroup {
   readonly name: string

@@ -9,7 +9,7 @@ import {
 } from "./ts-ab-04-analysis.js"
 import { TsPackageInfoTag, TsProjectTag } from "../ts-project.js"
 
-const TsAb04Config = Schema.Struct({
+export const TsAb04Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   test_globs: Schema.Array(Schema.String),
   public_entry_globs: Schema.Array(Schema.String),

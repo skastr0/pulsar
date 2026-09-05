@@ -13,7 +13,7 @@ import {
   measureDeclaration,
 } from "./ts-ab-03-indirection-walker.js"
 
-const TsAb03Config = Schema.Struct({
+export const TsAb03Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   max_depth: Schema.Number,
   max_traversal_steps: Schema.Number,

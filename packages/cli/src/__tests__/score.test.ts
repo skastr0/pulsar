@@ -1022,7 +1022,7 @@ export function stubF() { throw new Error("Not implemented") }
       expect(before.stdout).not.toContain("domain-boundary")
 
       const effectModuleUrl = pathToFileURL(
-        resolve(import.meta.dir, "../../node_modules/effect/dist/esm/index.js"),
+        resolve(import.meta.dir, "../../node_modules/effect/dist/index.js"),
       ).href
       await writeRepoFile(
         repoPath,

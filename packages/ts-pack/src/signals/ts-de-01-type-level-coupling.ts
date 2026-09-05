@@ -20,7 +20,7 @@ import type {
   TsDe01Output,
 } from "./ts-de-01-coupling-output.js"
 
-const TsDe01Config = Schema.Struct({
+export const TsDe01Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   top_n_diagnostics: Schema.Number,
   precise_module_limit: Schema.Number,

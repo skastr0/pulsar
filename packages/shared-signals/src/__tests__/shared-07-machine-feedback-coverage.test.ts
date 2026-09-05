@@ -8,6 +8,7 @@ import { Effect, Layer, Schema } from "effect"
 import { SHARED_SIGNALS } from "../pack.js"
 import {
   Shared07MachineFeedbackCoverage,
+  Shared07MachineFeedbackCoverageConfig,
   type Shared07MachineFeedbackCoverageOutput,
 } from "../shared-07-machine-feedback-coverage.js"
 
@@ -53,7 +54,7 @@ describe("SHARED-07 machine feedback coverage", () => {
     expect(packRegistered).toBeDefined()
     const registry = await Effect.runPromise(buildRegistry([packRegistered!]))
     const registered = registry.byId.get("SHARED-07")
-    const decoded = Schema.decodeUnknownSync(Shared07MachineFeedbackCoverage.configSchema)(
+    const decoded = Schema.decodeSync(Shared07MachineFeedbackCoverageConfig)(
       Shared07MachineFeedbackCoverage.defaultConfig,
     )
     const factorLedger = registered?.factorLedger?.({} as Shared07MachineFeedbackCoverageOutput)

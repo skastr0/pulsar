@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { Effect, Exit, Schema } from "effect"
+import { Effect, Exit, Option, Schema } from "effect"
 import type { AnySignal, Signal } from "../signal.js"
 import { buildRegistry } from "../registry.js"
 
@@ -145,8 +145,8 @@ describe("Registry", () => {
     )
     expect(Exit.isFailure(exit)).toBe(true)
     if (Exit.isFailure(exit)) {
-      const err = exit.cause._tag === "Fail" ? exit.cause.error : null
-      expect((err as any)?._tag).toBe("DuplicateSignalIdError")
+      const err = Option.getOrNull(Exit.findErrorOption(exit))
+      expect(err?._tag).toBe("DuplicateSignalIdError")
     }
   })
 
@@ -159,9 +159,11 @@ describe("Registry", () => {
     )
     expect(Exit.isFailure(exit)).toBe(true)
     if (Exit.isFailure(exit)) {
-      const err = exit.cause._tag === "Fail" ? exit.cause.error : null
-      expect((err as any)?._tag).toBe("DuplicateSignalIdError")
-      expect((err as any)?.id).toBe("MOCK-LEGACY")
+      const err = Option.getOrNull(Exit.findErrorOption(exit))
+      expect(err?._tag).toBe("DuplicateSignalIdError")
+      if (err?._tag === "DuplicateSignalIdError") {
+        expect(err.id).toBe("MOCK-LEGACY")
+      }
     }
   })
 
@@ -169,8 +171,8 @@ describe("Registry", () => {
     const exit = await Effect.runPromiseExit(buildRegistry([MockCompound]))
     expect(Exit.isFailure(exit)).toBe(true)
     if (Exit.isFailure(exit)) {
-      const err = exit.cause._tag === "Fail" ? exit.cause.error : null
-      expect((err as any)?._tag).toBe("MissingDependencyError")
+      const err = Option.getOrNull(Exit.findErrorOption(exit))
+      expect(err?._tag).toBe("MissingDependencyError")
     }
   })
 
@@ -202,8 +204,8 @@ describe("Registry", () => {
     const exit = await Effect.runPromiseExit(buildRegistry([A, B]))
     expect(Exit.isFailure(exit)).toBe(true)
     if (Exit.isFailure(exit)) {
-      const err = exit.cause._tag === "Fail" ? exit.cause.error : null
-      expect((err as any)?._tag).toBe("CycleDetectedError")
+      const err = Option.getOrNull(Exit.findErrorOption(exit))
+      expect(err?._tag).toBe("CycleDetectedError")
     }
   })
 
@@ -214,8 +216,8 @@ describe("Registry", () => {
     const exit = await Effect.runPromiseExit(buildRegistry([leaf, mid, top]))
     expect(Exit.isFailure(exit)).toBe(true)
     if (Exit.isFailure(exit)) {
-      const err = exit.cause._tag === "Fail" ? exit.cause.error : null
-      expect((err as any)?._tag).toBe("CompositionTooDeepError")
+      const err = Option.getOrNull(Exit.findErrorOption(exit))
+      expect(err?._tag).toBe("CompositionTooDeepError")
     }
   })
 })

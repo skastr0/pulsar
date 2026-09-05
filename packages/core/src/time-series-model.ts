@@ -48,17 +48,14 @@ export const TimeSeriesAggregate = Schema.Struct({
   sample_count: Schema.Number,
   commit_shas: Schema.Array(Schema.String),
   observer_semantics: Schema.optional(
-    Schema.Literal("readiness-aware", "legacy-compatibility"),
+    Schema.Literals(["readiness-aware", "legacy-compatibility"]),
   ),
   readiness_sample_count: Schema.optional(Schema.Number),
   compatibility_reason: Schema.optional(Schema.String),
 })
 export type TimeSeriesAggregate = typeof TimeSeriesAggregate.Type
 
-const SignalDiagnostics = Schema.Record({
-  key: Schema.String,
-  value: Schema.Array(DiagnosticSchema),
-})
+const SignalDiagnostics = Schema.Record(Schema.String, Schema.Array(DiagnosticSchema))
 type SignalDiagnostics = typeof SignalDiagnostics.Type
 
 export const TimeSeriesEntry = Schema.Struct({
@@ -67,7 +64,7 @@ export const TimeSeriesEntry = Schema.Struct({
   observerOutput: ObserverOutputSchema,
   signalDiagnostics: Schema.optional(SignalDiagnostics),
   inactiveSignals: Schema.optional(Schema.Array(Schema.String)),
-  source: Schema.Literal("raw", "weekly-average"),
+  source: Schema.Literals(["raw", "weekly-average"]),
   aggregate: Schema.optional(TimeSeriesAggregate),
 })
 export type TimeSeriesEntry = typeof TimeSeriesEntry.Type

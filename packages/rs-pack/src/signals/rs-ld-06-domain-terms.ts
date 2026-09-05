@@ -32,11 +32,11 @@ import {
   walkAttributedNodes,
 } from "./shared-rust-ast.js"
 
-const RsLd06Config = Schema.Struct({
+export const RsLd06Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   top_n_diagnostics: Schema.Number,
 })
-type RsLd06Config = typeof RsLd06Config.Type
+export type RsLd06Config = typeof RsLd06Config.Type
 
 type IdentifierClassification =
   | "matches-glossary"

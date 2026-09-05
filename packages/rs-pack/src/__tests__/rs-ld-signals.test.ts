@@ -3,12 +3,12 @@ import { buildRegistry, computeConfigHash } from "@skastr0/pulsar-core/scoring"
 import { SHARED_SIGNALS } from "@skastr0/pulsar-shared-signals"
 import { Effect, Schema } from "effect"
 import { RS_PACK_SIGNALS } from "../pack.js"
-import { RsLd01 } from "../signals/rs-ld-01-unsafe.js"
-import { RsLd02 } from "../signals/rs-ld-02-lifetimes.js"
-import { RsLd03 } from "../signals/rs-ld-03-match-catch-all.js"
-import { RsLd04 } from "../signals/rs-ld-04-error-granularity.js"
-import { RsLd05 } from "../signals/rs-ld-05-complexity.js"
-import { RsLd06 } from "../signals/rs-ld-06-domain-terms.js"
+import { RsLd01, RsLd01Config } from "../signals/rs-ld-01-unsafe.js"
+import { RsLd02, RsLd02Config } from "../signals/rs-ld-02-lifetimes.js"
+import { RsLd03, RsLd03Config } from "../signals/rs-ld-03-match-catch-all.js"
+import { RsLd04, RsLd04Config } from "../signals/rs-ld-04-error-granularity.js"
+import { RsLd05, RsLd05Config } from "../signals/rs-ld-05-complexity.js"
+import { RsLd06, RsLd06Config } from "../signals/rs-ld-06-domain-terms.js"
 import {
   cleanupWorkspace,
   createRustWorkspace,
@@ -450,7 +450,7 @@ describe("RS-LD-* signals", () => {
       ]),
     )
     const registered = registry.byId.get("RS-LD-01")
-    const decoded = Schema.decodeUnknownSync(RsLd01.configSchema)(RsLd01.defaultConfig)
+    const decoded = Schema.decodeSync(RsLd01Config)(RsLd01.defaultConfig)
     const factorLedger = registered?.factorLedger?.({})
     const baseCacheHash = computeConfigHash(RsLd01.id, registry, undefined)
     const versionedCacheHash = computeConfigHash(RsLd01.id, versionedRegistry, undefined)
@@ -997,7 +997,7 @@ describe("RS-LD-* signals", () => {
       ]),
     )
     const registered = registry.byId.get("RS-LD-02")
-    const decoded = Schema.decodeUnknownSync(RsLd02.configSchema)(RsLd02.defaultConfig)
+    const decoded = Schema.decodeSync(RsLd02Config)(RsLd02.defaultConfig)
     const factorLedger = registered?.factorLedger?.({})
     const baseCacheHash = computeConfigHash(RsLd02.id, registry, undefined)
     const versionedCacheHash = computeConfigHash(RsLd02.id, versionedRegistry, undefined)
@@ -1341,7 +1341,7 @@ describe("RS-LD-* signals", () => {
       ]),
     )
     const registered = registry.byId.get("RS-LD-03")
-    const decoded = Schema.decodeUnknownSync(RsLd03.configSchema)(RsLd03.defaultConfig)
+    const decoded = Schema.decodeSync(RsLd03Config)(RsLd03.defaultConfig)
     const factorLedger = registered?.factorLedger?.({})
     const baseCacheHash = computeConfigHash(RsLd03.id, registry, undefined)
     const versionedCacheHash = computeConfigHash(RsLd03.id, versionedRegistry, undefined)
@@ -1841,7 +1841,7 @@ describe("RS-LD-* signals", () => {
       ]),
     )
     const registered = registry.byId.get("RS-LD-04")
-    const decoded = Schema.decodeUnknownSync(RsLd04.configSchema)(RsLd04.defaultConfig)
+    const decoded = Schema.decodeSync(RsLd04Config)(RsLd04.defaultConfig)
     const factorLedger = registered?.factorLedger?.({})
     const baseCacheHash = computeConfigHash(RsLd04.id, registry, undefined)
     const versionedCacheHash = computeConfigHash(RsLd04.id, versionedRegistry, undefined)
@@ -2388,7 +2388,7 @@ describe("RS-LD-* signals", () => {
       ]),
     )
     const registered = registry.byId.get("RS-LD-05")
-    const decoded = Schema.decodeUnknownSync(RsLd05.configSchema)(RsLd05.defaultConfig)
+    const decoded = Schema.decodeSync(RsLd05Config)(RsLd05.defaultConfig)
     const factorLedger = registered?.factorLedger?.({})
     const baseCacheHash = computeConfigHash(RsLd05.id, registry, undefined)
     const versionedCacheHash = computeConfigHash(RsLd05.id, versionedRegistry, undefined)
@@ -2634,7 +2634,7 @@ describe("RS-LD-* signals", () => {
       ]),
     )
     const registered = registry.byId.get("RS-LD-06")
-    const decoded = Schema.decodeUnknownSync(RsLd06.configSchema)(RsLd06.defaultConfig)
+    const decoded = Schema.decodeSync(RsLd06Config)(RsLd06.defaultConfig)
     const factorLedger = registered?.factorLedger?.({})
     const baseCacheHash = computeConfigHash(RsLd06.id, registry, undefined)
     const versionedCacheHash = computeConfigHash(RsLd06.id, versionedRegistry, undefined)

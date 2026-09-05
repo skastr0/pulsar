@@ -1,16 +1,17 @@
-import { Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { clampWeight } from "./proposal-utils.js"
 
-export const RevealedPreferenceOutcome = Schema.Literal("accepted", "revised", "reverted")
+export const RevealedPreferenceOutcome = Schema.Literals(["accepted", "revised", "reverted"])
 export type RevealedPreferenceOutcome = typeof RevealedPreferenceOutcome.Type
 
 export const RevealedPreferenceSample = Schema.Struct({
   id: Schema.String,
   outcome: RevealedPreferenceOutcome,
-  signal_scores: Schema.Record({ key: Schema.String, value: Schema.Number }),
-  confidence: Schema.optionalWith(Schema.Number.pipe(Schema.between(0, 1)), {
-    default: () => 1,
-  }),
+  signal_scores: Schema.Record(Schema.String, Schema.Number),
+  confidence: Schema.Number.pipe(
+    Schema.check(Schema.isBetween({ minimum: 0, maximum: 1 })),
+    Schema.withDecodingDefaultType(Effect.succeed(1)),
+  ),
 })
 export type RevealedPreferenceSample = typeof RevealedPreferenceSample.Type
 

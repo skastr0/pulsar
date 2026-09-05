@@ -5,6 +5,7 @@ import { Effect, Schema } from "effect"
 import { SHARED_SIGNALS } from "../pack.js"
 import {
   Shared11TheoryEncodingIndex,
+  Shared11TheoryEncodingIndexConfig,
 } from "../shared-11-theory-encoding-index.js"
 import type { Shared07MachineFeedbackCoverageOutput } from "../shared-07-machine-feedback-coverage.js"
 import type { Shared09ContractFreshnessOutput } from "../shared-09-contract-freshness.js"
@@ -23,7 +24,7 @@ describe("Theory encoding index", () => {
     )
     const registry = await Effect.runPromise(buildRegistry(SHARED_SIGNALS))
     const registered = registry.byId.get("SHARED-11")
-    const decoded = Schema.decodeUnknownSync(Shared11TheoryEncodingIndex.configSchema)(
+    const decoded = Schema.decodeSync(Shared11TheoryEncodingIndexConfig)(
       Shared11TheoryEncodingIndex.defaultConfig,
     )
     const factorLedger = registered?.factorLedger?.({} as any)

@@ -12,7 +12,7 @@ export const CATEGORIES = [
   "behavior-preservation",
 ] as const
 
-export const Category = Schema.Literal(...CATEGORIES)
+export const Category = Schema.Literals(CATEGORIES)
 export type Category = typeof Category.Type
 
 export const categoryRecord = <Value>(

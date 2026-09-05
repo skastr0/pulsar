@@ -6,6 +6,7 @@ import { Effect, Schema } from "effect"
 import { TS_PACK_SIGNALS } from "../pack.js"
 import {
   TsAd02,
+  TsAd02Config,
   type TsAd02Output,
 } from "../signals/ts-ad-02-circular-deps.js"
 import { TsProjectLayer } from "../ts-project.js"
@@ -341,7 +342,7 @@ describe("TS-AD-02 (circular dependencies)", () => {
   })
 
   test("configSchema decodes defaults round-trip", () => {
-    const decoded = Schema.decodeUnknownSync(TsAd02.configSchema)(TsAd02.defaultConfig)
+    const decoded = Schema.decodeSync(TsAd02Config)(TsAd02.defaultConfig)
     expect(decoded.top_n_diagnostics).toBe(10)
     expect(decoded.exclude_globs.length).toBeGreaterThan(0)
   })

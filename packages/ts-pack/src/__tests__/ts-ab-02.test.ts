@@ -5,7 +5,7 @@ import type { RepoFacts } from "@skastr0/pulsar-core/calibration"
 import { buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { nextjsProjectModule } from "@skastr0/pulsar-project-module-nextjs"
 import { TS_PACK_SIGNALS } from "../pack.js"
-import { TsAb02 } from "../signals/ts-ab-02-unused-exports-reachability.js"
+import { TsAb02, TsAb02Config } from "../signals/ts-ab-02-unused-exports-reachability.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
 import { TsProjectLayer } from "../ts-project.js"
 
@@ -818,7 +818,7 @@ describe("TS-AB-02 (unused exports reachability)", () => {
   })
 
   test("configSchema decodes defaults round-trip", () => {
-    const decoded = Schema.decodeUnknownSync(TsAb02.configSchema)(TsAb02.defaultConfig)
+    const decoded = Schema.decodeSync(TsAb02Config)(TsAb02.defaultConfig)
     expect(decoded.exclude_globs).toContain("**/node_modules/**")
     expect(decoded.public_entry_globs).toContain("**/src/index.ts")
     expect(decoded.public_entry_globs).toContain("**/*.config.ts")

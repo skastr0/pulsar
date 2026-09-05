@@ -19,11 +19,11 @@ import {
 import { rustAnalyzedFunctionOutputMetadata } from "./shared-applicability.js"
 import { isExcluded } from "./shared-globs.js"
 
-const RsSl04Config = Schema.Struct({
+export const RsSl04Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   top_n_diagnostics: Schema.Number,
 })
-type RsSl04Config = typeof RsSl04Config.Type
+export type RsSl04Config = typeof RsSl04Config.Type
 
 interface CloneAbuseModule {
   readonly module: string

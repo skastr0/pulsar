@@ -44,13 +44,13 @@
   "dependencies": {
     "@skastr0/pulsar-core": "0.1.5",
     "@skastr0/pulsar-shared-signals": "0.1.5",
-    "effect": "^3.0.0",
+    "effect": "4.0.0-rc.112",
     "simple-git": "^3.25.0",
     "ts-morph": "^24.0.0"
   },
   "devDependencies": {
     "@skastr0/pulsar-project-module-nextjs": "workspace:*",
     "@skastr0/pulsar-signal-test-support": "workspace:*",
-    "typescript": "^5.8.0"
+    "typescript": "7.0.2"
   }
 }

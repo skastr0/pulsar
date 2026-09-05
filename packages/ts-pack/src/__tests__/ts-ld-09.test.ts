@@ -3,9 +3,10 @@ import { buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { Effect, Schema } from "effect"
 import { TS_PACK_SIGNALS } from "../pack.js"
 import { TsLd09 } from "../signals/ts-ld-09-error-channel-opacity.js"
-import type {
-  ErrorChannelOpacityKind,
-  TsLd09Output,
+import {
+  TsLd09Config,
+  type ErrorChannelOpacityKind,
+  type TsLd09Output,
 } from "../signals/ts-ld-09-types.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
 
@@ -730,7 +731,7 @@ describe("TS-LD-09 (error channel opacity)", () => {
   })
 
   test("default config decodes", () => {
-    const decoded = Schema.decodeUnknownSync(TsLd09.configSchema)(TsLd09.defaultConfig)
+    const decoded = Schema.decodeSync(TsLd09Config)(TsLd09.defaultConfig)
     expect(decoded.exclude_globs.length).toBeGreaterThan(0)
     expect(decoded.expected_failure_name_patterns).toContain("load")
     expect(decoded.max_weighted_opacity_per_kloc).toBeGreaterThan(0)

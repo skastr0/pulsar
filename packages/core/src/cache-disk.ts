@@ -238,7 +238,7 @@ const runDiskCacheOperation = <A>(
   Effect.tryPromise({
     try: evaluate,
     catch: (cause) => new DiskBackedCacheError(operation, cause),
-  }).pipe(Effect.catchAllCause((cause) => Effect.die(cause)))
+  }).pipe(Effect.catchCause((cause) => Effect.die(cause)))
 
 const makeDiskBackedCache = (config?: CacheConfig): Effect.Effect<SignalCache> =>
   runDiskCacheOperation("initialize", async () => {

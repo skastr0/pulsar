@@ -39,9 +39,10 @@ interface SignalFactorPolicyContext {
   readonly vectorSourceRef?: string
 }
 
-export class SignalFactorPolicyTag extends Context.Tag(
-  "@skastr0/pulsar-core/SignalFactorPolicy",
-)<SignalFactorPolicyTag, SignalFactorPolicyContext>() {}
+export class SignalFactorPolicyTag extends Context.Service<
+  SignalFactorPolicyTag,
+  SignalFactorPolicyContext
+>()("@skastr0/pulsar-core/SignalFactorPolicy") {}
 
 class SignalFactorDefinitionValidationError extends Error {
   override readonly name = "SignalFactorDefinitionValidationError"

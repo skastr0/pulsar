@@ -22,7 +22,7 @@ import {
   type ReExportAnalysis,
 } from "./ts-ad-03-reexport-analysis.js"
 
-const TsAd03Config = Schema.Struct({
+export const TsAd03Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   barrel_ratio_threshold: Schema.Number,
   index_reexport_threshold: Schema.Number,

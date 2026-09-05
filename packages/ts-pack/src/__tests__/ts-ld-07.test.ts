@@ -12,6 +12,7 @@ import { TS_PACK_SIGNALS } from "../pack.js"
 import { TsProjectLayer } from "../ts-project.js"
 import {
   TsLd07,
+  TsLd07Config,
   type TsLd07Output,
 } from "../signals/ts-ld-07-unsafe-type-erosion.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
@@ -970,7 +971,7 @@ describe("TS-LD-07 (unsafe type erosion)", () => {
   })
 
   test("default config decodes", () => {
-    const decoded = Schema.decodeUnknownSync(TsLd07.configSchema)(TsLd07.defaultConfig)
+    const decoded = Schema.decodeSync(TsLd07Config)(TsLd07.defaultConfig)
     expect(decoded.exclude_globs.length).toBeGreaterThan(0)
     expect(decoded.max_weighted_unsafe_per_kloc).toBeGreaterThan(0)
     expect(decoded.max_boundary_weighted_unsafe).toBeGreaterThan(0)

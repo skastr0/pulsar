@@ -67,7 +67,7 @@ const runCalibrate = async (commandArgs: ReadonlyArray<string>): Promise<void> =
         ...(actionArgs.includes("--json") ? { json: true } : {}),
         ...(actionArgs.includes("--write") ? { write: true } : {}),
       }).pipe(
-        Effect.catchAll((err) =>
+        Effect.catch((err) =>
           Effect.sync(() => {
             console.error(`pulsar calibrate failed: ${formatCliError(err)}`)
             process.exit(1)
@@ -118,7 +118,7 @@ const runGlossary = async (commandArgs: ReadonlyArray<string>): Promise<void> =>
   const exitCode = await runWithProgress("glossary", commandArgs, () =>
     Effect.runPromise(
       runGlossaryCommand(glossaryOptions).pipe(
-        Effect.catchAll((err) =>
+        Effect.catch((err) =>
           Effect.sync(() => {
             console.error(`pulsar glossary failed: ${formatCliError(err)}`)
             process.exit(1)
@@ -150,7 +150,7 @@ const runConventions = async (commandArgs: ReadonlyArray<string>): Promise<void>
   const exitCode = await runWithProgress("conventions", commandArgs, () =>
     Effect.runPromise(
       runConventionsCommand(conventionsOptions).pipe(
-        Effect.catchAll((err) =>
+        Effect.catch((err) =>
           Effect.sync(() => {
             console.error(`pulsar conventions failed: ${formatCliError(err)}`)
             process.exit(1)
@@ -187,7 +187,7 @@ const runPersona = async (commandArgs: ReadonlyArray<string>): Promise<void> => 
   const exitCode = await runWithProgress("persona", commandArgs, () =>
     Effect.runPromise(
       runPersonaCommand(personaOptions).pipe(
-        Effect.catchAll((err) =>
+        Effect.catch((err) =>
           Effect.sync(() => {
             console.error(`pulsar persona failed: ${formatCliError(err)}`)
             process.exit(1)
@@ -216,7 +216,7 @@ const runElicit = async (commandArgs: ReadonlyArray<string>): Promise<void> => {
   const exitCode = await runWithProgress("elicit", commandArgs, () =>
     Effect.runPromise(
       runElicitCommand(elicitOptions).pipe(
-        Effect.catchAll((err) =>
+        Effect.catch((err) =>
           Effect.sync(() => {
             console.error(`pulsar elicit failed: ${formatCliError(err)}`)
             process.exit(1)

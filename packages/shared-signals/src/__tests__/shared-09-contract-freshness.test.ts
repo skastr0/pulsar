@@ -14,6 +14,7 @@ import { Effect, Layer, Schema } from "effect"
 import { SHARED_SIGNALS } from "../pack.js"
 import {
   Shared09ContractFreshness,
+  Shared09ContractFreshnessConfig,
   type Shared09ContractFreshnessOutput,
 } from "../shared-09-contract-freshness.js"
 
@@ -47,7 +48,7 @@ describe("SHARED-09 contract freshness", () => {
     expect(packRegistered).toBeDefined()
     const registry = await Effect.runPromise(buildRegistry([packRegistered!]))
     const registered = registry.byId.get("SHARED-09")
-    const decoded = Schema.decodeUnknownSync(Shared09ContractFreshness.configSchema)(
+    const decoded = Schema.decodeSync(Shared09ContractFreshnessConfig)(
       Shared09ContractFreshness.defaultConfig,
     )
     const factorLedger = registered?.factorLedger?.({} as Shared09ContractFreshnessOutput)

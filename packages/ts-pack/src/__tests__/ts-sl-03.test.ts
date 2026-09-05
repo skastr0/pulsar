@@ -3,7 +3,7 @@ import { Effect, Layer, Schema } from "effect"
 import { SignalContextTag } from "@skastr0/pulsar-core/signal"
 import { buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { createTempRepo, runSignal } from "./test-repo.js"
-import { TsSl03 } from "../signals/ts-sl-03-suppressions.js"
+import { TsSl03, TsSl03Config } from "../signals/ts-sl-03-suppressions.js"
 import { TsProjectLayer } from "../ts-project.js"
 import type { TempRepo } from "./test-repo.js"
 import { TS_PACK_SIGNALS } from "../pack.js"
@@ -55,7 +55,7 @@ describe("TS-SL-03 Suppression growth", () => {
     expect(packRegistered).toBeDefined()
     const registry = await Effect.runPromise(buildRegistry([packRegistered!]))
     const registered = registry.byId.get("TS-SL-03")
-    const decoded = Schema.decodeUnknownSync(TsSl03.configSchema)(TsSl03.defaultConfig)
+    const decoded = Schema.decodeSync(TsSl03Config)(TsSl03.defaultConfig)
     const out = await runSignal(repo.root, TsSl03, TsSl03.defaultConfig)
     const factorLedger = registered?.factorLedger?.(out)
 

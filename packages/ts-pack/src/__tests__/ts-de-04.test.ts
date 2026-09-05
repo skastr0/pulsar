@@ -4,6 +4,7 @@ import { buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { Effect, Schema } from "effect"
 import { TS_PACK_SIGNALS } from "../pack.js"
 import { TsDe04 } from "../signals/ts-de-04-package-dependency-health.js"
+import { TsDe04Config } from "../signals/ts-de-04-model.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
 
 let repo: TempRepo
@@ -1944,7 +1945,7 @@ describe("TS-DE-04 (package dependency health)", () => {
   })
 
   test("configSchema decodes defaults round-trip", () => {
-    const decoded = Schema.decodeUnknownSync(TsDe04.configSchema)(TsDe04.defaultConfig)
+    const decoded = Schema.decodeSync(TsDe04Config)(TsDe04.defaultConfig)
 
     expect(decoded.exclude_globs).toContain("**/node_modules/**")
     expect(decoded.exclude_globs).toContain("**/vendor/**")

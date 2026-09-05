@@ -11,7 +11,7 @@ import { Effect, Option, Schema } from "effect"
 import { findDuplicateGroups, type DuplicateGroup } from "./ts-de-05-groups.js"
 import { readTsDe05Lockfile } from "./ts-de-05-lockfile.js"
 
-const TsDe05Config = Schema.Struct({
+export const TsDe05Config = Schema.Struct({
   top_n_diagnostics: Schema.Number,
 })
 type TsDe05Config = typeof TsDe05Config.Type

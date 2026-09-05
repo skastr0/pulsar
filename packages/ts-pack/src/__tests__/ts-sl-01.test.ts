@@ -7,7 +7,7 @@ import { createTempRepo, runSignal } from "./test-repo.js"
 import { TsSl01 } from "../signals/ts-sl-01-duplication.js"
 import { TsProjectLayer } from "../ts-project.js"
 import type { TempRepo } from "./test-repo.js"
-import type { TsSl01Output } from "../signals/ts-sl-01-model.js"
+import { TsSl01Config, type TsSl01Output } from "../signals/ts-sl-01-model.js"
 import { makePulsarSelfCalibrationContext } from "./pulsar-self-calibration.js"
 import { TS_PACK_SIGNALS } from "../pack.js"
 
@@ -138,7 +138,7 @@ describe("TS-SL-01 Duplication on new code", () => {
     expect(packRegistered).toBeDefined()
     const registry = await Effect.runPromise(buildRegistry([packRegistered!]))
     const registered = registry.byId.get("TS-SL-01")
-    const decoded = Schema.decodeUnknownSync(TsSl01.configSchema)(TsSl01.defaultConfig)
+    const decoded = Schema.decodeSync(TsSl01Config)(TsSl01.defaultConfig)
     const out = await runSignal(repo.root, TsSl01, TsSl01.defaultConfig)
     const factorLedger = registered?.factorLedger?.(out)
 

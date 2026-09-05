@@ -198,13 +198,13 @@ const collectFrameworkDetectionFacts = (
 
     const visit = (dir: string): Effect.Effect<void, never, never> =>
       Effect.gen(function* () {
-        const entries = yield* Effect.either(Effect.tryPromise({
+        const entries = yield* Effect.result(Effect.tryPromise({
           try: () => readdir(dir, { withFileTypes: true }),
           catch: (cause) => new Error(`Failed to scan ${dir}: ${String(cause)}`),
         }))
-        if (entries._tag === "Left") return
+        if (entries._tag === "Failure") return
 
-        for (const entry of entries.right.sort((left, right) =>
+        for (const entry of entries.success.sort((left, right) =>
           compareText(left.name, right.name)
         )) {
           const fullPath = join(dir, entry.name)
@@ -276,32 +276,32 @@ const packageJsonDependencyNames = (
   path: string,
 ): Effect.Effect<ReadonlySet<string>, never, never> =>
   Effect.gen(function* () {
-    const raw = yield* Effect.either(Effect.tryPromise({
+    const raw = yield* Effect.result(Effect.tryPromise({
       try: () => readFile(path, "utf8"),
       catch: (cause) => new Error(`Failed to read ${path}: ${String(cause)}`),
     }))
-    if (raw._tag === "Left") return new Set<string>()
+    if (raw._tag === "Failure") return new Set<string>()
 
-    const parsed = yield* Effect.either(Effect.try({
-      try: () => JSON.parse(raw.right) as Record<string, unknown>,
+    const parsed = yield* Effect.result(Effect.try({
+      try: () => JSON.parse(raw.success) as Record<string, unknown>,
       catch: (cause) => new Error(`Failed to parse ${path}: ${String(cause)}`),
     }))
-    if (parsed._tag === "Left") return new Set<string>()
+    if (parsed._tag === "Failure") return new Set<string>()
 
-    return collectDependencyNames(parsed.right)
+    return collectDependencyNames(parsed.success)
   })
 
 const solidStartConfigModuleSpecifier = (
   path: string,
 ): Effect.Effect<string | undefined, never, never> =>
   Effect.gen(function* () {
-    const source = yield* Effect.either(Effect.tryPromise({
+    const source = yield* Effect.result(Effect.tryPromise({
       try: () => readFile(path, "utf8"),
       catch: (cause) => new Error(`Failed to read ${path}: ${String(cause)}`),
     }))
-    if (source._tag === "Left") return undefined
+    if (source._tag === "Failure") return undefined
     return SOLID_START_CONFIG_MODULES.find((moduleSpecifier) =>
-      sourceImportsModule(source.right, moduleSpecifier)
+      sourceImportsModule(source.success, moduleSpecifier)
     )
   })
 

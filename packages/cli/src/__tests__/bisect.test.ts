@@ -5,7 +5,7 @@ import { join, resolve } from "node:path"
 import { spawnSync } from "node:child_process"
 import { createTimeSeriesServices } from "@skastr0/pulsar-core/time-series"
 import { CATEGORIES } from "@skastr0/pulsar-core/signal"
-import { Effect, Exit } from "effect"
+import { Effect, Exit, Option } from "effect"
 import { printObserverHumanReport } from "../bisect-output.js"
 import {
   chooseAdaptiveMidpoint,
@@ -695,8 +695,8 @@ describe("pulsar bisect (integration)", () => {
 
       expect(Exit.isFailure(exit)).toBe(true)
       if (Exit.isFailure(exit)) {
-        const err = exit.cause._tag === "Fail" ? exit.cause.error : null
-        expect((err as { _tag?: string } | null)?._tag).toBe("UnknownSignalIdError")
+        const err = Option.getOrNull(Exit.findErrorOption(exit))
+        expect(err).toEqual(expect.objectContaining({ _tag: "UnknownSignalIdError" }))
       }
     } finally {
       await fixture.cleanup()
@@ -732,9 +732,11 @@ describe("pulsar bisect (integration)", () => {
 
       expect(Exit.isFailure(exit)).toBe(true)
       if (Exit.isFailure(exit)) {
-        const err = exit.cause._tag === "Fail" ? exit.cause.error : null
+        const err = Option.getOrNull(Exit.findErrorOption(exit))
         expect(err).toBeInstanceOf(Error)
-        expect((err as Error).message).toContain("Observer mode has no active signals")
+        if (err instanceof Error) {
+          expect(err.message).toContain("Observer mode has no active signals")
+        }
       }
     } finally {
       await fixture.cleanup()

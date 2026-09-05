@@ -6,10 +6,10 @@ import { join } from "node:path"
 import type { CargoMetadata } from "../cargo-metadata.js"
 import { RS_PACK_SIGNALS } from "../pack.js"
 import { makeRustProject } from "../project.js"
-import { RsDe01 } from "../signals/rs-de-01-trait-coupling.js"
-import { RsDe02 } from "../signals/rs-de-02-dep-tree.js"
-import { RsDe03 } from "../signals/rs-de-03-feature-flags.js"
-import { RsDe04 } from "../signals/rs-de-04-fan-in-fan-out.js"
+import { RsDe01, RsDe01Config } from "../signals/rs-de-01-trait-coupling.js"
+import { RsDe02, RsDe02Config } from "../signals/rs-de-02-dep-tree.js"
+import { RsDe03, RsDe03Config } from "../signals/rs-de-03-feature-flags.js"
+import { RsDe04, RsDe04Config } from "../signals/rs-de-04-fan-in-fan-out.js"
 import {
   cleanupWorkspace,
   createRustWorkspace,
@@ -1451,7 +1451,7 @@ describe("RS-DE-* signals", () => {
       ),
     ]))
     const registered = registry.byId.get("RS-DE-01")
-    const decoded = Schema.decodeUnknownSync(RsDe01.configSchema)(RsDe01.defaultConfig)
+    const decoded = Schema.decodeSync(RsDe01Config)(RsDe01.defaultConfig)
     const factorLedger = registered?.factorLedger?.({} as never)
     const baseCacheHash = computeConfigHash(RsDe01.id, registry, undefined)
     const versionedCacheHash = computeConfigHash(RsDe01.id, versionedRegistry, undefined)
@@ -2012,7 +2012,7 @@ describe("RS-DE-* signals", () => {
       ),
     ]))
     const registered = registry.byId.get("RS-DE-02")
-    const decoded = Schema.decodeUnknownSync(RsDe02.configSchema)(RsDe02.defaultConfig)
+    const decoded = Schema.decodeSync(RsDe02Config)(RsDe02.defaultConfig)
     const factorLedger = registered?.factorLedger?.({} as never)
     const baseCacheHash = computeConfigHash(RsDe02.id, registry, undefined)
     const versionedCacheHash = computeConfigHash(RsDe02.id, versionedRegistry, undefined)
@@ -2594,7 +2594,7 @@ describe("RS-DE-* signals", () => {
       ),
     ]))
     const registered = registry.byId.get("RS-DE-03")
-    const decoded = Schema.decodeUnknownSync(RsDe03.configSchema)(RsDe03.defaultConfig)
+    const decoded = Schema.decodeSync(RsDe03Config)(RsDe03.defaultConfig)
     const factorLedger = registered?.factorLedger?.({} as never)
     const baseCacheHash = computeConfigHash(RsDe03.id, registry, undefined)
     const versionedCacheHash = computeConfigHash(RsDe03.id, versionedRegistry, undefined)
@@ -2870,7 +2870,7 @@ describe("RS-DE-* signals", () => {
       ),
     ]))
     const registered = registry.byId.get("RS-DE-04")
-    const decoded = Schema.decodeUnknownSync(RsDe04.configSchema)(RsDe04.defaultConfig)
+    const decoded = Schema.decodeSync(RsDe04Config)(RsDe04.defaultConfig)
     const factorLedger = registered?.factorLedger?.({} as never)
     const baseCacheHash = computeConfigHash(RsDe04.id, registry, undefined)
     const versionedCacheHash = computeConfigHash(RsDe04.id, versionedRegistry, undefined)

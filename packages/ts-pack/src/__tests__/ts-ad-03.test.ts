@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Schema } from "effect"
 import { TS_PACK_SIGNALS } from "../pack.js"
-import { TsAd03 } from "../signals/ts-ad-03-reexport-depth.js"
+import { TsAd03, TsAd03Config } from "../signals/ts-ad-03-reexport-depth.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
 
 let repo: TempRepo
@@ -243,7 +243,7 @@ describe("TS-AD-03 (re-export depth)", () => {
   })
 
   test("configSchema decodes defaults round-trip", () => {
-    const decoded = Schema.decodeUnknownSync(TsAd03.configSchema)(TsAd03.defaultConfig)
+    const decoded = Schema.decodeSync(TsAd03Config)(TsAd03.defaultConfig)
 
     expect(decoded.chain_threshold).toBe(3)
     expect(decoded.top_n_diagnostics).toBe(10)

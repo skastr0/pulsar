@@ -17,13 +17,13 @@ import {
 import { DEFAULT_RUST_EXCLUDE_GLOBS } from "./shared-rust-ast.js"
 import { rustAnalysisOutputMetadata } from "./shared-applicability.js"
 
-const RsDe04Config = Schema.Struct({
+export const RsDe04Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   hub_fan_in_threshold: Schema.Number,
   hub_fan_out_threshold: Schema.Number,
   top_n_diagnostics: Schema.Number,
 })
-type RsDe04Config = typeof RsDe04Config.Type
+export type RsDe04Config = typeof RsDe04Config.Type
 
 const DEFAULT_HUB_FAN_IN_THRESHOLD = 6
 const DEFAULT_HUB_FAN_OUT_THRESHOLD = 4

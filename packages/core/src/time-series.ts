@@ -72,12 +72,12 @@ export const createTimeSeriesServices = (
   const reader: TimeSeriesReader = {
     entries: (range) => readEntriesEffect(range),
     latest: readEntriesEffect().pipe(
-      Effect.map((entries) => Option.fromNullable(entries.at(-1))),
+      Effect.map((entries) => Option.fromNullishOr(entries.at(-1))),
     ),
     atSha: (sha) =>
       readEntriesEffect().pipe(
         Effect.map((entries) =>
-          Option.fromNullable(
+          Option.fromNullishOr(
             entries.find(
               (entry) =>
                 entry.sha === sha ||

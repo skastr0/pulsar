@@ -9,7 +9,7 @@ import {
 } from "@skastr0/pulsar-core/signal"
 import { buildRegistry, runSignal } from "@skastr0/pulsar-core/scoring"
 import { Effect, Layer, Schema } from "effect"
-import { TsRp01 } from "../signals/ts-rp-01-hotspots.js"
+import { TsRp01, TsRp01Config } from "../signals/ts-rp-01-hotspots.js"
 import type { HotspotOutput } from "../signals/ts-rp-01-hotspot-model.js"
 import { SHARED_SIGNALS } from "@skastr0/pulsar-shared-signals"
 import type {
@@ -233,7 +233,7 @@ describe("TS-RP-01 (compound)", () => {
       ),
     )
     const factorLedger = registered?.factorLedger?.(out)
-    const decoded = Schema.decodeUnknownSync(TsRp01.configSchema)(TsRp01.defaultConfig)
+    const decoded = Schema.decodeSync(TsRp01Config)(TsRp01.defaultConfig)
 
     expect(TsRp01).toMatchObject({
       id: "TS-RP-01-hotspots",

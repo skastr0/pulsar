@@ -15,7 +15,7 @@ import {
   summarizeViolationsByPackage,
 } from "./ts-ad-01-analysis.js"
 
-const TsAd01Config = Schema.Struct({
+export const TsAd01Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   top_n_diagnostics: Schema.Number,
 })

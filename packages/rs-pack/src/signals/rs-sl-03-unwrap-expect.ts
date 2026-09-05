@@ -19,11 +19,11 @@ import {
 import { rustAnalyzedFunctionOutputMetadata } from "./shared-applicability.js"
 import { isExcluded } from "./shared-globs.js"
 
-const RsSl03Config = Schema.Struct({
+export const RsSl03Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   top_n_diagnostics: Schema.Number,
 })
-type RsSl03Config = typeof RsSl03Config.Type
+export type RsSl03Config = typeof RsSl03Config.Type
 
 interface PanicDensityModule {
   readonly module: string

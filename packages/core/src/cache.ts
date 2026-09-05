@@ -145,10 +145,10 @@ export interface SignalCache {
   readonly totalBytes: Effect.Effect<number>
 }
 
-export class SignalCacheTag extends Context.Tag("@skastr0/pulsar-core/SignalCache")<
+export class SignalCacheTag extends Context.Service<
   SignalCacheTag,
   SignalCache
->() {}
+>()("@skastr0/pulsar-core/SignalCache") {}
 
 const entryByteSize = (entry: TieredCacheEntry<unknown>): number =>
   Buffer.byteLength(JSON.stringify(entry), "utf8")
@@ -190,7 +190,7 @@ const makeInMemoryCache: Effect.Effect<SignalCache> = Effect.gen(function* () {
       Ref.get(store).pipe(
         Effect.map((map) => {
           const entry = map.get(cacheKeyString(key)) as TieredCacheEntry<A> | undefined
-          return Option.fromNullable(entry?.value)
+          return Option.fromNullishOr(entry?.value)
         }),
       ),
     set: <A>(key: CacheKey, value: A) =>

@@ -19,7 +19,7 @@ const SHIPPED_ROUTING_PATTERNS = [
   unsafeAddedPattern,
 ] as const
 
-const RoutingPatternFile = Schema.Union(RoutingPattern, Schema.Array(RoutingPattern))
+const RoutingPatternFile = Schema.Union([RoutingPattern, Schema.Array(RoutingPattern)])
 
 export const loadRoutingPatterns = (
   options?: { readonly repoRoot?: string },
@@ -98,7 +98,7 @@ const loadPatternsFromDirectory = (opts: {
             }),
         })
 
-        const decoded = yield* Schema.decodeUnknown(RoutingPatternFile)(parsed).pipe(
+        const decoded = yield* Schema.decodeUnknownEffect(RoutingPatternFile)(parsed).pipe(
           Effect.mapError(
             (cause) =>
               new RoutingPatternLoadFailed({
@@ -117,7 +117,7 @@ const loadPatternsFromDirectory = (opts: {
 
 const decodeShippedRoutingPatterns = (repoRoot: string) =>
   Effect.forEach(SHIPPED_ROUTING_PATTERNS, (pattern, index) =>
-    Schema.decodeUnknown(RoutingPatternFile)(pattern).pipe(
+    Schema.decodeUnknownEffect(RoutingPatternFile)(pattern).pipe(
       Effect.mapError(
         (cause) =>
           new RoutingPatternLoadFailed({

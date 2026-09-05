@@ -14,7 +14,7 @@ import {
   type PulsarVector,
 } from "./vector.js"
 
-export class ScoringEngineTag extends Context.Tag("@skastr0/pulsar-core/ScoringEngine")<
+export class ScoringEngineTag extends Context.Service<
   ScoringEngineTag,
   {
     readonly scoreCommit: (
@@ -56,7 +56,7 @@ export class ScoringEngineTag extends Context.Tag("@skastr0/pulsar-core/ScoringE
       never
     >
   }
->() {}
+>()("@skastr0/pulsar-core/ScoringEngine") {}
 
 /**
  * Layer factory contract for per-worktree resources like the ts-morph

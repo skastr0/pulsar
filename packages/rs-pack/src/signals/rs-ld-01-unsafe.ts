@@ -26,12 +26,12 @@ import {
 } from "./rs-ld-01-unsafe-model.js"
 import { collectUnsafeSites } from "./rs-ld-01-unsafe-sites.js"
 
-const RsLd01Config = Schema.Struct({
+export const RsLd01Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   safe_only_modules: Schema.Array(Schema.String),
   top_n_diagnostics: Schema.Number,
 })
-type RsLd01Config = typeof RsLd01Config.Type
+export type RsLd01Config = typeof RsLd01Config.Type
 
 interface RsLd01Output {
   readonly modules: ReadonlyArray<UnsafeModuleSummary>

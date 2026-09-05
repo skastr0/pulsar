@@ -43,11 +43,11 @@
   },
   "dependencies": {
     "@skastr0/pulsar-core": "0.1.5",
-    "effect": "^3.0.0",
+    "effect": "4.0.0-rc.112",
     "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@skastr0/pulsar-signal-test-support": "workspace:*",
-    "typescript": "^5.8.0"
+    "typescript": "7.0.2"
   }
 }

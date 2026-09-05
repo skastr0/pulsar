@@ -78,21 +78,21 @@ const acquireDetachedWorktree = (
     (dir) =>
       Effect.gen(function* () {
         const git = simpleGit(repoRoot)
-        const removed = yield* Effect.either(
+        const removed = yield* Effect.result(
           Effect.tryPromise({
             try: () => git.raw(["worktree", "remove", "--force", dir]),
             catch: (cause) => new Error(`git worktree remove failed for ${dir}: ${String(cause)}`),
           }),
         )
-        if (removed._tag === "Left") {
-          const cleanup = yield* Effect.either(
+        if (removed._tag === "Failure") {
+          const cleanup = yield* Effect.result(
             Effect.tryPromise({
               try: () => rm(dir, { recursive: true, force: true }),
               catch: (cause) => new Error(`Failed to clean detached worktree ${dir}: ${String(cause)}`),
             }),
           )
-          if (cleanup._tag === "Left") {
-            yield* Effect.logWarning(cleanup.left.message)
+          if (cleanup._tag === "Failure") {
+            yield* Effect.logWarning(cleanup.failure.message)
           }
         }
       }),

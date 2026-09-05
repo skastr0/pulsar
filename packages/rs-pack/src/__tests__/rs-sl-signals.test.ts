@@ -3,10 +3,10 @@ import { buildRegistry, computeConfigHash } from "@skastr0/pulsar-core/scoring"
 import { SHARED_SIGNALS } from "@skastr0/pulsar-shared-signals"
 import { Effect, Schema } from "effect"
 import { RS_PACK_SIGNALS } from "../pack.js"
-import { RsSl01 } from "../signals/rs-sl-01-duplication.js"
-import { RsSl02 } from "../signals/rs-sl-02-suppressions.js"
-import { RsSl03 } from "../signals/rs-sl-03-unwrap-expect.js"
-import { RsSl04 } from "../signals/rs-sl-04-clone-abuse.js"
+import { RsSl01, RsSl01Config } from "../signals/rs-sl-01-duplication.js"
+import { RsSl02, RsSl02Config } from "../signals/rs-sl-02-suppressions.js"
+import { RsSl03, RsSl03Config } from "../signals/rs-sl-03-unwrap-expect.js"
+import { RsSl04, RsSl04Config } from "../signals/rs-sl-04-clone-abuse.js"
 import {
   cleanupWorkspace,
   createRustWorkspace,
@@ -25,7 +25,7 @@ describe("RS-SL-* signals", () => {
       ]),
     )
     const registered = registry.byId.get("RS-SL-01")
-    const decoded = Schema.decodeUnknownSync(RsSl01.configSchema)(RsSl01.defaultConfig)
+    const decoded = Schema.decodeSync(RsSl01Config)(RsSl01.defaultConfig)
     const factorLedger = registered?.factorLedger?.({})
     const baseCacheHash = computeConfigHash(RsSl01.id, registry, undefined)
     const versionedCacheHash = computeConfigHash(RsSl01.id, versionedRegistry, undefined)
@@ -478,7 +478,7 @@ describe("RS-SL-* signals", () => {
       ]),
     )
     const registered = registry.byId.get("RS-SL-02")
-    const decoded = Schema.decodeUnknownSync(RsSl02.configSchema)(RsSl02.defaultConfig)
+    const decoded = Schema.decodeSync(RsSl02Config)(RsSl02.defaultConfig)
     const factorLedger = registered?.factorLedger?.({})
     const baseCacheHash = computeConfigHash(RsSl02.id, registry, undefined)
     const versionedCacheHash = computeConfigHash(RsSl02.id, versionedRegistry, undefined)
@@ -898,7 +898,7 @@ describe("RS-SL-* signals", () => {
       ]),
     )
     const registered = registry.byId.get("RS-SL-03")
-    const decoded = Schema.decodeUnknownSync(RsSl03.configSchema)(RsSl03.defaultConfig)
+    const decoded = Schema.decodeSync(RsSl03Config)(RsSl03.defaultConfig)
     const factorLedger = registered?.factorLedger?.({})
     const baseCacheHash = computeConfigHash(RsSl03.id, registry, undefined)
     const versionedCacheHash = computeConfigHash(RsSl03.id, versionedRegistry, undefined)
@@ -1257,7 +1257,7 @@ describe("RS-SL-* signals", () => {
       ]),
     )
     const registered = registry.byId.get("RS-SL-04")
-    const decoded = Schema.decodeUnknownSync(RsSl04.configSchema)(RsSl04.defaultConfig)
+    const decoded = Schema.decodeSync(RsSl04Config)(RsSl04.defaultConfig)
     const factorLedger = registered?.factorLedger?.({})
     const baseCacheHash = computeConfigHash(RsSl04.id, registry, undefined)
     const versionedCacheHash = computeConfigHash(RsSl04.id, versionedRegistry, undefined)

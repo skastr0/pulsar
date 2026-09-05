@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 
-export const GlossaryIdentifierKind = Schema.Literal(
+export const GlossaryIdentifierKind = Schema.Literals([
   "function",
   "class",
   "interface",
@@ -9,7 +9,7 @@ export const GlossaryIdentifierKind = Schema.Literal(
   "const",
   "parameter",
   "exported-symbol",
-)
+])
 export type GlossaryIdentifierKind = typeof GlossaryIdentifierKind.Type
 
 export const GlossaryProvenance = Schema.Struct({
@@ -22,7 +22,7 @@ export const GlossaryProvenance = Schema.Struct({
 export type GlossaryProvenance = typeof GlossaryProvenance.Type
 
 const GlossaryDecision = Schema.Struct({
-  action: Schema.Literal("accept", "reject", "merge"),
+  action: Schema.Literals(["accept", "reject", "merge"]),
   merge_into: Schema.optional(Schema.String),
 })
 type GlossaryDecision = typeof GlossaryDecision.Type
@@ -72,5 +72,5 @@ export const Glossary = Schema.Struct({
 export type Glossary = typeof Glossary.Type
 
 export const decodeGlossaryDraftSync = Schema.decodeUnknownSync(GlossaryDraft)
-export const decodeGlossary = Schema.decodeUnknown(Glossary)
+export const decodeGlossary = Schema.decodeUnknownEffect(Glossary)
 export const decodeGlossarySync = Schema.decodeUnknownSync(Glossary)

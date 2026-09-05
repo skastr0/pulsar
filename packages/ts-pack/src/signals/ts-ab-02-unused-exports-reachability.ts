@@ -29,7 +29,7 @@ const BoundaryRuleSchema = Schema.Struct({
   globs: Schema.Array(Schema.String),
 })
 
-const TsAb02Config = Schema.Struct({
+export const TsAb02Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   public_entry_globs: Schema.Array(Schema.String),
   boundary_rules: Schema.Array(BoundaryRuleSchema),

@@ -20,11 +20,11 @@ import { makeDefaultSignalFactorLedger } from "./shared-factor-ledger.js"
 
 const execFileAsync = promisify(execFile)
 
-const RsRp02Config = Schema.Struct({
+export const RsRp02Config = Schema.Struct({
   top_n_diagnostics: Schema.Number,
   measure_live_builds: Schema.Boolean,
 })
-type RsRp02Config = typeof RsRp02Config.Type
+export type RsRp02Config = typeof RsRp02Config.Type
 
 interface CargoTimingUnit {
   readonly i: number

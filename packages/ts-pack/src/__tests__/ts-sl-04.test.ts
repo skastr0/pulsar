@@ -7,6 +7,7 @@ import { SIGNAL_FACTOR_POLICY_PRECEDENCE, SignalFactorPolicyTag } from "@skastr0
 import { buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { createTempRepo, runSignal } from "./test-repo.js"
 import { TsSl04 } from "../signals/ts-sl-04-empty-implementations.js"
+import { TsSl04Config } from "../signals/ts-sl-04-config.js"
 import { TsProjectLayer } from "../ts-project.js"
 import type { TempRepo } from "./test-repo.js"
 import { TS_PACK_SIGNALS } from "../pack.js"
@@ -98,7 +99,7 @@ describe("TS-SL-04 Empty implementations and stubs", () => {
     expect(packRegistered).toBeDefined()
     const registry = await Effect.runPromise(buildRegistry([packRegistered!]))
     const registered = registry.byId.get("TS-SL-04")
-    const decoded = Schema.decodeUnknownSync(TsSl04.configSchema)(TsSl04.defaultConfig)
+    const decoded = Schema.decodeSync(TsSl04Config)(TsSl04.defaultConfig)
     const out = await runSignal(repo.root, TsSl04, TsSl04.defaultConfig)
     const factorLedger = registered?.factorLedger?.(out)
 

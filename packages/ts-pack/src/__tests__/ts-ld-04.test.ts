@@ -6,7 +6,7 @@ import { buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { Effect, Layer, Schema } from "effect"
 import { inferCasingPattern } from "../casing.js"
 import { TS_PACK_SIGNALS } from "../pack.js"
-import { TsLd04 } from "../signals/ts-ld-04-naming-conventions.js"
+import { TsLd04, TsLd04Config } from "../signals/ts-ld-04-naming-conventions.js"
 import { TsProjectLayer } from "../ts-project.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
 
@@ -276,7 +276,7 @@ describe("TS-LD-04 (naming convention consistency)", () => {
   })
 
   test("configSchema decodes defaults round-trip", () => {
-    const decoded = Schema.decodeUnknownSync(TsLd04.configSchema)(TsLd04.defaultConfig)
+    const decoded = Schema.decodeSync(TsLd04Config)(TsLd04.defaultConfig)
 
     expect(decoded.top_n_diagnostics).toBe(20)
     expect(decoded.exclude_globs).toContain("**/*.test.ts")

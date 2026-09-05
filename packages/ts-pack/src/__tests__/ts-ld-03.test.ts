@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { CalibrationContextTag, appendCalibrationDecision, defineCalibrationProcessor, makeResolvedCalibrationContext } from "@skastr0/pulsar-core/calibration"
 import { Effect, Layer, Schema } from "effect"
 import { TS_PACK_SIGNALS } from "../pack.js"
-import { TsLd03 } from "../signals/ts-ld-03-nesting-depth.js"
+import { TsLd03, TsLd03Config } from "../signals/ts-ld-03-nesting-depth.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
 import { TsProjectLayer } from "../ts-project.js"
 import { makePulsarSelfCalibrationContext } from "./pulsar-self-calibration.js"
@@ -158,7 +158,7 @@ describe("TS-LD-03 (nesting depth)", () => {
   })
 
   test("configSchema decodes defaults round-trip", () => {
-    const decoded = Schema.decodeUnknownSync(TsLd03.configSchema)(TsLd03.defaultConfig)
+    const decoded = Schema.decodeSync(TsLd03Config)(TsLd03.defaultConfig)
     expect(decoded.max_nesting).toBe(4)
     expect(decoded.top_n_diagnostics).toBe(10)
     expect(decoded.exclude_globs).toContain("**/generated/**")

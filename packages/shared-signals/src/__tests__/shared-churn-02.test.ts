@@ -7,7 +7,11 @@ import { SignalContextTag } from "@skastr0/pulsar-core/signal"
 import { buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { Effect, Layer, Schema } from "effect"
 import { SHARED_SIGNALS } from "../pack.js"
-import { SharedChurn02, type SharedChurn02Output } from "../index.js"
+import {
+  SharedChurn02,
+  SharedChurn02Config,
+  type SharedChurn02Output,
+} from "../index.js"
 
 interface CommitOptions {
   readonly message: string
@@ -92,7 +96,7 @@ describe("SHARED-CHURN-02 recency-weighted churn", () => {
     expect(packRegistered).toBeDefined()
     const registry = await Effect.runPromise(buildRegistry([packRegistered!]))
     const registered = registry.byId.get("SHARED-CHURN-02")
-    const decoded = Schema.decodeUnknownSync(SharedChurn02.configSchema)(
+    const decoded = Schema.decodeSync(SharedChurn02Config)(
       SharedChurn02.defaultConfig,
     )
     const factorLedger = registered?.factorLedger?.({} as SharedChurn02Output)

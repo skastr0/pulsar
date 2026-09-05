@@ -7,7 +7,11 @@ import { SignalContextTag } from "@skastr0/pulsar-core/signal"
 import { buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { Effect, Layer, Schema } from "effect"
 import { SHARED_SIGNALS } from "../pack.js"
-import { SharedCochange01, type SharedCochange01Output } from "../index.js"
+import {
+  SharedCochange01,
+  SharedCochange01Config,
+  type SharedCochange01Output,
+} from "../index.js"
 
 interface CommitOptions {
   readonly message: string
@@ -104,7 +108,7 @@ describe("SHARED-COCHANGE-01 logical coupling", () => {
     expect(packRegistered).toBeDefined()
     const registry = await Effect.runPromise(buildRegistry([packRegistered!]))
     const registered = registry.byId.get("SHARED-COCHANGE-01")
-    const decoded = Schema.decodeUnknownSync(SharedCochange01.configSchema)(
+    const decoded = Schema.decodeSync(SharedCochange01Config)(
       SharedCochange01.defaultConfig,
     )
     const factorLedger = registered?.factorLedger?.({} as SharedCochange01Output)

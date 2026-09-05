@@ -7,13 +7,13 @@ import {
 } from "./evidence.js"
 import type { SignalKind, Tier } from "./tier.js"
 
-const EnforcementLevel = Schema.Literal(
+const EnforcementLevel = Schema.Literals([
   "hard-gate",
   "soft-warning",
   "trend",
   "dashboard",
   "review-routing",
-)
+])
 type EnforcementLevel = typeof EnforcementLevel.Type
 
 export const EnforcementCeiling = Schema.Array(EnforcementLevel)
