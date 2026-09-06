@@ -5,8 +5,16 @@ import {
   type Signal,
 } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
-import { Node, SyntaxKind, type CallExpression, type SourceFile } from "ts-morph"
-import { TsProjectTag } from "../ts-project.js"
+import { hasModifier, textOf, walkDescendants } from "../ast.js"
+import { TsAnalysisTag } from "../ts-analysis.js"
+import {
+  SyntaxKind,
+  isArrowFunction,
+  isCallExpression,
+  isPropertyAccessExpression,
+  type CallExpression,
+  type SourceFile,
+} from "../tsgo-api.js"
 import {
   inferConcurrencyBound,
   type ConcurrencyBoundInference,
@@ -69,7 +77,7 @@ export interface TsCc02Output {
   readonly enforcementCeiling: ReadonlyArray<string>
 }
 
-export const TsCc02: Signal<TsCc02Config, TsCc02Output, TsProjectTag> = {
+export const TsCc02: Signal<TsCc02Config, TsCc02Output, TsAnalysisTag> = {
   id: "TS-CC-02-unbounded-concurrency",
   title: "Unbounded concurrency",
   aliases: ["TS-CC-02"],
@@ -97,9 +105,10 @@ export const TsCc02: Signal<TsCc02Config, TsCc02Output, TsProjectTag> = {
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
-      const project = yield* TsProjectTag
+      const analysis = yield* TsAnalysisTag
+      const sourceFiles = yield* analysis.mapFiles(async (context) => context.sourceFile)
       return yield* Effect.try({
-        try: (): TsCc02Output => computeUnboundedConcurrency(project.getSourceFiles(), config),
+        try: (): TsCc02Output => computeUnboundedConcurrency(sourceFiles, config),
         catch: (cause) =>
           new SignalComputeError({
             signalId: "TS-CC-02-unbounded-concurrency",
@@ -152,7 +161,11 @@ const computeUnboundedConcurrency = (
   for (const sourceFile of sourceFiles) {
     if (!isAnalyzableSourceFile(sourceFile, config.exclude_globs)) continue
     analyzedFiles += 1
-    for (const call of sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+    const calls: Array<CallExpression> = []
+    walkDescendants(sourceFile, (node) => {
+      if (isCallExpression(node)) calls.push(node)
+    })
+    for (const call of calls) {
       const finding = classifyFanout(call, limiterPattern)
       if (finding === undefined) continue
       fanoutsObserved += 1
@@ -201,19 +214,19 @@ const classifyFanout = (
   call: CallExpression,
   limiterPattern: RegExp,
 ): ClassifiedFanout | undefined => {
-  const name = callName(call.getExpression())
+  const name = callName(call.expression)
   if (name === "Promise.all" || name === "Promise.allSettled") {
-    const arg = call.getArguments()[0]
-    if (arg === undefined || !Node.isCallExpression(arg)) return undefined
-    const innerExpression = arg.getExpression()
-    if (!Node.isPropertyAccessExpression(innerExpression) || innerExpression.getName() !== "map") {
+    const arg = call.arguments[0]
+    if (arg === undefined || !isCallExpression(arg)) return undefined
+    const innerExpression = arg.expression
+    if (!isPropertyAccessExpression(innerExpression) || textOf(innerExpression.name) !== "map") {
       return undefined
     }
-    const iterable = innerExpression.getExpression().getText()
-    const callback = arg.getArguments()[0]
+    const iterable = textOf(innerExpression.expression)
+    const callback = arg.arguments[0]
     if (callback === undefined) return undefined
     return {
-      bound: inferConcurrencyBound(innerExpression.getExpression(), callback, limiterPattern),
+      bound: inferConcurrencyBound(innerExpression.expression, callback, limiterPattern),
       fanout: {
         ...locationOf(call),
         kind: name === "Promise.all" ? "promise-all-map" : "promise-all-settled-map",
@@ -224,17 +237,17 @@ const classifyFanout = (
   }
 
   if (name.endsWith(".forEach")) {
-    const callback = call.getArguments()[0]
-    if (callback === undefined || !Node.isArrowFunction(callback) || !callback.isAsync()) {
+    const callback = call.arguments[0]
+    if (callback === undefined || !isArrowFunction(callback) || !hasModifier(callback, SyntaxKind.AsyncKeyword)) {
       return undefined
     }
-    const property = call.getExpression()
-    const iterable = Node.isPropertyAccessExpression(property)
-      ? property.getExpression().getText()
+    const property = call.expression
+    const iterable = isPropertyAccessExpression(property)
+      ? textOf(property.expression)
       : "iterable"
     return {
       bound: inferConcurrencyBound(
-        Node.isPropertyAccessExpression(property) ? property.getExpression() : call,
+        isPropertyAccessExpression(property) ? property.expression : call,
         callback,
         limiterPattern,
       ),

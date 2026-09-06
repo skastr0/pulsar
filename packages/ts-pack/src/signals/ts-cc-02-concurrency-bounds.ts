@@ -1,11 +1,34 @@
+import { textOf, walkDescendants } from "../ast.js"
 import {
-  Node,
   SyntaxKind,
-  VariableDeclarationKind,
+  isArrayLiteralExpression,
+  isArrowFunction,
+  isAsExpression,
+  isBinaryExpression,
+  isBlock,
+  isCallExpression,
+  isElementAccessExpression,
+  isFunctionDeclaration,
+  isFunctionExpression,
+  isIdentifier,
+  isMethodDeclaration,
+  isNonNullExpression,
+  isNumericLiteral,
+  isParenthesizedExpression,
+  isPostfixUnaryExpression,
+  isPrefixUnaryExpression,
+  isPropertyAccessExpression,
+  isReturnStatement,
+  isSatisfiesExpression,
+  isSpreadElement,
+  isTypeAssertion,
+  isVariableDeclaration,
+  isVariableDeclarationList,
   type CallExpression,
   type Identifier,
+  type Node,
   type VariableDeclaration,
-} from "ts-morph"
+} from "../tsgo-api.js"
 
 export type ConcurrencyBoundReason =
   | "literal-array"
@@ -55,33 +78,33 @@ const inferCollectionBound = (
 ): ConcurrencyBoundInference => {
   const unwrapped = unwrapExpression(node)
   if (unwrapped === undefined) {
-    return unresolved(node.getText(), `No finite local bound was found for ${node.getText()}`)
+    return unresolved(textOf(node), `No finite local bound was found for ${textOf(node)}`)
   }
 
-  if (Node.isArrayLiteralExpression(unwrapped)) {
-    if (unwrapped.getElements().some(Node.isSpreadElement)) {
+  if (isArrayLiteralExpression(unwrapped)) {
+    if ([...unwrapped.elements].some(isSpreadElement)) {
       return unresolved(
-        unwrapped.getText(),
-        `Array ${unwrapped.getText()} contains a spread with no finite local bound`,
+        textOf(unwrapped),
+        `Array ${textOf(unwrapped)} contains a spread with no finite local bound`,
       )
     }
-    return bounded(unwrapped.getText(), unwrapped.getElements().length, "literal-array")
+    return bounded(textOf(unwrapped), unwrapped.elements.length, "literal-array")
   }
 
-  if (Node.isIdentifier(unwrapped)) {
+  if (isIdentifier(unwrapped)) {
     return inferIdentifierCollectionBound(unwrapped, seenDeclarations)
   }
 
-  if (Node.isCallExpression(unwrapped)) {
-    const expression = unwrapped.getExpression()
-    if (Node.isPropertyAccessExpression(expression) && expression.getName() === "slice") {
-      return inferSliceBound(unwrapped, expression.getExpression(), seenDeclarations)
+  if (isCallExpression(unwrapped)) {
+    const expression = unwrapped.expression
+    if (isPropertyAccessExpression(expression) && textOf(expression.name) === "slice") {
+      return inferSliceBound(unwrapped, expression.expression, seenDeclarations)
     }
   }
 
   return unresolved(
-    unwrapped.getText(),
-    `No finite local bound was found for ${unwrapped.getText()}`,
+    textOf(unwrapped),
+    `No finite local bound was found for ${textOf(unwrapped)}`,
   )
 }
 
@@ -92,62 +115,62 @@ const inferIdentifierCollectionBound = (
   const declaration = localVariableDeclaration(identifier)
   if (declaration === undefined) {
     return unresolved(
-      identifier.getText(),
-      `No finite local bound was found for ${identifier.getText()}`,
+      textOf(identifier),
+      `No finite local bound was found for ${textOf(identifier)}`,
     )
   }
   if (!isConstDeclaration(declaration)) {
     return unresolved(
-      identifier.getText(),
-      `Iterable ${identifier.getText()} is not an immutable local array or tuple`,
+      textOf(identifier),
+      `Iterable ${textOf(identifier)} is not an immutable local array or tuple`,
     )
   }
   if (seenDeclarations.has(declaration)) {
     return unresolved(
-      identifier.getText(),
-      `Local bound resolution for ${identifier.getText()} is cyclic`,
+      textOf(identifier),
+      `Local bound resolution for ${textOf(identifier)} is cyclic`,
     )
   }
 
   const nextSeen = new Set(seenDeclarations).add(declaration)
   const instability = collectionInstabilityReason(declaration, new Set())
   if (instability !== undefined) {
-    return unresolved(identifier.getText(), instability)
+    return unresolved(textOf(identifier), instability)
   }
-  const initializer = declaration.getInitializer()
+  const initializer = declaration.initializer
   const unwrappedInitializer = unwrapExpression(initializer)
-  if (unwrappedInitializer !== undefined && Node.isArrayLiteralExpression(unwrappedInitializer)) {
-    if (unwrappedInitializer.getElements().some(Node.isSpreadElement)) {
+  if (unwrappedInitializer !== undefined && isArrayLiteralExpression(unwrappedInitializer)) {
+    if ([...unwrappedInitializer.elements].some(isSpreadElement)) {
       return unresolved(
-        identifier.getText(),
-        `Array ${identifier.getText()} contains a spread with no finite local bound`,
+        textOf(identifier),
+        `Array ${textOf(identifier)} contains a spread with no finite local bound`,
       )
     }
     const reason = isTupleLikeDeclaration(declaration)
       ? "tuple-like-collection"
       : "local-const-array"
     return bounded(
-      identifier.getText(),
-      unwrappedInitializer.getElements().length,
+      textOf(identifier),
+      unwrappedInitializer.elements.length,
       reason,
     )
   }
 
   const tupleLength = tupleLengthOf(declaration)
   if (tupleLength !== undefined) {
-    return bounded(identifier.getText(), tupleLength, "tuple-like-collection")
+    return bounded(textOf(identifier), tupleLength, "tuple-like-collection")
   }
 
-  if (unwrappedInitializer !== undefined && Node.isIdentifier(unwrappedInitializer)) {
+  if (unwrappedInitializer !== undefined && isIdentifier(unwrappedInitializer)) {
     const aliased = inferIdentifierCollectionBound(unwrappedInitializer, nextSeen)
     return aliased.state === "bounded"
-      ? { ...aliased, boundExpression: identifier.getText() }
-      : unresolved(identifier.getText(), aliased.inferenceStoppedReason)
+      ? { ...aliased, boundExpression: textOf(identifier) }
+      : unresolved(textOf(identifier), aliased.inferenceStoppedReason)
   }
 
   return unresolved(
-    identifier.getText(),
-    `No finite local bound was found for ${identifier.getText()}`,
+    textOf(identifier),
+    `No finite local bound was found for ${textOf(identifier)}`,
   )
 }
 
@@ -156,7 +179,7 @@ const inferSliceBound = (
   collection: Node,
   seenDeclarations: Set<VariableDeclaration>,
 ): ConcurrencyBoundInference => {
-  const [start, end] = sliceCall.getArguments()
+  const [start, end] = sliceCall.arguments
   const collectionBound = inferCollectionBound(collection, seenDeclarations)
   if (end === undefined) return collectionBound
 
@@ -192,8 +215,8 @@ const inferSliceBound = (
   if (collectionBound.state === "bounded") return collectionBound
 
   return unresolved(
-    end.getText(),
-    `Slice cap ${end.getText()} is not a finite local constant`,
+    textOf(end),
+    `Slice cap ${textOf(end)} is not a finite local constant`,
   )
 }
 
@@ -202,19 +225,19 @@ const resolveWindowSize = (
   end: Node,
 ): ResolvedNumber | undefined => {
   const unwrappedEnd = unwrapExpression(end)
-  if (unwrappedEnd === undefined || !Node.isBinaryExpression(unwrappedEnd)) return undefined
-  if (unwrappedEnd.getOperatorToken().getKind() !== SyntaxKind.PlusToken) return undefined
+  if (unwrappedEnd === undefined || !isBinaryExpression(unwrappedEnd)) return undefined
+  if (unwrappedEnd.operatorToken.kind !== SyntaxKind.PlusToken) return undefined
 
-  const left = unwrapExpression(unwrappedEnd.getLeft())
-  const right = unwrapExpression(unwrappedEnd.getRight())
+  const left = unwrapExpression(unwrappedEnd.left)
+  const right = unwrapExpression(unwrappedEnd.right)
   if (left === undefined || right === undefined) return undefined
-  const startText = unwrapExpression(start)?.getText()
+  const startText = unwrapExpression(start) === undefined ? undefined : textOf(unwrapExpression(start)!)
   if (startText === undefined) return undefined
 
-  if (left.getText() === startText) {
+  if (textOf(left) === startText) {
     return resolveFiniteLocalInteger(right, new Set())
   }
-  if (right.getText() === startText) {
+  if (textOf(right) === startText) {
     return resolveFiniteLocalInteger(left, new Set())
   }
   return undefined
@@ -224,10 +247,13 @@ const inferLimiterBound = (
   callback: Node,
   limiterPattern: RegExp,
 ): ConcurrencyBoundInference | undefined => {
-  const limiterCalls = callback
-    .getDescendantsOfKind(SyntaxKind.CallExpression)
-    .filter((call) => isOnCallbackResultPath(call, callback))
-    .filter((call) => isLimiterInvocation(call, limiterPattern))
+  const limiterCalls: Array<CallExpression> = []
+  walkDescendants(callback, (node) => {
+    if (!isCallExpression(node)) return
+    if (!isOnCallbackResultPath(node, callback)) return
+    if (!isLimiterInvocation(node, limiterPattern)) return
+    limiterCalls.push(node)
+  })
 
   if (limiterCalls.length === 0) return undefined
 
@@ -247,44 +273,50 @@ const inferLimiterBound = (
 const isLimiterInvocation = (call: CallExpression, limiterPattern: RegExp): boolean =>
   limiterPattern.test(limiterInvocationName(call))
 
+const isFunctionLike = (node: Node): boolean =>
+  isFunctionDeclaration(node) ||
+  isFunctionExpression(node) ||
+  isArrowFunction(node) ||
+  isMethodDeclaration(node)
+
 const isOnCallbackResultPath = (call: CallExpression, callback: Node): boolean => {
-  let current = call.getParent()
+  let current = call.parent
   let returnsFromCallback = false
   while (current !== undefined && current !== callback) {
-    if (Node.isFunctionLikeDeclaration(current)) return false
-    if (Node.isReturnStatement(current)) returnsFromCallback = true
-    current = current.getParent()
+    if (isFunctionLike(current)) return false
+    if (isReturnStatement(current)) returnsFromCallback = true
+    current = current.parent
   }
   if (current !== callback) return false
   if (returnsFromCallback) return true
-  if (Node.isArrowFunction(callback)) {
-    return !Node.isBlock(callback.getBody())
+  if (isArrowFunction(callback)) {
+    return !isBlock(callback.body)
   }
   return false
 }
 
 const limiterInvocationName = (call: CallExpression): string => {
-  const expression = call.getExpression()
-  if (Node.isIdentifier(expression)) return expression.getText()
-  if (Node.isPropertyAccessExpression(expression)) return expression.getName()
-  if (Node.isCallExpression(expression)) return expression.getExpression().getText()
-  return expression.getText()
+  const expression = call.expression
+  if (isIdentifier(expression)) return textOf(expression)
+  if (isPropertyAccessExpression(expression)) return textOf(expression.name)
+  if (isCallExpression(expression)) return textOf(expression.expression)
+  return textOf(expression)
 }
 
 const resolveLimiterInvocation = (
   invocation: CallExpression,
   limiterPattern: RegExp,
 ): ResolvedConcurrencyBound | undefined => {
-  const expression = invocation.getExpression()
-  if (Node.isCallExpression(expression)) {
+  const expression = invocation.expression
+  if (isCallExpression(expression)) {
     return resolveLimiterFactoryBound(expression, limiterPattern)
   }
-  if (!Node.isIdentifier(expression)) return undefined
+  if (!isIdentifier(expression)) return undefined
 
   const declaration = localVariableDeclaration(expression)
   if (declaration === undefined || !isConstDeclaration(declaration)) return undefined
-  const initializer = unwrapExpression(declaration.getInitializer())
-  if (initializer === undefined || !Node.isCallExpression(initializer)) return undefined
+  const initializer = unwrapExpression(declaration.initializer)
+  if (initializer === undefined || !isCallExpression(initializer)) return undefined
   return resolveLimiterFactoryBound(initializer, limiterPattern)
 }
 
@@ -293,7 +325,7 @@ const resolveLimiterFactoryBound = (
   limiterPattern: RegExp,
 ): ResolvedConcurrencyBound | undefined => {
   if (!limiterPattern.test(limiterInvocationName(factory))) return undefined
-  const size = resolveFiniteLocalInteger(factory.getArguments()[0], new Set())
+  const size = resolveFiniteLocalInteger(factory.arguments[0], new Set())
   if (size === undefined || size.value <= 0) return undefined
   return bounded(size.expression, size.value, "limiter-constant")
 }
@@ -310,13 +342,13 @@ const resolveFiniteLocalInteger = (
   const unwrapped = unwrapExpression(node)
   if (unwrapped === undefined) return undefined
 
-  if (Node.isNumericLiteral(unwrapped)) {
-    const value = unwrapped.getLiteralValue()
+  if (isNumericLiteral(unwrapped)) {
+    const value = Number(unwrapped.text)
     return isFiniteNonNegativeInteger(value)
-      ? { expression: unwrapped.getText(), value }
+      ? { expression: textOf(unwrapped), value }
       : undefined
   }
-  if (!Node.isIdentifier(unwrapped)) return undefined
+  if (!isIdentifier(unwrapped)) return undefined
 
   const declaration = localVariableDeclaration(unwrapped)
   if (
@@ -327,27 +359,38 @@ const resolveFiniteLocalInteger = (
     return undefined
   }
   const resolved = resolveFiniteLocalInteger(
-    declaration.getInitializer(),
+    declaration.initializer,
     new Set(seenDeclarations).add(declaration),
   )
   return resolved === undefined
     ? undefined
-    : { expression: unwrapped.getText(), value: resolved.value }
+    : { expression: textOf(unwrapped), value: resolved.value }
 }
 
-const localVariableDeclaration = (identifier: Identifier): VariableDeclaration | undefined =>
-  identifier
-    .getSymbol()
-    ?.getDeclarations()
-    .find((declaration): declaration is VariableDeclaration =>
-      Node.isVariableDeclaration(declaration) &&
-      declaration.getSourceFile() === identifier.getSourceFile()
-    )
+const localVariableDeclaration = (identifier: Identifier): VariableDeclaration | undefined => {
+  const name = identifier.text
+  let current: Node | undefined = identifier.parent
+  while (current !== undefined) {
+    let found: VariableDeclaration | undefined
+    const visit = (node: Node): void => {
+      if (found !== undefined) return
+      if (isVariableDeclaration(node) && isIdentifier(node.name) && node.name.text === name) {
+        found = node
+        return
+      }
+      node.forEachChild(visit)
+    }
+    current.forEachChild(visit)
+    if (found !== undefined) return found
+    current = current.parent
+  }
+  return undefined
+}
 
 const isConstDeclaration = (declaration: VariableDeclaration): boolean => {
-  const parent = declaration.getParent()
-  return Node.isVariableDeclarationList(parent) &&
-    parent.getDeclarationKind() === VariableDeclarationKind.Const
+  const parent = declaration.parent
+  return isVariableDeclarationList(parent) &&
+    ((parent.flags & 2) !== 0 || textOf(parent).startsWith("const "))
 }
 
 const CARDINALITY_MUTATORS = new Set(["pop", "push", "shift", "splice", "unshift"])
@@ -374,16 +417,23 @@ const ASSIGNMENT_OPERATORS = new Set<SyntaxKind>([
 const collectionInstabilityReason = (
   declaration: VariableDeclaration,
   seenDeclarations: Set<VariableDeclaration>,
-  rootName = declaration.getName(),
+  rootName = isIdentifier(declaration.name) ? declaration.name.text : textOf(declaration.name),
 ): string | undefined => {
   if (seenDeclarations.has(declaration)) return undefined
-  const name = declaration.getNameNode()
-  if (!Node.isIdentifier(name)) {
+  const name = declaration.name
+  if (!isIdentifier(name)) {
     return `Iterable ${rootName} uses a binding shape with no stable local upper bound`
   }
   const nextSeen = new Set(seenDeclarations).add(declaration)
+  const sourceFile = declaration.getSourceFile()
+  const references: Array<Identifier> = []
+  walkDescendants(sourceFile, (node) => {
+    if (isIdentifier(node) && node.text === name.text && node !== name) {
+      references.push(node)
+    }
+  })
 
-  for (const reference of name.findReferencesAsNodes()) {
+  for (const reference of references) {
     const reason = referenceInstabilityReason(
       reference,
       declaration,
@@ -405,16 +455,16 @@ const referenceInstabilityReason = (
   if (reference.getSourceFile() !== declaration.getSourceFile()) {
     return `Iterable ${rootName} escapes its local cardinality analysis`
   }
-  if (!Node.isIdentifier(reference)) {
+  if (!isIdentifier(reference)) {
     return `Iterable ${rootName} has a reference shape with no stable local upper bound`
   }
 
   const expression = transparentExpressionParent(reference)
-  const member = expression.getParent()
-  if (Node.isPropertyAccessExpression(member) && member.getExpression() === expression) {
+  const member = expression.parent
+  if (isPropertyAccessExpression(member) && member.expression === expression) {
     return propertyInstabilityReason(member, rootName)
   }
-  if (Node.isElementAccessExpression(member) && member.getExpression() === expression) {
+  if (isElementAccessExpression(member) && member.expression === expression) {
     return elementInstabilityReason(member, rootName)
   }
 
@@ -426,13 +476,13 @@ const referenceInstabilityReason = (
 }
 
 const propertyInstabilityReason = (property: Node, rootName: string): string | undefined => {
-  if (!Node.isPropertyAccessExpression(property)) return undefined
-  const propertyName = property.getName()
-  const call = property.getParent()
+  if (!isPropertyAccessExpression(property)) return undefined
+  const propertyName = textOf(property.name)
+  const call = property.parent
   if (
     CARDINALITY_MUTATORS.has(propertyName) &&
-    Node.isCallExpression(call) &&
-    call.getExpression() === property
+    isCallExpression(call) &&
+    call.expression === property
   ) {
     return `Iterable ${rootName} has a cardinality-changing ${propertyName} mutation`
   }
@@ -442,31 +492,31 @@ const propertyInstabilityReason = (property: Node, rootName: string): string | u
 }
 
 const elementInstabilityReason = (element: Node, rootName: string): string | undefined => {
-  if (!Node.isElementAccessExpression(element)) return undefined
+  if (!isElementAccessExpression(element)) return undefined
   if (isWriteTarget(element)) {
     return `Iterable ${rootName} has an element write that can change its upper bound`
   }
-  const call = element.getParent()
-  return Node.isCallExpression(call) && call.getExpression() === element
+  const call = element.parent
+  return isCallExpression(call) && call.expression === element
     ? `Iterable ${rootName} has a computed method call with no stable cardinality proof`
     : undefined
 }
 
 const escapedReferenceReason = (expression: Node, rootName: string): string | undefined => {
-  const parent = expression.getParent()
+  const parent = expression.parent
   if (
-    Node.isCallExpression(parent) &&
-    parent.getArguments().some((argument) => transparentExpressionNode(argument) === expression)
+    isCallExpression(parent) &&
+    [...parent.arguments].some((argument) => transparentExpressionNode(argument) === expression)
   ) {
     return `Iterable ${rootName} escapes local cardinality analysis through a function call`
   }
-  if (Node.isReturnStatement(parent)) {
+  if (isReturnStatement(parent)) {
     return `Iterable ${rootName} escapes local cardinality analysis through a return`
   }
   if (
-    Node.isBinaryExpression(parent) &&
-    parent.getRight() === expression &&
-    ASSIGNMENT_OPERATORS.has(parent.getOperatorToken().getKind())
+    isBinaryExpression(parent) &&
+    parent.right === expression &&
+    ASSIGNMENT_OPERATORS.has(parent.operatorToken.kind)
   ) {
     return `Iterable ${rootName} escapes local cardinality analysis through an assignment`
   }
@@ -475,37 +525,36 @@ const escapedReferenceReason = (expression: Node, rootName: string): string | un
 
 const directAliasDeclaration = (reference: Identifier): VariableDeclaration | undefined => {
   const expression = transparentExpressionParent(reference)
-  const parent = expression.getParent()
+  const parent = expression.parent
   if (
-    Node.isVariableDeclaration(parent) &&
-    transparentExpressionNode(parent.getInitializer()) === expression
+    isVariableDeclaration(parent) &&
+    transparentExpressionNode(parent.initializer) === expression
   ) {
     return parent
   }
   if (
-    Node.isBinaryExpression(parent) &&
-    parent.getOperatorToken().getKind() === SyntaxKind.EqualsToken &&
-    transparentExpressionNode(parent.getRight()) === expression
+    isBinaryExpression(parent) &&
+    parent.operatorToken.kind === SyntaxKind.EqualsToken &&
+    transparentExpressionNode(parent.right) === expression
   ) {
-    const left = transparentExpressionNode(parent.getLeft())
-    return Node.isIdentifier(left) ? localVariableDeclaration(left) : undefined
+    const left = transparentExpressionNode(parent.left)
+    return isIdentifier(left) ? localVariableDeclaration(left) : undefined
   }
   return undefined
 }
 
 const isWriteTarget = (node: Node): boolean => {
   const expression = transparentExpressionParent(node)
-  const parent = expression.getParent()
+  const parent = expression.parent
   if (
-    Node.isBinaryExpression(parent) &&
-    parent.getLeft() === expression &&
-    ASSIGNMENT_OPERATORS.has(parent.getOperatorToken().getKind())
+    isBinaryExpression(parent) &&
+    parent.left === expression &&
+    ASSIGNMENT_OPERATORS.has(parent.operatorToken.kind)
   ) {
     return true
   }
-  if (Node.isPrefixUnaryExpression(parent) || Node.isPostfixUnaryExpression(parent)) {
-    const operator = parent.getOperatorToken()
-    return operator === SyntaxKind.PlusPlusToken || operator === SyntaxKind.MinusMinusToken
+  if (isPrefixUnaryExpression(parent) || isPostfixUnaryExpression(parent)) {
+    return parent.operator === SyntaxKind.PlusPlusToken || parent.operator === SyntaxKind.MinusMinusToken
   }
   return false
 }
@@ -513,17 +562,17 @@ const isWriteTarget = (node: Node): boolean => {
 const transparentExpressionParent = (node: Node): Node => {
   let current = node
   while (true) {
-    const parent = current.getParent()
+    const parent = current.parent
     if (
       parent !== undefined &&
       (
-        Node.isAsExpression(parent) ||
-        Node.isSatisfiesExpression(parent) ||
-        Node.isTypeAssertion(parent) ||
-        Node.isParenthesizedExpression(parent) ||
-        Node.isNonNullExpression(parent)
+        isAsExpression(parent) ||
+        isSatisfiesExpression(parent) ||
+        isTypeAssertion(parent) ||
+        isParenthesizedExpression(parent) ||
+        isNonNullExpression(parent)
       ) &&
-      parent.getExpression() === current
+      parent.expression === current
     ) {
       current = parent
       continue
@@ -536,19 +585,19 @@ const transparentExpressionNode = (node: Node | undefined): Node | undefined =>
   node === undefined ? undefined : transparentExpressionParent(unwrapExpression(node) ?? node)
 
 const isTupleLikeDeclaration = (declaration: VariableDeclaration): boolean =>
-  hasConstAssertion(declaration.getInitializer()) || tupleLengthOf(declaration) !== undefined
+  hasConstAssertion(declaration.initializer) || tupleLengthOf(declaration) !== undefined
 
 const hasConstAssertion = (node: Node | undefined): boolean => {
   let current = node
   while (current !== undefined) {
-    if (Node.isAsExpression(current) && current.getTypeNode()?.getText() === "const") return true
+    if (isAsExpression(current) && current.type !== undefined && textOf(current.type) === "const") return true
     if (
-      Node.isAsExpression(current) ||
-      Node.isSatisfiesExpression(current) ||
-      Node.isTypeAssertion(current) ||
-      Node.isParenthesizedExpression(current)
+      isAsExpression(current) ||
+      isSatisfiesExpression(current) ||
+      isTypeAssertion(current) ||
+      isParenthesizedExpression(current)
     ) {
-      current = current.getExpression()
+      current = current.expression
       continue
     }
     return false
@@ -557,24 +606,24 @@ const hasConstAssertion = (node: Node | undefined): boolean => {
 }
 
 const tupleLengthOf = (declaration: VariableDeclaration): number | undefined => {
-  const type = declaration.getType()
-  if (!type.isTuple()) return undefined
-  const text = declaration.getTypeNode()?.getText() ?? declaration.getInitializer()?.getText() ?? ""
-  if (text.includes("...")) return undefined
-  return type.getTupleElements().length
+  const typeText = declaration.type === undefined ? undefined : textOf(declaration.type)
+  if (typeText === undefined || !typeText.startsWith("[") || typeText.includes("...")) return undefined
+  const inner = typeText.slice(1, typeText.lastIndexOf("]"))
+  if (inner.trim().length === 0) return 0
+  return inner.split(",").length
 }
 
 const unwrapExpression = (node: Node | undefined): Node | undefined => {
   let current = node
   while (current !== undefined) {
     if (
-      Node.isAsExpression(current) ||
-      Node.isSatisfiesExpression(current) ||
-      Node.isTypeAssertion(current) ||
-      Node.isParenthesizedExpression(current) ||
-      Node.isNonNullExpression(current)
+      isAsExpression(current) ||
+      isSatisfiesExpression(current) ||
+      isTypeAssertion(current) ||
+      isParenthesizedExpression(current) ||
+      isNonNullExpression(current)
     ) {
-      current = current.getExpression()
+      current = current.expression
       continue
     }
     return current

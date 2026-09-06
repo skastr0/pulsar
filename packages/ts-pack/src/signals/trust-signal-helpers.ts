@@ -1,6 +1,14 @@
 import { relative } from "node:path"
 import type { ChangedHunk } from "@skastr0/pulsar-core/signal"
-import { Node, type Node as TsMorphNode, type SourceFile } from "ts-morph"
+import { textOf } from "../ast.js"
+import {
+  SyntaxKind,
+  isNoSubstitutionTemplateLiteral,
+  isNumericLiteral,
+  isStringLiteral,
+  type Node,
+  type SourceFile,
+} from "../tsgo-api.js"
 import { isExcluded } from "./shared-globs.js"
 
 export const TRUST_SIGNAL_EXCLUDE_GLOBS = [
@@ -53,38 +61,38 @@ export const isAnalyzableSourceFile = (
   sourceFile: SourceFile,
   excludeGlobs: ReadonlyArray<string>,
 ): boolean => {
-  const file = sourceFile.getFilePath()
+  const file = sourceFile.fileName
   return !isExcluded(file, excludeGlobs)
 }
 
-export const locationOf = (node: TsMorphNode): SourceLocation => {
+export const locationOf = (node: Node): SourceLocation => {
   const sourceFile = node.getSourceFile()
-  const { line, column } = sourceFile.getLineAndColumnAtPos(node.getStart())
-  return { file: sourceFile.getFilePath(), line, column }
+  const { line, character } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile))
+  return { file: sourceFile.fileName, line: line + 1, column: character + 1 }
 }
 
-export const isStringLiteralLike = (node: TsMorphNode | undefined): boolean =>
+export const isStringLiteralLike = (node: Node | undefined): boolean =>
   node !== undefined &&
-  (Node.isStringLiteral(node) ||
-    Node.isNoSubstitutionTemplateLiteral(node) ||
-    Node.isNumericLiteral(node) ||
-    node.getKindName() === "TrueKeyword" ||
-    node.getKindName() === "FalseKeyword")
+  (isStringLiteral(node) ||
+    isNoSubstitutionTemplateLiteral(node) ||
+    isNumericLiteral(node) ||
+    node.kind === SyntaxKind.TrueKeyword ||
+    node.kind === SyntaxKind.FalseKeyword)
 
-export const stringLiteralValue = (node: TsMorphNode | undefined): string | undefined => {
+export const stringLiteralValue = (node: Node | undefined): string | undefined => {
   if (node === undefined) return undefined
-  if (Node.isStringLiteral(node) || Node.isNoSubstitutionTemplateLiteral(node)) {
-    return node.getLiteralText()
+  if (isStringLiteral(node) || isNoSubstitutionTemplateLiteral(node)) {
+    return node.text
   }
   return undefined
 }
 
-export const expressionName = (node: TsMorphNode | undefined): string => {
+export const expressionName = (node: Node | undefined): string => {
   if (node === undefined) return ""
-  return node.getText().replace(/\s+/g, " ").trim()
+  return textOf(node).replace(/\s+/g, " ").trim()
 }
 
-export const callName = (node: TsMorphNode | undefined): string => {
+export const callName = (node: Node | undefined): string => {
   const text = expressionName(node)
   return text.replace(/\?./g, ".")
 }
@@ -108,7 +116,7 @@ export const sourceFileChanged = (
   changedHunks: ReadonlyArray<ChangedHunk>,
 ): boolean => {
   if (changedHunks.length === 0) return false
-  const relativeFile = relative(worktreePath, sourceFile.getFilePath()).replace(/\\/g, "/")
+  const relativeFile = relative(worktreePath, sourceFile.fileName).replace(/\\/g, "/")
   return changedHunks.some((hunk) => hunk.file === relativeFile)
 }
 
