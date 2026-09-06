@@ -4,20 +4,27 @@ import {
   type Signal,
 } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
+import { textOf, walkDescendants } from "../ast.js"
 import {
-  Node,
-  SyntaxKind,
+  isAsExpression,
+  isCallExpression,
+  isCaseClause,
+  isDefaultClause,
+  isNewExpression,
+  isSatisfiesExpression,
+  isSwitchStatement,
+  isTypeAssertion,
+  isVariableDeclaration,
   type CaseClause,
   type DefaultClause,
-  type Expression,
-  type Node as TsMorphNode,
+  type Node,
   type Project,
   type SourceFile,
   type SwitchStatement,
-  type Type,
-} from "ts-morph"
-import { TsProjectTag } from "../ts-project.js"
+} from "../tsgo-api.js"
+import { TsAnalysisTag } from "../ts-analysis.js"
 import { isExcluded } from "./shared-globs.js"
+import type { Type } from "tsgo-typescript/unstable/async"
 
 export const TsLd08Config = Schema.Struct({
   min_case_clauses: Schema.Number,
@@ -51,7 +58,7 @@ export interface TsLd08Output {
   readonly enforcementCeiling: ReadonlyArray<string>
 }
 
-export const TsLd08: Signal<TsLd08Config, TsLd08Output, TsProjectTag> = {
+export const TsLd08: Signal<TsLd08Config, TsLd08Output, TsAnalysisTag> = {
   id: "TS-LD-08-exhaustiveness-erosion",
   title: "Exhaustiveness erosion",
   aliases: ["TS-LD-08"],
@@ -114,9 +121,18 @@ export const TsLd08: Signal<TsLd08Config, TsLd08Output, TsProjectTag> = {
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
-      const project = yield* TsProjectTag
-      return yield* Effect.try({
-        try: (): TsLd08Output => computeExhaustivenessErosion(project, config),
+      const analysis = yield* TsAnalysisTag
+      const files = yield* analysis.mapFiles(async (fileContext) => fileContext).pipe(
+        Effect.mapError((cause) =>
+          new SignalComputeError({
+            signalId: "TS-LD-08-exhaustiveness-erosion",
+            message: cause.message,
+            cause,
+          }),
+        ),
+      )
+      return yield* Effect.tryPromise({
+        try: () => computeExhaustivenessErosion(files, config),
         catch: (cause) =>
           new SignalComputeError({
             signalId: "TS-LD-08-exhaustiveness-erosion",
@@ -146,14 +162,16 @@ interface ExhaustivenessScanResult {
   readonly analyzedFiniteSwitches: number
 }
 
-const computeExhaustivenessErosion = (
-  project: Project,
+const computeExhaustivenessErosion = async (
+  files: ReadonlyArray<{ readonly sourceFile: SourceFile; readonly project: Project }>,
   config: TsLd08Config,
-): TsLd08Output => {
-  const scan = project.getSourceFiles()
-    .filter((sourceFile) => !isExcluded(sourceFile.getFilePath(), config.exclude_globs))
-    .map((sourceFile) => scanSourceFile(sourceFile, config))
-    .reduce(mergeScanResults, emptyScanResult())
+): Promise<TsLd08Output> => {
+  const scans: Array<ExhaustivenessScanResult> = []
+  for (const file of files) {
+    if (isExcluded(file.sourceFile.fileName, config.exclude_globs)) continue
+    scans.push(await scanSourceFile(file.sourceFile, file.project, config))
+  }
+  const scan = scans.reduce(mergeScanResults, emptyScanResult())
   const findings = [...scan.findings].sort(compareFindings)
 
   return {
@@ -177,16 +195,20 @@ const computeExhaustivenessErosion = (
   }
 }
 
-const scanSourceFile = (
+const scanSourceFile = async (
   sourceFile: SourceFile,
+  project: Project,
   config: TsLd08Config,
-): ExhaustivenessScanResult => {
+): Promise<ExhaustivenessScanResult> => {
   const findings: Array<ExhaustivenessErosionFinding> = []
   let analyzedFiniteSwitches = 0
-  const switches = sourceFile.getDescendantsOfKind(SyntaxKind.SwitchStatement)
+  const switches: Array<SwitchStatement> = []
+  walkDescendants(sourceFile, (node) => {
+    if (isSwitchStatement(node)) switches.push(node)
+  })
 
   for (const statement of switches) {
-    const { finding, finite } = findingFromSwitch(sourceFile, statement, config)
+    const { finding, finite } = await findingFromSwitch(sourceFile, project, statement, config)
     if (finite) analyzedFiniteSwitches += 1
     if (finding !== undefined) findings.push(finding)
   }
@@ -198,51 +220,53 @@ const scanSourceFile = (
   }
 }
 
-const findingFromSwitch = (
+const findingFromSwitch = async (
   sourceFile: SourceFile,
+  project: Project,
   statement: SwitchStatement,
   config: TsLd08Config,
-): { readonly finding?: ExhaustivenessErosionFinding; readonly finite: boolean } => {
-  const domain = finiteSwitchDomain(statement.getExpression())
+): Promise<{ readonly finding?: ExhaustivenessErosionFinding; readonly finite: boolean }> => {
+  const domain = await finiteSwitchDomain(project, statement.expression)
   if (domain === undefined) return { finite: false }
 
-  const clauses = statement.getCaseBlock().getClauses()
-  const caseClauses = clauses.filter(Node.isCaseClause)
-  const defaultClause = clauses.find(Node.isDefaultClause)
+  const clauses = [...statement.caseBlock.clauses]
+  const caseClauses = clauses.filter(isCaseClause)
+  const defaultClause = clauses.find(isDefaultClause)
   if (
     defaultClause === undefined ||
     caseClauses.length < config.min_case_clauses ||
-    isExhaustivenessGuardDefault(defaultClause)
+    await isExhaustivenessGuardDefault(project, defaultClause)
   ) {
     return { finite: true }
   }
 
   return {
     finite: true,
-    finding: switchFinding(sourceFile, statement, caseClauses, defaultClause, domain),
+    finding: await switchFinding(sourceFile, project, statement, caseClauses, defaultClause, domain),
   }
 }
 
-const switchFinding = (
+const switchFinding = async (
   sourceFile: SourceFile,
+  project: Project,
   statement: SwitchStatement,
   caseClauses: ReadonlyArray<CaseClause>,
   defaultClause: DefaultClause,
   domain: FiniteSwitchDomain,
-): ExhaustivenessErosionFinding => {
-  const handledVariantCount = handledVariantKeys(caseClauses, domain.variantKeys).size
-  const { line, column } = sourceFile.getLineAndColumnAtPos(statement.getStart())
+): Promise<ExhaustivenessErosionFinding> => {
+  const handledVariantCount = (await handledVariantKeys(project, caseClauses, domain.variantKeys)).size
+  const { line, character } = sourceFile.getLineAndCharacterOfPosition(statement.getStart(sourceFile))
   return {
-    file: sourceFile.getFilePath(),
-    line,
-    column,
-    expression: statement.getExpression().getText(),
+    file: sourceFile.fileName,
+    line: line + 1,
+    column: character + 1,
+    expression: textOf(statement.expression),
     typeText: domain.typeText,
     caseCount: caseClauses.length,
     variantCount: domain.variantKeys.size,
     handledVariantCount,
     unhandledVariantCount: Math.max(0, domain.variantKeys.size - handledVariantCount),
-    defaultText: defaultClause.getText().slice(0, 160),
+    defaultText: textOf(defaultClause).slice(0, 160),
   }
 }
 
@@ -276,21 +300,24 @@ interface FiniteSwitchDomain {
   readonly variantKeys: ReadonlySet<string>
 }
 
-const finiteSwitchDomain = (expression: Expression): FiniteSwitchDomain | undefined => {
-  const type = expression.getType()
-  const variants = finiteVariantKeys(type)
+const finiteSwitchDomain = async (
+  project: Project,
+  expression: Node,
+): Promise<FiniteSwitchDomain | undefined> => {
+  const type = await project.checker.getTypeAtLocation(expression)
+  const variants = await finiteVariantKeys(type)
   if (variants.length === 0 || variants.every((variant) => variant.startsWith("boolean:"))) {
     return undefined
   }
   return {
-    typeText: type.getText(expression),
+    typeText: await project.checker.typeToString(type, expression),
     variantKeys: new Set(variants),
   }
 }
 
-const finiteVariantKeys = (type: Type): ReadonlyArray<string> => {
-  if (type.isUnion()) {
-    const variants = type.getUnionTypes().map(literalVariantKey)
+const finiteVariantKeys = async (type: Type): Promise<ReadonlyArray<string>> => {
+  if (type.isUnionType()) {
+    const variants = (await type.getTypes()).map(literalVariantKey)
     if (!variants.every((variant): variant is string => variant !== undefined)) return []
     return [...new Set(variants)]
   }
@@ -299,66 +326,78 @@ const finiteVariantKeys = (type: Type): ReadonlyArray<string> => {
 }
 
 const literalVariantKey = (type: Type): string | undefined => {
-  if (type.isStringLiteral()) return `string:${String(type.getLiteralValue())}`
-  if (type.isNumberLiteral()) return `number:${String(type.getLiteralValue())}`
-  if (type.isEnumLiteral()) return `enum:${String(type.getLiteralValue() ?? type.getText())}`
-  if (type.isBooleanLiteral()) return `boolean:${type.getText()}`
-  if (type.isNull()) return "null:null"
-  if (type.isUndefined()) return "undefined:undefined"
-  if (type.isBigIntLiteral()) return `bigint:${type.getText()}`
+  if (type.isStringLiteralType()) return `string:${String(type.value)}`
+  if (type.isNumberLiteralType()) return `number:${String(type.value)}`
+  if (type.isBooleanLiteralType()) return `boolean:${String(type.value)}`
+  if (type.isBigIntLiteralType()) return `bigint:${String(type.value)}`
+  const text = intrinsicName(type)
+  if (text === "null") return "null:null"
+  if (text === "undefined") return "undefined:undefined"
   return undefined
 }
 
-const handledVariantKeys = (
+const intrinsicName = (type: Type): string | undefined => {
+  if (!type.isIntrinsicType()) return undefined
+  return (type as { readonly intrinsicName?: string }).intrinsicName
+}
+
+const handledVariantKeys = async (
+  project: Project,
   caseClauses: ReadonlyArray<CaseClause>,
   variantKeys: ReadonlySet<string>,
-): ReadonlySet<string> => {
+): Promise<ReadonlySet<string>> => {
   const handled = new Set<string>()
   for (const clause of caseClauses) {
-    for (const key of finiteVariantKeys(clause.getExpression().getType())) {
+    const type = await project.checker.getTypeAtLocation(clause.expression)
+    for (const key of await finiteVariantKeys(type)) {
       if (variantKeys.has(key)) handled.add(key)
     }
   }
   return handled
 }
 
-const isExhaustivenessGuardDefault = (defaultClause: DefaultClause): boolean =>
-  !containsExplicitNeverCast(defaultClause) &&
-  defaultClause.getDescendants().some((node) =>
-    isSatisfiesNeverCheck(node) ||
-    isNeverAssignment(node) ||
-    isNeverParameterGuard(node)
-  )
-
-const containsExplicitNeverCast = (node: TsMorphNode): boolean =>
-  node.getDescendants().some((descendant) =>
-    (Node.isAsExpression(descendant) || Node.isTypeAssertion(descendant)) &&
-    isNeverTypeNode(descendant.getTypeNode())
-  )
-
-const isSatisfiesNeverCheck = (node: TsMorphNode): boolean =>
-  Node.isSatisfiesExpression(node) &&
-  isNeverTypeNode(node.getTypeNode()) &&
-  node.getExpression().getType().isNever()
-
-const isNeverAssignment = (node: TsMorphNode): boolean =>
-  Node.isVariableDeclaration(node) &&
-  isNeverTypeNode(node.getTypeNode()) &&
-  node.getInitializer()?.getType().isNever() === true
-
-const isNeverParameterGuard = (node: TsMorphNode): boolean => {
-  if (!Node.isCallExpression(node) && !Node.isNewExpression(node)) return false
-  const signature = node.getProject().getTypeChecker().getResolvedSignature(node)
-  const parameters = signature?.getParameters() ?? []
-  const args = node.getArguments()
-  return args.some((arg, index) =>
-    parameters[index]?.getTypeAtLocation(node).isNever() === true &&
-    arg.getType().isNever()
-  )
+const isExhaustivenessGuardDefault = async (
+  project: Project,
+  defaultClause: DefaultClause,
+): Promise<boolean> => {
+  if (containsExplicitNeverCast(defaultClause)) return false
+  const candidates: Array<Node> = []
+  walkDescendants(defaultClause, (node) => {
+    if (isSatisfiesNeverCheck(node) && isSatisfiesExpression(node)) {
+      candidates.push(node.expression)
+    }
+    if (isNeverAssignment(node) && isVariableDeclaration(node) && node.initializer !== undefined) {
+      candidates.push(node.initializer)
+    }
+    if (isCallExpression(node) || isNewExpression(node)) {
+      candidates.push(...node.arguments)
+    }
+  })
+  for (const candidate of candidates) {
+    const type = await project.checker.getTypeAtLocation(candidate)
+    if (intrinsicName(type) === "never") return true
+  }
+  return false
 }
 
-const isNeverTypeNode = (node: TsMorphNode | undefined): boolean =>
-  node?.getText().trim() === "never"
+const containsExplicitNeverCast = (node: Node): boolean => {
+  let found = false
+  walkDescendants(node, (descendant) => {
+    if ((isAsExpression(descendant) || isTypeAssertion(descendant)) && isNeverTypeNode(descendant.type)) {
+      found = true
+    }
+  })
+  return found
+}
+
+const isSatisfiesNeverCheck = (node: Node): boolean =>
+  isSatisfiesExpression(node) && isNeverTypeNode(node.type)
+
+const isNeverAssignment = (node: Node): boolean =>
+  isVariableDeclaration(node) && isNeverTypeNode(node.type)
+
+const isNeverTypeNode = (node: Node | undefined): boolean =>
+  node !== undefined && textOf(node).trim() === "never"
 
 const normalizeDiagnosticLimit = (limit: number): number =>
   Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 0
