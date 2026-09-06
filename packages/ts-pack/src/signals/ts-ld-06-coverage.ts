@@ -1,4 +1,4 @@
-import { type Project, type SourceFile } from "ts-morph"
+import type { SourceFile } from "../tsgo-api.js"
 import { isExcluded } from "./shared-globs.js"
 import {
   collectTrackedFunctions,
@@ -31,7 +31,7 @@ const PARAMETER_COVERAGE_WEIGHT = 4
 const RETURN_COVERAGE_WEIGHT = 1
 
 export const computeAnnotationCoverage = (
-  project: Project,
+  sourceFiles: ReadonlyArray<SourceFile>,
   config: TsLd06Config,
 ): TsLd06Output => {
   const byFile = new Map<string, FileCoverage>()
@@ -39,8 +39,8 @@ export const computeAnnotationCoverage = (
   const boundaryTotals = emptyMutableCoverage()
   const internalTotals = emptyMutableCoverage()
 
-  for (const sourceFile of project.getSourceFiles()) {
-    const file = sourceFile.getFilePath()
+  for (const sourceFile of sourceFiles) {
+    const file = sourceFile.fileName
     if (isExcluded(file, config.exclude_globs)) continue
     const analysis = analyzeAnnotationCoverageFile(sourceFile, file)
     addCoverage(boundaryTotals, analysis.boundaryTotals)

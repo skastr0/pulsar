@@ -10,7 +10,7 @@ import {
   TsLd06Config,
   type TsLd06Output,
 } from "../signals/ts-ld-06-annotation-coverage.js"
-import { TsProjectLayer } from "../ts-project.js"
+import { TsAnalysisLayer } from "../ts-analysis.js"
 
 let repo: string
 
@@ -31,7 +31,7 @@ const writeTs = async (relPath: string, content: string): Promise<string> => {
 
 const runCompute = async (config = TsLd06.defaultConfig): Promise<TsLd06Output> => {
   const program = TsLd06.compute(config, new Map()).pipe(
-    Effect.provide(TsProjectLayer(repo)),
+    Effect.provide(TsAnalysisLayer(repo)),
   )
   return Effect.runPromise(program as Effect.Effect<TsLd06Output, unknown, never>)
 }

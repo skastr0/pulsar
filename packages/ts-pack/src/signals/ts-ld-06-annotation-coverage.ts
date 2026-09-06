@@ -1,7 +1,7 @@
 import { SignalComputeError } from "@skastr0/pulsar-core/signal"
 import type { Diagnostic, Signal } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
-import { TsProjectTag } from "../ts-project.js"
+import { TsAnalysisTag } from "../ts-analysis.js"
 import {
   computeAnnotationCoverage,
   weightedBoundaryCoverage,
@@ -41,7 +41,7 @@ export interface TsLd06Output {
   readonly diagnosticLimit: number
 }
 
-export const TsLd06: Signal<TsLd06Config, TsLd06Output, TsProjectTag> = {
+export const TsLd06: Signal<TsLd06Config, TsLd06Output, TsAnalysisTag> = {
   id: "TS-LD-06-annotation-coverage",
   title: "Type annotation coverage",
   aliases: ["TS-LD-06"],
@@ -102,9 +102,10 @@ export const TsLd06: Signal<TsLd06Config, TsLd06Output, TsProjectTag> = {
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
-      const project = yield* TsProjectTag
+      const analysis = yield* TsAnalysisTag
+      const sourceFiles = yield* analysis.mapFiles(async (context) => context.sourceFile)
       const result = yield* Effect.try({
-        try: (): TsLd06Output => computeAnnotationCoverage(project, config),
+        try: (): TsLd06Output => computeAnnotationCoverage(sourceFiles, config),
         catch: (cause) =>
           new SignalComputeError({
             signalId: "TS-LD-06-annotation-coverage",
@@ -113,7 +114,7 @@ export const TsLd06: Signal<TsLd06Config, TsLd06Output, TsProjectTag> = {
           }),
       })
       return result
-  }),
+    }),
   score: (out) => weightedBoundaryCoverage(out.boundaryCoverage),
   diagnose: (out): ReadonlyArray<Diagnostic> =>
     out.uncoveredBoundary.slice(0, out.diagnosticLimit).map((fn) => ({
