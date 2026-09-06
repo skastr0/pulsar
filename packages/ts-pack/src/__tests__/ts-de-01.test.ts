@@ -14,7 +14,7 @@ import {
 import { TS_PACK_SIGNALS } from "../pack.js"
 import { TsDe01, TsDe01Config } from "../signals/ts-de-01-type-level-coupling.js"
 import type { TsDe01Output } from "../signals/ts-de-01-coupling-output.js"
-import { TsProjectLayer } from "../ts-project.js"
+import { TsAnalysisLayer } from "../ts-analysis.js"
 import { makePulsarSelfCalibrationContext } from "./pulsar-self-calibration.js"
 
 let repo: string
@@ -30,7 +30,7 @@ const runCompute = async (
   config = TsDe01.defaultConfig,
   calibration?: ResolvedCalibrationContext,
 ): Promise<TsDe01Output> => {
-  const base = TsDe01.compute(config, new Map()).pipe(Effect.provide(TsProjectLayer(repo)))
+  const base = TsDe01.compute(config, new Map()).pipe(Effect.provide(TsAnalysisLayer(repo)))
   const program =
     calibration === undefined
       ? base

@@ -10,10 +10,9 @@ import {
   relativeFactorPath,
 } from "@skastr0/pulsar-core/factors"
 import { Effect, Option, Schema } from "effect"
-import { TsProjectTag } from "../ts-project.js"
+import { TsAnalysisTag } from "../ts-analysis.js"
 import { isExcluded } from "./shared-globs.js"
 import { computeFastImportTypeCoupling } from "./ts-de-01-fast-coupling.js"
-import { computePreciseTypeCoupling } from "./ts-de-01-precise-coupling.js"
 import type {
   CouplingCounterpart,
   ModuleTypeCoupling,
@@ -27,7 +26,7 @@ export const TsDe01Config = Schema.Struct({
 })
 type TsDe01Config = typeof TsDe01Config.Type
 
-export const TsDe01: Signal<TsDe01Config, TsDe01Output, TsProjectTag> = {
+export const TsDe01: Signal<TsDe01Config, TsDe01Output, TsAnalysisTag> = {
   id: "TS-DE-01-type-level-coupling",
   title: "Type-level coupling",
   aliases: ["TS-DE-01"],
@@ -61,18 +60,18 @@ export const TsDe01: Signal<TsDe01Config, TsDe01Output, TsProjectTag> = {
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
-      const project = yield* TsProjectTag
+      const analysis = yield* TsAnalysisTag
       const calibration = yield* Effect.serviceOption(CalibrationContextTag)
-      const result = yield* Effect.try({
-        try: (): TsDe01Output => {
+      const files = yield* analysis.mapFiles(async (fileContext) => fileContext).pipe(
+        Effect.mapError(toSignalComputeError),
+      )
+      const sourceFiles = files
+        .map((fileContext) => fileContext.sourceFile)
+        .filter((sourceFile) => !isExcluded(sourceFile.fileName, config.exclude_globs))
+      const result = yield* Effect.tryPromise({
+        try: async (): Promise<TsDe01Output> => {
           const diagnosticLimit = normalizeDiagnosticLimit(config.top_n_diagnostics)
-          const sourceFiles = project
-            .getSourceFiles()
-            .filter((sourceFile) => !isExcluded(sourceFile.getFilePath(), config.exclude_globs))
-          if (sourceFiles.length > config.precise_module_limit) {
-            return computeFastImportTypeCoupling(sourceFiles, diagnosticLimit)
-          }
-          return computePreciseTypeCoupling(sourceFiles, diagnosticLimit)
+          return computeFastImportTypeCoupling(sourceFiles, diagnosticLimit)
         },
         catch: (cause) =>
           new SignalComputeError({

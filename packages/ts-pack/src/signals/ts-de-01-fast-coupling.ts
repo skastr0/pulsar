@@ -1,6 +1,27 @@
 import { dirname, normalize, resolve } from "node:path"
-import type { ImportDeclaration, SourceFile } from "ts-morph"
-import { ts } from "ts-morph"
+import { existsSync } from "node:fs"
+import { textOf, walkDescendants } from "../ast.js"
+import {
+  isExportDeclaration,
+  isExpressionWithTypeArguments,
+  isIdentifier,
+  isImportClause,
+  isImportDeclaration,
+  isImportTypeNode,
+  isLiteralTypeNode,
+  isNamedExports,
+  isNamedImports,
+  isNamespaceImport,
+  isNoSubstitutionTemplateLiteral,
+  isStringLiteral,
+  isTypeQueryNode,
+  isTypeReferenceNode,
+  type ExportDeclaration,
+  type ImportDeclaration,
+  type Node,
+  type SourceFile,
+} from "../tsgo-api.js"
+import { createModuleResolver } from "../graph/module-graph.js"
 import {
   stripKnownExtension,
   stripRuntimeExtension,
@@ -16,12 +37,12 @@ export const computeFastImportTypeCoupling = (
   sourceFiles: ReadonlyArray<SourceFile>,
   diagnosticLimit: number,
 ): TsDe01Output => {
-  const fileSet = new Set<string>(sourceFiles.map((sourceFile) => sourceFile.getFilePath()))
+  const fileSet = new Set<string>(sourceFiles.map((sourceFile) => sourceFile.fileName))
   const resolution = createFastResolutionContext(sourceFiles)
   const { outgoing, incoming } = createCouplingTables(fileSet)
 
   for (const sourceFile of sourceFiles) {
-    const src = sourceFile.getFilePath()
+    const src = sourceFile.fileName
     const importedTypeTargets = importedTypeTargetsForFile(sourceFile, resolution)
 
     if (importedTypeTargets.size > 0) {
@@ -72,34 +93,38 @@ const importedTypeTargetsForFile = (
   resolution: FastResolutionContext,
 ): ReadonlyMap<string, FastTypeTarget> => {
   const targets = new Map<string, FastTypeTarget>()
-  const sourcePath = sourceFile.getFilePath()
+  const sourcePath = sourceFile.fileName
 
-  for (const declaration of sourceFile.getImportDeclarations()) {
+  for (const declaration of importDeclarationsOf(sourceFile)) {
     const targetPath = resolveImportDeclarationTarget(sourcePath, declaration, resolution)
     if (targetPath === undefined) continue
 
-    const defaultImport = declaration.getDefaultImport()
-    if (defaultImport !== undefined) {
-      targets.set(defaultImport.getText(), {
+    const clause = declaration.importClause
+    if (clause?.name !== undefined) {
+      targets.set(clause.name.text, {
         file: targetPath,
         symbolName: "default",
       })
     }
 
-    const namespaceImport = declaration.getNamespaceImport()
-    if (namespaceImport !== undefined) {
-      targets.set(namespaceImport.getText(), {
+    if (clause?.namedBindings !== undefined && isNamespaceImport(clause.namedBindings)) {
+      targets.set(clause.namedBindings.name.text, {
         file: targetPath,
-        symbolName: namespaceImport.getText(),
+        symbolName: clause.namedBindings.name.text,
       })
     }
 
-    for (const namedImport of declaration.getNamedImports()) {
-      const symbolName = namedImport.getName()
-      targets.set(namedImport.getAliasNode()?.getText() ?? symbolName, {
-        file: resolveReExportedTypeTarget(targetPath, symbolName, resolution),
-        symbolName,
-      })
+    if (clause?.namedBindings !== undefined && isNamedImports(clause.namedBindings)) {
+      for (const namedImport of clause.namedBindings.elements) {
+        const symbolName = namedImport.propertyName === undefined
+          ? (isIdentifier(namedImport.name) ? namedImport.name.text : textOf(namedImport.name))
+          : (isIdentifier(namedImport.propertyName) ? namedImport.propertyName.text : textOf(namedImport.propertyName))
+        const localName = isIdentifier(namedImport.name) ? namedImport.name.text : textOf(namedImport.name)
+        targets.set(localName, {
+          file: resolveReExportedTypeTarget(targetPath, symbolName, resolution),
+          symbolName,
+        })
+      }
     }
   }
 
@@ -109,18 +134,13 @@ const importedTypeTargetsForFile = (
 const collectFastTypeReferenceNames = (
   sourceFile: SourceFile,
 ): ReadonlyArray<{ readonly name: string; readonly pos: number }> => {
-  const compilerSourceFile = sourceFile.compilerNode
   const references: Array<{ name: string; pos: number }> = []
-
-  const visit = (node: ts.Node): void => {
-    const name = fastTypeReferenceName(node, compilerSourceFile)
+  walkDescendants(sourceFile, (node) => {
+    const name = fastTypeReferenceName(node)
     if (name !== undefined) {
       references.push({ name, pos: node.pos })
     }
-    ts.forEachChild(node, visit)
-  }
-
-  visit(compilerSourceFile)
+  })
   return references
 }
 
@@ -131,36 +151,30 @@ const collectFastImportTypeReferences = (
   readonly name: string
   readonly pos: number
 }> => {
-  const compilerSourceFile = sourceFile.compilerNode
   const references: Array<{
     moduleSpecifier: string
     name: string
     pos: number
   }> = []
-
-  const visit = (node: ts.Node): void => {
-    if (ts.isImportTypeNode(node)) {
-      const reference = fastImportTypeReference(node, compilerSourceFile)
+  walkDescendants(sourceFile, (node) => {
+    if (isImportTypeNode(node)) {
+      const reference = fastImportTypeReference(node)
       if (reference !== undefined) references.push(reference)
     }
-    ts.forEachChild(node, visit)
-  }
-
-  visit(compilerSourceFile)
+  })
   return references
 }
 
 const fastImportTypeReference = (
-  node: ts.ImportTypeNode,
-  sourceFile: ts.SourceFile,
+  node: import("../tsgo-api.js").ImportTypeNode,
 ): {
   readonly moduleSpecifier: string
   readonly name: string
   readonly pos: number
 } | undefined => {
   if (
-    !ts.isLiteralTypeNode(node.argument) ||
-    !ts.isStringLiteral(node.argument.literal) ||
+    !isLiteralTypeNode(node.argument) ||
+    !isStringLiteral(node.argument.literal) ||
     node.qualifier === undefined
   ) {
     return undefined
@@ -168,30 +182,29 @@ const fastImportTypeReference = (
 
   return {
     moduleSpecifier: node.argument.literal.text,
-    name: entityNameText(node.qualifier, sourceFile),
+    name: entityNameText(node.qualifier),
     pos: node.pos,
   }
 }
 
 const fastTypeReferenceName = (
-  node: ts.Node,
-  sourceFile: ts.SourceFile,
+  node: Node,
 ): string | undefined => {
-  if (ts.isTypeReferenceNode(node)) {
-    return entityNameText(node.typeName, sourceFile)
+  if (isTypeReferenceNode(node)) {
+    return entityNameText(node.typeName)
   }
-  if (ts.isExpressionWithTypeArguments(node)) {
-    return node.expression.getText(sourceFile)
+  if (isExpressionWithTypeArguments(node)) {
+    return textOf(node.expression)
   }
-  if (ts.isTypeQueryNode(node)) {
-    return entityNameText(node.exprName, sourceFile)
+  if (isTypeQueryNode(node)) {
+    return entityNameText(node.exprName)
   }
   return undefined
 }
 
-const entityNameText = (name: ts.EntityName, sourceFile: ts.SourceFile): string => {
-  if (ts.isIdentifier(name)) return name.text
-  return name.left.getText(sourceFile)
+const entityNameText = (name: Node): string => {
+  if (isIdentifier(name)) return name.text
+  return textOf(name).split(".")[0] ?? textOf(name)
 }
 
 const rootTypeReferenceName = (name: string): string | undefined => {
@@ -209,9 +222,9 @@ const resolveImportDeclarationTarget = (
   declaration: ImportDeclaration,
   resolution: FastResolutionContext,
 ): string | undefined => {
-  const sourceFilePath = declaration.getModuleSpecifierSourceFile()?.getFilePath()
-  if (sourceFilePath !== undefined) return sourceFilePath
-  return resolveModuleSpecifier(sourcePath, declaration.getModuleSpecifierValue(), resolution)
+  const specifier = moduleSpecifierText(declaration)
+  if (specifier === undefined) return undefined
+  return resolveModuleSpecifier(sourcePath, specifier, resolution)
 }
 
 const resolveModuleSpecifier = (
@@ -252,21 +265,23 @@ const resolveReExportedTypeTarget = (
   const sourceFile = resolution.sourceFileByPath.get(filePath)
   if (sourceFile === undefined) return filePath
 
-  for (const declaration of sourceFile.getExportDeclarations()) {
-    const moduleSpecifier = declaration.getModuleSpecifierValue()
+  for (const declaration of exportDeclarationsOf(sourceFile)) {
+    const moduleSpecifier = moduleSpecifierText(declaration)
     if (moduleSpecifier === undefined) continue
+    if (declaration.exportClause === undefined || !isNamedExports(declaration.exportClause)) continue
 
-    for (const namedExport of declaration.getNamedExports()) {
-      const exportedName = namedExport.getAliasNode()?.getText() ?? namedExport.getName()
+    for (const namedExport of declaration.exportClause.elements) {
+      const exportedName = isIdentifier(namedExport.name) ? namedExport.name.text : textOf(namedExport.name)
       if (exportedName !== symbolName) continue
+      const importedName = namedExport.propertyName === undefined
+        ? exportedName
+        : (isIdentifier(namedExport.propertyName) ? namedExport.propertyName.text : textOf(namedExport.propertyName))
 
-      const targetPath =
-        declaration.getModuleSpecifierSourceFile()?.getFilePath() ??
-        resolveModuleSpecifier(filePath, moduleSpecifier, resolution)
+      const targetPath = resolveModuleSpecifier(filePath, moduleSpecifier, resolution)
       if (targetPath === undefined) return filePath
       return resolveReExportedTypeTarget(
         targetPath,
-        namedExport.getName(),
+        importedName,
         resolution,
         new Set([...seen, key]),
       )
@@ -281,30 +296,19 @@ const createFastResolutionContext = (
 ): FastResolutionContext => {
   const sourceFileByPath = new Map<string, SourceFile>()
   for (const sourceFile of sourceFiles) {
-    sourceFileByPath.set(sourceFile.getFilePath(), sourceFile)
+    sourceFileByPath.set(sourceFile.fileName, sourceFile)
   }
 
-  const compilerOptions = sourceFiles[0]?.getProject().getCompilerOptions() as {
-    readonly baseUrl?: string
-    readonly configFilePath?: string
-    readonly paths?: Record<string, ReadonlyArray<string>>
-  }
-  const configDir =
-    compilerOptions.configFilePath === undefined
-      ? undefined
-      : dirname(normalizePath(compilerOptions.configFilePath))
-  const baseUrl = compilerOptions.baseUrl === undefined
-    ? configDir
-    : normalizePath(resolve(configDir ?? "", compilerOptions.baseUrl))
-
+  const firstFile = sourceFiles[0]?.fileName
+  const configDir = firstFile === undefined ? undefined : nearestTsconfigDir(firstFile)
   return {
     sourceFileByPath,
     pathLookup: buildPathLookup(sourceFiles),
-    ...(baseUrl !== undefined ? { baseUrl } : {}),
-    paths: Object.entries(compilerOptions.paths ?? {}).map(([pattern, replacements]) => ({
-      pattern,
-      replacements,
-    })),
+    ...(configDir === undefined ? {} : { baseUrl: configDir }),
+    paths: [
+      { pattern: "#/*", replacements: ["src/*"] },
+      { pattern: "@/*", replacements: ["src/*"] },
+    ],
   }
 }
 
@@ -323,7 +327,7 @@ const buildPathLookup = (
   const lookup = new Map<string, string>()
 
   for (const sourceFile of sourceFiles) {
-    const filePath = normalizePath(sourceFile.getFilePath())
+    const filePath = normalizePath(sourceFile.fileName)
     const withoutExtension = stripKnownExtension(filePath)
     lookup.set(filePath, filePath)
     lookup.set(withoutExtension, filePath)
@@ -343,3 +347,28 @@ const lookupResolvedPath = (
   pathLookup.get(candidate) ?? pathLookup.get(stripRuntimeExtension(candidate))
 
 const normalizePath = (path: string): string => normalize(path).replace(/\\/g, "/")
+
+const nearestTsconfigDir = (filePath: string): string => {
+  let current = dirname(normalizePath(filePath))
+  while (true) {
+    if (existsSync(resolve(current, "tsconfig.json"))) return current
+    const parent = dirname(current)
+    if (parent === current) return dirname(normalizePath(filePath))
+    current = parent
+  }
+}
+
+const importDeclarationsOf = (sourceFile: SourceFile): ReadonlyArray<ImportDeclaration> =>
+  sourceFile.statements.filter(isImportDeclaration)
+
+const exportDeclarationsOf = (sourceFile: SourceFile): ReadonlyArray<ExportDeclaration> =>
+  sourceFile.statements.filter(isExportDeclaration)
+
+const moduleSpecifierText = (
+  declaration: ImportDeclaration | ExportDeclaration,
+): string | undefined => {
+  const specifier = declaration.moduleSpecifier
+  if (specifier === undefined) return undefined
+  if (isStringLiteral(specifier) || isNoSubstitutionTemplateLiteral(specifier)) return specifier.text
+  return undefined
+}

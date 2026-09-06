@@ -1,11 +1,18 @@
+import { textOf, walkDescendants } from "../ast.js"
 import {
+  isExpressionWithTypeArguments,
+  isImportTypeNode,
+  isParenthesizedTypeNode,
+  isTypeNode,
+  isTypeQueryNode,
+  isTypeReferenceNode,
   type ExpressionWithTypeArguments,
   type ImportTypeNode,
-  Node,
+  type Node,
   type TypeNode,
   type TypeQueryNode,
   type TypeReferenceNode,
-} from "ts-morph"
+} from "../tsgo-api.js"
 
 type TypeReferenceLikeNode =
   | TypeReferenceNode
@@ -39,16 +46,16 @@ export const STANDARD_UTILITY_TYPE_ALIASES: ReadonlySet<string> = new Set([
 ])
 
 export const declarationKey = (node: Node): string =>
-  `${node.getSourceFile().getFilePath()}:${node.getStart()}`
+  `${node.getSourceFile().fileName}:${node.getStart(node.getSourceFile())}`
 
 export const collectTypeReferenceLikeNodes = (root: Node): ReadonlyArray<TypeReferenceLikeNode> => {
   const results: Array<TypeReferenceLikeNode> = []
-  root.forEachDescendant((node) => {
+  walkDescendants(root, (node) => {
     if (
-      Node.isTypeReference(node) ||
-      Node.isExpressionWithTypeArguments(node) ||
-      Node.isImportTypeNode(node) ||
-      Node.isTypeQuery(node)
+      isTypeReferenceNode(node) ||
+      isExpressionWithTypeArguments(node) ||
+      isImportTypeNode(node) ||
+      isTypeQueryNode(node)
     ) {
       results.push(node)
     }
@@ -57,47 +64,35 @@ export const collectTypeReferenceLikeNodes = (root: Node): ReadonlyArray<TypeRef
 }
 
 export const resolveReferenceLikeDeclarations = (
-  node: TypeReferenceLikeNode,
-): ReadonlyArray<Node> => {
-  if (Node.isTypeReference(node)) {
-    return resolveSymbolDeclarations(node.getTypeName())
-  }
-  if (Node.isExpressionWithTypeArguments(node)) {
-    return resolveSymbolDeclarations(node.getExpression())
-  }
-  if (Node.isImportTypeNode(node)) {
-    const qualifier = node.getQualifier()
-    return qualifier === undefined ? [] : resolveSymbolDeclarations(qualifier)
-  }
-  return resolveSymbolDeclarations(node.getExprName())
-}
+  _node: TypeReferenceLikeNode,
+): ReadonlyArray<Node> => []
 
 export const resolveReferenceLikeName = (node: TypeReferenceLikeNode): string => {
-  if (Node.isTypeReference(node)) {
-    return node.getTypeName().getText()
+  if (isTypeReferenceNode(node)) {
+    return textOf(node.typeName)
   }
-  if (Node.isExpressionWithTypeArguments(node)) {
-    return node.getExpression().getText()
+  if (isExpressionWithTypeArguments(node)) {
+    return textOf(node.expression)
   }
-  if (Node.isImportTypeNode(node)) {
-    return node.getQualifier()?.getText() ?? node.getText()
+  if (isImportTypeNode(node)) {
+    return node.qualifier === undefined ? textOf(node) : textOf(node.qualifier)
   }
-  return node.getExprName().getText()
+  return textOf(node.exprName)
 }
 
-const typeSyntaxDepth = (node: TypeNode | undefined): number => {
+export const typeSyntaxDepth = (node: TypeNode | undefined): number => {
   if (node === undefined) return 0
-  if (Node.isParenthesizedTypeNode(node)) {
-    return typeSyntaxDepth(node.getTypeNode())
+  if (isParenthesizedTypeNode(node)) {
+    return typeSyntaxDepth(node.type)
   }
 
   let childDepth = 0
   node.forEachChild((child) => {
-    if (Node.isTypeNode(child)) {
+    if (isTypeNode(child)) {
       childDepth = Math.max(childDepth, typeSyntaxDepth(child))
       return
     }
-    if (Node.isExpressionWithTypeArguments(child)) {
+    if (isExpressionWithTypeArguments(child)) {
       childDepth = Math.max(childDepth, 1 + maxTypeArgumentDepth(child))
     }
   })
@@ -109,14 +104,8 @@ const maxTypeArgumentDepth = (
   node: TypeReferenceNode | ExpressionWithTypeArguments | ImportTypeNode | TypeQueryNode,
 ): number => {
   let max = 0
-  for (const typeArg of node.getTypeArguments()) {
+  for (const typeArg of node.typeArguments ?? []) {
     max = Math.max(max, typeSyntaxDepth(typeArg))
   }
   return max
-}
-
-const resolveSymbolDeclarations = (node: Node): ReadonlyArray<Node> => {
-  const symbol = node.getSymbol()
-  const resolved = symbol?.getAliasedSymbol() ?? symbol
-  return resolved?.getDeclarations() ?? []
 }
