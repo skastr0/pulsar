@@ -91,7 +91,7 @@ export type DependencyAnalysisFacts = {
   readonly pathAliasesByPackage: ReadonlyMap<string, ReadonlyArray<TsconfigPathAlias>>
   readonly bundledInfoByPackage: ReadonlyMap<string, BundledPackageInfo>
   readonly workspaceNames: ReadonlySet<string>
-  readonly sourceFiles: ReadonlyArray<import("ts-morph").SourceFile>
+  readonly sourceFiles: ReadonlyArray<import("../tsgo-api.js").SourceFile>
   readonly packageForPath: PackagePathMatcher
   readonly rootDevDependencyNames: ReadonlySet<string>
   readonly rootToolingDependencyNames: ReadonlySet<string>

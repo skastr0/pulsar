@@ -1,5 +1,5 @@
 import type { SignalContext } from "@skastr0/pulsar-core/signal"
-import { Project } from "ts-morph"
+import type { SourceFile } from "../tsgo-api.js"
 import type { PackageInfo, PackageManifest } from "../discovery.js"
 import { dependencyNamesOf, workspacePackageNames } from "./shared-workspace.js"
 import { readBundledInfoByPackage } from "./ts-de-04-bundled-info.js"
@@ -21,12 +21,12 @@ import type {
 import { isExcluded } from "./shared-globs.js"
 
 export const computePackageDependencyHealth = async (
-  project: Project,
+  sourceFiles: ReadonlyArray<SourceFile>,
   packages: ReadonlyArray<PackageInfo>,
   context: SignalContext,
   config: TsDe04Config,
 ): Promise<TsDe04Output> => {
-  const facts = await loadDependencyAnalysisFacts(project, packages, context, config)
+  const facts = await loadDependencyAnalysisFacts(sourceFiles, packages, context, config)
   const usage = collectDependencyUsage(facts, context, config)
   const packageHealth = summarizePackageHealth(facts, usage, config)
   return {
@@ -41,7 +41,7 @@ export const computePackageDependencyHealth = async (
 }
 
 const loadDependencyAnalysisFacts = async (
-  project: Project,
+  sourceFiles: ReadonlyArray<SourceFile>,
   packages: ReadonlyArray<PackageInfo>,
   context: SignalContext,
   config: TsDe04Config,
@@ -54,7 +54,7 @@ const loadDependencyAnalysisFacts = async (
     pathAliasesByPackage: await readPathAliasesByPackage(activePackages),
     bundledInfoByPackage: await readBundledInfoByPackage(activePackages),
     workspaceNames: workspacePackageNames(activePackages),
-    sourceFiles: await dependencySourceFiles(project, activePackages, config.exclude_globs),
+    sourceFiles: await dependencySourceFiles(sourceFiles, activePackages, config.exclude_globs),
     packageForPath: createPackagePathMatcher(packages),
     rootDevDependencyNames: dependencyNamesOf(rootManifest, ["devDependencies"]),
     rootToolingDependencyNames: dependencyNamesOf(rootManifest, [

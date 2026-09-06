@@ -10,6 +10,7 @@ import {
   externalModuleSpecifiers,
   recordedDependencyNameForModuleUsage,
 } from "./ts-de-04-module-specifiers.js"
+import { extraSourceFileSpecifiers } from "./ts-de-04-source-files.js"
 import type {
   DependencyAnalysisFacts,
   DependencyUsageSummary,
@@ -44,7 +45,7 @@ export const collectDependencyUsage = (
 }
 
 const recordSourceFileDependencyUsage = (
-  sourceFile: import("ts-morph").SourceFile,
+  sourceFile: import("../tsgo-api.js").SourceFile,
   facts: DependencyAnalysisFacts,
   context: SignalContext,
   config: TsDe04Config,
@@ -52,12 +53,12 @@ const recordSourceFileDependencyUsage = (
   rootToolingUsedDependencyNames: Set<string>,
   localPathAliasUsageCache: Map<string, boolean>,
 ): void => {
-  const owningPackage = facts.packageForPath(sourceFile.getFilePath())
+  const owningPackage = facts.packageForPath(sourceFile.fileName)
   if (!hasPackageManifest(owningPackage)) return
-  const filePath = sourceFile.getFilePath()
+  const filePath = sourceFile.fileName
   const usageContext = dependencyUsageContext(owningPackage, filePath, config)
   const bucket = usageByPackage.get(owningPackage.path) ?? new Map<string, UsageBucket>()
-  for (const moduleUsage of externalModuleSpecifiers(sourceFile)) {
+  for (const moduleUsage of moduleUsagesForSourceFile(sourceFile)) {
     recordModuleSpecifierUsage(
       moduleUsage,
       owningPackage,
@@ -70,6 +71,14 @@ const recordSourceFileDependencyUsage = (
     )
   }
   usageByPackage.set(owningPackage.path, bucket)
+}
+
+const moduleUsagesForSourceFile = (
+  sourceFile: import("../tsgo-api.js").SourceFile,
+): ReadonlyArray<ModuleSpecifierUsage> => {
+  const extras = extraSourceFileSpecifiers(sourceFile)
+  if (extras === undefined) return externalModuleSpecifiers(sourceFile)
+  return extras.map((specifier) => ({ specifier, typeOnly: false, dynamic: false }))
 }
 
 const hasPackageManifest = (

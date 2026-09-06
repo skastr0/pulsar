@@ -41,4 +41,35 @@ describe("analysis config derivation", () => {
       `${repo.replaceAll("\\", "/")}/**/*.tsx`,
     ])
   })
+
+  test("parses JSONC comments and trailing commas", async () => {
+    const repo = await mkdtemp(join(tmpdir(), "pulsar-analysis-jsonc-"))
+    const tsconfigPath = join(repo, "tsconfig.json")
+    await writeFile(
+      tsconfigPath,
+      [
+        "{",
+        '  // comment',
+        '  "compilerOptions": {',
+        '    "target": "ES2022",',
+        "  },",
+        '  "include": ["src/**/*.ts"],',
+        "}",
+      ].join("\n"),
+    )
+
+    const bundle = await Effect.runPromise(materializeAnalysisConfigs(repo, [tsconfigPath]))
+    cleanup = async () => {
+      await Effect.runPromise(removeAnalysisConfigBundle(bundle))
+      await rm(repo, { recursive: true, force: true })
+    }
+
+    const derived = JSON.parse(await readFile(bundle.configs[0]!.derivedPath, "utf8")) as {
+      readonly include: ReadonlyArray<string>
+    }
+    expect(derived.include).toEqual([
+      `${repo.replaceAll("\\", "/")}/src/**/*.ts`,
+      `${repo.replaceAll("\\", "/")}/src/**/*.tsx`,
+    ])
+  })
 })

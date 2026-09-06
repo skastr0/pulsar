@@ -1,7 +1,7 @@
 import { SignalContextTag, SignalComputeError } from "@skastr0/pulsar-core/signal"
 import type { Diagnostic, Signal } from "@skastr0/pulsar-core/signal"
 import { Effect } from "effect"
-import { TsPackageInfoTag, TsProjectTag } from "../ts-project.js"
+import { TsAnalysisTag, TsPackageInfoTag } from "../ts-analysis.js"
 import { computePackageDependencyHealth } from "./ts-de-04-compute.js"
 import {
   compareDependencyDiagnostics,
@@ -19,7 +19,7 @@ import { TsDe04Config } from "./ts-de-04-model.js"
 export const TsDe04: Signal<
   TsDe04Config,
   TsDe04Output,
-  TsProjectTag | TsPackageInfoTag | SignalContextTag
+  TsAnalysisTag | TsPackageInfoTag | SignalContextTag
 > = {
   id: "TS-DE-04-package-dependency-health",
   title: "Package dependency health",
@@ -108,12 +108,13 @@ export const TsDe04: Signal<
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
-      const project = yield* TsProjectTag
+      const analysis = yield* TsAnalysisTag
       const packages = yield* TsPackageInfoTag
       const context = yield* SignalContextTag
+      const sourceFiles = yield* analysis.mapFiles(async (fileContext) => fileContext.sourceFile)
 
       return yield* Effect.tryPromise({
-        try: () => computePackageDependencyHealth(project, packages, context, config),
+        try: () => computePackageDependencyHealth(sourceFiles, packages, context, config),
         catch: (cause) =>
           new SignalComputeError({
             signalId: "TS-DE-04-package-dependency-health",

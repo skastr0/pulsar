@@ -81,7 +81,7 @@ const writeDerivedConfig = (
         rootDir: dirname(originalPath).replaceAll("\\", "/"),
         baseUrl: dirname(originalPath).replaceAll("\\", "/"),
       },
-      include: rebasePatterns(originalPath, asStringArray(original.include) ?? ["**/*.ts", "**/*.tsx"]),
+      include: rebasePatterns(originalPath, expandTypeScriptIncludes(asStringArray(original.include) ?? ["**/*.ts", "**/*.tsx"])),
       ...(asStringArray(original.files) === undefined
         ? {}
         : { files: rebasePatterns(originalPath, asStringArray(original.files) ?? []) }),
@@ -152,7 +152,7 @@ const readJsonObject = (
         }),
     })
     const parsed = yield* Effect.try({
-      try: () => JSON.parse(stripJsonc(raw)) as unknown,
+      try: () => JSON.parse(stripTrailingCommas(stripJsonc(raw))) as unknown,
       catch: (cause) =>
         new TsAnalysisConfigError({
           message: `Failed to parse ${path}`,
@@ -235,6 +235,9 @@ const stripJsonc = (raw: string): string => {
   return result
 }
 
+const stripTrailingCommas = (raw: string): string =>
+  raw.replace(/,(\s*[}\]])/g, "$1")
+
 const materializeFallbackConfig = (
   worktreePath: string,
 ): Effect.Effect<AnalysisConfigBundle, TsAnalysisConfigError> =>
@@ -282,6 +285,18 @@ const asStringArray = (value: unknown): ReadonlyArray<string> | undefined => {
   if (!Array.isArray(value)) return undefined
   const items = value.filter((item): item is string => typeof item === "string")
   return items.length === value.length ? items : undefined
+}
+
+
+const expandTypeScriptIncludes = (patterns: ReadonlyArray<string>): ReadonlyArray<string> => {
+  const expanded = new Set<string>()
+  for (const pattern of patterns) {
+    expanded.add(pattern)
+    if (pattern.endsWith(".ts") && !pattern.endsWith(".d.ts")) {
+      expanded.add(`${pattern}x`)
+    }
+  }
+  return [...expanded]
 }
 
 const rebasePatterns = (

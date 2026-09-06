@@ -1,8 +1,8 @@
-import { readdir } from "node:fs/promises"
+import { readdir, readFile } from "node:fs/promises"
 import { join } from "node:path"
-import { Project, type SourceFile } from "ts-morph"
 import { mapWithConcurrency } from "../concurrency.js"
 import type { PackageInfo } from "../discovery.js"
+import type { SourceFile } from "../tsgo-api.js"
 import { isExcluded } from "./shared-globs.js"
 
 const PACKAGE_ROOT_DEPENDENCY_FILES = [
@@ -68,33 +68,16 @@ const PACKAGE_ROOT_DEPENDENCY_FILES = [
 ] as const
 
 export const dependencySourceFiles = async (
-  project: Project,
+  sourceFiles: ReadonlyArray<SourceFile>,
   activePackages: ReadonlyArray<PackageInfo>,
   excludeGlobs: ReadonlyArray<string>,
 ): Promise<ReadonlyArray<SourceFile>> => {
-  const existing = project
-    .getSourceFiles()
-    .filter((sourceFile) => !isExcluded(sourceFile.getFilePath(), excludeGlobs))
-  const existingPaths = new Set(existing.map((sourceFile) => sourceFile.getFilePath()))
+  const existing = sourceFiles.filter((sourceFile) => !isExcluded(sourceFile.fileName, excludeGlobs))
+  const existingPaths = new Set(existing.map((sourceFile) => sourceFile.fileName))
   const extraPaths = await packageRootDependencyFiles(activePackages, excludeGlobs, existingPaths)
   if (extraPaths.length === 0) return existing
-
-  const extraProject = new Project({
-    compilerOptions: {
-      allowJs: true,
-      checkJs: false,
-    },
-    skipAddingFilesFromTsConfig: true,
-    skipFileDependencyResolution: true,
-    skipLoadingLibFiles: true,
-  })
-  for (const filePath of extraPaths) {
-    extraProject.addSourceFileAtPathIfExists(filePath)
-  }
-  return [
-    ...existing,
-    ...extraProject.getSourceFiles().filter((sourceFile) => !isExcluded(sourceFile.getFilePath(), excludeGlobs)),
-  ]
+  const extras = await mapWithConcurrency(extraPaths, 8, parseExtraSourceFile)
+  return [...existing, ...extras.filter((sourceFile): sourceFile is ExtraSourceFile => sourceFile !== undefined)]
 }
 
 const packageRootDependencyFiles = async (
@@ -120,3 +103,41 @@ const packageRootDependencyFiles = async (
   )
   return existing.flat().sort((left, right) => left.localeCompare(right))
 }
+
+interface ExtraSourceFile {
+  readonly fileName: string
+  readonly text: string
+  readonly specifiers: ReadonlyArray<string>
+}
+
+const parseExtraSourceFile = async (filePath: string): Promise<ExtraSourceFile | undefined> => {
+  try {
+    const text = await readFile(filePath, "utf8")
+    return {
+      fileName: filePath.replaceAll("\\", "/"),
+      text,
+      specifiers: extraModuleSpecifiers(text),
+    }
+  } catch {
+    return undefined
+  }
+}
+
+const extraModuleSpecifiers = (text: string): ReadonlyArray<string> => {
+  const specifiers = new Set<string>()
+  const patterns = [
+    /\bimport\s+(?:type\s+)?(?:[\s\S]*?\sfrom\s+)?(["'`])([^"'`]+)\1/g,
+    /\b(?:import|require)\s*\(\s*(["'`])([^"'`]+)\1\s*\)/g,
+    /\bexport\s+(?:type\s+)?(?:[\s\S]*?\sfrom\s+)(["'`])([^"'`]+)\1/g,
+  ]
+  for (const pattern of patterns) {
+    for (const match of text.matchAll(pattern)) {
+      const specifier = match[2]
+      if (specifier !== undefined && specifier.length > 0) specifiers.add(specifier)
+    }
+  }
+  return [...specifiers]
+}
+
+export const extraSourceFileSpecifiers = (sourceFile: SourceFile): ReadonlyArray<string> | undefined =>
+  "specifiers" in sourceFile ? (sourceFile as ExtraSourceFile).specifiers : undefined

@@ -1,4 +1,17 @@
-import { Node, SyntaxKind, type SourceFile } from "ts-morph"
+import { textOf, walkDescendants } from "../ast.js"
+import {
+  SyntaxKind,
+  isCallExpression,
+  isExportDeclaration,
+  isIdentifier,
+  isImportDeclaration,
+  isNoSubstitutionTemplateLiteral,
+  isStringLiteral,
+  isVariableDeclaration,
+  type ExportDeclaration,
+  type ImportDeclaration,
+  type SourceFile,
+} from "../tsgo-api.js"
 import {
   isTypeOnlyModuleDeclaration,
   localIdentifierUsageByName,
@@ -12,8 +25,8 @@ export const externalModuleSpecifiers = (
   sourceFile: SourceFile,
 ): ReadonlyArray<ModuleSpecifierUsage> => {
   const specifiers = new Map<string, ModuleSpecifierUsage>()
-  const importDeclarations = sourceFile.getImportDeclarations()
-  const exportDeclarations = sourceFile.getExportDeclarations()
+  const importDeclarations = declarationsOf(sourceFile, isImportDeclaration)
+  const exportDeclarations = declarationsOf(sourceFile, isExportDeclaration)
   let identifierUsage: ReadonlyMap<string, "type-only" | "value"> | undefined
   const getIdentifierUsage = (): ReadonlyMap<string, "type-only" | "value"> => {
     identifierUsage ??= localIdentifierUsageByName(
@@ -24,7 +37,7 @@ export const externalModuleSpecifiers = (
   }
 
   for (const declaration of [...importDeclarations, ...exportDeclarations]) {
-    const moduleSpecifier = declaration.getModuleSpecifierValue()
+    const moduleSpecifier = moduleSpecifierOf(declaration)
     if (moduleSpecifier !== undefined) {
       mergeModuleSpecifierUsage(specifiers, {
         specifier: moduleSpecifier,
@@ -36,18 +49,19 @@ export const externalModuleSpecifiers = (
 
   if (hasRuntimeLoaderSyntax(sourceFile)) {
     const requireLikeNames = requireLikeIdentifiers(sourceFile)
-    for (const call of sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-      const firstArg = call.getArguments()[0]
-      if (!Node.isStringLiteral(firstArg)) continue
-      if (isExternalLoaderCall(requireLikeNames, call.getExpression().getText())) {
-        const specifier = firstArg.getLiteralText()
+    walkDescendants(sourceFile, (node) => {
+      if (!isCallExpression(node)) return
+      const firstArg = node.arguments[0]
+      if (firstArg === undefined || !(isStringLiteral(firstArg) || isNoSubstitutionTemplateLiteral(firstArg))) return
+      const expressionText = textOf(node.expression)
+      if (isExternalLoaderCall(requireLikeNames, expressionText) || node.expression.kind === SyntaxKind.ImportKeyword) {
         mergeModuleSpecifierUsage(specifiers, {
-          specifier,
+          specifier: firstArg.text,
           typeOnly: false,
-          dynamic: call.getExpression().getText() === "import",
+          dynamic: expressionText === "import" || node.expression.kind === SyntaxKind.ImportKeyword,
         })
       }
-    }
+    })
   }
 
   return [...specifiers.values()].sort((left, right) =>
@@ -70,6 +84,28 @@ export const recordedDependencyNameForModuleUsage = (
     : packageName
 }
 
+const declarationsOf = <T>(
+  sourceFile: SourceFile,
+  predicate: (node: ImportDeclaration | ExportDeclaration) => node is T,
+): ReadonlyArray<T> => {
+  const declarations: Array<T> = []
+  walkDescendants(sourceFile, (node) => {
+    if (isImportDeclaration(node) || isExportDeclaration(node)) {
+      if (predicate(node as ImportDeclaration | ExportDeclaration)) {
+        declarations.push(node as T)
+      }
+    }
+  })
+  return declarations
+}
+
+const moduleSpecifierOf = (declaration: ImportDeclaration | ExportDeclaration): string | undefined => {
+  const specifier = declaration.moduleSpecifier
+  if (specifier === undefined) return undefined
+  if (isStringLiteral(specifier) || isNoSubstitutionTemplateLiteral(specifier)) return specifier.text
+  return undefined
+}
+
 const mergeModuleSpecifierUsage = (
   specifiers: Map<string, ModuleSpecifierUsage>,
   usage: ModuleSpecifierUsage,
@@ -83,7 +119,7 @@ const mergeModuleSpecifierUsage = (
 }
 
 const hasRuntimeLoaderSyntax = (sourceFile: SourceFile): boolean =>
-  /\b(?:require|createRequire)\b|import\s*\(/.test(sourceFile.getFullText())
+  /\b(?:require|createRequire)\b|import\s*\(/.test(sourceFile.text)
 
 const isExternalLoaderCall = (
   requireLikeNames: ReadonlySet<string>,
@@ -99,15 +135,14 @@ const isExternalLoaderCall = (
 const requireLikeIdentifiers = (sourceFile: SourceFile): ReadonlySet<string> => {
   const names = new Set<string>(["require"])
 
-  for (const declaration of sourceFile.getVariableDeclarations()) {
-    const name = declaration.getName()
-    const initializer = declaration.getInitializer()
-    if (!Node.isCallExpression(initializer)) continue
-    const callee = initializer.getExpression().getText()
+  walkDescendants(sourceFile, (node) => {
+    if (!isVariableDeclaration(node) || !isIdentifier(node.name) || node.initializer === undefined) return
+    if (!isCallExpression(node.initializer)) return
+    const callee = textOf(node.initializer.expression)
     if (callee === "createRequire" || callee.endsWith(".createRequire")) {
-      names.add(name)
+      names.add(node.name.text)
     }
-  }
+  })
 
   return names
 }
