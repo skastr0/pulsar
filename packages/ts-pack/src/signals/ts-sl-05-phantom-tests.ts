@@ -5,15 +5,21 @@ import {
   type Signal,
 } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
-import { Node, SyntaxKind, type CallExpression, type SourceFile } from "ts-morph"
-import { TsProjectTag } from "../ts-project.js"
+import { TsAnalysisTag } from "../ts-analysis.js"
+import { locationOf, textOf, walkDescendants } from "../ast.js"
+import {
+  isArrowFunction,
+  isCallExpression,
+  isFunctionExpression,
+  isStringLiteral,
+  type CallExpression,
+  type Node,
+  type SourceFile,
+} from "../tsgo-api.js"
 import { matchesAnyGlob } from "./shared-globs.js"
 import {
   TEST_FILE_GLOBS,
   TRUST_SIGNAL_EXCLUDE_GLOBS,
-  callName,
-  isAnalyzableSourceFile,
-  locationOf,
   normalizeDiagnosticLimit,
   type SourceLocation,
 } from "./trust-signal-helpers.js"
@@ -43,7 +49,7 @@ export interface TsSl05Output {
   readonly enforcementCeiling: ReadonlyArray<string>
 }
 
-export const TsSl05: Signal<TsSl05Config, TsSl05Output, TsProjectTag> = {
+export const TsSl05: Signal<TsSl05Config, TsSl05Output, TsAnalysisTag> = {
   id: "TS-SL-05-phantom-tests",
   title: "Phantom tests",
   aliases: ["TS-SL-05"],
@@ -61,16 +67,17 @@ export const TsSl05: Signal<TsSl05Config, TsSl05Output, TsProjectTag> = {
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
-      const project = yield* TsProjectTag
-      return yield* Effect.try({
-        try: (): TsSl05Output => computePhantomTests(project.getSourceFiles(), config),
-        catch: (cause) =>
-          new SignalComputeError({
-            signalId: "TS-SL-05-phantom-tests",
-            message: String(cause),
-            cause,
-          }),
-      })
+      const analysis = yield* TsAnalysisTag
+      const fileOutputs = yield* analysis.mapFiles(async (context) =>
+        analyzePhantomTests(context.sourceFile, context.file.path, config),
+      ).pipe(Effect.mapError((cause) =>
+        new SignalComputeError({
+          signalId: "TS-SL-05-phantom-tests",
+          message: cause.message,
+          cause,
+        }),
+      ))
+      return mergePhantomTests(fileOutputs, config)
     }),
   score: (out) =>
     out.state === "present" ? Math.max(0, 1 - out.findings.length / Math.max(1, out.testBlocksAnalyzed)) : 1,
@@ -99,32 +106,47 @@ export const TsSl05: Signal<TsSl05Config, TsSl05Output, TsProjectTag> = {
     out.state === "not_applicable" ? { applicability: "not_applicable" as const } : undefined,
 }
 
-const computePhantomTests = (
-  sourceFiles: ReadonlyArray<SourceFile>,
+const analyzePhantomTests = (
+  sourceFile: SourceFile,
+  filePath: string,
+  config: TsSl05Config,
+): {
+  readonly analyzed: boolean
+  readonly testBlocksAnalyzed: number
+  readonly findings: ReadonlyArray<PhantomTestFinding>
+} => {
+  if (isExcludedPath(filePath, config)) {
+    return { analyzed: false, testBlocksAnalyzed: 0, findings: [] }
+  }
+  const findings: Array<PhantomTestFinding> = []
+  let testBlocksAnalyzed = 0
+  walkDescendants(sourceFile, (node) => {
+    if (!isCallExpression(node)) return
+    const testBlock = classifyTestBlock(node)
+    if (testBlock === undefined) return
+    testBlocksAnalyzed += 1
+    if (hasAssertionEvidence(textOf(testBlock.callback))) return
+    findings.push({
+      ...locationOf(node, filePath),
+      testName: testBlock.name,
+      runner: testBlock.runner,
+      callbackText: textOf(testBlock.callback).slice(0, 160),
+    })
+  })
+  return { analyzed: true, testBlocksAnalyzed, findings }
+}
+
+const mergePhantomTests = (
+  fileOutputs: ReadonlyArray<{
+    readonly analyzed: boolean
+    readonly testBlocksAnalyzed: number
+    readonly findings: ReadonlyArray<PhantomTestFinding>
+  }>,
   config: TsSl05Config,
 ): TsSl05Output => {
-  const findings: Array<PhantomTestFinding> = []
-  let testFilesAnalyzed = 0
-  let testBlocksAnalyzed = 0
-
-  for (const sourceFile of sourceFiles) {
-    if (!isAnalyzableSourceFile(sourceFile, config.exclude_globs)) continue
-    if (!matchesAnyGlob(sourceFile.getFilePath(), config.test_globs)) continue
-    testFilesAnalyzed += 1
-    for (const call of sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-      const testBlock = classifyTestBlock(call)
-      if (testBlock === undefined) continue
-      testBlocksAnalyzed += 1
-      if (hasAssertionEvidence(testBlock.callback.getText())) continue
-      findings.push({
-        ...locationOf(call),
-        testName: testBlock.name,
-        runner: testBlock.runner,
-        callbackText: testBlock.callback.getText().slice(0, 160),
-      })
-    }
-  }
-
+  const findings = fileOutputs.flatMap((output) => output.findings)
+  const testFilesAnalyzed = fileOutputs.filter((output) => output.analyzed).length
+  const testBlocksAnalyzed = fileOutputs.reduce((sum, output) => sum + output.testBlocksAnalyzed, 0)
   return {
     state: testFilesAnalyzed === 0 || testBlocksAnalyzed === 0
       ? "not_applicable"
@@ -145,15 +167,19 @@ const computePhantomTests = (
   }
 }
 
+const isExcludedPath = (filePath: string, config: TsSl05Config): boolean =>
+  config.exclude_globs.some((glob) => matchesAnyGlob(filePath, [glob])) ||
+  !matchesAnyGlob(filePath, config.test_globs)
+
 const classifyTestBlock = (
   call: CallExpression,
 ): { readonly runner: string; readonly name: string; readonly callback: Node } | undefined => {
-  const runner = callName(call.getExpression())
+  const runner = textOf(call.expression).replace(/\s+/g, " ").trim().replace(/\?./g, ".")
   if (!/^(?:it|test)(?:\.(?:only|concurrent|each))?$/.test(runner)) return undefined
-  const args = call.getArguments()
+  const args = call.arguments
   if (args.length < 2) return undefined
   const callback = args[1]
-  if (callback === undefined || (!Node.isArrowFunction(callback) && !Node.isFunctionExpression(callback))) {
+  if (callback === undefined || (!isArrowFunction(callback) && !isFunctionExpression(callback))) {
     return undefined
   }
   return {
@@ -164,8 +190,8 @@ const classifyTestBlock = (
 }
 
 const testName = (node: Node | undefined): string => {
-  if (node !== undefined && Node.isStringLiteral(node)) return node.getLiteralText()
-  return node?.getText().slice(0, 80) ?? "<unnamed>"
+  if (node !== undefined && isStringLiteral(node)) return node.text
+  return node === undefined ? "<unnamed>" : textOf(node).slice(0, 80)
 }
 
 const hasAssertionEvidence = (text: string): boolean =>
