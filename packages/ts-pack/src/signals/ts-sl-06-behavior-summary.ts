@@ -1,13 +1,38 @@
+import { firstAncestor, textOf, walkDescendants } from "../ast.js"
 import {
-  Node,
   SyntaxKind,
+  isArrowFunction,
+  isAsExpression,
+  isBinaryExpression,
+  isBlock,
+  isCallExpression,
+  isConditionalExpression,
+  isExpressionStatement,
+  isFunctionDeclaration,
+  isFunctionExpression,
+  isIdentifier,
+  isIfStatement,
+  isMethodDeclaration,
+  isNewExpression,
+  isNonNullExpression,
+  isObjectLiteralExpression,
+  isParameter,
+  isParenthesizedExpression,
+  isPropertyAccessExpression,
+  isPropertyAssignment,
+  isRegularExpressionLiteral,
+  isReturnStatement,
+  isThrowStatement,
+  isTypeAssertion,
+  isVariableDeclaration,
   type ArrowFunction,
   type CallExpression,
   type FunctionDeclaration,
   type FunctionExpression,
   type MethodDeclaration,
+  type Node,
   type VariableDeclaration,
-} from "ts-morph"
+} from "../tsgo-api.js"
 
 export type ClaimKind =
   | "parse"
@@ -120,7 +145,7 @@ const collectLocalEvidence = (
   fn: ClaimFunctionNode,
   seen: ReadonlySet<ClaimFunctionNode>,
 ): ReadonlyArray<BehaviorEvidence> => {
-  const body = fn.getBody()
+  const body = functionBodyNode(fn)
   if (body === undefined) return []
   const evidence = new Map<string, BehaviorEvidence>()
   const add = (category: BehaviorCategory, label: string): void => {
@@ -142,7 +167,7 @@ const collectBinaryEvidence = (
 ): void => {
   for (const binary of nodesIncludingBody(body, SyntaxKind.BinaryExpression)) {
     if (!isExecutedBy(binary, fn) || !isBehaviorallyUsed(binary, fn)) continue
-    const operator = binary.getOperatorToken().getText()
+    const operator = operatorText(binary)
     if (operator === "&&" && hasFiniteRangeConjunction(binary)) {
       add("runtime-check", "finite positive/range check")
       continue
@@ -169,9 +194,9 @@ const collectCallEvidence = (
 }
 
 const collectUsedCallEvidence = (call: CallExpression, add: AddEvidence): void => {
-  const expression = call.getExpression()
-  const member = Node.isPropertyAccessExpression(expression) ? expression.getName() : undefined
-  const callee = expression.getText()
+  const expression = call.expression
+  const member = isPropertyAccessExpression(expression) ? propertyName(expression) : undefined
+  const callee = textOf(expression)
 
   if (isNamedCall(call, "existsSync")) add("runtime-check", "filesystem existence check")
   if (isRegexTestCall(call)) add("runtime-check", "regular-expression test")
@@ -187,9 +212,9 @@ const collectUsedCallEvidence = (call: CallExpression, add: AddEvidence): void =
 }
 
 const collectStateCallEvidence = (call: CallExpression, add: AddEvidence): void => {
-  const expression = call.getExpression()
-  const member = Node.isPropertyAccessExpression(expression) ? expression.getName() : undefined
-  const callee = expression.getText()
+  const expression = call.expression
+  const member = isPropertyAccessExpression(expression) ? propertyName(expression) : undefined
+  const callee = textOf(expression)
   if (isEnsureMutation(call)) add("state", `${member ?? callee} state mutation`)
   if (hasConflictTolerantSqlArgument(call)) {
     add("state", "conflict-tolerant database write")
@@ -218,9 +243,9 @@ const collectDelegationEvidence = (
     return
   }
   if (!isRecognizedExternalValidatorMember(call)) return
-  const expression = call.getExpression()
-  if (Node.isPropertyAccessExpression(expression)) {
-    add("delegation", `direct ${expression.getName()} validator delegation`)
+  const expression = call.expression
+  if (isPropertyAccessExpression(expression)) {
+    add("delegation", `direct ${propertyName(expression)} validator delegation`)
   }
 }
 
@@ -231,7 +256,7 @@ const collectConstructionEvidence = (
 ): void => {
   for (const construct of nodesIncludingBody(body, SyntaxKind.NewExpression)) {
     if (!isExecutedBy(construct, fn) || !isBehaviorallyUsed(construct, fn)) continue
-    const target = construct.getExpression().getText()
+    const target = textOf(construct.expression)
     if (target === "Date" || target === "URL") {
       add("parse", `new ${target} conversion`)
     }
@@ -244,7 +269,7 @@ const collectRejectionEvidence = (
   evidence: Iterable<BehaviorEvidence>,
   add: AddEvidence,
 ): void => {
-  const throws = body.getDescendantsOfKind(SyntaxKind.ThrowStatement)
+  const throws = collectKind(body, isThrowStatement)
     .filter((statement) => isExecutedBy(statement, fn))
   if (throws.length > 0 && evidenceHasCategory(evidence, "runtime-check")) {
     add("reject", "guard-backed rejecting throw")
@@ -252,10 +277,10 @@ const collectRejectionEvidence = (
 }
 
 const collectObservedBehavior = (fn: ClaimFunctionNode): ReadonlyArray<string> => {
-  const body = fn.getBody()
+  const body = functionBodyNode(fn)
   if (body === undefined) return []
   const observed = new Set<string>()
-  const returnTypeText = fn.getReturnType().getText(fn)
+  const returnTypeText = ""
 
   for (const cast of [
     ...nodesIncludingBody(body, SyntaxKind.AsExpression),
@@ -338,22 +363,17 @@ const evidenceHasCategory = (
   category: BehaviorCategory,
 ): boolean => Array.from(evidence).some((item) => item.category === category)
 
-const nodesIncludingBody = <Kind extends SyntaxKind>(
+const nodesIncludingBody = (
   body: Node,
-  kind: Kind,
-): ReadonlyArray<import("ts-morph").KindToNodeMappings[Kind]> => {
-  const descendants = body.getDescendantsOfKind(kind)
-  return body.getKind() === kind
-    ? [body as import("ts-morph").KindToNodeMappings[Kind], ...descendants]
-    : descendants
-}
+  kind: SyntaxKind,
+): ReadonlyArray<Node> => collectKind(body, (node) => node.kind === kind)
 
 const isExecutedBy = (node: Node, fn: ClaimFunctionNode): boolean => {
   if (node === fn) return true
-  let current = node.getParent()
+  let current = node.parent
   while (current !== undefined) {
     if (isClaimFunctionNode(current)) return current === fn
-    current = current.getParent()
+    current = current.parent
   }
   return false
 }
@@ -364,23 +384,23 @@ const isBehaviorallyUsed = (
   seenVariables: ReadonlySet<VariableDeclaration> = new Set(),
 ): boolean => {
   let current: Node = node
-  let parent = current.getParent()
+  let parent = current.parent
 
   while (parent !== undefined) {
     if (parent === fn) {
-      return Node.isArrowFunction(fn) && fn.getBody() === current && !Node.isBlock(current)
+      return isArrowFunction(fn) && functionBodyNode(fn) === current && !isBlock(current)
     }
     if (isClaimFunctionNode(parent)) return false
-    if (Node.isReturnStatement(parent) || Node.isThrowStatement(parent)) return true
-    if (Node.isIfStatement(parent) && containsNode(parent.getExpression(), node)) {
+    if (isReturnStatement(parent) || isThrowStatement(parent)) return true
+    if (isIfStatement(parent) && containsNode(parent.expression, node)) {
       return conditionalStatementHasObservableEffect(parent, fn)
     }
-    if (Node.isVariableDeclaration(parent) && containsNode(parent.getInitializer(), node)) {
+    if (isVariableDeclaration(parent) && containsNode(parent.initializer, node)) {
       return variableFeedsBehavior(parent, fn, seenVariables)
     }
-    if (Node.isExpressionStatement(parent)) return false
+    if (isExpressionStatement(parent)) return false
     current = parent
-    parent = current.getParent()
+    parent = current.parent
   }
 
   return false
@@ -392,91 +412,86 @@ const variableFeedsBehavior = (
   seenVariables: ReadonlySet<VariableDeclaration>,
 ): boolean => {
   if (seenVariables.has(declaration)) return false
-  const name = declaration.getNameNode()
-  if (!Node.isIdentifier(name)) return false
+  const name = declaration.name
+  if (!isIdentifier(name)) return false
   const nextSeen = new Set(seenVariables).add(declaration)
-  try {
-    return name.findReferencesAsNodes().some((reference) =>
-      reference.getSourceFile() === fn.getSourceFile() &&
-      isExecutedBy(reference, fn) &&
-      isBehaviorallyUsed(reference, fn, nextSeen)
-    )
-  } catch {
-    return false
-  }
+  return collectKind(fn.getSourceFile(), isIdentifier).some((reference) =>
+    reference.text === name.text &&
+    reference !== name &&
+    isExecutedBy(reference, fn) &&
+    isBehaviorallyUsed(reference, fn, nextSeen)
+  )
 }
 
 const conditionalStatementHasObservableEffect = (
-  statement: import("ts-morph").IfStatement,
+  statement: Node,
   fn: ClaimFunctionNode,
 ): boolean =>
-  statement.getDescendants().some((descendant) =>
-    isExecutedBy(descendant, fn) &&
-    (Node.isReturnStatement(descendant) || Node.isThrowStatement(descendant))
-  )
+  collectKind(statement, (descendant) => isReturnStatement(descendant) || isThrowStatement(descendant))
+    .some((descendant) => isExecutedBy(descendant, fn))
 
 const containsNode = (container: Node | undefined, node: Node): boolean =>
-  container !== undefined && (container === node || node.getAncestors().includes(container))
+  container !== undefined && (container === node || isAncestor(container, node))
 
-const hasFiniteRangeConjunction = (binary: import("ts-morph").BinaryExpression): boolean => {
+const hasFiniteRangeConjunction = (binary: import("../tsgo-api.js").BinaryExpression): boolean => {
   const operands = flattenConjunction(binary)
   return operands.some((operand) =>
-    Node.isCallExpression(operand) && isNamedCall(operand, "Number.isFinite")
+    isCallExpression(operand) && isNamedCall(operand, "Number.isFinite")
   ) && operands.some(isRangeComparison)
 }
 
 const flattenConjunction = (node: Node): ReadonlyArray<Node> => {
-  if (Node.isBinaryExpression(node) && node.getOperatorToken().getText() === "&&") {
-    return [...flattenConjunction(node.getLeft()), ...flattenConjunction(node.getRight())]
+  if (isBinaryExpression(node) && operatorText(node) === "&&") {
+    return [...flattenConjunction(node.left), ...flattenConjunction(node.right)]
   }
   return [node]
 }
 
 const isRangeComparison = (node: Node): boolean =>
-  Node.isBinaryExpression(node) && ["<", "<=", ">", ">="].includes(node.getOperatorToken().getText())
+  isBinaryExpression(node) && ["<", "<=", ">", ">="].includes(operatorText(node))
 
-const comparisonLabel = (binary: import("ts-morph").BinaryExpression): string => {
-  const operator = binary.getOperatorToken().getText()
+const comparisonLabel = (binary: import("../tsgo-api.js").BinaryExpression): string => {
+  const operator = operatorText(binary)
   if (operator === "instanceof") return "instanceof check"
   if (operator === "in") return "property-presence check"
-  if (/\b(?:length|size)\b/u.test(binary.getText())) return "collection cardinality check"
+  if (/\b(?:length|size)\b/u.test(textOf(binary))) return "collection cardinality check"
   return "runtime comparison"
 }
 
 const isRegexTestCall = (call: CallExpression): boolean => {
-  const expression = call.getExpression()
-  return Node.isPropertyAccessExpression(expression) &&
-    expression.getName() === "test" &&
-    isRegexLike(expression.getExpression())
+  const expression = call.expression
+  return isPropertyAccessExpression(expression) &&
+    propertyName(expression) === "test" &&
+    isRegexLike(expression.expression)
 }
 
 const isTruthyRegexMatchCall = (call: CallExpression): boolean => {
-  const expression = call.getExpression()
-  const pattern = call.getArguments()[0]
-  return Node.isPropertyAccessExpression(expression) &&
-    expression.getName() === "match" &&
+  const expression = call.expression
+  const pattern = call.arguments[0]
+  return isPropertyAccessExpression(expression) &&
+    propertyName(expression) === "match" &&
     pattern !== undefined &&
     isRegexLike(pattern)
 }
 
 const isRegexReplacement = (call: CallExpression): boolean => {
-  const expression = call.getExpression()
-  const [pattern, replacement] = call.getArguments()
-  return Node.isPropertyAccessExpression(expression) &&
-    (expression.getName() === "replace" || expression.getName() === "replaceAll") &&
+  const expression = call.expression
+  const [pattern, replacement] = call.arguments
+  return isPropertyAccessExpression(expression) &&
+    (propertyName(expression) === "replace" || propertyName(expression) === "replaceAll") &&
     pattern !== undefined &&
     replacement !== undefined &&
     isRegexLike(pattern)
 }
 
 const isRegexLike = (node: Node, seen: ReadonlySet<VariableDeclaration> = new Set()): boolean => {
-  if (Node.isRegularExpressionLiteral(node)) return true
-  if (Node.isNewExpression(node) && node.getExpression().getText() === "RegExp") return true
-  if (Node.isParenthesizedExpression(node)) return isRegexLike(node.getExpression(), seen)
-  if (!Node.isIdentifier(node)) return false
+  if (isRegularExpressionLiteral(node)) return true
+  if (isNewExpression(node) && textOf(node.expression) === "RegExp") return true
+  if (isParenthesizedExpression(node)) return isRegexLike(node.expression, seen)
+  if (!isIdentifier(node)) return false
   const declaration = localVariableDeclaration(node)
   if (declaration === undefined || seen.has(declaration)) return false
-  const initializer = declaration.getInitializer()
+  const initializer = declaration.initializer
   return initializer !== undefined && isRegexLike(initializer, new Set(seen).add(declaration))
 }
 
@@ -493,36 +508,36 @@ const isBuiltInParseCall = (callee: string): boolean =>
   ].includes(callee)
 
 const isEnsureMutation = (call: CallExpression): boolean => {
-  const expression = call.getExpression()
-  const name = Node.isPropertyAccessExpression(expression) ? expression.getName() : expression.getText()
+  const expression = call.expression
+  const name = isPropertyAccessExpression(expression) ? propertyName(expression) : textOf(expression)
   return ["mkdir", "writeFile", "rename", "rm"].includes(name)
 }
 
 const hasConflictTolerantSqlArgument = (call: CallExpression): boolean =>
-  call.getArguments().some((argument) => {
-    const text = argument.getText()
+  call.arguments.some((argument) => {
+    const text = textOf(argument)
     return /\binsert\s+or\s+ignore\b/iu.test(text) ||
       /\bon\s+conflict\b[\s\S]{0,120}?\bdo\s+nothing\b/iu.test(text)
   })
 
 const isRecognizedValidatorCall = (call: CallExpression): boolean => {
-  const expression = call.getExpression()
-  if (Node.isPropertyAccessExpression(expression)) {
-    return EXTERNAL_VALIDATOR_MEMBERS.has(expression.getName()) ||
-      VALIDATOR_NAMES.test(expression.getName())
+  const expression = call.expression
+  if (isPropertyAccessExpression(expression)) {
+    return EXTERNAL_VALIDATOR_MEMBERS.has(propertyName(expression)) ||
+      VALIDATOR_NAMES.test(propertyName(expression))
   }
-  return Node.isIdentifier(expression) && VALIDATOR_NAMES.test(expression.getText())
+  return isIdentifier(expression) && VALIDATOR_NAMES.test(textOf(expression))
 }
 
 const isRecognizedExternalValidatorMember = (call: CallExpression): boolean => {
-  const expression = call.getExpression()
-  return Node.isPropertyAccessExpression(expression) &&
-    EXTERNAL_VALIDATOR_MEMBERS.has(expression.getName())
+  const expression = call.expression
+  return isPropertyAccessExpression(expression) &&
+    EXTERNAL_VALIDATOR_MEMBERS.has(propertyName(expression))
 }
 
 const isDirectAssertionEffect = (call: CallExpression, fn: ClaimFunctionNode): boolean => {
   if (!calleeSegment(call).startsWith("assert")) return false
-  const statement = call.getFirstAncestorByKind(SyntaxKind.ExpressionStatement)
+  const statement = firstAncestor(call, isExpressionStatement)
   return statement !== undefined && isExecutedBy(statement, fn)
 }
 
@@ -530,45 +545,38 @@ const resolveLocalFunction = (
   call: CallExpression,
   owner: ClaimFunctionNode,
 ): ClaimFunctionNode | undefined => {
-  let declarations: ReadonlyArray<Node>
-  try {
-    declarations = call.getExpression().getSymbol()?.getDeclarations() ?? []
-  } catch {
-    return undefined
-  }
-
-  for (const declaration of declarations) {
-    if (declaration.getSourceFile() !== owner.getSourceFile()) continue
-    if (isClaimFunctionNode(declaration)) return declaration
-    if (Node.isVariableDeclaration(declaration)) {
-      const initializer = declaration.getInitializer()
-      if (initializer !== undefined && isClaimFunctionNode(initializer)) return initializer
+  const name = calleeSegment(call)
+  const sourceFile = owner.getSourceFile()
+  for (const declaration of collectKind(sourceFile, isFunctionDeclaration)) {
+    if (declaration.name !== undefined && isIdentifier(declaration.name) && declaration.name.text === name) {
+      return declaration
     }
+  }
+  for (const declaration of collectKind(sourceFile, isVariableDeclaration)) {
+    if (!isIdentifier(declaration.name) || declaration.name.text !== name) continue
+    const initializer = declaration.initializer
+    if (initializer !== undefined && isClaimFunctionNode(initializer)) return initializer
   }
   return undefined
 }
 
-const localVariableDeclaration = (identifier: import("ts-morph").Identifier): VariableDeclaration | undefined => {
-  try {
-    return identifier.getSymbol()?.getDeclarations().find((declaration): declaration is VariableDeclaration =>
-      Node.isVariableDeclaration(declaration) &&
-      declaration.getSourceFile() === identifier.getSourceFile()
-    )
-  } catch {
-    return undefined
-  }
+const localVariableDeclaration = (identifier: import("../tsgo-api.js").Identifier): VariableDeclaration | undefined => {
+  const sourceFile = identifier.getSourceFile()
+  return collectKind(sourceFile, isVariableDeclaration).find((declaration) =>
+    isIdentifier(declaration.name) && declaration.name.text === identifier.text
+  )
 }
 
 const calleeSegment = (call: CallExpression): string => {
-  const expression = call.getExpression()
-  return Node.isPropertyAccessExpression(expression) ? expression.getName() : expression.getText()
+  const expression = call.expression
+  return isPropertyAccessExpression(expression) ? propertyName(expression) : textOf(expression)
 }
 
 const isNamedCall = (call: CallExpression, name: string): boolean =>
-  call.getExpression().getText() === name
+  textOf(call.expression) === name
 
 const callReferencesOwnerInput = (call: CallExpression, owner: ClaimFunctionNode): boolean =>
-  call.getArguments().some((argument) => nodeReferencesOwnerInput(argument, owner, new Set()))
+  call.arguments.some((argument) => nodeReferencesOwnerInput(argument, owner, new Set()))
 
 const nodeReferencesOwnerInput = (
   node: Node,
@@ -576,20 +584,20 @@ const nodeReferencesOwnerInput = (
   seenVariables: ReadonlySet<VariableDeclaration>,
 ): boolean => {
   const identifiers = [
-    ...(Node.isIdentifier(node) ? [node] : []),
-    ...node.getDescendantsOfKind(SyntaxKind.Identifier),
+    ...(isIdentifier(node) ? [node] : []),
+    ...collectKind(node, isIdentifier),
   ]
   return identifiers.some((identifier) => {
     const declarations = identifierDeclarations(identifier)
     if (declarations.some((declaration) =>
-      Node.isParameterDeclaration(declaration) && nearestClaimFunction(declaration) === owner
+      isParameter(declaration) && nearestClaimFunction(declaration) === owner
     )) return true
 
     const variable = declarations.find((declaration): declaration is VariableDeclaration =>
-      Node.isVariableDeclaration(declaration) && declaration.getSourceFile() === owner.getSourceFile()
+      isVariableDeclaration(declaration) && declaration.getSourceFile() === owner.getSourceFile()
     )
     if (variable === undefined || seenVariables.has(variable)) return false
-    const initializer = variable.getInitializer()
+    const initializer = variable.initializer
     return initializer !== undefined && nodeReferencesOwnerInput(
       initializer,
       owner,
@@ -598,62 +606,120 @@ const nodeReferencesOwnerInput = (
   })
 }
 
-const identifierDeclarations = (identifier: import("ts-morph").Identifier): ReadonlyArray<Node> =>
-  identifier.getSymbol()?.getDeclarations() ?? []
+const identifierDeclarations = (identifier: import("../tsgo-api.js").Identifier): ReadonlyArray<Node> => {
+  const sourceFile = identifier.getSourceFile()
+  const name = identifier.text
+  const declarations: Array<Node> = []
+  walkDescendants(sourceFile, (node) => {
+    if (isParameter(node) && isIdentifier(node.name) && node.name.text === name) declarations.push(node)
+    if (isVariableDeclaration(node) && isIdentifier(node.name) && node.name.text === name) declarations.push(node)
+    if (isFunctionDeclaration(node) && node.name !== undefined && isIdentifier(node.name) && node.name.text === name) {
+      declarations.push(node)
+    }
+  })
+  return declarations
+}
 
 const nearestClaimFunction = (node: Node): ClaimFunctionNode | undefined =>
-  node.getFirstAncestor((ancestor): ancestor is ClaimFunctionNode => isClaimFunctionNode(ancestor))
+  firstClaimFunction(node)
 
 const hasOnlySuccessfulOutcomes = (fn: ClaimFunctionNode): boolean => {
-  const body = fn.getBody()
+  const body = functionBodyNode(fn)
   if (body === undefined) return false
-  if (!Node.isBlock(body)) return isSuccessfulExpression(body)
-  if (body.getDescendantsOfKind(SyntaxKind.ThrowStatement).some((node) => isExecutedBy(node, fn))) {
+  if (!isBlock(body)) return isSuccessfulExpression(body)
+  if (collectKind(body, isThrowStatement).some((node) => isExecutedBy(node, fn))) {
     return false
   }
-  const returns = body.getDescendantsOfKind(SyntaxKind.ReturnStatement)
+  const returns = collectKind(body, isReturnStatement)
     .filter((statement) => isExecutedBy(statement, fn))
-  const terminal = body.getStatements().at(-1)
+  const terminal = body.statements.at(-1)
   return returns.length > 0 &&
-    returns.every((statement) => isSuccessfulExpression(statement.getExpression())) &&
+    returns.every((statement) => isSuccessfulExpression(statement.expression)) &&
     terminal !== undefined &&
     statementAlwaysSucceeds(terminal)
 }
 
 const statementAlwaysSucceeds = (statement: Node): boolean => {
-  if (Node.isReturnStatement(statement)) return isSuccessfulExpression(statement.getExpression())
-  if (Node.isBlock(statement)) {
-    const terminal = statement.getStatements().at(-1)
+  if (isReturnStatement(statement)) return isSuccessfulExpression(statement.expression)
+  if (isBlock(statement)) {
+    const terminal = statement.statements.at(-1)
     return terminal !== undefined && statementAlwaysSucceeds(terminal)
   }
-  if (!Node.isIfStatement(statement)) return false
-  const alternate = statement.getElseStatement()
+  if (!isIfStatement(statement)) return false
+  const alternate = statement.elseStatement
   return alternate !== undefined &&
-    statementAlwaysSucceeds(statement.getThenStatement()) &&
+    statementAlwaysSucceeds(statement.thenStatement) &&
     statementAlwaysSucceeds(alternate)
 }
 
 const isSuccessfulExpression = (expression: Node | undefined): boolean => {
-  if (Node.isTrueLiteral(expression)) return true
-  if (Node.isParenthesizedExpression(expression)) return isSuccessfulExpression(expression.getExpression())
-  if (Node.isConditionalExpression(expression)) {
-    return isSuccessfulExpression(expression.getWhenTrue()) &&
-      isSuccessfulExpression(expression.getWhenFalse())
+  if (expression === undefined) return false
+  if (isTrueLiteral(expression)) return true
+  if (isParenthesizedExpression(expression)) return isSuccessfulExpression(expression.expression)
+  if (isConditionalExpression(expression)) {
+    return isSuccessfulExpression(expression.whenTrue) &&
+      isSuccessfulExpression(expression.whenFalse)
   }
-  if (Node.isObjectLiteralExpression(expression)) {
-    return expression.getProperties().some((property) =>
-      Node.isPropertyAssignment(property) &&
-      ["success", "ok"].includes(property.getName()) &&
-      Node.isTrueLiteral(property.getInitializer())
+  if (isObjectLiteralExpression(expression)) {
+    return expression.properties.some((property) =>
+      isPropertyAssignment(property) &&
+      ["success", "ok"].includes(propertyNameText(property)) &&
+      isTrueLiteral(property.initializer)
     )
   }
-  if (!Node.isCallExpression(expression)) return false
+  if (!isCallExpression(expression)) return false
   const name = calleeSegment(expression).toLowerCase()
   return ["succeed", "success", "ok", "right"].includes(name)
 }
 
 const isClaimFunctionNode = (node: Node): node is ClaimFunctionNode =>
-  Node.isFunctionDeclaration(node) ||
-  Node.isMethodDeclaration(node) ||
-  Node.isArrowFunction(node) ||
-  Node.isFunctionExpression(node)
+  isFunctionDeclaration(node) ||
+  isMethodDeclaration(node) ||
+  isArrowFunction(node) ||
+  isFunctionExpression(node)
+
+const functionBodyNode = (fn: ClaimFunctionNode): Node | undefined =>
+  "body" in fn ? fn.body : undefined
+
+const propertyName = (expression: import("../tsgo-api.js").PropertyAccessExpression): string =>
+  isIdentifier(expression.name) ? expression.name.text : textOf(expression.name)
+
+const propertyNameText = (property: import("../tsgo-api.js").PropertyAssignment): string =>
+  isIdentifier(property.name) ? property.name.text : textOf(property.name)
+
+const operatorText = (node: import("../tsgo-api.js").BinaryExpression): string =>
+  textOf(node.operatorToken)
+
+const isTrueLiteral = (node: Node | undefined): boolean =>
+  node !== undefined && node.kind === SyntaxKind.TrueKeyword
+
+const collectKind = <T extends Node>(
+  root: Node,
+  predicate: (node: Node) => node is T | boolean,
+): Array<T> => {
+  const results: Array<T> = []
+  const visit = (node: Node): void => {
+    if (predicate(node)) results.push(node as T)
+    node.forEachChild(visit)
+  }
+  visit(root)
+  return results
+}
+
+const isAncestor = (container: Node, node: Node): boolean => {
+  let current: Node | undefined = node.parent
+  while (current !== undefined) {
+    if (current === container) return true
+    current = current.parent
+  }
+  return false
+}
+
+const firstClaimFunction = (node: Node): ClaimFunctionNode | undefined => {
+  let current: Node | undefined = node.parent
+  while (current !== undefined) {
+    if (isClaimFunctionNode(current)) return current
+    current = current.parent
+  }
+  return undefined
+}

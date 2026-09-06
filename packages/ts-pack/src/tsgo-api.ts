@@ -151,6 +151,7 @@ export {
   isVariableDeclarationList,
   isVariableStatement,
   isVoidExpression,
+  isThrowStatement,
   isArrayBindingPattern,
   isAwaitExpression,
   isCaseClause,
@@ -169,6 +170,8 @@ export {
   isSwitchStatement,
   isTryStatement,
   isWhileStatement,
+  isRegularExpressionLiteral,
+  isConditionalExpression,
 } from "tsgo-typescript/unstable/ast/is"
 export { forEachLeadingCommentRange } from "tsgo-typescript/unstable/ast/scanner"
 export { isTypeAssertion as isTypeAssertionExpression } from "tsgo-typescript/unstable/ast/is"

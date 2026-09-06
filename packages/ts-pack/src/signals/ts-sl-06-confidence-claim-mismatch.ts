@@ -5,15 +5,20 @@ import {
   type Signal,
 } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
+import { textOf, walkDescendants } from "../ast.js"
 import {
-  Node,
-  SyntaxKind,
+  isArrowFunction,
+  isFunctionDeclaration,
+  isFunctionExpression,
+  isIdentifier,
+  isMethodDeclaration,
+  isVariableDeclaration,
   type FunctionDeclaration,
   type MethodDeclaration,
   type SourceFile,
   type VariableDeclaration,
-} from "ts-morph"
-import { TsProjectTag } from "../ts-project.js"
+} from "../tsgo-api.js"
+import { TsAnalysisTag } from "../ts-analysis.js"
 import {
   PRODUCTION_EXCLUDE_GLOBS,
   isAnalyzableSourceFile,
@@ -58,7 +63,7 @@ export interface TsSl06Output {
   readonly enforcementCeiling: ReadonlyArray<string>
 }
 
-export const TsSl06: Signal<TsSl06Config, TsSl06Output, TsProjectTag> = {
+export const TsSl06: Signal<TsSl06Config, TsSl06Output, TsAnalysisTag> = {
   id: "TS-SL-06-confidence-claim-mismatch",
   title: "Confidence claim mismatch",
   aliases: ["TS-SL-06"],
@@ -76,10 +81,19 @@ export const TsSl06: Signal<TsSl06Config, TsSl06Output, TsProjectTag> = {
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
-      const project = yield* TsProjectTag
+      const analysis = yield* TsAnalysisTag
+      const sourceFiles = yield* analysis.mapFiles(async (fileContext) => fileContext.sourceFile).pipe(
+        Effect.mapError((cause) =>
+          new SignalComputeError({
+            signalId: "TS-SL-06-confidence-claim-mismatch",
+            message: cause.message,
+            cause,
+          }),
+        ),
+      )
       return yield* Effect.try({
         try: (): TsSl06Output =>
-          computeConfidenceClaimMismatch(project.getSourceFiles(), config),
+          computeConfidenceClaimMismatch(sourceFiles, config),
         catch: (cause) =>
           new SignalComputeError({
             signalId: "TS-SL-06-confidence-claim-mismatch",
@@ -182,17 +196,19 @@ interface ClaimCandidate {
 const collectClaimCandidates = (
   sourceFile: SourceFile,
   claimPattern: RegExp,
-): ReadonlyArray<ClaimCandidate> => [
-  ...sourceFile.getDescendantsOfKind(SyntaxKind.FunctionDeclaration).flatMap((node) =>
-    candidateFromFunction(node, node.getName(), claimPattern),
-  ),
-  ...sourceFile.getDescendantsOfKind(SyntaxKind.MethodDeclaration).flatMap((node) =>
-    candidateFromFunction(node, node.getName(), claimPattern),
-  ),
-  ...sourceFile.getDescendantsOfKind(SyntaxKind.VariableDeclaration).flatMap((node) =>
-    candidateFromVariable(node, claimPattern),
-  ),
-]
+): ReadonlyArray<ClaimCandidate> => {
+  const candidates: Array<ClaimCandidate> = []
+  walkDescendants(sourceFile, (node) => {
+    if (isFunctionDeclaration(node) || isMethodDeclaration(node)) {
+      const name = node.name === undefined ? undefined : (isIdentifier(node.name) ? node.name.text : textOf(node.name))
+      candidates.push(...candidateFromFunction(node, name, claimPattern))
+    }
+    if (isVariableDeclaration(node)) {
+      candidates.push(...candidateFromVariable(node, claimPattern))
+    }
+  })
+  return candidates
+}
 
 const candidateFromFunction = (
   node: FunctionDeclaration | MethodDeclaration,
@@ -200,13 +216,13 @@ const candidateFromFunction = (
   claimPattern: RegExp,
 ): ReadonlyArray<ClaimCandidate> => {
   if (name === undefined || !claimPattern.test(name)) return []
-  const body = node.getBody()
+  const body = node.body
   if (body === undefined) return []
   return [{
     symbol: name,
     claimKind: claimKindOf(name),
     fn: node,
-    bodyText: body.getText(),
+    bodyText: textOf(body),
     location: locationOf(node),
   }]
 }
@@ -215,21 +231,23 @@ const candidateFromVariable = (
   node: VariableDeclaration,
   claimPattern: RegExp,
 ): ReadonlyArray<ClaimCandidate> => {
-  const name = node.getName()
+  if (!isIdentifier(node.name)) return []
+  const name = node.name.text
   if (!claimPattern.test(name)) return []
-  const initializer = node.getInitializer()
+  const initializer = node.initializer
   if (
     initializer === undefined ||
-    (!Node.isArrowFunction(initializer) && !Node.isFunctionExpression(initializer))
+    (!isArrowFunction(initializer) && !isFunctionExpression(initializer))
   ) {
     return []
   }
-  const body = initializer.getBody()
+  const body = initializer.body
+  if (body === undefined) return []
   return [{
     symbol: name,
     claimKind: claimKindOf(name),
     fn: initializer,
-    bodyText: body.getText(),
+    bodyText: textOf(body),
     location: locationOf(node),
   }]
 }
