@@ -1,8 +1,45 @@
 import { SignalComputeError, scoreThresholdViolationShare, summarize } from "@skastr0/pulsar-core/signal"
 import type { Diagnostic, DistributionalSummary, Signal } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
-import { ts, type SourceFile } from "ts-morph"
-import { TsProjectTag } from "../ts-project.js"
+import { textOf } from "../ast.js"
+import { TsAnalysisTag } from "../ts-analysis.js"
+import {
+  SyntaxKind,
+  isArrowFunction,
+  isCallSignatureDeclaration,
+  isClassDeclaration,
+  isConstructSignatureDeclaration,
+  isConstructorTypeNode,
+  isExportAssignment,
+  isExpressionWithTypeArguments,
+  isFunctionDeclaration,
+  isFunctionExpression,
+  isFunctionTypeNode,
+  isIdentifier,
+  isInterfaceDeclaration,
+  isMethodDeclaration,
+  isMethodSignature,
+  isParenthesizedTypeNode,
+  isPropertyAssignment,
+  isTypeAliasDeclaration,
+  isTypeLiteralNode,
+  isVariableDeclaration,
+  type ArrowFunction,
+  type CallSignatureDeclaration,
+  type ClassDeclaration,
+  type ConstructSignatureDeclaration,
+  type ConstructorTypeNode,
+  type FunctionDeclaration,
+  type FunctionExpression,
+  type FunctionTypeNode,
+  type InterfaceDeclaration,
+  type MethodDeclaration,
+  type MethodSignature,
+  type Node,
+  type SourceFile,
+  type TypeAliasDeclaration,
+  type TypeParameterDeclaration,
+} from "../tsgo-api.js"
 import { isExcluded } from "./shared-globs.js"
 
 export const TsAb05Config = Schema.Struct({
@@ -29,7 +66,7 @@ interface TsAb05Output {
   readonly diagnosticLimit: number
 }
 
-export const TsAb05: Signal<TsAb05Config, TsAb05Output, TsProjectTag> = {
+export const TsAb05: Signal<TsAb05Config, TsAb05Output, TsAnalysisTag> = {
   id: "TS-AB-05-generic-proliferation",
   title: "Generic proliferation",
   aliases: ["TS-AB-05"],
@@ -90,14 +127,15 @@ export const TsAb05: Signal<TsAb05Config, TsAb05Output, TsProjectTag> = {
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
-      const project = yield* TsProjectTag
+      const analysis = yield* TsAnalysisTag
+      const sourceFiles = yield* analysis.mapFiles(async (context) => context.sourceFile)
       const result = yield* Effect.try({
         try: (): TsAb05Output => {
           const byDeclaration: Array<GenericAnalysis> = []
           const paramCounts: Array<number> = []
 
-          for (const sourceFile of project.getSourceFiles()) {
-            const file = sourceFile.getFilePath()
+          for (const sourceFile of sourceFiles) {
+            const file = sourceFile.fileName
             if (isExcluded(file, config.exclude_globs)) continue
 
             for (const declaration of collectGenericAnalyses(sourceFile)) {
@@ -150,42 +188,41 @@ export const TsAb05: Signal<TsAb05Config, TsAb05Output, TsProjectTag> = {
 }
 
 type CompilerGenericDeclaration =
-  | ts.FunctionDeclaration
-  | ts.MethodDeclaration
-  | ts.MethodSignature
-  | ts.CallSignatureDeclaration
-  | ts.ConstructSignatureDeclaration
-  | ts.FunctionTypeNode
-  | ts.ConstructorTypeNode
-  | ts.ArrowFunction
-  | ts.FunctionExpression
-  | ts.TypeAliasDeclaration
-  | ts.InterfaceDeclaration
-  | ts.ClassDeclaration
+  | FunctionDeclaration
+  | MethodDeclaration
+  | MethodSignature
+  | CallSignatureDeclaration
+  | ConstructSignatureDeclaration
+  | FunctionTypeNode
+  | ConstructorTypeNode
+  | ArrowFunction
+  | FunctionExpression
+  | TypeAliasDeclaration
+  | InterfaceDeclaration
+  | ClassDeclaration
 
 type CompilerFunctionLike =
-  | ts.FunctionDeclaration
-  | ts.MethodDeclaration
-  | ts.MethodSignature
-  | ts.CallSignatureDeclaration
-  | ts.ConstructSignatureDeclaration
-  | ts.FunctionTypeNode
-  | ts.ConstructorTypeNode
-  | ts.ArrowFunction
-  | ts.FunctionExpression
+  | FunctionDeclaration
+  | MethodDeclaration
+  | MethodSignature
+  | CallSignatureDeclaration
+  | ConstructSignatureDeclaration
+  | FunctionTypeNode
+  | ConstructorTypeNode
+  | ArrowFunction
+  | FunctionExpression
 
 const collectGenericAnalyses = (
   sourceFile: SourceFile,
 ): ReadonlyArray<Omit<GenericAnalysis, "file">> => {
-  const compilerSourceFile = sourceFile.compilerNode
   const analyses: Array<Omit<GenericAnalysis, "file">> = []
 
-  const visit = (node: ts.Node): void => {
+  const visit = (node: Node): void => {
     if (isTrackedGenericDeclaration(node)) {
       const typeParameters = node.typeParameters ?? []
       analyses.push({
-        declarationName: compilerDeclarationName(node, compilerSourceFile),
-        line: compilerSourceFile.getLineAndCharacterOfPosition(node.getStart(compilerSourceFile)).line + 1,
+        declarationName: compilerDeclarationName(node, sourceFile),
+        line: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1,
         paramCount: typeParameters.length,
         maxConstraintDepth: typeParameters.reduce(
           (max, typeParameter) => Math.max(max, compilerTypeSyntaxDepth(typeParameter.constraint)),
@@ -195,63 +232,63 @@ const collectGenericAnalyses = (
       })
     }
 
-    ts.forEachChild(node, visit)
+    node.forEachChild(visit)
   }
 
-  visit(compilerSourceFile)
+  visit(sourceFile)
   return analyses
 }
 
-const isTrackedGenericDeclaration = (node: ts.Node): node is CompilerGenericDeclaration =>
-  ts.isFunctionDeclaration(node) ||
-  ts.isMethodDeclaration(node) ||
-  ts.isMethodSignature(node) ||
-  ts.isCallSignatureDeclaration(node) ||
-  ts.isConstructSignatureDeclaration(node) ||
+const isTrackedGenericDeclaration = (node: Node): node is CompilerGenericDeclaration =>
+  isFunctionDeclaration(node) ||
+  isMethodDeclaration(node) ||
+  isMethodSignature(node) ||
+  isCallSignatureDeclaration(node) ||
+  isConstructSignatureDeclaration(node) ||
   isDirectTypeAliasFunctionShape(node) ||
-  ts.isArrowFunction(node) ||
-  ts.isFunctionExpression(node) ||
-  ts.isTypeAliasDeclaration(node) ||
-  ts.isInterfaceDeclaration(node) ||
-  ts.isClassDeclaration(node)
+  isArrowFunction(node) ||
+  isFunctionExpression(node) ||
+  isTypeAliasDeclaration(node) ||
+  isInterfaceDeclaration(node) ||
+  isClassDeclaration(node)
 
 const compilerDeclarationName = (
   node: CompilerGenericDeclaration,
-  sourceFile: ts.SourceFile,
+  sourceFile: SourceFile,
 ): string => {
   if (
-    ts.isFunctionDeclaration(node) ||
-    ts.isMethodDeclaration(node) ||
-    ts.isMethodSignature(node) ||
-    ts.isFunctionExpression(node) ||
-    ts.isTypeAliasDeclaration(node) ||
-    ts.isInterfaceDeclaration(node) ||
-    ts.isClassDeclaration(node)
+    isFunctionDeclaration(node) ||
+    isMethodDeclaration(node) ||
+    isMethodSignature(node) ||
+    isFunctionExpression(node) ||
+    isTypeAliasDeclaration(node) ||
+    isInterfaceDeclaration(node) ||
+    isClassDeclaration(node)
   ) {
-    const name = node.name?.getText(sourceFile)
+    const name = node.name === undefined ? undefined : textOf(node.name, sourceFile)
     if (name !== undefined && name !== "") return name
   }
 
-  if (ts.isFunctionTypeNode(node) || ts.isConstructorTypeNode(node)) {
+  if (isFunctionTypeNode(node) || isConstructorTypeNode(node)) {
     const typeAlias = directTypeAliasDeclaration(node)
-    const signatureName = ts.isConstructorTypeNode(node) ? "<new>" : "<call>"
+    const signatureName = isConstructorTypeNode(node) ? "<new>" : "<call>"
     return typeAlias === undefined
       ? signatureName
-      : `${typeAlias.name.getText(sourceFile)}.${signatureName}`
+      : `${textOf(typeAlias.name, sourceFile)}.${signatureName}`
   }
 
-  if (ts.isCallSignatureDeclaration(node) || ts.isConstructSignatureDeclaration(node)) {
+  if (isCallSignatureDeclaration(node) || isConstructSignatureDeclaration(node)) {
     const ownerName = compilerOwnerDeclarationName(node.parent, sourceFile)
-    const signatureName = ts.isConstructSignatureDeclaration(node) ? "<new>" : "<call>"
+    const signatureName = isConstructSignatureDeclaration(node) ? "<new>" : "<call>"
     return ownerName === undefined ? signatureName : `${ownerName}.${signatureName}`
   }
 
-  if (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) {
+  if (isArrowFunction(node) || isFunctionExpression(node)) {
     const parent = node.parent
-    if (ts.isVariableDeclaration(parent) || ts.isPropertyAssignment(parent)) {
-      return parent.name.getText(sourceFile)
+    if (isVariableDeclaration(parent) || isPropertyAssignment(parent)) {
+      return textOf(parent.name, sourceFile)
     }
-    if (ts.isExportAssignment(parent)) {
+    if (isExportAssignment(parent)) {
       return "<default export>"
     }
   }
@@ -260,37 +297,38 @@ const compilerDeclarationName = (
 }
 
 const isDirectTypeAliasFunctionShape = (
-  node: ts.Node,
-): node is ts.FunctionTypeNode | ts.ConstructorTypeNode =>
-  (ts.isFunctionTypeNode(node) || ts.isConstructorTypeNode(node)) &&
+  node: Node,
+): node is FunctionTypeNode | ConstructorTypeNode =>
+  (isFunctionTypeNode(node) || isConstructorTypeNode(node)) &&
   directTypeAliasDeclaration(node) !== undefined
 
 const directTypeAliasDeclaration = (
-  node: ts.FunctionTypeNode | ts.ConstructorTypeNode,
-): ts.TypeAliasDeclaration | undefined => {
-  let directRhs: ts.Node = node
-  while (ts.isParenthesizedTypeNode(directRhs.parent)) {
+  node: FunctionTypeNode | ConstructorTypeNode,
+): TypeAliasDeclaration | undefined => {
+  let directRhs: Node = node
+  while (isParenthesizedTypeNode(directRhs.parent)) {
     directRhs = directRhs.parent
   }
 
   const parent = directRhs.parent
-  return ts.isTypeAliasDeclaration(parent) && parent.type === directRhs
+  return isTypeAliasDeclaration(parent) && parent.type === directRhs
     ? parent
     : undefined
 }
 
 const compilerOwnerDeclarationName = (
-  node: ts.Node | undefined,
-  sourceFile: ts.SourceFile,
+  node: Node | undefined,
+  sourceFile: SourceFile,
 ): string | undefined => {
   if (node === undefined) return undefined
   if (
-    ts.isInterfaceDeclaration(node) ||
-    ts.isTypeLiteralNode(node) ||
-    ts.isClassDeclaration(node) ||
-    ts.isTypeAliasDeclaration(node)
+    isInterfaceDeclaration(node) ||
+    isTypeLiteralNode(node) ||
+    isClassDeclaration(node) ||
+    isTypeAliasDeclaration(node)
   ) {
-    const name = "name" in node ? node.name?.getText(sourceFile) : undefined
+    const named = "name" in node ? node.name : undefined
+    const name = named === undefined ? undefined : textOf(named, sourceFile)
     if (name !== undefined && name !== "") return name
   }
   return compilerOwnerDeclarationName(node.parent, sourceFile)
@@ -298,7 +336,7 @@ const compilerOwnerDeclarationName = (
 
 const detectCompilerReturnOnlyParams = (
   declaration: CompilerGenericDeclaration,
-  typeParameters: ReadonlyArray<ts.TypeParameterDeclaration>,
+  typeParameters: ReadonlyArray<TypeParameterDeclaration>,
 ): ReadonlyArray<string> => {
   if (!isCompilerFunctionLikeDeclaration(declaration)) return []
 
@@ -306,7 +344,7 @@ const detectCompilerReturnOnlyParams = (
   const returnTypeNode = declaration.type
   const inputTypeNodes = typeParameters.flatMap((typeParameter) => [
     typeParameter.constraint,
-    typeParameter.default,
+    typeParameter.defaultType,
   ])
 
   return typeParameters
@@ -321,30 +359,30 @@ const detectCompilerReturnOnlyParams = (
 const isCompilerFunctionLikeDeclaration = (
   value: CompilerGenericDeclaration,
 ): value is CompilerFunctionLike =>
-  ts.isFunctionDeclaration(value) ||
-  ts.isMethodDeclaration(value) ||
-  ts.isMethodSignature(value) ||
-  ts.isCallSignatureDeclaration(value) ||
-  ts.isConstructSignatureDeclaration(value) ||
-  ts.isFunctionTypeNode(value) ||
-  ts.isConstructorTypeNode(value) ||
-  ts.isArrowFunction(value) ||
-  ts.isFunctionExpression(value)
+  isFunctionDeclaration(value) ||
+  isMethodDeclaration(value) ||
+  isMethodSignature(value) ||
+  isCallSignatureDeclaration(value) ||
+  isConstructSignatureDeclaration(value) ||
+  isFunctionTypeNode(value) ||
+  isConstructorTypeNode(value) ||
+  isArrowFunction(value) ||
+  isFunctionExpression(value)
 
 const compilerNameIsUsedInNodes = (
   name: string,
-  nodes: ReadonlyArray<ts.Node | undefined>,
+  nodes: ReadonlyArray<Node | undefined>,
 ): boolean => {
   for (const root of nodes) {
     if (root === undefined) continue
     let found = false
-    const visit = (node: ts.Node): void => {
+    const visit = (node: Node): void => {
       if (found) return
-      if (ts.isIdentifier(node) && node.text === name) {
+      if (isIdentifier(node) && node.text === name) {
         found = true
         return
       }
-      ts.forEachChild(node, visit)
+      node.forEachChild(visit)
     }
     visit(root)
     if (found) return true
@@ -352,9 +390,9 @@ const compilerNameIsUsedInNodes = (
   return false
 }
 
-const compilerTypeSyntaxDepth = (node: ts.TypeNode | undefined): number => {
+const compilerTypeSyntaxDepth = (node: Node | undefined): number => {
   if (node === undefined) return 0
-  if (ts.isParenthesizedTypeNode(node)) {
+  if (isParenthesizedTypeNode(node)) {
     return compilerTypeSyntaxDepth(node.type)
   }
 
@@ -364,7 +402,7 @@ const compilerTypeSyntaxDepth = (node: ts.TypeNode | undefined): number => {
       childDepth = Math.max(childDepth, compilerTypeSyntaxDepth(child))
       return
     }
-    if (ts.isExpressionWithTypeArguments(child)) {
+    if (isExpressionWithTypeArguments(child)) {
       childDepth = Math.max(childDepth, 1 + maxCompilerTypeArgumentDepth(child))
     }
   })
@@ -372,11 +410,11 @@ const compilerTypeSyntaxDepth = (node: ts.TypeNode | undefined): number => {
   return 1 + childDepth
 }
 
-const isCompilerTypeNode = (node: ts.Node): node is ts.TypeNode =>
-  node.kind >= ts.SyntaxKind.FirstTypeNode && node.kind <= ts.SyntaxKind.LastTypeNode
+const isCompilerTypeNode = (node: Node): node is Node =>
+  node.kind >= SyntaxKind.FirstTypeNode && node.kind <= SyntaxKind.LastTypeNode
 
 const maxCompilerTypeArgumentDepth = (
-  node: ts.ExpressionWithTypeArguments,
+  node: Node,
 ): number => {
   let max = 0
   for (const typeArg of node.typeArguments ?? []) {
