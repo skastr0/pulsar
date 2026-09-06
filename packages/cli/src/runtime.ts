@@ -30,7 +30,7 @@ import {
 import type { ObserverOutput } from "@skastr0/pulsar-core/observer"
 import type { TimeSeriesServices } from "@skastr0/pulsar-core/time-series"
 import { RustProjectLayer } from "@skastr0/pulsar-rs-pack"
-import { TsProjectLayer } from "@skastr0/pulsar-ts-pack"
+import { TsAnalysisLayer, TsProjectLayer } from "@skastr0/pulsar-ts-pack"
 import { Effect, Layer } from "effect"
 import { loadProjectModuleCalibrationContext } from "./runtime-calibration.js"
 import {
@@ -184,7 +184,10 @@ export const makePulsarRuntime = (
       (worktreePath): Layer.Layer<any, unknown, never> =>
         Layer.mergeAll(
           activePacks.typescript
-            ? TsProjectLayer(worktreePath, options?.tsProject)
+            ? Layer.mergeAll(
+                TsAnalysisLayer(worktreePath, options?.tsProject),
+                TsProjectLayer(worktreePath, options?.tsProject),
+              )
             : Layer.empty,
           activePacks.rust ? RustProjectLayer(worktreePath) : Layer.empty,
         ) as Layer.Layer<any, unknown, never>,
@@ -235,7 +238,10 @@ const buildWorktreeEnvLayer = (
       InMemoryCacheLayer,
       calibrationContextLayer,
       requiredPacks.typescript
-        ? TsProjectLayer(repoRoot, { productionOnly: true })
+        ? Layer.mergeAll(
+            TsAnalysisLayer(repoRoot, { productionOnly: true }),
+            TsProjectLayer(repoRoot, { productionOnly: true }),
+          )
         : Layer.empty,
       requiredPacks.rust ? RustProjectLayer(repoRoot) : Layer.empty,
     )

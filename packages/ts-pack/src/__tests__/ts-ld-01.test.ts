@@ -5,7 +5,7 @@ import { TsLd01, TsLd01Config } from "../signals/ts-ld-01-complexity.js"
 import { Effect, Layer, Schema } from "effect"
 import { CalibrationContextTag, defineCalibrationProcessor, makeResolvedCalibrationContext, appendCalibrationDecision } from "@skastr0/pulsar-core/calibration"
 import type { RepoFacts } from "@skastr0/pulsar-core/calibration"
-import { TsProjectLayer } from "../ts-project.js"
+import { TsAnalysisLayer } from "../ts-analysis.js"
 
 describe("TS-LD-01 (cyclomatic complexity)", () => {
   let repo: TempRepo
@@ -113,7 +113,7 @@ export const create = Effect.fn("Session.create")(function* (_input: unknown) {
       TsLd01.compute(TsLd01.defaultConfig, new Map()).pipe(
         Effect.provide(
           Layer.mergeAll(
-            TsProjectLayer(repo.root),
+            TsAnalysisLayer(repo.root),
             Layer.succeed(CalibrationContextTag, calibrationContext),
           ),
         ),

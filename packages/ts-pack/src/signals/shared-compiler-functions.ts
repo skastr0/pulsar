@@ -1,25 +1,42 @@
-import { ts } from "ts-morph"
+import {
+  isArrowFunction,
+  isConstructorDeclaration,
+  isFunctionDeclaration,
+  isFunctionExpression,
+  isGetAccessorDeclaration,
+  isIdentifier,
+  isMethodDeclaration,
+  isSetAccessorDeclaration,
+  type ArrowFunction,
+  type ConstructorDeclaration,
+  type FunctionDeclaration,
+  type FunctionExpression,
+  type GetAccessorDeclaration,
+  type MethodDeclaration,
+  type Node,
+  type SetAccessorDeclaration,
+} from "../tsgo-api.js"
+import { textOf } from "../ast.js"
 
 export type CompilerFunctionLike =
-  | ts.FunctionDeclaration
-  | ts.MethodDeclaration
-  | ts.ArrowFunction
-  | ts.FunctionExpression
-  | ts.ConstructorDeclaration
-  | ts.GetAccessorDeclaration
-  | ts.SetAccessorDeclaration
+  | FunctionDeclaration
+  | MethodDeclaration
+  | ArrowFunction
+  | FunctionExpression
+  | ConstructorDeclaration
+  | GetAccessorDeclaration
+  | SetAccessorDeclaration
 
-export const isCompilerFunctionLike = (node: ts.Node): node is CompilerFunctionLike =>
-  ts.isFunctionDeclaration(node) ||
-  ts.isMethodDeclaration(node) ||
-  ts.isArrowFunction(node) ||
-  ts.isFunctionExpression(node) ||
-  ts.isConstructorDeclaration(node) ||
-  ts.isGetAccessorDeclaration(node) ||
-  ts.isSetAccessorDeclaration(node)
+export const isCompilerFunctionLike = (node: Node): node is CompilerFunctionLike =>
+  isFunctionDeclaration(node) ||
+  isMethodDeclaration(node) ||
+  isArrowFunction(node) ||
+  isFunctionExpression(node) ||
+  isConstructorDeclaration(node) ||
+  isGetAccessorDeclaration(node) ||
+  isSetAccessorDeclaration(node)
 
-export const compilerPropertyNameText = (name: ts.PropertyName): string => {
-  if (ts.isIdentifier(name) || ts.isPrivateIdentifier(name)) return name.text
-  if (ts.isStringLiteral(name) || ts.isNumericLiteral(name)) return name.text
-  return name.getText()
+export const compilerPropertyNameText = (name: Node): string => {
+  if (isIdentifier(name)) return name.text
+  return textOf(name)
 }

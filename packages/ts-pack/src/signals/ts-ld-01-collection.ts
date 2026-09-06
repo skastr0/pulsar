@@ -1,15 +1,37 @@
 import type { TypeScriptCallbackContextNameValue } from "@skastr0/pulsar-core/calibration"
-import {
-  type SourceFile,
-  SyntaxKind,
-  ts,
-} from "ts-morph"
 import type { FunctionComplexity } from "./ts-ld-01-complexity.js"
 import {
   compilerPropertyNameText as propertyNameText,
   isCompilerFunctionLike,
   type CompilerFunctionLike,
 } from "./shared-compiler-functions.js"
+import {
+  SyntaxKind,
+  isArrowFunction,
+  isBinaryExpression,
+  isCallExpression,
+  isConstructorDeclaration,
+  isExportAssignment,
+  isFunctionDeclaration,
+  isFunctionExpression,
+  isGetAccessorDeclaration,
+  isIdentifier,
+  isMethodDeclaration,
+  isObjectLiteralExpression,
+  isPropertyAccessExpression,
+  isPropertyAssignment,
+  isSetAccessorDeclaration,
+  isSourceFile,
+  isStringLiteral,
+  isVariableDeclaration,
+  type ArrowFunction,
+  type CallExpression,
+  type FunctionExpression,
+  type Node,
+  type PropertyAccessExpression,
+  type PropertyAssignment,
+  type SourceFile,
+} from "../tsgo-api.js"
 
 type MutableFunctionComplexity = {
   file: string
@@ -39,27 +61,26 @@ const BRANCHING_KINDS = new Set<SyntaxKind>([
 export const collectFunctionComplexities = (
   sourceFile: SourceFile,
 ): ReadonlyArray<FunctionComplexityCandidate> => {
-  const compilerSourceFile = sourceFile.compilerNode
-  const file = sourceFile.getFilePath()
+  const file = sourceFile.fileName
   const functions: Array<MutableFunctionComplexity & {
     callbackContext?: FunctionNameCalibrationInput
   }> = []
 
-  const visit = (node: ts.Node, currentFunction: MutableFunctionComplexity | undefined): void => {
+  const visit = (node: Node, currentFunction: MutableFunctionComplexity | undefined): void => {
     if (isCompilerFunctionLike(node)) {
-      const start = node.getStart(compilerSourceFile)
+      const start = node.getStart(sourceFile)
       const nameInfo = functionName(node)
       const fn = {
         file,
         name: nameInfo.name,
-        line: compilerSourceFile.getLineAndCharacterOfPosition(start).line + 1,
+        line: sourceFile.getLineAndCharacterOfPosition(start).line + 1,
         complexity: 1,
         ...(nameInfo.callbackContext !== undefined
           ? { callbackContext: nameInfo.callbackContext }
           : {}),
       }
       functions.push(fn)
-      ts.forEachChild(node, (child) => visit(child, fn))
+      node.forEachChild((child) => visit(child, fn))
       return
     }
 
@@ -67,15 +88,15 @@ export const collectFunctionComplexities = (
       if (BRANCHING_KINDS.has(node.kind)) {
         currentFunction.complexity += 1
       }
-      if (ts.isBinaryExpression(node) && isComplexityOperator(node.operatorToken.kind)) {
+      if (isBinaryExpression(node) && isComplexityOperator(node.operatorToken.kind)) {
         currentFunction.complexity += 1
       }
     }
 
-    ts.forEachChild(node, (child) => visit(child, currentFunction))
+    node.forEachChild((child) => visit(child, currentFunction))
   }
 
-  visit(compilerSourceFile, undefined)
+  visit(sourceFile, undefined)
   return functions
 }
 
@@ -89,46 +110,46 @@ const functionName = (fn: CompilerFunctionLike): {
   readonly callbackContext?: FunctionNameCalibrationInput
 } => {
   if (
-    ts.isFunctionDeclaration(fn) ||
-    ts.isMethodDeclaration(fn) ||
-    ts.isFunctionExpression(fn)
+    isFunctionDeclaration(fn) ||
+    isMethodDeclaration(fn) ||
+    isFunctionExpression(fn)
   ) {
     const name = fn.name
     if (name !== undefined) return { name: propertyNameText(name) }
   }
-  if (ts.isConstructorDeclaration(fn)) return { name: "constructor" }
-  if (ts.isGetAccessorDeclaration(fn)) return { name: `get ${propertyNameText(fn.name)}` }
-  if (ts.isSetAccessorDeclaration(fn)) return { name: `set ${propertyNameText(fn.name)}` }
+  if (isConstructorDeclaration(fn)) return { name: "constructor" }
+  if (isGetAccessorDeclaration(fn)) return { name: `get ${propertyNameText(fn.name)}` }
+  if (isSetAccessorDeclaration(fn)) return { name: `set ${propertyNameText(fn.name)}` }
 
   const parent = fn.parent
-  if (ts.isVariableDeclaration(parent) && ts.isIdentifier(parent.name)) {
+  if (isVariableDeclaration(parent) && isIdentifier(parent.name)) {
     return { name: parent.name.text }
   }
-  if (ts.isPropertyAssignment(parent)) {
+  if (isPropertyAssignment(parent)) {
     return objectPropertyFunctionName(parent)
   }
-  if (ts.isExportAssignment(parent)) {
+  if (isExportAssignment(parent)) {
     return { name: "<default export>" }
   }
-  if ((ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)) && ts.isCallExpression(parent)) {
+  if ((isArrowFunction(fn) || isFunctionExpression(fn)) && isCallExpression(parent)) {
     return callExpressionCallbackName(parent, fn)
   }
   return { name: "<anonymous>" }
 }
 
 const objectPropertyFunctionName = (
-  property: ts.PropertyAssignment,
+  property: PropertyAssignment,
 ): {
   readonly name: string
   readonly callbackContext?: FunctionNameCalibrationInput
 } => {
   const objectLiteral = property.parent
-  if (!ts.isObjectLiteralExpression(objectLiteral)) {
+  if (!isObjectLiteralExpression(objectLiteral)) {
     return { name: propertyNameText(property.name) }
   }
 
   const call = objectLiteral.parent
-  if (!ts.isCallExpression(call)) {
+  if (!isCallExpression(call)) {
     return { name: propertyNameText(property.name) }
   }
 
@@ -159,8 +180,8 @@ const objectPropertyFunctionName = (
 }
 
 const callExpressionCallbackName = (
-  call: ts.CallExpression,
-  fn: ts.ArrowFunction | ts.FunctionExpression,
+  call: CallExpression,
+  fn: ArrowFunction | FunctionExpression,
 ): {
   readonly name: string
   readonly callbackContext?: FunctionNameCalibrationInput
@@ -192,19 +213,19 @@ const callExpressionCallbackName = (
   }
 }
 
-const nearestCallbackOwnerName = (node: ts.Node): string | undefined => {
-  let current: ts.Node | undefined = node.parent
-  while (current !== undefined && !ts.isSourceFile(current)) {
-    if (ts.isVariableDeclaration(current) && ts.isIdentifier(current.name)) {
+const nearestCallbackOwnerName = (node: Node): string | undefined => {
+  let current: Node | undefined = node.parent
+  while (current !== undefined && !isSourceFile(current)) {
+    if (isVariableDeclaration(current) && isIdentifier(current.name)) {
       return current.name.text
     }
-    if (ts.isPropertyAssignment(current)) {
+    if (isPropertyAssignment(current)) {
       return propertyNameText(current.name)
     }
     if (
-      (ts.isFunctionDeclaration(current) ||
-        ts.isMethodDeclaration(current) ||
-        ts.isFunctionExpression(current)) &&
+      (isFunctionDeclaration(current) ||
+        isMethodDeclaration(current) ||
+        isFunctionExpression(current)) &&
       current.name !== undefined
     ) {
       return propertyNameText(current.name)
@@ -214,29 +235,29 @@ const nearestCallbackOwnerName = (node: ts.Node): string | undefined => {
   return undefined
 }
 
-const callExpressionName = (call: ts.CallExpression): string | undefined => {
+const callExpressionName = (call: CallExpression): string | undefined => {
   const expression = call.expression
-  if (ts.isIdentifier(expression)) return expression.text
-  if (ts.isPropertyAccessExpression(expression)) return propertyAccessName(expression)
-  if (ts.isCallExpression(expression)) return callExpressionName(expression)
+  if (isIdentifier(expression)) return expression.text
+  if (isPropertyAccessExpression(expression)) return propertyAccessName(expression)
+  if (isCallExpression(expression)) return callExpressionName(expression)
   return undefined
 }
 
-const effectFnLabelFromOuterCall = (call: ts.CallExpression): string | undefined => {
+const effectFnLabelFromOuterCall = (call: CallExpression): string | undefined => {
   const expression = call.expression
-  if (!ts.isCallExpression(expression)) return undefined
+  if (!isCallExpression(expression)) return undefined
   if (callExpressionName(expression) !== "Effect.fn") return undefined
   const label = expression.arguments[0]
-  return label !== undefined && ts.isStringLiteral(label) ? label.text : undefined
+  return label !== undefined && isStringLiteral(label) ? label.text : undefined
 }
 
-const propertyAccessName = (node: ts.PropertyAccessExpression): string => {
+const propertyAccessName = (node: PropertyAccessExpression): string => {
   const parts: Array<string> = [node.name.text]
   let expression = node.expression
-  while (ts.isPropertyAccessExpression(expression)) {
+  while (isPropertyAccessExpression(expression)) {
     parts.unshift(expression.name.text)
     expression = expression.expression
   }
-  if (ts.isIdentifier(expression)) parts.unshift(expression.text)
+  if (isIdentifier(expression)) parts.unshift(expression.text)
   return parts.join(".")
 }

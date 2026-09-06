@@ -1,9 +1,9 @@
-import { ts } from "ts-morph"
+import type { Node } from "../tsgo-api.js"
 
-export const forEachCompilerNode = (root: ts.Node, visit: (node: ts.Node) => void): void => {
-  const walk = (node: ts.Node): void => {
+export const forEachCompilerNode = (root: Node, visit: (node: Node) => void): void => {
+  const walk = (node: Node): void => {
     visit(node)
-    ts.forEachChild(node, walk)
+    node.forEachChild(walk)
   }
   walk(root)
 }

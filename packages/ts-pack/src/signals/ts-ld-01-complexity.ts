@@ -3,7 +3,7 @@ import type { Diagnostic, DistributionalSummary, Signal } from "@skastr0/pulsar-
 import { CalibrationContextTag } from "@skastr0/pulsar-core/calibration"
 import type { CalibrationDecision } from "@skastr0/pulsar-core/calibration"
 import { Effect, Schema } from "effect"
-import { TsProjectTag } from "../ts-project.js"
+import { TsAnalysisTag } from "../ts-analysis.js"
 import { isExcluded } from "./shared-globs.js"
 import { calibrateFunctionNames } from "./ts-ld-01-calibration.js"
 import {
@@ -38,7 +38,7 @@ export interface TsLd01Output {
   readonly maxComplexityPressure: number
 }
 
-export const TsLd01: Signal<TsLd01Config, TsLd01Output, TsProjectTag> = {
+export const TsLd01: Signal<TsLd01Config, TsLd01Output, TsAnalysisTag> = {
   id: "TS-LD-01-cyclomatic-complexity",
   title: "Cyclomatic complexity",
   aliases: ["TS-LD-01"],
@@ -56,22 +56,13 @@ export const TsLd01: Signal<TsLd01Config, TsLd01Output, TsProjectTag> = {
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
-      const project = yield* TsProjectTag
+      const analysis = yield* TsAnalysisTag
       const calibration = yield* Effect.serviceOption(CalibrationContextTag)
-      const candidates = yield* Effect.try({
-        try: (): ReadonlyArray<FunctionComplexityCandidate> => {
-          const functions: Array<FunctionComplexityCandidate> = []
-
-          for (const sf of project.getSourceFiles()) {
-            const path = sf.getFilePath()
-            if (isExcluded(path, config.exclude_globs)) continue
-            functions.push(...collectFunctionComplexities(sf))
-          }
-
-          return functions
-        },
-        catch: toSignalComputeError,
-      })
+      const fileOutputs = yield* analysis.mapFiles(async (context) => {
+        if (isExcluded(context.file.path, config.exclude_globs)) return []
+        return [...collectFunctionComplexities(context.sourceFile)]
+      }).pipe(Effect.mapError(toSignalComputeError))
+      const candidates = fileOutputs.flat()
       const { functions, calibrationDecisions } = yield* calibrateFunctionNames(
         candidates,
         calibration,
