@@ -3,7 +3,8 @@ import type { Diagnostic, Signal } from "@skastr0/pulsar-core/signal"
 import { CalibrationContextTag } from "@skastr0/pulsar-core/calibration"
 import type { CalibrationDecision, CalibrationProcessorError, CalibrationSlotOutput, ResolvedCalibrationContext, TypeScriptExportReachabilityValue } from "@skastr0/pulsar-core/calibration"
 import { Effect, Option, Schema } from "effect"
-import { TsPackageInfoTag, TsProjectTag } from "../ts-project.js"
+import { TsAnalysisTag, TsPackageInfoTag } from "../ts-analysis.js"
+import { SyntaxKind } from "../tsgo-api.js"
 import {
   buildReachabilityAnalysis,
   type ExportBinding,
@@ -45,7 +46,7 @@ type TsAb02Output = {
   readonly diagnosticLimit: number
 }
 
-export const TsAb02: Signal<TsAb02Config, TsAb02Output, TsProjectTag | TsPackageInfoTag> = {
+export const TsAb02: Signal<TsAb02Config, TsAb02Output, TsAnalysisTag | TsPackageInfoTag> = {
   id: "TS-AB-02-unused-exports",
   title: "Unused exports",
   aliases: ["TS-AB-02"],
@@ -125,7 +126,7 @@ export const TsAb02: Signal<TsAb02Config, TsAb02Output, TsProjectTag | TsPackage
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
-      const project = yield* TsProjectTag
+      const analysis = yield* TsAnalysisTag
       const packages = yield* TsPackageInfoTag
       const calibration = yield* Effect.serviceOption(CalibrationContextTag)
       const exportReachabilityCalibration =
@@ -135,32 +136,35 @@ export const TsAb02: Signal<TsAb02Config, TsAb02Output, TsProjectTag | TsPackage
         )
           ? calibration.value
           : undefined
-      const analysis = yield* Effect.try({
-        try: () => buildReachabilityAnalysis(project.getSourceFiles(), packages, config),
+      const files = yield* analysis.mapFiles(async (fileContext) => fileContext.sourceFile).pipe(
+        Effect.mapError(toSignalComputeError),
+      )
+      const reachabilityAnalysis = yield* Effect.try({
+        try: () => buildReachabilityAnalysis(files, packages, config),
         catch: toSignalComputeError,
       })
       const entries: Array<ExportReachability> = []
       const calibrationDecisions: Array<CalibrationDecision> = []
 
-      for (const binding of analysis.bindings) {
+      for (const binding of reachabilityAnalysis.bindings) {
         const consumers = matchingConsumers(
-          analysis.consumerLookup.get(binding.exportFile),
+          reachabilityAnalysis.consumerLookup.get(binding.exportFile),
           binding.exportName,
         )
         const defaultPublicEntrypoint =
-          analysis.publicEntryFiles.has(binding.exportFile) ||
-          isReExportedByPublicEntrypoint(consumers, analysis.publicEntryFiles)
+          reachabilityAnalysis.publicEntryFiles.has(binding.exportFile) ||
+          isReExportedByPublicEntrypoint(consumers, reachabilityAnalysis.publicEntryFiles)
         const reachability = yield* calibrateExportReachability(
           binding,
           defaultPublicEntrypoint,
           exportReachabilityCalibration,
-          analysis.sourceFactsByFile.get(binding.exportFile),
+          reachabilityAnalysis.sourceFactsByFile.get(binding.exportFile),
         ).pipe(Effect.mapError(toSignalComputeError))
         calibrationDecisions.push(...reachability.decisions)
         entries.push(classifyExportReachability(
           binding,
           consumers,
-          analysis.packageNameByFile.get(binding.exportFile),
+          reachabilityAnalysis.packageNameByFile.get(binding.exportFile),
           config.boundary_rules,
           reachability.value,
         ))
@@ -265,7 +269,7 @@ const calibrateExportReachability = (
     exportFile: binding.exportFile,
     exportName: binding.exportName,
     declarationFiles: binding.declarationFiles,
-    declarationKinds: binding.localDeclarations.map((declaration) => declaration.getKindName()),
+    declarationKinds: binding.localDeclarations.map((declaration) => SyntaxKind[declaration.kind] ?? String(declaration.kind)),
     declarations: binding.localDeclarations.map((declaration) =>
       declarationFactForExport(binding.exportName, declaration)
     ),

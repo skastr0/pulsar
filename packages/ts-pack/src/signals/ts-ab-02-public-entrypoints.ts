@@ -1,5 +1,5 @@
 import { normalize, resolve } from "node:path"
-import type { SourceFile } from "ts-morph"
+import type { SourceFile } from "../tsgo-api.js"
 import type { PackageInfo } from "../discovery.js"
 import { matchesAnyGlob } from "./shared-globs.js"
 import {
@@ -14,7 +14,7 @@ export const publicEntrypointSourceFiles = (
 ): ReadonlySet<string> => {
   const publicFiles = new Set<string>(packageEntrypointSourceFiles(sourceFiles, packages))
   for (const sourceFile of sourceFiles) {
-    const filePath = sourceFile.getFilePath()
+    const filePath = sourceFile.fileName
     if (matchesAnyGlob(filePath, publicEntryGlobs)) {
       publicFiles.add(filePath)
     }
@@ -28,14 +28,14 @@ const packageEntrypointSourceFiles = (
 ): ReadonlySet<string> => {
   const sourcePathLookup = new Map<string, string>()
   for (const sourceFile of sourceFiles) {
-    const filePath = normalizePath(sourceFile.getFilePath())
+    const filePath = normalizePath(sourceFile.fileName)
     sourcePathLookup.set(filePath, filePath)
     sourcePathLookup.set(stripKnownExtension(filePath), filePath)
   }
 
   const entrypointFiles = new Set<string>()
   for (const sourceFile of sourceFiles) {
-    const filePath = normalizePath(sourceFile.getFilePath())
+    const filePath = normalizePath(sourceFile.fileName)
     if (isAgentToolEntrypoint(filePath)) {
       entrypointFiles.add(filePath)
     }

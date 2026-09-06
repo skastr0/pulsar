@@ -1,4 +1,30 @@
-import { Node, SyntaxKind, type Node as TsMorphNode, type SourceFile, ts } from "ts-morph"
+import { hasDefaultModifier, hasExportModifier, textOf } from "../ast.js"
+import {
+  isArrayBindingPattern,
+  isBindingElement,
+  isClassDeclaration,
+  isEnumDeclaration,
+  isExportAssignment,
+  isExportDeclaration,
+  isExportSpecifier,
+  isFunctionDeclaration,
+  isIdentifier,
+  isImportSpecifier,
+  isInterfaceDeclaration,
+  isMethodDeclaration,
+  isNamedExports,
+  isNamespaceExport,
+  isObjectBindingPattern,
+  isParameter,
+  isPropertyAssignment,
+  isPropertySignature,
+  isShorthandPropertyAssignment,
+  isTypeAliasDeclaration,
+  isVariableDeclaration,
+  isVariableStatement,
+  type Node,
+  type SourceFile,
+} from "../tsgo-api.js"
 import { forEachCompilerNode } from "./shared-compiler-node-traversal.js"
 export {
   buildExportConsumerIndex,
@@ -16,44 +42,55 @@ interface ExportBinding {
 export const collectExportBindings = (sourceFile: SourceFile): ReadonlyArray<ExportBinding> => {
   const bindings: Array<ExportBinding> = []
 
-  for (const statement of sourceFile.getVariableStatements()) {
-    if (!hasExportModifier(statement)) continue
-    for (const declaration of statement.getDeclarations()) {
-      for (const exportName of bindingNames(declaration.getNameNode())) {
-        bindings.push(localBinding(sourceFile, exportName, declaration))
+  for (const statement of sourceFile.statements) {
+    if (isVariableStatement(statement)) {
+      if (!hasExportModifier(statement)) continue
+      for (const declaration of statement.declarationList.declarations) {
+        for (const exportName of bindingNames(declaration.name)) {
+          bindings.push(localBinding(sourceFile, exportName, declaration))
+        }
       }
-    }
-  }
-
-  for (const declaration of [
-    ...sourceFile.getFunctions(),
-    ...sourceFile.getClasses(),
-    ...sourceFile.getInterfaces(),
-    ...sourceFile.getTypeAliases(),
-    ...sourceFile.getEnums(),
-  ]) {
-    if (!hasExportModifier(declaration)) continue
-    const name = declaration.getName()
-    bindings.push(localBinding(sourceFile, hasDefaultModifier(declaration) ? "default" : name ?? "default", declaration))
-  }
-
-  for (const assignment of sourceFile.getExportAssignments()) {
-    bindings.push(localBinding(sourceFile, "default", assignment))
-  }
-
-  for (const declaration of sourceFile.getExportDeclarations()) {
-    if (declaration.isNamespaceExport() || !declaration.hasNamedExports()) {
-      bindings.push(reExportBinding(sourceFile, "*"))
       continue
     }
 
-    for (const specifier of declaration.getNamedExports()) {
-      bindings.push(
-        reExportBinding(
-          sourceFile,
-          specifier.getAliasNode()?.getText() ?? specifier.getNameNode().getText(),
-        ),
-      )
+    if (
+      isFunctionDeclaration(statement) ||
+      isClassDeclaration(statement) ||
+      isInterfaceDeclaration(statement) ||
+      isTypeAliasDeclaration(statement) ||
+      isEnumDeclaration(statement)
+    ) {
+      if (!hasExportModifier(statement)) continue
+      const name = statement.name === undefined
+        ? undefined
+        : (isIdentifier(statement.name) ? statement.name.text : textOf(statement.name))
+      bindings.push(localBinding(
+        sourceFile,
+        hasDefaultModifier(statement) ? "default" : name ?? "default",
+        statement,
+      ))
+      continue
+    }
+
+    if (isExportAssignment(statement)) {
+      bindings.push(localBinding(sourceFile, "default", statement))
+      continue
+    }
+
+    if (isExportDeclaration(statement)) {
+      if (
+        statement.exportClause === undefined ||
+        isNamespaceExport(statement.exportClause) ||
+        !isNamedExports(statement.exportClause)
+      ) {
+        bindings.push(reExportBinding(sourceFile, "*"))
+        continue
+      }
+
+      for (const specifier of statement.exportClause.elements) {
+        const exportedName = isIdentifier(specifier.name) ? specifier.name.text : textOf(specifier.name)
+        bindings.push(reExportBinding(sourceFile, exportedName))
+      }
     }
   }
 
@@ -67,11 +104,11 @@ export const collectExportBindings = (sourceFile: SourceFile): ReadonlyArray<Exp
 const localBinding = (
   sourceFile: SourceFile,
   exportName: string,
-  declaration: TsMorphNode,
+  declaration: Node,
 ): ExportBinding => ({
-  exportFile: sourceFile.getFilePath(),
+  exportFile: sourceFile.fileName,
   exportName,
-  declarationFiles: [sourceFile.getFilePath()],
+  declarationFiles: [sourceFile.fileName],
   localDeclarations: [declaration],
   viaReExport: false,
 })
@@ -80,27 +117,18 @@ const reExportBinding = (
   sourceFile: SourceFile,
   exportName: string,
 ): ExportBinding => ({
-  exportFile: sourceFile.getFilePath(),
+  exportFile: sourceFile.fileName,
   exportName,
-  declarationFiles: [sourceFile.getFilePath()],
+  declarationFiles: [sourceFile.fileName],
   localDeclarations: [],
   viaReExport: true,
 })
 
-const hasModifier = (node: TsMorphNode, kind: SyntaxKind): boolean => {
-  const candidate = node as { getModifiers?: () => ReadonlyArray<{ getKind: () => SyntaxKind }> }
-  return candidate.getModifiers?.().some((modifier) => modifier.getKind() === kind) ?? false
-}
-
-const hasExportModifier = (node: TsMorphNode): boolean => hasModifier(node, SyntaxKind.ExportKeyword)
-
-const hasDefaultModifier = (node: TsMorphNode): boolean => hasModifier(node, SyntaxKind.DefaultKeyword)
-
 const bindingNames = (node: Node): ReadonlyArray<string> => {
-  if (Node.isIdentifier(node)) return [node.getText()]
-  if (Node.isObjectBindingPattern(node) || Node.isArrayBindingPattern(node)) {
-    return node.getElements().flatMap((element) =>
-      Node.isBindingElement(element) ? bindingNames(element.getNameNode()) : [],
+  if (isIdentifier(node)) return [node.text]
+  if (isObjectBindingPattern(node) || isArrayBindingPattern(node)) {
+    return node.elements.flatMap((element) =>
+      isBindingElement(element) ? bindingNames(element.name) : [],
     )
   }
   return []
@@ -122,8 +150,8 @@ const countIdentifierReferences = (sourceFile: SourceFile, name: string): number
   if (cached !== undefined) return cached
 
   let count = 0
-  forEachCompilerNode(sourceFile.compilerNode, (node) => {
-    if (!ts.isIdentifier(node)) return
+  forEachCompilerNode(sourceFile, (node) => {
+    if (!isIdentifier(node)) return
     if (node.text !== name) return
     if (isCompilerIdentifierInsideExportSyntax(node)) return
     if (isCompilerDeclarationName(node)) return
@@ -136,13 +164,13 @@ const countIdentifierReferences = (sourceFile: SourceFile, name: string): number
   return count
 }
 
-const isCompilerIdentifierInsideExportSyntax = (node: ts.Identifier): boolean => {
-  let current: ts.Node | undefined = node.parent
+const isCompilerIdentifierInsideExportSyntax = (node: Node): boolean => {
+  let current: Node | undefined = node.parent
   while (current !== undefined) {
     if (
-      ts.isExportDeclaration(current) ||
-      ts.isExportSpecifier(current) ||
-      ts.isExportAssignment(current)
+      isExportDeclaration(current) ||
+      isExportSpecifier(current) ||
+      isExportAssignment(current)
     ) {
       return true
     }
@@ -151,31 +179,32 @@ const isCompilerIdentifierInsideExportSyntax = (node: ts.Identifier): boolean =>
   return false
 }
 
-const isCompilerDeclarationName = (node: ts.Identifier): boolean => {
+const isCompilerDeclarationName = (node: Node): boolean => {
   const parent = node.parent
   if (parent === undefined) return false
 
   if (
-    ts.isVariableDeclaration(parent) ||
-    ts.isParameter(parent) ||
-    ts.isFunctionDeclaration(parent) ||
-    ts.isClassDeclaration(parent) ||
-    ts.isInterfaceDeclaration(parent) ||
-    ts.isTypeAliasDeclaration(parent) ||
-    ts.isEnumDeclaration(parent) ||
-    ts.isImportSpecifier(parent) ||
-    ts.isExportSpecifier(parent) ||
-    ts.isPropertyAssignment(parent) ||
-    ts.isPropertySignature(parent) ||
-    ts.isMethodDeclaration(parent) ||
-    ts.isBindingElement(parent)
+    isVariableDeclaration(parent) ||
+    isParameter(parent) ||
+    isFunctionDeclaration(parent) ||
+    isClassDeclaration(parent) ||
+    isInterfaceDeclaration(parent) ||
+    isTypeAliasDeclaration(parent) ||
+    isEnumDeclaration(parent) ||
+    isImportSpecifier(parent) ||
+    isExportSpecifier(parent) ||
+    isPropertyAssignment(parent) ||
+    isPropertySignature(parent) ||
+    isMethodDeclaration(parent) ||
+    isBindingElement(parent)
   ) {
     return parent.name === node
   }
 
-  if (ts.isShorthandPropertyAssignment(parent)) {
+  if (isShorthandPropertyAssignment(parent)) {
     return parent.name === node
   }
 
   return false
 }
+

@@ -7,7 +7,7 @@ import { nextjsProjectModule } from "@skastr0/pulsar-project-module-nextjs"
 import { TS_PACK_SIGNALS } from "../pack.js"
 import { TsAb02, TsAb02Config } from "../signals/ts-ab-02-unused-exports-reachability.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
-import { TsProjectLayer } from "../ts-project.js"
+import { TsAnalysisLayer } from "../ts-analysis.js"
 
 let repo: TempRepo
 type TsAb02Result = Parameters<typeof TsAb02.score>[0]
@@ -428,7 +428,7 @@ describe("TS-AB-02 (unused exports reachability)", () => {
       TsAb02.compute(TsAb02.defaultConfig, new Map()).pipe(
         Effect.provide(
           Layer.mergeAll(
-            TsProjectLayer(repo.root),
+            TsAnalysisLayer(repo.root),
             Layer.succeed(CalibrationContextTag, calibrationContext),
           ),
         ),
@@ -518,7 +518,7 @@ describe("TS-AB-02 (unused exports reachability)", () => {
       TsAb02.compute(TsAb02.defaultConfig, new Map()).pipe(
         Effect.provide(
           Layer.mergeAll(
-            TsProjectLayer(repo.root),
+            TsAnalysisLayer(repo.root),
             Layer.succeed(CalibrationContextTag, calibrationContext),
           ),
         ),

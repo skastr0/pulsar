@@ -1,4 +1,4 @@
-import type { SourceFile } from "ts-morph"
+import type { SourceFile } from "../tsgo-api.js"
 import type { PackageInfo } from "../discovery.js"
 import type { TsAb02Config } from "./ts-ab-02-unused-exports-reachability.js"
 import { isExcluded } from "./shared-globs.js"
@@ -34,7 +34,7 @@ export const buildReachabilityAnalysis = (
   config: TsAb02Config,
 ): ReachabilityAnalysis => {
   const sourceFiles = allSourceFiles
-    .filter((sourceFile) => !isExcluded(sourceFile.getFilePath(), config.exclude_globs))
+    .filter((sourceFile) => !isExcluded(sourceFile.fileName, config.exclude_globs))
   const consumerIndex = buildExportConsumerIndex(sourceFiles, packages)
   const consumerLookup = buildConsumerLookupByFile(consumerIndex)
   const publicEntryFiles = publicEntrypointSourceFiles(
@@ -44,8 +44,8 @@ export const buildReachabilityAnalysis = (
   )
   const packageNameByFile = new Map<string, string | undefined>(
     sourceFiles.map((sourceFile) => [
-      sourceFile.getFilePath(),
-      packageDisplayName(packageForFile(sourceFile.getFilePath(), packages)),
+      sourceFile.fileName,
+      packageDisplayName(packageForFile(sourceFile.fileName, packages)),
     ]),
   )
 
@@ -55,7 +55,7 @@ export const buildReachabilityAnalysis = (
     packageNameByFile,
     publicEntryFiles,
     sourceFactsByFile: new Map(sourceFiles.map((sourceFile) => [
-      sourceFile.getFilePath(),
+      sourceFile.fileName,
       collectSourceExportFacts(sourceFile),
     ])),
   }

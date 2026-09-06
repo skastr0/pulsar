@@ -1,5 +1,23 @@
 import type { TypeScriptCallExpressionFact, TypeScriptExportDeclarationFact, TypeScriptExportSpecifierFact, TypeScriptImportBindingFact, TypeScriptLocalBindingFact } from "@skastr0/pulsar-core/calibration"
-import { Node, type SourceFile } from "ts-morph"
+import { textOf } from "../ast.js"
+import {
+  SyntaxKind,
+  isCallExpression,
+  isExportAssignment,
+  isExportDeclaration,
+  isIdentifier,
+  isImportDeclaration,
+  isNamedExports,
+  isNamedImports,
+  isNamespaceImport,
+  isNoSubstitutionTemplateLiteral,
+  isPropertyAccessExpression,
+  isStringLiteral,
+  isVariableDeclaration,
+  isVariableStatement,
+  type Node,
+  type SourceFile,
+} from "../tsgo-api.js"
 
 export interface TypeScriptSourceExportFacts {
   readonly imports: ReadonlyArray<TypeScriptImportBindingFact>
@@ -29,13 +47,13 @@ export const declarationFactForExport = (
   declaration: Node,
 ): TypeScriptExportDeclarationFact => {
   const base = {
-    declarationKind: declaration.getKindName(),
+    declarationKind: SyntaxKind[declaration.kind] ?? String(declaration.kind),
     exportName,
   }
 
-  if (Node.isVariableDeclaration(declaration)) {
-    const localName = identifierName(declaration.getNameNode())
-    const initializerCall = callFact(declaration.getInitializer())
+  if (isVariableDeclaration(declaration)) {
+    const localName = identifierName(declaration.name)
+    const initializerCall = callFact(declaration.initializer)
     return {
       ...base,
       ...(localName === undefined ? {} : { localName }),
@@ -43,8 +61,8 @@ export const declarationFactForExport = (
     }
   }
 
-  if (Node.isExportAssignment(declaration)) {
-    const expression = declaration.getExpression()
+  if (isExportAssignment(declaration)) {
+    const expression = declaration.expression
     const expressionIdentifier = identifierName(expression)
     const expressionCall = callFact(expression)
     return {
@@ -54,10 +72,8 @@ export const declarationFactForExport = (
     }
   }
 
-  const named = declaration as { getNameNode?: () => Node; getName?: () => string | undefined }
-  const localName = named.getNameNode !== undefined
-    ? identifierName(named.getNameNode())
-    : named.getName?.()
+  const named = declaration as { readonly name?: Node }
+  const localName = named.name === undefined ? undefined : identifierName(named.name)
   return {
     ...base,
     ...(localName === undefined ? {} : { localName }),
@@ -65,47 +81,54 @@ export const declarationFactForExport = (
 }
 
 const importBindingFacts = (sourceFile: SourceFile): ReadonlyArray<TypeScriptImportBindingFact> =>
-  sourceFile.getImportDeclarations().flatMap((declaration) => {
-    const moduleSpecifier = declaration.getModuleSpecifierValue()
+  sourceFile.statements.filter(isImportDeclaration).flatMap((declaration) => {
+    const moduleSpecifier = moduleSpecifierText(declaration.moduleSpecifier)
+    if (moduleSpecifier === undefined) return []
     const bindings: Array<TypeScriptImportBindingFact> = []
-    const defaultImport = declaration.getDefaultImport()
-    if (defaultImport !== undefined) {
+    const clause = declaration.importClause
+    if (clause?.name !== undefined) {
       bindings.push({
         moduleSpecifier,
         importKind: "default",
         importedName: "default",
-        localName: defaultImport.getText(),
+        localName: clause.name.text,
       })
     }
 
-    const namespaceImport = declaration.getNamespaceImport()
-    if (namespaceImport !== undefined) {
+    if (clause?.namedBindings !== undefined && isNamespaceImport(clause.namedBindings)) {
       bindings.push({
         moduleSpecifier,
         importKind: "namespace",
         importedName: "*",
-        localName: namespaceImport.getText(),
+        localName: clause.namedBindings.name.text,
       })
     }
 
-    for (const namedImport of declaration.getNamedImports()) {
-      bindings.push({
-        moduleSpecifier,
-        importKind: "named",
-        importedName: namedImport.getNameNode().getText(),
-        localName: namedImport.getAliasNode()?.getText() ?? namedImport.getNameNode().getText(),
-      })
+    if (clause?.namedBindings !== undefined && isNamedImports(clause.namedBindings)) {
+      for (const namedImport of clause.namedBindings.elements) {
+        const importedName = namedImport.propertyName === undefined
+          ? (isIdentifier(namedImport.name) ? namedImport.name.text : textOf(namedImport.name))
+          : (isIdentifier(namedImport.propertyName) ? namedImport.propertyName.text : textOf(namedImport.propertyName))
+        const localName = isIdentifier(namedImport.name) ? namedImport.name.text : textOf(namedImport.name)
+        bindings.push({
+          moduleSpecifier,
+          importKind: "named",
+          importedName,
+          localName,
+        })
+      }
     }
     return bindings
   })
 
 const localBindingFacts = (sourceFile: SourceFile): ReadonlyArray<TypeScriptLocalBindingFact> =>
-  sourceFile.getVariableStatements()
-    .flatMap((statement) => statement.getDeclarations())
+  sourceFile.statements
+    .filter(isVariableStatement)
+    .flatMap((statement) => statement.declarationList.declarations)
     .map((declaration): TypeScriptLocalBindingFact | undefined => {
-      const localName = identifierName(declaration.getNameNode())
+      const localName = identifierName(declaration.name)
       if (localName === undefined) return undefined
-      const initializerCall = callFact(declaration.getInitializer())
+      const initializerCall = callFact(declaration.initializer)
       return {
         localName,
         ...(initializerCall === undefined ? {} : { initializerCall }),
@@ -116,31 +139,43 @@ const localBindingFacts = (sourceFile: SourceFile): ReadonlyArray<TypeScriptLoca
 const exportSpecifierFacts = (
   sourceFile: SourceFile,
 ): ReadonlyArray<TypeScriptExportSpecifierFact> =>
-  sourceFile.getExportDeclarations().flatMap((declaration) => {
-    if (!declaration.hasNamedExports()) return []
-    const moduleSpecifier = declaration.getModuleSpecifierValue()
-    return declaration.getNamedExports().map((specifier) => ({
-      exportedName: specifier.getAliasNode()?.getText() ?? specifier.getNameNode().getText(),
-      localName: specifier.getNameNode().getText(),
-      ...(moduleSpecifier === undefined ? {} : { moduleSpecifier }),
-    }))
+  sourceFile.statements.filter(isExportDeclaration).flatMap((declaration) => {
+    if (declaration.exportClause === undefined || !isNamedExports(declaration.exportClause)) return []
+    const moduleSpecifier = moduleSpecifierText(declaration.moduleSpecifier)
+    return declaration.exportClause.elements.map((specifier) => {
+      const exportedName = isIdentifier(specifier.name) ? specifier.name.text : textOf(specifier.name)
+      const localName = specifier.propertyName === undefined
+        ? exportedName
+        : (isIdentifier(specifier.propertyName) ? specifier.propertyName.text : textOf(specifier.propertyName))
+      return {
+        exportedName,
+        localName,
+        ...(moduleSpecifier === undefined ? {} : { moduleSpecifier }),
+      }
+    })
   })
 
 const callFact = (node: Node | undefined): TypeScriptCallExpressionFact | undefined => {
-  if (node === undefined || !Node.isCallExpression(node)) return undefined
-  const callee = node.getExpression()
+  if (node === undefined || !isCallExpression(node)) return undefined
+  const callee = node.expression
   const calleeName = callCalleeName(callee)
   return {
-    calleeText: callee.getText(),
+    calleeText: textOf(callee),
     ...(calleeName === undefined ? {} : { calleeName }),
   }
 }
 
 const callCalleeName = (node: Node): string | undefined => {
-  if (Node.isIdentifier(node)) return node.getText()
-  if (Node.isPropertyAccessExpression(node)) return node.getNameNode().getText()
+  if (isIdentifier(node)) return node.text
+  if (isPropertyAccessExpression(node)) return isIdentifier(node.name) ? node.name.text : textOf(node.name)
   return undefined
 }
 
-const identifierName = (node: Node): string | undefined =>
-  Node.isIdentifier(node) ? node.getText() : undefined
+const identifierName = (node: Node | undefined): string | undefined =>
+  node !== undefined && isIdentifier(node) ? node.text : undefined
+
+const moduleSpecifierText = (node: Node | undefined): string | undefined => {
+  if (node === undefined) return undefined
+  if (isStringLiteral(node) || isNoSubstitutionTemplateLiteral(node)) return node.text
+  return undefined
+}

@@ -1,4 +1,57 @@
-import { type SourceFile, ts } from "ts-morph"
+import {
+  SyntaxKind,
+  isArrowFunction,
+  isAwaitExpression,
+  isBindingElement,
+  isBlock,
+  isCallExpression,
+  isCaseClause,
+  isCatchClause,
+  isClassDeclaration,
+  isConstructorDeclaration,
+  isDefaultClause,
+  isElementAccessExpression,
+  isEnumDeclaration,
+  isExportDeclaration,
+  isExportSpecifier,
+  isGetAccessorDeclaration,
+  isForInStatement,
+  isForOfStatement,
+  isForStatement,
+  isFunctionDeclaration,
+  isFunctionExpression,
+  isIdentifier,
+  isImportDeclaration,
+  isImportSpecifier,
+  isInterfaceDeclaration,
+  isMethodDeclaration,
+  isModuleBlock,
+  isNumericLiteral,
+  isNamespaceExport,
+  isNamespaceImport,
+  isNoSubstitutionTemplateLiteral,
+  isObjectBindingPattern,
+  isParameter,
+  isParenthesizedExpression,
+  isPropertyAccessExpression,
+  isPropertyAssignment,
+  isPropertySignature,
+  isQualifiedName,
+  isSetAccessorDeclaration,
+  isSourceFile,
+  isStringLiteral,
+  isSwitchStatement,
+  isTypeAliasDeclaration,
+  isVariableDeclaration,
+  isVariableDeclarationList,
+  isVariableStatement,
+  type CallExpression,
+  type Expression,
+  type Identifier,
+  type Node,
+  type ObjectBindingPattern,
+  type SourceFile,
+} from "../tsgo-api.js"
 import type { PackageInfo } from "../discovery.js"
 import { createModuleResolver } from "../graph/module-graph.js"
 import { forEachCompilerNode } from "./shared-compiler-node-traversal.js"
@@ -23,7 +76,7 @@ export const buildExportConsumerIndex = (
   sourceFiles: ReadonlyArray<SourceFile>,
   packages: ReadonlyArray<PackageInfo>,
 ): ReadonlyMap<string, ReadonlyArray<ExportConsumer>> => {
-  const fileSet = new Set<string>(sourceFiles.map((sourceFile) => sourceFile.getFilePath()))
+  const fileSet = new Set<string>(sourceFiles.map((sourceFile) => sourceFile.fileName))
   const index = new Map<string, Array<ExportConsumer>>()
   const resolver = createModuleResolver(sourceFiles, packages)
 
@@ -54,8 +107,8 @@ const recordFileConsumers = (context: ExportConsumerContext): void => {
 const recordStaticImportConsumers = (context: ExportConsumerContext): void => {
   const consumer = consumerIdentity(context)
 
-  for (const statement of context.sourceFile.compilerNode.statements) {
-    if (!ts.isImportDeclaration(statement)) continue
+  for (const statement of context.sourceFile.statements) {
+    if (!isImportDeclaration(statement)) continue
     const targetFile = resolvedTargetFile(context, consumer.file, statement.moduleSpecifier)
     if (targetFile === undefined) continue
 
@@ -64,7 +117,7 @@ const recordStaticImportConsumers = (context: ExportConsumerContext): void => {
       addConsumer(context.index, targetFile, "default", consumer, "import")
     }
     recordNamedImportConsumers(
-      context.sourceFile.compilerNode,
+      context.sourceFile,
       context.index,
       targetFile,
       consumer,
@@ -74,14 +127,14 @@ const recordStaticImportConsumers = (context: ExportConsumerContext): void => {
 }
 
 const recordNamedImportConsumers = (
-  sourceFile: ts.SourceFile,
+  sourceFile: SourceFile,
   index: ExportConsumerIndex,
   targetFile: string,
   consumer: ConsumerIdentity,
-  namedBindings: ts.NamedImportBindings | undefined,
+  namedBindings: import("../tsgo-api.js").ImportClause["namedBindings"] | undefined,
 ): void => {
   if (namedBindings === undefined) return
-  if (ts.isNamespaceImport(namedBindings)) {
+  if (isNamespaceImport(namedBindings)) {
     addConsumersForUsage(
       index,
       targetFile,
@@ -99,11 +152,11 @@ const recordNamedImportConsumers = (
 const recordDynamicImportConsumers = (context: ExportConsumerContext): void => {
   const consumer = consumerIdentity(context)
 
-  forEachCompilerNode(context.sourceFile.compilerNode, (node) => {
-    if (!ts.isCallExpression(node)) return
-    if (node.expression.kind !== ts.SyntaxKind.ImportKeyword) return
+  forEachCompilerNode(context.sourceFile, (node) => {
+    if (!isCallExpression(node)) return
+    if (node.expression.kind !== SyntaxKind.ImportKeyword) return
     const specifier = node.arguments[0]
-    if (specifier === undefined || !ts.isStringLiteral(specifier)) return
+    if (specifier === undefined || !isStringLiteral(specifier)) return
 
     const targetFile = resolvedTargetFile(context, consumer.file, specifier)
     if (targetFile !== undefined) {
@@ -112,7 +165,7 @@ const recordDynamicImportConsumers = (context: ExportConsumerContext): void => {
         targetFile,
         consumer,
         "dynamic-import",
-        dynamicImportExportUsage(context.sourceFile.compilerNode, node),
+        dynamicImportExportUsage(context.sourceFile, node),
       )
     }
   })
@@ -121,8 +174,8 @@ const recordDynamicImportConsumers = (context: ExportConsumerContext): void => {
 const recordReExportConsumers = (context: ExportConsumerContext): void => {
   const consumer = consumerIdentity(context)
 
-  for (const statement of context.sourceFile.compilerNode.statements) {
-    if (!ts.isExportDeclaration(statement)) continue
+  for (const statement of context.sourceFile.statements) {
+    if (!isExportDeclaration(statement)) continue
     const targetFile = resolvedTargetFile(context, consumer.file, statement.moduleSpecifier)
     if (targetFile === undefined) continue
     recordExportClauseConsumers(context.index, targetFile, consumer, statement.exportClause)
@@ -133,9 +186,9 @@ const recordExportClauseConsumers = (
   index: ExportConsumerIndex,
   targetFile: string,
   consumer: ConsumerIdentity,
-  exportClause: ts.ExportDeclaration["exportClause"],
+  exportClause: import("../tsgo-api.js").ExportDeclaration["exportClause"],
 ): void => {
-  if (exportClause === undefined || ts.isNamespaceExport(exportClause)) {
+  if (exportClause === undefined || isNamespaceExport(exportClause)) {
     addConsumer(index, targetFile, "*", consumer, "re-export")
     return
   }
@@ -150,7 +203,7 @@ interface ConsumerIdentity {
 }
 
 const consumerIdentity = (context: ExportConsumerContext): ConsumerIdentity => {
-  const file = context.sourceFile.getFilePath()
+  const file = context.sourceFile.fileName
   return {
     file,
     package: packageDisplayName(packageForFile(file, context.packages)),
@@ -160,7 +213,7 @@ const consumerIdentity = (context: ExportConsumerContext): ConsumerIdentity => {
 const resolvedTargetFile = (
   context: ExportConsumerContext,
   consumerFile: string,
-  specifierNode: ts.Expression | undefined,
+  specifierNode: Expression | undefined,
 ): string | undefined => {
   const specifier = moduleSpecifierText(specifierNode)
   if (specifier === undefined) return undefined
@@ -202,27 +255,27 @@ const addConsumersForUsage = (
 }
 
 const namespaceExportUsage = (
-  root: ts.Node,
-  namespaceBinding: ts.Identifier,
+  root: Node,
+  namespaceBinding: Identifier,
 ): ExportUsage => {
   const namespaceName = namespaceBinding.text
   const names = new Set<string>()
   let opaque = false
 
   forEachCompilerNode(root, (node) => {
-    if (!ts.isIdentifier(node) || node.text !== namespaceName) return
+    if (!isIdentifier(node) || node.text !== namespaceName) return
     const parent = node.parent
     if (parent === undefined) return
     if (isDeclarationName(node)) return
-    if (ts.isNamespaceImport(parent) && parent.name === node) return
+    if (isNamespaceImport(parent) && parent.name === node) return
     if (isShadowedReference(node, root, namespaceBinding)) return
 
-    if (ts.isPropertyAccessExpression(parent)) {
+    if (isPropertyAccessExpression(parent)) {
       if (parent.expression === node) names.add(parent.name.text)
       return
     }
 
-    if (ts.isElementAccessExpression(parent)) {
+    if (isElementAccessExpression(parent)) {
       if (parent.expression !== node) return
       const name = stringLiteralText(parent.argumentExpression)
       if (name === undefined) opaque = true
@@ -230,7 +283,7 @@ const namespaceExportUsage = (
       return
     }
 
-    if (ts.isQualifiedName(parent)) {
+    if (isQualifiedName(parent)) {
       if (parent.left === node) names.add(parent.right.text)
       return
     }
@@ -242,8 +295,8 @@ const namespaceExportUsage = (
 }
 
 const dynamicImportExportUsage = (
-  sourceFile: ts.SourceFile,
-  importCall: ts.CallExpression,
+  sourceFile: SourceFile,
+  importCall: CallExpression,
 ): ExportUsage => {
   const directName = directDynamicImportAccessName(importCall)
   if (directName !== undefined) return { names: new Set([directName]), opaque: false }
@@ -258,13 +311,13 @@ const dynamicImportExportUsage = (
 }
 
 const directDynamicImportAccessName = (
-  importCall: ts.CallExpression,
+  importCall: CallExpression,
 ): string | undefined => {
   const current = unwrapExpressionNode(importCall)
   const parent = current.parent
   if (
     parent !== undefined &&
-    ts.isPropertyAccessExpression(parent) &&
+    isPropertyAccessExpression(parent) &&
     parent.expression === current &&
     parent.name.text !== "then"
   ) {
@@ -272,7 +325,7 @@ const directDynamicImportAccessName = (
   }
   if (
     parent !== undefined &&
-    ts.isElementAccessExpression(parent) &&
+    isElementAccessExpression(parent) &&
     parent.expression === current
   ) {
     return stringLiteralText(parent.argumentExpression)
@@ -281,13 +334,13 @@ const directDynamicImportAccessName = (
 }
 
 const dynamicImportThenUsage = (
-  importCall: ts.CallExpression,
+  importCall: CallExpression,
 ): ExportUsage | undefined => {
   const current = unwrapExpressionNode(importCall)
   const parent = current.parent
   if (
     parent === undefined ||
-    !ts.isPropertyAccessExpression(parent) ||
+    !isPropertyAccessExpression(parent) ||
     parent.expression !== current ||
     parent.name.text !== "then"
   ) {
@@ -296,7 +349,7 @@ const dynamicImportThenUsage = (
   const thenCall = parent.parent
   if (
     thenCall === undefined ||
-    !ts.isCallExpression(thenCall) ||
+    !isCallExpression(thenCall) ||
     thenCall.expression !== parent
   ) {
     return undefined
@@ -304,31 +357,31 @@ const dynamicImportThenUsage = (
   const callback = thenCall.arguments[0]
   if (
     callback === undefined ||
-    !(ts.isArrowFunction(callback) || ts.isFunctionExpression(callback))
+    !(isArrowFunction(callback) || isFunctionExpression(callback))
   ) {
     return undefined
   }
   const parameter = callback.parameters[0]
   if (parameter === undefined) return { names: new Set(), opaque: false }
-  if (ts.isIdentifier(parameter.name)) {
+  if (isIdentifier(parameter.name)) {
     return namespaceExportUsage(callback.body, parameter.name)
   }
-  if (ts.isObjectBindingPattern(parameter.name)) {
+  if (isObjectBindingPattern(parameter.name)) {
     return objectBindingExportUsage(parameter.name)
   }
   return { names: new Set(), opaque: true }
 }
 
 const dynamicImportBoundNamespaceName = (
-  importCall: ts.CallExpression,
-): ts.Identifier | undefined => {
+  importCall: CallExpression,
+): Identifier | undefined => {
   const current = unwrapExpressionNode(importCall)
   const parent = current.parent
   if (
     parent !== undefined &&
-    ts.isVariableDeclaration(parent) &&
+    isVariableDeclaration(parent) &&
     parent.initializer === current &&
-    ts.isIdentifier(parent.name)
+    isIdentifier(parent.name)
   ) {
     return parent.name
   }
@@ -336,7 +389,7 @@ const dynamicImportBoundNamespaceName = (
 }
 
 const objectBindingExportUsage = (
-  pattern: ts.ObjectBindingPattern,
+  pattern: ObjectBindingPattern,
 ): ExportUsage => {
   const names = new Set<string>()
   let opaque = false
@@ -347,7 +400,7 @@ const objectBindingExportUsage = (
     }
     const propertyName = element.propertyName
     if (propertyName === undefined) {
-      if (ts.isIdentifier(element.name)) names.add(element.name.text)
+      if (isIdentifier(element.name)) names.add(element.name.text)
       else opaque = true
       continue
     }
@@ -358,45 +411,45 @@ const objectBindingExportUsage = (
   return { names, opaque }
 }
 
-const unwrapExpressionNode = (node: ts.Expression): ts.Expression => {
-  let current: ts.Expression = node
+const unwrapExpressionNode = (node: Expression): Expression => {
+  let current: Expression = node
   while (
     current.parent !== undefined &&
-    ((ts.isParenthesizedExpression(current.parent) && current.parent.expression === current) ||
-      (ts.isAwaitExpression(current.parent) && current.parent.expression === current))
+    ((isParenthesizedExpression(current.parent) && current.parent.expression === current) ||
+      (isAwaitExpression(current.parent) && current.parent.expression === current))
   ) {
     current = current.parent
   }
   return current
 }
 
-const propertyNameText = (node: ts.PropertyName): string | undefined => {
-  if (ts.isIdentifier(node) || ts.isStringLiteral(node) || ts.isNumericLiteral(node)) {
+const propertyNameText = (node: Node): string | undefined => {
+  if (isIdentifier(node) || isStringLiteral(node) || isNumericLiteral(node)) {
     return node.text
   }
   return undefined
 }
 
-const stringLiteralText = (node: ts.Expression | undefined): string | undefined =>
-  node !== undefined && ts.isStringLiteralLike(node) ? node.text : undefined
+const stringLiteralText = (node: Expression | undefined): string | undefined =>
+  node !== undefined && isStringLiteralLike(node) ? node.text : undefined
 
-const isDeclarationName = (node: ts.Identifier): boolean => {
+const isDeclarationName = (node: Identifier): boolean => {
   const parent = node.parent
   if (parent === undefined) return false
   if (
-    ts.isVariableDeclaration(parent) ||
-    ts.isParameter(parent) ||
-    ts.isFunctionDeclaration(parent) ||
-    ts.isClassDeclaration(parent) ||
-    ts.isInterfaceDeclaration(parent) ||
-    ts.isTypeAliasDeclaration(parent) ||
-    ts.isEnumDeclaration(parent) ||
-    ts.isImportSpecifier(parent) ||
-    ts.isExportSpecifier(parent) ||
-    ts.isPropertyAssignment(parent) ||
-    ts.isPropertySignature(parent) ||
-    ts.isMethodDeclaration(parent) ||
-    ts.isBindingElement(parent)
+    isVariableDeclaration(parent) ||
+    isParameter(parent) ||
+    isFunctionDeclaration(parent) ||
+    isClassDeclaration(parent) ||
+    isInterfaceDeclaration(parent) ||
+    isTypeAliasDeclaration(parent) ||
+    isEnumDeclaration(parent) ||
+    isImportSpecifier(parent) ||
+    isExportSpecifier(parent) ||
+    isPropertyAssignment(parent) ||
+    isPropertySignature(parent) ||
+    isMethodDeclaration(parent) ||
+    isBindingElement(parent)
   ) {
     return parent.name === node
   }
@@ -404,11 +457,11 @@ const isDeclarationName = (node: ts.Identifier): boolean => {
 }
 
 const isShadowedReference = (
-  node: ts.Identifier,
-  root: ts.Node,
-  namespaceBinding: ts.Identifier,
+  node: Identifier,
+  root: Node,
+  namespaceBinding: Identifier,
 ): boolean => {
-  let current: ts.Node | undefined = node.parent
+  let current: Node | undefined = node.parent
   while (current !== undefined) {
     if (declaresShadowingName(current, node, namespaceBinding)) return true
     if (current === root) return false
@@ -418,9 +471,9 @@ const isShadowedReference = (
 }
 
 const declaresShadowingName = (
-  scope: ts.Node,
-  reference: ts.Identifier,
-  namespaceBinding: ts.Identifier,
+  scope: Node,
+  reference: Identifier,
+  namespaceBinding: Identifier,
 ): boolean => {
   const name = namespaceBinding.text
   const body = functionBody(scope)
@@ -434,26 +487,26 @@ const declaresShadowingName = (
     return true
   }
 
-  if (ts.isBlock(scope) || ts.isSourceFile(scope) || ts.isModuleBlock(scope) || ts.isCaseBlock(scope)) {
-    const statements = ts.isCaseBlock(scope)
-      ? scope.clauses.flatMap((clause) => [...clause.statements])
+  if (isBlock(scope) || isSourceFile(scope) || isModuleBlock(scope) || isSwitchStatement(scope)) {
+    const statements = isSwitchStatement(scope)
+      ? scope.caseBlock.clauses.flatMap((clause) => [...clause.statements])
       : [...scope.statements]
     if (statements.some((statement) => statementDeclaresName(statement, name, namespaceBinding))) {
       return true
     }
   }
 
-  if (ts.isCatchClause(scope) && scope.variableDeclaration !== undefined) {
+  if (isCatchClause(scope) && scope.variableDeclaration !== undefined) {
     return bindingNameContains(scope.variableDeclaration.name, name, namespaceBinding)
   }
 
-  if ((ts.isForOfStatement(scope) || ts.isForInStatement(scope)) && ts.isVariableDeclarationList(scope.initializer)) {
+  if ((isForOfStatement(scope) || isForInStatement(scope)) && isVariableDeclarationList(scope.initializer)) {
     return scope.initializer.declarations.some((declaration) =>
       bindingNameContains(declaration.name, name, namespaceBinding)
     )
   }
 
-  if (ts.isForStatement(scope) && scope.initializer !== undefined && ts.isVariableDeclarationList(scope.initializer)) {
+  if (isForStatement(scope) && scope.initializer !== undefined && isVariableDeclarationList(scope.initializer)) {
     return scope.initializer.declarations.some((declaration) =>
       bindingNameContains(declaration.name, name, namespaceBinding)
     )
@@ -463,17 +516,17 @@ const declaresShadowingName = (
 }
 
 const statementDeclaresName = (
-  statement: ts.Statement,
+  statement: Node,
   name: string,
-  namespaceBinding: ts.Identifier,
+  namespaceBinding: Identifier,
 ): boolean => {
-  if (ts.isVariableStatement(statement)) {
+  if (isVariableStatement(statement)) {
     return statement.declarationList.declarations.some((declaration) =>
       bindingNameContains(declaration.name, name, namespaceBinding)
     )
   }
   if (
-    (ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement)) &&
+    (isFunctionDeclaration(statement) || isClassDeclaration(statement)) &&
     statement.name !== undefined &&
     statement.name.text === name &&
     statement.name !== namespaceBinding
@@ -483,52 +536,52 @@ const statementDeclaresName = (
   return false
 }
 
-const functionBody = (node: ts.Node): ts.ConciseBody | ts.FunctionBody | undefined => {
+const functionBody = (node: Node): Node | undefined => {
   if (
-    ts.isFunctionDeclaration(node) ||
-    ts.isFunctionExpression(node) ||
-    ts.isArrowFunction(node) ||
-    ts.isMethodDeclaration(node) ||
-    ts.isConstructorDeclaration(node) ||
-    ts.isGetAccessorDeclaration(node) ||
-    ts.isSetAccessorDeclaration(node)
+    isFunctionDeclaration(node) ||
+    isFunctionExpression(node) ||
+    isArrowFunction(node) ||
+    isMethodDeclaration(node) ||
+    isConstructorDeclaration(node) ||
+    isGetAccessorDeclaration(node) ||
+    isSetAccessorDeclaration(node)
   ) {
     return node.body
   }
   return undefined
 }
 
-const functionParameters = (node: ts.Node): ts.NodeArray<ts.ParameterDeclaration> => {
+const functionParameters = (node: Node): ReadonlyArray<import("../tsgo-api.js").ParameterDeclaration> => {
   if (
-    ts.isFunctionDeclaration(node) ||
-    ts.isFunctionExpression(node) ||
-    ts.isArrowFunction(node) ||
-    ts.isMethodDeclaration(node) ||
-    ts.isConstructorDeclaration(node) ||
-    ts.isGetAccessorDeclaration(node) ||
-    ts.isSetAccessorDeclaration(node)
+    isFunctionDeclaration(node) ||
+    isFunctionExpression(node) ||
+    isArrowFunction(node) ||
+    isMethodDeclaration(node) ||
+    isConstructorDeclaration(node) ||
+    isGetAccessorDeclaration(node) ||
+    isSetAccessorDeclaration(node)
   ) {
     return node.parameters
   }
-  return ts.factory.createNodeArray()
+  return []
 }
 
 const bindingNameContains = (
-  bindingName: ts.BindingName,
+  bindingName: Node,
   name: string,
-  namespaceBinding: ts.Identifier,
+  namespaceBinding: Identifier,
 ): boolean => {
-  if (ts.isIdentifier(bindingName)) {
+  if (isIdentifier(bindingName)) {
     return bindingName.text === name && bindingName !== namespaceBinding
   }
   return bindingName.elements.some((element) =>
-    ts.isBindingElement(element) &&
+    isBindingElement(element) &&
     bindingNameContains(element.name, name, namespaceBinding)
   )
 }
 
-const containsNode = (container: ts.Node, node: ts.Node): boolean => {
-  let current: ts.Node | undefined = node
+const containsNode = (container: Node, node: Node): boolean => {
+  let current: Node | undefined = node
   while (current !== undefined) {
     if (current === container) return true
     current = current.parent
@@ -536,14 +589,16 @@ const containsNode = (container: ts.Node, node: ts.Node): boolean => {
   return false
 }
 
-const moduleSpecifierText = (node: ts.Expression | undefined): string | undefined =>
-  node !== undefined && ts.isStringLiteralLike(node) ? node.text : undefined
+
+const isStringLiteralLike = (node: Node | undefined): boolean =>
+  node !== undefined && (isStringLiteral(node) || isNoSubstitutionTemplateLiteral(node))
+
+const moduleSpecifierText = (node: Expression | undefined): string | undefined =>
+  node !== undefined && isStringLiteralLike(node) ? node.text : undefined
 
 const resolveModuleSpecifier = (
   resolver: ReturnType<typeof createModuleResolver>,
   sourcePath: string,
   specifier: string,
 ): string | undefined =>
-  resolver.resolve(sourcePath, {
-    getModuleSpecifierValue: () => specifier,
-  } as Parameters<typeof resolver.resolve>[1])
+  resolver.resolveSpecifier(sourcePath, specifier)

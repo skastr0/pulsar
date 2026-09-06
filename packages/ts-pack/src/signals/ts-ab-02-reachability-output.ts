@@ -1,4 +1,4 @@
-import { Node } from "ts-morph"
+import { isInterfaceDeclaration, isTypeAliasDeclaration, type Node } from "../tsgo-api.js"
 import type { TypeScriptExportReachabilityValue } from "@skastr0/pulsar-core/calibration"
 import {
   countSameFileReferences,
@@ -129,7 +129,7 @@ const isTestHookExportName = (name: string): boolean =>
   /(?:ForTest|ForTesting|Test|Testing|Fixture|Mock)(?:$|[A-Z_])/u.test(name)
 
 const isTypeOnlyDeclaration = (node: Node): boolean =>
-  Node.isInterfaceDeclaration(node) || Node.isTypeAliasDeclaration(node)
+  isInterfaceDeclaration(node) || isTypeAliasDeclaration(node)
 
 const evidencePenaltyWeight = (evidence: ExportEvidence): number => {
   if (evidence === "runtime") return 1
