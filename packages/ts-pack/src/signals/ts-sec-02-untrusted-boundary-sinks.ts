@@ -5,18 +5,26 @@ import {
   type Signal,
 } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
-import { Node, SyntaxKind, type CallExpression, type SourceFile } from "ts-morph"
-import { TsProjectTag } from "../ts-project.js"
+import { TsAnalysisTag } from "../ts-analysis.js"
+import { locationOf, textOf, walkDescendants } from "../ast.js"
+import {
+  isArrowFunction,
+  isCallExpression,
+  isNewExpression,
+  isNoSubstitutionTemplateLiteral,
+  isNumericLiteral,
+  isStringLiteral,
+  type CallExpression,
+  type Node,
+  type SourceFile,
+} from "../tsgo-api.js"
 import { matchesAnyGlob } from "./shared-globs.js"
 import {
   PRODUCTION_EXCLUDE_GLOBS,
-  callName,
-  isAnalyzableSourceFile,
-  isStringLiteralLike,
-  locationOf,
   normalizeDiagnosticLimit,
   type SourceLocation,
 } from "./trust-signal-helpers.js"
+import { isExcluded } from "./shared-globs.js"
 
 const TsSec02Config = Schema.Struct({
   boundary_globs: Schema.Array(Schema.String),
@@ -51,7 +59,7 @@ export interface TsSec02Output {
   readonly enforcementCeiling: ReadonlyArray<string>
 }
 
-export const TsSec02: Signal<TsSec02Config, TsSec02Output, TsProjectTag> = {
+export const TsSec02: Signal<TsSec02Config, TsSec02Output, TsAnalysisTag> = {
   id: "TS-SEC-02-untrusted-boundary-sinks",
   title: "Untrusted boundary sinks",
   aliases: ["TS-SEC-02"],
@@ -90,17 +98,17 @@ export const TsSec02: Signal<TsSec02Config, TsSec02Output, TsProjectTag> = {
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
-      const project = yield* TsProjectTag
-      return yield* Effect.try({
-        try: (): TsSec02Output =>
-          computeUntrustedBoundarySinks(project.getSourceFiles(), config),
-        catch: (cause) =>
-          new SignalComputeError({
-            signalId: "TS-SEC-02-untrusted-boundary-sinks",
-            message: String(cause),
-            cause,
-          }),
-      })
+      const analysis = yield* TsAnalysisTag
+      const fileOutputs = yield* analysis.mapFiles(async (context) =>
+        analyzeUntrustedBoundarySinks(context.sourceFile, context.file.path, config),
+      ).pipe(Effect.mapError((cause) =>
+        new SignalComputeError({
+          signalId: "TS-SEC-02-untrusted-boundary-sinks",
+          message: cause.message,
+          cause,
+        }),
+      ))
+      return mergeUntrustedBoundarySinks(fileOutputs, config)
     }),
   score: (out) =>
     out.state === "present" ? 1 / (1 + out.findings.length / 5) : 1,
@@ -137,44 +145,56 @@ export const TsSec02: Signal<TsSec02Config, TsSec02Output, TsProjectTag> = {
   },
 }
 
-const computeUntrustedBoundarySinks = (
-  sourceFiles: ReadonlyArray<SourceFile>,
+interface BoundaryFileAnalysis {
+  readonly matched: boolean
+  readonly sinksAnalyzed: number
+  readonly findings: ReadonlyArray<UntrustedBoundarySinkFinding>
+}
+
+const analyzeUntrustedBoundarySinks = (
+  sourceFile: SourceFile,
+  filePath: string,
+  config: TsSec02Config,
+): BoundaryFileAnalysis => {
+  if (isExcluded(filePath, config.exclude_globs) || !matchesAnyGlob(filePath, config.boundary_globs)) {
+    return { matched: false, sinksAnalyzed: 0, findings: [] }
+  }
+  const findings: Array<UntrustedBoundarySinkFinding> = []
+  let sinksAnalyzed = 0
+  walkDescendants(sourceFile, (node) => {
+    if (!isCallExpression(node)) return
+    const sink = classifyBoundarySink(node)
+    if (sink === undefined) return
+    sinksAnalyzed += 1
+    if (sink.covered) return
+    findings.push({
+      ...locationOf(node, filePath),
+      kind: sink.kind,
+      sink: sink.sink,
+      expression: textOf(node).slice(0, 160),
+      missingEvidence: missingEvidenceFor(sink.kind, config.parser_call_patterns),
+    })
+  })
+  return { matched: true, sinksAnalyzed, findings }
+}
+
+const mergeUntrustedBoundarySinks = (
+  fileOutputs: ReadonlyArray<BoundaryFileAnalysis>,
   config: TsSec02Config,
 ): TsSec02Output => {
   const diagnosticLimit = normalizeDiagnosticLimit(config.top_n_diagnostics)
   if (config.boundary_globs.length === 0) {
     return baseOutput("not_configured", 0, 0, [], diagnosticLimit)
   }
-
-  const boundaryFiles = sourceFiles.filter((sourceFile) =>
-    isAnalyzableSourceFile(sourceFile, config.exclude_globs) &&
-    matchesAnyGlob(sourceFile.getFilePath(), config.boundary_globs)
-  )
-  if (boundaryFiles.length === 0) {
+  const matched = fileOutputs.filter((output) => output.matched)
+  if (matched.length === 0) {
     return baseOutput("absent", 0, 0, [], diagnosticLimit)
   }
-
-  const findings: Array<UntrustedBoundarySinkFinding> = []
-  let sinksAnalyzed = 0
-  for (const sourceFile of boundaryFiles) {
-    for (const call of sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-      const sink = classifyBoundarySink(call)
-      if (sink === undefined) continue
-      sinksAnalyzed += 1
-      if (sink.covered) continue
-      findings.push({
-        ...locationOf(call),
-        kind: sink.kind,
-        sink: sink.sink,
-        expression: call.getText().slice(0, 160),
-        missingEvidence: missingEvidenceFor(sink.kind, config.parser_call_patterns),
-      })
-    }
-  }
-
+  const findings = matched.flatMap((output) => output.findings)
+  const sinksAnalyzed = matched.reduce((sum, output) => sum + output.sinksAnalyzed, 0)
   return baseOutput(
     findings.length === 0 ? "zero" : "present",
-    boundaryFiles.length,
+    matched.length,
     sinksAnalyzed,
     findings.sort(compareFindings),
     diagnosticLimit,
@@ -184,8 +204,8 @@ const computeUntrustedBoundarySinks = (
 const classifyBoundarySink = (
   call: CallExpression,
 ): { readonly kind: UntrustedBoundarySinkKind; readonly sink: string; readonly covered: boolean } | undefined => {
-  const name = callName(call.getExpression())
-  const args = call.getArguments()
+  const name = callName(call.expression)
+  const args = call.arguments
 
   if (name === "JSON.parse") {
     return {
@@ -219,11 +239,11 @@ const classifyBoundarySink = (
 }
 
 const hasParserAncestor = (call: CallExpression): boolean => {
-  let current: Node | undefined = call.getParent()
+  let current: Node | undefined = call.parent
   let depth = 0
   while (current !== undefined && depth < 5) {
-    if (Node.isCallExpression(current) && current !== call) {
-      const name = callName(current.getExpression()).toLowerCase()
+    if (isCallExpression(current) && current !== call) {
+      const name = callName(current.expression).toLowerCase()
       if (
         name !== "json.parse" &&
         /(parse|safeparse|decode|decodeunknown|validate|assert|schema)/.test(name)
@@ -231,7 +251,7 @@ const hasParserAncestor = (call: CallExpression): boolean => {
         return true
       }
     }
-    current = current.getParent()
+    current = current.parent
     depth += 1
   }
   return false
@@ -239,8 +259,8 @@ const hasParserAncestor = (call: CallExpression): boolean => {
 
 const isNewUrlExpression = (node: Node | undefined): boolean =>
   node !== undefined &&
-  Node.isNewExpression(node) &&
-  callName(node.getExpression()) === "URL"
+  isNewExpression(node) &&
+  callName(node.expression) === "URL"
 
 const missingEvidenceFor = (
   kind: UntrustedBoundarySinkKind,
@@ -282,3 +302,12 @@ const compareFindings = (
   left.line - right.line ||
   left.column - right.column ||
   left.kind.localeCompare(right.kind)
+
+const callName = (node: Node | undefined): string => {
+  if (node === undefined) return ""
+  return textOf(node).replace(/\s+/g, " ").trim().replace(/\?./g, ".")
+}
+
+const isStringLiteralLike = (node: Node | undefined): boolean =>
+  node !== undefined &&
+  (isStringLiteral(node) || isNoSubstitutionTemplateLiteral(node) || isNumericLiteral(node))

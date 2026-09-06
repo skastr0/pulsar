@@ -47,6 +47,7 @@ export {
   isMethodDeclaration,
   isNewExpression,
   isNoSubstitutionTemplateLiteral,
+  isNumericLiteral,
   isObjectLiteralExpression,
   isPropertyAccessExpression,
   isPropertyAssignment,
