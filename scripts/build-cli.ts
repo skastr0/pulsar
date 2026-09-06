@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 import { readFileSync } from "node:fs"
-import { mkdir, readFile, rm, stat } from "node:fs/promises"
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 
 const REPO_ROOT = resolve(import.meta.dir, "..")
@@ -138,6 +138,50 @@ const resolveOpenTuiNativeLibrary = async ({
   return nativePath
 }
 
+const TSGO_NATIVE_PACKAGE_BY_TARGET: Readonly<Record<string, string>> = {
+  "darwin-arm64": "@typescript/typescript-darwin-arm64",
+  "darwin-x64": "@typescript/typescript-darwin-x64",
+  "linux-arm64": "@typescript/typescript-linux-arm64",
+  "linux-x64": "@typescript/typescript-linux-x64",
+}
+
+const resolveNativeTsgoExecutable = async ({
+  platform,
+  arch,
+}: BinaryTarget): Promise<string> => {
+  const packageName = TSGO_NATIVE_PACKAGE_BY_TARGET[`${platform}-${arch}`]
+  if (packageName === undefined) {
+    throw new Error(`Pulsar has no pinned tsgo native payload for ${platform}-${arch}`)
+  }
+  const tsPackSourceDir = join(REPO_ROOT, "packages", "ts-pack", "src")
+  let packageJsonPath: string
+  try {
+    packageJsonPath = Bun.resolveSync(`${packageName}/package.json`, tsPackSourceDir)
+  } catch (cause) {
+    throw new Error(
+      `Failed to resolve ${packageName} for ${platform}-${arch}: ${String(cause)}`,
+    )
+  }
+  const executablePath = join(dirname(packageJsonPath), "lib", "tsc")
+  const executableStats = await stat(executablePath)
+  if (!executableStats.isFile() || executableStats.size === 0) {
+    throw new Error(`${packageName} is missing native tsgo executable lib/tsc`)
+  }
+  return executablePath
+}
+
+const writeNativeCliEntrypoint = async (tsgoPath: string): Promise<string> => {
+  const entryPath = join(DIST_DIR, "native-cli-entry.ts")
+  const source = `#!/usr/bin/env bun
+import nativeTsgoPath from ${JSON.stringify(tsgoPath)} with { type: "file" }
+import { registerEmbeddedTsgoPath } from "@skastr0/pulsar-ts-pack"
+registerEmbeddedTsgoPath(nativeTsgoPath)
+await import(${JSON.stringify(join(REPO_ROOT, "packages", "cli", "src", "bin.ts"))})
+`
+  await writeFile(entryPath, source)
+  return entryPath
+}
+
 const assertNativeLibraryEmbedded = async (
   outfile: string,
   nativePath: string,
@@ -153,6 +197,18 @@ const assertNativeLibraryEmbedded = async (
     )
   }
   console.log(`Verified embedded OpenTUI native library for ${target}`)
+}
+
+const assertNativeTsgoEmbedded = async (
+  outfile: string,
+  tsgoPath: string,
+  target: string,
+): Promise<void> => {
+  const [executable, tsgo] = await Promise.all([readFile(outfile), readFile(tsgoPath)])
+  if (executable.indexOf(tsgo) === -1) {
+    throw new Error(`${target} executable does not contain the native tsgo payload`)
+  }
+  console.log(`Verified embedded native tsgo payload for ${target}`)
 }
 
 const assertBuildIdentityEmbedded = async (
@@ -192,6 +248,7 @@ for (const targetConfig of binaryTargets) {
   const target = `${platform}-${arch}`
   const outfile = join(DIST_DIR, `pulsar-${target}`)
   const nativePath = await resolveOpenTuiNativeLibrary(targetConfig)
+  const tsgoPath = await resolveNativeTsgoExecutable(targetConfig)
   console.log(`Compiling ${target}...`)
   const buildResult = await Bun.build({
     target: "bun",
@@ -199,7 +256,7 @@ for (const targetConfig of binaryTargets) {
       target: `bun-${platform}-${arch}`,
       outfile,
     },
-    entrypoints: [join(REPO_ROOT, "packages", "cli", "src", "bin.ts")],
+    entrypoints: [await writeNativeCliEntrypoint(tsgoPath)],
     minify: true,
     define: {
       __PULSAR_BUILD_COMMIT__: JSON.stringify(buildCommit),
@@ -219,6 +276,7 @@ for (const targetConfig of binaryTargets) {
 
   await run(`Marking executable ${target}`, ["chmod", "+x", outfile])
   await assertNativeLibraryEmbedded(outfile, nativePath, target)
+  await assertNativeTsgoEmbedded(outfile, tsgoPath, target)
   await assertBuildIdentityEmbedded(outfile, target)
 }
 

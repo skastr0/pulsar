@@ -1,5 +1,7 @@
 import { createRequire } from "node:module"
+import { chmodSync, copyFileSync, mkdirSync } from "node:fs"
 import { dirname, join } from "node:path"
+import { tmpdir } from "node:os"
 import { fileURLToPath } from "node:url"
 import { Effect, Schema } from "effect"
 import { TSGO_ANALYSIS_TYPESCRIPT_VERSION } from "./ts-analysis-version.js"
@@ -22,18 +24,18 @@ const ANALYSIS_REQUIRE_BASES: ReadonlyArray<string> = [
 ]
 
 export const analysisPlatformTarget = (
-  platform = process.platform,
-  arch = process.arch,
+  platform: string = process.platform,
+  arch: string = process.arch,
 ): string => `${platform}-${arch}`
 
 export const analysisPlatformPackageName = (
-  platform = process.platform,
-  arch = process.arch,
+  platform: string = process.platform,
+  arch: string = process.arch,
 ): string | undefined => PLATFORM_PACKAGE_BY_TARGET[analysisPlatformTarget(platform, arch)]
 
 export const resolveTsgoExecutablePath = Effect.fn("resolveTsgoExecutablePath")(function* (
-  platform = process.platform,
-  arch = process.arch,
+  platform: string = process.platform,
+  arch: string = process.arch,
 ): Effect.fn.Return<string, TsgoRuntimeError> {
   const packageName = analysisPlatformPackageName(platform, arch)
   if (packageName === undefined) {
@@ -41,6 +43,9 @@ export const resolveTsgoExecutablePath = Effect.fn("resolveTsgoExecutablePath")(
       message: `Pulsar has no pinned tsgo native payload for ${analysisPlatformTarget(platform, arch)}`,
     })
   }
+
+  const embedded = yield* resolveEmbeddedTsgoExecutable(platform, arch)
+  if (embedded !== undefined) return embedded
 
   const resolved = yield* Effect.try({
     try: () => resolvePlatformPackage(packageName),
@@ -91,3 +96,58 @@ const resolvePlatformPackage = (packageName: string): ResolvedPlatformPackage =>
   }
   throw lastError instanceof Error ? lastError : new Error(String(lastError))
 }
+
+declare const __PULSAR_ARTIFACT_KIND__: "native" | undefined
+
+let registeredEmbeddedTsgoPath: string | undefined
+
+export const registerEmbeddedTsgoPath = (path: string): void => {
+  registeredEmbeddedTsgoPath = path.length === 0 ? undefined : path
+}
+
+const resolveEmbeddedTsgoExecutable = (
+  platform: string,
+  arch: string,
+): Effect.Effect<string | undefined, TsgoRuntimeError> =>
+  Effect.gen(function* () {
+    const embeddedPath = registeredEmbeddedTsgoPath
+    if (embeddedPath === undefined || embeddedPath.length === 0) {
+      if (typeof __PULSAR_ARTIFACT_KIND__ !== "undefined" && __PULSAR_ARTIFACT_KIND__ === "native") {
+        return yield* new TsgoRuntimeError({
+          message: `Native Pulsar CLI is missing the embedded tsgo payload for ${analysisPlatformTarget(platform, arch)}`,
+        })
+      }
+      return undefined
+    }
+
+    const source = Bun.file(embeddedPath)
+    if (!(yield* Effect.promise(() => source.exists()))) {
+      return yield* new TsgoRuntimeError({
+        message: `Embedded native tsgo payload is missing at ${embeddedPath}`,
+      })
+    }
+
+    const destinationDirectory = join(
+      tmpdir(),
+      "pulsar-tsgo",
+      TSGO_ANALYSIS_TYPESCRIPT_VERSION,
+      analysisPlatformTarget(platform, arch),
+    )
+    const destinationPath = join(destinationDirectory, "tsc")
+    const destination = Bun.file(destinationPath)
+    if (yield* Effect.promise(() => destination.exists())) return destinationPath
+
+    yield* Effect.try({
+      try: () => {
+        mkdirSync(destinationDirectory, { recursive: true })
+        copyFileSync(embeddedPath, destinationPath)
+        chmodSync(destinationPath, 0o755)
+      },
+      catch: (cause) =>
+        new TsgoRuntimeError({
+          message: `Failed to extract embedded native tsgo payload to ${destinationPath}`,
+          cause,
+        }),
+    })
+    return destinationPath
+  })

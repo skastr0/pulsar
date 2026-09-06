@@ -24,6 +24,7 @@ export {
   TsAnalysisTag,
   makeTsAnalysisSession,
 } from "./ts-analysis.js"
+export { registerEmbeddedTsgoPath } from "./tsgo-runtime.js"
 export type { TsProjectOptions } from "./ts-analysis.js"
 export {
   textOf,
