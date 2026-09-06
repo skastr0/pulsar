@@ -4,6 +4,8 @@ import type { SignalContext } from "@skastr0/pulsar-core/signal"
 import { matchesAnyGlob } from "./shared-globs.js"
 import { normalizePackageSpecifier, packageForFile, type BoundaryRule } from "./shared-workspace.js"
 import type { ChangedFileStat, ImportEdge, TsRp02Config, TsRp02Output } from "./ts-rp-02-pr-size.js"
+import { createModuleResolver } from "../graph/module-graph.js"
+import type { SourceFile } from "../tsgo-api.js"
 
 export const TS_DIFF_PATHSPECS = [
   ":(glob)*.ts",
@@ -21,7 +23,7 @@ export const TS_DIFF_PATHSPECS = [
 ]
 
 export const parseGitDiff = (
-  project: import("ts-morph").Project,
+  sourceFiles: ReadonlyArray<SourceFile>,
   packages: ReadonlyArray<import("../discovery.js").PackageInfo>,
   worktreePath: string,
   numstat: string,
@@ -55,7 +57,7 @@ export const parseGitDiff = (
 
   const packagesTouched = touchedPackages(packages, uniqueFiles)
   const { crossPackageEdges, crossBoundaryEdges } = parseImportEdges(
-    project,
+    sourceFiles,
     packages,
     uniqueFiles,
     diff,
@@ -124,7 +126,7 @@ export const includeChangedHunkOnlyFilesInDiff = (
 }
 
 export const fromChangedHunks = (
-  project: import("ts-morph").Project,
+  sourceFiles: ReadonlyArray<SourceFile>,
   packages: ReadonlyArray<import("../discovery.js").PackageInfo>,
   context: SignalContext,
   config: TsRp02Config,
@@ -300,7 +302,7 @@ const touchedPackages = (
 }
 
 const parseImportEdges = (
-  project: import("ts-morph").Project,
+  sourceFiles: ReadonlyArray<SourceFile>,
   packages: ReadonlyArray<import("../discovery.js").PackageInfo>,
   changedFiles: ReadonlyArray<string>,
   diff: string,
@@ -309,16 +311,18 @@ const parseImportEdges = (
 ): { crossPackageEdges: ReadonlyArray<ImportEdge>; crossBoundaryEdges: ReadonlyArray<ImportEdge> } => {
   const crossPackageEdges: Array<ImportEdge> = []
   const crossBoundaryEdges: Array<ImportEdge> = []
-
+  const resolver = createModuleResolver(sourceFiles, packages)
   const fileSet = new Set(changedFiles)
 
   let currentFile: string | undefined
   let currentNewLine: number | undefined
+  let pendingImportStart: number | undefined
   for (const line of diff.split("\n")) {
     const fileMatch = /^\+\+\+ b\/(.+)$/.exec(line)
     if (fileMatch !== null) {
       currentFile = resolveSourcePath(worktreePath, fileMatch[1]!)
       currentNewLine = undefined
+      pendingImportStart = undefined
       continue
     }
 
@@ -337,6 +341,9 @@ const parseImportEdges = (
 
     const addedLineNumber = currentNewLine
     currentNewLine = currentNewLine === undefined ? undefined : currentNewLine + 1
+    if (addedLineNumber !== undefined && /^\+\s*import\b/.test(line) && !line.includes(" from ")) {
+      pendingImportStart = addedLineNumber
+    }
 
     const moduleSpecifier = addedModuleSpecifier(line)
     if (
@@ -348,38 +355,19 @@ const parseImportEdges = (
       continue
     }
 
-    const sourceFile = project.getSourceFile(currentFile)
-    if (sourceFile === undefined) continue
-
-    const dependencyDeclarations = [
-      ...sourceFile.getImportDeclarations(),
-      ...sourceFile.getExportDeclarations(),
-    ].filter((declaration) =>
-      declaration.getModuleSpecifierValue() === moduleSpecifier &&
-      declaration.getStartLineNumber() <= addedLineNumber &&
-      declaration.getEndLineNumber() >= addedLineNumber
-    )
-
-    for (const declaration of dependencyDeclarations) {
-      const edge = dependencyEdgeFromDeclaration({
-        project,
-        packages,
-        declaration,
-        moduleSpecifier,
-        currentFile,
-        worktreePath,
-        boundaryRules,
-      })
-      if (edge === undefined) continue
-
-      if (edge.fromPackage !== edge.toPackage) {
-        crossPackageEdges.push(edge)
-      }
-
-      if (edge.isCrossBoundary) {
-        crossBoundaryEdges.push(edge)
-      }
-    }
+    const edge = dependencyEdgeFromSpecifier({
+      resolver,
+      packages,
+      moduleSpecifier,
+      currentFile,
+      addedLineNumber: pendingImportStart ?? addedLineNumber,
+      worktreePath,
+      boundaryRules,
+    })
+    pendingImportStart = undefined
+    if (edge === undefined) continue
+    if (edge.fromPackage !== edge.toPackage) crossPackageEdges.push(edge)
+    if (edge.isCrossBoundary) crossBoundaryEdges.push(edge)
   }
 
   return {
@@ -388,18 +376,18 @@ const parseImportEdges = (
   }
 }
 
-const dependencyEdgeFromDeclaration = (args: {
-  readonly project: import("ts-morph").Project
+const dependencyEdgeFromSpecifier = (args: {
+  readonly resolver: ReturnType<typeof createModuleResolver>
   readonly packages: ReadonlyArray<import("../discovery.js").PackageInfo>
-  readonly declaration: import("ts-morph").ImportDeclaration | import("ts-morph").ExportDeclaration
   readonly moduleSpecifier: string
   readonly currentFile: string
+  readonly addedLineNumber: number
   readonly worktreePath: string
   readonly boundaryRules: ReadonlyArray<BoundaryRule>
 }): ImportEdge | undefined => {
   const fromPkg = packageForFile(args.currentFile, args.packages)
-  const targetFile = args.declaration.getModuleSpecifierSourceFile()?.getFilePath() ??
-    resolvePackageLocalAliasFile(args.project, args.moduleSpecifier, fromPkg)
+  const targetFile = args.resolver.resolveSpecifier(args.currentFile, args.moduleSpecifier) ??
+    resolvePackageLocalAliasFile(args.moduleSpecifier, fromPkg)
   const targetIsExternal = targetFile !== undefined &&
     isExternalDependencyTarget(targetFile, args.worktreePath)
   const toPkg = targetFile === undefined || targetIsExternal
@@ -419,7 +407,7 @@ const dependencyEdgeFromDeclaration = (args: {
 
   return {
     file: args.currentFile,
-    line: args.declaration.getStartLineNumber(),
+    line: args.addedLineNumber,
     fromPackage: fromPkg?.manifest?.name,
     toPackage: toPkg?.manifest?.name,
     isCrossBoundary: fromBoundary !== undefined &&
@@ -485,7 +473,6 @@ const isExternalDependencyTarget = (targetFile: string, worktreePath: string): b
 }
 
 const resolvePackageLocalAliasFile = (
-  project: import("ts-morph").Project,
   moduleSpecifier: string,
   fromPkg: import("../discovery.js").PackageInfo | undefined,
 ): string | undefined => {
@@ -499,7 +486,6 @@ const resolvePackageLocalAliasFile = (
     for (const targetPattern of targetPatterns) {
       const targetPath = applyAliasTargetPattern(targetPattern, captures)
       const resolved = resolveExistingTypeScriptPath(
-        project,
         resolve(paths.baseDir, targetPath),
       )
       if (resolved !== undefined) return resolved
@@ -562,12 +548,10 @@ const applyAliasTargetPattern = (
 }
 
 const resolveExistingTypeScriptPath = (
-  project: import("ts-morph").Project,
   basePath: string,
 ): string | undefined => {
   for (const candidate of typeScriptResolutionCandidates(basePath)) {
     if (!existsSync(candidate)) continue
-    project.addSourceFileAtPathIfExists(candidate)
     return candidate
   }
   return undefined

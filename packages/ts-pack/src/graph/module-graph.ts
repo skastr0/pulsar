@@ -133,6 +133,7 @@ type ModuleDeclaration = ImportDeclaration | ExportDeclaration
 
 export type ModuleResolver = {
   readonly resolve: (sourcePath: string, declaration: ModuleDeclaration) => string | undefined
+  readonly resolveSpecifier: (sourcePath: string, specifier: string) => string | undefined
 }
 
 export const createModuleResolver = (
@@ -151,38 +152,50 @@ export const createModuleResolver = (
       if (specifier === undefined) {
         return undefined
       }
-      if (specifier.startsWith(".") || specifier.startsWith("/")) {
-        return resolveRelativeSpecifier(sourcePath, specifier, pathLookup)
-      }
-
-      const packageSrcAliasResolved = resolvePackageSrcAlias(
-        sourcePath,
-        specifier,
-        packages,
-        pathLookup,
-      )
-      if (packageSrcAliasResolved !== undefined) {
-        return packageSrcAliasResolved
-      }
-
-      const packageSpecifier = normalizePackageSpecifier(specifier)
-      if (packageSpecifier === undefined || isBuiltinModuleName(packageSpecifier)) {
-        return undefined
-      }
-
-      const workspaceResolved = resolveWorkspaceSpecifier(
-        specifier,
-        workspacePackageNames,
-        packages,
-        pathLookup,
-      )
-      if (workspaceResolved !== undefined) {
-        return workspaceResolved
-      }
-
-      return undefined
+      return resolveSpecifierPath(sourcePath, specifier, packages, workspacePackageNames, pathLookup)
     },
+    resolveSpecifier: (sourcePath, specifier) =>
+      resolveSpecifierPath(sourcePath, specifier, packages, workspacePackageNames, pathLookup),
   }
+}
+
+const resolveSpecifierPath = (
+  sourcePath: string,
+  specifier: string,
+  packages: ReadonlyArray<PackageInfo>,
+  workspacePackageNames: ReadonlyArray<string>,
+  pathLookup: ReadonlyMap<string, string>,
+): string | undefined => {
+  if (specifier.startsWith(".") || specifier.startsWith("/")) {
+    return resolveRelativeSpecifier(sourcePath, specifier, pathLookup)
+  }
+
+  const packageSrcAliasResolved = resolvePackageSrcAlias(
+    sourcePath,
+    specifier,
+    packages,
+    pathLookup,
+  )
+  if (packageSrcAliasResolved !== undefined) {
+    return packageSrcAliasResolved
+  }
+
+  const packageSpecifier = normalizePackageSpecifier(specifier)
+  if (packageSpecifier === undefined || isBuiltinModuleName(packageSpecifier)) {
+    return undefined
+  }
+
+  const workspaceResolved = resolveWorkspaceSpecifier(
+    specifier,
+    workspacePackageNames,
+    packages,
+    pathLookup,
+  )
+  if (workspaceResolved !== undefined) {
+    return workspaceResolved
+  }
+
+  return undefined
 }
 
 const resolvePackageSrcAlias = (

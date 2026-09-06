@@ -11,7 +11,7 @@ import { buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { createTempRepo } from "./test-repo.js"
 import { TS_PACK_SIGNALS } from "../pack.js"
 import { TsRp02, TsRp02Config, type ImportEdge, type TsRp02Output } from "../signals/ts-rp-02-pr-size.js"
-import { TsProjectLayer } from "../ts-project.js"
+import { TsAnalysisLayer } from "../ts-analysis.js"
 import type { TempRepo } from "./test-repo.js"
 
 const git = (repoRoot: string, args: ReadonlyArray<string>): void => {
@@ -74,7 +74,7 @@ const computeWithContext = async (
     ).pipe(
       Effect.provide(
         Layer.mergeAll(
-          TsProjectLayer(repo.root),
+          TsAnalysisLayer(repo.root),
           Layer.succeed(SignalContextTag, {
             gitSha: context.gitSha ?? "TEST",
             worktreePath: repo.root,
@@ -815,7 +815,7 @@ export function useHelper(): string { return helper() + extra() + legacy(); }
       ).pipe(
         Effect.provide(
           Layer.mergeAll(
-            TsProjectLayer(repo.root),
+            TsAnalysisLayer(repo.root),
             Layer.succeed(CalibrationContextTag, calibration),
             Layer.succeed(SignalContextTag, {
               gitSha: "TEST",
@@ -887,7 +887,7 @@ export function useHelper(): string { return helper() + extra() + legacy(); }
       ).pipe(
         Effect.provide(
           Layer.mergeAll(
-            TsProjectLayer(repo.root),
+            TsAnalysisLayer(repo.root),
             Layer.succeed(CalibrationContextTag, calibration),
             Layer.succeed(SignalContextTag, {
               gitSha: "TEST",
@@ -1040,7 +1040,7 @@ export function View(): unknown {
       ).pipe(
         Effect.provide(
           Layer.mergeAll(
-            TsProjectLayer(repo.root),
+            TsAnalysisLayer(repo.root),
             Layer.succeed(SignalContextTag, {
               gitSha: "HEAD",
               worktreePath: repo.root,
@@ -1089,7 +1089,7 @@ export const second = 2
       ).pipe(
         Effect.provide(
           Layer.mergeAll(
-            TsProjectLayer(repo.root),
+            TsAnalysisLayer(repo.root),
             Layer.succeed(SignalContextTag, {
               gitSha: "HEAD",
               worktreePath: repo.root,
@@ -1139,7 +1139,7 @@ export const aligned = true
       ).pipe(
         Effect.provide(
           Layer.mergeAll(
-            TsProjectLayer(repo.root),
+            TsAnalysisLayer(repo.root),
             Layer.succeed(SignalContextTag, {
               gitSha: "HEAD",
               worktreePath: repo.root,
@@ -1317,7 +1317,7 @@ export const aligned = true
       ).pipe(
         Effect.provide(
           Layer.mergeAll(
-            TsProjectLayer(repo.root),
+            TsAnalysisLayer(repo.root),
             Layer.succeed(SignalContextTag, {
               gitSha: "TEST",
               worktreePath: repo.root,

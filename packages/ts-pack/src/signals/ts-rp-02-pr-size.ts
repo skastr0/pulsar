@@ -4,8 +4,8 @@ import type { CalibrationDecision } from "@skastr0/pulsar-core/calibration"
 import { CalibrationContextTag } from "@skastr0/pulsar-core/calibration"
 import { Effect, Schema } from "effect"
 import { simpleGit } from "simple-git"
-import type { Project } from "ts-morph"
-import { TsProjectTag, TsPackageInfoTag } from "../ts-project.js"
+import type { SourceFile } from "../tsgo-api.js"
+import { TsAnalysisTag, TsPackageInfoTag } from "../ts-analysis.js"
 import type { PackageInfo } from "../discovery.js"
 import { formatLargestFiles } from "./ts-rp-02-diagnostics.js"
 import {
@@ -91,7 +91,7 @@ export interface TsRp02Output {
   readonly factorLedger?: SignalFactorLedger
 }
 
-export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackageInfoTag | SignalContextTag> = {
+export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsAnalysisTag | TsPackageInfoTag | SignalContextTag> = {
   id: "TS-RP-02-pr-size",
   title: "PR size",
   aliases: ["TS-RP-02"],
@@ -106,14 +106,15 @@ export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsProjectTag | TsPackage
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
-      const project = yield* TsProjectTag
+      const analysis = yield* TsAnalysisTag
       const packages = yield* TsPackageInfoTag
       const context = yield* SignalContextTag
       const calibration = yield* Effect.serviceOption(CalibrationContextTag)
       const normalizedConfig = normalizeTsRp02Config(config)
+      const sourceFiles = yield* analysis.mapFiles(async (fileContext) => fileContext.sourceFile)
       const output = yield* Effect.tryPromise({
         try: async (): Promise<TsRp02Output> => {
-          return await computeGitPrSizeOutput(project, packages, context, normalizedConfig)
+          return await computeGitPrSizeOutput(sourceFiles, packages, context, normalizedConfig)
         },
         catch: (cause) =>
           new SignalComputeError({ signalId: "TS-RP-02-pr-size", message: String(cause), cause }),
@@ -290,17 +291,17 @@ const edgeIdentity = (edge: ImportEdge): string =>
 type GitClient = ReturnType<typeof simpleGit>
 
 const computeGitPrSizeOutput = async (
-  project: Project,
+  sourceFiles: ReadonlyArray<SourceFile>,
   packages: ReadonlyArray<PackageInfo>,
   context: SignalContext,
   config: TsRp02Config,
 ): Promise<TsRp02Output> => {
   const git = simpleGit(context.worktreePath)
   if (!(await git.checkIsRepo())) {
-    return fromChangedHunks(project, packages, context, config)
+    return fromChangedHunks(sourceFiles, packages, context, config)
   }
 
-  const workingTree = await parseDiffRange(project, packages, context, config, git, undefined, "git-working-tree")
+  const workingTree = await parseDiffRange(sourceFiles, packages, context, config, git, undefined, "git-working-tree")
   if (workingTree !== undefined && workingTree.filesChanged.length > 0) return workingTree
   if (await hasWorktreeChanges(git)) {
     return emptyPrSizeOutput("git-working-tree", config)
@@ -311,10 +312,10 @@ const computeGitPrSizeOutput = async (
     return emptyPrSizeOutput("git-branch-range", config)
   }
   if (branchRange?.kind === "range") {
-    return await parseDiffRange(project, packages, context, config, git, branchRange.range, "git-branch-range")
+    return await parseDiffRange(sourceFiles, packages, context, config, git, branchRange.range, "git-branch-range")
   }
 
-  return await computeCommitRangeOutput(project, packages, context, config, git)
+  return await computeCommitRangeOutput(sourceFiles, packages, context, config, git)
 }
 
 const emptyPrSizeOutput = (
@@ -338,7 +339,7 @@ const emptyPrSizeOutput = (
 })
 
 const computeCommitRangeOutput = async (
-  project: Project,
+  sourceFiles: ReadonlyArray<SourceFile>,
   packages: ReadonlyArray<PackageInfo>,
   context: SignalContext,
   config: TsRp02Config,
@@ -346,18 +347,18 @@ const computeCommitRangeOutput = async (
 ): Promise<TsRp02Output> => {
   const range = context.gitSha === "HEAD" ? "HEAD^!" : `${context.gitSha}^!`
   try {
-    const output = await parseDiffRange(project, packages, context, config, git, range, "git-commit-range")
+    const output = await parseDiffRange(sourceFiles, packages, context, config, git, range, "git-commit-range")
     if (output.filesChanged.length === 0 && context.changedHunks.length > 0) {
-      return fromChangedHunks(project, packages, context, config)
+      return fromChangedHunks(sourceFiles, packages, context, config)
     }
     return output
   } catch {
-    return fromChangedHunks(project, packages, context, config)
+    return fromChangedHunks(sourceFiles, packages, context, config)
   }
 }
 
 const parseDiffRange = async (
-  project: Project,
+  sourceFiles: ReadonlyArray<SourceFile>,
   packages: ReadonlyArray<PackageInfo>,
   context: SignalContext,
   config: TsRp02Config,
@@ -372,7 +373,7 @@ const parseDiffRange = async (
     ? includeChangedHunkOnlyFilesInDiff(context.worktreePath, numstat, diff, context.changedHunks, config)
     : { numstat, diff }
   return parseGitDiff(
-    project,
+    sourceFiles,
     packages,
     context.worktreePath,
     withChangedHunkOnlyFiles.numstat,
