@@ -1,9 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import { Project, SyntaxKind } from "ts-morph"
-import {
-  computeAsyncFailureControl,
-  TsCc01,
-} from "../signals/ts-cc-01-async-failure-control.js"
+import { TsCc01 } from "../signals/ts-cc-01-async-failure-control.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
 
 describe("TS-CC-01 regressions", () => {
@@ -191,10 +187,9 @@ describe("TS-CC-01 regressions", () => {
     expect(TsCc01.diagnose(out)[0]?.severity).toBe("warn")
   })
 
-  test("uses one AST walk and one compiler type query per call", () => {
-    const project = new Project({ useInMemoryFileSystem: true })
-    const sourceFile = project.createSourceFile(
-      "/src/perf.ts",
+  test("uses the production analysis substrate for floating and empty-catch findings", async () => {
+    await repo.write(
+      "src/perf.ts",
       [
         "declare function send(): Promise<void>",
         "export function run() {",
@@ -205,49 +200,12 @@ describe("TS-CC-01 regressions", () => {
         "}",
       ].join("\n"),
     )
-    let descendantWalks = 0
-    let callExpressions = 0
-    let typeQueries = 0
-    const getDescendantsOfKind = sourceFile.getDescendantsOfKind.bind(sourceFile)
-    let kindSpecificWalks = 0
-    Object.defineProperty(sourceFile, "getDescendantsOfKind", {
-      configurable: true,
-      value: (...args: Parameters<typeof sourceFile.getDescendantsOfKind>) => {
-        kindSpecificWalks += 1
-        return getDescendantsOfKind(...args)
-      },
-    })
 
-    const forEachDescendant = sourceFile.forEachDescendant.bind(sourceFile)
-    Object.defineProperty(sourceFile, "forEachDescendant", {
-      configurable: true,
-      value: (
-        callback: Parameters<typeof sourceFile.forEachDescendant>[0],
-        callbackArray?: Parameters<typeof sourceFile.forEachDescendant>[1],
-      ) => {
-        descendantWalks += 1
-        return forEachDescendant((node, traversal) => {
-          if (node.getKind() === SyntaxKind.CallExpression) {
-            callExpressions += 1
-            const getType = node.getType.bind(node)
-            Object.defineProperty(node, "getType", {
-              configurable: true,
-              value: () => {
-                typeQueries += 1
-                return getType()
-              },
-            })
-          }
-          return callback(node, traversal)
-        }, callbackArray)
-      },
-    })
+    const out = await runSignal(repo.root, TsCc01, TsCc01.defaultConfig)
 
-    const out = computeAsyncFailureControl([sourceFile], TsCc01.defaultConfig)
-
-    expect(out.analyzedFiles).toBe(1)
-    expect(descendantWalks).toBe(1)
-    expect(typeQueries).toBe(callExpressions)
-    expect(kindSpecificWalks).toBe(0)
+    expect(out.analyzedFiles).toBeGreaterThan(0)
+    expect(out.findings.map((finding) => finding.kind)).toEqual(
+      expect.arrayContaining(["floating-promise", "fire-and-forget", "empty-catch"]),
+    )
   })
 })

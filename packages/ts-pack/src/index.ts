@@ -26,6 +26,11 @@ export {
   makeTsProjectWithOptions,
 } from "./ts-project.js"
 export type { TsProjectOptions } from "./ts-project.js"
+export {
+  TsAnalysisLayer,
+  TsAnalysisTag,
+  makeTsAnalysisSession,
+} from "./ts-analysis.js"
 
 export { discoverPackages } from "./discovery.js"
 export type { PackageInfo, PackageManifest } from "./discovery.js"

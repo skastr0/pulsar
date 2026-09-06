@@ -127,10 +127,9 @@ export class TsProjectTag extends Context.Service<TsProjectTag, Project>()(
   "@skastr0/pulsar-ts-pack/TsProject",
 ) {}
 
-export class TsPackageInfoTag extends Context.Service<
-  TsPackageInfoTag,
-  ReadonlyArray<PackageInfo>
->()("@skastr0/pulsar-ts-pack/TsPackageInfo") {}
+import { TsPackageInfoTag } from "./ts-analysis.js"
+
+export { TsPackageInfoTag }
 
 export const makeTsProject = (worktreePath: string): Effect.Effect<Project> =>
   Effect.gen(function* () {
@@ -339,6 +338,8 @@ const isHiddenToolEntrypoint = (path: string): boolean => {
   return /\/\.pi\/extensions\/[^/]+\.[cm]?tsx?$/u.test(normalized)
 }
 
+export { TsPackageInfoLayer } from "./ts-analysis.js"
+
 export const TsProjectLayer = (
   worktreePath: string,
   options?: TsProjectOptions,
@@ -356,8 +357,3 @@ export const TsProjectLayer = (
       )
     }),
   )
-
-export const TsPackageInfoLayer = (
-  worktreePath: string,
-): Layer.Layer<TsPackageInfoTag> =>
-  Layer.effect(TsPackageInfoTag, discoverPackages(worktreePath))

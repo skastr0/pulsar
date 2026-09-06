@@ -5,23 +5,36 @@ import {
   type Signal,
 } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
+import { firstAncestor, locationOf, textOf, walkDescendants } from "../ast.js"
+import { TsAnalysisTag } from "../ts-analysis.js"
 import {
-  Node,
   SyntaxKind,
+  isArrowFunction,
+  isBlock,
+  isCallExpression,
+  isCatchClause,
+  isExpressionStatement,
+  isFunctionDeclaration,
+  isFunctionExpression,
+  isIdentifier,
+  isMethodDeclaration,
+  isMethodSignature,
+  isPropertyAccessExpression,
+  isPropertyDeclaration,
+  isVariableDeclaration,
+  isVoidExpression,
   type CallExpression,
   type CatchClause,
-  type Node as TsMorphNode,
+  type Node,
   type SourceFile,
-} from "ts-morph"
-import { TsProjectTag } from "../ts-project.js"
+} from "../tsgo-api.js"
+import { declarationsAt, typeTexts } from "../type-evidence.js"
 import {
   PRODUCTION_EXCLUDE_GLOBS,
-  callName,
-  isAnalyzableSourceFile,
-  locationOf,
   normalizeDiagnosticLimit,
   type SourceLocation,
 } from "./trust-signal-helpers.js"
+import { isExcluded } from "./shared-globs.js"
 
 const TsCc01Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
@@ -55,7 +68,7 @@ export interface TsCc01Output {
   readonly enforcementCeiling: ReadonlyArray<string>
 }
 
-export const TsCc01: Signal<TsCc01Config, TsCc01Output, TsProjectTag> = {
+export const TsCc01: Signal<TsCc01Config, TsCc01Output, TsAnalysisTag> = {
   id: "TS-CC-01-async-failure-control",
   title: "Async failure control",
   aliases: ["TS-CC-01"],
@@ -63,7 +76,7 @@ export const TsCc01: Signal<TsCc01Config, TsCc01Output, TsProjectTag> = {
   category: "concurrency-safety",
   kind: "structural",
   evidenceClass: "heuristic-pattern",
-  cacheVersion: "async-failure-control-v3-syntactic-promise-evidence-documented-catch",
+  cacheVersion: "async-failure-control-v4-quartz-syntactic-promise-evidence-documented-catch",
   configSchema: TsCc01Config,
   defaultConfig: {
     exclude_globs: [...PRODUCTION_EXCLUDE_GLOBS],
@@ -84,16 +97,22 @@ export const TsCc01: Signal<TsCc01Config, TsCc01Output, TsProjectTag> = {
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
-      const project = yield* TsProjectTag
-      return yield* Effect.try({
-        try: (): TsCc01Output => computeAsyncFailureControl(project.getSourceFiles(), config),
-        catch: (cause) =>
+      const analysis = yield* TsAnalysisTag
+      const fileOutputs = yield* analysis.mapFiles(async (context) => {
+        if (isExcluded(context.file.path, config.exclude_globs)) {
+          return emptyFileAnalysis()
+        }
+        return analyzeSourceFile(context.sourceFile, context.file.path, context.project, config)
+      }).pipe(
+        Effect.mapError((cause) =>
           new SignalComputeError({
             signalId: "TS-CC-01-async-failure-control",
-            message: String(cause),
+            message: cause.message,
             cause,
           }),
-      })
+        ),
+      )
+      return mergeFileAnalyses(fileOutputs, config)
     }),
   score: (out) => {
     const pressure = out.findings.filter((finding) => finding.kind !== "log-only-handler").length
@@ -132,39 +151,73 @@ const findingMessage = (kind: AsyncFailureFindingKind): string =>
     ? "log-only-handler handles the async failure explicitly by logging and continuing"
     : `${kind} leaves async failure handling implicit`
 
-export const computeAsyncFailureControl = (
-  sourceFiles: ReadonlyArray<SourceFile>,
+interface FileAnalysis {
+  readonly analyzed: boolean
+  readonly asyncOperationsObserved: number
+  readonly findings: ReadonlyArray<AsyncFailureFinding>
+}
+
+const emptyFileAnalysis = (): FileAnalysis => ({
+  analyzed: false,
+  asyncOperationsObserved: 0,
+  findings: [],
+})
+
+const analyzeSourceFile = async (
+  sourceFile: SourceFile,
+  filePath: string,
+  project: import("../tsgo-api.js").Project,
   config: TsCc01Config,
-): TsCc01Output => {
-  const findings: Array<AsyncFailureFinding> = []
-  let analyzedFiles = 0
-  let asyncOperationsObserved = 0
+): Promise<FileAnalysis> => {
   const asyncNamePatterns = config.async_name_patterns.map((pattern) => pattern.toLowerCase())
+  const calls: Array<CallExpression> = []
+  const catches: Array<CatchClause> = []
+  walkDescendants(sourceFile, (node) => {
+    if (isCallExpression(node)) calls.push(node)
+    if (isCatchClause(node)) catches.push(node)
+  })
 
-  for (const sourceFile of sourceFiles) {
-    if (!isAnalyzableSourceFile(sourceFile, config.exclude_globs)) continue
-    analyzedFiles += 1
+  const typeTextByCall = await typeTexts(project, calls)
+  const declarationNodes = await declarationsAt(project, calls.map((call) => call.expression))
+  const findings: Array<AsyncFailureFinding> = []
+  let asyncOperationsObserved = 0
 
-    sourceFile.forEachDescendant((node) => {
-      if (Node.isCallExpression(node)) {
-        const analysis = analyzeCall(node, asyncNamePatterns)
-        if (analysis.isAsyncOperation) {
-          asyncOperationsObserved += 1
-        }
-        const floating = classifyFloatingCall(node, analysis.hasPromiseEvidence)
-        if (floating !== undefined) findings.push(floating)
-        const swallowed = classifySwallowedCatch(node)
-        if (swallowed !== undefined) findings.push(swallowed)
-        return
-      }
-
-      if (Node.isCatchClause(node)) {
-        const finding = classifyEmptyCatch(node)
-        if (finding !== undefined) findings.push(finding)
-      }
-    })
+  for (const [index, call] of calls.entries()) {
+    const analysis = analyzeCall(
+      call,
+      typeTextByCall[index] ?? "",
+      declarationNodes[index] ?? [],
+      asyncNamePatterns,
+    )
+    if (analysis.isAsyncOperation) asyncOperationsObserved += 1
+    const floating = classifyFloatingCall(call, analysis.hasPromiseEvidence, filePath)
+    if (floating !== undefined) findings.push(floating)
+    const swallowed = classifySwallowedCatch(call, filePath)
+    if (swallowed !== undefined) findings.push(swallowed)
   }
 
+  for (const catchClause of catches) {
+    const finding = classifyEmptyCatch(catchClause, sourceFile, filePath)
+    if (finding !== undefined) findings.push(finding)
+  }
+
+  return {
+    analyzed: true,
+    asyncOperationsObserved,
+    findings,
+  }
+}
+
+const mergeFileAnalyses = (
+  fileOutputs: ReadonlyArray<FileAnalysis>,
+  config: TsCc01Config,
+): TsCc01Output => {
+  const findings = fileOutputs.flatMap((output) => output.findings)
+  const analyzedFiles = fileOutputs.filter((output) => output.analyzed).length
+  const asyncOperationsObserved = fileOutputs.reduce(
+    (sum, output) => sum + output.asyncOperationsObserved,
+    0,
+  )
   return {
     state: analyzedFiles === 0
       ? "not_applicable"
@@ -189,70 +242,80 @@ export const computeAsyncFailureControl = (
 const classifyFloatingCall = (
   call: CallExpression,
   hasPromiseEvidence: boolean,
+  filePath: string,
 ): AsyncFailureFinding | undefined => {
-  const statement = call.getFirstAncestorByKind(SyntaxKind.ExpressionStatement)
-  const expression = statement?.getExpression()
-  const parent = call.getParent()
+  const statement = firstAncestor(call, isExpressionStatement)
+  if (statement === undefined || !isExpressionStatement(statement)) return undefined
+  const expression = statement.expression
+  const parent = call.parent
   const isDirectStatement = expression === call
-  const isVoidedStatement = Node.isVoidExpression(parent) && expression === parent
-  if (statement === undefined || (!isDirectStatement && !isVoidedStatement)) return undefined
+  const isVoidedStatement = isVoidExpression(parent) && expression === parent
+  if (!isDirectStatement && !isVoidedStatement) return undefined
   if (!hasPromiseEvidence) return undefined
   if (hasTerminalRejectionHandler(call)) return undefined
-  const name = callName(call.getExpression())
+  const name = callName(call.expression)
   if (isVoidedStatement) {
     return {
-      ...locationOf(call),
+      ...locationOf(call, filePath),
       kind: "fire-and-forget",
       expression: name,
-      evidence: statement.getText().slice(0, 160),
+      evidence: textOf(statement).slice(0, 160),
     }
   }
   return {
-    ...locationOf(call),
+    ...locationOf(call, filePath),
     kind: "floating-promise",
     expression: name,
-    evidence: statement.getText().slice(0, 160),
+    evidence: textOf(statement).slice(0, 160),
   }
 }
 
-const classifySwallowedCatch = (call: CallExpression): AsyncFailureFinding | undefined => {
-  const expression = call.getExpression()
-  if (!Node.isPropertyAccessExpression(expression) || expression.getName() !== "catch") {
+const classifySwallowedCatch = (
+  call: CallExpression,
+  filePath: string,
+): AsyncFailureFinding | undefined => {
+  const expression = call.expression
+  if (!isPropertyAccessExpression(expression) || textOf(expression.name) !== "catch") {
     return undefined
   }
-  const handler = call.getArguments()[0]
+  const handler = call.arguments[0]
   if (handler === undefined) return undefined
-  if (isConsoleLogReference(handler)) return catchHandlerFinding(call, "log-only-handler")
-  if (!Node.isArrowFunction(handler) && !Node.isFunctionExpression(handler)) return undefined
-  const body = handler.getBody()
-  if (!Node.isBlock(body)) {
-    return Node.isCallExpression(body) && isConsoleLogReference(body.getExpression())
-      ? catchHandlerFinding(call, "log-only-handler")
+  if (isConsoleLogReference(handler)) return catchHandlerFinding(call, "log-only-handler", filePath)
+  if (!isArrowFunction(handler) && !isFunctionExpression(handler)) return undefined
+  const body = handler.body
+  if (!isBlock(body)) {
+    return isCallExpression(body) && isConsoleLogReference(body.expression)
+      ? catchHandlerFinding(call, "log-only-handler", filePath)
       : undefined
   }
-  const bodyKind = classifyCatchBody(body.getText())
-  if (bodyKind === "silent") return catchHandlerFinding(call, "swallowed-rejection")
-  if (bodyKind === "log-only") return catchHandlerFinding(call, "log-only-handler")
+  const bodyKind = classifyCatchBody(textOf(body))
+  if (bodyKind === "silent") return catchHandlerFinding(call, "swallowed-rejection", filePath)
+  if (bodyKind === "log-only") return catchHandlerFinding(call, "log-only-handler", filePath)
   return undefined
 }
 
 const catchHandlerFinding = (
   call: CallExpression,
   kind: AsyncFailureFindingKind,
+  filePath: string,
 ): AsyncFailureFinding => ({
-  ...locationOf(call),
+  ...locationOf(call, filePath),
   kind,
-  expression: callName(call.getExpression()),
-  evidence: call.getText().slice(0, 160),
+  expression: callName(call.expression),
+  evidence: textOf(call).slice(0, 160),
 })
 
-const classifyEmptyCatch = (catchClause: CatchClause): AsyncFailureFinding | undefined => {
-  const blockText = catchClause.getBlock().getText()
+const classifyEmptyCatch = (
+  catchClause: CatchClause,
+  sourceFile: SourceFile,
+  filePath: string,
+): AsyncFailureFinding | undefined => {
+  const blockText = textOf(catchClause.block, sourceFile)
   const bodyKind = classifyCatchBody(blockText)
   if (bodyKind === "documented" || bodyKind === "substantive") return undefined
-  if (bodyKind === "silent" && hasDocumentingComment(catchClause)) return undefined
+  if (bodyKind === "silent" && hasDocumentingComment(sourceFile, catchClause)) return undefined
   return {
-    ...locationOf(catchClause),
+    ...locationOf(catchClause, filePath),
     kind: bodyKind === "log-only" ? "log-only-handler" : "empty-catch",
     expression: "catch",
     evidence: blockText.slice(0, 160),
@@ -280,9 +343,20 @@ const hasCommentContent = (text: string): boolean =>
 const isUnfinishedMarkerComment = (text: string): boolean =>
   /^\s*(?:todo|fixme|xxx)\b[\s.:!-]*$/i.test(text.replace(/\/\*|\*\/|\/\//g, " ").trim())
 
-const hasDocumentingComment = (catchClause: CatchClause): boolean =>
-  [...catchClause.getLeadingCommentRanges(), ...catchClause.getBlock().getLeadingCommentRanges()]
-    .some((range) => hasCommentContent(range.getText()) && !isUnfinishedMarkerComment(range.getText()))
+const hasDocumentingComment = (sourceFile: SourceFile, catchClause: CatchClause): boolean => {
+  const comments = [
+    ...collectRegionComments(sourceFile.text, catchClause.getFullStart()),
+    ...collectRegionComments(sourceFile.text, catchClause.block.getFullStart()),
+  ]
+  return comments.some((comment) => hasCommentContent(comment) && !isUnfinishedMarkerComment(comment))
+}
+
+const collectRegionComments = (text: string, pos: number): ReadonlyArray<string> => {
+  let index = pos
+  while (index > 0 && /\s/.test(text[index - 1] ?? "")) index -= 1
+  const regionStart = Math.max(0, text.lastIndexOf("\n", index - 1) + 1)
+  return text.slice(regionStart, pos).match(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g) ?? []
+}
 
 interface CallAnalysis {
   readonly isAsyncOperation: boolean
@@ -291,19 +365,20 @@ interface CallAnalysis {
 
 const analyzeCall = (
   call: CallExpression,
+  typeText: string,
+  declarations: ReadonlyArray<Node>,
   asyncNamePatterns: ReadonlyArray<string>,
 ): CallAnalysis => {
-  const typeText = safeTypeText(call)
   if (isTopLevelPromiseLikeType(typeText)) {
     return { isAsyncOperation: true, hasPromiseEvidence: true }
   }
   if (isKnownSynchronousType(typeText)) {
     return { isAsyncOperation: false, hasPromiseEvidence: false }
   }
-  const syntacticPromiseEvidence = hasSyntacticPromiseEvidence(call)
+  const syntacticPromiseEvidence = hasSyntacticPromiseEvidence(call, declarations)
   return {
     isAsyncOperation: syntacticPromiseEvidence ||
-      matchesAsyncNamePattern(callName(call.getExpression()), asyncNamePatterns),
+      matchesAsyncNamePattern(callName(call.expression), asyncNamePatterns),
     hasPromiseEvidence: syntacticPromiseEvidence,
   }
 }
@@ -319,67 +394,59 @@ const PROMISE_STATIC_MEMBERS: ReadonlySet<string> = new Set([
   "any",
 ])
 
-const hasSyntacticPromiseEvidence = (call: CallExpression): boolean => {
-  const expression = call.getExpression()
-  if (expression.getKind() === SyntaxKind.ImportKeyword) return true
-  if (Node.isIdentifier(expression) && KNOWN_PROMISE_GLOBALS.has(expression.getText())) return true
-  if (Node.isPropertyAccessExpression(expression)) {
-    if (PROMISE_CHAIN_MEMBERS.has(expression.getName())) return true
-    const receiver = expression.getExpression()
+const hasSyntacticPromiseEvidence = (
+  call: CallExpression,
+  declarations: ReadonlyArray<Node>,
+): boolean => {
+  const expression = call.expression
+  if (expression.kind === SyntaxKind.ImportKeyword) return true
+  if (isIdentifier(expression) && KNOWN_PROMISE_GLOBALS.has(textOf(expression))) return true
+  if (isPropertyAccessExpression(expression)) {
+    const member = textOf(expression.name)
+    if (PROMISE_CHAIN_MEMBERS.has(member)) return true
+    const receiver = expression.expression
     if (
-      Node.isIdentifier(receiver) &&
-      receiver.getText() === "Promise" &&
-      PROMISE_STATIC_MEMBERS.has(expression.getName())
+      isIdentifier(receiver) &&
+      textOf(receiver) === "Promise" &&
+      PROMISE_STATIC_MEMBERS.has(member)
     ) {
       return true
     }
   }
-  return declarationsOf(expression).some(isPromiseReturningDeclaration)
+  return declarations.some(isPromiseReturningDeclaration)
 }
 
-const declarationsOf = (expression: TsMorphNode): ReadonlyArray<TsMorphNode> => {
-  try {
-    return expression.getSymbol()?.getDeclarations() ?? []
-  } catch {
-    return []
-  }
-}
-
-const isPromiseReturningDeclaration = (declaration: TsMorphNode): boolean => {
-  if (Node.isVariableDeclaration(declaration) || Node.isPropertyDeclaration(declaration)) {
-    const initializer = declaration.getInitializer()
+const isPromiseReturningDeclaration = (declaration: Node): boolean => {
+  if (isVariableDeclaration(declaration) || isPropertyDeclaration(declaration)) {
+    const initializer = declaration.initializer
     return initializer !== undefined && isPromiseReturningDeclaration(initializer)
   }
   if (
-    Node.isFunctionDeclaration(declaration) ||
-    Node.isMethodDeclaration(declaration) ||
-    Node.isFunctionExpression(declaration) ||
-    Node.isArrowFunction(declaration)
+    isFunctionDeclaration(declaration) ||
+    isMethodDeclaration(declaration) ||
+    isFunctionExpression(declaration) ||
+    isArrowFunction(declaration)
   ) {
-    if (declaration.isAsync()) return true
-    const returnTypeNode = declaration.getReturnTypeNode()
-    return returnTypeNode !== undefined && isTopLevelPromiseLikeType(returnTypeNode.getText())
+    if (hasAsyncModifier(declaration)) return true
+    const returnTypeNode = (declaration as { readonly type?: Node }).type
+    return returnTypeNode !== undefined && isTopLevelPromiseLikeType(textOf(returnTypeNode))
   }
-  if (Node.isMethodSignature(declaration)) {
-    const returnTypeNode = declaration.getReturnTypeNode()
-    return returnTypeNode !== undefined && isTopLevelPromiseLikeType(returnTypeNode.getText())
+  if (isMethodSignature(declaration)) {
+    const returnTypeNode = (declaration as { readonly type?: Node }).type
+    return returnTypeNode !== undefined && isTopLevelPromiseLikeType(textOf(returnTypeNode))
   }
   return false
 }
 
-const isConsoleLogReference = (node: TsMorphNode): boolean =>
-  Node.isPropertyAccessExpression(node) &&
-  Node.isIdentifier(node.getExpression()) &&
-  node.getExpression().getText() === "console" &&
-  ["log", "warn", "error", "debug"].includes(node.getName())
+const hasAsyncModifier = (node: Node): boolean =>
+  ((node as { readonly modifiers?: ReadonlyArray<{ readonly kind: SyntaxKind }> }).modifiers ?? [])
+    .some((modifier) => modifier.kind === SyntaxKind.AsyncKeyword)
 
-const safeTypeText = (call: CallExpression): string => {
-  try {
-    return call.getType().getText(call)
-  } catch {
-    return ""
-  }
-}
+const isConsoleLogReference = (node: Node): boolean =>
+  isPropertyAccessExpression(node) &&
+  isIdentifier(node.expression) &&
+  textOf(node.expression) === "console" &&
+  ["log", "warn", "error", "debug"].includes(textOf(node.name))
 
 const isTopLevelPromiseLikeType = (typeText: string): boolean =>
   /^(?:Promise|PromiseLike)\s*</.test(typeText)
@@ -391,14 +458,14 @@ const isKnownSynchronousType = (typeText: string): boolean =>
   !isTopLevelPromiseLikeType(typeText)
 
 const hasTerminalRejectionHandler = (call: CallExpression): boolean => {
-  const expression = call.getExpression()
-  if (!Node.isPropertyAccessExpression(expression)) return false
-  const member = expression.getName()
-  if (member === "catch") return call.getArguments().length > 0
-  if (member === "then") return call.getArguments()[1] !== undefined
+  const expression = call.expression
+  if (!isPropertyAccessExpression(expression)) return false
+  const member = textOf(expression.name)
+  if (member === "catch") return call.arguments.length > 0
+  if (member === "then") return call.arguments[1] !== undefined
   if (member === "finally") {
-    const receiver = expression.getExpression()
-    return Node.isCallExpression(receiver) && hasTerminalRejectionHandler(receiver)
+    const receiver = expression.expression
+    return isCallExpression(receiver) && hasTerminalRejectionHandler(receiver)
   }
   return false
 }
@@ -439,3 +506,7 @@ const compareFindings = (
   left.line - right.line ||
   left.column - right.column ||
   left.kind.localeCompare(right.kind)
+const callName = (node: Node | undefined): string => {
+  if (node === undefined) return ""
+  return textOf(node).replace(/\s+/g, " ").trim().replace(/\?./g, ".")
+}
