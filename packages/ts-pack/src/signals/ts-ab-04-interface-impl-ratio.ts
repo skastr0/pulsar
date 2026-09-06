@@ -7,7 +7,7 @@ import {
   type SingleImplPair,
   type TsAb04Output,
 } from "./ts-ab-04-analysis.js"
-import { TsPackageInfoTag, TsProjectTag } from "../ts-project.js"
+import { TsAnalysisTag, TsPackageInfoTag } from "../ts-analysis.js"
 
 export const TsAb04Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
@@ -18,7 +18,7 @@ export const TsAb04Config = Schema.Struct({
 })
 type TsAb04Config = typeof TsAb04Config.Type
 
-export const TsAb04: Signal<TsAb04Config, TsAb04Output, TsProjectTag | TsPackageInfoTag> = {
+export const TsAb04: Signal<TsAb04Config, TsAb04Output, TsAnalysisTag | TsPackageInfoTag> = {
   id: "TS-AB-04-interface-implementation-ratio",
   title: "Interface implementation ratio",
   aliases: ["TS-AB-04"],
@@ -38,11 +38,20 @@ export const TsAb04: Signal<TsAb04Config, TsAb04Output, TsProjectTag | TsPackage
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
-      const project = yield* TsProjectTag
+      const analysis = yield* TsAnalysisTag
       const packages = yield* TsPackageInfoTag
+      const files = yield* analysis.mapFiles(async (fileContext) => fileContext.sourceFile).pipe(
+        Effect.mapError((cause) =>
+          new SignalComputeError({
+            signalId: "TS-AB-04-interface-implementation-ratio",
+            message: cause.message,
+            cause,
+          }),
+        ),
+      )
       const result = yield* Effect.try({
         try: (): TsAb04Output =>
-          computeInterfaceImplementationRatio(project, config, packages),
+          computeInterfaceImplementationRatio(files, config, packages),
         catch: (cause) =>
           new SignalComputeError({
             signalId: "TS-AB-04-interface-implementation-ratio",

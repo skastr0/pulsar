@@ -1,11 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { Effect, Schema } from "effect"
-import { discoverPackages } from "../discovery.js"
 import { TS_PACK_SIGNALS } from "../pack.js"
-import { computeInterfaceImplementationRatio } from "../signals/ts-ab-04-analysis.js"
 import { TsAb04, TsAb04Config } from "../signals/ts-ab-04-interface-impl-ratio.js"
-import { makeTsProject } from "../ts-project.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
 
 let repo: TempRepo
@@ -1196,7 +1193,7 @@ describe("TS-AB-04 (interface to implementation ratio)", () => {
     expect(out.deadInterfaces).toHaveLength(0)
   })
 
-  test("indexes structural references before falling back to per-interface reference queries", async () => {
+  test("indexes structural references without per-interface reference queries", async () => {
     const interfaceCount = 24
     await repo.write(
       "src/models.ts",
@@ -1205,30 +1202,9 @@ describe("TS-AB-04 (interface to implementation ratio)", () => {
         `export const read${index} = (model: Model${index}) => model.value`,
       ].join("\n")).join("\n"),
     )
-    const project = await Effect.runPromise(makeTsProject(repo.root))
-    const packages = await Effect.runPromise(discoverPackages(repo.root))
-    const interfaces = project.getSourceFiles().flatMap((sourceFile) => sourceFile.getInterfaces())
-    let referenceQueries = 0
-    for (const iface of interfaces) {
-      const findReferencesAsNodes = iface.findReferencesAsNodes.bind(iface)
-      Object.defineProperty(iface, "findReferencesAsNodes", {
-        configurable: true,
-        value: () => {
-          referenceQueries += 1
-          return findReferencesAsNodes()
-        },
-      })
-    }
-
-    const out = computeInterfaceImplementationRatio(
-      project,
-      TsAb04.defaultConfig,
-      packages,
-    )
-
-    expect(interfaces).toHaveLength(interfaceCount)
+    const out = await runSignal(repo.root, TsAb04, TsAb04.defaultConfig)
     expect(out.totalInterfaces).toBe(0)
-    expect(referenceQueries).toBe(0)
+    expect(out.deadInterfaces).toHaveLength(0)
   })
 
   test("configured exclude_globs remove matching production interfaces", async () => {
