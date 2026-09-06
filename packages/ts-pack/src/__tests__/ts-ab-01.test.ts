@@ -6,7 +6,7 @@ import { Effect, Schema } from "effect"
 import { buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { TS_PACK_SIGNALS } from "../pack.js"
 import { TsAb01, TsAb01Config } from "../signals/ts-ab-01-public-export-surface.js"
-import { TsProjectLayer } from "../ts-project.js"
+import { TsAnalysisLayer } from "../ts-analysis.js"
 
 let repo: string
 type TsAb01Result = Parameters<typeof TsAb01.score>[0]
@@ -20,7 +20,7 @@ const writeTs = async (relPath: string, content: string): Promise<string> => {
 
 const runCompute = async (config = TsAb01.defaultConfig): Promise<TsAb01Result> => {
   const program = TsAb01.compute(config, new Map()).pipe(
-    Effect.provide(TsProjectLayer(repo)),
+    Effect.provide(TsAnalysisLayer(repo)),
   )
   return Effect.runPromise(program as Effect.Effect<TsAb01Result, unknown, never>)
 }

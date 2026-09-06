@@ -1,7 +1,7 @@
 import { SignalComputeError } from "@skastr0/pulsar-core/signal"
 import type { Signal } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
-import { TsProjectTag } from "../ts-project.js"
+import { TsAnalysisTag } from "../ts-analysis.js"
 import { isExcluded, matchesAnyGlob } from "./shared-globs.js"
 import { diagnosePublicExportSurface } from "./ts-ab-01-diagnostics.js"
 import {
@@ -53,7 +53,7 @@ interface TsAb01Output {
  *   consistently a case of "everything is exported" rather than an
  *   intentional curated API; log-scale penalty above that.
  */
-export const TsAb01: Signal<TsAb01Config, TsAb01Output, TsProjectTag> = {
+export const TsAb01: Signal<TsAb01Config, TsAb01Output, TsAnalysisTag> = {
   id: "TS-AB-01-public-export-surface",
   title: "Public export surface",
   aliases: ["TS-AB-01"],
@@ -116,14 +116,13 @@ export const TsAb01: Signal<TsAb01Config, TsAb01Output, TsProjectTag> = {
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
-      const project = yield* TsProjectTag
+      const analysis = yield* TsAnalysisTag
+      const allFiles = yield* analysis.mapFiles(async (context) => context.sourceFile)
       const result = yield* Effect.try({
         try: (): TsAb01Output => {
-          const allSourceFiles = project
-            .getSourceFiles()
-            .filter((sf) => !isExcluded(sf.getFilePath(), config.exclude_globs))
+          const allSourceFiles = allFiles.filter((sf) => !isExcluded(sf.fileName, config.exclude_globs))
           const sourceFiles = allSourceFiles.filter((sf) =>
-            matchesAnyGlob(sf.getFilePath(), config.public_export_globs),
+            matchesAnyGlob(sf.fileName, config.public_export_globs),
           )
           const surfaces = collectPublicExportSurfaces(sourceFiles, allSourceFiles)
 

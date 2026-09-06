@@ -55,6 +55,9 @@ export const hasModifier = (node: Node, kind: SyntaxKind): boolean =>
 export const hasExportModifier = (node: Node): boolean =>
   hasModifier(node, SyntaxKind.ExportKeyword)
 
+export const hasDefaultModifier = (node: Node): boolean =>
+  hasModifier(node, SyntaxKind.DefaultKeyword)
+
 export const functionNameOf = (
   node: FunctionDeclaration | MethodDeclaration,
 ): string => {

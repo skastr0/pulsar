@@ -1,13 +1,27 @@
-import {
-  Node,
-  type ClassDeclaration,
-  type FunctionDeclaration,
-  type SourceFile,
-  type Statement,
-  type VariableStatement,
-} from "ts-morph"
+import { hasDefaultModifier, hasExportModifier, textOf, walkDescendants } from "../ast.js"
 import { createModuleResolver, type ModuleResolver } from "../graph/module-graph.js"
-import { hasDefaultModifier, hasExportModifier } from "./shared-ts-morph-modifiers.js"
+import {
+  SyntaxKind,
+  isClassDeclaration,
+  isEnumDeclaration,
+  isExportAssignment,
+  isExportDeclaration,
+  isFunctionDeclaration,
+  isIdentifier,
+  isImportDeclaration,
+  isInterfaceDeclaration,
+  isModuleDeclaration,
+  isNamedExports,
+  isNamedImports,
+  isNamespaceExport,
+  isNamespaceImport,
+  isNoSubstitutionTemplateLiteral,
+  isStringLiteral,
+  isTypeAliasDeclaration,
+  isVariableStatement,
+  type Node,
+  type SourceFile,
+} from "../tsgo-api.js"
 
 export interface FileSurface {
   readonly total: number
@@ -30,7 +44,7 @@ export const collectPublicExportSurfaces = (
   allSourceFiles: ReadonlyArray<SourceFile>,
 ): PublicExportSurfaces => {
   const sourceFileByPath = new Map(
-    allSourceFiles.map((sourceFile) => [sourceFile.getFilePath(), sourceFile] as const),
+    allSourceFiles.map((sourceFile) => [sourceFile.fileName, sourceFile] as const),
   )
   const resolver = createModuleResolver(allSourceFiles, [])
   const exportIndex = new ExportSurfaceIndex(sourceFileByPath, resolver)
@@ -41,10 +55,10 @@ export const collectPublicExportSurfaces = (
 
   for (const sf of publicSourceFiles) {
     const surface = countExports(sf, exportIndex)
-    byFile.set(sf.getFilePath(), surface)
+    byFile.set(sf.fileName, surface)
     totalPublicExports += surface.total
     if (largest === undefined || surface.total > largest.total) {
-      largest = { file: sf.getFilePath(), total: surface.total }
+      largest = { file: sf.fileName, total: surface.total }
     }
   }
 
@@ -70,7 +84,7 @@ class ExportSurfaceIndex {
   ) {}
 
   exportsFor(sourceFile: SourceFile): ReadonlyMap<string, ExportSymbolInfo> {
-    const path = sourceFile.getFilePath()
+    const path = sourceFile.fileName
     const cached = this.cache.get(path)
     if (cached !== undefined) return cached
 
@@ -81,13 +95,13 @@ class ExportSurfaceIndex {
   }
 
   private collectInto(sourceFile: SourceFile, exports: Map<string, ExportSymbolInfo>): void {
-    const sourcePath = sourceFile.getFilePath()
+    const sourcePath = sourceFile.fileName
     const importedSymbols = this.importedSymbolsFor(sourceFile)
 
-    for (const statement of sourceFile.getStatements()) {
+    for (const statement of sourceFile.statements) {
       if (this.collectDeclarationExport(statement, sourcePath, exports)) continue
 
-      if (Node.isExportDeclaration(statement)) {
+      if (isExportDeclaration(statement)) {
         this.collectExportDeclaration(statement, sourceFile, exports, importedSymbols)
         continue
       }
@@ -95,39 +109,39 @@ class ExportSurfaceIndex {
   }
 
   private collectDeclarationExport(
-    statement: Statement,
+    statement: Node,
     sourcePath: string,
     exports: Map<string, ExportSymbolInfo>,
   ): boolean {
-    if (Node.isFunctionDeclaration(statement)) {
+    if (isFunctionDeclaration(statement)) {
       this.collectNamedOrDefaultExport(statement, "function", sourcePath, exports)
       return true
     }
-    if (Node.isClassDeclaration(statement)) {
+    if (isClassDeclaration(statement)) {
       this.collectNamedOrDefaultExport(statement, "class", sourcePath, exports)
       return true
     }
-    if (Node.isInterfaceDeclaration(statement) && hasExportModifier(statement)) {
-      this.collectNamedExport(statement.getName(), "interface", sourcePath, exports)
+    if (isInterfaceDeclaration(statement) && hasExportModifier(statement)) {
+      this.collectNamedExport(statement.name === undefined ? undefined : (isIdentifier(statement.name) ? statement.name.text : textOf(statement.name)), "interface", sourcePath, exports)
       return true
     }
-    if (Node.isTypeAliasDeclaration(statement) && hasExportModifier(statement)) {
-      this.collectNamedExport(statement.getName(), "type", sourcePath, exports)
+    if (isTypeAliasDeclaration(statement) && hasExportModifier(statement)) {
+      this.collectNamedExport(statement.name === undefined ? undefined : (isIdentifier(statement.name) ? statement.name.text : textOf(statement.name)), "type", sourcePath, exports)
       return true
     }
-    if (Node.isEnumDeclaration(statement) && hasExportModifier(statement)) {
-      this.collectNamedExport(statement.getName(), "enum", sourcePath, exports)
+    if (isEnumDeclaration(statement) && hasExportModifier(statement)) {
+      this.collectNamedExport(statement.name === undefined ? undefined : (isIdentifier(statement.name) ? statement.name.text : textOf(statement.name)), "enum", sourcePath, exports)
       return true
     }
-    if (Node.isModuleDeclaration(statement) && hasExportModifier(statement)) {
-      this.collectNamedExport(statement.getName(), "namespace", sourcePath, exports)
+    if (isModuleDeclaration(statement) && hasExportModifier(statement)) {
+      this.collectNamedExport(statement.name === undefined ? undefined : (isIdentifier(statement.name) ? statement.name.text : textOf(statement.name)), "namespace", sourcePath, exports)
       return true
     }
-    if (Node.isVariableStatement(statement) && hasExportModifier(statement)) {
+    if (isVariableStatement(statement) && hasExportModifier(statement)) {
       this.collectVariableExports(statement, sourcePath, exports)
       return true
     }
-    if (Node.isExportAssignment(statement)) {
+    if (isExportAssignment(statement)) {
       this.collectExportAssignment(statement, sourcePath, exports)
       return true
     }
@@ -135,7 +149,7 @@ class ExportSurfaceIndex {
   }
 
   private collectNamedOrDefaultExport(
-    statement: FunctionDeclaration | ClassDeclaration,
+    statement: import("../tsgo-api.js").FunctionDeclaration | import("../tsgo-api.js").ClassDeclaration,
     kind: string,
     sourcePath: string,
     exports: Map<string, ExportSymbolInfo>,
@@ -145,7 +159,7 @@ class ExportSurfaceIndex {
       return
     }
     if (!hasExportModifier(statement)) return
-    this.collectNamedExport(statement.getName(), kind, sourcePath, exports)
+    this.collectNamedExport(statement.name === undefined ? undefined : (isIdentifier(statement.name) ? statement.name.text : textOf(statement.name)), kind, sourcePath, exports)
   }
 
   private collectNamedExport(
@@ -160,42 +174,47 @@ class ExportSurfaceIndex {
   }
 
   private collectVariableExports(
-    statement: VariableStatement,
+    statement: import("../tsgo-api.js").VariableStatement,
     sourcePath: string,
     exports: Map<string, ExportSymbolInfo>,
   ): void {
     const kind = declarationKind(statement)
-    for (const declaration of statement.getDeclarations()) {
-      const name = declaration.getName()
+    for (const declaration of statement.declarationList.declarations) {
+      if (!isIdentifier(declaration.name)) continue
+      const name = declaration.name.text
       exports.set(name, { publicName: name, kind, sourceFile: sourcePath })
     }
   }
 
   private collectExportAssignment(
-    statement: import("ts-morph").ExportAssignment,
+    statement: import("../tsgo-api.js").ExportAssignment,
     sourcePath: string,
     exports: Map<string, ExportSymbolInfo>,
   ): void {
-    const kind = statement.isExportEquals() ? "export-equals" : "default"
-    const publicName = statement.isExportEquals() ? "export=" : "default"
+    const kind = statement.isExportEquals ? "export-equals" : "default"
+    const publicName = statement.isExportEquals ? "export=" : "default"
     exports.set(publicName, { publicName, kind, sourceFile: sourcePath })
   }
 
   private collectExportDeclaration(
-    declaration: import("ts-morph").ExportDeclaration,
+    declaration: import("../tsgo-api.js").ExportDeclaration,
     sourceFile: SourceFile,
     exports: Map<string, ExportSymbolInfo>,
     importedSymbols: ReadonlyMap<string, ExportSymbolInfo>,
   ): void {
-    const sourcePath = sourceFile.getFilePath()
+    const sourcePath = sourceFile.fileName
     const targetPath = this.resolver.resolve(sourcePath, declaration)
     const targetFile = targetPath === undefined ? undefined : this.sourceFileByPath.get(targetPath)
     const targetExports = targetFile === undefined ? new Map<string, ExportSymbolInfo>() : this.exportsFor(targetFile)
-    const namedExports = declaration.getNamedExports()
-    const namespaceExport = declaration.getNamespaceExport()
+    const namedExports = declaration.exportClause !== undefined && isNamedExports(declaration.exportClause)
+      ? [...declaration.exportClause.elements]
+      : []
+    const namespaceExport = declaration.exportClause !== undefined && isNamespaceExport(declaration.exportClause)
+      ? declaration.exportClause
+      : undefined
 
     if (namespaceExport !== undefined) {
-      const publicName = namespaceExport.getName()
+      const publicName = isIdentifier(namespaceExport.name) ? namespaceExport.name.text : textOf(namespaceExport.name)
       exports.set(publicName, {
         publicName,
         kind: "namespace",
@@ -206,13 +225,15 @@ class ExportSurfaceIndex {
 
     if (namedExports.length > 0) {
       for (const specifier of namedExports) {
-        const exportedName = specifier.getAliasNode()?.getText() ?? specifier.getName()
-        const importedName = specifier.getName()
+        const exportedName = isIdentifier(specifier.name) ? specifier.name.text : textOf(specifier.name)
+        const importedName = specifier.propertyName === undefined
+          ? exportedName
+          : (isIdentifier(specifier.propertyName) ? specifier.propertyName.text : textOf(specifier.propertyName))
         if (targetFile === undefined) {
           const imported = importedSymbols.get(importedName)
           exports.set(exportedName, {
             publicName: exportedName,
-            kind: declaration.isTypeOnly() ? "type" : (imported?.kind ?? "re-export"),
+            kind: declaration.isTypeOnly ? "type" : (imported?.kind ?? "re-export"),
             sourceFile: imported?.sourceFile ?? sourcePath,
           })
           continue
@@ -236,46 +257,49 @@ class ExportSurfaceIndex {
   }
 
   private importedSymbolsFor(sourceFile: SourceFile): ReadonlyMap<string, ExportSymbolInfo> {
-    const sourcePath = sourceFile.getFilePath()
+    const sourcePath = sourceFile.fileName
     const imported = new Map<string, ExportSymbolInfo>()
 
-    for (const declaration of sourceFile.getImportDeclarations()) {
+    walkDescendants(sourceFile, (declaration) => {
+      if (!isImportDeclaration(declaration)) return
+
       const targetPath = this.resolver.resolve(sourcePath, declaration)
       const targetFile = targetPath === undefined ? undefined : this.sourceFileByPath.get(targetPath)
       const targetExports = targetFile === undefined ? new Map<string, ExportSymbolInfo>() : this.exportsFor(targetFile)
-      const declarationTypeOnly = declaration.isTypeOnly() || declaration.getImportClause()?.isTypeOnly() === true
+      const clause = declaration.importClause
+      const declarationTypeOnly = clause?.phaseModifier === SyntaxKind.TypeKeyword
 
-      const defaultImport = declaration.getDefaultImport()
-      if (defaultImport !== undefined) {
+      if (clause?.name !== undefined) {
         const target = targetExports.get("default")
-        imported.set(defaultImport.getText(), {
-          publicName: defaultImport.getText(),
+        imported.set(clause.name.text, {
+          publicName: clause.name.text,
           kind: declarationTypeOnly ? "type" : (target?.kind ?? "default"),
           sourceFile: target?.sourceFile ?? targetPath ?? sourcePath,
         })
       }
 
-      const namespaceImport = declaration.getNamespaceImport()
-      if (namespaceImport !== undefined) {
-        imported.set(namespaceImport.getText(), {
-          publicName: namespaceImport.getText(),
+      if (clause?.namedBindings !== undefined && isNamespaceImport(clause.namedBindings)) {
+        imported.set(clause.namedBindings.name.text, {
+          publicName: clause.namedBindings.name.text,
           kind: declarationTypeOnly ? "type" : "namespace",
           sourceFile: targetPath ?? sourcePath,
         })
       }
 
-      for (const specifier of declaration.getNamedImports()) {
-        const publicName = specifier.getAliasNode()?.getText() ?? specifier.getName()
-        const importedName = specifier.getName()
+      if (clause?.namedBindings !== undefined && isNamedImports(clause.namedBindings)) {
+      for (const specifier of clause.namedBindings.elements) {
+        const publicName = specifier.name.text
+        const importedName = specifier.propertyName === undefined ? publicName : specifier.propertyName.text
         const target = targetExports.get(importedName)
-        const typeOnly = declarationTypeOnly || specifier.isTypeOnly()
+        const typeOnly = declarationTypeOnly || specifier.isTypeOnly
         imported.set(publicName, {
           publicName,
           kind: typeOnly ? "type" : (target?.kind ?? "re-export"),
           sourceFile: target?.sourceFile ?? targetPath ?? sourcePath,
         })
       }
-    }
+      }
+    })
 
     return imported
   }
@@ -290,7 +314,7 @@ const countExports = (sf: SourceFile, exportIndex: ExportSurfaceIndex): FileSurf
 
   for (const symbol of exportIndex.exportsFor(sf).values()) {
     bump(symbol.kind)
-    if (symbol.sourceFile === sf.getFilePath()) continue
+    if (symbol.sourceFile === sf.fileName) continue
     sourceCounts.set(symbol.sourceFile, (sourceCounts.get(symbol.sourceFile) ?? 0) + 1)
   }
 
@@ -316,9 +340,9 @@ const countExports = (sf: SourceFile, exportIndex: ExportSurfaceIndex): FileSurf
 export const exportKindWeight = (kind: string): number =>
   kind === "type" || kind === "interface" ? 0.25 : 1
 
-const declarationKind = (statement: VariableStatement): string => {
-  const kind = statement.getDeclarationKind()
-  if (kind === "let") return "let"
-  if (kind === "var") return "var"
+const declarationKind = (statement: import("../tsgo-api.js").VariableStatement): string => {
+  const text = textOf(statement.declarationList)
+  if (text.startsWith("let ")) return "let"
+  if (text.startsWith("var ")) return "var"
   return "const"
 }
