@@ -6,15 +6,10 @@ import {
 } from "node:path"
 import { computeDiagnosticHash, parseBypasses } from "@skastr0/pulsar-core/signal"
 import type { PulsarAllowBypass } from "@skastr0/pulsar-core/signal"
-import type { SourceFile } from "ts-morph"
-import { createModuleResolver } from "../graph/module-graph.js"
+import { buildModuleGraphFromFiles } from "../graph/module-graph.js"
+import type { SourceFile } from "../tsgo-api.js"
 import type { PackageInfo } from "../discovery.js"
 import { isExcluded } from "./shared-globs.js"
-import {
-  isTypeOnlyModuleDeclaration,
-  localIdentifierUsageByName,
-  valueImportBindingNames,
-} from "./shared-module-usage.js"
 import { stronglyConnectedComponents } from "./ts-ad-02-scc.js"
 
 export interface Cycle {
@@ -52,17 +47,24 @@ export const analyzeCircularDependencies = (
   packages: ReadonlyArray<PackageInfo>,
 ): CycleAnalysis => {
   const includedSourceFiles = sourceFiles.filter(
-    (sf) => !isExcluded(sf.getFilePath(), excludeGlobs),
+    (sf) => !isExcluded(sf.fileName, excludeGlobs),
   )
-  const fileSet = new Set(includedSourceFiles.map((sf) => sf.getFilePath()))
   const sourceTextByPath = new Map(
-    includedSourceFiles.map((sf) => [sf.getFilePath(), sf.getFullText()] as const),
+    includedSourceFiles.map((sf) => [sf.fileName, sf.text] as const),
   )
   const bypassesByFile = new Map(
-    includedSourceFiles.map((sf) => [sf.getFilePath(), parseBypasses(sf.getFullText())] as const),
+    includedSourceFiles.map((sf) => [sf.fileName, parseBypasses(sf.text)] as const),
   )
 
-  const graph = buildImportGraph(includedSourceFiles, fileSet, packages)
+  const moduleGraph = buildModuleGraphFromFiles(includedSourceFiles, {
+    excludeGlobs,
+    includeExportEdges: true,
+    includeSelfEdges: true,
+    packages,
+  })
+  const graph = new Map(
+    [...moduleGraph.dependencies.entries()].map(([from, targets]) => [from, new Set(targets)] as const),
+  )
   const sccs = stronglyConnectedComponents(graph)
 
   const rawCycles: Array<Cycle> = []
@@ -102,44 +104,6 @@ export const analyzeCircularDependencies = (
     largestCycleSize,
     expiredBypasses,
   }
-}
-
-const buildImportGraph = (
-  sourceFiles: ReadonlyArray<SourceFile>,
-  fileSet: ReadonlySet<string>,
-  packages: ReadonlyArray<PackageInfo>,
-): Map<string, Set<string>> => {
-  const graph = new Map<string, Set<string>>()
-  const resolver = createModuleResolver(sourceFiles, packages)
-  for (const sf of sourceFiles) {
-    const path = sf.getFilePath()
-    const targets = new Set<string>()
-    const importDeclarations = sf.getImportDeclarations()
-    const valueBindingNames = valueImportBindingNames(importDeclarations)
-    let identifierUsage: ReadonlyMap<string, "type-only" | "value"> | undefined
-    const getIdentifierUsage = (): ReadonlyMap<string, "type-only" | "value"> => {
-      identifierUsage ??= localIdentifierUsageByName(sf, valueBindingNames)
-      return identifierUsage
-    }
-
-    for (const decl of importDeclarations) {
-      if (isTypeOnlyModuleDeclaration(decl, getIdentifierUsage)) continue
-      const targetPath = resolver.resolve(path, decl)
-      if (targetPath === undefined) continue
-      if (!fileSet.has(targetPath)) continue
-      targets.add(targetPath)
-    }
-    for (const decl of sf.getExportDeclarations()) {
-      if (isTypeOnlyModuleDeclaration(decl, getIdentifierUsage)) continue
-      const targetPath = resolver.resolve(path, decl)
-      if (targetPath === undefined) continue
-      if (!fileSet.has(targetPath)) continue
-      if (targetPath === path) continue
-      targets.add(targetPath)
-    }
-    graph.set(path, targets)
-  }
-  return graph
 }
 
 const toCycle = (

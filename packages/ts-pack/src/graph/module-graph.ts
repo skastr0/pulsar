@@ -29,6 +29,7 @@ import {
 interface ModuleGraphOptions {
   readonly excludeGlobs: ReadonlyArray<string>
   readonly includeExportEdges?: boolean
+  readonly includeSelfEdges?: boolean
   readonly packages?: ReadonlyArray<PackageInfo>
 }
 
@@ -54,13 +55,14 @@ export const buildModuleGraphFromFiles = (
   const fileToPackage = new Map<string, PackageInfo | undefined>()
   const resolver = createModuleResolver(selected, options.packages ?? [])
   const includeExportEdges = options.includeExportEdges === true
+  const includeSelfEdges = options.includeSelfEdges === true
   const packageLookupEnabled = (options.packages?.length ?? 0) > 0
 
   for (const sourceFile of selected) {
     const filePath = sourceFile.fileName
     dependencies.set(
       filePath,
-      collectTargets(sourceFile, resolver, includeExportEdges, sourceFileByPath),
+      collectTargets(sourceFile, resolver, includeExportEdges, includeSelfEdges, sourceFileByPath),
     )
     reverseDependencies.set(filePath, new Set())
     if (packageLookupEnabled) {
@@ -87,6 +89,7 @@ const collectTargets = (
   sourceFile: SourceFile,
   resolver: ModuleResolver,
   includeExportEdges: boolean,
+  includeSelfEdges: boolean,
   sourceFileByPath: ReadonlyMap<string, SourceFile>,
 ): Set<string> => {
   const sourcePath = sourceFile.fileName
@@ -102,14 +105,16 @@ const collectTargets = (
   for (const declaration of importDeclarations) {
     if (isTypeOnlyModuleDeclaration(declaration, getIdentifierUsage)) continue
     const targetPath = resolver.resolve(sourcePath, declaration)
-    if (targetPath === undefined || targetPath === sourcePath) continue
+    if (targetPath === undefined) continue
+    if (targetPath === sourcePath && !includeSelfEdges) continue
     targets.add(targetPath)
   }
 
   if (includeExportEdges) {
     for (const declaration of exportDeclarationsOf(sourceFile)) {
       const targetPath = resolver.resolve(sourcePath, declaration)
-      if (targetPath === undefined || targetPath === sourcePath) continue
+      if (targetPath === undefined) continue
+      if (targetPath === sourcePath) continue
       if (
         isTypeOnlyModuleDeclaration(
           declaration,

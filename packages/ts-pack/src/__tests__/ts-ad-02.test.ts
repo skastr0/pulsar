@@ -9,7 +9,7 @@ import {
   TsAd02Config,
   type TsAd02Output,
 } from "../signals/ts-ad-02-circular-deps.js"
-import { TsProjectLayer } from "../ts-project.js"
+import { TsAnalysisLayer } from "../ts-analysis.js"
 
 let repo: string
 
@@ -45,7 +45,7 @@ const writePackage = async (slug: string, name: string): Promise<void> => {
 
 const runCompute = async (config = TsAd02.defaultConfig): Promise<TsAd02Output> => {
   const program = TsAd02.compute(config, new Map()).pipe(
-    Effect.provide(TsProjectLayer(repo)),
+    Effect.provide(TsAnalysisLayer(repo)),
   )
   return Effect.runPromise(program as Effect.Effect<TsAd02Output, unknown, never>)
 }
