@@ -144,7 +144,7 @@ export interface Signal<Config, Output, R = SignalRequirements> {
   /**
    * `R` is the additional service requirement beyond the core
    * `SignalRequirements`. Packs provide these via their own layers
-   * (e.g. ts-pack provides `TsProjectTag`). The scoring engine composes
+   * (e.g. ts-pack provides `TsAnalysisTag`). The scoring engine composes
    * all provided layers before running.
    */
   readonly compute: (

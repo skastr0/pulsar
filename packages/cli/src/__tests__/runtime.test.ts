@@ -11,7 +11,7 @@ import {
   NEXTJS_APP_ROUTER_FRAMEWORK_ID,
   NEXTJS_PROJECT_MODULE_ID,
 } from "@skastr0/pulsar-project-module-nextjs"
-import { TsLd01, TsSl04, TsProjectLayer } from "@skastr0/pulsar-ts-pack"
+import { TsLd01, TsSl04, TsAnalysisLayer } from "@skastr0/pulsar-ts-pack"
 import { Effect, Layer } from "effect"
 import { loadProjectModuleCalibrationContext } from "../runtime-calibration.js"
 import { SOLIDJS_START_FRAMEWORK_ID } from "../runtime-framework-detection.js"
@@ -996,7 +996,7 @@ export function defaultEffect(EffectApi: { orElseSucceed: (fallback: () => void)
         TsLd01.compute(TsLd01.defaultConfig, new Map()).pipe(
           Effect.provide(
             Layer.mergeAll(
-              TsProjectLayer(repoPath),
+              TsAnalysisLayer(repoPath),
               Layer.succeed(CalibrationContextTag, calibrationContext!),
             ),
           ),
@@ -1014,7 +1014,7 @@ export function defaultEffect(EffectApi: { orElseSucceed: (fallback: () => void)
         TsSl04.compute(TsSl04.defaultConfig, new Map()).pipe(
           Effect.provide(
             Layer.mergeAll(
-              TsProjectLayer(repoPath),
+              TsAnalysisLayer(repoPath),
               Layer.succeed(SignalContextTag, {
                 gitSha: "TEST",
                 worktreePath: repoPath,
@@ -1032,7 +1032,7 @@ export function defaultEffect(EffectApi: { orElseSucceed: (fallback: () => void)
         TsSl04.compute(TsSl04.defaultConfig, new Map()).pipe(
           Effect.provide(
             Layer.mergeAll(
-              TsProjectLayer(repoPath),
+              TsAnalysisLayer(repoPath),
               Layer.succeed(SignalContextTag, {
                 gitSha: "TEST",
                 worktreePath: repoPath,

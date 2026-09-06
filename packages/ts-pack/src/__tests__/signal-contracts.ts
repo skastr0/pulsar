@@ -271,7 +271,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       config:
         "ts-de-01.test.ts: configSchema decodes defaults, exclude_globs remove files from the module set, precise_module_limit selects the fast path, path aliases resolve in fast mode, and diagnostics honor sanitized top_n_diagnostics.",
       positiveFixture:
-        "ts-de-01.test.ts: real ts-morph fixtures count direct type imports, fast-path import declarations, fast-path import-type references, path-alias type imports, re-export attribution to original type definitions, mixed-reference dedupe, and diagnostic hub pressure.",
+        "ts-de-01.test.ts: real Quartz/tsgo fixtures count direct type imports, fast-path import declarations, fast-path import-type references, path-alias type imports, re-export attribution to original type definitions, mixed-reference dedupe, and diagnostic hub pressure.",
       negativeFixture:
         "ts-de-01.test.ts: empty projects, runtime value imports, ordinary one-type coupling, incoming model fan-in, and excluded files do not create score pressure or diagnostics.",
       applicability:
@@ -635,7 +635,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       compoundInputs:
         "ts-rp-01.test.ts: composite input resolution is asserted for required TS-LD-01 and SHARED-CHURN-01 plus optional SHARED-CHURN-02, SHARED-02, SHARED-COV-01, and SHARED-COCHANGE-01 inputs, including canonical ids, aliases, weights, states, raw values, normalized values, and cache fingerprints.",
       integration:
-        "ts-rp-01.test.ts: a real temp git repository runs through buildRegistry with SHARED_SIGNALS and TS_PACK_SIGNALS, TsProjectLayer, SignalContextTag, real TS-LD-01 complexity output, real SHARED-CHURN-01 git churn output, and the TS-RP-01 compound target.",
+        "ts-rp-01.test.ts: a real temp git repository runs through buildRegistry with SHARED_SIGNALS and TS_PACK_SIGNALS, TsAnalysisLayer, SignalContextTag, real TS-LD-01 complexity output, real SHARED-CHURN-01 git churn output, and the TS-RP-01 compound target.",
     },
   },
   {
@@ -648,7 +648,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       config:
         "ts-sl-01.test.ts: configSchema decodes defaults; exclude_globs and test_globs are proven against real repos; min_tokens and top_n_diagnostics are floored, finite-safe, and cannot poison scoring or diagnostics.",
       positiveFixture:
-        "ts-sl-01.test.ts: real ts-morph temp-repo fixtures detect exact duplicate functions, structural near-duplicates, production duplicates outside excluded roots, changed-hunk duplicates against whole-tree counterparts, and duplicated imperative branches.",
+        "ts-sl-01.test.ts: real Quartz/tsgo temp-repo fixtures detect exact duplicate functions, structural near-duplicates, production duplicates outside excluded roots, changed-hunk duplicates against whole-tree counterparts, and duplicated imperative branches.",
       negativeFixture:
         "ts-sl-01.test.ts: real fixtures prove examples/playgrounds, tests, generated files and headers, tiny schema/effect/jsx callbacks, object-literal request anchors, SVG/icon wrappers, AST predicate guards, and adapter wrappers do not create unsupported findings.",
       applicability:
@@ -675,7 +675,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       config:
         "ts-sl-03.test.ts: configSchema decodes defaults; exclude_globs and test_globs are proven against real repos; top_n_diagnostics is floored, finite-safe, and cannot poison score or diagnostics.",
       positiveFixture:
-        "ts-sl-03.test.ts: real ts-morph temp-repo fixtures detect missing @ts-ignore, @ts-expect-error, eslint-disable, expired bypasses, and production suppressions outside excluded roots.",
+        "ts-sl-03.test.ts: real Quartz/tsgo temp-repo fixtures detect missing @ts-ignore, @ts-expect-error, eslint-disable, expired bypasses, and production suppressions outside excluded roots.",
       negativeFixture:
         "ts-sl-03.test.ts: real fixtures prove active bypasses, inline justifications, contextual comments, adjacent JSDoc, ban-ts-comment bridge suppressions, and directive-like string/comment text are classified correctly; generic defaults do not auto-justify Pulumi metadata or trace/no-console suppressions without explicit explanation.",
       applicability:
@@ -689,7 +689,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       cacheSemantics:
         "ts-sl-03.test.ts and pack.test.ts: wrapped pack cache version includes the TS-SL-03 semantic cacheVersion after comment-directive parsing, target-line hunk detection, root-independent diagnostic hashes, generic default justification semantics, diagnostic-limit normalization, hunk path normalization, deterministic ordering, and applicability metadata changed.",
       gitContext:
-        "ts-sl-03.test.ts: changed-hunk fixtures run through TsProjectLayer and SignalContextTag, proving only changed suppressions are reported and dot-relative hunk paths resolve to the real source file.",
+        "ts-sl-03.test.ts: changed-hunk fixtures run through TsAnalysisLayer and SignalContextTag, proving only changed suppressions are reported and dot-relative hunk paths resolve to the real source file.",
     },
   },
   {
@@ -702,7 +702,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       config:
         "ts-sl-04.test.ts: configSchema decodes defaults; exclude_globs and test_globs are proven against real repos with repo-relative and dot-relative overrides; top_n_diagnostics is floored, finite-safe, and cannot poison score or diagnostics.",
       positiveFixture:
-        "ts-sl-04.test.ts: real ts-morph temp-repo fixtures detect throw-not-implemented, TODO-only, empty-body, mock-return, async empty functions, production stubs outside excluded roots, and project-specific empty callbacks without module calibration.",
+        "ts-sl-04.test.ts: real Quartz/tsgo temp-repo fixtures detect throw-not-implemented, TODO-only, empty-body, mock-return, async empty functions, production stubs outside excluded roots, and project-specific empty callbacks without module calibration.",
       negativeFixture:
         "ts-sl-04.test.ts: real fixtures prove examples/samples/demos/specs/generated/test/story/runtime/mock roots, explicit noop files with empty bodies, platform/runtime unsupported capability throws, ordinary literal returns, ambient declarations, no-op handlers, lifecycle fallbacks, and generic contract callbacks avoid unsupported findings.",
       applicability:
@@ -716,7 +716,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       cacheSemantics:
         "ts-sl-04.test.ts and pack.test.ts: wrapped pack cache version includes the TS-SL-04 semantic cacheVersion after diagnostic-limit normalization, applicability metadata, hunk path normalization, root-independent diagnostic hashes, generic noop defaults, relative/dot-relative glob matching, finite factor normalization, and deterministic ordering changed.",
       gitContext:
-        "ts-sl-04.test.ts: changed-hunk fixtures run through TsProjectLayer and SignalContextTag, proving only changed functions are reported, dot-relative hunk paths resolve to the real source file, and non-TypeScript hunks are not applicable.",
+        "ts-sl-04.test.ts: changed-hunk fixtures run through TsAnalysisLayer and SignalContextTag, proving only changed functions are reported, dot-relative hunk paths resolve to the real source file, and non-TypeScript hunks are not applicable.",
       calibration:
         "ts-sl-04.test.ts: project-owned noop-classifier and unfinished-implementation-policy processors run through CalibrationContextTag, emit attribution decisions, can classify repo-specific intentional no-ops, and can keep findings visible while changing score pressure only through explicit policy output.",
     },
@@ -745,7 +745,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       cacheSemantics:
         "ts-rp-02.test.ts and pack.test.ts: wrapped pack cache version includes the TS-RP-02 semantic cacheVersion after diagnostic-limit handling, normalized hunk/exclude paths, boundary rules, finite-safe policy output, deterministic ordering, TypeScript module extension coverage, package-local alias resolution, external dependency target exclusion, added internal-import edge semantics, untracked worktree diff coverage, and upstream-aligned branch semantics changed.",
       gitContext:
-        "ts-rp-02.test.ts: tests run through TsProjectLayer and SignalContextTag, proving changed-hunk fallback, dependencyDeltaMode unavailable for hunk-only evidence, committed range diffs, upstream branch range selection, upstream-aligned branch not_applicable behavior, clean range not_applicable behavior, and non-git fallback behavior.",
+        "ts-rp-02.test.ts: tests run through TsAnalysisLayer and SignalContextTag, proving changed-hunk fallback, dependencyDeltaMode unavailable for hunk-only evidence, committed range diffs, upstream branch range selection, upstream-aligned branch not_applicable behavior, clean range not_applicable behavior, and non-git fallback behavior.",
       calibration:
         "ts-rp-02.test.ts: project-owned pr-size-policy processors run through CalibrationContextTag, can tune severity and penalty, emit factor provenance, and cannot poison score/factor paths with non-finite or invalid output.",
     },

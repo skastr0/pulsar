@@ -5,7 +5,6 @@ import { ReferenceDataTag, SignalContextTag, makeReferenceData } from "@skastr0/
 import type { Signal } from "@skastr0/pulsar-core/signal"
 import { Effect, Layer } from "effect"
 import { TsAnalysisLayer } from "../ts-analysis.js"
-import { TsProjectLayer } from "../ts-project.js"
 
 export interface TempRepo {
   readonly root: string
@@ -55,7 +54,6 @@ export const runSignal = async <Config, Output>(
 ): Promise<Output> => {
   const layer = Layer.mergeAll(
     TsAnalysisLayer(repo),
-    TsProjectLayer(repo),
     Layer.succeed(SignalContextTag, {
       gitSha: "TEST",
       worktreePath: repo,

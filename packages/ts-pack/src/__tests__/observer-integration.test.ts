@@ -7,7 +7,7 @@ import type { ObserverOutput } from "@skastr0/pulsar-core/observer"
 import { buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { SHARED_SIGNALS } from "@skastr0/pulsar-shared-signals"
 import { TS_PACK_SIGNALS } from "../pack.js"
-import { TsProjectLayer } from "../ts-project.js"
+import { TsAnalysisLayer } from "../ts-analysis.js"
 
 /**
  * End-to-end: run the Observer against the real TS pack on this repo's
@@ -50,7 +50,7 @@ describe("Observer + TS pack integration", () => {
           ContextLayer,
           ReferenceLayer,
           InMemoryCacheLayer,
-          TsProjectLayer(REPO_ROOT),
+          TsAnalysisLayer(REPO_ROOT),
         )
         return yield* (
           Effect.provide(

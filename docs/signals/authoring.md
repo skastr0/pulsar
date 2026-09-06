@@ -97,7 +97,7 @@ Add conditional evidence when relevant:
 
 Tests should run the same substrate the signal uses in production.
 
-- TypeScript signals should use real `ts-morph` projects or repository
+- TypeScript signals should use real Quartz/tsgo analysis sessions or repository
   fixtures, not mocked score blobs.
 - Rust signals should use real Cargo/tree-sitter/RustProjectLayer fixtures.
 - Shared history signals should use git repositories or structured history

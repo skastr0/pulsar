@@ -66,6 +66,9 @@ export type {
   TypeQueryNode,
   TypeReferenceNode,
   VariableStatement,
+  Expression,
+  NewExpression,
+  SatisfiesExpression,
 } from "tsgo-typescript/unstable/ast"
 export { SyntaxKind } from "tsgo-typescript/unstable/ast"
 export {

@@ -215,7 +215,7 @@ const isCapabilityAbsentContractStub = (fn: FnLike): boolean => {
 const isBorrowedResourceCloseNoop = (fn: FnLike): boolean => {
   if (!isMethodDeclaration(fn) || propertyNameText(fn.name) !== "close") return false
   const classDeclaration = firstAncestor(fn, isClassDeclaration)
-  return classDeclaration?.name?.text.startsWith("Borrowed") === true
+  return classDeclaration !== undefined && classDeclaration.name !== undefined && classDeclaration.name.text.startsWith("Borrowed")
 }
 
 const isConditionalNoopBranch = (fn: FnLike): boolean => {

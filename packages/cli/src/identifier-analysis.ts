@@ -4,9 +4,32 @@ import {
   inferCasingPattern,
   splitIdentifierTokens,
   type IdentifierPattern,
+  type PackageInfo,
+  type Node,
+  type SourceFile,
+  type VariableDeclaration,
+  discoverPackages,
+  TsAnalysisLayer,
+  TsAnalysisTag,
+  isAsExpression,
+  isCallExpression,
+  isClassDeclaration,
+  isEnumDeclaration,
+  isFunctionDeclaration,
+  isIdentifier,
+  isInterfaceDeclaration,
+  isParameter,
+  isSatisfiesExpression,
+  isSourceFile as isTsSourceFile,
+  isTypeAliasDeclaration,
+  isTypeAssertionExpression,
+  isVariableDeclaration,
+  isVariableDeclarationList,
+  isVariableStatement,
+  textOf,
+  walkDescendants,
 } from "@skastr0/pulsar-ts-pack"
 import { Effect } from "effect"
-import { type PackageInfo, discoverPackages, makeTsProject } from "@skastr0/pulsar-ts-pack"
 import { compareSourceLocationThenFields } from "./source-location-field-order.js"
 
 export interface IdentifierOccurrence {
@@ -27,68 +50,25 @@ interface IdentifierCollectionOptions {
   readonly includeLocalConstants?: boolean
 }
 
-interface NamedDeclarationLike {
-  readonly getStartLineNumber: () => number
-}
-
-interface DescendantLike {
-  readonly getKindName: () => string
-  readonly getName?: () => string
-  readonly getStartLineNumber: () => number
-  readonly getInitializer?: () => NodeLike | undefined
-  readonly getParent?: () => NodeLike | undefined
-  readonly getVariableStatement?: () => { getDeclarationKind: () => string } | undefined
-}
-
-interface SourceFileLike {
-  readonly isDeclarationFile: () => boolean
-  readonly getFunctions: () => Array<{ getName: () => string | undefined; getStartLineNumber: () => number }>
-  readonly getClasses: () => Array<{ getName: () => string | undefined; getStartLineNumber: () => number }>
-  readonly getInterfaces: () => Array<{ getName: () => string; getStartLineNumber: () => number }>
-  readonly getTypeAliases: () => Array<{ getName: () => string; getStartLineNumber: () => number }>
-  readonly getEnums: () => Array<{ getName: () => string; getStartLineNumber: () => number }>
-  readonly getVariableStatements: () => Array<{
-    getDeclarationKind: () => string
-    getDeclarations: () => Array<{
-      getName: () => string
-      getStartLineNumber: () => number
-      getInitializer?: () => NodeLike | undefined
-      getParent?: () => NodeLike | undefined
-      getVariableStatement?: () => { getDeclarationKind: () => string } | undefined
-    }>
-  }>
-  readonly forEachDescendant?: (visit: (node: DescendantLike) => void) => void
-  readonly getDescendants?: () => Array<DescendantLike>
-  readonly getExportedDeclarations: () => ReadonlyMap<string, ReadonlyArray<NamedDeclarationLike>>
-  readonly getFilePath: () => string
-  readonly getBaseName: () => string
-}
-
-interface NodeLike {
-  readonly getKindName?: () => string
-  readonly getParent?: () => NodeLike | undefined
-  readonly getExpression?: () => NodeLike | undefined
-  readonly getText?: () => string
-}
-
 export const collectIdentifiers = (
   worktreePath: string,
   opts: IdentifierCollectionOptions,
 ): Effect.Effect<ReadonlyArray<IdentifierOccurrence>> =>
   Effect.gen(function* () {
-    const [project, packages] = yield* Effect.all([
-      makeTsProject(worktreePath),
-      discoverPackages(worktreePath),
-    ])
+    const packages = yield* discoverPackages(worktreePath)
+    const sourceFiles = yield* TsAnalysisTag.pipe(
+      Effect.flatMap((analysis) => analysis.mapFiles(async (fileContext) => fileContext.sourceFile)),
+      Effect.provide(TsAnalysisLayer(worktreePath)),
+      Effect.orDie,
+    )
 
     const occurrences: Array<IdentifierOccurrence> = []
-    for (const sourceFile of project.getSourceFiles() as Array<SourceFileLike>) {
-      if (sourceFile.isDeclarationFile()) continue
+    for (const sourceFile of sourceFiles) {
+      if (sourceFile.isDeclarationFile) continue
       collectNamedDeclarations(occurrences, sourceFile, packages, worktreePath, opts)
       if (opts.includeParameters) {
         collectParameters(occurrences, sourceFile, packages, worktreePath)
       }
-      collectExportedSymbols(occurrences, sourceFile, packages, worktreePath)
     }
 
     return occurrences.sort(compareIdentifierOccurrences)
@@ -96,202 +76,145 @@ export const collectIdentifiers = (
 
 const collectNamedDeclarations = (
   occurrences: Array<IdentifierOccurrence>,
-  sourceFile: SourceFileLike,
+  sourceFile: SourceFile,
   packages: ReadonlyArray<PackageInfo>,
   worktreePath: string,
   opts: IdentifierCollectionOptions,
 ): void => {
-  for (const declaration of sourceFile.getFunctions()) {
-    pushOccurrence(occurrences, packages, worktreePath, sourceFile, declaration.getName(), "function", declaration)
-  }
-
-  for (const declaration of sourceFile.getClasses()) {
-    pushOccurrence(occurrences, packages, worktreePath, sourceFile, declaration.getName(), "class", declaration)
-  }
-
-  for (const declaration of sourceFile.getInterfaces()) {
-    pushOccurrence(occurrences, packages, worktreePath, sourceFile, declaration.getName(), "interface", declaration)
-  }
-
-  for (const declaration of sourceFile.getTypeAliases()) {
-    pushOccurrence(occurrences, packages, worktreePath, sourceFile, declaration.getName(), "type", declaration)
-  }
-
-  for (const declaration of sourceFile.getEnums()) {
-    pushOccurrence(occurrences, packages, worktreePath, sourceFile, declaration.getName(), "enum", declaration)
-  }
-
-  collectConstOccurrences(occurrences, sourceFile, packages, worktreePath, opts)
-}
-
-const collectConstOccurrences = (
-  occurrences: Array<IdentifierOccurrence>,
-  sourceFile: SourceFileLike,
-  packages: ReadonlyArray<PackageInfo>,
-  worktreePath: string,
-  opts: IdentifierCollectionOptions,
-): void => {
-  for (const statement of sourceFile.getVariableStatements()) {
-    if (statement.getDeclarationKind() !== "const") continue
-    for (const declaration of statement.getDeclarations()) {
-      pushConstOccurrence(occurrences, sourceFile, packages, worktreePath, declaration)
+  for (const statement of sourceFile.statements) {
+    if (isFunctionDeclaration(statement)) {
+      pushOccurrence(occurrences, packages, worktreePath, sourceFile, statement.name?.text, "function", statement)
+    }
+    if (isClassDeclaration(statement)) {
+      pushOccurrence(occurrences, packages, worktreePath, sourceFile, statement.name?.text, "class", statement)
+    }
+    if (isInterfaceDeclaration(statement)) {
+      pushOccurrence(occurrences, packages, worktreePath, sourceFile, statement.name.text, "interface", statement)
+    }
+    if (isTypeAliasDeclaration(statement)) {
+      pushOccurrence(occurrences, packages, worktreePath, sourceFile, statement.name.text, "type", statement)
+    }
+    if (isEnumDeclaration(statement)) {
+      pushOccurrence(occurrences, packages, worktreePath, sourceFile, statement.name.text, "enum", statement)
+    }
+    if (isVariableStatement(statement) && isConstList(statement.declarationList)) {
+      for (const declaration of statement.declarationList.declarations) {
+        pushConstOccurrence(occurrences, sourceFile, packages, worktreePath, declaration)
+      }
     }
   }
 
   if (opts.includeLocalConstants !== true) return
+  walkDescendants(sourceFile, (node) => {
+    if (!isVariableDeclaration(node)) return
+    if (isTopLevelConst(node)) return
+    if (!isConstDeclaration(node)) return
+    pushConstOccurrence(occurrences, sourceFile, packages, worktreePath, node)
+  })
+}
 
-  forEachSourceDescendant(sourceFile, (declaration) => {
-    if (declaration.getKindName() !== "VariableDeclaration") return
-    if (isDirectSourceFileConstDeclaration(declaration)) return
-    if (declaration.getVariableStatement?.()?.getDeclarationKind() !== "const") return
-    const name = typeof declaration.getName === "function" ? declaration.getName() : undefined
-    if (name === undefined) return
-    pushConstOccurrence(occurrences, sourceFile, packages, worktreePath, {
-      getName: () => name,
-      getStartLineNumber: () => declaration.getStartLineNumber(),
-      getInitializer: () => declaration.getInitializer?.(),
-      getParent: () => declaration.getParent?.(),
-    })
+const collectParameters = (
+  occurrences: Array<IdentifierOccurrence>,
+  sourceFile: SourceFile,
+  packages: ReadonlyArray<PackageInfo>,
+  worktreePath: string,
+): void => {
+  walkDescendants(sourceFile, (node) => {
+    if (!isParameter(node) || !isIdentifier(node.name)) return
+    if (!IDENTIFIER_NAME_PATTERN.test(node.name.text)) return
+    pushOccurrence(occurrences, packages, worktreePath, sourceFile, node.name.text, "parameter", node)
   })
 }
 
 const pushConstOccurrence = (
   occurrences: Array<IdentifierOccurrence>,
-  sourceFile: SourceFileLike,
+  sourceFile: SourceFile,
   packages: ReadonlyArray<PackageInfo>,
   worktreePath: string,
-  declaration: {
-    readonly getName: () => string
-    readonly getStartLineNumber: () => number
-    readonly getInitializer?: () => NodeLike | undefined
-    readonly getParent?: () => NodeLike | undefined
-  },
+  declaration: VariableDeclaration,
 ): void => {
+  const name = isIdentifier(declaration.name) ? declaration.name.text : textOf(declaration.name)
   pushOccurrence(
     occurrences,
     packages,
     worktreePath,
     sourceFile,
-    declaration.getName(),
+    name,
     "const",
     declaration,
     classifyConstContext(declaration),
   )
 }
 
-const collectParameters = (
-  occurrences: Array<IdentifierOccurrence>,
-  sourceFile: SourceFileLike,
-  packages: ReadonlyArray<PackageInfo>,
-  worktreePath: string,
-): void => {
-  forEachSourceDescendant(sourceFile, (parameter) => {
-    if (parameter.getKindName() !== "Parameter") return
-    const name = typeof parameter.getName === "function" ? parameter.getName() : undefined
-    if (name === undefined || !IDENTIFIER_NAME_PATTERN.test(name)) return
-    pushOccurrence(occurrences, packages, worktreePath, sourceFile, name, "parameter", parameter)
-  })
-}
-
-const forEachSourceDescendant = (
-  sourceFile: SourceFileLike,
-  visit: (node: DescendantLike) => void,
-): void => {
-  if (sourceFile.forEachDescendant !== undefined) {
-    sourceFile.forEachDescendant(visit)
-    return
-  }
-
-  for (const node of sourceFile.getDescendants?.() ?? []) {
-    visit(node)
-  }
-}
-
-const collectExportedSymbols = (
-  occurrences: Array<IdentifierOccurrence>,
-  sourceFile: SourceFileLike,
-  packages: ReadonlyArray<PackageInfo>,
-  worktreePath: string,
-): void => {
-  for (const [name, declarations] of sourceFile.getExportedDeclarations()) {
-    const firstDeclaration = declarations[0] ?? { getStartLineNumber: () => 1 }
-    pushOccurrence(occurrences, packages, worktreePath, sourceFile, name, "exported-symbol", firstDeclaration)
-  }
-}
-
 const pushOccurrence = (
   occurrences: Array<IdentifierOccurrence>,
   packages: ReadonlyArray<PackageInfo>,
   worktreePath: string,
-  sourceFile: SourceFileLike,
+  sourceFile: SourceFile,
   name: string | undefined,
   kind: GlossaryIdentifierKind,
-  node: NamedDeclarationLike,
+  node: Node,
   constContext?: ConstIdentifierContext,
 ): void => {
   if (name === undefined || name.length === 0) return
-
   const occurrence: IdentifierOccurrence = {
     name,
     kind,
-    package: locatePackageForFile(packages, sourceFile.getFilePath(), worktreePath),
-    file: relative(worktreePath, sourceFile.getFilePath()) || sourceFile.getBaseName(),
-    line: node.getStartLineNumber(),
+    package: locatePackageForFile(packages, sourceFile.fileName, worktreePath),
+    file: relative(worktreePath, sourceFile.fileName) || sourceFile.fileName,
+    line: startLine(node),
     tokens: splitIdentifierTokens(name),
     pattern: inferCasingPattern(name),
   }
-  occurrences.push(
-    constContext === undefined
-      ? occurrence
-      : {
-          ...occurrence,
-          constContext,
-        },
-  )
+  occurrences.push(constContext === undefined ? occurrence : { ...occurrence, constContext })
 }
 
-const classifyConstContext = (declaration: {
-  readonly getName: () => string
-  readonly getInitializer?: () => NodeLike | undefined
-  readonly getParent?: () => NodeLike | undefined
-}): ConstIdentifierContext => {
-  if (!isDirectSourceFileConstDeclaration(declaration)) return "local"
-
-  const initializer = declaration.getInitializer?.()
-  if (isSchemaOrTypeObjectConst(declaration.getName(), initializer)) return "schema-type-object"
-  return inferCasingPattern(declaration.getName()) === "UPPER_SNAKE_CASE" ? "module-constant" : "local"
+const classifyConstContext = (declaration: VariableDeclaration): ConstIdentifierContext => {
+  if (!isTopLevelConst(declaration)) return "local"
+  if (isSchemaOrTypeObjectConst(declaration)) return "schema-type-object"
+  const name = isIdentifier(declaration.name) ? declaration.name.text : textOf(declaration.name)
+  return inferCasingPattern(name) === "UPPER_SNAKE_CASE" ? "module-constant" : "local"
 }
 
-const isDirectSourceFileConstDeclaration = (
-  declaration: { readonly getParent?: () => NodeLike | undefined },
-): boolean => {
-  const declarationList = declaration.getParent?.()
-  if (declarationList?.getKindName?.() !== "VariableDeclarationList") return false
-  const statement = declarationList.getParent?.()
-  if (statement?.getKindName?.() !== "VariableStatement") return false
-  return statement.getParent?.()?.getKindName?.() === "SourceFile"
+const isTopLevelConst = (declaration: VariableDeclaration): boolean => {
+  const list = declaration.parent
+  if (!isVariableDeclarationList(list)) return false
+  const statement = list.parent
+  if (!isVariableStatement(statement)) return false
+  return isTsSourceFile(statement.parent)
 }
 
-const isSchemaOrTypeObjectConst = (name: string, initializer: NodeLike | undefined): boolean => {
-  const unwrappedInitializer = unwrapConstInitializer(initializer)
-  if (inferCasingPattern(name) !== "PascalCase" || unwrappedInitializer === undefined) return false
-
-  const kind = unwrappedInitializer.getKindName?.()
-  if (kind !== "CallExpression") return false
-
-  const expression = unwrappedInitializer.getExpression?.()
-  const expressionText = expression?.getText?.() ?? ""
-  return /(^|\.)(object|schema|type|struct|record|union|literal|enum)$/i.test(expressionText)
+const isConstDeclaration = (declaration: VariableDeclaration): boolean => {
+  const list = declaration.parent
+  return isVariableDeclarationList(list) && isConstList(list)
 }
 
-const unwrapConstInitializer = (initializer: NodeLike | undefined): NodeLike | undefined => {
+const isConstList = (list: { readonly flags: number } & Node): boolean =>
+  (list.flags & 2) !== 0 || textOf(list).trimStart().startsWith("const ")
+
+const isSchemaOrTypeObjectConst = (declaration: VariableDeclaration): boolean => {
+  const name = isIdentifier(declaration.name) ? declaration.name.text : textOf(declaration.name)
+  const initializer = unwrapConstInitializer(declaration.initializer)
+  if (inferCasingPattern(name) !== "PascalCase" || initializer === undefined) return false
+  if (!isCallExpression(initializer)) return false
+  return /(^|\.)(object|schema|type|struct|record|union|literal|enum)$/i.test(textOf(initializer.expression))
+}
+
+const unwrapConstInitializer = (initializer: Node | undefined): Node | undefined => {
   let current = initializer
   while (current !== undefined) {
-    const kind = current.getKindName?.()
-    if (kind !== "AsExpression" && kind !== "SatisfiesExpression" && kind !== "TypeAssertion") return current
-    current = current.getExpression?.()
+    if (isAsExpression(current) || isSatisfiesExpression(current) || isTypeAssertionExpression(current)) {
+      current = current.expression
+      continue
+    }
+    return current
   }
   return current
+}
+
+const startLine = (node: Node): number => {
+  const sourceFile = node.getSourceFile()
+  return sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1
 }
 
 const locatePackageForFile = (
@@ -302,7 +225,6 @@ const locatePackageForFile = (
   const match = [...packages]
     .sort((a, b) => b.path.length - a.path.length)
     .find((pkg) => filePath.startsWith(pkg.path))
-
   if (match === undefined) return "."
   return relative(worktreePath, match.path) || "."
 }

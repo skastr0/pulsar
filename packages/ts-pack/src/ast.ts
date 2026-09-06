@@ -33,10 +33,20 @@ export const ancestors = (node: Node): ReadonlyArray<Node> => {
   return result
 }
 
-export const firstAncestor = (
+export function firstAncestor<T extends Node>(
+  node: Node,
+  predicate: (candidate: Node) => candidate is T,
+): T | undefined
+export function firstAncestor(
   node: Node,
   predicate: (candidate: Node) => boolean,
-): Node | undefined => ancestors(node).find(predicate)
+): Node | undefined
+export function firstAncestor(
+  node: Node,
+  predicate: (candidate: Node) => boolean,
+): Node | undefined {
+  return ancestors(node).find(predicate)
+}
 
 export const textOf = (node: Node, sourceFile?: SourceFile): string =>
   node.getText(sourceFile ?? node.getSourceFile())

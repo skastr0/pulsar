@@ -508,7 +508,7 @@ const directStubThrowMessage = (fn: FnLike): string | undefined => {
   const thrownType = textOf(expression.expression)
   if (!["Error", "TypeError", "RangeError"].includes(thrownType)) return undefined
 
-  const messageArg = expression.arguments[0]
+  const messageArg = expression.arguments?.[0]
   if (
     messageArg === undefined ||
     (!isStringLiteral(messageArg) && !isNoSubstitutionTemplateLiteral(messageArg))

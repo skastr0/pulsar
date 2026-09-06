@@ -20,17 +20,37 @@ export type {
 export {
   TsPackageInfoLayer,
   TsPackageInfoTag,
-  TsProjectLayer,
-  TsProjectTag,
-  makeTsProject,
-  makeTsProjectWithOptions,
-} from "./ts-project.js"
-export type { TsProjectOptions } from "./ts-project.js"
-export {
   TsAnalysisLayer,
   TsAnalysisTag,
   makeTsAnalysisSession,
 } from "./ts-analysis.js"
+export type { TsProjectOptions } from "./ts-analysis.js"
+export {
+  textOf,
+  walkDescendants,
+} from "./ast.js"
+export {
+  isAsExpression,
+  isCallExpression,
+  isClassDeclaration,
+  isEnumDeclaration,
+  isFunctionDeclaration,
+  isIdentifier,
+  isInterfaceDeclaration,
+  isParameter,
+  isSatisfiesExpression,
+  isSourceFile,
+  isTypeAliasDeclaration,
+  isTypeAssertionExpression,
+  isVariableDeclaration,
+  isVariableDeclarationList,
+  isVariableStatement,
+} from "./tsgo-api.js"
+export type {
+  Node,
+  SourceFile,
+  VariableDeclaration,
+} from "./tsgo-api.js"
 
 export { discoverPackages } from "./discovery.js"
 export type { PackageInfo, PackageManifest } from "./discovery.js"

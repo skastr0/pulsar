@@ -232,7 +232,7 @@ const classifyWeakParameter = (
 ): ReadonlyArray<WeakBoundaryParameter> => {
   const name = identifierText(parameter.name)
   const typeNode = parameter.type
-  const typeText = typeNode === undefined ? undefined : textOf(typeNode) ?? "<untyped>"
+  const typeText = typeNode === undefined ? "<untyped>" : textOf(typeNode)
   // A default initializer means the inferred type comes from an internal
   // expression (`authPath = getAuthPath()`), not from untrusted callers.
   if (typeNode === undefined) {
@@ -282,7 +282,7 @@ const collectUntrustedDataKinds = (
 }
 
 const dataBearingTypeArguments = (
-  typeNode: import("ts-morph").TypeReferenceNode,
+  typeNode: import("../tsgo-api.js").TypeReferenceNode,
 ): ReadonlyArray<TypeNode> => {
   const typeName = textOf(typeNode.typeName)
   const args = [...(typeNode.typeArguments ?? [])]
@@ -461,7 +461,7 @@ const hasUnshadowedGlobalRoot = (
   expectedName: string,
 ): boolean => {
   const root = calleeRootIdentifier(expression)
-  return root === undefined ? undefined : textOf(root) === expectedName && isUnshadowedAmbientGlobal(root)
+  return root !== undefined && textOf(root) === expectedName && isUnshadowedAmbientGlobal(root)
 }
 
 const isUnshadowedAmbientGlobal = (identifier: Identifier): boolean => {

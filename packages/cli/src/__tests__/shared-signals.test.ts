@@ -18,7 +18,7 @@ import {
 } from "@skastr0/pulsar-core/signal"
 import { RustProjectLayer, RS_PACK_SIGNALS } from "@skastr0/pulsar-rs-pack"
 import { SHARED_SIGNALS } from "@skastr0/pulsar-shared-signals"
-import { TsProjectLayer, TS_PACK_SIGNALS } from "@skastr0/pulsar-ts-pack"
+import { TsAnalysisLayer, TS_PACK_SIGNALS } from "@skastr0/pulsar-ts-pack"
 import { Effect, Layer } from "effect"
 import { runSignalInWorktree } from "../runtime.js"
 
@@ -141,7 +141,7 @@ describe("polyglot shared signals", () => {
         }),
         Layer.succeed(ReferenceDataTag, makeReferenceData(referenceDataEntries)),
         InMemoryCacheLayer,
-        TsProjectLayer(repo),
+        TsAnalysisLayer(repo),
         RustProjectLayer(repo),
       )
 

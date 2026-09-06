@@ -29,7 +29,7 @@ interface ObserverOptions {
  * observation.
  *
  * Requirements `R` is left open — it is whatever the active signals
- * demand (e.g. TsProjectTag for the TS pack). The caller provides the
+ * demand (e.g. TsAnalysisTag for the TS pack). The caller provides the
  * layer union exactly as they do for runSignal.
  */
 export const observe = (

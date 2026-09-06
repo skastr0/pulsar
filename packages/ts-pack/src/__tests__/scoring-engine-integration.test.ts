@@ -3,15 +3,15 @@ import { describe, expect, test } from "bun:test"
 import { Effect, Layer } from "effect"
 import { ScoringEngineLayer, ScoringEngineTag, buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { SHARED_SIGNALS } from "@skastr0/pulsar-shared-signals"
-import { TsProjectLayer } from "../ts-project.js"
+import { TsAnalysisLayer } from "../ts-analysis.js"
 import { TS_PACK_SIGNALS } from "../pack.js"
 
 /**
  * Integration tests for the ScoringEngine wired against the real TS
  * signal pack and this repository's git history. These are slow (each
- * scored commit rebuilds a ts-morph Project over a fresh worktree) —
+ * scored commit rebuilds a Quartz workspace over a fresh worktree) —
  * they are the end-to-end assertion that the engine's Scope-bound
- * worktree lifecycle and the ts-morph layer compose cleanly.
+ * worktree lifecycle and the Quartz analysis layer compose cleanly.
  */
 const REPO_ROOT = new URL("../../../../", import.meta.url).pathname
 
@@ -56,7 +56,7 @@ describe("ScoringEngine + TS pack integration", () => {
         const registry = yield* buildRegistry([...SHARED_SIGNALS, ...TS_PACK_SIGNALS])
         const EngineLayer = ScoringEngineLayer(
           registry,
-          (worktreePath) => TsProjectLayer(worktreePath),
+          (worktreePath) => TsAnalysisLayer(worktreePath),
         )
         const engine = yield* (
           ScoringEngineTag.pipe(Effect.provide(EngineLayer)) as Effect.Effect<
@@ -102,7 +102,7 @@ describe("ScoringEngine + TS pack integration", () => {
         const registry = yield* buildRegistry([...SHARED_SIGNALS, ...TS_PACK_SIGNALS])
         const EngineLayer = ScoringEngineLayer(
           registry,
-          (worktreePath) => TsProjectLayer(worktreePath),
+          (worktreePath) => TsAnalysisLayer(worktreePath),
         )
         const engine = yield* (
           ScoringEngineTag.pipe(Effect.provide(EngineLayer)) as Effect.Effect<
@@ -139,7 +139,7 @@ describe("ScoringEngine + TS pack integration", () => {
         const registry = yield* buildRegistry([...SHARED_SIGNALS, ...TS_PACK_SIGNALS])
         const EngineLayer = ScoringEngineLayer(
           registry,
-          (worktreePath) => TsProjectLayer(worktreePath),
+          (worktreePath) => TsAnalysisLayer(worktreePath),
         )
         const engine = yield* (
           ScoringEngineTag.pipe(Effect.provide(EngineLayer)) as Effect.Effect<

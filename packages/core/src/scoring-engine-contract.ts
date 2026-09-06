@@ -59,7 +59,7 @@ export class ScoringEngineTag extends Context.Service<
 >()("@skastr0/pulsar-core/ScoringEngine") {}
 
 /**
- * Layer factory contract for per-worktree resources like the ts-morph
+ * Layer factory contract for per-worktree resources like the Quartz
  * Project. The engine lives in core and must not import language packs
  * directly — callers pass this factory when building the engine layer.
  */

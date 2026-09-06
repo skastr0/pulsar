@@ -257,21 +257,9 @@ const callbackTarget = (
 }
 
 const callbackSymbolTarget = (
-  callback: import("../tsgo-api.js").Identifier,
-  typeChecker?: unknown,
-): CallbackTarget | undefined => {
-  const declaration = undefined
-  if (declaration === undefined) return undefined
-  if (isFunctionDeclaration(declaration)) return declaration
-  if (
-    isVariableDeclaration(declaration) &&
-    declaration.initializer !== undefined &&
-    (isArrowFunction(declaration.initializer) || isFunctionExpression(declaration.initializer))
-  ) {
-    return declaration.initializer
-  }
-  return undefined
-}
+  _callback: import("../tsgo-api.js").Identifier,
+  _typeChecker?: unknown,
+): CallbackTarget | undefined => undefined
 
 const lexicalCallbackTarget = (
   callback: import("../tsgo-api.js").Identifier,

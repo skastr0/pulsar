@@ -20,7 +20,7 @@ import type {
   SharedCov01CoverageFactsOutput,
 } from "@skastr0/pulsar-shared-signals"
 import { TS_PACK_SIGNALS } from "../pack.js"
-import { TsProjectLayer } from "../ts-project.js"
+import { TsAnalysisLayer } from "../ts-analysis.js"
 import type { TsLd01Output } from "../signals/ts-ld-01-complexity.js"
 import { createTempRepo, type TempRepo } from "./test-repo.js"
 
@@ -51,7 +51,7 @@ const mockComplexityOut: TsLd01Output = {
   maxComplexityPressure: 1 / 3,
 }
 
-// Churn now emits absolute paths — aligned with ts-morph at produce time.
+// Churn now emits absolute paths — aligned with Quartz file paths at produce time.
 const mockChurnOut: SharedChurn01Output = {
   byFile: new Map([
     ["/repo/a.ts", 10],
@@ -1201,7 +1201,7 @@ describe("TS-RP-01 (compound)", () => {
       )
       const head = git(repo, ["rev-parse", "HEAD"])
       const layer = Layer.mergeAll(
-        TsProjectLayer(repo.root),
+        TsAnalysisLayer(repo.root),
         Layer.succeed(SignalContextTag, {
           gitSha: head,
           worktreePath: repo.root,
