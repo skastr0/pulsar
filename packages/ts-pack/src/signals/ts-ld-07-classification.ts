@@ -1,4 +1,33 @@
-import { type SourceFile, ts } from "ts-morph"
+import { hasModifier, textOf } from "../ast.js"
+import {
+  SyntaxKind,
+  isAsExpression,
+  isClassDeclaration,
+  isIdentifier,
+  isParameter,
+  isPropertyAccessExpression,
+  isPropertyAssignment,
+  isPropertySignature,
+  isTypeAssertion,
+  isArrowFunction,
+  isCallSignatureDeclaration,
+  isFunctionDeclaration,
+  isFunctionExpression,
+  isFunctionTypeNode,
+  isHeritageClause,
+  isInterfaceDeclaration,
+  isMethodDeclaration,
+  isMethodSignature,
+  isPropertyDeclaration,
+  isTypeAliasDeclaration,
+  isTypeAssertionExpression,
+  isVariableDeclaration,
+  type AsExpression,
+  type HeritageClause,
+  type Node,
+  type SourceFile,
+  type TypeAssertion,
+} from "../tsgo-api.js"
 import { compilerPropertyNameText as propertyNameText } from "./shared-compiler-functions.js"
 import {
   collectLocalExportedNames,
@@ -35,15 +64,14 @@ const BOUNDARY_MULTIPLIER = 2
 export const collectUnsafeTypeOccurrences = (
   sourceFile: SourceFile,
 ): ReadonlyArray<LocalUnsafeTypeOccurrence> => {
-  const compilerSourceFile = sourceFile.compilerNode
-  const exportedNames = collectLocalExportedNames(compilerSourceFile)
+  const exportedNames = collectLocalExportedNames(sourceFile)
   const occurrences: Array<LocalUnsafeTypeOccurrence> = []
 
-  const visit = (node: ts.Node): void => {
-    if (node.kind === ts.SyntaxKind.AnyKeyword) {
-      const classified = classifyAnyKeyword(node, compilerSourceFile, exportedNames)
-      const position = compilerSourceFile.getLineAndCharacterOfPosition(
-        node.getStart(compilerSourceFile),
+  const visit = (node: Node): void => {
+    if (node.kind === SyntaxKind.AnyKeyword) {
+      const classified = classifyAnyKeyword(node, sourceFile, exportedNames)
+      const position = sourceFile.getLineAndCharacterOfPosition(
+        node.getStart(sourceFile),
       )
       const line = position.line + 1
       const column = position.character + 1
@@ -59,19 +87,19 @@ export const collectUnsafeTypeOccurrences = (
       })
     }
 
-    ts.forEachChild(node, visit)
+    node.forEachChild(visit)
   }
 
-  visit(compilerSourceFile)
+  visit(sourceFile)
   return occurrences
 }
 
 const classifyAnyKeyword = (
-  node: ts.Node,
-  sourceFile: ts.SourceFile,
+  node: Node,
+  sourceFile: SourceFile,
   exportedNames: ReadonlySet<string>,
 ): Pick<LocalUnsafeTypeOccurrence, "kind" | "target" | "boundary"> => {
-  let current: ts.Node | undefined = node.parent
+  let current: Node | undefined = node.parent
   while (current !== undefined && current !== sourceFile) {
     const classified = classifyAnyKeywordAncestor(current, node, sourceFile, exportedNames)
     if (classified !== undefined) return classified
@@ -86,9 +114,9 @@ const classifyAnyKeyword = (
 }
 
 const classifyAnyKeywordAncestor = (
-  current: ts.Node,
-  node: ts.Node,
-  sourceFile: ts.SourceFile,
+  current: Node,
+  node: Node,
+  sourceFile: SourceFile,
   exportedNames: ReadonlySet<string>,
 ): Pick<LocalUnsafeTypeOccurrence, "kind" | "target" | "boundary"> | undefined =>
   classifyAnyAssertion(current, sourceFile, exportedNames) ??
@@ -100,11 +128,11 @@ const classifyAnyKeywordAncestor = (
   classifyAnyHeritage(current, sourceFile, exportedNames)
 
 const classifyAnyAssertion = (
-  current: ts.Node,
-  sourceFile: ts.SourceFile,
+  current: Node,
+  sourceFile: SourceFile,
   exportedNames: ReadonlySet<string>,
 ): Pick<LocalUnsafeTypeOccurrence, "kind" | "target" | "boundary"> | undefined =>
-  ts.isAsExpression(current) || ts.isTypeAssertionExpression(current)
+  isAsExpression(current) || isTypeAssertionExpression(current)
     ? {
         kind: "assertion",
         target: assertionTargetName(current, sourceFile),
@@ -113,11 +141,11 @@ const classifyAnyAssertion = (
     : undefined
 
 const classifyAnyParameter = (
-  current: ts.Node,
-  sourceFile: ts.SourceFile,
+  current: Node,
+  sourceFile: SourceFile,
   exportedNames: ReadonlySet<string>,
 ): Pick<LocalUnsafeTypeOccurrence, "kind" | "target" | "boundary"> | undefined =>
-  ts.isParameter(current)
+  isParameter(current)
     ? {
         kind: "parameter",
         target: parameterName(current, sourceFile),
@@ -126,9 +154,9 @@ const classifyAnyParameter = (
     : undefined
 
 const classifyAnyReturn = (
-  current: ts.Node,
-  node: ts.Node,
-  sourceFile: ts.SourceFile,
+  current: Node,
+  node: Node,
+  sourceFile: SourceFile,
   exportedNames: ReadonlySet<string>,
 ): Pick<LocalUnsafeTypeOccurrence, "kind" | "target" | "boundary"> | undefined =>
   isReturnTypeOwner(current) && current.type !== undefined && isAncestorOf(current.type, node)
@@ -140,10 +168,10 @@ const classifyAnyReturn = (
     : undefined
 
 const classifyAnyProperty = (
-  current: ts.Node,
+  current: Node,
   exportedNames: ReadonlySet<string>,
 ): Pick<LocalUnsafeTypeOccurrence, "kind" | "target" | "boundary"> | undefined =>
-  ts.isPropertySignature(current) || ts.isPropertyDeclaration(current)
+  isPropertySignature(current) || isPropertyDeclaration(current)
     ? {
         kind: "property",
         target: propertyNameText(current.name),
@@ -152,23 +180,23 @@ const classifyAnyProperty = (
     : undefined
 
 const classifyAnyVariable = (
-  current: ts.Node,
-  sourceFile: ts.SourceFile,
+  current: Node,
+  sourceFile: SourceFile,
   exportedNames: ReadonlySet<string>,
 ): Pick<LocalUnsafeTypeOccurrence, "kind" | "target" | "boundary"> | undefined =>
-  ts.isVariableDeclaration(current)
+  isVariableDeclaration(current)
     ? {
         kind: "variable",
-        target: current.name.getText(sourceFile),
+        target: textOf(current.name, sourceFile),
         boundary: isBoundaryVariable(current, exportedNames),
       }
     : undefined
 
 const classifyAnyTypeAlias = (
-  current: ts.Node,
+  current: Node,
   exportedNames: ReadonlySet<string>,
 ): Pick<LocalUnsafeTypeOccurrence, "kind" | "target" | "boundary"> | undefined =>
-  ts.isTypeAliasDeclaration(current)
+  isTypeAliasDeclaration(current)
     ? {
         kind: "type-alias",
         target: current.name.text,
@@ -177,11 +205,11 @@ const classifyAnyTypeAlias = (
     : undefined
 
 const classifyAnyHeritage = (
-  current: ts.Node,
-  sourceFile: ts.SourceFile,
+  current: Node,
+  sourceFile: SourceFile,
   exportedNames: ReadonlySet<string>,
 ): Pick<LocalUnsafeTypeOccurrence, "kind" | "target" | "boundary"> | undefined =>
-  ts.isHeritageClause(current)
+  isHeritageClause(current)
     ? {
         kind: "heritage",
         target: heritageOwnerName(current, sourceFile),
@@ -189,8 +217,8 @@ const classifyAnyHeritage = (
       }
     : undefined
 
-const isAncestorOf = (ancestor: ts.Node, node: ts.Node): boolean => {
-  let current: ts.Node | undefined = node
+const isAncestorOf = (ancestor: Node, node: Node): boolean => {
+  let current: Node | undefined = node
   while (current !== undefined) {
     if (current === ancestor) return true
     current = current.parent
@@ -199,46 +227,46 @@ const isAncestorOf = (ancestor: ts.Node, node: ts.Node): boolean => {
 }
 
 const parameterName = (
-  parameter: ts.ParameterDeclaration,
-  sourceFile: ts.SourceFile,
-): string => parameter.name.getText(sourceFile)
+  parameter: ParameterDeclaration,
+  sourceFile: SourceFile,
+): string => textOf(parameter.name, sourceFile)
 
 const functionLikeName = (
   owner: FunctionBoundaryOwner,
-  sourceFile: ts.SourceFile,
+  sourceFile: SourceFile,
 ): string => {
-  if (ts.isFunctionDeclaration(owner) || ts.isFunctionExpression(owner)) {
+  if (isFunctionDeclaration(owner) || isFunctionExpression(owner)) {
     return owner.name?.text ?? "<anonymous>"
   }
-  if (ts.isMethodDeclaration(owner) || ts.isMethodSignature(owner)) {
+  if (isMethodDeclaration(owner) || isMethodSignature(owner)) {
     return propertyNameText(owner.name)
   }
-  if (ts.isArrowFunction(owner) || ts.isFunctionTypeNode(owner)) {
+  if (isArrowFunction(owner) || isFunctionTypeNode(owner)) {
     return nearestNamedDeclaration(owner, sourceFile) ?? "<anonymous>"
   }
-  if (ts.isCallSignatureDeclaration(owner)) {
+  if (isCallSignatureDeclaration(owner)) {
     return nearestNamedDeclaration(owner, sourceFile) ?? "<call signature>"
   }
   return nearestNamedDeclaration(owner, sourceFile) ?? "<construct signature>"
 }
 
 const nearestNamedDeclaration = (
-  node: ts.Node,
-  sourceFile: ts.SourceFile,
+  node: Node,
+  sourceFile: SourceFile,
 ): string | undefined => {
-  let current: ts.Node | undefined = node.parent
+  let current: Node | undefined = node.parent
   while (current !== undefined && current !== sourceFile) {
-    if (ts.isVariableDeclaration(current)) return current.name.getText(sourceFile)
+    if (isVariableDeclaration(current)) return textOf(current.name, sourceFile)
     if (
-      ts.isTypeAliasDeclaration(current) ||
-      ts.isInterfaceDeclaration(current) ||
-      ts.isClassDeclaration(current)
+      isTypeAliasDeclaration(current) ||
+      isInterfaceDeclaration(current) ||
+      isClassDeclaration(current)
     ) {
       return current.name?.text
     }
-    if (ts.isParameter(current)) return current.name.getText(sourceFile)
-    if (ts.isPropertyAssignment(current) || ts.isPropertySignature(current)) {
-      return current.name.getText(sourceFile)
+    if (isParameter(current)) return textOf(current.name, sourceFile)
+    if (isPropertyAssignment(current) || isPropertySignature(current)) {
+      return textOf(current.name, sourceFile)
     }
     current = current.parent
   }
@@ -246,19 +274,19 @@ const nearestNamedDeclaration = (
 }
 
 const assertionTargetName = (
-  assertion: ts.AsExpression | ts.TypeAssertion,
-  sourceFile: ts.SourceFile,
+  assertion: AsExpression | TypeAssertion,
+  sourceFile: SourceFile,
 ): string => {
   const expression = assertion.expression
-  if (ts.isIdentifier(expression) || ts.isPropertyAccessExpression(expression)) {
-    return expression.getText(sourceFile)
+  if (isIdentifier(expression) || isPropertyAccessExpression(expression)) {
+    return textOf(expression, sourceFile)
   }
   return "<expression>"
 }
 
 const heritageOwnerName = (
-  clause: ts.HeritageClause,
-  sourceFile: ts.SourceFile,
+  clause: HeritageClause,
+  sourceFile: SourceFile,
 ): string => nearestNamedDeclaration(clause, sourceFile) ?? "<heritage>"
 
 const unsafeTypeWeight = (kind: UnsafeTypeKind, boundary: boolean): number => {

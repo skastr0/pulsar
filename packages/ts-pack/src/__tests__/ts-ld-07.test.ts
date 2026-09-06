@@ -9,7 +9,7 @@ import { buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { ReferenceDataTag, SignalContextTag, makeReferenceData } from "@skastr0/pulsar-core/signal"
 import { Effect, Layer, Schema } from "effect"
 import { TS_PACK_SIGNALS } from "../pack.js"
-import { TsProjectLayer } from "../ts-project.js"
+import { TsAnalysisLayer } from "../ts-analysis.js"
 import {
   TsLd07,
   TsLd07Config,
@@ -945,7 +945,7 @@ describe("TS-LD-07 (unsafe type erosion)", () => {
         TsLd07.compute(TsLd07.defaultConfig, new Map()).pipe(
           Effect.provide(
             Layer.mergeAll(
-              TsProjectLayer(repo.root),
+              TsAnalysisLayer(repo.root),
               Layer.succeed(CalibrationContextTag, calibrationContext),
               Layer.succeed(SignalContextTag, {
                 gitSha: "TEST",

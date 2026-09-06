@@ -1,4 +1,4 @@
-import { type SourceFile } from "ts-morph"
+import type { SourceFile } from "../tsgo-api.js"
 import type { CalibrationDecision, CalibrationProcessorError, ResolvedCalibrationContext } from "@skastr0/pulsar-core/calibration"
 import { Effect, Option } from "effect"
 import { isExcluded } from "./shared-globs.js"
@@ -29,8 +29,8 @@ export const computeUnsafeTypeErosionOutput = (
   let analyzedLines = 0
 
   for (const sourceFile of sourceFiles) {
-    const file = sourceFile.getFilePath()
-    if (sourceFile.isDeclarationFile() || isExcluded(file, config.exclude_globs)) continue
+    const file = sourceFile.fileName
+    if (sourceFile.isDeclarationFile || isExcluded(file, config.exclude_globs)) continue
 
     analyzedFiles += 1
     analyzedLines += countNonEmptyLines(sourceFile)

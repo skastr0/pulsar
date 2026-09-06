@@ -3,7 +3,7 @@ import type { Diagnostic, Signal } from "@skastr0/pulsar-core/signal"
 import { CalibrationContextTag } from "@skastr0/pulsar-core/calibration"
 import type { CalibrationDecision } from "@skastr0/pulsar-core/calibration"
 import { Effect, Schema } from "effect"
-import { TsProjectTag } from "../ts-project.js"
+import { TsAnalysisTag } from "../ts-analysis.js"
 import { computeUnsafeTypeErosionOutput } from "./ts-ld-07-analysis.js"
 
 export const TsLd07Config = Schema.Struct({
@@ -64,7 +64,7 @@ export interface TsLd07Output {
   readonly diagnosticLimit: number
 }
 
-export const TsLd07: Signal<TsLd07Config, TsLd07Output, TsProjectTag> = {
+export const TsLd07: Signal<TsLd07Config, TsLd07Output, TsAnalysisTag> = {
   id: "TS-LD-07-unsafe-type-erosion",
   title: "Unsafe type erosion",
   aliases: ["TS-LD-07"],
@@ -131,18 +131,10 @@ export const TsLd07: Signal<TsLd07Config, TsLd07Output, TsProjectTag> = {
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
-      const project = yield* TsProjectTag
+      const analysis = yield* TsAnalysisTag
       const calibration = yield* Effect.serviceOption(CalibrationContextTag)
-      const result = yield* Effect.try({
-        try: () => project.getSourceFiles(),
-        catch: (cause) =>
-          new SignalComputeError({
-            signalId: "TS-LD-07-unsafe-type-erosion",
-            message: String(cause),
-            cause,
-          }),
-      })
-      const output = yield* computeUnsafeTypeErosionOutput(result, config, calibration).pipe(
+      const sourceFiles = yield* analysis.mapFiles(async (context) => context.sourceFile)
+      const output = yield* computeUnsafeTypeErosionOutput(sourceFiles, config, calibration).pipe(
         Effect.mapError(
           (cause) =>
             new SignalComputeError({

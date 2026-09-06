@@ -1,4 +1,4 @@
-import { type SourceFile } from "ts-morph"
+import type { SourceFile } from "../tsgo-api.js"
 import type { CalibrationDecision } from "@skastr0/pulsar-core/calibration"
 import type {
   TsLd07Config,
@@ -61,7 +61,7 @@ export const summarizeFileOccurrences = (
 })
 
 export const countNonEmptyLines = (sourceFile: SourceFile): number =>
-  sourceFile.getFullText().split(/\r?\n/u).filter((line) => line.trim() !== "").length
+  sourceFile.text.split(/\r?\n/u).filter((line) => line.trim() !== "").length
 
 export const compareUnsafeOccurrences = (
   left: UnsafeTypeOccurrence,
