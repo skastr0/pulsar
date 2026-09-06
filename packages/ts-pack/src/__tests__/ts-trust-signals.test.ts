@@ -8,7 +8,7 @@ import type { ChangedHunk, Signal } from "@skastr0/pulsar-core/signal"
 import { withConfigFactorLedger } from "@skastr0/pulsar-core/factors"
 import { buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { Effect, Layer, Schema } from "effect"
-import { TsProjectLayer } from "../ts-project.js"
+import { TsAnalysisLayer } from "../ts-analysis.js"
 import { TsBp01, type TsBp01Output } from "../signals/ts-bp-01-public-api-signature-diff.js"
 import { TsCc01 } from "../signals/ts-cc-01-async-failure-control.js"
 import { TsCc02 } from "../signals/ts-cc-02-unbounded-concurrency.js"
@@ -533,7 +533,7 @@ describe("TypeScript trust-domain and AI-slop signals", () => {
 
   const runBp = async (changedHunks: ReadonlyArray<ChangedHunk>): Promise<TsBp01Output> => {
     const layer = Layer.mergeAll(
-      TsProjectLayer(repo.root),
+      TsAnalysisLayer(repo.root),
       Layer.succeed(SignalContextTag, {
         gitSha: "TEST",
         worktreePath: repo.root,

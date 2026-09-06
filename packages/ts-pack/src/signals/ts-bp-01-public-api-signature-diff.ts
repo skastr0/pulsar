@@ -6,12 +6,28 @@ import {
   type Signal,
 } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
+import { textOf } from "../ast.js"
 import {
-  Node,
-  type Node as TsMorphNode,
+  SyntaxKind,
+  isClassDeclaration,
+  isEnumDeclaration,
+  isExportAssignment,
+  isExportDeclaration,
+  isFunctionDeclaration,
+  isIdentifier,
+  isInterfaceDeclaration,
+  isNamedExports,
+  isNamespaceExport,
+  isNoSubstitutionTemplateLiteral,
+  isStringLiteral,
+  isTypeAliasDeclaration,
+  isVariableDeclaration,
+  isVariableStatement,
+  type Node,
   type SourceFile,
-} from "ts-morph"
-import { TsPackageInfoTag, TsProjectTag } from "../ts-project.js"
+} from "../tsgo-api.js"
+import { TsAnalysisTag, TsPackageInfoTag } from "../ts-analysis.js"
+import { hasExportModifier, hasDefaultModifier } from "../ast.js"
 import type { PackageInfo } from "../discovery.js"
 import { publicEntrypointSourceFiles } from "./ts-ab-02-public-entrypoints.js"
 import {
@@ -59,7 +75,7 @@ export interface TsBp01Output {
   readonly enforcementCeiling: ReadonlyArray<string>
 }
 
-export const TsBp01: Signal<TsBp01Config, TsBp01Output, TsProjectTag | TsPackageInfoTag | SignalContextTag> = {
+export const TsBp01: Signal<TsBp01Config, TsBp01Output, TsAnalysisTag | TsPackageInfoTag | SignalContextTag> = {
   id: "TS-BP-01-public-api-signature-diff",
   title: "Public API signature diff",
   aliases: ["TS-BP-01"],
@@ -84,12 +100,21 @@ export const TsBp01: Signal<TsBp01Config, TsBp01Output, TsProjectTag | TsPackage
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
-      const project = yield* TsProjectTag
+      const analysis = yield* TsAnalysisTag
       const packages = yield* TsPackageInfoTag
       const context = yield* SignalContextTag
+      const sourceFiles = yield* analysis.mapFiles(async (fileContext) => fileContext.sourceFile).pipe(
+        Effect.mapError((cause) =>
+          new SignalComputeError({
+            signalId: "TS-BP-01-public-api-signature-diff",
+            message: cause.message,
+            cause,
+          }),
+        ),
+      )
       return yield* Effect.try({
         try: (): TsBp01Output =>
-          computePublicApiSignatureDiff(project.getSourceFiles(), packages, config, context),
+          computePublicApiSignatureDiff(sourceFiles, packages, config, context),
         catch: (cause) =>
           new SignalComputeError({
             signalId: "TS-BP-01-public-api-signature-diff",
@@ -151,23 +176,21 @@ const computePublicApiSignatureDiff = (
 
   for (const sourceFile of sourceFiles) {
     if (!isAnalyzableSourceFile(sourceFile, config.exclude_globs)) continue
-    if (!publicEntryFiles.has(sourceFile.getFilePath())) continue
+    if (!publicEntryFiles.has(sourceFile.fileName)) continue
     analyzedFiles += 1
-    for (const [exportName, declarations] of sourceFile.getExportedDeclarations()) {
-      for (const declaration of declarations) {
-        const location = locationOf(declaration)
-        const signature = signatureOf(exportName, declaration)
-        const key = `${location.file}:${location.line}:${exportName}:${signature}`
-        if (seen.has(key)) continue
-        seen.add(key)
-        signatures.push({
-          exportName,
-          ...location,
-          declarationKind: declaration.getKindName(),
-          signature,
-          changedInDiff: changedHunkCovers(context.worktreePath, location, context.changedHunks),
-        })
-      }
+    for (const exported of collectExportedDeclarations(sourceFile)) {
+      const location = locationOf(exported.declaration)
+      const signature = signatureOf(exported.exportName, exported.declaration)
+      const key = `${location.file}:${location.line}:${exported.exportName}:${signature}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      signatures.push({
+        exportName: exported.exportName,
+        ...location,
+        declarationKind: SyntaxKind[exported.declaration.kind] ?? String(exported.declaration.kind),
+        signature,
+        changedInDiff: changedHunkCovers(context.worktreePath, location, context.changedHunks),
+      })
     }
   }
 
@@ -205,27 +228,64 @@ const computePublicApiSignatureDiff = (
   }
 }
 
-const signatureOf = (exportName: string, declaration: TsMorphNode): string => {
-  if (Node.isFunctionDeclaration(declaration)) {
-    const params = declaration.getParameters().map((param) => `${param.getName()}: ${param.getType().getText(param)}`)
-    return `function ${exportName}(${params.join(", ")}): ${declaration.getReturnType().getText(declaration)}`
+const signatureOf = (exportName: string, declaration: Node): string => {
+  if (isFunctionDeclaration(declaration)) {
+    const params = declaration.parameters.map((param) => {
+      const name = isIdentifier(param.name) ? param.name.text : textOf(param.name)
+      const typeText = param.type === undefined ? "any" : textOf(param.type)
+      return `${name}: ${typeText}`
+    })
+    const returnType = declaration.type === undefined ? "void" : textOf(declaration.type)
+    return `function ${exportName}(${params.join(", ")}): ${returnType}`
   }
-  if (Node.isClassDeclaration(declaration)) {
+  if (isClassDeclaration(declaration)) {
     return `class ${exportName}`
   }
-  if (Node.isInterfaceDeclaration(declaration)) {
-    return compact(declaration.getText())
+  if (isInterfaceDeclaration(declaration)) {
+    return compact(textOf(declaration))
   }
-  if (Node.isTypeAliasDeclaration(declaration)) {
-    return `type ${exportName} = ${declaration.getTypeNode()?.getText() ?? declaration.getType().getText(declaration)}`
+  if (isTypeAliasDeclaration(declaration)) {
+    return `type ${exportName} = ${declaration.type === undefined ? "unknown" : textOf(declaration.type)}`
   }
-  if (Node.isEnumDeclaration(declaration)) {
-    return compact(declaration.getText())
+  if (isEnumDeclaration(declaration)) {
+    return compact(textOf(declaration))
   }
-  if (Node.isVariableDeclaration(declaration)) {
-    return `const ${exportName}: ${declaration.getType().getText(declaration)}`
+  if (isVariableDeclaration(declaration)) {
+    return `const ${exportName}: ${declaration.type === undefined ? "unknown" : textOf(declaration.type)}`
   }
-  return compact(declaration.getText())
+  return compact(textOf(declaration))
+}
+
+const collectExportedDeclarations = (
+  sourceFile: SourceFile,
+): ReadonlyArray<{ readonly exportName: string; readonly declaration: Node }> => {
+  const exported: Array<{ exportName: string; declaration: Node }> = []
+  for (const statement of sourceFile.statements) {
+    if (isFunctionDeclaration(statement) || isClassDeclaration(statement) || isInterfaceDeclaration(statement) || isTypeAliasDeclaration(statement) || isEnumDeclaration(statement)) {
+      if (!hasExportModifier(statement)) continue
+      const name = statement.name === undefined ? "default" : (isIdentifier(statement.name) ? statement.name.text : textOf(statement.name))
+      exported.push({ exportName: hasDefaultModifier(statement) ? "default" : name, declaration: statement })
+      continue
+    }
+    if (isVariableStatement(statement) && hasExportModifier(statement)) {
+      for (const declaration of statement.declarationList.declarations) {
+        if (!isIdentifier(declaration.name)) continue
+        exported.push({ exportName: declaration.name.text, declaration })
+      }
+      continue
+    }
+    if (isExportAssignment(statement)) {
+      exported.push({ exportName: "default", declaration: statement })
+      continue
+    }
+    if (isExportDeclaration(statement) && statement.exportClause !== undefined && isNamedExports(statement.exportClause)) {
+      for (const specifier of statement.exportClause.elements) {
+        const exportName = isIdentifier(specifier.name) ? specifier.name.text : textOf(specifier.name)
+        exported.push({ exportName, declaration: specifier })
+      }
+    }
+  }
+  return exported
 }
 
 const compact = (value: string): string =>
