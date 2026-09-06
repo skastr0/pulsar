@@ -1,8 +1,23 @@
 import { basename } from "node:path"
 import { sortedUniqueFilePaths } from "@skastr0/pulsar-core/signal"
-import { Node, type SourceFile } from "ts-morph"
+import { hasExportModifier, walkDescendants } from "../ast.js"
 import { createModuleResolver } from "../graph/module-graph.js"
 import type { PackageInfo } from "../discovery.js"
+import {
+  isClassDeclaration,
+  isEnumDeclaration,
+  isExportAssignment,
+  isExportDeclaration,
+  isFunctionDeclaration,
+  isInterfaceDeclaration,
+  isModuleDeclaration,
+  isNamedExports,
+  isNoSubstitutionTemplateLiteral,
+  isStringLiteral,
+  isTypeAliasDeclaration,
+  isVariableStatement,
+  type SourceFile,
+} from "../tsgo-api.js"
 
 export interface ReExportAnalysis {
   readonly isBarrel: boolean
@@ -25,14 +40,14 @@ export const buildReExportAnalysis = (
   readonly analysisByFile: Map<string, ReExportAnalysis>
 } => {
   const fileSet: ReadonlySet<string> = new Set(
-    sourceFiles.map((sourceFile): string => sourceFile.getFilePath()),
+    sourceFiles.map((sourceFile): string => sourceFile.fileName),
   )
   const resolver = createModuleResolver(sourceFiles, packages)
   const reExportTargets = new Map<string, ReadonlyArray<string>>()
   const analysisByFile = new Map<string, ReExportAnalysis>()
 
   for (const sourceFile of sourceFiles) {
-    const file = sourceFile.getFilePath()
+    const file = sourceFile.fileName
     const targets = collectReExportTargets(sourceFile, fileSet, resolver)
     reExportTargets.set(file, targets)
     analysisByFile.set(file, analyzeReExportFile(sourceFile, targets, config))
@@ -46,15 +61,17 @@ const collectReExportTargets = (
   fileSet: ReadonlySet<string>,
   resolver: ReturnType<typeof createModuleResolver>,
 ): ReadonlyArray<string> => {
-  const file = sourceFile.getFilePath()
+  const file = sourceFile.fileName
   return sortedUniqueFilePaths(
-    sourceFile.getExportDeclarations().reduce<Array<string>>((acc, declaration) => {
-      const value = resolver.resolve(file, declaration)
-      if (value !== undefined && fileSet.has(value)) {
-        acc.push(value)
-      }
+    (() => {
+      const acc: Array<string> = []
+      walkDescendants(sourceFile, (declaration) => {
+        if (!isExportDeclaration(declaration)) return
+        const value = resolver.resolve(file, declaration)
+        if (value !== undefined && fileSet.has(value)) acc.push(value)
+      })
       return acc
-    }, []),
+    })(),
   )
 }
 
@@ -63,7 +80,7 @@ const analyzeReExportFile = (
   targets: ReadonlyArray<string>,
   config: ReExportAnalysisConfig,
 ): ReExportAnalysis => {
-  const file = sourceFile.getFilePath()
+  const file = sourceFile.fileName
   const directReExports = targets.length
   const totalExports = directReExports + countLocalExportSurfaces(sourceFile)
   const barrelRatio = totalExports === 0 ? Number(directReExports > 0) : directReExports / totalExports
@@ -82,31 +99,34 @@ const analyzeReExportFile = (
 const countLocalExportSurfaces = (sourceFile: SourceFile): number => {
   let count = 0
 
-  for (const statement of sourceFile.getStatements()) {
-    if (Node.isExportDeclaration(statement)) {
-      if (statement.getModuleSpecifierValue() !== undefined) continue
-      count += Math.max(1, statement.getNamedExports().length)
+  for (const statement of sourceFile.statements) {
+    if (isExportDeclaration(statement)) {
+      if (statement.moduleSpecifier !== undefined) continue
+      const named = statement.exportClause !== undefined && isNamedExports(statement.exportClause)
+        ? statement.exportClause.elements.length
+        : 0
+      count += Math.max(1, named)
       continue
     }
 
-    if (Node.isExportAssignment(statement)) {
+    if (isExportAssignment(statement)) {
       count += 1
       continue
     }
 
-    if (Node.isVariableStatement(statement)) {
+    if (isVariableStatement(statement)) {
       if (!hasExportModifier(statement)) continue
-      count += Math.max(1, statement.getDeclarations().length)
+      count += Math.max(1, statement.declarationList.declarations.length)
       continue
     }
 
     if (
-      Node.isFunctionDeclaration(statement) ||
-      Node.isClassDeclaration(statement) ||
-      Node.isInterfaceDeclaration(statement) ||
-      Node.isTypeAliasDeclaration(statement) ||
-      Node.isEnumDeclaration(statement) ||
-      Node.isModuleDeclaration(statement)
+      isFunctionDeclaration(statement) ||
+      isClassDeclaration(statement) ||
+      isInterfaceDeclaration(statement) ||
+      isTypeAliasDeclaration(statement) ||
+      isEnumDeclaration(statement) ||
+      isModuleDeclaration(statement)
     ) {
       if (hasExportModifier(statement)) count += 1
     }
@@ -114,14 +134,3 @@ const countLocalExportSurfaces = (sourceFile: SourceFile): number => {
 
   return count
 }
-
-const hasExportModifier = (
-  node:
-    | import("ts-morph").VariableStatement
-    | import("ts-morph").FunctionDeclaration
-    | import("ts-morph").ClassDeclaration
-    | import("ts-morph").InterfaceDeclaration
-    | import("ts-morph").TypeAliasDeclaration
-    | import("ts-morph").EnumDeclaration
-    | import("ts-morph").ModuleDeclaration,
-): boolean => node.getModifiers().some((modifier) => modifier.getText() === "export")

@@ -1,8 +1,8 @@
 import { SignalContextTag, SignalComputeError, summarize } from "@skastr0/pulsar-core/signal"
 import type { Diagnostic, DistributionalSummary, Signal } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
-import type { SourceFile } from "ts-morph"
-import { TsPackageInfoTag, TsProjectTag } from "../ts-project.js"
+import type { SourceFile } from "../tsgo-api.js"
+import { TsAnalysisTag, TsPackageInfoTag } from "../ts-analysis.js"
 import type { PackageInfo } from "../discovery.js"
 import { isExcluded } from "./shared-globs.js"
 import {
@@ -45,7 +45,7 @@ interface TsAd03Output {
 export const TsAd03: Signal<
   TsAd03Config,
   TsAd03Output,
-  TsProjectTag | TsPackageInfoTag | SignalContextTag
+  TsAnalysisTag | TsPackageInfoTag | SignalContextTag
 > = {
   id: "TS-AD-03-reexport-depth",
   title: "Re-export depth",
@@ -73,14 +73,13 @@ export const TsAd03: Signal<
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
-      const project = yield* TsProjectTag
+      const analysis = yield* TsAnalysisTag
       const packages = yield* TsPackageInfoTag
       const context = yield* SignalContextTag
+      const files = yield* analysis.mapFiles(async (fileContext) => fileContext.sourceFile)
       const result = yield* Effect.try({
         try: (): TsAd03Output => {
-          const sourceFiles = project
-            .getSourceFiles()
-            .filter((sourceFile) => !isExcluded(sourceFile.getFilePath(), config.exclude_globs))
+          const sourceFiles = files.filter((sourceFile) => !isExcluded(sourceFile.fileName, config.exclude_globs))
           return computeReExportDepthOutput(sourceFiles, packages, config, context.worktreePath)
         },
         catch: (cause) =>
