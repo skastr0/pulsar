@@ -1,5 +1,5 @@
+import type { Project, SourceFile } from "../tsgo-api.js"
 import { collectLocalExportedNames } from "./ts-ld-07-boundary.js"
-import { type SourceFile, ts } from "./ts-ld-09-ast.js"
 import { collectEffectOpacity } from "./ts-ld-09-effect-opacity.js"
 import {
   collectOpaquePromiseApi,
@@ -14,27 +14,32 @@ import type {
   TsLd09Config,
 } from "./ts-ld-09-types.js"
 
-export const collectErrorChannelOpacityFindings = (
+export const collectErrorChannelOpacityFindings = async (
   sourceFile: SourceFile,
+  project: Project,
   config: TsLd09Config,
-): ReadonlyArray<LocalErrorChannelFinding> => {
-  const compilerSourceFile = sourceFile.compilerNode
-  const typeChecker = sourceFile.getProject().getTypeChecker().compilerObject
-  const exportedNames = collectLocalExportedNames(compilerSourceFile)
+): Promise<ReadonlyArray<LocalErrorChannelFinding>> => {
+  const exportedNames = collectLocalExportedNames(sourceFile)
   const findings: Array<LocalErrorChannelFinding> = []
 
-  const visit = (node: ts.Node): void => {
+  const visit = async (node: import("../tsgo-api.js").Node): Promise<void> => {
     const finding =
-      collectBroadThrow(node, compilerSourceFile, exportedNames) ??
-      collectCatchCollapse(node, compilerSourceFile, exportedNames) ??
-      collectOpaquePromiseApi(node, compilerSourceFile, exportedNames, config, typeChecker) ??
-      collectEffectOpacity(node, compilerSourceFile, exportedNames, config, typeChecker) ??
-      collectPromiseCatchCollapse(node, compilerSourceFile, exportedNames, typeChecker)
+      collectBroadThrow(node, sourceFile, exportedNames) ??
+      collectCatchCollapse(node, sourceFile, exportedNames) ??
+      await collectOpaquePromiseApi(node, sourceFile, exportedNames, config, project) ??
+      collectEffectOpacity(node, sourceFile, exportedNames, config, project) ??
+      await collectPromiseCatchCollapse(node, sourceFile, exportedNames, project)
 
     if (finding !== undefined) findings.push(finding)
-    ts.forEachChild(node, visit)
+    const children: Array<import("../tsgo-api.js").Node> = []
+    node.forEachChild((child) => {
+      children.push(child)
+    })
+    for (const child of children) {
+      await visit(child)
+    }
   }
 
-  visit(compilerSourceFile)
+  await visit(sourceFile)
   return findings
 }

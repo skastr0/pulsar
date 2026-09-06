@@ -1,80 +1,116 @@
-import { ts } from "ts-morph"
+import { textOf } from "../ast.js"
+import {
+  SyntaxKind,
+  isArrayLiteralExpression,
+  isAsExpression,
+  isAwaitExpression,
+  isBinaryExpression,
+  isBlock,
+  isCallExpression,
+  isCatchClause,
+  isClassDeclaration,
+  isConditionalExpression,
+  isElementAccessExpression,
+  isFunctionDeclaration,
+  isFunctionExpression,
+  isArrowFunction,
+  isIdentifier,
+  isIfStatement,
+  isMethodDeclaration,
+  isNewExpression,
+  isNonNullExpression,
+  isNoSubstitutionTemplateLiteral,
+  isNumericLiteral,
+  isObjectLiteralExpression,
+  isParenthesizedExpression,
+  isPropertyAccessExpression,
+  isPropertyAssignment,
+  isReturnStatement,
+  isSatisfiesExpression,
+  isShorthandPropertyAssignment,
+  isStringLiteral,
+  isThrowStatement,
+  isTypeOfExpression,
+  isVariableDeclaration,
+  isVoidExpression,
+} from "../tsgo-api.js"
 import { isCompilerFunctionLike } from "./shared-compiler-functions.js"
 
 export const catchHasGuardedFallbackAndPropagation = (
-  clause: ts.CatchClause,
-  sourceFile: ts.SourceFile,
+  clause: import("../tsgo-api.js").CatchClause,
+  sourceFile: import("../tsgo-api.js").SourceFile,
 ): boolean => {
-  const variable = clause.variableDeclaration?.name.getText(sourceFile)
-  if (variable === undefined) return false
+  const variable = clause.variableDeclaration?.name
+  if (variable === undefined || !isIdentifier(variable)) return false
+  const variableName = variable.text
 
   let guardedFallback = false
   let propagatesError = false
 
-  const visit = (node: ts.Node): void => {
+  const visit = (node: import("../tsgo-api.js").Node): void => {
     if (isCompilerFunctionLike(node)) return
-    if (ts.isIfStatement(node) && conditionMentions(node.expression, variable, sourceFile)) {
+    if (isIfStatement(node) && conditionMentions(node.expression, variableName, sourceFile)) {
       guardedFallback =
         guardedFallback ||
         statementReturnsFallback(node.thenStatement) ||
         (node.elseStatement !== undefined && statementReturnsFallback(node.elseStatement))
     }
-    if (ts.isThrowStatement(node) || textStartsWithEffectFail(node, sourceFile)) {
+    if (isThrowStatement(node) || textStartsWithEffectFail(node, sourceFile)) {
       propagatesError = true
       return
     }
-    ts.forEachChild(node, visit)
+    node.forEachChild(visit)
   }
 
   visit(clause.block)
   return guardedFallback && propagatesError
 }
 
-const statementReturnsFallback = (statement: ts.Statement): boolean => {
+const statementReturnsFallback = (statement: import("../tsgo-api.js").Node): boolean => {
   let found = false
-  const visit = (node: ts.Node): void => {
+  const visit = (node: import("../tsgo-api.js").Node): void => {
     if (found) return
     if (isCompilerFunctionLike(node)) return
-    if (ts.isReturnStatement(node) && isFallbackExpression(node.expression)) {
+    if (isReturnStatement(node) && isFallbackExpression(node.expression)) {
       found = true
       return
     }
-    ts.forEachChild(node, visit)
+    node.forEachChild(visit)
   }
   visit(statement)
   return found
 }
 
 const conditionMentions = (
-  condition: ts.Expression,
+  condition: import("../tsgo-api.js").Node,
   variable: string,
-  sourceFile: ts.SourceFile,
+  sourceFile: import("../tsgo-api.js").SourceFile,
 ): boolean => {
   let found = false
-  const visit = (node: ts.Node): void => {
+  const visit = (node: import("../tsgo-api.js").Node): void => {
     if (found) return
-    if (ts.isIdentifier(node) && node.text === variable) {
+    if (isIdentifier(node) && node.text === variable) {
       found = true
       return
     }
-    ts.forEachChild(node, visit)
+    node.forEachChild(visit)
   }
   visit(condition)
-  return found || condition.getText(sourceFile).includes(variable)
+  return found || textOf(condition, sourceFile).includes(variable)
 }
 
-const isFallbackExpression = (expression: ts.Expression | undefined): boolean =>
+const isFallbackExpression = (expression: import("../tsgo-api.js").Node | undefined): boolean =>
   expression === undefined ||
-  ts.isStringLiteral(expression) ||
-  ts.isNumericLiteral(expression) ||
-  expression.kind === ts.SyntaxKind.TrueKeyword ||
-  expression.kind === ts.SyntaxKind.FalseKeyword ||
-  expression.kind === ts.SyntaxKind.NullKeyword ||
-  expression.kind === ts.SyntaxKind.UndefinedKeyword ||
-  ts.isVoidExpression(expression) ||
-  ts.isObjectLiteralExpression(expression) ||
-  ts.isArrayLiteralExpression(expression) ||
-  (ts.isIdentifier(expression) && expression.text === "undefined")
+  isStringLiteral(expression) ||
+  isNumericLiteral(expression) ||
+  expression.kind === SyntaxKind.TrueKeyword ||
+  expression.kind === SyntaxKind.FalseKeyword ||
+  expression.kind === SyntaxKind.NullKeyword ||
+  expression.kind === SyntaxKind.UndefinedKeyword ||
+  isVoidExpression(expression) ||
+  isObjectLiteralExpression(expression) ||
+  isArrayLiteralExpression(expression) ||
+  (isIdentifier(expression) && expression.text === "undefined")
 
-const textStartsWithEffectFail = (node: ts.Node, sourceFile: ts.SourceFile): boolean =>
-  ts.isCallExpression(node) && node.expression.getText(sourceFile) === "Effect.fail"
+const textStartsWithEffectFail = (node: import("../tsgo-api.js").Node, sourceFile: import("../tsgo-api.js").SourceFile): boolean =>
+  isCallExpression(node) && textOf(node.expression, sourceFile) === "Effect.fail"

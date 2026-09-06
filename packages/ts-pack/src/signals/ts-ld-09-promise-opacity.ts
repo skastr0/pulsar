@@ -2,6 +2,20 @@ import {
   type FunctionBoundaryOwner,
   isBoundaryFunctionOwner,
 } from "./ts-ld-07-boundary.js"
+import { textOf } from "../ast.js"
+import {
+  SyntaxKind,
+  isArrowFunction,
+  isCatchClause,
+  isCallExpression,
+  isFunctionDeclaration,
+  isFunctionExpression,
+  isMethodDeclaration,
+  isPropertyAccessExpression,
+  isThrowStatement,
+  type Project,
+} from "../tsgo-api.js"
+import { compilerPropertyNameText as propertyNameText } from "./shared-compiler-functions.js"
 import {
   calleeName,
   functionLikeName,
@@ -9,8 +23,7 @@ import {
   isFunctionLikeNode,
   isPromiseRejectCall,
   nearestBoundaryOwner,
-  nearestFunctionName,
-  ts,
+  nearestFunctionName
 } from "./ts-ld-09-ast.js"
 import {
   callbackCollapsesError,
@@ -27,13 +40,13 @@ import type {
   TsLd09Config,
 } from "./ts-ld-09-types.js"
 
-export const collectOpaquePromiseApi = (
-  node: ts.Node,
-  sourceFile: ts.SourceFile,
+export const collectOpaquePromiseApi = async (
+  node: import("../tsgo-api.js").Node,
+  sourceFile: import("../tsgo-api.js").SourceFile,
   exportedNames: ReadonlySet<string>,
   config: TsLd09Config,
-  typeChecker: ts.TypeChecker,
-): LocalErrorChannelFinding | undefined => {
+  project: Project,
+): Promise<LocalErrorChannelFinding | undefined> => {
   if (!isPromiseApiOwner(node)) return undefined
   if (!isBoundaryFunctionOwner(node, exportedNames)) return undefined
   const symbol = functionLikeName(node, sourceFile)
@@ -42,14 +55,14 @@ export const collectOpaquePromiseApi = (
 
   const returnTypeText = functionReturnTypeText(node, sourceFile)
   if (!hasOpaquePromiseReturn(node, returnTypeText)) return undefined
-  if (!functionContainsExpectedFailureEvidence(node, sourceFile, config, typeChecker)) return undefined
+  if (!await functionContainsExpectedFailureEvidence(node, sourceFile, config, project)) return undefined
 
   return localErrorChannelFinding({
     sourceFile,
     node,
     symbol,
     kind: "opaque-promise-api",
-    expressionText: node.getText(sourceFile).slice(0, 200),
+    expressionText: textOf(node).slice(0, 200),
     ...(returnTypeText === undefined ? {} : { returnTypeText }),
     boundary: true,
     expectedFailureEvidence,
@@ -57,18 +70,18 @@ export const collectOpaquePromiseApi = (
   })
 }
 
-export const collectPromiseCatchCollapse = (
-  node: ts.Node,
-  sourceFile: ts.SourceFile,
+export const collectPromiseCatchCollapse = async (
+  node: import("../tsgo-api.js").Node,
+  sourceFile: import("../tsgo-api.js").SourceFile,
   exportedNames: ReadonlySet<string>,
-  typeChecker: ts.TypeChecker,
-): LocalErrorChannelFinding | undefined => {
-  if (!ts.isCallExpression(node)) return undefined
+  project: Project,
+): Promise<LocalErrorChannelFinding | undefined> => {
+  if (!isCallExpression(node)) return undefined
   if (calleeName(node.expression, sourceFile) !== "catch") return undefined
-  if (!isPromiseCatchCall(node, typeChecker)) return undefined
+  if (!await isPromiseCatchCall(node, project)) return undefined
   const callback = node.arguments[0]
-  if (callback === undefined || !callbackCollapsesError(callback, sourceFile, typeChecker)) return undefined
-  const collapseMode = callbackReturnsFallback(callback, sourceFile, typeChecker)
+  if (callback === undefined || !callbackCollapsesError(callback, sourceFile)) return undefined
+  const collapseMode = callbackReturnsFallback(callback, sourceFile)
     ? "fallback"
     : "swallowed"
 
@@ -77,18 +90,18 @@ export const collectPromiseCatchCollapse = (
     node,
     symbol: nearestFunctionName(node, sourceFile) ?? "Promise.catch",
     kind: "promise-catch-collapse",
-    expressionText: node.expression.getText(sourceFile),
+    expressionText: textOf(node.expression),
     boundary: nearestBoundaryOwner(node, exportedNames),
     expectedFailureEvidence: ["Promise.catch returns fallback value or swallows rejection"],
     collapseMode,
   })
 }
 
-const isPromiseApiOwner = (node: ts.Node): node is FunctionBoundaryOwner =>
-  ts.isFunctionDeclaration(node) ||
-  ts.isMethodDeclaration(node) ||
-  ts.isArrowFunction(node) ||
-  ts.isFunctionExpression(node)
+const isPromiseApiOwner = (node: import("../tsgo-api.js").Node): node is FunctionBoundaryOwner =>
+  isFunctionDeclaration(node) ||
+  isMethodDeclaration(node) ||
+  isArrowFunction(node) ||
+  isFunctionExpression(node)
 
 const hasOpaquePromiseReturn = (
   node: FunctionBoundaryOwner,
@@ -98,47 +111,47 @@ const hasOpaquePromiseReturn = (
     return false
   }
   if (returnTypeText?.includes("Promise<") === true) return true
-  return ts.canHaveModifiers(node) &&
-    (ts.getModifiers(node)?.some((modifier) => modifier.kind === ts.SyntaxKind.AsyncKeyword) ?? false)
+  return true &&
+    ((node as { readonly modifiers?: ReadonlyArray<{ kind: number }> }).modifiers?.some((modifier) => modifier.kind === SyntaxKind.AsyncKeyword) ?? false)
 }
 
 const promiseReturnTypeModelsExpectedFailure = (returnTypeText: string): boolean =>
   /\b(?:AsyncResult|Either|PromiseResult|Result|TaskEither)\s*</u.test(returnTypeText)
 
-const functionContainsExpectedFailureEvidence = (
+const functionContainsExpectedFailureEvidence = async (
   node: FunctionBoundaryOwner,
-  sourceFile: ts.SourceFile,
+  sourceFile: import("../tsgo-api.js").SourceFile,
   config: TsLd09Config,
-  typeChecker: ts.TypeChecker,
-): boolean => {
+  project: Project,
+): Promise<boolean> => {
   const body = "body" in node ? node.body : undefined
   if (body === undefined) return false
   let found = false
-  const visit = (candidate: ts.Node): void => {
+  const visit = async (candidate: import("../tsgo-api.js").Node): Promise<void> => {
     if (found) return
     if (candidate !== body && isFunctionLikeNode(candidate)) return
     if (
-      ts.isThrowStatement(candidate) &&
+      isThrowStatement(candidate) &&
       candidate.expression !== undefined &&
       broadThrowCollapseMode(candidate.expression) !== undefined
     ) {
       found = true
       return
     }
-    if (ts.isCatchClause(candidate) && catchCollapsesErrorChannel(candidate, sourceFile)) {
+    if (isCatchClause(candidate) && catchCollapsesErrorChannel(candidate, sourceFile)) {
       found = true
       return
     }
-    if (ts.isCallExpression(candidate)) {
+    if (isCallExpression(candidate)) {
       if (isPromiseRejectCall(candidate.expression)) {
         found = true
         return
       }
       if (
         calleeName(candidate.expression, sourceFile) === "catch" &&
-        isPromiseCatchCall(candidate, typeChecker) &&
+        await isPromiseCatchCall(candidate, project) &&
         candidate.arguments[0] !== undefined &&
-        callbackCollapsesError(candidate.arguments[0], sourceFile, typeChecker)
+        callbackCollapsesError(candidate.arguments[0], sourceFile)
       ) {
         found = true
         return
@@ -154,20 +167,26 @@ const functionContainsExpectedFailureEvidence = (
         return
       }
     }
-    ts.forEachChild(candidate, visit)
+    const children: Array<import("../tsgo-api.js").Node> = []
+    candidate.forEachChild((child) => {
+      children.push(child)
+    })
+    for (const child of children) {
+      await visit(child)
+    }
   }
-  visit(body)
+  await visit(body)
   return found
 }
 
 const functionReturnTypeText = (
   node: FunctionBoundaryOwner,
-  sourceFile: ts.SourceFile,
+  sourceFile: import("../tsgo-api.js").SourceFile,
 ): string | undefined => {
   if (!("type" in node) || node.type === undefined) {
     return hasOpaquePromiseReturn(node, undefined) ? "async function return" : undefined
   }
-  return node.type.getText(sourceFile)
+  return textOf(node.type)
 }
 
 const expectedFailureEvidenceFor = (
@@ -181,11 +200,16 @@ const expectedFailureEvidenceFor = (
     .map((pattern) => `name matches expected-failure pattern \`${pattern}\``)
 }
 
-const isPromiseCatchCall = (node: ts.CallExpression, typeChecker: ts.TypeChecker): boolean => {
-  if (!ts.isPropertyAccessExpression(node.expression)) return false
-  const receiverType = typeChecker.getTypeAtLocation(node.expression.expression)
-  const receiverTypeText = typeChecker.typeToString(receiverType)
+const isPromiseCatchCall = async (
+  node: import("../tsgo-api.js").CallExpression,
+  project: Project,
+): Promise<boolean> => {
+  if (!isPropertyAccessExpression(node.expression)) return false
+  if (propertyNameText(node.expression.name) !== "catch") return false
+  const receiver = node.expression.expression
+  const type = await project.checker.getTypeAtLocation(receiver)
+  const receiverTypeText = await project.checker.typeToString(type, receiver)
   if (/\bPromise(?:<|$)/u.test(receiverTypeText)) return true
-  return receiverType.getProperty("then") !== undefined &&
-    receiverType.getProperty("catch") !== undefined
+  return (await type.getProperty("then")) !== undefined &&
+    (await type.getProperty("catch")) !== undefined
 }

@@ -1,11 +1,24 @@
 import {
+  SyntaxKind,
+  isArrayLiteralExpression,
+  isBinaryExpression,
+  isCallExpression,
+  isCatchClause,
+  isNewExpression,
+  isNoSubstitutionTemplateLiteral,
+  isObjectLiteralExpression,
+  isThrowStatement,
+  isTypeOfExpression,
+  isStringLiteral,
+} from "../tsgo-api.js"
+import {
   expressionName,
   isEffectFailCall,
   isFunctionLikeNode,
   nearestBoundaryOwner,
-  nearestFunctionName,
-  ts,
+  nearestFunctionName
 } from "./ts-ld-09-ast.js"
+import { textOf } from "../ast.js"
 import {
   blockReturnsFallback,
   blockSwallowsError,
@@ -20,11 +33,11 @@ import {
 } from "./ts-ld-09-types.js"
 
 export const collectBroadThrow = (
-  node: ts.Node,
-  sourceFile: ts.SourceFile,
+  node: import("../tsgo-api.js").Node,
+  sourceFile: import("../tsgo-api.js").SourceFile,
   exportedNames: ReadonlySet<string>,
 ): LocalErrorChannelFinding | undefined => {
-  if (!ts.isThrowStatement(node) || node.expression === undefined) return undefined
+  if (!isThrowStatement(node) || node.expression === undefined) return undefined
   const collapse = broadThrowCollapseMode(node.expression)
   if (collapse === undefined) return undefined
 
@@ -35,7 +48,7 @@ export const collectBroadThrow = (
     node,
     symbol,
     kind: "broad-throw",
-    expressionText: node.expression.getText(sourceFile).slice(0, 200),
+    expressionText: textOf(node.expression).slice(0, 200),
     boundary,
     expectedFailureEvidence: broadThrowEvidence(node.expression, sourceFile),
     collapseMode: collapse,
@@ -43,11 +56,11 @@ export const collectBroadThrow = (
 }
 
 export const collectCatchCollapse = (
-  node: ts.Node,
-  sourceFile: ts.SourceFile,
+  node: import("../tsgo-api.js").Node,
+  sourceFile: import("../tsgo-api.js").SourceFile,
   exportedNames: ReadonlySet<string>,
 ): LocalErrorChannelFinding | undefined => {
-  if (!ts.isCatchClause(node)) return undefined
+  if (!isCatchClause(node)) return undefined
   if (!catchCollapsesErrorChannel(node, sourceFile)) return undefined
 
   const boundary = nearestBoundaryOwner(node, exportedNames)
@@ -60,7 +73,7 @@ export const collectCatchCollapse = (
     node,
     symbol,
     kind: "catch-without-narrowing",
-    expressionText: node.block.getText(sourceFile).slice(0, 200),
+    expressionText: textOf(node.block).slice(0, 200),
     boundary,
     expectedFailureEvidence: catchEvidence(node, sourceFile),
     collapseMode,
@@ -68,18 +81,18 @@ export const collectCatchCollapse = (
 }
 
 export const broadThrowCollapseMode = (
-  expression: ts.Expression,
+  expression: import("../tsgo-api.js").Node,
 ): ErrorChannelCollapseMode | undefined => {
-  if (ts.isStringLiteral(expression) || ts.isNoSubstitutionTemplateLiteral(expression)) {
+  if (isStringLiteral(expression) || isNoSubstitutionTemplateLiteral(expression)) {
     return "generic-error"
   }
-  if (ts.isObjectLiteralExpression(expression) || ts.isArrayLiteralExpression(expression)) {
+  if (isObjectLiteralExpression(expression) || isArrayLiteralExpression(expression)) {
     return "generic-error"
   }
-  if (ts.isCallExpression(expression) && expressionName(expression.expression) === "Error") {
+  if (isCallExpression(expression) && expressionName(expression.expression) === "Error") {
     return "generic-error"
   }
-  if (ts.isNewExpression(expression)) {
+  if (isNewExpression(expression)) {
     const name = expressionName(expression.expression)
     return name !== undefined && BUILT_IN_ERROR_NAMES.has(name) ? "generic-error" : undefined
   }
@@ -87,8 +100,8 @@ export const broadThrowCollapseMode = (
 }
 
 export const catchCollapsesErrorChannel = (
-  clause: ts.CatchClause,
-  sourceFile: ts.SourceFile,
+  clause: import("../tsgo-api.js").CatchClause,
+  sourceFile: import("../tsgo-api.js").SourceFile,
 ): boolean => {
   const block = clause.block
   if (blockContainsCatchVariableNarrowing(clause, sourceFile) && blockRethrows(block)) return false
@@ -101,24 +114,24 @@ export const catchCollapsesErrorChannel = (
 }
 
 const broadThrowEvidence = (
-  expression: ts.Expression,
-  sourceFile: ts.SourceFile,
+  expression: import("../tsgo-api.js").Node,
+  sourceFile: import("../tsgo-api.js").SourceFile,
 ): ReadonlyArray<string> => {
-  if (ts.isNewExpression(expression)) {
+  if (isNewExpression(expression)) {
     const name = expressionName(expression.expression)
-    return [`throws ${name ?? expression.expression.getText(sourceFile)}`]
+    return [`throws ${name ?? textOf(expression.expression)}`]
   }
-  if (ts.isCallExpression(expression)) {
-    return [`throws ${expression.expression.getText(sourceFile)}(...)`]
+  if (isCallExpression(expression)) {
+    return [`throws ${textOf(expression.expression)}(...)`]
   }
-  return [`throws ${expression.getText(sourceFile).slice(0, 80)}`]
+  return [`throws ${textOf(expression).slice(0, 80)}`]
 }
 
 const catchEvidence = (
-  clause: ts.CatchClause,
-  sourceFile: ts.SourceFile,
+  clause: import("../tsgo-api.js").CatchClause,
+  sourceFile: import("../tsgo-api.js").SourceFile,
 ): ReadonlyArray<string> => {
-  const variable = clause.variableDeclaration?.name.getText(sourceFile)
+  const variable = catchClauseErrorBinding(clause)
   return [
     blockSwallowsError(clause.block)
       ? "catch block swallows error without typed mapping"
@@ -128,12 +141,12 @@ const catchEvidence = (
   ]
 }
 
-const blockContainsDomainErrorMapping = (block: ts.Block): boolean => {
+const blockContainsDomainErrorMapping = (block: import("../tsgo-api.js").Block): boolean => {
   let found = false
-  const visit = (node: ts.Node): void => {
+  const visit = (node: import("../tsgo-api.js").Node): void => {
     if (found) return
     if (isFunctionLikeNode(node) && node !== block.parent) return
-    if (ts.isNewExpression(node)) {
+    if (isNewExpression(node)) {
       const name = expressionName(node.expression)
       if (name !== undefined && /[A-Z][A-Za-z0-9]*Error$/u.test(name) && !BUILT_IN_ERROR_NAMES.has(name)) {
         found = true
@@ -144,42 +157,42 @@ const blockContainsDomainErrorMapping = (block: ts.Block): boolean => {
       found = true
       return
     }
-    ts.forEachChild(node, visit)
+    node.forEachChild(visit)
   }
   visit(block)
   return found
 }
 
 const blockContainsCatchVariableNarrowing = (
-  clause: ts.CatchClause,
-  sourceFile: ts.SourceFile,
+  clause: import("../tsgo-api.js").CatchClause,
+  sourceFile: import("../tsgo-api.js").SourceFile,
 ): boolean => {
-  const variable = clause.variableDeclaration?.name.getText(sourceFile)
+  const variable = catchClauseErrorBinding(clause)
   if (variable === undefined) return false
   let found = false
-  const visit = (node: ts.Node): void => {
+  const visit = (node: import("../tsgo-api.js").Node): void => {
     if (found) return
     if (isFunctionLikeNode(node) && node !== clause.parent) return
     if (
-      ts.isBinaryExpression(node) &&
-      node.operatorToken.kind === ts.SyntaxKind.InstanceOfKeyword &&
-      node.left.getText(sourceFile) === variable
+      isBinaryExpression(node) &&
+      node.operatorToken.kind === SyntaxKind.InstanceOfKeyword &&
+      textOf(node.left, sourceFile) === variable
     ) {
       found = true
       return
     }
     if (
-      ts.isTypeOfExpression(node) &&
-      node.expression.getText(sourceFile) === variable
+      isTypeOfExpression(node) &&
+      textOf(node.expression, sourceFile) === variable
     ) {
       found = true
       return
     }
-    ts.forEachChild(node, visit)
+    node.forEachChild(visit)
   }
   visit(clause.block)
   return found
 }
 
-const blockRethrows = (block: ts.Block): boolean =>
-  block.statements.some((statement) => ts.isThrowStatement(statement))
+const blockRethrows = (block: import("../tsgo-api.js").Block): boolean =>
+  block.statements.some((statement) => isThrowStatement(statement))

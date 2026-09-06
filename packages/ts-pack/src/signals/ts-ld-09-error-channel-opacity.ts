@@ -4,7 +4,7 @@ import {
   type Signal,
 } from "@skastr0/pulsar-core/signal"
 import { Effect } from "effect"
-import { TsProjectTag } from "../ts-project.js"
+import { TsAnalysisTag } from "../ts-analysis.js"
 import { errorChannelKindLabel } from "./ts-ld-09-finding.js"
 import { computeErrorChannelOpacityOutput } from "./ts-ld-09-output.js"
 import {
@@ -12,7 +12,7 @@ import {
   type TsLd09Output,
 } from "./ts-ld-09-types.js"
 
-export const TsLd09: Signal<TsLd09Config, TsLd09Output, TsProjectTag> = {
+export const TsLd09: Signal<TsLd09Config, TsLd09Output, TsAnalysisTag> = {
   id: "TS-LD-09-error-channel-opacity",
   title: "Error channel opacity",
   aliases: ["TS-LD-09"],
@@ -105,10 +105,19 @@ export const TsLd09: Signal<TsLd09Config, TsLd09Output, TsProjectTag> = {
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
-      const project = yield* TsProjectTag
-      return yield* Effect.try({
-        try: (): TsLd09Output =>
-          computeErrorChannelOpacityOutput(project.getSourceFiles(), config),
+      const analysis = yield* TsAnalysisTag
+      const files = yield* analysis.mapFiles(async (fileContext) => fileContext).pipe(
+        Effect.mapError((cause) =>
+          new SignalComputeError({
+            signalId: "TS-LD-09-error-channel-opacity",
+            message: cause.message,
+            cause,
+          }),
+        ),
+      )
+      return yield* Effect.tryPromise({
+        try: (): Promise<TsLd09Output> =>
+          computeErrorChannelOpacityOutput(files, config),
         catch: (cause) =>
           new SignalComputeError({
             signalId: "TS-LD-09-error-channel-opacity",

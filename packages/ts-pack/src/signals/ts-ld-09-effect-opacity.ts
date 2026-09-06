@@ -1,4 +1,39 @@
-import { ts } from "ts-morph"
+import { textOf } from "../ast.js"
+import {
+  SyntaxKind,
+  isArrayLiteralExpression,
+  isAsExpression,
+  isAwaitExpression,
+  isBinaryExpression,
+  isBlock,
+  isCallExpression,
+  isCatchClause,
+  isClassDeclaration,
+  isConditionalExpression,
+  isElementAccessExpression,
+  isFunctionDeclaration,
+  isFunctionExpression,
+  isArrowFunction,
+  isIdentifier,
+  isIfStatement,
+  isMethodDeclaration,
+  isNewExpression,
+  isNonNullExpression,
+  isNoSubstitutionTemplateLiteral,
+  isNumericLiteral,
+  isObjectLiteralExpression,
+  isParenthesizedExpression,
+  isPropertyAccessExpression,
+  isPropertyAssignment,
+  isReturnStatement,
+  isSatisfiesExpression,
+  isShorthandPropertyAssignment,
+  isStringLiteral,
+  isThrowStatement,
+  isTypeOfExpression,
+  isVariableDeclaration,
+  isVoidExpression,
+} from "../tsgo-api.js"
 import type {
   ErrorChannelCollapseMode,
   LocalErrorChannelFinding,
@@ -30,22 +65,22 @@ const EFFECT_COLLAPSE_CALLEES = new Set([
 ])
 
 type EffectTryPromiseCatchMapper =
-  | ts.MethodDeclaration
-  | ts.PropertyAssignment
-  | ts.ShorthandPropertyAssignment
+  | import("../tsgo-api.js").MethodDeclaration
+  | import("../tsgo-api.js").PropertyAssignment
+  | import("../tsgo-api.js").ShorthandPropertyAssignment
 
 export const collectEffectOpacity = (
-  node: ts.Node,
-  sourceFile: ts.SourceFile,
+  node: import("../tsgo-api.js").Node,
+  sourceFile: import("../tsgo-api.js").SourceFile,
   exportedNames: ReadonlySet<string>,
   config: TsLd09Config,
-  typeChecker: ts.TypeChecker,
+  _project?: unknown,
 ): LocalErrorChannelFinding | undefined => {
-  if (!ts.isCallExpression(node)) return undefined
+  if (!isCallExpression(node)) return undefined
   const context = effectCallContext(node, sourceFile, exportedNames)
   if (context === undefined) return undefined
   return (
-    collectTryPromiseOpacity(context, typeChecker) ??
+    collectTryPromiseOpacity(context) ??
     collectEffectPromiseOpacity(context, config) ??
     collectDirectEffectCollapseOpacity(context) ??
     collectPipedEffectCollapseOpacity(context)
@@ -53,25 +88,25 @@ export const collectEffectOpacity = (
 }
 
 export const callTextSuggestsExpectedFailure = (
-  node: ts.CallExpression,
-  sourceFile: ts.SourceFile,
+  node: import("../tsgo-api.js").CallExpression,
+  sourceFile: import("../tsgo-api.js").SourceFile,
   config: TsLd09Config,
 ): boolean =>
   config.expected_failure_name_patterns
     .filter((pattern) => pattern.trim() !== "")
-    .some((pattern) => node.getText(sourceFile).toLowerCase().includes(pattern.toLowerCase()))
+    .some((pattern) => textOf(node, sourceFile).toLowerCase().includes(pattern.toLowerCase()))
 
 interface EffectCallContext {
-  readonly node: ts.CallExpression
-  readonly sourceFile: ts.SourceFile
+  readonly node: import("../tsgo-api.js").CallExpression
+  readonly sourceFile: import("../tsgo-api.js").SourceFile
   readonly callee: string
   readonly symbol: string | undefined
   readonly boundary: boolean
 }
 
 const effectCallContext = (
-  node: ts.CallExpression,
-  sourceFile: ts.SourceFile,
+  node: import("../tsgo-api.js").CallExpression,
+  sourceFile: import("../tsgo-api.js").SourceFile,
   exportedNames: ReadonlySet<string>,
 ): EffectCallContext | undefined => {
   const callee = calleeName(node.expression, sourceFile)
@@ -87,7 +122,6 @@ const effectCallContext = (
 
 const collectTryPromiseOpacity = (
   context: EffectCallContext,
-  typeChecker: ts.TypeChecker,
 ): LocalErrorChannelFinding | undefined => {
   if (context.callee !== "tryPromise" || !isEffectStaticCall(context.node.expression, "tryPromise")) {
     return undefined
@@ -98,21 +132,21 @@ const collectTryPromiseOpacity = (
       node: context.node,
       symbol: context.symbol ?? "Effect.tryPromise",
       kind: "effect-unknown-exception",
-      expressionText: context.node.expression.getText(context.sourceFile),
+      expressionText: textOf(context.node.expression),
       expectedFailureEvidence: ["Effect.tryPromise without typed catch mapper"],
       collapseMode: "unknown-exception",
     })
   }
-  if (!effectTryPromiseCatchMapperCollapses(catchMapper, context.sourceFile, typeChecker)) {
+  if (!effectTryPromiseCatchMapperCollapses(catchMapper, context.sourceFile)) {
     return undefined
   }
   return effectFinding(context, {
     node: catchMapper,
     symbol: context.symbol ?? "Effect.tryPromise",
     kind: "effect-error-collapse",
-    expressionText: catchMapper.getText(context.sourceFile).slice(0, 200),
+    expressionText: textOf(catchMapper).slice(0, 200),
     expectedFailureEvidence: ["Effect.tryPromise catch mapper returns fallback or swallows the exception"],
-    collapseMode: effectTryPromiseCatchMapperReturnsFallback(catchMapper, context.sourceFile, typeChecker)
+    collapseMode: effectTryPromiseCatchMapperReturnsFallback(catchMapper, context.sourceFile)
       ? "fallback"
       : "swallowed",
   })
@@ -133,7 +167,7 @@ const collectEffectPromiseOpacity = (
     node: context.node,
     symbol: context.symbol ?? "Effect.promise",
     kind: "effect-unknown-exception",
-    expressionText: context.node.expression.getText(context.sourceFile),
+    expressionText: textOf(context.node.expression),
     expectedFailureEvidence: ["Effect.promise wrapping expected-failure operation"],
     collapseMode: "promise-rejection",
   })
@@ -149,7 +183,7 @@ const collectDirectEffectCollapseOpacity = (
   ) {
     return undefined
   }
-  return effectCollapseFinding(context, context.callee, context.node.expression.getText(context.sourceFile))
+  return effectCollapseFinding(context, context.callee, textOf(context.node.expression))
 }
 
 const collectPipedEffectCollapseOpacity = (
@@ -161,7 +195,7 @@ const collectPipedEffectCollapseOpacity = (
     : effectCollapseFinding(
       context,
       pipedCollapseCallee,
-      context.node.getText(context.sourceFile).slice(0, 200),
+      textOf(context.node).slice(0, 200),
     )
 }
 
@@ -182,7 +216,7 @@ const effectCollapseFinding = (
 const effectFinding = (
   context: EffectCallContext,
   args: {
-    readonly node: ts.Node
+    readonly node: import("../tsgo-api.js").Node
     readonly symbol: string
     readonly kind: "effect-unknown-exception" | "effect-error-collapse"
     readonly expressionText: string
@@ -212,15 +246,15 @@ const effectCollapseMode = (callee: string): ErrorChannelCollapseMode =>
   callee === "orElseSucceed" ? "success-channel" : "defect"
 
 const effectTryPromiseCatchMapper = (
-  node: ts.CallExpression,
+  node: import("../tsgo-api.js").CallExpression,
 ): EffectTryPromiseCatchMapper | undefined => {
   const arg = node.arguments[0]
-  if (arg === undefined || !ts.isObjectLiteralExpression(arg)) return undefined
+  if (arg === undefined || !isObjectLiteralExpression(arg)) return undefined
   for (const property of arg.properties) {
     if (
-      ts.isPropertyAssignment(property) ||
-      ts.isShorthandPropertyAssignment(property) ||
-      ts.isMethodDeclaration(property)
+      isPropertyAssignment(property) ||
+      isShorthandPropertyAssignment(property) ||
+      isMethodDeclaration(property)
     ) {
       if (propertyNameText(property.name) === "catch") return property
     }
@@ -230,17 +264,16 @@ const effectTryPromiseCatchMapper = (
 
 const effectTryPromiseCatchMapperCollapses = (
   mapper: EffectTryPromiseCatchMapper,
-  sourceFile: ts.SourceFile,
-  typeChecker?: ts.TypeChecker,
+  sourceFile: import("../tsgo-api.js").SourceFile,
 ): boolean => {
-  if (effectTryPromiseCatchMapperReturnsFallback(mapper, sourceFile, typeChecker)) return true
-  if (ts.isMethodDeclaration(mapper) && mapper.body !== undefined) {
+  if (effectTryPromiseCatchMapperReturnsFallback(mapper, sourceFile)) return true
+  if (isMethodDeclaration(mapper) && mapper.body !== undefined) {
     return blockSwallowsError(mapper.body)
   }
   if (
-    ts.isPropertyAssignment(mapper) &&
-    (ts.isArrowFunction(mapper.initializer) || ts.isFunctionExpression(mapper.initializer)) &&
-    ts.isBlock(mapper.initializer.body)
+    isPropertyAssignment(mapper) &&
+    (isArrowFunction(mapper.initializer) || isFunctionExpression(mapper.initializer)) &&
+    isBlock(mapper.initializer.body)
   ) {
     return blockSwallowsError(mapper.initializer.body)
   }
@@ -249,12 +282,11 @@ const effectTryPromiseCatchMapperCollapses = (
 
 const effectTryPromiseCatchMapperReturnsFallback = (
   mapper: EffectTryPromiseCatchMapper,
-  sourceFile: ts.SourceFile,
-  typeChecker?: ts.TypeChecker,
+  sourceFile: import("../tsgo-api.js").SourceFile,
 ): boolean => {
-  if (ts.isShorthandPropertyAssignment(mapper)) return false
-  if (ts.isPropertyAssignment(mapper)) {
-    return callbackReturnsFallback(mapper.initializer, sourceFile, typeChecker)
+  if (isShorthandPropertyAssignment(mapper)) return false
+  if (isPropertyAssignment(mapper)) {
+    return callbackReturnsFallback(mapper.initializer, sourceFile)
   }
   return mapper.body === undefined
     ? false
@@ -262,18 +294,18 @@ const effectTryPromiseCatchMapperReturnsFallback = (
 }
 
 const pipeCollapseCallee = (
-  node: ts.CallExpression,
-  sourceFile: ts.SourceFile,
+  node: import("../tsgo-api.js").CallExpression,
+  sourceFile: import("../tsgo-api.js").SourceFile,
 ): string | undefined => {
   if (calleeName(node.expression, sourceFile) !== "pipe") return undefined
   for (const argument of node.arguments) {
-    const name = ts.isCallExpression(argument)
+    const name = isCallExpression(argument)
       ? calleeName(argument.expression, sourceFile)
       : expressionName(argument)
     if (
       name !== undefined &&
       EFFECT_COLLAPSE_CALLEES.has(name) &&
-      (ts.isCallExpression(argument)
+      (isCallExpression(argument)
         ? isEffectStaticCall(argument.expression, name)
         : isEffectStaticReference(argument, name))
     ) {

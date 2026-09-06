@@ -1,4 +1,5 @@
-import { positionOf, ts } from "./ts-ld-09-ast.js"
+import type { Node, SourceFile } from "../tsgo-api.js"
+import { positionOf } from "./ts-ld-09-ast.js"
 import type {
   ErrorChannelCollapseMode,
   ErrorChannelOpacityKind,
@@ -7,8 +8,8 @@ import type {
 import { errorChannelWeight } from "./ts-ld-09-weight.js"
 
 export const localErrorChannelFinding = (args: {
-  readonly sourceFile: ts.SourceFile
-  readonly node: ts.Node
+  readonly sourceFile: SourceFile
+  readonly node: Node
   readonly symbol: string
   readonly kind: ErrorChannelOpacityKind
   readonly expressionText: string

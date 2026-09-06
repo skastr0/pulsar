@@ -1,45 +1,80 @@
-import { ts } from "ts-morph"
+import { textOf } from "../ast.js"
+import {
+  SyntaxKind,
+  isArrayLiteralExpression,
+  isAsExpression,
+  isAwaitExpression,
+  isBinaryExpression,
+  isBlock,
+  isCallExpression,
+  isCatchClause,
+  isClassDeclaration,
+  isConditionalExpression,
+  isElementAccessExpression,
+  isFunctionDeclaration,
+  isFunctionExpression,
+  isArrowFunction,
+  isIdentifier,
+  isIfStatement,
+  isMethodDeclaration,
+  isNewExpression,
+  isNonNullExpression,
+  isNoSubstitutionTemplateLiteral,
+  isNumericLiteral,
+  isObjectLiteralExpression,
+  isParenthesizedExpression,
+  isPropertyAccessExpression,
+  isPropertyAssignment,
+  isReturnStatement,
+  isSatisfiesExpression,
+  isShorthandPropertyAssignment,
+  isStringLiteral,
+  isThrowStatement,
+  isTypeOfExpression,
+  isVariableDeclaration,
+  isVoidExpression,
+} from "../tsgo-api.js"
 import { compilerPropertyNameText as propertyNameText } from "./shared-compiler-functions.js"
 import { expressionName, isFunctionLikeNode } from "./ts-ld-09-ast.js"
 
-type CallbackTarget = ts.ArrowFunction | ts.FunctionDeclaration | ts.FunctionExpression
+type CallbackTarget = import("../tsgo-api.js").ArrowFunction | import("../tsgo-api.js").FunctionDeclaration | import("../tsgo-api.js").FunctionExpression
 
 interface ParameterBearer {
-  readonly parameters: ts.NodeArray<ts.ParameterDeclaration>
+  readonly parameters: ReadonlyArray<import("../tsgo-api.js").ParameterDeclaration>
 }
 
 const FALLBACK_NAME_PATTERN = /(?:fallback|default|empty|nullResult|noop)/iu
 
 export const blockReturnsFallback = (
-  block: ts.Block,
-  sourceFile: ts.SourceFile,
+  block: import("../tsgo-api.js").Block,
+  sourceFile: import("../tsgo-api.js").SourceFile,
   errorBinding?: string,
 ): boolean => {
   let found = false
-  const visit = (node: ts.Node): void => {
+  const visit = (node: import("../tsgo-api.js").Node): void => {
     if (found) return
     if (isFunctionLikeNode(node) && node !== block.parent) return
     if (
-      ts.isReturnStatement(node) &&
+      isReturnStatement(node) &&
       returnExpressionIsFallback(node.expression, sourceFile, errorBinding)
     ) {
       found = true
       return
     }
-    ts.forEachChild(node, visit)
+    node.forEachChild(visit)
   }
   visit(block)
   return found
 }
 
 export const callbackReturnsFallback = (
-  callback: ts.Node,
-  sourceFile: ts.SourceFile,
-  typeChecker?: ts.TypeChecker,
+  callback: import("../tsgo-api.js").Node,
+  sourceFile: import("../tsgo-api.js").SourceFile,
+  typeChecker?: unknown,
 ): boolean => {
   const target = callbackTarget(callback, sourceFile, typeChecker)
   if (target !== undefined) return callbackReturnsFallback(target, sourceFile, typeChecker)
-  if (ts.isArrowFunction(callback) && callback.body !== undefined && !ts.isBlock(callback.body)) {
+  if (isArrowFunction(callback) && callback.body !== undefined && !isBlock(callback.body)) {
     return returnExpressionIsFallback(callback.body, sourceFile, firstParameterBinding(callback))
   }
   if (isFunctionWithBlockBody(callback)) {
@@ -49,9 +84,9 @@ export const callbackReturnsFallback = (
 }
 
 export const callbackCollapsesError = (
-  callback: ts.Node,
-  sourceFile: ts.SourceFile,
-  typeChecker?: ts.TypeChecker,
+  callback: import("../tsgo-api.js").Node,
+  sourceFile: import("../tsgo-api.js").SourceFile,
+  typeChecker?: unknown,
 ): boolean => {
   if (callbackReturnsFallback(callback, sourceFile, typeChecker)) return true
   const target = callbackTarget(callback, sourceFile, typeChecker)
@@ -59,17 +94,17 @@ export const callbackCollapsesError = (
   return isFunctionWithBlockBody(callback) ? blockSwallowsError(callback.body) : false
 }
 
-export const blockSwallowsError = (block: ts.Block): boolean => {
+export const blockSwallowsError = (block: import("../tsgo-api.js").Block): boolean => {
   if (block.statements.length === 0) return true
   let exits = false
-  const visit = (node: ts.Node): void => {
+  const visit = (node: import("../tsgo-api.js").Node): void => {
     if (exits) return
     if (isFunctionLikeNode(node) && node !== block.parent) return
-    if (ts.isReturnStatement(node) || ts.isThrowStatement(node) || isProcessTerminalCall(node)) {
+    if (isReturnStatement(node) || isThrowStatement(node) || isProcessTerminalCall(node)) {
       exits = true
       return
     }
-    ts.forEachChild(node, visit)
+    node.forEachChild(visit)
   }
   visit(block)
   return !exits
@@ -77,26 +112,26 @@ export const blockSwallowsError = (block: ts.Block): boolean => {
 
 export const firstParameterBinding = (node: ParameterBearer): string | undefined => {
   const parameter = node.parameters[0]
-  return parameter !== undefined && ts.isIdentifier(parameter.name)
+  return parameter !== undefined && isIdentifier(parameter.name)
     ? parameter.name.text
     : undefined
 }
 
-export const catchClauseErrorBinding = (clause: ts.CatchClause): string | undefined => {
+export const catchClauseErrorBinding = (clause: import("../tsgo-api.js").CatchClause): string | undefined => {
   const name = clause.variableDeclaration?.name
-  return name !== undefined && ts.isIdentifier(name) ? name.text : undefined
+  return name !== undefined && isIdentifier(name) ? name.text : undefined
 }
 
-const isProcessTerminalCall = (node: ts.Node): boolean =>
-  ts.isCallExpression(node) &&
-  ts.isPropertyAccessExpression(node.expression) &&
-  ts.isIdentifier(node.expression.expression) &&
+const isProcessTerminalCall = (node: import("../tsgo-api.js").Node): boolean =>
+  isCallExpression(node) &&
+  isPropertyAccessExpression(node.expression) &&
+  isIdentifier(node.expression.expression) &&
   node.expression.expression.text === "process" &&
   (node.expression.name.text === "exit" || node.expression.name.text === "abort")
 
 const returnExpressionIsFallback = (
-  expression: ts.Expression | undefined,
-  sourceFile: ts.SourceFile,
+  expression: import("../tsgo-api.js").Node | undefined,
+  sourceFile: import("../tsgo-api.js").SourceFile,
   errorBinding?: string,
 ): boolean => {
   if (expression === undefined) return true
@@ -107,103 +142,103 @@ const returnExpressionIsFallback = (
   return expressionHasFallbackShape(value)
 }
 
-const isLiteralFallback = (expression: ts.Expression): boolean =>
-  ts.isStringLiteralLike(expression) ||
-  ts.isNumericLiteral(expression) ||
-  expression.kind === ts.SyntaxKind.TrueKeyword ||
-  expression.kind === ts.SyntaxKind.FalseKeyword ||
-  expression.kind === ts.SyntaxKind.NullKeyword ||
-  expression.kind === ts.SyntaxKind.UndefinedKeyword ||
-  ts.isVoidExpression(expression) ||
-  (ts.isIdentifier(expression) && expression.text === "undefined") ||
-  ts.isObjectLiteralExpression(expression) ||
-  ts.isArrayLiteralExpression(expression)
+const isLiteralFallback = (expression: import("../tsgo-api.js").Node): boolean =>
+  (isStringLiteral(expression) || isNoSubstitutionTemplateLiteral(expression)) ||
+  isNumericLiteral(expression) ||
+  expression.kind === SyntaxKind.TrueKeyword ||
+  expression.kind === SyntaxKind.FalseKeyword ||
+  expression.kind === SyntaxKind.NullKeyword ||
+  expression.kind === SyntaxKind.UndefinedKeyword ||
+  isVoidExpression(expression) ||
+  (isIdentifier(expression) && expression.text === "undefined") ||
+  isObjectLiteralExpression(expression) ||
+  isArrayLiteralExpression(expression)
 
-const isErrorLikeValue = (expression: ts.Expression, sourceFile: ts.SourceFile): boolean => {
-  if (ts.isNewExpression(expression)) {
+const isErrorLikeValue = (expression: import("../tsgo-api.js").Node, sourceFile: import("../tsgo-api.js").SourceFile): boolean => {
+  if (isNewExpression(expression)) {
     const name = expressionName(expression.expression)
     if (name === undefined) return false
     return /Error$/u.test(name) || classHeritageIsErrorLike(name, sourceFile)
   }
-  if (ts.isObjectLiteralExpression(expression)) {
+  if (isObjectLiteralExpression(expression)) {
     return expression.properties.some(isTagProperty)
   }
   return false
 }
 
-const isTagProperty = (property: ts.ObjectLiteralElementLike): boolean =>
-  (ts.isPropertyAssignment(property) ||
-    ts.isShorthandPropertyAssignment(property) ||
-    ts.isMethodDeclaration(property)) &&
+const isTagProperty = (property: import("../tsgo-api.js").Node): boolean =>
+  (isPropertyAssignment(property) ||
+    isShorthandPropertyAssignment(property) ||
+    isMethodDeclaration(property)) &&
   propertyNameText(property.name) === "_tag"
 
-const classHeritageIsErrorLike = (className: string, sourceFile: ts.SourceFile): boolean => {
+const classHeritageIsErrorLike = (className: string, sourceFile: import("../tsgo-api.js").SourceFile): boolean => {
   let errorLike = false
-  const visit = (node: ts.Node): void => {
+  const visit = (node: import("../tsgo-api.js").Node): void => {
     if (errorLike) return
-    if (ts.isClassDeclaration(node) && node.name?.text === className) {
+    if (isClassDeclaration(node) && node.name?.text === className) {
       errorLike = (node.heritageClauses ?? []).some((clause) =>
-        clause.types.some((type) => /Error\b/u.test(type.expression.getText(sourceFile))),
+        clause.types.some((type) => /Error\b/u.test(textOf(type.expression, sourceFile))),
       )
       return
     }
-    ts.forEachChild(node, visit)
+    node.forEachChild(visit)
   }
   visit(sourceFile)
   return errorLike
 }
 
-const referencesErrorBinding = (expression: ts.Expression, binding: string): boolean => {
+const referencesErrorBinding = (expression: import("../tsgo-api.js").Node, binding: string): boolean => {
   let found = false
-  const visit = (node: ts.Node): void => {
+  const visit = (node: import("../tsgo-api.js").Node): void => {
     if (found) return
-    if (ts.isIdentifier(node) && node.text === binding && isValueReferencePosition(node)) {
+    if (isIdentifier(node) && node.text === binding && isValueReferencePosition(node)) {
       found = true
       return
     }
-    ts.forEachChild(node, visit)
+    node.forEachChild(visit)
   }
   visit(expression)
   return found
 }
 
-const isValueReferencePosition = (identifier: ts.Identifier): boolean => {
+const isValueReferencePosition = (identifier: import("../tsgo-api.js").Identifier): boolean => {
   const parent = identifier.parent
-  if (ts.isPropertyAccessExpression(parent) && parent.name === identifier) return false
-  if (ts.isPropertyAssignment(parent) && parent.name === identifier) return false
-  if (ts.isMethodDeclaration(parent) && parent.name === identifier) return false
+  if (isPropertyAccessExpression(parent) && parent.name === identifier) return false
+  if (isPropertyAssignment(parent) && parent.name === identifier) return false
+  if (isMethodDeclaration(parent) && parent.name === identifier) return false
   return true
 }
 
-const expressionHasFallbackShape = (expression: ts.Expression): boolean => {
+const expressionHasFallbackShape = (expression: import("../tsgo-api.js").Node): boolean => {
   const value = unwrapValueExpression(expression)
-  if (ts.isIdentifier(value)) return FALLBACK_NAME_PATTERN.test(value.text)
-  if (ts.isPropertyAccessExpression(value)) {
+  if (isIdentifier(value)) return FALLBACK_NAME_PATTERN.test(value.text)
+  if (isPropertyAccessExpression(value)) {
     return (
-      FALLBACK_NAME_PATTERN.test(value.name.text) || expressionHasFallbackShape(value.expression)
+      FALLBACK_NAME_PATTERN.test(isIdentifier(value.name) ? value.name.text : textOf(value.name)) || expressionHasFallbackShape(value.expression)
     )
   }
-  if (ts.isElementAccessExpression(value)) return expressionHasFallbackShape(value.expression)
-  if (ts.isCallExpression(value) || ts.isNewExpression(value)) {
+  if (isElementAccessExpression(value)) return expressionHasFallbackShape(value.expression)
+  if (isCallExpression(value) || isNewExpression(value)) {
     return expressionHasFallbackShape(value.expression)
   }
-  if (ts.isAwaitExpression(value)) return expressionHasFallbackShape(value.expression)
-  if (ts.isConditionalExpression(value)) {
+  if (isAwaitExpression(value)) return expressionHasFallbackShape(value.expression)
+  if (isConditionalExpression(value)) {
     return expressionHasFallbackShape(value.whenTrue) || expressionHasFallbackShape(value.whenFalse)
   }
-  if (ts.isBinaryExpression(value)) {
+  if (isBinaryExpression(value)) {
     return expressionHasFallbackShape(value.left) || expressionHasFallbackShape(value.right)
   }
   return false
 }
 
-const unwrapValueExpression = (expression: ts.Expression): ts.Expression => {
+const unwrapValueExpression = (expression: import("../tsgo-api.js").Node): import("../tsgo-api.js").Node => {
   let current = expression
   while (
-    ts.isParenthesizedExpression(current) ||
-    ts.isAsExpression(current) ||
-    ts.isSatisfiesExpression(current) ||
-    ts.isNonNullExpression(current)
+    isParenthesizedExpression(current) ||
+    isAsExpression(current) ||
+    isSatisfiesExpression(current) ||
+    isNonNullExpression(current)
   ) {
     current = current.expression
   }
@@ -211,27 +246,27 @@ const unwrapValueExpression = (expression: ts.Expression): ts.Expression => {
 }
 
 const callbackTarget = (
-  callback: ts.Node,
-  sourceFile: ts.SourceFile,
-  typeChecker?: ts.TypeChecker,
+  callback: import("../tsgo-api.js").Node,
+  sourceFile: import("../tsgo-api.js").SourceFile,
+  typeChecker?: unknown,
 ): CallbackTarget | undefined => {
-  if (!ts.isIdentifier(callback)) return undefined
+  if (!isIdentifier(callback)) return undefined
   const symbolTarget = callbackSymbolTarget(callback, typeChecker)
   if (symbolTarget !== undefined) return symbolTarget
-  return lexicalCallbackTarget(callback.text, sourceFile)
+  return lexicalCallbackTarget(callback)
 }
 
 const callbackSymbolTarget = (
-  callback: ts.Identifier,
-  typeChecker?: ts.TypeChecker,
+  callback: import("../tsgo-api.js").Identifier,
+  typeChecker?: unknown,
 ): CallbackTarget | undefined => {
-  const declaration = typeChecker?.getSymbolAtLocation(callback)?.valueDeclaration
+  const declaration = undefined
   if (declaration === undefined) return undefined
-  if (ts.isFunctionDeclaration(declaration)) return declaration
+  if (isFunctionDeclaration(declaration)) return declaration
   if (
-    ts.isVariableDeclaration(declaration) &&
+    isVariableDeclaration(declaration) &&
     declaration.initializer !== undefined &&
-    (ts.isArrowFunction(declaration.initializer) || ts.isFunctionExpression(declaration.initializer))
+    (isArrowFunction(declaration.initializer) || isFunctionExpression(declaration.initializer))
   ) {
     return declaration.initializer
   }
@@ -239,39 +274,61 @@ const callbackSymbolTarget = (
 }
 
 const lexicalCallbackTarget = (
-  targetName: string,
-  sourceFile: ts.SourceFile,
+  callback: import("../tsgo-api.js").Identifier,
 ): CallbackTarget | undefined => {
-  let target: CallbackTarget | undefined
-  const visit = (node: ts.Node): void => {
-    if (target !== undefined) return
-    if (ts.isFunctionDeclaration(node) && node.name?.text === targetName) {
-      target = node
-      return
-    }
-    if (isNamedFunctionVariable(node, targetName)) {
-      target = node.initializer
-      return
-    }
-    ts.forEachChild(node, visit)
+  const targetName = callback.text
+  let current: import("../tsgo-api.js").Node | undefined = callback.parent
+  while (current !== undefined) {
+    const binding = nearestBindingInScope(current, targetName)
+    if (binding !== undefined) return binding
+    current = current.parent
   }
-  visit(sourceFile)
-  return target
+  return undefined
+}
+
+const nearestBindingInScope = (
+  scope: import("../tsgo-api.js").Node,
+  targetName: string,
+): CallbackTarget | undefined => {
+  if (isFunctionDeclaration(scope) && scope.name?.text === targetName) {
+    return scope
+  }
+  if (isNamedFunctionVariable(scope, targetName)) {
+    return scope.initializer
+  }
+  if (isBlock(scope) || scope.kind === SyntaxKind.SourceFile) {
+    let found: CallbackTarget | undefined
+    const visit = (node: import("../tsgo-api.js").Node): void => {
+      if (found !== undefined) return
+      if (isFunctionDeclaration(node) && node.name?.text === targetName) {
+        found = node
+        return
+      }
+      if (isNamedFunctionVariable(node, targetName)) {
+        found = node.initializer
+        return
+      }
+      if (!isFunctionLikeNode(node)) node.forEachChild(visit)
+    }
+    scope.forEachChild(visit)
+    return found
+  }
+  return undefined
 }
 
 const isNamedFunctionVariable = (
-  node: ts.Node,
+  node: import("../tsgo-api.js").Node,
   targetName: string,
-): node is ts.VariableDeclaration & { readonly initializer: ts.ArrowFunction | ts.FunctionExpression } =>
-  ts.isVariableDeclaration(node) &&
-  ts.isIdentifier(node.name) &&
+): node is import("../tsgo-api.js").VariableDeclaration & { readonly initializer: import("../tsgo-api.js").ArrowFunction | import("../tsgo-api.js").FunctionExpression } =>
+  isVariableDeclaration(node) &&
+  isIdentifier(node.name) &&
   node.name.text === targetName &&
   node.initializer !== undefined &&
-  (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))
+  (isArrowFunction(node.initializer) || isFunctionExpression(node.initializer))
 
 const isFunctionWithBlockBody = (
-  node: ts.Node,
-): node is (ts.ArrowFunction | ts.FunctionExpression | ts.FunctionDeclaration) & { readonly body: ts.Block } =>
-  (ts.isArrowFunction(node) || ts.isFunctionExpression(node) || ts.isFunctionDeclaration(node)) &&
+  node: import("../tsgo-api.js").Node,
+): node is (import("../tsgo-api.js").ArrowFunction | import("../tsgo-api.js").FunctionExpression | import("../tsgo-api.js").FunctionDeclaration) & { readonly body: import("../tsgo-api.js").Block } =>
+  (isArrowFunction(node) || isFunctionExpression(node) || isFunctionDeclaration(node)) &&
   node.body !== undefined &&
-  ts.isBlock(node.body)
+  isBlock(node.body)

@@ -1,6 +1,6 @@
 import { isExcluded } from "./shared-globs.js"
 import { countNonEmptyLines } from "./ts-ld-07-output.js"
-import type { SourceFile } from "./ts-ld-09-ast.js"
+import type { Project, SourceFile } from "../tsgo-api.js"
 import { collectErrorChannelOpacityFindings } from "./ts-ld-09-collection.js"
 import type {
   ErrorChannelOpacityFileSummary,
@@ -42,24 +42,24 @@ interface ErrorChannelOpacityMetrics {
   readonly boundaryPressure: number
 }
 
-export const computeErrorChannelOpacityOutput = (
-  sourceFiles: ReadonlyArray<SourceFile>,
+export const computeErrorChannelOpacityOutput = async (
+  files: ReadonlyArray<{ readonly sourceFile: SourceFile; readonly project: Project }>,
   config: TsLd09Config,
-): TsLd09Output => {
+): Promise<TsLd09Output> => {
   const byFile = new Map<string, ErrorChannelOpacityFileSummary>()
   const byKind = new Map<ErrorChannelOpacityKind, number>()
   const findings: Array<ErrorChannelOpacityFinding> = []
   let analyzedFiles = 0
   let analyzedLines = 0
 
-  for (const sourceFile of sourceFiles) {
-    const file = sourceFile.getFilePath()
-    if (sourceFile.isDeclarationFile() || isExcluded(file, config.exclude_globs)) continue
+  for (const { sourceFile, project } of files) {
+    const file = sourceFile.fileName
+    if (sourceFile.isDeclarationFile || isExcluded(file, config.exclude_globs)) continue
 
     analyzedFiles += 1
     analyzedLines += countNonEmptyLines(sourceFile)
 
-    const fileFindings = collectErrorChannelOpacityFindings(sourceFile, config)
+    const fileFindings = (await collectErrorChannelOpacityFindings(sourceFile, project, config))
       .map((finding) => ({ ...finding, file }))
       .sort(compareErrorChannelFindings)
 
