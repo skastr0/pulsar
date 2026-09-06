@@ -1,4 +1,4 @@
-import type { Project } from "ts-morph"
+import type { SourceFile } from "../tsgo-api.js"
 import { collectCloneCandidates } from "./ts-sl-01-collect.js"
 import { buildCloneGroups, sortCloneGroups } from "./ts-sl-01-groups.js"
 import {
@@ -9,12 +9,12 @@ import {
 } from "./ts-sl-01-model.js"
 
 export const computeTsSl01Output = (
-  project: Project,
+  sourceFiles: ReadonlyArray<SourceFile>,
   context: TsSl01Context,
   config: TsSl01Config,
 ): TsSl01Output => {
   const normalizedConfig = normalizeTsSl01Config(config)
-  const collection = collectCloneCandidates(project.getSourceFiles(), context, normalizedConfig)
+  const collection = collectCloneCandidates(sourceFiles, context, normalizedConfig)
   const groups = buildCloneGroups(collection.functions, normalizedConfig, collection.scopeMode)
   return {
     groups: sortCloneGroups(groups, collection.scopeMode, normalizedConfig.min_tokens),

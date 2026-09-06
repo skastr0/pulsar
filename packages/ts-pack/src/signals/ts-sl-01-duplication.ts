@@ -11,7 +11,7 @@ import {
   type TypeScriptCloneGroupPolicyValue,
 } from "@skastr0/pulsar-core/calibration"
 import { Effect, Option } from "effect"
-import { TsProjectTag } from "../ts-project.js"
+import { TsAnalysisTag } from "../ts-analysis.js"
 import { computeTsSl01Output } from "./ts-sl-01-compute.js"
 import {
   DEFAULT_SCORE_BUDGET_MIN_TOKENS,
@@ -31,7 +31,7 @@ import {
   sortCloneMembers,
 } from "./ts-sl-01-policy.js"
 
-export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalContextTag> = {
+export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsAnalysisTag | SignalContextTag> = {
   id: "TS-SL-01-duplication",
   title: "Duplication",
   aliases: ["TS-SL-01"],
@@ -113,11 +113,12 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsProjectTag | SignalCon
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
-      const project = yield* TsProjectTag
+      const analysis = yield* TsAnalysisTag
       const context = yield* SignalContextTag
       const calibration = yield* Effect.serviceOption(CalibrationContextTag)
+      const sourceFiles = yield* analysis.mapFiles(async (fileContext) => fileContext.sourceFile)
       const output = yield* Effect.try({
-        try: () => computeTsSl01Output(project, context, config),
+        try: () => computeTsSl01Output(sourceFiles, context, config),
         catch: (cause) =>
           new SignalComputeError({ signalId: "TS-SL-01-duplication", message: String(cause), cause }),
       })

@@ -1,6 +1,6 @@
 import { relative } from "node:path"
-import type { SourceFile } from "ts-morph"
-import { getFunctionBody, getFunctionLikeEntriesForSourceFile, type TsFunctionLike as FnLike } from "./shared-function-index.js"
+import type { SourceFile } from "../tsgo-api.js"
+import { functionEndLine, functionStartLine, getFunctionBody, getFunctionLikeEntriesForSourceFile, type TsFunctionLike as FnLike } from "./shared-function-index.js"
 import { isExcluded, matchesAnyGlob } from "./shared-globs.js"
 import { analyzeStructuralSource } from "./ts-sl-01-structural.js"
 import { hashExactSource, normalizeExactSource } from "./ts-sl-01-hash.js"
@@ -44,7 +44,7 @@ const collectSourceFileCloneCandidates = (
     return emptyCloneSourceFileCollection()
   }
 
-  const path = sourceFile.getFilePath()
+  const path = sourceFile.fileName
   const collection = emptyCloneSourceFileCollection()
   for (const entry of getFunctionLikeEntriesForSourceFile(sourceFile)) {
     const candidate = cloneCandidateForFunction(entry.fn, entry.path, path, hunkMap, structuralAnalysisCache)
@@ -59,12 +59,12 @@ const shouldSkipSourceFile = (
   worktreePath: string,
   config: TsSl01Config,
 ): boolean => {
-  if (sourceFile.isDeclarationFile()) return true
-  const path = sourceFile.getFilePath()
+  if (sourceFile.isDeclarationFile) return true
+  const path = sourceFile.fileName
   const relativePath = relative(worktreePath, path).replace(/\\/g, "/")
   return (
     matchesSourcePath(path, relativePath, config.exclude_globs) ||
-    isGeneratedSourceFileHeader(sourceFile.compilerNode.text.slice(0, 2048)) ||
+    isGeneratedSourceFileHeader(sourceFile.text.slice(0, 2048)) ||
     matchesSourcePath(path, relativePath, config.test_globs)
   )
 }
@@ -84,8 +84,8 @@ const cloneCandidateForFunction = (
   const structuralAnalysis =
     structuralAnalysisCache.get(cacheKey) ??
     analyzeStructuralBody(body, structuralAnalysisCache, cacheKey)
-  const startLine = fn.getStartLineNumber()
-  const endLine = fn.getEndLineNumber()
+  const startLine = functionStartLine(fn)
+  const endLine = functionEndLine(fn)
   return {
     fn,
     path: functionPath,

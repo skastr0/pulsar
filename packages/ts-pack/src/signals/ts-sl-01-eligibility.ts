@@ -1,5 +1,22 @@
-import { type ArrowFunction, type FunctionExpression, Node, SyntaxKind } from "ts-morph"
-import { getFunctionName, type TsFunctionLike as FnLike } from "./shared-function-index.js"
+import { textOf } from "../ast.js"
+import {
+  SyntaxKind,
+  isArrowFunction,
+  isBinaryExpression,
+  isBlock,
+  isCallExpression,
+  isFunctionDeclaration,
+  isFunctionExpression,
+  isJsxExpression,
+  isParenthesizedExpression,
+  isPropertyAssignment,
+  isReturnStatement,
+  isSourceFile,
+  type ArrowFunction,
+  type FunctionExpression,
+  type Node,
+} from "../tsgo-api.js"
+import { functionBodyNode, getFunctionName, type TsFunctionLike as FnLike } from "./shared-function-index.js"
 
 export const isStructuralCloneEligible = (fn: FnLike): boolean => {
   if (isAstPredicateUnionGuard(fn)) {
@@ -14,9 +31,9 @@ export const isStructuralCloneEligible = (fn: FnLike): boolean => {
     return false
   }
 
-  if (Node.isArrowFunction(fn) || Node.isFunctionExpression(fn)) {
-    const parent = fn.getParent()
-    if ((Node.isCallExpression(parent) || Node.isPropertyAssignment(parent)) && hasSingleOperationalStatement(fn)) {
+  if (isArrowFunction(fn) || isFunctionExpression(fn)) {
+    const parent = fn.parent
+    if ((isCallExpression(parent) || isPropertyAssignment(parent)) && hasSingleOperationalStatement(fn)) {
       return false
     }
     if (isSmallEffectGenCallback(fn)) {
@@ -30,16 +47,16 @@ export const isStructuralCloneEligible = (fn: FnLike): boolean => {
 const isAstPredicateUnionGuard = (fn: FnLike): boolean => {
   const name = getFunctionName(fn)
   if (!/^is[A-Z]/.test(name)) return false
-  if (!("getBody" in fn) || typeof fn.getBody !== "function") return false
-  const body = fn.getBody()
+  const body = functionBodyNode(fn)
+  if (body === undefined) return false
   if (body === undefined) return false
 
-  if (Node.isBlock(body)) {
-    const statements = body.getStatements()
+  if (isBlock(body)) {
+    const statements = body.statements
     if (statements.length !== 1) return false
     const statement = statements[0]
-    if (!Node.isReturnStatement(statement)) return false
-    const expression = statement.getExpression()
+    if (!isReturnStatement(statement)) return false
+    const expression = statement.expression
     return expression !== undefined && isAstPredicateUnionExpression(expression)
   }
 
@@ -47,29 +64,29 @@ const isAstPredicateUnionGuard = (fn: FnLike): boolean => {
 }
 
 const isAstPredicateUnionExpression = (node: Node): boolean => {
-  if (Node.isParenthesizedExpression(node)) {
-    return isAstPredicateUnionExpression(node.getExpression())
+  if (isParenthesizedExpression(node)) {
+    return isAstPredicateUnionExpression(node.expression)
   }
-  if (Node.isBinaryExpression(node) && node.getOperatorToken().getKind() === SyntaxKind.BarBarToken) {
+  if (isBinaryExpression(node) && node.operatorToken.kind === SyntaxKind.BarBarToken) {
     return (
-      isAstPredicateUnionExpression(node.getLeft()) &&
-      isAstPredicateUnionExpression(node.getRight())
+      isAstPredicateUnionExpression(node.left) &&
+      isAstPredicateUnionExpression(node.right)
     )
   }
-  if (!Node.isCallExpression(node)) return false
-  const callee = node.getExpression().getText()
+  if (!isCallExpression(node)) return false
+  const callee = textOf(node.expression)
   return /^ts\.is[A-Z]/.test(callee) || /^Node\.is[A-Z]/.test(callee)
 }
 
 const isJsxComponentAdapter = (fn: FnLike): boolean => {
-  if (!("getBody" in fn) || typeof fn.getBody !== "function") return false
-  const body = fn.getBody()
-  if (!Node.isBlock(body)) return false
-  const statements = body.getStatements()
+  const body = functionBodyNode(fn)
+  if (body === undefined) return false
+  if (!isBlock(body)) return false
+  const statements = body.statements
   if (statements.length !== 2) return false
 
-  const setup = statements[0]?.getText() ?? ""
-  const returned = statements[1]?.getText() ?? ""
+  const setup = statements[0] === undefined ? undefined : textOf(statements[0]) ?? ""
+  const returned = statements[1] === undefined ? undefined : textOf(statements[1]) ?? ""
   return (
     /\bsplitProps\s*\(/.test(setup) &&
     /^return\s*\(?\s*</s.test(returned) &&
@@ -79,17 +96,17 @@ const isJsxComponentAdapter = (fn: FnLike): boolean => {
 }
 
 const isSvgIconComponent = (fn: FnLike): boolean => {
-  if (!Node.isFunctionDeclaration(fn)) return false
+  if (!isFunctionDeclaration(fn)) return false
   if (!/^Icon[A-Z]/.test(getFunctionName(fn))) return false
-  const parameters = fn.getParameters()
+  const parameters = fn.parameters
   if (parameters.length > 1) return false
-  const body = fn.getBody()
-  if (!Node.isBlock(body)) return false
-  const statements = body.getStatements()
+  const body = functionBodyNode(fn)
+  if (!isBlock(body)) return false
+  const statements = body.statements
   if (statements.length !== 1) return false
   const statement = statements[0]
-  if (!Node.isReturnStatement(statement)) return false
-  const returned = statement.getExpression()?.getText() ?? ""
+  if (!isReturnStatement(statement)) return false
+  const returned = statement.expression === undefined ? "" : textOf(statement.expression)
   return /^(\(\s*)?<svg\b/s.test(returned) && /\{\s*\.\.\.\s*props\s*\}/.test(returned)
 }
 
@@ -98,9 +115,9 @@ export const isExactCloneEligible = (fn: FnLike, tokenCount: number): boolean =>
     return false
   }
 
-  if (Node.isArrowFunction(fn) || Node.isFunctionExpression(fn)) {
-    const parent = fn.getParent()
-    if (Node.isCallExpression(parent) && hasSingleOperationalStatement(fn)) {
+  if (isArrowFunction(fn) || isFunctionExpression(fn)) {
+    const parent = fn.parent
+    if (isCallExpression(parent) && hasSingleOperationalStatement(fn)) {
       return false
     }
   }
@@ -109,37 +126,37 @@ export const isExactCloneEligible = (fn: FnLike, tokenCount: number): boolean =>
 }
 
 const isJsxRenderCallback = (fn: FnLike): boolean => {
-  if (!Node.isArrowFunction(fn) && !Node.isFunctionExpression(fn)) return false
+  if (!isArrowFunction(fn) && !isFunctionExpression(fn)) return false
 
-  let current: Node | undefined = fn.getParent()
-  while (current !== undefined && !Node.isSourceFile(current)) {
-    if (Node.isJsxExpression(current)) return true
-    current = current.getParent()
+  let current: Node | undefined = fn.parent
+  while (current !== undefined && !isSourceFile(current)) {
+    if (isJsxExpression(current)) return true
+    current = current.parent
   }
   return false
 }
 
 const isSmallJsxReturnFunction = (fn: FnLike): boolean => {
-  if (!("getBody" in fn) || typeof fn.getBody !== "function") return false
-  const body = fn.getBody()
-  if (!Node.isBlock(body)) return false
-  const statements = body.getStatements()
+  const body = functionBodyNode(fn)
+  if (body === undefined) return false
+  if (!isBlock(body)) return false
+  const statements = body.statements
   if (statements.length !== 1) return false
-  return /^return\s*\(?\s*</s.test(statements[0]?.getText() ?? "")
+  return /^return\s*\(?\s*</s.test(statements[0] === undefined ? undefined : textOf(statements[0]) ?? "")
 }
 
 const hasSingleOperationalStatement = (fn: ArrowFunction | FunctionExpression): boolean => {
-  const body = fn.getBody()
-  if (!Node.isBlock(body)) return true
-  return body.getStatements().length === 1
+  const body = functionBodyNode(fn)
+  if (!isBlock(body)) return true
+  return body.statements.length === 1
 }
 
 const isSmallEffectGenCallback = (fn: ArrowFunction | FunctionExpression): boolean => {
-  const parent = fn.getParent()
-  if (!Node.isCallExpression(parent)) return false
-  if (parent.getExpression().getText() !== "Effect.gen") return false
+  const parent = fn.parent
+  if (!isCallExpression(parent)) return false
+  if (textOf(parent.expression) !== "Effect.gen") return false
 
-  const body = fn.getBody()
-  if (!Node.isBlock(body)) return true
-  return body.getStatements().length <= 3
+  const body = functionBodyNode(fn)
+  if (!isBlock(body)) return true
+  return body.statements.length <= 3
 }

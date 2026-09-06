@@ -1,15 +1,26 @@
-import { describe, expect, test } from "bun:test"
-import { Project } from "ts-morph"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { Effect } from "effect"
+import { createTempRepo, type TempRepo } from "./test-repo.js"
+import { TsAnalysisLayer, TsAnalysisTag } from "../ts-analysis.js"
 import {
   getFunctionLikeEntriesForSourceFile,
   getFunctionName,
 } from "../signals/shared-function-index.js"
 
 describe("shared function index", () => {
-  test("names API option callbacks with enclosing operation context", () => {
-    const project = new Project({ useInMemoryFileSystem: true })
-    const sourceFile = project.createSourceFile(
-      "/repo/src/session.ts",
+  let repo: TempRepo
+
+  beforeEach(async () => {
+    repo = await createTempRepo("pulsar-function-index-")
+  })
+
+  afterEach(async () => {
+    await repo.cleanup()
+  })
+
+  test("names API option callbacks with enclosing operation context", async () => {
+    await repo.write(
+      "src/session.ts",
       `
 const readSessionLogMarkers = (artifactRoot: string) =>
   Effect.tryPromise({
@@ -23,8 +34,14 @@ const readSessionLogMarkers = (artifactRoot: string) =>
 `,
     )
 
-    const names = getFunctionLikeEntriesForSourceFile(sourceFile).map((entry) =>
-      getFunctionName(entry.fn),
+    const names = await Effect.runPromise(
+      Effect.gen(function* () {
+        const analysis = yield* TsAnalysisTag
+        const sourceFiles = yield* analysis.mapFiles(async (context) => context.sourceFile)
+        return sourceFiles.flatMap((sourceFile) =>
+          getFunctionLikeEntriesForSourceFile(sourceFile).map((entry) => getFunctionName(entry.fn)),
+        )
+      }).pipe(Effect.provide(TsAnalysisLayer(repo.root))),
     )
 
     expect(names).toContain("readSessionLogMarkers/Effect.tryPromise/try")

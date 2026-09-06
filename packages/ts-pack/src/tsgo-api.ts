@@ -69,6 +69,7 @@ export {
   isJsxElement,
   isJsxFragment,
   isJsxSelfClosingElement,
+  isJsxExpression,
   isParenthesizedTypeNode,
   isReturnStatement,
   isTypeLiteralNode,

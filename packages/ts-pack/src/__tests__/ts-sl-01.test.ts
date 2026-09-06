@@ -5,7 +5,7 @@ import { buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { CalibrationContextTag, appendCalibrationDecision, defineCalibrationProcessor, makeResolvedCalibrationContext } from "@skastr0/pulsar-core/calibration"
 import { createTempRepo, runSignal } from "./test-repo.js"
 import { TsSl01 } from "../signals/ts-sl-01-duplication.js"
-import { TsProjectLayer } from "../ts-project.js"
+import { TsAnalysisLayer } from "../ts-analysis.js"
 import type { TempRepo } from "./test-repo.js"
 import { TsSl01Config, type TsSl01Output } from "../signals/ts-sl-01-model.js"
 import { makePulsarSelfCalibrationContext } from "./pulsar-self-calibration.js"
@@ -337,7 +337,7 @@ export function copied(value: number): number {
       processors: [processor],
     })
     const layer = Layer.mergeAll(
-      TsProjectLayer(repo.root),
+      TsAnalysisLayer(repo.root),
       Layer.succeed(SignalContextTag, {
         gitSha: "TEST",
         worktreePath: repo.root,
@@ -385,7 +385,7 @@ export function copiedIntegration(value: number): number {
       }),
     )
     const layer = Layer.mergeAll(
-      TsProjectLayer(repo.root),
+      TsAnalysisLayer(repo.root),
       Layer.succeed(SignalContextTag, {
         gitSha: "TEST",
         worktreePath: repo.root,
@@ -1196,7 +1196,7 @@ function dup2(x: number): number { return x * 2; }
       ).pipe(
         Effect.provide(
           Layer.mergeAll(
-            TsProjectLayer(repo.root),
+            TsAnalysisLayer(repo.root),
             Layer.succeed(SignalContextTag, {
               gitSha: "TEST",
               worktreePath: repo.root,
@@ -1246,7 +1246,7 @@ export function copiedHandler(value: number): number {
       ).pipe(
         Effect.provide(
           Layer.mergeAll(
-            TsProjectLayer(repo.root),
+            TsAnalysisLayer(repo.root),
             Layer.succeed(SignalContextTag, {
               gitSha: "TEST",
               worktreePath: repo.root,
@@ -1303,7 +1303,7 @@ export function copiedHandler(value: number): number {
       ).pipe(
         Effect.provide(
           Layer.mergeAll(
-            TsProjectLayer(repo.root),
+            TsAnalysisLayer(repo.root),
             Layer.succeed(SignalContextTag, {
               gitSha: "TEST",
               worktreePath: repo.root,
@@ -1347,7 +1347,7 @@ export function copiedHandler(value: number): number {
       ).pipe(
         Effect.provide(
           Layer.mergeAll(
-            TsProjectLayer(repo.root),
+            TsAnalysisLayer(repo.root),
             Layer.succeed(SignalContextTag, {
               gitSha: "TEST",
               worktreePath: repo.root,
@@ -1391,7 +1391,7 @@ export function copiedHandler(value: number): number {
       ).pipe(
         Effect.provide(
           Layer.mergeAll(
-            TsProjectLayer(repo.root),
+            TsAnalysisLayer(repo.root),
             Layer.succeed(SignalContextTag, {
               gitSha: "TEST",
               worktreePath: repo.root,
@@ -1432,7 +1432,7 @@ function unique(x: number): number { return x + 1; }
       ).pipe(
         Effect.provide(
           Layer.mergeAll(
-            TsProjectLayer(repo.root),
+            TsAnalysisLayer(repo.root),
             Layer.succeed(SignalContextTag, {
               gitSha: "TEST",
               worktreePath: repo.root,
