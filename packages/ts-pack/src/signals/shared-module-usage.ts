@@ -1,11 +1,23 @@
 import {
-  Node,
-  ts,
+  isExportDeclaration,
+  isIdentifier,
+  isImportDeclaration,
+  isInterfaceDeclaration,
+  isNamespaceExport,
+  isNamespaceImport,
+  isNamedExports,
+  isNamedImports,
+  isTypeAliasDeclaration,
+  isTypeNode,
+  SyntaxKind,
   type ExportDeclaration,
   type ExportSpecifier,
+  type ImportClause,
   type ImportDeclaration,
+  type ImportSpecifier,
+  type Node,
   type SourceFile,
-} from "ts-morph"
+} from "../tsgo-api.js"
 
 type IdentifierUsage = "type-only" | "value"
 
@@ -14,16 +26,16 @@ export const isTypeOnlyModuleDeclaration = (
   getIdentifierUsage: () => ReadonlyMap<string, IdentifierUsage>,
   resolveExportSourceFile?: () => SourceFile | undefined,
 ): boolean => {
-  if (declaration.isTypeOnly()) return true
-  if (Node.isImportDeclaration(declaration)) {
+  if (isExplicitTypeOnlyDeclaration(declaration)) return true
+  if (isImportDeclaration(declaration)) {
     return isTypeOnlyImportDeclaration(declaration, getIdentifierUsage)
   }
 
-  if (declaration.getNamespaceExport() !== undefined) return false
-  const namedExports = declaration.getNamedExports()
+  if (declaration.exportClause !== undefined && isNamespaceExport(declaration.exportClause)) return false
+  const namedExports = namedExportsOf(declaration)
   return namedExports.length > 0 &&
     namedExports.every((specifier) =>
-      specifier.isTypeOnly() ||
+      specifier.isTypeOnly ||
       isSemanticallyTypeOnlyExportSpecifier(specifier, resolveExportSourceFile)
     )
 }
@@ -34,14 +46,11 @@ export const localIdentifierUsageByName = (
 ): ReadonlyMap<string, IdentifierUsage> => {
   const usage = new Map<string, IdentifierUsage>()
   const valueNames = new Set<string>()
-  const compilerSourceFile = sourceFile.compilerNode
-
-  const visit = (node: ts.Node, inTypePosition: boolean): void => {
+  const visit = (node: Node, inTypePosition: boolean): void => {
     if (valueNames.size === bindingNames.size) return
-    if (ts.isImportDeclaration(node)) return
-
-    const nextInTypePosition = inTypePosition || ts.isTypeNode(node)
-    if (ts.isIdentifier(node)) {
+    if (isImportDeclaration(node)) return
+    const nextInTypePosition = inTypePosition || isTypeNode(node)
+    if (isIdentifier(node)) {
       const name = node.text
       if (!bindingNames.has(name)) return
       if (!nextInTypePosition) {
@@ -54,11 +63,9 @@ export const localIdentifierUsageByName = (
       }
       return
     }
-
-    ts.forEachChild(node, (child) => visit(child, nextInTypePosition))
+    node.forEachChild((child) => visit(child, nextInTypePosition))
   }
-
-  visit(compilerSourceFile, false)
+  visit(sourceFile, false)
 
   return usage
 }
@@ -68,22 +75,15 @@ export const valueImportBindingNames = (
 ): ReadonlySet<string> => {
   const names = new Set<string>()
   for (const declaration of declarations) {
-    const clause = declaration.getImportClause()
-    if (clause === undefined || clause.isTypeOnly()) continue
-
-    const defaultImport = clause.getDefaultImport()
-    if (defaultImport !== undefined) {
-      names.add(defaultImport.getText())
+    const clause = declaration.importClause
+    if (clause === undefined || isTypeOnlyImportClause(clause)) continue
+    if (clause.name !== undefined) names.add(clause.name.text)
+    if (clause.namedBindings !== undefined && isNamespaceImport(clause.namedBindings)) {
+      names.add(clause.namedBindings.name.text)
     }
-
-    const namespaceImport = clause.getNamespaceImport()
-    if (namespaceImport !== undefined) {
-      names.add(namespaceImport.getText())
-    }
-
-    for (const specifier of clause.getNamedImports()) {
-      if (!specifier.isTypeOnly()) {
-        names.add(specifier.getAliasNode()?.getText() ?? specifier.getName())
+    for (const specifier of namedImportsOf(clause)) {
+      if (!specifier.isTypeOnly) {
+        names.add(localImportName(specifier))
       }
     }
   }
@@ -94,30 +94,21 @@ const isTypeOnlyImportDeclaration = (
   declaration: ImportDeclaration,
   getIdentifierUsage: () => ReadonlyMap<string, IdentifierUsage>,
 ): boolean => {
-  const clause = declaration.getImportClause()
+  const clause = declaration.importClause
   if (clause === undefined) return false
-  if (clause.isTypeOnly()) return true
+  if (isTypeOnlyImportClause(clause)) return true
 
   const typeOnlyBindings = new Set<string>()
   const valueBindings = new Set<string>()
 
-  const defaultImport = clause.getDefaultImport()
-  if (defaultImport !== undefined) {
-    valueBindings.add(defaultImport.getText())
+  if (clause.name !== undefined) valueBindings.add(clause.name.text)
+  if (clause.namedBindings !== undefined && isNamespaceImport(clause.namedBindings)) {
+    valueBindings.add(clause.namedBindings.name.text)
   }
-
-  const namespaceImport = clause.getNamespaceImport()
-  if (namespaceImport !== undefined) {
-    valueBindings.add(namespaceImport.getText())
-  }
-
-  for (const specifier of clause.getNamedImports()) {
-    const localName = specifier.getAliasNode()?.getText() ?? specifier.getName()
-    if (specifier.isTypeOnly()) {
-      typeOnlyBindings.add(localName)
-    } else {
-      valueBindings.add(localName)
-    }
+  for (const specifier of namedImportsOf(clause)) {
+    const localName = localImportName(specifier)
+    if (specifier.isTypeOnly) typeOnlyBindings.add(localName)
+    else valueBindings.add(localName)
   }
 
   if (valueBindings.size === 0) return typeOnlyBindings.size > 0
@@ -136,12 +127,57 @@ const isSemanticallyTypeOnlyExportSpecifier = (
   const sourceFile = resolveExportSourceFile?.()
   if (sourceFile === undefined) return false
 
-  const exportedName = specifier.getNameNode().getText()
-  const declarations = sourceFile.getExportedDeclarations().get(exportedName)
-  return declarations !== undefined &&
-    declarations.length > 0 &&
-    declarations.every(isTypeOnlyDeclaration)
+  const exportedName = exportNameText(specifier)
+  return exportedName.length > 0 && isExportedTypeOnlyName(sourceFile, exportedName)
 }
 
-const isTypeOnlyDeclaration = (declaration: Node): boolean =>
-  Node.isInterfaceDeclaration(declaration) || Node.isTypeAliasDeclaration(declaration)
+const isExportedTypeOnlyName = (sourceFile: SourceFile, exportedName: string): boolean => {
+  let foundValue = false
+  let foundType = false
+  const visit = (node: Node): void => {
+    if (foundValue) return
+    if (isInterfaceDeclaration(node) && node.name.text === exportedName) {
+      foundType = true
+      return
+    }
+    if (isTypeAliasDeclaration(node) && node.name.text === exportedName) {
+      foundType = true
+      return
+    }
+    if (isExportDeclaration(node) && node.moduleSpecifier === undefined) {
+      for (const specifier of namedExportsOf(node)) {
+        if (exportNameText(specifier) !== exportedName) continue
+        if (specifier.isTypeOnly) foundType = true
+        else foundValue = true
+      }
+    }
+    node.forEachChild(visit)
+  }
+  visit(sourceFile)
+  return foundType && !foundValue
+}
+
+const isExplicitTypeOnlyDeclaration = (declaration: ImportDeclaration | ExportDeclaration): boolean => {
+  if (isImportDeclaration(declaration)) {
+    return declaration.importClause !== undefined && isTypeOnlyImportClause(declaration.importClause)
+  }
+  return declaration.isTypeOnly
+}
+
+const isTypeOnlyImportClause = (clause: ImportClause): boolean =>
+  clause.phaseModifier === SyntaxKind.TypeKeyword
+
+const namedExportsOf = (declaration: ExportDeclaration): ReadonlyArray<ExportSpecifier> =>
+  declaration.exportClause !== undefined && isNamedExports(declaration.exportClause)
+    ? [...declaration.exportClause.elements]
+    : []
+
+const namedImportsOf = (clause: ImportClause): ReadonlyArray<ImportSpecifier> =>
+  clause.namedBindings !== undefined && isNamedImports(clause.namedBindings)
+    ? [...clause.namedBindings.elements]
+    : []
+
+const localImportName = (specifier: ImportSpecifier): string => specifier.name.text
+
+const exportNameText = (specifier: ExportSpecifier): string =>
+  (specifier.propertyName ?? specifier.name).text

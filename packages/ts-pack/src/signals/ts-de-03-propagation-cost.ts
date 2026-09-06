@@ -1,10 +1,10 @@
 import { SignalComputeError } from "@skastr0/pulsar-core/signal"
 import type { Diagnostic, Signal } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
-import { buildModuleGraph } from "../graph/module-graph.js"
+import { buildModuleGraphFromFiles } from "../graph/module-graph.js"
 import { computeReachabilityCounts } from "../graph/reachability.js"
 import { condenseGraph, tarjanSccs } from "../graph/tarjan.js"
-import { TsPackageInfoTag, TsProjectTag } from "../ts-project.js"
+import { TsAnalysisTag, TsPackageInfoTag } from "../ts-analysis.js"
 import { compareDescendingMetricByFile } from "./shared-rank-order.js"
 
 export const TsDe03Config = Schema.Struct({
@@ -36,7 +36,7 @@ interface TsDe03Output {
   readonly diagnosticLimit: number
 }
 
-export const TsDe03: Signal<TsDe03Config, TsDe03Output, TsProjectTag | TsPackageInfoTag> = {
+export const TsDe03: Signal<TsDe03Config, TsDe03Output, TsAnalysisTag | TsPackageInfoTag> = {
   id: "TS-DE-03-propagation-cost",
   title: "Propagation cost",
   aliases: ["TS-DE-03"],
@@ -64,11 +64,12 @@ export const TsDe03: Signal<TsDe03Config, TsDe03Output, TsProjectTag | TsPackage
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
-      const project = yield* TsProjectTag
+      const analysis = yield* TsAnalysisTag
       const packages = yield* TsPackageInfoTag
+      const sourceFiles = yield* analysis.mapFiles(async (context) => context.sourceFile)
       const result = yield* Effect.try({
         try: (): TsDe03Output => {
-          const moduleGraph = buildModuleGraph(project, {
+          const moduleGraph = buildModuleGraphFromFiles(sourceFiles, {
             excludeGlobs: config.exclude_globs,
             includeExportEdges: false,
             packages,
@@ -162,7 +163,7 @@ const computePropagationCost = (
 
 const indexModulesByFile = (moduleGraph: ModuleGraph): ReadonlyMap<string, number> =>
   new Map<string, number>(
-    moduleGraph.sourceFiles.map((sourceFile, index) => [sourceFile.getFilePath(), index] as const),
+    moduleGraph.sourceFiles.map((sourceFile, index) => [sourceFile.fileName, index] as const),
   )
 
 const buildPropagationInfo = (
@@ -174,7 +175,7 @@ const buildPropagationInfo = (
   const byModule = new Map<string, PropagationInfo>()
 
   for (const sourceFile of moduleGraph.sourceFiles) {
-    const file = sourceFile.getFilePath()
+    const file = sourceFile.fileName
     const componentIndex = condensed.nodeToComponent.get(file)
     if (componentIndex === undefined) continue
     const intraComponent = (condensed.components[componentIndex]?.length ?? 1) - 1

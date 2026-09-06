@@ -1,8 +1,8 @@
 import { SignalComputeError } from "@skastr0/pulsar-core/signal"
 import type { Diagnostic, Signal } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
-import { buildModuleGraph } from "../graph/module-graph.js"
-import { TsPackageInfoTag, TsProjectTag } from "../ts-project.js"
+import { buildModuleGraphFromFiles } from "../graph/module-graph.js"
+import { TsAnalysisTag, TsPackageInfoTag } from "../ts-analysis.js"
 
 export const TsDe02Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
@@ -46,7 +46,7 @@ interface TsDe02Output {
  *   catches files that both consume and are consumed widely, which is
  *   the coupling-hub shape from the research literature.
  */
-export const TsDe02: Signal<TsDe02Config, TsDe02Output, TsProjectTag | TsPackageInfoTag> = {
+export const TsDe02: Signal<TsDe02Config, TsDe02Output, TsAnalysisTag | TsPackageInfoTag> = {
   id: "TS-DE-02-fan-in-fan-out",
   title: "Fan-in/fan-out",
   aliases: ["TS-DE-02"],
@@ -73,12 +73,13 @@ export const TsDe02: Signal<TsDe02Config, TsDe02Output, TsProjectTag | TsPackage
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
-      const project = yield* TsProjectTag
+      const analysis = yield* TsAnalysisTag
       const packages = yield* TsPackageInfoTag
+      const sourceFiles = yield* analysis.mapFiles(async (context) => context.sourceFile)
       const result = yield* Effect.try({
         try: (): TsDe02Output => {
           const diagnosticLimit = normalizeDiagnosticLimit(config.top_n_diagnostics)
-          const graph = buildModuleGraph(project, {
+          const graph = buildModuleGraphFromFiles(sourceFiles, {
             excludeGlobs: config.exclude_globs,
             includeExportEdges: true,
             packages,

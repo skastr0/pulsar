@@ -195,10 +195,45 @@ const isPathInside = (root: string, candidate: string): boolean => {
   return relativePath === "" || (!relativePath.startsWith("..") && !isAbsolute(relativePath))
 }
 
-const stripJsonc = (raw: string): string =>
-  raw
-    .replace(/\/\*[\s\S]*?\*\//g, " ")
-    .replace(/(^|[^:])\/\/.*$/gm, "$1")
+const stripJsonc = (raw: string): string => {
+  let result = ""
+  let index = 0
+  while (index < raw.length) {
+    const char = raw[index]
+    const next = raw[index + 1]
+    if (char === "\"") {
+      result += char
+      index += 1
+      while (index < raw.length) {
+        const current = raw[index]
+        result += current
+        if (current === "\\" && index + 1 < raw.length) {
+          result += raw[index + 1]
+          index += 2
+          continue
+        }
+        index += 1
+        if (current === "\"") break
+      }
+      continue
+    }
+    if (char === "/" && next === "/") {
+      index += 2
+      while (index < raw.length && raw[index] !== "\n") index += 1
+      continue
+    }
+    if (char === "/" && next === "*") {
+      index += 2
+      while (index + 1 < raw.length && !(raw[index] === "*" && raw[index + 1] === "/")) index += 1
+      index = Math.min(index + 2, raw.length)
+      result += " "
+      continue
+    }
+    result += char
+    index += 1
+  }
+  return result
+}
 
 const materializeFallbackConfig = (
   worktreePath: string,

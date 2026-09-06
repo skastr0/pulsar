@@ -1,12 +1,16 @@
 import { dirname, normalize, resolve } from "node:path"
-import type {
-  ExportDeclaration,
-  ImportDeclaration,
-  Project,
-  SourceFile,
-} from "ts-morph"
+import { walkDescendants } from "../ast.js"
 import type { PackageInfo } from "../discovery.js"
 import { isExcluded } from "../signals/shared-globs.js"
+import {
+  isExportDeclaration,
+  isImportDeclaration,
+  isNoSubstitutionTemplateLiteral,
+  isStringLiteral,
+  type ExportDeclaration,
+  type ImportDeclaration,
+  type SourceFile,
+} from "../tsgo-api.js"
 import {
   isBuiltinModuleName,
   normalizePackageSpecifier,
@@ -36,26 +40,24 @@ interface ModuleGraph {
   readonly fileToPackage: ReadonlyMap<string, PackageInfo | undefined>
 }
 
-export const buildModuleGraph = (
-  project: Project,
+export const buildModuleGraphFromFiles = (
+  sourceFiles: ReadonlyArray<SourceFile>,
   options: ModuleGraphOptions,
 ): ModuleGraph => {
-  const sourceFiles = project
-    .getSourceFiles()
-    .filter((sourceFile) => !isExcluded(sourceFile.getFilePath(), options.excludeGlobs))
-  const fileSet = new Set(sourceFiles.map((sourceFile) => sourceFile.getFilePath()))
+  const selected = sourceFiles.filter((sourceFile) => !isExcluded(sourceFile.fileName, options.excludeGlobs))
+  const fileSet = new Set(selected.map((sourceFile) => sourceFile.fileName))
   const sourceFileByPath = new Map(
-    sourceFiles.map((sourceFile) => [sourceFile.getFilePath(), sourceFile] as const),
+    selected.map((sourceFile) => [sourceFile.fileName, sourceFile] as const),
   )
   const dependencies = new Map<string, Set<string>>()
   const reverseDependencies = new Map<string, Set<string>>()
   const fileToPackage = new Map<string, PackageInfo | undefined>()
-  const resolver = createModuleResolver(sourceFiles, options.packages ?? [])
+  const resolver = createModuleResolver(selected, options.packages ?? [])
   const includeExportEdges = options.includeExportEdges === true
   const packageLookupEnabled = (options.packages?.length ?? 0) > 0
 
-  for (const sourceFile of sourceFiles) {
-    const filePath = sourceFile.getFilePath()
+  for (const sourceFile of selected) {
+    const filePath = sourceFile.fileName
     dependencies.set(
       filePath,
       collectTargets(sourceFile, resolver, includeExportEdges, sourceFileByPath),
@@ -73,7 +75,7 @@ export const buildModuleGraph = (
   }
 
   return {
-    sourceFiles,
+    sourceFiles: selected,
     fileSet,
     dependencies,
     reverseDependencies,
@@ -87,9 +89,9 @@ const collectTargets = (
   includeExportEdges: boolean,
   sourceFileByPath: ReadonlyMap<string, SourceFile>,
 ): Set<string> => {
-  const sourcePath = sourceFile.getFilePath()
+  const sourcePath = sourceFile.fileName
   const targets = new Set<string>()
-  const importDeclarations = sourceFile.getImportDeclarations()
+  const importDeclarations = importDeclarationsOf(sourceFile)
   const valueBindingNames = valueImportBindingNames(importDeclarations)
   let identifierUsage: ReturnType<typeof localIdentifierUsageByName> | undefined
   const getIdentifierUsage = (): ReturnType<typeof localIdentifierUsageByName> => {
@@ -105,7 +107,7 @@ const collectTargets = (
   }
 
   if (includeExportEdges) {
-    for (const declaration of sourceFile.getExportDeclarations()) {
+    for (const declaration of exportDeclarationsOf(sourceFile)) {
       const targetPath = resolver.resolve(sourcePath, declaration)
       if (targetPath === undefined || targetPath === sourcePath) continue
       if (
@@ -140,7 +142,7 @@ export const createModuleResolver = (
 
   return {
     resolve: (sourcePath, declaration) => {
-      const specifier = declaration.getModuleSpecifierValue()
+      const specifier = moduleSpecifierOf(declaration)
       if (specifier === undefined) {
         return undefined
       }
@@ -194,7 +196,7 @@ const buildPathLookup = (sourceFiles: ReadonlyArray<SourceFile>): ReadonlyMap<st
   const lookup = new Map<string, string>()
 
   for (const sourceFile of sourceFiles) {
-    const filePath = normalizePath(sourceFile.getFilePath())
+    const filePath = normalizePath(sourceFile.fileName)
     const withoutExtension = stripKnownExtension(filePath)
     lookup.set(filePath, filePath)
     lookup.set(withoutExtension, filePath)
@@ -254,3 +256,26 @@ const lookupResolvedPath = (
 ): string | undefined => pathLookup.get(candidate) ?? pathLookup.get(stripRuntimeExtension(candidate))
 
 const normalizePath = (path: string): string => normalize(path).replace(/\\/g, "/")
+
+const importDeclarationsOf = (sourceFile: SourceFile): ReadonlyArray<ImportDeclaration> => {
+  const declarations: Array<ImportDeclaration> = []
+  walkDescendants(sourceFile, (node) => {
+    if (isImportDeclaration(node)) declarations.push(node)
+  })
+  return declarations
+}
+
+const exportDeclarationsOf = (sourceFile: SourceFile): ReadonlyArray<ExportDeclaration> => {
+  const declarations: Array<ExportDeclaration> = []
+  walkDescendants(sourceFile, (node) => {
+    if (isExportDeclaration(node)) declarations.push(node)
+  })
+  return declarations
+}
+
+const moduleSpecifierOf = (declaration: ImportDeclaration | ExportDeclaration): string | undefined => {
+  const specifier = declaration.moduleSpecifier
+  if (specifier === undefined) return undefined
+  if (isStringLiteral(specifier) || isNoSubstitutionTemplateLiteral(specifier)) return specifier.text
+  return undefined
+}
