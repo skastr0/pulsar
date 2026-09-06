@@ -16,7 +16,7 @@ import {
   secretFindingEvidenceClass,
   secretFindingSeverity,
 } from "../signals/ts-sec-03-secret-material.js"
-import { TsProjectLayer } from "../ts-project.js"
+import { TsAnalysisLayer } from "../ts-analysis.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
 
 // Scanner-grade fixture tokens are assembled at runtime so this SOURCE file
@@ -100,7 +100,7 @@ describe("TS-SEC-03 secret material", () => {
   const runEnforced = async () => {
     const registry = await Effect.runPromise(buildRegistry([TsSec03]))
     const layer = Layer.mergeAll(
-      TsProjectLayer(repo.root),
+      TsAnalysisLayer(repo.root),
       InMemoryCacheLayer,
       Layer.succeed(SignalContextTag, {
         gitSha: "TEST",
@@ -117,7 +117,7 @@ describe("TS-SEC-03 secret material", () => {
   const runObserved = async () => {
     const registry = await Effect.runPromise(buildRegistry([TsSec03]))
     const layer = Layer.mergeAll(
-      TsProjectLayer(repo.root),
+      TsAnalysisLayer(repo.root),
       InMemoryCacheLayer,
       Layer.succeed(SignalContextTag, {
         gitSha: "TEST",

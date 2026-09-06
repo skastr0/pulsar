@@ -13,6 +13,7 @@ export type {
   MethodDeclaration,
   ModifierLike,
   Node,
+  NoSubstitutionTemplateLiteral,
   ParameterDeclaration,
   PropertyAccessExpression,
   PropertyAssignment,
@@ -24,6 +25,7 @@ export type {
 } from "tsgo-typescript/unstable/ast"
 export { SyntaxKind } from "tsgo-typescript/unstable/ast"
 export {
+  isArrayLiteralExpression,
   isArrowFunction,
   isAsExpression,
   isBinaryExpression,
@@ -32,6 +34,7 @@ export {
   isCatchClause,
   isClassDeclaration,
   isConstructorDeclaration,
+  isElementAccessExpression,
   isEnumDeclaration,
   isExportAssignment,
   isExpressionStatement,
@@ -39,8 +42,11 @@ export {
   isFunctionExpression,
   isGetAccessorDeclaration,
   isIdentifier,
+  isIndexedAccessTypeNode,
   isInterfaceDeclaration,
   isMethodDeclaration,
+  isNewExpression,
+  isNoSubstitutionTemplateLiteral,
   isObjectLiteralExpression,
   isPropertyAccessExpression,
   isPropertyAssignment,

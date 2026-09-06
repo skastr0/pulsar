@@ -5,11 +5,26 @@ import {
   type Signal,
 } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
-import { Node, SyntaxKind, type Node as TsMorphNode, type SourceFile } from "ts-morph"
-import { TsProjectTag } from "../ts-project.js"
+import { TsAnalysisTag } from "../ts-analysis.js"
+import { ancestors, textOf, walkDescendants } from "../ast.js"
+import {
+  SyntaxKind,
+  isArrayLiteralExpression,
+  isBinaryExpression,
+  isElementAccessExpression,
+  isIndexedAccessTypeNode,
+  isNewExpression,
+  isNoSubstitutionTemplateLiteral,
+  isPropertyAssignment,
+  isPropertyDeclaration,
+  isStringLiteral,
+  isVariableDeclaration,
+  type Node,
+  type SourceFile,
+} from "../tsgo-api.js"
+import { isExcluded } from "./shared-globs.js"
 import {
   PRODUCTION_EXCLUDE_GLOBS,
-  isAnalyzableSourceFile,
   normalizeDiagnosticLimit,
   normalizeIdentifier,
   shannonEntropy,
@@ -121,7 +136,7 @@ const PROOF_SCORE_DENOMINATOR = 5
 const ADVISORY_SCORE_DENOMINATOR = 10
 const ADVISORY_SCORE_FLOOR = 0.6
 
-export const TsSec03: Signal<TsSec03Config, TsSec03Output, TsProjectTag> = {
+export const TsSec03: Signal<TsSec03Config, TsSec03Output, TsAnalysisTag> = {
   id: "TS-SEC-03-secret-material",
   title: "Secret material",
   aliases: ["TS-SEC-03"],
@@ -164,16 +179,17 @@ export const TsSec03: Signal<TsSec03Config, TsSec03Output, TsProjectTag> = {
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
-      const project = yield* TsProjectTag
-      return yield* Effect.try({
-        try: (): TsSec03Output => computeSecretMaterial(project.getSourceFiles(), config),
-        catch: (cause) =>
-          new SignalComputeError({
-            signalId: "TS-SEC-03-secret-material",
-            message: String(cause),
-            cause,
-          }),
-      })
+      const analysis = yield* TsAnalysisTag
+      const fileOutputs = yield* analysis.mapFiles(async (context) =>
+        analyzeSecretMaterial(context.sourceFile, context.file.path, config),
+      ).pipe(Effect.mapError((cause) =>
+        new SignalComputeError({
+          signalId: "TS-SEC-03-secret-material",
+          message: cause.message,
+          cause,
+        }),
+      ))
+      return mergeSecretMaterial(fileOutputs, config)
     }),
   score: (out) => (out.state === "present" ? out.scoreChannels.proof.score : 1),
   diagnose: (out): ReadonlyArray<Diagnostic> =>
@@ -207,47 +223,59 @@ export const TsSec03: Signal<TsSec03Config, TsSec03Output, TsProjectTag> = {
     out.state === "not_applicable" ? { applicability: "not_applicable" as const } : undefined,
 }
 
-const computeSecretMaterial = (
-  sourceFiles: ReadonlyArray<SourceFile>,
+interface SecretFileAnalysis {
+  readonly analyzed: boolean
+  readonly literalsScanned: number
+  readonly findings: ReadonlyArray<SecretMaterialFinding>
+}
+
+const analyzeSecretMaterial = (
+  sourceFile: SourceFile,
+  filePath: string,
+  config: TsSec03Config,
+): SecretFileAnalysis => {
+  if (isExcluded(filePath, config.exclude_globs)) {
+    return { analyzed: false, literalsScanned: 0, findings: [] }
+  }
+  const findings: Array<SecretMaterialFinding> = []
+  let literalsScanned = 0
+  for (const literal of collectStringLiterals(sourceFile)) {
+    const value = literal.value.trim()
+    if (value.length === 0) continue
+    literalsScanned += 1
+    const kind = classifySecretLiteral(literal.node, literal.identifier, value, config)
+    if (kind === undefined) continue
+    const { line, character } = sourceFile.getLineAndCharacterOfPosition(literal.index)
+    findings.push({
+      file: filePath,
+      line: line + 1,
+      column: character + 1,
+      kind,
+      identifier: literal.identifier,
+      redacted: redactSecret(value),
+      entropy: round(shannonEntropy(value)),
+      evidenceClass: secretFindingEvidenceClass(kind),
+      evidencePath: secretFindingEvidencePath(kind),
+      detectorReason: secretFindingDetectorReason(kind),
+      enforcementCeiling: secretFindingEnforcementCeiling(kind),
+      scoreDenominator:
+        secretFindingEvidencePath(kind) === "proof"
+          ? PROOF_SCORE_DENOMINATOR
+          : ADVISORY_SCORE_DENOMINATOR,
+      affectsSignalScore: secretFindingEvidencePath(kind) === "proof",
+    })
+  }
+  return { analyzed: true, literalsScanned, findings }
+}
+
+const mergeSecretMaterial = (
+  fileOutputs: ReadonlyArray<SecretFileAnalysis>,
   config: TsSec03Config,
 ): TsSec03Output => {
-  const findings: Array<SecretMaterialFinding> = []
-  let analyzedFiles = 0
-  let literalsScanned = 0
-
-  for (const sourceFile of sourceFiles) {
-    if (!isAnalyzableSourceFile(sourceFile, config.exclude_globs)) continue
-    analyzedFiles += 1
-    for (const literal of collectStringLiterals(sourceFile)) {
-      const value = literal.value.trim()
-      if (value.length === 0) continue
-      literalsScanned += 1
-      const kind = classifySecretLiteral(literal.node, literal.identifier, value, config)
-      if (kind === undefined) continue
-      const { line, column } = sourceFile.getLineAndColumnAtPos(literal.index)
-      findings.push({
-        file: sourceFile.getFilePath(),
-        line,
-        column,
-        kind,
-        identifier: literal.identifier,
-        redacted: redactSecret(value),
-        entropy: round(shannonEntropy(value)),
-        evidenceClass: secretFindingEvidenceClass(kind),
-        evidencePath: secretFindingEvidencePath(kind),
-        detectorReason: secretFindingDetectorReason(kind),
-        enforcementCeiling: secretFindingEnforcementCeiling(kind),
-        scoreDenominator:
-          secretFindingEvidencePath(kind) === "proof"
-            ? PROOF_SCORE_DENOMINATOR
-            : ADVISORY_SCORE_DENOMINATOR,
-        affectsSignalScore: secretFindingEvidencePath(kind) === "proof",
-      })
-    }
-  }
-
+  const findings = fileOutputs.flatMap((output) => output.findings)
+  const analyzedFiles = fileOutputs.filter((output) => output.analyzed).length
+  const literalsScanned = fileOutputs.reduce((sum, output) => sum + output.literalsScanned, 0)
   const resolvedFindings = [...dedupeFindings(findings)].sort(compareFindings)
-
   return {
     state: analyzedFiles === 0 ? "not_applicable" : findings.length === 0 ? "zero" : "present",
     analyzedFiles,
@@ -340,16 +368,16 @@ interface StringLiteralScanTarget {
   readonly value: string
   readonly index: number
   readonly identifier: string
-  readonly node: TsMorphNode
+  readonly node: Node
 }
 
 const collectStringLiterals = (sourceFile: SourceFile): ReadonlyArray<StringLiteralScanTarget> => {
   const targets: Array<StringLiteralScanTarget> = []
-  sourceFile.forEachDescendant((node) => {
-    if (Node.isStringLiteral(node) || Node.isNoSubstitutionTemplateLiteral(node)) {
+  walkDescendants(sourceFile, (node) => {
+    if (isStringLiteral(node) || isNoSubstitutionTemplateLiteral(node)) {
       targets.push({
-        value: node.getLiteralText(),
-        index: node.getStart(),
+        value: node.text,
+        index: node.getStart(sourceFile),
         identifier: enclosingBindingName(node),
         node,
       })
@@ -364,30 +392,23 @@ const collectStringLiterals = (sourceFile: SourceFile): ReadonlyArray<StringLite
  * Text-proximity attribution misreports unrelated identifiers (for example a
  * module specifier in a preceding import).
  */
-const enclosingBindingName = (node: TsMorphNode): string => {
-  let current: TsMorphNode | undefined = node.getParent()
+const enclosingBindingName = (node: Node): string => {
+  let current: Node | undefined = node.parent
   while (current !== undefined) {
-    if (
-      Node.isPropertyAssignment(current) ||
-      Node.isPropertyDeclaration(current) ||
-      Node.isVariableDeclaration(current)
-    ) {
-      return current.getName()
+    if (isPropertyAssignment(current) || isPropertyDeclaration(current) || isVariableDeclaration(current)) {
+      return "name" in current && current.name !== undefined ? textOf(current.name) : "literal"
     }
-    if (
-      Node.isBinaryExpression(current) &&
-      current.getOperatorToken().getKind() === SyntaxKind.EqualsToken
-    ) {
-      const left = current.getLeft().getText()
+    if (isBinaryExpression(current) && current.operatorToken.kind === SyntaxKind.EqualsToken) {
+      const left = textOf(current.left)
       return left.split(".").pop() ?? left
     }
-    current = current.getParent()
+    current = current.parent
   }
   return "literal"
 }
 
 const classifySecretLiteral = (
-  node: TsMorphNode,
+  node: Node,
   identifier: string,
   value: string,
   config: TsSec03Config,
@@ -443,7 +464,7 @@ const EXPLICIT_REDACTION_MARKER_PATTERN = /^<redacted>$/i
  * so a provider token or private-key block cannot be suppressed by its role.
  */
 const hasExplicitNonSecretSemanticRole = (
-  node: TsMorphNode,
+  node: Node,
   identifier: string,
   value: string,
 ): boolean =>
@@ -453,35 +474,35 @@ const hasExplicitNonSecretSemanticRole = (
   isExplicitFixtureLabel(value) ||
   EXPLICIT_REDACTION_MARKER_PATTERN.test(value)
 
-const isDirectLookupKey = (node: TsMorphNode, value: string): boolean => {
-  const parent = node.getParent()
+const isDirectLookupKey = (node: Node, value: string): boolean => {
+  const parent = node.parent
   if (!IDENTIFIER_SHAPE_PATTERN.test(value)) return false
   return (
     parent !== undefined &&
-    Node.isElementAccessExpression(parent) &&
-    parent.getArgumentExpression() === node
-  ) || hasAncestor(node, Node.isIndexedAccessTypeNode)
+    isElementAccessExpression(parent) &&
+    parent.argumentExpression === node
+  ) || hasAncestor(node, isIndexedAccessTypeNode)
 }
 
 const isLookupKeyCollectionMember = (
-  node: TsMorphNode,
+  node: Node,
   identifier: string,
   value: string,
 ): boolean => {
   if (!IDENTIFIER_SHAPE_PATTERN.test(value)) return false
-  if (!hasAncestor(node, Node.isArrayLiteralExpression)) return false
+  if (!hasAncestor(node, isArrayLiteralExpression)) return false
   return identifierWordSegments(identifier)
     .some((segment) => LOOKUP_COLLECTION_SEGMENTS.has(segment))
 }
 
 const isResourceDeclarationLabel = (
-  node: TsMorphNode,
+  node: Node,
   identifier: string,
   value: string,
 ): boolean => {
-  const parent = node.getParent()
-  if (parent === undefined || !Node.isNewExpression(parent)) return false
-  if (parent.getArguments()[0] !== node) return false
+  const parent = node.parent
+  if (parent === undefined || !isNewExpression(parent)) return false
+  if (parent.arguments[0] !== node) return false
 
   const normalizedValue = normalizeIdentifier(value)
   const normalizedBinding = normalizeIdentifier(identifier)
@@ -498,13 +519,13 @@ const isExplicitFixtureLabel = (value: string): boolean => {
 }
 
 const hasAncestor = (
-  node: TsMorphNode,
-  predicate: (candidate: TsMorphNode) => boolean,
+  node: Node,
+  predicate: (candidate: Node) => boolean,
 ): boolean => {
-  let current = node.getParent()
+  let current = node.parent
   while (current !== undefined) {
     if (predicate(current)) return true
-    current = current.getParent()
+    current = current.parent
   }
   return false
 }
