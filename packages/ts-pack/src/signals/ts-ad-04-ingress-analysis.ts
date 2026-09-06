@@ -1,15 +1,37 @@
+import { firstAncestor, hasExportModifier, hasModifier, textOf, walkDescendants } from "../ast.js"
 import {
+  SyntaxKind,
+  isArrayTypeNode,
+  isArrowFunction,
+  isBinaryExpression,
+  isCallExpression,
+  isConstructorTypeNode,
+  isExportAssignment,
+  isFunctionDeclaration,
+  isFunctionExpression,
+  isFunctionTypeNode,
+  isIdentifier,
+  isImportDeclaration,
+  isIntersectionTypeNode,
+  isLiteralTypeNode,
+  isParenthesizedTypeNode,
+  isPropertyAccessExpression,
+  isTypeOfExpression,
+  isTypePredicateNode,
+  isTypeReferenceNode,
+  isUnionTypeNode,
+  isVariableDeclaration,
+  isVariableStatement,
   type CallExpression,
-  type Expression,
   type FunctionDeclaration,
   type Identifier,
-  Node,
+  type Node,
   type ParameterDeclaration,
-  SyntaxKind,
+  type SourceFile,
   type TypeNode,
   type VariableDeclaration,
-  type SourceFile,
-} from "ts-morph"
+} from "../tsgo-api.js"
+import { compilerPropertyNameText as propertyNameText } from "./shared-compiler-functions.js"
 import type {
   BoundaryFunctionExclusionReason,
   BoundaryIngressKind,
@@ -106,32 +128,32 @@ export const collectBoundaryFunctionCandidates = (
 const collectBoundaryFunctionDescriptors = (
   sourceFile: SourceFile,
 ): ReadonlyArray<BoundaryFunctionDescriptor> => [
-  ...sourceFile.getFunctions().flatMap((fn) =>
+  ...sourceFile.statements.filter(isFunctionDeclaration).flatMap((fn) =>
     isBoundaryFunctionDeclaration(fn)
       ? [{
-        file: sourceFile.getFilePath(),
-        line: fn.getStartLineNumber(),
-        symbol: fn.getName() ?? "default",
+        file: sourceFile.fileName,
+        line: startLine(fn),
+        symbol: fn.name?.text ?? "default",
         node: fn,
         declaration: fn,
       }]
       : [],
   ),
-  ...sourceFile.getVariableDeclarations().flatMap((declaration) =>
+  ...collectKind(sourceFile, isVariableDeclaration).flatMap((declaration) =>
     boundaryVariableFunction(declaration).map((fn) => ({
-      file: sourceFile.getFilePath(),
-      line: fn.getStartLineNumber(),
-      symbol: declaration.getName(),
+      file: sourceFile.fileName,
+      line: startLine(fn),
+      symbol: identifierText(declaration.name),
       node: fn,
       declaration,
     })),
   ),
-  ...sourceFile.getExportAssignments().flatMap((assignment) => {
-    const expression = assignment.getExpression()
-    if (!Node.isArrowFunction(expression) && !Node.isFunctionExpression(expression)) return []
+  ...sourceFile.statements.filter(isExportAssignment).flatMap((assignment) => {
+    const expression = assignment.expression
+    if (!isArrowFunction(expression) && !isFunctionExpression(expression)) return []
     return [{
-      file: sourceFile.getFilePath(),
-      line: expression.getStartLineNumber(),
+      file: sourceFile.fileName,
+      line: startLine(expression),
       symbol: "default",
       node: expression,
       declaration: expression,
@@ -140,19 +162,19 @@ const collectBoundaryFunctionDescriptors = (
 ]
 
 const isBoundaryFunctionDeclaration = (fn: FunctionDeclaration): boolean =>
-  fn.isExported() || fn.isDefaultExport() || isHandlerName(fn.getName() ?? "")
+  hasExportModifier(fn) || hasModifier(fn, SyntaxKind.DefaultKeyword) || isHandlerName(fn.name?.text ?? "")
 
 const boundaryVariableFunction = (
   declaration: VariableDeclaration,
 ): Array<BoundaryFunctionNode> => {
-  const initializer = declaration.getInitializer()
+  const initializer = declaration.initializer
   if (initializer === undefined) return []
-  const variableStatement = declaration.getVariableStatement()
+  const variableStatement = variableStatementOf(declaration)
   const boundaryLike =
-    variableStatement?.isExported() === true ||
-    isHandlerName(declaration.getName())
+    variableStatement !== undefined && hasExportModifier(variableStatement) ||
+    isHandlerName(identifierText(declaration.name))
   if (!boundaryLike) return []
-  if (Node.isArrowFunction(initializer) || Node.isFunctionExpression(initializer)) {
+  if (isArrowFunction(initializer) || isFunctionExpression(initializer)) {
     return [initializer]
   }
   return []
@@ -166,7 +188,7 @@ const candidateFromFunction = (
   parserPatterns: ReadonlyArray<string>,
 ): BoundaryFunctionAnalysis => {
   const fn = descriptor.node
-  const weakParameters = fn.getParameters().flatMap(classifyWeakParameter)
+  const weakParameters = fn.parameters.flatMap(classifyWeakParameter)
   const parameterIngress = collectParameterIngressSources(fn, weakParameters)
   const parameterIngressDeclarations = new Set<Node>(
     parameterIngress.map((source) => source.declaration).filter(isPresent),
@@ -208,13 +230,13 @@ const candidateFromFunction = (
 const classifyWeakParameter = (
   parameter: ParameterDeclaration,
 ): ReadonlyArray<WeakBoundaryParameter> => {
-  const name = parameter.getName()
-  const typeNode = parameter.getTypeNode()
-  const typeText = typeNode?.getText() ?? "<untyped>"
+  const name = identifierText(parameter.name)
+  const typeNode = parameter.type
+  const typeText = typeNode === undefined ? undefined : textOf(typeNode) ?? "<untyped>"
   // A default initializer means the inferred type comes from an internal
   // expression (`authPath = getAuthPath()`), not from untrusted callers.
   if (typeNode === undefined) {
-    return parameter.hasInitializer() ? [] : [{ name, typeText, reason: "untyped" }]
+    return parameter.initializer !== undefined ? [] : [{ name, typeText, reason: "untyped" }]
   }
   // Function-typed parameters (`decode: (value: unknown) => T`) CONSUME
   // unknown; the unknown in their signature is not data entering through
@@ -238,32 +260,32 @@ const classifyWeakParameter = (
 const collectUntrustedDataKinds = (
   typeNode: TypeNode,
 ): ReadonlySet<"any" | "unknown"> => {
-  if (typeNode.getKind() === SyntaxKind.AnyKeyword) return new Set(["any"])
-  if (typeNode.getKind() === SyntaxKind.UnknownKeyword) return new Set(["unknown"])
-  if (Node.isParenthesizedTypeNode(typeNode)) {
-    return collectUntrustedDataKinds(typeNode.getTypeNode())
+  if (typeNode.kind === SyntaxKind.AnyKeyword) return new Set(["any"])
+  if (typeNode.kind === SyntaxKind.UnknownKeyword) return new Set(["unknown"])
+  if (isParenthesizedTypeNode(typeNode)) {
+    return collectUntrustedDataKinds(typeNode.type)
   }
   if (isFunctionShapedTypeNode(typeNode)) return new Set()
-  if (Node.isArrayTypeNode(typeNode)) {
-    return collectUntrustedDataKinds(typeNode.getElementTypeNode())
+  if (isArrayTypeNode(typeNode)) {
+    return collectUntrustedDataKinds(typeNode.elementType)
   }
-  if (Node.isUnionTypeNode(typeNode) || Node.isIntersectionTypeNode(typeNode)) {
-    return mergeUnsafeKinds(typeNode.getTypeNodes().map(collectUntrustedDataKinds))
+  if (isUnionTypeNode(typeNode) || isIntersectionTypeNode(typeNode)) {
+    return mergeUnsafeKinds(typeNode.types.map(collectUntrustedDataKinds))
   }
-  if (Node.isTypeReference(typeNode)) {
+  if (isTypeReferenceNode(typeNode)) {
     const argumentsToInspect = dataBearingTypeArguments(typeNode)
     return mergeUnsafeKinds(argumentsToInspect.map(collectUntrustedDataKinds))
   }
   return mergeUnsafeKinds(
-    typeNode.getChildren().filter(Node.isTypeNode).map(collectUntrustedDataKinds),
+    childrenOf(typeNode).filter(isTypeNodeLike).map(collectUntrustedDataKinds),
   )
 }
 
 const dataBearingTypeArguments = (
   typeNode: import("ts-morph").TypeReferenceNode,
 ): ReadonlyArray<TypeNode> => {
-  const typeName = typeNode.getTypeName().getText()
-  const args = typeNode.getTypeArguments()
+  const typeName = textOf(typeNode.typeName)
+  const args = [...(typeNode.typeArguments ?? [])]
   if (isEffectTypeName(typeName) || isEitherTypeName(typeName)) {
     return args.slice(0, 1)
   }
@@ -286,20 +308,20 @@ const isRequestLikeTypeNode = (typeNode: TypeNode): boolean =>
   )
 
 const typeIdentifierNames = (typeNode: TypeNode): ReadonlyArray<string> => [
-  ...(Node.isIdentifier(typeNode) ? [typeNode.getText()] : []),
-  ...typeNode.getDescendantsOfKind(SyntaxKind.Identifier).map((identifier) =>
-    identifier.getText()
+  ...(isIdentifier(typeNode) ? [typeNode.text] : []),
+  ...collectKind(typeNode, isIdentifier).map((identifier) =>
+    textOf(identifier)
   ),
 ]
 
 const isFunctionShapedTypeNode = (typeNode: Node): boolean => {
-  if (Node.isParenthesizedTypeNode(typeNode)) {
-    return isFunctionShapedTypeNode(typeNode.getTypeNode())
+  if (isParenthesizedTypeNode(typeNode)) {
+    return isFunctionShapedTypeNode(typeNode.type)
   }
-  if (Node.isUnionTypeNode(typeNode) || Node.isIntersectionTypeNode(typeNode)) {
-    return typeNode.getTypeNodes().every(isFunctionShapedTypeNode)
+  if (isUnionTypeNode(typeNode) || isIntersectionTypeNode(typeNode)) {
+    return typeNode.types.every(isFunctionShapedTypeNode)
   }
-  return Node.isFunctionTypeNode(typeNode) || Node.isConstructorTypeNode(typeNode)
+  return isFunctionTypeNode(typeNode) || isConstructorTypeNode(typeNode)
 }
 
 const collectParameterIngressSources = (
@@ -307,8 +329,8 @@ const collectParameterIngressSources = (
   weakParameters: ReadonlyArray<WeakBoundaryParameter>,
 ): ReadonlyArray<InternalIngressSource> => {
   const weakByName = new Map(weakParameters.map((parameter) => [parameter.name, parameter]))
-  return fn.getParameters().flatMap((parameter) => {
-    const weak = weakByName.get(parameter.getName())
+  return fn.parameters.flatMap((parameter) => {
+    const weak = weakByName.get(identifierText(parameter.name))
     if (weak === undefined) return []
     const requestIsIpc = weak.reason === "request-like" &&
       /(?:Ipc|IPC|MessageEvent)/u.test(weak.typeText)
@@ -333,18 +355,18 @@ const collectBodyIngressSources = (
   parameterIngressDeclarations: ReadonlySet<Node>,
 ): ReadonlyArray<InternalIngressSource> => {
   const sources: Array<InternalIngressSource> = []
-  for (const access of fn.getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)) {
+  for (const access of collectKind(fn, isPropertyAccessExpression)) {
     if (!isDirectlyWithinFunction(access, fn) || !isEnvironmentAccess(access)) continue
-    const parentAccess = access.getParentIfKind(SyntaxKind.PropertyAccessExpression)
+    const parentAccess = isPropertyAccessExpression(access.parent) ? access.parent : undefined
     if (parentAccess !== undefined && isEnvironmentAccess(parentAccess)) continue
     sources.push(internalIngressSource("environment", access, fn))
   }
-  for (const call of fn.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+  for (const call of collectKind(fn, isCallExpression)) {
     if (!isDirectlyWithinFunction(call, fn)) continue
     const kind = classifyIngressCall(call, parameterIngressDeclarations)
     if (kind !== undefined) sources.push(internalIngressSource(kind, call, fn))
   }
-  return sources.sort((left, right) => left.node.getStart() - right.node.getStart())
+  return sources.sort((left, right) => left.node.getStart(left.node.getSourceFile()) - right.node.getStart(right.node.getSourceFile()))
 }
 
 const internalIngressSource = (
@@ -354,7 +376,7 @@ const internalIngressSource = (
 ): InternalIngressSource => ({
   public: {
     kind,
-    evidence: `${kind} source ${node.getText()}`,
+    evidence: `${kind} source ${textOf(node)}`,
   },
   node,
   declaration: sourceHoldingDeclaration(node, fn),
@@ -364,25 +386,25 @@ const sourceHoldingDeclaration = (
   node: Node,
   fn: BoundaryFunctionNode,
 ): VariableDeclaration | undefined => {
-  const declaration = node.getFirstAncestorByKind(SyntaxKind.VariableDeclaration)
+  const declaration = firstAncestor(node, isVariableDeclaration)
   return declaration !== undefined && isDirectlyWithinFunction(declaration, fn)
     ? declaration
     : undefined
 }
 
-const isEnvironmentAccess = (node: Expression): boolean => {
-  const text = node.getText()
+const isEnvironmentAccess = (node: Node): boolean => {
+  const text = textOf(node)
   const root = calleeRootIdentifier(node)
   if (root === undefined) return false
   if (text === "process.env" || text.startsWith("process.env.")) {
-    return root.getText() === "process" &&
+    return textOf(root) === "process" &&
       (
         isUnshadowedAmbientGlobal(root) ||
         ["process", "node:process"].includes(importModuleSpecifier(root) ?? "")
       )
   }
   if (text === "Bun.env" || text.startsWith("Bun.env.")) {
-    return root.getText() === "Bun" && isUnshadowedAmbientGlobal(root)
+    return textOf(root) === "Bun" && isUnshadowedAmbientGlobal(root)
   }
   return false
 }
@@ -391,10 +413,10 @@ const classifyIngressCall = (
   call: CallExpression,
   parameterIngressDeclarations: ReadonlySet<Node>,
 ): BoundaryIngressKind | undefined => {
-  const callee = normalizeCallText(call.getExpression().getText())
+  const callee = normalizeCallText(textOf(call.expression))
   if (isParsedWireIngressCall(call, parameterIngressDeclarations)) return "parsed-wire"
 
-  const moduleSpecifier = importModuleSpecifier(call.getExpression())
+  const moduleSpecifier = importModuleSpecifier(call.expression)
   const member = calleeSegments(callee).at(-1) ?? ""
   if (
     moduleSpecifier !== undefined &&
@@ -419,34 +441,38 @@ const isParsedWireIngressCall = (
   call: CallExpression,
   parameterIngressDeclarations: ReadonlySet<Node>,
 ): boolean => {
-  const expression = call.getExpression()
-  if (!Node.isPropertyAccessExpression(expression)) return false
-  const member = normalizeCallText(expression.getName())
+  const expression = call.expression
+  if (!isPropertyAccessExpression(expression)) return false
+  const member = normalizeCallText(propertyNameText(expression.name))
   if (
     member === "parse" &&
-    normalizeCallText(expression.getExpression().getText()) === "json" &&
+    normalizeCallText(textOf(expression.expression)) === "json" &&
     hasUnshadowedGlobalRoot(expression, "JSON")
   ) return true
   if (member !== "json") return false
-  const receiver = expression.getExpression()
+  const receiver = expression.expression
   if (nodeReferencesDeclaration(receiver, parameterIngressDeclarations)) return true
-  const receiverType = receiver.getType().getText(receiver)
+  const receiverType = textOf(receiver)
   return /(?:^|[.<(, ])(?:Body|Request|Response)(?:$|[.>,) ])/u.test(receiverType)
 }
 
 const hasUnshadowedGlobalRoot = (
-  expression: Expression,
+  expression: Node,
   expectedName: string,
 ): boolean => {
   const root = calleeRootIdentifier(expression)
-  return root?.getText() === expectedName && isUnshadowedAmbientGlobal(root)
+  return root === undefined ? undefined : textOf(root) === expectedName && isUnshadowedAmbientGlobal(root)
 }
 
 const isUnshadowedAmbientGlobal = (identifier: Identifier): boolean => {
-  const symbol = identifier.getSymbol()?.getAliasedSymbol() ?? identifier.getSymbol()
-  return (symbol?.getDeclarations() ?? []).every((declaration) =>
-    declaration.getSourceFile().isDeclarationFile()
-  )
+  const sourceFile = identifier.getSourceFile()
+  let shadowed = false
+  walkDescendants(sourceFile, (node) => {
+    if (!isIdentifier(node) || node.text !== identifier.text || node === identifier) return
+    if (isVariableDeclaration(node.parent) && node.parent.name === node) shadowed = true
+    if (isFunctionDeclaration(node.parent) && node.parent.name === node) shadowed = true
+  })
+  return !shadowed
 }
 
 const FILESYSTEM_READ_MEMBERS: ReadonlySet<string> = new Set([
@@ -483,30 +509,40 @@ const isExternalPackageSpecifier = (specifier: string): boolean =>
   specifier !== "electron"
 
 const callReturnsUntrustedData = (call: CallExpression): boolean => {
-  const typeText = call.getType().getText(call)
-  return /(^|[<(, ])(?:any|unknown)(?=$|[>), ])/u.test(typeText)
+  const specifier = importModuleSpecifier(call.expression)
+  return specifier !== undefined && isExternalPackageSpecifier(specifier)
 }
 
-const importModuleSpecifier = (expression: Expression): string | undefined => {
+const importModuleSpecifier = (expression: Node): string | undefined => {
   const root = calleeRootIdentifier(expression)
   if (root === undefined) return undefined
-  const symbol = root.getSymbol()
-  const symbols = [symbol, symbol?.getAliasedSymbol()].filter(isPresent)
-  for (const candidate of symbols) {
-    for (const declaration of candidate.getDeclarations()) {
-      const importDeclaration = declaration.getFirstAncestorByKind(SyntaxKind.ImportDeclaration)
-      if (importDeclaration !== undefined) return importDeclaration.getModuleSpecifierValue()
+  const sourceFile = root.getSourceFile()
+  for (const statement of sourceFile.statements) {
+    if (!isImportDeclaration(statement)) continue
+    const clause = statement.importClause
+    if (clause?.name?.text === root.text) return moduleSpecifierText(statement)
+    const named = clause?.namedBindings
+    if (named !== undefined && "elements" in named) {
+      for (const element of named.elements) {
+        const local = isIdentifier(element.name) ? element.name.text : textOf(element.name)
+        if (local === root.text) return moduleSpecifierText(statement)
+      }
     }
   }
   return undefined
 }
 
-const calleeRootIdentifier = (expression: Expression): Identifier | undefined => {
-  if (Node.isIdentifier(expression)) return expression
-  if (Node.isPropertyAccessExpression(expression) || Node.isElementAccessExpression(expression)) {
-    return calleeRootIdentifier(expression.getExpression())
+const moduleSpecifierText = (declaration: import("../tsgo-api.js").ImportDeclaration): string | undefined => {
+  const specifier = declaration.moduleSpecifier
+  return specifier === undefined ? undefined : textOf(specifier).replace(/^[\"']|[\"']$/g, "")
+}
+
+const calleeRootIdentifier = (expression: Node): Identifier | undefined => {
+  if (isIdentifier(expression)) return expression
+  if (isPropertyAccessExpression(expression)) {
+    return calleeRootIdentifier(expression.expression)
   }
-  if (Node.isCallExpression(expression)) return calleeRootIdentifier(expression.getExpression())
+  if (isCallExpression(expression)) return calleeRootIdentifier(expression.expression)
   return undefined
 }
 
@@ -535,7 +571,7 @@ const classifySemanticExclusion = (
   }
   if (
     ingressSources.length > 0 &&
-    isTerminalOutputType(fn.getReturnTypeNode()) &&
+    isTerminalOutputType(fn.type) &&
     (
       hasTerminalProjectionEvidence(fn, ingressDeclarations, ingressNodes) ||
       ingressSources.every((source) => source.parameter === undefined)
@@ -549,7 +585,7 @@ const classifySemanticExclusion = (
   if (
     ingressSources.length > 0 &&
     ingressSources.every((source) => source.parameter === undefined) &&
-    isRawCarrierOutputType(fn.getReturnTypeNode())
+    isRawCarrierOutputType(fn.type)
   ) {
     return {
       reason: "raw-ingress-carrier",
@@ -581,9 +617,9 @@ const isRuntimeTypeRefinement = (
   fn: BoundaryFunctionNode,
   ingressDeclarations: ReadonlySet<Node>,
 ): boolean => {
-  const returnType = fn.getReturnTypeNode()
+  const returnType = fn.type
   return returnType !== undefined &&
-    Node.isTypePredicate(returnType) &&
+    isTypePredicateNode(returnType) &&
     hasRuntimeRefinement(fn, ingressDeclarations)
 }
 
@@ -591,38 +627,38 @@ const hasRuntimeRefinement = (
   fn: BoundaryFunctionNode,
   ingressDeclarations: ReadonlySet<Node>,
 ): boolean => {
-  for (const expression of fn.getDescendantsOfKind(SyntaxKind.TypeOfExpression)) {
+  for (const expression of collectKind(fn, isTypeOfExpression)) {
     if (
       isDirectlyWithinFunction(expression, fn) &&
       nodeReferencesDeclaration(expression, ingressDeclarations)
     ) return true
   }
-  for (const expression of fn.getDescendantsOfKind(SyntaxKind.BinaryExpression)) {
+  for (const expression of collectKind(fn, isBinaryExpression)) {
     if (!isDirectlyWithinFunction(expression, fn)) continue
-    const operator = expression.getOperatorToken().getKind()
+    const operator = expression.operatorToken.kind
     if (
       (operator === SyntaxKind.InstanceOfKeyword || operator === SyntaxKind.InKeyword) &&
       nodeReferencesDeclaration(expression, ingressDeclarations)
     ) return true
   }
-  return fn.getDescendantsOfKind(SyntaxKind.CallExpression).some((call) =>
+  return collectKind(fn, isCallExpression).some((call) =>
     isDirectlyWithinFunction(call, fn) &&
-    normalizeCallText(call.getExpression().getText()) === "array.isarray" &&
+    normalizeCallText(textOf(call.expression)) === "array.isarray" &&
     callReferencesDeclaration(call, ingressDeclarations)
   )
 }
 
 const isTerminalOutputType = (typeNode: TypeNode | undefined): boolean => {
   if (typeNode === undefined) return false
-  if (Node.isParenthesizedTypeNode(typeNode)) return isTerminalOutputType(typeNode.getTypeNode())
-  if (Node.isUnionTypeNode(typeNode) || Node.isIntersectionTypeNode(typeNode)) {
-    return typeNode.getTypeNodes().every(isTerminalOutputType)
+  if (isParenthesizedTypeNode(typeNode)) return isTerminalOutputType(typeNode.type)
+  if (isUnionTypeNode(typeNode) || isIntersectionTypeNode(typeNode)) {
+    return typeNode.types.every(isTerminalOutputType)
   }
-  if (Node.isLiteralTypeNode(typeNode)) return true
-  if (Node.isTypeReference(typeNode)) {
-    const name = typeNode.getTypeName().getText()
+  if (isLiteralTypeNode(typeNode)) return true
+  if (isTypeReferenceNode(typeNode)) {
+    const name = textOf(typeNode.typeName)
     if (["Promise", "Readonly", "Awaited"].includes(name)) {
-      const args = typeNode.getTypeArguments()
+      const args = [...(typeNode.typeArguments ?? [])]
       return args.length === 1 && isTerminalOutputType(args[0])
     }
     return ["String", "Number", "Boolean"].includes(name)
@@ -635,23 +671,23 @@ const isTerminalOutputType = (typeNode: TypeNode | undefined): boolean => {
     SyntaxKind.NullKeyword,
     SyntaxKind.VoidKeyword,
     SyntaxKind.NeverKeyword,
-  ]).has(typeNode.getKind())
+  ]).has(typeNode.kind)
 }
 
 const isRawCarrierOutputType = (typeNode: TypeNode | undefined): boolean => {
   if (typeNode === undefined) return false
-  if (Node.isParenthesizedTypeNode(typeNode)) {
-    return isRawCarrierOutputType(typeNode.getTypeNode())
+  if (isParenthesizedTypeNode(typeNode)) {
+    return isRawCarrierOutputType(typeNode.type)
   }
-  if (Node.isUnionTypeNode(typeNode) || Node.isIntersectionTypeNode(typeNode)) {
-    return typeNode.getTypeNodes().every((member) =>
+  if (isUnionTypeNode(typeNode) || isIntersectionTypeNode(typeNode)) {
+    return typeNode.types.every((member) =>
       isRawCarrierOutputType(member) || isTerminalOutputType(member)
     )
   }
-  if (!Node.isTypeReference(typeNode)) return false
-  const name = typeNode.getTypeName().getText()
+  if (!isTypeReferenceNode(typeNode)) return false
+  const name = textOf(typeNode.typeName)
   if (["Promise", "Readonly", "Awaited"].includes(name)) {
-    const args = typeNode.getTypeArguments()
+    const args = [...(typeNode.typeArguments ?? [])]
     return args.length === 1 && isRawCarrierOutputType(args[0])
   }
   return [
@@ -669,9 +705,9 @@ const hasTerminalProjectionEvidence = (
   ingressNodes: ReadonlySet<Node>,
 ): boolean =>
   hasRuntimeRefinement(fn, ingressDeclarations) ||
-  fn.getDescendantsOfKind(SyntaxKind.CallExpression).some((call) => {
+  collectKind(fn, isCallExpression).some((call) => {
     if (!isDirectlyWithinFunction(call, fn)) return false
-    const callee = normalizeCallText(call.getExpression().getText())
+    const callee = normalizeCallText(textOf(call.expression))
     return (callee === "json.stringify" || callee === "string") &&
       callReferencesIngress(call, ingressDeclarations, ingressNodes)
   })
@@ -687,11 +723,11 @@ const hasTypedCarrierChannel = (
   typeName: string,
   channelIndex: number,
 ): boolean =>
-  fn.getParameters().some((parameter) => {
-    const typeNode = parameter.getTypeNode()
-    if (typeNode === undefined || !Node.isTypeReference(typeNode)) return false
-    const args = typeNode.getTypeArguments()
-    return typeNode.getTypeName().getText() === typeName &&
+  fn.parameters.some((parameter) => {
+    const typeNode = parameter.type
+    if (typeNode === undefined || !isTypeReferenceNode(typeNode)) return false
+    const args = [...(typeNode.typeArguments ?? [])]
+    return textOf(typeNode.typeName) === typeName &&
       args.length > channelIndex &&
       collectUntrustedDataKinds(args[0]!).size === 0 &&
       collectUnsafeKeywordsUnbounded(args[channelIndex]!).size > 0
@@ -701,9 +737,9 @@ const collectUnsafeKeywordsUnbounded = (
   node: Node,
 ): ReadonlySet<"any" | "unknown"> => {
   const kinds = new Set<"any" | "unknown">()
-  if (node.getKind() === SyntaxKind.AnyKeyword) kinds.add("any")
-  if (node.getKind() === SyntaxKind.UnknownKeyword) kinds.add("unknown")
-  for (const child of node.getChildren()) {
+  if (node.kind === SyntaxKind.AnyKeyword) kinds.add("any")
+  if (node.kind === SyntaxKind.UnknownKeyword) kinds.add("unknown")
+  for (const child of childrenOf(node)) {
     for (const kind of collectUnsafeKeywordsUnbounded(child)) kinds.add(kind)
   }
   return kinds
@@ -714,16 +750,47 @@ const isEitherTypeName = (name: string): boolean => name === "Either.Either"
 
 const hasTypedInputProjection = (fn: BoundaryFunctionNode): boolean => {
   const typedParameters = new Set<Node>(
-    fn.getParameters().filter((parameter) => parameter.getTypeNode() !== undefined),
+    fn.parameters.filter((parameter) => parameter.type !== undefined),
   )
   if (typedParameters.size === 0) return false
-  return fn.getDescendantsOfKind(SyntaxKind.CallExpression).some((call) => {
+  return collectKind(fn, isCallExpression).some((call) => {
     if (!isDirectlyWithinFunction(call, fn)) return false
-    const expression = call.getExpression()
-    return Node.isPropertyAccessExpression(expression) &&
-      expression.getName() === "map" &&
-      nodeReferencesDeclaration(expression.getExpression(), typedParameters)
+    const expression = call.expression
+    return isPropertyAccessExpression(expression) &&
+      propertyNameText(expression.name) === "map" &&
+      nodeReferencesDeclaration(expression.expression, typedParameters)
   })
 }
 
 const isPresent = <T>(value: T | undefined): value is T => value !== undefined
+
+const collectKind = <T extends Node>(root: Node, predicate: (node: Node) => node is T): ReadonlyArray<T> => {
+  const results: Array<T> = []
+  walkDescendants(root, (node) => {
+    if (predicate(node)) results.push(node)
+  })
+  return results
+}
+
+const childrenOf = (node: Node): ReadonlyArray<Node> => {
+  const children: Array<Node> = []
+  node.forEachChild((child) => {
+    children.push(child)
+  })
+  return children
+}
+
+const identifierText = (node: Node): string =>
+  isIdentifier(node) ? node.text : textOf(node)
+
+const startLine = (node: Node): number => {
+  const sourceFile = node.getSourceFile()
+  return sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1
+}
+
+const variableStatementOf = (declaration: VariableDeclaration) => {
+  const parent = declaration.parent.parent
+  return isVariableStatement(parent) ? parent : undefined
+}
+
+const isTypeNodeLike = (node: Node): node is TypeNode => true

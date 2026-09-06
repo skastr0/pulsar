@@ -1,13 +1,40 @@
+import { ancestors, firstAncestor, textOf, walkDescendants } from "../ast.js"
 import {
+  SyntaxKind,
+  isArrowFunction,
+  isAsExpression,
+  isAwaitExpression,
+  isBinaryExpression,
+  isBlock,
+  isCallExpression,
+  isConstructorDeclaration,
+  isFunctionDeclaration,
+  isFunctionExpression,
+  isGetAccessorDeclaration,
+  isIdentifier,
+  isIfStatement,
+  isMethodDeclaration,
+  isNonNullExpression,
+  isObjectLiteralExpression,
+  isParenthesizedExpression,
+  isPropertyAssignment,
+  isReturnStatement,
+  isSatisfiesExpression,
+  isSetAccessorDeclaration,
+  isStringLiteral,
+  isThrowStatement,
+  isTypeOfExpression,
+  isVariableDeclaration,
+  isVariableDeclarationList,
   type ArrowFunction,
   type CallExpression,
   type FunctionDeclaration,
   type FunctionExpression,
-  Node,
+  type Node,
   type SourceFile,
-  SyntaxKind,
   type VariableDeclaration,
-} from "ts-morph"
+} from "../tsgo-api.js"
+import { compilerPropertyNameText as propertyNameText } from "./shared-compiler-functions.js"
 import type { WeakBoundaryParameter } from "./ts-ad-04-boundary-parser-coverage.js"
 
 export type BoundaryFunctionNode =
@@ -35,12 +62,12 @@ export const collectParserEvidence = (
     ...ingressDeclarations,
     ...collectStableOneHopAliases(fn, ingressDeclarations),
   ])
-  const calls = fn.getDescendantsOfKind(SyntaxKind.CallExpression)
+  const calls = collectKind(fn, isCallExpression)
   const evidence = new Set<string>()
   for (const call of calls) {
     if (!isDirectlyWithinFunction(call, fn)) continue
-    const expression = call.getExpression()
-    const expressionText = expression.getText()
+    const expression = call.expression
+    const expressionText = textOf(expression)
     const normalizedCallee = normalizeCallText(calleeText(expression))
     if (
       !isParsedWireCall(call) &&
@@ -60,26 +87,26 @@ const hasRejectingRuntimeRefinement = (
   fn: BoundaryFunctionNode,
   ingressDeclarations: ReadonlySet<Node>,
 ): boolean =>
-  fn.getDescendantsOfKind(SyntaxKind.IfStatement).some((statement) => {
+  collectKind(fn, isIfStatement).some((statement) => {
     if (!isDirectlyWithinFunction(statement, fn)) return false
-    const condition = statement.getExpression()
+    const condition = statement.expression
     if (!nodeReferencesDeclaration(condition, ingressDeclarations)) return false
-    const hasGuard = [condition, ...condition.getDescendants()].some((node) =>
-      Node.isTypeOfExpression(node) ||
+    const hasGuard = [condition, ...descendantsOf(condition).slice(1)].some((node) =>
+      isTypeOfExpression(node) ||
       (
-        Node.isBinaryExpression(node) &&
+        isBinaryExpression(node) &&
         (
-          node.getOperatorToken().getKind() === SyntaxKind.InstanceOfKeyword ||
-          node.getOperatorToken().getKind() === SyntaxKind.InKeyword
+          node.operatorToken.kind === SyntaxKind.InstanceOfKeyword ||
+          node.operatorToken.kind === SyntaxKind.InKeyword
         )
       ) ||
       (
-        Node.isCallExpression(node) &&
-        normalizeCallText(node.getExpression().getText()) === "array.isarray"
+        isCallExpression(node) &&
+        normalizeCallText(textOf(node.expression)) === "array.isarray"
       )
     )
     if (!hasGuard) return false
-    return [statement.getThenStatement(), statement.getElseStatement()]
+    return [statement.thenStatement, statement.elseStatement]
       .some((branch) =>
         branch !== undefined && branchContainsExplicitRejection(branch, fn)
       )
@@ -88,11 +115,11 @@ const hasRejectingRuntimeRefinement = (
 const branchContainsExplicitRejection = (
   branch: Node,
   fn: BoundaryFunctionNode,
-): boolean => [branch, ...branch.getDescendants()].some((node) => {
+): boolean => [branch, ...descendantsOf(branch).slice(1)].some((node) => {
   if (!isDirectlyWithinFunction(node, fn)) return false
-  if (Node.isThrowStatement(node)) return true
-  if (!Node.isReturnStatement(node)) return false
-  const expression = node.getExpression()
+  if (isThrowStatement(node)) return true
+  if (!isReturnStatement(node)) return false
+  const expression = node.expression
   if (expression === undefined) return true
   const value = unwrapValueExpression(expression)
   return isExplicitRejectionValue(value)
@@ -100,25 +127,25 @@ const branchContainsExplicitRejection = (
 
 const isExplicitRejectionValue = (value: Node): boolean => {
   if (
-    value.getKind() === SyntaxKind.NullKeyword ||
-    value.getKind() === SyntaxKind.FalseKeyword ||
-    (Node.isIdentifier(value) && value.getText() === "undefined")
+    value.kind === SyntaxKind.NullKeyword ||
+    value.kind === SyntaxKind.FalseKeyword ||
+    (isIdentifier(value) && textOf(value) === "undefined")
   ) return true
-  if (Node.isObjectLiteralExpression(value)) {
-    return value.getProperties().some((property) => {
-      if (!Node.isPropertyAssignment(property)) return false
-      const name = property.getName()
-      const initializer = unwrapValueExpression(property.getInitializerOrThrow())
+  if (isObjectLiteralExpression(value)) {
+    return value.properties.some((property) => {
+      if (!isPropertyAssignment(property)) return false
+      const name = propertyNameText(property.name)
+      const initializer = unwrapValueExpression(property.initializer!)
       if (name === "error") return true
       if (["ok", "success", "valid"].includes(name)) {
-        return initializer.getKind() === SyntaxKind.FalseKeyword
+        return initializer.kind === SyntaxKind.FalseKeyword
       }
-      if (name !== "_tag" || !Node.isStringLiteral(initializer)) return false
-      return ["Error", "Failure", "Left", "None"].includes(initializer.getLiteralValue())
+      if (name !== "_tag" || !isStringLiteral(initializer)) return false
+      return ["Error", "Failure", "Left", "None"].includes(initializer.text)
     })
   }
-  if (!Node.isCallExpression(value)) return false
-  const terminal = calleeSegments(normalizeCallText(value.getExpression().getText())).at(-1)
+  if (!isCallExpression(value)) return false
+  const terminal = calleeSegments(normalizeCallText(textOf(value.expression))).at(-1)
   return terminal !== undefined &&
     ["fail", "failure", "left", "none", "reject"].includes(terminal)
 }
@@ -129,20 +156,20 @@ export const collectInheritedParserEvidence = (
   parserPatterns: ReadonlyArray<string>,
 ): ReadonlyArray<string> => {
   const calls = sourceFiles.flatMap((sourceFile) =>
-    sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression).filter((call) =>
+    collectKind(sourceFile, isCallExpression).filter((call) =>
       callTargetsDeclaration(call, callee.declaration)
     )
   )
   if (calls.length === 0) return []
 
-  const ingressParameterIndexes = callee.node.getParameters().flatMap((parameter, index) =>
-    callee.weakParameters.some((weak) => weak.name === parameter.getName()) ? [index] : [],
+  const ingressParameterIndexes = callee.node.parameters.flatMap((parameter, index) =>
+    callee.weakParameters.some((weak) => weak.name === identifierText(parameter.name)) ? [index] : [],
   )
   if (ingressParameterIndexes.length === 0) return []
   const evidence = new Set<string>()
   for (const call of calls) {
     for (const index of ingressParameterIndexes) {
-      const argument = call.getArguments()[index]
+      const argument = call.arguments[index]
       if (argument === undefined) return []
       const decoded = decodedArgumentEvidence(argument, parserPatterns)
       if (decoded === undefined) return []
@@ -156,9 +183,15 @@ const callTargetsDeclaration = (
   call: CallExpression,
   declaration: Node,
 ): boolean => {
-  const expression = call.getExpression()
-  const symbol = expression.getSymbol()?.getAliasedSymbol() ?? expression.getSymbol()
-  return (symbol?.getDeclarations() ?? []).some((candidate) => candidate === declaration)
+  const expression = call.expression
+  const callee = isIdentifier(expression) ? expression.text : textOf(expression)
+  if (isFunctionDeclaration(declaration) && declaration.name !== undefined) {
+    return declaration.name.text === callee || callee.endsWith("." + declaration.name.text)
+  }
+  if (isVariableDeclaration(declaration) && isIdentifier(declaration.name)) {
+    return declaration.name.text === callee || callee.endsWith("." + declaration.name.text)
+  }
+  return false
 }
 
 const decodedArgumentEvidence = (
@@ -167,14 +200,20 @@ const decodedArgumentEvidence = (
 ): string | undefined => {
   const direct = parserCallEvidence(unwrapValueExpression(argument), parserPatterns)
   if (direct !== undefined) return direct
-  if (!Node.isIdentifier(argument)) return undefined
-  const symbol = argument.getSymbol()?.getAliasedSymbol() ?? argument.getSymbol()
-  for (const declaration of symbol?.getDeclarations() ?? []) {
-    if (!Node.isVariableDeclaration(declaration)) continue
-    const declarationKind = declaration.getVariableStatement()?.getDeclarationKind()
+  if (!isIdentifier(argument)) return undefined
+  const sourceFile = argument.getSourceFile()
+  const name = argument.text
+  const declarations: Array<VariableDeclaration> = []
+  walkDescendants(sourceFile, (node) => {
+    if (isVariableDeclaration(node) && isIdentifier(node.name) && node.name.text === name) {
+      declarations.push(node)
+    }
+  })
+  for (const declaration of declarations) {
+    const declarationKind = variableStatementKind(declaration)
     if (declarationKind !== "const" && declarationKind !== "let") continue
     if (declarationKind === "let" && hasNonDefinitionWrite(declaration)) continue
-    const initializer = declaration.getInitializer()
+    const initializer = declaration.initializer
     if (initializer === undefined) continue
     const evidence = parserCallEvidence(unwrapValueExpression(initializer), parserPatterns)
     if (evidence !== undefined) return evidence
@@ -184,12 +223,12 @@ const decodedArgumentEvidence = (
 
 const unwrapValueExpression = (node: Node): Node => {
   if (
-    Node.isParenthesizedExpression(node) ||
-    Node.isAsExpression(node) ||
-    Node.isSatisfiesExpression(node) ||
-    Node.isNonNullExpression(node) ||
-    Node.isAwaitExpression(node)
-  ) return unwrapValueExpression(node.getExpression())
+    isParenthesizedExpression(node) ||
+    isAsExpression(node) ||
+    isSatisfiesExpression(node) ||
+    isNonNullExpression(node) ||
+    isAwaitExpression(node)
+  ) return unwrapValueExpression(node.expression)
   return node
 }
 
@@ -197,22 +236,22 @@ const parserCallEvidence = (
   node: Node,
   parserPatterns: ReadonlyArray<string>,
 ): string | undefined => {
-  if (!Node.isCallExpression(node) || isParsedWireCall(node)) return undefined
-  const normalizedCallee = normalizeCallText(calleeText(node.getExpression()))
+  if (!isCallExpression(node) || isParsedWireCall(node)) return undefined
+  const normalizedCallee = normalizeCallText(calleeText(node.expression))
   const matches = parserPatterns
     .map(normalizeCallText)
     .some((pattern) => parserPatternMatchesCallee(pattern, normalizedCallee))
-  return matches ? node.getExpression().getText() : undefined
+  return matches ? textOf(node.expression) : undefined
 }
 
 const isParsedWireCall = (call: CallExpression): boolean => {
-  const callee = normalizeCallText(call.getExpression().getText())
+  const callee = normalizeCallText(textOf(call.expression))
   return callee === "json.parse" || callee.endsWith(".json")
 }
 
 const calleeText = (node: Node): string => {
-  if (Node.isCallExpression(node)) return calleeText(node.getExpression())
-  return node.getText()
+  if (isCallExpression(node)) return calleeText(node.expression)
+  return textOf(node)
 }
 
 export const normalizeCallText = (text: string): string =>
@@ -248,7 +287,7 @@ export const callReferencesDeclaration = (
   call: CallExpression,
   declarations: ReadonlySet<Node>,
 ): boolean =>
-  call.getArguments().some((argument) =>
+  call.arguments.some((argument) =>
     nodeReferencesDeclaration(argument, declarations),
   )
 
@@ -257,7 +296,7 @@ export const callReferencesIngress = (
   declarations: ReadonlySet<Node>,
   ingressNodes: ReadonlySet<Node>,
 ): boolean =>
-  call.getArguments().some((argument) =>
+  call.arguments.some((argument) =>
     nodeReferencesIngress(argument, declarations, ingressNodes),
   )
 
@@ -268,10 +307,10 @@ const nodeReferencesIngress = (
 ): boolean => {
   if (ingressNodes.has(node)) return true
   if (isFunctionScopeNode(node)) return false
-  if (Node.isIdentifier(node) && identifierReferencesDeclaration(node, declarations)) {
+  if (isIdentifier(node) && identifierReferencesDeclaration(node, declarations)) {
     return true
   }
-  return node.getChildren().some((child) =>
+  return childrenOf(node).some((child) =>
     nodeReferencesIngress(child, declarations, ingressNodes),
   )
 }
@@ -284,12 +323,12 @@ const collectStableOneHopAliases = (
   // parser argument. Symbols keep shadowed names from becoming evidence.
   const aliases = new Set<VariableDeclaration>()
 
-  for (const declaration of fn.getDescendantsOfKind(SyntaxKind.VariableDeclaration)) {
+  for (const declaration of collectKind(fn, isVariableDeclaration)) {
     if (!isDirectlyWithinFunction(declaration, fn)) continue
-    const declarationKind = declaration.getVariableStatement()?.getDeclarationKind()
+    const declarationKind = variableStatementKind(declaration)
     if (declarationKind !== "const" && declarationKind !== "let") continue
-    if (!Node.isIdentifier(declaration.getNameNode())) continue
-    const initializer = declaration.getInitializer()
+    if (!isIdentifier(declaration.name)) continue
+    const initializer = declaration.initializer
     if (initializer === undefined) continue
     if (!nodeReferencesDeclaration(initializer, weakParameterDeclarations)) continue
     // `let` is evidence only when language-service references prove the
@@ -306,10 +345,10 @@ export const nodeReferencesDeclaration = (
   declarations: ReadonlySet<Node>,
 ): boolean => {
   if (isFunctionScopeNode(node)) return false
-  if (Node.isIdentifier(node) && identifierReferencesDeclaration(node, declarations)) {
+  if (isIdentifier(node) && identifierReferencesDeclaration(node, declarations)) {
     return true
   }
-  return node.getChildren().some((child) =>
+  return childrenOf(node).some((child) =>
     nodeReferencesDeclaration(child, declarations),
   )
 }
@@ -317,23 +356,74 @@ export const nodeReferencesDeclaration = (
 const identifierReferencesDeclaration = (
   identifier: Node,
   declarations: ReadonlySet<Node>,
-): boolean =>
-  Node.isIdentifier(identifier) &&
-  (identifier.getSymbol()?.getDeclarations() ?? []).some((declaration) =>
-    declarations.has(declaration),
-  )
+): boolean => {
+  if (!isIdentifier(identifier)) return false
+  const binding = resolveIdentifierBinding(identifier)
+  return binding !== undefined && declarations.has(binding)
+}
 
-const hasNonDefinitionWrite = (declaration: VariableDeclaration): boolean =>
-  declaration.findReferences().some((reference) =>
-    reference.getReferences().some((entry) =>
-      entry.isWriteAccess() && entry.isDefinition() !== true,
-    ),
-  )
+const resolveIdentifierBinding = (identifier: import("../tsgo-api.js").Identifier): Node | undefined => {
+  let current: Node | undefined = identifier.parent
+  while (current !== undefined) {
+    const binding = bindingInScope(current, identifier.text)
+    if (binding !== undefined) return binding
+    current = current.parent
+  }
+  return undefined
+}
+
+const bindingInScope = (scope: Node, name: string): Node | undefined => {
+  if (isFunctionDeclaration(scope) && scope.name?.text === name) return scope
+  if (isVariableDeclaration(scope) && isIdentifier(scope.name) && scope.name.text === name) return scope
+  if ("parameters" in scope && Array.isArray((scope as { parameters?: ReadonlyArray<Node> }).parameters)) {
+    for (const parameter of (scope as { parameters: ReadonlyArray<Node> }).parameters) {
+      if ("name" in parameter && isIdentifier((parameter as { name: Node }).name) && (parameter as { name: import("../tsgo-api.js").Identifier }).name.text === name) {
+        return parameter
+      }
+    }
+  }
+  if (isBlock(scope) || scope.kind === SyntaxKind.SourceFile) {
+    let found: Node | undefined
+    const visit = (node: Node): void => {
+      if (found !== undefined) return
+      if (isVariableDeclaration(node) && isIdentifier(node.name) && node.name.text === name) {
+        found = node
+        return
+      }
+      if (isFunctionDeclaration(node) && node.name?.text === name) {
+        found = node
+        return
+      }
+      if (node !== scope && isFunctionScopeNode(node)) return
+      node.forEachChild(visit)
+    }
+    scope.forEachChild(visit)
+    return found
+  }
+  return undefined
+}
+
+const hasNonDefinitionWrite = (declaration: VariableDeclaration): boolean => {
+  if (!isIdentifier(declaration.name)) return false
+  const name = declaration.name.text
+  const sourceFile = declaration.getSourceFile()
+  let writes = 0
+  walkDescendants(sourceFile, (node) => {
+    if (!isIdentifier(node) || node.text !== name) return
+    const parent = node.parent
+    if (isVariableDeclaration(parent) && parent.name === node) return
+    if (isBinaryExpression(parent) && parent.left === node && assignmentOperator(parent)) writes += 1
+  })
+  return writes > 0
+}
+
+const assignmentOperator = (node: import("../tsgo-api.js").BinaryExpression): boolean =>
+  node.operatorToken.kind === SyntaxKind.EqualsToken
 
 export const isDirectlyWithinFunction = (
   node: Node,
   fn: BoundaryFunctionNode,
-): boolean => node.getFirstAncestor(isFunctionScopeNode) === fn
+): boolean => firstAncestor(node, isFunctionScopeNode) === fn
 
 const FUNCTION_SCOPE_KINDS: ReadonlySet<SyntaxKind> = new Set([
   SyntaxKind.ArrowFunction,
@@ -346,4 +436,39 @@ const FUNCTION_SCOPE_KINDS: ReadonlySet<SyntaxKind> = new Set([
 ])
 
 const isFunctionScopeNode = (node: Node): boolean =>
-  FUNCTION_SCOPE_KINDS.has(node.getKind())
+  FUNCTION_SCOPE_KINDS.has(node.kind)
+
+const collectKind = <T extends Node>(root: Node, predicate: (node: Node) => node is T): ReadonlyArray<T> => {
+  const results: Array<T> = []
+  walkDescendants(root, (node) => {
+    if (predicate(node)) results.push(node)
+  })
+  return results
+}
+
+const descendantsOf = (root: Node): ReadonlyArray<Node> => {
+  const results: Array<Node> = [root]
+  walkDescendants(root, (node) => {
+    results.push(node)
+  })
+  return results
+}
+
+const childrenOf = (node: Node): ReadonlyArray<Node> => {
+  const children: Array<Node> = []
+  node.forEachChild((child) => {
+    children.push(child)
+  })
+  return children
+}
+
+const identifierText = (node: Node): string =>
+  isIdentifier(node) ? node.text : textOf(node)
+
+const variableStatementKind = (declaration: VariableDeclaration): "const" | "let" | "var" | undefined => {
+  const list = declaration.parent
+  if (!isVariableDeclarationList(list)) return undefined
+  if ((list.flags & 2) !== 0 || textOf(list).trimStart().startsWith("const ")) return "const"
+  if (textOf(list).trimStart().startsWith("let ")) return "let"
+  return "var"
+}

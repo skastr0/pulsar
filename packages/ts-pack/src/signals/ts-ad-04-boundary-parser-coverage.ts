@@ -4,8 +4,8 @@ import {
   type Signal,
 } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
-import type { SourceFile } from "ts-morph"
-import { TsProjectTag } from "../ts-project.js"
+import type { SourceFile } from "../tsgo-api.js"
+import { TsAnalysisTag } from "../ts-analysis.js"
 import { isExcluded } from "./shared-globs.js"
 import {
   collectBoundaryFunctionCandidates,
@@ -110,7 +110,7 @@ export interface TsAd04Output {
 // a single weak function cannot zero the signal on its own.
 const MIN_WEAK_BOUNDARY_EVIDENCE = 4
 
-export const TsAd04: Signal<TsAd04Config, TsAd04Output, TsProjectTag> = {
+export const TsAd04: Signal<TsAd04Config, TsAd04Output, TsAnalysisTag> = {
   id: "TS-AD-04-boundary-parser-coverage",
   title: "Boundary parser coverage",
   aliases: ["TS-AD-04"],
@@ -170,10 +170,19 @@ export const TsAd04: Signal<TsAd04Config, TsAd04Output, TsProjectTag> = {
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
-      const project = yield* TsProjectTag
+      const analysis = yield* TsAnalysisTag
+      const sourceFiles = yield* analysis.mapFiles(async (fileContext) => fileContext.sourceFile).pipe(
+        Effect.mapError((cause) =>
+          new SignalComputeError({
+            signalId: "TS-AD-04-boundary-parser-coverage",
+            message: cause.message,
+            cause,
+          }),
+        ),
+      )
       return yield* Effect.try({
         try: (): TsAd04Output =>
-          computeBoundaryParserCoverage(project.getSourceFiles(), config),
+          computeBoundaryParserCoverage(sourceFiles, config),
         catch: (cause) =>
           new SignalComputeError({
             signalId: "TS-AD-04-boundary-parser-coverage",
@@ -398,9 +407,9 @@ const isBoundarySourceFile = (
   sourceFile: SourceFile,
   config: TsAd04Config,
 ): boolean => {
-  const file = sourceFile.getFilePath()
+  const file = sourceFile.fileName
   return (
-    !sourceFile.isDeclarationFile() &&
+    !sourceFile.isDeclarationFile &&
     !isExcluded(file, config.exclude_globs) &&
     isExcluded(file, config.boundary_globs)
   )
@@ -410,8 +419,8 @@ const isAnalyzedSourceFile = (
   sourceFile: SourceFile,
   config: TsAd04Config,
 ): boolean =>
-  !sourceFile.isDeclarationFile() &&
-  !isExcluded(sourceFile.getFilePath(), config.exclude_globs)
+  !sourceFile.isDeclarationFile &&
+  !isExcluded(sourceFile.fileName, config.exclude_globs)
 
 
 const normalizeDiagnosticLimit = (value: number): number => {
