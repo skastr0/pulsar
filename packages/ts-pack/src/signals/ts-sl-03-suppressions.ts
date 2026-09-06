@@ -1,8 +1,8 @@
 import { SignalContextTag, computeDiagnosticHash, SignalComputeError } from "@skastr0/pulsar-core/signal"
 import type { Diagnostic, Signal } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
-import { TsProjectTag } from "../ts-project.js"
-import { computeSuppressions } from "./ts-sl-03-analysis.js"
+import { TsAnalysisTag } from "../ts-analysis.js"
+import { computeSuppressionsFromFiles } from "./ts-sl-03-analysis.js"
 import { suppressionMessage } from "./ts-sl-03-justifications.js"
 
 export const TsSl03Config = Schema.Struct({
@@ -43,7 +43,7 @@ export interface TsSl03Output {
   readonly analyzedFileCount: number
 }
 
-export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalContextTag> = {
+export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsAnalysisTag | SignalContextTag> = {
   id: "TS-SL-03-suppressions",
   title: "Suppressions",
   aliases: ["TS-SL-03"],
@@ -146,13 +146,15 @@ export const TsSl03: Signal<TsSl03Config, TsSl03Output, TsProjectTag | SignalCon
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
-      const project = yield* TsProjectTag
       const context = yield* SignalContextTag
-      return yield* Effect.tryPromise({
-        try: () => Promise.resolve(computeSuppressions(project, context, normalizeTsSl03Config(config))),
-        catch: (cause) =>
-          new SignalComputeError({ signalId: "TS-SL-03-suppressions", message: String(cause), cause }),
-      })
+      const analysis = yield* TsAnalysisTag
+      const files = yield* analysis.mapFiles(async (contextFile) => ({
+        path: contextFile.file.path,
+        text: contextFile.sourceFile.text,
+      })).pipe(Effect.mapError((cause) =>
+        new SignalComputeError({ signalId: "TS-SL-03-suppressions", message: cause.message, cause }),
+      ))
+      return computeSuppressionsFromFiles(files, context, normalizeTsSl03Config(config))
     }),
   score: (out) => {
     if (out.suppressions.length === 0) return 1

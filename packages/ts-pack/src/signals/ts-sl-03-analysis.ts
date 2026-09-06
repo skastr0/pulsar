@@ -1,6 +1,6 @@
 import { SignalContextTag, parseBypasses } from "@skastr0/pulsar-core/signal"
 import { isAbsolute, relative, resolve } from "node:path"
-import type { Project, SourceFile } from "ts-morph"
+import type { SourceFile } from "../tsgo-api.js"
 import { isExcluded, matchesAnyGlob } from "./shared-globs.js"
 import {
   contextualSuppressionJustification,
@@ -10,43 +10,34 @@ import {
 } from "./ts-sl-03-justifications.js"
 import type { Suppression, TsSl03Config, TsSl03Output } from "./ts-sl-03-suppressions.js"
 
-export const computeSuppressions = (
-  project: Project,
+export const computeSuppressionsFromFiles = (
+  sourceFiles: ReadonlyArray<{ readonly path: string; readonly text: string }>,
   context: typeof SignalContextTag.Service,
   config: TsSl03Config,
 ): TsSl03Output => {
-  const sourceFiles = selectSourceFiles(project, context.worktreePath, config)
-  const suppressions = sourceFiles.flatMap((sourceFile) =>
-    collectFileSuppressions(sourceFile, context),
+  const selected = sourceFiles.filter((sourceFile) => {
+    const relativePath = relative(context.worktreePath, sourceFile.path).replace(/\\/g, "/")
+    return (
+      !matchesSourcePath(sourceFile.path, relativePath, config.exclude_globs) &&
+      !matchesSourcePath(sourceFile.path, relativePath, config.test_globs)
+    )
+  })
+  const suppressions = selected.flatMap((sourceFile) =>
+    collectFileSuppressions(sourceFile.path, sourceFile.text, context),
   )
   const analyzedFileCount = context.changedHunks.length === 0
-    ? sourceFiles.length
-    : sourceFiles.filter((sourceFile) =>
-      sourceFileOverlapsHunks(sourceFile.getFilePath(), context.worktreePath, context.changedHunks),
+    ? selected.length
+    : selected.filter((sourceFile) =>
+      sourceFileOverlapsHunks(sourceFile.path, context.worktreePath, context.changedHunks),
     ).length
   return buildSuppressionOutput(suppressions, analyzedFileCount, config, context)
 }
 
-const selectSourceFiles = (
-  project: Project,
-  worktreePath: string,
-  config: TsSl03Config,
-): ReadonlyArray<SourceFile> =>
-  project.getSourceFiles().filter((sourceFile) => {
-    const path = sourceFile.getFilePath()
-    const relativePath = relative(worktreePath, path).replace(/\\/g, "/")
-    return (
-      !matchesSourcePath(path, relativePath, config.exclude_globs) &&
-      !matchesSourcePath(path, relativePath, config.test_globs)
-    )
-  })
-
 const collectFileSuppressions = (
-  sourceFile: SourceFile,
+  path: string,
+  sourceText: string,
   context: typeof SignalContextTag.Service,
 ): ReadonlyArray<Suppression> => {
-  const path = sourceFile.getFilePath()
-  const sourceText = sourceFile.getFullText()
   const bypasses = parseBypasses(sourceText)
   const recentJustifications = new Map<string, { readonly line: number; readonly text: string }>()
   const suppressions: Array<Suppression> = []

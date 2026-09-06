@@ -4,7 +4,7 @@ import { SignalContextTag } from "@skastr0/pulsar-core/signal"
 import { buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { createTempRepo, runSignal } from "./test-repo.js"
 import { TsSl03, TsSl03Config } from "../signals/ts-sl-03-suppressions.js"
-import { TsProjectLayer } from "../ts-project.js"
+import { TsAnalysisLayer } from "../ts-analysis.js"
 import type { TempRepo } from "./test-repo.js"
 import { TS_PACK_SIGNALS } from "../pack.js"
 
@@ -960,7 +960,7 @@ const notChanged = 3;
       ).pipe(
         Effect.provide(
           Layer.mergeAll(
-            TsProjectLayer(repo.root),
+            TsAnalysisLayer(repo.root),
             Layer.succeed(SignalContextTag, {
               gitSha: "TEST",
               worktreePath: repo.root,
@@ -1001,7 +1001,7 @@ const changed = 2;
       ).pipe(
         Effect.provide(
           Layer.mergeAll(
-            TsProjectLayer(repo.root),
+            TsAnalysisLayer(repo.root),
             Layer.succeed(SignalContextTag, {
               gitSha: "TEST",
               worktreePath: repo.root,
@@ -1033,7 +1033,7 @@ const changed = 2;
       ).pipe(
         Effect.provide(
           Layer.mergeAll(
-            TsProjectLayer(repo.root),
+            TsAnalysisLayer(repo.root),
             Layer.succeed(SignalContextTag, {
               gitSha: "TEST",
               worktreePath: repo.root,
@@ -1069,7 +1069,7 @@ const changed = 2;
       ).pipe(
         Effect.provide(
           Layer.mergeAll(
-            TsProjectLayer(repo.root),
+            TsAnalysisLayer(repo.root),
             Layer.succeed(SignalContextTag, {
               gitSha: "TEST",
               worktreePath: repo.root,
