@@ -212,7 +212,7 @@ const buildGlossaryLookup = (glossary: Glossary): GlossaryLookup => {
 }
 
 const classifyIdentifier = (
-  identifier: ReturnType<typeof collectIdentifierDeclarations>[number],
+  identifier: ReturnType<typeof collectIdentifierDeclarationsFromFile>[number],
   glossaryLookup: GlossaryLookup,
 ): IdentifierGlossaryMatch => {
   const normalized = identifier.tokens.join(" ")

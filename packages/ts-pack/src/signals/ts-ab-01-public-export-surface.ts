@@ -117,7 +117,15 @@ export const TsAb01: Signal<TsAb01Config, TsAb01Output, TsAnalysisTag> = {
   compute: (config) =>
     Effect.gen(function* () {
       const analysis = yield* TsAnalysisTag
-      const allFiles = yield* analysis.mapFiles(async (context) => context.sourceFile)
+      const allFiles = yield* analysis.mapFiles(async (context) => context.sourceFile).pipe(
+        Effect.mapError((cause) =>
+          new SignalComputeError({
+            signalId: "TS-AB-01-public-export-surface",
+            message: cause.message,
+            cause,
+          }),
+        ),
+      )
       const result = yield* Effect.try({
         try: (): TsAb01Output => {
           const allSourceFiles = allFiles.filter((sf) => !isExcluded(sf.fileName, config.exclude_globs))

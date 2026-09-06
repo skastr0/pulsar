@@ -2,6 +2,7 @@ import {
   SyntaxKind,
   isArrowFunction,
   isAwaitExpression,
+  isArrayBindingPattern,
   isBindingElement,
   isBlock,
   isCallExpression,
@@ -400,11 +401,11 @@ const objectBindingExportUsage = (
     }
     const propertyName = element.propertyName
     if (propertyName === undefined) {
-      if (isIdentifier(element.name)) names.add(element.name.text)
+      if (element.name !== undefined && isIdentifier(element.name)) names.add(element.name.text)
       else opaque = true
       continue
     }
-    const name = propertyNameText(propertyName)
+    const name = propertyNameText(propertyName as Node)
     if (name === undefined) opaque = true
     else names.add(name)
   }
@@ -431,7 +432,7 @@ const propertyNameText = (node: Node): string | undefined => {
 }
 
 const stringLiteralText = (node: Expression | undefined): string | undefined =>
-  node !== undefined && isStringLiteralLike(node) ? node.text : undefined
+  node !== undefined && isStringLiteralLike(node) ? propertyNameText(node) : undefined
 
 const isDeclarationName = (node: Identifier): boolean => {
   const parent = node.parent
@@ -567,15 +568,18 @@ const functionParameters = (node: Node): ReadonlyArray<import("../tsgo-api.js").
 }
 
 const bindingNameContains = (
-  bindingName: Node,
+  bindingName: Node | undefined,
   name: string,
   namespaceBinding: Identifier,
 ): boolean => {
+  if (bindingName === undefined) return false
   if (isIdentifier(bindingName)) {
     return bindingName.text === name && bindingName !== namespaceBinding
   }
+  if (!isObjectBindingPattern(bindingName) && !isArrayBindingPattern(bindingName)) return false
   return bindingName.elements.some((element) =>
     isBindingElement(element) &&
+    element.name !== undefined &&
     bindingNameContains(element.name, name, namespaceBinding)
   )
 }
@@ -594,7 +598,7 @@ const isStringLiteralLike = (node: Node | undefined): boolean =>
   node !== undefined && (isStringLiteral(node) || isNoSubstitutionTemplateLiteral(node))
 
 const moduleSpecifierText = (node: Expression | undefined): string | undefined =>
-  node !== undefined && isStringLiteralLike(node) ? node.text : undefined
+  node !== undefined && isStringLiteralLike(node) ? propertyNameText(node) : undefined
 
 const resolveModuleSpecifier = (
   resolver: ReturnType<typeof createModuleResolver>,

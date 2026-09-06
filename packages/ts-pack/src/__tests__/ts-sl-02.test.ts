@@ -75,6 +75,7 @@ describe("TS-SL-02 Inconsistent clone detection", () => {
     git(repo, ["init", "-q"])
     git(repo, ["config", "user.email", "test@example.com"])
     git(repo, ["config", "user.name", "Test"])
+    git(repo, ["config", "commit.gpgsign", "false"])
 
     await import("node:fs/promises").then((fs) =>
       fs.writeFile(join(repo, "tsconfig.json"), JSON.stringify({ compilerOptions: { target: "ES2022" } })),

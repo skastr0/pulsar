@@ -111,7 +111,15 @@ export const TsDe04: Signal<
       const analysis = yield* TsAnalysisTag
       const packages = yield* TsPackageInfoTag
       const context = yield* SignalContextTag
-      const sourceFiles = yield* analysis.mapFiles(async (fileContext) => fileContext.sourceFile)
+      const sourceFiles = yield* analysis.mapFiles(async (fileContext) => fileContext.sourceFile).pipe(
+        Effect.mapError((cause) =>
+          new SignalComputeError({
+            signalId: "TS-DE-04-package-dependency-health",
+            message: cause.message,
+            cause,
+          }),
+        ),
+      )
 
       return yield* Effect.tryPromise({
         try: () => computePackageDependencyHealth(sourceFiles, packages, context, config),

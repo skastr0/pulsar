@@ -66,7 +66,15 @@ export const TsDe03: Signal<TsDe03Config, TsDe03Output, TsAnalysisTag | TsPackag
     Effect.gen(function* () {
       const analysis = yield* TsAnalysisTag
       const packages = yield* TsPackageInfoTag
-      const sourceFiles = yield* analysis.mapFiles(async (context) => context.sourceFile)
+      const sourceFiles = yield* analysis.mapFiles(async (context) => context.sourceFile).pipe(
+        Effect.mapError((cause) =>
+          new SignalComputeError({
+            signalId: "TS-DE-03-propagation-cost",
+            message: cause.message,
+            cause,
+          }),
+        ),
+      )
       const result = yield* Effect.try({
         try: (): TsDe03Output => {
           const moduleGraph = buildModuleGraphFromFiles(sourceFiles, {
@@ -126,7 +134,7 @@ export const TsDe03: Signal<TsDe03Config, TsDe03Output, TsAnalysisTag | TsPackag
   },
 }
 
-type ModuleGraph = ReturnType<typeof buildModuleGraph>
+type ModuleGraph = ReturnType<typeof buildModuleGraphFromFiles>
 type ReachabilityMode = TsDe03Output["reachabilityMode"]
 
 const computePropagationCost = (

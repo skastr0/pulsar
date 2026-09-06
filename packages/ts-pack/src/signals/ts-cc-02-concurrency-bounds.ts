@@ -538,7 +538,7 @@ const directAliasDeclaration = (reference: Identifier): VariableDeclaration | un
     transparentExpressionNode(parent.right) === expression
   ) {
     const left = transparentExpressionNode(parent.left)
-    return isIdentifier(left) ? localVariableDeclaration(left) : undefined
+    return left !== undefined && isIdentifier(left) ? localVariableDeclaration(left) : undefined
   }
   return undefined
 }

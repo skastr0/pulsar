@@ -251,14 +251,14 @@ const measureTypeNode = (node: TypeNode, context: WalkContext): DepthResult => {
         ...(aliasDeclaration === undefined
           ? []
           : [measureAliasDeclaration(aliasDeclaration, stepContext(context))]),
-        ...node.typeArguments ?? [].map((typeArg) => measureTypeNode(typeArg, stepContext(context))),
+        ...(node.typeArguments ?? []).map((typeArg) => measureTypeNode(typeArg, stepContext(context))),
       ],
     )
   }
   if (isTypeQueryNode(node)) {
     return layerResult(
       `<typeof ${textOf(node.exprName)}>`,
-      node.typeArguments ?? [].map((typeArg) => measureTypeNode(typeArg, stepContext(context))),
+      (node.typeArguments ?? []).map((typeArg) => measureTypeNode(typeArg, stepContext(context))),
     )
   }
 

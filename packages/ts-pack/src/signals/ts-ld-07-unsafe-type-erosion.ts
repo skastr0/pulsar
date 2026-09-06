@@ -133,7 +133,15 @@ export const TsLd07: Signal<TsLd07Config, TsLd07Output, TsAnalysisTag> = {
     Effect.gen(function* () {
       const analysis = yield* TsAnalysisTag
       const calibration = yield* Effect.serviceOption(CalibrationContextTag)
-      const sourceFiles = yield* analysis.mapFiles(async (context) => context.sourceFile)
+      const sourceFiles = yield* analysis.mapFiles(async (context) => context.sourceFile).pipe(
+        Effect.mapError((cause) =>
+          new SignalComputeError({
+            signalId: "TS-LD-07-unsafe-type-erosion",
+            message: cause.message,
+            cause,
+          }),
+        ),
+      )
       const output = yield* computeUnsafeTypeErosionOutput(sourceFiles, config, calibration).pipe(
         Effect.mapError(
           (cause) =>

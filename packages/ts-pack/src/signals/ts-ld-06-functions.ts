@@ -306,7 +306,7 @@ const hasFrameworkMethodContract = (node: CompilerFunctionLike): boolean => {
 }
 
 const classExtendsIdentifier = (node: Node, name: string): boolean =>
-  node.heritageClauses?.some(
+  (isClassDeclaration(node) ? node.heritageClauses : undefined)?.some(
     (clause) =>
       clause.token === SyntaxKind.ExtendsKeyword &&
       clause.types.some((heritage) => expressionMatchesIdentifier(heritage.expression, name)),
@@ -360,7 +360,7 @@ const containsJsx = (node: Node): boolean => {
       found = true
       return
     }
-    NODE_FOREACH(child, visit)
+    child.forEachChild(visit)
   }
   node.forEachChild(visit)
   return found

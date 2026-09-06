@@ -25,11 +25,13 @@ import {
   isPropertyAssignment,
   isStringLiteral,
   isVariableDeclaration,
+  isTaggedTemplateExpression,
   type CallExpression,
   type Identifier,
   type NewExpression,
   type Node,
   type SourceFile,
+  type TaggedTemplateExpression,
 } from "../tsgo-api.js"
 import {
   PRODUCTION_EXCLUDE_GLOBS,
@@ -97,7 +99,15 @@ export const TsSec01: Signal<TsSec01Config, TsSec01Output, TsAnalysisTag> = {
   compute: (config) =>
     Effect.gen(function* () {
       const analysis = yield* TsAnalysisTag
-      const sourceFiles = yield* analysis.mapFiles(async (context) => context.sourceFile)
+      const sourceFiles = yield* analysis.mapFiles(async (context) => context.sourceFile).pipe(
+        Effect.mapError((cause) =>
+          new SignalComputeError({
+            signalId: "TS-SEC-01-dangerous-capability-surface",
+            message: cause.message,
+            cause,
+          }),
+        ),
+      )
       return yield* Effect.try({
         try: (): TsSec01Output =>
           computeDangerousCapabilitySurface(sourceFiles, config),
@@ -282,8 +292,8 @@ const collectCallCapabilities = (
   })
 
   walkDescendants(sourceFile, (tagged) => {
-    if (tagged.kind !== SyntaxKind.TaggedTemplateExpression) return
-    const member = resolveDangerousMemberCallee((tagged as { readonly tag: Node }).tag)
+    if (!isTaggedTemplateExpression(tagged)) return
+    const member = resolveDangerousMemberCallee(tagged.tag)
     if (member !== undefined) {
       findings.push({
         ...locationOf(tagged),
@@ -302,8 +312,8 @@ const collectSqlCapabilities = (
   findings: Array<DangerousCapabilityFinding>,
 ): void => {
   walkDescendants(sourceFile, (tag) => {
-    if (tag.kind !== SyntaxKind.TaggedTemplateExpression) return
-    const tagName = callName((tag as { readonly tag: Node }).tag)
+    if (!isTaggedTemplateExpression(tag)) return
+    const tagName = callName(tag.tag)
     if (!/(\bsql\b|raw|unsafe)/i.test(tagName)) return
     // Tagged-template invocation of an sql-like tag (sql`... ${id}`) is the
     // parameterized pattern: the library escapes interpolations by
@@ -497,7 +507,7 @@ const childProcessBindingKind = (identifier: Identifier): "value" | "module" | u
     if (isVariableDeclaration(node) && isIdentifier(node.name) && node.name.text === name) {
       if (isChildProcessRequireCall(node.initializer)) kind = "module"
     }
-    if (isBindingElement(node) && isIdentifier(node.name) && node.name.text === name) {
+    if (isBindingElement(node) && node.name !== undefined && isIdentifier(node.name) && node.name.text === name) {
       let current: Node | undefined = node.parent
       while (current !== undefined) {
         if (isVariableDeclaration(current)) {

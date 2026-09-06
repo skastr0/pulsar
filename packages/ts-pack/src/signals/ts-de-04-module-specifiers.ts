@@ -84,7 +84,7 @@ export const recordedDependencyNameForModuleUsage = (
     : packageName
 }
 
-const declarationsOf = <T>(
+const declarationsOf = <T extends ImportDeclaration | ExportDeclaration>(
   sourceFile: SourceFile,
   predicate: (node: ImportDeclaration | ExportDeclaration) => node is T,
 ): ReadonlyArray<T> => {

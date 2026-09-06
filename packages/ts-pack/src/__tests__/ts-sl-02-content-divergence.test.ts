@@ -90,6 +90,7 @@ describe("TS-SL-02 content-grounded divergence", () => {
     git(repo, ["init", "-q"])
     git(repo, ["config", "user.email", "test@example.com"])
     git(repo, ["config", "user.name", "Test"])
+    git(repo, ["config", "commit.gpgsign", "false"])
     await writeFile(join(repo, "tsconfig.json"), JSON.stringify({ compilerOptions: { target: "ES2022" } }))
     await writeFile(join(repo, "package.json"), JSON.stringify({ name: "test" }))
   })

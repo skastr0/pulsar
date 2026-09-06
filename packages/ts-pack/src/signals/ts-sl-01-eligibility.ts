@@ -55,7 +55,7 @@ const isAstPredicateUnionGuard = (fn: FnLike): boolean => {
     const statements = body.statements
     if (statements.length !== 1) return false
     const statement = statements[0]
-    if (!isReturnStatement(statement)) return false
+    if (statement === undefined || !isReturnStatement(statement)) return false
     const expression = statement.expression
     return expression !== undefined && isAstPredicateUnionExpression(expression)
   }
@@ -85,8 +85,8 @@ const isJsxComponentAdapter = (fn: FnLike): boolean => {
   const statements = body.statements
   if (statements.length !== 2) return false
 
-  const setup = statements[0] === undefined ? undefined : textOf(statements[0]) ?? ""
-  const returned = statements[1] === undefined ? undefined : textOf(statements[1]) ?? ""
+  const setup = textOf(statements[0])
+  const returned = textOf(statements[1])
   return (
     /\bsplitProps\s*\(/.test(setup) &&
     /^return\s*\(?\s*</s.test(returned) &&
@@ -101,11 +101,11 @@ const isSvgIconComponent = (fn: FnLike): boolean => {
   const parameters = fn.parameters
   if (parameters.length > 1) return false
   const body = functionBodyNode(fn)
-  if (!isBlock(body)) return false
+  if (body === undefined || !isBlock(body)) return false
   const statements = body.statements
   if (statements.length !== 1) return false
   const statement = statements[0]
-  if (!isReturnStatement(statement)) return false
+  if (statement === undefined || !isReturnStatement(statement)) return false
   const returned = statement.expression === undefined ? "" : textOf(statement.expression)
   return /^(\(\s*)?<svg\b/s.test(returned) && /\{\s*\.\.\.\s*props\s*\}/.test(returned)
 }
@@ -142,12 +142,12 @@ const isSmallJsxReturnFunction = (fn: FnLike): boolean => {
   if (!isBlock(body)) return false
   const statements = body.statements
   if (statements.length !== 1) return false
-  return /^return\s*\(?\s*</s.test(statements[0] === undefined ? undefined : textOf(statements[0]) ?? "")
+  return /^return\s*\(?\s*</s.test(textOf(statements[0]))
 }
 
 const hasSingleOperationalStatement = (fn: ArrowFunction | FunctionExpression): boolean => {
   const body = functionBodyNode(fn)
-  if (!isBlock(body)) return true
+  if (body === undefined || !isBlock(body)) return true
   return body.statements.length === 1
 }
 
@@ -157,6 +157,6 @@ const isSmallEffectGenCallback = (fn: ArrowFunction | FunctionExpression): boole
   if (textOf(parent.expression) !== "Effect.gen") return false
 
   const body = functionBodyNode(fn)
-  if (!isBlock(body)) return true
+  if (body === undefined || !isBlock(body)) return true
   return body.statements.length <= 3
 }

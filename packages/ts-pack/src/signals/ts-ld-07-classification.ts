@@ -25,6 +25,7 @@ import {
   type AsExpression,
   type HeritageClause,
   type Node,
+  type ParameterDeclaration,
   type SourceFile,
   type TypeAssertion,
 } from "../tsgo-api.js"

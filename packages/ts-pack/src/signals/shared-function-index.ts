@@ -129,8 +129,8 @@ const effectFnLabel = (call: import("../tsgo-api.js").CallExpression): string | 
   const expression = call.expression
   if (!isCallExpression(expression)) return undefined
   if (textOf(expression.expression) !== "Effect.fn") return undefined
-  const labelArg = expression.arguments[0]
-  return isStringLiteral(labelArg) ? labelArg.text : undefined
+  const labelArg = expression.arguments?.[0]
+  return labelArg !== undefined && isStringLiteral(labelArg) ? labelArg.text : undefined
 }
 
 const nearestCallbackOwnerName = (node: Node): string | undefined => {

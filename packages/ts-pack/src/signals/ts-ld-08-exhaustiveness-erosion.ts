@@ -370,7 +370,7 @@ const isExhaustivenessGuardDefault = async (
       candidates.push(node.initializer)
     }
     if (isCallExpression(node) || isNewExpression(node)) {
-      candidates.push(...node.arguments)
+      if (node.arguments !== undefined) candidates.push(...node.arguments)
     }
   })
   for (const candidate of candidates) {

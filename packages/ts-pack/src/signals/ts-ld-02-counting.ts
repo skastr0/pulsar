@@ -6,12 +6,21 @@ import { isExcluded } from "./shared-globs.js"
 import { functionName } from "./ts-ld-02-function-names.js"
 import type {
   CollectedSizes,
+  FileSize,
   FunctionSizeCandidate,
   TsLd02Config,
 } from "./ts-ld-02-model.js"
 import type { Node, SourceFile } from "../tsgo-api.js"
 
-export const emptyCollectedSizes = (): CollectedSizes => ({
+interface MutableCollectedSizes {
+  perFileFunctionLocs: Map<string, number[]>
+  fileLocs: number[]
+  allFunctionLocs: number[]
+  allFunctions: FunctionSizeCandidate[]
+  allFiles: FileSize[]
+}
+
+export const emptyCollectedSizes = (): MutableCollectedSizes => ({
   perFileFunctionLocs: new Map(),
   fileLocs: [],
   allFunctionLocs: [],
@@ -20,16 +29,16 @@ export const emptyCollectedSizes = (): CollectedSizes => ({
 })
 
 export const mergeCollectedSizes = (
-  collected: CollectedSizes,
+  collected: MutableCollectedSizes,
   next: CollectedSizes,
-): CollectedSizes => {
+): MutableCollectedSizes => {
   for (const [file, values] of next.perFileFunctionLocs) {
-    collected.perFileFunctionLocs.set(file, values)
+    collected.perFileFunctionLocs.set(file, [...values])
   }
-  collected.fileLocs.push(...next.fileLocs)
-  collected.allFunctionLocs.push(...next.allFunctionLocs)
-  collected.allFunctions.push(...next.allFunctions)
-  collected.allFiles.push(...next.allFiles)
+  collected.fileLocs.push(...[...next.fileLocs])
+  collected.allFunctionLocs.push(...[...next.allFunctionLocs])
+  collected.allFunctions.push(...[...next.allFunctions])
+  collected.allFiles.push(...[...next.allFiles])
   return collected
 }
 

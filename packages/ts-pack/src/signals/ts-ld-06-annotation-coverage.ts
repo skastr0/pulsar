@@ -103,7 +103,15 @@ export const TsLd06: Signal<TsLd06Config, TsLd06Output, TsAnalysisTag> = {
   compute: (config) =>
     Effect.gen(function* () {
       const analysis = yield* TsAnalysisTag
-      const sourceFiles = yield* analysis.mapFiles(async (context) => context.sourceFile)
+      const sourceFiles = yield* analysis.mapFiles(async (context) => context.sourceFile).pipe(
+        Effect.mapError((cause) =>
+          new SignalComputeError({
+            signalId: "TS-LD-06-annotation-coverage",
+            message: cause.message,
+            cause,
+          }),
+        ),
+      )
       const result = yield* Effect.try({
         try: (): TsLd06Output => computeAnnotationCoverage(sourceFiles, config),
         catch: (cause) =>

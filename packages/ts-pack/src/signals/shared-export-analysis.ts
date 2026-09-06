@@ -128,7 +128,7 @@ const bindingNames = (node: Node): ReadonlyArray<string> => {
   if (isIdentifier(node)) return [node.text]
   if (isObjectBindingPattern(node) || isArrayBindingPattern(node)) {
     return node.elements.flatMap((element) =>
-      isBindingElement(element) ? bindingNames(element.name) : [],
+      isBindingElement(element) && element.name !== undefined ? bindingNames(element.name) : [],
     )
   }
   return []

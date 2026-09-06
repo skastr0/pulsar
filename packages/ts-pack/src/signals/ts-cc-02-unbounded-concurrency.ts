@@ -106,7 +106,15 @@ export const TsCc02: Signal<TsCc02Config, TsCc02Output, TsAnalysisTag> = {
   compute: (config) =>
     Effect.gen(function* () {
       const analysis = yield* TsAnalysisTag
-      const sourceFiles = yield* analysis.mapFiles(async (context) => context.sourceFile)
+      const sourceFiles = yield* analysis.mapFiles(async (context) => context.sourceFile).pipe(
+        Effect.mapError((cause) =>
+          new SignalComputeError({
+            signalId: "TS-CC-02-unbounded-concurrency",
+            message: cause.message,
+            cause,
+          }),
+        ),
+      )
       return yield* Effect.try({
         try: (): TsCc02Output => computeUnboundedConcurrency(sourceFiles, config),
         catch: (cause) =>

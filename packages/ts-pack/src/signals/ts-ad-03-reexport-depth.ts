@@ -76,7 +76,15 @@ export const TsAd03: Signal<
       const analysis = yield* TsAnalysisTag
       const packages = yield* TsPackageInfoTag
       const context = yield* SignalContextTag
-      const files = yield* analysis.mapFiles(async (fileContext) => fileContext.sourceFile)
+      const files = yield* analysis.mapFiles(async (fileContext) => fileContext.sourceFile).pipe(
+        Effect.mapError((cause) =>
+          new SignalComputeError({
+            signalId: "TS-AD-03-reexport-depth",
+            message: cause.message,
+            cause,
+          }),
+        ),
+      )
       const result = yield* Effect.try({
         try: (): TsAd03Output => {
           const sourceFiles = files.filter((sourceFile) => !isExcluded(sourceFile.fileName, config.exclude_globs))

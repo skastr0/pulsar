@@ -85,7 +85,15 @@ export const TsAd02: Signal<TsAd02Config, TsAd02Output, TsAnalysisTag | TsPackag
     Effect.gen(function* () {
       const analysis = yield* TsAnalysisTag
       const packages = yield* TsPackageInfoTag
-      const sourceFiles = yield* analysis.mapFiles(async (context) => context.sourceFile)
+      const sourceFiles = yield* analysis.mapFiles(async (context) => context.sourceFile).pipe(
+        Effect.mapError((cause) =>
+          new SignalComputeError({
+            signalId: "TS-AD-02-circular-deps",
+            message: cause.message,
+            cause,
+          }),
+        ),
+      )
       const result = yield* Effect.try({
         try: (): TsAd02Output => {
           const cycleAnalysis = analyzeCircularDependencies(

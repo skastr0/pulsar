@@ -111,7 +111,15 @@ export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsAnalysisTag | TsPackag
       const context = yield* SignalContextTag
       const calibration = yield* Effect.serviceOption(CalibrationContextTag)
       const normalizedConfig = normalizeTsRp02Config(config)
-      const sourceFiles = yield* analysis.mapFiles(async (fileContext) => fileContext.sourceFile)
+      const sourceFiles = yield* analysis.mapFiles(async (fileContext) => fileContext.sourceFile).pipe(
+        Effect.mapError((cause) =>
+          new SignalComputeError({
+            signalId: "TS-RP-02-pr-size",
+            message: cause.message,
+            cause,
+          }),
+        ),
+      )
       const output = yield* Effect.tryPromise({
         try: async (): Promise<TsRp02Output> => {
           return await computeGitPrSizeOutput(sourceFiles, packages, context, normalizedConfig)

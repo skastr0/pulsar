@@ -224,7 +224,7 @@ const normalizeDiagnosticLimit = (limit: number): number =>
   Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : 0
 
 const summarizeByKind = (
-  identifiers: ReadonlyArray<ReturnType<typeof collectIdentifierDeclarations>[number]>,
+  identifiers: ReadonlyArray<ReturnType<typeof collectIdentifierDeclarationsFromFile>[number]>,
   violations: ReadonlyArray<NamingViolation>,
 ): ReadonlyMap<IdentifierDeclarationKind, { readonly total: number; readonly violating: number }> => {
   const violationKeys = new Set(

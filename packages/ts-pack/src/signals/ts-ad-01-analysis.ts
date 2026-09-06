@@ -204,7 +204,7 @@ const boundaryViolation = (
   toPackage: context.target.targetName,
   specifier: context.target.specifier,
   kind,
-  line: locationOf(context.declaration).line,
+  line: locationOf(context.declaration, context.sourceFile.fileName).line,
 })
 
 const isSamePackage = (

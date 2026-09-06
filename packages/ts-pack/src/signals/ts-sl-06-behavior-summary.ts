@@ -26,10 +26,12 @@ import {
   isTypeAssertion,
   isVariableDeclaration,
   type ArrowFunction,
+  type BinaryExpression,
   type CallExpression,
   type FunctionDeclaration,
   type FunctionExpression,
   type MethodDeclaration,
+  type NewExpression,
   type Node,
   type VariableDeclaration,
 } from "../tsgo-api.js"
@@ -165,7 +167,7 @@ const collectBinaryEvidence = (
   fn: ClaimFunctionNode,
   add: AddEvidence,
 ): void => {
-  for (const binary of nodesIncludingBody(body, SyntaxKind.BinaryExpression)) {
+  for (const binary of collectKind(body, isBinaryExpression)) {
     if (!isExecutedBy(binary, fn) || !isBehaviorallyUsed(binary, fn)) continue
     const operator = operatorText(binary)
     if (operator === "&&" && hasFiniteRangeConjunction(binary)) {
@@ -184,7 +186,7 @@ const collectCallEvidence = (
   seen: ReadonlySet<ClaimFunctionNode>,
   add: AddEvidence,
 ): void => {
-  for (const call of nodesIncludingBody(body, SyntaxKind.CallExpression)) {
+  for (const call of collectKind(body, isCallExpression)) {
     if (!isExecutedBy(call, fn)) continue
     const used = isBehaviorallyUsed(call, fn)
     if (used) collectUsedCallEvidence(call, add)
@@ -254,7 +256,7 @@ const collectConstructionEvidence = (
   fn: ClaimFunctionNode,
   add: AddEvidence,
 ): void => {
-  for (const construct of nodesIncludingBody(body, SyntaxKind.NewExpression)) {
+  for (const construct of collectKind(body, isNewExpression)) {
     if (!isExecutedBy(construct, fn) || !isBehaviorallyUsed(construct, fn)) continue
     const target = textOf(construct.expression)
     if (target === "Date" || target === "URL") {
@@ -695,11 +697,11 @@ const isTrueLiteral = (node: Node | undefined): boolean =>
 
 const collectKind = <T extends Node>(
   root: Node,
-  predicate: (node: Node) => node is T | boolean,
+  predicate: ((node: Node) => node is T) | ((node: Node) => boolean),
 ): Array<T> => {
   const results: Array<T> = []
   const visit = (node: Node): void => {
-    if (predicate(node)) results.push(node as T)
+    if ((predicate as (node: Node) => boolean)(node)) results.push(node as T)
     node.forEachChild(visit)
   }
   visit(root)

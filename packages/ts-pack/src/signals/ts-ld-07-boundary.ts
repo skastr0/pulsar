@@ -39,8 +39,12 @@ import {
   type MethodDeclaration,
   type MethodSignature,
   type Node,
+  type ParameterDeclaration,
+  type PropertyDeclaration,
+  type PropertySignature,
   type SourceFile,
   type TypeAliasDeclaration,
+  type VariableDeclaration,
 } from "../tsgo-api.js"
 
 type BoundaryDeclaration =

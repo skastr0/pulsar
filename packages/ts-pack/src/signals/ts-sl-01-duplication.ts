@@ -116,7 +116,15 @@ export const TsSl01: Signal<TsSl01Config, TsSl01Output, TsAnalysisTag | SignalCo
       const analysis = yield* TsAnalysisTag
       const context = yield* SignalContextTag
       const calibration = yield* Effect.serviceOption(CalibrationContextTag)
-      const sourceFiles = yield* analysis.mapFiles(async (fileContext) => fileContext.sourceFile)
+      const sourceFiles = yield* analysis.mapFiles(async (fileContext) => fileContext.sourceFile).pipe(
+        Effect.mapError((cause) =>
+          new SignalComputeError({
+            signalId: "TS-SL-01-duplication",
+            message: cause.message,
+            cause,
+          }),
+        ),
+      )
       const output = yield* Effect.try({
         try: () => computeTsSl01Output(sourceFiles, context, config),
         catch: (cause) =>

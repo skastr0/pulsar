@@ -48,8 +48,8 @@ export function firstAncestor(
   return ancestors(node).find(predicate)
 }
 
-export const textOf = (node: Node, sourceFile?: SourceFile): string =>
-  node.getText(sourceFile ?? node.getSourceFile())
+export const textOf = (node: Node | undefined, sourceFile?: SourceFile): string =>
+  node === undefined ? "" : node.getText(sourceFile ?? node.getSourceFile())
 
 export const locationOf = (node: Node, filePath: string): SourceLocation => {
   const sourceFile = node.getSourceFile()

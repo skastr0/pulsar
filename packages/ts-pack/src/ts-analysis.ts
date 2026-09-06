@@ -212,7 +212,7 @@ const buildObservation = (
     )
     return {
       packages,
-      analysis: makeAnalysis(workspace, files, state.configBundle),
+      analysis: makeAnalysis(worktreePath, workspace, files, state.configBundle),
     }
   })
 
@@ -291,12 +291,13 @@ const collectOwnedFiles = (
   })
 
 const makeAnalysis = (
+  worktreePath: string,
   workspace: QuartzWorkspace,
   files: ReadonlyArray<TsFile>,
   bundle: AnalysisConfigBundle | undefined,
 ): TsAnalysis => {
   const filesByProject = groupFilesByProject(files)
-  const derivedByProject = derivedPathByProjectId(files, bundle)
+  const derivedByProject = derivedPathByProjectId(worktreePath, files, bundle)
 
   return {
     files,
@@ -367,38 +368,19 @@ const filesForProject = (
 ): ReadonlyArray<TsFile> => filesByProject.get(projectId) ?? []
 
 const derivedPathByProjectId = (
+  worktreePath: string,
   files: ReadonlyArray<TsFile>,
   bundle: AnalysisConfigBundle | undefined,
 ): ReadonlyMap<string, string> => {
-  const byOriginal = new Map(
-    (bundle?.configs ?? []).map((config) => [canonicalPath(config.originalPath), config.derivedPath] as const),
-  )
   const result = new Map<string, string>()
+  for (const config of bundle?.configs ?? []) {
+    result.set(projectIdForConfig(worktreePath, config.originalPath), config.derivedPath)
+  }
   for (const file of files) {
     if (result.has(file.projectId)) continue
-    const original = files.find((candidate) => candidate.projectId === file.projectId)
-    void original
-    const match = [...byOriginal.entries()].find(([originalPath]) =>
-      projectIdMatchesOriginal(file.projectId, originalPath),
-    )
-    if (match !== undefined) result.set(file.projectId, match[1])
-    else if (bundle?.configs[0] !== undefined) result.set(file.projectId, bundle.configs[0].derivedPath)
-  }
-  for (const config of bundle?.configs ?? []) {
-    const projectId = relativeWorktreePathFromConfig(config.originalPath)
-    if (!result.has(projectId)) result.set(projectId, config.derivedPath)
+    if (bundle?.configs[0] !== undefined) result.set(file.projectId, bundle.configs[0].derivedPath)
   }
   return result
-}
-
-const projectIdMatchesOriginal = (projectId: string, originalPath: string): boolean =>
-  originalPath.endsWith(`/${projectId}`) || originalPath.endsWith(projectId)
-
-const relativeWorktreePathFromConfig = (originalPath: string): string => {
-  const parts = originalPath.replaceAll("\\", "/").split("/")
-  const tsconfigIndex = parts.lastIndexOf("tsconfig.json")
-  if (tsconfigIndex <= 0) return "tsconfig.json"
-  return parts.slice(-2).join("/")
 }
 
 const replaceWorkspace = (state: SessionState): Effect.Effect<void> =>

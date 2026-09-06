@@ -71,7 +71,7 @@ export const dependencySourceFiles = async (
   sourceFiles: ReadonlyArray<SourceFile>,
   activePackages: ReadonlyArray<PackageInfo>,
   excludeGlobs: ReadonlyArray<string>,
-): Promise<ReadonlyArray<SourceFile>> => {
+): Promise<ReadonlyArray<SourceFile | ExtraSourceFile>> => {
   const existing = sourceFiles.filter((sourceFile) => !isExcluded(sourceFile.fileName, excludeGlobs))
   const existingPaths = new Set(existing.map((sourceFile) => sourceFile.fileName))
   const extraPaths = await packageRootDependencyFiles(activePackages, excludeGlobs, existingPaths)
@@ -139,5 +139,9 @@ const extraModuleSpecifiers = (text: string): ReadonlyArray<string> => {
   return [...specifiers]
 }
 
-export const extraSourceFileSpecifiers = (sourceFile: SourceFile): ReadonlyArray<string> | undefined =>
-  "specifiers" in sourceFile ? (sourceFile as ExtraSourceFile).specifiers : undefined
+export const extraSourceFileSpecifiers = (
+  sourceFile: SourceFile | ExtraSourceFile,
+): ReadonlyArray<string> | undefined =>
+  "specifiers" in sourceFile ? sourceFile.specifiers : undefined
+
+export type { ExtraSourceFile }

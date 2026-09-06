@@ -45,7 +45,7 @@ export const collectDependencyUsage = (
 }
 
 const recordSourceFileDependencyUsage = (
-  sourceFile: import("../tsgo-api.js").SourceFile,
+  sourceFile: import("../tsgo-api.js").SourceFile | import("./ts-de-04-source-files.js").ExtraSourceFile,
   facts: DependencyAnalysisFacts,
   context: SignalContext,
   config: TsDe04Config,
@@ -74,10 +74,12 @@ const recordSourceFileDependencyUsage = (
 }
 
 const moduleUsagesForSourceFile = (
-  sourceFile: import("../tsgo-api.js").SourceFile,
+  sourceFile: import("../tsgo-api.js").SourceFile | import("./ts-de-04-source-files.js").ExtraSourceFile,
 ): ReadonlyArray<ModuleSpecifierUsage> => {
   const extras = extraSourceFileSpecifiers(sourceFile)
-  if (extras === undefined) return externalModuleSpecifiers(sourceFile)
+  if (extras === undefined) {
+    return "specifiers" in sourceFile ? [] : externalModuleSpecifiers(sourceFile)
+  }
   return extras.map((specifier) => ({ specifier, typeOnly: false, dynamic: false }))
 }
 

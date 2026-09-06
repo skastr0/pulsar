@@ -58,7 +58,7 @@ export const TsAd01: Signal<
   category: "architectural-drift",
   kind: "structural",
   evidenceClass: "reference-backed",
-  cacheVersion: "external-attribution-stale-reference-v3",
+  cacheVersion: "external-attribution-stale-reference-v4",
   configSchema: TsAd01Config,
   defaultConfig: {
     exclude_globs: [

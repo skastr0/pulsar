@@ -502,7 +502,7 @@ const isResourceDeclarationLabel = (
 ): boolean => {
   const parent = node.parent
   if (parent === undefined || !isNewExpression(parent)) return false
-  if (parent.arguments[0] !== node) return false
+  if (parent.arguments?.[0] !== node) return false
 
   const normalizedValue = normalizeIdentifier(value)
   const normalizedBinding = normalizeIdentifier(identifier)

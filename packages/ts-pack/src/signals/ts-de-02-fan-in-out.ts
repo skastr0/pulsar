@@ -75,7 +75,15 @@ export const TsDe02: Signal<TsDe02Config, TsDe02Output, TsAnalysisTag | TsPackag
     Effect.gen(function* () {
       const analysis = yield* TsAnalysisTag
       const packages = yield* TsPackageInfoTag
-      const sourceFiles = yield* analysis.mapFiles(async (context) => context.sourceFile)
+      const sourceFiles = yield* analysis.mapFiles(async (context) => context.sourceFile).pipe(
+        Effect.mapError((cause) =>
+          new SignalComputeError({
+            signalId: "TS-DE-02-fan-in-out",
+            message: cause.message,
+            cause,
+          }),
+        ),
+      )
       const result = yield* Effect.try({
         try: (): TsDe02Output => {
           const diagnosticLimit = normalizeDiagnosticLimit(config.top_n_diagnostics)

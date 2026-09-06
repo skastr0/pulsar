@@ -128,7 +128,15 @@ export const TsAb05: Signal<TsAb05Config, TsAb05Output, TsAnalysisTag> = {
   compute: (config) =>
     Effect.gen(function* () {
       const analysis = yield* TsAnalysisTag
-      const sourceFiles = yield* analysis.mapFiles(async (context) => context.sourceFile)
+      const sourceFiles = yield* analysis.mapFiles(async (context) => context.sourceFile).pipe(
+        Effect.mapError((cause) =>
+          new SignalComputeError({
+            signalId: "TS-AB-05-generic-proliferation",
+            message: cause.message,
+            cause,
+          }),
+        ),
+      )
       const result = yield* Effect.try({
         try: (): TsAb05Output => {
           const byDeclaration: Array<GenericAnalysis> = []
@@ -416,8 +424,9 @@ const isCompilerTypeNode = (node: Node): node is Node =>
 const maxCompilerTypeArgumentDepth = (
   node: Node,
 ): number => {
+  const typeArguments = (node as { readonly typeArguments?: ReadonlyArray<Node> }).typeArguments ?? []
   let max = 0
-  for (const typeArg of node.typeArguments ?? []) {
+  for (const typeArg of typeArguments) {
     max = Math.max(max, compilerTypeSyntaxDepth(typeArg))
   }
   return max

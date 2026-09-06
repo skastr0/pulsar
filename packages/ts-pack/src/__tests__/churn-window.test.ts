@@ -39,6 +39,7 @@ beforeEach(async () => {
   git(["init", "-q"])
   git(["config", "user.email", "test@example.com"])
   git(["config", "user.name", "Test"])
+  git(["config", "commit.gpgsign", "false"])
   await writeFile(join(repo, "seed.ts"), "export const seed = 0\n")
   git(["add", "seed.ts"])
   git(["commit", "-m", "seed", "-q"], {

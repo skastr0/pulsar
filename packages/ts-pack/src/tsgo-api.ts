@@ -182,3 +182,6 @@ export { forEachLeadingCommentRange } from "tsgo-typescript/unstable/ast/scanner
 export { isTypeAssertion as isTypeAssertionExpression } from "tsgo-typescript/unstable/ast/is"
 export { isMethodSignatureDeclaration as isMethodSignature } from "tsgo-typescript/unstable/ast/is"
 export type { MethodSignatureDeclaration as MethodSignature } from "tsgo-typescript/unstable/ast"
+export { isTaggedTemplateExpression } from "tsgo-typescript/unstable/ast/is"
+export type { PropertySignatureDeclaration as PropertySignature } from "tsgo-typescript/unstable/ast"
+export type { TaggedTemplateExpression } from "tsgo-typescript/unstable/ast"
