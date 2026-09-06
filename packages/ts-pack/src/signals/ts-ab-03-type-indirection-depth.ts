@@ -2,8 +2,16 @@ import { SignalComputeError, summarize } from "@skastr0/pulsar-core/signal"
 import type { Diagnostic, DistributionalSummary, Signal } from "@skastr0/pulsar-core/signal"
 import { scoreThresholdViolationShare } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
-import { Node, type SourceFile } from "ts-morph"
-import { TsProjectTag } from "../ts-project.js"
+import { hasExportModifier, textOf } from "../ast.js"
+import {
+  isClassDeclaration,
+  isEnumDeclaration,
+  isIdentifier,
+  isInterfaceDeclaration,
+  isTypeAliasDeclaration,
+  type SourceFile,
+} from "../tsgo-api.js"
+import { TsAnalysisTag } from "../ts-analysis.js"
 import { isExcluded } from "./shared-globs.js"
 import {
   type DepthResult,
@@ -11,6 +19,7 @@ import {
   buildLocalAliasMap,
   createWalkContext,
   measureDeclaration,
+  buildTypeIndex,
 } from "./ts-ab-03-indirection-walker.js"
 
 export const TsAb03Config = Schema.Struct({
@@ -42,7 +51,7 @@ interface TsAb03Output {
   readonly diagnosticLimit: number
 }
 
-export const TsAb03: Signal<TsAb03Config, TsAb03Output, TsProjectTag> = {
+export const TsAb03: Signal<TsAb03Config, TsAb03Output, TsAnalysisTag> = {
   id: "TS-AB-03-type-indirection-depth",
   title: "Type indirection depth",
   aliases: ["TS-AB-03"],
@@ -104,14 +113,24 @@ export const TsAb03: Signal<TsAb03Config, TsAb03Output, TsProjectTag> = {
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
-      const project = yield* TsProjectTag
+      const analysis = yield* TsAnalysisTag
+      const sourceFiles = yield* analysis.mapFiles(async (fileContext) => fileContext.sourceFile).pipe(
+        Effect.mapError((cause) =>
+          new SignalComputeError({
+            signalId: "TS-AB-03-type-indirection-depth",
+            message: cause.message,
+            cause,
+          }),
+        ),
+      )
       const result = yield* Effect.try({
         try: (): TsAb03Output => {
           const declarations: Array<TypeIndirectionEntry> = []
           const byFile = new Map<string, Array<number>>()
+          const typeIndex = buildTypeIndex(sourceFiles)
 
-          for (const sourceFile of project.getSourceFiles()) {
-            const file = sourceFile.getFilePath()
+          for (const sourceFile of sourceFiles) {
+            const file = sourceFile.fileName
             if (isExcluded(file, config.exclude_globs)) continue
 
             const localAliases = buildLocalAliasMap(sourceFile)
@@ -119,12 +138,12 @@ export const TsAb03: Signal<TsAb03Config, TsAb03Output, TsProjectTag> = {
             for (const declaration of collectTrackedDeclarations(sourceFile)) {
               const result = measureDeclaration(
                 declaration,
-                createWalkContext(config.max_traversal_steps, localAliases, aliasDepthCache),
+                createWalkContext(config.max_traversal_steps, localAliases, aliasDepthCache, typeIndex),
               )
               declarations.push({
                 file,
-                name: declaration.getName() ?? "<anonymous>",
-                line: declaration.getStartLineNumber(),
+                name: declaration.name === undefined ? "<anonymous>" : (isIdentifier(declaration.name) ? declaration.name.text : textOf(declaration.name)),
+                line: sourceFile.getLineAndCharacterOfPosition(declaration.getStart(sourceFile)).line + 1,
                 depth: result.depth,
                 exported: isExportedDeclaration(declaration),
                 chain: result.chain,
@@ -185,22 +204,17 @@ const collectTrackedDeclarations = (
   sourceFile: SourceFile,
 ): ReadonlyArray<TrackedDeclaration> => {
   const results: Array<TrackedDeclaration> = []
-
-  results.push(...sourceFile.getTypeAliases())
-  results.push(...sourceFile.getInterfaces().filter(hasExportModifier))
-  results.push(...sourceFile.getClasses().filter(hasExportModifier))
-  results.push(...sourceFile.getEnums().filter(hasExportModifier))
-
+  for (const statement of sourceFile.statements) {
+    if (isTypeAliasDeclaration(statement)) results.push(statement)
+    if (isInterfaceDeclaration(statement) && hasExportModifier(statement)) results.push(statement)
+    if (isClassDeclaration(statement) && hasExportModifier(statement)) results.push(statement)
+    if (isEnumDeclaration(statement) && hasExportModifier(statement)) results.push(statement)
+  }
   return results
 }
 
-const hasExportModifier = (node: Node): boolean => {
-  const candidate = node as { getModifiers?: () => ReadonlyArray<{ getKindName: () => string }> }
-  return candidate.getModifiers?.().some((modifier) => modifier.getKindName() === "ExportKeyword") ?? false
-}
-
 const isExportedDeclaration = (node: TrackedDeclaration): boolean =>
-  !Node.isTypeAliasDeclaration(node) || hasExportModifier(node)
+  !isTypeAliasDeclaration(node) || hasExportModifier(node)
 
 const typeIndirectionSeverity = (
   entry: TypeIndirectionEntry,
