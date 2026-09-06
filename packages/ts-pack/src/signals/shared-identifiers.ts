@@ -1,4 +1,3 @@
-import { Node, type Project, type SourceFile, type VariableDeclaration } from "ts-morph"
 import {
   inferCasingPattern,
   splitIdentifierTokens,
@@ -9,6 +8,28 @@ import {
   type DiagnosticOrderProperties,
 } from "./shared-diagnostic-order.js"
 import { isExcluded } from "./shared-globs.js"
+import { textOf, walkDescendants } from "../ast.js"
+import {
+  SyntaxKind,
+  isArrowFunction,
+  isAsExpression,
+  isCallExpression,
+  isClassDeclaration,
+  isEnumDeclaration,
+  isFunctionDeclaration,
+  isIdentifier,
+  isInterfaceDeclaration,
+  isSatisfiesExpression,
+  isSourceFile,
+  isTypeAliasDeclaration,
+  isTypeAssertionExpression,
+  isVariableDeclaration,
+  isVariableDeclarationList,
+  isVariableStatement,
+  type Node,
+  type SourceFile,
+  type VariableDeclaration,
+} from "../tsgo-api.js"
 
 export type IdentifierDeclarationKind =
   | "function"
@@ -30,102 +51,42 @@ export interface IdentifierDeclaration {
   readonly pattern: IdentifierPattern
 }
 
-interface NamedDeclarationLike {
-  readonly getStartLineNumber: () => number
-}
-
 const IDENTIFIER_NAME_PATTERN = /^[A-Za-z_$][A-Za-z0-9_$]*$/
 
-export const collectIdentifierDeclarations = (
-  project: Project,
+export const collectIdentifierDeclarationsFromFile = (
+  sourceFile: SourceFile,
   excludeGlobs: ReadonlyArray<string>,
 ): ReadonlyArray<IdentifierDeclaration> => {
   const identifiers: Array<IdentifierDeclaration> = []
-
-  for (const sourceFile of project.getSourceFiles()) {
-    const filePath = sourceFile.getFilePath()
-    if (sourceFile.isDeclarationFile() || isExcluded(filePath, excludeGlobs)) continue
-
-    collectNamedDeclarations(identifiers, sourceFile)
+  if (sourceFile.isDeclarationFile || isExcluded(sourceFile.fileName, excludeGlobs)) {
+    return identifiers
   }
-
-  return identifiers.sort(compareIdentifierDeclarations)
-}
-
-const collectNamedDeclarations = (
-  identifiers: Array<IdentifierDeclaration>,
-  sourceFile: SourceFile,
-): void => {
-  for (const declaration of sourceFile.getFunctions()) {
-    pushIdentifierDeclaration(
-      identifiers,
-      sourceFile,
-      declaration.getName(),
-      "function",
-      declaration,
-    )
-  }
-
-  for (const declaration of sourceFile.getClasses()) {
-    pushIdentifierDeclaration(
-      identifiers,
-      sourceFile,
-      declaration.getName(),
-      "class",
-      declaration,
-    )
-  }
-
-  for (const declaration of sourceFile.getInterfaces()) {
-    pushIdentifierDeclaration(
-      identifiers,
-      sourceFile,
-      declaration.getName(),
-      "interface",
-      declaration,
-    )
-  }
-
-  for (const declaration of sourceFile.getTypeAliases()) {
-    pushIdentifierDeclaration(
-      identifiers,
-      sourceFile,
-      declaration.getName(),
-      "type",
-      declaration,
-    )
-  }
-
-  for (const declaration of sourceFile.getEnums()) {
-    pushIdentifierDeclaration(
-      identifiers,
-      sourceFile,
-      declaration.getName(),
-      "enum",
-      declaration,
-    )
-  }
-
-  collectConstDeclarations(identifiers, sourceFile)
-}
-
-const collectConstDeclarations = (
-  identifiers: Array<IdentifierDeclaration>,
-  sourceFile: SourceFile,
-): void => {
-  for (const statement of sourceFile.getVariableStatements()) {
-    if (statement.getDeclarationKind() !== "const") continue
-    for (const declaration of statement.getDeclarations()) {
-      pushConstDeclaration(identifiers, sourceFile, declaration)
+  walkDescendants(sourceFile, (node) => {
+    if (isFunctionDeclaration(node) && node.name !== undefined) {
+      pushIdentifierDeclaration(identifiers, sourceFile, node.name.text, "function", node)
+      return
     }
-  }
-
-  sourceFile.forEachDescendant((node) => {
-    if (!Node.isVariableDeclaration(node)) return
-    if (isDirectSourceFileConstDeclaration(node)) return
-    if (node.getVariableStatement()?.getDeclarationKind() !== "const") return
-    pushConstDeclaration(identifiers, sourceFile, node)
+    if (isClassDeclaration(node) && node.name !== undefined) {
+      pushIdentifierDeclaration(identifiers, sourceFile, node.name.text, "class", node)
+      return
+    }
+    if (isInterfaceDeclaration(node)) {
+      pushIdentifierDeclaration(identifiers, sourceFile, node.name.text, "interface", node)
+      return
+    }
+    if (isTypeAliasDeclaration(node)) {
+      pushIdentifierDeclaration(identifiers, sourceFile, node.name.text, "type", node)
+      return
+    }
+    if (isEnumDeclaration(node)) {
+      pushIdentifierDeclaration(identifiers, sourceFile, node.name.text, "enum", node)
+      return
+    }
+    if (isVariableDeclaration(node) && isConstDeclaration(node)) {
+      pushConstDeclaration(identifiers, sourceFile, node)
+    }
   })
+  return identifiers.sort(compareIdentifierDeclarations)
 }
 
 const pushConstDeclaration = (
@@ -136,7 +97,7 @@ const pushConstDeclaration = (
   pushIdentifierDeclaration(
     identifiers,
     sourceFile,
-    declaration.getName(),
+    isIdentifier(declaration.name) ? declaration.name.text : undefined,
     "const",
     declaration,
     classifyConstContext(declaration),
@@ -148,14 +109,14 @@ const pushIdentifierDeclaration = (
   sourceFile: SourceFile,
   name: string | undefined,
   kind: IdentifierDeclarationKind,
-  declaration: NamedDeclarationLike,
+  declaration: Node,
   constContext?: ConstIdentifierContext,
 ): void => {
   if (name === undefined || !IDENTIFIER_NAME_PATTERN.test(name)) return
 
   const identifier: IdentifierDeclaration = {
-    file: sourceFile.getFilePath(),
-    line: declaration.getStartLineNumber(),
+    file: sourceFile.fileName,
+    line: sourceFile.getLineAndCharacterOfPosition(declaration.getStart(sourceFile)).line + 1,
     kind,
     name,
     tokens: splitIdentifierTokens(name),
@@ -179,25 +140,25 @@ const classifyConstContext = (declaration: VariableDeclaration): ConstIdentifier
 }
 
 const isDirectSourceFileConstDeclaration = (declaration: VariableDeclaration): boolean => {
-  const declarationList = declaration.getParent()
-  if (!Node.isVariableDeclarationList(declarationList)) return false
-  const statement = declarationList.getParent()
-  if (!Node.isVariableStatement(statement)) return false
-  return Node.isSourceFile(statement.getParent())
+  const declarationList = declaration.parent
+  if (!isVariableDeclarationList(declarationList)) return false
+  const statement = declarationList.parent
+  if (!isVariableStatement(statement)) return false
+  return isSourceFile(statement.parent)
 }
 
 const isSchemaOrTypeObjectConst = (declaration: VariableDeclaration): boolean => {
-  const name = declaration.getName()
-  const initializer = declaration.getInitializer()
+  const name = isIdentifier(declaration.name) ? declaration.name.text : ""
+  const initializer = declaration.initializer
   const unwrappedInitializer = unwrapConstInitializer(initializer)
   if (inferCasingPattern(name) !== "PascalCase" || unwrappedInitializer === undefined) return false
   if (hasTypeLevelAnnotation(declaration)) return true
-  if (Node.isArrowFunction(unwrappedInitializer) && hasTypeLevelText(unwrappedInitializer.getReturnTypeNode()?.getText())) {
+  if (isArrowFunction(unwrappedInitializer) && hasTypeLevelText(unwrappedInitializer.type ? textOf(unwrappedInitializer.type) : undefined)) {
     return true
   }
-  if (!Node.isCallExpression(unwrappedInitializer)) return false
+  if (!isCallExpression(unwrappedInitializer)) return false
 
-  const expressionText = unwrappedInitializer.getExpression().getText()
+  const expressionText = textOf(unwrappedInitializer.expression)
   return (
     expressionText === "Schema" ||
     expressionText.startsWith("Schema.") ||
@@ -208,7 +169,7 @@ const isSchemaOrTypeObjectConst = (declaration: VariableDeclaration): boolean =>
 }
 
 const hasTypeLevelAnnotation = (declaration: VariableDeclaration): boolean =>
-  hasTypeLevelText(declaration.getTypeNode()?.getText())
+  hasTypeLevelText(declaration.type === undefined ? undefined : textOf(declaration.type))
 
 const hasTypeLevelText = (text: string | undefined): boolean =>
   text !== undefined && /\b(Signal|Schema\.Schema|Layer\.Layer)\b/.test(text)
@@ -217,15 +178,21 @@ const unwrapConstInitializer = (initializer: Node | undefined): Node | undefined
   let current = initializer
   while (current !== undefined) {
     if (
-      !Node.isAsExpression(current) &&
-      !Node.isSatisfiesExpression(current) &&
-      !Node.isTypeAssertion(current)
+      !isAsExpression(current) &&
+      !isSatisfiesExpression(current) &&
+      !isTypeAssertionExpression(current)
     ) {
       return current
     }
-    current = current.getExpression()
+    current = current.expression
   }
   return current
+}
+
+const isConstDeclaration = (declaration: VariableDeclaration): boolean => {
+  const list = declaration.parent
+  if (!isVariableDeclarationList(list)) return false
+  return (list.flags & 2) !== 0 || textOf(list).startsWith("const ")
 }
 
 const compareIdentifierDeclarations = (

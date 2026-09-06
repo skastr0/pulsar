@@ -3,10 +3,10 @@ import type { Diagnostic, Signal } from "@skastr0/pulsar-core/signal"
 import type { NamingConventions, SchemaConventions } from "@skastr0/pulsar-core/reference-data"
 import { Effect, Option, Schema } from "effect"
 import { type RecognizedCasingPattern, parseCasingPatternAlternatives } from "../casing.js"
-import { TsProjectTag } from "../ts-project.js"
+import { TsAnalysisTag } from "../ts-analysis.js"
 import { scoreReferenceBackedViolationRatio } from "./shared-violation-ratio-score.js"
 import {
-  collectIdentifierDeclarations,
+  collectIdentifierDeclarationsFromFile,
   type ConstIdentifierContext,
   type IdentifierDeclaration,
   type IdentifierDeclarationKind,
@@ -48,7 +48,7 @@ const IDENTIFIER_KINDS: ReadonlyArray<IdentifierDeclarationKind> = [
   "const",
 ]
 
-export const TsLd04: Signal<TsLd04Config, TsLd04Output, TsProjectTag | ReferenceDataTag> = {
+export const TsLd04: Signal<TsLd04Config, TsLd04Output, TsAnalysisTag | ReferenceDataTag> = {
   id: "TS-LD-04-naming-conventions",
   title: "Naming convention consistency",
   aliases: ["TS-LD-04"],
@@ -71,12 +71,22 @@ export const TsLd04: Signal<TsLd04Config, TsLd04Output, TsProjectTag | Reference
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
-      const project = yield* TsProjectTag
       const referenceData = yield* ReferenceDataTag
 
+      const fileOutputs = yield* (yield* TsAnalysisTag).mapFiles(async (context) =>
+        [...collectIdentifierDeclarationsFromFile(context.sourceFile, config.exclude_globs)],
+      ).pipe(Effect.mapError((cause) =>
+        new SignalComputeError({
+          signalId: "TS-LD-04-naming-conventions",
+          message: cause.message,
+          cause,
+        }),
+      ))
+      const identifiers = fileOutputs.flat().sort((left, right) =>
+        left.file.localeCompare(right.file) || left.line - right.line || left.name.localeCompare(right.name),
+      )
       return yield* Effect.try({
         try: (): TsLd04Output => {
-          const identifiers = collectIdentifierDeclarations(project, config.exclude_globs)
           const rawConventions = Effect.runSync(
             referenceData.get<SchemaConventions>("schema-conventions"),
           )

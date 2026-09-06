@@ -3,9 +3,9 @@ import type { Diagnostic, Signal } from "@skastr0/pulsar-core/signal"
 import type { Glossary } from "@skastr0/pulsar-core/reference-data"
 import { Effect, Option, Schema } from "effect"
 import { splitIdentifierTokens } from "../casing.js"
-import { TsProjectTag } from "../ts-project.js"
+import { TsAnalysisTag } from "../ts-analysis.js"
 import {
-  collectIdentifierDeclarations,
+  collectIdentifierDeclarationsFromFile,
   type IdentifierDeclarationKind,
 } from "./shared-identifiers.js"
 
@@ -60,7 +60,7 @@ interface ConflictCandidate {
   readonly distance: number
 }
 
-export const TsLd05: Signal<TsLd05Config, TsLd05Output, TsProjectTag | ReferenceDataTag> = {
+export const TsLd05: Signal<TsLd05Config, TsLd05Output, TsAnalysisTag | ReferenceDataTag> = {
   id: "TS-LD-05-domain-term-consistency",
   title: "Domain term consistency",
   aliases: ["TS-LD-05"],
@@ -83,15 +83,22 @@ export const TsLd05: Signal<TsLd05Config, TsLd05Output, TsProjectTag | Reference
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
-      const project = yield* TsProjectTag
       const referenceData = yield* ReferenceDataTag
+      const fileOutputs = yield* (yield* TsAnalysisTag).mapFiles(async (context) =>
+        [...collectIdentifierDeclarationsFromFile(context.sourceFile, config.exclude_globs)],
+      ).pipe(Effect.mapError((cause) =>
+        new SignalComputeError({
+          signalId: "TS-LD-05-domain-term-consistency",
+          message: cause.message,
+          cause,
+        }),
+      ))
 
       return yield* Effect.try({
         try: (): TsLd05Output => {
           // Domain-term consistency governs the module-level/exported naming surface;
           // function-local const temporaries are exempt from glossary enforcement.
-          const identifiers = collectIdentifierDeclarations(project, config.exclude_globs)
-            .filter((identifier) => identifier.constContext !== "local")
+          const identifiers = fileOutputs.flat().filter((identifier) => identifier.constContext !== "local")
           const rawGlossary = Effect.runSync(referenceData.get<Glossary>("glossary"))
 
           if (Option.isNone(rawGlossary)) {

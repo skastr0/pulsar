@@ -25,26 +25,35 @@ export type {
 export { SyntaxKind } from "tsgo-typescript/unstable/ast"
 export {
   isArrowFunction,
+  isAsExpression,
   isBinaryExpression,
   isBlock,
   isCallExpression,
   isCatchClause,
+  isClassDeclaration,
   isConstructorDeclaration,
+  isEnumDeclaration,
   isExportAssignment,
   isExpressionStatement,
   isFunctionDeclaration,
   isFunctionExpression,
   isGetAccessorDeclaration,
   isIdentifier,
+  isInterfaceDeclaration,
   isMethodDeclaration,
   isObjectLiteralExpression,
   isPropertyAccessExpression,
   isPropertyAssignment,
   isPropertyDeclaration,
+  isSatisfiesExpression,
   isSetAccessorDeclaration,
   isSourceFile,
   isStringLiteral,
+  isTypeAliasDeclaration,
+  isTypeAssertion,
   isVariableDeclaration,
+  isVariableDeclarationList,
+  isVariableStatement,
   isVoidExpression,
 } from "tsgo-typescript/unstable/ast/is"
 export {
@@ -58,5 +67,6 @@ export {
   isWhileStatement,
 } from "tsgo-typescript/unstable/ast/is"
 export { forEachLeadingCommentRange } from "tsgo-typescript/unstable/ast/scanner"
+export { isTypeAssertion as isTypeAssertionExpression } from "tsgo-typescript/unstable/ast/is"
 export { isMethodSignatureDeclaration as isMethodSignature } from "tsgo-typescript/unstable/ast/is"
 export type { MethodSignatureDeclaration as MethodSignature } from "tsgo-typescript/unstable/ast"

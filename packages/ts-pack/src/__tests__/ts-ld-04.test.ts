@@ -7,7 +7,7 @@ import { Effect, Layer, Schema } from "effect"
 import { inferCasingPattern } from "../casing.js"
 import { TS_PACK_SIGNALS } from "../pack.js"
 import { TsLd04, TsLd04Config } from "../signals/ts-ld-04-naming-conventions.js"
-import { TsProjectLayer } from "../ts-project.js"
+import { TsAnalysisLayer } from "../ts-analysis.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
 
 let repo: TempRepo
@@ -386,7 +386,7 @@ const runObserverTsLd04 = async (
   const program = Effect.gen(function* () {
     const registry = yield* buildRegistry([TsLd04])
     const EnvLayer = Layer.mergeAll(
-      TsProjectLayer(repoRoot),
+      TsAnalysisLayer(repoRoot),
       InMemoryCacheLayer,
       Layer.succeed(SignalContextTag, {
         gitSha: "TEST",
