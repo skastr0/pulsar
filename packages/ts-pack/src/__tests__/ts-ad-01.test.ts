@@ -6,7 +6,7 @@ import { buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { Effect, Layer, Schema } from "effect"
 import { TS_PACK_SIGNALS } from "../pack.js"
 import { TsAd01, TsAd01Config } from "../signals/ts-ad-01-boundary-violations.js"
-import { TsProjectLayer } from "../ts-project.js"
+import { TsAnalysisLayer } from "../ts-analysis.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
 
 let repo: TempRepo
@@ -466,7 +466,7 @@ const runObserverTsAd01 = async (
   const program = Effect.gen(function* () {
     const registry = yield* buildRegistry([TsAd01])
     const EnvLayer = Layer.mergeAll(
-      TsProjectLayer(repoRoot),
+      TsAnalysisLayer(repoRoot),
       InMemoryCacheLayer,
       Layer.succeed(SignalContextTag, {
         gitSha: "TEST",

@@ -1,6 +1,16 @@
 import { relative } from "node:path"
 import type { BoundaryConvention } from "@skastr0/pulsar-core/reference-data"
-import type { ExportDeclaration, ImportDeclaration, SourceFile } from "ts-morph"
+import { locationOf } from "../ast.js"
+import {
+  isExportDeclaration,
+  isImportDeclaration,
+  isNoSubstitutionTemplateLiteral,
+  isStringLiteral,
+  type ExportDeclaration,
+  type ImportDeclaration,
+  type SourceFile,
+} from "../tsgo-api.js"
+import { createModuleResolver } from "../graph/module-graph.js"
 import type { PackageInfo } from "../discovery.js"
 import type { BoundaryViolation } from "./ts-ad-01-boundary-violations.js"
 import {
@@ -21,6 +31,7 @@ interface BoundaryLookup {
   readonly worktreePath: string
   readonly rulesByKey: ReadonlyMap<string, BoundaryConvention>
   readonly packagesByManifestName: ReadonlyMap<string, PackageInfo>
+  readonly resolveTarget: (sourcePath: string, specifier: string) => string | undefined
 }
 
 interface TargetResolution {
@@ -50,11 +61,11 @@ export const collectBoundaryViolations = (
   conventions: Readonly<Record<string, BoundaryConvention>>,
   worktreePath: string,
 ): Array<BoundaryViolation> => {
-  const lookup = buildBoundaryLookup(conventions, packages, worktreePath)
+  const lookup = buildBoundaryLookup(conventions, packages, worktreePath, sourceFiles)
   const violations: Array<BoundaryViolation> = []
 
   for (const sourceFile of sourceFiles) {
-    const sourcePackage = packageForFile(sourceFile.getFilePath(), packages)
+    const sourcePackage = packageForFile(sourceFile.fileName, packages)
     const sourceRule =
       sourcePackage === undefined ? undefined : lookupBoundaryRule(lookup, sourcePackage)
 
@@ -78,12 +89,12 @@ export const collectBoundaryViolations = (
 
 export const collectImportLikeDeclarations = (
   sourceFile: SourceFile,
-): ReadonlyArray<ImportLikeDeclaration> => [
-  ...sourceFile.getImportDeclarations(),
-  ...sourceFile
-    .getExportDeclarations()
-    .filter((declaration) => declaration.getModuleSpecifierValue() !== undefined),
-]
+): ReadonlyArray<ImportLikeDeclaration> =>
+  sourceFile.statements.filter((statement): statement is ImportLikeDeclaration => {
+    if (isImportDeclaration(statement)) return moduleSpecifierOf(statement) !== undefined
+    if (isExportDeclaration(statement)) return moduleSpecifierOf(statement) !== undefined
+    return false
+  })
 
 export const summarizeViolationsByPackage = (
   violations: ReadonlyArray<BoundaryViolation>,
@@ -124,11 +135,11 @@ const classifyBoundaryViolation = ({
   readonly packages: ReadonlyArray<PackageInfo>
   readonly lookup: BoundaryLookup
 }): BoundaryViolation | undefined => {
-  const specifier = declaration.getModuleSpecifierValue()
+  const specifier = moduleSpecifierOf(declaration)
   if (specifier === undefined) return undefined
 
   const target = resolveTargetResolution(specifier, declaration, packages, lookup)
-  const fromPackageName = packageDisplayName(sourcePackage) ?? sourceFile.getFilePath()
+  const fromPackageName = packageDisplayName(sourcePackage) ?? sourceFile.fileName
   const targetRule =
     target.targetPackage === undefined ? undefined : lookupBoundaryRule(lookup, target.targetPackage)
   const context = {
@@ -188,12 +199,12 @@ const boundaryViolation = (
   context: BoundaryViolationContext,
   kind: BoundaryViolation["kind"],
 ): BoundaryViolation => ({
-  fromFile: context.sourceFile.getFilePath(),
+  fromFile: context.sourceFile.fileName,
   fromPackage: context.fromPackageName,
   toPackage: context.target.targetName,
   specifier: context.target.specifier,
   kind,
-  line: context.declaration.getStartLineNumber(),
+  line: locationOf(context.declaration).line,
 })
 
 const isSamePackage = (
@@ -211,6 +222,7 @@ const buildBoundaryLookup = (
   conventions: Readonly<Record<string, BoundaryConvention>>,
   packages: ReadonlyArray<PackageInfo>,
   worktreePath: string,
+  sourceFiles: ReadonlyArray<SourceFile>,
 ): BoundaryLookup => ({
   worktreePath,
   rulesByKey: new Map(
@@ -221,6 +233,7 @@ const buildBoundaryLookup = (
       pkg.manifest?.name === undefined ? [] : [[pkg.manifest.name, pkg] as const],
     ),
   ),
+  resolveTarget: createModuleResolver(sourceFiles, packages).resolveSpecifier,
 })
 
 const lookupBoundaryRule = (
@@ -243,7 +256,8 @@ const resolveTargetResolution = (
   const normalizedPackageName = normalizePackageSpecifier(specifier)
   const builtin =
     normalizedPackageName !== undefined && isBuiltinModuleName(normalizedPackageName)
-  const resolvedFilePath = declaration.getModuleSpecifierSourceFile()?.getFilePath()
+  const sourcePath = declaration.getSourceFile().fileName
+  const resolvedFilePath = lookup.resolveTarget(sourcePath, specifier)
   const externalPackageName =
     resolvedFilePath === undefined ? undefined : externalPackageNameForFile(resolvedFilePath)
   const targetPackage = externalPackageName !== undefined
@@ -356,5 +370,13 @@ const packageMatchesBoundaryKey = (
 
 const relativePackagePathOf = (pkg: PackageInfo, worktreePath: string): string =>
   normalizePath(relative(worktreePath, pkg.path) || ".")
+
+
+const moduleSpecifierOf = (declaration: ImportLikeDeclaration): string | undefined => {
+  const specifier = declaration.moduleSpecifier
+  if (specifier === undefined) return undefined
+  if (isStringLiteral(specifier) || isNoSubstitutionTemplateLiteral(specifier)) return specifier.text
+  return undefined
+}
 
 const normalizePath = (value: string): string => value.replaceAll("\\", "/")

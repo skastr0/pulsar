@@ -2,9 +2,9 @@ import { SignalContextTag, computeDiagnosticHash, ReferenceDataTag, SignalComput
 import type { Diagnostic, Signal } from "@skastr0/pulsar-core/signal"
 import type { SchemaConventions } from "@skastr0/pulsar-core/reference-data"
 import { Effect, Option, Schema } from "effect"
-import type { SourceFile } from "ts-morph"
+import type { SourceFile } from "../tsgo-api.js"
 import { discoverPackages, type PackageInfo } from "../discovery.js"
-import { TsProjectTag } from "../ts-project.js"
+import { TsAnalysisTag } from "../ts-analysis.js"
 import { isExcluded } from "./shared-globs.js"
 import { scoreReferenceBackedViolationRatio } from "./shared-violation-ratio-score.js"
 import {
@@ -49,7 +49,7 @@ interface TsAd01Output {
 export const TsAd01: Signal<
   TsAd01Config,
   TsAd01Output,
-  TsProjectTag | SignalContextTag | ReferenceDataTag
+  TsAnalysisTag | SignalContextTag | ReferenceDataTag
 > = {
   id: "TS-AD-01-boundary-violations",
   title: "Module boundary violations",
@@ -73,7 +73,7 @@ export const TsAd01: Signal<
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
-      const project = yield* TsProjectTag
+      const analysis = yield* TsAnalysisTag
       const context = yield* SignalContextTag
       const referenceData = yield* ReferenceDataTag
       const packages = yield* Effect.mapError(discoverPackages(context.worktreePath), (cause) =>
@@ -84,9 +84,19 @@ export const TsAd01: Signal<
         }),
       )
 
+      const files = yield* analysis.mapFiles(async (fileContext) => fileContext.sourceFile).pipe(
+        Effect.mapError((cause) =>
+          new SignalComputeError({
+            signalId: "TS-AD-01-boundary-violations",
+            message: cause.message,
+            cause,
+          }),
+        ),
+      )
+
       return yield* Effect.try({
         try: (): TsAd01Output => {
-          const sourceFiles = selectBoundarySourceFiles(project.getSourceFiles(), config)
+          const sourceFiles = selectBoundarySourceFiles(files, config)
           const totalImports = countImportLikeDeclarations(sourceFiles)
           const rawConventions = Effect.runSync(
             referenceData.get<SchemaConventions>("schema-conventions"),
@@ -187,8 +197,8 @@ const selectBoundarySourceFiles = (
 ): ReadonlyArray<SourceFile> =>
   sourceFiles.filter(
     (sourceFile) =>
-      !sourceFile.isDeclarationFile() &&
-      !isExcluded(sourceFile.getFilePath(), config.exclude_globs),
+      !sourceFile.isDeclarationFile &&
+      !isExcluded(sourceFile.fileName, config.exclude_globs),
   )
 
 const countImportLikeDeclarations = (sourceFiles: ReadonlyArray<SourceFile>): number =>
