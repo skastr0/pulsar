@@ -8,7 +8,7 @@ import { buildRegistry } from "@skastr0/pulsar-core/scoring"
 import { createTempRepo, runSignal } from "./test-repo.js"
 import { TsSl04 } from "../signals/ts-sl-04-empty-implementations.js"
 import { TsSl04Config } from "../signals/ts-sl-04-config.js"
-import { TsProjectLayer } from "../ts-project.js"
+import { TsAnalysisLayer } from "../ts-analysis.js"
 import type { TempRepo } from "./test-repo.js"
 import { TS_PACK_SIGNALS } from "../pack.js"
 import type { Stub } from "../signals/ts-sl-04-model.js"
@@ -324,7 +324,7 @@ export function projectContract() {}
       TsSl04.compute(TsSl04.defaultConfig, new Map()).pipe(
         Effect.provide(
           Layer.mergeAll(
-            TsProjectLayer(repo.root),
+            TsAnalysisLayer(repo.root),
             Layer.succeed(SignalContextTag, {
               gitSha: "TEST",
               worktreePath: repo.root,
@@ -357,7 +357,7 @@ export function fallback() {}
       TsSl04.compute(TsSl04.defaultConfig, new Map()).pipe(
         Effect.provide(
           Layer.mergeAll(
-            TsProjectLayer(repo.root),
+            TsAnalysisLayer(repo.root),
             Layer.succeed(SignalContextTag, {
               gitSha: "TEST",
               worktreePath: repo.root,
@@ -395,7 +395,7 @@ export function fallback() {}
       TsSl04.compute(TsSl04.defaultConfig, new Map()).pipe(
         Effect.provide(
           Layer.mergeAll(
-            TsProjectLayer(repo.root),
+            TsAnalysisLayer(repo.root),
             Layer.succeed(SignalContextTag, {
               gitSha: "TEST",
               worktreePath: repo.root,
@@ -440,7 +440,7 @@ export function authenticate() {
       TsSl04.compute(TsSl04.defaultConfig, new Map()).pipe(
         Effect.provide(
           Layer.mergeAll(
-            TsProjectLayer(repo.root),
+            TsAnalysisLayer(repo.root),
             Layer.succeed(SignalContextTag, {
               gitSha: "TEST",
               worktreePath: repo.root,
@@ -532,7 +532,7 @@ export function authenticate() {
       TsSl04.compute(TsSl04.defaultConfig, new Map()).pipe(
         Effect.provide(
           Layer.mergeAll(
-            TsProjectLayer(repo.root),
+            TsAnalysisLayer(repo.root),
             Layer.succeed(SignalContextTag, {
               gitSha: "TEST",
               worktreePath: repo.root,
@@ -664,7 +664,7 @@ export function createEffect<T>(fn: (v?: T) => T, value?: T): void {}
       TsSl04.compute(TsSl04.defaultConfig, new Map()).pipe(
         Effect.provide(
           Layer.mergeAll(
-            TsProjectLayer(repo.root),
+            TsAnalysisLayer(repo.root),
             Layer.succeed(SignalContextTag, {
               gitSha: "TEST",
               worktreePath: repo.root,
@@ -1165,7 +1165,7 @@ export function stub3() {
       TsSl04.compute(TsSl04.defaultConfig, new Map()).pipe(
         Effect.provide(
           Layer.mergeAll(
-            TsProjectLayer(repo.root),
+            TsAnalysisLayer(repo.root),
             Layer.succeed(SignalContextTag, {
               gitSha: "TEST",
               worktreePath: repo.root,
@@ -1342,7 +1342,7 @@ export function newStub() {
       ).pipe(
         Effect.provide(
           Layer.mergeAll(
-            TsProjectLayer(repo.root),
+            TsAnalysisLayer(repo.root),
             Layer.succeed(SignalContextTag, {
               gitSha: "TEST",
               worktreePath: repo.root,
@@ -1375,7 +1375,7 @@ export function newStub() {
       ).pipe(
         Effect.provide(
           Layer.mergeAll(
-            TsProjectLayer(repo.root),
+            TsAnalysisLayer(repo.root),
             Layer.succeed(SignalContextTag, {
               gitSha: "TEST",
               worktreePath: repo.root,
@@ -1403,7 +1403,7 @@ export function newStub() {
       ).pipe(
         Effect.provide(
           Layer.mergeAll(
-            TsProjectLayer(repo.root),
+            TsAnalysisLayer(repo.root),
             Layer.succeed(SignalContextTag, {
               gitSha: "TEST",
               worktreePath: repo.root,

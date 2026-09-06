@@ -23,9 +23,32 @@ import {
 } from "@skastr0/pulsar-core/factors"
 import { Effect, Option } from "effect"
 import { isAbsolute, relative, resolve } from "node:path"
-import { Node, SyntaxKind, type Project } from "ts-morph"
-import { TsProjectTag } from "../ts-project.js"
+import { ancestors, firstAncestor, hasModifier, textOf, walkDescendants } from "../ast.js"
 import {
+  SyntaxKind,
+  isArrowFunction,
+  isBinaryExpression,
+  isConstructorDeclaration,
+  isFunctionDeclaration,
+  isFunctionExpression,
+  isGetAccessorDeclaration,
+  isIdentifier,
+  isMethodDeclaration,
+  isNewExpression,
+  isNoSubstitutionTemplateLiteral,
+  isPropertyAssignment,
+  isSetAccessorDeclaration,
+  isSourceFile,
+  isStringLiteral,
+  isThrowStatement,
+  isVariableDeclaration,
+  type Node,
+  type SourceFile,
+} from "../tsgo-api.js"
+import { TsAnalysisTag } from "../ts-analysis.js"
+import {
+  functionEndLine,
+  functionStartLine,
   getFunctionBody,
   getFunctionLikeIndex,
   getFunctionName,
@@ -69,7 +92,7 @@ import {
   propertyNameOf,
 } from "./ts-sl-04-intentional-noops.js"
 
-export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalContextTag> = {
+export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsAnalysisTag | SignalContextTag> = {
   id: "TS-SL-04-unfinished-implementations",
   title: "Unfinished implementations",
   aliases: ["TS-SL-04"],
@@ -100,12 +123,21 @@ export const TsSl04: Signal<TsSl04Config, TsSl04Output, TsProjectTag | SignalCon
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
-      const project = yield* TsProjectTag
+      const analysis = yield* TsAnalysisTag
       const context = yield* SignalContextTag
       const calibration = yield* Effect.serviceOption(CalibrationContextTag)
       const factorPolicy = yield* Effect.serviceOption(SignalFactorPolicyTag)
+      const sourceFiles = yield* analysis.mapFiles(async (fileContext) => fileContext.sourceFile).pipe(
+        Effect.mapError((cause) =>
+          new SignalComputeError({
+            signalId: "TS-SL-04-unfinished-implementations",
+            message: cause.message,
+            cause,
+          }),
+        ),
+      )
       return yield* computeTsSl04Output(normalizeTsSl04Config(config), {
-        project,
+        sourceFiles,
         context,
         calibration,
         factorPolicy,
@@ -194,7 +226,7 @@ const stubEvidenceClass = (
 const computeTsSl04Output = (
   config: TsSl04Config,
   deps: {
-    readonly project: Project
+    readonly sourceFiles: ReadonlyArray<SourceFile>
     readonly context: {
       readonly worktreePath: string
       readonly changedHunks: ReadonlyArray<ChangedHunk>
@@ -207,7 +239,7 @@ const computeTsSl04Output = (
 ): Effect.Effect<TsSl04Output, SignalComputeError, never> =>
   Effect.gen(function* () {
     const collection = yield* Effect.try({
-      try: () => collectStubCandidates(deps.project, deps.context, config),
+      try: () => collectStubCandidates(deps.sourceFiles, deps.context, config),
       catch: toSignalComputeError,
     })
     const factorOverrides = Option.isSome(deps.factorPolicy)
@@ -258,7 +290,7 @@ interface HunkLineRange {
 }
 
 const collectStubCandidates = (
-  project: Project,
+  sourceFiles: ReadonlyArray<SourceFile>,
   context: {
     readonly worktreePath: string
     readonly changedHunks: ReadonlyArray<ChangedHunk>
@@ -269,7 +301,7 @@ const collectStubCandidates = (
   let totalFunctions = 0
   const hunkIndex = buildChangedHunkIndex(context.worktreePath, context.changedHunks)
 
-  for (const { path, fn } of getFunctionLikeIndex(project)) {
+  for (const { path, fn } of getFunctionLikeIndex(sourceFiles)) {
     const relativePath = relative(context.worktreePath, path).replace(/\\/g, "/")
     if (matchesSourcePath(path, relativePath, config.exclude_globs)) continue
 
@@ -312,16 +344,15 @@ const stubCandidateForFunction = (
     path,
     relativePath,
     name: getFunctionName(fn),
-    line: fn.getStartLineNumber(),
-    nodeKind: syntaxKindName(fn.getKind()),
+    line: functionStartLine(fn),
+    nodeKind: syntaxKindName(fn.kind),
     bodyText,
-    functionText: fn.getText(),
-    parentKind: syntaxKindName(fn.getParent().getKind()),
-    parentText: fn.getParent().getText(),
-    ancestorKinds: fn
-      .getAncestors()
+    functionText: textOf(fn),
+    parentKind: syntaxKindName(fn.parent.kind),
+    parentText: textOf(fn.parent),
+    ancestorKinds: ancestors(fn)
       .slice(-8)
-      .map((ancestor) => syntaxKindName(ancestor.getKind())),
+      .map((ancestor) => syntaxKindName(ancestor.kind)),
     isTestPath,
     builtinIntentionalNoop,
     stubKind,
@@ -338,7 +369,7 @@ const matchesSourcePath = (
   matchesAnyGlob(`./${relativePath}`, globs)
 
 const isAbstractMethod = (fn: FnLike): boolean =>
-  Node.isMethodDeclaration(fn) && fn.isAbstract()
+  isMethodDeclaration(fn) && hasModifier(fn, SyntaxKind.AbstractKeyword)
 
 const syntaxKindName = (kind: SyntaxKind): string => SyntaxKind[kind] ?? String(kind)
 
@@ -373,8 +404,8 @@ const lineRangeOverlapsHunkIndex = (
   const ranges = hunkIndex.get(absoluteFile)
   if (ranges === undefined) return false
 
-  const startLine = fn.getStartLineNumber()
-  const endLine = fn.getEndLineNumber()
+  const startLine = functionStartLine(fn)
+  const endLine = functionEndLine(fn)
   for (const range of ranges) {
     if (startLine < range.end && endLine >= range.start) {
       return true
@@ -442,18 +473,18 @@ const isFixtureEntrypointPlaceholder = (fn: FnLike, message: string): boolean =>
   if (!/^fixture\s+not\s+implemented!?$/i.test(message.trim())) return false
   if (/placeholder/i.test(getFunctionName(fn))) return true
 
-  let current: Node | undefined = fn.getParent()
-  while (current !== undefined && !Node.isSourceFile(current)) {
-    if (Node.isBinaryExpression(current) && /placeholder/i.test(current.getLeft().getText())) {
+  let current: Node | undefined = fn.parent
+  while (current !== undefined && !isSourceFile(current)) {
+    if (isBinaryExpression(current) && /placeholder/i.test(textOf(current.left))) {
       return true
     }
-    if (Node.isVariableDeclaration(current) && /placeholder/i.test(current.getName())) {
+    if (isVariableDeclaration(current) && /placeholder/i.test(variableName(current))) {
       return true
     }
-    if (Node.isPropertyAssignment(current) && /placeholder/i.test(propertyNameOf(current))) {
+    if (isPropertyAssignment(current) && /placeholder/i.test(propertyNameOf(current))) {
       return true
     }
-    current = current.getParent()
+    current = current.parent
   }
   return false
 }
@@ -462,42 +493,44 @@ const directStubThrowMessage = (fn: FnLike): string | undefined => {
   const body = functionBodyNode(fn)
   if (body === undefined) return undefined
 
-  const throwStatement = body
-    .getDescendantsOfKind(SyntaxKind.ThrowStatement)
-    .find((statement) => nearestFunctionLikeAncestor(statement) === fn)
-  if (throwStatement === undefined) return undefined
+  let throwStatement: import("../tsgo-api.js").Node | undefined
+  walkDescendants(body, (statement) => {
+    if (throwStatement !== undefined) return "skip"
+    if (!isThrowStatement(statement)) return
+    if (nearestFunctionLikeAncestor(statement) !== fn) return
+    throwStatement = statement
+    return "skip"
+  })
+  if (throwStatement === undefined || !isThrowStatement(throwStatement)) return undefined
 
-  const expression = throwStatement.getExpression()
-  if (!Node.isNewExpression(expression)) return undefined
-  const thrownType = expression.getExpression().getText()
+  const expression = throwStatement.expression
+  if (expression === undefined || !isNewExpression(expression)) return undefined
+  const thrownType = textOf(expression.expression)
   if (!["Error", "TypeError", "RangeError"].includes(thrownType)) return undefined
 
-  const [messageArg] = expression.getArguments()
+  const messageArg = expression.arguments[0]
   if (
-    !Node.isStringLiteral(messageArg) &&
-    !Node.isNoSubstitutionTemplateLiteral(messageArg)
+    messageArg === undefined ||
+    (!isStringLiteral(messageArg) && !isNoSubstitutionTemplateLiteral(messageArg))
   ) {
     return undefined
   }
 
-  return messageArg.getLiteralText()
+  return messageArg.text
 }
 
-const functionBodyNode = (fn: FnLike): Node | undefined => {
-  if (Node.isArrowFunction(fn)) return fn.getBody()
-  if ("getBody" in fn && typeof fn.getBody === "function") return fn.getBody()
-  return undefined
-}
+const functionBodyNode = (fn: FnLike): Node | undefined =>
+  "body" in fn ? fn.body : undefined
 
 const nearestFunctionLikeAncestor = (node: Node): FnLike | undefined =>
-  node.getFirstAncestor((ancestor): ancestor is FnLike =>
-    Node.isFunctionDeclaration(ancestor) ||
-    Node.isMethodDeclaration(ancestor) ||
-    Node.isArrowFunction(ancestor) ||
-    Node.isFunctionExpression(ancestor) ||
-    Node.isConstructorDeclaration(ancestor) ||
-    Node.isGetAccessorDeclaration(ancestor) ||
-    Node.isSetAccessorDeclaration(ancestor),
+  firstAncestor(node, (ancestor): ancestor is FnLike =>
+    isFunctionDeclaration(ancestor) ||
+    isMethodDeclaration(ancestor) ||
+    isArrowFunction(ancestor) ||
+    isFunctionExpression(ancestor) ||
+    isConstructorDeclaration(ancestor) ||
+    isGetAccessorDeclaration(ancestor) ||
+    isSetAccessorDeclaration(ancestor),
   )
 
 const commentOnlyBodyText = (bodyText: string): string | undefined => {
@@ -1006,3 +1039,6 @@ const toSignalComputeError = (cause: unknown): SignalComputeError =>
   cause instanceof SignalComputeError
     ? cause
     : new SignalComputeError({ signalId: "TS-SL-04-unfinished-implementations", message: String(cause), cause })
+
+const variableName = (declaration: import("../tsgo-api.js").VariableDeclaration): string =>
+  isIdentifier(declaration.name) ? declaration.name.text : textOf(declaration.name)

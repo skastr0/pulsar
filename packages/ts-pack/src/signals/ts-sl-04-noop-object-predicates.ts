@@ -1,4 +1,16 @@
-import { Node } from "ts-morph"
+import { ancestors, textOf } from "../ast.js"
+import {
+  isArrowFunction,
+  isFunctionDeclaration,
+  isFunctionExpression,
+  isIdentifier,
+  isMethodDeclaration,
+  isObjectLiteralExpression,
+  isPropertyAssignment,
+  isSourceFile,
+  isVariableDeclaration,
+} from "../tsgo-api.js"
+import { compilerPropertyNameText as propertyNameText } from "./shared-compiler-functions.js"
 import type { TsFunctionLike as FnLike } from "./shared-function-index.js"
 import {
   hasFallbackAncestor,
@@ -10,12 +22,12 @@ import {
 } from "./ts-sl-04-noop-ast.js"
 
 export const isObjectLifecycleNoop = (fn: FnLike): boolean => {
-  if (!Node.isMethodDeclaration(fn)) return false
-  if (!["remove", "dispose", "destroy", "cleanup", "stop"].includes(fn.getName())) return false
+  if (!isMethodDeclaration(fn)) return false
+  if (!["remove", "dispose", "destroy", "cleanup", "stop"].includes(propertyNameText(fn.name))) return false
   if (!hasOnlyIgnoredParameters(fn)) return false
 
-  const parent = fn.getParent()
-  if (!Node.isObjectLiteralExpression(parent)) return false
+  const parent = fn.parent
+  if (!isObjectLiteralExpression(parent)) return false
 
   const siblingNames = objectMemberNames(parent)
 
@@ -63,11 +75,11 @@ export const isNoopFactoryObjectMember = (fn: FnLike): boolean => {
   const object = objectLiteralParentOfFunctionMember(fn)
   if (object === undefined) return false
 
-  for (const ancestor of object.getAncestors()) {
-    if (Node.isFunctionDeclaration(ancestor) || Node.isFunctionExpression(ancestor)) {
-      return hasNoopFactoryName(ancestor.getName() ?? "")
+  for (const ancestor of ancestors(object)) {
+    if (isFunctionDeclaration(ancestor) || isFunctionExpression(ancestor)) {
+      return hasNoopFactoryName(ancestor.name === undefined ? "" : propertyNameText(ancestor.name))
     }
-    if (Node.isArrowFunction(ancestor) || Node.isSourceFile(ancestor)) {
+    if (isArrowFunction(ancestor) || isSourceFile(ancestor)) {
       return false
     }
   }
@@ -78,8 +90,10 @@ export const isNoopFactoryObjectMember = (fn: FnLike): boolean => {
 export const isExplicitNoopObjectMember = (fn: FnLike): boolean => {
   const object = objectLiteralParentOfFunctionMember(fn)
   if (object === undefined) return false
-  const declaration = object.getParent()
-  return Node.isVariableDeclaration(declaration) && hasNoopFactoryName(declaration.getName())
+  const declaration = object.parent
+  return isVariableDeclaration(declaration) && hasNoopFactoryName(
+    isIdentifier(declaration.name) ? declaration.name.text : textOf(declaration.name),
+  )
 }
 
 export const isFallbackLoggerNoop = (fn: FnLike): boolean => {
@@ -89,9 +103,9 @@ export const isFallbackLoggerNoop = (fn: FnLike): boolean => {
   const propertyName = objectMemberNameForFunction(fn)
   if (!loggerMethods.has(propertyName)) return false
 
-  const memberNames = object.getProperties().flatMap((property) => {
-    if (Node.isMethodDeclaration(property)) return [property.getName()]
-    if (Node.isPropertyAssignment(property)) return [propertyNameOf(property)]
+  const memberNames = object.properties.flatMap((property) => {
+    if (isMethodDeclaration(property)) return [propertyNameText(property.name)]
+    if (isPropertyAssignment(property)) return [propertyNameOf(property)]
     return []
   })
   if (memberNames.length === 0 || memberNames.some((name) => !loggerMethods.has(name))) {
@@ -108,10 +122,10 @@ export const isUnavailableCapabilitySetterNoop = (fn: FnLike): boolean => {
   const propertyName = objectMemberNameForFunction(fn)
   if (!/^set[A-Z].*Value$/.test(propertyName)) return false
 
-  return object.getProperties().some((property) => {
-    if (!Node.isPropertyAssignment(property)) return false
+  return object.properties.some((property) => {
+    if (!isPropertyAssignment(property)) return false
     const name = propertyNameOf(property)
-    const value = property.getInitializer()?.getText().trim()
+    const value = property.initializer === undefined ? undefined : textOf(property.initializer).trim()
     return (
       (name === "requiresCredential" && value === "false") ||
       (name === "credentialPath" && /^["']{2}$/.test(value ?? ""))
