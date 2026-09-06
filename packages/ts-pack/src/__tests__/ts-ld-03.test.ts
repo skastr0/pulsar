@@ -4,7 +4,7 @@ import { Effect, Layer, Schema } from "effect"
 import { TS_PACK_SIGNALS } from "../pack.js"
 import { TsLd03, TsLd03Config } from "../signals/ts-ld-03-nesting-depth.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
-import { TsProjectLayer } from "../ts-project.js"
+import { TsAnalysisLayer } from "../ts-analysis.js"
 import { makePulsarSelfCalibrationContext } from "./pulsar-self-calibration.js"
 
 let repo: TempRepo
@@ -331,7 +331,7 @@ describe("TS-LD-03 (nesting depth)", () => {
       }, new Map()).pipe(
         Effect.provide(
           Layer.mergeAll(
-            TsProjectLayer(repo.root),
+            TsAnalysisLayer(repo.root),
             Layer.succeed(CalibrationContextTag, calibrationContext),
           ),
         ),
@@ -418,7 +418,7 @@ describe("TS-LD-03 (nesting depth)", () => {
       }, new Map()).pipe(
         Effect.provide(
           Layer.mergeAll(
-            TsProjectLayer(repo.root),
+            TsAnalysisLayer(repo.root),
             Layer.succeed(CalibrationContextTag, calibrationContext),
           ),
         ),
@@ -465,7 +465,7 @@ describe("TS-LD-03 (nesting depth)", () => {
       }, new Map()).pipe(
         Effect.provide(
           Layer.mergeAll(
-            TsProjectLayer(repo.root),
+            TsAnalysisLayer(repo.root),
             Layer.succeed(CalibrationContextTag, calibrationContext),
           ),
         ),

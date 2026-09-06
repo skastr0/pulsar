@@ -47,6 +47,16 @@ export {
   isVariableDeclaration,
   isVoidExpression,
 } from "tsgo-typescript/unstable/ast/is"
+export {
+  isDoStatement,
+  isForInStatement,
+  isForOfStatement,
+  isForStatement,
+  isIfStatement,
+  isSwitchStatement,
+  isTryStatement,
+  isWhileStatement,
+} from "tsgo-typescript/unstable/ast/is"
 export { forEachLeadingCommentRange } from "tsgo-typescript/unstable/ast/scanner"
 export { isMethodSignatureDeclaration as isMethodSignature } from "tsgo-typescript/unstable/ast/is"
 export type { MethodSignatureDeclaration as MethodSignature } from "tsgo-typescript/unstable/ast"

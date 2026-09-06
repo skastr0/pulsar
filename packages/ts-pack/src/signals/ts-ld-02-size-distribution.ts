@@ -2,8 +2,12 @@ import { SignalComputeError } from "@skastr0/pulsar-core/signal"
 import type { Signal } from "@skastr0/pulsar-core/signal"
 import { CalibrationContextTag } from "@skastr0/pulsar-core/calibration"
 import { Effect } from "effect"
-import { TsProjectTag } from "../ts-project.js"
-import { collectProjectSizes } from "./ts-ld-02-counting.js"
+import { TsAnalysisTag } from "../ts-analysis.js"
+import {
+  collectSourceFileSizesIfIncluded,
+  emptyCollectedSizes,
+  mergeCollectedSizes,
+} from "./ts-ld-02-counting.js"
 import { diagnoseTsLd02 } from "./ts-ld-02-diagnostics.js"
 import {
   TsLd02Config as TsLd02ConfigSchema,
@@ -32,7 +36,7 @@ import {
  *   threshold across linter defaults and team conventions. Trend
  *   metric first, hard gate later.
  */
-export const TsLd02: Signal<TsLd02ConfigType, TsLd02Output, TsProjectTag> = {
+export const TsLd02: Signal<TsLd02ConfigType, TsLd02Output, TsAnalysisTag> = {
   id: "TS-LD-02-function-size-distribution",
   title: "Function size distribution",
   aliases: ["TS-LD-02"],
@@ -94,12 +98,12 @@ export const TsLd02: Signal<TsLd02ConfigType, TsLd02Output, TsProjectTag> = {
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
-      const project = yield* TsProjectTag
+      const analysis = yield* TsAnalysisTag
       const calibration = yield* Effect.serviceOption(CalibrationContextTag)
-      const collected = yield* Effect.try({
-        try: () => collectProjectSizes(project, config),
-        catch: toSignalComputeError,
-      })
+      const fileOutputs = yield* analysis.mapFiles(async (context) =>
+        collectSourceFileSizesIfIncluded(context.sourceFile, config),
+      ).pipe(Effect.mapError(toSignalComputeError))
+      const collected = fileOutputs.reduce(mergeCollectedSizes, emptyCollectedSizes())
       const thresholds = summarizeThresholds(collected, config)
       const calibratedFunctions = yield* calibrateThresholdFunctions(
         thresholds,

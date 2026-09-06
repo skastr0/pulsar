@@ -11,7 +11,7 @@ import {
   TsLd02Config,
   type TsLd02Output,
 } from "../signals/ts-ld-02-model.js"
-import { TsProjectLayer } from "../ts-project.js"
+import { TsAnalysisLayer } from "../ts-analysis.js"
 import { makePulsarSelfCalibrationContext } from "./pulsar-self-calibration.js"
 
 let repo: string
@@ -25,7 +25,7 @@ const writeTs = async (relPath: string, content: string): Promise<string> => {
 
 const runCompute = async (config = TsLd02.defaultConfig): Promise<TsLd02Output> => {
   const program = TsLd02.compute(config, new Map()).pipe(
-    Effect.provide(TsProjectLayer(repo)),
+    Effect.provide(TsAnalysisLayer(repo)),
   )
   return Effect.runPromise(program as Effect.Effect<TsLd02Output, unknown, never>)
 }
@@ -37,7 +37,7 @@ const runComputeWithCalibration = async (
   const program = TsLd02.compute(config, new Map()).pipe(
     Effect.provide(
       Layer.mergeAll(
-        TsProjectLayer(repo),
+        TsAnalysisLayer(repo),
         Layer.succeed(CalibrationContextTag, calibration),
       ),
     ),
@@ -704,7 +704,7 @@ describe("TS-LD-02 (function / file size distribution)", () => {
       }, new Map()).pipe(
         Effect.provide(
           Layer.mergeAll(
-            TsProjectLayer(repo),
+            TsAnalysisLayer(repo),
             Layer.succeed(CalibrationContextTag, calibrationContext),
           ),
         ),

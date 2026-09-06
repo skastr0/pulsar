@@ -1,4 +1,3 @@
-import { type Project, type SourceFile, ts } from "ts-morph"
 import {
   isCompilerFunctionLike,
   type CompilerFunctionLike,
@@ -10,30 +9,44 @@ import type {
   FunctionSizeCandidate,
   TsLd02Config,
 } from "./ts-ld-02-model.js"
+import type { Node, SourceFile } from "../tsgo-api.js"
 
-export const collectProjectSizes = (
-  project: Project,
+export const emptyCollectedSizes = (): CollectedSizes => ({
+  perFileFunctionLocs: new Map(),
+  fileLocs: [],
+  allFunctionLocs: [],
+  allFunctions: [],
+  allFiles: [],
+})
+
+export const mergeCollectedSizes = (
+  collected: CollectedSizes,
+  next: CollectedSizes,
+): CollectedSizes => {
+  for (const [file, values] of next.perFileFunctionLocs) {
+    collected.perFileFunctionLocs.set(file, values)
+  }
+  collected.fileLocs.push(...next.fileLocs)
+  collected.allFunctionLocs.push(...next.allFunctionLocs)
+  collected.allFunctions.push(...next.allFunctions)
+  collected.allFiles.push(...next.allFiles)
+  return collected
+}
+
+export const collectSourceFileSizesIfIncluded = (
+  sourceFile: SourceFile,
   config: TsLd02Config,
 ): CollectedSizes => {
-  const perFileFunctionLocs = new Map<string, Array<number>>()
-  const fileLocs: Array<number> = []
-  const allFunctionLocs: Array<number> = []
-  const allFunctions: Array<FunctionSizeCandidate> = []
-  const allFiles: Array<{ file: string; loc: number }> = []
-
-  for (const sf of project.getSourceFiles()) {
-    const path = sf.getFilePath()
-    if (isExcluded(path, config.exclude_globs)) continue
-    collectSourceFileSizes(sf, {
-      perFileFunctionLocs,
-      fileLocs,
-      allFunctionLocs,
-      allFunctions,
-      allFiles,
-    })
-  }
-
-  return { perFileFunctionLocs, fileLocs, allFunctionLocs, allFunctions, allFiles }
+  const collected = emptyCollectedSizes()
+  if (isExcluded(sourceFile.fileName, config.exclude_globs)) return collected
+  collectSourceFileSizes(sourceFile, {
+    perFileFunctionLocs: collected.perFileFunctionLocs,
+    fileLocs: collected.fileLocs,
+    allFunctionLocs: collected.allFunctionLocs,
+    allFunctions: collected.allFunctions,
+    allFiles: collected.allFiles,
+  })
+  return collected
 }
 
 const collectSourceFileSizes = (
@@ -46,8 +59,8 @@ const collectSourceFileSizes = (
     readonly allFiles: Array<{ file: string; loc: number }>
   },
 ): void => {
-  const path = sourceFile.getFilePath()
-  const locCounter = buildEffectiveLineCounter(sourceFile.getFullText())
+  const path = sourceFile.fileName
+  const locCounter = buildEffectiveLineCounter(sourceFile.text)
   collected.fileLocs.push(locCounter.total)
   collected.allFiles.push({ file: path, loc: locCounter.total })
 
@@ -141,35 +154,34 @@ const collectFunctionSizes = (
   sourceFile: SourceFile,
   locCounter: EffectiveLineCounter,
 ): ReadonlyArray<FunctionSizeCandidate> => {
-  const compilerSourceFile = sourceFile.compilerNode
-  const file = sourceFile.getFilePath()
+  const file = sourceFile.fileName
   const functions: Array<FunctionSizeCandidate> = []
 
-  const visit = (node: ts.Node): void => {
+  const visit = (node: Node): void => {
     if (isCompilerFunctionLike(node)) {
-      const start = node.getStart(compilerSourceFile)
+      const start = node.getStart(sourceFile)
       const nameInfo = functionName(node)
       functions.push({
         file,
         name: nameInfo.name,
-        line: compilerSourceFile.getLineAndCharacterOfPosition(start).line + 1,
-        loc: functionLoc(node, compilerSourceFile, locCounter),
+        line: sourceFile.getLineAndCharacterOfPosition(start).line + 1,
+        loc: functionLoc(node, sourceFile, locCounter),
         ...(nameInfo.callbackContext !== undefined
           ? { callbackContext: nameInfo.callbackContext }
           : {}),
       })
     }
 
-    ts.forEachChild(node, visit)
+    node.forEachChild(visit)
   }
 
-  visit(compilerSourceFile)
+  visit(sourceFile)
   return functions
 }
 
 const functionLoc = (
   fn: CompilerFunctionLike,
-  sourceFile: ts.SourceFile,
+  sourceFile: SourceFile,
   locCounter: EffectiveLineCounter,
 ): number => {
   const body = getFunctionBodyNode(fn)
@@ -182,16 +194,16 @@ const functionLoc = (
   return Math.max(0, locCounter.countInclusive(startLine, endLine) - nestedLoc)
 }
 
-const getFunctionBodyNode = (fn: CompilerFunctionLike): ts.Node | undefined =>
+const getFunctionBodyNode = (fn: CompilerFunctionLike): Node | undefined =>
   "body" in fn ? fn.body : undefined
 
 const collectNestedFunctionBodyLineIntervals = (
-  body: ts.Node,
-  sourceFile: ts.SourceFile,
+  body: Node,
+  sourceFile: SourceFile,
 ): ReadonlyArray<readonly [number, number]> => {
   const intervals: Array<readonly [number, number]> = []
 
-  const visit = (node: ts.Node): void => {
+  const visit = (node: Node): void => {
     if (isCompilerFunctionLike(node)) {
       const nestedBody = getFunctionBodyNode(node)
       if (nestedBody !== undefined) {
@@ -202,10 +214,10 @@ const collectNestedFunctionBodyLineIntervals = (
       }
       return
     }
-    ts.forEachChild(node, visit)
+    node.forEachChild(visit)
   }
 
-  ts.forEachChild(body, visit)
+  body.forEachChild(visit)
   return mergeLineIntervals(intervals)
 }
 

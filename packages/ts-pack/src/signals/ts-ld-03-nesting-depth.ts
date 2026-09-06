@@ -11,11 +11,29 @@ import {
   type TypeScriptNestingPolicyValue,
 } from "@skastr0/pulsar-core/calibration"
 import { Effect, Option, Schema } from "effect"
+import { TsAnalysisTag } from "../ts-analysis.js"
 import {
+  isCatchClause,
+  isConstructorDeclaration,
+  isDoStatement,
+  isForInStatement,
+  isForOfStatement,
+  isForStatement,
+  isFunctionDeclaration,
+  isFunctionExpression,
+  isGetAccessorDeclaration,
+  isIdentifier,
+  isIfStatement,
+  isMethodDeclaration,
+  isPropertyAssignment,
+  isSetAccessorDeclaration,
+  isSwitchStatement,
+  isTryStatement,
+  isVariableDeclaration,
+  isWhileStatement,
+  type Node,
   type SourceFile,
-  ts,
-} from "ts-morph"
-import { TsProjectTag } from "../ts-project.js"
+} from "../tsgo-api.js"
 import {
   compilerPropertyNameText as propertyNameText,
   isCompilerFunctionLike,
@@ -59,7 +77,7 @@ interface TsLd03Output {
   readonly calibrationDecisions: ReadonlyArray<CalibrationDecision>
 }
 
-export const TsLd03: Signal<TsLd03Config, TsLd03Output, TsProjectTag> = {
+export const TsLd03: Signal<TsLd03Config, TsLd03Output, TsAnalysisTag> = {
   id: "TS-LD-03-nesting-depth",
   title: "Nesting depth",
   aliases: ["TS-LD-03"],
@@ -120,23 +138,27 @@ export const TsLd03: Signal<TsLd03Config, TsLd03Output, TsProjectTag> = {
   inputs: [],
   compute: (config) =>
     Effect.gen(function* () {
-      const project = yield* TsProjectTag
       const calibration = yield* Effect.serviceOption(CalibrationContextTag)
+      const analysis = yield* TsAnalysisTag
+      const fileOutputs = yield* analysis.mapFiles(async (context) => {
+        if (isExcluded(context.file.path, config.exclude_globs)) return []
+        return [...collectFunctionNestings(context.sourceFile)]
+      }).pipe(Effect.mapError((cause) =>
+        new SignalComputeError({
+          signalId: "TS-LD-03-nesting-depth",
+          message: cause.message,
+          cause,
+        }),
+      ))
       const result = yield* Effect.try({
         try: (): TsLd03Output => {
           const byFunction: Array<FunctionNesting> = []
           const byFileValues = new Map<string, Array<number>>()
-
-          for (const sourceFile of project.getSourceFiles()) {
-            const file = sourceFile.getFilePath()
-            if (isExcluded(file, config.exclude_globs)) continue
-
-            const values = byFileValues.get(file) ?? []
-            for (const fn of collectFunctionNestings(sourceFile)) {
-              byFunction.push(fn)
-              values.push(fn.maxNesting)
-            }
-            byFileValues.set(file, values)
+          for (const fn of fileOutputs.flat()) {
+            byFunction.push(fn)
+            const values = byFileValues.get(fn.file) ?? []
+            values.push(fn.maxNesting)
+            byFileValues.set(fn.file, values)
           }
 
           const byFile = new Map<string, DistributionalSummary>()
@@ -262,25 +284,24 @@ const withNestingPolicy = (
 })
 
 const collectFunctionNestings = (sourceFile: SourceFile): ReadonlyArray<FunctionNesting> => {
-  const compilerSourceFile = sourceFile.compilerNode
-  const file = sourceFile.getFilePath()
+  const file = sourceFile.fileName
   const functions: Array<MutableFunctionNesting> = []
 
   const visit = (
-    node: ts.Node,
+    node: Node,
     currentFunction: MutableFunctionNesting | undefined,
     depth: number,
   ): void => {
     if (isCompilerFunctionLike(node)) {
-      const start = node.getStart(compilerSourceFile)
+      const start = node.getStart(sourceFile)
       const fn = {
         file,
         name: functionName(node),
-        line: compilerSourceFile.getLineAndCharacterOfPosition(start).line + 1,
+        line: sourceFile.getLineAndCharacterOfPosition(start).line + 1,
         maxNesting: 0,
       }
       functions.push(fn)
-      ts.forEachChild(node, (child) => visit(child, fn, 0))
+      node.forEachChild((child) => visit(child, fn, 0))
       return
     }
 
@@ -290,40 +311,40 @@ const collectFunctionNestings = (sourceFile: SourceFile): ReadonlyArray<Function
       currentFunction.maxNesting = nextDepth
     }
 
-    ts.forEachChild(node, (child) => visit(child, currentFunction, nextDepth))
+    node.forEachChild((child) => visit(child, currentFunction, nextDepth))
   }
 
-  visit(compilerSourceFile, undefined, 0)
+  visit(sourceFile, undefined, 0)
   return functions
 }
 
-const isControlFlowNode = (node: ts.Node): boolean =>
-  ts.isIfStatement(node) ||
-  ts.isForStatement(node) ||
-  ts.isForInStatement(node) ||
-  ts.isForOfStatement(node) ||
-  ts.isWhileStatement(node) ||
-  ts.isDoStatement(node) ||
-  ts.isSwitchStatement(node) ||
-  ts.isTryStatement(node) ||
-  ts.isCatchClause(node)
+const isControlFlowNode = (node: Node): boolean =>
+  isIfStatement(node) ||
+  isForStatement(node) ||
+  isForInStatement(node) ||
+  isForOfStatement(node) ||
+  isWhileStatement(node) ||
+  isDoStatement(node) ||
+  isSwitchStatement(node) ||
+  isTryStatement(node) ||
+  isCatchClause(node)
 
 const functionName = (fn: CompilerFunctionLike): string => {
   if (
-    ts.isFunctionDeclaration(fn) ||
-    ts.isMethodDeclaration(fn) ||
-    ts.isGetAccessorDeclaration(fn) ||
-    ts.isSetAccessorDeclaration(fn)
+    isFunctionDeclaration(fn) ||
+    isMethodDeclaration(fn) ||
+    isGetAccessorDeclaration(fn) ||
+    isSetAccessorDeclaration(fn)
   ) {
     return fn.name === undefined ? "<anonymous>" : propertyNameText(fn.name)
   }
-  if (ts.isConstructorDeclaration(fn)) return "constructor"
+  if (isConstructorDeclaration(fn)) return "constructor"
 
   const parent = fn.parent
-  if (ts.isVariableDeclaration(parent) && ts.isIdentifier(parent.name)) {
+  if (isVariableDeclaration(parent) && isIdentifier(parent.name)) {
     return parent.name.text
   }
-  if (ts.isPropertyAssignment(parent)) {
+  if (isPropertyAssignment(parent)) {
     return propertyNameText(parent.name)
   }
   return "<anonymous>"
