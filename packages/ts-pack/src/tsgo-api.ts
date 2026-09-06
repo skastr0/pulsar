@@ -49,6 +49,7 @@ export {
   isBinaryExpression,
   isBlock,
   isCallExpression,
+  isBindingElement,
   isCatchClause,
   isClassDeclaration,
   isClassExpression,
