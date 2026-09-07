@@ -1,0 +1,6 @@
+{
+  "schema": "pulsar/project-modules/v1",
+  "modules": [
+    { "id": "order-service", "kind": "repo-local", "path": ".pulsar/modules/orders.ts" }
+  ]
+}

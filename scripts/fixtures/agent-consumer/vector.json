@@ -1,0 +1,8 @@
+{
+  "id": "order-service",
+  "domain": "typescript",
+  "signal_overrides": {
+    "TS-SL-04": { "weight": 1.8, "config": { "hard_gate_production": true, "top_n_diagnostics": 30 } },
+    "TS-LD-02": { "weight": 0.7, "config": { "max_function_loc": 60, "max_file_loc": 350 } }
+  }
+}
