@@ -620,7 +620,7 @@ Observer scores each code change during Probe sessions. Backpressure green/yello
 
 ### TypeScript Compiler Tools → Pulsar
 
-ts-morph type graph queries provide Tier 1 signal inputs: type-level coupling, unused exports with full reachability, type indirection depth, generic complexity. All deterministic compiler queries.
+Quartz/tsgo type graph queries provide Tier 1 signal inputs: type-level coupling, unused exports with full reachability, type indirection depth, generic complexity. All deterministic compiler queries.
 
 ### Metrix → Pulsar
 
@@ -686,7 +686,7 @@ The gap: provable signals organized by rot taxonomy + type-system-exploiting lan
 ### Phase 3 — Domain Backend + Compound Signals
 
 10. Schema convention detection
-11. ts-morph type-level signals (TS-DE-01, TS-AB-03, TS-AB-05, TS-LD-06)
+11. Quartz/tsgo type-level signals (TS-DE-01, TS-AB-03, TS-AB-05, TS-LD-06)
 12. Compound signal framework (Tier 1.5 — signals that take other signals as input)
 13. Tiered caching with confidence decay
 
