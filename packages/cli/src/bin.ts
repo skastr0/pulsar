@@ -6,6 +6,11 @@ import { runWorkflowCommand } from "./cli-workflow-commands.js"
 import { CLI_BUILD_INFO, CLI_VERSION } from "./index.js"
 
 const main = async (argv: ReadonlyArray<string>): Promise<number> => {
+  if (argv[0] === "agent") {
+    const { runAgentCli } = await import("./agent-cli.js")
+    return runAgentCli(argv.slice(1))
+  }
+
   if (argv.length === 0 || argv.includes("--help") || argv.includes("-h")) {
     printHelp()
     return 0
