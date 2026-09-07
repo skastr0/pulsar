@@ -1,5 +1,5 @@
 import { createRequire } from "node:module"
-import { chmodSync, copyFileSync, mkdtempSync, renameSync } from "node:fs"
+import { chmodSync, mkdtempSync, renameSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { tmpdir } from "node:os"
 import { fileURLToPath } from "node:url"
@@ -129,16 +129,26 @@ const resolveEmbeddedTsgoExecutable = (
       })
     }
 
+    if (extractedTsgoPath !== undefined) return extractedTsgoPath
+
+    const bytes = yield* Effect.tryPromise({
+      try: () => source.arrayBuffer(),
+      catch: (cause) =>
+        new TsgoRuntimeError({
+          message: "Failed to read embedded native tsgo payload",
+          cause,
+        }),
+    })
+
     yield* Effect.try({
       try: () => {
-        if (extractedTsgoPath !== undefined) return
         const destinationDirectory = mkdtempSync(
           join(tmpdir(), `pulsar-tsgo-${analysisPlatformTarget(platform, arch)}-`),
         )
         chmodSync(destinationDirectory, 0o700)
         const destinationPath = join(destinationDirectory, "tsc")
         const stagingPath = join(destinationDirectory, "tsc.partial")
-        copyFileSync(embeddedPath, stagingPath)
+        writeFileSync(stagingPath, Buffer.from(bytes), { mode: 0o755 })
         chmodSync(stagingPath, 0o755)
         renameSync(stagingPath, destinationPath)
         extractedTsgoPath = destinationPath
