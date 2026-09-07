@@ -13,6 +13,32 @@ describe("TS-CC-01 regressions", () => {
     await repo.cleanup()
   })
 
+  test("project batches preserve file offsets, exclusions, and checker ownership", async () => {
+    for (const name of ["a", "b"]) {
+      await repo.writeJson(`packages/${name}/tsconfig.json`, {
+        compilerOptions: { strict: true },
+        include: ["src/**/*.ts"],
+      })
+      await repo.write(`packages/${name}/src/empty.ts`, "export const value = 1")
+      await repo.write(`packages/${name}/src/sync.ts`,
+        "export function send(): void {}\nsend()\nsend()")
+      await repo.write(`packages/${name}/src/async.ts`,
+        "export async function send() {}\nsend()")
+      await repo.write(`packages/${name}/src/ignored.test.ts`,
+        "export async function send() {}\nsend()")
+    }
+
+    const out = await runSignal(repo.root, TsCc01, TsCc01.defaultConfig)
+    const repeated = await runSignal(repo.root, TsCc01, TsCc01.defaultConfig)
+
+    expect(out.analyzedFiles).toBe(6)
+    expect(out.findings.map((finding) => [finding.file.slice(repo.root.length + 1), finding.kind])).toEqual([
+      ["packages/a/src/async.ts", "floating-promise"],
+      ["packages/b/src/async.ts", "floating-promise"],
+    ])
+    expect(repeated).toEqual(out)
+  })
+
   test("does not flag synchronous write calls when lib types do not resolve", async () => {
     await repo.write(
       "scripts/build.ts",

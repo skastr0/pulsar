@@ -6,7 +6,7 @@ import {
 } from "@skastr0/pulsar-core/signal"
 import { Effect, Schema } from "effect"
 import { firstAncestor, locationOf, textOf, walkDescendants } from "../ast.js"
-import { TsAnalysisTag } from "../ts-analysis.js"
+import { TsAnalysisTag, type TsFile } from "../ts-analysis.js"
 import {
   SyntaxKind,
   isArrowFunction,
@@ -98,12 +98,12 @@ export const TsCc01: Signal<TsCc01Config, TsCc01Output, TsAnalysisTag> = {
   compute: (config) =>
     Effect.gen(function* () {
       const analysis = yield* TsAnalysisTag
-      const fileOutputs = yield* analysis.mapFiles(async (context) => {
-        if (isExcluded(context.file.path, config.exclude_globs)) {
-          return emptyFileAnalysis()
-        }
-        return analyzeSourceFile(context.sourceFile, context.file.path, context.project, config)
-      }).pipe(
+      const projectOutputs = yield* Effect.forEach(
+        [...new Set(analysis.files.map((file) => file.projectId))].sort(),
+        (projectId) => analysis.withProject(projectId, (project, files) =>
+          analyzeProjectFiles(project, files, config),
+        ),
+      ).pipe(
         Effect.mapError((cause) =>
           new SignalComputeError({
             signalId: "TS-CC-01-async-failure-control",
@@ -112,7 +112,7 @@ export const TsCc01: Signal<TsCc01Config, TsCc01Output, TsAnalysisTag> = {
           }),
         ),
       )
-      return mergeFileAnalyses(fileOutputs, config)
+      return mergeFileAnalyses(projectOutputs.flat(), config)
     }),
   score: (out) => {
     const pressure = out.findings.filter((finding) => finding.kind !== "log-only-handler").length
@@ -157,28 +157,55 @@ interface FileAnalysis {
   readonly findings: ReadonlyArray<AsyncFailureFinding>
 }
 
-const emptyFileAnalysis = (): FileAnalysis => ({
-  analyzed: false,
-  asyncOperationsObserved: 0,
-  findings: [],
-})
-
-const analyzeSourceFile = async (
-  sourceFile: SourceFile,
-  filePath: string,
+const analyzeProjectFiles = async (
   project: import("../tsgo-api.js").Project,
+  files: ReadonlyArray<TsFile>,
   config: TsCc01Config,
-): Promise<FileAnalysis> => {
-  const asyncNamePatterns = config.async_name_patterns.map((pattern) => pattern.toLowerCase())
-  const calls: Array<CallExpression> = []
-  const catches: Array<CatchClause> = []
-  walkDescendants(sourceFile, (node) => {
-    if (isCallExpression(node)) calls.push(node)
-    if (isCatchClause(node)) catches.push(node)
+): Promise<ReadonlyArray<FileAnalysis>> => {
+  const sourceFiles = await Promise.all(
+    files.filter((file) => !isExcluded(file.path, config.exclude_globs))
+      .map(async (file) => ({ file, sourceFile: await project.program.getSourceFile(file.path) })),
+  )
+  const collected = sourceFiles.flatMap(({ file, sourceFile }) => {
+    if (sourceFile === undefined) return []
+    const calls: Array<CallExpression> = []
+    const catches: Array<CatchClause> = []
+    walkDescendants(sourceFile, (node) => {
+      if (isCallExpression(node)) calls.push(node)
+      if (isCatchClause(node)) catches.push(node)
+    })
+    return [{ filePath: file.path, sourceFile, calls, catches }]
   })
-
+  // Batch within one project: checker handles must never cross project boundaries.
+  const calls = collected.flatMap((file) => file.calls)
   const typeTextByCall = await typeTexts(project, calls)
   const declarationNodes = await declarationsAt(project, calls.map((call) => call.expression))
+  let offset = 0
+  return collected.map((file) => {
+    const start = offset
+    offset += file.calls.length
+    return analyzeSourceFile(
+      file.sourceFile,
+      file.filePath,
+      file.calls,
+      file.catches,
+      typeTextByCall.slice(start, offset),
+      declarationNodes.slice(start, offset),
+      config,
+    )
+  })
+}
+
+const analyzeSourceFile = (
+  sourceFile: SourceFile,
+  filePath: string,
+  calls: ReadonlyArray<CallExpression>,
+  catches: ReadonlyArray<CatchClause>,
+  typeTextByCall: ReadonlyArray<string>,
+  declarationNodes: ReadonlyArray<ReadonlyArray<Node>>,
+  config: TsCc01Config,
+): FileAnalysis => {
+  const asyncNamePatterns = config.async_name_patterns.map((pattern) => pattern.toLowerCase())
   const findings: Array<AsyncFailureFinding> = []
   let asyncOperationsObserved = 0
 
