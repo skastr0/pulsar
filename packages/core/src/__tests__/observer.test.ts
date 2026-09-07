@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { Effect, Layer, Schema } from "effect"
+import { Deferred, Effect, Layer, Schema } from "effect"
 import { buildRegistry } from "../registry.js"
 import { observe, ObserverOutput as ObserverOutputSchema, toObserverJson, type ObserverOutput } from "../observer.js"
 import {
@@ -74,6 +74,33 @@ const makeLeaf = (opts: LeafOpts): Signal<{}, { readonly n: number }, never> => 
         outputMetadata: () => opts.metadata,
       }
     : {}),
+})
+
+interface ConcurrentLeafOpts {
+  readonly id: string
+  readonly category: Category
+  readonly score: number
+  readonly inputs?: Signal<{}, { readonly n: number }, never>["inputs"]
+  readonly compute: (
+    config: {},
+    inputs: ReadonlyMap<string, unknown>,
+  ) => Effect.Effect<{ readonly n: number }, SignalError>
+}
+
+const makeConcurrentLeaf = (
+  opts: ConcurrentLeafOpts,
+): Signal<{}, { readonly n: number }, never> => ({
+  id: opts.id,
+  tier: (opts.inputs?.length ?? 0) > 0 ? 1.5 : 1,
+  category: opts.category,
+  kind: (opts.inputs?.length ?? 0) > 0 ? "compound" : "legibility",
+  evidenceClass: "deterministic-ast",
+  configSchema: Schema.Struct({}),
+  defaultConfig: {},
+  inputs: opts.inputs ?? [],
+  compute: opts.compute,
+  score: () => opts.score,
+  diagnose: () => [],
 })
 
 describe("Observer — category aggregation", () => {
@@ -1217,6 +1244,72 @@ describe("Observer — JSON output shape (AC-10)", () => {
     expect(result.runtimeProfile?.signals["TEST-A"]?.score).toBe(0.7)
     expect(result.runtimeProfile?.signals["TEST-B"]?.diagnostics).toBe(0)
     expect(decoded.runtime_profile?.signals["TEST-A"]?.duration_ms).toBeGreaterThanOrEqual(0)
+  })
+})
+
+describe("Observer — independent ready-signal concurrency", () => {
+  test("independent ready signals may complete out of start-order with deterministic outputs", async () => {
+    const started: Array<string> = []
+    const completed: Array<string> = []
+
+    const program = Effect.gen(function* () {
+      const slowMayFinish = yield* Deferred.make<void>()
+      const fast = makeConcurrentLeaf({
+        id: "TEST-FAST",
+        category: "generated-slop",
+        score: 0.4,
+        compute: () =>
+          Effect.gen(function* () {
+            started.push("TEST-FAST")
+            yield* Deferred.await(slowMayFinish)
+            completed.push("TEST-FAST")
+            return { n: 40 }
+          }),
+      })
+      const slow = makeConcurrentLeaf({
+        id: "TEST-SLOW",
+        category: "legibility-decay",
+        score: 0.7,
+        compute: () =>
+          Effect.gen(function* () {
+            started.push("TEST-SLOW")
+            yield* Deferred.succeed(slowMayFinish, undefined)
+            yield* Effect.sleep("25 millis")
+            completed.push("TEST-SLOW")
+            return { n: 70 }
+          }),
+      })
+      const compound = makeConcurrentLeaf({
+        id: "TEST-COMPOUND",
+        category: "review-pain",
+        score: 0.9,
+        inputs: [{ id: "TEST-FAST" }, { id: "TEST-SLOW" }],
+        compute: (_config, inputs) =>
+          Effect.sync(() => {
+            started.push("TEST-COMPOUND")
+            completed.push("TEST-COMPOUND")
+            return {
+              n:
+                ((inputs.get("TEST-FAST") as { n: number } | undefined)?.n ?? 0) +
+                ((inputs.get("TEST-SLOW") as { n: number } | undefined)?.n ?? 0),
+            }
+          }),
+      })
+      const registry = yield* buildRegistry([fast, slow, compound])
+      return yield* observe(registry, undefined)
+    })
+
+    const result = await Effect.runPromise(
+      program.pipe(Effect.timeout("2 seconds")) as Effect.Effect<ObserverOutput, unknown, never>,
+    )
+
+    expect(started).toEqual(["TEST-FAST", "TEST-SLOW", "TEST-COMPOUND"])
+    expect(completed[0]).toBe("TEST-FAST")
+    expect(completed).toEqual(["TEST-FAST", "TEST-SLOW", "TEST-COMPOUND"])
+    expect(result.categories["generated-slop"].signals).toEqual({ "TEST-FAST": 0.4 })
+    expect(result.categories["legibility-decay"].signals).toEqual({ "TEST-SLOW": 0.7 })
+    expect(result.categories["review-pain"].signals).toEqual({ "TEST-COMPOUND": 0.9 })
+    expect(result.signalResults.get("TEST-COMPOUND")?.output).toEqual({ n: 110 })
   })
 })
 
