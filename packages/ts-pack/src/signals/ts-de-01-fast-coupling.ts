@@ -1,5 +1,7 @@
 import { dirname, normalize, resolve } from "node:path"
 import { existsSync } from "node:fs"
+import { readPathAliases } from "./ts-de-04-path-aliases.js"
+import type { TsconfigPathAlias } from "./ts-de-04-path-aliases.js"
 import { textOf, walkDescendants } from "../ast.js"
 import {
   isExportDeclaration,
@@ -33,12 +35,12 @@ import {
   type TsDe01Output,
 } from "./ts-de-01-coupling-output.js"
 
-export const computeFastImportTypeCoupling = (
+export const computeFastImportTypeCoupling = async (
   sourceFiles: ReadonlyArray<SourceFile>,
   diagnosticLimit: number,
-): TsDe01Output => {
+): Promise<TsDe01Output> => {
   const fileSet = new Set<string>(sourceFiles.map((sourceFile) => sourceFile.fileName))
-  const resolution = createFastResolutionContext(sourceFiles)
+  const resolution = await createFastResolutionContext(sourceFiles)
   const { outgoing, incoming } = createCouplingTables(fileSet)
 
   for (const sourceFile of sourceFiles) {
@@ -81,11 +83,7 @@ interface FastTypeTarget {
 interface FastResolutionContext {
   readonly sourceFileByPath: ReadonlyMap<string, SourceFile>
   readonly pathLookup: ReadonlyMap<string, string>
-  readonly baseUrl?: string
-  readonly paths: ReadonlyArray<{
-    readonly pattern: string
-    readonly replacements: ReadonlyArray<string>
-  }>
+  readonly aliasesByConfigDir: ReadonlyMap<string, ReadonlyArray<TsconfigPathAlias>>
 }
 
 const importedTypeTargetsForFile = (
@@ -237,20 +235,19 @@ const resolveModuleSpecifier = (
     return lookupResolvedPath(resolved, resolution.pathLookup)
   }
 
-  if (resolution.baseUrl !== undefined) {
-    for (const { pattern, replacements } of resolution.paths) {
-      const wildcard = pathPatternWildcard(pattern, moduleSpecifier)
-      if (wildcard === undefined) continue
-      for (const replacement of replacements) {
-        const candidate = normalizePath(
-          resolve(resolution.baseUrl, replacement.replace("*", wildcard)),
-        )
-        const resolved = lookupResolvedPath(candidate, resolution.pathLookup)
-        if (resolved !== undefined) return resolved
-      }
+  const configDir = nearestTsconfigDir(sourcePath)
+  const aliases = resolution.aliasesByConfigDir.get(configDir) ?? []
+  for (const alias of aliases) {
+    const wildcard = pathPatternWildcard(alias.pattern, moduleSpecifier)
+    if (wildcard === undefined) continue
+    for (const replacement of alias.replacements) {
+      const candidate = normalizePath(
+        resolve(alias.baseDir, replacement.replace("*", wildcard)),
+      )
+      const resolved = lookupResolvedPath(candidate, resolution.pathLookup)
+      if (resolved !== undefined) return resolved
     }
   }
-
   return undefined
 }
 
@@ -291,24 +288,24 @@ const resolveReExportedTypeTarget = (
   return filePath
 }
 
-const createFastResolutionContext = (
+const createFastResolutionContext = async (
   sourceFiles: ReadonlyArray<SourceFile>,
-): FastResolutionContext => {
+): Promise<FastResolutionContext> => {
   const sourceFileByPath = new Map<string, SourceFile>()
   for (const sourceFile of sourceFiles) {
     sourceFileByPath.set(sourceFile.fileName, sourceFile)
   }
 
-  const firstFile = sourceFiles[0]?.fileName
-  const configDir = firstFile === undefined ? undefined : nearestTsconfigDir(firstFile)
+  const aliasesByConfigDir = new Map<string, ReadonlyArray<TsconfigPathAlias>>()
+  for (const sourceFile of sourceFiles) {
+    const configDir = nearestTsconfigDir(sourceFile.fileName)
+    if (aliasesByConfigDir.has(configDir)) continue
+    aliasesByConfigDir.set(configDir, await readPathAliases(resolve(configDir, "tsconfig.json")))
+  }
   return {
     sourceFileByPath,
     pathLookup: buildPathLookup(sourceFiles),
-    ...(configDir === undefined ? {} : { baseUrl: configDir }),
-    paths: [
-      { pattern: "#/*", replacements: ["src/*"] },
-      { pattern: "@/*", replacements: ["src/*"] },
-    ],
+    aliasesByConfigDir,
   }
 }
 

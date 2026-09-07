@@ -26,6 +26,7 @@ import {
   isTypeOfExpression,
   isVariableDeclaration,
   isVariableDeclarationList,
+  isVariableStatement,
   type ArrowFunction,
   type CallExpression,
   type FunctionDeclaration,
@@ -383,22 +384,26 @@ const bindingInScope = (scope: Node, name: string): Node | undefined => {
     }
   }
   if (isBlock(scope) || scope.kind === SyntaxKind.SourceFile) {
-    let found: Node | undefined
-    const visit = (node: Node): void => {
-      if (found !== undefined) return
-      if (isVariableDeclaration(node) && isIdentifier(node.name) && node.name.text === name) {
-        found = node
-        return
-      }
-      if (isFunctionDeclaration(node) && node.name?.text === name) {
-        found = node
-        return
-      }
-      if (node !== scope && isFunctionScopeNode(node)) return
-      node.forEachChild(visit)
+    return bindingInDirectStatements(scope, name)
+  }
+  return undefined
+}
+
+const bindingInDirectStatements = (scope: Node, name: string): Node | undefined => {
+  const statements =
+    "statements" in scope && Array.isArray((scope as { statements?: ReadonlyArray<Node> }).statements)
+      ? (scope as { statements: ReadonlyArray<Node> }).statements
+      : []
+  for (const statement of statements) {
+    if (isFunctionDeclaration(statement) && statement.name?.text === name) return statement
+    if (isVariableDeclaration(statement) && isIdentifier(statement.name) && statement.name.text === name) {
+      return statement
     }
-    scope.forEachChild(visit)
-    return found
+    if (isVariableStatement(statement)) {
+      for (const declaration of variableDeclarationsOf(statement)) {
+        if (isIdentifier(declaration.name) && declaration.name.text === name) return declaration
+      }
+    }
   }
   return undefined
 }
@@ -418,7 +423,18 @@ const hasNonDefinitionWrite = (declaration: VariableDeclaration): boolean => {
 }
 
 const assignmentOperator = (node: import("../tsgo-api.js").BinaryExpression): boolean =>
-  node.operatorToken.kind === SyntaxKind.EqualsToken
+  node.operatorToken.kind === SyntaxKind.EqualsToken ||
+  node.operatorToken.kind === SyntaxKind.PlusEqualsToken ||
+  node.operatorToken.kind === SyntaxKind.MinusEqualsToken ||
+  node.operatorToken.kind === SyntaxKind.AsteriskEqualsToken ||
+  node.operatorToken.kind === SyntaxKind.SlashEqualsToken ||
+  node.operatorToken.kind === SyntaxKind.PercentEqualsToken ||
+  node.operatorToken.kind === SyntaxKind.AmpersandEqualsToken ||
+  node.operatorToken.kind === SyntaxKind.BarEqualsToken ||
+  node.operatorToken.kind === SyntaxKind.CaretEqualsToken ||
+  node.operatorToken.kind === SyntaxKind.BarBarEqualsToken ||
+  node.operatorToken.kind === SyntaxKind.AmpersandAmpersandEqualsToken ||
+  node.operatorToken.kind === SyntaxKind.QuestionQuestionEqualsToken
 
 export const isDirectlyWithinFunction = (
   node: Node,
@@ -437,6 +453,11 @@ const FUNCTION_SCOPE_KINDS: ReadonlySet<SyntaxKind> = new Set([
 
 const isFunctionScopeNode = (node: Node): boolean =>
   FUNCTION_SCOPE_KINDS.has(node.kind)
+
+const variableDeclarationsOf = (statement: Node): ReadonlyArray<VariableDeclaration> => {
+  if (!isVariableStatement(statement)) return []
+  return [...statement.declarationList.declarations]
+}
 
 const collectKind = <T extends Node>(root: Node, predicate: (node: Node) => node is T): ReadonlyArray<T> => {
   const results: Array<T> = []

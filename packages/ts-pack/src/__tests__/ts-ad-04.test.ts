@@ -360,6 +360,31 @@ describe("TS-AD-04 (boundary parser coverage)", () => {
     ])
   })
 
+  test("does not credit nested-block shadowing or compound writes as parser evidence", async () => {
+    await repo.write(
+      "src/routes/shadow.ts",
+      [
+        "const WebhookSchema = { safeParse: (value: unknown) => ({ success: true, data: value }) }",
+        "export function POST(input: unknown) {",
+        "  {",
+        "    const copy = input",
+        "  }",
+        "  const copy = { unrelated: true }",
+        "  return WebhookSchema.safeParse(copy)",
+        "}",
+        "export function PUT(input: unknown) {",
+        "  let body = input",
+        "  body += \"\"",
+        "  return WebhookSchema.safeParse(body)",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await run()
+    expect(out.covered).toEqual([])
+    expect(out.findings.map((finding) => finding.symbol).sort()).toEqual(["POST", "PUT"])
+  })
+
   test("keeps cast-only boundary body aliases uncovered", async () => {
     await repo.write(
       "src/routes/enterprise.ts",

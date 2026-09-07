@@ -29,6 +29,7 @@ import {
 import { TsAnalysisTag, TsPackageInfoTag } from "../ts-analysis.js"
 import { hasExportModifier, hasDefaultModifier } from "../ast.js"
 import type { PackageInfo } from "../discovery.js"
+import { createModuleResolver } from "../graph/module-graph.js"
 import { publicEntrypointSourceFiles } from "./ts-ab-02-public-entrypoints.js"
 import {
   PRODUCTION_EXCLUDE_GLOBS,
@@ -83,7 +84,7 @@ export const TsBp01: Signal<TsBp01Config, TsBp01Output, TsAnalysisTag | TsPackag
   category: "behavior-preservation",
   kind: "structural",
   evidenceClass: "deterministic-ast",
-  cacheVersion: "public-api-signature-diff-v2-entrypoints",
+  cacheVersion: "public-api-signature-diff-v3-reexport-targets",
   configSchema: TsBp01Config,
   defaultConfig: {
     exclude_globs: [...PRODUCTION_EXCLUDE_GLOBS],
@@ -173,12 +174,14 @@ const computePublicApiSignatureDiff = (
     packages,
     config.public_entry_globs,
   )
+  const sourceFileByPath = new Map(sourceFiles.map((sourceFile) => [sourceFile.fileName, sourceFile]))
+  const resolver = createModuleResolver(sourceFiles, packages)
 
   for (const sourceFile of sourceFiles) {
     if (!isAnalyzableSourceFile(sourceFile, config.exclude_globs)) continue
     if (!publicEntryFiles.has(sourceFile.fileName)) continue
     analyzedFiles += 1
-    for (const exported of collectExportedDeclarations(sourceFile)) {
+    for (const exported of collectExportedDeclarations(sourceFile, sourceFileByPath, resolver)) {
       const location = locationOf(exported.declaration)
       const signature = signatureOf(exported.exportName, exported.declaration)
       const key = `${location.file}:${location.line}:${exported.exportName}:${signature}`
@@ -232,11 +235,13 @@ const signatureOf = (exportName: string, declaration: Node): string => {
   if (isFunctionDeclaration(declaration)) {
     const params = declaration.parameters.map((param) => {
       const name = isIdentifier(param.name) ? param.name.text : textOf(param.name)
-      const typeText = param.type === undefined ? "any" : textOf(param.type)
+      const typeText = param.type === undefined ? "" : textOf(param.type)
       return `${name}: ${typeText}`
     })
-    const returnType = declaration.type === undefined ? "void" : textOf(declaration.type)
-    return `function ${exportName}(${params.join(", ")}): ${returnType}`
+    const returnType = declaration.type === undefined ? "" : textOf(declaration.type)
+    return returnType.length === 0
+      ? `function ${exportName}(${params.join(", ")})`
+      : `function ${exportName}(${params.join(", ")}): ${returnType}`
   }
   if (isClassDeclaration(declaration)) {
     return `class ${exportName}`
@@ -251,14 +256,21 @@ const signatureOf = (exportName: string, declaration: Node): string => {
     return compact(textOf(declaration))
   }
   if (isVariableDeclaration(declaration)) {
-    return `const ${exportName}: ${declaration.type === undefined ? "unknown" : textOf(declaration.type)}`
+    return declaration.type === undefined
+      ? `const ${exportName}`
+      : `const ${exportName}: ${textOf(declaration.type)}`
   }
   return compact(textOf(declaration))
 }
 
 const collectExportedDeclarations = (
   sourceFile: SourceFile,
+  sourceFileByPath: ReadonlyMap<string, SourceFile>,
+  resolver: ReturnType<typeof createModuleResolver>,
+  seen: ReadonlySet<string> = new Set(),
 ): ReadonlyArray<{ readonly exportName: string; readonly declaration: Node }> => {
+  if (seen.has(sourceFile.fileName)) return []
+  const nextSeen = new Set(seen).add(sourceFile.fileName)
   const exported: Array<{ exportName: string; declaration: Node }> = []
   for (const statement of sourceFile.statements) {
     if (isFunctionDeclaration(statement) || isClassDeclaration(statement) || isInterfaceDeclaration(statement) || isTypeAliasDeclaration(statement) || isEnumDeclaration(statement)) {
@@ -278,10 +290,34 @@ const collectExportedDeclarations = (
       exported.push({ exportName: "default", declaration: statement })
       continue
     }
-    if (isExportDeclaration(statement) && statement.exportClause !== undefined && isNamedExports(statement.exportClause)) {
-      for (const specifier of statement.exportClause.elements) {
-        const exportName = isIdentifier(specifier.name) ? specifier.name.text : textOf(specifier.name)
-        exported.push({ exportName, declaration: specifier })
+    if (!isExportDeclaration(statement)) continue
+    const specifier = statement.moduleSpecifier === undefined
+      ? undefined
+      : isStringLiteral(statement.moduleSpecifier) || isNoSubstitutionTemplateLiteral(statement.moduleSpecifier)
+        ? statement.moduleSpecifier.text
+        : undefined
+    const targetPath = specifier === undefined
+      ? undefined
+      : resolver.resolveSpecifier(sourceFile.fileName, specifier)
+    const targetFile = targetPath === undefined ? undefined : sourceFileByPath.get(targetPath)
+    if (statement.exportClause === undefined) {
+      if (targetFile === undefined) continue
+      exported.push(...collectExportedDeclarations(targetFile, sourceFileByPath, resolver, nextSeen))
+      continue
+    }
+    if (isNamedExports(statement.exportClause)) {
+      for (const named of statement.exportClause.elements) {
+        const exportName = isIdentifier(named.name) ? named.name.text : textOf(named.name)
+        const importedName = named.propertyName === undefined
+          ? exportName
+          : (isIdentifier(named.propertyName) ? named.propertyName.text : textOf(named.propertyName))
+        if (targetFile === undefined) {
+          exported.push({ exportName, declaration: named })
+          continue
+        }
+        const resolved = collectExportedDeclarations(targetFile, sourceFileByPath, resolver, nextSeen)
+          .find((entry) => entry.exportName === importedName)
+        exported.push(resolved === undefined ? { exportName, declaration: named } : { exportName, declaration: resolved.declaration })
       }
     }
   }

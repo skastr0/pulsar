@@ -48,7 +48,7 @@ export const isLocalPathAliasUsage = (
   )
 }
 
-const readPathAliases = async (
+export const readPathAliases = async (
   tsconfigPath: string,
 ): Promise<ReadonlyArray<TsconfigPathAlias>> => {
   const config = await readPathAliasConfig(tsconfigPath, new Set<string>())

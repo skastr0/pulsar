@@ -381,6 +381,27 @@ describe("TypeScript trust-domain and AI-slop signals", () => {
     expect(TsBp01.diagnose(out)).toEqual([])
   })
 
+  test("TS-BP-01 follows named and star re-exports to the target declaration", async () => {
+    await repo.writeJson("package.json", {
+      name: "temp-workspace",
+      private: true,
+      main: "./src/index.ts",
+    })
+    await repo.write(
+      "src/foo.ts",
+      ["export function foo(id: string): string {", "  return id", "}"].join("\n"),
+    )
+    await repo.write("src/index.ts", "export { foo } from './foo'\nexport * from './foo'\n")
+
+    const out = await runBp([
+      { file: "src/foo.ts", oldStart: 1, oldLines: 1, newStart: 1, newLines: 1 },
+    ])
+
+    expect(out.changedPublicSignatures.some((finding) => finding.exportName === "foo")).toBe(true)
+    expect(out.changedPublicSignatures[0]?.file.endsWith("src/foo.ts")).toBe(true)
+    expect(out.changedPublicSignatures[0]?.signature.includes(": void")).toBe(false)
+  })
+
   test("TS-SL-05 flags test blocks with no oracle", async () => {
     await repo.write(
       "src/foo.test.ts",

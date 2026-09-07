@@ -119,7 +119,7 @@ export const TsAd04: Signal<TsAd04Config, TsAd04Output, TsAnalysisTag> = {
   kind: "structural",
   evidenceClass: "heuristic-pattern",
   cacheVersion:
-    "ts-boundary-parser-evidence-v7-symbol-proven-ingress-project-callers-auditable-exclusions",
+    "ts-boundary-parser-evidence-v8-lexical-binding-compound-write",
   configSchema: TsAd04Config,
   defaultConfig: {
     boundary_globs: [

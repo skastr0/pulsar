@@ -77,7 +77,7 @@ describe("TS-DE-01 (type-level coupling)", () => {
       tier: 1,
       category: "dependency-entropy",
       kind: "legibility",
-      cacheVersion: "factor-policy-v1-diagnostic-limit-v1-fast-import-type-v1",
+      cacheVersion: "factor-policy-v1-diagnostic-limit-v1-fast-import-type-v2-tsconfig-aliases",
       inputs: [],
     })
     expect(registered?.id).toBe(TsDe01.id)
@@ -292,6 +292,40 @@ describe("TS-DE-01 (type-level coupling)", () => {
       },
     ])
     expect(fastByFile.get(a)?.typesReferencedExternally).toBe(1)
+  })
+
+  test("resolves custom tsconfig path aliases instead of hardcoded @/*", async () => {
+    await writeFile(
+      join(repo, "tsconfig.json"),
+      JSON.stringify({
+        compilerOptions: {
+          target: "ES2022",
+          module: "ESNext",
+          moduleResolution: "Bundler",
+          baseUrl: ".",
+          paths: {
+            "@models/*": ["lib/models/*"],
+          },
+        },
+        include: ["**/*.ts"],
+      }),
+    )
+    const model = await writeTs("lib/models/user.ts", "export interface User { id: string }\n")
+    const consumer = await writeTs(
+      "src/consumer.ts",
+      ["import type { User } from '@models/user'", "export type Consumer = User", ""].join("\n"),
+    )
+    const out = await runCompute()
+    const entry = out.modules.find((module) => module.file === consumer)
+    expect(entry?.externalTypesReferenced).toBe(1)
+    expect(entry?.counterparts).toEqual([
+      {
+        module: model,
+        outgoingTypes: 1,
+        incomingTypes: 0,
+        totalTypes: 1,
+      },
+    ])
   })
 
   test("large-project fast path attributes re-export imports to original type definitions", async () => {
