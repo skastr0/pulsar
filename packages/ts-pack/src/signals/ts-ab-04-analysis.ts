@@ -455,7 +455,9 @@ const isImplementationReference = (reference: Node): boolean =>
   isClassImplementsReference(reference) || isTypedObjectLiteralReference(reference)
 
 const isClassImplementsReference = (reference: Node): boolean => {
-  const heritageExpression = firstAncestor(reference, isExpressionWithTypeArguments)
+  const heritageExpression =
+    firstAncestor(reference, isExpressionWithTypeArguments) ??
+    firstAncestor(reference, isTypeReferenceNode)
   if (heritageExpression === undefined || !isHeritageClause(heritageExpression.parent)) return false
   return heritageExpression.parent.token === SyntaxKind.ImplementsKeyword
 }
@@ -745,7 +747,7 @@ const unwrapParenthesizedExpression = (node: Node): Node => {
 }
 
 const resolveInterfaceKeysFromReference = (
-  reference: ExpressionWithTypeArguments,
+  reference: ExpressionWithTypeArguments | import("../tsgo-api.js").TypeReferenceNode,
   index: InterfaceIndex,
 ): ReadonlyArray<string> => resolveInterfaceDeclarations(reference, index).map(interfaceKey)
 
@@ -876,7 +878,7 @@ const variableName = (declaration: VariableDeclaration): string =>
 
 const implementsTypes = (
   node: ClassDeclaration | ClassExpression,
-): ReadonlyArray<ExpressionWithTypeArguments> =>
+): ReadonlyArray<ExpressionWithTypeArguments | import("../tsgo-api.js").TypeReferenceNode> =>
   (node.heritageClauses ?? [])
     .filter((clause) => clause.token === SyntaxKind.ImplementsKeyword)
     .flatMap((clause) => [...clause.types])

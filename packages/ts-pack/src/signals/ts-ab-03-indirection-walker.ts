@@ -182,7 +182,7 @@ const aliasCacheKey = (aliasId: string, context: WalkContext): string =>
   ].join("|")
 
 const measureHeritageType = (
-  typeNode: ExpressionWithTypeArguments,
+  typeNode: ExpressionWithTypeArguments | import("../tsgo-api.js").TypeReferenceNode,
   context: WalkContext,
 ): DepthResult => {
   const aliasDeclaration = resolveAliasDeclaration(typeNode, context)
@@ -196,7 +196,7 @@ const measureHeritageType = (
   )
   if (heritageDeclaration !== undefined) {
     return layerResult(
-      declarationName(heritageDeclaration) ?? textOf(typeNode.expression),
+      declarationName(heritageDeclaration) ?? textOf(isExpressionWithTypeArguments(typeNode) ? typeNode.expression : typeNode.typeName),
       [
         measureDeclaration(heritageDeclaration, stepContext(context)),
         ...typeArgumentResults,
@@ -322,7 +322,7 @@ const resolveAliasDeclaration = (
 }
 
 const resolveHeritageDeclaration = (
-  node: ExpressionWithTypeArguments,
+  node: ExpressionWithTypeArguments | import("../tsgo-api.js").TypeReferenceNode,
   context: WalkContext,
 ): InterfaceDeclaration | ClassDeclaration | undefined => {
   const name = resolveReferenceLikeName(node)

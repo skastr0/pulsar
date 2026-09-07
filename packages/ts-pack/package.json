@@ -44,10 +44,10 @@
   "dependencies": {
     "@skastr0/pulsar-core": "0.1.5",
     "@skastr0/pulsar-shared-signals": "0.1.5",
-    "@skastr0/quartz-engine": "0.2.0",
+    "@skastr0/quartz-engine": "0.2.1",
     "effect": "4.0.0-rc.112",
     "simple-git": "^3.25.0",
-    "tsgo-typescript": "npm:typescript@7.1.0-dev.20260723.1"
+    "tsgo-typescript": "npm:typescript@7.1.0-dev.20260905.1"
   },
   "devDependencies": {
     "@skastr0/pulsar-project-module-nextjs": "workspace:*",
@@ -55,9 +55,9 @@
     "typescript": "7.0.2"
   },
   "optionalDependencies": {
-    "@typescript/typescript-darwin-arm64": "7.1.0-dev.20260723.1",
-    "@typescript/typescript-darwin-x64": "7.1.0-dev.20260723.1",
-    "@typescript/typescript-linux-arm64": "7.1.0-dev.20260723.1",
-    "@typescript/typescript-linux-x64": "7.1.0-dev.20260723.1"
+    "@typescript/typescript-darwin-arm64": "7.1.0-dev.20260905.1",
+    "@typescript/typescript-darwin-x64": "7.1.0-dev.20260905.1",
+    "@typescript/typescript-linux-arm64": "7.1.0-dev.20260905.1",
+    "@typescript/typescript-linux-x64": "7.1.0-dev.20260905.1"
   }
 }

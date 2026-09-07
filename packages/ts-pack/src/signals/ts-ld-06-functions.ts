@@ -1,4 +1,4 @@
-import { hasModifier } from "../ast.js"
+import { hasModifier, heritageTypeExpression } from "../ast.js"
 import {
   SyntaxKind,
   isArrowFunction,
@@ -309,7 +309,10 @@ const classExtendsIdentifier = (node: Node, name: string): boolean =>
   (isClassDeclaration(node) ? node.heritageClauses : undefined)?.some(
     (clause) =>
       clause.token === SyntaxKind.ExtendsKeyword &&
-      clause.types.some((heritage) => expressionMatchesIdentifier(heritage.expression, name)),
+      clause.types.some((heritage) => {
+        const expression = heritageTypeExpression(heritage)
+        return expression !== undefined && expressionMatchesIdentifier(expression, name)
+      }),
   ) ?? false
 
 const expressionMatchesIdentifier = (expression: Node, name: string): boolean => {

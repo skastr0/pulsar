@@ -21,7 +21,7 @@ export const declarationsAt = async (
     symbols.map(async (symbol) => {
       if (symbol === undefined) return []
       const resolved = await Promise.all(symbol.declarations.map((handle) => handle.resolve(project)))
-      return resolved.filter((node): node is Node => node !== undefined)
+      return resolved.filter((node): node is NonNullable<typeof node> => node !== undefined)
     }),
   )
 }

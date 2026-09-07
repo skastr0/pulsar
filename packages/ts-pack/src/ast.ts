@@ -1,5 +1,7 @@
 import {
   SyntaxKind,
+  isExpressionWithTypeArguments,
+  isTypeReferenceNode,
   type FunctionDeclaration,
   type MethodDeclaration,
   type ModifierLike,
@@ -50,6 +52,17 @@ export function firstAncestor(
 
 export const textOf = (node: Node | undefined, sourceFile?: SourceFile): string =>
   node === undefined ? "" : node.getText(sourceFile ?? node.getSourceFile())
+
+export const heritageTypeExpression = (node: Node): Node | undefined => {
+  if (isExpressionWithTypeArguments(node)) return node.expression
+  if (isTypeReferenceNode(node)) return node.typeName
+  return undefined
+}
+
+export const isHeritageTypeNode = (
+  node: Node,
+): node is import("./tsgo-api.js").ExpressionWithTypeArguments | import("./tsgo-api.js").TypeReferenceNode =>
+  isExpressionWithTypeArguments(node) || isTypeReferenceNode(node)
 
 export const locationOf = (node: Node, filePath: string): SourceLocation => {
   const sourceFile = node.getSourceFile()

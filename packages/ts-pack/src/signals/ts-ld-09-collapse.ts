@@ -1,4 +1,4 @@
-import { textOf } from "../ast.js"
+import { heritageTypeExpression, textOf } from "../ast.js"
 import {
   SyntaxKind,
   isArrayLiteralExpression,
@@ -178,7 +178,7 @@ const classHeritageIsErrorLike = (className: string, sourceFile: import("../tsgo
     if (errorLike) return
     if (isClassDeclaration(node) && node.name?.text === className) {
       errorLike = (node.heritageClauses ?? []).some((clause) =>
-        clause.types.some((type) => /Error\b/u.test(textOf(type.expression, sourceFile))),
+        clause.types.some((type) => /Error\b/u.test(textOf(heritageTypeExpression(type), sourceFile))),
       )
       return
     }
