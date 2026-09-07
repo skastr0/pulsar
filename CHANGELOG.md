@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project follows Semantic Versioning for its declared public API.
 
+## [0.2.0] - 2026-09-07
+
+### Added
+
+- Scored TypeScript through Quartz 0.2.1 and pinned tsgo `7.1.0-dev.20260905.1` instead of ts-morph.
+- Embedded the native tsgo `lib/` tree in compiled CLI binaries so native score can open Quartz without a host TypeScript install.
+
+### Changed
+
+- Ready observer batches now run independent signals with unbounded Effect concurrency.
+- Live worktree and single-signal CLI runs reuse one scoped Quartz session instead of reopening analysis for every observation.
+- Module-graph aliases resolve only from declared tsconfig `paths`; `@/* → src/*` is no longer invented.
+
+### Fixed
+
+- Native extract copies sibling `lib.d.ts` with `tsc`, so tsgo no longer panics and hangs CI.
+- AD-04 inherited parser credit requires a proven callee binding, not a same-name match across files.
+- Native CLI compile now uses package dist and keeps onboard catalog tests out of the tsc project.
+
 ## [0.1.5] - 2026-08-17
 
 ### Added

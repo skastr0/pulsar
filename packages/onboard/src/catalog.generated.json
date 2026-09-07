@@ -802,7 +802,7 @@
     "title": "Public API signature diff",
     "pack": "ts",
     "category": "behavior-preservation",
-    "measures": "Scans public-entrypoint source files for exported declarations whose signatures intersect with diff hunks, flagging each changed export as requiring behavior-preservation evidence. It covers functions, classes, interfaces, type aliases, enums, and const exports resolved via ts-morph at exact file/line/column positions.",
+    "measures": "Scans public-entrypoint source files for exported declarations whose signatures intersect with diff hunks, flagging each changed export as requiring behavior-preservation evidence. It covers functions, classes, interfaces, type aliases, enums, and const exports resolved via Quartz/tsgo at exact file/line/column positions.",
     "whyItMatters": "A changed exported contract is a breaking-change candidate — callers may silently depend on the previous shape, and the diff alone cannot prove behavior was preserved.",
     "evidence": "file-local",
     "evidenceHint": "Right pane shows the source line of each changed exported declaration (file + line + column), the resolved signature text, and the \"route for behavior-preservation review\" message.",

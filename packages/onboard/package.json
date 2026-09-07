@@ -1,9 +1,9 @@
 {
   "name": "@skastr0/pulsar-onboard",
-  "version": "0.1.5",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Pulsar onboarding TUI — pulsar onboard",
+  "description": "Pulsar onboarding TUI \u2014 pulsar onboard",
   "license": "MIT",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

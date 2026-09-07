@@ -1,9 +1,9 @@
 {
   "name": "@skastr0/pulsar-cli",
-  "version": "0.1.5",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Pulsar CLI — pulsar score, pulsar bisect",
+  "description": "Pulsar CLI \u2014 pulsar score, pulsar bisect",
   "license": "MIT",
   "repository": {
     "type": "git",
