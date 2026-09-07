@@ -33,6 +33,7 @@ import { RustProjectLayer } from "@skastr0/pulsar-rs-pack"
 import {
   makeTsAnalysisSession,
   TsAnalysisLayer,
+  type TsAnalysisSession,
 } from "@skastr0/pulsar-ts-pack"
 import { Effect, Layer } from "effect"
 import { loadProjectModuleCalibrationContext } from "./runtime-calibration.js"
@@ -125,24 +126,36 @@ export const runSignalInWorktree = (
   signalId: string,
   vector?: PulsarVector,
 ): Effect.Effect<SignalWorktreeRun, unknown, never> =>
-  Effect.gen(function* () {
-    const repoRoot = yield* resolveRepoRoot(repoPath)
-    const gitSha = yield* readHeadSha(repoRoot)
-    const registry: Registry = yield* buildPulsarRegistry(repoRoot, {
-      includeSignalId: signalId,
-    })
-    if (vector !== undefined) {
-      yield* validateVectorAgainstPulsarSignals(vector, repoRoot)
-    }
+  Effect.scoped(
+    Effect.gen(function* () {
+      const repoRoot = yield* resolveRepoRoot(repoPath)
+      const gitSha = yield* readHeadSha(repoRoot)
+      const registry: Registry = yield* buildPulsarRegistry(repoRoot, {
+        includeSignalId: signalId,
+      })
+      if (vector !== undefined) {
+        yield* validateVectorAgainstPulsarSignals(vector, repoRoot)
+      }
 
-    const worktreeEnvLayer = yield* buildWorktreeEnvLayer(repoRoot, gitSha, registry, signalId)
-    const result = yield* (Effect.provide(
-      runSignal(registry, signalId, vector),
-      worktreeEnvLayer,
-    ) as Effect.Effect<SignalRunResult, unknown, never>)
+      const requiredPacks = collectRequiredLanguagePacks(registry, signalId)
+      const tsSession = requiredPacks.typescript
+        ? yield* makeTsAnalysisSession(repoRoot, { productionOnly: true })
+        : undefined
+      const worktreeEnvLayer = yield* buildWorktreeEnvLayer(
+        repoRoot,
+        gitSha,
+        registry,
+        signalId,
+        tsSession,
+      )
+      const result = yield* (Effect.provide(
+        runSignal(registry, signalId, vector),
+        worktreeEnvLayer,
+      ) as Effect.Effect<SignalRunResult, unknown, never>)
 
-    return { repoRoot, gitSha, registry, result }
-  })
+      return { repoRoot, gitSha, registry, result }
+    }),
+  )
 
 export const observeWorktree = (
   repoPath: string,
@@ -220,6 +233,7 @@ const buildWorktreeEnvLayer = (
   gitSha: string,
   registry: Registry,
   signalId: string,
+  tsSession?: TsAnalysisSession,
 ) =>
   Effect.gen(function* () {
     const referenceEntries = yield* loadCanonicalReferenceDataEntries(repoRoot)
@@ -246,7 +260,9 @@ const buildWorktreeEnvLayer = (
       InMemoryCacheLayer,
       calibrationContextLayer,
       requiredPacks.typescript
-        ? TsAnalysisLayer(repoRoot, { productionOnly: true })
+        ? tsSession !== undefined
+          ? tsSession.observationLayer()
+          : TsAnalysisLayer(repoRoot, { productionOnly: true })
         : Layer.empty,
       requiredPacks.rust ? RustProjectLayer(repoRoot) : Layer.empty,
     )
