@@ -16,7 +16,6 @@ import type {
 } from "./observer-model.js"
 import { nowMs, roundRuntimeMs } from "./observer-time.js"
 
-const DEFAULT_OBSERVER_SIGNAL_CONCURRENCY = 1
 type ObserverSignalMetadata = NonNullable<ObserverRuntimeOutput["signalMetadata"]>
 
 interface ObserverSignalExecution {
@@ -106,7 +105,7 @@ const runObserverSignalBatch = (
           durationMs: roundRuntimeMs(nowMs() - startedAt),
         }
       }),
-    { concurrency: DEFAULT_OBSERVER_SIGNAL_CONCURRENCY },
+    { concurrency: "unbounded" },
   )
 }
 
