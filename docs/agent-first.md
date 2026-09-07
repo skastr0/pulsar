@@ -189,8 +189,9 @@ with secrets or elevated access. Refusal happens before importing project code.
    even for a blocked assessment. `result.assessment` separates hard gates,
    evidence completeness, counts, weighted mean and readiness. Findings have
    messages, severity, weights, locations when available and detail arguments.
-   `--full` includes signal diagnostics and factors; `--signal ID` and `--limit N`
-   only filter detail, not the scoring universe or verdict.
+   `--full` includes signal diagnostics and factors. `result.signals` is an object
+   keyed by canonical signal ID; each signal's `factors` is an array of entries.
+   `--signal ID` and `--limit N` only filter detail, not the scoring universe or verdict.
 
 4. Repair the actual implementation and run the service's own tests. For example,
    replace an order-total `throw new Error("Not implemented")` with validated
@@ -249,5 +250,6 @@ gaps. The harness does not disable those signals to manufacture exit 0. It does
 not hardcode a passing score or suppress other detectors. Fixture-only mode links
 the clone's dependencies and declares them in the temporary repo solely because
 the legacy CLI lacks the POC dependency-root option; full acceptance does not.
-Native-binary and complete agent-contract acceptance require running those modes
-on the integrated revision; fixture-only success does not establish them.
+Fixture-only success does not establish native or JSON-contract acceptance.
+See the [executed POC acceptance and remaining limits](agent-first-poc-delivery.md)
+for the delivered revision's source, Linux x64 binary and independent-agent proof.
