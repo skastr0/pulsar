@@ -48,7 +48,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       diagnostics:
         "ts-ld-02.test.ts: diagnostics cover true outliers, absolute threshold pressure, callback names, and sanitized total top_n_diagnostics cap.",
       factorLedger:
-        "ts-ld-02.test.ts: registered pack signal emits max_function_loc, max_file_loc, and top_n_diagnostics factor-ledger entries.",
+        "ts-ld-02.test.ts: registered pack signal emits config entries and attributed size-policy factors even when calibration clears diagnostics; agent-smoke.ts verifies executable rule attribution survives full CLI output and cold/warm cache.",
       cacheSemantics:
         "ts-ld-02.test.ts and pack.test.ts: wrapped pack cache version includes the TS-LD-02 semantic cacheVersion after diagnostic-limit semantics change.",
       calibration:

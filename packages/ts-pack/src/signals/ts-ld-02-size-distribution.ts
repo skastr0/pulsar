@@ -9,6 +9,7 @@ import {
   mergeCollectedSizes,
 } from "./ts-ld-02-counting.js"
 import { diagnoseTsLd02 } from "./ts-ld-02-diagnostics.js"
+import { sizePolicyFactorLedger } from "./ts-ld-02-factors.js"
 import {
   TsLd02Config as TsLd02ConfigSchema,
   type TsLd02Config as TsLd02ConfigType,
@@ -44,7 +45,7 @@ export const TsLd02: Signal<TsLd02ConfigType, TsLd02Output, TsAnalysisTag> = {
   category: "legibility-decay",
   kind: "legibility",
   evidenceClass: "statistical",
-  cacheVersion: "exclusive-function-loc-v3",
+  cacheVersion: "exclusive-function-loc-v4-policy-attribution",
   configSchema: TsLd02ConfigSchema,
   defaultConfig: {
     exclude_globs: [
@@ -128,6 +129,7 @@ export const TsLd02: Signal<TsLd02ConfigType, TsLd02Output, TsAnalysisTag> = {
       ? { applicability: "not_applicable" as const }
       : undefined,
   diagnose: diagnoseTsLd02,
+  factorLedger: sizePolicyFactorLedger,
 }
 
 const toSignalComputeError = (cause: unknown): SignalComputeError =>

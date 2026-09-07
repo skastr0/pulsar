@@ -239,6 +239,16 @@ describe("TS-LD-02 (function / file size distribution)", () => {
     expect(calibrated.calibrationDecisions[0]?.factorPaths?.some((path) =>
       path.includes(".penalty_weight"),
     )).toBe(true)
+    const ledger = TsLd02.factorLedger!(calibrated)
+    if (ledger === undefined) throw new Error("Size policy factor ledger is missing")
+    expect(ledger.entries.length).toBeGreaterThan(0)
+    expect(ledger.entries.filter((entry) => entry.path.endsWith(".max_loc"))).toContainEqual(expect.objectContaining({
+      value: 1_000, source: "module", affectsScore: true,
+      attribution: expect.objectContaining({ ruleId: "acme.integration-size.v1", processorId: "integration-size" }),
+    }))
+    expect(ledger.entries.filter((entry) => entry.path.endsWith(".penalty_weight"))).toContainEqual(expect.objectContaining({ value: 0, affectsScore: true }))
+    // Attribution is independent of diagnostic survivors and their presentation cap.
+    expect(TsLd02.diagnose(calibrated).filter((diagnostic) => diagnostic.severity === "warn")).toHaveLength(0)
   })
 
   test("pulsar-self role classifier drives integration size policy", async () => {
