@@ -197,9 +197,9 @@ const writeNativeCliEntrypoint = async (tsgoPath: string): Promise<string> => {
   const entryPath = join(DIST_DIR, "native-cli-entry.ts")
   const source = `#!/usr/bin/env bun
 import nativeTsgoPath from ${JSON.stringify(tsgoPath)} with { type: "file" }
-import { registerEmbeddedTsgoPath } from ${JSON.stringify(join(REPO_ROOT, "packages", "ts-pack", "src", "tsgo-runtime.ts"))}
+import { registerEmbeddedTsgoPath } from ${JSON.stringify(join(REPO_ROOT, "packages", "ts-pack", "dist", "tsgo-runtime.js"))}
 registerEmbeddedTsgoPath(nativeTsgoPath)
-await import(${JSON.stringify(join(REPO_ROOT, "packages", "cli", "src", "bin.ts"))})
+await import(${JSON.stringify(join(REPO_ROOT, "packages", "cli", "dist", "bin.js"))})
 `
   await writeFile(entryPath, source)
   return entryPath
