@@ -110,12 +110,16 @@ export const chooseOwningProject = (
   candidates: ReadonlyArray<{ readonly projectId: string; readonly configPath: string }>,
 ): { readonly projectId: string; readonly configPath: string } | undefined => {
   if (candidates.length === 0) return undefined
-  const ranked = [...candidates].sort((left, right) => {
+  const file = canonicalPath(filePath)
+  const contained = candidates.filter((candidate) => {
+    const root = canonicalPath(dirname(candidate.configPath))
+    return file === root || file.startsWith(`${root}/`)
+  })
+  const ranked = [...(contained.length > 0 ? contained : [])].sort((left, right) => {
     const depthDelta = configDepth(right.configPath) - configDepth(left.configPath)
     if (depthDelta !== 0) return depthDelta
     return left.projectId.localeCompare(right.projectId)
   })
-  void filePath
   return ranked[0]
 }
 

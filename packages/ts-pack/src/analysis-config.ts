@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
-import { fileURLToPath, pathToFileURL } from "node:url"
+import { fileURLToPath } from "node:url"
 import { Effect, Schema } from "effect"
 
 export class TsAnalysisConfigError extends Schema.TaggedError<TsAnalysisConfigError>()(
@@ -75,13 +75,15 @@ const writeDerivedConfig = (
         }),
     })
     const payload = {
-      extends: pathToFileURL(originalPath).href,
+      extends: originalPath.replaceAll("\\", "/"),
       compilerOptions: {
         ...PINNED_COMPILER_OPTIONS,
         rootDir: dirname(originalPath).replaceAll("\\", "/"),
-        baseUrl: dirname(originalPath).replaceAll("\\", "/"),
+        ...derivedBaseUrl(originalPath, original),
       },
-      include: rebasePatterns(originalPath, expandTypeScriptIncludes(asStringArray(original.include) ?? ["**/*.ts", "**/*.tsx"])),
+      ...(asStringArray(original.include) === undefined
+        ? {}
+        : { include: rebasePatterns(originalPath, expandTypeScriptIncludes(asStringArray(original.include) ?? [])) }),
       ...(asStringArray(original.files) === undefined
         ? {}
         : { files: rebasePatterns(originalPath, asStringArray(original.files) ?? []) }),
@@ -310,6 +312,22 @@ const rebasePatterns = (
     const resolved = resolve(dirname(originalPath), body).replaceAll("\\", "/")
     return negated ? `!${resolved}` : resolved
   })
+
+const derivedBaseUrl = (
+  originalPath: string,
+  original: Readonly<Record<string, unknown>>,
+): { readonly baseUrl?: string } => {
+  const compilerOptions = original.compilerOptions
+  if (typeof compilerOptions !== "object" || compilerOptions === null || !("baseUrl" in compilerOptions)) {
+    return {}
+  }
+  const baseUrl = compilerOptions.baseUrl
+  if (typeof baseUrl !== "string" || baseUrl.length === 0) return {}
+  const resolved = isAbsolute(baseUrl)
+    ? baseUrl.replaceAll("\\", "/")
+    : resolve(dirname(originalPath), baseUrl).replaceAll("\\", "/")
+  return { baseUrl: resolved }
+}
 export const removeAnalysisConfigBundle = (
   bundle: AnalysisConfigBundle | undefined,
 ): Effect.Effect<void> =>

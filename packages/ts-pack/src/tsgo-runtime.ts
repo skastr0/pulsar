@@ -1,5 +1,5 @@
 import { createRequire } from "node:module"
-import { chmodSync, copyFileSync, mkdirSync } from "node:fs"
+import { chmodSync, copyFileSync, mkdtempSync, renameSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { tmpdir } from "node:os"
 import { fileURLToPath } from "node:url"
@@ -100,9 +100,11 @@ const resolvePlatformPackage = (packageName: string): ResolvedPlatformPackage =>
 declare const __PULSAR_ARTIFACT_KIND__: "native" | undefined
 
 let registeredEmbeddedTsgoPath: string | undefined
+let extractedTsgoPath: string | undefined
 
 export const registerEmbeddedTsgoPath = (path: string): void => {
   registeredEmbeddedTsgoPath = path.length === 0 ? undefined : path
+  extractedTsgoPath = undefined
 }
 
 const resolveEmbeddedTsgoExecutable = (
@@ -127,27 +129,30 @@ const resolveEmbeddedTsgoExecutable = (
       })
     }
 
-    const destinationDirectory = join(
-      tmpdir(),
-      "pulsar-tsgo",
-      TSGO_ANALYSIS_TYPESCRIPT_VERSION,
-      analysisPlatformTarget(platform, arch),
-    )
-    const destinationPath = join(destinationDirectory, "tsc")
-    const destination = Bun.file(destinationPath)
-    if (yield* Effect.promise(() => destination.exists())) return destinationPath
-
     yield* Effect.try({
       try: () => {
-        mkdirSync(destinationDirectory, { recursive: true })
-        copyFileSync(embeddedPath, destinationPath)
-        chmodSync(destinationPath, 0o755)
+        if (extractedTsgoPath !== undefined) return
+        const destinationDirectory = mkdtempSync(
+          join(tmpdir(), `pulsar-tsgo-${analysisPlatformTarget(platform, arch)}-`),
+        )
+        chmodSync(destinationDirectory, 0o700)
+        const destinationPath = join(destinationDirectory, "tsc")
+        const stagingPath = join(destinationDirectory, "tsc.partial")
+        copyFileSync(embeddedPath, stagingPath)
+        chmodSync(stagingPath, 0o755)
+        renameSync(stagingPath, destinationPath)
+        extractedTsgoPath = destinationPath
       },
       catch: (cause) =>
         new TsgoRuntimeError({
-          message: `Failed to extract embedded native tsgo payload to ${destinationPath}`,
+          message: "Failed to extract embedded native tsgo payload",
           cause,
         }),
     })
-    return destinationPath
+    if (extractedTsgoPath === undefined) {
+      return yield* new TsgoRuntimeError({
+        message: "Failed to extract embedded native tsgo payload",
+      })
+    }
+    return extractedTsgoPath
   })

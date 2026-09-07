@@ -28,7 +28,7 @@ describe("native tsgo runtime", () => {
     registerEmbeddedTsgoPath(fixturePath)
     try {
       const extracted = await Effect.runPromise(resolveTsgoExecutablePath())
-      expect(extracted.includes("/pulsar-tsgo/")).toBe(true)
+      expect(extracted.includes("/pulsar-tsgo-")).toBe(true)
       expect(await Bun.file(extracted).exists()).toBe(true)
     } finally {
       registerEmbeddedTsgoPath("")

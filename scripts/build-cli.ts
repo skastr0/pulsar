@@ -145,6 +145,20 @@ const TSGO_NATIVE_PACKAGE_BY_TARGET: Readonly<Record<string, string>> = {
   "linux-x64": "@typescript/typescript-linux-x64",
 }
 
+const nativeTsgoPinnedVersion = (): string => {
+  const source = readFileSync(
+    join(REPO_ROOT, "packages", "ts-pack", "src", "ts-analysis-version.ts"),
+    "utf8",
+  )
+  const match = source.match(
+    /export const TSGO_ANALYSIS_TYPESCRIPT_VERSION = "([^"]+)" as const/,
+  )
+  if (match?.[1] === undefined) {
+    throw new Error("Failed to read TSGO_ANALYSIS_TYPESCRIPT_VERSION")
+  }
+  return match[1]
+}
+
 const resolveNativeTsgoExecutable = async ({
   platform,
   arch,
@@ -160,6 +174,15 @@ const resolveNativeTsgoExecutable = async ({
   } catch (cause) {
     throw new Error(
       `Failed to resolve ${packageName} for ${platform}-${arch}: ${String(cause)}`,
+    )
+  }
+  const nativeManifest = JSON.parse(readFileSync(packageJsonPath, "utf8")) as {
+    readonly version?: unknown
+  }
+  const pinnedVersion = nativeTsgoPinnedVersion()
+  if (nativeManifest.version !== pinnedVersion) {
+    throw new Error(
+      `Resolved ${packageName}@${String(nativeManifest.version)}, expected ${pinnedVersion}`,
     )
   }
   const executablePath = join(dirname(packageJsonPath), "lib", "tsc")

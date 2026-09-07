@@ -1,4 +1,5 @@
 import { Context, Effect, Layer, Schema, Semaphore } from "effect"
+import { readFile } from "node:fs/promises"
 import { openQuartzWorkspace, type QuartzWorkspace } from "@skastr0/quartz-engine"
 import type { CalibrationProcessorError } from "@skastr0/pulsar-core/calibration"
 import {
@@ -90,12 +91,7 @@ export const makeTsAnalysisSession = Effect.fn("makeTsAnalysisSession")(function
   }
 
   yield* Effect.acquireRelease(Effect.succeed(state), (sessionState) =>
-    Effect.promise(async () => {
-      if (sessionState.workspace !== undefined) {
-        await sessionState.workspace.close()
-        sessionState.workspace = undefined
-      }
-    }),
+    replaceWorkspace(sessionState),
   )
 
   return {
@@ -150,7 +146,7 @@ const buildObservation = (
   Effect.gen(function* () {
     const packages = yield* discoverPackages(worktreePath)
     const originalConfigPaths = packages.map((pkg) => canonicalPath(pkg.tsconfigPath))
-    const fingerprint = originalConfigPaths.slice().sort().join("\0")
+    const fingerprint = yield* configFingerprint(originalConfigPaths)
     if (state.workspace !== undefined && state.configFingerprint !== fingerprint) {
       yield* replaceWorkspace(state)
     }
@@ -392,4 +388,27 @@ const replaceWorkspace = (state: SessionState): Effect.Effect<void> =>
     yield* removeAnalysisConfigBundle(state.configBundle)
     state.configBundle = undefined
     state.configFingerprint = ""
+  })
+
+const configFingerprint = (
+  originalConfigPaths: ReadonlyArray<string>,
+): Effect.Effect<string, TsAnalysisError> =>
+  Effect.tryPromise({
+    try: async () => {
+      const parts = await Promise.all(
+        [...originalConfigPaths].sort().map(async (path) => {
+          try {
+            return `${path}\n${await readFile(path, "utf8")}`
+          } catch {
+            return `${path}\n<missing>`
+          }
+        }),
+      )
+      return parts.join("\0")
+    },
+    catch: (cause) =>
+      new TsAnalysisError({
+        message: "Failed to fingerprint TypeScript analysis configs",
+        cause,
+      }),
   })
