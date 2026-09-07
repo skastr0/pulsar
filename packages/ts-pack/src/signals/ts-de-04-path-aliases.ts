@@ -1,4 +1,5 @@
 import { readFile, readdir } from "node:fs/promises"
+import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import type { PackageInfo } from "../discovery.js"
 import { mapWithConcurrency } from "../concurrency.js"
@@ -54,6 +55,16 @@ export const readPathAliases = async (
   const config = await readPathAliasConfig(tsconfigPath, new Set<string>())
   return config.aliases
 }
+
+export const readPathAliasesSync = (
+  tsconfigPath: string,
+): ReadonlyArray<TsconfigPathAlias> =>
+  readPathAliasConfigSync(tsconfigPath, new Set<string>()).aliases
+
+export const resolveTsconfigAliasTargets = (
+  alias: TsconfigPathAlias,
+  moduleSpecifier: string,
+): ReadonlyArray<string> => resolvePathAliasTargets(alias, moduleSpecifier)
 
 const readPathAliasConfig = async (
   tsconfigPath: string,
@@ -116,6 +127,85 @@ const implicitBaseUrlAliases = async (
 ): Promise<ReadonlyArray<TsconfigPathAlias>> => {
   try {
     const entries = await readdir(baseDir, { withFileTypes: true })
+    return entries.flatMap((entry): ReadonlyArray<TsconfigPathAlias> => {
+      if (entry.name.startsWith(".")) return []
+      if (entry.isDirectory()) {
+        return [
+          { pattern: entry.name, replacements: [entry.name], baseDir },
+          { pattern: `${entry.name}/*`, replacements: [`${entry.name}/*`], baseDir },
+        ]
+      }
+      if (!entry.isFile()) return []
+      const stem = entry.name.replace(/\.(?:c|m)?(?:t|j)sx?$/, "")
+      return stem === entry.name || stem.length === 0
+        ? []
+        : [{ pattern: stem, replacements: [entry.name], baseDir }]
+    })
+  } catch {
+    return []
+  }
+}
+
+const readPathAliasConfigSync = (
+  tsconfigPath: string,
+  visited: Set<string>,
+): TsconfigAliasConfig => {
+  const loaded = readTsconfigSync(tsconfigPath)
+  if (loaded === undefined) return { aliases: [], baseDir: dirname(tsconfigPath) }
+
+  const normalizedPath = resolve(loaded.path)
+  if (visited.has(normalizedPath)) return { aliases: [], baseDir: dirname(normalizedPath) }
+  visited.add(normalizedPath)
+
+  const inherited = readInheritedAliasConfigSync(loaded.config, normalizedPath, visited)
+  const compilerOptions = asRecord(loaded.config.compilerOptions)
+  const baseUrl = asString(compilerOptions?.baseUrl)
+  const baseDir = baseUrl === undefined ? inherited.baseDir : resolve(dirname(normalizedPath), baseUrl)
+  const paths = asRecord(compilerOptions?.paths)
+  const baseUrlAliases = baseUrl === undefined ? [] : implicitBaseUrlAliasesSync(baseDir)
+
+  if (paths === undefined) return { aliases: [...inherited.aliases, ...baseUrlAliases], baseDir }
+
+  return {
+    aliases: [...pathAliasesFromCompilerOptions(paths, baseDir), ...baseUrlAliases],
+    baseDir,
+  }
+}
+
+const readInheritedAliasConfigSync = (
+  config: Record<string, unknown>,
+  tsconfigPath: string,
+  visited: Set<string>,
+): TsconfigAliasConfig => {
+  const extendedConfigs = asStringArray(config.extends)
+  let inherited: TsconfigAliasConfig = { aliases: [], baseDir: dirname(tsconfigPath) }
+
+  for (const extendedConfig of extendedConfigs) {
+    const extendedPath = resolveTsconfigExtendsPath(extendedConfig, tsconfigPath)
+    inherited = readPathAliasConfigSync(extendedPath, visited)
+  }
+
+  return inherited
+}
+
+const readTsconfigSync = (
+  tsconfigPath: string,
+): { readonly path: string; readonly config: Record<string, unknown> } | undefined => {
+  for (const candidate of tsconfigCandidates(tsconfigPath)) {
+    try {
+      const parsed = asRecord(parseJsonc(readFileSync(candidate, "utf8")))
+      if (parsed !== undefined) return { path: candidate, config: parsed }
+    } catch {
+      continue
+    }
+  }
+  return undefined
+}
+
+const implicitBaseUrlAliasesSync = (baseDir: string): ReadonlyArray<TsconfigPathAlias> => {
+  if (!existsSync(baseDir)) return []
+  try {
+    const entries = readdirSync(baseDir, { withFileTypes: true })
     return entries.flatMap((entry): ReadonlyArray<TsconfigPathAlias> => {
       if (entry.name.startsWith(".")) return []
       if (entry.isDirectory()) {

@@ -36,7 +36,7 @@ describe("TS-AB-02 (unused exports reachability)", () => {
       tier: 1,
       category: "abstraction-bloat",
       kind: "structural",
-      cacheVersion: "calibrated-export-reachability-v4-framework-consumed-diagnostic-limit-v1",
+      cacheVersion: "calibrated-export-reachability-v5-tsconfig-aliases",
       inputs: [],
     })
     expect(registered?.id).toBe(TsAb02.id)

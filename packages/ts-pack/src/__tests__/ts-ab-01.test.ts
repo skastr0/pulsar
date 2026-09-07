@@ -60,7 +60,7 @@ describe("TS-AB-01 (public export surface)", () => {
       tier: 1,
       category: "abstraction-bloat",
       kind: "legibility",
-      cacheVersion: "diagnostic-limit-weighted-surface-v1",
+      cacheVersion: "diagnostic-limit-weighted-surface-v2-tsconfig-aliases",
       inputs: [],
     })
     expect(registered?.id).toBe(TsAb01.id)

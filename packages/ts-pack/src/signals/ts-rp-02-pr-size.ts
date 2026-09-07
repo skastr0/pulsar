@@ -99,7 +99,7 @@ export const TsRp02: Signal<TsRp02Config, TsRp02Output, TsAnalysisTag | TsPackag
   category: "review-pain",
   kind: "structural",
   evidenceClass: "historical-fact",
-  cacheVersion: "branch-range-factor-policy-diagnostic-limit-package-import-edges-untracked-upstream-aligned-v1",
+  cacheVersion: "branch-range-factor-policy-diagnostic-limit-package-import-edges-untracked-upstream-aligned-v2-tsconfig-aliases",
   cacheDependencies: ["git-revision-context"],
   configSchema: TsRp02Config,
   defaultConfig: DEFAULT_TS_RP_02_CONFIG,

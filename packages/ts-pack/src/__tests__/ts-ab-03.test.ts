@@ -62,7 +62,7 @@ describe("TS-AB-03 (type indirection depth)", () => {
       tier: 1,
       category: "abstraction-bloat",
       kind: "legibility",
-      cacheVersion: "type-indirection-depth-v2-diagnostic-limit-v1",
+      cacheVersion: "type-indirection-depth-v3-tsconfig-aliases",
       inputs: [],
     })
     expect(registered?.id).toBe(TsAb03.id)

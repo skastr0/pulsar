@@ -1,4 +1,5 @@
 import { dirname, normalize, resolve } from "node:path"
+import { existsSync } from "node:fs"
 import { walkDescendants } from "../ast.js"
 import type { PackageInfo } from "../discovery.js"
 import { isExcluded } from "../signals/shared-globs.js"
@@ -25,6 +26,11 @@ import {
   localIdentifierUsageByName,
   valueImportBindingNames,
 } from "../signals/shared-module-usage.js"
+import {
+  readPathAliasesSync,
+  resolveTsconfigAliasTargets,
+  type TsconfigPathAlias,
+} from "../signals/ts-de-04-path-aliases.js"
 
 interface ModuleGraphOptions {
   readonly excludeGlobs: ReadonlyArray<string>
@@ -141,6 +147,7 @@ export const createModuleResolver = (
   packages: ReadonlyArray<PackageInfo>,
 ): ModuleResolver => {
   const pathLookup = buildPathLookup(sourceFiles)
+  const aliasesByConfigDir = new Map<string, ReadonlyArray<TsconfigPathAlias>>()
   const workspacePackageNames = packages
     .map((pkg) => pkg.manifest?.name)
     .filter((name): name is string => typeof name === "string" && name.length > 0)
@@ -152,10 +159,24 @@ export const createModuleResolver = (
       if (specifier === undefined) {
         return undefined
       }
-      return resolveSpecifierPath(sourcePath, specifier, packages, workspacePackageNames, pathLookup)
+      return resolveSpecifierPath(
+        sourcePath,
+        specifier,
+        packages,
+        workspacePackageNames,
+        pathLookup,
+        aliasesByConfigDir,
+      )
     },
     resolveSpecifier: (sourcePath, specifier) =>
-      resolveSpecifierPath(sourcePath, specifier, packages, workspacePackageNames, pathLookup),
+      resolveSpecifierPath(
+        sourcePath,
+        specifier,
+        packages,
+        workspacePackageNames,
+        pathLookup,
+        aliasesByConfigDir,
+      ),
   }
 }
 
@@ -165,19 +186,20 @@ const resolveSpecifierPath = (
   packages: ReadonlyArray<PackageInfo>,
   workspacePackageNames: ReadonlyArray<string>,
   pathLookup: ReadonlyMap<string, string>,
+  aliasesByConfigDir: Map<string, ReadonlyArray<TsconfigPathAlias>>,
 ): string | undefined => {
   if (specifier.startsWith(".") || specifier.startsWith("/")) {
     return resolveRelativeSpecifier(sourcePath, specifier, pathLookup)
   }
 
-  const packageSrcAliasResolved = resolvePackageSrcAlias(
+  const tsconfigAliasResolved = resolveTsconfigPathAlias(
     sourcePath,
     specifier,
-    packages,
     pathLookup,
+    aliasesByConfigDir,
   )
-  if (packageSrcAliasResolved !== undefined) {
-    return packageSrcAliasResolved
+  if (tsconfigAliasResolved !== undefined) {
+    return tsconfigAliasResolved
   }
 
   const packageSpecifier = normalizePackageSpecifier(specifier)
@@ -198,16 +220,42 @@ const resolveSpecifierPath = (
   return undefined
 }
 
-const resolvePackageSrcAlias = (
+const resolveTsconfigPathAlias = (
   sourcePath: string,
   specifier: string,
-  packages: ReadonlyArray<PackageInfo>,
   pathLookup: ReadonlyMap<string, string>,
+  aliasesByConfigDir: Map<string, ReadonlyArray<TsconfigPathAlias>>,
 ): string | undefined => {
-  if (!specifier.startsWith("@/")) return undefined
-  const pkg = packageForFile(sourcePath, packages)
-  if (pkg === undefined) return undefined
-  return lookupResolvedPath(normalizePath(resolve(pkg.path, "src", specifier.slice(2))), pathLookup)
+  const aliases = aliasesForSource(sourcePath, aliasesByConfigDir)
+  for (const alias of aliases) {
+    for (const target of resolveTsconfigAliasTargets(alias, specifier)) {
+      const resolved = lookupResolvedPath(normalizePath(target), pathLookup)
+      if (resolved !== undefined) return resolved
+    }
+  }
+  return undefined
+}
+
+const aliasesForSource = (
+  sourcePath: string,
+  aliasesByConfigDir: Map<string, ReadonlyArray<TsconfigPathAlias>>,
+): ReadonlyArray<TsconfigPathAlias> => {
+  const configDir = nearestTsconfigDir(sourcePath)
+  const cached = aliasesByConfigDir.get(configDir)
+  if (cached !== undefined) return cached
+  const aliases = readPathAliasesSync(resolve(configDir, "tsconfig.json"))
+  aliasesByConfigDir.set(configDir, aliases)
+  return aliases
+}
+
+const nearestTsconfigDir = (filePath: string): string => {
+  let current = dirname(normalizePath(filePath))
+  while (true) {
+    if (existsSync(resolve(current, "tsconfig.json"))) return current
+    const parent = dirname(current)
+    if (parent === current) return dirname(normalizePath(filePath))
+    current = parent
+  }
 }
 
 const buildPathLookup = (sourceFiles: ReadonlyArray<SourceFile>): ReadonlyMap<string, string> => {

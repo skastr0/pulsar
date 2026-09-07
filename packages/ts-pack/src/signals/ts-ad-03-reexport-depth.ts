@@ -54,7 +54,7 @@ export const TsAd03: Signal<
   category: "architectural-drift",
   kind: "structural",
   evidenceClass: "deterministic-ast",
-  cacheVersion: "diagnostic-limit-v1-package-resolution-v1",
+  cacheVersion: "diagnostic-limit-v1-package-resolution-v2-tsconfig-aliases",
   configSchema: TsAd03Config,
   defaultConfig: {
     exclude_globs: [

@@ -26,7 +26,7 @@ export const TsAb04: Signal<TsAb04Config, TsAb04Output, TsAnalysisTag | TsPackag
   category: "abstraction-bloat",
   kind: "legibility",
   evidenceClass: "statistical",
-  cacheVersion: "interface-implementation-ratio-v17-shared-evidence-floor",
+  cacheVersion: "interface-implementation-ratio-v18-tsconfig-aliases",
   configSchema: TsAb04Config,
   defaultConfig: {
     exclude_globs: ["**/node_modules/**", "**/dist/**", "**/.turbo/**"],

@@ -48,7 +48,7 @@ export const TsAd02: Signal<TsAd02Config, TsAd02Output, TsAnalysisTag | TsPackag
   category: "architectural-drift",
   kind: "structural",
   evidenceClass: "deterministic-ast",
-  cacheVersion: "semantic-type-only-imports-v3",
+  cacheVersion: "semantic-type-only-imports-v4-tsconfig-aliases",
   configSchema: TsAd02Config,
   defaultConfig: {
     // Rationale: cycles inside test scaffolding or generated output are

@@ -32,7 +32,7 @@ describe("TS-DE-03 (propagation cost)", () => {
       tier: 1,
       category: "dependency-entropy",
       kind: "structural",
-      cacheVersion: "diagnostic-limit-and-module-resolution-v1",
+      cacheVersion: "diagnostic-limit-and-module-resolution-v2-tsconfig-aliases",
       inputs: [],
     })
     expect(registered?.id).toBe(TsDe03.id)
@@ -145,6 +145,16 @@ describe("TS-DE-03 (propagation cost)", () => {
 
   test("package-local source aliases contribute propagation edges", async () => {
     await writePackage("app", "@repo/app")
+    await repo.writeJson("packages/app/tsconfig.json", {
+      compilerOptions: {
+        target: "ES2022",
+        module: "ESNext",
+        moduleResolution: "Bundler",
+        baseUrl: ".",
+        paths: { "@/*": ["./src/*"] },
+      },
+      include: ["src/**/*.ts"],
+    })
     await repo.write("packages/app/src/base.ts", "export const base = 1\n")
     await repo.write(
       "packages/app/src/consumer.ts",

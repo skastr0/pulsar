@@ -88,6 +88,16 @@ describe("TS-AD-03 (re-export depth)", () => {
 
   test("package-local source alias re-exports participate in chain detection", async () => {
     await writePackage("app", "@scope/app")
+    await repo.writeJson("packages/app/tsconfig.json", {
+      compilerOptions: {
+        target: "ES2022",
+        module: "ESNext",
+        moduleResolution: "Bundler",
+        baseUrl: ".",
+        paths: { "@/*": ["./src/*"] },
+      },
+      include: ["src/**/*.ts"],
+    })
     const indexPath = await repo.write("packages/app/src/index.ts", "export * from '@/features'\n")
     const featuresPath = await repo.write(
       "packages/app/src/features/index.ts",

@@ -54,7 +54,7 @@ export const TsAb02: Signal<TsAb02Config, TsAb02Output, TsAnalysisTag | TsPackag
   category: "abstraction-bloat",
   kind: "structural",
   evidenceClass: "deterministic-ast",
-  cacheVersion: "calibrated-export-reachability-v4-framework-consumed-diagnostic-limit-v1",
+  cacheVersion: "calibrated-export-reachability-v5-tsconfig-aliases",
   configSchema: TsAb02Config,
   defaultConfig: {
     exclude_globs: [

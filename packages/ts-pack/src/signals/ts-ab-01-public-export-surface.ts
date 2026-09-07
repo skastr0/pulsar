@@ -61,7 +61,7 @@ export const TsAb01: Signal<TsAb01Config, TsAb01Output, TsAnalysisTag> = {
   category: "abstraction-bloat",
   kind: "legibility",
   evidenceClass: "statistical",
-  cacheVersion: "diagnostic-limit-weighted-surface-v1",
+  cacheVersion: "diagnostic-limit-weighted-surface-v2-tsconfig-aliases",
   configSchema: TsAb01Config,
   defaultConfig: {
     public_export_globs: ["**/src/index.ts", "**/index.ts"],

@@ -207,7 +207,7 @@ describe("TS-RP-02 PR size and dependency delta", () => {
       tier: 1,
       category: "review-pain",
       kind: "structural",
-      cacheVersion: "branch-range-factor-policy-diagnostic-limit-package-import-edges-untracked-upstream-aligned-v1",
+      cacheVersion: "branch-range-factor-policy-diagnostic-limit-package-import-edges-untracked-upstream-aligned-v2-tsconfig-aliases",
       inputs: [],
     })
     expect(decoded).toEqual(TsRp02.defaultConfig)
@@ -477,6 +477,16 @@ export function useHelper(): string { return helper() + extra() + legacy(); }
     })
     await writePackage(repo, "app", "@repo/app")
     await writePackage(repo, "core", "@repo/core")
+    await repo.writeJson("packages/app/tsconfig.json", {
+      compilerOptions: {
+        target: "ES2022",
+        module: "ESNext",
+        moduleResolution: "Bundler",
+        baseUrl: ".",
+        paths: { "@/*": ["src/*"] },
+      },
+      include: ["src/**/*.ts"],
+    })
     await repo.write("packages/core/src/index.ts", "export const core = 1\n")
     await repo.write("packages/app/src/local.ts", "export const local = 1\n")
     await repo.write(

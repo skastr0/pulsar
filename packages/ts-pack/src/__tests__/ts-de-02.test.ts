@@ -83,7 +83,7 @@ describe("TS-DE-02 (fan-in / fan-out)", () => {
       tier: 1,
       category: "dependency-entropy",
       kind: "structural",
-      cacheVersion: "module-resolution-and-export-type-only-v1",
+      cacheVersion: "module-resolution-and-export-type-only-v2-tsconfig-aliases",
       inputs: [],
     })
     expect(registered?.id).toBe(TsDe02.id)
@@ -180,6 +180,16 @@ describe("TS-DE-02 (fan-in / fan-out)", () => {
 
   test("package-local source aliases count as fan-out and fan-in edges", async () => {
     await writePackage("app", "@repo/app")
+    await writeJson("packages/app/tsconfig.json", {
+      compilerOptions: {
+        target: "ES2022",
+        module: "ESNext",
+        moduleResolution: "Bundler",
+        baseUrl: ".",
+        paths: { "@/*": ["./src/*"] },
+      },
+      include: ["src/**/*.ts"],
+    })
     const target = await writeTs("packages/app/src/target.ts", "export const value = 1\n")
     const consumer = await writeTs(
       "packages/app/src/consumer.ts",

@@ -158,7 +158,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       factorLedger:
         "ts-ad-01.test.ts: registered pack signal emits top_n_diagnostics factor-ledger entry.",
       cacheSemantics:
-        "ts-ad-01.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AD-01 semantic cacheVersion after diagnostic-limit semantics change.",
+        "ts-ad-01.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AD-01 semantic cacheVersion after diagnostic-limit and tsconfig path-alias resolution semantics changed.",
       referenceData:
         "ts-ad-01.test.ts: schema-conventions boundary reference data drives loaded boundary classification; missing conventions degrade explicitly through signal and observer paths.",
     },
@@ -184,7 +184,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       factorLedger:
         "ts-ad-02.test.ts: registered pack signal emits top_n_diagnostics factor-ledger entry.",
       cacheSemantics:
-        "ts-ad-02.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AD-02 semantic cacheVersion after diagnostic-limit and package-resolution semantics changes.",
+        "ts-ad-02.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AD-02 semantic cacheVersion after diagnostic-limit, package-resolution, and tsconfig path-alias resolution semantics changed.",
     },
   },
   {
@@ -208,7 +208,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       factorLedger:
         "ts-ad-03.test.ts: registered pack signal emits top_n_diagnostics factor-ledger entry.",
       cacheSemantics:
-        "ts-ad-03.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AD-03 semantic cacheVersion after diagnostic-limit and package-resolution semantics changes.",
+        "ts-ad-03.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AD-03 semantic cacheVersion after diagnostic-limit, package-resolution, and tsconfig path-alias resolution semantics changed.",
     },
   },
   {
@@ -309,7 +309,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       factorLedger:
         "ts-de-02.test.ts: registered pack signal emits exclude_globs, hub_fan_in_threshold, hub_fan_out_threshold, and top_n_diagnostics config factor-ledger entries.",
       cacheSemantics:
-        "ts-de-02.test.ts and pack.test.ts: wrapped pack cache version includes the TS-DE-02 semantic cacheVersion after diagnostic-limit, package-resolution, semantic type-only export, and TSX-exclusion semantics changed.",
+        "ts-de-02.test.ts and pack.test.ts: wrapped pack cache version includes the TS-DE-02 semantic cacheVersion after diagnostic-limit, package-resolution, semantic type-only export, TSX-exclusion, and tsconfig path-alias resolution semantics changed.",
     },
   },
   {
@@ -333,7 +333,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       factorLedger:
         "ts-de-03.test.ts: registered pack signal emits exclude_globs, target, scale, small_sample_threshold, and top_n_diagnostics config factor-ledger entries.",
       cacheSemantics:
-        "ts-de-03.test.ts and pack.test.ts: wrapped pack cache version includes the TS-DE-03 semantic cacheVersion after diagnostic-limit, package-resolution, and TSX-exclusion semantics changed.",
+        "ts-de-03.test.ts and pack.test.ts: wrapped pack cache version includes the TS-DE-03 semantic cacheVersion after diagnostic-limit, package-resolution, TSX-exclusion, and tsconfig path-alias resolution semantics changed.",
     },
   },
   {
@@ -408,7 +408,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       factorLedger:
         "ts-ab-01.test.ts: registered pack signal emits public_export_globs, exclude_globs, surface_threshold, and top_n_diagnostics config factor-ledger entries.",
       cacheSemantics:
-        "ts-ab-01.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AB-01 semantic cacheVersion after diagnostic-limit and weighted-surface semantics changed.",
+        "ts-ab-01.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AB-01 semantic cacheVersion after diagnostic-limit, weighted-surface, and tsconfig path-alias resolution semantics changed.",
     },
   },
   {
@@ -433,7 +433,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       factorLedger:
         "ts-ab-02.test.ts: registered pack signal emits config.exclude_globs, config.public_entry_globs, config.boundary_rules, and config.top_n_diagnostics factor-ledger entries with score roles.",
       cacheSemantics:
-        "ts-ab-02.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AB-02 semantic cacheVersion after diagnostic-limit, precise namespace/dynamic consumer, and framework-consumed score semantics changed.",
+        "ts-ab-02.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AB-02 semantic cacheVersion after diagnostic-limit, precise namespace/dynamic consumer, framework-consumed score, and tsconfig path-alias resolution semantics changed.",
       calibration:
         "ts-ab-02.test.ts: export-reachability calibration marks a Convex runtime export public with module id, processor id, action, reason, path/symbol evidence, calibrationDecisions, and cross-package classification while ordinary unused exports remain penalized; Next App Router calibration marks exact route contract exports as framework-consumed while a genuinely unused helper remains penalized.",
     },
@@ -459,7 +459,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       factorLedger:
         "ts-ab-03.test.ts: registered pack signal emits config.exclude_globs, config.max_depth, config.max_traversal_steps, and config.top_n_diagnostics factor-ledger entries with score roles.",
       cacheSemantics:
-        "ts-ab-03.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AB-03 semantic cacheVersion after diagnostic-limit, imported alias, generic argument, heritage, alias-cache, and truncation semantics changed.",
+        "ts-ab-03.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AB-03 semantic cacheVersion after diagnostic-limit, imported alias, generic argument, heritage, alias-cache, truncation, and tsconfig path-alias resolution semantics changed.",
     },
   },
   {
@@ -483,7 +483,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       factorLedger:
         "ts-ab-04.test.ts: registered pack signal emits config.exclude_globs, config.test_globs, config.public_entry_globs, and config.top_n_diagnostics factor-ledger entries with score roles.",
       cacheSemantics:
-        "ts-ab-04.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AB-04 semantic cacheVersion after identity, substitute, diagnostic-limit, object-data, cast-usage, public-entry, and class-implementation semantics changed.",
+        "ts-ab-04.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AB-04 semantic cacheVersion after identity, substitute, diagnostic-limit, object-data, cast-usage, public-entry, class-implementation, and tsconfig path-alias resolution semantics changed.",
     },
   },
   {
@@ -743,7 +743,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       factorLedger:
         "ts-rp-02.test.ts: registered pack signal emits config.exclude_globs, config.test_globs, config.boundary_rules, config.top_n_diagnostics, and pr_size policy factor entries with default/module attribution and score roles.",
       cacheSemantics:
-        "ts-rp-02.test.ts and pack.test.ts: wrapped pack cache version includes the TS-RP-02 semantic cacheVersion after diagnostic-limit handling, normalized hunk/exclude paths, boundary rules, finite-safe policy output, deterministic ordering, TypeScript module extension coverage, package-local alias resolution, external dependency target exclusion, added internal-import edge semantics, untracked worktree diff coverage, and upstream-aligned branch semantics changed.",
+        "ts-rp-02.test.ts and pack.test.ts: wrapped pack cache version includes the TS-RP-02 semantic cacheVersion after diagnostic-limit handling, normalized hunk/exclude paths, boundary rules, finite-safe policy output, deterministic ordering, TypeScript module extension coverage, tsconfig path-alias resolution, external dependency target exclusion, added internal-import edge semantics, untracked worktree diff coverage, and upstream-aligned branch semantics changed.",
       gitContext:
         "ts-rp-02.test.ts: tests run through TsAnalysisLayer and SignalContextTag, proving changed-hunk fallback, dependencyDeltaMode unavailable for hunk-only evidence, committed range diffs, upstream branch range selection, upstream-aligned branch not_applicable behavior, clean range not_applicable behavior, and non-git fallback behavior.",
       calibration:

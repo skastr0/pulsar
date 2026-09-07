@@ -54,7 +54,7 @@ export const TsDe02: Signal<TsDe02Config, TsDe02Output, TsAnalysisTag | TsPackag
   category: "dependency-entropy",
   kind: "structural",
   evidenceClass: "deterministic-ast",
-  cacheVersion: "module-resolution-and-export-type-only-v1",
+  cacheVersion: "module-resolution-and-export-type-only-v2-tsconfig-aliases",
   configSchema: TsDe02Config,
   defaultConfig: {
     exclude_globs: [

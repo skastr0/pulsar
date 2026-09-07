@@ -229,6 +229,18 @@ describe("TS-AD-02 (circular dependencies)", () => {
 
   test("package-local source aliases participate in cycle detection", async () => {
     await writePackage("app", "@scope/app")
+    await writeJson("packages/app/tsconfig.json", {
+      compilerOptions: {
+        target: "ES2022",
+        module: "ESNext",
+        moduleResolution: "Bundler",
+        baseUrl: ".",
+        paths: {
+          "@/*": ["./src/*"],
+        },
+      },
+      include: ["src/**/*.ts"],
+    })
     const aPath = await writeTs(
       "packages/app/src/a.ts",
       "import { b } from '@/b'\nexport const a = b + 1\n",
@@ -243,6 +255,23 @@ describe("TS-AD-02 (circular dependencies)", () => {
     expect(out.cycleCount).toBe(1)
     expect(out.cycles[0]?.modules).toEqual(expect.arrayContaining([aPath, bPath]))
     expect(TsAd02.diagnose(out)[0]?.message).toContain("candidate break")
+  })
+
+  test("does not invent @/* → src/* edges without a tsconfig paths mapping", async () => {
+    await writePackage("app", "@scope/app")
+    await writeTs(
+      "packages/app/src/a.ts",
+      "import { b } from '@/b'\nexport const a = b + 1\n",
+    )
+    await writeTs(
+      "packages/app/src/b.ts",
+      "import { a } from '@/a'\nexport const b = a + 1\n",
+    )
+
+    const out = await runCompute()
+
+    expect(out.cycleCount).toBe(0)
+    expect(out.cycles).toHaveLength(0)
   })
 
   test("larger SCC (4 nodes): largestCycleSize reflects it", async () => {

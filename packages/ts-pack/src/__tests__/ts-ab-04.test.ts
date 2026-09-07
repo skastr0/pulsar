@@ -48,7 +48,7 @@ describe("TS-AB-04 (interface to implementation ratio)", () => {
       tier: 1,
       category: "abstraction-bloat",
       kind: "legibility",
-      cacheVersion: "interface-implementation-ratio-v17-shared-evidence-floor",
+      cacheVersion: "interface-implementation-ratio-v18-tsconfig-aliases",
       inputs: [],
     })
     expect(registered?.id).toBe(TsAb04.id)
@@ -758,6 +758,17 @@ describe("TS-AB-04 (interface to implementation ratio)", () => {
   })
 
   test("public package-local alias re-exports exclude implementation contracts", async () => {
+    await repo.writeJson("tsconfig.json", {
+      compilerOptions: {
+        target: "ES2022",
+        module: "ESNext",
+        moduleResolution: "Bundler",
+        strict: true,
+        baseUrl: ".",
+        paths: { "@/*": ["./src/*"] },
+      },
+      include: ["**/*.ts"],
+    })
     await repo.write(
       "src/contracts.ts",
       [

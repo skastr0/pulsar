@@ -84,7 +84,7 @@ export const TsBp01: Signal<TsBp01Config, TsBp01Output, TsAnalysisTag | TsPackag
   category: "behavior-preservation",
   kind: "structural",
   evidenceClass: "deterministic-ast",
-  cacheVersion: "public-api-signature-diff-v3-reexport-targets",
+  cacheVersion: "public-api-signature-diff-v4-tsconfig-aliases",
   configSchema: TsBp01Config,
   defaultConfig: {
     exclude_globs: [...PRODUCTION_EXCLUDE_GLOBS],
