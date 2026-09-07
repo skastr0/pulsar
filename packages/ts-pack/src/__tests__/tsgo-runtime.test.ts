@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { chmodSync, copyFileSync, mkdirSync, rmSync } from "node:fs"
+import { chmodSync, copyFileSync, lstatSync, mkdirSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
@@ -8,6 +8,7 @@ import {
   registerEmbeddedTsgoPath,
   resolveTsgoExecutablePath,
 } from "../tsgo-runtime.js"
+import { TSGO_ANALYSIS_TYPESCRIPT_VERSION } from "../ts-analysis-version.js"
 
 describe("native tsgo runtime", () => {
   test("resolves the pinned host payload", async () => {
@@ -16,6 +17,10 @@ describe("native tsgo runtime", () => {
     const executablePath = await Effect.runPromise(resolveTsgoExecutablePath())
     expect(executablePath.endsWith("/lib/tsc")).toBe(true)
     expect(await Bun.file(executablePath).exists()).toBe(true)
+    const manifest = JSON.parse(
+      await Bun.file(join(executablePath, "..", "..", "package.json")).text(),
+    ) as { readonly version?: unknown }
+    expect(manifest.version).toBe(TSGO_ANALYSIS_TYPESCRIPT_VERSION)
   })
 
   test("extracts a registered embedded payload", async () => {
@@ -30,6 +35,8 @@ describe("native tsgo runtime", () => {
       const extracted = await Effect.runPromise(resolveTsgoExecutablePath())
       expect(extracted.includes("/pulsar-tsgo-")).toBe(true)
       expect(await Bun.file(extracted).exists()).toBe(true)
+      const extractDirectory = join(extracted, "..")
+      expect((lstatSync(extractDirectory).mode & 0o777)).toBe(0o700)
     } finally {
       registerEmbeddedTsgoPath("")
       rmSync(fixtureDirectory, { recursive: true, force: true })
