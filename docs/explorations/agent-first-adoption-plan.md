@@ -1,5 +1,7 @@
 # Pulsar: agent-first feature map and adoption plan
 
+> Historical audit, not the current implementation plan. The user clarified that signals, executable calibration and weights are the product foundation; surrounding workflows such as ratchets, bisect and personas are unproven product hypotheses. The implemented POC follows [the agent self-service guide](../agent-first.md): catalog → author repo policy → config → score → repair → verify. It does not add the plan/apply subsystem proposed below. Existing CLI workflows remain only for external compatibility pending an explicitly approved breaking transition. The audit receipts below describe the pre-POC checkout.
+
 ## Verdict and scope
 
 Pulsar has a substantial analysis engine. The next product increment should make an agent able to discover, configure, run, explain, and maintain it without reading Pulsar's source. More signals are not the first constraint.

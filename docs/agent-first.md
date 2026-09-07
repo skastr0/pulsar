@@ -11,7 +11,7 @@ bug-fix promise. Pulsar supplies evidence; the agent implements and tests repair
 
 ## Run from any working directory
 
-Use Git and Bun 1.3 or newer. Check out the revision containing this POC:
+Use Git and the repository-pinned Bun 1.3.14. Check out the revision containing this POC:
 
 ```sh
 git clone https://github.com/skastr0/pulsar.git /absolute/path/pulsar
@@ -186,6 +186,11 @@ with secrets or elevated access. Refusal happens before importing project code.
    resolved, the input fingerprint changed and the policy fingerprint did not.
    A weight or module-source change must produce `POLICY_MISMATCH`, not masquerade
    as a code-quality improvement. Commit the repair separately from policy changes.
+   The guard also includes tool version/build identity, reference manifests and
+   repository author-identity rules. Use the source runner or a built executable
+   for provenance; a direct package entrypoint may report an unknown build.
+   Dirty development builds and arbitrary trusted-code environment/network reads
+   are not hermetic identities; pin the tool and dependencies for repeatable use.
 
 ## Machine contract and limits
 
@@ -219,8 +224,11 @@ bun "$PULSAR_CLONE/scripts/agent-smoke.ts" --fixture-only
 The harness creates and deletes an isolated temporary Git order-service repo,
 uses its own tests, disables Git signing command-locally and isolates HOME and
 `PULSAR_STATE_HOME`. It checks catalog/config validation, pre-import trust refusal,
-candidate non-mutation, actual SDK processor execution, block→repair→pass,
-weight/module policy guards, detail-only filtering and cold/warm parity. It does
+candidate non-mutation, effective weighting and actual SDK processor execution,
+block→repair→gate-pass, weight/module policy guards, detail-only filtering and
+attributed cold/warm parity. The fresh service lacks history and reference data:
+after repair the hard gate passes but exit 3 correctly preserves those evidence
+gaps. The harness does not disable those signals to manufacture exit 0. It does
 not hardcode a passing score or suppress other detectors. Fixture-only mode links
 the clone's dependencies and declares them in the temporary repo solely because
 the legacy CLI lacks the POC dependency-root option; full acceptance does not.

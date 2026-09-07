@@ -157,6 +157,20 @@ test("repair/untracked bytes change input not policy; weight changes policy; com
   expect(await Effect.runPromise(loadProjectModuleCalibrationContext(root))).toBeUndefined()
 })
 
+test("repository author identity rules change policy, not just input identity", async () => {
+  const root = await fixture()
+  const policy = await staticPolicy(root)
+  const before = await prepare(policy)
+  await write(root, ".pulsar/author-aliases.json", JSON.stringify({ "bot@example.com": "Team" }))
+  const aliased = await prepare(policy)
+  expect(aliased.fingerprint).not.toBe(before.fingerprint)
+  await write(root, ".pulsar/author-aliases.json", JSON.stringify({ "bot@example.com": "Other team" }))
+  const after = await prepare(policy)
+  expect(after.fingerprint).not.toBe(aliased.fingerprint)
+  await write(root, ".mailmap", "Team <team@example.com> Bot <bot@example.com>\n")
+  expect((await prepare(policy)).fingerprint).not.toBe(after.fingerprint)
+})
+
 test("unfinished implementation repair changes evaluated score and input but preserves policy, including zero weights", async () => {
   const root = await fixture()
   await write(root, "src/index.ts", "export function calculate(value: number): number { throw new Error('not implemented') }\n")

@@ -45,37 +45,34 @@ Pulsar is repository-level, always. A repo-local `.pulsar/vector.json` is the so
 
 Presets are opt-in vector profile templates for creating or updating a repo vector. A preset is not active pulsar until it is applied to the repo. Shipped presets carry `preset_profile` metadata such as `workflow-risk`, `technology-practice`, or `architecture-taste` so a team can tell whether it is applying a conventional risk posture, a technology practice, or stronger local taste.
 
-## Quick Start From Source
+## Agent-first POC: discover, customize, assess
 
-After the first npm release, run Pulsar without cloning the repo:
+Pulsar's agent-first POC centers on signals, repository-specific processors and signal weights. The agent owns normal repo configuration files; Pulsar discovers their contracts, validates the policy, and evaluates the code under that policy. No persona, quiz, bisect, ratchet, baseline, hosted account or LLM key is required.
 
-```bash
-npx @skastr0/pulsar score .
-bunx @skastr0/pulsar score .
-pnpm dlx @skastr0/pulsar score .
-```
+This opt-in source workflow uses `pulsar agent`. It is not a claim that an existing npm release includes the POC. Use Bun 1.3.14, Git, and a supported macOS/Linux arm64/x64 environment.
 
 ```bash
 git clone https://github.com/skastr0/pulsar.git
 cd pulsar
-bun install
-bun run verify
+bun install --frozen-lockfile
+bun run dev agent --help
+bun run dev agent catalog /path/to/your/repo
 ```
 
-Run the CLI from source:
+The source runner builds missing workspace outputs automatically. From your own repository, run `bun /path/to/pulsar/scripts/pulsar-dev.ts agent catalog .`; the runner preserves your working directory. Preparation logs go to stderr; operation results are JSON on stdout.
 
-```bash
-bun packages/cli/src/bin.ts score .
-bun packages/cli/src/bin.ts score --json .
-bun packages/cli/src/bin.ts backpressure .
-```
+1. **Discover** signal schemas, defaults, weights and executable processor slots with `agent catalog`.
+2. **Customize** the repo vector and project modules using your editor; validate candidate files with `agent config` before adopting them.
+3. **Assess** with `agent score`, repair the code, and rerun with `--expect-policy <fingerprint>` to verify under unchanged policy.
 
-Build and install a local standalone binary:
+See the [complete self-service guide](docs/agent-first.md) for runnable configuration and processor examples, trust requirements, exit codes and the consumer acceptance harness. Executable project modules require `--trust-project-code`; this grants process permissions, not a sandbox. Inspection may write disposable caches, never repo policy or baselines.
+
+Existing root commands and published distribution channels remain available for compatibility. They are not prerequisites for the new workflow. To build and install a standalone binary from this checkout:
 
 ```bash
 bun run build:cli
 bun run install:local
-pulsar --help
+pulsar agent --help
 ```
 
 ## Common Commands

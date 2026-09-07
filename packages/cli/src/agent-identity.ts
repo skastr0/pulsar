@@ -48,8 +48,13 @@ export const agentReferencePolicyFingerprint = (repoRoot: string): Effect.Effect
       CANONICAL_CONVENTIONS_RELATIVE_PATH,
       CANONICAL_CONTRACT_FRESHNESS_RELATIVE_PATH,
       CANONICAL_DOMAIN_CONSTRUCTION_RELATIVE_PATH,
+      ".pulsar/author-aliases.json",
+      ".mailmap",
     ]) {
-      try { entries.push([path, JSON.parse(await readFile(join(repoRoot, path), "utf8"))]) } catch (cause) {
+      try {
+        const content = await readFile(join(repoRoot, path), "utf8")
+        entries.push([path, path === ".mailmap" ? content : JSON.parse(content)])
+      } catch (cause) {
         if (typeof cause === "object" && cause !== null && "code" in cause && cause.code === "ENOENT") continue
         throw cause
       }

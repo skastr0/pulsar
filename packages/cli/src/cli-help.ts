@@ -2,6 +2,17 @@ import { CLI_VERSION } from "./index.js"
 
 const HELP_SECTIONS: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [
   [
+    "Agent-first POC",
+    [
+      "  pulsar agent --help",
+      "  pulsar agent catalog [repo]   Discover signals, configuration, weights and processor slots.",
+      "  pulsar agent config [repo]    Validate and explain repo-owned policy.",
+      "  pulsar agent score [repo]     Assess, repair, and verify under the same policy.",
+      "  JSON by default. No baseline, persona, ratchet or quiz required.",
+      "  Existing commands below remain available for compatibility.",
+    ],
+  ],
+  [
     "Usage",
     [
       "  pulsar onboard [--json|--agent|--no-tui] [<repo-path>]",

@@ -22,7 +22,6 @@ const invalid = (message: string): never => {
 
 export const parseAgentArguments = (args: ReadonlyArray<string>): AgentArguments => {
   const first = args[0]
-  const help = args.length === 0 || args.includes("--help") || args.includes("-h")
   const operation = first === undefined || first === "--help" || first === "-h" ? "catalog" : first
   if (operation !== "catalog" && operation !== "config" && operation !== "score") {
     return invalid(`Unknown agent operation: ${operation}`)
@@ -85,7 +84,7 @@ export const parseAgentArguments = (args: ReadonlyArray<string>): AgentArguments
     repoPath: positional[0] ?? ".",
     full: switches.has("--full"),
     limit,
-    help,
+    help: args.length === 0 || switches.has("--help") || switches.has("-h"),
     ...(values.has("--vector") ? { vectorPath: values.get("--vector")! } : {}),
     ...(values.has("--modules") ? { modulesPath: values.get("--modules")! } : {}),
     ...(values.has("--module-dependency-root") ? { moduleDependencyRoot: values.get("--module-dependency-root")! } : {}),

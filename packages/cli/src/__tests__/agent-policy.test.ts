@@ -4,10 +4,10 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { Effect, Schema } from "effect"
 import { simpleGit } from "simple-git"
-import { buildAgentCatalog, agentSlotExample } from "./agent-catalog.js"
-import { loadAgentPolicy } from "./agent-policy.js"
-import { AgentCommandError } from "./agent-contract.js"
-import { buildPulsarRegistry } from "./runtime-registry.js"
+import { buildAgentCatalog, agentSlotExample } from "../agent-catalog.js"
+import { loadAgentPolicy } from "../agent-policy.js"
+import { AgentCommandError } from "../agent-contract.js"
+import { buildPulsarRegistry } from "../runtime-registry.js"
 import { makeResolvedCalibrationContext, type TypeScriptSizePolicyValue } from "@skastr0/pulsar-core/calibration"
 import type { DefinedProjectModule } from "@skastr0/pulsar-project-module-sdk"
 
@@ -110,7 +110,7 @@ describe("strict static policy", () => {
     await writeFile(join(home, ".config/pulsar/vector.json"), JSON.stringify({ ...vector({}), id: "org" }))
     const discover = async (vectorPath?: string) => {
       const program = `import {Effect} from ${JSON.stringify(import.meta.resolve("effect"))};
-        import {loadAgentPolicy} from ${JSON.stringify(resolve(import.meta.dir, "agent-policy.ts"))};
+        import {loadAgentPolicy} from ${JSON.stringify(resolve(import.meta.dir, "../agent-policy.ts"))};
         console.log(JSON.stringify((await Effect.runPromise(loadAgentPolicy(${JSON.stringify({ repoPath: repo, ...(vectorPath === undefined ? {} : { vectorPath }) })}))).vectorSelection));`
       const child = Bun.spawn([process.execPath, "-e", program], { env: { ...process.env, HOME: home }, stdout: "pipe", stderr: "pipe" })
       const output = await new Response(child.stdout).text()
@@ -205,7 +205,7 @@ describe("agent catalog", () => {
     expect(unchanged.value.maxLoc).toBe(300)
     const detail = await Effect.runPromise(buildAgentCatalog({ repoPath: repo, slotId: "typescript.size-policy" }))
     expect(detail.example).toBe(example)
-    const consumer = await readFile(resolve(import.meta.dir, "../../ts-pack/src/signals/ts-ld-02-thresholds.ts"), "utf8")
+    const consumer = await readFile(resolve(import.meta.dir, "../../../ts-pack/src/signals/ts-ld-02-thresholds.ts"), "utf8")
     expect(consumer).toContain('runSlot("typescript.size-policy"')
   })
 })

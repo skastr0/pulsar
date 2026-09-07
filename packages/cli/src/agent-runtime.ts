@@ -10,6 +10,7 @@ import {
   type AgentStaticPolicy,
 } from "./agent-contract.js"
 import { agentInputFingerprint, agentReferencePolicyFingerprint } from "./agent-identity.js"
+import { CLI_BUILD_INFO } from "./index.js"
 import { loadProjectModuleCalibrationContext } from "./runtime-calibration.js"
 import { makePulsarRuntime, readHeadSha, type observeWorktree } from "./runtime.js"
 
@@ -42,8 +43,10 @@ export const prepareAgentPolicy = (
     manifest: fingerprintProjectModuleManifest(manifest), modules, processors,
   })
   const referencePolicyFingerprint = yield* agentReferencePolicyFingerprint(policy.repoRoot)
+  const tool = { version: CLI_BUILD_INFO.version, commit: CLI_BUILD_INFO.commit, dirty: CLI_BUILD_INFO.dirty }
   const fingerprint = hashCalibrationValue({
     schema: "pulsar/agent-policy/v1",
+    tool,
     assessmentScope: "whole-repo",
     vector: policy.vector ?? null,
     observer: computeObserverConfigHash(policy.registry, policy.vector, calibrationPolicyFingerprint, referencePolicyFingerprint),
@@ -52,7 +55,6 @@ export const prepareAgentPolicy = (
     fingerprint,
     calibrationContext,
     explanation: {
-      ...policy.explanation,
       fingerprint,
       assessmentScope: "whole-repo",
       selectedManifest: manifest,
@@ -60,7 +62,7 @@ export const prepareAgentPolicy = (
       processors,
       trust: { required: executableRefs.length > 0, granted: options.trustProjectCode === true, execution: "in-process; not sandboxed" },
       dependencySource: { root: dependencyRoot, selection: dependencyRoot === resolve(policy.repoRoot) ? "repository" : "explicit" },
-      policyIdentity: { calibrationPolicyFingerprint, referencePolicyFingerprint },
+      policyIdentity: { tool, calibrationPolicyFingerprint, referencePolicyFingerprint },
       inputEvidence: { repoFacts: calibrationContext.repoFacts, calibrationFingerprint: calibrationContext.fingerprint },
       identityLimitations: [
         "Owned module source and statically discoverable helper imports use content identities and repo/package-relative paths.",

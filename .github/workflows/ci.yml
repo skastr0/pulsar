@@ -23,6 +23,8 @@ jobs:
         run: echo "PULSAR_STATE_HOME=${RUNNER_TEMP}/pulsar-state" >> "$GITHUB_ENV"
       - run: bun install --frozen-lockfile
       - run: bun run verify
+      - name: Agent-first external consumer contract (source)
+        run: bun run smoke:agent
 
   artifact-contract:
     runs-on: ubuntu-latest
