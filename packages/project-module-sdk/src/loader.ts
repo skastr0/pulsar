@@ -3,12 +3,8 @@ import {
   activateProjectModule,
   type ProjectModuleDescriptor,
 } from "@skastr0/pulsar-core/calibration"
-import {
-  defineProjectModule,
-  isDefinedProjectModule,
-  isProjectModuleDefinitionInput,
-  type DefinedProjectModule,
-} from "./definition.js"
+import type { DefinedProjectModule } from "./definition.js"
+import { validateLoadedProjectModule } from "./loader-validation.js"
 import type { ProjectModuleManifest, ProjectModuleRef } from "./manifest.js"
 import {
   ProjectModuleLoadError,
@@ -64,7 +60,7 @@ export const loadProjectModuleRef = (
           })
         : exported
 
-    const module = yield* normalizeLoadedProjectModule(ref, target, value)
+    const module = yield* validateLoadedProjectModule(ref, target, value)
     return withLoadedProjectModuleSourceIdentity(module, resolvedTarget)
   })
 
@@ -72,11 +68,22 @@ export const loadEnabledProjectModules = (
   manifest: ProjectModuleManifest,
   options: ProjectModuleLoadOptions,
 ): Effect.Effect<ReadonlyArray<DefinedProjectModule>, ProjectModuleLoadError> =>
-  Effect.forEach(
-    manifest.modules.filter((ref) => ref.enabled),
-    (ref) => loadProjectModuleRef(ref, options),
-    { concurrency: 4 },
-  )
+  Effect.gen(function* () {
+    const ids = new Set<string>()
+    for (const ref of manifest.modules) {
+      if (ids.has(ref.id)) {
+        return yield* new ProjectModuleLoadError({
+          refId: ref.id, target: ref.id, message: `Duplicate project module ref ${ref.id}`,
+        })
+      }
+      ids.add(ref.id)
+    }
+    return yield* Effect.forEach(
+      manifest.modules.filter((ref) => ref.enabled),
+      (ref) => loadProjectModuleRef(ref, options),
+      { concurrency: 4 },
+    )
+  })
 
 const loadBuiltinProjectModuleRef = (
   ref: ProjectModuleRef & { readonly kind: "builtin" },
@@ -92,32 +99,18 @@ const loadBuiltinProjectModuleRef = (
       })
     }
 
+    const validated = yield* validateLoadedProjectModule(ref, ref.id, module)
     const descriptor: ProjectModuleDescriptor = {
-      ...module.descriptor,
+      ...validated.descriptor,
       source: "builtin",
       sourceRef: ref.id,
     }
     return {
       descriptor,
       activeModule: activateProjectModule(descriptor),
-      processors: module.processors,
+      processors: validated.processors,
     }
   })
-
-const normalizeLoadedProjectModule = (
-  ref: ProjectModuleRef,
-  target: string,
-  value: unknown,
-): Effect.Effect<DefinedProjectModule, ProjectModuleLoadError> => {
-  if (isDefinedProjectModule(value)) return Effect.succeed(value)
-  if (isProjectModuleDefinitionInput(value)) return Effect.succeed(defineProjectModule(value))
-
-  return Effect.fail(new ProjectModuleLoadError({
-    refId: ref.id,
-    target,
-    message: `Project module ${ref.id} must export a DefinedProjectModule or ProjectModuleDefinitionInput`,
-  }))
-}
 
 const withLoadedProjectModuleSourceIdentity = (
   module: DefinedProjectModule,
