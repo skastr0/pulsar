@@ -14,7 +14,7 @@ describe("SchemaConventions", () => {
         },
         "packages/ts-pack": {
           visibility: "internal",
-          allowed_imports: ["@skastr0/pulsar-core", "effect", "ts-morph"],
+          allowed_imports: ["@skastr0/pulsar-core", "effect", "simple-git"],
         },
       },
       rust_crate_boundaries: {

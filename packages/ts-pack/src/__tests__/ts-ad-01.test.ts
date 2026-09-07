@@ -247,7 +247,7 @@ describe("TS-AD-01 (module boundary violations)", () => {
     await writePackage("app", "@repo/app")
     await repo.write(
       "packages/app/src/index.ts",
-      "import { Project } from 'ts-morph'\nexport const appValue = Project\n",
+      "import { chunk } from 'lodash'\nexport const appValue = chunk([1, 2], 1)\n",
     )
 
     const out = await runSignal(repo.root, TsAd01, TsAd01.defaultConfig, {
@@ -255,7 +255,7 @@ describe("TS-AD-01 (module boundary violations)", () => {
         "packages/app": {
           visibility: "internal",
           allowed_imports: [],
-          blocked_imports: ["ts-morph"],
+          blocked_imports: ["lodash"],
         },
       }),
     })

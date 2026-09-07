@@ -5,7 +5,7 @@ import { join, extname } from "node:path"
 /**
  * Service tag for markdown project context.
  * 
- * Similar to TsProjectTag or RustProjectTag, this provides domain-specific
+ * Similar to TsAnalysisTag or RustProjectTag, this provides domain-specific
  * context that markdown signals need for analysis.
  */
 export interface MarkdownProject {

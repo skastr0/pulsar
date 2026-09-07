@@ -71,7 +71,7 @@ These should live in language-ecosystem packs that track the JS/TS tooling lands
 | **JS Frameworks** | 60+ config filenames (astro, drizzle, eslint, next, nuxt, playwright, postcss, sst, svelte, tailwind, vite) | TS-DE-04 | `calibration-js-tooling` |
 | **JS Frameworks** | Bundled app framework detection (`vite`, `next`, `astro`, `svelte-kit`, `electron-vite`, `tauri`) | TS-DE-04 | `calibration-js-tooling` |
 | **JS Frameworks** | Bundled CLI pipeline detection | TS-DE-04 | `calibration-js-tooling` |
-| **TypeScript AST** | `ts.is[A-Z]` / `Node.is[A-Z]` predicate union guards | TS-SL-01 | `calibration-ts-morph` |
+| **TypeScript AST** | `ts.is[A-Z]` / `Node.is[A-Z]` predicate union guards | TS-SL-01 | `calibration-tsgo` |
 | **DefinitelyTyped** | `@types/` auto-mapping | TS-DE-04 | `calibration-js-tooling` |
 | **Storybook** | `*.stories.ts`, `*.stories.tsx`, `.storybook/` | taxonomy | `calibration-js-tooling` |
 | **Happy DOM** | `happydom.ts` | taxonomy | `calibration-js-tooling` |
@@ -593,7 +593,7 @@ Some hardcoded logic is genuinely structural and should remain in core:
 
 - **Graph algorithms** (Tarjan SCC for cycles, bitset reachability, Levenshtein matching)
 - **Tokenization** (the duplication tokenizer's lexer is a generic algorithm)
-- **AST traversal** (walking ts-morph nodes is structural)
+- **AST traversal** (walking compiler nodes is structural)
 - **Git operations** (parsing diffs, computing churn)
 
 The boundary is: **structural algorithms stay in core; domain-specific pattern matching moves to calibration**.

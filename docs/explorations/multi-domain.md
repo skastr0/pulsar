@@ -29,7 +29,7 @@ Can the signal interface (`Signal<Config, Output, R>`) generalize to non-code do
 
 **Reference data**: Replaces "glossary of domain terms" with "brand voice exemplars" or "campaign briefs". Same structure, different content. ✓
 
-**Compute requirements**: Instead of `TsProjectTag` (ts-morph AST), prose signals need:
+**Compute requirements**: Instead of `TsAnalysisTag` (Quartz/tsgo AST), prose signals need:
 - Text analysis (tokenization, readability metrics)
 - Pattern matching (brand voice consistency)
 - Potentially LLM-based semantic analysis (Tier 3)
@@ -179,7 +179,7 @@ This keeps the infrastructure unified while allowing domain-specific evolution.
 
 | Domain | Current tooling | New tooling needed |
 |--------|-----------------|-------------------|
-| TypeScript | ts-morph, tree-sitter | — |
+| TypeScript | Quartz/tsgo, tree-sitter | — |
 | Rust | tree-sitter-rust | — |
 | Writing | — | spaCy (Python bridge?), textstat, custom NLP |
 | Marketing | — | LLM APIs for semantic analysis |
