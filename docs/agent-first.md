@@ -26,6 +26,20 @@ messages on stderr. The repository argument selects what is scored; the current
 directory need not be the Pulsar clone or the target repository. Omit the argument
 only when the current directory is the intended repository.
 
+## Get evidence before configuring anything
+
+```sh
+bun "$PULSAR_CLONE/scripts/pulsar-dev.ts" agent score "$REPO"
+```
+
+This uses the repository's existing policy, an explicitly identified organization
+fallback, or generic defaults. There is no required setup, vector generation,
+baseline, questionnaire or calibration module. A repository that already enables
+executable modules still requires explicit trust. Exit 2 means a proven hard block;
+exit 3 means incomplete evidence, not an installation failure. Read the JSON in
+both cases. Customize only where this repository needs a different interpretation
+or weighting; the following sections show how, not additional prerequisites.
+
 ## Discover before authoring
 
 Start with `agent catalog`, choose a relevant signal, then request its config
@@ -194,10 +208,12 @@ with secrets or elevated access. Refusal happens before importing project code.
 
 ## Machine contract and limits
 
-Every operation emits one JSON envelope on stdout, without `--json`:
+Operations emit one JSON envelope on stdout, without `--json` (`--help` is text):
 `{schema: "pulsar/agent/v1alpha1", operation, status, result}`. Consumers should
 ignore unknown optional fields. Errors use `status: "error"` and
 `error: {code, message, issues, recovery}` instead of an assessment result.
+Trusted modules must cooperate: console logging is routed to stderr, but arbitrary
+code can still write directly to stdout or exit the process; trust is not isolation.
 
 | Exit | Meaning |
 | --- | --- |
@@ -223,7 +239,8 @@ bun "$PULSAR_CLONE/scripts/agent-smoke.ts" --fixture-only
 
 The harness creates and deletes an isolated temporary Git order-service repo,
 uses its own tests, disables Git signing command-locally and isolates HOME and
-`PULSAR_STATE_HOME`. It checks catalog/config validation, pre-import trust refusal,
+`PULSAR_STATE_HOME`. It first assesses a separate zero-config service without
+creating policy, then checks catalog/config validation, pre-import trust refusal,
 candidate non-mutation, effective weighting and actual SDK processor execution,
 block→repair→gate-pass, weight/module policy guards, detail-only filtering and
 attributed cold/warm parity. The fresh service lacks history and reference data:

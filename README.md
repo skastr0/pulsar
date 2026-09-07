@@ -57,6 +57,7 @@ cd pulsar
 bun install --frozen-lockfile
 bun run dev agent --help
 bun run dev agent catalog /path/to/your/repo
+bun run dev agent score /path/to/your/repo
 ```
 
 The source runner builds missing workspace outputs automatically. From your own repository, run `bun /path/to/pulsar/scripts/pulsar-dev.ts agent catalog .`; the runner preserves your working directory. Preparation logs go to stderr; operation results are JSON on stdout.

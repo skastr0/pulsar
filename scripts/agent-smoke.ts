@@ -20,7 +20,7 @@ const repair = `let total = 0
   }
   return total`
 
-export async function createConsumer(root: string) {
+export async function createConsumer(root: string, withPolicy = true) {
   const repo = join(root, "orders")
   const put = async (path: string, content: string) => {
     await mkdir(dirname(join(repo, path)), { recursive: true })
@@ -32,7 +32,10 @@ export async function createConsumer(root: string) {
     ["vector.json", ".pulsar/vector.json"],
     ["project-modules.json", ".pulsar/project-modules.json"],
     ["orders.ts", ".pulsar/modules/orders.ts"],
-  ]) await put(target!, await readFile(join(fixtures, source!), "utf8"))
+  ]) {
+    if (!withPolicy && target!.startsWith(".pulsar/")) continue
+    await put(target!, await readFile(join(fixtures, source!), "utf8"))
+  }
   await put("package.json", JSON.stringify({ name: "order-service", private: true, type: "module", scripts: { test: "bun test" } }))
   await put("tsconfig.json", JSON.stringify({ compilerOptions: { strict: true, target: "ES2022", module: "ESNext", moduleResolution: "Bundler" }, include: ["src"] }))
   await put("README.md", "# Order service\nQuotes order quantities in integer cents. Run `bun test`.\n")
@@ -102,6 +105,17 @@ export async function smoke(cli?: string, fixtureOnly = false) {
       return
     }
     const command = cli ? [resolve(cli)] : [process.execPath, join(clone, "scripts/pulsar-dev.ts")]
+    const fresh = await createConsumer(join(root, "zero-config"), false)
+    const initial = await fresh.run([...command, "agent", "score", fresh.repo], root)
+    assert.equal(initial.code, 2, initial.stdout + initial.stderr)
+    const defaults = JSON.parse(initial.stdout)
+    assert.equal(defaults.schema, "pulsar/agent/v1alpha1")
+    assert.equal(defaults.status, "completed")
+    assert.equal(defaults.result.policy.vector.trust_boundary, "built-in-defaults")
+    assert.equal(defaults.result.assessment.hard_gate_status, "fail")
+    assert.ok(defaults.result.findings.some((finding: { signal_id: string }) => finding.signal_id === stubId))
+    assert.ok(!existsSync(join(fresh.repo, ".pulsar/vector.json")), "first assessment generated policy")
+    assert.ok(!existsSync(join(fresh.repo, ".pulsar/project-modules.json")), "first assessment generated modules")
     // Deliberately invoke from outside both the consumer and the Pulsar clone.
     const call = async (operation: string, args: string[] = [], code = 0) => {
       const out = await run([...command, "agent", operation, repo, ...args], root)
@@ -193,7 +207,7 @@ export async function smoke(cli?: string, fixtureOnly = false) {
     assert.ok(JSON.stringify(recalibrated.signals[sizeId].factors).includes("order-service.reviewable-size.v1"), "calibration rule attribution missing")
     await writeFile(join(repo, modulePath), original[modulePath]!)
     assert.deepEqual(await policyFiles(repo), original)
-    console.log("PASS agent consumer: catalog, validation, pre-import trust, preview, effective weights/processors, block→repair→gate-pass (evidence gaps preserved), detail-only filters, policy guards, no mutations, attributed cold/warm parity")
+    console.log("PASS agent consumer: zero-config assessment, catalog, validation, pre-import trust, preview, effective weights/processors, block→repair→gate-pass (evidence gaps preserved), detail-only filters, policy guards, no mutations, attributed cold/warm parity")
   } finally {
     await rm(root, { recursive: true, force: true })
   }
