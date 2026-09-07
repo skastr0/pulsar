@@ -22,7 +22,6 @@ import type {
 export const TsDe01Config = Schema.Struct({
   exclude_globs: Schema.Array(Schema.String),
   top_n_diagnostics: Schema.Number,
-  precise_module_limit: Schema.Number,
 })
 type TsDe01Config = typeof TsDe01Config.Type
 
@@ -34,7 +33,7 @@ export const TsDe01: Signal<TsDe01Config, TsDe01Output, TsAnalysisTag> = {
   category: "dependency-entropy",
   kind: "legibility",
   evidenceClass: "statistical",
-  cacheVersion: "factor-policy-v1-diagnostic-limit-v1-fast-import-type-v2-tsconfig-aliases",
+  cacheVersion: "factor-policy-v1-diagnostic-limit-v1-fast-import-type-v3-no-precise-limit",
   configSchema: TsDe01Config,
   defaultConfig: {
     exclude_globs: [
@@ -55,7 +54,6 @@ export const TsDe01: Signal<TsDe01Config, TsDe01Output, TsAnalysisTag> = {
       "**/.turbo/**",
     ],
     top_n_diagnostics: 10,
-    precise_module_limit: 1_000,
   },
   inputs: [],
   compute: (config) =>

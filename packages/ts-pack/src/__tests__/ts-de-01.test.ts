@@ -77,7 +77,7 @@ describe("TS-DE-01 (type-level coupling)", () => {
       tier: 1,
       category: "dependency-entropy",
       kind: "legibility",
-      cacheVersion: "factor-policy-v1-diagnostic-limit-v1-fast-import-type-v2-tsconfig-aliases",
+      cacheVersion: "factor-policy-v1-diagnostic-limit-v1-fast-import-type-v3-no-precise-limit",
       inputs: [],
     })
     expect(registered?.id).toBe(TsDe01.id)
@@ -96,14 +96,6 @@ describe("TS-DE-01 (type-level coupling)", () => {
       expect.objectContaining({
         path: "config.top_n_diagnostics",
         value: 10,
-        source: "signal-default",
-        scoreRole: "threshold",
-      }),
-    )
-    expect(factorLedger?.entries).toContainEqual(
-      expect.objectContaining({
-        path: "config.precise_module_limit",
-        value: 1_000,
         source: "signal-default",
         scoreRole: "threshold",
       }),
@@ -169,7 +161,7 @@ describe("TS-DE-01 (type-level coupling)", () => {
     expect(TsDe01.diagnose(out)).toEqual([])
   })
 
-  test("large-project fast path counts imported type references syntactically", async () => {
+  test("counts imported type references syntactically", async () => {
     const a = await writeTs("src/a.ts", "export interface A { value: string }\n")
     const b = await writeTs(
       "src/b.ts",
@@ -180,17 +172,14 @@ describe("TS-DE-01 (type-level coupling)", () => {
       ].join("\n"),
     )
 
-    const out = await runCompute({
-      ...TsDe01.defaultConfig,
-      precise_module_limit: 1,
-    })
+    const out = await runCompute()
     const byFile = new Map(out.modules.map((module) => [module.file, module]))
 
     expect(byFile.get(b)?.externalTypesReferenced).toBe(1)
     expect(byFile.get(a)?.typesReferencedExternally).toBe(1)
   })
 
-  test("large-project fast path counts default and namespace type imports", async () => {
+  test("counts default and namespace type imports", async () => {
     const defaultFile = await writeTs(
       "src/default-contract.ts",
       "export default interface DefaultContract { value: string }\n",
@@ -209,10 +198,7 @@ describe("TS-DE-01 (type-level coupling)", () => {
       ].join("\n"),
     )
 
-    const out = await runCompute({
-      ...TsDe01.defaultConfig,
-      precise_module_limit: 1,
-    })
+    const out = await runCompute()
     const byFile = new Map(out.modules.map((module) => [module.file, module]))
 
     expect(byFile.get(consumer)?.externalTypesReferenced).toBe(2)
@@ -234,7 +220,7 @@ describe("TS-DE-01 (type-level coupling)", () => {
     expect(byFile.get(namespaceFile)?.typesReferencedExternally).toBe(1)
   })
 
-  test("large-project fast path counts relative import-type references", async () => {
+  test("counts relative import-type references", async () => {
     const a = await writeTs("src/a.ts", "export interface A { value: string }\n")
     const b = await writeTs(
       "src/b.ts",
@@ -244,10 +230,7 @@ describe("TS-DE-01 (type-level coupling)", () => {
       ].join("\n"),
     )
 
-    const out = await runCompute({
-      ...TsDe01.defaultConfig,
-      precise_module_limit: 1,
-    })
+    const out = await runCompute()
     const byFile = new Map(out.modules.map((module) => [module.file, module]))
 
     expect(byFile.get(b)?.externalTypesReferenced).toBe(1)
@@ -262,7 +245,7 @@ describe("TS-DE-01 (type-level coupling)", () => {
     expect(byFile.get(a)?.typesReferencedExternally).toBe(1)
   })
 
-  test("large-project fast path resolves tsconfig path alias type imports", async () => {
+  test("resolves tsconfig path alias type imports", async () => {
     const a = await writeTs("src/a.ts", "export interface A { value: string }\n")
     const b = await writeTs(
       "src/b.ts",
@@ -273,17 +256,11 @@ describe("TS-DE-01 (type-level coupling)", () => {
       ].join("\n"),
     )
 
-    const precise = await runCompute()
-    const fast = await runCompute({
-      ...TsDe01.defaultConfig,
-      precise_module_limit: 1,
-    })
-    const preciseByFile = new Map(precise.modules.map((module) => [module.file, module]))
-    const fastByFile = new Map(fast.modules.map((module) => [module.file, module]))
+    const out = await runCompute()
+    const byFile = new Map(out.modules.map((module) => [module.file, module]))
 
-    expect(preciseByFile.get(b)?.externalTypesReferenced).toBe(1)
-    expect(fastByFile.get(b)?.externalTypesReferenced).toBe(1)
-    expect(fastByFile.get(b)?.counterparts).toEqual([
+    expect(byFile.get(b)?.externalTypesReferenced).toBe(1)
+    expect(byFile.get(b)?.counterparts).toEqual([
       {
         module: a,
         outgoingTypes: 1,
@@ -291,7 +268,7 @@ describe("TS-DE-01 (type-level coupling)", () => {
         totalTypes: 1,
       },
     ])
-    expect(fastByFile.get(a)?.typesReferencedExternally).toBe(1)
+    expect(byFile.get(a)?.typesReferencedExternally).toBe(1)
   })
 
   test("resolves custom tsconfig path aliases instead of hardcoded @/*", async () => {
@@ -328,7 +305,72 @@ describe("TS-DE-01 (type-level coupling)", () => {
     ])
   })
 
-  test("large-project fast path attributes re-export imports to original type definitions", async () => {
+  test("resolves two-package path aliases to each package's own target", async () => {
+    await writeTs(
+      "packages/app/tsconfig.json",
+      JSON.stringify({
+        compilerOptions: {
+          target: "ES2022",
+          module: "ESNext",
+          moduleResolution: "Bundler",
+          baseUrl: ".",
+          paths: {
+            "#/*": ["src/*"],
+          },
+        },
+        include: ["src/**/*.ts"],
+      }),
+    )
+    await writeTs(
+      "packages/lib/tsconfig.json",
+      JSON.stringify({
+        compilerOptions: {
+          target: "ES2022",
+          module: "ESNext",
+          moduleResolution: "Bundler",
+          baseUrl: ".",
+          paths: {
+            "#/*": ["src/*"],
+          },
+        },
+        include: ["src/**/*.ts"],
+      }),
+    )
+    const appModel = await writeTs("packages/app/src/model.ts", "export interface AppModel { id: string }\n")
+    const libModel = await writeTs("packages/lib/src/model.ts", "export interface LibModel { id: string }\n")
+    const appConsumer = await writeTs(
+      "packages/app/src/consumer.ts",
+      ["import type { AppModel } from '#/model'", "export type AppConsumer = AppModel", ""].join("\n"),
+    )
+    const libConsumer = await writeTs(
+      "packages/lib/src/consumer.ts",
+      ["import type { LibModel } from '#/model'", "export type LibConsumer = LibModel", ""].join("\n"),
+    )
+
+    const out = await runCompute()
+    const byFile = new Map(out.modules.map((module) => [module.file, module]))
+
+    expect(byFile.get(appConsumer)?.counterparts).toEqual([
+      {
+        module: appModel,
+        outgoingTypes: 1,
+        incomingTypes: 0,
+        totalTypes: 1,
+      },
+    ])
+    expect(byFile.get(libConsumer)?.counterparts).toEqual([
+      {
+        module: libModel,
+        outgoingTypes: 1,
+        incomingTypes: 0,
+        totalTypes: 1,
+      },
+    ])
+    expect(byFile.get(appConsumer)?.counterparts?.[0]?.module).not.toBe(libModel)
+    expect(byFile.get(libConsumer)?.counterparts?.[0]?.module).not.toBe(appModel)
+  })
+
+  test("attributes re-export imports to original type definitions", async () => {
     const a = await writeTs("src/a.ts", "export interface A { value: string }\n")
     await writeTs("src/index.ts", "export type { A } from './a'\n")
     const consumer = await writeTs(
@@ -340,11 +382,8 @@ describe("TS-DE-01 (type-level coupling)", () => {
       ].join("\n"),
     )
 
-    const fast = await runCompute({
-      ...TsDe01.defaultConfig,
-      precise_module_limit: 1,
-    })
-    const consumerEntry = fast.modules.find((module) => module.file === consumer)
+    const out = await runCompute()
+    const consumerEntry = out.modules.find((module) => module.file === consumer)
 
     expect(consumerEntry?.counterparts).toEqual([
       {
@@ -356,7 +395,7 @@ describe("TS-DE-01 (type-level coupling)", () => {
     ])
   })
 
-  test("large-project fast path resolves multi-hop re-export chains", async () => {
+  test("resolves multi-hop re-export chains", async () => {
     const a = await writeTs("src/a.ts", "export interface A { value: string }\n")
     await writeTs("src/index.ts", "export type { A } from './a'\n")
     await writeTs("src/public.ts", "export type { A } from './index'\n")
@@ -369,11 +408,8 @@ describe("TS-DE-01 (type-level coupling)", () => {
       ].join("\n"),
     )
 
-    const fast = await runCompute({
-      ...TsDe01.defaultConfig,
-      precise_module_limit: 1,
-    })
-    const consumerEntry = fast.modules.find((module) => module.file === consumer)
+    const out = await runCompute()
+    const consumerEntry = out.modules.find((module) => module.file === consumer)
 
     expect(consumerEntry?.counterparts).toEqual([
       {
@@ -385,7 +421,7 @@ describe("TS-DE-01 (type-level coupling)", () => {
     ])
   })
 
-  test("large-project fast path deduplicates mixed references to the same target type", async () => {
+  test("deduplicates mixed references to the same target type", async () => {
     const a = await writeTs("src/a.ts", "export interface A { value: string }\n")
     const b = await writeTs(
       "src/b.ts",
@@ -396,17 +432,11 @@ describe("TS-DE-01 (type-level coupling)", () => {
       ].join("\n"),
     )
 
-    const precise = await runCompute()
-    const fast = await runCompute({
-      ...TsDe01.defaultConfig,
-      precise_module_limit: 1,
-    })
-    const preciseByFile = new Map(precise.modules.map((module) => [module.file, module]))
-    const fastByFile = new Map(fast.modules.map((module) => [module.file, module]))
+    const out = await runCompute()
+    const byFile = new Map(out.modules.map((module) => [module.file, module]))
 
-    expect(preciseByFile.get(b)?.externalTypesReferenced).toBe(1)
-    expect(fastByFile.get(b)?.externalTypesReferenced).toBe(1)
-    expect(fastByFile.get(b)?.counterparts).toEqual([
+    expect(byFile.get(b)?.externalTypesReferenced).toBe(1)
+    expect(byFile.get(b)?.counterparts).toEqual([
       {
         module: a,
         outgoingTypes: 1,
@@ -831,8 +861,8 @@ describe("TS-DE-01 (type-level coupling)", () => {
   test("configSchema decodes defaults round-trip", () => {
     const decoded = Schema.decodeSync(TsDe01Config)(TsDe01.defaultConfig)
     expect(decoded.top_n_diagnostics).toBe(10)
-    expect(decoded.precise_module_limit).toBe(1_000)
     expect(decoded.exclude_globs.length).toBeGreaterThan(0)
+    expect(Object.hasOwn(decoded, "precise_module_limit")).toBe(false)
   })
 })
 
