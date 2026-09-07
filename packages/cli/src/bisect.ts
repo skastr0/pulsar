@@ -30,25 +30,27 @@ import type {
 import type { SignalBisectOptions } from "./bisect-signal-types.js"
 
 export const runBisectCommand = (opts: BisectOptions): Effect.Effect<void, unknown, never> =>
-  Effect.gen(function* () {
-    const repoPath = resolve(opts.repoPath)
-    if (!existsSync(repoPath)) {
-      return yield* Effect.fail(new Error(`Path does not exist: ${repoPath}`))
-    }
+  Effect.scoped(
+    Effect.gen(function* () {
+      const repoPath = resolve(opts.repoPath)
+      if (!existsSync(repoPath)) {
+        return yield* Effect.fail(new Error(`Path does not exist: ${repoPath}`))
+      }
 
-    const vector = yield* loadPulsarVectorFromPath(opts.vectorPath)
-    const { engine, registry } = yield* makePulsarRuntime(repoPath, vector, {
-      timeSeries: {
-        enabled: opts.observer === true || opts.signalId === undefined || timeSeriesConfigOf(vector).enabled,
-      },
-    })
-    const observerMode = opts.observer === true || opts.signalId === undefined
+      const vector = yield* loadPulsarVectorFromPath(opts.vectorPath)
+      const { engine, registry } = yield* makePulsarRuntime(repoPath, vector, {
+        timeSeries: {
+          enabled: opts.observer === true || opts.signalId === undefined || timeSeriesConfigOf(vector).enabled,
+        },
+      })
+      const observerMode = opts.observer === true || opts.signalId === undefined
 
-    const runtime = { engine, registry, vector, repoPath }
-    return observerMode
-      ? yield* runObserverBisect(opts, runtime)
-      : yield* runSignalBisect({ ...opts, signalId: opts.signalId! }, runtime)
-  })
+      const runtime = { engine, registry, vector, repoPath }
+      return observerMode
+        ? yield* runObserverBisect(opts, runtime)
+        : yield* runSignalBisect({ ...opts, signalId: opts.signalId! }, runtime)
+    }),
+  )
 
 const runObserverBisect = (
   opts: BisectOptions,

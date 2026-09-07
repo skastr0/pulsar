@@ -92,23 +92,25 @@ export const scoreCommitHistory = (
   baseVector: PulsarVector | undefined,
   commits: ReadonlyArray<CommitLogEntry>,
 ): Effect.Effect<ReadonlyArray<ScoredCommitLogEntry>, Error, never> =>
-  Effect.gen(function* () {
-    const { engine } = yield* makePulsarRuntime(repoRoot, baseVector).pipe(
-      Effect.mapError((cause) => new Error(`Failed to build pulsar runtime: ${String(cause)}`)),
-    )
-    return yield* Effect.forEach(
-      commits,
-      (commit) =>
-        engine.observeCommit(repoRoot, commit.sha).pipe(
-          Effect.map((observer) => ({
-            ...commit,
-            observer,
-          })),
-          Effect.mapError((cause) => new Error(`Failed to score ${commit.sha}: ${String(cause)}`)),
-        ),
-      { concurrency: 1 },
-    )
-  })
+  Effect.scoped(
+    Effect.gen(function* () {
+      const { engine } = yield* makePulsarRuntime(repoRoot, baseVector).pipe(
+        Effect.mapError((cause) => new Error(`Failed to build pulsar runtime: ${String(cause)}`)),
+      )
+      return yield* Effect.forEach(
+        commits,
+        (commit) =>
+          engine.observeCommit(repoRoot, commit.sha).pipe(
+            Effect.map((observer) => ({
+              ...commit,
+              observer,
+            })),
+            Effect.mapError((cause) => new Error(`Failed to score ${commit.sha}: ${String(cause)}`)),
+          ),
+        { concurrency: 1 },
+      )
+    }),
+  )
 
 export const classifyRevealedPreferenceEvents = (
   commits: ReadonlyArray<ScoredCommitLogEntry>,

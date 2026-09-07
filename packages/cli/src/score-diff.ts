@@ -141,43 +141,45 @@ const observeDiffRun = (
   range: { readonly baseRef: string; readonly headRef: string },
   observerVector: PulsarVector,
 ): Effect.Effect<DiffRun, unknown, never> =>
-  Effect.gen(function* () {
-    const repoRoot = yield* resolveRepoRoot(opts.repoPath)
-    const currentHeadSha = yield* readHeadSha(repoRoot)
-    const runtime = yield* makePulsarRuntime(repoRoot, observerVector, {
-      ...(opts.profile === true ? { observer: { profile: true } } : {}),
-      tsProject: { productionOnly: true },
-    })
-    const baseSha = yield* resolveGitRef(repoRoot, range.baseRef)
-    const headIsWorktree = range.headRef === "WORKTREE"
-    const headSha = headIsWorktree
-      ? currentHeadSha
-      : yield* resolveGitRef(repoRoot, range.headRef)
-    const changedHunks = headIsWorktree
-      ? yield* collectWorktreeChangedHunks(repoRoot)
-      : yield* collectChangedHunksForRange(repoRoot, baseSha, headSha)
+  Effect.scoped(
+    Effect.gen(function* () {
+      const repoRoot = yield* resolveRepoRoot(opts.repoPath)
+      const currentHeadSha = yield* readHeadSha(repoRoot)
+      const runtime = yield* makePulsarRuntime(repoRoot, observerVector, {
+        ...(opts.profile === true ? { observer: { profile: true } } : {}),
+        tsProject: { productionOnly: true },
+      })
+      const baseSha = yield* resolveGitRef(repoRoot, range.baseRef)
+      const headIsWorktree = range.headRef === "WORKTREE"
+      const headSha = headIsWorktree
+        ? currentHeadSha
+        : yield* resolveGitRef(repoRoot, range.headRef)
+      const changedHunks = headIsWorktree
+        ? yield* collectWorktreeChangedHunks(repoRoot)
+        : yield* collectChangedHunksForRange(repoRoot, baseSha, headSha)
 
-    const baseOutput = yield* runtime.engine.observeCommit(repoRoot, baseSha)
-    const headOutput = headIsWorktree
-      ? yield* runtime.engine.observeWorktree(repoRoot, currentHeadSha, { changedHunks: [] })
-      : yield* runtime.engine.observeCommit(repoRoot, headSha)
-    const changedHeadOutput = headIsWorktree && changedHunks.length > 0
-      ? yield* runtime.engine.observeWorktree(repoRoot, currentHeadSha, {
-          changedHunks,
-          assessmentScope: "changed-only",
-        })
-      : undefined
+      const baseOutput = yield* runtime.engine.observeCommit(repoRoot, baseSha)
+      const headOutput = headIsWorktree
+        ? yield* runtime.engine.observeWorktree(repoRoot, currentHeadSha, { changedHunks: [] })
+        : yield* runtime.engine.observeCommit(repoRoot, headSha)
+      const changedHeadOutput = headIsWorktree && changedHunks.length > 0
+        ? yield* runtime.engine.observeWorktree(repoRoot, currentHeadSha, {
+            changedHunks,
+            assessmentScope: "changed-only",
+          })
+        : undefined
 
-    return {
-      repoRoot,
-      base: { ref: range.baseRef, sha: baseSha, output: baseOutput },
-      head: { ref: range.headRef, sha: headSha, output: headOutput },
-      ...(changedHeadOutput !== undefined
-        ? { changedHead: { ref: range.headRef, sha: headSha, output: changedHeadOutput } }
-        : {}),
-      changedHunks,
-    }
-  })
+      return {
+        repoRoot,
+        base: { ref: range.baseRef, sha: baseSha, output: baseOutput },
+        head: { ref: range.headRef, sha: headSha, output: headOutput },
+        ...(changedHeadOutput !== undefined
+          ? { changedHead: { ref: range.headRef, sha: headSha, output: changedHeadOutput } }
+          : {}),
+        changedHunks,
+      }
+    }),
+  )
 
 const buildDiffReport = (
   opts: ScoreDiffOptions,

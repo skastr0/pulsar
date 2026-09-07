@@ -1132,9 +1132,16 @@ export function defaultEffect(EffectApi: { orElseSucceed: (fallback: () => void)
       const secondContext = await Effect.runPromise(loadProjectModuleCalibrationContext(repoPath))
       expect(firstDetachedContext?.fingerprint).not.toBe(secondContext?.fingerprint)
 
-      const { engine } = await Effect.runPromise(makePulsarRuntime(repoPath))
-      const first = await Effect.runPromise(engine.observeCommit(repoPath, firstSha))
-      const second = await Effect.runPromise(engine.observeCommit(repoPath, secondSha))
+      const { first, second } = await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const { engine } = yield* makePulsarRuntime(repoPath)
+            const firstObservation = yield* engine.observeCommit(repoPath, firstSha)
+            const secondObservation = yield* engine.observeCommit(repoPath, secondSha)
+            return { first: firstObservation, second: secondObservation }
+          }),
+        ),
+      )
 
       expect(first.calibration?.fingerprint).toBeDefined()
       expect(second.calibration?.fingerprint).toBeDefined()

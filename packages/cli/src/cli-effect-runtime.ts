@@ -17,5 +17,7 @@ const stderrLogger = Logger.make((options) => {
   )
 })
 
-export const runCliEffect = <A>(effect: Effect.Effect<A, never, never>): Promise<A> =>
-  Effect.runPromise(Effect.provide(effect, Logger.layer([stderrLogger])))
+export const runCliEffect = <A, E>(
+  effect: Effect.Effect<A, E, never | import("effect/Scope").Scope>,
+): Promise<A> =>
+  Effect.runPromise(Effect.scoped(Effect.provide(effect, Logger.layer([stderrLogger]))))

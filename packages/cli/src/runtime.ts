@@ -30,7 +30,10 @@ import {
 import type { ObserverOutput } from "@skastr0/pulsar-core/observer"
 import type { TimeSeriesServices } from "@skastr0/pulsar-core/time-series"
 import { RustProjectLayer } from "@skastr0/pulsar-rs-pack"
-import { TsAnalysisLayer } from "@skastr0/pulsar-ts-pack"
+import {
+  makeTsAnalysisSession,
+  TsAnalysisLayer,
+} from "@skastr0/pulsar-ts-pack"
 import { Effect, Layer } from "effect"
 import { loadProjectModuleCalibrationContext } from "./runtime-calibration.js"
 import {
@@ -146,24 +149,26 @@ export const observeWorktree = (
   vector?: PulsarVector,
   options?: PulsarRuntimeOptions,
 ): Effect.Effect<ObserverWorktreeRun, unknown, never> =>
-  Effect.gen(function* () {
-    const repoRoot = yield* resolveRepoRoot(repoPath)
-    const gitSha = yield* readHeadSha(repoRoot)
-    const { registry, engine, timeSeries, calibrationContext } = yield* makePulsarRuntime(
-      repoRoot,
-      vector,
-      options,
-    )
-    const result = yield* engine.observeWorktree(repoRoot, gitSha)
+  Effect.scoped(
+    Effect.gen(function* () {
+      const repoRoot = yield* resolveRepoRoot(repoPath)
+      const gitSha = yield* readHeadSha(repoRoot)
+      const { registry, engine, timeSeries, calibrationContext } = yield* makePulsarRuntime(
+        repoRoot,
+        vector,
+        options,
+      )
+      const result = yield* engine.observeWorktree(repoRoot, gitSha)
 
-    return { repoRoot, gitSha, registry, result, timeSeries, calibrationContext }
-  })
+      return { repoRoot, gitSha, registry, result, timeSeries, calibrationContext }
+    }),
+  )
 
 export const makePulsarRuntime = (
   repoPath: string,
   vector?: PulsarVector,
   options?: PulsarRuntimeOptions,
-): Effect.Effect<PulsarRuntime, unknown, never> =>
+): Effect.Effect<PulsarRuntime, unknown, import("effect/Scope").Scope> =>
   Effect.gen(function* () {
     const repoRoot = yield* resolveRepoRoot(repoPath)
     const registry: Registry = yield* buildPulsarRegistry(repoRoot)
@@ -179,12 +184,18 @@ export const makePulsarRuntime = (
       options?.calibrationContext ?? (yield* loadProjectModuleCalibrationContext(repoRoot))
 
     const activePacks = collectActiveLanguagePacks(registry, vector)
+    const liveTsSession = activePacks.typescript
+      ? yield* makeTsAnalysisSession(repoRoot, options?.tsProject)
+      : undefined
+    const liveRoot = resolve(repoRoot)
     const scoringEngineLayer = ScoringEngineLayer(
       registry,
       (worktreePath): Layer.Layer<any, unknown, never> =>
         Layer.mergeAll(
           activePacks.typescript
-            ? TsAnalysisLayer(worktreePath, options?.tsProject)
+            ? liveTsSession !== undefined && resolve(worktreePath) === liveRoot
+              ? liveTsSession.observationLayer()
+              : TsAnalysisLayer(worktreePath, options?.tsProject)
             : Layer.empty,
           activePacks.rust ? RustProjectLayer(worktreePath) : Layer.empty,
         ) as Layer.Layer<any, unknown, never>,
