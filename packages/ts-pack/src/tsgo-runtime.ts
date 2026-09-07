@@ -1,6 +1,6 @@
 import { createRequire } from "node:module"
-import { chmodSync, mkdtempSync, renameSync, writeFileSync } from "node:fs"
-import { dirname, join } from "node:path"
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
+import { dirname, join, resolve } from "node:path"
 import { tmpdir } from "node:os"
 import { fileURLToPath } from "node:url"
 import { Effect, Schema } from "effect"
@@ -146,11 +146,13 @@ const resolveEmbeddedTsgoExecutable = (
           join(tmpdir(), `pulsar-tsgo-${analysisPlatformTarget(platform, arch)}-`),
         )
         chmodSync(destinationDirectory, 0o700)
+        extractTsgoLibArchive(new Uint8Array(bytes), destinationDirectory)
         const destinationPath = join(destinationDirectory, "tsc")
-        const stagingPath = join(destinationDirectory, "tsc.partial")
-        writeFileSync(stagingPath, Buffer.from(bytes), { mode: 0o755 })
-        chmodSync(stagingPath, 0o755)
-        renameSync(stagingPath, destinationPath)
+        const libDefinitions = join(destinationDirectory, "lib.d.ts")
+        if (!existsSync(destinationPath) || !existsSync(libDefinitions)) {
+          throw new Error("extracted tsgo payload is missing tsc or lib.d.ts")
+        }
+        chmodSync(destinationPath, 0o755)
         extractedTsgoPath = destinationPath
       },
       catch: (cause) =>
@@ -166,3 +168,49 @@ const resolveEmbeddedTsgoExecutable = (
     }
     return extractedTsgoPath
   })
+
+const USTAR_BLOCK = 512
+
+const extractTsgoLibArchive = (archive: Uint8Array, destination: string): void => {
+  const root = resolve(destination)
+  let offset = 0
+  while (offset + USTAR_BLOCK <= archive.byteLength) {
+    const header = archive.subarray(offset, offset + USTAR_BLOCK)
+    offset += USTAR_BLOCK
+    if (header.every((byte) => byte === 0)) break
+
+    const name = readUstarString(header.subarray(0, 100))
+    const prefix = readUstarString(header.subarray(345, 500))
+    const relativePath = (prefix.length === 0 ? name : `${prefix}/${name}`).replace(/^\.\//, "")
+    const size = Number.parseInt(readUstarString(header.subarray(124, 136)), 8)
+    const mode = Number.parseInt(readUstarString(header.subarray(100, 108)), 8)
+    const typeFlag = header[156] ?? 0
+    if (!Number.isFinite(size) || size < 0) {
+      throw new Error(`invalid ustar size for ${relativePath || "<unnamed>"}`)
+    }
+    const contentEnd = offset + size
+    const content = archive.subarray(offset, contentEnd)
+    offset += Math.ceil(size / USTAR_BLOCK) * USTAR_BLOCK
+
+    if (relativePath.length === 0 || relativePath === "." || typeFlag === 103 || typeFlag === 120) {
+      continue
+    }
+    const filePath = resolve(root, relativePath)
+    if (filePath !== root && !filePath.startsWith(`${root}/`)) {
+      throw new Error(`refusing to extract ${relativePath} outside ${root}`)
+    }
+    if (typeFlag === 53) {
+      mkdirSync(filePath, { recursive: true })
+      continue
+    }
+    if (typeFlag !== 0 && typeFlag !== 48) continue
+    mkdirSync(dirname(filePath), { recursive: true })
+    writeFileSync(filePath, content)
+    if (Number.isFinite(mode) && mode !== 0) chmodSync(filePath, mode & 0o777)
+  }
+}
+
+const readUstarString = (bytes: Uint8Array): string => {
+  const end = bytes.indexOf(0)
+  return Buffer.from(bytes.subarray(0, end === -1 ? bytes.length : end)).toString("utf8").replace(/\0+$/g, "").trim()
+}

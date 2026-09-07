@@ -205,6 +205,24 @@ await import(${JSON.stringify(join(REPO_ROOT, "packages", "cli", "dist", "bin.js
   return entryPath
 }
 
+const packNativeTsgoLib = async (tsgoPath: string, target: string): Promise<string> => {
+  const archivePath = join(DIST_DIR, `tsgo-lib-${target}.tar`)
+  const packed = Bun.spawnSync(
+    ["tar", "--format=ustar", "-cf", archivePath, "-C", dirname(tsgoPath), "."],
+    { cwd: REPO_ROOT, stdout: "pipe", stderr: "pipe" },
+  )
+  if (packed.exitCode !== 0) {
+    throw new Error(
+      `Failed to pack native tsgo lib for ${target}: ${packed.stderr.toString() || packed.stdout.toString()}`,
+    )
+  }
+  const archiveStats = await stat(archivePath)
+  if (!archiveStats.isFile() || archiveStats.size === 0) {
+    throw new Error(`${target} tsgo lib archive is missing`)
+  }
+  return archivePath
+}
+
 const assertNativeLibraryEmbedded = async (
   outfile: string,
   nativePath: string,
@@ -272,6 +290,7 @@ for (const targetConfig of binaryTargets) {
   const outfile = join(DIST_DIR, `pulsar-${target}`)
   const nativePath = await resolveOpenTuiNativeLibrary(targetConfig)
   const tsgoPath = await resolveNativeTsgoExecutable(targetConfig)
+  const tsgoArchivePath = await packNativeTsgoLib(tsgoPath, target)
   console.log(`Compiling ${target}...`)
   const buildResult = await Bun.build({
     target: "bun",
@@ -279,7 +298,7 @@ for (const targetConfig of binaryTargets) {
       target: `bun-${platform}-${arch}`,
       outfile,
     },
-    entrypoints: [await writeNativeCliEntrypoint(tsgoPath)],
+    entrypoints: [await writeNativeCliEntrypoint(tsgoArchivePath)],
     minify: true,
     define: {
       __PULSAR_BUILD_COMMIT__: JSON.stringify(buildCommit),
@@ -299,7 +318,7 @@ for (const targetConfig of binaryTargets) {
 
   await run(`Marking executable ${target}`, ["chmod", "+x", outfile])
   await assertNativeLibraryEmbedded(outfile, nativePath, target)
-  await assertNativeTsgoEmbedded(outfile, tsgoPath, target)
+  await assertNativeTsgoEmbedded(outfile, tsgoArchivePath, target)
   await assertBuildIdentityEmbedded(outfile, target)
 }
 
