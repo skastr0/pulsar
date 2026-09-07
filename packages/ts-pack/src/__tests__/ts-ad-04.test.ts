@@ -377,12 +377,33 @@ describe("TS-AD-04 (boundary parser coverage)", () => {
         "  body += \"\"",
         "  return WebhookSchema.safeParse(body)",
         "}",
+        "export function PATCH(input: unknown) {",
+        "  let body = input",
+        "  body ||= {}",
+        "  return WebhookSchema.safeParse(body)",
+        "}",
+        "export function DELETE(input: unknown) {",
+        "  let body = input",
+        "  body &&= {}",
+        "  return WebhookSchema.safeParse(body)",
+        "}",
+        "export function OPTIONS(input: unknown) {",
+        "  let body = input",
+        "  body ??= {}",
+        "  return WebhookSchema.safeParse(body)",
+        "}",
       ].join("\n"),
     )
 
     const out = await run()
     expect(out.covered).toEqual([])
-    expect(out.findings.map((finding) => finding.symbol).sort()).toEqual(["POST", "PUT"])
+    expect(out.findings.map((finding) => finding.symbol).sort()).toEqual([
+      "DELETE",
+      "OPTIONS",
+      "PATCH",
+      "POST",
+      "PUT",
+    ])
   })
 
   test("keeps cast-only boundary body aliases uncovered", async () => {
