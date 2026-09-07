@@ -222,7 +222,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       positiveFixture:
         "ts-ad-04.test.ts: fixtures detect unknown/untyped parameters plus parsed-wire, environment, filesystem, subprocess, IPC, and raw external-package ingress; paired controls preserve findings when raw data is cast into domain types.",
       negativeFixture:
-        "ts-ad-04.test.ts: typed mappers, typed Either error envelopes, grounded type predicates/instanceof refinements, primitive output serializers, raw carrier projections, and Effect requirement wrappers are excluded by semantic reason; direct/stable aliases and bounded one-hop decoded adapter stages carry parser evidence, while reassigned, shadowed, two-hop, unrelated, nested, and out-of-function parser references do not.",
+        "ts-ad-04.test.ts: typed mappers, typed Either error envelopes, grounded type predicates/instanceof refinements, primitive output serializers, raw carrier projections, and Effect requirement wrappers are excluded by semantic reason; direct/stable aliases and bounded one-hop decoded adapter stages carry parser evidence, while reassigned, shadowed, two-hop, unrelated, nested, out-of-function, same-name cross-file, and shadowed decoded-variable parser references do not.",
       applicability:
         "ts-ad-04.test.ts: absent boundary files, not_configured boundary_globs, and boundary files with no weak external inputs produce distinct applicability states.",
       score:
@@ -232,7 +232,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       factorLedger:
         "ts-ad-04.test.ts: registered pack signal emits parser_call_patterns and top_n_diagnostics factor-ledger entries.",
       cacheSemantics:
-        "ts-ad-04.test.ts, ts-ad-05.test.ts, and pack.test.ts: TS-AD-04 cache v7 covers symbol-proven ingress discovery, semantic exclusions, explicit rejection evidence, project-wide stable decoded-stage inheritance, and audit diagnostics; TS-AD-05 pins the changed primitive input fingerprint.",
+        "ts-ad-04.test.ts, ts-ad-05.test.ts, and pack.test.ts: TS-AD-04 cache v9 covers symbol-proven ingress discovery, semantic exclusions, explicit rejection evidence, callee-identity decoded-stage inheritance, and audit diagnostics; TS-AD-05 pins the changed primitive input fingerprint.",
     },
   },
   {

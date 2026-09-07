@@ -985,6 +985,60 @@ describe("TS-AD-04 (boundary parser coverage)", () => {
     expect(out.covered).toMatchObject([{ symbol: "handle" }])
   })
 
+  test("does not inherit decoder evidence from an unrelated same-name function", async () => {
+    await repo.write(
+      "src/adapters/lonely.ts",
+      [
+        "type Domain = { readonly id: string }",
+        "export const adapt = (value: unknown): Domain => value as Domain",
+      ].join("\n"),
+    )
+    await repo.write(
+      "src/adapters/decoded.ts",
+      [
+        "type Domain = { readonly id: string }",
+        "const parse = (value: unknown): Domain => value as Domain",
+        "export const adapt = (value: unknown): Domain => value as Domain",
+        "export const handle = (input: unknown): Domain => adapt(parse(input))",
+      ].join("\n"),
+    )
+
+    const out = await run()
+
+    expect(out.findings).toMatchObject([{ symbol: "adapt", file: expect.stringContaining("lonely.ts") }])
+    expect(out.excluded).toMatchObject([
+      {
+        symbol: "adapt",
+        file: expect.stringContaining("decoded.ts"),
+        exclusionReason: "already-decoded-input",
+      },
+    ])
+  })
+
+  test("does not inherit decoder evidence through a shadowed decoded binding", async () => {
+    await repo.write(
+      "src/adapters/shadowed-domain.ts",
+      [
+        "type Domain = { readonly id: string }",
+        "const parse = (value: unknown): Domain => value as Domain",
+        "export const adapt = (value: unknown): Domain => value as Domain",
+        "export const handle = (input: unknown): Domain => {",
+        "  const decoded = parse(input)",
+        "  {",
+        "    const decoded = input as Domain",
+        "    return adapt(decoded)",
+        "  }",
+        "}",
+      ].join("\n"),
+    )
+
+    const out = await run()
+
+    expect(out.excluded.some((entry) => entry.symbol === "adapt")).toBe(false)
+    expect(out.findings).toMatchObject([{ symbol: "adapt" }])
+    expect(out.covered).toMatchObject([{ symbol: "handle" }])
+  })
+
   test("does not treat a successful refinement branch as rejection evidence", async () => {
     await repo.write(
       "src/adapters/non-rejecting-refinement.ts",

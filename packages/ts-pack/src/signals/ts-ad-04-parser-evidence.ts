@@ -1,4 +1,5 @@
 import { ancestors, firstAncestor, textOf, walkDescendants } from "../ast.js"
+import { dirname, normalize, resolve } from "node:path"
 import {
   SyntaxKind,
   isArrowFunction,
@@ -13,15 +14,21 @@ import {
   isGetAccessorDeclaration,
   isIdentifier,
   isIfStatement,
+  isImportDeclaration,
+  isImportSpecifier,
   isMethodDeclaration,
+  isNamedImports,
+  isNamespaceImport,
   isNonNullExpression,
   isObjectLiteralExpression,
   isParenthesizedExpression,
+  isPropertyAccessExpression,
   isPropertyAssignment,
   isReturnStatement,
   isSatisfiesExpression,
   isSetAccessorDeclaration,
   isStringLiteral,
+  isNoSubstitutionTemplateLiteral,
   isThrowStatement,
   isTypeOfExpression,
   isVariableDeclaration,
@@ -31,11 +38,13 @@ import {
   type CallExpression,
   type FunctionDeclaration,
   type FunctionExpression,
+  type ImportDeclaration,
   type Node,
   type SourceFile,
   type VariableDeclaration,
 } from "../tsgo-api.js"
 import { compilerPropertyNameText as propertyNameText } from "./shared-compiler-functions.js"
+import { stripKnownExtension } from "./shared-path-extensions.js"
 import type { WeakBoundaryParameter } from "./ts-ad-04-boundary-parser-coverage.js"
 
 export type BoundaryFunctionNode =
@@ -184,15 +193,69 @@ const callTargetsDeclaration = (
   call: CallExpression,
   declaration: Node,
 ): boolean => {
+  const declarationName = declarationNameOf(declaration)
+  if (declarationName === undefined) return false
   const expression = call.expression
-  const callee = isIdentifier(expression) ? expression.text : textOf(expression)
-  if (isFunctionDeclaration(declaration) && declaration.name !== undefined) {
-    return declaration.name.text === callee || callee.endsWith("." + declaration.name.text)
+  if (isIdentifier(expression)) {
+    const binding = resolveIdentifierBinding(expression)
+    if (binding === declaration) return true
+    return namedImportTargetsDeclaration(binding, declaration, declarationName)
   }
-  if (isVariableDeclaration(declaration) && isIdentifier(declaration.name)) {
-    return declaration.name.text === callee || callee.endsWith("." + declaration.name.text)
+  if (isPropertyAccessExpression(expression) && isIdentifier(expression.expression)) {
+    const namespaceBinding = resolveIdentifierBinding(expression.expression)
+    const member = isIdentifier(expression.name) ? expression.name.text : textOf(expression.name)
+    if (member !== declarationName) return false
+    return namespaceImportTargetsDeclaration(namespaceBinding, declaration)
   }
   return false
+}
+
+const declarationNameOf = (declaration: Node): string | undefined => {
+  if (isFunctionDeclaration(declaration) && declaration.name !== undefined) return declaration.name.text
+  if (isVariableDeclaration(declaration) && isIdentifier(declaration.name)) return declaration.name.text
+  return undefined
+}
+
+const namedImportTargetsDeclaration = (
+  binding: Node | undefined,
+  declaration: Node,
+  declarationName: string,
+): boolean => {
+  if (binding === undefined || !isImportSpecifier(binding)) return false
+  const importedName = (binding.propertyName ?? binding.name).text
+  if (importedName !== declarationName) return false
+  const importDeclaration = firstAncestor(binding, isImportDeclaration)
+  return importDeclaration !== undefined &&
+    importResolvesToFile(importDeclaration, binding.getSourceFile().fileName, declaration.getSourceFile().fileName)
+}
+
+const namespaceImportTargetsDeclaration = (
+  binding: Node | undefined,
+  declaration: Node,
+): boolean => {
+  if (binding === undefined || !isNamespaceImport(binding)) return false
+  const importDeclaration = firstAncestor(binding, isImportDeclaration)
+  return importDeclaration !== undefined &&
+    importResolvesToFile(importDeclaration, binding.getSourceFile().fileName, declaration.getSourceFile().fileName)
+}
+
+const importResolvesToFile = (
+  importDeclaration: ImportDeclaration,
+  fromFile: string,
+  declarationFile: string,
+): boolean => {
+  const specifierNode = importDeclaration.moduleSpecifier
+  if (specifierNode === undefined) return false
+  if (!isStringLiteral(specifierNode) && !isNoSubstitutionTemplateLiteral(specifierNode)) {
+    return false
+  }
+  const specifier = specifierNode.text
+  if (!specifier.startsWith(".") && !specifier.startsWith("/")) return false
+  const resolved = normalize(resolve(dirname(fromFile), specifier))
+  const target = normalize(declarationFile)
+  const resolvedStem = stripKnownExtension(resolved)
+  const targetStem = stripKnownExtension(target)
+  return resolvedStem === targetStem || `${resolvedStem}/index` === targetStem
 }
 
 const decodedArgumentEvidence = (
@@ -202,24 +265,14 @@ const decodedArgumentEvidence = (
   const direct = parserCallEvidence(unwrapValueExpression(argument), parserPatterns)
   if (direct !== undefined) return direct
   if (!isIdentifier(argument)) return undefined
-  const sourceFile = argument.getSourceFile()
-  const name = argument.text
-  const declarations: Array<VariableDeclaration> = []
-  walkDescendants(sourceFile, (node) => {
-    if (isVariableDeclaration(node) && isIdentifier(node.name) && node.name.text === name) {
-      declarations.push(node)
-    }
-  })
-  for (const declaration of declarations) {
-    const declarationKind = variableStatementKind(declaration)
-    if (declarationKind !== "const" && declarationKind !== "let") continue
-    if (declarationKind === "let" && hasNonDefinitionWrite(declaration)) continue
-    const initializer = declaration.initializer
-    if (initializer === undefined) continue
-    const evidence = parserCallEvidence(unwrapValueExpression(initializer), parserPatterns)
-    if (evidence !== undefined) return evidence
-  }
-  return undefined
+  const binding = resolveIdentifierBinding(argument)
+  if (binding === undefined || !isVariableDeclaration(binding)) return undefined
+  const declarationKind = variableStatementKind(binding)
+  if (declarationKind !== "const" && declarationKind !== "let") return undefined
+  if (declarationKind === "let" && hasNonDefinitionWrite(binding)) return undefined
+  const initializer = binding.initializer
+  if (initializer === undefined) return undefined
+  return parserCallEvidence(unwrapValueExpression(initializer), parserPatterns)
 }
 
 const unwrapValueExpression = (node: Node): Node => {
@@ -404,6 +457,24 @@ const bindingInDirectStatements = (scope: Node, name: string): Node | undefined 
         if (isIdentifier(declaration.name) && declaration.name.text === name) return declaration
       }
     }
+    if (isImportDeclaration(statement)) {
+      const importBinding = importBindingNamed(statement, name)
+      if (importBinding !== undefined) return importBinding
+    }
+  }
+  return undefined
+}
+
+const importBindingNamed = (statement: ImportDeclaration, name: string): Node | undefined => {
+  const clause = statement.importClause
+  if (clause === undefined) return undefined
+  if (clause.name?.text === name) return clause.name
+  const named = clause.namedBindings
+  if (named === undefined) return undefined
+  if (isNamespaceImport(named) && named.name.text === name) return named
+  if (!isNamedImports(named)) return undefined
+  for (const element of named.elements) {
+    if (element.name.text === name) return element
   }
   return undefined
 }
