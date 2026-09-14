@@ -159,6 +159,43 @@ const removeTempFile = async (tempPath: string): Promise<void> => {
   }
 }
 
+const TEMP_FILE_PATTERN = /^\.entries\.jsonl\.(\d+)(?:\.\d+)?\.tmp$/
+
+const isProcessAlive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return hasNodeErrorCode(error, "EPERM")
+  }
+}
+
+/**
+ * Removes orphaned bucket temp files left by writers that died between
+ * creating their temp file and renaming it. Temp files owned by another live
+ * process are left alone: that process may still be writing them.
+ */
+const cleanupStaleTempFiles = async (cacheDir: string): Promise<void> => {
+  const dirEntries = await readdir(cacheDir, { withFileTypes: true })
+  await Promise.all(
+    dirEntries
+      .filter((entry) => entry.isDirectory())
+      .map(async (entry) => {
+        const bucketDir = join(cacheDir, entry.name)
+        const bucketEntries = await readdir(bucketDir, { withFileTypes: true })
+        await Promise.all(
+          bucketEntries.map(async (bucketEntry) => {
+            const match = TEMP_FILE_PATTERN.exec(bucketEntry.name)
+            if (match === null || !bucketEntry.isFile()) return
+            const ownerPid = Number(match[1])
+            if (ownerPid === process.pid || isProcessAlive(ownerPid)) return
+            await removeTempFile(join(bucketDir, bucketEntry.name))
+          }),
+        )
+      }),
+  )
+}
+
 interface ScannedRecord {
   readonly bytes: number
   readonly line: string
@@ -380,6 +417,8 @@ const makeDiskBackedCache = (config?: CacheConfig): Effect.Effect<SignalCache> =
     const cacheDir = config?.cacheDir ?? resolvePulsarRepoStatePath(process.cwd(), "cache")
     const maxSizeBytes = config?.maxSizeBytes ?? DEFAULT_CACHE_MAX_SIZE_BYTES
     const knownSignalIds = await loadKnownSignalIds(cacheDir)
+    // Best-effort: a sweep failure must not block cache initialization.
+    await cleanupStaleTempFiles(cacheDir).catch(() => undefined)
     const buckets = new Map<string, LoadedSignalBucket>()
     const loadingBuckets = new Map<string, Promise<LoadedSignalBucket>>()
     const countedSignalIds = new Set<string>()

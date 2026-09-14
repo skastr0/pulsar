@@ -714,6 +714,37 @@ describe("tiered disk cache", () => {
     }
   })
 
+  test("sweeps orphaned temp files at startup but keeps live writers'", async () => {
+    const cacheDir = await mkdtemp(join(tmpdir(), "pulsar-cache-sweep-"))
+    const signalDir = join(cacheDir, "SWEEP")
+    const orphanName = ".entries.jsonl.999999.1.tmp"
+    const liveName = `.entries.jsonl.${process.pid}.1.tmp`
+
+    try {
+      await mkdir(signalDir, { recursive: true })
+      await writeFile(join(signalDir, orphanName), "partial record from a dead writer")
+      await writeFile(join(signalDir, liveName), "partial record from a live writer")
+      await writeFile(
+        join(signalDir, "entries.jsonl"),
+        persistedTierOneRecord(
+          { signalId: "SWEEP", contentHash: "c", configHash: "k" },
+          { payload: "kept" },
+        ),
+      )
+
+      const cache = await makeDiskCache({ cacheDir })
+      expect((await Effect.runPromise(cache.getTiered<{ payload: string }>(
+        { signalId: "SWEEP", contentHash: "c", configHash: "k" },
+        { tier: 1 },
+      ))).value?.payload).toBe("kept")
+
+      const remaining = (await readdir(signalDir)).sort()
+      expect(remaining).toEqual([liveName, "entries.jsonl"])
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true })
+    }
+  })
+
   test("serves concurrent first accesses without a false miss", async () => {
     const cacheDir = await mkdtemp(join(tmpdir(), "pulsar-cache-concurrent-"))
     const signalDir = join(cacheDir, "CONCURRENT")
