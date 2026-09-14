@@ -1,12 +1,9 @@
-import { execFile } from "node:child_process"
-import { promisify } from "node:util"
+import { collectGitStdout } from "./shared-git.js"
 import {
   isIncludedHistoryPath,
   sourcePathspecs,
   type SharedHistoryFilterConfig,
 } from "./shared-history-filter.js"
-
-const execFileAsync = promisify(execFile)
 
 export const readHeadDate = async (repoPath: string): Promise<Date> => {
   const raw = await execGit(repoPath, ["log", "-1", "--format=%cI", "HEAD"])
@@ -79,13 +76,7 @@ const errorMessage = (error: unknown): string => {
   return String(error)
 }
 
-export const execGit = async (
+export const execGit = (
   repoPath: string,
   args: ReadonlyArray<string>,
-): Promise<string> => {
-  const result = await execFileAsync("git", [...args], {
-    cwd: repoPath,
-    maxBuffer: 256 * 1024 * 1024,
-  })
-  return result.stdout
-}
+): Promise<string> => collectGitStdout(repoPath, args)

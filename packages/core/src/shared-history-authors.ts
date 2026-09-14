@@ -6,7 +6,7 @@ import {
   type SharedHistoryFilterConfig,
 } from "./shared-history-filter.js"
 import { fileExists } from "./shared-history-files.js"
-import { execGit } from "./shared-history-git.js"
+import { forEachGitLine } from "./shared-git.js"
 import { resolveCurrentHistoryPath } from "./shared-history-renames.js"
 
 const COMMIT_AUTHOR_PREFIX = "__commit__\0"
@@ -35,11 +35,14 @@ export const listAuthorsByTouchedFileInWindow = async (
     return new Map()
   }
 
-  const raw = await execGit(
+  const state = createAuthorLogParseState()
+  await forEachGitLine(
     repoPath,
     authorHistoryLogArgs(config, sinceIso, untilIso, pathspecs),
+    (line) => ingestAuthorHistoryLine(state, line, config),
   )
-  return collectTouchedFileAuthorsFromLog(raw, config)
+  flushAuthorCommit(state)
+  return state.byFile
 }
 
 const authorHistoryLogArgs = (
@@ -62,18 +65,6 @@ const authorHistoryLogArgs = (
   "--",
   ...pathspecs,
 ]
-
-const collectTouchedFileAuthorsFromLog = (
-  raw: string,
-  config: SharedHistoryFilterConfig,
-): ReadonlyMap<string, ReadonlyArray<string>> => {
-  const state = createAuthorLogParseState()
-  for (const line of raw.split("\n")) {
-    ingestAuthorHistoryLine(state, line, config)
-  }
-  flushAuthorCommit(state)
-  return state.byFile
-}
 
 const createAuthorLogParseState = (): AuthorLogParseState => ({
   currentAuthor: undefined,

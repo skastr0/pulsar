@@ -4,7 +4,7 @@ import {
   sourcePathspecs,
   type SharedHistoryFilterConfig,
 } from "./shared-history-filter.js"
-import { execGit } from "./shared-history-git.js"
+import { forEachGitLine } from "./shared-git.js"
 import { matchesAnyGlob } from "./globs.js"
 import { resolveCurrentHistoryPath } from "./shared-history-renames.js"
 
@@ -22,7 +22,16 @@ export const listAddedLinesByFileInMatureWindow = async (
   config: SharedHistoryFilterConfig,
 ): Promise<ReadonlyMap<string, ReadonlyArray<string>>> => {
   const pathspecs = sourcePathspecs(config.includeExtensions)
-  const raw = await execGit(repoPath, [
+  const addedByFile = new Map<string, Array<string>>()
+  const renameMap = new Map<string, string>()
+  const cursor: MaturePatchCursor = {
+    commitAddsEligible: false,
+    currentFile: undefined,
+    pendingRenameFrom: undefined,
+  }
+  const maturityCutoffTime = new Date(maturityCutoffIso).getTime()
+
+  await forEachGitLine(repoPath, [
     "log",
     "--no-merges",
     `--since=${introductionStartIso}`,
@@ -33,31 +42,9 @@ export const listAddedLinesByFileInMatureWindow = async (
     "--find-renames",
     "-p",
     ...(pathspecs.length > 0 ? ["--", ...pathspecs] : []),
-  ])
-
-  return parseMatureAddedLinesByFile(
-    raw,
-    new Date(maturityCutoffIso).getTime(),
-    config,
-  )
-}
-
-const parseMatureAddedLinesByFile = (
-  rawPatchLog: string,
-  maturityCutoffTime: number,
-  config: SharedHistoryFilterConfig,
-): ReadonlyMap<string, ReadonlyArray<string>> => {
-  const addedByFile = new Map<string, Array<string>>()
-  const renameMap = new Map<string, string>()
-  const cursor: MaturePatchCursor = {
-    commitAddsEligible: false,
-    currentFile: undefined,
-    pendingRenameFrom: undefined,
-  }
-
-  for (const line of rawPatchLog.split("\n")) {
+  ], (line) => {
     consumeMaturePatchLine(line, cursor, maturityCutoffTime, config, addedByFile, renameMap)
-  }
+  })
 
   return remapAddedLinesByCurrentPath(addedByFile, renameMap, config)
 }
@@ -164,7 +151,8 @@ export const listAddedLineCountInWindow = async (
   config: SharedHistoryFilterConfig,
 ): Promise<number> => {
   const pathspecs = sourcePathspecs(config.includeExtensions)
-  const raw = await execGit(repoPath, [
+  let total = 0
+  await forEachGitLine(repoPath, [
     "log",
     "--no-merges",
     `--since=${sinceIso}`,
@@ -172,18 +160,15 @@ export const listAddedLineCountInWindow = async (
     "--pretty=format:__commit__",
     "--numstat",
     ...(pathspecs.length > 0 ? ["--", ...pathspecs] : []),
-  ])
-
-  let total = 0
-  for (const line of raw.split("\n")) {
+  ], (line) => {
     const trimmed = line.trim()
-    if (trimmed.length === 0 || trimmed === "__commit__") continue
+    if (trimmed.length === 0 || trimmed === "__commit__") return
     const [addedRaw, , file] = trimmed.split(/\s+/, 3)
-    if (addedRaw === undefined || file === undefined || addedRaw === "-") continue
-    if (!isIncludedHistoryPath(file, config)) continue
+    if (addedRaw === undefined || file === undefined || addedRaw === "-") return
+    if (!isIncludedHistoryPath(file, config)) return
     const added = Number.parseInt(addedRaw, 10)
     if (Number.isFinite(added)) total += added
-  }
+  })
   return total
 }
 
