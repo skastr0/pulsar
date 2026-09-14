@@ -17,6 +17,7 @@ import {
   isImportClause,
   isImportDeclaration,
   isImportSpecifier,
+  isNamedImports,
   isNamespaceImport,
   isNewExpression,
   isNoSubstitutionTemplateLiteral,
@@ -175,13 +176,13 @@ const computeDangerousCapabilitySurface = (
 ): TsSec01Output => {
   const findings: Array<DangerousCapabilityFinding> = []
   let analyzedFiles = 0
+  const reviewRouteWeight = normalizeReviewRouteWeight(config.review_route_weight)
 
   for (const sourceFile of sourceFiles) {
     if (!isAnalyzableSourceFile(sourceFile, config.exclude_globs)) continue
     analyzedFiles += 1
-    collectImportCapabilities(sourceFile, findings, normalizeReviewRouteWeight(config.review_route_weight))
-    collectCallCapabilities(sourceFile, findings)
-    collectSqlCapabilities(sourceFile, findings)
+    const bindings = indexSourceBindings(sourceFile)
+    collectCapabilities(sourceFile, findings, reviewRouteWeight, bindings)
   }
 
   return {
@@ -201,148 +202,173 @@ const computeDangerousCapabilitySurface = (
   }
 }
 
-const collectImportCapabilities = (
+const collectCapabilities = (
   sourceFile: SourceFile,
+  findings: Array<DangerousCapabilityFinding>,
+  reviewRouteWeight: number,
+  bindings: SourceBindings,
+): void => {
+  walkDescendants(sourceFile, (node) => {
+    if (isImportDeclaration(node)) {
+      collectImportCapability(node, findings, reviewRouteWeight)
+    }
+    if (isCallExpression(node)) {
+      collectCallCapability(node, findings, bindings)
+      collectSqlCallCapability(node, findings)
+    }
+    if (isNewExpression(node)) {
+      collectNewExpressionCapability(node, findings, bindings)
+    }
+    if (isTaggedTemplateExpression(node)) {
+      collectTaggedProcessCapability(node, findings, bindings)
+      collectSqlTaggedCapability(node, findings)
+    }
+  })
+}
+
+const collectImportCapability = (
+  declaration: import("../tsgo-api.js").ImportDeclaration,
   findings: Array<DangerousCapabilityFinding>,
   weight: number,
 ): void => {
-  walkDescendants(sourceFile, (declaration) => {
-    if (!isImportDeclaration(declaration)) return
-    const specifierNode = declaration.moduleSpecifier
-    const specifier = isStringLiteral(specifierNode) || isNoSubstitutionTemplateLiteral(specifierNode) ? specifierNode.text : undefined
-    if (specifier === undefined) return
-    const kind = moduleCapabilityKind(specifier)
-    if (kind === undefined) return
-    findings.push({
-      ...locationOf(declaration),
-      kind,
-      sink: specifier,
-      evidence: textOf(declaration).slice(0, 160),
-      reviewRoute: "security",
-      weight,
-    })
+  const specifierNode = declaration.moduleSpecifier
+  const specifier = isStringLiteral(specifierNode) || isNoSubstitutionTemplateLiteral(specifierNode)
+    ? specifierNode.text
+    : undefined
+  if (specifier === undefined) return
+  const kind = moduleCapabilityKind(specifier)
+  if (kind === undefined) return
+  findings.push({
+    ...locationOf(declaration),
+    kind,
+    sink: specifier,
+    evidence: textOf(declaration).slice(0, 160),
+    reviewRoute: "security",
+    weight,
   })
 }
 
-const collectCallCapabilities = (
-  sourceFile: SourceFile,
+const collectCallCapability = (
+  call: CallExpression,
   findings: Array<DangerousCapabilityFinding>,
+  bindings: SourceBindings,
 ): void => {
-  walkDescendants(sourceFile, (call) => {
-    if (!isCallExpression(call)) return
-    const expression = call.expression
-    if (isIdentifier(expression)) {
-      const name = textOf(expression)
-      if (name === "eval" && isAmbientGlobalReference(expression)) {
-        findings.push(findingFromCall(call, "eval", name, 1))
-        return
-      }
-      if (name === "Function" && isAmbientGlobalReference(expression)) {
-        findings.push(findingFromCall(call, "function-constructor", name, 1))
-        return
-      }
-      // Name matches alone never fire: a bare exec/spawn/... call is a
-      // capability only when its binding resolves to child_process. Local
-      // helpers that reuse those names, and unresolvable bindings, emit
-      // nothing.
-      if (PROCESS_FUNCTION_NAMES.has(name) && isChildProcessValueBinding(expression)) {
-        findings.push(findingFromCall(call, "shell-process", name, processCallWeight(call, name)))
-      }
+  const expression = call.expression
+  if (isIdentifier(expression)) {
+    const name = textOf(expression)
+    if (name === "eval" && isAmbientGlobalReference(expression, bindings)) {
+      findings.push(findingFromCall(call, "eval", name, 1))
       return
     }
-    if (expression.kind === SyntaxKind.ImportKeyword && !isStringLiteralLike(call.arguments[0])) {
-      findings.push(findingFromCall(call, "dynamic-import", "import(non-literal)", 0))
+    if (name === "Function" && isAmbientGlobalReference(expression, bindings)) {
+      findings.push(findingFromCall(call, "function-constructor", name, 1))
       return
     }
-    const member = resolveDangerousMemberCallee(expression)
-    if (member !== undefined) {
-      findings.push(findingFromCall(call, "shell-process", member.sink, memberCallWeight(call, member)))
+    // Name matches alone never fire: a bare exec/spawn/... call is a
+    // capability only when its binding resolves to child_process. Local
+    // helpers that reuse those names, and unresolvable bindings, emit
+    // nothing.
+    if (PROCESS_FUNCTION_NAMES.has(name) && isChildProcessValueBinding(expression, bindings)) {
+      findings.push(findingFromCall(call, "shell-process", name, processCallWeight(call, name)))
     }
-  })
+    return
+  }
+  if (expression.kind === SyntaxKind.ImportKeyword && !isStringLiteralLike(call.arguments[0])) {
+    findings.push(findingFromCall(call, "dynamic-import", "import(non-literal)", 0))
+    return
+  }
+  const member = resolveDangerousMemberCallee(expression, bindings)
+  if (member !== undefined) {
+    findings.push(findingFromCall(call, "shell-process", member.sink, memberCallWeight(call, member)))
+  }
+}
 
-  walkDescendants(sourceFile, (expression) => {
-    if (!isNewExpression(expression)) return
-    const callee = expression.expression
-    if (
-      isIdentifier(callee) &&
-      textOf(callee) === "Function" &&
-      isAmbientGlobalReference(callee)
-    ) {
-      findings.push({
-        ...locationOf(expression),
-        kind: "function-constructor",
-        sink: "new Function",
-        evidence: textOf(expression).slice(0, 160),
-        reviewRoute: "security",
-        weight: 1,
-      })
-      return
-    }
-    const member = resolveDangerousMemberCallee(callee)
-    if (member !== undefined) {
-      findings.push({
-        ...locationOf(expression),
-        kind: "shell-process",
-        sink: `new ${member.sink}`,
-        evidence: textOf(expression).slice(0, 160),
-        reviewRoute: "security",
-        weight: newExpressionWeight(expression),
-      })
-    }
-  })
+const collectNewExpressionCapability = (
+  expression: NewExpression,
+  findings: Array<DangerousCapabilityFinding>,
+  bindings: SourceBindings,
+): void => {
+  const callee = expression.expression
+  if (
+    isIdentifier(callee) &&
+    textOf(callee) === "Function" &&
+    isAmbientGlobalReference(callee, bindings)
+  ) {
+    findings.push({
+      ...locationOf(expression),
+      kind: "function-constructor",
+      sink: "new Function",
+      evidence: textOf(expression).slice(0, 160),
+      reviewRoute: "security",
+      weight: 1,
+    })
+    return
+  }
+  const member = resolveDangerousMemberCallee(callee, bindings)
+  if (member !== undefined) {
+    findings.push({
+      ...locationOf(expression),
+      kind: "shell-process",
+      sink: `new ${member.sink}`,
+      evidence: textOf(expression).slice(0, 160),
+      reviewRoute: "security",
+      weight: newExpressionWeight(expression),
+    })
+  }
+}
 
-  walkDescendants(sourceFile, (tagged) => {
-    if (!isTaggedTemplateExpression(tagged)) return
-    const member = resolveDangerousMemberCallee(tagged.tag)
-    if (member !== undefined) {
-      findings.push({
-        ...locationOf(tagged),
-        kind: "shell-process",
-        sink: member.sink,
-        evidence: textOf(tagged).slice(0, 160),
-        reviewRoute: "security",
-        weight: 0.75,
-      })
-    }
+const collectTaggedProcessCapability = (
+  tagged: TaggedTemplateExpression,
+  findings: Array<DangerousCapabilityFinding>,
+  bindings: SourceBindings,
+): void => {
+  const member = resolveDangerousMemberCallee(tagged.tag, bindings)
+  if (member === undefined) return
+  findings.push({
+    ...locationOf(tagged),
+    kind: "shell-process",
+    sink: member.sink,
+    evidence: textOf(tagged).slice(0, 160),
+    reviewRoute: "security",
+    weight: 0.75,
   })
 }
 
-const collectSqlCapabilities = (
-  sourceFile: SourceFile,
+const collectSqlTaggedCapability = (
+  tag: TaggedTemplateExpression,
   findings: Array<DangerousCapabilityFinding>,
 ): void => {
-  walkDescendants(sourceFile, (tag) => {
-    if (!isTaggedTemplateExpression(tag)) return
-    const tagName = callName(tag.tag)
-    if (!/(\bsql\b|raw|unsafe)/i.test(tagName)) return
-    // Tagged-template invocation of an sql-like tag (sql`... ${id}`) is the
-    // parameterized pattern: the library escapes interpolations by
-    // construction, so it is not raw SQL. Only tags that name an explicit
-    // escape hatch (raw/unsafe/literal) expose raw query material.
-    if (!SQL_ESCAPE_HATCH_MARKER.test(tagName)) return
-    findings.push({
-      ...locationOf(tag),
-      kind: "raw-sql",
-      sink: tagName,
-      evidence: textOf(tag).slice(0, 160),
-      reviewRoute: "security",
-      weight: SQL_ESCAPE_HATCH_WEIGHT,
-    })
+  const tagName = callName(tag.tag)
+  if (!/(\bsql\b|raw|unsafe)/i.test(tagName)) return
+  // Tagged-template invocation of an sql-like tag (sql`... ${id}`) is the
+  // parameterized pattern: the library escapes interpolations by
+  // construction, so it is not raw SQL. Only tags that name an explicit
+  // escape hatch (raw/unsafe/literal) expose raw query material.
+  if (!SQL_ESCAPE_HATCH_MARKER.test(tagName)) return
+  findings.push({
+    ...locationOf(tag),
+    kind: "raw-sql",
+    sink: tagName,
+    evidence: textOf(tag).slice(0, 160),
+    reviewRoute: "security",
+    weight: SQL_ESCAPE_HATCH_WEIGHT,
   })
+}
 
-  walkDescendants(sourceFile, (call) => {
-    if (!isCallExpression(call)) return
-    const name = callName(call.expression)
-    // Explicit escape hatches (sql.unsafe(...), sql.literal(...), db.raw(...))
-    // bypass parameterization regardless of argument shape.
-    if (isSqlEscapeHatchCall(name) && call.arguments.length > 0) {
-      findings.push(findingFromCall(call, "raw-sql", name, SQL_ESCAPE_HATCH_WEIGHT))
-      return
-    }
-    if (!/(^|\.)(query|execute|raw|unsafe|literal|sql)$/i.test(name)) return
-    if (![...call.arguments].some(isDynamicQueryArgument)) return
-    findings.push(findingFromCall(call, "raw-sql", name, 0.75))
-  })
+const collectSqlCallCapability = (
+  call: CallExpression,
+  findings: Array<DangerousCapabilityFinding>,
+): void => {
+  const name = callName(call.expression)
+  // Explicit escape hatches (sql.unsafe(...), sql.literal(...), db.raw(...))
+  // bypass parameterization regardless of argument shape.
+  if (isSqlEscapeHatchCall(name) && call.arguments.length > 0) {
+    findings.push(findingFromCall(call, "raw-sql", name, SQL_ESCAPE_HATCH_WEIGHT))
+    return
+  }
+  if (!/(^|\.)(query|execute|raw|unsafe|literal|sql)$/i.test(name)) return
+  if (![...call.arguments].some(isDynamicQueryArgument)) return
+  findings.push(findingFromCall(call, "raw-sql", name, 0.75))
 }
 
 const SQL_ESCAPE_HATCH_WEIGHT = 1
@@ -417,17 +443,89 @@ interface DangerousMemberCallee {
   readonly method: string
 }
 
-const resolveDangerousMemberCallee = (expression: Node): DangerousMemberCallee | undefined => {
+type ChildProcessBindingKind = "value" | "module"
+
+interface SourceBindings {
+  readonly shadowedGlobalNames: ReadonlySet<string>
+  readonly childProcessByName: ReadonlyMap<string, ChildProcessBindingKind>
+}
+
+const indexSourceBindings = (sourceFile: SourceFile): SourceBindings => {
+  const shadowedGlobalNames = new Set<string>()
+  const childProcessByName = new Map<string, ChildProcessBindingKind>()
+  const recordLocalName = (name: string): void => {
+    if (name === "eval" || name === "Function" || DANGEROUS_GLOBAL_MEMBERS.has(name)) {
+      shadowedGlobalNames.add(name)
+    }
+  }
+  const recordChildProcessBinding = (name: string, kind: ChildProcessBindingKind): void => {
+    if (!childProcessByName.has(name)) childProcessByName.set(name, kind)
+  }
+
+  walkDescendants(sourceFile, (node) => {
+    if (isVariableDeclaration(node) && isIdentifier(node.name)) {
+      recordLocalName(node.name.text)
+      if (isChildProcessRequireCall(node.initializer)) {
+        recordChildProcessBinding(node.name.text, "module")
+      }
+    }
+
+    if (isImportDeclaration(node)) {
+      const clause = node.importClause
+      if (clause?.name !== undefined) recordLocalName(clause.name.text)
+      if (clause?.namedBindings !== undefined && isNamespaceImport(clause.namedBindings)) {
+        recordLocalName(clause.namedBindings.name.text)
+      }
+
+      const specifierNode = node.moduleSpecifier
+      const specifier = isStringLiteral(specifierNode) || isNoSubstitutionTemplateLiteral(specifierNode)
+        ? specifierNode.text
+        : undefined
+      if (specifier === undefined || !isChildProcessSpecifier(specifier)) return
+      if (clause?.name !== undefined) {
+        recordChildProcessBinding(clause.name.text, "module")
+      }
+      if (clause?.namedBindings !== undefined && isNamespaceImport(clause.namedBindings)) {
+        recordChildProcessBinding(clause.namedBindings.name.text, "module")
+      }
+      if (clause?.namedBindings !== undefined && isNamedImports(clause.namedBindings)) {
+        for (const element of clause.namedBindings.elements) {
+          recordChildProcessBinding(element.name.text, "value")
+        }
+      }
+    }
+
+    if (isBindingElement(node) && node.name !== undefined && isIdentifier(node.name)) {
+      let current: Node | undefined = node.parent
+      while (current !== undefined) {
+        if (isVariableDeclaration(current)) {
+          if (isChildProcessRequireCall(current.initializer)) {
+            recordChildProcessBinding(node.name.text, "value")
+          }
+          break
+        }
+        current = current.parent
+      }
+    }
+  })
+
+  return { shadowedGlobalNames, childProcessByName }
+}
+
+const resolveDangerousMemberCallee = (
+  expression: Node,
+  bindings: SourceBindings,
+): DangerousMemberCallee | undefined => {
   if (!isPropertyAccessExpression(expression)) return undefined
   const method = textOf(expression.name)
   const base = expression.expression
   if (isIdentifier(base)) {
     const baseName = textOf(base)
     const globalMembers = DANGEROUS_GLOBAL_MEMBERS.get(baseName)
-    if (globalMembers?.has(method) === true && isAmbientGlobalReference(base)) {
+    if (globalMembers?.has(method) === true && isAmbientGlobalReference(base, bindings)) {
       return { sink: `${baseName}.${method}`, method }
     }
-    if (PROCESS_FUNCTION_NAMES.has(method) && isChildProcessModuleBinding(base)) {
+    if (PROCESS_FUNCTION_NAMES.has(method) && isChildProcessModuleBinding(base, bindings)) {
       return { sink: `${baseName}.${method}`, method }
     }
     return undefined
@@ -444,82 +542,20 @@ const resolveDangerousMemberCallee = (expression: Node): DangerousMemberCallee |
  * at all — the cases where the name can only be the runtime global.
  * A declaration in analyzed user source means the global is shadowed.
  */
-const isAmbientGlobalReference = (identifier: Identifier): boolean =>
-  !hasLocalBinding(identifier)
+const isAmbientGlobalReference = (
+  identifier: Identifier,
+  bindings: SourceBindings,
+): boolean => !bindings.shadowedGlobalNames.has(identifier.text)
 
-const isChildProcessValueBinding = (identifier: Identifier): boolean =>
-  childProcessBindingKind(identifier) === "value"
+const isChildProcessValueBinding = (
+  identifier: Identifier,
+  bindings: SourceBindings,
+): boolean => bindings.childProcessByName.get(identifier.text) === "value"
 
-const isChildProcessModuleBinding = (identifier: Identifier): boolean =>
-  childProcessBindingKind(identifier) === "module"
-
-const hasLocalBinding = (identifier: Identifier): boolean => {
-  const name = identifier.text
-  const sourceFile = identifier.getSourceFile()
-  let found = false
-  walkDescendants(sourceFile, (node) => {
-    if (found) return
-    if (isVariableDeclaration(node) && isIdentifier(node.name) && node.name.text === name && node.name !== identifier) {
-      found = true
-      return
-    }
-    if (isImportDeclaration(node)) {
-      const clause = node.importClause
-      if (clause?.name?.text === name) {
-        found = true
-        return
-      }
-      if (clause?.namedBindings !== undefined && isNamespaceImport(clause.namedBindings) && clause.namedBindings.name.text === name) {
-        found = true
-      }
-    }
-  })
-  return found
-}
-
-const childProcessBindingKind = (identifier: Identifier): "value" | "module" | undefined => {
-  const sourceFile = identifier.getSourceFile()
-  const name = identifier.text
-  let kind: "value" | "module" | undefined
-  walkDescendants(sourceFile, (node) => {
-    if (kind !== undefined) return
-    if (isImportDeclaration(node)) {
-      const specifierNode = node.moduleSpecifier
-      const specifier = isStringLiteral(specifierNode) || isNoSubstitutionTemplateLiteral(specifierNode)
-        ? specifierNode.text
-        : undefined
-      if (specifier === undefined || !isChildProcessSpecifier(specifier)) return
-      const clause = node.importClause
-      if (clause?.name?.text === name) {
-        kind = "module"
-        return
-      }
-      if (clause?.namedBindings !== undefined && isNamespaceImport(clause.namedBindings) && clause.namedBindings.name.text === name) {
-        kind = "module"
-        return
-      }
-      if (clause?.namedBindings !== undefined && "elements" in clause.namedBindings) {
-        for (const element of clause.namedBindings.elements as ReadonlyArray<{ readonly name: Identifier }>) {
-          if (element.name.text === name) kind = "value"
-        }
-      }
-    }
-    if (isVariableDeclaration(node) && isIdentifier(node.name) && node.name.text === name) {
-      if (isChildProcessRequireCall(node.initializer)) kind = "module"
-    }
-    if (isBindingElement(node) && node.name !== undefined && isIdentifier(node.name) && node.name.text === name) {
-      let current: Node | undefined = node.parent
-      while (current !== undefined) {
-        if (isVariableDeclaration(current)) {
-          if (isChildProcessRequireCall(current.initializer)) kind = "value"
-          break
-        }
-        current = current.parent
-      }
-    }
-  })
-  return kind
-}
+const isChildProcessModuleBinding = (
+  identifier: Identifier,
+  bindings: SourceBindings,
+): boolean => bindings.childProcessByName.get(identifier.text) === "module"
 
 const isChildProcessRequireCall = (node: Node | undefined): boolean => {
   if (node === undefined || !isCallExpression(node)) return false

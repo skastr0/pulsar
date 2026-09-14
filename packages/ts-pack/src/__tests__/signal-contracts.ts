@@ -788,15 +788,15 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       config:
         "ts-trust-signals.test.ts: default config decodes and factor ledger exposes config.exclude_globs, review_route_weight, and top_n_diagnostics through config factor definitions.",
       positiveFixture:
-        "ts-trust-signals.test.ts: real TsProject fixtures flag child_process import/use, eval calls, unsafe exec, and shell-enabled spawn as dangerous capability surface.",
+        "ts-trust-signals.test.ts and ts-sec-01-dangerous-capability-surface.test.ts: real TsProject fixtures flag child_process named/namespace/default/require bindings, eval calls, Bun/Deno process globals, unsafe exec, raw SQL escape hatches, and shell-enabled spawn as dangerous capability surface.",
       negativeFixture:
-        "ts-trust-signals.test.ts: test fixture path containing eval is excluded by default production excludes; capability imports, nonliteral dynamic import inventory, and constrained literal-command process launches stay visible but score-neutral by default.",
+        "ts-trust-signals.test.ts and ts-sec-01-dangerous-capability-surface.test.ts: test fixture paths are excluded; local process helpers, shadowed Bun/Deno globals, parameterized SQL tags, and unrelated raw/literal APIs remain clean; capability imports, nonliteral dynamic imports, and constrained commands stay visible but score-neutral by default.",
       applicability:
         "ts-trust-signals.test.ts: empty/value-only fixture runs through state zero with score 1 during identity/factor-ledger checks.",
       score:
-        "ts-trust-signals.test.ts: eval, unsafe exec, and shell-enabled spawn lower score below 1 while excluded-only, dynamic import inventory, and score-neutral capability inventory evidence do not affect score.",
+        "ts-trust-signals.test.ts and ts-sec-01-dangerous-capability-surface.test.ts: eval, unsafe exec, and shell-enabled spawn lower score below 1; inventory-only pressure stays above its floor while excluded-only and score-neutral capability evidence do not affect score.",
       diagnostics:
-        "ts-trust-signals.test.ts: diagnostics include severity, file/line/column, structured kind/sink payload, stable hash, and remediation fix hint.",
+        "ts-trust-signals.test.ts and ts-sec-01-dangerous-capability-surface.test.ts: diagnostics include severity, file/line/column, structured kind/sink payload, stable hash, remediation fix hint, deterministic risk ordering, and top-N bounds.",
       factorLedger:
         "ts-trust-signals.test.ts: registered signal emits config.top_n_diagnostics and other default config factor-ledger entries.",
       cacheSemantics:
