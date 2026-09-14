@@ -1,4 +1,5 @@
-import { mkdir, appendFile, open, readdir, rename, rm, stat } from "node:fs/promises"
+import { randomBytes } from "node:crypto"
+import { mkdir, appendFile, open, readdir, rename, rm, stat, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { Effect, Layer, Option } from "effect"
 import {
@@ -74,13 +75,14 @@ class DiskBackedCacheError extends Error {
 const recordPathFor = (cacheDir: string, signalId: string): string =>
   join(cacheDir, signalId, RECORD_FILE)
 
-let tempSequence = 0
-
 const recordTempPathFor = (cacheDir: string, signalId: string): string =>
   join(
     cacheDir,
     signalId,
-    `.${RECORD_FILE}.${process.pid}.${(tempSequence += 1)}.tmp`,
+    // PID plus a fresh random suffix per write: the PID keeps the startup
+    // sweep able to preserve live writers, the random suffix keeps two
+    // writers in one process from colliding.
+    `.${RECORD_FILE}.${process.pid}.${randomBytes(8).toString("hex")}.tmp`,
   )
 
 const createInitialBucket = (signalId: string): LoadedSignalBucket => ({
@@ -159,7 +161,7 @@ const removeTempFile = async (tempPath: string): Promise<void> => {
   }
 }
 
-const TEMP_FILE_PATTERN = /^\.entries\.jsonl\.(\d+)(?:\.\d+)?\.tmp$/
+const TEMP_FILE_PATTERN = /^\.entries\.jsonl\.(\d+)(?:\.\d+|(?:\.[0-9a-f]+)*)?\.tmp$/
 
 const isProcessAlive = (pid: number): boolean => {
   try {
@@ -171,9 +173,10 @@ const isProcessAlive = (pid: number): boolean => {
 }
 
 /**
- * Removes orphaned bucket temp files left by writers that died between
- * creating their temp file and renaming it. Temp files owned by another live
- * process are left alone: that process may still be writing them.
+ * Removes abandoned bucket temp files left by writers that died between
+ * creating their temp file and renaming it. Temp files owned by a live
+ * process (including this one) are left alone so a paused writer is never
+ * unlinked.
  */
 const cleanupStaleTempFiles = async (cacheDir: string): Promise<void> => {
   const dirEntries = await readdir(cacheDir, { withFileTypes: true })
@@ -185,8 +188,9 @@ const cleanupStaleTempFiles = async (cacheDir: string): Promise<void> => {
         const bucketEntries = await readdir(bucketDir, { withFileTypes: true })
         await Promise.all(
           bucketEntries.map(async (bucketEntry) => {
+            if (!bucketEntry.isFile()) return
             const match = TEMP_FILE_PATTERN.exec(bucketEntry.name)
-            if (match === null || !bucketEntry.isFile()) return
+            if (match === null) return
             const ownerPid = Number(match[1])
             if (ownerPid === process.pid || isProcessAlive(ownerPid)) return
             await removeTempFile(join(bucketDir, bucketEntry.name))
@@ -265,48 +269,48 @@ const scanBucketFile = async (
 
 /**
  * Writes records to a temp file in bounded batches instead of joining the
- * whole bucket into one string, then atomically renames it into place. A
- * failed or interrupted write removes the temp file, so a partial bucket
- * never lingers.
+ * whole bucket into one string, then atomically renames it into place.
+ * The temp file is created exclusively (`wx`): a pre-existing orphan can
+ * never be appended to and read back, and an `EEXIST` rejects the write
+ * without touching the existing file. A failed write removes the temp file
+ * only when this write actually created it.
  */
 const persistBucket = async (
   tempPath: string,
   path: string,
   records: ReadonlyArray<IndexedCacheRecord>,
 ): Promise<void> => {
+  let created = false
   try {
-    if (records.length === 0) {
-      const handle = await open(tempPath, "w")
-      await handle.close()
-      await rename(tempPath, path)
-      return
+    await writeFile(tempPath, "", { flag: "wx" })
+    created = true
+    if (records.length > 0) {
+      let batch: string[] = []
+      let batchBytes = 0
+      const flushBatch = async (): Promise<void> => {
+        if (batch.length === 0) return
+        await appendFile(tempPath, batch.join(""), "utf8")
+        batch = []
+        batchBytes = 0
+      }
+      for (const record of records) {
+        const line =
+          record.entry === undefined
+            ? `${record.line}\n`
+            : `${serializeRecord({
+                key: record.key,
+                entry: record.entry,
+                lastAccessedAt: record.lastAccessedAt,
+              })}\n`
+        batch.push(line)
+        batchBytes += record.bytes
+        if (batchBytes >= WRITE_BATCH_BYTES) await flushBatch()
+      }
+      await flushBatch()
     }
-
-    let batch: string[] = []
-    let batchBytes = 0
-    const flushBatch = async (): Promise<void> => {
-      if (batch.length === 0) return
-      await appendFile(tempPath, batch.join(""), "utf8")
-      batch = []
-      batchBytes = 0
-    }
-    for (const record of records) {
-      const line =
-        record.entry === undefined
-          ? `${record.line}\n`
-          : `${serializeRecord({
-              key: record.key,
-              entry: record.entry,
-              lastAccessedAt: record.lastAccessedAt,
-            })}\n`
-      batch.push(line)
-      batchBytes += record.bytes
-      if (batchBytes >= WRITE_BATCH_BYTES) await flushBatch()
-    }
-    await flushBatch()
     await rename(tempPath, path)
   } catch (error) {
-    await removeTempFile(tempPath)
+    if (created) await removeTempFile(tempPath)
     throw new DiskBackedCacheError("write bucket file", error)
   }
 }
@@ -339,6 +343,15 @@ const parseRecordLine = (line: string): SerializedRecord => {
     key,
     entry: parsed.entry as TieredCacheEntry<unknown>,
     lastAccessedAt: parsed.lastAccessedAt,
+  }
+}
+
+/** Returns the parsed record, or undefined for a malformed line. */
+const parseStoredRecordLine = (line: string): SerializedRecord | undefined => {
+  try {
+    return parseRecordLine(line)
+  } catch {
+    return undefined
   }
 }
 
@@ -471,22 +484,14 @@ const makeDiskBackedCache = (config?: CacheConfig): Effect.Effect<SignalCache> =
       if (budget !== undefined && onDiskBytes > budget) return bucket
 
       await scanBucketFile(path, (scanned) => {
-        let parsed: unknown
-        try {
-          parsed = JSON.parse(scanned.line)
-        } catch {
-          return
-        }
-        if (parsed === null || typeof parsed !== "object") return
-        const candidate = parsed as { key?: unknown; lastAccessedAt?: unknown }
-        const key = cacheKeyOf(candidate.key)
-        if (key === undefined || typeof candidate.lastAccessedAt !== "string") return
-        const keyString = cacheKeyString(key)
+        const parsed = parseStoredRecordLine(scanned.line)
+        if (parsed === undefined) return
+        const keyString = cacheKeyString(parsed.key)
         // First line for a key wins, matching the previous loader semantics.
         if (bucket.records.has(keyString)) return
         bucket.records.set(keyString, {
-          key,
-          lastAccessedAt: candidate.lastAccessedAt,
+          key: parsed.key,
+          lastAccessedAt: parsed.lastAccessedAt,
           bytes: scanned.bytes,
           line: scanned.line,
         })
@@ -577,6 +582,11 @@ const makeDiskBackedCache = (config?: CacheConfig): Effect.Effect<SignalCache> =
       }
     }
 
+    /**
+     * Returns the parsed entry for a record, parsing its retained line at
+     * most once. A line that no longer parses is dropped and reported as
+     * absent rather than poisoning every cache operation for the process.
+     */
     const loadedRecordFor = (
       bucket: LoadedSignalBucket,
       keyString: string,
@@ -584,7 +594,13 @@ const makeDiskBackedCache = (config?: CacheConfig): Effect.Effect<SignalCache> =
       const record = bucket.records.get(keyString)
       if (record === undefined) return undefined
       if (record.entry !== undefined) return record
-      const parsed = parseRecordLine(record.line)
+      const parsed = parseStoredRecordLine(record.line)
+      if (parsed === undefined) {
+        totalBytes -= record.bytes
+        bucket.records.delete(keyString)
+        bucket.dirty = true
+        return undefined
+      }
       const bytes = recordLineBytes(parsed)
       totalBytes += bytes - record.bytes
       const loaded: IndexedLoadedRecord = {

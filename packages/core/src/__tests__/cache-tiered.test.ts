@@ -717,8 +717,8 @@ describe("tiered disk cache", () => {
   test("sweeps orphaned temp files at startup but keeps live writers'", async () => {
     const cacheDir = await mkdtemp(join(tmpdir(), "pulsar-cache-sweep-"))
     const signalDir = join(cacheDir, "SWEEP")
-    const orphanName = ".entries.jsonl.999999.1.tmp"
-    const liveName = `.entries.jsonl.${process.pid}.1.tmp`
+    const orphanName = ".entries.jsonl.999999.0123456789abcdef.tmp"
+    const liveName = `.entries.jsonl.${process.pid}.0123456789abcdef.tmp`
 
     try {
       await mkdir(signalDir, { recursive: true })
@@ -738,8 +738,94 @@ describe("tiered disk cache", () => {
         { tier: 1 },
       ))).value?.payload).toBe("kept")
 
-      const remaining = (await readdir(signalDir)).sort()
-      expect(remaining).toEqual([liveName, "entries.jsonl"])
+      // Dead owners' temp files are gone; a live writer's file is untouched.
+      expect((await readdir(signalDir)).sort()).toEqual([liveName, "entries.jsonl"])
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true })
+    }
+  })
+
+  test("never appends to a pre-existing orphan temp file", async () => {
+    const cacheDir = await mkdtemp(join(tmpdir(), "pulsar-cache-orphan-"))
+    const signalDir = join(cacheDir, "ORPHAN")
+    const key: CacheKey = { signalId: "ORPHAN", contentHash: "c", configHash: "k" }
+    const stale: CacheKey = { signalId: "ORPHAN", contentHash: "c", configHash: "k" }
+
+    try {
+      // Simulate a crashed writer's orphan. It carries a stale record for the
+      // same key; appending to it would resurrect the stale value.
+      await mkdir(signalDir, { recursive: true })
+      const orphanName = `.entries.jsonl.${process.pid}.${"0".repeat(16)}.tmp`
+      await writeFile(
+        join(signalDir, orphanName),
+        persistedTierOneRecord(stale, { payload: "stale" }),
+      )
+
+      const cache = await makeDiskCache({ cacheDir })
+      await Effect.runPromise(
+        cache.setTiered(key, { payload: "fresh" }, {
+          tier: 1,
+          computedAt: "2026-04-19T00:00:00.000Z",
+        }),
+      )
+
+      const persisted = await readFile(join(signalDir, "entries.jsonl"), "utf8")
+      expect(persisted).toContain("fresh")
+      expect(persisted).not.toContain("stale")
+      // The winning write must not have used the orphan file: it may still be
+      // there (and later swept), but it was never appended to.
+      const orphanContents = await readFile(join(signalDir, orphanName), "utf8")
+      expect(orphanContents).not.toContain("fresh")
+
+      const reloaded = await makeDiskCache({ cacheDir })
+      const hit = await Effect.runPromise(
+        reloaded.getTiered<{ payload: string }>(key, { tier: 1 }),
+      )
+      expect(hit.status).toBe("hit")
+      expect(hit.value?.payload).toBe("fresh")
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true })
+    }
+  })
+
+  test("treats a malformed indexed record as a miss instead of failing the cache", async () => {
+    const cacheDir = await mkdtemp(join(tmpdir(), "pulsar-cache-malformed-"))
+    const signalId = "MALFORMED"
+    const signalDir = join(cacheDir, signalId)
+    const filePath = join(signalDir, "entries.jsonl")
+    const brokenKey: CacheKey = { signalId, contentHash: "broken", configHash: "broken" }
+    const goodKey: CacheKey = { signalId, contentHash: "good", configHash: "good" }
+
+    try {
+      await mkdir(signalDir, { recursive: true })
+      // A record with a valid key and timestamp but no entry used to poison
+      // the whole cache operation through the lazy parse path.
+      const brokenLine = `{"key":${JSON.stringify(brokenKey)},"lastAccessedAt":"2026-01-01T00:00:00.000Z"}`
+      await writeFile(
+        filePath,
+        `${brokenLine}\n${persistedTierOneRecord(goodKey, { payload: "kept" })}`,
+      )
+
+      const cache = await makeDiskCache({ cacheDir })
+      const broken = await Effect.runPromise(cache.getTiered(brokenKey, { tier: 1 }))
+      expect(broken.status).toBe("miss")
+
+      const good = await Effect.runPromise(
+        cache.getTiered<{ payload: string }>(goodKey, { tier: 1 }),
+      )
+      expect(good.status).toBe("hit")
+      expect(good.value?.payload).toBe("kept")
+
+      // The cache stays usable and can repair the bucket on the next write.
+      await Effect.runPromise(
+        cache.setTiered(goodKey, { payload: "rewritten" }, { tier: 1 }),
+      )
+      const reloaded = await makeDiskCache({ cacheDir })
+      expect(
+        (await Effect.runPromise(
+          reloaded.getTiered<{ payload: string }>(goodKey, { tier: 1 }),
+        )).value?.payload,
+      ).toBe("rewritten")
     } finally {
       await rm(cacheDir, { recursive: true, force: true })
     }
