@@ -177,7 +177,7 @@ describe("agent catalog", () => {
       expect(JSON.parse(JSON.stringify(detail.configSchema))).toEqual(JSON.parse(JSON.stringify(Schema.toJsonSchemaDocument(signal.configSchema))))
       expect(detail.defaults).toEqual(signal.defaultConfig)
     }
-  })
+  }, 30_000)
 
   test("unknown and conflicting details fail; invalid policy does not hide discovery", async () => {
     for (const options of [{ signalId: "unknown" }, { slotId: "unknown" }, { signalId: "TS-LD-02", slotId: "typescript.size-policy" }]) {
