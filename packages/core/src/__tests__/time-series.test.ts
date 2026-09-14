@@ -641,16 +641,20 @@ describe("time series persistence", () => {
 
       await mkdir(dirname(services.filePath), { recursive: true })
       await writeFile(services.filePath, firstRaw, "utf8")
+      const fixedTime = new Date("2026-04-15T10:00:00.000Z")
+      await utimes(services.filePath, fixedTime, fixedTime)
       expect(
         (await Effect.runPromise(services.reader.entries())).map((entry) => entry.sha),
       ).toEqual(["restore-a"])
       const before = await stat(services.filePath)
+      const beforeNs = await stat(services.filePath, { bigint: true })
 
       await writeFile(services.filePath, secondRaw, "utf8")
       await utimes(services.filePath, before.atime, before.mtime)
       const forged = await stat(services.filePath)
       expect(forged.size).toBe(before.size)
       expect(forged.mtimeMs).toBe(before.mtime.getTime())
+      expect((await stat(services.filePath, { bigint: true })).mtimeNs).toBe(beforeNs.mtimeNs)
 
       expect(
         (await Effect.runPromise(services.reader.entries())).map((entry) => entry.sha),
