@@ -1,4 +1,5 @@
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises"
+import * as fs from "node:fs/promises"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { describe, expect, spyOn, test } from "bun:test"
@@ -784,6 +785,39 @@ describe("tiered disk cache", () => {
       expect(hit.status).toBe("hit")
       expect(hit.value?.payload).toBe("fresh")
     } finally {
+      await rm(cacheDir, { recursive: true, force: true })
+    }
+  })
+
+  test("preserves another writer's temp file when exclusive creation collides", async () => {
+    const cacheDir = await mkdtemp(join(tmpdir(), "pulsar-cache-collision-"))
+    const signalDir = join(cacheDir, "COLLISION")
+    const key: CacheKey = { signalId: "COLLISION", contentHash: "c", configHash: "k" }
+    const existing = persistedTierOneRecord(key, { payload: "existing" })
+    const writeOriginal = fs.writeFile
+    let collidedPath: string | undefined
+    const write = spyOn(fs, "writeFile").mockImplementation(async (...args) => {
+      const [path] = args
+      if (typeof path === "string" && path.startsWith(signalDir) && path.endsWith(".tmp")) {
+        collidedPath = path
+        await writeOriginal(path, "another writer's bytes", { flag: "wx" })
+      }
+      return writeOriginal(...args)
+    })
+    try {
+      await mkdir(signalDir, { recursive: true })
+      await writeOriginal(join(signalDir, "entries.jsonl"), existing)
+      const cache = await makeDiskCache({ cacheDir })
+      const failure = await Effect.runPromise(cache.setTiered(key, { payload: "fresh" })).then(
+        () => undefined,
+        (error: unknown) => error,
+      )
+      expect(failure).toBeDefined()
+      expect(collidedPath).toBeDefined()
+      expect(await readFile(collidedPath!, "utf8")).toBe("another writer's bytes")
+      expect(await readFile(join(signalDir, "entries.jsonl"), "utf8")).toBe(existing)
+    } finally {
+      write.mockRestore()
       await rm(cacheDir, { recursive: true, force: true })
     }
   })
