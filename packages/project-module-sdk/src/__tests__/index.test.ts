@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readdir, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, test } from "bun:test"
@@ -1350,7 +1350,9 @@ describe("project module sdk", () => {
   })
 
   test("collects the legacy preProcessFile import forms used for source fingerprints", async () => {
-    const repoRoot = await mkdtemp(join(tmpdir(), "pulsar-project-module-imports-"))
+    const repoRoot = await realpath(
+      await mkdtemp(join(tmpdir(), "pulsar-project-module-imports-")),
+    )
     try {
       const target = join(repoRoot, "module.ts")
       const dependencyNames = [
