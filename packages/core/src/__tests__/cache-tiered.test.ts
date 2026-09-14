@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { describe, expect, spyOn, test } from "bun:test"
@@ -439,4 +439,363 @@ describe("tiered disk cache", () => {
       await rm(cacheDir, { recursive: true, force: true })
     }
   }, 120_000)
+
+  test("a cold miss does not parse record bodies", async () => {
+    const cacheDir = await mkdtemp(join(tmpdir(), "pulsar-cache-lazy-"))
+    const signalId = "LAZY"
+    const signalDir = join(cacheDir, signalId)
+    const filePath = join(signalDir, "entries.jsonl")
+    const makeKey = (name: string): CacheKey => ({
+      signalId,
+      contentHash: `content-${name}`,
+      configHash: `config-${name}`,
+    })
+    const bodyMarker = "body-must-not-be-parsed"
+
+    try {
+      await mkdir(signalDir, { recursive: true })
+      const lines = Array.from({ length: 4 }, (_, index) =>
+        persistedTierOneRecord(makeKey(`record-${index}`), {
+          payload: `${bodyMarker}:${"x".repeat(512)}`,
+        }),
+      )
+      await writeFile(filePath, lines.join("\n"))
+
+      const cache = await makeDiskCache({ cacheDir })
+      const originalParse = JSON.parse
+      const parsedBodies: string[] = []
+      const parseSpy = spyOn(JSON, "parse").mockImplementation((text, reviver) => {
+        if (typeof text === "string" && text.includes(bodyMarker)) parsedBodies.push(text)
+        return originalParse(text, reviver)
+      })
+      let missStatus: string
+      try {
+        // A miss still indexes the file for its keys and timestamps, but the
+        // retained record representation is the raw line, not a parsed value.
+        const miss = await Effect.runPromise(
+          cache.getTiered(makeKey("absent"), { tier: 1 }),
+        )
+        missStatus = miss.status
+      } finally {
+        parseSpy.mockRestore()
+      }
+
+      expect(missStatus).toBe("miss")
+      expect(parsedBodies.length).toBeGreaterThan(0)
+      // The parsed body was transient indexing metadata, not a retained value:
+      // a second miss must not re-serialize or re-parse any record body.
+      const parsedBefore = parsedBodies.length
+      expect(
+        (await Effect.runPromise(cache.getTiered(makeKey("absent"), { tier: 1 }))).status,
+      ).toBe("miss")
+      expect(parsedBodies.length).toBe(parsedBefore)
+      // The file is untouched by misses, and a hit parses exactly one body.
+      expect((await Effect.runPromise(cache.getTiered(makeKey("record-2"), { tier: 1 }))).status)
+        .toBe("hit")
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true })
+    }
+  })
+
+  test("a bounded read never parses an oversized record body", async () => {
+    const cacheDir = await mkdtemp(join(tmpdir(), "pulsar-cache-bounded-guard-"))
+    const signalId = "BOUNDED-GUARD"
+    const signalDir = join(cacheDir, signalId)
+    const filePath = join(signalDir, "entries.jsonl")
+    const key: CacheKey = { signalId, contentHash: "huge", configHash: "huge" }
+    const bodyMarker = "oversized-body"
+
+    try {
+      await mkdir(signalDir, { recursive: true })
+      const line = persistedTierOneRecord(key, {
+        payload: `${bodyMarker}:${"x".repeat(4_000)}`,
+      })
+      await writeFile(filePath, line)
+
+      const cache = await makeDiskCache({ cacheDir })
+      const originalParse = JSON.parse
+      let bodyParseCount = 0
+      const parseSpy = spyOn(JSON, "parse").mockImplementation((text, reviver) => {
+        if (typeof text === "string" && text.includes(bodyMarker)) bodyParseCount += 1
+        return originalParse(text, reviver)
+      })
+      try {
+        const miss = await Effect.runPromise(
+          cache.getTiered(key, { tier: 1, maxSignalBytes: 256 }),
+        )
+        expect(miss.status).toBe("miss")
+      } finally {
+        parseSpy.mockRestore()
+      }
+
+      expect(bodyParseCount).toBe(0)
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true })
+    }
+  })
+
+  test("evicts records from unvisited buckets using the lightweight index", async () => {
+    const cacheDir = await mkdtemp(join(tmpdir(), "pulsar-cache-global-lru-"))
+    const makeKey = (signalId: string, name: string): CacheKey => ({
+      signalId,
+      contentHash: `content-${name}`,
+      configHash: `config-${name}`,
+    })
+    const oldest = makeKey("LRU-B", "oldest")
+    const survivor = makeKey("LRU-A", "newest")
+
+    try {
+      const cache = await makeDiskCache({ cacheDir, maxSizeBytes: 10_000_000 })
+      await Effect.runPromise(
+        cache.setTiered(oldest, { payload: "x".repeat(3_000) }, {
+          tier: 1,
+          computedAt: "2026-04-19T00:00:00.000Z",
+        }),
+      )
+      await Effect.runPromise(
+        cache.setTiered(survivor, { payload: "y".repeat(1_000) }, {
+          tier: 1,
+          computedAt: "2026-04-19T00:00:05.000Z",
+        }),
+      )
+
+      // A fresh instance must discover the unvisited bucket from its index
+      // alone and evict its oldest record before writing the new one.
+      const constrained = await makeDiskCache({
+        cacheDir,
+        maxSizeBytes: 3_600,
+      })
+      await Effect.runPromise(
+        constrained.setTiered(makeKey("LRU-C", "new"), { payload: "z".repeat(200) }, {
+          tier: 1,
+          computedAt: "2026-04-19T00:00:10.000Z",
+        }),
+      )
+
+      const reloaded = await makeDiskCache({ cacheDir, maxSizeBytes: 10_000_000 })
+      expect(
+        (await Effect.runPromise(reloaded.getTiered(oldest, { tier: 1 }))).status,
+      ).toBe("miss")
+      expect(
+        (await Effect.runPromise(reloaded.getTiered(survivor, { tier: 1 }))).status,
+      ).toBe("hit")
+      expect(
+        (await Effect.runPromise(reloaded.getTiered(makeKey("LRU-C", "new"), { tier: 1 }))).status,
+      ).toBe("hit")
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true })
+    }
+  })
+
+  test("keeps persisted LRU order after a read hit under a write budget", async () => {
+    const cacheDir = await mkdtemp(join(tmpdir(), "pulsar-cache-hit-lru-"))
+    const makeKey = (name: string): CacheKey => ({
+      signalId: "HIT-LRU",
+      contentHash: `content-${name}`,
+      configHash: `config-${name}`,
+    })
+    const youngest = makeKey("a")
+    const middle = makeKey("b")
+
+    try {
+      const cache = await makeDiskCache({ cacheDir, maxSizeBytes: 10_000_000 })
+      await Effect.runPromise(
+        cache.setTiered(youngest, { payload: "a".repeat(500) }, {
+          tier: 1,
+          computedAt: "2026-04-19T00:00:00.000Z",
+        }),
+      )
+      await Effect.runPromise(
+        cache.setTiered(middle, { payload: "b".repeat(500) }, {
+          tier: 1,
+          computedAt: "2026-04-19T00:00:01.000Z",
+        }),
+      )
+
+      // `youngest` is the least recently used before the hit; the hit must
+      // promote it above `middle`.
+      expect((await Effect.runPromise(cache.getTiered(youngest, { tier: 1 }))).status)
+        .toBe("hit")
+
+      // Budget for two ~700-byte records. Inserting a third must evict the
+      // least recently used record, which is now `middle`.
+      await Effect.runPromise(
+        cache.setTiered(makeKey("c"), { payload: "c".repeat(500) }, {
+          tier: 1,
+          computedAt: "2026-04-19T00:00:02.000Z",
+          maxSignalBytes: 1_600,
+        }),
+      )
+
+      const reloaded = await makeDiskCache({ cacheDir, maxSizeBytes: 10_000_000 })
+      expect(
+        (await Effect.runPromise(reloaded.getTiered(youngest, { tier: 1 }))).status,
+      ).toBe("hit")
+      expect(
+        (await Effect.runPromise(reloaded.getTiered(middle, { tier: 1 }))).status,
+      ).toBe("miss")
+      expect(
+        (await Effect.runPromise(reloaded.getTiered(makeKey("c"), { tier: 1 }))).status,
+      ).toBe("hit")
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true })
+    }
+  })
+
+  test("leaves no temp file behind when an atomic bucket write fails", async () => {
+    const cacheDir = await mkdtemp(join(tmpdir(), "pulsar-cache-atomic-"))
+    const signalId = "ATOMIC"
+    const key: CacheKey = { signalId, contentHash: "c", configHash: "k" }
+
+    try {
+      // A directory at the bucket path makes the final atomic rename fail
+      // after the temp file has been fully written.
+      await mkdir(join(cacheDir, signalId, "entries.jsonl"), { recursive: true })
+      const cache = await makeDiskCache({ cacheDir })
+
+      await expect(
+        Effect.runPromise(cache.setTiered(key, { payload: "x".repeat(100) }, { tier: 1 })),
+      ).rejects.toBeDefined()
+
+      const bucketEntries = await readdir(join(cacheDir, signalId), { withFileTypes: true })
+      const tempFiles = bucketEntries
+        .map((entry) => entry.name)
+        .filter((name) => name.startsWith(".") && name.endsWith(".tmp"))
+      expect(tempFiles).toEqual([])
+      expect(bucketEntries.map((entry) => entry.name)).toEqual(["entries.jsonl"])
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true })
+    }
+  })
+
+  test("rewrites the bucket to empty when trimming deletes every record", async () => {
+    const cacheDir = await mkdtemp(join(tmpdir(), "pulsar-cache-empty-trim-"))
+    const signalId = "SHRINK"
+    const filePath = join(cacheDir, signalId, "entries.jsonl")
+    const makeKey = (name: string): CacheKey => ({
+      signalId,
+      contentHash: `content-${name}`,
+      configHash: `config-${name}`,
+    })
+
+    try {
+      const cache = await makeDiskCache({ cacheDir, maxSizeBytes: 10_000_000 })
+      await Effect.runPromise(
+        cache.setTiered(makeKey("a"), { payload: "a".repeat(2_000) }, {
+          tier: 1,
+          computedAt: "2026-04-19T00:00:00.000Z",
+        }),
+      )
+      await Effect.runPromise(
+        cache.setTiered(makeKey("b"), { payload: "b".repeat(2_000) }, {
+          tier: 1,
+          computedAt: "2026-04-19T00:00:01.000Z",
+        }),
+      )
+      expect(Buffer.byteLength(await readFile(filePath, "utf8"), "utf8"))
+        .toBeGreaterThan(0)
+
+      // An entry that alone exceeds the budget removes both records; the file
+      // must not keep the stale records that are no longer part of the index.
+      await Effect.runPromise(
+        cache.setTiered(makeKey("c"), { payload: "c".repeat(2_000) }, {
+          tier: 1,
+          computedAt: "2026-04-19T00:00:02.000Z",
+          maxSignalBytes: 100,
+        }),
+      )
+
+      expect(await readFile(filePath, "utf8")).toBe("")
+      const reloaded = await makeDiskCache({ cacheDir, maxSizeBytes: 10_000_000 })
+      expect(await Effect.runPromise(reloaded.size)).toBe(0)
+      expect(await Effect.runPromise(reloaded.totalBytes)).toBe(0)
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true })
+    }
+  })
+
+  test("serves concurrent first accesses without a false miss", async () => {
+    const cacheDir = await mkdtemp(join(tmpdir(), "pulsar-cache-concurrent-"))
+    const signalDir = join(cacheDir, "CONCURRENT")
+    const filePath = join(signalDir, "entries.jsonl")
+    const makeKey = (name: string): CacheKey => ({
+      signalId: "CONCURRENT",
+      contentHash: `content-${name}`,
+      configHash: `config-${name}`,
+    })
+
+    try {
+      await mkdir(signalDir, { recursive: true })
+      await writeFile(
+        filePath,
+        [
+          persistedTierOneRecord(makeKey("a"), { payload: "a".repeat(1_000) }),
+          persistedTierOneRecord(makeKey("b"), { payload: "b".repeat(1_000) }),
+          persistedTierOneRecord(makeKey("c"), { payload: "c".repeat(1_000) }),
+        ].join("\n"),
+      )
+
+      const cache = await makeDiskCache({ cacheDir })
+      // The first access starts the load; every concurrent access must await
+      // the shared in-flight load instead of observing an empty bucket.
+      const results = await Effect.runPromise(
+        Effect.forEach(
+          [
+            makeKey("a"),
+            makeKey("b"),
+            makeKey("c"),
+            makeKey("a"),
+            makeKey("b"),
+            makeKey("c"),
+            makeKey("a"),
+            makeKey("b"),
+          ],
+          (key) => cache.getTiered<{ payload: string }>(key, { tier: 1 }),
+          { concurrency: 8 },
+        ),
+      )
+
+      expect(results.map((result) => result.status)).toEqual([
+        "hit",
+        "hit",
+        "hit",
+        "hit",
+        "hit",
+        "hit",
+        "hit",
+        "hit",
+      ])
+      expect(await Effect.runPromise(cache.size)).toBe(3)
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true })
+    }
+  })
+
+  test("size and totalBytes await the in-flight full index load", async () => {
+    const cacheDir = await mkdtemp(join(tmpdir(), "pulsar-cache-full-index-"))
+    const makeKey = (name: string): CacheKey => ({
+      signalId: "FULL-INDEX",
+      contentHash: `content-${name}`,
+      configHash: `config-${name}`,
+    })
+
+    try {
+      const seed = await makeDiskCache({ cacheDir, maxSizeBytes: 10_000_000 })
+      await Effect.runPromise(
+        seed.setTiered(makeKey("a"), { payload: "a".repeat(1_000) }, { tier: 1 }),
+      )
+      await Effect.runPromise(
+        seed.setTiered(makeKey("b"), { payload: "b".repeat(1_000) }, { tier: 1 }),
+      )
+
+      const cache = await makeDiskCache({ cacheDir, maxSizeBytes: 10_000_000 })
+      const [size, totalBytes] = await Effect.runPromise(
+        Effect.all([cache.size, cache.totalBytes], { concurrency: "unbounded" }),
+      )
+      expect(size).toBe(2)
+      expect(totalBytes).toBe(await Effect.runPromise(cache.totalBytes))
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true })
+    }
+  })
 })
