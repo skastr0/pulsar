@@ -25,7 +25,7 @@ export const SHARED_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       cacheSemantics:
         "shared-churn-01.test.ts and pack.test.ts: SHARED-CHURN-01 declares git-revision-context and provider-not-applicable-git-context-v1 cacheVersion; wrapped shared-pack cache version preserves the signal cacheVersion after config normalization and TS module-extension semantics changed.",
       gitContext:
-        "shared-churn-01.test.ts: tests run against real git repositories with authored commit dates, proving HEAD-relative history windows, max-count sampling, extension pathspecs, excluded-path behavior, and deterministic repeated history interpretation.",
+        "shared-churn-01.test.ts: tests run against real git repositories with authored commit dates, proving HEAD-relative history windows, max-count sampling, extension pathspecs, excluded-path behavior, and deterministic repeated history interpretation. packages/core/src/__tests__/shared-history-git.test.ts: streamed Git lines match buffered splitting, and output ceilings and cancellation fail explicitly without returning partial facts.",
     },
   },
   {
