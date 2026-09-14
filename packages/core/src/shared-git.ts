@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process"
+import { spawn, type ChildProcess } from "node:child_process"
 
 /**
  * Same fail-closed ceiling as the previous execFile maxBuffer. Streaming
@@ -90,13 +90,16 @@ interface RunGitProcessOptions extends GitSubprocessOptions {
   readonly onStdoutChunk: (chunk: Buffer) => void
 }
 
+const GIT_CANCEL_KILL_MS = 1_000
+
 const runGitProcess = (
   repoPath: string,
   args: ReadonlyArray<string>,
   options: RunGitProcessOptions,
 ): Promise<void> =>
   new Promise((resolve, reject) => {
-    if (options.signal?.aborted) {
+    const signal = options.signal
+    if (signal?.aborted) {
       reject(new GitSubprocessAborted())
       return
     }
@@ -110,7 +113,7 @@ const runGitProcess = (
     let settled = false
 
     const cleanup = (): void => {
-      options.signal?.removeEventListener("abort", onAbort)
+      signal?.removeEventListener("abort", onAbort)
     }
 
     const fail = (error: Error): void => {
@@ -119,14 +122,21 @@ const runGitProcess = (
       cleanup()
       child.stdout.removeAllListeners("data")
       child.stderr.removeAllListeners("data")
-      child.kill("SIGTERM")
-      reject(error)
+      waitForChildExit(child, () => {
+        reject(error)
+      })
     }
 
     const onAbort = (): void => {
       fail(new GitSubprocessAborted())
     }
-    options.signal?.addEventListener("abort", onAbort, { once: true })
+    if (signal !== undefined) {
+      signal.addEventListener("abort", onAbort, { once: true })
+      if (signal.aborted) {
+        onAbort()
+        return
+      }
+    }
 
     child.stdout.on("data", (chunk: Buffer) => {
       if (settled) return
@@ -167,3 +177,24 @@ const runGitProcess = (
       fail(new Error(`git ${args.join(" ")} exited with code ${code}: ${stderr.trim()}`))
     })
   })
+
+const childHasExited = (child: ChildProcess): boolean =>
+  child.exitCode !== null || child.signalCode !== null || child.pid === undefined
+
+const waitForChildExit = (child: ChildProcess, onExited: () => void): void => {
+  if (childHasExited(child)) {
+    onExited()
+    return
+  }
+
+  const killTimer = setTimeout(() => {
+    if (!childHasExited(child)) child.kill("SIGKILL")
+  }, GIT_CANCEL_KILL_MS)
+  killTimer.unref()
+
+  child.once("close", () => {
+    clearTimeout(killTimer)
+    onExited()
+  })
+  child.kill("SIGTERM")
+}

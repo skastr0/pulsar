@@ -77,19 +77,39 @@ describe("bounded git subprocess IO", () => {
     }
   })
 
-  test("rejects an already-aborted signal without returning stdout", async () => {
-    const repo = await createGitTestRepo("pulsar-shared-git-abort-")
+  test("rejects an already-aborted signal before spawning git", async () => {
+    let thrown: unknown
     try {
-      await repo.write("src/ok.ts", "export const ok = true\n")
+      await collectGitStdout("/nonexistent-pulsar-git-abort", ["rev-parse", "HEAD"], {
+        signal: AbortSignal.abort(),
+      })
+    } catch (error) {
+      thrown = error
+    }
+
+    expect(thrown).toBeInstanceOf(GitSubprocessAborted)
+  })
+
+  test("abort after spawn rejects once the child has exited", async () => {
+    const repo = await createGitTestRepo("pulsar-shared-git-abort-live-")
+    try {
+      await repo.write("src/ok.ts", `${"export const line = 1\n".repeat(200)}`)
       await repo.commitAll({
         message: "ok",
         dateIso: "2024-01-01T00:00:00Z",
       })
 
-      const signal = AbortSignal.abort()
+      const controller = new AbortController()
       let thrown: unknown
       try {
-        await collectGitStdout(repo.root, ["rev-parse", "HEAD"], { signal })
+        await forEachGitLine(
+          repo.root,
+          ["log", "-p", "--all"],
+          () => {
+            controller.abort()
+          },
+          { signal: controller.signal },
+        )
       } catch (error) {
         thrown = error
       }
