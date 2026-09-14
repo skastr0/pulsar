@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   collectGitStdout,
   forEachGitLine,
+  GitSubprocessAborted,
   GitSubprocessLimitExceeded,
 } from "../shared-git.js"
 import { listAddedLinesByFileInMatureWindow } from "../shared-history-lines.js"
@@ -53,7 +54,77 @@ describe("bounded git subprocess IO", () => {
       }
 
       expect(thrown).toBeInstanceOf(GitSubprocessLimitExceeded)
-      expect(thrown).toMatchObject({ maxBytes: 64 })
+      expect(thrown).toMatchObject({ stream: "stdout", maxBytes: 64 })
+    } finally {
+      await repo.cleanup()
+    }
+  })
+
+  test("fails closed when stderr exceeds the caller ceiling", async () => {
+    const repo = await createGitTestRepo("pulsar-shared-git-stderr-")
+    try {
+      let thrown: unknown
+      try {
+        await collectGitStdout(repo.root, ["show", "missing-ref"], { maxStderrBytes: 8 })
+      } catch (error) {
+        thrown = error
+      }
+
+      expect(thrown).toBeInstanceOf(GitSubprocessLimitExceeded)
+      expect(thrown).toMatchObject({ stream: "stderr", maxBytes: 8 })
+    } finally {
+      await repo.cleanup()
+    }
+  })
+
+  test("rejects an already-aborted signal without returning stdout", async () => {
+    const repo = await createGitTestRepo("pulsar-shared-git-abort-")
+    try {
+      await repo.write("src/ok.ts", "export const ok = true\n")
+      await repo.commitAll({
+        message: "ok",
+        dateIso: "2024-01-01T00:00:00Z",
+      })
+
+      const signal = AbortSignal.abort()
+      let thrown: unknown
+      try {
+        await collectGitStdout(repo.root, ["rev-parse", "HEAD"], { signal })
+      } catch (error) {
+        thrown = error
+      }
+
+      expect(thrown).toBeInstanceOf(GitSubprocessAborted)
+    } finally {
+      await repo.cleanup()
+    }
+  })
+
+  test("streamed line parse rejects instead of returning after a ceiling miss", async () => {
+    const repo = await createGitTestRepo("pulsar-shared-git-partial-")
+    try {
+      await repo.write("src/big.ts", `${"line\n".repeat(200)}`)
+      await repo.commitAll({
+        message: "many lines",
+        dateIso: "2024-01-01T00:00:00Z",
+      })
+
+      let resolved = false
+      let thrown: unknown
+      try {
+        await forEachGitLine(
+          repo.root,
+          ["show", "HEAD:src/big.ts"],
+          () => undefined,
+          { maxBytes: 32 },
+        )
+        resolved = true
+      } catch (error) {
+        thrown = error
+      }
+
+      expect(resolved).toBe(false)
+      expect(thrown).toBeInstanceOf(GitSubprocessLimitExceeded)
     } finally {
       await repo.cleanup()
     }

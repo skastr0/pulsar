@@ -3,25 +3,36 @@ import { spawn } from "node:child_process"
 /**
  * Same fail-closed ceiling as the previous execFile maxBuffer. Streaming
  * history parses must not retain this buffer; they may only read up to it.
+ * Exceeding a ceiling rejects; it must not truncate evidence.
  */
 export const GIT_SUBPROCESS_MAX_BYTES = 256 * 1024 * 1024
-const GIT_STDERR_MAX_BYTES = 64 * 1024
+export const GIT_STDERR_MAX_BYTES = 64 * 1024
 
 export class GitSubprocessLimitExceeded extends Error {
+  readonly stream: "stdout" | "stderr"
   readonly maxBytes: number
   readonly bytesRead: number
 
-  constructor(maxBytes: number, bytesRead: number) {
-    super(`git subprocess output exceeded ${maxBytes} bytes`)
+  constructor(stream: "stdout" | "stderr", maxBytes: number, bytesRead: number) {
+    super(`git subprocess ${stream} exceeded ${maxBytes} bytes`)
     this.name = "GitSubprocessLimitExceeded"
+    this.stream = stream
     this.maxBytes = maxBytes
     this.bytesRead = bytesRead
+  }
+}
+
+export class GitSubprocessAborted extends Error {
+  constructor() {
+    super("git subprocess aborted")
+    this.name = "GitSubprocessAborted"
   }
 }
 
 export interface GitSubprocessOptions {
   readonly signal?: AbortSignal
   readonly maxBytes?: number
+  readonly maxStderrBytes?: number
 }
 
 export const collectGitStdout = async (
@@ -85,9 +96,16 @@ const runGitProcess = (
   options: RunGitProcessOptions,
 ): Promise<void> =>
   new Promise((resolve, reject) => {
+    if (options.signal?.aborted) {
+      reject(new GitSubprocessAborted())
+      return
+    }
+
     const maxBytes = options.maxBytes ?? GIT_SUBPROCESS_MAX_BYTES
+    const maxStderrBytes = options.maxStderrBytes ?? GIT_STDERR_MAX_BYTES
     const child = spawn("git", args as Array<string>, { cwd: repoPath })
-    let bytesRead = 0
+    let stdoutBytes = 0
+    let stderrBytes = 0
     let stderr = ""
     let settled = false
 
@@ -99,20 +117,22 @@ const runGitProcess = (
       if (settled) return
       settled = true
       cleanup()
+      child.stdout.removeAllListeners("data")
+      child.stderr.removeAllListeners("data")
       child.kill("SIGTERM")
       reject(error)
     }
 
     const onAbort = (): void => {
-      fail(new Error("git subprocess aborted"))
+      fail(new GitSubprocessAborted())
     }
     options.signal?.addEventListener("abort", onAbort, { once: true })
 
     child.stdout.on("data", (chunk: Buffer) => {
       if (settled) return
-      bytesRead += chunk.length
-      if (bytesRead > maxBytes) {
-        fail(new GitSubprocessLimitExceeded(maxBytes, bytesRead))
+      stdoutBytes += chunk.length
+      if (stdoutBytes > maxBytes) {
+        fail(new GitSubprocessLimitExceeded("stdout", maxBytes, stdoutBytes))
         return
       }
       try {
@@ -123,8 +143,13 @@ const runGitProcess = (
     })
 
     child.stderr.on("data", (chunk: Buffer) => {
-      if (stderr.length >= GIT_STDERR_MAX_BYTES) return
-      stderr += chunk.toString("utf8").slice(0, GIT_STDERR_MAX_BYTES - stderr.length)
+      if (settled) return
+      stderrBytes += chunk.length
+      if (stderrBytes > maxStderrBytes) {
+        fail(new GitSubprocessLimitExceeded("stderr", maxStderrBytes, stderrBytes))
+        return
+      }
+      stderr += chunk.toString("utf8")
     })
 
     child.on("error", (error) => {
