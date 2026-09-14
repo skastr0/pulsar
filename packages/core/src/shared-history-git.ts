@@ -1,4 +1,4 @@
-import { collectGitStdout } from "./shared-git.js"
+import { collectGitStdout, forEachGitLine } from "./shared-git.js"
 import {
   isIncludedHistoryPath,
   sourcePathspecs,
@@ -14,12 +14,14 @@ export const listTrackedFiles = async (
   repoPath: string,
   config: SharedHistoryFilterConfig,
 ): Promise<ReadonlyArray<string>> => {
-  const raw = await execGit(repoPath, ["ls-files"])
-  return raw
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-    .filter((line) => isIncludedHistoryPath(line, config))
+  const files: Array<string> = []
+  await forEachGitLine(repoPath, ["ls-files"], (line) => {
+    const trimmed = line.trim()
+    if (trimmed.length === 0) return
+    if (!isIncludedHistoryPath(trimmed, config)) return
+    files.push(trimmed)
+  })
+  return files
 }
 
 export const countCommitsInWindow = async (

@@ -1,14 +1,11 @@
-import { execFile } from "node:child_process"
 import { join } from "node:path"
-import { promisify } from "node:util"
 import { Effect, Schema } from "effect"
 import { matchesAnyGlob } from "./globs.js"
 import { SignalComputeError } from "./errors.js"
 import { SignalContextTag } from "./context.js"
+import { forEachGitLine } from "./shared-git.js"
+import { readHeadDate } from "./shared-history-git.js"
 import type { Signal } from "./signal.js"
-
-const execFileAsync = promisify(execFile)
-const GIT_MAX_BUFFER_BYTES = 256 * 1024 * 1024
 
 export const SharedChurn01Config = Schema.Struct({
   window_days: Schema.Number,
@@ -57,15 +54,8 @@ export const SharedChurn01: Signal<SharedChurn01Config, SharedChurn01Output, Sig
       const ctx = yield* SignalContextTag
       const normalizedConfig = normalizeSharedChurn01Config(config)
 
-      const headIsoRaw = yield* Effect.tryPromise({
-        try: async (): Promise<string> => {
-          const result = await execFileAsync(
-            "git",
-            ["log", "-1", "--format=%cI", "HEAD"],
-            { cwd: ctx.worktreePath, maxBuffer: GIT_MAX_BUFFER_BYTES },
-          )
-          return result.stdout
-        },
+      const headDate = yield* Effect.tryPromise({
+        try: () => readHeadDate(ctx.worktreePath),
         catch: (cause) =>
           new SignalComputeError({
             signalId: "SHARED-CHURN-01-recent-churn",
@@ -73,7 +63,6 @@ export const SharedChurn01: Signal<SharedChurn01Config, SharedChurn01Output, Sig
             cause,
           }),
       })
-      const headDate = new Date(headIsoRaw.trim())
       const sinceDate = new Date(
         headDate.getTime() - normalizedConfig.window_days * 24 * 3600 * 1000,
       )
@@ -82,25 +71,15 @@ export const SharedChurn01: Signal<SharedChurn01Config, SharedChurn01Output, Sig
         return emptyOutput(normalizedConfig)
       }
 
-      const raw = yield* Effect.tryPromise({
-        try: async (): Promise<string> => {
-          const result = await execFileAsync(
-            "git",
-            [
-              "log",
-              `--max-count=${normalizedConfig.max_commits}`,
-              `--since=${sinceDate.toISOString()}`,
-              `--until=${headDate.toISOString()}`,
-              "--name-only",
-              "--pretty=format:__commit__",
-              "--find-renames=100%",
-              "--",
-              ...pathspecs,
-            ],
-            { cwd: ctx.worktreePath, maxBuffer: GIT_MAX_BUFFER_BYTES },
-          )
-          return result.stdout
-        },
+      const counted = yield* Effect.tryPromise({
+        try: () =>
+          countRecentChurnByFile(
+            ctx.worktreePath,
+            sinceDate.toISOString(),
+            headDate.toISOString(),
+            normalizedConfig,
+            pathspecs,
+          ),
         catch: (cause) =>
           new SignalComputeError({
             signalId: "SHARED-CHURN-01-recent-churn",
@@ -109,27 +88,12 @@ export const SharedChurn01: Signal<SharedChurn01Config, SharedChurn01Output, Sig
           }),
       })
 
-      const byFile = new Map<string, number>()
-      let totalCommits = 0
-      for (const line of raw.split("\n")) {
-        const trimmed = line.trim()
-        if (trimmed === "") continue
-        if (trimmed === "__commit__") {
-          totalCommits += 1
-          continue
-        }
-        if (!hasIncludedExtension(trimmed, normalizedConfig.include_extensions)) continue
-        if (isExcluded(trimmed, normalizedConfig.exclude_paths)) continue
-        const absolute = join(ctx.worktreePath, trimmed)
-        byFile.set(absolute, (byFile.get(absolute) ?? 0) + 1)
-      }
-
       return {
-        byFile,
+        byFile: counted.byFile,
         windowDays: normalizedConfig.window_days,
-        totalCommits,
+        totalCommits: counted.totalCommits,
         maxCommits: normalizedConfig.max_commits,
-        sampled: totalCommits >= normalizedConfig.max_commits,
+        sampled: counted.totalCommits >= normalizedConfig.max_commits,
       }
   }),
   score: () => 1,
@@ -154,6 +118,47 @@ const normalizeSharedChurn01Config = (
     DEFAULT_SHARED_CHURN_01_CONFIG.exclude_paths,
   ),
 })
+
+const countRecentChurnByFile = async (
+  repoPath: string,
+  sinceIso: string,
+  untilIso: string,
+  config: SharedChurn01Config,
+  pathspecs: ReadonlyArray<string>,
+): Promise<{
+  readonly byFile: Map<string, number>
+  readonly totalCommits: number
+}> => {
+  const byFile = new Map<string, number>()
+  let totalCommits = 0
+  await forEachGitLine(
+    repoPath,
+    [
+      "log",
+      `--max-count=${config.max_commits}`,
+      `--since=${sinceIso}`,
+      `--until=${untilIso}`,
+      "--name-only",
+      "--pretty=format:__commit__",
+      "--find-renames=100%",
+      "--",
+      ...pathspecs,
+    ],
+    (line) => {
+      const trimmed = line.trim()
+      if (trimmed === "") return
+      if (trimmed === "__commit__") {
+        totalCommits += 1
+        return
+      }
+      if (!hasIncludedExtension(trimmed, config.include_extensions)) return
+      if (isExcluded(trimmed, config.exclude_paths)) return
+      const absolute = join(repoPath, trimmed)
+      byFile.set(absolute, (byFile.get(absolute) ?? 0) + 1)
+    },
+  )
+  return { byFile, totalCommits }
+}
 
 const emptyOutput = (config: SharedChurn01Config): SharedChurn01Output => ({
   byFile: new Map(),

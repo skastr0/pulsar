@@ -5,7 +5,7 @@ import {
   GitSubprocessLimitExceeded,
 } from "../shared-git.js"
 import { listAddedLinesByFileInMatureWindow } from "../shared-history-lines.js"
-import { execGit, readFileAtCommit } from "../shared-history-git.js"
+import { execGit, listTrackedFiles, readFileAtCommit } from "../shared-history-git.js"
 import { createGitTestRepo } from "./git-test-repo.js"
 
 describe("bounded git subprocess IO", () => {
@@ -71,6 +71,12 @@ describe("bounded git subprocess IO", () => {
       expect((await execGit(repo.root, ["rev-parse", "HEAD"])).trim()).toBe(sha)
       expect(await readFileAtCommit(repo.root, sha, "src/ok.ts")).toBe("export const ok = true\n")
       expect(await readFileAtCommit(repo.root, sha, "src/missing.ts")).toBeUndefined()
+      expect(
+        await listTrackedFiles(repo.root, {
+          includeExtensions: [".ts"],
+          excludeGlobs: [],
+        }),
+      ).toEqual(["src/ok.ts"])
     } finally {
       await repo.cleanup()
     }
