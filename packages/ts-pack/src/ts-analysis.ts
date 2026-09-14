@@ -20,6 +20,7 @@ import {
   type TsProjectOptions,
 } from "./source-membership.js"
 import type { Project, SourceFile } from "./tsgo-api.js"
+import { loadSourceFile } from "./source-file-loader.js"
 import { resolveTsgoExecutablePath } from "./tsgo-runtime.js"
 
 export type { TsProjectOptions }
@@ -307,7 +308,7 @@ const makeAnalysis = (
             const derivedPath = derivedByProject.get(projectId)
             const batch = await workspace.withProject(async (project) => {
               const sourceFiles = await Promise.all(
-                projectFiles.map((file) => project.program.getSourceFile(file.path)),
+                projectFiles.map((file) => loadSourceFile(project.program, file.path)),
               )
               const visited: Array<A> = []
               for (const [index, file] of projectFiles.entries()) {

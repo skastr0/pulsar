@@ -7,6 +7,7 @@ import {
 import { Effect, Schema } from "effect"
 import { firstAncestor, locationOf, textOf, walkDescendants } from "../ast.js"
 import { TsAnalysisTag, type TsFile } from "../ts-analysis.js"
+import { loadSourceFile } from "../source-file-loader.js"
 import {
   SyntaxKind,
   isArrowFunction,
@@ -164,7 +165,7 @@ const analyzeProjectFiles = async (
 ): Promise<ReadonlyArray<FileAnalysis>> => {
   const sourceFiles = await Promise.all(
     files.filter((file) => !isExcluded(file.path, config.exclude_globs))
-      .map(async (file) => ({ file, sourceFile: await project.program.getSourceFile(file.path) })),
+      .map(async (file) => ({ file, sourceFile: await loadSourceFile(project.program, file.path) })),
   )
   const collected = sourceFiles.flatMap(({ file, sourceFile }) => {
     if (sourceFile === undefined) return []
