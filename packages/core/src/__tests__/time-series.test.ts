@@ -1,10 +1,14 @@
 import { describe, expect, spyOn, test } from "bun:test"
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { appendFile, mkdir, mkdtemp, rename, rm, stat, utimes, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { Effect, Option, Schema } from "effect"
 import { categoryRecord } from "../category.js"
-import { createTimeSeriesServices, TimeSeriesEntry } from "../time-series.js"
+import {
+  createTimeSeriesServices,
+  TimeSeriesEntry,
+  TimeSeriesReadFailed,
+} from "../time-series.js"
 import { readTimeSeriesEntriesWithState } from "../time-series-storage.js"
 
 const makeEntry = (
@@ -526,6 +530,131 @@ describe("time series persistence", () => {
 
       expect(entries.map((entry) => entry.sha)).toEqual(["legacy", "current"])
       expect(entries[0]?.observerOutput.readiness?.aggregation.failed_signal_pressure).toBeUndefined()
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("observes external appends after the cache is primed", async () => {
+    const repoPath = await mkdtemp(join(tmpdir(), "pulsar-ts-external-append-"))
+    try {
+      const services = createTimeSeriesServices(repoPath)
+      await Effect.runPromise(
+        services.writer.append(makeEntry("ours", "2026-04-15T10:00:00.000Z", 0.9)),
+      )
+      expect(
+        (await Effect.runPromise(services.reader.entries())).map((entry) => entry.sha),
+      ).toEqual(["ours"])
+
+      await appendFile(
+        services.filePath,
+        `${JSON.stringify(makeEntry("external", "2026-04-16T10:00:00.000Z", 0.8))}\n`,
+        "utf8",
+      )
+
+      const entries = await Effect.runPromise(services.reader.entries())
+      expect(entries.map((entry) => entry.sha)).toEqual(["ours", "external"])
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("observes atomic ledger replacement after the cache is primed", async () => {
+    const repoPath = await mkdtemp(join(tmpdir(), "pulsar-ts-external-replace-"))
+    try {
+      const services = createTimeSeriesServices(repoPath)
+      const firstRaw = `${JSON.stringify(
+        makeEntry("replace-a", "2026-04-15T10:00:00.000Z", 0.8),
+      )}\n`
+      const secondRaw = `${JSON.stringify(
+        makeEntry("replace-b", "2026-04-15T10:00:00.000Z", 0.9),
+      )}\n`
+      expect(secondRaw.length).toBe(firstRaw.length)
+
+      await mkdir(dirname(services.filePath), { recursive: true })
+      await writeFile(services.filePath, firstRaw, "utf8")
+      expect(
+        (await Effect.runPromise(services.reader.entries())).map((entry) => entry.sha),
+      ).toEqual(["replace-a"])
+
+      const stagingPath = `${services.filePath}.staging`
+      await writeFile(stagingPath, secondRaw, "utf8")
+      await rename(stagingPath, services.filePath)
+
+      expect(
+        (await Effect.runPromise(services.reader.entries())).map((entry) => entry.sha),
+      ).toEqual(["replace-b"])
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("observes external deletion after the cache is primed", async () => {
+    const repoPath = await mkdtemp(join(tmpdir(), "pulsar-ts-external-delete-"))
+    try {
+      const services = createTimeSeriesServices(repoPath)
+      await Effect.runPromise(
+        services.writer.append(makeEntry("ours", "2026-04-15T10:00:00.000Z", 0.9)),
+      )
+      await Effect.runPromise(services.reader.entries())
+
+      await rm(services.filePath)
+
+      expect(await Effect.runPromise(services.reader.entries())).toEqual([])
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("rejects corrupted ledger content after the cache is primed", async () => {
+    const repoPath = await mkdtemp(join(tmpdir(), "pulsar-ts-external-corrupt-"))
+    try {
+      const services = createTimeSeriesServices(repoPath)
+      await Effect.runPromise(
+        services.writer.append(makeEntry("ours", "2026-04-15T10:00:00.000Z", 0.9)),
+      )
+      await Effect.runPromise(services.reader.entries())
+
+      await writeFile(services.filePath, "not-json\n", "utf8")
+
+      const failure = await Effect.runPromise(services.reader.entries()).then(
+        () => undefined,
+        (error: unknown) => error,
+      )
+      expect(failure).toBeInstanceOf(TimeSeriesReadFailed)
+    } finally {
+      await rm(repoPath, { recursive: true, force: true })
+    }
+  })
+
+  test("detects same-size rewrites even when the external writer restores mtime", async () => {
+    const repoPath = await mkdtemp(join(tmpdir(), "pulsar-ts-external-utimes-"))
+    try {
+      const services = createTimeSeriesServices(repoPath)
+      const firstRaw = `${JSON.stringify(
+        makeEntry("restore-a", "2026-04-15T10:00:00.000Z", 0.8),
+      )}\n`
+      const secondRaw = `${JSON.stringify(
+        makeEntry("restore-b", "2026-04-15T10:00:00.000Z", 0.9),
+      )}\n`
+      expect(secondRaw.length).toBe(firstRaw.length)
+
+      await mkdir(dirname(services.filePath), { recursive: true })
+      await writeFile(services.filePath, firstRaw, "utf8")
+      expect(
+        (await Effect.runPromise(services.reader.entries())).map((entry) => entry.sha),
+      ).toEqual(["restore-a"])
+      const before = await stat(services.filePath)
+
+      await writeFile(services.filePath, secondRaw, "utf8")
+      await utimes(services.filePath, before.atime, before.mtime)
+      const forged = await stat(services.filePath)
+      expect(forged.size).toBe(before.size)
+      expect(forged.mtimeMs).toBe(before.mtime.getTime())
+
+      expect(
+        (await Effect.runPromise(services.reader.entries())).map((entry) => entry.sha),
+      ).toEqual(["restore-b"])
     } finally {
       await rm(repoPath, { recursive: true, force: true })
     }

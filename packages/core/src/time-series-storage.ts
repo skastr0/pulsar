@@ -1,4 +1,4 @@
-import { appendFile, mkdir, open, readFile, rm, writeFile } from "node:fs/promises"
+import { appendFile, mkdir, open, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { dirname } from "node:path"
 import { Schema } from "effect"
 import { compactTimeSeriesEntries } from "./time-series-compaction.js"
@@ -14,9 +14,17 @@ import {
   type TimeSeriesError,
 } from "./time-series-model.js"
 
+export type TimeSeriesFileFingerprint = {
+  readonly dev: bigint
+  readonly ino: bigint
+  readonly size: bigint
+  readonly mtimeNs: bigint
+  readonly ctimeNs: bigint
+}
+
 export type TimeSeriesEntriesState = {
   readonly entries: ReadonlyArray<TimeSeriesEntry>
-  readonly raw: string
+  readonly fingerprint: TimeSeriesFileFingerprint | undefined
 }
 
 export type OnEntriesRead = (state: TimeSeriesEntriesState) => void
@@ -66,19 +74,23 @@ export const appendTimeSeriesEntry = async (args: {
       const cacheOwnedEntry = freezeTimeSeriesEntry(args.entry)
       const next = [...existing, cacheOwnedEntry].sort(compareTimeSeriesEntries)
       let nextStored: ReadonlyArray<TimeSeriesEntry> = Object.freeze(next)
-      let nextRaw: string
+      let expectedSize: bigint
       if (next.length > args.compactionThreshold) {
         const compacted = compactTimeSeriesEntries(next, args.rawRetentionDays)
         nextStored = freezeTimeSeriesEntries(compacted)
-        nextRaw = encodeTimeSeriesEntries(compacted)
+        const nextRaw = encodeTimeSeriesEntries(compacted)
         await writeFile(args.filePath, nextRaw, "utf8")
+        expectedSize = BigInt(Buffer.byteLength(nextRaw, "utf8"))
       } else {
         const appendedRaw = `${JSON.stringify(args.entry)}\n`
         await appendFile(args.filePath, appendedRaw, "utf8")
-        nextRaw = existingState.raw + appendedRaw
+        expectedSize =
+          (existingState.fingerprint?.size ?? 0n) + BigInt(Buffer.byteLength(appendedRaw, "utf8"))
       }
 
-      args.onPersistedState?.({ entries: nextStored, raw: nextRaw })
+      args.onPersistedState?.(
+        await stateForPersistedEntries(args.repoPath, args.filePath, nextStored, expectedSize),
+      )
 
       return { status: "written", entry: args.entry }
     },
@@ -91,6 +103,105 @@ export const readTimeSeriesEntriesWithState = async (
   existingState?: TimeSeriesEntriesState,
 ): Promise<TimeSeriesEntriesState> => {
   return readTimeSeriesEntriesUsingState(repoPath, filePath, existingState)
+}
+
+const statTimeSeriesFile = async (
+  repoPath: string,
+  filePath: string,
+): Promise<TimeSeriesFileFingerprint | undefined> => {
+  try {
+    const stats = await stat(filePath, { bigint: true })
+    return {
+      dev: stats.dev,
+      ino: stats.ino,
+      size: stats.size,
+      mtimeNs: stats.mtimeNs,
+      ctimeNs: stats.ctimeNs,
+    }
+  } catch (error) {
+    if (errorCodeOf(error) === "ENOENT") return undefined
+    throw new TimeSeriesReadFailed({
+      repoPath,
+      filePath,
+      message: String(error),
+    })
+  }
+}
+
+const timeSeriesFingerprintsEqual = (
+  left: TimeSeriesFileFingerprint | undefined,
+  right: TimeSeriesFileFingerprint | undefined,
+): boolean => {
+  if (left === undefined || right === undefined) return left === right
+  return (
+    left.dev === right.dev &&
+    left.ino === right.ino &&
+    left.size === right.size &&
+    left.mtimeNs === right.mtimeNs &&
+    left.ctimeNs === right.ctimeNs
+  )
+}
+
+const stateForPersistedEntries = async (
+  repoPath: string,
+  filePath: string,
+  entries: ReadonlyArray<TimeSeriesEntry>,
+  expectedSize: bigint,
+): Promise<TimeSeriesEntriesState> => {
+  const fingerprint = await statTimeSeriesFile(repoPath, filePath)
+  // A size mismatch means a non-cooperative writer interleaved with our write;
+  // rebuild from disk instead of caching entries for bytes we never saw.
+  // Accepted limit: a same-size rewrite landing between our write and this
+  // stat is indistinguishable from our own bytes; it surfaces on the next
+  // fingerprint-changing write.
+  if (fingerprint !== undefined && fingerprint.size === expectedSize) {
+    return { entries, fingerprint }
+  }
+  return readTimeSeriesEntriesUncached(repoPath, filePath)
+}
+
+const readTimeSeriesEntriesUsingState = async (
+  repoPath: string,
+  filePath: string,
+  existingState: TimeSeriesEntriesState | undefined,
+  options?: {
+    readonly onEntriesRead?: OnEntriesRead
+  },
+): Promise<TimeSeriesEntriesState> => {
+  const fingerprint = await statTimeSeriesFile(repoPath, filePath)
+  if (
+    existingState !== undefined &&
+    timeSeriesFingerprintsEqual(existingState.fingerprint, fingerprint)
+  ) {
+    return existingState
+  }
+
+  const nextState = await readTimeSeriesEntriesUncached(repoPath, filePath)
+  options?.onEntriesRead?.(nextState)
+  return nextState
+}
+
+const readTimeSeriesEntriesUncached = async (
+  repoPath: string,
+  filePath: string,
+): Promise<TimeSeriesEntriesState> => {
+  // Pair the decoded bytes with the stat observed around the read; if an
+  // external write lands mid-read, retry once so the cache never pairs a
+  // fingerprint with content it did not consistently observe. A ledger that
+  // keeps changing across both attempts fails instead of blessing torn bytes.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const before = await statTimeSeriesFile(repoPath, filePath)
+    const raw = await readTimeSeriesRaw(repoPath, filePath)
+    const after = await statTimeSeriesFile(repoPath, filePath)
+    if (timeSeriesFingerprintsEqual(before, after)) {
+      return { entries: decodeTimeSeriesEntries(repoPath, filePath, raw), fingerprint: after }
+    }
+  }
+  throw new TimeSeriesReadFailed({
+    repoPath,
+    filePath,
+    message: `Ledger changed while reading ${filePath}`,
+  })
 }
 
 const readTimeSeriesRaw = async (
@@ -223,23 +334,6 @@ const encodeTimeSeriesEntries = (entries: ReadonlyArray<TimeSeriesEntry>): strin
 
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms))
-
-const readTimeSeriesEntriesUsingState = async (
-  repoPath: string,
-  filePath: string,
-  existingState: TimeSeriesEntriesState | undefined,
-  options?: {
-    readonly onEntriesRead?: OnEntriesRead
-  },
-): Promise<TimeSeriesEntriesState> => {
-  const raw = await readTimeSeriesRaw(repoPath, filePath)
-  if (existingState !== undefined && existingState.raw === raw) return existingState
-
-  const entries = decodeTimeSeriesEntries(repoPath, filePath, raw)
-  const nextState: TimeSeriesEntriesState = { entries, raw }
-  options?.onEntriesRead?.(nextState)
-  return nextState
-}
 
 const errorCodeOf = (error: unknown): string | undefined =>
   typeof error === "object" && error !== null && "code" in error
