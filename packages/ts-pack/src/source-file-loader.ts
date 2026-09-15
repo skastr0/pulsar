@@ -2,6 +2,11 @@ import type { Project, SourceFile } from "./tsgo-api.js"
 
 type SourceFileReader = Pick<Project["program"], "getSourceFile">
 
+export interface LoadedSourceFile<File> {
+  readonly file: File
+  readonly sourceFile: SourceFile
+}
+
 const pendingByProgram = new WeakMap<SourceFileReader, Map<string, Promise<SourceFile | undefined>>>()
 
 /** Per-mapping-call window; independent mapping calls remain concurrent. */
@@ -33,14 +38,14 @@ export const loadSourceFile = (
 }
 
 /**
- * Loads one bounded source-file window at a time, then visits the loaded files
- * in input order. Independent callers remain concurrent while a single caller
- * avoids decoding every project AST at once.
+ * Loads one bounded source-file window at a time and finishes its visitor
+ * before fetching the next window. Missing files are omitted without changing
+ * the input order of the remaining entries.
  */
-export const mapSourceFilesInWindows = async <File extends { readonly path: string }, A>(
+export const mapSourceFileWindows = async <File extends { readonly path: string }, A>(
   program: SourceFileReader,
   files: ReadonlyArray<File>,
-  visit: (file: File, sourceFile: SourceFile) => Promise<A>,
+  visitWindow: (files: ReadonlyArray<LoadedSourceFile<File>>) => Promise<ReadonlyArray<A>>,
 ): Promise<Array<A>> => {
   const results: Array<A> = []
   for (let start = 0; start < files.length; start += SOURCE_FILE_LOAD_WINDOW_SIZE) {
@@ -48,11 +53,31 @@ export const mapSourceFilesInWindows = async <File extends { readonly path: stri
     const sourceFiles = await Promise.all(
       window.map((file) => loadSourceFile(program, file.path)),
     )
+    const loaded: Array<LoadedSourceFile<File>> = []
     for (const [index, file] of window.entries()) {
       const sourceFile = sourceFiles[index]
       if (sourceFile === undefined) continue
-      results.push(await visit(file, sourceFile))
+      loaded.push({ file, sourceFile })
     }
+    if (loaded.length > 0) results.push(...await visitWindow(loaded))
   }
   return results
 }
+
+/**
+ * Loads one bounded source-file window at a time, then visits the loaded files
+ * in input order. Independent callers remain concurrent while a single caller
+ * avoids decoding every project AST at once.
+ */
+export const mapSourceFilesInWindows = <File extends { readonly path: string }, A>(
+  program: SourceFileReader,
+  files: ReadonlyArray<File>,
+  visit: (file: File, sourceFile: SourceFile) => Promise<A>,
+): Promise<Array<A>> =>
+  mapSourceFileWindows(program, files, async (loaded) => {
+    const results: Array<A> = []
+    for (const { file, sourceFile } of loaded) {
+      results.push(await visit(file, sourceFile))
+    }
+    return results
+  })

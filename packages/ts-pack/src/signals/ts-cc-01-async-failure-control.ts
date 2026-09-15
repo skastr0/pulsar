@@ -7,7 +7,10 @@ import {
 import { Effect, Schema } from "effect"
 import { firstAncestor, locationOf, textOf, walkDescendants } from "../ast.js"
 import { TsAnalysisTag, type TsFile } from "../ts-analysis.js"
-import { loadSourceFile } from "../source-file-loader.js"
+import {
+  mapSourceFileWindows,
+  type LoadedSourceFile,
+} from "../source-file-loader.js"
 import {
   SyntaxKind,
   isArrowFunction,
@@ -27,6 +30,7 @@ import {
   type CallExpression,
   type CatchClause,
   type Node,
+  type Project,
   type SourceFile,
 } from "../tsgo-api.js"
 import { declarationsAt, typeTexts } from "../type-evidence.js"
@@ -158,82 +162,116 @@ interface FileAnalysis {
   readonly findings: ReadonlyArray<AsyncFailureFinding>
 }
 
+interface PendingFileAnalysis {
+  readonly filePath: string
+  readonly sourceFile: SourceFile
+  readonly calls: ReadonlyArray<CallExpression>
+  readonly catches: ReadonlyArray<CatchClause>
+  asyncOperationsObserved: number
+  readonly findings: Array<AsyncFailureFinding>
+}
+
+/** Per-project native checker bound; observer signals remain independently scheduled. */
+export const TS_CC_01_CHECKER_CALL_CHUNK_SIZE = 128
+
+/** Visits aligned checker evidence in call order and releases each chunk before continuing. */
+export const forEachCheckerCallEvidenceInChunks = async (
+  project: Project,
+  calls: ReadonlyArray<CallExpression>,
+  visit: (
+    call: CallExpression,
+    typeText: string,
+    declarations: ReadonlyArray<Node>,
+    index: number,
+  ) => void,
+): Promise<void> => {
+  for (let start = 0; start < calls.length; start += TS_CC_01_CHECKER_CALL_CHUNK_SIZE) {
+    const chunk = calls.slice(start, start + TS_CC_01_CHECKER_CALL_CHUNK_SIZE)
+    const typeTextByCall = await typeTexts(project, chunk)
+    const declarationNodes = await declarationsAt(
+      project,
+      chunk.map((call) => call.expression),
+    )
+    for (const [index, call] of chunk.entries()) {
+      visit(
+        call,
+        typeTextByCall[index] ?? "",
+        declarationNodes[index] ?? [],
+        start + index,
+      )
+    }
+  }
+}
+
 const analyzeProjectFiles = async (
-  project: import("../tsgo-api.js").Project,
+  project: Project,
   files: ReadonlyArray<TsFile>,
   config: TsCc01Config,
-): Promise<ReadonlyArray<FileAnalysis>> => {
-  const sourceFiles = await Promise.all(
-    files.filter((file) => !isExcluded(file.path, config.exclude_globs))
-      .map(async (file) => ({ file, sourceFile: await loadSourceFile(project.program, file.path) })),
+): Promise<ReadonlyArray<FileAnalysis>> =>
+  mapSourceFileWindows(
+    project.program,
+    files.filter((file) => !isExcluded(file.path, config.exclude_globs)),
+    (loaded) => analyzeSourceFileWindow(project, loaded, config),
   )
-  const collected = sourceFiles.flatMap(({ file, sourceFile }) => {
-    if (sourceFile === undefined) return []
+
+const analyzeSourceFileWindow = async (
+  project: Project,
+  loaded: ReadonlyArray<LoadedSourceFile<TsFile>>,
+  config: TsCc01Config,
+): Promise<ReadonlyArray<FileAnalysis>> => {
+  const collected: Array<PendingFileAnalysis> = loaded.map(({ file, sourceFile }) => {
     const calls: Array<CallExpression> = []
     const catches: Array<CatchClause> = []
     walkDescendants(sourceFile, (node) => {
       if (isCallExpression(node)) calls.push(node)
       if (isCatchClause(node)) catches.push(node)
     })
-    return [{ filePath: file.path, sourceFile, calls, catches }]
+    return {
+      filePath: file.path,
+      sourceFile,
+      calls,
+      catches,
+      asyncOperationsObserved: 0,
+      findings: [],
+    }
   })
-  // Batch within one project: checker handles must never cross project boundaries.
-  const calls = collected.flatMap((file) => file.calls)
-  const typeTextByCall = await typeTexts(project, calls)
-  const declarationNodes = await declarationsAt(project, calls.map((call) => call.expression))
-  let offset = 0
-  return collected.map((file) => {
-    const start = offset
-    offset += file.calls.length
-    return analyzeSourceFile(
-      file.sourceFile,
-      file.filePath,
-      file.calls,
-      file.catches,
-      typeTextByCall.slice(start, offset),
-      declarationNodes.slice(start, offset),
-      config,
-    )
-  })
-}
-
-const analyzeSourceFile = (
-  sourceFile: SourceFile,
-  filePath: string,
-  calls: ReadonlyArray<CallExpression>,
-  catches: ReadonlyArray<CatchClause>,
-  typeTextByCall: ReadonlyArray<string>,
-  declarationNodes: ReadonlyArray<ReadonlyArray<Node>>,
-  config: TsCc01Config,
-): FileAnalysis => {
   const asyncNamePatterns = config.async_name_patterns.map((pattern) => pattern.toLowerCase())
-  const findings: Array<AsyncFailureFinding> = []
-  let asyncOperationsObserved = 0
+  const indexedCalls = collected.flatMap((file, fileIndex) =>
+    file.calls.map((call) => ({ call, fileIndex })))
+  await forEachCheckerCallEvidenceInChunks(
+    project,
+    indexedCalls.map(({ call }) => call),
+    (call, typeText, declarations, index) => {
+      const indexedCall = indexedCalls[index]
+      if (indexedCall === undefined) return
+      const file = collected[indexedCall.fileIndex]
+      if (file === undefined) return
+      const analysis = analyzeCall(
+        call,
+        typeText,
+        declarations,
+        asyncNamePatterns,
+      )
+      if (analysis.isAsyncOperation) file.asyncOperationsObserved += 1
+      const floating = classifyFloatingCall(call, analysis.hasPromiseEvidence, file.filePath)
+      if (floating !== undefined) file.findings.push(floating)
+      const swallowed = classifySwallowedCatch(call, file.filePath)
+      if (swallowed !== undefined) file.findings.push(swallowed)
+    },
+  )
 
-  for (const [index, call] of calls.entries()) {
-    const analysis = analyzeCall(
-      call,
-      typeTextByCall[index] ?? "",
-      declarationNodes[index] ?? [],
-      asyncNamePatterns,
-    )
-    if (analysis.isAsyncOperation) asyncOperationsObserved += 1
-    const floating = classifyFloatingCall(call, analysis.hasPromiseEvidence, filePath)
-    if (floating !== undefined) findings.push(floating)
-    const swallowed = classifySwallowedCatch(call, filePath)
-    if (swallowed !== undefined) findings.push(swallowed)
+  for (const file of collected) {
+    for (const catchClause of file.catches) {
+      const finding = classifyEmptyCatch(catchClause, file.sourceFile, file.filePath)
+      if (finding !== undefined) file.findings.push(finding)
+    }
   }
 
-  for (const catchClause of catches) {
-    const finding = classifyEmptyCatch(catchClause, sourceFile, filePath)
-    if (finding !== undefined) findings.push(finding)
-  }
-
-  return {
+  return collected.map((file) => ({
     analyzed: true,
-    asyncOperationsObserved,
-    findings,
-  }
+    asyncOperationsObserved: file.asyncOperationsObserved,
+    findings: file.findings,
+  }))
 }
 
 const mergeFileAnalyses = (

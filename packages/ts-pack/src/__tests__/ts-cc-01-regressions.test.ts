@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import { TsCc01 } from "../signals/ts-cc-01-async-failure-control.js"
+import {
+  forEachCheckerCallEvidenceInChunks,
+  TS_CC_01_CHECKER_CALL_CHUNK_SIZE,
+  TsCc01,
+} from "../signals/ts-cc-01-async-failure-control.js"
+import { SOURCE_FILE_LOAD_WINDOW_SIZE } from "../source-file-loader.js"
+import type { CallExpression, Node, Project } from "../tsgo-api.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
 
 describe("TS-CC-01 regressions", () => {
@@ -11,6 +17,93 @@ describe("TS-CC-01 regressions", () => {
 
   afterEach(async () => {
     await repo.cleanup()
+  })
+
+  test("chunks checker evidence while preserving call and declaration alignment", async () => {
+    const callCount = TS_CC_01_CHECKER_CALL_CHUNK_SIZE * 2 + 1
+    const expressions = Array.from({ length: callCount }, (_, index) =>
+      ({ testIndex: index }) as unknown as Node)
+    const calls = expressions.map((expression, testIndex) =>
+      ({ expression, testIndex }) as unknown as CallExpression)
+    const typeBatchSizes: Array<number> = []
+    const symbolBatchSizes: Array<number> = []
+    const project = {
+      checker: {
+        getTypeAtLocation: async (nodes: ReadonlyArray<Node>) => {
+          typeBatchSizes.push(nodes.length)
+          return nodes.map((node) => ({
+            testIndex: (node as unknown as { readonly testIndex: number }).testIndex,
+          }))
+        },
+        typeToString: async (
+          type: { readonly testIndex: number },
+          node: Node,
+        ) => `type:${type.testIndex}:${(node as unknown as { readonly testIndex: number }).testIndex}`,
+        getSymbolAtLocation: async (nodes: ReadonlyArray<Node>) => {
+          symbolBatchSizes.push(nodes.length)
+          return nodes.map((node) => ({
+            declarations: [{ resolve: async () => node }],
+          }))
+        },
+      },
+    } as unknown as Project
+    const observed: Array<readonly [number, string, number]> = []
+
+    await forEachCheckerCallEvidenceInChunks(
+      project,
+      calls,
+      (call, typeText, declarations, index) => {
+        expect(call).toBe(calls[index])
+        observed.push([
+          index,
+          typeText,
+          (declarations[0] as unknown as { readonly testIndex: number }).testIndex,
+        ])
+      },
+    )
+
+    expect(typeBatchSizes).toEqual([
+      TS_CC_01_CHECKER_CALL_CHUNK_SIZE,
+      TS_CC_01_CHECKER_CALL_CHUNK_SIZE,
+      1,
+    ])
+    expect(symbolBatchSizes).toEqual(typeBatchSizes)
+    expect(observed).toEqual(Array.from({ length: callCount }, (_, index) => [
+      index,
+      `type:${index}:${index}`,
+      index,
+    ]))
+  })
+
+  test("preserves exact output across source-file and checker-call windows", async () => {
+    for (let index = 0; index < SOURCE_FILE_LOAD_WINDOW_SIZE; index += 1) {
+      await repo.write(
+        `src/${String(index).padStart(2, "0")}.ts`,
+        [
+          "export declare function touch(): void",
+          "touch()",
+          "touch()",
+          "touch()",
+          "touch()",
+        ].join("\n"),
+      )
+    }
+    const boundaryFile = `src/${String(SOURCE_FILE_LOAD_WINDOW_SIZE).padStart(2, "0")}.ts`
+    await repo.write(
+      boundaryFile,
+      "export declare function persist(): Promise<void>\npersist()",
+    )
+
+    const out = await runSignal(repo.root, TsCc01, TsCc01.defaultConfig)
+    const repeated = await runSignal(repo.root, TsCc01, TsCc01.defaultConfig)
+
+    expect(out.analyzedFiles).toBe(SOURCE_FILE_LOAD_WINDOW_SIZE + 1)
+    expect(out.findings.map((finding) => [
+      finding.file.slice(repo.root.length + 1),
+      finding.kind,
+      finding.expression,
+    ])).toEqual([[boundaryFile, "floating-promise", "persist"]])
+    expect(repeated).toEqual(out)
   })
 
   test("project batches preserve file offsets, exclusions, and checker ownership", async () => {

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   loadSourceFile,
+  mapSourceFileWindows,
   mapSourceFilesInWindows,
   SOURCE_FILE_LOAD_WINDOW_SIZE,
 } from "../source-file-loader.js"
@@ -92,6 +93,29 @@ describe("concurrent source-file loading", () => {
 })
 
 describe("windowed source-file mapping", () => {
+  test("passes complete ordered windows to one visitor at a time", async () => {
+    const files = Array.from({ length: SOURCE_FILE_LOAD_WINDOW_SIZE * 2 + 1 }, (_, index) => ({
+      path: `/repo/${String(index).padStart(2, "0")}.ts`,
+      index,
+    }))
+    const windowSizes: Array<number> = []
+    const mapped = await mapSourceFileWindows(
+      { getSourceFile: async (path: string) => source(path) },
+      files,
+      async (loaded) => {
+        windowSizes.push(loaded.length)
+        return loaded.map(({ file, sourceFile }) => `${file.index}:${sourceFile.fileName}`)
+      },
+    )
+
+    expect(windowSizes).toEqual([
+      SOURCE_FILE_LOAD_WINDOW_SIZE,
+      SOURCE_FILE_LOAD_WINDOW_SIZE,
+      1,
+    ])
+    expect(mapped).toEqual(files.map((file) => `${file.index}:${file.path}`))
+  })
+
   test("bounds one mapping call while preserving visit and result order", async () => {
     const files = Array.from({ length: 65 }, (_, index) => ({
       path: `/repo/${String(index).padStart(2, "0")}.ts`,

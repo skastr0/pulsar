@@ -877,7 +877,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       cacheSemantics:
         "ts-trust-signals.test.ts and pack.test.ts: wrapped pack cache version includes the TS-CC-01 semantic cacheVersion.",
       integration:
-        "ts-cc-01-regressions.test.ts: project-level checker batches preserve file offsets, exclusions, project ownership, and deterministic findings across repeated observations. source-file-loader.test.ts: simultaneous readers share one pending native AST request per Program/path, release successes and failures, and preserve Program cache ownership.",
+        "ts-cc-01-regressions.test.ts: a 33-file/129-call fixture crosses the 32-file and 128-call boundaries with exact repeated output; instrumented checker evidence preserves call/type/declaration alignment and project-level fixtures preserve offsets, exclusions, and checker ownership. source-file-loader.test.ts: ordered source windows finish before later fetches while simultaneous readers share one pending native AST request per Program/path and preserve Program cache ownership.",
     },
   },
   {
