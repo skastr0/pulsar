@@ -3,8 +3,10 @@ import { mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
+  footprintLimitUnsupportedReason,
   parseProcessTable,
   parseResourceBenchArgs,
+  probePhysFootprintReader,
   RESOURCE_BENCH_EXIT,
   runResourceBench,
   type ResourceBenchOptions,
@@ -34,6 +36,7 @@ const fixtureOptions = (
   outDir,
   preload: undefined,
   maxRssMiB: 4096,
+  maxFootprintMiB: undefined,
   timeoutSeconds: 8,
   sampleIntervalMs: 50,
   command: [process.execPath, childPath, mode],
@@ -57,7 +60,27 @@ describe("resource-bench watchdog", () => {
     expect(args.repo.endsWith("/target")).toBe(true)
     expect(args.outDir.endsWith("/receipts")).toBe(true)
     expect(args.maxRssMiB).toBe(4096)
+    expect(args.maxFootprintMiB).toBeUndefined()
     expect(args.timeoutSeconds).toBe(120)
+    expect(
+      parseResourceBenchArgs(["--repo", "./target", "--out", "./receipts", "--max-footprint-mib", "4096"])
+        .maxFootprintMiB,
+    ).toBe(4096)
+  })
+
+  test("rejects --max-footprint-mib on unsupported platforms", () => {
+    expect(footprintLimitUnsupportedReason("darwin")).toBeUndefined()
+    expect(footprintLimitUnsupportedReason("linux")).toContain("supported only on macOS")
+  })
+
+  test("proc_pid_rusage V0 self-probe returns a finite phys_footprint", () => {
+    if (process.platform !== "darwin") {
+      expect(() => probePhysFootprintReader()).toThrow(/supported only on macOS/)
+      return
+    }
+    const bytes = probePhysFootprintReader().readBytes(process.pid)
+    expect(bytes).toBeGreaterThan(0)
+    expect(Number.isFinite(bytes)).toBe(true)
   })
 
   test("parses process-group RSS rows from ps", () => {
@@ -80,6 +103,7 @@ describe("resource-bench watchdog", () => {
     expect(metrics.processGroupReaped).toBe(true)
     expect(await readFile(metrics.stdoutPath, "utf8")).toBe('{"ok":true}\n')
     expect(JSON.parse(await readFile(metrics.metricsPath, "utf8")).scoreAccepted).toBe(true)
+    expect(metrics.maxFootprintMiB).toBeNull()
   })
 
   test("non-zero child is error and not an accepted score", async () => {
@@ -192,5 +216,31 @@ describe("resource-bench watchdog", () => {
     expect(metrics.processGroupReaped).toBe(true)
     expect(metrics.error).toContain("SIGTERM")
     expect(processAlive(nestedPid!)).toBe(false)
+  })
+
+  test("max-footprint-mib stops on phys_footprint without changing rss-limit", async () => {
+    if (process.platform !== "darwin") {
+      const outDir = await makeOutDir()
+      const { metrics, exitCode } = await runResourceBench(
+        fixtureOptions(outDir, "ok", { maxFootprintMiB: 4096 }),
+      )
+      expect(exitCode).toBe(RESOURCE_BENCH_EXIT.error)
+      expect(metrics.outcome).toBe("error")
+      expect(metrics.scoreAccepted).toBe(false)
+      expect(metrics.error).toContain("supported only on macOS")
+      return
+    }
+    const outDir = await makeOutDir()
+    const { metrics, exitCode } = await runResourceBench(
+      fixtureOptions(outDir, "sleep", { maxFootprintMiB: 1, maxRssMiB: 4096 }),
+    )
+    expect(exitCode).toBe(RESOURCE_BENCH_EXIT["footprint-limit"])
+    expect(metrics.outcome).toBe("footprint-limit")
+    expect(metrics.scoreAccepted).toBe(false)
+    expect(metrics.maxRssMiB).toBe(4096)
+    expect(metrics.maxFootprintMiB).toBe(1)
+    expect(metrics.peakPhysFootprintMiB).toBeGreaterThanOrEqual(1)
+    expect(metrics.peakPhysFootprintProcesses.length).toBeGreaterThan(0)
+    expect(metrics.error).toContain("phys_footprint")
   })
 })

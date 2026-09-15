@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 
+import { dlopen, FFIType, ptr } from "bun:ffi"
 import { closeSync, openSync } from "node:fs"
 import { mkdir, writeFile } from "node:fs/promises"
 import { isAbsolute, join, resolve } from "node:path"
@@ -18,6 +19,7 @@ export const RESOURCE_BENCH_EXIT = {
   error: 1,
   "rss-limit": 2,
   timeout: 3,
+  "footprint-limit": 4,
 } as const
 
 export type ResourceBenchOutcome = keyof typeof RESOURCE_BENCH_EXIT
@@ -27,6 +29,7 @@ export interface ResourceBenchArgs {
   readonly outDir: string
   readonly preload: string | undefined
   readonly maxRssMiB: number
+  readonly maxFootprintMiB: number | undefined
   readonly timeoutSeconds: number
   readonly sampleIntervalMs: number
 }
@@ -44,6 +47,8 @@ export interface ResourceBenchProcess {
   readonly rssKiB: number
   readonly rssMiB: number
   readonly command: string
+  readonly physFootprintKiB?: number
+  readonly physFootprintMiB?: number
 }
 
 export interface ResourceBenchMetrics {
@@ -58,6 +63,11 @@ export interface ResourceBenchMetrics {
   readonly peakRssMiB: number
   readonly peakRssKiB: number
   readonly peakAtMs: number
+  readonly maxFootprintMiB: number | null
+  readonly peakPhysFootprintMiB: number
+  readonly peakPhysFootprintKiB: number
+  readonly peakPhysFootprintAtMs: number
+  readonly peakPhysFootprintProcesses: ReadonlyArray<ResourceBenchProcess>
   readonly sampleCount: number
   readonly sampleIntervalMs: number
   readonly childPid: number | null
@@ -102,15 +112,17 @@ Options:
   --out <dir>                Output directory (required)
   --preload <file>           Optional Bun --preload for controlled experiments
   --max-rss-mib <n>          Stop own process group at this RSS (default: ${DEFAULT_MAX_RSS_MIB})
+  --max-footprint-mib <n>    macOS only: stop at process-group phys_footprint (optional)
   --timeout-seconds <n>      Stop own process group after this many seconds (default: ${DEFAULT_TIMEOUT_SECONDS})
   --sample-ms <n>            Process-group RSS sample interval (default: ${DEFAULT_SAMPLE_MS})
   -h, --help                 Show this help
 
 Exit codes:
-  0  completed   child exited 0 without hitting a limit
-  1  error       spawn, isolation, sampling, or child failure
-  2  rss-limit   own process group reached --max-rss-mib
-  3  timeout     own process group exceeded --timeout-seconds
+  0  completed         child exited 0 without hitting a limit
+  1  error             spawn, isolation, sampling, or child failure
+  2  rss-limit         own process group reached --max-rss-mib
+  3  timeout           own process group exceeded --timeout-seconds
+  4  footprint-limit   own process group reached --max-footprint-mib
 `)
 }
 
@@ -119,6 +131,7 @@ export const parseResourceBenchArgs = (argv: ReadonlyArray<string>): ResourceBen
   let outDir: string | undefined
   let preload: string | undefined
   let maxRssMiB = DEFAULT_MAX_RSS_MIB
+  let maxFootprintMiB: number | undefined
   let timeoutSeconds = DEFAULT_TIMEOUT_SECONDS
   let sampleIntervalMs = DEFAULT_SAMPLE_MS
 
@@ -148,6 +161,11 @@ export const parseResourceBenchArgs = (argv: ReadonlyArray<string>): ResourceBen
       index += 1
       continue
     }
+    if (flag === "--max-footprint-mib") {
+      maxFootprintMiB = requiredPositiveNumber(requiredValue(argv, index, flag), flag)
+      index += 1
+      continue
+    }
     if (flag === "--timeout-seconds") {
       timeoutSeconds = requiredPositiveNumber(requiredValue(argv, index, flag), flag)
       index += 1
@@ -169,6 +187,7 @@ export const parseResourceBenchArgs = (argv: ReadonlyArray<string>): ResourceBen
     outDir: resolve(process.cwd(), outDir),
     preload: preload === undefined ? undefined : resolve(process.cwd(), preload),
     maxRssMiB,
+    maxFootprintMiB,
     timeoutSeconds,
     sampleIntervalMs,
   }
@@ -195,6 +214,61 @@ const requiredPositiveNumber = (raw: string, flag: string): number => {
 }
 
 const toMiB = (rssKiB: number): number => Number((rssKiB / 1024).toFixed(2))
+
+const RUSAGE_INFO_V0 = 0
+const RUSAGE_INFO_V0_BYTES = 96
+const RI_PHYS_FOOTPRINT_OFFSET = 72
+
+export interface PhysFootprintReader {
+  readonly readBytes: (pid: number) => number | undefined
+}
+
+export const footprintLimitUnsupportedReason = (
+  platform: string = process.platform,
+): string | undefined => {
+  if (platform === "darwin") return undefined
+  return `--max-footprint-mib is supported only on macOS (got ${platform})`
+}
+
+export const probePhysFootprintReader = (): PhysFootprintReader => {
+  const unsupported = footprintLimitUnsupportedReason()
+  if (unsupported !== undefined) throw new Error(unsupported)
+  const lib = dlopen("/usr/lib/libproc.dylib", {
+    proc_pid_rusage: {
+      args: [FFIType.i32, FFIType.i32, FFIType.ptr],
+      returns: FFIType.i32,
+    },
+  })
+  const readBytes = (pid: number): number | undefined => {
+    const buf = new Uint8Array(RUSAGE_INFO_V0_BYTES)
+    const rc = lib.symbols.proc_pid_rusage(pid, RUSAGE_INFO_V0, ptr(buf))
+    if (rc !== 0) return undefined
+    return Number(new DataView(buf.buffer).getBigUint64(RI_PHYS_FOOTPRINT_OFFSET, true))
+  }
+  if (readBytes(process.pid) === undefined) {
+    throw new Error("proc_pid_rusage V0 self-probe failed")
+  }
+  return { readBytes }
+}
+
+const attachPhysFootprints = (
+  processes: ReadonlyArray<ResourceBenchProcess>,
+  reader: PhysFootprintReader,
+): { readonly processes: ResourceBenchProcess[]; readonly physFootprintKiB: number } => {
+  let physFootprintKiB = 0
+  const decorated = processes.map((row) => {
+    const bytes = reader.readBytes(row.pid)
+    if (bytes === undefined) return row
+    const kiB = bytes / 1024
+    physFootprintKiB += kiB
+    return {
+      ...row,
+      physFootprintKiB: kiB,
+      physFootprintMiB: toMiB(kiB),
+    }
+  })
+  return { processes: decorated, physFootprintKiB }
+}
 
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => {
@@ -425,6 +499,16 @@ const emptyPeak = (): {
   processes: [],
 })
 
+const emptyFootprintPeak = (): {
+  physFootprintKiB: number
+  atMs: number
+  processes: ReadonlyArray<ResourceBenchProcess>
+} => ({
+  physFootprintKiB: 0,
+  atMs: 0,
+  processes: [],
+})
+
 export const runResourceBench = async (options: ResourceBenchOptions): Promise<ResourceBenchResult> => {
   const outDir = isAbsolute(options.outDir) ? options.outDir : resolve(process.cwd(), options.outDir)
   const repo = isAbsolute(options.repo) ? options.repo : resolve(process.cwd(), options.repo)
@@ -439,6 +523,8 @@ export const runResourceBench = async (options: ResourceBenchOptions): Promise<R
   const killWaitMs = options.killWaitMs ?? DEFAULT_KILL_WAIT_MS
   const timeoutMs = options.timeoutSeconds * 1000
   const maxRssKiB = options.maxRssMiB * 1024
+  const maxFootprintKiB =
+    options.maxFootprintMiB === undefined ? undefined : options.maxFootprintMiB * 1024
 
   const stdoutPath = join(outDir, "stdout.json")
   const stderrPath = join(outDir, "stderr.log")
@@ -456,9 +542,11 @@ export const runResourceBench = async (options: ResourceBenchOptions): Promise<R
   let processGroupReaped = true
   let sampleCount = 0
   let peak = emptyPeak()
+  let footprintPeak = emptyFootprintPeak()
   let outcome: ResourceBenchOutcome = "error"
   let error: string | null = null
-  let stopReason: "rss-limit" | "timeout" | undefined
+  let stopReason: "rss-limit" | "timeout" | "footprint-limit" | undefined
+  let footprintReader: PhysFootprintReader | undefined
   let leftoverDescendants = false
   let watchdogSignal: NodeJS.Signals | undefined
   let stdoutFd: number | undefined
@@ -494,6 +582,11 @@ export const runResourceBench = async (options: ResourceBenchOptions): Promise<R
       peakRssMiB: toMiB(peak.rssKiB),
       peakRssKiB: peak.rssKiB,
       peakAtMs: peak.atMs,
+      maxFootprintMiB: options.maxFootprintMiB ?? null,
+      peakPhysFootprintMiB: toMiB(footprintPeak.physFootprintKiB),
+      peakPhysFootprintKiB: footprintPeak.physFootprintKiB,
+      peakPhysFootprintAtMs: footprintPeak.atMs,
+      peakPhysFootprintProcesses: footprintPeak.processes,
       sampleCount,
       sampleIntervalMs: options.sampleIntervalMs,
       processGroupId,
@@ -516,6 +609,15 @@ export const runResourceBench = async (options: ResourceBenchOptions): Promise<R
   process.on("SIGTERM", onSigterm)
 
   try {
+    if (options.maxFootprintMiB !== undefined) {
+      try {
+        footprintReader = probePhysFootprintReader()
+      } catch (cause) {
+        error = cause instanceof Error ? cause.message : String(cause)
+        return finish()
+      }
+    }
+
     stdoutFd = openSync(stdoutPath, "w")
     stderrFd = openSync(stderrPath, "w")
     const child = Bun.spawn(command, {
@@ -584,6 +686,20 @@ export const runResourceBench = async (options: ResourceBenchOptions): Promise<R
         stopReason = "rss-limit"
         break
       }
+      if (footprintReader !== undefined && maxFootprintKiB !== undefined) {
+        const footprint = attachPhysFootprints(processes, footprintReader)
+        if (footprint.physFootprintKiB >= footprintPeak.physFootprintKiB) {
+          footprintPeak = {
+            physFootprintKiB: footprint.physFootprintKiB,
+            atMs: Math.round(performance.now() - started),
+            processes: footprint.processes,
+          }
+        }
+        if (footprint.physFootprintKiB >= maxFootprintKiB) {
+          stopReason = "footprint-limit"
+          break
+        }
+      }
       const elapsed = performance.now() - started
       if (elapsed >= timeoutMs) {
         stopReason = "timeout"
@@ -644,6 +760,8 @@ export const runResourceBench = async (options: ResourceBenchOptions): Promise<R
       outcome = stopReason
       error = stopReason === "rss-limit"
         ? `process group RSS reached ${toMiB(peak.rssKiB)} MiB (limit ${options.maxRssMiB} MiB)`
+        : stopReason === "footprint-limit"
+          ? `process group phys_footprint reached ${toMiB(footprintPeak.physFootprintKiB)} MiB (limit ${options.maxFootprintMiB} MiB)`
         : `process group exceeded ${options.timeoutSeconds}s`
     } else if (leftoverDescendants) {
       outcome = "error"

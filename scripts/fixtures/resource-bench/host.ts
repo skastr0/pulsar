@@ -15,6 +15,7 @@ const result = await runResourceBench({
   outDir,
   preload: undefined,
   maxRssMiB: 4096,
+  maxFootprintMiB: undefined,
   timeoutSeconds: 20,
   sampleIntervalMs: 50,
   command: [process.execPath, join(import.meta.dir, "child.ts"), mode],
