@@ -53,7 +53,7 @@ describe("TS-CC-01 regressions", () => {
       project,
       calls,
       (call, typeText, declarations, index) => {
-        expect(call).toBe(calls[index])
+        expect(call).toBe(calls[index]!)
         observed.push([
           index,
           typeText,
