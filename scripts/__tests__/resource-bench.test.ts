@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
+  attachPhysFootprints,
   footprintLimitUnsupportedReason,
   parseProcessTable,
   parseResourceBenchArgs,
@@ -78,9 +79,34 @@ describe("resource-bench watchdog", () => {
       expect(() => probePhysFootprintReader()).toThrow(/supported only on macOS/)
       return
     }
-    const bytes = probePhysFootprintReader().readBytes(process.pid)
-    expect(bytes).toBeGreaterThan(0)
-    expect(Number.isFinite(bytes)).toBe(true)
+    const reader = probePhysFootprintReader()
+    try {
+      const bytes = reader.readBytes(process.pid)
+      expect(bytes).toBeGreaterThan(0)
+      expect(Number.isFinite(bytes)).toBe(true)
+    } finally {
+      reader.close()
+    }
+  })
+
+  test("footprint read miss fails closed for a live pid and skips an exited pid", async () => {
+    const reader = { readBytes: () => undefined, close: () => undefined }
+    expect(() =>
+      attachPhysFootprints(
+        [{ pid: process.pid, ppid: 1, rssKiB: 1, rssMiB: 0, command: "self" }],
+        reader,
+      ),
+    ).toThrow(/live pid/)
+    const child = Bun.spawn(["true"], { stdin: "ignore", stdout: "ignore", stderr: "ignore" })
+    const pid = child.pid
+    expect(pid).toBeDefined()
+    await child.exited
+    const skipped = attachPhysFootprints(
+      [{ pid: pid!, ppid: 1, rssKiB: 1, rssMiB: 0, command: "exited" }],
+      reader,
+    )
+    expect(skipped.physFootprintKiB).toBe(0)
+    expect(skipped.processes[0]?.physFootprintKiB).toBeUndefined()
   })
 
   test("parses process-group RSS rows from ps", () => {
@@ -239,6 +265,7 @@ describe("resource-bench watchdog", () => {
     expect(metrics.scoreAccepted).toBe(false)
     expect(metrics.maxRssMiB).toBe(4096)
     expect(metrics.maxFootprintMiB).toBe(1)
+    expect(metrics.peakRssMiB).toBeGreaterThan(0)
     expect(metrics.peakPhysFootprintMiB).toBeGreaterThanOrEqual(1)
     expect(metrics.peakPhysFootprintProcesses.length).toBeGreaterThan(0)
     expect(metrics.error).toContain("phys_footprint")

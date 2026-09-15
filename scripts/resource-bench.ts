@@ -221,6 +221,7 @@ const RI_PHYS_FOOTPRINT_OFFSET = 72
 
 export interface PhysFootprintReader {
   readonly readBytes: (pid: number) => number | undefined
+  readonly close: () => void
 }
 
 export const footprintLimitUnsupportedReason = (
@@ -228,6 +229,15 @@ export const footprintLimitUnsupportedReason = (
 ): string | undefined => {
   if (platform === "darwin") return undefined
   return `--max-footprint-mib is supported only on macOS (got ${platform})`
+}
+
+const processIsAlive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
 }
 
 export const probePhysFootprintReader = (): PhysFootprintReader => {
@@ -239,6 +249,12 @@ export const probePhysFootprintReader = (): PhysFootprintReader => {
       returns: FFIType.i32,
     },
   })
+  let closed = false
+  const close = (): void => {
+    if (closed) return
+    closed = true
+    lib.close()
+  }
   const readBytes = (pid: number): number | undefined => {
     const buf = new Uint8Array(RUSAGE_INFO_V0_BYTES)
     const rc = lib.symbols.proc_pid_rusage(pid, RUSAGE_INFO_V0, ptr(buf))
@@ -246,26 +262,30 @@ export const probePhysFootprintReader = (): PhysFootprintReader => {
     return Number(new DataView(buf.buffer).getBigUint64(RI_PHYS_FOOTPRINT_OFFSET, true))
   }
   if (readBytes(process.pid) === undefined) {
+    close()
     throw new Error("proc_pid_rusage V0 self-probe failed")
   }
-  return { readBytes }
+  return { readBytes, close }
 }
 
-const attachPhysFootprints = (
+export const attachPhysFootprints = (
   processes: ReadonlyArray<ResourceBenchProcess>,
   reader: PhysFootprintReader,
 ): { readonly processes: ResourceBenchProcess[]; readonly physFootprintKiB: number } => {
   let physFootprintKiB = 0
   const decorated = processes.map((row) => {
     const bytes = reader.readBytes(row.pid)
-    if (bytes === undefined) return row
-    const kiB = bytes / 1024
-    physFootprintKiB += kiB
-    return {
-      ...row,
-      physFootprintKiB: kiB,
-      physFootprintMiB: toMiB(kiB),
+    if (bytes !== undefined) {
+      const kiB = bytes / 1024
+      physFootprintKiB += kiB
+      return {
+        ...row,
+        physFootprintKiB: kiB,
+        physFootprintMiB: toMiB(kiB),
+      }
     }
+    if (!processIsAlive(row.pid)) return row
+    throw new Error(`proc_pid_rusage V0 failed for live pid ${row.pid}`)
   })
   return { processes: decorated, physFootprintKiB }
 }
@@ -682,23 +702,30 @@ export const runResourceBench = async (options: ResourceBenchOptions): Promise<R
           processes,
         }
       }
+      let currentFootprintKiB: number | undefined
+      if (footprintReader !== undefined && maxFootprintKiB !== undefined) {
+        try {
+          const footprint = attachPhysFootprints(processes, footprintReader)
+          currentFootprintKiB = footprint.physFootprintKiB
+          if (footprint.physFootprintKiB >= footprintPeak.physFootprintKiB) {
+            footprintPeak = {
+              physFootprintKiB: footprint.physFootprintKiB,
+              atMs: Math.round(performance.now() - started),
+              processes: footprint.processes,
+            }
+          }
+        } catch (cause) {
+          error = cause instanceof Error ? cause.message : String(cause)
+          break
+        }
+      }
       if (rssKiB >= maxRssKiB) {
         stopReason = "rss-limit"
         break
       }
-      if (footprintReader !== undefined && maxFootprintKiB !== undefined) {
-        const footprint = attachPhysFootprints(processes, footprintReader)
-        if (footprint.physFootprintKiB >= footprintPeak.physFootprintKiB) {
-          footprintPeak = {
-            physFootprintKiB: footprint.physFootprintKiB,
-            atMs: Math.round(performance.now() - started),
-            processes: footprint.processes,
-          }
-        }
-        if (footprint.physFootprintKiB >= maxFootprintKiB) {
-          stopReason = "footprint-limit"
-          break
-        }
+      if (currentFootprintKiB !== undefined && currentFootprintKiB >= maxFootprintKiB) {
+        stopReason = "footprint-limit"
+        break
       }
       const elapsed = performance.now() - started
       if (elapsed >= timeoutMs) {
@@ -725,7 +752,7 @@ export const runResourceBench = async (options: ResourceBenchOptions): Promise<R
       )
       await raceTimeout(child.exited, killWaitMs)
       error = `watchdog received ${watchdogSignal}`
-    } else if (stopReason !== undefined) {
+    } else if (stopReason !== undefined || error !== null) {
       processGroupReaped = await stopOwnProcessGroup(
         isolation.pgid,
         spawnedPid,
@@ -763,7 +790,7 @@ export const runResourceBench = async (options: ResourceBenchOptions): Promise<R
         : stopReason === "footprint-limit"
           ? `process group phys_footprint reached ${toMiB(footprintPeak.physFootprintKiB)} MiB (limit ${options.maxFootprintMiB} MiB)`
         : `process group exceeded ${options.timeoutSeconds}s`
-    } else if (leftoverDescendants) {
+    } else if (leftoverDescendants || error !== null) {
       outcome = "error"
     } else if (child.signalCode !== null) {
       error = `child exited from signal ${child.signalCode}`
@@ -794,6 +821,7 @@ export const runResourceBench = async (options: ResourceBenchOptions): Promise<R
   } finally {
     process.off("SIGINT", onSigint)
     process.off("SIGTERM", onSigterm)
+    footprintReader?.close()
     if (stdoutFd !== undefined) closeSync(stdoutFd)
     if (stderrFd !== undefined) closeSync(stderrFd)
   }
