@@ -1,0 +1,661 @@
+{
+  "date": "2026-09-15",
+  "rawArtifactRoot": "/tmp/pulsar-large-repos.J4NDv7",
+  "pulsarBeforeRevision": "41d74627b289f87a937133af71fcf5042660b590",
+  "pulsarAfterProductionRevision": "55ab4e63e83c61c9eab5b65b1a522a8417cb0683",
+  "watchdogRevision": "0b2b4e5e79c2e626e4e9003a9b57e89210cab4e2",
+  "environment": {
+    "platform": "macOS arm64",
+    "hardwareMemoryGiB": 64,
+    "bun": "1.3.14",
+    "effect": "4.0.0-rc.112",
+    "quartz": "0.2.1",
+    "tsgoTypescript": "7.1.0-dev.20260905.1",
+    "concurrentUnrelatedWork": true,
+    "filesystemCachesFlushed": false,
+    "gcEnvironmentOverrides": false
+  },
+  "targets": [
+    {
+      "name": "vouch",
+      "source": "/Users/guilhermecastro/Projects/vouch",
+      "path": "/tmp/pulsar-large-repos.J4NDv7/vouch",
+      "commit": "81f4aca345bbddc5f4a7864c4a68749e8698dfb6",
+      "nodeModules": "/Users/guilhermecastro/Projects/vouch/node_modules"
+    },
+    {
+      "name": "vellum",
+      "source": "/Users/guilhermecastro/Projects/vellum",
+      "path": "/tmp/pulsar-large-repos.J4NDv7/vellum",
+      "commit": "9013b252e460e8a08d7b0d956ca8f4ea02cd1370",
+      "nodeModules": "/Users/guilhermecastro/Projects/vellum/node_modules"
+    },
+    {
+      "name": "effect",
+      "source": "/Users/guilhermecastro/Playground/effect",
+      "path": "/tmp/pulsar-large-repos.J4NDv7/effect",
+      "commit": "f4151e1937c26de14f1d64566f8126173f1b5014",
+      "nodeModules": null
+    }
+  ],
+  "vellumDependencyAdjustment": {
+    "repository": "vellum",
+    "change": "isolated node_modules overlay adds missing @skastr0/pulsar-project-module-sdk from local Pulsar packages/project-module-sdk; all other entries point to original dependencies",
+    "trackedTargetUnchanged": true,
+    "stateRootResolution": "Each isolated Vellum benchmark state root has node_modules symlinked to Pulsar node_modules so the undeclared SDK dependency resolves when calibration is bundled. The clone overlay alone did not resolve it."
+  },
+  "changedRuntimeSha256": {
+    "before": {
+      "packages/core/dist/scoring-engine-observer-cache.js": "daee7528b2404326ae561252e8bb3288bbddfea7a93039f4815168501236c524",
+      "packages/ts-pack/dist/source-file-loader.js": "5b91cb199426a956e156c1bd7154d2ae04e280fdfecfa144cbb5198cdfc2ba24",
+      "packages/ts-pack/dist/ts-analysis.js": "483e956174baa39c5564e3208dc489382a8c685bc74b0babc8ef9289c5170d02",
+      "packages/ts-pack/dist/signals/ts-ab-03-indirection-walker.js": "67697be249af45508577704cfc3d8cbfb09982afdeafa49fd40454449a521b55",
+      "packages/ts-pack/dist/signals/ts-cc-01-async-failure-control.js": "4c9e25c48becd16ea36bfb1a8746d11d24e627e05b784c426a5c6467efb6bd24",
+      "packages/ts-pack/dist/__tests__/ts-cc-01-regressions.test.js": "c1a216ac7f8ca3f19872896aa31de62ac623dd7c9ccea6c6e4ec50bd6494d2d9",
+      "packages/ts-pack/dist/__tests__/source-file-loader.test.js": "deffa9c4e93b54341a1804725a8ef53541f3de73b351965c18051f21440f8f34",
+      "packages/ts-pack/dist/__tests__/ts-ab-03-regressions.test.js": "7bead9ba81388eb0af3ed77385dda66db77f7f72859b8af3a659c5e04cba5d82",
+      "packages/ts-pack/dist/__tests__/signal-contracts.js": "3d5bb0e26b752aa1d4a5fec840008506b787c940d3fb7c3b2e15d9085e9382e5"
+    },
+    "bounded": {
+      "packages/core/dist/scoring-engine-observer-cache.js": "53696c71634b5184e8df52257bd694cbe258126fc3c21585d27fc36a65517714",
+      "packages/ts-pack/dist/source-file-loader.js": "668af2fed62770048aa0dfc63e9dd30e099c6a3750e5be7fef0761c578797b6f",
+      "packages/ts-pack/dist/ts-analysis.js": "344178938a8c33b9c9108a877909d570c6d5994f2a425c7c399f9e644b6211c0",
+      "packages/ts-pack/dist/signals/ts-ab-03-indirection-walker.js": "879a018fd4a3a2f87d67ea2c552f34cf012fffcda13db7b429cfb1298f11f7fc",
+      "packages/ts-pack/dist/signals/ts-cc-01-async-failure-control.js": "97eb1caf551496c1a32a4cbd9417882024aa3d9cc06e4c84233cf1378ab77ced",
+      "packages/ts-pack/dist/__tests__/ts-cc-01-regressions.test.js": "ebc6dd83ba27f30274884c1e8c08a0f68bf602e6accb4194d84f77dea09da5be",
+      "packages/ts-pack/dist/__tests__/source-file-loader.test.js": "a8ad0261b50da9e5d42c51b3aa8f38effc22fdc16e88ce6207b08adcbab5a319",
+      "packages/ts-pack/dist/__tests__/ts-ab-03-regressions.test.js": "6f94642e13b0d4068dcf6db9ec2893f97a87df191ef2ca57680454488980de90",
+      "packages/ts-pack/dist/__tests__/signal-contracts.js": "c87b3d31494ecfeb43cfd18624d9424c06f7aaa5bce8c5a0db4279cd94bd391a"
+    }
+  },
+  "normalization": "Remove runtime_profile only; json.dumps(sort_keys=True,separators=(comma,colon),ensure_ascii=False), then SHA-256 UTF-8 bytes. Failed-signal diagnostics remain included.",
+  "profileRuns": [
+    {
+      "artifact": "paired-before-vouch-1",
+      "outcome": "completed",
+      "scoreAccepted": true,
+      "wallMs": 6625,
+      "peakRssMiB": 1539.03,
+      "peakPhysFootprintMiB": 1125.28,
+      "maxRssMiB": 4096,
+      "maxFootprintMiB": 4096,
+      "timeoutSeconds": 120,
+      "sampleIntervalMs": 100,
+      "sampleCount": 21,
+      "processGroupIsolated": true,
+      "processGroupReaped": true,
+      "rawSha256": {
+        "metrics.json": "1094d3f833e36774e780b1973a38475e0b756da309939f618338f098c46802ef",
+        "stdout.json": "828dceeb7f9747f9264cf6760038319316729ab5038fe960c971bf3994b67687",
+        "stderr.log": "8f52828004c911d5fe7f4467106ec1a6b7938ce01efc3286c4359a92dac5dd81",
+        "counters.json": "396365e0a49b9e86096789d07e7d79f620c763b25d51a0052c694e205cd88aa6",
+        "variant.json": "81eb2887f23be256bc8470486a3bc176d7d5f2e6f9dff27961d877a7dd77049b"
+      },
+      "sourceFileCounters": {
+        "sourceFileCalls": 7458,
+        "coldSourceRequests": 336,
+        "peakInFlight": 5869
+      },
+      "normalizedScoreSha256": "b99cfb5a464ce732915bcd60be3c64682d821c201247f61a104f00114a2e57aa",
+      "failedSignals": [
+        "TS-AD-04-boundary-parser-coverage"
+      ]
+    },
+    {
+      "artifact": "paired-bounded-vouch-1",
+      "outcome": "completed",
+      "scoreAccepted": true,
+      "wallMs": 6632,
+      "peakRssMiB": 1142.42,
+      "peakPhysFootprintMiB": 902.33,
+      "maxRssMiB": 4096,
+      "maxFootprintMiB": 4096,
+      "timeoutSeconds": 120,
+      "sampleIntervalMs": 100,
+      "sampleCount": 21,
+      "processGroupIsolated": true,
+      "processGroupReaped": true,
+      "rawSha256": {
+        "metrics.json": "f83cf924564d063caa4facbf5a24658e6ce88e5538f7773227fde56da7b83c38",
+        "stdout.json": "c3d3a4fd022c1b7bfaa94393408381ae84f54b0953808b81a06df2258a588249",
+        "stderr.log": "65b43cf9986890ea7511c0909111938137577baee1634df94438d246124960c5",
+        "counters.json": "0de6004d9b61421c0ba90454a97317eb7ed574292c19979ec516b2fcf73d658e",
+        "variant.json": "3434cdf6cab7b02741d2a6b656bffd071f5015c49839d756d06eb46d834fd9b4"
+      },
+      "sourceFileCounters": {
+        "sourceFileCalls": 7458,
+        "coldSourceRequests": 336,
+        "peakInFlight": 105
+      },
+      "normalizedScoreSha256": "b99cfb5a464ce732915bcd60be3c64682d821c201247f61a104f00114a2e57aa",
+      "failedSignals": [
+        "TS-AD-04-boundary-parser-coverage"
+      ]
+    },
+    {
+      "artifact": "paired-before-vouch-2",
+      "outcome": "completed",
+      "scoreAccepted": true,
+      "wallMs": 6201,
+      "peakRssMiB": 1360.02,
+      "peakPhysFootprintMiB": 915.13,
+      "maxRssMiB": 4096,
+      "maxFootprintMiB": 4096,
+      "timeoutSeconds": 120,
+      "sampleIntervalMs": 100,
+      "sampleCount": 21,
+      "processGroupIsolated": true,
+      "processGroupReaped": true,
+      "rawSha256": {
+        "metrics.json": "ab0ba7dde9fdc7ad56791e73d928312ca5537b5c8ea56b2017656fc7149d910e",
+        "stdout.json": "5c95b9d63ecae42258d7852f485ee55becf049bae23f13bd8c261b580e24eee9",
+        "stderr.log": "ea754f7f636047df6876b014074a5539e1f5687095daa25e2f65294f5d7fe9a6",
+        "counters.json": "a51faf62a124bd657a3ca12523d943d348ae0f5ecaf368cccbc18b6c7b8f437a",
+        "variant.json": "65a028bb6b5d174c20d73723b3752e0d0df15bbcf89d8652147a0f3ec099eb8f"
+      },
+      "sourceFileCounters": {
+        "sourceFileCalls": 7458,
+        "coldSourceRequests": 336,
+        "peakInFlight": 5869
+      },
+      "normalizedScoreSha256": "b99cfb5a464ce732915bcd60be3c64682d821c201247f61a104f00114a2e57aa",
+      "failedSignals": [
+        "TS-AD-04-boundary-parser-coverage"
+      ]
+    },
+    {
+      "artifact": "paired-bounded-vouch-2",
+      "outcome": "completed",
+      "scoreAccepted": true,
+      "wallMs": 6318,
+      "peakRssMiB": 1118.69,
+      "peakPhysFootprintMiB": 880.24,
+      "maxRssMiB": 4096,
+      "maxFootprintMiB": 4096,
+      "timeoutSeconds": 120,
+      "sampleIntervalMs": 100,
+      "sampleCount": 21,
+      "processGroupIsolated": true,
+      "processGroupReaped": true,
+      "rawSha256": {
+        "metrics.json": "6a5dc9e8c06c356e9577fba78ac9945372342e65c6a7c25bd1baada2ed412910",
+        "stdout.json": "106a0a5075ad1aa269d5f09e24574636f0da48fa720a427429a4ce837382c08d",
+        "stderr.log": "81a5ac9467572119435f0404218bc927371ba1c373c070e343c658b31ec87a67",
+        "counters.json": "1a8239936e0d71d7d82c1e2409a9d64487feec4468811f9b55a8c0df35837995",
+        "variant.json": "c5ec4735a7630d35026246675bd544f3775ca640402aad32142a84f878e6e5b6"
+      },
+      "sourceFileCounters": {
+        "sourceFileCalls": 7458,
+        "coldSourceRequests": 336,
+        "peakInFlight": 105
+      },
+      "normalizedScoreSha256": "b99cfb5a464ce732915bcd60be3c64682d821c201247f61a104f00114a2e57aa",
+      "failedSignals": [
+        "TS-AD-04-boundary-parser-coverage"
+      ]
+    },
+    {
+      "artifact": "paired-before-vouch-3",
+      "outcome": "completed",
+      "scoreAccepted": true,
+      "wallMs": 6862,
+      "peakRssMiB": 1370.52,
+      "peakPhysFootprintMiB": 1171.82,
+      "maxRssMiB": 4096,
+      "maxFootprintMiB": 4096,
+      "timeoutSeconds": 120,
+      "sampleIntervalMs": 100,
+      "sampleCount": 21,
+      "processGroupIsolated": true,
+      "processGroupReaped": true,
+      "rawSha256": {
+        "metrics.json": "28b3ac416ea18905ea502cf35e5ebf4abdcba99d27ea2c6f1f0fa2f6e4238006",
+        "stdout.json": "68e2a9b2357b9a2d4d916c073d29d97d44c1ae987aff5bc1b19df06548976b45",
+        "stderr.log": "a61d04ec91ebc1ff85e2a9d4ea2ad1abba0cabb0a7ed6786985936397d8645a6",
+        "counters.json": "9c3c335499157fbc4e4ba72dcda65e9db92d30f68c02ee9f810392ace637c5ac",
+        "variant.json": "e1d26edca8077dedd393f2467ff46be2b9c2f12af693b26d08d468fc9a9761f1"
+      },
+      "sourceFileCounters": {
+        "sourceFileCalls": 7458,
+        "coldSourceRequests": 336,
+        "peakInFlight": 5869
+      },
+      "normalizedScoreSha256": "b99cfb5a464ce732915bcd60be3c64682d821c201247f61a104f00114a2e57aa",
+      "failedSignals": [
+        "TS-AD-04-boundary-parser-coverage"
+      ]
+    },
+    {
+      "artifact": "paired-bounded-vouch-3",
+      "outcome": "completed",
+      "scoreAccepted": true,
+      "wallMs": 6669,
+      "peakRssMiB": 1115.11,
+      "peakPhysFootprintMiB": 886.88,
+      "maxRssMiB": 4096,
+      "maxFootprintMiB": 4096,
+      "timeoutSeconds": 120,
+      "sampleIntervalMs": 100,
+      "sampleCount": 21,
+      "processGroupIsolated": true,
+      "processGroupReaped": true,
+      "rawSha256": {
+        "metrics.json": "86c3b32eee530a2a6670ae1e97e9c5055cb14dbff4cc155fe39b66feaa1d2ca3",
+        "stdout.json": "395bb99cb3b73fa9af63c40cff0d6d237ffe088f6e781b4b589c071486c97175",
+        "stderr.log": "7f0800a33ce44063c84631c6499763f3688f65f38974c28c267b27c24ee80584",
+        "counters.json": "0c8555bfd7e01949e3586b9eeeb846eaf3a29e4f047300ec4a7f859390ca8cdf",
+        "variant.json": "00a0da44efdc4ee834ae2539eb60682f7e6efac8cbcaaf3507819c64a97a1f6d"
+      },
+      "sourceFileCounters": {
+        "sourceFileCalls": 7458,
+        "coldSourceRequests": 336,
+        "peakInFlight": 105
+      },
+      "normalizedScoreSha256": "b99cfb5a464ce732915bcd60be3c64682d821c201247f61a104f00114a2e57aa",
+      "failedSignals": [
+        "TS-AD-04-boundary-parser-coverage"
+      ]
+    },
+    {
+      "artifact": "paired-before-vellum-1",
+      "outcome": "footprint-limit",
+      "scoreAccepted": false,
+      "wallMs": 39147,
+      "peakRssMiB": 3616.66,
+      "peakPhysFootprintMiB": 4097.94,
+      "maxRssMiB": 4096,
+      "maxFootprintMiB": 4096,
+      "timeoutSeconds": 120,
+      "sampleIntervalMs": 100,
+      "sampleCount": 104,
+      "processGroupIsolated": true,
+      "processGroupReaped": true,
+      "rawSha256": {
+        "metrics.json": "77a78eedd48667fc89bc75a1e2b1a6447689275dadf76b90632ecd900c8627da",
+        "stdout.json": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "counters.json": "ac42b22035e42684b40b0283ad4e2314352306c37ca5d83472f5aa8126ff1559",
+        "variant.json": "e992648b4b154d2638b4c14ab1c942fd684e2957497cdcf43cd70deb221f1d66"
+      },
+      "sourceFileCounters": {
+        "sourceFileCalls": 936,
+        "coldSourceRequests": 936,
+        "peakInFlight": 936
+      }
+    },
+    {
+      "artifact": "paired-bounded-vellum-1",
+      "outcome": "completed",
+      "scoreAccepted": true,
+      "wallMs": 38917,
+      "peakRssMiB": 2817.78,
+      "peakPhysFootprintMiB": 2534.24,
+      "maxRssMiB": 4096,
+      "maxFootprintMiB": 4096,
+      "timeoutSeconds": 120,
+      "sampleIntervalMs": 100,
+      "sampleCount": 109,
+      "processGroupIsolated": true,
+      "processGroupReaped": true,
+      "rawSha256": {
+        "metrics.json": "c8c3d8cd7e5761bb46cb267659a60320017237abbf50ae5f5cd1ea0cdecf4a32",
+        "stdout.json": "97b45c9d4a8c438182d19af1a5d403b698053f4c587b2407fb4f5d7619299d84",
+        "stderr.log": "69d66a4d5603810adcd5ec9235cf8308ea50410b324645f79f92be4d425e142c",
+        "counters.json": "3e1f61eec27cde81f99aca679d221a9022d540322425ba2fc81a7c318114527f",
+        "variant.json": "2c5749a15da7c83caf733594e97c4288d11deea3f678eab3fe78e6b6e2107a8e"
+      },
+      "sourceFileCounters": {
+        "sourceFileCalls": 31055,
+        "coldSourceRequests": 936,
+        "peakInFlight": 120
+      },
+      "normalizedScoreSha256": "5c10c96d0fd7e0577246e493bc4f86f5c028b60340285be62dce50e6c3acfd16",
+      "failedSignals": [
+        "TS-AD-04-boundary-parser-coverage"
+      ]
+    },
+    {
+      "artifact": "paired-bounded-vellum-2",
+      "outcome": "completed",
+      "scoreAccepted": true,
+      "wallMs": 42697,
+      "peakRssMiB": 3121.17,
+      "peakPhysFootprintMiB": 3002.5,
+      "maxRssMiB": 4096,
+      "maxFootprintMiB": 4096,
+      "timeoutSeconds": 120,
+      "sampleIntervalMs": 100,
+      "sampleCount": 115,
+      "processGroupIsolated": true,
+      "processGroupReaped": true,
+      "rawSha256": {
+        "metrics.json": "a2b2b3358bd1cb395d9ee83b25a5fc698ceb66127d898d9e98f06f07003d907d",
+        "stdout.json": "eba009512607d8400cd121810e945e035c2c0e7a4df95b5604d367a6ba630424",
+        "stderr.log": "5283c01af19f0b94de6f26dc5ca573259ed9faf6fc00dc779a3a1eaa3263b6bc",
+        "counters.json": "865548158ad03766f6d262219ca8c9a2d6b0a7fe4684359003b0bb5dc88babf4",
+        "variant.json": "0b805239eaaaa3796acea1f78d334b7f208d522b0ecd1a4a9b426a852ea8618e"
+      },
+      "sourceFileCounters": {
+        "sourceFileCalls": 31055,
+        "coldSourceRequests": 936,
+        "peakInFlight": 120
+      },
+      "normalizedScoreSha256": "5c10c96d0fd7e0577246e493bc4f86f5c028b60340285be62dce50e6c3acfd16",
+      "failedSignals": [
+        "TS-AD-04-boundary-parser-coverage"
+      ]
+    },
+    {
+      "artifact": "paired-bounded-vellum-3",
+      "outcome": "completed",
+      "scoreAccepted": true,
+      "wallMs": 41135,
+      "peakRssMiB": 2749.39,
+      "peakPhysFootprintMiB": 2491.74,
+      "maxRssMiB": 4096,
+      "maxFootprintMiB": 4096,
+      "timeoutSeconds": 120,
+      "sampleIntervalMs": 100,
+      "sampleCount": 111,
+      "processGroupIsolated": true,
+      "processGroupReaped": true,
+      "rawSha256": {
+        "metrics.json": "325a538a7866b8a551fd6413670a18add46151dcacd985605a81fa9ca5ea3fec",
+        "stdout.json": "5bf6961d38cb6ce916d72db6fd2235dcab438b3bd66922e5e597a03a03ef6403",
+        "stderr.log": "b1952082e285c633ea96ef92fc1788ad484e6f1cebcbe88282136a2ad7c72501",
+        "counters.json": "3aee4b091285d654e644f01cfa60c1556ff9cbe40eba1a852b36cc339f373726",
+        "variant.json": "3a08141d62649ec8ec8e6867710057f1fdd4b28977d5c8aa553a62ecfe346122"
+      },
+      "sourceFileCounters": {
+        "sourceFileCalls": 31055,
+        "coldSourceRequests": 936,
+        "peakInFlight": 120
+      },
+      "normalizedScoreSha256": "5c10c96d0fd7e0577246e493bc4f86f5c028b60340285be62dce50e6c3acfd16",
+      "failedSignals": [
+        "TS-AD-04-boundary-parser-coverage"
+      ]
+    },
+    {
+      "artifact": "paired-before-effect-1",
+      "outcome": "footprint-limit",
+      "scoreAccepted": false,
+      "wallMs": 17393,
+      "peakRssMiB": 3938.67,
+      "peakPhysFootprintMiB": 4140.63,
+      "maxRssMiB": 4096,
+      "maxFootprintMiB": 4096,
+      "timeoutSeconds": 120,
+      "sampleIntervalMs": 100,
+      "sampleCount": 43,
+      "processGroupIsolated": true,
+      "processGroupReaped": true,
+      "rawSha256": {
+        "metrics.json": "4bef72b96c90cb06f28d4192617aa418ba7591377aff735c739b018d38757ab3",
+        "stdout.json": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "counters.json": "2ea1f7c86c846cd1ece69dd2808f810c7adb67ed0f3861e935d6687bea5f5c7b",
+        "variant.json": "53371591178b7053e520293d6598f50421b13fa367ce5ba7219401acb9d06e42"
+      },
+      "sourceFileCounters": {
+        "sourceFileCalls": 1708,
+        "coldSourceRequests": 604,
+        "peakInFlight": 678
+      }
+    },
+    {
+      "artifact": "paired-bounded-effect-1",
+      "outcome": "footprint-limit",
+      "scoreAccepted": false,
+      "wallMs": 79192,
+      "peakRssMiB": 3860.02,
+      "peakPhysFootprintMiB": 4097.65,
+      "maxRssMiB": 4096,
+      "maxFootprintMiB": 4096,
+      "timeoutSeconds": 120,
+      "sampleIntervalMs": 100,
+      "sampleCount": 207,
+      "processGroupIsolated": true,
+      "processGroupReaped": true,
+      "rawSha256": {
+        "metrics.json": "6e0d352f573dad94614503d7674e29b8587de5a7134629d18cd4faaa90a44980",
+        "stdout.json": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "counters.json": "be085004a017268cd875a2ea01aa28dbf1850fd674ba94a6fbc29f5b5baef5a3",
+        "variant.json": "bfeb2a185d9b371a589a9d707c779d916343df83a72cedb1cea9aa8bef00c8df"
+      },
+      "sourceFileCounters": {
+        "sourceFileCalls": 45201,
+        "coldSourceRequests": 734,
+        "peakInFlight": 601
+      }
+    }
+  ],
+  "cacheEnabledRuns": [
+    {
+      "artifact": "cache-before-vouch-cold",
+      "outcome": "completed",
+      "scoreAccepted": true,
+      "wallMs": 7471,
+      "peakRssMiB": 1380.75,
+      "peakPhysFootprintMiB": 917.91,
+      "maxRssMiB": 4096,
+      "maxFootprintMiB": 4096,
+      "timeoutSeconds": 120,
+      "sampleIntervalMs": 100,
+      "sampleCount": 21,
+      "processGroupIsolated": true,
+      "processGroupReaped": true,
+      "rawSha256": {
+        "metrics.json": "aeb59e940dcfd16db9abe1088fd49db3f9c5b9bcf0775e6040ad009cac956d51",
+        "stdout.json": "38ffee157b9471169c88df3744b6702e45d75d3d4751a4fc910136b755197c61",
+        "stderr.log": "de63bbcf983622301c785de1a87b94532cd091e599dbacd47fee57c2807c4729",
+        "counters.json": "993dee5f15af96651af8b3f0280a55d23beef69f213460a491340906c9aa0474",
+        "variant.json": "54560b0c709378701a9656ce135cc6e4c0e957e573509d8a0efda6c891548d90"
+      },
+      "sourceFileCounters": {
+        "sourceFileCalls": 7468,
+        "coldSourceRequests": 336,
+        "peakInFlight": 5869
+      },
+      "normalizedScoreSha256": "b99cfb5a464ce732915bcd60be3c64682d821c201247f61a104f00114a2e57aa",
+      "failedSignals": [
+        "TS-AD-04-boundary-parser-coverage"
+      ]
+    },
+    {
+      "artifact": "cache-before-vouch-warm",
+      "outcome": "completed",
+      "scoreAccepted": true,
+      "wallMs": 823,
+      "peakRssMiB": 163.75,
+      "peakPhysFootprintMiB": 129.16,
+      "maxRssMiB": 4096,
+      "maxFootprintMiB": 4096,
+      "timeoutSeconds": 120,
+      "sampleIntervalMs": 100,
+      "sampleCount": 4,
+      "processGroupIsolated": true,
+      "processGroupReaped": true,
+      "rawSha256": {
+        "metrics.json": "0fa307180e6db8f9cd4d5e2ff3abbf1f049c3d46df7f9ee07c7da7893f622b79",
+        "stdout.json": "38ffee157b9471169c88df3744b6702e45d75d3d4751a4fc910136b755197c61",
+        "stderr.log": "ef4de32612b9492b11df41e1ba8cedad9ed8efa0eb6f0369e9133fe2c6ec5e01",
+        "counters.json": "042b8a0763e08b6cad738b07cedda24861b1ba4118de2f94a216a810f7203493",
+        "variant.json": "4634e28356d413922c5f901bea5e0d90494eaf9a0e721e205b16d814986b1400"
+      },
+      "sourceFileCounters": {
+        "sourceFileCalls": 0,
+        "coldSourceRequests": 0,
+        "peakInFlight": 0
+      },
+      "normalizedScoreSha256": "b99cfb5a464ce732915bcd60be3c64682d821c201247f61a104f00114a2e57aa",
+      "failedSignals": [
+        "TS-AD-04-boundary-parser-coverage"
+      ]
+    },
+    {
+      "artifact": "cache-bounded-vouch-cold",
+      "outcome": "completed",
+      "scoreAccepted": true,
+      "wallMs": 8226,
+      "peakRssMiB": 1010.02,
+      "peakPhysFootprintMiB": 931.55,
+      "maxRssMiB": 4096,
+      "maxFootprintMiB": 4096,
+      "timeoutSeconds": 120,
+      "sampleIntervalMs": 100,
+      "sampleCount": 21,
+      "processGroupIsolated": true,
+      "processGroupReaped": true,
+      "rawSha256": {
+        "metrics.json": "d6db42dc2b1cef193cce1b6889eac4a929dca00c6a7a1841247b79dddaf6ef08",
+        "stdout.json": "38ffee157b9471169c88df3744b6702e45d75d3d4751a4fc910136b755197c61",
+        "stderr.log": "11a7b507244d468cc4a8e0a0543a397b7f604bd35b0ef3315dad9a0e069bf3ad",
+        "counters.json": "b5f37a9a82182e4eb46fb964b13d690e0608d5e3c3e6436e6960c2607675d353",
+        "variant.json": "57aa16788f91936146cfa76d24f7b4ef84b0f286f6a7543efc054d2d57b81a40"
+      },
+      "sourceFileCounters": {
+        "sourceFileCalls": 7468,
+        "coldSourceRequests": 336,
+        "peakInFlight": 105
+      },
+      "normalizedScoreSha256": "b99cfb5a464ce732915bcd60be3c64682d821c201247f61a104f00114a2e57aa",
+      "failedSignals": [
+        "TS-AD-04-boundary-parser-coverage"
+      ]
+    },
+    {
+      "artifact": "cache-bounded-vouch-warm",
+      "outcome": "completed",
+      "scoreAccepted": true,
+      "wallMs": 751,
+      "peakRssMiB": 170.53,
+      "peakPhysFootprintMiB": 130.52,
+      "maxRssMiB": 4096,
+      "maxFootprintMiB": 4096,
+      "timeoutSeconds": 120,
+      "sampleIntervalMs": 100,
+      "sampleCount": 5,
+      "processGroupIsolated": true,
+      "processGroupReaped": true,
+      "rawSha256": {
+        "metrics.json": "b4cc2d50b2215a84dcbf9aba82ef095c84b984f89cdcab6244bd4f24fab586cf",
+        "stdout.json": "38ffee157b9471169c88df3744b6702e45d75d3d4751a4fc910136b755197c61",
+        "stderr.log": "a55abe79937cd34120d9f2f406a3b1123d66fb94681dcd94368dd6382efbbfe9",
+        "counters.json": "75a6d3f7f9f1ebc0e86bcc57c9d99d3c01784bf5578fc454d4669f277da238b1",
+        "variant.json": "f8da2adf85104e575d620cac5bfe3577e8fdc79dd810f248cfbba58ad2629c8c"
+      },
+      "sourceFileCounters": {
+        "sourceFileCalls": 0,
+        "coldSourceRequests": 0,
+        "peakInFlight": 0
+      },
+      "normalizedScoreSha256": "b99cfb5a464ce732915bcd60be3c64682d821c201247f61a104f00114a2e57aa",
+      "failedSignals": [
+        "TS-AD-04-boundary-parser-coverage"
+      ]
+    }
+  ],
+  "ab03MicroRuns": [
+    {
+      "artifact": "ab03-before-1",
+      "wallMs": 442.183167,
+      "outputSha256": "bf3aa2c84e9cdab1ba782e4771013f21c9ed68edd7bcd4bc81a605b2577e71c9",
+      "declarations": 704,
+      "outputBytes": 274533,
+      "maximumRssBytes": 224804864,
+      "rawSha256": {
+        "json": "ae1a9a45d909b9103bb9bf590544f673ff6d336f6af9a5c881da86a014d04f0d",
+        "time": "627ca023cdf61696f81ca0ec43ae0d0d1672ab32c12ee3be0552e1af9312ec9c"
+      }
+    },
+    {
+      "artifact": "ab03-before-2",
+      "wallMs": 457.17975,
+      "outputSha256": "bf3aa2c84e9cdab1ba782e4771013f21c9ed68edd7bcd4bc81a605b2577e71c9",
+      "declarations": 704,
+      "outputBytes": 274533,
+      "maximumRssBytes": 229605376,
+      "rawSha256": {
+        "json": "07cedf12eb1ae053c581d9db2cb2c82152a0c1a51879a156afc9330d77a98b19",
+        "time": "9da5256745d6f05d82287736689be05cad4052f18ed80ab106ac1f119bae0489"
+      }
+    },
+    {
+      "artifact": "ab03-before-3",
+      "wallMs": 429.5760409999999,
+      "outputSha256": "bf3aa2c84e9cdab1ba782e4771013f21c9ed68edd7bcd4bc81a605b2577e71c9",
+      "declarations": 704,
+      "outputBytes": 274533,
+      "maximumRssBytes": 227557376,
+      "rawSha256": {
+        "json": "d755571b28b1e4b1d3d7d29d2852eaeafb618f8fbc7b6a720db69d7092c5863d",
+        "time": "62bee07ca12b20226586b80d93321c4017e0c6c19a7065447135bddadcbfbba5"
+      }
+    },
+    {
+      "artifact": "ab03-after-1",
+      "wallMs": 260.137875,
+      "outputSha256": "bf3aa2c84e9cdab1ba782e4771013f21c9ed68edd7bcd4bc81a605b2577e71c9",
+      "declarations": 704,
+      "outputBytes": 274533,
+      "maximumRssBytes": 220315648,
+      "rawSha256": {
+        "json": "0d7e56f815fa61c43c9dcdaacf85f8d76f4558f6abf452bb9a171b8ed4f712a2",
+        "time": "d4f5af87338add22f172eccf1c7ad39a95a0bb7c69e691dd299ee818b677076b"
+      }
+    },
+    {
+      "artifact": "ab03-after-2",
+      "wallMs": 283.60983400000003,
+      "outputSha256": "bf3aa2c84e9cdab1ba782e4771013f21c9ed68edd7bcd4bc81a605b2577e71c9",
+      "declarations": 704,
+      "outputBytes": 274533,
+      "maximumRssBytes": 226951168,
+      "rawSha256": {
+        "json": "92102a8f03373d5abd10d1e734e962b1d96b198ab5c4b41ba67c4fdcb00565b9",
+        "time": "751d25af6cd4f91d71f029679ad91787fddda2c84e1bcba6fcc5df30fddfc2ef"
+      }
+    },
+    {
+      "artifact": "ab03-after-3",
+      "wallMs": 275.032834,
+      "outputSha256": "bf3aa2c84e9cdab1ba782e4771013f21c9ed68edd7bcd4bc81a605b2577e71c9",
+      "declarations": 704,
+      "outputBytes": 274533,
+      "maximumRssBytes": 226213888,
+      "rawSha256": {
+        "json": "116e2bcce2c2fc881c2dc684d4bb746a3a584960c9349668276679b103c42e21",
+        "time": "1d8c3a16ecbbbae55e34075cd71f473e0ffe71630e0a53fb6af6e1aaa15ff0c9"
+      }
+    }
+  ],
+  "validation": {
+    "revision": "0b2b4e5e79c2e626e4e9003a9b57e89210cab4e2",
+    "command": "bun run verify",
+    "exitCode": 0,
+    "workspaceTestCounts": {
+      "@skastr0/pulsar-signal-test-support": 4,
+      "@skastr0/pulsar-project-module-nextjs": 6,
+      "@skastr0/pulsar-project-module-convex": 9,
+      "@skastr0/pulsar-project-module-effect": 10,
+      "@skastr0/pulsar-project-module-sdk": 37,
+      "@skastr0/pulsar-onboard": 11,
+      "@skastr0/pulsar-shared-signals": 143,
+      "@skastr0/pulsar-core": 353,
+      "@skastr0/pulsar-rs-pack": 211,
+      "@skastr0/pulsar-ts-pack": 946,
+      "@skastr0/pulsar-cli": 207
+    },
+    "workspaceTestsTotal": 1937,
+    "log": "verify-final.log",
+    "logSha256": "5cba50ab89f8e40ef07c987431f1978ceec33de6a7a5c8ee883264ef71a06d74",
+    "watchdogTests": {
+      "command": "bun test scripts/__tests__/resource-bench.test.ts",
+      "pass": 13,
+      "fail": 0,
+      "expectations": 79
+    }
+  }
+}
