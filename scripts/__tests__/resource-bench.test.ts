@@ -75,6 +75,9 @@ describe("resource-bench watchdog", () => {
     expect(metrics.outcome).toBe("completed")
     expect(metrics.scoreAccepted).toBe(true)
     expect(metrics.childExitCode).toBe(0)
+    expect(metrics.processGroupIsolated).toBe(true)
+    expect(metrics.processGroupId).toBe(metrics.childPid)
+    expect(metrics.processGroupReaped).toBe(true)
     expect(await readFile(metrics.stdoutPath, "utf8")).toBe('{"ok":true}\n')
     expect(JSON.parse(await readFile(metrics.metricsPath, "utf8")).scoreAccepted).toBe(true)
   })
@@ -99,6 +102,7 @@ describe("resource-bench watchdog", () => {
     expect(metrics.scoreAccepted).toBe(false)
     expect(await readFile(metrics.stdoutPath, "utf8")).toBe('{"partial":true}\n')
     expect(metrics.processGroupIsolated).toBe(true)
+    expect(metrics.processGroupId).toBe(metrics.childPid)
     expect(metrics.processGroupReaped).toBe(true)
     expect(metrics.peakProcesses.some((row) => row.command.includes("sleep"))).toBe(true)
     const nested = /nested=(\d+)/.exec(await readFile(metrics.stderrPath, "utf8"))
@@ -134,5 +138,59 @@ describe("resource-bench watchdog", () => {
     expect(exitCode).toBe(RESOURCE_BENCH_EXIT.completed)
     expect(metrics.preload).toBe(preloadPath)
     expect(JSON.parse(await readFile(metrics.stdoutPath, "utf8"))).toEqual({ preload: true })
+  })
+
+  test("leftover same-group descendants are reaped as error, not completed", async () => {
+    const outDir = await makeOutDir()
+    const { metrics, exitCode } = await runResourceBench(fixtureOptions(outDir, "orphan"))
+    expect(exitCode).toBe(RESOURCE_BENCH_EXIT.error)
+    expect(metrics.outcome).toBe("error")
+    expect(metrics.scoreAccepted).toBe(false)
+    expect(metrics.childExitCode).toBe(0)
+    expect(metrics.processGroupId).toBe(metrics.childPid)
+    expect(metrics.processGroupReaped).toBe(true)
+    expect(metrics.error).toContain("descendants remained")
+    expect(await readFile(metrics.stdoutPath, "utf8")).toBe('{"ok":true}\n')
+    const nested = /nested=(\d+)/.exec(await readFile(metrics.stderrPath, "utf8"))
+    expect(nested).not.toBeNull()
+    expect(processAlive(Number(nested?.[1]))).toBe(false)
+  })
+
+  test("SIGTERM to the watchdog host reaps only the established child group", async () => {
+    const outDir = await makeOutDir()
+    const host = join(import.meta.dir, "../fixtures/resource-bench/host.ts")
+    const proc = Bun.spawn([process.execPath, host, outDir, "hold"], {
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    })
+    const stderrPath = join(outDir, "stderr.log")
+    const deadline = Date.now() + 3000
+    let nestedPid: number | undefined
+    while (Date.now() < deadline) {
+      const stderr = await readFile(stderrPath, "utf8").catch(() => "")
+      const nested = /nested=(\d+)/.exec(stderr)
+      if (nested !== null) {
+        nestedPid = Number(nested[1])
+        break
+      }
+      await Bun.sleep(50)
+    }
+    expect(nestedPid).toBeDefined()
+    expect(proc.pid).toBeDefined()
+    process.kill(proc.pid!, "SIGTERM")
+    const [stdout, hostCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      proc.exited,
+    ])
+    expect(hostCode).toBe(RESOURCE_BENCH_EXIT.error)
+    const metrics = JSON.parse(stdout === "" ? await readFile(join(outDir, "metrics.json"), "utf8") : stdout)
+    expect(metrics.outcome).toBe("error")
+    expect(metrics.scoreAccepted).toBe(false)
+    expect(metrics.processGroupIsolated).toBe(true)
+    expect(metrics.processGroupId).toBe(metrics.childPid)
+    expect(metrics.processGroupReaped).toBe(true)
+    expect(metrics.error).toContain("SIGTERM")
+    expect(processAlive(nestedPid!)).toBe(false)
   })
 })

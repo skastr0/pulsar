@@ -37,6 +37,17 @@ if (mode === "hold") {
   process.exit(0)
 }
 
+if (mode === "orphan") {
+  const nested = Bun.spawn(["sleep", "30"], {
+    stdin: "ignore",
+    stdout: "ignore",
+    stderr: "ignore",
+  })
+  process.stdout.write('{"ok":true}\n')
+  process.stderr.write(`nested=${nested.pid}\n`)
+  process.exit(0)
+}
+
 if (mode === "preload") {
   const preload =
     (globalThis as { __PULSAR_RESOURCE_BENCH_PRELOAD__?: boolean }).__PULSAR_RESOURCE_BENCH_PRELOAD__ ===

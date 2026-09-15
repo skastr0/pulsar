@@ -60,6 +60,7 @@ export interface ResourceBenchMetrics {
   readonly peakAtMs: number
   readonly sampleCount: number
   readonly sampleIntervalMs: number
+  readonly childPid: number | null
   readonly processGroupId: number | null
   readonly processGroupIsolated: boolean
   readonly processGroupReaped: boolean
@@ -313,17 +314,25 @@ const sampleProcessGroupWithRetry = async (pgid: number): Promise<ResourceBenchP
   throw lastError instanceof Error ? lastError : new Error(String(lastError))
 }
 
-const assertKillableProcessGroup = (pgid: number, watchdogPgid: number): void => {
+const assertOwnChildGroup = (pgid: number, childPid: number, watchdogPgid: number): void => {
   if (!Number.isInteger(pgid) || pgid <= 1) {
     throw new Error(`refusing to signal invalid process group ${pgid}`)
+  }
+  if (pgid !== childPid) {
+    throw new Error(`refusing to signal process group ${pgid} that is not child leader ${childPid}`)
   }
   if (pgid === watchdogPgid) {
     throw new Error("refusing to signal the watchdog process group")
   }
 }
 
-const signalProcessGroup = (pgid: number, watchdogPgid: number, signal: NodeJS.Signals): void => {
-  assertKillableProcessGroup(pgid, watchdogPgid)
+const signalProcessGroup = (
+  pgid: number,
+  childPid: number,
+  watchdogPgid: number,
+  signal: NodeJS.Signals,
+): void => {
+  assertOwnChildGroup(pgid, childPid, watchdogPgid)
   try {
     process.kill(-pgid, signal)
   } catch (error) {
@@ -342,24 +351,52 @@ const waitForGroupExit = async (pgid: number, timeoutMs: number): Promise<boolea
 
 const stopOwnProcessGroup = async (
   pgid: number,
+  childPid: number,
   watchdogPgid: number,
   termGraceMs: number,
   killWaitMs: number,
 ): Promise<boolean> => {
-  signalProcessGroup(pgid, watchdogPgid, "SIGTERM")
+  signalProcessGroup(pgid, childPid, watchdogPgid, "SIGTERM")
   if (await waitForGroupExit(pgid, termGraceMs)) return true
-  signalProcessGroup(pgid, watchdogPgid, "SIGKILL")
+  signalProcessGroup(pgid, childPid, watchdogPgid, "SIGKILL")
   return waitForGroupExit(pgid, killWaitMs)
 }
 
-const waitUntilIsolated = async (
+const stopDirectChild = async (
+  childPid: number,
+  exited: Promise<unknown>,
+  termGraceMs: number,
+): Promise<boolean> => {
+  try {
+    process.kill(childPid, "SIGTERM")
+  } catch (error) {
+    if (!isNoSuchProcess(error)) throw error
+  }
+  if ((await raceTimeout(exited, termGraceMs)) !== "timeout") return true
+  try {
+    process.kill(childPid, "SIGKILL")
+  } catch (error) {
+    if (!isNoSuchProcess(error)) throw error
+  }
+  return (await raceTimeout(exited, termGraceMs)) !== "timeout"
+}
+
+const isOwnGroupLeader = (
+  pgid: number | undefined,
   childPid: number,
   watchdogPgid: number,
+): pgid is number =>
+  pgid !== undefined && pgid === childPid && pgid > 1 && pgid !== watchdogPgid
+
+const waitUntilOwnGroupLeader = async (
+  childPid: number,
+  watchdogPgid: number,
+  interrupted: () => boolean,
 ): Promise<{ readonly pgid: number; readonly isolated: boolean }> => {
   const deadline = Date.now() + 250
   let pgid = await readPgid(childPid)
-  while (Date.now() < deadline) {
-    if (pgid !== undefined && pgid > 1 && pgid !== watchdogPgid) {
+  while (Date.now() < deadline && !interrupted()) {
+    if (isOwnGroupLeader(pgid, childPid, watchdogPgid)) {
       return { pgid, isolated: true }
     }
     await sleep(25)
@@ -411,6 +448,7 @@ export const runResourceBench = async (options: ResourceBenchOptions): Promise<R
 
   const started = performance.now()
   const watchdogPgid = (await readPgid(process.pid)) ?? process.pid
+  let childPid: number | null = null
   let childExitCode: number | null = null
   let childSignal: string | null = null
   let processGroupId: number | null = null
@@ -421,8 +459,19 @@ export const runResourceBench = async (options: ResourceBenchOptions): Promise<R
   let outcome: ResourceBenchOutcome = "error"
   let error: string | null = null
   let stopReason: "rss-limit" | "timeout" | undefined
+  let leftoverDescendants = false
+  let watchdogSignal: NodeJS.Signals | undefined
   let stdoutFd: number | undefined
   let stderrFd: number | undefined
+  let settleInterrupt: ((signal: NodeJS.Signals) => void) | undefined
+  const interruptPromise = new Promise<NodeJS.Signals>((resolve) => {
+    settleInterrupt = resolve
+  })
+  const onWatchdogSignal = (signal: NodeJS.Signals): void => {
+    if (watchdogSignal !== undefined) return
+    watchdogSignal = signal
+    settleInterrupt?.(signal)
+  }
 
   const finish = async (): Promise<ResourceBenchResult> => {
     const exitCode = RESOURCE_BENCH_EXIT[outcome]
@@ -430,6 +479,7 @@ export const runResourceBench = async (options: ResourceBenchOptions): Promise<R
       outcome,
       exitCode,
       scoreAccepted: outcome === "completed",
+      childPid,
       childExitCode,
       childSignal,
       wallMs: Math.round(performance.now() - started),
@@ -456,6 +506,9 @@ export const runResourceBench = async (options: ResourceBenchOptions): Promise<R
     return { metrics, exitCode }
   }
 
+  process.on("SIGINT", onWatchdogSignal)
+  process.on("SIGTERM", onWatchdogSignal)
+
   try {
     stdoutFd = openSync(stdoutPath, "w")
     stderrFd = openSync(stderrPath, "w")
@@ -467,39 +520,50 @@ export const runResourceBench = async (options: ResourceBenchOptions): Promise<R
       stderr: stderrFd,
       detached: true,
     })
-    const childPid = child.pid
-    if (childPid === undefined) {
+    const spawnedPid = child.pid
+    if (spawnedPid === undefined) {
       error = "child spawned without a pid"
       return finish()
     }
+    childPid = spawnedPid
+    const childExited = child.exited.then(() => "exited" as const)
 
-    const isolation = await waitUntilIsolated(childPid, watchdogPgid)
+    const isolation = await waitUntilOwnGroupLeader(
+      spawnedPid,
+      watchdogPgid,
+      () => watchdogSignal !== undefined,
+    )
     processGroupId = isolation.pgid
     processGroupIsolated = isolation.isolated
-    if (!processGroupIsolated) {
-      error = "child did not enter an isolated process group; refusing to supervise"
-      try {
-        process.kill(childPid, "SIGTERM")
-      } catch (killError) {
-        if (!isNoSuchProcess(killError)) throw killError
+
+    if (watchdogSignal !== undefined) {
+      error = `watchdog received ${watchdogSignal}`
+      if (processGroupIsolated) {
+        processGroupReaped = await stopOwnProcessGroup(
+          isolation.pgid,
+          spawnedPid,
+          watchdogPgid,
+          termGraceMs,
+          killWaitMs,
+        )
+      } else {
+        processGroupReaped = await stopDirectChild(spawnedPid, child.exited, termGraceMs)
       }
-      await raceTimeout(child.exited, termGraceMs)
-      if (child.exitCode === null && child.signalCode === null) {
-        try {
-          process.kill(childPid, "SIGKILL")
-        } catch (killError) {
-          if (!isNoSuchProcess(killError)) throw killError
-        }
-      }
+      await raceTimeout(child.exited, killWaitMs)
       childExitCode = child.exitCode
       childSignal = child.signalCode
-      processGroupReaped = child.exitCode !== null || child.signalCode !== null
       return finish()
     }
 
-    const childExited = child.exited.then(() => "exited" as const)
+    if (!processGroupIsolated) {
+      error = `child pid ${spawnedPid} is not its process-group leader (pgid=${isolation.pgid}); refusing to supervise`
+      processGroupReaped = await stopDirectChild(spawnedPid, child.exited, termGraceMs)
+      childExitCode = child.exitCode
+      childSignal = child.signalCode
+      return finish()
+    }
 
-    while (stopReason === undefined) {
+    while (stopReason === undefined && watchdogSignal === undefined) {
       const processes = await sampleProcessGroupWithRetry(isolation.pgid)
       sampleCount += 1
       const rssKiB = processes.reduce((sum, processRow) => sum + processRow.rssKiB, 0)
@@ -520,13 +584,29 @@ export const runResourceBench = async (options: ResourceBenchOptions): Promise<R
         break
       }
       const waitMs = Math.min(options.sampleIntervalMs, timeoutMs - elapsed)
-      const raced = await raceTimeout(childExited, waitMs)
+      const raced = await Promise.race([
+        childExited,
+        interruptPromise,
+        sleep(waitMs).then(() => "tick" as const),
+      ])
       if (raced === "exited") break
+      if (raced !== "tick") break
     }
 
-    if (stopReason !== undefined) {
+    if (watchdogSignal !== undefined) {
       processGroupReaped = await stopOwnProcessGroup(
         isolation.pgid,
+        spawnedPid,
+        watchdogPgid,
+        termGraceMs,
+        killWaitMs,
+      )
+      await raceTimeout(child.exited, killWaitMs)
+      error = `watchdog received ${watchdogSignal}`
+    } else if (stopReason !== undefined) {
+      processGroupReaped = await stopOwnProcessGroup(
+        isolation.pgid,
+        spawnedPid,
         watchdogPgid,
         termGraceMs,
         killWaitMs,
@@ -534,16 +614,33 @@ export const runResourceBench = async (options: ResourceBenchOptions): Promise<R
       await raceTimeout(child.exited, killWaitMs)
     } else {
       await child.exited
-      processGroupReaped = (await listProcessGroupPids(isolation.pgid)).length === 0
+      const remaining = await listProcessGroupPids(isolation.pgid)
+      if (remaining.length > 0) {
+        leftoverDescendants = true
+        processGroupReaped = await stopOwnProcessGroup(
+          isolation.pgid,
+          spawnedPid,
+          watchdogPgid,
+          termGraceMs,
+          killWaitMs,
+        )
+        error = `child exited while process-group descendants remained: ${remaining.join(",")}`
+      } else {
+        processGroupReaped = true
+      }
     }
 
     childExitCode = child.exitCode
     childSignal = child.signalCode
-    if (stopReason !== undefined) {
+    if (watchdogSignal !== undefined) {
+      outcome = "error"
+    } else if (stopReason !== undefined) {
       outcome = stopReason
       error = stopReason === "rss-limit"
         ? `process group RSS reached ${toMiB(peak.rssKiB)} MiB (limit ${options.maxRssMiB} MiB)`
         : `process group exceeded ${options.timeoutSeconds}s`
+    } else if (leftoverDescendants) {
+      outcome = "error"
     } else if (child.signalCode !== null) {
       error = `child exited from signal ${child.signalCode}`
     } else if (child.exitCode === 0) {
@@ -554,10 +651,11 @@ export const runResourceBench = async (options: ResourceBenchOptions): Promise<R
     return finish()
   } catch (cause) {
     error = cause instanceof Error ? cause.message : String(cause)
-    if (processGroupIsolated && processGroupId !== null) {
+    if (processGroupIsolated && processGroupId !== null && childPid !== null) {
       try {
         processGroupReaped = await stopOwnProcessGroup(
           processGroupId,
+          childPid,
           watchdogPgid,
           termGraceMs,
           killWaitMs,
@@ -570,6 +668,8 @@ export const runResourceBench = async (options: ResourceBenchOptions): Promise<R
     }
     return finish()
   } finally {
+    process.off("SIGINT", onWatchdogSignal)
+    process.off("SIGTERM", onWatchdogSignal)
     if (stdoutFd !== undefined) closeSync(stdoutFd)
     if (stderrFd !== undefined) closeSync(stderrFd)
   }
