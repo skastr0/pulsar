@@ -135,7 +135,10 @@ describe("windowed source-file mapping", () => {
 
   test("keeps input order when fetches resolve out of order and skips missing files", async () => {
     const files = ["a", "b", "c", "d"].map((name) => ({ path: `/repo/${name}.ts` }))
-    const requests = new Map<string, PromiseWithResolvers<SourceFile | undefined>>()
+    const requests = new Map<
+      string,
+      ReturnType<typeof Promise.withResolvers<SourceFile | undefined>>
+    >()
     const program = {
       getSourceFile: (path: string) => {
         const request = Promise.withResolvers<SourceFile | undefined>()
