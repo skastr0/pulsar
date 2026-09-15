@@ -472,6 +472,12 @@ export const runResourceBench = async (options: ResourceBenchOptions): Promise<R
     watchdogSignal = signal
     settleInterrupt?.(signal)
   }
+  const onSigint = (): void => {
+    onWatchdogSignal("SIGINT")
+  }
+  const onSigterm = (): void => {
+    onWatchdogSignal("SIGTERM")
+  }
 
   const finish = async (): Promise<ResourceBenchResult> => {
     const exitCode = RESOURCE_BENCH_EXIT[outcome]
@@ -506,8 +512,8 @@ export const runResourceBench = async (options: ResourceBenchOptions): Promise<R
     return { metrics, exitCode }
   }
 
-  process.on("SIGINT", onWatchdogSignal)
-  process.on("SIGTERM", onWatchdogSignal)
+  process.on("SIGINT", onSigint)
+  process.on("SIGTERM", onSigterm)
 
   try {
     stdoutFd = openSync(stdoutPath, "w")
@@ -668,8 +674,8 @@ export const runResourceBench = async (options: ResourceBenchOptions): Promise<R
     }
     return finish()
   } finally {
-    process.off("SIGINT", onWatchdogSignal)
-    process.off("SIGTERM", onWatchdogSignal)
+    process.off("SIGINT", onSigint)
+    process.off("SIGTERM", onSigterm)
     if (stdoutFd !== undefined) closeSync(stdoutFd)
     if (stderrFd !== undefined) closeSync(stderrFd)
   }
