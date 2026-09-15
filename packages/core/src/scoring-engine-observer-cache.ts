@@ -196,8 +196,7 @@ const cachedSignalRunResultOutput = (
   const compressedOutput = brotliCompressSync(Buffer.from(serialized, "utf8"), {
     params: { [constants.BROTLI_PARAM_QUALITY]: OUTPUT_COMPRESSION_QUALITY },
   }).toString("base64")
-  return Buffer.byteLength(JSON.stringify(compressedOutput), "utf8") <
-    Buffer.byteLength(serialized, "utf8")
+  return compressedOutput.length + 2 < Buffer.byteLength(serialized, "utf8")
     ? { compressedOutput }
     : { output }
 }
