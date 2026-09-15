@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { readFile } from "node:fs/promises"
+import { join } from "node:path"
 import { TsAb03 } from "../signals/ts-ab-03-type-indirection-depth.js"
 import { createTempRepo, runSignal, type TempRepo } from "./test-repo.js"
 
@@ -13,6 +15,41 @@ afterEach(async () => {
 })
 
 describe("TS-AB-03 type indirection regressions", () => {
+  test("refreshes module resolution between observations after a path alias changes", async () => {
+    await repo.write("src/first.ts", "export type Target = string\n")
+    await repo.write("src/second.ts", "type Base = string\nexport type Target = Base\n")
+    await repo.write(
+      "src/public.ts",
+      "import type { Target } from '@target'\nexport type Public = Target\nexport type Inline = import('@target').Target\n",
+    )
+    const config = JSON.parse(await readFile(join(repo.root, "tsconfig.json"), "utf8"))
+    const pointTo = async (target: string): Promise<void> => {
+      await repo.write("tsconfig.json", JSON.stringify({
+        ...config,
+        compilerOptions: {
+          ...config.compilerOptions,
+          paths: { "@target": [target] },
+        },
+      }))
+    }
+
+    await pointTo("./src/first.ts")
+    const first = await runSignal(repo.root, TsAb03, TsAb03.defaultConfig)
+    await pointTo("./src/second.ts")
+    const second = await runSignal(repo.root, TsAb03, TsAb03.defaultConfig)
+    const repeat = await runSignal(repo.root, TsAb03, TsAb03.defaultConfig)
+
+    expect(first.declarations.find((entry) => entry.name === "Public")?.chain)
+      .toEqual(["Public", "Target"])
+    expect(second.declarations.find((entry) => entry.name === "Public")?.chain)
+      .toEqual(["Public", "Target", "Base"])
+    expect(first.declarations.find((entry) => entry.name === "Inline")?.chain)
+      .toEqual(["Inline", "<import-type>", "Target"])
+    expect(second.declarations.find((entry) => entry.name === "Inline")?.chain)
+      .toEqual(["Inline", "<import-type>", "Target", "Base"])
+    expect(repeat).toEqual(second)
+  })
+
   test("resolves imported alias chains across source files", async () => {
     await repo.write(
       "src/types.ts",

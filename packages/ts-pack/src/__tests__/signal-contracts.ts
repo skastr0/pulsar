@@ -459,7 +459,7 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
       factorLedger:
         "ts-ab-03.test.ts: registered pack signal emits config.exclude_globs, config.max_depth, config.max_traversal_steps, and config.top_n_diagnostics factor-ledger entries with score roles.",
       cacheSemantics:
-        "ts-ab-03.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AB-03 semantic cacheVersion after diagnostic-limit, imported alias, generic argument, heritage, alias-cache, truncation, and tsconfig path-alias resolution semantics changed.",
+        "ts-ab-03.test.ts and pack.test.ts: wrapped pack cache version includes the TS-AB-03 semantic cacheVersion after diagnostic-limit, imported alias, generic argument, heritage, alias-cache, truncation, and tsconfig path-alias resolution semantics changed. ts-ab-03-regressions.test.ts: observation-scoped resolver reuse preserves named and inline import chains, detects changed path aliases on the next observation, and returns identical repeated output.",
     },
   },
   {

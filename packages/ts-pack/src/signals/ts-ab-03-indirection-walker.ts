@@ -30,7 +30,7 @@ import {
   resolveReferenceLikeDeclarations,
   resolveReferenceLikeName,
 } from "./shared-type-analysis.js"
-import { createModuleResolver } from "../graph/module-graph.js"
+import { createModuleResolver, type ModuleResolver } from "../graph/module-graph.js"
 import {
   isImportDeclaration,
   isNamedImports,
@@ -70,6 +70,18 @@ export interface TypeIndex {
   readonly interfacesByFile: ReadonlyMap<string, ReadonlyMap<string, InterfaceDeclaration>>
   readonly classesByFile: ReadonlyMap<string, ReadonlyMap<string, ClassDeclaration>>
   readonly sourceFileByPath: ReadonlyMap<string, SourceFile>
+}
+
+// A fresh index belongs to each observation, including its path-alias configuration.
+const resolverByTypeIndex = new WeakMap<TypeIndex, ModuleResolver>()
+
+const moduleResolverFor = (index: TypeIndex): ModuleResolver => {
+  let resolver = resolverByTypeIndex.get(index)
+  if (resolver === undefined) {
+    resolver = createModuleResolver([...index.sourceFileByPath.values()], [])
+    resolverByTypeIndex.set(index, resolver)
+  }
+  return resolver
 }
 
 export const buildLocalAliasMap = (
@@ -155,7 +167,11 @@ const measureAliasDeclaration = (
 
   const nextStack = new Set(context.aliasStack)
   nextStack.add(aliasId)
-  const localAliases = buildLocalAliasMap(declaration.getSourceFile())
+  const sourceFile = declaration.getSourceFile()
+  const localAliases =
+    (context.typeIndex.sourceFileByPath.get(sourceFile.fileName) === sourceFile
+      ? context.typeIndex.aliasesByFile.get(sourceFile.fileName)
+      : undefined) ?? buildLocalAliasMap(sourceFile)
   if (declaration.type === undefined) return truncatedDepth()
   const inner = measureTypeNode(declaration.type, {
     remainingSteps: context.remainingSteps - 1,
@@ -310,7 +326,7 @@ const resolveAliasDeclaration = (
   if (isImportTypeNode(node)) {
     const argument = node.argument
     if (isLiteralTypeNode(argument) && (isStringLiteral(argument.literal) || isNoSubstitutionTemplateLiteral(argument.literal)) && node.qualifier !== undefined) {
-      const resolver = createModuleResolver([...context.typeIndex.sourceFileByPath.values()], [])
+      const resolver = moduleResolverFor(context.typeIndex)
       const target = resolver.resolveSpecifier(sourceFile.fileName, argument.literal.text)
       const importedName = isIdentifier(node.qualifier) ? node.qualifier.text : textOf(node.qualifier)
       if (target !== undefined) return lookupAliasInFile(context, target, importedName)
@@ -438,7 +454,7 @@ const importedBinding = (
   sourceFile: SourceFile,
   localName: string,
 ): { readonly targetFile: string; readonly importedName: string } | undefined => {
-  const resolver = createModuleResolver([...context.typeIndex.sourceFileByPath.values()], [])
+  const resolver = moduleResolverFor(context.typeIndex)
   for (const statement of sourceFile.statements) {
     if (!isImportDeclaration(statement)) continue
     const targetFile = resolver.resolve(sourceFile.fileName, statement)
