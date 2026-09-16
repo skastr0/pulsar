@@ -4,6 +4,33 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project follows Semantic Versioning for its declared public API.
 
+## [0.2.1] - 2026-09-16
+
+This is the first published 0.2.x release. It includes the previously unpublished 0.2.0 changes below, including the Quartz/tsgo migration. Library consumers upgrading from 0.1.5 should also account for the move to Effect 4 and TypeScript 7.
+
+### Added
+
+- Agent-first discovery, policy validation, and repository assessments, with source and native external-consumer acceptance tests.
+
+### Changed
+
+- Reduced transient TypeScript analysis memory by sharing pending source-file requests, processing ordered file windows, and batching async-failure checker evidence.
+- Reused type-indirection resolution indexes and fused dangerous-capability syntax traversals to reduce repeated analysis work.
+- Streamed Git history and disk-cache I/O instead of materializing whole buffers, and validated cached time-series ledgers with file fingerprints instead of rereading their bytes on every operation.
+- Removed a redundant serialization of compressed observer-cache output.
+
+### Fixed
+
+- Fail closed on Git output limits and wait for aborted subprocesses to exit.
+- Preserve disk-cache correctness across concurrent loads, eviction, malformed records, and exclusive temporary-file collisions; sweep abandoned temporary files.
+- Detect external time-series ledger replacement, corruption, and timestamp-preserving changes.
+
+### Known limitations
+
+- TS-AD-04 can still fail on some repositories; the performance comparisons preserved this existing failure.
+- The Effect benchmark still exceeds a 4 GiB process-tree physical-footprint budget. The measured reductions are workload-specific, not a universal memory bound.
+- Detailed measurements and output-parity evidence are recorded in [round one](docs/explorations/resource-performance-2026-09-14.md) and [round two](docs/explorations/resource-performance-2026-09-15.md).
+
 ## [0.2.0] - 2026-09-07
 
 ### Added
