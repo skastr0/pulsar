@@ -4,7 +4,7 @@ import { resolve } from "node:path"
 import { Data, Effect, Result, Schema } from "effect"
 import { Case, PROBABILITY_TOLERANCE, Request, canonical, compile, sha256, summarize, validateBank, validateResponse } from "./jev-spike/model.ts"
 import { JudgmentProvider, jevLayer } from "./jev-spike/transport.ts"
-import { pulsarCase } from "./jev-spike/pulsar-case.ts"
+import { pulsarCase, pulsarRegressionCase } from "./jev-spike/pulsar-case.ts"
 
 const ROOT = resolve(import.meta.dir, "..")
 const BANK_PATH = resolve(ROOT, "docs/explorations/jev-spike-question-bank.json")
@@ -24,7 +24,7 @@ export const smokeRequest: Request = {
 
 const Plan = Schema.Struct({
   schema: Schema.Literal("pulsar.jev_spike_plan.v1"),
-  mode: Schema.Literals(["smoke", "development", "pulsar"]),
+  mode: Schema.Literals(["smoke", "development", "pulsar", "pulsar-policy", "pulsar-regression"]),
   createdAt: Schema.String,
   repositorySha: Schema.String,
   bankHash: Schema.String,
@@ -40,7 +40,12 @@ export function prepare(mode: Plan["mode"], model = "jev-latest"): Plan {
   const bank = validateBank(JSON.parse(readFileSync(BANK_PATH, "utf8")))
   const cases = mode === "development"
     ? Schema.decodeUnknownSync(Schema.Array(Case))(JSON.parse(readFileSync(CASES_PATH, "utf8")))
-    : mode === "pulsar" ? [pulsarCase(ROOT)] : []
+      .map((fixture) => {
+        const { approved_examples: _, ...policy } = Schema.decodeUnknownSync(Schema.JsonObject)(fixture.state.policy)
+        return { ...fixture, state: { ...fixture.state, policy } }
+      })
+    : mode === "pulsar-policy" ? [pulsarCase(ROOT, true)]
+    : mode === "pulsar" ? [pulsarCase(ROOT)] : mode === "pulsar-regression" ? [pulsarRegressionCase(ROOT)] : []
   if (new Set(cases.map((fixture) => fixture.id)).size !== cases.length) throw new Error("Duplicate case IDs")
   const requests = mode === "smoke"
     ? [{ id: "contract-smoke", lineage: "contract-smoke", request: { ...smokeRequest, model } }]
@@ -52,9 +57,15 @@ export function prepare(mode: Plan["mode"], model = "jev-latest"): Plan {
     for (const entry of requests.slice(0, cases.length)) {
       if (!entry.request.questions["JQ-17"]) continue
       const alternatives = Schema.decodeUnknownSync(Schema.JsonObject)(entry.request.state.alternatives)
+      const focus = Schema.decodeUnknownSync(Schema.JsonObject)(entry.request.state.focus)
+      const candidate = focus.candidate === "a" ? "b" : focus.candidate === "b" ? "a" : focus.candidate
       if (!alternatives.a || !alternatives.b) throw new Error("Pairwise comparison needs both alternatives")
       requests.push({ ...entry, id: `${entry.id}-swapped`, request: {
-        ...entry.request, state: { ...entry.request.state, alternatives: { ...alternatives, a: alternatives.b, b: alternatives.a } },
+        ...entry.request, state: {
+          ...entry.request.state,
+          focus: { ...focus, ...(candidate === undefined ? {} : { candidate }) },
+          alternatives: { ...alternatives, a: alternatives.b, b: alternatives.a },
+        },
       } })
     }
   }
@@ -66,11 +77,12 @@ export function prepare(mode: Plan["mode"], model = "jev-latest"): Plan {
     policy: {
       status: "development_only", authority: "tier3_research_only", modelRevisionStatus: "unresolved",
       labelStatus: "author_proposed_not_human_reviewed", retries: 0, concurrency: 1, timeoutMs: 30_000,
+      syntheticExamples: "omitted_before_inference_because_seed_examples_name_candidate_verdicts",
       probabilityTolerance: PROBABILITY_TOLERANCE, inputUsdPerMillion: 0.042, outputUsdPerMillion: 0,
       budget: "Hard request and byte caps; usage-based costs are estimates, not an account billing limit.",
       conventionalBaseline: "not_run_no_separate_provider_credentials",
       acceptanceGates: "not_run_requires_reviewed_labels_and_held_out_cases",
-      disclosure: mode === "pulsar" ? "owner_authorized_public_repository" : "synthetic_only",
+      disclosure: mode.startsWith("pulsar") ? "owner_authorized_public_repository" : "synthetic_only",
     },
     requests: requests.map((entry) => ({ ...entry, requestHash: sha256(JSON.stringify(entry.request)) })),
   }
@@ -91,6 +103,14 @@ export function validatePlan(input: unknown): Plan {
   return plan
 }
 
+export function validateCurrentInputs(plan: Plan): void {
+  const current = prepare(plan.mode, plan.requests[0]!.request.model)
+  if (plan.bankHash !== current.bankHash || plan.casesHash !== current.casesHash ||
+      canonical(plan.policy) !== canonical(current.policy) || canonical(plan.requests) !== canonical(current.requests)) {
+    throw new Error("Prepared inputs or policy changed; prepare and inspect a new plan")
+  }
+}
+
 class FileError extends Data.TaggedError("FileError")<{ readonly operation: string }> {}
 const persist = (path: string, value: unknown) => Effect.try({
   try: () => writeFileSync(path, JSON.stringify(value, null, 2) + "\n", { flag: "wx", mode: 0o600 }),
@@ -98,6 +118,7 @@ const persist = (path: string, value: unknown) => Effect.try({
 })
 
 export const evaluatePlan = Effect.fn("JevSpike.evaluatePlan")(function* (plan: Plan, out: string) {
+  yield* Effect.try({ try: () => validateCurrentInputs(validatePlan(plan)), catch: () => new FileError({ operation: "validate current plan inputs and policy" }) })
   const provider = yield* JudgmentProvider
   // Exclusive directory and manifest creation prevent rerunning into an existing ledger.
   yield* Effect.try({ try: () => mkdirSync(out), catch: () => new FileError({ operation: "create new run directory" }) })
@@ -162,7 +183,7 @@ export function replay(bytes: string, expectedHash: string) {
 
 async function main() {
   const [command, arg, out, approval] = process.argv.slice(2)
-  if (command === "prepare" && (arg === "smoke" || arg === "development" || arg === "pulsar") && out) {
+  if (command === "prepare" && (arg === "smoke" || arg === "development" || arg === "pulsar" || arg === "pulsar-policy" || arg === "pulsar-regression") && out) {
     const plan = prepare(arg)
     writeFileSync(out, JSON.stringify(plan, null, 2) + "\n", { flag: "wx", mode: 0o600 })
     console.log(`Prepared ${plan.requests.length} requests; inspect ${out} before evaluate. SHA256 ${sha256(canonical(plan))}`)
@@ -178,7 +199,7 @@ async function main() {
   } else if (command === "replay" && arg && out) {
     console.log(JSON.stringify(replay(readFileSync(arg, "utf8"), out), null, 2))
   } else {
-    throw new Error("Usage: bun scripts/jev-spike.ts prepare <smoke|development|pulsar> <plan.json> | evaluate <plan.json> <new-run-dir> --allow-egress | replay <run.json> <trusted-sha256>")
+    throw new Error("Usage: bun scripts/jev-spike.ts prepare <smoke|development|pulsar|pulsar-policy|pulsar-regression> <plan.json> | evaluate <plan.json> <new-run-dir> --allow-egress | replay <run.json> <trusted-sha256>")
   }
 }
 

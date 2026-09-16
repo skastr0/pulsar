@@ -2,10 +2,10 @@ import { describe, expect, test } from "bun:test"
 import { mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Schema } from "effect"
 import bankJson from "../../docs/explorations/jev-spike-question-bank.json"
 import { canonical, compile, sha256, summarize, validateBank, validateResponse, type Case, type Response as JevResponse } from "../jev-spike/model.ts"
-import { evaluatePlan, prepare, replay, smokeRequest, validatePlan } from "../jev-spike.ts"
+import { evaluatePlan, prepare, replay, smokeRequest, validateCurrentInputs, validatePlan } from "../jev-spike.ts"
 import { ENDPOINT, JudgmentProvider, jevLayer } from "../jev-spike/transport.ts"
 
 const bank = validateBank(bankJson)
@@ -18,14 +18,14 @@ const fixture: Case = {
     context_manifest: { missing: [] },
   },
 }
-const smokeAnswer: JevResponse = {
+const smokeAnswer = {
   model: "jev-test", usage: { input_tokens: 123, output_tokens: 12 },
   answers: {
     color: { type: "choice", choice: "red", probabilities: { red: 0.8, blue: 0.15, unknown: 0.05 }, confidence: 0.6 },
     count: { type: "score", score: 2.5, probabilities: { "0": 0, "1": 0.1, "2": 0.3, "3": 0.6 }, legend: { "0": "Zero balls", "1": "One ball", "2": "Two balls", "3": "Three balls" }, confidence: 0.7 },
     blue: { type: "noul", noul: 0.01 },
   },
-}
+} satisfies JevResponse
 
 describe("Jev research contract", () => {
   test("validates all 24 templates and compiles readiness without labels or metadata", () => {
@@ -38,6 +38,15 @@ describe("Jev research contract", () => {
       expect(Object.keys(question).sort()).toEqual(["criteria", "instructions", "type"])
     }
     expect(JSON.stringify(request.state.focus)).toContain("code.related")
+  })
+
+  test("readiness preserves explicitly declared evidence beyond selected templates", () => {
+    const request = compile(bank, { ...fixture, questionIds: ["JQ-22"], state: {
+      ...fixture.state, contracts: null,
+      focus: { subject: "adapters", criterion: "contract preservation", required_evidence: ["contracts"] },
+    } }, "jev-latest")
+    const focus = Schema.decodeUnknownSync(Schema.JsonObject)(request.state.focus)
+    expect(focus.required_evidence).toContain("contracts")
   })
 
   test("rejects missing required paths, leaked labels, and invalid catalog references", () => {
@@ -54,6 +63,14 @@ describe("Jev research contract", () => {
   test("validates all answer types with an asymmetric weighted score", () => {
     expect(validateResponse(smokeRequest, smokeAnswer)).toEqual(smokeAnswer)
     expect(canonical({ z: [2, 1], a: "x" })).toBe('{"a":"x","z":[2,1]}')
+  })
+
+  test("accepts independently rounded Score, but rejects differences beyond rounding", () => {
+    const rounded = { ...smokeAnswer, answers: { ...smokeAnswer.answers, count: {
+      ...smokeAnswer.answers.count, score: 2.99, probabilities: { "0": 0, "1": 0, "2": 0, "3": 1 },
+    } } }
+    expect(validateResponse(smokeRequest, rounded).answers.count).toEqual(rounded.answers.count)
+    expect(() => validateResponse(smokeRequest, { ...rounded, answers: { ...rounded.answers, count: { ...rounded.answers.count, score: 2.95 } } })).toThrow("inconsistent score")
   })
 
   test("rejects missing answers, nonfinite values, invented keys, bad sums, wrong choice and legend", () => {
@@ -88,6 +105,49 @@ describe("Jev research contract", () => {
     expect(() => validatePlan({ ...plan, maxRequests: 100 })).toThrow("budget")
     expect(() => validatePlan({ ...plan, requests: [{ ...plan.requests[0], requestHash: "forged" }] })).toThrow("hash")
     expect(() => validatePlan({ ...plan, requests: Array(33).fill(plan.requests[0]) })).toThrow("budget")
+  })
+
+  test("development plan freezes repeats, strips verdict examples, and swaps candidate references", () => {
+    const plan = prepare("development")
+    expect(plan.requests).toHaveLength(25)
+    const first = plan.requests[0]!
+    const repeats = plan.requests.filter((entry) => entry.id.startsWith(`${first.id}-repeat-`))
+    expect(repeats).toHaveLength(4)
+    expect(repeats.every((entry) => entry.requestHash === first.requestHash)).toBe(true)
+    for (const entry of plan.requests) {
+      expect(JSON.stringify(entry.request)).not.toContain("approved_examples")
+      expect(JSON.stringify(entry.request)).not.toContain("proposedExpectations")
+    }
+    const original = plan.requests.find((entry) => entry.id === "C16-reject-superclass")!
+    const swapped = plan.requests.find((entry) => entry.id === "C16-reject-superclass-swapped")!
+    expect(Schema.decodeUnknownSync(Schema.JsonObject)(swapped.request.state.focus).candidate).toBe("a")
+    expect(Schema.decodeUnknownSync(Schema.JsonObject)(swapped.request.state.alternatives).a)
+      .toEqual(Schema.decodeUnknownSync(Schema.JsonObject)(original.request.state.alternatives).b)
+    const omitted = plan.requests.find((entry) => entry.id === "C11-omitted-contracts")!
+    expect(Schema.decodeUnknownSync(Schema.JsonObject)(omitted.request.state.focus).required_evidence).toContain("contracts")
+  })
+
+  test("rejects stale evidence and altered policy even with self-consistent request hashes", () => {
+    const plan = prepare("smoke")
+    expect(() => validateCurrentInputs(plan)).not.toThrow()
+    expect(() => validateCurrentInputs({ ...plan, casesHash: "old-source" })).toThrow("changed")
+    expect(() => validateCurrentInputs({ ...plan, policy: { ...plan.policy, retries: 4 } })).toThrow("changed")
+    const request = { ...plan.requests[0]!.request, state: { reference_label: "leaked" } }
+    const forged = { ...plan, requests: [{ ...plan.requests[0]!, request, requestHash: sha256(JSON.stringify(request)) }] }
+    expect(() => validateCurrentInputs(forged)).toThrow("changed")
+  })
+
+  test("executes the actual Pulsar scoring candidate against the existing test obligation", async () => {
+    const plan = prepare("pulsar-regression")
+    const code = Schema.decodeUnknownSync(Schema.JsonObject)(plan.requests[0]!.request.state.code)
+    const before = Schema.decodeUnknownSync(Schema.Struct({ content: Schema.String }))(code.before)
+    const after = Schema.decodeUnknownSync(Schema.Struct({ content: Schema.String }))(code.after)
+    const original = await import(`data:text/javascript;base64,${Buffer.from(`export const signal = { ${before.content} }`).toString("base64")}`)
+    const candidate = await import(`data:text/javascript;base64,${Buffer.from(`export const signal = { ${after.content} }`).toString("base64")}`)
+    const input = { moduleCount: 14, resolvedUseCount: 7, hubCount: 1, totalHubPressure: 3 }
+    expect(original.signal.score(input)).toBeCloseTo(0.8357142857, 9)
+    expect(candidate.signal.score(input)).toBeCloseTo(0.7857142857, 9)
+    expect(candidate.signal.score(input)).not.toBeCloseTo(0.8357142857, 9)
   })
 
   test("records exact receipts and replays offline; trusted digest detects tampering", async () => {

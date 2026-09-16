@@ -123,16 +123,21 @@ export function compile(bank: Bank, fixture: Case, model: string): Request {
     if (!template) throw new Error(`Unknown question ${id}`)
     return template
   })
-  const required = [...new Set(templates.flatMap((template) => template.requires))].sort()
   const focus = Schema.decodeUnknownSync(Schema.JsonObject)(fixture.state.focus)
+  const explicitRequirements = focus.required_evidence === undefined ? [] :
+    Schema.decodeUnknownSync(Schema.Array(Schema.String))(focus.required_evidence)
+  const required = [...new Set([...explicitRequirements, ...templates.flatMap((template) => template.requires)])].sort()
   if (typeof focus.subject !== "string" || !focus.subject || typeof focus.criterion !== "string" || !focus.criterion) {
     throw new Error("Bind focus.subject and focus.criterion")
   }
-  const state = { ...fixture.state, focus: { ...focus, required_evidence: required } }
+  const state: Schema.JsonObject = { ...fixture.state, focus: { ...focus, required_evidence: required } }
   rejectLocalMetadata(state)
-  // Deliberate omissions use explicit null and a context_manifest entry, never absent paths.
+  const manifest = Schema.decodeUnknownSync(Schema.Struct({ missing: Schema.Array(Schema.String) }))(state.context_manifest)
+  // A declared omission is unknown evidence, not an empty healthy default.
   for (const path of required) {
-    if (atPath(state, path) === undefined) throw new Error(`Unbound evidence path: ${path}`)
+    if (atPath(state, path) === undefined && !manifest.missing.some((missing) => path === missing || path.startsWith(`${missing}.`))) {
+      throw new Error(`Unbound evidence path: ${path}`)
+    }
   }
   return {
     model,
@@ -183,8 +188,10 @@ export function summarize(request: Request, response: Response) {
   const readiness = response.answers["JQ-01"]
   const policy = response.answers["JQ-02"]
   const required = atPath(request.state, "focus.required_evidence")
+  const missing = atPath(request.state, "context_manifest.missing")
   const incompleteInput = !Schema.is(Schema.Array(Schema.String))(required) ||
-    required.some((path) => atPath(request.state, path) == null)
+    required.some((path) => atPath(request.state, path) == null) ||
+    (Array.isArray(missing) && missing.length > 0)
   const ready = !incompleteInput && readiness?.type === "choice" && readiness.choice === "sufficient" &&
     policy?.type === "choice" && policy.choice === "defined"
   return {
