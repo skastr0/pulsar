@@ -1,5 +1,9 @@
 # Pulsar
 
+<p align="center">
+  <img src="docs/assets/pulsar-hero.png" alt="Pulsar — repository health, measured: deterministic signals, inspectable scores, repo-owned policy" width="100%">
+</p>
+
 Pulsar measures repository health with deterministic, inspectable signals — and lets your repository decide what those signals mean.
 
 > **Status: experimental.** Usable for inspection and local scoring. Signal semantics, scoring bands, and package boundaries may change before a stable public API is declared.
