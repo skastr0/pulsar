@@ -1,6 +1,6 @@
 # Jev semantic judgment spike
 
-**Status:** Pre-access architecture proposal; no live Jev evaluation or runtime integration has been performed. Prepared 2026-09-16. The implementation inventory is pinned to `fe84b1212148564703ebbaff0ee7f3c3df1c668f`; this documentation does not change active scoring policy or defaults.
+**Status:** Research adapter and first live evaluation completed 2026-09-16: 29 requests, including three over real Pulsar source. [Results and runnable commands](jev-spike-results.md). Production scoring is unchanged; adoption gates remain untested. The original architecture inventory is pinned to `fe84b1212148564703ebbaff0ee7f3c3df1c668f`.
 
 The goal is to turn Pulsar's grounded signals and repository-owned calibration into architectural judgments, refactoring direction and a replayable semantic scorecard. Jev is the first evaluator to test, not a required foundation of Pulsar.
 
@@ -8,16 +8,17 @@ The goal is to turn Pulsar's grounded signals and repository-owned calibration i
 
 | Artifact | Contents |
 | --- | --- |
+| [First-access results](jev-spike-results.md) | Real Pulsar scoring-regression probe, development controls and failures, measured usage/latency, receipt hashes, adapter runbook and remaining limitations |
 | [Architecture proposal](jev-semantic-judgment-architecture.md) | Evidence packets, explicit taste, provider boundary, judgment artifacts, deterministic replay, score comparability, agent optimization, threat model and 12 implementation work items |
-| [Evaluation plan](jev-spike-evaluation-plan.md) | 42 unanswered research questions, 16 case specifications, hypotheses, baseline comparisons, dataset/labeling rules, proposed acceptance gates and a first-access runbook |
+| [Evaluation plan](jev-spike-evaluation-plan.md) | Original 42-question register and 16 case specifications, hypotheses, baseline comparisons, dataset/labeling rules and proposed acceptance gates; partial observations are recorded separately in the results |
 | [Question bank](jev-spike-question-bank.json) | 24 structured question templates, required evidence, experiment/case references and request-compilation rules |
 
 There are two deliberately separate question sets: questions **asked of Jev about code**, and questions **the experiments must answer about Jev**. The latter require reviewed examples and observed results, not model assurances.
 
-## First bounded experiment
+## First bounded experiment and its limit
 
-Start with **extract, retain or dismantle an abstraction**. Materialize the development cases for independent vendor adapters, genuine shared domain rules, policy-dependent preferences and rejection of all offered changes. Compare structural-only Pulsar, a conventional structured-output evaluator and Jev under matched evidence and explicit repository taste.
+The first experiment concerns **extract, retain or dismantle an abstraction**. Jev rejected a hypothetical reuse of the TypeScript score formula in Rust; independent execution confirms that it changes an existing numerical contract. Eleven synthetic development cases also exercise independent vendor adapters, shared domain rules, opposite policies and missing context.
 
-Before access, prepare reviewed cases, frozen criteria, an offline request compiler and a mock/replay harness. At first access, verify the actual API contract and model identity using public or synthetic inputs before evaluating code. The implementation work items are planned work; the catalog is not an executable harness or adopted configuration.
+The research harness now compiles bounded requests, records exact responses and replays offline. One failing synthetic candidate's contract verdict changed from `violates` to `meets` after swapping alternatives. All judgments remain descriptive; no semantic scoring gate is enabled.
 
-All research questions remain unanswered, all case specifications await materialization and reviewed labels, and all performance results remain unmeasured. Keep those states explicit when extending this spike. A useful failure should narrow the supported question family or revise the experiment, not be hidden by changing a score or threshold after inspecting the held-out results.
+Independent labels, held-out evaluation, matched conventional-provider comparisons and blinded agent-patch review remain outstanding. The case specifications and broader architecture are not implemented merely because an adapter runs. Keep failures explicit rather than changing thresholds after inspecting evaluation results.

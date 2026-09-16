@@ -1,12 +1,13 @@
 # Jev spike: evaluation plan, question register and first-access runbook
 
-**Status:** Proposed experiment; all live results are **not run**.  
+**Status:** Original proposed evaluation plan. A partial development run is now recorded in [first-access results](jev-spike-results.md); held-out acceptance gates are **not run**.
+
 **Prepared:** 2026-09-16 against Pulsar `fe84b1212148564703ebbaff0ee7f3c3df1c668f`.  
 **Companions:** [Architecture](jev-semantic-judgment-architecture.md), [question-bank JSON](jev-spike-question-bank.json).
 
 This plan pre-seeds both kinds of questions: **what to ask Jev about code**, and **what the experiment must establish about Jev**. They are different. A model answering a question about its own reliability is not an evaluation of that reliability.
 
-Nothing here is an active Pulsar policy. Proposed thresholds, utility maps, corpora and command names must be frozen for an experimental run before looking at its held-out results. This document contains no measured accuracy, benchmark win, approved labels, working live adapter or claim of Jev access.
+Nothing here is an active Pulsar policy. Proposed thresholds, utility maps, corpora and command names must be frozen for an experimental run before looking at its held-out results. This document preserves the original design, not measured accuracy or approved labels. The separate results document identifies the implemented research adapter, observed responses and unresolved questions; its commands supersede hypothetical commands in this plan.
 
 ## 1. The spike's central falsifiable claim
 

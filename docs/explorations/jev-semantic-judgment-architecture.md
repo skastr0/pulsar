@@ -3,7 +3,9 @@
 **Status:** Proposed; no Jev access or live evaluation used to prepare this document.  
 **Date:** 2026-09-16.  
 **Repository inspected:** `fe84b1212148564703ebbaff0ee7f3c3df1c668f`.  
-**Change scope:** Documentation and an experimental question catalog only. No active policy, runtime, dependencies, published API, or enforcement changes.
+**Original change scope:** Documentation and an experimental question catalog only. No active policy, runtime, dependencies, published API, or enforcement changes.
+
+**Follow-up:** A research-only adapter and first live probes now exist; see [measured results and limitations](jev-spike-results.md). This remains the broader proposed architecture, not an inventory of delivered capabilities. Production scoring and enforcement remain unchanged.
 
 Start here for architecture. Use the [evaluation plan and unanswered experiment register](jev-spike-evaluation-plan.md) to execute the spike, and the [machine-readable question bank](jev-spike-question-bank.json) to seed requests. These artifacts are proposals, not evidence that Jev works for architecture. Nothing under this exploration is automatically loaded as repository policy.
 
