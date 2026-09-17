@@ -1,0 +1,204 @@
+{
+  "version": "pulsar-staged-judgment-experiment-v1",
+  "status": "Research fixtures only. The taxonomy, the proposed repository criteria and the instance list are experiment definitions, not adopted Pulsar policy, not generic signals, and not a scoring rubric. No case carries an expected verdict.",
+  "taxonomy": {
+    "id": "variant_relationship",
+    "task": "How does `variants.b` differ from `variants.a` in organizing the subject site described by `state.subject`? Classify the relationship between the two variants. Inspect `variants.b` against `variants.a`; do not judge which organization is preferable and do not apply `policy`.",
+    "focus": "Compare the subject operation's ownership boundary and internal decomposition first. Report a contract or behavior difference only when the two variants differ beyond organization.",
+    "nodes": {
+      "equivalent_organization": {
+        "what": "Both variants organize the subject operation the same way; remaining differences are naming, formatting, or local expression.",
+        "not_for": "Any pair where the ownership boundary or the internal decomposition of the subject operation differs.",
+        "examples": [
+          "Both alternatives name the same local variable differently.",
+          "One alternative reorders two statements that do not depend on each other."
+        ],
+        "children": []
+      },
+      "internal_decomposition_differs": {
+        "what": "The subject site keeps the same single owner, but the site's internal decomposition differs, such as private helper phases versus one inlined sequence inside that owner.",
+        "not_for": "A change that moves the operation between one shared owner and multiple implementation sites.",
+        "examples": [],
+        "children": ["helpers_private_single_use", "helpers_shared_or_reused", "decomposition_not_via_helpers"]
+      },
+      "ownership_boundary_differs": {
+        "what": "The operation is implemented at more than one site in one variant and concentrated at a single shared owner in the other.",
+        "not_for": "A change that only reorganizes the internals of one owner, or that changes the operation's contract.",
+        "examples": [],
+        "children": ["shared_owner_single_contract", "shared_owner_caller_specific_mode", "implementation_sites_remain"]
+      },
+      "contract_or_behavior_differs": {
+        "what": "The variants differ in the operation's contract, guarantees, or runtime behavior, not only in how the operation is organized.",
+        "not_for": "A difference confined to ownership or internal decomposition with unchanged contract and runtime behavior.",
+        "examples": [],
+        "children": ["static_guarantee_differs", "runtime_behavior_differs"]
+      },
+      "insufficient_evidence": {
+        "what": "The supplied source does not establish how the variants relate at the subject site.",
+        "not_for": "A relationship that the supplied source does establish, even when the judgment is close.",
+        "examples": [],
+        "children": []
+      },
+      "helpers_private_single_use": {
+        "what": "The differing decomposition is expressed as helper functions that are private to the site and referenced only from that site.",
+        "not_for": "A helper that is exported, or referenced outside the subject site.",
+        "examples": [],
+        "children": []
+      },
+      "helpers_shared_or_reused": {
+        "what": "At least one of the differing helpers is exported or referenced outside the subject site.",
+        "not_for": "Helpers referenced only from the subject site.",
+        "examples": [],
+        "children": []
+      },
+      "decomposition_not_via_helpers": {
+        "what": "The decomposition difference is not expressed as helper boundaries.",
+        "not_for": "A difference expressed as helper boundaries.",
+        "examples": [],
+        "children": []
+      },
+      "shared_owner_single_contract": {
+        "what": "The single shared owner serves both call sites without a caller-specific mode, switch, or branch; the call sites differ only in the ordinary argument values they pass.",
+        "not_for": "A shared owner that must branch on which caller invoked it, or that leaves one call site with its own implementation.",
+        "examples": [],
+        "children": []
+      },
+      "shared_owner_caller_specific_mode": {
+        "what": "The shared owner must branch on a caller-supplied mode, policy, or capability to serve both call sites.",
+        "not_for": "A shared owner whose call sites differ only in ordinary argument values.",
+        "examples": [],
+        "children": []
+      },
+      "implementation_sites_remain": {
+        "what": "More than one implementation site remains; the operation is not concentrated at a single owner.",
+        "not_for": "A single shared owner used by both call sites.",
+        "examples": [],
+        "children": []
+      },
+      "static_guarantee_differs": {
+        "what": "A declared type expresses a guarantee in one variant that the other leaves to the producer. Runtime behavior and serialized payload shape are unchanged.",
+        "not_for": "A difference that changes runtime behavior or the serialized payload shape.",
+        "examples": [],
+        "children": []
+      },
+      "runtime_behavior_differs": {
+        "what": "The variants differ in runtime behavior at the subject site.",
+        "not_for": "A difference confined to declared types with unchanged runtime behavior.",
+        "examples": [],
+        "children": []
+      }
+    }
+  },
+  "subjects": [
+    {
+      "id": "extraction",
+      "subject": "Successful SignalRunResult construction in the runner and the observer entry points",
+      "sources": [
+        { "id": "runner_success", "path": "packages/core/src/runner.ts", "start": 78, "end": 94 },
+        { "id": "observer_success", "path": "packages/core/src/observer-execution.ts", "start": 193, "end": 208 },
+        { "id": "severity_ceiling", "path": "packages/core/src/enforcement.ts", "start": 63, "end": 96 }
+      ],
+      "obligations": [
+        {
+          "id": "no_uncapped_block",
+          "kind": "deterministic",
+          "probe": "extraction.no_uncapped_block",
+          "text": "A successful result from a signal without hard-gate authority must not expose a block-severity diagnostic; see `sources.severity_ceiling`."
+        },
+        {
+          "id": "failure_handling",
+          "kind": "deterministic",
+          "probe": "extraction.failure_handling",
+          "text": "Retain the runner's compute-failure propagation and the observer's conversion of a failed computation into a failed SignalRunResult."
+        },
+        {
+          "id": "behavior_preserved",
+          "kind": "deterministic",
+          "probe": "extraction.behavior_equivalence",
+          "text": "The variants must not change observable results for the same signals, vectors and registry: score, output, diagnostics, metadata, factor ledger, inactive handling and failure isolation."
+        },
+        {
+          "id": "pure_construction_step",
+          "kind": "semantic",
+          "text": "The successful-result construction step must stay a construction step: it must not become the place where signal selection, ordering, or failure handling is decided for either entry point."
+        }
+      ],
+      "policy": {
+        "scope": "pulsar-repository-research",
+        "status": "proposed-experiment-only-not-adopted",
+        "selected_criterion": "Prefer a single implementation of a presently shared result-construction contract when both callers can use it without shared scheduling or failure-policy switches. Preserving the supplied behavior obligations is a minimum, not a compensating benefit."
+      },
+      "policySources": [
+        { "id": "integration_clone_policy", "path": ".pulsar/modules/pulsar-self.ts", "start": 149, "end": 180 }
+      ]
+    },
+    {
+      "id": "representation",
+      "subject": "Cache lookup status and payload representation",
+      "sources": [
+        { "id": "signal_result_type", "path": "packages/core/src/runner.ts", "start": 24, "end": 31 }
+      ],
+      "obligations": [
+        {
+          "id": "runtime_preserved",
+          "kind": "deterministic",
+          "probe": "representation.runtime_equivalence",
+          "text": "Preserve runtime lookup results and the serialized payload shape at a fixed evaluation time."
+        },
+        {
+          "id": "producer_guarantee_untouched",
+          "kind": "deterministic",
+          "probe": "representation.producer_guarantee",
+          "text": "The supplied `evaluateTieredCacheEntry` producer still returns payload fields for hit and stale outcomes, and can still return a miss carrying `effectiveConfidence` without an entry or value."
+        }
+      ],
+      "policy": {
+        "scope": "pulsar-repository-research",
+        "status": "proposed-experiment-only-not-adopted",
+        "selected_criterion": "Prefer representing already-established producer guarantees in the result type when doing so preserves runtime and serialized behavior. Do not treat static narrowing as runtime validation of external data."
+      },
+      "policySources": []
+    },
+    {
+      "id": "consolidation",
+      "subject": "Observer batch output-visibility protocol",
+      "sources": [],
+      "obligations": [
+        {
+          "id": "protocol_preserved",
+          "kind": "deterministic",
+          "probe": "consolidation.behavior_equivalence",
+          "text": "Preserve readiness selection, pending removal, the batch's output snapshot, concurrent execution, publication after the batch returns, inactive handling and failure isolation."
+        },
+        {
+          "id": "publication_after_batch",
+          "kind": "deterministic",
+          "probe": "consolidation.publication_after_batch",
+          "text": "A signal computed inside a batch must not observe another member of that same batch's output; the batch reads the snapshot taken before the batch runs."
+        },
+        {
+          "id": "single_owner_coordination",
+          "kind": "semantic",
+          "text": "The batch-selection and publication protocol must stay owned by the subject site: no other module may read or depend on the scheduler's per-batch phase state."
+        }
+      ],
+      "policy": {
+        "scope": "pulsar-repository-research",
+        "status": "proposed-experiment-only-not-adopted",
+        "selected_criterion": "For this integration scheduler, prefer the presentation that makes the existing output-visibility protocol easier to inspect as one operational sequence. Retain a helper boundary when it hides an independently useful contract. File length and number of functions are not benefits by themselves."
+      },
+      "policySources": [
+        { "id": "integration_size_nesting", "path": ".pulsar/modules/pulsar-self.ts", "start": 90, "end": 148 }
+      ]
+    }
+  ],
+  "instances": [
+    { "id": "extraction", "subject": "extraction", "policy": "present", "variants": { "a": "extraction.a", "b": "extraction.b" } },
+    { "id": "representation", "subject": "representation", "policy": "present", "variants": { "a": "representation.a", "b": "representation.b" } },
+    { "id": "consolidation", "subject": "consolidation", "policy": "present", "variants": { "a": "consolidation.a", "b": "consolidation.b" } },
+    { "id": "consolidation-repeat", "subject": "consolidation", "policy": "present", "variants": { "a": "consolidation.a", "b": "consolidation.b" } },
+    { "id": "consolidation-swapped", "subject": "consolidation", "policy": "present", "variants": { "a": "consolidation.b", "b": "consolidation.a" } },
+    { "id": "extraction-mutation", "subject": "extraction", "policy": "present", "variants": { "a": "extraction.a", "b": "extraction.mutant" } },
+    { "id": "consolidation-no-policy", "subject": "consolidation", "policy": "absent", "variants": { "a": "consolidation.a", "b": "consolidation.b" } }
+  ]
+}

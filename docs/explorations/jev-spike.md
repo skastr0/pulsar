@@ -1,6 +1,6 @@
 # Jev semantic judgment spike
 
-**Status:** Two research evaluations completed: [29 first-access requests](jev-spike-results.md) on 2026-09-16 and [12 real-code question-shape requests](jev-question-shape-results.md) on 2026-09-17. Narrow contract questions were useful in the latter; architectural preferences reversed on an identical repeat and an A/B swap. Production scoring is unchanged; adoption gates remain untested. The original architecture inventory is pinned to `fe84b1212148564703ebbaff0ee7f3c3df1c668f`.
+**Status:** Three follow-up workstreams completed on real Pulsar code: policy clarity (116 requests), maintenance utility (13), and staged judgments (58, including development and a retained confounded batch). These follow [29 first-access requests](jev-spike-results.md) and [12 question-shape requests](jev-question-shape-results.md). Precise repository policy improved development-case agreement; bounded ownership questions were useful. Neither architectural impossibility nor a trustworthy architecture score has been demonstrated. Production scoring and adopted calibration are unchanged. The original architecture inventory is pinned to `fe84b1212148564703ebbaff0ee7f3c3df1c668f`.
 
 The goal is to turn Pulsar's grounded signals and repository-owned calibration into architectural judgments, refactoring direction and a replayable semantic scorecard. Jev is the first evaluator to test, not a required foundation of Pulsar.
 
@@ -8,6 +8,9 @@ The goal is to turn Pulsar's grounded signals and repository-owned calibration i
 
 | Artifact | Contents |
 | --- | --- |
+| [Policy-clarity results](jev-policy-clarity-results.md) | Operational boundary definitions, opposite-policy controls, label sensitivity, missing/conflicting policy, and the limits of an incomplete format control |
+| [Maintenance-utility results](jev-maintenance-utility-results.md) | Four real change requirements, 24 compiler/runtime patch checks, ownership agreement, prose-plan limitations, and corrected Score decoding |
+| [Staged-judgment results](jev-staged-judgment-results.md) | Taxonomy walking, deterministic obligation gates, explicit missing-policy refusal, direct/staged comparison, and retained experiment-authoring failures |
 | [Question-shape results](jev-question-shape-results.md) | Oracle-designed real Pulsar extraction, consolidation and representation experiment; flat/structured, order, repeat, mutation and missing-policy controls; implications for repository-owned judgment |
 | [First-access results](jev-spike-results.md) | Real Pulsar scoring-regression probe, development controls and failures, measured usage/latency, receipt hashes, adapter runbook and remaining limitations |
 | [Architecture proposal](jev-semantic-judgment-architecture.md) | Evidence packets, explicit taste, provider boundary, judgment artifacts, deterministic replay, score comparability, agent optimization, threat model and 12 implementation work items |
@@ -15,6 +18,15 @@ The goal is to turn Pulsar's grounded signals and repository-owned calibration i
 | [Question bank](jev-spike-question-bank.json) | 24 structured question templates, required evidence, experiment/case references and request-compilation rules |
 
 There are two deliberately separate question sets: questions **asked of Jev about code**, and questions **the experiments must answer about Jev**. The latter require reviewed examples and observed results, not model assurances.
+
+## What the follow-ups support
+
+- **Repository policy remains data, not a Pulsar default.** Operationalizing a boundary changed the development judgments; changing the policy's direction changed the selected implementation. These are experiments with proposed criteria, not adoption of those criteria or evidence of universal architectural correctness.
+- **Use deterministic gates for deterministic obligations.** The staged consumer excluded a known breaking candidate and refused to rank without policy. Those protections belong to code, not to model reliability. Staging did not establish better policy interpretation and supplied additional evidence, so it is not a matched-evidence proof of superiority.
+- **Inspect distributions and question scope.** Close rankings are not confident reversals. Three reported maintenance contradictions were artifacts of rounding a Score mean instead of inspecting its distribution. Some expected labels and experimental controls were also defective; the reports preserve the corrections and raw evidence.
+- **The score-optimization goal is still untested.** Ownership agreement and policy-sensitive rule application do not demonstrate that optimizing a scalar yields better architecture. The next useful experiment is a held-out real maintenance change with actual candidate diffs, fixed repo-owned policy, independent behavioral checks and blinded outcome review, comparing guidance with and without Jev. No new composite score is justified by these results alone.
+
+**Integration verification (2026-09-17):** `bun run typecheck:jev` passed; `bun run test:jev` passed **81 tests, 0 failures**, including independent compiler/runtime probes. Offline replay validated the 116 policy, 13 maintenance and 58 staged receipts. The staged archive's per-request bodies were also checked against raw responses and stored parsed answers independently of its replay implementation. No further inference was needed during integration. The worker's earlier load-sensitive timeout is retained in its report; it did not recur in this combined run.
 
 ## First bounded experiment and its limit
 
