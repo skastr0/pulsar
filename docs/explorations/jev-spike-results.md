@@ -2,6 +2,8 @@
 
 **Observed:** 2026-09-16. **Scope:** a research-only adapter, three requests over real Pulsar code, one API smoke request, and 25 synthetic development requests. Production signals, weights, calibration, and caches are unchanged.
 
+**Follow-up:** The [2026-09-17 question-shape experiment](jev-question-shape-results.md) tests three further real Pulsar implementation pairs and records the Oracle's interpretation. Results below remain the original first-access observations.
+
 Jev rejected a concrete behavior-breaking scoring refactor in Pulsar. It also changed a synthetic candidate's contract verdict when the alternatives were reordered. Keep judgments descriptive: these observations support further evaluation, not autonomous refactoring approval or a semantic repository score.
 
 ## Real Pulsar use case

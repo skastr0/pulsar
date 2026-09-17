@@ -1,6 +1,6 @@
 # Jev semantic judgment spike
 
-**Status:** Research adapter and first live evaluation completed 2026-09-16: 29 requests, including three over real Pulsar source. [Results and runnable commands](jev-spike-results.md). Production scoring is unchanged; adoption gates remain untested. The original architecture inventory is pinned to `fe84b1212148564703ebbaff0ee7f3c3df1c668f`.
+**Status:** Two research evaluations completed: [29 first-access requests](jev-spike-results.md) on 2026-09-16 and [12 real-code question-shape requests](jev-question-shape-results.md) on 2026-09-17. Narrow contract questions were useful in the latter; architectural preferences reversed on an identical repeat and an A/B swap. Production scoring is unchanged; adoption gates remain untested. The original architecture inventory is pinned to `fe84b1212148564703ebbaff0ee7f3c3df1c668f`.
 
 The goal is to turn Pulsar's grounded signals and repository-owned calibration into architectural judgments, refactoring direction and a replayable semantic scorecard. Jev is the first evaluator to test, not a required foundation of Pulsar.
 
@@ -8,6 +8,7 @@ The goal is to turn Pulsar's grounded signals and repository-owned calibration i
 
 | Artifact | Contents |
 | --- | --- |
+| [Question-shape results](jev-question-shape-results.md) | Oracle-designed real Pulsar extraction, consolidation and representation experiment; flat/structured, order, repeat, mutation and missing-policy controls; implications for repository-owned judgment |
 | [First-access results](jev-spike-results.md) | Real Pulsar scoring-regression probe, development controls and failures, measured usage/latency, receipt hashes, adapter runbook and remaining limitations |
 | [Architecture proposal](jev-semantic-judgment-architecture.md) | Evidence packets, explicit taste, provider boundary, judgment artifacts, deterministic replay, score comparability, agent optimization, threat model and 12 implementation work items |
 | [Evaluation plan](jev-spike-evaluation-plan.md) | Original 42-question register and 16 case specifications, hypotheses, baseline comparisons, dataset/labeling rules and proposed acceptance gates; partial observations are recorded separately in the results |
