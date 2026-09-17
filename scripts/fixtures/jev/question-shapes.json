@@ -1,0 +1,158 @@
+{
+  "version": "pulsar-question-shapes-experiment-v1",
+  "status": "Research fixtures only. These proposed Pulsar-repository criteria are not adopted policy, generic signals, or a scoring rubric.",
+  "subjects": [
+    {
+      "id": "extraction",
+      "subject": "Successful SignalRunResult construction in runner and observer",
+      "sources": [
+        { "id": "runner_success", "path": "packages/core/src/runner.ts", "start": 78, "end": 94 },
+        { "id": "observer_success", "path": "packages/core/src/observer-execution.ts", "start": 193, "end": 208 },
+        { "id": "severity_ceiling", "path": "packages/core/src/enforcement.ts", "start": 63, "end": 96 }
+      ],
+      "obligations": [
+        "Successful results from signals without hard-gate authority must not expose block-severity diagnostics; see sources.severity_ceiling.",
+        "Retain the runner's compute-failure propagation and the observer's conversion of a failed computation into a failed SignalRunResult."
+      ],
+      "policy": {
+        "scope": "pulsar-repository-research",
+        "status": "proposed-experiment-only-not-adopted",
+        "selected_criterion": "Prefer a single implementation of a presently shared result-construction contract when both callers can use it without shared scheduling or failure-policy switches. Preserving the supplied behavior obligations is a minimum, not a compensating benefit."
+      },
+      "policySources": [
+        { "id": "integration_clone_policy", "path": ".pulsar/modules/pulsar-self.ts", "start": 149, "end": 180 }
+      ],
+      "measurement": {
+        "task": "How much of the successful-result construction operation has one implementation owner across the two entry points in `variants.$variant`? This measures organization, not correctness or architectural quality.",
+        "anchors": [
+          { "what": "Complete successful-result construction remains implemented separately at both entry points.", "not_for": "A shared successful-result constructor called by both entry points." },
+          { "what": "A subset is implemented once, but some successful-result construction decisions remain duplicated.", "not_for": "Fully separate construction or a single shared constructor for the entire successful result." },
+          { "what": "Successful-result construction is implemented once and called by both entry points; their execution and failure policies remain outside it.", "not_for": "Sharing that also moves scheduling or failure handling into the constructor." }
+        ]
+      },
+      "questions": [
+        {
+          "id": "shared_operation", "perVariant": false,
+          "task": "Do the successful-result construction slices in `sources.runner_success` and `sources.observer_success` implement the same operation on an already-computed output? Do not include computation or failure handling in this comparison.",
+          "criteria": {
+            "same_operation": "Both implement the same successful-result construction contract, despite local naming differences.",
+            "related_but_distinct": "They implement related operations with materially different successful-result contracts.",
+            "incidental_similarity": "The resemblance does not establish a shared result-construction operation.",
+            "insufficient_evidence": "The supplied source cannot establish the relationship."
+          }
+        },
+        {
+          "id": "failure_interchangeable", "perVariant": true,
+          "task": "Does `variants.$variant` support the claim that the runner and observer entry points have interchangeable compute-failure behavior? Assess the entry points, not only successful-result construction.",
+          "criteria": {
+            "supports": "Their compute-failure behavior is interchangeable in the supplied source.",
+            "contradicts": "Their supplied compute-failure behavior differs.",
+            "insufficient_evidence": "The relevant failure paths are not established."
+          }
+        },
+        {
+          "id": "severity_preserved", "perVariant": true,
+          "task": "Does `variants.$variant` preserve the obligation that a signal without hard-gate authority cannot expose a block-severity diagnostic through a successful SignalRunResult? Trace the call path using `sources.severity_ceiling`.",
+          "criteria": {
+            "supports": "The successful-result path applies the required severity ceiling.",
+            "contradicts": "The successful-result path can expose an uncapped block diagnostic from a signal without hard-gate authority.",
+            "insufficient_evidence": "The call path or required ceiling is not established."
+          }
+        }
+      ]
+    },
+    {
+      "id": "consolidation",
+      "subject": "Observer batch output-visibility protocol",
+      "sources": [],
+      "obligations": [
+        "Preserve readiness selection, pending removal, the batch's output snapshot, concurrent execution, publication after the batch returns, inactive handling and failure isolation.",
+        "The subject is only the scheduler sequence. SummarizeCalibration and per-signal computation are not consolidation targets."
+      ],
+      "policy": {
+        "scope": "pulsar-repository-research",
+        "status": "proposed-experiment-only-not-adopted",
+        "selected_criterion": "For this integration scheduler, prefer the presentation that makes the existing output-visibility protocol easier to inspect as one operational sequence. Retain a helper boundary when it hides an independently useful contract. File length and number of functions are not benefits by themselves."
+      },
+      "policySources": [
+        { "id": "integration_size_nesting", "path": ".pulsar/modules/pulsar-self.ts", "start": 90, "end": 148 }
+      ],
+      "measurement": {
+        "task": "How localized is coordination of the batch's output-visibility transition in `variants.$variant`? Describe the organization, without deciding which organization is preferable.",
+        "anchors": [
+          { "what": "Coordination is required across separately owned external operations.", "not_for": "Private phases owned by a single scheduler." },
+          { "what": "One scheduler owns coordination, but mutable phase state is exchanged among private phase helpers.", "not_for": "Separately owned external protocols, or a sequence without private mutable-state phase helpers." },
+          { "what": "One local orchestration sequence expresses selection, snapshot, execution, and publication without passing mutable phase state between phase helpers.", "not_for": "A top-level sequence whose phase coordination still passes mutable state between private phase helpers." }
+        ]
+      },
+      "questions": [
+        {
+          "id": "protocol_form", "perVariant": true,
+          "task": "In `variants.$variant`, is the batch-selection and result-publication protocol expressed through private phase helpers that exchange mutable execution state, through one local orchestration sequence, or through independently owned external protocols?",
+          "criteria": {
+            "private_stateful_phases": "A single scheduler uses private phase helpers exchanging mutable execution state.",
+            "local_sequence": "One local sequence coordinates the phases without mutable-state phase-helper calls.",
+            "external_protocols": "The phases are independently owned external protocols.",
+            "insufficient_evidence": "Ownership or data exchange is not established."
+          }
+        },
+        {
+          "id": "early_publication", "perVariant": true,
+          "task": "Does `variants.$variant` publish a result produced by the current batch into the shared outputs map before the batch execution effect has returned its result collection?",
+          "criteria": {
+            "supported": "At least one current-batch result is published to the shared outputs map before the batch returns its collection.",
+            "contradicted": "The shared outputs map receives current-batch results only after the batch returns its collection.",
+            "insufficient_evidence": "The batch publication timing cannot be established."
+          }
+        }
+      ]
+    },
+    {
+      "id": "representation",
+      "subject": "Cache lookup status and payload representation",
+      "sources": [
+        { "id": "signal_result_type", "path": "packages/core/src/runner.ts", "start": 24, "end": 31 }
+      ],
+      "obligations": [
+        "The supplied evaluateTieredCacheEntry producer returns payload fields on hit/stale and can return a miss carrying effectiveConfidence without an entry or value.",
+        "Assess payload presence for CacheLookupResult<SignalRunResult>; do not infer that arbitrary generic T excludes undefined.",
+        "Preserve runtime behavior and serialized payload shape; static typing is distinct from external-data validation."
+      ],
+      "policy": {
+        "scope": "pulsar-repository-research",
+        "status": "proposed-experiment-only-not-adopted",
+        "selected_criterion": "Prefer representing already-established producer guarantees in the result type when doing so preserves runtime and serialized behavior. Do not treat static narrowing as runtime validation of external data."
+      },
+      "policySources": [],
+      "measurement": {
+        "task": "How completely does the result type in `variants.$variant` express the producer's hit/stale payload-presence guarantee for CacheLookupResult<SignalRunResult>?",
+        "anchors": [
+          { "what": "Neither hit nor stale statically requires the payload fields.", "not_for": "Any result type requiring those fields for a non-miss status." },
+          { "what": "Only some non-miss outcomes statically require the payload fields.", "not_for": "A type requiring payloads for all non-miss outcomes, or for none." },
+          { "what": "Every hit or stale outcome statically requires the payload fields, while misses remain representable without them.", "not_for": "A runtime producer guarantee not expressed by the declared type." }
+        ]
+      },
+      "questions": [
+        {
+          "id": "payload_guarantee", "perVariant": true,
+          "task": "For CacheLookupResult<SignalRunResult> in `variants.$variant`, does the declared type guarantee payload presence after narrowing status to hit or stale, or is that guarantee established only by the supplied producer implementation?",
+          "criteria": {
+            "type_and_producer": "Both the declared type after narrowing and the supplied producer establish payload presence for hit/stale.",
+            "producer_only": "The producer establishes payload presence, but the declared type leaves the fields optional after narrowing.",
+            "producer_contradicts_contract": "The supplied producer can return hit/stale without the payload required by the stated contract.",
+            "insufficient_evidence": "The type or producer is insufficiently established."
+          }
+        },
+        {
+          "id": "runtime_validation_added", "perVariant": false,
+          "task": "Does the difference between `variants.a` and `variants.b` add runtime validation of a persisted cache payload's contents, rather than only alter static representation and type assertions?",
+          "criteria": {
+            "supports": "One variant adds executable checks of persisted payload contents absent from the other.",
+            "contradicts": "The representation difference does not add runtime validation of persisted payload contents.",
+            "insufficient_evidence": "The supplied differences cannot establish whether runtime validation is added."
+          }
+        }
+      ]
+    }
+  ]
+}

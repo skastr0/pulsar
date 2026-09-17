@@ -2,11 +2,12 @@ import { createHash } from "node:crypto"
 import { Schema } from "effect"
 
 const Probability = Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 }))
-const Descriptions = Schema.Record(Schema.String, Schema.String)
+const Description = Schema.Union([Schema.NonEmptyString, Schema.JsonObject, Schema.Array(Schema.Json)])
+const Descriptions = Schema.Record(Schema.String, Description)
 export const Question = Schema.Union([
-  Schema.Struct({ type: Schema.Literal("choice"), instructions: Schema.NonEmptyString, criteria: Descriptions }),
-  Schema.Struct({ type: Schema.Literal("score"), instructions: Schema.NonEmptyString, criteria: Schema.Array(Schema.String) }),
-  Schema.Struct({ type: Schema.Literal("noul"), instructions: Schema.NonEmptyString, criteria: Schema.Struct({ true: Schema.String, false: Schema.String }) }),
+  Schema.Struct({ type: Schema.Literal("choice"), instructions: Description, criteria: Descriptions }),
+  Schema.Struct({ type: Schema.Literal("score"), instructions: Description, criteria: Schema.Array(Description) }),
+  Schema.Struct({ type: Schema.Literal("noul"), instructions: Description, criteria: Schema.Struct({ true: Description, false: Description }) }),
 ])
 export const Request = Schema.Struct({
   model: Schema.NonEmptyString,
@@ -144,7 +145,10 @@ export function compile(bank: Bank, fixture: Case, model: string): Request {
     state,
     questions: Object.fromEntries(ids.map((id, index) => {
       const question = templates[index]!.question
-      return [id, { ...question, instructions: `${bank.common_instructions}\n\n${question.instructions}` }]
+      const instructions = typeof question.instructions === "string"
+        ? `${bank.common_instructions}\n\n${question.instructions}`
+        : { common: bank.common_instructions, question: question.instructions }
+      return [id, { ...question, instructions }]
     })),
   }
 }

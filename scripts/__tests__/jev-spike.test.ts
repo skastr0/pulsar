@@ -34,7 +34,7 @@ describe("Jev research contract", () => {
     expect(Object.keys(request.questions)).toEqual(["JQ-01", "JQ-02", "JQ-04"])
     expect(JSON.stringify(request)).not.toContain("proposedExpectations")
     for (const question of Object.values(request.questions)) {
-      expect(question.instructions.startsWith(bank.common_instructions)).toBe(true)
+      expect(typeof question.instructions === "string" && question.instructions.startsWith(bank.common_instructions)).toBe(true)
       expect(Object.keys(question).sort()).toEqual(["criteria", "instructions", "type"])
     }
     expect(JSON.stringify(request.state.focus)).toContain("code.related")
