@@ -6,7 +6,7 @@ import { Effect, Schema } from "effect"
 import { canonical, Response, sha256, type Request } from "../jev-spike/model.ts"
 import { aggregate, judgmentMachine, replay, type CallRecord, type Finding, type Plan, type Run, type Step } from "../jev-poc/pipeline.ts"
 import { decodePolicy, loadSemanticPolicy } from "../jev-poc/policy.ts"
-import { decisive, QUESTION_VERSION } from "../jev-poc/questions.ts"
+import { decisive, factsRequest, QUESTION_VERSION } from "../jev-poc/questions.ts"
 import repoPolicy from "../../.pulsar/modules/semantic-policy.ts"
 
 function plan(): Plan {
@@ -52,6 +52,15 @@ function run(p = plan(), choose: (step: Step) => Record<string, string> = () => 
 const finding = (verdict: Finding["verdict"], penaltyPoints: number): Finding => ({ candidateId: "one", ruleId: "rule", penaltyPoints, verdict, relationship: null, refinement: null, direction: null, reason: "test" })
 
 describe("autonomous semantic machine", () => {
+  test("clone relationships do not compete with single-function responsibility labels", () => {
+    const candidate = plan().discovery.candidates[0]!
+    const clone = factsRequest(candidate, "test")
+    const fn = factsRequest({ ...candidate, kind: "complexity-function" }, "test")
+    expect(Object.keys(clone.questions.relationship!.criteria).sort()).toEqual(["independent_rules", "insufficient_evidence", "mechanical_similarity", "shared_rule"])
+    expect(Object.keys(fn.questions.relationship!.criteria)).not.toContain("shared_rule")
+    expect(clone.questions.readiness!.instructions).toMatchObject({ task: expect.stringContaining("domain decision") })
+    expect(fn.questions.readiness!.instructions).toMatchObject({ task: expect.stringContaining("primary function") })
+  })
   test("chains source-only facts, semantic refinement, then explicit repo policy", () => {
     const result = run()
     expect(result.records.map((r) => r.stage)).toEqual(["facts", "refinement", "policy"])
