@@ -1,62 +1,15 @@
 import { computeDiagnosticHash, ReferenceDataTag, type Diagnostic, type Signal } from "@skastr0/pulsar-core/signal"
 import { makeFactorEntry, makeFactorLedger, type SignalFactorDefinition } from "@skastr0/pulsar-core/factors"
+import {
+  OWNERSHIP_REFERENCE_DATA_KEY,
+  CANONICAL_OWNERSHIP_POLICY_RELATIVE_PATH,
+  decodeOwnershipLabelValueSync,
+  type OwnershipFacts,
+} from "@skastr0/pulsar-core/reference-data"
 import { Effect, Option, Schema } from "effect"
-
-export const OWNERSHIP_REFERENCE_DATA_KEY = "ownership"
-export const CANONICAL_OWNERSHIP_POLICY_RELATIVE_PATH = ".pulsar/ownership.json"
 
 export const TsSl07Config = Schema.Struct({ top_n_diagnostics: Schema.Number })
 type TsSl07Config = typeof TsSl07Config.Type
-
-interface OwnershipLabelValue {
-  readonly group_id: string
-  readonly status: "resolved" | "unresolved" | "not_applicable"
-  readonly anchor_id?: string
-  readonly anchor_value?: number
-  readonly distribution: ReadonlyArray<{
-    readonly anchor_id: string
-    readonly anchor_value?: number
-    readonly probability: number
-    readonly selected: boolean
-  }>
-}
-
-interface OwnershipFacts {
-  readonly state: "present" | "not_configured" | "unknown"
-  readonly policy?: {
-    readonly preference: string
-    readonly target: number
-    readonly anchors: ReadonlyArray<{ readonly id: string; readonly value: number; readonly description: string }>
-    readonly stretch?: unknown
-    readonly groups: ReadonlyArray<{
-      readonly id: string
-      readonly owner_paths: ReadonlyArray<string>
-      readonly caller_paths: ReadonlyArray<string>
-    }>
-  }
-  readonly policyFingerprint?: string
-  readonly assessmentFingerprint?: string
-  readonly inventory: {
-    readonly declaredGroupIds: ReadonlyArray<string>
-    readonly labeledGroupIds: ReadonlyArray<string>
-    readonly complete: boolean
-  }
-  readonly labels: ReadonlyArray<{
-    readonly label: { readonly confidence: number; readonly value: unknown }
-  }>
-  readonly aggregate?: {
-    readonly applicability: "applicable" | "not_applicable" | "insufficient_evidence"
-    readonly attainment?: number
-    readonly observedAttainment?: number
-    readonly target: number
-    readonly score?: number
-    readonly histogram: Readonly<Record<string, number>>
-    readonly resolvedGroupIds: ReadonlyArray<string>
-    readonly unresolvedGroupIds: ReadonlyArray<string>
-    readonly notApplicableGroupIds: ReadonlyArray<string>
-    readonly missingGroupIds: ReadonlyArray<string>
-  }
-}
 
 export interface TsSl07Output {
   readonly facts: OwnershipFacts | undefined
@@ -82,33 +35,6 @@ const attainmentFactor: SignalFactorDefinition = {
 
 const sanitizeDiagnosticLimit = (limit: number): number =>
   Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : 0
-
-const labelValueOf = (facts: OwnershipFacts, groupId: string): OwnershipLabelValue | undefined => {
-  for (const artifact of facts.labels) {
-    const value = artifact.label.value
-    if (
-      value !== null &&
-      typeof value === "object" &&
-      "group_id" in value &&
-      (value as { group_id?: unknown }).group_id === groupId
-    ) {
-      return value as OwnershipLabelValue
-    }
-  }
-  return undefined
-}
-
-const groupStatus = (
-  facts: OwnershipFacts,
-  groupId: string,
-): "resolved" | "unresolved" | "not_applicable" | "missing" => {
-  if (facts.aggregate?.resolvedGroupIds.includes(groupId) === true) return "resolved"
-  if (facts.aggregate?.notApplicableGroupIds.includes(groupId) === true) return "not_applicable"
-  if (facts.aggregate?.unresolvedGroupIds.includes(groupId) === true) return "unresolved"
-  if (facts.aggregate?.missingGroupIds.includes(groupId) === true) return "missing"
-  const label = labelValueOf(facts, groupId)
-  return label?.status ?? "missing"
-}
 
 const comparisonOf = (facts: OwnershipFacts): string => {
   const aggregate = facts.aggregate
@@ -159,19 +85,11 @@ const summaryDiagnostic = (facts: OwnershipFacts): Diagnostic => {
 }
 
 const groupDiagnostic = (facts: OwnershipFacts, groupId: string): Diagnostic => {
-  const label = labelValueOf(facts, groupId)
-  const status = groupStatus(facts, groupId)
+  const envelope = facts.labels.find((artifact) => decodeOwnershipLabelValueSync(artifact.label.value).group_id === groupId)
+  const label = envelope === undefined ? undefined : decodeOwnershipLabelValueSync(envelope.label.value)
+  const status = label?.status ?? "missing"
   const group = facts.policy?.groups.find((entry) => entry.id === groupId)
   const locationFile = group?.owner_paths[0] ?? group?.caller_paths[0] ?? CANONICAL_OWNERSHIP_POLICY_RELATIVE_PATH
-  const envelope = facts.labels.find((artifact) => {
-    const value = artifact.label.value
-    return (
-      value !== null &&
-      typeof value === "object" &&
-      "group_id" in value &&
-      (value as { group_id?: unknown }).group_id === groupId
-    )
-  })
   return {
     severity: status === "resolved" && label?.anchor_id === "contrary" ? "warn" : "info",
     message: `Ownership group ${groupId}: ${status}${
@@ -273,19 +191,7 @@ export const TsSl07: Signal<TsSl07Config, TsSl07Output, ReferenceDataTag> = {
                 value: anchor.value,
                 description: anchor.description,
               })),
-              stretch:
-                facts.policy.stretch !== undefined &&
-                facts.policy.stretch !== null &&
-                typeof facts.policy.stretch === "object"
-                  ? Object.fromEntries(
-                      Object.entries(facts.policy.stretch as Record<string, unknown>).flatMap(
-                        ([key, value]) =>
-                          typeof value === "string" || typeof value === "number" || typeof value === "boolean"
-                            ? [[key, value] as const]
-                            : [],
-                      ),
-                    )
-                  : null,
+              stretch: facts.policy.stretch ?? null,
               fingerprint: facts.policyFingerprint ?? null,
             },
         {
