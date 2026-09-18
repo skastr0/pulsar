@@ -124,7 +124,7 @@ describe("compileOwnershipRequest", () => {
     const question = compiled.request.questions[JEV_OWNERSHIP_QUESTION_ID]
     expect(question?.type).toBe("choice")
     if (question?.type !== "choice") throw new Error("expected choice")
-    expect(Object.keys(question.criteria)).toEqual(compiled.optionIds)
+    expect(Object.keys(question.criteria)).toEqual([...compiled.optionIds])
     const state = JSON.stringify(compiled.request.state)
     expect(state).not.toContain("C15")
     expect(state).not.toContain("fixture")
@@ -215,7 +215,7 @@ describe("evaluateOwnershipGroup", () => {
     expect(assessment.rawResponse).toBe(raw)
     expect(assessment.requestId).toBe("req-1")
     expect(assessment.usage).toEqual({ inputTokens: 12, outputTokens: 4 })
-    expect(assessment.distribution.map((entry) => entry.anchorId)).toEqual(compiled.optionIds)
+    expect(assessment.distribution.map((entry) => entry.anchorId)).toEqual([...compiled.optionIds])
     expect(assessment.distribution.find((entry) => entry.anchorId === "unknown")?.probability).toBe(0.03)
     expect(assessment.modelConfidence).toBe(0.8)
   })

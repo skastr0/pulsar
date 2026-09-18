@@ -22,7 +22,7 @@ export class JevClient extends Context.Service<JevClient, JevClientService>()("p
 
 export interface JevClientOptions {
   readonly apiKey: Redacted.Redacted<string>
-  readonly fetcher?: typeof fetch
+  readonly fetcher?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>
   readonly timeoutMs?: number
   readonly endpoint?: string
 }

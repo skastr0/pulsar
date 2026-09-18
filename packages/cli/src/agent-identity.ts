@@ -9,6 +9,7 @@ import {
   CANONICAL_DOMAIN_CONSTRUCTION_RELATIVE_PATH,
   CANONICAL_CONVENTIONS_RELATIVE_PATH,
   CANONICAL_GLOSSARY_RELATIVE_PATH,
+  CANONICAL_OWNERSHIP_POLICY_RELATIVE_PATH,
 } from "@skastr0/pulsar-core/reference-data"
 
 /** Unlike the engine's cache key, this is byte identity, independent of HEAD/index state. */
@@ -16,7 +17,7 @@ export const agentInputFingerprint = (repoRoot: string): Effect.Effect<string, u
   try: async () => {
     const paths = await simpleGit(repoRoot).raw([
       "ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", ".",
-      ":!.pulsar/cache", ":!.pulsar/timeseries", ":!.amp", ":!node_modules",
+      ":!.pulsar/cache", ":!.pulsar/timeseries", ":!.pulsar/ownership-runs", ":!.amp", ":!node_modules",
     ])
     const hash = createHash("sha256")
     for (const path of [...new Set(paths.split("\0").filter(Boolean))].sort()) {
@@ -48,12 +49,16 @@ export const agentReferencePolicyFingerprint = (repoRoot: string): Effect.Effect
       CANONICAL_CONVENTIONS_RELATIVE_PATH,
       CANONICAL_CONTRACT_FRESHNESS_RELATIVE_PATH,
       CANONICAL_DOMAIN_CONSTRUCTION_RELATIVE_PATH,
+      CANONICAL_OWNERSHIP_POLICY_RELATIVE_PATH,
       ".pulsar/author-aliases.json",
       ".mailmap",
     ]) {
       try {
         const content = await readFile(join(repoRoot, path), "utf8")
-        entries.push([path, path === ".mailmap" ? content : JSON.parse(content)])
+        const parsed = path === ".mailmap" ? content : JSON.parse(content)
+        // Ownership assessments bind the exact adopted policy bytes. Model output
+        // is evidence, not policy, and is deliberately absent from this list.
+        entries.push([path, path === CANONICAL_OWNERSHIP_POLICY_RELATIVE_PATH ? content : parsed])
       } catch (cause) {
         if (typeof cause === "object" && cause !== null && "code" in cause && cause.code === "ENOENT") continue
         throw cause

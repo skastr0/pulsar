@@ -10,6 +10,9 @@ import { runCliEffect } from "./cli-effect-runtime.js"
 import { writeJsonToStdout, writeStdout } from "./cli-output.js"
 import { CLI_BUILD_INFO } from "./index.js"
 import { buildPulsarRegistry } from "./runtime-registry.js"
+import { DEFAULT_OWNERSHIP_DISCOVER_LIMITS, proposeOwnershipInventory } from "./ownership-discovery.js"
+import { prepareOwnershipJudgment, ownershipJudgmentPreview, executeOwnershipJudgment } from "./agent-judge.js"
+import { jevClientLayerFromEnv } from "./jev/index.js"
 
 const runAgentOperation = (options: AgentArguments) => Effect.gen(function* () {
   if (options.operation === "catalog") {
@@ -50,7 +53,33 @@ const runAgentOperation = (options: AgentArguments) => Effect.gen(function* () {
       exitCode: 0,
     }
   }
+  if (options.operation === "judge") {
+    const plan = yield* prepareOwnershipJudgment(policy.repoRoot)
+    if (options.dryRun) {
+      return { result: { ...ownershipJudgmentPreview(plan), dry_run: true }, exitCode: 0 }
+    }
+    const result = yield* executeOwnershipJudgment(plan).pipe(Effect.provide(jevClientLayerFromEnv))
+    return { result, exitCode: result.applicability === "insufficient_evidence" ? 3 : 0 }
+  }
   const run = yield* runAgentAssessment(policy, prepared)
+  if (options.operation === "discover") {
+    const proposal = yield* Effect.try({
+      try: () => proposeOwnershipInventory({
+        repoRoot: policy.repoRoot,
+        signalResults: [...run.observation.result.signalResults.values()],
+        limits: {
+          ...DEFAULT_OWNERSHIP_DISCOVER_LIMITS,
+          ...(options.include === undefined ? {} : { include: [options.include] }),
+          ...(options.exclude === undefined ? {} : { exclude: [options.exclude] }),
+        },
+      }),
+      catch: () => new AgentCommandError("DISCOVERY_FAILED", "Could not construct ownership inventory from detector evidence."),
+    })
+    return {
+      result: { ...proposal, repository: { root: policy.repoRoot }, policy: agentPolicySummary(policy, prepared) },
+      exitCode: proposal.coverage.complete ? 0 : 3,
+    }
+  }
   return buildAgentScoreReport({
     options: { ...options, ...(signalId === undefined ? {} : { signalId }) },
     policy,
