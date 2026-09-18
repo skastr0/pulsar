@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import { Request, type Response } from "../jev-spike/model.ts"
-import type { SemanticCandidate } from "./discovery.ts"
+import type { SemanticCandidate } from "../../packages/cli/src/semantic-discovery.ts"
 import type { Policy, Rule } from "./policy.ts"
 
 export const QUESTION_VERSION = "autonomous-semantic-v2"

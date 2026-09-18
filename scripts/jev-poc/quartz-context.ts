@@ -7,7 +7,7 @@ import { TsAnalysisLayer, TsAnalysisTag, type TsFileContext } from "../../packag
 import { SyntaxKind, isIdentifier, isPropertyAccessExpression, isVariableDeclaration, type Node } from "../../packages/ts-pack/src/tsgo-api.ts"
 import { functionStartLine, getFunctionLikeEntriesForSourceFile, getFunctionName } from "../../packages/ts-pack/src/signals/shared-function-index.ts"
 import { sha256 } from "../jev-spike/model.ts"
-import type { SourcePointer } from "./discovery.ts"
+import type { SourcePointer } from "../../packages/cli/src/semantic-discovery.ts"
 import { SemanticError } from "./policy.ts"
 
 export interface ContextDeclaration {

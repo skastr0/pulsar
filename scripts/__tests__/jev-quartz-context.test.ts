@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { Effect } from "effect"
 import { createTempRepo } from "../../packages/ts-pack/src/__tests__/test-repo.ts"
 import { boundContext, quartzContext, type QuartzContext } from "../jev-poc/quartz-context.ts"
-import type { SourcePointer } from "../jev-poc/discovery.ts"
+import type { SourcePointer } from "../../packages/cli/src/semantic-discovery.ts"
 import { sha256, type Request } from "../jev-spike/model.ts"
 import { contextConsumption, contextRequest, externalSignature } from "../jev-quartz-context.ts"
 

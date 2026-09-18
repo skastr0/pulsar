@@ -10,7 +10,7 @@ import { runCliEffect } from "../packages/cli/src/cli-effect-runtime.ts"
 import { toScoreJson } from "../packages/cli/src/score-json.ts"
 import { TsAnalysisLayer, TsAnalysisTag } from "../packages/ts-pack/src/ts-analysis.ts"
 import { functionEndLine, functionStartLine, getFunctionLikeEntriesForSourceFile, getFunctionName } from "../packages/ts-pack/src/signals/shared-function-index.ts"
-import { collectSemanticCandidates } from "./jev-poc/discovery.ts"
+import { collectSemanticCandidates } from "../packages/cli/src/semantic-discovery.ts"
 import { decodeReceipt, judgmentMachine, replay, type CallRecord, type Plan, type Run } from "./jev-poc/pipeline.ts"
 import { loadSemanticPolicy, SemanticError } from "./jev-poc/policy.ts"
 import { QUESTION_VERSION } from "./jev-poc/questions.ts"
@@ -30,7 +30,7 @@ export const prepareSemanticPlan = Effect.fn("Semantic.prepare")(function* (
   const semantic = yield* loadSemanticPolicy(structuralPolicy.repoRoot, trusted)
   const prepared = yield* prepareAgentPolicy(structuralPolicy, options)
   const implementation = yield* Effect.try({
-    try: () => Object.fromEntries(["jev-poc.ts", "jev-poc/policy.ts", "jev-poc/discovery.ts", "jev-poc/questions.ts", "jev-poc/pipeline.ts", "jev-spike/model.ts", "jev-spike/transport.ts"]
+    try: () => Object.fromEntries(["jev-poc.ts", "jev-poc/policy.ts", "../packages/cli/src/semantic-discovery.ts", "jev-poc/questions.ts", "jev-poc/pipeline.ts", "jev-spike/model.ts", "jev-spike/transport.ts"]
       .map((path) => [path, sha256(readFileSync(join(import.meta.dir, path), "utf8"))])),
     catch: () => new SemanticError({ operation: "Fingerprint semantic implementation" }),
   })

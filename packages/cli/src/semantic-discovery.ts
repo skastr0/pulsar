@@ -373,15 +373,20 @@ const lineOfIndex = (text: string, index: number): number => {
   return line
 }
 
-type SourceRead =
+export type SourceRead =
   | { readonly ok: true; readonly text: string; readonly fileSha256: string; readonly bytes: number }
   | { readonly ok: false; readonly reason: string }
 
 /**
  * Read one candidate source under the safety rules. A rejected input is reported with a reason;
- * it is never read and never silently dropped.
+ * it is never read and never silently dropped. Judge uses this for bounded full-file snapshots
+ * before any model egress.
  */
-const readSource = (root: string, file: string, limits: ResolvedLimits): SourceRead => {
+export const readSemanticSource = (
+  root: string,
+  file: string,
+  limits: Pick<Required<DiscoveryLimits>, "maxSourceFileBytes">,
+): SourceRead => {
   if (file.length === 0) return { ok: false, reason: "path_empty" }
   // Absolute paths are normalized before they reach here; one that survives is outside the root.
   if (isAbsolute(file)) return { ok: false, reason: "path_outside_repo_root" }
@@ -746,7 +751,7 @@ const buildImportIndex = (
   let unresolvedSpecifiers = 0
   let importSpecifierCaps = 0
   for (const file of files) {
-    const read = readSource(root, file, limits)
+    const read = readSemanticSource(root, file, limits)
     if (!read.ok) {
       filesUnreadable += 1
       continue
@@ -949,7 +954,7 @@ export function collectSemanticCandidates(
   const readOnce = (file: string): SourceRead => {
     const cached = reads.get(file)
     if (cached !== undefined) return cached
-    const read = readSource(root, file, resolvedLimits)
+    const read = readSemanticSource(root, file, resolvedLimits)
     reads.set(file, read)
     return read
   }

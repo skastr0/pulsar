@@ -8,7 +8,7 @@ import {
   type DiscoveryResult,
   type ExtentResolver,
   type SignalRunResultLike,
-} from "../jev-poc/discovery.ts"
+} from "../../packages/cli/src/semantic-discovery.ts"
 
 const CLONE_SIGNAL = "TS-SL-01-duplication"
 const COMPLEXITY_SIGNAL = "TS-LD-01-cyclomatic-complexity"

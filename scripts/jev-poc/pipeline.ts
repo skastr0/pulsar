@@ -1,6 +1,6 @@
 import { canonical, sha256, validateResponse, type Request, type Response } from "../jev-spike/model.ts"
 import type { Receipt } from "../jev-spike/transport.ts"
-import type { DiscoveryResult, SemanticCandidate } from "./discovery.ts"
+import type { DiscoveryResult, SemanticCandidate } from "../../packages/cli/src/semantic-discovery.ts"
 import { decodePolicy, type Policy, type Rule } from "./policy.ts"
 import { decisive, factsRequest, judgmentRequest, QUESTION_VERSION, refinementRequest } from "./questions.ts"
 

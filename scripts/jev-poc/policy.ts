@@ -5,7 +5,7 @@ import { Data, Effect, Schema } from "effect"
 import { collectProjectModuleSourceFiles } from "../../packages/project-module-sdk/src/loader-source-files.ts"
 import { hashProjectModuleSource, materializeProjectModuleImportTarget } from "../../packages/project-module-sdk/src/loader-materialize.ts"
 import { canonical, sha256 } from "../jev-spike/model.ts"
-import type { SemanticCandidate } from "./discovery.ts"
+import type { SemanticCandidate } from "../../packages/cli/src/semantic-discovery.ts"
 
 const integer = (minimum: number, maximum: number) => Schema.Int.check(Schema.isBetween({ minimum, maximum }))
 const probability = Schema.Finite.check(Schema.isBetween({ minimum: 0.5, maximum: 1 }))
