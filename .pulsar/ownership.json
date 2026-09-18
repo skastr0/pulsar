@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "preference": "shared_domain_rule",
+  "target": 1,
+  "anchors": [
+    {
+      "id": "contrary",
+      "value": 0,
+      "description": "The declared callers implement their own copies of the same diagnostic severity authority rule rather than delegating to its shared owner. Similar unrelated logic is not a copy of this rule."
+    },
+    {
+      "id": "mixed",
+      "value": 0.5,
+      "description": "Some declared callers delegate diagnostic severity authority to its shared owner, while others implement a local copy of the same rule."
+    },
+    {
+      "id": "meets",
+      "value": 1,
+      "description": "The declared callers delegate diagnostic severity authority to one shared implementation. This judgment concerns ownership of that rule, not proof that the rule or callers are behaviorally correct."
+    }
+  ],
+  "allowed_classifiers": [
+    {
+      "id": "pulsar.jev.ownership",
+      "version": "2",
+      "model_id": "jev-1.13.0",
+      "prompt_id": "pulsar.ownership.choice.v2"
+    }
+  ],
+  "groups": [
+    {
+      "id": "engine-diagnostic-severity-authority",
+      "origin": "declared",
+      "description": "Pulsar's two signal execution paths must share the severity ceiling rule. This one-group pilot is not an inventory of all domain rules in Pulsar.",
+      "owner_paths": ["packages/core/src/enforcement.ts"],
+      "caller_paths": [
+        "packages/core/src/runner.ts",
+        "packages/core/src/observer-execution.ts"
+      ],
+      "context_paths": ["packages/core/src/evidence.ts"]
+    }
+  ]
+}

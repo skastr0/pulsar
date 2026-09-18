@@ -9,6 +9,7 @@ tsconfig.tsbuildinfo
 !.pulsar/conventions.json
 !.pulsar/glossary.json
 !.pulsar/author-aliases.json
+!.pulsar/ownership.json
 !.pulsar/project-modules.json
 !.pulsar/modules/
 !.pulsar/modules/**

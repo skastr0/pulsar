@@ -207,6 +207,85 @@ with secrets or elevated access. Refusal happens before importing project code.
    Dirty development builds and arbitrary trusted-code environment/network reads
    are not hermetic identities; pin the tool and dependencies for repeatable use.
 
+## Opt-in Jev ownership numbers
+
+`TS-SL-07-rule-ownership-alignment` replays an offline assessment against a
+repo-owned ownership rubric. It measures **fit on the declared inventory**, not
+the fraction of all code that is good. It never calls a model during `agent score`.
+Without `.pulsar/ownership.json` it is not applicable; a configured policy with
+missing or stale evidence is insufficient evidence, not a healthy score.
+
+The workflow is:
+
+```sh
+# Mechanical candidate discovery; no provider calls or policy adoption.
+bun "$PULSAR_CLONE/scripts/pulsar-dev.ts" agent discover "$REPO" --include 'src/**'
+# After reviewing candidates and authoring .pulsar/ownership.json:
+bun "$PULSAR_CLONE/scripts/pulsar-dev.ts" agent judge "$REPO" --dry-run
+# Explicit source egress to TypeSafe. Set TYPESAFE_API_KEY securely first.
+bun "$PULSAR_CLONE/scripts/pulsar-dev.ts" agent judge "$REPO"
+# Subsequent scoring is offline and checks current source/context bytes.
+bun "$PULSAR_CLONE/scripts/pulsar-dev.ts" agent score "$REPO" --signal TS-SL-07 --full
+```
+
+Add the normal policy/trust flags when the repo uses executable project modules.
+Dry-run shows the exact paths, source/request byte counts, model and number of
+calls without making calls or writing receipts. Live judgment reads whole declared
+files, rejects oversized/unsafe evidence rather than silently clipping it, and
+saves requests and responses under `.pulsar/ownership-runs/`. These receipts
+contain source code: keep them private and ignored. The adopted output is
+`.pulsar/ownership-assessment.json`; it is local generated evidence, not policy.
+Source changes during inference prevent adoption. Failed calls produce an
+incomplete assessment rather than silently retaining an earlier healthy verdict.
+
+Use [Pulsar's one-rule pilot](../.pulsar/ownership.json) as a concrete schema
+example, not a universal architecture preference. It declares that both signal
+execution paths should share the diagnostic severity authority rule. The source
+files are `enforcement.ts`, `runner.ts` and `observer-execution.ts`, with
+`evidence.ts` as context. Reviewers can directly check both calls to
+`enforceSeverityCeiling`; Jev estimates whether that arrangement matches the
+declared rubric. This does not prove that either execution path is bug-free.
+
+Policy fields specify `preference` (`shared_domain_rule` or `caller_local`),
+`target: 1`, described `anchors`, allowed classifier/model/prompt identities, and
+stable group IDs with owner/caller/context paths. Candidate origins must be
+changed from `detector_proposed` to `declared` when intentionally adopted.
+Keep the group ID and update its paths after extraction: deleting a clone must
+not delete the obligation being measured. Discovery finds clone candidates only;
+it cannot inventory noncloned shared rules such as this pilot automatically.
+
+Jev uses a **Choice**, not a free-form score: it chooses a described anchor, or
+`unknown` / `not_applicable`. Pulsar maps that selection to the policy's numbers:
+
+| Judgment | Pilot attainment |
+| --- | --- |
+| Contrary: callers copy the same rule | 0 |
+| Mixed: some delegate, some copy | 0.5 |
+| Meets: callers share one implementation | 1 |
+| Exceeds | Unavailable unless the repo defines an explicit stretch requirement and value >1 |
+| Unknown, missing, stale or invalid evidence | No overall attainment |
+
+The inventory attainment is the **minimum** applicable resolved group value.
+Adding healthy groups cannot hide a shortfall. The histogram shows how many
+groups received each anchor. Signal score clamps attainment to 1, while
+`result.assessment.preference_alignment` preserves the full attainment, target and comparison.
+Partial results retain `observed_attainment` but make no overall fit claim.
+An explicitly empty or entirely not-applicable inventory has no score claim.
+
+Confidence never multiplies attainment. The current evaluator routes a winner
+below 0.8 probability or a winner/runner-up margin below 0.2 to unresolved.
+Those thresholds are an **uncalibrated abstention rule**, not an accuracy guarantee.
+Full probability mass, including unknown/not-applicable, stays in the artifact.
+Synthetic development cases discriminate opposite preferences, but similarly
+shaped code implementing distinct rules remains unreliable without domain-identity
+evidence. Additional context can change judgments; more files are not a substitute
+for the right evidence. Treat results as advisory, with a soft-warning ceiling.
+
+The loader validates policy/rubric, declared inventory, classifier allowlist,
+source/context hashes and expiration before cache lookup. Replays expire after
+seven days by default. Hashes identify bytes; they do not authenticate a dishonest
+artifact writer. Do not accept untrusted assessment artifacts as proof.
+
 ## Machine contract and limits
 
 Operations emit one JSON envelope on stdout, without `--json` (`--help` is text):
