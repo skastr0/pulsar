@@ -8,7 +8,7 @@ Jev rejected a concrete behavior-breaking scoring refactor in Pulsar. It also ch
 
 ## Real Pulsar use case
 
-The source allowlist in [`pulsar-case.ts`](../../scripts/jev-spike/pulsar-case.ts) includes TS-DE-02, RS-DE-04, the Rust analysis helper, registration/caller excerpts, signal contracts, tests, and repository policy. Packets retain exact excerpts and file/content hashes. These are real implementations; the proposed refactor is an explicitly hypothetical patch, not a discovered production bug.
+The source allowlist in retired [`pulsar-case.ts`](https://github.com/skastr0/pulsar/blob/f09151f07e493ac9c76c84c32c38aed31df4669b/scripts/jev-spike/pulsar-case.ts) includes TS-DE-02, RS-DE-04, the Rust analysis helper, registration/caller excerpts, signal contracts, tests, and repository policy. Packets retain exact excerpts and file/content hashes. These are real implementations; the proposed refactor is an explicitly hypothetical patch, not a discovered production bug. Recovery and distilled tests: [jev-research-archive.md](jev-research-archive.md).
 
 | Probe | Observed response | What the evidence supports |
 | --- | --- | --- |
@@ -22,7 +22,7 @@ For structural context, `bun packages/cli/src/bin.ts score --signal TS-DE-02 .` 
 
 ## Development controls and observed failures
 
-The [corpus](../../scripts/fixtures/jev/cases.json) contains 11 public, agent-authored development cases. Its six lineage IDs are inventory categories, **not six independent decision lineages**: several cases reuse vendor-adapter code. `proposedExpectations` are author proposals, not reviewed labels. They and case IDs stay outside provider state. The compiler also strips `policy.approved_examples`, because those seed examples name candidate verdicts. Ordinary test assertions and declared contracts remain legitimate evidence.
+The retired [corpus](https://github.com/skastr0/pulsar/blob/f09151f07e493ac9c76c84c32c38aed31df4669b/scripts/fixtures/jev/cases.json) contains 11 public, agent-authored development cases. Its six lineage IDs are inventory categories, **not six independent decision lineages**: several cases reuse vendor-adapter code. `proposedExpectations` are author proposals, not reviewed labels. They and case IDs stay outside provider state. The compiler also strips `policy.approved_examples`, because those seed examples name candidate verdicts. Ordinary test assertions and declared contracts remain legitimate evidence.
 
 The 25-request plan was fixed before its provider run: 11 original cases, four additional identical requests for the first case, and ten A/B swaps. Swaps remap `focus.candidate` to preserve the physical candidate being judged. No live failures were selectively retried.
 
@@ -67,11 +67,14 @@ Raw run receipts, manifests, intents, original summaries, current replay summari
 
 A separately retained digest detects edits; this is not signed producer authentication. Historical replay validates recorded inputs rather than requiring today's source to match. Fresh evaluation recompiles current inputs and rejects changed source, questions, policy, or request bodies. A Git revision alone does not identify a dirty-tree experiment; use the recorded content and request hashes.
 
-## Run the integration
+## Historical integration commands (retired)
 
-Requires Bun and installed workspace dependencies. Preparation, tests, and replay need no credentials or network. Review each prepared packet before authorizing egress; the adapter transmits public allowlisted repository source or synthetic fixtures, not a recursive repository dump. It is not a general secret scanner.
+The research harness, npm scripts (`research:jev`, `test:jev`, `typecheck:jev`) and fixtures were deleted after preservation. Exact sources: snapshot [`f09151f07e493ac9c76c84c32c38aed31df4669b`](https://github.com/skastr0/pulsar/tree/f09151f07e493ac9c76c84c32c38aed31df4669b). Distilled specifications: [jev-research-archive.md](jev-research-archive.md). Ignored receipts under `.pulsar/jev-research/` were left untouched. **Do not treat the following as current commands.** This document is not an executed test suite. No live calls.
+
+Preparation, tests, and replay needed no credentials or network. Review each prepared packet before authorizing egress; the adapter transmitted public allowlisted repository source or synthetic fixtures, not a recursive repository dump. It is not a general secret scanner.
 
 ```sh
+# Historical only — snapshot f09151f07e493ac9c76c84c32c38aed31df4669b
 bun run test:jev
 bun run typecheck:jev
 mkdir -p .pulsar/jev-research
@@ -82,9 +85,10 @@ bun run research:jev evaluate .pulsar/jev-research/new-plan.json .pulsar/jev-res
 
 Other preparation modes: `smoke`, `pulsar`, `pulsar-policy`, `development`. Plans/runs must have new paths; they are never overwritten. Each plan is limited to **32 requests, 100,000 serialized bytes per request, concurrency one, 30-second transport timeout, and zero retries**. These are per-plan bounds, not a session-wide billing cap. An interrupted intent must be investigated rather than silently resent.
 
-After extracting the receipt bundle under `.pulsar/jev-research`, reproduce the real regression result without a key:
+After extracting the receipt bundle under `.pulsar/jev-research`, the historical regression replay without a key was:
 
 ```sh
+# Historical only
 bun run research:jev replay .pulsar/jev-research/pulsar-regression/run.json \
   3ce7d14e9dd3216205ce427bb2b53c9df9ba99be135f31f1630c504a7fc2f232
 ```

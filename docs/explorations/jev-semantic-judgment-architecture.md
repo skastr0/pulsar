@@ -7,7 +7,7 @@
 
 **Follow-up:** A research-only adapter and first live probes now exist; see [measured results and limitations](jev-spike-results.md). This remains the broader proposed architecture, not an inventory of delivered capabilities. Production scoring and enforcement remain unchanged.
 
-Start here for architecture. Use the [evaluation plan and unanswered experiment register](jev-spike-evaluation-plan.md) to execute the spike, and the [machine-readable question bank](jev-spike-question-bank.json) to seed requests. These artifacts are proposals, not evidence that Jev works for architecture. Nothing under this exploration is automatically loaded as repository policy.
+Start here for architecture. Use the [evaluation plan and unanswered experiment register](jev-spike-evaluation-plan.md) as the original design record. The machine-readable question bank is retired; templates and recovery live in [jev-research-archive.md](jev-research-archive.md). These artifacts are proposals, not evidence that Jev works for architecture. Nothing under this exploration is automatically loaded as repository policy. Research scripts that would have executed the spike are deleted.
 
 ## 1. Decision and intended outcome
 

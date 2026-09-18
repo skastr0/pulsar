@@ -8,7 +8,7 @@ The Oracle proposed this bounded experiment and interpreted its recorded results
 
 Each POST to `https://api.typesafe.ai/v1/systemone` contained `{ model: "jev-latest", state, questions }`. State held full source for two hypothetical alternatives, selected supporting excerpts, explicit behavior obligations, and an explicitly proposed repository-scoped preference. Requests were 28,435–43,571 serialized bytes, with 10–12 questions each. The API key was an authorization header, never part of the recorded packet.
 
-The [experiment definition](../../scripts/fixtures/jev/question-shapes.json) supplies questions and criteria. The [candidate builder](../../scripts/jev-spike/shape-candidates.ts) generates actual source alternatives with drift-checked replacements. These alternatives are research fixtures, not changes adopted into production:
+The retired [experiment definition](https://github.com/skastr0/pulsar/blob/f09151f07e493ac9c76c84c32c38aed31df4669b/scripts/fixtures/jev/question-shapes.json) supplies questions and criteria. The retired [candidate builder](https://github.com/skastr0/pulsar/blob/f09151f07e493ac9c76c84c32c38aed31df4669b/scripts/jev-spike/shape-candidates.ts) generates actual source alternatives with drift-checked replacements. These alternatives are research fixtures, not changes adopted into production. Distilled questions and invariants: [jev-research-archive.md](jev-research-archive.md).
 
 | Subject | Original A | Candidate B | Independent checks outside Jev input |
 | --- | --- | --- | --- |
@@ -86,19 +86,21 @@ consolidation flat/repeat request SHA256: 4866c33a51c9c1bbaec7d23959ffe375c4345f
 
 The implementation was checkpointed before inference at [14e8910](https://github.com/skastr0/pulsar/commit/14e8910fcac4f06a9163451c03e43cd5e1f7aa4b), local-only when recorded. The digest detects later edits; it is not signed provider authentication.
 
-After extracting the archive from the repository root:
+After extracting the archive from the repository root, historical replay (retired harness at snapshot `f09151f07e493ac9c76c84c32c38aed31df4669b`) was:
 
 ```sh
+# Historical only — research:jev retired
 bun run research:jev replay .pulsar/jev-research/question-shapes/run.json \
   22d15ba7b645ef2d0aad824ce17da3cbc6ac7344450a135f251368fbabdd82b1
 ```
 
-For a separately authorized fresh experiment, use new paths and inspect the prepared packet before egress:
+For a separately authorized fresh experiment the historical prepare/evaluate path was:
 
 ```sh
+# Historical only — do not run; no live calls
 bun run research:jev prepare question-shapes .pulsar/jev-research/new-shapes-plan.json
 bun run research:jev evaluate .pulsar/jev-research/new-shapes-plan.json \
   .pulsar/jev-research/new-shapes-run --allow-egress
 ```
 
-Validation: `bun run typecheck:jev` passed; `bun run test:jev` returned **35 pass, 0 fail**, including real candidate compiler/runtime checks, structured-response validation, per-question masking, request controls and the previous corpus. Historical development replay remains **25 valid / 25**. There is still no held-out architectural evaluation, matched conventional-provider baseline, independently labeled policy comparison, score-directed agent trial, calibrated decision threshold or production enforcement integration.
+**Historical validation (not a live suite):** `bun run typecheck:jev` passed; `bun run test:jev` returned **35 pass, 0 fail**, including real candidate compiler/runtime checks, structured-response validation, per-question masking, request controls and the previous corpus. Historical development replay remains **25 valid / 25**. There is still no held-out architectural evaluation, matched conventional-provider baseline, independently labeled policy comparison, score-directed agent trial, calibrated decision threshold or production enforcement integration. Those scripts/tests are deleted; see [jev-research-archive.md](jev-research-archive.md).

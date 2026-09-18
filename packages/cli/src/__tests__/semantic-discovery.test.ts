@@ -8,7 +8,7 @@ import {
   type DiscoveryResult,
   type ExtentResolver,
   type SignalRunResultLike,
-} from "../../packages/cli/src/semantic-discovery.ts"
+} from "../semantic-discovery.js"
 
 const CLONE_SIGNAL = "TS-SL-01-duplication"
 const COMPLEXITY_SIGNAL = "TS-LD-01-cyclomatic-complexity"
@@ -82,7 +82,7 @@ export const wrap = (values: number[]): number => betaTotal(values) + 1
 
 /** A small asymmetric repository: two workspace packages, five source files, uneven sizes. */
 const buildFixtureRepo = (): string => {
-  const root = mkdtempSync(join(tmpdir(), "jev-poc-discovery-"))
+  const root = mkdtempSync(join(tmpdir(), "pulsar-semantic-discovery-"))
   roots.push(root)
   write(root, "package.json", JSON.stringify({ name: "fixture-root", private: true, workspaces: ["packages/*"] }))
   write(root, "packages/alpha/package.json", JSON.stringify({
@@ -405,7 +405,7 @@ describe("collectSemanticCandidates: extents", () => {
 describe("collectSemanticCandidates: safety", () => {
   test("rejects paths escaping the repository, symlink escapes, secret paths and non-source inputs", () => {
     const root = buildFixtureRepo()
-    const outside = mkdtempSync(join(tmpdir(), "jev-poc-outside-"))
+    const outside = mkdtempSync(join(tmpdir(), "pulsar-semantic-discovery-outside-"))
     roots.push(outside)
     writeFileSync(join(outside, "escaped.ts"), "export const escaped = (): number => 1\n")
     // A symlink inside the repository that resolves outside it.
@@ -699,7 +699,7 @@ describe("collectSemanticCandidates: absolute signal paths and confinement", () 
 
   test("still rejects an absolute path outside the repository after normalization", () => {
     const root = buildFixtureRepo()
-    const outside = mkdtempSync(join(tmpdir(), "jev-poc-abs-"))
+    const outside = mkdtempSync(join(tmpdir(), "pulsar-semantic-discovery-abs-"))
     roots.push(outside)
     writeFileSync(join(outside, "elsewhere.ts"), "export const elsewhere = (): number => 1\n")
     const signal = cloneSignal(root)
@@ -718,7 +718,7 @@ describe("collectSemanticCandidates: absolute signal paths and confinement", () 
 
   test("rejects a candidate reached through a symlinked parent directory", () => {
     const root = buildFixtureRepo()
-    const outside = mkdtempSync(join(tmpdir(), "jev-poc-dirlink-"))
+    const outside = mkdtempSync(join(tmpdir(), "pulsar-semantic-discovery-dirlink-"))
     roots.push(outside)
     writeFileSync(join(outside, "escaped.ts"), "export const escaped = (): number => 1\n")
     // The leaf is a regular file; only its parent directory escapes the repository.

@@ -192,6 +192,8 @@ The **original** archive `maint-utility-receipts.tar.gz` (205,266 bytes) is pres
 The recorded plans carry the repository SHA they were prepared against, so `evaluate` refuses to re-infer them on a later commit by design; `replay` is unaffected because it verifies the recorded bytes and digests instead of rebuilding the inputs.
 
 ```sh
+# Historical only — scripts/jev-maint.ts retired. Snapshot f09151f07e493ac9c76c84c32c38aed31df4669b.
+# Distilled: [jev-research-archive.md](jev-research-archive.md). No live calls.
 # independent re-verification of the ground truth (24 compiler/runtime rows)
 bun scripts/jev-maint.ts verify .pulsar/jev-research/maint-utility/patch-matrix.json
 bun run test:jev-maint
@@ -202,4 +204,4 @@ bun scripts/jev-maint.ts replay .pulsar/jev-research/maint-utility/eval-run/run.
 bun scripts/jev-maint/receipt.ts v2
 ```
 
-Validation: `bun run typecheck:jev-maint` passed; `bun run test:jev-maint` returned **12 pass, 0 fail**, including the full 24-row patch matrix, the leakage guards, plan tamper rejection, the byte-identical repeat check, the answer-field slot guard, the three recorded Score distributions, the no-implementation guard, the no-cascade guard, and the ledger inventory. `bun run test:jev` returned **47 pass, 0 fail** (35 prior + 12 new) through its existing `jev-*.test.ts` glob.
+**Historical validation (not a live suite):** `bun run typecheck:jev-maint` passed; `bun run test:jev-maint` returned **12 pass, 0 fail**, including the full 24-row patch matrix, the leakage guards, plan tamper rejection, the byte-identical repeat check, the answer-field slot guard, the three recorded Score distributions, the no-implementation guard, the no-cascade guard, and the ledger inventory. `bun run test:jev` returned **47 pass, 0 fail** (35 prior + 12 new) through its existing `jev-*.test.ts` glob. Those paths are deleted.

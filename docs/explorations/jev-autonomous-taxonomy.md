@@ -1,13 +1,15 @@
 # Autonomous taxonomy and penalty aggregation for the Jev-backed health command
 
+**Historical research recommendation.** The parent POC implementation and `.pulsar/modules/semantic-policy.ts` were retired; see [jev-poc-archive.md](jev-poc-archive.md). Exact sources remain at snapshot [`f09151f07e493ac9c76c84c32c38aed31df4669b`](https://github.com/skastr0/pulsar/commit/f09151f07e493ac9c76c84c32c38aed31df4669b). Nothing in this document is a live API.
+
 **Observed:** 2026-09-17. **Scope:** research recommendation. No provider call was made for this document and no production signal, score, weight, cache key, calibration slot, or default changed. It extends [policy-clarity](jev-policy-clarity-results.md), [staged-judgment](jev-staged-judgment-results.md), [maintenance-utility](jev-maintenance-utility-results.md) and [question-shape](jev-question-shape-results.md).
 
 ## 0. Status of everything below
 
-**Proposed, not implemented.** Every interface, field name, option set, weight, and formula in this document is a recommendation. The parent implementation currently uses a **fixed repo-local `semantic-policy.ts` research module**, not the manifest or SDK slot mechanism, and its shape is authoritative where it differs from what follows. Concretely:
+**Proposed, not implemented.** Every interface, field name, option set, weight, and formula in this document is a recommendation. The parent implementation used a **fixed repo-local `semantic-policy.ts` research module** (now retired), not the manifest or SDK slot mechanism, and its snapshot shape is authoritative where it differs from what follows. Concretely:
 
 - The `SemanticPolicy` / `SemanticRule` / `semanticPolicy()` / `selectRules()` surface in §5 is **proposed**. It is not a shipped contract, and no test pins it.
-- Declaring that module through `.pulsar/project-modules.json` (`kind: "repo-local"`, the existing manifest at `.pulsar/project-modules.json`) and the project-module SDK (`defineProcessor`, `packages/project-module-sdk/src/index.ts:15`) is a **later step**, not part of this POC. The SDK mechanism exists and is already used by `.pulsar/modules/pulsar-self.ts`; it is simply not how the semantic policy is wired yet.
+- Declaring that module through `.pulsar/project-modules.json` (`kind: "repo-local"`, the existing manifest at `.pulsar/project-modules.json`) and the project-module SDK (`defineProcessor`, `packages/project-module-sdk/src/index.ts:15`) was a **later step**, not part of this POC. The SDK mechanism exists and is already used by `.pulsar/modules/pulsar-self.ts`; it was never how the semantic policy was wired.
 - The three-stage flow, the fixed penalty points, and the separate hard-gate treatment below match the implementation direction as described to me; the field names and the two illustrative policies are mine.
 - Weights, thresholds, and the two policies in §6 are **illustrative**, not calibrated.
 
@@ -15,7 +17,7 @@
 
 ## 1. Candidates (deterministic, not asked)
 
-Candidate inventory: **all detected clone groups** plus **all functions collected by the complexity signal** (`TS-LD-01-cyclomatic-complexity`, `ts-ld-01-complexity.ts:42`), filtered by repo-declared include/exclude scope. The implemented POC applies a ranked/interleaved budget to that full inventory and explicitly marks the remaining sample incomplete. See [the implemented contract](jev-autonomous-poc.md); the broader alternatives below remain proposals.
+Candidate inventory: **all detected clone groups** plus **all functions collected by the complexity signal** (`TS-LD-01-cyclomatic-complexity`, `ts-ld-01-complexity.ts:42`), filtered by repo-declared include/exclude scope. The implemented POC applied a ranked/interleaved budget to that full inventory and explicitly marked the remaining sample incomplete. See [the historical implemented contract](jev-autonomous-poc.md) and [archive](jev-poc-archive.md); the broader alternatives below remain proposals. Production candidate collection for ownership discovery still lives in `packages/cli/src/semantic-discovery.ts`.
 
 | Kind | Detector | Fields | Existing slot |
 | --- | --- | --- | --- |

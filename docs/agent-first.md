@@ -294,6 +294,11 @@ source/context hashes and expiration before cache lookup. Replays expire after
 seven days by default. Hashes identify bytes; they do not authenticate a dishonest
 artifact writer. Do not accept untrusted assessment artifacts as proof.
 
+The [ownership evaluation archive](explorations/jev-ownership-evaluation-archive.md)
+preserves live request criteria, results, counterexamples and former research test
+specifications. The [research index](explorations/jev-research-archive.md) records
+earlier attempts. Research runners are retired; production package tests remain.
+
 ## Machine contract and limits
 
 Operations emit one JSON envelope on stdout, without `--json` (`--help` is text):

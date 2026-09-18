@@ -3,7 +3,7 @@
 **Status:** Original proposed evaluation plan. A partial development run is now recorded in [first-access results](jev-spike-results.md); held-out acceptance gates are **not run**.
 
 **Prepared:** 2026-09-16 against Pulsar `fe84b1212148564703ebbaff0ee7f3c3df1c668f`.  
-**Companions:** [Architecture](jev-semantic-judgment-architecture.md), [question-bank JSON](jev-spike-question-bank.json).
+**Companions:** [Architecture](jev-semantic-judgment-architecture.md), distilled [question bank and archive](jev-research-archive.md). The former `jev-spike-question-bank.json` is retired; recover it from snapshot [`f09151f07e493ac9c76c84c32c38aed31df4669b`](https://github.com/skastr0/pulsar/blob/f09151f07e493ac9c76c84c32c38aed31df4669b/docs/explorations/jev-spike-question-bank.json).
 
 This plan pre-seeds both kinds of questions: **what to ask Jev about code**, and **what the experiment must establish about Jev**. They are different. A model answering a question about its own reliability is not an evaluation of that reliability.
 
@@ -228,11 +228,11 @@ bun run dev agent catalog /absolute/path/to/fixture
 bun run dev agent score /absolute/path/to/fixture --full
 ```
 
-Preserve stdout JSON and exit status, including incomplete evidence. A fixture enabling project modules requires the trust/dependency setup in [the agent guide](../agent-first.md); do not add trust flags blindly. `pulsar semantic prepare/evaluate/replay/compare/bench` are proposed names in the architecture, **not implemented commands**. The mock compiler and live harness are future PJS work items.
+Preserve stdout JSON and exit status, including incomplete evidence. A fixture enabling project modules requires the trust/dependency setup in [the agent guide](../agent-first.md); do not add trust flags blindly. `pulsar semantic prepare/evaluate/replay/compare/bench` are proposed names in the architecture, **not implemented commands**. The research harness that later existed under `scripts/jev-*` is retired; see [jev-research-archive.md](jev-research-archive.md). The mock compiler and live harness remain future PJS work items, not current commands.
 
 ## 9. Question-bank compilation and validation
 
-The JSON companion has a top-level catalog, 24 templates, readiness requirements, intended usage, related research questions and example case IDs. Its scores have illustrative local utility maps, not adopted weights or calibration thresholds. It is deliberately outside `.pulsar`.
+The JSON companion (retired; distilled in [jev-research-archive.md](jev-research-archive.md), blob at the snapshot) had a top-level catalog, 24 templates, readiness requirements, intended usage, related research questions and example case IDs. Its scores have illustrative local utility maps, not adopted weights or calibration thresholds. It was deliberately outside `.pulsar`.
 
 A future compiler must:
 

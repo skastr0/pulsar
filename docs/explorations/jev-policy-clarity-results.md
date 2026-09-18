@@ -101,7 +101,7 @@ This defect was found after the calls and is recorded rather than repaired. Fixi
 
 ## Independent evidence, and what it does not establish
 
-Computed outside provider input by `bun scripts/jev-policy-clarity.ts evidence`, and asserted by tests.
+Computed outside provider input by the retired `bun scripts/jev-policy-clarity.ts evidence` command ([snapshot](https://github.com/skastr0/pulsar/blob/f09151f07e493ac9c76c84c32c38aed31df4669b/scripts/jev-policy-clarity.ts)), and asserted by retired tests.
 
 | Case | Check | Result |
 | --- | --- | --- |
@@ -255,6 +255,8 @@ Plan digests: `exploration` `1f48832f405308f90ed1f8f5bcce785e2e77a3357690c083b85
 Input usage **934,616 tokens**, output **23,442 tokens**. Under the recorded $0.042/million input and free-output assumption, estimated cost **$0.039253872**, not verified account billing. Orb-observed fetch/body latency: **p50 135 ms, p95 212 ms, max 377 ms**, nearest-rank percentiles; serial, small-sample, excluding evidence preparation.
 
 ```sh
+# Historical only — harness deleted after [jev-research-archive.md](jev-research-archive.md).
+# Snapshot f09151f07e493ac9c76c84c32c38aed31df4669b. No live calls.
 bun run typecheck:jev
 bun test scripts/__tests__/jev-policy-clarity.test.ts
 bun scripts/jev-policy-clarity.ts evidence .pulsar/jev-research/evidence/independent-evidence.json

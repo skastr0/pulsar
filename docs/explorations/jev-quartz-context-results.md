@@ -1,5 +1,7 @@
 # Quartz context spike: more evidence changed uncertainty, not the disputed verdict
 
+**Historical.** The experiment CLI `scripts/jev-quartz-context.ts` and `scripts/jev-poc/quartz-context.ts` were retired. Exact sources remain at snapshot [`f09151f07e493ac9c76c84c32c38aed31df4669b`](https://github.com/skastr0/pulsar/commit/f09151f07e493ac9c76c84c32c38aed31df4669b). Findings are also summarized in [jev-poc-archive.md](jev-poc-archive.md). Commands below are not currently runnable. No new provider calls were made for this note.
+
 The same Pulsar candidate was evaluated with the existing file-window context and with a Quartz-resolved neighborhood. **The richer context moved Jev toward a near-tie between mechanical similarity and a shared rule. It did not resolve the subsequent policy contradiction.** One treatment repeat stopped at the existing confidence gate; the other crossed it and still called the shared-rule policy violated after classifying the code as mechanics only.
 
 This is an isolated experiment, not a production scoring change. No source repair, default signal change, or policy/threshold adjustment was made. The comparison concerns one previously observed candidate, not held-out architectural accuracy.
@@ -48,7 +50,9 @@ The first epoch retained external-library JSDoc. Its ~95.8 KB treatment fact pac
 
 Across the two epochs: **18 attempted requests, 16 validated responses, two token-limit rejections**. Valid responses reported 280,591 input and 1,962 output tokens in total. The failed epoch and every successful or rejected raw receipt are retained; no answer was discarded in favor of a favorable rerun.
 
-## Reproduce or inspect without inference
+## Reproduce or inspect without inference (retired; not currently runnable)
+
+The following commands are historical. Replay of recorded artifacts still requires the snapshot sources, not the current tree.
 
 ```sh
 # Build a frozen context experiment; zero provider calls.
@@ -65,4 +69,4 @@ The accepted result is `.pulsar/context-experiments/1789705202709-d1877c10/run-1
 
 The review archive `jev-quartz-context-spike.tar.gz` includes both epochs, intents, raw receipts, compiler maps, source snapshots and verification logs. The six targeted tests exercise native function/arrow reference resolution through aliases, same-name decoys, local policy-table retention, external built-in signatures, source drift, byte-budget rejection, question preservation, incomplete-evidence consumption and documentation-token compaction. Offline CLI replay reproduced the accepted epoch's four summaries without provider calls.
 
-Final verification: `bun run test:jev` → **150 pass, 0 fail** across 11 files; `bun run typecheck:jev` → exit 0. An independent file read verified all 122 selected declaration texts against their source offsets and hashes. Repeated requests within each arm were byte-identical. Altered request, missing receipt and altered verdict probes were all rejected by replay. These checks establish packet integrity and execution, not semantic accuracy.
+Final verification at the time of the experiment: `bun run test:jev` → **150 pass, 0 fail** across 11 files; `bun run typecheck:jev` → exit 0. Those research scripts and the `test:jev` glob that targeted them are retired. An independent file read verified all 122 selected declaration texts against their source offsets and hashes. Repeated requests within each arm were byte-identical. Altered request, missing receipt and altered verdict probes were all rejected by replay. These checks establish packet integrity and execution, not semantic accuracy.

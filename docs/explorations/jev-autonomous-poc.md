@@ -1,10 +1,14 @@
 # Autonomous semantic health POC
 
-This is an opt-in **tool**, not an agent prompt. Pulsar computes the signals, selects source, composes every question, follows the answers through a bounded state machine, and applies the repository's declared penalties. The invoking agent supplies no code excerpts, labels, diagnoses, or proposed refactors.
+**Historical.** The research command, `.pulsar/modules/semantic-policy.ts`, and `scripts/jev-poc*` machinery were retired. Exact sources remain at snapshot [`f09151f07e493ac9c76c84c32c38aed31df4669b`](https://github.com/skastr0/pulsar/commit/f09151f07e493ac9c76c84c32c38aed31df4669b). Findings, request shapes, and test intent are preserved in [jev-poc-archive.md](jev-poc-archive.md). Production discovery (`packages/cli/src/semantic-discovery.ts`) remains; this document is not a live runbook.
 
-This source-checkout command is experimental. It does not change published CLI contracts, built-in signal scoring, or the production project-module manifest.
+This was an opt-in **tool**, not an agent prompt. Pulsar computed the signals, selected source, composed every question, followed the answers through a bounded state machine, and applied the repository's declared penalties. The invoking agent supplied no code excerpts, labels, diagnoses, or proposed refactors.
 
-## Run it once
+This source-checkout command was experimental. It did not change published CLI contracts, built-in signal scoring, or the production project-module manifest.
+
+## Run it once (retired; not currently runnable)
+
+The following commands are historical. They are not present after cleanup.
 
 ```sh
 # No provider calls: inspect deterministic discovery and the selected policy.
@@ -22,7 +26,7 @@ bun run dev semantic replay <runPath> <runHash>
 
 `run` exits 0 for green, 2 for red, 3 for unresolved/amber, and 1 for configuration or execution errors. `plan` and successful `replay` exit 0 independently of health. Each invocation starts fresh inference; there is no hidden favorable-answer cache or automatic retry. Recorded replay is deterministic; fresh Jev inference is not.
 
-The repository must own `.pulsar/modules/semantic-policy.ts`. There is no personal semantic policy, fallback, or policy-free score. The module exports explicit include/exclude scope, rules, fixed penalties, confidence/margin floors, budgets and optional executable `selectRules(candidate)`. Executing it requires `--trust-project-code`; it is trusted code, not sandboxed. Static owned dependencies are content-hashed and materialized using the existing SDK loader. Arbitrary environment/network reads and external dependency bytes are not covered by this identity.
+The repository had to own `.pulsar/modules/semantic-policy.ts` (retired with this cleanup; snapshot source linked from the archive). There was no personal semantic policy, fallback, or policy-free score. The module exported explicit include/exclude scope, rules, fixed penalties, confidence/margin floors, budgets and optional executable `selectRules(candidate)`. Executing it required `--trust-project-code`; it was trusted code, not sandboxed. Static owned dependencies were content-hashed and materialized using the existing SDK loader. Arbitrary environment/network reads and external dependency bytes were not covered by this identity.
 
 `--expect-policy` covers semantic module source/configuration, structural assessment policy, the requested model identifier, question version and POC implementation bytes. It cannot pin the server's implementation behind `jev-latest`; responses record their reported model version. Changing the tool or policy creates a different scoring epoch, not a repair.
 
@@ -59,11 +63,11 @@ The supplied self-policy is illustrative calibration: 20 points for independentl
 
 Every live run writes an immutable plan and exclusive intent files before egress under `.pulsar/semantic-runs/`. Receipts retain raw provider bodies, exact requests, hashes, request IDs, status and latency. Replay reconstructs every transition, checks exact request identity and hash, validates raw responses against their questions, and recomputes the summary. A caller-supplied run SHA256 protects the entire recorded artifact. Failed/invalid provider responses remain unknown; there is no second stored answer object that can drift from the raw body.
 
-`bun scripts/jev-poc-smoke.ts` creates disposable TypeScript/Git development repositories, runs the real signal engine and unchanged semantic pipeline, and retains receipts. It compares delegation, copied rule bodies, independent same-shaped rules, and repair. No expected outcome or fixture description is passed into discovery or Jev. These small authored cases test end-to-end operation, **not held-out accuracy**.
+`bun scripts/jev-poc-smoke.ts` (retired) created disposable TypeScript/Git development repositories, ran the real signal engine and unchanged semantic pipeline, and retained receipts. It compared delegation, copied rule bodies, independent same-shaped rules, and repair. No expected outcome or fixture description was passed into discovery or Jev. These small authored cases tested end-to-end operation, **not held-out accuracy**. Snapshot: [`scripts/jev-poc-smoke.ts`](https://github.com/skastr0/pulsar/blob/f09151f07e493ac9c76c84c32c38aed31df4669b/scripts/jev-poc-smoke.ts).
 
-The separate mutation fixtures in `scripts/jev-poc/challenges.ts` operate on real Pulsar code: a duplicated rule, a forwarding wrapper, independent same-shaped rules, healthy-file padding and a low-ranked duplicate. Their tests establish detector reach and selected behavioral preservation; they do not by themselves validate semantic score movement. Notably, the wrapper appears in the full complexity inventory despite producing no over-threshold diagnostic. Top-N diagnostics alone would miss it.
+The separate mutation fixtures in `scripts/jev-poc/challenges.ts` (retired) operated on real Pulsar code: a duplicated rule, a forwarding wrapper, independent same-shaped rules, healthy-file padding and a low-ranked duplicate. Their tests established detector reach and selected behavioral preservation; they did not by themselves validate semantic score movement. Notably, the wrapper appears in the full complexity inventory despite producing no over-threshold diagnostic. Top-N diagnostics alone would miss it. Snapshot: [`scripts/jev-poc/challenges.ts`](https://github.com/skastr0/pulsar/blob/f09151f07e493ac9c76c84c32c38aed31df4669b/scripts/jev-poc/challenges.ts).
 
-See [taxonomy research](jev-autonomous-taxonomy.md) for alternative questions and proposed extensions, not the implemented API contract. Earlier [staged experiments](jev-staged-judgment-results.md) justify explicit gating and ambiguity reporting; they did not establish better policy judgment accuracy.
+See [taxonomy research](jev-autonomous-taxonomy.md) for alternative questions and proposed extensions, not the implemented API contract. Earlier [staged experiments](jev-staged-judgment-results.md) justify explicit gating and ambiguity reporting; they did not establish better policy judgment accuracy. Cleanup summary: [jev-poc-archive.md](jev-poc-archive.md).
 
 ## Observed on 2026-09-17: autonomous operation, unproven repair target
 
@@ -95,4 +99,4 @@ Receipt anchors (paths relative to the repository):
 
 The v1 source is preserved at [the initial implementation commit](https://github.com/skastr0/pulsar/commit/5e4d6f6); v2 intentionally rejects v1 question versions during replay. The review archive `jev-autonomous-poc-2026-09-17.tar.gz` retains both source snapshots, plans, intents, raw receipts, smoke sources/results, verification logs and a checksum manifest. Recorded absolute temporary paths describe the original runs; replay needs only the extracted run file and its recorded SHA256, not the original source directory.
 
-Final local verification: `bun run test:jev` → **144 pass, 0 fail** across 10 files; `bun run typecheck:jev` → exit 0. CLI replay of Pulsar v2 and all four v2 smoke runs reproduced their summaries without provider calls. This verifies execution, integrity and aggregation, not semantic accuracy or repeatability of fresh inference. Before treating this score as an optimization objective, held-out opposing-policy controls must demonstrate debt discrimination, and contradictions between semantic facts and policy verdicts need an explicit treatment.
+Final local verification at the time of the experiment: `bun run test:jev` → **144 pass, 0 fail** across 10 files; `bun run typecheck:jev` → exit 0. Those research scripts and the `test:jev` entry that targeted them are retired. CLI replay of Pulsar v2 and all four v2 smoke runs reproduced their summaries without provider calls. This verified execution, integrity and aggregation, not semantic accuracy or repeatability of fresh inference. Before treating this score as an optimization objective, held-out opposing-policy controls must demonstrate debt discrimination, and contradictions between semantic facts and policy verdicts need an explicit treatment.

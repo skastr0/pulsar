@@ -133,11 +133,7 @@ const prepareWorkspace = async (): Promise<void> => {
 const runCli = async (): Promise<number> => {
   await prepareWorkspace()
   const provenance = await sourceProvenance()
-  // Opt-in source-checkout research command; published CLI contracts stay unchanged.
-  const args = process.argv.slice(2)
-  const semantic = args[0] === "semantic"
-  const entry = semantic ? join(REPO_ROOT, "scripts", "jev-poc.ts") : CLI_ENTRY
-  const proc = Bun.spawn([process.execPath, entry, ...(semantic ? args.slice(1) : args)], {
+  const proc = Bun.spawn([process.execPath, CLI_ENTRY, ...process.argv.slice(2)], {
     cwd: process.cwd(),
     env: { ...process.env, ...provenance },
     stdin: "inherit",
