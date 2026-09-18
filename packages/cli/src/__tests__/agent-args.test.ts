@@ -24,6 +24,23 @@ describe("agent arguments", () => {
     expect(parseAgentArguments(replay.slice(2))).toMatchObject({ full: true, repoPath: "-repo", expectPolicy: "fingerprint" })
   })
 
+  test("judge is an explicit source-egress operation with a zero-call preview", () => {
+    expect(parseAgentArguments(["judge", "repo", "--dry-run", "--expect-policy", "fingerprint"]))
+      .toMatchObject({ operation: "judge", repoPath: "repo", dryRun: true, expectPolicy: "fingerprint" })
+    expect(parseAgentArguments(["judge"])).toMatchObject({ dryRun: false })
+    expect(agentHelp("judge")).toContain("Sends configured source and context to TypeSafe")
+    expect(agentHelp("judge")).toContain("without network calls or writes")
+    expect(agentHelp("judge")).toContain("TYPESAFE_API_KEY")
+    expect(agentHelp("score")).toContain("Only judge sends code")
+  })
+
+  test("discovery scope is explicit and never adopts a policy", () => {
+    expect(parseAgentArguments(["discover", "--include", "packages/core/**", "--exclude", "**/*.test.ts"]))
+      .toMatchObject({ operation: "discover", include: "packages/core/**", exclude: "**/*.test.ts" })
+    expect(agentHelp("discover")).toContain("does not adopt policy or call a model")
+    expect(agentHelp("discover")).toContain("not a shared-rule verdict")
+  })
+
   test("rejects unsupported, incomplete, repeated, conflicting and cross-operation flags", () => {
     for (const args of [
       ["unknown"], ["score", "--json"], ["score", "--vector"], ["score", "--vector=x"],
@@ -33,6 +50,10 @@ describe("agent arguments", () => {
       ["score", "--vector", "a", "--vector", "b"], ["config", "--full"],
       ["catalog", "--trust-project-code"], ["catalog", "--vector", "a"],
       ["catalog", "--signal", "x", "--slot", "y"], ["score", "--slot", "x"],
+      ["score", "--dry-run"], ["judge", "--full"], ["judge", "--limit", "2"],
+      ["judge", "--signal", "TS-SL-07"], ["judge", "--dry-run", "--dry-run"],
+      ["score", "--include", "src/**"], ["judge", "--exclude", "src/**"],
+      ["discover", "--include"], ["discover", "--dry-run"],
     ]) {
       expect(() => parseAgentArguments(args)).toThrow(AgentCommandError)
     }

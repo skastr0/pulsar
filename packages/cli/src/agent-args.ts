@@ -1,20 +1,23 @@
 import { AgentCommandError, type AgentPolicyOptions } from "./agent-contract.js"
 
-export type AgentOperation = "catalog" | "config" | "score"
+export type AgentOperation = "catalog" | "config" | "score" | "judge" | "discover"
 
 export interface AgentArguments extends AgentPolicyOptions {
   readonly operation: AgentOperation
   readonly signalId?: string
   readonly slotId?: string
   readonly expectPolicy?: string
+  readonly include?: string
+  readonly exclude?: string
+  readonly dryRun: boolean
   readonly full: boolean
   readonly limit: number
   readonly help: boolean
 }
 
 const policyValues = ["--vector", "--modules", "--module-dependency-root"] as const
-const valueFlags = new Set([...policyValues, "--signal", "--slot", "--expect-policy", "--limit"])
-const switchFlags = new Set(["--trust-project-code", "--full", "--help", "-h"])
+const valueFlags = new Set([...policyValues, "--signal", "--slot", "--expect-policy", "--limit", "--include", "--exclude"])
+const switchFlags = new Set(["--trust-project-code", "--full", "--dry-run", "--help", "-h"])
 
 const invalid = (message: string): never => {
   throw new AgentCommandError("INVALID_ARGUMENT", message, [], ["pulsar agent --help"])
@@ -23,7 +26,7 @@ const invalid = (message: string): never => {
 export const parseAgentArguments = (args: ReadonlyArray<string>): AgentArguments => {
   const first = args[0]
   const operation = first === undefined || first === "--help" || first === "-h" ? "catalog" : first
-  if (operation !== "catalog" && operation !== "config" && operation !== "score") {
+  if (operation !== "catalog" && operation !== "config" && operation !== "score" && operation !== "judge" && operation !== "discover") {
     return invalid(`Unknown agent operation: ${operation}`)
   }
 
@@ -60,8 +63,12 @@ export const parseAgentArguments = (args: ReadonlyArray<string>): AgentArguments
     ? ["--signal", "--slot"]
     : operation === "config"
       ? policyValues
-      : [...policyValues, "--signal", "--expect-policy", "--limit"])
-  const allowedSwitches = new Set(["--help", "-h", ...(operation === "catalog" ? [] : ["--trust-project-code"]), ...(operation === "score" ? ["--full"] : [])])
+      : operation === "judge"
+        ? [...policyValues, "--expect-policy"]
+        : operation === "discover"
+          ? [...policyValues, "--expect-policy", "--include", "--exclude"]
+          : [...policyValues, "--signal", "--expect-policy", "--limit"])
+  const allowedSwitches = new Set(["--help", "-h", ...(operation === "catalog" ? [] : ["--trust-project-code"]), ...(operation === "score" ? ["--full"] : []), ...(operation === "judge" ? ["--dry-run"] : [])])
   for (const flag of values.keys()) {
     if (!allowedValues.has(flag)) return invalid(`${operation} does not accept ${flag}`)
   }
@@ -82,6 +89,7 @@ export const parseAgentArguments = (args: ReadonlyArray<string>): AgentArguments
   return {
     operation,
     repoPath: positional[0] ?? ".",
+    dryRun: switches.has("--dry-run"),
     full: switches.has("--full"),
     limit,
     help: args.length === 0 || switches.has("--help") || switches.has("-h"),
@@ -91,6 +99,8 @@ export const parseAgentArguments = (args: ReadonlyArray<string>): AgentArguments
     ...(values.has("--signal") ? { signalId: values.get("--signal")! } : {}),
     ...(values.has("--slot") ? { slotId: values.get("--slot")! } : {}),
     ...(values.has("--expect-policy") ? { expectPolicy: values.get("--expect-policy")! } : {}),
+    ...(values.has("--include") ? { include: values.get("--include")! } : {}),
+    ...(values.has("--exclude") ? { exclude: values.get("--exclude")! } : {}),
     ...(switches.has("--trust-project-code") ? { trustProjectCode: true } : {}),
   }
 }
@@ -113,6 +123,8 @@ export const agentHelp = (operation?: AgentOperation): string => {
     catalog: "pulsar agent catalog [repo] [--signal <id> | --slot <id>]\nDiscover installed signals, actual configuration schemas, weights and typed processors. Does not execute project code.",
     config: `pulsar agent config ${common}\nValidate and explain repository policy. Candidate files preview policy without adopting it. Does not score or write policy.`,
     score: `pulsar agent score ${common} [--expect-policy <fingerprint>] [--signal <id>] [--full | --limit <1..100>]\nAssess the whole repository under its policy. --signal filters detail, never the verdict. Default: up to ten findings; --full retrieves available evidence.`,
+    judge: `pulsar agent judge ${common} [--expect-policy <fingerprint>] [--dry-run]\nRefresh the declared ownership inventory using Jev. Sends configured source and context to TypeSafe and writes local assessment receipts; requires TYPESAFE_API_KEY. --dry-run previews the inventory without network calls or writes. Normal agent score replays the assessment offline.`,
+    discover: `pulsar agent discover ${common} [--expect-policy <fingerprint>] [--include <glob>] [--exclude <glob>]\nPropose an ownership inventory from full mechanical clone evidence, including source context and coverage limits. Prints JSON; does not adopt policy or call a model. Similar code is a candidate, not a shared-rule verdict.`,
   }
   return [
     "Pulsar agent-first POC — signals, programmable calibration and repository-owned weights",
@@ -121,7 +133,7 @@ export const agentHelp = (operation?: AgentOperation): string => {
     "Exit codes: 0 complete, 1 operation/config/trust error, 2 proven hard-gate violations, 3 incomplete evidence without a proven block.",
     "Readiness colors are not additional hard gates. Not-applicable evidence is not failure; missing/failed evidence is not healthy.",
     "Project modules execute with this process's permissions. --trust-project-code is explicit permission, not a sandbox.",
-    "Paths passed as flags are cwd-relative. Manifest module paths remain repo-relative. Inspection may write disposable caches, never policy or baselines.",
+    "Paths passed as flags are cwd-relative. Manifest module paths remain repo-relative. Inspection may write disposable caches, never policy or baselines. Only judge sends code to a model provider.",
     "Start: catalog → author vector/modules with your editor → config → score → repair → score --expect-policy <fingerprint>.",
     "No persona, ratchet, bisect, quiz or baseline is required. This opt-in POC does not change the legacy CLI contract.",
     "",
