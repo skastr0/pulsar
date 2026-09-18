@@ -312,7 +312,6 @@ export function buildShapeCandidates(root: string): ShapeCandidates {
   requireUnique(observerA, OBSERVER, "export const summarizeCalibration =", "summarizeCalibration")
   requireUnique(observerA, OBSERVER, "const runOneSignal = (", "runOneSignal")
   requireUnique(cacheA, CACHE, CACHE_LOOKUP, "CacheLookupResult")
-  requireUnique(scoreA, SCORE_EXECUTION, "cached.value!", "readScoreCache value")
   requireUnique(scoreA, SCORE_EXECUTION, "tieredCached.value!", "runSignalWithCache value")
 
   const runnerB = replaceUnique(
@@ -375,7 +374,7 @@ export function buildShapeCandidates(root: string): ShapeCandidates {
 
   const cacheB = replaceUnique(cacheA, CACHE, CACHE_LOOKUP, CACHE_LOOKUP_UNION, "tagged CacheLookupResult")
   const scoreB = replaceUnique(
-    replaceUnique(scoreA, SCORE_EXECUTION, "cached.value!", "cached.value", "drop cached value assertion"),
+    scoreA,
     SCORE_EXECUTION,
     "tieredCached.value!",
     "tieredCached.value",

@@ -290,8 +290,7 @@ describe("detector reach", () => {
       if (!requireBuilt("duplicated-rule pointers")) return
       const before = await baseline("TS-SL-01")
       const after = await runSignalById(workspace("c1", "duplicated-rule"), "TS-SL-01")
-      expect((before.groups ?? []).length).toBe(148)
-      expect((after.groups ?? []).length).toBe(149)
+      expect((after.groups ?? []).length).toBe((before.groups ?? []).length + 1)
       const groups = groupsTouching(after, "observer-readiness.ts")
       expect(groups.length).toBe(1)
       expect(groups[0]?.kind).toBe("exact")
@@ -302,21 +301,19 @@ describe("detector reach", () => {
       ])
       // Beyond the signal's own diagnostic limit, so a top-N pointer budget misses it.
       expect(rankOf(after, "observer-readiness.ts")).toBeGreaterThan(after.diagnosticLimit ?? 0)
-      expect(rankOf(after, "observer-readiness.ts")).toBe(37)
 
       // A second pointer exists in the raw complexity function list. It is below
       // the threshold, so a threshold-only reading would miss it: the risk is
       // ranking and cap, not absence.
       const beforeComplexity = await baseline("TS-LD-01")
       const afterComplexity = await runSignalById(workspace("c1-cx", "duplicated-rule"), "TS-LD-01")
-      expect(beforeComplexity.totalFunctions).toBe(7137)
-      expect(afterComplexity.totalFunctions).toBe(7138)
+      expect(afterComplexity.totalFunctions).toBe((beforeComplexity.totalFunctions ?? 0) + 1)
       const index = functionIndexOf(afterComplexity, "localPoisonAuthority")
       expect(index).toBeGreaterThanOrEqual(0)
       expect(afterComplexity.functions?.[index]?.complexity).toBe(4)
       expect(afterComplexity.functions?.[index]?.complexity).toBeLessThan(afterComplexity.complexityThreshold ?? 0)
       expect(afterComplexity.overThresholdCount).toBe(beforeComplexity.overThresholdCount)
-      expect(functionRankByComplexity(afterComplexity, "localPoisonAuthority")).toBe(1162)
+      expect(functionRankByComplexity(afterComplexity, "localPoisonAuthority")).toBeGreaterThan(100)
     },
     180_000,
   )
@@ -339,8 +336,8 @@ describe("detector reach", () => {
       const wrapperIndex = functionIndexOf(afterComplexity, "applySeverityCeiling")
       expect(wrapperIndex).toBeGreaterThanOrEqual(0)
       expect(afterComplexity.functions?.[wrapperIndex]?.complexity).toBe(1)
-      // Deep in a complexity-descending ordering, which is the real risk.
-      expect(functionRankByComplexity(afterComplexity, "applySeverityCeiling")).toBe(4377)
+      // A top-100 complexity budget misses it, regardless of repository growth.
+      expect(functionRankByComplexity(afterComplexity, "applySeverityCeiling")).toBeGreaterThan(100)
 
       // It creates no finding anywhere: no clone group, no over-threshold
       // complexity, no size outlier. A re-export facade is not a function.
@@ -369,15 +366,14 @@ describe("detector reach", () => {
       if (!requireBuilt("similar-shape-different-rule pointers")) return
       const before = await baseline("TS-SL-01")
       const after = await runSignalById(workspace("c3", "similar-shape-different-rule"), "TS-SL-01")
-      expect((before.groups ?? []).length).toBe(148)
-      expect((after.groups ?? []).length).toBe(149)
+      expect((after.groups ?? []).length).toBe((before.groups ?? []).length + 1)
       const groups = groupsTouching(after, "evidence-poison.ts")
       expect(groups.length).toBe(1)
       expect(groups[0]?.kind).toBe("exact")
       expect(groups[0]?.tokenCount).toBe(17)
       // Below the whole-tree impact floor, so the detector itself charges zero.
       expect(groups[0]?.tokenCount).toBeLessThan(20)
-      expect(rankOf(after, "evidence-poison.ts")).toBe(124)
+      expect(rankOf(after, "evidence-poison.ts")).toBeGreaterThan(after.diagnosticLimit ?? 0)
       const complexity = await runSignalById(workspace("c3-cx", "similar-shape-different-rule"), "TS-LD-01")
       expect(functionIndexOf(complexity, "evidenceClassAllowsPoison")).toBeGreaterThanOrEqual(0)
     },
@@ -418,16 +414,17 @@ describe("detector reach", () => {
     "beyond-top-n is present in both candidate outputs and ranks beyond a top-N budget",
     async () => {
       if (!requireBuilt("beyond-top-n rank")) return
+      const before = await baseline("TS-SL-01")
       const after = await runSignalById(workspace("g2", "beyond-top-n"), "TS-SL-01")
-      expect((after.groups ?? []).length).toBe(149)
+      expect((after.groups ?? []).length).toBe((before.groups ?? []).length + 1)
       const groups = groupsTouching(after, "file-category-support.ts")
       expect(groups.length).toBe(1)
       expect(groups[0]?.tokenCount).toBe(19)
       const rank = rankOf(after, "file-category-support.ts")
-      expect(rank).toBe(115)
       expect(rank).toBeGreaterThan((after.diagnosticLimit ?? 0) * 10)
+      const beforeComplexity = await baseline("TS-LD-01")
       const complexity = await runSignalById(workspace("g2-cx", "beyond-top-n"), "TS-LD-01")
-      expect(complexity.totalFunctions).toBe(7139)
+      expect(complexity.totalFunctions).toBe((beforeComplexity.totalFunctions ?? 0) + 2)
       expect(functionIndexOf(complexity, "hasMixedProductionCategory")).toBeGreaterThanOrEqual(0)
     },
     180_000,
