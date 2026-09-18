@@ -10,6 +10,7 @@ import {
   CANONICAL_CONVENTIONS_RELATIVE_PATH,
   CANONICAL_GLOSSARY_RELATIVE_PATH,
   CANONICAL_OWNERSHIP_POLICY_RELATIVE_PATH,
+  CANONICAL_OWNERSHIP_ASSESSMENT_RELATIVE_PATH,
 } from "@skastr0/pulsar-core/reference-data"
 
 /** Unlike the engine's cache key, this is byte identity, independent of HEAD/index state. */
@@ -20,7 +21,9 @@ export const agentInputFingerprint = (repoRoot: string): Effect.Effect<string, u
       ":!.pulsar/cache", ":!.pulsar/timeseries", ":!.pulsar/ownership-runs", ":!.amp", ":!node_modules",
     ])
     const hash = createHash("sha256")
-    for (const path of [...new Set(paths.split("\0").filter(Boolean))].sort()) {
+    // Adopted model evidence affects the result even when intentionally gitignored.
+    const inputs = [...paths.split("\0").filter(Boolean), CANONICAL_OWNERSHIP_ASSESSMENT_RELATIVE_PATH]
+    for (const path of [...new Set(inputs)].sort()) {
       const absolute = join(repoRoot, path)
       let stat
       try { stat = await lstat(absolute) } catch (cause) {

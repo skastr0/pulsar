@@ -30,6 +30,7 @@ test("ownership policy identity changes independently from source and assessment
 })
 
 test("raw ownership receipts are disposable but the adopted assessment remains scoring input", async () => {
+  await writeFile(join(root, ".gitignore"), ".pulsar/*\n")
   const first = await Effect.runPromise(agentInputFingerprint(root))
   await mkdir(join(root, ".pulsar/ownership-runs"))
   await writeFile(join(root, ".pulsar/ownership-runs/receipt.json"), '{"usage":{"input_tokens":19}}')
