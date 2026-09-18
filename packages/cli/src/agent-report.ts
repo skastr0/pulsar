@@ -116,6 +116,23 @@ export const buildAgentScoreReport = (input: {
       counts,
       incomplete_signals: snapshots.filter(([, value]) => value.applicability === "failed" || value.applicability === "insufficient_evidence")
         .map(([signal_id, value]) => ({ signal_id, applicability: value.applicability })),
+      // Preference attainment is not the overall readiness score. Keep the compact
+      // summary even when informational diagnostics or another signal are filtered.
+      preference_alignment: snapshots.flatMap(([signal_id, snapshot]) => {
+        const summary = snapshot.diagnostics.find((diagnostic) => diagnostic.data?.kind === "ownership-alignment")?.data
+        return summary === undefined ? [] : [{
+          signal_id,
+          applicability: snapshot.applicability,
+          scope: summary.scope,
+          attainment: summary.attainment,
+          observed_attainment: summary.observed_attainment,
+          target: summary.target,
+          comparison: summary.comparison,
+          expected_groups: summary.expected_groups,
+          assessed_groups: summary.assessed_groups,
+          unresolved_groups: summary.unresolved_groups,
+        }]
+      }),
       categories: Object.fromEntries(Object.entries(output.categories).map(([id, category]) => [id, {
         score: category.score,
         applicable_signals: category.applicableSignalCount ?? category.signalCount,

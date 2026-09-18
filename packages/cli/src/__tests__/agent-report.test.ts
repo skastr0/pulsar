@@ -80,6 +80,27 @@ describe("agent assessment projection", () => {
     expect(result.presentation.filtering_changes_assessment).toBe(false)
   })
 
+  test("compact preference attainment survives info filtering without turning partial evidence into fit", () => {
+    const data = {
+      kind: "ownership-alignment", scope: "declared-ownership-inventory",
+      attainment: null, observed_attainment: 0.5, target: 1, comparison: "unknown",
+      expected_groups: 3, assessed_groups: 1, unresolved_groups: 2,
+      distributions: "x".repeat(100_000),
+    }
+    const { result, exitCode } = report(makeOutput({
+      applicability: "insufficient_evidence",
+      diagnostics: [{ severity: "info", message: "Ownership evidence is incomplete", data }],
+    }), ["--signal", "RS-LD-01-unsafe-code"])
+    expect(exitCode).toBe(3)
+    expect(result.findings).toHaveLength(0)
+    expect(result.assessment.preference_alignment).toEqual([{
+      signal_id: signalId, applicability: "insufficient_evidence",
+      scope: "declared-ownership-inventory", attainment: null, observed_attainment: 0.5,
+      target: 1, comparison: "unknown", expected_groups: 3, assessed_groups: 1, unresolved_groups: 2,
+    }])
+    expect(JSON.stringify(result)).not.toContain("distributions")
+  })
+
   test("compact mode omits informational evidence and bounds encoded UTF-8 bytes", () => {
     const diagnostics: Diagnostic[] = Array.from({ length: 30 }, (_, index) => ({
       severity: index === 0 ? "info" : "warn",
