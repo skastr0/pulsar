@@ -51,7 +51,7 @@ export function contextRequest(request: Request, arm: Arm, context: QuartzContex
       inventory: Object.fromEntries(modules), roots: context.roots.map(id),
       declarations: context.declarations.map(d => ({ id: id(d.id), location: `${d.file}:${d.startLine}-${d.endLine}`, name: d.name, kind: d.kind, source: d.source })),
       edgeLocation: "line is in the from declaration's file unless file is explicitly supplied",
-      edges: context.edges.map(e => ({ from: id(e.from), to: id(e.to), kind: e.kind, line: e.line, ...(context.declarations[id(e.from)]!.file === e.file ? {} : { file: e.file }) })),
+      edges: Object.fromEntries(["reference", "dependency"].map(kind => [kind, context.edges.filter(e => e.kind === kind).map(e => ({ from: id(e.from), to: id(e.to), line: e.line, ...(context.declarations[id(e.from)]!.file === e.file ? {} : { file: e.file }) }))])),
       externalContracts: context.externalContracts,
     },
   } })
