@@ -229,7 +229,7 @@ bun "$PULSAR_CLONE/scripts/pulsar-dev.ts" agent score "$REPO" --signal TS-SL-07 
 ```
 
 Add the normal policy/trust flags when the repo uses executable project modules.
-Dry-run shows the exact paths, source/request byte counts, model and number of
+Dry-run shows the rubric, exact paths, source/request byte counts, model and number of
 calls without making calls or writing receipts. Live judgment reads whole declared
 files, rejects oversized/unsafe evidence rather than silently clipping it, and
 saves requests and responses under `.pulsar/ownership-runs/`. These receipts
@@ -280,6 +280,14 @@ Synthetic development cases discriminate opposite preferences, but similarly
 shaped code implementing distinct rules remains unreliable without domain-identity
 evidence. Additional context can change judgments; more files are not a substitute
 for the right evidence. Treat results as advisory, with a soft-warning ceiling.
+
+**Write anchor descriptions for the active preference only.** Under a shared-rule
+policy, contrary means copied rules and meets means delegation; under caller-local,
+contrary means shared extraction and meets means local implementations. Do not put
+both opposing defects in one contrary option and expect the model to infer which
+half applies. Independent testing found confidently wrong answers with that wording;
+the probability gate did not reliably catch them. The compiler sends the repository's
+descriptions verbatim, not a hidden replacement rubric. Review them in dry-run.
 
 The loader validates policy/rubric, declared inventory, classifier allowlist,
 source/context hashes and expiration before cache lookup. Replays expire after

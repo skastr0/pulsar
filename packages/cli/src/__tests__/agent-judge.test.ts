@@ -44,6 +44,8 @@ test("dry-run plan exposes exact egress size and paths without writes or provide
   const plan = await Effect.runPromise(prepareOwnershipJudgment(root))
   const preview = ownershipJudgmentPreview(plan)
   expect(preview.calls_planned).toBe(1)
+  expect(preview.rubric.preference).toBe("shared_domain_rule")
+  expect(preview.rubric.anchors.find((anchor) => anchor.id === "contrary")?.description).toBe("The same rule is copied across callers.")
   expect(preview.groups[0]!.paths).toEqual(["caller.ts", "context.ts", "rule.ts"])
   expect(preview.groups[0]!.source_bytes).toBeGreaterThan(80)
   expect(preview.groups[0]!.request_bytes).toBeGreaterThan(preview.groups[0]!.source_bytes)

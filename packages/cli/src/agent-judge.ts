@@ -103,6 +103,12 @@ export const prepareOwnershipJudgment = (repoRoot: string): Effect.Effect<Owners
 export const ownershipJudgmentPreview = (plan: OwnershipJudgmentPlan) => ({
   policy_fingerprint: plan.policyFingerprint,
   scope: "declared-ownership-inventory",
+  rubric: {
+    preference: plan.policy.preference,
+    target: plan.policy.target,
+    anchors: plan.policy.anchors,
+    stretch: plan.policy.stretch ?? null,
+  },
   model: JEV_OWNERSHIP_MODEL,
   classifier: { id: OWNERSHIP_CLASSIFIER_ID, version: OWNERSHIP_CLASSIFIER_VERSION, prompt_id: JEV_OWNERSHIP_PROMPT_ID },
   groups: plan.inputs.map((input) => ({
