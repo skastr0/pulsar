@@ -3,6 +3,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
 import { Effect, Result, Schema } from "effect"
+import { createScanner, SyntaxKind as TokenKind } from "typescript/unstable/ast"
 import { canonical, Request, sha256 } from "./jev-spike/model.ts"
 import { jevLayer, JudgmentProvider } from "./jev-spike/transport.ts"
 import { decodeReceipt, judgmentMachine, replay, type CallRecord, type Plan, type Run, type Summary } from "./jev-poc/pipeline.ts"
@@ -11,7 +12,7 @@ import { SemanticError } from "./jev-poc/policy.ts"
 
 type Arm = "file-windows" | "quartz-neighborhood"
 export interface ContextExperiment {
-  readonly version: "jev-context-experiment-v1"
+  readonly version: "jev-context-experiment-v2"
   readonly baselineHash: string
   readonly plan: Plan
   readonly context: QuartzContext
@@ -25,6 +26,18 @@ const persist = (path: string, data: unknown) => Effect.try({
   try: () => writeFileSync(path, JSON.stringify(data, null, 2) + "\n", { flag: "wx", mode: 0o600 }),
   catch: () => new SemanticError({ operation: `Write exclusive experiment artifact: ${path}` }),
 })
+
+/** Remove documentation tokens, never comment-looking string literals. Keep complex lexical forms intact. */
+export function externalSignature(source: string): string {
+  const scanner = createScanner(false, undefined, source)
+  const parts: string[] = []
+  for (let token = scanner.scan(); token !== TokenKind.EndOfFile; token = scanner.scan()) {
+    if (token === TokenKind.TemplateHead || token === TokenKind.NoSubstitutionTemplateLiteral || token === TokenKind.SlashToken) return source
+    const text = scanner.getTokenText()
+    parts.push(token === TokenKind.MultiLineCommentTrivia && text.startsWith("/**") ? " " : text)
+  }
+  return parts.join("")
+}
 
 export function contextRequest(request: Request, arm: Arm, context: QuartzContext): Request {
   if (arm === "file-windows") return request
@@ -52,7 +65,8 @@ export function contextRequest(request: Request, arm: Arm, context: QuartzContex
       declarations: context.declarations.map(d => ({ id: id(d.id), location: `${d.file}:${d.startLine}-${d.endLine}`, name: d.name, kind: d.kind, source: d.source })),
       edgeLocation: "line is in the from declaration's file unless file is explicitly supplied",
       edges: Object.fromEntries(["reference", "dependency"].map(kind => [kind, context.edges.filter(e => e.kind === kind).map(e => ({ from: id(e.from), to: id(e.to), line: e.line, ...(context.declarations[id(e.from)]!.file === e.file ? {} : { file: e.file }) }))])),
-      externalContracts: context.externalContracts,
+      externalContractFormat: "Declaration syntax; JSDoc omitted for budget. Full external declarations retained in local artifact, not proof of external runtime behavior.",
+      externalContracts: context.externalContracts.map(contract => ({ name: contract.name, source: externalSignature(contract.source) })),
     },
   } })
 }
@@ -115,7 +129,7 @@ async function main() {
     const context = await Effect.runPromise(quartzContext(resolve(repo), candidate.members))
     if (context.roots.length !== candidate.members.length || !context.declarations.length) throw new Error(`Context incomplete at roots or byte cap: ${context.limitations.join("; ")}`)
     const plan: Plan = { ...baseline.plan, discovery: { ...baseline.plan.discovery, candidates: [candidate] } }
-    const experiment: ContextExperiment = { version: "jev-context-experiment-v1", baselineHash: hash, plan, context, implementation: implementation(), order: ["file-windows", "quartz-neighborhood", "quartz-neighborhood", "file-windows"] }
+    const experiment: ContextExperiment = { version: "jev-context-experiment-v2", baselineHash: hash, plan, context, implementation: implementation(), order: ["file-windows", "quartz-neighborhood", "quartz-neighborhood", "file-windows"] }
     const directory = join(resolve(repo), ".pulsar", "context-experiments", `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`)
     mkdirSync(directory, { recursive: true, mode: 0o700 })
     const file = join(directory, "experiment.json")
@@ -123,7 +137,7 @@ async function main() {
     console.log(JSON.stringify({ file, hash: sha256(readFileSync(file, "utf8")), roots: context.roots.length, declarations: context.declarations.length, edges: context.edges.length, limitations: context.limitations }, null, 2))
   } else if (command === "run") {
     const experiment = JSON.parse(readHashed(path, hash)) as ContextExperiment
-    if (experiment.version !== "jev-context-experiment-v1" || canonical(experiment.implementation) !== canonical(implementation())) throw new Error("Experiment implementation changed")
+    if (experiment.version !== "jev-context-experiment-v2" || canonical(experiment.implementation) !== canonical(implementation())) throw new Error("Experiment implementation changed")
     if (!process.env.TYPESAFE_API_KEY) throw new Error("TYPESAFE_API_KEY required")
     const directory = join(dirname(resolve(path)), `run-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`)
     mkdirSync(directory, { mode: 0o700 })

@@ -6,7 +6,7 @@ import { createTempRepo } from "../../packages/ts-pack/src/__tests__/test-repo.t
 import { boundContext, quartzContext, type QuartzContext } from "../jev-poc/quartz-context.ts"
 import type { SourcePointer } from "../jev-poc/discovery.ts"
 import { sha256, type Request } from "../jev-spike/model.ts"
-import { contextConsumption, contextRequest } from "../jev-quartz-context.ts"
+import { contextConsumption, contextRequest, externalSignature } from "../jev-quartz-context.ts"
 
 const pointer = (root: string): SourcePointer => ({ file: "src/rule.ts", startLine: 2, endLine: 2,
   extentSource: "parser", extentComplete: true, fileSha256: sha256(readFileSync(join(root, "src/rule.ts"), "utf8")),
@@ -66,4 +66,10 @@ test("a confident violation cannot override incomplete compiler evidence", () =>
   const finding = { candidateId: "a", ruleId: "b", penaltyPoints: 20, verdict: "violated" as const, relationship: "shared_rule", refinement: "independent_owners", direction: "consolidate_rule", reason: "policy_judgment" }
   expect(contextConsumption(true, finding)).toEqual(finding)
   expect(contextConsumption(false, finding)).toMatchObject({ verdict: "unknown", direction: null, reason: "context_coverage_incomplete" })
+})
+
+test("external documentation compaction preserves declaration tokens and string literals", () => {
+  expect(externalSignature('interface X { /** docs */ literal: "/** keep */"; fn(x: number): string }')).toBe('interface X {   literal: "/** keep */"; fn(x: number): string }')
+  const template = 'type T = `prefix${"/** keep */"}`'
+  expect(externalSignature(template)).toBe(template)
 })
