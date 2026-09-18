@@ -1,0 +1,57 @@
+export {
+  JevCompileError,
+  JevConfigError,
+  JevDecodeError,
+  JevHttpError,
+  JevTransportError,
+  type JevError,
+} from "./errors.js"
+export {
+  JEV_ENDPOINT,
+  JEV_DEFAULT_TIMEOUT_MS,
+  JevClient,
+  jevClientLayer,
+  jevClientLayerFromEnv,
+  makeJevClient,
+  type JevClientOptions,
+  type JevClientService,
+  type JevReceipt,
+} from "./transport.js"
+export {
+  JevAnswer,
+  JevDescription,
+  JevQuestion,
+  JevRequest,
+  JevResponse,
+  PROBABILITY_TOLERANCE,
+  canonical,
+  encodeJevRequestBody,
+  promptFingerprint,
+  requestSha256,
+  sha256,
+  validateJevResponse,
+} from "./protocol.js"
+export {
+  JEV_NOT_APPLICABLE_ANCHOR_ID,
+  JEV_OWNERSHIP_MODEL,
+  JEV_OWNERSHIP_PROMPT_ID,
+  JEV_OWNERSHIP_QUESTION_ID,
+  JEV_UNKNOWN_ANCHOR_ID,
+  OWNERSHIP_SOURCE_ROLE,
+  compileOwnershipRequest,
+  compileOwnershipRequestSync,
+  type CompiledOwnershipRequest,
+  type OwnershipAnchorSpec,
+  type OwnershipGroupEvaluationInput,
+  type OwnershipRubric,
+  type OwnershipSourceRole,
+  type OwnershipSourceSnapshot,
+} from "./compile.js"
+export {
+  evaluateOwnershipGroup,
+  evaluateOwnershipGroups,
+  type EvaluateOwnershipGroup,
+  type JevEvaluateError,
+  type OwnershipDistributionEntry,
+  type OwnershipGroupAssessment,
+} from "./evaluate.js"
