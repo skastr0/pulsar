@@ -114,7 +114,7 @@ describe("compileOwnershipRequest", () => {
   test("builds a self-contained Choice with unknown and not_applicable, no fixture ids in state", () => {
     const compiled = compileOwnershipRequestSync(sharedArrangement("http-status-class", sharedPreference))
     expect(compiled.request.model).toBe(JEV_OWNERSHIP_MODEL)
-    expect(compiled.optionIds).toEqual([
+    expect([...compiled.optionIds]).toEqual([
       "contrary",
       "mixed",
       "meets",

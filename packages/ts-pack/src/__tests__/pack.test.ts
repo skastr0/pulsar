@@ -33,6 +33,7 @@ import { TsSl03 } from "../signals/ts-sl-03-suppressions.js"
 import { TsSl04 } from "../signals/ts-sl-04-empty-implementations.js"
 import { TsSl05 } from "../signals/ts-sl-05-phantom-tests.js"
 import { TsSl06 } from "../signals/ts-sl-06-confidence-claim-mismatch.js"
+import { TsSl07 } from "../signals/ts-sl-07-rule-ownership-alignment.js"
 
 describe("TS pack cache versions", () => {
   test("pack wrapper preserves signal-specific cache versions", () => {
@@ -64,6 +65,7 @@ describe("TS pack cache versions", () => {
     const sl04 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-SL-04"))
     const sl05 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-SL-05"))
     const sl06 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-SL-06"))
+    const sl07 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-SL-07"))
     const ab01 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-AB-01"))
     const ab02 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-AB-02"))
     const ab03 = TS_PACK_SIGNALS.find((signal) => signal.aliases?.includes("TS-AB-03"))
@@ -103,6 +105,7 @@ describe("TS pack cache versions", () => {
     expect(sl04?.cacheVersion).toContain(TsSl04.cacheVersion)
     expect(sl05?.cacheVersion).toContain(TsSl05.cacheVersion)
     expect(sl06?.cacheVersion).toContain(TsSl06.cacheVersion)
+    expect(sl07?.cacheVersion).toContain(TsSl07.cacheVersion)
   })
 
   test("all TypeScript signals expose semantic ids, aliases, and titles", () => {

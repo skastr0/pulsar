@@ -979,4 +979,31 @@ export const TS_SIGNAL_CONTRACTS: ReadonlyArray<SignalContract> = [
         "ts-trust-signals.test.ts and pack.test.ts: TS-SL-06 uses confidence-claim-mismatch-v3 and the wrapped pack cache version includes that semantic cacheVersion.",
     },
   },
+  {
+    id: "TS-SL-07-rule-ownership-alignment",
+    status: "verified",
+    requiredEvidence: ["referenceData"],
+    evidence: {
+      identity:
+        "ts-sl-07.test.ts and pack.test.ts: canonical id, alias, title, tier 3, structural kind, soft-warning ceiling; pack wrapper preserves ownership-attainment-v2.",
+      config:
+        "ts-sl-07.test.ts: configSchema decodes defaults and sanitizes top_n_diagnostics (floor, zero, Infinity).",
+      positiveFixture:
+        "ts-sl-07.test.ts: contrary declared group produces below-target pressure on the weakest obligation while a healthy sibling cannot pad the min.",
+      negativeFixture:
+        "ts-sl-07.test.ts: all-meets declared inventory scores 1 with info diagnostics and no hard-gate authority.",
+      applicability:
+        "ts-sl-07.test.ts: missing policy is not_applicable with score 0; partial/stale inventories are insufficient_evidence and cannot claim fit.",
+      score:
+        "ts-sl-07.test.ts: min resolved anchor is the score; mixed+meets is 0.5; missing evidence is never encoded as healthy 1; model confidence does not change attainment.",
+      diagnostics:
+        "ts-sl-07.test.ts: inventory summary plus bounded per-group diagnostics honor top_n_diagnostics; public summary names declared inventory scope.",
+      factorLedger:
+        "ts-sl-07.test.ts: factor ledger exposes full rubric (preference, target, anchors, stretch) plus weakest attainment, not only a policy fingerprint.",
+      cacheSemantics:
+        "ts-sl-07.test.ts and pack.test.ts: wrapped pack cache version includes ownership-attainment-v2; observer applicability matches single-signal output.",
+      referenceData:
+        "ts-sl-07.test.ts: real filesystem loadOwnershipFacts fixtures drive policy, assessment, source hashes, expiry, and incomplete inventory states.",
+    },
+  },
 ]
