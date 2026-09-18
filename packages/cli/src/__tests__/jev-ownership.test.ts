@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { Effect, Redacted } from "effect"
+import { Effect, Fiber, Redacted } from "effect"
 import {
   JEV_NOT_APPLICABLE_ANCHOR_ID,
   JEV_OWNERSHIP_MODEL,
@@ -9,6 +9,7 @@ import {
   JevHttpError,
   compileOwnershipRequestSync,
   evaluateOwnershipGroup,
+  evaluateOwnershipGroups,
   jevClientLayer,
   type OwnershipGroupEvaluationInput,
   type OwnershipRubric,
@@ -128,9 +129,13 @@ describe("compileOwnershipRequest", () => {
     expect(state).not.toContain("C15")
     expect(state).not.toContain("fixture")
     expect(state).not.toContain("expected")
+    expect(state).not.toContain("http-status-class")
+    expect(state).not.toContain("groupId")
     expect(state).toContain("mapHttpStatus")
+    expect(state).not.toContain("163d13789e231dbb")
     expect(compiled.requestSha256).toHaveLength(64)
     expect(compiled.contentHash).toHaveLength(64)
+    expect(compiled.selectionGate.id).toBe("pulsar.ownership.selection_gate.v1")
   })
 
   test("reordering sources changes request identity only through snapshot order, opposite policies differ", () => {
@@ -204,6 +209,8 @@ describe("evaluateOwnershipGroup", () => {
     )
     expect(assessment.status).toBe("resolved")
     expect(assessment.selectedAnchorId).toBe("meets")
+    expect(assessment.rawSelectedAnchorId).toBe("meets")
+    expect(assessment.selectionGate.passed).toBe(true)
     expect(assessment.requestSha256).toBe(compiled.requestSha256)
     expect(assessment.rawResponse).toBe(raw)
     expect(assessment.requestId).toBe("req-1")
@@ -245,17 +252,130 @@ describe("evaluateOwnershipGroup", () => {
     )
     expect(assessment.status).toBe("unresolved")
     expect(assessment.selectedAnchorId).toBe("unknown")
+    expect(assessment.rawSelectedAnchorId).toBe("unknown")
+    expect(assessment.selectionGate.passed).toBe(false)
   })
 
-  test("propagates HTTP failure without retry", async () => {
+  test("low-confidence not_applicable stays unresolved and keeps raw selection", async () => {
     const input = sharedArrangement("http-status-class", sharedPreference)
+    const raw = JSON.stringify({
+      model: "jev-1.13.0",
+      answers: {
+        ownership: {
+          type: "choice",
+          choice: "not_applicable",
+          confidence: 0.5,
+          probabilities: {
+            contrary: 0,
+            mixed: 0,
+            meets: 0,
+            unknown: 0.39,
+            not_applicable: 0.61,
+          },
+        },
+      },
+      usage: { input_tokens: 8, output_tokens: 3 },
+    })
+    const assessment = await Effect.runPromise(
+      evaluateOwnershipGroup(input).pipe(
+        Effect.provide(
+          jevClientLayer({
+            apiKey: Redacted.make("test-key"),
+            fetcher: async () => new Response(raw, { status: 200 }),
+          }),
+        ),
+      ),
+    )
+    expect(assessment.status).toBe("unresolved")
+    expect(assessment.selectedAnchorId).toBe("unknown")
+    expect(assessment.rawSelectedAnchorId).toBe("not_applicable")
+    expect(assessment.selectionGate.passed).toBe(false)
+    expect(assessment.distribution.find((entry) => entry.anchorId === "not_applicable")?.probability).toBe(0.61)
+  })
+
+  test("low-confidence meets stays unresolved", async () => {
+    const input = sharedArrangement("http-status-class", sharedPreference)
+    const raw = JSON.stringify({
+      model: "jev-1.13.0",
+      answers: {
+        ownership: {
+          type: "choice",
+          choice: "meets",
+          confidence: 0.4,
+          probabilities: {
+            contrary: 0.2,
+            mixed: 0.2,
+            meets: 0.5,
+            unknown: 0.05,
+            not_applicable: 0.05,
+          },
+        },
+      },
+      usage: { input_tokens: 8, output_tokens: 3 },
+    })
+    const assessment = await Effect.runPromise(
+      evaluateOwnershipGroup(input).pipe(
+        Effect.provide(
+          jevClientLayer({
+            apiKey: Redacted.make("test-key"),
+            fetcher: async () => new Response(raw, { status: 200 }),
+          }),
+        ),
+      ),
+    )
+    expect(assessment.status).toBe("unresolved")
+    expect(assessment.rawSelectedAnchorId).toBe("meets")
+    expect(assessment.selectedAnchorId).toBe("unknown")
+  })
+
+  test("rejects response model mismatch", async () => {
+    const input = sharedArrangement("http-status-class", sharedPreference)
+    const raw = JSON.stringify({
+      model: "jev-other",
+      answers: {
+        ownership: {
+          type: "choice",
+          choice: "meets",
+          confidence: 1,
+          probabilities: {
+            contrary: 0,
+            mixed: 0,
+            meets: 1,
+            unknown: 0,
+            not_applicable: 0,
+          },
+        },
+      },
+      usage: { input_tokens: 1, output_tokens: 1 },
+    })
     const result = await Effect.runPromise(
       Effect.result(
         evaluateOwnershipGroup(input).pipe(
           Effect.provide(
             jevClientLayer({
               apiKey: Redacted.make("test-key"),
-              fetcher: async () => new Response("nope", { status: 500 }),
+              fetcher: async () => new Response(raw, { status: 200 }),
+            }),
+          ),
+        ),
+      ),
+    )
+    expect(result._tag).toBe("Failure")
+  })
+
+  test("propagates HTTP failure without retry", async () => {
+    const input = sharedArrangement("http-status-class", sharedPreference)
+    let calls = 0
+    const result = await Effect.runPromise(
+      Effect.result(
+        evaluateOwnershipGroup(input).pipe(
+          Effect.provide(
+            jevClientLayer({
+              apiKey: Redacted.make("test-key"),
+              fetcher: async () => {
+                calls += 1
+                return new Response("nope", { status: 500 })
+              },
             }),
           ),
         ),
@@ -264,6 +384,71 @@ describe("evaluateOwnershipGroup", () => {
     expect(result._tag).toBe("Failure")
     if (result._tag !== "Failure") throw new Error("expected failure")
     expect(result.failure).toBeInstanceOf(JevHttpError)
+    expect(calls).toBe(1)
+  })
+
+  test("bounds concurrent evaluations and forwards abort", async () => {
+    const input = sharedArrangement("http-status-class", sharedPreference)
+    let inFlight = 0
+    let maxInFlight = 0
+    let aborted = 0
+    let sawSecond = false
+    const firstStarted = Promise.withResolvers<void>()
+    const fetcher = async (_url: string | URL | Request, init?: RequestInit) => {
+      inFlight += 1
+      maxInFlight = Math.max(maxInFlight, inFlight)
+      if (inFlight === 1) firstStarted.resolve()
+      if (inFlight === 2) sawSecond = true
+      try {
+        await new Promise<void>((_resolve, reject) => {
+          const abort = init?.signal
+          const fail = () => {
+            aborted += 1
+            reject(new DOMException("aborted", "AbortError"))
+          }
+          if (abort?.aborted) {
+            fail()
+            return
+          }
+          abort?.addEventListener("abort", fail, { once: true })
+        })
+        throw new Error("fetcher resolved without abort")
+      } finally {
+        inFlight -= 1
+      }
+    }
+    const layer = jevClientLayer({ apiKey: Redacted.make("test-key"), fetcher })
+    const fiber = Effect.runFork(
+      evaluateOwnershipGroups([input, input, input, input], 2).pipe(Effect.provide(layer)),
+    )
+    await firstStarted.promise
+    await Effect.sleep("20 millis").pipe(Effect.runPromise)
+    expect(maxInFlight).toBeLessThanOrEqual(2)
+    expect(sawSecond || maxInFlight === 1).toBe(true)
+    await Effect.runPromise(Fiber.interrupt(fiber))
+    const exit = await Effect.runPromise(Fiber.await(fiber))
+    expect(exit._tag).toBe("Failure")
+    expect(aborted).toBeGreaterThan(0)
+    expect(maxInFlight).toBeLessThanOrEqual(2)
+  })
+})
+
+describe("role perturbation compiler", () => {
+  test("swapping filing tags still sends the same source text", () => {
+    const original = compileOwnershipRequestSync(sharedArrangement("http-status-class", sharedPreference))
+    const swapped = compileOwnershipRequestSync({
+      groupId: "http-status-class",
+      rubric: sharedPreference,
+      sources: sharedArrangement("http-status-class", sharedPreference).sources.map((source) => ({
+        ...source,
+        role: source.role === "owner" ? "caller" : "owner",
+      })),
+    })
+    const originalState = JSON.stringify(original.request.state)
+    const swappedState = JSON.stringify(swapped.request.state)
+    expect(originalState).toContain("mapHttpStatus")
+    expect(swappedState).toContain("mapHttpStatus")
+    expect(original.requestSha256).not.toBe(swapped.requestSha256)
   })
 })
 

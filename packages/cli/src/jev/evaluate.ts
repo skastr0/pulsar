@@ -4,6 +4,9 @@ import {
   JEV_NOT_APPLICABLE_ANCHOR_ID,
   JEV_OWNERSHIP_PROMPT_ID,
   JEV_OWNERSHIP_QUESTION_ID,
+  JEV_SELECTION_GATE_ID,
+  JEV_SELECTION_MIN_MARGIN,
+  JEV_SELECTION_MIN_WINNER,
   JEV_UNKNOWN_ANCHOR_ID,
   type CompiledOwnershipRequest,
   type OwnershipGroupEvaluationInput,
@@ -19,11 +22,22 @@ export interface OwnershipDistributionEntry {
   readonly selected: boolean
 }
 
+export interface OwnershipSelectionGate {
+  readonly id: typeof JEV_SELECTION_GATE_ID
+  readonly minWinner: typeof JEV_SELECTION_MIN_WINNER
+  readonly minMargin: typeof JEV_SELECTION_MIN_MARGIN
+  readonly winnerProbability: number
+  readonly margin: number
+  readonly passed: boolean
+}
+
 export interface OwnershipGroupAssessment {
   readonly groupId: string
   readonly status: "resolved" | "unresolved" | "not_applicable"
   readonly selectedAnchorId: string
+  readonly rawSelectedAnchorId: string
   readonly distribution: ReadonlyArray<OwnershipDistributionEntry>
+  readonly selectionGate: OwnershipSelectionGate
   readonly modelConfidence: number
   readonly modelId: string
   readonly promptId: typeof JEV_OWNERSHIP_PROMPT_ID
@@ -94,9 +108,17 @@ const toAssessment = (
     probability: answer.probabilities[anchorId] ?? 0,
     selected: answer.choice === anchorId,
   }))
-  const selectedAnchorId = answer.choice
+  const ranked = [...distribution].sort((left, right) => right.probability - left.probability)
+  const winner = ranked[0]
+  const runnerUp = ranked[1]
+  const winnerProbability = winner?.probability ?? 0
+  const margin = winnerProbability - (runnerUp?.probability ?? 0)
+  const passed =
+    winnerProbability >= JEV_SELECTION_MIN_WINNER && margin >= JEV_SELECTION_MIN_MARGIN
+  const rawSelectedAnchorId = answer.choice
+  const selectedAnchorId = passed ? rawSelectedAnchorId : JEV_UNKNOWN_ANCHOR_ID
   const status =
-    selectedAnchorId === JEV_UNKNOWN_ANCHOR_ID
+    !passed || selectedAnchorId === JEV_UNKNOWN_ANCHOR_ID
       ? "unresolved"
       : selectedAnchorId === JEV_NOT_APPLICABLE_ANCHOR_ID
         ? "not_applicable"
@@ -105,7 +127,16 @@ const toAssessment = (
     groupId: input.groupId,
     status,
     selectedAnchorId,
+    rawSelectedAnchorId,
     distribution,
+    selectionGate: {
+      id: JEV_SELECTION_GATE_ID,
+      minWinner: JEV_SELECTION_MIN_WINNER,
+      minMargin: JEV_SELECTION_MIN_MARGIN,
+      winnerProbability,
+      margin,
+      passed,
+    },
     modelConfidence: answer.confidence,
     modelId: response.model,
     promptId: compiled.promptId,

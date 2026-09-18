@@ -94,6 +94,9 @@ export const promptFingerprint = (questions: JevRequest["questions"]): string =>
 
 export const validateJevResponse = (request: JevRequest, input: unknown): JevResponse => {
   const response = Schema.decodeUnknownSync(JevResponse)(input)
+  if (response.model !== request.model) {
+    throw new Error(`model mismatch: request ${request.model} response ${response.model}`)
+  }
   sameKeys(response.answers, request.questions, "answers")
   for (const [id, question] of Object.entries(request.questions)) {
     const answer = response.answers[id]!

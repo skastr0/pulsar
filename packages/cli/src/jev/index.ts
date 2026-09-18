@@ -36,6 +36,9 @@ export {
   JEV_OWNERSHIP_MODEL,
   JEV_OWNERSHIP_PROMPT_ID,
   JEV_OWNERSHIP_QUESTION_ID,
+  JEV_SELECTION_GATE_ID,
+  JEV_SELECTION_MIN_MARGIN,
+  JEV_SELECTION_MIN_WINNER,
   JEV_UNKNOWN_ANCHOR_ID,
   OWNERSHIP_SOURCE_ROLE,
   compileOwnershipRequest,
@@ -54,4 +57,5 @@ export {
   type JevEvaluateError,
   type OwnershipDistributionEntry,
   type OwnershipGroupAssessment,
+  type OwnershipSelectionGate,
 } from "./evaluate.js"
