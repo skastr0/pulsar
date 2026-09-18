@@ -96,6 +96,33 @@ export type {
   DomainConstructionFindingKind,
 } from "./domain-construction.js"
 export {
+  CANONICAL_OWNERSHIP_ASSESSMENT_RELATIVE_PATH,
+  CANONICAL_OWNERSHIP_POLICY_RELATIVE_PATH,
+  OWNERSHIP_ASSESSMENT_SCHEMA_VERSION,
+  OWNERSHIP_LABEL_KIND,
+  OWNERSHIP_LABEL_VALUE_SCHEMA_VERSION,
+  OWNERSHIP_POLICY_SCHEMA_VERSION,
+  OWNERSHIP_REFERENCE_DATA_KEY,
+  OwnershipAssessmentArtifact,
+  OwnershipLabelValue,
+  OwnershipPolicy,
+  aggregateOwnershipAttainment,
+  computeOwnershipContentHash,
+  computeOwnershipInputFingerprint,
+  computeOwnershipPolicyFingerprint,
+  computeOwnershipRubricFingerprint,
+  decodeOwnershipAssessmentArtifactSync,
+  decodeOwnershipLabelValueSync,
+  decodeOwnershipPolicySync,
+  loadOwnershipFacts,
+  ownershipGroupPaths,
+} from "./ownership.js"
+export type {
+  OwnershipAggregate,
+  OwnershipFacts,
+  OwnershipGroup,
+} from "./ownership.js"
+export {
   CANONICAL_CONVENTIONS_RELATIVE_PATH,
   CANONICAL_GLOSSARY_RELATIVE_PATH,
   loadCanonicalReferenceDataEntries,

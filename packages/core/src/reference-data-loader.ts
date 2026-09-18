@@ -25,6 +25,11 @@ import {
 } from "./domain-construction.js"
 import { ReferenceDataLoadFailed } from "./errors.js"
 import { decodeGlossary } from "./glossary.js"
+import {
+  CANONICAL_OWNERSHIP_POLICY_RELATIVE_PATH,
+  OWNERSHIP_REFERENCE_DATA_KEY,
+  loadOwnershipFacts,
+} from "./ownership.js"
 
 export const CANONICAL_GLOSSARY_RELATIVE_PATH = ".pulsar/glossary.json" as const
 export const CANONICAL_CONVENTIONS_RELATIVE_PATH = ".pulsar/conventions.json" as const
@@ -104,6 +109,10 @@ export const loadCanonicalReferenceDataEntries = (
       DOMAIN_CONSTRUCTION_REFERENCE_DATA_KEY,
       yield* loadDomainConstructionReferenceEntry(repoRoot),
     )
+    entries.set(
+      OWNERSHIP_REFERENCE_DATA_KEY,
+      yield* loadOwnershipReferenceEntry(repoRoot),
+    )
 
     return entries as ReadonlyMap<string, unknown>
   })
@@ -174,5 +183,18 @@ const loadDomainConstructionReferenceEntry = (
         repoPath: repoRoot,
         path: CANONICAL_DOMAIN_CONSTRUCTION_RELATIVE_PATH,
         message: `Failed to load domain construction reference data: ${String(cause)}`,
+      }),
+  })
+
+const loadOwnershipReferenceEntry = (
+  repoRoot: string,
+): Effect.Effect<unknown, ReferenceDataLoadFailed, never> =>
+  Effect.tryPromise({
+    try: () => loadOwnershipFacts(repoRoot),
+    catch: (cause) =>
+      new ReferenceDataLoadFailed({
+        repoPath: repoRoot,
+        path: CANONICAL_OWNERSHIP_POLICY_RELATIVE_PATH,
+        message: `Failed to load ownership reference data: ${String(cause)}`,
       }),
   })

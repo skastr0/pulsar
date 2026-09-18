@@ -1,6 +1,10 @@
 import { CANONICAL_CONTRACT_FRESHNESS_RELATIVE_PATH } from "./contract-freshness.js"
 import { CANONICAL_DOMAIN_CONSTRUCTION_RELATIVE_PATH } from "./domain-construction.js"
 import {
+  CANONICAL_OWNERSHIP_ASSESSMENT_RELATIVE_PATH,
+  CANONICAL_OWNERSHIP_POLICY_RELATIVE_PATH,
+} from "./ownership.js"
+import {
   CANONICAL_CONVENTIONS_RELATIVE_PATH,
   CANONICAL_GLOSSARY_RELATIVE_PATH,
 } from "./reference-data-loader.js"
@@ -8,6 +12,8 @@ import {
 export const isPulsarSource = (path: string): boolean =>
   path === CANONICAL_CONTRACT_FRESHNESS_RELATIVE_PATH ||
   path === CANONICAL_DOMAIN_CONSTRUCTION_RELATIVE_PATH ||
+  path === CANONICAL_OWNERSHIP_POLICY_RELATIVE_PATH ||
+  path === CANONICAL_OWNERSHIP_ASSESSMENT_RELATIVE_PATH ||
   path === CANONICAL_CONVENTIONS_RELATIVE_PATH ||
   path === CANONICAL_GLOSSARY_RELATIVE_PATH ||
   path.startsWith(".github/workflows/") && (path.endsWith(".yml") || path.endsWith(".yaml")) ||

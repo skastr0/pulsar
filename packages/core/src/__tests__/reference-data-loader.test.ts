@@ -20,6 +20,10 @@ import {
   type DomainConstructionFacts,
 } from "../domain-construction.js"
 import { type SchemaConventions } from "../conventions.js"
+import {
+  OWNERSHIP_REFERENCE_DATA_KEY,
+  type OwnershipFacts,
+} from "../ownership.js"
 import { loadCanonicalReferenceDataEntries } from "../reference-data-loader.js"
 import { computeReferenceVersionHash } from "../scoring-engine-observer-cache.js"
 
@@ -101,6 +105,9 @@ describe("loadCanonicalReferenceDataEntries", () => {
       "coverage/lcov.info",
       "coverage/coverage-final.json",
     ])
+
+    const ownership = entries.get(OWNERSHIP_REFERENCE_DATA_KEY) as OwnershipFacts
+    expect(ownership.state).toBe("not_configured")
   })
 
   test("loads canonical coverage into ReferenceData", async () => {

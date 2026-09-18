@@ -78,9 +78,6 @@ export const scoreSignalCommit = (args: {
         calibrationContext?.fingerprint,
       ),
     }
-    const cached = yield* readScoreCache(args.internals.cacheRef, key, signal?.tier)
-    if (cached !== undefined) return cached
-
     return yield* runSignalWithCache({
       registry: args.registry,
       vector: args.vector,
@@ -132,22 +129,6 @@ const signalRequiresGitRevisionContext = (
   return visit(signal)
 }
 
-const readScoreCache = (
-  cacheRef: typeof SignalCacheTag.Service,
-  key: CacheKey,
-  tier: Tier | undefined,
-): Effect.Effect<SignalRunResult | undefined, never, never> =>
-  Effect.gen(function* () {
-    if (tier !== undefined && tier !== 1 && tier !== 1.5) return undefined
-    const cached = yield* cacheRef.getTiered<SignalRunResult>(key, {
-      ...(tier !== undefined ? { tier } : {}),
-    })
-    if (cached.status !== "hit" && cached.status !== "stale") return undefined
-    yield* Effect.annotateCurrentSpan("cacheKey", cacheKeyString(key))
-    yield* Effect.annotateCurrentSpan("cacheHit", true)
-    return mergeCachedResultMetadata(cached.value!, cached)
-  })
-
 const runSignalWithCache = (args: {
   readonly registry: Registry
   readonly vector: PulsarVector | undefined
@@ -170,9 +151,7 @@ const runSignalWithCache = (args: {
       Effect.gen(function* () {
         const tierOptions = {
           ...(args.signalTier !== undefined ? { tier: args.signalTier } : {}),
-          ...(args.signalTier === 2
-            ? { refVersionHash: computeReferenceVersionHash(referenceEntries) }
-            : {}),
+          refVersionHash: computeReferenceVersionHash(referenceEntries),
         }
         const tieredCached = yield* args.cacheRef.getTiered<SignalRunResult>(args.key, tierOptions)
         if (tieredCached.status === "hit" || tieredCached.status === "stale") {
