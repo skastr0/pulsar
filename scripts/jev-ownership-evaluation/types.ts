@@ -63,22 +63,3 @@ export interface HostGroupLabel {
   readonly anchorId?: string
   readonly anchorValue?: number
 }
-
-export type HostApplicability =
-  | "applicable"
-  | "not_applicable"
-  | "insufficient_evidence"
-  | "not_configured"
-
-export interface HostAggregate {
-  readonly applicability: HostApplicability
-  readonly attainment: number | undefined
-  readonly observedAttainment: number | undefined
-  readonly target: 1
-  readonly score: number | undefined
-  readonly histogram: Readonly<Record<string, number>>
-  readonly resolvedGroupIds: ReadonlyArray<string>
-  readonly unresolvedGroupIds: ReadonlyArray<string>
-  readonly notApplicableGroupIds: ReadonlyArray<string>
-  readonly missingGroupIds: ReadonlyArray<string>
-}

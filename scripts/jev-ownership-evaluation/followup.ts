@@ -1,7 +1,9 @@
 /**
- * Follow-up ablation: preference-conditioned anchor wording.
- * Does not change sealed expectations. Isolates whether mixed contrary text
- * (copies always described as contrary) caused caller_local gate failures.
+ * Production-shaped preference-conditioned anchor wording.
+ * Not a prompt-id bump: compileOwnershipRequestSync already forwards
+ * rubric.anchors verbatim. This is the host-owned rubric the 20-call
+ * series used (receipts-1789721635468.json). STANDARD_ANCHORS in
+ * rubrics.ts is frozen adversarial input, not this file.
  */
 import type { OwnershipGroupEvaluationInput, OwnershipRubric } from "../../packages/cli/src/jev/index.ts"
 import { EVALUATION_CASES } from "./cases.ts"

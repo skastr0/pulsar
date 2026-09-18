@@ -1,6 +1,19 @@
 import type { OwnershipAnchorSpec, OwnershipRubric } from "../../packages/cli/src/jev/index.ts"
 import { PREFERENCE_LOCAL, PREFERENCE_SHARED, type PreferenceId } from "./types.ts"
 
+/**
+ * ADVERSARIAL / CONFLICTING RUBRIC INPUT — NOT PRODUCTION WORDING.
+ *
+ * These option descriptions name both policies' defects in one contrary
+ * string and a preference-agnostic meets string. The frozen 101-call
+ * series (receipts-1789721468958.json) used this input to measure what
+ * happens when the host supplies mixed contrary/meets text.
+ *
+ * Production judge / `.pulsar/ownership.json` anchors must be
+ * preference-conditioned (see followup.ts). Do not copy STANDARD_ANCHORS
+ * into shipped policy. Do not bump Jev promptId for this; compile already
+ * forwards rubric.anchors verbatim.
+ */
 const contrary: OwnershipAnchorSpec = {
   id: "contrary",
   value: 0,

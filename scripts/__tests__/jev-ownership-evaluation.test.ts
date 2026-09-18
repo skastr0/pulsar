@@ -10,9 +10,10 @@ const compileOwnershipRequestSync = HAS_JEV
 import { EVALUATION_CASES, FORBIDDEN_SOURCE_SUBSTRINGS } from "../jev-ownership-evaluation/cases.ts"
 import { HOST_SCENARIOS, SEALED_EXPECTATIONS, expectationOf } from "../jev-ownership-evaluation/expectations.ts"
 import {
-  aggregateOwnershipAttainment,
+  aggregateEvaluationLabels,
   comparisonVersusTarget,
 } from "../jev-ownership-evaluation/host-score.ts"
+import { STANDARD_ANCHORS } from "../jev-ownership-evaluation/rubrics.ts"
 import { FORBIDDEN_REQUEST_KEYS, buildLiveArms } from "../jev-ownership-evaluation/requests.ts"
 import {
   CALLER_PREVIEW_COPY,
@@ -149,10 +150,17 @@ describe("independent ownership evaluation fixtures", () => {
 })
 
 describe("host min-attainment contract", () => {
+  test("uses canonical core aggregateOwnershipAttainment, not a second engine", () => {
+    const source = readFileSync(resolve(import.meta.dir, "../jev-ownership-evaluation/host-score.ts"), "utf8")
+    expect(source).toContain("from \"../../packages/core/src/ownership.ts\"")
+    expect(source).toContain("aggregateOwnershipAttainment")
+    expect(source).not.toContain("histogram.unresolved")
+    expect(source).not.toContain("histogram.not_applicable")
+  })
+
   test("padding cannot erase a shortfall and unresolved evidence abstains", () => {
     for (const scenario of HOST_SCENARIOS) {
-      const aggregate = aggregateOwnershipAttainment({
-        policyPresent: "policyPresent" in scenario ? scenario.policyPresent : true,
+      const aggregate = aggregateEvaluationLabels({
         declaredGroupIds: [...scenario.declaredGroupIds],
         labels: scenario.labels.map((label) => ({ ...label })),
         stretchDeclared: scenario.id === "host-stretch-clamp",
@@ -167,10 +175,12 @@ describe("host min-attainment contract", () => {
       if ("expectedObserved" in scenario) {
         expect(aggregate.observedAttainment, scenario.id).toBe(scenario.expectedObserved)
         expect(aggregate.score, scenario.id).toBeUndefined()
+        expect(aggregate.attainment, scenario.id).toBeUndefined()
       }
+      expect(aggregate.histogram.unresolved, scenario.id).toBeUndefined()
+      expect(aggregate.histogram.not_applicable, scenario.id).toBeUndefined()
     }
-    const stretch = aggregateOwnershipAttainment({
-      policyPresent: true,
+    const stretch = aggregateEvaluationLabels({
       declaredGroupIds: ["a"],
       labels: [{ groupId: "a", status: "resolved", anchorId: "exceeds", anchorValue: 1.2 }],
       stretchDeclared: true,
@@ -181,11 +191,17 @@ describe("host min-attainment contract", () => {
 
   test("duplicate group ids fail closed", () => {
     expect(() =>
-      aggregateOwnershipAttainment({
-        policyPresent: true,
+      aggregateEvaluationLabels({
         declaredGroupIds: ["a", "a"],
         labels: [],
       }),
-    ).toThrow(/duplicate group_id/)
+    ).toThrow(/Duplicate group id/)
+  })
+
+  test("STANDARD_ANCHORS remain frozen adversarial wording, not a production recommendation", () => {
+    const rubrics = readFileSync(resolve(import.meta.dir, "../jev-ownership-evaluation/rubrics.ts"), "utf8")
+    expect(rubrics).toContain("ADVERSARIAL / CONFLICTING RUBRIC INPUT")
+    expect(rubrics).toContain("NOT PRODUCTION WORDING")
+    expect(STANDARD_ANCHORS[0]?.description).toContain("or a caller-local rule is extracted")
   })
 })

@@ -147,10 +147,12 @@ const main = async () => {
   const hostShared = hostFromOutcomes(
     [...new Set(primaryShared.map((row) => row.caseId))],
     primaryShared.filter((row) => row.repeat === 1),
+    PREFERENCE_SHARED,
   )
   const hostLocal = hostFromOutcomes(
     [...new Set(primaryLocal.map((row) => row.caseId))],
     primaryLocal.filter((row) => row.repeat === 1),
+    PREFERENCE_LOCAL,
   )
   const summary = {
     schema: "pulsar.jev_ownership_evaluation.summary.v1",

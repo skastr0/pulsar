@@ -1,6 +1,10 @@
 import type { OwnershipGroupAssessment } from "../../packages/cli/src/jev/index.ts"
 import { expectationOf } from "./expectations.ts"
-import { ANCHOR_VALUES, aggregateOwnershipAttainment, comparisonVersusTarget } from "./host-score.ts"
+import {
+  ANCHOR_VALUES,
+  aggregateEvaluationLabels,
+  comparisonVersusTarget,
+} from "./host-score.ts"
 import type { LiveArm } from "./requests.ts"
 import type { HostGroupLabel, SealedExpectation } from "./types.ts"
 
@@ -141,7 +145,7 @@ export const oppositePolicyPairs = (
 export const hostFromOutcomes = (
   declaredGroupIds: ReadonlyArray<string>,
   outcomes: ReadonlyArray<CallOutcome>,
-  policyPresent = true,
+  preference: "shared_domain_rule" | "caller_local" = "shared_domain_rule",
 ) => {
   const seen = new Set<string>()
   const uniqueOutcomes = outcomes.filter((row) => {
@@ -154,13 +158,13 @@ export const hostFromOutcomes = (
     if (row.status !== "resolved") return { groupId: row.caseId, status: "unresolved" as const }
     const value =
       row.selectedAnchorId === "contrary"
-        ? 0
+        ? ANCHOR_VALUES.contrary
         : row.selectedAnchorId === "mixed"
-          ? 0.5
+          ? ANCHOR_VALUES.mixed
           : row.selectedAnchorId === "meets"
-            ? 1
+            ? ANCHOR_VALUES.meets
             : row.selectedAnchorId === "exceeds"
-              ? 1.2
+              ? ANCHOR_VALUES.exceeds
               : undefined
     if (value === undefined) return { groupId: row.caseId, status: "unresolved" as const }
     return {
@@ -170,8 +174,8 @@ export const hostFromOutcomes = (
       anchorValue: value,
     }
   })
-  const aggregate = aggregateOwnershipAttainment({
-    policyPresent,
+  const aggregate = aggregateEvaluationLabels({
+    preference,
     declaredGroupIds,
     labels,
     stretchDeclared: outcomes.some((row) => row.preference === "stretch-shared"),

@@ -387,14 +387,6 @@ export const HOST_SCENARIOS = [
     note: "Missing declared group is incomplete inventory.",
   },
   {
-    id: "host-no-policy",
-    declaredGroupIds: [],
-    labels: [],
-    policyPresent: false,
-    expectedApplicability: "not_configured" as const,
-    note: "Missing policy is not_configured, not a healthy default.",
-  },
-  {
     id: "host-stretch-clamp",
     declaredGroupIds: ["a"],
     labels: [{ groupId: "a", status: "resolved" as const, anchorId: "exceeds", anchorValue: 1.2 }],

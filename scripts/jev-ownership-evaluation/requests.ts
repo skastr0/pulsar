@@ -1,5 +1,10 @@
 /**
  * Provider-facing request construction. Does not import the sealed judgment file.
+ *
+ * `buildLiveArms` uses the adversarial STANDARD_ANCHORS from rubrics.ts
+ * (mixed two-policy contrary/meets). That series is frozen as
+ * receipts-1789721468958.json. Production wording is followup.ts, not
+ * this default.
  */
 import type { OwnershipGroupEvaluationInput, OwnershipRubric } from "../../packages/cli/src/jev/index.ts"
 import { EVALUATION_CASES } from "./cases.ts"
