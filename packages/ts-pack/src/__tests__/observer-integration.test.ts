@@ -116,6 +116,7 @@ describe("Observer + TS pack integration", () => {
         "TS-SL-04-unfinished-implementations",
         "TS-SL-05-phantom-tests",
         "TS-SL-06-confidence-claim-mismatch",
+        "TS-SL-07-rule-ownership-alignment",
       ])
 
       // Overall shape invariants.

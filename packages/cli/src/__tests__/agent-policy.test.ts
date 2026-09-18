@@ -39,8 +39,8 @@ describe("strict static policy", () => {
     const policy = await load()
     expect(policy.vector).toBeUndefined()
     expect(policy.vectorSelection.source).toBe("fallback")
-    expect(policy.registry.sorted).toHaveLength(50)
-    expect(JSON.parse(JSON.stringify(policy.explanation)).signals).toHaveLength(74)
+    expect(policy.registry.sorted).toHaveLength(51)
+    expect(JSON.parse(JSON.stringify(policy.explanation)).signals).toHaveLength(75)
   })
 
   test("rejects raw excess vector, override and config keys before they can disappear", async () => {
@@ -161,16 +161,16 @@ describe("strict static policy", () => {
     await save({ modules: [{ id: "danger", kind: "repo-local", path: ".pulsar/danger.ts" }] }, ".pulsar/project-modules.json")
     await writeFile(join(repo, ".pulsar/danger.ts"), 'throw new Error("PROJECT CODE EXECUTED")')
     expect((await Effect.runPromise(loadAgentPolicy({ repoPath: repo, trustProjectCode: true }))).manifest?.modules).toHaveLength(1)
-    expect((await Effect.runPromise(buildAgentCatalog({ repoPath: repo }))).installedCount).toBe(74)
+    expect((await Effect.runPromise(buildAgentCatalog({ repoPath: repo }))).installedCount).toBe(75)
   })
 })
 
 describe("agent catalog", () => {
-  test("74 signal registry parity, schema documents/defaults serialize without losing definitions", async () => {
+  test("75 signal registry parity, schema documents/defaults serialize without losing definitions", async () => {
     const registry = await Effect.runPromise(buildPulsarRegistry())
     const catalog = JSON.parse(JSON.stringify(await Effect.runPromise(buildAgentCatalog({ repoPath: repo }))))
     expect(catalog.signals.map((s: { id: string }) => s.id)).toEqual(registry.sorted.map((s) => s.id))
-    expect(catalog.signals.filter((s: { id: string }) => s.id.startsWith("TS-"))).toHaveLength(38)
+    expect(catalog.signals.filter((s: { id: string }) => s.id.startsWith("TS-"))).toHaveLength(39)
     expect(catalog.signals.filter((s: { id: string }) => s.id.startsWith("RS-"))).toHaveLength(24)
     for (const signal of registry.sorted) {
       const detail = await Effect.runPromise(buildAgentCatalog({ repoPath: repo, signalId: signal.id }))
@@ -185,7 +185,7 @@ describe("agent catalog", () => {
     }
     await save({ ...vector({}), typo: true })
     const catalog = await Effect.runPromise(buildAgentCatalog({ repoPath: repo }))
-    expect(catalog.installedCount).toBe(74)
+    expect(catalog.installedCount).toBe(75)
     expect(catalog.policyError).toBeString()
   })
 
