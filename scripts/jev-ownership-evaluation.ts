@@ -14,7 +14,9 @@ import {
   type OwnershipGroupAssessment,
 } from "../packages/cli/src/jev/index.ts"
 import { outcomeOf, oppositePolicyPairs, hostFromOutcomes } from "./jev-ownership-evaluation/compare.ts"
+import { buildConditionedAnchorArms } from "./jev-ownership-evaluation/followup.ts"
 import { buildLiveArms, type LiveArm } from "./jev-ownership-evaluation/requests.ts"
+import { PREFERENCE_LOCAL, PREFERENCE_SHARED, type ArrangementId } from "./jev-ownership-evaluation/types.ts"
 
 const ARTIFACT_DIR = resolve(import.meta.dir, "../.amp/in/artifacts/jev-ownership-evaluation")
 const CONCURRENCY = 4
@@ -59,10 +61,43 @@ const compactRequest = (arm: LiveArm) => {
   }
 }
 
+type RunnableArm = {
+  readonly runId: string
+  readonly caseId: string
+  readonly obligationId: string
+  readonly arrangement: ArrangementId
+  readonly preference: LiveArm["preference"]
+  readonly perturbation: LiveArm["perturbation"]
+  readonly repeat: number
+  readonly input: LiveArm["input"]
+}
+
 const main = async () => {
-  const arms = buildLiveArms()
+  const followup = process.argv.includes("--followup=conditioned-anchors")
+  const arms: ReadonlyArray<RunnableArm> = followup
+    ? buildConditionedAnchorArms().map((arm, index) => ({
+        runId: arm.runId,
+        caseId: arm.caseId,
+        obligationId: "obl-publish",
+        arrangement: arm.arrangement as ArrangementId,
+        preference: arm.preference,
+        perturbation: "none" as const,
+        repeat: (index % 2) + 1,
+        input: arm.input,
+      }))
+    : buildLiveArms()
   if (process.argv.includes("--plan")) {
-    console.log(JSON.stringify({ calls: arms.length, arrangements: [...new Set(arms.map((arm) => arm.arrangement))] }, null, 2))
+    console.log(
+      JSON.stringify(
+        {
+          followup,
+          calls: arms.length,
+          arrangements: [...new Set(arms.map((arm) => arm.arrangement))],
+        },
+        null,
+        2,
+      ),
+    )
     return
   }
   mkdirSync(ARTIFACT_DIR, { recursive: true })
@@ -76,7 +111,9 @@ const main = async () => {
   if (assessments.length !== arms.length) throw new Error("assessment count drifted from plan")
   const outcomes = arms.map((arm, index) => outcomeOf(arm, assessments[index]!))
   const receipts = {
-    schema: "pulsar.jev_ownership_evaluation.receipts.v1",
+    schema: followup
+      ? "pulsar.jev_ownership_evaluation.followup.conditioned_anchors.v1"
+      : "pulsar.jev_ownership_evaluation.receipts.v1",
     startedAt: new Date(started).toISOString(),
     finishedAt: new Date().toISOString(),
     model: "jev-1.13.0",
@@ -102,18 +139,18 @@ const main = async () => {
   }
   const pairs = oppositePolicyPairs(outcomes)
   const primaryShared = outcomes.filter(
-    (row) => row.preference === "shared_domain_rule" && row.perturbation === "none" && row.repeat === 1,
+    (row) => row.preference === PREFERENCE_SHARED && row.perturbation === "none" && row.repeat === 1,
   )
   const primaryLocal = outcomes.filter(
-    (row) => row.preference === "caller_local" && row.perturbation === "none" && row.repeat === 1,
+    (row) => row.preference === PREFERENCE_LOCAL && row.perturbation === "none" && row.repeat === 1,
   )
   const hostShared = hostFromOutcomes(
-    primaryShared.map((row) => row.caseId),
-    primaryShared,
+    [...new Set(primaryShared.map((row) => row.caseId))],
+    primaryShared.filter((row) => row.repeat === 1),
   )
   const hostLocal = hostFromOutcomes(
-    primaryLocal.map((row) => row.caseId),
-    primaryLocal,
+    [...new Set(primaryLocal.map((row) => row.caseId))],
+    primaryLocal.filter((row) => row.repeat === 1),
   )
   const summary = {
     schema: "pulsar.jev_ownership_evaluation.summary.v1",

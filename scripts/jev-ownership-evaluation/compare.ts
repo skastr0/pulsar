@@ -143,7 +143,13 @@ export const hostFromOutcomes = (
   outcomes: ReadonlyArray<CallOutcome>,
   policyPresent = true,
 ) => {
-  const labels = outcomes.map((row) => {
+  const seen = new Set<string>()
+  const uniqueOutcomes = outcomes.filter((row) => {
+    if (seen.has(row.caseId)) return false
+    seen.add(row.caseId)
+    return true
+  })
+  const labels = uniqueOutcomes.map((row) => {
     if (row.status === "not_applicable") return { groupId: row.caseId, status: "not_applicable" as const }
     if (row.status !== "resolved") return { groupId: row.caseId, status: "unresolved" as const }
     const value =

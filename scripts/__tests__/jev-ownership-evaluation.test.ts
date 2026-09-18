@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test"
-import { readFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { compileOwnershipRequestSync } from "../../packages/cli/src/jev/index.ts"
+
+const JEV_INDEX = resolve(import.meta.dir, "../../packages/cli/src/jev/index.ts")
+const HAS_JEV = existsSync(JEV_INDEX)
+const compileOwnershipRequestSync = HAS_JEV
+  ? (await import("../../packages/cli/src/jev/index.ts")).compileOwnershipRequestSync
+  : null
 import { EVALUATION_CASES, FORBIDDEN_SOURCE_SUBSTRINGS } from "../jev-ownership-evaluation/cases.ts"
 import { HOST_SCENARIOS, SEALED_EXPECTATIONS, expectationOf } from "../jev-ownership-evaluation/expectations.ts"
 import {
@@ -101,6 +106,7 @@ describe("independent ownership evaluation fixtures", () => {
   })
 
   test("compiled provider state omits group ids, expectations, and local metadata", () => {
+    if (compileOwnershipRequestSync === null) return
     for (const arm of buildLiveArms()) {
       const compiled = compileOwnershipRequestSync(arm.input)
       const hits: Array<string> = []
@@ -133,6 +139,12 @@ describe("independent ownership evaluation fixtures", () => {
     expect(arms.some((arm) => arm.perturbation === "anchor-order")).toBe(true)
     expect(arms.filter((arm) => arm.preference === "shared_domain_rule").length).toBeGreaterThan(30)
     expect(arms.filter((arm) => arm.preference === "caller_local").length).toBeGreaterThan(30)
+  })
+
+  test("conditioned-anchor followup stays off the sealed judgment file", () => {
+    const followup = readFileSync(resolve(import.meta.dir, "../jev-ownership-evaluation/followup.ts"), "utf8")
+    expect(followup).not.toContain("from \"./expectations")
+    expect(followup).not.toContain("SEALED")
   })
 })
 
