@@ -1596,6 +1596,27 @@
     "defaultOptionIndex": 0
   },
   {
+    "id": "TS-SL-07",
+    "title": "Rule ownership alignment",
+    "pack": "ts",
+    "category": "generated-slop",
+    "measures": "Replays a model assessment of the repository's explicitly declared ownership inventory. Attainment is the weakest applicable resolved anchor, never a confidence-weighted average. Missing or stale evidence cannot claim fit.",
+    "whyItMatters": "A repo may prefer shared domain rules or caller-local ownership. This opt-in signal measures the declared preference rather than imposing a universal style. Its advisory result is not proof of code quality.",
+    "evidence": "repo-level",
+    "evidenceHint": "Inspect .pulsar/ownership.json and the offline ownership-assessment.json. Use agent judge --dry-run to review source egress before explicitly refreshing with Jev.",
+    "question": "Keep this repository's explicit ownership rubric?",
+    "options": [
+      {
+        "label": "Keep the declared rubric, or leave unconfigured",
+        "summary": "This choice does not author ownership policy or call a model. Edit .pulsar/ownership.json explicitly to change preference, anchors or inventory; then use agent judge to refresh evidence. An absent policy is not applicable.",
+        "calibrationKind": "keep-default",
+        "calibrationTarget": ".pulsar/ownership.json",
+        "framing": "keep"
+      }
+    ],
+    "defaultOptionIndex": 0
+  },
+  {
     "id": "RS-AB-01",
     "title": "Unused public items",
     "pack": "rs",

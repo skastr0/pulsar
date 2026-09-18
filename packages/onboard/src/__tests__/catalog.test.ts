@@ -67,9 +67,9 @@ describe("onboarding catalog identity", () => {
 
     expect(report).toEqual({
       valid: true,
-      catalogCount: 74,
-      registryCount: 74,
-      resolvedCount: 74,
+      catalogCount: 75,
+      registryCount: 75,
+      resolvedCount: 75,
       invalidEntryIds: [],
       duplicateSignalIds: [],
       missingSignalIds: [],
@@ -85,9 +85,9 @@ describe("onboarding catalog identity", () => {
 
     expect(inspectCatalogIntegrity(drifted)).toMatchObject({
       valid: false,
-      catalogCount: 74,
-      registryCount: 74,
-      resolvedCount: 73,
+      catalogCount: 75,
+      registryCount: 75,
+      resolvedCount: 74,
       invalidEntryIds: ["ts-sl-04-onboarding-calibration"],
       missingSignalIds: ["TS-SL-04-unfinished-implementations"],
     })
@@ -102,9 +102,9 @@ describe("onboarding catalog identity", () => {
 
     expect(inspectCatalogIntegrity(drifted)).toMatchObject({
       valid: false,
-      catalogCount: 74,
-      registryCount: 74,
-      resolvedCount: 73,
+      catalogCount: 75,
+      registryCount: 75,
+      resolvedCount: 74,
       invalidEntryIds: ["TS-SL-04-UNREGISTERED-SUFFIX"],
       missingSignalIds: ["TS-SL-04-unfinished-implementations"],
     })
