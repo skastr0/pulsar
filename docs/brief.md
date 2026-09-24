@@ -1,8 +1,8 @@
 # Pulsar — brief
 
-updated: 2026-09-24 · version: 0.2.1 · maturity: usable-with-gaps
+updated: 2026-09-24 · version: 0.3.0 · maturity: usable-with-gaps
 
-Maturity argument: 0.2.1 is on npm and it did its job on a repository it had never seen (Tether, below), but the agent protocol is still `v1alpha1`, TS-AD-04 fails on some repositories, and the README calls itself experimental.
+Maturity argument: 0.3.0 is on npm and it did its job on a repository it had never seen (Tether, below), but the agent protocol is still `v1alpha1`, TS-AD-04 fails on some repositories, and the README calls itself experimental.
 
 ## One line
 
@@ -99,7 +99,9 @@ $ pulsar agent catalog . | jq '.result.signals | length'
 
 `@skastr0/pulsar-core` holds the signal registry, the Observer that runs signals, the scoring engine, vectors, and calibration. Three signal packs feed it: `@skastr0/pulsar-ts-pack` (TypeScript analysis on quartz-engine and tsgo), `@skastr0/pulsar-rs-pack` (Rust), and `@skastr0/pulsar-shared-signals` (git history, manifests, coverage reports). Each signal declares a provability tier that caps how hard it can enforce. Only proof-grade signals can fail the hard gate, and the `readiness` aggregate ignores signals that are not applicable or lack evidence (`packages/core/src/observer-categories.ts:250`). The policy is `.pulsar/vector.json` plus optional project modules from `.pulsar/project-modules.json`. Modules are executable TypeScript calibration and run only with `--trust-project-code`. Vector and modules together hash to one policy fingerprint. `score --diff` runs `observeCommit` on the base and `observeWorktree` on the head (`packages/cli/src/score-diff.ts:161-166`), then routes the introduced diagnostics (`packages/cli/src/score-diff-gate.ts:47`). `pulsar agent` wraps all of this in one JSON envelope, `pulsar/agent/v1alpha1` (`packages/cli/src/agent-contract.ts:8`), with exit codes 0 complete, 1 invalid input or policy, 2 hard-gate violation, 3 incomplete evidence (`packages/cli/src/agent-report.ts:68`).
 
-Plain version, as the page says it: it runs 74 checks: TypeScript (built on Quartz), Rust, and checks on git history and package manifests that work in any language. Only checks backed by proof can block a change; the rest flag it for review. `score --diff` scores the base commit and your working tree, then lists only what the change introduced.
+Plain version, as the page says it: it runs 75 checks: TypeScript (built on Quartz), Rust, and checks on git history and package manifests that work in any language. Only checks backed by proof can block a change; the rest flag it for review. `score --diff` scores the base commit and your working tree, then lists only what the change introduced.
+
+Model use (0.3.0): `pulsar agent judge` sends the source and context files declared in `.pulsar/ownership.json`, plus the repository's rubric, to TypeSafe's Jev model `jev-1.13.0` at `https://api.typesafe.ai/v1/systemone` and needs `TYPESAFE_API_KEY` (`packages/cli/src/jev/transport.ts:5,84`, `packages/cli/src/jev/compile.ts:13`). `--dry-run` sends nothing and reports `sends_source: true`, `calls_planned`, and the model (run on Pulsar itself, 2026-09-24: 1 call planned). `agent discover` and `agent score` make no model call (`packages/cli/src/agent-args.ts:127`, `docs/agent-first.md:214`).
 
 Diagram spec:
 - Nodes: `repository` (code + git history + manifests + coverage) · `.pulsar/vector.json` · `.pulsar/project-modules.json` → `project modules` · `policy fingerprint` · `ts-pack` · `rs-pack` · `shared-signals` · `quartz-engine` · `Observer` · `findings` (signal_id, file:line, severity, evidence_class) · `readiness` / `hard_gate_status` · `pulsar agent score` (JSON envelope, exit 0/1/2/3) · `pulsar score --diff` (base vs WORKTREE → introduced diagnostics → PASS / ROUTE).
@@ -110,7 +112,7 @@ Diagram spec:
 For:
 - Someone whose repository is mostly written by agents and who wants each change checked against a stated policy instead of read line by line.
 - Agents that need a check they can run and parse: JSON on stdout, stable exit codes, a fix hint per finding.
-- TypeScript and Rust repositories. TypeScript has the deepest coverage: 38 of the 74 signals.
+- TypeScript and Rust repositories. TypeScript has the deepest coverage: 39 of the 75 signals.
 
 Not for:
 - A linter replacement or a security scanner. `TS-SEC-*` flags dangerous sinks and hard-coded secrets and does not audit.
@@ -131,7 +133,7 @@ bunx @skastr0/pulsar agent score .
 - Releases: 7 tags, `v0.1.0`–`v0.2.1` (`git tag`). npm `@skastr0/pulsar` 0.2.1 was published 2026-09-16, and the first release was 2026-05-16 (`npm view @skastr0/pulsar time`).
 - History: 957 commits since 2026-04-15 (`git log --oneline | wc -l`; first commit `396eedb`).
 - Tests: 2,032 bun tests in 11 suites, plus 12 artifact-contract tests, all green in CI run 35966573027 on `39684c7` (2026-09-24, `gh run view --log`). In a fresh local clone with Bun 1.3.14, `bun run verify` passed typecheck and build and ran 2,032 tests. 2,031 passed and 1 failed (see Gaps).
-- Signals: 74 production signals, 18 calibration slots (`agent catalog`, See it run §4).
+- Signals: 75 production signals, 18 calibration slots (`agent catalog` from source at `39684c7`, run 2026-09-24; TS-SL-07 is selected by default and `not_applicable` without `.pulsar/ownership.json`).
 - Usage: committed `.pulsar/` policy in 6 of Guilherme's other repositories (Where it fits). Agents use `score --diff … --agent-view` as a pre-claim check in other repos, for example Plinth (Quasar `codex:31fd6820d14c8d2fd16bd992e2b307e1`).
 - Resource work in 0.2.1, measured: `docs/explorations/resource-performance-2026-09-15.md`.
 
@@ -139,7 +141,6 @@ bunx @skastr0/pulsar agent score .
 
 - `score --diff` exits 0 when it only flags a change for review (`ROUTE`, See it run §1), and 2 only on `BLOCK` (`packages/cli/src/score-diff.ts:136`). To fail a script on `ROUTE`, add `--json` and read `gate_decision.status`.
 - In a mostly TypeScript repository with a little Rust, most Rust checks have too little to go on: with one `.rs` file, 21 of 24 report `insufficient_evidence`, and `agent score` exits 3 (See it run §2).
-- Unreleased on main (due in 0.3.0, not in npm 0.2.1): `pulsar agent judge` / `agent discover`, where judge sends source to a model (`packages/cli/src/agent-args.ts:3`, commit 4fc545c), and a new check, TS-SL-07 rule-ownership-alignment (`packages/ts-pack/src/pack.ts`). The README and page describe 0.2.1.
 - TS-AD-04 still fails on some repositories. The Effect benchmark exceeds a 4 GiB footprint budget (CHANGELOG 0.2.1, Known limitations).
 - In the shared working checkout, `bun run verify` fails at the `@skastr0/pulsar-shared-signals` typecheck with TS7006 in `src/__tests__/shared-11-theory-encoding-index.test.ts:210,223,387`. That happens under Bun 1.4.2 and under the pinned 1.3.14, while CI on the same commit is green. A fresh clone typechecks cleanly, so this is stale state in the shared checkout. In that fresh clone, `proposeOwnershipInventory > quarantines unsafe sources` fails (`packages/cli/src/__tests__/ownership-discovery.test.ts:327`, expected `true`, received `false`) while CI passes it. It may depend on the clone living under `/private/tmp` (unverified).
 - The README header image (`docs/assets/pulsar-hero.png`) is cyan. The `pulsar onboard` TUI accent is amber (`packages/onboard/src/palette.ts:13`, `#e5b567`, title at `packages/onboard/src/app.tsx:426`).

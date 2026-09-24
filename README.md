@@ -20,7 +20,7 @@ An agent says the change is done. Typecheck is clean and the tests pass.
 - **Checking it means reading every line.** With several agents in one repo, that's the job you were handing off.
 - **A whole-repo score hides one bad change** inside an average that still looks fine.
 
-**Status:** usable with gaps · v0.2.1 · macOS and Linux (arm64, x64) · [gaps](#status)
+**Status:** usable with gaps · v0.3.0 · macOS and Linux (arm64, x64) · [gaps](#status)
 
 ## An agent's diff, scored
 
@@ -73,10 +73,10 @@ TS-SL-06-confidence-claim-mismatch WARN validateSearchCache claims runtime valid
 
 | Pulsar **is** | Pulsar **is not** |
 |---|---|
-| Deterministic: same code and same policy give the same score | A model reviewer. It needs no account and no API key |
+| Deterministic: same code and same policy give the same score | A model reviewer. Scoring runs locally, with no account and no API key |
 | One policy per repository, committed in `.pulsar/` | A personal preference profile |
 | A check an agent can run and parse: JSON, exit codes, file and line | A linter replacement or a security audit |
-| 74 checks (signals): 38 TypeScript, 24 Rust, 12 from git history and manifests | Windows-ready: there is no Windows binary yet |
+| 75 checks (signals): 39 TypeScript, 24 Rust, 12 from git history and manifests | Windows-ready: there is no Windows binary yet |
 
 ## Quick start
 
@@ -180,13 +180,17 @@ Optional. Everything lives in `.pulsar/`, which you commit.
 
 Presets are called personas in the CLI. They are `ai-slop-defense`, `domain-purist`, `refactor-friendly`, `security-paranoid`, `strict-type-safety`, and `velocity-first`. A preset changes nothing until you apply it. For weights, project modules, and the policy files, see [calibration](docs/calibration.md).
 
+## Optional: ownership judged by a model
+
+`pulsar agent discover` proposes groups of duplicated code that may share one rule. It makes no model call. `pulsar agent judge` sends the source and context files you declare in `.pulsar/ownership.json`, plus your rubric, to TypeSafe's Jev model (`jev-1.13.0`) and needs `TYPESAFE_API_KEY`. `--dry-run` shows the rubric, paths, byte counts, and number of calls without sending anything. Everything else, including `agent score`, stays local. See [ownership checks](docs/agent-first.md#opt-in-jev-ownership-numbers).
+
 ## Where it fits
 
 When several agents work in one repository, Pulsar is the check they all run against the same committed policy before they call a change done. More at [castro.engineer/projects/pulsar](https://castro.engineer/projects/pulsar).
 
 ## Reference
 
-- [Signals](docs/signals/catalog.md): all 74 checks, what each measures, and which can block a change
+- [Signals](docs/signals/catalog.md): all 75 checks, what each measures, and which can block a change
 - [Calibration and policy](docs/calibration.md): vectors, presets, project modules, the agent protocol, and packages
 - [Agent guide](docs/agent-first.md): the catalog → config → score → repair loop, end to end
 - [Project modules](docs/project-modules.md): executable calibration with the SDK
@@ -194,7 +198,7 @@ When several agents work in one repository, Pulsar is the check they all run aga
 
 ## Status
 
-Usable with gaps. v0.2.1 on npm. The agent JSON schema is `v1alpha1` and may change.
+Usable with gaps. v0.3.0 on npm. The agent JSON schema is `v1alpha1` and may change.
 
 - `score --diff` exits 0 on `ROUTE`. To fail a script on it, read `gate_decision.status` as shown above.
 - A stray file in another language leaves those checks without evidence. For example, one `.rs` file in a TypeScript repo leaves 21 Rust checks at `insufficient_evidence`, and `agent score` exits 3.

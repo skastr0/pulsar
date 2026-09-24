@@ -1,13 +1,13 @@
 # Signals
 
-Every signal Pulsar 0.2.1 ships. `pulsar agent catalog .` prints the same list for your repository, with config schemas, defaults, and weights; `pulsar agent catalog . --signal <id>` shows one.
+Every signal Pulsar 0.3.0 ships. `pulsar agent catalog .` prints the same list for your repository, with config schemas, defaults, and weights; `pulsar agent catalog . --signal <id>` shows one.
 
-Pulsar ships **74 production signals** in three packs: 12 language-agnostic shared signals, 38 TypeScript signals, and 24 Rust signals. Each signal declares a **provability tier** that caps how strongly it can enforce:
+Pulsar ships **75 production signals** in three packs: 12 language-agnostic shared signals, 39 TypeScript signals, and 24 Rust signals. Each signal declares a **provability tier** that caps how strongly it can enforce:
 
 - **Tier 1** — pure deterministic computation over code or git history (complexity, cycles, churn).
 - **Tier 1.5** — compound: combines other signals' outputs (hotspots, suppression governance).
 - **Tier 2** — computation plus reference data (manifests, glossaries, coverage reports).
-- **Tier 3** — reserved for LLM-assisted judgment; soft warning only, never a hard gate. No production signal uses it today.
+- **Tier 3** — LLM-assisted judgment; soft warning only, never a hard gate. `TS-SL-07` is the one Tier 3 signal: it replays a saved model assessment offline, and only `pulsar agent judge` calls the model.
 
 Tier honesty is enforced by contract tests: a signal that reads reference data cannot claim Tier 1.
 
@@ -70,6 +70,7 @@ Tier honesty is enforced by contract tests: a signal that reads reference data c
 | `TS-SL-04` unfinished-implementations | Empty/todo/no-op code presented as real |
 | `TS-SL-05` phantom-tests | Tests that assert nothing meaningful |
 | `TS-SL-06` confidence-claim-mismatch | Validator-named functions that don't deliver the claimed guarantee |
+| `TS-SL-07` rule-ownership-alignment | Fit between the code and the ownership rules declared in `.pulsar/ownership.json` (not applicable without it) |
 
 ## Rust
 
