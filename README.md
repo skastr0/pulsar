@@ -20,8 +20,6 @@ An agent says the change is done. Typecheck is clean and the tests pass.
 - **Checking it means reading every line.** With several agents in one repo, that's the job you were handing off.
 - **A whole-repo score hides one bad change** inside an average that still looks fine.
 
-Pulsar scores the diff against the policy your repository has committed and lists what the change introduced, by file and line.
-
 **Status:** usable with gaps · v0.2.1 · macOS and Linux (arm64, x64) · [gaps](#status)
 
 ## An agent's diff, scored
@@ -78,7 +76,7 @@ TS-SL-06-confidence-claim-mismatch WARN validateSearchCache claims runtime valid
 | Deterministic: same code and same policy give the same score | A model reviewer. It needs no account and no API key |
 | One policy per repository, committed in `.pulsar/` | A personal preference profile |
 | A check an agent can run and parse: JSON, exit codes, file and line | A linter replacement or a security audit |
-| 74 signals: 38 TypeScript, 24 Rust, 12 from git history and manifests | Windows-ready: there is no Windows binary yet |
+| 74 checks (signals): 38 TypeScript, 24 Rust, 12 from git history and manifests | Windows-ready: there is no Windows binary yet |
 
 ## Quick start
 
@@ -114,11 +112,13 @@ Step 1 prints one JSON document. Trimmed:
         "location": { "file": "src/facts/lint.ts", "line": 378 } } ] } }
 ```
 
+`insufficient_evidence: 29` means those checks had nothing to read, not that they failed. Here, 21 are Rust checks and the repository has one Rust file. The rest need inputs it doesn't have yet, such as a coverage report, a glossary, or declared module boundaries.
+
 | Exit code | `agent score` means |
 |---|---|
 | 0 | Complete |
 | 1 | Invalid input, config, or policy |
-| 2 | A proven hard-gate violation |
+| 2 | A check backed by proof blocks the change |
 | 3 | Incomplete evidence. The JSON still carries every finding |
 
 `score --diff` exits 0 whether it prints `PASS` or `ROUTE`. To gate a script on it, read the verdict from JSON:
@@ -151,7 +151,7 @@ flowchart LR
   vector[".pulsar/vector.json"]
   modules[".pulsar/project-modules.json<br/>project modules"]
   fp["policy fingerprint"]
-  obs["Observer"]
+  obs["Observer<br/>runs the checks"]
   findings["findings<br/>signal_id · file:line · severity"]
   agent["pulsar agent score<br/>JSON · exit 0/1/2/3"]
   diff["pulsar score --diff<br/>base vs WORKTREE → PASS / ROUTE"]
@@ -165,7 +165,7 @@ flowchart LR
   findings --> diff
 ```
 
-Signal packs read the repository: TypeScript through [Quartz](https://github.com/skastr0/quartz), Rust, and language-agnostic signals over git history, manifests, and coverage reports. The Observer runs them under the repository's policy. The policy is `.pulsar/vector.json` plus optional project modules, and it hashes to one fingerprint. `score --diff` runs the Observer on the base commit and on the working tree and reports only what the change introduced. Each signal has a provability tier that caps how hard it can enforce, so only signals with proof behind them can fail the hard gate.
+Pulsar runs its checks over the repository: TypeScript through [Quartz](https://github.com/skastr0/quartz), Rust, and language-agnostic checks over git history, manifests, and coverage reports. It runs them under the repository's policy: `.pulsar/vector.json` plus optional project modules, hashed to one fingerprint. `score --diff` runs the checks on the base commit and on the working tree and reports only what the change introduced. Only checks backed by proof can block a change; the rest flag it for review.
 
 ## Make the policy yours
 
@@ -173,12 +173,12 @@ Optional. Everything lives in `.pulsar/`, which you commit.
 
 | To | Run |
 |---|---|
-| See every signal, weight, and calibration slot | `npx @skastr0/pulsar agent catalog .` |
+| See every check, weight, and calibration slot | `npx @skastr0/pulsar agent catalog .` |
 | Start from a preset | `npx @skastr0/pulsar persona apply strict-type-safety --to .pulsar/vector.json` |
 | List presets | `npx @skastr0/pulsar persona list` |
 | Check a policy change before scoring | `npx @skastr0/pulsar agent config .` |
 
-The presets are `ai-slop-defense`, `domain-purist`, `refactor-friendly`, `security-paranoid`, `strict-type-safety`, and `velocity-first`. A preset changes nothing until you apply it. For weights, project modules, and the policy files, see [calibration](docs/calibration.md).
+Presets are called personas in the CLI. They are `ai-slop-defense`, `domain-purist`, `refactor-friendly`, `security-paranoid`, `strict-type-safety`, and `velocity-first`. A preset changes nothing until you apply it. For weights, project modules, and the policy files, see [calibration](docs/calibration.md).
 
 ## Where it fits
 
@@ -186,7 +186,7 @@ When several agents work in one repository, Pulsar is the check they all run aga
 
 ## Reference
 
-- [Signals](docs/signals/catalog.md): all 74, what each measures, and provability tiers
+- [Signals](docs/signals/catalog.md): all 74 checks, what each measures, and which can block a change
 - [Calibration and policy](docs/calibration.md): vectors, presets, project modules, the agent protocol, and packages
 - [Agent guide](docs/agent-first.md): the catalog → config → score → repair loop, end to end
 - [Project modules](docs/project-modules.md): executable calibration with the SDK
@@ -197,7 +197,7 @@ When several agents work in one repository, Pulsar is the check they all run aga
 Usable with gaps. v0.2.1 on npm. The agent JSON schema is `v1alpha1` and may change.
 
 - `score --diff` exits 0 on `ROUTE`. Gate on `gate_decision.status` as shown above.
-- A stray file in another language leaves those signals without evidence. For example, one `.rs` file in a TypeScript repo leaves 21 Rust signals at `insufficient_evidence`, and `agent score` exits 3.
+- A stray file in another language leaves those checks without evidence. For example, one `.rs` file in a TypeScript repo leaves 21 Rust checks at `insufficient_evidence`, and `agent score` exits 3.
 - TS-AD-04 fails on some repositories. Scoring a repository the size of Effect can use more than 4 GiB of memory. See [CHANGELOG](CHANGELOG.md).
 - There are no Windows binaries.
 
