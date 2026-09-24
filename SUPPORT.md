@@ -1,6 +1,6 @@
 # Support
 
-Pulsar is experimental and solo-maintained. There is no guaranteed support response time.
+Pulsar has one maintainer. There is no guaranteed support response time.
 
 Use GitHub issues for:
 

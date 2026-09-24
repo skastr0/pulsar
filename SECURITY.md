@@ -1,8 +1,8 @@
 # Security Policy
 
-## Supported Status
+## Response
 
-Pulsar is experimental and solo-maintained. Security reports are reviewed on a best-effort basis; there is no formal response SLA.
+Pulsar has one maintainer. Security reports are reviewed as they arrive; there is no formal response SLA.
 
 ## Reporting A Vulnerability
 

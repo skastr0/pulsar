@@ -1,6 +1,6 @@
 # Contributing
 
-Pulsar is experimental and solo-maintained. The default contribution path is issues first: reproducible bugs, documentation corrections, and scoped proposals.
+Pulsar has one maintainer. The default contribution path is issues first: reproducible bugs, documentation corrections, and scoped proposals.
 
 ## Useful Issues
 
@@ -20,7 +20,7 @@ Scoped proposals are welcome when they explain the problem, the desired behavior
 
 ## Pull Requests
 
-External pull requests are not the default maintenance path while Pulsar is experimental. Small corrections may be accepted, but a PR can be declined for scope, maintenance cost, compatibility risk, or product direction even when the implementation is technically sound.
+External pull requests are not the default maintenance path. Small corrections may be accepted, but a PR can be declined for scope, maintenance cost, compatibility risk, or product direction even when the implementation is technically sound.
 
 If a PR is discussed and opened, include the verification commands you ran and call out any user-facing behavior changes.
 

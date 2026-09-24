@@ -20,7 +20,7 @@ An agent says the change is done. Typecheck is clean and the tests pass.
 - **Checking it means reading every line.** With several agents in one repo, that's the job you were handing off.
 - **A whole-repo score hides one bad change** inside an average that still looks fine.
 
-**Status:** usable with gaps · v0.3.0 · macOS and Linux (arm64, x64) · [gaps](#status)
+v0.3.0 · macOS and Linux (arm64, x64)
 
 ## An agent's diff, scored
 
@@ -171,15 +171,6 @@ When several agents work in one repository, Pulsar is the check they all run aga
 - [Agent guide](docs/agent-first.md): the catalog → config → score → repair loop, end to end
 - [Project modules](docs/project-modules.md): executable calibration with the SDK
 - [Changelog](CHANGELOG.md)
-
-## Status
-
-Usable with gaps. v0.3.0 on npm. The agent JSON schema is `v1alpha1` and may change.
-
-- `score --diff` exits 0 on `ROUTE`. To fail a script on it, read `gate_decision.status` as shown above.
-- A stray file in another language leaves those checks without evidence. For example, one `.rs` file in a TypeScript repo leaves 21 Rust checks at `insufficient_evidence`, and `agent score` exits 3.
-- TS-AD-04 fails on some repositories. Scoring a repository the size of Effect can use more than 4 GiB of memory. See [CHANGELOG](CHANGELOG.md).
-- There are no Windows binaries.
 
 ## Contributing, security, license
 

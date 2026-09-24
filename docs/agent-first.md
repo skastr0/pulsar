@@ -1,4 +1,4 @@
-# Agent-first POC: one repository, one policy
+# Agent-first workflow: one repository, one policy
 
 `pulsar agent` is an opt-in JSON interface to Pulsar's existing detectors,
 weighted scoring and executable calibration. It ships in the npm release from
@@ -11,7 +11,7 @@ bug-fix promise. Pulsar supplies evidence; the agent implements and tests repair
 
 ## Run from any working directory
 
-Use Git and the repository-pinned Bun 1.3.14. Check out the revision containing this POC:
+Use Git and the repository-pinned Bun 1.3.14. Check out the revision you want to run:
 
 ```sh
 git clone https://github.com/skastr0/pulsar.git /absolute/path/pulsar
@@ -144,7 +144,7 @@ The module manifest candidate is:
 Adopt it as `$REPO/.pulsar/project-modules.json`. Module paths are repo-relative
 even when the manifest candidate lives elsewhere. The source-clone option
 `--module-dependency-root "$PULSAR_CLONE"` supplies the installed SDK/Effect
-dependency graph for this POC without adding dependencies to the consumer.
+dependency graph without adding dependencies to the consumer.
 Other [project module kinds](project-modules.md) support installed package and
 workspace plugins. There is no promise of an arbitrary hook on every detector;
 use the catalog's actual consumed slots and typed SDK contracts.
@@ -317,8 +317,7 @@ code can still write directly to stdout or exit the process; trust is not isolat
 
 Pulsar detects grounded patterns; absence of findings is not proof of correct
 business behavior. Ratchets, bisect, personas and surrounding workflows are not
-prerequisites. This POC does not claim a platform release matrix, portable native
-binary support on every OS, or automatic fixes.
+prerequisites. Pulsar does not fix code for you. Prebuilt binaries cover macOS and Linux (arm64, x64).
 
 ## External-consumer acceptance
 
@@ -341,7 +340,7 @@ after repair the hard gate passes but exit 3 correctly preserves those evidence
 gaps. The harness does not disable those signals to manufacture exit 0. It does
 not hardcode a passing score or suppress other detectors. Fixture-only mode links
 the clone's dependencies and declares them in the temporary repo solely because
-the legacy CLI lacks the POC dependency-root option; full acceptance does not.
+the legacy CLI lacks the agent dependency-root option; full acceptance does not.
 Fixture-only success does not establish native or JSON-contract acceptance.
-See the [executed POC acceptance and remaining limits](agent-first-poc-delivery.md)
+See the [executed acceptance run](agent-first-poc-delivery.md)
 for the delivered revision's source, Linux x64 binary and independent-agent proof.
