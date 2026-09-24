@@ -165,7 +165,7 @@ flowchart LR
   findings --> diff
 ```
 
-Signal packs read the repository: TypeScript through [quartz](https://github.com/skastr0/quartz), Rust, and language-agnostic signals over git history, manifests, and coverage reports. The Observer runs them under the repository's policy. The policy is `.pulsar/vector.json` plus optional project modules, and it hashes to one fingerprint. `score --diff` runs the Observer on the base commit and on the working tree and reports only what the change introduced. Each signal has a provability tier that caps how hard it can enforce, so only signals with proof behind them can fail the hard gate.
+Signal packs read the repository: TypeScript through [Quartz](https://github.com/skastr0/quartz), Rust, and language-agnostic signals over git history, manifests, and coverage reports. The Observer runs them under the repository's policy. The policy is `.pulsar/vector.json` plus optional project modules, and it hashes to one fingerprint. `score --diff` runs the Observer on the base commit and on the working tree and reports only what the change introduced. Each signal has a provability tier that caps how hard it can enforce, so only signals with proof behind them can fail the hard gate.
 
 ## Make the policy yours
 

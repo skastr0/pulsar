@@ -1,8 +1,8 @@
-# pulsar — brief
+# Pulsar — brief
 
 updated: 2026-09-24 · version: 0.2.1 · maturity: usable-with-gaps
 
-Maturity argument: 0.2.1 is on npm and it did its job on a repository it had never seen (tether, below), but the agent protocol is still `v1alpha1`, TS-AD-04 fails on some repositories, and the README calls itself experimental.
+Maturity argument: 0.2.1 is on npm and it did its job on a repository it had never seen (Tether, below), but the agent protocol is still `v1alpha1`, TS-AD-04 fails on some repositories, and the README calls itself experimental.
 
 ## One line
 
@@ -13,10 +13,10 @@ Pulsar scores a repository and each agent diff under one shared policy.
 An agent finishes a change and reports done. Typecheck is green and the tests pass. The diff also has a `catch` that returns `{}`, a `validateSearchCache` that always returns `true`, and a `@ts-ignore` with no reason, and no test covers any of them. You can read every line or you can trust the claim. When several agents work in the same repository, reading every line is the job you meant to hand off. A whole-repository score doesn't help either: one bad change disappears into an average that still looks fine.
 
 Receipts for the pain:
-- Guilherme's stated goal for Pulsar: "greatly reduce / eliminate the need for line-by-line code review by providing deterministic trust based guarantees that the code is up to quality threshold" (quasar `codex:e8b2889348490c24d17a51996bc9f48a`, user message; date unverified).
-- His review of 95 failed agent sessions found "completion claimed on proxy signals (typecheck green, never the real artifact)" was the largest failure class (quoted in the task prompt of quasar `claude:b3843fd0b0c091bdfca263feaf5fb32b`; date unverified).
-- An average hiding severe evidence: one repository scored `weighted_mean ~0.88` "despite severe evidence", which led to the separate `readiness` aggregate (quasar `codex:258286f19ad5cdaea9eb303b59270d98`, from before September; used as history only). `readiness` is in the output today: `packages/core/src/observer-json.ts:278`.
-- The diff in the scene is one I staged in a clone of tether to show the problem. It is not a captured agent incident. See "See it run" §1.
+- Guilherme's stated goal for Pulsar: "greatly reduce / eliminate the need for line-by-line code review by providing deterministic trust based guarantees that the code is up to quality threshold" (Quasar `codex:e8b2889348490c24d17a51996bc9f48a`, user message; date unverified).
+- His review of 95 failed agent sessions found "completion claimed on proxy signals (typecheck green, never the real artifact)" was the largest failure class (quoted in the task prompt of Quasar `claude:b3843fd0b0c091bdfca263feaf5fb32b`; date unverified).
+- An average hiding severe evidence: one repository scored `weighted_mean ~0.88` "despite severe evidence", which led to the separate `readiness` aggregate (Quasar `codex:258286f19ad5cdaea9eb303b59270d98`, from before September; used as history only). `readiness` is in the output today: `packages/core/src/observer-json.ts:278`.
+- The diff in the scene is one I staged in a clone of Tether to show the problem. It is not a captured agent incident. See "See it run" §1.
 
 ## What changes
 
@@ -24,11 +24,11 @@ Receipts for the pain:
 
 ## Where it fits
 
-When several agents share one repository, Pulsar is the quality check they all run against the same committed policy before they claim a change is done. Its TypeScript analysis runs on quartz (`@skastr0/quartz-engine` 0.2.1, `packages/ts-pack/package.json:47`). Committed `.pulsar/` policy exists today in junto, prism, groundwork, plinth, quasar, and rig (`ls ~/Projects/*/.pulsar`, run 2026-09-24).
+When several agents share one repository, Pulsar is the quality check they all run against the same committed policy before they claim a change is done. Its TypeScript analysis runs on Quartz (`@skastr0/quartz-engine` 0.2.1, `packages/ts-pack/package.json:47`). Committed `.pulsar/` policy exists today in Junto, Prism, Groundwork, Plinth, Quasar, and Rig (`ls ~/Projects/*/.pulsar`, run 2026-09-24).
 
 ## See it run
 
-All four were run on 2026-09-24 against a fresh clone of tether at `f618dc3` using the npm release (`bunx @skastr0/pulsar@0.2.1`). Output is trimmed and nothing was reworded. Absolute paths were cut.
+All four were run on 2026-09-24 against a fresh clone of Tether at `f618dc3` using the npm release (`bunx @skastr0/pulsar@0.2.1`). Output is trimmed and nothing was reworded. Absolute paths were cut.
 
 **1. What did this diff hit?** I added one file, `src/search/cache.ts`, with a swallowed error, an always-true validator, and an unexplained `@ts-ignore`.
 
@@ -130,7 +130,7 @@ bunx @skastr0/pulsar agent score .
 - History: 957 commits since 2026-04-15 (`git log --oneline | wc -l`; first commit `396eedb`).
 - Tests: 2,032 bun tests in 11 suites, plus 12 artifact-contract tests, all green in CI run 35966573027 on `39684c7` (2026-09-24, `gh run view --log`). In a fresh local clone with Bun 1.3.14, `bun run verify` passed typecheck and build and ran 2,032 tests. 2,031 passed and 1 failed (see Gaps).
 - Signals: 74 production signals, 18 calibration slots (`agent catalog`, See it run §4).
-- Usage: committed `.pulsar/` policy in 6 of Guilherme's other repositories (Where it fits). Agents use `score --diff … --agent-view` as a pre-claim check in other repos, for example plinth (quasar `codex:31fd6820d14c8d2fd16bd992e2b307e1`).
+- Usage: committed `.pulsar/` policy in 6 of Guilherme's other repositories (Where it fits). Agents use `score --diff … --agent-view` as a pre-claim check in other repos, for example Plinth (Quasar `codex:31fd6820d14c8d2fd16bd992e2b307e1`).
 - Resource work in 0.2.1, measured: `docs/explorations/resource-performance-2026-09-15.md`.
 
 ## Gaps
