@@ -1,8 +1,8 @@
 # Agent-first POC: one repository, one policy
 
 `pulsar agent` is an opt-in JSON interface to Pulsar's existing detectors,
-weighted scoring and executable calibration. It is a source-checkout POC, not
-a new published release. Existing CLI commands remain available for compatibility;
+weighted scoring and executable calibration. It ships in the npm release from
+0.2.1 (`npx @skastr0/pulsar agent`) and in source checkouts. Existing CLI commands remain available for compatibility;
 their output and exit conventions are not the agent protocol.
 
 Agents own their repositories and edit ordinary policy and source files. There
