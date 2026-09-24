@@ -101,11 +101,11 @@ Step 1 prints one JSON document. Trimmed:
 ```json
 { "schema": "pulsar/agent/v1alpha1", "operation": "score", "status": "completed",
   "result": {
-    "policy": { "fingerprint": "d654fb01c258…", "vector": { "source_label": "built-in defaults" } },
+    "policy": { "fingerprint": "f4c369e8eb1d…", "vector": { "source_label": "built-in defaults" } },
     "assessment": {
       "hard_gate_status": "pass",
       "readiness": { "score": 0.676884830859, "status": "yellow" },
-      "counts": { "applicable": 34, "not_applicable": 9, "insufficient_evidence": 29, "failed": 0 } },
+      "counts": { "applicable": 34, "not_applicable": 10, "insufficient_evidence": 29, "failed": 0 } },
     "findings": [
       { "signal_id": "TS-LD-02-function-size-distribution", "severity": "warn",
         "message": "Function outlier `collectFacts/Effect.gen` — 147 LOC",
@@ -134,7 +134,7 @@ If the policy changes between two runs, step 4 refuses to compare them:
 
 ```console
 $ npx @skastr0/pulsar persona apply strict-type-safety --to .pulsar/vector.json
-$ npx @skastr0/pulsar agent score --expect-policy d654fb01c258a9397d03d596be30452437bda2c30d207c278833a26a51c5ec67 .
+$ npx @skastr0/pulsar agent score --expect-policy f4c369e8eb1da98d876bf5fff98b499c11ab492f6a467087e93ae9fce6f758de .
 {"status":"error","error":{"code":"POLICY_MISMATCH",
  "message":"The assessment policy changed; this run cannot verify a repair under the expected policy."}}
 ```
