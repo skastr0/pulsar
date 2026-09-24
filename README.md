@@ -67,7 +67,7 @@ TS-SL-06-confidence-claim-mismatch WARN validateSearchCache claims runtime valid
   fix: Make the claim true or rename it (medium)
 ```
 
-`ROUTE` means the change introduced findings someone should look at. `PASS` means it introduced none in the changed files.
+`ROUTE` means the change introduced findings someone should look at. `PASS` means it introduced none in the changed files. `BLOCK` means a check backed by proof blocks the change.
 
 ## Is / is not
 
@@ -121,7 +121,7 @@ Step 1 prints one JSON document. Trimmed:
 | 2 | A check backed by proof blocks the change |
 | 3 | Incomplete evidence. The JSON still carries every finding |
 
-`score --diff` exits 0 whether it prints `PASS` or `ROUTE`. To gate a script on it, read the verdict from JSON:
+`score --diff` exits 2 on `BLOCK` and 0 on `PASS` or `ROUTE`. To fail a script on `ROUTE` too, read the verdict from JSON:
 
 ```console
 $ npx @skastr0/pulsar score --diff HEAD..WORKTREE --changed-only --json . | jq -r .gate_decision.status
@@ -196,7 +196,7 @@ When several agents work in one repository, Pulsar is the check they all run aga
 
 Usable with gaps. v0.2.1 on npm. The agent JSON schema is `v1alpha1` and may change.
 
-- `score --diff` exits 0 on `ROUTE`. Gate on `gate_decision.status` as shown above.
+- `score --diff` exits 0 on `ROUTE`. To fail a script on it, read `gate_decision.status` as shown above.
 - A stray file in another language leaves those checks without evidence. For example, one `.rs` file in a TypeScript repo leaves 21 Rust checks at `insufficient_evidence`, and `agent score` exits 3.
 - TS-AD-04 fails on some repositories. Scoring a repository the size of Effect can use more than 4 GiB of memory. See [CHANGELOG](CHANGELOG.md).
 - There are no Windows binaries.
