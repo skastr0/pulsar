@@ -87,7 +87,7 @@ export async function smoke(cli?: string, fixtureOnly = false) {
       // The legacy CLI lacks --module-dependency-root. This is fixture proof only.
       await symlink(join(clone, "node_modules"), join(repo, "node_modules"), "dir")
       const manifest = JSON.parse(await readFile(join(repo, "package.json"), "utf8"))
-      manifest.devDependencies = { effect: "4.0.0-rc.112", "@skastr0/pulsar-project-module-sdk": "0.2.1" }
+      manifest.devDependencies = { effect: "4.0.0-rc.112", "@skastr0/pulsar-project-module-sdk": "0.3.0" }
       await writeFile(join(repo, "package.json"), JSON.stringify(manifest))
       const committed = await run(["git", "-c", "user.name=Acceptance", "-c", "user.email=acceptance@example.invalid", "commit", "-am", "test: legacy module dependency declarations"])
       assert.equal(committed.code, 0, committed.stderr)

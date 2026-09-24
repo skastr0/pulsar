@@ -1,6 +1,6 @@
 {
   "name": "@skastr0/pulsar-onboard",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Pulsar onboarding TUI \u2014 pulsar onboard",

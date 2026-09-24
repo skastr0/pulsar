@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project follows Semantic Versioning for its declared public API.
 
+## [0.3.0] - 2026-09-24
+
+### Added
+
+- `TS-SL-07-rule-ownership-alignment`, a TypeScript check that scores how well the code matches the ownership rules a repository declares in `.pulsar/ownership.json`. It is advisory only (soft warning), and it is not applicable until a repository declares that file. Pulsar now ships 75 checks.
+- `pulsar agent discover` proposes an ownership inventory from duplicated-code evidence. It prints JSON, adopts nothing, and makes no model call.
+- `pulsar agent judge` judges the declared ownership groups with TypeSafe's Jev model (`jev-1.13.0`). It sends the declared source and context files and the repository's rubric to `api.typesafe.ai`, needs `TYPESAFE_API_KEY`, and saves requests and responses under `.pulsar/ownership-runs/`. `--dry-run` shows the rubric, paths, byte counts, and number of calls without sending anything. `agent score` replays the saved assessment offline.
+- `agent score` reports `preference_alignment` for ownership checks, kept separate from the readiness score.
+
+### Fixed
+
+- An adopted ownership assessment now changes the input fingerprint, even when the file is gitignored.
+- Uncertain ownership selections resolve to unknown instead of a verdict.
+- Release assets exclude intermediate build files.
+
 ## [0.2.1] - 2026-09-16
 
 This is the first published 0.2.x release. It includes the previously unpublished 0.2.0 changes below, including the Quartz/tsgo migration. Library consumers upgrading from 0.1.5 should also account for the move to Effect 4 and TypeScript 7.
