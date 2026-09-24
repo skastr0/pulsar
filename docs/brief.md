@@ -24,7 +24,7 @@ Receipts for the pain:
 
 ## Where it fits
 
-When several agents share one repository, Pulsar is the quality check they all run against the same committed policy before they claim a change is done. Its TypeScript analysis runs on Quartz (`@skastr0/quartz-engine` 0.2.1, `packages/ts-pack/package.json:47`). Committed `.pulsar/` policy exists today in Junto, Prism, Groundwork, Plinth, Quasar, and Rig (`ls ~/Projects/*/.pulsar`, run 2026-09-24).
+The check every agent in a repository runs against the same committed policy before it says a change is done. Its TypeScript analysis runs on Quartz (`@skastr0/quartz-engine` 0.2.1, `packages/ts-pack/package.json:47`). Committed `.pulsar/` policy exists today in Junto, Prism, Groundwork, Plinth, Quasar, and Rig (`ls ~/Projects/*/.pulsar`, run 2026-09-24).
 
 ## See it run
 
@@ -99,6 +99,8 @@ $ pulsar agent catalog . | jq '.result.signals | length'
 
 `@skastr0/pulsar-core` holds the signal registry, the Observer that runs signals, the scoring engine, vectors, and calibration. Three signal packs feed it: `@skastr0/pulsar-ts-pack` (TypeScript analysis on quartz-engine and tsgo), `@skastr0/pulsar-rs-pack` (Rust), and `@skastr0/pulsar-shared-signals` (git history, manifests, coverage reports). Each signal declares a provability tier that caps how hard it can enforce. Only proof-grade signals can fail the hard gate, and the `readiness` aggregate ignores signals that are not applicable or lack evidence (`packages/core/src/observer-categories.ts:250`). The policy is `.pulsar/vector.json` plus optional project modules from `.pulsar/project-modules.json`. Modules are executable TypeScript calibration and run only with `--trust-project-code`. Vector and modules together hash to one policy fingerprint. `score --diff` runs `observeCommit` on the base and `observeWorktree` on the head (`packages/cli/src/score-diff.ts:161-166`), then routes the introduced diagnostics (`packages/cli/src/score-diff-gate.ts:47`). `pulsar agent` wraps all of this in one JSON envelope, `pulsar/agent/v1alpha1` (`packages/cli/src/agent-contract.ts:8`), with exit codes 0 complete, 1 invalid input or policy, 2 hard-gate violation, 3 incomplete evidence (`packages/cli/src/agent-report.ts:68`).
 
+Plain version, as the page says it: it runs 74 checks: TypeScript (built on Quartz), Rust, and checks on git history and package manifests that work in any language. Only checks backed by proof can block a change; the rest flag it for review. `score --diff` scores the base commit and your working tree, then lists only what the change introduced.
+
 Diagram spec:
 - Nodes: `repository` (code + git history + manifests + coverage) · `.pulsar/vector.json` · `.pulsar/project-modules.json` → `project modules` · `policy fingerprint` · `ts-pack` · `rs-pack` · `shared-signals` · `quartz-engine` · `Observer` · `findings` (signal_id, file:line, severity, evidence_class) · `readiness` / `hard_gate_status` · `pulsar agent score` (JSON envelope, exit 0/1/2/3) · `pulsar score --diff` (base vs WORKTREE → introduced diagnostics → PASS / ROUTE).
 - Edges: repository → ts-pack, rs-pack, shared-signals · quartz-engine → ts-pack · packs → Observer · vector.json + project modules → policy fingerprint → Observer · Observer → findings → readiness / hard_gate_status → `agent score` · Observer(base) + Observer(WORKTREE) → introduced diagnostics → `score --diff` · `--expect-policy` compares against policy fingerprint → POLICY_MISMATCH.
@@ -135,8 +137,8 @@ bunx @skastr0/pulsar agent score .
 
 ## Gaps
 
-- `score --diff --agent-view` exits 0 when it prints `ROUTE` (See it run §1). A script has to parse the text. Exit-code gating exists only through `agent score` hard gates and `score --ci` with a baseline.
-- On a mostly TypeScript repository with one Rust file, 21 of 24 Rust signals report `insufficient_evidence`, and `agent score` exits 3 by default (See it run §2).
+- `score --diff` exits 0 when it only flags a change for review (`ROUTE`, See it run §1), and 2 only on `BLOCK` (`packages/cli/src/score-diff.ts:136`). To fail a script on `ROUTE`, add `--json` and read `gate_decision.status`.
+- In a mostly TypeScript repository with a little Rust, most Rust checks have too little to go on: with one `.rs` file, 21 of 24 report `insufficient_evidence`, and `agent score` exits 3 (See it run §2).
 - TS-AD-04 still fails on some repositories. The Effect benchmark exceeds a 4 GiB footprint budget (CHANGELOG 0.2.1, Known limitations).
 - In the shared working checkout, `bun run verify` fails at the `@skastr0/pulsar-shared-signals` typecheck with TS7006 in `src/__tests__/shared-11-theory-encoding-index.test.ts:210,223,387`. That happens under Bun 1.4.2 and under the pinned 1.3.14, while CI on the same commit is green. A fresh clone typechecks cleanly, so this is stale state in the shared checkout. In that fresh clone, `proposeOwnershipInventory > quarantines unsafe sources` fails (`packages/cli/src/__tests__/ownership-discovery.test.ts:327`, expected `true`, received `false`) while CI passes it. It may depend on the clone living under `/private/tmp` (unverified).
 - The README header image (`docs/assets/pulsar-hero.png`) is cyan. The `pulsar onboard` TUI accent is amber (`packages/onboard/src/palette.ts:13`, `#e5b567`, title at `packages/onboard/src/app.tsx:426`).
@@ -152,6 +154,6 @@ bunx @skastr0/pulsar agent score .
 ## Copy bank
 
 - tagline: Score every agent diff against one repo policy.
-- short description: Deterministic repository-health scoring for agent-written code. Scores each diff against a committed, fingerprinted repo policy.
-- page lede: An agent says a change is done, and Pulsar checks the diff against the policy the repository has committed. It lists what the change introduced, file and line, and refuses to compare scores if anyone loosened the rules in between.
+- short description: Deterministic repository-health scoring for agent-written code. Scores each diff against the rules your repository committed.
+- page lede: An agent says a change is done. Pulsar checks the diff against the rules your repository committed, lists what the change introduced by file and line, and refuses to compare scores if the rules changed in between.
 - X post: Typecheck green and tests passing don't tell you what an agent's diff did. `pulsar score --diff HEAD..WORKTREE` lists what the change introduced: a catch that swallows the error, a validator that always returns true, a ts-ignore with no reason. Each one with a file and line.
