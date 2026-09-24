@@ -141,30 +141,6 @@ $ npx @skastr0/pulsar agent score --expect-policy d654fb01c258a9397d03d596be3045
 
 ## How it works
 
-```mermaid
-flowchart LR
-  repo["repository<br/>code · git history · manifests · coverage"]
-  quartz["quartz-engine"]
-  ts["ts-pack"]
-  rs["rs-pack"]
-  shared["shared-signals"]
-  vector[".pulsar/vector.json"]
-  modules[".pulsar/project-modules.json<br/>project modules"]
-  fp["policy fingerprint"]
-  obs["Observer<br/>runs the checks"]
-  findings["findings<br/>signal_id · file:line · severity"]
-  agent["pulsar agent score<br/>JSON · exit 0/1/2/3"]
-  diff["pulsar score --diff<br/>base vs WORKTREE → PASS / ROUTE"]
-
-  repo --> ts & rs & shared
-  quartz --> ts
-  ts & rs & shared --> obs
-  vector & modules --> fp --> obs
-  obs --> findings
-  findings --> agent
-  findings --> diff
-```
-
 Pulsar runs its checks over the repository: TypeScript through [Quartz](https://github.com/skastr0/quartz), Rust, and language-agnostic checks over git history, manifests, and coverage reports. It runs them under the repository's policy: `.pulsar/vector.json` plus optional project modules, hashed to one fingerprint. `score --diff` runs the checks on the base commit and on the working tree and reports only what the change introduced. Only checks backed by proof can block a change; the rest flag it for review.
 
 ## Make the policy yours
