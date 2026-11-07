@@ -24,6 +24,8 @@ classes = [
   { class = "fork", id = 6, rule = "platform-node/fork" },
   { class = "resource-acquire", id = 7, rule = "platform-node/resource-acquire" },
   { class = "ambient-read", id = 8, rule = "platform-node/ambient-read" },
+  { class = "promise-style", id = 14, rule = "platform-node/promise-style" },
+  { class = "exception-style", id = 15, rule = "platform-node/exception-style" },
 ]
 
 symbols = [

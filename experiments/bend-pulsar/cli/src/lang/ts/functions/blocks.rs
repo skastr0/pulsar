@@ -385,7 +385,7 @@ mod tests {
 
     fn rows(src: &str) -> crate::lang::functions::BlockRows {
         let alloc = Allocator::default();
-        extract(&alloc, "b.ts", Path::new("b.ts"), src, &all_index(), false, None).functions.blocks
+        extract(&alloc, "b.ts", Path::new("b.ts"), src, &all_index(), 0, None).functions.blocks
     }
 
     fn sorted<const N: usize>(mut v: Vec<[u32; N]>) -> Vec<[u32; N]> {

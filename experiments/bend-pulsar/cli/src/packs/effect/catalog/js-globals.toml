@@ -20,6 +20,8 @@ classes = [
   { class = "fork", id = 6, rule = "js-globals/fork" },
   { class = "resource-acquire", id = 7, rule = "js-globals/resource-acquire" },
   { class = "ambient-read", id = 8, rule = "js-globals/ambient-read" },
+  { class = "promise-style", id = 14, rule = "js-globals/promise-style" },
+  { class = "exception-style", id = 15, rule = "js-globals/exception-style" },
 ]
 
 symbols = [

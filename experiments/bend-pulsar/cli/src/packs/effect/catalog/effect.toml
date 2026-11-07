@@ -36,6 +36,8 @@ classes = [
   { class = "fork", id = 6, rule = "effect/fork" },
   { class = "resource-acquire", id = 7, rule = "effect/resource-acquire" },
   { class = "ambient-read", id = 8, rule = "effect/ambient-read" },
+  { class = "promise-style", id = 14, rule = "effect/promise-style" },
+  { class = "exception-style", id = 15, rule = "effect/exception-style" },
 ]
 
 symbols = [
@@ -170,6 +172,18 @@ symbols = [
   { sym = "effect/sql#SqlSchema.findOne", class = "query", via = "result", use = "call", ver = "4", at = "effect@9428e17499:packages/effect/src/sql/SqlSchema.ts:116", doc = "Builds a query function that encodes the request, decodes the first result" },
   { sym = "effect/sql#SqlSchema.findOneOption", class = "query", via = "result", use = "call", ver = "4", at = "effect@9428e17499:packages/effect/src/sql/SqlSchema.ts:150", doc = "Builds a query function that encodes the request, decodes the first result row" },
   { sym = "effect/sql#SqlSchema.void", class = "query", via = "result", use = "call", ver = "4", at = "effect@9428e17499:packages/effect/src/sql/SqlSchema.ts:106", doc = "Runs a sql query with a request schema and discard the result." },
+  { sym = "global#Promise", class = "promise-style", via = "new", ver = "js", at = "typescript@5.9.3:lib/lib.es2015.promise.d.ts:26", doc = "Creates a new Promise." },
+  { sym = "global#Promise.all", class = "promise-style", ver = "js", at = "typescript@5.9.3:lib/lib.es2015.promise.d.ts:34", doc = "Creates a Promise that is resolved with an array of results when all of the provided Promises" },
+  { sym = "global#Promise.allSettled", class = "promise-style", ver = "js", at = "typescript@5.9.3:lib/lib.es2020.promise.d.ts:33", doc = "Creates a Promise that is resolved with an array of results when all" },
+  { sym = "global#Promise.any", class = "promise-style", ver = "js", at = "typescript@5.9.3:lib/lib.es2021.promise.d.ts:36", doc = "The any function returns a promise that is fulfilled by the first given promise to be fulfilled, or rejecte..." },
+  { sym = "global#Promise.race", class = "promise-style", ver = "js", at = "typescript@5.9.3:lib/lib.es2015.promise.d.ts:45", doc = "Creates a Promise that is resolved or rejected when any of the provided Promises are resolved" },
+  { sym = "syntax#async-fn", class = "promise-style", ver = "js", at = "effect@9428e17499:ai-docs/src/01_effect/01_basics/10_creating-effects.ts:45", doc = "`Effect.tryPromise` wraps Promise-based APIs that can reject or throw." },
+  { sym = "syntax#await", class = "promise-style", ver = "js", at = "effect@9428e17499:ai-docs/src/01_effect/01_basics/10_creating-effects.ts:45", doc = "`Effect.tryPromise` wraps Promise-based APIs that can reject or throw." },
+  { sym = "syntax#member.catch", class = "promise-style", ver = "js", at = "effect@9428e17499:ai-docs/src/01_effect/01_basics/10_creating-effects.ts:45", doc = "`Effect.tryPromise` wraps Promise-based APIs that can reject or throw." },
+  { sym = "syntax#member.finally", class = "promise-style", ver = "js", at = "effect@9428e17499:ai-docs/src/01_effect/01_basics/10_creating-effects.ts:45", doc = "`Effect.tryPromise` wraps Promise-based APIs that can reject or throw." },
+  { sym = "syntax#member.then", class = "promise-style", ver = "js", at = "effect@9428e17499:ai-docs/src/01_effect/01_basics/10_creating-effects.ts:45", doc = "`Effect.tryPromise` wraps Promise-based APIs that can reject or throw." },
+  { sym = "syntax#throw", class = "exception-style", ver = "js", at = "effect@9428e17499:ai-docs/src/01_effect/01_basics/10_creating-effects.ts:32", doc = "`Effect.try` wraps synchronous code that may throw." },
+  { sym = "syntax#try", class = "exception-style", ver = "js", at = "effect@9428e17499:ai-docs/src/01_effect/01_basics/10_creating-effects.ts:32", doc = "`Effect.try` wraps synchronous code that may throw." },
 ]
 
 # Error handlers, for HD facts. arg: last-fn = the last function-valued argument;
@@ -197,10 +211,13 @@ handlers = [
   { sym = "effect#Effect.orElse", arg = "last-fn", ver = "3", at = "effect@3.21.0:src/Effect.ts:24267", doc = "Attempts one effect, and if it fails, falls back to another effect." },
 ]
 
-# Wrappers: function-valued arguments run inside an Effect generator (CS ctx bit 2).
+# Wrappers: ctx 2 = function-valued arguments run inside an Effect generator; ctx 32 = interop
+# callbacks (Effect.try, tryPromise, promise, callback/async), the arguments or options-object functions.
 # Also matched when the call's callee is itself a call of sym (curried Effect.fn("n")(body)).
 # label = first-string: the first string argument is a display label in .fns, never part of FK.
 wrappers = [
+  { sym = "effect#Effect.async", ctx = 32, label = "none", ver = "3", at = "effect@3.21.0:src/Effect.ts:4846", doc = "Creates an `Effect` from a callback-based asynchronous function." },
+  { sym = "effect#Effect.callback", ctx = 32, label = "none", ver = "4", at = "effect@9428e17499:packages/effect/src/Effect.ts:1242", doc = "Creates an `Effect` from a callback-based asynchronous API." },
   { sym = "effect#Effect.fn", ctx = 2, label = "first-string", ver = "3", at = "effect@3.21.0:src/Effect.ts:28780", doc = "The `Effect.fn` function allows you to create traced functions that return an" },
   { sym = "effect#Effect.fn", ctx = 2, label = "first-string", ver = "4", at = "effect@9428e17499:packages/effect/src/Effect.ts:14747", doc = "Creates a reusable traced function from an Effect body." },
   { sym = "effect#Effect.fnUntraced", ctx = 2, label = "none", ver = "3", at = "effect@3.21.0:src/Effect.ts:29045", doc = "Same as {@link fn}, but allows you to create a function that is not traced, for when performance is critical." },
@@ -208,6 +225,12 @@ wrappers = [
   { sym = "effect#Effect.fnUntracedEager", ctx = 2, label = "none", ver = "4", at = "effect@9428e17499:packages/effect/src/Effect.ts:16772", doc = "Creates untraced function effects with eager evaluation optimization." },
   { sym = "effect#Effect.gen", ctx = 2, label = "none", ver = "3", at = "effect@3.21.0:src/Effect.ts:5255", doc = "Provides a way to write effectful code using generator functions, simplifying" },
   { sym = "effect#Effect.gen", ctx = 2, label = "none", ver = "4", at = "effect@9428e17499:packages/effect/src/Effect.ts:1445", doc = "Provides a way to write effectful code using generator functions, simplifying" },
+  { sym = "effect#Effect.promise", ctx = 32, label = "none", ver = "3", at = "effect@3.21.0:src/Effect.ts:5723", doc = "Creates an `Effect` that represents an asynchronous computation guaranteed to" },
+  { sym = "effect#Effect.promise", ctx = 32, label = "none", ver = "4", at = "effect@9428e17499:packages/effect/src/Effect.ts:877", doc = "Creates an `Effect` that represents an asynchronous computation guaranteed to" },
+  { sym = "effect#Effect.try", ctx = 32, label = "none", ver = "3", at = "effect@3.21.0:src/Effect.ts:8718", doc = "Creates an `Effect` that represents a synchronous computation that might" },
+  { sym = "effect#Effect.try", ctx = 32, label = "none", ver = "4", at = "effect@9428e17499:packages/effect/src/Effect.ts:1719", doc = "Creates an `Effect` from a synchronous computation that may throw, mapping" },
+  { sym = "effect#Effect.tryPromise", ctx = 32, label = "none", ver = "3", at = "effect@3.21.0:src/Effect.ts:8872", doc = "Creates an `Effect` that represents an asynchronous computation that might" },
+  { sym = "effect#Effect.tryPromise", ctx = 32, label = "none", ver = "4", at = "effect@9428e17499:packages/effect/src/Effect.ts:930", doc = "Creates an `Effect` from an asynchronous computation that may throw or" },
   { sym = "effect#Layer.sync", ctx = 2, label = "none", ver = "3", at = "effect@3.21.0:src/Layer.ts:1088", doc = "Lazily constructs a layer from the specified value." },
   { sym = "effect#Layer.sync", ctx = 2, label = "none", ver = "4", at = "effect@9428e17499:packages/effect/src/Layer.ts:915", doc = "Constructs a layer lazily that provides a single service." },
 ]
@@ -252,5 +275,7 @@ layers = [
 rules = [
   { id = "effect.ambient-read-in-effect", class = "ambient-read", ctx_any = 2, ctx_none = 4, says = "reads the clock, randomness or the environment directly inside Effect code, bypassing Clock, Random, Config or DateTime", ver = "1", at = "effect@9428e17499:LLMS.md:290", doc = "When working with dates and time, use the `DateTime` module instead of `Date` and `Date.now`." },
   { id = "effect.blocking-in-effect", class = "blocking", ctx_any = 2, ctx_none = 4, says = "makes a blocking host call inside Effect code instead of going through the FileSystem or ChildProcessSpawner service", ver = "1", at = "effect@9428e17499:packages/effect/src/FileSystem.ts:4", doc = "`FileSystem` is the boundary between Effect code and the host file system." },
+  { id = "effect.exception-style-in-effect-scope", class = "exception-style", ctx_any = 8, ctx_none = 54, says = "throws or uses try in an Effect-first file outside its boundary, Effect code and interop callbacks", ver = "1", at = "effect@9428e17499:ai-docs/src/01_effect/01_basics/10_creating-effects.ts:32", doc = "`Effect.try` wraps synchronous code that may throw." },
+  { id = "effect.promise-style-in-effect-scope", class = "promise-style", ctx_any = 8, ctx_none = 52, says = "uses async, await, a Promise or a .then/.catch/.finally chain in an Effect-first file outside its boundary and outside an interop callback", ver = "1", at = "effect@9428e17499:ai-docs/src/01_effect/01_basics/10_creating-effects.ts:45", doc = "`Effect.tryPromise` wraps Promise-based APIs that can reject or throw." },
   { id = "effect.runtime-escape-in-effect", class = "runtime-escape", ctx_any = 2, ctx_none = 4, says = "runs an effect to a Promise or a value from inside Effect code instead of composing it", ver = "1", at = "effect@9428e17499:ai-docs/src/04_integration/10_managed-runtime.ts:4", doc = "Use `ManagedRuntime` to run Effect programs from external frameworks while keeping your domain logic in services and Layers." },
 ]

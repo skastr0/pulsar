@@ -53,6 +53,8 @@ pub struct CatalogIndex {
     syms: HashMap<String, Vec<Entry>>,
     handlers: HashMap<String, Arg>,
     wrappers: HashMap<String, Wrap>,
+    /// Active rules as (class id, ctx_any, ctx_none).
+    rules: Vec<(u32, u8, u8)>,
 }
 
 fn parse_use(s: Option<&str>) -> Use {
@@ -95,6 +97,13 @@ impl CatalogIndex {
             }
             for e in &c.entries {
                 ix.entries.push(EntrySpec { sym: e.sym.clone(), shape: e.shape, kind: e.kind as u8, names: e.names.clone() });
+            }
+            for r in &c.rules {
+                if let Some(&class) = class_id.get(r.class.as_str()) {
+                    // Bits above 7 never occur in CS.ctx: dropping them from ctx_any (when it is
+                    // then 0, "any context") or from ctx_none only lets more sites through.
+                    ix.rules.push((class, r.ctx_any as u8, r.ctx_none as u8));
+                }
             }
             for w in &c.wrappers {
                 let slot = ix.wrappers.entry(w.sym.clone()).or_insert(Wrap { ctx: 0 });
@@ -139,6 +148,13 @@ impl CatalogIndex {
 
     pub fn wrapper(&self, sym: &str) -> Option<Wrap> {
         self.wrappers.get(sym).copied()
+    }
+
+    /// Whether some rule of an active catalog fires on a call of `sym` in context `ctx`
+    /// (FACTS.md `RL`: some bit of ctx_any, or ctx_any 0, and no bit of ctx_none).
+    pub fn may_fire(&self, sym: &str, ctx: u8) -> bool {
+        let ks = self.classes(sym);
+        self.rules.iter().any(|&(k, any, none)| ks.contains(&k) && (any == 0 || ctx & any != 0) && ctx & none == 0)
     }
 
     /// Every class a symbol belongs to, ascending and unique (for `CL`).
@@ -230,7 +246,7 @@ mod fixtures {
     fn render(rel: &str, src: &str) -> String {
         let alloc = Allocator::default();
         let ix = all_index();
-        let ex = extract(&alloc, rel, Path::new(rel), src, &ix, false, None);
+        let ex = extract(&alloc, rel, Path::new(rel), src, &ix, 0, None);
         let f = ex.functions;
         let mut out = String::new();
         for s in &f.sites {
@@ -272,7 +288,7 @@ mod fixtures {
         use crate::lang::functions::SqlTextKind::{Dynamic, Literal, Template};
         let src = "import { SqlClient } from \"@effect/sql\";\nexport const q = (sql: SqlClient.SqlClient) => {\n  sql`select * from t where id = ${1} and k = ${2}`;\n  sql`select 1`;\n  sql.unsafe(\"select 2\");\n  sql.unsafe(build());\n  sql.unsafe(`select ${x}`);\n  for (const i of [1]) {\n    sql.unsafe(\"select 3\");\n  }\n  other(\"not sql\");\n};\n";
         let alloc = Allocator::default();
-        let ex = extract(&alloc, "q.ts", Path::new("q.ts"), src, &all_index(), false, None);
+        let ex = extract(&alloc, "q.ts", Path::new("q.ts"), src, &all_index(), 0, None);
         let got: Vec<(_, u32, u32, &str)> =
             ex.functions.sql.iter().map(|r| (r.kind, r.line, r.ct_node, r.text.as_str())).collect();
         assert_eq!(
@@ -296,7 +312,7 @@ mod fixtures {
     fn entry_points_follow_the_catalog() {
         let src = "import { DurableObject, WorkerEntrypoint } from \"cloudflare:workers\";\nexport class Room extends DurableObject {\n  constructor(ctx: any, env: any) { super(ctx, env); }\n  async fetch(req: Request) {}\n  async alarm() {}\n  join() {}\n}\nexport class Rpc extends WorkerEntrypoint {\n  async fetch() {}\n  ping() {}\n}\nclass Plain {\n  fetch() {}\n}\nexport default {\n  async fetch(request: Request) {},\n  scheduled() {},\n  helper() {},\n};\n";
         let alloc = Allocator::default();
-        let ex = extract(&alloc, "e.ts", Path::new("e.ts"), src, &all_index(), false, None);
+        let ex = extract(&alloc, "e.ts", Path::new("e.ts"), src, &all_index(), 0, None);
         let f = ex.functions;
         let got: Vec<String> =
             f.entries.iter().map(|(l, k)| format!("{}:{k}", f.fns[*l as usize].chain)).collect();
@@ -312,7 +328,7 @@ mod fixtures {
     fn constant_arguments_of_classed_calls() {
         let src = "import { SqlClient } from \"@effect/sql\";\nconst fixed = \"a\";\nlet moved = \"b\";\nmoved = \"c\";\nexport const q = (sql: SqlClient.SqlClient, x: string) => {\n  sql.unsafe(\"s\", 5);\n  sql.unsafe(`t`);\n  sql.unsafe(fixed);\n  sql.unsafe(moved);\n  sql.unsafe(`u${x}`);\n  sql.unsafe(x, true);\n};\n";
         let alloc = Allocator::default();
-        let f = extract(&alloc, "al.ts", Path::new("al.ts"), src, &all_index(), false, None).functions;
+        let f = extract(&alloc, "al.ts", Path::new("al.ts"), src, &all_index(), 0, None).functions;
         let got: Vec<Vec<(u8, u8)>> = f
             .sites
             .iter()

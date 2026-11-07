@@ -253,13 +253,13 @@ fn check_activate(c: &Catalog) -> Result<(), String> {
     Ok(())
 }
 
-/// Classes: fixed ids 1-8 or repo ids >= 1000; names and ids unique. Returns the declared names.
+/// Classes: fixed ids 1-15 or repo ids >= 1000; names and ids unique. Returns the declared names.
 fn check_classes(c: &Catalog) -> Result<BTreeSet<&str>, String> {
     let mut names = BTreeSet::new();
     let mut ids = BTreeSet::new();
     for k in &c.classes {
-        if !((1..=8).contains(&k.id) || k.id >= 1000) {
-            return Err(format!("class {:?} has id {}: use 1-8 (FACTS.md fixed ids) or >= 1000", k.class, k.id));
+        if !((1..=15).contains(&k.id) || k.id >= 1000) {
+            return Err(format!("class {:?} has id {}: use 1-15 (FACTS.md fixed ids) or >= 1000", k.class, k.id));
         }
         if !names.insert(k.class.as_str()) {
             return Err(format!("class {:?} declared twice", k.class));

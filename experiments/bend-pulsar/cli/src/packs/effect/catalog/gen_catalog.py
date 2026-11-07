@@ -310,6 +310,15 @@ for n, label in [("gen", "none"), ("fn", "first-string"), ("fnUntraced", "none")
 # value (`resource: S`), not a thunk, so there is nothing for it to wrap.
 for ver, src in [("4", "E4"), ("3", "E3")]:
     WRAPPERS.append(dict(sym="effect#Layer.sync", ver=ver, src=src, file="Layer.ts", export="sync", label="none"))
+for w in WRAPPERS:
+    w["ctx"] = 2
+# Interop wrappers (ctx bit 32): their function arguments, or the functions of their options
+# object, are the adapter edge where Promise and exception code is how Effect's own docs write
+# it (ai-docs/src/01_effect/01_basics/10_creating-effects.ts:32-57: `async try() { ... throw ... }`).
+for n in ["try", "tryPromise", "promise", "callback"]:
+    WRAPPERS.append(dict(sym=f"effect#Effect.{n}", ver="4", src="E4", file="Effect.ts", export=n, label="none", ctx=32))
+for n in ["try", "tryPromise", "promise", "async"]:
+    WRAPPERS.append(dict(sym=f"effect#Effect.{n}", ver="3", src="E3", file="Effect.ts", export=n, label="none", ctx=32))
 
 # Services with a default: always provided, so never "unprovided" (SV kind 1, file 4294967295).
 SERVICES = []
@@ -344,6 +353,22 @@ for sym, src, file, export in [
 # Each cite is the doc line that says the class does not belong in Effect code;
 # the generator checks that the line holds `text`.
 RULES = [
+    # #705, Effect-first scopes. Bit 8 = the file is in the repo's `[packs.effect] effect_only`, 16 =
+    # in its `boundary`; only repo policy sets them, so neither rule fires without it. 32 = an
+    # interop callback. Exception style inside Effect code is effect.throw-or-try-in-gen instead.
+    dict(id="effect.promise-style-in-effect-scope", cls="promise-style", ctx_any=8, ctx_none=4 | 16 | 32, ver=1,
+         says="uses async, await, a Promise or a .then/.catch/.finally chain in an Effect-first file outside its boundary and outside an interop callback",
+         src="ED", file="ai-docs/src/01_effect/01_basics/10_creating-effects.ts", line=45,
+         text="`Effect.tryPromise` wraps Promise-based APIs that can reject or throw."),
+    dict(id="effect.exception-style-in-effect-scope", cls="exception-style", ctx_any=8, ctx_none=2 | 4 | 16 | 32, ver=1,
+         says="throws or uses try in an Effect-first file outside its boundary, Effect code and interop callbacks",
+         src="ED", file="ai-docs/src/01_effect/01_basics/10_creating-effects.ts", line=32,
+         text="`Effect.try` wraps synchronous code that may throw."),
+    # Pack-gated (on wherever the pack is), so it is held until pulsar-research's generality
+    # check across Effect apps (#705): checked and cited here, not written to the catalog.
+    dict(id="effect.throw-or-try-in-gen", cls="exception-style", ctx_any=2, ctx_none=4 | 32, ver=1, held="#705 generality check",
+         says="throws or uses try inside Effect code, where a failure is yielded as a typed error instead",
+         src="ED", file="LLMS.md", line=34, text="return yield* new FileProcessingError"),
     dict(id="effect.ambient-read-in-effect", cls="ambient-read", ctx_any=2, ctx_none=4, ver=1,
          says="reads the clock, randomness or the environment directly inside Effect code, bypassing Clock, Random, Config or DateTime",
          src="ED", file="LLMS.md", line=290, text="use the `DateTime` module instead of `Date` and `Date.now`"),
@@ -424,7 +449,42 @@ for n in ["log", "error", "warn", "info", "debug", "trace"]:
     J.append(dict(cls="log", sym=f"global#console.{n}", ver="js", src="TS", file="lib.dom.d.ts", export=n, via="call", use=None, member_of="Console"))
 
 
+# Language constructs (`syntax#<name>`, FACTS.md CS): core emits a site only when an active
+# catalog classifies the name. Cited by the doc line that names the Effect way to write them.
+SYNTAX = []
+for n in ["await", "async-fn", "member.then", "member.catch", "member.finally"]:
+    SYNTAX.append(dict(sym=f"syntax#{n}", cls="promise-style", src="ED",
+                       file="ai-docs/src/01_effect/01_basics/10_creating-effects.ts", line=45,
+                       text="`Effect.tryPromise` wraps Promise-based APIs that can reject or throw."))
+for n in ["throw", "try"]:
+    SYNTAX.append(dict(sym=f"syntax#{n}", cls="exception-style", src="ED",
+                       file="ai-docs/src/01_effect/01_basics/10_creating-effects.ts", line=32,
+                       text="`Effect.try` wraps synchronous code that may throw."))
+for sym, file, export, via in [("global#Promise", "lib.es2015.promise.d.ts", "new", "new"),
+                               ("global#Promise.all", "lib.es2015.promise.d.ts", "all", "call"),
+                               ("global#Promise.race", "lib.es2015.promise.d.ts", "race", "call"),
+                               ("global#Promise.allSettled", "lib.es2020.promise.d.ts", "allSettled", "call"),
+                               ("global#Promise.any", "lib.es2021.promise.d.ts", "any", "call")]:
+    E.append(dict(cls="promise-style", sym=sym, ver="js", src="TS", file=file, export=export, via=via, use=None,
+                  member_of="PromiseConstructor"))
+
+
+def render_syntax():
+    out = []
+    for x in SYNTAX:
+        root, prefix = SRC[x["src"]]
+        ln = lines_of(f"{root}/{x['file']}")
+        got = ln[x["line"] - 1] if x["line"] <= len(ln) else ""
+        if x["text"] not in got:
+            ERRORS.append(f"{x['sym']}: {x['file']}:{x['line']} does not hold the cited text")
+            continue
+        doc = re.sub(r"^\s*(//|\*|#)?\s*", "", got).strip().replace('"', '\\"')
+        out.append((x["sym"], "call", "", "js", f"  {{ sym = {q(x['sym'])}, class = {q(x['cls'])}, ver = \"js\", at = {q(prefix + x['file'] + ':' + str(x['line']))}, doc = {q(doc)} }},"))
+    return out
+
+
 WHY = {
+    "promise-style": r"Promise|promise",
     "error-erasing": r"defect|[Dd]iscard|remov|[Ii]gnor|fallback|none|replac|death|termination",
     "runtime-escape": r"Promise|[Ss]ynchronous|[Ee]xecut|[Rr]uns? |entrypoint",
     "fork": r"no parent|independent of its parent|not tied",
@@ -464,8 +524,8 @@ def is_effect_value(src, file, name, member_of):
     return d is not None and re.match(rf"^export const {re.escape(name)}: (Effect\.)?Effect<", lines[d]) is not None
 
 
-def render_symbols(entries):
-    out = []
+def render_symbols(entries, extra=()):
+    out = list(extra)
     for e in entries:
         if e["via"] == "call" and is_effect_value(e["src"], e["file"], e["export"], e.get("member_of")):
             # An Effect value is used by reference (`yield* Clock.currentTimeMillis`), never called.
@@ -482,7 +542,9 @@ def render_symbols(entries):
 
 
 CLASSES = [("query", 1), ("blocking", 2), ("log", 3), ("error-erasing", 4), ("runtime-escape", 5),
-           ("fork", 6), ("resource-acquire", 7), ("ambient-read", 8)]
+           ("fork", 6), ("resource-acquire", 7), ("ambient-read", 8),
+           # 9-13 are reserved for the #696 context mechanisms.
+           ("promise-style", 14), ("exception-style", 15)]
 
 
 def header(cid, desc, activate, sources, aliases, scope="pack"):
@@ -522,7 +584,7 @@ def main(out_dir, check=False):
          ("effect/unstable/http/", "effect/http#"), ("effect/unstable/process/", "effect/process#"),
          ("effect/unstable/sql/", "effect/sql#"), ("effect/", "effect#")])
     eff.append("symbols = [")
-    eff += render_symbols(E)
+    eff += render_symbols(E, render_syntax())
     eff.append("]")
     eff.append("")
     eff.append("# Error handlers, for HD facts. arg: last-fn = the last function-valued argument;")
@@ -536,7 +598,8 @@ def main(out_dir, check=False):
     eff += [x[2] for x in sorted(hl)]
     eff.append("]")
     eff.append("")
-    eff.append("# Wrappers: function-valued arguments run inside an Effect generator (CS ctx bit 2).")
+    eff.append("# Wrappers: ctx 2 = function-valued arguments run inside an Effect generator; ctx 32 = interop")
+    eff.append("# callbacks (Effect.try, tryPromise, promise, callback/async), the arguments or options-object functions.")
     eff.append("# Also matched when the call's callee is itself a call of sym (curried Effect.fn(\"n\")(body)).")
     eff.append("# label = first-string: the first string argument is a display label in .fns, never part of FK.")
     eff.append("wrappers = [")
@@ -544,7 +607,7 @@ def main(out_dir, check=False):
     for w in WRAPPERS:
         c = cite(w["src"], w["file"], w["export"])
         if c:
-            wl.append((w["sym"], w["ver"], f"  {{ sym = {q(w['sym'])}, ctx = 2, label = {q(w['label'])}, ver = {q(w['ver'])}, {", ".join(cite_fields(c))} }},"))
+            wl.append((w["sym"], w["ver"], f"  {{ sym = {q(w['sym'])}, ctx = {w['ctx']}, label = {q(w['label'])}, ver = {q(w['ver'])}, {", ".join(cite_fields(c))} }},"))
     eff += [x[2] for x in sorted(wl)]
     eff.append("]")
     eff.append("")
@@ -598,7 +661,7 @@ def main(out_dir, check=False):
     eff.append("# Rules: a finding needs an active rule (RL). A call of the class in a context with some bit")
     eff.append("# of ctx_any and no bit of ctx_none is a finding. ctx 2 = pack-defined effect context, 4 = test.")
     eff.append("rules = [")
-    classes = {e["cls"] for e in E + P + J}
+    classes = {e["cls"] for e in E + P + J + SYNTAX}
     for r in sorted(RULES, key=lambda r: r["id"]):
         root, prefix = SRC[r["src"]]
         ln = lines_of(f"{root}/{r['file']}")
@@ -609,6 +672,8 @@ def main(out_dir, check=False):
         if r["cls"] not in classes:
             ERRORS.append(f"rule {r['id']}: class {r['cls']} has no entry")
         doc = re.sub(r"^\s*(//|\*|#)?\s*", "", got).strip().replace("\\", "\\\\").replace('"', '\\"')
+        if r.get("held"):
+            continue
         eff.append(f"  {{ id = {q(r['id'])}, class = {q(r['cls'])}, ctx_any = {r['ctx_any']}, ctx_none = {r['ctx_none']}, "
                    f"says = {q(r['says'])}, ver = \"{r['ver']}\", at = {q(prefix + r['file'] + ':' + str(r['line']))}, doc = {q(doc)} }},")
     eff.append("]")

@@ -65,7 +65,7 @@ pub fn extract(
     path: &Path,
     source: &str,
     index: &CatalogIndex,
-    test: bool,
+    file_ctx: u8,
     hook: Option<&mut dyn PackHook>,
 ) -> Extracted {
     let source_type = SourceType::from_path(path).unwrap_or_else(|_| SourceType::ts());
@@ -78,7 +78,7 @@ pub fn extract(
     let scoping = sem.scoping();
     let imports = import_like(&sem, scoping);
     let walker = Walker::new(rel, source);
-    let walker = walker.with_calls(scoping, index, test);
+    let walker = walker.with_calls(scoping, index, file_ctx);
     let walker = match hook {
         Some(h) => walker.with_hook(h),
         None => walker,
@@ -242,6 +242,7 @@ mod tests {
 
     use super::super::builtin::all_index;
     use super::super::functions::HookCx;
+    use crate::lang::functions::SiteKind;
     use oxc_ast::ast::{BindingPattern, CallExpression, Class, Expression, VariableDeclarator};
 
     #[derive(Default)]
@@ -274,7 +275,7 @@ mod tests {
         let alloc = Allocator::default();
         let ix = all_index();
         let mut rec = Rec::default();
-        extract(&alloc, "a.ts", Path::new("a.ts"), src, &ix, false, Some(&mut rec));
+        extract(&alloc, "a.ts", Path::new("a.ts"), src, &ix, 0, Some(&mut rec));
         assert_eq!(
             rec.0,
             [
@@ -287,6 +288,60 @@ mod tests {
                 "call fn=Some(0) ctx=2 sym=Some(\"effect#Effect.runSync\")",
             ]
         );
+    }
+
+    /// `(fn, symbol, ctx)` for the syntax and Promise call sites of a file with base ctx `file_ctx`.
+    fn promise_sites(src: &str, file_ctx: u8) -> Vec<(u32, String, u8)> {
+        let alloc = Allocator::default();
+        let ix = all_index();
+        let f = extract(&alloc, "a.ts", Path::new("a.ts"), src, &ix, file_ctx, None).functions;
+        f.sites
+            .iter()
+            .filter_map(|s| match s.kind {
+                SiteKind::Call { sym, ctx, .. } => Some((s.fn_local, f.syms[sym as usize].clone(), ctx)),
+                _ => None,
+            })
+            .filter(|s| s.1.starts_with("syntax#") || s.1.starts_with("global#Promise"))
+            .collect()
+    }
+
+    const PROMISES: &str = "import { Effect } from \"effect\";\n\
+        async function load(xs) { for await (const x of xs) {} const r = await go(); return r.then((v) => v); }\n\
+        function all() { return Promise.all([]).finally(() => {}); }\n\
+        function make() { return new Promise((ok) => ok(1)).catch(() => 0); }\n\
+        const g = Effect.gen(function* () {\n\
+          yield* Effect.tryPromise({ try: async () => { throw new Error(\"x\"); }, catch: (e) => e });\n\
+          try { yield* Effect.void; } catch { throw 1; }\n\
+          yield* Effect.catch(Effect.void, () => Effect.void);\n\
+        });\n";
+
+    fn rows(v: &[(u32, &str, u8)]) -> Vec<(u32, String, u8)> {
+        v.iter().map(|(f, s, c)| (*f, s.to_string(), *c)).collect()
+    }
+
+    #[test]
+    fn syntax_sites_in_an_effect_only_file_carry_their_context() {
+        // Bit 8 (the file is in effect_only scope). Function 8, the tryPromise callback, has the
+        // interop bit 32, and the generator (7) has bit 2, which the exception-style scope rule
+        // excludes, so no rule can fire there and their `async`, `try` and `throw` emit nothing.
+        let want = rows(&[
+            (0, "syntax#async-fn", 1 | 8),
+            (0, "syntax#await", 1 | 8),
+            (0, "syntax#await", 1 | 8),
+            (0, "syntax#member.then", 1 | 8),
+            (2, "syntax#member.finally", 8),
+            (2, "global#Promise.all", 8),
+            (4, "syntax#member.catch", 8),
+            (4, "global#Promise", 8),
+        ]);
+        assert_eq!(promise_sites(PROMISES, 8), want);
+    }
+
+    #[test]
+    fn without_policy_no_syntax_site_is_emitted() {
+        // No bit 8: no shipped rule can fire on a construct, so only the Promise calls remain.
+        let want = rows(&[(2, "global#Promise.all", 0), (4, "global#Promise", 0)]);
+        assert_eq!(promise_sites(PROMISES, 0), want);
     }
 }
 
@@ -312,7 +367,7 @@ mod facts_tests {
         let src = "export function f(a: number) {\n  if (a > 1) { return 1; }\n  for (const x of [a]) { g(x); }\n  return 2;\n}\nconst g = (n: number) => n || 0;\n";
         let alloc = Allocator::default();
         let blob = function_facts(&alloc, "m.ts", src);
-        let head = extract(&alloc, "m.ts", Path::new("m.ts"), src, &CatalogIndex::default(), false, None).functions;
+        let head = extract(&alloc, "m.ts", Path::new("m.ts"), src, &CatalogIndex::default(), 0, None).functions;
         assert_eq!(blob.fns.iter().map(|f| f.key).collect::<Vec<_>>(), head.fns.iter().map(|f| f.key).collect::<Vec<_>>());
         assert_eq!(blob.ct, head.ct);
         assert_eq!(blob.fns.len(), 2);
