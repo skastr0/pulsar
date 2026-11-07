@@ -22,7 +22,9 @@ import ./Crap-PROOF.bend as CrapProof
 import ./Hotspot-PROOF.bend as HotspotProof
 import ./Churn-PROOF.bend as ChurnProof
 import ./History-PROOF.bend as HistoryProof
+import ./Delta-PROOF.bend as DeltaProof
 import ./History.bend as Hs
+import ./Delta.bend as Dt
 import ./Cognitive-PROOF.bend as CognitiveProof
 import ./Sql-PROOF.bend as SqlProof
 import ./Fanout-PROOF.bend as FanoutProof
@@ -175,4 +177,18 @@ def Laws.engine_history_lines(r, o):
 
 def Laws.engine_history_off(n, prods, fs, rows, off):
   %Equal.sym(Bool, L.Engine.has_tag(rows, L.Engine.tag_hr()), False{}, off) : {L.Engine.hs1(_, n, S.Scope.set(prods), fs, rows) == Some{Nil{}} : Maybe<List<&2, String>>}
+  {==}
+
+def Laws.engine_delta_on(rows, on):
+  %Equal.sym(Bool, L.Engine.has_tag(rows, L.Engine.tag_kd()), True{}, on) : {L.Engine.dl1(_, rows) == Dt.Delta.lines1(Dt.Delta.decode(rows)) : Maybe<List<&2, String>>}
+  {==}
+
+def Laws.engine_delta_run(d):
+  {==}
+
+def Laws.engine_delta_lines(o):
+  {==}
+
+def Laws.engine_delta_off(rows, off):
+  %Equal.sym(Bool, L.Engine.has_tag(rows, L.Engine.tag_kd()), False{}, off) : {L.Engine.dl1(_, rows) == Some{Nil{}} : Maybe<List<&2, String>>}
   {==}

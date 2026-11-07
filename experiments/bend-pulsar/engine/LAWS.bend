@@ -35,6 +35,7 @@ import ./ClassCtx.bend as X
 import ./Metrics.bend as M
 import ./History.bend as Hs
 import ./SqlIn.bend as Sq
+import ./Delta.bend as Dt
 
 # ---- K. the fact-to-edge rule -----------------------------------------------------------------
 # `Facts.kind` asks the proven rule (Extract.value_kind) what a fact is. These
@@ -344,21 +345,22 @@ law engine_classctx_off:
 
 # P14. what main.bend prints is the import graph and Metrics, then the layer
 # lines, then the class-in-context lines, the SQL, fan-out, constant-argument and hot-path sections (SqlIn.bend),
-# then the history lines h (main.bend passes Engine.history, P17-P18).
+# then the history lines h (main.bend passes Engine.history, P17-P18), then the
+# delta lines (P19-P20).
 law engine_all:
   for o: Maybe<L.Out>
   for m: Maybe<&2, List<&2, String>>
   for h: Maybe<List<&2, String>>
   for +rows: List<&2, W.Row>
-  {L.Engine.all(o, m, h, rows) == L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.lines(o, m), L.Engine.layers(rows)), L.Engine.classctx(rows)), Sq.SqlIn.lines(rows)), Sq.FanoutIn.lines(rows)), Sq.KonstIn.lines(rows)), Sq.HotIn.lines(rows)), h) : Maybe<List<&2, String>>}
+  {L.Engine.all(o, m, h, rows) == L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.lines(o, m), L.Engine.layers(rows)), L.Engine.classctx(rows)), Sq.SqlIn.lines(rows)), Sq.FanoutIn.lines(rows)), Sq.KonstIn.lines(rows)), Sq.HotIn.lines(rows)), h), L.Engine.delta(rows)) : Maybe<List<&2, String>>}
 
 # P15. the rows the engine keeps (Rows.start_keep) are exactly the tags FACTS.md
 # lists under "Rows the engine reads", each packed as Rows.bend packs it (the
 # ASCII letters, big-endian): FN CT TF (MetricsIn); E SV LY LQ LP LR LC LO US
 # (Layers); CS CL RL (ClassCtx); CV (Crap); A C CFN (Churn); CO (Cognitive);
-# H CF HR (History); DS DT DC DI DX DF DG QS QT QU QD SR (SqlIn); CE RF (FanoutIn); AL RK (KonstIn); EP RH (HotIn).
+# H CF HR (History); DS DT DC DI DX DF DG QS QT QU QD SR (SqlIn); CE RF (FanoutIn); AL RK (KonstIn); EP RH (HotIn); KD KB KH MB MH (Delta).
 law engine_row_tags:
-  {L.Engine.row_tags() == [17998, 17236, 21574, 69, 21334, 19545, 19537, 19536, 19538, 19523, 19535, 21843, 17235, 17228, 21068, 17238, 65, 67, 4408910, 17231, 72, 17222, 18514, 17491, 17492, 17475, 17481, 17496, 17478, 17479, 20819, 20820, 20821, 20804, 21330, 17221, 21062, 16716, 21067, 17744, 21064] : List<&2, U32>}
+  {L.Engine.row_tags() == [17998, 17236, 21574, 69, 21334, 19545, 19537, 19536, 19538, 19523, 19535, 21843, 17235, 17228, 21068, 17238, 65, 67, 4408910, 17231, 72, 17222, 18514, 17491, 17492, 17475, 17481, 17496, 17478, 17479, 20819, 20820, 20821, 20804, 21330, 17221, 21062, 16716, 21067, 17744, 21064, 19268, 19266, 19272, 19778, 19784] : List<&2, U32>}
 
 # P16. the shipped Metrics thresholds are FACTS.md's: core.cyclomatic 10,
 # core.nesting 3, core.npath 200, core.length 60. (The fifth field, the cap
@@ -405,3 +407,24 @@ law engine_history_off:
   for +rows: List<&2, W.Row>
   for off: {L.Engine.has_tag(rows, L.Engine.tag_hr()) == False{} : Bool}
   {L.Engine.history(n, prods, fs, rows) == Some{Nil{}} : Maybe<List<&2, String>>}
+
+# P19. with a `KD` row the delta section runs: Delta-LAWS D1-D6 and C1-C6 are about
+# Dl.run, and E1 about Dl.lines, on the decoded rows.
+law engine_delta_on:
+  for +rows: List<&2, W.Row>
+  for on: {L.Engine.has_tag(rows, L.Engine.tag_kd()) == True{} : Bool}
+  {L.Engine.delta(rows) == Dt.Delta.lines1(Dt.Delta.decode(rows)) : Maybe<List<&2, String>>}
+
+law engine_delta_run:
+  for +d: Dt.DIn
+  {Dt.Delta.lines1(Some{d}) == Dt.Delta.lines2(Dt.Dl.run(d)) : Maybe<List<&2, String>>}
+
+law engine_delta_lines:
+  for o: Dt.DOut
+  {Dt.Delta.lines2(Some{o}) == Some{Dt.Dl.lines(o)} : Maybe<List<&2, String>>}
+
+# P20. with no `KD` row there is no delta section.
+law engine_delta_off:
+  for +rows: List<&2, W.Row>
+  for off: {L.Engine.has_tag(rows, L.Engine.tag_kd()) == False{} : Bool}
+  {L.Engine.delta(rows) == Some{Nil{}} : Maybe<List<&2, String>>}

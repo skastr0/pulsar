@@ -1,0 +1,14 @@
+pulsar-findings 0
+CERT 1
+S 1 0 0
+pulsar-delta 0
+KDA 0 9
+KDA 1 3
+KDL 4 0
+KDC 2 5
+KDC 5 0
+KDR 1 2
+KDR 3 0
+KDW 7 7 0 10 12
+KDI 7 7 1 3 2
+KDS 2 1 2 2 1 1 1

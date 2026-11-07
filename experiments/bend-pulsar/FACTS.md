@@ -152,6 +152,7 @@ the number of counted `CFN` rows, and every counted function is reported.
 - **Fan-out** (an `RF` row is present): `pulsar-fanout 0`, see "Fan-out rules" below.
 - **Constant argument** (an `RK` row is present): `pulsar-konst 0`, see "Constant-argument rules" below.
 - **Hot path** (an `RH` row is present): `pulsar-hot 0`, see "Hot-path composites" below.
+- **Delta** (a `KD` row is present): `pulsar-delta 0`, see "Delta" below.
 - **History** (an `HR` row is present): `pulsar-history 0`, then:
   - `CHF file k`, one per production file with churn: k counted `CF` rows (human commit, production file);
   - `CHX k nf top total ws...` (history.churn-concentration): the k files ws, at most `top`% of the nf churned files, hold `top` of the `total` counted rows, and that is at least `share`%;
@@ -177,10 +178,35 @@ If any detector refuses its facts (the graph, Metrics, or an active pack), the e
 | `CE` 17221, `RF` 21062 (with `CS`, `CL`) | FanoutIn |
 | `AL` 16716, `RK` 21067 (with `CS`, `CL`) | KonstIn |
 | `EP` 17744, `RH` 21064 (with `CE`, `QS`, and the SQL, fan-out and constant-argument rows) | HotIn |
+| `KD` 19268, `KB` 19266, `KH` 19272, `MB` 19778, `MH` 19784 | Delta |
 
 A new relation reaches a detector only once its tag is added here and to `Engine.row_tags`, in the same commit.
 
 The CLI renders file ids to paths, maps them to stable keys, and prints the human and JSON forms.
+
+### Delta
+
+`pulsar delta` runs the engine a third time, on a file holding an empty graph and the two shas' finding keys. The engine decides what is printed (`engine/Delta.bend`).
+
+| Tag | Fields | Meaning |
+|---|---|---|
+| `KD` | `0` | The switch. Exactly one; without it there is no delta section. |
+| `KB` | `hi lo` | A base finding key, its 64 bits as two U32s. A base finding that git's rename matching pairs with a head finding is written with the head key. |
+| `KH` | `hi lo cls` | A head finding key. `cls` 0 is plain, 1 needs coverage (listed apart, never added), and 2 is plain and allowed by a decision committed at head. |
+| `MB` | `hi lo m v` | Measure `m` of function key (hi lo) at base, rename-mapped like `KB`. `m`: 0 cyclomatic, 1 nesting, 2 npath, 3 length. Higher `v` is worse for every `m`. Only the functions the CLI reports trends for. |
+| `MH` | `hi lo m v` | The same at head. |
+
+A key is (hi, lo, m), with m = 0 for `KB` and `KH`. A key repeated within `KB`, `KH`, `MB` or `MH`, a `cls` above 2, or a wrong field count refuses the run.
+
+Output (`pulsar-delta 0`), each kind in key order:
+- `KDA hi lo`: added, a plain head key with no base row;
+- `KDL hi lo`: allowed, the same with `cls` 2;
+- `KDC hi lo`: every head key with `cls` 1;
+- `KDR hi lo`: removed, a base key with no head row;
+- `KDW hi lo m vb vh` and `KDI hi lo m vb vh`: worsened (vh > vb) and improved (vh < vb), base and head rows with the same key;
+- `KDS added allowed coverage removed unchanged worsened improved`, where unchanged counts head keys with `cls` other than 1 that are also in base.
+
+Each side is sorted by an untrusted merge sort, which is proven to keep exactly its rows. The sorted side is checked strictly ascending at run time, and the two sides are compared in one walk. `engine/Delta-LAWS.bend` D1-D6 prove every line sound, and C1-C6 prove every line that should be printed is. Completeness is relative to the run's certificate: both sides strictly ascending and the walk not out of fuel. The engine refuses the run when the certificate fails, so it holds whenever a delta prints. Not proven: decoding the rows, the number formatting, and the meaning of `unchanged` beyond its definition.
 
 ## Relations v1 (draft, first cut)
 

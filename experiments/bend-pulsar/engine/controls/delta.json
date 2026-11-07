@@ -1,0 +1,99 @@
+[
+ {
+  "law": "D1 added_sound",
+  "bug": "Dr.ev_new keeps a head row of any class",
+  "old": "      Dr.push(U32.is_eq(Kr.v(b), c), b, Nil{})",
+  "new": "      Con{b, Nil{}}"
+ },
+ {
+  "law": "C1 added_complete",
+  "bug": "Dr.ev_new drops every new head row",
+  "old": "      Dr.push(U32.is_eq(Kr.v(b), c), b, Nil{})",
+  "new": "      Nil{}"
+ },
+ {
+  "law": "D1b added_fresh",
+  "bug": "the walk reports a matched key as new",
+  "old": "    case EQ{}:\n      BT{a, b}",
+  "new": "    case EQ{}:\n      OB{b}"
+ },
+ {
+  "law": "D3 coverage_sound",
+  "bug": "Dr.ev_cov lists plain head rows",
+  "old": "    case OB{+b}:\n      Dr.push(U32.is_eq(Kr.v(b), 1), b, Nil{})",
+  "new": "    case OB{+b}:\n      Dr.push(U32.is_eq(Kr.v(b), 0), b, Nil{})"
+ },
+ {
+  "law": "C3 coverage_complete",
+  "bug": "Dr.ev_cov skips coverage rows that are also in base",
+  "old": "    case BT{a, +b}:\n      Dr.push(U32.is_eq(Kr.v(b), 1), b, Nil{})",
+  "new": "    case BT{a, +b}:\n      Nil{}"
+ },
+ {
+  "law": "D4 removed_sound",
+  "bug": "the walk reports leftover head rows as removed",
+  "old": "        case Nil{} ys2:\n          Dw.ob(ys2)",
+  "new": "        case Nil{} ys2:\n          Dw.oa(ys2)"
+ },
+ {
+  "law": "D4b removed_fresh",
+  "bug": "the ascending check accepts any order",
+  "old": "    case Some{q}:\n      Cmp.is_lt(Kr.cmp(q, x))",
+  "new": "    case Some{q}:\n      True{}"
+ },
+ {
+  "law": "C5 worsened_complete",
+  "bug": "the ascending check accepts a repeated key",
+  "old": "    case Some{q}:\n      Cmp.is_lt(Kr.cmp(q, x))",
+  "new": "    case Some{q}:\n      Cmp.is_le(Kr.cmp(q, x))"
+ },
+ {
+  "law": "C4 removed_complete",
+  "bug": "a walk out of fuel reports nothing instead of refusing",
+  "old": "    case _ _:\n      Con{ST{}, Nil{}}",
+  "new": "    case _ _:\n      Nil{}"
+ },
+ {
+  "law": "D5 worsened_sound",
+  "bug": "an unchanged measure counts as worsened",
+  "old": "      U32.is_gt(vb, va)",
+  "new": "      U32.is_ge(vb, va)"
+ },
+ {
+  "law": "D6 improved_sound",
+  "bug": "an unchanged measure counts as improved",
+  "old": "      U32.is_lt(vb, va)",
+  "new": "      U32.is_le(vb, va)"
+ },
+ {
+  "law": "D5 worsened_sound",
+  "bug": "the key order ignores the measure index m",
+  "old": "      Kc.then(U32.cmp(ah, bh), Kc.then(U32.cmp(al, bl), U32.cmp(am, bm)))",
+  "new": "      Kc.then(U32.cmp(ah, bh), U32.cmp(al, bl))"
+ },
+ {
+  "law": "C1 added_complete",
+  "bug": "the sort drops rows (half skips its head)",
+  "old": "      Ks.half_k(k, x, Ks.half(t, Bool.not(k)))",
+  "new": "      Ks.half(t, Bool.not(k))"
+ },
+ {
+  "law": "C4 removed_complete",
+  "bug": "a merge out of fuel drops the second list",
+  "old": "      List.append(&2, Kr, xs, ys)",
+  "new": "      xs"
+ },
+ {
+  "law": "E1 lines_shape",
+  "bug": "the section header changes",
+  "old": "\"pulsar-delta 0\"",
+  "new": "\"pulsar-delta 1\""
+ },
+ {
+  "law": "P20 engine_delta_off",
+  "bug": "the delta runs without a KD row",
+  "file": "Pipeline.bend",
+  "old": "      Dt.Delta.lines1(Dt.Delta.decode(rows))\n    case False{}:\n      Some{Nil{}}",
+  "new": "      Dt.Delta.lines1(Dt.Delta.decode(rows))\n    case False{}:\n      Dt.Delta.lines1(Dt.Delta.decode(rows))"
+ }
+]
