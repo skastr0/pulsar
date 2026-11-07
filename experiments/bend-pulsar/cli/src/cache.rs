@@ -165,6 +165,12 @@ pub struct Meta {
     pub syms: Vec<String>,
     pub rules: Vec<String>,
     pub laws: String,
+    #[serde(default)]
+    pub sql_names: Vec<String>,
+    #[serde(default)]
+    pub sql_indexes: Vec<Option<String>>,
+    #[serde(default)]
+    pub sql_sites: Vec<(u32, u32)>,
     /// (lane, cause)
     pub degraded: Vec<(String, String)>,
 }

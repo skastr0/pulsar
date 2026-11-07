@@ -33,6 +33,7 @@ pub struct Stats {
     pub ct: usize,
     pub ts_files: usize,
     pub rust_files: usize,
+    pub sql: crate::sql::Stats,
     pub bend_files: usize,
     pub laws: usize,
     pub markers: usize,
@@ -69,13 +70,14 @@ pub fn build(
     let ts_files = lane_files(&files, lang::ts::owns);
     let rust_files = lane_files(&files, lang::rust::owns);
     let bend_files = lane_files(&files, lang::bend::owns);
+    let sql_files = lane_files(&files, crate::sql::owns);
 
     let mut st = Stats { files: files.len(), ts_files: ts_files.len(), rust_files: rust_files.len(), bend_files: bend_files.len(), ..Stats::default() };
 
     // Lanes run one after another: each already uses every core, and one lane's ASTs are gone
     // before the next lane parses.
     let mut per: Vec<Option<FileOut>> = (0..files.len()).map(|_| None).collect();
-    let (sym_classes, effect) = analyze_ts(root, &tracked, &ts_files, &mut per, w, &mut st)?;
+    let (sym_classes, effect, sql_texts) = analyze_ts(root, &tracked, &ts_files, &mut per, w, &mut st)?;
     // What a lane's analysis decided about production code, per file id: None keeps the path rule.
     let mut lane_prod: Vec<Option<bool>> = vec![None; files.len()];
     analyze_rust(root, &tracked, &rust_files, &mut per, &mut lane_prod, w, &mut st)?;
@@ -93,11 +95,13 @@ pub fn build(
     w.push(Rel::M, &[total_fns as u32]);
     tables.fns.reserve(total_fns);
     push_sites(w, &per, &sym_classes, tables, &mut st);
+    let fn_base = function_bases(&per);
     if let Some(rows) = &effect {
         push_effect(w, &per, rows);
     }
     let fn_keys = push_functions(w, per, tables, &mut st);
     push_rules(w, rules, tables);
+    analyze_sql(root, &sql_files, sql_texts, &fn_base, w, tables, &mut st);
     st.fns = total_fns;
     for d in &st.degraded {
         w.note(&format!("degraded {}: {}", d.lane, d.cause));
@@ -114,7 +118,8 @@ fn list_files(root: &Path, tracked: &[String], lanes: &Lanes) -> Vec<String> {
         .filter(|p| {
             ((lang::ts::owns(p) && lanes.ts.allows(p))
                 || (lang::rust::owns(p) && lanes.rust.allows(p))
-                || (lang::bend::owns(p) && lanes.bend.allows(p)))
+                || (lang::bend::owns(p) && lanes.bend.allows(p))
+                || (crate::sql::owns(p) && lanes.sql.allows(p)))
                 && root.join(p).is_file()
         })
         .cloned()
@@ -127,6 +132,70 @@ fn list_files(root: &Path, tracked: &[String], lanes: &Lanes) -> Vec<String> {
 /// `(global file id, path)` for the files one lane owns.
 fn lane_files(files: &[String], owns: fn(&str) -> bool) -> Vec<(u32, String)> {
     files.iter().enumerate().filter(|(_, p)| owns(p)).map(|(i, p)| (i as u32, p.clone())).collect()
+}
+
+/// Global id of each file's first function, by file id (files without functions repeat the next
+/// base): `fn_base[file] + fn_local` is a function's global id.
+fn function_bases(per: &[Option<FileOut>]) -> Vec<u32> {
+    let mut next = 0u32;
+    per.iter()
+        .map(|f| {
+            let base = next;
+            next += f.as_ref().map_or(0, |f| f.fns.fns.len() as u32);
+            base
+        })
+        .collect()
+}
+
+/// The SQL lane: every `.sql` file as one text, plus the SQL of the TypeScript lane's query-class
+/// calls. Runs after all other lanes (it needs global function ids); its rows are `DS`..`QD` and its
+/// name, index and site tables go to the side tables. A bad statement costs only itself.
+fn analyze_sql(
+    root: &Path,
+    files: &[(u32, String)],
+    ts_texts: Vec<lang::ts::SqlText>,
+    fn_base: &[u32],
+    w: &mut FactWriter,
+    tables: &mut SideTables,
+    st: &mut Stats,
+) {
+    use crate::sql;
+    let mut texts: Vec<sql::Text> = Vec::new();
+    for (id, rel) in files {
+        match std::fs::read_to_string(root.join(rel)) {
+            Ok(content) => texts.push(sql::Text { file: *id, fn_id: sql::NONE, node: 0, line: 1, sql: Some(content) }),
+            Err(_) => st.unreadable += 1,
+        }
+    }
+    for t in ts_texts {
+        let fn_id = t.fn_local.map_or(sql::NONE, |l| fn_base[t.file as usize] + l);
+        let sql_text = (t.kind != lang::functions::SqlTextKind::Dynamic).then_some(t.text);
+        texts.push(sql::Text { file: t.file, fn_id, node: t.ct_node, line: t.line, sql: sql_text });
+    }
+    if texts.is_empty() {
+        return;
+    }
+    let (out, stats) = sql::analyze(texts, sql::Dialect::Sqlite);
+    w.push(Rel::Ds, &out.ds);
+    for r in &out.dt { w.push(Rel::Dt, r); }
+    for r in &out.dc { w.push(Rel::Dc, r); }
+    for r in &out.dp { w.push(Rel::Dp, r); }
+    for r in &out.di { w.push(Rel::Di, r); }
+    for r in &out.dx { w.push(Rel::Dx, r); }
+    for r in &out.df { w.push(Rel::Df, r); }
+    for r in &out.dg { w.push(Rel::Dg, r); }
+    for r in &out.qs { w.push(Rel::Qs, r); }
+    for r in &out.qt { w.push(Rel::Qt, r); }
+    for r in &out.qu { w.push(Rel::Qu, r); }
+    for r in &out.qd { w.push(Rel::Qd, r); }
+    tables.sql_names = out.names;
+    tables.sql_indexes = out.index_names;
+    tables.sql_sites = out.site_pos;
+    eprintln!(
+        "pulsar: sql texts={} dynamic={} statements={} failed={} ddl_ok={} ddl_skipped={}",
+        stats.texts, stats.dynamic, stats.statements, stats.failed, stats.ddl_ok, stats.ddl_skipped
+    );
+    st.sql = stats;
 }
 
 /// `RL rule class ctx_any ctx_none` for every active catalog rule, numbered by sorted id. A
@@ -158,7 +227,7 @@ fn analyze_ts(
     per: &mut [Option<FileOut>],
     w: &mut FactWriter,
     st: &mut Stats,
-) -> Result<(std::collections::BTreeMap<String, Vec<u32>>, Option<crate::packs::effect::Rows>), String> {
+) -> Result<(std::collections::BTreeMap<String, Vec<u32>>, Option<crate::packs::effect::Rows>, Vec<lang::ts::SqlText>), String> {
     if files.is_empty() {
         return Ok(Default::default());
     }
@@ -169,7 +238,7 @@ fn analyze_ts(
     for ((id, _), f) in files.iter().zip(a.per_file) {
         per[*id as usize] = Some(f);
     }
-    Ok((a.sym_classes, a.effect))
+    Ok((a.sym_classes, a.effect, a.sql_texts))
 }
 
 /// The Effect pack's rows (FACTS.md, "Effect pack"), with functions numbered as `FN` numbers
@@ -388,6 +457,30 @@ mod tests {
         assert!(out.contains("I 1 0 0 1 0\n"), "b imports a: {out}");
         // functions are numbered in file-id order: the Rust fn is in file 2.
         assert!(out.lines().any(|l| l.starts_with("FN ") && l.split(' ').nth(2) == Some("2")), "{out}");
+    }
+
+    #[test]
+    fn sql_files_join_the_id_space_and_emit_schema_and_query_rows() {
+        let dir = std::env::temp_dir().join(format!("pulsar-driver-sql-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("db")).unwrap();
+        std::fs::write(dir.join("db/schema.sql"), "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);\nSELECT name FROM users WHERE id = 1;\n").unwrap();
+        std::fs::write(dir.join("a.ts"), "export const a = 1\n").unwrap();
+        let mut w = FactWriter::new();
+        let mut t = SideTables::default();
+        let tracked = ["db/schema.sql", "a.ts"].map(String::from).to_vec();
+        let (set, st) = build(&dir, tracked, &Lanes::default(), &[], &mut w, &mut t).unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+        let mut out = Vec::new();
+        w.write_to(&mut out).unwrap();
+        let out = String::from_utf8(out).unwrap();
+        // ids by sorted path: a.ts 0, db/schema.sql 1; the schema is a production file.
+        assert_eq!(set.files, ["a.ts", "db/schema.sql"]);
+        assert!(out.contains("F 1 1\n"), "{out}");
+        assert!(out.lines().any(|l| l.starts_with("DT ")), "a table row: {out}");
+        assert!(out.lines().any(|l| l.starts_with("QS ")), "a query site row: {out}");
+        assert_eq!((st.sql.texts, st.sql.failed), (1, 0));
+        assert!(!t.sql_names.is_empty() && !t.sql_sites.is_empty());
     }
 
     #[test]

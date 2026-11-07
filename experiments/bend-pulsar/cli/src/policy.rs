@@ -70,7 +70,7 @@ impl LaneScope {
     }
 }
 
-/// Per-lane scopes (`[lanes.ts]`, `[lanes.rust]`, `[lanes.bend]`). A lane with no table is unrestricted.
+/// Per-lane scopes (`[lanes.ts]`, `[lanes.rust]`, `[lanes.bend]`, `[lanes.sql]`). A lane with no table is unrestricted.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Lanes {
@@ -80,6 +80,8 @@ pub struct Lanes {
     pub rust: LaneScope,
     #[serde(default)]
     pub bend: LaneScope,
+    #[serde(default)]
+    pub sql: LaneScope,
 }
 
 impl Lanes {
@@ -90,7 +92,8 @@ impl Lanes {
     pub fn is_prod(&self, rel: &str, lane: Option<bool>) -> bool {
         let rust = rel.ends_with(".rs");
         let bend = rel.ends_with(".bend");
-        let scope = if rust { &self.rust } else if bend { &self.bend } else { &self.ts };
+        let sql = rel.ends_with(".sql");
+        let scope = if rust { &self.rust } else if bend { &self.bend } else if sql { &self.sql } else { &self.ts };
         if scope.test.iter().any(|p| under(p, rel)) {
             return false;
         }
@@ -99,6 +102,10 @@ impl Lanes {
         }
         if let Some(found) = lane {
             return found;
+        }
+        if sql {
+            // Schema and migrations are the code of a database; policy `test` prefixes mark the rest.
+            return true;
         }
         if rust {
             crate::lang::rust::is_prod(rel)
@@ -301,7 +308,7 @@ pub fn parse_policy(name: &str, text: &str) -> Result<Policy, String> {
         rules: raw.rules.unwrap_or_default(),
         lanes: raw.lanes.unwrap_or_default(),
     };
-    for (lane, scope) in [("ts", &p.lanes.ts), ("rust", &p.lanes.rust), ("bend", &p.lanes.bend)] {
+    for (lane, scope) in [("ts", &p.lanes.ts), ("rust", &p.lanes.rust), ("bend", &p.lanes.bend), ("sql", &p.lanes.sql)] {
         for (what, items) in
             [("include", &scope.include), ("exclude", &scope.exclude), ("prod", &scope.prod), ("test", &scope.test)]
         {
@@ -615,6 +622,7 @@ mod tests {
         assert!(d.is_prod("src/a.ts", None) && !d.is_prod("src/a.test.ts", None) && !d.is_prod("README.md", None));
         assert!(d.is_prod("e/Facts.bend", Some(true)) && !d.is_prod("e/Facts.bend", Some(false)));
         assert!(!d.is_prod("e/Facts.bend", None), "a Bend file is production only if its lane says so");
+        assert!(d.is_prod("db/schema.sql", None), "SQL files are production unless policy marks them test");
     }
 
     #[test]

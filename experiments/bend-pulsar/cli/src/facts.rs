@@ -55,10 +55,22 @@ pub enum Rel {
     Lo,
     Us,
     Rl,
+    Ds,
+    Dt,
+    Dc,
+    Dp,
+    Di,
+    Dx,
+    Df,
+    Dg,
+    Qs,
+    Qt,
+    Qu,
+    Qd,
 }
 
 impl Rel {
-    pub const ALL: [Rel; 42] = [
+    pub const ALL: [Rel; 54] = [
         Rel::N,
         Rel::F,
         Rel::K,
@@ -101,6 +113,18 @@ impl Rel {
         Rel::Lo,
         Rel::Us,
         Rel::Rl,
+        Rel::Ds,
+        Rel::Dt,
+        Rel::Dc,
+        Rel::Dp,
+        Rel::Di,
+        Rel::Dx,
+        Rel::Df,
+        Rel::Dg,
+        Rel::Qs,
+        Rel::Qt,
+        Rel::Qu,
+        Rel::Qd,
     ];
 
     pub const fn tag(self) -> &'static str {
@@ -147,6 +171,18 @@ impl Rel {
             Rel::Lo => "LO",
             Rel::Us => "US",
             Rel::Rl => "RL",
+            Rel::Ds => "DS",
+            Rel::Dt => "DT",
+            Rel::Dc => "DC",
+            Rel::Dp => "DP",
+            Rel::Di => "DI",
+            Rel::Dx => "DX",
+            Rel::Df => "DF",
+            Rel::Dg => "DG",
+            Rel::Qs => "QS",
+            Rel::Qt => "QT",
+            Rel::Qu => "QU",
+            Rel::Qd => "QD",
         }
     }
 
@@ -154,11 +190,11 @@ impl Rel {
     pub const fn arity(self) -> usize {
         match self {
             Rel::N | Rel::M | Rel::Sy | Rel::Tf | Rel::L | Rel::Lo => 1,
-            Rel::F | Rel::U | Rel::H | Rel::A | Rel::Cl | Rel::Lq | Rel::Us | Rel::Ln | Rel::If | Rel::Lr | Rel::Lc => 2,
-            Rel::K | Rel::Fk | Rel::C | Rel::Cfn | Rel::Cv | Rel::Hd | Rel::E | Rel::Sv | Rel::Ly | Rel::Lp | Rel::Rt | Rel::Mk | Rel::Lw | Rel::Co | Rel::Im | Rel::Cu => 3,
-            Rel::Fn | Rel::Ct | Rel::Cf | Rel::Rl | Rel::Cm | Rel::Et => 4,
+            Rel::F | Rel::U | Rel::H | Rel::A | Rel::Cl | Rel::Lq | Rel::Us | Rel::Ln | Rel::If | Rel::Lr | Rel::Lc | Rel::Ds => 2,
+            Rel::K | Rel::Fk | Rel::C | Rel::Cfn | Rel::Cv | Rel::Hd | Rel::E | Rel::Sv | Rel::Ly | Rel::Lp | Rel::Rt | Rel::Mk | Rel::Lw | Rel::Co | Rel::Im | Rel::Cu | Rel::Dt | Rel::Dp | Rel::Di | Rel::Dx | Rel::Df | Rel::Qt => 3,
+            Rel::Fn | Rel::Ct | Rel::Cf | Rel::Rl | Rel::Cm | Rel::Et | Rel::Dc | Rel::Dg | Rel::Qu | Rel::Qd => 4,
             Rel::I | Rel::Cs => 5,
-            Rel::Ce => 6,
+            Rel::Ce | Rel::Qs => 6,
         }
     }
 
@@ -329,11 +365,41 @@ pub struct SideTables {
     pub syms: Vec<String>,
     /// Active catalog rule ids by `RL` id (the engine reports `RCX` with these ids).
     pub rules: Vec<String>,
+    /// SQL lane name table: name id -> name (`.sqlnames`).
+    pub sql_names: Vec<String>,
+    /// SQL lane index table: index id -> declared name, `None` when anonymous (`.sqlindexes`).
+    pub sql_indexes: Vec<Option<String>>,
+    /// SQL lane query sites: site id -> (file id, line) (`.sites`).
+    pub sql_sites: Vec<(u32, u32)>,
     /// The `.laws` table, already formatted (`law path line name`, TAB-separated, law-id order).
     pub laws: String,
 }
 
 impl SideTables {
+    /// The SQL lane's side tables (`.sqlnames`, `.sqlindexes`, `.sites`), when the lane ran.
+    fn write_sql(&self, sibling: &dyn Fn(&str) -> std::path::PathBuf) -> Result<(), String> {
+        let put = |ext: &str, text: String| -> Result<(), String> {
+            let p = sibling(ext);
+            std::fs::write(&p, text).map_err(|e| format!("{}: {e}", p.display()))
+        };
+        if !self.sql_names.is_empty() {
+            put(".sqlnames", self.sql_names.iter().map(|n| format!("{n}\n")).collect())?;
+        }
+        if !self.sql_indexes.is_empty() {
+            put(".sqlindexes", self.sql_indexes.iter().map(|n| format!("{}\n", n.as_deref().unwrap_or("-"))).collect())?;
+        }
+        if !self.sql_sites.is_empty() {
+            let rows: String = self
+                .sql_sites
+                .iter()
+                .enumerate()
+                .map(|(site, (file, line))| format!("{site}\t{}\t{line}\n", self.paths.get(*file as usize).map_or("", String::as_str)))
+                .collect();
+            put(".sites", rows)?;
+        }
+        Ok(())
+    }
+
     /// Write `<base>.paths` and `<base>.fns` next to the facts file.
     pub fn write(&self, base: &Path) -> Result<(), String> {
         let sibling = |ext: &str| {
@@ -365,6 +431,7 @@ impl SideTables {
             std::fs::write(&p, &self.laws).map_err(|e| format!("{}: {e}", p.display()))?;
         }
 
+        self.write_sql(&sibling)?;
         if self.syms.is_empty() {
             return Ok(());
         }
