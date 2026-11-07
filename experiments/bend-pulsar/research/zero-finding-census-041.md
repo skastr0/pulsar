@@ -30,8 +30,8 @@ and which stayed silent because no corpus reached their inputs.
 
 | detector | findings | repos | verdict |
 |---|---|---|---|
-| sql.unindexed-filter | 15 | deepseek-harness only | sampled-able (n=15) |
-| sql.schema-drift | 2 | deepseek-harness only | sampled-able (n=2) |
+| sql.unindexed-filter | 15 | deepseek-harness only | held at 10/15 (0.667) — see postscript |
+| sql.schema-drift | 2 | deepseek-harness only | unsampled-on-real-code after builtin-table exemption — see postscript |
 | sql.dynamic-text | 0 | — | unsampled on real code |
 | sql.fk-unindexed | 0 | — | unsampled on real code |
 | sql.index-defeat | 0 | — | unsampled on real code |
@@ -105,3 +105,20 @@ Delivered to pulsar-rs for #740 on the task thread: per-repo QS/SR/DT counts,
 `.sql` file counts, driver imports, and the five DDL-in-code patterns above.
 Facts files: `/tmp/s2-<repo>.facts` (ephemeral; regenerate with
 `pulsar facts <repo> -o /tmp/s2-<repo>.facts`).
+
+## Postscript — rulings after the census closed
+
+- `sql.unindexed-filter` measured 10/15 (0.667) on the deepseek-harness pool
+  (the only SR>0 corpus, so the whole real-code evidence): held; under the
+  prefix-credit ruling the count is 7/15. Corrected mechanism (fidelity
+  self-review): the lane does emit implied PK/UNIQUE indexes and the
+  rowid-alias flag — last-writer-wins table resolution let test-fixture
+  `.sql` DDL overwrite the production schema, so the surviving tables had
+  `ANY` columns with no keys. Research independently confirmed the
+  symptom: the repo's facts carry zero `Di`/`Dx` rows.
+- `sql.schema-drift` 2/2 became FPs under the built-in catalog-table
+  exemption (`sqlite_schema`, `sqlite_master`, `sqlite_sequence`), so it
+  ships unsampled-on-real-code until #740 widens the pool.
+- Both resample once the #740 lane fixes (including DDL scope: test
+  fixtures must not overwrite production schema) and the composites
+  prefix/PK detector fix land.
