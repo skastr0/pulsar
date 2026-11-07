@@ -1,0 +1,12 @@
+S	0	src/db.ts	3	Db (app/Db)
+S	1	src/user-repo.ts	4	UserRepo (app/UserRepo)
+S	2	src/http.ts	5	Http (app/Http)
+S	3	src/config.ts	3	Config (app/Config)
+S	4	-	0	effect#Clock.Clock
+S	5	src/mailer.ts	2	Mailer (app/Mailer)
+L	0	src/db.ts	8	DbLive
+L	1	src/user-repo.ts	10	UserRepoLive
+L	2	src/http.ts	12	HttpLive
+L	3	src/config.ts	6	ConfigLive
+L	4	src/app.ts	9	AppLive
+L	5	src/db.ts	20	DbLive2

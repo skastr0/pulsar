@@ -5,6 +5,7 @@
 # 3 ConfigLive (builds Config), 4 AppLive = mergeAll(HttpLive, UserRepoLive,
 # DbLive2) with provide(ConfigLive), 5 DbLive2 (builds Db again).
 # Root 0 runs AppLive. Mailer is built by no layer: unprovided at root 0.
+# app.paths and app.effect are its side tables (FACTS.md "Side tables"), for finding subjects.
 pulsar-facts 0
 E 6 6 1
 SV 0 0 0
@@ -29,3 +30,4 @@ LP 4 2 3
 LP 4 3 1
 LP 4 5 3
 LR 0 4
+RT 0 4 4294967295
