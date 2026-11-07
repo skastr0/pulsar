@@ -120,6 +120,10 @@ def similar(a, b):
 hits = set()
 for f in git("diff", "--name-only", old, tree).split("\n"):
     if not f or subprocess.run(["git", "cat-file", "-e", f"{old}:{f}"], capture_output=True).returncode: continue
+    # A file nobody committed in the window has no recent lines to protect: skip it before
+    # blaming line by line (a large deletion would otherwise run one blame per removed line).
+    last = git("log", "-1", "--format=%ct", old, "--", f).strip()
+    if not last or now - int(last) > 43200: continue
     diff = git("diff", "-U0", old, tree, "--", f).split("\n")
     i = 0
     while i < len(diff):
