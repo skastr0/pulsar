@@ -54,7 +54,7 @@ def find_decl(lines, name, member_of=None):
         rf"^const {n}\b",
     ]
     if member_of:  # interface member, e.g. DateConstructor.now / Math.random
-        start = next((i for i, l in enumerate(lines) if re.match(rf"^\s*(interface|declare var) {re.escape(member_of)}\b", l)), None)
+        start = next((i for i, l in enumerate(lines) if re.match(rf"^\s*(export )?(interface|declare var) {re.escape(member_of)}\b", l)), None)
         if start is None:
             return None
         for i in range(start, min(start + 600, len(lines))):
@@ -273,6 +273,8 @@ for sym, src, file, export in [("@effect/sql-sqlite-do#SqliteClient.SqliteClient
                                ("@effect/sql-d1#D1Client.D1Client", "D14", "D1Client.ts", "D1Client")]:
     add("query", sym, "4", src, file, export, via="yield", use="tag")
     add("query", sym, "4", src, file, export, via="yield", use="member:unsafe")
+# D1Client.batch runs a list of statements as one D1 batch: a query site of its own.
+add("query", "@effect/sql-d1#D1Client.D1Client", "4", "D14", "D1Client.ts", "batch", via="yield", use="member:batch", member_of="D1Client")
 for n in ["findAll", "findNonEmpty", "findOne", "findOneOption", "void"]:
     add("query", f"effect/sql#SqlSchema.{n}", "4", "E4", "sql/SqlSchema.ts", n, via="result", use="call")
 for n in ["findAll", "findOne", "single", "void"]:
