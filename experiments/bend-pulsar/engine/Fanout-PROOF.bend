@@ -272,14 +272,8 @@ def Inv.down(+css: List<&2, X.Cs>, +ces: List<&2, F.Ce>, +cls: List<&2, X.Cl>, +
   match w:
     case Inl{r}:
       AU.l(cur, F.Fo.step(ces, S.Scope.set(cur)), y, inv(y, r))
-    case Inr{q}:
-      match q:
-        case Tuple{+e, q2}:
-          match q2:
-            case Tuple{me, q3}:
-              match q3:
-                case Tuple{ef, rt}:
-                  AU.r(cur, F.Fo.step(ces, S.Scope.set(cur)), y, Step.c(ces, cur, y, e, me, ef, inv(F.Ce.target(e), rt)))
+    case Inr{Tuple{+e, Tuple{me, Tuple{ef, rt}}}}:
+      AU.r(cur, F.Fo.step(ces, S.Scope.set(cur)), y, Step.c(ces, cur, y, e, me, ef, inv(F.Ce.target(e), rt)))
 
 def Rw.rch(+a: Nat, +b: Nat, +css: List<&2, X.Cs>, +ces: List<&2, F.Ce>, +cls: List<&2, X.Cl>, +c: U32, +x: U32, e: {b == a : Nat}, w: Laws.Rch(b, css, ces, cls, c, x)) -> Laws.Rch(a, css, ces, cls, c, x):
   %e : Laws.Rch(_, css, ces, cls, c, x)

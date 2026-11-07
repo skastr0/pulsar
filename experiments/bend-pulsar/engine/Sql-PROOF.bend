@@ -331,12 +331,8 @@ def Term.any(+i: U32, +col: U32, +any: Bool, dxs: List<&2, S.Dx>, w: Laws.TermW(
       match w:
     case Con{S.Dx{+x, +p, +c}, +rest}:
       match w:
-        case Inl{q}:
-          match q:
-            case Tuple{e1, q2}:
-              match q2:
-                case Tuple{e2, e3}:
-                  Or.l(Bool.and(U32.is_eq(x, i), Bool.and(U32.is_eq(c, col), Bool.or(any, U32.is_eq(p, 0)))), S.Sq.term(i, col, any, rest), HP.And.both(U32.is_eq(x, i), Bool.and(U32.is_eq(c, col), Bool.or(any, U32.is_eq(p, 0))), e1, HP.And.both(U32.is_eq(c, col), Bool.or(any, U32.is_eq(p, 0)), e2, e3)))
+        case Inl{Tuple{e1, Tuple{e2, e3}}}:
+          Or.l(Bool.and(U32.is_eq(x, i), Bool.and(U32.is_eq(c, col), Bool.or(any, U32.is_eq(p, 0)))), S.Sq.term(i, col, any, rest), HP.And.both(U32.is_eq(x, i), Bool.and(U32.is_eq(c, col), Bool.or(any, U32.is_eq(p, 0))), e1, HP.And.both(U32.is_eq(c, col), Bool.or(any, U32.is_eq(p, 0)), e2, e3)))
         case Inr{q}:
           HP.Or.r(Bool.and(U32.is_eq(x, i), Bool.and(U32.is_eq(c, col), Bool.or(any, U32.is_eq(p, 0)))), S.Sq.term(i, col, any, rest), Term.any(i, col, any, rest, q))
 
