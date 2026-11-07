@@ -34,12 +34,12 @@ git add .pulsar && git commit -m "chore: pulsar policy"
 
 `init` states only what the evidence supports, and puts the evidence in a comment next to each choice:
 
-- **Lanes** from `tsconfig.json` and `Cargo.toml`: a root manifest means the whole repo, otherwise only the directories that have one.
+- **Lanes** from `tsconfig.json` and `Cargo.toml`. A root `Cargo.toml` means the whole Rust lane, otherwise only the directories that have one. A TypeScript lane follows the `include` of each `tsconfig.json` (comments and trailing commas are fine), so a root tsconfig that includes only `src` scopes the lane to `src/`; a tsconfig with no `include`, or one that reaches the whole repo (`**/*`), means the whole repo.
 - **Production and test code** from layout. The default path rules already treat `test/`, `fixtures/`, `docs/`, generated and config files as non-production. `init` lists the other directories whose names say "not the product" (`scripts/`, `bench/`, `e2e/`, ...) with a file count, so you can strike any that hold shipped code.
 - **The history window**, with the number of commits it holds, and a warning on a shallow clone.
 - **Packs**, reported and not listed: a pack switches on by itself from evidence (`effect` in a `package.json`, a `wrangler.jsonc`), and the comment names the file that triggered it.
 
-`init` never turns a rule on. Opt-in rules, and the Effect scope lists that decide where the Effect scope rules fire, change which findings appear, so it leaves them to you: it names the opt-in rules in a comment, and when a package other than the root depends on `effect` it lists that package's directory as a commented `[packs.effect] effect_only` suggestion. When only the root package depends on `effect`, it writes no `[packs.effect]` block at all: set `effect_only` and `boundary` by hand. It also cannot tell which root-level directory is the product: with a root `tsconfig.json` it covers the whole repo, so narrow `[lanes.ts] include` yourself. It refuses to overwrite an existing policy (`--force` replaces it, `--print` shows what it would write).
+`init` never turns a rule on. Opt-in rules, and the Effect scope lists that decide where the Effect scope rules fire, change which findings appear, so it leaves them to you: it names the opt-in rules in a comment, and when the Effect pack is on it writes a commented `[packs.effect] effect_only` suggestion listing the directories where most non-test TypeScript files import `effect`, with the counts as the evidence (a directory is listed whole only when every subdirectory also has most files importing it; the first 20 are shown). If no directory qualifies the block is an empty template. `boundary` cannot be read off imports and is always left to you. It refuses to overwrite an existing policy (`--force` replaces it, `--print` shows what it would write).
 
 ## Daily commands
 
