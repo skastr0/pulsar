@@ -107,13 +107,16 @@ pub fn analyze(root: &Path, files: &[(u32, String)]) -> Result<Analysis, String>
     let prod = prod_flags(files, &parsed, &i);
     let mut marks = Vec::new();
     let mut per_file = Vec::with_capacity(parsed.len());
-    for ((id, _), (_, f)) in files.iter().zip(parsed) {
+    for ((id, path), (_, f)) in files.iter().zip(parsed) {
         for &(local, class, count) in &f.markers {
             if count > 0 {
                 marks.push((*id, local, class, count));
             }
         }
-        per_file.push(FileOut { fns: f.fns, tests: Vec::new() });
+        // Laws, proofs, checks and fixtures are not production code (the lane's prod rule), so
+        // their functions are test functions for the metric rules: TF rows, which Metrics skips.
+        let tests = if is_proof_path(path) || is_test_path(path) { (0..f.fns.fns.len() as u32).collect() } else { Vec::new() };
+        per_file.push(FileOut { fns: f.fns, tests });
     }
     st.markers = marks.len();
     Ok(Analysis { per_file, i, u, extra: Extra { marks, laws }, prod, stats: st })
@@ -125,6 +128,13 @@ pub fn is_test_path(path: &str) -> bool {
     let name = path.rsplit('/').next().unwrap_or(path);
     let stem = name.strip_suffix(".bend").unwrap_or(name);
     stem.ends_with("-CHECK") || stem.ends_with("-TEST") || path.split('/').rev().skip(1).any(|d| d == "fixtures")
+}
+
+/// Whether a path names a laws or proof file by convention: `*-LAWS.bend` or `*-PROOF.bend`.
+pub fn is_proof_path(path: &str) -> bool {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    let stem = name.strip_suffix(".bend").unwrap_or(name);
+    stem.ends_with("-LAWS") || stem.ends_with("-PROOF")
 }
 
 /// Which files are production code. Shipped Bend is what a program runs: a file is production when
@@ -375,6 +385,21 @@ mod tests {
         assert!(!is_test_path("engine/Metrics.bend"));
         assert!(!is_test_path("fixtures.bend"));
         assert!(!is_test_path("engine/CHECK.bend"));
+        assert!(is_proof_path("engine/Rules-PROOF.bend"));
+        assert!(is_proof_path("engine/Rules-LAWS.bend"));
+        assert!(!is_proof_path("engine/Rules.bend"));
+        assert!(!is_proof_path("engine/PROOF.bend"));
+    }
+
+    #[test]
+    fn proof_and_check_functions_are_test_functions() {
+        let d = tree(&[("e/lib.bend", LIB), ("e/lib-PROOF.bend", LIB), ("e/lib-CHECK.bend", LIB)]);
+        let a = analyze(&d.0, &[(0, "e/lib.bend".into()), (1, "e/lib-PROOF.bend".into()), (2, "e/lib-CHECK.bend".into())]).unwrap();
+        let n = a.per_file[0].fns.fns.len() as u32;
+        assert!(n > 0);
+        assert!(a.per_file[0].tests.is_empty());
+        assert_eq!(a.per_file[1].tests, (0..n).collect::<Vec<_>>());
+        assert_eq!(a.per_file[2].tests, (0..n).collect::<Vec<_>>());
     }
 
     #[test]
