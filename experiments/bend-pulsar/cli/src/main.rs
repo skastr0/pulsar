@@ -96,13 +96,23 @@ fn build_facts(repo: &Path, coverage: Option<&Path>, out: &mut dyn Write) -> Res
     let mut tables = facts::SideTables { sql_rules: eff.sql_rule_codes(), ..facts::SideTables::default() };
     let (set, st) = driver::build_repo(repo, &eff.policy.lanes, &eff.active_rules(), &mut w, &mut tables)?;
     let hist = &eff.policy.history;
+    let hist_rules = eff
+        .policy
+        .rules
+        .enable
+        .iter()
+        .any(|r| r.starts_with("history."))
+        .then(history::Rules::default);
     let hs = history::emit(
         repo,
-        &history::Config { since_days: Some(hist.since_days), max_commits: hist.max_commits },
+        &history::Config { since_days: Some(hist.since_days), max_commits: hist.max_commits, rules: hist_rules },
         &tables,
         &set.fn_keys,
         &mut w,
     )?;
+    if let Some(d) = &hs.degraded {
+        w.note(&format!("degraded history: {d}"));
+    }
     let _ = coverage::emit(repo, coverage, &tables, &mut w)?;
     w.write_to(out)?;
     print_stats(&st);
@@ -189,8 +199,9 @@ fn cmd_history(args: &[String]) -> Result<(), String> {
     let mut sink = std::io::sink();
     let (_, _, hs) = build_facts(&repo, None, &mut sink)?;
     println!(
-        "commits={} authors={} CF={} CFN={} blobs={} pass1={}ms pass2={}ms",
-        hs.commits, hs.authors, hs.cf, hs.cfn, hs.blobs, hs.pass1_ms, hs.pass2_ms
+        "commits={} authors={} CF={} CFN={} VN={} VT={} HR={} blobs={} pass1={}ms pass2={}ms degraded={:?}",
+        hs.commits, hs.authors, hs.cf, hs.cfn, hs.vn, hs.vt, hs.hr, hs.blobs, hs.pass1_ms,
+        hs.pass2_ms, hs.degraded
     );
     Ok(())
 }
