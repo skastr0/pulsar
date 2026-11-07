@@ -76,10 +76,7 @@ def ident_keys(row):
     ords = ords or [0]
     for o in ords:
         keys.append(("exact", path, chain or name, kind, o))
-    # Positional fallbacks: the full span first — same-line nested functions
-    # (arrow callbacks in one expression) collide on start_line alone — then
-    # start_line for rows that lack end_line.
-    keys.append(("span", path, row.get("start_line"), row.get("end_line")))
+    # Positional fallback: same file, same start line.
     keys.append(("line", path, row.get("start_line")))
     return keys
 
@@ -139,13 +136,9 @@ def main():
         match = None
         for k in ident_keys(o):
             cands = eng_by_key.get(k)
-            if not cands:
-                continue
-            # Span/line buckets can still hold several functions (same span,
-            # or rows with no end_line); prefer the same kind.
-            pick = next((i for i, c in enumerate(cands) if c.get("kind") == o.get("kind")), 0)
-            match = cands.pop(pick)
-            break
+            if cands:
+                match = cands.pop(0)
+                break
         if match is not None:
             pairs.append((o, match))
         else:

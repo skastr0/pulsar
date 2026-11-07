@@ -58,3 +58,28 @@ No false positives; no FP causes to report.
 - Rule 4 (`throw-or-try-in-gen`) measured 0.40 by the implementer and is held
   pending the ctx-128 "directly in wrapper body" fix; it joins this table
   after resampling.
+
+## Resample after fixes (post-`fc4a029`, worktree `fc0e065`)
+
+Independent resample by pulsar-research; own facts+engine, seeds distinct
+from the implementer's (7192/7193) and pulsar-fidelity's.
+
+| rule | pool | sampled | TP | precision | repos |
+|---|---|---|---|---|---|
+| effect.throw-or-try-in-gen (ctx 128) | 92 site rows | 20 | 20 | 20/20 | opencode 70, junto 13, effect 8, uploadthing 1 (the private app and confect 0; t3code facts scanned, pool not extracted at draw time) |
+| effect.mixed-module v2 | 82 | 20 | 19 | 19/20 | junto 39, opencode 36, effect 4, uploadthing 2, confect 1 |
+
+- Rule 4: every sampled throw/try verified lexically inside the
+  `Effect.gen`/`Effect.fn`/`fnUntraced` generator body, including
+  try-to-`Effect.fail` idioms and sites carrying Effect's own
+  `@effect-diagnostics tryCatchInEffectGen:off` markers. Nested helpers and
+  interop callbacks correctly absent (the documented conservative limit).
+- Mixed-module: all 19 TPs verified to hold both an Effect-code function
+  and a real async function in `effect_only` scope outside generic test
+  paths. The one FP is `effect/packages/vitest/typetest/index.tst.ts`, a
+  type-test file the generic test naming does not recognize — classified as
+  FP caused by test naming per the lead ruling (no `*.tst.ts` policy entry
+  yet; suffix support is pulsar-cli's pending 0.4.1 change).
+- `cloudflare.binding-drift` remains held at fidelity's 1/5 pending the
+  env-escape fix; resample at the fix SHA with vendored `.repos/` excluded
+  where policy permits.
