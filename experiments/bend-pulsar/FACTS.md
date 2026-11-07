@@ -129,6 +129,8 @@ the number of counted `CFN` rows, and every counted function is reported.
 **Pack sections.** After the Metrics lines, `pulsar-engine` prints one section per active pack, in this order. A pack is active when its facts are present, and the CLI writes them only for packs that are on.
 - **Effect layer graph** (an `E` row is present): `pulsar-layers 0`, then the `LCYC` … `LS` lines of "Effect pack" below.
 - **Class-in-context** (an `RL` row is present): `pulsar-classctx 0`, then `RCX rule site fn callee`, one per (rule, site), sorted, then `RCXS n`.
+- **SQL** (an `SR` row is present): `pulsar-sql 0`, see "SQL rules" below.
+- **Fan-out** (an `RF` row is present): `pulsar-fanout 0`, see "Fan-out rules" below.
 - **History** (an `HR` row is present): `pulsar-history 0`, then:
   - `CHF file k`, one per production file with churn: k counted `CF` rows (human commit, production file);
   - `CHX k nf top total ws...` (history.churn-concentration): the k files ws, at most `top`% of the nf churned files, hold `top` of the `total` counted rows, and that is at least `share`%;
@@ -150,6 +152,8 @@ If any detector refuses its facts (the graph, Metrics, or an active pack), the e
 | `A` 65, `C` 67, `CFN` 4408910 | Churn |
 | `CO` 17231 | Cognitive |
 | `H` 72, `C` 67, `A` 65, `CF` 17222, `HR` 18514 | History |
+| `DS` 17491, `DT` 17492, `DC` 17475, `DI` 17481, `DX` 17496, `DF` 17478, `DG` 17479, `QS` 20819, `QT` 20820, `QU` 20821, `QD` 20804, `SR` 21330 | SqlIn (SQL rules) |
+| `CE` 17221, `RF` 21062 (with `CS`, `CL`) | FanoutIn |
 
 A new relation reaches a detector only once its tag is added here and to `Engine.row_tags`, in the same commit.
 
