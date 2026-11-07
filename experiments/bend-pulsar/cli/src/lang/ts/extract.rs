@@ -289,3 +289,33 @@ mod tests {
         );
     }
 }
+
+/// Every function of one file with its control tree, for a caller that parses a historical blob
+/// (per-commit metrics). Same walker as the head parse; `key_path` is the file's head path, so
+/// the `FK` keys match the head's. Call sites and edges are not produced here.
+pub fn function_facts(alloc: &Allocator, key_path: &str, source: &str) -> FileFns {
+    let source_type = SourceType::from_path(key_path).unwrap_or_else(|_| SourceType::ts());
+    let ret = Parser::new(alloc, source, source_type).parse();
+    if ret.fatal_error {
+        return FileFns::default();
+    }
+    Walker::new(key_path, source).run(&ret.program)
+}
+
+#[cfg(test)]
+mod facts_tests {
+    use super::*;
+
+    /// The blob walk and the head walk are the same walker: same keys, same control trees.
+    #[test]
+    fn function_facts_matches_the_head_walk() {
+        let src = "export function f(a: number) {\n  if (a > 1) { return 1; }\n  for (const x of [a]) { g(x); }\n  return 2;\n}\nconst g = (n: number) => n || 0;\n";
+        let alloc = Allocator::default();
+        let blob = function_facts(&alloc, "m.ts", src);
+        let head = extract(&alloc, "m.ts", Path::new("m.ts"), src, &CatalogIndex::default(), false, None).functions;
+        assert_eq!(blob.fns.iter().map(|f| f.key).collect::<Vec<_>>(), head.fns.iter().map(|f| f.key).collect::<Vec<_>>());
+        assert_eq!(blob.ct, head.ct);
+        assert_eq!(blob.fns.len(), 2);
+        assert!(!blob.ct.is_empty());
+    }
+}
