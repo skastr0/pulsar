@@ -1,0 +1,173 @@
+//! Parse one file, decide each import-like statement's binding usage, drop the AST.
+
+use oxc_allocator::Allocator;
+use oxc_ast::{ast::ImportDeclarationSpecifier, AstKind};
+use oxc_parser::Parser;
+use oxc_semantic::{Scoping, SemanticBuilder};
+use oxc_span::SourceType;
+use oxc_syntax::symbol::SymbolId;
+use std::path::Path;
+
+/// One import-like statement as the syntax says it (FACTS.md `I`/`U` input).
+#[derive(Debug, Clone)]
+pub struct RawImport {
+    pub spec: String,
+    /// 0 = `import ... from`, 1 = `import "x"`, 2 = `export ... from`
+    pub form: u8,
+    pub hv: bool,
+    pub ht: bool,
+    /// `export { a } from` specifiers (local names) whose type-ness depends on the target file.
+    /// The caller settles them with `type_only_exports` and folds them into `hv`/`ht`.
+    pub pending: Vec<String>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Use {
+    /// Never referenced. Old Pulsar counts this as a value import (`undefined !== "type-only"`).
+    Unused,
+    Value,
+    TypeOnly,
+}
+
+fn binding_use(scoping: &Scoping, sid: SymbolId) -> Use {
+    let mut any = false;
+    for rid in scoping.get_resolved_reference_ids(sid) {
+        any = true;
+        let r = scoping.get_reference(*rid);
+        let f = r.flags();
+        let type_pos = f.is_type() || f.is_value_as_type();
+        if !type_pos && (r.is_read() || r.is_write()) {
+            return Use::Value;
+        }
+    }
+    if any {
+        Use::TypeOnly
+    } else {
+        Use::Unused
+    }
+}
+
+pub struct Extracted {
+    pub imports: Vec<RawImport>,
+    /// Parser hit a fatal error and returned an empty program.
+    pub fatal: bool,
+}
+
+pub fn extract(alloc: &Allocator, path: &Path, source: &str) -> Extracted {
+    let source_type = SourceType::from_path(path).unwrap_or_else(|_| SourceType::ts());
+    let ret = Parser::new(alloc, source, source_type).parse();
+    if ret.fatal_error {
+        return Extracted { imports: Vec::new(), fatal: true };
+    }
+    let built = SemanticBuilder::new().with_build_nodes(true).build(&ret.program);
+    let sem = built.semantic;
+    let scoping = sem.scoping();
+    let mut out = Vec::new();
+    for node in sem.nodes().iter() {
+        match node.kind() {
+            AstKind::ImportDeclaration(d) => {
+                let spec = d.source.value.display().to_string();
+                let (form, hv, ht) = match &d.specifiers {
+                    None => (1, true, false),
+                    Some(_) if d.import_kind.is_type() => (0, false, true),
+                    Some(list) if list.is_empty() => (0, false, false),
+                    Some(list) => {
+                        let (mut hv, mut ht) = (false, false);
+                        for s in list.iter() {
+                            let explicit_type = matches!(
+                                s,
+                                ImportDeclarationSpecifier::ImportSpecifier(i) if i.import_kind.is_type()
+                            );
+                            if explicit_type {
+                                ht = true;
+                                continue;
+                            }
+                            match binding_use(scoping, s.symbol_id()) {
+                                Use::Value | Use::Unused => hv = true,
+                                Use::TypeOnly => ht = true,
+                            }
+                        }
+                        (0, hv, ht)
+                    }
+                };
+                out.push(RawImport { spec, form, hv, ht, pending: Vec::new() });
+            }
+            AstKind::ExportAllDeclaration(d) => {
+                let spec = d.source.value.display().to_string();
+                let ty = d.export_kind.is_type();
+                out.push(RawImport { spec, form: 2, hv: !ty, ht: ty, pending: Vec::new() });
+            }
+            AstKind::ExportFromDeclaration(d) => {
+                let spec = d.source.value.display().to_string();
+                let mut pending = Vec::new();
+                let (hv, ht) = if d.export_kind.is_type() {
+                    (false, true)
+                } else if d.specifiers.is_empty() {
+                    (false, false)
+                } else {
+                    let mut ht = false;
+                    for s in d.specifiers.iter() {
+                        if s.export_kind.is_type() {
+                            ht = true;
+                        } else {
+                            pending.push(s.local.name().to_string());
+                        }
+                    }
+                    (false, ht)
+                };
+                out.push(RawImport { spec, form: 2, hv, ht, pending });
+            }
+            _ => {}
+        }
+    }
+    Extracted { imports: out, fatal: false }
+}
+
+/// Old-Pulsar-compatible "is this exported name type-only in the target" check for
+/// `export { a } from "./x"`: true for each `wanted` name that the file declares as an
+/// interface or type alias (anywhere), or exports with `export type { a }`, and never
+/// exports as a value with `export { a }`.
+pub fn type_only_exports(alloc: &Allocator, path: &Path, source: &str, wanted: &[&str]) -> Vec<bool> {
+    let source_type = SourceType::from_path(path).unwrap_or_else(|_| SourceType::ts());
+    let ret = Parser::new(alloc, source, source_type).parse();
+    let mut found_type = vec![false; wanted.len()];
+    let mut found_value = vec![false; wanted.len()];
+    if ret.fatal_error {
+        return found_type;
+    }
+    let sem = SemanticBuilder::new().with_build_nodes(true).build(&ret.program).semantic;
+    for node in sem.nodes().iter() {
+        match node.kind() {
+            AstKind::TSInterfaceDeclaration(d) => {
+                for (i, w) in wanted.iter().enumerate() {
+                    if d.id.name.as_str() == *w {
+                        found_type[i] = true;
+                    }
+                }
+            }
+            AstKind::TSTypeAliasDeclaration(d) => {
+                for (i, w) in wanted.iter().enumerate() {
+                    if d.id.name.as_str() == *w {
+                        found_type[i] = true;
+                    }
+                }
+            }
+            AstKind::ExportNamedDeclaration(d) => {
+                for s in d.specifiers.iter() {
+                    let name = s.local.name();
+                    for (i, w) in wanted.iter().enumerate() {
+                        if name.as_str() == *w {
+                            if s.export_kind.is_type() || d.export_kind.is_type() {
+                                found_type[i] = true;
+                            } else {
+                                found_value[i] = true;
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    (0..wanted.len()).map(|i| found_type[i] && !found_value[i]).collect()
+}

@@ -48,10 +48,87 @@ S <files> <edges> <cycles>
 
 The CLI renders file ids to paths, maps them to stable keys, and prints the human and JSON forms.
 
-## Planned next (not v0)
+## Relations v1 (draft, first cut)
 
-- `C commit author day`, `CF commit file added deleted`: git history, for churn, co-change and hotspots.
-- `FN fn file loc` and `D fn kind`: functions and decision points, for complexity, size and nesting. The adapter reports decision points by kind; which kinds count is an engine rule.
-- `CV fn covered coverable`: per-function line coverage, read by the CLI from the repo's existing coverage report (lcov, Istanbul JSON, Cobertura). This feeds CRAP (complexity × missing coverage), and with churn facts the composite "risky change". The engine computes in integers (`c² × (100−cov)³ / 100³ + c`, threshold explicit in the rule), and the finding carries complexity and coverage as evidence.
-- `SY`, `EX`, `RF`: symbols, exports and references, for unused exports.
-- Call graph and loop facts, for queries and blocking calls on hot paths. Schema facts, for SQL.
+This draft supports the first-cut detectors in `PLAN.md`: complexity, NPath, churn, hotspots, CRAP and the Effect pack. Seats may refine the encoding. Any change to tags or fields is made here first, in the same commit as the code.
+
+Function ids are `0..m-1`, in the order (file id, start offset). Ids are per run. Identity across shas comes from `FK`.
+
+### Functions and control structure (TS, Rust, Bend)
+
+| Tag | Fields | Meaning |
+|---|---|---|
+| `M` | `fn_count` | Header line, before any function relation |
+| `FN` | `fn file parent loc` | A function, method, closure or arrow function. `parent` is the enclosing function, or `4294967295` at top level. `loc` is its non-blank lines. |
+| `FK` | `fn hi lo` | Stable key: a hash of path, container chain, name, kind and ordinal, never a line. Anonymous functions are named by their ordinal within the parent. |
+| `CT` | `node fn parent kind` | One node of the function's control tree. Ids start at 1 within each function; `parent = 0` is the function body. Children of the same parent, in source order, are sequential. |
+
+**`CT` kinds**, all language-neutral:
+- 1 = branch (`if`, `if let`, ternary). Its children are arms.
+- 2 = arm, one alternative body. A branch with no else arm gets an implicit empty one, added by the engine, not the adapter.
+- 3 = multi-branch (`switch`, `match`). Its children are arms. The adapter emits a flag child, kind 9, when there is a default or wildcard arm.
+- 4 = loop (`for`, `while`, `do`, `for of/in`, `loop`, iterator chains are not loops).
+- 5 = try. Its children are arms: the body, each catch, and finally.
+- 6 = short-circuit operator (`&&`, `||`, `??`) inside a condition.
+- 7 = early exit that is not the last statement (`return`, `break`, `continue`, `throw`, Rust `?`).
+- 8 = nested function boundary. The subtree belongs to the nested `FN`, so it's excluded from this function's metrics.
+- 9 = default or wildcard flag.
+
+The engine computes cyclomatic complexity, cognitive-style nesting, NPath (Nejmeh 1988) and size from the control tree. Its rules state which kinds count. Every threshold sits in the rule, with a rule id.
+
+### Git history
+
+| Tag | Fields | Meaning |
+|---|---|---|
+| `H` | `commit_count author_count` | Header line, for the analysed window. The window (default: 12 months or 2,000 commits) is in `.pulsar/policy.toml`. |
+| `C` | `commit author day` | `day` = days since the Unix epoch. Commit ids follow commit order, oldest first. |
+| `A` | `author bot` | `bot` = 1 when the author matches the bot patterns in the catalog. The CLI matches strings and the rule id is reported with the finding. |
+| `CF` | `commit file added deleted` | Line counts for a file that still exists at head. Renames are followed. |
+| `CFN` | `commit fn touched` | Lines that the commit touched inside head function `fn`. It's matched through `FK` on the commit's version of the file. Functions whose key changed count from the commit that introduced the current key. |
+
+### Coverage
+
+| Tag | Fields | Meaning |
+|---|---|---|
+| `CV` | `fn covered coverable` | Line coverage for one function. The CLI reads the repo's own report: Vitest's `coverage-final.json` (Istanbul format, written by the default `json` reporter with either the v8 or istanbul provider), lcov (`lcov.info`, also from `cargo llvm-cov --lcov`), or Cobertura. A function with no coverage data gets no `CV`. The engine treats "no data" separately from 0%. |
+
+CRAP (Savoia and Evans) is computed in integers: `c² × (coverable − covered)³ / coverable³ + c`, with `c` being cyclomatic complexity. The threshold (default 30) is in the rule. The finding reports `c`, `covered` and `coverable`.
+
+### Symbols, calls and catalogs (mechanism for packs and repo data)
+
+| Tag | Fields | Meaning |
+|---|---|---|
+| `SY` | `sym` | An external or repo symbol that call sites refer to (for example `effect` `Effect.orDie`). Its name lives in the CLI side table. |
+| `CL` | `sym class` | Symbol `sym` belongs to catalog class `class`. Classes come from packs and from `.pulsar/catalogs/*.toml`. The CLI matches names to classes, and each class id maps to a catalog rule id in the side table. |
+| `CS` | `site fn callee loop_depth ctx` | A call site in function `fn` calling `sym`. `loop_depth` is the number of enclosing loop nodes. `ctx` flags (a bit set): 1 = inside an async function, 2 = inside an Effect generator or `Effect.fn`, 4 = inside a test. |
+| `HD` | `site fn shape` | An error handler: a `catch` clause, `.catch(...)`, or an Effect `catch*`/`orElse` callback. `shape`: 0 = other, 1 = empty, 2 = only calls class `log`, 3 = returns a constant or void effect, 4 = rethrows or fails with the cause, 5 = rethrows or fails without the cause. |
+
+**Fixed class ids:**
+- 1 = query
+- 2 = blocking
+- 3 = log
+- 4 = error-erasing (for example `orDie`, `ignore`, `catchAll` to void)
+- 5 = runtime-escape (`runSync`, `runPromise`)
+- 6 = fork
+- 7 = resource-acquire
+- 8 = ambient-read
+
+Repo classes start at 1000.
+
+### Effect pack
+
+| Tag | Fields | Meaning |
+|---|---|---|
+| `SV` | `svc file` | A service definition (`Context.Service`, `Context.Tag`, `Effect.Service`). Its key is the service's tag string, hashed. |
+| `LY` | `layer file svc` | A layer that builds service `svc`. |
+| `LQ` | `layer svc` | Layer `layer` requires `svc` (a `yield*` in its constructor, or a listed dependency). |
+| `LP` | `outer inner mode` | Layer composition: `mode` 1 = provide, 2 = provideMerge, 3 = merge. |
+| `US` | `fn svc` | Function `fn` uses `svc` (`yield*` of the service). |
+
+With the type lane on, `LQ` and `US` become exact: they come from the requirement channel instead of syntax. The pack's catalog covers `effect` and `@effect/sql` (including `@effect/sql-pg`): `sql` tagged templates, `SqlResolver`, `SqlSchema` and `Model.makeRepository`, all as class 1 (query).
+
+### Later
+
+- `EX`, `RF`: exports and references, for unused exports and API churn.
+- Schema facts from migrations, for SQL detectors.
+- Type-lane facts.
