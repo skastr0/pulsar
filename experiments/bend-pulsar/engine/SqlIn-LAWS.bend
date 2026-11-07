@@ -12,6 +12,7 @@ import ./Rows.bend as W
 import ./SqlIn.bend as S
 import ./Sql.bend as Q
 import ./Fanout.bend as F
+import ./Grow.bend as R
 import ./Konst.bend as K
 import ./Hot.bend as H
 
@@ -83,3 +84,20 @@ law hotin_runs:
   for h: {S.Si.has(rows, 21064) == True{} : Bool}
   for hb: {S.Si.bad(rows) == False{} : Bool}
   {S.HotIn.lines(rows) == Some{H.Hot.lines(S.Si.hf(rows))} : Maybe<List<&2, String>>}
+
+law growin_off:
+  for +rows: List<&2, W.Row>
+  for h: {S.Si.has(rows, 21063) == False{} : Bool}
+  {S.GrowIn.lines(rows) == Some{Nil{}} : Maybe<List<&2, String>>}
+
+law growin_refuses:
+  for +rows: List<&2, W.Row>
+  for h: {S.Si.has(rows, 21063) == True{} : Bool}
+  for hb: {S.Si.bad(rows) == True{} : Bool}
+  {S.GrowIn.lines(rows) == None{} : Maybe<List<&2, String>>}
+
+law growin_runs:
+  for +rows: List<&2, W.Row>
+  for h: {S.Si.has(rows, 21063) == True{} : Bool}
+  for hb: {S.Si.bad(rows) == False{} : Bool}
+  {S.GrowIn.lines(rows) == Some{R.Grow.lines(S.Si.gf(rows))} : Maybe<List<&2, String>>}

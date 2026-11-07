@@ -31,6 +31,7 @@ import ./Fanout-PROOF.bend as FanoutProof
 import ./Konst-PROOF.bend as KonstProof
 import ./Hot-PROOF.bend as HotProof
 import ./Untested-PROOF.bend as UntestedProof
+import ./Grow-PROOF.bend as GrowProof
 import ./SqlIn-PROOF.bend as SqlInProof
 import ./Rules-PROOF.bend as RulesProof
 

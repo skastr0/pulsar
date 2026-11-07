@@ -70,5 +70,23 @@
   "bug": "the hot-path section prints nothing",
   "old": "Some{H.Hot.lines(Si.hf(rows))}",
   "new": "Some{Nil{}}"
+ },
+ {
+  "law": "growin_off",
+  "bug": "the growth section runs without an RG row",
+  "old": "Si.gr1(Si.has(rows, 21063), rows)",
+  "new": "Si.gr1(True{}, rows)"
+ },
+ {
+  "law": "growin_refuses",
+  "bug": "the growth section ignores a bad arity",
+  "old": "Si.gr2(Bool.not(Si.bad(rows)), rows)",
+  "new": "Si.gr2(True{}, rows)"
+ },
+ {
+  "law": "growin_runs",
+  "bug": "the growth section prints nothing",
+  "old": "Some{R.Grow.lines(Si.gf(rows))}",
+  "new": "Some{Nil{}}"
  }
 ]

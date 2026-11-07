@@ -1,0 +1,98 @@
+[
+ {
+  "law": "gr_keyed_sound",
+  "bug": "a range filter binds a key",
+  "old": "  Bool.or(U32.is_eq(role, 1), U32.is_eq(role, 3))",
+  "new": "  Bool.or(U32.is_eq(role, 1), Bool.or(U32.is_eq(role, 2), U32.is_eq(role, 3)))"
+ },
+ {
+  "law": "gr_keyed_sound",
+  "bug": "a partial unique index counts as a key",
+  "old": "Bool.and(Bool.not(Q.Sq.bit(f, 2)), Gr.covers(",
+  "new": "Bool.and(True{}, Gr.covers("
+ },
+ {
+  "law": "gr_keyed_sound",
+  "bug": "an expression term counts as bound",
+  "old": "Bool.and(Bool.not(U32.is_eq(c, Q.Sq.none())), Gr.eq(site, table, c, qus))",
+  "new": "Gr.eq(site, table, c, qus)"
+ },
+ {
+  "law": "gr_keyed_sound",
+  "bug": "the primary key counts as bound after its first column",
+  "old": "Gr.eq(site, table, c, qus)), Gr.pkcov(site, table, rest, qus))",
+  "new": "Gr.eq(site, table, c, qus)), True{})"
+ },
+ {
+  "law": "gr_keyed_complete",
+  "bug": "a bound unique column is not a key",
+  "old": "Bool.and(Gr.haspk(table, dcs), Gr.pkcov(site, table, dcs, qus)), Gr.ucol(site, table, dcs, qus)))",
+  "new": "Bool.and(Gr.haspk(table, dcs), Gr.pkcov(site, table, dcs, qus)), False{}))"
+ },
+ {
+  "law": "gr_sel_sound",
+  "bug": "a LIMIT is ignored",
+  "old": "Bool.and(U32.is_eq(kind, 1), Bool.not(Q.Sq.bit(flags, 1)))",
+  "new": "Bool.and(U32.is_eq(kind, 1), True{})"
+ },
+ {
+  "law": "gr_sel_complete",
+  "bug": "the read kind is INSERT",
+  "old": "Bool.and(U32.is_eq(kind, 1), Bool.not(",
+  "new": "Bool.and(U32.is_eq(kind, 2), Bool.not("
+ },
+ {
+  "law": "gr_hot_sound",
+  "bug": "an insert counts without the hot set",
+  "old": "Bool.and(U32.is_eq(s, site), S.Scope.has(hset, fn))",
+  "new": "Bool.and(U32.is_eq(s, site), True{})"
+ },
+ {
+  "law": "gr_unb_means",
+  "bug": "an incomplete schema still reports",
+  "old": "Bool.and(Q.Sq.complete(s), Bool.and(Gr.base",
+  "new": "Bool.and(True{}, Bool.and(Gr.base"
+ },
+ {
+  "law": "gr_unb_means",
+  "bug": "a view counts as a table",
+  "old": "Bool.and(Gr.base(table, s), Bool.and(Gr.sel",
+  "new": "Bool.and(True{}, Bool.and(Gr.sel"
+ },
+ {
+  "law": "gr_findings_sound",
+  "bug": "an UPDATE counts as an insert",
+  "old": "Bool.and(U32.is_eq(mode, 2), Gr.hotw",
+  "new": "Bool.and(U32.is_eq(mode, 3), Gr.hotw"
+ },
+ {
+  "law": "gr_findings_sound",
+  "bug": "an insert into another table counts",
+  "old": "Gr.push(Bool.and(U32.is_eq(t, table), Bool.and(",
+  "new": "Gr.push(Bool.and(True{}, Bool.and("
+ },
+ {
+  "law": "gr_findings_sound",
+  "bug": "a write counts as the read",
+  "old": "Gr.when(Bool.and(U32.is_eq(mode, 1), Gr.unb(",
+  "new": "Gr.when(Bool.and(True{}, Gr.unb("
+ },
+ {
+  "law": "gr_findings_complete",
+  "bug": "only the first read is checked",
+  "old": ", Gr.rd(rest, all, s, qs, qus, hset, r))",
+  "new": ", Nil{})"
+ },
+ {
+  "law": "gr_findings_complete",
+  "bug": "only the first RG row runs",
+  "old": ", Gr.rules(s, qs, qts, qus, eps, ces, rest))",
+  "new": ", Nil{})"
+ },
+ {
+  "law": "gr_lines_shape",
+  "bug": "the section header changes",
+  "old": "Con{\"pulsar-grow 0\"",
+  "new": "Con{\"pulsar-grow 1\""
+ }
+]

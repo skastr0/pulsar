@@ -6,6 +6,7 @@ import ./Sql.bend as Q
 import ./Fanout.bend as F
 import ./Konst.bend as K
 import ./Hot.bend as H
+import ./Grow.bend as R
 import ./SqlIn-LAWS.bend as Laws
 
 def Laws.sqlin_off(rows, h):
@@ -62,4 +63,18 @@ def Laws.hotin_refuses(rows, h, hb):
 def Laws.hotin_runs(rows, h, hb):
   %Equal.sym(Bool, S.Si.has(rows, 21064), True{}, h) : {S.Si.ho1(_, rows) == Some{H.Hot.lines(S.Si.hf(rows))} : Maybe<List<&2, String>>}
   %Equal.sym(Bool, S.Si.bad(rows), False{}, hb) : {S.Si.ho2(Bool.not(_), rows) == Some{H.Hot.lines(S.Si.hf(rows))} : Maybe<List<&2, String>>}
+  {==}
+
+def Laws.growin_off(rows, h):
+  %Equal.sym(Bool, S.Si.has(rows, 21063), False{}, h) : {S.Si.gr1(_, rows) == Some{Nil{}} : Maybe<List<&2, String>>}
+  {==}
+
+def Laws.growin_refuses(rows, h, hb):
+  %Equal.sym(Bool, S.Si.has(rows, 21063), True{}, h) : {S.Si.gr1(_, rows) == None{} : Maybe<List<&2, String>>}
+  %Equal.sym(Bool, S.Si.bad(rows), True{}, hb) : {S.Si.gr2(Bool.not(_), rows) == None{} : Maybe<List<&2, String>>}
+  {==}
+
+def Laws.growin_runs(rows, h, hb):
+  %Equal.sym(Bool, S.Si.has(rows, 21063), True{}, h) : {S.Si.gr1(_, rows) == Some{R.Grow.lines(S.Si.gf(rows))} : Maybe<List<&2, String>>}
+  %Equal.sym(Bool, S.Si.bad(rows), False{}, hb) : {S.Si.gr2(Bool.not(_), rows) == Some{R.Grow.lines(S.Si.gf(rows))} : Maybe<List<&2, String>>}
   {==}

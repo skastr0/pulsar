@@ -352,15 +352,15 @@ law engine_all:
   for m: Maybe<&2, List<&2, String>>
   for h: Maybe<List<&2, String>>
   for +rows: List<&2, W.Row>
-  {L.Engine.all(o, m, h, rows) == L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.lines(o, m), L.Engine.layers(rows)), L.Engine.classctx(rows)), Sq.SqlIn.lines(rows)), Sq.FanoutIn.lines(rows)), Sq.KonstIn.lines(rows)), Sq.HotIn.lines(rows)), h), L.Engine.delta(rows)) : Maybe<List<&2, String>>}
+  {L.Engine.all(o, m, h, rows) == L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.lines(o, m), L.Engine.layers(rows)), L.Engine.classctx(rows)), Sq.SqlIn.lines(rows)), Sq.FanoutIn.lines(rows)), Sq.KonstIn.lines(rows)), Sq.HotIn.lines(rows)), Sq.GrowIn.lines(rows)), h), L.Engine.delta(rows)) : Maybe<List<&2, String>>}
 
 # P15. the rows the engine keeps (Rows.start_keep) are exactly the tags FACTS.md
 # lists under "Rows the engine reads", each packed as Rows.bend packs it (the
 # ASCII letters, big-endian): FN CT TF (MetricsIn); E SV LY LQ LP LR LC LO US
 # (Layers); CS CL RL (ClassCtx); CV (Crap); A C CFN (Churn); CO (Cognitive);
-# H CF HR (History); DS DT DC DI DX DF DG QS QT QU QD SR (SqlIn); CE RF (FanoutIn); AL RK (KonstIn); EP RH (HotIn); KD KB KH MB MH (Delta); RU (Untested, via MetricsIn).
+# H CF HR (History); DS DT DC DI DX DF DG QS QT QU QD SR (SqlIn); CE RF (FanoutIn); AL RK (KonstIn); EP RH (HotIn); KD KB KH MB MH (Delta); RU (Untested, via MetricsIn); RG (GrowIn).
 law engine_row_tags:
-  {L.Engine.row_tags() == [17998, 17236, 21574, 69, 21334, 19545, 19537, 19536, 19538, 19523, 19535, 21843, 17235, 17228, 21068, 17238, 65, 67, 4408910, 17231, 72, 17222, 18514, 17491, 17492, 17475, 17481, 17496, 17478, 17479, 20819, 20820, 20821, 20804, 21330, 17221, 21062, 16716, 21067, 17744, 21064, 19268, 19266, 19272, 19778, 19784, 21077] : List<&2, U32>}
+  {L.Engine.row_tags() == [17998, 17236, 21574, 69, 21334, 19545, 19537, 19536, 19538, 19523, 19535, 21843, 17235, 17228, 21068, 17238, 65, 67, 4408910, 17231, 72, 17222, 18514, 17491, 17492, 17475, 17481, 17496, 17478, 17479, 20819, 20820, 20821, 20804, 21330, 17221, 21062, 16716, 21067, 17744, 21064, 19268, 19266, 19272, 19778, 19784, 21077, 21063] : List<&2, U32>}
 
 # P16. the shipped Metrics thresholds are FACTS.md's: core.cyclomatic 10,
 # core.nesting 3, core.npath 200, core.length 60. (The fifth field, the cap

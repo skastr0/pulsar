@@ -10,6 +10,7 @@
 #   constant-argument section runs when there is an `RK rule class pos` row
 #   hot-path section runs when there is an `RH rule lane base depth` row; its base
 #                   findings are the shown SQL, fan-out and constant-argument findings
+#   growth section  runs when there is an `RG rule depth` row (Grow.bend)
 
 import Base
 import ./Rows.bend as W
@@ -18,6 +19,7 @@ import ./Sql.bend as Q
 import ./Fanout.bend as F
 import ./Konst.bend as K
 import ./Hot.bend as H
+import ./Grow.bend as R
 
 def Si.f(fs: List<&2, U32>, k: Nat) -> U32:
   match fs k:
@@ -33,7 +35,7 @@ type Ar is Data:
 
 # The field count a tag's rows must have, or 0 for a tag this file does not read: a table.
 def Si.arities() -> List<&2, Ar>:
-  [Ar{17491, 2n}, Ar{17492, 3n}, Ar{17475, 4n}, Ar{17481, 3n}, Ar{17496, 3n}, Ar{17478, 3n}, Ar{17479, 4n}, Ar{20819, 6n}, Ar{20820, 3n}, Ar{20821, 4n}, Ar{20804, 4n}, Ar{21330, 1n}, Ar{17235, 5n}, Ar{17228, 2n}, Ar{17221, 6n}, Ar{21062, 4n}, Ar{16716, 3n}, Ar{21067, 3n}, Ar{17744, 2n}, Ar{21064, 4n}]
+  [Ar{17491, 2n}, Ar{17492, 3n}, Ar{17475, 4n}, Ar{17481, 3n}, Ar{17496, 3n}, Ar{17478, 3n}, Ar{17479, 4n}, Ar{20819, 6n}, Ar{20820, 3n}, Ar{20821, 4n}, Ar{20804, 4n}, Ar{21330, 1n}, Ar{17235, 5n}, Ar{17228, 2n}, Ar{17221, 6n}, Ar{21062, 4n}, Ar{16716, 3n}, Ar{21067, 3n}, Ar{17744, 2n}, Ar{21064, 4n}, Ar{21063, 2n}]
 
 def Si.pick(hit: Bool, n: Nat, m: Nat) -> Nat:
   match hit:
@@ -219,6 +221,13 @@ def Si.rhs(xs: List<&2, List<&2, U32>>) -> List<&2, H.Rh>:
     case Con{+f, t}:
       Con{H.Rh{Si.f(f, 0n), Si.f(f, 1n), Si.f(f, 2n), Si.f(f, 3n)}, Si.rhs(t)}
 
+def Si.rgs(xs: List<&2, List<&2, U32>>) -> List<&2, R.Rg>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case Con{+f, t}:
+      Con{R.Rg{Si.f(f, 0n), Si.f(f, 1n)}, Si.rgs(t)}
+
 # The DS header, or 0 0 when there is none (no DDL seen: the schema is not complete).
 def Si.ds(xs: List<&2, List<&2, U32>>) -> List<&2, U32>:
   match xs:
@@ -314,3 +323,24 @@ def Si.ho1(on: Bool, +rows: List<&2, W.Row>) -> Maybe<List<&2, String>>:
 # The hot-path section: nothing without an RH row, None when a row has the wrong arity.
 def HotIn.lines(+rows: List<&2, W.Row>) -> Maybe<List<&2, String>>:
   Si.ho1(Si.has(rows, 21064), rows)
+
+# "RG" = 82*256+71: unbounded growth over the schema, the query facts and the hot set.
+def Si.gf(+rows: List<&2, W.Row>) -> R.GF:
+  R.GF{Si.schema(rows), Si.qss(Si.of(rows, 20819)), Si.qts(Si.of(rows, 20820)), Si.qus(Si.of(rows, 20821)), Si.eps(Si.of(rows, 17744)), Si.ces(Si.of(rows, 17221)), Si.rgs(Si.of(rows, 21063))}
+
+def Si.gr2(ok: Bool, +rows: List<&2, W.Row>) -> Maybe<List<&2, String>>:
+  match ok:
+    case True{}:
+      Some{R.Grow.lines(Si.gf(rows))}
+    case False{}:
+      None{}
+
+def Si.gr1(on: Bool, +rows: List<&2, W.Row>) -> Maybe<List<&2, String>>:
+  match on:
+    case True{}:
+      Si.gr2(Bool.not(Si.bad(rows)), rows)
+    case False{}:
+      Some{Nil{}}
+
+def GrowIn.lines(+rows: List<&2, W.Row>) -> Maybe<List<&2, String>>:
+  Si.gr1(Si.has(rows, 21063), rows)

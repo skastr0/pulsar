@@ -1,0 +1,39 @@
+# Unbounded growth end to end (RG, FACTS.md "Unbounded growth"), the Grow-CHECK case.
+#   Table 1 (pk col 10, unique index 0 on col 11), view 2. EP fn 0; CE 0 -> 1.
+#   Reads of 1: site 20 no filter, 21 LIMIT, 22 pk bound, 23 index bound by IN, 24 col 12 only.
+#   Read of view 2 at 25. Inserts into 1: 30 in fn 1 (hot), 31 in fn 2 (not reached).
+#   RG rule 7 depth 1 -> GX 7 20 1 30, GX 7 24 1 30.
+pulsar-facts 0
+N 1
+F 0 1
+M 1
+DS 5 0
+DT 1 0 0
+DT 2 0 8
+DC 1 10 0 1
+DC 1 11 1 0
+DC 1 12 2 0
+DI 0 1 1
+DX 0 0 11
+QS 20 0 1 0 1 0
+QS 21 0 1 0 1 1
+QS 22 0 1 0 1 0
+QS 23 0 1 0 1 0
+QS 24 0 1 0 1 0
+QS 25 0 1 0 1 0
+QS 30 0 1 0 2 0
+QS 31 0 2 0 2 0
+QT 20 1 1
+QT 21 1 1
+QT 22 1 1
+QT 23 1 1
+QT 24 1 1
+QT 25 2 1
+QT 30 1 2
+QT 31 1 2
+QU 22 1 10 1
+QU 23 1 11 3
+QU 24 1 12 1
+EP 0 0
+CE 40 0 1 0 0 0
+RG 7 1
