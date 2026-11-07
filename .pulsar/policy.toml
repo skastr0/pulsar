@@ -4,6 +4,11 @@ format = "pulsar-policy 0"
 # Dogfood v0: Rust for the rewrite's CLI, TS for the repo's tools and scripts. The legacy
 # 0.3.0 packages (packages/) are left out: they are replaced by the rewrite, not improved.
 
+[lanes.bend]
+include = [
+  "experiments/bend-pulsar/",
+]
+
 [lanes.rust]
 include = [
   "experiments/bend-pulsar/cli/",
