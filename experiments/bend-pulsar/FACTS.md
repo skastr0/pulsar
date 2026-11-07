@@ -264,6 +264,8 @@ One module tree per cargo target (from `cargo metadata --no-deps --offline`, one
 | `A` | `author bot` | `bot` = 1 when the author matches the bot patterns in the catalog. The CLI matches strings and the rule id is reported with the finding. |
 | `CF` | `commit file added deleted` | Line counts for a file that still exists at head. Renames are followed. |
 | `CFN` | `commit fn touched` | Lines that the commit touched inside head function `fn`. It's matched through `FK` on the commit's version of the file. Functions whose key changed count from the commit that introduced the current key. |
+| `VN` | `commit fn loc` | Size of head function `fn` at that commit's version of the file: `loc` non-blank lines, exactly as `FN loc`. One row for every `(commit, fn)` that has a `CFN` row. |
+| `VT` | `commit fn node parent kind` | A control-tree node of head function `fn` at that commit, with `CT`'s node, parent and kind numbering (node ids 1..k within each commit+fn). Together with `VN`, this is the per-commit trajectory the growth rule measures. |
 | `HR` | `sup conf bulk top share` | The history rules are on, with these numbers. The CLI writes it, from `.pulsar/policy.toml`, only when a history rule is on. It's one row, and conf, top and share are percentages of at most 100. A commit with more than `bulk` `CF` rows is bulk and not mined for co-change. The defaults (research/thresholds.md) are `3 50 100 20 80`. |
 
 **Window.** The date range is anchored to the head commit's committer time, not wall clock, so a sha always yields the same facts. Merges are excluded (`--no-merges`): each commit is one diff. The newest `commit_count` commits inside the range are kept, then emitted oldest first.
@@ -271,6 +273,8 @@ One module tree per cargo target (from `cargo metadata --no-deps --offline`, one
 **Authors.** Identity is the lowercased email, or the name when the email is empty. Author ids are `0..author_count-1` in first-appearance order over the oldest-first commits, and `bot` is 1 for a name ending in `[bot]` (any case) or a name in the built-in bot list; a repo catalog adds patterns later.
 
 **`CF`.** Only rows with `added + deleted > 0` are emitted, so a pure rename is not churn. The `file` id is the head file's id. Renames are followed by walking the window newest to oldest: the old path inherits the head file of the new path, and a file deleted before head drops out.
+
+**`VN`/`VT`.** These are the trajectory: the function's size and control tree at each commit that touched it, with `fn` the head function id through `FK` and the same head-path key rule as `CFN`. They exist only for `(commit, fn)` pairs with a `CFN` row, so the engine can measure at each step without a second function namespace.
 
 **`CFN`.** `touched` = added lines plus deleted lines charged to the function, and only rows with `touched > 0` are emitted. Added lines are exact post-image line numbers. A deletion has no post-image position, so its lines are charged to the function span containing the hunk's `new_start` (line 1 when `new_start` is 0, the last line when past EOF). The innermost span wins: the greatest `start_line` containing the line, and the smallest span among equals (the same rule as `.fns` line assignment). `FK` is computed with the file's **head** path even when the parsed blob is an older version, so churn follows a rename. A function with no head key gets no row.
 

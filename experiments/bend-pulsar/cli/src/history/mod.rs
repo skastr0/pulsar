@@ -22,11 +22,29 @@ pub struct Config {
     pub since_days: Option<u32>,
     /// Newest commits to keep; `0` means no cap.
     pub max_commits: u32,
+    /// Some when a history rule is enabled: the `HR` row the engine needs to run them.
+    pub rules: Option<Rules>,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        Config { since_days: Some(DEFAULT_SINCE_DAYS), max_commits: DEFAULT_MAX_COMMITS }
+        Config { since_days: Some(DEFAULT_SINCE_DAYS), max_commits: DEFAULT_MAX_COMMITS, rules: None }
+    }
+}
+
+/// The history rules' numbers, from FACTS.md `HR`; defaults from research/thresholds.md.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Rules {
+    pub sup: u32,
+    pub conf: u32,
+    pub bulk: u32,
+    pub top: u32,
+    pub share: u32,
+}
+
+impl Default for Rules {
+    fn default() -> Self {
+        Rules { sup: 3, conf: 50, bulk: 100, top: 20, share: 80 }
     }
 }
 
@@ -36,24 +54,59 @@ pub struct Stats {
     pub authors: usize,
     pub cf: usize,
     pub cfn: usize,
+    pub vn: usize,
+    pub vt: usize,
+    pub hr: usize,
     /// Historical blobs parsed for `CFN` (cache misses).
     pub blobs: usize,
     pub pass1_ms: u128,
     pub pass2_ms: u128,
+    /// Some when history could not run (or only partially ran); no history rows are
+    /// emitted for a pass that failed, and the caller notes this in the facts header.
+    pub degraded: Option<String>,
+}
+
+/// One control-tree node, as the language lane numbers it within its function.
+pub struct CtNode {
+    pub node: u32,
+    pub parent: u32,
+    pub kind: u8,
 }
 
 /// One function of one file version, as the language lane keys it (`FK`).
-pub struct FnSpan {
+pub struct FnFacts {
     pub key: u64,
     pub start_line: u32,
     pub end_line: u32,
+    /// Non-blank lines, as `FN loc` defines them.
+    pub loc: u32,
+    pub ct: Vec<CtNode>,
 }
 
 /// What history needs from a language lane to attribute hunks to head functions.
 pub trait FnParser {
-    /// Function spans for one file version. `key_path` is the file's path at head:
+    /// Function facts for one file version. `key_path` is the file's path at head:
     /// `FK` is hashed with it, so churn follows renames.
-    fn functions(&self, key_path: &Path, source: &str) -> Vec<FnSpan>;
+    fn functions(&self, key_path: &Path, source: &str) -> Vec<FnFacts>;
+}
+
+/// Map one file's lane output to history's facts.
+fn file_facts(ff: crate::lang::functions::FileFns) -> Vec<FnFacts> {
+    let mut ct: HashMap<u32, Vec<CtNode>> = HashMap::new();
+    for r in ff.ct {
+        ct.entry(r.fn_local).or_default().push(CtNode { node: r.node, parent: r.parent, kind: r.kind });
+    }
+    ff.fns
+        .into_iter()
+        .enumerate()
+        .map(|(local, f)| FnFacts {
+            key: f.key,
+            start_line: f.start_line,
+            end_line: f.end_line,
+            loc: f.loc,
+            ct: ct.remove(&(local as u32)).unwrap_or_default(),
+        })
+        .collect()
 }
 
 /// Dispatches to the language lane by extension, reusing one oxc allocator across TS blobs.
@@ -63,20 +116,14 @@ struct LangFns {
 }
 
 impl FnParser for LangFns {
-    fn functions(&self, key_path: &Path, source: &str) -> Vec<FnSpan> {
+    fn functions(&self, key_path: &Path, source: &str) -> Vec<FnFacts> {
         let path = key_path.to_string_lossy();
         match key_path.extension().and_then(|e| e.to_str()) {
-            Some("rs") => crate::lang::rust::function_spans(&path, source)
-                .into_iter()
-                .map(|f| FnSpan { key: f.key, start_line: f.start_line, end_line: f.end_line })
-                .collect(),
+            Some("rs") => file_facts(crate::lang::rust::function_facts(&path, source)),
             Some("ts" | "tsx" | "mts" | "cts") => {
                 let mut alloc = self.alloc.borrow_mut();
                 alloc.reset();
-                crate::lang::ts::function_spans(&alloc, &path, source)
-                    .into_iter()
-                    .map(|f| FnSpan { key: f.key, start_line: f.start_line, end_line: f.end_line })
-                    .collect()
+                file_facts(crate::lang::ts::function_facts(&alloc, &path, source))
             }
             _ => Vec::new(),
         }
@@ -112,8 +159,16 @@ fn emit_with(
             tables.fns.len()
         ));
     }
-    let head_ts = head_commit_time(repo)?;
     let mut stats = Stats::default();
+    if let Ok(out) = git_output(repo, &["rev-parse".into(), "--is-shallow-repository".into()]) {
+        if text(&out).trim() == "true" {
+            return Ok(degraded("shallow clone: the history window is incomplete".into()));
+        }
+    }
+    let head_ts = match head_commit_time(repo) {
+        Ok(t) => t,
+        Err(e) => return Ok(degraded(e)),
+    };
 
     // Pass 1: commits, authors, churn per head file.
     let pass1 = std::time::Instant::now();
@@ -127,8 +182,14 @@ fn emit_with(
         "--format=%x01%H%x01%ct%x01%an%x01%ae".into(),
     ];
     args.extend(log_args(cfg, head_ts));
-    let out = git_output(repo, &args)?;
-    let raw = parse_log(&out)?;
+    let out = match git_output(repo, &args) {
+        Ok(o) => o,
+        Err(e) => return Ok(degraded(e)),
+    };
+    let raw = match parse_log(&out) {
+        Ok(r) => r,
+        Err(e) => return Ok(degraded(e)),
+    };
     let mut authors: Vec<Author> = Vec::new();
     let mut author_ids: HashMap<String, u32> = HashMap::new();
     let mut commits: Vec<Commit> = Vec::with_capacity(raw.len());
@@ -146,6 +207,10 @@ fn emit_with(
     }
 
     w.push(Rel::H, &[commits.len() as u32, authors.len() as u32]);
+    if let Some(r) = &cfg.rules {
+        w.push(Rel::Hr, &[r.sup, r.conf, r.bulk, r.top, r.share]);
+        stats.hr = 1;
+    }
     for (id, a) in authors.iter().enumerate() {
         w.push(Rel::A, &[id as u32, a.bot as u32]);
     }
@@ -208,25 +273,48 @@ fn emit_with(
             .collect();
         let commit_ids: HashMap<&str, u32> =
             commits.iter().enumerate().map(|(id, c)| (c.sha.as_str(), id as u32)).collect();
+        let cat = match CatFile::start(repo) {
+            Ok(c) => c,
+            Err(e) => {
+                stats.degraded = Some(format!("hunk pass: {e}"));
+                stats.pass2_ms = pass2.elapsed().as_millis();
+                return Ok(stats);
+            }
+        };
         let mut cfn = Cfn {
             key_ids: &key_ids,
             fn_files: &fn_files,
             head_paths: &head_paths,
             commit_ids,
             parser,
-            cat: CatFile::start(repo)?,
+            cat,
             parsed: HashMap::new(),
-            w,
+            out: Vec::new(),
             rows: 0,
+            vn: 0,
+            vt: 0,
             blobs: 0,
         };
-        for_each_patch(repo, cfg, head_ts, &mut |sha, file| cfn.file(sha, file))?;
-        stats.cfn = cfn.rows;
-        stats.blobs = cfn.blobs;
+        match for_each_patch(repo, cfg, head_ts, &mut |sha, file| cfn.file(sha, file)) {
+            Ok(()) => {
+                for (rel, row) in cfn.out.drain(..) {
+                    w.push(rel, &row);
+                }
+                stats.cfn = cfn.rows;
+                stats.vn = cfn.vn;
+                stats.vt = cfn.vt;
+                stats.blobs = cfn.blobs;
+            }
+            Err(e) => stats.degraded = Some(format!("hunk pass: {e}")),
+        }
         stats.pass2_ms = pass2.elapsed().as_millis();
     }
 
     Ok(stats)
+}
+
+fn degraded(cause: String) -> Stats {
+    Stats { degraded: Some(cause), ..Stats::default() }
 }
 
 // ---------------------------------------------------------------- git plumbing
@@ -656,7 +744,7 @@ impl Drop for CatFile {
 }
 
 struct Parsed {
-    spans: Vec<FnSpan>,
+    facts: Vec<FnFacts>,
     lines: u32,
 }
 
@@ -667,10 +755,13 @@ struct Cfn<'a> {
     commit_ids: HashMap<&'a str, u32>,
     parser: &'a dyn FnParser,
     cat: CatFile,
-    /// Parsed spans per (blob oid, head path): FK depends on both.
+    /// Parsed facts per (blob oid, head path): FK depends on both.
     parsed: HashMap<(String, String), Parsed>,
-    w: &'a mut FactWriter,
+    /// Rows buffered until the pass completes; a failed pass emits none of them.
+    out: Vec<(Rel, Vec<u32>)>,
     rows: usize,
+    vn: usize,
+    vt: usize,
     blobs: usize,
 }
 
@@ -691,25 +782,43 @@ impl Cfn<'_> {
             let parsed = match std::str::from_utf8(&blob) {
                 Ok(source) => {
                     let lines = source.lines().count() as u32;
-                    let spans = self.parser.functions(Path::new(&head_path), source);
-                    Parsed { spans, lines }
+                    let facts = self.parser.functions(Path::new(&head_path), source);
+                    Parsed { facts, lines }
                 }
-                Err(_) => Parsed { spans: Vec::new(), lines: 0 },
+                Err(_) => Parsed { facts: Vec::new(), lines: 0 },
             };
             self.parsed.insert(key.clone(), parsed);
         }
         let parsed = self.parsed.get(&key).expect("inserted above");
-        if parsed.spans.is_empty() {
+        if parsed.facts.is_empty() {
             return Ok(());
         }
         let mut counts: HashMap<u32, u32> = HashMap::new();
         for h in &file.hunks {
-            charge(&parsed.spans, self.key_ids, parsed.lines, h, &mut counts);
+            charge(&parsed.facts, self.key_ids, parsed.lines, h, &mut counts);
         }
+        let by_head: HashMap<u32, usize> = parsed
+            .facts
+            .iter()
+            .enumerate()
+            .filter_map(|(i, f)| self.key_ids.get(&f.key).map(|&id| (id, i)))
+            .collect();
         for (fn_id, touched) in counts {
-            if touched > 0 {
-                self.w.push(Rel::Cfn, &[commit, fn_id, touched]);
-                self.rows += 1;
+            if touched == 0 {
+                continue;
+            }
+            self.out.push((Rel::Cfn, vec![commit, fn_id, touched]));
+            self.rows += 1;
+            let Some(&i) = by_head.get(&fn_id) else { continue };
+            let f = &parsed.facts[i];
+            if f.loc == 0 && f.ct.is_empty() {
+                continue;
+            }
+            self.out.push((Rel::Vn, vec![commit, fn_id, f.loc]));
+            self.vn += 1;
+            for n in &f.ct {
+                self.out.push((Rel::Vt, vec![commit, fn_id, n.node, n.parent, n.kind as u32]));
+                self.vt += 1;
             }
         }
         Ok(())
@@ -717,7 +826,7 @@ impl Cfn<'_> {
 }
 
 fn charge(
-    spans: &[FnSpan],
+    spans: &[FnFacts],
     keys: &HashMap<u64, u32>,
     file_lines: u32,
     h: &Hunk,
@@ -817,6 +926,26 @@ mod tests {
             fs::write(p, body).unwrap();
         }
 
+        fn clone_shallow(origin: &TempRepo, name: &str) -> TempRepo {
+            let dir = std::env::temp_dir().join(format!(
+                "pulsar-history-{name}-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_nanos())
+                    .unwrap_or(0)
+            ));
+            let _ = fs::remove_dir_all(&dir);
+            let url = format!("file://{}", origin.dir.display());
+            let out = Command::new("git")
+                .args(["clone", "-q", "--depth", "1", &url])
+                .arg(&dir)
+                .output()
+                .unwrap();
+            assert!(out.status.success(), "clone: {}", String::from_utf8_lossy(&out.stderr));
+            TempRepo { dir }
+        }
+
         fn commit(&self, message: &str, ts: u64, name: &str, email: &str) {
             self.git(&["add", "-A"]);
             let date = format!("@{ts} +0000");
@@ -856,7 +985,7 @@ mod tests {
     struct LineFns;
 
     impl FnParser for LineFns {
-        fn functions(&self, _key_path: &Path, source: &str) -> Vec<FnSpan> {
+        fn functions(&self, _key_path: &Path, source: &str) -> Vec<FnFacts> {
             let lines: Vec<&str> = source.lines().collect();
             let mut out = Vec::new();
             for (i, line) in lines.iter().enumerate() {
@@ -868,10 +997,16 @@ mod tests {
                     .find(|(_, l)| l.starts_with("fn "))
                     .map(|(j, _)| j)
                     .unwrap_or(lines.len());
-                out.push(FnSpan {
+                out.push(FnFacts {
                     key: crate::facts::stable_key(name.trim()),
                     start_line: (i + 1) as u32,
                     end_line: end as u32,
+                    loc: (end - i) as u32,
+                    ct: vec![
+                        CtNode { node: 1, parent: 0, kind: 1 },
+                        CtNode { node: 2, parent: 1, kind: 2 },
+                        CtNode { node: 3, parent: 1, kind: 2 },
+                    ],
                 });
             }
             out
@@ -921,10 +1056,11 @@ mod tests {
         repo.write("a.ts", "one\ntwo\nthree\n");
         repo.commit("c3", 1_767_225_600 + 2 * DAY, "alice", "ALICE@example.com");
 
-        let cfg = Config { since_days: None, max_commits: 2 };
+        let cfg = Config { since_days: None, max_commits: 2, rules: Some(Rules::default()) };
         let (text, stats) = facts(&repo.dir, cfg, &tables(&["a.ts"]), &[], &LineFns);
 
         assert_eq!(rows(&text, "H"), vec![vec![2, 2]]);
+        assert_eq!(rows(&text, "HR"), vec![vec![3, 50, 100, 20, 80]]);
         assert_eq!(
             rows(&text, "C"),
             vec![
@@ -948,7 +1084,7 @@ mod tests {
         repo.write("new.ts", "a\nB\nc\n");
         repo.commit("rename", 1_767_225_600 + DAY, "Alice", "alice@example.com");
 
-        let cfg = Config { since_days: None, max_commits: 0 };
+        let cfg = Config { since_days: None, max_commits: 0, rules: None };
         let (text, _) = facts(&repo.dir, cfg, &tables(&["new.ts"]), &[], &LineFns);
         assert_eq!(rows(&text, "CF"), vec![vec![0, 0, 3, 0], vec![1, 0, 1, 1]]);
     }
@@ -979,7 +1115,7 @@ mod tests {
             })
             .collect();
 
-        let cfg = Config { since_days: None, max_commits: 0 };
+        let cfg = Config { since_days: None, max_commits: 0, rules: None };
         let (text, stats) = facts(&repo.dir, cfg, &t, &keys, &LineFns);
 
         // Adds charge every line; the edit charges one added and one deleted line to
@@ -989,5 +1125,32 @@ mod tests {
             vec![vec![0, 0, 3], vec![0, 1, 3], vec![1, 0, 2], vec![2, 1, 1]]
         );
         assert_eq!(stats.cfn, 4);
+        // The trajectory: one VN per touched function per commit, and the stub's
+        // three control nodes as VT rows.
+        assert_eq!(
+            rows(&text, "VN"),
+            vec![vec![0, 0, 3], vec![0, 1, 3], vec![1, 0, 3], vec![2, 1, 2]]
+        );
+        assert_eq!(rows(&text, "VT").len(), 12);
+        assert_eq!(rows(&text, "VT")[0], vec![0, 0, 1, 0, 1]);
+        assert_eq!(stats.vn, 4);
+        assert_eq!(stats.vt, 12);
+    }
+
+    #[test]
+    fn shallow_clone_degrades_and_emits_no_history_rows() {
+        let origin = TempRepo::new("shallow-origin");
+        origin.write("a.ts", "one\n");
+        origin.commit("c1", 1_767_225_600, "Alice", "alice@example.com");
+        origin.write("a.ts", "one\ntwo\n");
+        origin.commit("c2", 1_767_225_600 + DAY, "Alice", "alice@example.com");
+        let shallow = TempRepo::clone_shallow(&origin, "shallow");
+
+        let cfg = Config { since_days: None, max_commits: 0, rules: None };
+        let (text, stats) = facts(&shallow.dir, cfg, &tables(&["a.ts"]), &[], &LineFns);
+        for tag in ["H", "C", "A", "CF", "CFN", "VN", "VT"] {
+            assert!(rows(&text, tag).is_empty(), "{tag} rows on a shallow clone");
+        }
+        assert!(stats.degraded.unwrap_or_default().contains("shallow"));
     }
 }

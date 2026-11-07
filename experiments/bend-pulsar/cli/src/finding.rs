@@ -252,4 +252,6 @@ pub fn is_builtin_rule(id: &str) -> bool {
         || metric_rule(id).is_ok()
         || SQL_RULES.iter().any(|r| r.id == id)
         || [crate::layers::LAYER_CYCLE.id, crate::layers::UNPROVIDED.id, crate::layers::DUPLICATE.id, crate::layers::HUB.id].contains(&id)
+        || id == "history.churn-concentration"
+        || id == "history.co-change"
 }
