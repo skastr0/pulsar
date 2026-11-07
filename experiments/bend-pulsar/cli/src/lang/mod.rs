@@ -16,3 +16,12 @@ pub struct FileOut {
 }
 
 pub mod scope;
+
+/// A lane that ran on weaker input than it wanted: its facts are real but incomplete, so findings
+/// that depend on them can be missing. Printed in every output form (AGENTS.md: anything that
+/// changes findings must be visible).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Degraded {
+    pub lane: &'static str,
+    pub cause: String,
+}

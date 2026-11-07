@@ -11,7 +11,7 @@ use crate::git::git_ls_files;
 use crate::lang::functions::{FileFns, NO_PARENT};
 use crate::lang::scope::is_prod;
 use crate::policy::Lanes;
-use crate::lang::{self, FileOut};
+use crate::lang::{self, Degraded, FileOut};
 use std::path::{Path, PathBuf};
 
 pub struct FactSet {
@@ -35,6 +35,8 @@ pub struct Stats {
     pub ts_files: usize,
     pub rust_files: usize,
     pub sites: usize,
+    /// Lanes that ran on weaker input than they wanted; also noted in the facts header.
+    pub degraded: Vec<Degraded>,
 }
 
 /// Run the lanes on the git checkout at `repo`.
@@ -97,6 +99,15 @@ pub fn build(
     if !rust_files.is_empty() {
         let a = lang::rust::analyze(root, &rust_files, &tracked)?;
         st.fatal += a.stats.failed_parse;
+        if a.stats.metadata_fallbacks > 0 {
+            st.degraded.push(Degraded {
+                lane: "rust",
+                cause: format!(
+                    "cargo metadata failed for {} manifest(s) (missing toolchain or unresolvable workspace); the module graph uses the conventional layout, so use edges and cycles may be missing",
+                    a.stats.metadata_fallbacks
+                ),
+            });
+        }
         push_edges(w, &a.i, &a.u, &mut st);
         for ((id, _), f) in rust_files.iter().zip(a.per_file) {
             per[*id as usize] = Some(FileOut { fns: f.fns, tests: f.tests });
@@ -170,6 +181,9 @@ pub fn build(
         base += count;
     }
     st.fns = total_fns;
+    for d in &st.degraded {
+        w.note(&format!("degraded {}: {}", d.lane, d.cause));
+    }
     tables.paths = files.clone();
     let prod = st.prod;
     Ok((FactSet { files, prod, fn_keys }, st))

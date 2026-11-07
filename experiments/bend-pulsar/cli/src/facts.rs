@@ -144,6 +144,7 @@ impl Counts {
 pub struct FactWriter {
     rows: [Vec<u32>; Rel::ALL.len()],
     header: &'static str,
+    notes: Vec<String>,
 }
 
 impl Default for FactWriter {
@@ -154,7 +155,13 @@ impl Default for FactWriter {
 
 impl FactWriter {
     pub fn new() -> Self {
-        FactWriter { rows: std::array::from_fn(|_| Vec::new()), header: "pulsar-facts 0" }
+        FactWriter { rows: std::array::from_fn(|_| Vec::new()), header: "pulsar-facts 0", notes: Vec::new() }
+    }
+
+    /// A `#` comment line after the header (the engine ignores comments, a reader sees them).
+    /// Notes are written sorted and deduped, so the output stays canonical.
+    pub fn note(&mut self, line: &str) {
+        self.notes.push(line.replace(['\n', '\r'], " "));
     }
 
     /// Add one fact. Panics if `row.len()` is not the relation's arity: a lane bug, not input.
@@ -182,6 +189,12 @@ impl FactWriter {
         let w = |e: std::io::Error| format!("write: {e}");
         let mut buf = std::io::BufWriter::with_capacity(1 << 20, out);
         writeln!(buf, "{}", self.header).map_err(w)?;
+        let mut notes = self.notes.clone();
+        notes.sort();
+        notes.dedup();
+        for n in &notes {
+            writeln!(buf, "# {n}").map_err(w)?;
+        }
         let mut counts = Counts::default();
         let mut line: Vec<u8> = Vec::with_capacity(64);
         for rel in Rel::ALL {

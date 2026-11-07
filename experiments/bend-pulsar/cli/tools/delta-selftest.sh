@@ -41,11 +41,22 @@ check "same sha: exit 0"          0 "added=0 allowed=0 removed=0" HEAD HEAD
 check "allowed by a committed decision: exit 0" 0 "added=0 allowed=1 removed=0" HEAD~2 HEAD~1
 check "metric findings added (cyclomatic and npath): exit 1" 1 "added=2 allowed=0 removed=0" HEAD~1 HEAD
 out=$("$BIN" delta HEAD~1 HEAD --repo . 2>/dev/null)
-grep -q '^+ core.cyclomatic [0-9a-f]* m.ts tangled  cyclomatic 13 over 10' <<<"$out" && echo "ok   metric rendering names rule, file, symbol and evidence" || { echo "FAIL metric rendering"; echo "$out" | head -3; fail=1; }
+grep -q '^+ core.cyclomatic [0-9a-f]* m.ts:1 tangled  cyclomatic 13 > 10 \[cyclomatic 13 .*\] (rule v1)$' <<<"$out" && echo "ok   metric rendering: rule, key, path:line, symbol, value > threshold, rule version" || { echo "FAIL metric rendering"; echo "$out" | head -3; fail=1; }
 out=$("$BIN" delta HEAD~4 HEAD~3 --repo . --json 2>/dev/null)
 grep -q '"change":"added".*"rule":"graph.import-cycle"' <<<"$out" && echo "ok   json line" || { echo "FAIL json line"; fail=1; }
 a=$("$BIN" delta HEAD~4 HEAD~3 --repo . 2>/dev/null | grep -o '^+ [^ ]* [0-9a-f]*'); b=$("$BIN" delta HEAD~4 HEAD~3 --repo . 2>/dev/null | grep -o '^+ [^ ]* [0-9a-f]*')
 [ -n "$a" ] && [ "$a" == "$b" ] && echo "ok   key stable across runs ($a)" || { echo "FAIL key stable"; fail=1; }
 "$BIN" delta nope HEAD --repo . >/dev/null 2>&1; [ $? == 2 ] && echo "ok   bad rev: exit 2" || { echo "FAIL bad rev"; fail=1; }
 [ -z "$(ls -d /tmp/pulsar-delta-* 2>/dev/null)" ] && echo "ok   scratch removed" || { echo "FAIL scratch left behind"; fail=1; }
+# A Rust manifest cargo cannot read degrades the Rust graph: every output form must say so.
+D=$(mktemp -d); trap 'rm -rf "$T" "$D"' EXIT
+( cd "$D" && git init -q . && git config user.email t@t && git config user.name t
+  echo 'x' > README.md && git add -A && git commit -qm base
+  printf 'this is not toml [[[\n' > Cargo.toml; mkdir -p src; echo 'pub fn f() {}' > src/lib.rs
+  git add -A && git commit -qm "broken manifest" )
+out=$("$BIN" delta HEAD~1 HEAD --repo "$D" 2>/dev/null)
+grep -q '^! DEGRADED INPUT (head) rust: ' <<<"$out" && grep -q 'degraded=1$' <<<"$out" && echo "ok   degraded input marked in text" || { echo "FAIL degraded text"; echo "$out" | head -3; fail=1; }
+out=$("$BIN" delta HEAD~1 HEAD --repo "$D" --json 2>/dev/null)
+grep -q '"type":"degraded","side":"head","lane":"rust"' <<<"$out" && grep -q '"degraded":1' <<<"$out" && echo "ok   degraded input marked in JSON" || { echo "FAIL degraded json"; fail=1; }
+"$BIN" facts "$D" -o "$D/f.txt" 2>/dev/null; grep -q '^# degraded rust: ' "$D/f.txt" && echo "ok   degraded input noted in the facts header" || { echo "FAIL degraded facts header"; fail=1; }
 exit $fail

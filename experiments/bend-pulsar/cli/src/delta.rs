@@ -12,6 +12,7 @@ use crate::engine;
 use crate::facts::{stable_key, FactWriter, SideTables};
 use crate::finding::{hex, metric_rule, Finding, Subject, IMPORT_CYCLE};
 use crate::driver;
+use crate::lang::Degraded;
 use crate::policy::{self, Effective};
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -94,7 +95,7 @@ struct Timing {
 
 /// All findings of one commit, keyed by finding key. A key collision between two distinct
 /// findings is an error: delta must never merge them silently.
-fn evaluate(repo: &Path, sha: &str, tag: &str) -> Result<(BTreeMap<u64, Finding>, Timing, Effective), String> {
+fn evaluate(repo: &Path, sha: &str, tag: &str) -> Result<(BTreeMap<u64, Finding>, Timing, Effective, Vec<Degraded>), String> {
     let mut t = Timing::default();
     let scratch = Scratch::new(tag)?;
     let tree = scratch.0.join("tree");
@@ -125,7 +126,7 @@ fn evaluate(repo: &Path, sha: &str, tag: &str) -> Result<(BTreeMap<u64, Finding>
     let t1 = Instant::now();
     let mut w = FactWriter::new();
     let mut tables = SideTables::default();
-    let (set, _) = driver::build(&tree, tracked, &eff.policy.lanes, &mut w, &mut tables)?;
+    let (set, dstats) = driver::build(&tree, tracked, &eff.policy.lanes, &mut w, &mut tables)?;
     let facts_path = scratch.0.join("facts.txt");
     let mut f = std::fs::File::create(&facts_path).map_err(|e| format!("{}: {e}", facts_path.display()))?;
     w.write_to(&mut f)?;
@@ -177,25 +178,27 @@ fn evaluate(repo: &Path, sha: &str, tag: &str) -> Result<(BTreeMap<u64, Finding>
             path,
             Some(entry.chain.clone()),
             format!(
-                "{} {} over {} (cyclomatic {}, nesting {}, npath {}, length {}) at lines {}-{}",
-                rule.id.trim_start_matches("core."), x.value, x.threshold, fm[0], fm[1], fm[2], fm[3],
-                entry.start_line, entry.end_line
+                "{} {}{} > {} [cyclomatic {} nesting {} npath {} length {}]",
+                rule.id.trim_start_matches("core."),
+                x.value,
+                if x.rule == "core.npath" && x.value >= 16_777_215 { "+ (at least the cap)" } else { "" },
+                x.threshold, fm[0], fm[1], fm[2], fm[3]
             ),
             json!({ "value": x.value, "threshold": x.threshold,
                     "metrics": { "cyclomatic": fm[0], "nesting": fm[1], "npath": fm[2], "length": fm[3] },
                     "lines": [entry.start_line, entry.end_line] }),
         );
-        insert(&mut out, finding, sha)?;
+        insert(&mut out, finding.at_line(entry.start_line), sha)?;
     }
-    Ok((out, t, eff))
+    Ok((out, t, eff, dstats.degraded))
 }
 
 /// Returns the process exit code: 0 none added, 1 added.
 pub fn run(a: &Args) -> Result<u8, String> {
     let base = resolve(&a.repo, &a.base)?;
     let head = resolve(&a.repo, &a.head)?;
-    let (before, tb, _) = evaluate(&a.repo, &base, "base")?;
-    let (after, th, eff) = evaluate(&a.repo, &head, "head")?;
+    let (before, tb, _, deg_base) = evaluate(&a.repo, &base, "base")?;
+    let (after, th, eff, deg_head) = evaluate(&a.repo, &head, "head")?;
     eprintln!("pulsar: {}", eff.summary());
     for (name, sha, t) in [("base", &base, &tb), ("head", &head, &th)] {
         eprintln!(
@@ -214,8 +217,17 @@ pub fn run(a: &Args) -> Result<u8, String> {
     let unchanged = after.len() - added.len() - allowed.len();
     let reason = |f: &Finding| eff.allowed(&hex(f.key())).map(|d| d.reason.clone()).unwrap_or_default();
 
+    let degraded: Vec<(&str, &Degraded)> = deg_base
+        .iter()
+        .map(|d| ("base", d))
+        .chain(deg_head.iter().map(|d| ("head", d)))
+        .collect();
     let mut out = String::new();
     if a.json {
+        for (side, d) in &degraded {
+            out.push_str(&json!({"type":"degraded","side":side,"lane":d.lane,"cause":d.cause}).to_string());
+            out.push('\n');
+        }
         for f in &added {
             out.push_str(&f.json("added").to_string());
             out.push('\n');
@@ -231,11 +243,14 @@ pub fn run(a: &Args) -> Result<u8, String> {
             out.push('\n');
         }
         out.push_str(
-            &json!({"type":"summary","base":base,"head":head,"added":added.len(),"allowed":allowed.len(),"removed":removed.len(),"unchanged":unchanged,"policy":eff.fingerprint})
+            &json!({"type":"summary","base":base,"head":head,"added":added.len(),"allowed":allowed.len(),"removed":removed.len(),"unchanged":unchanged,"degraded":degraded.len(),"policy":eff.fingerprint})
                 .to_string(),
         );
         out.push('\n');
     } else {
+        for (side, d) in &degraded {
+            out.push_str(&format!("! DEGRADED INPUT ({side}) {}: {}\n", d.lane, d.cause));
+        }
         for f in &added {
             out.push_str(&format!("+ {}\n", f.text()));
         }
@@ -246,13 +261,14 @@ pub fn run(a: &Args) -> Result<u8, String> {
             out.push_str(&format!("- {}\n", f.text()));
         }
         out.push_str(&format!(
-            "# base={} head={} added={} allowed={} removed={} unchanged={}\n",
+            "# base={} head={} added={} allowed={} removed={} unchanged={} degraded={}\n",
             &base[..12],
             &head[..12],
             added.len(),
             allowed.len(),
             removed.len(),
-            unchanged
+            unchanged,
+            degraded.len()
         ));
     }
     print!("{out}");

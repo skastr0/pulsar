@@ -73,6 +73,9 @@ fn print_stats(st: &driver::Stats) {
         "pulsar: files={} prod={} I={} U={} fatal_parse={} unreadable={}",
         st.files, st.prod, st.i_facts, st.u_facts, st.fatal, st.unreadable
     );
+    for d in &st.degraded {
+        eprintln!("pulsar: DEGRADED INPUT {}: {}", d.lane, d.cause);
+    }
 }
 
 /// Run every lane on `repo`, write canonical facts to `out`, and return the file set and side tables.

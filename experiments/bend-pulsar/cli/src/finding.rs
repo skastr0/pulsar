@@ -71,6 +71,8 @@ pub struct Finding {
     pub file: String,
     /// The symbol to point at, when the finding is about a symbol.
     pub symbol: Option<String>,
+    /// 1-based line to navigate to, for display only: never part of the key.
+    pub line: Option<u32>,
     /// One line a peer can read.
     pub evidence_text: String,
     /// The same evidence, structured.
@@ -91,7 +93,13 @@ impl Finding {
         evidence: Value,
     ) -> Self {
         subjects.sort_by_key(|s| (s.tag(), s.key()));
-        Finding { rule, subjects, file, symbol, evidence_text, evidence }
+        Finding { rule, subjects, file, symbol, line: None, evidence_text, evidence }
+    }
+
+    /// Set the display line (a navigation hint, not identity).
+    pub fn at_line(mut self, line: u32) -> Self {
+        self.line = Some(line);
+        self
     }
 
     /// Stable identity: FNV-1a 64 over `rule id, 0, version (u32 BE)`, then each subject as
@@ -108,15 +116,20 @@ impl Finding {
         h.0
     }
 
-    /// `rule key file symbol-or-dash evidence`, one line.
+    /// `rule key path[:line] symbol-or-dash  evidence (rule vN)`, one line.
     pub fn text(&self) -> String {
+        let place = match self.line {
+            Some(l) => format!("{}:{l}", self.file),
+            None => self.file.clone(),
+        };
         format!(
-            "{} {} {} {}  {}",
+            "{} {} {} {}  {} (rule v{})",
             self.rule.id,
             hex(self.key()),
-            self.file,
+            place,
             self.symbol.as_deref().unwrap_or("-"),
-            self.evidence_text
+            self.evidence_text,
+            self.rule.version
         )
     }
 
@@ -128,6 +141,7 @@ impl Finding {
             "rule": self.rule.id,
             "rule_version": self.rule.version,
             "file": self.file,
+            "line": self.line,
             "symbol": self.symbol,
             "subjects": self.subjects.iter().map(Subject::json).collect::<Vec<_>>(),
             "evidence": self.evidence,
