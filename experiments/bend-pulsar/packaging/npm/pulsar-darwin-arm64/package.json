@@ -1,0 +1,27 @@
+{
+  "name": "@skastr0/pulsar-darwin-arm64",
+  "version": "0.4.0",
+  "description": "Pulsar CLI and proven engine binaries for darwin arm64.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/skastr0/pulsar.git",
+    "directory": "experiments/bend-pulsar/packaging/npm/pulsar-darwin-arm64"
+  },
+  "homepage": "https://github.com/skastr0/pulsar#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "files": [
+    "bin",
+    "engine",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES"
+  ]
+}
