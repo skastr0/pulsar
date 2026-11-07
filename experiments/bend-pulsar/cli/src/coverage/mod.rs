@@ -46,10 +46,10 @@ pub fn emit(
     explicit: Option<&Path>,
     tables: &SideTables,
     w: &mut FactWriter,
-) -> Result<(), String> {
+) -> Result<Stats, String> {
     let (cv, stats) = ingest(repo, explicit, tables)?;
     if stats.reports == 0 {
-        return Ok(());
+        return Ok(stats);
     }
     for (id, covered, coverable) in &cv {
         w.push(Rel::Cv, &[*id, *covered, *coverable]);
@@ -68,7 +68,7 @@ pub fn emit(
         stats.unassigned,
         stats.cv
     );
-    Ok(())
+    Ok(stats)
 }
 
 /// Everything `emit` does except the writer and the stat line.

@@ -130,6 +130,7 @@ struct Eval {
     timing: Timing,
     policy: Effective,
     degraded: Vec<Degraded>,
+    coverage_reroot: Option<String>,
 }
 
 /// The files of `sha`, repo-relative, from its tree object (no checkout).
@@ -211,6 +212,8 @@ struct Built {
     set: driver::FactSet,
     tables: SideTables,
     degraded: Vec<Degraded>,
+    /// The prefix coverage re-rooted report paths from, when a report came from another tree.
+    coverage_reroot: Option<String>,
 }
 
 fn to_meta(b: &Built) -> cache::Meta {
@@ -222,9 +225,6 @@ fn to_meta(b: &Built) -> cache::Meta {
         syms: b.tables.syms.clone(),
         rules: b.tables.rules.clone(),
         laws: b.tables.laws.clone(),
-        sql_names: b.tables.sql_names.clone(),
-        sql_indexes: b.tables.sql_indexes.clone(),
-        sql_sites: b.tables.sql_sites.clone(),
         degraded: b.degraded.iter().map(|d| (d.lane.to_string(), d.cause.clone())).collect(),
     }
 }
@@ -238,7 +238,7 @@ fn from_meta(m: cache::Meta) -> Built {
             other => Box::leak(other.to_string().into_boxed_str()),
         }
     };
-    let mut tables = SideTables { paths: m.files.clone(), syms: m.syms, rules: m.rules, laws: m.laws, sql_names: m.sql_names, sql_indexes: m.sql_indexes, sql_sites: m.sql_sites, ..SideTables::default() };
+    let mut tables = SideTables { paths: m.files.clone(), syms: m.syms, rules: m.rules, laws: m.laws, ..SideTables::default() };
     tables.fns = m
         .fns
         .into_iter()
@@ -248,6 +248,8 @@ fn from_meta(m: cache::Meta) -> Built {
         set: driver::FactSet { files: m.files, prod: m.prod, fn_keys: m.fn_keys },
         tables,
         degraded: m.degraded.into_iter().map(|(l, cause)| Degraded { lane: lane(&l), cause }).collect(),
+        // A cache entry never carries coverage: a run with `--coverage` is never cached.
+        coverage_reroot: None,
     }
 }
 
@@ -274,13 +276,15 @@ fn build_fresh(
     let mut w = FactWriter::new();
     let mut tables = SideTables::default();
     let (set, dstats) = driver::build(tree, tracked, &eff.policy.lanes, &eff.active_rules(), &mut w, &mut tables)?;
+    let mut coverage_reroot = None;
     if let Some(c) = coverage {
         // The report is read from the worktree at `repo`, never from the scratch checkout.
-        coverage::emit(repo, Some(c), &tables, &mut w)?;
+        let stats = coverage::emit(repo, Some(c), &tables, &mut w)?;
+        coverage_reroot = stats.rerooted_prefix;
     }
     let mut f = std::fs::File::create(facts_path).map_err(|e| format!("{}: {e}", facts_path.display()))?;
     w.write_to(&mut f)?;
-    Ok(Built { set, tables, degraded: dstats.degraded })
+    Ok(Built { set, tables, degraded: dstats.degraded, coverage_reroot })
 }
 
 /// Add a finding; a key collision between two distinct findings is an error, never a silent merge.
@@ -465,7 +469,7 @@ fn evaluate(repo: &Path, sha: &str, tag: &str, coverage: Option<&Path>, use_cach
     };
     timing.facts_ms = t1.elapsed().as_millis();
     timing.cache = if cache.is_none() { "off" } else if hit { "hit" } else { "miss" };
-    let Built { set, tables, degraded } = built;
+    let Built { set, tables, degraded, coverage_reroot } = built;
 
     let t2 = Instant::now();
     let found = engine_findings(cache.as_ref(), &rel, &facts_path)?;
@@ -488,7 +492,7 @@ fn evaluate(repo: &Path, sha: &str, tag: &str, coverage: Option<&Path>, use_cach
     for f in metric_findings(&found, &measures, &tables, &set.fn_keys, disabled, &eff.policy.rules.enable)? {
         insert(&mut findings, f, sha)?;
     }
-    Ok(Eval { findings, measures, timing, policy: eff, degraded })
+    Ok(Eval { findings, measures, timing, policy: eff, degraded, coverage_reroot })
 }
 
 /// A function whose measured values moved between base and head. Measurement only.
@@ -650,7 +654,8 @@ fn render_json(d: &Diff, after: &Eval, base: &str, head: &str) -> String {
     lines.extend(d.trends.iter().map(Trend::json));
     lines.push(json!({"type":"summary","base":base,"head":head,"added":d.added.len(),"allowed":d.allowed.len(),
         "removed":d.removed.len(),"unchanged":d.unchanged,"worsened":d.count(true),"improved":d.count(false),
-        "degraded":d.degraded.len(),"coverage":d.coverage.len(),"policy":after.policy.fingerprint}));
+        "degraded":d.degraded.len(),"coverage":d.coverage.len(),"coverage_reroot":after.coverage_reroot,
+        "policy":after.policy.fingerprint}));
     lines.iter().map(|l| format!("{l}\n")).collect()
 }
 
