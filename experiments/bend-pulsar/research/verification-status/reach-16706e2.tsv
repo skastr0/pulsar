@@ -1,0 +1,631 @@
+module	def	status	laws_or_note
+Extract.bend	Extract.value_kind	proven	LAWS.bend:empty_clause_keeps_edge LAWS.bend:kind_is_value_kind LAWS.bend:only_type_bindings_elided LAWS.bend:value_binding_keeps_edge
+Extract.bend	Extract.value_kind2	under-law	only through a caller; e.g. LAWS.bend:empty_clause_keeps_edge
+Graph.bend	Graph.ad_get	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.all_cert	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.analyze	proven	LAWS.bend:analyze_is_cycles LAWS.bend:pipeline_is_analyze Layers-LAWS.bend:run_is_detectors
+Graph.bend	Graph.analyze2	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.bfs	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.bfs_seen	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.cand_k	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.candidates	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.ceil_half	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.cert_for	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.cert_for_k	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.cert_ok	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.certified	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.certs	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.cnt_all	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.cnt_of	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.cyc	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.cycles2	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.depth	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.depth_go	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.edge	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.edge_k	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.edge_k2	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.edge_seen	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.edge_step	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.edges	proven	LAWS.bend:pipeline_cycles_are_graph_cycles LAWS.bend:pipeline_is_analyze Layers-LAWS.bend:run_is_detectors
+Graph.bend	Graph.ent_get	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.expand	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.ext	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.fgraph	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.fill	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.final	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.find	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.find_k	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.find_k2	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.find_k3	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.find_k4	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.ids	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.in_tr	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.in_tr2	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.ins_comp	under-law	only through a caller; e.g. ClassCtx-LAWS.bend:classctx_complete
+Graph.bend	Graph.ins_l	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.ins_l_k	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.ins_u	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.ins_u_k	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.iota	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.is_cand	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.isort_l	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.isort_u	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.keep_cand	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.keep_certified	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.keep_in	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.keep_in_k	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.le_ok	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.len	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.list_cmp	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.list_le	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.mem	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.member_ok	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.members_ok	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.merge_cmp	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.mono_ok	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.newround	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.nth	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.part_ok2	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.part_rows	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.path0	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.path1	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.pick_l	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.pop_fin	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.pop_k	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.pop_one	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.pop_popv	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.push_if	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.radd	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.radd1	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.ret_frame	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.ret_parent	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.ret_popv	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.rev_edges	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.rev_go	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.rev_init	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.rgraph	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.round	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.row_ok	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.run	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.sccs	proven	LAWS.bend:sccs_partition
+Graph.bend	Graph.sccs_n	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.search	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.seen_has	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.selfs	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.selfs_add	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.selfs_go	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.selfs_ok	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.sort_members	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.start_k	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.start_k2	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.start_step	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.starts	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.step	proven	LAWS.bend:idle_is_fixed_point
+Graph.bend	Graph.step_d	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.step_rs	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.upd	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.upd_k	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.verified2	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Graph.walk	under-law	only through a caller; e.g. LAWS.bend:analyze_is_cycles
+Graph.bend	Tr.get	under-law	only through a caller; e.g. ClassCtx-LAWS.bend:classctx_complete
+Graph.bend	Tr.getu	under-law	only through a caller; e.g. ClassCtx-LAWS.bend:classctx_complete
+Graph.bend	Tr.leaf	under-law	only through a caller; e.g. ClassCtx-LAWS.bend:classctx_complete
+Graph.bend	Tr.o	under-law	only through a caller; e.g. ClassCtx-LAWS.bend:classctx_complete
+Graph.bend	Tr.put	under-law	only through a caller; e.g. ClassCtx-LAWS.bend:classctx_complete
+Graph.bend	Tr.putu	under-law	only through a caller; e.g. ClassCtx-LAWS.bend:classctx_complete
+Graph.bend	Tr.sel	under-law	only through a caller; e.g. ClassCtx-LAWS.bend:classctx_complete
+Graph.bend	Tr.setk	under-law	only through a caller; e.g. ClassCtx-LAWS.bend:classctx_complete
+Graph.bend	Tr.z	under-law	only through a caller; e.g. ClassCtx-LAWS.bend:classctx_complete
+Resolve.bend	Resolve.add_edge	under-law	only through a caller; e.g. LAWS.bend:fact_empty_clause_is_edge
+Resolve.bend	Resolve.add_edge2	proven	LAWS.bend:export_self_edge_dropped LAWS.bend:import_self_edge_kept
+Resolve.bend	Resolve.close_file	under-law	only through a caller; e.g. LAWS.bend:pipeline_cycles_are_graph_cycles
+Resolve.bend	Resolve.count_res	under-law	only through a caller; e.g. LAWS.bend:fact_empty_clause_is_edge
+Resolve.bend	Resolve.dedup	under-law	only through a caller; e.g. LAWS.bend:pipeline_cycles_are_graph_cycles
+Resolve.bend	Resolve.dedup_push	under-law	only through a caller; e.g. LAWS.bend:pipeline_cycles_are_graph_cycles
+Resolve.bend	Resolve.empty_acc	under-law	only through a caller; e.g. LAWS.bend:pipeline_cycles_are_graph_cycles
+Resolve.bend	Resolve.sorted_unique	under-law	only through a caller; e.g. LAWS.bend:pipeline_cycles_are_graph_cycles
+Resolve.bend	Resolve.u32_le	under-law	only through a caller; e.g. LAWS.bend:pipeline_cycles_are_graph_cycles
+engine/Churn.bend	Churn.add_if	neither	
+engine/Churn.bend	Churn.bot_commits	neither	
+engine/Churn.bend	Churn.bots	neither	
+engine/Churn.bend	Churn.count	neither	
+engine/Churn.bend	Churn.f0	neither	
+engine/Churn.bend	Churn.f1	neither	
+engine/Churn.bend	Churn.f2	neither	
+engine/Churn.bend	Churn.of	neither	
+engine/Churn.bend	Churn.ok2	neither	
+engine/Churn.bend	Churn.ok3	neither	
+engine/Churn.bend	Churn.tag_a	neither	
+engine/Churn.bend	Churn.tag_c	neither	
+engine/Churn.bend	Churn.tag_cfn	neither	
+engine/Churn.bend	Tr.bits	neither	
+engine/Churn.bend	Tr.has	neither	
+engine/Churn.bend	Tr.ins	neither	
+engine/Churn.bend	Tr.key	neither	
+engine/Churn.bend	Tr.walk	neither	
+engine/ClassCtx.bend	CF.cls	proven	ClassCtx-LAWS.bend:classctx_complete ClassCtx-LAWS.bend:classctx_sound
+engine/ClassCtx.bend	CF.css	proven	ClassCtx-LAWS.bend:classctx_complete ClassCtx-LAWS.bend:classctx_sound
+engine/ClassCtx.bend	CF.rls	proven	ClassCtx-LAWS.bend:classctx_complete ClassCtx-LAWS.bend:classctx_sound
+engine/ClassCtx.bend	CRep.fd	proven	ClassCtx-LAWS.bend:lines_shape
+engine/ClassCtx.bend	CRep.summary	proven	ClassCtx-LAWS.bend:lines_shape
+engine/ClassCtx.bend	Cd.add	tested	decoder (engine/LAWS.bend:21-22)
+engine/ClassCtx.bend	Cd.bad	tested	decoder (engine/LAWS.bend:21-22)
+engine/ClassCtx.bend	Cd.cl	tested	decoder (engine/LAWS.bend:21-22)
+engine/ClassCtx.bend	Cd.cs	tested	decoder (engine/LAWS.bend:21-22)
+engine/ClassCtx.bend	Cd.fin	tested	decoder (engine/LAWS.bend:21-22)
+engine/ClassCtx.bend	Cd.fin2	tested	decoder (engine/LAWS.bend:21-22)
+engine/ClassCtx.bend	Cd.go	tested	decoder (engine/LAWS.bend:21-22)
+engine/ClassCtx.bend	Cd.rl	tested	decoder (engine/LAWS.bend:21-22)
+engine/ClassCtx.bend	ClassCtx.decode	tested	decoder (engine/LAWS.bend:21-22)
+engine/ClassCtx.bend	ClassCtx.findings	proven	ClassCtx-LAWS.bend:classctx_complete ClassCtx-LAWS.bend:classctx_sound ClassCtx-LAWS.bend:run_is_findings
+engine/ClassCtx.bend	ClassCtx.lines	proven	ClassCtx-LAWS.bend:lines_shape LAWS.bend:engine_classctx_lines
+engine/ClassCtx.bend	ClassCtx.run	proven	ClassCtx-LAWS.bend:run_is_findings ClassCtx-LAWS.bend:run_refuses_invalid LAWS.bend:engine_classctx_run
+engine/ClassCtx.bend	ClassCtx.run2	under-law	only through a caller; e.g. ClassCtx-LAWS.bend:run_is_findings
+engine/ClassCtx.bend	ClassCtx.valid	proven	ClassCtx-LAWS.bend:run_is_findings ClassCtx-LAWS.bend:run_refuses_invalid
+engine/ClassCtx.bend	Cx.ctx_ok	proven	ClassCtx-LAWS.bend:classctx_complete ClassCtx-LAWS.bend:classctx_sound ClassCtx-LAWS.bend:ctx_ok_is_masks
+engine/ClassCtx.bend	Cx.find	under-law	only through a caller; e.g. ClassCtx-LAWS.bend:classctx_complete
+engine/ClassCtx.bend	Cx.hit	under-law	only through a caller; e.g. ClassCtx-LAWS.bend:classctx_complete
+engine/ClassCtx.bend	Cx.ids	under-law	only through a caller; e.g. ClassCtx-LAWS.bend:classctx_complete
+engine/ClassCtx.bend	Cx.lt2	under-law	only through a caller; e.g. ClassCtx-LAWS.bend:run_is_findings
+engine/ClassCtx.bend	Cx.lt4	under-law	only through a caller; e.g. ClassCtx-LAWS.bend:run_is_findings
+engine/ClassCtx.bend	Cx.push_f	under-law	only through a caller; e.g. ClassCtx-LAWS.bend:classctx_complete
+engine/ClassCtx.bend	Cx.push_u	under-law	only through a caller; e.g. ClassCtx-LAWS.bend:classctx_complete
+engine/ClassCtx.bend	Cx.row	under-law	only through a caller; e.g. ClassCtx-LAWS.bend:classctx_complete
+engine/ClassCtx.bend	Cx.rules	under-law	only through a caller; e.g. ClassCtx-LAWS.bend:classctx_complete
+engine/ClassCtx.bend	Cx.rules_go	under-law	only through a caller; e.g. ClassCtx-LAWS.bend:classctx_complete
+engine/ClassCtx.bend	Cx.sites	under-law	only through a caller; e.g. ClassCtx-LAWS.bend:classctx_complete
+engine/ClassCtx.bend	Cx.tables	under-law	only through a caller; e.g. ClassCtx-LAWS.bend:classctx_complete
+engine/ClassCtx.bend	Va.cls	under-law	only through a caller; e.g. ClassCtx-LAWS.bend:run_is_findings
+engine/ClassCtx.bend	Va.css	under-law	only through a caller; e.g. ClassCtx-LAWS.bend:run_is_findings
+engine/ClassCtx.bend	Va.rls	under-law	only through a caller; e.g. ClassCtx-LAWS.bend:run_is_findings
+engine/Cognitive.bend	CS.last	under-law	only through a caller; e.g. Cognitive-LAWS.bend:cog_catch
+engine/Cognitive.bend	CS.n	proven	Cognitive-LAWS.bend:cog_catch Cognitive-LAWS.bend:cog_else_if_flat Cognitive-LAWS.bend:cog_if_at_level Cognitive-LAWS.bend:cog_loop_nests Cognitive-LAWS.bend:cog_measure_cons Cognitive-LAWS.bend:cog_op_change Cognitive-LAWS.bend:cog_then_if_nests
+engine/Cognitive.bend	CS.ops	proven	Cognitive-LAWS.bend:cog_measure_cons
+engine/Cognitive.bend	Cog.after	under-law	only through a caller; e.g. Cognitive-LAWS.bend:cog_catch
+engine/Cognitive.bend	Cog.default_thr	under-law	only through a caller; e.g. MetricsIn-LAWS.bend:glue_measures
+engine/Cognitive.bend	Cog.findings	proven	Cognitive-LAWS.bend:cog_findings_complete Cognitive-LAWS.bend:cog_findings_sound Cognitive-LAWS.bend:cog_lines Cognitive-LAWS.bend:cog_skips_tests
+engine/Cognitive.bend	Cog.fx_line	under-law	only through a caller; e.g. Cognitive-LAWS.bend:cog_lines
+engine/Cognitive.bend	Cog.fxs	proven	Cognitive-LAWS.bend:cog_lines
+engine/Cognitive.bend	Cog.inc	under-law	only through a caller; e.g. Cognitive-LAWS.bend:cog_catch
+engine/Cognitive.bend	Cog.kctx	under-law	only through a caller; e.g. Cognitive-LAWS.bend:cog_catch
+engine/Cognitive.bend	Cog.kctx_arm	under-law	only through a caller; e.g. Cognitive-LAWS.bend:cog_catch
+engine/Cognitive.bend	Cog.klvl	under-law	only through a caller; e.g. Cognitive-LAWS.bend:cog_catch
+engine/Cognitive.bend	Cog.klvl_arm	under-law	only through a caller; e.g. Cognitive-LAWS.bend:cog_catch
+engine/Cognitive.bend	Cog.last	under-law	only through a caller; e.g. Cognitive-LAWS.bend:cog_catch
+engine/Cognitive.bend	Cog.measure_all	proven	Cognitive-LAWS.bend:cog_lines Cognitive-LAWS.bend:cog_measure_cons
+engine/Cognitive.bend	Cog.of	proven	Cognitive-LAWS.bend:cog_measure_cons
+engine/Cognitive.bend	Cog.op_of	under-law	only through a caller; e.g. Cognitive-LAWS.bend:cog_catch
+engine/Cognitive.bend	Cog.ops_after	under-law	only through a caller; e.g. Cognitive-LAWS.bend:cog_catch
+engine/Cognitive.bend	Cog.prod	under-law	only through a caller; e.g. Cognitive-LAWS.bend:cog_findings_complete
+engine/Cognitive.bend	Cog.self	under-law	only through a caller; e.g. Cognitive-LAWS.bend:cog_catch
+engine/Cognitive.bend	Cog.seq	proven	Cognitive-LAWS.bend:cog_catch Cognitive-LAWS.bend:cog_else_if_flat Cognitive-LAWS.bend:cog_if_at_level Cognitive-LAWS.bend:cog_loop_nests Cognitive-LAWS.bend:cog_multi_arm_free Cognitive-LAWS.bend:cog_nested_fn_free Cognitive-LAWS.bend:cog_op_change Cognitive-LAWS.bend:cog_same_op_once Cognitive-LAWS.bend:cog_then_if_nests
+engine/Cognitive.bend	Cognitive.lines	proven	Cognitive-LAWS.bend:cog_lines MetricsIn-LAWS.bend:glue_measures
+engine/Cognitive.bend	Ops.hd	under-law	only through a caller; e.g. Cognitive-LAWS.bend:cog_catch
+engine/Cognitive.bend	Ops.tl	under-law	only through a caller; e.g. Cognitive-LAWS.bend:cog_catch
+engine/Crap.bend	Crap.add	under-law	only through a caller; e.g. Crap-LAWS.bend:crap_run
+engine/Crap.bend	Crap.cons	under-law	only through a caller; e.g. Crap-LAWS.bend:crap_run
+engine/Crap.bend	Crap.cube	proven	Crap-LAWS.bend:crap_term_is_floor
+engine/Crap.bend	Crap.default_thr	under-law	only through a caller; e.g. MetricsIn-LAWS.bend:glue_measures
+engine/Crap.bend	Crap.ev	under-law	only through a caller; e.g. Crap-LAWS.bend:crap_lines_shape
+engine/Crap.bend	Crap.ev_pick	under-law	only through a caller; e.g. Crap-LAWS.bend:crap_lines_shape
+engine/Crap.bend	Crap.findings	proven	Crap-LAWS.bend:crap_findings_complete Crap-LAWS.bend:crap_findings_sound Crap-LAWS.bend:crap_lines_shape Crap-LAWS.bend:crap_skips_tests MetricsIn-LAWS.bend:glue_prints_lines
+engine/Crap.bend	Crap.fx_line	under-law	only through a caller; e.g. Crap-LAWS.bend:crap_lines_shape
+engine/Crap.bend	Crap.fxs	proven	Crap-LAWS.bend:crap_lines_shape
+engine/Crap.bend	Crap.ge	under-law	only through a caller; e.g. Crap-LAWS.bend:crap_at_least_c
+engine/Crap.bend	Crap.join	proven	Crap-LAWS.bend:crap_run MetricsIn-LAWS.bend:glue_measures
+engine/Crap.bend	Crap.keep2	under-law	only through a caller; e.g. Crap-LAWS.bend:crap_run
+engine/Crap.bend	Crap.lines	proven	Crap-LAWS.bend:crap_lines_shape Crap-LAWS.bend:crap_out_lines MetricsIn-LAWS.bend:glue_prints_lines
+engine/Crap.bend	Crap.measure	proven	Crap-LAWS.bend:crap_measure Crap-LAWS.bend:crap_measure_all_cons
+engine/Crap.bend	Crap.measure_all	proven	Crap-LAWS.bend:crap_measure_all_cons Crap-LAWS.bend:crap_out_lines MetricsIn-LAWS.bend:glue_prints_lines
+engine/Crap.bend	Crap.prod	under-law	only through a caller; e.g. Crap-LAWS.bend:crap_findings_complete
+engine/Crap.bend	Crap.rest	under-law	only through a caller; e.g. Crap-LAWS.bend:crap_run
+engine/Crap.bend	Crap.term	proven	Crap-LAWS.bend:crap_term_is_floor Crap-LAWS.bend:crap_value
+engine/Crap.bend	Crap.value	proven	Crap-LAWS.bend:crap_at_least_c Crap-LAWS.bend:crap_full_coverage Crap-LAWS.bend:crap_measure Crap-LAWS.bend:crap_monotone_coverage Crap-LAWS.bend:crap_value
+engine/Crap.bend	Md.go	under-law	only through a caller; e.g. Crap-LAWS.bend:crap_at_least_c
+engine/Crap.bend	Md.step	under-law	only through a caller; e.g. Crap-LAWS.bend:crap_at_least_c
+engine/Crap.bend	QR.q	under-law	only through a caller; e.g. Crap-LAWS.bend:crap_at_least_c
+engine/Facts.bend	Facts.add	proven	LAWS.bend:fact_empty_clause_is_edge LAWS.bend:fact_export_from_is_edge LAWS.bend:fact_export_self_dropped LAWS.bend:fact_import_self_kept LAWS.bend:fact_side_effect_import_is_edge LAWS.bend:fact_type_only_not_edge LAWS.bend:fact_value_import_is_edge LAWS.bend:verdict_export_adds_edge LAWS.bend:verdict_export_self_dropped LAWS.bend:verdict_import_adds_edge LAWS.bend:verdict_type_only_no_edge Scope-LAWS.bend:scope_both_prod_is_rule
+engine/Facts.bend	Facts.apply	under-law	only through a caller; e.g. LAWS.bend:fact_empty_clause_is_edge
+engine/Facts.bend	Facts.close_n	tested	row grouping / file count (engine/LAWS.bend:13-20)
+engine/Facts.bend	Facts.edge_kind	proven	LAWS.bend:kind_is_value_kind
+engine/Facts.bend	Facts.finish	under-law	only through a caller; e.g. LAWS.bend:pipeline_cycles_are_graph_cycles
+engine/Facts.bend	Facts.flag	proven	LAWS.bend:kind_is_value_kind
+engine/Facts.bend	Facts.gap	under-law	only through a caller; e.g. LAWS.bend:pipeline_cycles_are_graph_cycles
+engine/Facts.bend	Facts.gap2	under-law	only through a caller; e.g. LAWS.bend:pipeline_cycles_are_graph_cycles
+engine/Facts.bend	Facts.kind	proven	LAWS.bend:kind_is_value_kind LAWS.bend:verdict_exhaustive LAWS.bend:verdict_export_adds_edge LAWS.bend:verdict_export_self_dropped LAWS.bend:verdict_import_adds_edge LAWS.bend:verdict_type_only_no_edge
+engine/Facts.bend	Facts.kind2	under-law	only through a caller; e.g. LAWS.bend:fact_empty_clause_is_edge
+engine/Facts.bend	Facts.ok1	under-law	only through a caller; e.g. LAWS.bend:pipeline_cycles_are_graph_cycles
+engine/Facts.bend	Facts.rows	under-law	only through a caller; e.g. LAWS.bend:pipeline_cycles_are_graph_cycles
+engine/Facts.bend	Facts.src_of	under-law	only through a caller; e.g. LAWS.bend:pipeline_cycles_are_graph_cycles
+engine/Facts.bend	Facts.valid	proven	LAWS.bend:pipeline_cycles_are_graph_cycles LAWS.bend:pipeline_is_analyze LAWS.bend:pipeline_refuses_invalid
+engine/Hotspot.bend	Hotspot.lines	proven	Hotspot-LAWS.bend:hs_lines_shape MetricsIn-LAWS.bend:glue_prints_lines
+engine/Hotspot.bend	Hs.any	under-law	only through a caller; e.g. Hotspot-LAWS.bend:hs_complete
+engine/Hotspot.bend	Hs.base_ok	proven	Hotspot-LAWS.bend:hotspot_bases Hotspot-LAWS.bend:hs_complete Hotspot-LAWS.bend:hs_sound Hotspot-LAWS.bend:risky_bases
+engine/Hotspot.bend	Hs.comp	under-law	only through a caller; e.g. Hotspot-LAWS.bend:hotspot_bases
+engine/Hotspot.bend	Hs.default_thr	under-law	only through a caller; e.g. MetricsIn-LAWS.bend:glue_measures
+engine/Hotspot.bend	Hs.ev_keep	under-law	only through a caller; e.g. Hotspot-LAWS.bend:hs_lines_shape
+engine/Hotspot.bend	Hs.evs	under-law	only through a caller; e.g. Hotspot-LAWS.bend:hs_lines_shape
+engine/Hotspot.bend	Hs.find	proven	Hotspot-LAWS.bend:hs_complete Hotspot-LAWS.bend:hs_lines_shape Hotspot-LAWS.bend:hs_sound
+engine/Hotspot.bend	Hs.out	proven	Hotspot-LAWS.bend:hs_lines_shape
+engine/Hotspot.bend	Hs.rid	under-law	only through a caller; e.g. Hotspot-LAWS.bend:hs_lines_shape
+engine/Layers.bend	Bd.ins	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Bd.ins_k	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Bd.lt	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Bd.same	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Bd.sort	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Bf.add	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Bf.add2	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Bf.all	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Bf.empty	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Bf.round	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Bf.run	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Bf.seen	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Bf.starts	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Bf.starts2	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Bf.step	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Bf.visit	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Dc.eq	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Dc.ins	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Dc.ins_k	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Dc.lt	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Dc.sort	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Du.bds	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Du.bds2	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Du.check	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Du.inner	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Du.keep	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Du.mk	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Du.nacc	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Du.nfirst	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Du.outer	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Du.pairs	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Du.pairs0	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Du.path2	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Du.path_to	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Du.push	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Du.top	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Du.top2	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Du.top3	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Du.tops	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Hb.cand2	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Hb.cands	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Hb.check	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Hb.cnt	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Hb.hubs2	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Hb.keep	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Hb.lc_fns	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Hb.lc_set	proven	Layers-LAWS.bend:hub_counts
+engine/Layers.bend	Hb.lq_ids	proven	Layers-LAWS.bend:hub_counts
+engine/Layers.bend	Hb.push	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Hb.ta	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Hb.tb	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Hb.us_ids	proven	Layers-LAWS.bend:hub_counts
+engine/Layers.bend	LF.lcs	proven	Layers-LAWS.bend:hub_counts
+engine/Layers.bend	LF.los	proven	Layers-LAWS.bend:unprovided_no_opaque
+engine/Layers.bend	LF.lps	proven	Layers-LAWS.bend:dup_one_composition Layers-LAWS.bend:unprovided_no_builder Layers-LAWS.bend:unprovided_no_opaque Layers-LAWS.bend:unprovided_rooted
+engine/Layers.bend	LF.lqs	proven	Layers-LAWS.bend:hub_counts Layers-LAWS.bend:req_edge_sound Layers-LAWS.bend:unprovided_requires
+engine/Layers.bend	LF.lrs	proven	Layers-LAWS.bend:unprovided_no_builder Layers-LAWS.bend:unprovided_no_opaque Layers-LAWS.bend:unprovided_rooted
+engine/Layers.bend	LF.lys	proven	Layers-LAWS.bend:dup_builders Layers-LAWS.bend:req_edge_sound Layers-LAWS.bend:unprovided_no_builder
+engine/Layers.bend	LF.nl	proven	Layers-LAWS.bend:run_is_detectors
+engine/Layers.bend	LF.nr	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	LF.ns	proven	Layers-LAWS.bend:run_is_detectors
+engine/Layers.bend	LF.svs	proven	Layers-LAWS.bend:unprovided_no_default
+engine/Layers.bend	LF.uss	proven	Layers-LAWS.bend:hub_counts
+engine/Layers.bend	LRep.cert	proven	Layers-LAWS.bend:lines_shape
+engine/Layers.bend	LRep.cyc	proven	Layers-LAWS.bend:lines_shape
+engine/Layers.bend	LRep.dup	proven	Layers-LAWS.bend:lines_shape
+engine/Layers.bend	LRep.hub	proven	Layers-LAWS.bend:lines_shape
+engine/Layers.bend	LRep.ids	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	LRep.len	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	LRep.nums	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	LRep.opq	proven	Layers-LAWS.bend:lines_shape
+engine/Layers.bend	LRep.pre	proven	Layers-LAWS.bend:lines_shape
+engine/Layers.bend	LRep.res	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	LRep.summary	proven	Layers-LAWS.bend:lines_shape
+engine/Layers.bend	LRep.unp	proven	Layers-LAWS.bend:lines_shape
+engine/Layers.bend	Layers.decode	tested	decoder (engine/LAWS.bend:21-22)
+engine/Layers.bend	Layers.dups	proven	Layers-LAWS.bend:dup_builders Layers-LAWS.bend:dup_one_composition Layers-LAWS.bend:run_is_detectors
+engine/Layers.bend	Layers.hub_min	proven	Layers-LAWS.bend:hub_counts
+engine/Layers.bend	Layers.hubs	proven	Layers-LAWS.bend:hub_counts Layers-LAWS.bend:run_is_detectors
+engine/Layers.bend	Layers.iota	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Layers.lines	proven	LAWS.bend:engine_layers_lines Layers-LAWS.bend:lines_shape
+engine/Layers.bend	Layers.lp_adj	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Layers.lt2	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Layers.lt3	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Layers.opaque	proven	Layers-LAWS.bend:run_is_detectors
+engine/Layers.bend	Layers.out	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Layers.push_u	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Layers.req_graph	proven	Layers-LAWS.bend:req_edge_sound Layers-LAWS.bend:run_is_detectors
+engine/Layers.bend	Layers.run	proven	LAWS.bend:engine_layers_run Layers-LAWS.bend:run_is_detectors Layers-LAWS.bend:run_refuses_invalid
+engine/Layers.bend	Layers.run2	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Layers.unprovided	proven	Layers-LAWS.bend:run_is_detectors Layers-LAWS.bend:unprovided_no_builder Layers-LAWS.bend:unprovided_no_default Layers-LAWS.bend:unprovided_no_opaque Layers-LAWS.bend:unprovided_requires Layers-LAWS.bend:unprovided_rooted
+engine/Layers.bend	Layers.unprovided_search	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Layers.valid	proven	Layers-LAWS.bend:run_is_detectors Layers-LAWS.bend:run_refuses_invalid
+engine/Layers.bend	Ld.add	tested	decoder (engine/LAWS.bend:21-22)
+engine/Layers.bend	Ld.bad	tested	decoder (engine/LAWS.bend:21-22)
+engine/Layers.bend	Ld.e	tested	decoder (engine/LAWS.bend:21-22)
+engine/Layers.bend	Ld.fin	tested	decoder (engine/LAWS.bend:21-22)
+engine/Layers.bend	Ld.fin2	tested	decoder (engine/LAWS.bend:21-22)
+engine/Layers.bend	Ld.go	tested	decoder (engine/LAWS.bend:21-22)
+engine/Layers.bend	Ld.lc	tested	decoder (engine/LAWS.bend:21-22)
+engine/Layers.bend	Ld.lo	tested	decoder (engine/LAWS.bend:21-22)
+engine/Layers.bend	Ld.lp	tested	decoder (engine/LAWS.bend:21-22)
+engine/Layers.bend	Ld.lq	tested	decoder (engine/LAWS.bend:21-22)
+engine/Layers.bend	Ld.lr	tested	decoder (engine/LAWS.bend:21-22)
+engine/Layers.bend	Ld.ly	tested	decoder (engine/LAWS.bend:21-22)
+engine/Layers.bend	Ld.sv	tested	decoder (engine/LAWS.bend:21-22)
+engine/Layers.bend	Ld.us	tested	decoder (engine/LAWS.bend:21-22)
+engine/Layers.bend	Lo.has	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Lp.has	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Lp.path0	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Lp.row	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Lp.rows	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Lq.has	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Lr.has	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Ly.has	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Pe.v	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Pe.vs	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Rq.builders	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Rq.cands	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Rq.cands2	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Rq.check	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Rq.ins	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Rq.ins_k	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Rq.keep	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Rq.push	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Rq.row	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Rq.rows	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Rq.sort	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Rq.w	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Sv.dflt	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	UR.cs	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	UR.op	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Un.built	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Un.built2	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Un.check	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Un.closed	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Un.first_lo	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Un.ins	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Un.ins_k	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Un.join	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Un.keep	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Un.key_lt	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Un.min2	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Un.min_if	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Un.none_build	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Un.none_opaque	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Un.per	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Un.push	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Un.reqs	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Un.reqs2	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Un.root	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Un.root2	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Un.root3	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Un.root4	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Un.roots	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Un.sort	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Un.starts_in	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Va.lcs	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Va.los	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Va.lps	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Va.lqs	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Va.lrs	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Va.lys	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Va.svs	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Layers.bend	Va.uss	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Metrics.bend	Build.body	under-law	only through a caller; e.g. Metrics-LAWS.bend:run_measures_trees
+engine/Metrics.bend	Build.chain	under-law	only through a caller; e.g. Metrics-LAWS.bend:run_measures_trees
+engine/Metrics.bend	Build.depth	under-law	only through a caller; e.g. Metrics-LAWS.bend:run_measures_trees
+engine/Metrics.bend	Build.empty	under-law	only through a caller; e.g. Metrics-LAWS.bend:run_measures_trees
+engine/Metrics.bend	Build.finish	under-law	only through a caller; e.g. Metrics-LAWS.bend:run_measures_trees
+engine/Metrics.bend	Build.fold1	under-law	only through a caller; e.g. Metrics-LAWS.bend:run_measures_trees
+engine/Metrics.bend	Build.go	under-law	only through a caller; e.g. Metrics-LAWS.bend:run_measures_trees
+engine/Metrics.bend	Build.kind_ok	under-law	only through a caller; e.g. Metrics-LAWS.bend:run_measures_trees
+engine/Metrics.bend	Build.pop	under-law	only through a caller; e.g. Metrics-LAWS.bend:run_measures_trees
+engine/Metrics.bend	Build.push	under-law	only through a caller; e.g. Metrics-LAWS.bend:run_measures_trees
+engine/Metrics.bend	Build.top_is	under-law	only through a caller; e.g. Metrics-LAWS.bend:run_measures_trees
+engine/Metrics.bend	Build.top_kind	under-law	only through a caller; e.g. Metrics-LAWS.bend:run_measures_trees
+engine/Metrics.bend	Build.tree	under-law	only through a caller; e.g. Metrics-LAWS.bend:run_measures_trees
+engine/Metrics.bend	Cc.arms	proven	Metrics-LAWS.bend:arms_add_up Metrics-LAWS.bend:decision_multi Metrics-LAWS.bend:decision_try
+engine/Metrics.bend	Cc.dflt	proven	Metrics-LAWS.bend:decision_multi
+engine/Metrics.bend	Cc.node	under-law	only through a caller; e.g. Metrics-LAWS.bend:cyclomatic_is_one_plus_decisions
+engine/Metrics.bend	Cc.of	proven	Metrics-LAWS.bend:cyclomatic_is_one_plus_decisions Metrics-LAWS.bend:measure_is_the_measures
+engine/Metrics.bend	Cc.seq	proven	Metrics-LAWS.bend:cyclomatic_is_one_plus_decisions Metrics-LAWS.bend:cyclomatic_skips_nested_fn Metrics-LAWS.bend:decision_branch Metrics-LAWS.bend:decision_loop Metrics-LAWS.bend:decision_multi Metrics-LAWS.bend:decision_short_circuit Metrics-LAWS.bend:decision_try Metrics-LAWS.bend:decisions_add_up Metrics-LAWS.bend:no_decision_arm Metrics-LAWS.bend:no_decision_exit Metrics-LAWS.bend:no_decision_finally Metrics-LAWS.bend:no_decision_flag
+engine/Metrics.bend	Cc.weight	under-law	only through a caller; e.g. Metrics-LAWS.bend:cyclomatic_is_one_plus_decisions
+engine/Metrics.bend	K.arm	proven	Metrics-LAWS.bend:npath_at_least_one Metrics-LAWS.bend:npath_if_without_else Metrics-LAWS.bend:npath_is_nejmeh_capped Metrics-LAWS.bend:npath_loop Metrics-LAWS.bend:npath_printed_if_without_else Metrics-LAWS.bend:npath_printed_is_min Metrics-LAWS.bend:npath_printed_loop Metrics-LAWS.bend:npath_printed_sequence Metrics-LAWS.bend:npath_sequence_is_product
+engine/Metrics.bend	K.flag	proven	Metrics-LAWS.bend:npath_at_least_one Metrics-LAWS.bend:npath_if_without_else Metrics-LAWS.bend:npath_is_nejmeh_capped Metrics-LAWS.bend:npath_loop Metrics-LAWS.bend:npath_printed_if_without_else Metrics-LAWS.bend:npath_printed_is_min Metrics-LAWS.bend:npath_printed_loop Metrics-LAWS.bend:npath_printed_sequence Metrics-LAWS.bend:npath_sequence_is_product
+engine/Metrics.bend	K.of	under-law	only through a caller; e.g. Metrics-LAWS.bend:run_measures_trees
+engine/Metrics.bend	K.sc	proven	Metrics-LAWS.bend:npath_at_least_one Metrics-LAWS.bend:npath_if_without_else Metrics-LAWS.bend:npath_is_nejmeh_capped Metrics-LAWS.bend:npath_loop Metrics-LAWS.bend:npath_printed_if_without_else Metrics-LAWS.bend:npath_printed_is_min Metrics-LAWS.bend:npath_printed_loop Metrics-LAWS.bend:npath_printed_sequence Metrics-LAWS.bend:npath_sequence_is_product
+engine/Metrics.bend	Metrics.defaults	neither	
+engine/Metrics.bend	Metrics.findings	proven	Metrics-LAWS.bend:findings_complete_cyclomatic Metrics-LAWS.bend:findings_complete_length Metrics-LAWS.bend:findings_complete_nesting Metrics-LAWS.bend:findings_complete_npath Metrics-LAWS.bend:findings_skip_tests Metrics-LAWS.bend:findings_sound Metrics-LAWS.bend:lines_shape MetricsIn-LAWS.bend:glue_prints_lines
+engine/Metrics.bend	Metrics.lines	proven	Metrics-LAWS.bend:lines_shape MetricsIn-LAWS.bend:glue_prints_lines
+engine/Metrics.bend	Metrics.measure	proven	Metrics-LAWS.bend:measure_all_cons Metrics-LAWS.bend:measure_is_the_measures
+engine/Metrics.bend	Metrics.measure_all	proven	Metrics-LAWS.bend:measure_all_cons Metrics-LAWS.bend:run_measures_trees MetricsIn-LAWS.bend:glue_measure_is_run MetricsIn-LAWS.bend:glue_measures
+engine/Metrics.bend	Nest.after	under-law	only through a caller; e.g. Metrics-LAWS.bend:measure_all_cons
+engine/Metrics.bend	Nest.arm	under-law	only through a caller; e.g. Metrics-LAWS.bend:measure_all_cons
+engine/Metrics.bend	Nest.kid_mode	under-law	only through a caller; e.g. Metrics-LAWS.bend:measure_all_cons
+engine/Metrics.bend	Nest.lone	under-law	only through a caller; e.g. Cognitive-LAWS.bend:cog_catch
+engine/Metrics.bend	Nest.node	under-law	only through a caller; e.g. Metrics-LAWS.bend:measure_all_cons
+engine/Metrics.bend	Nest.of	proven	Metrics-LAWS.bend:measure_is_the_measures Metrics-LAWS.bend:nesting_else_if_is_flat Metrics-LAWS.bend:nesting_then_if_nests
+engine/Metrics.bend	Nest.seq	proven	Metrics-LAWS.bend:nesting_else_if_is_flat Metrics-LAWS.bend:nesting_loop Metrics-LAWS.bend:nesting_skips_nested_fn Metrics-LAWS.bend:nesting_then_if_nests
+engine/Metrics.bend	Np.agg	proven	Metrics-LAWS.bend:npath_ignores_nested_fn_body Metrics-LAWS.bend:npath_is_nejmeh_capped
+engine/Metrics.bend	Np.cons	under-law	only through a caller; e.g. Metrics-LAWS.bend:measure_all_cons
+engine/Metrics.bend	Np.empty	under-law	only through a caller; e.g. Metrics-LAWS.bend:measure_all_cons
+engine/Metrics.bend	Np.fin_of	under-law	only through a caller; e.g. Metrics-LAWS.bend:measure_all_cons
+engine/Metrics.bend	Np.kids	under-law	only through a caller; e.g. Metrics-LAWS.bend:measure_all_cons
+engine/Metrics.bend	Np.of	proven	Metrics-LAWS.bend:measure_is_the_measures Metrics-LAWS.bend:npath_arm_monotone_branch Metrics-LAWS.bend:npath_arm_monotone_multi Metrics-LAWS.bend:npath_arm_monotone_try Metrics-LAWS.bend:npath_printed_at_least_one Metrics-LAWS.bend:npath_printed_if_without_else Metrics-LAWS.bend:npath_printed_is_min Metrics-LAWS.bend:npath_printed_loop Metrics-LAWS.bend:npath_printed_sequence
+engine/Metrics.bend	Np.prod	proven	Metrics-LAWS.bend:npath_at_least_one Metrics-LAWS.bend:npath_if_without_else Metrics-LAWS.bend:npath_loop Metrics-LAWS.bend:npath_printed_if_without_else Metrics-LAWS.bend:npath_printed_is_min Metrics-LAWS.bend:npath_printed_loop Metrics-LAWS.bend:npath_printed_sequence Metrics-LAWS.bend:npath_sequence_is_product
+engine/Metrics.bend	Np.val	under-law	only through a caller; e.g. Metrics-LAWS.bend:measure_all_cons
+engine/Metrics.bend	Np.value	under-law	only through a caller; e.g. Metrics-LAWS.bend:measure_all_cons
+engine/Metrics.bend	Report.fm	under-law	only through a caller; e.g. Metrics-LAWS.bend:lines_shape
+engine/Metrics.bend	Report.fms	proven	Metrics-LAWS.bend:lines_shape
+engine/Metrics.bend	Report.fx	under-law	only through a caller; e.g. Metrics-LAWS.bend:lines_shape
+engine/Metrics.bend	Report.fxs	proven	Metrics-LAWS.bend:lines_shape
+engine/Metrics.bend	Rule.check	under-law	only through a caller; e.g. Cognitive-LAWS.bend:cog_findings_complete
+engine/Metrics.bend	Rule.id	under-law	only through a caller; e.g. Metrics-LAWS.bend:lines_shape
+engine/Metrics.bend	Rule.keep	under-law	only through a caller; e.g. Cognitive-LAWS.bend:cog_findings_complete
+engine/Metrics.bend	Rule.one	under-law	only through a caller; e.g. Metrics-LAWS.bend:findings_complete_cyclomatic
+engine/Metrics.bend	Rule.prod	under-law	only through a caller; e.g. Metrics-LAWS.bend:findings_complete_cyclomatic
+engine/Metrics.bend	Rules.cap	proven	Metrics-LAWS.bend:run_measures_trees MetricsIn-LAWS.bend:glue_measures MetricsIn-LAWS.bend:glue_trees
+engine/Metrics.bend	Sat.add	under-law	only through a caller; e.g. Metrics-LAWS.bend:measure_all_cons
+engine/Metrics.bend	Sat.mul	under-law	only through a caller; e.g. Metrics-LAWS.bend:measure_all_cons
+engine/Metrics.bend	Span.for	under-law	only through a caller; e.g. Metrics-LAWS.bend:run_measures_trees
+engine/Metrics.bend	Span.hit	under-law	only through a caller; e.g. Metrics-LAWS.bend:run_measures_trees
+engine/Metrics.bend	Span.of	under-law	only through a caller; e.g. Metrics-LAWS.bend:run_measures_trees
+engine/Metrics.bend	Span.push	under-law	only through a caller; e.g. Metrics-LAWS.bend:run_measures_trees
+engine/Metrics.bend	Trees.cons	under-law	only through a caller; e.g. Metrics-LAWS.bend:run_measures_trees
+engine/Metrics.bend	Trees.go	under-law	only through a caller; e.g. Metrics-LAWS.bend:run_measures_trees
+engine/Metrics.bend	Trees.of	proven	Metrics-LAWS.bend:run_measures_trees Metrics-LAWS.bend:run_refuses_invalid MetricsIn-LAWS.bend:glue_runs_metrics MetricsIn-LAWS.bend:glue_trees
+engine/Metrics.bend	Trees.ok	under-law	only through a caller; e.g. Metrics-LAWS.bend:run_measures_trees
+engine/MetricsIn.bend	In.align	tested	decoder (MetricsIn-LAWS.bend:12-15)
+engine/MetricsIn.bend	In.all	under-law	only through a caller; e.g. MetricsIn-LAWS.bend:glue_measures
+engine/MetricsIn.bend	In.co3	tested	decoder (MetricsIn-LAWS.bend:12-15)
+engine/MetricsIn.bend	In.co_pick	tested	decoder (MetricsIn-LAWS.bend:12-15)
+engine/MetricsIn.bend	In.co_rest	tested	decoder (MetricsIn-LAWS.bend:12-15)
+engine/MetricsIn.bend	In.comp	proven	MetricsIn-LAWS.bend:glue_measures MetricsIn-LAWS.bend:glue_prints_lines MetricsIn-LAWS.bend:glue_refuses_join
+engine/MetricsIn.bend	In.cons_co	tested	decoder (MetricsIn-LAWS.bend:12-15)
+engine/MetricsIn.bend	In.cons_ct	tested	decoder (MetricsIn-LAWS.bend:12-15)
+engine/MetricsIn.bend	In.cons_cv	tested	decoder (MetricsIn-LAWS.bend:12-15)
+engine/MetricsIn.bend	In.cons_fn	tested	decoder (MetricsIn-LAWS.bend:12-15)
+engine/MetricsIn.bend	In.cons_op	tested	decoder (MetricsIn-LAWS.bend:12-15)
+engine/MetricsIn.bend	In.cons_tf	tested	decoder (MetricsIn-LAWS.bend:12-15)
+engine/MetricsIn.bend	In.cos	tested	decoder (MetricsIn-LAWS.bend:12-15)
+engine/MetricsIn.bend	In.ct4	tested	decoder (MetricsIn-LAWS.bend:12-15)
+engine/MetricsIn.bend	In.ct_pick	tested	decoder (MetricsIn-LAWS.bend:12-15)
+engine/MetricsIn.bend	In.cts	tested	decoder (MetricsIn-LAWS.bend:12-15)
+engine/MetricsIn.bend	In.cv3	tested	decoder (MetricsIn-LAWS.bend:12-15)
+engine/MetricsIn.bend	In.cv_pick	tested	decoder (MetricsIn-LAWS.bend:12-15)
+engine/MetricsIn.bend	In.cvs	tested	decoder (MetricsIn-LAWS.bend:12-15)
+engine/MetricsIn.bend	In.fn4	tested	decoder (MetricsIn-LAWS.bend:12-15)
+engine/MetricsIn.bend	In.fn_pick	tested	decoder (MetricsIn-LAWS.bend:12-15)
+engine/MetricsIn.bend	In.fns	tested	decoder (MetricsIn-LAWS.bend:12-15)
+engine/MetricsIn.bend	In.go	proven	MetricsIn-LAWS.bend:glue_runs_metrics
+engine/MetricsIn.bend	In.mark	tested	decoder (MetricsIn-LAWS.bend:12-15)
+engine/MetricsIn.bend	In.marked	tested	decoder (MetricsIn-LAWS.bend:12-15)
+engine/MetricsIn.bend	In.meas	under-law	only through a caller; e.g. MetricsIn-LAWS.bend:glue_measures
+engine/MetricsIn.bend	In.op	tested	decoder (MetricsIn-LAWS.bend:12-15)
+engine/MetricsIn.bend	In.op_pick	tested	decoder (MetricsIn-LAWS.bend:12-15)
+engine/MetricsIn.bend	In.ops	tested	decoder (MetricsIn-LAWS.bend:12-15)
+engine/MetricsIn.bend	In.out	proven	MetricsIn-LAWS.bend:glue_measures MetricsIn-LAWS.bend:glue_refuses MetricsIn-LAWS.bend:glue_refuses_co MetricsIn-LAWS.bend:glue_refuses_cv MetricsIn-LAWS.bend:glue_runs_metrics
+engine/MetricsIn.bend	In.rest	tested	decoder (MetricsIn-LAWS.bend:12-15)
+engine/MetricsIn.bend	In.tag_co	tested	decoder (MetricsIn-LAWS.bend:12-15)
+engine/MetricsIn.bend	In.tag_ct	tested	decoder (MetricsIn-LAWS.bend:12-15)
+engine/MetricsIn.bend	In.tag_cv	tested	decoder (MetricsIn-LAWS.bend:12-15)
+engine/MetricsIn.bend	In.tag_fn	tested	decoder (MetricsIn-LAWS.bend:12-15)
+engine/MetricsIn.bend	In.tag_tf	tested	decoder (MetricsIn-LAWS.bend:12-15)
+engine/MetricsIn.bend	In.tf1	tested	decoder (MetricsIn-LAWS.bend:12-15)
+engine/MetricsIn.bend	In.tf_pick	tested	decoder (MetricsIn-LAWS.bend:12-15)
+engine/MetricsIn.bend	In.tfs	tested	decoder (MetricsIn-LAWS.bend:12-15)
+engine/MetricsIn.bend	MetricsIn.lines	neither	
+engine/Parse.bend	Parse.add_fact	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Parse.bend	Parse.add_prod	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Parse.bend	Parse.add_prod2	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Parse.bend	Parse.classify	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Parse.bend	Parse.cls	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Parse.bend	Parse.cls2	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Parse.bend	Parse.consumed	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Parse.bend	Parse.done1	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Parse.bend	Parse.done2	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Parse.bend	Parse.done3	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Parse.bend	Parse.fail	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Parse.bend	Parse.feed	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Parse.bend	Parse.finish	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Parse.bend	Parse.flag_ovf	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Parse.bend	Parse.go	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Parse.bend	Parse.inc	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Parse.bend	Parse.inc2	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Parse.bend	Parse.inc3	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Parse.bend	Parse.line_end	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Parse.bend	Parse.mad	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Parse.bend	Parse.mad2	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Parse.bend	Parse.ovf	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Parse.bend	Parse.set_bad	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Parse.bend	Parse.set_hdr	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Parse.bend	Parse.set_n	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Parse.bend	Parse.start	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Parse.bend	Parse.stray	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Parse.bend	Parse.tag_id	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Parse.bend	Parse.tag_id2	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Parse.bend	Parse.tag_id3	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Parse.bend	Parse.tag_one	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Parse.bend	Parse.tagacc	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Parse.bend	Parse.tinc	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Pipeline.bend	Engine.all	proven	LAWS.bend:engine_all
+engine/Pipeline.bend	Engine.classctx	proven	LAWS.bend:engine_all LAWS.bend:engine_classctx_off LAWS.bend:engine_classctx_on
+engine/Pipeline.bend	Engine.cx1	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Pipeline.bend	Engine.cx2	proven	LAWS.bend:engine_classctx_on LAWS.bend:engine_classctx_run
+engine/Pipeline.bend	Engine.cx3	proven	LAWS.bend:engine_classctx_lines LAWS.bend:engine_classctx_run
+engine/Pipeline.bend	Engine.has_tag	proven	LAWS.bend:engine_classctx_off LAWS.bend:engine_classctx_on LAWS.bend:engine_layers_off LAWS.bend:engine_layers_on
+engine/Pipeline.bend	Engine.join	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Pipeline.bend	Engine.layers	proven	LAWS.bend:engine_all LAWS.bend:engine_layers_off LAWS.bend:engine_layers_on
+engine/Pipeline.bend	Engine.lines	proven	LAWS.bend:engine_all LAWS.bend:engine_is_both LAWS.bend:engine_refuses_graph LAWS.bend:engine_refuses_metrics
+engine/Pipeline.bend	Engine.ly1	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Pipeline.bend	Engine.ly2	proven	LAWS.bend:engine_layers_on LAWS.bend:engine_layers_run
+engine/Pipeline.bend	Engine.ly3	proven	LAWS.bend:engine_layers_lines LAWS.bend:engine_layers_run
+engine/Pipeline.bend	Engine.more	proven	LAWS.bend:engine_all LAWS.bend:engine_more_both LAWS.bend:engine_more_refuses_left LAWS.bend:engine_more_refuses_right
+engine/Pipeline.bend	Engine.row_tags	neither	
+engine/Pipeline.bend	Engine.tag_e	proven	LAWS.bend:engine_layers_off LAWS.bend:engine_layers_on
+engine/Pipeline.bend	Engine.tag_rl	proven	LAWS.bend:engine_classctx_off LAWS.bend:engine_classctx_on
+engine/Pipeline.bend	Pipeline.out	under-law	only through a caller; e.g. LAWS.bend:pipeline_cycles_are_graph_cycles
+engine/Pipeline.bend	Pipeline.run	proven	LAWS.bend:pipeline_cycles_are_graph_cycles LAWS.bend:pipeline_is_analyze LAWS.bend:pipeline_refuses_invalid
+engine/Pipeline.bend	Pipeline.run2	under-law	only through a caller; e.g. LAWS.bend:pipeline_cycles_are_graph_cycles
+engine/Pipeline.bend	Pipeline.run3	under-law	only through a caller; e.g. LAWS.bend:pipeline_cycles_are_graph_cycles
+engine/Pipeline.bend	Report.cert_line	proven	LAWS.bend:report_shape
+engine/Pipeline.bend	Report.cyc_line	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Pipeline.bend	Report.cyc_lines	proven	LAWS.bend:report_shape
+engine/Pipeline.bend	Report.ids	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Pipeline.bend	Report.lines	proven	LAWS.bend:engine_is_both LAWS.bend:report_shape
+engine/Pipeline.bend	Report.res_lines	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Pipeline.bend	Report.summary	proven	LAWS.bend:report_shape
+engine/Pipeline.bend	Report.tail	under-law	only through a caller; e.g. LAWS.bend:engine_all
+engine/Rows.bend	Rows.after_tag	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Rows.bend	Rows.bad	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Rows.bend	Rows.done1	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Rows.bend	Rows.done2	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Rows.bend	Rows.done3	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Rows.bend	Rows.end_line	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Rows.bend	Rows.fail	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Rows.bend	Rows.feed	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Rows.bend	Rows.finish	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Rows.bend	Rows.g_wants	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Rows.bend	Rows.go	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Rows.bend	Rows.hdr	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Rows.bend	Rows.hdr2	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Rows.bend	Rows.mem	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Rows.bend	Rows.ovf2	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Rows.bend	Rows.push	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Rows.bend	Rows.push2	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Rows.bend	Rows.start_keep	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Rows.bend	Rows.tag_add	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Rows.bend	Rows.tag_add2	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Rows.bend	Rows.wants	tested	reader (engine/LAWS.bend:10-11, 21-22)
+engine/Scope.bend	Scope.add	proven	Scope-LAWS.bend:scope_both_prod_is_rule Scope-LAWS.bend:scope_dst_not_prod_no_edge Scope-LAWS.bend:scope_src_not_prod_no_edge
+engine/Scope.bend	Scope.add2	under-law	only through a caller; e.g. LAWS.bend:pipeline_cycles_are_graph_cycles
+engine/Scope.bend	Scope.count	tested	row grouping / file count (engine/LAWS.bend:13-20)
+engine/Scope.bend	Scope.go	tested	row grouping / file count (engine/LAWS.bend:13-20)
+engine/Scope.bend	Scope.graph	proven	LAWS.bend:pipeline_cycles_are_graph_cycles LAWS.bend:pipeline_is_analyze
+engine/Scope.bend	Scope.has	proven	Scope-LAWS.bend:scope_both_prod_is_rule Scope-LAWS.bend:scope_dst_not_prod_no_edge Scope-LAWS.bend:scope_set_complete Scope-LAWS.bend:scope_set_sound Scope-LAWS.bend:scope_src_not_prod_no_edge
+engine/Scope.bend	Scope.has2	under-law	only through a caller; e.g. ClassCtx-LAWS.bend:classctx_complete
+engine/Scope.bend	Scope.in_scope	under-law	only through a caller; e.g. LAWS.bend:pipeline_cycles_are_graph_cycles
+engine/Scope.bend	Scope.set	proven	LAWS.bend:pipeline_cycles_are_graph_cycles LAWS.bend:pipeline_is_analyze Scope-LAWS.bend:scope_set_complete Scope-LAWS.bend:scope_set_sound
+engine/main.bend	Main.chunk_size	effects	IO only (main.bend:1-12)
+engine/main.bend	Main.chunks	effects	IO only (main.bend:1-12)
+engine/main.bend	Main.close_parse	effects	IO only (main.bend:1-12)
+engine/main.bend	Main.done	effects	IO only (main.bend:1-12)
+engine/main.bend	Main.feed	effects	IO only (main.bend:1-12)
+engine/main.bend	Main.feed2	effects	IO only (main.bend:1-12)
+engine/main.bend	Main.go	effects	IO only (main.bend:1-12)
+engine/main.bend	Main.nchunks	effects	IO only (main.bend:1-12)
+engine/main.bend	Main.opened	effects	IO only (main.bend:1-12)
+engine/main.bend	Main.parse_sized	effects	IO only (main.bend:1-12)
+engine/main.bend	Main.print_lines	effects	IO only (main.bend:1-12)
+engine/main.bend	Main.read_facts	effects	IO only (main.bend:1-12)
+engine/main.bend	Main.read_one	effects	IO only (main.bend:1-12)
+engine/main.bend	Main.report	effects	IO only (main.bend:1-12)
+engine/main.bend	Main.run	effects	IO only (main.bend:1-12)
+engine/main.bend	Main.run_both	effects	IO only (main.bend:1-12)
+engine/main.bend	Main.run_parsed	effects	IO only (main.bend:1-12)
+engine/main.bend	Main.run_parsed2	effects	IO only (main.bend:1-12)
+engine/main.bend	Main.run_rows	effects	IO only (main.bend:1-12)
+engine/main.bend	Main.step	effects	IO only (main.bend:1-12)
+engine/main.bend	main	effects	IO only (main.bend:1-12)
