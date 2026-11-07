@@ -131,6 +131,9 @@ pub struct HookCx<'a> {
     pub fn_local: Option<u32>,
     pub ctx: u8,
     pub resolve: &'a dyn Fn(&Expression<'_>) -> Option<String>,
+    /// The same resolution for a type name (`Layer.Layer`, `SqlClient`): the catalog-style
+    /// symbol an imported or global type reference stands for.
+    pub resolve_type: &'a dyn Fn(&TSTypeName<'_>) -> Option<String>,
 }
 
 /// An `ident.a.b` expression: the root identifier (with its reference, once the semantic pass
@@ -267,7 +270,11 @@ impl<'s> Walker<'s> {
             None => (None, if self.test_file { ctx::TEST } else { 0 }),
         };
         let resolve = |e: &Expression<'_>| self.sym_of(e);
-        f(&mut *hook, &HookCx { fn_local, ctx, resolve: &resolve });
+        let resolve_type = |t: &TSTypeName<'_>| match self.resolve(&self.type_chain(t)?) {
+            Target::Sym(s) => Some(s),
+            _ => None,
+        };
+        f(&mut *hook, &HookCx { fn_local, ctx, resolve: &resolve, resolve_type: &resolve_type });
         self.hook = Some(hook);
     }
 

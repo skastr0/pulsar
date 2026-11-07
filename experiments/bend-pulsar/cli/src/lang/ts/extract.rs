@@ -259,14 +259,18 @@ mod tests {
         }
         fn on_declarator(&mut self, cx: &HookCx<'_>, d: &VariableDeclarator<'_>) {
             if let BindingPattern::BindingIdentifier(b) = &d.id {
-                self.0.push(format!("decl {} fn={:?}", b.name, cx.fn_local));
+                let ty = d.type_annotation.as_ref().and_then(|a| match &a.type_annotation {
+                    oxc_ast::ast::TSType::TSTypeReference(r) => (cx.resolve_type)(&r.type_name),
+                    _ => None,
+                });
+                self.0.push(format!("decl {} fn={:?} type={:?}", b.name, cx.fn_local, ty));
             }
         }
     }
 
     #[test]
     fn a_pack_hook_sees_calls_yields_classes_and_declarators_with_resolved_names() {
-        let src = "import { Effect } from \"effect\";\nimport { SqlClient } from \"@effect/sql\";\nclass Repo {}\nexport const q = Effect.gen(function* () {\n  const sql = yield* SqlClient.SqlClient;\n  Effect.runSync(1);\n});\n";
+        let src = "import { Effect } from \"effect\";\nimport { SqlClient } from \"@effect/sql\";\nclass Repo {}\nexport const q = Effect.gen(function* () {\n  const sql = yield* SqlClient.SqlClient;\n  const typed: SqlClient.SqlClient = sql;\n  Effect.runSync(1);\n});\n";
         let alloc = Allocator::default();
         let ix = all_index();
         let mut rec = Rec::default();
@@ -275,10 +279,11 @@ mod tests {
             rec.0,
             [
                 "class Some(\"Repo\")",
-                "decl q fn=None",
+                "decl q fn=None type=None",
                 "call fn=None ctx=0 sym=Some(\"effect#Effect.gen\")",
-                "decl sql fn=Some(0)",
+                "decl sql fn=Some(0) type=None",
                 "yield* fn=Some(0) sym=Some(\"@effect/sql#SqlClient.SqlClient\")",
+                "decl typed fn=Some(0) type=Some(\"@effect/sql#SqlClient.SqlClient\")",
                 "call fn=Some(0) ctx=2 sym=Some(\"effect#Effect.runSync\")",
             ]
         );
