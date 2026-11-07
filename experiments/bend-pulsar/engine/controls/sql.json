@@ -124,5 +124,23 @@
   "bug": "the section header changes",
   "old": "\"pulsar-sql 0\"",
   "new": "\"pulsar-sql 1\""
+ },
+ {
+  "law": "sql_only_sound",
+  "bug": "the rule filter keeps every rule",
+  "old": "Sq.keep(Sq.on(rule, on),",
+  "new": "Sq.keep(True{},"
+ },
+ {
+  "law": "sql_only_complete",
+  "bug": "the rule filter stops after the first finding",
+  "old": "Sx{rule, id, table, col, d}, Sq.only(on, t))",
+  "new": "Sx{rule, id, table, col, d}, Nil{})"
+ },
+ {
+  "law": "sql_only_complete",
+  "bug": "a rule is on only when it is the first SR row",
+  "old": "Bool.or(U32.is_eq(r, rule), Sq.on(rule, t))",
+  "new": "U32.is_eq(r, rule)"
  }
 ]

@@ -269,6 +269,7 @@ CRAP (Savoia and Evans) is computed in integers: `c² × (coverable − covered)
 | `CL` | `sym class` | Symbol `sym` belongs to catalog class `class`. Classes come from packs and from `.pulsar/catalogs/*.toml`. The CLI matches names to classes, and each class id maps to a catalog rule id in the side table. |
 | `CS` | `site fn callee loop_depth ctx` | A call site in function `fn` calling `sym`. `site` ids are one global space shared with `HD`, in (file id, source order). A site outside any function emits nothing. The event can be a call, a tagged template, a `new`, a reference or a property read, per the catalog entry's `via`; a value bound from a catalog symbol (`const sql = yield* S`, a typed parameter `sql: S`) counts as the symbol when used as the entry's `use` says. `loop_depth` is the number of enclosing loop nodes. `ctx` flags (a bit set), inherited by nested functions: 1 = inside an async function, 2 = pack-defined effect context, 4 = inside a test. Bit 2 is set by an active pack's data, never by core; the Effect pack sets it inside the functions its catalog lists as wrappers: `Effect.gen` and `Effect.fn` bodies, so a layer constructor written with them, and the `Layer.sync` thunk. `Layer.succeed` takes a value, not a thunk, so it adds no context. |
 | `RL` | `rule class ctx_any ctx_none` | Rule `rule` fires on a call to a symbol of `class` whose `ctx` has some bit of `ctx_any` (or `ctx_any` = 0) and no bit of `ctx_none`. The CLI writes RL rows only for active rules: a pack rule whose pack is active, or a rule the repo's `policy.toml` lists. A rule may have several rows; they are OR-ed. Rule ids, names and versions live in the side table. |
+| `RF` | `rule class edges none` | Fan-out rule `rule`: fires on a call site at `loop_depth` > 0 whose `ctx` has no bit of `none` and that reaches a call to a symbol of `class` within `edges` call edges (0 = the site itself calls the class). The CLI writes RF rows only for active rules, one per (rule, class); rule ids, names and versions live in the side table. |
 | `HD` | `site fn shape` | An error handler: a `catch` clause, `.catch(...)`, or an Effect `catch*`/`orElse` callback. `shape`: 0 = other, 1 = empty, 2 = only calls class `log`, 3 = returns a constant or void effect, 4 = rethrows or fails with the cause, 5 = rethrows or fails without the cause. |
 | `CE` | `site fn target node loop_depth ctx` | A call in function `fn` to repo function `target`. `site` is the same id space as `CS` and `HD`; `loop_depth` and `ctx` are as in `CS`; `node` is the innermost control-tree node of `fn` at the call (0 = the function body), so loop ancestry comes from `CT`. A call inside an iterator callback belongs to the callback's own function id. |
 | `CU` | `fn reason count` | Calls in `fn` that could not become an edge, by reason: 1 = callee is not a name path (a call result, an element access, a computed key); 2 = rooted at a parameter or local binding that is not a module-level function, class or object; 3 = a member of a repo object or class whose methods are not known (deeper than one member, or not defined); 4 = an import of a repo file that exports no function by that name. Calls that leave the repo (an external package, a runtime global) are neither an edge nor counted here. |
@@ -293,6 +294,8 @@ CRAP (Savoia and Evans) is computed in integers: `c² × (coverable − covered)
 - 8 = ambient-read
 
 Repo classes start at 1000.
+
+**Fan-out rules (N+1 and its kin).** Read by `engine/Fanout.bend` (laws in `engine/Fanout-LAWS.bend`) from `CS`, `CL`, `CE` and `RF`. One mechanism covers a query reached from a loop, a remote call in a loop and repeated calls with a batch form: which class counts is catalog data. Reach sets: R0 is the functions holding a call of the class, and R(k+1) is R(k) plus the callers of an R(k) function by a `CE` edge. A finding is kind 0, a loop `CS` site calling the class, or kind 1, a loop `CE` site whose target is in R(edges - 1). A call inside an iterator callback is the callback's own function at loop depth 0, so it is a finding only once iteration-combinator data marks such callbacks; unresolved calls (`CU`) have no edge. The section runs when there is an `RF` row. Output (`pulsar-fanout 0`): one `NX rule site fn via kind` line per finding, where `via` is the callee symbol (kind 0) or the target function (kind 1). Lines come per `RF` row in row order, kind 0 in `CS` order, then kind 1 in `CE` order, then `NXS n`, the count.
 
 **Class-in-context rules.** Read by `engine/ClassCtx.bend` (laws in `engine/ClassCtx-LAWS.bend`). Classification alone never makes a finding: only `RL` rows do. `CS` (by `site`), `CL` and `RL` must each be strictly ascending, or the engine refuses (exit 2). Output (`pulsar-classctx 0`): one `RCX rule site fn callee` line per (rule, site) that some `CS` fact, `CL` fact and `RL` row of that rule justify, sorted by (rule, site), then `RCXS n`, the count.
 
@@ -354,8 +357,23 @@ Query facts, one per SQL statement text (a **site**). Site ids are `0..q-1` in (
 | `QT` | `site table mode` | The statement touches `table` (a name id; CTE names are not tables): `mode` 1 = read, 2 = insert, 3 = update, 4 = delete. |
 | `QU` | `site table col role` | A column use. `table` is the resolved table, or `4294967295` when an unqualified column is ambiguous across several tables. `role`: 1 = equality (`=`, `IS`), 2 = range (`<`, `>`, `<=`, `>=`, `BETWEEN`), 3 = `IN` list, 4 = `LIKE`, 5 = `IS NULL`, 6 = `ORDER BY`, 7 = join condition (`ON` or `USING`), 8 = projection, 9 = `GROUP BY`, 10 = `UPDATE .. SET` target, 11 = `INSERT` column list. |
 | `QD` | `site table col kind` | A predicate that defeats an index on that column: 1 = `LIKE`/`GLOB` with a leading wildcard, 2 = the column wrapped in a function or arithmetic, 3 = `OR` across different columns. |
+| `SR` | `rule` | SQL rule `rule` is on: 1 = `sql.dynamic-text`, 2 = `sql.offset-param`, 3 = `sql.index-defeat`, 4 = `sql.unindexed-filter`, 5 = `sql.fk-unindexed`, 6 = `sql.schema-drift`. The CLI writes one row per rule that a pack or the repo policy turns on; with none, the engine prints no SQL section. |
 
 The adapter reports what the text says. Whether a column is "unindexed", whether an `OFFSET` is a finding or whether the schema is complete enough to call a name "unknown" is decided by the engine's rules over these rows. Dialect and entry points: the lane is selected by the catalog (a `.sql` file extension, the `sql` tag, query-class calls); platform names (SQLite, D1, Durable Objects) appear only as catalog data.
+
+**SQL rules.** Read by `engine/Sql.bend` (laws in `engine/Sql-LAWS.bend`); every rule is a filter over the rows above:
+- `sql.dynamic-text`: a site with flag 64.
+- `sql.offset-param`: a site with flag 8.
+- `sql.index-defeat`: a `QD` row on a column that some index of its table has as a term.
+- `sql.unindexed-filter`: a `QU` use with role 1, 2, 3 or 7 on a known column of a known base table (not a view or virtual table), where no index of the table leads with the column and the column is not the rowid alias.
+- `sql.fk-unindexed`: a foreign key whose first column leads no index of the child table.
+- `sql.schema-drift`: a `QT` table with no `DT` row, or a resolved `QU` column with no `DC` row. It fires only when `DS` reports `ddl_skipped` = 0.
+
+The rules are per column, not per query plan. Output (`pulsar-sql 0`), only for rules with an `SR` row:
+- `SQD ok skipped complete` (complete is 0 or 1);
+- `SQX <rule-name> site <site> <table> <col> <detail>` (table and col are `4294967295` when none);
+- `SQX sql.fk-unindexed fk <fk> <table> <col> <ref_table>`;
+- `SQS n`, the count.
 
 ### Later
 

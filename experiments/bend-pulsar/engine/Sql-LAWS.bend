@@ -320,7 +320,36 @@ law sql_fks_shape:
   for +dgs: List<&2, S.Dg>
   {S.Sq.fks(S.Schema{ok, sk, dts, dcs, dis, dxs, dfs, dgs}) == S.Sq.fk_all(S.Schema{ok, sk, dts, dcs, dis, dxs, dfs, dgs}, dfs, dgs) : List<&2, S.Sx>}
 
+# ---- only the rules that are on ---------------------------------------------------------------
+def MemU(xs: List<&2, U32>, m: U32) -> Data:
+  match xs:
+    case Nil{}:
+      Empty
+    case Con{h, t}:
+      Either<&2, &2, {h == m : U32}, MemU(t, m)>
+
+def Rule(x: S.Sx) -> U32:
+  match x:
+    case S.Sx{rule, id, table, col, d}:
+      rule
+
+law sql_only_sound:
+  for +on: List<&2, U32>
+  for +xs: List<&2, S.Sx>
+  for +y: S.Sx
+  for hm: MemS(S.Sq.only(on, xs), y)
+  ML.And(MemS(xs, y), MemU(on, Rule(y)))
+
+law sql_only_complete:
+  for +on: List<&2, U32>
+  for +xs: List<&2, S.Sx>
+  for +y: S.Sx
+  for hm: MemS(xs, y)
+  for ho: MemU(on, Rule(y))
+  MemS(S.Sq.only(on, xs), y)
+
 law sql_lines_shape:
   for +s: S.Schema
   for +q: S.Qy
-  {S.Sql.lines(s, q) == List.append(&2, String, ["pulsar-sql 0", S.Sq.header(s)], List.append(&2, String, S.Sq.lines(S.Sq.findings(s, q)), ["SQS " ++ Nat.show(List.length(&2, S.Sx, S.Sq.findings(s, q)))])) : List<&2, String>}
+  for +on: List<&2, U32>
+  {S.Sql.lines(s, q, on) == List.append(&2, String, ["pulsar-sql 0", S.Sq.header(s)], List.append(&2, String, S.Sq.lines(S.Sq.only(on, S.Sq.findings(s, q))), ["SQS " ++ Nat.show(List.length(&2, S.Sx, S.Sq.only(on, S.Sq.findings(s, q))))])) : List<&2, String>}

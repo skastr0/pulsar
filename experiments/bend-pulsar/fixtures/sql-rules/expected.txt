@@ -1,0 +1,13 @@
+pulsar-sql 0
+SQD 6 0 1
+SQX sql.offset-param site 5 4294967295 4294967295 8
+SQX sql.index-defeat site 4 15 2 1
+SQX sql.index-defeat site 9 7 1 2
+SQX sql.unindexed-filter site 1 7 14 1
+SQX sql.unindexed-filter site 6 7 14 7
+SQX sql.unindexed-filter site 6 15 11 1
+SQX sql.fk-unindexed fk 0 7 14 15
+SQX sql.fk-unindexed fk 1 15 9 10
+SQX sql.schema-drift site 7 0 4294967295 1
+SQX sql.schema-drift site 8 15 5 8
+SQS 10

@@ -5,6 +5,9 @@ import ./Metrics-NAT.bend as N
 import ./Metrics-LAWS.bend as ML
 import ./Hotspot-PROOF.bend as HP
 import ./Sql-LAWS.bend as Laws
+import ../Lemmas.bend as L
+import ../Lemmas2.bend as L2
+import ./Scope-PROOF.bend as SP
 
 def Keep.mem(hit: Bool, +x: S.Sx, +rest: List<&2, S.Sx>, +y: S.Sx, hm: Laws.MemS(S.Sq.keep(hit, x, rest), y)) -> Either<&2, &2, ML.And({hit == True{} : Bool}, {x == y : S.Sx}), Laws.MemS(rest, y)>:
   match hit:
@@ -373,5 +376,81 @@ def Laws.sql_findings_shape(s, qs, qts, qus, qds):
 def Laws.sql_fks_shape(ok, sk, dts, dcs, dis, dxs, dfs, dgs):
   {==}
 
-def Laws.sql_lines_shape(s, q):
+
+def On.eq(+r: U32, +rule: U32, e: {r == rule : U32}) -> {U32.is_eq(r, rule) == True{} : Bool}:
+  %e : {U32.is_eq(r, _) == True{} : Bool}
+  L2.U32.eq_refl(r)
+
+def On.here(+rule: U32, +r: U32, +t: List<&2, U32>, o: Either<&2, &2, {U32.is_eq(r, rule) == True{} : Bool}, {S.Sq.on(rule, t) == True{} : Bool}>, ih: {S.Sq.on(rule, t) == True{} : Bool} -> Laws.MemU(t, rule)) -> Laws.MemU(Con{r, t}, rule):
+  match o:
+    case Inl{e}:
+      Inl{L.U32.eq_sound(r, rule, e)}
+    case Inr{e}:
+      Inr{ih(e)}
+
+def Only.here(+on: List<&2, U32>, +rule: U32, +id: U32, +table: U32, +col: U32, +d: U32, +t: List<&2, S.Sx>, +y: S.Sx, ex: {S.Sx{rule, id, table, col, d} == y : S.Sx}, mo: Laws.MemU(on, rule)) -> ML.And(Laws.MemS(Con{S.Sx{rule, id, table, col, d}, t}, y), Laws.MemU(on, Laws.Rule(y))):
+  %ex : ML.And(Laws.MemS(Con{S.Sx{rule, id, table, col, d}, t}, _), Laws.MemU(on, Laws.Rule(_)))
+  Tuple{Inl{{==}}, mo}
+
+def Only.up(+on: List<&2, U32>, +h: S.Sx, +t: List<&2, S.Sx>, +y: S.Sx, w: ML.And(Laws.MemS(t, y), Laws.MemU(on, Laws.Rule(y)))) -> ML.And(Laws.MemS(Con{h, t}, y), Laws.MemU(on, Laws.Rule(y))):
+  match w:
+    case Tuple{m, mo}:
+      Tuple{Inr{m}, mo}
+
+# ---- only the rules that are on ----
+def On.sound(+rule: U32, on: List<&2, U32>, e: {S.Sq.on(rule, on) == True{} : Bool}) -> Laws.MemU(on, rule):
+  match on:
+    case Nil{}:
+      Empty.absurd(Laws.MemU(Nil{}, rule), N.Bool.ff_tt(e))
+    case Con{+r, +t}:
+      On.here(rule, r, t, HP.Split.or(U32.is_eq(r, rule), S.Sq.on(rule, t), e), q => On.sound(rule, t, q))
+
+def On.complete(+rule: U32, on: List<&2, U32>, m: Laws.MemU(on, rule)) -> {S.Sq.on(rule, on) == True{} : Bool}:
+  match on:
+    case Nil{}:
+      match m:
+    case Con{+r, +t}:
+      match m:
+        case Inl{e}:
+          Or.l(U32.is_eq(r, rule), S.Sq.on(rule, t), On.eq(r, rule, e))
+        case Inr{q}:
+          HP.Or.r(U32.is_eq(r, rule), S.Sq.on(rule, t), On.complete(rule, t, q))
+
+def Only.k(+on: List<&2, U32>, +rule: U32, +id: U32, +table: U32, +col: U32, +d: U32, +t: List<&2, S.Sx>, +y: S.Sx, o: Either<&2, &2, ML.And({S.Sq.on(rule, on) == True{} : Bool}, {S.Sx{rule, id, table, col, d} == y : S.Sx}), Laws.MemS(S.Sq.only(on, t), y)>, ih: Laws.MemS(S.Sq.only(on, t), y) -> ML.And(Laws.MemS(t, y), Laws.MemU(on, Laws.Rule(y)))) -> ML.And(Laws.MemS(Con{S.Sx{rule, id, table, col, d}, t}, y), Laws.MemU(on, Laws.Rule(y))):
+  match o:
+    case Inl{Tuple{eo, ex}}:
+      Only.here(on, rule, id, table, col, d, t, y, ex, On.sound(rule, on, eo))
+    case Inr{m}:
+      Only.up(on, S.Sx{rule, id, table, col, d}, t, y, ih(m))
+
+def Laws.sql_only_sound(on, xs, y, hm):
+  match xs:
+    case Nil{}:
+      match hm:
+    case Con{S.Sx{+rule, +id, +table, +col, +d}, +t}:
+      Only.k(on, rule, id, table, col, d, t, y, Keep.mem(S.Sq.on(rule, on), S.Sx{rule, id, table, col, d}, S.Sq.only(on, t), y, hm), q => Laws.sql_only_sound(on, t, y, q))
+
+def Only.hit(+on: List<&2, U32>, y: S.Sx, +t: List<&2, S.Sx>, ho: Laws.MemU(on, Laws.Rule(y))) -> Laws.MemS(S.Sq.only(on, Con{y, t}), y):
+  match y:
+    case S.Sx{+rule, +id, +table, +col, +d}:
+      Keep.hit(S.Sq.on(rule, on), S.Sx{rule, id, table, col, d}, S.Sq.only(on, t), On.complete(rule, on, ho))
+
+def Only.stay(+on: List<&2, U32>, h: S.Sx, +t: List<&2, S.Sx>, +y: S.Sx, m: Laws.MemS(S.Sq.only(on, t), y)) -> Laws.MemS(S.Sq.only(on, Con{h, t}), y):
+  match h:
+    case S.Sx{+rule, +id, +table, +col, +d}:
+      Keep.stay(S.Sq.on(rule, on), S.Sx{rule, id, table, col, d}, S.Sq.only(on, t), y, m)
+
+def Laws.sql_only_complete(on, xs, y, hm, ho):
+  match xs:
+    case Nil{}:
+      match hm:
+    case Con{h, +t}:
+      match hm:
+        case Inl{e}:
+          %Equal.sym(S.Sx, h, y, e) : Laws.MemS(S.Sq.only(on, Con{_, t}), y)
+          Only.hit(on, y, t, ho)
+        case Inr{q}:
+          Only.stay(on, h, t, y, Laws.sql_only_complete(on, t, y, q, ho))
+
+def Laws.sql_lines_shape(s, q, on):
   {==}
