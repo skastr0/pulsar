@@ -749,6 +749,7 @@ version = "0.0.1"
 dependencies = [
  "oxc_allocator",
  "oxc_ast",
+ "oxc_ast_visit",
  "oxc_parser",
  "oxc_resolver",
  "oxc_semantic",
