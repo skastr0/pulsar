@@ -32,6 +32,10 @@ codex	/Users/guilhermecastro/playground/codex	6111791d0b3dd9de93e9cbea6614c85644
 convex-backend	/Users/guilhermecastro/playground/convex-backend	8258f32547e814e838e66360ed6b8921013b25ff	repo	Rust + TS, mixed, large
 ```
 
+Corpora whose paths exist only on operator machines are listed outside this
+repo, in `~/Projects/pulsar-corpora/corpora.private.md`; `bench/gate.sh`
+reads that file when it exists.
+
 ## History corpora
 
 History lanes (churn, hotspots, co-change, `H`/`C`/`A`/`CF`/`CFN` facts) run only

@@ -69,6 +69,15 @@ done
 ROWS=$(awk '/^```corpus$/{f=1;next} /^```$/{if(f)exit} f' "$CORPORA" | grep -v '^name')
 [ -n "$ROWS" ] || { echo "gate.sh: no corpus rows in $CORPORA" >&2; exit 2; }
 
+# Private corpora live outside this repo; gate.sh picks them up when the
+# operator's private registry exists (see corpora.md).
+PRIVATE=${PULSAR_PRIVATE_CORPORA:-$HOME/Projects/pulsar-corpora/corpora.private.md}
+if [ -f "$PRIVATE" ]; then
+  PROWS=$(awk '/^```corpus$/{f=1;next} /^```$/{if(f)exit} f' "$PRIVATE" | grep -v '^name')
+  [ -n "$PROWS" ] && ROWS="$ROWS
+$PROWS"
+fi
+
 want() { # $1=name $2=row-index -> 0 if selected
   [ -z "$ONLY" ] || case ",$ONLY," in *",$1,"*) ;; *) return 1 ;; esac
   if [ -n "$SHARD" ]; then
