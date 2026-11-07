@@ -48,6 +48,14 @@ A native, proven code-health tool for teams of peer agents. A seat runs it on a 
 
 Weighted means, categories, readiness, bands, personas, the quiz, backpressure, review routing, mixers, weights per signal, the legacy command family. The tool does not produce a single number.
 
+## Verification claim
+
+> Each finding Pulsar reports is checked by a formally verified engine, given the facts it read.
+
+- **Proven:** every detector, composite and threshold, plus the per-sha delta (added, removed, worsened, improved).
+- **Not proven, by decision:** fact extraction and fact reading. That covers the external parsers, the Rust adapters, and the engine's byte readers and row decoders, which are tested and checked differentially.
+- **Status:** `research/verification-status.md`.
+
 ## Guardrails
 
 - A core detector must be statable without naming a technology, framework or incident. It needs evidence from several unrelated repos. Anything learned from one repo stays in that repo's rules.

@@ -40,6 +40,7 @@ Pulsar's defaults are generic, always.
 ## Proof rules
 
 - **Laws are about the shipped code.** Every engine detector states laws in `LAWS.bend` about the functions the binary runs, never about a model of them. A law ties the binary's entry point to the proven functions.
+- **Scope of verification (operator, 2026-11-07).** Proven: the calculations, the algorithms and the report, meaning every detector, composite, threshold and the per-sha delta that decides what is printed. Not proven, by decision: extracting and reading facts (the parsers, the adapters, and the engine's byte readers and row decoders). They are shown by fixtures and differential testing. The claim is: *each finding Pulsar reports is checked by a formally verified engine, given the facts it read.*
 - **Soundness is the minimum bar.** It means no false positives, proven unconditionally. A proven certificate checker in front of an unproven algorithm is acceptable.
 - **Completeness is proven where it matters.** It may be proven relative to runtime certificates, which the binary must report.
 - **The gate:**
