@@ -91,15 +91,6 @@ def read(p):
         return f.read().replace("\r\n", "\n").rstrip() + "\n"
 
 
-def bend_runtime():
-    """The Bend licence: the engine is C that Bend emits, which includes Bend's runtime."""
-    cands = [os.path.expanduser("~/.bend/LICENSE"), os.path.expanduser("~/.bend/share/LICENSE")]
-    for c in cands:
-        if os.path.isfile(c):
-            return read(c)
-    return None
-
-
 def render(meta, targets):
     pkgs = {p["id"]: p for p in meta["packages"]}
     ids = shipped(meta)
@@ -119,7 +110,7 @@ def render(meta, targets):
     missing = []
     for p in rows:
         out.append(f"{p['name']} {p['version']}  {p.get('license') or 'NO LICENCE EXPRESSION'}  {p.get('repository') or ''}".rstrip())
-    out += ["", "Engine: C emitted by Bend (HigherOrderCO), including the Bend runtime. Apache-2.0.",
+    out += ["", "Engine: C emitted by Bend (bendlang), including the Bend runtime. Apache-2.0.",
             "Linux engine and CLI builds link musl libc statically. MIT.", ""]
     for p in rows:
         root, files = licence_files(p)
@@ -134,12 +125,10 @@ def render(meta, targets):
             out += ["", f"--- {p['name']}/{rel} ---", "", read(f).rstrip()]
         for f in extra:
             out += ["", f"--- {f} (upstream; the crate package omits it) ---", "", read(os.path.join(HERE, "notices", f)).rstrip()]
-    out += ["", "=" * 78, "Bend runtime (in the emitted engine C)", "Licence: Apache-2.0", "Source: https://github.com/HigherOrderCO/Bend"]
-    b = bend_runtime()
-    out += ["", b.rstrip()] if b else ["", "The Apache-2.0 text is at the end of this file."]
+    out += ["", "=" * 78, "Bend runtime (in the emitted engine C)", "Licence: Apache-2.0", "Source: https://github.com/bendlang/bend",
+            "", read(os.path.join(HERE, "notices", "bend.LICENSE")).rstrip()]
     out += ["", "=" * 78, "musl libc (static Linux builds)", "Licence: MIT", "Source: https://musl.libc.org/",
-            "", "Copyright (c) 2005-2020 Rich Felker, et al. Full list of contributors in the musl COPYRIGHT file.",
-            "The MIT text is at the end of this file."]
+            "", read(os.path.join(HERE, "notices", "musl.COPYRIGHT")).rstrip()]
     out += ["", "=" * 78, "Standard licence texts", "", "--- MIT ---", "", MIT, "", "--- Apache-2.0 ---", "",
             "Apache License, Version 2.0: https://www.apache.org/licenses/LICENSE-2.0.txt",
             "The full text is included above with every crate that ships an Apache-2.0 LICENSE file."]
