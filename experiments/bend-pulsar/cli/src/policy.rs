@@ -119,6 +119,8 @@ pub enum Source {
 pub struct Evidence {
     pub deps: BTreeSet<String>,
     pub imports: BTreeSet<String>,
+    /// Base names of tracked files (`wrangler.toml`), for `file:` activators.
+    pub files: BTreeSet<String>,
 }
 
 /// One input to the fingerprint: what it is, its name, and the SHA-256 of its content.
@@ -300,6 +302,10 @@ fn matches(activate: &[String], ev: &Evidence) -> Option<String> {
             if ev.imports.iter().any(|i| glob(pat, i)) {
                 return Some(a.clone());
             }
+        } else if let Some(name) = a.strip_prefix("file:") {
+            if ev.files.contains(name) {
+                return Some(a.clone());
+            }
         }
     }
     None
@@ -390,6 +396,7 @@ pub fn load(root: &Path, home: Option<&Path>, ev: &Evidence) -> Result<Effective
 /// Collect `dep:` evidence from every tracked `package.json`.
 pub fn gather_evidence(root: &Path, tracked: &[String]) -> Evidence {
     let mut ev = Evidence::default();
+    ev.files = tracked.iter().map(|p| p.rsplit('/').next().unwrap_or(p).to_string()).collect();
     for p in tracked.iter().filter(|p| p == &"package.json" || p.ends_with("/package.json")) {
         let Ok(text) = std::fs::read_to_string(root.join(p)) else { continue };
         let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else { continue };
@@ -469,6 +476,16 @@ mod tests {
         let e = load(&tmp("c"), None, &Evidence::default()).unwrap();
         let ids: Vec<&str> = e.catalogs.iter().map(|c| c.loaded.catalog.id.as_str()).collect();
         assert_eq!(ids, ["js-globals"]);
+    }
+
+    #[test]
+    fn a_file_activator_switches_a_pack_on_by_a_tracked_base_name() {
+        let ev = gather_evidence(&tmp("f"), &["apps/api/wrangler.jsonc".to_string(), "src/a.ts".to_string()]);
+        let e = load(&tmp("g"), None, &ev).unwrap();
+        let on = e.catalogs.iter().find(|c| c.loaded.catalog.id == "cloudflare-workers").expect("pack on");
+        assert_eq!(on.why, "file:wrangler.jsonc");
+        let off = load(&tmp("h"), None, &gather_evidence(&tmp("i"), &["src/a.ts".to_string()])).unwrap();
+        assert!(off.catalogs.iter().all(|c| c.loaded.catalog.id != "cloudflare-workers"));
     }
 
     #[test]

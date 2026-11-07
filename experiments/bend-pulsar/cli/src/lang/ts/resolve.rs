@@ -214,9 +214,22 @@ fn classify_unresolved(spec: &str) -> u8 {
     }
     if let Some(i) = spec.find(':') {
         let proto = &spec[..i];
-        if !matches!(proto, "node" | "bun" | "npm") {
+        if !matches!(proto, "node" | "bun" | "npm" | "cloudflare") {
             return U_OTHER;
         }
     }
     U_BARE
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn platform_protocol_modules_are_external_not_unresolvable() {
+        for spec in ["node:fs", "bun:sqlite", "cloudflare:workers", "cloudflare:test"] {
+            assert_eq!(classify_unresolved(spec), U_BARE, "{spec}");
+        }
+        assert_eq!(classify_unresolved("virtual:thing"), U_OTHER);
+    }
 }

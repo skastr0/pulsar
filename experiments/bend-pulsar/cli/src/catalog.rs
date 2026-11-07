@@ -202,8 +202,9 @@ fn validate(c: &Catalog, text: &str) -> Result<(), String> {
         _ => {}
     }
     for a in c.activate.iter().flatten() {
-        if !(a.starts_with("dep:") || a.starts_with("import:")) || a.split_once(':').is_some_and(|(_, v)| v.is_empty()) {
-            return Err(format!("activate {a:?} must be dep:<package> or import:<specifier glob>"));
+        let known = a.starts_with("dep:") || a.starts_with("import:") || a.starts_with("file:");
+        if !known || a.split_once(':').is_some_and(|(_, v)| v.is_empty()) {
+            return Err(format!("activate {a:?} must be dep:<package>, import:<specifier glob> or file:<base name>"));
         }
     }
 
@@ -302,6 +303,7 @@ fn sorted_unique(what: &str, keys: impl Iterator<Item = String>) -> Result<(), S
 /// Catalogs shipped in the binary, by id. Pack catalogs name their framework; the lane catalog
 /// is always on.
 pub const EMBEDDED: &[(&str, &str)] = &[
+    ("cloudflare-workers", include_str!("packs/cloudflare/catalog/cloudflare-workers.toml")),
     ("effect", include_str!("packs/effect/catalog/effect.toml")),
     ("js-globals", include_str!("packs/effect/catalog/js-globals.toml")),
     ("platform-node", include_str!("packs/effect/catalog/platform-node.toml")),

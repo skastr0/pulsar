@@ -1,0 +1,7 @@
+CS a global#D1Database loops=0 ctx=1
+CS a global#D1Database loops=0 ctx=1
+CS a global#D1Database loops=0 ctx=1
+CS b global#DurableObjectState loops=0 ctx=0
+CS b global#SqlStorage loops=0 ctx=0
+CS b global#DurableObjectStorage loops=0 ctx=0
+CS c cloudflare:workers#env loops=0 ctx=0

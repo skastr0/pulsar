@@ -746,7 +746,7 @@ impl<'s> Walker<'s> {
                 && match (&e.use_, tag, path) {
                     (Use::Tag, true, []) => true,
                     (Use::Call, false, []) => true,
-                    (Use::Member(m), false, [seg]) => m == seg,
+                    (Use::Member(m), false, p) if !p.is_empty() => *m == p.join("."),
                     (Use::AnyMember, false, [_]) => true,
                     _ => false,
                 }

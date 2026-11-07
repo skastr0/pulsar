@@ -1,0 +1,31 @@
+# Cloudflare Workers pack catalog: the platform's D1 and Durable Object SQL surfaces and the
+# module-level `env` import. Framework-specific: switched on by evidence, never by default.
+# One entry per line, sorted by (sym, via, use, ver). at: the declaration line that justifies the
+# class in @cloudflare/workers-types; doc starts with "signature:" when the line has no prose.
+format = "pulsar-catalog 0"
+id = "cloudflare-workers"
+scope = "pack"
+activate = ["dep:@cloudflare/workers-types", "dep:wrangler", "file:wrangler.json", "file:wrangler.jsonc", "file:wrangler.toml", "import:cloudflare:*"]
+sources = ["@cloudflare/workers-types@4.20260120.0 index.d.ts"]
+
+aliases = [
+]
+
+# Fixed class ids from FACTS.md; the rule id is reported with every finding that uses the class.
+classes = [
+  { class = "query", id = 1, rule = "cloudflare-workers/query" },
+  { class = "ambient-read", id = 8, rule = "cloudflare-workers/ambient-read" },
+]
+
+# D1, Durable Object SQL storage and `env` have no module to import a symbol from: the types are
+# ambient globals. `global#<Type>` with via = "yield" means a parameter or const annotated with
+# that type (the same rule as a value bound from `yield* S`), and `use` names the method path.
+symbols = [
+  { sym = "cloudflare:workers#env", class = "ambient-read", via = "ref", ver = "workers-types-4", at = "@cloudflare/workers-types@4.20260120.0:index.d.ts:11472", doc = "signature: export const env: Cloudflare.Env;" },
+  { sym = "global#D1Database", class = "query", via = "yield", use = "member:batch", ver = "workers-types-4", at = "@cloudflare/workers-types@4.20260120.0:index.d.ts:10536", doc = "signature: batch<T = unknown>(statements: D1PreparedStatement[]): Promise<D1Result<T>[]>;" },
+  { sym = "global#D1Database", class = "query", via = "yield", use = "member:exec", ver = "workers-types-4", at = "@cloudflare/workers-types@4.20260120.0:index.d.ts:10537", doc = "signature: exec(query: string): Promise<D1ExecResult>;" },
+  { sym = "global#D1Database", class = "query", via = "yield", use = "member:prepare", ver = "workers-types-4", at = "@cloudflare/workers-types@4.20260120.0:index.d.ts:10535", doc = "signature: prepare(query: string): D1PreparedStatement;" },
+  { sym = "global#DurableObjectState", class = "query", via = "yield", use = "member:storage.sql.exec", ver = "workers-types-4", at = "@cloudflare/workers-types@4.20260120.0:index.d.ts:3492", doc = "signature: exec<T extends Record<string, SqlStorageValue>>(query: string, ...bindings: any[]): SqlStorageCursor<T>;" },
+  { sym = "global#DurableObjectStorage", class = "query", via = "yield", use = "member:sql.exec", ver = "workers-types-4", at = "@cloudflare/workers-types@4.20260120.0:index.d.ts:3492", doc = "signature: exec<T extends Record<string, SqlStorageValue>>(query: string, ...bindings: any[]): SqlStorageCursor<T>;" },
+  { sym = "global#SqlStorage", class = "query", via = "yield", use = "member:exec", ver = "workers-types-4", at = "@cloudflare/workers-types@4.20260120.0:index.d.ts:3492", doc = "signature: exec<T extends Record<string, SqlStorageValue>>(query: string, ...bindings: any[]): SqlStorageCursor<T>;" },
+]

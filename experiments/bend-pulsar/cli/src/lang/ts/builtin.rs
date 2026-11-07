@@ -1,18 +1,31 @@
 //! The catalogs the TS lane applies today: the three that ship with the binary, selected by
 //! evidence. Until `.pulsar/` policy supplies the set, a pack is on when a `package.json` in the
-//! repo lists a dependency its `activate` names; `import:` evidence is not read yet, so a pack
-//! that only activates by import stays off.
+//! repo lists a dependency its `activate` names, or a tracked file has a `file:` name it lists;
+//! `import:` evidence is not read yet, so a pack that only activates by import stays off.
 
 use super::calls::CatalogIndex;
 use crate::catalog::{self, Catalog, Scope};
 use std::collections::BTreeSet;
 use std::path::Path;
 
-const SHIPPED: [(&str, &str); 3] = [
+const SHIPPED: [(&str, &str); 4] = [
     ("js-globals", include_str!("../../packs/effect/catalog/js-globals.toml")),
+    ("cloudflare-workers", include_str!("../../packs/cloudflare/catalog/cloudflare-workers.toml")),
     ("effect", include_str!("../../packs/effect/catalog/effect.toml")),
     ("platform-node", include_str!("../../packs/effect/catalog/platform-node.toml")),
 ];
+
+/// What a tree shows about itself: dependency names from every tracked `package.json`, and the
+/// base names of tracked files (`wrangler.toml`).
+struct Evidence {
+    deps: BTreeSet<String>,
+    files: BTreeSet<String>,
+}
+
+fn gather(root: &Path, tracked: &[String]) -> Evidence {
+    let files = tracked.iter().map(|p| p.rsplit('/').next().unwrap_or(p).to_string()).collect();
+    Evidence { deps: dependency_names(root, tracked), files }
+}
 
 /// Dependency names listed by any tracked `package.json`.
 fn dependency_names(root: &Path, tracked: &[String]) -> BTreeSet<String> {
@@ -36,25 +49,26 @@ fn dep_matches(pattern: &str, deps: &BTreeSet<String>) -> bool {
     }
 }
 
-fn is_active(c: &Catalog, deps: &BTreeSet<String>) -> bool {
+fn is_active(c: &Catalog, ev: &Evidence) -> bool {
     match c.scope {
         Scope::Lane | Scope::Repo => true,
-        Scope::Pack => c
-            .activate
-            .iter()
-            .flatten()
-            .filter_map(|a| a.strip_prefix("dep:"))
-            .any(|p| dep_matches(p, deps)),
+        Scope::Pack => c.activate.iter().flatten().any(|a| {
+            match (a.strip_prefix("dep:"), a.strip_prefix("file:")) {
+                (Some(p), _) => dep_matches(p, &ev.deps),
+                (_, Some(f)) => ev.files.contains(f),
+                _ => false,
+            }
+        }),
     }
 }
 
 /// The index for a repo, and the ids of the catalogs that are on (for the stats line).
 pub fn index_for(root: &Path, tracked: &[String]) -> Result<(CatalogIndex, Vec<String>), String> {
-    let deps = dependency_names(root, tracked);
+    let ev = gather(root, tracked);
     let mut loaded = Vec::new();
     for (name, text) in SHIPPED {
         let l = catalog::load(name, text)?;
-        if is_active(&l.catalog, &deps) {
+        if is_active(&l.catalog, &ev) {
             loaded.push(l);
         }
     }

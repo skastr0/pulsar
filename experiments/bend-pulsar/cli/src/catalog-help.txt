@@ -21,6 +21,7 @@ FILE FORMAT  (TOML; format = "pulsar-catalog 0")
     activate  = ["dep:effect"]         scope "pack" only. Any match switches the pack on:
                                          dep:<package>          package.json dependency
                                          import:<specifier glob> an import in the repo
+                                         file:<base name>       a tracked file of that name (wrangler.toml)
     sources   = ["what you checked"]   free text, kept as evidence
   Arrays of inline tables. ONE ENTRY PER LINE, SORTED, no duplicates, or the file is rejected:
 
