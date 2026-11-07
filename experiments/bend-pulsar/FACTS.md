@@ -53,7 +53,7 @@ Strings the engine never sees. The CLI writes them next to the facts file (`<fac
   - To assign a line to a function, take the function in the same file with the largest `start_line` whose span contains the line. A nested arrow that starts on its parent's line owns that line.
 - **`.laws`:** one line per law, in law-id order: `law path line name`, TAB-separated (see "Laws").
 
-## Engine output (v0)
+## Engine output (v0, one stream)
 
 ```
 pulsar-findings 0
@@ -74,6 +74,12 @@ saturates at the cap 16777215 (2^24 - 1): a printed NPath equal to the cap means
 A function with a `TF` row still gets its `FM` line, but no `FX`. Invalid FN/CT/TF facts
 make the engine refuse the run and print no `FM` lines. Invalid means a wrong field count,
 a tree the CT rules reject, or a `TF` id that is not a function, or is out of order.
+
+**Pack sections.** After the Metrics lines, `pulsar-engine` prints one section per active pack, in this order. A pack is active when its facts are present, and the CLI writes them only for packs that are on.
+- **Effect layer graph** (an `E` row is present): `pulsar-layers 0`, then the `LCYC` … `LS` lines of "Effect pack" below.
+- **Class-in-context** (an `RL` row is present): `pulsar-classctx 0`, then `RCX rule site fn callee`, one per (rule, site), sorted, then `RCXS n`.
+
+If any detector refuses its facts (the graph, Metrics, or an active pack), the engine exits 2 with nothing on stdout. engine/LAWS.bend P5-P14 state the order and the switches; `engine/fixtures/packs.expected` shows all four sections.
 
 The CLI renders file ids to paths, maps them to stable keys, and prints the human and JSON forms.
 
