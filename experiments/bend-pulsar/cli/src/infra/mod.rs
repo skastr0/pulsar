@@ -15,6 +15,7 @@
 use crate::facts::{FactWriter, Rel, SideTables};
 use oxc_allocator::Allocator;
 use oxc_ast::ast::*;
+use oxc_ast::AstKind;
 use oxc_ast_visit::{walk, Visit};
 use oxc_parser::Parser;
 use oxc_span::SourceType;
@@ -661,7 +662,8 @@ fn reads_in_closure(
             st.degraded.push(format!("{path}: parse failed, its binding reads are unknown"));
             continue;
         }
-        let mut r = Reads { env: HashSet::new(), out: BTreeSet::new() };
+        let sem = oxc_semantic::SemanticBuilder::new().with_build_nodes(true).build(&ret.program).semantic;
+        let mut r = Reads { sem: &sem, env: HashSet::new(), out: BTreeSet::new() };
         r.visit_program(&ret.program);
         out.extend(r.out.into_iter().map(|n| (file, n)));
     }
@@ -669,27 +671,49 @@ fn reads_in_closure(
 }
 
 struct Reads<'a> {
-    /// Local names bound to `env` from `cloudflare:workers`.
-    env: HashSet<&'a str>,
+    sem: &'a oxc_semantic::Semantic<'a>,
+    /// Symbols bound by `import { env } from "cloudflare:workers"`.
+    env: HashSet<oxc_syntax::symbol::SymbolId>,
     out: BTreeSet<String>,
 }
 
-/// `env`, `this.env`, `ctx.env` and `alias.env`: the Workers `Env` conventions, by name.
-fn is_env_object(e: &Expression<'_>, aliases: &HashSet<&str>) -> bool {
-    match e.get_inner_expression() {
-        Expression::Identifier(i) => i.name.as_str() == "env" || aliases.contains(i.name.as_str()),
-        Expression::StaticMemberExpression(m) => {
-            if m.property.name.as_str() != "env" {
-                return false;
-            }
-            match m.object.get_inner_expression() {
-                Expression::Identifier(o) => o.name.as_str() != "process",
-                // `import.meta.env` is the bundler's, not a binding.
-                Expression::ImportMeta(_) => false,
-                _ => true,
-            }
+impl Reads<'_> {
+    /// Whether an `env` name is the Workers `Env`: an import from `cloudflare:workers`, or a
+    /// parameter. A local `const env = ...` is not, so a framework's own `env` objects are not
+    /// binding reads.
+    fn env_ident(&self, i: &IdentifierReference<'_>) -> bool {
+        if i.name.as_str() != "env" {
+            return false;
         }
-        _ => false,
+        let Some(rid) = i.reference_id.get() else { return false };
+        let Some(sid) = self.sem.scoping().get_reference(rid).symbol_id() else { return false };
+        if self.env.contains(&sid) {
+            return true;
+        }
+        matches!(
+            self.sem.symbol_declaration(sid).kind(),
+            AstKind::FormalParameter(_) | AstKind::FormalParameterRest(_)
+        )
+    }
+
+    /// `env` (a parameter or import), `this.env`, `ctx.env` and `alias.env`: the Workers `Env`
+    /// conventions. `process.env` and `import.meta.env` are never one.
+    fn env_object(&self, e: &Expression<'_>) -> bool {
+        match e.get_inner_expression() {
+            Expression::Identifier(i) => self.env_ident(i),
+            Expression::StaticMemberExpression(m) => {
+                if m.property.name.as_str() != "env" {
+                    return false;
+                }
+                match m.object.get_inner_expression() {
+                    Expression::Identifier(o) => o.name.as_str() != "process",
+                    // `import.meta.env` is the bundler's, not a binding.
+                    Expression::ImportMeta(_) => false,
+                    _ => true,
+                }
+            }
+            _ => false,
+        }
     }
 }
 
@@ -701,21 +725,23 @@ impl<'a> Visit<'a> for Reads<'a> {
         for s in it.specifiers.iter().flatten() {
             if let ImportDeclarationSpecifier::ImportSpecifier(s) = s {
                 if s.imported.name().as_str() == "env" {
-                    self.env.insert(s.local.name.as_str());
+                    if let Some(sid) = s.local.symbol_id.get() {
+                        self.env.insert(sid);
+                    }
                 }
             }
         }
     }
 
     fn visit_static_member_expression(&mut self, it: &StaticMemberExpression<'a>) {
-        if is_env_object(&it.object, &self.env) {
+        if self.env_object(&it.object) {
             self.out.insert(it.property.name.to_string());
         }
         walk::walk_static_member_expression(self, it);
     }
 
     fn visit_computed_member_expression(&mut self, it: &ComputedMemberExpression<'a>) {
-        if is_env_object(&it.object, &self.env) {
+        if self.env_object(&it.object) {
             if let Expression::StringLiteral(s) = it.expression.get_inner_expression() {
                 if let Some(v) = s.value.as_str().filter(|v| !v.is_empty()) {
                     self.out.insert(v.to_string());
@@ -727,7 +753,7 @@ impl<'a> Visit<'a> for Reads<'a> {
 
     fn visit_variable_declarator(&mut self, it: &VariableDeclarator<'a>) {
         if let (BindingPattern::ObjectPattern(p), Some(init)) = (&it.id, &it.init) {
-            if is_env_object(init, &self.env) {
+            if self.env_object(init) {
                 for b in &p.properties {
                     if let Some(n) = static_key(&b.key) {
                         self.out.insert(n);
@@ -903,13 +929,16 @@ export function f(request: Request, env: Env) {
   const mode = process.env.MODE;
   const vite = import.meta.env.VITE;
   const alias = CF.env.ALIAS;
-  return [db, key, QUEUE, b, mode, vite, alias];
+  const local = { READ: 1 };
+  const shadow = local.READ;
+  return [db, key, QUEUE, b, mode, vite, alias, shadow];
 }
 class C { fetch() { return this.env.ROOM; } }
 "#;
         let alloc = Allocator::default();
         let ret = Parser::new(&alloc, src, SourceType::ts()).parse();
-        let mut r = Reads { env: HashSet::new(), out: BTreeSet::new() };
+        let sem = oxc_semantic::SemanticBuilder::new().with_build_nodes(true).build(&ret.program).semantic;
+        let mut r = Reads { sem: &sem, env: HashSet::new(), out: BTreeSet::new() };
         r.visit_program(&ret.program);
         let got: Vec<&str> = r.out.iter().map(String::as_str).collect();
         assert_eq!(got, ["ALIAS", "BUCKET", "DB", "KEY", "QUEUE", "ROOM"]);
