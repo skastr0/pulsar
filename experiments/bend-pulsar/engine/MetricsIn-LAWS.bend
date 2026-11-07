@@ -7,12 +7,23 @@ import ./Crap.bend as C
 import ./Hotspot.bend as H
 import ./Cognitive.bend as G
 import ./MetricsIn.bend as I
+import ./Rows.bend as R
+import ./Churn.bend as Ch
 
 # ---- G. the glue main calls (MetricsIn.bend) ----------------------------------------------------
-# main prints MetricsIn.lines(rules, rows). Decoding rows to FN/CT/TF/CV and the churn
-# count are unproven (like Rows.bend); from the decoded facts on, the output is
-# Metrics', then Cognitive's, then Crap's, then Hotspot's, each proven in its own LAWS
-# file. Decoding CO to the operator list (In.ops) is unproven too.
+# main prints MetricsIn.lines(rules, rows). Decoding rows to FN/CT/TF/CV is unproven
+# (like Rows.bend); from the decoded facts on, the output is Metrics', then Cognitive's,
+# then Crap's, then Hotspot's, each proven in its own LAWS file. Decoding CO to the
+# operator list (In.ops) is unproven too. The churn list is proven: G0 passes
+# Churn.of(rows), which Churn-LAWS CH1-CH2 prove exact, so Hotspot's churn (G4) is
+# the counted CFN rows.
+
+# G0. the entry point: MetricsIn.lines is In.go on the decoded rows, with Churn.of(rows)
+# as the churn list.
+law glue_entry:
+  for +r: M.Rules
+  for +rows: List<&2, R.Row>
+  {I.MetricsIn.lines(r, rows) == I.In.go(r, I.In.cvs(rows), Ch.Churn.of(rows), I.In.cos(rows), I.In.marked(I.In.fns(rows), I.In.tfs(rows)), I.In.cts(rows)) : Maybe<&2, List<&2, String>>}
 
 # G1. decoded facts go to Trees.of, the tree builder Metrics.run uses, and the CO rows
 # to the operator list.
