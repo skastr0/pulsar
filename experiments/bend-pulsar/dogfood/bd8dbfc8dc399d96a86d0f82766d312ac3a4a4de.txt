@@ -1,0 +1,18 @@
+# dogfood delta 7788532bf14c5675be50852555605f505c4017f9 bd8dbfc8dc399d96a86d0f82766d312ac3a4a4de — bd8dbfc8dc399d96a86d0f82766d312ac3a4a4de
+# repo: /home/user/pulsar
+# 2026-11-07T10:45:50Z  fingerprint	sha256:86ac7009726d58c5a5d21996cf1be4fa54995cc8e6967dc16a52fcba6db44e5e
+#
+# base=7788532bf14c head=bd8dbfc8dc39 added=1 removed=10 unchanged=61
+
++ core.npath 32e33d2ba508c07c experiments/bend-pulsar/cli/src/delta.rs run
+
+- core.cyclomatic 48ae4557ac3fad66 experiments/bend-pulsar/cli/src/lang/ts/functions.rs Walker>scan_imports  (removed)
+- core.cyclomatic 980d9d87529ca817 experiments/bend-pulsar/cli/src/lang/ts/functions.rs Walker>on_call  (removed)
+- core.cyclomatic ef879ea22e38344d experiments/bend-pulsar/cli/src/lang/ts/functions.rs Walker>enter  (removed)
+- core.length dc980c0706dc4cca experiments/bend-pulsar/cli/src/lang/ts/mod.rs analyze  (removed)
+- core.nesting 093c8a1e659ef50f experiments/bend-pulsar/cli/src/lang/ts/functions.rs Walker>handler_args  (removed)
+- core.nesting 27dc09ba0b501843 experiments/bend-pulsar/cli/src/lang/ts/functions.rs Walker as Visit>visit_tagged_template_expression  (removed)
+- core.nesting 285d2a791d8d9a56 experiments/bend-pulsar/cli/src/lang/ts/functions.rs Walker>scan_imports  (removed)
+- core.npath 7abe758a2daeda1a experiments/bend-pulsar/cli/src/lang/ts/functions.rs Walker>enter  (removed)
+- core.npath cd23b2179ef3bfb4 experiments/bend-pulsar/cli/src/lang/ts/functions.rs Walker>on_call  (removed)
+- core.npath d9a48ae083f82f41 experiments/bend-pulsar/cli/src/lang/ts/functions.rs Walker>scan_imports  (removed)
