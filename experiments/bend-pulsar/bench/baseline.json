@@ -1,0 +1,931 @@
+{
+ "cli": {
+  "path": "/Users/guilhermecastro/Projects/pulsar/experiments/bend-pulsar/cli/target/release/pulsar",
+  "sha256": "97157ec4a6aec92a2073992af8f437e4b45cc6b499111368f0ceb1223514ab96"
+ },
+ "corpora": {
+  "alchemy": {
+   "actual_sha": "0a3a41974fc171ee6920087e64ae7610216bdee1",
+   "dirty": 0,
+   "engine": {
+    "cpu_runs": [
+     3.86,
+     3.85,
+     3.85
+    ],
+    "cpu_s": 3.85,
+    "rss_bytes": 17338368,
+    "rss_runs": [
+     17338368,
+     17334272,
+     17338368
+    ],
+    "summary": "S 9288 28850 9",
+    "wall_runs": [
+     3.87,
+     3.86,
+     3.85
+    ],
+    "wall_s": 3.86
+   },
+   "facts": {
+    "cpu_runs": [
+     0.51,
+     0.5,
+     0.49
+    ],
+    "cpu_s": 0.5,
+    "rss_bytes": 36904960,
+    "rss_runs": [
+     36904960,
+     36528128,
+     37933056
+    ],
+    "stats": "pulsar: files=13669 prod=9288 I=48654 U=12716 fatal_parse=0 unreadable=0",
+    "wall_runs": [
+     0.19,
+     0.15,
+     0.16
+    ],
+    "wall_s": 0.16
+   },
+   "kind": "repo",
+   "loadavg": 0.23,
+   "path": "/Users/guilhermecastro/playground/alchemy",
+   "sha": "0a3a41974fc171ee6920087e64ae7610216bdee1"
+  },
+  "codex": {
+   "actual_sha": "6111791d0b3dd9de93e9cbea6614c85644523979",
+   "dirty": 0,
+   "engine": {
+    "cpu_runs": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "cpu_s": 0.0,
+    "rss_bytes": 1835008,
+    "rss_runs": [
+     1835008,
+     1835008,
+     1835008
+    ],
+    "summary": "S 552 6 0",
+    "wall_runs": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "wall_s": 0.0
+   },
+   "facts": {
+    "cpu_runs": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "cpu_s": 0.0,
+    "rss_bytes": 6967296,
+    "rss_runs": [
+     6971392,
+     6705152,
+     6967296
+    ],
+    "stats": "pulsar: files=564 prod=552 I=1205 U=15 fatal_parse=0 unreadable=0",
+    "wall_runs": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "wall_s": 0.0
+   },
+   "kind": "repo",
+   "loadavg": 0.41,
+   "path": "/Users/guilhermecastro/playground/codex",
+   "sha": "6111791d0b3dd9de93e9cbea6614c85644523979"
+  },
+  "convex-backend": {
+   "actual_sha": "8258f32547e814e838e66360ed6b8921013b25ff",
+   "dirty": 0,
+   "engine": {
+    "cpu_runs": [
+     0.09,
+     0.1,
+     0.09
+    ],
+    "cpu_s": 0.09,
+    "rss_bytes": 3801088,
+    "rss_runs": [
+     3801088,
+     3801088,
+     3801088
+    ],
+    "summary": "S 1117 3956 5",
+    "wall_runs": [
+     0.09,
+     0.1,
+     0.09
+    ],
+    "wall_s": 0.09
+   },
+   "facts": {
+    "cpu_runs": [
+     0.11,
+     0.1,
+     0.07
+    ],
+    "cpu_s": 0.1,
+    "rss_bytes": 17166336,
+    "rss_runs": [
+     17195008,
+     17166336,
+     15966208
+    ],
+    "stats": "pulsar: files=2117 prod=1117 I=6370 U=1668 fatal_parse=0 unreadable=0",
+    "wall_runs": [
+     0.04,
+     0.03,
+     0.02
+    ],
+    "wall_s": 0.03
+   },
+   "kind": "repo",
+   "loadavg": 0.41,
+   "path": "/Users/guilhermecastro/playground/convex-backend",
+   "sha": "8258f32547e814e838e66360ed6b8921013b25ff"
+  },
+  "effect": {
+   "actual_sha": "9428e17499ee3a144f2ac73c67213fb1336d2bdf",
+   "dirty": 0,
+   "engine": {
+    "cpu_runs": [
+     0.1,
+     0.1,
+     0.09
+    ],
+    "cpu_s": 0.1,
+    "rss_bytes": 4325376,
+    "rss_runs": [
+     4325376,
+     4325376,
+     4325376
+    ],
+    "summary": "S 1166 7279 0",
+    "wall_runs": [
+     0.1,
+     0.1,
+     0.1
+    ],
+    "wall_s": 0.1
+   },
+   "facts": {
+    "cpu_runs": [
+     0.28,
+     0.29,
+     0.28
+    ],
+    "cpu_s": 0.28,
+    "rss_bytes": 66142208,
+    "rss_runs": [
+     67559424,
+     65564672,
+     66142208
+    ],
+    "stats": "pulsar: files=2070 prod=1166 I=13733 U=570 fatal_parse=0 unreadable=0",
+    "wall_runs": [
+     0.08,
+     0.08,
+     0.08
+    ],
+    "wall_s": 0.08
+   },
+   "kind": "repo",
+   "loadavg": 0.23,
+   "path": "/Users/guilhermecastro/playground/effect",
+   "sha": "9428e17499ee3a144f2ac73c67213fb1336d2bdf"
+  },
+  "effect-actualbudged-sync": {
+   "actual_sha": "33a1184b3fa6a27c1ff2f80577d9445e2c90ff2c",
+   "dirty": 0,
+   "engine": {
+    "cpu_runs": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "cpu_s": 0.0,
+    "rss_bytes": 393216,
+    "rss_runs": [
+     393216,
+     393216,
+     262144
+    ],
+    "summary": "S 11 12 0",
+    "wall_runs": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "wall_s": 0.0
+   },
+   "facts": {
+    "cpu_runs": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "cpu_s": 0.0,
+    "rss_bytes": 4849664,
+    "rss_runs": [
+     4849664,
+     4718592,
+     4849664
+    ],
+    "stats": "pulsar: files=12 prod=11 I=14 U=12 fatal_parse=0 unreadable=0",
+    "wall_runs": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "wall_s": 0.0
+   },
+   "kind": "repo",
+   "loadavg": 0.41,
+   "path": "/Users/guilhermecastro/playground/effect-actualbudged-sync",
+   "sha": "33a1184b3fa6a27c1ff2f80577d9445e2c90ff2c"
+  },
+  "effect-app-barake": {
+   "actual_sha": "89b975380aeed9057be8cf54ef477a9d5b053bbb",
+   "dirty": 0,
+   "engine": {
+    "cpu_runs": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "cpu_s": 0.0,
+    "rss_bytes": 393216,
+    "rss_runs": [
+     393216,
+     393216,
+     393216
+    ],
+    "summary": "S 63 46 0",
+    "wall_runs": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "wall_s": 0.0
+   },
+   "facts": {
+    "cpu_runs": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "cpu_s": 0.0,
+    "rss_bytes": 5767168,
+    "rss_runs": [
+     5767168,
+     5636096,
+     5767168
+    ],
+    "stats": "pulsar: files=70 prod=63 I=53 U=89 fatal_parse=0 unreadable=0",
+    "wall_runs": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "wall_s": 0.0
+   },
+   "kind": "repo",
+   "loadavg": 0.41,
+   "path": "/Users/guilhermecastro/playground/effect-app-barake",
+   "sha": "89b975380aeed9057be8cf54ef477a9d5b053bbb"
+  },
+  "effect-cluster-via-sst": {
+   "actual_sha": "04d5546381a0e2e7b3afd3547eaf2ac29b798633",
+   "dirty": 0,
+   "engine": {
+    "cpu_runs": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "cpu_s": 0.0,
+    "rss_bytes": 393216,
+    "rss_runs": [
+     393216,
+     393216,
+     393216
+    ],
+    "summary": "S 14 9 0",
+    "wall_runs": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "wall_s": 0.0
+   },
+   "facts": {
+    "cpu_runs": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "cpu_s": 0.0,
+    "rss_bytes": 4718592,
+    "rss_runs": [
+     4718592,
+     4718592,
+     4718592
+    ],
+    "stats": "pulsar: files=14 prod=14 I=9 U=13 fatal_parse=0 unreadable=0",
+    "wall_runs": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "wall_s": 0.0
+   },
+   "kind": "repo",
+   "loadavg": 0.41,
+   "path": "/Users/guilhermecastro/playground/effect-cluster-via-sst",
+   "sha": "04d5546381a0e2e7b3afd3547eaf2ac29b798633"
+  },
+  "effect-http": {
+   "actual_sha": "f251f6cf73d0b8c81130226f9f71e597c56dfd7b",
+   "dirty": 0,
+   "engine": {
+    "cpu_runs": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "cpu_s": 0.0,
+    "rss_bytes": 655360,
+    "rss_runs": [
+     655360,
+     655360,
+     655360
+    ],
+    "summary": "S 63 128 0",
+    "wall_runs": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "wall_s": 0.0
+   },
+   "facts": {
+    "cpu_runs": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "cpu_s": 0.0,
+    "rss_bytes": 6815744,
+    "rss_runs": [
+     6946816,
+     6553600,
+     6815744
+    ],
+    "stats": "pulsar: files=114 prod=63 I=300 U=110 fatal_parse=0 unreadable=0",
+    "wall_runs": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "wall_s": 0.0
+   },
+   "kind": "repo",
+   "loadavg": 0.41,
+   "path": "/Users/guilhermecastro/playground/effect-http",
+   "sha": "f251f6cf73d0b8c81130226f9f71e597c56dfd7b"
+  },
+  "effect-website": {
+   "actual_sha": "2941fc063508ca3f662ee571f76f24bb742f8640",
+   "dirty": 0,
+   "engine": {
+    "cpu_runs": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "cpu_s": 0.0,
+    "rss_bytes": 655360,
+    "rss_runs": [
+     655360,
+     655360,
+     655360
+    ],
+    "summary": "S 178 179 0",
+    "wall_runs": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "wall_s": 0.0
+   },
+   "facts": {
+    "cpu_runs": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "cpu_s": 0.0,
+    "rss_bytes": 5505024,
+    "rss_runs": [
+     5505024,
+     5767168,
+     5505024
+    ],
+    "stats": "pulsar: files=180 prod=178 I=233 U=241 fatal_parse=0 unreadable=0",
+    "wall_runs": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "wall_s": 0.0
+   },
+   "kind": "repo",
+   "loadavg": 0.41,
+   "path": "/Users/guilhermecastro/playground/effect-website",
+   "sha": "2941fc063508ca3f662ee571f76f24bb742f8640"
+  },
+  "js-genai": {
+   "actual_sha": "e626bef1a780a54b5b3fe04f062adf708335bd58",
+   "dirty": 0,
+   "engine": {
+    "cpu_runs": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "cpu_s": 0.0,
+    "rss_bytes": 655360,
+    "rss_runs": [
+     655360,
+     655360,
+     655360
+    ],
+    "summary": "S 113 0 0",
+    "wall_runs": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "wall_s": 0.0
+   },
+   "facts": {
+    "cpu_runs": [
+     0.01,
+     0.01,
+     0.02
+    ],
+    "cpu_s": 0.01,
+    "rss_bytes": 9678848,
+    "rss_runs": [
+     9220096,
+     9678848,
+     10362880
+    ],
+    "stats": "pulsar: files=246 prod=113 I=98 U=180 fatal_parse=0 unreadable=0",
+    "wall_runs": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "wall_s": 0.0
+   },
+   "kind": "repo",
+   "loadavg": 0.41,
+   "path": "/Users/guilhermecastro/playground/js-genai",
+   "sha": "e626bef1a780a54b5b3fe04f062adf708335bd58"
+  },
+  "junto": {
+   "actual_sha": "bfc7b01ee79e03d71ec6620959ae446bbac10678",
+   "dirty": 0,
+   "engine": {
+    "cpu_runs": [
+     0.25,
+     0.26,
+     0.26
+    ],
+    "cpu_s": 0.26,
+    "rss_bytes": 6029312,
+    "rss_runs": [
+     6029312,
+     6029312,
+     6029312
+    ],
+    "summary": "S 1979 7576 5",
+    "wall_runs": [
+     0.26,
+     0.26,
+     0.26
+    ],
+    "wall_s": 0.26
+   },
+   "facts": {
+    "cpu_runs": [
+     0.29,
+     0.28,
+     0.28
+    ],
+    "cpu_s": 0.28,
+    "rss_bytes": 16273408,
+    "rss_runs": [
+     16310272,
+     16273408,
+     15564800
+    ],
+    "stats": "pulsar: files=3752 prod=1979 I=18556 U=3105 fatal_parse=0 unreadable=0",
+    "wall_runs": [
+     0.1,
+     0.08,
+     0.08
+    ],
+    "wall_s": 0.08
+   },
+   "kind": "snapshot",
+   "loadavg": 0.23,
+   "path": "/Users/guilhermecastro/Projects/pulsar-corpora/junto",
+   "sha": "bfc7b01ee79e03d71ec6620959ae446bbac10678"
+  },
+  "opencode": {
+   "actual_sha": "36234c462cdd48e6eabd6be2dc16225103881760",
+   "dirty": 0,
+   "engine": {
+    "cpu_runs": [
+     0.08,
+     0.07,
+     0.07
+    ],
+    "cpu_s": 0.07,
+    "rss_bytes": 3801088,
+    "rss_runs": [
+     3801088,
+     3801088,
+     3801088
+    ],
+    "summary": "S 1535 1970 2",
+    "wall_runs": [
+     0.08,
+     0.08,
+     0.07
+    ],
+    "wall_s": 0.08
+   },
+   "facts": {
+    "cpu_runs": [
+     0.18,
+     0.17,
+     0.16
+    ],
+    "cpu_s": 0.17,
+    "rss_bytes": 14729216,
+    "rss_runs": [
+     15437824,
+     14729216,
+     14340096
+    ],
+    "stats": "pulsar: files=2197 prod=1535 I=3205 U=3439 fatal_parse=0 unreadable=0",
+    "wall_runs": [
+     0.05,
+     0.05,
+     0.05
+    ],
+    "wall_s": 0.05
+   },
+   "kind": "repo",
+   "loadavg": 0.23,
+   "path": "/Users/guilhermecastro/playground/opencode",
+   "sha": "36234c462cdd48e6eabd6be2dc16225103881760"
+  },
+  "phoenix": {
+   "actual_sha": "380de9b49f53b54530eafa20866cf8df9f2832e3",
+   "dirty": 0,
+   "engine": {
+    "cpu_runs": [
+     0.04,
+     0.05,
+     0.05
+    ],
+    "cpu_s": 0.05,
+    "rss_bytes": 3014656,
+    "rss_runs": [
+     3014656,
+     3014656,
+     3014656
+    ],
+    "summary": "S 1225 2481 3",
+    "wall_runs": [
+     0.04,
+     0.05,
+     0.05
+    ],
+    "wall_s": 0.05
+   },
+   "facts": {
+    "cpu_runs": [
+     0.04,
+     0.04,
+     0.06
+    ],
+    "cpu_s": 0.04,
+    "rss_bytes": 9764864,
+    "rss_runs": [
+     9494528,
+     10129408,
+     9764864
+    ],
+    "stats": "pulsar: files=1370 prod=1225 I=3413 U=1095 fatal_parse=0 unreadable=0",
+    "wall_runs": [
+     0.01,
+     0.01,
+     0.01
+    ],
+    "wall_s": 0.01
+   },
+   "kind": "repo",
+   "loadavg": 0.41,
+   "path": "/Users/guilhermecastro/playground/phoenix",
+   "sha": "380de9b49f53b54530eafa20866cf8df9f2832e3"
+  },
+  "pi": {
+   "actual_sha": "e65b3b88c08412bb8ffbd21fb5dc5756064a6e5a",
+   "dirty": 0,
+   "engine": {
+    "cpu_runs": [
+     0.08,
+     0.07,
+     0.08
+    ],
+    "cpu_s": 0.08,
+    "rss_bytes": 3670016,
+    "rss_runs": [
+     3670016,
+     3670016,
+     3670016
+    ],
+    "summary": "S 934 2771 5",
+    "wall_runs": [
+     0.08,
+     0.08,
+     0.08
+    ],
+    "wall_s": 0.08
+   },
+   "facts": {
+    "cpu_runs": [
+     0.18,
+     0.18,
+     0.17
+    ],
+    "cpu_s": 0.18,
+    "rss_bytes": 19251200,
+    "rss_runs": [
+     19034112,
+     19726336,
+     19251200
+    ],
+    "stats": "pulsar: files=2034 prod=934 I=8338 U=1233 fatal_parse=0 unreadable=0",
+    "wall_runs": [
+     0.05,
+     0.05,
+     0.05
+    ],
+    "wall_s": 0.05
+   },
+   "kind": "repo",
+   "loadavg": 0.41,
+   "path": "/Users/guilhermecastro/playground/pi",
+   "sha": "e65b3b88c08412bb8ffbd21fb5dc5756064a6e5a"
+  },
+  "pulsar": {
+   "actual_sha": "927ab7a51231f635f2d99c7073259b03c36af916",
+   "dirty": 930,
+   "engine": {
+    "cpu_runs": [
+     0.01,
+     0.01,
+     0.01
+    ],
+    "cpu_s": 0.01,
+    "rss_bytes": 3014656,
+    "rss_runs": [
+     3014656,
+     3014656,
+     3014656
+    ],
+    "summary": "S 517 1433 2",
+    "wall_runs": [
+     0.01,
+     0.01,
+     0.01
+    ],
+    "wall_s": 0.01
+   },
+   "facts": {
+    "cpu_runs": [
+     0.05,
+     0.05,
+     0.05
+    ],
+    "cpu_s": 0.05,
+    "rss_bytes": 10141696,
+    "rss_runs": [
+     8884224,
+     10584064,
+     10141696
+    ],
+    "stats": "pulsar: files=700 prod=517 I=2758 U=453 fatal_parse=0 unreadable=0",
+    "wall_runs": [
+     0.01,
+     0.01,
+     0.01
+    ],
+    "wall_s": 0.01
+   },
+   "kind": "snapshot",
+   "loadavg": 0.23,
+   "path": "/Users/guilhermecastro/Projects/pulsar-corpora/pulsar",
+   "sha": "927ab7a51231f635f2d99c7073259b03c36af916"
+  },
+  "t3code": {
+   "actual_sha": "23b55022175e69938514934f65c5a607d38f1e47",
+   "dirty": 0,
+   "engine": {
+    "cpu_runs": [
+     0.27,
+     0.27,
+     0.27
+    ],
+    "cpu_s": 0.27,
+    "rss_bytes": 6422528,
+    "rss_runs": [
+     6422528,
+     6422528,
+     6422528
+    ],
+    "summary": "S 1408 3862 4",
+    "wall_runs": [
+     0.27,
+     0.27,
+     0.27
+    ],
+    "wall_s": 0.27
+   },
+   "facts": {
+    "cpu_runs": [
+     0.32,
+     0.31,
+     0.31
+    ],
+    "cpu_s": 0.31,
+    "rss_bytes": 48640000,
+    "rss_runs": [
+     48640000,
+     51113984,
+     43290624
+    ],
+    "stats": "pulsar: files=4332 prod=1408 I=26391 U=2292 fatal_parse=0 unreadable=0",
+    "wall_runs": [
+     0.1,
+     0.09,
+     0.09
+    ],
+    "wall_s": 0.09
+   },
+   "kind": "repo",
+   "loadavg": 0.41,
+   "path": "/Users/guilhermecastro/playground/t3code",
+   "sha": "23b55022175e69938514934f65c5a607d38f1e47"
+  },
+  "tantivy": {
+   "actual_sha": "d0c5ffb0aa6bf046553dde8775ca7b6d362aa388",
+   "dirty": 0,
+   "engine": {
+    "cpu_runs": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "cpu_s": 0.0,
+    "rss_bytes": 262144,
+    "rss_runs": [
+     262144,
+     262144,
+     262144
+    ],
+    "summary": "S 0 0 0",
+    "wall_runs": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "wall_s": 0.0
+   },
+   "facts": {
+    "cpu_runs": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "cpu_s": 0.0,
+    "rss_bytes": 4718592,
+    "rss_runs": [
+     4718592,
+     4718592,
+     4718592
+    ],
+    "stats": "pulsar: files=0 prod=0 I=0 U=0 fatal_parse=0 unreadable=0",
+    "wall_runs": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "wall_s": 0.0
+   },
+   "kind": "repo",
+   "loadavg": 0.41,
+   "path": "/Users/guilhermecastro/playground/tantivy",
+   "sha": "d0c5ffb0aa6bf046553dde8775ca7b6d362aa388"
+  },
+  "typst": {
+   "actual_sha": "031f539dca3f41b804e89d39d1ca26126309c96f",
+   "dirty": 0,
+   "engine": {
+    "cpu_runs": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "cpu_s": 0.0,
+    "rss_bytes": 262144,
+    "rss_runs": [
+     262144,
+     262144,
+     262144
+    ],
+    "summary": "S 1 0 0",
+    "wall_runs": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "wall_s": 0.0
+   },
+   "facts": {
+    "cpu_runs": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "cpu_s": 0.0,
+    "rss_bytes": 5111808,
+    "rss_runs": [
+     5111808,
+     5111808,
+     5324800
+    ],
+    "stats": "pulsar: files=1 prod=1 I=0 U=1 fatal_parse=0 unreadable=0",
+    "wall_runs": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "wall_s": 0.0
+   },
+   "kind": "repo",
+   "loadavg": 0.41,
+   "path": "/Users/guilhermecastro/playground/typst",
+   "sha": "031f539dca3f41b804e89d39d1ca26126309c96f"
+  }
+ },
+ "created": "2026-11-07T10:10:34Z",
+ "engine": {
+  "path": "/Users/guilhermecastro/Projects/pulsar/experiments/bend-pulsar/engine/pulsar-engine",
+  "sha256": "96b865a1f60940261eade83557cefb69462dea8dc3aeea41792580a2bdda9f15"
+ },
+ "gate_metrics": [
+  "rss_bytes",
+  "cpu_s"
+ ],
+ "informational": [
+  "wall_s",
+  "loadavg"
+ ],
+ "machine": "Linux x86_64",
+ "margins": {
+  "cpu_pct": 25,
+  "note": "lead ruling 2026-11-07: gate on RSS + user/sys CPU (load-stable); wall+loadavg informational only \u2014 Bend io_loop sleeps between work chunks",
+  "rss_pct": 25
+ },
+ "os": "Ubuntu 24.04.4 LTS",
+ "runs": 3,
+ "source_sha": "04500f1774c9d72fac003e75c7a0530c9d174e89",
+ "version": 2
+}
