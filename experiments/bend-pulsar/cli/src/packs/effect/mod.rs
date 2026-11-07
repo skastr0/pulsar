@@ -13,6 +13,7 @@
 use crate::lang::ts::calls::CatalogIndex;
 use crate::lang::ts::functions::{HookCx, PackHook};
 use oxc_ast::ast::*;
+use oxc_span::GetSpan;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 /// The runtime-escape class (FACTS.md): a call that runs an effect. An `Effect.provide` is a
@@ -54,6 +55,8 @@ struct Node {
     ctor: Ctor,
     parts: Vec<(Operand, u8)>,
     opaque: bool,
+    /// Byte offset of the expression during the walk, its line after [`Hook::finish`].
+    at: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -68,6 +71,17 @@ struct SvcDef {
     name: String,
     key: String,
     kind: u8,
+    /// Offset during the walk, line after [`Hook::finish`].
+    at: u32,
+}
+
+/// What the `.effect` side table says about a service or a layer: its file (`NONE` for a catalog
+/// one), line (0 when unknown) and name.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Named {
+    pub file: u32,
+    pub line: u32,
+    pub name: String,
 }
 
 #[derive(Debug, Clone)]
@@ -104,6 +118,8 @@ pub struct Hook<'i> {
     seen: HashMap<(u32, u32), Option<u32>>,
     /// Classes seen so far: span and name, for `this`.
     classes: Vec<(u32, u32, Option<String>)>,
+    /// Start of the expression being read, for the nodes it creates.
+    at: u32,
 }
 
 /// A symbol in the `effect` package itself, never a repo binding.
@@ -159,7 +175,7 @@ fn transparent(name: &str) -> bool {
 
 impl<'i> Hook<'i> {
     pub fn new(index: &'i CatalogIndex) -> Self {
-        Hook { index, g: FileGraph::default(), pending: HashMap::new(), seen: HashMap::new(), classes: Vec::new() }
+        Hook { index, g: FileGraph::default(), pending: HashMap::new(), seen: HashMap::new(), classes: Vec::new(), at: 0 }
     }
 
     /// The file's facts, with generator spans turned into lines of `src` (the file's text).
@@ -178,6 +194,10 @@ impl<'i> Hook<'i> {
         };
         for n in &mut self.g.nodes {
             fix(&mut n.ctor);
+            n.at = line(n.at);
+        }
+        for d in &mut self.g.services {
+            d.at = line(d.at);
         }
         for (_, b) in &mut self.g.binds {
             if let Bind::Ctor(c) = b {
@@ -231,13 +251,14 @@ impl<'i> Hook<'i> {
         self.sym(cx, e).and_then(|s| sym_rest(&s, "effect#Layer.").map(str::to_string))
     }
 
-    fn node(&mut self, n: Node) -> u32 {
+    fn node(&mut self, mut n: Node) -> u32 {
+        n.at = self.at;
         self.g.nodes.push(n);
         (self.g.nodes.len() - 1) as u32
     }
 
     fn opaque(&mut self) -> u32 {
-        self.node(Node { builds: Vec::new(), ctor: Ctor::Nothing, parts: Vec::new(), opaque: true })
+        self.node(Node { builds: Vec::new(), ctor: Ctor::Nothing, parts: Vec::new(), opaque: true, at: 0 })
     }
 
     fn ctor_of(&self, cx: &HookCx<'_>, e: &Expression<'_>) -> Ctor {
@@ -289,7 +310,7 @@ impl<'i> Hook<'i> {
     fn operand(&mut self, cx: &HookCx<'_>, e: &Expression<'_>) -> Operand {
         let e = e.get_inner_expression();
         if self.layer_name(cx, e).as_deref() == Some("empty") {
-            return Operand::Node(self.node(Node { builds: Vec::new(), ctor: Ctor::Nothing, parts: Vec::new(), opaque: false }));
+            return Operand::Node(self.node(Node { builds: Vec::new(), ctor: Ctor::Nothing, parts: Vec::new(), opaque: false, at: 0 }));
         }
         if let Expression::CallExpression(c) = e {
             if let Some(n) = self.layer_call(cx, c, true) {
@@ -320,6 +341,14 @@ impl<'i> Hook<'i> {
     }
 
     fn layer_call_new(&mut self, cx: &HookCx<'_>, c: &CallExpression<'_>, operand: bool) -> Option<u32> {
+        let outer = self.at;
+        self.at = c.span.start;
+        let r = self.layer_call_at(cx, c, operand);
+        self.at = outer;
+        r
+    }
+
+    fn layer_call_at(&mut self, cx: &HookCx<'_>, c: &CallExpression<'_>, operand: bool) -> Option<u32> {
         let a = args(c);
         // `X.pipe(…)` and `pipe(X, …)`.
         if let Expression::StaticMemberExpression(m) = c.callee.get_inner_expression() {
@@ -358,11 +387,11 @@ impl<'i> Hook<'i> {
                     parts.push((o, mode));
                 }
             }
-            return Some(self.node(Node { builds: Vec::new(), ctor: Ctor::Nothing, parts, opaque: false }));
+            return Some(self.node(Node { builds: Vec::new(), ctor: Ctor::Nothing, parts, opaque: false, at: 0 }));
         }
         if matches!(name.as_str(), "effectDiscard" | "scopedDiscard") {
             let ctor = a.first().map_or(Ctor::Opaque, |e| self.ctor_of(cx, e));
-            return Some(self.node(Node { builds: Vec::new(), ctor, parts: Vec::new(), opaque: false }));
+            return Some(self.node(Node { builds: Vec::new(), ctor, parts: Vec::new(), opaque: false, at: 0 }));
         }
         if transparent(&name) || !operand {
             return None;
@@ -375,7 +404,7 @@ impl<'i> Hook<'i> {
         let builds = self.ref_of(cx, tag).into_iter().collect::<Vec<_>>();
         let opaque = builds.is_empty();
         let ctor = eff.map_or(Ctor::Nothing, |e| self.ctor_of(cx, e));
-        self.node(Node { builds, ctor, parts: Vec::new(), opaque })
+        self.node(Node { builds, ctor, parts: Vec::new(), opaque, at: 0 })
     }
 
     /// A pipe is a layer pipe when one of its steps is a `Layer` function.
@@ -410,7 +439,7 @@ impl<'i> Hook<'i> {
                     for o in self.operands(cx, that) {
                         parts.push((o, mode));
                     }
-                    cur = Some(Operand::Node(self.node(Node { builds: Vec::new(), ctor: Ctor::Nothing, parts, opaque: false })));
+                    cur = Some(Operand::Node(self.node(Node { builds: Vec::new(), ctor: Ctor::Nothing, parts, opaque: false, at: 0 })));
                 }
                 (Some(n), _) if transparent(n) => {
                     if cur.is_none() {
@@ -485,6 +514,7 @@ impl<'i> Hook<'i> {
     }
 
     fn roots_at(&mut self, cx: &HookCx<'_>, c: &CallExpression<'_>) {
+        self.at = c.span.start;
         let a = args(c);
         match self.sym(cx, &c.callee).as_deref() {
             Some("effect#Layer.launch") | Some("effect#ManagedRuntime.make") => {
@@ -618,6 +648,7 @@ impl Hook<'_> {
     /// `class X extends Context.Service<…>()("key", …)`, `const X = Context.Service<…>("key")`
     /// and the other service forms. Returns whether `sup` is one.
     fn service_expr(&mut self, cx: &HookCx<'_>, name: &str, sup: &Expression<'_>) -> bool {
+        self.at = sup.span().start;
         let mut all_args: Vec<&Expression<'_>> = Vec::new();
         let mut e = sup.get_inner_expression();
         while let Expression::CallExpression(c) = e {
@@ -635,7 +666,7 @@ impl Hook<'_> {
             _ => return false,
         };
         let key = all_args.iter().find_map(|a| string_lit(a)).unwrap_or_else(|| name.to_string());
-        self.g.services.push(SvcDef { name: name.to_string(), key, kind });
+        self.g.services.push(SvcDef { name: name.to_string(), key, kind, at: self.at });
         let opts = all_args.iter().find_map(|a| match a.get_inner_expression() {
             Expression::ObjectExpression(o) => Some(o),
             _ => None,
@@ -659,9 +690,9 @@ impl Hook<'_> {
             };
             let deps = field("dependencies").map(|d| self.operands(cx, d)).unwrap_or_default();
             let own = Ref::Local(name.to_string());
-            let bare = self.node(Node { builds: vec![own.clone()], ctor: ctor.clone(), parts: Vec::new(), opaque: false });
+            let bare = self.node(Node { builds: vec![own.clone()], ctor: ctor.clone(), parts: Vec::new(), opaque: false, at: 0 });
             let parts = deps.into_iter().map(|o| (o, 1)).collect();
-            let full = self.node(Node { builds: vec![own], ctor, parts, opaque: false });
+            let full = self.node(Node { builds: vec![own], ctor, parts, opaque: false, at: 0 });
             self.bind(format!("{name}.Default"), Bind::Node(full));
             self.bind(format!("{name}.DefaultWithoutDependencies"), Bind::Node(bare));
         } else if let Some(v) = field("make") {
@@ -711,6 +742,10 @@ pub struct Rows {
     pub lc: Vec<(u32, FnAt)>,
     pub lo: Vec<u32>,
     pub us: Vec<(FnAt, u32)>,
+    /// By service id: where it is defined and its name (`Users (app/Users)`, or a catalog symbol).
+    pub svc_names: Vec<Named>,
+    /// By layer id: where its expression is and the name bound to it (`-` when none).
+    pub layer_names: Vec<Named>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -920,10 +955,38 @@ pub fn link(files: &[LinkFile<'_>], ext: &External, resolve: &dyn Fn(&str, &str)
             LayerKey::Repo(..) => {}
         }
     }
+    let layer_names: Vec<Named> = layers
+        .iter()
+        .map(|k| match k {
+            LayerKey::Repo(i, n) => {
+                let g = files[*i].graph.unwrap();
+                let name = g.binds.iter().find(|(_, b)| matches!(b, Bind::Node(m) if m == n)).map_or("-".to_string(), |(x, _)| x.clone());
+                Named { file: files[*i].id, line: g.nodes[*n as usize].at, name }
+            }
+            LayerKey::Cat(s) => Named { file: NONE, line: 0, name: s.clone() },
+            LayerKey::Unresolved(i, Ref::Local(r) | Ref::Sym(r)) => Named { file: files[*i].id, line: 0, name: r.clone() },
+        })
+        .collect();
     let lid: BTreeMap<LayerKey, u32> = layers.into_iter().enumerate().map(|(n, k)| (k, n as u32)).collect();
     let sid: BTreeMap<SvcKey, u32> = svcs.keys().enumerate().map(|(n, k)| (k.clone(), n as u32)).collect();
     let mut rows = Rows { nl: lid.len() as u32, ns: sid.len() as u32, nr: roots.len() as u32, ..Rows::default() };
     rows.sv = svcs.iter().map(|(k, (file, kind))| [sid[k], *file, *kind]).collect();
+    rows.layer_names = layer_names;
+    rows.svc_names = svcs
+        .iter()
+        .map(|(k, (file, _))| match k {
+            SvcKey::Ext(s) => Named { file: NONE, line: 0, name: s.clone() },
+            SvcKey::Repo(key) => {
+                let d = files
+                    .iter()
+                    .filter(|f| f.id == *file)
+                    .flat_map(|f| f.graph.iter().flat_map(|g| &g.services))
+                    .find(|d| &d.key == key);
+                let (line, name) = d.map_or((0, key.clone()), |d| (d.at, format!("{} ({key})", d.name)));
+                Named { file: *file, line, name }
+            }
+        })
+        .collect();
     rows.ly = ly.iter().map(|(l, f, s)| [lid[l], *f, sid[s]]).collect();
     rows.lp = lp.iter().filter(|(a, b, _)| a != b).map(|(a, b, m)| [lid[a], lid[b], *m]).collect();
     rows.lc = lc.iter().map(|(l, fa)| (lid[l], *fa)).collect();
@@ -1092,6 +1155,13 @@ export const Hidden = Layer.unwrap(Effect.succeed(AppLive))
         let mut us = vec![(fn_at(&a, 0, 5), 4), (fn_at(&a, 1, 4), 3), (fn_at(&a, 1, 8), 2), (fn_at(&a, 2, 4), 2)];
         us.sort();
         assert_eq!(r.us, us);
+        // The `.effect` side table names each id: binding, file and line.
+        let names = |v: &[Named]| v.iter().map(|n| (n.file, n.line, n.name.clone())).collect::<Vec<_>>();
+        assert_eq!(names(&r.svc_names)[3], (0, 4, "Users (app/Users)".to_string()));
+        assert_eq!(names(&r.svc_names)[4], (NONE, 0, "effect/sql#SqlClient.SqlClient".to_string()));
+        assert_eq!(names(&r.layer_names)[0], (0, 5, "Users.layer".to_string()));
+        assert_eq!(names(&r.layer_names)[4], (1, 14, "makeAppLive".to_string()));
+        assert_eq!(names(&r.layer_names)[3], (1, 14, "-".to_string()));
         let _ = std::fs::remove_dir_all(&root);
     }
 

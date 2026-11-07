@@ -52,6 +52,7 @@ Strings the engine never sees. The CLI writes them next to the facts file (`<fac
   - `chain`: container names outermost first, ending with the function itself, joined by `>`. Anonymous functions are `#<ordinal within parent>`. Never empty.
   - To assign a line to a function, take the function in the same file with the largest `start_line` whose span contains the line. A nested arrow that starts on its parent's line owns that line.
 - **`.laws`:** one line per law, in law-id order: `law path line name`, TAB-separated (see "Laws").
+- **`.effect`:** written when the Effect pack found services, layers or roots. It names them for finding subjects, TAB-separated: `S svc path line name` for each service in `SV` id order, then `L layer path line name` for each layer in id order. `name` is the binding and tag string for a repo service (`Users (app/Users)`), the catalog symbol for a catalog service or layer, the name bound to a repo layer (`MailerLive`, `Users.layer`; `-` when the expression is unnamed), or the unresolved name for an opaque one. `path` is `-` and `line` 0 for catalog entries; `line` is 0 for an unresolved name.
 
 ## Engine output (v0, one stream)
 

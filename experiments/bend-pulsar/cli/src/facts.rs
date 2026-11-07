@@ -376,6 +376,9 @@ pub struct SideTables {
     pub sql_sites: Vec<(u32, u32)>,
     /// The `.laws` table, already formatted (`law path line name`, TAB-separated, law-id order).
     pub laws: String,
+    /// The `.effect` table, already formatted: `S svc path line name` and `L layer path line
+    /// name`, TAB-separated, in id order (FACTS.md "Side tables").
+    pub effect: String,
 }
 
 impl SideTables {
@@ -432,6 +435,10 @@ impl SideTables {
         if !self.laws.is_empty() {
             let p = sibling(".laws");
             std::fs::write(&p, &self.laws).map_err(|e| format!("{}: {e}", p.display()))?;
+        }
+        if !self.effect.is_empty() {
+            let p = sibling(".effect");
+            std::fs::write(&p, &self.effect).map_err(|e| format!("{}: {e}", p.display()))?;
         }
 
         self.write_sql(&sibling)?;

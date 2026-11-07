@@ -98,6 +98,7 @@ pub fn build(
     let fn_base = function_bases(&per);
     if let Some(rows) = &effect {
         push_effect(w, &per, rows);
+        tables.effect = effect_table(rows, &files);
     }
     let fn_keys = push_functions(w, per, tables, &mut st);
     push_rules(w, rules, tables);
@@ -239,6 +240,19 @@ fn analyze_ts(
         per[*id as usize] = Some(f);
     }
     Ok((a.sym_classes, a.effect, a.sql_texts))
+}
+
+/// The `.effect` side table: what each service and layer id names, for finding subjects.
+fn effect_table(rows: &crate::packs::effect::Rows, files: &[String]) -> String {
+    use std::fmt::Write;
+    let mut s = String::new();
+    let path = |f: u32| files.get(f as usize).map_or("-", String::as_str);
+    for (tag, names) in [("S", &rows.svc_names), ("L", &rows.layer_names)] {
+        for (id, n) in names.iter().enumerate() {
+            let _ = writeln!(s, "{tag}\t{id}\t{}\t{}\t{}", path(n.file), n.line, n.name);
+        }
+    }
+    s
 }
 
 /// The Effect pack's rows (FACTS.md, "Effect pack"), with functions numbered as `FN` numbers
