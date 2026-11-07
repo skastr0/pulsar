@@ -1,0 +1,1 @@
+{"id": "no-top2", "domain": "typescript", "description": "ablation experiment, not a policy", "signal_overrides": {"TS-AB-04-interface-implementation-ratio": {"active": false}, "TS-RP-01-hotspots": {"active": false}}}

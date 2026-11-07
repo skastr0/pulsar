@@ -1,0 +1,3 @@
+packages/core/src/coverage-facts.ts packages/core/src/coverage-istanbul.ts packages/core/src/coverage-lcov.ts
+packages/ts-pack/src/signals/ts-rp-02-policy.ts packages/ts-pack/src/signals/ts-rp-02-pr-size.ts
+# files=505 cycles=2
