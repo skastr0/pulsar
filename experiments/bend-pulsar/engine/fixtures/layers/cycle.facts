@@ -1,0 +1,17 @@
+# A needs B's service, B needs C's, C needs A's (a 3-cycle); D needs its own
+# service (a self-loop). Layers 0 A, 1 B, 2 C, 3 D; services 0..3 built by
+# layers 0..3. No roots, so nothing is unprovided.
+pulsar-facts 0
+E 4 4 0
+SV 0 0 0
+SV 1 0 0
+SV 2 0 0
+SV 3 0 0
+LY 0 0 0
+LY 1 0 1
+LY 2 0 2
+LY 3 0 3
+LQ 0 1
+LQ 1 2
+LQ 2 0
+LQ 3 3

@@ -1,0 +1,27 @@
+# svc 0: LQ from layers 0-5, US from fns 0-4, fn 0 is layer 0's constructor (LC 0 0)
+# -> fan-in 6 + 4 = 10, at the bar. svc 1: LQ from layers 0-4, US from fns 5-8 -> 9, under it.
+pulsar-facts 0
+E 6 2 0
+SV 0 0 0
+SV 1 0 0
+LQ 0 0
+LQ 0 1
+LQ 1 0
+LQ 1 1
+LQ 2 0
+LQ 2 1
+LQ 3 0
+LQ 3 1
+LQ 4 0
+LQ 4 1
+LQ 5 0
+LC 0 0
+US 0 0
+US 1 0
+US 2 0
+US 3 0
+US 4 0
+US 5 1
+US 6 1
+US 7 1
+US 8 1

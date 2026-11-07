@@ -1,0 +1,31 @@
+# Hand-written Effect facts (no adapter yet). Services: 0 Db, 1 UserRepo,
+# 2 Http, 3 Config, 4 Clock (kind 1, has a default), 5 Mailer.
+# Layers: 0 DbLive (builds Db, needs Config), 1 UserRepoLive (builds UserRepo,
+# needs Db, Clock), 2 HttpLive (builds Http, needs UserRepo, Mailer),
+# 3 ConfigLive (builds Config), 4 AppLive = mergeAll(HttpLive, UserRepoLive,
+# DbLive2) with provide(ConfigLive), 5 DbLive2 (builds Db again).
+# Root 0 runs AppLive. Mailer is built by no layer: unprovided at root 0.
+pulsar-facts 0
+E 6 6 1
+SV 0 0 0
+SV 1 1 0
+SV 2 2 0
+SV 3 3 0
+SV 4 4294967295 1
+SV 5 5 0
+LY 0 0 0
+LY 1 1 1
+LY 2 2 2
+LY 3 3 3
+LY 5 0 0
+LQ 0 3
+LQ 1 0
+LQ 1 4
+LQ 2 1
+LQ 2 5
+LP 4 0 3
+LP 4 1 3
+LP 4 2 3
+LP 4 3 1
+LP 4 5 3
+LR 0 4
