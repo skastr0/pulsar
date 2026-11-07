@@ -22,6 +22,7 @@ pub enum Rel {
     Fn,
     Fk,
     Ct,
+    Co,
     Tf,
     Mk,
     L,
@@ -46,7 +47,7 @@ pub enum Rel {
 }
 
 impl Rel {
-    pub const ALL: [Rel; 30] = [
+    pub const ALL: [Rel; 31] = [
         Rel::N,
         Rel::F,
         Rel::K,
@@ -56,6 +57,7 @@ impl Rel {
         Rel::Fn,
         Rel::Fk,
         Rel::Ct,
+        Rel::Co,
         Rel::Tf,
         Rel::Mk,
         Rel::L,
@@ -90,6 +92,7 @@ impl Rel {
             Rel::Fn => "FN",
             Rel::Fk => "FK",
             Rel::Ct => "CT",
+            Rel::Co => "CO",
             Rel::Tf => "TF",
             Rel::Mk => "MK",
             Rel::L => "L",
@@ -119,7 +122,7 @@ impl Rel {
         match self {
             Rel::N | Rel::M | Rel::Sy | Rel::Tf | Rel::L => 1,
             Rel::F | Rel::U | Rel::H | Rel::A | Rel::Cl | Rel::Lq | Rel::Us | Rel::Sv | Rel::Ln => 2,
-            Rel::K | Rel::Fk | Rel::C | Rel::Cfn | Rel::Cv | Rel::Hd | Rel::Ly | Rel::Lp | Rel::Mk | Rel::Lw => 3,
+            Rel::K | Rel::Fk | Rel::C | Rel::Cfn | Rel::Cv | Rel::Hd | Rel::Ly | Rel::Lp | Rel::Mk | Rel::Lw | Rel::Co => 3,
             Rel::Fn | Rel::Ct | Rel::Cf | Rel::Rl => 4,
             Rel::I | Rel::Cs => 5,
         }

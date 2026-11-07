@@ -17,7 +17,7 @@ use oxc_syntax::scope::ScopeFlags;
 
 use super::calls::{join, CatalogIndex, Use};
 use crate::catalog::{Arg, Via};
-use crate::lang::functions::{ct, ctx, fk, fnv_parts, shape, CtRec, FileFns, FnRec, Site, SiteKind};
+use crate::lang::functions::{ct, ctx, fk, fnv_parts, op, shape, CoRec, CtRec, FileFns, FnRec, Site, SiteKind};
 use oxc_semantic::Scoping;
 use oxc_syntax::reference::ReferenceId;
 use oxc_syntax::symbol::SymbolId;
@@ -346,6 +346,13 @@ impl<'s> Walker<'s> {
         let parent = *f.stack.last().unwrap();
         self.out.ct.push(CtRec { fn_local: f.local, node: id, parent, kind });
         Some(id)
+    }
+
+    /// A kind-6 node, and the operator behind it.
+    fn short_circuit(&mut self, code: u8) {
+        let Some(node) = self.leaf(ct::SHORT_CIRCUIT) else { return };
+        let fn_local = self.frames.last().map_or(0, |f| f.local);
+        self.out.ops.push(CoRec { fn_local, node, op: code });
     }
 
     fn exit(&mut self, start: u32) {
@@ -1096,16 +1103,21 @@ impl<'a> Visit<'a> for Walker<'_> {
     }
 
     fn visit_logical_expression(&mut self, it: &LogicalExpression<'a>) {
-        self.leaf(ct::SHORT_CIRCUIT);
+        let code = match it.operator {
+            LogicalOperator::And => op::AND,
+            LogicalOperator::Or => op::OR,
+            LogicalOperator::Coalesce => op::NULLISH,
+        };
+        self.short_circuit(code);
         walk::walk_logical_expression(self, it);
     }
 
     fn visit_assignment_expression(&mut self, it: &AssignmentExpression<'a>) {
-        if matches!(
-            it.operator,
-            AssignmentOperator::LogicalAnd | AssignmentOperator::LogicalOr | AssignmentOperator::LogicalNullish
-        ) {
-            self.leaf(ct::SHORT_CIRCUIT);
+        match it.operator {
+            AssignmentOperator::LogicalAnd => self.short_circuit(op::AND_ASSIGN),
+            AssignmentOperator::LogicalOr => self.short_circuit(op::OR_ASSIGN),
+            AssignmentOperator::LogicalNullish => self.short_circuit(op::NULLISH_ASSIGN),
+            _ => {}
         }
         walk::walk_assignment_expression(self, it);
     }
@@ -1226,6 +1238,11 @@ mod tests {
         ct.sort_by_key(|c| (c.fn_local, c.node));
         for c in ct {
             s += &format!("CT {} {} {} {}\n", c.fn_local, c.node, c.parent, c.kind);
+        }
+        let mut ops = out.ops.clone();
+        ops.sort_by_key(|o| (o.fn_local, o.node));
+        for o in ops {
+            s += &format!("CO {} {} {}\n", o.fn_local, o.node, o.op);
         }
         s
     }

@@ -152,7 +152,7 @@ pub fn build(
     }
     let mut base = 0u32;
     for (file, slot) in per.iter_mut().enumerate() {
-        let Some(FileOut { fns: FileFns { fns, mut ct, .. }, tests }) = slot.take() else { continue };
+        let Some(FileOut { fns: FileFns { fns, mut ct, mut ops, .. }, tests }) = slot.take() else { continue };
         let count = fns.len() as u32;
         for (local, f) in fns.into_iter().enumerate() {
             let id = base + local as u32;
@@ -174,6 +174,11 @@ pub fn build(
         st.ct += ct.len();
         for c in &ct {
             w.push(Rel::Ct, &[base + c.fn_local, c.node, c.parent, c.kind as u32]);
+        }
+        // The boolean operator behind each kind-6 node.
+        ops.sort_unstable_by_key(|o| (o.fn_local, o.node));
+        for o in &ops {
+            w.push(Rel::Co, &[base + o.fn_local, o.node, o.op as u32]);
         }
         for t in tests {
             w.push(Rel::Tf, &[base + t]);

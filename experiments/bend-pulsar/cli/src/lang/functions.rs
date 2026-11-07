@@ -58,6 +58,24 @@ pub struct CtRec {
     pub kind: u8,
 }
 
+/// `CO` operator codes for a kind-6 node (FACTS.md).
+pub mod op {
+    pub const AND: u8 = 1;
+    pub const OR: u8 = 2;
+    pub const NULLISH: u8 = 3;
+    pub const AND_ASSIGN: u8 = 4;
+    pub const OR_ASSIGN: u8 = 5;
+    pub const NULLISH_ASSIGN: u8 = 6;
+}
+
+/// Which boolean operator a kind-6 control node stands for (`CO fn node op`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CoRec {
+    pub fn_local: u32,
+    pub node: u32,
+    pub op: u8,
+}
+
 /// `CS.ctx` bits (FACTS.md).
 pub mod ctx {
     pub const ASYNC: u8 = 1;
@@ -95,6 +113,8 @@ pub struct Site {
 pub struct FileFns {
     pub fns: Vec<FnRec>,
     pub ct: Vec<CtRec>,
+    /// One row per kind-6 node in `ct`.
+    pub ops: Vec<CoRec>,
     /// Symbols this file's call sites name, deduplicated, in first-use order.
     pub syms: Vec<String>,
     pub sites: Vec<Site>,
