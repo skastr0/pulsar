@@ -38,6 +38,8 @@ pub struct SqlText {
     /// Enclosing function, as a local index within the file; `None` at module level.
     pub fn_local: Option<u32>,
     pub line: u32,
+    /// Innermost enclosing control-tree node of `fn_local` at the call; 0 is the function body.
+    pub ct_node: u32,
     /// Empty for `Dynamic`; `${expr}` is `?` in a `Template`.
     pub text: String,
     pub kind: SqlTextKind,
@@ -122,6 +124,7 @@ pub fn analyze(root: &Path, files: &[(u32, String)], tracked: &[String]) -> Resu
             file,
             fn_local: r.fn_local,
             line: r.line,
+            ct_node: r.ct_node,
             text: r.text,
             kind: r.kind,
         }));

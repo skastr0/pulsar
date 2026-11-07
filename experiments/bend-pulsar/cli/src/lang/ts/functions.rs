@@ -504,8 +504,9 @@ impl<'s> Walker<'s> {
 
     fn push_sql(&mut self, span: Span, kind: SqlTextKind, text: String) {
         let fn_local = self.frames.last().map(|f| f.local);
+        let ct_node = self.frames.last().and_then(|f| f.stack.last().copied()).unwrap_or(0);
         let line = self.lines.line(span.start);
-        self.out.sql.push(SqlTextRec { fn_local, line, text, kind });
+        self.out.sql.push(SqlTextRec { fn_local, line, ct_node, text, kind });
     }
 
     fn handler_site(&mut self, shape: u8) {

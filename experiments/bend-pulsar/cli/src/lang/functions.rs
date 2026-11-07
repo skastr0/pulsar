@@ -126,6 +126,9 @@ pub struct SqlTextRec {
     /// Enclosing function, as a local index; `None` at module level.
     pub fn_local: Option<u32>,
     pub line: u32,
+    /// Innermost enclosing control-tree node of `fn_local` at the call (0 = the function body,
+    /// and 0 when there is no function).
+    pub ct_node: u32,
     pub text: String,
     pub kind: SqlTextKind,
 }
