@@ -255,8 +255,8 @@
   "law": "engine_all",
   "bug": "Engine.all drops the class-in-context lines",
   "file": "Pipeline.bend",
-  "old": "  Engine.more(Engine.more(Engine.lines(o, m), Engine.layers(rows)), Engine.classctx(rows))",
-  "new": "  Engine.more(Engine.lines(o, m), Engine.layers(rows))"
+  "old": "Engine.more(Engine.more(Engine.lines(o, m), Engine.layers(rows)), Engine.classctx(rows))",
+  "new": "Engine.more(Engine.lines(o, m), Engine.layers(rows))"
  },
  {
   "law": "cycles_complete (top LAWS H)",
@@ -269,8 +269,8 @@
   "law": "P15 engine_row_tags",
   "bug": "Engine.row_tags drops CO",
   "file": "Pipeline.bend",
-  "old": ", 4408910, 17231]",
-  "new": ", 4408910]"
+  "old": ", 4408910, 17231, 72,",
+  "new": ", 4408910, 72,"
  },
  {
   "law": "P16 metrics_defaults",
