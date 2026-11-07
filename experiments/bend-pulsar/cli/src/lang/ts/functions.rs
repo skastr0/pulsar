@@ -215,7 +215,8 @@ pub struct Walker<'s> {
     /// control trees are produced.
     scoping: Option<&'s Scoping>,
     index: Option<&'s CatalogIndex>,
-    test_file: bool,
+    /// `CS.ctx` bits of the whole file (4 = a test file, 8 and 16 from repo policy).
+    file_ctx: u8,
     imports: HashMap<SymbolId, String>,
     bound: HashMap<SymbolId, Bound>,
     sym_ids: HashMap<String, u32>,
@@ -249,7 +250,7 @@ impl<'s> Walker<'s> {
             not_exit: HashSet::new(),
             scoping: None,
             index: None,
-            test_file: false,
+            file_ctx: 0,
             imports: HashMap::new(),
             bound: HashMap::new(),
             sym_ids: HashMap::new(),
@@ -275,7 +276,7 @@ impl<'s> Walker<'s> {
         let Some(hook) = self.hook.take() else { return };
         let (fn_local, ctx) = match self.frames.last() {
             Some(fr) => (Some(fr.local), fr.ctx),
-            None => (None, if self.test_file { ctx::TEST } else { 0 }),
+            None => (None, self.file_ctx),
         };
         let resolve = |e: &Expression<'_>| self.sym_of(e);
         let resolve_type = |t: &TSTypeName<'_>| match self.resolve(&self.type_chain(t)?) {
@@ -287,10 +288,10 @@ impl<'s> Walker<'s> {
     }
 
     /// Turn on call-site, binding and handler facts for this file.
-    pub fn with_calls(mut self, scoping: &'s Scoping, index: &'s CatalogIndex, test_file: bool) -> Self {
+    pub fn with_calls(mut self, scoping: &'s Scoping, index: &'s CatalogIndex, file_ctx: u8) -> Self {
         self.scoping = Some(scoping);
         self.index = Some(index);
-        self.test_file = test_file;
+        self.file_ctx = file_ctx;
         self
     }
 
@@ -549,6 +550,9 @@ impl<'s> Walker<'s> {
         }
         let frame_ctx = self.frame_ctx(span.start, is_async);
         self.frames.push(Frame { local, blocks: BlockAcc::default(), next_node: 1, ctx: frame_ctx, loops: 0, stack: vec![0] });
+        if is_async {
+            self.syntax_site("async-fn");
+        }
         self.push_container(&element);
     }
 
@@ -574,8 +578,7 @@ impl<'s> Walker<'s> {
     fn frame_ctx(&mut self, start: u32, is_async: bool) -> u8 {
         let inherited = match self.frames.last() {
             Some(f) => f.ctx,
-            None if self.test_file => ctx::TEST,
-            None => 0,
+            None => self.file_ctx,
         };
         let wrapped = self
             .pending_ctx
@@ -670,6 +673,18 @@ impl<'s> Walker<'s> {
                 self.lit_consts.contains(&sid).then_some(3)
             }
             _ => None,
+        }
+    }
+
+    /// A `CS` site for the language construct `name`, as the symbol `syntax#<name>`, when an
+    /// active rule could fire on it here. Core names the constructs; only catalog data gives them
+    /// a class and a rule. Constructs are common (`await` alone is tens of thousands of sites in a
+    /// large app), so a site no active rule can match is not emitted: that loses no finding.
+    fn syntax_site(&mut self, name: &str) {
+        let Some(ctx) = self.frames.last().map(|f| f.ctx) else { return };
+        let sym = format!("syntax#{name}");
+        if self.index.is_some_and(|ix| ix.may_fire(&sym, ctx)) {
+            self.call_site(&sym);
         }
     }
 
@@ -887,16 +902,31 @@ impl<'s> Walker<'s> {
         matches!(e, Expression::FunctionExpression(_) | Expression::ArrowFunctionExpression(_)).then_some(e)
     }
 
-    /// A wrapper call hands its ctx bits to every function it takes.
+    /// A wrapper call hands its ctx bits to every function it takes: a function argument, or a
+    /// function-valued property of an object-literal argument (`Effect.tryPromise({ try, catch })`).
     fn wrap_args(&mut self, args: &[Argument<'_>], bits: u8) {
         for a in args {
-            let start = match a.as_expression().map(|e| e.get_inner_expression()) {
-                Some(Expression::FunctionExpression(f)) => f.span.start,
-                Some(Expression::ArrowFunctionExpression(f)) => f.span.start,
-                _ => continue,
-            };
-            self.pending_ctx.push((start, bits));
+            match a.as_expression().map(|e| e.get_inner_expression()) {
+                Some(Expression::ObjectExpression(o)) => {
+                    for p in &o.properties {
+                        if let ObjectPropertyKind::ObjectProperty(p) = p {
+                            self.wrap_fn(&p.value, bits);
+                        }
+                    }
+                }
+                Some(e) => self.wrap_fn(e, bits),
+                None => {}
+            }
         }
+    }
+
+    fn wrap_fn(&mut self, e: &Expression<'_>, bits: u8) {
+        let start = match e.get_inner_expression() {
+            Expression::FunctionExpression(f) => f.span.start,
+            Expression::ArrowFunctionExpression(f) => f.span.start,
+            _ => return,
+        };
+        self.pending_ctx.push((start, bits));
     }
 
     fn handler_args(&mut self, args: &[Argument<'_>], arg: Arg) {
@@ -1111,6 +1141,7 @@ impl<'s> Walker<'s> {
             return;
         }
         self.promise_catch(it);
+        self.promise_member(it);
         match it.callee.get_inner_expression() {
             Expression::CallExpression(inner) => self.on_applied_call(inner, it),
             callee => self.on_named_call(callee, it),
@@ -1127,6 +1158,20 @@ impl<'s> Walker<'s> {
         if let Some(sh) = shape {
             self.handler_site(sh);
         }
+    }
+
+    /// `x.then(…)`, `x.catch(…)`, `x.finally(…)` where `x` is not an imported symbol, so
+    /// `Effect.catch(…)` is not one: the `syntax#member.<name>` site.
+    fn promise_member(&mut self, it: &CallExpression<'_>) {
+        let Expression::StaticMemberExpression(m) = it.callee.get_inner_expression() else { return };
+        let name = m.property.name.as_str();
+        if !matches!(name, "then" | "catch" | "finally") {
+            return;
+        }
+        if self.sym_of(&m.object).is_some_and(|s| !s.starts_with("global#")) {
+            return;
+        }
+        self.syntax_site(&format!("member.{name}"));
     }
 
     /// `S(...)(...)`: a wrapper applied in two steps, or the result of S called at once.
@@ -1505,6 +1550,9 @@ impl<'a> Visit<'a> for Walker<'_> {
     }
 
     fn visit_for_of_statement(&mut self, it: &ForOfStatement<'a>) {
+        if it.r#await {
+            self.syntax_site("await");
+        }
         let l = self.open_loop(None, Some(&it.right));
         walk::walk_for_of_statement(self, it);
         self.close_loop(l);
@@ -1523,6 +1571,7 @@ impl<'a> Visit<'a> for Walker<'_> {
     }
 
     fn visit_try_statement(&mut self, it: &TryStatement<'a>) {
+        self.syntax_site("try");
         let t = self.open(ct::TRY);
         let arm = self.open(ct::ARM);
         self.visit_block_statement(&it.block);
@@ -1584,6 +1633,7 @@ impl<'a> Visit<'a> for Walker<'_> {
     }
 
     fn visit_throw_statement(&mut self, it: &ThrowStatement<'a>) {
+        self.syntax_site("throw");
         self.exit(it.span.start);
         walk::walk_throw_statement(self, it);
     }
@@ -1613,6 +1663,11 @@ impl<'a> Visit<'a> for Walker<'_> {
         } else {
             walk::walk_call_expression(self, it);
         }
+    }
+
+    fn visit_await_expression(&mut self, it: &AwaitExpression<'a>) {
+        self.syntax_site("await");
+        walk::walk_await_expression(self, it);
     }
 
     fn visit_yield_expression(&mut self, it: &YieldExpression<'a>) {

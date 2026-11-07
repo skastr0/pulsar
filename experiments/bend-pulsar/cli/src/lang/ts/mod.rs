@@ -186,7 +186,7 @@ fn parse_files(root: &Path, paths: &[String], res: &Resolution, index: &calls::C
             let text = String::from_utf8_lossy(&bytes);
             // One pack hook per file; the pack keeps the file's state and hands it back here.
             let mut hook = effect_on.then(|| crate::packs::effect::Hook::new(index));
-            let mut ex = extract(alloc, rel, &path, &text, index, is_test(rel), hook.as_mut().map(|h| h as &mut dyn functions::PackHook));
+            let mut ex = extract(alloc, rel, &path, &text, index, if is_test(rel) { crate::lang::functions::ctx::TEST } else { 0 }, hook.as_mut().map(|h| h as &mut dyn functions::PackHook));
             let effect = hook.and_then(|h| h.finish(&text));
             prune_external_edges(&mut ex.functions, res, rel);
             let (mut i, mut u) = (Vec::new(), Vec::new());

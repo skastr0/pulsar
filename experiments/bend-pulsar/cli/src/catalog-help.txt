@@ -27,7 +27,7 @@ FILE FORMAT  (TOML; format = "pulsar-catalog 0")
 
     classes = [                        every class you use must be declared here
       { class = "query", id = 1, rule = "my-repo/query" },
-    ]                                  id: 1-8 are the fixed classes below, repo classes start at 1000
+    ]                                  id: 1-15 are the fixed classes below, repo classes start at 1000
                                        rule: the rule id reported with any finding that uses the class
 
     symbols = [                        sorted by (sym, via, use, ver)
@@ -69,10 +69,17 @@ FILE FORMAT  (TOML; format = "pulsar-catalog 0")
 
 FIXED CLASS IDS
   1 query  2 blocking  3 log  4 error-erasing  5 runtime-escape  6 fork
-  7 resource-acquire  8 ambient-read          (repo classes: 1000 and up)
+  7 resource-acquire  8 ambient-read  9-13 reserved  14 promise-style  15 exception-style
+  (repo classes: 1000 and up)
 
 CTX BITS (call sites)
   1 inside an async function   2 inside an Effect generator or Effect.fn   4 inside a test
+  8 file in effect_only scope  16 file in boundary scope  32 inside an interop callback
+  (2 and 32 come from a pack's wrappers; 8 and 16 only from the repo's policy)
+
+SYNTAX SYMBOLS  sym = "syntax#<name>": a language construct, emitted only where an active rule could fire
+  await (also for await)  async-fn (in the async function itself)  throw  try
+  member.then  member.catch  member.finally  (a method call on a value that is not an imported symbol)
 
 MINIMAL REPO CATALOG  (.pulsar/catalogs/db.toml)
   format = "pulsar-catalog 0"
