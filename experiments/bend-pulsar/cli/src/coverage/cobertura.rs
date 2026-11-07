@@ -111,89 +111,128 @@ fn unescape(raw: &str) -> String {
         .replace("&amp;", "&")
 }
 
-pub fn parse(text: &str) -> Result<Vec<FileEntry>, String> {
-    let mut classes: Vec<(String, FileLines)> = Vec::new();
-    let mut sources: Vec<String> = Vec::new();
-    let mut current: Option<(String, FileLines)> = None;
-    let mut in_methods = 0u32;
-    let mut in_source_text = false;
-    let mut source_text = String::new();
-    let mut pos = 0usize;
-    while let Some((tag, next)) = next_tag(text, pos) {
+/// One pass over the document, turning tags into classes and sources.
+#[derive(Default)]
+struct Scan {
+    classes: Vec<(String, FileLines)>,
+    sources: Vec<String>,
+    current: Option<(String, FileLines)>,
+    in_methods: u32,
+    /// `Some` while inside a `<source>...</source>` body.
+    source_text: Option<String>,
+}
+
+impl Scan {
+    fn tag(&mut self, tag: &Tag<'_>) -> Result<(), String> {
         match (tag.closing, tag.name) {
-            (false, "class") if !tag.self_closing => {
-                let filename = attr(tag.attrs, "filename")
-                    .ok_or("cobertura: <class> without filename")?;
-                current = Some((unescape(filename), BTreeMap::new()));
-            }
-            (true, "class") => {
-                if let Some(done) = current.take() {
-                    classes.push(done);
-                }
-            }
-            (false, "methods") if !tag.self_closing => in_methods += 1,
-            (true, "methods") => in_methods = in_methods.saturating_sub(1),
-            (false, "source") if !tag.self_closing => {
-                in_source_text = true;
-                source_text.clear();
-            }
-            (true, "source") if in_source_text => {
-                let value = unescape(source_text.trim());
-                if !value.is_empty() {
-                    sources.push(value);
-                }
-                in_source_text = false;
-            }
-            (false, "line") => {
-                if let Some((_, lines)) = current.as_mut() {
-                    if in_methods == 0 {
-                        let number = attr(tag.attrs, "number")
-                            .ok_or("cobertura: <line> without number")?
-                            .trim()
-                            .parse::<u32>()
-                            .map_err(|_| "cobertura: <line> number is not a line number")?;
-                        let hits = attr(tag.attrs, "hits")
-                            .ok_or("cobertura: <line> without hits")?
-                            .trim()
-                            .parse::<u64>()
-                            .map_err(|_| "cobertura: <line> hits is not a count")?;
-                        let slot = lines.entry(number).or_insert(0);
-                        *slot = slot.saturating_add(hits);
-                    }
-                }
-            }
+            (false, "class") if !tag.self_closing => self.open_class(tag)?,
+            (true, "class") => self.close_class(),
+            (false, "methods") if !tag.self_closing => self.in_methods += 1,
+            (true, "methods") => self.in_methods = self.in_methods.saturating_sub(1),
+            (false, "source") if !tag.self_closing => self.source_text = Some(String::new()),
+            (true, "source") => self.close_source(),
+            (false, "line") => self.line(tag)?,
             _ => {}
         }
-        if in_source_text {
-            let raw_start = next;
-            let raw_end = text[raw_start..]
-                .find('<')
-                .map(|i| raw_start + i)
-                .unwrap_or(text.len());
-            source_text.push_str(&text[raw_start..raw_end]);
+        Ok(())
+    }
+
+    fn open_class(&mut self, tag: &Tag<'_>) -> Result<(), String> {
+        let filename = attr(tag.attrs, "filename").ok_or("cobertura: <class> without filename")?;
+        self.current = Some((unescape(filename), BTreeMap::new()));
+        Ok(())
+    }
+
+    fn close_class(&mut self) {
+        if let Some(done) = self.current.take() {
+            self.classes.push(done);
+        }
+    }
+
+    fn close_source(&mut self) {
+        let Some(raw) = self.source_text.take() else { return };
+        let value = unescape(raw.trim());
+        if !value.is_empty() {
+            self.sources.push(value);
+        }
+    }
+
+    /// A class-level `<line>`. The same elements repeat under `<methods>`, so those are skipped.
+    fn line(&mut self, tag: &Tag<'_>) -> Result<(), String> {
+        let Some((_, lines)) = self.current.as_mut() else { return Ok(()) };
+        if self.in_methods > 0 {
+            return Ok(());
+        }
+        let number = count(tag.attrs, "number", "a line number")?;
+        let number = u32::try_from(number)
+            .map_err(|_| "cobertura: <line> number is out of range".to_string())?;
+        let hits = count(tag.attrs, "hits", "a count")?;
+        let slot = lines.entry(number).or_insert(0);
+        *slot = slot.saturating_add(hits);
+        Ok(())
+    }
+
+    fn collecting_source(&self) -> bool {
+        self.source_text.is_some()
+    }
+
+    fn source_chunk(&mut self, chunk: &str) {
+        if let Some(text) = self.source_text.as_mut() {
+            text.push_str(chunk);
+        }
+    }
+
+    fn finish(mut self) -> (Vec<(String, FileLines)>, Vec<String>) {
+        self.close_class();
+        (self.classes, self.sources)
+    }
+}
+
+fn count(attrs: &str, key: &str, what: &str) -> Result<u64, String> {
+    attr(attrs, key)
+        .ok_or_else(|| format!("cobertura: <line> without {key}"))?
+        .trim()
+        .parse::<u64>()
+        .map_err(|_| format!("cobertura: <line> {key} is not {what}"))
+}
+
+pub fn parse(text: &str) -> Result<Vec<FileEntry>, String> {
+    let mut scan = Scan::default();
+    let mut pos = 0usize;
+    while let Some((tag, next)) = next_tag(text, pos) {
+        scan.tag(&tag)?;
+        if scan.collecting_source() {
+            let end = text[next..].find('<').map(|i| next + i).unwrap_or(text.len());
+            scan.source_chunk(&text[next..end]);
         }
         pos = next;
     }
-    if let Some(done) = current.take() {
-        classes.push(done);
-    }
+    let (classes, sources) = scan.finish();
+    Ok(entries(classes, &sources))
+}
 
-    let mut out: Vec<FileEntry> = Vec::new();
-    for (filename, lines) in classes {
-        if filename.starts_with('/') || sources.is_empty() {
-            out.push(FileEntry { path: filename, lines });
-        } else {
-            // One candidate per source root; normalization keeps the one that exists.
-            for source in &sources {
-                const SEP: &str = if cfg!(windows) { "\\" } else { "/" };
-                let path = format!("{}{SEP}{filename}", source.trim_end_matches('/'));
-                out.push(FileEntry { path, lines: lines.clone() });
-            }
-        }
-    }
+fn entries(classes: Vec<(String, FileLines)>, sources: &[String]) -> Vec<FileEntry> {
+    let mut out: Vec<FileEntry> = classes
+        .into_iter()
+        .flat_map(|(filename, lines)| paths(filename, lines, sources))
+        .collect();
     out.sort_by(|a, b| a.path.cmp(&b.path));
     out.dedup_by(|a, b| a.path == b.path);
-    Ok(out)
+    out
+}
+
+/// One candidate per source root; normalization keeps the one that exists.
+fn paths(filename: String, lines: FileLines, sources: &[String]) -> Vec<FileEntry> {
+    if filename.starts_with('/') || sources.is_empty() {
+        return vec![FileEntry { path: filename, lines }];
+    }
+    sources
+        .iter()
+        .map(|source| FileEntry {
+            path: format!("{}/{filename}", source.trim_end_matches('/')),
+            lines: lines.clone(),
+        })
+        .collect()
 }
 
 #[cfg(test)]
