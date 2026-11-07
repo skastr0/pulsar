@@ -250,3 +250,19 @@ law report_shape:
   for cs: List<&2, List<&2, U32>>
   for ok: Bool
   {L.Report.lines(L.Out{files, edges, G.Res{cs, ok}}) == Con{"pulsar-findings 0", List.append(&2, String, L.Report.cyc_lines(cs), [L.Report.cert_line(ok), L.Report.summary(files, edges, U32.from_nat(List.length(&2, List<&2, U32>, cs)))])} : List<&2, String>}
+
+# P5. the binary prints the import-graph lines, then exactly the Metrics lines
+# (FM, FX: Metrics-LAWS, from Metrics.run), when both detectors accept their facts.
+law engine_is_both:
+  for o: L.Out
+  for ms: List<&2, String>
+  {L.Engine.lines(Some{o}, Some{ms}) == Some{List.append(&2, String, L.Report.lines(o), ms)} : Maybe<List<&2, String>>}
+
+# P6. if either detector refuses its facts, nothing is printed (the binary exits 2).
+law engine_refuses_graph:
+  for m: Maybe<&2, List<&2, String>>
+  {L.Engine.lines(None{}, m) == None{} : Maybe<List<&2, String>>}
+
+law engine_refuses_metrics:
+  for o: L.Out
+  {L.Engine.lines(Some{o}, None{}) == None{} : Maybe<List<&2, String>>}

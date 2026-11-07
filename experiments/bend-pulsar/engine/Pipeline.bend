@@ -76,3 +76,24 @@ def Report.lines(o: Out) -> List<&2, String>:
   match o:
     case Out{files, edges, res}:
       Report.res_lines(files, edges, res)
+
+# ---- the engine: every detector's lines ------------------------------------------------------
+# The import-graph lines, then the Metrics lines (FM, FX). None when either
+# refuses its facts: the binary then exits 2 and prints nothing. LAWS.bend P5-P6.
+def Engine.join(ls: List<&2, String>, m: Maybe<&2, List<&2, String>>) -> Maybe<List<&2, String>>:
+  match m:
+    case None{}:
+      None{}
+    case Some{ms}:
+      Some{List.append(&2, String, ls, ms)}
+
+def Engine.lines(o: Maybe<Out>, m: Maybe<&2, List<&2, String>>) -> Maybe<List<&2, String>>:
+  match o:
+    case None{}:
+      None{}
+    case Some{x}:
+      Engine.join(Report.lines(x), m)
+
+# The row tags the detectors read from Rows.bend: FN, CT (MetricsIn.bend).
+def Engine.row_tags() -> List<&2, U32>:
+  [17998, 17236]

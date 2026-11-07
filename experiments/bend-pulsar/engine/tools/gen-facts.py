@@ -18,11 +18,55 @@ Traps the engine must not count as edges:
 Duplicate (src, dst) pairs appear under different forms and flags.
 The expected output is computed here, by a rule table written independently of
 the engine: edge unless (hv 0, ht 1), an export-from self is no edge, and both
-ends must be production files; files = production files.
+ends must be production files; files = production files. Cycles are the SCCs of
+those edges (Tarjan, below), not just the planted blocks.
 """
 import argparse
 import random
 import sys
+
+
+def sccs(n, edges):
+    """The cycles of the edge set, computed here independently of the engine
+    (iterative Tarjan): every strongly connected set of two or more files, and
+    every file with a self edge; members ascending, ordered by smallest member.
+    Random forward edges can close a cycle through a decoy that skips its
+    non-production member, so the planted blocks alone are not the answer."""
+    adj = [[] for _ in range(n)]
+    for s, d in edges:
+        adj[s].append(d)
+    index, low, on, stack, out = [None] * n, [0] * n, [False] * n, [], []
+    counter = 0
+    for root in range(n):
+        if index[root] is not None:
+            continue
+        work = [(root, 0)]
+        index[root] = low[root] = counter; counter += 1
+        stack.append(root); on[root] = True
+        while work:
+            v, i = work[-1]
+            if i < len(adj[v]):
+                work[-1] = (v, i + 1)
+                w = adj[v][i]
+                if index[w] is None:
+                    index[w] = low[w] = counter; counter += 1
+                    stack.append(w); on[w] = True
+                    work.append((w, 0))
+                elif on[w]:
+                    low[v] = min(low[v], index[w])
+            else:
+                work.pop()
+                if work:
+                    low[work[-1][0]] = min(low[work[-1][0]], low[v])
+                if low[v] == index[v]:
+                    comp = []
+                    while True:
+                        w = stack.pop(); on[w] = False; comp.append(w)
+                        if w == v:
+                            break
+                    if len(comp) > 1 or (v, v) in edges:
+                        out.append(sorted(comp))
+    return sorted(out)
 
 
 def main():
@@ -141,12 +185,13 @@ def main():
             if s in nonprod or d in nonprod:
                 continue
             edges.add((s, d))
+        cycles = sccs(n, edges)
         with open(a.expect, "w") as f:
             f.write("pulsar-findings 0\n")
-            for s, k in sorted(planted):
-                f.write("CYC %d %s\n" % (k, " ".join(str(i) for i in range(s, s + k))))
+            for c in cycles:
+                f.write("CYC %d %s\n" % (len(c), " ".join(str(i) for i in c)))
             f.write("CERT 1\n")
-            f.write("S %d %d %d\n" % (n - len(nonprod), len(edges), len(planted)))
+            f.write("S %d %d %d\n" % (n - len(nonprod), len(edges), len(cycles)))
     sys.stderr.write("files=%d I=%d planted=%d\n" % (n, len(rows), len(planted)))
 
 

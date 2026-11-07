@@ -86,3 +86,12 @@ def Laws.pipeline_cycles_are_graph_cycles(n, prods, fs, ok):
 
 def Laws.report_shape(files, edges, cs, ok):
   {==}
+
+def Laws.engine_is_both(o, ms):
+  {==}
+
+def Laws.engine_refuses_graph(m):
+  {==}
+
+def Laws.engine_refuses_metrics(o):
+  {==}

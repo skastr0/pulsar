@@ -152,5 +152,26 @@
   "file": "Pipeline.bend",
   "old": "Con{\"pulsar-findings 0\", Report.tail(",
   "new": "Con{\"pulsar-findings 1\", Report.tail("
+ },
+ {
+  "law": "engine_is_both",
+  "bug": "Engine.join drops the Metrics lines",
+  "file": "Pipeline.bend",
+  "old": "      Some{List.append(&2, String, ls, ms)}",
+  "new": "      Some{ls}"
+ },
+ {
+  "law": "engine_refuses_graph",
+  "bug": "Engine.lines prints Metrics when the graph facts are refused",
+  "file": "Pipeline.bend",
+  "old": "  match o:\n    case None{}:\n      None{}\n    case Some{x}:\n      Engine.join(",
+  "new": "  match o:\n    case None{}:\n      Engine.join(Nil{}, m)\n    case Some{x}:\n      Engine.join("
+ },
+ {
+  "law": "engine_refuses_metrics",
+  "bug": "Engine.join prints the graph lines when Metrics refuses",
+  "file": "Pipeline.bend",
+  "old": "  match m:\n    case None{}:\n      None{}\n    case Some{ms}:\n      Some{List.append(",
+  "new": "  match m:\n    case None{}:\n      Some{ls}\n    case Some{ms}:\n      Some{List.append("
  }
 ]
