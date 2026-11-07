@@ -8,7 +8,9 @@
 //! form 2 for a re-export (any visibility other than inherited). `hv` is always 1 and `ht`
 //! always 0: whether a name is used as a value or only as a type is a type-checker question,
 //! so the adapter does not guess. Paths that leave the repo are `U` reason 0; a path whose first
-//! segment names nothing in scope is reason 3.
+//! segment names nothing in scope is reason 3. A `use` that resolves to the file it sits in (an
+//! item of the same file, `use self::x`, `use crate::m::x` inside `m`) is not an import and
+//! produces no row.
 
 use super::cargo::Crates;
 use super::parse::{ModDecl, RustFile, UseRec};
@@ -238,6 +240,7 @@ impl Build<'_> {
     fn resolve_use(&self, env: &Env, file: u32, top: usize, u: &UseRec, g: &mut Graph) {
         let at = self.descend_inline(top, &u.mod_path).unwrap_or(top);
         match self.resolve(env, at, u) {
+            Ok(dst) if dst == file => {}
             Ok(dst) => g.i.push([file, dst, if u.public { 2 } else { 0 }, 1, 0]),
             Err(reason) => g.u.push([file, reason]),
         }

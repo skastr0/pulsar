@@ -88,7 +88,7 @@ fn use_paths_resolve_to_files_and_leave_the_repo_as_u() {
     let root = std::env::temp_dir().join(format!("pulsar-rs-lane-{}", std::process::id()));
     std::fs::remove_dir_all(&root).ok();
     write(&root, "Cargo.toml", "[package]\nname = \"demo\"\nversion = \"0.0.0\"\nedition = \"2021\"\n\n[dependencies]\nserde = \"1\"\n");
-    write(&root, "src/lib.rs", "mod a;\nmod b;\npub use a::X;\nuse crate::b::inner::Y;\nuse std::fmt;\nuse serde::Serialize;\nuse nothing_here::Z;\n");
+    write(&root, "src/lib.rs", "mod a;\nmod b;\npub use a::X;\nuse crate::b::inner::Y;\nuse crate::Own;\nuse self::Own2;\nuse std::fmt;\nuse serde::Serialize;\nuse nothing_here::Z;\n");
     write(&root, "src/a.rs", "use super::b::Z;\nuse crate::missing_mod::Q;\n");
     write(&root, "src/b/mod.rs", "pub mod inner;\n");
     write(&root, "src/b/inner.rs", "use super::super::a::X;\n#[cfg(test)]\nmod tests;\n");
