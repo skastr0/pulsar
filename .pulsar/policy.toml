@@ -9,6 +9,13 @@ include = [
   "experiments/bend-pulsar/",
 ]
 
+# core.cognitive (SonarSource cognitive complexity) has weak evidence, so it is off by default; this
+# repo turns it on to gather evidence on its own code (lead ruling, research/cognitive-complexity.md).
+[rules]
+enable = [
+  "core.cognitive",
+]
+
 [lanes.rust]
 include = [
   "experiments/bend-pulsar/cli/",
