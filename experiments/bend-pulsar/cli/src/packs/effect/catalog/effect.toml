@@ -218,3 +218,11 @@ layers = [
   { sym = "@effect/sql-pg#PgClient.layer", builds = ["@effect/sql-pg#PgClient.PgClient", "effect/sql#SqlClient.SqlClient"], ver = "4", at = "effect@9428e17499:packages/sql/pg/src/PgClient.ts:487", doc = "Creates a client layer from pool configuration." },
   { sym = "@effect/sql-pg#PgClient.layerConfig", builds = ["@effect/sql-pg#PgClient.PgClient", "effect/sql#SqlClient.SqlClient"], ver = "4", at = "effect@9428e17499:packages/sql/pg/src/PgClient.ts:468", doc = "Creates a client layer from wrapped pool configuration." },
 ]
+
+# Rules: a finding needs an active rule (RL). A call of the class in a context with some bit
+# of ctx_any and no bit of ctx_none is a finding. ctx 2 = pack-defined effect context, 4 = test.
+rules = [
+  { id = "effect.ambient-read-in-effect", class = "ambient-read", ctx_any = 2, ctx_none = 4, says = "reads the clock, randomness or the environment directly inside Effect code, bypassing Clock, Random, Config or DateTime", ver = "1", at = "effect@9428e17499:LLMS.md:290", doc = "When working with dates and time, use the `DateTime` module instead of `Date` and `Date.now`." },
+  { id = "effect.blocking-in-effect", class = "blocking", ctx_any = 2, ctx_none = 4, says = "makes a blocking host call inside Effect code instead of going through the FileSystem or ChildProcessSpawner service", ver = "1", at = "effect@9428e17499:packages/effect/src/FileSystem.ts:4", doc = "`FileSystem` is the boundary between Effect code and the host file system." },
+  { id = "effect.runtime-escape-in-effect", class = "runtime-escape", ctx_any = 2, ctx_none = 4, says = "runs an effect to a Promise or a value from inside Effect code instead of composing it", ver = "1", at = "effect@9428e17499:ai-docs/src/04_integration/10_managed-runtime.ts:4", doc = "Use `ManagedRuntime` to run Effect programs from external frameworks while keeping your domain logic in services and Layers." },
+]

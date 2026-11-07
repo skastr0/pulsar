@@ -17,6 +17,7 @@ import sys
 HOME = os.path.expanduser("~")
 SRC = {
     # key: (root dir, citation prefix)
+    "ED": (f"{HOME}/playground/effect", "effect@9428e17499:"),
     "E4": (f"{HOME}/playground/effect/packages/effect/src", "effect@9428e17499:packages/effect/src/"),
     "PG4": (f"{HOME}/playground/effect/packages/sql/pg/src", "effect@9428e17499:packages/sql/pg/src/"),
     "PN4": (f"{HOME}/playground/effect/packages/platform/node/src", "effect@9428e17499:packages/platform/node/src/"),
@@ -266,6 +267,23 @@ for sym, src, file, export in [
 
 # External layers and what they build (LY with file 4294967295). Each `builds` entry pairs the
 # catalog service with the type name that must appear in the layer's declared type.
+# Pack rules: the only entries that make findings (engine/ClassCtx.bend, relation RL).
+# ctx bits (FACTS.md, CS): 2 = pack-defined effect context, 4 = inside a test.
+# Each cite is the doc line that says the class does not belong in Effect code;
+# the generator checks that the line holds `text`.
+RULES = [
+    dict(id="effect.ambient-read-in-effect", cls="ambient-read", ctx_any=2, ctx_none=4, ver=1,
+         says="reads the clock, randomness or the environment directly inside Effect code, bypassing Clock, Random, Config or DateTime",
+         src="ED", file="LLMS.md", line=290, text="use the `DateTime` module instead of `Date` and `Date.now`"),
+    dict(id="effect.blocking-in-effect", cls="blocking", ctx_any=2, ctx_none=4, ver=1,
+         says="makes a blocking host call inside Effect code instead of going through the FileSystem or ChildProcessSpawner service",
+         src="E4", file="FileSystem.ts", line=4, text="`FileSystem` is the boundary between Effect code and the host file system."),
+    dict(id="effect.runtime-escape-in-effect", cls="runtime-escape", ctx_any=2, ctx_none=4, ver=1,
+         says="runs an effect to a Promise or a value from inside Effect code instead of composing it",
+         src="ED", file="ai-docs/src/04_integration/10_managed-runtime.ts", line=4,
+         text="Use `ManagedRuntime` to run Effect programs from external frameworks"),
+]
+
 LAYERS = [
     dict(sym="@effect/sql-pg#PgClient.layer", ver="4", src="PG4", file="PgClient.ts", export="layer",
          builds=[("@effect/sql-pg#PgClient.PgClient", "PgClient"), ("effect/sql#SqlClient.SqlClient", "Client.SqlClient")]),
@@ -493,6 +511,24 @@ def main(out_dir, check=False):
             b = ", ".join(q(x[0]) for x in sorted(lay["builds"]))
             ll.append((lay["sym"], f"  {{ sym = {q(lay['sym'])}, builds = [{b}], ver = {q(lay['ver'])}, {", ".join(cite_fields(c))} }},"))
     eff += [x[1] for x in sorted(ll)]
+    eff.append("]")
+    eff.append("")
+    eff.append("# Rules: a finding needs an active rule (RL). A call of the class in a context with some bit")
+    eff.append("# of ctx_any and no bit of ctx_none is a finding. ctx 2 = pack-defined effect context, 4 = test.")
+    eff.append("rules = [")
+    classes = {e["cls"] for e in E + P + J}
+    for r in sorted(RULES, key=lambda r: r["id"]):
+        root, prefix = SRC[r["src"]]
+        ln = lines_of(f"{root}/{r['file']}")
+        got = ln[r["line"] - 1] if r["line"] <= len(ln) else ""
+        if r["text"] not in got:
+            ERRORS.append(f"rule {r['id']}: {r['file']}:{r['line']} does not hold the cited text")
+            continue
+        if r["cls"] not in classes:
+            ERRORS.append(f"rule {r['id']}: class {r['cls']} has no entry")
+        doc = re.sub(r"^\s*(//|\*|#)?\s*", "", got).strip().replace("\\", "\\\\").replace('"', '\\"')
+        eff.append(f"  {{ id = {q(r['id'])}, class = {q(r['cls'])}, ctx_any = {r['ctx_any']}, ctx_none = {r['ctx_none']}, "
+                   f"says = {q(r['says'])}, ver = \"{r['ver']}\", at = {q(prefix + r['file'] + ':' + str(r['line']))}, doc = {q(doc)} }},")
     eff.append("]")
 
     plat = header(
