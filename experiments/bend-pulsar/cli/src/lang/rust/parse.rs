@@ -7,7 +7,7 @@
 //! anonymous and shown as `#<ordinal>`. Code inside macro invocations is a token stream and
 //! emits nothing.
 
-use crate::lang::functions::{ct, fk, fnv_parts, CtRec, FileFns, FnRec};
+use crate::lang::functions::{ct, fk, fnv_parts, op, CoRec, CtRec, FileFns, FnRec};
 use proc_macro2::{Span, TokenStream, TokenTree};
 use std::collections::{HashMap, HashSet};
 use syn::spanned::Spanned;
@@ -219,6 +219,14 @@ impl<'s> Walker<'s> {
 
     fn leaf(&mut self, kind: u8) {
         self.node(kind);
+    }
+
+    /// A kind-6 node plus its `CO` row: which boolean operator it stands for.
+    fn short_circuit(&mut self, operator: u8) {
+        let id = self.node(ct::SHORT_CIRCUIT);
+        if let Some(local) = self.frames.last().map(|f| f.local) {
+            self.out.ops.push(CoRec { fn_local: local, node: id, op: operator });
+        }
     }
 
     fn push_parent(&mut self, id: u32) {
@@ -461,13 +469,14 @@ impl<'a> Visit<'a> for Walker<'_> {
     }
 
     fn visit_expr_binary(&mut self, n: &'a ExprBinary) {
-        if matches!(n.op, BinOp::And(_) | BinOp::Or(_)) {
-            self.visit_expr(&n.left);
-            self.leaf(ct::SHORT_CIRCUIT);
-            self.visit_expr(&n.right);
-        } else {
-            visit::visit_expr_binary(self, n);
-        }
+        let operator = match n.op {
+            BinOp::And(_) => op::AND,
+            BinOp::Or(_) => op::OR,
+            _ => return visit::visit_expr_binary(self, n),
+        };
+        self.visit_expr(&n.left);
+        self.short_circuit(operator);
+        self.visit_expr(&n.right);
     }
 
     fn visit_local(&mut self, n: &'a Local) {

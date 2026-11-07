@@ -169,3 +169,24 @@ fn corpus() {
         std::fs::write(path, s).unwrap();
     }
 }
+
+#[test]
+fn every_short_circuit_node_has_its_operator_row() {
+    let f = parse::extract("src/x.rs", "fn f(a: bool, b: bool, c: bool) -> bool {\n    if a && b || c { return true; }\n    a || b\n}\n", false);
+    let kind6: Vec<(u32, u32)> =
+        f.fns.ct.iter().filter(|c| c.kind == crate::lang::functions::ct::SHORT_CIRCUIT).map(|c| (c.fn_local, c.node)).collect();
+    let ops: Vec<(u32, u32, u8)> = f.fns.ops.iter().map(|o| (o.fn_local, o.node, o.op)).collect();
+    // `a && b || c` is `(a && b) || c`: the inner && comes first in source order.
+    assert_eq!(ops.iter().map(|o| o.2).collect::<Vec<_>>(), [1, 2, 2]);
+    assert_eq!(ops.iter().map(|o| (o.0, o.1)).collect::<Vec<_>>(), kind6);
+}
+
+#[test]
+fn fixtures_carry_one_operator_row_per_short_circuit_node() {
+    for entry in std::fs::read_dir(fixture_dir().join("src")).unwrap() {
+        let path = entry.unwrap().path();
+        let f = parse::extract("src/x.rs", &std::fs::read_to_string(&path).unwrap(), false);
+        let kind6 = f.fns.ct.iter().filter(|c| c.kind == crate::lang::functions::ct::SHORT_CIRCUIT).count();
+        assert_eq!(f.fns.ops.len(), kind6, "{}", path.display());
+    }
+}
