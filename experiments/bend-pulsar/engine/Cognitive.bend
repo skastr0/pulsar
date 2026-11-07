@@ -16,8 +16,11 @@
 # - `else` adds nothing (CT cannot tell `if/else` from a ternary, which the paper charges once);
 # - recursion and labelled jumps add nothing (CT has no fact for them);
 # - a nested function counts in its own tree, not inside its parent;
-# - sibling operator runs from different statements merge, and a missing CO row reads
-#   as an operator that adds nothing.
+# - a missing CO row reads as an operator that adds nothing.
+# One deviation is a choice, not a CT limit, and is a documented undercount: operator
+# runs merge across sibling statements under the same control node, so
+# `a && b; c && d` counts +1 where the paper counts +2 (one sequence per expression).
+# It leans low, the safe direction; revisit if dogfood shows it hiding real cases.
 #
 # The k-th short-circuit node of the whole input, in function order then preorder,
 # takes the k-th operator of `ops`. The decoder builds `ops` from the CT and CO rows
