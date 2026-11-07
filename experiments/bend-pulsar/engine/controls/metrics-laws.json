@@ -1,0 +1,26 @@
+[
+ {
+  "law": "npath_sequence_is_product",
+  "bug": "Npx joins a sequence by +",
+  "old": "Nat.mul(Npx.value(k, M.Agg{ap, as, an, asc, ad, af}), rp)",
+  "new": "Nat.add(Npx.value(k, M.Agg{ap, as, an, asc, ad, af}), rp)"
+ },
+ {
+  "law": "npath_at_least_one",
+  "bug": "Npx gives a plain statement no path",
+  "old": "      prod\n    case _:\n      1n",
+  "new": "      prod\n    case _:\n      0n"
+ },
+ {
+  "law": "npath_if_without_else",
+  "bug": "Npx drops the implicit else",
+  "old": "      Nat.add(Nat.add(sum, Nat.sub(2n, arms)), sc)",
+  "new": "      Nat.add(sum, sc)"
+ },
+ {
+  "law": "npath_loop",
+  "bug": "Npx drops the path that skips a loop",
+  "old": "      Nat.add(Nat.add(prod, 1n), sc)",
+  "new": "      Nat.add(prod, sc)"
+ }
+]

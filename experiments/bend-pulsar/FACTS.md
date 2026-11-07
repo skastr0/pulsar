@@ -70,7 +70,9 @@ Rule ids and default thresholds: `core.cyclomatic` 10, `core.nesting` 3,
 Thresholds are an explicit `Rules` argument. Every value is a decimal natural number. NPath
 saturates at the cap 16777215 (2^24 - 1): a printed NPath equal to the cap means
 "at least the cap". The laws prove that printed NPath = min(Nejmeh NPath, cap).
-Invalid FN/CT facts make the engine refuse the run and print no `FM` lines.
+A function with a `TF` row still gets its `FM` line, but no `FX`. Invalid FN/CT/TF facts
+make the engine refuse the run and print no `FM` lines. Invalid means a wrong field count,
+a tree the CT rules reject, or a `TF` id that is not a function, or is out of order.
 
 The CLI renders file ids to paths, maps them to stable keys, and prints the human and JSON forms.
 

@@ -55,7 +55,7 @@ def Thr(r: M.Rules, +rule: U32) -> Nat:
 
 def Field(m: M.FnM, +rule: U32) -> Nat:
   match m:
-    case M.FnM{fn, cc, nest, np, loc}:
+    case M.FnM{fn, cc, nest, np, loc, test}:
       match rule:
         case 1:
           cc
@@ -66,13 +66,14 @@ def Field(m: M.FnM, +rule: U32) -> Nat:
         case _:
           loc
 
-# Some function in `ms` is `fn`, and its measure for `rule` is `v`.
+# Some function in `ms` is `fn`, it is not a test function, and its measure for
+# `rule` is `v`.
 def Measured(ms: List<&2, M.FnM>, +rule: U32, +fn: U32, +v: Nat) -> Data:
   match ms:
     case Nil{}:
       Empty
-    case Con{M.FnM{f, cc, nest, np, loc}, t}:
-      Either<&2, &2, And({f == fn : U32}, {Field(M.FnM{f, cc, nest, np, loc}, rule) == v : Nat}), Measured(t, rule, fn, v)>
+    case Con{M.FnM{f, cc, nest, np, loc, test}, t}:
+      Either<&2, &2, And({f == fn : U32}, And({test == False{} : Bool}, {Field(M.FnM{f, cc, nest, np, loc, test}, rule) == v : Nat})), Measured(t, rule, fn, v)>
 
 # What a reported finding must satisfy.
 def Sound(r: M.Rules, ms: List<&2, M.FnM>, x: M.Finding) -> Data:
@@ -106,8 +107,9 @@ law measure_is_the_measures:
   for +fn: U32
   for +t: M.Ct
   for +loc: U32
+  for +test: Bool
   for +cap: Nat
-  {M.Metrics.measure(M.FnT{fn, t, loc}, cap) == M.FnM{fn, M.Cc.of(t), M.Nest.of(t), M.Np.of(t, cap), U32.to_nat(loc)} : M.FnM}
+  {M.Metrics.measure(M.FnT{fn, t, loc, test}, cap) == M.FnM{fn, M.Cc.of(t), M.Nest.of(t), M.Np.of(t, cap), U32.to_nat(loc), test} : M.FnM}
 
 # E4. measure_all measures each function, in order.
 law measure_all_cons:
@@ -145,7 +147,7 @@ law findings_complete_cyclomatic:
   for +nest: Nat
   for +np: Nat
   for +loc: Nat
-  for hm: MemM(ms, M.FnM{fn, cc, nest, np, loc})
+  for hm: MemM(ms, M.FnM{fn, cc, nest, np, loc, False{}})
   for h: {Nat.is_gt(cc, tcc) == True{} : Bool}
   MemF(M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, ms), M.Finding{1, fn, cc, tcc})
 
@@ -161,7 +163,7 @@ law findings_complete_nesting:
   for +nest: Nat
   for +np: Nat
   for +loc: Nat
-  for hm: MemM(ms, M.FnM{fn, cc, nest, np, loc})
+  for hm: MemM(ms, M.FnM{fn, cc, nest, np, loc, False{}})
   for h: {Nat.is_gt(nest, tnest) == True{} : Bool}
   MemF(M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, ms), M.Finding{2, fn, nest, tnest})
 
@@ -177,7 +179,7 @@ law findings_complete_npath:
   for +nest: Nat
   for +np: Nat
   for +loc: Nat
-  for hm: MemM(ms, M.FnM{fn, cc, nest, np, loc})
+  for hm: MemM(ms, M.FnM{fn, cc, nest, np, loc, False{}})
   for h: {Nat.is_gt(np, tnp) == True{} : Bool}
   MemF(M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, ms), M.Finding{3, fn, np, tnp})
 
@@ -193,9 +195,20 @@ law findings_complete_length:
   for +nest: Nat
   for +np: Nat
   for +loc: Nat
-  for hm: MemM(ms, M.FnM{fn, cc, nest, np, loc})
+  for hm: MemM(ms, M.FnM{fn, cc, nest, np, loc, False{}})
   for h: {Nat.is_gt(loc, tloc) == True{} : Bool}
   MemF(M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, ms), M.Finding{4, fn, loc, tloc})
+
+# F6. a test function (TF) adds no findings.
+law findings_skip_tests:
+  for +r: M.Rules
+  for +fn: U32
+  for +cc: Nat
+  for +nest: Nat
+  for +np: Nat
+  for +loc: Nat
+  for +ms: List<&2, M.FnM>
+  {M.Metrics.findings(r, Con{M.FnM{fn, cc, nest, np, loc, True{}}, ms}) == M.Metrics.findings(r, ms) : List<&2, M.Finding>}
 
 # ---- X. nested functions ----------------------------------------------------------------------
 # A kind-8 node and anything under it count for nothing in this function.
@@ -397,7 +410,8 @@ law npath_printed_is_min:
   for +cap: Nat
   {M.Np.of(t, cap) == Nat.min(Npx.of(t), cap) : Nat}
 
-# N3. the NPath of a sequence is the product of its parts.
+# N3. reference lemma, about Npx only (no shipped code can fail it; its printed
+# twin N4 is about Np.of): the NPath of a sequence is the product of its parts.
 law npath_sequence_is_product:
   for +a: M.Ct
   for +b: M.Ct
@@ -410,7 +424,8 @@ law npath_printed_sequence:
   for +cap: Nat
   {M.Np.of(Ct.cat(a, b), cap) == Nat.min(Nat.mul(Npx.of(a), Npx.of(b)), cap) : Nat}
 
-# N5. every function has at least one path.
+# N5. reference lemma, about Npx only (printed twin: npath_printed_at_least_one):
+# every function has at least one path.
 law npath_at_least_one:
   for +t: M.Ct
   N.Le(1n, Npx.of(t))
@@ -438,7 +453,8 @@ law npath_arm_monotone_try:
   for +cap: Nat
   N.Le(M.Np.of(M.Node{M.KTry{}, kids, next}, cap), M.Np.of(M.Node{M.KTry{}, M.Node{M.KArm{}, body, kids}, next}, cap))
 
-# N9. `if (c) {body}` has body's paths plus the implicit empty else.
+# N9. reference lemma, about Npx only (printed twin: npath_printed_if_without_else):
+# `if (c) {body}` has body's paths plus the implicit empty else.
 law npath_if_without_else:
   for +body: M.Ct
   {Npx.of(M.Node{M.KBranch{}, M.Node{M.KArm{}, body, M.Leaf{}}, M.Leaf{}}) == 1n+Npx.of(body) : Nat}
@@ -451,7 +467,8 @@ def Sc(t: M.Ct) -> Nat:
     case M.Node{k, kids, next}:
       Nat.add(M.K.sc(k), Sc(next))
 
-# N10. a loop has its body's paths, plus one, plus one per short-circuit in its guard.
+# N10. reference lemma, about Npx only (printed twin: npath_printed_loop): a loop
+# has its body's paths, plus one, plus one per short-circuit in its guard.
 law npath_loop:
   for +body: M.Ct
   {Npx.of(M.Node{M.KLoop{}, body, M.Leaf{}}) == Nat.add(1n+Npx.of(body), Sc(body)) : Nat}

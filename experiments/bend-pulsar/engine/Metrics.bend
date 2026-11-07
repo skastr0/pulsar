@@ -36,7 +36,7 @@ import Base
 
 # ---- input rows ------------------------------------------------------------------------------
 type Fn is Data:
-  Fn{fn: U32, file: U32, parent: U32, loc: U32}
+  Fn{fn: U32, file: U32, parent: U32, loc: U32, test: Bool}
 
 type CtRow is Data:
   CtRow{fn: U32, node: U32, parent: U32, kind: U32}
@@ -66,7 +66,7 @@ type Rules is Data:
 
 # One function's measures.
 type FnM is Data:
-  FnM{fn: U32, cc: Nat, nest: Nat, npath: Nat, loc: Nat}
+  FnM{fn: U32, cc: Nat, nest: Nat, npath: Nat, loc: Nat, test: Bool}
 
 # rule: 1 cyclomatic, 2 nesting, 3 npath, 4 length.
 type Finding is Data:
@@ -485,12 +485,12 @@ def Span.for(+rows: List<&2, CtRow>, +f: U32) -> Span:
 
 # ---- the measures and the rules --------------------------------------------------------------
 type FnT is Data:
-  FnT{fn: U32, t: Ct, loc: U32}
+  FnT{fn: U32, t: Ct, loc: U32, test: Bool}
 
 def Metrics.measure(f: FnT, +cap: Nat) -> FnM:
   match f:
-    case FnT{fn, +t, loc}:
-      FnM{fn, Cc.of(t), Nest.of(t), Np.of(t, cap), U32.to_nat(loc)}
+    case FnT{fn, +t, loc, test}:
+      FnM{fn, Cc.of(t), Nest.of(t), Np.of(t, cap), U32.to_nat(loc), test}
 
 def Metrics.measure_all(fs: List<&2, FnT>, +cap: Nat) -> List<&2, FnM>:
   match fs:
@@ -499,10 +499,10 @@ def Metrics.measure_all(fs: List<&2, FnT>, +cap: Nat) -> List<&2, FnM>:
     case Con{h, t}:
       Con{Metrics.measure(h, cap), Metrics.measure_all(t, cap)}
 
-def Trees.cons(+fn: U32, +loc: U32, mt: Maybe<&2, Ct>, rest: Maybe<&2, List<&2, FnT>>) -> Maybe<&2, List<&2, FnT>>:
+def Trees.cons(+fn: U32, +loc: U32, test: Bool, mt: Maybe<&2, Ct>, rest: Maybe<&2, List<&2, FnT>>) -> Maybe<&2, List<&2, FnT>>:
   match mt rest:
     case Some{t} Some{xs}:
-      Some{Con{FnT{fn, t, loc}, xs}}
+      Some{Con{FnT{fn, t, loc, test}, xs}}
     case _ _:
       None{}
 
@@ -516,9 +516,9 @@ def Trees.go(fns: List<&2, Fn>, s: Span, +want: U32) -> Maybe<&2, List<&2, FnT>>
   match fns s:
     case Nil{} Span{mine, rest}:
       Bool.pick(Maybe<&2, List<&2, FnT>>, Bool.and(Build.empty(mine), Build.empty(rest)), Some{Nil{}}, None{})
-    case Con{Fn{+fn, file, parent, +loc}, t} Span{mine, +rest}:
+    case Con{Fn{+fn, file, parent, +loc, test}, t} Span{mine, +rest}:
       +nx = U32.add(want, 1)
-      Trees.ok(fn, want, Trees.cons(fn, loc, Build.tree(mine), Trees.go(t, Span.for(rest, nx), nx)))
+      Trees.ok(fn, want, Trees.cons(fn, loc, test, Build.tree(mine), Trees.go(t, Span.for(rest, nx), nx)))
 
 def Trees.of(fns: List<&2, Fn>, +cts: List<&2, CtRow>) -> Maybe<&2, List<&2, FnT>>:
   Trees.go(fns, Span.for(cts, 0), 0)
@@ -545,10 +545,18 @@ def Rule.keep(over: Bool, x: Finding, rest: List<&2, Finding>) -> List<&2, Findi
 def Rule.check(+rule: U32, +fn: U32, +v: Nat, +thr: Nat, rest: List<&2, Finding>) -> List<&2, Finding>:
   Rule.keep(Nat.is_gt(v, thr), Finding{rule, fn, v, thr}, rest)
 
+# A test function (a TF fact) gets no findings: FACTS.md has these detectors skip it.
+def Rule.prod(test: Bool, +fn: U32, cc: Nat, nest: Nat, np: Nat, loc: Nat, tcc: Nat, tnest: Nat, tnp: Nat, tloc: Nat, rest: List<&2, Finding>) -> List<&2, Finding>:
+  match test:
+    case True{}:
+      rest
+    case False{}:
+      Rule.check(1, fn, cc, tcc, Rule.check(2, fn, nest, tnest, Rule.check(3, fn, np, tnp, Rule.check(4, fn, loc, tloc, rest))))
+
 def Rule.one(r: Rules, m: FnM, rest: List<&2, Finding>) -> List<&2, Finding>:
   match r m:
-    case Rules{tcc, tnest, tnp, tloc, cap} FnM{+fn, cc, nest, np, loc}:
-      Rule.check(1, fn, cc, tcc, Rule.check(2, fn, nest, tnest, Rule.check(3, fn, np, tnp, Rule.check(4, fn, loc, tloc, rest))))
+    case Rules{tcc, tnest, tnp, tloc, cap} FnM{+fn, cc, nest, np, loc, test}:
+      Rule.prod(test, fn, cc, nest, np, loc, tcc, tnest, tnp, tloc, rest)
 
 def Metrics.findings(+r: Rules, ms: List<&2, FnM>) -> List<&2, Finding>:
   match ms:
@@ -573,7 +581,7 @@ def Rule.id(+rule: U32) -> String:
 
 def Report.fm(m: FnM) -> String:
   match m:
-    case FnM{fn, cc, nest, np, loc}:
+    case FnM{fn, cc, nest, np, loc, test}:
       "FM " ++ U32.show(fn) ++ " " ++ Nat.show(cc) ++ " " ++ Nat.show(nest) ++ " " ++ Nat.show(np) ++ " " ++ Nat.show(loc)
 
 def Report.fx(x: Finding) -> String:

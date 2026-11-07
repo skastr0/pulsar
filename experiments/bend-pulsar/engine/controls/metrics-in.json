@@ -1,0 +1,20 @@
+[
+ {
+  "law": "glue_runs_metrics",
+  "bug": "the glue drops the CT rows",
+  "old": "      In.out(r, M.Metrics.run(r, fns, cts))",
+  "new": "      In.out(r, M.Metrics.run(r, fns, Nil{}))"
+ },
+ {
+  "law": "glue_prints_lines",
+  "bug": "the glue prints only FM lines",
+  "old": "      Some{M.Metrics.lines(r, ms)}",
+  "new": "      Some{M.Report.fms(ms)}"
+ },
+ {
+  "law": "glue_refuses",
+  "bug": "the glue prints nothing instead of refusing",
+  "old": "    case None{}:\n      None{}\n    case Some{ms}:",
+  "new": "    case None{}:\n      Some{Nil{}}\n    case Some{ms}:"
+ }
+]

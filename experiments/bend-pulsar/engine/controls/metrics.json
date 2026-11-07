@@ -100,5 +100,137 @@
   "bug": "invalid facts yield an empty result",
   "old": "    case None{}:\n      None{}\n    case Some{fs}:\n      Some{Metrics.measure_all(fs, cap)}",
   "new": "    case None{}:\n      Some{Nil{}}\n    case Some{fs}:\n      Some{Metrics.measure_all(fs, cap)}"
+ },
+ {
+  "law": "run_measures_trees",
+  "bug": "valid facts measure nothing",
+  "old": "    case Some{fs}:\n      Some{Metrics.measure_all(fs, cap)}",
+  "new": "    case Some{fs}:\n      Some{Nil{}}"
+ },
+ {
+  "law": "measure_is_the_measures",
+  "bug": "measure swaps cyclomatic and nesting",
+  "old": "FnM{fn, Cc.of(t), Nest.of(t), Np.of(t, cap), U32.to_nat(loc), test}",
+  "new": "FnM{fn, Nest.of(t), Cc.of(t), Np.of(t, cap), U32.to_nat(loc), test}"
+ },
+ {
+  "law": "measure_all_cons",
+  "bug": "measure_all drops each function",
+  "old": "      Con{Metrics.measure(h, cap), Metrics.measure_all(t, cap)}",
+  "new": "      Metrics.measure_all(t, cap)"
+ },
+ {
+  "law": "lines_shape",
+  "bug": "FX lines print before FM lines",
+  "old": "List.append(&2, String, Report.fms(ms), Report.fxs(Metrics.findings(r, ms)))",
+  "new": "List.append(&2, String, Report.fxs(Metrics.findings(r, ms)), Report.fms(ms))"
+ },
+ {
+  "law": "findings_complete_nesting",
+  "bug": "the nesting check is dropped",
+  "old": "Rule.check(2, fn, nest, tnest, Rule.check(3, fn, np, tnp, Rule.check(4, fn, loc, tloc, rest))))",
+  "new": "Rule.check(3, fn, np, tnp, Rule.check(4, fn, loc, tloc, rest)))"
+ },
+ {
+  "law": "findings_complete_npath",
+  "bug": "the npath check is dropped",
+  "old": "Rule.check(3, fn, np, tnp, Rule.check(4, fn, loc, tloc, rest))))",
+  "new": "Rule.check(4, fn, loc, tloc, rest)))"
+ },
+ {
+  "law": "findings_skip_tests",
+  "bug": "a test function still gets a cyclomatic finding",
+  "old": "    case True{}:\n      rest\n    case False{}:\n      Rule.check(1,",
+  "new": "    case True{}:\n      Rule.check(1, fn, cc, tcc, rest)\n    case False{}:\n      Rule.check(1,"
+ },
+ {
+  "law": "decisions_add_up",
+  "bug": "an empty chain counts one decision",
+  "old": "    case Leaf{}:\n      0n\n    case Node{k, +kids, next}:\n      Cc.node(",
+  "new": "    case Leaf{}:\n      1n\n    case Node{k, +kids, next}:\n      Cc.node("
+ },
+ {
+  "law": "decision_loop",
+  "bug": "a loop adds no decision",
+  "old": "    case KLoop{}:\n      1n\n    case KSc{}:\n      1n",
+  "new": "    case KLoop{}:\n      0n\n    case KSc{}:\n      1n"
+ },
+ {
+  "law": "decision_short_circuit",
+  "bug": "a short-circuit adds no decision",
+  "old": "    case KSc{}:\n      1n\n    case KMulti{}:",
+  "new": "    case KSc{}:\n      0n\n    case KMulti{}:"
+ },
+ {
+  "law": "no_decision_arm",
+  "bug": "an arm counts as a decision",
+  "old": "    case KTry{}:\n      Nat.sub(Cc.arms(kids), 1n)\n    case _:\n      0n",
+  "new": "    case KTry{}:\n      Nat.sub(Cc.arms(kids), 1n)\n    case KArm{}:\n      1n\n    case _:\n      0n"
+ },
+ {
+  "law": "no_decision_exit",
+  "bug": "an early exit counts as a decision",
+  "old": "    case KTry{}:\n      Nat.sub(Cc.arms(kids), 1n)\n    case _:\n      0n",
+  "new": "    case KTry{}:\n      Nat.sub(Cc.arms(kids), 1n)\n    case KExit{}:\n      1n\n    case _:\n      0n"
+ },
+ {
+  "law": "no_decision_flag",
+  "bug": "a default flag counts as a decision",
+  "old": "    case KTry{}:\n      Nat.sub(Cc.arms(kids), 1n)\n    case _:\n      0n",
+  "new": "    case KTry{}:\n      Nat.sub(Cc.arms(kids), 1n)\n    case KFlag{}:\n      1n\n    case _:\n      0n"
+ },
+ {
+  "law": "no_decision_finally",
+  "bug": "a finally arm counts as a decision",
+  "old": "    case KTry{}:\n      Nat.sub(Cc.arms(kids), 1n)\n    case _:\n      0n",
+  "new": "    case KTry{}:\n      Nat.sub(Cc.arms(kids), 1n)\n    case KFin{}:\n      1n\n    case _:\n      0n"
+ },
+ {
+  "law": "arms_add_up",
+  "bug": "Cc.arms counts the first arm's children instead of its siblings",
+  "old": "      Nat.add(K.arm(k), Cc.arms(next))",
+  "new": "      Nat.add(K.arm(k), Cc.arms(kids))"
+ },
+ {
+  "law": "nesting_loop",
+  "bug": "a loop does not nest",
+  "old": "    case KLoop{}:\n      Nat.max(1n+d, r)",
+  "new": "    case KLoop{}:\n      Nat.max(d, r)"
+ },
+ {
+  "law": "nesting_then_if_nests",
+  "bug": "a lone if under a then arm is flattened like an else-if",
+  "old": "    case MPost{} True{}:\n      Nat.sub(d, 1n)",
+  "new": "    case _ True{}:\n      Nat.sub(d, 1n)"
+ },
+ {
+  "law": "npath_printed_is_min",
+  "bug": "NPath is capped at cap + 1",
+  "old": "  Np.prod(Np.agg(t, cap))\n",
+  "new": "  Np.prod(Np.agg(t, Nat.add(cap, 1n)))\n"
+ },
+ {
+  "law": "npath_arm_monotone_multi",
+  "bug": "a multi-branch subtracts its arm count from the sum",
+  "old": "      Sat.add(Sat.add(sum, Nat.sub(1n, Nat.min(dflt, arms)), cap), sc, cap)",
+  "new": "      Sat.add(Sat.add(Nat.sub(sum, arms), Nat.sub(1n, Nat.min(dflt, arms)), cap), sc, cap)"
+ },
+ {
+  "law": "npath_arm_monotone_try",
+  "bug": "a try subtracts its arm count from the sum",
+  "old": "      Sat.mul(Sat.add(sum, Nat.sub(1n, arms), cap), fin, cap)",
+  "new": "      Sat.mul(Sat.add(Nat.sub(sum, arms), Nat.sub(1n, arms), cap), fin, cap)"
+ },
+ {
+  "law": "npath_printed_at_least_one",
+  "bug": "an empty chain has no path",
+  "old": "  Agg{Nat.min(1n, cap), 0n, 0n, 0n, 0n, Nat.min(1n, cap)}",
+  "new": "  Agg{0n, 0n, 0n, 0n, 0n, Nat.min(1n, cap)}"
+ },
+ {
+  "law": "npath_printed_if_without_else",
+  "bug": "the implicit empty else is not added",
+  "old": "      Sat.add(Sat.add(sum, Nat.sub(2n, arms), cap), sc, cap)",
+  "new": "      Sat.add(Sat.add(sum, Nat.sub(1n, arms), cap), sc, cap)"
  }
 ]
