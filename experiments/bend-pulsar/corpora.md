@@ -50,6 +50,19 @@ paths) the history-capable repos are:
 Shallow clones everywhere else are fine for facts and metrics; do not run
 history lanes on them (`git rev-list --count HEAD` of 1 gives no signal).
 
+## Intended differences from the 0.3.0 baselines
+
+The new baselines are the CLI and engine output at a recorded sha; two
+differences from the 0.3.0 numbers are known and intended (lead ruling
+2026-11-07):
+
+1. **Prod scope** counts git-tracked files even when they fall outside the
+   tsconfig `include` set, so Junto reports 1979 prod files (0.3.0: 1976)
+   and Pulsar 517 (0.3.0: 505). This is the CLI's class A.
+2. **Junto cycles:** 5, not 6. The 0.3.0 39-file `src/core/ops` cycle came
+   from a file-vs-directory import resolution bug; `tsc` resolves the way
+   the new extractor does. This is class B.
+
 ## Coverage notes
 
 - **Effect pack evidence:** `effect` is the Effect 4 monorepo itself;
