@@ -32,6 +32,20 @@ type TS is Type:
 
 # ---- (A) pop one node of the finished component -------------------------------------
 
+type Cert is Data:
+  Cert{up: List<&2, U32>, down: List<&2, U32>}
+type Ad is Data:
+  Ad{v: U32, ns: List<&2, U32>}
+type Ent is Data:
+  Ent{v: U32, p: List<&2, U32>}
+type Bs is Data:
+  Bs{seen: List<&2, Ent>, front: List<&2, Ent>}
+type Tr is Data:
+  TE{}
+  TV{x: Nat}
+  TN{z: Tr, o: Tr}
+type Res is Data:
+  Res{cycles: List<&2, List<&2, U32>>, ok: Bool}
 def Graph.pop_fin(same: Bool, w: U32, comps: List<&2, List<&2, U32>>, cur: List<&2, U32>) -> List<&2, List<&2, U32>> & List<&2, U32>:
   match same:
     case True{}:
@@ -258,8 +272,6 @@ def Graph.list_le(a: List<&2, U32>, b: List<&2, U32>) -> Bool:
 # component with root r (its first member), a walk r ->+ v and a walk v ->+ r,
 # each as the list of nodes visited after the walk's start, at least one.
 
-type Cert is Data:
-  Cert{up: List<&2, U32>, down: List<&2, U32>}
 
 # Successor list of node n.
 def Graph.nth(adj: List<&2, List<&2, U32>>, n: Nat) -> List<&2, U32>:
@@ -321,14 +333,8 @@ def Graph.cert_ok(c: List<&2, U32>, cs: List<&2, Cert>, +adj: List<&2, List<&2, 
       Graph.members_ok(Con{r, t}, cs, adj, r)
 
 # ---- certificate search (untrusted) ---------------------------------------------------------
-type Ad is Data:
-  Ad{v: U32, ns: List<&2, U32>}
 
-type Ent is Data:
-  Ent{v: U32, p: List<&2, U32>}
 
-type Bs is Data:
-  Bs{seen: List<&2, Ent>, front: List<&2, Ent>}
 
 def Graph.pick_l(hit: Bool, a: List<&2, U32>, b: List<&2, U32>) -> List<&2, U32>:
   match hit:
@@ -532,7 +538,6 @@ def Graph.keep_certified(cs: List<&2, List<&2, U32>>, +adj: List<&2, List<&2, U3
     case Con{+c, t}:
       Graph.push_if(Graph.certified(c, adj), c, Graph.keep_certified(t, adj))
 
-
 # ---- sorting (insertion; the proofs only need that no member is lost) ---------------
 def Graph.ins_u_k(b: Bool, x: U32, h: U32, t: List<&2, U32>, r: List<&2, U32>) -> List<&2, U32>:
   match b:
@@ -583,43 +588,11 @@ def Graph.sort_members(cs: List<&2, List<&2, U32>>) -> List<&2, List<&2, U32>>:
     case Con{h, t}:
       Con{Graph.isort_u(h), Graph.sort_members(t)}
 
-# ---- candidates --------------------------------------------------------------------------
-def Graph.cand_k(t: List<&2, U32>, +adj: List<&2, List<&2, U32>>, +x: U32) -> Bool:
-  match t:
-    case Nil{}:
-      Graph.edge(adj, x, x)
-    case Con{_, _}:
-      True{}
-
-# A component is a cycle if it has two or more nodes, or one node with a self edge.
-def Graph.is_cand(c: List<&2, U32>, +adj: List<&2, List<&2, U32>>) -> Bool:
-  match c:
-    case Nil{}:
-      False{}
-    case Con{+x, t}:
-      Graph.cand_k(t, adj, x)
-
-def Graph.keep_cand(cs: List<&2, List<&2, U32>>, +adj: List<&2, List<&2, U32>>) -> List<&2, List<&2, U32>>:
-  match cs:
-    case Nil{}:
-      Nil{}
-    case Con{+c, t}:
-      Graph.push_if(Graph.is_cand(c, adj), c, Graph.keep_cand(t, adj))
-
-# Every cycle of the graph (components' views): members ascending, cycles in
-# lexicographic order of their member lists.
-def Graph.candidates(adj: List<&2, List<&2, U32>>, cs: List<&2, List<&2, U32>>) -> List<&2, List<&2, U32>>:
-  Graph.isort_l(Graph.sort_members(Graph.keep_cand(cs, adj)))
-
 # ---- completeness certificate: component numbers never decrease along an edge ---------
 # Tarjan emits components sinks first and Graph.sccs lists the latest first, so
 # the position of a component in that list is a topological number.
 
 # Map from U32 (read bit by bit, low bit first) to Nat.
-type Tr is Data:
-  TE{}
-  TV{x: Nat}
-  TN{z: Tr, o: Tr}
 
 def Tr.z(t: Tr) -> Tr:
   match t:
@@ -639,15 +612,6 @@ def Tr.o(t: Tr) -> Tr:
     case TN{_, o}:
       o
 
-def Tr.leaf(t: Tr) -> Maybe<&2, Nat>:
-  match t:
-    case TE{}:
-      None{}
-    case TV{x}:
-      Some{x}
-    case TN{_, _}:
-      None{}
-
 def Tr.sel(b: Bool, t: Tr) -> Tr:
   match b:
     case False{}:
@@ -662,15 +626,6 @@ def Tr.setk(b: Bool, t: Tr, nw: Tr) -> Tr:
     case True{}:
       TN{Tr.z(t), nw}
 
-def Tr.get(n: Nat, t: Tr, w: Word(n)) -> Maybe<&2, Nat>:
-  match n:
-    case 0n:
-      Tr.leaf(t)
-    case 1n+p:
-      match w:
-        case WCon{b, wt}:
-          Tr.get(p, Tr.sel(b, t), wt)
-
 def Tr.put(n: Nat, +t: Tr, w: Word(n), x: Nat) -> Tr:
   match n:
     case 0n:
@@ -680,15 +635,103 @@ def Tr.put(n: Nat, +t: Tr, w: Word(n), x: Nat) -> Tr:
         case WCon{+b, wt}:
           Tr.setk(b, t, Tr.put(p, Tr.sel(b, t), wt, x))
 
+def Tr.putu(t: Tr, x: U32, v: Nat) -> Tr:
+  match x:
+    case U32{w}:
+      Tr.put(32n, t, w, v)
+
+# ---- candidates --------------------------------------------------------------------------
+# ---- self edges, read in one pass ---------------------------------------------------------
+# The nodes whose own row lists them, positionally (the row at position p is
+# node U32.from_nat(p)). Untrusted: only Graph.selfs_ok (in verified2) is
+# relied on, and only for completeness; soundness never reads it, since every
+# reported cycle passes cert_ok. One pass replaces an O(n) Graph.nth per
+# singleton component, which was quadratic in the number of files.
+def Graph.selfs_add(hit: Bool, +x: U32, s: Tr) -> Tr:
+  match hit:
+    case True{}:
+      Tr.putu(s, x, 0n)
+    case False{}:
+      s
+
+def Graph.selfs_go(adj: List<&2, List<&2, U32>>, +x: U32, s: Tr) -> Tr:
+  match adj:
+    case Nil{}:
+      s
+    case Con{ns, t}:
+      Graph.selfs_go(t, U32.inc(x), Graph.selfs_add(Graph.mem(ns, x), x, s))
+
+def Graph.selfs(adj: List<&2, List<&2, U32>>) -> Tr:
+  Graph.selfs_go(adj, 0, TE{})
+
+def Graph.in_tr2(m: Maybe<&2, Nat>) -> Bool:
+  match m:
+    case None{}:
+      False{}
+    case Some{v}:
+      True{}
+
+def Tr.leaf(t: Tr) -> Maybe<&2, Nat>:
+  match t:
+    case TE{}:
+      None{}
+    case TV{x}:
+      Some{x}
+    case TN{_, _}:
+      None{}
+
+def Tr.get(n: Nat, t: Tr, w: Word(n)) -> Maybe<&2, Nat>:
+  match n:
+    case 0n:
+      Tr.leaf(t)
+    case 1n+p:
+      match w:
+        case WCon{b, wt}:
+          Tr.get(p, Tr.sel(b, t), wt)
+
 def Tr.getu(t: Tr, x: U32) -> Maybe<&2, Nat>:
   match x:
     case U32{w}:
       Tr.get(32n, t, w)
 
-def Tr.putu(t: Tr, x: U32, v: Nat) -> Tr:
-  match x:
-    case U32{w}:
-      Tr.put(32n, t, w, v)
+def Graph.in_tr(+t: Tr, x: U32) -> Bool:
+  Graph.in_tr2(Tr.getu(t, x))
+
+# Certificate: every row that lists its own node is in s.
+def Graph.selfs_ok(adj: List<&2, List<&2, U32>>, +x: U32, +s: Tr) -> Bool:
+  match adj:
+    case Nil{}:
+      True{}
+    case Con{ns, t}:
+      Bool.and(Bool.or(Bool.not(Graph.mem(ns, x)), Graph.in_tr(s, x)), Graph.selfs_ok(t, U32.inc(x), s))
+
+def Graph.cand_k(t: List<&2, U32>, +s: Tr, +x: U32) -> Bool:
+  match t:
+    case Nil{}:
+      Graph.in_tr(s, x)
+    case Con{_, _}:
+      True{}
+
+# A component is a cycle if it has two or more nodes, or one node with a self
+# edge (s = Graph.selfs(adj)).
+def Graph.is_cand(c: List<&2, U32>, +s: Tr) -> Bool:
+  match c:
+    case Nil{}:
+      False{}
+    case Con{+x, t}:
+      Graph.cand_k(t, s, x)
+
+def Graph.keep_cand(cs: List<&2, List<&2, U32>>, +s: Tr) -> List<&2, List<&2, U32>>:
+  match cs:
+    case Nil{}:
+      Nil{}
+    case Con{+c, t}:
+      Graph.push_if(Graph.is_cand(c, s), c, Graph.keep_cand(t, s))
+
+# Every cycle of the graph (components' views): members ascending, cycles in
+# lexicographic order of their member lists.
+def Graph.candidates(adj: List<&2, List<&2, U32>>, cs: List<&2, List<&2, U32>>) -> List<&2, List<&2, U32>>:
+  Graph.isort_l(Graph.sort_members(Graph.keep_cand(cs, Graph.selfs(adj))))
 
 # Number every member of component c with k.
 def Graph.ins_comp(c: List<&2, U32>, +k: Nat, tr: Tr) -> Tr:
@@ -777,7 +820,7 @@ def Graph.cycles2(+adj: List<&2, List<&2, U32>>, +cs: List<&2, List<&2, U32>>) -
 # verified2: the run's certificates all passed (see LAWS.bend: completeness and
 # partition hold whenever this is True).
 def Graph.verified2(+adj: List<&2, List<&2, U32>>, +cs: List<&2, List<&2, U32>>) -> Bool:
-  Bool.and(Graph.mono_ok(adj, 0, Graph.ids(cs, 0n, TE{})), Graph.all_cert(Graph.candidates(adj, cs), adj))
+  Bool.and(Bool.and(Graph.mono_ok(adj, 0, Graph.ids(cs, 0n, TE{})), Graph.all_cert(Graph.candidates(adj, cs), adj)), Graph.selfs_ok(adj, 0, Graph.selfs(adj)))
 
 def Graph.cycles(+adj: List<&2, List<&2, U32>>) -> List<&2, List<&2, U32>>:
   Graph.cycles2(adj, Graph.sccs(adj))
@@ -790,8 +833,6 @@ def Graph.verified(+adj: List<&2, List<&2, U32>>) -> Bool:
 # certificate passed (when True, LAWS.bend's cycles_complete and sccs_partition
 # apply to this very run). A caller should treat `ok = False` as an internal
 # error: the search disagreed with its own certificates.
-type Res is Data:
-  Res{cycles: List<&2, List<&2, U32>>, ok: Bool}
 
 def Graph.analyze2(+adj: List<&2, List<&2, U32>>, +cs: List<&2, List<&2, U32>>) -> Res:
   Res{Graph.cycles2(adj, cs), Bool.and(Graph.verified2(adj, cs), Graph.part_ok2(adj, cs))}

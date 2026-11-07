@@ -381,7 +381,6 @@ def Common.mem2(+cs: List<&2, List<&2, U32>>, +y: U32, +j: Nat, ex: Laws.Ex(Nat,
 def Common.mem(+cs: List<&2, List<&2, U32>>, +y: U32, +j: Nat, e: {G.Tr.getu(G.Graph.ids(cs, 0n, G.TE{}), y) == Some{j} : Maybe<&2, Nat>}) -> Laws.Mem(NthL(cs, j), y):
   Common.mem2(cs, y, j, Ids.top(cs, y, j, e))
 
-
 # ---- from facts back to the Bool checks ----------------------------------------------------------
 def Word.cmp_refl(+n: Nat, w: Word(n)) -> {Word.cmp(n, w, w) == EQ{} : Cmp}:
   match n:
@@ -542,18 +541,18 @@ def PushL.keep(b: Bool, +x: List<&2, U32>, acc: List<&2, List<&2, U32>>, +c: Lis
     case True{}:
       Inr{hm}
 
-def KeepCand.rw(+adj: List<&2, List<&2, U32>>, +c1: List<&2, U32>, +c: List<&2, U32>, h: {c1 == c : List<&2, U32>}, hc: {G.Graph.is_cand(c, adj) == True{} : Bool}) -> {G.Graph.is_cand(c1, adj) == True{} : Bool}:
-  %Equal.sym(List<&2, U32>, c1, c, h) : {G.Graph.is_cand(_, adj) == True{} : Bool}
+def KeepCand.rw(+adj: List<&2, List<&2, U32>>, +c1: List<&2, U32>, +c: List<&2, U32>, h: {c1 == c : List<&2, U32>}, hc: {G.Graph.is_cand(c, G.Graph.selfs(adj)) == True{} : Bool}) -> {G.Graph.is_cand(c1, G.Graph.selfs(adj)) == True{} : Bool}:
+  %Equal.sym(List<&2, U32>, c1, c, h) : {G.Graph.is_cand(_, G.Graph.selfs(adj)) == True{} : Bool}
   hc
 
-def KeepCand.k(+adj: List<&2, List<&2, U32>>, +c1: List<&2, U32>, +t: List<&2, List<&2, U32>>, +c: List<&2, U32>, hm: Laws.MemL(Con{c1, t}, c), hc: {G.Graph.is_cand(c, adj) == True{} : Bool}, ih: Laws.MemL(t, c) -> Laws.MemL(G.Graph.keep_cand(t, adj), c)) -> Laws.MemL(G.Graph.keep_cand(Con{c1, t}, adj), c):
+def KeepCand.k(+adj: List<&2, List<&2, U32>>, +c1: List<&2, U32>, +t: List<&2, List<&2, U32>>, +c: List<&2, U32>, hm: Laws.MemL(Con{c1, t}, c), hc: {G.Graph.is_cand(c, G.Graph.selfs(adj)) == True{} : Bool}, ih: Laws.MemL(t, c) -> Laws.MemL(G.Graph.keep_cand(t, G.Graph.selfs(adj)), c)) -> Laws.MemL(G.Graph.keep_cand(Con{c1, t}, G.Graph.selfs(adj)), c):
   match hm:
     case Inl{+h}:
-      PushL.in(G.Graph.is_cand(c1, adj), c1, G.Graph.keep_cand(t, adj), c, KeepCand.rw(adj, c1, c, h, hc), h)
+      PushL.in(G.Graph.is_cand(c1, G.Graph.selfs(adj)), c1, G.Graph.keep_cand(t, G.Graph.selfs(adj)), c, KeepCand.rw(adj, c1, c, h, hc), h)
     case Inr{h2}:
-      PushL.keep(G.Graph.is_cand(c1, adj), c1, G.Graph.keep_cand(t, adj), c, ih(h2))
+      PushL.keep(G.Graph.is_cand(c1, G.Graph.selfs(adj)), c1, G.Graph.keep_cand(t, G.Graph.selfs(adj)), c, ih(h2))
 
-def KeepCand.mem(cs: List<&2, List<&2, U32>>, +adj: List<&2, List<&2, U32>>, +c: List<&2, U32>, hm: Laws.MemL(cs, c), +hc: {G.Graph.is_cand(c, adj) == True{} : Bool}) -> Laws.MemL(G.Graph.keep_cand(cs, adj), c):
+def KeepCand.mem(cs: List<&2, List<&2, U32>>, +adj: List<&2, List<&2, U32>>, +c: List<&2, U32>, hm: Laws.MemL(cs, c), +hc: {G.Graph.is_cand(c, G.Graph.selfs(adj)) == True{} : Bool}) -> Laws.MemL(G.Graph.keep_cand(cs, G.Graph.selfs(adj)), c):
   match cs:
     case Nil{}:
       Empty.absurd(Laws.MemL(Nil{}, c), hm)
@@ -575,8 +574,8 @@ def SortM.mem(cs: List<&2, List<&2, U32>>, +c: List<&2, U32>, hm: Laws.MemL(cs, 
       SortM.k(h, t, c, hm, z => SortM.mem(t, c, z))
 
 # A genuine cycle component is a candidate.
-def Cand.mem(+cs: List<&2, List<&2, U32>>, +adj: List<&2, List<&2, U32>>, +c: List<&2, U32>, hm: Laws.MemL(cs, c), hc: {G.Graph.is_cand(c, adj) == True{} : Bool}) -> Laws.MemL(G.Graph.candidates(adj, cs), G.Graph.isort_u(c)):
-  Isort_l.mem(G.Graph.sort_members(G.Graph.keep_cand(cs, adj)), G.Graph.isort_u(c), SortM.mem(G.Graph.keep_cand(cs, adj), c, KeepCand.mem(cs, adj, c, hm, hc)))
+def Cand.mem(+cs: List<&2, List<&2, U32>>, +adj: List<&2, List<&2, U32>>, +c: List<&2, U32>, hm: Laws.MemL(cs, c), hc: {G.Graph.is_cand(c, G.Graph.selfs(adj)) == True{} : Bool}) -> Laws.MemL(G.Graph.candidates(adj, cs), G.Graph.isort_u(c)):
+  Isort_l.mem(G.Graph.sort_members(G.Graph.keep_cand(cs, G.Graph.selfs(adj))), G.Graph.isort_u(c), SortM.mem(G.Graph.keep_cand(cs, G.Graph.selfs(adj)), c, KeepCand.mem(cs, adj, c, hm, hc)))
 
 def KeepCert.k(+adj: List<&2, List<&2, U32>>, +c1: List<&2, U32>, +t: List<&2, List<&2, U32>>, +c: List<&2, U32>, o: Laws.And({G.Graph.certified(c1, adj) == True{} : Bool}, {G.Graph.all_cert(t, adj) == True{} : Bool}), hm: Laws.MemL(Con{c1, t}, c), ih: {G.Graph.all_cert(t, adj) == True{} : Bool} -> Laws.MemL(t, c) -> Laws.MemL(G.Graph.keep_certified(t, adj), c)) -> Laws.MemL(G.Graph.keep_certified(Con{c1, t}, adj), c):
   match o:
@@ -640,6 +639,66 @@ def Sing.mem(+cs: List<&2, List<&2, U32>>, +x: U32, +w: U32, +j: Nat, ax: {G.Tr.
         case Tuple{a2, b2}:
           Common.mem(cs, w, j, Num.eq2(G.Graph.ids(cs, 0n, G.TE{}), w, j, j2, Same.num(G.Graph.ids(cs, 0n, G.TE{}), x, j2, j, a2, ax), b2))
 
+# ---- self edges: the selfs_ok certificate covers every self edge -------------------------
+def SO.fst(+a: Bool, +b: Bool, p: Laws.And({a == True{} : Bool}, {b == True{} : Bool})) -> {a == True{} : Bool}:
+  match p:
+    case Tuple{x, y}:
+      x
+
+def SO.snd(+a: Bool, +b: Bool, p: Laws.And({a == True{} : Bool}, {b == True{} : Bool})) -> {b == True{} : Bool}:
+  match p:
+    case Tuple{x, y}:
+      y
+
+def SO.imp(+a: Bool, +b: Bool, e: {Bool.or(Bool.not(a), b) == True{} : Bool}, ha: {a == True{} : Bool}) -> {b == True{} : Bool}:
+  %ha : {Bool.or(Bool.not(_), b) == True{} : Bool}
+  e
+
+def SO.mrw(+xs: List<&2, U32>, +a: U32, +b: U32, h: {a == b : U32}, m: Laws.Mem(xs, a)) -> Laws.Mem(xs, b):
+  %h : Laws.Mem(xs, _)
+  m
+
+def SO.trw(+s: G.Tr, +a: U32, +b: U32, h: {a == b : U32}, e: {G.Graph.in_tr(s, a) == True{} : Bool}) -> {G.Graph.in_tr(s, b) == True{} : Bool}:
+  %h : {G.Graph.in_tr(s, _) == True{} : Bool}
+  e
+
+def SO.inc(+x: U32, +p: Nat, hx: {x == U32.from_nat(p) : U32}) -> {U32.inc(x) == U32.from_nat(1n+p) : U32}:
+  %hx : {U32.inc(x) == U32.inc(_) : U32}
+  {==}
+
+def SO.here(+ns: List<&2, U32>, +t: List<&2, List<&2, U32>>, +s: G.Tr, +x: U32, +p: Nat, +hx: {x == U32.from_nat(p) : U32}, e: {Bool.and(Bool.or(Bool.not(G.Graph.mem(ns, x)), G.Graph.in_tr(s, x)), G.Graph.selfs_ok(t, U32.inc(x), s)) == True{} : Bool}, hm: Laws.Mem(ns, U32.from_nat(p))) -> {G.Graph.in_tr(s, U32.from_nat(p)) == True{} : Bool}:
+  SO.trw(s, x, U32.from_nat(p), hx, SO.imp(G.Graph.mem(ns, x), G.Graph.in_tr(s, x), SO.fst(Bool.or(Bool.not(G.Graph.mem(ns, x)), G.Graph.in_tr(s, x)), G.Graph.selfs_ok(t, U32.inc(x), s), L.Bool.and_true(Bool.or(Bool.not(G.Graph.mem(ns, x)), G.Graph.in_tr(s, x)), G.Graph.selfs_ok(t, U32.inc(x), s), e)), Mem.to_bool(ns, x, SO.mrw(ns, U32.from_nat(p), x, Equal.sym(U32, x, U32.from_nat(p), hx), hm))))
+
+def SO.eq(+n2: Nat, +p: Nat) -> {U32.from_nat(1n+Nat.add(n2, p)) == U32.from_nat(Nat.add(n2, 1n+p)) : U32}:
+  %Equal.sym(Nat, Nat.add(n2, 1n+p), 1n+Nat.add(n2, p), N.Nat.add_succ_r(n2, p)) : {U32.from_nat(1n+Nat.add(n2, p)) == U32.from_nat(_) : U32}
+  {==}
+
+# Row n of adj, where adj starts at node x = from_nat(p), belongs to node from_nat(n + p).
+def SO.go(adj: List<&2, List<&2, U32>>, +s: G.Tr, +x: U32, +p: Nat, +n: Nat, +hx: {x == U32.from_nat(p) : U32}, +e: {G.Graph.selfs_ok(adj, x, s) == True{} : Bool}, hm: Laws.Mem(Laws.Nth(adj, n), U32.from_nat(Nat.add(n, p)))) -> {G.Graph.in_tr(s, U32.from_nat(Nat.add(n, p))) == True{} : Bool}:
+  match adj:
+    case Nil{}:
+      match n:
+        case 0n:
+          Empty.absurd({G.Graph.in_tr(s, U32.from_nat(Nat.add(0n, p))) == True{} : Bool}, hm)
+        case 1n+n2:
+          Empty.absurd({G.Graph.in_tr(s, U32.from_nat(Nat.add(1n+n2, p))) == True{} : Bool}, hm)
+    case Con{+ns, +t}:
+      match n:
+        case 0n:
+          SO.here(ns, t, s, x, p, hx, e, hm)
+        case 1n+n2:
+          +e2 = SO.snd(Bool.or(Bool.not(G.Graph.mem(ns, x)), G.Graph.in_tr(s, x)), G.Graph.selfs_ok(t, U32.inc(x), s), L.Bool.and_true(Bool.or(Bool.not(G.Graph.mem(ns, x)), G.Graph.in_tr(s, x)), G.Graph.selfs_ok(t, U32.inc(x), s), e))
+          %N.Nat.add_succ_r(n2, p) : {G.Graph.in_tr(s, U32.from_nat(_)) == True{} : Bool}
+          SO.go(t, s, U32.inc(x), 1n+p, n2, SO.inc(x, p, hx), e2, SO.mrw(Laws.Nth(t, n2), U32.from_nat(1n+Nat.add(n2, p)), U32.from_nat(Nat.add(n2, 1n+p)), SO.eq(n2, p), hm))
+
+def SO.x(+x: U32) -> {x == U32.from_nat(Nat.add(U32.to_nat(x), 0n)) : U32}:
+  %Equal.sym(Nat, Nat.add(U32.to_nat(x), 0n), U32.to_nat(x), N.Nat.add_zero(U32.to_nat(x))) : {x == U32.from_nat(_) : U32}
+  Equal.sym(U32, U32.from_nat(U32.to_nat(x)), x, N.U32.round(x))
+
+# A self edge x -> x puts x in Graph.selfs(adj), whenever the certificate passed.
+def SelfC(+adj: List<&2, List<&2, U32>>, +x: U32, +e3: {G.Graph.selfs_ok(adj, 0, G.Graph.selfs(adj)) == True{} : Bool}, hs: Laws.Succ(adj, x, x)) -> {G.Graph.in_tr(G.Graph.selfs(adj), x) == True{} : Bool}:
+  SO.trw(G.Graph.selfs(adj), U32.from_nat(Nat.add(U32.to_nat(x), 0n)), x, Equal.sym(U32, x, U32.from_nat(Nat.add(U32.to_nat(x), 0n)), SO.x(x)), SO.go(adj, G.Graph.selfs(adj), 0, 0n, U32.to_nat(x), {==}, e3, SO.mrw(Laws.Nth(adj, U32.to_nat(x)), x, U32.from_nat(Nat.add(U32.to_nat(x), 0n)), SO.x(x), hs)))
+
 def Sing.edge2(+adj: List<&2, List<&2, U32>>, +x: U32, +w: U32, hxw: {x == w : U32}, s: Laws.Succ(adj, x, w)) -> Laws.Succ(adj, x, x):
   %Equal.sym(U32, x, w, hxw) : Laws.Succ(adj, x, _)
   s
@@ -671,67 +730,67 @@ def Rw.num(+tr: G.Tr, +u: U32, +x: U32, +j: Nat, hu: {x == u : U32}, a: {G.Tr.ge
   %Equal.sym(U32, x, u, hu) : {G.Tr.getu(tr, _) == Some{j} : Maybe<&2, Nat>}
   a
 
-def Cand.single2(+adj: List<&2, List<&2, U32>>, +cs: List<&2, List<&2, U32>>, +j: Nat, +x: U32, +w: U32, +k: Nat, e1: {G.Graph.mono_ok(adj, 0, G.Graph.ids(cs, 0n, G.TE{})) == True{} : Bool}, ax: {G.Tr.getu(G.Graph.ids(cs, 0n, G.TE{}), x) == Some{j} : Maybe<&2, Nat>}, hC: {NthL(cs, j) == Con{x, Nil{}} : List<&2, U32>}, s: Laws.Succ(adj, x, w), wk: Laws.Walk(adj, k, w, x)) -> {G.Graph.edge(adj, x, x) == True{} : Bool}:
-  Edge.to_bool(adj, x, x, Sing.succ2(adj, cs, j, x, w, k, e1, ax, hC, s, wk))
+def Cand.single2(+adj: List<&2, List<&2, U32>>, +cs: List<&2, List<&2, U32>>, +j: Nat, +x: U32, +w: U32, +k: Nat, +e3: {G.Graph.selfs_ok(adj, 0, G.Graph.selfs(adj)) == True{} : Bool}, e1: {G.Graph.mono_ok(adj, 0, G.Graph.ids(cs, 0n, G.TE{})) == True{} : Bool}, ax: {G.Tr.getu(G.Graph.ids(cs, 0n, G.TE{}), x) == Some{j} : Maybe<&2, Nat>}, hC: {NthL(cs, j) == Con{x, Nil{}} : List<&2, U32>}, s: Laws.Succ(adj, x, w), wk: Laws.Walk(adj, k, w, x)) -> {G.Graph.in_tr(G.Graph.selfs(adj), x) == True{} : Bool}:
+  SelfC(adj, x, e3, Sing.succ2(adj, cs, j, x, w, k, e1, ax, hC, s, wk))
 
-def Cand.single1(+adj: List<&2, List<&2, U32>>, +cs: List<&2, List<&2, U32>>, +j: Nat, +x: U32, e1: {G.Graph.mono_ok(adj, 0, G.Graph.ids(cs, 0n, G.TE{})) == True{} : Bool}, ax: {G.Tr.getu(G.Graph.ids(cs, 0n, G.TE{}), x) == Some{j} : Maybe<&2, Nat>}, hC: {NthL(cs, j) == Con{x, Nil{}} : List<&2, U32>}, r: Laws.Reach1(adj, x, x)) -> {G.Graph.edge(adj, x, x) == True{} : Bool}:
+def Cand.single1(+adj: List<&2, List<&2, U32>>, +cs: List<&2, List<&2, U32>>, +j: Nat, +x: U32, +e3: {G.Graph.selfs_ok(adj, 0, G.Graph.selfs(adj)) == True{} : Bool}, e1: {G.Graph.mono_ok(adj, 0, G.Graph.ids(cs, 0n, G.TE{})) == True{} : Bool}, ax: {G.Tr.getu(G.Graph.ids(cs, 0n, G.TE{}), x) == Some{j} : Maybe<&2, Nat>}, hC: {NthL(cs, j) == Con{x, Nil{}} : List<&2, U32>}, r: Laws.Reach1(adj, x, x)) -> {G.Graph.in_tr(G.Graph.selfs(adj), x) == True{} : Bool}:
   match r:
     case Tuple{+w, r2}:
       match r2:
         case Tuple{s, r3}:
           match r3:
             case Tuple{+k, wk}:
-              Cand.single2(adj, cs, j, x, w, k, e1, ax, hC, s, wk)
+              Cand.single2(adj, cs, j, x, w, k, e3, e1, ax, hC, s, wk)
 
-def Cand.single(+adj: List<&2, List<&2, U32>>, +cs: List<&2, List<&2, U32>>, +j: Nat, +x: U32, +u: U32, +v: U32, e1: {G.Graph.mono_ok(adj, 0, G.Graph.ids(cs, 0n, G.TE{})) == True{} : Bool}, ax: {G.Tr.getu(G.Graph.ids(cs, 0n, G.TE{}), u) == Some{j} : Maybe<&2, Nat>}, hC: {NthL(cs, j) == Con{x, Nil{}} : List<&2, U32>}, +hu: {x == u : U32}, hv: {x == v : U32}, r1: Laws.Reach1(adj, u, v)) -> {G.Graph.edge(adj, x, x) == True{} : Bool}:
-  Cand.single1(adj, cs, j, x, e1, Rw.num(G.Graph.ids(cs, 0n, G.TE{}), u, x, j, hu, ax), hC, Rw.reach(adj, u, v, x, hu, hv, r1))
+def Cand.single(+adj: List<&2, List<&2, U32>>, +cs: List<&2, List<&2, U32>>, +j: Nat, +x: U32, +u: U32, +v: U32, +e3: {G.Graph.selfs_ok(adj, 0, G.Graph.selfs(adj)) == True{} : Bool}, e1: {G.Graph.mono_ok(adj, 0, G.Graph.ids(cs, 0n, G.TE{})) == True{} : Bool}, ax: {G.Tr.getu(G.Graph.ids(cs, 0n, G.TE{}), u) == Some{j} : Maybe<&2, Nat>}, hC: {NthL(cs, j) == Con{x, Nil{}} : List<&2, U32>}, +hu: {x == u : U32}, hv: {x == v : U32}, r1: Laws.Reach1(adj, u, v)) -> {G.Graph.in_tr(G.Graph.selfs(adj), x) == True{} : Bool}:
+  Cand.single1(adj, cs, j, x, e3, e1, Rw.num(G.Graph.ids(cs, 0n, G.TE{}), u, x, j, hu, ax), hC, Rw.reach(adj, u, v, x, hu, hv, r1))
 
-def Cand.s2(+adj: List<&2, List<&2, U32>>, +cs: List<&2, List<&2, U32>>, +j: Nat, +x: U32, +u: U32, +v: U32, e1: {G.Graph.mono_ok(adj, 0, G.Graph.ids(cs, 0n, G.TE{})) == True{} : Bool}, ax: {G.Tr.getu(G.Graph.ids(cs, 0n, G.TE{}), u) == Some{j} : Maybe<&2, Nat>}, hC: {NthL(cs, j) == Con{x, Nil{}} : List<&2, U32>}, hu: Laws.Mem(Con{x, Nil{}}, u), hv: Laws.Mem(Con{x, Nil{}}, v), r1: Laws.Reach1(adj, u, v)) -> {G.Graph.edge(adj, x, x) == True{} : Bool}:
+def Cand.s2(+adj: List<&2, List<&2, U32>>, +cs: List<&2, List<&2, U32>>, +j: Nat, +x: U32, +u: U32, +v: U32, +e3: {G.Graph.selfs_ok(adj, 0, G.Graph.selfs(adj)) == True{} : Bool}, e1: {G.Graph.mono_ok(adj, 0, G.Graph.ids(cs, 0n, G.TE{})) == True{} : Bool}, ax: {G.Tr.getu(G.Graph.ids(cs, 0n, G.TE{}), u) == Some{j} : Maybe<&2, Nat>}, hC: {NthL(cs, j) == Con{x, Nil{}} : List<&2, U32>}, hu: Laws.Mem(Con{x, Nil{}}, u), hv: Laws.Mem(Con{x, Nil{}}, v), r1: Laws.Reach1(adj, u, v)) -> {G.Graph.in_tr(G.Graph.selfs(adj), x) == True{} : Bool}:
   match hu:
     case Inl{h1}:
       match hv:
         case Inl{h2}:
-          Cand.single(adj, cs, j, x, u, v, e1, ax, hC, h1, h2, r1)
+          Cand.single(adj, cs, j, x, u, v, e3, e1, ax, hC, h1, h2, r1)
         case Inr{em}:
-          Empty.absurd({G.Graph.edge(adj, x, x) == True{} : Bool}, em)
+          Empty.absurd({G.Graph.in_tr(G.Graph.selfs(adj), x) == True{} : Bool}, em)
     case Inr{em}:
-      Empty.absurd({G.Graph.edge(adj, x, x) == True{} : Bool}, em)
+      Empty.absurd({G.Graph.in_tr(G.Graph.selfs(adj), x) == True{} : Bool}, em)
 
 # The component holding u and v is a candidate cycle.
-def Cand.is(c: List<&2, U32>, +adj: List<&2, List<&2, U32>>, +cs: List<&2, List<&2, U32>>, +j: Nat, +u: U32, +v: U32, e1: {G.Graph.mono_ok(adj, 0, G.Graph.ids(cs, 0n, G.TE{})) == True{} : Bool}, ax: {G.Tr.getu(G.Graph.ids(cs, 0n, G.TE{}), u) == Some{j} : Maybe<&2, Nat>}, hC: {NthL(cs, j) == c : List<&2, U32>}, hu: Laws.Mem(c, u), hv: Laws.Mem(c, v), r1: Laws.Reach1(adj, u, v)) -> {G.Graph.is_cand(c, adj) == True{} : Bool}:
+def Cand.is(c: List<&2, U32>, +adj: List<&2, List<&2, U32>>, +cs: List<&2, List<&2, U32>>, +j: Nat, +u: U32, +v: U32, +e3: {G.Graph.selfs_ok(adj, 0, G.Graph.selfs(adj)) == True{} : Bool}, e1: {G.Graph.mono_ok(adj, 0, G.Graph.ids(cs, 0n, G.TE{})) == True{} : Bool}, ax: {G.Tr.getu(G.Graph.ids(cs, 0n, G.TE{}), u) == Some{j} : Maybe<&2, Nat>}, hC: {NthL(cs, j) == c : List<&2, U32>}, hu: Laws.Mem(c, u), hv: Laws.Mem(c, v), r1: Laws.Reach1(adj, u, v)) -> {G.Graph.is_cand(c, G.Graph.selfs(adj)) == True{} : Bool}:
   match c:
     case Nil{}:
-      Empty.absurd({G.Graph.is_cand(Nil{}, adj) == True{} : Bool}, hu)
+      Empty.absurd({G.Graph.is_cand(Nil{}, G.Graph.selfs(adj)) == True{} : Bool}, hu)
     case Con{+x, Nil{}}:
-      Cand.s2(adj, cs, j, x, u, v, e1, ax, hC, hu, hv, r1)
+      Cand.s2(adj, cs, j, x, u, v, e3, e1, ax, hC, hu, hv, r1)
     case Con{+x, Con{+y, +r}}:
       {==}
 
 def Done(+adj: List<&2, List<&2, U32>>, +cs: List<&2, List<&2, U32>>, u: U32, v: U32) -> Data:
   Laws.Ex(List<&2, U32>, c => Laws.And(Laws.MemL(G.Graph.keep_certified(G.Graph.candidates(adj, cs), adj), c), Laws.And(Laws.Mem(c, u), Laws.Mem(c, v))))
 
-def Done.mk(+adj: List<&2, List<&2, U32>>, +cs: List<&2, List<&2, U32>>, +u: U32, +v: U32, +c0: List<&2, U32>, +ok: {G.Graph.all_cert(G.Graph.candidates(adj, cs), adj) == True{} : Bool}, +hm: Laws.MemL(cs, c0), hc: {G.Graph.is_cand(c0, adj) == True{} : Bool}, hu: Laws.Mem(c0, u), hv: Laws.Mem(c0, v)) -> Done(adj, cs, u, v):
+def Done.mk(+adj: List<&2, List<&2, U32>>, +cs: List<&2, List<&2, U32>>, +u: U32, +v: U32, +c0: List<&2, U32>, +ok: {G.Graph.all_cert(G.Graph.candidates(adj, cs), adj) == True{} : Bool}, +hm: Laws.MemL(cs, c0), hc: {G.Graph.is_cand(c0, G.Graph.selfs(adj)) == True{} : Bool}, hu: Laws.Mem(c0, u), hv: Laws.Mem(c0, v)) -> Done(adj, cs, u, v):
   Tuple{G.Graph.isort_u(c0), Tuple{KeepCert.mem(G.Graph.candidates(adj, cs), adj, G.Graph.isort_u(c0), ok, Cand.mem(cs, adj, c0, hm, hc)), Tuple{Isort_u.mem(c0, u, hu), Isort_u.mem(c0, v, hv)}}}
 
-def Complete.k2(+adj: List<&2, List<&2, U32>>, +cs: List<&2, List<&2, U32>>, +j: Nat, +u: U32, +v: U32, +e1: {G.Graph.mono_ok(adj, 0, G.Graph.ids(cs, 0n, G.TE{})) == True{} : Bool}, +ok: {G.Graph.all_cert(G.Graph.candidates(adj, cs), adj) == True{} : Bool}, a: {G.Tr.getu(G.Graph.ids(cs, 0n, G.TE{}), u) == Some{j} : Maybe<&2, Nat>}, r1: Laws.Reach1(adj, u, v), +hu: Laws.Mem(NthL(cs, j), u), +hv: Laws.Mem(NthL(cs, j), v)) -> Done(adj, cs, u, v):
-  Done.mk(adj, cs, u, v, NthL(cs, j), ok, NthL.memL(cs, j, u, hu), Cand.is(NthL(cs, j), adj, cs, j, u, v, e1, a, {==}, hu, hv, r1), hu, hv)
+def Complete.k2(+adj: List<&2, List<&2, U32>>, +cs: List<&2, List<&2, U32>>, +j: Nat, +u: U32, +v: U32, +e3: {G.Graph.selfs_ok(adj, 0, G.Graph.selfs(adj)) == True{} : Bool}, +e1: {G.Graph.mono_ok(adj, 0, G.Graph.ids(cs, 0n, G.TE{})) == True{} : Bool}, +ok: {G.Graph.all_cert(G.Graph.candidates(adj, cs), adj) == True{} : Bool}, a: {G.Tr.getu(G.Graph.ids(cs, 0n, G.TE{}), u) == Some{j} : Maybe<&2, Nat>}, r1: Laws.Reach1(adj, u, v), +hu: Laws.Mem(NthL(cs, j), u), +hv: Laws.Mem(NthL(cs, j), v)) -> Done(adj, cs, u, v):
+  Done.mk(adj, cs, u, v, NthL(cs, j), ok, NthL.memL(cs, j, u, hu), Cand.is(NthL(cs, j), adj, cs, j, u, v, e3, e1, a, {==}, hu, hv, r1), hu, hv)
 
-def Complete.k(+adj: List<&2, List<&2, U32>>, +cs: List<&2, List<&2, U32>>, +u: U32, +v: U32, +e1: {G.Graph.mono_ok(adj, 0, G.Graph.ids(cs, 0n, G.TE{})) == True{} : Bool}, +ok: {G.Graph.all_cert(G.Graph.candidates(adj, cs), adj) == True{} : Bool}, r1: Laws.Reach1(adj, u, v), s: Same(G.Graph.ids(cs, 0n, G.TE{}), u, v)) -> Done(adj, cs, u, v):
+def Complete.k(+adj: List<&2, List<&2, U32>>, +cs: List<&2, List<&2, U32>>, +u: U32, +v: U32, +e3: {G.Graph.selfs_ok(adj, 0, G.Graph.selfs(adj)) == True{} : Bool}, +e1: {G.Graph.mono_ok(adj, 0, G.Graph.ids(cs, 0n, G.TE{})) == True{} : Bool}, +ok: {G.Graph.all_cert(G.Graph.candidates(adj, cs), adj) == True{} : Bool}, r1: Laws.Reach1(adj, u, v), s: Same(G.Graph.ids(cs, 0n, G.TE{}), u, v)) -> Done(adj, cs, u, v):
   match s:
     case Tuple{+j, pr}:
       match pr:
         case Tuple{+a, b}:
-          Complete.k2(adj, cs, j, u, v, e1, ok, a, r1, Common.mem(cs, u, j, a), Common.mem(cs, v, j, b))
+          Complete.k2(adj, cs, j, u, v, e3, e1, ok, a, r1, Common.mem(cs, u, j, a), Common.mem(cs, v, j, b))
 
-def Complete.main(+adj: List<&2, List<&2, U32>>, +cs: List<&2, List<&2, U32>>, +u: U32, +v: U32, +e1: {G.Graph.mono_ok(adj, 0, G.Graph.ids(cs, 0n, G.TE{})) == True{} : Bool}, +ok: {G.Graph.all_cert(G.Graph.candidates(adj, cs), adj) == True{} : Bool}, +r1: Laws.Reach1(adj, u, v), r2: Laws.Reach1(adj, v, u)) -> Done(adj, cs, u, v):
-  Complete.k(adj, cs, u, v, e1, ok, r1, Same.of(G.Graph.ids(cs, 0n, G.TE{}), u, v, Reach.lei(adj, G.Graph.ids(cs, 0n, G.TE{}), u, v, e1, r1), Reach.lei(adj, G.Graph.ids(cs, 0n, G.TE{}), v, u, e1, r2)))
+def Complete.main(+adj: List<&2, List<&2, U32>>, +cs: List<&2, List<&2, U32>>, +u: U32, +v: U32, +e3: {G.Graph.selfs_ok(adj, 0, G.Graph.selfs(adj)) == True{} : Bool}, +e1: {G.Graph.mono_ok(adj, 0, G.Graph.ids(cs, 0n, G.TE{})) == True{} : Bool}, +ok: {G.Graph.all_cert(G.Graph.candidates(adj, cs), adj) == True{} : Bool}, +r1: Laws.Reach1(adj, u, v), r2: Laws.Reach1(adj, v, u)) -> Done(adj, cs, u, v):
+  Complete.k(adj, cs, u, v, e3, e1, ok, r1, Same.of(G.Graph.ids(cs, 0n, G.TE{}), u, v, Reach.lei(adj, G.Graph.ids(cs, 0n, G.TE{}), u, v, e1, r1), Reach.lei(adj, G.Graph.ids(cs, 0n, G.TE{}), v, u, e1, r2)))
 
 def Complete.conv(+adj: List<&2, List<&2, U32>>, +cs: List<&2, List<&2, U32>>, +u: U32, +v: U32, d: Done(adj, cs, u, v)) -> Sigma<&1, &1, List<&2, U32>, c => Laws.And(Laws.MemL(G.Graph.keep_certified(G.Graph.candidates(adj, cs), adj), c), Laws.And(Laws.Mem(c, u), Laws.Mem(c, v)))>:
   match d:
     case Tuple{+c, pf}:
       Tuple{c, pf}
 
-def Complete.fin(+adj: List<&2, List<&2, U32>>, +u: U32, +v: U32, o: Laws.And({G.Graph.mono_ok(adj, 0, G.Graph.ids(G.Graph.sccs(adj), 0n, G.TE{})) == True{} : Bool}, {G.Graph.all_cert(G.Graph.candidates(adj, G.Graph.sccs(adj)), adj) == True{} : Bool}), +r1: Laws.Reach1(adj, u, v), r2: Laws.Reach1(adj, v, u)) -> Sigma<&1, &1, List<&2, U32>, c => Laws.And(Laws.MemL(G.Graph.keep_certified(G.Graph.candidates(adj, G.Graph.sccs(adj)), adj), c), Laws.And(Laws.Mem(c, u), Laws.Mem(c, v)))>:
+def Complete.fin(+adj: List<&2, List<&2, U32>>, +u: U32, +v: U32, +e3: {G.Graph.selfs_ok(adj, 0, G.Graph.selfs(adj)) == True{} : Bool}, o: Laws.And({G.Graph.mono_ok(adj, 0, G.Graph.ids(G.Graph.sccs(adj), 0n, G.TE{})) == True{} : Bool}, {G.Graph.all_cert(G.Graph.candidates(adj, G.Graph.sccs(adj)), adj) == True{} : Bool}), +r1: Laws.Reach1(adj, u, v), r2: Laws.Reach1(adj, v, u)) -> Sigma<&1, &1, List<&2, U32>, c => Laws.And(Laws.MemL(G.Graph.keep_certified(G.Graph.candidates(adj, G.Graph.sccs(adj)), adj), c), Laws.And(Laws.Mem(c, u), Laws.Mem(c, v)))>:
   match o:
     case Tuple{e1, e2}:
-      Complete.conv(adj, G.Graph.sccs(adj), u, v, Complete.main(adj, G.Graph.sccs(adj), u, v, e1, e2, r1, r2))
+      Complete.conv(adj, G.Graph.sccs(adj), u, v, Complete.main(adj, G.Graph.sccs(adj), u, v, e3, e1, e2, r1, r2))

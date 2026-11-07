@@ -31,7 +31,8 @@ def Laws.idle_is_fixed_point(ns, cnt, comps, cur):
   {==}
 
 def Laws.cycles_complete(adj, ok, u, v, r1, r2):
-  L2.Complete.fin(adj, u, v, L.Bool.and_true(G.Graph.mono_ok(adj, 0, G.Graph.ids(G.Graph.sccs(adj), 0n, G.TE{})), G.Graph.all_cert(G.Graph.candidates(adj, G.Graph.sccs(adj)), adj), ok), r1, r2)
+  +ok2 = L.Bool.and_true(Bool.and(G.Graph.mono_ok(adj, 0, G.Graph.ids(G.Graph.sccs(adj), 0n, G.TE{})), G.Graph.all_cert(G.Graph.candidates(adj, G.Graph.sccs(adj)), adj)), G.Graph.selfs_ok(adj, 0, G.Graph.selfs(adj)), ok)
+  L2.Complete.fin(adj, u, v, L2.SO.snd(Bool.and(G.Graph.mono_ok(adj, 0, G.Graph.ids(G.Graph.sccs(adj), 0n, G.TE{})), G.Graph.all_cert(G.Graph.candidates(adj, G.Graph.sccs(adj)), adj)), G.Graph.selfs_ok(adj, 0, G.Graph.selfs(adj)), ok2), L.Bool.and_true(G.Graph.mono_ok(adj, 0, G.Graph.ids(G.Graph.sccs(adj), 0n, G.TE{})), G.Graph.all_cert(G.Graph.candidates(adj, G.Graph.sccs(adj)), adj), L2.SO.fst(Bool.and(G.Graph.mono_ok(adj, 0, G.Graph.ids(G.Graph.sccs(adj), 0n, G.TE{})), G.Graph.all_cert(G.Graph.candidates(adj, G.Graph.sccs(adj)), adj)), G.Graph.selfs_ok(adj, 0, G.Graph.selfs(adj)), ok2)), r1, r2)
 
 def Laws.sccs_partition(adj, ok, p, hp):
   L3.Part.at(adj, G.Graph.sccs(adj), p, ok, hp)

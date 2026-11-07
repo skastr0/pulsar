@@ -257,5 +257,12 @@
   "file": "Pipeline.bend",
   "old": "  Engine.more(Engine.more(Engine.lines(o, m), Engine.layers(rows)), Engine.classctx(rows))",
   "new": "  Engine.more(Engine.lines(o, m), Engine.layers(rows))"
+ },
+ {
+  "law": "cycles_complete (top LAWS H)",
+  "bug": "Graph.selfs_ok accepts a self edge missing from the set",
+  "file": "../Graph.bend",
+  "old": "      Bool.and(Bool.or(Bool.not(Graph.mem(ns, x)), Graph.in_tr(s, x)), Graph.selfs_ok(t, U32.inc(x), s))",
+  "new": "      Graph.selfs_ok(t, U32.inc(x), s)"
  }
 ]
