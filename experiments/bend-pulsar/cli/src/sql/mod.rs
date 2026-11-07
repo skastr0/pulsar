@@ -25,6 +25,18 @@ pub enum Dialect {
     Postgres,
 }
 
+impl Dialect {
+    /// The names this dialect gives a table's implicit key column, matched without regard to case.
+    /// SQLite: `rowid`, `oid` and `_rowid_` name the row key of a rowid table. Postgres has none
+    /// (`ctid` is a physical address, not a key), so its table is empty.
+    pub fn implicit_keys(self) -> &'static [&'static str] {
+        match self {
+            Dialect::Sqlite => &["rowid", "oid", "_rowid_"],
+            Dialect::Postgres => &[],
+        }
+    }
+}
+
 /// The SQL of one query-class call or one `.sql` file.
 #[derive(Debug, Clone)]
 pub struct Text {
@@ -53,6 +65,7 @@ pub struct Stats {
 pub fn analyze(mut texts: Vec<Text>, dialect: Dialect) -> (Out, Stats) {
     texts.sort_by_key(|t| (t.file, t.line));
     let mut b = Builder::default();
+    b.implicit_keys = dialect.implicit_keys();
     let mut st = Stats { texts: texts.len(), ..Stats::default() };
     for t in &texts {
         let cx = Cx { file: t.file, fn_id: t.fn_id, node: t.node, line: t.line };

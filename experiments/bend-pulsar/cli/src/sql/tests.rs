@@ -6,7 +6,13 @@ fn run(sql: &str) -> (Out, Stats) {
 }
 
 fn nm(o: &Out, id: u32) -> String {
-    if id == NONE { "-".into() } else { o.names[id as usize].clone() }
+    if id == NONE {
+        "-".into()
+    } else if id == ROWID {
+        "<rowid>".into()
+    } else {
+        o.names[id as usize].clone()
+    }
 }
 
 /// Rows of `QU` as `table.col:role`, sorted, for one site.
@@ -288,4 +294,39 @@ fn a_column_of_a_cte_or_derived_table_has_no_table() {
     let (o, _) = run("CREATE TABLE t (a INT);\nWITH r AS (SELECT a FROM t) SELECT r.a FROM r WHERE r.a = 1;");
     let u = uses(&o, 0);
     assert!(u.contains(&"-.a:8".to_string()) && u.contains(&"-.a:1".to_string()), "{u:?}");
+}
+
+#[test]
+fn the_implicit_rowid_resolves_to_the_alias_or_the_reserved_id_only_for_rowid_tables() {
+    let ddl = "CREATE TABLE plain (name TEXT);\n\
+               CREATE TABLE aliased (id INTEGER PRIMARY KEY, name TEXT);\n\
+               CREATE TABLE norowid (id INTEGER PRIMARY KEY, name TEXT) WITHOUT ROWID;\n\
+               CREATE TABLE shadow (rowid TEXT, name TEXT);\n";
+    let q = |sql: &str| {
+        let (o, _) = run(&format!("{ddl}{sql}"));
+        // The first DML site is the one after the schema statements.
+        let site = o.qs.iter().map(|r| r[0]).max().unwrap();
+        uses(&o, site)
+    };
+    assert_eq!(q("SELECT name FROM plain WHERE rowid = ?;"), ["plain.<rowid>:1", "plain.name:8"]);
+    assert_eq!(q("SELECT name FROM plain WHERE OID IN (1, 2);"), ["plain.<rowid>:3", "plain.name:8"]);
+    assert_eq!(q("SELECT name FROM plain WHERE _rowid_ = ?;"), ["plain.<rowid>:1", "plain.name:8"]);
+    // With an alias column, the name is that column, as SQLite resolves it.
+    assert_eq!(q("SELECT name FROM aliased WHERE rowid = ?;"), ["aliased.id:1", "aliased.name:8"]);
+    // WITHOUT ROWID has no implicit key: the name stays what it was (a schema-drift candidate).
+    assert_eq!(q("SELECT name FROM norowid WHERE rowid = ?;"), ["norowid.name:8", "norowid.rowid:1"]);
+    // A real column called rowid shadows the implicit one.
+    assert_eq!(q("SELECT name FROM shadow WHERE rowid = ?;"), ["shadow.name:8", "shadow.rowid:1"]);
+    // Qualified by an alias, and an unknown table, behave the same way.
+    assert_eq!(q("SELECT p.name FROM plain p WHERE p.rowid = ?;"), ["plain.<rowid>:1", "plain.name:8"]);
+}
+
+#[test]
+fn a_dialect_without_implicit_keys_never_resolves_rowid() {
+    let text = Text { file: 0, fn_id: NONE, node: 0, line: 1, sql: Some("CREATE TABLE plain (name TEXT);\nSELECT name FROM plain WHERE rowid = 1;".to_string()) };
+    let (o, st) = analyze(vec![text], Dialect::Postgres);
+    assert_eq!(st.failed, 0);
+    let site = o.qs.iter().map(|r| r[0]).max().unwrap();
+    // `rowid` stays a column name no table defines: Postgres has no implicit key, so no reserved id.
+    assert_eq!(uses(&o, site), ["plain.name:8", "plain.rowid:1"]);
 }

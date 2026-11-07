@@ -10,6 +10,11 @@ pub const NONE: u32 = u32::MAX;
 /// A scope entry whose columns the lane cannot know: a subquery or a CTE.
 pub const DERIVED: u32 = u32::MAX - 1;
 
+/// The reserved `QU` column id for the implicit row key of a rowid table that has no column aliasing it
+/// (FACTS.md `QU`). It shares its number with [`DERIVED`], which only ever names a table scope entry
+/// and is never written to a column field, so the two cannot meet.
+pub const ROWID: u32 = u32::MAX - 1;
+
 /// `DT` flags.
 pub const T_WITHOUT_ROWID: u32 = 1;
 pub const T_STRICT: u32 = 2;
@@ -182,6 +187,8 @@ pub struct Builder {
     pub ddl_skipped: u32,
     sites: Vec<Site>,
     cur: Option<Site>,
+    /// The dialect's names for a rowid table's implicit key (`Dialect::implicit_keys`).
+    pub implicit_keys: &'static [&'static str],
 }
 
 // ---- schema -----------------------------------------------------------------------------
@@ -499,6 +506,22 @@ impl Builder {
         }
     }
 
+    /// The column an implicit-key name stands for in table `t` (raw id): the rowid alias column when
+    /// the table has one, as SQLite does, else [`ROWID`]. `None` when `col` is not such a name for
+    /// this table: a real column of that name wins, a `WITHOUT ROWID` table, a view and a virtual
+    /// table have no row key, and a dialect with no implicit keys never matches.
+    fn implicit_key(&self, t: u32, col: u32, id: &dyn Fn(u32) -> u32) -> Option<u32> {
+        let table = self.tables.get(&t)?;
+        let name = self.names.list.get(col as usize)?.to_ascii_lowercase();
+        if !self.implicit_keys.contains(&name.as_str()) || table.cols.iter().any(|c| c.name == col) {
+            return None;
+        }
+        if table.flags & (T_WITHOUT_ROWID | T_VIEW | T_VIRTUAL) != 0 {
+            return None;
+        }
+        Some(table.cols.iter().find(|c| c.flags & C_ROWID != 0).map_or(ROWID, |c| id(c.name)))
+    }
+
     /// Resolve, renumber and emit.
     pub fn finish(self) -> Out {
         // Sorted names: raw id -> final id.
@@ -568,7 +591,8 @@ impl Builder {
             }
             for u in &s.uses {
                 let t = self.resolve(s, u.scope, u.qual, u.col);
-                out.qu.push([site, if t == NONE { NONE } else { id(t) }, id(u.col), u.role as u32]);
+                let col = self.implicit_key(t, u.col, id).unwrap_or_else(|| id(u.col));
+                out.qu.push([site, if t == NONE { NONE } else { id(t) }, col, u.role as u32]);
             }
             for d in &s.defeats {
                 let t = self.resolve(s, d.scope, d.qual, d.col);
