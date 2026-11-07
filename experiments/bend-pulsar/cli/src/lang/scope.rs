@@ -57,3 +57,11 @@ pub fn is_prod(rel: &str) -> bool {
     }
     true
 }
+
+/// True if `rel` is a test file: a test directory segment or a `.test`/`.spec` suffix. This is
+/// the `CS.ctx` "inside a test" bit, a path convention, not a claim about the code.
+pub fn is_test(rel: &str) -> bool {
+    const TEST_SEGMENTS: &[&str] = &["__tests__", "test", "tests", "spec", "specs", "test-support", "test-utils"];
+    const TEST_SUFFIXES: &[&str] = &[".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx", ".test.mts", ".spec.mts"];
+    TEST_SUFFIXES.iter().any(|s| rel.ends_with(s)) || rel.split('/').any(|seg| TEST_SEGMENTS.contains(&seg))
+}

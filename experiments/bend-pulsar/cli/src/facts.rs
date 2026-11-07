@@ -22,6 +22,11 @@ pub enum Rel {
     Fn,
     Fk,
     Ct,
+    Tf,
+    Mk,
+    L,
+    Lw,
+    Lr,
     H,
     C,
     A,
@@ -37,10 +42,11 @@ pub enum Rel {
     Lq,
     Lp,
     Us,
+    Rl,
 }
 
 impl Rel {
-    pub const ALL: [Rel; 24] = [
+    pub const ALL: [Rel; 30] = [
         Rel::N,
         Rel::F,
         Rel::K,
@@ -50,6 +56,11 @@ impl Rel {
         Rel::Fn,
         Rel::Fk,
         Rel::Ct,
+        Rel::Tf,
+        Rel::Mk,
+        Rel::L,
+        Rel::Lw,
+        Rel::Lr,
         Rel::H,
         Rel::C,
         Rel::A,
@@ -65,6 +76,7 @@ impl Rel {
         Rel::Lq,
         Rel::Lp,
         Rel::Us,
+        Rel::Rl,
     ];
 
     pub const fn tag(self) -> &'static str {
@@ -78,6 +90,11 @@ impl Rel {
             Rel::Fn => "FN",
             Rel::Fk => "FK",
             Rel::Ct => "CT",
+            Rel::Tf => "TF",
+            Rel::Mk => "MK",
+            Rel::L => "L",
+            Rel::Lw => "LW",
+            Rel::Lr => "LR",
             Rel::H => "H",
             Rel::C => "C",
             Rel::A => "A",
@@ -93,16 +110,17 @@ impl Rel {
             Rel::Lq => "LQ",
             Rel::Lp => "LP",
             Rel::Us => "US",
+            Rel::Rl => "RL",
         }
     }
 
     /// Number of U32 fields after the tag.
     pub const fn arity(self) -> usize {
         match self {
-            Rel::N | Rel::M | Rel::Sy => 1,
-            Rel::F | Rel::U | Rel::H | Rel::A | Rel::Cl | Rel::Lq | Rel::Us | Rel::Sv => 2,
-            Rel::K | Rel::Fk | Rel::C | Rel::Cfn | Rel::Cv | Rel::Hd | Rel::Ly | Rel::Lp => 3,
-            Rel::Fn | Rel::Ct | Rel::Cf => 4,
+            Rel::N | Rel::M | Rel::Sy | Rel::Tf | Rel::L => 1,
+            Rel::F | Rel::U | Rel::H | Rel::A | Rel::Cl | Rel::Lq | Rel::Us | Rel::Sv | Rel::Lr => 2,
+            Rel::K | Rel::Fk | Rel::C | Rel::Cfn | Rel::Cv | Rel::Hd | Rel::Ly | Rel::Lp | Rel::Mk | Rel::Lw => 3,
+            Rel::Fn | Rel::Ct | Rel::Cf | Rel::Rl => 4,
             Rel::I | Rel::Cs => 5,
         }
     }

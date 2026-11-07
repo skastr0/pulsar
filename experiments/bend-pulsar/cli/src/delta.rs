@@ -11,7 +11,7 @@
 use crate::engine;
 use crate::facts::{stable_key, FactWriter, SideTables};
 use crate::finding::{hex, Finding, Subject, IMPORT_CYCLE};
-use crate::lang;
+use crate::driver;
 use crate::policy::{self, Effective};
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -125,7 +125,7 @@ fn evaluate(repo: &Path, sha: &str, tag: &str) -> Result<(BTreeMap<u64, Finding>
     let t1 = Instant::now();
     let mut w = FactWriter::new();
     let mut tables = SideTables::default();
-    let (set, _) = lang::ts::collect_tracked(&tree, tracked, &mut w, &mut tables)?;
+    let (set, _) = driver::build(&tree, tracked, &mut w, &mut tables)?;
     let facts_path = scratch.0.join("facts.txt");
     let mut f = std::fs::File::create(&facts_path).map_err(|e| format!("{}: {e}", facts_path.display()))?;
     w.write_to(&mut f)?;

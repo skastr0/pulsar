@@ -1,6 +1,7 @@
 mod catalog;
 mod coverage;
 mod delta;
+mod driver;
 mod engine;
 mod facts;
 mod finding;
@@ -67,7 +68,7 @@ fn parse_flags(args: &[String], flag: &str) -> Result<Opts, String> {
     Ok(Opts { repo: repo.ok_or(USAGE.to_string())?, out, coverage })
 }
 
-fn print_stats(st: &lang::ts::Stats) {
+fn print_stats(st: &driver::Stats) {
     eprintln!(
         "pulsar: files={} prod={} I={} U={} fatal_parse={} unreadable={}",
         st.files, st.prod, st.i_facts, st.u_facts, st.fatal, st.unreadable
@@ -75,11 +76,11 @@ fn print_stats(st: &lang::ts::Stats) {
 }
 
 /// Run every lane on `repo`, write canonical facts to `out`, and return the file set and side tables.
-fn build_facts(repo: &Path, coverage: Option<&Path>, out: &mut dyn Write) -> Result<(lang::ts::FactSet, facts::SideTables), String> {
+fn build_facts(repo: &Path, coverage: Option<&Path>, out: &mut dyn Write) -> Result<(driver::FactSet, facts::SideTables), String> {
     policy_for(repo)?;
     let mut w = facts::FactWriter::new();
     let mut tables = facts::SideTables::default();
-    let (set, st) = lang::ts::collect(repo, &mut w, &mut tables)?;
+    let (set, st) = driver::build_repo(repo, &mut w, &mut tables)?;
     coverage::emit(repo, coverage, &tables, &mut w)?;
     w.write_to(out)?;
     print_stats(&st);
