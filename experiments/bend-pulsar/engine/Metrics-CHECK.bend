@@ -11,5 +11,5 @@ def T.fns() -> List<&2, M.Fn>:
 
 def main() -> Maybe<&2, List<&2, String>>:
   do Maybe<&2, List<&2, String>>:
-    ms : List<&2, M.FnM> <- M.Metrics.run(T.fns(), T.rows())
-    return M.Metrics.lines(M.Rules{5n, 1n, 10n, 60n}, ms)
+    ms : List<&2, M.FnM> <- M.Metrics.run(M.Rules{5n, 1n, 10n, 60n, 1000n}, T.fns(), T.rows())
+    return M.Metrics.lines(M.Rules{5n, 1n, 10n, 60n, 1000n}, ms)

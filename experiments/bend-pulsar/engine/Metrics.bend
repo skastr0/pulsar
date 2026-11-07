@@ -40,14 +40,28 @@ type Fn is Data:
 type CtRow is Data:
   CtRow{fn: U32, node: U32, parent: U32, kind: U32}
 
+# The CT kinds (FACTS.md), as the engine reads them.
+type K is Data:
+  KBranch{}
+  KArm{}
+  KMulti{}
+  KLoop{}
+  KTry{}
+  KSc{}
+  KExit{}
+  KFn{}
+  KFlag{}
+  KFin{}
+
 # A control tree as first-child / next-sibling: `kids` is the node's children
 # in source order, `next` the node's later siblings.
 type Ct is Data:
   Leaf{}
-  Node{kind: U32, kids: Ct, next: Ct}
+  Node{kind: K, kids: Ct, next: Ct}
 
+# Thresholds per rule, and the NPath cap (see the header).
 type Rules is Data:
-  Rules{cc: Nat, nest: Nat, npath: Nat, loc: Nat}
+  Rules{cc: Nat, nest: Nat, npath: Nat, loc: Nat, cap: Nat}
 
 # One function's measures.
 type FnM is Data:
@@ -58,113 +72,205 @@ type Finding is Data:
   Finding{rule: U32, fn: U32, value: Nat, thr: Nat}
 
 def Metrics.defaults() -> Rules:
-  Rules{10n, 3n, 200n, 60n}
+  Rules{10n, 3n, 200n, 60n, U32.to_nat(16777215)}
 
-def Metrics.cap() -> Nat:
-  U32.to_nat(16777215)
+def Rules.cap(r: Rules) -> Nat:
+  match r:
+    case Rules{cc, nest, np, loc, cap}:
+      cap
 
-def B.nat(b: Bool) -> Nat:
-  match b:
-    case True{}:
+# CT kind numbers; Build.kind_ok refuses any other, so the last case is unused.
+def K.of(+k: U32) -> K:
+  match k:
+    case 1:
+      KBranch{}
+    case 2:
+      KArm{}
+    case 3:
+      KMulti{}
+    case 4:
+      KLoop{}
+    case 5:
+      KTry{}
+    case 6:
+      KSc{}
+    case 8:
+      KFn{}
+    case 9:
+      KFlag{}
+    case 10:
+      KFin{}
+    case _:
+      KExit{}
+
+def K.arm(k: K) -> Nat:
+  match k:
+    case KArm{}:
       1n
-    case False{}:
+    case _:
       0n
 
-def Metrics.is(+k: U32, +x: U32) -> Nat:
-  B.nat(U32.is_eq(k, x))
+def K.sc(k: K) -> Nat:
+  match k:
+    case KSc{}:
+      1n
+    case _:
+      0n
+
+def K.flag(k: K) -> Nat:
+  match k:
+    case KFlag{}:
+      1n
+    case _:
+      0n
 
 # ---- cyclomatic -------------------------------------------------------------------------------
-# Arms (kind 2) and default flags (kind 9) in one sibling chain.
+# Arms and default flags in one sibling chain.
 def Cc.arms(t: Ct) -> Nat:
   match t:
     case Leaf{}:
       0n
-    case Node{+k, kids, next}:
-      Nat.add(Metrics.is(k, 2), Cc.arms(next))
+    case Node{k, kids, next}:
+      Nat.add(K.arm(k), Cc.arms(next))
 
 def Cc.dflt(t: Ct) -> Nat:
   match t:
     case Leaf{}:
       0n
-    case Node{+k, kids, next}:
-      Nat.add(Metrics.is(k, 9), Cc.dflt(next))
+    case Node{k, kids, next}:
+      Nat.add(K.flag(k), Cc.dflt(next))
 
-# The decisions one node adds, given its children.
-def Cc.weight(+k: U32, +kids: Ct) -> Nat:
+# The decisions one node adds, given its children: McCabe's out-edges minus one.
+def Cc.weight(k: K, +kids: Ct) -> Nat:
   match k:
-    case 1:
+    case KBranch{}:
       1n
-    case 4:
+    case KLoop{}:
       1n
-    case 6:
+    case KSc{}:
       1n
-    case 3:
+    case KMulti{}:
       Nat.sub(Cc.arms(kids), Cc.dflt(kids))
-    case 5:
+    case KTry{}:
       Nat.sub(Cc.arms(kids), 1n)
     case _:
       0n
+
+# One node in front of the rest `r` of its chain; `d` is the decisions under it.
+# A nested function (KFn) adds nothing, and nothing under it counts.
+def Cc.node(k: K, +kids: Ct, d: Nat, r: Nat) -> Nat:
+  match k:
+    case KFn{}:
+      r
+    case KBranch{}:
+      Nat.add(Nat.add(Cc.weight(KBranch{}, kids), d), r)
+    case KArm{}:
+      Nat.add(Nat.add(Cc.weight(KArm{}, kids), d), r)
+    case KMulti{}:
+      Nat.add(Nat.add(Cc.weight(KMulti{}, kids), d), r)
+    case KLoop{}:
+      Nat.add(Nat.add(Cc.weight(KLoop{}, kids), d), r)
+    case KTry{}:
+      Nat.add(Nat.add(Cc.weight(KTry{}, kids), d), r)
+    case KSc{}:
+      Nat.add(Nat.add(Cc.weight(KSc{}, kids), d), r)
+    case KExit{}:
+      Nat.add(Nat.add(Cc.weight(KExit{}, kids), d), r)
+    case KFlag{}:
+      Nat.add(Nat.add(Cc.weight(KFlag{}, kids), d), r)
+    case KFin{}:
+      Nat.add(Nat.add(Cc.weight(KFin{}, kids), d), r)
 
 # Decisions in a sibling chain and everything under it.
 def Cc.seq(t: Ct) -> Nat:
   match t:
     case Leaf{}:
       0n
-    case Node{+k, +kids, next}:
-      match k:
-        case 8:
-          Cc.seq(next)
-        case _:
-          Nat.add(Nat.add(Cc.weight(k, kids), Cc.seq(kids)), Cc.seq(next))
+    case Node{k, +kids, next}:
+      Cc.node(k, kids, Cc.seq(kids), Cc.seq(next))
 
 def Cc.of(t: Ct) -> Nat:
   1n+Cc.seq(t)
 
 # ---- nesting ----------------------------------------------------------------------------------
-def Nest.nests(+k: U32) -> Bool:
-  Bool.or(Bool.or(U32.is_eq(k, 1), U32.is_eq(k, 3)), Bool.or(U32.is_eq(k, 4), U32.is_eq(k, 5)))
+# Where a chain sits: any chain; a branch's children before its first arm; a
+# branch's children after its first arm (so the next arm is the else arm).
+type Md is Data:
+  MAny{}
+  MPre{}
+  MPost{}
 
 # A chain that is exactly one branch: the body of an `else if`.
-def Nest.lone_branch(t: Ct) -> Bool:
+def Nest.lone(t: Ct) -> Bool:
   match t:
     case Leaf{}:
       False{}
-    case Node{+k, kids, next}:
-      match next:
-        case Leaf{}:
-          U32.is_eq(k, 1)
-        case Node{k2, kids2, next2}:
+    case Node{k, kids, next}:
+      match k next:
+        case KBranch{} Leaf{}:
+          True{}
+        case _ _:
           False{}
 
-# A chain's mode: 0 any chain; 1 a branch's children before its first arm;
-# 2 a branch's children after its first arm (the next arm is the else arm).
-def Nest.after(+k: U32, +mode: U32) -> U32:
-  Bool.pick(U32, Bool.and(U32.is_eq(k, 2), U32.is_ne(mode, 0)), 2, mode)
+def Nest.after(k: K, +m: Md) -> Md:
+  match k m:
+    case KArm{} MAny{}:
+      MAny{}
+    case KArm{} _:
+      MPost{}
+    case _ _:
+      m
 
-def Nest.kid_mode(+k: U32) -> U32:
-  Bool.pick(U32, U32.is_eq(k, 1), 1, 0)
+def Nest.kid_mode(k: K) -> Md:
+  match k:
+    case KBranch{}:
+      MPre{}
+    case _:
+      MAny{}
 
-def Nest.flat(+k: U32, +mode: U32, +kids: Ct) -> Bool:
-  Bool.and(Bool.and(U32.is_eq(k, 2), U32.is_eq(mode, 2)), Nest.lone_branch(kids))
+# The depth of an arm: its children's depth `d`, less the level an `else if`
+# would add.
+def Nest.arm(m: Md, lone: Bool, +d: Nat) -> Nat:
+  match m lone:
+    case MPost{} True{}:
+      Nat.sub(d, 1n)
+    case _ _:
+      d
 
-# The depth one node reaches, given the depth `d` of its children.
-def Nest.own(+k: U32, +mode: U32, +kids: Ct, +d: Nat) -> Nat:
-  Bool.pick(Nat, Nest.nests(k), 1n+d, Bool.pick(Nat, Nest.flat(k, mode, kids), Nat.sub(d, 1n), d))
+# One node in front of the rest `r` of its chain; `d` is the depth under it.
+def Nest.node(k: K, m: Md, +kids: Ct, +d: Nat, r: Nat) -> Nat:
+  match k:
+    case KFn{}:
+      r
+    case KBranch{}:
+      Nat.max(1n+d, r)
+    case KMulti{}:
+      Nat.max(1n+d, r)
+    case KLoop{}:
+      Nat.max(1n+d, r)
+    case KTry{}:
+      Nat.max(1n+d, r)
+    case KArm{}:
+      Nat.max(Nest.arm(m, Nest.lone(kids), d), r)
+    case KSc{}:
+      Nat.max(d, r)
+    case KExit{}:
+      Nat.max(d, r)
+    case KFlag{}:
+      Nat.max(d, r)
+    case KFin{}:
+      Nat.max(d, r)
 
 # The deepest nesting in a chain and everything under it.
-def Nest.seq(t: Ct, +mode: U32) -> Nat:
+def Nest.seq(t: Ct, +m: Md) -> Nat:
   match t:
     case Leaf{}:
       0n
     case Node{+k, +kids, next}:
-      match k:
-        case 8:
-          Nest.seq(next, Nest.after(k, mode))
-        case _:
-          Nat.max(Nest.own(k, mode, kids, Nest.seq(kids, Nest.kid_mode(k))), Nest.seq(next, Nest.after(k, mode)))
+      Nest.node(k, m, kids, Nest.seq(kids, Nest.kid_mode(k)), Nest.seq(next, Nest.after(k, m)))
 
 def Nest.of(t: Ct) -> Nat:
-  Nest.seq(t, 0)
+  Nest.seq(t, MAny{})
 
 # ---- npath ------------------------------------------------------------------------------------
 def Sat.add(a: Nat, b: Nat, +cap: Nat) -> Nat:
@@ -175,10 +281,10 @@ def Sat.mul(a: Nat, +b: Nat, +cap: Nat) -> Nat:
 
 # What a sibling chain tells its parent:
 #   prod  the chain as a sequence: the product of its nodes' NPaths
-#   sum   the sum of its arms' NPaths (kind 2)
-#   arms  how many arms        sc  how many short-circuits (kind 6)
-#   dflt  how many default flags (kind 9)
-#   fin   the finally arm's NPath (kind 10); 1 when there is none
+#   sum   the sum of its arms' NPaths
+#   arms  how many arms        sc  how many short-circuits
+#   dflt  how many default flags
+#   fin   the finally arm's NPath; 1 when there is none
 type Agg is Data:
   Agg{prod: Nat, sum: Nat, arms: Nat, sc: Nat, dflt: Nat, fin: Nat}
 
@@ -188,50 +294,57 @@ def Np.prod(a: Agg) -> Nat:
       prod
 
 # One node's NPath as a statement, given what its children's chain tells it.
-def Np.val(+k: U32, prod: Nat, sum: Nat, arms: Nat, sc: Nat, dflt: Nat, +fin: Nat, +cap: Nat) -> Nat:
+def Np.val(k: K, prod: Nat, sum: Nat, arms: Nat, sc: Nat, dflt: Nat, +fin: Nat, +cap: Nat) -> Nat:
   match k:
-    case 1:
+    case KBranch{}:
       Sat.add(Sat.add(sum, Nat.sub(2n, arms), cap), sc, cap)
-    case 3:
+    case KMulti{}:
       Sat.add(Sat.add(sum, Nat.sub(1n, dflt), cap), sc, cap)
-    case 4:
+    case KLoop{}:
       Sat.add(Sat.add(prod, 1n, cap), sc, cap)
-    case 5:
+    case KTry{}:
       Sat.mul(Sat.add(sum, Nat.sub(1n, arms), cap), fin, cap)
-    case 2:
+    case KArm{}:
       prod
     case _:
       Nat.min(1n, cap)
 
-def Np.value(+k: U32, a: Agg, +cap: Nat) -> Nat:
+def Np.value(k: K, a: Agg, +cap: Nat) -> Nat:
   match a:
     case Agg{prod, sum, arms, sc, dflt, fin}:
       Np.val(k, prod, sum, arms, sc, dflt, fin, cap)
 
-def Np.fin_of(+k: U32, ap: Nat, +cap: Nat) -> Nat:
-  Bool.pick(Nat, U32.is_eq(k, 10), ap, Nat.min(1n, cap))
+def Np.fin_of(k: K, ap: Nat, +cap: Nat) -> Nat:
+  match k:
+    case KFin{}:
+      ap
+    case _:
+      Nat.min(1n, cap)
 
 # A node, as one element of its parent's chain, in front of the rest `r`.
-def Np.cons(+k: U32, +a: Agg, r: Agg, +cap: Nat) -> Agg:
+def Np.cons(+k: K, +a: Agg, r: Agg, +cap: Nat) -> Agg:
   match r:
     case Agg{prod, sum, arms, sc, dflt, fin}:
       +ap = Np.prod(a)
-      Agg{Sat.mul(Np.value(k, a, cap), prod, cap), Sat.add(Nat.mul(Metrics.is(k, 2), ap), sum, cap), Nat.add(Metrics.is(k, 2), arms), Nat.add(Metrics.is(k, 6), sc), Nat.add(Metrics.is(k, 9), dflt), Sat.mul(Np.fin_of(k, ap, cap), fin, cap)}
+      Agg{Sat.mul(Np.value(k, a, cap), prod, cap), Sat.add(Nat.mul(K.arm(k), ap), sum, cap), Nat.add(K.arm(k), arms), Nat.add(K.sc(k), sc), Nat.add(K.flag(k), dflt), Sat.mul(Np.fin_of(k, ap, cap), fin, cap)}
 
 def Np.empty(+cap: Nat) -> Agg:
   Agg{Nat.min(1n, cap), 0n, 0n, 0n, 0n, Nat.min(1n, cap)}
 
-# A kind-8 node is a statement with one path; its subtree is not looked at.
+# A nested function is a statement with one path; its subtree is not looked at.
+def Np.kids(k: K, a: Agg, +cap: Nat) -> Agg:
+  match k:
+    case KFn{}:
+      Np.empty(cap)
+    case _:
+      a
+
 def Np.agg(t: Ct, +cap: Nat) -> Agg:
   match t:
     case Leaf{}:
       Np.empty(cap)
     case Node{+k, kids, next}:
-      match k:
-        case 8:
-          Np.cons(k, Np.empty(cap), Np.agg(next, cap), cap)
-        case _:
-          Np.cons(k, Np.agg(kids, cap), Np.agg(next, cap), cap)
+      Np.cons(k, Np.kids(k, Np.agg(kids, cap), cap), Np.agg(next, cap), cap)
 
 def Np.of(t: Ct, +cap: Nat) -> Nat:
   Np.prod(Np.agg(t, cap))
@@ -243,7 +356,7 @@ def Np.of(t: Ct, +cap: Nat) -> Nat:
 # itself. A row whose parent is not open is out of preorder and makes the tree
 # invalid.
 type Kid is Data:
-  Kid{kind: U32, kids: Ct}
+  Kid{kind: K, kids: Ct}
 
 type Frame is Data:
   Frame{id: U32, kind: U32, kids: List<&2, Kid>}
@@ -280,7 +393,7 @@ def Build.fold1(st: List<&2, Frame>) -> List<&2, Frame>:
         case Nil{}:
           Nil{}
         case Con{Frame{id2, kind2, kids2}, rest2}:
-          Con{Frame{id2, kind2, Con{Kid{kind, Build.chain(kids, Leaf{})}, kids2}}, rest2}
+          Con{Frame{id2, kind2, Con{Kid{K.of(kind), Build.chain(kids, Leaf{})}, kids2}}, rest2}
 
 # Close frames until the top is `p`; an empty stack when `p` is not open.
 def Build.pop(fuel: Nat, hit: Bool, st: List<&2, Frame>, +p: U32) -> List<&2, Frame>:
@@ -408,16 +521,16 @@ def Trees.go(fns: List<&2, Fn>, s: Span, +want: U32) -> Maybe<&2, List<&2, FnT>>
 def Trees.of(fns: List<&2, Fn>, +cts: List<&2, CtRow>) -> Maybe<&2, List<&2, FnT>>:
   Trees.go(fns, Span.for(cts, 0), 0)
 
-def Metrics.run2(m: Maybe<&2, List<&2, FnT>>) -> Maybe<&2, List<&2, FnM>>:
+def Metrics.run2(+cap: Nat, m: Maybe<&2, List<&2, FnT>>) -> Maybe<&2, List<&2, FnM>>:
   match m:
     case None{}:
       None{}
     case Some{fs}:
-      Some{Metrics.measure_all(fs, Metrics.cap())}
+      Some{Metrics.measure_all(fs, cap)}
 
 # The entry point: the facts to every function's measures.
-def Metrics.run(fns: List<&2, Fn>, cts: List<&2, CtRow>) -> Maybe<&2, List<&2, FnM>>:
-  Metrics.run2(Trees.of(fns, cts))
+def Metrics.run(r: Rules, fns: List<&2, Fn>, cts: List<&2, CtRow>) -> Maybe<&2, List<&2, FnM>>:
+  Metrics.run2(Rules.cap(r), Trees.of(fns, cts))
 
 # A finding for rule `rule` when the value is strictly over the threshold.
 def Rule.keep(over: Bool, x: Finding, rest: List<&2, Finding>) -> List<&2, Finding>:
@@ -432,7 +545,7 @@ def Rule.check(+rule: U32, +fn: U32, +v: Nat, +thr: Nat, rest: List<&2, Finding>
 
 def Rule.one(r: Rules, m: FnM, rest: List<&2, Finding>) -> List<&2, Finding>:
   match r m:
-    case Rules{tcc, tnest, tnp, tloc} FnM{+fn, cc, nest, np, loc}:
+    case Rules{tcc, tnest, tnp, tloc, cap} FnM{+fn, cc, nest, np, loc}:
       Rule.check(1, fn, cc, tcc, Rule.check(2, fn, nest, tnest, Rule.check(3, fn, np, tnp, Rule.check(4, fn, loc, tloc, rest))))
 
 def Metrics.findings(+r: Rules, ms: List<&2, FnM>) -> List<&2, Finding>:
