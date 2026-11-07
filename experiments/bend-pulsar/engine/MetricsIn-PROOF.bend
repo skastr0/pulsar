@@ -6,6 +6,8 @@ import ./Hotspot.bend as H
 import ./Cognitive.bend as G
 import ./MetricsIn.bend as I
 import ./MetricsIn-LAWS.bend as Laws
+import ./Rows.bend as R
+import ./Churn.bend as Ch
 
 def Laws.glue_runs_metrics(r, cv, chs, om, fns, cts):
   {==}
@@ -32,4 +34,7 @@ def Laws.glue_refuses_co(r, cvs, chs, m):
   {==}
 
 def Laws.glue_refuses_join(r, ms, gl, chs):
+  {==}
+
+def Laws.glue_entry(r, rows):
   {==}

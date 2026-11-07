@@ -54,5 +54,11 @@
   "bug": "a refused join prints an empty run",
   "old": "    case None{}:\n      None{}\n    case Some{xs}:\n      Some{In.all(",
   "new": "    case None{}:\n      Some{Nil{}}\n    case Some{xs}:\n      Some{In.all("
+ },
+ {
+  "law": "glue_entry",
+  "bug": "MetricsIn.lines passes no churn to Hotspot",
+  "old": "In.go(r, In.cvs(rows), Ch.Churn.of(rows), In.cos(rows)",
+  "new": "In.go(r, In.cvs(rows), Nil{}, In.cos(rows)"
  }
 ]
