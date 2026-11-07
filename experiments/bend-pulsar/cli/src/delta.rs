@@ -17,6 +17,7 @@ use crate::facts::{stable_key, FactWriter, SideTables};
 use crate::finding::{catalog_rule, hex, metric_rule, needs_coverage, off_by_default, Finding, Subject, IMPORT_CYCLE};
 use crate::lang::Degraded;
 use crate::policy::{self, Effective};
+use crate::layers;
 use crate::rename::{self, Renames};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -226,6 +227,7 @@ fn to_meta(b: &Built) -> cache::Meta {
         syms: b.tables.syms.clone(),
         rules: b.tables.rules.clone(),
         laws: b.tables.laws.clone(),
+        effect: b.tables.effect.clone(),
         sql_names: b.tables.sql_names.clone(),
         sql_indexes: b.tables.sql_indexes.clone(),
         sql_sites: b.tables.sql_sites.clone(),
@@ -242,7 +244,7 @@ fn from_meta(m: cache::Meta) -> Built {
             other => Box::leak(other.to_string().into_boxed_str()),
         }
     };
-    let mut tables = SideTables { paths: m.files.clone(), syms: m.syms, rules: m.rules, laws: m.laws, sql_names: m.sql_names, sql_indexes: m.sql_indexes, sql_sites: m.sql_sites, ..SideTables::default() };
+    let mut tables = SideTables { paths: m.files.clone(), syms: m.syms, rules: m.rules, laws: m.laws, effect: m.effect, sql_names: m.sql_names, sql_indexes: m.sql_indexes, sql_sites: m.sql_sites, ..SideTables::default() };
     tables.fns = m
         .fns
         .into_iter()
@@ -383,19 +385,22 @@ fn class_context_findings(
     tables: &SideTables,
     keys: &[u64],
     rules: &[crate::policy::ActiveRule],
-) -> Vec<Finding> {
+) -> (Vec<Finding>, usize) {
     let mut groups: BTreeMap<(u32, u32, u32), usize> = BTreeMap::new();
     for x in &found.rcx {
         *groups.entry((x.rule, x.fn_id, x.callee)).or_default() += 1;
     }
-    let mut out = Vec::new();
+    let (mut out, mut dropped) = (Vec::new(), 0);
     for ((rule_id, fn_id, callee), sites) in groups {
-        let (Some(rule), Some(&fn_key), Some(name)) =
-            (rules.get(rule_id as usize), keys.get(fn_id as usize), tables.syms.get(callee as usize))
-        else {
+        let looked_up = (rules.get(rule_id as usize), keys.get(fn_id as usize), tables.syms.get(callee as usize));
+        let (Some(rule), Some(&fn_key), Some(name)) = looked_up else {
+            dropped += 1;
             continue;
         };
-        let Some(me) = measures.get(&fn_key) else { continue };
+        let Some(me) = measures.get(&fn_key) else {
+            dropped += 1;
+            continue;
+        };
         let sym_key = crate::lang::functions::fnv_parts(&[name.as_bytes()]);
         let finding = Finding::new(
             catalog_rule(&rule.id, rule.version),
@@ -410,7 +415,19 @@ fn class_context_findings(
         );
         out.push(finding.at_line(me.line));
     }
-    out
+    (out, dropped)
+}
+
+/// `RT root file fn` rows of a facts file: where each Effect root is built.
+fn read_roots(facts_path: &Path) -> Vec<layers::Root> {
+    let Ok(text) = std::fs::read_to_string(facts_path) else { return Vec::new() };
+    text.lines()
+        .filter_map(|l| l.strip_prefix("RT "))
+        .filter_map(|r| {
+            let mut n = r.split(' ').map(|t| t.parse::<u32>());
+            Some(layers::Root { root: n.next()?.ok()?, file: n.next()?.ok()?, fn_id: n.next()?.ok()? })
+        })
+        .collect()
 }
 
 /// The engine's findings for a facts file: from the cache when this engine already ran on these
@@ -477,8 +494,9 @@ fn evaluate(repo: &Path, sha: &str, tag: &str, coverage: Option<&Path>, use_cach
 
     let t2 = Instant::now();
     let found = engine_findings(cache.as_ref(), &rel, &facts_path)?;
-    if found.cert == Some(false) {
-        return Err(format!("engine certificate check failed at {sha}"));
+    // The cycle findings are only complete when the engine certifies it: a missing CERT line refuses.
+    if found.cert != Some(true) {
+        return Err(format!("engine certificate {} at {sha}", if found.cert.is_none() { "line is missing" } else { "check failed" }));
     }
     timing.engine_ms = t2.elapsed().as_millis();
 
@@ -490,8 +508,30 @@ fn evaluate(repo: &Path, sha: &str, tag: &str, coverage: Option<&Path>, use_cach
             insert(&mut findings, f, sha)?;
         }
     }
-    for f in class_context_findings(&found, &measures, &tables, &set.fn_keys, &active) {
+    let (class_findings, dropped) = class_context_findings(&found, &measures, &tables, &set.fn_keys, &active);
+    for f in class_findings {
         insert(&mut findings, f, sha)?;
+    }
+    let mut degraded = degraded;
+    if dropped > 0 {
+        // Never drop silently: a finding the CLI could not name is reported as degraded input.
+        degraded.push(Degraded {
+            lane: "class-context",
+            cause: format!("{dropped} class-in-context finding(s) named a rule, function or symbol the CLI could not resolve and are not reported"),
+        });
+    }
+    if let Some(l) = &found.layers {
+        if l.cert != Some(true) {
+            return Err(format!("engine layer certificate (LCERT) is {} at {sha}", if l.cert.is_none() { "missing" } else { "0" }));
+        }
+        let names = layers::parse_names(&tables.effect)?;
+        let roots = read_roots(&facts_path);
+        let ctx = layers::Ctx { names: &names, roots: &roots, files: &set.files, tables: &tables, keys: &set.fn_keys };
+        let (layer_findings, notices) = layers::findings(l, &ctx, disabled)?;
+        for f in layer_findings {
+            insert(&mut findings, f, sha)?;
+        }
+        degraded.extend(notices);
     }
     for f in metric_findings(&found, &measures, &tables, &set.fn_keys, disabled, &eff.policy.rules.enable)? {
         insert(&mut findings, f, sha)?;

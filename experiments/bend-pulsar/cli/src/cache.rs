@@ -165,6 +165,9 @@ pub struct Meta {
     pub syms: Vec<String>,
     pub rules: Vec<String>,
     pub laws: String,
+    /// The `.effect` side table text (service and layer names), empty without the Effect pack.
+    #[serde(default)]
+    pub effect: String,
     #[serde(default)]
     pub sql_names: Vec<String>,
     #[serde(default)]

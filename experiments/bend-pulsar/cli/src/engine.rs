@@ -18,6 +18,54 @@ pub struct Findings {
     pub fx: Vec<Fx>,
     /// `RCX`: class-in-context findings, sorted by (rule, site).
     pub rcx: Vec<Rcx>,
+    /// The `pulsar-layers 0` section, when the facts had an `E` row.
+    pub layers: Option<Layers>,
+}
+
+/// `LUNP r l s x walk..`: at root `root`, reachable layer `layer` requires `svc`, which no layer
+/// provides; `walk` is the `LP` path from root layer `via` to `layer`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Unp {
+    pub root: u32,
+    pub layer: u32,
+    pub svc: u32,
+    pub via: u32,
+    pub walk: Vec<u32>,
+}
+
+/// `LDUP s a b w na wa.. wb..`: layers `a` < `b` both build `svc` and are both reachable from `w`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Dup {
+    pub svc: u32,
+    pub a: u32,
+    pub b: u32,
+    pub w: u32,
+    pub wa: Vec<u32>,
+    pub wb: Vec<u32>,
+}
+
+/// `LHUB s k a b`: service `svc` has fan-in `k` = `a` layers + `b` functions.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Hub {
+    pub svc: u32,
+    pub k: u32,
+    pub a: u32,
+    pub b: u32,
+}
+
+/// The Effect layer-graph section of the engine output (FACTS.md "Effect pack").
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Layers {
+    pub cycles: Vec<Vec<u32>>,
+    /// `LCERT`: 1 when the cycle list is certified complete.
+    pub cert: Option<bool>,
+    pub unp: Vec<Unp>,
+    /// `LOPQ r l`: root `r` reaches opaque layer `l`.
+    pub opq: Vec<(u32, u32)>,
+    pub dups: Vec<Dup>,
+    pub hubs: Vec<Hub>,
+    /// The hub threshold in force, from `LS`.
+    pub hub_min: u32,
 }
 
 /// One class-in-context finding: call site `site` in function `fn_id` calls `callee`, a symbol of
@@ -92,8 +140,44 @@ pub fn run_raw(engine: &Path, facts: &Path) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
+/// One line of the layers section, its fields already numbers.
+fn parse_layer_line(l: &mut Layers, tag: &str, n: &[u32]) -> Result<(), String> {
+    let short = || format!("{tag} line has too few fields");
+    match tag {
+        "LCYC" => {
+            let (size, ids) = n.split_first().ok_or_else(short)?;
+            if *size as usize != ids.len() || ids.is_empty() {
+                return Err(format!("LCYC size {size} but {} members", ids.len()));
+            }
+            l.cycles.push(ids.to_vec());
+        }
+        "LCERT" => l.cert = Some(n.first().ok_or_else(short)? == &1),
+        "LUNP" => match n {
+            [root, layer, svc, via, walk @ ..] => l.unp.push(Unp { root: *root, layer: *layer, svc: *svc, via: *via, walk: walk.to_vec() }),
+            _ => return Err(short()),
+        },
+        "LOPQ" => match n {
+            [r, ly] => l.opq.push((*r, *ly)),
+            _ => return Err(short()),
+        },
+        "LDUP" => match n {
+            [svc, a, b, w, na, rest @ ..] if rest.len() >= *na as usize => {
+                let (wa, wb) = rest.split_at(*na as usize);
+                l.dups.push(Dup { svc: *svc, a: *a, b: *b, w: *w, wa: wa.to_vec(), wb: wb.to_vec() });
+            }
+            _ => return Err(short()),
+        },
+        "LHUB" => match n {
+            [svc, k, a, b] => l.hubs.push(Hub { svc: *svc, k: *k, a: *a, b: *b }),
+            _ => return Err(short()),
+        },
+        _ => l.hub_min = *n.get(7).ok_or_else(short)?,
+    }
+    Ok(())
+}
+
 pub fn parse(text: &str) -> Result<Findings, String> {
-    let mut f = Findings { cycles: vec![], cert: None, files: 0, edges: 0, cycle_count: 0, fm: vec![], fx: vec![], rcx: vec![] };
+    let mut f = Findings { cycles: vec![], cert: None, files: 0, edges: 0, cycle_count: 0, fm: vec![], fx: vec![], rcx: vec![], layers: None };
     let mut header = false;
     // Rows are parsed only inside the sections this reader consumes; a `pulsar-*`
     // header for any other section switches skipping on until the next header.
@@ -109,10 +193,14 @@ pub fn parse(text: &str) -> Result<Findings, String> {
         if let Some(name) = tag.strip_prefix("pulsar-") {
             section = match name {
                 "findings" | "classctx" => name,
+                "layers" => name,
                 _ => "other",
             };
             if section == "findings" {
                 header = true;
+            }
+            if section == "layers" {
+                f.layers.get_or_insert_with(Layers::default);
             }
             continue;
         }
@@ -129,6 +217,11 @@ pub fn parse(text: &str) -> Result<Findings, String> {
                 f.cycles.push(ids);
             }
             "CERT" => f.cert = Some(it.next() == Some("1")),
+            tag @ ("LCYC" | "LCERT" | "LUNP" | "LOPQ" | "LDUP" | "LHUB" | "LS") => {
+                let l = f.layers.as_mut().ok_or_else(|| format!("{tag} outside the `pulsar-layers 0` section"))?;
+                let nums = it.map(|t| num(t).map(|v| v as u32)).collect::<Result<Vec<u32>, _>>()?;
+                parse_layer_line(l, tag, &nums)?;
+            }
             "S" => {
                 f.files = num(it.next().ok_or("S missing files")?)?;
                 f.edges = num(it.next().ok_or("S missing edges")?)?;
@@ -204,6 +297,22 @@ mod tests {
         assert_eq!(f.rcx, vec![Rcx { rule: 0, site: 3, fn_id: 2, callee: 7 }, Rcx { rule: 1, site: 4, fn_id: 2, callee: 8 }]);
         assert!(parse("pulsar-findings 0\npulsar-classctx 0\nRCX 0 3 2 7\nRCXS 2\n").unwrap_err().contains("RCXS"));
         assert!(parse("pulsar-findings 0\nRCX 0 3 2\n").unwrap_err().contains("RCX needs"));
+    }
+
+    #[test]
+    fn parses_the_layers_section() {
+        let t = "pulsar-findings 0\nCERT 1\npulsar-layers 0\nLCYC 2 0 1\nLCERT 1\nLUNP 0 2 5 4 4 2\nLOPQ 1 3\nLDUP 7 0 1 2 2 2 0 2 1\nLHUB 5 12 9 3\nLS 4 3 2 1 1 1 1 10\n";
+        let l = parse(t).unwrap().layers.unwrap();
+        assert_eq!(l.cycles, vec![vec![0, 1]]);
+        assert_eq!(l.cert, Some(true));
+        assert_eq!(l.unp, vec![Unp { root: 0, layer: 2, svc: 5, via: 4, walk: vec![4, 2] }]);
+        assert_eq!(l.opq, vec![(1, 3)]);
+        assert_eq!(l.dups, vec![Dup { svc: 7, a: 0, b: 1, w: 2, wa: vec![2, 0], wb: vec![2, 1] }]);
+        assert_eq!(l.hubs, vec![Hub { svc: 5, k: 12, a: 9, b: 3 }]);
+        assert_eq!(l.hub_min, 10);
+        assert!(parse("pulsar-findings 0\nLCYC 1 0\n").unwrap_err().contains("outside the"));
+        assert!(parse("pulsar-findings 0\npulsar-layers 0\nLCYC 3 0 1\n").unwrap_err().contains("LCYC size"));
+        assert!(parse("pulsar-findings 0\npulsar-layers 0\nLUNP 0 1\n").unwrap_err().contains("too few"));
     }
 
     #[test]

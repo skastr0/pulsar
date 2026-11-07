@@ -9,6 +9,7 @@ mod finding;
 mod git;
 mod history;
 mod lang;
+mod layers;
 mod packs;
 mod policy;
 mod rename;

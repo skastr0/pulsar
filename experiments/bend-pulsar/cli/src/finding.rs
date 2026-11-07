@@ -237,5 +237,7 @@ mod tests {
 
 /// Rules the CLI itself defines (not catalog rules). Policy may enable or disable them by id.
 pub fn is_builtin_rule(id: &str) -> bool {
-    id == IMPORT_CYCLE.id || metric_rule(id).is_ok()
+    id == IMPORT_CYCLE.id
+        || metric_rule(id).is_ok()
+        || [crate::layers::LAYER_CYCLE.id, crate::layers::UNPROVIDED.id, crate::layers::DUPLICATE.id, crate::layers::HUB.id].contains(&id)
 }

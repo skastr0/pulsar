@@ -138,4 +138,31 @@ rcheck "a function moved between files stays + and -" "added=2 allowed=0 removed
 rcheck "...and is counted as an unmatched move"     "unmatched_moves=2" HEAD~1 HEAD
 "$BIN" delta HEAD~4 HEAD~3 --repo "$R" --json 2>/dev/null | grep -q '"renamed_files":1' && echo "ok   renamed_files in the JSON summary" || { echo "FAIL renamed_files json"; fail=1; }
 
+# Effect layers: an unprovided service reaches delta as a finding named by file and layer name.
+( cd "$E" && cat > app.ts <<'TS'
+import { Context, Effect, Layer, ManagedRuntime } from "effect"
+export class Db extends Context.Tag("Db")<Db, { q: number }>() {}
+export class Mailer extends Context.Tag("Mailer")<Mailer, { send: number }>() {}
+export const MailerLive = Layer.effect(Mailer, Effect.gen(function* () {
+  const db = yield* Db
+  return { send: db.q }
+}))
+export const runtime = ManagedRuntime.make(MailerLive)
+TS
+  git add -A && git commit -qm "an app whose runtime misses Db" )
+out=$("$BIN" delta HEAD~1 HEAD --repo "$E" 2>/dev/null)
+grep -q '^+ effect.unprovided-service [0-9a-f]* app.ts:[0-9]* MailerLive  MailerLive (app.ts) requires Db' <<<"$out" && echo "ok   an unprovided Effect service is a finding, named by file and layer" || { echo "FAIL unprovided service"; echo "$out" | head -4; fail=1; }
+
+# The engine's certificate: a missing CERT line refuses (exit 2); a class-in-context finding the
+# CLI cannot resolve is reported as degraded input, never dropped silently.
+FE=$(mktemp -d)
+printf '#!/bin/sh\necho "pulsar-findings 0"\necho "S 0 0 0"\n' > "$FE/nocert"
+printf '#!/bin/sh\necho "pulsar-findings 0"\necho "CERT 1"\necho "S 0 0 0"\necho "pulsar-classctx 0"\necho "RCX 99 0 0 0"\necho "RCXS 1"\n' > "$FE/badrcx"
+chmod +x "$FE/nocert" "$FE/badrcx"
+PULSAR_ENGINE="$FE/nocert" "$BIN" delta HEAD~1 HEAD --repo "$E" --no-cache >/dev/null 2>"$FE/err"; code=$?
+[ "$code" == 2 ] && grep -q "certificate line is missing" "$FE/err" && echo "ok   a missing CERT line refuses (exit 2)" || { echo "FAIL missing CERT (exit $code)"; fail=1; }
+out=$(PULSAR_ENGINE="$FE/badrcx" "$BIN" delta HEAD~1 HEAD --repo "$E" --no-cache 2>/dev/null)
+grep -q 'DEGRADED INPUT (head) class-context: 1 class-in-context finding' <<<"$out" && echo "ok   an unresolvable class-in-context finding is degraded input, not dropped" || { echo "FAIL dropped RCX"; echo "$out" | head -3; fail=1; }
+rm -rf "$FE"
+
 exit $fail
