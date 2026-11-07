@@ -17,7 +17,8 @@
 #
 # Output (FnCtx.lines): `pulsar-fnctx 0`, then per RE row in row order one
 # `ECX rule site fn target` per CE fact in CE order, then per RM row in row order one
-# `FMX rule file` per file (in FC order), then `FNCS n`, the count.
+# `FMX rule file` per file (ascending: FC must be in file order, or the section refuses),
+# then `FNCS n`, the count.
 #
 # Generalisation: both are filters over numbers (context bits, rule masks). The Effect
 # pack's two instances (#705) are a promise bridge (an interop callback in Effect-first
@@ -99,8 +100,9 @@ def Nc.files_ok(fcs: List<&2, Fc>, +all: U32, +none: U32) -> List<&2, U32>:
     case Con{Fc{fn, +file, +ctx}, t}:
       X.Cx.push_u(Nc.ok(all, none, ctx), file, Nc.files_ok(t, all, none))
 
-# The files of FC, once per run of equal files (FC is in fn order, and fn ids are numbered
-# file by file, so each file comes once).
+# The files of FC, once per run of equal files. The section runs only when FC's file column
+# never decreases (Nc.sorted, checked below), so each file comes once and in ascending order
+# (FnCtx-LAWS nc_files_asc, nc_mrule_asc).
 def Nc.files_go(fcs: List<&2, Fc>, +prev: U32) -> List<&2, U32>:
   match fcs:
     case Nil{}:
@@ -114,6 +116,22 @@ def Nc.files(fcs: List<&2, Fc>) -> List<&2, U32>:
       Nil{}
     case Con{Fc{fn, +file, ctx}, t}:
       Con{file, Nc.files_go(t, file)}
+
+# FC's file column never decreases. The CLI writes FC in fn order and numbers fn ids file
+# by file, so a real run passes; a run that does not is refused (FnCtxIn.go).
+def Nc.sorted_go(fcs: List<&2, Fc>, +prev: U32) -> Bool:
+  match fcs:
+    case Nil{}:
+      True{}
+    case Con{Fc{fn, +file, ctx}, t}:
+      Bool.and(Bool.not(Cmp.is_lt(U32.cmp(file, prev))), Nc.sorted_go(t, file))
+
+def Nc.sorted(fcs: List<&2, Fc>) -> Bool:
+  match fcs:
+    case Nil{}:
+      True{}
+    case Con{Fc{fn, +file, ctx}, t}:
+      Nc.sorted_go(t, file)
 
 def Nc.keep_m(b: Bool, x: Mx, acc: List<&2, Mx>) -> List<&2, Mx>:
   match b:
@@ -268,13 +286,21 @@ def FnCtx.decode(rows: List<&2, W.Row>) -> Maybe<NF>:
 
 # ---- the section ------------------------------------------------------------------------------
 # It runs when there is an RE or RM row (the CLI writes them only for active rules); a row of
-# a tag read here with the wrong field count refuses it (None). FnCtx-LAWS E1-E3.
+# a tag read here with the wrong field count, or FC out of file order (Nc.sorted), refuses it
+# (None). FnCtx-LAWS E1-E4.
+def FnCtxIn.ok(ok: Bool, +f: NF) -> Maybe<List<&2, String>>:
+  match ok:
+    case True{}:
+      Some{FnCtx.lines(f)}
+    case False{}:
+      None{}
+
 def FnCtxIn.go(m: Maybe<NF>) -> Maybe<List<&2, String>>:
   match m:
     case None{}:
       None{}
-    case Some{f}:
-      Some{FnCtx.lines(f)}
+    case Some{NF{ces, +fcs, res, rms}}:
+      FnCtxIn.ok(Nc.sorted(fcs), NF{ces, fcs, res, rms})
 
 def FnCtxIn.go1(on: Bool, +rows: List<&2, W.Row>) -> Maybe<List<&2, String>>:
   match on:

@@ -16,6 +16,7 @@ import ./Fanout-PROOF.bend as FP
 import ./FnCtx.bend as N
 import ./FnCtx-LAWS.bend as Laws
 import ./Rows.bend as W
+import ./Delta-PROOF.bend as DP
 
 # ---- list lemmas ------------------------------------------------------------------------------
 
@@ -415,7 +416,12 @@ def Laws.fnctx_on(rows, on):
   %Equal.sym(Bool, N.FnCtxIn.on(rows), True{}, on) : {N.FnCtxIn.go1(_, rows) == N.FnCtxIn.go(N.FnCtx.decode(rows)) : Maybe<List<&2, String>>}
   {==}
 
-def Laws.fnctx_go_lines(f):
+def Laws.fnctx_go_lines(ces, fcs, res, rms, h):
+  %Equal.sym(Bool, N.Nc.sorted(fcs), True{}, h) : {N.FnCtxIn.ok(_, N.NF{ces, fcs, res, rms}) == Some{N.FnCtx.lines(N.NF{ces, fcs, res, rms})} : Maybe<List<&2, String>>}
+  {==}
+
+def Laws.fnctx_unsorted_refuses(ces, fcs, res, rms, h):
+  %Equal.sym(Bool, N.Nc.sorted(fcs), False{}, h) : {N.FnCtxIn.ok(_, N.NF{ces, fcs, res, rms}) == None{} : Maybe<List<&2, String>>}
   {==}
 
 def Laws.fnctx_go_refuses():
@@ -424,3 +430,121 @@ def Laws.fnctx_go_refuses():
 def Laws.fnctx_off(rows, off):
   %Equal.sym(Bool, N.FnCtxIn.on(rows), False{}, off) : {N.FnCtxIn.go1(_, rows) == Some{Nil{}} : Maybe<List<&2, String>>}
   {==}
+
+# ---- the order of FC ----------------------------------------------------------------------------
+# p below file, or equal to it: file is not below p.
+def SC.nl(+p: U32, +file: U32, o: Either<&2, &2, {U32.cmp(p, file) == LT{} : Cmp}, {p == file : U32}>) -> {Cmp.is_lt(U32.cmp(file, p)) == False{} : Bool}:
+  match o:
+    case Inl{lt}:
+      %Equal.sym(Cmp, U32.cmp(file, p), DP.Fl(U32.cmp(p, file)), DP.USym(p, file)) : {Cmp.is_lt(_) == False{} : Bool}
+      %Equal.sym(Cmp, U32.cmp(p, file), LT{}, lt) : {Cmp.is_lt(DP.Fl(_)) == False{} : Bool}
+      {==}
+    case Inr{eq}:
+      %eq : {Cmp.is_lt(U32.cmp(_, p)) == False{} : Bool}
+      %Equal.sym(Cmp, U32.cmp(p, p), EQ{}, DP.URefl(p)) : {Cmp.is_lt(_) == False{} : Bool}
+      {==}
+
+def SC.go(t: List<&2, N.Fc>, +p: U32, h: Laws.NonDec(t, p)) -> {N.Nc.sorted_go(t, p) == True{} : Bool}:
+  match t:
+    case Nil{}:
+      {==}
+    case Con{N.Fc{+fn, +file, +ctx}, +t2}:
+      match h:
+        case Tuple{o, h2}:
+          %Equal.sym(Bool, Cmp.is_lt(U32.cmp(file, p)), False{}, SC.nl(p, file, o)) : {Bool.and(Bool.not(_), N.Nc.sorted_go(t2, file)) == True{} : Bool}
+          %Equal.sym(Bool, N.Nc.sorted_go(t2, file), True{}, SC.go(t2, file, h2)) : {Bool.and(True{}, _) == True{} : Bool}
+          {==}
+
+def Laws.nc_sorted_complete(fcs, h):
+  match fcs:
+    case Nil{}:
+      {==}
+    case Con{N.Fc{+fn, +file, +ctx}, +t}:
+      SC.go(t, file, h)
+
+# Not equal and not below: above.
+def GtOf(+c: Cmp, hq: {Cmp.is_eq(c) == False{} : Bool}, nl: {Cmp.is_lt(c) == False{} : Bool}) -> {DP.Fl(c) == LT{} : Cmp}:
+  match c:
+    case LT{}:
+      Empty.absurd({DP.Fl(LT{}) == LT{} : Cmp}, DP.TF(nl))
+    case EQ{}:
+      Empty.absurd({DP.Fl(EQ{}) == LT{} : Cmp}, DP.TF(hq))
+    case GT{}:
+      {==}
+
+def FA.k(q: Bool, +file: U32, +p: U32, +rest: List<&2, U32>, hq: {U32.is_eq(file, p) == q : Bool}, nl: {Cmp.is_lt(U32.cmp(file, p)) == False{} : Bool}, ih: Laws.AscU(rest, file)) -> Laws.AscU(X.Cx.push_u(Bool.not(q), file, rest), p):
+  match q:
+    case True{}:
+      %L.U32.eq_sound(file, p, hq) : Laws.AscU(rest, _)
+      ih
+    case False{}:
+      Tuple{Equal.trans(Cmp, U32.cmp(p, file), DP.Fl(U32.cmp(file, p)), LT{}, DP.USym(file, p), GtOf(U32.cmp(file, p), hq, nl)), ih}
+
+def FA.go(t: List<&2, N.Fc>, +p: U32, +h: {N.Nc.sorted_go(t, p) == True{} : Bool}) -> Laws.AscU(N.Nc.files_go(t, p), p):
+  match t:
+    case Nil{}:
+      Unit{}
+    case Con{N.Fc{+fn, +file, +ctx}, +t2}:
+      FA.k(U32.is_eq(file, p), file, p, N.Nc.files_go(t2, file), {==}, DP.NotT(Cmp.is_lt(U32.cmp(file, p)), DP.AL(Bool.not(Cmp.is_lt(U32.cmp(file, p))), N.Nc.sorted_go(t2, file), h)), FA.go(t2, file, DP.AR(Bool.not(Cmp.is_lt(U32.cmp(file, p))), N.Nc.sorted_go(t2, file), h)))
+
+def FA.top(fcs: List<&2, N.Fc>, h: {N.Nc.sorted(fcs) == True{} : Bool}) -> Laws.Asc(N.Nc.files(fcs)):
+  match fcs:
+    case Nil{}:
+      Unit{}
+    case Con{N.Fc{+fn, +file, +ctx}, +t}:
+      FA.go(t, file, h)
+
+def Laws.nc_files_asc(fcs, h):
+  FA.top(fcs, h)
+
+# A lower start keeps a strictly ascending list strictly ascending.
+def WkMx(xs: List<&2, N.Mx>, +p: U32, +q: U32, lt: {U32.cmp(q, p) == LT{} : Cmp}, h: Laws.AscMxU(xs, p)) -> Laws.AscMxU(xs, q):
+  match xs:
+    case Nil{}:
+      Unit{}
+    case Con{N.Mx{+r, +f}, +t}:
+      match h:
+        case Tuple{a, b}:
+          Tuple{DP.UTrans(q, p, f, lt, a), b}
+
+def UpMx(xs: List<&2, N.Mx>, +p: U32, h: Laws.AscMxU(xs, p)) -> Laws.AscMx(xs):
+  match xs:
+    case Nil{}:
+      Unit{}
+    case Con{N.Mx{+r, +f}, +t}:
+      match h:
+        case Tuple{a, b}:
+          b
+
+def MD.k(k: Bool, +r: U32, +f: U32, +rest: List<&2, N.Mx>, +p: U32, a: {U32.cmp(p, f) == LT{} : Cmp}, ih: Laws.AscMxU(rest, f)) -> Laws.AscMxU(N.Nc.keep_m(k, N.Mx{r, f}, rest), p):
+  match k:
+    case True{}:
+      Tuple{a, ih}
+    case False{}:
+      WkMx(rest, f, p, a, ih)
+
+def MD.go(fs: List<&2, U32>, +r: U32, +sa: G.Tr, +sb: G.Tr, +p: U32, h: Laws.AscU(fs, p)) -> Laws.AscMxU(N.Nc.mods(fs, r, sa, sb), p):
+  match fs:
+    case Nil{}:
+      Unit{}
+    case Con{+f, +t}:
+      match h:
+        case Tuple{a, b}:
+          MD.k(Bool.and(S.Scope.has(sa, f), S.Scope.has(sb, f)), r, f, N.Nc.mods(t, r, sa, sb), p, a, MD.go(t, r, sa, sb, f, b))
+
+def MT.k(k: Bool, +r: U32, +f: U32, +rest: List<&2, N.Mx>, ih: Laws.AscMxU(rest, f)) -> Laws.AscMx(N.Nc.keep_m(k, N.Mx{r, f}, rest)):
+  match k:
+    case True{}:
+      ih
+    case False{}:
+      UpMx(rest, f, ih)
+
+def MD.top(fs: List<&2, U32>, +r: U32, +sa: G.Tr, +sb: G.Tr, h: Laws.Asc(fs)) -> Laws.AscMx(N.Nc.mods(fs, r, sa, sb)):
+  match fs:
+    case Nil{}:
+      Unit{}
+    case Con{+f, +t}:
+      MT.k(Bool.and(S.Scope.has(sa, f), S.Scope.has(sb, f)), r, f, N.Nc.mods(t, r, sa, sb), MD.go(t, r, sa, sb, f, h))
+
+def Laws.nc_mrule_asc(fcs, r, aall, anone, ball, bnone, h):
+  MD.top(N.Nc.files(fcs), r, S.Scope.set(N.Nc.files_ok(fcs, aall, anone)), S.Scope.set(N.Nc.files_ok(fcs, ball, bnone)), FA.top(fcs, h))

@@ -74,7 +74,43 @@
  {
   "law": "fnctx_go_refuses",
   "bug": "FnCtxIn.go answers no lines on undecodable rows",
-  "old": "    case None{}:\n      None{}\n    case Some{f}:\n      Some{FnCtx.lines(f)}",
-  "new": "    case None{}:\n      Some{Nil{}}\n    case Some{f}:\n      Some{FnCtx.lines(f)}"
+  "old": "    case None{}:\n      None{}\n    case Some{NF{ces, +fcs, res, rms}}:",
+  "new": "    case None{}:\n      Some{Nil{}}\n    case Some{NF{ces, +fcs, res, rms}}:"
+ },
+ {
+  "law": "nc_sorted_complete",
+  "bug": "Nc.sorted refuses every non-empty FC",
+  "old": "      Nc.sorted_go(t, file)\n\ndef Nc.keep_m",
+  "new": "      False{}\n\ndef Nc.keep_m"
+ },
+ {
+  "law": "nc_files_asc",
+  "bug": "Nc.sorted accepts FC in any order",
+  "old": "      Bool.and(Bool.not(Cmp.is_lt(U32.cmp(file, prev))), Nc.sorted_go(t, file))",
+  "new": "      Nc.sorted_go(t, file)"
+ },
+ {
+  "law": "nc_files_asc",
+  "bug": "Nc.files_go drops the run test, so a file repeats",
+  "old": "X.Cx.push_u(Bool.not(U32.is_eq(file, prev)), file, Nc.files_go(t, file))",
+  "new": "Con{file, Nc.files_go(t, file)}"
+ },
+ {
+  "law": "nc_mrule_asc",
+  "bug": "Nc.keep_m writes a module finding twice",
+  "old": "def Nc.keep_m(b: Bool, x: Mx, acc: List<&2, Mx>) -> List<&2, Mx>:\n  match b:\n    case True{}:\n      Con{x, acc}",
+  "new": "def Nc.keep_m(b: Bool, +x: Mx, acc: List<&2, Mx>) -> List<&2, Mx>:\n  match b:\n    case True{}:\n      Con{x, Con{x, acc}}"
+ },
+ {
+  "law": "fnctx_go_lines",
+  "bug": "FnCtxIn.ok refuses FC in file order",
+  "old": "    case True{}:\n      Some{FnCtx.lines(f)}\n    case False{}:\n      None{}",
+  "new": "    case True{}:\n      None{}\n    case False{}:\n      None{}"
+ },
+ {
+  "law": "fnctx_unsorted_refuses",
+  "bug": "FnCtxIn.ok prints FC out of file order",
+  "old": "    case False{}:\n      None{}\n\ndef FnCtxIn.go(",
+  "new": "    case False{}:\n      Some{FnCtx.lines(f)}\n\ndef FnCtxIn.go("
  }
 ]

@@ -14,10 +14,13 @@
 #   - "passes (all, none)": Nc.ok(all, none, ctx), pinned by nc_ok_is_masks to
 #     ctx & all == all and ctx & none == 0.
 #
-# Not covered, by design: decoding the rows (FnCtxIn, shown by fixtures), the
-# decimal formatting inside the lines, and one finding per (rule, file): it holds
-# when FC is in fn order (the CLI writes it so, and fn ids are numbered file by
-# file), and the fixtures check it.
+#   - order: the section runs only when FC's file column never decreases (Nc.sorted;
+#     nc_sorted_complete, fnctx_unsorted_refuses). Under that check each rule's FMX
+#     lines name each file once, in ascending order (nc_files_asc, nc_mrule_asc), so
+#     what is printed does not depend on an unproven input order.
+#
+# Not covered, by design: decoding the rows (FnCtxIn, shown by fixtures) and the
+# decimal formatting inside the lines.
 
 import Base
 import ../LAWS.bend as TL
@@ -90,6 +93,52 @@ def EAt(e: F.Ce, +fcs: List<&2, N.Fc>, +r: U32, +all: U32, +none: U32, +tall: U3
 # Finding y of module rule r: a file with a function of each kind.
 def MAt(fcs: List<&2, N.Fc>, r: U32, aall: U32, anone: U32, ball: U32, bnone: U32, y: N.Mx) -> Data:
   TL.Ex(U32, f => TL.And({N.Mx{r, f} == y : N.Mx}, TL.And(FileHas(fcs, f, aall, anone), FileHas(fcs, f, ball, bnone))))
+
+# FC's file column, from p on, never decreases: each file is above the one before or
+# equal to it.
+def NonDec(xs: List<&2, N.Fc>, p: U32) -> Data:
+  match xs:
+    case Nil{}:
+      Unit
+    case Con{N.Fc{fn, file, ctx}, t}:
+      TL.And(Either<&2, &2, {U32.cmp(p, file) == LT{} : Cmp}, {p == file : U32}>, NonDec(t, file))
+
+def Sorted(xs: List<&2, N.Fc>) -> Data:
+  match xs:
+    case Nil{}:
+      Unit
+    case Con{N.Fc{fn, file, ctx}, t}:
+      NonDec(t, file)
+
+# Strictly ascending from p: each element is above the one before (so none repeats).
+def AscU(xs: List<&2, U32>, p: U32) -> Data:
+  match xs:
+    case Nil{}:
+      Unit
+    case Con{h, t}:
+      TL.And({U32.cmp(p, h) == LT{} : Cmp}, AscU(t, h))
+
+def Asc(xs: List<&2, U32>) -> Data:
+  match xs:
+    case Nil{}:
+      Unit
+    case Con{h, t}:
+      AscU(t, h)
+
+# The same for the file column of module findings.
+def AscMxU(xs: List<&2, N.Mx>, p: U32) -> Data:
+  match xs:
+    case Nil{}:
+      Unit
+    case Con{N.Mx{r, f}, t}:
+      TL.And({U32.cmp(p, f) == LT{} : Cmp}, AscMxU(t, f))
+
+def AscMx(xs: List<&2, N.Mx>) -> Data:
+  match xs:
+    case Nil{}:
+      Unit
+    case Con{N.Mx{r, f}, t}:
+      AscMxU(t, f)
 
 # ---- the context test ----------------------------------------------------------------------------
 # N1. every bit of all, and no bit of none, written out over U32 bit operations.
@@ -211,6 +260,31 @@ law nc_mods_complete:
   for hm: MemMx(N.Nc.mrule(fcs, k), y)
   MemMx(N.FnCtx.mods(N.NF{ces, fcs, res, rms}), y)
 
+# ---- the order of FC ------------------------------------------------------------------------------
+# N9. the check accepts every FC whose file column never decreases (so every real run:
+# the CLI writes FC in fn order, and fn ids are numbered file by file).
+law nc_sorted_complete:
+  for +fcs: List<&2, N.Fc>
+  for h: Sorted(fcs)
+  {N.Nc.sorted(fcs) == True{} : Bool}
+
+# N10. under the check, the files a module rule walks are strictly ascending: each once.
+law nc_files_asc:
+  for +fcs: List<&2, N.Fc>
+  for h: {N.Nc.sorted(fcs) == True{} : Bool}
+  Asc(N.Nc.files(fcs))
+
+# N11. so a module rule's findings name each file once, in ascending file order.
+law nc_mrule_asc:
+  for +fcs: List<&2, N.Fc>
+  for +r: U32
+  for +aall: U32
+  for +anone: U32
+  for +ball: U32
+  for +bnone: U32
+  for h: {N.Nc.sorted(fcs) == True{} : Bool}
+  AscMx(N.Nc.mrule(fcs, N.Rm{r, aall, anone, ball, bnone}))
+
 # ---- output --------------------------------------------------------------------------------------
 # N8. the printed lines are built from the findings and nothing else: the header, one
 # ECX line per edge finding in order, one FMX line per module finding in order, the count.
@@ -225,13 +299,27 @@ law fnctx_on:
   for on: {N.FnCtxIn.on(rows) == True{} : Bool}
   {N.FnCtxIn.lines(rows) == N.FnCtxIn.go(N.FnCtx.decode(rows)) : Maybe<List<&2, String>>}
 
-# E2. decoded facts print FnCtx.lines; facts that do not decode refuse the section.
+# E2. decoded facts with FC in file order print FnCtx.lines; facts that do not decode,
+# or FC out of file order (E4), refuse the section.
 law fnctx_go_lines:
-  for +f: N.NF
-  {N.FnCtxIn.go(Some{f}) == Some{N.FnCtx.lines(f)} : Maybe<List<&2, String>>}
+  for +ces: List<&2, F.Ce>
+  for +fcs: List<&2, N.Fc>
+  for +res: List<&2, N.Re>
+  for +rms: List<&2, N.Rm>
+  for h: {N.Nc.sorted(fcs) == True{} : Bool}
+  {N.FnCtxIn.go(Some{N.NF{ces, fcs, res, rms}}) == Some{N.FnCtx.lines(N.NF{ces, fcs, res, rms})} : Maybe<List<&2, String>>}
 
 law fnctx_go_refuses:
   {N.FnCtxIn.go(None{}) == None{} : Maybe<List<&2, String>>}
+
+# E4. FC out of file order refuses the section (exit 2), whatever else the rows hold.
+law fnctx_unsorted_refuses:
+  for +ces: List<&2, F.Ce>
+  for +fcs: List<&2, N.Fc>
+  for +res: List<&2, N.Re>
+  for +rms: List<&2, N.Rm>
+  for h: {N.Nc.sorted(fcs) == False{} : Bool}
+  {N.FnCtxIn.go(Some{N.NF{ces, fcs, res, rms}}) == None{} : Maybe<List<&2, String>>}
 
 # E3. with no RE or RM row no rule of this kind is on: no lines.
 law fnctx_off:

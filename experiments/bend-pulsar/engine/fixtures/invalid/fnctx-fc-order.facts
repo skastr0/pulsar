@@ -1,0 +1,5 @@
+# FC out of file order (fn 2 of file 1 before fn 0 of file 0): the function-context section refuses the run.
+pulsar-facts 0
+FC 2 1 1
+FC 0 0 9
+RM 6 10 52 9 54
