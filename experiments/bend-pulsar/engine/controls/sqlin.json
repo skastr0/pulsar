@@ -1,0 +1,56 @@
+[
+ {
+  "law": "sqlin_off",
+  "bug": "the SQL section runs without an SR row",
+  "old": "Si.sql1(Si.has(rows, 21330), rows)",
+  "new": "Si.sql1(True{}, rows)"
+ },
+ {
+  "law": "sqlin_refuses",
+  "bug": "the SQL section ignores a bad arity",
+  "old": "Si.sql2(Bool.not(Si.bad(rows)), rows)",
+  "new": "Si.sql2(True{}, rows)"
+ },
+ {
+  "law": "sqlin_runs",
+  "bug": "the SQL section reads the wrong rule rows",
+  "old": "Si.ons(Si.of(rows, 21330))",
+  "new": "Si.ons(Si.of(rows, 21062))"
+ },
+ {
+  "law": "fanoutin_off",
+  "bug": "the fan-out section runs without an RF row",
+  "old": "Si.fo1(Si.has(rows, 21062), rows)",
+  "new": "Si.fo1(True{}, rows)"
+ },
+ {
+  "law": "fanoutin_refuses",
+  "bug": "the fan-out section ignores a bad arity",
+  "old": "Si.fo2(Bool.not(Si.bad(rows)), rows)",
+  "new": "Si.fo2(True{}, rows)"
+ },
+ {
+  "law": "fanoutin_runs",
+  "bug": "the fan-out section reads CS rows as edges",
+  "old": "Si.ces(Si.of(rows, 17221))",
+  "new": "Si.ces(Si.of(rows, 17235))"
+ },
+ {
+  "law": "konstin_off",
+  "bug": "the constant section runs without an RK row",
+  "old": "Si.ko1(Si.has(rows, 21067), rows)",
+  "new": "Si.ko1(True{}, rows)"
+ },
+ {
+  "law": "konstin_refuses",
+  "bug": "the constant section ignores a bad arity",
+  "old": "Si.ko2(Bool.not(Si.bad(rows)), rows)",
+  "new": "Si.ko2(True{}, rows)"
+ },
+ {
+  "law": "konstin_runs",
+  "bug": "the constant section reads CL rows as AL",
+  "old": "Si.als(Si.of(rows, 16716))",
+  "new": "Si.als(Si.of(rows, 17228))"
+ }
+]
