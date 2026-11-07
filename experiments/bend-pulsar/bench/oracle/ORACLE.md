@@ -118,6 +118,58 @@ Provisional choices pending the adapter's FK kind numbering:
   blocks, decorators, TS overload signatures (no body), and
   `export default` forms.
 
+## Inventory join results (2026-11-07, gate VM bx_89cmcpqp)
+
+All 18 corpora: `pulsar facts` regenerated with function facts
+(`FN`/`FK`/`CT`/`M` + `.fns`), 478,419 functions total. Oracle rows
+merged per corpus (`*.ts.oracle.jsonl` + `*.rs.oracle.jsonl`), engine
+rows via `fns_rows.py`, joined by `diff_metrics.py` (exact key, then
+`(path, start_line)` fallback).
+
+| corpus | oracle rows | engine fns | matched | oracle-only |
+|---|---|---|---|---|
+| alchemy | 108,625 | 110,714 | 108,625 | 0 |
+| effect | 80,622 | 80,748 | 80,607 | 15 |
+| junto | 68,093 | 78,286 | 67,557 | 536 |
+| t3code | 79,385 | 85,730 | 79,385 | 0 |
+| opencode | 29,107 | 39,057 | 29,107 | 0 |
+| pi | 50,018 | 49,790 | 49,790 | 228 |
+| pulsar | 12,196 | 12,277 | 12,194 | 2 |
+| phoenix | 1,644 | 5,418 | 1,644 | 0 |
+| js-genai | 2,949 | 2,980 | 2,949 | 0 |
+| convex-backend | 13,980 | 10,609 | 5,780 | 8,200 |
+| codex | 31,155 | 146 | 146 | 31,009 |
+| typst | 6,374 | 54 | 54 | 6,320 |
+| tantivy | 6,184 | 0 | 0 | 6,184 |
+| effect-http | 1,081 | 1,081 | 1,081 | 0 |
+| effect-website | 503 | 866 | 503 | 0 |
+| effect-app-barake | 357 | 475 | 357 | 0 |
+| effect-actualbudged-sync | 111 | 111 | 111 | 0 |
+| effect-cluster-via-sst | 77 | 77 | 77 | 0 |
+
+Findings:
+
+- **TS named-function inventory is essentially complete.** Every pure-TS
+  corpus matches oracle rows 1:1 except small residuals (junto 536,
+  effect 15, pulsar 2). The matched count equals oracle rows minus the
+  `.rs` lizard rows exactly (e.g. pi: 50,018 − 228 rs = 49,790).
+- **Rust is 100% oracle-only** (codex 31,009, typst 6,320, tantivy 6,184,
+  convex-backend 8,200, pi 228, pulsar 2): the Rust adapter exists but
+  `pulsar facts` does not call it yet — blocked on #657. Engine `.fns`
+  for Rust corpora contains only their TS files.
+- **Engine surplus is anonymous-function chains.** Engine-only rows are
+  dominated by `arrow-or-closure` kind under `packages/app/e2e/` in
+  opencode (10,539 surplus; 8,574 arrows). The oracle emits the same
+  functions but under a different anonymous chain (`#0>#0` nesting vs
+  the oracle's `<anon:N>` scheme) and possibly a different start-line
+  anchor for multi-line arrow signatures, so neither the exact key nor
+  the `(path, start_line)` fallback joins them. Not an inventory gap —
+  a join-key divergence to fix before metric diffing (coordinate with
+  pulsar-ts on chain naming and arrow span anchors).
+- **Oracle-only TS residuals** (junto 536, effect 15, pulsar 2) are
+  mostly `.rs` rows plus a handful of TS rows in files the engine marks
+  unreadable or non-prod; enumerate during the metric pass.
+
 ## Running
 
 ```sh
