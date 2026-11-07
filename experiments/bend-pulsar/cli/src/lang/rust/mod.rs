@@ -19,6 +19,24 @@ pub fn owns(path: &str) -> bool {
     path.ends_with(".rs")
 }
 
+/// A function's span and stable key, for callers that parse a historical blob (CFN: lines a
+/// commit touched inside each head function). Same walker as the head parse, so the key for
+/// `key_path` is the key `FK` carries; pass the file's head path to follow renames. Same shape as
+/// `lang::ts::extract::FnSpan`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FnSpan {
+    pub key: u64,
+    pub start_line: u32,
+    pub end_line: u32,
+}
+
+/// Parse `source` and return its functions in id order (start offset). Test functions are
+/// included, as in the `FN` rows. A file that does not parse yields an empty list.
+pub fn function_spans(key_path: &str, source: &str) -> Vec<FnSpan> {
+    let f = parse::extract(key_path, source, false);
+    f.fns.fns.iter().map(|r| FnSpan { key: r.key, start_line: r.start_line, end_line: r.end_line }).collect()
+}
+
 /// One file's function rows. `tests` holds local indices of test functions (`TF`).
 #[derive(Debug, Default)]
 pub struct FileOut {

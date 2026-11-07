@@ -190,3 +190,15 @@ fn fixtures_carry_one_operator_row_per_short_circuit_node() {
         assert_eq!(f.fns.ops.len(), kind6, "{}", path.display());
     }
 }
+
+#[test]
+fn function_spans_match_the_fn_rows_and_survive_a_move() {
+    let src = std::fs::read_to_string(fixture_dir().join("src/branch.rs")).unwrap();
+    let f = parse::extract("src/branch.rs", &src, false);
+    let spans = function_spans("src/branch.rs", &src);
+    let want: Vec<(u64, u32, u32)> = f.fns.fns.iter().map(|r| (r.key, r.start_line, r.end_line)).collect();
+    assert_eq!(spans.iter().map(|s| (s.key, s.start_line, s.end_line)).collect::<Vec<_>>(), want);
+    // The same text under another path is a different key; a file that does not parse is empty.
+    assert_ne!(function_spans("src/other.rs", &src)[0].key, spans[0].key);
+    assert!(function_spans("src/bad.rs", "fn (").is_empty());
+}
