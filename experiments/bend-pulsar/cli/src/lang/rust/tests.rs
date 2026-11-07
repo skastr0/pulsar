@@ -223,3 +223,17 @@ fn is_prod_follows_the_rust_layout_rule() {
         assert!(!is_prod(p), "{p} is not production code");
     }
 }
+
+#[test]
+fn function_facts_carry_the_control_tree_for_a_historical_blob() {
+    let src = std::fs::read_to_string(fixture_dir().join("src/branch.rs")).unwrap();
+    let live = parse::extract("src/branch.rs", &src, false);
+    let facts = function_facts("src/branch.rs", &src);
+    assert_eq!(render_ct_of(&facts), render_ct(&live));
+    assert_eq!(facts.fns.len(), live.fns.fns.len());
+    assert!(function_facts("src/bad.rs", "fn (").fns.is_empty());
+}
+
+fn render_ct_of(f: &crate::lang::functions::FileFns) -> String {
+    f.ct.iter().map(|c| format!("{}\t{}\t{}\t{}\n", c.fn_local, c.node, c.parent, c.kind)).collect()
+}

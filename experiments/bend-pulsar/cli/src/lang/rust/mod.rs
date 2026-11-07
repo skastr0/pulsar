@@ -50,6 +50,14 @@ pub fn is_prod(path: &str) -> bool {
     file != "build.rs" && !segs.any(|s| NON_PROD_DIRS.contains(&s))
 }
 
+/// The whole function walk of `source` for a file at `key_path`: the `FN` rows (key, span, loc,
+/// parent, kind, chain), the control trees (`ct`) and their operator rows (`ops`), with ids local to
+/// the file. For callers that parse historical blobs (per-commit metrics); a file that does not
+/// parse yields an empty `FileFns`. Same walk and same keys as the head parse.
+pub fn function_facts(key_path: &str, source: &str) -> FileFns {
+    parse::extract(key_path, source, false).fns
+}
+
 /// One file's function rows. `tests` holds local indices of test functions (`TF`).
 #[derive(Debug, Default)]
 pub struct FileOut {
