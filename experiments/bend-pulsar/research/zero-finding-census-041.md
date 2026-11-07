@@ -93,6 +93,12 @@ binding-drift (pulsar-history). The family has zero confirmed real-code TPs
 until those fixes land and fidelity's resample runs; the private app's
 query-in-loop finding is the expected survivor (verified run-site).
 
+Caveat: the alchemy engine run was still in flight when this census closed
+(machine load ~240, engine CPU-starved). It is structurally bounded — SR=0
+means `SQD`-incomplete, so no `SQX`/`GX`/lane-1 `HX` can print — but it can
+still add `NX` or `BFX` rows; if it does, the table's Cloudflare counts move
+and this file gets a follow-up line.
+
 ## Per-repo data
 
 Delivered to pulsar-rs for #740 on the task thread: per-repo QS/SR/DT counts,
