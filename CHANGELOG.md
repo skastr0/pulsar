@@ -18,7 +18,7 @@ Each finding is checked by a formally verified engine, given the facts it read: 
 - Core, opt-in: `core.cognitive` (SonarSource spec, threshold 15; list it in `[rules] enable`).
 - Coverage: `core.crap` with its cause (`complexity-only` or `coverage`), from Vitest/Istanbul `coverage-final.json`, lcov or `cargo llvm-cov` lcov.
 - History: `core.hotspot` and `core.risky-change`, plus worsened and improved trends per function.
-- Effect pack (on when the repo depends on `effect`): `effect.ambient-read-in-effect`, `effect.blocking-in-effect`, `effect.runtime-escape-in-effect`, and the layer-graph rules `effect.layer-cycle`, `effect.unprovided-service`, `effect.duplicate-builder`, `effect.hub-service`.
+- Effect pack (on when the repo depends on `effect`): `effect.ambient-read-in-effect`, `effect.blocking-in-effect`, `effect.runtime-escape-in-effect`; for files the policy lists in `[packs.effect] effect_only` (and outside its `boundary`), `effect.promise-style-in-effect-scope` and `effect.exception-style-in-effect-scope`, which never fire without that list; and the layer-graph rules `effect.layer-cycle`, `effect.unprovided-service`, `effect.duplicate-builder`, `effect.hub-service`.
 - SQL lane (SQLite and Postgres), opt-in per rule: `sql.dynamic-text`, `sql.offset-param`, `sql.index-defeat`, `sql.unindexed-filter`, `sql.fk-unindexed`, `sql.schema-drift`.
 - Cloudflare Workers catalog: D1 and Durable Object SQL calls are queries, the `cloudflare:workers` env import is an ambient read.
 - Rust: the metrics, import cycles and CRAP from `cargo llvm-cov`.
@@ -37,7 +37,7 @@ One per repository, committed in `.pulsar/` and fingerprinted: `policy.toml` (la
 
 ### Not in 0.4.0
 
-Fan-out (N+1) findings, the remaining non-idiomatic Effect rules (promise and exception style in Effect-first scope), Durable Object bindings and the type-aware lane wait for 0.4.1 or later. Packages ship for darwin-arm64 and linux-x64 only. Windows is not supported.
+Fan-out (N+1) findings (the engine computes them, but the CLI does not request them yet), the other non-idiomatic Effect rules (promise bridges around repo functions, mixed modules), default parameter values as cyclomatic decisions (cyclomatic v3), infra bindings, Durable Object bindings and the type-aware lane wait for 0.4.1 or later. Packages ship for darwin-arm64 and linux-x64 only. Windows is not supported.
 
 ## [0.3.0] - 2026-09-24
 
