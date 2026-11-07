@@ -1,0 +1,80 @@
+[
+ {
+  "law": "nc_ok_is_masks",
+  "bug": "Nc.ok ignores none",
+  "old": "U32.is_eq(U32.and(ctx, none), 0))",
+  "new": "True{})"
+ },
+ {
+  "law": "nc_erule_sound",
+  "bug": "Nc.edges drops the target-context test",
+  "old": "Bool.and(Nc.ok(all, none, ctx), S.Scope.has(tset, target))",
+  "new": "Nc.ok(all, none, ctx)"
+ },
+ {
+  "law": "nc_erule_complete",
+  "bug": "Nc.fns lists no function",
+  "old": "X.Cx.push_u(Nc.ok(all, none, ctx), fn, Nc.fns(t, all, none))",
+  "new": "Nc.fns(t, all, none)"
+ },
+ {
+  "law": "nc_edges_sound",
+  "bug": "Nc.erules reports a rule no RE row holds",
+  "old": "      Nil{}\n    case Con{h, t}:\n      List.append(&2, Ex,",
+  "new": "      Nc.erule(ces, fcs, Re{0, 0, 0, 0, 0})\n    case Con{h, t}:\n      List.append(&2, Ex,"
+ },
+ {
+  "law": "nc_edges_complete",
+  "bug": "Nc.erules reads only the first RE row",
+  "old": "List.append(&2, Ex, Nc.erule(ces, fcs, h), Nc.erules(ces, fcs, t))",
+  "new": "Nc.erule(ces, fcs, h)"
+ },
+ {
+  "law": "nc_mrule_sound",
+  "bug": "Nc.mods drops the second side",
+  "old": "Bool.and(S.Scope.has(sa, f), S.Scope.has(sb, f))",
+  "new": "S.Scope.has(sa, f)"
+ },
+ {
+  "law": "nc_mrule_complete",
+  "bug": "Nc.files_go lists only the first file",
+  "old": "X.Cx.push_u(Bool.not(U32.is_eq(file, prev)), file, Nc.files_go(t, file))",
+  "new": "Nc.files_go(t, file)"
+ },
+ {
+  "law": "nc_mods_sound",
+  "bug": "Nc.mrules reports a rule no RM row holds",
+  "old": "      Nil{}\n    case Con{h, t}:\n      List.append(&2, Mx,",
+  "new": "      Nc.mrule(fcs, Rm{0, 0, 0, 0, 0})\n    case Con{h, t}:\n      List.append(&2, Mx,"
+ },
+ {
+  "law": "nc_mods_complete",
+  "bug": "Nc.mrules reads only the first RM row",
+  "old": "List.append(&2, Mx, Nc.mrule(fcs, h), Nc.mrules(fcs, t))",
+  "new": "Nc.mrule(fcs, h)"
+ },
+ {
+  "law": "nc_lines_shape",
+  "bug": "FnCtx.lines drops the count line",
+  "old": "List.append(&2, String, Nc.mlines(ms), [Nc.count(es, ms)])",
+  "new": "Nc.mlines(ms)"
+ },
+ {
+  "law": "fnctx_on",
+  "bug": "FnCtxIn.go1 prints nothing when on",
+  "old": "      FnCtxIn.go(FnCtx.decode(rows))\n    case False{}:",
+  "new": "      Some{Nil{}}\n    case False{}:"
+ },
+ {
+  "law": "fnctx_off",
+  "bug": "FnCtxIn.go1 analyses when off",
+  "old": "    case False{}:\n      Some{Nil{}}\n\ndef FnCtxIn.on",
+  "new": "    case False{}:\n      FnCtxIn.go(FnCtx.decode(rows))\n\ndef FnCtxIn.on"
+ },
+ {
+  "law": "fnctx_go_refuses",
+  "bug": "FnCtxIn.go answers no lines on undecodable rows",
+  "old": "    case None{}:\n      None{}\n    case Some{f}:\n      Some{FnCtx.lines(f)}",
+  "new": "    case None{}:\n      Some{Nil{}}\n    case Some{f}:\n      Some{FnCtx.lines(f)}"
+ }
+]

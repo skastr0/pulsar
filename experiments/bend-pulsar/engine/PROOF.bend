@@ -34,6 +34,7 @@ import ./Untested-PROOF.bend as UntestedProof
 import ./Grow-PROOF.bend as GrowProof
 import ./SqlIn-PROOF.bend as SqlInProof
 import ./Rules-PROOF.bend as RulesProof
+import ./FnCtx-PROOF.bend as FnCtxProof
 
 def Laws.kind_is_value_kind(hv, ht, form):
   {==}

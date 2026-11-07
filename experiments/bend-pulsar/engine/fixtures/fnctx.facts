@@ -1,0 +1,25 @@
+# Hand-written function-context facts (FnCtx.bend). Context bits: 1 async, 2 Effect code,
+# 4 test, 8 effect_only file, 16 boundary file, 32 interop callback.
+# FC: fn 0 (file 0) async in effect_only; fn 1 (file 0) Effect code; fn 2 (file 1) async;
+# fn 3 (file 1) an interop callback; fn 4 (file 2) async in a boundary file; fn 5 (file 3)
+# Effect code and fn 6 (file 3) an async function nested in Effect code (both bits).
+# CE: site 10 in fn 3 -> fn 0; site 11 in fn 3 -> fn 4 (boundary target); site 12 in fn 1
+# -> fn 0 (not an interop callback); site 13 in fn 3 -> fn 2 (async, not effect_only: the
+# target masks do not ask for 8, so it is a finding).
+# RE 5: all 8|32, none 4|16, target all 1, none 16 -> sites 10 and 13.
+# RM 6: a = 2|8 none 4|16|32, b = 1|8 none 2|4|16|32 -> file 0 only (file 1 has no Effect
+# code, file 3 is not effect_only, and fn 6 has bit 2, which side b excludes).
+pulsar-facts 0
+CE 10 3 0 0 0 40
+CE 11 3 4 0 0 40
+CE 12 1 0 0 0 10
+CE 13 3 2 0 0 40
+FC 0 0 9
+FC 1 0 10
+FC 2 1 1
+FC 3 1 40
+FC 4 2 17
+FC 5 3 2
+FC 6 3 3
+RE 5 40 20 1 16
+RM 6 10 52 9 54
