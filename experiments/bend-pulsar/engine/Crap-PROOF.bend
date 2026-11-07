@@ -258,3 +258,26 @@ def Laws.crap_findings_complete(thr, ms, fn, c, cov, n, v, hm, h):
 
 def Laws.crap_skips_tests(thr, fn, c, cov, n, v, ms):
   {==}
+
+def Laws.crap_cause_complexity_only(c, cov, n, h):
+  Ge.true(C.Crap.cube(n), Nat.mul(c, C.Crap.cube(Nat.sub(n, cov))), h)
+
+def Laws.crap_cause_coverage(c, cov, n, h):
+  Ge.false(C.Crap.cube(n), Nat.mul(c, C.Crap.cube(Nat.sub(n, cov))), h)
+
+def Laws.crap_cause_name_complexity():
+  {==}
+
+def Laws.crap_cause_name_coverage():
+  {==}
+
+def Laws.crap_ev_none(fn):
+  {==}
+
+def Laws.crap_ev_skip(fn, f, c, cov, n, v, test, t, h):
+  %Equal.sym(Bool, U32.is_eq(f, fn), False{}, h) : {C.Crap.ev_pick(_, C.Crap.tail(c, cov, n), C.Crap.ev(fn, t)) == C.Crap.ev(fn, t) : String}
+  {==}
+
+def Laws.crap_ev_hit(fn, f, c, cov, n, v, test, t, h):
+  %Equal.sym(Bool, U32.is_eq(f, fn), True{}, h) : {C.Crap.ev_pick(_, C.Crap.tail(c, cov, n), C.Crap.ev(fn, t)) == " cyclomatic=" ++ Nat.show(c) ++ " covered=" ++ Nat.show(cov) ++ " coverable=" ++ Nat.show(n) ++ " cause=" ++ C.Crap.cause_name(C.Crap.cause(c, cov, n)) : String}
+  {==}

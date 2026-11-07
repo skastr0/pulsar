@@ -82,5 +82,41 @@
   "bug": "test functions get findings",
   "old": "    case True{}:\n      rest\n    case False{}:\n      M.Rule.check(5",
   "new": "    case True{}:\n      M.Rule.check(5, fn, v, thr, rest)\n    case False{}:\n      M.Rule.check(5"
+ },
+ {
+  "law": "crap_cause_coverage",
+  "bug": "an equal pair reads as coverage",
+  "old": "Crap.ge(Crap.cube(n), Nat.mul(c, Crap.cube(Nat.sub(n, covered))))",
+  "new": "Crap.ge(Crap.cube(n), 1n+Nat.mul(c, Crap.cube(Nat.sub(n, covered))))"
+ },
+ {
+  "law": "crap_cause_complexity_only",
+  "bug": "cause weighs c squared",
+  "old": "Crap.ge(Crap.cube(n), Nat.mul(c, Crap.cube(Nat.sub(n, covered))))",
+  "new": "Crap.ge(Crap.cube(n), Nat.mul(Nat.mul(c, c), Crap.cube(Nat.sub(n, covered))))"
+ },
+ {
+  "law": "crap_cause_name_complexity",
+  "bug": "the cause names swap",
+  "old": "    case True{}:\n      \"complexity-only\"\n    case False{}:\n      \"coverage\"",
+  "new": "    case True{}:\n      \"coverage\"\n    case False{}:\n      \"complexity-only\""
+ },
+ {
+  "law": "crap_ev_hit",
+  "bug": "the evidence drops the cause",
+  "old": " ++ \" cause=\" ++ Crap.cause_name(Crap.cause(c, covered, n))",
+  "new": ""
+ },
+ {
+  "law": "crap_ev_skip",
+  "bug": "the evidence is any function's",
+  "old": "Crap.ev_pick(U32.is_eq(f, fn), Crap.tail(c, covered, n), Crap.ev(fn, t))",
+  "new": "Crap.ev_pick(True{}, Crap.tail(c, covered, n), Crap.ev(fn, t))"
+ },
+ {
+  "law": "crap_ev_none",
+  "bug": "no coverage data reads as complexity-only",
+  "old": "    case Nil{}:\n      \"\"\n    case Con{CrM{+f, +c, +covered, +n, v, test}, t}:",
+  "new": "    case Nil{}:\n      \" cause=complexity-only\"\n    case Con{CrM{+f, +c, +covered, +n, v, test}, t}:"
  }
 ]
