@@ -107,6 +107,7 @@ Direction convention below: "flag > N" means a finding fires when the metric is 
 | Hotspot | CC finding AND churn | conjunction | Conjunction itself untested → report components |
 | Risky change | CRAP AND churn | conjunction | Same caveat |
 | Co-change | support ≥3, confidence ≥0.5 | unexplained by imports | Mechanism strong; cutoffs weak → **opt-in candidate** |
+| Cognitive complexity | 15 | cognitive > 15 | SonarQube S3776 convention; weak → **ships OFF, policy opt-in** |
 
 ## Fan-in / hub defaults (Effect pack, #661)
 
@@ -135,6 +136,22 @@ pulsar-graph asked for the finding-level defaults on pairs *not explained by an 
 - Report the actual top-k share in the finding (e.g. "top 20% of files = 83% of churn") so the threshold is auditable.
 
 **Verdict:** churn-concentration default = top 20% of files holding >= 80% of window churn, bot-filtered and production-files-only, opt-in until fidelity measures it. If the engine prefers a distribution-free variant, `>= 50% of churn in top 10% of files` is stricter; pick one and record it in policy.
+
+## Cognitive complexity (`core.cognitive`, #663 — ruled, ships OFF)
+
+SonarSource Cognitive Complexity (white paper, https://www.sonarsource.com/docs/CognitiveComplexity.pdf):
++1 per structural break (`if`/`else if`/`else`, ternary, `catch`, `switch` counted once
+regardless of arm count, loops, recursion) **plus the current nesting depth**; +1 per
+contiguous run of the same binary logical operator; labelled jumps +1; unlabelled
+`break`/`continue` and null-coalescing +0. Full model:
+`research/cognitive-complexity.md`.
+
+- **Default: flag strictly `cognitive > 15`.** Source: SonarQube S3776 convention (15; 30 for
+  Rust in SQ Server 2026.5). Evidence class: weak — convention, no defect-validation study.
+- **Ships OFF by default** (weak evidence per this document's rule); enabled per-repo via
+  policy — this repo turns it on for dogfood evidence.
+- Operator identity comes from `CO fn node op` (1=`&&`, 2=`||`, 3=`??`, 4=`&&=`, 5=`||=`,
+  6=`??=`); only `&&`/`||` runs score, `??` and assigns are +0 per spec.
 
 ## Method note
 

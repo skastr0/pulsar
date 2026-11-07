@@ -51,14 +51,15 @@ Our CT kinds already carry most of what the spec needs:
 | loops | KLoop |
 | catch/finally | KTry (+ KFin) |
 | ternary | needs checking: is `?:` emitted as KSc or a branch? (adapter contract) |
-| `&&`/`||` runs | KSc — **gap**: spec wants +1 per run of the *same* operator; our KSc rows may not record which operator, and NPath's predicate rule counts each short-circuit node individually |
+| `&&`/`||` runs | KSc + **`CO fn node op`** (ruled by pulsar-lead): op 1=`&&`, 2=`||`, 3=`??`, 4=`&&=`, 5=`||=`, 6=`??=`; adapters emit it for kind-6 nodes, Rust maps `&&`/`||` only. `??` stays +0 per spec (null-coalescing is a readability aid) — the op column exists so the rule can tell runs apart |
 | recursion | no CT kind — needs an adapter fact (self-call edge already exists in call graphs for TS/Rust lanes?) |
 | labelled break/continue, goto | KExit exists; labelled-ness would need a flag |
 | nesting depth per break | computable from CT depth at each break node |
 
-Net: the metric is computable from CT plus two small adapter additions (operator identity on
-KSc, recursion/labelled-jump flags). No source text needed in the engine — consistent with
-the facts contract.
+Net: the metric is computable from CT plus the `CO` relation (FACTS.md row owned by
+pulsar-composites; pulsar-ts and pulsar-rs emit it) and small adapter additions for
+ternary classification, recursion and labelled-jump flags. No source text needed in the
+engine — consistent with the facts contract.
 
 ## Dogfood evidence (run 1, ee12518)
 
@@ -83,14 +84,22 @@ Of the 29 cyclomatic findings, roughly 8 sit in the arm-dominated cluster (npath
 cc ≥ 11). Cyclomatic counts each arm as a decision; cognitive counts the whole match once —
 exactly the correction the `Rel>tag` case needs, without touching genuinely branchy code.
 
-## Recommendation to #663
+## Ruling (pulsar-lead, after this note)
+
+1. `core.cognitive` ships as its own rule in Metrics beside cyclomatic, threshold **15**
+   explicit in the rule, with laws like the other metrics (pulsar-composites, #663).
+2. Evidence is weak → the rule ships **OFF by default**; pulsar-cli enables it in this
+   repo's `.pulsar/policy.toml` so dogfood gathers real evidence on our own code.
+3. Operator identity: new relation `CO fn node op` for kind-6 nodes (arity unchanged);
+   composites writes the FACTS.md row, ts/rs emit it, Rust maps `&&` and `||` only.
+
+## Recommendation to #663 (as ruled)
 
 1. Add `core.cognitive` as a **separate rule** computed from the same CT, not a patch to
    `core.cyclomatic` — keeps both metrics' semantics clean and lets policy choose either.
 2. Default threshold **15** (SonarQube S3776 convention), labelled weak-evidence in
    thresholds.md; revisit after it runs on our own dogfood corpus.
-3. Adapter additions needed before it can be exact: operator identity on KSc rows,
-   ternary classification, recursion and labelled-jump flags. Until then a v1 can omit
-   recursion/labels (document the gap) — they are rare in our corpus.
+3. Until ternary/recursion/labelled-jump adapter bits land, a v1 can omit them
+   (document the gap) — they are rare in our corpus. `CO` covers the operator-run rule.
 4. Keep `core.cyclomatic`, `core.nesting`, `core.npath` unchanged — cognitive complexity
    complements, does not replace, the testability metrics.
