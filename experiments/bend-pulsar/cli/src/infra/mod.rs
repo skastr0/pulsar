@@ -453,6 +453,10 @@ impl Decls<'_> {
                         d.entries.insert(entry);
                     }
                 }
+                // Alchemy's assets option always exposes the `ASSETS` binding; it is not in `env`.
+                Some("assets") => {
+                    d.bindings.insert("ASSETS".to_string());
+                }
                 Some("env") => {
                     if let Expression::ObjectExpression(env) = p.value.get_inner_expression() {
                         for b in &env.properties {
@@ -859,6 +863,16 @@ queue = "jobs"
         assert_eq!(d.name, "api");
         assert_eq!(d.entries.iter().collect::<Vec<_>>(), ["apps/api/worker/index.ts"]);
         assert_eq!(d.bindings.iter().map(String::as_str).collect::<Vec<_>>(), ["DB", "JOBS", "KV", "MODE", "ROOM"]);
+    }
+
+    #[test]
+    fn alchemy_assets_expose_the_assets_binding() {
+        let src = r#"
+import * as Cloudflare from "alchemy/Cloudflare";
+export const w = Cloudflare.Worker("Site", { assets: { directory: "./out" } });
+"#;
+        let d = decls("alchemy.run.ts", src);
+        assert_eq!(d[0].bindings.iter().map(String::as_str).collect::<Vec<_>>(), ["ASSETS"]);
     }
 
     #[test]
