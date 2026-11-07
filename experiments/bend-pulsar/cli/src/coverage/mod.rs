@@ -21,16 +21,21 @@ use std::path::{Path, PathBuf};
 /// Executable lines and their hit counts for one file, as the report states them.
 type FileLines = BTreeMap<u32, u64>;
 
-/// Diagnostics for the stderr line. Counts only; the CLI renders paths.
+/// Diagnostics for the stderr line and for a caller that wants them in its own output (the
+/// delta summary prints `rerooted_prefix`). Counts only; the CLI renders paths.
 #[derive(Default, Debug, PartialEq, Eq)]
-struct Stats {
-    reports: usize,
-    reported_files: usize,
-    reported_lines: usize,
-    skipped: usize,
-    assigned: usize,
-    unassigned: usize,
-    cv: usize,
+pub struct Stats {
+    pub reports: usize,
+    pub reported_files: usize,
+    pub reported_lines: usize,
+    pub skipped: usize,
+    pub assigned: usize,
+    pub unassigned: usize,
+    pub cv: usize,
+    /// Report files whose absolute path was re-rooted onto the repo by suffix match.
+    pub rerooted_files: usize,
+    /// The prefix those paths carried outside the repo, when there was exactly one.
+    pub rerooted_prefix: Option<String>,
 }
 
 /// Read the repo's coverage report and push `CV` facts. `explicit` is `--coverage <file|dir>`;
@@ -49,8 +54,12 @@ pub fn emit(
     for (id, covered, coverable) in &cv {
         w.push(Rel::Cv, &[*id, *covered, *coverable]);
     }
+    let rerooted = match &stats.rerooted_prefix {
+        Some(prefix) => format!(" rerooted={prefix} rerooted_files={}", stats.rerooted_files),
+        None => String::new(),
+    };
     eprintln!(
-        "pulsar: coverage reports={} files={} lines={} skipped={} assigned={} unassigned={} cv={}",
+        "pulsar: coverage reports={} files={} lines={} skipped={} assigned={} unassigned={} cv={}{rerooted}",
         stats.reports,
         stats.reported_files,
         stats.reported_lines,
@@ -84,15 +93,33 @@ fn ingest(
 
     let known: std::collections::HashSet<&str> = tables.paths.iter().map(String::as_str).collect();
     let mut lines: BTreeMap<String, FileLines> = BTreeMap::new();
+    let mut prefixes: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut rerooted = 0usize;
     for (raw, file_lines) in union(parsed) {
         stats.reported_lines += file_lines.len();
-        match normalize(repo, &raw) {
-            Some(rel) if known.contains(rel.as_str()) => {
-                lines.insert(rel, file_lines);
+        match normalize(repo, &raw, &known) {
+            Some(found) if known.contains(found.rel.as_str()) => {
+                if let Some(prefix) = &found.dropped {
+                    prefixes.insert(prefix.clone());
+                    rerooted += 1;
+                }
+                lines.insert(found.rel, file_lines);
             }
             _ => stats.skipped += 1,
         }
     }
+    // One prefix means the report was produced in one other checkout. Two mean the paths are
+    // not all describing the same tree, and guessing would silently attach lines to the wrong
+    // functions, so the run refuses instead.
+    if prefixes.len() > 1 {
+        let listed: Vec<&str> = prefixes.iter().map(String::as_str).collect();
+        return Err(format!(
+            "coverage: report paths re-root at more than one prefix ({}); refusing to guess",
+            listed.join(", ")
+        ));
+    }
+    stats.rerooted_files = rerooted;
+    stats.rerooted_prefix = prefixes.into_iter().next();
 
     let spans = map::spans(tables)?;
     let assignment = map::assign(&lines, &spans);
@@ -153,23 +180,53 @@ fn union(reports: Vec<istanbul::FileEntry>) -> BTreeMap<String, FileLines> {
     files
 }
 
-/// Repo-relative path for a report path, when the file exists inside the repo.
-fn normalize(repo: &Path, raw: &str) -> Option<String> {
+/// A report path resolved onto the repo, plus the prefix dropped to get there.
+struct Normalized {
+    rel: String,
+    dropped: Option<String>,
+}
+
+/// Resolve a report path to a repo-relative one.
+///
+/// A report written in another checkout carries that checkout's absolute root, so when the path
+/// is not under `repo` the lane re-roots it: the longest suffix of the report path that is a
+/// tracked path wins. `dropped` names the prefix that was cut, so the caller can report it and
+/// refuse a report whose paths resolve through two different roots.
+fn normalize(repo: &Path, raw: &str, known: &std::collections::HashSet<&str>) -> Option<Normalized> {
     let p = Path::new(raw);
-    let abs = if p.is_absolute() {
-        p.to_path_buf()
-    } else {
-        let from_root = repo.join(p);
-        if from_root.exists() {
-            from_root
-        } else {
-            return None;
+    if p.is_absolute() {
+        if let (Ok(root), Ok(canon)) = (std::fs::canonicalize(repo), std::fs::canonicalize(p)) {
+            if let Ok(rel) = canon.strip_prefix(&root) {
+                return Some(Normalized { rel: rel.to_str()?.replace('\\', "/"), dropped: None });
+            }
         }
-    };
-    let canon = std::fs::canonicalize(&abs).ok()?;
+        return reroot(raw, known);
+    }
+    let from_root = repo.join(p);
+    if !from_root.exists() {
+        return None;
+    }
+    let canon = std::fs::canonicalize(&from_root).ok()?;
     let root = std::fs::canonicalize(repo).ok()?;
     let rel = canon.strip_prefix(&root).ok()?;
-    Some(rel.to_str()?.replace('\\', "/"))
+    Some(Normalized { rel: rel.to_str()?.replace('\\', "/"), dropped: None })
+}
+
+/// Longest tracked suffix of an absolute report path, with the leading prefix it cut.
+fn reroot(raw: &str, known: &std::collections::HashSet<&str>) -> Option<Normalized> {
+    let parts: Vec<&str> = raw.split('/').filter(|s| !s.is_empty()).collect();
+    for start in 0..parts.len() {
+        let candidate = parts[start..].join("/");
+        if known.contains(candidate.as_str()) {
+            let dropped = if start == 0 {
+                None
+            } else {
+                Some(format!("/{}", parts[..start].join("/")))
+            };
+            return Some(Normalized { rel: candidate, dropped });
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -300,6 +357,43 @@ mod tests {
         // instruments in `mod tests` belong to them and nothing is left unassigned.
         assert_eq!(stats.unassigned, 0, "unassigned lines: {stats:?}");
         assert_eq!(stats.skipped, 0, "every SF: path must normalize: {stats:?}");
+    }
+
+
+    #[test]
+    fn a_report_from_another_checkout_is_rerooted_by_longest_tracked_suffix() {
+        let dir = fixture("coverage/reroot").join("repo");
+        let report = fixture("coverage/reroot").join("report/coverage-final.json");
+        let (cv, stats) = ingest(&dir, Some(&report), &tables(&dir.join(".."))).unwrap();
+        assert_eq!(render(&tables(&dir.join("..")), &cv), expected(&dir.join(".."), "expected.txt"));
+        assert_eq!(stats.rerooted_files, 2, "{stats:?}");
+        assert_eq!(stats.rerooted_prefix.as_deref(), Some("/build/agent-7/work"));
+        assert_eq!(stats.skipped, 0, "{stats:?}");
+    }
+
+    #[test]
+    fn two_reroot_prefixes_are_refused() {
+        let dir = fixture("coverage/reroot").join("repo");
+        let tmp = std::env::temp_dir().join(format!("pulsar-cov-reroot-{}", std::process::id()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let report = tmp.join("two-roots.json");
+        let entry = |path: &str| {
+            format!(
+                r#""{path}":{{"path":"{path}","statementMap":{{"0":{{"start":{{"line":2,"column":0}},"end":{{"line":2,"column":4}}}}}},"s":{{"0":1}}}}"#
+            )
+        };
+        std::fs::write(
+            &report,
+            format!(
+                "{{{},\n{}}}",
+                entry("/build/one/src/math.ts"),
+                entry("/build/two/src/other.ts")
+            ),
+        )
+        .unwrap();
+        let err = ingest(&dir, Some(&report), &tables(&dir.join(".."))).unwrap_err();
+        assert!(err.contains("more than one prefix"), "{err}");
+        std::fs::remove_dir_all(&tmp).unwrap();
     }
 
     #[test]
