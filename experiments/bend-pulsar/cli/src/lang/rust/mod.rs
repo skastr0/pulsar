@@ -72,6 +72,14 @@ pub fn analyze(root: &Path, files: &[(u32, String)], tracked: &[String]) -> Resu
     let path_ids: HashMap<&str, u32> = files.iter().map(|(id, p)| (p.as_str(), *id)).collect();
     let owned: std::collections::HashSet<&str> = files.iter().map(|(_, p)| p.as_str()).collect();
     let crates = cargo::discover(root, tracked, &owned);
+    if let Some((first, why)) = crates.fallbacks.first() {
+        // One line, not one per manifest: the graph is degraded (no crate edges, default target
+        // layout only) and the reader must be able to see that.
+        eprintln!(
+            "pulsar: cargo metadata failed for {} Cargo.toml files (first: {first}: {why}); those crates use the conventional layout, with no crate-level edges",
+            crates.fallbacks.len(),
+        );
+    }
 
     let by_id: HashMap<u32, &parse::RustFile> =
         files.iter().zip(parsed.iter()).map(|((id, _), pf)| (*id, pf)).collect();

@@ -33,8 +33,9 @@ pub struct Package {
 pub struct Crates {
     pub packages: Vec<Package>,
     pub targets: Vec<Target>,
-    /// Manifests whose metadata call failed and fell back to the conventional layout.
-    pub fallbacks: Vec<String>,
+    /// Manifests whose metadata call failed and fell back to the conventional layout, with the
+    /// reason cargo gave.
+    pub fallbacks: Vec<(String, String)>,
 }
 
 #[derive(Deserialize)]
@@ -99,8 +100,7 @@ pub fn discover(root: &Path, tracked: &[String], files: &HashSet<&str>) -> Crate
                 known.insert(m.clone());
             }
             Err(e) => {
-                eprintln!("pulsar: cargo metadata failed for {m} ({e}); using the conventional layout");
-                out.fallbacks.push(m.clone());
+                out.fallbacks.push((m.clone(), e));
                 known.insert(m.clone());
                 if let Some(p) = conventional(root, m, files) {
                     raw.push(p);
