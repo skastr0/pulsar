@@ -71,8 +71,9 @@ want() { # $1=name -> 0 if selected
 }
 
 loadavg() {
-  if command -v sysctl >/dev/null 2>&1; then sysctl -n vm.loadavg | tr -d '{}' | awk '{print $1}';
-  else cut -d' ' -f1 /proc/loadavg; fi
+  if [ -r /proc/loadavg ]; then cut -d' ' -f1 /proc/loadavg;
+  elif command -v sysctl >/dev/null 2>&1; then sysctl -n vm.loadavg | tr -d '{}' | awk '{print $1}';
+  else uptime | awk -F'load average' '{print $2}' | tr -d ' ,'; fi
 }
 
 TIMEDIR=$(mktemp -d /tmp/pulsar-gate.XXXXXX)
@@ -151,7 +152,7 @@ run_corpus() { # $1=name $2=path $3=sha $4=kind
 
   for i in $(seq 1 "$RUNS"); do
     rm -f "$facts" "$facts.paths"
-    timed "$CAP_OUT" "$CAP_ERR" /usr/bin/time -l "$CLI" facts "$path" -o "$facts"
+    timed "$CAP_OUT" "$CAP_ERR" "$CLI" facts "$path" -o "$facts"
     rc=$T_RC; wall=$T_WALL; cpu=$T_CPU; rss=$T_RSS
     stats=$(grep '^pulsar:' "$CAP_ERR" | tail -1)
     [ "$rc" = 0 ] || echo "gate: WARN $name facts run $i exit $rc: $(tail -1 "$CAP_ERR")" >&2
@@ -163,7 +164,7 @@ run_corpus() { # $1=name $2=path $3=sha $4=kind
     return 1
   fi
   for i in $(seq 1 "$RUNS"); do
-    timed "$CAP_OUT" "$CAP_ERR" /usr/bin/time -l "$ENGINE" "$facts"
+    timed "$CAP_OUT" "$CAP_ERR" "$ENGINE" "$facts"
     rc=$T_RC; wall=$T_WALL; cpu=$T_CPU; rss=$T_RSS
     eng_s=$(grep '^S ' "$CAP_OUT" | tail -1)
     [ "$rc" = 0 ] || echo "gate: WARN $name engine run $i exit $rc" >&2
