@@ -8,7 +8,7 @@
 //! emits nothing.
 
 use super::blocks::{bindings, BlockState};
-use super::calls::{err_binds, if_let_err_binds, named_leaves, scan_uses, Body, CallEnv, OpenHandler, Scan};
+use super::env::{err_binds, if_let_err_binds, named_leaves, scan_uses, Body, CallEnv, OpenHandler, Scan};
 use crate::lang::functions::{ct, fk, fnv_parts, op, CoRec, CtRec, FileFns, FnRec};
 use proc_macro2::{Span, TokenStream, TokenTree};
 use std::collections::{HashMap, HashSet};

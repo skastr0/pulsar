@@ -8,6 +8,7 @@
 mod blocks;
 mod calls;
 mod cargo;
+mod env;
 mod graph;
 mod parse;
 
@@ -108,31 +109,12 @@ pub struct Analysis {
 /// Analyse the Rust files of a repo. `files` is `(global file id, repo-relative path)` for every
 /// `.rs` file the lane owns; `tracked` is every tracked path (to find `Cargo.toml` files).
 pub fn analyze(root: &Path, files: &[(u32, String)], tracked: &[String]) -> Result<Analysis, String> {
-    let pool = rayon::ThreadPoolBuilder::new()
-        .stack_size(64 << 20)
-        .build()
-        .map_err(|e| format!("rust lane: thread pool: {e}"))?;
     let path_ids: HashMap<&str, u32> = files.iter().map(|(id, p)| (p.as_str(), *id)).collect();
     let owned: std::collections::HashSet<&str> = files.iter().map(|(_, p)| p.as_str()).collect();
     let crates = cargo::discover(root, tracked, &owned);
-    let (env, catalogs) = calls::env_for(root, &crates)?;
-    let mut parsed: Vec<parse::RustFile> = pool.install(|| {
-        files
-            .par_iter()
-            .map(|(_, rel)| match std::fs::read(root.join(rel)) {
-                Ok(bytes) => parse::extract_with(rel, &String::from_utf8_lossy(&bytes), false, Some(&env)),
-                Err(_) => parse::RustFile { failed: true, ..parse::RustFile::default() },
-            })
-            .collect()
-    });
-    if let Some((first, why)) = crates.fallbacks.first() {
-        // One line, not one per manifest: the graph is degraded (no crate edges, default target
-        // layout only) and the reader must be able to see that.
-        eprintln!(
-            "pulsar: cargo metadata failed for {} Cargo.toml files (first: {first}: {why}); those crates use the conventional layout, with no crate-level edges",
-            crates.fallbacks.len(),
-        );
-    }
+    warn_fallbacks(&crates);
+    let (env, catalogs) = env::env_for(root, &crates)?;
+    let mut parsed = parse_all(root, files, &env)?;
 
     let by_id: HashMap<u32, &parse::RustFile> =
         files.iter().zip(parsed.iter()).map(|((id, _), pf)| (*id, pf)).collect();
@@ -148,11 +130,9 @@ pub fn analyze(root: &Path, files: &[(u32, String)], tracked: &[String]) -> Resu
 
     let prod: Vec<Option<bool>> =
         files.iter().map(|(id, rel)| Some(is_prod(rel) && !g.test_files.contains(id))).collect();
-    let (gi, gu, trees) = (g.i, g.u, g.trees);
-    let mut i = gi;
+    let (mut i, mut u, trees) = (g.i, g.u, g.trees);
     i.sort_unstable();
     i.dedup();
-    let mut u = gu;
     u.sort_unstable();
     u.dedup();
     let stats = Stats {
@@ -167,19 +147,53 @@ pub fn analyze(root: &Path, files: &[(u32, String)], tracked: &[String]) -> Resu
         u_facts: u.len(),
     };
     let per_file: Vec<FileOut> = parsed.into_iter().map(|p| FileOut { fns: p.fns, tests: p.tests }).collect();
-    let mut sym_classes = std::collections::BTreeMap::new();
-    for f in &per_file {
-        for name in &f.fns.syms {
-            let classes = env.classes(name).cloned().unwrap_or_default();
-            sym_classes.entry(name.clone()).or_insert(classes);
-        }
+    let (per_file, sql_texts, sym_classes) = collect_outputs(files, per_file, &env);
+    Ok(Analysis { per_file, i, u, prod, trees, sql_texts, sym_classes, catalogs, stats })
+}
+
+/// One parse per file, in parallel, on threads with room for deeply nested source.
+fn parse_all(root: &Path, files: &[(u32, String)], env: &env::CallEnv) -> Result<Vec<parse::RustFile>, String> {
+    let pool = rayon::ThreadPoolBuilder::new()
+        .stack_size(64 << 20)
+        .build()
+        .map_err(|e| format!("rust lane: thread pool: {e}"))?;
+    Ok(pool.install(|| {
+        files
+            .par_iter()
+            .map(|(_, rel)| match std::fs::read(root.join(rel)) {
+                Ok(bytes) => parse::extract_with(rel, &String::from_utf8_lossy(&bytes), false, Some(env)),
+                Err(_) => parse::RustFile { failed: true, ..parse::RustFile::default() },
+            })
+            .collect()
+    }))
+}
+
+/// One line, not one per manifest: the graph is degraded (no crate edges, default target layout
+/// only) and the reader must be able to see that.
+fn warn_fallbacks(crates: &cargo::Crates) {
+    if let Some((first, why)) = crates.fallbacks.first() {
+        eprintln!(
+            "pulsar: cargo metadata failed for {} Cargo.toml files (first: {first}: {why}); those crates use the conventional layout, with no crate-level edges",
+            crates.fallbacks.len(),
+        );
     }
-    let mut per_file = per_file;
+}
+
+/// The classes of every symbol the files name, and their SQL texts taken out of the per-file rows.
+fn collect_outputs(
+    files: &[(u32, String)],
+    mut per_file: Vec<FileOut>,
+    env: &env::CallEnv,
+) -> (Vec<FileOut>, Vec<(u32, crate::lang::functions::SqlTextRec)>, std::collections::BTreeMap<String, Vec<u32>>) {
+    let mut sym_classes = std::collections::BTreeMap::new();
     let mut sql_texts = Vec::new();
     for ((id, _), f) in files.iter().zip(per_file.iter_mut()) {
+        for name in &f.fns.syms {
+            sym_classes.entry(name.clone()).or_insert_with(|| env.classes(name).cloned().unwrap_or_default());
+        }
         sql_texts.extend(std::mem::take(&mut f.fns.sql).into_iter().map(|t| (*id, t)));
     }
-    Ok(Analysis { per_file, i, u, prod, trees, sql_texts, sym_classes, catalogs, stats })
+    (per_file, sql_texts, sym_classes)
 }
 
 #[cfg(test)]
