@@ -98,6 +98,36 @@ for try in 1 2 3 4 5 6 7 8; do
     echo "commit.sh: nothing to commit in those paths" >&2
     exit 0
   fi
+  # Revert guard: refuse a commit that deletes lines another seat committed in
+  # the last 12 hours (the stale-copy failure). Seats come from main's reflog.
+  if [ "${COMMIT_ALLOW_REVERT:-}" != "1" ]; then
+    git reflog show --format='%H %gs' refs/heads/main 2>/dev/null \
+      | sed -n 's/^\([0-9a-f]*\) commit\.sh (\(.*\))$/\1 \2/p' > "$tmp/seats"
+    now=$(date +%s)
+    : > "$tmp/hits"
+    git diff --name-only "$old" "$tree" | while IFS= read -r f; do
+      git cat-file -e "$old:$f" 2>/dev/null || continue
+      git diff -U0 "$old" "$tree" -- "$f" | sed -n 's/^@@ -\([0-9]*\)\(,\([0-9]*\)\)\{0,1\} .*/\1 \3/p' |
+      while read -r start count; do
+        [ "${count:-1}" = "0" ] && continue
+        end=$((start + ${count:-1} - 1))
+        git blame -l -s -L "$start,$end" "$old" -- "$f" 2>/dev/null | cut -c1-40
+      done | sort -u | while read -r c; do
+        ct=$(git log -1 --format=%ct "$c" 2>/dev/null || echo 0)
+        [ $((now - ct)) -gt 43200 ] && continue
+        s=$(awk -v c="$c" '$1==c {print $2}' "$tmp/seats")
+        if [ -n "$s" ] && [ "$s" != "$seat" ]; then
+          echo "$f: deletes lines from $(git log -1 --format='%h %s' "$c") [$s]" >> "$tmp/hits"
+        fi
+      done
+    done || true
+    if [ -s "$tmp/hits" ]; then
+      echo "commit.sh: refusing; this commit deletes recent lines committed by another seat:" >&2
+      sed 's/^/  /' "$tmp/hits" >&2
+      echo "  If your copy was stale, rebuild it from HEAD. If the deletion is intended, agree it with that seat and rerun with COMMIT_ALLOW_REVERT=1." >&2
+      exit 1
+    fi
+  fi
   new=$(printf '%s\n' "$msg" | git commit-tree "$tree" -p "$old" -F -)
   if git update-ref -m "commit.sh ($seat)" refs/heads/main "$new" "$old" 2>/dev/null; then
     # Bring the shared working-tree copy of each --blob path up to the new
