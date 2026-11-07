@@ -678,14 +678,21 @@ impl<'a> Visit<'a> for Walker<'_> {
     }
 
     fn visit_expr_break(&mut self, n: &'a ExprBreak) {
-        self.leaf(ct::EXIT);
+        let exit = self.node(ct::EXIT);
+        // `break 'a` and `break 'a value` (out of a labelled loop or block) are jumps to a label.
+        if n.label.is_some() {
+            self.branch_flavor(exit, flavor::LABELLED_JUMP);
+        }
         if let Some(e) = &n.expr {
             self.visit_expr(e);
         }
     }
 
-    fn visit_expr_continue(&mut self, _: &'a ExprContinue) {
-        self.leaf(ct::EXIT);
+    fn visit_expr_continue(&mut self, n: &'a ExprContinue) {
+        let exit = self.node(ct::EXIT);
+        if n.label.is_some() {
+            self.branch_flavor(exit, flavor::LABELLED_JUMP);
+        }
     }
 
     fn visit_expr_binary(&mut self, n: &'a ExprBinary) {

@@ -593,3 +593,20 @@ fn every_branch_node_says_what_it_is() {
     let branches = f.fns.ct.iter().filter(|c| c.kind == crate::lang::functions::ct::BRANCH).count();
     assert_eq!(f.fns.branches.len(), branches);
 }
+
+#[test]
+fn a_jump_to_a_label_is_a_kind_7_node_with_a_cb_row_and_a_plain_jump_has_none() {
+    use crate::lang::functions::{ct, flavor};
+    let f = parse::extract(
+        "src/x.rs",
+        "fn f(a: bool, items: Vec<u32>) -> u32 {\n    'outer: for x in &items {\n        for y in &items {\n            if a { continue 'outer; }\n            if x == y { break 'outer; }\n            if a { break; }\n            if !a { continue; }\n        }\n    }\n    let v = 'blk: { if a { break 'blk 1; } 2 };\n    v\n}\n",
+        false,
+    );
+    let mut cb = f.fns.branches.clone();
+    cb.sort_by_key(|b| b.node);
+    let exits: Vec<u32> = f.fns.ct.iter().filter(|c| c.kind == ct::EXIT).map(|c| c.node).collect();
+    let jumps: Vec<u32> = cb.iter().filter(|b| b.flavor == flavor::LABELLED_JUMP).map(|b| b.node).collect();
+    assert_eq!(jumps.len(), 3, "continue 'outer, break 'outer and break 'blk: {cb:?}");
+    assert!(jumps.iter().all(|n| exits.contains(n)), "every labelled jump row names a kind-7 node");
+    assert_eq!(exits.len(), 5, "the plain break and continue are exit nodes without a CB row");
+}
