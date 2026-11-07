@@ -10,14 +10,14 @@
 # exactly floor division.
 #
 # Coverage data per function:
-#   no CV row                       no data: no CR line, no finding (distinct from 0%)
+#   no CV row                       no data: no finding (distinct from 0%)
 #   coverable = 0 or > 32768        no data either (no lines to cover / out of range)
 #   covered > coverable             invalid facts: the run is refused
 #   covered = 0                     0%: CRAP = c^2 + c
 #
-#   CR <fn> <c> <covered> <coverable> <crap>    every function with data, id order
-#   FX core.crap <fn> <crap> <threshold>         CRAP strictly over the threshold,
-#                                                test functions (TF) excluded
+#   FX core.crap <fn> <crap> <threshold> cyclomatic=<c> covered=<covered> coverable=<n>
+#        CRAP strictly over the threshold, test functions (TF) excluded; the tail is
+#        the finding's input facts (FM cyclomatic and the CV row)
 # The join of FnM and CV rows (Crap.join) is unproven, like the builder in
 # Metrics.bend; the laws start at the joined records.
 
@@ -161,33 +161,36 @@ def Crap.join(ms: List<&2, M.FnM>, cvs: List<&2, Cv>) -> Maybe<&2, List<&2, Cr>>
     case Con{M.FnM{+fn, +cc, nest, np, loc, +test}, t} Con{Cv{+f, +cov, +n}, xs}:
       Crap.add(U32.is_eq(f, fn), fn, cc, cov, n, test, Crap.join(t, Crap.rest(U32.is_eq(f, fn), Cv{f, cov, n}, xs)))
 
+def Crap.ev_pick(hit: Bool, s: String, rest: String) -> String:
+  match hit:
+    case True{}:
+      s
+    case False{}:
+      rest
+
 # ---- output -----------------------------------------------------------------------------------
-def Crap.cr_line(m: CrM) -> String:
-  match m:
-    case CrM{fn, c, covered, n, v, test}:
-      "CR " ++ U32.show(fn) ++ " " ++ Nat.show(c) ++ " " ++ Nat.show(covered) ++ " " ++ Nat.show(n) ++ " " ++ Nat.show(v)
-
-def Crap.fx_line(x: M.Finding) -> String:
-  match x:
-    case M.Finding{rule, fn, v, thr}:
-      "FX core.crap " ++ U32.show(fn) ++ " " ++ Nat.show(v) ++ " " ++ Nat.show(thr)
-
-def Crap.crs(ms: List<&2, CrM>) -> List<&2, String>:
+# The evidence of a finding: the CrM record of its function (the first one, ids are unique).
+def Crap.ev(+fn: U32, ms: List<&2, CrM>) -> String:
   match ms:
     case Nil{}:
-      Nil{}
-    case Con{h, t}:
-      Con{Crap.cr_line(h), Crap.crs(t)}
+      ""
+    case Con{CrM{+f, +c, +covered, +n, v, test}, t}:
+      Crap.ev_pick(U32.is_eq(f, fn), " cyclomatic=" ++ Nat.show(c) ++ " covered=" ++ Nat.show(covered) ++ " coverable=" ++ Nat.show(n), Crap.ev(fn, t))
 
-def Crap.fxs(xs: List<&2, M.Finding>) -> List<&2, String>:
+def Crap.fx_line(+ms: List<&2, CrM>, x: M.Finding) -> String:
+  match x:
+    case M.Finding{rule, +fn, v, thr}:
+      "FX core.crap " ++ U32.show(fn) ++ " " ++ Nat.show(v) ++ " " ++ Nat.show(thr) ++ Crap.ev(fn, ms)
+
+def Crap.fxs(+ms: List<&2, CrM>, xs: List<&2, M.Finding>) -> List<&2, String>:
   match xs:
     case Nil{}:
       Nil{}
     case Con{h, t}:
-      Con{Crap.fx_line(h), Crap.fxs(t)}
+      Con{Crap.fx_line(ms, h), Crap.fxs(ms, t)}
 
 def Crap.lines(+thr: Nat, +ms: List<&2, CrM>) -> List<&2, String>:
-  List.append(&2, String, Crap.crs(ms), Crap.fxs(Crap.findings(thr, ms)))
+  Crap.fxs(ms, Crap.findings(thr, ms))
 
 def Crap.out(+thr: Nat, m: Maybe<&2, List<&2, Cr>>) -> Maybe<&2, List<&2, String>>:
   match m:

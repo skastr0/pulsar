@@ -6,7 +6,8 @@
 # Crap.lines. MemC, Measured and Sound below only describe outputs.
 #
 # Not covered by any law, by design: Crap.join (FnM and CV rows to Cr records),
-# like the decoders. It is shown against Crap-CHECK.bend.
+# like the decoders, and the evidence tail (Crap.ev). Both are shown against
+# Crap-CHECK.bend.
 
 import Base
 import ./Metrics.bend as M
@@ -42,7 +43,7 @@ law crap_run:
   for +cvs: List<&2, C.Cv>
   {C.Crap.run(thr, ms, cvs) == C.Crap.out(thr, C.Crap.join(ms, cvs)) : Maybe<&2, List<&2, String>>}
 
-# E2. joined records print the CR and FX lines of their measures.
+# E2. joined records print the FX lines of their measures.
 law crap_out_lines:
   for +thr: Nat
   for +xs: List<&2, C.Cr>
@@ -67,11 +68,11 @@ law crap_measure_all_cons:
   for +xs: List<&2, C.Cr>
   {C.Crap.measure_all(Con{x, xs}) == Con{C.Crap.measure(x), C.Crap.measure_all(xs)} : List<&2, C.CrM>}
 
-# E5. one CR line per function with data, then one FX line per finding.
+# E5. one FX line per finding, in order.
 law crap_lines_shape:
   for +thr: Nat
   for +ms: List<&2, C.CrM>
-  {C.Crap.lines(thr, ms) == List.append(&2, String, C.Crap.crs(ms), C.Crap.fxs(C.Crap.findings(thr, ms))) : List<&2, String>}
+  {C.Crap.lines(thr, ms) == C.Crap.fxs(ms, C.Crap.findings(thr, ms)) : List<&2, String>}
 
 # ---- V. the formula ---------------------------------------------------------------------------
 # V1. CRAP = term + c, with u = coverable - covered.

@@ -61,7 +61,7 @@ CYC <size> <file> <file> ...     one cycle, members ascending; cycles ordered by
 CERT <0|1>                       1 when the completeness and partition certificates passed
 S <files> <edges> <cycles>
 FM <fn> <cyclomatic> <nesting> <npath> <length>   every function, function-id order
-FX <rule-id> <fn> <value> <threshold>              one metric finding: value strictly over threshold
+FX <rule-id> <fn> <value> <threshold> [<evidence>...]   one finding: value strictly over threshold
 ```
 
 `FM` and `FX` come from `engine/Metrics.bend`. `FX` lines follow all `FM` lines,
@@ -74,6 +74,35 @@ saturates at the cap 16777215 (2^24 - 1): a printed NPath equal to the cap means
 A function with a `TF` row still gets its `FM` line, but no `FX`. Invalid FN/CT/TF facts
 make the engine refuse the run and print no `FM` lines. Invalid means a wrong field count,
 a tree the CT rules reject, or a `TF` id that is not a function, or is out of order.
+
+**CRAP and composites** (`engine/Crap.bend`, `engine/Hotspot.bend`, wired in `engine/MetricsIn.bend`).
+After the Metrics `FX` lines come the `core.crap` findings, then `core.hotspot`, then `core.risky-change`,
+each in function-id order. Each line carries an evidence tail of `key=value` tokens that names its input
+facts. A reader that takes the first four fields only stays correct.
+
+```
+FX core.crap <fn> <crap> <thr> cyclomatic=<c> covered=<covered> coverable=<coverable>
+FX core.hotspot <fn> <churn> <thr> churn=CFN <base-rule>=<value>/<thr> ...
+FX core.risky-change <fn> <churn> <thr> churn=CFN core.crap=<crap>/<thr>
+```
+
+- `core.crap` (default 30): `floor(c² × (coverable − covered)³ / coverable³) + c`, exact in integers.
+  A function with no `CV` row, or `coverable` 0 or over 32768, has no data and no finding. That is
+  different from 0% coverage (`covered` 0, CRAP = c² + c). `covered > coverable`, a `CV` row without
+  3 fields, or a `CV` id that is not a function in id order refuses the run.
+- `core.hotspot` (churn default 2, so at least 3 commits): a `core.cyclomatic`, `core.nesting` or `core.npath`
+  finding AND churn over the threshold. `core.length` is not a base.
+- `core.risky-change` (same threshold): a `core.crap` finding AND churn over the threshold.
+- Churn of a function: the number of `CFN` rows for it with `touched > 0` whose commit's author is not a
+  bot (`A` bot 0), in the window of `H`.
+- Test functions (`TF`) get none of these: their base findings are already skipped.
+
+`Crap-LAWS.bend` proves that the term is floor division, that more coverage never raises CRAP, that
+CRAP is at least c and equals c at full coverage, and that findings are sound and complete.
+`Hotspot-LAWS.bend` proves that every composite has churn over the threshold and an accepted base
+finding for the same function, and the converse. `MetricsIn-LAWS.bend` ties the output to both. The `CV`
+join, the churn count and the evidence tail are unproven, like the decoders, and are checked
+by hand in `*-CHECK.bend`.
 
 **Pack sections.** After the Metrics lines, `pulsar-engine` prints one section per active pack, in this order. A pack is active when its facts are present, and the CLI writes them only for packs that are on.
 - **Effect layer graph** (an `E` row is present): `pulsar-layers 0`, then the `LCYC` … `LS` lines of "Effect pack" below.
@@ -97,6 +126,7 @@ Function ids are `0..m-1`, in the order (file id, start offset). Ids are per run
 | `FN` | `fn file parent loc` | A function, method, closure or arrow function. `parent` is the enclosing function, or `4294967295` at top level. `loc` is the number of non-blank lines in its span, nested functions included (only `CT` excludes them). |
 | `FK` | `fn hi lo` | Stable key: a 64-bit hash of path, container chain, name, kind and ordinal, never a line. See "`FK` key and kinds". |
 | `CT` | `fn node parent kind` | One node of the function's control tree. `node` ids are exactly `1..k` per function, in preorder, so sibling order is id order; `parent = 0` is the function body, and a parent id is always smaller than its child's. Sorted by `(fn, node)`. |
+| `CO` | `fn node op` | The operator of a kind-6 (short-circuit) `CT` node: 1 `&&`, 2 `\|\|`, 3 `??`, 4 `&&=`, 5 `\|\|=`, 6 `??=`. One row per kind-6 node, sorted by `(fn, node)`, written after `CT`. Rust emits 1 and 2 only. Cognitive complexity uses it: a run of the same operator counts once. |
 | `TF` | `fn` | Function `fn` is test code. Rust: an item under `#[cfg(test)]` (also `cfg(all(test, ..))`, not under `not(..)`), a function with `#[test]`, `#[tokio::test]` or any attribute ending in `test`, `#[rstest]`, `#[test_case]` or `#[bench]`, and every function in a file reachable only through `#[cfg(test)] mod x;`. TS: a function in a test file (`.test.*`, `.spec.*`, `__tests__/`, `tests/`). Absence means production code. Detectors for complexity, size, NPath, CRAP and hotspots skip a function that has a `TF` row. One row per test function, none for a repo without tests. Sorted by `fn`. |
 
 **`FK` key and kinds.**

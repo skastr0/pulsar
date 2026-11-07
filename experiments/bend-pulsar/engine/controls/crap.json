@@ -1,0 +1,86 @@
+[
+ {
+  "law": "crap_run",
+  "bug": "run ignores the threshold",
+  "old": "  Crap.out(thr, Crap.join(ms, cvs))",
+  "new": "  Crap.out(Nat.add(thr, 1n), Crap.join(ms, cvs))"
+ },
+ {
+  "law": "crap_out_lines",
+  "bug": "out prints no findings",
+  "old": "Some{Crap.lines(thr, Crap.measure_all(xs))}",
+  "new": "Some{Crap.fxs(Crap.measure_all(xs), Nil{})}"
+ },
+ {
+  "law": "crap_out_refuses",
+  "bug": "a refused join prints an empty run",
+  "old": "    case None{}:\n      None{}\n    case Some{xs}:",
+  "new": "    case None{}:\n      Some{Nil{}}\n    case Some{xs}:"
+ },
+ {
+  "law": "crap_measure",
+  "bug": "measure reads 0% coverage",
+  "old": "CrM{fn, c, covered, n, Crap.value(c, covered, n), test}",
+  "new": "CrM{fn, c, covered, n, Crap.value(c, 0n, n), test}"
+ },
+ {
+  "law": "crap_measure_all_cons",
+  "bug": "measure_all keeps only the first record",
+  "old": "Con{Crap.measure(h), Crap.measure_all(t)}",
+  "new": "Con{Crap.measure(h), Nil{}}"
+ },
+ {
+  "law": "crap_lines_shape",
+  "bug": "lines reports against threshold + 1",
+  "old": "  Crap.fxs(ms, Crap.findings(thr, ms))",
+  "new": "  Crap.fxs(ms, Crap.findings(Nat.add(thr, 1n), ms))"
+ },
+ {
+  "law": "crap_value",
+  "bug": "value adds c on the left",
+  "old": "Nat.add(Crap.term(c, Nat.sub(n, covered), n), c)",
+  "new": "Nat.add(c, Crap.term(c, Nat.sub(n, covered), n))"
+ },
+ {
+  "law": "crap_term_is_floor",
+  "bug": "ge is strict, so a remainder can equal n^3",
+  "old": "    case 0n 0n:\n      True{}\n    case 0n 1n+q:",
+  "new": "    case 0n 0n:\n      False{}\n    case 0n 1n+q:"
+ },
+ {
+  "law": "crap_monotone_coverage",
+  "bug": "value cubes covered instead of uncovered",
+  "old": "Nat.add(Crap.term(c, Nat.sub(n, covered), n), c)",
+  "new": "Nat.add(Crap.term(c, covered, n), c)"
+ },
+ {
+  "law": "crap_at_least_c",
+  "bug": "value adds c - 1",
+  "old": "Nat.add(Crap.term(c, Nat.sub(n, covered), n), c)",
+  "new": "Nat.add(Crap.term(c, Nat.sub(n, covered), n), Nat.sub(c, 1n))"
+ },
+ {
+  "law": "crap_full_coverage",
+  "bug": "value counts one extra uncovered line",
+  "old": "Nat.add(Crap.term(c, Nat.sub(n, covered), n), c)",
+  "new": "Nat.add(Crap.term(c, Nat.sub(1n+n, covered), n), c)"
+ },
+ {
+  "law": "crap_findings_sound",
+  "bug": "findings report rule 4",
+  "old": "      M.Rule.check(5, fn, v, thr, rest)",
+  "new": "      M.Rule.check(4, fn, v, thr, rest)"
+ },
+ {
+  "law": "crap_findings_complete",
+  "bug": "findings treat every function as a test",
+  "old": "Crap.prod(test, fn, v, thr, Crap.findings(thr, t))",
+  "new": "Crap.prod(True{}, fn, v, thr, Crap.findings(thr, t))"
+ },
+ {
+  "law": "crap_skips_tests",
+  "bug": "test functions get findings",
+  "old": "    case True{}:\n      rest\n    case False{}:\n      M.Rule.check(5",
+  "new": "    case True{}:\n      M.Rule.check(5, fn, v, thr, rest)\n    case False{}:\n      M.Rule.check(5"
+ }
+]

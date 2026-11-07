@@ -2,19 +2,37 @@
  {
   "law": "glue_runs_metrics",
   "bug": "the glue drops the CT rows",
-  "old": "      In.out(r, M.Metrics.run(r, fns, cts))",
-  "new": "      In.out(r, M.Metrics.run(r, fns, Nil{}))"
+  "old": "      In.out(r, cv, chs, M.Metrics.run(r, fns, cts))",
+  "new": "      In.out(r, cv, chs, M.Metrics.run(r, fns, Nil{}))"
+ },
+ {
+  "law": "glue_joins_coverage",
+  "bug": "the glue ignores the CV rows",
+  "old": "      In.comp(r, ms, chs, C.Crap.join(ms, cvs))",
+  "new": "      In.comp(r, ms, chs, C.Crap.join(ms, Nil{}))"
  },
  {
   "law": "glue_prints_lines",
-  "bug": "the glue prints only FM lines",
-  "old": "      Some{M.Metrics.lines(r, ms)}",
-  "new": "      Some{M.Report.fms(ms)}"
+  "bug": "hotspots read no complexity findings",
+  "old": "H.Hotspot.lines(H.Hs.default_thr(), chs, M.Metrics.findings(r, ms),",
+  "new": "H.Hotspot.lines(H.Hs.default_thr(), chs, Nil{},"
  },
  {
   "law": "glue_refuses",
-  "bug": "the glue prints nothing instead of refusing",
-  "old": "    case None{}:\n      None{}\n    case Some{ms}:",
-  "new": "    case None{}:\n      Some{Nil{}}\n    case Some{ms}:"
+  "bug": "refused Metrics facts print an empty run",
+  "old": "    case _ _:\n      None{}\n\ndef In.go(",
+  "new": "    case Some{cvs} None{}:\n      Some{Nil{}}\n    case _ _:\n      None{}\n\ndef In.go("
+ },
+ {
+  "law": "glue_refuses_cv",
+  "bug": "malformed CV rows read as no coverage",
+  "old": "    case Some{cvs} Some{+ms}:\n      In.comp(r, ms, chs, C.Crap.join(ms, cvs))\n    case _ _:",
+  "new": "    case Some{cvs} Some{+ms}:\n      In.comp(r, ms, chs, C.Crap.join(ms, cvs))\n    case None{} Some{+ms}:\n      In.comp(r, ms, chs, C.Crap.join(ms, Nil{}))\n    case _ _:"
+ },
+ {
+  "law": "glue_refuses_join",
+  "bug": "a refused join prints an empty run",
+  "old": "    case None{}:\n      None{}\n    case Some{xs}:\n      Some{In.all(",
+  "new": "    case None{}:\n      Some{Nil{}}\n    case Some{xs}:\n      Some{In.all("
  }
 ]

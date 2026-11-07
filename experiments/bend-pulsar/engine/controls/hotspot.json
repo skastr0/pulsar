@@ -1,0 +1,32 @@
+[
+ {
+  "law": "hs_lines_shape",
+  "bug": "risky changes read Metrics' findings",
+  "old": "Hs.out(Hs.find(7, thr, chs, crap), crap))",
+  "new": "Hs.out(Hs.find(7, thr, chs, metrics), crap))"
+ },
+ {
+  "law": "hs_sound",
+  "bug": "find ignores the churn threshold",
+  "old": "M.Rule.keep(Bool.and(Nat.is_gt(n, thr), Hs.any(k, fn, base))",
+  "new": "M.Rule.keep(Hs.any(k, fn, base)"
+ },
+ {
+  "law": "hs_complete",
+  "bug": "any looks only at the first base finding",
+  "old": "Bool.or(Bool.and(U32.is_eq(f, fn), Hs.base_ok(k, rule)), Hs.any(k, fn, rest))",
+  "new": "Bool.and(U32.is_eq(f, fn), Hs.base_ok(k, rule))"
+ },
+ {
+  "law": "hotspot_bases",
+  "bug": "length counts as complexity",
+  "old": "Bool.or(U32.is_eq(rule, 2), U32.is_eq(rule, 3)))",
+  "new": "Bool.or(U32.is_eq(rule, 2), Bool.or(U32.is_eq(rule, 3), U32.is_eq(rule, 4))))"
+ },
+ {
+  "law": "risky_bases",
+  "bug": "a cyclomatic finding counts as risky",
+  "old": "Bool.and(U32.is_eq(k, 7), U32.is_eq(rule, 5)))",
+  "new": "Bool.and(U32.is_eq(k, 7), Bool.or(U32.is_eq(rule, 5), U32.is_eq(rule, 1))))"
+ }
+]

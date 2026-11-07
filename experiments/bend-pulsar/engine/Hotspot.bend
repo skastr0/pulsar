@@ -10,10 +10,10 @@
 # commits that touched the function in the window the CLI chose (H, policy.toml).
 # Default threshold: churn > 2, so at least 3 commits.
 #
-#   FX core.hotspot <fn> <churn> <threshold>
-#   EV core.hotspot <fn> <base-rule-id> <base-value> <base-threshold>   one per base finding
-#   FX core.risky-change <fn> <churn> <threshold>
-#   EV core.risky-change <fn> core.crap <crap> <crap-threshold>
+#   FX core.hotspot <fn> <churn> <threshold> churn=CFN <base-rule>=<value>/<thr> ...
+#   FX core.risky-change <fn> <churn> <threshold> churn=CFN core.crap=<crap>/<thr>
+# The tail names the finding's input facts: the CFN churn count, then every base
+# finding of that function the composite accepts.
 #
 # Base findings already exclude test functions (TF), so test functions never get a
 # composite. Churn counting (Churn.bend: rows -> sorted Ch list) is unproven, like the
@@ -70,27 +70,27 @@ def Hs.rid(+rule: U32) -> String:
     case _:
       "core.risky-change"
 
-def Hs.ev_keep(hit: Bool, s: String, rest: List<&2, String>) -> List<&2, String>:
+def Hs.ev_keep(hit: Bool, s: String, rest: String) -> String:
   match hit:
     case True{}:
-      Con{s, rest}
+      s ++ rest
     case False{}:
       rest
 
-
-def Hs.evs(+k: U32, +fn: U32, base: List<&2, M.Finding>) -> List<&2, String>:
+# The evidence tail: each accepted base finding of the function, as <rule>=<value>/<thr>.
+def Hs.evs(+k: U32, +fn: U32, base: List<&2, M.Finding>) -> String:
   match base:
     case Nil{}:
-      Nil{}
+      ""
     case Con{M.Finding{+rule, +f, +v, +t}, rest}:
-      Hs.ev_keep(Bool.and(U32.is_eq(f, fn), Hs.base_ok(k, rule)), "EV " ++ Hs.rid(k) ++ " " ++ U32.show(fn) ++ " " ++ Hs.rid(rule) ++ " " ++ Nat.show(v) ++ " " ++ Nat.show(t), Hs.evs(k, fn, rest))
+      Hs.ev_keep(Bool.and(U32.is_eq(f, fn), Hs.base_ok(k, rule)), " " ++ Hs.rid(rule) ++ "=" ++ Nat.show(v) ++ "/" ++ Nat.show(t), Hs.evs(k, fn, rest))
 
 def Hs.out(xs: List<&2, M.Finding>, +base: List<&2, M.Finding>) -> List<&2, String>:
   match xs:
     case Nil{}:
       Nil{}
     case Con{M.Finding{+k, +fn, v, t}, rest}:
-      Con{"FX " ++ Hs.rid(k) ++ " " ++ U32.show(fn) ++ " " ++ Nat.show(v) ++ " " ++ Nat.show(t), List.append(&2, String, Hs.evs(k, fn, base), Hs.out(rest, base))}
+      Con{"FX " ++ Hs.rid(k) ++ " " ++ U32.show(fn) ++ " " ++ Nat.show(v) ++ " " ++ Nat.show(t) ++ " churn=CFN" ++ Hs.evs(k, fn, base), Hs.out(rest, base)}
 
 # The entry point: churn, Metrics' findings and CRAP findings to composite lines.
 def Hotspot.lines(+thr: Nat, +chs: List<&2, Ch>, +metrics: List<&2, M.Finding>, +crap: List<&2, M.Finding>) -> List<&2, String>:
