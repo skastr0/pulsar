@@ -179,12 +179,13 @@ mod tests {
 
     fn fixture(name: &str) -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../fixtures/coverage")
+            .join("../fixtures")
             .join(name)
     }
 
     /// The fixture's `.fns` side table (id, path, start, end, parent, kind, chain), turned into
-    /// the shape the CLI writes: file ids index the sorted path list.
+    /// the shape the CLI writes: file ids index the sorted path list. `paths.txt`, when the
+    /// fixture has one, is that list; otherwise it is the distinct paths the fns rows name.
     fn tables(dir: &Path) -> SideTables {
         let text = std::fs::read_to_string(dir.join("fns.tsv")).unwrap();
         let mut rows: Vec<Vec<String>> = Vec::new();
@@ -193,10 +194,15 @@ mod tests {
             assert_eq!(fields.len(), 7, ".fns row: {line}");
             rows.push(fields);
         }
-        let mut paths: Vec<String> = Vec::new();
-        for row in &rows {
-            if !paths.iter().any(|p| p == &row[1]) {
-                paths.push(row[1].clone());
+        let mut paths: Vec<String> = match std::fs::read_to_string(dir.join("paths.txt")) {
+            Ok(list) => list.lines().filter(|l| !l.is_empty()).map(str::to_string).collect(),
+            Err(_) => Vec::new(),
+        };
+        if paths.is_empty() {
+            for row in &rows {
+                if !paths.iter().any(|p| p == &row[1]) {
+                    paths.push(row[1].clone());
+                }
             }
         }
         paths.sort();
@@ -244,14 +250,14 @@ mod tests {
 
     #[test]
     fn v8_json_matches_the_hand_checked_expectation() {
-        let dir = fixture("ts");
+        let dir = fixture("coverage/ts");
         let (cv, _) = ingest_report(&dir, &dir.join("reports/v8/coverage-final.json"));
         assert_eq!(render(&tables(&dir), &cv), expected(&dir, "expected-v8.txt"));
     }
 
     #[test]
     fn istanbul_json_matches_the_hand_checked_expectation() {
-        let dir = fixture("ts");
+        let dir = fixture("coverage/ts");
         let (cv, _) = ingest_report(&dir, &dir.join("reports/istanbul/coverage-final.json"));
         assert_eq!(render(&tables(&dir), &cv), expected(&dir, "expected-istanbul.txt"));
     }
@@ -259,7 +265,7 @@ mod tests {
     #[test]
     fn lcov_agrees_with_json_for_the_same_provider() {
         for provider in ["v8", "istanbul"] {
-            let dir = fixture("ts");
+            let dir = fixture("coverage/ts");
             let base = dir.join("reports").join(provider);
             let (from_json, _) = ingest_report(&dir, &base.join("coverage-final.json"));
             let (from_lcov, _) = ingest_report(&dir, &base.join("lcov.info"));
@@ -269,7 +275,7 @@ mod tests {
 
     #[test]
     fn cobertura_agrees_with_the_istanbul_provider() {
-        let dir = fixture("ts");
+        let dir = fixture("coverage/ts");
         let (from_json, _) = ingest_report(&dir, &dir.join("reports/istanbul/coverage-final.json"));
         let (from_xml, _) = ingest_report(&dir, &dir.join("reports/cobertura/coverage.xml"));
         assert_eq!(render(&tables(&dir), &from_json), render(&tables(&dir), &from_xml));
@@ -277,7 +283,7 @@ mod tests {
 
     #[test]
     fn cargo_llvm_cov_matches_the_hand_checked_expectation() {
-        let dir = fixture("rs");
+        let dir = fixture("coverage/rs");
         let (cv, stats) = ingest_report(&dir, &dir.join("reports/lcov.info"));
         assert_eq!(render(&tables(&dir), &cv), expected(&dir, "expected.txt"));
         // llvm-cov instruments `mod tests`; those lines have no FN span, so they are unassigned.
@@ -286,8 +292,19 @@ mod tests {
     }
 
     #[test]
+    fn cargo_llvm_cov_on_the_rust_fn_fixture_matches_the_hand_checked_expectation() {
+        let dir = fixture("rust-fn");
+        let (cv, stats) = ingest_report(&dir, &dir.join("reports/lcov.info"));
+        assert_eq!(render(&tables(&dir), &cv), expected(&dir, "expected-cv.txt"));
+        // The 45 lines of the `#[cfg(test)]` module in lib.rs and the 6 inside skipped.rs's
+        // cfg(test) items carry no FN, so they are unassigned, never CV.
+        assert_eq!(stats.unassigned, 51, "test-module lines: {stats:?}");
+        assert_eq!(stats.skipped, 0, "every SF: path must normalize: {stats:?}");
+    }
+
+    #[test]
     fn a_missing_report_is_not_an_error() {
-        let dir = fixture("ts");
+        let dir = fixture("coverage/ts");
         let empty = std::env::temp_dir().join(format!("pulsar-cov-empty-{}", std::process::id()));
         std::fs::create_dir_all(&empty).unwrap();
         let (cv, stats) = ingest(&empty, None, &tables(&dir)).unwrap();
@@ -298,14 +315,14 @@ mod tests {
 
     #[test]
     fn an_explicit_missing_report_is_an_error() {
-        let dir = fixture("ts");
+        let dir = fixture("coverage/ts");
         let err = ingest(&dir, Some(Path::new("reports/nope.json")), &tables(&dir)).unwrap_err();
         assert!(err.contains("no such file"), "{err}");
     }
 
     #[test]
     fn an_explicit_directory_finds_every_report_in_it() {
-        let dir = fixture("ts");
+        let dir = fixture("coverage/ts");
         let (cv, stats) = ingest(&dir, Some(&dir.join("reports/istanbul")), &tables(&dir)).unwrap();
         assert_eq!(stats.reports, 2, "json and lcov: {stats:?}");
         assert_eq!(render(&tables(&dir), &cv), expected(&dir, "expected-istanbul.txt"));

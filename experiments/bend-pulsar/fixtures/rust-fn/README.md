@@ -39,6 +39,31 @@ One pair per source file, in `expected/`, both TAB-separated, ids local to the f
 | `skipped.rs` | an `if`-like condition hidden in a macro emitting nothing, and `#[cfg(test)]` items (a function and a whole module) emitting no `FN`. |
 | `lib.rs` | module declarations only: no functions, no control nodes. |
 
+## Coverage expectation (`expected-cv.txt`)
+
+The same crate doubles as the Rust coverage fixture: `src/lib.rs` has a `#[cfg(test)]` module,
+`reports/lcov.info` is `cargo llvm-cov --lcov` output with crate-relative `SF:` paths, and
+`expected-cv.txt` is `path<TAB>chain<TAB>covered/coverable` for every function with data.
+`fns.tsv` is the global-id form of the `.fns` rows in `expected/`, and `paths.txt` is the file
+list, because `src/lib.rs` has no functions but does have coverage lines.
+
+Hand checks, from the `DA:` lines in `reports/lcov.info`:
+
+| Function | Expected | Why |
+|---|---|---|
+| `branch::grade` | 6/7 | DA 1, 2, 3, 4, 5, 7, 9; only line 5 (`'B'`) is never taken. |
+| `match_expr::label` | 5/6 | DA 13, 14, 15, 16, 17, 19; line 16 (`1 => "one"`) is never taken. |
+| `impls::fetch_len` | 0/3 | an `async fn` whose body is never polled by a test. |
+| `skipped::macro_hides_if` | 4/4 | the macro's tokens are not coverage lines. |
+
+Unassigned lines are 51 and that is asserted: 45 from the `#[cfg(test)]` module in
+`src/lib.rs` and 6 from the `#[cfg(test)]` items in `src/skipped.rs`. Those items emit no `FN`
+(a decision recorded in `README.md` of the adapter lane), so their lines belong to no function
+span and produce no `CV`, which is exactly what "no data" has to mean here.
+
+`bash regen.sh` regenerates the lcov and prints the first `SF:` line; the expectation itself is
+hand-checked, never regenerated.
+
 ## Assumptions to confirm with pulsar-rs
 
 These are encoded in the expected files and were not stated in FACTS.md when the fixture was
