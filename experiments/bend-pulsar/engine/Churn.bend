@@ -2,66 +2,23 @@
 #
 #   Churn.of(rows)   one Ch{fn, n} per function with n > 0, in function-id order, where
 #                    n = CFN rows for fn with touched > 0 whose commit's author is not
-#                    a bot. Rows with a wrong field count are ignored.
+#                    a bot. Rows with a wrong field count are ignored, and so are
+#                    function ids of 2^24 or more (FACTS.md's id range).
 #
-# Unproven, like the decoders: three passes over the rows with binary tries (bot
-# authors, bot commits, per-function counts); the walk gives keys in order.
+# Churn-LAWS.bend: every reported count is that number of rows (CH1), and every
+# function with such a row is reported (CH2). The counted rows are Churn.list:
+#   bot authors   the author of every `A a 1` row (Churn.bot_as)
+#   bot commits   the commit of every `C c a d` row whose author is a bot (Churn.bot_cs)
+#   counted rows  the fn of every `CFN c fn t` row with t > 0, fn < 2^24 and c not a
+#                 bot commit (Churn.fns)
+# The sets are Scope.set tries, whose membership is exact (Scope-LAWS SC1-SC2), and
+# the tally is Graph.cnt_all, whose count is exact (Lemmas3 Cnt.sound).
 
 import Base
+import ../Graph.bend as G
+import ./Scope.bend as S
 import ./Rows.bend as R
 import ./Hotspot.bend as H
-
-# A binary trie over U32 keys, most significant bit first; leaves count insertions.
-type Tr is Data:
-  TE{}
-  TL{n: Nat}
-  TN{z: Tr, o: Tr}
-
-def Tr.bits(+d: Nat, +key: U32) -> List<&2, Bool>:
-  match d:
-    case 0n:
-      Nil{}
-    case 1n+p:
-      Con{U32.is_eq(U32.and(U32.shrn(key, p), 1), 1), Tr.bits(p, key)}
-
-def Tr.key(+key: U32) -> List<&2, Bool>:
-  Tr.bits(32n, key)
-
-def Tr.ins(bs: List<&2, Bool>, t: Tr) -> Tr:
-  match bs t:
-    case Nil{} TL{n}:
-      TL{1n+n}
-    case Nil{} _:
-      TL{1n}
-    case Con{False{}, rest} TN{z, o}:
-      TN{Tr.ins(rest, z), o}
-    case Con{True{}, rest} TN{z, o}:
-      TN{z, Tr.ins(rest, o)}
-    case Con{False{}, rest} _:
-      TN{Tr.ins(rest, TE{}), TE{}}
-    case Con{True{}, rest} _:
-      TN{TE{}, Tr.ins(rest, TE{})}
-
-def Tr.has(bs: List<&2, Bool>, t: Tr) -> Bool:
-  match bs t:
-    case Nil{} TL{n}:
-      True{}
-    case Con{False{}, rest} TN{z, o}:
-      Tr.has(rest, z)
-    case Con{True{}, rest} TN{z, o}:
-      Tr.has(rest, o)
-    case _ _:
-      False{}
-
-# Leaves in key order, as (key, count).
-def Tr.walk(t: Tr, +prefix: U32, rest: List<&2, H.Ch>) -> List<&2, H.Ch>:
-  match t:
-    case TE{}:
-      rest
-    case TL{n}:
-      Con{H.Ch{prefix, n}, rest}
-    case TN{z, o}:
-      Tr.walk(z, U32.shl(prefix), Tr.walk(o, U32.or(U32.shl(prefix), 1), rest))
 
 # Row tags, packed as Rows.bend does: "A" 65, "C" 67, "CFN" 67*65536+70*256+78.
 def Churn.tag_a() -> U32:
@@ -108,38 +65,163 @@ def Churn.f2(fs: List<&2, U32>) -> U32:
     case _:
       0
 
-def Churn.add_if(hit: Bool, +key: U32, t: Tr) -> Tr:
-  match hit:
+def Churn.push_u(c: Bool, x: U32, acc: List<&2, U32>) -> List<&2, U32>:
+  match c:
     case True{}:
-      Tr.ins(Tr.key(key), t)
+      Con{x, acc}
     case False{}:
-      t
+      acc
 
-# Pass 1: authors that are bots.
-def Churn.bots(rows: List<&2, R.Row>, t: Tr) -> Tr:
+# The author of every `A a 1` row.
+def Churn.bot_as(rows: List<&2, R.Row>) -> List<&2, U32>:
   match rows:
     case Nil{}:
-      t
-    case Con{R.Row{tag, +fs}, rest}:
-      Churn.bots(rest, Churn.add_if(Bool.and(U32.is_eq(tag, Churn.tag_a()), Bool.and(Churn.ok2(fs), U32.is_eq(Churn.f1(fs), 1))), Churn.f0(fs), t))
+      Nil{}
+    case Con{R.Row{+tag, +fs}, rest}:
+      Churn.push_u(Bool.and(U32.is_eq(tag, Churn.tag_a()), Bool.and(Churn.ok2(fs), U32.is_eq(Churn.f1(fs), 1))), Churn.f0(fs), Churn.bot_as(rest))
 
-# Pass 2: commits whose author is a bot.
-def Churn.bot_commits(rows: List<&2, R.Row>, +ba: Tr, t: Tr) -> Tr:
+# The commit of every `C c a d` row whose author is in ba.
+def Churn.bot_cs(rows: List<&2, R.Row>, +ba: G.Tr) -> List<&2, U32>:
   match rows:
     case Nil{}:
-      t
-    case Con{R.Row{tag, +fs}, rest}:
-      Churn.bot_commits(rest, ba, Churn.add_if(Bool.and(U32.is_eq(tag, Churn.tag_c()), Bool.and(Churn.ok3(fs), Tr.has(Tr.key(Churn.f1(fs)), ba))), Churn.f0(fs), t))
+      Nil{}
+    case Con{R.Row{+tag, +fs}, rest}:
+      Churn.push_u(Bool.and(U32.is_eq(tag, Churn.tag_c()), Bool.and(Churn.ok3(fs), S.Scope.has(ba, Churn.f1(fs)))), Churn.f0(fs), Churn.bot_cs(rest, ba))
 
-# Pass 3: one count per CFN row with touched > 0 from a non-bot commit.
-def Churn.count(rows: List<&2, R.Row>, +bc: Tr, t: Tr) -> Tr:
+# The fn of every `CFN c fn t` row with t > 0, fn < 2^24 and c not in bc.
+def Churn.fns(rows: List<&2, R.Row>, +bc: G.Tr) -> List<&2, U32>:
   match rows:
     case Nil{}:
-      t
-    case Con{R.Row{tag, +fs}, rest}:
-      Churn.count(rest, bc, Churn.add_if(Bool.and(U32.is_eq(tag, Churn.tag_cfn()), Bool.and(Churn.ok3(fs), Bool.and(U32.is_gt(Churn.f2(fs), 0), Bool.not(Tr.has(Tr.key(Churn.f0(fs)), bc))))), Churn.f1(fs), t))
+      Nil{}
+    case Con{R.Row{+tag, +fs}, rest}:
+      Churn.push_u(Bool.and(U32.is_eq(tag, Churn.tag_cfn()), Bool.and(Churn.ok3(fs), Bool.and(Bool.and(U32.is_gt(Churn.f2(fs), 0), U32.is_lt(Churn.f1(fs), 16777216)), Bool.not(S.Scope.has(bc, Churn.f0(fs)))))), Churn.f1(fs), Churn.fns(rest, bc))
+
+def Churn.bc(+rows: List<&2, R.Row>) -> G.Tr:
+  S.Scope.set(Churn.bot_cs(rows, S.Scope.set(Churn.bot_as(rows))))
+
+# The counted rows, one entry per row (the fn it names).
+def Churn.list(+rows: List<&2, R.Row>) -> List<&2, U32>:
+  Churn.fns(rows, Churn.bc(rows))
+
+# ---- reporting --------------------------------------------------------------------------
+def Churn.cnt(+t: G.Tr, +x: U32) -> Nat:
+  G.Graph.cnt_of(G.Tr.getu(t, x))
+
+def Churn.push3(z: Bool, +x: U32, +k: Nat, acc: List<&2, H.Ch>) -> List<&2, H.Ch>:
+  match z:
+    case True{}:
+      acc
+    case False{}:
+      Con{H.Ch{x, k}, acc}
+
+def Churn.push(+t: G.Tr, +x: U32, acc: List<&2, H.Ch>) -> List<&2, H.Ch>:
+  Churn.push3(Nat.is_eq(Churn.cnt(t, x), 0n), x, Churn.cnt(t, x), acc)
+
+# Ch{x, count} for every x of xs with a non-zero count, in the order of xs.
+def Churn.all(xs: List<&2, U32>, +t: G.Tr) -> List<&2, H.Ch>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case Con{+x, rest}:
+      Churn.push(t, x, Churn.all(rest, t))
+
+# ---- id order: a sorted, deduplicated copy of the counted list (untrusted) ------------------
+def Uu.hd(+b: Bool, x: U32, y: U32) -> U32:
+  match b:
+    case True{}:
+      x
+    case False{}:
+      y
+
+def Uu.pl(+b: Bool, x: U32, xt: List<&2, U32>) -> List<&2, U32>:
+  match b:
+    case True{}:
+      xt
+    case False{}:
+      Con{x, xt}
+
+def Uu.pr(+b: Bool, y: U32, yt: List<&2, U32>) -> List<&2, U32>:
+  match b:
+    case True{}:
+      Con{y, yt}
+    case False{}:
+      yt
+
+def Uu.merge(fuel: Nat, xs: List<&2, U32>, ys: List<&2, U32>) -> List<&2, U32>:
+  match fuel:
+    case 0n:
+      List.append(&2, U32, xs, ys)
+    case 1n+p:
+      match xs ys:
+        case Nil{} ys2:
+          ys2
+        case xs2 Nil{}:
+          xs2
+        case Con{+x, xt} Con{+y, yt}:
+          +b = U32.is_lt(x, y)
+          Con{Uu.hd(b, x, y), Uu.merge(p, Uu.pl(b, x, xt), Uu.pr(b, y, yt))}
+
+def Uu.half_k(k: Bool, x: U32, r: List<&2, U32>) -> List<&2, U32>:
+  match k:
+    case True{}:
+      Con{x, r}
+    case False{}:
+      r
+
+# Every other element, starting with the first when k.
+def Uu.half(xs: List<&2, U32>, +k: Bool) -> List<&2, U32>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case Con{x, t}:
+      Uu.half_k(k, x, Uu.half(t, Bool.not(k)))
+
+def Uu.sort(fuel: Nat, xs: List<&2, U32>) -> List<&2, U32>:
+  match fuel:
+    case 0n:
+      xs
+    case 1n+p:
+      match xs:
+        case Nil{}:
+          Nil{}
+        case Con{x, Nil{}}:
+          Con{x, Nil{}}
+        case Con{+x, Con{+y, +t}}:
+          +q = p
+          Uu.merge(Nat.add(2n, List.length(&2, U32, t)), Uu.sort(q, Uu.half(Con{x, Con{y, t}}, True{})), Uu.sort(q, Uu.half(Con{x, Con{y, t}}, False{})))
+
+# Drops repeats of the previous element.
+def Uu.uniq(xs: List<&2, U32>, +prev: U32, first: Bool) -> List<&2, U32>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case Con{+x, t}:
+      Churn.push_u(Bool.or(first, Bool.not(U32.is_eq(x, prev))), x, Uu.uniq(t, x, False{}))
+
+# Every element of l is in s.
+def Churn.covers(l: List<&2, U32>, +s: G.Tr) -> Bool:
+  match l:
+    case Nil{}:
+      True{}
+    case Con{+x, t}:
+      Bool.and(S.Scope.has(s, x), Churn.covers(t, s))
+
+# The id-ordered copy when it covers the counted list (it always does when the
+# sort is right); otherwise the counted list itself. Either way every counted
+# function is iterated, so CH2 needs no certificate.
+def Churn.go2(ok: Bool, cs: List<&2, U32>, l: List<&2, U32>, +t: G.Tr) -> List<&2, H.Ch>:
+  match ok:
+    case True{}:
+      Churn.all(cs, t)
+    case False{}:
+      Churn.all(l, t)
+
+def Churn.go3(+cs: List<&2, U32>, +l: List<&2, U32>) -> List<&2, H.Ch>:
+  Churn.go2(Churn.covers(l, S.Scope.set(cs)), cs, l, G.Graph.cnt_all(l, G.TE{}))
+
+def Churn.go(+l: List<&2, U32>) -> List<&2, H.Ch>:
+  Churn.go3(Uu.uniq(Uu.sort(64n, l), 0, True{}), l)
 
 # Every function with churn > 0, in id order.
 def Churn.of(+rows: List<&2, R.Row>) -> List<&2, H.Ch>:
-  Tr.walk(Churn.count(rows, Churn.bot_commits(rows, Churn.bots(rows, TE{}), TE{}), TE{}), 0, Nil{})
-
+  Churn.go(Churn.list(rows))

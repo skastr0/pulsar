@@ -1,0 +1,32 @@
+[
+ {
+  "law": "CH1 churn_sound",
+  "bug": "Churn.push3 reports functions with a zero count",
+  "old": "    case True{}:\n      acc\n    case False{}:\n      Con{H.Ch{x, k}, acc}",
+  "new": "    case True{}:\n      Con{H.Ch{x, k}, acc}\n    case False{}:\n      Con{H.Ch{x, k}, acc}"
+ },
+ {
+  "law": "CH1 churn_sound",
+  "bug": "Churn.push reports the count plus one",
+  "old": "  Churn.push3(Nat.is_eq(Churn.cnt(t, x), 0n), x, Churn.cnt(t, x), acc)",
+  "new": "  Churn.push3(Nat.is_eq(Churn.cnt(t, x), 0n), x, 1n+Churn.cnt(t, x), acc)"
+ },
+ {
+  "law": "CH2 churn_complete",
+  "bug": "Churn.covers accepts any copy",
+  "old": "      Bool.and(S.Scope.has(s, x), Churn.covers(t, s))",
+  "new": "      Churn.covers(t, s)"
+ },
+ {
+  "law": "CH2 churn_complete",
+  "bug": "Churn.go2 reports nothing when the copy does not cover",
+  "old": "    case False{}:\n      Churn.all(l, t)",
+  "new": "    case False{}:\n      Nil{}"
+ },
+ {
+  "law": "CH2 churn_complete",
+  "bug": "Churn.all drops the last element",
+  "old": "    case Con{+x, rest}:\n      Churn.push(t, x, Churn.all(rest, t))",
+  "new": "    case Con{+x, rest}:\n      Churn.all(rest, t)"
+ }
+]

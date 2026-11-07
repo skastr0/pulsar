@@ -20,6 +20,7 @@ import ./MetricsIn-PROOF.bend as MetricsInProof
 import ./ClassCtx-PROOF.bend as ClassCtxProof
 import ./Crap-PROOF.bend as CrapProof
 import ./Hotspot-PROOF.bend as HotspotProof
+import ./Churn-PROOF.bend as ChurnProof
 import ./Cognitive-PROOF.bend as CognitiveProof
 import ./Sql-PROOF.bend as SqlProof
 
