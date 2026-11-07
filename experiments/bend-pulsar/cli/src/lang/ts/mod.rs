@@ -6,6 +6,7 @@ mod builtin;
 pub mod calls;
 mod extract;
 pub mod functions;
+mod link;
 mod resolve;
 
 use crate::lang::functions::{FileFns, SqlTextKind};
@@ -26,6 +27,8 @@ pub struct Stats {
     pub unreadable: usize,
     pub i_facts: usize,
     pub u_facts: usize,
+    /// Call edges: linked, external, and unresolved by reason.
+    pub edges: link::EdgeStats,
     /// Ids of the catalogs applied to this tree.
     pub catalogs: Vec<String>,
 }
@@ -112,10 +115,20 @@ pub fn analyze(root: &Path, files: &[(u32, String)], tracked: &[String]) -> Resu
     let per = parse_files(root, &paths, &res, &index, effect_on);
     let settled = settle_reexports(root, &paths, &per);
     let mut per = finish_files(per, &settled);
+    let edge_stats = {
+        let mut fns: Vec<&mut FileFns> = per.iter_mut().map(|p| &mut p.fns).collect();
+        link::link_edges(files, &mut fns)
+    };
 
     let mut st = Stats { files: files.len(), ..Stats::default() };
     let (i_rows, u_rows) = edge_rows(files, &per, &mut st);
     st.catalogs = catalogs;
+    let u = &edge_stats.unresolved;
+    eprintln!(
+        "pulsar: ts edges resolved={} external={} unresolved dynamic={} local-binding={} unknown-member={} not-found={}",
+        edge_stats.resolved, edge_stats.external, u[1], u[2], u[3], u[4]
+    );
+    st.edges = edge_stats;
     let mut sym_classes = std::collections::BTreeMap::new();
     for p in &per {
         for name in &p.fns.syms {
@@ -173,8 +186,9 @@ fn parse_files(root: &Path, paths: &[String], res: &Resolution, index: &calls::C
             let text = String::from_utf8_lossy(&bytes);
             // One pack hook per file; the pack keeps the file's state and hands it back here.
             let mut hook = effect_on.then(|| crate::packs::effect::Hook::new(index));
-            let ex = extract(alloc, rel, &path, &text, index, is_test(rel), hook.as_mut().map(|h| h as &mut dyn functions::PackHook));
+            let mut ex = extract(alloc, rel, &path, &text, index, is_test(rel), hook.as_mut().map(|h| h as &mut dyn functions::PackHook));
             let effect = hook.and_then(|h| h.finish(&text));
+            prune_external_edges(&mut ex.functions, res, rel);
             let (mut i, mut u) = (Vec::new(), Vec::new());
             for imp in ex.imports {
                 match res.resolve(rel, &imp.spec) {
@@ -187,6 +201,27 @@ fn parse_files(root: &Path, paths: &[String], res: &Resolution, index: &calls::C
             PerFile { i, u, fns: ex.functions, effect, fatal: ex.fatal, unreadable: false }
         })
         .collect()
+}
+
+/// Resolve the file's module specifiers to repo files and drop the edge sites whose import is not
+/// one (an external package has no callee to find), so they never wait in memory for linking.
+fn prune_external_edges(f: &mut FileFns, res: &Resolution, rel: &str) {
+    use crate::lang::functions::{Callee, SiteKind};
+    f.spec_targets = f
+        .specs
+        .iter()
+        .map(|spec| match res.resolve(rel, spec) {
+            Resolved::File(d) => Some(d),
+            Resolved::Unresolved(_) => None,
+        })
+        .collect();
+    let targets = &f.spec_targets;
+    let before = f.sites.len();
+    f.sites.retain(|s| match &s.kind {
+        SiteKind::Edge { to: Callee::Import { spec, .. }, .. } => targets[*spec as usize].is_some(),
+        _ => true,
+    });
+    f.external = before - f.sites.len();
 }
 
 /// `export { a } from "./x"` is type-only per specifier when the target declares `a` as an
