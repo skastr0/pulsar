@@ -1,0 +1,11 @@
+{
+  "name": "pulsar-oracle",
+  "private": true,
+  "description": "Test-oracle harness for experiments/bend-pulsar fidelity work. Not shipped.",
+  "dependencies": {
+    "@typescript-eslint/parser": "8.72.1",
+    "eslint": "9",
+    "eslint-plugin-sonarjs": "^4.2.2",
+    "typescript": "5.9.3"
+  }
+}
