@@ -158,6 +158,64 @@ add("error-erasing", "effect#Layer.orDie", "3", "E3", "Layer.ts", "orDie")
 many("error-erasing", "effect#Stream.", "4", "E4", "Stream.ts", ["orDie", "ignore"])
 many("error-erasing", "effect#Stream.", "3", "E3", "Stream.ts", ["orDie"])
 
+
+def decl_text(lines, i):
+    """The declaration starting at line i, up to the next export or doc comment."""
+    out = [lines[i]]
+    for l in lines[i + 1:i + 120]:
+        if re.match(r"^(export |/\*\*)", l):
+            break
+        out.append(l)
+    return "\n".join(out)
+
+
+def takes_self_alone(text):
+    """Some overload's parameters are `self` plus only optional ones, so the export can be
+    passed point-free (`pipe(x, Effect.orDie)`)."""
+    for m in re.finditer(r"\(\s*self\s*:", text):
+        # Only a parameter list that opens an overload (`const x: <..>(self` or a `<..>(self`
+        # line in an overload block), never the `(self) => ..` a data-last overload returns.
+        line = text[text.rfind("\n", 0, m.start()) + 1:m.end()]
+        if not re.match(r"^\s*(export (declare )?const \w+\s*:\s*)?(<[^()]*>)?\s*\(\s*self\s*:$", line):
+            continue
+        depth, j, start = 0, m.start(), m.start() + 1
+        params, cur = [], []
+        while j < len(text):
+            ch = text[j]
+            if ch in "(<[{":
+                depth += 1
+                if depth > 1:
+                    cur.append(ch)
+            elif ch in ")>]}":
+                if ch == ">" and j > 0 and text[j - 1] == "=":
+                    cur.append(ch)  # the `=>` of a function type, not a closing bracket
+                    j += 1
+                    continue
+                depth -= 1
+                if depth == 0:
+                    params.append("".join(cur))
+                    break
+                cur.append(ch)
+            elif ch == "," and depth == 1:
+                params.append("".join(cur))
+                cur = []
+            else:
+                cur.append(ch)
+            j += 1
+        if params and all(re.match(r"\s*\w+\?\s*:", q) for q in params[1:] if q.strip()):
+            return True
+    return False
+
+
+# Point-free uses of the unary error-erasing combinators are references, not calls: give each
+# one whose signature takes `self` alone a `via = "ref"` entry too.
+for e in [x for x in E if x["cls"] == "error-erasing" and x["via"] == "call"]:
+    root = SRC[e["src"]][0]
+    ln = lines_of(f"{root}/{e['file']}")
+    i = find_decl(ln, e["export"])
+    if i is not None and takes_self_alone(decl_text(ln, i)):
+        E.append(dict(e, via="ref"))
+
 # runtime-escape (5): leaves the Effect runtime and runs an effect imperatively.
 many("runtime-escape", "effect#Effect.", "4", "E4", "Effect.ts", [
     "runSync", "runSyncExit", "runPromise", "runPromiseExit", "runFork", "runCallback",
