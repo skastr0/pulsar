@@ -161,6 +161,7 @@ fn corpus() {
         (a.0 + f.fns.blocks.bl.len(), a.1 + f.fns.blocks.bw.len(), a.2 + f.fns.blocks.br.len(), a.3 + f.fns.blocks.bc.len())
     });
     eprintln!("wall_s={:.3} fns={fns} ct={ct} tf={tf} bl={bl} bw={bw} br={br} bc={bc} {:?}", t.elapsed().as_secs_f64(), out.stats);
+    call_report(&out);
     if let Ok(path) = std::env::var("PULSAR_RS_TREES") {
         let mut s = String::new();
         for (r, ids) in &out.trees {
@@ -290,4 +291,175 @@ fn writing_a_root_writes_the_chains_seen_on_it() {
     // vars: c=0 e=1 other=2, chain e.kind=3. Block 1 is the first if, block 3 the second.
     assert_eq!(set(&r.br, 1), vec![3]);
     assert_eq!(set(&r.bw, 3), vec![1, 3], "the write to e also writes the chain e.kind");
+}
+
+fn core_env() -> calls::CallEnv {
+    let l = crate::catalog::load("rust-core", include_str!("catalog/rust-core.toml")).unwrap();
+    calls::CallEnv::new(&[&l.catalog], ["tokio".to_string()].into(), Default::default())
+}
+
+/// `(symbol, loop_depth, ctx)` of every call site, in source order.
+fn sites_of(src: &str) -> Vec<(String, u32, u8)> {
+    let env = core_env();
+    let f = parse::extract_with("src/x.rs", src, false, Some(&env));
+    f.fns
+        .sites
+        .iter()
+        .filter_map(|s| match &s.kind {
+            crate::lang::functions::SiteKind::Call { sym, loop_depth, ctx, .. } => {
+                Some((f.fns.syms[*sym as usize].clone(), *loop_depth, *ctx))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn call_paths_resolve_through_use_aliases_and_full_paths_and_unknown_calls_emit_nothing() {
+    let sites = sites_of(
+        "use std::fs;\nuse std::thread::sleep as nap;\nfn a() {\n    let _s = fs::read_to_string(\"x\");\n    nap(d());\n    std::fs::write(\"a\", \"b\");\n    core::fs::read(\"z\");\n    mine::read_to_string(\"q\");\n    println!(\"hi\");\n    panic!(\"x\");\n}\n",
+    );
+    let syms: Vec<&str> = sites.iter().map(|s| s.0.as_str()).collect();
+    assert_eq!(
+        syms,
+        ["std#fs::read_to_string", "std#thread::sleep", "std#fs::write", "std#fs::read", "std#println!", "std#panic!"]
+    );
+    assert!(sites.iter().all(|s| s.2 == 0), "no async, no test, no name-only: {sites:?}");
+}
+
+#[test]
+fn methods_match_by_name_only_and_say_so() {
+    let sites = sites_of("fn f(a: Option<i32>, r: Result<i32, ()>) {\n    a.unwrap();\n    r.expect(\"m\");\n    a.map(|x| x);\n}\n");
+    assert_eq!(
+        sites,
+        vec![
+            ("syntax#method.unwrap".to_string(), 0, calls::NAME_ONLY),
+            ("syntax#method.expect".to_string(), 0, calls::NAME_ONLY),
+        ]
+    );
+}
+
+#[test]
+fn discarded_results_async_test_and_loop_context_are_in_the_ctx_and_depth() {
+    let sites = sites_of(
+        "fn c() { let _ = f(); g().ok(); let _x = h(); }\nasync fn b() { std::fs::read(\"f\"); }\nfn l(v: Vec<u8>) { for _x in v { std::thread::sleep(d()); } }\n#[cfg(test)]\nmod tests { fn t(a: Option<u8>) { a.unwrap(); } }\n",
+    );
+    assert_eq!(
+        sites,
+        vec![
+            ("syntax#let-underscore".to_string(), 0, calls::NAME_ONLY),
+            ("syntax#ok-discarded".to_string(), 0, calls::NAME_ONLY),
+            ("std#fs::read".to_string(), 0, 1),
+            ("std#thread::sleep".to_string(), 1, 0),
+            ("syntax#method.unwrap".to_string(), 0, 4 | calls::NAME_ONLY),
+        ]
+    );
+}
+
+#[test]
+fn without_an_environment_no_call_site_is_emitted() {
+    let f = parse::extract("src/x.rs", "fn f() { std::fs::read(\"f\"); panic!(); }", false);
+    assert!(f.fns.sites.is_empty() && f.fns.syms.is_empty());
+}
+
+/// `(shape)` of every handler site, in source order.
+fn handlers_of(src: &str) -> Vec<u8> {
+    let env = core_env();
+    let f = parse::extract_with("src/x.rs", src, false, Some(&env));
+    f.fns
+        .sites
+        .iter()
+        .filter_map(|s| match &s.kind {
+            crate::lang::functions::SiteKind::Handler { shape } => Some(*shape),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn error_handlers_get_a_shape_from_their_body() {
+    let shapes = handlers_of(
+        "fn h(r: R) {\n\
+         match r { Ok(v) => v, Err(_) => {} }\n\
+         match r { Ok(v) => v, Err(e) => { println!(\"{e}\"); } }\n\
+         match r { Ok(v) => v, Err(_) => 0 }\n\
+         match r { Ok(v) => v, Err(e) => return Err(e) }\n\
+         match r { Ok(v) => v, Err(_) => return Err(Other) }\n\
+         match r { Ok(v) => v, Err(e) => { retry(e); retry2() } }\n\
+         if let Err(e) = r { eprintln!(\"{e}\"); }\n\
+         r.unwrap_or_else(|e| { println!(\"{e}\"); 0 });\n\
+         r.or_else(|e| Err(wrap(e)));\n\
+         }\n",
+    );
+    // empty, only logs, constant, rethrow with cause, rethrow without, other, only logs, constant, rethrow with cause
+    assert_eq!(shapes, [1, 2, 3, 4, 5, 0, 2, 3, 4]);
+}
+
+#[test]
+fn constant_arguments_are_literals_module_constants_and_names_bound_once_to_a_literal() {
+    let env = core_env();
+    let f = parse::extract_with(
+        "src/x.rs",
+        "const K: &str = \"k\";\nfn f() {\n    let a = \"x\";\n    let mut b = \"y\";\n    std::fs::write(\"p\", a);\n    std::fs::write(K, b);\n    std::fs::write(a, c());\n}\nfn g(a: &str) { let a = \"z\"; std::fs::read(a); }\n",
+        false,
+        Some(&env),
+    );
+    let consts: Vec<Vec<(u8, u8)>> = f
+        .fns
+        .sites
+        .iter()
+        .filter_map(|s| match &s.kind {
+            crate::lang::functions::SiteKind::Call { consts, .. } => Some(consts.to_vec()),
+            _ => None,
+        })
+        .collect();
+    // write("p", a): literal + a bound once; write(K, b): K is a module constant, b is `mut`;
+    // write(a, c()): a again; g binds `a` twice (parameter and let), so it is not a constant.
+    assert_eq!(consts, vec![vec![(0, 1), (1, 3)], vec![(0, 3)], vec![(0, 3)], vec![]]);
+}
+
+#[test]
+fn query_call_texts_are_literal_or_dynamic_and_carry_their_control_node() {
+    let l = crate::catalog::load(
+        "t",
+        "format = \"pulsar-catalog 0\"\nid = \"t\"\nscope = \"lane\"\nsources = [\"x\"]\nclasses = [\n  { class = \"query\", id = 1, rule = \"t/query\" },\n]\nsymbols = [\n  { sym = \"sqlx#query\", class = \"query\", ver = \"1\", at = \"x\", doc = \"x\" },\n  { sym = \"syntax#method.execute\", class = \"query\", ver = \"1\", at = \"x\", doc = \"x\" },\n]\n",
+    )
+    .unwrap();
+    let env = calls::CallEnv::new(&[&l.catalog], ["sqlx".to_string()].into(), Default::default());
+    let f = parse::extract_with(
+        "src/x.rs",
+        "fn f(conn: C, s: String) {\n    sqlx::query(\"SELECT 1\");\n    for _x in 0..3 {\n        conn.execute(\"INSERT INTO t VALUES (?)\", [1]);\n    }\n    sqlx::query(&s);\n}\n",
+        false,
+        Some(&env),
+    );
+    let got: Vec<(u32, u32, String, crate::lang::functions::SqlTextKind)> =
+        f.fns.sql.iter().map(|s| (s.line, s.ct_node, s.text.clone(), s.kind)).collect();
+    use crate::lang::functions::SqlTextKind::{Dynamic, Literal};
+    assert_eq!(got, vec![(2, 0, "SELECT 1".to_string(), Literal), (4, 1, "INSERT INTO t VALUES (?)".to_string(), Literal), (6, 0, String::new(), Dynamic)]);
+}
+
+/// Call-site totals for the measurement harness: exact versus name-only, handler shapes, constants.
+fn call_report(out: &Analysis) {
+    use crate::lang::functions::SiteKind;
+    let (mut exact, mut name_only, mut test_sites, mut al, mut hd) = (0usize, 0usize, 0usize, 0usize, [0usize; 6]);
+    let mut by_sym: std::collections::BTreeMap<String, usize> = Default::default();
+    for f in &out.per_file {
+        for s in &f.fns.sites {
+            match &s.kind {
+                SiteKind::Call { sym, ctx, consts, .. } => {
+                    *by_sym.entry(f.fns.syms[*sym as usize].clone()).or_default() += 1;
+                    if ctx & calls::NAME_ONLY != 0 { name_only += 1 } else { exact += 1 }
+                    if ctx & 4 != 0 { test_sites += 1 }
+                    al += consts.len();
+                }
+                SiteKind::Handler { shape } => hd[*shape as usize] += 1,
+                SiteKind::Edge { .. } => {}
+            }
+        }
+    }
+    let sql = out.sql_texts.len();
+    eprintln!("calls: exact={exact} name_only={name_only} in_test={test_sites} al={al} handlers(other,empty,logs,const,cause,nocause)={hd:?} sql_texts={sql} catalogs={:?}", out.catalogs);
+    let mut top: Vec<_> = by_sym.into_iter().collect();
+    top.sort_by(|a, b| b.1.cmp(&a.1));
+    eprintln!("top symbols: {:?}", &top[..top.len().min(12)]);
 }

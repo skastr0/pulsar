@@ -6,6 +6,7 @@
 //! file-id order and writes every row through `crate::facts::FactWriter`.
 
 mod blocks;
+mod calls;
 mod cargo;
 mod graph;
 mod parse;
@@ -94,6 +95,13 @@ pub struct Analysis {
     pub prod: Vec<Option<bool>>,
     /// Per target: root path and the file ids of its module tree.
     pub trees: Vec<(String, Vec<u32>)>,
+    /// SQL texts of query-class calls, with their global file id, for the SQL lane (taken out of
+    /// each file's `FileFns.sql`).
+    pub sql_texts: Vec<(u32, crate::lang::functions::SqlTextRec)>,
+    /// Catalog classes of every symbol a call site names, for the driver's `CL` rows.
+    pub sym_classes: std::collections::BTreeMap<String, Vec<u32>>,
+    /// Ids of the catalogs that were on.
+    pub catalogs: Vec<String>,
     pub stats: Stats,
 }
 
@@ -104,19 +112,19 @@ pub fn analyze(root: &Path, files: &[(u32, String)], tracked: &[String]) -> Resu
         .stack_size(64 << 20)
         .build()
         .map_err(|e| format!("rust lane: thread pool: {e}"))?;
+    let path_ids: HashMap<&str, u32> = files.iter().map(|(id, p)| (p.as_str(), *id)).collect();
+    let owned: std::collections::HashSet<&str> = files.iter().map(|(_, p)| p.as_str()).collect();
+    let crates = cargo::discover(root, tracked, &owned);
+    let (env, catalogs) = calls::env_for(root, &crates)?;
     let mut parsed: Vec<parse::RustFile> = pool.install(|| {
         files
             .par_iter()
             .map(|(_, rel)| match std::fs::read(root.join(rel)) {
-                Ok(bytes) => parse::extract(rel, &String::from_utf8_lossy(&bytes), false),
+                Ok(bytes) => parse::extract_with(rel, &String::from_utf8_lossy(&bytes), false, Some(&env)),
                 Err(_) => parse::RustFile { failed: true, ..parse::RustFile::default() },
             })
             .collect()
     });
-
-    let path_ids: HashMap<&str, u32> = files.iter().map(|(id, p)| (p.as_str(), *id)).collect();
-    let owned: std::collections::HashSet<&str> = files.iter().map(|(_, p)| p.as_str()).collect();
-    let crates = cargo::discover(root, tracked, &owned);
     if let Some((first, why)) = crates.fallbacks.first() {
         // One line, not one per manifest: the graph is degraded (no crate edges, default target
         // layout only) and the reader must be able to see that.
@@ -134,6 +142,7 @@ pub fn analyze(root: &Path, files: &[(u32, String)], tracked: &[String]) -> Resu
     for ((id, _), pf) in files.iter().zip(parsed.iter_mut()) {
         if g.test_files.contains(id) {
             pf.tests = (0..pf.fns.fns.len() as u32).collect();
+            calls::mark_test_sites(&mut pf.fns);
         }
     }
 
@@ -157,8 +166,20 @@ pub fn analyze(root: &Path, files: &[(u32, String)], tracked: &[String]) -> Resu
         i_facts: i.len(),
         u_facts: u.len(),
     };
-    let per_file = parsed.into_iter().map(|p| FileOut { fns: p.fns, tests: p.tests }).collect();
-    Ok(Analysis { per_file, i, u, prod, trees, stats })
+    let per_file: Vec<FileOut> = parsed.into_iter().map(|p| FileOut { fns: p.fns, tests: p.tests }).collect();
+    let mut sym_classes = std::collections::BTreeMap::new();
+    for f in &per_file {
+        for name in &f.fns.syms {
+            let classes = env.classes(name).cloned().unwrap_or_default();
+            sym_classes.entry(name.clone()).or_insert(classes);
+        }
+    }
+    let mut per_file = per_file;
+    let mut sql_texts = Vec::new();
+    for ((id, _), f) in files.iter().zip(per_file.iter_mut()) {
+        sql_texts.extend(std::mem::take(&mut f.fns.sql).into_iter().map(|t| (*id, t)));
+    }
+    Ok(Analysis { per_file, i, u, prod, trees, sql_texts, sym_classes, catalogs, stats })
 }
 
 #[cfg(test)]
