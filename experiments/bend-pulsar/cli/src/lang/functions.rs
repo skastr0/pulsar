@@ -66,6 +66,8 @@ pub mod op {
     pub const AND_ASSIGN: u8 = 4;
     pub const OR_ASSIGN: u8 = 5;
     pub const NULLISH_ASSIGN: u8 = 6;
+    /// `?.`: an optional member, call or element access.
+    pub const OPTIONAL: u8 = 7;
 }
 
 /// Which boolean operator a kind-6 control node stands for (`CO fn node op`).

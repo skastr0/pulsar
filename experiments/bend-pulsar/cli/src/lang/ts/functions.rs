@@ -517,6 +517,37 @@ impl<'s> Walker<'s> {
         Some(id)
     }
 
+    /// One short-circuit node per `?.` in a pure member chain that the walk will not descend into.
+    fn optional_in_chain(&mut self, e: &Expression<'_>) {
+        let mut cur = e.get_inner_expression();
+        loop {
+            cur = match cur {
+                Expression::StaticMemberExpression(m) => {
+                    if m.optional {
+                        self.short_circuit(op::OPTIONAL);
+                    }
+                    m.object.get_inner_expression()
+                }
+                Expression::ComputedMemberExpression(m) => {
+                    if m.optional {
+                        self.short_circuit(op::OPTIONAL);
+                    }
+                    m.object.get_inner_expression()
+                }
+                Expression::ChainExpression(c) => match &c.expression {
+                    ChainElement::StaticMemberExpression(m) => {
+                        if m.optional {
+                            self.short_circuit(op::OPTIONAL);
+                        }
+                        m.object.get_inner_expression()
+                    }
+                    _ => return,
+                },
+                _ => return,
+            };
+        }
+    }
+
     /// A kind-6 node, and the operator behind it.
     fn short_circuit(&mut self, code: u8) {
         let Some(node) = self.leaf(ct::SHORT_CIRCUIT) else { return };
@@ -1655,8 +1686,12 @@ impl<'a> Visit<'a> for Walker<'_> {
         self.note_call_write(it);
         self.edge_site(it);
         self.on_call(it);
+        if it.optional {
+            self.short_circuit(op::OPTIONAL);
+        }
         if self.index.is_some() && self.chain(&it.callee).is_some() {
-            // A pure chain holds nothing else to visit.
+            // A pure chain holds nothing else to visit, but its `?.` still count.
+            self.optional_in_chain(&it.callee);
             for a in &it.arguments {
                 self.visit_argument(a);
             }
@@ -1703,11 +1738,33 @@ impl<'a> Visit<'a> for Walker<'_> {
     fn visit_static_member_expression(&mut self, it: &StaticMemberExpression<'a>) {
         if self.index.is_some() {
             if let Some(c) = self.chain_static(it) {
+                // A pure chain is not walked, so its `?.` are counted here, all at once.
+                self.optional_in_chain(&it.object);
+                if it.optional {
+                    self.short_circuit(op::OPTIONAL);
+                }
                 self.on_chain_ref(&c);
                 return;
             }
         }
+        if it.optional {
+            self.short_circuit(op::OPTIONAL);
+        }
         walk::walk_static_member_expression(self, it);
+    }
+
+    fn visit_computed_member_expression(&mut self, it: &ComputedMemberExpression<'a>) {
+        if it.optional {
+            self.short_circuit(op::OPTIONAL);
+        }
+        walk::walk_computed_member_expression(self, it);
+    }
+
+    fn visit_private_field_expression(&mut self, it: &PrivateFieldExpression<'a>) {
+        if it.optional {
+            self.short_circuit(op::OPTIONAL);
+        }
+        walk::walk_private_field_expression(self, it);
     }
 
     fn visit_identifier_reference(&mut self, it: &IdentifierReference<'a>) {
@@ -1783,6 +1840,20 @@ mod tests {
             seen += 1;
         }
         assert!(seen >= 5, "fixtures missing: saw {seen}");
+    }
+
+    /// Each `?.` is one short-circuit node (kind 6) with CO op 7: an optional member, a chain, a
+    /// call and an element access. A plain member chain adds none.
+    #[test]
+    fn each_optional_chain_link_is_a_short_circuit_with_op_7() {
+        let src = "function f(o: any, k: string) {\n  o?.a?.b;\n  o.f?.(1);\n  o?.[k];\n  return o.x.y;\n}\n";
+        let alloc = Allocator::default();
+        let ret = Parser::new(&alloc, src, SourceType::ts()).parse();
+        let out = Walker::new("m.ts", src).run(&ret.program);
+        let short: Vec<u32> = out.ct.iter().filter(|c| c.kind == ct::SHORT_CIRCUIT).map(|c| c.node).collect();
+        assert_eq!(short.len(), 4, "o?.a, ?.b, ?.(), ?.[k]");
+        assert_eq!(out.ops.len(), 4);
+        assert!(out.ops.iter().all(|o| o.op == op::OPTIONAL));
     }
 
     #[test]
