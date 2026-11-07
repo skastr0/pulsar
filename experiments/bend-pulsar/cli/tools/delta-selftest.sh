@@ -256,4 +256,34 @@ out=$("$BIN" delta HEAD~1 HEAD --repo "$M" 2>/dev/null)
 grep -q '^+ effect.mixed-module [0-9a-f]* src/m.ts' <<<"$out" && echo "ok   a module with Effect code and an async function is a finding" || { echo "FAIL mixed-module"; grep mixed-module <<<"$out"; fail=1; }
 ! grep -q 'mixed-module .*src/m.test.ts' <<<"$out" && echo "ok   the same module as a test file is not" || { echo "FAIL mixed-module fired in a test file"; grep mixed-module <<<"$out"; fail=1; }
 
+# cloudflare.query-in-loop counts a SQL template where its statement runs, not where it is built:
+# statements pushed in a loop and run in one batch are not a finding; one yielded per iteration is.
+B=$(mktemp -d); trap 'rm -rf "$T" "$K" "$D" "$E" "$R" "$Q" "$W" "$G" "$M" "$B"' EXIT
+( cd "$B" && git init -q . && git config user.email t@t && git config user.name t
+  echo base > README.md && git add -A && git commit -qm base
+  echo '{"dependencies":{"effect":"*","@effect/sql-d1":"*"}}' > package.json
+  printf 'name = "w"\nmain = "src/a.ts"\n[[d1_databases]]\nbinding = "DB"\ndatabase_name = "d"\ndatabase_id = "x"\n' > wrangler.toml
+  mkdir -p src && cat > src/a.ts <<'TS'
+import { Effect } from "effect"
+import { D1Client } from "@effect/sql-d1"
+export const insertAll = (xs: number[]) => Effect.gen(function* () {
+  const db = yield* D1Client.D1Client
+  const stmts = []
+  for (const x of xs) {
+    stmts.push(db`insert into t values (${x})`)
+  }
+  yield* db.batch(stmts)
+})
+export const insertEach = (xs: number[]) => Effect.gen(function* () {
+  const db = yield* D1Client.D1Client
+  for (const x of xs) {
+    yield* db`insert into t values (${x})`
+  }
+})
+TS
+  git add -A && git commit -qm "a batch built in a loop, and a query per iteration" )
+out=$("$BIN" delta HEAD~1 HEAD --repo "$B" 2>/dev/null)
+grep -q '^+ cloudflare.query-in-loop [0-9a-f]* src/a.ts:11 insertEach' <<<"$out" && echo "ok   a SQL template yielded in a loop is a query-in-loop finding" || { echo "FAIL query-in-loop on a run site"; grep query-in-loop <<<"$out"; fail=1; }
+[ "$(grep -c '^[-+~] cloudflare.query-in-loop' <<<"$out")" == 1 ] && echo "ok   statements built in a loop and run in one batch are not" || { echo "FAIL query-in-loop at a template's build site"; grep query-in-loop <<<"$out"; fail=1; }
+
 exit $fail

@@ -216,6 +216,9 @@ pub struct Walker<'s> {
     counters: Counters,
     /// Statements that are not early exits: a final top-level `return`/`throw`, a case-ending `break`.
     not_exit: HashSet<u32>,
+    /// Tagged templates whose value is run where it is written: the operand of `yield`, `yield*`
+    /// or `await` (see `mark_run`). Keyed by span start.
+    run_tags: HashSet<u32>,
     /// Calls and handlers need name resolution and a catalog; without them only functions and
     /// control trees are produced.
     scoping: Option<&'s Scoping>,
@@ -257,6 +260,7 @@ impl<'s> Walker<'s> {
             pending: Vec::new(),
             counters: Counters::default(),
             not_exit: HashSet::new(),
+            run_tags: HashSet::new(),
             scoping: None,
             index: None,
             file_ctx: 0,
@@ -1382,6 +1386,39 @@ impl<'s> Walker<'s> {
         self.out.entries.extend(found);
     }
 
+    /// Record the tagged templates `e` runs in place when it is yielded or awaited: `e` itself,
+    /// either branch of a conditional or logical, the last of a sequence, and the receiver of a
+    /// member read or member call (`db`..`.pipe(f)`), through parentheses and type assertions.
+    /// A template passed as an argument, stored, or returned is not run here.
+    fn mark_run(&mut self, e: &Expression<'_>) {
+        match e.get_inner_expression() {
+            Expression::TaggedTemplateExpression(t) => {
+                self.run_tags.insert(t.span.start);
+            }
+            Expression::ConditionalExpression(c) => {
+                self.mark_run(&c.consequent);
+                self.mark_run(&c.alternate);
+            }
+            Expression::LogicalExpression(l) => {
+                self.mark_run(&l.left);
+                self.mark_run(&l.right);
+            }
+            Expression::SequenceExpression(q) => {
+                if let Some(last) = q.expressions.last() {
+                    self.mark_run(last);
+                }
+            }
+            Expression::CallExpression(c) => {
+                if let Some(m) = c.callee.get_inner_expression().as_member_expression() {
+                    self.mark_run(m.object());
+                }
+            }
+            Expression::StaticMemberExpression(m) => self.mark_run(&m.object),
+            Expression::ComputedMemberExpression(m) => self.mark_run(&m.object),
+            _ => {}
+        }
+    }
+
     /// The catalog symbol a tagged template's tag stands for, when the tag is a bound value.
     fn tag_use(&self, tag: &Expression<'_>) -> Option<String> {
         self.index?;
@@ -1819,10 +1856,14 @@ impl<'a> Visit<'a> for Walker<'_> {
 
     fn visit_await_expression(&mut self, it: &AwaitExpression<'a>) {
         self.syntax_site("await");
+        self.mark_run(&it.argument);
         walk::walk_await_expression(self, it);
     }
 
     fn visit_yield_expression(&mut self, it: &YieldExpression<'a>) {
+        if let Some(arg) = &it.argument {
+            self.mark_run(arg);
+        }
         if let (true, Some(arg)) = (it.delegate, &it.argument) {
             self.hooked(|h, cx| h.on_yield_star(cx, arg));
         }
@@ -1843,7 +1884,12 @@ impl<'a> Visit<'a> for Walker<'_> {
 
     fn visit_tagged_template_expression(&mut self, it: &TaggedTemplateExpression<'a>) {
         if let Some(sym) = self.tag_use(&it.tag) {
-            self.call_site(&sym);
+            // A template builds a statement; it is a call site only where that statement runs.
+            // Built and stored (`stmts.push(db`..`)`, `const q = db`..``) it is not: what runs it
+            // later (a batch) is its own site. The SQL text is kept either way.
+            if self.run_tags.contains(&it.span.start) {
+                self.call_site(&sym);
+            }
             if self.is_query(&sym) {
                 let (kind, text) = template_text(&it.quasi);
                 self.push_sql(it.span, kind, text);

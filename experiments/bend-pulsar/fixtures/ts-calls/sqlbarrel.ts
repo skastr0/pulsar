@@ -1,3 +1,5 @@
 import { SqlClient } from "effect/sql";
 
-export const q = (sql: SqlClient.SqlClient) => sql`select 1`;
+export async function q(sql: SqlClient.SqlClient) {
+  await sql`select 1`;
+}

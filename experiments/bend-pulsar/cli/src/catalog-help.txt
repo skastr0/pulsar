@@ -44,7 +44,8 @@ FILE FORMAT  (TOML; format = "pulsar-catalog 0")
               yield-result  a use of the value bound by `yield* sym(...)`
               read          a property read
               new           a construction
-      use   with yield/result/yield-result, which use counts: tag (tagged template), call,
+      use   with yield/result/yield-result, which use counts: tag (a tagged template yielded
+            or awaited where it is written; one stored or passed on is built, not run), call,
             member:<name> (a method call), member:* (any method); with new: noargs
       ver   a label for the library version or runtime this entry is true for ("3", "4", "node", "js")
       at    where the justification lives (file:line); doc  the text that justifies the class

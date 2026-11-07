@@ -1,0 +1,5 @@
+CS insertAll @effect/sql-d1#D1Client.D1Client loops=0 ctx=130
+CS insertEach @effect/sql-d1#D1Client.D1Client loops=1 ctx=130
+CS insertEach @effect/sql-d1#D1Client.D1Client loops=1 ctx=130
+CS local @effect/sql-sqlite-do#SqliteClient.SqliteClient loops=0 ctx=130
+CS local @effect/sql-sqlite-do#SqliteClient.SqliteClient loops=0 ctx=130
