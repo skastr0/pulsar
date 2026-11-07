@@ -229,6 +229,8 @@ pub struct Walker<'s> {
     name_ids: HashMap<String, u32>,
     /// Entry kind for the function starting at the given offset (callback arguments).
     pending_entry: Vec<(u32, u8)>,
+    /// Symbols bound once to a literal: a constant when passed as an argument (`AL` kind 3).
+    lit_consts: HashSet<SymbolId>,
 }
 
 impl<'s> Walker<'s> {
@@ -258,6 +260,7 @@ impl<'s> Walker<'s> {
             spec_ids: HashMap::new(),
             name_ids: HashMap::new(),
             pending_entry: Vec::new(),
+            lit_consts: HashSet::new(),
         }
     }
 
@@ -632,11 +635,42 @@ impl<'s> Walker<'s> {
 
     /// A `CS` site for `sym` in the current function. Outside any function there is no `fn` to
     /// attribute it to, so nothing is emitted.
-    fn call_site(&mut self, sym: &str) {
-        let Some(f) = self.frames.last() else { return };
+    fn call_site(&mut self, sym: &str) -> bool {
+        let Some(f) = self.frames.last() else { return false };
         let (fn_local, loop_depth, c) = (f.local, f.loops, f.ctx);
         let id = self.intern(sym);
-        self.out.sites.push(Site { fn_local, kind: SiteKind::Call { sym: id, loop_depth, ctx: c } });
+        let kind = SiteKind::Call { sym: id, loop_depth, ctx: c, consts: Box::default() };
+        self.out.sites.push(Site { fn_local, kind });
+        true
+    }
+
+    /// `call_site` for a call with arguments: also records which arguments are constants (`AL`).
+    fn call_site_args(&mut self, sym: &str, args: &[Argument<'_>]) {
+        if !self.call_site(sym) {
+            return;
+        }
+        let consts: Vec<(u8, u8)> = args
+            .iter()
+            .enumerate()
+            .filter_map(|(i, a)| Some((u8::try_from(i).ok()?, self.const_kind(a.as_expression()?)?)))
+            .collect();
+        if let Some(Site { kind: SiteKind::Call { consts: c, .. }, .. }) = self.out.sites.last_mut() {
+            *c = consts.into();
+        }
+    }
+
+    /// `AL` kind of an argument: 1 a string, number or boolean literal, 2 a template with no
+    /// substitution, 3 an identifier bound once to such a literal.
+    fn const_kind(&self, e: &Expression<'_>) -> Option<u8> {
+        match e.get_inner_expression() {
+            Expression::StringLiteral(_) | Expression::NumericLiteral(_) | Expression::BooleanLiteral(_) => Some(1),
+            Expression::TemplateLiteral(t) if t.expressions.is_empty() => Some(2),
+            Expression::Identifier(i) => {
+                let sid = i.reference_id.get().and_then(|r| self.scoping?.get_reference(r).symbol_id())?;
+                self.lit_consts.contains(&sid).then_some(3)
+            }
+            _ => None,
+        }
     }
 
     fn is_query(&self, sym: &str) -> bool {
@@ -1102,7 +1136,7 @@ impl<'s> Walker<'s> {
             self.wrap_args(&it.arguments, w.ctx);
         }
         if ix.entries(&sym).iter().any(|e| e.via == Via::Result && e.use_ == Use::Call) {
-            self.call_site(&sym);
+            self.call_site_args(&sym, &it.arguments);
             self.sql_call(&sym, &it.arguments, it.span);
         }
     }
@@ -1114,13 +1148,13 @@ impl<'s> Walker<'s> {
             Target::Sym(sym) => self.on_symbol_call(&sym, it),
             Target::Bound(sid) => {
                 if let Some(sym) = self.bound_use(sid, &c.path, false) {
-                    self.call_site(&sym);
+                    self.call_site_args(&sym, &it.arguments);
                     self.sql_call(&sym, &it.arguments, it.span);
                 }
             }
             Target::Held { sym, via, rest } => {
                 if let Some(sym) = self.use_of(&sym, via, &rest, false) {
-                    self.call_site(&sym);
+                    self.call_site_args(&sym, &it.arguments);
                     self.sql_call(&sym, &it.arguments, it.span);
                 }
             }
@@ -1131,7 +1165,7 @@ impl<'s> Walker<'s> {
     fn on_symbol_call(&mut self, sym: &str, it: &CallExpression<'_>) {
         let Some(ix) = self.index else { return };
         if self.has_via(sym, Via::Call) {
-            self.call_site(sym);
+            self.call_site_args(sym, &it.arguments);
             self.sql_call(sym, &it.arguments, it.span);
         }
         if let Some(w) = ix.wrapper(sym) {
@@ -1286,9 +1320,16 @@ impl<'a> Visit<'a> for Walker<'_> {
         if let (BindingPattern::BindingIdentifier(id), Some(init)) = (&it.id, &it.init) {
             self.hint(init, id.name.as_str(), None);
         }
-        if let (BindingPattern::BindingIdentifier(id), Some(_)) = (&it.id, &it.init) {
+        if let (BindingPattern::BindingIdentifier(id), Some(init)) = (&it.id, &it.init) {
             if let Some(sid) = id.symbol_id.get() {
                 self.note_write(&format!("{sid:?}"));
+                let literal = matches!(
+                    init.get_inner_expression(),
+                    Expression::StringLiteral(_) | Expression::NumericLiteral(_) | Expression::BooleanLiteral(_)
+                ) || matches!(init.get_inner_expression(), Expression::TemplateLiteral(t) if t.expressions.is_empty());
+                if literal && self.scoping.is_some_and(|sc| !sc.symbol_is_mutated(sid)) {
+                    self.lit_consts.insert(sid);
+                }
             }
         }
         if let BindingPattern::BindingIdentifier(id) = &it.id {
@@ -1587,7 +1628,7 @@ impl<'a> Visit<'a> for Walker<'_> {
                 e.via == Via::New && (e.use_ != Use::NoArgs || it.arguments.is_empty())
             });
             if hit {
-                self.call_site(&sym);
+                self.call_site_args(&sym, &it.arguments);
             }
         }
         walk::walk_new_expression(self, it);
