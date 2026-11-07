@@ -1,0 +1,56 @@
+[
+ {
+  "law": "fo_reach_sound",
+  "bug": "a step adds every caller, reached or not",
+  "old": "X.Cx.push_u(S.Scope.has(rt, target), fn, Fo.step(t, rt))",
+  "new": "X.Cx.push_u(True{}, fn, Fo.step(t, rt))"
+ },
+ {
+  "law": "fo_reach_complete",
+  "bug": "reach never takes a step",
+  "old": "Fo.reach(p, ces, List.append(&2, U32, cur, Fo.step(ces, S.Scope.set(cur))))",
+  "new": "Fo.reach(p, ces, cur)"
+ },
+ {
+  "law": "fo_rule_sound",
+  "bug": "a direct finding ignores the loop",
+  "old": "Fo.keep(Bool.and(Fo.at(ld, ctx, none), S.Scope.has(cset, callee))",
+  "new": "Fo.keep(S.Scope.has(cset, callee)"
+ },
+ {
+  "law": "fo_rule_sound",
+  "bug": "the loop test ignores loop depth",
+  "old": "Bool.and(Bool.not(U32.is_eq(ld, 0)), U32.is_eq(U32.and(ctx, none), 0))",
+  "new": "U32.is_eq(U32.and(ctx, none), 0)"
+ },
+ {
+  "law": "fo_direct_complete",
+  "bug": "direct findings stop after the first site",
+  "old": "Nx{r, site, fn, callee, 0}, Fo.direct(t, r, none, cset))",
+  "new": "Nx{r, site, fn, callee, 0}, Nil{})"
+ },
+ {
+  "law": "fo_via_complete",
+  "bug": "edge findings read only the seed set",
+  "old": "Fo.edges(ces, r, none, S.Scope.set(Fo.reach(p, ces, seed)))",
+  "new": "Fo.edges(ces, r, none, S.Scope.set(seed))"
+ },
+ {
+  "law": "fo_findings_complete",
+  "bug": "only the first rule row runs",
+  "old": "List.append(&2, Nx, Fo.rule(css, cls, ces, h), Fo.rules(css, cls, ces, t))",
+  "new": "Fo.rule(css, cls, ces, h)"
+ },
+ {
+  "law": "fo_findings_sound",
+  "bug": "a finding with no rule row",
+  "old": "      Fo.rules(css, cls, ces, rfs)",
+  "new": "      Con{Nx{0, 0, 0, 0, 0}, Fo.rules(css, cls, ces, rfs)}"
+ },
+ {
+  "law": "fo_lines_shape",
+  "bug": "the section header changes",
+  "old": "\"pulsar-fanout 0\"",
+  "new": "\"pulsar-fanout 1\""
+ }
+]
