@@ -1,0 +1,8 @@
+src/math.ts	add	3/3
+src/math.ts	classify	4/9
+src/math.ts	unreached	1/3
+src/nested.ts	outer	4/6
+src/nested.ts	outer>#1	3/3
+src/widget.tsx	Widget	5/5
+src/widget.tsx	Widget>#1	2/3
+src/widget.tsx	Empty	3/3

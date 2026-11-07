@@ -1,0 +1,34 @@
+<?xml version="1.0" ?>
+<coverage line-rate="0" branch-rate="0" version="pulsar-fixture">
+  <sources><source>.</source></sources>
+  <packages><package name="fixture" line-rate="0"><classes>
+    <class name="src/math.ts" filename="src/math.ts"><methods/>
+      <lines>
+        <line number="2" hits="1"/>
+        <line number="6" hits="1"/>
+        <line number="7" hits="1"/>
+        <line number="9" hits="0"/>
+        <line number="10" hits="0"/>
+        <line number="12" hits="0"/>
+        <line number="16" hits="0"/>
+      </lines>
+    </class>
+    <class name="src/nested.ts" filename="src/nested.ts"><methods/>
+      <lines>
+        <line number="2" hits="1"/>
+        <line number="3" hits="1"/>
+        <line number="5" hits="1"/>
+        <line number="6" hits="1"/>
+        <line number="8" hits="0"/>
+      </lines>
+    </class>
+    <class name="src/widget.tsx" filename="src/widget.tsx"><methods/>
+      <lines>
+        <line number="3" hits="1"/>
+        <line number="4" hits="1"/>
+        <line number="7" hits="0"/>
+        <line number="14" hits="1"/>
+      </lines>
+    </class>
+  </classes></package></packages>
+</coverage>
