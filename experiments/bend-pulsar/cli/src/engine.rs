@@ -20,6 +20,36 @@ pub struct Findings {
     pub rcx: Vec<Rcx>,
     /// The `pulsar-layers 0` section, when the facts had an `E` row.
     pub layers: Option<Layers>,
+    /// The `pulsar-sql 0` section, when an `SR` row switched SQL rules on.
+    pub sql: Option<Sql>,
+}
+
+/// What an `SQX` line is about: a query site, or a foreign key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SqlKind {
+    Site,
+    Fk,
+}
+
+/// `SQX <rule> site|fk <id> <table> <col> <detail>`; table and col are 4294967295 when none, and
+/// for a foreign key `detail` is the referenced table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sqx {
+    pub rule: String,
+    pub kind: SqlKind,
+    pub id: u32,
+    pub table: u32,
+    pub col: u32,
+    pub detail: u32,
+}
+
+/// The SQL rules section: `SQD ok skipped complete`, the `SQX` lines, and `SQS n`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Sql {
+    pub ok: u32,
+    pub skipped: u32,
+    pub complete: bool,
+    pub xs: Vec<Sqx>,
 }
 
 /// `LUNP r l s x walk..`: at root `root`, reachable layer `layer` requires `svc`, which no layer
@@ -183,7 +213,7 @@ fn parse_layer_line(l: &mut Layers, tag: &str, n: &[u32]) -> Result<(), String> 
 }
 
 pub fn parse(text: &str) -> Result<Findings, String> {
-    let mut f = Findings { cycles: vec![], cert: None, files: 0, edges: 0, cycle_count: 0, fm: vec![], fx: vec![], rcx: vec![], layers: None };
+    let mut f = Findings { cycles: vec![], cert: None, files: 0, edges: 0, cycle_count: 0, fm: vec![], fx: vec![], rcx: vec![], layers: None, sql: None };
     let mut header = false;
     // Rows are parsed only inside the sections this reader consumes; a `pulsar-*`
     // header for any other section switches skipping on until the next header.
@@ -200,6 +230,7 @@ pub fn parse(text: &str) -> Result<Findings, String> {
             section = match name {
                 "findings" | "classctx" => name,
                 "layers" => name,
+                "sql" => name,
                 _ => "other",
             };
             if section == "findings" {
@@ -207,6 +238,9 @@ pub fn parse(text: &str) -> Result<Findings, String> {
             }
             if section == "layers" {
                 f.layers.get_or_insert_with(Layers::default);
+            }
+            if section == "sql" {
+                f.sql.get_or_insert_with(Sql::default);
             }
             continue;
         }
@@ -223,6 +257,31 @@ pub fn parse(text: &str) -> Result<Findings, String> {
                 f.cycles.push(ids);
             }
             "CERT" => f.cert = Some(it.next() == Some("1")),
+            "SQD" | "SQX" | "SQS" if section != "sql" => return Err(format!("{tag} outside the `pulsar-sql 0` section")),
+            "SQD" => {
+                let n = it.map(|t| num(t).map(|v| v as u32)).collect::<Result<Vec<u32>, _>>()?;
+                let [ok, skipped, complete] = n[..] else { return Err("SQD needs ok skipped complete".into()) };
+                let s = f.sql.get_or_insert_with(Sql::default);
+                (s.ok, s.skipped, s.complete) = (ok, skipped, complete == 1);
+            }
+            "SQX" => {
+                let rule = it.next().ok_or("SQX without a rule")?.to_string();
+                let kind = match it.next() {
+                    Some("site") => SqlKind::Site,
+                    Some("fk") => SqlKind::Fk,
+                    other => return Err(format!("SQX kind {other:?} is not site or fk")),
+                };
+                let n = it.map(|t| num(t).map(|v| v as u32)).collect::<Result<Vec<u32>, _>>()?;
+                let [id, table, col, detail] = n[..] else { return Err("SQX needs id table col detail".into()) };
+                f.sql.get_or_insert_with(Sql::default).xs.push(Sqx { rule, kind, id, table, col, detail });
+            }
+            "SQS" => {
+                let n = num(it.next().ok_or("SQS without a count")?)? as usize;
+                let have = f.sql.as_ref().map_or(0, |s| s.xs.len());
+                if n != have {
+                    return Err(format!("SQS says {n} but {have} SQX lines came before it"));
+                }
+            }
             tag @ ("LCYC" | "LCERT" | "LUNP" | "LOPQ" | "LDUP" | "LHUB" | "LS") => {
                 let l = f.layers.as_mut().ok_or_else(|| format!("{tag} outside the `pulsar-layers 0` section"))?;
                 let nums = it.map(|t| num(t).map(|v| v as u32)).collect::<Result<Vec<u32>, _>>()?;
@@ -338,6 +397,18 @@ mod tests {
         assert!(parse("pulsar-findings 0\nLCYC 1 0\n").unwrap_err().contains("outside the"));
         assert!(parse("pulsar-findings 0\npulsar-layers 0\nLCYC 3 0 1\n").unwrap_err().contains("LCYC size"));
         assert!(parse("pulsar-findings 0\npulsar-layers 0\nLUNP 0 1\n").unwrap_err().contains("too few"));
+    }
+
+    #[test]
+    fn parses_the_sql_rules_section() {
+        let t = "pulsar-findings 0\nCERT 1\npulsar-sql 0\nSQD 4 1 0\nSQX sql.unindexed-filter site 3 7 2 0\nSQX sql.fk-unindexed fk 0 7 2 9\nSQS 2\n";
+        let s = parse(t).unwrap().sql.unwrap();
+        assert_eq!((s.ok, s.skipped, s.complete), (4, 1, false));
+        assert_eq!(s.xs[0], Sqx { rule: "sql.unindexed-filter".into(), kind: SqlKind::Site, id: 3, table: 7, col: 2, detail: 0 });
+        assert_eq!(s.xs[1].kind, SqlKind::Fk);
+        assert!(parse("pulsar-findings 0\nSQD 1 0 1\n").unwrap_err().contains("outside"));
+        assert!(parse("pulsar-findings 0\npulsar-sql 0\nSQX sql.x site 1 2 3 4\nSQS 2\n").unwrap_err().contains("SQS says 2"));
+        assert!(parse("pulsar-findings 0\npulsar-sql 0\nSQX sql.x row 1 2 3 4\n").unwrap_err().contains("not site or fk"));
     }
 
     #[test]

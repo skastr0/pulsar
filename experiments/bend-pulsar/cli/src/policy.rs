@@ -207,6 +207,13 @@ pub struct Effective {
 }
 
 impl Effective {
+    /// The `SR` codes (1 to 6) of the SQL rules this repo turned on in `[rules] enable`, ascending.
+    /// SQL rules are opt-in: with none enabled the engine prints no SQL section.
+    pub fn sql_rule_codes(&self) -> Vec<u32> {
+        let on = |id: &str| self.policy.rules.enable.iter().any(|e| e == id) && !self.policy.rules.disable.iter().any(|d| d == id);
+        crate::finding::SQL_RULES.iter().enumerate().filter(|(_, r)| on(r.id)).map(|(i, _)| i as u32 + 1).collect()
+    }
+
     /// The catalog rules that are on: every rule of an active catalog unless `[rules] disable`
     /// lists it, sorted by id. The position in this list is the rule's `RL` id.
     pub fn active_rules(&self) -> Vec<ActiveRule> {

@@ -73,10 +73,11 @@ pub enum Rel {
     Qt,
     Qu,
     Qd,
+    Sr,
 }
 
 impl Rel {
-    pub const ALL: [Rel; 60] = [
+    pub const ALL: [Rel; 61] = [
         Rel::N,
         Rel::F,
         Rel::K,
@@ -137,6 +138,7 @@ impl Rel {
         Rel::Qt,
         Rel::Qu,
         Rel::Qd,
+        Rel::Sr,
     ];
 
     pub const fn tag(self) -> &'static str {
@@ -201,13 +203,14 @@ impl Rel {
             Rel::Qt => "QT",
             Rel::Qu => "QU",
             Rel::Qd => "QD",
+            Rel::Sr => "SR",
         }
     }
 
     /// Number of U32 fields after the tag.
     pub const fn arity(self) -> usize {
         match self {
-            Rel::N | Rel::M | Rel::Sy | Rel::Tf | Rel::L | Rel::Lo => 1,
+            Rel::N | Rel::M | Rel::Sy | Rel::Tf | Rel::L | Rel::Lo | Rel::Sr => 1,
             Rel::F | Rel::U | Rel::H | Rel::A | Rel::Cl | Rel::Lq | Rel::Us | Rel::Ln | Rel::If | Rel::Lr | Rel::Lc | Rel::Ds | Rel::Ep => 2,
             Rel::K | Rel::Fk | Rel::C | Rel::Cfn | Rel::Cv | Rel::Hd | Rel::E | Rel::Sv | Rel::Ly | Rel::Lp | Rel::Rt | Rel::Mk | Rel::Lw | Rel::Co | Rel::Im | Rel::Cu | Rel::Dt | Rel::Dp | Rel::Di | Rel::Dx | Rel::Df | Rel::Qt | Rel::Bl | Rel::Bw | Rel::Br | Rel::Al => 3,
             Rel::Fn | Rel::Ct | Rel::Cf | Rel::Rl | Rel::Cm | Rel::Et | Rel::Dc | Rel::Dg | Rel::Qu | Rel::Qd => 4,
@@ -389,6 +392,8 @@ pub struct SideTables {
     pub sql_indexes: Vec<Option<String>>,
     /// SQL lane query sites: site id -> (file id, line) (`.sites`).
     pub sql_sites: Vec<(u32, u32)>,
+    /// `SR` codes of the SQL rules switched on by policy (not a side table: input to the driver).
+    pub sql_rules: Vec<u32>,
     /// The `.laws` table, already formatted (`law path line name`, TAB-separated, law-id order).
     pub laws: String,
     /// The `.effect` table, already formatted: `S svc path line name` and `L layer path line

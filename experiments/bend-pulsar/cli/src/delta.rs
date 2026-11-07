@@ -18,6 +18,7 @@ use crate::finding::{catalog_rule, hex, metric_rule, needs_coverage, off_by_defa
 use crate::lang::Degraded;
 use crate::policy::{self, Effective};
 use crate::layers;
+use crate::sqlfind;
 use crate::rename::{self, Renames};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -280,7 +281,7 @@ fn build_fresh(
 ) -> Result<Built, String> {
     checkout(repo, sha, scratch, tree)?;
     let mut w = FactWriter::new();
-    let mut tables = SideTables::default();
+    let mut tables = SideTables { sql_rules: eff.sql_rule_codes(), ..SideTables::default() };
     let (set, dstats) = driver::build(tree, tracked, &eff.policy.lanes, &eff.active_rules(), &mut w, &mut tables)?;
     let mut coverage_reroot = None;
     if let Some(c) = coverage {
@@ -418,6 +419,18 @@ fn class_context_findings(
     (out, dropped)
 }
 
+/// `DT table file flags` rows of a facts file: table name id -> file id of its definition.
+fn read_table_defs(facts_path: &Path) -> BTreeMap<u32, u32> {
+    let Ok(text) = std::fs::read_to_string(facts_path) else { return BTreeMap::new() };
+    text.lines()
+        .filter_map(|l| l.strip_prefix("DT "))
+        .filter_map(|r| {
+            let mut n = r.split(' ').map(|t| t.parse::<u32>());
+            Some((n.next()?.ok()?, n.next()?.ok()?))
+        })
+        .collect()
+}
+
 /// `RT root file fn` rows of a facts file: where each Effect root is built.
 fn read_roots(facts_path: &Path) -> Vec<layers::Root> {
     let Ok(text) = std::fs::read_to_string(facts_path) else { return Vec::new() };
@@ -519,6 +532,14 @@ fn evaluate(repo: &Path, sha: &str, tag: &str, coverage: Option<&Path>, use_cach
             lane: "class-context",
             cause: format!("{dropped} class-in-context finding(s) named a rule, function or symbol the CLI could not resolve and are not reported"),
         });
+    }
+    if let Some(s) = &found.sql {
+        let defs = read_table_defs(&facts_path);
+        let (sql_findings, notices) = sqlfind::findings(s, &tables, &set.files, &defs, disabled)?;
+        for f in sql_findings {
+            insert(&mut findings, f, sha)?;
+        }
+        degraded.extend(notices);
     }
     if let Some(l) = &found.layers {
         if l.cert != Some(true) {

@@ -103,6 +103,10 @@ pub fn build(
     let fn_keys = push_functions(w, per, tables, &mut st);
     push_rules(w, rules, tables);
     analyze_sql(root, &sql_files, sql_texts, &fn_base, w, tables, &mut st);
+    // SQL rules are opt-in: one SR row per rule policy turned on, and none means no SQL section.
+    for code in std::mem::take(&mut tables.sql_rules) {
+        w.push(Rel::Sr, &[code]);
+    }
     st.fns = total_fns;
     for d in &st.degraded {
         w.note(&format!("degraded {}: {}", d.lane, d.cause));
