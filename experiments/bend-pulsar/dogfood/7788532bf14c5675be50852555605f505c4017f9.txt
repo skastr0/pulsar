@@ -1,0 +1,78 @@
+# dogfood delta 748111b6a8481d718e4aa476205ecde7775bf5c7 7788532bf14c5675be50852555605f505c4017f9 — 7788532bf14c5675be50852555605f505c4017f9
+# repo: /home/user/pulsar
+# 2026-11-07T10:39:59Z  fingerprint	sha256:86ac7009726d58c5a5d21996cf1be4fa54995cc8e6967dc16a52fcba6db44e5e
+#
+# base=748111b6a848 head=7788532bf14c added=71 removed=0 unchanged=0
+
++ core.cyclomatic 354e33c66d23af03 experiments/bend-pulsar/cli/src/catalog.rs validate
++ core.cyclomatic 1b1953971aeee82a experiments/bend-pulsar/cli/src/coverage/cobertura.rs parse
++ core.cyclomatic 9d486996b3760233 experiments/bend-pulsar/cli/src/coverage/cobertura.rs next_tag
++ core.cyclomatic 097b55a6ac0714b0 experiments/bend-pulsar/cli/src/coverage/map.rs assign
++ core.cyclomatic eeb7a02a7e6cc9cf experiments/bend-pulsar/cli/src/delta.rs run
++ core.cyclomatic 0759acb41b3e6f83 experiments/bend-pulsar/cli/src/driver.rs build
++ core.cyclomatic 7250729adecea3ad experiments/bend-pulsar/cli/src/engine.rs parse
++ core.cyclomatic 04844d87fed8503e experiments/bend-pulsar/cli/src/facts.rs Rel>tag
++ core.cyclomatic 51603d966f826a0a experiments/bend-pulsar/cli/src/lang/bend/mod.rs extract
++ core.cyclomatic 5ec66d8e79b633d2 experiments/bend-pulsar/cli/src/lang/bend/mod.rs lex
++ core.cyclomatic b1ac7ea6060d772e experiments/bend-pulsar/cli/src/lang/bend/mod.rs Walker>tokens
++ core.cyclomatic d849f13fa34ae9cd experiments/bend-pulsar/cli/src/lang/bend/mod.rs link_laws
++ core.cyclomatic fc629858b0940b36 experiments/bend-pulsar/cli/src/lang/bend/mod.rs Walker>block
++ core.cyclomatic 62e5dfcbd23942ef experiments/bend-pulsar/cli/src/lang/ts/extract.rs extract
++ core.cyclomatic 7642333d9ee6af53 experiments/bend-pulsar/cli/src/lang/ts/extract.rs type_only_exports
++ core.cyclomatic 48ae4557ac3fad66 experiments/bend-pulsar/cli/src/lang/ts/functions.rs Walker>scan_imports
++ core.cyclomatic 980d9d87529ca817 experiments/bend-pulsar/cli/src/lang/ts/functions.rs Walker>on_call
++ core.cyclomatic ef879ea22e38344d experiments/bend-pulsar/cli/src/lang/ts/functions.rs Walker>enter
++ core.cyclomatic 083b8a01b28acd62 experiments/bend-pulsar/cli/src/lang/ts/resolve.rs Resolution>resolve
++ core.cyclomatic b9c672b3409c7168 experiments/bend-pulsar/cli/src/lang/ts/resolve.rs Resolution>new
++ core.cyclomatic 5a5a77e626b3cbc2 experiments/bend-pulsar/cli/src/policy.rs load
++ core.cyclomatic 2ab01093b0646fb6 scripts/onboard-smoke.ts smokeTuiFirstFrame
++ core.cyclomatic 459ec589e05a7450 scripts/release-contracts.ts assertPublishedExportContract
++ core.cyclomatic 95a88005bcc97415 scripts/release-smoke.ts assertScoreContract
++ core.cyclomatic 653f547004a0c1e2 scripts/resource-bench.ts parseResourceBenchArgs
++ core.cyclomatic f6625ac3341566d4 scripts/resource-bench.ts runResourceBench
++ core.length a1b8e4b12c2ff839 experiments/bend-pulsar/cli/src/catalog.rs validate
++ core.length 1aa41e853dd07da5 experiments/bend-pulsar/cli/src/coverage/cobertura.rs next_tag
++ core.length af40bd051ad27914 experiments/bend-pulsar/cli/src/coverage/cobertura.rs parse
++ core.length 7d4d3fb6e915c2af experiments/bend-pulsar/cli/src/delta.rs evaluate
++ core.length 9b5d8a1be0eeb1a9 experiments/bend-pulsar/cli/src/delta.rs run
++ core.length 38be6ab10415dead experiments/bend-pulsar/cli/src/driver.rs build
++ core.length 649dbf48dd279a84 experiments/bend-pulsar/cli/src/lang/bend/mod.rs extract
++ core.length efebe025c3631a20 experiments/bend-pulsar/cli/src/lang/bend/mod.rs lex
++ core.length a4bf6a61a7205381 experiments/bend-pulsar/cli/src/lang/ts/extract.rs extract
++ core.length dc980c0706dc4cca experiments/bend-pulsar/cli/src/lang/ts/mod.rs analyze
++ core.length a4e321274c597c2c experiments/bend-pulsar/cli/src/policy.rs load
++ core.length e4a5448a130400e0 scripts/__tests__/resource-bench.test.ts #1
++ core.length 138d283da93b2f3a scripts/agent-smoke.ts smoke
++ core.length 656cf4ca8e1bdf94 scripts/onboard-smoke.ts smokeTuiFirstFrame
++ core.length 2a51dbb2bac1dfa4 scripts/release-smoke.ts installNpmArtifact
++ core.length e38e8f37487e8368 scripts/resource-bench.ts parseResourceBenchArgs
++ core.length ea44889689142b12 scripts/resource-bench.ts runResourceBench
++ core.nesting c9ab4cb47e9f26da experiments/bend-pulsar/cli/src/coverage/cobertura.rs parse
++ core.nesting 147ae0b3650faee0 experiments/bend-pulsar/cli/src/coverage/map.rs assign
++ core.nesting 2b476309ec52bc5d experiments/bend-pulsar/cli/src/lang/bend/mod.rs link_laws
++ core.nesting 72d0c2e731274f3e experiments/bend-pulsar/cli/src/lang/bend/mod.rs Walker>tokens
++ core.nesting ab3674d8d442ce22 experiments/bend-pulsar/cli/src/lang/bend/mod.rs lex
++ core.nesting c5eb8cda1c6ed23a experiments/bend-pulsar/cli/src/lang/bend/mod.rs extract
++ core.nesting 96436217af3214e3 experiments/bend-pulsar/cli/src/lang/ts/extract.rs type_only_exports
++ core.nesting c9889e9f1976195f experiments/bend-pulsar/cli/src/lang/ts/extract.rs extract
++ core.nesting 093c8a1e659ef50f experiments/bend-pulsar/cli/src/lang/ts/functions.rs Walker>handler_args
++ core.nesting 27dc09ba0b501843 experiments/bend-pulsar/cli/src/lang/ts/functions.rs Walker as Visit>visit_tagged_template_expression
++ core.nesting 285d2a791d8d9a56 experiments/bend-pulsar/cli/src/lang/ts/functions.rs Walker>scan_imports
++ core.nesting 977ca7544e8c9998 experiments/bend-pulsar/cli/src/lang/ts/resolve.rs Resolution>new
++ core.nesting 95c0b67e20e29520 scripts/release-contracts.ts assertPublishedExportContract
++ core.nesting 548de29a51a2f264 scripts/resource-bench.ts runResourceBench
++ core.npath 2f9ffc54a118a350 experiments/bend-pulsar/cli/src/catalog.rs validate
++ core.npath 498dc65d6eb33da8 experiments/bend-pulsar/cli/src/coverage/cobertura.rs next_tag
++ core.npath d199cdba767a8d8d experiments/bend-pulsar/cli/src/coverage/cobertura.rs parse
++ core.npath 1a990b35a925de8c experiments/bend-pulsar/cli/src/driver.rs build
++ core.npath f85979c523c2189d experiments/bend-pulsar/cli/src/lang/bend/mod.rs lex
++ core.npath 7abe758a2daeda1a experiments/bend-pulsar/cli/src/lang/ts/functions.rs Walker>enter
++ core.npath cd23b2179ef3bfb4 experiments/bend-pulsar/cli/src/lang/ts/functions.rs Walker>on_call
++ core.npath d9a48ae083f82f41 experiments/bend-pulsar/cli/src/lang/ts/functions.rs Walker>scan_imports
++ core.npath 1b5ab55d8c3236dd experiments/bend-pulsar/cli/src/lang/ts/resolve.rs Resolution>resolve
++ core.npath 9713440ad9b43d61 experiments/bend-pulsar/cli/src/policy.rs load
++ core.npath 0cfcc998593b5563 scripts/release-contracts.ts assertPublishedExportContract
++ core.npath 7eda65e3875b41ce scripts/release-smoke.ts assertScoreContract
++ core.npath 4a5d5bbaa1fa5955 scripts/resource-bench.ts parseResourceBenchArgs
++ core.npath c706904a377c35f7 scripts/resource-bench.ts runResourceBench
+
