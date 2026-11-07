@@ -9,6 +9,18 @@
 #
 # Not covered by any law, by design: Parse.bend (bytes to facts). The reader is
 # shown against the fixtures in engine/fixtures and the synthetic input.
+#
+# Tested, not proven (fixtures, and gen-facts.py's independent rule table and
+# Tarjan SCC at 20k files / 100k facts, which match byte for byte):
+#   - row grouping: Scope.go / Facts.close_n put each accepted fact's edge in
+#     the row of its src, and every row holds only such edges. K1-K13 and SC3-SC5
+#     prove what a single fact adds to the open row, not that rows are opened
+#     and closed at the right file. A proof would be an invariant over Scope.go:
+#     after the prefix up to src, `all` holds the rows 0..src-1.
+#   - Scope.count: the S line's file count (the number of production ids). It
+#     changes no finding.
+#   - the readers Parse.bend, Rows.bend and the decoders (MetricsIn, Layers.decode,
+#     ClassCtx.decode).
 
 import Base
 import ../Extract.bend as E

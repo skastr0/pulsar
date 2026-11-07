@@ -8,7 +8,7 @@
 #   Rows.bend      bytes -> detector rows   (reader, unproven; Engine.row_tags are kept)
 #   MetricsIn.bend rows -> Metrics          (decoder, unproven; Metrics-LAWS from Metrics.run)
 #   Pipeline.bend  findings lines           (Graph.analyze, Metrics, Layers, ClassCtx; LAWS.bend P1-P14)
-# This file reads the file in 64 KiB chunks, feeding each chunk to both readers,
+# This file reads the file in 4 KiB chunks, feeding each chunk to both readers,
 # so the bytes of the file are never all in memory, and prints the lines.
 
 import Base
@@ -25,7 +25,7 @@ type St is Data:
   St{ps: P.PS, rs: W.RS}
 
 def Main.chunk_size() -> U32:
-  65536
+  4096
 
 # Parse the result of one read; a failed read marks the input bad.
 def Main.feed2(r: Result<&1, &1, U32 & String, List<&2, U32>>, ps: P.PS, rs: W.RS) -> St:

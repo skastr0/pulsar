@@ -3,7 +3,7 @@
 #
 #   usage: pulsar-layers <facts-file>
 #
-# Rows.bend reads the bytes (64 KiB chunks), Layers.decode picks the Effect
+# Rows.bend reads the bytes (4 KiB chunks), Layers.decode picks the Effect
 # relations, Layers.run decides, Layers.lines formats. Exit 2 on malformed or
 # invalid facts.
 
@@ -12,7 +12,7 @@ import ./Rows.bend as W
 import ./Layers.bend as Y
 
 def LM.chunk() -> U32:
-  65536
+  4096
 
 def LM.feed(r: Result<&1, &1, U32 & String, List<&2, U32>>, s: W.RS) -> W.RS:
   match r:
