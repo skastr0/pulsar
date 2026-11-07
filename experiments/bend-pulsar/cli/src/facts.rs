@@ -44,6 +44,7 @@ pub enum Rel {
     Hd,
     Ce,
     Cu,
+    Ep,
     E,
     Sv,
     Ly,
@@ -70,7 +71,7 @@ pub enum Rel {
 }
 
 impl Rel {
-    pub const ALL: [Rel; 54] = [
+    pub const ALL: [Rel; 55] = [
         Rel::N,
         Rel::F,
         Rel::K,
@@ -102,6 +103,7 @@ impl Rel {
         Rel::Hd,
         Rel::Ce,
         Rel::Cu,
+        Rel::Ep,
         Rel::E,
         Rel::Sv,
         Rel::Ly,
@@ -160,6 +162,7 @@ impl Rel {
             Rel::Hd => "HD",
             Rel::Ce => "CE",
             Rel::Cu => "CU",
+            Rel::Ep => "EP",
             Rel::E => "E",
             Rel::Sv => "SV",
             Rel::Ly => "LY",
@@ -190,7 +193,7 @@ impl Rel {
     pub const fn arity(self) -> usize {
         match self {
             Rel::N | Rel::M | Rel::Sy | Rel::Tf | Rel::L | Rel::Lo => 1,
-            Rel::F | Rel::U | Rel::H | Rel::A | Rel::Cl | Rel::Lq | Rel::Us | Rel::Ln | Rel::If | Rel::Lr | Rel::Lc | Rel::Ds => 2,
+            Rel::F | Rel::U | Rel::H | Rel::A | Rel::Cl | Rel::Lq | Rel::Us | Rel::Ln | Rel::If | Rel::Lr | Rel::Lc | Rel::Ds | Rel::Ep => 2,
             Rel::K | Rel::Fk | Rel::C | Rel::Cfn | Rel::Cv | Rel::Hd | Rel::E | Rel::Sv | Rel::Ly | Rel::Lp | Rel::Rt | Rel::Mk | Rel::Lw | Rel::Co | Rel::Im | Rel::Cu | Rel::Dt | Rel::Dp | Rel::Di | Rel::Dx | Rel::Df | Rel::Qt => 3,
             Rel::Fn | Rel::Ct | Rel::Cf | Rel::Rl | Rel::Cm | Rel::Et | Rel::Dc | Rel::Dg | Rel::Qu | Rel::Qd => 4,
             Rel::I | Rel::Cs => 5,

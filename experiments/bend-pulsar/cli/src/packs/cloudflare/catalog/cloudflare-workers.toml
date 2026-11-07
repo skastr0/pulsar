@@ -32,3 +32,19 @@ symbols = [
   { sym = "global#DurableObjectStorage", class = "query", via = "yield", use = "member:sql.exec", ver = "workers-types-4", at = "@cloudflare/workers-types@4.20260120.0:index.d.ts:3492", doc = "signature: exec<T extends Record<string, SqlStorageValue>>(query: string, ...bindings: any[]): SqlStorageCursor<T>;" },
   { sym = "global#SqlStorage", class = "query", via = "yield", use = "member:exec", ver = "workers-types-4", at = "@cloudflare/workers-types@4.20260120.0:index.d.ts:3492", doc = "signature: exec<T extends Record<string, SqlStorageValue>>(query: string, ...bindings: any[]): SqlStorageCursor<T>;" },
 ]
+
+# Entry points: functions the platform calls from outside. kind: 1 request, 2 object method,
+# 3 RPC method, 4 scheduled or alarm, 5 queue consumer. A member named by an entry beats the
+# general entry for its class.
+entries = [
+  { sym = "", shape = "default-export-fns", kind = 1, names = ["fetch"], ver = "workers-types-4", at = "@cloudflare/workers-types@4.20260120.0:index.d.ts:512", doc = "signature: fetch?: ExportedHandlerFetchHandler<Env, CfHostMetadata>;" },
+  { sym = "", shape = "default-export-fns", kind = 4, names = ["scheduled"], ver = "workers-types-4", at = "@cloudflare/workers-types@4.20260120.0:index.d.ts:516", doc = "signature: scheduled?: ExportedHandlerScheduledHandler<Env>;" },
+  { sym = "", shape = "default-export-fns", kind = 5, names = ["queue"], ver = "workers-types-4", at = "@cloudflare/workers-types@4.20260120.0:index.d.ts:519", doc = "signature: queue?: ExportedHandlerQueueHandler<Env, QueueHandlerMessage>;" },
+  { sym = "cloudflare:workers#DurableObject", shape = "subclass-methods", kind = 1, names = ["fetch"], ver = "workers-types-4", at = "@cloudflare/workers-types@4.20260120.0:index.d.ts:11384", doc = "signature: fetch?(request: Request): Response | Promise<Response>;" },
+  { sym = "cloudflare:workers#DurableObject", shape = "subclass-methods", kind = 2, ver = "workers-types-4", at = "@cloudflare/workers-types@4.20260120.0:index.d.ts:11376", doc = "signature: export abstract class DurableObject<Env = Cloudflare.Env, Props = {}>" },
+  { sym = "cloudflare:workers#DurableObject", shape = "subclass-methods", kind = 4, names = ["alarm"], ver = "workers-types-4", at = "@cloudflare/workers-types@4.20260120.0:index.d.ts:11383", doc = "signature: alarm?(alarmInfo?: AlarmInvocationInfo): void | Promise<void>;" },
+  { sym = "cloudflare:workers#WorkerEntrypoint", shape = "subclass-methods", kind = 1, names = ["fetch"], ver = "workers-types-4", at = "@cloudflare/workers-types@4.20260120.0:index.d.ts:11364", doc = "signature: fetch?(request: Request): Response | Promise<Response>;" },
+  { sym = "cloudflare:workers#WorkerEntrypoint", shape = "subclass-methods", kind = 3, ver = "workers-types-4", at = "@cloudflare/workers-types@4.20260120.0:index.d.ts:11356", doc = "signature: export abstract class WorkerEntrypoint<Env = Cloudflare.Env, Props = {}>" },
+  { sym = "cloudflare:workers#WorkerEntrypoint", shape = "subclass-methods", kind = 4, names = ["scheduled"], ver = "workers-types-4", at = "@cloudflare/workers-types@4.20260120.0:index.d.ts:11366", doc = "signature: scheduled?(controller: ScheduledController): void | Promise<void>;" },
+  { sym = "cloudflare:workers#WorkerEntrypoint", shape = "subclass-methods", kind = 5, names = ["queue"], ver = "workers-types-4", at = "@cloudflare/workers-types@4.20260120.0:index.d.ts:11365", doc = "signature: queue?(batch: MessageBatch<unknown>): void | Promise<void>;" },
+]

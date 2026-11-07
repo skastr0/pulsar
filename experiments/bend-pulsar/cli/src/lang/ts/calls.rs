@@ -5,7 +5,7 @@
 //! `global#<path>` when its root is an undeclared global (`global#console.log`). Nothing here
 //! names a technology: the entries are data, and which catalogs are on is decided by evidence.
 
-use crate::catalog::{Arg, Catalog, Via};
+use crate::catalog::{Arg, Catalog, Shape, Via};
 use std::collections::HashMap;
 
 /// Which use of a bound value counts (the catalog's `use`).
@@ -36,8 +36,18 @@ pub struct Wrap {
     pub ctx: u8,
 }
 
+/// A catalog entry point (`entries`), as the walker uses it.
+#[derive(Debug, Clone)]
+pub struct EntrySpec {
+    pub sym: String,
+    pub shape: Shape,
+    pub kind: u8,
+    pub names: Option<Vec<String>>,
+}
+
 #[derive(Debug, Default)]
 pub struct CatalogIndex {
+    entries: Vec<EntrySpec>,
     /// Longest prefix first.
     aliases: Vec<(String, String)>,
     syms: HashMap<String, Vec<Entry>>,
@@ -83,6 +93,9 @@ impl CatalogIndex {
             for h in &c.handlers {
                 ix.handlers.insert(h.sym.clone(), h.arg);
             }
+            for e in &c.entries {
+                ix.entries.push(EntrySpec { sym: e.sym.clone(), shape: e.shape, kind: e.kind as u8, names: e.names.clone() });
+            }
             for w in &c.wrappers {
                 let slot = ix.wrappers.entry(w.sym.clone()).or_insert(Wrap { ctx: 0 });
                 slot.ctx |= w.ctx as u8;
@@ -91,6 +104,29 @@ impl CatalogIndex {
         ix.aliases.sort_by(|a, b| b.0.len().cmp(&a.0.len()).then(a.0.cmp(&b.0)));
         ix.aliases.dedup();
         ix
+    }
+
+    /// The entry kind for member `name` of a class extending `sym` (or of the default export,
+    /// with an empty `sym`): an entry that names the member beats one that names none.
+    pub fn entry_kind(&self, shape: Shape, sym: &str, name: &str) -> Option<u8> {
+        let mut general = None;
+        for e in self.entries.iter().filter(|e| e.shape == shape && e.sym == sym) {
+            match &e.names {
+                Some(n) if n.iter().any(|x| x == name) => return Some(e.kind),
+                None => general = general.or(Some(e.kind)),
+                _ => {}
+            }
+        }
+        general
+    }
+
+    /// The entry kind of the function arguments of calls to `sym` (`callback-args`).
+    pub fn callback_entry(&self, sym: &str) -> Option<u8> {
+        self.entries.iter().find(|e| e.shape == Shape::CallbackArgs && e.sym == sym).map(|e| e.kind)
+    }
+
+    pub fn has_entries(&self) -> bool {
+        !self.entries.is_empty()
     }
 
     pub fn entries(&self, sym: &str) -> &[Entry] {
@@ -252,5 +288,21 @@ mod fixtures {
             ]
         );
         assert!(ex.functions.sql.iter().all(|r| r.fn_local == Some(0)));
+    }
+
+    /// Entry points come from catalog entries only: subclass methods (a named member beats the
+    /// general entry, a constructor is never one) and the default export's function properties.
+    #[test]
+    fn entry_points_follow_the_catalog() {
+        let src = "import { DurableObject, WorkerEntrypoint } from \"cloudflare:workers\";\nexport class Room extends DurableObject {\n  constructor(ctx: any, env: any) { super(ctx, env); }\n  async fetch(req: Request) {}\n  async alarm() {}\n  join() {}\n}\nexport class Rpc extends WorkerEntrypoint {\n  async fetch() {}\n  ping() {}\n}\nclass Plain {\n  fetch() {}\n}\nexport default {\n  async fetch(request: Request) {},\n  scheduled() {},\n  helper() {},\n};\n";
+        let alloc = Allocator::default();
+        let ex = extract(&alloc, "e.ts", Path::new("e.ts"), src, &all_index(), false, None);
+        let f = ex.functions;
+        let got: Vec<String> =
+            f.entries.iter().map(|(l, k)| format!("{}:{k}", f.fns[*l as usize].chain)).collect();
+        assert_eq!(
+            got,
+            ["Room>fetch:1", "Room>alarm:4", "Room>join:2", "Rpc>fetch:1", "Rpc>ping:3", "default>fetch:1", "default>scheduled:4"]
+        );
     }
 }

@@ -200,6 +200,8 @@ pub struct FileFns {
     pub reexports: Vec<Reexport>,
     /// `(fn_local, reason)` once per call that could not become an edge.
     pub unresolved: Vec<(u32, u8)>,
+    /// `(fn_local, kind)`: functions a catalog names as entry points (`EP`).
+    pub entries: Vec<(u32, u8)>,
 }
 
 /// FNV-1a 64 over parts separated by a zero byte (same constants as the file key).

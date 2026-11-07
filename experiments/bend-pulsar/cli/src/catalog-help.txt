@@ -50,6 +50,13 @@ FILE FORMAT  (TOML; format = "pulsar-catalog 0")
       at    where the justification lives (file:line); doc  the text that justifies the class
 
     handlers = [ { sym, arg, ver, at, doc } ]        error handlers; arg = last-fn | object-fns
+    entries = [ { sym, shape, kind, names?, ver, at, doc } ]   entry points (functions called from outside);
+                                       sorted by (sym, shape, kind, ver); kind = EP kind 1-6: 1 request handler,
+                                       2 object method, 3 RPC method, 4 alarm/scheduled, 5 queue consumer,
+                                       6 HTTP API handler; shape = subclass-methods (methods of a class that
+                                       extends sym) | default-export-fns (sym is empty: the default export or
+                                       its function properties) | callback-args (function arguments of calls
+                                       to sym); names narrows subclass-methods and default-export-fns
     wrappers = [ { sym, ctx, label, ver, at, doc } ] function arguments get ctx bits;
                                                      label = none | first-string
     services = [ { sym, default, ver, at, doc } ]    default = true: always provided

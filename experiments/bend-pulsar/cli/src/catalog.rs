@@ -91,6 +91,33 @@ pub struct Handler {
     pub doc: String,
 }
 
+/// Which functions an entry names as entry points.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Shape {
+    /// Every method of a class that extends `sym` (`names` narrows to those method names).
+    SubclassMethods,
+    /// The default export, or its function-valued properties (`names` narrows); `sym` is empty.
+    DefaultExportFns,
+    /// The function arguments of calls to `sym` (a handler registration).
+    CallbackArgs,
+}
+
+/// A catalog entry point: functions the platform or framework calls from outside. `kind` is
+/// FACTS.md's `EP` kind: 1 request handler, 2 object method, 3 RPC method, 4 alarm or
+/// scheduled, 5 queue consumer, 6 HTTP API handler.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EntryPoint {
+    pub sym: String,
+    pub shape: Shape,
+    pub kind: u32,
+    pub names: Option<Vec<String>>,
+    pub ver: String,
+    pub at: String,
+    pub doc: String,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Wrapper {
@@ -153,6 +180,8 @@ pub struct Catalog {
     pub handlers: Vec<Handler>,
     #[serde(default)]
     pub wrappers: Vec<Wrapper>,
+    #[serde(default)]
+    pub entries: Vec<EntryPoint>,
     #[serde(default)]
     pub services: Vec<Service>,
     #[serde(default)]
@@ -256,7 +285,32 @@ fn check_declared(c: &Catalog, names: &BTreeSet<&str>) -> Result<(), String> {
             valid_use(u).map_err(|e| format!("symbol {:?}: {e}", s.sym))?;
         }
     }
+    check_entries(c)?;
     c.rules.iter().try_for_each(|r| declared(&r.class, &format!("rule {:?}", r.id)))
+}
+
+/// Entry points: a kind FACTS.md defines, a symbol exactly where the shape needs one, and
+/// `names` only where it narrows something.
+fn check_entries(c: &Catalog) -> Result<(), String> {
+    for e in &c.entries {
+        let what = format!("entry {:?} ({:?})", e.sym, e.shape);
+        if !(1..=6).contains(&e.kind) {
+            return Err(format!("{what} has kind {}: use 1-6 (FACTS.md EP kinds)", e.kind));
+        }
+        match (e.shape, e.sym.is_empty()) {
+            (Shape::DefaultExportFns, false) => return Err(format!("{what}: default-export-fns takes an empty sym")),
+            (Shape::SubclassMethods | Shape::CallbackArgs, true) => return Err(format!("{what} needs a sym")),
+            _ => {}
+        }
+        match (&e.names, e.shape) {
+            (Some(_), Shape::CallbackArgs) => return Err(format!("{what}: names does not apply to callback-args")),
+            (Some(n), _) if n.is_empty() || n.iter().any(|x| x.is_empty()) => {
+                return Err(format!("{what}: names is empty or has an empty name"));
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 /// Sorted and unique, so a diff shows only what changed.
@@ -278,6 +332,7 @@ fn check_order(c: &Catalog) -> Result<(), String> {
     )?;
     sorted_unique("handlers", c.handlers.iter().map(|h| format!("{}\0{}", h.sym, h.ver)))?;
     sorted_unique("wrappers", c.wrappers.iter().map(|w| format!("{}\0{}", w.sym, w.ver)))?;
+    sorted_unique("entries", c.entries.iter().map(|e| format!("{}\0{:?}\0{:02}\0{}", e.sym, e.shape, e.kind, e.ver)))?;
     sorted_unique("services", c.services.iter().map(|s| format!("{}\0{}", s.sym, s.ver)))?;
     sorted_unique("layers", c.layers.iter().map(|l| format!("{}\0{}", l.sym, l.ver)))?;
     sorted_unique("rules", c.rules.iter().map(|r| r.id.clone()))
@@ -290,6 +345,7 @@ fn check_one_entry_per_line(c: &Catalog, text: &str) -> Result<(), String> {
         + c.symbols.len()
         + c.handlers.len()
         + c.wrappers.len()
+        + c.entries.len()
         + c.services.len()
         + c.layers.len()
         + c.rules.len();
@@ -394,6 +450,21 @@ symbols = [
         assert!(err(&shadow).contains("shadowed"));
         let joined = GOOD.replace("},\n  { sym = \"demo#b\"", "}, { sym = \"demo#b\"");
         assert!(err(&joined).contains("one entry per line"));
+    }
+
+    #[test]
+    fn entry_points_are_strict_about_shape_kind_and_names() {
+        let with = |entries: &str| format!("{GOOD}entries = [\n{entries}]\n");
+        let ok = with("  { sym = \"\", shape = \"default-export-fns\", kind = 1, names = [\"fetch\"], ver = \"1\", at = \"x:3\", doc = \"d\" },\n  { sym = \"demo#Base\", shape = \"subclass-methods\", kind = 2, ver = \"1\", at = \"x:4\", doc = \"d\" },\n");
+        let l = load("t", &ok).unwrap();
+        assert_eq!(l.catalog.entries.len(), 2);
+        let e = |s: &str| err(&with(s));
+        assert!(e("  { sym = \"demo#B\", shape = \"subclasses\", kind = 2, ver = \"1\", at = \"x\", doc = \"d\" },\n").contains("subclasses"));
+        assert!(e("  { sym = \"demo#B\", shape = \"subclass-methods\", kind = 7, ver = \"1\", at = \"x\", doc = \"d\" },\n").contains("kind 7"));
+        assert!(e("  { sym = \"demo#B\", shape = \"callback-args\", kind = 6, names = [\"a\"], ver = \"1\", at = \"x\", doc = \"d\" },\n").contains("names does not apply"));
+        assert!(e("  { sym = \"demo#B\", shape = \"default-export-fns\", kind = 1, ver = \"1\", at = \"x\", doc = \"d\" },\n").contains("empty sym"));
+        assert!(e("  { sym = \"\", shape = \"subclass-methods\", kind = 2, ver = \"1\", at = \"x\", doc = \"d\" },\n").contains("needs a sym"));
+        assert!(e("  { sym = \"demo#B\", shape = \"subclass-methods\", kind = 2, ver = \"1\", at = \"x\", doc = \"d\" },\n  { sym = \"demo#A\", shape = \"subclass-methods\", kind = 2, ver = \"1\", at = \"x\", doc = \"d\" },\n").contains("out of order"));
     }
 
     #[test]

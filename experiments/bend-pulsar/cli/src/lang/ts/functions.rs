@@ -16,7 +16,7 @@ use oxc_span::{GetSpan, Span};
 use oxc_syntax::scope::ScopeFlags;
 
 use super::calls::{join, CatalogIndex, Use};
-use crate::catalog::{Arg, Via};
+use crate::catalog::{Arg, Shape, Via};
 use crate::lang::functions::{
     ct, ctx, fk, fnv_parts, op, shape, unres, Callee, CoRec, CtRec, FileFns, FnRec, Reexport, Site, SiteKind,
     SqlTextKind, SqlTextRec,
@@ -219,6 +219,8 @@ pub struct Walker<'s> {
     import_binds: HashMap<SymbolId, (u32, Option<String>)>,
     spec_ids: HashMap<String, u32>,
     name_ids: HashMap<String, u32>,
+    /// Entry kind for the function starting at the given offset (callback arguments).
+    pending_entry: Vec<(u32, u8)>,
 }
 
 impl<'s> Walker<'s> {
@@ -247,6 +249,7 @@ impl<'s> Walker<'s> {
             import_binds: HashMap::new(),
             spec_ids: HashMap::new(),
             name_ids: HashMap::new(),
+            pending_entry: Vec::new(),
         }
     }
 
@@ -494,6 +497,10 @@ impl<'s> Walker<'s> {
         self.leaf(ct::NESTED_FN);
         let local = self.out.fns.len() as u32;
         self.out.fns.push(FnRec { start_line, end_line, parent, loc, kind, chain, key });
+        if let Some(i) = self.pending_entry.iter().position(|p| p.0 == span.start) {
+            let kind = self.pending_entry.swap_remove(i).1;
+            self.out.entries.push((local, kind));
+        }
         let frame_ctx = self.frame_ctx(span.start, is_async);
         self.frames.push(Frame { local, next_node: 1, ctx: frame_ctx, loops: 0, stack: vec![0] });
         self.push_container(&element);
@@ -1088,6 +1095,36 @@ impl<'s> Walker<'s> {
         if let Some(arg) = ix.handler(sym) {
             self.handler_args(&it.arguments, arg);
         }
+        if let Some(kind) = ix.callback_entry(sym) {
+            self.entry_args(&it.arguments, kind);
+        }
+    }
+
+    /// The function arguments of a registration call are entry points of this kind.
+    fn entry_args(&mut self, args: &[Argument<'_>], kind: u8) {
+        for a in args {
+            let start = match a.as_expression().map(|e| e.get_inner_expression()) {
+                Some(Expression::FunctionExpression(f)) => f.span.start,
+                Some(Expression::ArrowFunctionExpression(f)) => f.span.start,
+                _ => continue,
+            };
+            self.pending_entry.push((start, kind));
+        }
+    }
+
+    /// Mark the one-level members `container>member` of the functions registered since
+    /// `first` as entry points, by the catalog's kind for that member.
+    fn mark_members(&mut self, first: usize, container: &str, kind_of: impl Fn(&str) -> Option<u8>) {
+        let prefix = format!("{container}>");
+        let found: Vec<(u32, u8)> = self.out.fns[first..]
+            .iter()
+            .enumerate()
+            .filter_map(|(i, f)| {
+                let member = f.chain.strip_prefix(&prefix).filter(|m| !m.contains('>'))?;
+                Some(((first + i) as u32, kind_of(member)?))
+            })
+            .collect();
+        self.out.entries.extend(found);
     }
 
     /// The catalog symbol a tagged template's tag stands for, when the tag is a bound value.
@@ -1262,7 +1299,17 @@ impl<'a> Visit<'a> for Walker<'_> {
                 }
             }
         }
+        let first = self.out.fns.len();
         walk::walk_export_default_declaration(self, it);
+        let is_object = matches!(
+            it.declaration.as_expression().map(|e| e.get_inner_expression()),
+            Some(Expression::ObjectExpression(_))
+        );
+        if let (Some(ix), true) = (self.index, is_object) {
+            if ix.has_entries() {
+                self.mark_members(first, "default", |m| ix.entry_kind(Shape::DefaultExportFns, "", m));
+            }
+        }
     }
 
     fn visit_class(&mut self, it: &Class<'a>) {
@@ -1273,9 +1320,19 @@ impl<'a> Visit<'a> for Walker<'_> {
         };
         self.push_container(&name);
         let ctx = self.class_ctx(it);
+        let (chain, base) = (ctx.chain.clone(), ctx.base.clone());
         self.classes.push(ctx);
+        let first = self.out.fns.len();
         walk::walk_class(self, it);
         self.classes.pop();
+        if let (Some(ix), Some(base)) = (self.index, base) {
+            if ix.has_entries() {
+                self.mark_members(first, &chain, |m| {
+                    // A constructor runs inside the platform's own call, it is not an entry.
+                    (m != "constructor").then(|| ix.entry_kind(Shape::SubclassMethods, &base, m)).flatten()
+                });
+            }
+        }
         self.pop_container();
     }
 

@@ -348,7 +348,7 @@ fn push_functions(w: &mut FactWriter, mut per: Vec<Option<FileOut>>, tables: &mu
     let mut fn_keys = Vec::new();
     let mut base = 0u32;
     for (file, slot) in per.iter_mut().enumerate() {
-        let Some(FileOut { fns: FileFns { fns, mut ct, mut ops, .. }, tests }) = slot.take() else { continue };
+        let Some(FileOut { fns: FileFns { fns, mut ct, mut ops, entries, .. }, tests }) = slot.take() else { continue };
         let count = fns.len() as u32;
         for (local, f) in fns.into_iter().enumerate() {
             let id = base + local as u32;
@@ -375,6 +375,9 @@ fn push_functions(w: &mut FactWriter, mut per: Vec<Option<FileOut>>, tables: &mu
         ops.sort_unstable_by_key(|o| (o.fn_local, o.node));
         for o in &ops {
             w.push(Rel::Co, &[base + o.fn_local, o.node, o.op as u32]);
+        }
+        for (local, kind) in &entries {
+            w.push(Rel::Ep, &[base + local, *kind as u32]);
         }
         for t in tests {
             w.push(Rel::Tf, &[base + t]);
