@@ -46,7 +46,9 @@ cap() { if [ -n "$TIMEOUT" ]; then "$TIMEOUT" 600 "$@"; else "$@"; fi; }
 # --- coverage first (CV facts attach at facts time) -------------------------
 # Each step is time-capped: coverage is best-effort and must never block
 # the findings run (observed: `bun test` on the legacy suite can hang for
-# many minutes on a VM without node_modules).
+# many minutes on a VM without node_modules). DOGFOOD_SKIP_COVERAGE=1 skips
+# both steps — useful until `pulsar delta --coverage` exists to read them.
+if [ "${DOGFOOD_SKIP_COVERAGE:-0}" != "1" ]; then
 if command -v cargo >/dev/null 2>&1 && [ -d "$REPO/experiments/bend-pulsar/cli" ]; then
   (cd "$REPO/experiments/bend-pulsar/cli" && \
     cap cargo llvm-cov --lcov --output-path "$REPO/experiments/bend-pulsar/coverage/lcov.info" \
@@ -55,6 +57,7 @@ fi
 if command -v bun >/dev/null 2>&1 && [ -f "$REPO/package.json" ]; then
   (cd "$REPO" && cap bun test --coverage-reporter=lcov >/dev/null 2>&1) \
     || warn "bun test coverage failed or >600s — TS coverage is no-data"
+fi
 fi
 
 sha_of() { git -C "$REPO" rev-parse "$1" 2>/dev/null || echo "$1"; }
