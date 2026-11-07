@@ -19,14 +19,16 @@ Explained in the design note "Type lane facts: encoding proposal (#685)". Curren
 
 | Tag | Fields | State |
 |---|---|---|
+| `T` | `im if cm et` | header row counts, before the rows |
+|---|---|---|
 | `IM` | `impl tr self_ty` | emitted; `tr` is 4294967295 for an inherent impl |
 | `IF` | `fn impl` | emitted for methods and associated functions |
 | `CM` | `fn expr callee mode` | emitted; mode 0 inherent, 1 trait, 2 free |
-| `RT` | `fn expr ty flags` | emitted with flags 16 (receiver) and 32 (reference or pointer) |
+| `ET` | `fn expr ty flags` | expression type; emitted with flags 16 (receiver) and 32 (reference or pointer) |
 
 Side tables: `<out>.syms` (`kind<TAB>rendered`) and `<out>.exprs` (`fn<TAB>expr<TAB>path<TAB>line`).
 
-Not yet emitted, and therefore not claimed: `RT` flags 1 and 2 (`Result`/`Option`), because the
+Not yet emitted, and therefore not claimed: `ET` flags 1 and 2 (`Result`/`Option`), because the
 ADT path needs `AdtId` lookup this version exposes differently, and 4 and 8 (discarded,
 unwrapped), which need the expression's AST context. Until they exist, error-swallowing
 detectors have `CM`/`IF` but not typed `Result` evidence.

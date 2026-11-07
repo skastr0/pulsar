@@ -8,11 +8,12 @@
 //!                           [--rss-limit-mb <n>] [--shard <crate-name>]
 //!
 //! Facts (FACTS.md "Type lane"):
+//!   T  <im> <if> <cm> <et>            header: row counts, before the rows
 //!   IM <impl> <tr> <self_ty>          an impl block; tr = 4294967295 when inherent
 //!   IF <fn> <impl>                    function fn is an item of impl impl
 //!   CM <fn> <expr> <callee> <mode>    call at expr resolves to callee; mode 0 inherent,
 //!                                     1 trait method, 2 free function
-//!   RT <fn> <expr> <ty> <flags>       type of expr; flags 1 Result, 2 Option, 16 receiver,
+//!   ET <fn> <expr> <ty> <flags>       type of expr; flags 1 Result, 2 Option, 16 receiver,
 //!                                     32 reference or pointer
 //!
 //! Side tables: `<out>.syms` (kind<TAB>rendered) and `<out>.exprs` (fn<TAB>expr<TAB>path<TAB>line).
@@ -76,6 +77,29 @@ fn peak_rss_mb() -> u64 {
 fn line_at(text: &str, offset: usize) -> u32 {
     let upto = &text[..offset.min(text.len())];
     1 + upto.bytes().filter(|b| *b == b'\n').count() as u32
+}
+
+
+/// Name and whether the type is defined in `core`, for the two lang-level types `RT` flags
+/// care about. Resolved through the ADT, never by matching a printed type name.
+fn core_adt(adt: ra_ap_hir_def::AdtId, db: &ra_ap_ide_db::RootDatabase) -> (String, bool) {
+    use ra_ap_hir_def::AdtId;
+    let (name, module) = match adt {
+        AdtId::EnumId(id) => {
+            let e = hir::Enum::from(id);
+            (e.name(db).as_str().to_string(), e.module(db))
+        }
+        AdtId::StructId(id) => {
+            let s = hir::Struct::from(id);
+            (s.name(db).as_str().to_string(), s.module(db))
+        }
+        AdtId::UnionId(id) => {
+            let u = hir::Union::from(id);
+            (u.name(db).as_str().to_string(), u.module(db))
+        }
+    };
+    let core = module.krate(db).display_name(db).is_some_and(|n| n.to_string() == "core");
+    (name, core)
 }
 
 #[derive(Default)]
@@ -157,7 +181,7 @@ fn main() -> anyhow::Result<()> {
     let mut im_rows: Vec<(u32, u32, u32)> = Vec::new();
     let mut if_rows: Vec<(u32, u32)> = Vec::new();
     let mut cm_rows: Vec<(u32, u32, u32, u32)> = Vec::new();
-    let mut rt_rows: Vec<(u32, u32, u32, u32)> = Vec::new();
+    let mut et_rows: Vec<(u32, u32, u32, u32)> = Vec::new();
     let mut expr_rows: Vec<(u32, u32, String, u32)> = Vec::new();
 
     let all = Crate::all(&db);
@@ -286,6 +310,16 @@ fn main() -> anyhow::Result<()> {
                     let expr_no = u32::from(expr_id.into_raw());
                     let ty_id = symbols.intern(1, rendered);
                     let mut flags = 0u32;
+                    if let Some((adt, _args)) = ty.as_adt() {
+                        let (name, core) = core_adt(adt, &db);
+                        if core && name == "Result" {
+                            flags |= 1;
+                            counts.result_exprs += 1;
+                        } else if core && name == "Option" {
+                            flags |= 2;
+                            counts.option_exprs += 1;
+                        }
+                    }
                     if ty.as_reference_or_ptr().is_some() {
                         flags |= 32;
                     }
@@ -293,7 +327,7 @@ fn main() -> anyhow::Result<()> {
                         flags |= 16;
                     }
                     if flags != 0 {
-                        rt_rows.push((fn_id, expr_no, ty_id, flags));
+                        et_rows.push((fn_id, expr_no, ty_id, flags));
                     }
                     expr_rows.push((fn_id, expr_no, path.clone(), line));
                     match inf.method_resolution(expr_id) {
@@ -350,6 +384,7 @@ fn main() -> anyhow::Result<()> {
     let mut buf = String::new();
     buf.push_str("pulsar-types 0\n");
     buf.push_str(&format!("S {}\n", symbols.rows.len()));
+    buf.push_str(&format!("T {} {} {} {}\n", im_rows.len(), if_rows.len(), cm_rows.len(), et_rows.len()));
     im_rows.sort_unstable();
     im_rows.dedup();
     for (imp, tr, self_ty) in &im_rows {
@@ -365,10 +400,10 @@ fn main() -> anyhow::Result<()> {
     for (f, e, callee, mode) in &cm_rows {
         buf.push_str(&format!("CM {f} {e} {callee} {mode}\n"));
     }
-    rt_rows.sort_unstable();
-    rt_rows.dedup();
-    for (f, e, ty, flags) in &rt_rows {
-        buf.push_str(&format!("RT {f} {e} {ty} {flags}\n"));
+    et_rows.sort_unstable();
+    et_rows.dedup();
+    for (f, e, ty, flags) in &et_rows {
+        buf.push_str(&format!("ET {f} {e} {ty} {flags}\n"));
     }
 
     match &out_path {
