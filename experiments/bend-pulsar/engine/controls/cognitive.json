@@ -172,5 +172,17 @@
   "bug": "a plain break costs 1",
   "old": "    case M.KExit{} _:\n      Cog.jump_inc(o)",
   "new": "    case M.KExit{} _:\n      1n"
+ },
+ {
+  "law": "cog_and_each",
+  "bug": "a && run start costs nothing",
+  "old": "    case OAnd{}:\n      1n\n    case OOr{}:",
+  "new": "    case OAnd{}:\n      0n\n    case OOr{}:"
+ },
+ {
+  "law": "cog_unknown_else_free",
+  "bug": "a branch with no CB row charges an else",
+  "old": "    case FIfE{}:\n      1n\n    case _:\n      0n",
+  "new": "    case FIfE{}:\n      1n\n    case ONone{}:\n      1n\n    case _:\n      0n"
  }
 ]

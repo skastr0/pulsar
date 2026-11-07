@@ -29,12 +29,13 @@ law glue_entry:
   for +rows: List<&2, R.Row>
   {I.MetricsIn.lines(r, rows) == I.In.go(r, I.In.cvs(rows), Ch.Churn.of(rows), I.In.un(rows), I.In.crs(rows), I.In.marked(I.In.fns(rows), I.In.tfs(rows)), I.In.cts(rows)) : Maybe<&2, List<&2, String>>}
 
-# G0b. the token a CO or CB value decodes to (FACTS.md). CO 1 and 2 start a run of `&&`
+# G0b. the token each CO value (1..10) and CB value (1..5) that FACTS.md defines decodes to, plus
+# one value outside each range (0 and 11, 0 and 6). FACTS.md. CO 1 and 2 start a run of `&&`
 # and `||`; 9 and 10 continue one and are not scored, like 3..8 (`??`, the assignments,
 # `?.`, defaults). CB 1..4 are the four branch flavors and 5 a labelled jump; anything else is
 # unknown (ONone, the v1 reading).
 law glue_tokens:
-  {[I.In.tok(6, 1), I.In.tok(6, 2), I.In.tok(6, 3), I.In.tok(6, 8), I.In.tok(6, 9), I.In.tok(6, 10), I.In.tok(1, 1), I.In.tok(1, 2), I.In.tok(1, 3), I.In.tok(1, 4), I.In.tok(7, 5), I.In.tok(1, 0), I.In.tok(1, 6)] == [G.OAnd{}, G.OOr{}, G.ONone{}, G.ONone{}, G.ONone{}, G.ONone{}, G.FTern{}, G.FIf{}, G.FIfE{}, G.FIfEl{}, G.FLab{}, G.ONone{}, G.ONone{}] : List<&2, G.Op>}
+  {[I.In.tok(6, 1), I.In.tok(6, 2), I.In.tok(6, 3), I.In.tok(6, 4), I.In.tok(6, 5), I.In.tok(6, 6), I.In.tok(6, 7), I.In.tok(6, 8), I.In.tok(6, 9), I.In.tok(6, 10), I.In.tok(6, 0), I.In.tok(6, 11), I.In.tok(1, 1), I.In.tok(1, 2), I.In.tok(1, 3), I.In.tok(1, 4), I.In.tok(1, 5), I.In.tok(7, 5), I.In.tok(1, 0), I.In.tok(1, 6)] == [G.OAnd{}, G.OOr{}, G.ONone{}, G.ONone{}, G.ONone{}, G.ONone{}, G.ONone{}, G.ONone{}, G.ONone{}, G.ONone{}, G.ONone{}, G.ONone{}, G.FTern{}, G.FIf{}, G.FIfE{}, G.FIfEl{}, G.FLab{}, G.FLab{}, G.ONone{}, G.ONone{}] : List<&2, G.Op>}
 
 # G1. decoded facts go to Trees.of, the tree builder Metrics.run uses, and the CO and CB
 # rows to the token list.
