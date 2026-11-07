@@ -20,8 +20,8 @@
 #                         drift finding is made, and the SQD line says the schema is incomplete
 #
 # Platform names (SQLite, D1, Durable Objects) never appear: the lane and the catalogs
-# decide which text is SQL. Every rule is off unless policy enables it (the SQL lane runs
-# only when a pack or the repo's policy turns it on).
+# decide which text is SQL. Every rule is off unless policy enables it: the CLI writes an
+# `SR rule` row for each rule that is on, and only those rules are reported.
 #
 #   pulsar-sql 0
 #   SQD <ddl_ok> <ddl_skipped> <complete 0|1>
@@ -256,7 +256,24 @@ def Sq.header(+s: Schema) -> String:
     case Schema{+ok, +sk, dts, dcs, dis, dxs, dfs, dgs}:
       "SQD " ++ U32.show(ok) ++ " " ++ U32.show(sk) ++ " " ++ Bool.pick(String, U32.is_eq(sk, 0), "1", "0")
 
-# The entry point: the schema and the query facts to the section's lines.
-def Sql.lines(+s: Schema, q: Qy) -> List<&2, String>:
-  +xs = Sq.findings(s, q)
+# Rule `rule` (1..6) is on: some `SR rule` row (the CLI writes one per rule policy turns on).
+def Sq.on(+rule: U32, on: List<&2, U32>) -> Bool:
+  match on:
+    case Nil{}:
+      False{}
+    case Con{r, t}:
+      Bool.or(U32.is_eq(r, rule), Sq.on(rule, t))
+
+# The findings of the rules that are on, in order.
+def Sq.only(+on: List<&2, U32>, xs: List<&2, Sx>) -> List<&2, Sx>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case Con{Sx{+rule, +id, +table, +col, +d}, t}:
+      Sq.keep(Sq.on(rule, on), Sx{rule, id, table, col, d}, Sq.only(on, t))
+
+# The entry point: the schema, the query facts and the rules that are on, to the
+# section's lines.
+def Sql.lines(+s: Schema, q: Qy, +on: List<&2, U32>) -> List<&2, String>:
+  +xs = Sq.only(on, Sq.findings(s, q))
   List.append(&2, String, ["pulsar-sql 0", Sq.header(s)], List.append(&2, String, Sq.lines(xs), ["SQS " ++ Nat.show(List.length(&2, Sx, xs))]))

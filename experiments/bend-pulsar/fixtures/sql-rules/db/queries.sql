@@ -1,0 +1,10 @@
+SELECT * FROM users WHERE email = ?;
+SELECT id FROM orders WHERE user_id = ?;
+SELECT id FROM users WHERE id = ?;
+SELECT id FROM users WHERE name LIKE '%x';
+SELECT id FROM users WHERE email LIKE '%x';
+SELECT id FROM orders WHERE created_at > ? LIMIT 10 OFFSET ?;
+SELECT o.id FROM orders o JOIN users u ON u.id = o.user_id WHERE u.status = ?;
+SELECT id FROM accounts WHERE x = ?;
+SELECT nope FROM users WHERE id = ?;
+SELECT id FROM orders WHERE lower(created_at) = ?;
