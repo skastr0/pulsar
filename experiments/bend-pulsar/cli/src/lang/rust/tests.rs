@@ -293,9 +293,9 @@ fn writing_a_root_writes_the_chains_seen_on_it() {
     assert_eq!(set(&r.bw, 3), vec![1, 3], "the write to e also writes the chain e.kind");
 }
 
-fn core_env() -> calls::CallEnv {
+fn core_env() -> env::CallEnv {
     let l = crate::catalog::load("rust-core", include_str!("catalog/rust-core.toml")).unwrap();
-    calls::CallEnv::new(&[&l.catalog], ["tokio".to_string()].into(), Default::default())
+    env::CallEnv::new(&[&l.catalog], ["tokio".to_string()].into(), Default::default())
 }
 
 /// `(symbol, loop_depth, ctx)` of every call site, in source order.
@@ -333,8 +333,8 @@ fn methods_match_by_name_only_and_say_so() {
     assert_eq!(
         sites,
         vec![
-            ("syntax#method.unwrap".to_string(), 0, calls::NAME_ONLY),
-            ("syntax#method.expect".to_string(), 0, calls::NAME_ONLY),
+            ("syntax#method.unwrap".to_string(), 0, env::NAME_ONLY),
+            ("syntax#method.expect".to_string(), 0, env::NAME_ONLY),
         ]
     );
 }
@@ -347,11 +347,11 @@ fn discarded_results_async_test_and_loop_context_are_in_the_ctx_and_depth() {
     assert_eq!(
         sites,
         vec![
-            ("syntax#let-underscore".to_string(), 0, calls::NAME_ONLY),
-            ("syntax#ok-discarded".to_string(), 0, calls::NAME_ONLY),
+            ("syntax#let-underscore".to_string(), 0, env::NAME_ONLY),
+            ("syntax#ok-discarded".to_string(), 0, env::NAME_ONLY),
             ("std#fs::read".to_string(), 0, 1),
             ("std#thread::sleep".to_string(), 1, 0),
-            ("syntax#method.unwrap".to_string(), 0, 4 | calls::NAME_ONLY),
+            ("syntax#method.unwrap".to_string(), 0, 4 | env::NAME_ONLY),
         ]
     );
 }
@@ -425,7 +425,7 @@ fn query_call_texts_are_literal_or_dynamic_and_carry_their_control_node() {
         "format = \"pulsar-catalog 0\"\nid = \"t\"\nscope = \"lane\"\nsources = [\"x\"]\nclasses = [\n  { class = \"query\", id = 1, rule = \"t/query\" },\n]\nsymbols = [\n  { sym = \"sqlx#query\", class = \"query\", ver = \"1\", at = \"x\", doc = \"x\" },\n  { sym = \"syntax#method.execute\", class = \"query\", ver = \"1\", at = \"x\", doc = \"x\" },\n]\n",
     )
     .unwrap();
-    let env = calls::CallEnv::new(&[&l.catalog], ["sqlx".to_string()].into(), Default::default());
+    let env = env::CallEnv::new(&[&l.catalog], ["sqlx".to_string()].into(), Default::default());
     let f = parse::extract_with(
         "src/x.rs",
         "fn f(conn: C, s: String) {\n    sqlx::query(\"SELECT 1\");\n    for _x in 0..3 {\n        conn.execute(\"INSERT INTO t VALUES (?)\", [1]);\n    }\n    sqlx::query(&s);\n}\n",
@@ -448,7 +448,7 @@ fn call_report(out: &Analysis) {
             match &s.kind {
                 SiteKind::Call { sym, ctx, consts, .. } => {
                     *by_sym.entry(f.fns.syms[*sym as usize].clone()).or_default() += 1;
-                    if ctx & calls::NAME_ONLY != 0 { name_only += 1 } else { exact += 1 }
+                    if ctx & env::NAME_ONLY != 0 { name_only += 1 } else { exact += 1 }
                     if ctx & 4 != 0 { test_sites += 1 }
                     al += consts.len();
                 }
