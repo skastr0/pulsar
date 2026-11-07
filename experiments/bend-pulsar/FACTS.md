@@ -121,14 +121,28 @@ FX core.risky-change <fn> <churn> <thr> churn=CFN core.crap=<crap>/<thr>
 CRAP is at least c and equals c at full coverage, and that findings are sound and complete.
 `Hotspot-LAWS.bend` proves that every composite has churn over the threshold and an accepted base
 finding for the same function, and the converse. `MetricsIn-LAWS.bend` ties the output to both. The `CV`
-join, the churn count and the evidence tail are unproven, like the decoders, and are checked
-by hand in `*-CHECK.bend`.
+join and the evidence tail are unproven, like the decoders, and are checked by hand in
+`*-CHECK.bend`. The churn count is proven: `Churn-LAWS.bend` CH1-CH2 say each reported count is
+the number of counted `CFN` rows, and every counted function is reported.
 
 **Pack sections.** After the Metrics lines, `pulsar-engine` prints one section per active pack, in this order. A pack is active when its facts are present, and the CLI writes them only for packs that are on.
 - **Effect layer graph** (an `E` row is present): `pulsar-layers 0`, then the `LCYC` … `LS` lines of "Effect pack" below.
 - **Class-in-context** (an `RL` row is present): `pulsar-classctx 0`, then `RCX rule site fn callee`, one per (rule, site), sorted, then `RCXS n`.
 
 If any detector refuses its facts (the graph, Metrics, or an active pack), the engine exits 2 with nothing on stdout. engine/LAWS.bend P5-P14 state the order and the switches; `engine/fixtures/packs.expected` shows all four sections.
+
+**Rows the engine reads.** Besides the graph facts read by `Parse.bend`, `pulsar-engine` keeps only rows with these tags and skips every other line unread. engine/LAWS.bend P15 pins the list. Each tag is its ASCII letters packed big-endian, as `Rows.bend` reads them:
+
+| Tags | Read by |
+|---|---|
+| `FN` 17998, `CT` 17236, `TF` 21574 | MetricsIn |
+| `E` 69, `SV` 21334, `LY` 19545, `LQ` 19537, `LP` 19536, `LR` 19538, `LC` 19523, `LO` 19535, `US` 21843 | Layers |
+| `CS` 17235, `CL` 17228, `RL` 21068 | ClassCtx |
+| `CV` 17238 | Crap |
+| `A` 65, `C` 67, `CFN` 4408910 | Churn |
+| `CO` 17231 | Cognitive |
+
+A new relation reaches a detector only once its tag is added here and to `Engine.row_tags`, in the same commit.
 
 The CLI renders file ids to paths, maps them to stable keys, and prints the human and JSON forms.
 

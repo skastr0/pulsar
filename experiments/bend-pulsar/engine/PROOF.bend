@@ -149,3 +149,9 @@ def Laws.engine_classctx_off(rows, off):
 
 def Laws.engine_all(o, m, rows):
   {==}
+
+def Laws.engine_row_tags():
+  {==}
+
+def Laws.metrics_defaults():
+  {==}

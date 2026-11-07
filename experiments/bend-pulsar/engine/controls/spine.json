@@ -264,5 +264,19 @@
   "file": "../Graph.bend",
   "old": "      Bool.and(Bool.or(Bool.not(Graph.mem(ns, x)), Graph.in_tr(s, x)), Graph.selfs_ok(t, U32.inc(x), s))",
   "new": "      Graph.selfs_ok(t, U32.inc(x), s)"
+ },
+ {
+  "law": "P15 engine_row_tags",
+  "bug": "Engine.row_tags drops CO",
+  "file": "Pipeline.bend",
+  "old": ", 4408910, 17231]",
+  "new": ", 4408910]"
+ },
+ {
+  "law": "P16 metrics_defaults",
+  "bug": "Metrics.defaults raises core.cyclomatic to 11",
+  "file": "Metrics.bend",
+  "old": "  Rules{10n, 3n, 200n, 60n, U32.to_nat(16777215)}",
+  "new": "  Rules{11n, 3n, 200n, 60n, U32.to_nat(16777215)}"
  }
 ]

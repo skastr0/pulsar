@@ -32,6 +32,7 @@ import ./Pipeline.bend as L
 import ./Rows.bend as W
 import ./Layers.bend as Y
 import ./ClassCtx.bend as X
+import ./Metrics.bend as M
 
 # ---- K. the fact-to-edge rule -----------------------------------------------------------------
 # `Facts.kind` asks the proven rule (Extract.value_kind) what a fact is. These
@@ -346,3 +347,22 @@ law engine_all:
   for m: Maybe<&2, List<&2, String>>
   for +rows: List<&2, W.Row>
   {L.Engine.all(o, m, rows) == L.Engine.more(L.Engine.more(L.Engine.lines(o, m), L.Engine.layers(rows)), L.Engine.classctx(rows)) : Maybe<List<&2, String>>}
+
+# P15. the rows the engine keeps (Rows.start_keep) are exactly the tags FACTS.md
+# lists under "Rows the engine reads", each packed as Rows.bend packs it (the
+# ASCII letters, big-endian): FN CT TF (MetricsIn); E SV LY LQ LP LR LC LO US
+# (Layers); CS CL RL (ClassCtx); CV (Crap); A C CFN (Churn); CO (Cognitive).
+law engine_row_tags:
+  {L.Engine.row_tags() == [17998, 17236, 21574, 69, 21334, 19545, 19537, 19536, 19538, 19523, 19535, 21843, 17235, 17228, 21068, 17238, 65, 67, 4408910, 17231] : List<&2, U32>}
+
+# P16. the shipped Metrics thresholds are FACTS.md's: core.cyclomatic 10,
+# core.nesting 3, core.npath 200, core.length 60. (The fifth field, the cap
+# 2^24 - 1, is not a finding threshold, and stating it would expand a 2^24
+# unary literal.)
+def Thr(r: M.Rules) -> Nat & Nat & Nat & Nat:
+  match r:
+    case M.Rules{cc, nest, np, loc, cap}:
+      (cc, nest, np, loc)
+
+law metrics_defaults:
+  {Thr(M.Metrics.defaults()) == (10n, 3n, 200n, 60n) : Nat & Nat & Nat & Nat}
