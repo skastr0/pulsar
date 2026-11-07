@@ -71,6 +71,25 @@ pulsar catalog list               # class catalogs in effect, and why each is on
 
 The first run on a sha parses it. The result is cached per sha under `~/.pulsar/cache` (`PULSAR_CACHE_DIR`, `PULSAR_CACHE_MAX_MB`, `PULSAR_CACHE=off`), so the second run on the same sha is fast. `--no-cache` recomputes.
 
+## Rules
+
+`pulsar explain <rule>` gives the definition, the threshold and the laws behind each one; `pulsar version` lists their versions. A rule is **on** by default, **opt-in** (list it in `[rules] enable`), or **with its pack** (the pack switches on from evidence; `[rules] disable` turns one rule off). Every threshold is in the rule or its catalog, never hidden.
+
+| Rule | Flags | On when |
+|---|---|---|
+| `core.cyclomatic`, `core.nesting`, `core.npath`, `core.length` | a function over a size or complexity threshold | default |
+| `core.cognitive` | cognitive complexity (SonarSource) | opt-in |
+| `core.hotspot` | a complexity finding on a function that changed often | default, with git history |
+| `core.crap`, `core.risky-change` | complex, under-tested code, and the same on a function that changes often | with a coverage report |
+| `graph.import-cycle` | files that reach each other through value imports | default |
+| `sql.unindexed-filter`, `sql.index-defeat`, `sql.offset-param`, `sql.dynamic-text`, `sql.fk-unindexed`, `sql.schema-drift` | query and schema problems in `.sql` files and in queries the code runs | opt-in |
+| `effect.promise-style-in-effect-scope`, `effect.exception-style-in-effect-scope` | async/await, promises, `throw` or `try` in an Effect-first file | Effect pack, with `[packs.effect]` scope lists |
+| `effect.ambient-read-in-effect`, `effect.blocking-in-effect`, `effect.runtime-escape-in-effect` | clock, blocking host calls or runtime escapes inside Effect code | Effect pack |
+| `effect.layer-cycle`, `effect.unprovided-service`, `effect.duplicate-builder`, `effect.hub-service` | problems in the Effect layer graph | Effect pack |
+| `cloudflare.query-in-loop` | a D1 or Durable Object SQL query run once per loop iteration, directly or through a function it calls within 2 call edges (test code excluded) | Cloudflare pack |
+| `cloudflare.hot-query-fan-out` | that finding in code a request, alarm or queue entry point reaches within 3 call edges | Cloudflare pack |
+| `cloudflare.hot-unindexed-query` | a `sql.unindexed-filter` finding in such code | Cloudflare pack and `sql.unindexed-filter` enabled; `pulsar policy` says when it is off |
+
 ## Coverage
 
 Coverage is optional and comes from a report your repo already writes; Pulsar never runs your tests. `pulsar facts` and `pulsar delta` find the report themselves: they look at the repo root for `coverage/coverage-final.json`, `coverage/lcov.info`, `coverage/cobertura.xml`, `coverage/cobertura-coverage.xml` and `lcov.info`. `delta` applies it to HEAD only (the report describes your worktree, never the base), so run the tests before the delta. `--coverage <file|dir>` points either command at another location, and `delta` prints on stderr which report it read, or that it found none.

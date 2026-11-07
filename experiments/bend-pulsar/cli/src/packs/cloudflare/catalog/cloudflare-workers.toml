@@ -48,3 +48,20 @@ entries = [
   { sym = "cloudflare:workers#WorkerEntrypoint", shape = "subclass-methods", kind = 4, names = ["scheduled"], ver = "workers-types-4", at = "@cloudflare/workers-types@4.20260120.0:index.d.ts:11366", doc = "signature: scheduled?(controller: ScheduledController): void | Promise<void>;" },
   { sym = "cloudflare:workers#WorkerEntrypoint", shape = "subclass-methods", kind = 5, names = ["queue"], ver = "workers-types-4", at = "@cloudflare/workers-types@4.20260120.0:index.d.ts:11365", doc = "signature: queue?(batch: MessageBatch<unknown>): void | Promise<void>;" },
 ]
+
+# Fan-out: a query call at loop depth > 0, or a loop call of a function that reaches one within two
+# call edges (edges = 2). none = 4: test code is left out. D1 has a batch form that sends the
+# statements in one round trip, which is the evidence that a query per loop iteration has a cheaper
+# shape.
+fanouts = [
+  { id = "cloudflare.query-in-loop", class = "query", edges = 2, none = 4, says = "runs a D1 or Durable Object SQL query once per loop iteration, directly or through a repo function it calls", ver = "1", at = "@cloudflare/workers-types@4.20260120.0:index.d.ts:10536", doc = "signature: batch<T = unknown>(statements: D1PreparedStatement[]): Promise<D1Result<T>[]>;" },
+]
+
+# Hot path: a base finding in a function an entry point above reaches within three call edges
+# (depth = 3), so it runs per request, alarm or message. The unindexed-query rule needs
+# `sql.unindexed-filter` in policy.toml [rules] enable, and the fan-out rule builds on
+# cloudflare.query-in-loop.
+hots = [
+  { id = "cloudflare.hot-query-fan-out", lane = "fanout", base = "cloudflare.query-in-loop", depth = 3, says = "runs a query per loop iteration in code that a request, alarm or queue entry point reaches", ver = "1", at = "@cloudflare/workers-types@4.20260120.0:index.d.ts:512", doc = "signature: fetch?: ExportedHandlerFetchHandler<Env, CfHostMetadata>;" },
+  { id = "cloudflare.hot-unindexed-query", lane = "sql", base = "sql.unindexed-filter", depth = 3, says = "runs a query that filters on a column no index covers, in code that a request, alarm or queue entry point reaches", ver = "1", at = "@cloudflare/workers-types@4.20260120.0:index.d.ts:512", doc = "signature: fetch?: ExportedHandlerFetchHandler<Env, CfHostMetadata>;" },
+]

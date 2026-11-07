@@ -338,6 +338,16 @@ pub fn run(args: &[String]) -> Result<(), String> {
 mod tests {
     use super::*;
 
+    /// The README's rule table is the one place a reader sees every rule; a rule the CLI can report
+    /// but the table omits fails here.
+    #[test]
+    fn every_rule_the_cli_reports_is_in_the_readme_rule_table() {
+        let readme = include_str!("../../../../README.md");
+        for (id, _) in version::rules() {
+            assert!(readme.contains(&format!("`{id}`")), "README.md has no rule table row for {id}");
+        }
+    }
+
     #[test]
     fn every_rule_the_cli_reports_has_an_explanation() {
         for (id, _) in version::rules() {
