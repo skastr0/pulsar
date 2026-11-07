@@ -9,7 +9,6 @@
 use crate::facts::{stable_key, FactWriter, FnEntry, Rel, SideTables};
 use crate::git::git_ls_files;
 use crate::lang::functions::{FileFns, NO_PARENT};
-use crate::lang::scope::is_prod;
 use crate::policy::Lanes;
 use crate::lang::{self, Degraded, FileOut};
 use std::path::{Path, PathBuf};
@@ -65,14 +64,17 @@ pub fn build(
     let bend_files = lane_files(&files, lang::bend::owns);
 
     let mut st = Stats { files: files.len(), ts_files: ts_files.len(), rust_files: rust_files.len(), bend_files: bend_files.len(), ..Stats::default() };
-    push_files(w, &files, &mut st);
 
     // Lanes run one after another: each already uses every core, and one lane's ASTs are gone
     // before the next lane parses.
     let mut per: Vec<Option<FileOut>> = (0..files.len()).map(|_| None).collect();
     let sym_classes = analyze_ts(root, &tracked, &ts_files, &mut per, w, &mut st)?;
-    analyze_rust(root, &tracked, &rust_files, &mut per, w, &mut st)?;
-    tables.laws = bend_lane(root, &bend_files, &files, &mut per, w, &mut st)?;
+    // What a lane's analysis decided about production code, per file id: None keeps the path rule.
+    let mut lane_prod: Vec<Option<bool>> = vec![None; files.len()];
+    analyze_rust(root, &tracked, &rust_files, &mut per, &mut lane_prod, w, &mut st)?;
+    tables.laws = bend_lane(root, &bend_files, &files, &mut per, &mut lane_prod, w, &mut st)?;
+    // F rows come after the lanes, because only a lane's analysis can tell some test files.
+    push_files(w, &files, lanes, &lane_prod, &mut st);
 
     // Function ids are global: files in id order, functions in start-offset order within a file.
     // Each file's rows move into the writer and are freed before the next file.
@@ -117,10 +119,10 @@ fn lane_files(files: &[String], owns: fn(&str) -> bool) -> Vec<(u32, String)> {
 }
 
 /// `N`, `F` and `K` for every file.
-fn push_files(w: &mut FactWriter, files: &[String], st: &mut Stats) {
+fn push_files(w: &mut FactWriter, files: &[String], lanes: &Lanes, lane_prod: &[Option<bool>], st: &mut Stats) {
     w.push(Rel::N, &[files.len() as u32]);
     for (id, rel) in files.iter().enumerate() {
-        let prod = is_prod(rel);
+        let prod = lanes.is_prod(rel, lane_prod[id]);
         st.prod += prod as usize;
         w.push(Rel::F, &[id as u32, prod as u32]);
         let k = stable_key(rel);
@@ -156,6 +158,7 @@ fn analyze_rust(
     tracked: &[String],
     files: &[(u32, String)],
     per: &mut [Option<FileOut>],
+    lane_prod: &mut [Option<bool>],
     w: &mut FactWriter,
     st: &mut Stats,
 ) -> Result<(), String> {
@@ -163,6 +166,9 @@ fn analyze_rust(
         return Ok(());
     }
     let a = lang::rust::analyze(root, files, tracked)?;
+    for ((id, _), p) in files.iter().zip(&a.prod) {
+        lane_prod[*id as usize] = *p;
+    }
     st.fatal += a.stats.failed_parse;
     if a.stats.metadata_fallbacks > 0 {
         st.degraded.push(Degraded {
@@ -257,6 +263,7 @@ fn bend_lane(
     bend_files: &[(u32, String)],
     files: &[String],
     per: &mut [Option<FileOut>],
+    lane_prod: &mut [Option<bool>],
     w: &mut FactWriter,
     st: &mut Stats,
 ) -> Result<String, String> {
@@ -264,6 +271,9 @@ fn bend_lane(
         return Ok(String::new());
     }
     let a = lang::bend::analyze(root, bend_files)?;
+    for ((id, _), p) in bend_files.iter().zip(&a.prod) {
+        lane_prod[*id as usize] = Some(*p);
+    }
     st.unreadable += a.stats.unreadable;
     st.laws = a.stats.laws;
     st.markers = a.stats.markers;
