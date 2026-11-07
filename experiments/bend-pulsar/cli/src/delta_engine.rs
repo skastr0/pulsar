@@ -80,6 +80,26 @@ pub struct Out {
     pub better: Vec<Move>,
 }
 
+/// One `KDA`/`KDL`/`KDC`/`KDR` (a key) or `KDW`/`KDI` (a key, metric and two values) line.
+fn row(o: &mut Out, tag: &str, n: &[u64]) -> Result<(), String> {
+    let list = match tag {
+        "KDA" => &mut o.added,
+        "KDL" => &mut o.allowed,
+        "KDC" => &mut o.coverage,
+        "KDR" => &mut o.removed,
+        "KDW" | "KDI" => {
+            let [h, l, m, vb, vh] = <[u64; 5]>::try_from(n).map_err(|_| "wrong number of fields")?;
+            let mv = (key(h, l)?, u32::try_from(m).map_err(|_| "metric is not a U32")?, vb, vh);
+            if tag == "KDW" { o.worse.push(mv) } else { o.better.push(mv) }
+            return Ok(());
+        }
+        other => return Err(format!("unknown engine delta line tag {other:?}")),
+    };
+    let [h, l] = <[u64; 2]>::try_from(n).map_err(|_| "wrong number of fields")?;
+    list.push(key(h, l)?);
+    Ok(())
+}
+
 /// Read the `pulsar-delta 0` section of the engine's output. Anything else in that section, a
 /// missing or repeated section or `KDS` line, or a `KDS` count that disagrees with the lines, is an
 /// error: the CLI never prints a delta the engine did not.
@@ -98,17 +118,13 @@ pub fn parse(text: &str) -> Result<Out, String> {
             continue;
         }
         let n = it.map(|s| s.parse::<u64>().map_err(|_| format!("bad number {s:?} in engine line {line:?}"))).collect::<Result<Vec<_>, _>>()?;
-        let bad = || format!("engine delta line {line:?} has the wrong number of fields");
-        match (tag, n.as_slice()) {
-            ("KDA", [h, l]) => o.added.push(key(*h, *l)?),
-            ("KDL", [h, l]) => o.allowed.push(key(*h, *l)?),
-            ("KDC", [h, l]) => o.coverage.push(key(*h, *l)?),
-            ("KDR", [h, l]) => o.removed.push(key(*h, *l)?),
-            ("KDW", [h, l, m, vb, vh]) => o.worse.push((key(*h, *l)?, u32::try_from(*m).map_err(|_| bad())?, *vb, *vh)),
-            ("KDI", [h, l, m, vb, vh]) => o.better.push((key(*h, *l)?, u32::try_from(*m).map_err(|_| bad())?, *vb, *vh)),
-            ("KDS", [a, al, c, r, s, w, b]) if kds.is_none() => kds = Some([*a, *al, *c, *r, *s, *w, *b]),
-            ("KDA" | "KDL" | "KDC" | "KDR" | "KDW" | "KDI" | "KDS", _) => return Err(bad()),
-            (other, _) => return Err(format!("unknown engine delta line tag {other:?}")),
+        if tag == "KDS" {
+            match (n.as_slice(), kds) {
+                ([a, al, c, r, s, w, b], None) => kds = Some([*a, *al, *c, *r, *s, *w, *b]),
+                _ => return Err(format!("engine delta line {line:?} is a repeated or malformed KDS")),
+            }
+        } else {
+            row(&mut o, tag, &n).map_err(|e| format!("engine delta line {line:?}: {e}"))?;
         }
     }
     if sections != 1 {
@@ -166,6 +182,7 @@ mod tests {
         assert!(parse("pulsar-delta 0\nKDA 0 1\n").unwrap_err().contains("no KDS"));
         assert!(parse("pulsar-delta 0\nKDA 0 1\nKDS 0 0 0 0 0 0 0\n").unwrap_err().contains("disagrees"));
         assert!(parse("pulsar-delta 0\nKDA 0\nKDS 1 0 0 0 0 0 0\n").unwrap_err().contains("wrong number"));
+        assert!(parse("pulsar-delta 0\nKDW 0 1 2 3\nKDS 0 0 0 0 0 1 0\n").unwrap_err().contains("wrong number"));
         assert!(parse("pulsar-delta 0\nKDX 0 1\nKDS 0 0 0 0 0 0 0\n").unwrap_err().contains("unknown"));
         assert!(parse("pulsar-delta 0\nKDS 0 0 0 0 0 0 0\nKDS 0 0 0 0 0 0 0\n").is_err());
         assert!(parse("pulsar-delta 0\nKDS 0 0 0 0 0 0 0\npulsar-delta 0\nKDS 0 0 0 0 0 0 0\n").is_err());
