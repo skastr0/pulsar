@@ -213,19 +213,28 @@ fn push_sites(
     st: &mut Stats,
 ) {
     let mut bases = Vec::new();
+    let mut file_base = std::collections::HashMap::new();
     let mut next = 0u32;
-    for f in per.iter().flatten() {
+    for (file, slot) in per.iter().enumerate() {
+        let Some(f) = slot else { continue };
+        file_base.insert(file as u32, next);
         bases.push((next, &f.fns));
         next += f.fns.fns.len() as u32;
     }
-    let rows = crate::lang::functions::number_sites(&bases, &|s| sym_classes.get(s).cloned().unwrap_or_default());
+    let rows = crate::lang::functions::number_sites(
+        &bases,
+        &|file| file_base.get(&file).copied(),
+        &|s| sym_classes.get(s).cloned().unwrap_or_default(),
+    );
     for id in 0..rows.syms.len() {
         w.push(Rel::Sy, &[id as u32]);
     }
     rows.cl.iter().for_each(|r| w.push(Rel::Cl, r));
     rows.cs.iter().for_each(|r| w.push(Rel::Cs, r));
     rows.hd.iter().for_each(|r| w.push(Rel::Hd, r));
-    st.sites = rows.cs.len() + rows.hd.len();
+    rows.ce.iter().for_each(|r| w.push(Rel::Ce, r));
+    rows.cu.iter().for_each(|r| w.push(Rel::Cu, r));
+    st.sites = rows.cs.len() + rows.hd.len() + rows.ce.len();
     tables.syms = rows.syms;
 }
 

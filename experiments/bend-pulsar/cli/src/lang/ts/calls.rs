@@ -199,11 +199,12 @@ mod fixtures {
         let mut out = String::new();
         for s in &f.sites {
             let chain = &f.fns[s.fn_local as usize].chain;
-            match s.kind {
+            match &s.kind {
                 SiteKind::Call { sym, loop_depth, ctx } => {
-                    out += &format!("CS {chain} {} loops={loop_depth} ctx={ctx}\n", f.syms[sym as usize]);
+                    out += &format!("CS {chain} {} loops={loop_depth} ctx={ctx}\n", f.syms[*sym as usize]);
                 }
                 SiteKind::Handler { shape } => out += &format!("HD {chain} shape={shape}\n"),
+                SiteKind::Edge { .. } => {}
             }
         }
         out

@@ -93,17 +93,59 @@ pub mod shape {
     pub const RETHROW_NO_CAUSE: u8 = 5;
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// `CU` reasons: why a call could not be turned into an edge to a repo function. Calls that
+/// leave the repo (an external package, a runtime global) are not unresolved: they have no
+/// callee to find.
+pub mod unres {
+    /// The callee is not a plain name path: a call result, an element access, a computed key.
+    pub const DYNAMIC: u8 = 1;
+    /// The callee is rooted at a parameter or a local binding that is not a module-level
+    /// function, class or object.
+    pub const LOCAL_BINDING: u8 = 2;
+    /// The callee is a member of a repo object or class whose method set is not known (a path
+    /// deeper than one member, or a method the class does not define).
+    pub const UNKNOWN_MEMBER: u8 = 3;
+    /// An import of a repo file that exports no function by that name.
+    pub const NOT_FOUND: u8 = 4;
+}
+
+/// The callee of a call edge, before and after linking.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Callee {
+    /// A function of this file, by its `.fns` chain (`f`, `Class>method`, `api>m`): an index
+    /// into [`FileFns::names`].
+    Local(u32),
+    /// An export of an imported repo module: `spec` indexes [`FileFns::specs`], `path` indexes
+    /// [`FileFns::names`] and is the exported name and the members after it, dot-joined
+    /// (`api.m`, `default`).
+    Import { spec: u32, path: u32 },
+    /// Linked: global file id and local function index of the target.
+    Resolved { file: u32, fn_local: u32 },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SiteKind {
     /// A call site of catalog symbol `sym` (an index into [`FileFns::syms`]).
     Call { sym: u32, loop_depth: u32, ctx: u8 },
     /// An error handler of the given shape.
     Handler { shape: u8 },
+    /// A call of a repo function (`CE`); `node` is the innermost enclosing control-tree node.
+    Edge { to: Callee, node: u32, loop_depth: u32, ctx: u8 },
+}
+
+/// An `export ... from` of a module, resolved by the lane.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Reexport {
+    pub spec: u32,
+    /// The name taken from the module; `None` for `export * from`.
+    pub imported: Option<String>,
+    /// The name this file exports it as (unused for a star).
+    pub exported: String,
 }
 
 /// A `CS` or `HD` row before numbering: `fn_local` is the owning function's local index. Sites
 /// are in source order; the driver numbers them globally, one id space for both relations.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Site {
     pub fn_local: u32,
     pub kind: SiteKind,
@@ -144,6 +186,20 @@ pub struct FileFns {
     pub sites: Vec<Site>,
     /// SQL texts of query-class calls, in source order.
     pub sql: Vec<SqlTextRec>,
+    /// Module specifiers that callees and re-exports refer to by index.
+    pub specs: Vec<String>,
+    /// Chains and export paths that callees refer to by index, each stored once.
+    pub names: Vec<String>,
+    /// Per spec: the repo file (a local file index) it names, once the lane resolved it.
+    pub spec_targets: Vec<Option<u32>>,
+    /// Edge calls dropped because their import is not a repo file.
+    pub external: usize,
+    /// `(exported name, local chain)`: an exported function, class or object keeps the chain
+    /// of its declaration; an object or class also exports its members as `name.member`.
+    pub exports: Vec<(String, String)>,
+    pub reexports: Vec<Reexport>,
+    /// `(fn_local, reason)` once per call that could not become an edge.
+    pub unresolved: Vec<(u32, u8)>,
 }
 
 /// FNV-1a 64 over parts separated by a zero byte (same constants as the file key).
@@ -171,6 +227,10 @@ pub struct SiteRows {
     pub cs: Vec<[u32; 5]>,
     /// `(site, fn, shape)`.
     pub hd: Vec<[u32; 3]>,
+    /// `(site, fn, target, node, loop_depth, ctx)`.
+    pub ce: Vec<[u32; 6]>,
+    /// `(fn, reason, count)`, sorted.
+    pub cu: Vec<[u32; 3]>,
 }
 
 /// Number the call sites and handlers of every file. `files` is `(first function id, rows)` in
@@ -178,6 +238,7 @@ pub struct SiteRows {
 /// gives each symbol's catalog classes.
 pub fn number_sites(
     files: &[(u32, &FileFns)],
+    file_base: &dyn Fn(u32) -> Option<u32>,
     classes: &dyn Fn(&str) -> Vec<u32>,
 ) -> SiteRows {
     let mut names: std::collections::BTreeSet<&str> = Default::default();
@@ -193,18 +254,29 @@ pub fn number_sites(
         }
     }
     let mut site = 0u32;
+    let mut unresolved: std::collections::BTreeMap<(u32, u8), u32> = Default::default();
     for (base, f) in files {
         for s in &f.sites {
             let fnid = base + s.fn_local;
-            match s.kind {
+            match &s.kind {
                 SiteKind::Call { sym, loop_depth, ctx } => {
-                    out.cs.push([site, fnid, ids[f.syms[sym as usize].as_str()], loop_depth, ctx as u32]);
+                    out.cs.push([site, fnid, ids[f.syms[*sym as usize].as_str()], *loop_depth, *ctx as u32]);
                 }
-                SiteKind::Handler { shape } => out.hd.push([site, fnid, shape as u32]),
+                SiteKind::Handler { shape } => out.hd.push([site, fnid, *shape as u32]),
+                SiteKind::Edge { to: Callee::Resolved { file, fn_local }, node, loop_depth, ctx } => {
+                    let Some(target) = file_base(*file).map(|b| b + fn_local) else { continue };
+                    out.ce.push([site, fnid, target, *node, *loop_depth, *ctx as u32]);
+                }
+                // Linking turns every edge into a resolved one or drops it.
+                SiteKind::Edge { .. } => continue,
             }
             site += 1;
         }
+        for (fn_local, reason) in &f.unresolved {
+            *unresolved.entry((base + fn_local, *reason)).or_insert(0) += 1;
+        }
     }
+    out.cu = unresolved.into_iter().map(|((f, r), n)| [f, r as u32, n]).collect();
     out.syms = names.iter().map(|n| n.to_string()).collect();
     out
 }

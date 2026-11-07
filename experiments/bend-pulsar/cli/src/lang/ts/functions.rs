@@ -18,7 +18,8 @@ use oxc_syntax::scope::ScopeFlags;
 use super::calls::{join, CatalogIndex, Use};
 use crate::catalog::{Arg, Via};
 use crate::lang::functions::{
-    ct, ctx, fk, fnv_parts, op, shape, CoRec, CtRec, FileFns, FnRec, Site, SiteKind, SqlTextKind, SqlTextRec,
+    ct, ctx, fk, fnv_parts, op, shape, unres, Callee, CoRec, CtRec, FileFns, FnRec, Reexport, Site, SiteKind,
+    SqlTextKind, SqlTextRec,
 };
 use oxc_semantic::Scoping;
 use oxc_syntax::reference::ReferenceId;
@@ -140,6 +141,12 @@ struct Chain {
     path: Vec<String>,
 }
 
+/// A callee the walker named but has not linked.
+enum Named {
+    Local(String),
+    Import { spec: u32, path: String },
+}
+
 enum Target {
     /// A catalog-style symbol: through an import, or `global#...` for an undeclared root.
     Sym(String),
@@ -155,6 +162,8 @@ enum Target {
 /// What `this.<field>` can be known to hold inside one class body.
 #[derive(Default)]
 struct ClassCtx {
+    /// The class's `.fns` chain, for `this.method()` edges.
+    chain: String,
     /// The catalog symbol of an imported base class.
     base: Option<String>,
     /// Typed fields and constructor parameter properties: field name to the type's symbol.
@@ -206,6 +215,10 @@ pub struct Walker<'s> {
     pending_ctx: Vec<(u32, u8)>,
     hook: Option<&'s mut dyn PackHook>,
     classes: Vec<ClassCtx>,
+    /// Value import bindings: module specifier index and imported name (`None` = namespace).
+    import_binds: HashMap<SymbolId, (u32, Option<String>)>,
+    spec_ids: HashMap<String, u32>,
+    name_ids: HashMap<String, u32>,
 }
 
 impl<'s> Walker<'s> {
@@ -231,6 +244,9 @@ impl<'s> Walker<'s> {
             pending_ctx: Vec::new(),
             hook: None,
             classes: Vec::new(),
+            import_binds: HashMap::new(),
+            spec_ids: HashMap::new(),
+            name_ids: HashMap::new(),
         }
     }
 
@@ -261,29 +277,115 @@ impl<'s> Walker<'s> {
     }
 
     pub fn run(mut self, program: &Program<'_>) -> FileFns {
-        if self.index.is_some() {
+        if self.scoping.is_some() {
             self.scan_imports(program);
         }
         self.visit_program(program);
         self.out
     }
 
+    /// Index of `name` in the file's name table (each distinct chain or export path once).
+    fn name_id(&mut self, name: &str) -> u32 {
+        if let Some(&i) = self.name_ids.get(name) {
+            return i;
+        }
+        let i = self.out.names.len() as u32;
+        self.out.names.push(name.to_string());
+        self.name_ids.insert(name.to_string(), i);
+        i
+    }
+
+    fn spec_id(&mut self, spec: &str) -> u32 {
+        if let Some(&i) = self.spec_ids.get(spec) {
+            return i;
+        }
+        let i = self.out.specs.len() as u32;
+        self.out.specs.push(spec.to_string());
+        self.spec_ids.insert(spec.to_string(), i);
+        i
+    }
+
     /// Map each value import binding to the symbol it names (`effect#Effect.orDie` is a member
-    /// of the binding for `import { Effect } from "effect"`). Type-only imports are skipped.
+    /// of the binding for `import { Effect } from "effect"`) and to its module and imported
+    /// name, for call edges. Type-only imports are skipped. Also reads the file's exports.
     fn scan_imports(&mut self, program: &Program<'_>) {
-        let Some(ix) = self.index else { return };
         let decls = program.body.iter().filter_map(|s| match s {
             Statement::ImportDeclaration(d) if !d.import_kind.is_type() => Some(d),
             _ => None,
         });
         for d in decls {
-            let base = ix.module_base(&d.source.value.display().to_string());
+            let spec_text = d.source.value.display().to_string();
+            let spec = self.spec_id(&spec_text);
+            let base = self.index.map(|ix| ix.module_base(&spec_text));
             for sp in d.specifiers.iter().flatten() {
-                if let Some((sid, member)) = import_binding(sp) {
-                    let sym = member.map_or_else(|| base.clone(), |m| join(&base, &m));
+                let Some((sid, member)) = import_binding(sp) else { continue };
+                if let Some(base) = &base {
+                    let sym = member.as_ref().map_or_else(|| base.clone(), |m| join(base, m));
                     self.imports.insert(sid, sym);
                 }
+                self.import_binds.insert(sid, (spec, member));
             }
+        }
+        self.scan_exports(program);
+    }
+
+    /// The file's exported functions, classes and objects (by local chain) and its re-exports.
+    fn scan_exports(&mut self, program: &Program<'_>) {
+        for stmt in &program.body {
+            match stmt {
+                Statement::ExportDeclaration(d) => self.export_declaration(&d.declaration),
+                Statement::ExportNamedDeclaration(d) if !d.export_kind.is_type() => {
+                    for sp in d.specifiers.iter().filter(|sp| !sp.export_kind.is_type()) {
+                        self.out.exports.push((sp.exported.name().to_string(), sp.local.name().to_string()));
+                    }
+                }
+                Statement::ExportFromDeclaration(d) if !d.export_kind.is_type() => {
+                    let spec = self.spec_id(&d.source.value.display().to_string());
+                    for sp in d.specifiers.iter().filter(|sp| !sp.export_kind.is_type()) {
+                        self.out.reexports.push(Reexport {
+                            spec,
+                            imported: Some(sp.local.name().to_string()),
+                            exported: sp.exported.name().to_string(),
+                        });
+                    }
+                }
+                Statement::ExportDefaultDeclaration(d) => {
+                    let local = match &d.declaration {
+                        ExportDefaultDeclarationKind::FunctionDeclaration(f) => f.id.as_ref().map(|i| i.name.to_string()),
+                        ExportDefaultDeclarationKind::ClassDeclaration(c) => c.id.as_ref().map(|i| i.name.to_string()),
+                        other => match other.as_expression().map(|e| e.get_inner_expression()) {
+                            Some(Expression::Identifier(i)) => Some(i.name.to_string()),
+                            _ => None,
+                        },
+                    };
+                    self.out.exports.push(("default".to_string(), local.unwrap_or_else(|| "default".to_string())));
+                }
+                Statement::ExportAllDeclaration(d) if d.exported.is_none() && !d.export_kind.is_type() => {
+                    let spec = self.spec_id(&d.source.value.display().to_string());
+                    self.out.reexports.push(Reexport { spec, imported: None, exported: String::new() });
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// `export function f`, `export class C`, `export const a = ..., b = ...`.
+    fn export_declaration(&mut self, decl: &Declaration<'_>) {
+        let names: Vec<String> = match decl {
+            Declaration::FunctionDeclaration(f) => f.id.iter().map(|i| i.name.to_string()).collect(),
+            Declaration::ClassDeclaration(c) => c.id.iter().map(|i| i.name.to_string()).collect(),
+            Declaration::VariableDeclaration(v) => v
+                .declarations
+                .iter()
+                .filter_map(|x| match &x.id {
+                    BindingPattern::BindingIdentifier(b) => Some(b.name.to_string()),
+                    _ => None,
+                })
+                .collect(),
+            _ => Vec::new(),
+        };
+        for n in names {
+            self.out.exports.push((n.clone(), n));
         }
     }
 
@@ -595,7 +697,7 @@ impl<'s> Walker<'s> {
     /// What `this.<field>` can hold in `class`: its imported base class and its typed fields,
     /// including constructor parameter properties (`constructor(private ctx: T)`).
     fn class_ctx(&self, class: &Class<'_>) -> ClassCtx {
-        let mut cx = ClassCtx::default();
+        let mut cx = ClassCtx { chain: self.prefix.clone(), ..ClassCtx::default() };
         if self.index.is_none() {
             return cx;
         }
@@ -867,6 +969,55 @@ impl<'s> Walker<'s> {
                 }
         });
         hit.then(|| sym.to_string())
+    }
+
+    /// A call of a repo function (`CE`), or why it could not be one (`CU`). Calls that leave the
+    /// repo (an external package, a runtime global) are neither.
+    fn edge_site(&mut self, it: &CallExpression<'_>) {
+        let (Some(sc), Some(f)) = (self.scoping, self.frames.last()) else { return };
+        let (fn_local, node, loop_depth, cx) = (f.local, f.stack.last().copied().unwrap_or(0), f.loops, f.ctx);
+        let outcome = match self.chain(it.callee.get_inner_expression()) {
+            Some(c) => self.callee_of(sc, &c),
+            None => Err(unres::DYNAMIC),
+        };
+        let to = match outcome {
+            Ok(Some(Named::Local(chain))) => Callee::Local(self.name_id(&chain)),
+            Ok(Some(Named::Import { spec, path })) => Callee::Import { spec, path: self.name_id(&path) },
+            Ok(None) => return,
+            Err(reason) => {
+                self.out.unresolved.push((fn_local, reason));
+                return;
+            }
+        };
+        self.out.sites.push(Site { fn_local, kind: SiteKind::Edge { to, node, loop_depth, ctx: cx } });
+    }
+
+    /// What a pure name-path callee refers to: an import, a module-level declaration of this file,
+    /// a method of the enclosing class, or nothing in the repo.
+    fn callee_of(&self, sc: &Scoping, c: &Chain) -> Result<Option<Named>, u8> {
+        if c.root == "this" && c.rid.is_none() {
+            let class = self.classes.last().map(|k| k.chain.as_str()).filter(|k| !k.is_empty());
+            return match (class, c.path.as_slice()) {
+                (Some(k), [m]) => Ok(Some(Named::Local(format!("{k}>{m}")))),
+                _ => Err(unres::UNKNOWN_MEMBER),
+            };
+        }
+        let Some(sid) = c.rid.and_then(|r| sc.get_reference(r).symbol_id()) else { return Ok(None) };
+        if let Some((spec, imported)) = self.import_binds.get(&sid) {
+            let path: Vec<&str> = imported.iter().map(String::as_str).chain(c.path.iter().map(String::as_str)).collect();
+            if path.is_empty() {
+                return Err(unres::DYNAMIC);
+            }
+            return Ok(Some(Named::Import { spec: *spec, path: path.join(".") }));
+        }
+        if sc.symbol_scope_id(sid) != sc.root_scope_id() {
+            return Err(unres::LOCAL_BINDING);
+        }
+        match c.path.as_slice() {
+            [] => Ok(Some(Named::Local(c.root.clone()))),
+            [m] => Ok(Some(Named::Local(format!("{}>{m}", c.root)))),
+            _ => Err(unres::UNKNOWN_MEMBER),
+        }
     }
 
     fn on_call(&mut self, it: &CallExpression<'_>) {
@@ -1289,6 +1440,7 @@ impl<'a> Visit<'a> for Walker<'_> {
 
     fn visit_call_expression(&mut self, it: &CallExpression<'a>) {
         self.hooked(|h, cx| h.on_call(cx, it));
+        self.edge_site(it);
         self.on_call(it);
         if self.index.is_some() && self.chain(&it.callee).is_some() {
             // A pure chain holds nothing else to visit.

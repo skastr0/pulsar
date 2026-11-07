@@ -78,7 +78,7 @@ pub fn extract(
     let scoping = sem.scoping();
     let imports = import_like(&sem, scoping);
     let walker = Walker::new(rel, source);
-    let walker = if index.is_empty() { walker } else { walker.with_calls(scoping, index, test) };
+    let walker = walker.with_calls(scoping, index, test);
     let walker = match hook {
         Some(h) => walker.with_hook(h),
         None => walker,
