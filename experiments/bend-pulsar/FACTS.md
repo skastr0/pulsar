@@ -58,7 +58,18 @@ pulsar-findings 0
 CYC <size> <file> <file> ...     one cycle, members ascending; cycles ordered by smallest member
 CERT <0|1>                       1 when the completeness and partition certificates passed
 S <files> <edges> <cycles>
+FM <fn> <cyclomatic> <nesting> <npath> <length>   every function, function-id order
+FX <rule-id> <fn> <value> <threshold>              one metric finding: value strictly over threshold
 ```
+
+`FM` and `FX` come from `engine/Metrics.bend`. `FX` lines follow all `FM` lines,
+grouped by function, with rules in the order cyclomatic, nesting, npath, length.
+Rule ids and default thresholds: `core.cyclomatic` 10, `core.nesting` 3,
+`core.npath` 200, `core.length` 60 (`research/thresholds.md`, `Metrics.defaults()`).
+Thresholds are an explicit `Rules` argument. Every value is a decimal natural number. NPath
+saturates at the cap 16777215 (2^24 - 1): a printed NPath equal to the cap means
+"at least the cap". The laws prove that printed NPath = min(Nejmeh NPath, cap).
+Invalid FN/CT facts make the engine refuse the run and print no `FM` lines.
 
 The CLI renders file ids to paths, maps them to stable keys, and prints the human and JSON forms.
 
