@@ -52,5 +52,6 @@ The CLI renders file ids to paths, maps them to stable keys, and prints the huma
 
 - `C commit author day`, `CF commit file added deleted`: git history, for churn, co-change and hotspots.
 - `FN fn file loc` and `D fn kind`: functions and decision points, for complexity, size and nesting. The adapter reports decision points by kind; which kinds count is an engine rule.
+- `CV fn covered coverable`: per-function line coverage, read by the CLI from the repo's existing coverage report (lcov, Istanbul JSON, Cobertura). This feeds CRAP (complexity × missing coverage), and with churn facts the composite "risky change". The engine computes in integers (`c² × (100−cov)³ / 100³ + c`, threshold explicit in the rule), and the finding carries complexity and coverage as evidence.
 - `SY`, `EX`, `RF`: symbols, exports and references, for unused exports.
 - Call graph and loop facts, for queries and blocking calls on hot paths. Schema facts, for SQL.
