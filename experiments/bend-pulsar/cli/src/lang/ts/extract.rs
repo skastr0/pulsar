@@ -176,3 +176,46 @@ pub fn type_only_exports(alloc: &Allocator, path: &Path, source: &str, wanted: &
     }
     (0..wanted.len()).map(|i| found_type[i] && !found_value[i]).collect()
 }
+
+/// A function's span and stable key, for callers that parse a historical blob (CFN: lines a
+/// commit touched inside each head function). Same walker as the head parse, so the key for
+/// `key_path` is the key `FK` carries; pass the file's head path to follow renames.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FnSpan {
+    pub key: u64,
+    pub start_line: u32,
+    pub end_line: u32,
+}
+
+/// Parse `source` and return its functions in id order (start offset). No imports, no semantic pass.
+pub fn function_spans(alloc: &Allocator, key_path: &str, source: &str) -> Vec<FnSpan> {
+    let source_type = SourceType::from_path(key_path).unwrap_or_else(|_| SourceType::ts());
+    let ret = Parser::new(alloc, source, source_type).parse();
+    if ret.fatal_error {
+        return Vec::new();
+    }
+    Walker::new(key_path, source)
+        .run(&ret.program)
+        .fns
+        .into_iter()
+        .map(|f| FnSpan { key: f.key, start_line: f.start_line, end_line: f.end_line })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn span_keys_follow_the_head_path_not_the_blob() {
+        let alloc = Allocator::default();
+        let old = "function f() {}\n";
+        let new = "\n\nfunction f() {}\nfunction g() {}\n";
+        let a = function_spans(&alloc, "src/m.ts", old);
+        let b = function_spans(&alloc, "src/m.ts", new);
+        assert_eq!(a.len(), 1);
+        assert_eq!(b.len(), 2);
+        assert_eq!(a[0].key, b[0].key);
+        assert_eq!((b[0].start_line, b[1].start_line), (3, 4));
+    }
+}

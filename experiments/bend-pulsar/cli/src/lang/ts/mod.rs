@@ -8,6 +8,8 @@ mod scope;
 
 use crate::facts::{stable_key, FactWriter, FnEntry, Rel, SideTables};
 use crate::git::git_ls_files;
+#[allow(unused_imports)]
+pub use extract::{function_spans, FnSpan};
 use extract::{extract, type_only_exports};
 use crate::lang::functions::{FileFns, NO_PARENT};
 use oxc_allocator::Allocator;
