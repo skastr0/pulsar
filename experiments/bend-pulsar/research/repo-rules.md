@@ -59,7 +59,7 @@ Every FACTS field has a domain, and the CLI keeps the domain table next to the s
 A variable has exactly one domain, and the CLI rejects a rule that:
 - joins different domains: `I(src: X)` with `FN(fn: X)` is a file joined with a function;
 - compares an id with a number (`F > 3` on a fn);
-- compares two variables with `<`, `<=`, `>` or `>=`. Equality between variables is a join. `X != Y` is allowed between ids of the same domain (the open question in section 8);
+- compares two variables with `<`, `<=`, `>` or `>=`. Equality between variables is a join. `X != Y` is allowed between ids of the same domain (IR row `JE`);
 - uses `bits` on anything but `flags`.
 
 ## 3. Strata
@@ -79,7 +79,7 @@ PLAN.md J asks for no arithmetic across metrics, no weights and no score. Here t
 - **The IR has no arithmetic instruction.** There is no add, multiply or divide anywhere, so no repo rule can compute a sum or a weighted blend.
 - **Nat values are restricted:** a `nat` value can be compared with a literal, counted, or carried into a finding as evidence. It can never be compared with another `nat`, because section 2 forbids variable-to-variable order comparisons.
 - **Several metrics in one rule are only ANDed conditions.** Each is compared with its own literal threshold, like the boolean composites in PLAN group I.
-- **A finding names subjects** (files, functions, sites, symbols), and its `nat` columns are evidence only. The CLI never sorts or ranks findings by them.
+- **A finding names subjects**, and its `nat` columns are evidence only. The CLI never sorts or ranks findings by them. Subjects must have stable keys, so a `find` head's id variables must be of domain `file` (key `K`) or `fn` (key `FK`). Site, symbol, class and commit ids are per-run, and the type check rejects them in a `find` head. The finding key is hash(rule id, version, sorted subject keys), like every other finding (#653).
 
 For example, `score(F, C + N)` fails to parse, `FX(rule: core.crap, fn: F, value: A), CV(fn: F, covered: B), A > B` fails the type check, and `count` over two unlike relations is still one count of one body's bindings, never a sum of two counts.
 
@@ -89,7 +89,7 @@ Numeric rows, appended to the facts file. All tags start with `J`, for group J. 
 
 | Tag | Fields | Meaning |
 |---|---|---|
-| `JD` | `rel arity stratum src` | A relation. `src` 0 = derived. Otherwise `src` is the FACTS tag code of an input relation (as in `Engine.row_tags`), 1 = `in` sets, and 2 = a core-findings relation. |
+| `JD` | `rel arity stratum src` | A relation. `src` (frozen): 0 = derived, 1 = the `in` sets (`JS` rows), 2 = core `FX` findings (`rule fn value threshold`), 3 = core `CYC` membership (`cycle file`). Any other value is a FACTS tag packed big-endian as `Rows.bend` does (`LY` = 76·256+89, at most 4 bytes). The smallest tag, `A`, is 65, so 0-3 cannot collide. |
 | `JS` | `set value` | One member of a compiled set. |
 | `JR` | `clause head_rel stratum kind` | One clause. `kind` 0 = Horn, 1 = count. |
 | `JH` | `clause pos kind term` | Head term `pos`: `kind` 0 = variable `term`, 1 = constant `term`. For a count clause, the last head position is the count. |
@@ -180,7 +180,21 @@ Rejected:
 - `"A > B"` with two `nat` variables: no order comparison between variables.
 - `"risky(F) :- FN(fn: F), not risky(F)"`: a cycle through negation, which is not stratified.
 
-## 8. Open questions for review
+## 8. Review outcomes
+
+pulsar-cli reviewed this note at 80c2b64 and accepted it:
+- **Q1:** `!=` between ids of one domain is allowed (`JE`).
+- **Q3:** rules run in the same binary, after the core detectors.
+- **Q4:** the domain table lives by hand in `facts.rs`, next to `Rel` (`Rel::fields() -> [(name, Domain)]`). A unit test parses the FACTS.md relation tables and fails when a tag, its arity or its field names drift, so FACTS.md wording never becomes load-bearing.
+- **Q6:** arity <= 8, clauses <= 256, body atoms <= 8 per clause, relations <= 64. The CLI prints the bounds it applied, and the engine's `Rules.valid` refuses anything past them too.
+- **Subjects:** `find` heads take `file` and `fn` subjects only (section 4).
+- **Rule switches:** `rules.disable` in policy.toml can switch a repo rule off, and each finding line shows `origin repo` plus the rule's file:line.
+- **Check runs:** `pulsar rules check` needs one engine run, so its tests run on a VM-sized fixture.
+- **Timing:** the CLI side starts after pulsar-cli's #654 cache work lands.
+
+pulsar-research's review is pending: Q2 and Q5 below, and anything else.
+
+## 9. Open questions (as first asked)
 
 1. **`!=` between two ids of one domain.** One use is "A imports B where A's package differs from B's". It brings no arithmetic and no ordering, so I recommend allowing it (IR row `JE`).
 2. **Which core findings rules may read in phase 2:** `FX` and `CYC` first. Are layer findings (`LM`, `LCYC`, ...) and `RCX` needed for the first real rules?
@@ -189,7 +203,7 @@ Rejected:
 5. **`pulsar explain <finding>`:** the engine can print one derivation witness (the clause plus the body tuples) for a requested tuple, checked against R1. Phase 3, unless the first real rules need it sooner.
 6. **Limits:** a maximum arity (8?) and a maximum number of clauses per repo, so a rule file cannot blow the memory bar. The CLI reports the bound it applied.
 
-## 9. Who does what
+## 10. Who does what
 
 - **pulsar-cli** (#697, the CLI side):
   - the TOML and rule-text parser;
