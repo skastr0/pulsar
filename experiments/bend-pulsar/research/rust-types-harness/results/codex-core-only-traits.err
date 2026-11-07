@@ -1,0 +1,30 @@
+[phase     0.00s] start
+[phase     0.68s] project model loaded (cargo metadata + sysroot)
+[phase     1.08s] vfs + crate graph loaded
+crates total=1210 analysed(local)=1
+[phase     1.08s] crates enumerated
+[phase    31.40s] crate done: codex_core
+[phase    31.40s] inference done
+	Command being timed: "/home/user/ra-harness/target/release/ra-harness /home/user/corp-codex-rs --only codex_core --traits"
+	User time (seconds): 32.12
+	System time (seconds): 1.48
+	Percent of CPU this job got: 102%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:32.66
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 4479992
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 17
+	Minor (reclaiming a frame) page faults: 1237978
+	Voluntary context switches: 68755
+	Involuntary context switches: 1334
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 744
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

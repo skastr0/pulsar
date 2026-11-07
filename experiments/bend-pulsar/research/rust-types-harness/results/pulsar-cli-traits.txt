@@ -1,0 +1,9 @@
+loadavg_before: 0.36 1.43 1.54 1/391 64188
+mem_before: Mem:            7941         786        5559           0        1902        7155
+modules=6 functions=33
+exprs_typed=3429 exprs_unknown=0
+result_typed_exprs=161
+resolved_method_calls=447
+workspace_traits=0 impls_of_workspace_traits=0
+analysis_phase_secs=3.72 total_secs=3.96
+exit: 0
