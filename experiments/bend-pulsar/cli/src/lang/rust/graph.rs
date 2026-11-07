@@ -225,17 +225,21 @@ impl Build<'_> {
         Ok(self.nodes[self.descend(cur, rest)].file)
     }
 
-    /// Resolve every `use` of every file in tree `ti`, pushing `I` and `U` rows.
+    /// Resolve every `use` of every file in the tree of `env`, pushing `I` and `U` rows.
     fn resolve_tree(&self, env: &Env, g: &mut Graph) {
         for (&file, &top) in &self.tops[env.tree] {
             let Some(pf) = self.parsed.get(&file) else { continue };
             for u in &pf.uses {
-                let at = self.descend_inline(top, &u.mod_path).unwrap_or(top);
-                match self.resolve(env, at, u) {
-                    Ok(dst) => g.i.push([file, dst, if u.public { 2 } else { 0 }, 1, 0]),
-                    Err(reason) => g.u.push([file, reason]),
-                }
+                self.resolve_use(env, file, top, u, g);
             }
+        }
+    }
+
+    fn resolve_use(&self, env: &Env, file: u32, top: usize, u: &UseRec, g: &mut Graph) {
+        let at = self.descend_inline(top, &u.mod_path).unwrap_or(top);
+        match self.resolve(env, at, u) {
+            Ok(dst) => g.i.push([file, dst, if u.public { 2 } else { 0 }, 1, 0]),
+            Err(reason) => g.u.push([file, reason]),
         }
     }
 
