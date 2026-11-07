@@ -8,7 +8,7 @@
  {
   "law": "findings_complete_length",
   "bug": "Rule.one forgets the length check",
-  "old": "Rule.check(4, fn, loc, tloc, rest))))",
+  "old": "Len.check(fn, cc, nest, loc, tloc, rest))))",
   "new": "rest)))"
  },
  {
@@ -128,14 +128,14 @@
  {
   "law": "findings_complete_nesting",
   "bug": "the nesting check is dropped",
-  "old": "Rule.check(2, fn, nest, tnest, Rule.check(3, fn, np, tnp, Rule.check(4, fn, loc, tloc, rest))))",
-  "new": "Rule.check(3, fn, np, tnp, Rule.check(4, fn, loc, tloc, rest)))"
+  "old": "Rule.check(2, fn, nest, tnest, Rule.check(3, fn, np, tnp, Len.check(fn, cc, nest, loc, tloc, rest))))",
+  "new": "Rule.check(3, fn, np, tnp, Len.check(fn, cc, nest, loc, tloc, rest)))"
  },
  {
   "law": "findings_complete_npath",
   "bug": "the npath check is dropped",
-  "old": "Rule.check(3, fn, np, tnp, Rule.check(4, fn, loc, tloc, rest))))",
-  "new": "Rule.check(4, fn, loc, tloc, rest)))"
+  "old": "Rule.check(3, fn, np, tnp, Len.check(fn, cc, nest, loc, tloc, rest))))",
+  "new": "Len.check(fn, cc, nest, loc, tloc, rest)))"
  },
  {
   "law": "findings_skip_tests",
@@ -232,5 +232,53 @@
   "bug": "the implicit empty else is not added",
   "old": "      Sat.add(Sat.add(sum, Nat.sub(2n, arms), cap), sc, cap)",
   "new": "      Sat.add(Sat.add(sum, Nat.sub(1n, arms), cap), sc, cap)"
+ },
+ {
+  "law": "findings_complete_length_linear",
+  "bug": "a linear body uses the structured threshold",
+  "old": "      Rule.check(9, fn, loc, Len.linear_thr(), rest)",
+  "new": "      Rule.check(9, fn, loc, tloc, rest)"
+ },
+ {
+  "law": "findings_sound",
+  "bug": "the linear tier fires at 301",
+  "old": "def Len.linear_thr() -> Nat:\n  300n",
+  "new": "def Len.linear_thr() -> Nat:\n  301n"
+ },
+ {
+  "law": "findings_sound",
+  "bug": "a structured body uses the linear threshold",
+  "old": "      Rule.check(4, fn, loc, tloc, rest)",
+  "new": "      Rule.check(4, fn, loc, 300n, rest)"
+ },
+ {
+  "law": "findings_sound",
+  "bug": "the tiers swap shapes",
+  "old": "    case True{}:\n      Rule.check(9, fn, loc, Len.linear_thr(), rest)\n    case False{}:\n      Rule.check(4, fn, loc, tloc, rest)",
+  "new": "    case True{}:\n      Rule.check(4, fn, loc, tloc, rest)\n    case False{}:\n      Rule.check(9, fn, loc, Len.linear_thr(), rest)"
+ },
+ {
+  "law": "len_linear_is_linear",
+  "bug": "cyclomatic 3 counts as linear",
+  "old": "Bool.not(Nat.is_gt(cc, 2n))",
+  "new": "Bool.not(Nat.is_gt(cc, 3n))"
+ },
+ {
+  "law": "len_linear_is_linear",
+  "bug": "nesting 1 counts as structured",
+  "old": "Bool.not(Nat.is_gt(nest, 1n))",
+  "new": "Bool.not(Nat.is_gt(nest, 0n))"
+ },
+ {
+  "law": "fx_length_structured",
+  "bug": "the shapes print swapped",
+  "old": "    case 4:\n      \" shape=structured\"\n    case 9:\n      \" shape=linear\"",
+  "new": "    case 4:\n      \" shape=linear\"\n    case 9:\n      \" shape=structured\""
+ },
+ {
+  "law": "fx_length_linear",
+  "bug": "linear length prints no shape",
+  "old": "    case 9:\n      \" shape=linear\"\n    case _:\n      \"\"",
+  "new": "    case _:\n      \"\""
  }
 ]

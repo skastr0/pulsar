@@ -38,3 +38,6 @@ def Laws.glue_refuses_join(r, ms, gs, gl, chs):
 
 def Laws.glue_entry(r, rows):
   {==}
+
+def Laws.glue_op_optional_chain():
+  {==}

@@ -150,11 +150,11 @@ def Keep.hit(b: Bool, +x: M.Finding, +rest: List<&2, M.Finding>, hb: {b == True{
       Empty.absurd(Laws.MemF(rest, x), Bool.ff_tt(hb))
 
 # A finding for `rule` of function f is sound in any list that starts with f.
-def Hit(+r: M.Rules, +rule: U32, +f: U32, +cc: Nat, +nest: Nat, +np: Nat, +loc: Nat, +t: List<&2, M.FnM>, +v: Nat, +th: Nat, +y: M.Finding, p: Laws.And({Nat.is_gt(v, th) == True{} : Bool}, {M.Finding{rule, f, v, th} == y : M.Finding}), hth: {th == Laws.Thr(r, rule) : Nat}, hv: {Laws.Field(M.FnM{f, cc, nest, np, loc, False{}}, rule) == v : Nat}) -> Laws.Sound(r, Con{M.FnM{f, cc, nest, np, loc, False{}}, t}, y):
+def Hit(+r: M.Rules, +rule: U32, +f: U32, +cc: Nat, +nest: Nat, +np: Nat, +loc: Nat, +t: List<&2, M.FnM>, +v: Nat, +th: Nat, +y: M.Finding, p: Laws.And({Nat.is_gt(v, th) == True{} : Bool}, {M.Finding{rule, f, v, th} == y : M.Finding}), hth: {th == Laws.Thr(r, rule) : Nat}, hv: {Laws.Field(M.FnM{f, cc, nest, np, loc, False{}}, rule) == v : Nat}, hs: Laws.ShapeOk(M.FnM{f, cc, nest, np, loc, False{}}, rule)) -> Laws.Sound(r, Con{M.FnM{f, cc, nest, np, loc, False{}}, t}, y):
   match p:
     case Tuple{g, e}:
       %e : Laws.Sound(r, Con{M.FnM{f, cc, nest, np, loc, False{}}, t}, _)
-      Tuple{g, Tuple{hth, Inl{Tuple{{==}, Tuple{{==}, hv}}}}}
+      Tuple{g, Tuple{hth, Inl{Tuple{{==}, Tuple{{==}, Tuple{hv, hs}}}}}}
 
 # Sound in the tail is sound in the whole list.
 def Sound.weak(+r: M.Rules, m: M.FnM, +t: List<&2, M.FnM>, y: M.Finding, s: Laws.Sound(r, t, y)) -> Laws.Sound(r, Con{m, t}, y):
@@ -166,33 +166,50 @@ def Sound.weak(+r: M.Rules, m: M.FnM, +t: List<&2, M.FnM>, y: M.Finding, s: Laws
             case Tuple{b, c}:
               Tuple{a, Tuple{b, Inr{c}}}
 
-def One.l4(+tcc: Nat, +tn: Nat, +tp: Nat, +tl: Nat, +cap: Nat, +f: U32, +cc: Nat, +nest: Nat, +np: Nat, +loc: Nat, +t: List<&2, M.FnM>, +y: M.Finding, o: Either<&2, &2, Laws.And({Nat.is_gt(loc, tl) == True{} : Bool}, {M.Finding{4, f, loc, tl} == y : M.Finding}), Laws.MemF(M.Metrics.findings(M.Rules{tcc, tn, tp, tl, cap}, t), y)>, ih: Laws.MemF(M.Metrics.findings(M.Rules{tcc, tn, tp, tl, cap}, t), y) -> Laws.Sound(M.Rules{tcc, tn, tp, tl, cap}, t, y)) -> Laws.Sound(M.Rules{tcc, tn, tp, tl, cap}, Con{M.FnM{f, cc, nest, np, loc, False{}}, t}, y):
+def Len.s4(+tcc: Nat, +tn: Nat, +tp: Nat, +tl: Nat, +cap: Nat, +f: U32, +cc: Nat, +nest: Nat, +np: Nat, +loc: Nat, +t: List<&2, M.FnM>, +y: M.Finding, o: Either<&2, &2, Laws.And({Nat.is_gt(loc, tl) == True{} : Bool}, {M.Finding{4, f, loc, tl} == y : M.Finding}), Laws.MemF(M.Metrics.findings(M.Rules{tcc, tn, tp, tl, cap}, t), y)>, e: {M.Len.linear(cc, nest) == False{} : Bool}, ih: Laws.MemF(M.Metrics.findings(M.Rules{tcc, tn, tp, tl, cap}, t), y) -> Laws.Sound(M.Rules{tcc, tn, tp, tl, cap}, t, y)) -> Laws.Sound(M.Rules{tcc, tn, tp, tl, cap}, Con{M.FnM{f, cc, nest, np, loc, False{}}, t}, y):
   match o:
     case Inl{p}:
-      Hit(M.Rules{tcc, tn, tp, tl, cap}, 4, f, cc, nest, np, loc, t, loc, tl, y, p, {==}, {==})
+      Hit(M.Rules{tcc, tn, tp, tl, cap}, 4, f, cc, nest, np, loc, t, loc, tl, y, p, {==}, {==}, e)
     case Inr{m}:
       Sound.weak(M.Rules{tcc, tn, tp, tl, cap}, M.FnM{f, cc, nest, np, loc, False{}}, t, y, ih(m))
 
-def One.l3(+tcc: Nat, +tn: Nat, +tp: Nat, +tl: Nat, +cap: Nat, +f: U32, +cc: Nat, +nest: Nat, +np: Nat, +loc: Nat, +t: List<&2, M.FnM>, +y: M.Finding, o: Either<&2, &2, Laws.And({Nat.is_gt(np, tp) == True{} : Bool}, {M.Finding{3, f, np, tp} == y : M.Finding}), Laws.MemF(M.Rule.check(4, f, loc, tl, M.Metrics.findings(M.Rules{tcc, tn, tp, tl, cap}, t)), y)>, ih: Laws.MemF(M.Metrics.findings(M.Rules{tcc, tn, tp, tl, cap}, t), y) -> Laws.Sound(M.Rules{tcc, tn, tp, tl, cap}, t, y)) -> Laws.Sound(M.Rules{tcc, tn, tp, tl, cap}, Con{M.FnM{f, cc, nest, np, loc, False{}}, t}, y):
+def Len.s9(+tcc: Nat, +tn: Nat, +tp: Nat, +tl: Nat, +cap: Nat, +f: U32, +cc: Nat, +nest: Nat, +np: Nat, +loc: Nat, +t: List<&2, M.FnM>, +y: M.Finding, o: Either<&2, &2, Laws.And({Nat.is_gt(loc, 300n) == True{} : Bool}, {M.Finding{9, f, loc, 300n} == y : M.Finding}), Laws.MemF(M.Metrics.findings(M.Rules{tcc, tn, tp, tl, cap}, t), y)>, e: {M.Len.linear(cc, nest) == True{} : Bool}, ih: Laws.MemF(M.Metrics.findings(M.Rules{tcc, tn, tp, tl, cap}, t), y) -> Laws.Sound(M.Rules{tcc, tn, tp, tl, cap}, t, y)) -> Laws.Sound(M.Rules{tcc, tn, tp, tl, cap}, Con{M.FnM{f, cc, nest, np, loc, False{}}, t}, y):
   match o:
     case Inl{p}:
-      Hit(M.Rules{tcc, tn, tp, tl, cap}, 3, f, cc, nest, np, loc, t, np, tp, y, p, {==}, {==})
+      Hit(M.Rules{tcc, tn, tp, tl, cap}, 9, f, cc, nest, np, loc, t, loc, 300n, y, p, {==}, {==}, e)
     case Inr{m}:
-      One.l4(tcc, tn, tp, tl, cap, f, cc, nest, np, loc, t, y, Keep.mem(Nat.is_gt(loc, tl), M.Finding{4, f, loc, tl}, M.Metrics.findings(M.Rules{tcc, tn, tp, tl, cap}, t), y, m), ih)
+      Sound.weak(M.Rules{tcc, tn, tp, tl, cap}, M.FnM{f, cc, nest, np, loc, False{}}, t, y, ih(m))
 
-def One.l2(+tcc: Nat, +tn: Nat, +tp: Nat, +tl: Nat, +cap: Nat, +f: U32, +cc: Nat, +nest: Nat, +np: Nat, +loc: Nat, +t: List<&2, M.FnM>, +y: M.Finding, o: Either<&2, &2, Laws.And({Nat.is_gt(nest, tn) == True{} : Bool}, {M.Finding{2, f, nest, tn} == y : M.Finding}), Laws.MemF(M.Rule.check(3, f, np, tp, M.Rule.check(4, f, loc, tl, M.Metrics.findings(M.Rules{tcc, tn, tp, tl, cap}, t))), y)>, ih: Laws.MemF(M.Metrics.findings(M.Rules{tcc, tn, tp, tl, cap}, t), y) -> Laws.Sound(M.Rules{tcc, tn, tp, tl, cap}, t, y)) -> Laws.Sound(M.Rules{tcc, tn, tp, tl, cap}, Con{M.FnM{f, cc, nest, np, loc, False{}}, t}, y):
-  match o:
-    case Inl{p}:
-      Hit(M.Rules{tcc, tn, tp, tl, cap}, 2, f, cc, nest, np, loc, t, nest, tn, y, p, {==}, {==})
-    case Inr{m}:
-      One.l3(tcc, tn, tp, tl, cap, f, cc, nest, np, loc, t, y, Keep.mem(Nat.is_gt(np, tp), M.Finding{3, f, np, tp}, M.Rule.check(4, f, loc, tl, M.Metrics.findings(M.Rules{tcc, tn, tp, tl, cap}, t)), y, m), ih)
+def Len.snd(+tcc: Nat, +tn: Nat, +tp: Nat, +tl: Nat, +cap: Nat, +f: U32, +cc: Nat, +nest: Nat, +np: Nat, +loc: Nat, +t: List<&2, M.FnM>, +y: M.Finding, lin: Bool, e: {M.Len.linear(cc, nest) == lin : Bool}, m: Laws.MemF(M.Len.pick(lin, f, loc, tl, M.Metrics.findings(M.Rules{tcc, tn, tp, tl, cap}, t)), y), ih: Laws.MemF(M.Metrics.findings(M.Rules{tcc, tn, tp, tl, cap}, t), y) -> Laws.Sound(M.Rules{tcc, tn, tp, tl, cap}, t, y)) -> Laws.Sound(M.Rules{tcc, tn, tp, tl, cap}, Con{M.FnM{f, cc, nest, np, loc, False{}}, t}, y):
+  match lin:
+    case True{}:
+      Len.s9(tcc, tn, tp, tl, cap, f, cc, nest, np, loc, t, y, Keep.mem(Nat.is_gt(loc, 300n), M.Finding{9, f, loc, 300n}, M.Metrics.findings(M.Rules{tcc, tn, tp, tl, cap}, t), y, m), e, ih)
+    case False{}:
+      Len.s4(tcc, tn, tp, tl, cap, f, cc, nest, np, loc, t, y, Keep.mem(Nat.is_gt(loc, tl), M.Finding{4, f, loc, tl}, M.Metrics.findings(M.Rules{tcc, tn, tp, tl, cap}, t), y, m), e, ih)
 
-def One.l1(+tcc: Nat, +tn: Nat, +tp: Nat, +tl: Nat, +cap: Nat, +f: U32, +cc: Nat, +nest: Nat, +np: Nat, +loc: Nat, +t: List<&2, M.FnM>, +y: M.Finding, o: Either<&2, &2, Laws.And({Nat.is_gt(cc, tcc) == True{} : Bool}, {M.Finding{1, f, cc, tcc} == y : M.Finding}), Laws.MemF(M.Rule.check(2, f, nest, tn, M.Rule.check(3, f, np, tp, M.Rule.check(4, f, loc, tl, M.Metrics.findings(M.Rules{tcc, tn, tp, tl, cap}, t)))), y)>, ih: Laws.MemF(M.Metrics.findings(M.Rules{tcc, tn, tp, tl, cap}, t), y) -> Laws.Sound(M.Rules{tcc, tn, tp, tl, cap}, t, y)) -> Laws.Sound(M.Rules{tcc, tn, tp, tl, cap}, Con{M.FnM{f, cc, nest, np, loc, False{}}, t}, y):
+def One.l4(+tcc: Nat, +tn: Nat, +tp: Nat, +tl: Nat, +cap: Nat, +f: U32, +cc: Nat, +nest: Nat, +np: Nat, +loc: Nat, +t: List<&2, M.FnM>, +y: M.Finding, m: Laws.MemF(M.Len.check(f, cc, nest, loc, tl, M.Metrics.findings(M.Rules{tcc, tn, tp, tl, cap}, t)), y), ih: Laws.MemF(M.Metrics.findings(M.Rules{tcc, tn, tp, tl, cap}, t), y) -> Laws.Sound(M.Rules{tcc, tn, tp, tl, cap}, t, y)) -> Laws.Sound(M.Rules{tcc, tn, tp, tl, cap}, Con{M.FnM{f, cc, nest, np, loc, False{}}, t}, y):
+  Len.snd(tcc, tn, tp, tl, cap, f, cc, nest, np, loc, t, y, M.Len.linear(cc, nest), {==}, m, ih)
+
+def One.l3(+tcc: Nat, +tn: Nat, +tp: Nat, +tl: Nat, +cap: Nat, +f: U32, +cc: Nat, +nest: Nat, +np: Nat, +loc: Nat, +t: List<&2, M.FnM>, +y: M.Finding, o: Either<&2, &2, Laws.And({Nat.is_gt(np, tp) == True{} : Bool}, {M.Finding{3, f, np, tp} == y : M.Finding}), Laws.MemF(M.Len.check(f, cc, nest, loc, tl, M.Metrics.findings(M.Rules{tcc, tn, tp, tl, cap}, t)), y)>, ih: Laws.MemF(M.Metrics.findings(M.Rules{tcc, tn, tp, tl, cap}, t), y) -> Laws.Sound(M.Rules{tcc, tn, tp, tl, cap}, t, y)) -> Laws.Sound(M.Rules{tcc, tn, tp, tl, cap}, Con{M.FnM{f, cc, nest, np, loc, False{}}, t}, y):
   match o:
     case Inl{p}:
-      Hit(M.Rules{tcc, tn, tp, tl, cap}, 1, f, cc, nest, np, loc, t, cc, tcc, y, p, {==}, {==})
+      Hit(M.Rules{tcc, tn, tp, tl, cap}, 3, f, cc, nest, np, loc, t, np, tp, y, p, {==}, {==}, {==})
     case Inr{m}:
-      One.l2(tcc, tn, tp, tl, cap, f, cc, nest, np, loc, t, y, Keep.mem(Nat.is_gt(nest, tn), M.Finding{2, f, nest, tn}, M.Rule.check(3, f, np, tp, M.Rule.check(4, f, loc, tl, M.Metrics.findings(M.Rules{tcc, tn, tp, tl, cap}, t))), y, m), ih)
+      One.l4(tcc, tn, tp, tl, cap, f, cc, nest, np, loc, t, y, m, ih)
+
+def One.l2(+tcc: Nat, +tn: Nat, +tp: Nat, +tl: Nat, +cap: Nat, +f: U32, +cc: Nat, +nest: Nat, +np: Nat, +loc: Nat, +t: List<&2, M.FnM>, +y: M.Finding, o: Either<&2, &2, Laws.And({Nat.is_gt(nest, tn) == True{} : Bool}, {M.Finding{2, f, nest, tn} == y : M.Finding}), Laws.MemF(M.Rule.check(3, f, np, tp, M.Len.check(f, cc, nest, loc, tl, M.Metrics.findings(M.Rules{tcc, tn, tp, tl, cap}, t))), y)>, ih: Laws.MemF(M.Metrics.findings(M.Rules{tcc, tn, tp, tl, cap}, t), y) -> Laws.Sound(M.Rules{tcc, tn, tp, tl, cap}, t, y)) -> Laws.Sound(M.Rules{tcc, tn, tp, tl, cap}, Con{M.FnM{f, cc, nest, np, loc, False{}}, t}, y):
+  match o:
+    case Inl{p}:
+      Hit(M.Rules{tcc, tn, tp, tl, cap}, 2, f, cc, nest, np, loc, t, nest, tn, y, p, {==}, {==}, {==})
+    case Inr{m}:
+      One.l3(tcc, tn, tp, tl, cap, f, cc, nest, np, loc, t, y, Keep.mem(Nat.is_gt(np, tp), M.Finding{3, f, np, tp}, M.Len.check(f, cc, nest, loc, tl, M.Metrics.findings(M.Rules{tcc, tn, tp, tl, cap}, t)), y, m), ih)
+
+def One.l1(+tcc: Nat, +tn: Nat, +tp: Nat, +tl: Nat, +cap: Nat, +f: U32, +cc: Nat, +nest: Nat, +np: Nat, +loc: Nat, +t: List<&2, M.FnM>, +y: M.Finding, o: Either<&2, &2, Laws.And({Nat.is_gt(cc, tcc) == True{} : Bool}, {M.Finding{1, f, cc, tcc} == y : M.Finding}), Laws.MemF(M.Rule.check(2, f, nest, tn, M.Rule.check(3, f, np, tp, M.Len.check(f, cc, nest, loc, tl, M.Metrics.findings(M.Rules{tcc, tn, tp, tl, cap}, t)))), y)>, ih: Laws.MemF(M.Metrics.findings(M.Rules{tcc, tn, tp, tl, cap}, t), y) -> Laws.Sound(M.Rules{tcc, tn, tp, tl, cap}, t, y)) -> Laws.Sound(M.Rules{tcc, tn, tp, tl, cap}, Con{M.FnM{f, cc, nest, np, loc, False{}}, t}, y):
+  match o:
+    case Inl{p}:
+      Hit(M.Rules{tcc, tn, tp, tl, cap}, 1, f, cc, nest, np, loc, t, cc, tcc, y, p, {==}, {==}, {==})
+    case Inr{m}:
+      One.l2(tcc, tn, tp, tl, cap, f, cc, nest, np, loc, t, y, Keep.mem(Nat.is_gt(nest, tn), M.Finding{2, f, nest, tn}, M.Rule.check(3, f, np, tp, M.Len.check(f, cc, nest, loc, tl, M.Metrics.findings(M.Rules{tcc, tn, tp, tl, cap}, t))), y, m), ih)
 
 # One function's findings are sound, test function or not.
 def Snd.go(+tcc: Nat, +tn: Nat, +tp: Nat, +tl: Nat, +cap: Nat, +f: U32, +cc: Nat, +nest: Nat, +np: Nat, +loc: Nat, test: Bool, +t: List<&2, M.FnM>, +x: M.Finding, hm: Laws.MemF(M.Metrics.findings(M.Rules{tcc, tn, tp, tl, cap}, Con{M.FnM{f, cc, nest, np, loc, test}, t}), x), ih: Laws.MemF(M.Metrics.findings(M.Rules{tcc, tn, tp, tl, cap}, t), x) -> Laws.Sound(M.Rules{tcc, tn, tp, tl, cap}, t, x)) -> Laws.Sound(M.Rules{tcc, tn, tp, tl, cap}, Con{M.FnM{f, cc, nest, np, loc, test}, t}, x):
@@ -200,7 +217,7 @@ def Snd.go(+tcc: Nat, +tn: Nat, +tp: Nat, +tl: Nat, +cap: Nat, +f: U32, +cc: Nat
     case True{}:
       Sound.weak(M.Rules{tcc, tn, tp, tl, cap}, M.FnM{f, cc, nest, np, loc, True{}}, t, x, ih(hm))
     case False{}:
-      One.l1(tcc, tn, tp, tl, cap, f, cc, nest, np, loc, t, x, Keep.mem(Nat.is_gt(cc, tcc), M.Finding{1, f, cc, tcc}, M.Rule.check(2, f, nest, tn, M.Rule.check(3, f, np, tp, M.Rule.check(4, f, loc, tl, M.Metrics.findings(M.Rules{tcc, tn, tp, tl, cap}, t)))), x, hm), ih)
+      One.l1(tcc, tn, tp, tl, cap, f, cc, nest, np, loc, t, x, Keep.mem(Nat.is_gt(cc, tcc), M.Finding{1, f, cc, tcc}, M.Rule.check(2, f, nest, tn, M.Rule.check(3, f, np, tp, M.Len.check(f, cc, nest, loc, tl, M.Metrics.findings(M.Rules{tcc, tn, tp, tl, cap}, t)))), x, hm), ih)
 
 def Laws.findings_sound(r, ms, x, hm):
   match r:
@@ -213,12 +230,30 @@ def Laws.findings_sound(r, ms, x, hm):
             case M.FnM{+f, +cc, +nest, +np, +loc, test}:
               Snd.go(tcc, tn, tp, tl, cap, f, cc, nest, np, loc, test, t, x, hm, mm => Laws.findings_sound(M.Rules{tcc, tn, tp, tl, cap}, t, x, mm))
 
+def Len.stay2(lin: Bool, +f: U32, +loc: Nat, +tl: Nat, +rest: List<&2, M.Finding>, +y: M.Finding, mm: Laws.MemF(rest, y)) -> Laws.MemF(M.Len.pick(lin, f, loc, tl, rest), y):
+  match lin:
+    case True{}:
+      Keep.stay(Nat.is_gt(loc, 300n), M.Finding{9, f, loc, 300n}, rest, y, mm)
+    case False{}:
+      Keep.stay(Nat.is_gt(loc, tl), M.Finding{4, f, loc, tl}, rest, y, mm)
+
+def Len.stay(+f: U32, +cc: Nat, +nest: Nat, +loc: Nat, +tl: Nat, +rest: List<&2, M.Finding>, +y: M.Finding, mm: Laws.MemF(rest, y)) -> Laws.MemF(M.Len.check(f, cc, nest, loc, tl, rest), y):
+  Len.stay2(M.Len.linear(cc, nest), f, loc, tl, rest, y, mm)
+
+def Len.hit4(+fn: U32, +cc: Nat, +nest: Nat, +loc: Nat, +tloc: Nat, +rest: List<&2, M.Finding>, hs: {M.Len.linear(cc, nest) == False{} : Bool}, h: {Nat.is_gt(loc, tloc) == True{} : Bool}) -> Laws.MemF(M.Len.check(fn, cc, nest, loc, tloc, rest), M.Finding{4, fn, loc, tloc}):
+  %Equal.sym(Bool, M.Len.linear(cc, nest), False{}, hs) : Laws.MemF(M.Len.pick(_, fn, loc, tloc, rest), M.Finding{4, fn, loc, tloc})
+  Keep.hit(Nat.is_gt(loc, tloc), M.Finding{4, fn, loc, tloc}, rest, h)
+
+def Len.hit9(+fn: U32, +cc: Nat, +nest: Nat, +loc: Nat, +tloc: Nat, +rest: List<&2, M.Finding>, hs: {M.Len.linear(cc, nest) == True{} : Bool}, h: {Nat.is_gt(loc, 300n) == True{} : Bool}) -> Laws.MemF(M.Len.check(fn, cc, nest, loc, tloc, rest), M.Finding{9, fn, loc, 300n}):
+  %Equal.sym(Bool, M.Len.linear(cc, nest), True{}, hs) : Laws.MemF(M.Len.pick(_, fn, loc, tloc, rest), M.Finding{9, fn, loc, 300n})
+  Keep.hit(Nat.is_gt(loc, 300n), M.Finding{9, fn, loc, 300n}, rest, h)
+
 def Stay.go(test: Bool, +tcc: Nat, +tn: Nat, +tp: Nat, +tl: Nat, +f: U32, +cc: Nat, +nest: Nat, +np: Nat, +loc: Nat, +rest: List<&2, M.Finding>, +y: M.Finding, mm: Laws.MemF(rest, y)) -> Laws.MemF(M.Rule.prod(test, f, cc, nest, np, loc, tcc, tn, tp, tl, rest), y):
   match test:
     case True{}:
       mm
     case False{}:
-      Keep.stay(Nat.is_gt(cc, tcc), M.Finding{1, f, cc, tcc}, M.Rule.check(2, f, nest, tn, M.Rule.check(3, f, np, tp, M.Rule.check(4, f, loc, tl, rest))), y, Keep.stay(Nat.is_gt(nest, tn), M.Finding{2, f, nest, tn}, M.Rule.check(3, f, np, tp, M.Rule.check(4, f, loc, tl, rest)), y, Keep.stay(Nat.is_gt(np, tp), M.Finding{3, f, np, tp}, M.Rule.check(4, f, loc, tl, rest), y, Keep.stay(Nat.is_gt(loc, tl), M.Finding{4, f, loc, tl}, rest, y, mm))))
+      Keep.stay(Nat.is_gt(cc, tcc), M.Finding{1, f, cc, tcc}, M.Rule.check(2, f, nest, tn, M.Rule.check(3, f, np, tp, M.Len.check(f, cc, nest, loc, tl, rest))), y, Keep.stay(Nat.is_gt(nest, tn), M.Finding{2, f, nest, tn}, M.Rule.check(3, f, np, tp, M.Len.check(f, cc, nest, loc, tl, rest)), y, Keep.stay(Nat.is_gt(np, tp), M.Finding{3, f, np, tp}, M.Len.check(f, cc, nest, loc, tl, rest), y, Len.stay(f, cc, nest, loc, tl, rest, y, mm))))
 
 # A finding already in `rest` stays through one more function's checks.
 def One.stay(r: M.Rules, m: M.FnM, +rest: List<&2, M.Finding>, +y: M.Finding, mm: Laws.MemF(rest, y)) -> Laws.MemF(M.Rule.one(r, m, rest), y):
@@ -234,7 +269,7 @@ def Laws.findings_complete_cyclomatic(tcc, tnest, tnp, tloc, cap, ms, fn, cc, ne
       match hm:
         case Inl{e}:
           %Equal.sym(M.FnM, m, M.FnM{fn, cc, nest, np, loc, False{}}, e) : Laws.MemF(M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, Con{_, t}), M.Finding{1, fn, cc, tcc})
-          Keep.hit(Nat.is_gt(cc, tcc), M.Finding{1, fn, cc, tcc}, M.Rule.check(2, fn, nest, tnest, M.Rule.check(3, fn, np, tnp, M.Rule.check(4, fn, loc, tloc, M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, t)))), h)
+          Keep.hit(Nat.is_gt(cc, tcc), M.Finding{1, fn, cc, tcc}, M.Rule.check(2, fn, nest, tnest, M.Rule.check(3, fn, np, tnp, M.Len.check(fn, cc, nest, loc, tloc, M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, t)))), h)
         case Inr{mm}:
           One.stay(M.Rules{tcc, tnest, tnp, tloc, cap}, m, M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, t), M.Finding{1, fn, cc, tcc}, Laws.findings_complete_cyclomatic(tcc, tnest, tnp, tloc, cap, t, fn, cc, nest, np, loc, mm, h))
 
@@ -246,7 +281,7 @@ def Laws.findings_complete_nesting(tcc, tnest, tnp, tloc, cap, ms, fn, cc, nest,
       match hm:
         case Inl{e}:
           %Equal.sym(M.FnM, m, M.FnM{fn, cc, nest, np, loc, False{}}, e) : Laws.MemF(M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, Con{_, t}), M.Finding{2, fn, nest, tnest})
-          Keep.stay(Nat.is_gt(cc, tcc), M.Finding{1, fn, cc, tcc}, M.Rule.check(2, fn, nest, tnest, M.Rule.check(3, fn, np, tnp, M.Rule.check(4, fn, loc, tloc, M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, t)))), M.Finding{2, fn, nest, tnest}, Keep.hit(Nat.is_gt(nest, tnest), M.Finding{2, fn, nest, tnest}, M.Rule.check(3, fn, np, tnp, M.Rule.check(4, fn, loc, tloc, M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, t))), h))
+          Keep.stay(Nat.is_gt(cc, tcc), M.Finding{1, fn, cc, tcc}, M.Rule.check(2, fn, nest, tnest, M.Rule.check(3, fn, np, tnp, M.Len.check(fn, cc, nest, loc, tloc, M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, t)))), M.Finding{2, fn, nest, tnest}, Keep.hit(Nat.is_gt(nest, tnest), M.Finding{2, fn, nest, tnest}, M.Rule.check(3, fn, np, tnp, M.Len.check(fn, cc, nest, loc, tloc, M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, t))), h))
         case Inr{mm}:
           One.stay(M.Rules{tcc, tnest, tnp, tloc, cap}, m, M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, t), M.Finding{2, fn, nest, tnest}, Laws.findings_complete_nesting(tcc, tnest, tnp, tloc, cap, t, fn, cc, nest, np, loc, mm, h))
 
@@ -258,11 +293,11 @@ def Laws.findings_complete_npath(tcc, tnest, tnp, tloc, cap, ms, fn, cc, nest, n
       match hm:
         case Inl{e}:
           %Equal.sym(M.FnM, m, M.FnM{fn, cc, nest, np, loc, False{}}, e) : Laws.MemF(M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, Con{_, t}), M.Finding{3, fn, np, tnp})
-          Keep.stay(Nat.is_gt(cc, tcc), M.Finding{1, fn, cc, tcc}, M.Rule.check(2, fn, nest, tnest, M.Rule.check(3, fn, np, tnp, M.Rule.check(4, fn, loc, tloc, M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, t)))), M.Finding{3, fn, np, tnp}, Keep.stay(Nat.is_gt(nest, tnest), M.Finding{2, fn, nest, tnest}, M.Rule.check(3, fn, np, tnp, M.Rule.check(4, fn, loc, tloc, M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, t))), M.Finding{3, fn, np, tnp}, Keep.hit(Nat.is_gt(np, tnp), M.Finding{3, fn, np, tnp}, M.Rule.check(4, fn, loc, tloc, M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, t)), h)))
+          Keep.stay(Nat.is_gt(cc, tcc), M.Finding{1, fn, cc, tcc}, M.Rule.check(2, fn, nest, tnest, M.Rule.check(3, fn, np, tnp, M.Len.check(fn, cc, nest, loc, tloc, M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, t)))), M.Finding{3, fn, np, tnp}, Keep.stay(Nat.is_gt(nest, tnest), M.Finding{2, fn, nest, tnest}, M.Rule.check(3, fn, np, tnp, M.Len.check(fn, cc, nest, loc, tloc, M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, t))), M.Finding{3, fn, np, tnp}, Keep.hit(Nat.is_gt(np, tnp), M.Finding{3, fn, np, tnp}, M.Len.check(fn, cc, nest, loc, tloc, M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, t)), h)))
         case Inr{mm}:
           One.stay(M.Rules{tcc, tnest, tnp, tloc, cap}, m, M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, t), M.Finding{3, fn, np, tnp}, Laws.findings_complete_npath(tcc, tnest, tnp, tloc, cap, t, fn, cc, nest, np, loc, mm, h))
 
-def Laws.findings_complete_length(tcc, tnest, tnp, tloc, cap, ms, fn, cc, nest, np, loc, hm, h):
+def Laws.findings_complete_length(tcc, tnest, tnp, tloc, cap, ms, fn, cc, nest, np, loc, hm, hs, h):
   match ms:
     case Nil{}:
       match hm:
@@ -270,9 +305,21 @@ def Laws.findings_complete_length(tcc, tnest, tnp, tloc, cap, ms, fn, cc, nest, 
       match hm:
         case Inl{e}:
           %Equal.sym(M.FnM, m, M.FnM{fn, cc, nest, np, loc, False{}}, e) : Laws.MemF(M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, Con{_, t}), M.Finding{4, fn, loc, tloc})
-          Keep.stay(Nat.is_gt(cc, tcc), M.Finding{1, fn, cc, tcc}, M.Rule.check(2, fn, nest, tnest, M.Rule.check(3, fn, np, tnp, M.Rule.check(4, fn, loc, tloc, M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, t)))), M.Finding{4, fn, loc, tloc}, Keep.stay(Nat.is_gt(nest, tnest), M.Finding{2, fn, nest, tnest}, M.Rule.check(3, fn, np, tnp, M.Rule.check(4, fn, loc, tloc, M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, t))), M.Finding{4, fn, loc, tloc}, Keep.stay(Nat.is_gt(np, tnp), M.Finding{3, fn, np, tnp}, M.Rule.check(4, fn, loc, tloc, M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, t)), M.Finding{4, fn, loc, tloc}, Keep.hit(Nat.is_gt(loc, tloc), M.Finding{4, fn, loc, tloc}, M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, t), h))))
+          Keep.stay(Nat.is_gt(cc, tcc), M.Finding{1, fn, cc, tcc}, M.Rule.check(2, fn, nest, tnest, M.Rule.check(3, fn, np, tnp, M.Len.check(fn, cc, nest, loc, tloc, M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, t)))), M.Finding{4, fn, loc, tloc}, Keep.stay(Nat.is_gt(nest, tnest), M.Finding{2, fn, nest, tnest}, M.Rule.check(3, fn, np, tnp, M.Len.check(fn, cc, nest, loc, tloc, M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, t))), M.Finding{4, fn, loc, tloc}, Keep.stay(Nat.is_gt(np, tnp), M.Finding{3, fn, np, tnp}, M.Len.check(fn, cc, nest, loc, tloc, M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, t)), M.Finding{4, fn, loc, tloc}, Len.hit4(fn, cc, nest, loc, tloc, M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, t), hs, h))))
         case Inr{mm}:
-          One.stay(M.Rules{tcc, tnest, tnp, tloc, cap}, m, M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, t), M.Finding{4, fn, loc, tloc}, Laws.findings_complete_length(tcc, tnest, tnp, tloc, cap, t, fn, cc, nest, np, loc, mm, h))
+          One.stay(M.Rules{tcc, tnest, tnp, tloc, cap}, m, M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, t), M.Finding{4, fn, loc, tloc}, Laws.findings_complete_length(tcc, tnest, tnp, tloc, cap, t, fn, cc, nest, np, loc, mm, hs, h))
+
+def Laws.findings_complete_length_linear(tcc, tnest, tnp, tloc, cap, ms, fn, cc, nest, np, loc, hm, hs, h):
+  match ms:
+    case Nil{}:
+      match hm:
+    case Con{m, t}:
+      match hm:
+        case Inl{e}:
+          %Equal.sym(M.FnM, m, M.FnM{fn, cc, nest, np, loc, False{}}, e) : Laws.MemF(M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, Con{_, t}), M.Finding{9, fn, loc, 300n})
+          Keep.stay(Nat.is_gt(cc, tcc), M.Finding{1, fn, cc, tcc}, M.Rule.check(2, fn, nest, tnest, M.Rule.check(3, fn, np, tnp, M.Len.check(fn, cc, nest, loc, tloc, M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, t)))), M.Finding{9, fn, loc, 300n}, Keep.stay(Nat.is_gt(nest, tnest), M.Finding{2, fn, nest, tnest}, M.Rule.check(3, fn, np, tnp, M.Len.check(fn, cc, nest, loc, tloc, M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, t))), M.Finding{9, fn, loc, 300n}, Keep.stay(Nat.is_gt(np, tnp), M.Finding{3, fn, np, tnp}, M.Len.check(fn, cc, nest, loc, tloc, M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, t)), M.Finding{9, fn, loc, 300n}, Len.hit9(fn, cc, nest, loc, tloc, M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, t), hs, h))))
+        case Inr{mm}:
+          One.stay(M.Rules{tcc, tnest, tnp, tloc, cap}, m, M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, t), M.Finding{9, fn, loc, 300n}, Laws.findings_complete_length_linear(tcc, tnest, tnp, tloc, cap, t, fn, cc, nest, np, loc, mm, hs, h))
 
 # ---- D. nesting ---------------------------------------------------------------------------------
 def Nat.sub_zero(+a: Nat) -> {Nat.sub(a, 0n) == a : Nat}:
@@ -733,3 +780,12 @@ def Laws.findings_skip_tests(r, fn, cc, nest, np, loc, ms):
   match r:
     case M.Rules{tcc, tn, tp, tl, cap}:
       {==}
+
+def Laws.len_linear_is_linear(cc, nest):
+  {==}
+
+def Laws.fx_length_structured(fn, v, thr):
+  {==}
+
+def Laws.fx_length_linear(fn, v, thr):
+  {==}

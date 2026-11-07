@@ -545,13 +545,34 @@ def Rule.keep(over: Bool, x: Finding, rest: List<&2, Finding>) -> List<&2, Findi
 def Rule.check(+rule: U32, +fn: U32, +v: Nat, +thr: Nat, rest: List<&2, Finding>) -> List<&2, Finding>:
   Rule.keep(Nat.is_gt(v, thr), Finding{rule, fn, v, thr}, rest)
 
+# core.length has two tiers (rule version 2, lead ruling 2026-11-07). A body is linear when
+# its cyclomatic is at most 2 and its nesting at most 1, and structured otherwise. A structured
+# body is flagged above the Rules length threshold (default 60), a linear one above 300.
+# Internally, rule 4 is structured length and rule 9 is linear length; both print as
+# core.length, with shape=structured or shape=linear.
+def Len.linear(+cc: Nat, +nest: Nat) -> Bool:
+  Bool.and(Bool.not(Nat.is_gt(cc, 2n)), Bool.not(Nat.is_gt(nest, 1n)))
+
+def Len.linear_thr() -> Nat:
+  300n
+
+def Len.pick(lin: Bool, +fn: U32, +loc: Nat, +tloc: Nat, rest: List<&2, Finding>) -> List<&2, Finding>:
+  match lin:
+    case True{}:
+      Rule.check(9, fn, loc, Len.linear_thr(), rest)
+    case False{}:
+      Rule.check(4, fn, loc, tloc, rest)
+
+def Len.check(+fn: U32, +cc: Nat, +nest: Nat, +loc: Nat, +tloc: Nat, rest: List<&2, Finding>) -> List<&2, Finding>:
+  Len.pick(Len.linear(cc, nest), fn, loc, tloc, rest)
+
 # A test function (a TF fact) gets no findings: FACTS.md has these detectors skip it.
-def Rule.prod(test: Bool, +fn: U32, cc: Nat, nest: Nat, np: Nat, loc: Nat, tcc: Nat, tnest: Nat, tnp: Nat, tloc: Nat, rest: List<&2, Finding>) -> List<&2, Finding>:
+def Rule.prod(test: Bool, +fn: U32, +cc: Nat, +nest: Nat, np: Nat, loc: Nat, tcc: Nat, tnest: Nat, tnp: Nat, tloc: Nat, rest: List<&2, Finding>) -> List<&2, Finding>:
   match test:
     case True{}:
       rest
     case False{}:
-      Rule.check(1, fn, cc, tcc, Rule.check(2, fn, nest, tnest, Rule.check(3, fn, np, tnp, Rule.check(4, fn, loc, tloc, rest))))
+      Rule.check(1, fn, cc, tcc, Rule.check(2, fn, nest, tnest, Rule.check(3, fn, np, tnp, Len.check(fn, cc, nest, loc, tloc, rest))))
 
 def Rule.one(r: Rules, m: FnM, rest: List<&2, Finding>) -> List<&2, Finding>:
   match r m:
@@ -567,7 +588,7 @@ def Metrics.findings(+r: Rules, ms: List<&2, FnM>) -> List<&2, Finding>:
 
 # ---- output -----------------------------------------------------------------------------------
 #   FM <fn> <cyclomatic> <nesting> <npath> <length>     every function, id order
-#   FX <rule-id> <fn> <value> <threshold>               every finding
+#   FX <rule-id> <fn> <value> <threshold> [shape=...]   every finding (shape: core.length)
 def Rule.id(+rule: U32) -> String:
   match rule:
     case 1:
@@ -584,10 +605,20 @@ def Report.fm(m: FnM) -> String:
     case FnM{fn, cc, nest, np, loc, test}:
       "FM " ++ U32.show(fn) ++ " " ++ Nat.show(cc) ++ " " ++ Nat.show(nest) ++ " " ++ Nat.show(np) ++ " " ++ Nat.show(loc)
 
+# The evidence tail: core.length's shape.
+def Rule.ev(+rule: U32) -> String:
+  match rule:
+    case 4:
+      " shape=structured"
+    case 9:
+      " shape=linear"
+    case _:
+      ""
+
 def Report.fx(x: Finding) -> String:
   match x:
-    case Finding{rule, fn, v, thr}:
-      "FX " ++ Rule.id(rule) ++ " " ++ U32.show(fn) ++ " " ++ Nat.show(v) ++ " " ++ Nat.show(thr)
+    case Finding{+rule, fn, v, thr}:
+      "FX " ++ Rule.id(rule) ++ " " ++ U32.show(fn) ++ " " ++ Nat.show(v) ++ " " ++ Nat.show(thr) ++ Rule.ev(rule)
 
 def Report.fms(ms: List<&2, FnM>) -> List<&2, String>:
   match ms:

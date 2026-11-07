@@ -70,6 +70,14 @@ FX <rule-id> <fn> <value> <threshold> [<evidence>...]   one finding: value stric
 grouped by function, with rules in the order cyclomatic, nesting, npath, length.
 Rule ids and default thresholds: `core.cyclomatic` 10, `core.nesting` 3,
 `core.npath` 200, `core.length` 60 (`research/thresholds.md`, `Metrics.defaults()`).
+A decision for cyclomatic, and a short-circuit for NPath, is any `CT` kind-6 node: `&&`, `||`, `??`,
+their assignment forms and optional chaining `?.` (CO op 7). That makes `core.cyclomatic` rule version 2;
+cognitive does not count `?.`.
+`core.length` (rule version 2) has two tiers. A body is linear when its cyclomatic is at most 2
+and its nesting at most 1, and structured otherwise. A structured body is flagged above the `Rules`
+length threshold (60), a linear one above 300. The `FX core.length` line ends with `shape=structured`
+or `shape=linear`, and its threshold is the tier's. Metrics-LAWS F1, F5 and F5' prove that core.length
+fires exactly when length > (linear ? 300 : 60). `FM` keeps the raw length.
 Thresholds are an explicit `Rules` argument. Every value is a decimal natural number. NPath
 saturates at the cap 16777215 (2^24 - 1): a printed NPath equal to the cap means
 "at least the cap". The laws prove that printed NPath = min(Nejmeh NPath, cap).
@@ -87,7 +95,8 @@ The level rises inside an arm, a loop and a catch; a try body and a finally keep
 Where `CT` cannot tell what the paper needs, the count leans low, so it never exceeds the
 paper's count:
 - `else` adds nothing (CT cannot tell `if/else` from a ternary);
-- `??`, the assignment operators, recursion and labelled jumps add nothing;
+- `??`, the assignment operators, optional chaining `?.`, recursion and labelled jumps add nothing
+  (the paper scores none of them; Cognitive-LAWS `cog_unscored_op_free`);
 - a nested function counts in its own tree;
 - a missing `CO` row reads as an operator that adds nothing.
 

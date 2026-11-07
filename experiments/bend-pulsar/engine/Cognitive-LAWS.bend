@@ -91,6 +91,19 @@ law cog_op_change:
   for +lvl: Nat
   {C.CS.n(C.Cog.seq(M.Node{M.KSc{}, M.Leaf{}, M.Node{M.KSc{}, M.Leaf{}, M.Leaf{}}}, C.CAny{}, lvl, C.ONone{}, [C.OAnd{}, C.OOr{}])) == 2n : Nat}
 
+# S6'. an operator the white paper does not score (CO 3..7: `??`, the assignment forms and
+# optional chaining `?.`, read as ONone) adds nothing and does not break a run: the count
+# is that of what follows, with the same last operator. Optional chaining counts for
+# cyclomatic and NPath (Metrics-LAWS C5, N), not here: the SonarSource spec does not
+# increment for it (lead ruling, 2026-11-07).
+law cog_unscored_op_free:
+  for +rest: M.Ct
+  for +ctx: C.Cx
+  for +lvl: Nat
+  for +last: C.Op
+  for +os: List<&2, C.Op>
+  {C.CS.n(C.Cog.seq(M.Node{M.KSc{}, M.Leaf{}, rest}, ctx, lvl, last, Con{C.ONone{}, os})) == C.CS.n(C.Cog.seq(rest, ctx, lvl, last, os)) : Nat}
+
 # S7. a nested function's boundary adds nothing here (it is measured in its own tree).
 law cog_nested_fn_free:
   for +next: M.Ct

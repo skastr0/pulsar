@@ -39,7 +39,8 @@ def MemM(xs: List<&2, M.FnM>, m: M.FnM) -> Data:
     case Con{h, t}:
       Either<&2, &2, {h == m : M.FnM}, MemM(t, m)>
 
-# The threshold rule `rule` carries, and the measure it reads.
+# The threshold rule `rule` carries, and the measure it reads. Rule 4 is core.length on a
+# structured body (the Rules threshold), rule 9 core.length on a linear body (300).
 def Thr(r: M.Rules, +rule: U32) -> Nat:
   match r:
     case M.Rules{cc, nest, np, loc, cap}:
@@ -50,8 +51,26 @@ def Thr(r: M.Rules, +rule: U32) -> Nat:
           nest
         case 3:
           np
+        case 9:
+          300n
         case _:
           loc
+
+# A linear body: cyclomatic at most 2 and nesting at most 1, from the shipped measures.
+def Linear(+cc: Nat, +nest: Nat) -> Bool:
+  Bool.and(Bool.not(Nat.is_gt(cc, 2n)), Bool.not(Nat.is_gt(nest, 1n)))
+
+# The shape a rule needs: rule 4 a structured body, rule 9 a linear one, others none.
+def ShapeOk(m: M.FnM, +rule: U32) -> Data:
+  match m:
+    case M.FnM{fn, cc, nest, np, loc, test}:
+      match rule:
+        case 4:
+          {Linear(cc, nest) == False{} : Bool}
+        case 9:
+          {Linear(cc, nest) == True{} : Bool}
+        case _:
+          {0n == 0n : Nat}
 
 def Field(m: M.FnM, +rule: U32) -> Nat:
   match m:
@@ -73,7 +92,7 @@ def Measured(ms: List<&2, M.FnM>, +rule: U32, +fn: U32, +v: Nat) -> Data:
     case Nil{}:
       Empty
     case Con{M.FnM{f, cc, nest, np, loc, test}, t}:
-      Either<&2, &2, And({f == fn : U32}, And({test == False{} : Bool}, {Field(M.FnM{f, cc, nest, np, loc, test}, rule) == v : Nat})), Measured(t, rule, fn, v)>
+      Either<&2, &2, And({f == fn : U32}, And({test == False{} : Bool}, And({Field(M.FnM{f, cc, nest, np, loc, test}, rule) == v : Nat}, ShapeOk(M.FnM{f, cc, nest, np, loc, test}, rule)))), Measured(t, rule, fn, v)>
 
 # What a reported finding must satisfy.
 def Sound(r: M.Rules, ms: List<&2, M.FnM>, x: M.Finding) -> Data:
@@ -126,7 +145,7 @@ law lines_shape:
 
 # ---- F. findings ------------------------------------------------------------------------------
 # F1. sound: every finding is over its rule's threshold, and its value is the
-# measure of a function that was measured.
+# measure of a function that was measured, with the shape its rule needs (ShapeOk).
 law findings_sound:
   for +r: M.Rules
   for +ms: List<&2, M.FnM>
@@ -196,8 +215,46 @@ law findings_complete_length:
   for +np: Nat
   for +loc: Nat
   for hm: MemM(ms, M.FnM{fn, cc, nest, np, loc, False{}})
+  for hs: {Linear(cc, nest) == False{} : Bool}
   for h: {Nat.is_gt(loc, tloc) == True{} : Bool}
   MemF(M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, ms), M.Finding{4, fn, loc, tloc})
+
+# F5'. a linear body over 300 is reported as linear length (rule 9). With F1 and F5, core.length
+# fires exactly when length > (linear ? 300 : the Rules threshold).
+law findings_complete_length_linear:
+  for +tcc: Nat
+  for +tnest: Nat
+  for +tnp: Nat
+  for +tloc: Nat
+  for +cap: Nat
+  for +ms: List<&2, M.FnM>
+  for +fn: U32
+  for +cc: Nat
+  for +nest: Nat
+  for +np: Nat
+  for +loc: Nat
+  for hm: MemM(ms, M.FnM{fn, cc, nest, np, loc, False{}})
+  for hs: {Linear(cc, nest) == True{} : Bool}
+  for h: {Nat.is_gt(loc, 300n) == True{} : Bool}
+  MemF(M.Metrics.findings(M.Rules{tcc, tnest, tnp, tloc, cap}, ms), M.Finding{9, fn, loc, 300n})
+
+# F5''. the shipped shape test is Linear, and both tiers print as core.length with their shape.
+law len_linear_is_linear:
+  for +cc: Nat
+  for +nest: Nat
+  {M.Len.linear(cc, nest) == Linear(cc, nest) : Bool}
+
+law fx_length_structured:
+  for +fn: U32
+  for +v: Nat
+  for +thr: Nat
+  {M.Report.fx(M.Finding{4, fn, v, thr}) == "FX core.length " ++ U32.show(fn) ++ " " ++ Nat.show(v) ++ " " ++ Nat.show(thr) ++ " shape=structured" : String}
+
+law fx_length_linear:
+  for +fn: U32
+  for +v: Nat
+  for +thr: Nat
+  {M.Report.fx(M.Finding{9, fn, v, thr}) == "FX core.length " ++ U32.show(fn) ++ " " ++ Nat.show(v) ++ " " ++ Nat.show(thr) ++ " shape=linear" : String}
 
 # F6. a test function (TF) adds no findings.
 law findings_skip_tests:
@@ -245,7 +302,10 @@ law decisions_add_up:
   for +b: M.Ct
   {M.Cc.seq(Ct.cat(a, b)) == Nat.add(M.Cc.seq(a), M.Cc.seq(b)) : Nat}
 
-# C3-C5. a branch, a loop and a short-circuit are one decision each.
+# C3-C5. a branch, a loop and a short-circuit are one decision each. A short-circuit is a
+# CT kind-6 node: `&&`, `||`, `??`, their assignment forms, and optional chaining `?.`
+# (member, call and element access), which short-circuits like `??` (lead ruling,
+# 2026-11-07; core.cyclomatic rule version 2).
 law decision_branch:
   for +kids: M.Ct
   for +next: M.Ct
@@ -332,6 +392,7 @@ law nesting_else_if_is_flat:
 #   loop          its body + 1 + one per short-circuit
 #   try           (body + catches) x finally
 #   anything else one path; a nested function's subtree is not read
+#   a short-circuit is a CT kind-6 node, `?.` included, as in C3-C5
 def Npx.val(k: M.K, prod: Nat, sum: Nat, arms: Nat, sc: Nat, dflt: Nat, fin: Nat) -> Nat:
   match k:
     case M.KBranch{}:
