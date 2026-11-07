@@ -15,9 +15,26 @@ A native, proven code-health tool for teams of peer agents. A seat runs it on a 
 | A lead | Which lanes accumulate debt over a commit range |
 | The operator | A few trends and the exceptions |
 
+## Facts model
+
+- **One fact store.**
+  - Language adapters emit base facts: modules, imports, symbols, definitions, references, functions and branches, commits.
+  - Later fact kinds: types, SQL schema and queries.
+- **Detectors are functions from facts to new facts.**
+  - A composite detector (hotspot = complexity finding and high churn) is a detector whose inputs are derived facts.
+  - Composition is unbounded, so detectors form a dependency graph.
+- **Every fact carries provenance:** the facts it came from. A finding explains itself down to file and line.
+- **Numbers.** Measured numbers may appear in facts. Thresholds live explicitly in the rule that derives a fact. Weighted blends are not allowed.
+- **Incremental.** Facts are cached per sha, and a change recomputes only what is downstream of the files it touched.
+- **Language-neutral detectors.** A new adapter gets every existing detector. A new detector works in every language with an adapter.
+- **Framework packs** are switched on by evidence, such as an Effect pack when `effect` is in `package.json`. They are named as framework-specific and never change the generic defaults.
+
 ## Core
 
-- **Detectors.** Generic and deterministic. Graph and history first (cycles, duplication, unused exports, boundaries, coupling, churn, co-change), then syntax-level ones. Each detector ships with laws in `LAWS.bend`, proven in `PROOF.bend` and passing `--verdict`.
+- **Detectors.** Generic and deterministic. Graph and history first (cycles, duplication, unused exports, boundaries, coupling, churn, co-change), then syntax-level ones.
+  - Each detector ships with laws in `LAWS.bend`, proven in `PROOF.bend` and passing `--verdict`.
+  - The minimum bar is soundness (no false positives), proven unconditionally, through a certificate checker where the algorithm itself is hard to prove.
+  - Completeness is proven where it matters, and may be proven relative to runtime certificates that the binary reports.
 - **Finding identity.** Stable across line shifts, keyed by symbol and path. Baseline, delta, allows and recorded decisions all share it.
 - **Facts cached per sha.** A delta is the comparison of two cached fact sets, not a second engine.
 - **Delta output.** The findings added and removed, plus counts. Plain text and machine-readable lines. Exit codes a script can act on.
@@ -40,11 +57,19 @@ Weighted means, categories, readiness, bands, personas, the quiz, backpressure, 
 
 ## Runtime
 
-- One native binary compiled from Bend. Users need no Bend, Lean or clang. Contributors and CI need Bend, clang and Lean 4.34 (for `--verdict`).
-- Parser: open. Either a Bend scanner/parser (go only if it stays under about 10k lines and is competitive on speed), or an external parser that emits facts in a line format, which keeps the parser outside the proofs.
+- **The engine is native, compiled from Bend.**
+  - `bend main.bend -o x.c` emits one C file, and plain `clang -O2` builds it with no Bend installed. Checked on macOS for bend-cycles: a 1.4 MB C file, a 5 s build, and a binary that links only libSystem.
+  - Packagers such as Homebrew and npm can build from the generated C.
+  - Contributors and CI need Bend, clang and Lean 4.34 (for `--verdict`). Users need none of them.
+- **Parsers are external, written in Rust:** oxc for TypeScript syntax, tsrs for the opt-in type-aware lane, tree-sitter for other languages. They emit facts, and they sit outside the proofs.
+  - Fidelity to each language is shown by differential testing.
+  - Config reading (tsconfig, package.json) lives in the adapter.
+- **Type-aware detectors run in a separate opt-in lane** that pays tsrs's memory. The default lane needs no type checker.
+- **Windows:** not supported. Bend has no Windows target (WSL works).
 
 ## Open decisions
 
-1. Parser route, decided on the Bend scanner speed results.
-2. Whether completeness laws are required for each detector, or soundness alone (no false positives) is the bar.
-3. Which detectors make the first cut.
+1. Process shape: a Rust front CLI that runs the adapter and the Bend engine, or a Bend CLI that runs the adapter as a subprocess.
+2. Where it lives: a new repository, or a new workspace in this one that replaces 0.3.0.
+3. Licence notices for bundled crates (oxc, tsrs, tree-sitter). Legal must rule on these before anything ships; local use is not affected.
+4. Which detectors make the first cut.
