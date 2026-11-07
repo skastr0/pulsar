@@ -164,7 +164,9 @@ the number of counted `CFN` rows, and every counted function is reported.
 
   The searches are untrusted, and each finding is kept only when a checker accepts it. History-LAWS.bend F1, X1 and C1-C4 state what a kept finding means, and E1-E3 cover the entry point and the lines. LAWS.bend P17-P18 state the switch.
 
-If any detector refuses its facts (the graph, Metrics, or an active pack), the engine exits 2 with nothing on stdout. engine/LAWS.bend P5-P14 state the order and the switches; `engine/fixtures/packs.expected` shows all four sections.
+- **Binding rules** (a `BF` row is present): `pulsar-binding 0`, after the history lines and before the delta lines; see "Binding rules" below.
+
+If any detector refuses its facts (the graph, Metrics, or an active pack), the engine exits 2 with nothing on stdout. engine/LAWS.bend P5-P14 and P21-P22 state the order and the switches; `engine/fixtures/packs.expected` shows all four sections.
 
 **Rows the engine reads.** Besides the graph facts read by `Parse.bend`, `pulsar-engine` keeps only rows with these tags and skips every other line unread. engine/LAWS.bend P15 pins the list. Each tag is its ASCII letters packed big-endian, as `Rows.bend` reads them:
 
@@ -184,6 +186,7 @@ If any detector refuses its facts (the graph, Metrics, or an active pack), the e
 | `EP` 17744, `RH` 21064 (with `CE`, `QS`, and the SQL, fan-out and constant-argument rows) | HotIn |
 | `RU` 21077 (with `QS`, `FN`, `CT`, `TF`, `CV`) | MetricsIn (Untested) |
 | `RG` 21063 (with the schema rows, `QS`, `QT`, `QU`, `EP`, `CE`) | GrowIn |
+| `I` 73, `ID` 18756, `IE` 18757, `IB` 18754, `IU` 18773, `BF` 16966 | Binding |
 | `KD` 19268, `KB` 19266, `KH` 19272, `MB` 19778, `MH` 19784 | Delta |
 
 A new relation reaches a detector only once its tag is added here and to `Engine.row_tags`, in the same commit.
@@ -479,9 +482,24 @@ Written by the infra lane (`cli/src/infra/`). A **deployable** is one unit the r
 
 `IB`: the names the declaration makes available to code — the keys of an alchemy `env` object, and wrangler's binding fields (`binding` for KV, R2, D1, services, Hyperdrive, Vectorize, analytics datasets, mTLS certificates and queues producers; `name` for Durable Objects and send-email; `assets.binding`, `ai.binding`, `browser.binding`) plus the keys of `vars`. The resource a binding points at is not a fact: a drift rule compares names.
 
-`IU`: a binding read **by name**: `env.X`, `this.env.X`, `ctx.env.X`, `alias.env.X`, `env["X"]`, and object destructuring from any of those (`const { DB } = env`). An identifier `env` counts only when it is a function parameter or an import from `cloudflare:workers`; a local `env` object does not. `process.env.X` and `import.meta.env.X` are never binding reads. Reads are taken only in the entry closure of some deployable — the `IE` file plus every file its `I` edges reach — so a repo's unrelated `env` variables contribute no rows. A read is not attributed to a deployable: the engine limits the files to the closure it computes from `IE`, which compares per deployable in a repo with several.
+`IU`: a binding read **by name**: `env.X`, `this.env.X`, `ctx.env.X`, `alias.env.X`, `env["X"]`, and object destructuring from any of those (`const { DB } = env`). An identifier `env` counts only when it is a function parameter or an import from `cloudflare:workers`; a local `env` object does not. `import.meta.env.X` is never a binding read. `process.env.X` is one only in the closure of a container deployable, which receives its bindings as the process environment; in a worker's closure it is not. Reads are taken only in the entry closure of some deployable — the `IE` file plus every file its `I` edges reach — so a repo's unrelated `env` variables contribute no rows. A read is not attributed to a deployable: the engine limits the files to the closure it computes from `IE`, which compares per deployable in a repo with several.
 
 The lane is inert without a config it reads: no `ID` row means no infra facts and no infra finding. A deployable whose bindings resolve but whose entry does not is reported as degraded input, because its reads are unknown.
+
+**Binding rules.** Read by `engine/Binding.bend` (laws in `engine/Binding-LAWS.bend`); the CLI writes one `BF` row per rule that is on, with its threshold:
+
+| Tag | Fields | Meaning |
+|---|---|---|
+| `BF` | `rule thr` | Binding rule `rule` (1 is `cloudflare.binding-drift`) is on, with threshold `thr` in unread bindings per deployable. |
+
+For each deployable with an `IE` row, the engine walks the `I` edges from its entry files (the same closure the infra lane read), collects the bindings some file in that closure reads (`IU`), and reports each declared binding (`IB`) that none reads. A deployable with no `IE` row is skipped: its code is unknown, and that is degraded input, never drift. The rule reports declared-not-read only: a read of a binding that no config declares needs a list of secret names the repo commits, and without it a read could be a secret.
+
+The section is `pulsar-binding 0`, then
+
+- `BFX cloudflare.binding-drift <dep> <bind> <value> <thr> declared=<d>`: binding `bind` (a `.bindings` id) of deployable `dep` (a `.deployables` id) is declared and unread; `value` is the deployable's unread count, `d` its declared count; ordered by deployable, then binding;
+- `BFS n`, the count.
+
+The rule fires when a deployable's unread count is over its threshold (default 0), so one line per unread binding of a deployable over it. Binding-LAWS.bend states soundness (a reported binding is declared and no file in the entry closure reads it), completeness (every such binding is reported), the degraded skip, and the switch.
 
 ### Later
 

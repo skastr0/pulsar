@@ -32,6 +32,7 @@ import ./Konst-PROOF.bend as KonstProof
 import ./Hot-PROOF.bend as HotProof
 import ./Untested-PROOF.bend as UntestedProof
 import ./Grow-PROOF.bend as GrowProof
+import ./Binding-PROOF.bend as BindingProof
 import ./SqlIn-PROOF.bend as SqlInProof
 import ./Rules-PROOF.bend as RulesProof
 import ./FnCtx-PROOF.bend as FnCtxProof
@@ -159,7 +160,7 @@ def Laws.engine_classctx_off(rows, off):
   %Equal.sym(Bool, L.Engine.has_tag(rows, L.Engine.tag_rl()), False{}, off) : {L.Engine.cx1(_, rows) == Some{Nil{}} : Maybe<List<&2, String>>}
   {==}
 
-def Laws.engine_all(o, m, h, rows):
+def Laws.engine_all(n, o, m, h, rows):
   {==}
 
 def Laws.engine_row_tags():
@@ -194,4 +195,15 @@ def Laws.engine_delta_lines(o):
 
 def Laws.engine_delta_off(rows, off):
   %Equal.sym(Bool, L.Engine.has_tag(rows, L.Engine.tag_kd()), False{}, off) : {L.Engine.dl1(_, rows) == Some{Nil{}} : Maybe<List<&2, String>>}
+  {==}
+
+def Laws.engine_binding_on(n, rows, on):
+  %Equal.sym(Bool, L.Engine.has_tag(rows, L.Engine.tag_bf()), True{}, on) : {L.Engine.bd2(_, n, rows) == L.Engine.bd2(True{}, n, rows) : Maybe<List<&2, String>>}
+  {==}
+
+def Laws.engine_binding_lines(n, rows):
+  {==}
+
+def Laws.engine_binding_off(n, rows, off):
+  %Equal.sym(Bool, L.Engine.has_tag(rows, L.Engine.tag_bf()), False{}, off) : {L.Engine.bd2(_, n, rows) == Some{Nil{}} : Maybe<List<&2, String>>}
   {==}

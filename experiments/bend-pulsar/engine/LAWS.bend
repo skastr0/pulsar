@@ -29,6 +29,7 @@ import ../Graph.bend as G
 import ./Facts.bend as F
 import ./Scope.bend as S
 import ./Pipeline.bend as L
+import ./Binding.bend as Bd
 import ./Rows.bend as W
 import ./Layers.bend as Y
 import ./FnCtx.bend as N
@@ -349,19 +350,23 @@ law engine_classctx_off:
 # then the history lines h (main.bend passes Engine.history, P17-P18), then the
 # delta lines (P19-P20).
 law engine_all:
+  for +n: U32
   for o: Maybe<L.Out>
   for m: Maybe<&2, List<&2, String>>
   for h: Maybe<List<&2, String>>
   for +rows: List<&2, W.Row>
-  {L.Engine.all(o, m, h, rows) == L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.lines(o, m), L.Engine.layers(rows)), L.Engine.classctx(rows)), N.FnCtxIn.lines(rows)), Sq.SqlIn.lines(rows)), Sq.FanoutIn.lines(rows)), Sq.KonstIn.lines(rows)), Sq.HotIn.lines(rows)), Sq.GrowIn.lines(rows)), h), L.Engine.delta(rows)) : Maybe<List<&2, String>>}
+  {L.Engine.all(n, o, m, h, rows) == L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.lines(o, m), L.Engine.layers(rows)), L.Engine.classctx(rows)), N.FnCtxIn.lines(rows)), Sq.SqlIn.lines(rows)), Sq.FanoutIn.lines(rows)), Sq.KonstIn.lines(rows)), Sq.HotIn.lines(rows)), Sq.GrowIn.lines(rows)), h), L.Engine.binding(n, rows)), L.Engine.delta(rows)) : Maybe<List<&2, String>>}
 
 # P15. the rows the engine keeps (Rows.start_keep) are exactly the tags FACTS.md
 # lists under "Rows the engine reads", each packed as Rows.bend packs it (the
 # ASCII letters, big-endian): FN CT TF (MetricsIn); E SV LY LQ LP LR LC LO US
 # (Layers); CS CL RL (ClassCtx); CV (Crap); A C CFN (Churn); CO (Cognitive);
 # H CF HR (History); DS DT DC DI DX DF DG QS QT QU QD SR (SqlIn); CE RF (FanoutIn); AL RK (KonstIn); EP RH (HotIn); KD KB KH MB MH (Delta); RU (Untested, via MetricsIn); RG (GrowIn); FC RE RM (FnCtx, with CE).
+# I ID IE IB IU BF (Binding): the import rows the entry closure walks, the deployables, their
+# entry files, declared bindings and reads, and the rule row. The binding lines print after
+# the history lines and before the delta lines (P21-P22).
 law engine_row_tags:
-  {L.Engine.row_tags() == [17998, 17236, 21574, 69, 21334, 19545, 19537, 19536, 19538, 19523, 19535, 21843, 17235, 17228, 21068, 17238, 65, 67, 4408910, 17231, 72, 17222, 18514, 17491, 17492, 17475, 17481, 17496, 17478, 17479, 20819, 20820, 20821, 20804, 21330, 17221, 21062, 16716, 21067, 17744, 21064, 19268, 19266, 19272, 19778, 19784, 21077, 21063, 17987, 21061, 21069] : List<&2, U32>}
+  {L.Engine.row_tags() == [17998, 17236, 21574, 69, 21334, 19545, 19537, 19536, 19538, 19523, 19535, 21843, 17235, 17228, 21068, 17238, 65, 67, 4408910, 17231, 72, 17222, 18514, 17491, 17492, 17475, 17481, 17496, 17478, 17479, 20819, 20820, 20821, 20804, 21330, 17221, 21062, 16716, 21067, 17744, 21064, 19268, 19266, 19272, 19778, 19784, 21077, 21063, 17987, 21061, 21069, 73, 18756, 18757, 18754, 18773, 16966] : List<&2, U32>}
 
 # P16. the shipped Metrics thresholds are FACTS.md's: core.cyclomatic 10,
 # core.nesting 3, core.npath 200, core.length 60. (The fifth field, the cap
@@ -423,6 +428,27 @@ law engine_delta_run:
 law engine_delta_lines:
   for o: Dt.DOut
   {Dt.Delta.lines2(Some{o}) == Some{Dt.Dl.lines(o)} : Maybe<List<&2, String>>}
+
+# P21. with a `BF` row the binding rule is on: the binding lines are Binding.lines
+# (Binding-LAWS B1-B8) of the decoded facts and the file count n whose import rows the
+# entry closure walks; with no `BF` row the section is empty.
+law engine_binding_on:
+  for +n: U32
+  for +rows: List<&2, W.Row>
+  for on: {L.Engine.has_tag(rows, L.Engine.tag_bf()) == True{} : Bool}
+  {L.Engine.binding(n, rows) == L.Engine.bd2(True{}, n, rows) : Maybe<List<&2, String>>}
+
+law engine_binding_lines:
+  for +n: U32
+  for +rows: List<&2, W.Row>
+  {L.Engine.bd2(True{}, n, rows) == Some{Bd.Binding.lines(Bd.Bd.dec(rows, n))} : Maybe<List<&2, String>>}
+
+# P22. with no `BF` row the binding rule is off: no binding lines.
+law engine_binding_off:
+  for +n: U32
+  for +rows: List<&2, W.Row>
+  for off: {L.Engine.has_tag(rows, L.Engine.tag_bf()) == False{} : Bool}
+  {L.Engine.binding(n, rows) == Some{Nil{}} : Maybe<List<&2, String>>}
 
 # P20. with no `KD` row there is no delta section.
 law engine_delta_off:

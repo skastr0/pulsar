@@ -1,0 +1,23 @@
+# fixtures/binding: three deployables over four files. d0's entry (file 0) reaches
+# file 1 and reads binding 0 there; d1's entry reads nothing; d2 has no IE row
+# (degraded: its code is unknown, so it is never drift). The rule is on with
+# threshold 0. d0 declares bindings 0 and 1, d1 declares binding 2, d2 declares 3.
+pulsar-facts 0
+N 4
+F 0 1
+F 1 1
+F 2 1
+F 3 1
+I 0 1 0 1 0
+I 1 2 0 1 0
+ID 0
+ID 1
+ID 2
+IE 0 0
+IE 1 2
+IB 0 0
+IB 0 1
+IB 1 2
+IB 2 3
+IU 1 0
+BF 1 1

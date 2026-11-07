@@ -1,0 +1,92 @@
+[
+ {
+  "law": "B1 reach_sound",
+  "bug": "Bd.step keeps the destination of every edge, reachable or not",
+  "old": "      Bd.push_u(S.Scope.has(cur, src), dst, Bd.step(t, cur))",
+  "new": "      Bd.push_u(True{}, dst, Bd.step(t, cur))"
+ },
+ {
+  "law": "B2 reach_complete",
+  "bug": "Bd.step drops every successor, so the closure is only the entries",
+  "old": "      Bd.push_u(S.Scope.has(cur, src), dst, Bd.step(t, cur))",
+  "new": "      Bd.push_u(False{}, dst, Bd.step(t, cur))"
+ },
+ {
+  "law": "B3 files_sound",
+  "bug": "Bd.files keeps a file it declares no IE row for",
+  "old": "      Bd.push_u(U32.is_eq(d, dep), file, Bd.files(t, dep))",
+  "new": "      Con{file, Bd.files(t, dep)}"
+ },
+ {
+  "law": "B3b files_complete",
+  "bug": "Bd.files drops every entry file",
+  "old": "      Bd.push_u(U32.is_eq(d, dep), file, Bd.files(t, dep))",
+  "new": "      Bd.push_u(False{}, file, Bd.files(t, dep))"
+ },
+ {
+  "law": "B4 decl_sound",
+  "bug": "Bd.decl keeps a binding the deployable does not declare",
+  "old": "      Bd.push_u(U32.is_eq(d, dep), b, Bd.decl(t, dep))",
+  "new": "      Con{b, Bd.decl(t, dep)}"
+ },
+ {
+  "law": "B4b decl_complete",
+  "bug": "Bd.decl drops every declared binding",
+  "old": "      Bd.push_u(U32.is_eq(d, dep), b, Bd.decl(t, dep))",
+  "new": "      Bd.push_u(False{}, b, Bd.decl(t, dep))"
+ },
+ {
+  "law": "B5 read_sound",
+  "bug": "Bd.read is always true, so every binding looks read",
+  "old": "      Bool.or(Bool.and(U32.is_eq(bind, b), S.Scope.has(reach, file)), Bd.read(t, reach, b))",
+  "new": "      True{}"
+ },
+ {
+  "law": "B6 read_complete",
+  "bug": "Bd.read is always false, so no read is seen",
+  "old": "      Bool.or(Bool.and(U32.is_eq(bind, b), S.Scope.has(reach, file)), Bd.read(t, reach, b))",
+  "new": "      False{}"
+ },
+ {
+  "law": "B7 unread_sound",
+  "bug": "Bd.unread lists read bindings too",
+  "old": "      Bd.push_u(Bool.and(U32.is_eq(d, dep), Bool.not(Bd.read(ius, reach, b))), b, Bd.unread(t, ius, reach, dep))",
+  "new": "      Con{b, Bd.unread(t, ius, reach, dep)}"
+ },
+ {
+  "law": "B8 unread_complete",
+  "bug": "Bd.unread drops every unread binding",
+  "old": "      Bd.push_u(Bool.and(U32.is_eq(d, dep), Bool.not(Bd.read(ius, reach, b))), b, Bd.unread(t, ius, reach, dep))",
+  "new": "      Bd.push_u(False{}, b, Bd.unread(t, ius, reach, dep))"
+ },
+ {
+  "law": "B9 dep_sound",
+  "bug": "a finding names the next binding id, which may be read or not declared",
+  "old": "      Con{Bx{dep, b, value, thr, declared}, Bd.mks(t, dep, value, thr, declared)}",
+  "new": "      Con{Bx{dep, U32.add(b, 1), value, thr, declared}, Bd.mks(t, dep, value, thr, declared)}"
+ },
+ {
+  "law": "B10 dep_complete",
+  "bug": "the threshold gate is always off, so no binding is reported",
+  "old": "  Bd.dep2(Bd.fires(thr, us), us, ibs, ius, reach, dep, thr)",
+  "new": "  Bd.dep2(False{}, us, ibs, ius, reach, dep, thr)"
+ },
+ {
+  "law": "B11 no_entry",
+  "bug": "a deployable with no entry still gets its unread bindings reported",
+  "old": "def Bd.dep(es: List<&2, U32>, +ibs: List<&2, Ib>, +ius: List<&2, Iu>, +ixs: List<&2, Ix>, +dep: U32, +thr: U32, +n: U32) -> List<&2, Bx>:\n  match es:\n    case Nil{}:\n      Nil{}",
+  "new": "def Bd.dep(es: List<&2, U32>, +ibs: List<&2, Ib>, +ius: List<&2, Iu>, +ixs: List<&2, Ix>, +dep: U32, +thr: U32, +n: U32) -> List<&2, Bx>:\n  match es:\n    case Nil{}:\n      Bd.dep1(es, ibs, ius, ixs, dep, thr, n)"
+ },
+ {
+  "law": "B12 rule_off",
+  "bug": "with no BR row the first rule's threshold is invented, so the section runs",
+  "old": "def Bd.thr(brs: List<&2, Br>, +rule: U32) -> Maybe<U32>:\n  Bd.thr_go(brs, rule, None{})",
+  "new": "def Bd.thr(brs: List<&2, Br>, +rule: U32) -> Maybe<U32>:\n  Bd.thr_go(brs, rule, Some{0})"
+ },
+ {
+  "law": "B13 lines_shape",
+  "bug": "the section header does not name the section",
+  "old": "  Con{\"pulsar-binding 0\", List.append(&2, String, Bd.lines(xs), [\"BFS \" ++ Nat.show(List.length(&2, Bx, xs))])}",
+  "new": "  Con{\"pulsar-binding 1\", List.append(&2, String, Bd.lines(xs), [\"BFS \" ++ Nat.show(List.length(&2, Bx, xs))])}"
+ }
+]

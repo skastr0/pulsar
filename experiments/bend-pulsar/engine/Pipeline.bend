@@ -18,6 +18,7 @@ import ./Layers.bend as Y
 import ./ClassCtx.bend as X
 import ./History.bend as Hs
 import ./SqlIn.bend as Sq
+import ./Binding.bend as Bd
 import ./Delta.bend as Dt
 import ./FnCtx.bend as N
 
@@ -208,6 +209,21 @@ def Engine.hs1(on: Bool, +n: U32, +pt: G.Tr, fs: List<&2, F.Fact>, rows: List<&2
 def Engine.history(+n: U32, prods: List<&2, U32>, fs: List<&2, F.Fact>, +rows: List<&2, W.Row>) -> Maybe<List<&2, String>>:
   Engine.hs1(Engine.has_tag(rows, Engine.tag_hr()), n, S.Scope.set(prods), fs, rows)
 
+# Binding drift (Binding.bend) runs when there is a `BF rule thr` row: the CLI writes it,
+# from the pack or the repo policy, only when the rule is on.
+def Engine.tag_bf() -> U32:
+  16966
+
+def Engine.bd2(on: Bool, +n: U32, rows: List<&2, W.Row>) -> Maybe<List<&2, String>>:
+  match on:
+    case True{}:
+      Some{Bd.Binding.lines(Bd.Bd.dec(rows, n))}
+    case False{}:
+      Some{Nil{}}
+
+def Engine.binding(+n: U32, +rows: List<&2, W.Row>) -> Maybe<List<&2, String>>:
+  Engine.bd2(Engine.has_tag(rows, Engine.tag_bf()), n, rows)
+
 # The per-sha delta (Delta.bend) runs when there is a `KD` row: the CLI writes it, with
 # the KB/KH/MB/MH rows, only for `pulsar delta`.
 def Engine.tag_kd() -> U32:
@@ -223,12 +239,13 @@ def Engine.dl1(on: Bool, +rows: List<&2, W.Row>) -> Maybe<List<&2, String>>:
 def Engine.delta(+rows: List<&2, W.Row>) -> Maybe<List<&2, String>>:
   Engine.dl1(Engine.has_tag(rows, Engine.tag_kd()), rows)
 
-def Engine.all(o: Maybe<Out>, m: Maybe<&2, List<&2, String>>, h: Maybe<List<&2, String>>, +rows: List<&2, W.Row>) -> Maybe<List<&2, String>>:
-  Engine.more(Engine.more(Engine.more(Engine.more(Engine.more(Engine.more(Engine.more(Engine.more(Engine.more(Engine.more(Engine.lines(o, m), Engine.layers(rows)), Engine.classctx(rows)), N.FnCtxIn.lines(rows)), Sq.SqlIn.lines(rows)), Sq.FanoutIn.lines(rows)), Sq.KonstIn.lines(rows)), Sq.HotIn.lines(rows)), Sq.GrowIn.lines(rows)), h), Engine.delta(rows))
+def Engine.all(+n: U32, o: Maybe<Out>, m: Maybe<&2, List<&2, String>>, h: Maybe<List<&2, String>>, +rows: List<&2, W.Row>) -> Maybe<List<&2, String>>:
+  Engine.more(Engine.more(Engine.more(Engine.more(Engine.more(Engine.more(Engine.more(Engine.more(Engine.more(Engine.more(Engine.more(Engine.lines(o, m), Engine.layers(rows)), Engine.classctx(rows)), N.FnCtxIn.lines(rows)), Sq.SqlIn.lines(rows)), Sq.FanoutIn.lines(rows)), Sq.KonstIn.lines(rows)), Sq.HotIn.lines(rows)), Sq.GrowIn.lines(rows)), h), Engine.binding(n, rows)), Engine.delta(rows))
 
 # The row tags the detectors read from Rows.bend: FN, CT, TF (MetricsIn.bend); E, SV,
 # LY, LQ, LP, LR, LC, LO, US (Layers.bend); CS, CL, RL (ClassCtx.bend); CV (Crap.bend);
 # A, C, CFN (Churn.bend); CO (Cognitive, via MetricsIn); H, CF, HR (History.bend);
 # DS, DT, DC, DI, DX, DF, DG, QS, QT, QU, QD, SR (SqlIn.bend); CE, RF (FanoutIn); AL, RK (KonstIn); EP, RH (HotIn); KD, KB, KH, MB, MH (Delta.bend); RU (MetricsIn, with QS: Untested.bend); RG (GrowIn, with DS..QU, EP, CE: Grow.bend); FC, RE, RM (FnCtx.bend, with CE).
+# I, ID, IE, IB, IU, BF (Binding.bend).
 def Engine.row_tags() -> List<&2, U32>:
-  [17998, 17236, 21574, 69, 21334, 19545, 19537, 19536, 19538, 19523, 19535, 21843, 17235, 17228, 21068, 17238, 65, 67, 4408910, 17231, 72, 17222, 18514, 17491, 17492, 17475, 17481, 17496, 17478, 17479, 20819, 20820, 20821, 20804, 21330, 17221, 21062, 16716, 21067, 17744, 21064, 19268, 19266, 19272, 19778, 19784, 21077, 21063, 17987, 21061, 21069]
+  [17998, 17236, 21574, 69, 21334, 19545, 19537, 19536, 19538, 19523, 19535, 21843, 17235, 17228, 21068, 17238, 65, 67, 4408910, 17231, 72, 17222, 18514, 17491, 17492, 17475, 17481, 17496, 17478, 17479, 20819, 20820, 20821, 20804, 21330, 17221, 21062, 16716, 21067, 17744, 21064, 19268, 19266, 19272, 19778, 19784, 21077, 21063, 17987, 21061, 21069, 73, 18756, 18757, 18754, 18773, 16966]
