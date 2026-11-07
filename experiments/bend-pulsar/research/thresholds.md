@@ -55,6 +55,49 @@ Direction convention below: "flag > N" means a finding fires when the metric is 
 
 **Verdict:** **flag length > 60 non-blank lines** is a reasonable, conservative default — high enough to avoid noise on idiomatic TS/React code, low enough to catch genuine outliers. Evidence weak; report `loc` in the finding (FACTS.md `FN loc` already carries it).
 
+### Linear-body addendum (operator question, measured)
+
+`core.length` dominates delta churn on Effect-first code: on one private app's
+200-commit walk it was 45/119 added findings and moved on 146/151 worsened
+functions, and inspection showed the hits are mostly *linear wiring bodies* —
+`Effect.gen`/`Layer` sequences with cyclomatic ≤ 2 and nesting ≤ 1 (receipt
+example: cc 1, npath 1, length 109). Measured across three corpora (aggregate
+counts only):
+
+| Corpus | length findings | linear (cc≤2, nest≤1) | pure-linear (cc≤1, npath≤1) | >300 lines | of those linear |
+|---|---|---|---|---|---|
+| private Effect app, trend snapshot | 3,149 | 1,641 (52%) | 1,472 | 256 | 132 |
+| private Effect/Workers app | 77 | 34 (44%) | 33 | 2 | 1 |
+| public CLI dogfood | 19 | 1 (5%) | 1 | 0 | 0 |
+
+Linear findings' length distribution: p50 ≈ 93–101, p90 ≈ 250 — i.e. the mass
+sits in the 60–250 band of declarative sequences. Two further facts:
+
+- A linear body can *only* produce a `core.length` finding (cc≤2/nest≤1 rules
+  out cyclomatic, nesting, npath; cognitive stays low). Excluding it entirely
+  makes a 3,117-line function invisible — the biggest single finding in the
+  sample is linear.
+- Review-hardness is genuinely lower per line but not zero: a linear sequence
+  is skimmed top-to-bottom (no path analysis), yet >300 lines still exceeds
+  what a reviewer holds as "did they wire it right". The >300 tier is real
+  signal in both private corpora: the smaller one's only two are Effect
+  `Layer` compositions (split candidates by hand already), while the larger
+  one's 256 are mostly named functions and methods across its core app
+  directories — genuine monsters, half of them linear.
+
+**Proposal: two-tier threshold inside `core.length`, not a new rule and not
+exclusion.** The law already computes cc/nesting/npath for every function, so
+the branch costs nothing: structured bodies (cc > 2 or nesting > 1) keep
+threshold 60; linear bodies flag only above ~300 — preserving the monster
+signal while dropping the 60–250 wiring noise that drives the churn. A
+`shape: linear|structured` evidence field (same idea as CRAP's `cause`) lets
+delta/reviewers see which tier fired. Alternative if the measurement must stay
+visible: `core.length-linear` as a separate rule at ~300 — same findings
+survive, relabeled; churn drops only if consumers filter on rule id. Engine
+work is a law change + control; thresholds.md's "evidence weak" verdict on
+length stands — this addendum strengthens the *conditional* part, not the
+base threshold.
+
 ## CRAP (Savoia & Evans 2007)
 
 **Formula:** `CRAP(m) = comp(m)² × (1 − cov(m))³ + comp(m)`, coverage as a fraction. FACTS.md fixes the integer form `c² × (coverable − covered)³ / coverable³ + c` — algebraically the same when coverage is line-based.
