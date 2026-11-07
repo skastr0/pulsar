@@ -64,6 +64,30 @@ span and produce no `CV`, which is exactly what "no data" has to mean here.
 `bash regen.sh` regenerates the lcov and prints the first `SF:` line; the expectation itself is
 hand-checked, never regenerated.
 
+## Pending change: test functions become `FN` with a `TF` row
+
+Today `expected/lib.fns` and `expected/skipped.fns` have no rows for the `#[cfg(test)]`
+functions, because #657's first cut skips them. The agreed direction (lead, 2026-11-07) is to
+emit them like any other function and mark them test code with a new `TF fn` relation, so
+group H can name which test touched which function and metric detectors can skip them by rule.
+
+When that lands, these change and nothing else:
+
+- `expected/lib.fns` gains seven rows, one per `#[test]` item in `src/lib.rs`, chained
+  `tests>branch_arms` and so on, and `expected/lib.ct` stays empty: a test body has no
+  branches, loops or early exits, only calls inside assertions (macro argument tokens, so
+  nothing is reported).
+- `expected/skipped.fns` gains two rows, `test_only_helper` and `runs_only_under_test`, the
+  latter chained `tests>runs_only_under_test`.
+- `fns.tsv`, `paths.txt` unchanged; global ids shift for the functions after `src/lib.rs`.
+- `expected-cv.txt` gains those functions, and the coverage test's `unassigned == 51` becomes
+  `0`: the 45 test-module lines and the 6 in `skipped.rs` then belong to test functions.
+
+The coverage expectation is safe until then: the test maps against the hand-written `fns.tsv`
+in this directory, not against whatever the adapter emits, so it cannot silently drift. It
+changes when the fixture switches to a real `.fns` file, in the same commit that flips the
+numbers, with the test module kept in `src/lib.rs` for exactly that purpose.
+
 ## Assumptions to confirm with pulsar-rs
 
 These are encoded in the expected files and were not stated in FACTS.md when the fixture was

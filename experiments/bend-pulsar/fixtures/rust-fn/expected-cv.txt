@@ -1,6 +1,8 @@
 src/branch.rs	grade	6/7
 src/branch.rs	describe	5/5
 src/branch.rs	nested	6/7
+src/branch.rs	let_else	0/5
+src/branch.rs	both	0/5
 src/closures.rs	doubled	2/2
 src/closures.rs	doubled>#1	1/1
 src/closures.rs	adder	2/2
@@ -16,6 +18,7 @@ src/impls.rs	generic_first	3/3
 src/loops.rs	sum_to	9/9
 src/loops.rs	find_first_even	7/7
 src/loops.rs	first_over	10/10
+src/loops.rs	count_while	0/7
 src/match_expr.rs	area	5/5
 src/match_expr.rs	label	5/6
 src/match_expr.rs	guarded	5/6

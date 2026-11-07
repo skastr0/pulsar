@@ -29,3 +29,11 @@ pub fn first_over(values: &[i32], limit: i32) -> Option<i32> {
         index += 1;
     }
 }
+
+pub fn count_while(values: &[i32], limit: usize) -> usize {
+    let mut index = 0;
+    while index < limit && index < values.len() && values[index] > 0 {
+        index += 1;
+    }
+    index
+}
