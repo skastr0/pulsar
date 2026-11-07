@@ -173,10 +173,12 @@ for m in ["runSync", "runSyncExit", "runPromise", "runPromiseExit", "runFork", "
     add("runtime-escape", "effect#ManagedRuntime.make", "4", "E4", "ManagedRuntime.ts", "make", via="result", use=f"member:{m}")
     add("runtime-escape", "effect#ManagedRuntime.make", "3", "E3", "ManagedRuntime.ts", "make", via="result", use=f"member:{m}")
 
-# fork (6): a fiber whose lifetime is not tied to a Scope. forkScoped / forkIn and
-# FiberSet/FiberMap/FiberHandle.run are the scoped forms and are deliberately absent.
-many("fork", "effect#Effect.", "4", "E4", "Effect.ts", ["forkChild", "forkDetach"])
-many("fork", "effect#Effect.", "3", "E3", "Effect.ts", ["fork", "forkDaemon", "forkAll", "forkWithErrorHandler"])
+# fork (6): a fiber whose lifetime is bounded by neither its parent nor a Scope.
+# Absent on purpose: forkChild (v4) and fork (v3) are auto-supervised, terminated with their
+# parent (their JSDoc says so); forkScoped / forkIn and FiberSet/FiberMap/FiberHandle.run are
+# scoped; v3 forkAll / forkWithErrorHandler have no doc stating an unbounded lifetime.
+many("fork", "effect#Effect.", "4", "E4", "Effect.ts", ["forkDetach"])
+many("fork", "effect#Effect.", "3", "E3", "Effect.ts", ["forkDaemon"])
 
 # resource-acquire (7): a resource the caller must release by hand.
 many("resource-acquire", "effect#Scope.", "4", "E4", "Scope.ts", ["make", "makeUnsafe"])
@@ -184,15 +186,12 @@ many("resource-acquire", "effect#Scope.", "3", "E3", "Scope.ts", ["make"])
 add("resource-acquire", "effect#ManagedRuntime.make", "4", "E4", "ManagedRuntime.ts", "make")
 add("resource-acquire", "effect#ManagedRuntime.make", "3", "E3", "ManagedRuntime.ts", "make")
 
-# ambient-read (8): time, randomness and configuration read from the environment.
-many("ambient-read", "effect#Clock.", "4", "E4", "Clock.ts", ["currentTimeMillis", "currentTimeNanos"])
-many("ambient-read", "effect#Clock.", "3", "E3", "Clock.ts", ["currentTimeMillis", "currentTimeNanos"])
-many("ambient-read", "effect#DateTime.", "4", "E4", "DateTime.ts", ["now", "nowAsDate", "nowUnsafe", "nowInCurrentZone"])
-many("ambient-read", "effect#DateTime.", "3", "E3", "DateTime.ts", ["now", "unsafeNow", "nowInCurrentZone"])
-many("ambient-read", "effect#Random.", "4", "E4", "Random.ts", ["next", "nextBoolean", "nextInt", "nextBetween", "nextIntBetween", "shuffle", "choice"])
-many("ambient-read", "effect#Random.", "3", "E3", "Random.ts", ["next", "nextBoolean", "nextInt", "nextRange", "nextIntBetween", "shuffle", "choice"])
-many("ambient-read", "effect#Config.", "4", "E4", "Config.ts", ["String", "Number", "Int", "Boolean", "Port", "Redacted", "schema"])
-many("ambient-read", "effect#Config.", "3", "E3", "Config.ts", ["string", "number", "integer", "boolean", "port", "redacted", "secret", "url", "literal", "date", "duration", "nonEmptyString"])
+# ambient-read (8): process-global state read outside the service model. Effect's Clock, Random,
+# DateTime.now and Config reads go through injectable services (a declared requirement), so they
+# are not ambient and are absent (pulsar-research review of #660, decision 6). The unsafe DateTime
+# reads call Date.now directly, bypassing Clock, so they stay.
+add("ambient-read", "effect#DateTime.nowUnsafe", "4", "E4", "DateTime.ts", "nowUnsafe")
+add("ambient-read", "effect#DateTime.unsafeNow", "3", "E3", "DateTime.ts", "unsafeNow")
 
 # log (3)
 many("log", "effect#Effect.", "4", "E4", "Effect.ts", ["log", "logTrace", "logDebug", "logInfo", "logWarning", "logError", "logFatal", "logWithLevel"])
@@ -326,9 +325,9 @@ for n in ["log", "error", "warn", "info", "debug", "trace"]:
 WHY = {
     "error-erasing": r"defect|[Dd]iscard|remov|[Ii]gnor|fallback|none|replac|death|termination",
     "runtime-escape": r"Promise|[Ss]ynchronous|[Ee]xecut|[Rr]uns? |entrypoint",
-    "fork": r"fiber|parent|scope",
+    "fork": r"no parent|independent of its parent|not tied",
     "resource-acquire": r"clos|dispos|release|finaliz",
-    "ambient-read": r"current|[Tt]ime|[Rr]andom|config|Date\.now",
+    "ambient-read": r"Date\.now|current|[Tt]ime|[Rr]andom|config",
     "log": r"[Ll]og",
     "query": r"query|sql|SQL|repository",
     "blocking": r"[Ss]ynchronous|block",
