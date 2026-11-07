@@ -1,5 +1,5 @@
 # engine/SqlIn-LAWS.bend - laws tying the SQL, fan-out and constant-argument sections
-# to the shipped detectors. Proofs: SqlIn-PROOF.bend.
+# (and the hot-path section) to the shipped detectors. Proofs: SqlIn-PROOF.bend.
 #
 # Reading the rows into lists (Si.of and the constructors) is not proven, by the
 # verification scope. These laws state what each section does with the lists read:
@@ -13,6 +13,7 @@ import ./SqlIn.bend as S
 import ./Sql.bend as Q
 import ./Fanout.bend as F
 import ./Konst.bend as K
+import ./Hot.bend as H
 
 law sqlin_off:
   for +rows: List<&2, W.Row>
@@ -64,3 +65,21 @@ law konstin_runs:
   for h: {S.Si.has(rows, 21067) == True{} : Bool}
   for hb: {S.Si.bad(rows) == False{} : Bool}
   {S.KonstIn.lines(rows) == Some{K.Konst.lines(K.KF{S.Si.css(S.Si.of(rows, 17235)), S.Si.cls(S.Si.of(rows, 17228)), S.Si.als(S.Si.of(rows, 16716)), S.Si.rks(S.Si.of(rows, 21067))})} : Maybe<List<&2, String>>}
+
+# The hot-path section: Hot-LAWS.bend states what H.Hot.lines prints for Si.hf(rows).
+law hotin_off:
+  for +rows: List<&2, W.Row>
+  for h: {S.Si.has(rows, 21064) == False{} : Bool}
+  {S.HotIn.lines(rows) == Some{Nil{}} : Maybe<List<&2, String>>}
+
+law hotin_refuses:
+  for +rows: List<&2, W.Row>
+  for h: {S.Si.has(rows, 21064) == True{} : Bool}
+  for hb: {S.Si.bad(rows) == True{} : Bool}
+  {S.HotIn.lines(rows) == None{} : Maybe<List<&2, String>>}
+
+law hotin_runs:
+  for +rows: List<&2, W.Row>
+  for h: {S.Si.has(rows, 21064) == True{} : Bool}
+  for hb: {S.Si.bad(rows) == False{} : Bool}
+  {S.HotIn.lines(rows) == Some{H.Hot.lines(S.Si.hf(rows))} : Maybe<List<&2, String>>}

@@ -1,0 +1,21 @@
+# Hot-path composites end to end (RH, FACTS.md "Hot-path composites").
+#   EP: fn 0 is a request handler. CE: 0 -> 1 (site 40), 1 -> 2 (site 41); fn 3 has no caller.
+#   CS site 30 in fn 2 and site 31 in fn 3 call sym 5, of class 7 (CL); AL: argument 0 of
+#   both is a literal. RK rule 50: class 7, argument 0 -> KX at sites 30 and 31.
+#   RH 100 lane 3 base 50 depth 2 -> site 30 (fn 2 is two edges from fn 0); not 31.
+#   RH 101 lane 3 base 50 depth 1 -> nothing (fn 2 needs two edges).
+pulsar-facts 0
+N 1
+F 0 1
+M 1
+CS 30 2 5 0 0
+CS 31 3 5 0 0
+CL 5 7
+AL 30 0 1
+AL 31 0 1
+RK 50 7 0
+CE 40 0 1 0 0 0
+CE 41 1 2 0 0 0
+EP 0 1
+RH 100 3 50 2
+RH 101 3 50 1

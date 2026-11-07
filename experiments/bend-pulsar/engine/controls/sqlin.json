@@ -14,8 +14,8 @@
  {
   "law": "sqlin_runs",
   "bug": "the SQL section reads the wrong rule rows",
-  "old": "Si.ons(Si.of(rows, 21330))",
-  "new": "Si.ons(Si.of(rows, 21062))"
+  "old": "Some{Q.Sql.lines(Si.schema(rows), Si.query(rows), Si.ons(Si.of(rows, 21330))",
+  "new": "Some{Q.Sql.lines(Si.schema(rows), Si.query(rows), Si.ons(Si.of(rows, 21062))"
  },
  {
   "law": "fanoutin_off",
@@ -32,8 +32,8 @@
  {
   "law": "fanoutin_runs",
   "bug": "the fan-out section reads CS rows as edges",
-  "old": "Si.ces(Si.of(rows, 17221))",
-  "new": "Si.ces(Si.of(rows, 17235))"
+  "old": "Some{F.Fanout.lines(F.FoF{Si.css(Si.of(rows, 17235)), Si.cls(Si.of(rows, 17228)), Si.ces(Si.of(rows, 17221))",
+  "new": "Some{F.Fanout.lines(F.FoF{Si.css(Si.of(rows, 17235)), Si.cls(Si.of(rows, 17228)), Si.ces(Si.of(rows, 17235))"
  },
  {
   "law": "konstin_off",
@@ -50,7 +50,25 @@
  {
   "law": "konstin_runs",
   "bug": "the constant section reads CL rows as AL",
-  "old": "Si.als(Si.of(rows, 16716))",
-  "new": "Si.als(Si.of(rows, 17228))"
+  "old": "Some{K.Konst.lines(K.KF{Si.css(Si.of(rows, 17235)), Si.cls(Si.of(rows, 17228)), Si.als(Si.of(rows, 16716))",
+  "new": "Some{K.Konst.lines(K.KF{Si.css(Si.of(rows, 17235)), Si.cls(Si.of(rows, 17228)), Si.als(Si.of(rows, 17228))"
+ },
+ {
+  "law": "hotin_off",
+  "bug": "the hot-path section runs without an RH row",
+  "old": "Si.ho1(Si.has(rows, 21064), rows)",
+  "new": "Si.ho1(True{}, rows)"
+ },
+ {
+  "law": "hotin_refuses",
+  "bug": "the hot-path section ignores a bad arity",
+  "old": "Si.ho2(Bool.not(Si.bad(rows)), rows)",
+  "new": "Si.ho2(True{}, rows)"
+ },
+ {
+  "law": "hotin_runs",
+  "bug": "the hot-path section prints nothing",
+  "old": "Some{H.Hot.lines(Si.hf(rows))}",
+  "new": "Some{Nil{}}"
  }
 ]

@@ -207,11 +207,11 @@ def Engine.history(+n: U32, prods: List<&2, U32>, fs: List<&2, F.Fact>, +rows: L
   Engine.hs1(Engine.has_tag(rows, Engine.tag_hr()), n, S.Scope.set(prods), fs, rows)
 
 def Engine.all(o: Maybe<Out>, m: Maybe<&2, List<&2, String>>, h: Maybe<List<&2, String>>, +rows: List<&2, W.Row>) -> Maybe<List<&2, String>>:
-  Engine.more(Engine.more(Engine.more(Engine.more(Engine.more(Engine.more(Engine.lines(o, m), Engine.layers(rows)), Engine.classctx(rows)), Sq.SqlIn.lines(rows)), Sq.FanoutIn.lines(rows)), Sq.KonstIn.lines(rows)), h)
+  Engine.more(Engine.more(Engine.more(Engine.more(Engine.more(Engine.more(Engine.more(Engine.lines(o, m), Engine.layers(rows)), Engine.classctx(rows)), Sq.SqlIn.lines(rows)), Sq.FanoutIn.lines(rows)), Sq.KonstIn.lines(rows)), Sq.HotIn.lines(rows)), h)
 
 # The row tags the detectors read from Rows.bend: FN, CT, TF (MetricsIn.bend); E, SV,
 # LY, LQ, LP, LR, LC, LO, US (Layers.bend); CS, CL, RL (ClassCtx.bend); CV (Crap.bend);
 # A, C, CFN (Churn.bend); CO (Cognitive, via MetricsIn); H, CF, HR (History.bend);
-# DS, DT, DC, DI, DX, DF, DG, QS, QT, QU, QD, SR (SqlIn.bend); CE, RF (FanoutIn); AL, RK (KonstIn).
+# DS, DT, DC, DI, DX, DF, DG, QS, QT, QU, QD, SR (SqlIn.bend); CE, RF (FanoutIn); AL, RK (KonstIn); EP, RH (HotIn).
 def Engine.row_tags() -> List<&2, U32>:
-  [17998, 17236, 21574, 69, 21334, 19545, 19537, 19536, 19538, 19523, 19535, 21843, 17235, 17228, 21068, 17238, 65, 67, 4408910, 17231, 72, 17222, 18514, 17491, 17492, 17475, 17481, 17496, 17478, 17479, 20819, 20820, 20821, 20804, 21330, 17221, 21062, 16716, 21067]
+  [17998, 17236, 21574, 69, 21334, 19545, 19537, 19536, 19538, 19523, 19535, 21843, 17235, 17228, 21068, 17238, 65, 67, 4408910, 17231, 72, 17222, 18514, 17491, 17492, 17475, 17481, 17496, 17478, 17479, 20819, 20820, 20821, 20804, 21330, 17221, 21062, 16716, 21067, 17744, 21064]

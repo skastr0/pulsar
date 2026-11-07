@@ -8,6 +8,8 @@
 #   SQL section     runs when there is an `SR rule` row (a SQL rule policy turned on)
 #   fan-out section runs when there is an `RF rule class edges none` row
 #   constant-argument section runs when there is an `RK rule class pos` row
+#   hot-path section runs when there is an `RH rule lane base depth` row; its base
+#                   findings are the shown SQL, fan-out and constant-argument findings
 
 import Base
 import ./Rows.bend as W
@@ -15,6 +17,7 @@ import ./ClassCtx.bend as X
 import ./Sql.bend as Q
 import ./Fanout.bend as F
 import ./Konst.bend as K
+import ./Hot.bend as H
 
 def Si.f(fs: List<&2, U32>, k: Nat) -> U32:
   match fs k:
@@ -30,7 +33,7 @@ type Ar is Data:
 
 # The field count a tag's rows must have, or 0 for a tag this file does not read: a table.
 def Si.arities() -> List<&2, Ar>:
-  [Ar{17491, 2n}, Ar{17492, 3n}, Ar{17475, 4n}, Ar{17481, 3n}, Ar{17496, 3n}, Ar{17478, 3n}, Ar{17479, 4n}, Ar{20819, 6n}, Ar{20820, 3n}, Ar{20821, 4n}, Ar{20804, 4n}, Ar{21330, 1n}, Ar{17235, 5n}, Ar{17228, 2n}, Ar{17221, 6n}, Ar{21062, 4n}, Ar{16716, 3n}, Ar{21067, 3n}]
+  [Ar{17491, 2n}, Ar{17492, 3n}, Ar{17475, 4n}, Ar{17481, 3n}, Ar{17496, 3n}, Ar{17478, 3n}, Ar{17479, 4n}, Ar{20819, 6n}, Ar{20820, 3n}, Ar{20821, 4n}, Ar{20804, 4n}, Ar{21330, 1n}, Ar{17235, 5n}, Ar{17228, 2n}, Ar{17221, 6n}, Ar{21062, 4n}, Ar{16716, 3n}, Ar{21067, 3n}, Ar{17744, 2n}, Ar{21064, 4n}]
 
 def Si.pick(hit: Bool, n: Nat, m: Nat) -> Nat:
   match hit:
@@ -202,6 +205,20 @@ def Si.rks(xs: List<&2, List<&2, U32>>) -> List<&2, K.Rk>:
     case Con{+f, t}:
       Con{K.Rk{Si.f(f, 0n), Si.f(f, 1n), Si.f(f, 2n)}, Si.rks(t)}
 
+def Si.eps(xs: List<&2, List<&2, U32>>) -> List<&2, H.Ep>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case Con{+f, t}:
+      Con{H.Ep{Si.f(f, 0n), Si.f(f, 1n)}, Si.eps(t)}
+
+def Si.rhs(xs: List<&2, List<&2, U32>>) -> List<&2, H.Rh>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case Con{+f, t}:
+      Con{H.Rh{Si.f(f, 0n), Si.f(f, 1n), Si.f(f, 2n), Si.f(f, 3n)}, Si.rhs(t)}
+
 # The DS header, or 0 0 when there is none (no DDL seen: the schema is not complete).
 def Si.ds(xs: List<&2, List<&2, U32>>) -> List<&2, U32>:
   match xs:
@@ -271,3 +288,29 @@ def Si.ko1(on: Bool, +rows: List<&2, W.Row>) -> Maybe<List<&2, String>>:
 # The constant-argument section: nothing without an RK row, None when a row has the wrong arity.
 def KonstIn.lines(+rows: List<&2, W.Row>) -> Maybe<List<&2, String>>:
   Si.ko1(Si.has(rows, 21067), rows)
+
+# The hot-path inputs: EP and CE rows, the QS sites, and the findings the SQL, fan-out and
+# constant-argument sections show (each empty without its rule rows).
+def Si.hf(+rows: List<&2, W.Row>) -> H.HF:
+  +css = Si.css(Si.of(rows, 17235))
+  +cls = Si.cls(Si.of(rows, 17228))
+  +ces = Si.ces(Si.of(rows, 17221))
+  H.HF{Si.eps(Si.of(rows, 17744)), ces, Si.qss(Si.of(rows, 20819)), Q.Sq.only(Si.ons(Si.of(rows, 21330)), Q.Sq.findings(Si.schema(rows), Si.query(rows))), F.Fanout.findings(F.FoF{css, cls, ces, Si.rfs(Si.of(rows, 21062))}), K.Konst.findings(K.KF{css, cls, Si.als(Si.of(rows, 16716)), Si.rks(Si.of(rows, 21067))}), Si.rhs(Si.of(rows, 21064))}
+
+def Si.ho2(ok: Bool, +rows: List<&2, W.Row>) -> Maybe<List<&2, String>>:
+  match ok:
+    case True{}:
+      Some{H.Hot.lines(Si.hf(rows))}
+    case False{}:
+      None{}
+
+def Si.ho1(on: Bool, +rows: List<&2, W.Row>) -> Maybe<List<&2, String>>:
+  match on:
+    case True{}:
+      Si.ho2(Bool.not(Si.bad(rows)), rows)
+    case False{}:
+      Some{Nil{}}
+
+# The hot-path section: nothing without an RH row, None when a row has the wrong arity.
+def HotIn.lines(+rows: List<&2, W.Row>) -> Maybe<List<&2, String>>:
+  Si.ho1(Si.has(rows, 21064), rows)

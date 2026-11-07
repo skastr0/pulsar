@@ -1,0 +1,10 @@
+pulsar-findings 0
+CERT 1
+S 1 0 0
+pulsar-konst 0
+KX 50 30 2 5 0
+KX 50 31 3 5 0
+KXS 2
+pulsar-hot 0
+HX 100 3 50 30 2
+HXS 1

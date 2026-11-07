@@ -1,0 +1,98 @@
+[
+ {
+  "law": "ho_reach_sound",
+  "bug": "one step adds every callee, not only the set's",
+  "old": "X.Cx.push_u(S.Scope.has(cur, fn), target, Ho.step(t, cur))",
+  "new": "X.Cx.push_u(True{}, target, Ho.step(t, cur))"
+ },
+ {
+  "law": "ho_reach_sound",
+  "bug": "the step follows edges callee to caller",
+  "old": "X.Cx.push_u(S.Scope.has(cur, fn), target, Ho.step(t, cur))",
+  "new": "X.Cx.push_u(S.Scope.has(cur, target), fn, Ho.step(t, cur))"
+ },
+ {
+  "law": "ho_reach_complete",
+  "bug": "reach stops one step short",
+  "old": "      Ho.reach(p, ces, List.append(&2, U32, cur, Ho.step(ces, S.Scope.set(cur))))",
+  "new": "      cur"
+ },
+ {
+  "law": "ho_reach_complete",
+  "bug": "the seed drops all but the first entry point",
+  "old": "      Con{fn, Ho.seed(t)}",
+  "new": "      [fn]"
+ },
+ {
+  "law": "ho_bases_sound",
+  "bug": "lane 1 takes every query site",
+  "old": "Ho.bpush(S.Scope.has(sset, site), Bs{site, fn}, Ho.sql(t, sset))",
+  "new": "Ho.bpush(True{}, Bs{site, fn}, Ho.sql(t, sset))"
+ },
+ {
+  "law": "ho_bases_sound",
+  "bug": "lane 1 takes SQL findings of any rule",
+  "old": "X.Cx.push_u(U32.is_eq(rule, base), id, Ho.sids(t, base))",
+  "new": "X.Cx.push_u(True{}, id, Ho.sids(t, base))"
+ },
+ {
+  "law": "ho_bases_sound",
+  "bug": "lane 2 takes fan-out findings of any rule",
+  "old": "Ho.bpush(U32.is_eq(r, base), Bs{site, fn}, Ho.nx(t, base))",
+  "new": "Ho.bpush(True{}, Bs{site, fn}, Ho.nx(t, base))"
+ },
+ {
+  "law": "ho_bases_sound",
+  "bug": "lane 3 runs as lane 2",
+  "old": "Ho.when(U32.is_eq(lane, 3), Ho.kx(kxs, base))",
+  "new": "Ho.when(U32.is_eq(lane, 2), Ho.kx(kxs, base))"
+ },
+ {
+  "law": "ho_bases_complete",
+  "bug": "lane 3 finds nothing",
+  "old": "Ho.bpush(U32.is_eq(r, base), Bs{site, fn}, Ho.kx(t, base))",
+  "new": "Ho.kx(t, base)"
+ },
+ {
+  "law": "ho_bases_complete",
+  "bug": "lane 1 stops after the first query site",
+  "old": "Ho.bpush(S.Scope.has(sset, site), Bs{site, fn}, Ho.sql(t, sset))",
+  "new": "Ho.bpush(S.Scope.has(sset, site), Bs{site, fn}, Nil{})"
+ },
+ {
+  "law": "ho_rule_sound",
+  "bug": "the hot filter is dropped",
+  "old": "Ho.keep(S.Scope.has(hset, fn), Hx{r, lane, base, site, fn}, Ho.hot(t, r, lane, base, hset))",
+  "new": "Ho.keep(True{}, Hx{r, lane, base, site, fn}, Ho.hot(t, r, lane, base, hset))"
+ },
+ {
+  "law": "ho_rule_sound",
+  "bug": "the finding names the wrong site",
+  "old": "Hx{r, lane, base, site, fn}, Ho.hot(t, r, lane, base, hset))",
+  "new": "Hx{r, lane, base, fn, fn}, Ho.hot(t, r, lane, base, hset))"
+ },
+ {
+  "law": "ho_rule_complete",
+  "bug": "the depth is ignored (always 0)",
+  "old": "Ho.reach(U32.to_nat(depth), Ho.ces(f), Ho.seed(Ho.eps(f)))",
+  "new": "Ho.reach(0n, Ho.ces(f), Ho.seed(Ho.eps(f)))"
+ },
+ {
+  "law": "ho_findings_complete",
+  "bug": "only the first rule row runs",
+  "old": "List.append(&2, Hx, Ho.rule(f, h), Ho.rules(f, t))",
+  "new": "Ho.rule(f, h)"
+ },
+ {
+  "law": "ho_findings_sound",
+  "bug": "a finding with no rule row",
+  "old": "  Ho.rules(f, Ho.rhs(f))",
+  "new": "  Con{Hx{0, 0, 0, 0, 0}, Ho.rules(f, Ho.rhs(f))}"
+ },
+ {
+  "law": "ho_lines_shape",
+  "bug": "the section header changes",
+  "old": "\"pulsar-hot 0\"",
+  "new": "\"pulsar-hot 1\""
+ }
+]
