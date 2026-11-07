@@ -339,16 +339,35 @@ def Main.detail(bare: U32, miss: U32, dyn: U32, req: U32, tonly: U32) -> String:
 def Main.len_u32(xs: List<&2, List<&2, U32>>) -> U32:
   U32.from_nat(List.length(&2, List<&2, U32>, xs))
 
+def Main.vs(b: Bool) -> String:
+  match b:
+    case True{}:
+      "certificates: verified"
+    case False{}:
+      "certificates: NOT VERIFIED"
+
 def Main.report2(+paths: List<&2, String>, +all: List<&2, List<&2, U32>>, +bare: U32, +miss: U32, +dyn: U32, +req: U32, +tonly: U32, +cyc: List<&2, List<&2, U32>>) -> IO(Unit):
   do IO<Unit>:
     Unit <- Main.print_cycles(cyc, paths)
     Unit <- IO.print(Main.summary(G.Graph.len(all, 0), G.Graph.edges(all, 0), Main.len_u32(cyc), U32.add(bare, miss)))
     IO.print_err(Main.detail(bare, miss, dyn, req, tonly))
 
+def Main.report4(+paths: List<&2, String>, +all: List<&2, List<&2, U32>>, +bare: U32, +miss: U32, +dyn: U32, +req: U32, +tonly: U32, +cyc: List<&2, List<&2, U32>>, ok: Bool) -> IO(Unit):
+  do IO<Unit>:
+    Unit <- Main.print_cycles(cyc, paths)
+    Unit <- IO.print_err(Main.vs(ok))
+    Unit <- IO.print(Main.summary(G.Graph.len(all, 0), G.Graph.edges(all, 0), Main.len_u32(cyc), U32.add(bare, miss)))
+    IO.print_err(Main.detail(bare, miss, dyn, req, tonly))
+
+def Main.report3(+paths: List<&2, String>, +all: List<&2, List<&2, U32>>, +bare: U32, +miss: U32, +dyn: U32, +req: U32, +tonly: U32, res: G.Res) -> IO(Unit):
+  match res:
+    case G.Res{cyc, ok}:
+      Main.report4(paths, all, bare, miss, dyn, req, tonly, cyc, ok)
+
 def Main.report(paths: List<&2, String>, acc: R.Acc) -> IO(Unit):
   match acc:
     case R.Acc{cur, +all, bare, miss, dyn, req, tonly}:
-      Main.report2(paths, all, bare, miss, dyn, req, tonly, G.Graph.cycles(all))
+      Main.report3(paths, all, bare, miss, dyn, req, tonly, G.Graph.analyze(all))
 
 def Main.after_scan(+paths: List<&2, String>, items: List<&2, R.Item>) -> IO(Unit):
   Main.report(paths, R.Resolve.graph(items, R.Resolve.index(paths)))

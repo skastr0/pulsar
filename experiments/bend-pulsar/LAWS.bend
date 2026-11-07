@@ -64,23 +64,30 @@ law idle_is_fixed_point:
   for cur: List<&2, U32>
   {G.Graph.step(G.TS{ns, G.RS{Nil{}, Nil{}, Nil{}, cnt, comps, 4294967295, cur}}) == G.TS{ns, G.RS{Nil{}, Nil{}, Nil{}, cnt, comps, 4294967295, cur}} : G.TS}
 
-# ---- D. the claims that matter most (OPEN) ----------------------------------------------
-# Edges and reachability, as types.
+# ---- D. the claims that matter most ----------------------------------------------
+# Edges and reachability, as types. All of them are Data, so a proof can use a
+# fact more than once.
+
+def And(-A: Data, -B: Data) -> Data:
+  Sigma<&2, &2, A, _ => B>
+
+def Ex(-A: Data, -B: @-x: A -> Data) -> Data:
+  Sigma<&2, &2, A, B>
 
 # w is one of the listed successors.
-def Mem(xs: List<&2, U32>, w: U32) -> Type:
+def Mem(xs: List<&2, U32>, w: U32) -> Data:
   match xs:
     case Nil{}:
       Empty
     case Con{h, t}:
-      Either<&1, &1, {h == w : U32}, Mem(t, w)>
+      Either<&2, &2, {h == w : U32}, Mem(t, w)>
 
-def MemL(xs: List<&2, List<&2, U32>>, c: List<&2, U32>) -> Type:
+def MemL(xs: List<&2, List<&2, U32>>, c: List<&2, U32>) -> Data:
   match xs:
     case Nil{}:
       Empty
     case Con{h, t}:
-      Either<&1, &1, {h == c : List<&2, U32>}, MemL(t, c)>
+      Either<&2, &2, {h == c : List<&2, U32>}, MemL(t, c)>
 
 # The successor list of node n.
 def Nth(adj: List<&2, List<&2, U32>>, n: Nat) -> List<&2, U32>:
@@ -92,20 +99,20 @@ def Nth(adj: List<&2, List<&2, U32>>, n: Nat) -> List<&2, U32>:
     case Con{h, t} 1n+p:
       Nth(t, p)
 
-def Succ(adj: List<&2, List<&2, U32>>, u: U32, w: U32) -> Type:
+def Succ(adj: List<&2, List<&2, U32>>, u: U32, w: U32) -> Data:
   Mem(Nth(adj, U32.to_nat(u)), w)
 
-# A walk of at most k edges from u to v.
-def Walk(adj: List<&2, List<&2, U32>>, k: Nat, u: U32, v: U32) -> Type:
+# A walk of exactly k edges from u to v.
+def Walk(adj: List<&2, List<&2, U32>>, k: Nat, u: U32, v: U32) -> Data:
   match k:
     case 0n:
       {u == v : U32}
     case 1n+p:
-      Either<&1, &1, {u == v : U32}, &w: U32 -> (Succ(adj, u, w) & Walk(adj, p, w, v))>
+      Ex(U32, w => And(Succ(adj, u, w), Walk(adj, p, w, v)))
 
 # A walk with at least one edge: u -> w, then any walk w ~> v.
-def Reach1(adj: List<&2, List<&2, U32>>, u: U32, v: U32) -> Type:
-  &w: U32 -> (Succ(adj, u, w) & &k: Nat -> Walk(adj, k, w, v))
+def Reach1(adj: List<&2, List<&2, U32>>, u: U32, v: U32) -> Data:
+  Ex(U32, w => And(Succ(adj, u, w), Ex(Nat, k => Walk(adj, k, w, v))))
 
 def Count.step(hit: Bool, rest: Nat) -> Nat:
   match hit:
@@ -132,33 +139,46 @@ def WF(adj: List<&2, List<&2, U32>>) -> Type:
 #    Any two members u, v of a reported component are joined by a walk with
 #    at least one edge (for a self-loop, the loop itself).
 law cycles_sound:
-  for adj: List<&2, List<&2, U32>>
-  for wf: WF(adj)
-  for c: List<&2, U32>
+  for +adj: List<&2, List<&2, U32>>
+  for +c: List<&2, U32>
   for hc: MemL(G.Graph.cycles(adj), c)
-  for u: U32
+  for +u: U32
   for hu: Mem(c, u)
-  for v: U32
+  for +v: U32
   for hv: Mem(c, v)
   Reach1(adj, u, v)
 
-# H. COMPLETE: every node on a cycle is reported. u and v on a common closed
-#    walk lie in one reported component.
+# H. COMPLETE, relative to the run's certificates: whenever `Graph.verified`
+#    accepts (it checks that component numbers never decrease along an edge
+#    and that every candidate cycle certifies), any u and v on a common closed
+#    walk lie in one reported component. `verified` is a runtime check on the
+#    untrusted SCC search; this law does not say the search always passes it.
 law cycles_complete:
-  for adj: List<&2, List<&2, U32>>
-  for wf: WF(adj)
-  for u: U32
-  for v: U32
-  for r1: Reach1(adj, u, v)
+  for +adj: List<&2, List<&2, U32>>
+  for ok: {G.Graph.verified(adj) == True{} : Bool}
+  for +u: U32
+  for +v: U32
+  for +r1: Reach1(adj, u, v)
   for r2: Reach1(adj, v, u)
   exs c: List<&2, U32>
-  MemL(G.Graph.cycles(adj), c) & Mem(c, u) & Mem(c, v)
+  And(MemL(G.Graph.cycles(adj), c), And(Mem(c, u), Mem(c, v)))
 
-# I. PARTITION: the components of Graph.sccs split the nodes: each node of the
-#    graph occurs in exactly one component, exactly once.
+# I. PARTITION, relative to the run's counting certificate: whenever
+#    `Graph.part_ok` accepts (it tallies the concatenated components and checks
+#    each node, position p being U32.from_nat(p), has tally exactly 1), the
+#    node at every position p < length occurs exactly once in the components.
+#    Stated per position (not per U32 below a bound), which avoids arithmetic
+#    on U32 wrap-around; `part_ok` is again a runtime check on the SCC search.
 law sccs_partition:
-  for adj: List<&2, List<&2, U32>>
-  for wf: WF(adj)
-  for i: U32
-  for hi: {U32.is_lt(i, U32.from_nat(List.length(&2, List<&2, U32>, adj))) == True{} : Bool}
-  {Count(List.concat(&2, U32, G.Graph.sccs(adj)), i) == 1n : Nat}
+  for +adj: List<&2, List<&2, U32>>
+  for ok: {G.Graph.part_ok(adj) == True{} : Bool}
+  for +p: Nat
+  for hp: {Nat.is_lt(p, List.length(&2, List<&2, U32>, adj)) == True{} : Bool}
+  {Count(List.concat(&2, U32, G.Graph.sccs(adj)), U32.from_nat(p)) == 1n : Nat}
+
+# J. SHIPPED OUTPUT: the binary calls Graph.analyze. Its cycles are exactly
+#    Graph.cycles (so G, H and I apply to what is printed), and its ok flag is
+#    exactly the conjunction of the two runtime certificates H and I assume.
+law analyze_is_cycles:
+  for +adj: List<&2, List<&2, U32>>
+  {G.Graph.analyze(adj) == G.Res{G.Graph.cycles(adj), Bool.and(G.Graph.verified(adj), G.Graph.part_ok(adj))} : G.Res}
