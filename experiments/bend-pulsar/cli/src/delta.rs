@@ -17,6 +17,7 @@ use crate::facts::{stable_key, FactWriter, SideTables};
 use crate::finding::{catalog_rule, hex, metric_rule, needs_coverage, off_by_default, Finding, Subject, IMPORT_CYCLE};
 use crate::lang::Degraded;
 use crate::policy::{self, Effective};
+use crate::rename::{self, Renames};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -507,9 +508,9 @@ struct Trend {
     worse: bool,
 }
 
-/// Same-key functions whose values moved. By default only functions with a metric finding on
-/// either side; with `all`, every function.
-fn trends(before: &Eval, after: &Eval, all: bool) -> Vec<Trend> {
+/// Functions whose measured values moved: the same key, or the same symbol in a file git renamed.
+/// By default only functions with a metric finding on either side; with `all`, every function.
+fn trends(before: &Eval, after: &Eval, renames: &Renames, all: bool) -> Vec<Trend> {
     let flagged = |e: &Eval| -> BTreeSet<u64> {
         e.findings
             .values()
@@ -522,10 +523,23 @@ fn trends(before: &Eval, after: &Eval, all: bool) -> Vec<Trend> {
             .collect()
     };
     let (fb, fa) = (flagged(before), flagged(after));
+    // Base functions by (head path, symbol), for the ones whose key changed with a rename. A
+    // (path, symbol) that two functions share is ambiguous and not matched.
+    let mut by_place: BTreeMap<(&str, &str), Vec<(&u64, &Measure)>> = BTreeMap::new();
+    for (k, m) in &before.measures {
+        by_place.entry((renames.head_path(&m.path), m.chain.as_str())).or_default().push((k, m));
+    }
     let mut out = Vec::new();
     for (key, new) in &after.measures {
-        let Some(old) = before.measures.get(key) else { continue };
-        if !all && !fb.contains(key) && !fa.contains(key) {
+        let found = match before.measures.get(key) {
+            Some(m) => Some((key, m)),
+            None => match by_place.get(&(new.path.as_str(), new.chain.as_str())).map(Vec::as_slice) {
+                Some([(k, m)]) if !after.measures.contains_key(*k) => Some((*k, *m)),
+                _ => None,
+            },
+        };
+        let Some((base_key, old)) = found else { continue };
+        if !all && !fb.contains(base_key) && !fa.contains(key) {
             continue;
         }
         let changes: Vec<_> = (0..4).filter(|&i| old.m[i] != new.m[i]).map(|i| (METRICS[i], old.m[i], new.m[i])).collect();
@@ -562,16 +576,27 @@ struct Diff<'a> {
     unchanged: usize,
     trends: Vec<Trend>,
     degraded: Vec<(&'static str, &'a Degraded)>,
+    /// Files git saw renamed between base and head.
+    renamed_files: usize,
+    /// Findings that moved with a renamed file and were matched, not reported as removed plus added.
+    renamed_findings: usize,
+    /// Removed plus added pairs that look like one function moved to another file (not followed).
+    unmatched_moves: usize,
 }
 
-fn compare<'a>(before: &'a Eval, after: &'a Eval, trend_all: bool) -> Diff<'a> {
+fn compare<'a>(before: &'a Eval, after: &'a Eval, renames: &Renames, trend_all: bool) -> Diff<'a> {
     // Coverage-dependent findings (head only) are listed apart: base has no coverage to compare.
     let (coverage, plain): (Vec<_>, Vec<_>) = after.findings.iter().partition(|(_, f)| needs_coverage(&f.rule));
-    let new: Vec<&Finding> = plain.iter().filter(|(k, _)| !before.findings.contains_key(*k)).map(|(_, f)| *f).collect();
+    let mut new: Vec<&Finding> = plain.iter().filter(|(k, _)| !before.findings.contains_key(*k)).map(|(_, f)| *f).collect();
+    let mut removed: Vec<&Finding> = before.findings.iter().filter(|(k, _)| !after.findings.contains_key(k)).map(|(_, f)| f).collect();
+    // A finding whose key changed only because git renamed its file is the same finding.
+    let pairs = rename::match_findings(&removed, &new, renames);
+    removed.retain(|f| !pairs.iter().any(|(b, _)| *b == f.key()));
+    new.retain(|f| !pairs.iter().any(|(_, h)| *h == f.key()));
+    let unmatched_moves = rename::unmatched_moves(&removed, &new);
     // A decision committed in head allows a new finding with a reason; it does not count as added.
     let (allowed, added): (Vec<&Finding>, Vec<&Finding>) =
         new.into_iter().partition(|f| after.policy.allowed(&hex(f.key())).is_some());
-    let removed = before.findings.iter().filter(|(k, _)| !after.findings.contains_key(k)).map(|(_, f)| f).collect();
     let unchanged = plain.len() - added.len() - allowed.len();
     let degraded = before
         .degraded
@@ -585,8 +610,11 @@ fn compare<'a>(before: &'a Eval, after: &'a Eval, trend_all: bool) -> Diff<'a> {
         removed,
         coverage: coverage.into_iter().map(|(_, f)| f).collect(),
         unchanged,
-        trends: trends(before, after, trend_all),
+        trends: trends(before, after, renames, trend_all),
         degraded,
+        renamed_files: renames.count(),
+        renamed_findings: pairs.len(),
+        unmatched_moves,
     }
 }
 
@@ -626,7 +654,7 @@ fn render_text(d: &Diff, after: &Eval, base: &str, head: &str) -> String {
         ));
     }
     out.push_str(&format!(
-        "# base={} head={} added={} allowed={} removed={} unchanged={} worsened={} improved={} degraded={} coverage={}\n",
+        "# base={} head={} added={} allowed={} removed={} unchanged={} worsened={} improved={} degraded={} coverage={} renamed_files={} renamed_findings={} unmatched_moves={}\n",
         &base[..12],
         &head[..12],
         d.added.len(),
@@ -636,7 +664,10 @@ fn render_text(d: &Diff, after: &Eval, base: &str, head: &str) -> String {
         d.count(true),
         d.count(false),
         d.degraded.len(),
-        d.coverage.len()
+        d.coverage.len(),
+        d.renamed_files,
+        d.renamed_findings,
+        d.unmatched_moves
     ));
     out
 }
@@ -658,6 +689,7 @@ fn render_json(d: &Diff, after: &Eval, base: &str, head: &str) -> String {
     lines.push(json!({"type":"summary","base":base,"head":head,"added":d.added.len(),"allowed":d.allowed.len(),
         "removed":d.removed.len(),"unchanged":d.unchanged,"worsened":d.count(true),"improved":d.count(false),
         "degraded":d.degraded.len(),"coverage":d.coverage.len(),"coverage_reroot":after.coverage_reroot,
+        "renamed_files":d.renamed_files,"renamed_findings":d.renamed_findings,"unmatched_moves":d.unmatched_moves,
         "policy":after.policy.fingerprint}));
     lines.iter().map(|l| format!("{l}\n")).collect()
 }
@@ -673,7 +705,8 @@ pub fn run(a: &Args) -> Result<u8, String> {
         let t = &e.timing;
         eprintln!("pulsar: {name} {} cache={} policy={}ms facts={}ms engine={}ms", &sha[..12], t.cache, t.checkout_ms, t.facts_ms, t.engine_ms);
     }
-    let diff = compare(&before, &after, a.trend);
+    let renames = rename::detect(&a.repo, &base, &head)?;
+    let diff = compare(&before, &after, &renames, a.trend);
     print!("{}", if a.json { render_json(&diff, &after, &base, &head) } else { render_text(&diff, &after, &base, &head) });
     Ok(if diff.added.is_empty() { 0 } else { 1 })
 }

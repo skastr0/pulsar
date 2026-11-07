@@ -78,7 +78,7 @@ D=$(mktemp -d); trap 'rm -rf "$T" "$K" "$D"' EXIT
   printf 'this is not toml [[[\n' > Cargo.toml; mkdir -p src; echo 'pub fn f() {}' > src/lib.rs
   git add -A && git commit -qm "broken manifest" )
 out=$("$BIN" delta HEAD~1 HEAD --repo "$D" 2>/dev/null)
-grep -q '^! DEGRADED INPUT (head) rust: ' <<<"$out" && grep -q 'degraded=1 coverage=0$' <<<"$out" && echo "ok   degraded input marked in text" || { echo "FAIL degraded text"; echo "$out" | head -3; fail=1; }
+grep -q '^! DEGRADED INPUT (head) rust: ' <<<"$out" && grep -q 'degraded=1 coverage=0 ' <<<"$out" && echo "ok   degraded input marked in text" || { echo "FAIL degraded text"; echo "$out" | head -3; fail=1; }
 out=$("$BIN" delta HEAD~1 HEAD --repo "$D" --json 2>/dev/null)
 grep -q '"type":"degraded","side":"head","lane":"rust"' <<<"$out" && grep -q '"degraded":1' <<<"$out" && echo "ok   degraded input marked in JSON" || { echo "FAIL degraded json"; fail=1; }
 "$BIN" facts "$D" -o "$D/f.txt" 2>/dev/null; grep -q '^# degraded rust: ' "$D/f.txt" && echo "ok   degraded input noted in the facts header" || { echo "FAIL degraded facts header"; fail=1; }
@@ -109,5 +109,33 @@ cold=$("$BIN" delta HEAD~2 HEAD~1 --repo . --no-cache 2>"$K/e0.txt"); warm=$("$B
 [ "$cold" == "$warm" ] && echo "ok   cached result equals the recomputed one" || { echo "FAIL cache changed the result"; fail=1; }
 grep -q 'cache=off' "$K/e0.txt" && echo "ok   --no-cache bypasses the cache" || { echo "FAIL --no-cache"; fail=1; }
 grep -q "base .* cache=hit" "$K/e2.txt" && grep -q 'head .* cache=hit' "$K/e2.txt" && echo "ok   second run: both shas hit the cache" || { echo "FAIL no cache hit"; cat "$K/e2.txt" | tail -3; fail=1; }
+
+# Renames: delta follows git renames, so a moved file or directory is not a removal plus an addition.
+R=$(mktemp -d); trap 'rm -rf "$T" "$K" "$D" "$E" "$R"' EXIT
+tangled() { # tangled <ifs>: a function whose cyclomatic complexity is <ifs>+1
+  echo "export function tangled(x: number): number {"; echo "  let r = 0"
+  for i in $(seq 1 "$1"); do echo "  if (x > $i) r += $i"; done
+  echo "  return r"; echo "}"
+}
+( cd "$R" && git init -q . && git config user.email t@t && git config user.name t
+  tangled 13 > m.ts && echo 'export const a = 1' > a.ts && git add -A && git commit -qm base
+  git mv m.ts n.ts && git commit -qm "rename a file"
+  mkdir sub && git mv n.ts sub/n.ts && git commit -qm "move into a directory"
+  git mv sub/n.ts sub/o.ts && tangled 14 > sub/o.ts && git add -A && git commit -qm "rename and edit"
+  echo 'export const x = 1' > sub/o.ts && tangled 14 > p.ts && git add -A && git commit -qm "move the function to another file" )
+rcheck() { # rcheck "<label>" "<summary fragment>" <base> <head>
+  local label=$1 frag=$2; shift 2
+  out=$("$BIN" delta "$1" "$2" --repo "$R" 2>/dev/null)
+  grep -q -F "$frag" <<<"$out" && echo "ok   $label" || { echo "FAIL $label"; echo "$out" | tail -3; fail=1; }
+}
+rcheck "a renamed file keeps its findings"          "added=0 allowed=0 removed=0 unchanged=2" HEAD~4 HEAD~3
+rcheck "...and says so in the header"               "renamed_files=1 renamed_findings=2 unmatched_moves=0" HEAD~4 HEAD~3
+rcheck "a directory move keeps its findings"        "added=0 allowed=0 removed=0 unchanged=2" HEAD~3 HEAD~2
+rcheck "a rename plus an edit matches the findings" "renamed_files=1 renamed_findings=2" HEAD~2 HEAD~1
+out=$("$BIN" delta HEAD~2 HEAD~1 --repo "$R" 2>/dev/null)
+grep -q 'added=0 allowed=0 removed=0' <<<"$out" && grep -q '^~ worsened [0-9a-f]* sub/o.ts:1 tangled  cyclomatic 14 -> 15' <<<"$out" && echo "ok   the moved and edited function shows as worsened, not removed plus added" || { echo "FAIL moved and edited"; echo "$out" | head -4; fail=1; }
+rcheck "a function moved between files stays + and -" "added=2 allowed=0 removed=2" HEAD~1 HEAD
+rcheck "...and is counted as an unmatched move"     "unmatched_moves=2" HEAD~1 HEAD
+"$BIN" delta HEAD~4 HEAD~3 --repo "$R" --json 2>/dev/null | grep -q '"renamed_files":1' && echo "ok   renamed_files in the JSON summary" || { echo "FAIL renamed_files json"; fail=1; }
 
 exit $fail

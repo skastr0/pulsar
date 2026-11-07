@@ -11,6 +11,7 @@ mod history;
 mod lang;
 mod packs;
 mod policy;
+mod rename;
 mod sql;
 
 use std::io::Write;
