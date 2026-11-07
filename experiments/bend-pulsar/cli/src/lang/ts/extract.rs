@@ -4,7 +4,8 @@ use super::calls::CatalogIndex;
 use super::functions::{PackHook, Walker};
 use crate::lang::functions::FileFns;
 use oxc_allocator::Allocator;
-use oxc_ast::{ast::ImportDeclarationSpecifier, AstKind};
+use oxc_ast::ast::{ExportAllDeclaration, ExportFromDeclaration, ImportDeclaration, ImportDeclarationSpecifier};
+use oxc_ast::AstKind;
 use oxc_parser::Parser;
 use oxc_semantic::{Scoping, SemanticBuilder};
 use oxc_span::SourceType;
@@ -75,64 +76,7 @@ pub fn extract(
     let built = SemanticBuilder::new().with_build_nodes(true).build(&ret.program);
     let sem = built.semantic;
     let scoping = sem.scoping();
-    let mut out = Vec::new();
-    for node in sem.nodes().iter() {
-        match node.kind() {
-            AstKind::ImportDeclaration(d) => {
-                let spec = d.source.value.display().to_string();
-                let (form, hv, ht) = match &d.specifiers {
-                    None => (1, true, false),
-                    Some(_) if d.import_kind.is_type() => (0, false, true),
-                    Some(list) if list.is_empty() => (0, false, false),
-                    Some(list) => {
-                        let (mut hv, mut ht) = (false, false);
-                        for s in list.iter() {
-                            let explicit_type = matches!(
-                                s,
-                                ImportDeclarationSpecifier::ImportSpecifier(i) if i.import_kind.is_type()
-                            );
-                            if explicit_type {
-                                ht = true;
-                                continue;
-                            }
-                            match binding_use(scoping, s.symbol_id()) {
-                                Use::Value | Use::Unused => hv = true,
-                                Use::TypeOnly => ht = true,
-                            }
-                        }
-                        (0, hv, ht)
-                    }
-                };
-                out.push(RawImport { spec, form, hv, ht, pending: Vec::new() });
-            }
-            AstKind::ExportAllDeclaration(d) => {
-                let spec = d.source.value.display().to_string();
-                let ty = d.export_kind.is_type();
-                out.push(RawImport { spec, form: 2, hv: !ty, ht: ty, pending: Vec::new() });
-            }
-            AstKind::ExportFromDeclaration(d) => {
-                let spec = d.source.value.display().to_string();
-                let mut pending = Vec::new();
-                let (hv, ht) = if d.export_kind.is_type() {
-                    (false, true)
-                } else if d.specifiers.is_empty() {
-                    (false, false)
-                } else {
-                    let mut ht = false;
-                    for s in d.specifiers.iter() {
-                        if s.export_kind.is_type() {
-                            ht = true;
-                        } else {
-                            pending.push(s.local.name().to_string());
-                        }
-                    }
-                    (false, ht)
-                };
-                out.push(RawImport { spec, form: 2, hv, ht, pending });
-            }
-            _ => {}
-        }
-    }
+    let imports = import_like(&sem, scoping);
     let walker = Walker::new(rel, source);
     let walker = if index.is_empty() { walker } else { walker.with_calls(scoping, index, test) };
     let walker = match hook {
@@ -140,7 +84,80 @@ pub fn extract(
         None => walker,
     };
     let functions = walker.run(&ret.program);
-    Extracted { imports: out, functions, fatal: false }
+    Extracted { imports, functions, fatal: false }
+}
+
+/// Every import-like statement of the file, in node order.
+fn import_like(sem: &oxc_semantic::Semantic<'_>, scoping: &Scoping) -> Vec<RawImport> {
+    sem.nodes()
+        .iter()
+        .filter_map(|node| match node.kind() {
+            AstKind::ImportDeclaration(d) => Some(import_declaration(d, scoping)),
+            AstKind::ExportAllDeclaration(d) => Some(export_all(d)),
+            AstKind::ExportFromDeclaration(d) => Some(export_from(d)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// `import ... from`, `import "x"`: form and the value/type use of its bindings.
+fn import_declaration(d: &ImportDeclaration<'_>, scoping: &Scoping) -> RawImport {
+    let spec = d.source.value.display().to_string();
+    let (form, hv, ht) = match &d.specifiers {
+        None => (1, true, false),
+        Some(_) if d.import_kind.is_type() => (0, false, true),
+        Some(list) if list.is_empty() => (0, false, false),
+        Some(list) => {
+            let (hv, ht) = binding_flags(list, scoping);
+            (0, hv, ht)
+        }
+    };
+    RawImport { spec, form, hv, ht, pending: Vec::new() }
+}
+
+/// `(hv, ht)` over an import's specifiers: an explicit `type` specifier is type-only, and an
+/// unused binding counts as a value (old Pulsar's rule).
+fn binding_flags(list: &[ImportDeclarationSpecifier<'_>], scoping: &Scoping) -> (bool, bool) {
+    let (mut hv, mut ht) = (false, false);
+    for s in list {
+        if matches!(s, ImportDeclarationSpecifier::ImportSpecifier(i) if i.import_kind.is_type()) {
+            ht = true;
+            continue;
+        }
+        match binding_use(scoping, s.symbol_id()) {
+            Use::Value | Use::Unused => hv = true,
+            Use::TypeOnly => ht = true,
+        }
+    }
+    (hv, ht)
+}
+
+fn export_all(d: &ExportAllDeclaration<'_>) -> RawImport {
+    let spec = d.source.value.display().to_string();
+    let ty = d.export_kind.is_type();
+    RawImport { spec, form: 2, hv: !ty, ht: ty, pending: Vec::new() }
+}
+
+/// `export { a } from "./x"`: type-ness of each specifier waits for the target file.
+fn export_from(d: &ExportFromDeclaration<'_>) -> RawImport {
+    let spec = d.source.value.display().to_string();
+    let mut pending = Vec::new();
+    let (hv, ht) = if d.export_kind.is_type() {
+        (false, true)
+    } else if d.specifiers.is_empty() {
+        (false, false)
+    } else {
+        let mut ht = false;
+        for s in d.specifiers.iter() {
+            if s.export_kind.is_type() {
+                ht = true;
+            } else {
+                pending.push(s.local.name().to_string());
+            }
+        }
+        (false, ht)
+    };
+    RawImport { spec, form: 2, hv, ht, pending }
 }
 
 /// Old-Pulsar-compatible "is this exported name type-only in the target" check for
