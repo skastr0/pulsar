@@ -217,6 +217,51 @@ pub struct ActiveRule {
     pub says: String,
 }
 
+/// A fan-out rule that is on: the `RF` row's `rule` is its position in the sorted active list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActiveFanout {
+    pub id: String,
+    pub version: u32,
+    pub class_id: u32,
+    pub edges: u32,
+    pub none: u32,
+    pub says: String,
+}
+
+/// A constant-argument rule that is on (`RK`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActiveKonst {
+    pub id: String,
+    pub version: u32,
+    pub class_id: u32,
+    pub pos: u32,
+    pub says: String,
+}
+
+/// A hot-path rule that is on (`RH`): `lane` 1 sql, 2 fan-out, 3 constant argument, and `base` the
+/// base rule's number in that lane (an `SR` code, an `RF` rule or an `RK` rule).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActiveHot {
+    pub id: String,
+    pub version: u32,
+    pub lane: u32,
+    pub base: u32,
+    pub base_id: String,
+    pub depth: u32,
+    pub says: String,
+}
+
+/// The fan-out, constant-argument and hot-path rules policy and the active catalogs turned on, and the
+/// ones that stay off with the reason, so a rule that does not run is never silent.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Composites {
+    pub fanouts: Vec<ActiveFanout>,
+    pub konsts: Vec<ActiveKonst>,
+    pub hots: Vec<ActiveHot>,
+    /// `(rule id, why it is off)` for hot-path rules whose base rule is not on.
+    pub inert: Vec<(String, String)>,
+}
+
 /// One input to the fingerprint: what it is, its name, and the SHA-256 of its content.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Part {
@@ -276,6 +321,49 @@ impl Effective {
         }
         out.sort_by(|a, b| a.id.cmp(&b.id));
         out.dedup_by(|a, b| a.id == b.id);
+        out
+    }
+
+    /// The fan-out, constant-argument and hot-path rules that are on. A catalog's rule is on when the
+    /// catalog is active and `[rules] disable` does not list it; a hot-path rule also needs its base
+    /// rule on (an `sql.*` base needs `[rules] enable`). Numbers follow the sorted ids of each kind.
+    pub fn composites(&self) -> Composites {
+        let off = |id: &str| self.policy.rules.disable.iter().any(|d| d == id);
+        let mut out = Composites::default();
+        let cats = || self.catalogs.iter().map(|c| &c.loaded.catalog);
+        let class_of = |cat: &catalog::Catalog, name: &str| cat.classes.iter().find(|k| k.class == name).map(|k| k.id);
+        for cat in cats() {
+            for r in cat.fanouts.iter().filter(|r| !off(&r.id)) {
+                let Some(class_id) = class_of(cat, &r.class) else { continue };
+                out.fanouts.push(ActiveFanout { id: r.id.clone(), version: r.ver.parse().unwrap_or(1), class_id, edges: r.edges, none: r.none, says: r.says.clone() });
+            }
+            for r in cat.konsts.iter().filter(|r| !off(&r.id)) {
+                let Some(class_id) = class_of(cat, &r.class) else { continue };
+                out.konsts.push(ActiveKonst { id: r.id.clone(), version: r.ver.parse().unwrap_or(1), class_id, pos: r.pos, says: r.says.clone() });
+            }
+        }
+        out.fanouts.sort_by(|a, b| a.id.cmp(&b.id));
+        out.fanouts.dedup_by(|a, b| a.id == b.id);
+        out.konsts.sort_by(|a, b| a.id.cmp(&b.id));
+        out.konsts.dedup_by(|a, b| a.id == b.id);
+        let sql_on = self.sql_rule_codes();
+        let mut hots: Vec<&catalog::Hot> = cats().flat_map(|c| c.hots.iter()).filter(|h| !off(&h.id)).collect();
+        hots.sort_by(|a, b| a.id.cmp(&b.id));
+        hots.dedup_by(|a, b| a.id == b.id);
+        for h in hots {
+            let base = match h.lane {
+                catalog::HotLane::Sql => {
+                    let code = crate::finding::SQL_RULES.iter().position(|r| r.id == h.base).map(|i| i as u32 + 1);
+                    code.filter(|c| sql_on.contains(c))
+                }
+                catalog::HotLane::Fanout => out.fanouts.iter().position(|f| f.id == h.base).map(|i| i as u32),
+                catalog::HotLane::Konst => out.konsts.iter().position(|k| k.id == h.base).map(|i| i as u32),
+            };
+            match base {
+                Some(base) => out.hots.push(ActiveHot { id: h.id.clone(), version: h.ver.parse().unwrap_or(1), lane: h.lane.number(), base, base_id: h.base.clone(), depth: h.depth, says: h.says.clone() }),
+                None => out.inert.push((h.id.clone(), format!("base rule {} is not on{}", h.base, if h.lane == catalog::HotLane::Sql { " (list it in [rules] enable)" } else { "" }))),
+            }
+        }
         out
     }
 
@@ -514,7 +602,13 @@ pub fn load(root: &Path, home: Option<&Path>, ev: &Evidence) -> Result<Effective
     }
 
     // A rule named in policy.toml must exist in an active catalog, or the policy is wrong.
-    let known: BTreeSet<&str> = catalogs.iter().flat_map(|c| c.loaded.catalog.rules.iter().map(|r| r.id.as_str())).collect();
+    let known: BTreeSet<&str> = catalogs
+        .iter()
+        .flat_map(|c| {
+            let k = &c.loaded.catalog;
+            k.rules.iter().map(|r| r.id.as_str()).chain(k.fanouts.iter().map(|r| r.id.as_str())).chain(k.konsts.iter().map(|r| r.id.as_str())).chain(k.hots.iter().map(|r| r.id.as_str()))
+        })
+        .collect();
     for r in policy.rules.enable.iter().chain(&policy.rules.disable) {
         if !known.contains(r.as_str()) && !crate::finding::is_builtin_rule(r) {
             return Err(format!("policy names rule {r:?}, which no active catalog or built-in rule defines"));

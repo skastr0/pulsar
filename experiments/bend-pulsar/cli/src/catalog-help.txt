@@ -66,6 +66,17 @@ FILE FORMAT  (TOML; format = "pulsar-catalog 0")
       A call site whose callee is in `class`, in a context where (ctx_any == 0 or a ctx_any bit
       is set) and no ctx_none bit is set, is a finding of rule `id`. A rule is on only when its
       catalog is active, and only if policy.toml does not disable it.
+    fanouts  = [ { id, class, edges, none, says, ver, at, doc } ]
+      Fan-out (N+1 and kin): a call at loop depth > 0 whose ctx has no bit of `none`, and that reaches
+      a call of a symbol of `class` within `edges` call edges (0 = the call itself), is a finding of
+      rule `id`. A call inside an iterator callback is the callback's own function at depth 0.
+    konsts   = [ { id, class, pos, says, ver, at, doc } ]
+      Constant argument: a call of a symbol of `class` whose argument `pos` (0-based) is a constant.
+    hots     = [ { id, lane, base, depth, says, ver, at, doc } ]
+      Hot path: a finding of rule `base` whose function an entry point (`entries`) reaches within
+      `depth` call edges. lane = sql (base is an `sql.*` rule) | fanout | konst (base is a `fanouts`
+      or `konsts` id). The rule is on only when its base rule is on: an sql.* base needs policy.toml
+      `[rules] enable`. Ids are unique across rules, fanouts, konsts and hots; each list is sorted by id.
 
 FIXED CLASS IDS
   1 query  2 blocking  3 log  4 error-erasing  5 runtime-escape  6 fork

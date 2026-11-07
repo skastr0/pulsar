@@ -163,6 +163,73 @@ pub struct Rule {
     pub doc: String,
 }
 
+/// A fan-out rule (FACTS.md `RF`): a call at loop depth > 0, with no ctx bit of `none`, that reaches
+/// a call of a symbol of `class` within `edges` call edges (0 = the site itself).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Fanout {
+    pub id: String,
+    pub class: String,
+    pub edges: u32,
+    pub none: u32,
+    pub says: String,
+    pub ver: String,
+    pub at: String,
+    pub doc: String,
+}
+
+/// A constant-argument rule (FACTS.md `RK`): a call of a symbol of `class` whose argument `pos`
+/// (0-based) is a constant.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Konst {
+    pub id: String,
+    pub class: String,
+    pub pos: u32,
+    pub says: String,
+    pub ver: String,
+    pub at: String,
+    pub doc: String,
+}
+
+/// What kind of finding a hot-path rule is about (FACTS.md `RH` lanes 1 to 3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum HotLane {
+    /// An SQL rule; `base` is the id of a `sql.*` rule.
+    Sql,
+    /// A fan-out rule; `base` is a `fanouts` id.
+    Fanout,
+    /// A constant-argument rule; `base` is a `konsts` id.
+    Konst,
+}
+
+impl HotLane {
+    /// The `RH` lane number.
+    pub fn number(self) -> u32 {
+        match self {
+            HotLane::Sql => 1,
+            HotLane::Fanout => 2,
+            HotLane::Konst => 3,
+        }
+    }
+}
+
+/// A hot-path composite rule (FACTS.md `RH`): a finding of rule `base` whose function an entry point
+/// reaches within `depth` call edges.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Hot {
+    pub id: String,
+    pub lane: HotLane,
+    pub base: String,
+    pub depth: u32,
+    pub says: String,
+    pub ver: String,
+    pub at: String,
+    pub doc: String,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Catalog {
@@ -188,6 +255,12 @@ pub struct Catalog {
     pub layers: Vec<Layer>,
     #[serde(default)]
     pub rules: Vec<Rule>,
+    #[serde(default)]
+    pub fanouts: Vec<Fanout>,
+    #[serde(default)]
+    pub konsts: Vec<Konst>,
+    #[serde(default)]
+    pub hots: Vec<Hot>,
 }
 
 /// A parsed, validated catalog and its fingerprint.
@@ -286,7 +359,38 @@ fn check_declared(c: &Catalog, names: &BTreeSet<&str>) -> Result<(), String> {
         }
     }
     check_entries(c)?;
-    c.rules.iter().try_for_each(|r| declared(&r.class, &format!("rule {:?}", r.id)))
+    c.rules.iter().try_for_each(|r| declared(&r.class, &format!("rule {:?}", r.id)))?;
+    c.fanouts.iter().try_for_each(|r| declared(&r.class, &format!("fan-out rule {:?}", r.id)))?;
+    c.konsts.iter().try_for_each(|r| declared(&r.class, &format!("constant-argument rule {:?}", r.id)))?;
+    check_composites(c)
+}
+
+/// Fan-out, constant-argument and hot-path rules: ids unique across every rule kind of the catalog
+/// (policy names a rule by id alone), `none` a ctx mask, and a hot rule's base a rule of its lane
+/// (an `sql.*` id, or a rule of this catalog: a repo catalog may build on a pack's rule instead, and
+/// policy resolves that when both are active).
+fn check_composites(c: &Catalog) -> Result<(), String> {
+    let mut ids = BTreeSet::new();
+    let all = c.rules.iter().map(|r| &r.id).chain(c.fanouts.iter().map(|r| &r.id)).chain(c.konsts.iter().map(|r| &r.id)).chain(c.hots.iter().map(|r| &r.id));
+    for id in all {
+        if id.is_empty() || !ids.insert(id.as_str()) {
+            return Err(format!("rule id {id:?} is empty or declared twice in this catalog"));
+        }
+    }
+    for f in &c.fanouts {
+        if f.none > 255 {
+            return Err(format!("fan-out rule {:?}: none {} is not a ctx mask (0-255)", f.id, f.none));
+        }
+    }
+    for h in &c.hots {
+        if h.base.is_empty() {
+            return Err(format!("hot-path rule {:?} names no base rule", h.id));
+        }
+        if h.lane == HotLane::Sql && !crate::finding::SQL_RULES.iter().any(|r| r.id == h.base) {
+            return Err(format!("hot-path rule {:?}: base {:?} is not an sql.* rule", h.id, h.base));
+        }
+    }
+    Ok(())
 }
 
 /// Entry points: a kind FACTS.md defines, a symbol exactly where the shape needs one, and
@@ -335,7 +439,10 @@ fn check_order(c: &Catalog) -> Result<(), String> {
     sorted_unique("entries", c.entries.iter().map(|e| format!("{}\0{:?}\0{:02}\0{}", e.sym, e.shape, e.kind, e.ver)))?;
     sorted_unique("services", c.services.iter().map(|s| format!("{}\0{}", s.sym, s.ver)))?;
     sorted_unique("layers", c.layers.iter().map(|l| format!("{}\0{}", l.sym, l.ver)))?;
-    sorted_unique("rules", c.rules.iter().map(|r| r.id.clone()))
+    sorted_unique("rules", c.rules.iter().map(|r| r.id.clone()))?;
+    sorted_unique("fanouts", c.fanouts.iter().map(|r| r.id.clone()))?;
+    sorted_unique("konsts", c.konsts.iter().map(|r| r.id.clone()))?;
+    sorted_unique("hots", c.hots.iter().map(|r| r.id.clone()))
 }
 
 /// One entry per line: every array entry is an inline table that starts its own line.
@@ -348,7 +455,10 @@ fn check_one_entry_per_line(c: &Catalog, text: &str) -> Result<(), String> {
         + c.entries.len()
         + c.services.len()
         + c.layers.len()
-        + c.rules.len();
+        + c.rules.len()
+        + c.fanouts.len()
+        + c.konsts.len()
+        + c.hots.len();
     let starts = text.lines().filter(|l| l.trim_start().starts_with("{ ")).count();
     if starts != entries {
         return Err(format!("{entries} entries but {starts} lines start an inline table: one entry per line"));

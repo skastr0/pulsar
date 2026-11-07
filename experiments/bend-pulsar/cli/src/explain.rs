@@ -237,6 +237,46 @@ fn render_catalog(cat: &catalog::Catalog, r: &catalog::Rule) -> String {
     )
 }
 
+/// A fan-out, constant-argument or hot-path rule of a catalog: what it is and every threshold in it.
+fn render_composite(cat: &catalog::Catalog, id: &str) -> Option<String> {
+    let (ver, says, at, doc, kind, threshold, laws, example) = if let Some(r) = cat.fanouts.iter().find(|r| r.id == id) {
+        let none = if r.none == 0 { String::new() } else { format!(", never when the site is {}", bits(r.none)) };
+        (
+            r.ver.as_str(), r.says.as_str(), r.at.as_str(), r.doc.as_str(), "fan-out",
+            format!("edges = {} (a call at loop depth > 0 reaches a call of class {:?} within {} call edge{}){none}", r.edges, r.class, r.edges, if r.edges == 1 { "" } else { "s" }),
+            "engine/Fanout-LAWS.bend",
+            format!("a call of a class {:?} symbol inside a loop, or a loop call of a function that reaches one", r.class),
+        )
+    } else if let Some(r) = cat.konsts.iter().find(|r| r.id == id) {
+        (
+            r.ver.as_str(), r.says.as_str(), r.at.as_str(), r.doc.as_str(), "constant-argument",
+            format!("pos = {} (argument {} of a call of class {:?} is a constant)", r.pos, r.pos, r.class),
+            "engine/Konst-LAWS.bend",
+            format!("a call of a class {:?} symbol whose argument {} is a literal", r.class, r.pos),
+        )
+    } else if let Some(r) = cat.hots.iter().find(|r| r.id == id) {
+        (
+            r.ver.as_str(), r.says.as_str(), r.at.as_str(), r.doc.as_str(), "hot-path",
+            format!("depth = {} (an entry point reaches the function within {} call edge{}); base rule {} ({:?} lane)", r.depth, r.depth, if r.depth == 1 { "" } else { "s" }, r.base, r.lane),
+            "engine/Hot-LAWS.bend: ho_reach_sound, ho_reach_complete, ho_findings_sound, ho_findings_complete",
+            format!("a {} finding in a function reachable from a request, alarm or queue entry point", r.base),
+        )
+    } else {
+        return None;
+    };
+    let runs = if kind == "hot-path" {
+        "on with its catalog while its base rule is on (an sql.* base needs [rules] enable); [rules] disable turns it off"
+    } else {
+        "on with its catalog; [rules] disable turns it off"
+    };
+    Some(format!(
+        "{id} v{ver}\n  family:     catalog {} {kind} rule (scope {:?}, on by evidence: {})\n  runs:       {runs}\n  definition: Code that {says}.\n  threshold:  {threshold}\n  laws:       {laws}\n  example:    {example}\n  source:     {at} ({doc})\n",
+        cat.id,
+        cat.scope,
+        cat.activate.as_ref().map(|a| a.join(", ")).unwrap_or_else(|| "always (lane catalog)".into()),
+    ))
+}
+
 /// The explanation of `id`, from the built-in table or the shipped catalogs.
 pub fn explain(id: &str) -> Result<String, String> {
     let versions = version::rules();
@@ -249,15 +289,37 @@ pub fn explain(id: &str) -> Result<String, String> {
         if let Some(r) = l.catalog.rules.iter().find(|r| r.id == id) {
             return Ok(render_catalog(&l.catalog, r));
         }
+        if let Some(text) = render_composite(&l.catalog, id) {
+            return Ok(text);
+        }
     }
     Err(format!("no rule {id:?}; `pulsar explain` lists every rule"))
+}
+
+/// The family of a catalog rule: its kind, from the shipped catalogs.
+fn catalog_family(id: &str) -> String {
+    for (name, text) in catalog::EMBEDDED {
+        let Ok(l) = catalog::load(name, text) else { continue };
+        let c = &l.catalog;
+        let kind = if c.fanouts.iter().any(|r| r.id == id) {
+            "fan-out"
+        } else if c.konsts.iter().any(|r| r.id == id) {
+            "constant-argument"
+        } else if c.hots.iter().any(|r| r.id == id) {
+            "hot-path"
+        } else {
+            continue;
+        };
+        return format!("catalog {kind} rule");
+    }
+    "catalog rule".into()
 }
 
 /// Every rule id with its version and one-line family, for `pulsar explain` with no argument.
 pub fn list() -> String {
     let mut out = String::new();
     for (id, v) in version::rules() {
-        let family = BUILTIN.iter().find(|e| e.id == id).map(|e| e.family.to_string()).unwrap_or_else(|| "catalog rule".into());
+        let family = BUILTIN.iter().find(|e| e.id == id).map(|e| e.family.to_string()).unwrap_or_else(|| catalog_family(&id));
         out.push_str(&format!("{id} v{v}\t{family}\n"));
     }
     out

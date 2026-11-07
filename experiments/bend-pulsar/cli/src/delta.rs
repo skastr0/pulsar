@@ -10,6 +10,7 @@
 //! part of a path key).
 
 use crate::cache::{self, Cache};
+use crate::compfind;
 use crate::coverage;
 use crate::driver;
 use crate::engine::{self, Findings};
@@ -283,7 +284,7 @@ fn build_fresh(
 ) -> Result<Built, String> {
     checkout(repo, sha, scratch, tree)?;
     let mut w = FactWriter::new();
-    let mut tables = SideTables { sql_rules: eff.sql_rule_codes(), ..SideTables::default() };
+    let mut tables = SideTables { sql_rules: eff.sql_rule_codes(), composites: eff.composites(), ..SideTables::default() };
     let (set, dstats) = driver::build(tree, tracked, &eff.policy.lanes, &eff.active_rules(), &mut w, &mut tables)?;
     let mut coverage_reroot = None;
     if coverage.is_some() || discover {
@@ -569,6 +570,16 @@ fn evaluate(repo: &Path, sha: &str, tag: &str, coverage: Option<&Path>, discover
         degraded.push(Degraded {
             lane: "measures",
             cause: format!("{unmeasured} function(s) have no measure row, head key or file; they are missing from trends and metric findings"),
+        });
+    }
+    let (comp_findings, comp_dropped) = compfind::findings(&found, &tables, &set.files, &set.fn_keys, &eff.composites());
+    for f in comp_findings {
+        insert(&mut findings, f, sha)?;
+    }
+    if comp_dropped > 0 {
+        degraded.push(Degraded {
+            lane: "composites",
+            cause: format!("{comp_dropped} fan-out, constant-argument or hot-path finding(s) named a rule, function, symbol or base finding the CLI could not resolve and are not reported"),
         });
     }
     if dropped > 0 {

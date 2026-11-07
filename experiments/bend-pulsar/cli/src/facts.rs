@@ -68,6 +68,9 @@ pub enum Rel {
     Lo,
     Us,
     Rl,
+    Rf,
+    Rk,
+    Rh,
     Ds,
     Dt,
     Dc,
@@ -84,7 +87,7 @@ pub enum Rel {
 }
 
 impl Rel {
-    pub const ALL: [Rel; 68] = [
+    pub const ALL: [Rel; 71] = [
         Rel::N,
         Rel::F,
         Rel::K,
@@ -140,6 +143,9 @@ impl Rel {
         Rel::Lo,
         Rel::Us,
         Rel::Rl,
+        Rel::Rf,
+        Rel::Rk,
+        Rel::Rh,
         Rel::Ds,
         Rel::Dt,
         Rel::Dc,
@@ -212,6 +218,9 @@ impl Rel {
             Rel::Lo => "LO",
             Rel::Us => "US",
             Rel::Rl => "RL",
+            Rel::Rf => "RF",
+            Rel::Rk => "RK",
+            Rel::Rh => "RH",
             Rel::Ds => "DS",
             Rel::Dt => "DT",
             Rel::Dc => "DC",
@@ -234,8 +243,8 @@ impl Rel {
             Rel::N | Rel::M | Rel::Sy | Rel::Tf | Rel::L | Rel::Lo | Rel::Sr | Rel::Id => 1,
             Rel::F | Rel::U | Rel::H | Rel::A | Rel::Cl | Rel::Lq | Rel::Us | Rel::Ln | Rel::If | Rel::Lr | Rel::Lc | Rel::Ds | Rel::Ep
             | Rel::Ie | Rel::Ib | Rel::Iu => 2,
-            Rel::K | Rel::Fk | Rel::C | Rel::Cfn | Rel::Vn | Rel::Cv | Rel::Hd | Rel::E | Rel::Sv | Rel::Ly | Rel::Lp | Rel::Rt | Rel::Mk | Rel::Lw | Rel::Co | Rel::Im | Rel::Cu | Rel::Dt | Rel::Dp | Rel::Di | Rel::Dx | Rel::Df | Rel::Qt | Rel::Bl | Rel::Bw | Rel::Br | Rel::Al => 3,
-            Rel::Fn | Rel::Ct | Rel::Cf | Rel::Rl | Rel::Cm | Rel::Et | Rel::Dc | Rel::Dg | Rel::Qu | Rel::Qd => 4,
+            Rel::K | Rel::Fk | Rel::C | Rel::Cfn | Rel::Vn | Rel::Cv | Rel::Hd | Rel::E | Rel::Sv | Rel::Ly | Rel::Lp | Rel::Rt | Rel::Mk | Rel::Lw | Rel::Co | Rel::Im | Rel::Cu | Rel::Dt | Rel::Dp | Rel::Di | Rel::Dx | Rel::Df | Rel::Qt | Rel::Bl | Rel::Bw | Rel::Br | Rel::Al | Rel::Rk => 3,
+            Rel::Fn | Rel::Ct | Rel::Cf | Rel::Rl | Rel::Rf | Rel::Rh | Rel::Cm | Rel::Et | Rel::Dc | Rel::Dg | Rel::Qu | Rel::Qd => 4,
             Rel::I | Rel::Cs | Rel::Bc | Rel::Hr | Rel::Vt => 5,
             Rel::Ce | Rel::Qs => 6,
         }
@@ -416,6 +425,9 @@ pub struct SideTables {
     pub sql_sites: Vec<(u32, u32)>,
     /// `SR` codes of the SQL rules switched on by policy (not a side table: input to the driver).
     pub sql_rules: Vec<u32>,
+    /// The fan-out, constant-argument and hot-path rules policy turned on (input to the driver, like
+    /// `sql_rules`: it writes their `RF`, `RK` and `RH` rows).
+    pub composites: crate::policy::Composites,
     /// The `.laws` table, already formatted (`law path line name`, TAB-separated, law-id order).
     pub laws: String,
     /// The `.effect` table, already formatted: `S svc path line name` and `L layer path line

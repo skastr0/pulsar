@@ -1,5 +1,6 @@
 mod cache;
 mod catalog;
+mod compfind;
 mod coverage;
 mod delta;
 mod driver;
@@ -106,7 +107,7 @@ fn build_facts(
 ) -> Result<(driver::FactSet, facts::SideTables, history::Stats, driver::Stats), String> {
     let eff = policy_for(repo)?;
     let mut w = facts::FactWriter::new();
-    let mut tables = facts::SideTables { sql_rules: eff.sql_rule_codes(), ..facts::SideTables::default() };
+    let mut tables = facts::SideTables { sql_rules: eff.sql_rule_codes(), composites: eff.composites(), ..facts::SideTables::default() };
     let (set, st) = driver::build_repo(repo, &eff.policy.lanes, &eff.active_rules(), &mut w, &mut tables)?;
     let hist = &eff.policy.history;
     let hist_rules = eff
@@ -247,6 +248,21 @@ fn cmd_policy(args: &[String]) -> Result<(), String> {
     for p in &eff.parts {
         println!("{}\t{}\tsha256:{}", p.kind, p.name, p.sha256);
     }
+    // The fan-out, constant-argument and hot-path rules that run, with every threshold, and those
+    // that stay off with the reason. Their thresholds live in the catalogs the parts above fingerprint.
+    let c = eff.composites();
+    for r in &c.fanouts {
+        println!("rule\t{}\tv{}\tfanout rf={} class={} edges={} none={}", r.id, r.version, c.fanouts.iter().position(|x| x.id == r.id).unwrap_or(0), r.class_id, r.edges, r.none);
+    }
+    for (n, r) in c.konsts.iter().enumerate() {
+        println!("rule\t{}\tv{}\tkonst rk={n} class={} pos={}", r.id, r.version, r.class_id, r.pos);
+    }
+    for (n, r) in c.hots.iter().enumerate() {
+        println!("rule\t{}\tv{}\thot rh={n} lane={} base={} ({}) depth={}", r.id, r.version, r.lane, r.base, r.base_id, r.depth);
+    }
+    for (id, why) in &c.inert {
+        println!("rule-off\t{id}\t{why}");
+    }
     println!("fingerprint\tsha256:{}", eff.fingerprint);
     Ok(())
 }
@@ -271,9 +287,9 @@ fn cmd_catalog(args: &[String]) -> Result<(), String> {
                 let l = catalog::load(f, &text)?;
                 let c = &l.catalog;
                 println!(
-                    "ok {f}: id={} scope={:?} classes={} symbols={} handlers={} wrappers={} services={} layers={} rules={} sha256:{}",
+                    "ok {f}: id={} scope={:?} classes={} symbols={} handlers={} wrappers={} services={} layers={} rules={} fanouts={} konsts={} hots={} sha256:{}",
                     c.id, c.scope, c.classes.len(), c.symbols.len(), c.handlers.len(), c.wrappers.len(),
-                    c.services.len(), c.layers.len(), c.rules.len(), l.sha256
+                    c.services.len(), c.layers.len(), c.rules.len(), c.fanouts.len(), c.konsts.len(), c.hots.len(), l.sha256
                 );
             }
             Ok(())

@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Findings {
     /// Each cycle is a list of file ids, ascending.
     pub cycles: Vec<Vec<u32>>,
@@ -22,6 +22,46 @@ pub struct Findings {
     pub layers: Option<Layers>,
     /// The `pulsar-sql 0` section, when an `SR` row switched SQL rules on.
     pub sql: Option<Sql>,
+    /// `NX`: fan-out findings (`pulsar-fanout 0`), in engine order.
+    pub nx: Vec<Nx>,
+    /// `KX`: constant-argument findings (`pulsar-konst 0`).
+    pub kx: Vec<Kx>,
+    /// `HX`: hot-path findings (`pulsar-hot 0`).
+    pub hx: Vec<Hx>,
+}
+
+/// `NX rule site fn via kind`: fan-out rule `rule` (an `RF` rule number) at call site `site` of
+/// function `fn_id`. `kind` 0: the site calls `via`, a symbol (`SY` id) of the rule's class. `kind` 1:
+/// the site calls repo function `via` (a function id) that reaches such a call.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Nx {
+    pub rule: u32,
+    pub site: u32,
+    pub fn_id: u32,
+    pub via: u32,
+    pub kind: u32,
+}
+
+/// `KX rule site fn callee pos`: constant-argument rule `rule` (an `RK` rule number) at `site`, a call
+/// of symbol `callee` whose argument `pos` is a constant.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Kx {
+    pub rule: u32,
+    pub site: u32,
+    pub fn_id: u32,
+    pub callee: u32,
+    pub pos: u32,
+}
+
+/// `HX rule lane base site fn`: hot-path rule `rule` (an `RH` rule number) on a base finding of lane
+/// `lane` and rule `base`, at `site`, in function `fn_id`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Hx {
+    pub rule: u32,
+    pub lane: u32,
+    pub base: u32,
+    pub site: u32,
+    pub fn_id: u32,
 }
 
 /// What an `SQX` line is about: a query site, or a foreign key.
@@ -213,7 +253,7 @@ fn parse_layer_line(l: &mut Layers, tag: &str, n: &[u32]) -> Result<(), String> 
 }
 
 pub fn parse(text: &str) -> Result<Findings, String> {
-    let mut f = Findings { cycles: vec![], cert: None, files: 0, edges: 0, cycle_count: 0, fm: vec![], fx: vec![], rcx: vec![], layers: None, sql: None };
+    let mut f = Findings::default();
     let mut header = false;
     // Rows are parsed only inside the sections this reader consumes; a `pulsar-*`
     // header for any other section switches skipping on until the next header.
@@ -230,7 +270,7 @@ pub fn parse(text: &str) -> Result<Findings, String> {
             section = match name {
                 "findings" | "classctx" => name,
                 "layers" => name,
-                "sql" => name,
+                "sql" | "fanout" | "konst" | "hot" => name,
                 _ => "other",
             };
             if section == "findings" {
@@ -317,6 +357,29 @@ pub fn parse(text: &str) -> Result<Findings, String> {
                 let mut n = || num(it.next().ok_or("RCX needs rule site fn callee")?).map(|v| v as u32);
                 let (rule, site, fn_id, callee) = (n()?, n()?, n()?, n()?);
                 f.rcx.push(Rcx { rule, site, fn_id, callee });
+            }
+            "NX" | "KX" | "HX" => {
+                let want = match tag { "NX" => "fanout", "KX" => "konst", _ => "hot" };
+                if section != want {
+                    return Err(format!("{tag} outside the `pulsar-{want} 0` section"));
+                }
+                let n = it.map(|t| num(t).map(|v| v as u32)).collect::<Result<Vec<u32>, _>>()?;
+                match (tag, n[..].try_into()) {
+                    ("NX", Ok::<[u32; 5], _>([rule, site, fn_id, via, kind])) => f.nx.push(Nx { rule, site, fn_id, via, kind }),
+                    ("KX", Ok::<[u32; 5], _>([rule, site, fn_id, callee, pos])) => f.kx.push(Kx { rule, site, fn_id, callee, pos }),
+                    ("HX", Ok::<[u32; 5], _>([rule, lane, base, site, fn_id])) => f.hx.push(Hx { rule, lane, base, site, fn_id }),
+                    _ => return Err(format!("{tag} needs five numbers, got {}", n.len())),
+                }
+            }
+            "NXS" | "KXS" | "HXS" => {
+                let (want, have) = match tag { "NXS" => ("fanout", f.nx.len()), "KXS" => ("konst", f.kx.len()), _ => ("hot", f.hx.len()) };
+                if section != want {
+                    return Err(format!("{tag} outside the `pulsar-{want} 0` section"));
+                }
+                let n = num(it.next().ok_or_else(|| format!("{tag} without a count"))?)? as usize;
+                if n != have {
+                    return Err(format!("{tag} says {n} but {have} lines came before it"));
+                }
             }
             "RCXS" => {
                 let n = num(it.next().ok_or("RCXS without a count")?)?;

@@ -30,6 +30,10 @@ pub fn rules() -> Vec<(String, u32)> {
     for (id, text) in catalog::EMBEDDED {
         if let Ok(l) = catalog::load(id, text) {
             out.extend(l.catalog.rules.iter().map(|r| (r.id.clone(), r.ver.parse().unwrap_or(1))));
+            let c = &l.catalog;
+            out.extend(c.fanouts.iter().map(|r| (r.id.clone(), r.ver.parse().unwrap_or(1))));
+            out.extend(c.konsts.iter().map(|r| (r.id.clone(), r.ver.parse().unwrap_or(1))));
+            out.extend(c.hots.iter().map(|r| (r.id.clone(), r.ver.parse().unwrap_or(1))));
         }
     }
     out.sort();

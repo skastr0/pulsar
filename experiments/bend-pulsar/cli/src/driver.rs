@@ -104,6 +104,7 @@ pub fn build(
     }
     let fn_keys = push_functions(w, per, tables, &mut st);
     push_rules(w, rules, tables);
+    push_composites(w, &tables.composites);
     analyze_sql(root, &sql_files, sql_texts, &fn_base, w, tables, &mut st);
     // SQL rules are opt-in: one SR row per rule policy turned on, and none means no SQL section.
     for code in std::mem::take(&mut tables.sql_rules) {
@@ -218,6 +219,21 @@ fn push_rules(w: &mut FactWriter, rules: &[ActiveRule], tables: &mut SideTables)
         w.push(Rel::Rl, &[id as u32, r.class_id, r.ctx_any, r.ctx_none]);
     }
     tables.rules = rules.iter().map(|r| r.id.clone()).collect();
+}
+
+/// `RF`, `RK` and `RH` for every fan-out, constant-argument and hot-path rule that is on. The rule
+/// number is the rule's position in its sorted list (policy.rs `Effective::composites`), so the same
+/// policy always writes the same rows.
+fn push_composites(w: &mut FactWriter, c: &crate::policy::Composites) {
+    for (n, r) in c.fanouts.iter().enumerate() {
+        w.push(Rel::Rf, &[n as u32, r.class_id, r.edges, r.none]);
+    }
+    for (n, r) in c.konsts.iter().enumerate() {
+        w.push(Rel::Rk, &[n as u32, r.class_id, r.pos]);
+    }
+    for (n, r) in c.hots.iter().enumerate() {
+        w.push(Rel::Rh, &[n as u32, r.lane, r.base, r.depth]);
+    }
 }
 
 /// `N`, `F` and `K` for every file.
