@@ -190,14 +190,14 @@ The CLI renders file ids to paths, maps them to stable keys, and prints the huma
 
 ### Delta
 
-`pulsar delta` runs the engine a third time, on a file holding an empty graph and the two shas' finding keys. The engine decides what is printed (`engine/Delta.bend`).
+After evaluating both shas, `pulsar delta` runs the engine twice more, each time on a file holding an empty graph and the two shas' finding keys. The engine decides what is printed (`engine/Delta.bend`). The first run has the raw keys, and its added, allowed and removed lines are the only candidates for git's rename matching (and for the rule-version matching, which uses the same identity). The second run writes each matched base finding under its head key, adds the `MB`/`MH` rows, and is where everything `pulsar delta` prints comes from. The CLI keeps the matching, the choice of trend functions, the grouping of `KDW`/`KDI` rows into one trend line per function (worsened if any measure rose), degraded notices and rendering.
 
 | Tag | Fields | Meaning |
 |---|---|---|
 | `KD` | `0` | The switch. Exactly one; without it there is no delta section. |
 | `KB` | `hi lo` | A base finding key, its 64 bits as two U32s. A base finding that git's rename matching pairs with a head finding is written with the head key. |
 | `KH` | `hi lo cls` | A head finding key. `cls` 0 is plain, 1 needs coverage (listed apart, never added), and 2 is plain and allowed by a decision committed at head. |
-| `MB` | `hi lo m v` | Measure `m` of function key (hi lo) at base, rename-mapped like `KB`. `m`: 0 cyclomatic, 1 nesting, 2 npath, 3 length. Higher `v` is worse for every `m`. Only the functions the CLI reports trends for. |
+| `MB` | `hi lo m v` | Measure `m` of function key (hi lo) at base, rename-mapped like `KB`. `m`: 0 cyclomatic, 1 nesting, 2 npath, 3 length, 4 cognitive. Higher `v` is worse for every `m`. Only the functions the CLI reports trends for (all of them with `--trend`), five rows each. A value above U32 refuses the run. |
 | `MH` | `hi lo m v` | The same at head. |
 
 A key is (hi, lo, m), with m = 0 for `KB` and `KH`. A key repeated within `KB`, `KH`, `MB` or `MH`, a `cls` above 2, or a wrong field count refuses the run.

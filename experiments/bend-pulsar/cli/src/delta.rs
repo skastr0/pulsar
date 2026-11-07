@@ -12,6 +12,7 @@
 use crate::cache::{self, Cache};
 use crate::compfind;
 use crate::coverage;
+use crate::delta_engine::{self, Rows};
 use crate::driver;
 use crate::engine::{self, Findings};
 use crate::facts::{stable_key, FactWriter, SideTables};
@@ -616,6 +617,71 @@ fn evaluate(repo: &Path, sha: &str, tag: &str, coverage: Option<&Path>, discover
     Ok(Eval { findings, measures, timing, policy: eff, degraded, coverage_reroot })
 }
 
+/// The functions `pulsar delta` reports trends for, each as (head key, base measure, head measure):
+/// the same key, or the same symbol in a file git renamed. By default only functions with a metric
+/// finding on either side; with `all`, every function. Their `MB`/`MH` rows go to the engine under
+/// the head key, so a renamed function compares as one.
+fn tracked<'a>(before: &'a Eval, after: &'a Eval, renames: &Renames, all: bool) -> Vec<(u64, &'a Measure, &'a Measure)> {
+    let flagged = |e: &Eval| -> BTreeSet<u64> {
+        e.findings
+            .values()
+            .filter(|f| f.rule.id.starts_with("core.") && !needs_coverage(&f.rule))
+            .flat_map(|f| f.subjects.iter())
+            .filter_map(|s| match s {
+                Subject::Function { key, .. } => Some(*key),
+                Subject::File { .. } | Subject::Symbol { .. } => None,
+            })
+            .collect()
+    };
+    let (fb, fa) = (flagged(before), flagged(after));
+    // Base functions by (head path, symbol), for the ones whose key changed with a rename. A
+    // (path, symbol) that two functions share is ambiguous and not matched.
+    let mut by_place: BTreeMap<(&str, &str), Vec<(&u64, &Measure)>> = BTreeMap::new();
+    for (k, m) in &before.measures {
+        by_place.entry((renames.head_path(&m.path), m.chain.as_str())).or_default().push((k, m));
+    }
+    let mut out = Vec::new();
+    for (key, new) in &after.measures {
+        let found = match before.measures.get(key) {
+            Some(m) => Some((key, m)),
+            None => match by_place.get(&(new.path.as_str(), new.chain.as_str())).map(Vec::as_slice) {
+                Some([(k, m)]) if !after.measures.contains_key(*k) => Some((*k, *m)),
+                _ => None,
+            },
+        };
+        let Some((base_key, old)) = found else { continue };
+        if all || fb.contains(base_key) || fa.contains(key) {
+            out.push((*key, old, new));
+        }
+    }
+    out
+}
+
+/// The trend lines from the engine's worsened (`KDW`) and improved (`KDI`) measures, one per
+/// function in key order: worsened when any of its measures rose, else improved.
+fn group_trends(after: &Eval, worse: &[delta_engine::Move], better: &[delta_engine::Move]) -> Result<Vec<Trend>, String> {
+    let mut by_fn: BTreeMap<u64, (bool, Vec<(u32, u64, u64)>)> = BTreeMap::new();
+    for (moves, w) in [(worse, true), (better, false)] {
+        for &(k, m, vb, vh) in moves {
+            let e = by_fn.entry(k).or_default();
+            e.0 |= w;
+            e.1.push((m, vb, vh));
+        }
+    }
+    by_fn
+        .into_iter()
+        .map(|(key, (worse, mut ch))| {
+            ch.sort_unstable();
+            let head = after.measures.get(&key).ok_or_else(|| format!("engine delta names function {} that head does not measure", hex(key)))?;
+            let changes = ch
+                .into_iter()
+                .map(|(m, o, n)| METRICS.get(m as usize).map(|name| (*name, o, n)).ok_or_else(|| format!("engine delta names metric {m}")))
+                .collect::<Result<_, _>>()?;
+            Ok(Trend { key, head: head.clone(), changes, worse })
+        })
+        .collect()
+}
+
 /// A function whose measured values moved between base and head. Measurement only.
 struct Trend {
     key: u64,
@@ -703,7 +769,67 @@ struct Diff<'a> {
     rule_version_changed: Vec<(String, u32, u32, usize)>,
 }
 
-fn compare<'a>(before: &'a Eval, after: &'a Eval, renames: &Renames, trend_all: bool) -> Diff<'a> {
+/// The comparison, decided by the engine's delta section (`engine/Delta.bend`). It runs twice: the
+/// first run, on the raw keys, gives the findings on one side only, which are the candidates for
+/// git's rename matching; the second, with matched base findings written under their head keys
+/// and the tracked functions' measures, gives everything that is printed.
+fn compare<'a>(before: &'a Eval, after: &'a Eval, renames: &Renames, trend_all: bool, run: &dyn Fn(&Rows, &str) -> Result<delta_engine::Out, String>) -> Result<Diff<'a>, String> {
+    let cls = |f: &Finding| {
+        if needs_coverage(&f.rule) {
+            delta_engine::COVERAGE
+        } else if after.policy.allowed(&hex(f.key())).is_some() {
+            delta_engine::ALLOWED
+        } else {
+            delta_engine::PLAIN
+        }
+    };
+    let rows = |to_head: &BTreeMap<u64, u64>| {
+        let mut r = Rows::new();
+        for k in before.findings.keys() {
+            r.base(*to_head.get(k).unwrap_or(k));
+        }
+        for (k, f) in &after.findings {
+            r.head(*k, cls(f));
+        }
+        r
+    };
+    let pick = |side: &'a BTreeMap<u64, Finding>, keys: &[u64]| -> Result<Vec<&'a Finding>, String> {
+        keys.iter().map(|k| side.get(k).ok_or_else(|| format!("engine delta names finding {} that is not there", hex(*k)))).collect()
+    };
+    let one_side = run(&rows(&BTreeMap::new()), "keys.facts")?;
+    let gone = pick(&before.findings, &one_side.removed)?;
+    let new = pick(&after.findings, &[one_side.added, one_side.allowed].concat())?;
+    // A finding whose key changed only because git renamed its file is the same finding.
+    let pairs = rename::match_findings(&gone, &new, renames);
+    let mut r = rows(&pairs.iter().copied().collect());
+    for (k, old, new) in tracked(before, after, renames, trend_all) {
+        for (i, (o, n)) in old.m.iter().zip(new.m).enumerate() {
+            r.measure_base(k, i as u32, *o)?;
+            r.measure_head(k, i as u32, n)?;
+        }
+    }
+    let o = run(&r, "delta.facts")?;
+    let (added, allowed, removed) = (pick(&after.findings, &o.added)?, pick(&after.findings, &o.allowed)?, pick(&before.findings, &o.removed)?);
+    let unmatched_moves = rename::unmatched_moves(&removed, &[added.as_slice(), allowed.as_slice()].concat());
+    let rule_version_changed = version_changes(&pairs, &before.findings, &after.findings);
+    let degraded = before.degraded.iter().map(|d| ("base", d)).chain(after.degraded.iter().map(|d| ("head", d))).collect();
+    Ok(Diff {
+        added,
+        allowed,
+        removed,
+        coverage: pick(&after.findings, &o.coverage)?,
+        unchanged: o.unchanged,
+        trends: group_trends(after, &o.worse, &o.better)?,
+        degraded,
+        renamed_files: renames.count(),
+        renamed_findings: pairs.len() - rule_version_changed.iter().map(|v| v.3).sum::<usize>(),
+        unmatched_moves,
+        rule_version_changed,
+    })
+}
+
+/// The CLI's own set difference, kept only to check the engine's delta against it byte for byte.
+fn compare_set<'a>(before: &'a Eval, after: &'a Eval, renames: &Renames, trend_all: bool) -> Diff<'a> {
     // Coverage-dependent findings (head only) are listed apart: base has no coverage to compare.
     let (coverage, plain): (Vec<_>, Vec<_>) = after.findings.iter().partition(|(_, f)| needs_coverage(&f.rule));
     let mut new: Vec<&Finding> = plain.iter().filter(|(k, _)| !before.findings.contains_key(*k)).map(|(_, f)| *f).collect();
@@ -842,7 +968,13 @@ pub fn run(a: &Args) -> Result<u8, String> {
         eprintln!("pulsar: {name} {} cache={} policy={}ms facts={}ms engine={}ms", &sha[..12], t.cache, t.checkout_ms, t.facts_ms, t.engine_ms);
     }
     let renames = rename::detect(&a.repo, &base, &head)?;
-    let diff = compare(&before, &after, &renames, a.trend);
+    let diff = if std::env::var_os("PULSAR_DELTA_ORACLE").is_some_and(|v| v == "set") {
+        compare_set(&before, &after, &renames, a.trend)
+    } else {
+        let engine = engine::locate()?;
+        let scratch = Scratch::new("engine")?;
+        compare(&before, &after, &renames, a.trend, &|rows, name| delta_engine::run(&engine, rows, &scratch.0, name))?
+    };
     print!("{}", if a.json { render_json(&diff, &after, &base, &head) } else { render_text(&diff, &after, &base, &head) });
     Ok(if diff.added.is_empty() { 0 } else { 1 })
 }

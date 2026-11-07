@@ -3,6 +3,7 @@ mod catalog;
 mod compfind;
 mod coverage;
 mod delta;
+mod delta_engine;
 mod driver;
 mod engine;
 mod explain;

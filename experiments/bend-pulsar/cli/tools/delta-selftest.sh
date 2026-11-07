@@ -4,6 +4,12 @@
 # Usage: bash tools/delta-selftest.sh [pulsar-binary]   (needs PULSAR_ENGINE or an engine beside the binary)
 set -uo pipefail
 BIN=$(cd "$(dirname "${1:-$(dirname "$0")/../target/release/pulsar}")" && pwd)/$(basename "${1:-pulsar}")
+# The scripted engines below stand in for one section each; the delta section (a `KD` row) always
+# runs on the real engine, which they hand such a facts file to.
+REAL=${PULSAR_ENGINE:-}
+for d in "$(dirname "$BIN")"/.. "$(dirname "$BIN")"/../.. "$(dirname "$BIN")"/../../..; do
+  [ -z "$REAL" ] && [ -x "$d/engine/pulsar-engine" ] && REAL=$(cd "$d/engine" && pwd)/pulsar-engine
+done
 T=$(mktemp -d); K=$(mktemp -d); export PULSAR_CACHE_DIR="$K"; trap 'rm -rf "$T" "$K"' EXIT; cd "$T"
 git init -q . && git config user.email t@t && git config user.name t
 echo 'export const a = 1' > a.ts
@@ -165,7 +171,7 @@ grep -q '^+ effect.unprovided-service [0-9a-f]* app.ts:[0-9]* MailerLive  Mailer
 # CLI cannot resolve is reported as degraded input, never dropped silently.
 FE=$(mktemp -d)
 printf '#!/bin/sh\necho "pulsar-findings 0"\necho "S 0 0 0"\n' > "$FE/nocert"
-printf '#!/bin/sh\necho "pulsar-findings 0"\necho "CERT 1"\necho "S 0 0 0"\necho "pulsar-classctx 0"\necho "RCX 99 0 0 0"\necho "RCXS 1"\n' > "$FE/badrcx"
+printf '#!/bin/sh\ngrep -q "^KD " "$1" && exec '"'"$REAL"'"' "$1"\necho "pulsar-findings 0"\necho "CERT 1"\necho "S 0 0 0"\necho "pulsar-classctx 0"\necho "RCX 99 0 0 0"\necho "RCXS 1"\n' > "$FE/badrcx"
 chmod +x "$FE/nocert" "$FE/badrcx"
 PULSAR_ENGINE="$FE/nocert" "$BIN" delta HEAD~1 HEAD --repo "$E" --no-cache >/dev/null 2>"$FE/err"; code=$?
 [ "$code" == 2 ] && grep -q "certificate line is missing" "$FE/err" && echo "ok   a missing CERT line refuses (exit 2)" || { echo "FAIL missing CERT (exit $code)"; fail=1; }
@@ -183,7 +189,7 @@ Q=$(mktemp -d); trap 'rm -rf "$T" "$K" "$D" "$E" "$R" "$Q"' EXIT
   git add -A && git commit -qm "a schema and an unindexed filter" )
 "$BIN" facts "$Q" -o "$Q/../q.facts" >/dev/null 2>&1; grep -q '^SR 4$' "$Q/../q.facts" && echo "ok   an enabled SQL rule becomes an SR row" || { echo "FAIL SR row"; fail=1; }
 rm -f "$Q/../q.facts"*
-printf '#!/bin/sh\necho "pulsar-findings 0"\necho "CERT 1"\necho "S 0 0 0"\ngrep -q "^SR " "$1" || exit 0\necho "pulsar-sql 0"\necho "SQD 1 0 1"\necho "SQX sql.unindexed-filter site 0 2 1 0"\necho "SQS 1"\n' > "$Q/../fake-sql"; chmod +x "$Q/../fake-sql"
+printf '#!/bin/sh\ngrep -q "^KD " "$1" && exec '"'"$REAL"'"' "$1"\necho "pulsar-findings 0"\necho "CERT 1"\necho "S 0 0 0"\ngrep -q "^SR " "$1" || exit 0\necho "pulsar-sql 0"\necho "SQD 1 0 1"\necho "SQX sql.unindexed-filter site 0 2 1 0"\necho "SQS 1"\n' > "$Q/../fake-sql"; chmod +x "$Q/../fake-sql"
 out=$(PULSAR_ENGINE="$Q/../fake-sql" "$BIN" delta HEAD~1 HEAD --repo "$Q" --no-cache 2>/dev/null)
 grep -q '^+ sql.unindexed-filter [0-9a-f]* q.sql:2 -  unindexed-filter on users.name (1 site)' <<<"$out" && echo "ok   an SQX line is a finding named by file, table and column" || { echo "FAIL SQL finding"; echo "$out" | head -4; fail=1; }
 rm -f "$Q/../fake-sql"
