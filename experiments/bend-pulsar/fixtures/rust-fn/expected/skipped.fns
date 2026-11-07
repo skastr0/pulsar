@@ -1,1 +1,3 @@
 1	4	-	0	macro_hides_if
+7	9	-	0	test_only_helper
+14	16	-	0	tests>runs_only_under_test

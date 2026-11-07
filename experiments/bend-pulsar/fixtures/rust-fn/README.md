@@ -64,39 +64,32 @@ span and produce no `CV`, which is exactly what "no data" has to mean here.
 `bash regen.sh` regenerates the lcov and prints the first `SF:` line; the expectation itself is
 hand-checked, never regenerated.
 
-## Pending change: test functions become `FN` with a `TF` row
+## Test functions and anonymous ordinals (settled)
 
-Today `expected/lib.fns` and `expected/skipped.fns` have no rows for the `#[cfg(test)]`
-functions, because #657's first cut skips them. The agreed direction (lead, 2026-11-07) is to
-emit them like any other function and mark them test code with a new `TF fn` relation, so
-group H can name which test touched which function and metric detectors can skip them by rule.
+pulsar-rs's emitter now agrees with this fixture on every row, after three flips on the
+fixture side, all made here:
 
-When that lands, these change and nothing else:
+- `#[cfg(test)]` items are ordinary `FN` rows flagged `TF`, so `expected/lib.fns` has the seven
+  `#[test]` functions chained `tests>branch_arms` and `expected/skipped.fns` has
+  `test_only_helper` and `tests>runs_only_under_test`. `expected/lib.ct` stays empty: a test
+  body is one assertion macro per line, and macro tokens are not control nodes.
+- Anonymous ordinals are 0-based and agree with the TS lane: `doubled>#0`,
+  `nested_closures>#0>#0`.
+- A trait impl keeps the trait's generics in the container name so two impls cannot collide:
+  `Meters as From<f64>>from` and `Meters as From<i32>>from`, while the self type drops them.
 
-- `expected/lib.fns` gains seven rows, one per `#[test]` item in `src/lib.rs`, chained
-  `tests>branch_arms` and so on, and `expected/lib.ct` stays empty: a test body has no
-  branches, loops or early exits, only calls inside assertions (macro argument tokens, so
-  nothing is reported).
-- `expected/skipped.fns` gains two rows, `test_only_helper` and `runs_only_under_test`, the
-  latter chained `tests>runs_only_under_test`.
-- `fns.tsv`, `paths.txt` unchanged; global ids shift for the functions after `src/lib.rs`.
-- `expected-cv.txt` gains those functions, and the coverage test's `unassigned == 51` becomes
-  `0`: the 45 test-module lines and the 6 in `skipped.rs` then belong to test functions.
+With test functions in `fns.tsv`, every line llvm-cov instruments belongs to a function, so
+`expected-cv.txt` has 39 rows and the coverage test asserts `unassigned == 0` — the earlier
+51-line assertion was the no-FN-for-tests rule, and it is gone with the rule.
 
-The coverage expectation is safe until then: the test maps against the hand-written `fns.tsv`
-in this directory, not against whatever the adapter emits, so it cannot silently drift. It
-changes when the fixture switches to a real `.fns` file, in the same commit that flips the
-numbers, with the test module kept in `src/lib.rs` for exactly that purpose.
+## Settled decisions encoded in these expected files
 
-## Assumptions to confirm with pulsar-rs
-
-These are encoded in the expected files and were not stated in FACTS.md when the fixture was
-written. Each is one line to change if the adapter decides otherwise.
+pulsar-rs confirmed all of these on 2026-11-07; each was uncertain when the fixture was first
+written, and the two "extra pins" they asked for are in `branch.rs` and `loops.rs`.
 
 1. **Wildcard flag position.** A `match` with `_` emits the kind-9 flag as a child of the
    multi-branch, in source order at its wildcard clause, so `match n { 0, 1, _ }` is arms
-   2, 3, 4 then flag 5. If the flag is meant to follow all arms instead, `match_expr.ct` rows
-   for functions 1 and 2 change by one id.
+   2, 3, 4 then flag 5.
 2. **Closure boundary parent.** Each kind-8 leaf sits at `parent = 0`, because every closure
    in `closures.rs` is declared in a function body rather than inside an arm or loop.
 3. **Closure spans.** A closure's span starts at its `|` and ends at its last body token, so

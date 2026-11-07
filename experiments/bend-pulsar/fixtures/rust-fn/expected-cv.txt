@@ -4,17 +4,26 @@ src/branch.rs	nested	6/7
 src/branch.rs	let_else	0/5
 src/branch.rs	both	0/5
 src/closures.rs	doubled	2/2
-src/closures.rs	doubled>#1	1/1
+src/closures.rs	doubled>#0	1/1
 src/closures.rs	adder	2/2
-src/closures.rs	adder>#1	1/1
+src/closures.rs	adder>#0	1/1
 src/closures.rs	nested_closures	3/3
-src/closures.rs	nested_closures>#1	3/3
-src/closures.rs	nested_closures>#1>#1	1/1
+src/closures.rs	nested_closures>#0	3/3
+src/closures.rs	nested_closures>#0>#0	1/1
 src/impls.rs	Counter>new	3/3
 src/impls.rs	Counter>bump	4/4
 src/impls.rs	Counter as Reset>reset	3/3
 src/impls.rs	fetch_len	0/3
 src/impls.rs	generic_first	3/3
+src/impls.rs	Meters as From<f64>>from	0/3
+src/impls.rs	Meters as From<i32>>from	0/3
+src/lib.rs	tests>branch_arms	8/8
+src/lib.rs	tests>loops_terminate	7/7
+src/lib.rs	tests>matches_pick_arms	8/8
+src/lib.rs	tests>try_ops_succeed_and_fail	7/7
+src/lib.rs	tests>closures_capture	5/5
+src/lib.rs	tests>impls_mutate	7/7
+src/lib.rs	tests>macro_fixture_runs	3/3
 src/loops.rs	sum_to	9/9
 src/loops.rs	find_first_even	7/7
 src/loops.rs	first_over	10/10
@@ -23,6 +32,8 @@ src/match_expr.rs	area	5/5
 src/match_expr.rs	label	5/6
 src/match_expr.rs	guarded	5/6
 src/skipped.rs	macro_hides_if	4/4
+src/skipped.rs	test_only_helper	3/3
+src/skipped.rs	tests>runs_only_under_test	3/3
 src/try_ops.rs	first_number	9/9
 src/try_ops.rs	second_number	6/6
 src/try_ops.rs	checked_div	6/6

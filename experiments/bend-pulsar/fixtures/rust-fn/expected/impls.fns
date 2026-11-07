@@ -3,3 +3,5 @@
 21	23	-	3	Counter as Reset>reset
 26	28	-	0	fetch_len
 30	32	-	0	generic_first
+37	39	-	3	Meters as From<f64>>from
+43	45	-	3	Meters as From<i32>>from

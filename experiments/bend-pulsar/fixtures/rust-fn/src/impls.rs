@@ -30,3 +30,17 @@ pub async fn fetch_len(_url: &str) -> usize {
 pub fn generic_first<T: Clone>(items: &[T]) -> Option<T> {
     items.first().cloned()
 }
+
+pub struct Meters(pub f64);
+
+impl From<f64> for Meters {
+    fn from(value: f64) -> Self {
+        Meters(value)
+    }
+}
+
+impl From<i32> for Meters {
+    fn from(value: i32) -> Self {
+        Meters(value as f64)
+    }
+}

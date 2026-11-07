@@ -296,9 +296,9 @@ mod tests {
         let dir = fixture("rust-fn");
         let (cv, stats) = ingest_report(&dir, &dir.join("reports/lcov.info"));
         assert_eq!(render(&tables(&dir), &cv), expected(&dir, "expected-cv.txt"));
-        // The 45 lines of the `#[cfg(test)]` module in lib.rs and the 6 inside skipped.rs's
-        // cfg(test) items carry no FN, so they are unassigned, never CV.
-        assert_eq!(stats.unassigned, 51, "test-module lines: {stats:?}");
+        // Test functions are ordinary FN rows with a TF flag (#657), so the lines llvm-cov
+        // instruments in `mod tests` belong to them and nothing is left unassigned.
+        assert_eq!(stats.unassigned, 0, "unassigned lines: {stats:?}");
         assert_eq!(stats.skipped, 0, "every SF: path must normalize: {stats:?}");
     }
 
