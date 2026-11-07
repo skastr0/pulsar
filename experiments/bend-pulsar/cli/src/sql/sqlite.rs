@@ -580,6 +580,15 @@ impl<'b> Fe<'b> {
     }
 
     fn compare(&mut self, l: &Expr, op: Operator, r: &Expr, sc: usize) {
+        // `x IS NULL` and `x IS NOT NULL` are null tests, not equalities.
+        if matches!(op, Operator::Is | Operator::IsNot) {
+            if is_null(r) {
+                return self.side(l, R_NULL, sc);
+            }
+            if is_null(l) {
+                return self.side(r, R_NULL, sc);
+            }
+        }
         let role = match op {
             Operator::Equals | Operator::Is => R_EQ,
             Operator::Greater | Operator::GreaterEquals | Operator::Less | Operator::LessEquals => R_RANGE,
@@ -643,4 +652,8 @@ fn child_exprs<'a, 'b>(e: &'a Expr<'b>) -> Vec<&'a Expr<'b>> {
         Expr::Parenthesized(v) => v.iter().collect(),
         _ => Vec::new(),
     }
+}
+
+fn is_null(e: &Expr) -> bool {
+    matches!(e, Expr::Literal(Literal::Null))
 }

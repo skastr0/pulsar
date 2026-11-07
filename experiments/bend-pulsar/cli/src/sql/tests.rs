@@ -269,3 +269,23 @@ fn postgres_dml_failures_and_dollar_quotes() {
     assert_eq!(o.qs.iter().filter(|r| r[5] & Q_FAILED == 0).map(|r| r[4]).collect::<Vec<_>>(), [K_INSERT, K_UPDATE, K_DELETE]);
     assert_eq!(uses(&o, 0), ["t.a:11", "t.b:10", "t.b:11"]);
 }
+
+#[test]
+fn null_tests_are_null_roles_in_both_spellings_and_both_dialects() {
+    let (o, _) = run("CREATE TABLE t (a INT, b INT);\nSELECT a FROM t WHERE b IS NULL;\nSELECT a FROM t WHERE b IS NOT NULL;\nSELECT a FROM t WHERE b ISNULL AND a NOTNULL;\nSELECT a FROM t WHERE b IS a;");
+    assert_eq!(uses(&o, 0), ["t.a:8", "t.b:5"]);
+    assert_eq!(uses(&o, 1), ["t.a:8", "t.b:5"]);
+    assert_eq!(uses(&o, 2), ["t.a:5", "t.a:8", "t.b:5"]);
+    // `IS` with a non-NULL operand is null-safe equality.
+    assert_eq!(uses(&o, 3), ["t.a:1", "t.a:8", "t.b:1"]);
+    let (p, _) = run_pg("CREATE TABLE t (a int, b int);\nSELECT a FROM t WHERE b IS NULL;\nSELECT a FROM t WHERE b IS NOT NULL;");
+    assert_eq!(uses(&p, 0), uses(&o, 0));
+    assert_eq!(uses(&p, 1), uses(&o, 1));
+}
+
+#[test]
+fn a_column_of_a_cte_or_derived_table_has_no_table() {
+    let (o, _) = run("CREATE TABLE t (a INT);\nWITH r AS (SELECT a FROM t) SELECT r.a FROM r WHERE r.a = 1;");
+    let u = uses(&o, 0);
+    assert!(u.contains(&"-.a:8".to_string()) && u.contains(&"-.a:1".to_string()), "{u:?}");
+}
