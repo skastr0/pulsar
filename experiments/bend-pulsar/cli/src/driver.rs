@@ -236,7 +236,7 @@ fn analyze_ts(
     if files.is_empty() {
         return Ok(Default::default());
     }
-    let a = lang::ts::analyze(root, files, tracked)?;
+    let a = lang::ts::analyze(root, files, tracked, &|_| 0)?;
     st.fatal += a.stats.fatal;
     st.unreadable += a.stats.unreadable;
     push_edges(w, &a.i, &a.u, st);

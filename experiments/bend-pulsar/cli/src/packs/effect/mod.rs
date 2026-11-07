@@ -1130,7 +1130,7 @@ mod tests {
     }
 
     fn run(root: &Path, ts: &[(u32, String)], tracked: &[String]) -> crate::lang::ts::Analysis {
-        crate::lang::ts::analyze(root, ts, tracked).unwrap()
+        crate::lang::ts::analyze(root, ts, tracked, &|_| 0).unwrap()
     }
 
     const DB: &str = r#"import { Context, Effect, Layer } from "effect"

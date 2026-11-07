@@ -106,13 +106,22 @@ type Settled = std::collections::HashMap<u32, std::collections::HashMap<String, 
 
 /// Analyse the TypeScript files of a tree. `files` is `(global file id, repo-relative path)` for
 /// every file this lane owns; `tracked` is every tracked path (for workspace package discovery).
-pub fn analyze(root: &Path, files: &[(u32, String)], tracked: &[String]) -> Result<Analysis, String> {
+///
+/// `file_ctx` gives each file's policy `CS.ctx` bits (8 `effect_only`, 16 `boundary`) from its
+/// repo-relative path; they are known at walk time because the walker prunes syntax sites by
+/// them. The test bit is the lane's own (`is_test`), never the policy's.
+pub fn analyze(
+    root: &Path,
+    files: &[(u32, String)],
+    tracked: &[String],
+    file_ctx: &(dyn Fn(&str) -> u8 + Sync),
+) -> Result<Analysis, String> {
     let paths: Vec<String> = files.iter().map(|(_, p)| p.clone()).collect();
     let res = Resolution::new(root, &paths, tracked);
     let (index, catalogs) = builtin::index_for(root, tracked)?;
 
     let effect_on = catalogs.iter().any(|c| c == "effect");
-    let per = parse_files(root, &paths, &res, &index, effect_on);
+    let per = parse_files(root, &paths, &res, &index, effect_on, file_ctx);
     let settled = settle_reexports(root, &paths, &per);
     let mut per = finish_files(per, &settled);
     let edge_stats = {
@@ -174,7 +183,14 @@ fn effect_rows(files: &[(u32, String)], per: &[PerFileOut], res: &Resolution) ->
 }
 
 /// Parse every file in parallel, one AST at a time per thread, and resolve its imports.
-fn parse_files(root: &Path, paths: &[String], res: &Resolution, index: &calls::CatalogIndex, effect_on: bool) -> Vec<PerFile> {
+fn parse_files(
+    root: &Path,
+    paths: &[String],
+    res: &Resolution,
+    index: &calls::CatalogIndex,
+    effect_on: bool,
+    file_ctx: &(dyn Fn(&str) -> u8 + Sync),
+) -> Vec<PerFile> {
     paths
         .par_iter()
         .map_init(Allocator::default, |alloc, rel| {
@@ -186,7 +202,7 @@ fn parse_files(root: &Path, paths: &[String], res: &Resolution, index: &calls::C
             let text = String::from_utf8_lossy(&bytes);
             // One pack hook per file; the pack keeps the file's state and hands it back here.
             let mut hook = effect_on.then(|| crate::packs::effect::Hook::new(index));
-            let mut ex = extract(alloc, rel, &path, &text, index, if is_test(rel) { crate::lang::functions::ctx::TEST } else { 0 }, hook.as_mut().map(|h| h as &mut dyn functions::PackHook));
+            let mut ex = extract(alloc, rel, &path, &text, index, file_ctx(rel) | if is_test(rel) { crate::lang::functions::ctx::TEST } else { 0 }, hook.as_mut().map(|h| h as &mut dyn functions::PackHook));
             let effect = hook.and_then(|h| h.finish(&text));
             prune_external_edges(&mut ex.functions, res, rel);
             let (mut i, mut u) = (Vec::new(), Vec::new());
