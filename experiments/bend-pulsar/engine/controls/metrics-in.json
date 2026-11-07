@@ -1,15 +1,29 @@
 [
  {
   "law": "glue_runs_metrics",
-  "bug": "the glue drops the CT rows",
-  "old": "      In.out(r, cv, chs, M.Metrics.run(r, fns, cts))",
-  "new": "      In.out(r, cv, chs, M.Metrics.run(r, fns, Nil{}))"
+  "bug": "the glue builds trees without the CT rows",
+  "old": "In.out(r, cv, chs, In.ops(cts, om), M.Trees.of(fns, cts))",
+  "new": "In.out(r, cv, chs, In.ops(cts, om), M.Trees.of(fns, Nil{}))"
  },
  {
-  "law": "glue_joins_coverage",
-  "bug": "the glue ignores the CV rows",
-  "old": "      In.comp(r, ms, chs, C.Crap.join(ms, cvs))",
-  "new": "      In.comp(r, ms, chs, C.Crap.join(ms, Nil{}))"
+  "law": "glue_trees",
+  "file": "Metrics.bend",
+  "bug": "Metrics.run builds trees without the CT rows",
+  "old": "  Metrics.run2(Rules.cap(r), Trees.of(fns, cts))",
+  "new": "  Metrics.run2(Rules.cap(r), Trees.of(fns, Nil{}))"
+ },
+ {
+  "law": "glue_measure_is_run",
+  "file": "Metrics.bend",
+  "bug": "Metrics.run2 measures nothing",
+  "old": "      Some{Metrics.measure_all(fs, cap)}",
+  "new": "      Some{Nil{}}"
+ },
+ {
+  "law": "glue_measures",
+  "bug": "cognitive runs at threshold 16",
+  "old": "G.Cognitive.lines(G.Cog.default_thr(), fts, ops)",
+  "new": "G.Cognitive.lines(16n, fts, ops)"
  },
  {
   "law": "glue_prints_lines",
@@ -19,15 +33,21 @@
  },
  {
   "law": "glue_refuses",
-  "bug": "refused Metrics facts print an empty run",
-  "old": "    case _ _:\n      None{}\n\ndef In.go(",
-  "new": "    case Some{cvs} None{}:\n      Some{Nil{}}\n    case _ _:\n      None{}\n\ndef In.go("
+  "bug": "refused trees print an empty run",
+  "old": "    case _ _ _:\n      None{}",
+  "new": "    case Some{cvs} Some{ops} None{}:\n      Some{Nil{}}\n    case _ _ _:\n      None{}"
  },
  {
   "law": "glue_refuses_cv",
   "bug": "malformed CV rows read as no coverage",
-  "old": "    case Some{cvs} Some{+ms}:\n      In.comp(r, ms, chs, C.Crap.join(ms, cvs))\n    case _ _:",
-  "new": "    case Some{cvs} Some{+ms}:\n      In.comp(r, ms, chs, C.Crap.join(ms, cvs))\n    case None{} Some{+ms}:\n      In.comp(r, ms, chs, C.Crap.join(ms, Nil{}))\n    case _ _:"
+  "old": "    case _ _ _:\n      None{}",
+  "new": "    case None{} Some{ops} Some{fts}:\n      In.meas(r, Nil{}, chs, ops, fts)\n    case _ _ _:\n      None{}"
+ },
+ {
+  "law": "glue_refuses_co",
+  "bug": "malformed CO rows read as no operators",
+  "old": "    case _ _ _:\n      None{}",
+  "new": "    case Some{cvs} None{} Some{fts}:\n      In.meas(r, cvs, chs, Nil{}, fts)\n    case _ _ _:\n      None{}"
  },
  {
   "law": "glue_refuses_join",

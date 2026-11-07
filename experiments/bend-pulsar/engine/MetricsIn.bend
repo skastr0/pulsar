@@ -1,12 +1,14 @@
 # MetricsIn.bend - FN and CT rows (Rows.bend) to Metrics' facts and output lines.
 #
 #   MetricsIn.lines(r, rows)   Some{lines}, or None when an FN or CT row does not
-#                              have exactly 4 fields, a TF row 1 field, a CV row 3,
-#                              a TF or CV id is not a function in id order,
+#                              have exactly 4 fields, a TF row 1 field, a CV or CO row 3,
+#                              a TF or CV id is not a function in id order, a CO row
+#                              names no kind-6 CT node in order,
 #                              Metrics.run refuses the facts (see Metrics.bend), or
 #                              Crap.join refuses the CV rows (see Crap.bend)
 #
-# The lines are Metrics' FM and FX lines, then core.crap findings (Crap.bend, from
+# The lines are Metrics' FM and FX lines, then core.cognitive findings (Cognitive.bend,
+# from the CT tree and the CO operators), then core.crap findings (Crap.bend, from
 # the CV rows), then core.hotspot and core.risky-change (Hotspot.bend, from the
 # churn of A/C/CFN rows, Churn.bend). A function with a TF row is a test function:
 # it gets its FM line, no finding.
@@ -20,6 +22,7 @@ import ./Metrics.bend as M
 import ./Crap.bend as C
 import ./Hotspot.bend as H
 import ./Churn.bend as Ch
+import ./Cognitive.bend as G
 
 # Tags packed big-endian, as Rows.bend does: "FN" = 70*256+78, "CT" = 67*256+84.
 def In.tag_fn() -> U32:
@@ -179,30 +182,128 @@ def In.cvs(rows: List<&2, R.Row>) -> Maybe<&2, List<&2, C.Cv>>:
     case Con{R.Row{tag, fs}, t}:
       In.cv_pick(U32.is_eq(tag, In.tag_cv()), fs, In.cvs(t))
 
-# Metrics' lines, then CRAP's, then the composites over both sets of findings.
-def In.all(+r: M.Rules, +ms: List<&2, M.FnM>, +chs: List<&2, H.Ch>, +cs: List<&2, C.CrM>) -> List<&2, String>:
-  List.append(&2, String, M.Metrics.lines(r, ms), List.append(&2, String, C.Crap.lines(C.Crap.default_thr(), cs), H.Hotspot.lines(H.Hs.default_thr(), chs, M.Metrics.findings(r, ms), C.Crap.findings(C.Crap.default_thr(), cs))))
+# ---- CO: the operator of each short-circuit node ----------------------------------------------
+type Co is Data:
+  Co{fn: U32, node: U32, op: U32}
 
-def In.comp(+r: M.Rules, +ms: List<&2, M.FnM>, +chs: List<&2, H.Ch>, j: Maybe<&2, List<&2, C.Cr>>) -> Maybe<&2, List<&2, String>>:
+# "CO" = 67*256+79.
+def In.tag_co() -> U32:
+  17231
+
+def In.cons_co(x: Co, m: Maybe<&2, List<&2, Co>>) -> Maybe<&2, List<&2, Co>>:
+  match m:
+    case None{}:
+      None{}
+    case Some{l}:
+      Some{Con{x, l}}
+
+def In.co3(fs: List<&2, U32>, rest: Maybe<&2, List<&2, Co>>) -> Maybe<&2, List<&2, Co>>:
+  match fs:
+    case Con{a, Con{b, Con{c, Nil{}}}}:
+      In.cons_co(Co{a, b, c}, rest)
+    case _:
+      None{}
+
+def In.co_pick(hit: Bool, fs: List<&2, U32>, rest: Maybe<&2, List<&2, Co>>) -> Maybe<&2, List<&2, Co>>:
+  match hit:
+    case True{}:
+      In.co3(fs, rest)
+    case False{}:
+      rest
+
+# The CO rows, in file order (FACTS.md: sorted by (fn, node)).
+def In.cos(rows: List<&2, R.Row>) -> Maybe<&2, List<&2, Co>>:
+  match rows:
+    case Nil{}:
+      Some{Nil{}}
+    case Con{R.Row{tag, fs}, t}:
+      In.co_pick(U32.is_eq(tag, In.tag_co()), fs, In.cos(t))
+
+def In.op(+op: U32) -> G.Op:
+  match op:
+    case 1:
+      G.OAnd{}
+    case 2:
+      G.OOr{}
+    case _:
+      G.ONone{}
+
+def In.op_pick(hit: Bool, +op: U32) -> G.Op:
+  match hit:
+    case True{}:
+      In.op(op)
+    case False{}:
+      G.ONone{}
+
+def In.co_rest(hit: Bool, x: Co, xs: List<&2, Co>) -> List<&2, Co>:
+  match hit:
+    case True{}:
+      xs
+    case False{}:
+      Con{x, xs}
+
+def In.cons_op(sc: Bool, o: G.Op, m: Maybe<&2, List<&2, G.Op>>) -> Maybe<&2, List<&2, G.Op>>:
+  match sc m:
+    case True{} Some{l}:
+      Some{Con{o, l}}
+    case False{} Some{l}:
+      Some{l}
+    case _ None{}:
+      None{}
+
+# One operator per kind-6 CT row, in CT order: the CO row at the same (fn, node), or
+# ONone when there is none. A CO row left over names no kind-6 node, or is out of
+# order: refuse.
+def In.align(cts: List<&2, M.CtRow>, cos: List<&2, Co>) -> Maybe<&2, List<&2, G.Op>>:
+  match cts cos:
+    case Nil{} Nil{}:
+      Some{Nil{}}
+    case Nil{} Con{x, xs}:
+      None{}
+    case Con{M.CtRow{fn, node, p, +kind}, t} Nil{}:
+      In.cons_op(U32.is_eq(kind, 6), G.ONone{}, In.align(t, Nil{}))
+    case Con{M.CtRow{+fn, +node, p, +kind}, t} Con{Co{+f, +n, +op}, xs}:
+      +hit = Bool.and(U32.is_eq(kind, 6), Bool.and(U32.is_eq(f, fn), U32.is_eq(n, node)))
+      In.cons_op(U32.is_eq(kind, 6), In.op_pick(hit, op), In.align(t, In.co_rest(hit, Co{f, n, op}, xs)))
+
+def In.ops(+cts: List<&2, M.CtRow>, om: Maybe<&2, List<&2, Co>>) -> Maybe<&2, List<&2, G.Op>>:
+  match om:
+    case None{}:
+      None{}
+    case Some{cos}:
+      In.align(cts, cos)
+
+# ---- the joined output ------------------------------------------------------------------------
+# Metrics' lines, then cognitive's, then CRAP's, then the composites over Metrics' and
+# CRAP's findings.
+def In.all(+r: M.Rules, +ms: List<&2, M.FnM>, gl: List<&2, String>, +chs: List<&2, H.Ch>, +cs: List<&2, C.CrM>) -> List<&2, String>:
+  List.append(&2, String, M.Metrics.lines(r, ms), List.append(&2, String, gl, List.append(&2, String, C.Crap.lines(C.Crap.default_thr(), cs), H.Hotspot.lines(H.Hs.default_thr(), chs, M.Metrics.findings(r, ms), C.Crap.findings(C.Crap.default_thr(), cs)))))
+
+def In.comp(+r: M.Rules, +ms: List<&2, M.FnM>, gl: List<&2, String>, +chs: List<&2, H.Ch>, j: Maybe<&2, List<&2, C.Cr>>) -> Maybe<&2, List<&2, String>>:
   match j:
     case None{}:
       None{}
     case Some{xs}:
-      Some{In.all(r, ms, chs, C.Crap.measure_all(xs))}
+      Some{In.all(r, ms, gl, chs, C.Crap.measure_all(xs))}
 
-def In.out(+r: M.Rules, cv: Maybe<&2, List<&2, C.Cv>>, +chs: List<&2, H.Ch>, m: Maybe<&2, List<&2, M.FnM>>) -> Maybe<&2, List<&2, String>>:
-  match cv m:
-    case Some{cvs} Some{+ms}:
-      In.comp(r, ms, chs, C.Crap.join(ms, cvs))
-    case _ _:
+# The trees measured once by Metrics and once by Cognitive, then joined with the CV rows.
+def In.meas(+r: M.Rules, cvs: List<&2, C.Cv>, +chs: List<&2, H.Ch>, +ops: List<&2, G.Op>, +fts: List<&2, M.FnT>) -> Maybe<&2, List<&2, String>>:
+  +ms = M.Metrics.measure_all(fts, M.Rules.cap(r))
+  In.comp(r, ms, G.Cognitive.lines(G.Cog.default_thr(), fts, ops), chs, C.Crap.join(ms, cvs))
+
+def In.out(+r: M.Rules, cv: Maybe<&2, List<&2, C.Cv>>, +chs: List<&2, H.Ch>, om: Maybe<&2, List<&2, G.Op>>, m: Maybe<&2, List<&2, M.FnT>>) -> Maybe<&2, List<&2, String>>:
+  match cv om m:
+    case Some{cvs} Some{ops} Some{fts}:
+      In.meas(r, cvs, chs, ops, fts)
+    case _ _ _:
       None{}
 
-def In.go(+r: M.Rules, cv: Maybe<&2, List<&2, C.Cv>>, +chs: List<&2, H.Ch>, fm: Maybe<&2, List<&2, M.Fn>>, cm: Maybe<&2, List<&2, M.CtRow>>) -> Maybe<&2, List<&2, String>>:
+def In.go(+r: M.Rules, cv: Maybe<&2, List<&2, C.Cv>>, +chs: List<&2, H.Ch>, om: Maybe<&2, List<&2, Co>>, fm: Maybe<&2, List<&2, M.Fn>>, cm: Maybe<&2, List<&2, M.CtRow>>) -> Maybe<&2, List<&2, String>>:
   match fm cm:
-    case Some{fns} Some{cts}:
-      In.out(r, cv, chs, M.Metrics.run(r, fns, cts))
+    case Some{fns} Some{+cts}:
+      In.out(r, cv, chs, In.ops(cts, om), M.Trees.of(fns, cts))
     case _ _:
       None{}
 
 def MetricsIn.lines(+r: M.Rules, +rows: List<&2, R.Row>) -> Maybe<&2, List<&2, String>>:
-  In.go(r, In.cvs(rows), Ch.Churn.of(rows), In.marked(In.fns(rows), In.tfs(rows)), In.cts(rows))
+  In.go(r, In.cvs(rows), Ch.Churn.of(rows), In.cos(rows), In.marked(In.fns(rows), In.tfs(rows)), In.cts(rows))

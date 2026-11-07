@@ -4,7 +4,9 @@
 # is not a function. Then the full chain with coverage and history: fn 0 at 0% coverage
 # (CRAP 4^2+4 = 20, no core.crap at 30) touched by 3 human commits (hotspot over
 # its cyclomatic finding), a bot commit that does not count, and None for a CV row
-# with covered > coverable and for a CV id that is not a function.
+# with covered > coverable and for a CV id that is not a function. Then CO: the && of
+# fn 0 (node 2) decodes and changes nothing printed (cognitive 4, under 15); None for a
+# CO row naming node 3, an arm, and for a duplicate CO row.
 import Base
 import ./Rows.bend as R
 import ./Metrics.bend as M
@@ -33,5 +35,8 @@ def T.hist() -> List<&2, R.Row>:
 def T.cv(+a: U32, +b: U32, +c: U32) -> R.Row:
   R.Row{17238, [a, b, c]}
 
+def T.co(+a: U32, +b: U32, +c: U32) -> R.Row:
+  R.Row{17231, [a, b, c]}
+
 def main() -> List<&2, Maybe<&2, List<&2, String>>>:
-  [I.MetricsIn.lines(T.low(), T.rows()), I.MetricsIn.lines(T.low(), List.append(&2, R.Row, T.rows(), [T.tf(0)])), I.MetricsIn.lines(M.Metrics.defaults(), [T.fn(0, 0, 4294967295, 1), R.Row{17236, [0, 1, 0]}]), I.MetricsIn.lines(M.Metrics.defaults(), [T.fn(0, 0, 4294967295, 1), T.tf(5)]), I.MetricsIn.lines(T.low(), List.append(&2, R.Row, T.rows(), Con{T.cv(0, 0, 10), T.hist()})), I.MetricsIn.lines(T.low(), List.append(&2, R.Row, T.rows(), [T.cv(0, 11, 10)])), I.MetricsIn.lines(T.low(), List.append(&2, R.Row, T.rows(), [T.cv(2, 1, 10)]))]
+  [I.MetricsIn.lines(T.low(), T.rows()), I.MetricsIn.lines(T.low(), List.append(&2, R.Row, T.rows(), [T.tf(0)])), I.MetricsIn.lines(M.Metrics.defaults(), [T.fn(0, 0, 4294967295, 1), R.Row{17236, [0, 1, 0]}]), I.MetricsIn.lines(M.Metrics.defaults(), [T.fn(0, 0, 4294967295, 1), T.tf(5)]), I.MetricsIn.lines(T.low(), List.append(&2, R.Row, T.rows(), Con{T.cv(0, 0, 10), T.hist()})), I.MetricsIn.lines(T.low(), List.append(&2, R.Row, T.rows(), [T.cv(0, 11, 10)])), I.MetricsIn.lines(T.low(), List.append(&2, R.Row, T.rows(), [T.cv(2, 1, 10)])), I.MetricsIn.lines(T.low(), List.append(&2, R.Row, T.rows(), [T.co(0, 2, 1)])), I.MetricsIn.lines(T.low(), List.append(&2, R.Row, T.rows(), [T.co(0, 3, 1)])), I.MetricsIn.lines(T.low(), List.append(&2, R.Row, T.rows(), [T.co(0, 2, 1), T.co(0, 2, 2)]))]

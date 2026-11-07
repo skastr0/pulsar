@@ -75,8 +75,28 @@ A function with a `TF` row still gets its `FM` line, but no `FX`. Invalid FN/CT/
 make the engine refuse the run and print no `FM` lines. Invalid means a wrong field count,
 a tree the CT rules reject, or a `TF` id that is not a function, or is out of order.
 
+**Cognitive complexity** (`engine/Cognitive.bend`, rule `core.cognitive`, default 15, strictly greater).
+It follows the SonarSource white paper (G. Ann Campbell) from `CT` and `CO`:
+- +1 + level for a branch, a multi-branch (once, whatever its arms), a loop and each catch;
+- +1 and no level for an `else if`;
+- +1 per run of the same `&&` or `||` among sibling short-circuits.
+
+The level rises inside an arm, a loop and a catch; a try body and a finally keep it.
+Where `CT` cannot tell what the paper needs, the count leans low, so it never exceeds the
+paper's count:
+- `else` adds nothing (CT cannot tell `if/else` from a ternary);
+- `??`, the assignment operators, recursion and labelled jumps add nothing;
+- a nested function counts in its own tree;
+- a missing `CO` row reads as an operator that adds nothing.
+
+A `CO` row that names no kind-6 node, or is out of order, refuses the run. The evidence is
+weak (`research/cognitive-complexity.md`), so the CLI shows the rule only when `.pulsar/policy.toml`
+enables it. `Cognitive-LAWS.bend` proves the increments above for the shipped `Cog.seq`, and that
+findings are sound and complete. Its `FX` lines follow the Metrics ones:
+`FX core.cognitive <fn> <cognitive> <thr>`.
+
 **CRAP and composites** (`engine/Crap.bend`, `engine/Hotspot.bend`, wired in `engine/MetricsIn.bend`).
-After the Metrics `FX` lines come the `core.crap` findings, then `core.hotspot`, then `core.risky-change`,
+After the Metrics and cognitive `FX` lines come the `core.crap` findings, then `core.hotspot`, then `core.risky-change`,
 each in function-id order. Each line carries an evidence tail of `key=value` tokens that names its input
 facts. A reader that takes the first four fields only stays correct.
 
