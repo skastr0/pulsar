@@ -273,6 +273,34 @@ With the type lane on, `LQ` and `US` become exact: they come from the requiremen
 | `LHUB s k a b` | service s has fan-in k = a `LQ` layers + b `US` functions that are no layer's constructor, with k ≥ the threshold | effect.hub-service |
 | `LS nl ns edges cycles unp dups hubs hub_min` | summary; `hub_min` is the threshold in force (default 10) | |
 
+### SQL (schema and queries, SQLite first)
+
+Written by the SQL lane (`cli/src/sql/`). SQL text comes from `.sql` files, from `sql` tagged templates and from string literals passed to a query-class call. It is parsed in the adapter with a SQL parser per dialect (SQLite first: `sqlite3-parser`, `research/sql-parser.md`); placeholders stay parameters. Identifiers are lower-cased (ASCII) and interned: a **name id** is an index into the sorted list of every table, column and index name in the run, shown in the `.sqlnames` side table (one name per line, id order). Tables and columns of one run therefore compare by id. A name with no `DT`/`DC` row is a name the schema does not define.
+
+Schema facts describe the **final state** after replaying the DDL (`CREATE`, `ALTER TABLE .. ADD/RENAME/DROP COLUMN`, `DROP`) in file-id order, statement order within a file. The `.sql` files of a migration folder replay in path order, which is the usual numbering.
+
+| Tag | Fields | Meaning |
+|---|---|---|
+| `DS` | `ddl_ok ddl_skipped` | Header: DDL statements applied, and DDL statements the lane could not parse or does not model. The schema is **complete** only when `ddl_skipped` is 0; detectors that need a complete schema say so when it is not. |
+| `DT` | `table file flags` | Table, view or virtual table `table` (a name id), defined last in `file`. `flags`: 1 = `WITHOUT ROWID`, 2 = `STRICT`, 4 = virtual table, 8 = view. |
+| `DC` | `table col pos flags` | Column `col` (a name id) of `table`, at 0-based position `pos`. `flags`: 1 = member of the primary key, 2 = `NOT NULL`, 4 = alone `UNIQUE`, 8 = generated, 16 = has a default, 32 = rowid alias (a single `INTEGER PRIMARY KEY` column of a rowid table). |
+| `DP` | `table pos col` | Primary key column number `pos` of `table`, in key order. |
+| `DI` | `index table flags` | Index `index` (ids `0..n-1` in (table, creation) order; names in `.sqlindexes`, `-` when anonymous) on `table`. `flags`: 1 = unique, 2 = partial (has `WHERE`), 4 = has an expression term, 8 = implied by a `PRIMARY KEY` or `UNIQUE` constraint, not declared as an index. |
+| `DX` | `index pos col` | Term `pos` of `index`; `col` is a name id, or `4294967295` for an expression term. |
+| `DF` | `fk table ref_table` | Foreign key `fk` (ids `0..n-1`) from `table` to `ref_table`. |
+| `DG` | `fk pos col ref_col` | Column pair `pos` of `fk`; `ref_col` is `4294967295` when the clause names none (it means the referenced primary key). |
+
+Query facts, one per SQL statement text (a **site**). Site ids are `0..q-1` in (file, line) order; the `.sites` side table has `site path line` per site.
+
+| Tag | Fields | Meaning |
+|---|---|---|
+| `QS` | `site file fn kind flags` | A query site. `fn` is the enclosing function id, or `4294967295` in a `.sql` file. `kind`: 1 = `SELECT`, 2 = `INSERT`, 3 = `UPDATE`, 4 = `DELETE`, 5 = other statement. `flags`: 1 = has `LIMIT`, 2 = `LIMIT` is the literal 1, 4 = `OFFSET` with a literal, 8 = `OFFSET` with a parameter or expression, 16 = `*` in a projection, 32 = `table.*` in a projection, 64 = dynamic text (not a literal or template, so not parsed), 128 = did not parse (a parse failure), 256 = text built from a template with an interpolation that is not a value placeholder. A multi-statement text gives one site per statement. |
+| `QT` | `site table mode` | The statement touches `table` (a name id; CTE names are not tables): `mode` 1 = read, 2 = insert, 3 = update, 4 = delete. |
+| `QU` | `site table col role` | A column use. `table` is the resolved table, or `4294967295` when an unqualified column is ambiguous across several tables. `role`: 1 = equality (`=`, `IS`), 2 = range (`<`, `>`, `<=`, `>=`, `BETWEEN`), 3 = `IN` list, 4 = `LIKE`, 5 = `IS NULL`, 6 = `ORDER BY`, 7 = join condition (`ON` or `USING`), 8 = projection, 9 = `GROUP BY`, 10 = `UPDATE .. SET` target, 11 = `INSERT` column list. |
+| `QD` | `site table col kind` | A predicate that defeats an index on that column: 1 = `LIKE`/`GLOB` with a leading wildcard, 2 = the column wrapped in a function or arithmetic, 3 = `OR` across different columns. |
+
+The adapter reports what the text says. Whether a column is "unindexed", whether an `OFFSET` is a finding or whether the schema is complete enough to call a name "unknown" is decided by the engine's rules over these rows. Dialect and entry points: the lane is selected by the catalog (a `.sql` file extension, the `sql` tag, query-class calls); platform names (SQLite, D1, Durable Objects) appear only as catalog data.
+
 ### Later
 
 - `EX`, `RF`: exports and references, for unused exports and API churn.
