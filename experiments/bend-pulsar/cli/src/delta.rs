@@ -246,6 +246,7 @@ fn to_meta(b: &Built) -> cache::Meta {
         sql_indexes: b.tables.sql_indexes.clone(),
         sql_sites: b.tables.sql_sites.clone(),
         degraded: b.degraded.iter().map(|d| (d.lane.to_string(), d.cause.clone())).collect(),
+        slim: false,
     }
 }
 
@@ -273,10 +274,30 @@ fn from_meta(m: cache::Meta) -> Built {
     }
 }
 
-/// A cached derived entry: its facts go to `facts_path`, its tables come back.
-fn load_entry(cache: &Cache, rel: &str, facts_path: &Path) -> Option<Built> {
+/// The rows `evaluate` re-reads from the facts file after the engine ran: table definitions,
+/// Effect roots and query sites. A slim cache entry keeps only these.
+const SIDE_ROWS: [&str; 3] = ["DT ", "RT ", "QS "];
+
+fn slim_facts(facts: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    for line in facts.split(|b| *b == b'\n') {
+        if SIDE_ROWS.iter().any(|t| line.starts_with(t.as_bytes())) {
+            out.extend_from_slice(line);
+            out.push(b'\n');
+        }
+    }
+    out
+}
+
+/// A cached derived entry: its facts (or, for a slim entry, the side rows) go to `facts_path`, its
+/// tables come back. A slim entry is only usable with the engine output cached at `engine_rel`;
+/// without it the engine would have to run on facts the entry no longer holds, so it is a miss.
+fn load_entry(cache: &Cache, rel: &str, engine_rel: &str, facts_path: &Path) -> Option<Built> {
     let bytes = cache.get(rel)?;
     let (meta, facts) = cache::decode(&bytes)?;
+    if meta.slim && !cache.has(engine_rel) {
+        return None;
+    }
     std::fs::write(facts_path, facts).ok()?;
     Some(from_meta(meta))
 }
@@ -577,7 +598,8 @@ fn evaluate(repo: &Path, sha: &str, tag: &str, coverage: Option<&Path>, discover
     let rel = Cache::derived_rel(sha, org_policy_bytes().as_deref());
     let facts_path = scratch.0.join("facts.txt");
     let t1 = Instant::now();
-    let cached = cache.as_ref().and_then(|c| load_entry(c, &rel, &facts_path));
+    let engine_rel = Cache::engine_rel(&rel, &engine::locate()?);
+    let cached = cache.as_ref().and_then(|c| load_entry(c, &rel, &engine_rel, &facts_path));
     let hit = cached.is_some();
     let built = match cached {
         Some(b) => b,
@@ -585,7 +607,8 @@ fn evaluate(repo: &Path, sha: &str, tag: &str, coverage: Option<&Path>, discover
             let b = build_fresh(repo, sha, &scratch, &tree, tracked, &eff, coverage, discover, &facts_path)?;
             if let Some(c) = &cache {
                 let facts = std::fs::read(&facts_path).map_err(|e| format!("{}: {e}", facts_path.display()))?;
-                if let Err(e) = c.put(&rel, &cache::encode(&to_meta(&b), &facts)) {
+                let meta = cache::Meta { slim: true, ..to_meta(&b) };
+                if let Err(e) = c.put(&rel, &cache::encode(&meta, &slim_facts(&facts))) {
                     eprintln!("pulsar: cache write failed: {e}");
                 }
             }
@@ -1066,5 +1089,34 @@ mod coverage_discovery_tests {
         std::fs::write(repo.join("coverage/lcov.info"), "SF:a.ts\nDA:1,1\nend_of_record\n").unwrap();
         assert!(coverage::has_report(&repo), "has_report sees the repo-root report discovery would read");
         let _ = std::fs::remove_dir_all(&repo);
+    }
+}
+
+#[cfg(test)]
+mod slim_tests {
+    use super::*;
+
+    #[test]
+    fn a_slim_entry_keeps_only_the_rows_a_warm_run_re_reads() {
+        let facts = b"pulsar-facts 0\nN 3\nDT 1 2 0\nFN 1 2 3 4\nRT 5 6 7\nQS 1 2 3 4 5 6\nCT 1 1 1 1 1\nDTX 9\n";
+        let slim = slim_facts(facts);
+        assert_eq!(String::from_utf8(slim).unwrap(), "DT 1 2 0\nRT 5 6 7\nQS 1 2 3 4 5 6\n");
+    }
+
+    #[test]
+    fn a_slim_entry_without_its_engine_output_is_a_miss_and_a_full_entry_is_not() {
+        let root = std::env::temp_dir().join(format!("pulsar-slim-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let c = Cache::open_at_for_tests(&root, "k");
+        let facts = root.join("facts.txt");
+        let slim = cache::Meta { slim: true, ..cache::Meta::default() };
+        c.put("derived/a/entry", &cache::encode(&slim, b"DT 1 2 0\n")).unwrap();
+        c.put("derived/b/entry", &cache::encode(&cache::Meta::default(), b"N 1\n")).unwrap();
+        assert!(load_entry(&c, "derived/a/entry", "derived/a/engine-x", &facts).is_none(), "no engine output: miss");
+        c.put("derived/a/engine-x", b"pulsar-findings 0\n").unwrap();
+        assert!(load_entry(&c, "derived/a/entry", "derived/a/engine-x", &facts).is_some());
+        assert_eq!(std::fs::read(&facts).unwrap(), b"DT 1 2 0\n");
+        assert!(load_entry(&c, "derived/b/entry", "derived/b/engine-x", &facts).is_some(), "a full entry needs no engine output");
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

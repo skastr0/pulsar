@@ -75,6 +75,11 @@ impl Cache {
     }
 
     #[cfg(test)]
+    pub fn open_at_for_tests(root: &Path, key: &str) -> Cache {
+        Cache::at(root, key, 1 << 30)
+    }
+
+    #[cfg(test)]
     fn at(root: &Path, key: &str, cap: u64) -> Cache {
         Cache { root: root.to_path_buf(), dir: root.join(key), cap }
     }
@@ -96,6 +101,11 @@ impl Cache {
     #[allow(dead_code)] // for the lanes that cache per file (history, TypeScript)
     pub fn blob_rel(adapter: &str, adapter_version: &str, facts_version: u32, oid: &str) -> String {
         format!("blobs/{adapter}-{adapter_version}-facts{facts_version}/{}/{oid}", &oid[..2.min(oid.len())])
+    }
+
+    /// Is there an entry at `rel`? Does not mark it used.
+    pub fn has(&self, rel: &str) -> bool {
+        self.dir.join(rel).is_file()
     }
 
     /// Read an entry and mark it recently used.
@@ -176,6 +186,12 @@ pub struct Meta {
     pub sql_sites: Vec<(u32, u32)>,
     /// (lane, cause)
     pub degraded: Vec<(String, String)>,
+    /// The facts text after the metadata is only the side rows `pulsar delta` re-reads (`DT`, `RT`,
+    /// `QS`), not the whole facts file: the engine's output is cached beside it, so a warm run never
+    /// needs the rest, and an entry costs a quarter of the disk. A slim entry whose engine output is
+    /// gone is a miss.
+    #[serde(default)]
+    pub slim: bool,
 }
 
 /// An entry is the metadata as one JSON line, then the facts text.
