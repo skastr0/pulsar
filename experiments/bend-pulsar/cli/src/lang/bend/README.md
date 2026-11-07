@@ -10,6 +10,7 @@ The Bend 2 adapter. Owner: pulsar-bend. It is a small parser written from `bend 
   - laws, with the names in their statements.
 - **Across files** (`link_laws`): laws are linked to the defs they name, through import aliases, and to the defs that fill them. The mapping onto FACTS kinds is in `FACTS.md`, under "Per language", "Markers" and "Laws".
 - **The driver's side** (`lane.rs`): `owns(path)` is `*.bend`. `analyze(root, files)` returns `I`/`U` over global file ids and per-file `FileOut`s, which the driver numbers like every lane's. `Extra::push_rows(w, &fn_bases(&per))` writes `MK`/`L`/`LW`/`LN` with global `FN` ids, and `Extra::laws_table` is the `.laws` side table.
+- **Production and test code:** a file is production when an entry point (a non-test file defining `main`) reaches it through imports, which is the `prod` flag cycles use. Every function in a `*-LAWS`, `*-PROOF`, `*-CHECK` or `*-TEST` file, or under `fixtures/`, is a test function (`TF`), so the metric rules skip it. A proof is checked by the kernel; its size is not a code-health finding.
 - **Known limit:** a lambda whose statement block is written inside brackets is read as tokens, so a `match` in it is not a control node. Indented lambda blocks are handled.
 
 ## Evidence
