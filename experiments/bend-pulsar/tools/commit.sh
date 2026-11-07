@@ -3,6 +3,15 @@
 #
 #   bash experiments/bend-pulsar/tools/commit.sh <seat> "<message>" -- <paths...>
 #
+# For a file several seats are editing at once (a shared working-tree file
+# holding other seats' hunks), commit a blob you built yourself instead of the
+# working-tree file:
+#
+#   ... -- --blob <repo-path>=<file-with-HEAD-plus-only-your-hunks> [more...]
+#
+# Build that file from `git show HEAD:<repo-path>` plus your change. Plain
+# paths and --blob entries can be mixed. The working tree is not touched.
+#
 # - Builds the commit in a private index (.git/index.<seat>) from HEAD,
 #   with only <paths> taken from the working tree. Other seats' staged or
 #   unstaged files are never included.
@@ -17,12 +26,26 @@
 set -euo pipefail
 
 if [ $# -lt 4 ] || [ "$3" != "--" ]; then
-  echo "usage: commit.sh <seat> \"<message>\" -- <paths...>" >&2
+  echo "usage: commit.sh <seat> \"<message>\" -- <paths...> [--blob <repo-path>=<file>...]" >&2
   exit 2
 fi
 seat=$1
 msg=$2
 shift 3
+paths=()
+blobs=()
+while [ $# -gt 0 ]; do
+  if [ "$1" = "--blob" ]; then
+    [ $# -ge 2 ] && [[ "$2" == *=* ]] || { echo "commit.sh: --blob needs <repo-path>=<file>" >&2; exit 2; }
+    src=${2#*=}
+    [ -f "$src" ] || { echo "commit.sh: blob source $src not found" >&2; exit 2; }
+    blobs+=("${2%%=*}=$(cd "$(dirname "$src")" && pwd)/$(basename "$src")")
+    shift 2
+  else
+    paths+=("$1")
+    shift
+  fi
+done
 
 cd "$(git rev-parse --show-toplevel)"
 idx="$(git rev-parse --absolute-git-dir)/index.$seat"
@@ -35,7 +58,13 @@ fi
 for try in 1 2 3 4 5 6 7 8; do
   old=$(git rev-parse HEAD)
   GIT_INDEX_FILE=$idx git read-tree "$old"
-  GIT_INDEX_FILE=$idx git add -A -- "$@"
+  if [ -n "${paths[*]+x}" ]; then GIT_INDEX_FILE=$idx git add -A -- "${paths[@]}"; fi
+  for b in ${blobs[@]+"${blobs[@]}"}; do
+    rp=${b%%=*}
+    sha=$(git hash-object -w -- "${b#*=}")
+    mode=$(git ls-tree "$old" -- "$rp" | awk '{print $1}')
+    GIT_INDEX_FILE=$idx git update-index --add --cacheinfo "${mode:-100644},$sha,$rp"
+  done
   tree=$(GIT_INDEX_FILE=$idx git write-tree)
   if [ "$tree" = "$(git rev-parse "$old^{tree}")" ]; then
     echo "commit.sh: nothing to commit in those paths" >&2
@@ -43,7 +72,9 @@ for try in 1 2 3 4 5 6 7 8; do
   fi
   new=$(printf '%s\n' "$msg" | git commit-tree "$tree" -p "$old" -F -)
   if git update-ref -m "commit.sh ($seat)" refs/heads/main "$new" "$old" 2>/dev/null; then
-    git reset -q -- "$@"
+    synced=("${paths[@]+"${paths[@]}"}")
+    for b in ${blobs[@]+"${blobs[@]}"}; do synced+=("${b%%=*}"); done
+    git reset -q -- "${synced[@]}"
     git --no-pager show --stat --format='%h %s' "$new"
     exit 0
   fi
