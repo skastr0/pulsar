@@ -21,6 +21,7 @@ import ./ClassCtx-PROOF.bend as ClassCtxProof
 import ./Crap-PROOF.bend as CrapProof
 import ./Hotspot-PROOF.bend as HotspotProof
 import ./Cognitive-PROOF.bend as CognitiveProof
+import ./Sql-PROOF.bend as SqlProof
 
 def Laws.kind_is_value_kind(hv, ht, form):
   {==}

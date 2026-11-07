@@ -1,0 +1,128 @@
+[
+ {
+  "law": "sql_sites_sound",
+  "bug": "dynamic text fires on every site",
+  "old": "Sq.keep(Sq.bit(flags, 64),",
+  "new": "Sq.keep(True{},"
+ },
+ {
+  "law": "sql_dynamic_complete",
+  "bug": "dynamic text never fires",
+  "old": "Sq.keep(Sq.bit(flags, 64),",
+  "new": "Sq.keep(False{},"
+ },
+ {
+  "law": "sql_offset_complete",
+  "bug": "offset reads the wrong flag",
+  "old": "Sq.keep(Sq.bit(flags, 8),",
+  "new": "Sq.keep(Sq.bit(flags, 16),"
+ },
+ {
+  "law": "sql_defeat_sound",
+  "bug": "index-defeat swaps table and column",
+  "old": "Sx{3, site, table, col, kind}",
+  "new": "Sx{3, site, col, table, kind}"
+ },
+ {
+  "law": "sql_defeat_complete",
+  "bug": "index-defeat stops after the first predicate",
+  "old": "Sq.defeat_all(s, t))",
+  "new": "Nil{})"
+ },
+ {
+  "law": "sql_unindexed_sound",
+  "bug": "unindexed filter checks only the role",
+  "old": "Sq.keep(Sq.unindexed(s, table, col, role)",
+  "new": "Sq.keep(Sq.filter_role(role)"
+ },
+ {
+  "law": "sql_unindexed_complete",
+  "bug": "unindexed filter stops after the first use",
+  "old": "Sx{4, site, table, col, role}, Sq.unindexed_all(s, t))",
+  "new": "Sx{4, site, table, col, role}, Nil{})"
+ },
+ {
+  "law": "sql_fk_sound",
+  "bug": "fk finding swaps child and parent table",
+  "old": "Sx{5, fk, table, c, ref}",
+  "new": "Sx{5, fk, ref, c, table}"
+ },
+ {
+  "law": "sql_fk_complete",
+  "bug": "fk check stops after the first key",
+  "old": "Sq.fk_all(s, t, dgs))",
+  "new": "Nil{})"
+ },
+ {
+  "law": "sql_drift_t_sound",
+  "bug": "table drift fires on every touched table",
+  "old": "Sq.keep(Sq.drift_t(s, table)",
+  "new": "Sq.keep(True{}"
+ },
+ {
+  "law": "sql_drift_t_complete",
+  "bug": "table drift stops after the first table",
+  "old": "Sq.drift_ts(s, t))",
+  "new": "Nil{})"
+ },
+ {
+  "law": "sql_drift_c_sound",
+  "bug": "column drift drops the role",
+  "old": "Sx{6, site, table, col, role}",
+  "new": "Sx{6, site, table, col, 0}"
+ },
+ {
+  "law": "sql_drift_c_complete",
+  "bug": "column drift stops after the first use",
+  "old": "Sq.drift_cs(s, t))",
+  "new": "Nil{})"
+ },
+ {
+  "law": "sql_indexed_sound",
+  "bug": "any index term counts as leading",
+  "old": "Bool.or(any, U32.is_eq(p, 0))",
+  "new": "True{}"
+ },
+ {
+  "law": "sql_indexed_complete",
+  "bug": "only the first index is searched",
+  "old": "Sq.indexed(table, col, any, rest, dxs))",
+  "new": "False{})"
+ },
+ {
+  "law": "sql_unindexed_means",
+  "bug": "the rowid alias is not excluded",
+  "old": "Bool.not(Sq.col(table, col, True{}, dcs))",
+  "new": "True{}"
+ },
+ {
+  "law": "sql_drift_tables_need_complete",
+  "bug": "table drift ignores an incomplete schema",
+  "old": "Bool.and(U32.is_eq(sk, 0), Bool.not(Sq.table(table, dts)))",
+  "new": "Bool.not(Sq.table(table, dts))"
+ },
+ {
+  "law": "sql_drift_cols_need_complete",
+  "bug": "column drift ignores an incomplete schema",
+  "old": "Bool.and(U32.is_eq(sk, 0), Bool.and(Bool.not(U32.is_eq(table, Sq.none()))",
+  "new": "Bool.and(True{}, Bool.and(Bool.not(U32.is_eq(table, Sq.none()))"
+ },
+ {
+  "law": "sql_findings_shape",
+  "bug": "the fk findings are dropped from the output",
+  "old": "List.append(&2, Sx, Sq.fks(s), List.append(&2, Sx, Sq.drift_ts(s, qts), Sq.drift_cs(s, qus))))))",
+  "new": "List.append(&2, Sx, Sq.drift_ts(s, qts), Sq.drift_cs(s, qus)))))"
+ },
+ {
+  "law": "sql_fks_shape",
+  "bug": "the fk check reads no keys",
+  "old": "Sq.fk_all(s, dfs, dgs)",
+  "new": "Sq.fk_all(s, Nil{}, dgs)"
+ },
+ {
+  "law": "sql_lines_shape",
+  "bug": "the section header changes",
+  "old": "\"pulsar-sql 0\"",
+  "new": "\"pulsar-sql 1\""
+ }
+]
