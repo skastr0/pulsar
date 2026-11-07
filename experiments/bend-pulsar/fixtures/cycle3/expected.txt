@@ -1,0 +1,2 @@
+src/a.ts src/b.ts src/c.ts
+files=4 edges=3 cycles=1 unresolved=0
