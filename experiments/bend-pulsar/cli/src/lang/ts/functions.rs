@@ -620,9 +620,18 @@ impl<'s> Walker<'s> {
         self.out.ops.push(CoRec { fn_local, node, op: code });
     }
 
-    fn exit(&mut self, start: u32) {
-        if !self.not_exit.contains(&start) {
-            self.leaf(ct::EXIT);
+    fn exit(&mut self, start: u32) -> Option<u32> {
+        if self.not_exit.contains(&start) {
+            return None;
+        }
+        self.leaf(ct::EXIT)
+    }
+
+    /// An exit node for a `break` or `continue`: labelled ones are flagged (`CB` flavor 5).
+    fn jump(&mut self, start: u32, labelled: bool) {
+        let node = self.exit(start);
+        if let (true, Some(node), Some(f)) = (labelled, node, self.frames.last()) {
+            self.out.branches.push(CbRec { fn_local: f.local, node, flavor: flavor::LABELLED_JUMP });
         }
     }
 
@@ -1774,12 +1783,12 @@ impl<'a> Visit<'a> for Walker<'_> {
     }
 
     fn visit_break_statement(&mut self, it: &BreakStatement<'a>) {
-        self.exit(it.span.start);
+        self.jump(it.span.start, it.label.is_some());
         walk::walk_break_statement(self, it);
     }
 
     fn visit_continue_statement(&mut self, it: &ContinueStatement<'a>) {
-        self.exit(it.span.start);
+        self.jump(it.span.start, it.label.is_some());
         walk::walk_continue_statement(self, it);
     }
 
@@ -2036,6 +2045,25 @@ mod tests {
                 op::OR_CONT, op::OR, // m
             ]
         );
+    }
+
+    /// A `break` or `continue` to a label is a `CB` row on its exit node; a plain one is not.
+    #[test]
+    fn labelled_jumps_are_flagged() {
+        let src = "function f(xs: number[][]) {\n  outer: for (const a of xs) {\n    for (const b of a) {\n      if (b) { continue outer; }\n      if (!b) { break; }\n      if (b > 1) { break outer; }\n    }\n  }\n}\n";
+        let alloc = Allocator::default();
+        let ret = Parser::new(&alloc, src, SourceType::ts()).parse();
+        let out = Walker::new("m.ts", src).run(&ret.program);
+        let exits: Vec<u32> = out.ct.iter().filter(|c| c.kind == ct::EXIT).map(|c| c.node).collect();
+        assert_eq!(exits.len(), 3, "continue outer, break, break outer");
+        let mut flagged: Vec<u32> = out
+            .branches
+            .iter()
+            .filter(|b| b.flavor == crate::lang::functions::flavor::LABELLED_JUMP)
+            .map(|b| b.node)
+            .collect();
+        flagged.sort();
+        assert_eq!(flagged, [exits[0], exits[2]]);
     }
 
     #[test]

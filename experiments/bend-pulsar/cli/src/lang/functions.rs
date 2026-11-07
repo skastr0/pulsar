@@ -80,7 +80,8 @@ pub mod op {
     pub const OR_CONT: u8 = 10;
 }
 
-/// `CB fn node flavor`: what a kind-1 (branch) control node is, for cognitive complexity.
+/// `CB fn node flavor`: what a kind-1 (branch) or kind-7 (exit) control node is, for cognitive
+/// complexity.
 pub mod flavor {
     /// A conditional expression `c ? a : b`.
     pub const TERNARY: u8 = 1;
@@ -90,6 +91,8 @@ pub mod flavor {
     pub const IF_ELSE: u8 = 3;
     /// An `if` whose `else` is another `if` (an `else if`).
     pub const IF_ELIF: u8 = 4;
+    /// A kind-7 (exit) node that is a `break` or `continue` to a label: the paper charges it one.
+    pub const LABELLED_JUMP: u8 = 5;
 }
 
 /// One `CB` row before numbering.
