@@ -165,4 +165,19 @@ out=$(PULSAR_ENGINE="$FE/badrcx" "$BIN" delta HEAD~1 HEAD --repo "$E" --no-cache
 grep -q 'DEGRADED INPUT (head) class-context: 1 class-in-context finding' <<<"$out" && echo "ok   an unresolvable class-in-context finding is degraded input, not dropped" || { echo "FAIL dropped RCX"; echo "$out" | head -3; fail=1; }
 rm -rf "$FE"
 
+# SQL rules: opt-in through policy (an SR row per enabled rule), and the engine's SQX lines become
+# findings named by file, table and column. A scripted engine stands in for the SQL section.
+Q=$(mktemp -d); trap 'rm -rf "$T" "$K" "$D" "$E" "$R" "$Q"' EXIT
+( cd "$Q" && git init -q . && git config user.email t@t && git config user.name t
+  echo base > README.md && git add -A && git commit -qm base
+  mkdir -p .pulsar && printf 'format = "pulsar-policy 0"\n[rules]\nenable = [\n  "sql.unindexed-filter",\n]\n' > .pulsar/policy.toml
+  printf 'CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);\nSELECT id FROM users WHERE name = '"'"'x'"'"';\n' > q.sql
+  git add -A && git commit -qm "a schema and an unindexed filter" )
+"$BIN" facts "$Q" -o "$Q/../q.facts" >/dev/null 2>&1; grep -q '^SR 4$' "$Q/../q.facts" && echo "ok   an enabled SQL rule becomes an SR row" || { echo "FAIL SR row"; fail=1; }
+rm -f "$Q/../q.facts"*
+printf '#!/bin/sh\necho "pulsar-findings 0"\necho "CERT 1"\necho "S 0 0 0"\ngrep -q "^SR " "$1" || exit 0\necho "pulsar-sql 0"\necho "SQD 1 0 1"\necho "SQX sql.unindexed-filter site 0 2 1 0"\necho "SQS 1"\n' > "$Q/../fake-sql"; chmod +x "$Q/../fake-sql"
+out=$(PULSAR_ENGINE="$Q/../fake-sql" "$BIN" delta HEAD~1 HEAD --repo "$Q" --no-cache 2>/dev/null)
+grep -q '^+ sql.unindexed-filter [0-9a-f]* q.sql:2 -  unindexed-filter on users.name (1 site)' <<<"$out" && echo "ok   an SQX line is a finding named by file, table and column" || { echo "FAIL SQL finding"; echo "$out" | head -4; fail=1; }
+rm -f "$Q/../fake-sql"
+
 exit $fail

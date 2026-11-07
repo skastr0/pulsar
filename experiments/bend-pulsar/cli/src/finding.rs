@@ -53,6 +53,17 @@ pub fn catalog_rule(id: &str, version: u32) -> Rule {
     Rule { id: Box::leak(id.to_string().into_boxed_str()), version }
 }
 
+/// SQL rules, in the order of their `SR` codes 1 to 6 (FACTS.md "SQL rules"). Opt-in: a pack or the
+/// repo policy turns each on.
+pub const SQL_RULES: [Rule; 6] = [
+    Rule { id: "sql.dynamic-text", version: 1 },
+    Rule { id: "sql.offset-param", version: 1 },
+    Rule { id: "sql.index-defeat", version: 1 },
+    Rule { id: "sql.unindexed-filter", version: 1 },
+    Rule { id: "sql.fk-unindexed", version: 1 },
+    Rule { id: "sql.schema-drift", version: 1 },
+];
+
 /// Engine `CYC`: a strongly connected set of files in the import graph.
 pub const IMPORT_CYCLE: Rule = Rule { id: "graph.import-cycle", version: 1 };
 
@@ -239,5 +250,6 @@ mod tests {
 pub fn is_builtin_rule(id: &str) -> bool {
     id == IMPORT_CYCLE.id
         || metric_rule(id).is_ok()
+        || SQL_RULES.iter().any(|r| r.id == id)
         || [crate::layers::LAYER_CYCLE.id, crate::layers::UNPROVIDED.id, crate::layers::DUPLICATE.id, crate::layers::HUB.id].contains(&id)
 }

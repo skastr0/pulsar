@@ -14,6 +14,7 @@ mod packs;
 mod policy;
 mod rename;
 mod sql;
+mod sqlfind;
 mod version;
 
 use std::io::Write;
@@ -92,7 +93,7 @@ fn print_stats(st: &driver::Stats) {
 fn build_facts(repo: &Path, coverage: Option<&Path>, out: &mut dyn Write) -> Result<(driver::FactSet, facts::SideTables, history::Stats), String> {
     let eff = policy_for(repo)?;
     let mut w = facts::FactWriter::new();
-    let mut tables = facts::SideTables::default();
+    let mut tables = facts::SideTables { sql_rules: eff.sql_rule_codes(), ..facts::SideTables::default() };
     let (set, st) = driver::build_repo(repo, &eff.policy.lanes, &eff.active_rules(), &mut w, &mut tables)?;
     let hist = &eff.policy.history;
     let hs = history::emit(

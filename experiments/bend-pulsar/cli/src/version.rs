@@ -26,6 +26,7 @@ pub fn rules() -> Vec<(String, u32)> {
     .iter()
     .map(|r| (r.id.to_string(), r.version))
     .collect();
+    out.extend(finding::SQL_RULES.iter().map(|r| (r.id.to_string(), r.version)));
     for (id, text) in catalog::EMBEDDED {
         if let Ok(l) = catalog::load(id, text) {
             out.extend(l.catalog.rules.iter().map(|r| (r.id.clone(), r.ver.parse().unwrap_or(1))));
