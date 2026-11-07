@@ -62,6 +62,26 @@ fn is_active(c: &Catalog, ev: &Evidence) -> bool {
     }
 }
 
+/// The repo's own catalogs, `.pulsar/catalogs/*.toml`, always on and strict like the policy's
+/// loader: a catalog that does not parse, or is not scope \"repo\", is an error.
+fn repo_catalogs(root: &Path) -> Result<Vec<catalog::Loaded>, String> {
+    let Ok(rd) = std::fs::read_dir(root.join(".pulsar/catalogs")) else { return Ok(Vec::new()) };
+    let mut paths: Vec<_> =
+        rd.filter_map(|e| e.ok().map(|e| e.path())).filter(|p| p.extension().is_some_and(|x| x == "toml")).collect();
+    paths.sort();
+    let mut out = Vec::new();
+    for p in paths {
+        let name = p.file_name().unwrap_or_default().to_string_lossy().into_owned();
+        let text = std::fs::read_to_string(&p).map_err(|e| format!("{}: {e}", p.display()))?;
+        let l = catalog::load(&format!(".pulsar/catalogs/{name}"), &text)?;
+        if l.catalog.scope != Scope::Repo {
+            return Err(format!(".pulsar/catalogs/{name}: repo catalogs use scope \"repo\""));
+        }
+        out.push(l);
+    }
+    Ok(out)
+}
+
 /// The index for a repo, and the ids of the catalogs that are on (for the stats line).
 pub fn index_for(root: &Path, tracked: &[String]) -> Result<(CatalogIndex, Vec<String>), String> {
     let ev = gather(root, tracked);
@@ -72,6 +92,7 @@ pub fn index_for(root: &Path, tracked: &[String]) -> Result<(CatalogIndex, Vec<S
             loaded.push(l);
         }
     }
+    loaded.extend(repo_catalogs(root)?);
     let refs: Vec<&Catalog> = loaded.iter().map(|l| &l.catalog).collect();
     let ids = loaded.iter().map(|l| l.catalog.id.clone()).collect();
     Ok((CatalogIndex::from_catalogs(&refs), ids))
@@ -95,6 +116,21 @@ mod tests {
         assert!(dep_matches("effect", &deps));
         assert!(dep_matches("@effect/sql*", &deps));
         assert!(!dep_matches("@types/node", &deps));
+    }
+
+    #[test]
+    fn a_repo_catalog_reaches_the_index_and_must_be_scope_repo() {
+        let dir = std::env::temp_dir().join(format!("pulsar-repo-cat-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join(".pulsar/catalogs")).unwrap();
+        let cat = "format = \"pulsar-catalog 0\"\nid = \"shard\"\nscope = \"repo\"\nsources = [\"x\"]\nclasses = [\n  { class = \"partition\", id = 1000, rule = \"shard/partition\" },\n]\nsymbols = [\n  { sym = \"shard-lib#pick\", class = \"partition\", ver = \"1\", at = \"x:1\", doc = \"d\" },\n]\n";
+        std::fs::write(dir.join(".pulsar/catalogs/shard.toml"), cat).unwrap();
+        let (ix, ids) = index_for(&dir, &[]).unwrap();
+        assert_eq!(ix.classes("shard-lib#pick"), vec![1000]);
+        assert!(ids.contains(&"shard".to_string()));
+        std::fs::write(dir.join(".pulsar/catalogs/shard.toml"), cat.replace("scope = \"repo\"", "scope = \"lane\"")).unwrap();
+        assert!(index_for(&dir, &[]).unwrap_err().contains("scope \"repo\""));
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
