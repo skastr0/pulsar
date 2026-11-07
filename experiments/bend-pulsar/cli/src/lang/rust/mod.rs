@@ -7,6 +7,7 @@
 
 mod blocks;
 mod calls;
+pub use calls::mark_test_sites;
 mod cargo;
 mod env;
 mod graph;

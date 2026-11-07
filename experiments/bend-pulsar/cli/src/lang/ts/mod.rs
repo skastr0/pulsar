@@ -109,7 +109,8 @@ type Settled = std::collections::HashMap<u32, std::collections::HashMap<String, 
 ///
 /// `file_ctx` gives each file's policy `CS.ctx` bits (8 `effect_only`, 16 `boundary`) from its
 /// repo-relative path; they are known at walk time because the walker prunes syntax sites by
-/// them. The test bit is the lane's own (`is_test`), never the policy's.
+/// them. The test bit (4) is the policy's `[lanes.ts] test` entries, as `TF` reads them (the driver
+/// puts it in `file_ctx`), together with the lane's own path convention (`is_test`).
 pub fn analyze(
     root: &Path,
     files: &[(u32, String)],

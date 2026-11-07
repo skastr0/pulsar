@@ -8,7 +8,7 @@
 
 use crate::facts::{stable_key, FactWriter, FnEntry, Rel, SideTables};
 use crate::git::git_ls_files;
-use crate::lang::functions::{FileFns, NO_PARENT};
+use crate::lang::functions::{ctx, FileFns, NO_PARENT};
 use crate::policy::{ActiveRule, Lanes};
 use crate::lang::{self, Degraded, FileOut};
 use std::path::{Path, PathBuf};
@@ -82,7 +82,7 @@ pub fn build(
         analyze_ts(root, lanes, &tracked, &ts_files, &mut per, w, &mut st)?;
     // What a lane's analysis decided about production code, per file id: None keeps the path rule.
     let mut lane_prod: Vec<Option<bool>> = vec![None; files.len()];
-    analyze_rust(root, &tracked, &rust_files, &mut per, &mut lane_prod, w, &mut st)?;
+    analyze_rust(root, lanes, &tracked, &rust_files, &mut per, &mut lane_prod, w, &mut st)?;
     tables.laws = bend_lane(root, &bend_files, &files, &mut per, &mut lane_prod, w, &mut st)?;
     // F rows come after the lanes, because only a lane's analysis can tell some test files.
     push_files(w, &files, lanes, &lane_prod, &mut st);
@@ -286,7 +286,9 @@ fn analyze_ts(
         return Ok(Default::default());
     }
     // The per-file ctx bits from policy `[packs.effect]`: 8 effect-only, 16 boundary.
+    // Also 4 test: a file policy `[lanes.ts] test` marks, as `TF` says (the lane's own path convention adds to it).
     let file_ctx = |rel: &str| lanes.effect.file_ctx(rel);
+    let file_ctx = |rel: &str| file_ctx(rel) | if lanes.is_policy_test(rel) { ctx::TEST } else { 0 };
     let a = lang::ts::analyze(root, files, tracked, &file_ctx)?;
     st.fatal += a.stats.fatal;
     st.unreadable += a.stats.unreadable;
@@ -345,6 +347,7 @@ fn push_effect(w: &mut FactWriter, per: &[Option<FileOut>], rows: &crate::packs:
 /// Run the Rust lane; a manifest cargo cannot read degrades the graph and is reported.
 fn analyze_rust(
     root: &Path,
+    lanes: &Lanes,
     tracked: &[String],
     files: &[(u32, String)],
     per: &mut [Option<FileOut>],
@@ -370,7 +373,11 @@ fn analyze_rust(
         });
     }
     push_edges(w, &a.i, &a.u, st);
-    for ((id, _), f) in files.iter().zip(a.per_file) {
+    for ((id, rel), mut f) in files.iter().zip(a.per_file) {
+        // A file the policy marks as test code has every call site in test code, as `TF` says.
+        if lanes.is_policy_test(rel) {
+            lang::rust::mark_test_sites(&mut f.fns);
+        }
         per[*id as usize] = Some(FileOut { fns: f.fns, tests: f.tests });
     }
     Ok(())
@@ -589,6 +596,61 @@ mod tests {
         // a.tst.ts is file 0 with functions 0 and 1; b.ts holds function 2, which stays production.
         assert_eq!(tf(&out), vec!["TF 0".to_string(), "TF 1".to_string()], "{out}");
         assert!(out.contains("F 0 0\n") && out.contains("F 1 1\n"), "the policy test file is not production, b.ts is: {out}");
+    }
+
+    #[test]
+    fn a_policy_test_file_carries_the_test_bit_on_its_call_sites() {
+        let dir = std::env::temp_dir().join(format!("pulsar-driver-ctx4-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.tst.ts"), "export function one() { return Date.now() }\n").unwrap();
+        std::fs::write(dir.join("b.ts"), "export function two() { return Date.now() }\n").unwrap();
+        let tracked: Vec<String> = vec!["a.tst.ts".into(), "b.ts".into()];
+        let run = |lanes: &Lanes| {
+            let mut w = FactWriter::new();
+            let mut t = SideTables::default();
+            build(&dir, tracked.clone(), lanes, &[], &mut w, &mut t).unwrap();
+            let mut out = Vec::new();
+            w.write_to(&mut out).unwrap();
+            String::from_utf8(out).unwrap()
+        };
+        // `CS site fn callee loop_depth ctx`, by function: a.tst.ts holds fn 0, b.ts fn 1.
+        let ctx_of = |out: &str, f: &str| {
+            out.lines().find(|l| l.starts_with("CS ") && l.split(' ').nth(2) == Some(f)).map(|l| l.rsplit(' ').next().unwrap().to_string())
+        };
+        let before = run(&Lanes::default());
+        assert_eq!(ctx_of(&before, "0").as_deref(), Some("0"), "no policy entry and no test naming: {before}");
+        let mut lanes = Lanes::default();
+        lanes.ts.test = vec!["*.tst.ts".into()];
+        let out = run(&lanes);
+        std::fs::remove_dir_all(&dir).ok();
+        assert_eq!(ctx_of(&out, "0").as_deref(), Some("4"), "the policy test file carries bit 4: {out}");
+        assert_eq!(ctx_of(&out, "1").as_deref(), Some("0"), "an ordinary file does not: {out}");
+    }
+
+    #[test]
+    fn a_policy_test_file_carries_the_test_bit_in_the_rust_lane_too() {
+        let dir = std::env::temp_dir().join(format!("pulsar-driver-ctx4-rs-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        std::fs::write(dir.join("src/lib.rs"), "pub fn f(x: Option<u8>) -> u8 {\n    x.unwrap()\n}\n").unwrap();
+        let tracked: Vec<String> = vec!["src/lib.rs".into()];
+        let run = |lanes: &Lanes| {
+            let mut w = FactWriter::new();
+            let mut t = SideTables::default();
+            build(&dir, tracked.clone(), lanes, &[], &mut w, &mut t).unwrap();
+            let mut out = Vec::new();
+            w.write_to(&mut out).unwrap();
+            String::from_utf8(out).unwrap()
+        };
+        let ctx_of = |out: &str| out.lines().find(|l| l.starts_with("CS ")).map(|l| l.rsplit(' ').next().unwrap().to_string());
+        // 64 is the name-only bit of `x.unwrap()`.
+        assert_eq!(ctx_of(&run(&Lanes::default())).as_deref(), Some("64"));
+        let mut lanes = Lanes::default();
+        lanes.rust.test = vec!["src/lib.rs".into()];
+        let out = run(&lanes);
+        std::fs::remove_dir_all(&dir).ok();
+        assert_eq!(ctx_of(&out).as_deref(), Some("68"), "name-only and test: {out}");
     }
 
     #[test]
