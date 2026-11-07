@@ -231,8 +231,8 @@ function contains(row, line, col) {
   return afterStart && beforeEnd;
 }
 
-async function eslintMetrics(repo, absFiles) {
-  const eslint = new ESLint({
+function makeEslint(repo) {
+  return new ESLint({
     cwd: repo,
     overrideConfigFile: true,
     overrideConfig: [
@@ -247,6 +247,9 @@ async function eslintMetrics(repo, absFiles) {
       },
     ],
   });
+}
+
+async function eslintMetrics(eslint, absFiles) {
   const results = await eslint.lintFiles(absFiles);
   // file -> list of {line, col, ruleId, value}
   const byFile = new Map();
@@ -286,64 +289,77 @@ async function main() {
     ? readFileSync(opt.files, "utf8").split("\n").filter(Boolean)
     : gitFiles(repo);
 
-  const parsed = [];
-  for (const rel of relFiles) {
-    const abs = join(repo, rel);
-    let code;
-    try { code = readFileSync(abs, "utf8"); } catch { continue; }
-    let ast;
-    try {
-      ast = tsParser.parse(code, {
-        loc: true, range: true, tokens: false, comment: false,
-        sourceType: "module",
-      });
-    } catch {
-      continue; // unparseable file: oracle skips, diff reports coverage gap
+  // Parse, inventory and lint in chunks so ASTs do not accumulate: large
+  // corpora (junto ~2k TS files) exhaust the default heap otherwise.
+  const CHUNK = 200;
+  const eslint = opt.eslint ? makeEslint(repo) : null;
+  let attached = 0, missed = 0;
+  const outLines = [];
+
+  for (let i = 0; i < relFiles.length; i += CHUNK) {
+    const slice = relFiles.slice(i, i + CHUNK);
+    const parsed = [];
+    for (const rel of slice) {
+      const abs = join(repo, rel);
+      let code;
+      try { code = readFileSync(abs, "utf8"); } catch { continue; }
+      let ast;
+      try {
+        ast = tsParser.parse(code, {
+          loc: true, range: true, tokens: false, comment: false,
+          sourceType: "module",
+        });
+      } catch {
+        continue; // unparseable file: oracle skips, diff reports coverage gap
+      }
+      parsed.push({ rel, abs, ast });
     }
-    parsed.push({ rel, abs, ast });
-  }
 
-  const allRows = [];
-  const rowsByFile = new Map();
-  for (const { rel, ast } of parsed) {
-    const rows = inventory(rel, ast);
-    rowsByFile.set(join(repo, rel), rows);
-    allRows.push(...rows);
-  }
+    const allRows = [];
+    const rowsByFile = new Map();
+    for (const { rel, ast } of parsed) {
+      const rows = inventory(rel, ast);
+      rowsByFile.set(join(repo, rel), rows);
+      allRows.push(...rows);
+    }
 
-  if (opt.eslint) {
-    const byFile = await eslintMetrics(repo, parsed.map((p) => p.abs));
-    let attached = 0, missed = 0;
-    for (const [abs, msgs] of byFile) {
-      const rows = rowsByFile.get(abs) ?? [];
-      for (const m of msgs) {
-        // Innermost join-span containing the report position.
-        let best = null, bestSize = Infinity;
-        for (const r of rows) {
-          if (!contains(r, m.line, m.col - 1)) continue;
-          const size = (r.join_end_line - r.join_start_line) * 100000 +
-                       (r.join_end_col - r.join_start_col);
-          if (size < bestSize) { bestSize = size; best = r; }
-        }
-        if (best) {
-          best.metrics = best.metrics ?? {};
-          best.metrics[m.metric] = m.value;
-          attached++;
-        } else {
-          missed++;
-          if (process.env.ORACLE_DEBUG_MISSES) {
-            console.error(`miss ${m.metric} ${abs}:${m.line}:${m.col} "${(m.text ?? "").slice(0, 60)}"`);
+    if (eslint) {
+      const byFile = await eslintMetrics(eslint, parsed.map((p) => p.abs));
+      for (const [abs, msgs] of byFile) {
+        const rows = rowsByFile.get(abs) ?? [];
+        for (const m of msgs) {
+          // Innermost join-span containing the report position.
+          let best = null, bestSize = Infinity;
+          for (const r of rows) {
+            if (!contains(r, m.line, m.col - 1)) continue;
+            const size = (r.join_end_line - r.join_start_line) * 100000 +
+                         (r.join_end_col - r.join_start_col);
+            if (size < bestSize) { bestSize = size; best = r; }
+          }
+          if (best) {
+            best.metrics = best.metrics ?? {};
+            best.metrics[m.metric] = m.value;
+            attached++;
+          } else {
+            missed++;
+            if (process.env.ORACLE_DEBUG_MISSES) {
+              console.error(`miss ${m.metric} ${abs}:${m.line}:${m.col} "${(m.text ?? "").slice(0, 60)}"`);
+            }
           }
         }
       }
     }
-    console.error(`ts_oracle: eslint messages attached=${attached} missed=${missed}`);
+
+    for (const r of allRows) outLines.push(JSON.stringify(r));
   }
 
-  const text = allRows.map((r) => JSON.stringify(r)).join("\n") + "\n";
+  if (opt.eslint) {
+    console.error(`ts_oracle: eslint messages attached=${attached} missed=${missed}`);
+  }
+  const text = outLines.join("\n") + "\n";
   if (opt.out) writeFileSync(opt.out, text);
   else process.stdout.write(text);
-  console.error(`ts_oracle: ${relFiles.length} files, ${allRows.length} functions`);
+  console.error(`ts_oracle: ${relFiles.length} files, ${outLines.length} functions`);
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });
