@@ -1,0 +1,31 @@
+[package]
+name = "pulsar-rust-types"
+version = "0.0.1"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "pulsar-rust-types"
+path = "src/main.rs"
+
+# The rust-analyzer crates have no stability promise and every release may break the API, so
+# they are pinned to exact versions (see research/rust-types.md). The salsa pin is the one
+# pulsar-rs found necessary: 0.28.5 breaks ra_ap_span.
+[dependencies]
+ra_ap_hir = "=0.0.349"
+ra_ap_hir_ty = "=0.0.349"
+ra_ap_hir_def = "=0.0.349"
+ra_ap_ide_db = "=0.0.349"
+ra_ap_load-cargo = "=0.0.349"
+ra_ap_project_model = "=0.0.349"
+ra_ap_paths = "=0.0.349"
+ra_ap_syntax = "=0.0.349"
+ra_ap_vfs = "=0.0.349"
+ra_ap_base_db = "=0.0.349"
+anyhow = "1"
+rustc-hash = "2"
+
+[profile.release]
+debug = false
+
+[workspace]
