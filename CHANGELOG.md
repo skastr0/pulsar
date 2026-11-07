@@ -39,6 +39,8 @@ One per repository, committed in `.pulsar/` and fingerprinted: `policy.toml` (la
 
 Fan-out (N+1) findings (the engine computes them, but the CLI does not request them yet), the other non-idiomatic Effect rules (promise bridges around repo functions, mixed modules), default parameter values as cyclomatic decisions (cyclomatic v3), infra bindings, Durable Object bindings and the type-aware lane wait for 0.4.1 or later. Packages ship for darwin-arm64 and linux-x64 only. Windows is not supported.
 
+SQL detectors read schemas only from `.sql` files in the SQLite dialect. Postgres and MySQL migrations, schemas defined in code, and better-sqlite3 / node:sqlite / bun:sqlite calls produce no SQL facts yet (planned for 0.4.1).
+
 ## [0.3.0] - 2026-09-24
 
 ### Added

@@ -127,6 +127,7 @@ One policy per repo, committed in `.pulsar/`, and its fingerprint is printed wit
 - **`.then`, `.catch` and `.finally` on an imported binding are deliberately not flagged as promise style**, to keep `Effect.catch`-style APIs out.
 - **Constructs at module level, outside any function, are not yet sites** for the Effect style rules (fixed in 0.4.1).
 - **Thresholds are conventions.** `core.cyclomatic` flags above 10, `core.nesting` above 3, `core.npath` above 200. The evidence for each is in [`experiments/bend-pulsar/research/thresholds.md`](experiments/bend-pulsar/research/thresholds.md) and is weaker than the numbers look. In 0.4.0 they are fixed in the engine's rules, not set by policy; `pulsar explain <rule>` prints each one.
+- **SQL is SQLite-only and file-based.** SQL detectors read schemas only from `.sql` files in the SQLite dialect. Postgres and MySQL migrations, schemas defined in code, and better-sqlite3 / node:sqlite / bun:sqlite calls produce no SQL facts yet (planned for 0.4.1).
 - **Not a score.** Pulsar does not rank repos, rate agents or blend signals.
 
 More: [`experiments/bend-pulsar/PRODUCT.md`](experiments/bend-pulsar/PRODUCT.md) (scope), [`experiments/bend-pulsar/FACTS.md`](experiments/bend-pulsar/FACTS.md) (the fact format and every rule's facts).
