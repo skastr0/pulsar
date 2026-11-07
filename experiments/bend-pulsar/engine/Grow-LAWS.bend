@@ -4,7 +4,7 @@
 # The findings are exactly the (RG row, QT read, QT insert) triples whose checks hold
 # (gr_findings_sound / _complete). What the checks mean, in the facts:
 #   - unbounded: a complete schema, a known base table, a SELECT with no LIMIT at the read
-#     site, and not keyed (gr_unb_means);
+#     site, and not keyed, both ways (gr_unb_means / gr_unb_complete);
 #   - keyed: some key of the table has every column bound at the read site by an equality
 #     or an IN list (KeyW), both ways (gr_keyed_sound / _complete), so a finding's read has
 #     no such key (gr_no_key);
@@ -188,6 +188,18 @@ law gr_unb_means:
   for +table: U32
   for e: {R.Gr.unb(s, qs, qus, rs, table) == True{} : Bool}
   TL.And({Q.Sq.complete(s) == True{} : Bool}, TL.And({R.Gr.base(table, s) == True{} : Bool}, TL.And({R.Gr.sel(rs, qs) == True{} : Bool}, {R.Gr.keyed(rs, table, s, qus) == False{} : Bool})))
+
+law gr_unb_complete:
+  for +s: Q.Schema
+  for +qs: List<&2, Q.Qs>
+  for +qus: List<&2, Q.Qu>
+  for +rs: U32
+  for +table: U32
+  for ec: {Q.Sq.complete(s) == True{} : Bool}
+  for eb: {R.Gr.base(table, s) == True{} : Bool}
+  for es: {R.Gr.sel(rs, qs) == True{} : Bool}
+  for ek: {R.Gr.keyed(rs, table, s, qus) == False{} : Bool}
+  {R.Gr.unb(s, qs, qus, rs, table) == True{} : Bool}
 
 # ---- the findings -----------------------------------------------------------------------------
 def GPair(g: R.Rg, a: Q.Qt, b: Q.Qt, +s: Q.Schema, +qs: List<&2, Q.Qs>, +qus: List<&2, Q.Qu>, +eps: List<&2, H.Ep>, +ces: List<&2, F.Ce>, +y: R.Gx) -> Data:

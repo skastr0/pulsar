@@ -543,6 +543,9 @@ def Laws.gr_hot_complete(site, qs, eps, ces, depth, w):
           Hw.c(site, qs, eps, ces, depth, x, mx, ax)
 
 # ---- unbounded --------------------------------------------------------------------------------
+def Laws.gr_unb_complete(s, qs, qus, rs, table, ec, eb, es, ek):
+  B.tt(Q.Sq.complete(s), Bool.and(R.Gr.base(table, s), Bool.and(R.Gr.sel(rs, qs), Bool.not(R.Gr.keyed(rs, table, s, qus)))), ec, B.tt(R.Gr.base(table, s), Bool.and(R.Gr.sel(rs, qs), Bool.not(R.Gr.keyed(rs, table, s, qus))), eb, B.tt(R.Gr.sel(rs, qs), Bool.not(R.Gr.keyed(rs, table, s, qus)), es, B.nf(R.Gr.keyed(rs, table, s, qus), ek))))
+
 def Un.m(+s: Q.Schema, +qs: List<&2, Q.Qs>, +qus: List<&2, Q.Qu>, +rs: U32, +table: U32, +e: {R.Gr.unb(s, qs, qus, rs, table) == True{} : Bool}) -> TL.And({Q.Sq.complete(s) == True{} : Bool}, TL.And({R.Gr.base(table, s) == True{} : Bool}, TL.And({R.Gr.sel(rs, qs) == True{} : Bool}, {R.Gr.keyed(rs, table, s, qus) == False{} : Bool}))):
   +e1 = B.r(Q.Sq.complete(s), Bool.and(R.Gr.base(table, s), Bool.and(R.Gr.sel(rs, qs), Bool.not(R.Gr.keyed(rs, table, s, qus)))), e)
   +e2 = B.r(R.Gr.base(table, s), Bool.and(R.Gr.sel(rs, qs), Bool.not(R.Gr.keyed(rs, table, s, qus))), e1)

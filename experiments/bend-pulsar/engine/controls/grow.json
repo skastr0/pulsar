@@ -94,5 +94,11 @@
   "bug": "the section header changes",
   "old": "Con{\"pulsar-grow 0\"",
   "new": "Con{\"pulsar-grow 1\""
+ },
+ {
+  "law": "gr_unb_complete",
+  "bug": "no read is ever unbounded",
+  "old": "  Bool.and(Q.Sq.complete(s), Bool.and(Gr.base(table, s), Bool.and(Gr.sel(rs, qs), Bool.not(Gr.keyed(rs, table, s, qus)))))",
+  "new": "  False{}"
  }
 ]
