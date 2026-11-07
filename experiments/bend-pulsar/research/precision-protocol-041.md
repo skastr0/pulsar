@@ -120,6 +120,11 @@ same protocol, wired end-to-end via the CLI RF rows.
 
 - Protocol fixed; detector inventory may grow as #694/#695/#696 land — new
   rule ids join this list before their findings are sampled.
+- `core.cyclomatic` ships as rule v3 in 0.4.1 (parameter and destructuring
+  defaults count as decisions; cognitive unchanged). It is not a new
+  detector, so it gets no sample row — but TP/FP classification of any
+  sampled finding reads cc under v3 semantics, and composites that cite
+  cyclomatic inherit the v3 values.
 - Generality pre-check for #705: `research/effect-pack-generality.md` @
   8652782 (the bare-`throw` flag is why the exception-style leg reports
   separately with the 0.8 fallback).
