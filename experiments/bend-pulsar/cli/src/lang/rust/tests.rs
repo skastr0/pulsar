@@ -120,7 +120,8 @@ fn use_paths_resolve_to_files_and_leave_the_repo_as_u() {
     // tests.rs is reached only through #[cfg(test)] mod tests; so all its functions are test code.
     assert_eq!(out.per_file[2].fns.fns.len(), 1);
     assert_eq!(out.per_file[2].tests, vec![0]);
-    assert_eq!(out.test_only_files, vec![2]);
+    // ids a=0 inner=1 tests=2 b/mod=3 lib=4: only tests.rs is reachable solely through cfg(test).
+    assert_eq!(out.prod, vec![Some(true), Some(true), Some(false), Some(true), Some(true)]);
     assert!(out.per_file[0].tests.is_empty());
 }
 
