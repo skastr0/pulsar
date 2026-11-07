@@ -1,180 +1,132 @@
-<p align="center">
-  <img src="docs/assets/pulsar-hero.png" alt="Pulsar: repository health, measured" width="100%">
-</p>
+# Pulsar
 
-<h1 align="center">Pulsar</h1>
+Pulsar tells a team of peer agents what a change did to the health of the code. You give it two git shas. It prints the findings the change **added** and **removed**, each with a file, a symbol, the evidence behind it, and a stable key. There is no score and no grade.
 
-<p align="center"><strong>Pulsar scores a repository and each agent diff under one shared policy.</strong></p>
+It is built to run on every sha, beside many agents. A Rust CLI reads the code into compact facts, and a formally verified engine written in Bend decides what is a finding. *Each finding Pulsar reports is checked by a formally verified engine, given the facts it read.* What that does and does not cover is in [`experiments/bend-pulsar/research/verification-status.md`](experiments/bend-pulsar/research/verification-status.md).
 
-<p align="center">
-  <code>npx @skastr0/pulsar agent score .</code>
-  ·
-  <a href="https://www.npmjs.com/package/@skastr0/pulsar">npm</a>
-</p>
+Works on TypeScript (including Effect and Cloudflare Workers code), Rust, Bend and SQL files. macOS and Linux, arm64 and x64. Windows is not supported (use WSL). What changed since 0.3.0 is in [`CHANGELOG.md`](CHANGELOG.md).
 
-## The pain
+## Install
 
-An agent says the change is done. Typecheck is clean and the tests pass.
-
-- **The diff can still be wrong in ways no test covers:** a `catch` that returns `{}`, a validator that always returns `true`, a `@ts-ignore` with no reason.
-- **Checking it means reading every line.** With several agents in one repo, that's the job you were handing off.
-- **A whole-repo score hides one bad change** inside an average that still looks fine.
-
-v0.3.0 · macOS and Linux (arm64, x64)
-
-## An agent's diff, scored
-
-An agent adds `src/search/cache.ts` to a TypeScript repository. Typecheck is clean and all 351 tests pass.
-
-```ts
-import { readFileSync } from "node:fs"
-
-export function loadSearchCache(path: string): Record<string, unknown> {
-  try {
-    const raw = readFileSync(path, "utf8")
-    // @ts-ignore
-    return JSON.parse(raw) as any
-  } catch (e) {
-    return {}
-  }
-}
-
-export function validateSearchCache(cache: Record<string, unknown>): boolean {
-  // TODO: implement real validation
-  return true
-}
+```sh
+npm install --save-dev @skastr0/pulsar     # 0.4.0 or later
+npx pulsar version                          # CLI sha, engine sha, every rule with its version
 ```
 
-```console
-$ npx @skastr0/pulsar score --diff HEAD..WORKTREE --changed-only --agent-view .
-Pulsar Agent View: ROUTE
-Range: HEAD..WORKTREE
-Changed files: 1
-Introduced diagnostics: 7
-Changed-scope diagnostics: 6
-- 6 introduced diagnostic(s) need review routing.
-TS-AB-02-unused-exports WARN Export loadSearchCache in src/search/cache.ts: unused
-TS-AB-02-unused-exports WARN Export validateSearchCache in src/search/cache.ts: unused
-TS-LD-07-unsafe-type-erosion INFO Unsafe `any` in assertion `<expression>`
-  at src/search/cache.ts:7
-TS-LD-09-error-channel-opacity WARN Catch fallback hides error channel in boundary `loadSearchCache`
-  at src/search/cache.ts:8
-  fix: Expose the failure contract (medium)
-TS-SL-03-suppressions WARN ts-ignore is missing justification
-  at src/search/cache.ts:6
-TS-SL-06-confidence-claim-mismatch WARN validateSearchCache claims runtime validation; supporting behavior: none; observed behavior: unconditional success; ...
-  at src/search/cache.ts:13
-  fix: Make the claim true or rename it (medium)
+The package carries the CLI and the engine for your platform. You need git and nothing else.
+
+From a checkout (needs Rust stable, clang 14+ and the Bend pinned in `experiments/bend-pulsar/packaging/bend-version`):
+
+```sh
+cargo build --release --manifest-path experiments/bend-pulsar/cli/Cargo.toml
+experiments/bend-pulsar/packaging/build-engine.sh        # writes the engine under dist/engine/
+export PULSAR_ENGINE=$PWD/experiments/bend-pulsar/dist/engine/<target>/pulsar-engine
 ```
 
-`ROUTE` means the change introduced findings someone should look at. `PASS` means it introduced none in the changed files. `BLOCK` means a check backed by proof blocks the change.
+## First run
 
-## Is / is not
-
-| Pulsar **is** | Pulsar **is not** |
-|---|---|
-| Deterministic: same code and same policy give the same score | A model reviewer. Scoring runs locally, with no account and no API key |
-| One policy per repository, committed in `.pulsar/` | A personal preference profile |
-| A check an agent can run and parse: JSON, exit codes, file and line | A linter replacement or a security audit |
-| 75 checks (signals): 39 TypeScript, 24 Rust, 12 from git history and manifests | Windows-ready: there is no Windows binary yet |
-
-## Quick start
-
-No config needed. Run inside the repository you want to score. `bunx @skastr0/pulsar` works the same as `npx` (Node 18 or newer).
-
-```bash
-# 1. Score the whole repository under the built-in defaults
-npx @skastr0/pulsar agent score .
-
-# 2. Score only what your uncommitted changes introduced
-npx @skastr0/pulsar score --diff HEAD..WORKTREE --changed-only --agent-view .
-
-# 3. Record the policy fingerprint you are scoring under (uses jq)
-npx @skastr0/pulsar agent config . | jq -r .result.policy.fingerprint
-
-# 4. After a fix, score again and refuse the comparison if the policy changed
-npx @skastr0/pulsar agent score --expect-policy <fingerprint> .
+```sh
+pulsar init              # writes .pulsar/policy.toml from what the repo shows
+$EDITOR .pulsar/policy.toml
+pulsar policy            # the effective policy and its fingerprint
+git add .pulsar && git commit -m "chore: pulsar policy"
 ```
 
-Step 1 prints one JSON document. Trimmed:
+`init` states only what the evidence supports, and puts the evidence in a comment next to each choice:
 
-```json
-{ "schema": "pulsar/agent/v1alpha1", "operation": "score", "status": "completed",
-  "result": {
-    "policy": { "fingerprint": "f4c369e8eb1d…", "vector": { "source_label": "built-in defaults" } },
-    "assessment": {
-      "hard_gate_status": "pass",
-      "readiness": { "score": 0.676884830859, "status": "yellow" },
-      "counts": { "applicable": 34, "not_applicable": 10, "insufficient_evidence": 29, "failed": 0 } },
-    "findings": [
-      { "signal_id": "TS-LD-02-function-size-distribution", "severity": "warn",
-        "message": "Function outlier `collectFacts/Effect.gen` — 147 LOC",
-        "location": { "file": "src/facts/lint.ts", "line": 378 } } ] } }
+- **Lanes** from `tsconfig.json` and `Cargo.toml`: a root manifest means the whole repo, otherwise only the directories that have one.
+- **Production and test code** from layout. The default path rules already treat `test/`, `fixtures/`, `docs/`, generated and config files as non-production. `init` lists the other directories whose names say "not the product" (`scripts/`, `bench/`, `e2e/`, ...) with a file count, so you can strike any that hold shipped code.
+- **The history window**, with the number of commits it holds, and a warning on a shallow clone.
+- **Packs**, reported and not listed: a pack switches on by itself from evidence (`effect` in a `package.json`, a `wrangler.jsonc`), and the comment names the file that triggered it.
+
+`init` never turns a rule on. Opt-in rules, and the Effect scope lists that decide where the Effect scope rules fire, change which findings appear, so they stay as commented suggestions. It refuses to overwrite an existing policy (`--force` replaces it, `--print` shows what it would write).
+
+## Daily commands
+
+```sh
+pulsar delta <base> <head>        # what the change added and removed
+pulsar delta main HEAD --json     # the same, one JSON line per finding, then a summary line
+pulsar delta main HEAD --trend    # also list functions whose measured values moved
+pulsar delta main HEAD --coverage coverage/lcov.info    # coverage for HEAD from a named report (default: found at the repo root)
+pulsar explain                    # list every rule
+pulsar explain core.cyclomatic    # definition, threshold, the laws that prove it, an example
+pulsar policy                     # policy parts and fingerprint
+pulsar catalog list               # class catalogs in effect, and why each is on
 ```
 
-`insufficient_evidence: 29` means those checks had nothing to read, not that they failed. Here, 21 are Rust checks and the repository has one Rust file. The rest need inputs it doesn't have yet, such as a coverage report, a glossary, or declared module boundaries.
+**Exit codes.** `delta`: 0 = nothing added, 1 = at least one finding added, 2 = error. Any other command: 0 = ok, 2 = error. A run whose engine certificate is missing or fails exits 2 and prints no findings, because the cycle list could not be certified complete.
 
-| Exit code | `agent score` means |
-|---|---|
-| 0 | Complete |
-| 1 | Invalid input, config, or policy |
-| 2 | A check backed by proof blocks the change |
-| 3 | Incomplete evidence. The JSON still carries every finding |
+**Reading a delta.**
 
-`score --diff` exits 2 on `BLOCK` and 0 on `PASS` or `ROUTE`. To fail a script on `ROUTE` too, read the verdict from JSON:
-
-```console
-$ npx @skastr0/pulsar score --diff HEAD..WORKTREE --changed-only --json . | jq -r .gate_decision.status
-route
+```
++ core.cyclomatic 0f40c570f3e24fa4 m.ts:1 tangled  cyclomatic 13 > 10 [cyclomatic 13 nesting 1 npath 4096 length 16 cognitive 12] (rule v2)
+- graph.import-cycle 78c5bd807667298b a.ts b.ts
+~ graph.import-cycle ...  [allowed: legacy pair, tracked in #12]
+? core.crap ...  [head only, needs coverage]
+! DEGRADED INPUT (head) ts: ...
+# base=ddb9485ac1eb head=428b29ab86e7 added=1 allowed=1 removed=1 unchanged=0 worsened=0 improved=0 degraded=1 ...
 ```
 
-### Loosening the rules does not count as a fix
+`+` added (counts toward exit 1), `-` removed, `~` allowed by a committed decision (or a trend line under `--trend`), `?` needs coverage, `!` the run read its input only partly and says what it skipped: read these before trusting a clean result. The word after the rule is the finding's key. It does not change when lines move, so a peer can look the finding up, and a decision can name it. A delta compares committed shas: uncommitted edits in your worktree are not seen.
 
-If the policy changes between two runs, step 4 refuses to compare them:
+The first run on a sha parses it. The result is cached per sha under `~/.pulsar/cache` (`PULSAR_CACHE_DIR`, `PULSAR_CACHE_MAX_MB`, `PULSAR_CACHE=off`), so the second run on the same sha is fast. `--no-cache` recomputes.
 
-```console
-$ npx @skastr0/pulsar persona apply strict-type-safety --to .pulsar/vector.json
-$ npx @skastr0/pulsar agent score --expect-policy f4c369e8eb1da98d876bf5fff98b499c11ab492f6a467087e93ae9fce6f758de .
-{"status":"error","error":{"code":"POLICY_MISMATCH",
- "message":"The assessment policy changed; this run cannot verify a repair under the expected policy."}}
+## Coverage
+
+Coverage is optional and comes from a report your repo already writes; Pulsar never runs your tests. `pulsar facts` and `pulsar delta` find the report themselves: they look at the repo root for `coverage/coverage-final.json`, `coverage/lcov.info`, `coverage/cobertura.xml`, `coverage/cobertura-coverage.xml` and `lcov.info`. `delta` applies it to HEAD only (the report describes your worktree, never the base), so run the tests before the delta. `--coverage <file|dir>` points either command at another location, and `delta` prints on stderr which report it read, or that it found none.
+
+```sh
+npx vitest run --coverage
+# Vitest, v8 or istanbul provider: writes coverage/coverage-final.json (json is a default reporter)
+
+bun test --coverage --coverage-reporter=lcov
+# bun's own runner: writes coverage/lcov.info
+
+mkdir -p coverage && cargo llvm-cov --lcov --output-path coverage/lcov.info
+# Rust, from the crate root; cargo-llvm-cov does not create the directory
 ```
 
-## How it works
+Discovery is repo-root relative, so a report inside a crate dir (`cli/coverage/lcov.info`) needs `--coverage`.
 
-Pulsar runs its checks over the repository: TypeScript through [Quartz](https://github.com/skastr0/quartz), Rust, and language-agnostic checks over git history, manifests, and coverage reports. It runs them under the repository's policy: `.pulsar/vector.json` plus optional project modules, hashed to one fingerprint. `score --diff` runs the checks on the base commit and on the working tree and reports only what the change introduced. Only checks backed by proof can block a change; the rest flag it for review.
+No report, no CRAP: without coverage Pulsar emits no `CV` facts, so `core.crap` is not reported at all. The cause is absent, which is not the same as full coverage. A report that says a function was never run is 0%, and there CRAP is c squared plus c (c is its cyclomatic complexity): cc6 at 0% is 42, a finding over the default 30, listed under `?` and never counted toward exit 1.
 
-## Make the policy yours
+The pass signal on stderr: `pulsar: coverage reports=1 files=3 lines=35 skipped=0 assigned=35 unassigned=0 cv=8`. `skipped=0` means every report path matched a fact file; `cv=0` with `reports=1` means the report named no file Pulsar knows. (Commands and counts verified by pulsar-cov at e11fa15; rerun at the freeze sha.)
 
-Optional. Everything lives in `.pulsar/`, which you commit.
+## The repo's policy
 
-| To | Run |
-|---|---|
-| See every check, weight, and calibration slot | `npx @skastr0/pulsar agent catalog .` |
-| Start from a preset | `npx @skastr0/pulsar persona apply strict-type-safety --to .pulsar/vector.json` |
-| List presets | `npx @skastr0/pulsar persona list` |
-| Check a policy change before scoring | `npx @skastr0/pulsar agent config .` |
+One policy per repo, committed in `.pulsar/`, and its fingerprint is printed with every run:
 
-Presets are called personas in the CLI. They are `ai-slop-defense`, `domain-purist`, `refactor-friendly`, `security-paranoid`, `strict-type-safety`, and `velocity-first`. A preset changes nothing until you apply it. For weights, project modules, and the policy files, see [calibration](docs/calibration.md).
+- `policy.toml`: the history window, `[lanes.ts]` / `[lanes.rust]` / `[lanes.bend]` / `[lanes.sql]` coverage and `prod` / `test` prefixes, `[rules] enable` / `disable`, `[packs.effect]` scope.
+- `decisions.toml`: a finding key accepted with a written reason. It is shown as `~ allowed` and does not fail the run.
+- `catalogs/*.toml`: your own class data (which calls are queries, which block). See `pulsar catalog --help`.
 
-## Optional: ownership judged by a model
+`~/.pulsar/policy.toml` is an organization fallback used only when the repo has none, and the output says so. There is no personal or per-agent policy.
 
-`pulsar agent discover` proposes groups of duplicated code that may share one rule. It makes no model call. `pulsar agent judge` sends the source and context files you declare in `.pulsar/ownership.json`, plus your rubric, to TypeSafe's Jev model (`jev-1.13.0`) and needs `TYPESAFE_API_KEY`. `--dry-run` shows the rubric, paths, byte counts, and number of calls without sending anything. Everything else, including `agent score`, stays local. See [ownership checks](docs/agent-first.md#opt-in-jev-ownership-numbers).
+## For your AGENTS.md
 
-## Where it fits
+```md
+## Code health (Pulsar)
 
-When several agents work in one repository, Pulsar is the check they all run against the same committed policy before they call a change done. More at [castro.engineer/projects/pulsar](https://castro.engineer/projects/pulsar).
+- Before you hand off a change, run `pulsar delta <base-sha> HEAD`. Exit 1 means your change added findings.
+- Fix what you added. If a finding is wrong or accepted, do not hide it: add its key to `.pulsar/decisions.toml`
+  with a reason and say so in your handoff. Never edit `.pulsar/policy.toml` to make a finding go away.
+- Read any `! DEGRADED INPUT` line. A clean result with degraded input is not a clean result.
+- `pulsar explain <rule>` says what a rule means and what number it flags.
+- Peers can reproduce your result with the same command on the same shas.
+```
 
-## Reference
+## Known limits
 
-- [Signals](docs/signals/catalog.md): all 75 checks, what each measures, and which can block a change
-- [Calibration and policy](docs/calibration.md): vectors, presets, project modules, the agent protocol, and packages
-- [Agent guide](docs/agent-first.md): the catalog → config → score → repair loop, end to end
-- [Project modules](docs/project-modules.md): executable calibration with the SDK
-- [Changelog](CHANGELOG.md)
+- **Verification stops at the facts.** The engine's findings are proven correct for the facts it decoded. Reading code into facts (the parsers, the adapters, the byte readers) and printing the delta, including its added/removed set difference, are tested against fixtures and reference tools, not proven. See `experiments/bend-pulsar/research/verification-status.md` for the current boundary.
+- **No type checker in the default lane.** Rules that need types are not part of 0.4.0.
+- **Packs switch on from dependencies and file names.** `import:` activators in a catalog do not match yet.
+- **History needs history.** A shallow clone cuts the history facts short, and `init` says so. History is capped by the policy window (default: the newest 2000 commits of the last 365 days).
+- **Renames are followed, not guaranteed.** A renamed file keeps its findings (`renamed_files` in the summary); a move Pulsar could not match shows as `unmatched_moves`, and that finding can appear as removed and added.
+- **Coverage is yours to supply.** `core.crap` does not exist for a sha without a report (see Coverage above).
+- **Effect scope takes path prefixes, not globs.** `[packs.effect] effect_only` and `boundary` match like the lane scopes: a prefix ending in `/` is a directory, anything else is that file.
+- **`.then`, `.catch` and `.finally` on an imported binding are deliberately not flagged as promise style**, to keep `Effect.catch`-style APIs out.
+- **Constructs at module level, outside any function, are not yet sites** for the Effect style rules (fixed in 0.4.1).
+- **Thresholds are conventions.** `core.cyclomatic` flags above 10, `core.nesting` above 3, `core.npath` above 200. The evidence for each is in [`experiments/bend-pulsar/research/thresholds.md`](experiments/bend-pulsar/research/thresholds.md) and is weaker than the numbers look. Change them in policy, not in your head.
+- **Not a score.** Pulsar does not rank repos, rate agents or blend signals.
 
-## Contributing, security, license
-
-- Development: Bun 1.3.14, then `bun install --frozen-lockfile && bun run verify`. New signals follow [signal authoring](docs/signals/authoring.md).
-- Bugs and scoped proposals: [issues](https://github.com/skastr0/pulsar/issues). See [CONTRIBUTING.md](CONTRIBUTING.md) and [SUPPORT.md](SUPPORT.md).
-- Report vulnerabilities privately: [SECURITY.md](SECURITY.md).
-- [MIT](LICENSE).
+More: [`experiments/bend-pulsar/PRODUCT.md`](experiments/bend-pulsar/PRODUCT.md) (scope), [`experiments/bend-pulsar/FACTS.md`](experiments/bend-pulsar/FACTS.md) (the fact format and every rule's facts).
