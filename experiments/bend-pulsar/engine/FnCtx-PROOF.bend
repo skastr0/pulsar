@@ -416,12 +416,25 @@ def Laws.fnctx_on(rows, on):
   %Equal.sym(Bool, N.FnCtxIn.on(rows), True{}, on) : {N.FnCtxIn.go1(_, rows) == N.FnCtxIn.go(N.FnCtx.decode(rows)) : Maybe<List<&2, String>>}
   {==}
 
-def Laws.fnctx_go_lines(ces, fcs, res, rms, h):
-  %Equal.sym(Bool, N.Nc.sorted(fcs), True{}, h) : {N.FnCtxIn.ok(_, N.NF{ces, fcs, res, rms}) == Some{N.FnCtx.lines(N.NF{ces, fcs, res, rms})} : Maybe<List<&2, String>>}
+def Laws.fnctx_go_lines(ces, fcs, res, rms, h, hc):
+  %Equal.sym(Bool, N.Nc.sorted(fcs), True{}, h) : {N.FnCtxIn.ok(Bool.and(_, N.Nc.ce_sorted(ces)), N.NF{ces, fcs, res, rms}) == Some{N.FnCtx.lines(N.NF{ces, fcs, res, rms})} : Maybe<List<&2, String>>}
+  %Equal.sym(Bool, N.Nc.ce_sorted(ces), True{}, hc) : {N.FnCtxIn.ok(Bool.and(True{}, _), N.NF{ces, fcs, res, rms}) == Some{N.FnCtx.lines(N.NF{ces, fcs, res, rms})} : Maybe<List<&2, String>>}
   {==}
 
 def Laws.fnctx_unsorted_refuses(ces, fcs, res, rms, h):
-  %Equal.sym(Bool, N.Nc.sorted(fcs), False{}, h) : {N.FnCtxIn.ok(_, N.NF{ces, fcs, res, rms}) == None{} : Maybe<List<&2, String>>}
+  %Equal.sym(Bool, N.Nc.sorted(fcs), False{}, h) : {N.FnCtxIn.ok(Bool.and(_, N.Nc.ce_sorted(ces)), N.NF{ces, fcs, res, rms}) == None{} : Maybe<List<&2, String>>}
+  {==}
+
+def AndF(+a: Bool) -> {Bool.and(a, False{}) == False{} : Bool}:
+  match a:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def Laws.fnctx_ce_unsorted_refuses(ces, fcs, res, rms, h):
+  %Equal.sym(Bool, N.Nc.ce_sorted(ces), False{}, h) : {N.FnCtxIn.ok(Bool.and(N.Nc.sorted(fcs), _), N.NF{ces, fcs, res, rms}) == None{} : Maybe<List<&2, String>>}
+  %Equal.sym(Bool, Bool.and(N.Nc.sorted(fcs), False{}), False{}, AndF(N.Nc.sorted(fcs))) : {N.FnCtxIn.ok(_, N.NF{ces, fcs, res, rms}) == None{} : Maybe<List<&2, String>>}
   {==}
 
 def Laws.fnctx_go_refuses():
@@ -548,3 +561,80 @@ def MD.top(fs: List<&2, U32>, +r: U32, +sa: G.Tr, +sb: G.Tr, h: Laws.Asc(fs)) ->
 
 def Laws.nc_mrule_asc(fcs, r, aall, anone, ball, bnone, h):
   MD.top(N.Nc.files(fcs), r, S.Scope.set(N.Nc.files_ok(fcs, aall, anone)), S.Scope.set(N.Nc.files_ok(fcs, ball, bnone)), FA.top(fcs, h))
+
+# ---- the order of CE ----------------------------------------------------------------------------
+def CC.go(t: List<&2, F.Ce>, +p: U32, h: Laws.CeAscU(t, p)) -> {N.Nc.ce_go(t, p) == True{} : Bool}:
+  match t:
+    case Nil{}:
+      {==}
+    case Con{F.Ce{+site, +fn, +target, +node, +ld, +ctx}, +t2}:
+      match h:
+        case Tuple{a, h2}:
+          %Equal.sym(Cmp, U32.cmp(p, site), LT{}, a) : {Bool.and(Cmp.is_lt(_), N.Nc.ce_go(t2, site)) == True{} : Bool}
+          %Equal.sym(Bool, N.Nc.ce_go(t2, site), True{}, CC.go(t2, site, h2)) : {Bool.and(True{}, _) == True{} : Bool}
+          {==}
+
+def Laws.nc_ce_sorted_complete(ces, h):
+  match ces:
+    case Nil{}:
+      {==}
+    case Con{F.Ce{+site, +fn, +target, +node, +ld, +ctx}, +t}:
+      CC.go(t, site, h)
+
+def LtOf(+c: Cmp, h: {Cmp.is_lt(c) == True{} : Bool}) -> {c == LT{} : Cmp}:
+  match c:
+    case LT{}:
+      {==}
+    case EQ{}:
+      Empty.absurd({EQ{} == LT{} : Cmp}, DP.TF(Equal.sym(Bool, False{}, True{}, h)))
+    case GT{}:
+      Empty.absurd({GT{} == LT{} : Cmp}, DP.TF(Equal.sym(Bool, False{}, True{}, h)))
+
+def WkEx(xs: List<&2, N.Ex>, +p: U32, +q: U32, lt: {U32.cmp(q, p) == LT{} : Cmp}, h: Laws.AscExU(xs, p)) -> Laws.AscExU(xs, q):
+  match xs:
+    case Nil{}:
+      Unit{}
+    case Con{N.Ex{+r, +site, +fn, +target}, +t}:
+      match h:
+        case Tuple{a, b}:
+          Tuple{DP.UTrans(q, p, site, lt, a), b}
+
+def UpEx(xs: List<&2, N.Ex>, +p: U32, h: Laws.AscExU(xs, p)) -> Laws.AscEx(xs):
+  match xs:
+    case Nil{}:
+      Unit{}
+    case Con{N.Ex{+r, +site, +fn, +target}, +t}:
+      match h:
+        case Tuple{a, b}:
+          b
+
+def ED.k(k: Bool, +r: U32, +site: U32, +fn: U32, +target: U32, +rest: List<&2, N.Ex>, +p: U32, a: {U32.cmp(p, site) == LT{} : Cmp}, ih: Laws.AscExU(rest, site)) -> Laws.AscExU(N.Nc.keep_e(k, N.Ex{r, site, fn, target}, rest), p):
+  match k:
+    case True{}:
+      Tuple{a, ih}
+    case False{}:
+      WkEx(rest, site, p, a, ih)
+
+def ED.go(ces: List<&2, F.Ce>, +r: U32, +all: U32, +none: U32, +tset: G.Tr, +p: U32, +h: {N.Nc.ce_go(ces, p) == True{} : Bool}) -> Laws.AscExU(N.Nc.edges(ces, r, all, none, tset), p):
+  match ces:
+    case Nil{}:
+      Unit{}
+    case Con{F.Ce{+site, +fn, +target, +node, +ld, +ctx}, +t}:
+      ED.k(Bool.and(N.Nc.ok(all, none, ctx), S.Scope.has(tset, target)), r, site, fn, target, N.Nc.edges(t, r, all, none, tset), p, LtOf(U32.cmp(p, site), DP.AL(Cmp.is_lt(U32.cmp(p, site)), N.Nc.ce_go(t, site), h)), ED.go(t, r, all, none, tset, site, DP.AR(Cmp.is_lt(U32.cmp(p, site)), N.Nc.ce_go(t, site), h)))
+
+def ET.k(k: Bool, +r: U32, +site: U32, +fn: U32, +target: U32, +rest: List<&2, N.Ex>, ih: Laws.AscExU(rest, site)) -> Laws.AscEx(N.Nc.keep_e(k, N.Ex{r, site, fn, target}, rest)):
+  match k:
+    case True{}:
+      ih
+    case False{}:
+      UpEx(rest, site, ih)
+
+def ED.top(ces: List<&2, F.Ce>, +r: U32, +all: U32, +none: U32, +tset: G.Tr, h: {N.Nc.ce_sorted(ces) == True{} : Bool}) -> Laws.AscEx(N.Nc.edges(ces, r, all, none, tset)):
+  match ces:
+    case Nil{}:
+      Unit{}
+    case Con{F.Ce{+site, +fn, +target, +node, +ld, +ctx}, +t}:
+      ET.k(Bool.and(N.Nc.ok(all, none, ctx), S.Scope.has(tset, target)), r, site, fn, target, N.Nc.edges(t, r, all, none, tset), ED.go(t, r, all, none, tset, site, h))
+
+def Laws.nc_erule_asc(ces, fcs, r, all, none, tall, tnone, h):
+  ED.top(ces, r, all, none, S.Scope.set(N.Nc.fns(fcs, tall, tnone)), h)

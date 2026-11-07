@@ -1,0 +1,7 @@
+# CE out of site order (site 11 before site 10): the function-context section refuses the run.
+pulsar-facts 0
+CE 11 3 4 0 0 40
+CE 10 3 0 0 0 40
+FC 0 0 9
+FC 3 1 40
+RE 5 40 20 1 16

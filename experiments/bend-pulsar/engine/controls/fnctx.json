@@ -74,8 +74,8 @@
  {
   "law": "fnctx_go_refuses",
   "bug": "FnCtxIn.go answers no lines on undecodable rows",
-  "old": "    case None{}:\n      None{}\n    case Some{NF{ces, +fcs, res, rms}}:",
-  "new": "    case None{}:\n      Some{Nil{}}\n    case Some{NF{ces, +fcs, res, rms}}:"
+  "old": "    case None{}:\n      None{}\n    case Some{NF{+ces, +fcs, res, rms}}:",
+  "new": "    case None{}:\n      Some{Nil{}}\n    case Some{NF{+ces, +fcs, res, rms}}:"
  },
  {
   "law": "nc_sorted_complete",
@@ -112,5 +112,29 @@
   "bug": "FnCtxIn.ok prints FC out of file order",
   "old": "    case False{}:\n      None{}\n\ndef FnCtxIn.go(",
   "new": "    case False{}:\n      Some{FnCtx.lines(f)}\n\ndef FnCtxIn.go("
+ },
+ {
+  "law": "nc_ce_sorted_complete",
+  "bug": "Nc.ce_sorted refuses every non-empty CE",
+  "old": "      Nc.ce_go(t, site)\n\ndef Nc.erule(",
+  "new": "      False{}\n\ndef Nc.erule("
+ },
+ {
+  "law": "nc_erule_asc",
+  "bug": "Nc.ce_sorted accepts CE in any order",
+  "old": "      Bool.and(Cmp.is_lt(U32.cmp(prev, site)), Nc.ce_go(t, site))",
+  "new": "      Nc.ce_go(t, site)"
+ },
+ {
+  "law": "nc_erule_asc",
+  "bug": "Nc.keep_e writes an edge finding twice",
+  "old": "def Nc.keep_e(b: Bool, x: Ex, acc: List<&2, Ex>) -> List<&2, Ex>:\n  match b:\n    case True{}:\n      Con{x, acc}",
+  "new": "def Nc.keep_e(b: Bool, +x: Ex, acc: List<&2, Ex>) -> List<&2, Ex>:\n  match b:\n    case True{}:\n      Con{x, Con{x, acc}}"
+ },
+ {
+  "law": "fnctx_ce_unsorted_refuses",
+  "bug": "FnCtxIn.go ignores the CE check",
+  "old": "FnCtxIn.ok(Bool.and(Nc.sorted(fcs), Nc.ce_sorted(ces)), NF{ces, fcs, res, rms})",
+  "new": "FnCtxIn.ok(Nc.sorted(fcs), NF{ces, fcs, res, rms})"
  }
 ]

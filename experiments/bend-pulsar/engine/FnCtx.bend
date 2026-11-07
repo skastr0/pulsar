@@ -16,7 +16,8 @@
 #                                         ctx passes (ball, bnone)
 #
 # Output (FnCtx.lines): `pulsar-fnctx 0`, then per RE row in row order one
-# `ECX rule site fn target` per CE fact in CE order, then per RM row in row order one
+# `ECX rule site fn target` per CE fact, in ascending site order (CE must be in strict site
+# order, or the section refuses), then per RM row in row order one
 # `FMX rule file` per file (ascending: FC must be in file order, or the section refuses),
 # then `FNCS n`, the count.
 #
@@ -78,6 +79,23 @@ def Nc.edges(ces: List<&2, F.Ce>, +r: U32, +all: U32, +none: U32, +tset: G.Tr) -
       Nil{}
     case Con{F.Ce{+site, +fn, +target, node, ld, +ctx}, t}:
       Nc.keep_e(Bool.and(Nc.ok(all, none, ctx), S.Scope.has(tset, target)), Ex{r, site, fn, target}, Nc.edges(t, r, all, none, tset))
+
+# CE's site column strictly ascends: one row per call site, in site order. The CLI numbers
+# each site once and writes CE sorted, so a real run passes; a run that does not is refused
+# (FnCtxIn.go), so ECX order and uniqueness follow from the facts (FnCtx-LAWS nc_erule_asc).
+def Nc.ce_go(ces: List<&2, F.Ce>, +prev: U32) -> Bool:
+  match ces:
+    case Nil{}:
+      True{}
+    case Con{F.Ce{+site, fn, target, node, ld, ctx}, t}:
+      Bool.and(Cmp.is_lt(U32.cmp(prev, site)), Nc.ce_go(t, site))
+
+def Nc.ce_sorted(ces: List<&2, F.Ce>) -> Bool:
+  match ces:
+    case Nil{}:
+      True{}
+    case Con{F.Ce{+site, fn, target, node, ld, ctx}, t}:
+      Nc.ce_go(t, site)
 
 def Nc.erule(+ces: List<&2, F.Ce>, +fcs: List<&2, Fc>, e: Re) -> List<&2, Ex>:
   match e:
@@ -286,8 +304,8 @@ def FnCtx.decode(rows: List<&2, W.Row>) -> Maybe<NF>:
 
 # ---- the section ------------------------------------------------------------------------------
 # It runs when there is an RE or RM row (the CLI writes them only for active rules); a row of
-# a tag read here with the wrong field count, or FC out of file order (Nc.sorted), refuses it
-# (None). FnCtx-LAWS E1-E4.
+# a tag read here with the wrong field count, FC out of file order (Nc.sorted) or CE out of
+# site order (Nc.ce_sorted) refuses it (None). FnCtx-LAWS E1-E5.
 def FnCtxIn.ok(ok: Bool, +f: NF) -> Maybe<List<&2, String>>:
   match ok:
     case True{}:
@@ -299,8 +317,8 @@ def FnCtxIn.go(m: Maybe<NF>) -> Maybe<List<&2, String>>:
   match m:
     case None{}:
       None{}
-    case Some{NF{ces, +fcs, res, rms}}:
-      FnCtxIn.ok(Nc.sorted(fcs), NF{ces, fcs, res, rms})
+    case Some{NF{+ces, +fcs, res, rms}}:
+      FnCtxIn.ok(Bool.and(Nc.sorted(fcs), Nc.ce_sorted(ces)), NF{ces, fcs, res, rms})
 
 def FnCtxIn.go1(on: Bool, +rows: List<&2, W.Row>) -> Maybe<List<&2, String>>:
   match on:

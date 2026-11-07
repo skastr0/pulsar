@@ -15,9 +15,11 @@
 #     ctx & all == all and ctx & none == 0.
 #
 #   - order: the section runs only when FC's file column never decreases (Nc.sorted;
-#     nc_sorted_complete, fnctx_unsorted_refuses). Under that check each rule's FMX
-#     lines name each file once, in ascending order (nc_files_asc, nc_mrule_asc), so
-#     what is printed does not depend on an unproven input order.
+#     nc_sorted_complete, fnctx_unsorted_refuses) and CE's site column strictly ascends
+#     (Nc.ce_sorted; nc_ce_sorted_complete, fnctx_ce_unsorted_refuses). Under those checks
+#     each rule's FMX lines name each file once, in ascending order (nc_files_asc,
+#     nc_mrule_asc), and its ECX lines name each site once, in ascending order
+#     (nc_erule_asc), so what is printed does not depend on an unproven input order.
 #
 # Not covered, by design: decoding the rows (FnCtxIn, shown by fixtures) and the
 # decimal formatting inside the lines.
@@ -124,6 +126,36 @@ def Asc(xs: List<&2, U32>) -> Data:
       Unit
     case Con{h, t}:
       AscU(t, h)
+
+# CE's site column strictly ascends from p (the CLI numbers each call site once).
+def CeAscU(xs: List<&2, F.Ce>, p: U32) -> Data:
+  match xs:
+    case Nil{}:
+      Unit
+    case Con{F.Ce{site, fn, target, node, ld, ctx}, t}:
+      TL.And({U32.cmp(p, site) == LT{} : Cmp}, CeAscU(t, site))
+
+def CeAsc(xs: List<&2, F.Ce>) -> Data:
+  match xs:
+    case Nil{}:
+      Unit
+    case Con{F.Ce{site, fn, target, node, ld, ctx}, t}:
+      CeAscU(t, site)
+
+# The site column of edge findings, strictly ascending.
+def AscExU(xs: List<&2, N.Ex>, p: U32) -> Data:
+  match xs:
+    case Nil{}:
+      Unit
+    case Con{N.Ex{r, site, fn, target}, t}:
+      TL.And({U32.cmp(p, site) == LT{} : Cmp}, AscExU(t, site))
+
+def AscEx(xs: List<&2, N.Ex>) -> Data:
+  match xs:
+    case Nil{}:
+      Unit
+    case Con{N.Ex{r, site, fn, target}, t}:
+      AscExU(t, site)
 
 # The same for the file column of module findings.
 def AscMxU(xs: List<&2, N.Mx>, p: U32) -> Data:
@@ -285,6 +317,24 @@ law nc_mrule_asc:
   for h: {N.Nc.sorted(fcs) == True{} : Bool}
   AscMx(N.Nc.mrule(fcs, N.Rm{r, aall, anone, ball, bnone}))
 
+# N12. the CE check accepts every CE whose site column strictly ascends (every real run).
+law nc_ce_sorted_complete:
+  for +ces: List<&2, F.Ce>
+  for h: CeAsc(ces)
+  {N.Nc.ce_sorted(ces) == True{} : Bool}
+
+# N13. under it, an edge rule's findings name each site once, in ascending site order.
+law nc_erule_asc:
+  for +ces: List<&2, F.Ce>
+  for +fcs: List<&2, N.Fc>
+  for +r: U32
+  for +all: U32
+  for +none: U32
+  for +tall: U32
+  for +tnone: U32
+  for h: {N.Nc.ce_sorted(ces) == True{} : Bool}
+  AscEx(N.Nc.erule(ces, fcs, N.Re{r, all, none, tall, tnone}))
+
 # ---- output --------------------------------------------------------------------------------------
 # N8. the printed lines are built from the findings and nothing else: the header, one
 # ECX line per edge finding in order, one FMX line per module finding in order, the count.
@@ -299,14 +349,15 @@ law fnctx_on:
   for on: {N.FnCtxIn.on(rows) == True{} : Bool}
   {N.FnCtxIn.lines(rows) == N.FnCtxIn.go(N.FnCtx.decode(rows)) : Maybe<List<&2, String>>}
 
-# E2. decoded facts with FC in file order print FnCtx.lines; facts that do not decode,
-# or FC out of file order (E4), refuse the section.
+# E2. decoded facts with FC in file order and CE in site order print FnCtx.lines; facts
+# that do not decode, FC out of file order (E4) or CE out of site order (E5) refuse it.
 law fnctx_go_lines:
   for +ces: List<&2, F.Ce>
   for +fcs: List<&2, N.Fc>
   for +res: List<&2, N.Re>
   for +rms: List<&2, N.Rm>
   for h: {N.Nc.sorted(fcs) == True{} : Bool}
+  for hc: {N.Nc.ce_sorted(ces) == True{} : Bool}
   {N.FnCtxIn.go(Some{N.NF{ces, fcs, res, rms}}) == Some{N.FnCtx.lines(N.NF{ces, fcs, res, rms})} : Maybe<List<&2, String>>}
 
 law fnctx_go_refuses:
@@ -326,3 +377,12 @@ law fnctx_off:
   for +rows: List<&2, W.Row>
   for off: {N.FnCtxIn.on(rows) == False{} : Bool}
   {N.FnCtxIn.lines(rows) == Some{Nil{}} : Maybe<List<&2, String>>}
+
+# E5. CE out of site order refuses the section (exit 2), whatever else the rows hold.
+law fnctx_ce_unsorted_refuses:
+  for +ces: List<&2, F.Ce>
+  for +fcs: List<&2, N.Fc>
+  for +res: List<&2, N.Re>
+  for +rms: List<&2, N.Rm>
+  for h: {N.Nc.ce_sorted(ces) == False{} : Bool}
+  {N.FnCtxIn.go(Some{N.NF{ces, fcs, res, rms}}) == None{} : Maybe<List<&2, String>>}
