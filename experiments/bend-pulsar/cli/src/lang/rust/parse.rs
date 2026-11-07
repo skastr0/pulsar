@@ -7,6 +7,7 @@
 //! anonymous and shown as `#<ordinal>`. Code inside macro invocations is a token stream and
 //! emits nothing.
 
+use super::blocks::{bindings, BlockRows, BlockState};
 use crate::lang::functions::{ct, fk, fnv_parts, op, CoRec, CtRec, FileFns, FnRec};
 use proc_macro2::{Span, TokenStream, TokenTree};
 use std::collections::{HashMap, HashSet};
@@ -48,6 +49,8 @@ pub struct RustFile {
     pub tests: Vec<u32>,
     pub uses: Vec<UseRec>,
     pub mods: Vec<ModDecl>,
+    /// `BL`, `BW`, `BR`, `BC` rows of every function (local function and block ids).
+    pub blocks: BlockRows,
     /// The file did not parse; no rows came from it.
     pub failed: bool,
 }
@@ -60,7 +63,7 @@ pub fn extract(rel: &str, src: &str, file_is_test: bool) -> RustFile {
     };
     let mut w = Walker::new(rel, src, file_is_test);
     w.visit_file(&file);
-    RustFile { fns: w.out, tests: w.tests, uses: w.uses, mods: w.mods, failed: false }
+    RustFile { fns: w.out, tests: w.tests, uses: w.uses, mods: w.mods, blocks: w.blocks, failed: false }
 }
 
 struct Frame {
@@ -68,6 +71,7 @@ struct Frame {
     next_node: u32,
     /// Control parents, innermost last; 0 is the function body.
     stack: Vec<u32>,
+    bs: BlockState,
 }
 
 struct Lines {
@@ -115,6 +119,7 @@ struct Walker<'s> {
     test_depth: u32,
     /// `return` expressions that end a function body: not early exits (by node address).
     terminal: HashSet<usize>,
+    blocks: BlockRows,
 }
 
 fn line_of(s: Span) -> u32 {
@@ -142,6 +147,7 @@ impl<'s> Walker<'s> {
             mod_path: Vec::new(),
             test_depth: file_is_test as u32,
             terminal: HashSet::new(),
+            blocks: BlockRows::default(),
         }
     }
 
@@ -170,12 +176,18 @@ impl<'s> Walker<'s> {
         if self.test_depth > 0 {
             self.tests.push(local);
         }
-        self.frames.push(Frame { local, next_node: 1, stack: vec![0] });
+        self.frames.push(Frame { local, next_node: 1, stack: vec![0], bs: BlockState::default() });
         self.push_container(&element);
     }
 
     fn leave(&mut self) {
-        self.frames.pop();
+        if let Some(f) = self.frames.pop() {
+            let rows = f.bs.finish(f.local);
+            self.blocks.bl.extend(rows.bl);
+            self.blocks.bw.extend(rows.bw);
+            self.blocks.br.extend(rows.br);
+            self.blocks.bc.extend(rows.bc);
+        }
         self.pop_container();
     }
 
@@ -256,6 +268,68 @@ impl<'s> Walker<'s> {
         self.pop_parent();
     }
 
+    /// Open the block of a `match`: the scrutinee is its condition, arm patterns pin it to
+    /// literals, arm bindings are written in the region, guards are read by the block.
+    fn match_block(&mut self, m: u32, n: &ExprMatch) {
+        let guards: Vec<&Expr> = n.arms.iter().filter_map(|a| a.guard.as_ref().map(|(_, g)| &**g)).collect();
+        let mut binds = Vec::new();
+        n.arms.iter().for_each(|a| bindings(&a.pat, &mut binds));
+        let pats: Vec<&Pat> = n.arms.iter().filter(|a| a.guard.is_none()).map(|a| &a.pat).collect();
+        if let Some(bs) = self.bs() {
+            bs.begin_match(m, &n.expr, &guards, &binds);
+            bs.match_arms(m, &n.expr, &pats);
+        }
+    }
+
+    fn bs(&mut self) -> Option<&mut BlockState> {
+        self.frames.last_mut().map(|f| &mut f.bs)
+    }
+
+    /// Open decision block `b` (a `CT` node) in the current function's block state.
+    fn block_begin(&mut self, b: u32, cond: Option<&Expr>, extra: &[&Expr], binds: &[String]) {
+        if let Some(bs) = self.bs() {
+            bs.begin(b, cond, extra, binds);
+        }
+    }
+
+    fn block_end(&mut self, b: u32) {
+        if let Some(bs) = self.bs() {
+            bs.end(b);
+        }
+    }
+
+    fn write_place(&mut self, e: &Expr) {
+        if let Some(bs) = self.bs() {
+            bs.write_place(e);
+        }
+    }
+
+    fn write_pat(&mut self, p: &Pat) {
+        let mut names = Vec::new();
+        bindings(p, &mut names);
+        if let Some(bs) = self.bs() {
+            for n in names {
+                bs.write_name(&n);
+            }
+        }
+    }
+
+    /// Parameters get the first variable ids, `self` first.
+    fn bind_params(&mut self, sig: &Signature) {
+        let mut names = Vec::new();
+        for a in &sig.inputs {
+            match a {
+                FnArg::Receiver(_) => names.push("self".to_string()),
+                FnArg::Typed(t) => bindings(&t.pat, &mut names),
+            }
+        }
+        if let Some(bs) = self.bs() {
+            names.iter().for_each(|n| {
+                bs.name_var(n);
+            });
+        }
+    }
+
     fn with_test<R>(&mut self, attrs: &[Attribute], f: impl FnOnce(&mut Self) -> R) -> R {
         let t = attrs_mark_test(attrs);
         if t {
@@ -287,6 +361,7 @@ impl<'s> Walker<'s> {
         let end = end_line_of(block.brace_token.span.close());
         let name = sig.ident.to_string();
         self.enter(start, end, Some(name.strip_prefix("r#").unwrap_or(&name)), kind);
+        self.bind_params(sig);
         self.mark_terminal(block);
         self.visit_block(block);
         self.leave();
@@ -383,6 +458,15 @@ impl<'a> Visit<'a> for Walker<'_> {
             }
             _ => {}
         }
+        for input in &n.inputs {
+            let mut names = Vec::new();
+            bindings(input, &mut names);
+            if let Some(bs) = self.bs() {
+                names.iter().for_each(|x| {
+                    bs.name_var(x);
+                });
+            }
+        }
         self.visit_expr(&n.body);
         self.leave();
     }
@@ -392,17 +476,20 @@ impl<'a> Visit<'a> for Walker<'_> {
     fn visit_expr_if(&mut self, n: &'a ExprIf) {
         let b = self.node(ct::BRANCH);
         self.push_parent(b);
+        self.block_begin(b, Some(&n.cond), &[], &let_binds(&n.cond));
         self.visit_expr(&n.cond);
         self.arm(|w| w.visit_block(&n.then_branch));
         if let Some((_, e)) = &n.else_branch {
             self.arm(|w| w.visit_expr(e));
         }
+        self.block_end(b);
         self.pop_parent();
     }
 
     fn visit_expr_match(&mut self, n: &'a ExprMatch) {
         let m = self.node(ct::MULTI);
         self.push_parent(m);
+        self.match_block(m, n);
         self.visit_expr(&n.expr);
         let mut flagged = false;
         for arm in &n.arms {
@@ -417,29 +504,38 @@ impl<'a> Visit<'a> for Walker<'_> {
                 self.leaf(ct::DEFAULT_FLAG);
             }
         }
+        self.block_end(m);
         self.pop_parent();
     }
 
     fn visit_expr_while(&mut self, n: &'a ExprWhile) {
         let l = self.node(ct::LOOP);
         self.push_parent(l);
+        self.block_begin(l, Some(&n.cond), &[], &let_binds(&n.cond));
         self.visit_expr(&n.cond);
         self.visit_block(&n.body);
+        self.block_end(l);
         self.pop_parent();
     }
 
     fn visit_expr_for_loop(&mut self, n: &'a ExprForLoop) {
         let l = self.node(ct::LOOP);
         self.push_parent(l);
+        let mut binds = Vec::new();
+        bindings(&n.pat, &mut binds);
+        self.block_begin(l, None, &[&n.expr], &binds);
         self.visit_expr(&n.expr);
         self.visit_block(&n.body);
+        self.block_end(l);
         self.pop_parent();
     }
 
     fn visit_expr_loop(&mut self, n: &'a ExprLoop) {
         let l = self.node(ct::LOOP);
         self.push_parent(l);
+        self.block_begin(l, None, &[], &[]);
         self.visit_block(&n.body);
+        self.block_end(l);
         self.pop_parent();
     }
 
@@ -472,7 +568,12 @@ impl<'a> Visit<'a> for Walker<'_> {
         let operator = match n.op {
             BinOp::And(_) => op::AND,
             BinOp::Or(_) => op::OR,
-            _ => return visit::visit_expr_binary(self, n),
+            _ => {
+                if is_assign_op(&n.op) {
+                    self.write_place(&n.left);
+                }
+                return visit::visit_expr_binary(self, n);
+            }
         };
         self.visit_expr(&n.left);
         self.short_circuit(operator);
@@ -486,13 +587,68 @@ impl<'a> Visit<'a> for Walker<'_> {
         if let Some((_, diverge)) = &init.diverge {
             let b = self.node(ct::BRANCH);
             self.push_parent(b);
+            self.block_begin(b, Some(&init.expr), &[], &[]);
             self.arm(|w| w.visit_expr(diverge));
+            self.block_end(b);
             self.pop_parent();
         }
+        self.write_pat(&n.pat);
+    }
+
+    fn visit_expr_assign(&mut self, n: &'a ExprAssign) {
+        self.write_place(&n.left);
+        visit::visit_expr_assign(self, n);
+    }
+
+    fn visit_expr_reference(&mut self, n: &'a ExprReference) {
+        if n.mutability.is_some() {
+            self.write_place(&n.expr);
+        }
+        visit::visit_expr_reference(self, n);
+    }
+
+    fn visit_expr_method_call(&mut self, n: &'a ExprMethodCall) {
+        self.write_place(&n.receiver);
+        visit::visit_expr_method_call(self, n);
     }
 }
 
 // ---- helpers ----------------------------------------------------------------------------
+
+fn is_assign_op(o: &BinOp) -> bool {
+    matches!(
+        o,
+        BinOp::AddAssign(_)
+            | BinOp::SubAssign(_)
+            | BinOp::MulAssign(_)
+            | BinOp::DivAssign(_)
+            | BinOp::RemAssign(_)
+            | BinOp::BitXorAssign(_)
+            | BinOp::BitAndAssign(_)
+            | BinOp::BitOrAssign(_)
+            | BinOp::ShlAssign(_)
+            | BinOp::ShrAssign(_)
+    )
+}
+
+/// Names bound by `if let` / `while let` patterns anywhere in a condition (through `&&` chains).
+fn let_binds(cond: &Expr) -> Vec<String> {
+    let mut out = Vec::new();
+    collect_let_binds(cond, &mut out);
+    out
+}
+
+fn collect_let_binds(e: &Expr, out: &mut Vec<String>) {
+    match e {
+        Expr::Let(l) => bindings(&l.pat, out),
+        Expr::Binary(b) if matches!(b.op, BinOp::And(_)) => {
+            collect_let_binds(&b.left, out);
+            collect_let_binds(&b.right, out);
+        }
+        Expr::Paren(p) => collect_let_binds(&p.expr, out),
+        _ => {}
+    }
+}
 
 /// `#[cfg(test)]` (also `cfg(all(test, ..))`, but not under `not(..)`), or a test attribute.
 fn attrs_mark_test(attrs: &[Attribute]) -> bool {
