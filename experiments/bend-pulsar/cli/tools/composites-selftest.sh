@@ -136,4 +136,48 @@ git commit -qam head3
 out=$("$BIN" delta HEAD~1 HEAD --repo . 2>&1); code=$?
 [ "$code" == 1 ] && ok "mutual loop calls: delta runs and reports (exit 1, no key collision)" || { bad "mutual loop calls: exit $code"; echo "$out" | tail -4; }
 [ "$(grep -c '^+ cloudflare.query-in-loop ' <<<"$out")" == 2 ] && ok "A loop-calls B and B loop-calls A are two findings" || { bad "expected two query-in-loop findings"; echo "$out" | tail -4; }
+# ---- the implicit rowid is a key for unbounded growth and never schema drift (SQLite) ----
+# rowid_case <schema> <where clause>: a Worker whose fetch inserts into events and reads it with the
+# clause, with growth and drift rules on; prints the delta against a commit without the read and insert.
+rowid_case() {
+  cd "$T" && rm -rf ./* .pulsar .git && git init -q . && git config user.email t@t && git config user.name t
+  mkdir -p src .pulsar
+  printf 'name = "demo"\nmain = "src/index.ts"\n' > wrangler.toml
+  echo "$1" > schema.sql
+  printf 'format = "pulsar-policy 0"\n\n[rules]\nenable = [\n  "sql.schema-drift",\n]\n' > .pulsar/policy.toml
+  echo 'export default { async fetch(request: Request): Promise<Response> { return new Response("ok"); } };' > src/index.ts
+  git add -A && git commit -qm base
+  cat > src/index.ts <<TS
+export default {
+  async fetch(request: Request, env: { DB: D1Database }): Promise<Response> {
+    await record(env.DB, "hit");
+    return new Response(JSON.stringify(await report(env.DB)));
+  },
+};
+async function record(db: D1Database, kind: string) {
+  return db.prepare("INSERT INTO events (kind, at) VALUES (?, ?)").bind(kind, Date.now()).run();
+}
+async function report(db: D1Database) {
+  return db.prepare("SELECT kind, at FROM events WHERE $2").all();
+}
+TS
+  git commit -qam head
+  "$BIN" delta HEAD~1 HEAD --repo . 2>/dev/null
+}
+PLAIN='CREATE TABLE events (kind TEXT, at INTEGER);'
+for name in rowid oid _rowid_ ROWID; do
+  out=$(rowid_case "$PLAIN" "$name = ?")
+  { ! grep -q '^+ cloudflare.unbounded-growth ' <<<"$out" && ! grep -q '^+ sql.schema-drift ' <<<"$out"; } && ok "WHERE $name = ? on a rowid table: no growth, no drift" || { bad "WHERE $name = ? is reported"; echo "$out" | grep '^+' | cut -c1-160; }
+done
+out=$(rowid_case "$PLAIN" "rowid IN (?, ?)")
+{ ! grep -q '^+ cloudflare.unbounded-growth ' <<<"$out" && ! grep -q '^+ sql.schema-drift ' <<<"$out"; } && ok "WHERE rowid IN (...) is a key too" || bad "rowid IN is reported"
+out=$(rowid_case "CREATE TABLE events (id INTEGER PRIMARY KEY, kind TEXT, at INTEGER);" "rowid = ?")
+{ ! grep -q '^+ cloudflare.unbounded-growth ' <<<"$out" && ! grep -q '^+ sql.schema-drift ' <<<"$out"; } && ok "rowid on a table with an INTEGER PRIMARY KEY alias resolves to it" || bad "alias case is reported"
+# Controls: the same repo still reports what is really wrong.
+out=$(rowid_case "$PLAIN" "kind = ?")
+grep -q '^+ cloudflare.unbounded-growth ' <<<"$out" && ok "control: a filter on a non-key column is still unbounded growth" || bad "control: growth lost"
+out=$(rowid_case "$PLAIN" "nosuch = ?")
+grep -q '^+ sql.schema-drift ' <<<"$out" && ok "control: an undeclared column is still schema drift" || bad "control: drift lost"
+out=$(rowid_case "CREATE TABLE events (kind TEXT, at INTEGER, PRIMARY KEY (kind)) WITHOUT ROWID;" "rowid = ?")
+{ grep -q '^+ cloudflare.unbounded-growth ' <<<"$out" && grep -q '^+ sql.schema-drift ' <<<"$out"; } && ok "control: WITHOUT ROWID has no row id, so both still fire" || { bad "control: WITHOUT ROWID"; echo "$out" | grep '^+' | cut -c1-140; }
 exit $fail
