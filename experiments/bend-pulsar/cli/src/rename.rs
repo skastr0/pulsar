@@ -68,7 +68,7 @@ pub fn detect(repo: &Path, base: &str, head: &str) -> Result<Renames, String> {
     Ok(parse(&out.stdout))
 }
 
-/// What makes two findings "the same finding" across a rename: rule, version and the subjects by
+/// What makes two findings "the same finding" across a rename or a rule version bump: the rule and the subjects by
 /// path (mapped onto head paths) and symbol, never by key or line.
 pub fn identity(f: &Finding, renames: &Renames, base_side: bool) -> String {
     let mut subs: Vec<String> = f
@@ -83,7 +83,9 @@ pub fn identity(f: &Finding, renames: &Renames, base_side: bool) -> String {
         })
         .collect();
     subs.sort();
-    format!("{}\0{}\0{}", f.rule.id, f.rule.version, subs.join("\u{1}"))
+    // The rule version is not part of it: a version bump re-keys every finding of the rule, and
+    // the same rule about the same subjects is the same finding across versions.
+    format!("{}\0{}", f.rule.id, subs.join("\u{1}"))
 }
 
 /// Pair base-only findings with head-only findings that are the same finding under a rename. A pair
@@ -165,9 +167,14 @@ mod tests {
         let other = func("b/a.ts", "g", 3, 12);
         assert!(match_findings(&[&gone], &[&other], &r).is_empty());
         assert!(match_findings(&[&gone], &[&new], &Renames::default()).is_empty());
+        // a rule version bump re-keys the finding but it is still the same finding
         let mut v2 = func("b/a.ts", "f", 4, 12);
         v2.rule = Rule { version: 2, ..CYCLOMATIC };
-        assert!(match_findings(&[&gone], &[&v2], &r).is_empty());
+        assert_eq!(match_findings(&[&gone], &[&v2], &r), vec![(gone.key(), v2.key())]);
+        // and a different rule never matches
+        let mut nest = func("b/a.ts", "f", 5, 12);
+        nest.rule = crate::finding::NESTING;
+        assert!(match_findings(&[&gone], &[&nest], &r).is_empty());
     }
 
     #[test]

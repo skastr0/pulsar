@@ -643,6 +643,8 @@ struct Diff<'a> {
     renamed_findings: usize,
     /// Removed plus added pairs that look like one function moved to another file (not followed).
     unmatched_moves: usize,
+    /// Rules whose version changed between base and head: (rule, old, new, findings re-keyed).
+    rule_version_changed: Vec<(String, u32, u32, usize)>,
 }
 
 fn compare<'a>(before: &'a Eval, after: &'a Eval, renames: &Renames, trend_all: bool) -> Diff<'a> {
@@ -655,6 +657,7 @@ fn compare<'a>(before: &'a Eval, after: &'a Eval, renames: &Renames, trend_all: 
     removed.retain(|f| !pairs.iter().any(|(b, _)| *b == f.key()));
     new.retain(|f| !pairs.iter().any(|(_, h)| *h == f.key()));
     let unmatched_moves = rename::unmatched_moves(&removed, &new);
+    let rule_version_changed = version_changes(&pairs, &before.findings, &after.findings);
     // A decision committed in head allows a new finding with a reason; it does not count as added.
     let (allowed, added): (Vec<&Finding>, Vec<&Finding>) =
         new.into_iter().partition(|f| after.policy.allowed(&hex(f.key())).is_some());
@@ -674,9 +677,23 @@ fn compare<'a>(before: &'a Eval, after: &'a Eval, renames: &Renames, trend_all: 
         trends: trends(before, after, renames, trend_all),
         degraded,
         renamed_files: renames.count(),
-        renamed_findings: pairs.len(),
+        renamed_findings: pairs.len() - rule_version_changed.iter().map(|v| v.3).sum::<usize>(),
         unmatched_moves,
+        rule_version_changed,
     }
+}
+
+/// The rules whose version differs between a matched base and head finding, with how many findings
+/// were re-keyed by it (so they are neither removed nor added).
+fn version_changes(pairs: &[(u64, u64)], before: &BTreeMap<u64, Finding>, after: &BTreeMap<u64, Finding>) -> Vec<(String, u32, u32, usize)> {
+    let mut by_rule: BTreeMap<(String, u32, u32), usize> = BTreeMap::new();
+    for (b, h) in pairs {
+        let (Some(old), Some(new)) = (before.get(b), after.get(h)) else { continue };
+        if old.rule.version != new.rule.version {
+            *by_rule.entry((old.rule.id.to_string(), old.rule.version, new.rule.version)).or_default() += 1;
+        }
+    }
+    by_rule.into_iter().map(|((rule, old, new), n)| (rule, old, new, n)).collect()
 }
 
 impl Diff<'_> {
@@ -715,7 +732,7 @@ fn render_text(d: &Diff, after: &Eval, base: &str, head: &str) -> String {
         ));
     }
     out.push_str(&format!(
-        "# base={} head={} added={} allowed={} removed={} unchanged={} worsened={} improved={} degraded={} coverage={} renamed_files={} renamed_findings={} unmatched_moves={}\n",
+        "# base={} head={} added={} allowed={} removed={} unchanged={} worsened={} improved={} degraded={} coverage={} renamed_files={} renamed_findings={} unmatched_moves={}{}\n",
         &base[..12],
         &head[..12],
         d.added.len(),
@@ -728,7 +745,8 @@ fn render_text(d: &Diff, after: &Eval, base: &str, head: &str) -> String {
         d.coverage.len(),
         d.renamed_files,
         d.renamed_findings,
-        d.unmatched_moves
+        d.unmatched_moves,
+        d.rule_version_changed.iter().map(|(r, o, n, k)| format!(" rule_version_changed={r} {o}->{n} rekeyed={k}")).collect::<String>()
     ));
     out
 }
@@ -751,6 +769,7 @@ fn render_json(d: &Diff, after: &Eval, base: &str, head: &str) -> String {
         "removed":d.removed.len(),"unchanged":d.unchanged,"worsened":d.count(true),"improved":d.count(false),
         "degraded":d.degraded.len(),"coverage":d.coverage.len(),"coverage_reroot":after.coverage_reroot,
         "renamed_files":d.renamed_files,"renamed_findings":d.renamed_findings,"unmatched_moves":d.unmatched_moves,
+        "rule_version_changed":d.rule_version_changed.iter().map(|(r, o, n, k)| json!({"rule":r,"old":o,"new":n,"rekeyed":k})).collect::<Vec<_>>(),
         "policy":after.policy.fingerprint}));
     lines.iter().map(|l| format!("{l}\n")).collect()
 }
@@ -770,4 +789,33 @@ pub fn run(a: &Args) -> Result<u8, String> {
     let diff = compare(&before, &after, &renames, a.trend);
     print!("{}", if a.json { render_json(&diff, &after, &base, &head) } else { render_text(&diff, &after, &base, &head) });
     Ok(if diff.added.is_empty() { 0 } else { 1 })
+}
+
+#[cfg(test)]
+mod version_tests {
+    use super::*;
+    use crate::finding::{Rule, CYCLOMATIC, NESTING};
+
+    fn f(rule: Rule, chain: &str) -> Finding {
+        Finding::new(
+            rule,
+            vec![Subject::Function { key: 1, path: "a.ts".into(), chain: chain.into() }],
+            "a.ts".into(),
+            Some(chain.into()),
+            String::new(),
+            json!({}),
+        )
+    }
+
+    #[test]
+    fn a_rule_version_bump_is_reported_per_rule_with_the_number_of_rekeyed_findings() {
+        let v2 = Rule { version: 2, ..CYCLOMATIC };
+        let (b1, b2, b3) = (f(CYCLOMATIC, "f"), f(CYCLOMATIC, "g"), f(NESTING, "h"));
+        let (h1, h2, h3) = (f(v2, "f"), f(v2, "g"), f(NESTING, "h"));
+        let pairs = vec![(b1.key(), h1.key()), (b2.key(), h2.key()), (b3.key(), h3.key())];
+        let before: BTreeMap<u64, Finding> = [b1, b2, b3].into_iter().map(|x| (x.key(), x)).collect();
+        let after: BTreeMap<u64, Finding> = [h1, h2, h3].into_iter().map(|x| (x.key(), x)).collect();
+        assert_eq!(version_changes(&pairs, &before, &after), vec![("core.cyclomatic".to_string(), 1, 2, 2)]);
+        assert!(version_changes(&[], &before, &after).is_empty());
+    }
 }
