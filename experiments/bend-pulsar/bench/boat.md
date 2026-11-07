@@ -10,7 +10,7 @@ Each layer starts from the one above it. `boat new --from <name>` starts a VM fr
 |---|---|---|---|---|---|
 | 1 | `pulsar-base` | the toolchains (below) | pulsar-bend | 6.0 GB | 4 s |
 | 2 | `pulsar-corpora` | pulsar-base, plus the 18 validation repos at their recorded shas under the same `/Users/guilhermecastro` paths `corpora.md` records, with full history for junto (blobless), effect, tantivy and typst; also `~/pulsar` at `bd8dbfc` with warm `cli/target` and the oracle working dirs | pulsar-fidelity | 5.07 GB | not measured (no new starts under the VM budget; measure on first use) |
-| 3 | `pulsar-<short-sha>` | pulsar-corpora, plus the repo at that commit, with `cli/` built in release, the engine built and cargo deps warm | cut at milestones (the first dogfood run, then after big build changes), not on every commit | not built yet | not built yet |
+| 3 | `pulsar-<short-sha>` | pulsar-corpora, plus the repo at that commit, with `cli/` built in release, the engine built and cargo deps warm | pulsar-bend; cut at milestones after big build changes, not on every commit, and only from a VM already running on pulsar-corpora (no start is spent on a snapshot) | not built yet: for dogfood v0 (fe31d6e), pulsar-corpora's `~/pulsar` at `bd8dbfc` with warm `cli/target` serves | - |
 
 - **Retention:** keep the newest 2 of each layer and delete older ones with `boat snapshot rm <name>`. A saved snapshot costs about $0.06 a day.
 - **Names:** `pulsar-base` is a single name that each rebuild replaces. Keep the previous base as `pulsar-base-prev` while the new one is checked.
