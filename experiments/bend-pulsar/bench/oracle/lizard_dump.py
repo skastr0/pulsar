@@ -5,7 +5,12 @@ Reads lizard CSV on stdin (or a file argument), emits one JSON row per
 function:
 
   {"tool":"lizard","path":...,"name":...,"start_line":...,"end_line":...,
-   "nloc":...,"ccn":...,"token":...,"param":...,"length":...}
+   "metrics":{"lizard.nloc":...,"lizard.ccn":...,"lizard.token":...,
+              "lizard.param":...,"lizard.length":...}}
+
+Metrics live in the nested dict (not flat fields) so diff_metrics.py
+--metric aliases can rename them to canonical names — flat fields get
+tool-prefixed inside metrics_of() after renames run.
 
 Lizard CSV columns (no header):
   NLOC, CCN, token, PARAM, length, "name@start-end@file", file, name,
@@ -33,17 +38,20 @@ def main() -> int:
             start, end = int(row[9]), int(row[10])
         except ValueError:
             continue
+        num = lambda s: int(s) if s and s.lstrip("-").isdigit() else None
         print(json.dumps({
             "tool": "lizard",
             "path": path,
             "name": name,
             "start_line": start,
             "end_line": end,
-            "nloc": int(nloc) if nloc.isdigit() else None,
-            "ccn": int(ccn) if ccn.lstrip("-").isdigit() else None,
-            "token": int(token) if token.lstrip("-").isdigit() else None,
-            "param": int(param) if param.lstrip("-").isdigit() else None,
-            "length": int(length) if length.lstrip("-").isdigit() else None,
+            "metrics": {
+                "lizard.nloc": num(nloc),
+                "lizard.ccn": num(ccn),
+                "lizard.token": num(token),
+                "lizard.param": num(param),
+                "lizard.length": num(length),
+            },
         }))
     return 0
 

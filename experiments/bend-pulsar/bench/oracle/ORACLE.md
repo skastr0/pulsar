@@ -170,6 +170,81 @@ Findings:
   mostly `.rs` rows plus a handful of TS rows in files the engine marks
   unreadable or non-prod; enumerate during the metric pass.
 
+## Metric diff results (2026-11-07, engine e75331e + CLI f70d268+)
+
+Pipeline per corpus: `pulsar facts` → `pulsar-engine` → `fm_rows.py`
+(FM lines joined to `.fns` identity, canonical metric names) →
+`diff_metrics.py` with `--metric` aliases
+(`eslint.cyclomatic=cyclomatic`, `lizard.ccn=cyclomatic`,
+`lizard.length=length`). Raw table: `results/metric-diff-ee12518.txt`.
+552,685 `.fns` rows across 18 corpora after the Rust lane landed.
+
+### NPath fixtures: 28/28 exact
+
+`fixtures/npath/` (14 TS + 14 Rust functions) run through the live
+engine: every hand-computed Nejmeh value matched, including `&&`
+predicates, ternaries, switch/match, guard returns, `else if` chains
+and Rust `for … in` (modeled as while-equivalent, =2). The engine's
+NPath is empirically the Nejmeh 1988 recurrence, saturating at
+16,777,215 — not literal acyclic-path count (see research/thresholds.md).
+
+### Cyclomatic: ESLint vs engine (TS)
+
+| corpus | agree | diff | agreement |
+|---|---|---|---|
+| alchemy | 99,197 | 9,415 | 91.3% |
+| effect | 77,744 | 2,863 | 96.5% |
+| t3code | 74,515 | 4,851 | 93.9% |
+| junto | 61,780 | 6,286 | 90.8% |
+| opencode | 26,657 | 2,450 | 91.6% |
+| pi | 45,283 | 4,507 | 91.0% |
+| pulsar | 10,640 | 1,556 | 87.2% |
+| js-genai | 2,703 | 246 | 91.7% |
+
+Systematic direction: **engine reads lower than ESLint**, almost always
+by 1–2 (`oracle=5 engine=4`, `oracle=2 engine=1`, `oracle=29 engine=27`).
+Hypothesis to verify per-construct: ESLint counts `??`, `?.` chains or
+`else if` arms that the CT-based count does not (or counts `if` without
+`else` differently). Construct-level attribution is the next step —
+pick diffing functions and diff their control trees by hand.
+
+### Cyclomatic: lizard vs engine (Rust)
+
+| corpus | agree | diff | agreement |
+|---|---|---|---|
+| codex | 21,884 | 9,142 | 70.5% |
+| convex-backend | 9,994 | 3,801 | 72.4% |
+| tantivy | 4,481 | 1,580 | 73.9% |
+| typst | 4,527 | 1,692 | 72.8% |
+
+Rust agreement is markedly lower and **bidirectional**: engine reads
+lower on simple bodies (`oracle=2 engine=1` — likely `?`/`if let`/match
+ergonomics) and higher on others (`oracle=1 engine=3`, `oracle=4 engine=6`
+— likely `?` desugaring, match guards or closure bodies lizard skips).
+Lizard also has no chain/kind, so the join relies on name+span
+fallback; the ~2% unmatched (oracle-only 123–170 per corpus) are
+same-name collisions and macro-generated items.
+
+### Length: lizard vs engine (Rust)
+
+agree/diff roughly 60–80% (codex 18,082/12,798; tantivy 5,018/1,043;
+typst 4,969/1,196) — expected: lizard `length` is its own line metric,
+engine `length` is the `.fns` span; definitions differ by braces/comments.
+
+### Not yet comparable
+
+- `nesting`/`npath` have no runnable TS oracle (NPath is fixture-verified
+  only; nesting has no published spec oracle — sonarjs cognitive is a
+  different metric and stays unmapped by design).
+- `eslint.cognitive` (sonarjs) vs engine `nesting`: deliberately NOT
+  aliased — SonarSource cognitive complexity and CT nesting are
+  different definitions (nesting increments, `else if` chains, `switch`
+  as one increment). If the team adds a cognitive-complexity rule per
+  the SonarSource spec (lead's #663 note), sonarjs becomes its oracle.
+- Coverage gaps: `fatal_parse=0` on all corpora; residual oracle-only
+  rows are `.rs` items lizard can't see (macro-generated, some trait
+  items) plus anonymous-chain join misses documented above.
+
 ## Running
 
 ```sh

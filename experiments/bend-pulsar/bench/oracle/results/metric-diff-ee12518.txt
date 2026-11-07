@@ -1,0 +1,307 @@
+=== alchemy
+oracle rows: 108625  engine rows: 110714
+matched: 108625  oracle-only: 0
+
+metric                                   agree   diff o-only e-only
+-------------------------------------------------------------------
+cyclomatic                               99197   9415      0     13
+    e.g. waitForWorker: oracle=5 engine=4
+    e.g. waitForOAuthUrl: oracle=4 engine=3
+    e.g. <anon:0>: oracle=29 engine=27
+    e.g. Api><anon:0>><anon:0>: oracle=6 engine=5
+    e.g. <anon:0>><anon:0>><anon:0>: oracle=3 engine=2
+engine.fn                                    0      0      0 108625
+eslint.cognitive                             0      0  21875      0
+length                                       0      0      0 108625
+nesting                                      0      0      0 108625
+npath                                        0      0      0 108625
+=== codex
+oracle rows: 31155  engine rows: 44936
+matched: 31026  oracle-only: 129
+
+metric                                   agree   diff o-only e-only
+-------------------------------------------------------------------
+cyclomatic                               21884   9142      0      0
+    e.g. Codex>constructor: oracle=2 engine=1
+    e.g. Codex>startThread: oracle=2 engine=1
+    e.g. Codex>resumeThread: oracle=2 engine=1
+    e.g. CodexExec>constructor: oracle=3 engine=2
+    e.g. CodexExec>run: oracle=39 engine=37
+engine.fn                                    0      0      0  31026
+eslint.cognitive                             0      0     53      0
+length                                   18082  12798      0    146
+    e.g. list_thread_spawn_children: oracle=18 engine=17
+    e.g. local_store_upserts_and_lists_direct_children_with_status_filters: oracle=54 engine=50
+=== convex-backend
+oracle rows: 13980  engine rows: 22106
+matched: 13810  oracle-only: 170
+
+metric                                   agree   diff o-only e-only
+-------------------------------------------------------------------
+cyclomatic                                9994   3801      0     15
+    e.g. ContextImpl>crash: oracle=1 engine=3
+    e.g. ContextImpl>flushAndExit: oracle=1 engine=2
+    e.g. ContextImpl>incrementChanges: oracle=1 engine=2
+    e.g. logError: oracle=2 engine=1
+    e.g. logWarning: oracle=2 engine=1
+engine.fn                                    0      0      0  13810
+eslint.cognitive                             0      0   2221      0
+length                                    6845   1185      0   5780
+    e.g. mark_as_soft_deleted: oracle=18 engine=16
+    e.g. extend_validity: oracle=27 engine=25
+=== effect-actualbudged-sync
+oracle rows: 111  engine rows: 111
+matched: 111  oracle-only: 0
+
+metric                                   agree   diff o-only e-only
+-------------------------------------------------------------------
+cyclomatic                                 105      6      0      0
+    e.g. Akahu><anon:0>>stream><anon:0>><anon:0>><anon:0>: oracle=2 engine=1
+    e.g. Transaction>accountTransaction: oracle=4 engine=2
+    e.g. Transaction>accountTransaction: oracle=4 engine=1
+    e.g. <anon:0>>categoryId: oracle=5 engine=3
+    e.g. <anon:0>>categoryId><anon:0>: oracle=2 engine=1
+engine.fn                                    0      0      0    111
+eslint.cognitive                             0      0     14      0
+length                                       0      0      0    111
+nesting                                      0      0      0    111
+npath                                        0      0      0    111
+=== effect-app-barake
+oracle rows: 357  engine rows: 475
+matched: 357  oracle-only: 0
+
+metric                                   agree   diff o-only e-only
+-------------------------------------------------------------------
+cyclomatic                                 326      9      0     22
+    e.g. MountableDialog: oracle=3 engine=2
+    e.g. useFormNavigationBlocker: oracle=4 engine=3
+    e.g. getNameInitials><anon:0>: oracle=3 engine=2
+    e.g. Email>message: oracle=3 engine=2
+    e.g. Email>message: oracle=3 engine=2
+engine.fn                                    0      0      0    357
+eslint.cognitive                             0      0     52      0
+length                                       0      0      0    357
+nesting                                      0      0      0    357
+npath                                        0      0      0    357
+=== effect-cluster-via-sst
+oracle rows: 77  engine rows: 77
+matched: 77  oracle-only: 0
+
+metric                                   agree   diff o-only e-only
+-------------------------------------------------------------------
+cyclomatic                                  71      6      0      0
+    e.g. <anon:0>: oracle=2 engine=1
+    e.g. <anon:0>><anon:0>><anon:0>: oracle=3 engine=1
+    e.g. <anon:0>><anon:0>><anon:0>: oracle=2 engine=1
+    e.g. <anon:0>><anon:0>><anon:0>><anon:0>: oracle=2 engine=1
+    e.g. ClusterCommand><anon:0>><anon:0>: oracle=2 engine=1
+engine.fn                                    0      0      0     77
+eslint.cognitive                             0      0     15      0
+length                                       0      0      0     77
+nesting                                      0      0      0     77
+npath                                        0      0      0     77
+=== effect-http
+oracle rows: 1081  engine rows: 1081
+matched: 1081  oracle-only: 0
+
+metric                                   agree   diff o-only e-only
+-------------------------------------------------------------------
+cyclomatic                                1061     20      0      0
+    e.g. make><anon:0>: oracle=3 engine=2
+    e.g. randomExample>go: oracle=28 engine=27
+    e.g. randomExample>go><anon:0>: oracle=3 engine=2
+    e.g. _make: oracle=2 engine=1
+    e.g. HttpErrorImpl>unsafeFromUnknown: oracle=9 engine=7
+engine.fn                                    0      0      0   1081
+eslint.cognitive                             0      0    119      0
+length                                       0      0      0   1081
+nesting                                      0      0      0   1081
+npath                                        0      0      0   1081
+=== effect
+oracle rows: 80622  engine rows: 80748
+matched: 80607  oracle-only: 15
+
+metric                                   agree   diff o-only e-only
+-------------------------------------------------------------------
+cyclomatic                               77744   2863      0      0
+    e.g. <anon:0>: oracle=4 engine=2
+    e.g. <anon:0>><anon:0>: oracle=2 engine=1
+    e.g. <anon:0>>connection: oracle=2 engine=1
+    e.g. issueTitles><anon:0>: oracle=4 engine=2
+    e.g. issueTitles><anon:0>><anon:0>: oracle=2 engine=1
+engine.fn                                    0      0      0  80607
+eslint.cognitive                             0      0  13733      0
+length                                       0      0      0  80607
+nesting                                      0      0      0  80607
+npath                                        0      0      0  80607
+=== effect-website
+oracle rows: 503  engine rows: 866
+matched: 503  oracle-only: 0
+
+metric                                   agree   diff o-only e-only
+-------------------------------------------------------------------
+cyclomatic                                 490     13      0      0
+    e.g. makeFile: oracle=2 engine=1
+    e.g. makeDirectory: oracle=2 engine=1
+    e.g. Loader><anon:0>>withIndicator: oracle=2 engine=1
+    e.g. setupCompletionItemProviders><anon:0>>provideCompletionItems><anon:0>: oracle=4 engine=3
+    e.g. setupCompletionItemProviders><anon:0>>resolveCompletionItem: oracle=5 engine=3
+engine.fn                                    0      0      0    503
+eslint.cognitive                             0      0     87      0
+length                                       0      0      0    503
+nesting                                      0      0      0    503
+npath                                        0      0      0    503
+=== js-genai
+oracle rows: 2949  engine rows: 2980
+matched: 2949  oracle-only: 0
+
+metric                                   agree   diff o-only e-only
+-------------------------------------------------------------------
+cyclomatic                                2703    246      0      0
+    e.g. batchEmbedFile: oracle=12 engine=11
+    e.g. batchEmbedInline: oracle=8 engine=7
+    e.g. ask: oracle=23 engine=20
+    e.g. editImageContentReferenceFromVertexAI: oracle=5 engine=1
+    e.g. editImageControlReferenceFromVertexAI: oracle=12 engine=2
+engine.fn                                    0      0      0   2949
+eslint.cognitive                             0      0    973      0
+length                                       0      0      0   2949
+nesting                                      0      0      0   2949
+npath                                        0      0      0   2949
+=== junto
+oracle rows: 68093  engine rows: 79342
+matched: 68066  oracle-only: 27
+
+metric                                   agree   diff o-only e-only
+-------------------------------------------------------------------
+cyclomatic                               61780   6286      0      0
+    e.g. repoMetadata: oracle=2 engine=1
+    e.g. runCli: oracle=2 engine=1
+    e.g. call: oracle=2 engine=1
+    e.g. call><anon:0>><anon:0>>data: oracle=6 engine=5
+    e.g. fresh: oracle=2 engine=1
+engine.fn                                    0      0      0  68066
+eslint.cognitive                             0      0  17187      0
+length                                     495     14      0  67557
+    e.g. main: oracle=37 engine=35
+    e.g. names_the_secret_and_never_holds_its_value: oracle=15 engine=17
+=== opencode
+oracle rows: 29107  engine rows: 39057
+matched: 29107  oracle-only: 0
+
+metric                                   agree   diff o-only e-only
+-------------------------------------------------------------------
+cyclomatic                               26657   2450      0      0
+    e.g. githubFetch: oracle=4 engine=3
+    e.g. githubFetch: oracle=4 engine=3
+    e.g. useEnvModel: oracle=5 engine=4
+    e.g. getUserPrompt: oracle=6 engine=5
+    e.g. subscribeSessionEvents><anon:0>: oracle=20 engine=19
+engine.fn                                    0      0      0  29107
+eslint.cognitive                             0      0   6391      0
+length                                       0      0      0  29107
+nesting                                      0      0      0  29107
+npath                                        0      0      0  29107
+=== phoenix
+oracle rows: 1644  engine rows: 5418
+matched: 1644  oracle-only: 0
+
+metric                                   agree   diff o-only e-only
+-------------------------------------------------------------------
+cyclomatic                                1236    145      0    263
+    e.g. fetchJsonObservable><anon:0>><anon:0>: oracle=3 engine=2
+    e.g. FocusHotkey><anon:0>: oracle=2 engine=1
+    e.g. cardCSS: oracle=3 engine=2
+    e.g. colorValue: oracle=2 engine=1
+    e.g. useStyleProps: oracle=5 engine=2
+engine.fn                                    0      0      0   1644
+eslint.cognitive                             0      0    419      0
+length                                       0      0      0   1644
+nesting                                      0      0      0   1644
+npath                                        0      0      0   1644
+=== pi
+oracle rows: 50018  engine rows: 50219
+matched: 50018  oracle-only: 0
+
+metric                                   agree   diff o-only e-only
+-------------------------------------------------------------------
+cyclomatic                               45433   4585      0      0
+    e.g. findIssueGistId: oracle=10 engine=9
+    e.g. fetchGistSession><anon:0>: oracle=2 engine=1
+    e.g. fetchGistSession><anon:0>: oracle=2 engine=1
+    e.g. extractPromptMatch: oracle=7 engine=4
+    e.g. parseAdvisoryUrl: oracle=5 engine=4
+engine.fn                                    0      0      0  50018
+eslint.cognitive                             0      0  11577      0
+length                                     226      2      0  49790
+    e.g. run: oracle=259 engine=258
+    e.g. run: oracle=179 engine=176
+=== pulsar
+oracle rows: 12196  engine rows: 12279
+matched: 12196  oracle-only: 0
+
+metric                                   agree   diff o-only e-only
+-------------------------------------------------------------------
+cyclomatic                               10640   1556      0      0
+    e.g. repoSelfCalibrationMetadata: oracle=2 engine=1
+    e.g. readStringMetadata: oracle=3 engine=2
+    e.g. centerScope: oracle=5 engine=4
+    e.g. locationLine: oracle=6 engine=4
+    e.g. narrowVectorToDomain: oracle=22 engine=13
+engine.fn                                    0      0      0  12196
+eslint.cognitive                             0      0   3570      0
+length                                       2      0      0  12194
+lizard.nloc                                  0      0      2      0
+lizard.param                                 0      0      2      0
+=== t3code
+oracle rows: 79385  engine rows: 85730
+matched: 79385  oracle-only: 0
+
+metric                                   agree   diff o-only e-only
+-------------------------------------------------------------------
+cyclomatic                               74515   4851      0     19
+    e.g. <anon:0>: oracle=2 engine=1
+    e.g. <anon:0>>getJob><anon:0>>try: oracle=7 engine=3
+    e.g. <anon:0>>getJob><anon:0>: oracle=4 engine=2
+    e.g. <anon:0>>getJob><anon:0>>try: oracle=7 engine=3
+    e.g. <anon:0>>getJob><anon:0>: oracle=4 engine=2
+engine.fn                                    0      0      0  79385
+eslint.cognitive                             0      0  14980      0
+length                                       0      0      0  79385
+nesting                                      0      0      0  79385
+npath                                        0      0      0  79385
+=== tantivy
+oracle rows: 6184  engine rows: 7714
+matched: 6061  oracle-only: 123
+
+metric                                   agree   diff o-only e-only
+-------------------------------------------------------------------
+cyclomatic                                4481   1580      0      0
+    e.g. get_test_index_bench: oracle=20 engine=11
+    e.g. criterion_benchmark: oracle=3 engine=1
+    e.g. _benchmark: oracle=6 engine=2
+    e.g. test_range: oracle=6 engine=5
+    e.g. get_index_0_to_100: oracle=3 engine=1
+engine.fn                                    0      0      0   6061
+length                                    5018   1043      0      0
+    e.g. main: oracle=19 engine=18
+    e.g. bench_agg: oracle=46 engine=40
+    e.g. exec_term_with_agg: oracle=13 engine=12
+=== typst
+oracle rows: 6374  engine rows: 8832
+matched: 6219  oracle-only: 155
+
+metric                                   agree   diff o-only e-only
+-------------------------------------------------------------------
+cyclomatic                                4527   1692      0      0
+    e.g. TestHelper>viewFromLens: oracle=5 engine=4
+    e.g. getWebviewContent: oracle=9 engine=7
+    e.g. export: oracle=2 engine=1
+    e.g. export_document: oracle=4 engine=6
+    e.g. export_svg: oracle=2 engine=1
+engine.fn                                    0      0      0   6219
+eslint.cognitive                             0      0     20      0
+length                                    4969   1196      0     54
+    e.g. document: oracle=11 engine=10
+    e.g. path: oracle=18 engine=17
+DONE

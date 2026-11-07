@@ -100,6 +100,30 @@ def main():
     oracle_rows = load_rows(args.oracle)
     engine_rows = load_rows(args.engine) if args.engine else []
 
+    # --metric A=B renames metric A to B on every row, so tools with
+    # different names for the same quantity (eslint.cyclomatic,
+    # lizard.ccn, engine cyclomatic) compare under one canonical name.
+    renames = {}
+    for spec in args.metric:
+        a, _, b = spec.partition("=")
+        if b:
+            renames[a] = b
+
+    def apply_renames(rows):
+        for r in rows:
+            m = r.get("metrics")
+            if isinstance(m, dict):
+                for a, b in renames.items():
+                    if a in m:
+                        m[b] = m.pop(a)
+            for a, b in renames.items():
+                if a in r and isinstance(r[a], (int, float)):
+                    r[b] = r.pop(a)
+        return rows
+
+    oracle_rows = apply_renames(oracle_rows)
+    engine_rows = apply_renames(engine_rows)
+
     # Index engine rows by identity keys.
     eng_by_key = defaultdict(list)
     for r in engine_rows:
