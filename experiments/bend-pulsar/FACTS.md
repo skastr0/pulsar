@@ -153,15 +153,36 @@ Repo classes start at 1000.
 
 ### Effect pack
 
+Read by `engine/Layers.bend` (layer-graph detectors; laws in `engine/Layers-LAWS.bend`). Ids are dense per kind: layers `0..nl-1`, services `0..ns-1`, roots `0..nr-1`; `fn` and `file` ids are the v0/v1 ones. Every relation is strictly ascending in its fields, and the engine refuses (exit 2) a fact set that is not, or that names an id at or above its header count.
+
 | Tag | Fields | Meaning |
 |---|---|---|
-| `SV` | `svc file` | A service definition (`Context.Service`, `Context.Tag`, `Effect.Service`). Its key is the service's tag string, hashed. |
+| `E` | `nl ns nr` | Header: layer, service and root counts (each at most 2^24). Exactly one. |
+| `SV` | `svc file kind` | A service definition (`Context.Service`, `Context.Tag`, `Effect.Service`); its key is the service's tag string, hashed. `kind` 1 = the service has a default implementation (always provided), 0 = not. |
 | `LY` | `layer file svc` | A layer that builds service `svc`. |
 | `LQ` | `layer svc` | Layer `layer` requires `svc` (a `yield*` in its constructor, or a listed dependency). |
-| `LP` | `outer inner mode` | Layer composition: `mode` 1 = provide, 2 = provideMerge, 3 = merge. |
+| `LP` | `outer inner mode` | Layer composition: `mode` 1 = provide (also v3 `dependencies`), 2 = provideMerge, 3 = merge. |
+| `LR` | `root layer` | Provider root `root` (a `Layer.launch`, `Effect.provide(…, layer)` or `ManagedRuntime.make` site) is given `layer`. |
+| `RT` | `root file fn` | Where root `root` is: its file and enclosing function. |
+| `LC` | `layer fn` | Function `fn` is layer `layer`'s constructor body. |
+| `LO` | `layer` | Opaque: a layer whose composition the adapter cannot see (built from a computed value, or imported from outside the repo). |
 | `US` | `fn svc` | Function `fn` uses `svc` (`yield*` of the service). |
 
 With the type lane on, `LQ` and `US` become exact: they come from the requirement channel instead of syntax. The pack's catalog covers `effect` and `@effect/sql` (including `@effect/sql-pg`): `sql` tagged templates, `SqlResolver`, `SqlSchema` and `Model.makeRepository`, all as class 1 (query).
+
+**Definitions the detectors use.** `LP` edges are followed from `outer` to `inner`, ignoring `mode` and order; this over-approximates what a root provides, so a reported gap is never a false positive of the walk. A layer is *reachable at root r* if an `LP` walk leads to it from a layer of some `LR r _` fact. Service `s` is *provided at r* if a layer reachable at r builds s (`LY`), or s has `SV` kind 1. A root that reaches an `LO` layer reports nothing missing (it prints `LOPQ` instead).
+
+**Output (`pulsar-layers 0`), one line per finding, sorted:**
+
+| Line | Fields | Rule |
+|---|---|---|
+| `LCYC n ids…` | a layer requirement cycle: layer u → w when u requires a service w builds | effect/layer-cycle |
+| `LCERT 0\|1` | 1 = the cycle list is certified complete (Graph laws H, J) | |
+| `LUNP r l s x walk…` | at root r, reachable layer l requires s and s is not provided; `walk` is the `LP` path from r's layer x to l | effect/unprovided-service |
+| `LOPQ r l` | root r reaches opaque layer l, so its gaps are not reported | |
+| `LDUP s a b w na wa… wb…` | layers a < b both build s and both are reachable from layer w (walks wa, wb) | effect/duplicate-builder |
+| `LHUB s k a b` | service s has fan-in k = a `LQ` layers + b `US` functions that are no layer's constructor, with k ≥ the threshold | effect/hub-service |
+| `LS nl ns edges cycles unp dups hubs hub_min` | summary; `hub_min` is the threshold in force (default 10) | |
 
 ### Later
 
