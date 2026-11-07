@@ -8,6 +8,7 @@
 //! emits nothing.
 
 use super::blocks::{bindings, BlockState};
+use super::calls::{err_binds, if_let_err_binds, named_leaves, scan_uses, Body, CallEnv, OpenHandler, Scan};
 use crate::lang::functions::{ct, fk, fnv_parts, op, CoRec, CtRec, FileFns, FnRec};
 use proc_macro2::{Span, TokenStream, TokenTree};
 use std::collections::{HashMap, HashSet};
@@ -22,6 +23,8 @@ pub struct UseRec {
     pub mod_path: Vec<String>,
     /// Path segments, `self` stripped from the end. A glob leaf holds the segments before `*`.
     pub segs: Vec<String>,
+    /// The name the leaf binds (the alias after `as`); `None` for a glob.
+    pub local: Option<String>,
     /// `use ::name::...`: the first segment is an extern crate name.
     pub leading_colon: bool,
     /// Any visibility other than inherited: a re-export (`I` form 2).
@@ -56,20 +59,37 @@ pub struct RustFile {
 /// Parse and walk one file. `file_is_test` marks every function in it as test code (the file is
 /// only reachable through a `#[cfg(test)] mod x;`).
 pub fn extract(rel: &str, src: &str, file_is_test: bool) -> RustFile {
+    extract_with(rel, src, file_is_test, None)
+}
+
+/// Like [`extract`], and with call sites for the symbols of `env`'s catalogs.
+pub fn extract_with(rel: &str, src: &str, file_is_test: bool, env: Option<&CallEnv>) -> RustFile {
     let Ok(file) = syn::parse_file(src) else {
         return RustFile { failed: true, ..RustFile::default() };
     };
-    let mut w = Walker::new(rel, src, file_is_test);
+    let scan = if env.is_some() { scan_uses(&file) } else { Scan::default() };
+    let mut w = Walker::new(rel, src, file_is_test, env, scan);
     w.visit_file(&file);
     RustFile { fns: w.out, tests: w.tests, uses: w.uses, mods: w.mods, failed: false }
 }
 
-struct Frame {
-    local: u32,
+pub(super) struct Frame {
+    pub(super) local: u32,
     next_node: u32,
     /// Control parents, innermost last; 0 is the function body.
-    stack: Vec<u32>,
-    bs: BlockState,
+    pub(super) stack: Vec<u32>,
+    pub(super) bs: BlockState,
+    /// Enclosing loops in this function.
+    pub(super) loop_depth: u32,
+    /// >0 inside an `async` function, closure or block.
+    pub(super) async_depth: u32,
+    /// Call arguments that are a bare name: settled when the function ends, once its binding
+    /// counts are final. `(site index, argument position, name)`.
+    pub(super) pending_consts: Vec<(usize, u8, String)>,
+    /// Names bound by an immutable `let name = <literal>`.
+    pub(super) lit_locals: std::collections::HashSet<String>,
+    /// Error handlers still open, by the pointer of the closure that is the handler.
+    pub(super) handler_closures: HashMap<usize, OpenHandler>,
 }
 
 struct Lines {
@@ -98,23 +118,29 @@ impl Lines {
     }
 }
 
-struct Walker<'s> {
+pub(super) struct Walker<'s> {
     rel: &'s str,
     lines: Lines,
-    out: FileFns,
+    pub(super) out: FileFns,
     tests: Vec<u32>,
     uses: Vec<UseRec>,
     mods: Vec<ModDecl>,
-    frames: Vec<Frame>,
+    pub(super) frames: Vec<Frame>,
+    /// The active catalogs' symbols, when the caller wants call sites.
+    pub(super) env: Option<&'s CallEnv>,
+    /// What each module's `use` items bind, for resolving call paths.
+    pub(super) scan: Scan,
+    /// Symbol string -> its index in `out.syms`.
+    pub(super) sym_ids: HashMap<String, u32>,
     /// Container chain, `>`-joined, and the same chain `0x1f`-joined for the key.
     prefix: String,
     key_prefix: Vec<u8>,
     marks: Vec<(usize, usize)>,
     counters: HashMap<u64, u32>,
     /// Inline modules between the root and here.
-    mod_path: Vec<String>,
+    pub(super) mod_path: Vec<String>,
     /// >0 while inside `#[cfg(test)]` code or a test function.
-    test_depth: u32,
+    pub(super) test_depth: u32,
     /// `return` expressions that end a function body: not early exits (by node address).
     terminal: HashSet<usize>,
 }
@@ -128,7 +154,7 @@ fn end_line_of(s: Span) -> u32 {
 }
 
 impl<'s> Walker<'s> {
-    fn new(rel: &'s str, src: &'s str, file_is_test: bool) -> Self {
+    fn new(rel: &'s str, src: &'s str, file_is_test: bool, env: Option<&'s CallEnv>, scan: Scan) -> Self {
         Walker {
             rel,
             lines: Lines::new(src),
@@ -137,6 +163,9 @@ impl<'s> Walker<'s> {
             uses: Vec::new(),
             mods: Vec::new(),
             frames: Vec::new(),
+            env,
+            scan,
+            sym_ids: HashMap::new(),
             prefix: String::new(),
             key_prefix: Vec::new(),
             marks: Vec::new(),
@@ -172,11 +201,12 @@ impl<'s> Walker<'s> {
         if self.test_depth > 0 {
             self.tests.push(local);
         }
-        self.frames.push(Frame { local, next_node: 1, stack: vec![0], bs: BlockState::default() });
+        self.frames.push(Frame { local, next_node: 1, stack: vec![0], bs: BlockState::default(), loop_depth: 0, async_depth: 0, pending_consts: Vec::new(), lit_locals: Default::default(), handler_closures: HashMap::new() });
         self.push_container(&element);
     }
 
     fn leave(&mut self) {
+        self.settle_consts();
         if let Some(f) = self.frames.pop() {
             let rows = f.bs.finish(f.local);
             let out = &mut self.out.blocks;
@@ -278,6 +308,24 @@ impl<'s> Walker<'s> {
         }
     }
 
+    fn set_async(&mut self) {
+        if let Some(f) = self.frames.last_mut() {
+            f.async_depth += 1;
+        }
+    }
+
+    fn loop_enter(&mut self) {
+        if let Some(f) = self.frames.last_mut() {
+            f.loop_depth += 1;
+        }
+    }
+
+    fn loop_exit(&mut self) {
+        if let Some(f) = self.frames.last_mut() {
+            f.loop_depth = f.loop_depth.saturating_sub(1);
+        }
+    }
+
     fn bs(&mut self) -> Option<&mut BlockState> {
         self.frames.last_mut().map(|f| &mut f.bs)
     }
@@ -359,6 +407,9 @@ impl<'s> Walker<'s> {
         let name = sig.ident.to_string();
         self.enter(start, end, Some(name.strip_prefix("r#").unwrap_or(&name)), kind);
         self.bind_params(sig);
+        if sig.asyncness.is_some() {
+            self.set_async();
+        }
         self.mark_terminal(block);
         self.visit_block(block);
         self.leave();
@@ -431,12 +482,11 @@ impl<'a> Visit<'a> for Walker<'_> {
     fn visit_item_use(&mut self, n: &'a ItemUse) {
         let test = self.test_depth > 0 || attrs_mark_test(&n.attrs);
         let public = !matches!(n.vis, Visibility::Inherited);
-        let mut leaves = Vec::new();
-        flatten_use(&n.tree, &mut Vec::new(), &mut leaves);
-        for segs in leaves {
+        for (segs, local) in named_leaves(&n.tree) {
             self.uses.push(UseRec {
                 mod_path: self.mod_path.clone(),
                 segs,
+                local,
                 leading_colon: n.leading_colon.is_some(),
                 public,
                 test,
@@ -447,6 +497,7 @@ impl<'a> Visit<'a> for Walker<'_> {
     fn visit_expr_closure(&mut self, n: &'a ExprClosure) {
         let start = line_of(n.or1_token.spans[0]);
         let end = end_line_of(n.body.span());
+        let handler = self.take_handler_closure(n);
         self.enter(start, end, None, fk::ARROW);
         match &*n.body {
             Expr::Block(b) => self.mark_terminal(&b.block),
@@ -454,6 +505,9 @@ impl<'a> Visit<'a> for Walker<'_> {
                 self.terminal.insert(std::ptr::from_ref(r) as usize);
             }
             _ => {}
+        }
+        if n.asyncness.is_some() {
+            self.set_async();
         }
         for input in &n.inputs {
             let mut names = Vec::new();
@@ -466,6 +520,9 @@ impl<'a> Visit<'a> for Walker<'_> {
         }
         self.visit_expr(&n.body);
         self.leave();
+        if let Some(h) = handler {
+            self.handler_close(h, Body::Expr(&n.body));
+        }
     }
 
     // ---- control structure --------------------------------------------------------------
@@ -475,7 +532,11 @@ impl<'a> Visit<'a> for Walker<'_> {
         self.push_parent(b);
         self.block_begin(b, Some(&n.cond), &[], &let_binds(&n.cond));
         self.visit_expr(&n.cond);
+        let open = if_let_err_binds(&n.cond).and_then(|b| self.handler_open(b));
         self.arm(|w| w.visit_block(&n.then_branch));
+        if let Some(h) = open {
+            self.handler_close(h, Body::Stmts(&n.then_branch.stmts));
+        }
         if let Some((_, e)) = &n.else_branch {
             self.arm(|w| w.visit_expr(e));
         }
@@ -490,12 +551,16 @@ impl<'a> Visit<'a> for Walker<'_> {
         self.visit_expr(&n.expr);
         let mut flagged = false;
         for arm in &n.arms {
+            let open = err_binds(&arm.pat).and_then(|b| self.handler_open(b));
             self.arm(|w| {
                 if let Some((_, g)) = &arm.guard {
                     w.visit_expr(g);
                 }
                 w.visit_expr(&arm.body);
             });
+            if let Some(h) = open {
+                self.handler_close(h, Body::Expr(&arm.body));
+            }
             if !flagged && is_catch_all(arm) {
                 flagged = true;
                 self.leaf(ct::DEFAULT_FLAG);
@@ -508,31 +573,37 @@ impl<'a> Visit<'a> for Walker<'_> {
     fn visit_expr_while(&mut self, n: &'a ExprWhile) {
         let l = self.node(ct::LOOP);
         self.push_parent(l);
+        self.loop_enter();
         self.block_begin(l, Some(&n.cond), &[], &let_binds(&n.cond));
         self.visit_expr(&n.cond);
         self.visit_block(&n.body);
         self.block_end(l);
+        self.loop_exit();
         self.pop_parent();
     }
 
     fn visit_expr_for_loop(&mut self, n: &'a ExprForLoop) {
         let l = self.node(ct::LOOP);
         self.push_parent(l);
+        self.loop_enter();
         let mut binds = Vec::new();
         bindings(&n.pat, &mut binds);
         self.block_begin(l, None, &[&n.expr], &binds);
         self.visit_expr(&n.expr);
         self.visit_block(&n.body);
         self.block_end(l);
+        self.loop_exit();
         self.pop_parent();
     }
 
     fn visit_expr_loop(&mut self, n: &'a ExprLoop) {
         let l = self.node(ct::LOOP);
         self.push_parent(l);
+        self.loop_enter();
         self.block_begin(l, None, &[], &[]);
         self.visit_block(&n.body);
         self.block_end(l);
+        self.loop_exit();
         self.pop_parent();
     }
 
@@ -579,6 +650,9 @@ impl<'a> Visit<'a> for Walker<'_> {
 
     fn visit_local(&mut self, n: &'a Local) {
         let Some(init) = &n.init else { return };
+        if matches!(n.pat, Pat::Wild(_)) && init.diverge.is_none() {
+            self.discard("let-underscore", line_of(n.let_token.span));
+        }
         self.visit_expr(&init.expr);
         // `let PAT = EXPR else { .. }` is a decision with one arm: the else block.
         if let Some((_, diverge)) = &init.diverge {
@@ -589,6 +663,7 @@ impl<'a> Visit<'a> for Walker<'_> {
             self.block_end(b);
             self.pop_parent();
         }
+        self.note_literal_local(&n.pat, &init.expr);
         self.write_pat(&n.pat);
     }
 
@@ -606,7 +681,36 @@ impl<'a> Visit<'a> for Walker<'_> {
 
     fn visit_expr_method_call(&mut self, n: &'a ExprMethodCall) {
         self.write_place(&n.receiver);
+        self.method_call(n);
+        self.handler_closure_for(n);
         visit::visit_expr_method_call(self, n);
+    }
+
+    fn visit_expr_call(&mut self, n: &'a ExprCall) {
+        self.path_call(n);
+        visit::visit_expr_call(self, n);
+    }
+
+    fn visit_macro(&mut self, n: &'a Macro) {
+        self.macro_call(n);
+        visit::visit_macro(self, n);
+    }
+
+    fn visit_expr_async(&mut self, n: &'a ExprAsync) {
+        self.set_async();
+        visit::visit_expr_async(self, n);
+        if let Some(f) = self.frames.last_mut() {
+            f.async_depth = f.async_depth.saturating_sub(1);
+        }
+    }
+
+    fn visit_stmt(&mut self, n: &'a Stmt) {
+        if let Stmt::Expr(Expr::MethodCall(m), Some(_)) = n {
+            if m.method == "ok" && m.args.is_empty() {
+                self.discard("ok-discarded", line_of(m.span()));
+            }
+        }
+        visit::visit_stmt(self, n);
     }
 }
 
@@ -706,38 +810,6 @@ fn is_catch_all(arm: &Arm) -> bool {
                 && p.ident.to_string().chars().next().is_some_and(|c| c.is_lowercase() || c == '_')
         }
         _ => false,
-    }
-}
-
-fn flatten_use(tree: &UseTree, prefix: &mut Vec<String>, out: &mut Vec<Vec<String>>) {
-    match tree {
-        UseTree::Path(p) => {
-            prefix.push(p.ident.to_string());
-            flatten_use(&p.tree, prefix, out);
-            prefix.pop();
-        }
-        UseTree::Name(n) => {
-            let id = n.ident.to_string();
-            let mut segs = prefix.clone();
-            if id != "self" {
-                segs.push(id);
-            }
-            out.push(segs);
-        }
-        UseTree::Rename(r) => {
-            let id = r.ident.to_string();
-            let mut segs = prefix.clone();
-            if id != "self" {
-                segs.push(id);
-            }
-            out.push(segs);
-        }
-        UseTree::Glob(_) => out.push(prefix.clone()),
-        UseTree::Group(g) => {
-            for t in &g.items {
-                flatten_use(t, prefix, out);
-            }
-        }
     }
 }
 

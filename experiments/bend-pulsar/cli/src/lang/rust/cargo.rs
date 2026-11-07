@@ -25,6 +25,8 @@ pub struct Package {
     pub manifest: String,
     /// Names a `use` path may start with: every declared dependency (all kinds) and the package.
     pub dep_names: HashSet<String>,
+    /// `foo = { package = "bar" }`: the name used in source -> the package's real name.
+    pub renames: Vec<(String, String)>,
     /// Indices of workspace members this package depends on (normal and build kinds).
     pub member_deps: Vec<usize>,
 }
@@ -134,6 +136,9 @@ fn package_of(root: &Path, pi: usize, r: &Raw, names: &[String]) -> Package {
     pkg.dep_names.insert(underscored(&p.name));
     for d in &p.dependencies {
         pkg.dep_names.insert(underscored(d.rename.as_deref().unwrap_or(&d.name)));
+        if let Some(r) = &d.rename {
+            pkg.renames.push((underscored(r), underscored(&d.name)));
+        }
         // Dev-dependencies may legally form cycles, so they are not crate edges.
         if !matches!(d.kind.as_deref(), None | Some("build")) {
             continue;

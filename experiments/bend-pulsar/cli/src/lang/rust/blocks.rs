@@ -33,6 +33,7 @@ pub struct BlockState {
     bw: BTreeSet<(u32, u32)>,
     br: BTreeSet<(u32, u32)>,
     bc: BTreeSet<(u32, u32, u8, u32)>,
+    bind_counts: HashMap<String, u32>,
 }
 
 fn fnv32(s: &str) -> u32 {
@@ -167,7 +168,13 @@ impl BlockState {
 
     /// Intern a binding or a plain name as a variable.
     pub fn name_var(&mut self, name: &str) -> u32 {
+        *self.bind_counts.entry(name.to_string()).or_insert(0) += 1;
         self.var(name, name)
+    }
+
+    /// How many times `name` was bound (parameter, `let`, pattern) in this function.
+    pub fn binding_count(&self, name: &str) -> u32 {
+        self.bind_counts.get(name).copied().unwrap_or(0)
     }
 
     /// Normalised text of `e`; every variable read on the way is recorded in `reads`.
