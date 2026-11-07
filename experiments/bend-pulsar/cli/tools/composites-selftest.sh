@@ -111,4 +111,29 @@ grep -q '^- cloudflare.unbounded-growth ' <<<"$out" && ! grep -q '^+ cloudflare.
 printf 'format = "pulsar-policy 0"\n\n[rules]\ndisable = [\n  "core.untested-data-access",\n]\n' > .pulsar/policy.toml && git commit -qam "disable untested"
 out=$("$BIN" delta HEAD~3 HEAD --repo . 2>/dev/null)
 grep -q 'core.untested-data-access' <<<"$out" && bad "disabled untested rule still reported" || ok "[rules] disable turns untested data access off"
+# ---- two functions that loop-call each other are two findings, not one key collision ----
+cd "$T" && rm -rf ./* .pulsar .git && git init -q . && git config user.email t@t && git config user.name t
+mkdir -p src .pulsar
+printf 'name = "demo"\nmain = "src/index.ts"\n' > wrangler.toml
+printf 'format = "pulsar-policy 0"\n' > .pulsar/policy.toml
+echo 'export default { async fetch(request: Request): Promise<Response> { return new Response("ok"); } };' > src/index.ts
+git add -A && git commit -qm base3
+cat > src/index.ts <<'TS'
+export default { async fetch(request: Request): Promise<Response> { return new Response("ok"); } };
+export async function ping(db: D1Database, ids: number[]) {
+  for (const id of ids) {
+    await pong(db, id);
+  }
+}
+export async function pong(db: D1Database, id: number) {
+  for (const next of [id + 1]) {
+    await ping(db, [next]);
+  }
+  return db.prepare("SELECT 1").all();
+}
+TS
+git commit -qam head3
+out=$("$BIN" delta HEAD~1 HEAD --repo . 2>&1); code=$?
+[ "$code" == 1 ] && ok "mutual loop calls: delta runs and reports (exit 1, no key collision)" || { bad "mutual loop calls: exit $code"; echo "$out" | tail -4; }
+[ "$(grep -c '^+ cloudflare.query-in-loop ' <<<"$out")" == 2 ] && ok "A loop-calls B and B loop-calls A are two findings" || { bad "expected two query-in-loop findings"; echo "$out" | tail -4; }
 exit $fail
