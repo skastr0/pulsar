@@ -165,7 +165,11 @@ I reran these on the 16706e2 copy. Each one must fail the gate.
 2. Report the layer rules through the CLI, or state that they are not shipped.
 3. A law fixing `Metrics.defaults` and `Engine.row_tags` to the documented values, for example
    one equality law each.
-4. Proven decoders. Each one is a pure function over Rows, so a law can say that it accepts
-   exactly the rows FACTS.md describes. That is the largest piece of work.
+4. ~~Proven decoders.~~ Out of scope by operator decision (AGENTS.md and PRODUCT.md): fact
+   extraction and reading (parsers, adapters, the engine's byte readers and row decoders) are
+   covered by fixtures and differential tests, not proofs. The claim above is stated "given the
+   facts it read" for that reason.
+6. The CLI's part of the report: refuse a missing CERT line as well as `CERT 0`, report or
+   remove the layer rules, and stop dropping class-in-context findings silently.
 5. Move delta's set difference into the engine (two fact sets in, added/removed out). The Rust
    side would then only format the result.
