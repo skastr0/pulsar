@@ -51,6 +51,12 @@ pub struct LaneScope {
     pub include: Vec<String>,
     #[serde(default)]
     pub exclude: Vec<String>,
+    /// Paths that are production code whatever the lane's default rule says.
+    #[serde(default)]
+    pub prod: Vec<String>,
+    /// Paths that are test or support code whatever the lane's default rule says (wins over `prod`).
+    #[serde(default)]
+    pub test: Vec<String>,
 }
 
 fn under(prefix: &str, path: &str) -> bool {
@@ -74,6 +80,34 @@ pub struct Lanes {
     pub rust: LaneScope,
     #[serde(default)]
     pub bend: LaneScope,
+}
+
+impl Lanes {
+    /// Is `rel` production code? Policy `test` prefixes win, then `prod` prefixes, then what the
+    /// lane's analysis decided (`lane`: for example a Rust file only reachable through
+    /// `#[cfg(test)] mod`, or a Bend file no `main` reaches), then the path rule of the lane's
+    /// language (each language decides what is test or support code).
+    pub fn is_prod(&self, rel: &str, lane: Option<bool>) -> bool {
+        let rust = rel.ends_with(".rs");
+        let bend = rel.ends_with(".bend");
+        let scope = if rust { &self.rust } else if bend { &self.bend } else { &self.ts };
+        if scope.test.iter().any(|p| under(p, rel)) {
+            return false;
+        }
+        if scope.prod.iter().any(|p| under(p, rel)) {
+            return true;
+        }
+        if let Some(found) = lane {
+            return found;
+        }
+        if rust {
+            crate::lang::rust::is_prod(rel)
+        } else if bend {
+            false
+        } else {
+            crate::lang::scope::is_prod(rel)
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -228,7 +262,9 @@ pub fn parse_policy(name: &str, text: &str) -> Result<Policy, String> {
         lanes: raw.lanes.unwrap_or_default(),
     };
     for (lane, scope) in [("ts", &p.lanes.ts), ("rust", &p.lanes.rust), ("bend", &p.lanes.bend)] {
-        for (what, items) in [("include", &scope.include), ("exclude", &scope.exclude)] {
+        for (what, items) in
+            [("include", &scope.include), ("exclude", &scope.exclude), ("prod", &scope.prod), ("test", &scope.test)]
+        {
             sorted_unique(name, &format!("lanes.{lane}.{what}"), items)?;
             if let Some(bad) = items.iter().find(|i| i.is_empty() || i.starts_with('/') || i.starts_with("./") || i.split('/').any(|c| c == "..")) {
                 return Err(format!("{name}: lanes.{lane}.{what} {bad:?} must be a repo-relative path prefix"));
@@ -523,6 +559,22 @@ mod tests {
         assert!(bad("/abs/").contains("repo-relative"));
         assert!(bad("../up/").contains("repo-relative"));
         assert!(parse_policy("p", "format = \"pulsar-policy 0\"\n[lanes.go]\ninclude = []\n").is_err());
+    }
+
+    #[test]
+    fn production_is_decided_by_policy_then_the_lane_then_the_path_rule() {
+        let t = "format = \"pulsar-policy 0\"\n[lanes.rust]\nprod = [\n  \"cli/tests/golden.rs\",\n]\ntest = [\n  \"cli/src/gen/\",\n]\n";
+        let l = parse_policy("p", t).unwrap().lanes;
+        assert!(l.is_prod("cli/src/main.rs", None) && !l.is_prod("cli/tests/other.rs", None));
+        assert!(l.is_prod("cli/tests/golden.rs", None), "prod prefix overrides the lane rule");
+        assert!(!l.is_prod("cli/src/gen/x.rs", None), "test prefix overrides the lane rule");
+        assert!(!l.is_prod("cli/src/lib.rs", Some(false)), "the analysis can mark a file non-production");
+        assert!(l.is_prod("cli/src/lib.rs", Some(true)));
+        assert!(!l.is_prod("cli/src/gen/x.rs", Some(true)), "policy test prefixes beat the analysis");
+        let d = Lanes::default();
+        assert!(d.is_prod("src/a.ts", None) && !d.is_prod("src/a.test.ts", None) && !d.is_prod("README.md", None));
+        assert!(d.is_prod("e/Facts.bend", Some(true)) && !d.is_prod("e/Facts.bend", Some(false)));
+        assert!(!d.is_prod("e/Facts.bend", None), "a Bend file is production only if its lane says so");
     }
 
     #[test]
