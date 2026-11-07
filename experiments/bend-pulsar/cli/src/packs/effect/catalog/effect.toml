@@ -188,6 +188,8 @@ wrappers = [
   { sym = "effect#Effect.fnUntracedEager", ctx = 2, label = "none", ver = "4", at = "effect@9428e17499:packages/effect/src/Effect.ts:16772", doc = "Creates untraced function effects with eager evaluation optimization." },
   { sym = "effect#Effect.gen", ctx = 2, label = "none", ver = "3", at = "effect@3.21.0:src/Effect.ts:5255", doc = "Provides a way to write effectful code using generator functions, simplifying" },
   { sym = "effect#Effect.gen", ctx = 2, label = "none", ver = "4", at = "effect@9428e17499:packages/effect/src/Effect.ts:1445", doc = "Provides a way to write effectful code using generator functions, simplifying" },
+  { sym = "effect#Layer.sync", ctx = 2, label = "none", ver = "3", at = "effect@3.21.0:src/Layer.ts:1088", doc = "Lazily constructs a layer from the specified value." },
+  { sym = "effect#Layer.sync", ctx = 2, label = "none", ver = "4", at = "effect@9428e17499:packages/effect/src/Layer.ts:915", doc = "Constructs a layer lazily that provides a single service." },
 ]
 
 # External services (SV with file 4294967295). default = true: always provided (SV kind 1).

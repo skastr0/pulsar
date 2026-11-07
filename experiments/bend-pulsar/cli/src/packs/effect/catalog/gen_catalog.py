@@ -234,12 +234,16 @@ for n in ["catchAll", "catchAllCause", "catchAllDefect", "catchSome", "catchSome
     handler(f"effect#Effect.{n}", "3", "E3", "Effect.ts", n)
 handler("effect#Effect.catchTags", "3", "E3", "Effect.ts", "catchTags", arg="object-fns")
 
-# Wrappers: calls whose function-valued arguments run inside an Effect generator (ctx bit 2).
+# Wrappers: calls whose function-valued arguments run as Effect code (ctx bit 2, pack-defined effect context).
 WRAPPERS = []
 for n, label in [("gen", "none"), ("fn", "first-string"), ("fnUntraced", "none"), ("fnUntracedEager", "none")]:
     WRAPPERS.append(dict(sym=f"effect#Effect.{n}", ver="4", src="E4", file="Effect.ts", export=n, label=label))
 for n, label in [("gen", "none"), ("fn", "first-string"), ("fnUntraced", "none")]:
     WRAPPERS.append(dict(sym=f"effect#Effect.{n}", ver="3", src="E3", file="Effect.ts", export=n, label=label))
+# Layer.sync's thunk runs when the layer is built, so it is Effect code too. Layer.succeed takes a
+# value (`resource: S`), not a thunk, so there is nothing for it to wrap.
+for ver, src in [("4", "E4"), ("3", "E3")]:
+    WRAPPERS.append(dict(sym="effect#Layer.sync", ver=ver, src=src, file="Layer.ts", export="sync", label="none"))
 
 # Services with a default: always provided, so never "unprovided" (SV kind 1, file 4294967295).
 SERVICES = []
