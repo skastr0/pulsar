@@ -1,15 +1,17 @@
+mod coverage;
 mod engine;
-mod extract;
 mod facts;
-mod resolve;
-mod scope;
+mod git;
+mod history;
+mod lang;
+mod packs;
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 const USAGE: &str = "usage:
-  pulsar facts <repo> [-o file]     write FACTS v0 (and <file>.paths when -o is given)
+  pulsar facts <repo> [-o file] [--coverage path]   write facts (and <file>.paths, <file>.fns when -o is given)
   pulsar cycles <repo> [--facts-out file]   run facts, then the engine, and print cycles";
 
 fn main() -> ExitCode {
@@ -28,12 +30,21 @@ fn main() -> ExitCode {
     }
 }
 
-fn parse_flags(args: &[String], flag: &str) -> Result<(PathBuf, Option<PathBuf>), String> {
+struct Opts {
+    repo: PathBuf,
+    out: Option<PathBuf>,
+    coverage: Option<PathBuf>,
+}
+
+fn parse_flags(args: &[String], flag: &str) -> Result<Opts, String> {
     let mut repo = None;
     let mut out = None;
+    let mut coverage = None;
     let mut it = args.iter();
     while let Some(a) = it.next() {
-        if a == flag || (flag == "-o" && a == "--out") {
+        if a == "--coverage" {
+            coverage = Some(PathBuf::from(it.next().ok_or("--coverage needs a value".to_string())?));
+        } else if a == flag || (flag == "-o" && a == "--out") {
             out = Some(PathBuf::from(it.next().ok_or(format!("{flag} needs a value"))?));
         } else if a.starts_with('-') {
             return Err(format!("unknown flag {a}\n{USAGE}"));
@@ -43,48 +54,54 @@ fn parse_flags(args: &[String], flag: &str) -> Result<(PathBuf, Option<PathBuf>)
             return Err(format!("unexpected argument {a}\n{USAGE}"));
         }
     }
-    Ok((repo.ok_or(USAGE.to_string())?, out))
+    Ok(Opts { repo: repo.ok_or(USAGE.to_string())?, out, coverage })
 }
 
-fn print_stats(st: &facts::Stats) {
+fn print_stats(st: &lang::ts::Stats) {
     eprintln!(
         "pulsar: files={} prod={} I={} U={} fatal_parse={} unreadable={}",
         st.files, st.prod, st.i_facts, st.u_facts, st.fatal, st.unreadable
     );
 }
 
+/// Run every lane on `repo`, write canonical facts to `out`, and return the file set and side tables.
+fn build_facts(repo: &Path, coverage: Option<&Path>, out: &mut dyn Write) -> Result<(lang::ts::FactSet, facts::SideTables), String> {
+    let mut w = facts::FactWriter::new();
+    let mut tables = facts::SideTables::default();
+    let (set, st) = lang::ts::collect(repo, &mut w, &mut tables)?;
+    coverage::emit(repo, coverage, &tables, &mut w)?;
+    w.write_to(out)?;
+    print_stats(&st);
+    Ok((set, tables))
+}
+
 fn cmd_facts(args: &[String]) -> Result<(), String> {
-    let (repo, out) = parse_flags(args, "-o")?;
+    let Opts { repo, out, coverage } = parse_flags(args, "-o")?;
     match out {
         Some(path) => {
             let mut f = std::fs::File::create(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-            let (set, st) = facts::build(&repo, &mut f)?;
-            let mut paths = path.clone().into_os_string();
-            paths.push(".paths");
-            facts::write_paths(&set.files, Path::new(&paths))?;
-            print_stats(&st);
+            let (_, tables) = build_facts(&repo, coverage.as_deref(), &mut f)?;
+            tables.write(&path)?;
         }
         None => {
             let stdout = std::io::stdout();
             let mut lock = stdout.lock();
-            let (_, st) = facts::build(&repo, &mut lock)?;
+            build_facts(&repo, coverage.as_deref(), &mut lock)?;
             lock.flush().ok();
-            print_stats(&st);
         }
     }
     Ok(())
 }
 
 fn cmd_cycles(args: &[String]) -> Result<(), String> {
-    let (repo, facts_out) = parse_flags(args, "--facts-out")?;
+    let Opts { repo, out: facts_out, coverage } = parse_flags(args, "--facts-out")?;
     let engine_path = engine::locate()?;
     let facts_path = facts_out.clone().unwrap_or_else(|| {
         std::env::temp_dir().join(format!("pulsar-facts-{}.txt", std::process::id()))
     });
     let set = {
         let mut f = std::fs::File::create(&facts_path).map_err(|e| format!("{}: {e}", facts_path.display()))?;
-        let (set, st) = facts::build(&repo, &mut f)?;
-        print_stats(&st);
+        let (set, _) = build_facts(&repo, coverage.as_deref(), &mut f)?;
         set
     };
     let result = engine::run(&engine_path, &facts_path);

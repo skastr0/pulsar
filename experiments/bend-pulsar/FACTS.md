@@ -37,6 +37,20 @@ N <file_count>
 
 **`U` reasons:** 0 = bare package, 1 = relative path with no target file, 2 = alias that did not resolve, 3 = dynamic or unresolvable form.
 
+## Side tables
+
+Strings the engine never sees. The CLI writes them next to the facts file (`<facts>.paths`, `<facts>.fns`) when `-o` is given. Every lane gets them from `SideTables` in `cli/src/facts.rs`, and facts come only from `FactWriter` in the same file, which sorts and dedups every relation.
+
+- **`.paths`:** one repo-relative path per line, in file-id order.
+- **`.fns`:** one line per function, in function-id order, so line N (0-based) is function N. Fields are separated by a single TAB, because paths may contain spaces: `fn path start_line end_line parent kind chain`.
+  - `fn`: the numeric `FN` id.
+  - `path`: repo-relative, equal to the `.paths` line for the function's file.
+  - `start_line`, `end_line`: 1-based, inclusive, the whole function span.
+  - `parent`: enclosing function id, or `-` at top level.
+  - `kind`: the `FK` kind number (0-7).
+  - `chain`: container names outermost first, ending with the function itself, joined by `>`. Anonymous functions are `#<ordinal within parent>`. Never empty.
+  - To assign a line to a function, take the function in the same file with the largest `start_line` whose span contains the line. A nested arrow that starts on its parent's line owns that line.
+
 ## Engine output (v0)
 
 ```
