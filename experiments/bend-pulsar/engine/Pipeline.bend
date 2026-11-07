@@ -178,6 +178,6 @@ def Engine.all(o: Maybe<Out>, m: Maybe<&2, List<&2, String>>, +rows: List<&2, W.
 
 # The row tags the detectors read from Rows.bend: FN, CT, TF (MetricsIn.bend); E, SV,
 # LY, LQ, LP, LR, LC, LO, US (Layers.bend); CS, CL, RL (ClassCtx.bend); CV (Crap.bend);
-# A, C, CFN (Churn.bend).
+# A, C, CFN (Churn.bend); CO (Cognitive, via MetricsIn).
 def Engine.row_tags() -> List<&2, U32>:
-  [17998, 17236, 21574, 69, 21334, 19545, 19537, 19536, 19538, 19523, 19535, 21843, 17235, 17228, 21068, 17238, 65, 67, 4408910]
+  [17998, 17236, 21574, 69, 21334, 19545, 19537, 19536, 19538, 19523, 19535, 21843, 17235, 17228, 21068, 17238, 65, 67, 4408910, 17231]
