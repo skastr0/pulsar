@@ -31,7 +31,9 @@ pub const RISKY_CHANGE: Rule = Rule { id: "core.risky-change", version: 1 };
 /// a coverage report (see `needs_coverage`); on unless `[rules] disable` lists it.
 pub const UNTESTED: Rule = Rule { id: "core.untested-data-access", version: 1 };
 /// Cognitive complexity (SonarSource). Weak evidence, so it is off unless policy enables it.
-pub const COGNITIVE: Rule = Rule { id: "core.cognitive", version: 1 };
+/// v2: a plain `else` counts, `else if` is read from the CB flavor (so `else { if }` and a
+/// ternary in the alternate nest), and an `&&`/`||` run never spans two expressions (FACTS.md).
+pub const COGNITIVE: Rule = Rule { id: "core.cognitive", version: 2 };
 
 /// Does the rule need a coverage report? Such findings exist only for a sha that has one, so a
 /// base-versus-head diff cannot compare them; delta lists them for head on their own.

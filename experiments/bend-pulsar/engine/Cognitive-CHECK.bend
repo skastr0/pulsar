@@ -1,12 +1,12 @@
 # bend Cognitive-CHECK.bend - cognitive complexity on hand-built trees.
 #   fn 0  if (a && b && c) { for (..) { if (x) {} } } else if (d || e) {} else {}
-#         if 1, && run 1, for 2 (level 1), inner if 3 (level 2), else if 1, || 1  = 9
-#         (the paper also charges the final else: 10; CT cannot tell it from a ternary)
+#         if 1, && run 1, for 2 (level 1), inner if 3 (level 2), else if 1, || 1,
+#         the final else 1                                                         = 10
 #   fn 1  for (..) { switch (v) { 5 cases, default } }    for 1, switch 2 (level 1)   = 3
 #   fn 2  try { if (x) {} } catch {} catch {} finally {}  if 1 (a try body keeps the
 #         level), each catch 1                                                       = 3
 #   fn 3  return a && b || c && d ?? e                     runs &&, ||, && = 3; ?? 0  = 3
-#   fn 4  a test function with fn 0's tree: measured 9, no finding
+#   fn 4  a test function with fn 0's tree: measured 10, no finding
 #   fn 5  x => { if (y) {} } inside fn 5's tree is a kind-8 leaf                    = 0
 # At threshold 2: findings for fns 0, 1, 2 and 3; none for 4 (test) or 5.
 import Base
@@ -50,9 +50,14 @@ def T.f5() -> M.Ct:
 def T.fs() -> List<&2, M.FnT>:
   [M.FnT{0, T.f0(), 9, False{}}, M.FnT{1, T.f1(), 9, False{}}, M.FnT{2, T.f2(), 9, False{}}, M.FnT{3, T.f3(), 1, False{}}, M.FnT{4, T.f0(), 9, True{}}, M.FnT{5, T.f5(), 1, False{}}]
 
-# fn 0: && && ||; fn 3: && || && ??; fn 4: && && ||.
+# One token per branch (its CB flavor) and per short-circuit (its CO operator), in preorder.
+# fn 0: the outer if (else if), && starting a run, && continuing it (CO 9), the inner if, the
+# else-if branch (plain else), ||. fn 2: the if in the try. fn 3: && || && ??. fn 4: fn 0's.
+def T.f0ops() -> List<&2, C.Op>:
+  [C.FIfEl{}, C.OAnd{}, C.ONone{}, C.FIf{}, C.FIfE{}, C.OOr{}]
+
 def T.ops() -> List<&2, C.Op>:
-  [C.OAnd{}, C.OAnd{}, C.OOr{}, C.OAnd{}, C.OOr{}, C.OAnd{}, C.ONone{}, C.OAnd{}, C.OAnd{}, C.OOr{}]
+  List.append(&2, C.Op, T.f0ops(), List.append(&2, C.Op, [C.FIf{}, C.OAnd{}, C.OOr{}, C.OAnd{}, C.ONone{}], T.f0ops()))
 
 def T.show(ms: List<&2, C.CgM>) -> List<&2, String>:
   match ms:

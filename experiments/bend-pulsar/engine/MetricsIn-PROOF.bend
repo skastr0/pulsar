@@ -45,3 +45,6 @@ def Laws.glue_op_optional_chain():
 
 def Laws.glue_op_default_value():
   {==}
+
+def Laws.glue_tokens():
+  {==}

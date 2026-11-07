@@ -213,13 +213,63 @@ def In.co_pick(hit: Bool, fs: List<&2, U32>, rest: Maybe<&2, List<&2, Co>>) -> M
     case False{}:
       rest
 
-# The CO rows, in file order (FACTS.md: sorted by (fn, node)).
-def In.cos(rows: List<&2, R.Row>) -> Maybe<&2, List<&2, Co>>:
+# The CO and CB rows of one input, each in file order (FACTS.md: sorted by (fn, node)), from a
+# single pass over the rows. "CB" = 67*256+66; a CB row has the shape of a CO row
+# (`fn node flavor`), so both decode as `Co`.
+def In.tag_cb() -> U32:
+  17218
+
+type Cr is Data:
+  Cr{co: List<&2, Co>, cb: List<&2, Co>}
+
+def In.cr_cons_co(x: Co, m: Maybe<&2, Cr>) -> Maybe<&2, Cr>:
+  match m:
+    case None{}:
+      None{}
+    case Some{Cr{co, cb}}:
+      Some{Cr{Con{x, co}, cb}}
+
+def In.cr_cons_cb(x: Co, m: Maybe<&2, Cr>) -> Maybe<&2, Cr>:
+  match m:
+    case None{}:
+      None{}
+    case Some{Cr{co, cb}}:
+      Some{Cr{co, Con{x, cb}}}
+
+def In.cr3_co(fs: List<&2, U32>, rest: Maybe<&2, Cr>) -> Maybe<&2, Cr>:
+  match fs:
+    case Con{a, Con{b, Con{c, Nil{}}}}:
+      In.cr_cons_co(Co{a, b, c}, rest)
+    case _:
+      None{}
+
+def In.cr3_cb(fs: List<&2, U32>, rest: Maybe<&2, Cr>) -> Maybe<&2, Cr>:
+  match fs:
+    case Con{a, Con{b, Con{c, Nil{}}}}:
+      In.cr_cons_cb(Co{a, b, c}, rest)
+    case _:
+      None{}
+
+def In.cr_pick_cb(hit: Bool, fs: List<&2, U32>, rest: Maybe<&2, Cr>) -> Maybe<&2, Cr>:
+  match hit:
+    case True{}:
+      In.cr3_cb(fs, rest)
+    case False{}:
+      rest
+
+def In.cr_pick(hit_co: Bool, hit_cb: Bool, fs: List<&2, U32>, rest: Maybe<&2, Cr>) -> Maybe<&2, Cr>:
+  match hit_co:
+    case True{}:
+      In.cr3_co(fs, rest)
+    case False{}:
+      In.cr_pick_cb(hit_cb, fs, rest)
+
+def In.crs(rows: List<&2, R.Row>) -> Maybe<&2, Cr>:
   match rows:
     case Nil{}:
-      Some{Nil{}}
-    case Con{R.Row{tag, fs}, t}:
-      In.co_pick(U32.is_eq(tag, In.tag_co()), fs, In.cos(t))
+      Some{Cr{Nil{}, Nil{}}}
+    case Con{R.Row{+tag, fs}, t}:
+      In.cr_pick(U32.is_eq(tag, In.tag_co()), U32.is_eq(tag, In.tag_cb()), fs, In.crs(t))
 
 def In.op(+op: U32) -> G.Op:
   match op:
@@ -230,22 +280,63 @@ def In.op(+op: U32) -> G.Op:
     case _:
       G.ONone{}
 
-def In.op_pick(hit: Bool, +op: U32) -> G.Op:
+# A CB flavor: 1 conditional expression, 2 `if`, 3 `if` with a plain else, 4 `if` with an `else if`,
+# 5 a labelled `break` or `continue` (on a kind-7 node).
+def In.flav(+f: U32) -> G.Op:
+  match f:
+    case 1:
+      G.FTern{}
+    case 2:
+      G.FIf{}
+    case 3:
+      G.FIfE{}
+    case 4:
+      G.FIfEl{}
+    case 5:
+      G.FLab{}
+    case _:
+      G.ONone{}
+
+def In.tok(+kind: U32, +op: U32) -> G.Op:
+  match kind:
+    case 6:
+      In.op(op)
+    case _:
+      In.flav(op)
+
+def In.op_pick(hit: Bool, +kind: U32, +op: U32) -> G.Op:
   match hit:
     case True{}:
-      In.op(op)
+      In.tok(kind, op)
     case False{}:
       G.ONone{}
 
-def In.co_rest(hit: Bool, x: Co, xs: List<&2, Co>) -> List<&2, Co>:
-  match hit:
-    case True{}:
-      xs
-    case False{}:
-      Con{x, xs}
+# The head row of a CO or CB list against the CT row at `(fn, node)`: whether there is a head and
+# whether it is that row's, its fields, and the tail.
+type Pk is Data:
+  Pk{hit: Bool, has: Bool, f: U32, n: U32, op: U32, tl: List<&2, Co>}
 
-def In.cons_op(sc: Bool, o: G.Op, m: Maybe<&2, List<&2, G.Op>>) -> Maybe<&2, List<&2, G.Op>>:
-  match sc m:
+def In.peek(xs: List<&2, Co>, +fn: U32, +node: U32) -> Pk:
+  match xs:
+    case Nil{}:
+      Pk{False{}, False{}, 0, 0, 0, Nil{}}
+    case Con{Co{+f, +n, +op}, t}:
+      Pk{Bool.and(U32.is_eq(f, fn), U32.is_eq(n, node)), True{}, f, n, op, t}
+
+# The list after a row was (y) or was not taken.
+def In.left(y: Bool, +has: Bool, +f: U32, +n: U32, +op: U32, tl: List<&2, Co>) -> List<&2, Co>:
+  match y:
+    case True{}:
+      tl
+    case False{}:
+      match has:
+        case True{}:
+          Con{Co{f, n, op}, tl}
+        case False{}:
+          tl
+
+def In.cons_op(emit: Bool, o: G.Op, m: Maybe<&2, List<&2, G.Op>>) -> Maybe<&2, List<&2, G.Op>>:
+  match emit m:
     case True{} Some{l}:
       Some{Con{o, l}}
     case False{} Some{l}:
@@ -253,27 +344,60 @@ def In.cons_op(sc: Bool, o: G.Op, m: Maybe<&2, List<&2, G.Op>>) -> Maybe<&2, Lis
     case _ None{}:
       None{}
 
-# One operator per kind-6 CT row, in CT order: the CO row at the same (fn, node), or
-# ONone when there is none. A CO row left over names no kind-6 node, or is out of
-# order: refuse.
-def In.align(cts: List<&2, M.CtRow>, cos: List<&2, Co>) -> Maybe<&2, List<&2, G.Op>>:
-  match cts cos:
-    case Nil{} Nil{}:
-      Some{Nil{}}
-    case Nil{} Con{x, xs}:
-      None{}
-    case Con{M.CtRow{fn, node, p, +kind}, t} Nil{}:
-      In.cons_op(U32.is_eq(kind, 6), G.ONone{}, In.align(t, Nil{}))
-    case Con{M.CtRow{+fn, +node, p, +kind}, t} Con{Co{+f, +n, +op}, xs}:
-      +hit = Bool.and(U32.is_eq(kind, 6), Bool.and(U32.is_eq(f, fn), U32.is_eq(n, node)))
-      In.cons_op(U32.is_eq(kind, 6), In.op_pick(hit, op), In.align(t, In.co_rest(hit, Co{f, n, op}, xs)))
+# What one CT row takes: whether it emits a token, the token, and the CO and CB rows left. A
+# kind-6 row takes the CO row at its (fn, node), a kind-1 or kind-7 row the CB row there.
+type Stp is Data:
+  Stp{emit: Bool, tok: G.Op, cos: List<&2, Co>, cbs: List<&2, Co>}
 
-def In.ops(+cts: List<&2, M.CtRow>, om: Maybe<&2, List<&2, Co>>) -> Maybe<&2, List<&2, G.Op>>:
+def Stp.emit(s: Stp) -> Bool:
+  match s:
+    case Stp{e, t, c, b}:
+      e
+
+def Stp.tok(s: Stp) -> G.Op:
+  match s:
+    case Stp{e, t, c, b}:
+      t
+
+def Stp.cos(s: Stp) -> List<&2, Co>:
+  match s:
+    case Stp{e, t, c, b}:
+      c
+
+def Stp.cbs(s: Stp) -> List<&2, Co>:
+  match s:
+    case Stp{e, t, c, b}:
+      b
+
+def In.step(+kind: U32, pc: Pk, pb: Pk) -> Stp:
+  match pc pb:
+    case Pk{+hc, +hasc, +fc, +nc, +oc, tc} Pk{+hb, +hasb, +fb, +nb, +ob, tb}:
+      +sc = U32.is_eq(kind, 6)
+      +br = Bool.pick(Bool, U32.is_eq(kind, 1), True{}, U32.is_eq(kind, 7))
+      +yc = Bool.and(sc, hc)
+      +yb = Bool.and(br, hb)
+      Stp{Bool.pick(Bool, sc, True{}, br), Bool.pick(G.Op, yc, In.tok(kind, oc), Bool.pick(G.Op, yb, In.tok(kind, ob), G.ONone{})), In.left(yc, hasc, fc, nc, oc, tc), In.left(yb, hasb, fb, nb, ob, tb)}
+
+# One token per kind-6, kind-1 or kind-7 CT row, in CT order, or ONone when its row is missing. A CO or
+# CB row left over names no such node, or is out of order: refuse.
+def In.align(cts: List<&2, M.CtRow>, cos: List<&2, Co>, cbs: List<&2, Co>) -> Maybe<&2, List<&2, G.Op>>:
+  match cts:
+    case Nil{}:
+      match cos cbs:
+        case Nil{} Nil{}:
+          Some{Nil{}}
+        case _ _:
+          None{}
+    case Con{M.CtRow{+fn, +node, p, +kind}, t}:
+      +s = In.step(kind, In.peek(cos, fn, node), In.peek(cbs, fn, node))
+      In.cons_op(Stp.emit(s), Stp.tok(s), In.align(t, Stp.cos(s), Stp.cbs(s)))
+
+def In.ops(+cts: List<&2, M.CtRow>, om: Maybe<&2, Cr>) -> Maybe<&2, List<&2, G.Op>>:
   match om:
     case None{}:
       None{}
-    case Some{cos}:
-      In.align(cts, cos)
+    case Some{Cr{cos, cbs}}:
+      In.align(cts, cos, cbs)
 
 # ---- the joined output ------------------------------------------------------------------------
 # FM lines with cognitive, Metrics' FX lines, then cognitive's, then CRAP's, then the composites over Metrics' and
@@ -302,7 +426,7 @@ def In.out(+r: M.Rules, cv: Maybe<&2, List<&2, C.Cv>>, +chs: List<&2, H.Ch>, u: 
     case _ _ _:
       None{}
 
-def In.go(+r: M.Rules, cv: Maybe<&2, List<&2, C.Cv>>, +chs: List<&2, H.Ch>, u: U.UF, om: Maybe<&2, List<&2, Co>>, fm: Maybe<&2, List<&2, M.Fn>>, cm: Maybe<&2, List<&2, M.CtRow>>) -> Maybe<&2, List<&2, String>>:
+def In.go(+r: M.Rules, cv: Maybe<&2, List<&2, C.Cv>>, +chs: List<&2, H.Ch>, u: U.UF, om: Maybe<&2, Cr>, fm: Maybe<&2, List<&2, M.Fn>>, cm: Maybe<&2, List<&2, M.CtRow>>) -> Maybe<&2, List<&2, String>>:
   match fm cm:
     case Some{fns} Some{+cts}:
       In.out(r, cv, chs, u, In.ops(cts, om), M.Trees.of(fns, cts))
@@ -364,4 +488,4 @@ def In.un(+rows: List<&2, R.Row>) -> U.UF:
   U.UF{In.qfns(rows), In.rus(rows)}
 
 def MetricsIn.lines(+r: M.Rules, +rows: List<&2, R.Row>) -> Maybe<&2, List<&2, String>>:
-  In.go(r, In.cvs(rows), Ch.Churn.of(rows), In.un(rows), In.cos(rows), In.marked(In.fns(rows), In.tfs(rows)), In.cts(rows))
+  In.go(r, In.cvs(rows), Ch.Churn.of(rows), In.un(rows), In.crs(rows), In.marked(In.fns(rows), In.tfs(rows)), In.cts(rows))

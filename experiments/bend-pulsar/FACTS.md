@@ -90,22 +90,27 @@ A function with a `TF` row still gets its `FM` line, but no `FX`. Invalid FN/CT/
 make the engine refuse the run and print no `FM` lines. Invalid means a wrong field count,
 a tree the CT rules reject, or a `TF` id that is not a function, or is out of order.
 
-**Cognitive complexity** (`engine/Cognitive.bend`, rule `core.cognitive`, default 15, strictly greater).
-It follows the SonarSource white paper (G. Ann Campbell) from `CT` and `CO`:
-- +1 + level for a branch, a multi-branch (once, whatever its arms), a loop and each catch;
-- +1 and no level for an `else if`;
-- +1 per run of the same `&&` or `||` among sibling short-circuits.
+**Cognitive complexity** (`engine/Cognitive.bend`, rule `core.cognitive` v2, default 15, strictly greater).
+It follows the SonarSource white paper (G. Ann Campbell) from `CT`, `CO` and `CB`:
+- +1 + level for a branch (`if`, ternary), a multi-branch (once, whatever its arms), a loop and each catch;
+- +1 and no level for an `else if`: the lone branch in the else arm of a `CB` flavor-4 `if`;
+- +1 and no level for a plain `else` (`CB` flavor 3), also on an `else if` that has one;
+- +1 and no level for a `break` or `continue` to a label (`CB` flavor 5 on its exit node);
+- +1 per run of `&&` or `||`: each `CO` 1 or 2 starts a run and costs 1; 9 and 10 continue one and are free,
+  so a run never spans two expressions.
 
-The level rises inside an arm, a loop and a catch; a try body and a finally keep it.
-Where `CT` cannot tell what the paper needs, the count leans low, so it never exceeds the
-paper's count:
-- `else` adds nothing (CT cannot tell `if/else` from a ternary);
-- `??`, the assignment operators, optional chaining `?.`, default values, recursion and labelled jumps add nothing
-  (the paper scores none of them; Cognitive-LAWS `cog_unscored_op_free`);
+The level rises inside an arm, a loop and a catch; a try body and a finally keep it. A branch of
+flavor 1, 2 or 3 never has an `else if`: `else { if .. }` and a ternary in the alternate nest.
+Where the facts cannot tell what the paper needs, the count leans low:
+- `??`, the assignment operators, optional chaining `?.`, default values and recursion add nothing
+  (the paper scores recursion, but there is no fact for it; Cognitive-LAWS `cog_unscored_op_free`);
 - a nested function counts in its own tree;
-- a missing `CO` row reads as an operator that adds nothing.
+- a missing `CO` row reads as an operator that adds nothing;
+- a branch with no `CB` row keeps the v1 reading: a lone branch in its second arm is an `else if`, and
+  `else` adds nothing (Cognitive-LAWS `cog_unknown_*`).
 
-A `CO` row that names no kind-6 node, or is out of order, refuses the run. The evidence is
+A `CO` row that names no kind-6 node, a `CB` row that names no kind-1 or kind-7 node, or either out of order,
+refuses the run. The evidence is
 weak (`research/cognitive-complexity.md`), so the CLI shows the rule only when `.pulsar/policy.toml`
 enables it. `Cognitive-LAWS.bend` proves the increments above for the shipped `Cog.seq`, and that
 findings are sound and complete. Its `FX` lines follow the Metrics ones:
@@ -178,7 +183,7 @@ If any detector refuses its facts (the graph, Metrics, or an active pack), the e
 | `CE` 17221, `FC` 17987, `RE` 21061, `RM` 21069 | FnCtx |
 | `CV` 17238 | Crap |
 | `A` 65, `C` 67, `CFN` 4408910 | Churn |
-| `CO` 17231 | Cognitive |
+| `CO` 17231, `CB` 17218 | Cognitive |
 | `H` 72, `C` 67, `A` 65, `CF` 17222, `HR` 18514 | History |
 | `DS` 17491, `DT` 17492, `DC` 17475, `DI` 17481, `DX` 17496, `DF` 17478, `DG` 17479, `QS` 20819, `QT` 20820, `QU` 20821, `QD` 20804, `SR` 21330 | SqlIn (SQL rules) |
 | `CE` 17221, `RF` 21062 (with `CS`, `CL`) | FanoutIn |

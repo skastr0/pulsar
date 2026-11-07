@@ -244,8 +244,8 @@ def Engine.all(+n: U32, o: Maybe<Out>, m: Maybe<&2, List<&2, String>>, h: Maybe<
 
 # The row tags the detectors read from Rows.bend: FN, CT, TF (MetricsIn.bend); E, SV,
 # LY, LQ, LP, LR, LC, LO, US (Layers.bend); CS, CL, RL (ClassCtx.bend); CV (Crap.bend);
-# A, C, CFN (Churn.bend); CO (Cognitive, via MetricsIn); H, CF, HR (History.bend);
+# A, C, CFN (Churn.bend); CO, CB (Cognitive, via MetricsIn); H, CF, HR (History.bend);
 # DS, DT, DC, DI, DX, DF, DG, QS, QT, QU, QD, SR (SqlIn.bend); CE, RF (FanoutIn); AL, RK (KonstIn); EP, RH (HotIn); KD, KB, KH, MB, MH (Delta.bend); RU (MetricsIn, with QS: Untested.bend); RG (GrowIn, with DS..QU, EP, CE: Grow.bend); FC, RE, RM (FnCtx.bend, with CE).
 # I, ID, IE, IB, IU, BF (Binding.bend).
 def Engine.row_tags() -> List<&2, U32>:
-  [17998, 17236, 21574, 69, 21334, 19545, 19537, 19536, 19538, 19523, 19535, 21843, 17235, 17228, 21068, 17238, 65, 67, 4408910, 17231, 72, 17222, 18514, 17491, 17492, 17475, 17481, 17496, 17478, 17479, 20819, 20820, 20821, 20804, 21330, 17221, 21062, 16716, 21067, 17744, 21064, 19268, 19266, 19272, 19778, 19784, 21077, 21063, 17987, 21061, 21069, 73, 18756, 18757, 18754, 18773, 16966]
+  [17998, 17236, 21574, 69, 21334, 19545, 19537, 19536, 19538, 19523, 19535, 21843, 17235, 17228, 21068, 17238, 65, 67, 4408910, 17231, 72, 17222, 18514, 17491, 17492, 17475, 17481, 17496, 17478, 17479, 20819, 20820, 20821, 20804, 21330, 17221, 21062, 16716, 21067, 17744, 21064, 19268, 19266, 19272, 19778, 19784, 21077, 21063, 17987, 21061, 21069, 73, 18756, 18757, 18754, 18773, 16966, 17218]

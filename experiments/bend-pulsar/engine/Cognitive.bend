@@ -5,22 +5,26 @@
 #
 #   +1 + level   a branch (if, ternary), a multi-branch (once, whatever its arms), a
 #                loop, and each catch arm of a try
-#   +1           an `else if`: the else arm holding only a branch. It adds no level.
-#   +1           a run of the same boolean operator among sibling short-circuits:
-#                `&&` and `||` (CO op 1, 2). `??` and the assignments (3-6) add nothing
+#   +1           an `else if`: the else arm of an `if` whose CB flavor is 4. It adds no level.
+#   +1           a plain `else` (CB flavor 3), at no level
+#   +1           a `break` or `continue` to a label (CB flavor 5 on its kind-7 node)
+#   +1           each run of `&&` or `||`: the adapter marks where a run starts (CO op 1 and 2
+#                start one, 9 and 10 continue it, read as ONone). `??` and the assignments
+#                (3-6) add nothing
 #   level        +1 inside a branch's arm, a multi-branch arm, a loop and a catch arm;
 #                a try body and a finally keep the level
 #
-# Where CT cannot tell what the spec needs, the count leans low, so it never exceeds
+# The CB flavor of a branch (FACTS.md) decides what its else arm is: flavor 4 makes a lone
+# branch in it an `else if`; flavors 1 (ternary), 2 and 3 never do, so a ternary in the
+# alternate and `else { if .. }` are nested branches (+1 + level). A branch with no CB row
+# (an adapter that does not emit it) keeps the v1 reading: a lone branch in the second arm
+# is an `else if`, and `else` adds nothing.
+#
+# Where the facts cannot tell what the spec needs, the count leans low, so it never exceeds
 # the paper's count for the same code:
-# - `else` adds nothing (CT cannot tell `if/else` from a ternary, which the paper charges once);
-# - recursion and labelled jumps add nothing (CT has no fact for them);
+# - recursion and labelled jumps add nothing (no fact for them);
 # - a nested function counts in its own tree, not inside its parent;
 # - a missing CO row reads as an operator that adds nothing.
-# One deviation is a choice, not a CT limit, and is a documented undercount: operator
-# runs merge across sibling statements under the same control node, so
-# `a && b; c && d` counts +1 where the paper counts +2 (one sequence per expression).
-# It leans low, the safe direction; revisit if dogfood shows it hiding real cases.
 #
 # The k-th short-circuit node of the whole input, in function order then preorder,
 # takes the k-th operator of `ops`. The decoder builds `ops` from the CT and CO rows
@@ -33,26 +37,39 @@
 import Base
 import ./Metrics.bend as M
 
+# One token per kind-6 node (the operator) and per kind-1 node (its CB flavor), in preorder.
+# ONone is also what a branch with no CB row takes.
 type Op is Data:
   OAnd{}
   OOr{}
   ONone{}
+  FTern{}
+  FIf{}
+  FIfE{}
+  FIfEl{}
+  FLab{}
 
 # Where a chain sits: anywhere; a branch's children before its first arm, or after
 # it; a multi-branch's children; a try's children before its first arm (the body),
 # or after it (the catches); the lone branch of an `else if`.
+# CBr0 and CBr1 are the v1 reading (flavor unknown); the E forms are a flavor-4 `if` (its else
+# arm is an `else if`); the N forms a branch whose else arm is never one.
 type Cx is Data:
   CAny{}
   CBr0{}
   CBr1{}
+  CBr0E{}
+  CBr1E{}
+  CBr0N{}
+  CBr1N{}
   CMulti{}
   CTry0{}
   CTry1{}
   CElif{}
 
-# A chain's count, the operators left for what follows, and the last counted operator.
+# A chain's count and the tokens left for what follows.
 type CS is Data:
-  CS{n: Nat, ops: List<&2, Op>, last: Op}
+  CS{n: Nat, ops: List<&2, Op>}
 
 type CgM is Data:
   CgM{fn: U32, cog: Nat, test: Bool}
@@ -62,41 +79,39 @@ def Cog.default_thr() -> Nat:
 
 def CS.n(s: CS) -> Nat:
   match s:
-    case CS{n, ops, last}:
+    case CS{n, ops}:
       n
 
 def CS.ops(s: CS) -> List<&2, Op>:
   match s:
-    case CS{n, ops, last}:
+    case CS{n, ops}:
       ops
 
-def CS.last(s: CS) -> Op:
-  match s:
-    case CS{n, ops, last}:
-      last
-
 # ---- the operator run -------------------------------------------------------------------------
-def Cog.inc(o: Op, last: Op) -> Nat:
-  match o last:
-    case OAnd{} OAnd{}:
-      0n
-    case OOr{} OOr{}:
-      0n
-    case ONone{} _:
-      0n
-    case OAnd{} _:
-      1n
-    case OOr{} _:
-      1n
-
-def Cog.last(o: Op, last: Op) -> Op:
+def Cog.inc(o: Op) -> Nat:
   match o:
     case OAnd{}:
-      OAnd{}
+      1n
     case OOr{}:
-      OOr{}
-    case ONone{}:
-      last
+      1n
+    case _:
+      0n
+
+# A `break` or `continue` to a label (flavor 5) costs one, at no level.
+def Cog.jump_inc(o: Op) -> Nat:
+  match o:
+    case FLab{}:
+      1n
+    case _:
+      0n
+
+# A plain `else` (flavor 3) costs one, at no level.
+def Cog.else_inc(o: Op) -> Nat:
+  match o:
+    case FIfE{}:
+      1n
+    case _:
+      0n
 
 def Ops.hd(ops: List<&2, Op>) -> Op:
   match ops:
@@ -112,10 +127,15 @@ def Ops.tl(ops: List<&2, Op>) -> List<&2, Op>:
     case Con{h, t}:
       t
 
-# A short-circuit node takes the next operator; any other node takes none.
+# A short-circuit node takes the next operator and a branch node the next flavor; any other
+# node takes none.
 def Cog.op_of(k: M.K, +ops: List<&2, Op>) -> Op:
   match k:
     case M.KSc{}:
+      Ops.hd(ops)
+    case M.KBranch{}:
+      Ops.hd(ops)
+    case M.KExit{}:
       Ops.hd(ops)
     case _:
       ONone{}
@@ -124,17 +144,21 @@ def Cog.ops_after(k: M.K, +ops: List<&2, Op>) -> List<&2, Op>:
   match k:
     case M.KSc{}:
       Ops.tl(ops)
+    case M.KBranch{}:
+      Ops.tl(ops)
+    case M.KExit{}:
+      Ops.tl(ops)
     case _:
       ops
 
 # ---- one node ---------------------------------------------------------------------------------
 # What the node itself adds at level `lvl`.
-def Cog.self(k: M.K, ctx: Cx, +lvl: Nat, o: Op, last: Op) -> Nat:
+def Cog.self(k: M.K, ctx: Cx, +lvl: Nat, o: Op) -> Nat:
   match k ctx:
     case M.KBranch{} CElif{}:
-      1n
+      Nat.add(Cog.else_inc(o), 1n)
     case M.KBranch{} _:
-      1n+lvl
+      Nat.add(Cog.else_inc(o), 1n+lvl)
     case M.KMulti{} _:
       1n+lvl
     case M.KLoop{} _:
@@ -142,7 +166,9 @@ def Cog.self(k: M.K, ctx: Cx, +lvl: Nat, o: Op, last: Op) -> Nat:
     case M.KArm{} CTry1{}:
       1n+lvl
     case M.KSc{} _:
-      Cog.inc(o, last)
+      Cog.inc(o)
+    case M.KExit{} _:
+      Cog.jump_inc(o)
     case _ _:
       0n
 
@@ -150,14 +176,30 @@ def Cog.kctx_arm(ctx: Cx, lone: Bool) -> Cx:
   match ctx lone:
     case CBr1{} True{}:
       CElif{}
+    case CBr1E{} True{}:
+      CElif{}
     case _ _:
       CAny{}
 
+# What a branch's children see before its first arm, by its flavor.
+def Cog.brctx(o: Op) -> Cx:
+  match o:
+    case FIfEl{}:
+      CBr0E{}
+    case FTern{}:
+      CBr0N{}
+    case FIf{}:
+      CBr0N{}
+    case FIfE{}:
+      CBr0N{}
+    case _:
+      CBr0{}
+
 # The context of the node's children.
-def Cog.kctx(k: M.K, ctx: Cx, lone: Bool) -> Cx:
+def Cog.kctx(k: M.K, ctx: Cx, lone: Bool, o: Op) -> Cx:
   match k:
     case M.KBranch{}:
-      CBr0{}
+      Cog.brctx(o)
     case M.KMulti{}:
       CMulti{}
     case M.KTry{}:
@@ -171,9 +213,19 @@ def Cog.klvl_arm(ctx: Cx, lone: Bool, +lvl: Nat) -> Nat:
   match ctx lone:
     case CBr0{} _:
       1n+lvl
+    case CBr0E{} _:
+      1n+lvl
+    case CBr0N{} _:
+      1n+lvl
     case CBr1{} True{}:
       lvl
     case CBr1{} False{}:
+      1n+lvl
+    case CBr1E{} True{}:
+      lvl
+    case CBr1E{} False{}:
+      1n+lvl
+    case CBr1N{} _:
       1n+lvl
     case CMulti{} _:
       1n+lvl
@@ -197,25 +249,29 @@ def Cog.after(k: M.K, ctx: Cx) -> Cx:
   match k ctx:
     case M.KArm{} CBr0{}:
       CBr1{}
+    case M.KArm{} CBr0E{}:
+      CBr1E{}
+    case M.KArm{} CBr0N{}:
+      CBr1N{}
     case M.KArm{} CTry0{}:
       CTry1{}
     case _ _:
       ctx
 
 # ---- a chain ----------------------------------------------------------------------------------
-# The count of chain `t` at context `ctx` and level `lvl`, after operator `last`.
-def Cog.seq(t: M.Ct, +ctx: Cx, +lvl: Nat, +last: Op, +ops: List<&2, Op>) -> CS:
+# The count of chain `t` at context `ctx` and level `lvl`.
+def Cog.seq(t: M.Ct, +ctx: Cx, +lvl: Nat, +ops: List<&2, Op>) -> CS:
   match t:
     case M.Leaf{}:
-      CS{0n, ops, last}
+      CS{0n, ops}
     case M.Node{+k, +kids, next}:
       +o = Cog.op_of(k, ops)
-      +r = Cog.seq(kids, Cog.kctx(k, ctx, M.Nest.lone(kids)), Cog.klvl(k, ctx, M.Nest.lone(kids), lvl), ONone{}, Cog.ops_after(k, ops))
-      +s = Cog.seq(next, Cog.after(k, ctx), lvl, Cog.last(o, last), CS.ops(r))
-      CS{Nat.add(Nat.add(Cog.self(k, ctx, lvl, o, last), CS.n(r)), CS.n(s)), CS.ops(s), CS.last(s)}
+      +r = Cog.seq(kids, Cog.kctx(k, ctx, M.Nest.lone(kids), o), Cog.klvl(k, ctx, M.Nest.lone(kids), lvl), Cog.ops_after(k, ops))
+      +s = Cog.seq(next, Cog.after(k, ctx), lvl, CS.ops(r))
+      CS{Nat.add(Nat.add(Cog.self(k, ctx, lvl, o), CS.n(r)), CS.n(s)), CS.ops(s)}
 
 def Cog.of(t: M.Ct, +ops: List<&2, Op>) -> CS:
-  Cog.seq(t, CAny{}, 0n, ONone{}, ops)
+  Cog.seq(t, CAny{}, 0n, ops)
 
 # ---- measures, findings, output ---------------------------------------------------------------
 def Cog.measure_all(fs: List<&2, M.FnT>, +ops: List<&2, Op>) -> List<&2, CgM>:

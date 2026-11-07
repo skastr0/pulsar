@@ -88,8 +88,8 @@
  {
   "law": "glue_entry",
   "bug": "MetricsIn.lines passes no churn to Hotspot",
-  "old": "In.go(r, In.cvs(rows), Ch.Churn.of(rows), In.un(rows), In.cos(rows)",
-  "new": "In.go(r, In.cvs(rows), Nil{}, In.un(rows), In.cos(rows)"
+  "old": "In.go(r, In.cvs(rows), Ch.Churn.of(rows), In.un(rows), In.crs(rows)",
+  "new": "In.go(r, In.cvs(rows), Nil{}, In.un(rows), In.crs(rows)"
  },
  {
   "law": "glue_prints_lines",
@@ -102,5 +102,23 @@
   "bug": "the entry point passes no untested input",
   "old": "Ch.Churn.of(rows), In.un(rows),",
   "new": "Ch.Churn.of(rows), U.UF{Nil{}, Nil{}},"
+ },
+ {
+  "law": "glue_tokens",
+  "bug": "CO 9 (a run continuing) starts a run of &&",
+  "old": "    case 1:\n      G.OAnd{}",
+  "new": "    case 1:\n      G.OAnd{}\n    case 9:\n      G.OAnd{}"
+ },
+ {
+  "law": "glue_tokens",
+  "bug": "CB 3 (plain else) decodes as an if with no else",
+  "old": "    case 3:\n      G.FIfE{}",
+  "new": "    case 3:\n      G.FIf{}"
+ },
+ {
+  "law": "glue_tokens",
+  "bug": "CB 5 (labelled jump) is not read",
+  "old": "    case 5:\n      G.FLab{}",
+  "new": "    case 5:\n      G.ONone{}"
  }
 ]

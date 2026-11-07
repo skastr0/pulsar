@@ -14,8 +14,9 @@ import ./Untested.bend as U
 # ---- G. the glue main calls (MetricsIn.bend) ----------------------------------------------------
 # main prints MetricsIn.lines(rules, rows). Decoding rows to FN/CT/TF/CV is unproven
 # (like Rows.bend); from the decoded facts on, the output is Metrics', then Cognitive's,
-# then Crap's, then Hotspot's, each proven in its own LAWS file. Decoding CO to the
-# operator list (In.ops) is unproven too. The churn list is proven: G0 passes
+# then Crap's, then Hotspot's, each proven in its own LAWS file. Aligning the CO and CB
+# rows to the token list (In.ops) is unproven too; what each row's value decodes to is
+# pinned (G0b). The churn list is proven: G0 passes
 # Churn.of(rows), which Churn-LAWS CH1-CH2 prove exact, so Hotspot's churn (G4) is
 # the counted CFN rows.
 # Decoding QS and RU rows to the Untested input (In.un) is unproven.
@@ -26,16 +27,23 @@ import ./Untested.bend as U
 law glue_entry:
   for +r: M.Rules
   for +rows: List<&2, R.Row>
-  {I.MetricsIn.lines(r, rows) == I.In.go(r, I.In.cvs(rows), Ch.Churn.of(rows), I.In.un(rows), I.In.cos(rows), I.In.marked(I.In.fns(rows), I.In.tfs(rows)), I.In.cts(rows)) : Maybe<&2, List<&2, String>>}
+  {I.MetricsIn.lines(r, rows) == I.In.go(r, I.In.cvs(rows), Ch.Churn.of(rows), I.In.un(rows), I.In.crs(rows), I.In.marked(I.In.fns(rows), I.In.tfs(rows)), I.In.cts(rows)) : Maybe<&2, List<&2, String>>}
 
-# G1. decoded facts go to Trees.of, the tree builder Metrics.run uses, and the CO rows
-# to the operator list.
+# G0b. the token a CO or CB value decodes to (FACTS.md). CO 1 and 2 start a run of `&&`
+# and `||`; 9 and 10 continue one and are not scored, like 3..8 (`??`, the assignments,
+# `?.`, defaults). CB 1..4 are the four branch flavors and 5 a labelled jump; anything else is
+# unknown (ONone, the v1 reading).
+law glue_tokens:
+  {[I.In.tok(6, 1), I.In.tok(6, 2), I.In.tok(6, 3), I.In.tok(6, 8), I.In.tok(6, 9), I.In.tok(6, 10), I.In.tok(1, 1), I.In.tok(1, 2), I.In.tok(1, 3), I.In.tok(1, 4), I.In.tok(7, 5), I.In.tok(1, 0), I.In.tok(1, 6)] == [G.OAnd{}, G.OOr{}, G.ONone{}, G.ONone{}, G.ONone{}, G.ONone{}, G.FTern{}, G.FIf{}, G.FIfE{}, G.FIfEl{}, G.FLab{}, G.ONone{}, G.ONone{}] : List<&2, G.Op>}
+
+# G1. decoded facts go to Trees.of, the tree builder Metrics.run uses, and the CO and CB
+# rows to the token list.
 law glue_runs_metrics:
   for +r: M.Rules
   for +cv: Maybe<&2, List<&2, C.Cv>>
   for +chs: List<&2, H.Ch>
   for +u: U.UF
-  for +om: Maybe<&2, List<&2, I.Co>>
+  for +om: Maybe<&2, I.Cr>
   for +fns: List<&2, M.Fn>
   for +cts: List<&2, M.CtRow>
   {I.In.go(r, cv, chs, u, om, Some{fns}, Some{cts}) == I.In.out(r, cv, chs, u, I.In.ops(cts, om), M.Trees.of(fns, cts)) : Maybe<&2, List<&2, String>>}

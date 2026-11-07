@@ -70,9 +70,9 @@ pub const BUILTIN: &[Entry] = &[
         id: "core.cognitive",
         family: "core, function metric",
         runs: "off unless .pulsar/policy.toml lists it in [rules] enable (the evidence for it is weak)",
-        definition: "Cognitive complexity after the SonarSource white paper: +1 plus the nesting level for each branch, multi-branch, loop and catch; +1 for an else-if; +1 per run of the same && or || operator. ??, ?. and assignment operators add nothing. Where the facts cannot tell, the count leans low.",
+        definition: "Cognitive complexity after the SonarSource white paper: +1 plus the nesting level for each branch (if, ternary), multi-branch, loop and catch; +1 and no level for an else-if and for a plain else; +1 per run of the same && or || operator within one expression. else { if } and a ternary in the alternate nest like any branch. ??, ?., defaults and assignment operators add nothing; recursion and labelled jumps are not counted. Where the facts cannot tell, the count leans low.",
         threshold: "flags a value strictly over 15",
-        laws: "engine/Cognitive-LAWS.bend: cog_findings_sound, cog_findings_complete, cog_unscored_op_free",
+        laws: "engine/Cognitive-LAWS.bend: cog_findings_sound, cog_findings_complete, cog_else_plain, cog_else_costs_one, cog_else_if_flat, cog_else_block_if_nests, cog_ternary_else_nests, cog_elif_else, cog_and_each, cog_unscored_op_free",
         example: "if (a) { for (...) { if (b && c) {...} } }  -> 1 + (1+1) + (1+2) + 1 = 7",
     },
     Entry {

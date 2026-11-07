@@ -360,13 +360,13 @@ law engine_all:
 # P15. the rows the engine keeps (Rows.start_keep) are exactly the tags FACTS.md
 # lists under "Rows the engine reads", each packed as Rows.bend packs it (the
 # ASCII letters, big-endian): FN CT TF (MetricsIn); E SV LY LQ LP LR LC LO US
-# (Layers); CS CL RL (ClassCtx); CV (Crap); A C CFN (Churn); CO (Cognitive);
+# (Layers); CS CL RL (ClassCtx); CV (Crap); A C CFN (Churn); CO CB (Cognitive);
 # H CF HR (History); DS DT DC DI DX DF DG QS QT QU QD SR (SqlIn); CE RF (FanoutIn); AL RK (KonstIn); EP RH (HotIn); KD KB KH MB MH (Delta); RU (Untested, via MetricsIn); RG (GrowIn); FC RE RM (FnCtx, with CE).
 # I ID IE IB IU BF (Binding): the import rows the entry closure walks, the deployables, their
 # entry files, declared bindings and reads, and the rule row. The binding lines print after
 # the history lines and before the delta lines (P21-P22).
 law engine_row_tags:
-  {L.Engine.row_tags() == [17998, 17236, 21574, 69, 21334, 19545, 19537, 19536, 19538, 19523, 19535, 21843, 17235, 17228, 21068, 17238, 65, 67, 4408910, 17231, 72, 17222, 18514, 17491, 17492, 17475, 17481, 17496, 17478, 17479, 20819, 20820, 20821, 20804, 21330, 17221, 21062, 16716, 21067, 17744, 21064, 19268, 19266, 19272, 19778, 19784, 21077, 21063, 17987, 21061, 21069, 73, 18756, 18757, 18754, 18773, 16966] : List<&2, U32>}
+  {L.Engine.row_tags() == [17998, 17236, 21574, 69, 21334, 19545, 19537, 19536, 19538, 19523, 19535, 21843, 17235, 17228, 21068, 17238, 65, 67, 4408910, 17231, 72, 17222, 18514, 17491, 17492, 17475, 17481, 17496, 17478, 17479, 20819, 20820, 20821, 20804, 21330, 17221, 21062, 16716, 21067, 17744, 21064, 19268, 19266, 19272, 19778, 19784, 21077, 21063, 17987, 21061, 21069, 73, 18756, 18757, 18754, 18773, 16966, 17218] : List<&2, U32>}
 
 # P16. the shipped Metrics thresholds are FACTS.md's: core.cyclomatic 10,
 # core.nesting 3, core.npath 200, core.length 60. (The fifth field, the cap

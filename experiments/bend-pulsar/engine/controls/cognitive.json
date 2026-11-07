@@ -8,8 +8,8 @@
  {
   "law": "cog_if_at_level",
   "bug": "a branch ignores its level",
-  "old": "    case M.KBranch{} _:\n      1n+lvl",
-  "new": "    case M.KBranch{} _:\n      1n"
+  "old": "    case M.KBranch{} _:\n      Nat.add(Cog.else_inc(o), 1n+lvl)",
+  "new": "    case M.KBranch{} _:\n      Nat.add(Cog.else_inc(o), 1n)"
  },
  {
   "law": "cog_loop_nests",
@@ -20,14 +20,14 @@
  {
   "law": "cog_else_if_flat",
   "bug": "an else-if costs 2",
-  "old": "    case M.KBranch{} CElif{}:\n      1n",
-  "new": "    case M.KBranch{} CElif{}:\n      2n"
+  "old": "    case M.KBranch{} CElif{}:\n      Nat.add(Cog.else_inc(o), 1n)",
+  "new": "    case M.KBranch{} CElif{}:\n      Nat.add(Cog.else_inc(o), 2n)"
  },
  {
   "law": "cog_then_if_nests",
-  "bug": "a then arm does not raise the level",
-  "old": "    case CBr0{} _:\n      1n+lvl",
-  "new": "    case CBr0{} _:\n      lvl"
+  "bug": "a then arm of a known branch does not raise the level",
+  "old": "    case CBr0N{} _:\n      1n+lvl",
+  "new": "    case CBr0N{} _:\n      lvl"
  },
  {
   "law": "cog_catch",
@@ -36,16 +36,10 @@
   "new": "    case M.KArm{} CTry1{}:\n      1n"
  },
  {
-  "law": "cog_same_op_once",
-  "bug": "a repeated && counts again",
-  "old": "    case OAnd{} OAnd{}:\n      0n",
-  "new": "    case OAnd{} OAnd{}:\n      1n"
- },
- {
   "law": "cog_op_change",
-  "bug": "&& after another operator adds nothing",
-  "old": "    case OAnd{} _:\n      1n",
-  "new": "    case OAnd{} _:\n      0n"
+  "bug": "&& adds nothing",
+  "old": "    case OAnd{}:\n      1n\n    case OOr{}:\n      1n\n    case _:",
+  "new": "    case OAnd{}:\n      0n\n    case OOr{}:\n      1n\n    case _:"
  },
  {
   "law": "cog_nested_fn_free",
@@ -103,8 +97,80 @@
  },
  {
   "law": "cog_unscored_op_free",
-  "bug": "an unscored operator such as ?. counts",
-  "old": "    case ONone{} _:\n      0n",
-  "new": "    case ONone{} _:\n      1n"
+  "bug": "an unscored operator such as ?. or a run continuing counts",
+  "old": "      1n\n    case _:\n      0n\n\n# A `break`",
+  "new": "      1n\n    case _:\n      1n\n\n# A `break`"
+ },
+ {
+  "law": "cog_or_each",
+  "bug": "a second || run counts nothing",
+  "old": "    case OOr{}:\n      1n\n    case _:\n      0n\n\n# A `break`",
+  "new": "    case OOr{}:\n      0n\n    case _:\n      0n\n\n# A `break`"
+ },
+ {
+  "law": "cog_else_plain",
+  "bug": "a plain else costs nothing",
+  "old": "    case FIfE{}:\n      1n",
+  "new": "    case FIfE{}:\n      0n"
+ },
+ {
+  "law": "cog_elif_else",
+  "bug": "an else if's own else is not charged",
+  "old": "    case M.KBranch{} CElif{}:\n      Nat.add(Cog.else_inc(o), 1n)",
+  "new": "    case M.KBranch{} CElif{}:\n      1n"
+ },
+ {
+  "law": "cog_else_block_if_nests",
+  "bug": "else { if } is read as an else if",
+  "old": "    case FIfE{}:\n      CBr0N{}",
+  "new": "    case FIfE{}:\n      CBr0E{}"
+ },
+ {
+  "law": "cog_ternary_else_nests",
+  "bug": "a ternary in the alternate is read as an else if",
+  "old": "    case FTern{}:\n      CBr0N{}",
+  "new": "    case FTern{}:\n      CBr0E{}"
+ },
+ {
+  "law": "cog_ternary_else_nests",
+  "bug": "a ternary charges an else",
+  "old": "    case FIfE{}:\n      1n\n    case _:",
+  "new": "    case FIfE{}:\n      1n\n    case FTern{}:\n      1n\n    case _:"
+ },
+ {
+  "law": "cog_else_if_flat",
+  "bug": "flavor 4 never makes an else if",
+  "old": "    case CBr1E{} True{}:\n      CElif{}",
+  "new": "    case CBr1E{} True{}:\n      CAny{}"
+ },
+ {
+  "law": "cog_unknown_else_if",
+  "bug": "no CB row: the v1 else if is lost",
+  "old": "    case FIfEl{}:\n      CBr0E{}\n    case FTern{}:\n      CBr0N{}\n    case FIf{}:\n      CBr0N{}\n    case FIfE{}:\n      CBr0N{}\n    case _:\n      CBr0{}",
+  "new": "    case FIfEl{}:\n      CBr0E{}\n    case FTern{}:\n      CBr0N{}\n    case FIf{}:\n      CBr0N{}\n    case FIfE{}:\n      CBr0N{}\n    case _:\n      CBr0N{}"
+ },
+ {
+  "law": "cog_unknown_then_nests",
+  "bug": "no CB row: a then arm does not raise the level",
+  "old": "    case CBr0{} _:\n      1n+lvl",
+  "new": "    case CBr0{} _:\n      lvl"
+ },
+ {
+  "law": "cog_else_costs_one",
+  "bug": "a plain else costs 2",
+  "old": "    case FIfE{}:\n      1n",
+  "new": "    case FIfE{}:\n      2n"
+ },
+ {
+  "law": "cog_label_jump",
+  "bug": "a labelled jump costs nothing",
+  "old": "    case FLab{}:\n      1n",
+  "new": "    case FLab{}:\n      0n"
+ },
+ {
+  "law": "cog_plain_exit_free",
+  "bug": "a plain break costs 1",
+  "old": "    case M.KExit{} _:\n      Cog.jump_inc(o)",
+  "new": "    case M.KExit{} _:\n      1n"
  }
 ]
