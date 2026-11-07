@@ -131,3 +131,6 @@ def Laws.cog_fms_nil(cap, ops):
 
 def Laws.cog_fms_aligned(fn, t, loc, test, rest, cap, ops):
   {==}
+
+def Laws.cog_unscored_op_free(rest, ctx, lvl, last, os):
+  {==}

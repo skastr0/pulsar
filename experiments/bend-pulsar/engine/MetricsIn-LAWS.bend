@@ -72,6 +72,12 @@ law glue_prints_lines:
   for +xs: List<&2, C.Cr>
   {I.In.comp(r, ms, gs, gl, chs, Some{xs}) == Some{List.append(&2, String, G.Cog.fms(ms, gs), List.append(&2, String, M.Report.fxs(M.Metrics.findings(r, ms)), List.append(&2, String, gl, List.append(&2, String, C.Crap.lines(30n, C.Crap.measure_all(xs)), H.Hotspot.lines(2n, chs, M.Metrics.findings(r, ms), C.Crap.findings(30n, C.Crap.measure_all(xs)))))))} : Maybe<&2, List<&2, String>>}
 
+# G4'. the CO decoder reads op 7 (optional chaining `?.`) as an unscored operator, like
+# 3..6, so it adds no cognitive (Cognitive-LAWS S6'); its CT kind-6 node still counts for
+# cyclomatic and NPath.
+law glue_op_optional_chain:
+  {I.In.op(7) == G.ONone{} : G.Op}
+
 # G5. refused facts print nothing: the trees are refused, the CV rows or the CO rows
 # are malformed, or the join refuses.
 law glue_refuses:

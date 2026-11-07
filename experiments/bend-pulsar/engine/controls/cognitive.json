@@ -100,5 +100,11 @@
   "bug": "an FM line with no function",
   "old": "    case _ _:\n      Nil{}",
   "new": "    case _ _:\n      [\"FM\"]"
+ },
+ {
+  "law": "cog_unscored_op_free",
+  "bug": "an unscored operator such as ?. counts",
+  "old": "    case ONone{} _:\n      0n",
+  "new": "    case ONone{} _:\n      1n"
  }
 ]
