@@ -125,3 +125,9 @@ def Laws.cog_findings_complete(thr, ms, fn, v, hm, h):
           MP.Keep.hit(Nat.is_gt(v, thr), M.Finding{8, fn, v, thr}, C.Cog.findings(thr, t), h)
         case Inr{mm}:
           Cmp.stay(thr, m, t, M.Finding{8, fn, v, thr}, Laws.cog_findings_complete(thr, t, fn, v, mm, h))
+
+def Laws.cog_fms_nil(cap, ops):
+  {==}
+
+def Laws.cog_fms_aligned(fn, t, loc, test, rest, cap, ops):
+  {==}

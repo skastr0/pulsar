@@ -140,3 +140,21 @@ law cog_skips_tests:
   for +v: Nat
   for +ms: List<&2, C.CgM>
   {C.Cog.findings(thr, Con{C.CgM{fn, v, True{}}, ms}) == C.Cog.findings(thr, ms) : List<&2, M.Finding>}
+
+# ---- G. FM lines ------------------------------------------------------------------------------
+# Pairing Metrics' and Cognitive's measures of the same trees gives each function, in order,
+# exactly one FM line: its Metrics measures (Metrics-LAWS E3), then its cognitive measure.
+law cog_fms_nil:
+  for +cap: Nat
+  for +ops: List<&2, C.Op>
+  {C.Cog.fms(M.Metrics.measure_all(Nil{}, cap), C.Cog.measure_all(Nil{}, ops)) == Nil{} : List<&2, String>}
+
+law cog_fms_aligned:
+  for +fn: U32
+  for +t: M.Ct
+  for +loc: U32
+  for +test: Bool
+  for +rest: List<&2, M.FnT>
+  for +cap: Nat
+  for +ops: List<&2, C.Op>
+  {C.Cog.fms(M.Metrics.measure_all(Con{M.FnT{fn, t, loc, test}, rest}, cap), C.Cog.measure_all(Con{M.FnT{fn, t, loc, test}, rest}, ops)) == Con{M.Report.fm(M.FnM{fn, M.Cc.of(t), M.Nest.of(t), M.Np.of(t, cap), U32.to_nat(loc), test}) ++ " " ++ Nat.show(C.CS.n(C.Cog.of(t, ops))), C.Cog.fms(M.Metrics.measure_all(rest, cap), C.Cog.measure_all(rest, C.CS.ops(C.Cog.of(t, ops))))} : List<&2, String>}

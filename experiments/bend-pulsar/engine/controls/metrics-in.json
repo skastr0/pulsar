@@ -22,8 +22,8 @@
  {
   "law": "glue_measures",
   "bug": "cognitive runs at threshold 16",
-  "old": "G.Cognitive.lines(G.Cog.default_thr(), fts, ops)",
-  "new": "G.Cognitive.lines(16n, fts, ops)"
+  "old": "G.Cog.findings(G.Cog.default_thr(), gs)",
+  "new": "G.Cog.findings(16n, gs)"
  },
  {
   "law": "glue_prints_lines",
@@ -54,6 +54,24 @@
   "bug": "a refused join prints an empty run",
   "old": "    case None{}:\n      None{}\n    case Some{xs}:\n      Some{In.all(",
   "new": "    case None{}:\n      Some{Nil{}}\n    case Some{xs}:\n      Some{In.all("
+ },
+ {
+  "law": "glue_measures",
+  "bug": "the FM lines pair the cognitive measures of no trees",
+  "old": "+gs = G.Cog.measure_all(fts, ops)",
+  "new": "+gs = G.Cog.measure_all(Nil{}, ops)"
+ },
+ {
+  "law": "glue_prints_lines",
+  "bug": "FM lines print without the cognitive field",
+  "old": "G.Cog.fms(ms, gs), List.append",
+  "new": "M.Report.fms(ms), List.append"
+ },
+ {
+  "law": "glue_prints_lines",
+  "bug": "Metrics' FX lines are dropped",
+  "old": "List.append(&2, String, M.Report.fxs(M.Metrics.findings(r, ms)), List.append(&2, String, gl,",
+  "new": "List.append(&2, String, Nil{}, List.append(&2, String, gl,"
  },
  {
   "law": "glue_entry",

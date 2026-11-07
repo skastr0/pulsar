@@ -255,3 +255,18 @@ def Cog.fxs(xs: List<&2, M.Finding>) -> List<&2, String>:
 # The entry point: the functions' trees and the operators to FX lines.
 def Cognitive.lines(+thr: Nat, fs: List<&2, M.FnT>, +ops: List<&2, Op>) -> List<&2, String>:
   Cog.fxs(Cog.findings(thr, Cog.measure_all(fs, ops)))
+
+# ---- FM lines ---------------------------------------------------------------------------------
+# A function's FM line from Metrics (cyclomatic, nesting, npath, length) with its cognitive
+# measure as a fifth field. MetricsIn pairs the two measure lists of the same trees, in order.
+def Cog.fm(m: M.FnM, g: CgM) -> String:
+  match g:
+    case CgM{fn, cog, test}:
+      M.Report.fm(m) ++ " " ++ Nat.show(cog)
+
+def Cog.fms(ms: List<&2, M.FnM>, gs: List<&2, CgM>) -> List<&2, String>:
+  match ms gs:
+    case Con{m, t} Con{g, u}:
+      Con{Cog.fm(m, g), Cog.fms(t, u)}
+    case _ _:
+      Nil{}
