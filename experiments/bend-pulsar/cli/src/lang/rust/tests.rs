@@ -463,3 +463,68 @@ fn call_report(out: &Analysis) {
     top.sort_by(|a, b| b.1.cmp(&a.1));
     eprintln!("top symbols: {:?}", &top[..top.len().min(12)]);
 }
+
+/// `(caller chain, callee file, callee chain)` of every linked edge, and `(caller chain, reason)`
+/// of every unresolved call, sorted.
+use crate::lang::functions::{Callee, SiteKind};
+
+fn edges_of(out: &Analysis) -> (Vec<(String, u32, String)>, Vec<(String, u8)>) {
+    let (mut linked, mut unres) = (Vec::new(), Vec::new());
+    for f in &out.per_file {
+        for s in &f.fns.sites {
+            if let SiteKind::Edge { to: Callee::Resolved { file, fn_local }, .. } = &s.kind {
+                let callee = &out.per_file[*file as usize].fns.fns[*fn_local as usize];
+                linked.push((f.fns.fns[s.fn_local as usize].chain.clone(), *file, callee.chain.clone()));
+            }
+        }
+        for (l, r) in &f.fns.unresolved {
+            unres.push((f.fns.fns[*l as usize].chain.clone(), *r));
+        }
+    }
+    linked.sort();
+    unres.sort();
+    (linked, unres)
+}
+
+#[test]
+fn call_edges_link_path_self_and_type_calls_and_drop_calls_that_leave_the_repo() {
+    use crate::lang::functions::unres;
+    let root = std::env::temp_dir().join(format!("pulsar-rs-edges-{}", std::process::id()));
+    std::fs::remove_dir_all(&root).ok();
+    write(&root, "Cargo.toml", "[package]\nname = \"demo\"\nversion = \"0.0.0\"\nedition = \"2021\"\n\n[dependencies]\nserde = \"1\"\n");
+    write(
+        &root,
+        "src/lib.rs",
+        "mod a;\nmod util;\nuse util::helper as h;\nfn top() {\n    a::run();\n    util::helper();\n    crate::util::helper();\n    h();\n    local();\n    Counter::make();\n    std::mem::drop(1);\n    serde::thing();\n    a::missing();\n    drop(2);\n}\nfn local() {}\nstruct Counter;\nimpl Counter {\n    fn make() -> Counter { Counter }\n    fn bump(&self) { self.read(); Self::make(); self.nowhere(); }\n    fn read(&self) {}\n}\n",
+    );
+    write(&root, "src/a.rs", "pub fn run() { super::local(); }\n");
+    write(&root, "src/util/mod.rs", "pub fn helper() {}\n");
+    let tracked: Vec<String> = ["Cargo.toml", "src/a.rs", "src/lib.rs", "src/util/mod.rs"].map(String::from).to_vec();
+    let files: Vec<(u32, String)> =
+        tracked.iter().filter(|p| owns(p)).cloned().enumerate().map(|(i, p)| (i as u32, p)).collect();
+    // ids: a=0 lib=1 util=2
+    let out = analyze(&root, &files, &tracked).unwrap();
+    std::fs::remove_dir_all(&root).ok();
+    let (linked, unresolved) = edges_of(&out);
+    let want = |c: &str, f: u32, t: &str| (c.to_string(), f, t.to_string());
+    assert_eq!(
+        linked,
+        vec![
+            want("Counter>bump", 1, "Counter>make"),
+            want("Counter>bump", 1, "Counter>read"),
+            want("run", 1, "local"),
+            want("top", 0, "run"),
+            want("top", 1, "Counter>make"),
+            want("top", 1, "local"),
+            want("top", 2, "helper"),
+            want("top", 2, "helper"),
+            want("top", 2, "helper"),
+        ]
+    );
+    // `a::missing` is a module of the repo without that function; `self.nowhere()` is a method of no
+    // impl in the file.
+    assert_eq!(
+        unresolved,
+        vec![("Counter>bump".to_string(), unres::UNKNOWN_MEMBER), ("top".to_string(), unres::NOT_FOUND)]
+    );
+}

@@ -24,6 +24,8 @@ struct Node {
     dir: String,
     /// Base for `#[path]` attributes.
     base_dir: String,
+    /// Inline module names from the file's top module down to this node.
+    inline: Vec<String>,
 }
 
 #[derive(Default)]
@@ -39,6 +41,8 @@ pub struct Graph {
     /// Per target: its root path and every file in its module tree, ascending. For the oracle
     /// diff against rustc's dep-info.
     pub trees: Vec<(String, Vec<u32>)>,
+    /// The module trees, for resolving call paths to files.
+    pub modules: Modules,
 }
 
 fn dirname(p: &str) -> &str {
@@ -87,7 +91,7 @@ impl Build<'_> {
         let is_root_like = parent.is_none() || loaded_by_path_attr || name == "mod.rs";
         let dir = if is_root_like { d.clone() } else { join_norm(&d, name.trim_end_matches(".rs")) };
         let idx = self.nodes.len();
-        self.nodes.push(Node { file, parent, children: HashMap::new(), dir, base_dir: d });
+        self.nodes.push(Node { file, parent, children: HashMap::new(), dir, base_dir: d, inline: Vec::new() });
         self.tops[tree].insert(file, idx);
         idx
     }
@@ -95,7 +99,9 @@ impl Build<'_> {
     fn inline_node(&mut self, at: usize, file: u32, name: &str) {
         let dir = join_norm(&self.nodes[at].dir, name);
         let idx = self.nodes.len();
-        self.nodes.push(Node { file, parent: Some(at), children: HashMap::new(), dir: dir.clone(), base_dir: dir });
+        let mut inline = self.nodes[at].inline.clone();
+        inline.push(name.to_string());
+        self.nodes.push(Node { file, parent: Some(at), children: HashMap::new(), dir: dir.clone(), base_dir: dir, inline });
         self.nodes[at].children.insert(name.to_string(), idx);
     }
 
@@ -308,5 +314,82 @@ pub fn build(crates: &Crates, files: &HashMap<&str, u32>, parsed: &HashMap<u32, 
     }
     b.crate_edges(crates, &roots, &mut g);
     g.orphans = files.values().filter(|f| !reached.contains(f)).count();
+    g.modules = Modules::new(crates, b.nodes, b.tops, roots, lib_root_of);
     g
+}
+
+/// The module trees after the build, for resolving the path of a call to the file and function
+/// chain it names.
+#[derive(Default)]
+pub struct Modules {
+    nodes: Vec<Node>,
+    tops: Vec<HashMap<u32, usize>>,
+    roots: Vec<usize>,
+    lib_root_of: HashMap<String, usize>,
+    /// The tree each file is resolved in: the first target that contains it, libraries first.
+    file_tree: HashMap<u32, usize>,
+}
+
+/// Where a call path leads.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Resolved {
+    /// A module of the repo: its file, the inline modules below the file's top, and the path
+    /// segments left over (an item inside that module).
+    Found { file: u32, inline: Vec<String>, rest: Vec<String> },
+    /// A crate that is not part of the repo.
+    External,
+    /// A `crate::`, `self::` or `super::` path that leaves the tree.
+    NotFound,
+}
+
+impl Modules {
+    fn new(crates: &Crates, nodes: Vec<Node>, tops: Vec<HashMap<u32, usize>>, roots: Vec<usize>, lib_root_of: HashMap<String, usize>) -> Modules {
+        let mut order: Vec<usize> = (0..crates.targets.len()).collect();
+        order.sort_by_key(|&i| !crates.targets[i].is_lib);
+        let mut file_tree = HashMap::new();
+        for ti in order {
+            for f in tops[ti].keys() {
+                file_tree.entry(*f).or_insert(ti);
+            }
+        }
+        Modules { nodes, tops, roots, lib_root_of, file_tree }
+    }
+
+    /// Resolve `segs` as written in module `mod_path` (inline modules) of `file`. The first
+    /// segment is `crate`, `self`, `super`, a workspace crate, a child module or an item of the
+    /// current module.
+    pub fn resolve(&self, file: u32, mod_path: &[String], segs: &[String]) -> Resolved {
+        let Some(&tree) = self.file_tree.get(&file) else { return Resolved::NotFound };
+        let Some(&top) = self.tops[tree].get(&file) else { return Resolved::NotFound };
+        let Some(mut at) = mod_path.iter().try_fold(top, |a, n| self.nodes[a].children.get(n).copied()) else {
+            return Resolved::NotFound;
+        };
+        let Some(first) = segs.first() else { return Resolved::NotFound };
+        let mut i = 1;
+        match first.as_str() {
+            "crate" => at = self.roots[tree],
+            "self" => {}
+            "super" => {
+                let mut n = 0;
+                while segs.get(n).is_some_and(|s| s == "super") {
+                    let Some(p) = self.nodes[at].parent else { return Resolved::NotFound };
+                    at = p;
+                    n += 1;
+                }
+                i = n;
+            }
+            name if !self.nodes[at].children.contains_key(name) => match self.lib_root_of.get(name) {
+                Some(&r) => at = r,
+                None if name.chars().next().is_some_and(char::is_lowercase) && segs.len() > 1 => return Resolved::External,
+                None => i = 0,
+            },
+            _ => i = 0,
+        }
+        while let Some(c) = segs.get(i).and_then(|s| self.nodes[at].children.get(s)) {
+            at = *c;
+            i += 1;
+        }
+        let n = &self.nodes[at];
+        Resolved::Found { file: n.file, inline: n.inline.clone(), rest: segs[i..].to_vec() }
+    }
 }

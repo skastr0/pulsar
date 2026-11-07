@@ -132,6 +132,10 @@ pub(super) struct Walker<'s> {
     pub(super) scan: Scan,
     /// Symbol string -> its index in `out.syms`.
     pub(super) sym_ids: HashMap<String, u32>,
+    /// Call-edge keys already in `out.names`.
+    pub(super) name_ids: HashMap<String, u32>,
+    /// The container chain of each enclosing `impl` or `trait`, innermost last.
+    pub(super) impl_prefix: Vec<String>,
     /// Container chain, `>`-joined, and the same chain `0x1f`-joined for the key.
     prefix: String,
     key_prefix: Vec<u8>,
@@ -166,6 +170,8 @@ impl<'s> Walker<'s> {
             env,
             scan,
             sym_ids: HashMap::new(),
+            name_ids: HashMap::new(),
+            impl_prefix: Vec::new(),
             prefix: String::new(),
             key_prefix: Vec::new(),
             marks: Vec::new(),
@@ -439,9 +445,11 @@ impl<'a> Visit<'a> for Walker<'_> {
         };
         self.with_test(&n.attrs, |w| {
             w.push_container(&name);
+            w.impl_prefix.push(w.prefix.clone());
             for item in &n.items {
                 w.visit_impl_item(item);
             }
+            w.impl_prefix.pop();
             w.pop_container();
         });
     }
@@ -450,9 +458,11 @@ impl<'a> Visit<'a> for Walker<'_> {
         let name = n.ident.to_string();
         self.with_test(&n.attrs, |w| {
             w.push_container(&name);
+            w.impl_prefix.push(w.prefix.clone());
             for item in &n.items {
                 w.visit_trait_item(item);
             }
+            w.impl_prefix.pop();
             w.pop_container();
         });
     }
@@ -682,12 +692,14 @@ impl<'a> Visit<'a> for Walker<'_> {
     fn visit_expr_method_call(&mut self, n: &'a ExprMethodCall) {
         self.write_place(&n.receiver);
         self.method_call(n);
+        self.edge_method(n);
         self.handler_closure_for(n);
         visit::visit_expr_method_call(self, n);
     }
 
     fn visit_expr_call(&mut self, n: &'a ExprCall) {
         self.path_call(n);
+        self.edge_call(n);
         visit::visit_expr_call(self, n);
     }
 

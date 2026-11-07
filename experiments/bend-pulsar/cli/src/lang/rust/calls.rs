@@ -370,3 +370,86 @@ fn all_call_statements(b: Body) -> bool {
     })
 }
 
+
+// ---- call edges (`CE`) -------------------------------------------------------------------------
+
+/// Separates the parts of a call-edge key stored in `FileFns.names`.
+pub(super) const KEY_SEP: char = '\u{1f}';
+/// Separates path segments inside a key part.
+pub(super) const SEG_SEP: char = '\u{1e}';
+
+/// Prelude names that are not calls of a repo function.
+const PRELUDE_FNS: [&str; 4] = ["drop", "Some", "Ok", "Err"];
+
+impl Walker<'_> {
+    fn edge_site(&mut self, key: String) {
+        let Some(frame) = self.frames.last() else { return };
+        let (fn_local, loop_depth, node) = (frame.local, frame.loop_depth, frame.stack.last().copied().unwrap_or(0));
+        let ctx = self.ctx_bits();
+        let n = self.out.names.len() as u32;
+        let idx = *self.name_ids.entry(key.clone()).or_insert(n);
+        if idx == n {
+            self.out.names.push(key);
+        }
+        self.out.sites.push(Site {
+            fn_local,
+            kind: SiteKind::Edge { to: crate::lang::functions::Callee::Local(idx), node, loop_depth, ctx },
+        });
+    }
+
+    /// A call that cannot become an edge, with the reason (`unres` in FACTS.md `CU`).
+    fn unresolved(&mut self, reason: u8) {
+        if let Some(f) = self.frames.last() {
+            self.out.unresolved.push((f.local, reason));
+        }
+    }
+
+    /// `f(..)`, `a::b::f(..)`, `Type::assoc(..)`, `Self::f(..)`: an edge to a repo function when the
+    /// path resolves.
+    pub(super) fn edge_call(&mut self, call: &syn::ExprCall) {
+        if self.env.is_none() {
+            return;
+        }
+        let Expr::Path(p) = &*call.func else {
+            self.unresolved(crate::lang::functions::unres::DYNAMIC);
+            return;
+        };
+        let Some(segs) = path_segs(p) else { return };
+        let first = segs[0].as_str();
+        if PRELUDE_FNS.contains(&first) || (segs.len() == 1 && first.chars().next().is_some_and(char::is_uppercase)) {
+            return;
+        }
+        if first == "Self" {
+            return self.self_edge(segs.get(1).filter(|_| segs.len() == 2));
+        }
+        if segs.len() == 1 && self.frames.last().is_some_and(|f| f.bs.binding_count(first) > 0) {
+            return self.unresolved(crate::lang::functions::unres::LOCAL_BINDING);
+        }
+        let full = self.expand(&segs, false).unwrap_or_else(|| segs.clone());
+        if matches!(full[0].as_str(), "std" | "core" | "alloc") {
+            return;
+        }
+        let key = format!("P{KEY_SEP}{}{KEY_SEP}{}", self.mod_path.join(&SEG_SEP.to_string()), full.join(&SEG_SEP.to_string()));
+        self.edge_site(key);
+    }
+
+    /// `self.m(..)` is an edge within the impl; any other method call has no receiver type.
+    pub(super) fn edge_method(&mut self, call: &syn::ExprMethodCall) {
+        if self.env.is_none() {
+            return;
+        }
+        match &*call.receiver {
+            Expr::Path(p) if p.path.is_ident("self") => self.self_edge(Some(&call.method.to_string())),
+            Expr::Call(_) | Expr::MethodCall(_) | Expr::Macro(_) => self.unresolved(crate::lang::functions::unres::DYNAMIC),
+            _ => self.unresolved(crate::lang::functions::unres::LOCAL_BINDING),
+        }
+    }
+
+    fn self_edge(&mut self, name: Option<&String>) {
+        let (Some(name), Some(prefix)) = (name, self.impl_prefix.last()) else {
+            return self.unresolved(crate::lang::functions::unres::UNKNOWN_MEMBER);
+        };
+        let key = format!("S{KEY_SEP}{prefix}{KEY_SEP}{name}");
+        self.edge_site(key);
+    }
+}

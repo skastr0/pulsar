@@ -10,6 +10,7 @@ mod calls;
 mod cargo;
 mod env;
 mod graph;
+mod link;
 mod parse;
 
 
@@ -128,6 +129,8 @@ pub fn analyze(root: &Path, files: &[(u32, String)], tracked: &[String]) -> Resu
         }
     }
 
+    let edges = link::link_edges(files, &mut parsed, &g.modules);
+    report_edges(&edges);
     let prod: Vec<Option<bool>> =
         files.iter().map(|(id, rel)| Some(is_prod(rel) && !g.test_files.contains(id))).collect();
     let (mut i, mut u, trees) = (g.i, g.u, g.trees);
@@ -198,3 +201,10 @@ fn collect_outputs(
 
 #[cfg(test)]
 mod tests;
+
+fn report_edges(e: &link::EdgeStats) {
+    eprintln!(
+        "pulsar: rust edges resolved={} external={} unresolved dynamic={} local-binding={} unknown-member={} not-found={}",
+        e.resolved, e.external, e.unresolved[1], e.unresolved[2], e.unresolved[3], e.unresolved[4]
+    );
+}
