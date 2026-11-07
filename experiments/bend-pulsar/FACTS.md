@@ -119,7 +119,7 @@ The engine computes cyclomatic complexity, cognitive-style nesting, NPath (Nejme
 
 **Per language** (what each adapter maps onto these kinds):
 - **Rust** (`cli/src/lang/rust/`): `fn` items are kind 0 (async, const, unsafe and generic alike), methods in `impl` and `trait` blocks are kind 3, closures are kind 2. A trait method with no body emits nothing. A function's span runs from its signature (visibility and qualifiers included, attributes excluded) to its closing brace; a closure's from its first `|` to the end of its body. Containers are inline modules, traits, impl blocks and enclosing functions. An impl block is named `Type` (the last path segment, no generics) or `Type as Trait` (the trait's last segment with its type arguments, so `From<A>` and `From<B>` do not collide); the file path already names file modules. `if` and `if let` are branches (1) with a then arm and, when present, an else arm; `else if` is a branch inside the else arm; `let .. else` is a branch with one arm, the else block. `match` is a multi-branch (3) with one arm per clause, and a flag (9) after the first unguarded `_` or lowercase binding clause. A guard adds no node; its `&&` and `||` are kind 6 children of the arm. `while`, `for` and `loop` are kind 4 with no arm. Every `?` is kind 7, wherever it sits; `return`, `break` and `continue` are kind 7 except a `return` that ends a function body. Async blocks are not function boundaries. Code inside macro invocations (`assert!`, `matches!`, `select!`) is a token stream and emits nothing. `I` and `U`: see "Rust module graph".
-- **Bend** (`cli/src/lang/bend/`): `def` is kind 0 and a lambda `x => e` is kind 2. A law is a claim, not a function. `match` is a multi-branch (3) with one arm (2) per `case`, and a flag (9) when every pattern of a case is `_` or a plain binder. `&&` and `||` are short-circuit nodes (6). Bend has no `if` (a `match` on `True{}`/`False{}` stands in for it), no loops, and no early exits. Recursion is a call, not a loop.
+- **Bend** (`cli/src/lang/bend/`): `def` is kind 0 and a lambda `x => e` is kind 2. A law is a claim, not a function. `match` is a multi-branch (3) with one arm (2) per `case`, and a flag (9) when every pattern of a case is `_` or a plain binder. `&&` and `||` are short-circuit nodes (6). Bend has no `if` (a `match` on `True{}`/`False{}` stands in for it), no loops, and no early exits. Recursion is a call, not a loop. `I` and `U`: `import ./x.bend as M` (a relative path) is an `I` row to that file with `form` 0, `hv` 1 and `ht` 0. Bend has no type-only import. `import Base`, a hash or a hub name is `U` reason 0, and a relative path with no file is `U` reason 1. A foreign `import "x.c"` inside a def is an `MK` class 3 marker, not an import. Bend files have no `TF`: the language has no test functions.
 
 ### Rust module graph
 
@@ -148,11 +148,11 @@ One module tree per cargo target (from `cargo metadata --no-deps --offline`, one
 
 | Tag | Fields | Meaning |
 |---|---|---|
-| `L` | `law_count` | Header line, before `LW` and `LR`. Not emitted when a run has no laws. |
+| `L` | `law_count` | Header line, before `LW` and `LN`. Not emitted when a run has no laws. |
 | `LW` | `law file filled` | Law `law` is stated in `file`. `filled` is 1 when some def fills it: `def name(..)` beside the law, or `def A.name(..)` in a file that imports the law's file as `A`. Whether the fill is a valid proof is decided by the proof gate, not by facts. |
-| `LR` | `law fn` | The statement of `law` names function `fn`: through an import alias (`F.Facts.add`) or by an exact name in the law's own file. Names from packages (Base) give no row. |
+| `LN` | `law fn` | The statement of `law` names function `fn`: through an import alias (`F.Facts.add`) or by an exact name in the law's own file. Names from packages (Base) give no row. |
 
-Law ids are `0..l-1`, in the order (file id, line). The side table `.laws` has one line per law, in law-id order: `law path line name`, TAB-separated.
+(`LN`, not `LR`: `LR root layer` belongs to the Effect pack.) Law ids are `0..l-1`, in the order (file id, line). The side table `.laws` has one line per law, in law-id order: `law path line name`, TAB-separated.
 
 ### Git history
 
