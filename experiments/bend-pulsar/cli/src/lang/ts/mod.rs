@@ -13,7 +13,7 @@ use crate::lang::functions::{FileFns, SqlTextKind};
 use crate::lang::scope::is_test;
 use crate::lang::FileOut;
 #[allow(unused_imports)]
-pub use extract::{function_spans, FnSpan};
+pub use extract::{function_facts, function_spans, FnSpan};
 use extract::{extract, type_only_exports};
 use oxc_allocator::Allocator;
 use rayon::prelude::*;
