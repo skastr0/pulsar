@@ -82,46 +82,102 @@ multiplicative) outcomes.
 ## 3. Candidate metric: coupled-path count
 
 **Definition.** Build the function's decision blocks in control-tree order.
-Two consecutive decision points are *linked* when a variable written inside or
-by the first block's region is read by the second block's condition (def-use),
-or when both read the same unmodified variable with disjoint predicates
-(correlation, §2d). The function's coupled-path count is computed over the DAG
-of linked blocks: multiply within a linked component, add across unlinked
-components — i.e. `CP = Σ_components Π_{blocks in component} paths(block)`.
+Two blocks are *linked* when a variable written inside or by the first block's
+region is read by the second block's condition (def-use), when both read the
+same unmodified variable with disjoint literal predicates (§2d), or when the
+second reads an accumulator written by the first (accumulator rule below).
+Unlinked blocks form separate *components*; the function's coupled-path count
+is
+
+```
+CP = D + 1 + Σ_components (Π_{blocks in component} n(block) − 1)
+```
+
+where `n(block)` is the block's count of *continuing* outcomes (below), `D` is
+the sum of dead-end paths from terminal outcomes, and the `1 + Σ(·−1)` form —
+not the naive `Σ Π` — is what makes `coupled ≤ NPath` hold: with components
+`c` partitioning the blocks, `NPath = Π_c Π_{b∈c} paths(b)`, and
+`1 + Σ_c(P_c − 1) ≤ Π_c P_c` for all `P_c ≥ 1` by induction from
+`(a−1)(b−1) ≥ 0`. Two independent straight-line blocks give `CP = 1`, not 2.
+(Review fix: the earlier `Σ Π` form violated the law — two components of one
+path each summed to 2 > NPath 1.)
+
+**Continuing vs terminal outcomes — the fail-fast rule (§1b).** A branch or
+arm whose body *always exits* (`return`, `throw`, `break`, `continue`, Rust
+`?` — CT kind 7, or a branch/multi-branch whose every arm is terminal, or a
+try whose body and every catch are terminal; finally never decides) cannot
+reach the continuation. Such an outcome contributes its paths to `D`,
+weighted by the product of continuing outcomes of the blocks that precede it
+in its component — it is a dead end, not a multiplier. `n(block)` counts only
+non-terminal outcomes. `if (!ok) return err; rest` therefore multiplies
+`rest` by 1, not 2, and adds one dead path — which is exactly the §1b
+correction. Terminality is computed engine-side from the `CT` rows already
+emitted (kind 7 plus recursive all-arms-terminal); no new fact is needed.
+Conservative default: an arm the predicate cannot prove terminal counts as
+continuing (CP leans toward NPath, never past it). A block with `n = 0`
+truncates its component — the suffix is unreachable and contributes nothing;
+after it, only `D` accumulates. For a clean fail-fast chain — guards reading
+straight-line results, continuation in one component — the formula
+degenerates to the exact observable count: k dead ends plus the continuation's
+paths. The `D` reach-weighting is an over-approximation when a terminal arm
+sits behind other decision outcomes (it cannot prove which predecessors
+actually reach it), so CP stays honest-but-high there, never below the true
+count.
+
+**Mutually exclusive predicates (§2d).** Conditions in one component that
+read the same variable, with no intervening write to it, and whose predicates
+are provably disjoint (same variable, equality-family operators, distinct
+literals — `x === A` vs `x === B`) collapse into one multiplicative unit whose
+outcome count is `k + 1` (one of k literal matches, or none) instead of `2^k`.
+`x === A` vs `x !== A` is the complementary pair — also one unit, outcomes 2.
+Anything not provably disjoint stays def-use-only. This needs per-atom
+condition structure, specified below as `BC` rows; `cond_hash` alone cannot
+express disjointness.
+
+**Repeated conditions (§1c).** The same normalized condition tested twice
+with no intervening write to its operands has a determined second outcome:
+the pair contributes 2 joint outcomes, not 4. Detected via `cond_hash`
+equality on `BL` rows.
 
 **Accumulators.** A later `if (xs.length)` where every prior block appends to
-`xs` *is* coupled to those blocks — but the task's hint is right that the
-product over-weights it: appends make the guard's outcome distribution skewed,
-not combinatorial. Treat accumulator reads as a 2-outcome coupled link
-(continue/exit), never as a fresh multiplier per appending block. Concretely:
-link the guard to the *set* of appending blocks as one component whose path
-count is `Π blocks × 2`, not `Π (blocks × 2)`.
+`xs` *is* coupled to those blocks — but the product over-weights it: appends
+make the guard's outcome distribution skewed, not combinatorial. Treat
+accumulator reads as a 2-outcome coupled link (continue/exit), never as a
+fresh multiplier per appending block. Concretely: the guard joins the
+appending blocks' component with `n(guard) = 2`, contributing
+`Π appends × 2` to that component's product — not `Π (appends × 2)`.
 
 **Laws it could carry** (same shape as the Metrics laws):
-- `coupled ≤ NPath` — coupling only removes multiplicative freedom;
-- equality when every block is def-use linked (the state-machine case);
+- `coupled ≤ NPath` — every CP term removes multiplicative freedom;
+- equality when every block is def-use linked and no arm is terminal (the
+  state-machine case);
 - `coupled ≥ cyclomatic` is *not* claimed — CP can drop below CC on pure
   dispatchers, which is honest (CC counts arms, CP counts interacting
   scenarios);
-- monotonicity: adding an independent check never decreases CP.
+- monotonicity: adding an independent check never decreases CP;
+- terminal-outcome law: replacing a continuing outcome with a terminal one
+  never increases CP.
 
 **Facts needed (adapter work, estimated):**
-- per block: locals written (names or numeric local ids), locals read in its
-  conditions — the TS adapter already walks the AST for CT; collecting
-  write/read sets per control node is maybe +15–25% walker cost, one new
-  numeric relation `BL block fn writes reads condition_hash`;
-- condition hashes: a normalized hash of the predicate (operator + operand
-  shape, constants bucketed) to detect §2d correlations — reuse the existing
-  string interning, ~5% extra;
-- total: one relation + small walker additions per language; Rust lane needs
-  the same for its CT emission. No new parsing, no type information — this
-  stays in the default lane.
+- `BL block fn writes reads cond_hash` — per decision block: locals written
+  (numeric local ids), locals read in conditions, one normalized condition
+  hash per condition for §1c. The TS adapter already walks the AST for `CT`;
+  collecting write/read sets per control node is maybe +15–25% walker cost.
+- `BC block var op lit` — one row per atomic predicate inside a block's
+  conditions: `var` an interned local id (same domain as `BL` writes/reads),
+  `op` a small enum (`eq`, `neq`, `lt`, `le`, `gt`, `ge`, `other`), `lit` an
+  interned literal id or 0 when the operand is not a literal. This is what
+  §2d's disjointness proof consumes; `cond_hash` cannot supply it.
+- terminality needs **no** new fact — it is a pure function of `CT`.
+- total: two relations + small walker additions per language; the Rust lane
+  needs the same for its `CT` emission. No new parsing, no type information —
+  this stays in the default lane.
 
 ## 4. Literature (specs and papers only)
 
-- Nejmeh, "NPath: a Measure of Execution Path Complexity" (1991) — the
-  recurrence being measured; its sequence-multiplication rule is the direct
-  cause of the inflation documented above.
+- Nejmeh, "NPATH: A Measure of Execution Path Complexity and Its Applications",
+  CACM 31(2), 1988 — the recurrence being measured; its sequence-multiplication
+  rule is the direct cause of the inflation documented above.
 - Ammann & Offutt, *Introduction to Software Testing* — path coverage and the
   distinction between syntactic paths and feasible test sequences; the
   fail-fast infeasibility of §1b is the textbook case.
@@ -130,9 +186,11 @@ count is `Π blocks × 2`, not `Π (blocks × 2)`.
   problem §2d approximates cheaply (correlated predicates = unsatisfiable path
   conditions). Full symbolic execution is out of scope for a per-SHA metric —
   the coupled count is the static, decidable fragment.
-- Balaban, Briand & Dufour, feasible-coverage work (late 1990s) — the
-  observation that coverage criteria must count *feasible* paths, which is
-  precisely the operator's question.
+- Offutt & Pan, "Detecting equivalent mutants and the feasible path problem"
+  (COMPASS 1996; extended in STVR 7(3), 1997); Goldberg, Zimmerman & Wang,
+  "Applications of feasible path analysis to program testing" (ISSTA 1994) —
+  the feasible-path problem named and attacked with theorem proving; CP is
+  the cheap syntactic approximation of what they solve exactly.
 - SonarSource Cognitive Complexity (already in `research/cognitive-complexity.md`)
   — the existing answer to "NPath over-counts": it counts *nesting-weighted*
   structures, not paths. CP is complementary: it counts interacting scenarios.
