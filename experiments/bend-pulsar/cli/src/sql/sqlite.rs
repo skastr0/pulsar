@@ -508,50 +508,8 @@ impl<'b> Fe<'b> {
     }
 
     fn children(&mut self, e: &Expr, sc: usize, role: Option<u8>) {
-        match e {
-            Expr::Between { lhs, start, end, .. } => {
-                for x in [&**lhs, &**start, &**end] {
-                    self.expr(x, sc, role);
-                }
-            }
-            Expr::Binary(l, _, r) => {
-                self.expr(l, sc, role);
-                self.expr(r, sc, role);
-            }
-            Expr::Case { base, when_then_pairs, else_expr } => {
-                for x in base.iter().copied().chain(else_expr.iter().copied()) {
-                    self.expr(x, sc, role);
-                }
-                for (w, t) in when_then_pairs.iter() {
-                    self.expr(w, sc, role);
-                    self.expr(t, sc, role);
-                }
-            }
-            Expr::Cast { expr, .. } | Expr::Collate(expr, _) | Expr::Unary(_, expr) | Expr::IsNull(expr) | Expr::NotNull(expr) => {
-                self.expr(expr, sc, role)
-            }
-            Expr::FunctionCall { args, .. } => {
-                for x in args.iter().flat_map(|a| a.iter()) {
-                    self.expr(x, sc, role);
-                }
-            }
-            Expr::InList { lhs, rhs, .. } => {
-                self.expr(lhs, sc, role);
-                for x in rhs.iter().flat_map(|a| a.iter()) {
-                    self.expr(x, sc, role);
-                }
-            }
-            Expr::Like { lhs, rhs, escape, .. } => {
-                for x in [&**lhs, &**rhs].into_iter().chain(escape.iter().copied()) {
-                    self.expr(x, sc, role);
-                }
-            }
-            Expr::Parenthesized(v) => {
-                for x in v.iter() {
-                    self.expr(x, sc, role);
-                }
-            }
-            _ => {}
+        for x in child_exprs(e) {
+            self.expr(x, sc, role);
         }
     }
 
@@ -571,6 +529,19 @@ impl<'b> Fe<'b> {
             }
             Expr::Binary(l, Operator::Or, r) => self.or(l, r, sc, on),
             Expr::Binary(l, op, r) => self.compare(l, *op, r, sc),
+            Expr::Unary(_, x) => self.pred(x, sc, on),
+            Expr::Parenthesized(v) => {
+                for x in v.iter() {
+                    self.pred(x, sc, on);
+                }
+            }
+            _ => self.pred_atom(e, sc),
+        }
+    }
+
+    /// A predicate that is not a boolean combination: range, membership, pattern or null test.
+    fn pred_atom(&mut self, e: &Expr, sc: usize) {
+        match e {
             Expr::Between { lhs, start, end, .. } => {
                 self.side(lhs, R_RANGE, sc);
                 self.expr(start, sc, None);
@@ -591,12 +562,6 @@ impl<'b> Fe<'b> {
                 self.leading_wildcard(lhs, rhs, sc);
             }
             Expr::IsNull(x) | Expr::NotNull(x) => self.side(x, R_NULL, sc),
-            Expr::Unary(_, x) => self.pred(x, sc, on),
-            Expr::Parenthesized(v) => {
-                for x in v.iter() {
-                    self.pred(x, sc, on);
-                }
-            }
             _ => self.expr(e, sc, None),
         }
     }
@@ -655,5 +620,27 @@ impl<'b> Fe<'b> {
         for (scope, q, c) in cols {
             self.b.defeat(scope, q, c, D_OR);
         }
+    }
+}
+
+/// The direct sub-expressions of `e` that a column can hide in. Subqueries are not children here:
+/// `expr` handles those.
+fn child_exprs<'a, 'b>(e: &'a Expr<'b>) -> Vec<&'a Expr<'b>> {
+    match e {
+        Expr::Between { lhs, start, end, .. } => vec![&**lhs, &**start, &**end],
+        Expr::Binary(l, _, r) => vec![&**l, &**r],
+        Expr::Case { base, when_then_pairs, else_expr } => {
+            let mut v: Vec<&Expr> = base.iter().copied().chain(else_expr.iter().copied()).collect();
+            v.extend(when_then_pairs.iter().flat_map(|(w, t)| [w, t]));
+            v
+        }
+        Expr::Cast { expr, .. } | Expr::Collate(expr, _) | Expr::Unary(_, expr) | Expr::IsNull(expr) | Expr::NotNull(expr) => {
+            vec![&**expr]
+        }
+        Expr::FunctionCall { args, .. } => args.iter().flat_map(|a| a.iter()).collect(),
+        Expr::InList { lhs, rhs, .. } => std::iter::once(&**lhs).chain(rhs.iter().flat_map(|a| a.iter())).collect(),
+        Expr::Like { lhs, rhs, escape, .. } => [&**lhs, &**rhs].into_iter().chain(escape.iter().copied()).collect(),
+        Expr::Parenthesized(v) => v.iter().collect(),
+        _ => Vec::new(),
     }
 }

@@ -192,44 +192,37 @@ impl Builder {
             return;
         }
         self.drop_table(name);
-        let mut cols: Vec<Col> = spec.cols.iter().map(|c| Col { name: c.name, flags: col_flags(c) }).collect();
-        let mut pk: Vec<u32> = spec.cols.iter().filter(|c| c.pk).map(|c| c.name).collect();
-        if !spec.pk.is_empty() {
-            pk = spec.pk.clone();
-        }
-        for c in &mut cols {
-            if pk.contains(&c.name) {
-                c.flags |= C_PK;
-            }
-        }
-        let rowid_alias = spec.flags & T_WITHOUT_ROWID == 0
-            && pk.len() == 1
-            && spec.cols.iter().any(|c| c.name == pk[0] && c.integer);
-        if rowid_alias {
-            if let Some(c) = cols.iter_mut().find(|c| c.name == pk[0]) {
-                c.flags |= C_ROWID;
-            }
-        }
+        let (cols, pk, rowid_alias) = table_columns(&spec);
         if !pk.is_empty() && !rowid_alias {
             self.indexes.push(Some(Index { name: None, table: name, flags: I_UNIQUE | I_IMPLIED, cols: pk.clone() }));
         }
+        self.implied_indexes(name, &spec);
+        self.fk_rows(name, &spec);
+        self.tables.insert(name, Table { file, flags: spec.flags, cols, pk });
+    }
+
+    /// The indexes `UNIQUE` column and table constraints imply.
+    fn implied_indexes(&mut self, table: u32, spec: &TableSpec) {
         for c in spec.cols.iter().filter(|c| c.unique) {
-            self.indexes.push(Some(Index { name: None, table: name, flags: I_UNIQUE | I_IMPLIED, cols: vec![c.name] }));
+            self.indexes.push(Some(Index { name: None, table, flags: I_UNIQUE | I_IMPLIED, cols: vec![c.name] }));
         }
-        for u in spec.uniques {
+        for u in &spec.uniques {
             let flags = I_UNIQUE | I_IMPLIED | if u.contains(&NONE) { I_EXPR } else { 0 };
-            self.indexes.push(Some(Index { name: None, table: name, flags, cols: u }));
+            self.indexes.push(Some(Index { name: None, table, flags, cols: u.clone() }));
         }
+    }
+
+    /// Foreign keys, inline on a column and as table constraints.
+    fn fk_rows(&mut self, table: u32, spec: &TableSpec) {
         for c in &spec.cols {
             if let Some((rt, rc)) = c.fk {
-                self.fks.push(Some(Fk { table: name, ref_table: rt, pairs: vec![(c.name, rc)] }));
+                self.fks.push(Some(Fk { table, ref_table: rt, pairs: vec![(c.name, rc)] }));
             }
         }
-        for (cs, rt, rcs) in spec.fks {
+        for (cs, rt, rcs) in &spec.fks {
             let pairs = cs.iter().enumerate().map(|(i, c)| (*c, rcs.get(i).copied().unwrap_or(NONE))).collect();
-            self.fks.push(Some(Fk { table: name, ref_table: rt, pairs }));
+            self.fks.push(Some(Fk { table, ref_table: *rt, pairs }));
         }
-        self.tables.insert(name, Table { file, flags: spec.flags, cols, pk });
     }
 
     /// A table whose columns the lane does not model: a view or a virtual table.
@@ -328,6 +321,25 @@ impl Builder {
         let pairs = cols.iter().enumerate().map(|(i, c)| (*c, ref_cols.get(i).copied().unwrap_or(NONE))).collect();
         self.fks.push(Some(Fk { table, ref_table, pairs }));
     }
+}
+
+/// Columns with their flags, the primary key (a table-level one wins), and whether the key is a
+/// rowid alias (a single `INTEGER` column of a rowid table).
+fn table_columns(spec: &TableSpec) -> (Vec<Col>, Vec<u32>, bool) {
+    let mut cols: Vec<Col> = spec.cols.iter().map(|c| Col { name: c.name, flags: col_flags(c) }).collect();
+    let mut pk: Vec<u32> = spec.cols.iter().filter(|c| c.pk).map(|c| c.name).collect();
+    if !spec.pk.is_empty() {
+        pk = spec.pk.clone();
+    }
+    for c in cols.iter_mut().filter(|c| pk.contains(&c.name)) {
+        c.flags |= C_PK;
+    }
+    let rowid_alias =
+        spec.flags & T_WITHOUT_ROWID == 0 && pk.len() == 1 && spec.cols.iter().any(|c| c.name == pk[0] && c.integer);
+    if rowid_alias {
+        cols.iter_mut().filter(|c| c.name == pk[0]).for_each(|c| c.flags |= C_ROWID);
+    }
+    (cols, pk, rowid_alias)
 }
 
 fn col_flags(c: &ColSpec) -> u32 {
@@ -518,7 +530,12 @@ impl Builder {
                 out.dp.push([tid, pos as u32, id(*c)]);
             }
         }
-        // Index ids follow (table id, creation order).
+        self.emit_indexes(out, id);
+        self.emit_fks(out, id);
+    }
+
+    /// Index ids follow (table id, creation order).
+    fn emit_indexes(&self, out: &mut Out, id: &dyn Fn(u32) -> u32) {
         let mut idx: Vec<&Index> = self.indexes.iter().flatten().collect();
         idx.sort_by_key(|i| id(i.table));
         for (n, i) in idx.iter().enumerate() {
@@ -528,6 +545,9 @@ impl Builder {
                 out.dx.push([n as u32, pos as u32, if *c == NONE { NONE } else { id(*c) }]);
             }
         }
+    }
+
+    fn emit_fks(&self, out: &mut Out, id: &dyn Fn(u32) -> u32) {
         let mut fks: Vec<&Fk> = self.fks.iter().flatten().collect();
         fks.sort_by_key(|f| id(f.table));
         for (n, f) in fks.iter().enumerate() {
