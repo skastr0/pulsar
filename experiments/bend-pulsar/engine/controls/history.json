@@ -1,0 +1,57 @@
+[
+ {
+  "law": "C1 cochange_support",
+  "bug": "Cp.files drops a < b",
+  "old": "  Bool.and(U32.is_lt(a, b), Bool.and(S.Scope.has(pt, a), S.Scope.has(pt, b)))",
+  "new": "  Bool.and(S.Scope.has(pt, a), S.Scope.has(pt, b))"
+ },
+ {
+  "law": "C2 cochange_witness",
+  "bug": "Cp.ws_ok skips the per-commit test",
+  "old": "      Bool.and(Cp.w1(cft, ht, nbt, a, b, c), Cp.ws_ok(t, cft, ht, nbt, a, b))",
+  "new": "      Cp.ws_ok(t, cft, ht, nbt, a, b)"
+ },
+ {
+  "law": "C2 cochange_witness",
+  "bug": "Wd.cat drops the commit's bits, so keys collide",
+  "old": "          WCon{x, Wd.cat(p, at, b)}",
+  "new": "          WCon{False{}, Wd.cat(p, at, b)}"
+ },
+ {
+  "law": "C3 cochange_no_import",
+  "bug": "Cp.noimp tests one direction only",
+  "old": "  Bool.and(Bool.not(G.Graph.edge(adj, a, b)), Bool.not(G.Graph.edge(adj, b, a)))",
+  "new": "  Bool.not(G.Graph.edge(adj, a, b))"
+ },
+ {
+  "law": "C4 cochange_confidence",
+  "bug": "Cp.conf does not tie na to the tally",
+  "old": "  Bool.and(Bool.and(U32.is_eq(na, Hist.cnt(tl, a)), U32.is_eq(nb, Hist.cnt(tl, b))), ",
+  "new": "  Bool.and(U32.is_eq(nb, Hist.cnt(tl, b)), "
+ },
+ {
+  "law": "X1 concentration",
+  "bug": "Cx.b drops the share threshold",
+  "old": "Bool.and(U32.is_ge(total, 1), U32.is_ge(U32.mul(100, top), U32.mul(Rules.share(r), total))))",
+  "new": "U32.is_ge(total, 1))"
+ },
+ {
+  "law": "F1 file_churn",
+  "bug": "Ck.push3 reports files with zero churn",
+  "old": "    case True{}:\n      acc\n    case False{}:\n      Con{Ck{x, k}, acc}",
+  "new": "    case True{}:\n      Con{Ck{x, k}, acc}\n    case False{}:\n      Con{Ck{x, k}, acc}"
+ },
+ {
+  "law": "E2 run_refuses_invalid",
+  "bug": "Hist.run2 analyses invalid facts",
+  "old": "    case False{}:\n      None{}\n\n# None when the facts are invalid.",
+  "new": "    case False{}:\n      Some{Hist.out(ch, r, n, pt, adj)}\n\n# None when the facts are invalid."
+ },
+ {
+  "law": "P18 engine_history_off",
+  "bug": "Engine.hs1 runs history without an HR row",
+  "file": "Pipeline.bend",
+  "old": "    case False{}:\n      Some{Nil{}}\n\n# n, prods and fs",
+  "new": "    case False{}:\n      Engine.hs2(Hs.Hist.decode(rows), n, pt, S.Scope.graph(pt, n, fs))\n\n# n, prods and fs"
+ }
+]

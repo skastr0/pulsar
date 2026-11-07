@@ -1,0 +1,11 @@
+# CF rows out of (commit, file) order are refused.
+pulsar-facts 0
+N 2
+F 0 1
+F 1 1
+H 1 1
+HR 2 50 3 20 30
+A 0 0
+C 0 0 1
+CF 0 1 1 0
+CF 0 0 1 0

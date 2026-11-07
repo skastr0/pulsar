@@ -121,8 +121,8 @@ def Main.report(m: Maybe<List<&2, String>>) -> IO(Unit):
 
 def Main.run_both(p: P.Parsed, +rows: List<&2, W.Row>) -> IO(Unit):
   match p:
-    case P.Parsed{n, prods, fs}:
-      Main.report(L.Engine.all(L.Pipeline.run(n, prods, fs), MI.MetricsIn.lines(M.Metrics.defaults(), rows), rows))
+    case P.Parsed{+n, +prods, +fs}:
+      Main.report(L.Engine.all(L.Pipeline.run(n, prods, fs), MI.MetricsIn.lines(M.Metrics.defaults(), rows), L.Engine.history(n, prods, fs, rows), rows))
 
 def Main.run_rows(m: Maybe<List<&2, W.Row>>, p: P.Parsed) -> IO(Unit):
   match m:

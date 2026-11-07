@@ -21,6 +21,8 @@ import ./ClassCtx-PROOF.bend as ClassCtxProof
 import ./Crap-PROOF.bend as CrapProof
 import ./Hotspot-PROOF.bend as HotspotProof
 import ./Churn-PROOF.bend as ChurnProof
+import ./History-PROOF.bend as HistoryProof
+import ./History.bend as Hs
 import ./Cognitive-PROOF.bend as CognitiveProof
 import ./Sql-PROOF.bend as SqlProof
 import ./Fanout-PROOF.bend as FanoutProof
@@ -149,11 +151,25 @@ def Laws.engine_classctx_off(rows, off):
   %Equal.sym(Bool, L.Engine.has_tag(rows, L.Engine.tag_rl()), False{}, off) : {L.Engine.cx1(_, rows) == Some{Nil{}} : Maybe<List<&2, String>>}
   {==}
 
-def Laws.engine_all(o, m, rows):
+def Laws.engine_all(o, m, h, rows):
   {==}
 
 def Laws.engine_row_tags():
   {==}
 
 def Laws.metrics_defaults():
+  {==}
+
+def Laws.engine_history_on(n, prods, fs, rows, on):
+  %Equal.sym(Bool, L.Engine.has_tag(rows, L.Engine.tag_hr()), True{}, on) : {L.Engine.hs1(_, n, S.Scope.set(prods), fs, rows) == L.Engine.hs2(Hs.Hist.decode(rows), n, S.Scope.set(prods), S.Scope.graph(S.Scope.set(prods), n, fs)) : Maybe<List<&2, String>>}
+  {==}
+
+def Laws.engine_history_run(ch, r, n, pt, adj):
+  {==}
+
+def Laws.engine_history_lines(r, o):
+  {==}
+
+def Laws.engine_history_off(n, prods, fs, rows, off):
+  %Equal.sym(Bool, L.Engine.has_tag(rows, L.Engine.tag_hr()), False{}, off) : {L.Engine.hs1(_, n, S.Scope.set(prods), fs, rows) == Some{Nil{}} : Maybe<List<&2, String>>}
   {==}

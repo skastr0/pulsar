@@ -1,0 +1,41 @@
+# History rules (History.bend). HR 2 50 3 20 30: support >= 2, confidence >= 50%,
+# bulk > 3 files, top 20% of churned files hold >= 30% of churn.
+# Author 1 is a bot (commit 3 is not counted). Commit 2 touches 4 files, so it is
+# bulk: it counts as churn but not as co-change. File 5 is not production.
+# Pair (0,1) co-changes twice but 0 imports 1, so it is explained.
+pulsar-facts 0
+N 6
+F 0 1
+F 1 1
+F 2 1
+F 3 1
+F 4 1
+F 5 0
+I 0 1 0 1 0
+H 7 2
+HR 2 50 3 20 30
+A 0 0
+A 1 1
+C 0 0 20000
+C 1 0 20001
+C 2 0 20002
+C 3 1 20003
+C 4 0 20004
+C 5 0 20005
+C 6 0 20006
+CF 0 0 1 0
+CF 0 1 1 0
+CF 0 2 1 0
+CF 1 0 1 0
+CF 1 1 1 0
+CF 1 2 1 0
+CF 2 0 1 0
+CF 2 1 1 0
+CF 2 2 1 0
+CF 2 5 1 0
+CF 3 2 1 0
+CF 3 3 1 0
+CF 4 2 1 0
+CF 4 3 1 0
+CF 5 3 1 0
+CF 6 0 1 0
