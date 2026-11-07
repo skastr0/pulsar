@@ -16,7 +16,7 @@ with open(fns_path) as f:
         line = line.rstrip("\n")
         if not line:
             continue
-        fn, path, start, end, parent, chain = line.split("\t")
+        fn, path, start, end, parent, kind, chain = line.split("\t")
         chains[int(fn)] = (path, chain)
 
 rows = []
