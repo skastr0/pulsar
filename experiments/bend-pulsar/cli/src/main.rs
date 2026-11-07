@@ -8,6 +8,7 @@ mod explain;
 mod facts;
 mod finding;
 mod git;
+mod init;
 mod history;
 mod lang;
 mod layers;
@@ -25,6 +26,7 @@ use std::process::ExitCode;
 const USAGE: &str = "usage:
   pulsar facts <repo> [-o file] [--coverage path]   write facts (and <file>.paths, <file>.fns when -o is given)
   pulsar delta <base> <head> [--repo dir] [--json] [--coverage file|dir]   findings added and removed between two shas (exit 1 if any added)
+  pulsar init [--repo dir] [--force] [--print]   write a starter .pulsar/policy.toml from evidence, each choice commented
   pulsar explain [<rule>]           what a rule means: definition, threshold, laws, example (no rule: list them)
   pulsar version                    CLI sha, engine sha, Bend version and every rule with its version
   pulsar catalog [check <file>... | list [--repo dir] | --help]   class data (see `pulsar catalog --help`)
@@ -41,6 +43,7 @@ fn main() -> ExitCode {
         Some("policy") => cmd_policy(&args[1..]).map(|()| 0),
         Some("history") => cmd_history(&args[1..]).map(|()| 0),
         Some("explain") => explain::run(&args[1..]).map(|()| 0),
+        Some("init") => init::run(&args[1..]),
         Some("version") | Some("--version") | Some("-V") => version::run().map(|()| 0),
         Some("delta") => delta::parse(&args[1..]).and_then(|a| delta::run(&a)),
         _ => Err(USAGE.to_string()),

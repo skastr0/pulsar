@@ -429,7 +429,7 @@ pub fn glob(pattern: &str, s: &str) -> bool {
 }
 
 /// The activator that switches `c` on for this evidence, if any.
-fn matches(activate: &[String], ev: &Evidence) -> Option<String> {
+pub(crate) fn matches(activate: &[String], ev: &Evidence) -> Option<String> {
     for a in activate {
         if let Some(dep) = a.strip_prefix("dep:") {
             if ev.deps.contains(dep) {
