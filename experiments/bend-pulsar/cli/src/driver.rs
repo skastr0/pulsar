@@ -34,6 +34,7 @@ pub struct Stats {
     pub ts_files: usize,
     pub rust_files: usize,
     pub sql: crate::sql::Stats,
+    pub infra: crate::infra::Stats,
     pub bend_files: usize,
     pub laws: usize,
     pub markers: usize,
@@ -77,7 +78,8 @@ pub fn build(
     // Lanes run one after another: each already uses every core, and one lane's ASTs are gone
     // before the next lane parses.
     let mut per: Vec<Option<FileOut>> = (0..files.len()).map(|_| None).collect();
-    let (sym_classes, effect, sql_texts) = analyze_ts(root, lanes, &tracked, &ts_files, &mut per, w, &mut st)?;
+    let (sym_classes, effect, sql_texts, edges) =
+        analyze_ts(root, lanes, &tracked, &ts_files, &mut per, w, &mut st)?;
     // What a lane's analysis decided about production code, per file id: None keeps the path rule.
     let mut lane_prod: Vec<Option<bool>> = vec![None; files.len()];
     analyze_rust(root, &tracked, &rust_files, &mut per, &mut lane_prod, w, &mut st)?;
@@ -107,6 +109,12 @@ pub fn build(
     for code in std::mem::take(&mut tables.sql_rules) {
         w.push(Rel::Sr, &[code]);
     }
+    // Infra declarations and the binding names their entry closures read. Inert unless the tree
+    // has a config the lane reads, so it costs no rows in a repo without one.
+    let infra = crate::infra::emit(root, &tracked, &files, &edges, w, tables);
+    st.degraded
+        .extend(infra.degraded.iter().map(|c| Degraded { lane: "infra", cause: c.clone() }));
+    st.infra = infra;
     st.fns = total_fns;
     for d in &st.degraded {
         w.note(&format!("degraded {}: {}", d.lane, d.cause));
@@ -233,7 +241,15 @@ fn analyze_ts(
     per: &mut [Option<FileOut>],
     w: &mut FactWriter,
     st: &mut Stats,
-) -> Result<(std::collections::BTreeMap<String, Vec<u32>>, Option<crate::packs::effect::Rows>, Vec<lang::ts::SqlText>), String> {
+) -> Result<
+    (
+        std::collections::BTreeMap<String, Vec<u32>>,
+        Option<crate::packs::effect::Rows>,
+        Vec<lang::ts::SqlText>,
+        Vec<[u32; 5]>,
+    ),
+    String,
+> {
     if files.is_empty() {
         return Ok(Default::default());
     }
@@ -243,10 +259,11 @@ fn analyze_ts(
     st.fatal += a.stats.fatal;
     st.unreadable += a.stats.unreadable;
     push_edges(w, &a.i, &a.u, st);
+    let edges = a.i;
     for ((id, _), f) in files.iter().zip(a.per_file) {
         per[*id as usize] = Some(f);
     }
-    Ok((a.sym_classes, a.effect, a.sql_texts))
+    Ok((a.sym_classes, a.effect, a.sql_texts, edges))
 }
 
 /// The `.effect` side table: what each service and layer id names, for finding subjects.

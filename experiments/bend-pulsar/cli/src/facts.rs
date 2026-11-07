@@ -36,6 +36,10 @@ pub enum Rel {
     Hr,
     Vn,
     Vt,
+    Id,
+    Ie,
+    Ib,
+    Iu,
     Cv,
     Im,
     If,
@@ -80,7 +84,7 @@ pub enum Rel {
 }
 
 impl Rel {
-    pub const ALL: [Rel; 64] = [
+    pub const ALL: [Rel; 68] = [
         Rel::N,
         Rel::F,
         Rel::K,
@@ -104,6 +108,10 @@ impl Rel {
         Rel::Hr,
         Rel::Vn,
         Rel::Vt,
+        Rel::Id,
+        Rel::Ie,
+        Rel::Ib,
+        Rel::Iu,
         Rel::Cv,
         Rel::Im,
         Rel::If,
@@ -172,6 +180,10 @@ impl Rel {
             Rel::Hr => "HR",
             Rel::Vn => "VN",
             Rel::Vt => "VT",
+            Rel::Id => "ID",
+            Rel::Ie => "IE",
+            Rel::Ib => "IB",
+            Rel::Iu => "IU",
             Rel::Cv => "CV",
             Rel::Im => "IM",
             Rel::If => "IF",
@@ -219,8 +231,9 @@ impl Rel {
     /// Number of U32 fields after the tag.
     pub const fn arity(self) -> usize {
         match self {
-            Rel::N | Rel::M | Rel::Sy | Rel::Tf | Rel::L | Rel::Lo | Rel::Sr => 1,
-            Rel::F | Rel::U | Rel::H | Rel::A | Rel::Cl | Rel::Lq | Rel::Us | Rel::Ln | Rel::If | Rel::Lr | Rel::Lc | Rel::Ds | Rel::Ep => 2,
+            Rel::N | Rel::M | Rel::Sy | Rel::Tf | Rel::L | Rel::Lo | Rel::Sr | Rel::Id => 1,
+            Rel::F | Rel::U | Rel::H | Rel::A | Rel::Cl | Rel::Lq | Rel::Us | Rel::Ln | Rel::If | Rel::Lr | Rel::Lc | Rel::Ds | Rel::Ep
+            | Rel::Ie | Rel::Ib | Rel::Iu => 2,
             Rel::K | Rel::Fk | Rel::C | Rel::Cfn | Rel::Vn | Rel::Cv | Rel::Hd | Rel::E | Rel::Sv | Rel::Ly | Rel::Lp | Rel::Rt | Rel::Mk | Rel::Lw | Rel::Co | Rel::Im | Rel::Cu | Rel::Dt | Rel::Dp | Rel::Di | Rel::Dx | Rel::Df | Rel::Qt | Rel::Bl | Rel::Bw | Rel::Br | Rel::Al => 3,
             Rel::Fn | Rel::Ct | Rel::Cf | Rel::Rl | Rel::Cm | Rel::Et | Rel::Dc | Rel::Dg | Rel::Qu | Rel::Qd => 4,
             Rel::I | Rel::Cs | Rel::Bc | Rel::Hr | Rel::Vt => 5,
@@ -408,6 +421,11 @@ pub struct SideTables {
     /// The `.effect` table, already formatted: `S svc path line name` and `L layer path line
     /// name`, TAB-separated, in id order (FACTS.md "Side tables").
     pub effect: String,
+    /// The `.deployables` table, already formatted: `id path line name`, TAB-separated, in id
+    /// order. Empty when the infra lane found no deployable.
+    pub deployables: String,
+    /// Binding names by `IB`/`IU` id (`.bindings`), one per line.
+    pub bindings: Vec<String>,
 }
 
 impl SideTables {
@@ -471,6 +489,14 @@ impl SideTables {
         }
 
         self.write_sql(&sibling)?;
+        if !self.deployables.is_empty() {
+            let p = sibling(".deployables");
+            std::fs::write(&p, &self.deployables).map_err(|e| format!("{}: {e}", p.display()))?;
+        }
+        if !self.bindings.is_empty() {
+            let p = sibling(".bindings");
+            std::fs::write(&p, self.bindings.join("\n") + "\n").map_err(|e| format!("{}: {e}", p.display()))?;
+        }
         if self.syms.is_empty() {
             return Ok(());
         }

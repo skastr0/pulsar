@@ -52,6 +52,8 @@ Strings the engine never sees. The CLI writes them next to the facts file (`<fac
   - `chain`: container names outermost first, ending with the function itself, joined by `>`. Anonymous functions are `#<ordinal within parent>`. Never empty.
   - To assign a line to a function, take the function in the same file with the largest `start_line` whose span contains the line. A nested arrow that starts on its parent's line owns that line.
 - **`.laws`:** one line per law, in law-id order: `law path line name`, TAB-separated (see "Laws").
+- **`.deployables`:** one line per `ID` id, TAB-separated: `id path line name`. `path` and `line` are the declaration the lane read (line 0 when the dialect has no position); `name` is what findings call the deployable. Written only when the infra lane found a deployable.
+- **`.bindings`:** one binding name per line, in `IB`/`IU` id order, so line N (0-based) is binding N. Written only when there is a declared or read binding.
 - **`.effect`:** written when the Effect pack found services, layers or roots. It names them for finding subjects, TAB-separated: `S svc path line name` for each service in `SV` id order, then `L layer path line name` for each layer in id order. `name` is the binding and tag string for a repo service (`Users (app/Users)`), the catalog symbol for a catalog service or layer, the name bound to a repo layer (`MailerLive`, `Users.layer`; `-` when the expression is unnamed), or the unresolved name for an opaque one. `path` is `-` and `line` 0 for catalog entries; `line` is 0 for an unresolved name.
 
 ## Engine output (v0, one stream)
@@ -412,6 +414,25 @@ The rules are per column, not per query plan. Output (`pulsar-sql 0`), only for 
 - `SQX <rule-name> site <site> <table> <col> <detail>` (table and col are `4294967295` when none);
 - `SQX sql.fk-unindexed fk <fk> <table> <col> <ref_table>`;
 - `SQS n`, the count.
+
+### Infra: deployables, bindings and reads
+
+Written by the infra lane (`cli/src/infra/`). A **deployable** is one unit the repo declares to run somewhere: an alchemy worker or container, or a wrangler config. The lane reads the dialect's declaration (alchemy's `Cloudflare.Worker`/`Cloudflare.Container` calls, wrangler's `wrangler.toml`/`wrangler.json`/`wrangler.jsonc`) and emits the same facts for both: a name, its entry files and its declared binding names. Which keys a dialect uses for those is the reader's data, not the fact model; a detector never names a dialect.
+
+| Tag | Fields | Meaning |
+|---|---|---|
+| `ID` | `dep` | Deployable `dep` is declared. Ids are `0..n-1` in (declaration file, line, name) order; `.deployables` names each one. |
+| `IE` | `dep file` | Deployable `dep` runs `file` (its entry). |
+| `IB` | `dep binding` | Deployable `dep` declares binding `binding` (a `.bindings` id). |
+| `IU` | `file binding` | `file` reads binding `binding`. |
+
+`IE`: alchemy's `main` is a path relative to the declaring module, or `import.meta.url`, which is that module itself. Wrangler's `main` is a path relative to the config; without one, the tracked `src/index.ts`, `.tsx`, `.js` or `.mjs` is the entry. An entry that is not a tracked file gets no row.
+
+`IB`: the names the declaration makes available to code — the keys of an alchemy `env` object, and wrangler's binding fields (`binding` for KV, R2, D1, services, Hyperdrive, Vectorize, analytics datasets, mTLS certificates and queues producers; `name` for Durable Objects and send-email; `assets.binding`, `ai.binding`, `browser.binding`) plus the keys of `vars`. The resource a binding points at is not a fact: a drift rule compares names.
+
+`IU`: a binding read **by name**: `env.X`, `this.env.X`, `ctx.env.X`, `alias.env.X`, `env["X"]`, and object destructuring from any of those (`const { DB } = env`). `process.env.X` and `import.meta.env.X` are never binding reads. Reads are taken only in the entry closure of some deployable — the `IE` file plus every file its `I` edges reach — so a repo's unrelated `env` variables contribute no rows. A read is not attributed to a deployable: the engine limits the files to the closure it computes from `IE`, which compares per deployable in a repo with several.
+
+The lane is inert without a config it reads: no `ID` row means no infra facts and no infra finding. A deployable whose bindings resolve but whose entry does not is reported as degraded input, because its reads are unknown.
 
 ### Later
 

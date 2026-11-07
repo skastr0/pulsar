@@ -9,6 +9,7 @@ mod facts;
 mod finding;
 mod git;
 mod history;
+mod infra;
 mod lang;
 mod layers;
 mod packs;
@@ -30,6 +31,7 @@ const USAGE: &str = "usage:
   pulsar catalog [check <file>... | list [--repo dir] | --help]   class data (see `pulsar catalog --help`)
   pulsar policy [--repo dir]        print the effective policy, its parts and fingerprint
   pulsar history <repo>             print the git-history fact counts (H, C, A, CF, CFN)
+  pulsar infra <repo>               print the deployables, their bindings and the reads the lane found
   pulsar cycles <repo> [--facts-out file]   run facts, then the engine, and print cycles";
 
 fn main() -> ExitCode {
@@ -40,6 +42,7 @@ fn main() -> ExitCode {
         Some("catalog") => cmd_catalog(&args[1..]).map(|()| 0),
         Some("policy") => cmd_policy(&args[1..]).map(|()| 0),
         Some("history") => cmd_history(&args[1..]).map(|()| 0),
+        Some("infra") => cmd_infra(&args[1..]).map(|()| 0),
         Some("explain") => explain::run(&args[1..]).map(|()| 0),
         Some("version") | Some("--version") | Some("-V") => version::run().map(|()| 0),
         Some("delta") => delta::parse(&args[1..]).and_then(|a| delta::run(&a)),
@@ -93,7 +96,11 @@ fn print_stats(st: &driver::Stats) {
 
 /// Run every lane on `repo`, write canonical facts to `out`, and return the file set, side tables
 /// and history stats.
-fn build_facts(repo: &Path, coverage: Option<&Path>, out: &mut dyn Write) -> Result<(driver::FactSet, facts::SideTables, history::Stats), String> {
+fn build_facts(
+    repo: &Path,
+    coverage: Option<&Path>,
+    out: &mut dyn Write,
+) -> Result<(driver::FactSet, facts::SideTables, history::Stats, driver::Stats), String> {
     let eff = policy_for(repo)?;
     let mut w = facts::FactWriter::new();
     let mut tables = facts::SideTables { sql_rules: eff.sql_rule_codes(), ..facts::SideTables::default() };
@@ -119,7 +126,7 @@ fn build_facts(repo: &Path, coverage: Option<&Path>, out: &mut dyn Write) -> Res
     let _ = coverage::emit(repo, coverage, &tables, &mut w)?;
     w.write_to(out)?;
     print_stats(&st);
-    Ok((set, tables, hs))
+    Ok((set, tables, hs, st))
 }
 
 fn cmd_facts(args: &[String]) -> Result<(), String> {
@@ -127,7 +134,7 @@ fn cmd_facts(args: &[String]) -> Result<(), String> {
     match out {
         Some(path) => {
             let mut f = std::fs::File::create(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-            let (_, tables, _) = build_facts(&repo, coverage.as_deref(), &mut f)?;
+            let (_, tables, _, _) = build_facts(&repo, coverage.as_deref(), &mut f)?;
             tables.write(&path)?;
         }
         None => {
@@ -148,7 +155,7 @@ fn cmd_cycles(args: &[String]) -> Result<(), String> {
     });
     let set = {
         let mut f = std::fs::File::create(&facts_path).map_err(|e| format!("{}: {e}", facts_path.display()))?;
-        let (set, _, _) = build_facts(&repo, coverage.as_deref(), &mut f)?;
+        let (set, _, _, _) = build_facts(&repo, coverage.as_deref(), &mut f)?;
         set
     };
     let result = engine::run(&engine_path, &facts_path);
@@ -200,12 +207,34 @@ fn policy_for(root: &Path) -> Result<policy::Effective, String> {
 fn cmd_history(args: &[String]) -> Result<(), String> {
     let Opts { repo, .. } = parse_flags(args, "-o")?;
     let mut sink = std::io::sink();
-    let (_, _, hs) = build_facts(&repo, None, &mut sink)?;
+    let (_, _, hs, _) = build_facts(&repo, None, &mut sink)?;
     println!(
         "commits={} authors={} CF={} CFN={} VN={} VT={} HR={} blobs={} pass1={}ms pass2={}ms degraded={:?}",
         hs.commits, hs.authors, hs.cf, hs.cfn, hs.vn, hs.vt, hs.hr, hs.blobs, hs.pass1_ms,
         hs.pass2_ms, hs.degraded
     );
+    Ok(())
+}
+
+/// The infra lane's report: what the tree declares, and what the lane read from its entries.
+fn cmd_infra(args: &[String]) -> Result<(), String> {
+    let Opts { repo, .. } = parse_flags(args, "-o")?;
+    let mut sink = std::io::sink();
+    let (_, tables, _, st) = build_facts(&repo, None, &mut sink)?;
+    let i = &st.infra;
+    println!(
+        "deployables={} bindings={} entries={} reads={} config_files={} read_files={} infra={}ms",
+        i.deployables, i.bindings, i.entries, i.reads, i.config_files, i.read_files, i.ms
+    );
+    for line in tables.deployables.lines() {
+        let f: Vec<&str> = line.split('\t').collect();
+        if let [_id, path, ln, name] = f.as_slice() {
+            println!("{name}\t{path}:{ln}");
+        }
+    }
+    for d in &i.degraded {
+        println!("degraded: {d}");
+    }
     Ok(())
 }
 
