@@ -1,75 +1,70 @@
 # Pulsar Agent Guide
 
-## Project Intent
+## Status: Pulsar is being rewritten
 
-Pulsar measures repository health with deterministic, inspectable signals. Its outputs are only trustworthy if every contributor and agent evaluates a repository under the same repo- or organization-owned pulsar definition.
+- **Where:** the new Pulsar is built in `experiments/bend-pulsar/`. Its scope is `experiments/bend-pulsar/PRODUCT.md`; read it before any work.
+- **The old packages are legacy.** `packages/`, `scripts/` and the docs that describe vectors, personas, readiness and scoring are the 0.3.0 implementation. When the rewrite is usable, it replaces them and ships through the existing npm package as a version bump. No compatibility contract applies: there are no external users.
+- **Don't add features to the legacy packages.** Touch them only to keep the build green, or when the rewrite needs to read something from them.
+- **Move and delete, don't keep both.** Once a rewrite part is ready, delete the legacy code it replaces.
 
-Pulsar's default product posture is generic, conventional, and least-surprising. Built-in signals and default scoring must be grounded in broadly reusable software-engineering evidence, not in one maintainer's personal architecture taste.
+## Project intent
 
-Pulsar is still meant to be thoroughly programmable. Repository, organization, framework, technology, or separately packaged opinionated modules may encode strong architecture preferences, but those preferences must be explicit calibration, not hidden default behavior.
+- **What it does:** deterministic, proven, low-memory checks of code and architecture health, for teams of peer agents. For a git sha, Pulsar reports which findings a change added or removed. Each finding names a file and symbol, and comes with the evidence a peer can check.
+- **What it doesn't do:** no single score, no weighted blend, no grades.
+- **Memory is a product requirement.** It runs beside many agents, on every sha. Measure peak memory on a large corpus for every change to a hot path.
 
-## Non-Negotiable Domain Invariant
+## Non-negotiable invariants
 
 Pulsar is repository-level, always.
+- A repository's policy lives in its committed `.pulsar/` directory and is fingerprinted. Everyone working in the repo shares it.
+- A home-directory policy is allowed only as an organization fallback. Output that uses it must say so. A repo-local policy always wins.
+- There is no personal or per-agent policy.
+- Anything that changes findings has to be visible: rule IDs, sources, activation evidence and fingerprints.
 
-- The effective pulsar vector belongs to the repository or organization being scored, regardless of where the file is transported from.
-- A repo-local `.pulsar/vector.json` always overrides a home or organization-level vector.
-- A home-directory vector may be valid only as an organization-standard fallback shared across repos. It is not personal preference.
-- CLI output that uses a home-directory vector must identify it as an organization fallback so it cannot be mistaken for repo-local pulsar.
-- There is no personal pulsar vector or portable per-agent pulsar for scoring a repo.
-- Anyone working in a repo shares that repo's pulsar. Divergent per-person scoring makes the system theater.
-- Presets are templates for creating or updating a repo vector. A preset is not active pulsar until it is applied to the repo.
-- Calibration rules that affect scores must be repo-scoped, organization-scoped, framework-scoped, or technology-scoped with explicit activation evidence. They must not be hidden in personal fallback state.
+Pulsar's defaults are generic, always.
+- A core detector must be statable without naming a technology, a framework or an incident. It needs evidence that it generalises across unrelated repositories. Record that evidence under `experiments/bend-pulsar/research/` or in the detector's notes.
+- Anything learned from one repo stays in that repo's rules. Library-specific knowledge, such as which calls are database queries, is data supplied per framework or per repo. The mechanism belongs in core.
+- Framework packs, such as an Effect pack, are switched on by evidence and named as framework-specific. They never redefine the generic baseline.
+- Defaults must not encode one school of architecture taste.
 
-Pulsar defaults are generic, always.
+## Architecture
 
-- Default signals and score semantics must follow the principle of least surprise for a broad software-engineering audience.
-- Defaults may use conventional research- and practice-backed checks such as complexity, coupling, churn, boundary safety, ownership, coverage facts, public API churn, and suppression debt.
-- Defaults must not assume a repo prefers a specific local taste such as tiny files everywhere, integration blobs, maximal DRY, maximal extraction, or any other one-school architecture style.
-- Taste-laden judgments must have a calibration surface, a documented non-tunable rationale, or an explicit enforcement ceiling that prevents overclaiming.
-- The Pulsar repository may dogfood opinionated self-calibration, but that calibration is example usage, not the out-of-box product contract.
-- Opinionated Pulsar distributions are valid only when packaged and named as opinionated. They must not silently redefine the generic baseline.
+- **Rust CLI:** handles arguments, git, config reading (tsconfig, package.json, manifests) and parsing. Parsing goes through external parsers: oxc for TypeScript syntax, tsrs for the opt-in type-aware lane, tree-sitter for other languages. The CLI writes compact facts with numeric IDs, runs the engine, and formats the output.
+- **Bend engine:** holds the fact store, the detectors, composites and per-sha deltas. Every rule that decides a finding lives here, and the engine never holds source text.
+- **Facts:**
+  - Facts carry provenance. Detectors map facts to new facts, and composites are detectors over derived facts.
+  - Thresholds live explicitly in the rules.
+  - Facts are cached per sha and recomputed incrementally.
+- **Type-aware detectors** run in a separate opt-in lane. The default lane needs no type checker.
 
-## Stack and Tooling Constraints
+## Proof rules
 
-- Use `bun` for package operations and test commands.
-- Keep signal behavior deterministic unless a signal is explicitly Tier 3.
-- Preserve cache correctness whenever a change can alter a score.
+- **Laws are about the shipped code.** Every engine detector states laws in `LAWS.bend` about the functions the binary runs, never about a model of them. A law ties the binary's entry point to the proven functions.
+- **Soundness is the minimum bar.** It means no false positives, proven unconditionally. A proven certificate checker in front of an unproven algorithm is acceptable.
+- **Completeness is proven where it matters.** It may be proven relative to runtime certificates, which the binary must report.
+- **The gate:**
+  - `bend PROOF.bend --verdict` must pass.
+  - No `@unsafe`, `?TODO` or foreign code in the engine.
+- **Every new law gets a negative control:** a deliberate bug, in a scratch copy, that fails the gate.
+- **Weakening a law** (adding a hypothesis, narrowing a quantifier) must be stated in the commit message.
+- **Correctness against each language** is shown by differential testing against a reference on real repositories. It can't be proven. Keep the regression corpora and baselines passing.
 
-## Key Concepts and Architectural Principles
+## Clean room
 
-- Signals compute grounded evidence.
-- A pulsar vector configures how this repository interprets and weights that evidence.
-- Calibration adapts signal interpretation to repo layout, framework conventions, and technology contracts.
-- Project modules are project-owned TypeScript/Effect modules that contribute typed calibration processors. Data-only JSON helpers may exist, but they are convenience APIs, not the foundation.
-- Repo- and organization-level pulsar and calibration must be diffable, hashable, attributable, and explainable.
-- Core Pulsar mechanisms should use neutral, conventional vocabulary. Repo-specific architecture taste belongs in calibration modules, vectors, presets, or clearly named opinionated packages.
-- If a concept is only true under this repository's taste, keep it out of generic signal semantics and express it through `.pulsar/modules/pulsar-self.ts` or an equivalent explicit module.
+- Learn from specs, papers, official docs and design write-ups. Existing tools serve only as test oracles. Don't read or port implementation source.
+- Licences and third-party notices for bundled components (oxc, tsrs, tree-sitter) go to Legal before anything ships. Local use isn't blocked.
 
-## Workflow Conventions
+## Tooling
 
-- Before changing signal semantics, identify whether the change is generic signal logic, repo calibration, framework calibration, or score weighting.
-- When adding or changing production signals, follow `docs/signals/authoring.md` and update the pack signal contract matrix in the same change.
-- Do not broaden defaults to satisfy one repo unless the rule is genuinely reusable.
-- Do not promote Pulsar's self-calibration vocabulary into core unless it is a generic, conventional term a new user would reasonably expect.
-- When extracting calibration, preserve current behavior first, then move rules into the correct layer.
-- Update cache keys or fingerprints whenever resolved pulsar or calibration can affect output.
+- **Bend:** `~/.bend/bin/bend`. Pin the version the engine was proven with. `bend x.bend -o x.c` emits C that plain clang builds, which is the packaging path.
+- **Compilers:** clang 14+ (19+ for `!` parallel calls). Lean 4.34 through elan, for `--verdict`.
+- **Rust:** stable with cargo, for the CLI and adapters.
+- **Bun:** only for the legacy packages and their tests.
 
-## Anti-Patterns to Avoid
+## Anti-patterns
 
-- Do not add or extend personal or per-agent pulsar hierarchy.
-  - Instead, resolve one effective repo/org vector and make any proposed change explicit against that shared artifact.
-- Do not treat `~/.config/pulsar/vector.json` as personal pulsar.
-  - Instead, treat it only as an organization-level fallback transport location, with repo-local `.pulsar/vector.json` taking precedence.
-- Do not describe pulsar as portable personal preference.
-  - Instead, describe presets as portable starting templates and repo vectors as the source of truth.
-- Do not smuggle project facts into generic signal source code.
-  - Instead, express them as repo calibration or pack calibration with rule attribution.
-- Do not bake a personal or repo-local architecture taste into out-of-box defaults.
-  - Instead, expose the mechanism generically and encode the taste through explicit calibration, a preset, or an opinionated package.
-- Do not describe Pulsar's self-score calibration as Pulsar's universal ideal.
-  - Instead, describe it as one repo-owned calibration proving that Pulsar can be programmed to follow a declared taste.
-- Do not reduce calibration to a closed JSON DSL when the heuristic requires executable signal processing.
-  - Instead, use project modules that attach code-backed processors to typed slots.
-- Do not make score-affecting calibration invisible.
-  - Instead, expose rule IDs, sources, activation evidence, and fingerprints.
+- **Scores, weights, mixers, personas, readiness bands.** Instead: named findings with evidence, and an explicit rule threshold.
+- **A detector built from one incident or one repo's taste.** Instead: a generic mechanism, with the repo's specifics as data.
+- **Proofs about a copy or a model of the code.** Instead: laws over the shipped functions, plus a law linking the entry point.
+- **Holding source text or syntax trees in the engine.** Instead: the adapter streams files and emits facts.
+- **Hidden policy that changes findings.** Instead: committed, fingerprinted repo policy, with rule IDs on every finding it affects.

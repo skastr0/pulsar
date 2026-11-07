@@ -67,9 +67,16 @@ Weighted means, categories, readiness, bands, personas, the quiz, backpressure, 
 - **Type-aware detectors run in a separate opt-in lane** that pays tsrs's memory. The default lane needs no type checker.
 - **Windows:** not supported. Bend has no Windows target (WSL works).
 
+## Decided (2026-11-07)
+
+- **Process shape: a Rust CLI plus the Bend engine.**
+  - Rust owns all text work: arguments, git, config, parsing and output formatting.
+  - Bend receives only compact numeric facts, so it never pays for its slow strings.
+- **Location: this repo, in `experiments/bend-pulsar/` until it is usable.**
+  - It then replaces 0.3.0, ships through the existing npm package as a version bump, and the legacy packages are deleted.
+
 ## Open decisions
 
-1. Process shape: a Rust front CLI that runs the adapter and the Bend engine, or a Bend CLI that runs the adapter as a subprocess.
-2. Where it lives: a new repository, or a new workspace in this one that replaces 0.3.0.
-3. Licence notices for bundled crates (oxc, tsrs, tree-sitter). Legal must rule on these before anything ships; local use is not affected.
-4. Which detectors make the first cut.
+1. Licence notices for bundled crates (oxc, tsrs, tree-sitter). Legal must rule on these before anything ships; local use is not affected.
+2. Which detectors make the first cut.
+3. The fact format v0, informed by `research/fact-stores.md` and `research/fact-extraction.md`.
