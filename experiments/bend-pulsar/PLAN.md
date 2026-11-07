@@ -4,6 +4,16 @@ Scope: `PRODUCT.md`. Contract between the CLI and the engine: `FACTS.md`. Rules:
 
 Languages, in priority order: **TypeScript (with a full Effect pack), Rust, Bend.** Others come later through tree-sitter.
 
+## First cut (operator, 2026-11-07)
+
+- **Order:**
+  1. The Effect pack.
+  2. Core CRAP, hotspots, churn, complexity and NPath.
+  3. Then the rest.
+- **Languages:** TypeScript and Rust first; Bend later.
+- **Kept for later, not dropped:** the experimental detectors ("needs research" rows).
+- **Live coordination:** the team charter artifact on the Junto canvas ("Pulsar rewrite: team charter") and the task node, tasks #652 to #670.
+
 ## Staff
 
 | Seat | Owns | Model |
