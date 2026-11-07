@@ -21,6 +21,7 @@ REPO=$(cd "$ROOT/../.." && pwd)
 ENGINE=$ROOT/dist/engine
 OUT=$ROOT/dist/npm
 PACK=0
+NPM=${NPM:-npm}   # any working npm; set NPM=/path/to/npm when the one on PATH is broken
 CLI_DARWIN=""; CLI_LINUX=""
 cli_for() { if [ "$1" == darwin-arm64 ]; then echo "$CLI_DARWIN"; else echo "$CLI_LINUX"; fi; }
 while [ $# -gt 0 ]; do
@@ -60,6 +61,13 @@ expect() { # binary, target
   esac || die "$1 is not a $2 binary ($d)"
 }
 
+# The binary this machine can run must report the release version and a real CLI sha.
+native=""; case "$(uname -s)-$(uname -m)" in Darwin-arm64) native=darwin-arm64 ;; Linux-x86_64) native=linux-x64 ;; esac
+if [ -n "$native" ]; then
+  line=$("$(cli_for $native)" version | head -1)
+  [[ "$line" == "pulsar $VERSION (cli "* ]] && [[ "$line" != *"(cli unknown)"* ]] || die "$native CLI says '$line', want pulsar $VERSION with its git sha"
+fi
+
 rm -rf "$OUT" && mkdir -p "$OUT"
 cp -R "$HERE/npm/pulsar" "$OUT/pulsar"
 cp "$REPO/README.md" "$OUT/pulsar/README.md"
@@ -76,9 +84,9 @@ done
 for p in pulsar $(printf 'pulsar-%s ' $TARGETS); do
   cp "$REPO/LICENSE" "$OUT/$p/LICENSE"
   cp "$NOTICES" "$OUT/$p/THIRD_PARTY_NOTICES"
-  (cd "$OUT/$p" && npm pack --dry-run --json 2>/dev/null) \
+  (cd "$OUT/$p" && "$NPM" pack --dry-run --json 2>/dev/null) \
     | python3 -c 'import json,sys; r=json.load(sys.stdin)[0]; print(r["id"], r["size"], "bytes:", " ".join(sorted(f["path"] for f in r["files"])))'
-  if [ $PACK == 1 ]; then (cd "$OUT" && npm pack "./$p" --silent >/dev/null); fi
+  if [ $PACK == 1 ]; then (cd "$OUT" && "$NPM" pack "./$p" --silent >/dev/null); fi
 done
 [ $PACK == 1 ] && ls -l "$OUT"/*.tgz
 echo "staged in $OUT; nothing published"
