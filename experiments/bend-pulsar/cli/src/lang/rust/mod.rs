@@ -37,6 +37,19 @@ pub fn function_spans(key_path: &str, source: &str) -> Vec<FnSpan> {
     f.fns.fns.iter().map(|r| FnSpan { key: r.key, start_line: r.start_line, end_line: r.end_line }).collect()
 }
 
+/// Directory names whose files are never production code in any layout.
+const NON_PROD_DIRS: [&str; 6] = ["tests", "test", "benches", "examples", "fixtures", "testdata"];
+
+/// The Rust rule for the `F` prod flag, from the path alone: files under `tests/`, `test/`,
+/// `benches/`, `examples/`, `fixtures/` or `testdata/`, and `build.rs` (build-time code, not what
+/// ships). Files reachable only through `#[cfg(test)] mod x;` are also non-prod but only the
+/// analysis can tell; they come back in [`Analysis::test_only_files`].
+pub fn is_prod(path: &str) -> bool {
+    let mut segs = path.split('/');
+    let file = segs.next_back().unwrap_or(path);
+    file != "build.rs" && !segs.any(|s| NON_PROD_DIRS.contains(&s))
+}
+
 /// One file's function rows. `tests` holds local indices of test functions (`TF`).
 #[derive(Debug, Default)]
 pub struct FileOut {
@@ -65,6 +78,9 @@ pub struct Analysis {
     pub i: Vec<[u32; 5]>,
     /// `(src, reason)`; sorted and deduped.
     pub u: Vec<[u32; 2]>,
+    /// Global ids of files reachable only through `#[cfg(test)] mod x;`: non-prod, though their
+    /// path says nothing. The driver must clear their `F` prod flag.
+    pub test_only_files: Vec<u32>,
     /// Per target: root path and the file ids of its module tree.
     pub trees: Vec<(String, Vec<u32>)>,
     pub stats: Stats,
@@ -110,6 +126,8 @@ pub fn analyze(root: &Path, files: &[(u32, String)], tracked: &[String]) -> Resu
         }
     }
 
+    let mut test_only_files: Vec<u32> = g.test_files.iter().copied().collect();
+    test_only_files.sort_unstable();
     let (gi, gu, trees) = (g.i, g.u, g.trees);
     let mut i = gi;
     i.sort_unstable();
@@ -129,7 +147,7 @@ pub fn analyze(root: &Path, files: &[(u32, String)], tracked: &[String]) -> Resu
         u_facts: u.len(),
     };
     let per_file = parsed.into_iter().map(|p| FileOut { fns: p.fns, tests: p.tests }).collect();
-    Ok(Analysis { per_file, i, u, trees, stats })
+    Ok(Analysis { per_file, i, u, test_only_files, trees, stats })
 }
 
 #[cfg(test)]

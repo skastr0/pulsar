@@ -120,6 +120,7 @@ fn use_paths_resolve_to_files_and_leave_the_repo_as_u() {
     // tests.rs is reached only through #[cfg(test)] mod tests; so all its functions are test code.
     assert_eq!(out.per_file[2].fns.fns.len(), 1);
     assert_eq!(out.per_file[2].tests, vec![0]);
+    assert_eq!(out.test_only_files, vec![2]);
     assert!(out.per_file[0].tests.is_empty());
 }
 
@@ -201,4 +202,23 @@ fn function_spans_match_the_fn_rows_and_survive_a_move() {
     // The same text under another path is a different key; a file that does not parse is empty.
     assert_ne!(function_spans("src/other.rs", &src)[0].key, spans[0].key);
     assert!(function_spans("src/bad.rs", "fn (").is_empty());
+}
+
+#[test]
+fn is_prod_follows_the_rust_layout_rule() {
+    for p in ["src/lib.rs", "cli/src/lang/rust/mod.rs", "src/bin/tool.rs", "src/testing.rs", "src/attests.rs"] {
+        assert!(is_prod(p), "{p} is production code");
+    }
+    for p in [
+        "tests/it.rs",
+        "crate/tests/common/mod.rs",
+        "benches/b.rs",
+        "examples/demo.rs",
+        "fixtures/rust-fn/src/lib.rs",
+        "x/testdata/a.rs",
+        "build.rs",
+        "crates/a/build.rs",
+    ] {
+        assert!(!is_prod(p), "{p} is not production code");
+    }
 }
