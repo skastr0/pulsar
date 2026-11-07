@@ -142,5 +142,11 @@
   "bug": "a rule is on only when it is the first SR row",
   "old": "Bool.or(U32.is_eq(r, rule), Sq.on(rule, t))",
   "new": "U32.is_eq(r, rule)"
+ },
+ {
+  "law": "sql_drift_rowid",
+  "bug": "the row id is flagged as drift",
+  "old": "Bool.and(Bool.not(Sq.col(table, col, False{}, dcs)), Bool.not(U32.is_eq(col, Sq.rowid())))",
+  "new": "Bool.not(Sq.col(table, col, False{}, dcs))"
  }
 ]

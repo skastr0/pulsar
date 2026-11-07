@@ -1,7 +1,7 @@
 # Unbounded growth end to end (RG, FACTS.md "Unbounded growth"), the Grow-CHECK case.
 #   Table 1 (pk col 10, unique index 0 on col 11), view 2. EP fn 0; CE 0 -> 1.
 #   Reads of 1: site 20 no filter, 21 LIMIT, 22 pk bound, 23 index bound by IN, 24 col 12 only.
-#   Read of view 2 at 25. Inserts into 1: 30 in fn 1 (hot), 31 in fn 2 (not reached).
+#   Read of view 2 at 25. Site 26 binds the row id (QU col 4294967294): keyed, not reported. Inserts into 1: 30 in fn 1 (hot), 31 in fn 2 (not reached).
 #   RG rule 7 depth 1 -> GX 7 20 1 30, GX 7 24 1 30.
 pulsar-facts 0
 N 1
@@ -21,6 +21,7 @@ QS 22 0 1 0 1 0
 QS 23 0 1 0 1 0
 QS 24 0 1 0 1 0
 QS 25 0 1 0 1 0
+QS 26 0 1 0 1 0
 QS 30 0 1 0 2 0
 QS 31 0 2 0 2 0
 QT 20 1 1
@@ -29,11 +30,13 @@ QT 22 1 1
 QT 23 1 1
 QT 24 1 1
 QT 25 2 1
+QT 26 1 1
 QT 30 1 2
 QT 31 1 2
 QU 22 1 10 1
 QU 23 1 11 3
 QU 24 1 12 1
+QU 26 1 4294967294 1
 EP 0 0
 CE 40 0 1 0 0 0
 RG 7 1

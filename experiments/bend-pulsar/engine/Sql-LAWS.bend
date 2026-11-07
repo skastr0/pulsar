@@ -287,6 +287,13 @@ law sql_drift_tables_need_complete:
   for +qts: List<&2, S.Qt>
   {S.Sq.drift_ts(S.Schema{ok, sk, dts, dcs, dis, dxs, dfs, dgs}, qts) == Nil{} : List<&2, S.Sx>}
 
+# The row id (QU col Sq.rowid()) is never schema drift: it is a key the dialect gives a
+# table, not a declared column.
+law sql_drift_rowid:
+  for +s: S.Schema
+  for +table: U32
+  {S.Sq.drift_c(s, table, S.Sq.rowid()) == False{} : Bool}
+
 law sql_drift_cols_need_complete:
   for +ok: U32
   for +sk: U32

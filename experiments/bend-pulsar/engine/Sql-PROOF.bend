@@ -368,7 +368,7 @@ def Laws.sql_drift_cols_need_complete(ok, sk, dts, dcs, dis, dxs, dfs, dgs, h, q
     case Nil{}:
       {==}
     case Con{S.Qu{+site, +table, +col, +role}, t}:
-      Equal.trans(List<&2, S.Sx>, S.Sq.keep(Bool.and(U32.is_eq(sk, 0), Bool.and(Bool.not(U32.is_eq(table, S.Sq.none())), Bool.and(S.Sq.table(table, dts), Bool.not(S.Sq.col(table, col, False{}, dcs))))), S.Sx{6, site, table, col, role}, S.Sq.drift_cs(S.Schema{ok, sk, dts, dcs, dis, dxs, dfs, dgs}, t)), S.Sq.drift_cs(S.Schema{ok, sk, dts, dcs, dis, dxs, dfs, dgs}, t), Nil{}, Keep.off(Bool.and(U32.is_eq(sk, 0), Bool.and(Bool.not(U32.is_eq(table, S.Sq.none())), Bool.and(S.Sq.table(table, dts), Bool.not(S.Sq.col(table, col, False{}, dcs))))), S.Sx{6, site, table, col, role}, S.Sq.drift_cs(S.Schema{ok, sk, dts, dcs, dis, dxs, dfs, dgs}, t), And.ff(U32.is_eq(sk, 0), Bool.and(Bool.not(U32.is_eq(table, S.Sq.none())), Bool.and(S.Sq.table(table, dts), Bool.not(S.Sq.col(table, col, False{}, dcs)))), h)), Laws.sql_drift_cols_need_complete(ok, sk, dts, dcs, dis, dxs, dfs, dgs, h, t))
+      Equal.trans(List<&2, S.Sx>, S.Sq.keep(Bool.and(U32.is_eq(sk, 0), Bool.and(Bool.not(U32.is_eq(table, S.Sq.none())), Bool.and(S.Sq.table(table, dts), Bool.and(Bool.not(S.Sq.col(table, col, False{}, dcs)), Bool.not(U32.is_eq(col, S.Sq.rowid())))))), S.Sx{6, site, table, col, role}, S.Sq.drift_cs(S.Schema{ok, sk, dts, dcs, dis, dxs, dfs, dgs}, t)), S.Sq.drift_cs(S.Schema{ok, sk, dts, dcs, dis, dxs, dfs, dgs}, t), Nil{}, Keep.off(Bool.and(U32.is_eq(sk, 0), Bool.and(Bool.not(U32.is_eq(table, S.Sq.none())), Bool.and(S.Sq.table(table, dts), Bool.and(Bool.not(S.Sq.col(table, col, False{}, dcs)), Bool.not(U32.is_eq(col, S.Sq.rowid())))))), S.Sx{6, site, table, col, role}, S.Sq.drift_cs(S.Schema{ok, sk, dts, dcs, dis, dxs, dfs, dgs}, t), And.ff(U32.is_eq(sk, 0), Bool.and(Bool.not(U32.is_eq(table, S.Sq.none())), Bool.and(S.Sq.table(table, dts), Bool.and(Bool.not(S.Sq.col(table, col, False{}, dcs)), Bool.not(U32.is_eq(col, S.Sq.rowid()))))), h)), Laws.sql_drift_cols_need_complete(ok, sk, dts, dcs, dis, dxs, dfs, dgs, h, t))
 
 def Laws.sql_findings_shape(s, qs, qts, qus, qds):
   {==}
@@ -454,3 +454,15 @@ def Laws.sql_only_complete(on, xs, y, hm, ho):
 
 def Laws.sql_lines_shape(s, q, on):
   {==}
+
+def Rowid.ff(a: Bool, b: Bool, hb: {b == False{} : Bool}) -> {Bool.and(a, b) == False{} : Bool}:
+  match a:
+    case True{}:
+      hb
+    case False{}:
+      {==}
+
+def Laws.sql_drift_rowid(s, table):
+  match s:
+    case S.Schema{+ok, +sk, +dts, +dcs, +dis, +dxs, +dfs, +dgs}:
+      Rowid.ff(U32.is_eq(sk, 0), Bool.and(Bool.not(U32.is_eq(table, S.Sq.none())), Bool.and(S.Sq.table(table, dts), Bool.and(Bool.not(S.Sq.col(table, S.Sq.rowid(), False{}, dcs)), Bool.not(U32.is_eq(S.Sq.rowid(), S.Sq.rowid()))))), Rowid.ff(Bool.not(U32.is_eq(table, S.Sq.none())), Bool.and(S.Sq.table(table, dts), Bool.and(Bool.not(S.Sq.col(table, S.Sq.rowid(), False{}, dcs)), Bool.not(U32.is_eq(S.Sq.rowid(), S.Sq.rowid())))), Rowid.ff(S.Sq.table(table, dts), Bool.and(Bool.not(S.Sq.col(table, S.Sq.rowid(), False{}, dcs)), Bool.not(U32.is_eq(S.Sq.rowid(), S.Sq.rowid()))), Rowid.ff(Bool.not(S.Sq.col(table, S.Sq.rowid(), False{}, dcs)), Bool.not(U32.is_eq(S.Sq.rowid(), S.Sq.rowid())), {==}))))

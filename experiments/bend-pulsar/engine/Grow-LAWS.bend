@@ -108,11 +108,11 @@ def UColAt(d: Q.Dc, +site: U32, +table: U32, +qus: List<&2, Q.Qu>) -> Data:
 
 # Some key of `table` is bound at `site`: a unique, not partial index with every term bound;
 # or a primary key (some DC flag-1 column) with every column bound; or a column alone
-# UNIQUE or the rowid alias, bound.
+# UNIQUE or the rowid alias, bound; or the row id (QU col Sq.rowid()), bound.
 def KeyW(+site: U32, +table: U32, s: Q.Schema, +qus: List<&2, Q.Qu>) -> Data:
   match s:
     case Q.Schema{ok, sk, dts, +dcs, dis, dxs, dfs, dgs}:
-      Either<&2, &2, TL.Ex(Q.Di, d => TL.And(MemDi(dis, d), UKeyAt(d, site, table, dxs, qus))), Either<&2, &2, TL.And(TL.Ex(Q.Dc, d => TL.And(MemDc(dcs, d), PkAt(d, table))), PkAll(site, table, dcs, qus)), TL.Ex(Q.Dc, d => TL.And(MemDc(dcs, d), UColAt(d, site, table, qus)))>>
+      Either<&2, &2, TL.Ex(Q.Di, d => TL.And(MemDi(dis, d), UKeyAt(d, site, table, dxs, qus))), Either<&2, &2, TL.And(TL.Ex(Q.Dc, d => TL.And(MemDc(dcs, d), PkAt(d, table))), PkAll(site, table, dcs, qus)), Either<&2, &2, TL.Ex(Q.Dc, d => TL.And(MemDc(dcs, d), UColAt(d, site, table, qus))), EqW(site, table, Q.Sq.rowid(), qus)>>>
 
 law gr_keyed_sound:
   for +site: U32

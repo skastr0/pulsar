@@ -26,8 +26,8 @@
  {
   "law": "gr_keyed_complete",
   "bug": "a bound unique column is not a key",
-  "old": "Bool.and(Gr.haspk(table, dcs), Gr.pkcov(site, table, dcs, qus)), Gr.ucol(site, table, dcs, qus)))",
-  "new": "Bool.and(Gr.haspk(table, dcs), Gr.pkcov(site, table, dcs, qus)), False{}))"
+  "old": "Bool.or(Gr.ucol(site, table, dcs, qus), Gr.eq(site, table, Q.Sq.rowid(), qus))",
+  "new": "Bool.or(False{}, Gr.eq(site, table, Q.Sq.rowid(), qus))"
  },
  {
   "law": "gr_sel_sound",
@@ -100,5 +100,11 @@
   "bug": "no read is ever unbounded",
   "old": "  Bool.and(Q.Sq.complete(s), Bool.and(Gr.base(table, s), Bool.and(Gr.sel(rs, qs), Bool.not(Gr.keyed(rs, table, s, qus)))))",
   "new": "  False{}"
+ },
+ {
+  "law": "gr_keyed_complete",
+  "bug": "a bound row id is not a key",
+  "old": "Gr.eq(site, table, Q.Sq.rowid(), qus))))",
+  "new": "False{})))"
  }
 ]

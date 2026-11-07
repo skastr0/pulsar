@@ -74,6 +74,11 @@ type Sx is Data:
 def Sq.none() -> U32:
   4294967295
 
+# The row id: the SQL lane writes it as a QU column for an implicit row key (a dialect
+# table names it; SQLite: rowid, oid, _rowid_ of a table that is not WITHOUT ROWID).
+def Sq.rowid() -> U32:
+  4294967294
+
 # ---- the generic filter -----------------------------------------------------------------------
 def Sq.keep(hit: Bool, x: Sx, rest: List<&2, Sx>) -> List<&2, Sx>:
   match hit:
@@ -165,7 +170,7 @@ def Sq.drift_t(+s: Schema, +table: U32) -> Bool:
 def Sq.drift_c(+s: Schema, +table: U32, +col: U32) -> Bool:
   match s:
     case Schema{ok, sk, +dts, +dcs, dis, dxs, dfs, dgs}:
-      Bool.and(U32.is_eq(sk, 0), Bool.and(Bool.not(U32.is_eq(table, Sq.none())), Bool.and(Sq.table(table, dts), Bool.not(Sq.col(table, col, False{}, dcs)))))
+      Bool.and(U32.is_eq(sk, 0), Bool.and(Bool.not(U32.is_eq(table, Sq.none())), Bool.and(Sq.table(table, dts), Bool.and(Bool.not(Sq.col(table, col, False{}, dcs)), Bool.not(U32.is_eq(col, Sq.rowid()))))))
 
 # ---- the detectors ----------------------------------------------------------------------------
 def Sq.sites(qs: List<&2, Qs>) -> List<&2, Sx>:

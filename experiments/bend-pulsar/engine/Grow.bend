@@ -12,10 +12,10 @@
 #   - the read is not keyed: no key of `table` has every column bound at `rs` by equality
 #     or an IN list (QU role 1 or 3). The keys: a unique index that is not partial, with
 #     every term a named column; the primary key (all DC flag-1 columns, when there are
-#     any); a column alone UNIQUE (DC flag 4) or the rowid alias (DC flag 32).
+#     any); a column alone UNIQUE (DC flag 4) or the rowid alias (DC flag 32); the row id
+#     (QU col Sq.rowid(), which the SQL lane writes for a dialect's implicit row key).
 #   - the QS at `ws` is in a function the hot set holds.
-# What it does not see: an aggregate (`COUNT(*)`) still counts as unbounded; a filter on the
-# implicit `rowid` of a table with no alias column does not count as keyed.
+# An aggregate with no bound key (`COUNT(*)`) counts, on purpose: its cost grows with the table.
 #
 # Output, only with an RG row: `pulsar-grow 0`, the SQL schema line (SQD), the GX lines,
 # then `GXS n`.
@@ -91,7 +91,7 @@ def Gr.ucol(+site: U32, +table: U32, dcs: List<&2, Q.Dc>, +qus: List<&2, Q.Qu>) 
 def Gr.keyed(+site: U32, +table: U32, s: Q.Schema, +qus: List<&2, Q.Qu>) -> Bool:
   match s:
     case Q.Schema{ok, sk, dts, +dcs, dis, dxs, dfs, dgs}:
-      Bool.or(Gr.uidx(site, table, dis, dxs, qus), Bool.or(Bool.and(Gr.haspk(table, dcs), Gr.pkcov(site, table, dcs, qus)), Gr.ucol(site, table, dcs, qus)))
+      Bool.or(Gr.uidx(site, table, dis, dxs, qus), Bool.or(Bool.and(Gr.haspk(table, dcs), Gr.pkcov(site, table, dcs, qus)), Bool.or(Gr.ucol(site, table, dcs, qus), Gr.eq(site, table, Q.Sq.rowid(), qus))))
 
 # ---- the read and the write -------------------------------------------------------------------
 # The QS at `site` is a SELECT with no LIMIT.

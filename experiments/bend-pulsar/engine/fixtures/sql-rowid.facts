@@ -1,0 +1,15 @@
+# Schema drift skips the row id (QU col 4294967294, FACTS.md "SQL"): table 1 has column 10;
+# site 20 filters the row id and column 99, which the schema does not define. SR 6 (drift)
+# -> one SQX for column 99, none for the row id.
+pulsar-facts 0
+N 1
+F 0 1
+M 1
+DS 1 0
+DT 1 0 0
+DC 1 10 0 1
+QS 20 0 0 0 1 0
+QT 20 1 1
+QU 20 1 4294967294 1
+QU 20 1 99 1
+SR 6

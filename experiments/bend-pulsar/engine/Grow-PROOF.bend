@@ -407,39 +407,56 @@ def Uc.from(+site: U32, +table: U32, +dcs: List<&2, Q.Dc>, +qus: List<&2, Q.Qu>,
           Uc.c(site, table, dcs, qus, d, md, ad)
 
 # ---- keyed ------------------------------------------------------------------------------------
-def Ky.s2(+site: U32, +table: U32, +dcs: List<&2, Q.Dc>, +dis: List<&2, Q.Di>, +dxs: List<&2, Q.Dx>, +qus: List<&2, Q.Qu>, o: Either<&2, &2, {Bool.and(R.Gr.haspk(table, dcs), R.Gr.pkcov(site, table, dcs, qus)) == True{} : Bool}, {R.Gr.ucol(site, table, dcs, qus) == True{} : Bool}>) -> Either<&2, &2, TL.Ex(Q.Di, d => TL.And(Laws.MemDi(dis, d), Laws.UKeyAt(d, site, table, dxs, qus))), Either<&2, &2, TL.And(TL.Ex(Q.Dc, d => TL.And(Laws.MemDc(dcs, d), Laws.PkAt(d, table))), Laws.PkAll(site, table, dcs, qus)), TL.Ex(Q.Dc, d => TL.And(Laws.MemDc(dcs, d), Laws.UColAt(d, site, table, qus)))>>:
+def Ky.s3(+site: U32, +table: U32, +dcs: List<&2, Q.Dc>, +dis: List<&2, Q.Di>, +dxs: List<&2, Q.Dx>, +qus: List<&2, Q.Qu>, o: Either<&2, &2, {R.Gr.ucol(site, table, dcs, qus) == True{} : Bool}, {R.Gr.eq(site, table, Q.Sq.rowid(), qus) == True{} : Bool}>) -> Either<&2, &2, TL.Ex(Q.Dc, d => TL.And(Laws.MemDc(dcs, d), Laws.UColAt(d, site, table, qus))), Laws.EqW(site, table, Q.Sq.rowid(), qus)>:
+  match o:
+    case Inl{u}:
+      Inl{Uc.s(site, table, dcs, qus, u)}
+    case Inr{e}:
+      Inr{Eq.s(site, table, Q.Sq.rowid(), qus, e)}
+
+def Ky.s2(+site: U32, +table: U32, +dcs: List<&2, Q.Dc>, +dis: List<&2, Q.Di>, +dxs: List<&2, Q.Dx>, +qus: List<&2, Q.Qu>, o: Either<&2, &2, {Bool.and(R.Gr.haspk(table, dcs), R.Gr.pkcov(site, table, dcs, qus)) == True{} : Bool}, {Bool.or(R.Gr.ucol(site, table, dcs, qus), R.Gr.eq(site, table, Q.Sq.rowid(), qus)) == True{} : Bool}>) -> Either<&2, &2, TL.And(TL.Ex(Q.Dc, d => TL.And(Laws.MemDc(dcs, d), Laws.PkAt(d, table))), Laws.PkAll(site, table, dcs, qus)), Either<&2, &2, TL.Ex(Q.Dc, d => TL.And(Laws.MemDc(dcs, d), Laws.UColAt(d, site, table, qus))), Laws.EqW(site, table, Q.Sq.rowid(), qus)>>:
   match o:
     case Inl{+a}:
-      Inr{Inl{Tuple{Hp.s(table, dcs, B.l(R.Gr.haspk(table, dcs), R.Gr.pkcov(site, table, dcs, qus), a)), Pa.s(site, table, dcs, qus, B.r(R.Gr.haspk(table, dcs), R.Gr.pkcov(site, table, dcs, qus), a))}}}
+      Inl{Tuple{Hp.s(table, dcs, B.l(R.Gr.haspk(table, dcs), R.Gr.pkcov(site, table, dcs, qus), a)), Pa.s(site, table, dcs, qus, B.r(R.Gr.haspk(table, dcs), R.Gr.pkcov(site, table, dcs, qus), a))}}
     case Inr{b}:
-      Inr{Inr{Uc.s(site, table, dcs, qus, b)}}
+      Inr{Ky.s3(site, table, dcs, dis, dxs, qus, L.Bool.or_true(R.Gr.ucol(site, table, dcs, qus), R.Gr.eq(site, table, Q.Sq.rowid(), qus), b))}
 
-def Ky.s(+site: U32, +table: U32, +dcs: List<&2, Q.Dc>, +dis: List<&2, Q.Di>, +dxs: List<&2, Q.Dx>, +qus: List<&2, Q.Qu>, o: Either<&2, &2, {R.Gr.uidx(site, table, dis, dxs, qus) == True{} : Bool}, {Bool.or(Bool.and(R.Gr.haspk(table, dcs), R.Gr.pkcov(site, table, dcs, qus)), R.Gr.ucol(site, table, dcs, qus)) == True{} : Bool}>) -> Either<&2, &2, TL.Ex(Q.Di, d => TL.And(Laws.MemDi(dis, d), Laws.UKeyAt(d, site, table, dxs, qus))), Either<&2, &2, TL.And(TL.Ex(Q.Dc, d => TL.And(Laws.MemDc(dcs, d), Laws.PkAt(d, table))), Laws.PkAll(site, table, dcs, qus)), TL.Ex(Q.Dc, d => TL.And(Laws.MemDc(dcs, d), Laws.UColAt(d, site, table, qus)))>>:
+def Ky.s(+site: U32, +table: U32, +dcs: List<&2, Q.Dc>, +dis: List<&2, Q.Di>, +dxs: List<&2, Q.Dx>, +qus: List<&2, Q.Qu>, o: Either<&2, &2, {R.Gr.uidx(site, table, dis, dxs, qus) == True{} : Bool}, {Bool.or(Bool.and(R.Gr.haspk(table, dcs), R.Gr.pkcov(site, table, dcs, qus)), Bool.or(R.Gr.ucol(site, table, dcs, qus), R.Gr.eq(site, table, Q.Sq.rowid(), qus))) == True{} : Bool}>) -> Either<&2, &2, TL.Ex(Q.Di, d => TL.And(Laws.MemDi(dis, d), Laws.UKeyAt(d, site, table, dxs, qus))), Either<&2, &2, TL.And(TL.Ex(Q.Dc, d => TL.And(Laws.MemDc(dcs, d), Laws.PkAt(d, table))), Laws.PkAll(site, table, dcs, qus)), Either<&2, &2, TL.Ex(Q.Dc, d => TL.And(Laws.MemDc(dcs, d), Laws.UColAt(d, site, table, qus))), Laws.EqW(site, table, Q.Sq.rowid(), qus)>>>:
   match o:
     case Inl{a}:
       Inl{Ux.s(site, table, dis, dxs, qus, a)}
     case Inr{b}:
-      Ky.s2(site, table, dcs, dis, dxs, qus, L.Bool.or_true(Bool.and(R.Gr.haspk(table, dcs), R.Gr.pkcov(site, table, dcs, qus)), R.Gr.ucol(site, table, dcs, qus), b))
+      Inr{Ky.s2(site, table, dcs, dis, dxs, qus, L.Bool.or_true(Bool.and(R.Gr.haspk(table, dcs), R.Gr.pkcov(site, table, dcs, qus)), Bool.or(R.Gr.ucol(site, table, dcs, qus), R.Gr.eq(site, table, Q.Sq.rowid(), qus)), b))}
 
 def Laws.gr_keyed_sound(site, table, s, qus, e):
   match s:
     case Q.Schema{+ok, +sk, +dts, +dcs, +dis, +dxs, +dfs, +dgs}:
-      Ky.s(site, table, dcs, dis, dxs, qus, L.Bool.or_true(R.Gr.uidx(site, table, dis, dxs, qus), Bool.or(Bool.and(R.Gr.haspk(table, dcs), R.Gr.pkcov(site, table, dcs, qus)), R.Gr.ucol(site, table, dcs, qus)), e))
+      Ky.s(site, table, dcs, dis, dxs, qus, L.Bool.or_true(R.Gr.uidx(site, table, dis, dxs, qus), Bool.or(Bool.and(R.Gr.haspk(table, dcs), R.Gr.pkcov(site, table, dcs, qus)), Bool.or(R.Gr.ucol(site, table, dcs, qus), R.Gr.eq(site, table, Q.Sq.rowid(), qus))), e))
+
+def Ky.c3(+site: U32, +table: U32, +dcs: List<&2, Q.Dc>, +dis: List<&2, Q.Di>, +dxs: List<&2, Q.Dx>, +qus: List<&2, Q.Qu>, w: Either<&2, &2, TL.Ex(Q.Dc, d => TL.And(Laws.MemDc(dcs, d), Laws.UColAt(d, site, table, qus))), Laws.EqW(site, table, Q.Sq.rowid(), qus)>) -> {Bool.or(R.Gr.ucol(site, table, dcs, qus), R.Gr.eq(site, table, Q.Sq.rowid(), qus)) == True{} : Bool}:
+  match w:
+    case Inl{u}:
+      B.ol(R.Gr.ucol(site, table, dcs, qus), R.Gr.eq(site, table, Q.Sq.rowid(), qus), Uc.from(site, table, dcs, qus, u))
+    case Inr{r}:
+      B.or(R.Gr.ucol(site, table, dcs, qus), R.Gr.eq(site, table, Q.Sq.rowid(), qus), Eq.from(site, table, Q.Sq.rowid(), qus, r))
+
+def Ky.c2(+site: U32, +table: U32, +dcs: List<&2, Q.Dc>, +dis: List<&2, Q.Di>, +dxs: List<&2, Q.Dx>, +qus: List<&2, Q.Qu>, w: Either<&2, &2, TL.And(TL.Ex(Q.Dc, d => TL.And(Laws.MemDc(dcs, d), Laws.PkAt(d, table))), Laws.PkAll(site, table, dcs, qus)), Either<&2, &2, TL.Ex(Q.Dc, d => TL.And(Laws.MemDc(dcs, d), Laws.UColAt(d, site, table, qus))), Laws.EqW(site, table, Q.Sq.rowid(), qus)>>) -> {Bool.or(Bool.and(R.Gr.haspk(table, dcs), R.Gr.pkcov(site, table, dcs, qus)), Bool.or(R.Gr.ucol(site, table, dcs, qus), R.Gr.eq(site, table, Q.Sq.rowid(), qus))) == True{} : Bool}:
+  match w:
+    case Inl{p}:
+      match p:
+        case Tuple{hp, pa}:
+          B.ol(Bool.and(R.Gr.haspk(table, dcs), R.Gr.pkcov(site, table, dcs, qus)), Bool.or(R.Gr.ucol(site, table, dcs, qus), R.Gr.eq(site, table, Q.Sq.rowid(), qus)), B.tt(R.Gr.haspk(table, dcs), R.Gr.pkcov(site, table, dcs, qus), Hp.from(table, dcs, hp), Pa.c(site, table, dcs, qus, pa)))
+    case Inr{c}:
+      B.or(Bool.and(R.Gr.haspk(table, dcs), R.Gr.pkcov(site, table, dcs, qus)), Bool.or(R.Gr.ucol(site, table, dcs, qus), R.Gr.eq(site, table, Q.Sq.rowid(), qus)), Ky.c3(site, table, dcs, dis, dxs, qus, c))
 
 def Laws.gr_keyed_complete(site, table, s, qus, w):
   match s:
     case Q.Schema{+ok, +sk, +dts, +dcs, +dis, +dxs, +dfs, +dgs}:
       match w:
         case Inl{a}:
-          B.ol(R.Gr.uidx(site, table, dis, dxs, qus), Bool.or(Bool.and(R.Gr.haspk(table, dcs), R.Gr.pkcov(site, table, dcs, qus)), R.Gr.ucol(site, table, dcs, qus)), Ux.from(site, table, dis, dxs, qus, a))
+          B.ol(R.Gr.uidx(site, table, dis, dxs, qus), Bool.or(Bool.and(R.Gr.haspk(table, dcs), R.Gr.pkcov(site, table, dcs, qus)), Bool.or(R.Gr.ucol(site, table, dcs, qus), R.Gr.eq(site, table, Q.Sq.rowid(), qus))), Ux.from(site, table, dis, dxs, qus, a))
         case Inr{b}:
-          match b:
-            case Inl{p}:
-              match p:
-                case Tuple{hp, pa}:
-                  B.or(R.Gr.uidx(site, table, dis, dxs, qus), Bool.or(Bool.and(R.Gr.haspk(table, dcs), R.Gr.pkcov(site, table, dcs, qus)), R.Gr.ucol(site, table, dcs, qus)), B.ol(Bool.and(R.Gr.haspk(table, dcs), R.Gr.pkcov(site, table, dcs, qus)), R.Gr.ucol(site, table, dcs, qus), B.tt(R.Gr.haspk(table, dcs), R.Gr.pkcov(site, table, dcs, qus), Hp.from(table, dcs, hp), Pa.c(site, table, dcs, qus, pa))))
-            case Inr{u}:
-              B.or(R.Gr.uidx(site, table, dis, dxs, qus), Bool.or(Bool.and(R.Gr.haspk(table, dcs), R.Gr.pkcov(site, table, dcs, qus)), R.Gr.ucol(site, table, dcs, qus)), B.or(Bool.and(R.Gr.haspk(table, dcs), R.Gr.pkcov(site, table, dcs, qus)), R.Gr.ucol(site, table, dcs, qus), Uc.from(site, table, dcs, qus, u)))
+          B.or(R.Gr.uidx(site, table, dis, dxs, qus), Bool.or(Bool.and(R.Gr.haspk(table, dcs), R.Gr.pkcov(site, table, dcs, qus)), Bool.or(R.Gr.ucol(site, table, dcs, qus), R.Gr.eq(site, table, Q.Sq.rowid(), qus))), Ky.c2(site, table, dcs, dis, dxs, qus, b))
 
 # ---- the read ---------------------------------------------------------------------------------
 def Se.k(+s: U32, +file: U32, +fn: U32, +node: U32, +kind: U32, +flags: U32, +rest: List<&2, Q.Qs>, +site: U32, o: Either<&2, &2, {Bool.and(U32.is_eq(s, site), Bool.and(U32.is_eq(kind, 1), Bool.not(Q.Sq.bit(flags, 1)))) == True{} : Bool}, {R.Gr.sel(site, rest) == True{} : Bool}>, ih: {R.Gr.sel(site, rest) == True{} : Bool} -> TL.Ex(Q.Qs, x => TL.And(QL.MemQs(rest, x), Laws.SelAt(x, site)))) -> TL.Ex(Q.Qs, x => TL.And(QL.MemQs(Con{Q.Qs{s, file, fn, node, kind, flags}, rest}, x), Laws.SelAt(x, site))):
