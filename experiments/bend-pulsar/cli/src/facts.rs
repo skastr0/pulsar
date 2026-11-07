@@ -34,6 +34,10 @@ pub enum Rel {
     Cf,
     Cfn,
     Cv,
+    Im,
+    If,
+    Cm,
+    Rt,
     Sy,
     Cl,
     Cs,
@@ -47,7 +51,7 @@ pub enum Rel {
 }
 
 impl Rel {
-    pub const ALL: [Rel; 31] = [
+    pub const ALL: [Rel; 35] = [
         Rel::N,
         Rel::F,
         Rel::K,
@@ -69,6 +73,10 @@ impl Rel {
         Rel::Cf,
         Rel::Cfn,
         Rel::Cv,
+        Rel::Im,
+        Rel::If,
+        Rel::Cm,
+        Rel::Rt,
         Rel::Sy,
         Rel::Cl,
         Rel::Cs,
@@ -104,6 +112,10 @@ impl Rel {
             Rel::Cf => "CF",
             Rel::Cfn => "CFN",
             Rel::Cv => "CV",
+            Rel::Im => "IM",
+            Rel::If => "IF",
+            Rel::Cm => "CM",
+            Rel::Rt => "RT",
             Rel::Sy => "SY",
             Rel::Cl => "CL",
             Rel::Cs => "CS",
@@ -121,9 +133,9 @@ impl Rel {
     pub const fn arity(self) -> usize {
         match self {
             Rel::N | Rel::M | Rel::Sy | Rel::Tf | Rel::L => 1,
-            Rel::F | Rel::U | Rel::H | Rel::A | Rel::Cl | Rel::Lq | Rel::Us | Rel::Sv | Rel::Ln => 2,
-            Rel::K | Rel::Fk | Rel::C | Rel::Cfn | Rel::Cv | Rel::Hd | Rel::Ly | Rel::Lp | Rel::Mk | Rel::Lw | Rel::Co => 3,
-            Rel::Fn | Rel::Ct | Rel::Cf | Rel::Rl => 4,
+            Rel::F | Rel::U | Rel::H | Rel::A | Rel::Cl | Rel::Lq | Rel::Us | Rel::Sv | Rel::Ln | Rel::If => 2,
+            Rel::K | Rel::Fk | Rel::C | Rel::Cfn | Rel::Cv | Rel::Hd | Rel::Ly | Rel::Lp | Rel::Mk | Rel::Lw | Rel::Co | Rel::Im => 3,
+            Rel::Fn | Rel::Ct | Rel::Cf | Rel::Rl | Rel::Cm | Rel::Rt => 4,
             Rel::I | Rel::Cs => 5,
         }
     }
@@ -134,8 +146,15 @@ impl Rel {
 }
 
 /// Number of facts written per relation, after dedup.
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct Counts([usize; Rel::ALL.len()]);
+
+// `[T; N]: Default` stops at N = 32, and there are more relations than that.
+impl Default for Counts {
+    fn default() -> Self {
+        Counts([0; Rel::ALL.len()])
+    }
+}
 
 impl Counts {
     pub fn get(&self, rel: Rel) -> usize {
@@ -382,6 +401,18 @@ mod tests {
         let text = render(sorted);
         assert_eq!(text, render(shuffled));
         assert_eq!(text, "pulsar-facts 0\nCT 0 1 0 1\nCT 0 2 1 2\nCT 1 1 0 4294967295\nCT 1 2 1 10\n");
+    }
+
+    #[test]
+    fn the_rust_type_relations_sit_between_cv_and_sy() {
+        let mut w = FactWriter::new();
+        w.push(Rel::Sy, &[1]);
+        w.push(Rel::Rt, &[0, 1, 2, 1]);
+        w.push(Rel::Cm, &[0, 1, 2, 3]);
+        w.push(Rel::If, &[0, 1]);
+        w.push(Rel::Im, &[0, 1, 2]);
+        w.push(Rel::Cv, &[0, 1, 2]);
+        assert_eq!(render(w), "pulsar-facts 0\nCV 0 1 2\nIM 0 1 2\nIF 0 1\nCM 0 1 2 3\nRT 0 1 2 1\nSY 1\n");
     }
 
     #[test]
