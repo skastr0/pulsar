@@ -359,13 +359,15 @@ for sym, src, file, export in [
 #     convert the callee instead of bridging it. A callee outside effect_only is on the promise
 #     side the policy declares, and bridging it is interop, so target_all needs 8 as well as 1.
 #   effect.mixed-module (modules): an Effect-first file holding Effect code and an async function
-#     that is neither Effect code nor an interop callback.
+#     that is neither Effect code nor an interop callback. v2: FC carries the test bit, so none 4
+#     excludes test files (v1 flagged them: FC stripped the bit, and pulsar-fidelity's sample found
+#     8 of 20 findings in test files).
 FN_RULES = [
     dict(id="effect.internal-promise-bridge", table="edges", masks=dict(all=8 | 32, none=4 | 16, target_all=1 | 8, target_none=16), ver=1,
          says="bridges an async function of the Effect-first scope into Effect through an interop callback, instead of converting the callee",
          src="ED", file="ai-docs/src/01_effect/01_basics/10_creating-effects.ts", line=45,
          text="`Effect.tryPromise` wraps Promise-based APIs that can reject or throw."),
-    dict(id="effect.mixed-module", table="modules", masks=dict(all=8 | 2, none=4 | 16 | 32, also_all=8 | 1, also_none=2 | 4 | 16 | 32), ver=1,
+    dict(id="effect.mixed-module", table="modules", masks=dict(all=8 | 2, none=4 | 16 | 32, also_all=8 | 1, also_none=2 | 4 | 16 | 32), ver=2,
          says="defines both Effect code and async functions in one Effect-first module",
          src="ED", file="LLMS.md", line=53,
          text="When writing reusable functions that return an Effect, use `Effect.fn`"),

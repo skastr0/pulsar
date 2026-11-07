@@ -398,19 +398,21 @@ mod tests {
         // load and its callback are async; the generator and what it holds are Effect code; the
         // tryPromise options are interop callbacks. A function a wrapper takes (the generator and
         // the two tryPromise options) also has 128, which the callback inside the generator (10)
-        // does not inherit. The test bit is never in FC (TF says it).
+        // does not inherit. The file is a test file, so every row also has 4: a module rule's
+        // ctx_none 4 has to see it.
+        let t = ctx_test();
         let want: Vec<(u32, u8)> = vec![
-            (0, 9),
-            (1, 9),
-            (2, 8),
-            (3, 8),
-            (4, 8),
-            (5, 8),
-            (6, 8),
-            (7, 2 | 8 | 128),
-            (8, 1 | 2 | 8 | 32 | 128),
-            (9, 2 | 8 | 32 | 128),
-            (10, 10),
+            (0, 9 | t),
+            (1, 9 | t),
+            (2, 8 | t),
+            (3, 8 | t),
+            (4, 8 | t),
+            (5, 8 | t),
+            (6, 8 | t),
+            (7, 2 | 8 | 128 | t),
+            (8, 1 | 2 | 8 | 32 | 128 | t),
+            (9, 2 | 8 | 32 | 128 | t),
+            (10, 10 | t),
         ];
         assert_eq!(f.fn_ctx, want);
     }

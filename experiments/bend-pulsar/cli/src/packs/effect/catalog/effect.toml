@@ -290,5 +290,5 @@ edges = [
 # modules (RM): masks over function ctx (FC); see `pulsar catalog --help`.
 # ctx 1 = async, 2 = Effect code, 4 = test, 8 = effect_only, 16 = boundary, 32 = interop callback.
 modules = [
-  { id = "effect.mixed-module", all = 10, none = 52, also_all = 9, also_none = 54, says = "defines both Effect code and async functions in one Effect-first module", ver = "1", at = "effect@9428e17499:LLMS.md:53", doc = "When writing reusable functions that return an Effect, use `Effect.fn` or" },
+  { id = "effect.mixed-module", all = 10, none = 52, also_all = 9, also_none = 54, says = "defines both Effect code and async functions in one Effect-first module", ver = "2", at = "effect@9428e17499:LLMS.md:53", doc = "When writing reusable functions that return an Effect, use `Effect.fn` or" },
 ]

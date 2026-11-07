@@ -654,8 +654,10 @@ impl<'s> Walker<'s> {
             self.out.entries.push((local, kind));
         }
         let frame_ctx = self.frame_ctx(span.start, is_async);
+        // FC keeps the test bit, so a module rule's ctx_none 4 excludes test files; a function
+        // whose only bit is the test bit has no row (no rule needs it).
         if self.index.is_some() && frame_ctx & !ctx::TEST != 0 {
-            self.out.fn_ctx.push((local, frame_ctx & !ctx::TEST));
+            self.out.fn_ctx.push((local, frame_ctx));
         }
         self.frames.push(Frame { local, blocks: BlockAcc::default(), next_node: 1, ctx: frame_ctx, loops: 0, stack: vec![0] });
         if is_async {

@@ -241,4 +241,19 @@ grep -q '^+ effect.throw-or-try-in-gen [0-9a-f]* g.ts:2 fires1 .*syntax#throw (x
 grep -q '^+ effect.throw-or-try-in-gen [0-9a-f]* g.ts:6 fires2 .*syntax#try (x1) (rule v1)$' <<<"$out" && echo "ok   a try directly in an Effect.fn body is a finding" || { echo "FAIL try in Effect.fn"; grep throw-or-try <<<"$out"; fail=1; }
 [ "$(grep -c '^[-+~] effect.throw-or-try-in-gen' <<<"$out")" == 2 ] && echo "ok   not inside Effect.try, Effect.tryPromise, a nested helper or a test" || { echo "FAIL rule 4 reported outside the generator body"; grep throw-or-try <<<"$out"; fail=1; }
 
+# effect.mixed-module: a file in effect_only scope with Effect code and an async function is a
+# finding; the same file named as a test is not (FC carries the test bit, ctx_none 4).
+M=$(mktemp -d); trap 'rm -rf "$T" "$K" "$D" "$E" "$R" "$Q" "$W" "$G" "$M"' EXIT
+( cd "$M" && git init -q . && git config user.email t@t && git config user.name t
+  echo base > README.md && git add -A && git commit -qm base
+  echo '{"dependencies":{"effect":"*"}}' > package.json
+  mkdir -p .pulsar src
+  printf 'format = "pulsar-policy 0"\n[packs.effect]\neffect_only = [\n  "src/",\n]\n' > .pulsar/policy.toml
+  printf 'import { Effect } from "effect"\nexport const e = Effect.gen(function* () {\n  return 1\n})\nexport async function a() {\n  return 2\n}\n' > src/m.ts
+  cp src/m.ts src/m.test.ts
+  git add -A && git commit -qm "Effect code and an async function in one module, and in a test" )
+out=$("$BIN" delta HEAD~1 HEAD --repo "$M" 2>/dev/null)
+grep -q '^+ effect.mixed-module [0-9a-f]* src/m.ts' <<<"$out" && echo "ok   a module with Effect code and an async function is a finding" || { echo "FAIL mixed-module"; grep mixed-module <<<"$out"; fail=1; }
+! grep -q 'mixed-module .*src/m.test.ts' <<<"$out" && echo "ok   the same module as a test file is not" || { echo "FAIL mixed-module fired in a test file"; grep mixed-module <<<"$out"; fail=1; }
+
 exit $fail
