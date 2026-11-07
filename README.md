@@ -141,6 +141,7 @@ The pass signal on stderr: `pulsar: coverage reports=1 files=3 lines=35 skipped=
 One policy per repo, committed in `.pulsar/`, and its fingerprint is printed with every run:
 
 - `policy.toml`: the history window, `[lanes.ts]` / `[lanes.rust]` / `[lanes.bend]` / `[lanes.sql]` coverage and `prod` / `test` prefixes, `[rules] enable` / `disable`, `[packs.effect]` scope.
+  `[lanes.<lane>]` `test` and `prod` take path prefixes (`"scripts/"`, an exact file) and file-suffix patterns: an entry starting with `*` followed by a literal suffix, such as `"*.tst.ts"` for type-test files, covers every file whose path ends with it. A `test` entry wins over a `prod` entry, and a file covered by `test` has every function flagged as a test function, so the metric rules skip it. `pulsar policy` prints a `scope` line for each entry with the number of tracked files it decided. The whole file, patterns included, is part of the fingerprint.
 - `decisions.toml`: a finding key accepted with a written reason. It is shown as `~ allowed` and does not fail the run.
 - `catalogs/*.toml`: your own class data (which calls are queries, which block). See `pulsar catalog --help`.
 

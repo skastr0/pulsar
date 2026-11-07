@@ -63,6 +63,31 @@ fn under(prefix: &str, path: &str) -> bool {
     if prefix.ends_with('/') { path.starts_with(prefix) } else { path == prefix }
 }
 
+/// Does a `test` or `prod` entry cover `path`? An entry starting with `*` is a file-suffix pattern
+/// (`*.tst.ts` covers every path ending in `.tst.ts`); any other entry is a path prefix.
+fn entry_covers(entry: &str, path: &str) -> bool {
+    match entry.strip_prefix('*') {
+        Some(suffix) => path.ends_with(suffix),
+        None => under(entry, path),
+    }
+}
+
+/// Which list of a lane scope decided a file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScopeKind {
+    Test,
+    Prod,
+}
+
+impl ScopeKind {
+    pub fn word(self) -> &'static str {
+        match self {
+            ScopeKind::Test => "test",
+            ScopeKind::Prod => "prod",
+        }
+    }
+}
+
 impl LaneScope {
     pub fn allows(&self, path: &str) -> bool {
         (self.include.is_empty() || self.include.iter().any(|p| under(p, path)))
@@ -122,6 +147,47 @@ pub struct Lanes {
 }
 
 impl Lanes {
+    fn scope_of(&self, rel: &str) -> (&'static str, &LaneScope) {
+        if rel.ends_with(".rs") {
+            ("rust", &self.rust)
+        } else if rel.ends_with(".bend") {
+            ("bend", &self.bend)
+        } else if rel.ends_with(".sql") {
+            ("sql", &self.sql)
+        } else {
+            ("ts", &self.ts)
+        }
+    }
+
+    /// The policy entry that decides `rel`: a `test` entry first (it wins), then a `prod` entry.
+    pub fn matched(&self, rel: &str) -> Option<(ScopeKind, &str)> {
+        let (_, scope) = self.scope_of(rel);
+        if let Some(e) = scope.test.iter().find(|e| entry_covers(e, rel)) {
+            return Some((ScopeKind::Test, e));
+        }
+        scope.prod.iter().find(|e| entry_covers(e, rel)).map(|e| (ScopeKind::Prod, e.as_str()))
+    }
+
+    /// Does a policy `test` entry cover `rel`? Every function in such a file is a test function.
+    pub fn is_policy_test(&self, rel: &str) -> bool {
+        matches!(self.matched(rel), Some((ScopeKind::Test, _)))
+    }
+
+    /// Every `test` and `prod` entry with the number of tracked files it decides, as
+    /// (lane, kind, entry, files), for `pulsar policy`.
+    pub fn scope_report(&self, tracked: &[String]) -> Vec<(&'static str, ScopeKind, String, usize)> {
+        let mut out = Vec::new();
+        for (lane, scope) in [("ts", &self.ts), ("rust", &self.rust), ("bend", &self.bend), ("sql", &self.sql)] {
+            for (kind, entries) in [(ScopeKind::Test, &scope.test), (ScopeKind::Prod, &scope.prod)] {
+                for e in entries {
+                    let n = tracked.iter().filter(|p| self.scope_of(p).0 == lane && self.matched(p) == Some((kind, e.as_str()))).count();
+                    out.push((lane, kind, e.clone(), n));
+                }
+            }
+        }
+        out
+    }
+
     /// Is `rel` production code? Policy `test` prefixes win, then `prod` prefixes, then what the
     /// lane's analysis decided (`lane`: for example a Rust file only reachable through
     /// `#[cfg(test)] mod`, or a Bend file no `main` reaches), then the path rule of the lane's
@@ -130,12 +196,10 @@ impl Lanes {
         let rust = rel.ends_with(".rs");
         let bend = rel.ends_with(".bend");
         let sql = rel.ends_with(".sql");
-        let scope = if rust { &self.rust } else if bend { &self.bend } else if sql { &self.sql } else { &self.ts };
-        if scope.test.iter().any(|p| under(p, rel)) {
-            return false;
-        }
-        if scope.prod.iter().any(|p| under(p, rel)) {
-            return true;
+        match self.matched(rel) {
+            Some((ScopeKind::Test, _)) => return false,
+            Some((ScopeKind::Prod, _)) => return true,
+            None => {}
         }
         if let Some(found) = lane {
             return found;
@@ -519,8 +583,19 @@ pub fn parse_policy(name: &str, text: &str) -> Result<Policy, String> {
             [("include", &scope.include), ("exclude", &scope.exclude), ("prod", &scope.prod), ("test", &scope.test)]
         {
             sorted_unique(name, &format!("lanes.{lane}.{what}"), items)?;
-            if let Some(bad) = items.iter().find(|i| i.is_empty() || i.starts_with('/') || i.starts_with("./") || i.split('/').any(|c| c == "..")) {
-                return Err(format!("{name}: lanes.{lane}.{what} {bad:?} must be a repo-relative path prefix"));
+            // `test` and `prod` also take file-suffix patterns: `*` then a literal suffix.
+            let patterns = matches!(what, "test" | "prod");
+            for i in items {
+                if let Some(suffix) = i.strip_prefix('*') {
+                    if !patterns {
+                        return Err(format!("{name}: lanes.{lane}.{what} {i:?}: a *suffix pattern is for test and prod; include and exclude take path prefixes"));
+                    }
+                    if suffix.is_empty() || suffix.contains(['*', '/']) {
+                        return Err(format!("{name}: lanes.{lane}.{what} {i:?} must be a file-suffix pattern: * then a literal suffix without / or *, like \"*.tst.ts\""));
+                    }
+                } else if i.is_empty() || i.starts_with('/') || i.starts_with("./") || i.split('/').any(|c| c == "..") {
+                    return Err(format!("{name}: lanes.{lane}.{what} {i:?} must be a repo-relative path prefix"));
+                }
             }
         }
     }
@@ -785,6 +860,64 @@ mod tests {
         assert_eq!(on.why, "file:wrangler.jsonc");
         let off = load(&tmp("h"), None, &gather_evidence(&tmp("i"), &["src/a.ts".to_string()])).unwrap();
         assert!(off.catalogs.iter().all(|c| c.loaded.catalog.id != "cloudflare-workers"));
+    }
+
+    const SUFFIX_POLICY: &str = "format = \"pulsar-policy 0\"\n[lanes.ts]\ntest = [\n  \"*.tst.ts\",\n  \"fixtures-extra/\",\n]\nprod = [\n  \"*.live.test.ts\",\n]\n";
+
+    #[test]
+    fn a_suffix_entry_marks_files_by_name_and_test_wins_over_prod() {
+        let p = parse_policy("p", SUFFIX_POLICY).unwrap();
+        let l = &p.lanes;
+        assert_eq!(l.matched("src/a.tst.ts"), Some((ScopeKind::Test, "*.tst.ts")));
+        assert_eq!(l.matched("a.tst.ts"), Some((ScopeKind::Test, "*.tst.ts")), "a root file matches too");
+        assert_eq!(l.matched("fixtures-extra/x.ts"), Some((ScopeKind::Test, "fixtures-extra/")), "prefixes still work beside patterns");
+        assert_eq!(l.matched("src/a.ts"), None);
+        assert_eq!(l.matched("src/atst.ts"), None, "the suffix is literal: .tst.ts needs its dot");
+        assert!(!l.is_prod("src/a.tst.ts", None), "a test entry makes the file non-production");
+        assert!(l.is_policy_test("src/a.tst.ts") && !l.is_policy_test("src/a.ts"));
+        // prod entry: the default rule calls *.live.test.ts a test (the .test.ts suffix); policy prod overrides it.
+        assert!(!Lanes::default().is_prod("e2e/a.live.test.ts", None));
+        assert!(l.is_prod("e2e/a.live.test.ts", None));
+        assert!(!l.is_policy_test("e2e/a.live.test.ts"), "prod is not a test entry");
+        // test beats prod when both cover a file.
+        let both = parse_policy("p", "format = \"pulsar-policy 0\"\n[lanes.ts]\ntest = [\n  \"*.live.test.ts\",\n]\nprod = [\n  \"e2e/\",\n]\n").unwrap();
+        assert_eq!(both.lanes.matched("e2e/a.live.test.ts"), Some((ScopeKind::Test, "*.live.test.ts")));
+        // other lanes use their own lists.
+        assert_eq!(l.matched("src/lib.tst.rs"), None);
+    }
+
+    #[test]
+    fn the_scope_report_names_the_entry_and_counts_the_files_it_decided() {
+        let p = parse_policy("p", SUFFIX_POLICY).unwrap();
+        let tracked: Vec<String> = ["a.tst.ts", "src/b.tst.ts", "src/c.ts", "fixtures-extra/d.ts", "e2e/x.live.test.ts"].iter().map(|s| s.to_string()).collect();
+        let r = p.lanes.scope_report(&tracked);
+        let get = |e: &str| r.iter().find(|(_, _, entry, _)| entry == e).map(|(l, k, _, n)| (*l, k.word(), *n));
+        assert_eq!(get("*.tst.ts"), Some(("ts", "test", 2)));
+        assert_eq!(get("fixtures-extra/"), Some(("ts", "test", 1)));
+        assert_eq!(get("*.live.test.ts"), Some(("ts", "prod", 1)));
+    }
+
+    #[test]
+    fn a_suffix_entry_must_be_star_then_a_literal_suffix_and_only_in_test_or_prod() {
+        let bad = |t: &str| parse_policy("p", &format!("format = \"pulsar-policy 0\"\n[lanes.ts]\n{t}")).unwrap_err();
+        assert!(bad("test = [\n  \"*\",\n]\n").contains("file-suffix pattern"));
+        assert!(bad("test = [\n  \"*.a/b.ts\",\n]\n").contains("file-suffix pattern"));
+        assert!(bad("test = [\n  \"*.t*.ts\",\n]\n").contains("file-suffix pattern"));
+        assert!(bad("include = [\n  \"*.ts\",\n]\n").contains("test and prod"));
+        assert!(bad("exclude = [\n  \"*.ts\",\n]\n").contains("test and prod"));
+        assert!(parse_policy("p", &format!("format = \"pulsar-policy 0\"\n[lanes.ts]\ntest = [\n  \"*.tst.ts\",\n]\n")).is_ok());
+    }
+
+    #[test]
+    fn the_fingerprint_covers_a_suffix_entry() {
+        let repo = tmp("suffix");
+        write(&repo, ".pulsar/policy.toml", POLICY);
+        let base = load(&repo, None, &Evidence::default()).unwrap().fingerprint;
+        write(&repo, ".pulsar/policy.toml", &format!("{POLICY}[lanes.ts]\ntest = [\n  \"*.tst.ts\",\n]\n"));
+        let with = load(&repo, None, &Evidence::default()).unwrap().fingerprint;
+        assert_ne!(base, with);
+        write(&repo, ".pulsar/policy.toml", &format!("{POLICY}[lanes.ts]\ntest = [\n  \"*.type.ts\",\n]\n"));
+        assert_ne!(with, load(&repo, None, &Evidence::default()).unwrap().fingerprint, "a different suffix is a different policy");
     }
 
     #[test]

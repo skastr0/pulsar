@@ -102,7 +102,7 @@ pub fn build(
         push_effect(w, &per, rows);
         tables.effect = effect_table(rows, &files);
     }
-    let fn_keys = push_functions(w, per, tables, &mut st);
+    let fn_keys = push_functions(w, per, &|file| lanes.is_policy_test(&files[file]), tables, &mut st);
     push_rules(w, rules, tables);
     push_composites(w, &tables.composites);
     analyze_sql(root, &sql_files, sql_texts, &fn_base, w, tables, &mut st);
@@ -415,7 +415,9 @@ fn push_sites(
 /// Function ids are global: files in id order, functions in start-offset order within a file.
 /// Each file's rows move into the writer and are freed before the next file. Returns the `FK`
 /// key of each function.
-fn push_functions(w: &mut FactWriter, mut per: Vec<Option<FileOut>>, tables: &mut SideTables, st: &mut Stats) -> Vec<u64> {
+/// A file that policy marks as test code (`[lanes.*] test`, by prefix or `*suffix`) has every function
+/// flagged `TF`, so the metric rules skip it like any other test function.
+fn push_functions(w: &mut FactWriter, mut per: Vec<Option<FileOut>>, policy_test: &dyn Fn(usize) -> bool, tables: &mut SideTables, st: &mut Stats) -> Vec<u64> {
     let mut fn_keys = Vec::new();
     let mut base = 0u32;
     for (file, slot) in per.iter_mut().enumerate() {
@@ -473,8 +475,14 @@ fn push_functions(w: &mut FactWriter, mut per: Vec<Option<FileOut>>, tables: &mu
         for r in &blocks.bc {
             w.push(Rel::Bc, &[base + r[0], r[1], r[2], r[3], r[4]]);
         }
-        for t in tests {
-            w.push(Rel::Tf, &[base + t]);
+        if policy_test(file) {
+            for t in 0..count {
+                w.push(Rel::Tf, &[base + t]);
+            }
+        } else {
+            for t in tests {
+                w.push(Rel::Tf, &[base + t]);
+            }
         }
         base += count;
     }
@@ -554,6 +562,33 @@ mod tests {
         assert!(out.contains("I 1 0 0 1 0\n"), "b imports a: {out}");
         // functions are numbered in file-id order: the Rust fn is in file 2.
         assert!(out.lines().any(|l| l.starts_with("FN ") && l.split(' ').nth(2) == Some("2")), "{out}");
+    }
+
+    #[test]
+    fn a_policy_test_suffix_makes_every_function_in_the_file_a_test_function() {
+        let dir = std::env::temp_dir().join(format!("pulsar-driver-tf-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.tst.ts"), "export function one() { return 1 }\nexport function two() { return 2 }\n").unwrap();
+        std::fs::write(dir.join("b.ts"), "export function three() { return 3 }\n").unwrap();
+        let tracked: Vec<String> = vec!["a.tst.ts".into(), "b.ts".into()];
+        let run = |lanes: &Lanes| {
+            let mut w = FactWriter::new();
+            let mut t = SideTables::default();
+            build(&dir, tracked.clone(), lanes, &[], &mut w, &mut t).unwrap();
+            let mut out = Vec::new();
+            w.write_to(&mut out).unwrap();
+            String::from_utf8(out).unwrap()
+        };
+        let tf = |out: &str| out.lines().filter(|l| l.starts_with("TF ")).map(String::from).collect::<Vec<_>>();
+        assert!(tf(&run(&Lanes::default())).is_empty(), "without the policy entry nothing is a test function");
+        let mut lanes = Lanes::default();
+        lanes.ts.test = vec!["*.tst.ts".into()];
+        let out = run(&lanes);
+        std::fs::remove_dir_all(&dir).ok();
+        // a.tst.ts is file 0 with functions 0 and 1; b.ts holds function 2, which stays production.
+        assert_eq!(tf(&out), vec!["TF 0".to_string(), "TF 1".to_string()], "{out}");
+        assert!(out.contains("F 0 0\n") && out.contains("F 1 1\n"), "the policy test file is not production, b.ts is: {out}");
     }
 
     #[test]

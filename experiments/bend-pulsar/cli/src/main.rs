@@ -285,6 +285,12 @@ fn cmd_policy(args: &[String]) -> Result<(), String> {
     for (id, why) in &c.inert {
         println!("rule-off\t{id}\t{why}");
     }
+    // Which policy entry decides which files: `test`/`prod` prefixes and *suffix patterns, with the
+    // number of tracked files each one decided (a test entry wins over a prod entry).
+    let tracked = git::git_ls_files(&repo).unwrap_or_default();
+    for (lane, kind, entry, n) in eff.policy.lanes.scope_report(&tracked) {
+        println!("scope\t{lane}\t{}\t{entry}\tfiles={n}", kind.word());
+    }
     println!("fingerprint\tsha256:{}", eff.fingerprint);
     Ok(())
 }
