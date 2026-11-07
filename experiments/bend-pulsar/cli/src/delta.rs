@@ -9,6 +9,7 @@
 //! adds them again under the new path (FACTS.md: keys never use lines, and rename tracking is not
 //! part of a path key).
 
+use crate::cache::{self, Cache};
 use crate::coverage;
 use crate::driver;
 use crate::engine::{self, Findings};
@@ -22,7 +23,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
 
-pub const USAGE: &str = "usage: pulsar delta <base> <head> [--repo dir] [--json] [--coverage file|dir] [--trend]
+pub const USAGE: &str = "usage: pulsar delta <base> <head> [--repo dir] [--json] [--coverage file|dir] [--trend] [--no-cache]
   exit 0 = no finding added, 1 = at least one added, 2 = error
   --coverage reads a coverage report from the worktree and applies it to HEAD only (it describes the
     checked-out tree, so use it when <head> is what you have checked out and tested). Findings that
@@ -30,6 +31,7 @@ pub const USAGE: &str = "usage: pulsar delta <base> <head> [--repo dir] [--json]
   --trend lists every function whose measured values moved (default: only functions that have a
     metric finding in base or head). Trend lines (`~ worsened`, `~ improved`) show old -> new values;
     they are measurements, never findings, and never count toward exit 1.
+  --no-cache recomputes both shas instead of reading ~/.pulsar/cache (a cached sha skips checkout and parsing).
   --json prints JSON lines (one per finding, then a summary line) instead of text";
 
 pub struct Args {
@@ -39,18 +41,20 @@ pub struct Args {
     json: bool,
     coverage: Option<PathBuf>,
     trend: bool,
+    no_cache: bool,
 }
 
 pub fn parse(args: &[String]) -> Result<Args, String> {
     let mut pos = Vec::new();
     let mut repo = PathBuf::from(".");
-    let (mut json, mut trend) = (false, false);
+    let (mut json, mut trend, mut no_cache) = (false, false, false);
     let mut coverage = None;
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--json" => json = true,
             "--trend" => trend = true,
+            "--no-cache" => no_cache = true,
             "--coverage" => coverage = Some(PathBuf::from(it.next().ok_or("--coverage needs a value")?)),
             "--repo" => repo = PathBuf::from(it.next().ok_or("--repo needs a value")?),
             f if f.starts_with('-') => return Err(format!("unknown flag {f}\n{USAGE}")),
@@ -58,7 +62,7 @@ pub fn parse(args: &[String]) -> Result<Args, String> {
         }
     }
     let [base, head] = <[String; 2]>::try_from(pos).map_err(|_| USAGE.to_string())?;
-    Ok(Args { base, head, repo, json, coverage, trend })
+    Ok(Args { base, head, repo, json, coverage, trend, no_cache })
 }
 
 fn git(repo: &Path, args: &[&str], envs: &[(&str, &Path)]) -> Result<Vec<u8>, String> {
@@ -104,6 +108,7 @@ struct Timing {
     checkout_ms: u128,
     facts_ms: u128,
     engine_ms: u128,
+    cache: &'static str,
 }
 
 /// One function's measured values (`FM`), keyed by its `FK` key, for trend lines.
@@ -127,26 +132,152 @@ struct Eval {
     degraded: Vec<Degraded>,
 }
 
-/// Materialise `sha` into `scratch/tree` through a private index; returns the tree and its file list.
-fn materialise(repo: &Path, sha: &str, scratch: &Scratch) -> Result<(PathBuf, Vec<String>), String> {
-    let tree = scratch.0.join("tree");
-    let index = scratch.0.join("index");
-    git(repo, &["read-tree", sha], &[("GIT_INDEX_FILE", &index)])?;
-    std::fs::create_dir_all(&tree).map_err(|e| format!("{}: {e}", tree.display()))?;
-    // `--work-tree` points git at the scratch tree, so this also works in a bare repository
-    // and never touches the repository's own work tree.
-    git(
-        repo,
-        &["--work-tree", &tree.to_string_lossy(), "checkout-index", "-a", "-f"],
-        &[("GIT_INDEX_FILE", &index)],
-    )?;
+/// The files of `sha`, repo-relative, from its tree object (no checkout).
+fn list_tracked(repo: &Path, sha: &str) -> Result<Vec<String>, String> {
     let listing = git(repo, &["ls-tree", "-r", "-z", "--name-only", sha], &[])?;
-    let tracked = listing
+    Ok(listing
         .split(|b| *b == 0)
         .filter(|s| !s.is_empty())
         .map(|s| String::from_utf8_lossy(s).into_owned())
+        .collect())
+}
+
+/// Materialise all of `sha` into `tree` through a private index.
+fn checkout(repo: &Path, sha: &str, scratch: &Scratch, tree: &Path) -> Result<(), String> {
+    let index = scratch.0.join("index");
+    git(repo, &["read-tree", sha], &[("GIT_INDEX_FILE", &index)])?;
+    std::fs::create_dir_all(tree).map_err(|e| format!("{}: {e}", tree.display()))?;
+    // `--work-tree` points git at the scratch tree, so this also works in a bare repository
+    // and never touches the repository's own work tree.
+    git(repo, &["--work-tree", &tree.to_string_lossy(), "checkout-index", "-a", "-f"], &[("GIT_INDEX_FILE", &index)])?;
+    Ok(())
+}
+
+/// The files that decide policy and pack activation: `.pulsar/` policy, decisions and catalogs, and
+/// every `package.json`. Reading these alone is enough to load the policy of a sha.
+fn policy_paths(tracked: &[String]) -> Vec<&String> {
+    tracked
+        .iter()
+        .filter(|p| {
+            p.as_str() == ".pulsar/policy.toml"
+                || p.as_str() == ".pulsar/decisions.toml"
+                || (p.starts_with(".pulsar/catalogs/") && p.ends_with(".toml"))
+                || p.as_str() == "package.json"
+                || p.ends_with("/package.json")
+        })
+        .collect()
+}
+
+/// Write the policy files of `sha` into `tree`, read in one `git cat-file --batch` call.
+fn write_policy_files(repo: &Path, sha: &str, tracked: &[String], tree: &Path) -> Result<(), String> {
+    use std::io::{BufRead, Read, Write};
+    let paths = policy_paths(tracked);
+    if paths.is_empty() {
+        return Ok(());
+    }
+    let mut child = Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(["cat-file", "--batch"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("cannot run git: {e}"))?;
+    let mut stdin = child.stdin.take().ok_or("git cat-file has no stdin")?;
+    let wanted: Vec<String> = paths.iter().map(|p| format!("{sha}:{p}\n")).collect();
+    // A separate thread feeds the requests so a full pipe in either direction cannot deadlock.
+    let feeder = std::thread::spawn(move || wanted.iter().try_for_each(|l| stdin.write_all(l.as_bytes())));
+    let mut out = std::io::BufReader::new(child.stdout.take().ok_or("git cat-file has no stdout")?);
+    for p in &paths {
+        let mut head = String::new();
+        out.read_line(&mut head).map_err(|e| format!("git cat-file: {e}"))?;
+        let size: usize = head.split_whitespace().nth(2).and_then(|s| s.parse().ok()).ok_or_else(|| format!("{sha}:{p}: {}", head.trim()))?;
+        let mut body = vec![0u8; size + 1];
+        out.read_exact(&mut body).map_err(|e| format!("git cat-file: {e}"))?;
+        body.pop();
+        let dest = tree.join(p);
+        std::fs::create_dir_all(dest.parent().unwrap_or(tree)).map_err(|e| format!("{}: {e}", dest.display()))?;
+        std::fs::write(&dest, body).map_err(|e| format!("{}: {e}", dest.display()))?;
+    }
+    drop(out);
+    let _ = feeder.join();
+    let _ = child.wait();
+    Ok(())
+}
+
+/// What the lanes produced for one sha: the file set and side tables, plus the lanes that ran on
+/// weaker input. The facts text lives in a file beside it.
+struct Built {
+    set: driver::FactSet,
+    tables: SideTables,
+    degraded: Vec<Degraded>,
+}
+
+fn to_meta(b: &Built) -> cache::Meta {
+    cache::Meta {
+        files: b.set.files.clone(),
+        prod: b.set.prod,
+        fn_keys: b.set.fn_keys.clone(),
+        fns: b.tables.fns.iter().map(|f| (f.file, f.start_line, f.end_line, f.parent, f.kind, f.chain.clone())).collect(),
+        syms: b.tables.syms.clone(),
+        rules: b.tables.rules.clone(),
+        laws: b.tables.laws.clone(),
+        degraded: b.degraded.iter().map(|d| (d.lane.to_string(), d.cause.clone())).collect(),
+    }
+}
+
+fn from_meta(m: cache::Meta) -> Built {
+    let lane = |l: &str| -> &'static str {
+        match l {
+            "rust" => "rust",
+            "ts" => "ts",
+            "bend" => "bend",
+            other => Box::leak(other.to_string().into_boxed_str()),
+        }
+    };
+    let mut tables = SideTables { paths: m.files.clone(), syms: m.syms, rules: m.rules, laws: m.laws, ..SideTables::default() };
+    tables.fns = m
+        .fns
+        .into_iter()
+        .map(|(file, start_line, end_line, parent, kind, chain)| crate::facts::FnEntry { file, start_line, end_line, parent, kind, chain })
         .collect();
-    Ok((tree, tracked))
+    Built {
+        set: driver::FactSet { files: m.files, prod: m.prod, fn_keys: m.fn_keys },
+        tables,
+        degraded: m.degraded.into_iter().map(|(l, cause)| Degraded { lane: lane(&l), cause }).collect(),
+    }
+}
+
+/// A cached derived entry: its facts go to `facts_path`, its tables come back.
+fn load_entry(cache: &Cache, rel: &str, facts_path: &Path) -> Option<Built> {
+    let bytes = cache.get(rel)?;
+    let (meta, facts) = cache::decode(&bytes)?;
+    std::fs::write(facts_path, facts).ok()?;
+    Some(from_meta(meta))
+}
+
+/// Run the lanes on a full checkout of `sha` and write the facts to `facts_path`.
+fn build_fresh(
+    repo: &Path,
+    sha: &str,
+    scratch: &Scratch,
+    tree: &Path,
+    tracked: Vec<String>,
+    eff: &Effective,
+    coverage: Option<&Path>,
+    facts_path: &Path,
+) -> Result<Built, String> {
+    checkout(repo, sha, scratch, tree)?;
+    let mut w = FactWriter::new();
+    let mut tables = SideTables::default();
+    let (set, dstats) = driver::build(tree, tracked, &eff.policy.lanes, &eff.active_rules(), &mut w, &mut tables)?;
+    if let Some(c) = coverage {
+        // The report is read from the worktree at `repo`, never from the scratch checkout.
+        coverage::emit(repo, Some(c), &tables, &mut w)?;
+    }
+    let mut f = std::fs::File::create(facts_path).map_err(|e| format!("{}: {e}", facts_path.display()))?;
+    w.write_to(&mut f)?;
+    Ok(Built { set, tables, degraded: dstats.degraded })
 }
 
 /// Add a finding; a key collision between two distinct findings is an error, never a silent merge.
@@ -271,35 +402,70 @@ fn class_context_findings(
     out
 }
 
+/// The engine's findings for a facts file: from the cache when this engine already ran on these
+/// facts, otherwise from a run whose output is cached.
+fn engine_findings(cache: Option<&Cache>, derived: &str, facts_path: &Path) -> Result<Findings, String> {
+    let engine_path = engine::locate()?;
+    let rel = Cache::engine_rel(derived, &engine_path);
+    if let Some(text) = cache.and_then(|c| c.get(&rel)) {
+        if let Ok(found) = engine::parse(&String::from_utf8_lossy(&text)) {
+            return Ok(found);
+        }
+    }
+    let text = engine::run_raw(&engine_path, facts_path)?;
+    let found = engine::parse(&text)?;
+    if let (Some(c), true) = (cache, found.cert != Some(false)) {
+        let _ = c.put(&rel, text.as_bytes());
+    }
+    Ok(found)
+}
+
+/// The org policy file, the one policy input that is not part of a sha (for the cache key).
+fn org_policy_bytes() -> Option<Vec<u8>> {
+    std::fs::read(std::env::var_os("HOME").map(PathBuf::from)?.join(".pulsar/policy.toml")).ok()
+}
+
 /// All findings and measures of one commit.
-fn evaluate(repo: &Path, sha: &str, tag: &str, coverage: Option<&Path>) -> Result<Eval, String> {
+fn evaluate(repo: &Path, sha: &str, tag: &str, coverage: Option<&Path>, use_cache: bool) -> Result<Eval, String> {
     let mut timing = Timing::default();
     let scratch = Scratch::new(tag)?;
+    let tree = scratch.0.join("tree");
     let t0 = Instant::now();
-    let (tree, tracked) = materialise(repo, sha, &scratch)?;
-    timing.checkout_ms = t0.elapsed().as_millis();
+    let tracked = list_tracked(repo, sha)?;
     // The policy is the one committed in this sha, so a decision counts only once it is in the tree.
+    write_policy_files(repo, sha, &tracked, &tree)?;
     let ev = policy::gather_evidence(&tree, &tracked);
     let home = std::env::var_os("HOME").map(PathBuf::from);
     let eff = policy::load(&tree, home.as_deref(), &ev)?;
-
-    let t1 = Instant::now();
-    let mut w = FactWriter::new();
-    let mut tables = SideTables::default();
     let active = eff.active_rules();
-    let (set, dstats) = driver::build(&tree, tracked, &eff.policy.lanes, &active, &mut w, &mut tables)?;
-    if let Some(c) = coverage {
-        // The report is read from the worktree at `repo`, never from the scratch checkout.
-        coverage::emit(repo, Some(c), &tables, &mut w)?;
-    }
+    timing.checkout_ms = t0.elapsed().as_millis();
+
+    // A report describes one checkout, so a run with coverage is never cached.
+    let cache = if use_cache && coverage.is_none() { Cache::open(repo) } else { None };
+    let rel = Cache::derived_rel(sha, org_policy_bytes().as_deref());
     let facts_path = scratch.0.join("facts.txt");
-    let mut f = std::fs::File::create(&facts_path).map_err(|e| format!("{}: {e}", facts_path.display()))?;
-    w.write_to(&mut f)?;
-    drop(f);
+    let t1 = Instant::now();
+    let cached = cache.as_ref().and_then(|c| load_entry(c, &rel, &facts_path));
+    let hit = cached.is_some();
+    let built = match cached {
+        Some(b) => b,
+        None => {
+            let b = build_fresh(repo, sha, &scratch, &tree, tracked, &eff, coverage, &facts_path)?;
+            if let Some(c) = &cache {
+                let facts = std::fs::read(&facts_path).map_err(|e| format!("{}: {e}", facts_path.display()))?;
+                if let Err(e) = c.put(&rel, &cache::encode(&to_meta(&b), &facts)) {
+                    eprintln!("pulsar: cache write failed: {e}");
+                }
+            }
+            b
+        }
+    };
     timing.facts_ms = t1.elapsed().as_millis();
+    timing.cache = if cache.is_none() { "off" } else if hit { "hit" } else { "miss" };
+    let Built { set, tables, degraded } = built;
 
     let t2 = Instant::now();
-    let found = engine::run(&engine::locate()?, &facts_path)?;
+    let found = engine_findings(cache.as_ref(), &rel, &facts_path)?;
     if found.cert == Some(false) {
         return Err(format!("engine certificate check failed at {sha}"));
     }
@@ -319,7 +485,7 @@ fn evaluate(repo: &Path, sha: &str, tag: &str, coverage: Option<&Path>) -> Resul
     for f in metric_findings(&found, &measures, &tables, &set.fn_keys, disabled, &eff.policy.rules.enable)? {
         insert(&mut findings, f, sha)?;
     }
-    Ok(Eval { findings, measures, timing, policy: eff, degraded: dstats.degraded })
+    Ok(Eval { findings, measures, timing, policy: eff, degraded })
 }
 
 /// A function whose measured values moved between base and head. Measurement only.
@@ -489,12 +655,12 @@ fn render_json(d: &Diff, after: &Eval, base: &str, head: &str) -> String {
 pub fn run(a: &Args) -> Result<u8, String> {
     let base = resolve(&a.repo, &a.base)?;
     let head = resolve(&a.repo, &a.head)?;
-    let before = evaluate(&a.repo, &base, "base", None)?;
-    let after = evaluate(&a.repo, &head, "head", a.coverage.as_deref())?;
+    let before = evaluate(&a.repo, &base, "base", None, !a.no_cache)?;
+    let after = evaluate(&a.repo, &head, "head", a.coverage.as_deref(), !a.no_cache)?;
     eprintln!("pulsar: {}", after.policy.summary());
     for (name, sha, e) in [("base", &base, &before), ("head", &head, &after)] {
         let t = &e.timing;
-        eprintln!("pulsar: {name} {} checkout={}ms facts={}ms engine={}ms", &sha[..12], t.checkout_ms, t.facts_ms, t.engine_ms);
+        eprintln!("pulsar: {name} {} cache={} policy={}ms facts={}ms engine={}ms", &sha[..12], t.cache, t.checkout_ms, t.facts_ms, t.engine_ms);
     }
     let diff = compare(&before, &after, a.trend);
     print!("{}", if a.json { render_json(&diff, &after, &base, &head) } else { render_text(&diff, &after, &base, &head) });

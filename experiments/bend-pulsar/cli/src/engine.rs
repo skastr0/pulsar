@@ -71,7 +71,13 @@ pub fn locate() -> Result<PathBuf, String> {
     ))
 }
 
+/// Run the engine and parse its output.
 pub fn run(engine: &Path, facts: &Path) -> Result<Findings, String> {
+    parse(&run_raw(engine, facts)?)
+}
+
+/// Run the engine and return its stdout, so a caller can cache the text.
+pub fn run_raw(engine: &Path, facts: &Path) -> Result<String, String> {
     let out = Command::new(engine)
         .arg(facts)
         .output()
@@ -83,7 +89,7 @@ pub fn run(engine: &Path, facts: &Path) -> Result<Findings, String> {
             String::from_utf8_lossy(&out.stderr).trim()
         ));
     }
-    parse(&String::from_utf8_lossy(&out.stdout))
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 pub fn parse(text: &str) -> Result<Findings, String> {

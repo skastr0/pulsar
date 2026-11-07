@@ -4,7 +4,7 @@
 # Usage: bash tools/delta-selftest.sh [pulsar-binary]   (needs PULSAR_ENGINE or an engine beside the binary)
 set -uo pipefail
 BIN=$(cd "$(dirname "${1:-$(dirname "$0")/../target/release/pulsar}")" && pwd)/$(basename "${1:-pulsar}")
-T=$(mktemp -d); trap 'rm -rf "$T"' EXIT; cd "$T"
+T=$(mktemp -d); K=$(mktemp -d); export PULSAR_CACHE_DIR="$K"; trap 'rm -rf "$T" "$K"' EXIT; cd "$T"
 git init -q . && git config user.email t@t && git config user.name t
 echo 'export const a = 1' > a.ts
 echo 'import {a} from "./a"; export const b = a' > b.ts
@@ -72,7 +72,7 @@ tj=$("$BIN" delta HEAD~1 HEAD --repo . --json 2>/dev/null | grep '"type":"trend"
 grep -q '"change":"worsened"' <<<"$tj" && grep -q '"cyclomatic":{"old":13,"new":14}' <<<"$tj" && echo "ok   trend JSON carries old and new" || { echo "FAIL trend json"; echo "$tj" | head -2; fail=1; }
 
 # A Rust manifest cargo cannot read degrades the Rust graph: every output form must say so.
-D=$(mktemp -d); trap 'rm -rf "$T" "$D"' EXIT
+D=$(mktemp -d); trap 'rm -rf "$T" "$K" "$D"' EXIT
 ( cd "$D" && git init -q . && git config user.email t@t && git config user.name t
   echo 'x' > README.md && git add -A && git commit -qm base
   printf 'this is not toml [[[\n' > Cargo.toml; mkdir -p src; echo 'pub fn f() {}' > src/lib.rs
@@ -84,7 +84,7 @@ grep -q '"type":"degraded","side":"head","lane":"rust"' <<<"$out" && grep -q '"d
 "$BIN" facts "$D" -o "$D/f.txt" 2>/dev/null; grep -q '^# degraded rust: ' "$D/f.txt" && echo "ok   degraded input noted in the facts header" || { echo "FAIL degraded facts header"; fail=1; }
 # Class-in-context: an ambient read inside Effect code is a finding of the Effect pack's rule, the
 # same call outside Effect code is not (classification alone never makes a finding).
-E=$(mktemp -d); trap 'rm -rf "$T" "$D" "$E"' EXIT
+E=$(mktemp -d); trap 'rm -rf "$T" "$K" "$D" "$E"' EXIT
 ( cd "$E" && git init -q . && git config user.email t@t && git config user.name t
   echo base > README.md && git add -A && git commit -qm base
   echo '{"dependencies":{"effect":"*"}}' > package.json
@@ -101,4 +101,13 @@ TS
 out=$("$BIN" delta HEAD~1 HEAD --repo "$E" 2>/dev/null)
 grep -q '^+ effect.ambient-read-in-effect [0-9a-f]* a.ts:2 f  .*global#Date.now (x2) (rule v1)$' <<<"$out" && echo "ok   class-in-context: Date.now x2 inside Effect.gen is one finding for f" || { echo "FAIL class-in-context"; echo "$out" | head -3; fail=1; }
 [ "$(grep -c 'effect.ambient-read-in-effect' <<<"$out")" == 1 ] && echo "ok   the same call outside Effect code is not a finding" || { echo "FAIL outside-Effect call reported"; fail=1; }
+# The ~/.pulsar cache: a second run on unchanged shas reads derived entries instead of parsing, and
+# prints the same result; --no-cache bypasses it.
+"$BIN" delta HEAD~1 HEAD --repo . >/dev/null 2>&1   # warm
+cold=$("$BIN" delta HEAD~2 HEAD~1 --repo . --no-cache 2>"$K/e0.txt"); warm=$("$BIN" delta HEAD~2 HEAD~1 --repo . 2>"$K/e1.txt")
+"$BIN" delta HEAD~2 HEAD~1 --repo . >/dev/null 2>"$K/e2.txt"
+[ "$cold" == "$warm" ] && echo "ok   cached result equals the recomputed one" || { echo "FAIL cache changed the result"; fail=1; }
+grep -q 'cache=off' "$K/e0.txt" && echo "ok   --no-cache bypasses the cache" || { echo "FAIL --no-cache"; fail=1; }
+grep -q "base .* cache=hit" "$K/e2.txt" && grep -q 'head .* cache=hit' "$K/e2.txt" && echo "ok   second run: both shas hit the cache" || { echo "FAIL no cache hit"; cat "$K/e2.txt" | tail -3; fail=1; }
+
 exit $fail

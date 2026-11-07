@@ -1,3 +1,4 @@
+mod cache;
 mod catalog;
 mod coverage;
 mod delta;
