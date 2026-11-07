@@ -75,7 +75,7 @@ pub fn build(
     // Lanes run one after another: each already uses every core, and one lane's ASTs are gone
     // before the next lane parses.
     let mut per: Vec<Option<FileOut>> = (0..files.len()).map(|_| None).collect();
-    let sym_classes = analyze_ts(root, &tracked, &ts_files, &mut per, w, &mut st)?;
+    let (sym_classes, effect) = analyze_ts(root, &tracked, &ts_files, &mut per, w, &mut st)?;
     // What a lane's analysis decided about production code, per file id: None keeps the path rule.
     let mut lane_prod: Vec<Option<bool>> = vec![None; files.len()];
     analyze_rust(root, &tracked, &rust_files, &mut per, &mut lane_prod, w, &mut st)?;
@@ -93,6 +93,9 @@ pub fn build(
     w.push(Rel::M, &[total_fns as u32]);
     tables.fns.reserve(total_fns);
     push_sites(w, &per, &sym_classes, tables, &mut st);
+    if let Some(rows) = &effect {
+        push_effect(w, &per, rows);
+    }
     let fn_keys = push_functions(w, per, tables, &mut st);
     push_rules(w, rules, tables);
     st.fns = total_fns;
@@ -155,7 +158,7 @@ fn analyze_ts(
     per: &mut [Option<FileOut>],
     w: &mut FactWriter,
     st: &mut Stats,
-) -> Result<std::collections::BTreeMap<String, Vec<u32>>, String> {
+) -> Result<(std::collections::BTreeMap<String, Vec<u32>>, Option<crate::packs::effect::Rows>), String> {
     if files.is_empty() {
         return Ok(Default::default());
     }
@@ -166,7 +169,38 @@ fn analyze_ts(
     for ((id, _), f) in files.iter().zip(a.per_file) {
         per[*id as usize] = Some(f);
     }
-    Ok(a.sym_classes)
+    Ok((a.sym_classes, a.effect))
+}
+
+/// The Effect pack's rows (FACTS.md, "Effect pack"), with functions numbered as `FN` numbers
+/// them. Nothing is written when the pack found no service, layer or root.
+fn push_effect(w: &mut FactWriter, per: &[Option<FileOut>], rows: &crate::packs::effect::Rows) {
+    if rows.is_empty() {
+        return;
+    }
+    let mut base = vec![0u32; per.len()];
+    let mut next = 0u32;
+    for (file, slot) in per.iter().enumerate() {
+        base[file] = next;
+        next += slot.as_ref().map_or(0, |f| f.fns.fns.len() as u32);
+    }
+    let fid = |(file, local): (u32, u32)| base[file as usize] + local;
+    w.push(Rel::E, &[rows.nl, rows.ns, rows.nr]);
+    rows.sv.iter().for_each(|r| w.push(Rel::Sv, r));
+    rows.ly.iter().for_each(|r| w.push(Rel::Ly, r));
+    rows.lq.iter().for_each(|r| w.push(Rel::Lq, r));
+    rows.lp.iter().for_each(|r| w.push(Rel::Lp, r));
+    rows.lr.iter().for_each(|r| w.push(Rel::Lr, r));
+    for (root, file, f) in &rows.rt {
+        w.push(Rel::Rt, &[*root, *file, f.map_or(NO_PARENT, fid)]);
+    }
+    for (l, f) in &rows.lc {
+        w.push(Rel::Lc, &[*l, fid(*f)]);
+    }
+    rows.lo.iter().for_each(|l| w.push(Rel::Lo, &[*l]));
+    for (f, s) in &rows.us {
+        w.push(Rel::Us, &[fid(*f), *s]);
+    }
 }
 
 /// Run the Rust lane; a manifest cargo cannot read degrades the graph and is reported.

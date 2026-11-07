@@ -42,18 +42,21 @@ pub enum Rel {
     Cl,
     Cs,
     Hd,
-    Ce,
-    Cu,
+    E,
     Sv,
     Ly,
     Lq,
     Lp,
+    Lr,
+    Rt,
+    Lc,
+    Lo,
     Us,
     Rl,
 }
 
 impl Rel {
-    pub const ALL: [Rel; 37] = [
+    pub const ALL: [Rel; 40] = [
         Rel::N,
         Rel::F,
         Rel::K,
@@ -83,12 +86,15 @@ impl Rel {
         Rel::Cl,
         Rel::Cs,
         Rel::Hd,
-        Rel::Ce,
-        Rel::Cu,
+        Rel::E,
         Rel::Sv,
         Rel::Ly,
         Rel::Lq,
         Rel::Lp,
+        Rel::Lr,
+        Rel::Rt,
+        Rel::Lc,
+        Rel::Lo,
         Rel::Us,
         Rel::Rl,
     ];
@@ -124,12 +130,15 @@ impl Rel {
             Rel::Cl => "CL",
             Rel::Cs => "CS",
             Rel::Hd => "HD",
-            Rel::Ce => "CE",
-            Rel::Cu => "CU",
+            Rel::E => "E",
             Rel::Sv => "SV",
             Rel::Ly => "LY",
             Rel::Lq => "LQ",
             Rel::Lp => "LP",
+            Rel::Lr => "LR",
+            Rel::Rt => "RT",
+            Rel::Lc => "LC",
+            Rel::Lo => "LO",
             Rel::Us => "US",
             Rel::Rl => "RL",
         }
@@ -138,12 +147,11 @@ impl Rel {
     /// Number of U32 fields after the tag.
     pub const fn arity(self) -> usize {
         match self {
-            Rel::N | Rel::M | Rel::Sy | Rel::Tf | Rel::L => 1,
-            Rel::F | Rel::U | Rel::H | Rel::A | Rel::Cl | Rel::Lq | Rel::Us | Rel::Sv | Rel::Ln | Rel::If => 2,
-            Rel::K | Rel::Fk | Rel::C | Rel::Cfn | Rel::Cv | Rel::Hd | Rel::Ly | Rel::Lp | Rel::Mk | Rel::Lw | Rel::Co | Rel::Im | Rel::Cu => 3,
+            Rel::N | Rel::M | Rel::Sy | Rel::Tf | Rel::L | Rel::Lo => 1,
+            Rel::F | Rel::U | Rel::H | Rel::A | Rel::Cl | Rel::Lq | Rel::Us | Rel::Ln | Rel::If | Rel::Lr | Rel::Lc => 2,
+            Rel::K | Rel::Fk | Rel::C | Rel::Cfn | Rel::Cv | Rel::Hd | Rel::E | Rel::Sv | Rel::Ly | Rel::Lp | Rel::Rt | Rel::Mk | Rel::Lw | Rel::Co | Rel::Im => 3,
             Rel::Fn | Rel::Ct | Rel::Cf | Rel::Rl | Rel::Cm | Rel::Et => 4,
             Rel::I | Rel::Cs => 5,
-            Rel::Ce => 6,
         }
     }
 

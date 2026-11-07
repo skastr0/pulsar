@@ -272,14 +272,14 @@ Read by `engine/Layers.bend` (layer-graph detectors; laws in `engine/Layers-LAWS
 | Tag | Fields | Meaning |
 |---|---|---|
 | `E` | `nl ns nr` | Header: layer, service and root counts (each at most 2^24). Exactly one. |
-| `SV` | `svc file kind` | A service definition (`Context.Service`, `Context.Tag`, `Effect.Service`); its key is the service's tag string, hashed. `kind` 1 = the service has a default implementation (always provided), 0 = not. |
-| `LY` | `layer file svc` | A layer that builds service `svc`. |
-| `LQ` | `layer svc` | Layer `layer` requires `svc` (a `yield*` in its constructor, or a listed dependency). |
-| `LP` | `outer inner mode` | Layer composition: `mode` 1 = provide (also v3 `dependencies`), 2 = provideMerge, 3 = merge. |
-| `LR` | `root layer` | Provider root `root` (a `Layer.launch`, `Effect.provide(…, layer)` or `ManagedRuntime.make` site) is given `layer`. |
-| `RT` | `root file fn` | Where root `root` is: its file and enclosing function. |
-| `LC` | `layer fn` | Function `fn` is layer `layer`'s constructor body. |
-| `LO` | `layer` | Opaque: a layer whose composition the adapter cannot see (built from a computed value, or imported from outside the repo). |
+| `SV` | `svc file kind` | A service: a class extending, or a `const` initialised by, `Context.Service`, `Context.Tag`, `Context.GenericTag`, `Context.Reference`, `Effect.Tag` or `Effect.Service`; or a catalog `services` entry a repo name resolves to (`file` 4294967295). Definitions with the same tag string are one service. `kind` 1 = the service has a default implementation (`Context.Reference`, or catalog `default = true`), so it is always provided; 0 = not. |
+| `LY` | `layer file svc` | A layer that builds service `svc`: the tag of `Layer.effect`, `Layer.scoped`, `Layer.succeed` or `Layer.sync`, a v3 `Effect.Service`'s `Default` layer, or a catalog layer's `builds` (`file` 4294967295). A decorator, a layer whose constructor yields the service it builds, gets neither this row nor the `LQ` for that service: the service comes from the layer it is provided with. |
+| `LQ` | `layer svc` | Layer `layer` requires `svc`: a `yield*` of `svc` in its constructor function itself (the `LC` function; nested functions run later and are not counted). |
+| `LP` | `outer inner mode` | Layer composition: `outer` is the layer the composition expression denotes, with one row per operand (an array operand gives one per element; each pipe step is its own `outer`). `mode` 1 = provide (also v3 `dependencies`), 2 = provideMerge, 3 = merge or mergeAll. |
+| `LR` | `root layer` | Provider root `root` is given `layer`. A root is a `Layer.launch` or `ManagedRuntime.make` site, or a call of a runtime-escape (class 5) symbol whose effect is provided there: `Effect.runPromise(eff.pipe(Effect.provide(L)))`, `Effect.provide(eff, L)` as its argument, or `eff.pipe(Effect.provide(L), Effect.runPromise)`. Every `Effect.provide` in that chain gives a row, and an `Effect.provideService(Tag, …)` there is a layer that builds Tag. An `Effect.provide` whose effect is not run there is no root, because its caller may provide more. |
+| `RT` | `root file fn` | Where root `root` is: its file and enclosing function (4294967295 at module level). |
+| `LC` | `layer fn` | Function `fn` is layer `layer`'s constructor: the `Effect.gen` generator passed to it, directly or through a name bound to one (`const make = Effect.gen(…)`, a v4 service's `make` option, a call of a function returning one). |
+| `LO` | `layer` | Opaque: a layer whose composition the adapter cannot see. That is a layer computed by an effect (`Layer.unwrap…`, `Layer.effectContext`), a constructor that is not a visible generator, a tag or operand name that resolves to nothing in the repo or the catalog (a parameter, a package's layer the catalog does not list), or a pipe step it does not know. A catalog layer is not opaque. |
 | `US` | `fn svc` | Function `fn` uses `svc` (`yield*` of the service). |
 
 With the type lane on, `LQ` and `US` become exact: they come from the requirement channel instead of syntax. The pack's catalog covers `effect` and `@effect/sql` (including `@effect/sql-pg`): `sql` tagged templates, `SqlResolver`, `SqlSchema` and `Model.makeRepository`, all as class 1 (query).

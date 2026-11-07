@@ -1,6 +1,6 @@
 # packs/effect
 
-Effect pack, framework-specific and switched on by evidence (an `effect` dependency), never part of the generic baseline. Owner: pulsar-ts-effect. It will emit `SV` (services), `LY`, `LQ`, `LP` (layers), `US` (service use), and `SY`, `CL`, `CS`, `HD` classes from its catalogs (`effect`, `@effect/sql`). Rows go through `crate::facts::FactWriter`.
+Effect pack, framework-specific and switched on by evidence (an `effect` dependency), never part of the generic baseline. Owner: pulsar-ts-effect. Its catalogs give the `SY`, `CL`, `CS` and `HD` classes. `mod.rs` extracts the layer graph (`E`, `SV`, `LY`, `LQ`, `LP`, `LR`, `RT`, `LC`, `LO`, `US`, FACTS.md "Effect pack") through the TS lane's `PackHook`: one hook per file records services, layer expressions, the names bound to them, `yield*` uses and provider roots, all as unresolved names. `link` then resolves the names across files with the lane's import resolution, so `./x` and `../x` reach the same file, and numbers everything densely. A name it cannot resolve makes the layer opaque, never a guess. HANDCHECK.md holds the expected graphs for three real modules, and the tests in `mod.rs` use fresh fixtures of the same shapes.
 
 ## catalog/
 

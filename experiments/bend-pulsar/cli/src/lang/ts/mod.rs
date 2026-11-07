@@ -6,7 +6,6 @@ mod builtin;
 pub mod calls;
 mod extract;
 pub mod functions;
-mod link;
 mod resolve;
 
 use crate::lang::functions::{FileFns, SqlTextKind};
@@ -27,8 +26,6 @@ pub struct Stats {
     pub unreadable: usize,
     pub i_facts: usize,
     pub u_facts: usize,
-    /// Call edges: linked, external, and unresolved by reason.
-    pub edges: link::EdgeStats,
     /// Ids of the catalogs applied to this tree.
     pub catalogs: Vec<String>,
 }
@@ -60,6 +57,8 @@ pub struct Analysis {
     pub sym_classes: std::collections::BTreeMap<String, Vec<u32>>,
     /// SQL texts of query-class calls, in (file, source) order.
     pub sql_texts: Vec<SqlText>,
+    /// The Effect pack's layer graph, when the pack is on.
+    pub effect: Option<crate::packs::effect::Rows>,
     pub stats: Stats,
 }
 
@@ -84,6 +83,7 @@ struct PerFile {
     i: Vec<IEntry>,
     u: Vec<u8>,
     fns: FileFns,
+    effect: Option<crate::packs::effect::FileGraph>,
     fatal: bool,
     unreadable: bool,
 }
@@ -93,6 +93,7 @@ struct PerFileOut {
     i: Vec<(u32, u8, u8, u8)>,
     u: Vec<u8>,
     fns: FileFns,
+    effect: Option<crate::packs::effect::FileGraph>,
     fatal: bool,
     unreadable: bool,
 }
@@ -107,23 +108,14 @@ pub fn analyze(root: &Path, files: &[(u32, String)], tracked: &[String]) -> Resu
     let res = Resolution::new(root, &paths, tracked);
     let (index, catalogs) = builtin::index_for(root, tracked)?;
 
-    let per = parse_files(root, &paths, &res, &index);
+    let effect_on = catalogs.iter().any(|c| c == "effect");
+    let per = parse_files(root, &paths, &res, &index, effect_on);
     let settled = settle_reexports(root, &paths, &per);
     let mut per = finish_files(per, &settled);
-    let edge_stats = {
-        let mut fns: Vec<&mut FileFns> = per.iter_mut().map(|p| &mut p.fns).collect();
-        link::link_edges(files, &mut fns)
-    };
 
     let mut st = Stats { files: files.len(), ..Stats::default() };
     let (i_rows, u_rows) = edge_rows(files, &per, &mut st);
     st.catalogs = catalogs;
-    let u = &edge_stats.unresolved;
-    eprintln!(
-        "pulsar: ts edges resolved={} external={} unresolved dynamic={} local-binding={} unknown-member={} not-found={}",
-        edge_stats.resolved, edge_stats.external, u[1], u[2], u[3], u[4]
-    );
-    st.edges = edge_stats;
     let mut sym_classes = std::collections::BTreeMap::new();
     for p in &per {
         for name in &p.fns.syms {
@@ -142,23 +134,47 @@ pub fn analyze(root: &Path, files: &[(u32, String)], tracked: &[String]) -> Resu
             kind: r.kind,
         }));
     }
+    let effect = effect_on.then(|| effect_rows(files, &per, &res)).transpose()?;
     let per_file = per.iter_mut().map(|p| FileOut { fns: std::mem::take(&mut p.fns), tests: Vec::new() }).collect();
-    Ok(Analysis { per_file, i: i_rows, u: u_rows, sym_classes, sql_texts, stats: st })
+    Ok(Analysis { per_file, i: i_rows, u: u_rows, sym_classes, sql_texts, effect, stats: st })
+}
+
+/// Link the Effect pack's per-file graphs through this lane's import resolution.
+fn effect_rows(files: &[(u32, String)], per: &[PerFileOut], res: &Resolution) -> Result<crate::packs::effect::Rows, String> {
+    use crate::packs::effect;
+    let ext = effect::external(&effect::shipped()?);
+    let link: Vec<effect::LinkFile<'_>> = files
+        .iter()
+        .zip(per)
+        .map(|((id, rel), p)| effect::LinkFile {
+            id: *id,
+            rel,
+            graph: p.effect.as_ref(),
+            fn_lines: p.fns.fns.iter().map(|f| (f.start_line, f.end_line)).collect(),
+        })
+        .collect();
+    let resolve = |rel: &str, spec: &str| match res.resolve(rel, spec) {
+        Resolved::File(dst) => Some(dst as usize),
+        Resolved::Unresolved(_) => None,
+    };
+    Ok(effect::link(&link, &ext, &resolve))
 }
 
 /// Parse every file in parallel, one AST at a time per thread, and resolve its imports.
-fn parse_files(root: &Path, paths: &[String], res: &Resolution, index: &calls::CatalogIndex) -> Vec<PerFile> {
+fn parse_files(root: &Path, paths: &[String], res: &Resolution, index: &calls::CatalogIndex, effect_on: bool) -> Vec<PerFile> {
     paths
         .par_iter()
         .map_init(Allocator::default, |alloc, rel| {
             alloc.reset();
             let path = root.join(rel);
             let Ok(bytes) = std::fs::read(&path) else {
-                return PerFile { i: vec![], u: vec![], fns: FileFns::default(), fatal: false, unreadable: true };
+                return PerFile { i: vec![], u: vec![], fns: FileFns::default(), effect: None, fatal: false, unreadable: true };
             };
             let text = String::from_utf8_lossy(&bytes);
-            let mut ex = extract(alloc, rel, &path, &text, index, is_test(rel), None);
-            prune_external_edges(&mut ex.functions, res, rel);
+            // One pack hook per file; the pack keeps the file's state and hands it back here.
+            let mut hook = effect_on.then(|| crate::packs::effect::Hook::new(index));
+            let ex = extract(alloc, rel, &path, &text, index, is_test(rel), hook.as_mut().map(|h| h as &mut dyn functions::PackHook));
+            let effect = hook.and_then(|h| h.finish(&text));
             let (mut i, mut u) = (Vec::new(), Vec::new());
             for imp in ex.imports {
                 match res.resolve(rel, &imp.spec) {
@@ -168,30 +184,9 @@ fn parse_files(root: &Path, paths: &[String], res: &Resolution, index: &calls::C
                     Resolved::Unresolved(r) => u.push(r),
                 }
             }
-            PerFile { i, u, fns: ex.functions, fatal: ex.fatal, unreadable: false }
+            PerFile { i, u, fns: ex.functions, effect, fatal: ex.fatal, unreadable: false }
         })
         .collect()
-}
-
-/// Resolve the file's module specifiers to repo files and drop the edge sites whose import is not
-/// one (an external package has no callee to find), so they never wait in memory for linking.
-fn prune_external_edges(f: &mut FileFns, res: &Resolution, rel: &str) {
-    use crate::lang::functions::{Callee, SiteKind};
-    f.spec_targets = f
-        .specs
-        .iter()
-        .map(|spec| match res.resolve(rel, spec) {
-            Resolved::File(d) => Some(d),
-            Resolved::Unresolved(_) => None,
-        })
-        .collect();
-    let targets = &f.spec_targets;
-    let before = f.sites.len();
-    f.sites.retain(|s| match &s.kind {
-        SiteKind::Edge { to: Callee::Import { spec, .. }, .. } => targets[*spec as usize].is_some(),
-        _ => true,
-    });
-    f.external = before - f.sites.len();
 }
 
 /// `export { a } from "./x"` is type-only per specifier when the target declares `a` as an
@@ -237,7 +232,7 @@ fn finish_files(per: Vec<PerFile>, settled: &Settled) -> Vec<PerFileOut> {
             i.dedup();
             p.u.sort_unstable();
             p.u.dedup();
-            PerFileOut { i, u: p.u, fns: p.fns, fatal: p.fatal, unreadable: p.unreadable }
+            PerFileOut { i, u: p.u, fns: p.fns, effect: p.effect, fatal: p.fatal, unreadable: p.unreadable }
         })
         .collect()
 }

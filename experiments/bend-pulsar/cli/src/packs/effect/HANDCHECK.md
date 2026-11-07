@@ -66,6 +66,7 @@ both reachable but build different services, so there is no duplicate builder.
 |---|---|
 | `SV TsAnalysisTag`, `SV TsPackageInfoTag` | :68, :72 |
 | `LO L1` | :100 `Layer.effectContext(Effect.gen(… Context.make(TsAnalysisTag, …).pipe(Context.add(TsPackageInfoTag, …))))`: the services are put in a Context built at run time, so the adapter cannot see what the layer builds |
+|  | The extractor emits no row for L1: it is unnamed, and its only use is inside L2's `Layer.unwrap` generator, which is opaque itself. Nothing names L1, so no detector could reach it. |
 | `LO L2` | :117 `TsAnalysisLayer = (…) => Layer.unwrap(Effect.gen(…))`: an effect computes the layer |
 | `LY L3 TsPackageInfoTag`, `LO L3` | :127 `Layer.effect(TsPackageInfoTag, discoverPackages(worktreePath))`: the service is known, but the constructor is a call into a repo function, not a generator, so there is no `LC` and its requirements are not visible |
 
