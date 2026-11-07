@@ -410,9 +410,10 @@ def Build.pop(fuel: Nat, hit: Bool, st: List<&2, Frame>, +p: U32) -> List<&2, Fr
           Build.pop(f, Build.top_is(ns, p), ns, p)
 
 # A node's kind is 1..10, and its parent is the body (0) or a node that can have
-# children: not a short-circuit (6), an early exit (7) or a flag (9).
+# children: not a short-circuit (6), an early exit (7), a nested-function leaf
+# (8) or a flag (9). The leaf's own tree is under its own FN.
 def Build.kind_ok(+kind: U32, +pk: U32) -> Bool:
-  Bool.and(Bool.and(U32.is_ge(kind, 1), U32.is_le(kind, 10)), Bool.not(Bool.or(Bool.or(U32.is_eq(pk, 6), U32.is_eq(pk, 7)), U32.is_eq(pk, 9))))
+  Bool.and(Bool.and(U32.is_ge(kind, 1), U32.is_le(kind, 10)), Bool.not(Bool.and(U32.is_ge(pk, 6), U32.is_le(pk, 9))))
 
 def Build.push(st: List<&2, Frame>, node: U32, kind: U32) -> List<&2, Frame>:
   Con{Frame{node, kind, Nil{}}, st}
