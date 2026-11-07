@@ -195,6 +195,10 @@ struct Bound {
     via: Via,
 }
 
+/// The placeholder `fn_local` of a site outside every function, until `finish_module` numbers the
+/// module body.
+const MODULE_LOCAL: u32 = u32::MAX - 1;
+
 pub struct Walker<'s> {
     rel: &'s str,
     src: &'s str,
@@ -217,6 +221,8 @@ pub struct Walker<'s> {
     index: Option<&'s CatalogIndex>,
     /// `CS.ctx` bits of the whole file (4 = a test file, 8 and 16 from repo policy).
     file_ctx: u8,
+    /// Some call site landed outside every function (see `site_at`).
+    module_sites: bool,
     imports: HashMap<SymbolId, String>,
     bound: HashMap<SymbolId, Bound>,
     sym_ids: HashMap<String, u32>,
@@ -251,6 +257,7 @@ impl<'s> Walker<'s> {
             scoping: None,
             index: None,
             file_ctx: 0,
+            module_sites: false,
             imports: HashMap::new(),
             bound: HashMap::new(),
             sym_ids: HashMap::new(),
@@ -300,7 +307,30 @@ impl<'s> Walker<'s> {
             self.scan_imports(program);
         }
         self.visit_program(program);
+        self.finish_module();
         self.out
+    }
+
+    /// The module body, when a site landed outside every function: one function row appended
+    /// after the real ones (so their local ids do not move), with no control tree and no span.
+    fn finish_module(&mut self) {
+        if !self.module_sites {
+            return;
+        }
+        let local = self.out.fns.len() as u32;
+        let key = self.fn_key("", true, fk::MODULE, 0);
+        self.out.fns.push(FnRec {
+            start_line: 0,
+            end_line: 0,
+            parent: None,
+            loc: 0,
+            kind: fk::MODULE,
+            chain: "<module>".to_string(),
+            key,
+        });
+        for s in self.out.sites.iter_mut().filter(|s| s.fn_local == MODULE_LOCAL) {
+            s.fn_local = local;
+        }
     }
 
     /// Index of `name` in the file's name table (each distinct chain or export path once).
@@ -670,8 +700,15 @@ impl<'s> Walker<'s> {
     /// A `CS` site for `sym` in the current function. Outside any function there is no `fn` to
     /// attribute it to, so nothing is emitted.
     fn call_site(&mut self, sym: &str) -> bool {
-        let Some(f) = self.frames.last() else { return false };
-        let (fn_local, loop_depth, c) = (f.local, f.loops, f.ctx);
+        let Some((fn_local, loop_depth, c)) = self.site_at() else { return false };
+        if fn_local == MODULE_LOCAL {
+            // Outside any function only a site some active rule can match is kept (loop depth is
+            // not tracked there), so a file with no policy scope and the rest of the repo are unchanged.
+            if !self.index.is_some_and(|ix| ix.may_fire(sym, c)) {
+                return false;
+            }
+            self.module_sites = true;
+        }
         let id = self.intern(sym);
         let kind = SiteKind::Call { sym: id, loop_depth, ctx: c, consts: Box::default() };
         self.out.sites.push(Site { fn_local, kind });
@@ -707,12 +744,24 @@ impl<'s> Walker<'s> {
         }
     }
 
+    /// Where a call site lands: the current function as `(local index, loop depth, ctx)`, or, in a
+    /// file the repo policy scopes (`effect_only` or `boundary`), the file's module body.
+    fn site_at(&self) -> Option<(u32, u32, u8)> {
+        match self.frames.last() {
+            Some(f) => Some((f.local, f.loops, f.ctx)),
+            None if self.index.is_some() && self.file_ctx & (ctx::EFFECT_ONLY | ctx::BOUNDARY) != 0 => {
+                Some((MODULE_LOCAL, 0, self.file_ctx))
+            }
+            None => None,
+        }
+    }
+
     /// A `CS` site for the language construct `name`, as the symbol `syntax#<name>`, when an
     /// active rule could fire on it here. Core names the constructs; only catalog data gives them
     /// a class and a rule. Constructs are common (`await` alone is tens of thousands of sites in a
     /// large app), so a site no active rule can match is not emitted: that loses no finding.
     fn syntax_site(&mut self, name: &str) {
-        let Some(ctx) = self.frames.last().map(|f| f.ctx) else { return };
+        let Some((_, _, ctx)) = self.site_at() else { return };
         let sym = format!("syntax#{name}");
         if self.index.is_some_and(|ix| ix.may_fire(&sym, ctx)) {
             self.call_site(&sym);

@@ -337,6 +337,57 @@ mod tests {
         assert_eq!(promise_sites(PROMISES, 8), want);
     }
 
+    const ENTRY: &str = "import { Effect } from \"effect\";\n\
+        function run() { return 1; }\n\
+        const cfg = await load();\n\
+        main().catch((e) => e);\n\
+        try { run(); } catch { throw 1; }\n\
+        const later = () => { return fetch(\"x\").then((r) => r); };\n";
+
+    #[test]
+    fn module_level_constructs_land_on_a_module_body_in_a_scoped_file() {
+        let alloc = Allocator::default();
+        let ix = all_index();
+        let f = extract(&alloc, "a.ts", Path::new("a.ts"), ENTRY, &ix, 8, None).functions;
+        let module = f.fns.len() as u32 - 1;
+        assert_eq!(f.fns[module as usize].kind, crate::lang::functions::fk::MODULE);
+        assert_eq!(f.fns[module as usize].parent, None);
+        assert_eq!(f.fns[module as usize].loc, 0);
+        assert!(f.ct.iter().all(|c| c.fn_local != module), "the module body has no control tree");
+        let got: Vec<(u32, String)> = f
+            .sites
+            .iter()
+            .filter_map(|s| match s.kind {
+                SiteKind::Call { sym, .. } => Some((s.fn_local, f.syms[sym as usize].clone())),
+                _ => None,
+            })
+            .collect();
+        let want: Vec<(u32, String)> = [
+            (module, "syntax#await"),
+            (module, "syntax#member.catch"),
+            (module, "syntax#try"),
+            (module, "syntax#throw"),
+            (2, "syntax#member.then"), // `later` (run 0, the catch callback 1)
+        ]
+        .iter()
+        .map(|(l, s)| (*l, s.to_string()))
+        .collect();
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn module_body_needs_a_policy_scope_and_a_rule_that_can_fire() {
+        let alloc = Allocator::default();
+        let ix = all_index();
+        // No policy bits: no module site, no module body, the function ids as before.
+        let f = extract(&alloc, "a.ts", Path::new("a.ts"), ENTRY, &ix, 0, None).functions;
+        assert!(f.fns.iter().all(|x| x.kind != crate::lang::functions::fk::MODULE));
+        assert_eq!(f.fns.len(), 4, "run, the catch callback, later, the then callback");
+        // Boundary only (bit 16): both scope rules exclude it, so nothing can fire at module level.
+        let f = extract(&alloc, "a.ts", Path::new("a.ts"), ENTRY, &ix, 16, None).functions;
+        assert!(f.fns.iter().all(|x| x.kind != crate::lang::functions::fk::MODULE));
+    }
+
     #[test]
     fn without_policy_no_syntax_site_is_emitted() {
         // No bit 8: no shipped rule can fire on a construct, so only the Promise calls remain.

@@ -17,6 +17,8 @@ pub mod fk {
     pub const SETTER: u8 = 5;
     pub const CTOR: u8 = 6;
     pub const STATIC_BLOCK: u8 = 7;
+    /// The module body of a file: code outside any function (FACTS.md).
+    pub const MODULE: u8 = 8;
 }
 
 /// `CT` kind numbers (FACTS.md).
@@ -33,7 +35,8 @@ pub mod ct {
     pub const FINALLY: u8 = 10;
 }
 
-/// One function, with ids local to its file (index = order of start offset).
+/// One function, with ids local to its file (index = order of start offset; a module body, kind 8,
+/// comes last).
 #[derive(Debug, Clone)]
 pub struct FnRec {
     pub start_line: u32,
@@ -85,6 +88,10 @@ pub mod ctx {
     pub const ASYNC: u8 = 1;
     pub const EFFECT: u8 = 2;
     pub const TEST: u8 = 4;
+    /// The file is in the repo policy's `effect_only` scope.
+    pub const EFFECT_ONLY: u8 = 8;
+    /// The file is in the repo policy's `boundary` scope.
+    pub const BOUNDARY: u8 = 16;
 }
 
 /// `HD.shape` values (FACTS.md).
