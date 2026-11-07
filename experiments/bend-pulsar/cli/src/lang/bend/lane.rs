@@ -53,6 +53,8 @@ pub struct Analysis {
     /// `(src, reason)`; sorted and deduped.
     pub u: Vec<[u32; 2]>,
     pub extra: Extra,
+    /// Production flag per file, indexed like `files` (see `prod_flags`).
+    pub prod: Vec<bool>,
     pub stats: Stats,
 }
 
@@ -102,6 +104,7 @@ pub fn analyze(root: &Path, files: &[(u32, String)]) -> Result<Analysis, String>
     laws.sort_by_key(|l| (l.file, l.line));
     st.laws = laws.len();
 
+    let prod = prod_flags(files, &parsed, &i);
     let mut marks = Vec::new();
     let mut per_file = Vec::with_capacity(parsed.len());
     for ((id, _), (_, f)) in files.iter().zip(parsed) {
@@ -113,7 +116,44 @@ pub fn analyze(root: &Path, files: &[(u32, String)]) -> Result<Analysis, String>
         per_file.push(FileOut { fns: f.fns, tests: Vec::new() });
     }
     st.markers = marks.len();
-    Ok(Analysis { per_file, i, u, extra: Extra { marks, laws }, stats: st })
+    Ok(Analysis { per_file, i, u, extra: Extra { marks, laws }, prod, stats: st })
+}
+
+/// Whether a path names a check or test program by convention: `*-CHECK.bend`, `*-TEST.bend`, or
+/// a file under a `fixtures/` directory.
+pub fn is_test_path(path: &str) -> bool {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    let stem = name.strip_suffix(".bend").unwrap_or(name);
+    stem.ends_with("-CHECK") || stem.ends_with("-TEST") || path.split('/').rev().skip(1).any(|d| d == "fixtures")
+}
+
+/// Which files are production code. Shipped Bend is what a program runs: a file is production when
+/// an entry point (a non-test file that defines `main`) reaches it through imports, the entry
+/// included. Laws, proofs and lemmas import the code; the code never imports them, so they fall
+/// out without naming them. Test-named files are never production. A lane with no entry point
+/// (a library) falls back to the content: a non-test file that states no law.
+pub fn prod_flags(files: &[(u32, String)], parsed: &[(String, BendFile)], i: &[[u32; 5]]) -> Vec<bool> {
+    let n = files.len();
+    let test: Vec<bool> = files.iter().map(|(_, p)| is_test_path(p)).collect();
+    let entry: Vec<bool> = (0..n).map(|k| !test[k] && parsed[k].1.defs.iter().any(|d| d.name == "main")).collect();
+    if !entry.contains(&true) {
+        return (0..n).map(|k| !test[k] && parsed[k].1.laws.is_empty()).collect();
+    }
+    let pos: std::collections::HashMap<u32, usize> = files.iter().enumerate().map(|(k, (id, _))| (*id, k)).collect();
+    let mut adj = vec![Vec::new(); n];
+    for r in i {
+        adj[pos[&r[0]]].push(pos[&r[1]]);
+    }
+    let mut prod = vec![false; n];
+    let mut stack: Vec<usize> = (0..n).filter(|&k| entry[k]).collect();
+    while let Some(k) = stack.pop() {
+        if prod[k] || test[k] {
+            continue;
+        }
+        prod[k] = true;
+        stack.extend(adj[k].iter().copied());
+    }
+    prod
 }
 
 impl Extra {
@@ -289,6 +329,52 @@ mod tests {
         let text = String::from_utf8(out).unwrap();
         assert!(!text.contains("\nL ") && !text.contains("\nLW "), "{text}");
         assert!(text.contains("\nMK 1 1 1\n"), "{text}");
+    }
+
+    #[test]
+    fn prod_is_what_an_entry_point_reaches() {
+        let main = "import Base\nimport ./lib.bend as L\n\ndef main() -> IO(Unit):\n  IO.print(\"x\")\n";
+        let check = "import Base\nimport ./lib.bend as L\n\ndef main() -> IO(Unit):\n  IO.print(\"y\")\n";
+        let lemma = "import Base\n\ndef helper(+x: U32) -> U32:\n  x\n";
+        let fx = "import Base\nimport ../lib.bend as L\n\ndef main() -> IO(Unit):\n  IO.print(\"z\")\n";
+        let d = tree(&[
+            ("e/main.bend", main),
+            ("e/lib.bend", LIB),
+            ("e/laws.bend", LAWS),
+            ("e/proof.bend", PROOF),
+            ("e/lemma.bend", lemma),
+            ("e/lib-CHECK.bend", check),
+            ("e/fixtures/f.bend", fx),
+        ]);
+        let files: Vec<(u32, String)> =
+            ["e/fixtures/f.bend", "e/laws.bend", "e/lemma.bend", "e/lib-CHECK.bend", "e/lib.bend", "e/main.bend", "e/proof.bend"]
+                .iter()
+                .enumerate()
+                .map(|(k, p)| (k as u32 + 10, p.to_string()))
+                .collect();
+        let a = analyze(&d.0, &files).unwrap();
+        let prod: Vec<&str> = files.iter().zip(&a.prod).filter(|(_, &p)| p).map(|((_, f), _)| f.as_str()).collect();
+        // The lemma states no law but no entry point imports it; the check and fixture programs
+        // define main but are tests; the laws and proof files import lib, not the other way round.
+        assert_eq!(prod, ["e/lib.bend", "e/main.bend"]);
+    }
+
+    #[test]
+    fn a_lane_with_no_entry_point_falls_back_to_files_without_laws() {
+        let d = tree(&[("e/lib.bend", LIB), ("e/laws.bend", LAWS), ("e/lib-CHECK.bend", LIB)]);
+        let files = vec![(0, "e/laws.bend".into()), (1, "e/lib-CHECK.bend".into()), (2, "e/lib.bend".into())];
+        let a = analyze(&d.0, &files).unwrap();
+        assert_eq!(a.prod, [false, false, true]);
+    }
+
+    #[test]
+    fn test_paths() {
+        assert!(is_test_path("engine/Metrics-CHECK.bend"));
+        assert!(is_test_path("engine/fixtures/x.bend"));
+        assert!(is_test_path("a/X-TEST.bend"));
+        assert!(!is_test_path("engine/Metrics.bend"));
+        assert!(!is_test_path("fixtures.bend"));
+        assert!(!is_test_path("engine/CHECK.bend"));
     }
 
     #[test]
