@@ -285,6 +285,14 @@ fn cmd_policy(args: &[String]) -> Result<(), String> {
     for (id, why) in &c.inert {
         println!("rule-off\t{id}\t{why}");
     }
+    // Binding rules are opt-in: say so when one is off, so `pulsar policy` never leaves a rule
+    // that changes findings silently absent.
+    let bf = eff.binding_rule_codes();
+    for (n, r) in crate::finding::BINDING_RULES.iter().enumerate() {
+        if !bf.iter().any(|(code, _)| *code == n as u32 + 1) {
+            println!("rule-off\t{}\topt-in: list it in [rules] enable", r.id);
+        }
+    }
     // Which policy entry decides which files: `test`/`prod` prefixes and *suffix patterns, with the
     // number of tracked files each one decided (a test entry wins over a prod entry).
     let tracked = git::git_ls_files(&repo).unwrap_or_default();

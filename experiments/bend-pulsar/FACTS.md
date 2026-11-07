@@ -491,7 +491,7 @@ Written by the infra lane (`cli/src/infra/`). A **deployable** is one unit the r
 
 The lane is inert without a config it reads: no `ID` row means no infra facts and no infra finding. A deployable whose bindings resolve but whose entry does not is reported as degraded input, because its reads are unknown.
 
-**Binding rules.** Read by `engine/Binding.bend` (laws in `engine/Binding-LAWS.bend`); the CLI writes one `BF` row per rule that is on, with its threshold:
+**Binding rules.** Read by `engine/Binding.bend` (laws in `engine/Binding-LAWS.bend`); the CLI writes one `BF` row per rule that is on, with its threshold. The rule is opt-in: the pack alone does not switch it on, only `[rules] enable`, while the closure walk is still cubic.
 
 | Tag | Fields | Meaning |
 |---|---|---|

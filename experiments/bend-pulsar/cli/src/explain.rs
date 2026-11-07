@@ -204,7 +204,7 @@ pub const BUILTIN: &[Entry] = &[
     Entry {
         id: "cloudflare.binding-drift",
         family: "Cloudflare pack, infra facts",
-        runs: "on with the Cloudflare Workers catalog (or [rules] enable); [rules] disable turns it off",
+        runs: "opt-in: list it in [rules] enable; [rules] disable turns it off",
         definition: "A binding a deployable declares (wrangler or alchemy config) that no file its entry reaches reads through env.",
         threshold: "unread bindings per deployable, over 0",
         laws: "engine/Binding-LAWS.bend: read_sound, read_complete, unread_sound, unread_complete, rule_off",
