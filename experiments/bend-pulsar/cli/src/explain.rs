@@ -85,6 +85,15 @@ pub const BUILTIN: &[Entry] = &[
         example: "cyclomatic 8 at 0% coverage -> CRAP 72 cause=coverage; cyclomatic 31 at 100% -> CRAP 31 cause=complexity-only",
     },
     Entry {
+        id: "core.untested-data-access",
+        family: "core, coverage composite",
+        runs: "only with a coverage report, and unless [rules] disable lists it; it needs the repo's queries to be seen (a .sql file or a query call a pack classifies)",
+        definition: "A non-test function that runs a query and either has a core.crap finding (reason 1) or has no coverage data (reason 2: the report has no coverable line in its range). 0% coverage is data, so it is reason 1 or nothing, never reason 2.",
+        threshold: "none: every such function is a finding; the CRAP threshold is core.crap's (30)",
+        laws: "engine/Untested-LAWS.bend: the lines are exactly the non-test query functions with a CRAP finding or no coverage data (sound and complete)",
+        example: "a function with db.prepare(...) and no line in the lcov report -> core.untested-data-access (no coverage data)",
+    },
+    Entry {
         id: "core.hotspot",
         family: "core, history composite",
         runs: "on by default where git history is available (window: [history] in policy.toml, default 365 days, 2000 commits)",
@@ -254,6 +263,13 @@ fn render_composite(cat: &catalog::Catalog, id: &str) -> Option<String> {
             "engine/Konst-LAWS.bend",
             format!("a call of a class {:?} symbol whose argument {} is a literal", r.class, r.pos),
         )
+    } else if let Some(r) = cat.growths.iter().find(|r| r.id == id) {
+        (
+            r.ver.as_str(), r.says.as_str(), r.at.as_str(), r.doc.as_str(), "unbounded-growth",
+            format!("depth = {} (an entry point reaches the inserting function within {} call edge{}); the read is a SELECT with no LIMIT and no key of the table bound by equality or IN", r.depth, r.depth, if r.depth == 1 { "" } else { "s" }),
+            "engine/Grow-LAWS.bend: the findings are exactly the (read, insert) triples, and the insert is reached from an entry point",
+            "SELECT * FROM events with no LIMIT, in code that also runs INSERT INTO events from a request handler".to_string(),
+        )
     } else if let Some(r) = cat.hots.iter().find(|r| r.id == id) {
         (
             r.ver.as_str(), r.says.as_str(), r.at.as_str(), r.doc.as_str(), "hot-path",
@@ -264,7 +280,9 @@ fn render_composite(cat: &catalog::Catalog, id: &str) -> Option<String> {
     } else {
         return None;
     };
-    let runs = if kind == "hot-path" {
+    let runs = if kind == "unbounded-growth" {
+        "on with its catalog; it reports nothing, and says so, while the schema is partial; [rules] disable turns it off"
+    } else if kind == "hot-path" {
         "on with its catalog while its base rule is on (an sql.* base needs [rules] enable); [rules] disable turns it off"
     } else {
         "on with its catalog; [rules] disable turns it off"
@@ -307,6 +325,8 @@ fn catalog_family(id: &str) -> String {
             "constant-argument"
         } else if c.hots.iter().any(|r| r.id == id) {
             "hot-path"
+        } else if c.growths.iter().any(|r| r.id == id) {
+            "unbounded-growth"
         } else {
             continue;
         };

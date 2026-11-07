@@ -81,6 +81,7 @@ The first run on a sha parses it. The result is cached per sha under `~/.pulsar/
 | `core.cognitive` | cognitive complexity (SonarSource) | opt-in |
 | `core.hotspot` | a complexity finding on a function that changed often | default, with git history |
 | `core.crap`, `core.risky-change` | complex, under-tested code, and the same on a function that changes often | with a coverage report |
+| `core.untested-data-access` | a function that runs a query and has a `core.crap` finding or no coverage data | with a coverage report |
 | `graph.import-cycle` | files that reach each other through value imports | default |
 | `sql.unindexed-filter`, `sql.index-defeat`, `sql.offset-param`, `sql.dynamic-text`, `sql.fk-unindexed`, `sql.schema-drift` | query and schema problems in `.sql` files and in queries the code runs | opt-in |
 | `effect.promise-style-in-effect-scope`, `effect.exception-style-in-effect-scope` | async/await, promises, `throw` or `try` in an Effect-first file | Effect pack, with `[packs.effect]` scope lists |
@@ -89,6 +90,7 @@ The first run on a sha parses it. The result is cached per sha under `~/.pulsar/
 | `cloudflare.query-in-loop` | a D1 or Durable Object SQL query run once per loop iteration, directly or through a function it calls within 2 call edges (test code excluded) | Cloudflare pack |
 | `cloudflare.hot-query-fan-out` | that finding in code a request, alarm or queue entry point reaches within 3 call edges | Cloudflare pack |
 | `cloudflare.hot-unindexed-query` | a `sql.unindexed-filter` finding in such code | Cloudflare pack and `sql.unindexed-filter` enabled; `pulsar policy` says when it is off |
+| `cloudflare.unbounded-growth` | a `SELECT` with no `LIMIT` and no key bound, on a table that code an entry point reaches (within 3 call edges) inserts into | Cloudflare pack; needs a complete `.sql` schema |
 
 ## Coverage
 

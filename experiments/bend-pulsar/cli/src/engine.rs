@@ -28,6 +28,31 @@ pub struct Findings {
     pub kx: Vec<Kx>,
     /// `HX`: hot-path findings (`pulsar-hot 0`).
     pub hx: Vec<Hx>,
+    /// `UX`: untested data access (`pulsar-untested 0`).
+    pub ux: Vec<Ux>,
+    /// `GX`: unbounded growth (`pulsar-grow 0`).
+    pub gx: Vec<Gx>,
+    /// The `SQD ok skipped complete` line of the `pulsar-grow 0` section, when the section ran.
+    pub grow_schema: Option<(u32, u32, bool)>,
+}
+
+/// `UX rule fn reason`: function `fn_id` runs a query and `reason` is 1 (it has a `core.crap`
+/// finding) or 2 (the coverage report has no data for it).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Ux {
+    pub rule: u32,
+    pub fn_id: u32,
+    pub reason: u32,
+}
+
+/// `GX rule rs table ws`: unbounded-growth rule `rule`; the read at `QS` site `rs` has no row bound
+/// on `table` (a name id), and the insert at site `ws` is reached from an entry point.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Gx {
+    pub rule: u32,
+    pub rs: u32,
+    pub table: u32,
+    pub ws: u32,
 }
 
 /// `NX rule site fn via kind`: fan-out rule `rule` (an `RF` rule number) at call site `site` of
@@ -270,7 +295,7 @@ pub fn parse(text: &str) -> Result<Findings, String> {
             section = match name {
                 "findings" | "classctx" => name,
                 "layers" => name,
-                "sql" | "fanout" | "konst" | "hot" => name,
+                "sql" | "fanout" | "konst" | "hot" | "untested" | "grow" => name,
                 _ => "other",
             };
             if section == "findings" {
@@ -297,6 +322,11 @@ pub fn parse(text: &str) -> Result<Findings, String> {
                 f.cycles.push(ids);
             }
             "CERT" => f.cert = Some(it.next() == Some("1")),
+            "SQD" if section == "grow" => {
+                let n = it.map(|t| num(t).map(|v| v as u32)).collect::<Result<Vec<u32>, _>>()?;
+                let [ok, skipped, complete] = n[..] else { return Err("SQD needs ok skipped complete".into()) };
+                f.grow_schema = Some((ok, skipped, complete == 1));
+            }
             "SQD" | "SQX" | "SQS" if section != "sql" => return Err(format!("{tag} outside the `pulsar-sql 0` section")),
             "SQD" => {
                 let n = it.map(|t| num(t).map(|v| v as u32)).collect::<Result<Vec<u32>, _>>()?;
@@ -369,6 +399,28 @@ pub fn parse(text: &str) -> Result<Findings, String> {
                     ("KX", Ok::<[u32; 5], _>([rule, site, fn_id, callee, pos])) => f.kx.push(Kx { rule, site, fn_id, callee, pos }),
                     ("HX", Ok::<[u32; 5], _>([rule, lane, base, site, fn_id])) => f.hx.push(Hx { rule, lane, base, site, fn_id }),
                     _ => return Err(format!("{tag} needs five numbers, got {}", n.len())),
+                }
+            }
+            "UX" | "GX" => {
+                let want = if tag == "UX" { "untested" } else { "grow" };
+                if section != want {
+                    return Err(format!("{tag} outside the `pulsar-{want} 0` section"));
+                }
+                let n = it.map(|t| num(t).map(|v| v as u32)).collect::<Result<Vec<u32>, _>>()?;
+                match (tag, n.len()) {
+                    ("UX", 3) => f.ux.push(Ux { rule: n[0], fn_id: n[1], reason: n[2] }),
+                    ("GX", 4) => f.gx.push(Gx { rule: n[0], rs: n[1], table: n[2], ws: n[3] }),
+                    _ => return Err(format!("{tag} has {} numbers", n.len())),
+                }
+            }
+            "UXS" | "GXS" => {
+                let (want, have) = if tag == "UXS" { ("untested", f.ux.len()) } else { ("grow", f.gx.len()) };
+                if section != want {
+                    return Err(format!("{tag} outside the `pulsar-{want} 0` section"));
+                }
+                let n = num(it.next().ok_or_else(|| format!("{tag} without a count"))?)? as usize;
+                if n != have {
+                    return Err(format!("{tag} says {n} but {have} lines came before it"));
                 }
             }
             "NXS" | "KXS" | "HXS" => {

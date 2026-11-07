@@ -27,13 +27,16 @@ pub const CRAP: Rule = Rule { id: "core.crap", version: 1 };
 pub const HOTSPOT: Rule = Rule { id: "core.hotspot", version: 1 };
 /// A CRAP finding on a function with high churn (needs history and coverage).
 pub const RISKY_CHANGE: Rule = Rule { id: "core.risky-change", version: 1 };
+/// A function that runs a query and either has a `core.crap` finding or has no coverage data. Needs
+/// a coverage report (see `needs_coverage`); on unless `[rules] disable` lists it.
+pub const UNTESTED: Rule = Rule { id: "core.untested-data-access", version: 1 };
 /// Cognitive complexity (SonarSource). Weak evidence, so it is off unless policy enables it.
 pub const COGNITIVE: Rule = Rule { id: "core.cognitive", version: 1 };
 
 /// Does the rule need a coverage report? Such findings exist only for a sha that has one, so a
 /// base-versus-head diff cannot compare them; delta lists them for head on their own.
 pub fn needs_coverage(rule: &Rule) -> bool {
-    rule.id == CRAP.id || rule.id == RISKY_CHANGE.id
+    rule.id == CRAP.id || rule.id == RISKY_CHANGE.id || rule.id == UNTESTED.id
 }
 
 /// Rules that stay silent unless `[rules] enable` lists them (their evidence is weak).
@@ -252,6 +255,7 @@ mod tests {
 /// Rules the CLI itself defines (not catalog rules). Policy may enable or disable them by id.
 pub fn is_builtin_rule(id: &str) -> bool {
     id == IMPORT_CYCLE.id
+        || id == UNTESTED.id
         || metric_rule(id).is_ok()
         || SQL_RULES.iter().any(|r| r.id == id)
         || [crate::layers::LAYER_CYCLE.id, crate::layers::UNPROVIDED.id, crate::layers::DUPLICATE.id, crate::layers::HUB.id].contains(&id)

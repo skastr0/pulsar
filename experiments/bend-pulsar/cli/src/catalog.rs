@@ -192,6 +192,19 @@ pub struct Konst {
     pub doc: String,
 }
 
+/// An unbounded-growth rule (FACTS.md `RG`): a read with no row bound on a table that code an entry
+/// point reaches within `depth` call edges inserts into.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Growth {
+    pub id: String,
+    pub depth: u32,
+    pub says: String,
+    pub ver: String,
+    pub at: String,
+    pub doc: String,
+}
+
 /// What kind of finding a hot-path rule is about (FACTS.md `RH` lanes 1 to 3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -261,6 +274,8 @@ pub struct Catalog {
     pub konsts: Vec<Konst>,
     #[serde(default)]
     pub hots: Vec<Hot>,
+    #[serde(default)]
+    pub growths: Vec<Growth>,
 }
 
 /// A parsed, validated catalog and its fingerprint.
@@ -371,7 +386,7 @@ fn check_declared(c: &Catalog, names: &BTreeSet<&str>) -> Result<(), String> {
 /// policy resolves that when both are active).
 fn check_composites(c: &Catalog) -> Result<(), String> {
     let mut ids = BTreeSet::new();
-    let all = c.rules.iter().map(|r| &r.id).chain(c.fanouts.iter().map(|r| &r.id)).chain(c.konsts.iter().map(|r| &r.id)).chain(c.hots.iter().map(|r| &r.id));
+    let all = c.rules.iter().map(|r| &r.id).chain(c.fanouts.iter().map(|r| &r.id)).chain(c.konsts.iter().map(|r| &r.id)).chain(c.hots.iter().map(|r| &r.id)).chain(c.growths.iter().map(|r| &r.id));
     for id in all {
         if id.is_empty() || !ids.insert(id.as_str()) {
             return Err(format!("rule id {id:?} is empty or declared twice in this catalog"));
@@ -442,7 +457,8 @@ fn check_order(c: &Catalog) -> Result<(), String> {
     sorted_unique("rules", c.rules.iter().map(|r| r.id.clone()))?;
     sorted_unique("fanouts", c.fanouts.iter().map(|r| r.id.clone()))?;
     sorted_unique("konsts", c.konsts.iter().map(|r| r.id.clone()))?;
-    sorted_unique("hots", c.hots.iter().map(|r| r.id.clone()))
+    sorted_unique("hots", c.hots.iter().map(|r| r.id.clone()))?;
+    sorted_unique("growths", c.growths.iter().map(|r| r.id.clone()))
 }
 
 /// One entry per line: every array entry is an inline table that starts its own line.
@@ -458,7 +474,8 @@ fn check_one_entry_per_line(c: &Catalog, text: &str) -> Result<(), String> {
         + c.rules.len()
         + c.fanouts.len()
         + c.konsts.len()
-        + c.hots.len();
+        + c.hots.len()
+        + c.growths.len();
     let starts = text.lines().filter(|l| l.trim_start().starts_with("{ ")).count();
     if starts != entries {
         return Err(format!("{entries} entries but {starts} lines start an inline table: one entry per line"));

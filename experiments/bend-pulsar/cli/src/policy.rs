@@ -251,6 +251,15 @@ pub struct ActiveHot {
     pub says: String,
 }
 
+/// An unbounded-growth rule that is on (`RG`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActiveGrowth {
+    pub id: String,
+    pub version: u32,
+    pub depth: u32,
+    pub says: String,
+}
+
 /// The fan-out, constant-argument and hot-path rules policy and the active catalogs turned on, and the
 /// ones that stay off with the reason, so a rule that does not run is never silent.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -258,6 +267,7 @@ pub struct Composites {
     pub fanouts: Vec<ActiveFanout>,
     pub konsts: Vec<ActiveKonst>,
     pub hots: Vec<ActiveHot>,
+    pub growths: Vec<ActiveGrowth>,
     /// `(rule id, why it is off)` for hot-path rules whose base rule is not on.
     pub inert: Vec<(String, String)>,
 }
@@ -324,6 +334,12 @@ impl Effective {
         out
     }
 
+    /// Is `core.untested-data-access` on? It is on unless `[rules] disable` lists it, and it only
+    /// finds anything when a coverage report is ingested.
+    pub fn untested_on(&self) -> bool {
+        !self.policy.rules.disable.iter().any(|d| d == crate::finding::UNTESTED.id)
+    }
+
     /// The fan-out, constant-argument and hot-path rules that are on. A catalog's rule is on when the
     /// catalog is active and `[rules] disable` does not list it; a hot-path rule also needs its base
     /// rule on (an `sql.*` base needs `[rules] enable`). Numbers follow the sorted ids of each kind.
@@ -342,6 +358,13 @@ impl Effective {
                 out.konsts.push(ActiveKonst { id: r.id.clone(), version: r.ver.parse().unwrap_or(1), class_id, pos: r.pos, says: r.says.clone() });
             }
         }
+        for cat in cats() {
+            for r in cat.growths.iter().filter(|r| !off(&r.id)) {
+                out.growths.push(ActiveGrowth { id: r.id.clone(), version: r.ver.parse().unwrap_or(1), depth: r.depth, says: r.says.clone() });
+            }
+        }
+        out.growths.sort_by(|a, b| a.id.cmp(&b.id));
+        out.growths.dedup_by(|a, b| a.id == b.id);
         out.fanouts.sort_by(|a, b| a.id.cmp(&b.id));
         out.fanouts.dedup_by(|a, b| a.id == b.id);
         out.konsts.sort_by(|a, b| a.id.cmp(&b.id));
@@ -606,7 +629,7 @@ pub fn load(root: &Path, home: Option<&Path>, ev: &Evidence) -> Result<Effective
         .iter()
         .flat_map(|c| {
             let k = &c.loaded.catalog;
-            k.rules.iter().map(|r| r.id.as_str()).chain(k.fanouts.iter().map(|r| r.id.as_str())).chain(k.konsts.iter().map(|r| r.id.as_str())).chain(k.hots.iter().map(|r| r.id.as_str()))
+            k.rules.iter().map(|r| r.id.as_str()).chain(k.fanouts.iter().map(|r| r.id.as_str())).chain(k.konsts.iter().map(|r| r.id.as_str())).chain(k.hots.iter().map(|r| r.id.as_str())).chain(k.growths.iter().map(|r| r.id.as_str()))
         })
         .collect();
     for r in policy.rules.enable.iter().chain(&policy.rules.disable) {

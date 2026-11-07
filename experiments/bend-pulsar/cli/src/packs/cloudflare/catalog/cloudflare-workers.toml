@@ -65,3 +65,10 @@ hots = [
   { id = "cloudflare.hot-query-fan-out", lane = "fanout", base = "cloudflare.query-in-loop", depth = 3, says = "runs a query per loop iteration in code that a request, alarm or queue entry point reaches", ver = "1", at = "@cloudflare/workers-types@4.20260120.0:index.d.ts:512", doc = "signature: fetch?: ExportedHandlerFetchHandler<Env, CfHostMetadata>;" },
   { id = "cloudflare.hot-unindexed-query", lane = "sql", base = "sql.unindexed-filter", depth = 3, says = "runs a query that filters on a column no index covers, in code that a request, alarm or queue entry point reaches", ver = "1", at = "@cloudflare/workers-types@4.20260120.0:index.d.ts:512", doc = "signature: fetch?: ExportedHandlerFetchHandler<Env, CfHostMetadata>;" },
 ]
+
+# Unbounded growth: a SELECT with no LIMIT that binds no key of a table, in a table that code an entry
+# point reaches within three call edges (depth = 3) inserts into, so the read costs more with every
+# request. Needs the schema (.sql files) to be complete.
+growths = [
+  { id = "cloudflare.unbounded-growth", depth = 3, says = "reads a table in full with no LIMIT and no key, while code that a request, alarm or queue entry point reaches inserts into it", ver = "1", at = "@cloudflare/workers-types@4.20260120.0:index.d.ts:512", doc = "signature: fetch?: ExportedHandlerFetchHandler<Env, CfHostMetadata>;" },
+]

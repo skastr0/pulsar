@@ -54,6 +54,69 @@ pub fn findings(found: &Findings, tables: &SideTables, files: &[String], keys: &
     (out, dropped + unjoined)
 }
 
+/// Functions that run a query and are untested (`core.untested-data-access`): one finding per
+/// function, naming the reasons the engine gave (a `core.crap` finding, or no coverage data).
+pub fn untested(found: &Findings, tables: &SideTables, files: &[String], keys: &[u64]) -> (Vec<Finding>, usize) {
+    let cx = Cx { tables, files, keys };
+    let mut by_fn: BTreeMap<u32, (bool, bool)> = BTreeMap::new();
+    for x in &found.ux {
+        let e = by_fn.entry(x.fn_id).or_default();
+        match x.reason {
+            1 => e.0 = true,
+            _ => e.1 = true,
+        }
+    }
+    let (mut out, mut dropped) = (Vec::new(), 0);
+    for (fn_id, (crap, no_data)) in by_fn {
+        let Some(at) = cx.place(fn_id) else {
+            dropped += 1;
+            continue;
+        };
+        let why = match (crap, no_data) {
+            (true, true) => "has a core.crap finding and no coverage data",
+            (true, false) => "has a core.crap finding",
+            _ => "has no coverage data",
+        };
+        let text = format!("runs a query and {why}");
+        let evidence = json!({ "crap_finding": crap, "no_coverage_data": no_data });
+        let f = Finding::new(crate::finding::UNTESTED, vec![at.subject], at.path, Some(at.chain), text, evidence);
+        out.push(f.at_line(at.line));
+    }
+    (out, dropped)
+}
+
+/// Unbounded-growth findings (`GX rule rs table ws`): a read with no row bound on a table that code an
+/// entry point reaches inserts into. `site_fns` maps a `QS` site to its function (from the facts).
+/// Keyed by rule, the reader's function key, the table and the writer's function key.
+pub fn growth(found: &Findings, tables: &SideTables, files: &[String], keys: &[u64], comp: &Composites, site_fns: &BTreeMap<u32, u32>) -> (Vec<Finding>, usize) {
+    let cx = Cx { tables, files, keys };
+    let mut groups: BTreeMap<(u32, u32, u32, u32), usize> = BTreeMap::new();
+    let mut dropped = 0;
+    for x in &found.gx {
+        match (site_fns.get(&x.rs), site_fns.get(&x.ws)) {
+            (Some(&r), Some(&w)) => *groups.entry((x.rule, r, x.table, w)).or_default() += 1,
+            _ => dropped += 1,
+        }
+    }
+    let mut out = Vec::new();
+    for ((rule, rfn, table, wfn), sites) in groups {
+        let found_one = (comp.growths.get(rule as usize), cx.place(rfn), cx.place(wfn), tables.sql_names.get(table as usize));
+        let (Some(r), Some(read), Some(write), Some(name)) = found_one else {
+            dropped += 1;
+            continue;
+        };
+        let text = format!("{}: reads {name} with no row bound, and {} inserts into it (x{sites})", r.says, name_of(&write.subject));
+        let evidence = json!({ "table": name, "writer": name_of(&write.subject), "sites": sites, "depth": r.depth, "says": r.says });
+        // Subjects are an unordered set, so the writer's key goes into the table subject: a reader and a
+        // writer swapped is another finding.
+        let writer_key = keys.get(wfn as usize).copied().unwrap_or(0).to_le_bytes();
+        let table_subject = Subject::Symbol { key: fnv_parts(&[b"sql", name.as_bytes(), b"inserted-by", &writer_key]), name: format!("{name} (inserted by {})", name_of(&write.subject)) };
+        let f = Finding::new(catalog_rule(&r.id, r.version), vec![read.subject, table_subject, write.subject], read.path, Some(read.chain), text, evidence);
+        out.push(f.at_line(read.line));
+    }
+    (out, dropped)
+}
+
 struct Cx<'a> {
     tables: &'a SideTables,
     files: &'a [String],
@@ -73,6 +136,14 @@ impl Cx<'_> {
         let entry = self.tables.fns.get(fn_id as usize)?;
         let (key, path) = (*self.keys.get(fn_id as usize)?, self.files.get(entry.file as usize)?.clone());
         Some(Place { subject: Subject::Function { key, path: path.clone(), chain: entry.chain.clone() }, path, chain: entry.chain.clone(), line: entry.start_line })
+    }
+    /// A function that a loop call reaches, as a subject distinct from the caller's own `Function`
+    /// subject: subjects are an unordered set, so two `Function`s would make A-calls-B and B-calls-A
+    /// one key.
+    fn reached(&self, fn_id: u32) -> Option<Subject> {
+        let p = self.place(fn_id)?;
+        let key = *self.keys.get(fn_id as usize)?;
+        Some(Subject::Symbol { key: fnv_parts(&[b"loop-reaches", &key.to_le_bytes()]), name: p.chain })
     }
     fn symbol(&self, id: u32) -> Option<Subject> {
         let name = self.tables.syms.get(id as usize)?;
@@ -94,7 +165,7 @@ fn fanout(cx: &Cx, comp: &Composites, rule: u32, fn_id: u32, via: u32, kind: u32
     // kind 0 calls a symbol of the class; kind 1 calls a repo function that reaches one.
     let (reached, what) = match kind {
         0 => (cx.symbol(via)?, "loop call of"),
-        _ => (cx.place(via)?.subject, "loop call of the function"),
+        _ => (cx.reached(via)?, "loop call of the function"),
     };
     let tail = if kind == 0 { String::new() } else { ", which reaches a call of the rule's class".to_string() };
     let text = format!("{}: {what} {}{tail} (x{sites})", r.says, name_of(&reached));
@@ -162,7 +233,7 @@ fn hot_path(cx: &Cx, comp: &Composites, rule: u32, fn_id: u32, d: Detail, sites:
             (name_of(&s), Some(s))
         }
         Detail::Reached(id) => {
-            let s = cx.place(id)?.subject;
+            let s = cx.reached(id)?;
             (name_of(&s), Some(s))
         }
     };
@@ -177,9 +248,9 @@ fn hot_path(cx: &Cx, comp: &Composites, rule: u32, fn_id: u32, d: Detail, sites:
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::{Hx, Sql, Sqx};
+    use crate::engine::{Gx, Hx, Sql, Sqx, Ux};
     use crate::facts::FnEntry;
-    use crate::policy::{ActiveFanout, ActiveHot, ActiveKonst};
+    use crate::policy::{ActiveFanout, ActiveGrowth, ActiveHot, ActiveKonst};
 
     fn tables() -> SideTables {
         let f = |file, chain: &str| FnEntry { file, start_line: 3, end_line: 9, parent: None, kind: 0, chain: chain.into() };
@@ -198,6 +269,7 @@ mod tests {
                 ActiveHot { id: "t.hot-fanout".into(), version: 1, lane: 2, base: 0, base_id: "t.n-plus-one".into(), depth: 3, says: "fan-out on a hot path".into() },
                 ActiveHot { id: "t.hot-unindexed".into(), version: 1, lane: 1, base: 4, base_id: "sql.unindexed-filter".into(), depth: 3, says: "unindexed query on a hot path".into() },
             ],
+            growths: vec![ActiveGrowth { id: "t.unbounded".into(), version: 1, depth: 3, says: "reads a growing table in full".into() }],
             inert: vec![],
         }
     }
@@ -262,5 +334,43 @@ mod tests {
         let (out, dropped) = run(&f);
         assert_eq!(out.len(), 5);
         assert_eq!(dropped, 3);
+    }
+
+    #[test]
+    fn an_untested_function_is_one_finding_with_both_reasons_when_the_engine_gives_both() {
+        let f = Findings { ux: vec![Ux { rule: 0, fn_id: 0, reason: 1 }, Ux { rule: 0, fn_id: 0, reason: 2 }, Ux { rule: 0, fn_id: 1, reason: 2 }, Ux { rule: 0, fn_id: 99, reason: 2 }], ..Findings::default() };
+        let (out, dropped) = untested(&f, &tables(), &["a.ts".to_string(), "b.ts".to_string()], &[11, 12, 13]);
+        let texts: Vec<&str> = out.iter().map(|f| f.evidence_text.as_str()).collect();
+        assert_eq!(texts, ["runs a query and has a core.crap finding and no coverage data", "runs a query and has no coverage data"]);
+        assert_eq!(dropped, 1);
+        assert!(out.iter().all(|f| f.rule.id == "core.untested-data-access"));
+    }
+
+    #[test]
+    fn growth_is_keyed_by_the_reader_the_table_and_the_writer_not_by_sites() {
+        let run = |rs: u32, ws: u32, map: &[(u32, u32)]| {
+            let f = Findings { gx: vec![Gx { rule: 0, rs, table: 0, ws }], ..Findings::default() };
+            let sites: BTreeMap<u32, u32> = map.iter().copied().collect();
+            growth(&f, &tables(), &["a.ts".to_string(), "b.ts".to_string()], &[11, 12, 13], &comp(), &sites)
+        };
+        let (a, da) = run(5, 6, &[(5, 0), (6, 1)]);
+        let (b, db) = run(50, 60, &[(50, 0), (60, 1)]);
+        assert_eq!((da, db), (0, 0));
+        assert_eq!(a[0].key(), b[0].key());
+        assert_eq!(a[0].evidence_text, "reads a growing table in full: reads users with no row bound, and load inserts into it (x1)");
+        let (c, _) = run(5, 6, &[(5, 1), (6, 0)]);
+        assert_ne!(a[0].key(), c[0].key(), "reader and writer swapped is another finding");
+        let (none, dropped) = run(5, 6, &[(5, 0)]);
+        assert!(none.is_empty());
+        assert_eq!(dropped, 1, "a site the facts do not name is counted, not dropped silently");
+    }
+
+    #[test]
+    fn two_functions_that_loop_call_each_other_are_two_findings() {
+        let nx = |fn_id, via| Nx { rule: 0, site: 1, fn_id, via, kind: 1 };
+        let f = Findings { nx: vec![nx(0, 1), nx(1, 0)], ..Findings::default() };
+        let (out, dropped) = run(&f);
+        assert_eq!((out.len(), dropped), (2, 0));
+        assert_ne!(out[0].key(), out[1].key(), "A calls B and B calls A must not share a key");
     }
 }

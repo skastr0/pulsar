@@ -76,7 +76,11 @@ FILE FORMAT  (TOML; format = "pulsar-catalog 0")
       Hot path: a finding of rule `base` whose function an entry point (`entries`) reaches within
       `depth` call edges. lane = sql (base is an `sql.*` rule) | fanout | konst (base is a `fanouts`
       or `konsts` id). The rule is on only when its base rule is on: an sql.* base needs policy.toml
-      `[rules] enable`. Ids are unique across rules, fanouts, konsts and hots; each list is sorted by id.
+      `[rules] enable`. Ids are unique across rules, fanouts, konsts, hots and growths; each list is sorted by id.
+    growths  = [ { id, depth, says, ver, at, doc } ]
+      Unbounded growth: a SELECT with no LIMIT whose filter binds no key of the table, on a table
+      that code an entry point reaches within `depth` call edges inserts into. Needs the repo's
+      schema (.sql files) to be complete; with a partial schema it reports nothing and says so.
 
 FIXED CLASS IDS
   1 query  2 blocking  3 log  4 error-erasing  5 runtime-escape  6 fork

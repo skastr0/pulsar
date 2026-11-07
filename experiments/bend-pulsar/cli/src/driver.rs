@@ -221,7 +221,7 @@ fn push_rules(w: &mut FactWriter, rules: &[ActiveRule], tables: &mut SideTables)
     tables.rules = rules.iter().map(|r| r.id.clone()).collect();
 }
 
-/// `RF`, `RK` and `RH` for every fan-out, constant-argument and hot-path rule that is on. The rule
+/// `RF`, `RK`, `RH` and `RG` for every fan-out, constant-argument and hot-path rule that is on. The rule
 /// number is the rule's position in its sorted list (policy.rs `Effective::composites`), so the same
 /// policy always writes the same rows.
 fn push_composites(w: &mut FactWriter, c: &crate::policy::Composites) {
@@ -233,6 +233,9 @@ fn push_composites(w: &mut FactWriter, c: &crate::policy::Composites) {
     }
     for (n, r) in c.hots.iter().enumerate() {
         w.push(Rel::Rh, &[n as u32, r.lane, r.base, r.depth]);
+    }
+    for (n, r) in c.growths.iter().enumerate() {
+        w.push(Rel::Rg, &[n as u32, r.depth]);
     }
 }
 

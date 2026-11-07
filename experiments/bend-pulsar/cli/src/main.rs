@@ -108,7 +108,7 @@ fn build_facts(
 ) -> Result<(driver::FactSet, facts::SideTables, history::Stats, driver::Stats), String> {
     let eff = policy_for(repo)?;
     let mut w = facts::FactWriter::new();
-    let mut tables = facts::SideTables { sql_rules: eff.sql_rule_codes(), composites: eff.composites(), ..facts::SideTables::default() };
+    let mut tables = facts::SideTables { sql_rules: eff.sql_rule_codes(), composites: eff.composites(), untested: eff.untested_on(), ..facts::SideTables::default() };
     let (set, st) = driver::build_repo(repo, &eff.policy.lanes, &eff.active_rules(), &mut w, &mut tables)?;
     let hist = &eff.policy.history;
     let hist_rules = eff

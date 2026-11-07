@@ -71,6 +71,8 @@ pub enum Rel {
     Rf,
     Rk,
     Rh,
+    Rg,
+    Ru,
     Ds,
     Dt,
     Dc,
@@ -87,7 +89,7 @@ pub enum Rel {
 }
 
 impl Rel {
-    pub const ALL: [Rel; 71] = [
+    pub const ALL: [Rel; 73] = [
         Rel::N,
         Rel::F,
         Rel::K,
@@ -146,6 +148,8 @@ impl Rel {
         Rel::Rf,
         Rel::Rk,
         Rel::Rh,
+        Rel::Rg,
+        Rel::Ru,
         Rel::Ds,
         Rel::Dt,
         Rel::Dc,
@@ -221,6 +225,8 @@ impl Rel {
             Rel::Rf => "RF",
             Rel::Rk => "RK",
             Rel::Rh => "RH",
+            Rel::Rg => "RG",
+            Rel::Ru => "RU",
             Rel::Ds => "DS",
             Rel::Dt => "DT",
             Rel::Dc => "DC",
@@ -240,9 +246,9 @@ impl Rel {
     /// Number of U32 fields after the tag.
     pub const fn arity(self) -> usize {
         match self {
-            Rel::N | Rel::M | Rel::Sy | Rel::Tf | Rel::L | Rel::Lo | Rel::Sr | Rel::Id => 1,
+            Rel::N | Rel::M | Rel::Sy | Rel::Tf | Rel::L | Rel::Lo | Rel::Sr | Rel::Id | Rel::Ru => 1,
             Rel::F | Rel::U | Rel::H | Rel::A | Rel::Cl | Rel::Lq | Rel::Us | Rel::Ln | Rel::If | Rel::Lr | Rel::Lc | Rel::Ds | Rel::Ep
-            | Rel::Ie | Rel::Ib | Rel::Iu => 2,
+            | Rel::Ie | Rel::Ib | Rel::Iu | Rel::Rg => 2,
             Rel::K | Rel::Fk | Rel::C | Rel::Cfn | Rel::Vn | Rel::Cv | Rel::Hd | Rel::E | Rel::Sv | Rel::Ly | Rel::Lp | Rel::Rt | Rel::Mk | Rel::Lw | Rel::Co | Rel::Im | Rel::Cu | Rel::Dt | Rel::Dp | Rel::Di | Rel::Dx | Rel::Df | Rel::Qt | Rel::Bl | Rel::Bw | Rel::Br | Rel::Al | Rel::Rk => 3,
             Rel::Fn | Rel::Ct | Rel::Cf | Rel::Rl | Rel::Rf | Rel::Rh | Rel::Cm | Rel::Et | Rel::Dc | Rel::Dg | Rel::Qu | Rel::Qd => 4,
             Rel::I | Rel::Cs | Rel::Bc | Rel::Hr | Rel::Vt => 5,
@@ -428,6 +434,9 @@ pub struct SideTables {
     /// The fan-out, constant-argument and hot-path rules policy turned on (input to the driver, like
     /// `sql_rules`: it writes their `RF`, `RK` and `RH` rows).
     pub composites: crate::policy::Composites,
+    /// Whether the untested-data-access rule is on: `coverage::emit` writes its `RU` row only when a
+    /// coverage report was ingested (without `CV` rows every query function would have no data).
+    pub untested: bool,
     /// The `.laws` table, already formatted (`law path line name`, TAB-separated, law-id order).
     pub laws: String,
     /// The `.effect` table, already formatted: `S svc path line name` and `L layer path line

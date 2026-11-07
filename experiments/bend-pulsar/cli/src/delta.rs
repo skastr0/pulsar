@@ -289,7 +289,7 @@ fn build_fresh(
 ) -> Result<Built, String> {
     checkout(repo, sha, scratch, tree)?;
     let mut w = FactWriter::new();
-    let mut tables = SideTables { sql_rules: eff.sql_rule_codes(), composites: eff.composites(), ..SideTables::default() };
+    let mut tables = SideTables { sql_rules: eff.sql_rule_codes(), composites: eff.composites(), untested: eff.untested_on(), ..SideTables::default() };
     let (set, dstats) = driver::build(tree, tracked, &eff.policy.lanes, &eff.active_rules(), &mut w, &mut tables)?;
     let mut coverage_reroot = None;
     if coverage.is_some() || discover {
@@ -471,6 +471,13 @@ fn read_table_defs(facts_path: &Path) -> Result<(BTreeMap<u32, u32>, usize), Str
     Ok((rows.iter().map(|n| (n[0], n[1])).collect(), bad))
 }
 
+/// `QS site file fn node kind flags` rows of a facts file: query site -> function id (sites in a
+/// `.sql` file have none and are left out).
+fn read_query_fns(facts_path: &Path) -> Result<(BTreeMap<u32, u32>, usize), String> {
+    let (rows, bad) = read_tagged(facts_path, "QS", 6)?;
+    Ok((rows.iter().filter(|n| n[2] != u32::MAX).map(|n| (n[0], n[2])).collect(), bad))
+}
+
 /// `RT root file fn` rows of a facts file: where each Effect root is built.
 fn read_roots(facts_path: &Path) -> Result<(Vec<layers::Root>, usize), String> {
     let (rows, bad) = read_tagged(facts_path, "RT", 3)?;
@@ -581,6 +588,23 @@ fn evaluate(repo: &Path, sha: &str, tag: &str, coverage: Option<&Path>, discover
     for f in comp_findings {
         insert(&mut findings, f, sha)?;
     }
+    let comp = eff.composites();
+    let site_fns = if found.gx.is_empty() { BTreeMap::new() } else { lookup("query site (QS)", "composites", read_query_fns(&facts_path), &mut degraded) };
+    let (growth_findings, growth_dropped) = compfind::growth(&found, &tables, &set.files, &set.fn_keys, &comp, &site_fns);
+    for f in growth_findings {
+        insert(&mut findings, f, sha)?;
+    }
+    if let (Some((_, skipped, false)), false) = (found.grow_schema, comp.growths.is_empty()) {
+        degraded.push(Degraded {
+            lane: "sql",
+            cause: format!("{skipped} DDL statement(s) could not be parsed or are not modelled, so the schema is incomplete; unbounded-growth rules report nothing"),
+        });
+    }
+    let (untested_findings, untested_dropped) = compfind::untested(&found, &tables, &set.files, &set.fn_keys);
+    for f in untested_findings {
+        insert(&mut findings, f, sha)?;
+    }
+    let comp_dropped = comp_dropped + growth_dropped + untested_dropped;
     if comp_dropped > 0 {
         degraded.push(Degraded {
             lane: "composites",

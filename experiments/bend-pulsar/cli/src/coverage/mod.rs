@@ -64,6 +64,10 @@ pub fn emit(
     for (id, covered, coverable) in &cv {
         w.push(Rel::Cv, &[*id, *covered, *coverable]);
     }
+    // The untested-data-access rule reads `CV`: it is switched on only when a report was ingested.
+    if tables.untested {
+        w.push(Rel::Ru, &[0]);
+    }
     let rerooted = match &stats.rerooted_prefix {
         Some(prefix) => format!(" rerooted={prefix} rerooted_files={}", stats.rerooted_files),
         None => String::new(),
