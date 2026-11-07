@@ -37,7 +37,7 @@ pub enum Rel {
     Im,
     If,
     Cm,
-    Rt,
+    Et,
     Sy,
     Cl,
     Cs,
@@ -76,7 +76,7 @@ impl Rel {
         Rel::Im,
         Rel::If,
         Rel::Cm,
-        Rel::Rt,
+        Rel::Et,
         Rel::Sy,
         Rel::Cl,
         Rel::Cs,
@@ -115,7 +115,7 @@ impl Rel {
             Rel::Im => "IM",
             Rel::If => "IF",
             Rel::Cm => "CM",
-            Rel::Rt => "RT",
+            Rel::Et => "ET",
             Rel::Sy => "SY",
             Rel::Cl => "CL",
             Rel::Cs => "CS",
@@ -135,7 +135,7 @@ impl Rel {
             Rel::N | Rel::M | Rel::Sy | Rel::Tf | Rel::L => 1,
             Rel::F | Rel::U | Rel::H | Rel::A | Rel::Cl | Rel::Lq | Rel::Us | Rel::Sv | Rel::Ln | Rel::If => 2,
             Rel::K | Rel::Fk | Rel::C | Rel::Cfn | Rel::Cv | Rel::Hd | Rel::Ly | Rel::Lp | Rel::Mk | Rel::Lw | Rel::Co | Rel::Im => 3,
-            Rel::Fn | Rel::Ct | Rel::Cf | Rel::Rl | Rel::Cm | Rel::Rt => 4,
+            Rel::Fn | Rel::Ct | Rel::Cf | Rel::Rl | Rel::Cm | Rel::Et => 4,
             Rel::I | Rel::Cs => 5,
         }
     }
@@ -407,12 +407,12 @@ mod tests {
     fn the_rust_type_relations_sit_between_cv_and_sy() {
         let mut w = FactWriter::new();
         w.push(Rel::Sy, &[1]);
-        w.push(Rel::Rt, &[0, 1, 2, 1]);
+        w.push(Rel::Et, &[0, 1, 2, 1]);
         w.push(Rel::Cm, &[0, 1, 2, 3]);
         w.push(Rel::If, &[0, 1]);
         w.push(Rel::Im, &[0, 1, 2]);
         w.push(Rel::Cv, &[0, 1, 2]);
-        assert_eq!(render(w), "pulsar-facts 0\nCV 0 1 2\nIM 0 1 2\nIF 0 1\nCM 0 1 2 3\nRT 0 1 2 1\nSY 1\n");
+        assert_eq!(render(w), "pulsar-facts 0\nCV 0 1 2\nIM 0 1 2\nIF 0 1\nCM 0 1 2 3\nET 0 1 2 1\nSY 1\n");
     }
 
     #[test]
