@@ -108,6 +108,10 @@ for r in removed:
 PY
   BODY=/tmp/dogfood-body.$$
   report "$H" "delta $B $H" "$BODY"
+  # The JSONL is the triage input (evidence_text per finding) — keep it
+  # beside the .txt every run (pulsar-research triage request).
+  cp "$JSONL" "$OUTDIR/$H.json"
+  echo "dogfood: wrote $OUTDIR/$H.json"
   rm -f "$JSONL" "$BODY"
   exit "$rc"
 fi
