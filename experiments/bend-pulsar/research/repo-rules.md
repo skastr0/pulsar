@@ -36,7 +36,7 @@ body    = ["I(src: A, dst: B)", "in(kernel, A)", "in(adapters, B)"]
 - **Relations a rule can read:**
   - Every FACTS relation, by tag, with named fields from FACTS.md: `I(src, dst, form, hv, ht)`, `FN(fn, file, parent, loc)`, `CS(site, fn, callee, loop_depth, ctx)`, `CL(sym, class)`, `TF(fn)`, `CV(fn, covered, coverable)`, and so on. A field left out is a wildcard. Positional arguments are not allowed, because named fields survive a schema change and positions do not.
   - Core findings, as one relation per output kind: `FX(rule, fn, value, threshold)`, written with rule names (`FX(rule: core.crap, fn: F)`), and `CYC(cycle, file)` for cycle membership. Other detector outputs join this list when a rule needs them.
-  - `in(set, x)`, for the `[sets]` above.
+  - `in(set, x)`, for the `[sets]` above. Each set has one element domain (`files` gives `file`, `fns` gives `fn`, `syms` gives `sym`, `classes` gives `class`), and the type check holds `x` to it.
   - Relations derived in any rule file of the repo. All files form one program, so a later stratum may read another file's relation.
 - **Body syntax:** a list of literals that are ANDed.
   - an atom `R(field: Term, ...)`, or a negated atom `not R(...)`;
@@ -59,7 +59,7 @@ Every FACTS field has a domain, and the CLI keeps the domain table next to the s
 A variable has exactly one domain, and the CLI rejects a rule that:
 - joins different domains: `I(src: X)` with `FN(fn: X)` is a file joined with a function;
 - compares an id with a number (`F > 3` on a fn);
-- compares two variables with `<`, `<=`, `>` or `>=`. Equality between variables is a join. `X != Y` is allowed between ids of the same domain (IR row `JE`);
+- compares two variables with `<`, `<=`, `>` or `>=`. Equality between variables is a join. `X != Y` is allowed between ids of the same domain (IR row `JE`). It is a built-in disequality, not a negation, so it adds no stratum edge; range restriction binds both sides, so it filters joins and never generates bindings. `!=` between two `nat` variables (two counts, say) is rejected like the order comparisons;
 - uses `bits` on anything but `flags`.
 
 ## 3. Strata
@@ -98,6 +98,8 @@ Numeric rows, appended to the facts file. All tags start with `J`, for group J. 
 | `JC` | `clause var op const` | Comparison. `op`: 0 `=`, 1 `!=`, 2 `<`, 3 `<=`, 4 `>`, 5 `>=`, 6 `bits`, 7 `nobits`. |
 | `JE` | `clause v1 v2` | `v1 != v2` between two id variables, if section 8 allows it. |
 | `JF` | `finding rel` | Derived relation `rel` is reported as finding `finding`, an index into `.rules` (id, version, file, line, subject domains). |
+
+**`JCERT 0`.** The engine still prints the `JX` tuples. They are sound regardless (R4 needs no hypothesis), but possibly incomplete. The CLI treats the run as degraded input: delta reports the added findings, and claims no removed finding from that run. With the fuel of section 6 a stratum always reaches its fixed point, so `JCERT 0` means an engine bug, never a data condition. This matches the graph's `CERT`.
 
 **Engine output**, a section after the packs, switched on by the presence of `JR` rows, as packs are by their facts:
 
@@ -186,13 +188,19 @@ pulsar-cli reviewed this note at 80c2b64 and accepted it:
 - **Q1:** `!=` between ids of one domain is allowed (`JE`).
 - **Q3:** rules run in the same binary, after the core detectors.
 - **Q4:** the domain table lives by hand in `facts.rs`, next to `Rel` (`Rel::fields() -> [(name, Domain)]`). A unit test parses the FACTS.md relation tables and fails when a tag, its arity or its field names drift, so FACTS.md wording never becomes load-bearing.
-- **Q6:** arity <= 8, clauses <= 256, body atoms <= 8 per clause, relations <= 64. The CLI prints the bounds it applied, and the engine's `Rules.valid` refuses anything past them too.
+- **Q6:** the tighter of both reviews' limits: arity <= 8, body literals <= 8 per clause, variables <= 16 per clause, clauses <= 200, derived relations <= 50, sets <= 100. The CLI prints the bounds it applied, and the engine's `Rules.valid` refuses anything past them too. As pulsar-research points out, the real blowup is join width, not arity: range restriction bounds outputs, not intermediate joins. So `pulsar rules check` also prints each stratum's fuel estimate (sum of |D|^arity at HEAD) and refuses to compile past the engine's envelope. `JCERT` is the runtime check, and the estimate is the compile-time one.
 - **Subjects:** `find` heads take `file` and `fn` subjects only (section 4).
 - **Rule switches:** `rules.disable` in policy.toml can switch a repo rule off, and each finding line shows `origin repo` plus the rule's file:line.
 - **Check runs:** `pulsar rules check` needs one engine run, so its tests run on a VM-sized fixture.
 - **Timing:** the CLI side starts after pulsar-cli's #654 cache work lands.
 
-pulsar-research's review is pending: Q2 and Q5 below, and anything else.
+pulsar-research reviewed it too and said go:
+- **Q1:** allow `!=`, ids only (section 2).
+- **Q2:** `FX` and `CYC` only for phase 2. A rule that needs `LM`, `LCYC` or `RCX` is really a pack rule (#683). The read set grows additively (a new stratum-0 source) when the first real rule asks.
+- **Q6:** the limits above.
+- **Identity:** a finding's file:line is display-only provenance. Identity is rule id + version + subjects, so editing a rule file does not churn delta.
+- **Sets:** `in` holds its element to the set's domain (section 1).
+- **`JCERT 0`:** the policy is in section 5.
 
 ## 9. Open questions (as first asked)
 
