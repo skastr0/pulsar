@@ -173,8 +173,13 @@ struct ClassCtx {
     props: HashMap<String, String>,
 }
 
+mod blocks;
+use blocks::BlockAcc;
+
 struct Frame {
     local: u32,
+    /// Decision-block bookkeeping (`BL`, `BW`, `BR`, `BC`).
+    blocks: BlockAcc,
     next_node: u32,
     /// `CS.ctx` bits in force: inherited lexically, plus this function's own.
     ctx: u8,
@@ -455,8 +460,30 @@ impl<'s> Walker<'s> {
         true
     }
 
-    fn open_loop(&mut self) -> bool {
-        let opened = self.open(ct::LOOP);
+    /// Open a decision block (a branch, multi-branch or loop): a control node plus its
+    /// condition's facts. Returns false outside any function.
+    fn open_decision(
+        &mut self,
+        kind: u8,
+        test: Option<&Expression<'_>>,
+        iter: Option<&Expression<'_>>,
+        predicates: bool,
+    ) -> bool {
+        let Some(id) = self.leaf(kind) else { return false };
+        self.frames.last_mut().unwrap().stack.push(id);
+        self.begin_block(id, test, iter, predicates);
+        true
+    }
+
+    fn close_decision(&mut self, opened: bool) {
+        if opened {
+            self.end_block();
+        }
+        self.close(opened);
+    }
+
+    fn open_loop(&mut self, test: Option<&Expression<'_>>, iter: Option<&Expression<'_>>) -> bool {
+        let opened = self.open_decision(ct::LOOP, test, iter, true);
         if opened {
             self.frames.last_mut().unwrap().loops += 1;
         }
@@ -467,7 +494,7 @@ impl<'s> Walker<'s> {
         if opened {
             self.frames.last_mut().unwrap().loops -= 1;
         }
-        self.close(opened);
+        self.close_decision(opened);
     }
 
     fn close(&mut self, opened: bool) {
@@ -518,7 +545,7 @@ impl<'s> Walker<'s> {
             self.out.entries.push((local, kind));
         }
         let frame_ctx = self.frame_ctx(span.start, is_async);
-        self.frames.push(Frame { local, next_node: 1, ctx: frame_ctx, loops: 0, stack: vec![0] });
+        self.frames.push(Frame { local, blocks: BlockAcc::default(), next_node: 1, ctx: frame_ctx, loops: 0, stack: vec![0] });
         self.push_container(&element);
     }
 
@@ -556,7 +583,9 @@ impl<'s> Walker<'s> {
     }
 
     fn leave(&mut self) {
-        self.frames.pop();
+        if let Some(f) = self.frames.pop() {
+            self.finish_blocks(f.local, f.blocks);
+        }
         self.pop_container();
     }
 
@@ -1257,6 +1286,11 @@ impl<'a> Visit<'a> for Walker<'_> {
         if let (BindingPattern::BindingIdentifier(id), Some(init)) = (&it.id, &it.init) {
             self.hint(init, id.name.as_str(), None);
         }
+        if let (BindingPattern::BindingIdentifier(id), Some(_)) = (&it.id, &it.init) {
+            if let Some(sid) = id.symbol_id.get() {
+                self.note_write(&format!("{sid:?}"));
+            }
+        }
         if let BindingPattern::BindingIdentifier(id) = &it.id {
             if self.index.is_some() {
                 if let Some((sym, via)) = it.init.as_ref().and_then(|i| self.classify_init(i)) {
@@ -1366,7 +1400,7 @@ impl<'a> Visit<'a> for Walker<'_> {
     // ---- control tree -------------------------------------------------------------------
 
     fn visit_if_statement(&mut self, it: &IfStatement<'a>) {
-        let b = self.open(ct::BRANCH);
+        let b = self.open_decision(ct::BRANCH, Some(&it.test), None, true);
         self.visit_expression(&it.test);
         let arm = self.open(ct::ARM);
         self.visit_statement(&it.consequent);
@@ -1376,11 +1410,11 @@ impl<'a> Visit<'a> for Walker<'_> {
             self.visit_statement(alt);
             self.close(arm);
         }
-        self.close(b);
+        self.close_decision(b);
     }
 
     fn visit_conditional_expression(&mut self, it: &ConditionalExpression<'a>) {
-        let b = self.open(ct::BRANCH);
+        let b = self.open_decision(ct::BRANCH, Some(&it.test), None, true);
         self.visit_expression(&it.test);
         let arm = self.open(ct::ARM);
         self.visit_expression(&it.consequent);
@@ -1388,11 +1422,12 @@ impl<'a> Visit<'a> for Walker<'_> {
         let arm = self.open(ct::ARM);
         self.visit_expression(&it.alternate);
         self.close(arm);
-        self.close(b);
+        self.close_decision(b);
     }
 
     fn visit_switch_statement(&mut self, it: &SwitchStatement<'a>) {
-        let m = self.open(ct::MULTI);
+        let m = self.open_decision(ct::MULTI, Some(&it.discriminant), None, false);
+        let node = self.frames.last().and_then(|f| f.stack.last().copied()).unwrap_or(0);
         self.visit_expression(&it.discriminant);
         for case in &it.cases {
             if case.test.is_none() {
@@ -1403,6 +1438,9 @@ impl<'a> Visit<'a> for Walker<'_> {
             }
             let arm = self.open(ct::ARM);
             if let Some(t) = &case.test {
+                if m {
+                    self.case_atom(node, &it.discriminant, t);
+                }
                 self.visit_expression(t);
             }
             for s in &case.consequent {
@@ -1410,35 +1448,35 @@ impl<'a> Visit<'a> for Walker<'_> {
             }
             self.close(arm);
         }
-        self.close(m);
+        self.close_decision(m);
     }
 
     fn visit_for_statement(&mut self, it: &ForStatement<'a>) {
-        let l = self.open_loop();
+        let l = self.open_loop(it.test.as_ref(), None);
         walk::walk_for_statement(self, it);
         self.close_loop(l);
     }
 
     fn visit_for_in_statement(&mut self, it: &ForInStatement<'a>) {
-        let l = self.open_loop();
+        let l = self.open_loop(None, Some(&it.right));
         walk::walk_for_in_statement(self, it);
         self.close_loop(l);
     }
 
     fn visit_for_of_statement(&mut self, it: &ForOfStatement<'a>) {
-        let l = self.open_loop();
+        let l = self.open_loop(None, Some(&it.right));
         walk::walk_for_of_statement(self, it);
         self.close_loop(l);
     }
 
     fn visit_while_statement(&mut self, it: &WhileStatement<'a>) {
-        let l = self.open_loop();
+        let l = self.open_loop(Some(&it.test), None);
         walk::walk_while_statement(self, it);
         self.close_loop(l);
     }
 
     fn visit_do_while_statement(&mut self, it: &DoWhileStatement<'a>) {
-        let l = self.open_loop();
+        let l = self.open_loop(Some(&it.test), None);
         walk::walk_do_while_statement(self, it);
         self.close_loop(l);
     }
@@ -1480,6 +1518,9 @@ impl<'a> Visit<'a> for Walker<'_> {
     }
 
     fn visit_assignment_expression(&mut self, it: &AssignmentExpression<'a>) {
+        if let Some(k) = self.target_key(&it.left) {
+            self.note_write(&k);
+        }
         match it.operator {
             AssignmentOperator::LogicalAnd => self.short_circuit(op::AND_ASSIGN),
             AssignmentOperator::LogicalOr => self.short_circuit(op::OR_ASSIGN),
@@ -1487,6 +1528,13 @@ impl<'a> Visit<'a> for Walker<'_> {
             _ => {}
         }
         walk::walk_assignment_expression(self, it);
+    }
+
+    fn visit_update_expression(&mut self, it: &UpdateExpression<'a>) {
+        if let Some(k) = self.simple_key(&it.argument) {
+            self.note_write(&k);
+        }
+        walk::walk_update_expression(self, it);
     }
 
     fn visit_return_statement(&mut self, it: &ReturnStatement<'a>) {
@@ -1513,6 +1561,7 @@ impl<'a> Visit<'a> for Walker<'_> {
 
     fn visit_call_expression(&mut self, it: &CallExpression<'a>) {
         self.hooked(|h, cx| h.on_call(cx, it));
+        self.note_call_write(it);
         self.edge_site(it);
         self.on_call(it);
         if self.index.is_some() && self.chain(&it.callee).is_some() {
