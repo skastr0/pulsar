@@ -699,3 +699,17 @@ def Sc.agg(t: M.Ct) -> {Agg.sc(Laws.Npx.agg(t)) == Laws.Sc(t) : Nat}:
 def Laws.npath_loop(body):
   %Sc.agg(body) : {M.Np.prod(Laws.Npx.cons(M.KLoop{}, Laws.Npx.agg(body), Laws.Npx.empty())) == Nat.add(1n+Laws.Npx.of(body), _) : Nat}
   Loop.lemma(Laws.Npx.agg(body))
+
+def Laws.npath_printed_at_least_one(t, cap):
+  %Equal.sym(Nat, M.Np.of(t, cap), Nat.min(Laws.Npx.of(t), cap), Laws.npath_printed_is_min(t, cap)) : N.Le(Nat.min(1n, cap), _)
+  N.Nat.min_mono(1n, Laws.Npx.of(t), cap, Laws.npath_at_least_one(t))
+
+def Laws.npath_printed_if_without_else(body, cap):
+  %Equal.sym(Nat, M.Np.of(M.Node{M.KBranch{}, M.Node{M.KArm{}, body, M.Leaf{}}, M.Leaf{}}, cap), Nat.min(Laws.Npx.of(M.Node{M.KBranch{}, M.Node{M.KArm{}, body, M.Leaf{}}, M.Leaf{}}), cap), Laws.npath_printed_is_min(M.Node{M.KBranch{}, M.Node{M.KArm{}, body, M.Leaf{}}, M.Leaf{}}, cap)) : {_ == Nat.min(1n+Laws.Npx.of(body), cap) : Nat}
+  %Equal.sym(Nat, Laws.Npx.of(M.Node{M.KBranch{}, M.Node{M.KArm{}, body, M.Leaf{}}, M.Leaf{}}), 1n+Laws.Npx.of(body), Laws.npath_if_without_else(body)) : {Nat.min(_, cap) == Nat.min(1n+Laws.Npx.of(body), cap) : Nat}
+  {==}
+
+def Laws.npath_printed_loop(body, cap):
+  %Equal.sym(Nat, M.Np.of(M.Node{M.KLoop{}, body, M.Leaf{}}, cap), Nat.min(Laws.Npx.of(M.Node{M.KLoop{}, body, M.Leaf{}}), cap), Laws.npath_printed_is_min(M.Node{M.KLoop{}, body, M.Leaf{}}, cap)) : {_ == Nat.min(Nat.add(1n+Laws.Npx.of(body), Laws.Sc(body)), cap) : Nat}
+  %Equal.sym(Nat, Laws.Npx.of(M.Node{M.KLoop{}, body, M.Leaf{}}), Nat.add(1n+Laws.Npx.of(body), Laws.Sc(body)), Laws.npath_loop(body)) : {Nat.min(_, cap) == Nat.min(Nat.add(1n+Laws.Npx.of(body), Laws.Sc(body)), cap) : Nat}
+  {==}

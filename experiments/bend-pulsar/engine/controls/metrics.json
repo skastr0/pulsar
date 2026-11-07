@@ -1,0 +1,104 @@
+[
+ {
+  "law": "findings_sound",
+  "bug": "Rule.check fires without comparing to the threshold",
+  "old": "  Rule.keep(Nat.is_gt(v, thr), Finding{rule, fn, v, thr}, rest)",
+  "new": "  Rule.keep(True{}, Finding{rule, fn, v, thr}, rest)"
+ },
+ {
+  "law": "findings_complete_length",
+  "bug": "Rule.one forgets the length check",
+  "old": "Rule.check(4, fn, loc, tloc, rest))))",
+  "new": "rest)))"
+ },
+ {
+  "law": "findings_complete_cyclomatic",
+  "bug": "Rule.one reports cyclomatic against the nesting threshold",
+  "old": "Rule.check(1, fn, cc, tcc,",
+  "new": "Rule.check(1, fn, cc, tnest,"
+ },
+ {
+  "law": "decision_branch",
+  "bug": "a branch adds no decision",
+  "old": "    case KBranch{}:\n      1n\n    case KLoop{}:",
+  "new": "    case KBranch{}:\n      0n\n    case KLoop{}:"
+ },
+ {
+  "law": "decision_multi",
+  "bug": "a multi-branch counts its default as a decision",
+  "old": "      Nat.sub(Cc.arms(kids), Cc.dflt(kids))",
+  "new": "      Cc.arms(kids)"
+ },
+ {
+  "law": "decision_try",
+  "bug": "a try counts its body as a decision",
+  "old": "      Nat.sub(Cc.arms(kids), 1n)",
+  "new": "      Cc.arms(kids)"
+ },
+ {
+  "law": "cyclomatic_is_one_plus_decisions",
+  "bug": "the cyclomatic base is 2",
+  "old": "  1n+Cc.seq(t)",
+  "new": "  2n+Cc.seq(t)"
+ },
+ {
+  "law": "cyclomatic_skips_nested_fn",
+  "bug": "a nested function's decisions count",
+  "old": "    case KFn{}:\n      r\n    case KBranch{}:\n      Nat.add(Nat.add(Cc.weight(KBranch{}, kids), d), r)",
+  "new": "    case KFn{}:\n      Nat.add(d, r)\n    case KBranch{}:\n      Nat.add(Nat.add(Cc.weight(KBranch{}, kids), d), r)"
+ },
+ {
+  "law": "nesting_skips_nested_fn",
+  "bug": "a nested function's depth counts",
+  "old": "    case KFn{}:\n      r\n    case KBranch{}:\n      Nat.max(1n+d, r)",
+  "new": "    case KFn{}:\n      Nat.max(d, r)\n    case KBranch{}:\n      Nat.max(1n+d, r)"
+ },
+ {
+  "law": "nesting_else_if_is_flat",
+  "bug": "else-if nests a level",
+  "old": "      Nat.sub(d, 1n)\n",
+  "new": "      d\n"
+ },
+ {
+  "law": "npath_is_nejmeh_capped",
+  "bug": "a branch ignores its guard's short-circuits",
+  "old": "      Sat.add(Sat.add(sum, Nat.sub(2n, arms), cap), sc, cap)",
+  "new": "      Sat.add(sum, Nat.sub(2n, arms), cap)"
+ },
+ {
+  "law": "npath_is_nejmeh_capped",
+  "bug": "a multi-branch with a default still adds the implicit path",
+  "old": "Nat.sub(1n, Nat.min(dflt, arms))",
+  "new": "Nat.sub(1n, 0n)"
+ },
+ {
+  "law": "npath_printed_loop",
+  "bug": "a loop forgets the path that skips it",
+  "old": "      Sat.add(Sat.add(prod, 1n, cap), sc, cap)",
+  "new": "      Sat.add(prod, sc, cap)"
+ },
+ {
+  "law": "npath_printed_sequence",
+  "bug": "multiplication is not capped",
+  "old": "  Nat.min(Nat.mul(a, b), cap)",
+  "new": "  Nat.mul(a, b)"
+ },
+ {
+  "law": "npath_arm_monotone_branch",
+  "bug": "an arm's NPath is not added to the sum",
+  "old": "Sat.add(Nat.mul(K.arm(k), ap), sum, cap)",
+  "new": "Sat.add(0n, sum, cap)"
+ },
+ {
+  "law": "npath_ignores_nested_fn_body",
+  "bug": "a nested function's paths count",
+  "old": "      Np.empty(cap)\n    case _:\n      a",
+  "new": "      a\n    case _:\n      a"
+ },
+ {
+  "law": "run_refuses_invalid",
+  "bug": "invalid facts yield an empty result",
+  "old": "    case None{}:\n      None{}\n    case Some{fs}:\n      Some{Metrics.measure_all(fs, cap)}",
+  "new": "    case None{}:\n      Some{Nil{}}\n    case Some{fs}:\n      Some{Metrics.measure_all(fs, cap)}"
+ }
+]
