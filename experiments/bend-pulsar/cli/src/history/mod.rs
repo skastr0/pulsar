@@ -396,7 +396,7 @@ fn number(b: &[u8]) -> Result<u32, String> {
 
 /// Bot authors are excluded from churn by the engine (`A bot 1`). The defaults are
 /// technology-free: a `[bot]` name suffix, plus the names GitHub's automation uses.
-/// Repo catalog patterns plug into [`BotMatcher::with_names`] later.
+/// Repo catalog patterns plug in here later, as extra entries in `names`.
 pub struct BotMatcher {
     names: HashSet<String>,
 }
@@ -415,13 +415,6 @@ impl BotMatcher {
             "snyk-bot",
         ];
         BotMatcher { names: names.iter().map(|s| s.to_string()).collect() }
-    }
-
-    /// Extra lowercased author names from a repo catalog.
-    pub fn with_names<I: IntoIterator<Item = String>>(names: I) -> Self {
-        let mut m = Self::defaults();
-        m.names.extend(names.into_iter().map(|n| n.to_ascii_lowercase()));
-        m
     }
 
     pub fn is_bot(&self, name: &str, _email: &str) -> bool {
