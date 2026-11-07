@@ -192,7 +192,7 @@ mod tests {
         let names = ["a.ts", "b.ts", "c.ts"];
         let files: Vec<(u32, String)> = names.iter().enumerate().map(|(i, n)| (i as u32, n.to_string())).collect();
         let tracked: Vec<String> = names.iter().map(|n| n.to_string()).collect();
-        let a = analyze(&dir, &files, &tracked).unwrap();
+        let a = analyze(&dir, &files, &tracked, &|_| 0).unwrap();
         std::fs::remove_dir_all(&dir).ok();
         assert_eq!(
             edges(&a, &names),
@@ -215,5 +215,30 @@ mod tests {
         let st = &a.stats.edges;
         assert_eq!((st.resolved, st.external), (11, 1));
         assert_eq!(st.unresolved, [0, 0, 1, 0, 1]);
+    }
+
+    /// Policy ctx bits reach the walk through the per-file closure, and the lane keeps the test
+    /// bit for itself: a test file gets 4 whatever the closure says.
+    #[test]
+    fn policy_bits_reach_the_walk_and_the_test_bit_stays_the_lanes() {
+        let dir = std::env::temp_dir().join(format!("pulsar-filectx-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        write(&dir, "a.ts", "export function f() { return Date.now(); }\n");
+        write(&dir, "b.test.ts", "export function g() { return Date.now(); }\n");
+        let names = ["a.ts", "b.test.ts"];
+        let files: Vec<(u32, String)> = names.iter().enumerate().map(|(i, n)| (i as u32, n.to_string())).collect();
+        let tracked: Vec<String> = names.iter().map(|n| n.to_string()).collect();
+        let bits = |p: &str| if p == "a.ts" { 8 } else { 16 };
+        let a = analyze(&dir, &files, &tracked, &bits).unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+        let ctx_of = |i: usize| {
+            a.per_file[i].fns.sites.iter().find_map(|s| match &s.kind {
+                SiteKind::Call { ctx, .. } => Some(*ctx),
+                _ => None,
+            })
+        };
+        assert_eq!(ctx_of(0), Some(8));
+        assert_eq!(ctx_of(1), Some(16 | 4));
     }
 }
