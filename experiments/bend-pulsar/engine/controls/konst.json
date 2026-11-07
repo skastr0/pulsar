@@ -1,0 +1,38 @@
+[
+ {
+  "law": "ko_rule_sound",
+  "bug": "the constant test is dropped",
+  "old": "Ko.keep(Bool.and(S.Scope.has(cset, callee), S.Scope.has(aset, site))",
+  "new": "Ko.keep(S.Scope.has(cset, callee)"
+ },
+ {
+  "law": "ko_rule_sound",
+  "bug": "a constant at any position counts",
+  "old": "X.Cx.push_u(U32.is_eq(p, pos), site, Ko.sites(t, pos))",
+  "new": "X.Cx.push_u(True{}, site, Ko.sites(t, pos))"
+ },
+ {
+  "law": "ko_rule_complete",
+  "bug": "findings stop after the first site",
+  "old": "Kx{r, site, fn, callee, pos}, Ko.hits(t, r, pos, cset, aset))",
+  "new": "Kx{r, site, fn, callee, pos}, Nil{})"
+ },
+ {
+  "law": "ko_findings_complete",
+  "bug": "only the first rule row runs",
+  "old": "List.append(&2, Kx, Ko.rule(css, cls, als, h), Ko.rules(css, cls, als, t))",
+  "new": "Ko.rule(css, cls, als, h)"
+ },
+ {
+  "law": "ko_findings_sound",
+  "bug": "a finding with no rule row",
+  "old": "      Ko.rules(css, cls, als, rks)",
+  "new": "      Con{Kx{0, 0, 0, 0, 0}, Ko.rules(css, cls, als, rks)}"
+ },
+ {
+  "law": "ko_lines_shape",
+  "bug": "the section header changes",
+  "old": "\"pulsar-konst 0\"",
+  "new": "\"pulsar-konst 1\""
+ }
+]
