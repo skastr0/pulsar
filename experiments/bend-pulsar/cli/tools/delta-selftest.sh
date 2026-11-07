@@ -48,6 +48,12 @@ a=$("$BIN" delta HEAD~4 HEAD~3 --repo . 2>/dev/null | grep -o '^+ [^ ]* [0-9a-f]
 [ -n "$a" ] && [ "$a" == "$b" ] && echo "ok   key stable across runs ($a)" || { echo "FAIL key stable"; fail=1; }
 "$BIN" delta nope HEAD --repo . >/dev/null 2>&1; [ $? == 2 ] && echo "ok   bad rev: exit 2" || { echo "FAIL bad rev"; fail=1; }
 [ -z "$(ls -d /tmp/pulsar-delta-* 2>/dev/null)" ] && echo "ok   scratch removed" || { echo "FAIL scratch left behind"; fail=1; }
+# --coverage reads the report from the worktree (not the scratch checkout) and is an error if missing.
+printf 'SF:m.ts\nDA:2,0\nDA:3,1\nend_of_record\n' > "$T/lcov.info"
+err=$("$BIN" delta HEAD~1 HEAD --repo . --coverage "$T/lcov.info" 2>&1 >/dev/null)
+grep -q 'coverage reports=1' <<<"$err" && echo "ok   --coverage reads the worktree report" || { echo "FAIL --coverage"; echo "$err" | tail -3; fail=1; }
+"$BIN" delta HEAD~1 HEAD --repo . --coverage "$T/none.info" >/dev/null 2>&1; [ $? == 2 ] && echo "ok   missing --coverage path: exit 2" || { echo "FAIL missing coverage path"; fail=1; }
+
 # A Rust manifest cargo cannot read degrades the Rust graph: every output form must say so.
 D=$(mktemp -d); trap 'rm -rf "$T" "$D"' EXIT
 ( cd "$D" && git init -q . && git config user.email t@t && git config user.name t
@@ -55,7 +61,7 @@ D=$(mktemp -d); trap 'rm -rf "$T" "$D"' EXIT
   printf 'this is not toml [[[\n' > Cargo.toml; mkdir -p src; echo 'pub fn f() {}' > src/lib.rs
   git add -A && git commit -qm "broken manifest" )
 out=$("$BIN" delta HEAD~1 HEAD --repo "$D" 2>/dev/null)
-grep -q '^! DEGRADED INPUT (head) rust: ' <<<"$out" && grep -q 'degraded=1$' <<<"$out" && echo "ok   degraded input marked in text" || { echo "FAIL degraded text"; echo "$out" | head -3; fail=1; }
+grep -q '^! DEGRADED INPUT (head) rust: ' <<<"$out" && grep -q 'degraded=1 coverage=0$' <<<"$out" && echo "ok   degraded input marked in text" || { echo "FAIL degraded text"; echo "$out" | head -3; fail=1; }
 out=$("$BIN" delta HEAD~1 HEAD --repo "$D" --json 2>/dev/null)
 grep -q '"type":"degraded","side":"head","lane":"rust"' <<<"$out" && grep -q '"degraded":1' <<<"$out" && echo "ok   degraded input marked in JSON" || { echo "FAIL degraded json"; fail=1; }
 "$BIN" facts "$D" -o "$D/f.txt" 2>/dev/null; grep -q '^# degraded rust: ' "$D/f.txt" && echo "ok   degraded input noted in the facts header" || { echo "FAIL degraded facts header"; fail=1; }

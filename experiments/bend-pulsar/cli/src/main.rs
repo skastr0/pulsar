@@ -17,7 +17,7 @@ use std::process::ExitCode;
 
 const USAGE: &str = "usage:
   pulsar facts <repo> [-o file] [--coverage path]   write facts (and <file>.paths, <file>.fns when -o is given)
-  pulsar delta <base> <head> [--repo dir] [--json]   findings added and removed between two shas (exit 1 if any added)
+  pulsar delta <base> <head> [--repo dir] [--json] [--coverage file|dir]   findings added and removed between two shas (exit 1 if any added)
   pulsar catalog [check <file>... | list [--repo dir] | --help]   class data (see `pulsar catalog --help`)
   pulsar policy [--repo dir]        print the effective policy, its parts and fingerprint
   pulsar cycles <repo> [--facts-out file]   run facts, then the engine, and print cycles";

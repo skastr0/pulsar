@@ -18,11 +18,19 @@ pub const CYCLOMATIC: Rule = Rule { id: "core.cyclomatic", version: 1 };
 pub const NESTING: Rule = Rule { id: "core.nesting", version: 1 };
 pub const NPATH: Rule = Rule { id: "core.npath", version: 1 };
 pub const LENGTH: Rule = Rule { id: "core.length", version: 1 };
+/// Needs line coverage: only computed where a coverage report is supplied (see `needs_coverage`).
+pub const CRAP: Rule = Rule { id: "core.crap", version: 1 };
+
+/// Does the rule need a coverage report? Such findings exist only for a sha that has one, so a
+/// base-versus-head diff cannot compare them; delta lists them for head on their own.
+pub fn needs_coverage(rule: &Rule) -> bool {
+    rule.id == CRAP.id
+}
 
 /// The rule for an engine `FX` rule id, or an error if the CLI does not know it (an engine and
 /// CLI that disagree must fail, not drop findings).
 pub fn metric_rule(id: &str) -> Result<Rule, String> {
-    [CYCLOMATIC, NESTING, NPATH, LENGTH]
+    [CYCLOMATIC, NESTING, NPATH, LENGTH, CRAP]
         .into_iter()
         .find(|r| r.id == id)
         .ok_or_else(|| format!("engine reported FX rule {id:?}, which this CLI does not know"))

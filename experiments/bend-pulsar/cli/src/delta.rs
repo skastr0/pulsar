@@ -10,7 +10,8 @@
 
 use crate::engine;
 use crate::facts::{stable_key, FactWriter, SideTables};
-use crate::finding::{hex, metric_rule, Finding, Subject, IMPORT_CYCLE};
+use crate::coverage;
+use crate::finding::{hex, metric_rule, needs_coverage, Finding, Subject, IMPORT_CYCLE};
 use crate::driver;
 use crate::lang::Degraded;
 use crate::policy::{self, Effective};
@@ -20,8 +21,11 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
 
-pub const USAGE: &str = "usage: pulsar delta <base> <head> [--repo dir] [--json]
+pub const USAGE: &str = "usage: pulsar delta <base> <head> [--repo dir] [--json] [--coverage file|dir]
   exit 0 = no finding added, 1 = at least one added, 2 = error
+  --coverage reads a coverage report from the worktree and applies it to HEAD only (it describes the
+    checked-out tree, so use it when <head> is what you have checked out and tested). Findings that
+    need coverage (core.crap) are listed under `?` and never count toward exit 1.
   --json prints JSON lines (one per finding, then a summary line) instead of text";
 
 pub struct Args {
@@ -29,23 +33,26 @@ pub struct Args {
     head: String,
     repo: PathBuf,
     json: bool,
+    coverage: Option<PathBuf>,
 }
 
 pub fn parse(args: &[String]) -> Result<Args, String> {
     let mut pos = Vec::new();
     let mut repo = PathBuf::from(".");
     let mut json = false;
+    let mut coverage = None;
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--json" => json = true,
+            "--coverage" => coverage = Some(PathBuf::from(it.next().ok_or("--coverage needs a value")?)),
             "--repo" => repo = PathBuf::from(it.next().ok_or("--repo needs a value")?),
             f if f.starts_with('-') => return Err(format!("unknown flag {f}\n{USAGE}")),
             _ => pos.push(a.clone()),
         }
     }
     let [base, head] = <[String; 2]>::try_from(pos).map_err(|_| USAGE.to_string())?;
-    Ok(Args { base, head, repo, json })
+    Ok(Args { base, head, repo, json, coverage })
 }
 
 fn git(repo: &Path, args: &[&str], envs: &[(&str, &Path)]) -> Result<Vec<u8>, String> {
@@ -95,7 +102,7 @@ struct Timing {
 
 /// All findings of one commit, keyed by finding key. A key collision between two distinct
 /// findings is an error: delta must never merge them silently.
-fn evaluate(repo: &Path, sha: &str, tag: &str) -> Result<(BTreeMap<u64, Finding>, Timing, Effective, Vec<Degraded>), String> {
+fn evaluate(repo: &Path, sha: &str, tag: &str, coverage: Option<&Path>) -> Result<(BTreeMap<u64, Finding>, Timing, Effective, Vec<Degraded>), String> {
     let mut t = Timing::default();
     let scratch = Scratch::new(tag)?;
     let tree = scratch.0.join("tree");
@@ -127,6 +134,10 @@ fn evaluate(repo: &Path, sha: &str, tag: &str) -> Result<(BTreeMap<u64, Finding>
     let mut w = FactWriter::new();
     let mut tables = SideTables::default();
     let (set, dstats) = driver::build(&tree, tracked, &eff.policy.lanes, &mut w, &mut tables)?;
+    if let Some(c) = coverage {
+        // The report is read from the worktree at `repo`, never from the scratch checkout.
+        coverage::emit(repo, Some(c), &tables, &mut w)?;
+    }
     let facts_path = scratch.0.join("facts.txt");
     let mut f = std::fs::File::create(&facts_path).map_err(|e| format!("{}: {e}", facts_path.display()))?;
     w.write_to(&mut f)?;
@@ -197,8 +208,8 @@ fn evaluate(repo: &Path, sha: &str, tag: &str) -> Result<(BTreeMap<u64, Finding>
 pub fn run(a: &Args) -> Result<u8, String> {
     let base = resolve(&a.repo, &a.base)?;
     let head = resolve(&a.repo, &a.head)?;
-    let (before, tb, _, deg_base) = evaluate(&a.repo, &base, "base")?;
-    let (after, th, eff, deg_head) = evaluate(&a.repo, &head, "head")?;
+    let (before, tb, _, deg_base) = evaluate(&a.repo, &base, "base", None)?;
+    let (after, th, eff, deg_head) = evaluate(&a.repo, &head, "head", a.coverage.as_deref())?;
     eprintln!("pulsar: {}", eff.summary());
     for (name, sha, t) in [("base", &base, &tb), ("head", &head, &th)] {
         eprintln!(
@@ -209,12 +220,17 @@ pub fn run(a: &Args) -> Result<u8, String> {
             t.engine_ms
         );
     }
-    let new: Vec<&Finding> = after.iter().filter(|(k, _)| !before.contains_key(k)).map(|(_, f)| f).collect();
+    // Coverage-dependent findings (head only) are listed apart: base has no coverage to compare.
+    let (cov_found, after_plain): (Vec<&Finding>, Vec<(&u64, &Finding)>) = {
+        let (c, p): (Vec<_>, Vec<_>) = after.iter().partition(|(_, f)| needs_coverage(&f.rule));
+        (c.into_iter().map(|(_, f)| f).collect(), p)
+    };
+    let new: Vec<&Finding> = after_plain.iter().filter(|(k, _)| !before.contains_key(*k)).map(|(_, f)| *f).collect();
     // A decision committed in head allows a new finding with a reason; it does not count as added.
     let (allowed, added): (Vec<&Finding>, Vec<&Finding>) =
         new.into_iter().partition(|f| eff.allowed(&hex(f.key())).is_some());
     let removed: Vec<&Finding> = before.iter().filter(|(k, _)| !after.contains_key(k)).map(|(_, f)| f).collect();
-    let unchanged = after.len() - added.len() - allowed.len();
+    let unchanged = after_plain.len() - added.len() - allowed.len();
     let reason = |f: &Finding| eff.allowed(&hex(f.key())).map(|d| d.reason.clone()).unwrap_or_default();
 
     let degraded: Vec<(&str, &Degraded)> = deg_base
@@ -242,8 +258,12 @@ pub fn run(a: &Args) -> Result<u8, String> {
             out.push_str(&f.json("removed").to_string());
             out.push('\n');
         }
+        for f in &cov_found {
+            out.push_str(&f.json("coverage").to_string());
+            out.push('\n');
+        }
         out.push_str(
-            &json!({"type":"summary","base":base,"head":head,"added":added.len(),"allowed":allowed.len(),"removed":removed.len(),"unchanged":unchanged,"degraded":degraded.len(),"policy":eff.fingerprint})
+            &json!({"type":"summary","base":base,"head":head,"added":added.len(),"allowed":allowed.len(),"removed":removed.len(),"unchanged":unchanged,"degraded":degraded.len(),"coverage":cov_found.len(),"policy":eff.fingerprint})
                 .to_string(),
         );
         out.push('\n');
@@ -260,15 +280,19 @@ pub fn run(a: &Args) -> Result<u8, String> {
         for f in &removed {
             out.push_str(&format!("- {}\n", f.text()));
         }
+        for f in &cov_found {
+            out.push_str(&format!("? {}  [head only, needs coverage]\n", f.text()));
+        }
         out.push_str(&format!(
-            "# base={} head={} added={} allowed={} removed={} unchanged={} degraded={}\n",
+            "# base={} head={} added={} allowed={} removed={} unchanged={} degraded={} coverage={}\n",
             &base[..12],
             &head[..12],
             added.len(),
             allowed.len(),
             removed.len(),
             unchanged,
-            degraded.len()
+            degraded.len(),
+            cov_found.len()
         ));
     }
     print!("{out}");
