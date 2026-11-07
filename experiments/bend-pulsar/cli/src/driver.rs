@@ -34,6 +34,7 @@ pub struct Stats {
     pub ct: usize,
     pub ts_files: usize,
     pub rust_files: usize,
+    pub sites: usize,
 }
 
 /// Run the lanes on the git checkout at `repo`.
@@ -82,11 +83,13 @@ pub fn build(
     // Lanes run one after another: each already uses every core, and one lane's ASTs are gone
     // before the next lane parses.
     let mut per: Vec<Option<FileOut>> = (0..files.len()).map(|_| None).collect();
+    let mut sym_classes = std::collections::BTreeMap::new();
     if !ts_files.is_empty() {
         let a = lang::ts::analyze(root, &ts_files, &tracked)?;
         st.fatal += a.stats.fatal;
         st.unreadable += a.stats.unreadable;
         push_edges(w, &a.i, &a.u, &mut st);
+        sym_classes = a.sym_classes;
         for ((id, _), f) in ts_files.iter().zip(a.per_file) {
             per[*id as usize] = Some(f);
         }
@@ -110,6 +113,32 @@ pub fn build(
     w.push(Rel::M, &[total_fns as u32]);
     tables.fns.reserve(total_fns);
     let mut fn_keys = Vec::with_capacity(total_fns);
+    // Call sites and handlers: symbol ids are global and sorted by name, site ids run in
+    // (file, source) order, so they need every file's rows before any is consumed.
+    {
+        let mut bases = Vec::new();
+        let mut next = 0u32;
+        for f in per.iter().flatten() {
+            bases.push((next, &f.fns));
+            next += f.fns.fns.len() as u32;
+        }
+        let rows = crate::lang::functions::number_sites(&bases, &|s| sym_classes.get(s).cloned().unwrap_or_default());
+        drop(bases);
+        for id in 0..rows.syms.len() {
+            w.push(Rel::Sy, &[id as u32]);
+        }
+        for r in &rows.cl {
+            w.push(Rel::Cl, r);
+        }
+        for r in &rows.cs {
+            w.push(Rel::Cs, r);
+        }
+        for r in &rows.hd {
+            w.push(Rel::Hd, r);
+        }
+        st.sites = rows.cs.len() + rows.hd.len();
+        tables.syms = rows.syms;
+    }
     let mut base = 0u32;
     for (file, slot) in per.iter_mut().enumerate() {
         let Some(FileOut { fns: FileFns { fns, mut ct, .. }, tests }) = slot.take() else { continue };
