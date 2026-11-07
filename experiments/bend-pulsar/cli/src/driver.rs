@@ -77,7 +77,7 @@ pub fn build(
     // Lanes run one after another: each already uses every core, and one lane's ASTs are gone
     // before the next lane parses.
     let mut per: Vec<Option<FileOut>> = (0..files.len()).map(|_| None).collect();
-    let (sym_classes, effect, sql_texts) = analyze_ts(root, &tracked, &ts_files, &mut per, w, &mut st)?;
+    let (sym_classes, effect, sql_texts) = analyze_ts(root, lanes, &tracked, &ts_files, &mut per, w, &mut st)?;
     // What a lane's analysis decided about production code, per file id: None keeps the path rule.
     let mut lane_prod: Vec<Option<bool>> = vec![None; files.len()];
     analyze_rust(root, &tracked, &rust_files, &mut per, &mut lane_prod, w, &mut st)?;
@@ -227,6 +227,7 @@ fn push_files(w: &mut FactWriter, files: &[String], lanes: &Lanes, lane_prod: &[
 /// Run the TypeScript lane; returns the catalog classes of each symbol it saw.
 fn analyze_ts(
     root: &Path,
+    lanes: &Lanes,
     tracked: &[String],
     files: &[(u32, String)],
     per: &mut [Option<FileOut>],
@@ -236,7 +237,9 @@ fn analyze_ts(
     if files.is_empty() {
         return Ok(Default::default());
     }
-    let a = lang::ts::analyze(root, files, tracked, &|_| 0)?;
+    // The per-file ctx bits from policy `[packs.effect]`: 8 effect-only, 16 boundary.
+    let file_ctx = |rel: &str| lanes.effect.file_ctx(rel);
+    let a = lang::ts::analyze(root, files, tracked, &file_ctx)?;
     st.fatal += a.stats.fatal;
     st.unreadable += a.stats.unreadable;
     push_edges(w, &a.i, &a.u, st);
