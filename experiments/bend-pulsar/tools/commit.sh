@@ -100,6 +100,25 @@ for try in 1 2 3 4 5 6 7 8; do
   fi
   new=$(printf '%s\n' "$msg" | git commit-tree "$tree" -p "$old" -F -)
   if git update-ref -m "commit.sh ($seat)" refs/heads/main "$new" "$old" 2>/dev/null; then
+    # Bring the shared working-tree copy of each --blob path up to the new
+    # commit, keeping other seats' uncommitted hunks (three-way merge with the
+    # pre-commit HEAD as base). Without this the working tree drifts behind
+    # main and the next plain-path commit of that file reverts work.
+    for b in ${blobs[@]+"${blobs[@]}"}; do
+      rp=${b%%=*}
+      git show "$old:$rp" > "$tmp/pre" 2>/dev/null || : > "$tmp/pre"
+      git show "$new:$rp" > "$tmp/post"
+      if [ ! -e "$rp" ] || cmp -s "$rp" "$tmp/pre"; then
+        cp "$tmp/post" "$rp"
+      else
+        cp "$rp" "$tmp/wt"
+        if git merge-file -q "$tmp/wt" "$tmp/pre" "$tmp/post"; then
+          cp "$tmp/wt" "$rp"
+        else
+          echo "commit.sh: committed, but could not merge the commit into the working-tree $rp (other hunks conflict); left it as it was, tell its other editors" >&2
+        fi
+      fi
+    done
     synced=("${paths[@]+"${paths[@]}"}")
     for b in ${blobs[@]+"${blobs[@]}"}; do synced+=("${b%%=*}"); done
     git reset -q -- "${synced[@]}"
