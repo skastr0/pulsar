@@ -1,0 +1,6 @@
+# An HR row without an H header is refused.
+pulsar-facts 0
+N 2
+F 0 1
+F 1 1
+HR 2 50 3 20 30

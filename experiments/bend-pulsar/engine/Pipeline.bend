@@ -16,6 +16,7 @@ import ./Scope.bend as S
 import ./Rows.bend as W
 import ./Layers.bend as Y
 import ./ClassCtx.bend as X
+import ./History.bend as Hs
 
 type Out is Data:
   Out{files: U32, edges: U32, res: G.Res}
@@ -173,11 +174,42 @@ def Engine.classctx(+rows: List<&2, W.Row>) -> Maybe<List<&2, String>>:
 
 # What pulsar-engine prints: the import graph and Metrics (P5-P6), then the
 # Effect layer lines, then the class-in-context lines. LAWS.bend P14.
-def Engine.all(o: Maybe<Out>, m: Maybe<&2, List<&2, String>>, +rows: List<&2, W.Row>) -> Maybe<List<&2, String>>:
-  Engine.more(Engine.more(Engine.lines(o, m), Engine.layers(rows)), Engine.classctx(rows))
+# History rules (History.bend) run when there is an `HR` row: the CLI writes it,
+# with the rule numbers from policy, only when a history rule is on.
+def Engine.tag_hr() -> U32:
+  18514
+
+def Engine.hs3(+r: Hs.Rules, m: Maybe<Hs.COut>) -> Maybe<List<&2, String>>:
+  match m:
+    case None{}:
+      None{}
+    case Some{o}:
+      Some{Hs.Hist.lines(r, o)}
+
+def Engine.hs2(m: Maybe<Hs.HIn>, +n: U32, +pt: G.Tr, +adj: List<&2, List<&2, U32>>) -> Maybe<List<&2, String>>:
+  match m:
+    case None{}:
+      None{}
+    case Some{Hs.HIn{+ch, +r}}:
+      Engine.hs3(r, Hs.Hist.run(ch, r, n, pt, adj))
+
+def Engine.hs1(on: Bool, +n: U32, +pt: G.Tr, fs: List<&2, F.Fact>, rows: List<&2, W.Row>) -> Maybe<List<&2, String>>:
+  match on:
+    case True{}:
+      Engine.hs2(Hs.Hist.decode(rows), n, pt, S.Scope.graph(pt, n, fs))
+    case False{}:
+      Some{Nil{}}
+
+# n, prods and fs as Pipeline.run takes them; the import graph is the one the
+# proven production-scope rule builds.
+def Engine.history(+n: U32, prods: List<&2, U32>, fs: List<&2, F.Fact>, +rows: List<&2, W.Row>) -> Maybe<List<&2, String>>:
+  Engine.hs1(Engine.has_tag(rows, Engine.tag_hr()), n, S.Scope.set(prods), fs, rows)
+
+def Engine.all(o: Maybe<Out>, m: Maybe<&2, List<&2, String>>, h: Maybe<List<&2, String>>, +rows: List<&2, W.Row>) -> Maybe<List<&2, String>>:
+  Engine.more(Engine.more(Engine.more(Engine.lines(o, m), Engine.layers(rows)), Engine.classctx(rows)), h)
 
 # The row tags the detectors read from Rows.bend: FN, CT, TF (MetricsIn.bend); E, SV,
 # LY, LQ, LP, LR, LC, LO, US (Layers.bend); CS, CL, RL (ClassCtx.bend); CV (Crap.bend);
-# A, C, CFN (Churn.bend); CO (Cognitive, via MetricsIn).
+# A, C, CFN (Churn.bend); CO (Cognitive, via MetricsIn); H, CF, HR (History.bend).
 def Engine.row_tags() -> List<&2, U32>:
-  [17998, 17236, 21574, 69, 21334, 19545, 19537, 19536, 19538, 19523, 19535, 21843, 17235, 17228, 21068, 17238, 65, 67, 4408910, 17231]
+  [17998, 17236, 21574, 69, 21334, 19545, 19537, 19536, 19538, 19523, 19535, 21843, 17235, 17228, 21068, 17238, 65, 67, 4408910, 17231, 72, 17222, 18514]

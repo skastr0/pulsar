@@ -33,6 +33,7 @@ import ./Rows.bend as W
 import ./Layers.bend as Y
 import ./ClassCtx.bend as X
 import ./Metrics.bend as M
+import ./History.bend as Hs
 
 # ---- K. the fact-to-edge rule -----------------------------------------------------------------
 # `Facts.kind` asks the proven rule (Extract.value_kind) what a fact is. These
@@ -341,19 +342,22 @@ law engine_classctx_off:
   {L.Engine.classctx(rows) == Some{Nil{}} : Maybe<List<&2, String>>}
 
 # P14. what main.bend prints is the import graph and Metrics, then the layer
-# lines, then the class-in-context lines.
+# lines, then the class-in-context lines, then the history lines h (main.bend
+# passes Engine.history, P17-P18).
 law engine_all:
   for o: Maybe<L.Out>
   for m: Maybe<&2, List<&2, String>>
+  for h: Maybe<List<&2, String>>
   for +rows: List<&2, W.Row>
-  {L.Engine.all(o, m, rows) == L.Engine.more(L.Engine.more(L.Engine.lines(o, m), L.Engine.layers(rows)), L.Engine.classctx(rows)) : Maybe<List<&2, String>>}
+  {L.Engine.all(o, m, h, rows) == L.Engine.more(L.Engine.more(L.Engine.more(L.Engine.lines(o, m), L.Engine.layers(rows)), L.Engine.classctx(rows)), h) : Maybe<List<&2, String>>}
 
 # P15. the rows the engine keeps (Rows.start_keep) are exactly the tags FACTS.md
 # lists under "Rows the engine reads", each packed as Rows.bend packs it (the
 # ASCII letters, big-endian): FN CT TF (MetricsIn); E SV LY LQ LP LR LC LO US
-# (Layers); CS CL RL (ClassCtx); CV (Crap); A C CFN (Churn); CO (Cognitive).
+# (Layers); CS CL RL (ClassCtx); CV (Crap); A C CFN (Churn); CO (Cognitive);
+# H CF HR (History).
 law engine_row_tags:
-  {L.Engine.row_tags() == [17998, 17236, 21574, 69, 21334, 19545, 19537, 19536, 19538, 19523, 19535, 21843, 17235, 17228, 21068, 17238, 65, 67, 4408910, 17231] : List<&2, U32>}
+  {L.Engine.row_tags() == [17998, 17236, 21574, 69, 21334, 19545, 19537, 19536, 19538, 19523, 19535, 21843, 17235, 17228, 21068, 17238, 65, 67, 4408910, 17231, 72, 17222, 18514] : List<&2, U32>}
 
 # P16. the shipped Metrics thresholds are FACTS.md's: core.cyclomatic 10,
 # core.nesting 3, core.npath 200, core.length 60. (The fifth field, the cap
@@ -366,3 +370,37 @@ def Thr(r: M.Rules) -> Nat & Nat & Nat & Nat:
 
 law metrics_defaults:
   {Thr(M.Metrics.defaults()) == (10n, 3n, 200n, 60n) : Nat & Nat & Nat & Nat}
+
+# P17. with an `HR` row the history rules are on: the history lines are
+# History.lines of History.run (History-LAWS E1-E3) on the decoded facts, the
+# production set of the `F` facts, and the import graph the proven scope rule
+# builds (K and SC laws), so "explained by an import" is that graph's edge.
+law engine_history_on:
+  for +n: U32
+  for +prods: List<&2, U32>
+  for +fs: List<&2, F.Fact>
+  for +rows: List<&2, W.Row>
+  for on: {L.Engine.has_tag(rows, L.Engine.tag_hr()) == True{} : Bool}
+  {L.Engine.history(n, prods, fs, rows) == L.Engine.hs2(Hs.Hist.decode(rows), n, S.Scope.set(prods), S.Scope.graph(S.Scope.set(prods), n, fs)) : Maybe<List<&2, String>>}
+
+law engine_history_run:
+  for +ch: Hs.CH
+  for +r: Hs.Rules
+  for +n: U32
+  for +pt: G.Tr
+  for +adj: List<&2, List<&2, U32>>
+  {L.Engine.hs2(Some{Hs.HIn{ch, r}}, n, pt, adj) == L.Engine.hs3(r, Hs.Hist.run(ch, r, n, pt, adj)) : Maybe<List<&2, String>>}
+
+law engine_history_lines:
+  for +r: Hs.Rules
+  for o: Hs.COut
+  {L.Engine.hs3(r, Some{o}) == Some{Hs.Hist.lines(r, o)} : Maybe<List<&2, String>>}
+
+# P18. with no `HR` row the history rules are off: no history lines.
+law engine_history_off:
+  for +n: U32
+  for +prods: List<&2, U32>
+  for +fs: List<&2, F.Fact>
+  for +rows: List<&2, W.Row>
+  for off: {L.Engine.has_tag(rows, L.Engine.tag_hr()) == False{} : Bool}
+  {L.Engine.history(n, prods, fs, rows) == Some{Nil{}} : Maybe<List<&2, String>>}

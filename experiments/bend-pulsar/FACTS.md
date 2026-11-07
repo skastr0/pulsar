@@ -129,6 +129,13 @@ the number of counted `CFN` rows, and every counted function is reported.
 **Pack sections.** After the Metrics lines, `pulsar-engine` prints one section per active pack, in this order. A pack is active when its facts are present, and the CLI writes them only for packs that are on.
 - **Effect layer graph** (an `E` row is present): `pulsar-layers 0`, then the `LCYC` … `LS` lines of "Effect pack" below.
 - **Class-in-context** (an `RL` row is present): `pulsar-classctx 0`, then `RCX rule site fn callee`, one per (rule, site), sorted, then `RCXS n`.
+- **History** (an `HR` row is present): `pulsar-history 0`, then:
+  - `CHF file k`, one per production file with churn: k counted `CF` rows (human commit, production file);
+  - `CHX k nf top total ws...` (history.churn-concentration): the k files ws, at most `top`% of the nf churned files, hold `top` of the `total` counted rows, and that is at least `share`%;
+  - `CHP a b sup na nb ws...` (history.co-change), with a < b: files a and b changed together in the sup human, non-bulk commits ws, where sup >= `sup` and 100·sup >= `conf`·min(na, nb), na and nb being each file's mined rows; no import edge joins them in either direction;
+  - then `CHS nfiles ncx ncp sup conf bulk top share`.
+
+  The searches are untrusted, and each finding is kept only when a checker accepts it. History-LAWS.bend F1, X1 and C1-C4 state what a kept finding means, and E1-E3 cover the entry point and the lines. LAWS.bend P17-P18 state the switch.
 
 If any detector refuses its facts (the graph, Metrics, or an active pack), the engine exits 2 with nothing on stdout. engine/LAWS.bend P5-P14 state the order and the switches; `engine/fixtures/packs.expected` shows all four sections.
 
@@ -142,6 +149,7 @@ If any detector refuses its facts (the graph, Metrics, or an active pack), the e
 | `CV` 17238 | Crap |
 | `A` 65, `C` 67, `CFN` 4408910 | Churn |
 | `CO` 17231 | Cognitive |
+| `H` 72, `C` 67, `A` 65, `CF` 17222, `HR` 18514 | History |
 
 A new relation reaches a detector only once its tag is added here and to `Engine.row_tags`, in the same commit.
 
@@ -235,6 +243,7 @@ One module tree per cargo target (from `cargo metadata --no-deps --offline`, one
 | `A` | `author bot` | `bot` = 1 when the author matches the bot patterns in the catalog. The CLI matches strings and the rule id is reported with the finding. |
 | `CF` | `commit file added deleted` | Line counts for a file that still exists at head. Renames are followed. |
 | `CFN` | `commit fn touched` | Lines that the commit touched inside head function `fn`. It's matched through `FK` on the commit's version of the file. Functions whose key changed count from the commit that introduced the current key. |
+| `HR` | `sup conf bulk top share` | The history rules are on, with these numbers. The CLI writes it, from `.pulsar/policy.toml`, only when a history rule is on. It's one row, and conf, top and share are percentages of at most 100. A commit with more than `bulk` `CF` rows is bulk and not mined for co-change. The defaults (research/thresholds.md) are `3 50 100 20 80`. |
 
 **Window.** The date range is anchored to the head commit's committer time, not wall clock, so a sha always yields the same facts. Merges are excluded (`--no-merges`): each commit is one diff. The newest `commit_count` commits inside the range are kept, then emitted oldest first.
 
