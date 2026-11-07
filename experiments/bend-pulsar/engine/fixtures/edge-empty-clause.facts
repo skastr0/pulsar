@@ -1,0 +1,7 @@
+# `import {} from "./b"` and `export {} from "./a"` have hv 0 ht 0: they stay edges (law C), here closing a cycle.
+pulsar-facts 0
+N 2
+F 0 1
+F 1 1
+I 0 1 0 0 0
+I 1 0 2 0 0

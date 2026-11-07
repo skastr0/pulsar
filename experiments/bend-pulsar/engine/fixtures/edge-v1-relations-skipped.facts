@@ -1,0 +1,25 @@
+# FACTS v1 relations mixed in: every tag the engine does not consume is skipped,
+# whatever the line holds (more fields, hex-looking text, a number over 2^32-1).
+pulsar-facts 0
+N 3
+F 0 1
+F 1 1
+F 2 1
+K 0 1 2
+M 4
+FN 0 0 4294967295 12
+FK 0 11 22
+CT 0 1 0 1
+CT 0 2 1 2
+H 2 1
+C 0 0 20000
+A 0 1
+CF 0 0 3 4
+CFN 0 0 2
+CV 0 3 4
+SV 1 2 3
+LY 0 1 abc
+XX 99999999999 !!! ?
+I 0 1 0 1 0
+I 1 2 0 1 0
+I 2 0 0 1 0

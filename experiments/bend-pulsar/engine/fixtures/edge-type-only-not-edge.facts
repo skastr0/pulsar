@@ -1,0 +1,12 @@
+# 0 -> 1 only as `import type`, 1 -> 0 is a value import: no cycle. 0 -> 2 is both a type-only and a value import: one edge. 2 -> 0 closes 0-2.
+pulsar-facts 0
+N 3
+F 0 1
+F 1 1
+F 2 1
+I 0 1 0 0 1
+I 0 2 0 0 1
+I 0 2 0 1 0
+I 0 2 2 0 1
+I 1 0 0 1 0
+I 2 0 0 1 0

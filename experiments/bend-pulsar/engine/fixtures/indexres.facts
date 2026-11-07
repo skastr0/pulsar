@@ -1,0 +1,9 @@
+# fixtures/indexres: a.ts=0 lib/index.ts=1; "zod" bare (U 0), "./missing" no target (U 1)
+pulsar-facts 0
+N 2
+F 0 1
+F 1 1
+I 0 1 0 1 0
+I 1 0 0 1 0
+U 0 0
+U 0 1

@@ -1,0 +1,6 @@
+# A file with no F fact is not production: only file 0 has one, so 0 <-> 1 is not a cycle.
+pulsar-facts 0
+N 2
+F 0 1
+I 0 1 0 1 0
+I 1 0 0 1 0

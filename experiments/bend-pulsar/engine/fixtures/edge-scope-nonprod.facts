@@ -1,0 +1,19 @@
+# Production scope. Files 0..5; 2 and 5 are not production (F file 0).
+# 0 -> 1 -> 0 is a production cycle. 0 -> 2 -> 0 and 3 -> 4 -> 5 -> 3 pass through a
+# non-production file, so they are no cycle. A non-production self import (2) is no edge.
+pulsar-facts 0
+N 6
+F 0 1
+F 1 1
+F 2 0
+F 3 1
+F 4 1
+F 5 0
+I 0 1 0 1 0
+I 0 2 0 1 0
+I 1 0 0 1 0
+I 2 0 0 1 0
+I 2 2 0 1 0
+I 3 4 0 1 0
+I 4 5 0 1 0
+I 5 3 0 1 0

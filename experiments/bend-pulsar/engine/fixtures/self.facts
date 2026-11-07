@@ -1,0 +1,6 @@
+# fixtures/self: x.ts=0 y.ts=1; x imports itself
+pulsar-facts 0
+N 2
+F 0 1
+F 1 1
+I 0 0 0 1 0

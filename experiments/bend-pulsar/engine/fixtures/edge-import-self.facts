@@ -1,0 +1,9 @@
+# import and side-effect import naming the file itself: kept, a 1-cycle (law E). The type-only self import is not an edge.
+pulsar-facts 0
+N 3
+F 0 1
+F 1 1
+F 2 1
+I 0 0 0 1 0
+I 1 1 1 1 0
+I 2 2 0 0 1

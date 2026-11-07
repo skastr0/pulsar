@@ -1,0 +1,12 @@
+# fixtures/typeonly: a.ts=0 b.ts=1 c.ts=2
+# a: import type { B } from ./b (hv 0 ht 1)   import { type C } from ./c (hv 0 ht 1)
+# b: import { x } from ./a   c: import { y } from ./a
+pulsar-facts 0
+N 3
+F 0 1
+F 1 1
+F 2 1
+I 0 1 0 0 1
+I 0 2 0 0 1
+I 1 0 0 1 0
+I 2 0 0 1 0

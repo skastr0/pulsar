@@ -1,0 +1,7 @@
+# No production file: nothing is analysed, files = 0, even though the graph has a cycle.
+pulsar-facts 0
+N 2
+F 0 0
+F 1 0
+I 0 1 0 1 0
+I 1 0 0 1 0

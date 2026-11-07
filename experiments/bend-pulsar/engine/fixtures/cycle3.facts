@@ -1,0 +1,14 @@
+# fixtures/cycle3: src/a.ts=0 src/b.ts=1 src/c.ts=2 src/d.ts=3
+pulsar-facts 0
+N 4
+F 0 1
+F 1 1
+F 2 1
+F 3 1
+K 0 11 12
+K 1 21 22
+K 2 31 32
+K 3 41 42
+I 0 1 0 1 0
+I 1 2 0 1 0
+I 2 0 0 1 0

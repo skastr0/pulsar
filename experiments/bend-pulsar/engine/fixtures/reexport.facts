@@ -1,0 +1,13 @@
+# fixtures/reexport: a.ts=0 b.ts=1 d.ts=2 e.ts=3
+# a: export * from ./b   b: export { a } from ./a   d: dynamic import / require (not I facts)   e: import { d } from ./d
+pulsar-facts 0
+N 4
+F 0 1
+F 1 1
+F 2 1
+F 3 1
+I 0 1 2 1 0
+I 1 0 2 1 0
+I 3 2 0 1 0
+U 2 3
+U 2 3
