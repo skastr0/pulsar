@@ -2,6 +2,20 @@
 
 Heavy work runs on Boat VMs, not on the Mac: builds, tests, `--verdict`, corpus runs, coverage and benchmarks (charter, Compute section). Every seat starts its VMs from the shared snapshot **`pulsar-base`**.
 
+## Snapshot layers
+
+Each layer starts from the one above it. `boat new --from <name>` starts a VM from any of them.
+
+| Layer | Name | Contents | Owner | Size | VM ready in |
+|---|---|---|---|---|---|
+| 1 | `pulsar-base` | the toolchains (below) | pulsar-bend | 6.0 GB | 4 s |
+| 2 | `pulsar-corpora` | pulsar-base, plus the 18 validation repos at their recorded shas, with full history for junto, effect and one Rust repo | pulsar-fidelity, once the #668 corpora are in place | not built yet | not built yet |
+| 3 | `pulsar-<short-sha>` | pulsar-corpora, plus the repo at that commit, with `cli/` built in release, the engine built and cargo deps warm | cut at milestones (the first dogfood run, then after big build changes), not on every commit | not built yet | not built yet |
+
+- **Retention:** keep the newest 2 of each layer and delete older ones with `boat snapshot rm <name>`. A saved snapshot costs about $0.06 a day.
+- **Names:** `pulsar-base` is a single name that each rebuild replaces. Keep the previous base as `pulsar-base-prev` while the new one is checked.
+- **When a layer is built:** add its row here, then mail every seat the `boat new --from <name>` line.
+
 ## What pulsar-base holds
 
 `default` type: 4 vCPU, 8 GB, Ubuntu 24.04, x86-64. It was built by `bench/boat-setup.sh`, and every tool is on PATH for a non-interactive `boat ssh`.
