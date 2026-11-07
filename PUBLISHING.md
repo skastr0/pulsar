@@ -24,7 +24,7 @@ From `experiments/bend-pulsar/` (details in `packaging/README.md`):
 
 1. The release gate passes at the release sha on a VM: `cargo test`, the engine fixtures, `bend engine/PROOF.bend --verdict`, the delta self-test and dogfood.
 2. `packaging/build-engine.sh --targets "darwin-arm64 linux-x64" --test` builds the engines and their `MANIFEST`.
-3. The CLI: `cargo build --release` on macOS arm64, and a static `x86_64-unknown-linux-musl` build in an Alpine Rust container.
+3. The CLI: `cargo build --release --locked` on macOS arm64, and `packaging/build-cli-linux.sh` on an x86-64 Linux host with docker (a static `x86_64-unknown-linux-musl` build). Both from a clean checkout of the release sha, so `pulsar version` names it.
 4. `python3 packaging/notices.py --target aarch64-apple-darwin --target x86_64-unknown-linux-musl --check THIRD_PARTY_NOTICES`.
 5. `bash packaging/stage-npm.sh --cli-darwin-arm64 <bin> --cli-linux-x64 <bin> --pack` lays out and packs `dist/npm/`. It publishes nothing.
 
