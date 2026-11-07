@@ -2,7 +2,7 @@
 
 Design note for #697 (PLAN.md group J), for review by pulsar-research and pulsar-cli before any code. Owner: pulsar-bend.
 
-**The proposal.** A repo writes rules in Datalog with stratified negation, a `count` aggregate, and comparisons of a measured value against a literal. The CLI type-checks the rules, compiles names and globs to numbers, stratifies them, and lowers them to numeric IR rows in the facts file. The engine runs one evaluator for every rule, refuses IR that is not stratified or not range-restricted, and prints the findings with a completeness certificate. The laws are about that one evaluator: every printed tuple is derivable, and when the certificate passes the output is the least fixed point, stratum by stratum. No rule can compute a score, because the IR has no arithmetic.
+**The proposal.** A repo writes rules in Datalog with stratified negation, a `count` aggregate, and comparisons of a measured value against a literal. The CLI type-checks the rules, compiles names and globs to numbers, stratifies them, and lowers them to numeric `J*` IR rows in the facts file. The engine runs one evaluator for every rule, refuses IR that is not stratified or not range-restricted, and prints the findings with a completeness certificate. The laws are about that one evaluator: every printed tuple is derivable, and when the certificate passes the output is the least fixed point, stratum by stratum. No rule can compute a score, because the IR has no arithmetic.
 
 Sources: the semantics are textbook Datalog. Stratified negation and its perfect model are from Apt, Blair and Walker (1988). Least fixed points, range restriction and semi-naive evaluation are from Abiteboul, Hull and Vianu, *Foundations of Databases* (1995), and Ullman, *Principles of Database and Knowledge-Base Systems* (1988). Aggregates stratified like negation are from Mumick, Pirahesh and Ramakrishnan (VLDB 1990). These come from background reading; no link was fetched for this note, and no Datalog engine's source was read (clean room).
 
@@ -85,27 +85,27 @@ For example, `score(F, C + N)` fails to parse, `FX(rule: core.crap, fn: F, value
 
 ## 5. The IR the CLI lowers to
 
-Numeric rows, appended to the facts file. All tags start with `Q`, and none collides with FACTS.md today. Strings go to a `.rules` side table.
+Numeric rows, appended to the facts file. All tags start with `J`, for group J. No FACTS tag or engine output tag starts with `J`; `Q` is taken by the SQL lane (`QS`, `QT`, `QU`, `QD`). Strings go to a `.rules` side table.
 
 | Tag | Fields | Meaning |
 |---|---|---|
-| `QD` | `rel arity stratum src` | A relation. `src` 0 = derived. Otherwise `src` is the FACTS tag code of an input relation (as in `Engine.row_tags`), 1 = `in` sets, and 2 = a core-findings relation. |
-| `QS` | `set value` | One member of a compiled set. |
-| `QR` | `clause head_rel stratum kind` | One clause. `kind` 0 = Horn, 1 = count. |
-| `QH` | `clause pos kind term` | Head term `pos`: `kind` 0 = variable `term`, 1 = constant `term`. For a count clause, the last head position is the count. |
-| `QB` | `clause atom rel neg` | Body atom. `neg` 1 = negated. |
-| `QT` | `clause atom col kind term` | Field `col` of body atom `atom` is a variable or a constant. Fields not listed are wildcards. |
-| `QC` | `clause var op const` | Comparison. `op`: 0 `=`, 1 `!=`, 2 `<`, 3 `<=`, 4 `>`, 5 `>=`, 6 `bits`, 7 `nobits`. |
-| `QE` | `clause v1 v2` | `v1 != v2` between two id variables, if section 8 allows it. |
-| `QF` | `finding rel` | Derived relation `rel` is reported as finding `finding`, an index into `.rules` (id, version, file, line, subject domains). |
+| `JD` | `rel arity stratum src` | A relation. `src` 0 = derived. Otherwise `src` is the FACTS tag code of an input relation (as in `Engine.row_tags`), 1 = `in` sets, and 2 = a core-findings relation. |
+| `JS` | `set value` | One member of a compiled set. |
+| `JR` | `clause head_rel stratum kind` | One clause. `kind` 0 = Horn, 1 = count. |
+| `JH` | `clause pos kind term` | Head term `pos`: `kind` 0 = variable `term`, 1 = constant `term`. For a count clause, the last head position is the count. |
+| `JB` | `clause atom rel neg` | Body atom. `neg` 1 = negated. |
+| `JT` | `clause atom col kind term` | Field `col` of body atom `atom` is a variable or a constant. Fields not listed are wildcards. |
+| `JC` | `clause var op const` | Comparison. `op`: 0 `=`, 1 `!=`, 2 `<`, 3 `<=`, 4 `>`, 5 `>=`, 6 `bits`, 7 `nobits`. |
+| `JE` | `clause v1 v2` | `v1 != v2` between two id variables, if section 8 allows it. |
+| `JF` | `finding rel` | Derived relation `rel` is reported as finding `finding`, an index into `.rules` (id, version, file, line, subject domains). |
 
-**Engine output**, a section after the packs, switched on by the presence of `QR` rows, as packs are by their facts:
+**Engine output**, a section after the packs, switched on by the presence of `JR` rows, as packs are by their facts:
 
 ```
 pulsar-rules 0
-QX <finding> <v1> ... <vk>     one per tuple of a finding relation, sorted by (finding, tuple)
-QCERT <0|1>                    1 when every stratum reached a fixed point within its fuel
-QXS <n>
+JX <finding> <v1> ... <vk>     one per tuple of a finding relation, sorted by (finding, tuple)
+JCERT <0|1>                    1 when every stratum reached a fixed point within its fuel
+JXS <n>
 ```
 
 The CLI maps each `vi` through its domain (file id to path and `K`, fn id to `FK`) for rendering and for finding identity (#653). It labels the finding `origin: repo`, with its rule file and line.
@@ -121,7 +121,7 @@ The CLI maps each `vi` through its domain (file id to path and `K`, fn id to `FK
    - every `src` relation is present.
    Invalid IR is refused, and the engine exits 2, as every detector does.
 2. **Strata run in order.** Within a stratum, `Rules.step` is the immediate-consequence operator: the current relations, plus the head of every clause instance whose body holds. Lower strata are fixed. A count clause runs once, over its lower-stratum input.
-3. **Fuel.** Iteration stops when a step adds nothing, or when the fuel runs out. The fuel is `1 + Σ |D|^arity` over the stratum's derived relations, where D is the active domain (every value in the input and every constant), computed in `Nat`. Each step that does not stop adds at least one tuple, so a stratum always reaches its fixed point within that fuel. `QCERT` reports whether every stratum reached its fixed point, so a fuel bug cannot pass unnoticed.
+3. **Fuel.** Iteration stops when a step adds nothing, or when the fuel runs out. The fuel is `1 + Σ |D|^arity` over the stratum's derived relations, where D is the active domain (every value in the input and every constant), computed in `Nat`. Each step that does not stop adds at least one tuple, so a stratum always reaches its fixed point within that fuel. `JCERT` reports whether every stratum reached its fixed point, so a fuel bug cannot pass unnoticed.
 
 **Laws (`Rules-LAWS.bend`), all about the shipped functions:**
 
@@ -132,13 +132,13 @@ The CLI maps each `vi` through its domain (file id to path and `K`, fn id to `FK
   This is the core lemma, and every other law rests on it.
 - **R3 `step_is_tp`.** `Rules.step` equals I ∪ heads(join), the immediate-consequence operator T_P.
 - **R4 `run_sound`.** Every printed tuple is derivable: it is in T_P↑k of its stratum for some k. Proved by induction on the iterations. It needs no hypothesis.
-- **R5 `run_complete`.** When `QCERT` is 1, the output of each stratum is closed under T_P and contains its input, so it contains every derivable tuple (induction on derivations). With R4, the output is exactly the least fixed point.
+- **R5 `run_complete`.** When `JCERT` is 1, the output of each stratum is closed under T_P and contains its input, so it contains every derivable tuple (induction on derivations). With R4, the output is exactly the least fixed point.
 - **R6 `stratified_model`.** Stratum s is evaluated with the final relations of strata below s. Each negation and each count reads a finished relation, so the output is the perfect model of the program.
 - **R7 `count_is_distinct`.** A count equals the number of distinct bindings of its counted variables in its group.
 - **E1-E3.** `run` equals `Some(evaluate(ir, edb))` on valid IR, it refuses invalid IR, and `lines` has the shape above. The engine's `Engine.all` gains a `rules` section, with a P-law in `engine/LAWS.bend`, as for packs.
 
 **What stays unproven, stated as for the other detectors:**
-- the decoder from Q rows to the IR;
+- the decoder from J rows to the IR;
 - the decimal printing;
 - the CLI's compiler.
 The compiler is checked by `pulsar rules check` and by fixtures, and the engine re-checks validity, so a compiler bug can only cause a refusal, never a wrong finding.
@@ -182,7 +182,7 @@ Rejected:
 
 ## 8. Open questions for review
 
-1. **`!=` between two ids of one domain.** One use is "A imports B where A's package differs from B's". It brings no arithmetic and no ordering, so I recommend allowing it (IR row `QE`).
+1. **`!=` between two ids of one domain.** One use is "A imports B where A's package differs from B's". It brings no arithmetic and no ordering, so I recommend allowing it (IR row `JE`).
 2. **Which core findings rules may read in phase 2:** `FX` and `CYC` first. Are layer findings (`LM`, `LCYC`, ...) and `RCX` needed for the first real rules?
 3. **Where rules run.** The engine evaluates them after the core detectors, in the same binary and stream, so `FX` reaches them in memory. The alternative is a second engine pass that reads the first pass's output, which is simpler to wire but adds a round trip through text. I recommend the same binary.
 4. **The domain table:** generated from FACTS.md, or kept by hand in the CLI with a test that compares it to FACTS.md? (pulsar-cli)
@@ -196,9 +196,9 @@ Rejected:
   - the domain table and the type check;
   - set compilation;
   - strata;
-  - lowering to Q rows, the `.rules` side table and the fingerprint;
+  - lowering to J rows, the `.rules` side table and the fingerprint;
   - `pulsar rules check` (strata, relations read, and matches at HEAD from one engine run);
-  - rendering `QX`.
+  - rendering `JX`.
 - **pulsar-bend:**
   - `Rules.bend` with `Rules-LAWS.bend` / `Rules-PROOF.bend` (R1-R7, E1-E3) and a negative control for each law;
   - the engine wiring with its P-law;
