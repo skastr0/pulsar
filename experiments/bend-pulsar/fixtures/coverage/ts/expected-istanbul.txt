@@ -2,7 +2,7 @@ src/math.ts	add	1/1
 src/math.ts	classify	2/5
 src/math.ts	unreached	0/1
 src/nested.ts	outer	2/3
-src/nested.ts	outer>#1	2/2
+src/nested.ts	outer>twice	2/2
 src/widget.tsx	Widget	2/2
-src/widget.tsx	Widget>#1	0/1
+src/widget.tsx	Widget>#0	0/1
 src/widget.tsx	Empty	1/1
