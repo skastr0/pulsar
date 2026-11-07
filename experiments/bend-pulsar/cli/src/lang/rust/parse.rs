@@ -7,7 +7,7 @@
 //! anonymous and shown as `#<ordinal>`. Code inside macro invocations is a token stream and
 //! emits nothing.
 
-use super::blocks::{bindings, BlockRows, BlockState};
+use super::blocks::{bindings, BlockState};
 use crate::lang::functions::{ct, fk, fnv_parts, op, CoRec, CtRec, FileFns, FnRec};
 use proc_macro2::{Span, TokenStream, TokenTree};
 use std::collections::{HashMap, HashSet};
@@ -49,8 +49,6 @@ pub struct RustFile {
     pub tests: Vec<u32>,
     pub uses: Vec<UseRec>,
     pub mods: Vec<ModDecl>,
-    /// `BL`, `BW`, `BR`, `BC` rows of every function (local function and block ids).
-    pub blocks: BlockRows,
     /// The file did not parse; no rows came from it.
     pub failed: bool,
 }
@@ -63,7 +61,7 @@ pub fn extract(rel: &str, src: &str, file_is_test: bool) -> RustFile {
     };
     let mut w = Walker::new(rel, src, file_is_test);
     w.visit_file(&file);
-    RustFile { fns: w.out, tests: w.tests, uses: w.uses, mods: w.mods, blocks: w.blocks, failed: false }
+    RustFile { fns: w.out, tests: w.tests, uses: w.uses, mods: w.mods, failed: false }
 }
 
 struct Frame {
@@ -119,7 +117,6 @@ struct Walker<'s> {
     test_depth: u32,
     /// `return` expressions that end a function body: not early exits (by node address).
     terminal: HashSet<usize>,
-    blocks: BlockRows,
 }
 
 fn line_of(s: Span) -> u32 {
@@ -147,7 +144,6 @@ impl<'s> Walker<'s> {
             mod_path: Vec::new(),
             test_depth: file_is_test as u32,
             terminal: HashSet::new(),
-            blocks: BlockRows::default(),
         }
     }
 
@@ -183,10 +179,11 @@ impl<'s> Walker<'s> {
     fn leave(&mut self) {
         if let Some(f) = self.frames.pop() {
             let rows = f.bs.finish(f.local);
-            self.blocks.bl.extend(rows.bl);
-            self.blocks.bw.extend(rows.bw);
-            self.blocks.br.extend(rows.br);
-            self.blocks.bc.extend(rows.bc);
+            let out = &mut self.out.blocks;
+            out.bl.extend(rows.bl);
+            out.bw.extend(rows.bw);
+            out.br.extend(rows.br);
+            out.bc.extend(rows.bc);
         }
         self.pop_container();
     }
