@@ -14,6 +14,7 @@ mod packs;
 mod policy;
 mod rename;
 mod sql;
+mod version;
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -22,6 +23,7 @@ use std::process::ExitCode;
 const USAGE: &str = "usage:
   pulsar facts <repo> [-o file] [--coverage path]   write facts (and <file>.paths, <file>.fns when -o is given)
   pulsar delta <base> <head> [--repo dir] [--json] [--coverage file|dir]   findings added and removed between two shas (exit 1 if any added)
+  pulsar version                    CLI sha, engine sha, Bend version and every rule with its version
   pulsar catalog [check <file>... | list [--repo dir] | --help]   class data (see `pulsar catalog --help`)
   pulsar policy [--repo dir]        print the effective policy, its parts and fingerprint
   pulsar history <repo>             print the git-history fact counts (H, C, A, CF, CFN)
@@ -35,6 +37,7 @@ fn main() -> ExitCode {
         Some("catalog") => cmd_catalog(&args[1..]).map(|()| 0),
         Some("policy") => cmd_policy(&args[1..]).map(|()| 0),
         Some("history") => cmd_history(&args[1..]).map(|()| 0),
+        Some("version") | Some("--version") | Some("-V") => version::run().map(|()| 0),
         Some("delta") => delta::parse(&args[1..]).and_then(|a| delta::run(&a)),
         _ => Err(USAGE.to_string()),
     };

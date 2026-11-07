@@ -79,6 +79,7 @@ export const f = 1
 J
 echo 'export const x = 1' > src/types.d.ts
 git add -A >/dev/null
+git -c user.email=selftest@pulsar -c user.name=selftest commit -qm selftest   # history facts need a HEAD
 OUT=$T/facts.txt
 "$BIN" facts "$T" -o "$OUT" 2>/dev/null
 id() { grep -n -x -F "$1" "$OUT.paths" | cut -d: -f1 | awk '{print $1-1}'; }

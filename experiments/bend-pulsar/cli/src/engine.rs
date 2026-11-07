@@ -89,8 +89,23 @@ pub struct Fx {
     pub extra: Vec<(String, String)>,
 }
 
-pub fn locate() -> Result<PathBuf, String> {
+/// Where an engine may sit relative to the CLI binary `exe`: next to its `bin/` (an install), or
+/// below a Cargo `target/` directory. `exe` is canonicalised first, so a symlink such as
+/// `~/.local/bin/pulsar` finds the engine installed beside the file it points to.
+fn candidates(exe: &Path) -> Vec<PathBuf> {
+    let exe = std::fs::canonicalize(exe).unwrap_or_else(|_| exe.to_path_buf());
     let mut tried = Vec::new();
+    if let Some(dir) = exe.parent() {
+        tried.push(dir.join("../engine/pulsar-engine"));
+        // Cargo layout: <project>/cli/target/release/pulsar sits below <project>/engine/.
+        for anc in dir.ancestors().skip(1).take(4) {
+            tried.push(anc.join("engine/pulsar-engine"));
+        }
+    }
+    tried
+}
+
+pub fn locate() -> Result<PathBuf, String> {
     if let Ok(p) = std::env::var("PULSAR_ENGINE") {
         let p = PathBuf::from(p);
         if p.is_file() {
@@ -98,15 +113,7 @@ pub fn locate() -> Result<PathBuf, String> {
         }
         return Err(format!("PULSAR_ENGINE={} does not exist", p.display()));
     }
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            tried.push(dir.join("../engine/pulsar-engine"));
-            // Cargo layout: <project>/cli/target/release/pulsar sits below <project>/engine/.
-            for anc in dir.ancestors().skip(1).take(4) {
-                tried.push(anc.join("engine/pulsar-engine"));
-            }
-        }
-    }
+    let mut tried = std::env::current_exe().map(|exe| candidates(&exe)).unwrap_or_default();
     tried.push(PathBuf::from("experiments/bend-pulsar/engine/pulsar-engine"));
     for t in &tried {
         if t.is_file() {
@@ -119,7 +126,6 @@ pub fn locate() -> Result<PathBuf, String> {
     ))
 }
 
-/// Run the engine and parse its output.
 pub fn run(engine: &Path, facts: &Path) -> Result<Findings, String> {
     parse(&run_raw(engine, facts)?)
 }
@@ -271,6 +277,25 @@ pub fn parse(text: &str) -> Result<Findings, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_binary_finds_the_engine_beside_the_real_file() {
+        let root = std::env::temp_dir().join(format!("pulsar-locate-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let (bin, engine, link_dir) = (root.join("pulsar/bin"), root.join("pulsar/engine"), root.join("local/bin"));
+        for d in [&bin, &engine, &link_dir] {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        std::fs::write(bin.join("pulsar"), b"cli").unwrap();
+        std::fs::write(engine.join("pulsar-engine"), b"engine").unwrap();
+        std::os::unix::fs::symlink(bin.join("pulsar"), link_dir.join("pulsar")).unwrap();
+        let found = candidates(&link_dir.join("pulsar")).into_iter().find(|p| p.is_file());
+        let want = std::fs::canonicalize(engine.join("pulsar-engine")).unwrap();
+        let got = found.map(|p| std::fs::canonicalize(p).unwrap());
+        std::fs::remove_dir_all(&root).ok();
+        assert_eq!(got, Some(want), "the engine beside the symlink target");
+    }
 
     #[test]
     fn parses_cycles_metrics_and_findings() {
