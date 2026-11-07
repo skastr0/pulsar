@@ -225,6 +225,9 @@ fn to_meta(b: &Built) -> cache::Meta {
         syms: b.tables.syms.clone(),
         rules: b.tables.rules.clone(),
         laws: b.tables.laws.clone(),
+        sql_names: b.tables.sql_names.clone(),
+        sql_indexes: b.tables.sql_indexes.clone(),
+        sql_sites: b.tables.sql_sites.clone(),
         degraded: b.degraded.iter().map(|d| (d.lane.to_string(), d.cause.clone())).collect(),
     }
 }
@@ -238,7 +241,7 @@ fn from_meta(m: cache::Meta) -> Built {
             other => Box::leak(other.to_string().into_boxed_str()),
         }
     };
-    let mut tables = SideTables { paths: m.files.clone(), syms: m.syms, rules: m.rules, laws: m.laws, ..SideTables::default() };
+    let mut tables = SideTables { paths: m.files.clone(), syms: m.syms, rules: m.rules, laws: m.laws, sql_names: m.sql_names, sql_indexes: m.sql_indexes, sql_sites: m.sql_sites, ..SideTables::default() };
     tables.fns = m
         .fns
         .into_iter()
