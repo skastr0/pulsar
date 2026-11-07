@@ -68,3 +68,50 @@ By repo (`parsed` = the parser accepted the whole file; `valid` = no syntax erro
 
 `sqlite3-parser` is `Apache-2.0 OR MIT`: ship the notice text with the binary when it lands in `Cargo.toml`
 (its own commit, per the charter). It pulls in `bumpalo` (the parser allocates ASTs in an arena) and `fallible-iterator`.
+
+## Postgres dialect (added with the Postgres front-end)
+
+Decision: `pg_query` 6.2 (MIT; it wraps libpg_query, which is Postgres's own parser, so its accept/reject
+is Postgres's by construction). Runner-up: `sqlparser` 0.63 with `PostgreSqlDialect`.
+
+Same VM as above (default, x86_64, 4 vCPU, 8 GB, load under 1), release build, 20 passes in memory, `?`
+placeholders rewritten to `$n` before parsing.
+
+| input | files | `pg_query` rejects | `sqlparser` (Postgres) rejects | `sqlparser` rejects what `pg_query` accepts | `sqlparser` accepts what `pg_query` rejects |
+|---|---|---|---|---|---|
+| 7,663 SQL templates from one TS app (Junto) | 7,663 | 563 (7.3%) | 342 (4.5%) | 0 | 221 |
+| the 423 local `.sql` files (mostly SQLite and MySQL) | 423 | 182 (43.0%) | 163 (38.5%) | 18 | 37 |
+
+| input | `pg_query` | `sqlparser` (Postgres) | peak RSS |
+|---|---|---|---|
+| 7,663 templates, 20 passes | 1.64 s (82 ms a pass) | 0.86 s (43 ms) | 7 MiB and 8 MiB |
+
+`pg_query` is 1.9 times slower than `sqlparser` and uses the same memory; it needs a C compiler (the whole
+bench built in 37 s) and its tree is the protobuf one, larger than a hand-written AST. In exchange there are
+no false rejects and no silent acceptance of syntax Postgres refuses, the same argument as for SQLite.
+`sqlparser` accepting 221 texts Postgres rejects is the failure to avoid: facts from text that is not valid
+SQL for the database in use. I did not inspect which constructs those 221 are.
+
+### Lane measurements (the SQL lane itself, `sql::tests::corpus`)
+
+The 7,663 templates were pulled out of the TS of one repo with a regex for `sql` tagged templates, each
+`${..}` replaced by `?` (the TS lane's rule). They are SQL fragments as the program writes them; some are not
+statements on their own (a template that is only `AND x = ?`).
+
+| dialect | statements | failed | texts failing | wall | peak RSS |
+|---|---|---|---|---|---|
+| SQLite | 7,862 | 450 | 251 of 7,663 (3.3%) | 25 ms | 12 MiB |
+| Postgres | 7,862 | 762 | 563 of 7,663 (7.3%) | 100 ms | 14 MiB |
+
+Every text that fails as SQLite also fails as Postgres (251 in both), and no text parses only as Postgres: all
+312 texts that Postgres rejects but SQLite accepts are SQLite-only syntax (94 start with `PRAGMA`; the rest
+include `INSERT OR ..`). So for this repo a per-repo dialect of Postgres would lose 312 texts that a per-repo
+SQLite loses none of. Of the 251 texts neither dialect parses, by their first word: 44 start with `AND`, 11 with `,`,
+and the rest are `INSERT`, `SELECT`, `UPDATE`, `DELETE`, `CREATE` and `DROP` texts I did not classify further
+(a likely cause is an interpolation standing for an identifier or a clause, which the `?` rule makes unparseable).
+The dialect therefore has to be chosen per call site from the client class, not once per repo; until the catalog
+carries it, the driver passes SQLite.
+
+The same lane over the 423-file local corpus (SQLite): 2,787 statements, 1,557 failed, 8 ms, 6 MiB. 0 failed
+in the four repos whose files are SQLite (openinterpreter, codex, sst, t3code), 73 of 266 in opencode and 704
+of 805 in paperclip, whose migrations are MySQL and Postgres.
