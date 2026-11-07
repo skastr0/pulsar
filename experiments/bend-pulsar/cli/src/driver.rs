@@ -10,7 +10,6 @@ use crate::facts::{stable_key, FactWriter, FnEntry, Rel, SideTables};
 use crate::git::git_ls_files;
 use crate::lang::functions::{FileFns, NO_PARENT};
 use crate::lang::scope::is_prod;
-use crate::policy::Lanes;
 use crate::lang::{self, FileOut};
 use std::path::{Path, PathBuf};
 
@@ -38,29 +37,24 @@ pub struct Stats {
 }
 
 /// Run the lanes on the git checkout at `repo`.
-pub fn build_repo(repo: &Path, lanes: &Lanes, w: &mut FactWriter, tables: &mut SideTables) -> Result<(FactSet, Stats), String> {
+pub fn build_repo(repo: &Path, w: &mut FactWriter, tables: &mut SideTables) -> Result<(FactSet, Stats), String> {
     let root: PathBuf = std::fs::canonicalize(repo).map_err(|e| format!("{}: {e}", repo.display()))?;
     let tracked = git_ls_files(&root)?;
-    build(&root, tracked, lanes, w, tables)
+    build(&root, tracked, w, tables)
 }
 
 /// Run the lanes on the tree at `root`; `tracked` is its file list, repo-relative (for a tree that
-/// is not a git checkout, for example one materialised from a sha). `lanes` is the policy's
-/// per-lane scope: a file outside it is in no lane and gets no id.
+/// is not a git checkout, for example one materialised from a sha).
 pub fn build(
     root: &Path,
     tracked: Vec<String>,
-    lanes: &Lanes,
     w: &mut FactWriter,
     tables: &mut SideTables,
 ) -> Result<(FactSet, Stats), String> {
     // One id space: every existing file some lane owns, byte-sorted.
     let mut files: Vec<String> = tracked
         .iter()
-        .filter(|p| {
-            ((lang::ts::owns(p) && lanes.ts.allows(p)) || (lang::rust::owns(p) && lanes.rust.allows(p)))
-                && root.join(p).is_file()
-        })
+        .filter(|p| (lang::ts::owns(p) || lang::rust::owns(p)) && root.join(p).is_file())
         .cloned()
         .collect();
     files.sort();
@@ -195,7 +189,7 @@ mod tests {
     fn facts(root: &Path, tracked: &[&str]) -> String {
         let mut w = FactWriter::new();
         let mut t = SideTables::default();
-        build(root, tracked.iter().map(|s| s.to_string()).collect(), &Lanes::default(), &mut w, &mut t).unwrap();
+        build(root, tracked.iter().map(|s| s.to_string()).collect(), &mut w, &mut t).unwrap();
         let mut out = Vec::new();
         w.write_to(&mut out).unwrap();
         String::from_utf8(out).unwrap()
