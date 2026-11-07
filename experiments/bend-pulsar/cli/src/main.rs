@@ -184,8 +184,8 @@ fn cmd_cycles(args: &[String]) -> Result<(), String> {
         found.files, set.prod, found.edges, found.cycle_count, cert
     ));
     print!("{out}");
-    if found.cert == Some(false) {
-        return Err("engine certificate check failed".into());
+    if found.cert != Some(true) {
+        return Err(format!("engine certificate {}", if found.cert.is_none() { "line is missing" } else { "check failed" }));
     }
     Ok(())
 }
