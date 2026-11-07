@@ -1,0 +1,12 @@
+# dogfood delta bd8dbfc8dc399d96a86d0f82766d312ac3a4a4de 2f9490e91f6fdd72a736d7fcf6ca06490907edeb — 2f9490e91f6fdd72a736d7fcf6ca06490907edeb
+# repo: /home/user/pulsar
+# 2026-11-07T10:50:59Z  fingerprint	sha256:86ac7009726d58c5a5d21996cf1be4fa54995cc8e6967dc16a52fcba6db44e5e
+#
+# base=bd8dbfc8dc39 head=2f9490e91f6f added=1 removed=4 unchanged=58
+
++ core.npath 4273a420602817f8 experiments/bend-pulsar/cli/src/lang/ts/extract.rs extract
+
+- core.cyclomatic 1b1953971aeee82a experiments/bend-pulsar/cli/src/coverage/cobertura.rs parse  (removed)
+- core.length af40bd051ad27914 experiments/bend-pulsar/cli/src/coverage/cobertura.rs parse  (removed)
+- core.nesting c9ab4cb47e9f26da experiments/bend-pulsar/cli/src/coverage/cobertura.rs parse  (removed)
+- core.npath d199cdba767a8d8d experiments/bend-pulsar/cli/src/coverage/cobertura.rs parse  (removed)
