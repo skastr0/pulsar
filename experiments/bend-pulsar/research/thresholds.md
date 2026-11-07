@@ -108,6 +108,34 @@ Direction convention below: "flag > N" means a finding fires when the metric is 
 | Risky change | CRAP AND churn | conjunction | Same caveat |
 | Co-change | support ≥3, confidence ≥0.5 | unexplained by imports | Mechanism strong; cutoffs weak → **opt-in candidate** |
 
+## Fan-in / hub defaults (Effect pack, #661)
+
+Requested by pulsar-graph for the Effect hub-service detector: fan-in = distinct layers requiring the service (LQ) + distinct functions yield*-ing it (US); what default threshold?
+
+**Evidence:** no study validates a fan-in cutoff for "hub" findings. What exists is tool calibration:
+- codelore-lib `god-classes` analysis: `fan_in + fan_out >= 10` combined with cognitive complexity >= 30 (defaults "tuned for typical application repositories") ([docs.rs source](https://docs.rs/crate/codelore-lib/latest/source/src/analyses/god_classes.rs)).
+- An iOS health-check tool's config: `highFanIn = 21`, but effective threshold = `min(21, p86 of repo fan-in)` — i.e. absolute floor *plus* distribution-relative cap ([source](https://cephalochromoscope.net/a9f8bc9a-b856-4752-9601-a2591c9543d5)).
+- `zuit_analyzers` fan-out default 20 (out-degree analogue); fallow reports p95 fan-in as a trend vital sign rather than a fixed cutoff ([docs.rs](https://docs.rs/zuit-analyzers/latest/zuit_analyzers/fan_out/index.html), [fallow VitalSigns](https://docs.rs/fallow-output/latest/fallow_output/struct.VitalSigns.html)).
+- devscout's hub brake `DEFAULT_HUB_MAX_INDEGREE = 34`, derived from a corpus histogram (first unpopulated in-degree value) ([docs.rs](https://docs.rs/devscout-rs/latest/devscout_rs/query/constant.DEFAULT_HUB_MAX_INDEGREE.html)).
+
+Absolute fan-in cutoffs in the wild cluster at 10–34; the more defensible pattern is **repo-relative** (percentile of the repo's own fan-in distribution), because fan-in scales with codebase size — a fixed 10 flags most shared services in a small app and almost nothing in a monorepo.
+
+**Verdict:** for the Effect hub finding, **flag when LQ + US >= 10** (matches the placeholder and the codelore composite bound). Evidence weak — pragmatic, not validated. Requirements: (1) report LQ and US separately in the finding so a peer sees *which* dimension carries it; (2) keep the threshold in policy, not hard-coded; (3) longer-term, consider `max(10, p90 fan-in)` semantics — but that needs the distribution, which v1 facts don't carry. This is a framework-pack detector, so an absolute floor is acceptable where a core detector would not be.
+
+## Co-change finding cutoffs and churn concentration (#662)
+
+pulsar-graph asked for the finding-level defaults on pairs *not explained by an import edge*, plus a churn-concentration definition. Consistent with §Co-change above:
+
+- **Min support: >= 3 commits, min confidence: >= 0.5** — same as the fact-level defaults already given to pulsar-composites. Their placeholder support>=5 is more conservative and also defensible; if corpora show noise, raise the *finding* threshold to 5 rather than changing the fact. Evidence remains weak (mechanism strong, cutoffs unvalidated) — keep the detector opt-in and report support/confidence in evidence.
+- Bulk-commit filter stands: drop commits touching >100 entities before mining.
+
+**Churn concentration** — "few files hold most of the churn". No canonical threshold exists; the honest options:
+- **Pareto framing (recommended):** flag when the top 20% of files by churn count hold >= 80% of total churn in the window. This is the classic 80/20 defect-concentration rule (Ostrand & Weyuker, "The Evolution of Pareto"; Nagappan & Ball's relative-churn normalization is the same instinct — concentration is the signal, absolute volume is not). Evidence moderate-weak: the Pareto shape is well documented for *defects*; for *churn* specifically it is plausible but unvalidated.
+- **Per-file outlier framing:** MSR 2026's μ+3σ on modification counts is a *hotspot* definition (which files are outliers), not a concentration measure — don't conflate them.
+- Report the actual top-k share in the finding (e.g. "top 20% of files = 83% of churn") so the threshold is auditable.
+
+**Verdict:** churn-concentration default = top 20% of files holding >= 80% of window churn, bot-filtered and production-files-only, opt-in until fidelity measures it. If the engine prefers a distribution-free variant, `>= 50% of churn in top 10% of files` is stricter; pick one and record it in policy.
+
 ## Method note
 
 Sources fetched 2026-11-07 via web search/fetch; every link above resolves to a paper, official docs page or vendor documentation. No implementation source of any analysis tool was read (clean room). Claims about "no study exists" are bounded: I found none in targeted searches; absence of evidence, not proof of absence.
