@@ -33,15 +33,20 @@ CORPORA=${CORPORA:-$ROOT/corpora.md}
 BASELINE=${BASELINE:-$HERE/baseline.json}
 RUNS=3
 ONLY=""
+SHARD=""
 MODE=""
 RSS_MARGIN=25
 CPU_MARGIN=25
+# cpu_s below this delta is measurement noise, never a regression (lead
+# ruling 2026-11-07: sub-0.5 s corpora failed check on scheduler jitter).
+CPU_FLOOR=0.05
 
 while [ $# -gt 0 ]; do
   case "$1" in
     record|check) MODE=$1 ;;
     --runs) RUNS=$2; shift ;;
     --only) ONLY=$2; shift ;;
+    --shard) SHARD=$2; shift ;;
     --corpora) CORPORA=$2; shift ;;
     --baseline) BASELINE=$2; shift ;;
     --rss-margin) RSS_MARGIN=$2; shift ;;
@@ -64,10 +69,13 @@ done
 ROWS=$(awk '/^```corpus$/{f=1;next} /^```$/{if(f)exit} f' "$CORPORA" | grep -v '^name')
 [ -n "$ROWS" ] || { echo "gate.sh: no corpus rows in $CORPORA" >&2; exit 2; }
 
-want() { # $1=name -> 0 if selected
-  [ -z "$ONLY" ] && return 0
-  case ",$ONLY," in *",$1,"*) return 0 ;; esac
-  return 1
+want() { # $1=name $2=row-index -> 0 if selected
+  [ -z "$ONLY" ] || case ",$ONLY," in *",$1,"*) ;; *) return 1 ;; esac
+  if [ -n "$SHARD" ]; then
+    local i=${SHARD%%/*} n=${SHARD##*/}
+    [ $(( $2 % n )) -eq "$i" ] || return 1
+  fi
+  return 0
 }
 
 loadavg() {
@@ -185,8 +193,10 @@ run_corpus() { # $1=name $2=path $3=sha $4=kind
     "${fw#,}" "${fc#,}" "${fr#,}" "${ew#,}" "${ec#,}" "${er#,}" "$actual" "$dirty"
 }
 
+rowi=0
 while IFS=$'\t' read -r name path sha kind note; do
-  want "$name" || continue
+  rowi=$((rowi+1))
+  want "$name" "$rowi" || continue
   if [ ! -d "$path" ]; then
     echo "gate: FAIL $name — missing $path" >&2
     emit_result __error__ "$name" "$path" "missing directory"
@@ -237,9 +247,9 @@ PY
 fi
 
 # check mode
-python3 - "$RESULTS" "$BASELINE" "$RSS_MARGIN" "$CPU_MARGIN" <<'PY'
+python3 - "$RESULTS" "$BASELINE" "$RSS_MARGIN" "$CPU_MARGIN" "$CPU_FLOOR" <<'PY'
 import json, sys, os
-results, baseline, rm, cm = sys.argv[1], sys.argv[2], float(sys.argv[3]), float(sys.argv[4])
+results, baseline, rm, cm, cfloor = sys.argv[1], sys.argv[2], float(sys.argv[3]), float(sys.argv[4]), float(sys.argv[5])
 now, errs = {}, []
 for line in open(results):
     r = json.loads(line)
@@ -259,6 +269,7 @@ for name, r in sorted(now.items()):
         for metric, margin in (("rss_bytes", rm), ("cpu_s", cm)):
             cur, old = r[stage].get(metric), b[stage].get(metric)
             if cur is None or old is None: continue
+            if metric == "cpu_s" and abs(cur - old) < cfloor: continue
             if cur > old * (1 + margin / 100):
                 fails.append(f"{name}/{stage}/{metric}: {cur} > baseline {old} +{margin}%")
     fs, bs = (r["facts"].get("stats") or ""), (b["facts"].get("stats") or "")

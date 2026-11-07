@@ -1,0 +1,47 @@
+{
+  "metric": "npath",
+  "definition": "Nejmeh 1988 recurrences as restated for C-like languages in Bagnara et al., 'ACPATH: Precise Estimation of the Number of Acyclic Paths' (arXiv:1610.07914), Tables 1-2. Hand-computed; the paper's own Example 1 (if(a&&b&&c) return d?0:1; else return e?0:1) evaluates to 6 under these rules and was used to validate the arithmetic.",
+  "engine_cap": 16777215,
+  "files": {
+    "npath.ts": {
+      "straight": 1,
+      "one_if": 2,
+      "if_else": 2,
+      "two_ifs": 4,
+      "nested_if": 3,
+      "and_pred": 3,
+      "while_and": 3,
+      "switch3": 3,
+      "ternary_ret": 2,
+      "while_loop": 2,
+      "for_loop": 2,
+      "guard_return": 2,
+      "deep_nest": 4,
+      "seq_mixed": 4
+    },
+    "npath.rs": {
+      "straight": 1,
+      "one_if": 2,
+      "if_else": 2,
+      "two_ifs": 4,
+      "nested_if": 3,
+      "and_pred": 3,
+      "while_and": 3,
+      "match3": 3,
+      "while_loop": 2,
+      "for_loop": 2,
+      "guard_return": 2,
+      "deep_nest": 4,
+      "seq_mixed": 4
+    }
+  },
+  "notes": [
+    "for_loop (TS): for-init `let i = 0` treated as NP_E 0, test/update NP_E 0 -> 0+0+0+1+1 = 2.",
+    "for_loop (Rust): `for i in 0..10` has no C-style E1;E2;E3 — expected assumes the engine models it as while-equivalent (0+1+1 = 2). If the CT models the range expression, expect a different value; that is a finding, not a fixture bug.",
+    "match3 treated as switch analog: NP_E(x)=0 + three unit arms = 3.",
+    "deep_nest (Rust) uses `else if` — desugars to nested if-else; expected equals the TS nested shape (4).",
+    "guard_return: `if (!c) return;` contributes 0+1+1 = 2, then foo();bar(); multiply by 1 each -> 2.",
+    "seq_mixed: 1 (foo) * 2 (if a) * 2 (while b) = 4.",
+    "Excluded constructs pending formula verification: ||, do-while, continue, labeled break/continue, try/catch, && / || inside loop bodies beyond the predicate."
+  ]
+}
