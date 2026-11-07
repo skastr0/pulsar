@@ -1,5 +1,5 @@
 //! Bend 2 lane: per-file syntax facts for `.bend` sources (FACTS.md `I`/`U`, `FN`/`FK`/`CT`,
-//! `MK`, and the law relations `L`/`LW`/`LR`).
+//! `MK`, and the law relations `L`/`LW`/`LN`).
 //!
 //! Written from `bend guide` (the language's own documentation), not from Bend's parser. The
 //! `bend` CLI cannot dump a syntax tree: `-o x.bendtt` writes the elaborated kernel term, with no
@@ -27,7 +27,10 @@
 //! tokens, so a `match` in such a body is not seen as a control node. The guide's forms and this
 //! repo's sources write those bodies on indented lines, which are handled.
 
-#![allow(dead_code)] // wired into the driver once lang::Files lands (pulsar-cli)
+#![allow(dead_code)] // Def.spec/untyped and BendFile::is_code are read by tests and the corpus check only
+
+mod lane;
+pub use lane::{analyze, fn_bases, owns};
 
 use crate::lang::functions::{ct, fk, fnv_parts, CtRec, FileFns, FnRec};
 use std::collections::HashMap;

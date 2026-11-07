@@ -305,6 +305,8 @@ pub struct SideTables {
     pub fns: Vec<FnEntry>,
     /// Symbol names by `SY` id (catalog-style: `effect#Effect.orDie`, `global#console.log`).
     pub syms: Vec<String>,
+    /// The `.laws` table, already formatted (`law path line name`, TAB-separated, law-id order).
+    pub laws: String,
 }
 
 impl SideTables {
@@ -333,6 +335,11 @@ impl SideTables {
                 .map_err(|e| format!("{}: {e}", p.display()))?;
         }
         out.flush().map_err(|e| format!("{}: {e}", p.display()))?;
+
+        if !self.laws.is_empty() {
+            let p = sibling(".laws");
+            std::fs::write(&p, &self.laws).map_err(|e| format!("{}: {e}", p.display()))?;
+        }
 
         if self.syms.is_empty() {
             return Ok(());

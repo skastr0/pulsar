@@ -64,7 +64,7 @@ impl LaneScope {
     }
 }
 
-/// Per-lane scopes (`[lanes.ts]`, `[lanes.rust]`). A lane with no table is unrestricted.
+/// Per-lane scopes (`[lanes.ts]`, `[lanes.rust]`, `[lanes.bend]`). A lane with no table is unrestricted.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Lanes {
@@ -72,6 +72,8 @@ pub struct Lanes {
     pub ts: LaneScope,
     #[serde(default)]
     pub rust: LaneScope,
+    #[serde(default)]
+    pub bend: LaneScope,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -225,7 +227,7 @@ pub fn parse_policy(name: &str, text: &str) -> Result<Policy, String> {
         rules: raw.rules.unwrap_or_default(),
         lanes: raw.lanes.unwrap_or_default(),
     };
-    for (lane, scope) in [("ts", &p.lanes.ts), ("rust", &p.lanes.rust)] {
+    for (lane, scope) in [("ts", &p.lanes.ts), ("rust", &p.lanes.rust), ("bend", &p.lanes.bend)] {
         for (what, items) in [("include", &scope.include), ("exclude", &scope.exclude)] {
             sorted_unique(name, &format!("lanes.{lane}.{what}"), items)?;
             if let Some(bad) = items.iter().find(|i| i.is_empty() || i.starts_with('/') || i.starts_with("./") || i.split('/').any(|c| c == "..")) {

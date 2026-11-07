@@ -9,7 +9,7 @@ The Bend 2 adapter. Owner: pulsar-bend. It is a small parser written from `bend 
   - `MK` markers: 1 for unsafe, 2 for each proof hole, 3 for each foreign import line;
   - laws, with the names in their statements.
 - **Across files** (`link_laws`): laws are linked to the defs they name, through import aliases, and to the defs that fill them. The mapping onto FACTS kinds is in `FACTS.md`, under "Per language", "Markers" and "Laws".
-- **Not yet wired:** the driver's shared file-id space (`lang::Files`, pulsar-cli) comes first. Then this lane adds `owns(path) = *.bend`, pushes `I`/`U`/`MK`/`L`/`LW`/`LR`, and returns its `FileFns`.
+- **The driver's side** (`lane.rs`): `owns(path)` is `*.bend`. `analyze(root, files)` returns `I`/`U` over global file ids and per-file `FileOut`s, which the driver numbers like every lane's. `Extra::push_rows(w, &fn_bases(&per))` writes `MK`/`L`/`LW`/`LN` with global `FN` ids, and `Extra::laws_table` is the `.laws` side table.
 - **Known limit:** a lambda whose statement block is written inside brackets is read as tokens, so a `match` in it is not a control node. Indented lambda blocks are handled.
 
 ## Evidence

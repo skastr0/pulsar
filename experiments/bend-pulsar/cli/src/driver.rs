@@ -34,6 +34,9 @@ pub struct Stats {
     pub ct: usize,
     pub ts_files: usize,
     pub rust_files: usize,
+    pub bend_files: usize,
+    pub laws: usize,
+    pub markers: usize,
     pub sites: usize,
     /// Lanes that ran on weaker input than they wanted; also noted in the facts header.
     pub degraded: Vec<Degraded>,
@@ -60,7 +63,9 @@ pub fn build(
     let mut files: Vec<String> = tracked
         .iter()
         .filter(|p| {
-            ((lang::ts::owns(p) && lanes.ts.allows(p)) || (lang::rust::owns(p) && lanes.rust.allows(p)))
+            ((lang::ts::owns(p) && lanes.ts.allows(p))
+                || (lang::rust::owns(p) && lanes.rust.allows(p))
+                || (lang::bend::owns(p) && lanes.bend.allows(p)))
                 && root.join(p).is_file()
         })
         .cloned()
@@ -70,9 +75,9 @@ pub fn build(
     let ids = |owns: fn(&str) -> bool| -> Vec<(u32, String)> {
         files.iter().enumerate().filter(|(_, p)| owns(p)).map(|(i, p)| (i as u32, p.clone())).collect()
     };
-    let (ts_files, rust_files) = (ids(lang::ts::owns), ids(lang::rust::owns));
+    let (ts_files, rust_files, bend_files) = (ids(lang::ts::owns), ids(lang::rust::owns), ids(lang::bend::owns));
 
-    let mut st = Stats { files: files.len(), ts_files: ts_files.len(), rust_files: rust_files.len(), ..Stats::default() };
+    let mut st = Stats { files: files.len(), ts_files: ts_files.len(), rust_files: rust_files.len(), bend_files: bend_files.len(), ..Stats::default() };
     w.push(Rel::N, &[files.len() as u32]);
     for (id, rel) in files.iter().enumerate() {
         let prod = is_prod(rel);
@@ -113,6 +118,7 @@ pub fn build(
             per[*id as usize] = Some(FileOut { fns: f.fns, tests: f.tests });
         }
     }
+    tables.laws = bend_lane(root, &bend_files, &files, &mut per, w, &mut st)?;
 
     // Function ids are global: files in id order, functions in start-offset order within a file.
     // Each file's rows move into the writer and are freed before the next file.
@@ -194,6 +200,32 @@ pub fn build(
     Ok((FactSet { files, prod, fn_keys }, st))
 }
 
+/// The Bend lane: its `I`/`U` rows and per-file functions, then `MK`/`L`/`LW`/`LN`, which name
+/// functions by (file, local index) and so are numbered here, like `FN` below. Returns the
+/// `.laws` table (empty when there are no Bend files or no laws).
+fn bend_lane(
+    root: &Path,
+    bend_files: &[(u32, String)],
+    files: &[String],
+    per: &mut [Option<FileOut>],
+    w: &mut FactWriter,
+    st: &mut Stats,
+) -> Result<String, String> {
+    if bend_files.is_empty() {
+        return Ok(String::new());
+    }
+    let a = lang::bend::analyze(root, bend_files)?;
+    st.unreadable += a.stats.unreadable;
+    st.laws = a.stats.laws;
+    st.markers = a.stats.markers;
+    push_edges(w, &a.i, &a.u, st);
+    for ((id, _), f) in bend_files.iter().zip(a.per_file) {
+        per[*id as usize] = Some(f);
+    }
+    a.extra.push_rows(w, &lang::bend::fn_bases(per));
+    Ok(a.extra.laws_table(files))
+}
+
 fn push_edges(w: &mut FactWriter, i: &[[u32; 5]], u: &[[u32; 2]], st: &mut Stats) {
     w.reserve(Rel::I, i.len());
     w.reserve(Rel::U, u.len());
@@ -237,5 +269,33 @@ mod tests {
         assert!(out.contains("I 1 0 0 1 0\n"), "b imports a: {out}");
         // functions are numbered in file-id order: the Rust fn is in file 2.
         assert!(out.lines().any(|l| l.starts_with("FN ") && l.split(' ').nth(2) == Some("2")), "{out}");
+    }
+
+    #[test]
+    fn bend_files_join_the_id_space_and_number_law_functions_globally() {
+        let dir = std::env::temp_dir().join(format!("pulsar-driver-bend-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("e")).unwrap();
+        std::fs::write(dir.join("a.ts"), "export function f() { return 1 }\n").unwrap();
+        std::fs::write(dir.join("e/lib.bend"), "import Base\n\ndef inc(+x: U32) -> U32:\n  U32.add(x, 1)\n").unwrap();
+        std::fs::write(
+            dir.join("e/laws.bend"),
+            "import Base\nimport ./lib.bend as L\n\nlaw inc_is:\n  for +x: U32\n  {L.inc(x) == U32.add(x, 1) : U32}\n",
+        )
+        .unwrap();
+        let mut w = FactWriter::new();
+        let mut t = SideTables::default();
+        let tracked = ["e/laws.bend", "a.ts", "e/lib.bend"].map(String::from).to_vec();
+        let (_, st) = build(&dir, tracked, &Lanes::default(), &mut w, &mut t).unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+        let mut out = Vec::new();
+        w.write_to(&mut out).unwrap();
+        let out = String::from_utf8(out).unwrap();
+        // ids: a.ts 0, e/laws.bend 1, e/lib.bend 2; a.ts has one function (FN 0), lib's inc is FN 1.
+        assert_eq!((st.bend_files, st.laws), (2, 1));
+        assert!(out.contains("N 3\n") && out.contains("I 1 2 0 1 0\n"), "{out}");
+        assert!(out.contains("FN 1 2 "), "{out}");
+        assert!(out.contains("L 1\n") && out.contains("LW 0 1 0\n") && out.contains("LN 0 1\n"), "{out}");
+        assert_eq!(t.laws, "0\te/laws.bend\t4\tinc_is\n");
     }
 }
