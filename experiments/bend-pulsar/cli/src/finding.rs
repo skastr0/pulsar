@@ -13,6 +13,21 @@ pub struct Rule {
     pub version: u32,
 }
 
+/// Engine `FX`: a function over a metric threshold. Rule ids and versions per FACTS.md.
+pub const CYCLOMATIC: Rule = Rule { id: "core.cyclomatic", version: 1 };
+pub const NESTING: Rule = Rule { id: "core.nesting", version: 1 };
+pub const NPATH: Rule = Rule { id: "core.npath", version: 1 };
+pub const LENGTH: Rule = Rule { id: "core.length", version: 1 };
+
+/// The rule for an engine `FX` rule id, or an error if the CLI does not know it (an engine and
+/// CLI that disagree must fail, not drop findings).
+pub fn metric_rule(id: &str) -> Result<Rule, String> {
+    [CYCLOMATIC, NESTING, NPATH, LENGTH]
+        .into_iter()
+        .find(|r| r.id == id)
+        .ok_or_else(|| format!("engine reported FX rule {id:?}, which this CLI does not know"))
+}
+
 /// Engine `CYC`: a strongly connected set of files in the import graph.
 pub const IMPORT_CYCLE: Rule = Rule { id: "graph.import-cycle", version: 1 };
 
@@ -180,5 +195,5 @@ mod tests {
 
 /// Rules the CLI itself defines (not catalog rules). Policy may enable or disable them by id.
 pub fn is_builtin_rule(id: &str) -> bool {
-    id == IMPORT_CYCLE.id
+    id == IMPORT_CYCLE.id || metric_rule(id).is_ok()
 }

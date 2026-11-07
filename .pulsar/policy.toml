@@ -1,0 +1,22 @@
+format = "pulsar-policy 0"
+
+# Pulsar policy for this repository (committed and fingerprinted; shared by every seat).
+# Dogfood v0: Rust for the rewrite's CLI, TS for the repo's tools and scripts. The legacy
+# 0.3.0 packages (packages/) are left out: they are replaced by the rewrite, not improved.
+
+[lanes.rust]
+include = [
+  "experiments/bend-pulsar/cli/",
+]
+
+[lanes.ts]
+include = [
+  "experiments/bend-pulsar/baseline/tools/",
+  "experiments/bend-pulsar/bench/oracle/",
+  "experiments/bend-pulsar/cli/tools/",
+  "scripts/",
+]
+exclude = [
+  "experiments/bend-pulsar/bench/oracle/fixtures/",
+  "scripts/fixtures/",
+]

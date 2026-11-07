@@ -41,18 +41,53 @@ pub struct Rules {
     pub disable: Vec<String>,
 }
 
+/// Which files of one language lane the repo wants checked: repo-relative path prefixes. A prefix
+/// ending in `/` matches a directory, anything else matches that exact file. Empty `include`
+/// means the whole repo.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LaneScope {
+    #[serde(default)]
+    pub include: Vec<String>,
+    #[serde(default)]
+    pub exclude: Vec<String>,
+}
+
+fn under(prefix: &str, path: &str) -> bool {
+    if prefix.ends_with('/') { path.starts_with(prefix) } else { path == prefix }
+}
+
+impl LaneScope {
+    pub fn allows(&self, path: &str) -> bool {
+        (self.include.is_empty() || self.include.iter().any(|p| under(p, path)))
+            && !self.exclude.iter().any(|p| under(p, path))
+    }
+}
+
+/// Per-lane scopes (`[lanes.ts]`, `[lanes.rust]`). A lane with no table is unrestricted.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Lanes {
+    #[serde(default)]
+    pub ts: LaneScope,
+    #[serde(default)]
+    pub rust: LaneScope,
+}
+
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawPolicy {
     format: Option<String>,
     history: Option<History>,
     rules: Option<Rules>,
+    lanes: Option<Lanes>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Policy {
     pub history: History,
     pub rules: Rules,
+    pub lanes: Lanes,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -183,7 +218,19 @@ pub fn parse_policy(name: &str, text: &str) -> Result<Policy, String> {
         return Err(format!("{name}: format must be {POLICY_FORMAT:?}"));
     }
     one_item_per_line(name, text)?;
-    let p = Policy { history: raw.history.unwrap_or_default(), rules: raw.rules.unwrap_or_default() };
+    let p = Policy {
+        history: raw.history.unwrap_or_default(),
+        rules: raw.rules.unwrap_or_default(),
+        lanes: raw.lanes.unwrap_or_default(),
+    };
+    for (lane, scope) in [("ts", &p.lanes.ts), ("rust", &p.lanes.rust)] {
+        for (what, items) in [("include", &scope.include), ("exclude", &scope.exclude)] {
+            sorted_unique(name, &format!("lanes.{lane}.{what}"), items)?;
+            if let Some(bad) = items.iter().find(|i| i.is_empty() || i.starts_with('/') || i.starts_with("./") || i.split('/').any(|c| c == "..")) {
+                return Err(format!("{name}: lanes.{lane}.{what} {bad:?} must be a repo-relative path prefix"));
+            }
+        }
+    }
     sorted_unique(name, "rules.enable", &p.rules.enable)?;
     sorted_unique(name, "rules.disable", &p.rules.disable)?;
     if let Some(r) = p.rules.enable.iter().find(|r| p.rules.disable.contains(r)) {
@@ -443,6 +490,20 @@ mod tests {
         let repo = tmp("d");
         write(&repo, ".pulsar/policy.toml", "format = \"pulsar-policy 0\"\n[rules]\nenable = [\n  \"nope/missing\",\n]\n");
         assert!(load(&repo, None, &Evidence::default()).unwrap_err().contains("nope/missing"));
+    }
+
+    #[test]
+    fn lane_scopes_parse_and_filter() {
+        let t = "format = \"pulsar-policy 0\"\n[lanes.rust]\ninclude = [\n  \"cli/\",\n]\n[lanes.ts]\ninclude = [\n  \"scripts/\",\n  \"tools/run.ts\",\n]\nexclude = [\n  \"scripts/fixtures/\",\n]\n";
+        let p = parse_policy("p", t).unwrap();
+        assert!(p.lanes.rust.allows("cli/src/main.rs") && !p.lanes.rust.allows("engine/x.rs"));
+        assert!(p.lanes.ts.allows("scripts/a.ts") && p.lanes.ts.allows("tools/run.ts"));
+        assert!(!p.lanes.ts.allows("scripts/fixtures/a.ts") && !p.lanes.ts.allows("tools/run.tsx"));
+        assert!(Lanes::default().ts.allows("anything/at/all.ts"), "no table = unrestricted");
+        let bad = |x: &str| parse_policy("p", &format!("format = \"pulsar-policy 0\"\n[lanes.ts]\ninclude = [\n  \"{x}\",\n]\n")).unwrap_err();
+        assert!(bad("/abs/").contains("repo-relative"));
+        assert!(bad("../up/").contains("repo-relative"));
+        assert!(parse_policy("p", "format = \"pulsar-policy 0\"\n[lanes.go]\ninclude = []\n").is_err());
     }
 
     #[test]

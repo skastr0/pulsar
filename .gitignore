@@ -11,6 +11,10 @@ tsconfig.tsbuildinfo
 !.pulsar/author-aliases.json
 !.pulsar/ownership.json
 !.pulsar/project-modules.json
+!.pulsar/policy.toml
+!.pulsar/decisions.toml
+!.pulsar/catalogs/
+!.pulsar/catalogs/**
 !.pulsar/modules/
 !.pulsar/modules/**
 !.pulsar/routing-patterns/

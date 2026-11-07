@@ -10,7 +10,7 @@
 
 use crate::engine;
 use crate::facts::{stable_key, FactWriter, SideTables};
-use crate::finding::{hex, Finding, Subject, IMPORT_CYCLE};
+use crate::finding::{hex, metric_rule, Finding, Subject, IMPORT_CYCLE};
 use crate::driver;
 use crate::policy::{self, Effective};
 use serde_json::json;
@@ -125,7 +125,7 @@ fn evaluate(repo: &Path, sha: &str, tag: &str) -> Result<(BTreeMap<u64, Finding>
     let t1 = Instant::now();
     let mut w = FactWriter::new();
     let mut tables = SideTables::default();
-    let (set, _) = driver::build(&tree, tracked, &mut w, &mut tables)?;
+    let (set, _) = driver::build(&tree, tracked, &eff.policy.lanes, &mut w, &mut tables)?;
     let facts_path = scratch.0.join("facts.txt");
     let mut f = std::fs::File::create(&facts_path).map_err(|e| format!("{}: {e}", facts_path.display()))?;
     w.write_to(&mut f)?;
@@ -140,6 +140,13 @@ fn evaluate(repo: &Path, sha: &str, tag: &str) -> Result<(BTreeMap<u64, Finding>
     t.engine_ms = t2.elapsed().as_millis();
 
     let mut out: BTreeMap<u64, Finding> = BTreeMap::new();
+    let insert = |out: &mut BTreeMap<u64, Finding>, finding: Finding, sha: &str| -> Result<(), String> {
+        let key = finding.key();
+        match out.insert(key, finding) {
+            Some(prev) => Err(format!("finding key {} collides for two findings at {sha}: {}", hex(key), prev.evidence_text)),
+            None => Ok(()),
+        }
+    };
     let cycles_on = !eff.policy.rules.disable.iter().any(|r| r == IMPORT_CYCLE.id);
     for members in found.cycles.iter().filter(|_| cycles_on) {
         let mut paths: Vec<&str> = members.iter().map(|&i| set.files[i as usize].as_str()).collect();
@@ -153,10 +160,32 @@ fn evaluate(repo: &Path, sha: &str, tag: &str) -> Result<(BTreeMap<u64, Finding>
             format!("cycle of {} files: {}", paths.len(), paths.join(", ")),
             json!({ "size": paths.len(), "members": paths }),
         );
-        let key = finding.key();
-        if let Some(prev) = out.insert(key, finding) {
-            return Err(format!("finding key {} collides for two findings at {sha}: {}", hex(key), prev.evidence_text));
+        insert(&mut out, finding, sha)?;
+    }
+    for x in &found.fx {
+        let rule = metric_rule(&x.rule)?;
+        if eff.policy.rules.disable.iter().any(|r| r == rule.id) {
+            continue;
         }
+        let entry = tables.fns.get(x.fn_id as usize).ok_or_else(|| format!("FX names function {} but only {} exist", x.fn_id, tables.fns.len()))?;
+        let key = *set.fn_keys.get(x.fn_id as usize).ok_or("FX function has no FK key")?;
+        let path = set.files[entry.file as usize].clone();
+        let fm = found.fm.get(x.fn_id as usize).copied().unwrap_or_default();
+        let finding = Finding::new(
+            rule,
+            vec![Subject::Function { key, path: path.clone(), chain: entry.chain.clone() }],
+            path,
+            Some(entry.chain.clone()),
+            format!(
+                "{} {} over {} (cyclomatic {}, nesting {}, npath {}, length {}) at lines {}-{}",
+                rule.id.trim_start_matches("core."), x.value, x.threshold, fm[0], fm[1], fm[2], fm[3],
+                entry.start_line, entry.end_line
+            ),
+            json!({ "value": x.value, "threshold": x.threshold,
+                    "metrics": { "cyclomatic": fm[0], "nesting": fm[1], "npath": fm[2], "length": fm[3] },
+                    "lines": [entry.start_line, entry.end_line] }),
+        );
+        insert(&mut out, finding, sha)?;
     }
     Ok((out, t, eff))
 }

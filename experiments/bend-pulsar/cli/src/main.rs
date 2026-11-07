@@ -77,10 +77,10 @@ fn print_stats(st: &driver::Stats) {
 
 /// Run every lane on `repo`, write canonical facts to `out`, and return the file set and side tables.
 fn build_facts(repo: &Path, coverage: Option<&Path>, out: &mut dyn Write) -> Result<(driver::FactSet, facts::SideTables), String> {
-    policy_for(repo)?;
+    let eff = policy_for(repo)?;
     let mut w = facts::FactWriter::new();
     let mut tables = facts::SideTables::default();
-    let (set, st) = driver::build_repo(repo, &mut w, &mut tables)?;
+    let (set, st) = driver::build_repo(repo, &eff.policy.lanes, &mut w, &mut tables)?;
     coverage::emit(repo, coverage, &tables, &mut w)?;
     w.write_to(out)?;
     print_stats(&st);
