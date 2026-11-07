@@ -73,6 +73,8 @@ Rule ids and default thresholds: `core.cyclomatic` 10, `core.nesting` 3,
 A decision for cyclomatic, and a short-circuit for NPath, is any `CT` kind-6 node: `&&`, `||`, `??`,
 their assignment forms and optional chaining `?.` (CO op 7). That makes `core.cyclomatic` rule version 2;
 cognitive does not count `?.`.
+`core.npath` is rule version 2 for the same reason. The CLI keys all three changed rules (cyclomatic,
+npath, length) as v2; delta matches v1 base findings to them and reports `rule_version_changed`.
 `core.length` (rule version 2) has two tiers. A body is linear when its cyclomatic is at most 2
 and its nesting at most 1, and structured otherwise. A structured body is flagged above the `Rules`
 length threshold (60), a linear one above 300. The `FX core.length` line ends with `shape=structured`

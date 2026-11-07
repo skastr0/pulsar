@@ -809,8 +809,8 @@ mod version_tests {
 
     #[test]
     fn a_rule_version_bump_is_reported_per_rule_with_the_number_of_rekeyed_findings() {
-        let v2 = Rule { version: 2, ..CYCLOMATIC };
-        let (b1, b2, b3) = (f(CYCLOMATIC, "f"), f(CYCLOMATIC, "g"), f(NESTING, "h"));
+        let (v1, v2) = (Rule { version: 1, ..CYCLOMATIC }, Rule { version: 2, ..CYCLOMATIC });
+        let (b1, b2, b3) = (f(v1, "f"), f(v1, "g"), f(NESTING, "h"));
         let (h1, h2, h3) = (f(v2, "f"), f(v2, "g"), f(NESTING, "h"));
         let pairs = vec![(b1.key(), h1.key()), (b2.key(), h2.key()), (b3.key(), h3.key())];
         let before: BTreeMap<u64, Finding> = [b1, b2, b3].into_iter().map(|x| (x.key(), x)).collect();
