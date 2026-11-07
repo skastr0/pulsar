@@ -81,6 +81,10 @@ Add when a lane needs more coverage or a corpus must be swapped:
 ## Gate
 
 `bench/gate.sh` runs `pulsar facts` then `pulsar-engine` on every corpus above,
-median of 3 runs for wall time and peak RSS, records load average, and compares
-against the committed `bench/baseline.json`. Regression margin: see the script
-header. Expensive runs go through the lead's queue (charter).
+median of 3 runs, and compares against the committed `bench/baseline.json`.
+Gate metrics are peak RSS and user+sys CPU time (lead ruling 2026-11-07: they
+hold up under machine load); wall time and load average are recorded as
+information only. Regression margins: RSS +25%, CPU +25%. `baseline.json` is
+tagged with the repo HEAD sha and the CLI/engine binary sha256s — re-record
+after engine or CLI changes. Expensive runs go through the lead's queue
+(charter).
