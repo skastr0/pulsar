@@ -7,12 +7,14 @@
 #
 #   SQL section     runs when there is an `SR rule` row (a SQL rule policy turned on)
 #   fan-out section runs when there is an `RF rule class edges none` row
+#   constant-argument section runs when there is an `RK rule class pos` row
 
 import Base
 import ./Rows.bend as W
 import ./ClassCtx.bend as X
 import ./Sql.bend as Q
 import ./Fanout.bend as F
+import ./Konst.bend as K
 
 def Si.f(fs: List<&2, U32>, k: Nat) -> U32:
   match fs k:
@@ -58,6 +60,10 @@ def Si.arity(tag: U32) -> Nat:
       6n
     case 21062:
       4n
+    case 16716:
+      3n
+    case 21067:
+      3n
     case _:
       0n
 
@@ -200,6 +206,20 @@ def Si.ons(xs: List<&2, List<&2, U32>>) -> List<&2, U32>:
     case Con{+f, t}:
       Con{Si.f(f, 0n), Si.ons(t)}
 
+def Si.als(xs: List<&2, List<&2, U32>>) -> List<&2, K.Al>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case Con{+f, t}:
+      Con{K.Al{Si.f(f, 0n), Si.f(f, 1n), Si.f(f, 2n)}, Si.als(t)}
+
+def Si.rks(xs: List<&2, List<&2, U32>>) -> List<&2, K.Rk>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case Con{+f, t}:
+      Con{K.Rk{Si.f(f, 0n), Si.f(f, 1n), Si.f(f, 2n)}, Si.rks(t)}
+
 # The DS header, or 0 0 when there is none (no DDL seen: the schema is not complete).
 def Si.ds(xs: List<&2, List<&2, U32>>) -> List<&2, U32>:
   match xs:
@@ -251,3 +271,21 @@ def Si.fo1(on: Bool, +rows: List<&2, W.Row>) -> Maybe<List<&2, String>>:
 # The fan-out section: nothing without an RF row, None when a row has the wrong arity.
 def FanoutIn.lines(+rows: List<&2, W.Row>) -> Maybe<List<&2, String>>:
   Si.fo1(Si.has(rows, 21062), rows)
+
+def Si.ko2(ok: Bool, +rows: List<&2, W.Row>) -> Maybe<List<&2, String>>:
+  match ok:
+    case True{}:
+      Some{K.Konst.lines(K.KF{Si.css(Si.of(rows, 17235)), Si.cls(Si.of(rows, 17228)), Si.als(Si.of(rows, 16716)), Si.rks(Si.of(rows, 21067))})}
+    case False{}:
+      None{}
+
+def Si.ko1(on: Bool, +rows: List<&2, W.Row>) -> Maybe<List<&2, String>>:
+  match on:
+    case True{}:
+      Si.ko2(Bool.not(Si.bad(rows)), rows)
+    case False{}:
+      Some{Nil{}}
+
+# The constant-argument section: nothing without an RK row, None when a row has the wrong arity.
+def KonstIn.lines(+rows: List<&2, W.Row>) -> Maybe<List<&2, String>>:
+  Si.ko1(Si.has(rows, 21067), rows)
