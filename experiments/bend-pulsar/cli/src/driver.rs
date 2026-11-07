@@ -362,7 +362,7 @@ fn push_functions(w: &mut FactWriter, mut per: Vec<Option<FileOut>>, tables: &mu
     let mut fn_keys = Vec::new();
     let mut base = 0u32;
     for (file, slot) in per.iter_mut().enumerate() {
-        let Some(FileOut { fns: FileFns { fns, mut ct, mut ops, entries, .. }, tests }) = slot.take() else { continue };
+        let Some(FileOut { fns: FileFns { fns, mut ct, mut ops, entries, blocks, .. }, tests }) = slot.take() else { continue };
         let count = fns.len() as u32;
         for (local, f) in fns.into_iter().enumerate() {
             let id = base + local as u32;
@@ -392,6 +392,18 @@ fn push_functions(w: &mut FactWriter, mut per: Vec<Option<FileOut>>, tables: &mu
         }
         for (local, kind) in &entries {
             w.push(Rel::Ep, &[base + local, *kind as u32]);
+        }
+        for r in &blocks.bl {
+            w.push(Rel::Bl, &[base + r[0], r[1], r[2]]);
+        }
+        for r in &blocks.bw {
+            w.push(Rel::Bw, &[base + r[0], r[1], r[2]]);
+        }
+        for r in &blocks.br {
+            w.push(Rel::Br, &[base + r[0], r[1], r[2]]);
+        }
+        for r in &blocks.bc {
+            w.push(Rel::Bc, &[base + r[0], r[1], r[2], r[3], r[4]]);
         }
         for t in tests {
             w.push(Rel::Tf, &[base + t]);

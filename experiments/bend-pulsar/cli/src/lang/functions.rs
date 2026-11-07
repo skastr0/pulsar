@@ -175,8 +175,23 @@ pub struct SqlTextRec {
     pub kind: SqlTextKind,
 }
 
+/// `BL`, `BW`, `BR` and `BC` rows of a file's decision blocks, with the function as a local index.
+#[derive(Debug, Default)]
+pub struct BlockRows {
+    /// `(fn, block, cond)`.
+    pub bl: Vec<[u32; 3]>,
+    /// `(fn, block, var)`.
+    pub bw: Vec<[u32; 3]>,
+    /// `(fn, block, var)`.
+    pub br: Vec<[u32; 3]>,
+    /// `(fn, block, var, op, lit)`.
+    pub bc: Vec<[u32; 5]>,
+}
+
 #[derive(Debug, Default)]
 pub struct FileFns {
+    /// Decision blocks for the coupled-path count.
+    pub blocks: BlockRows,
     pub fns: Vec<FnRec>,
     pub ct: Vec<CtRec>,
     /// One row per kind-6 node in `ct`.
