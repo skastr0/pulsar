@@ -2,9 +2,11 @@
 //!
 //! Vitest's `json` reporter writes this shape from both providers: the istanbul provider
 //! directly, and the v8 provider through ast-v8-to-istanbul. A line is executable when a
-//! statement starts on it, and its hits are the sum over statements that start there — the
-//! same rule Istanbul uses to print "Lines". The v8 mapping marks every physical line of a
-//! function (signature and closing brace included) as a statement, so the provider decides
+//! statement starts on it. Istanbul prints a line as hit when any statement starting there was
+//! hit; this reader sums the counts of that line's statements, and the sum is 0 exactly when
+//! all of them are 0, so covered and coverable agree with Istanbul's own answer. Only the hit
+//! magnitude could differ, and `CV` never carries it. The v8 mapping marks every physical line
+//! of a function (signature and closing brace included) as a statement, so the provider decides
 //! the line set; the adapter never rewrites it.
 
 use serde_json::Value;
