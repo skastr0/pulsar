@@ -32,6 +32,24 @@ codex	/Users/guilhermecastro/playground/codex	6111791d0b3dd9de93e9cbea6614c85644
 convex-backend	/Users/guilhermecastro/playground/convex-backend	8258f32547e814e838e66360ed6b8921013b25ff	repo	Rust + TS, mixed, large
 ```
 
+## History corpora
+
+History lanes (churn, hotspots, co-change, `H`/`C`/`A`/`CF`/`CFN` facts) run only
+where real git history exists. The snapshots above are single-commit orphans by
+design, so they cannot serve this lane. On the gate VM
+(`pulsar-fidelity-bx_89cmcpqp-gate`, corpora mirrored at the same absolute
+paths) the history-capable repos are:
+
+| name | VM path | history |
+|---|---|---|
+| junto | `/Users/guilhermecastro/Projects/junto` | GitHub clone of `skastr0/junto`, blobless (`--filter=blob:none`): all commits and trees, blobs fetched lazily. The pinned `pulsar-corpora/junto` snapshot stays the facts/metrics corpus; this is the history corpus. |
+| effect | `/Users/guilhermecastro/playground/effect` | Full clone, checked out at the recorded sha `9428e174` (12,313+ commits). |
+| tantivy | `/Users/guilhermecastro/playground/tantivy` | Full clone, checked out at `d0c5ffb0` (3,474 commits) — the long-history Rust repo. |
+| typst | `/Users/guilhermecastro/playground/typst` | Full clone, checked out at `031f539d` (4,562 commits) — second Rust history source. |
+
+Shallow clones everywhere else are fine for facts and metrics; do not run
+history lanes on them (`git rev-list --count HEAD` of 1 gives no signal).
+
 ## Coverage notes
 
 - **Effect pack evidence:** `effect` is the Effect 4 monorepo itself;
