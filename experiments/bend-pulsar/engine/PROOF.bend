@@ -18,6 +18,8 @@ import ./Layers-PROOF.bend as LayersProof
 import ./Metrics-PROOF.bend as MetricsProof
 import ./MetricsIn-PROOF.bend as MetricsInProof
 import ./ClassCtx-PROOF.bend as ClassCtxProof
+import ./Crap-PROOF.bend as CrapProof
+import ./Hotspot-PROOF.bend as HotspotProof
 
 def Laws.kind_is_value_kind(hv, ht, form):
   {==}
