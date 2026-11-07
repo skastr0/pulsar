@@ -2,8 +2,8 @@
  {
   "law": "glue_runs_metrics",
   "bug": "the glue builds trees without the CT rows",
-  "old": "In.out(r, cv, chs, In.ops(cts, om), M.Trees.of(fns, cts))",
-  "new": "In.out(r, cv, chs, In.ops(cts, om), M.Trees.of(fns, Nil{}))"
+  "old": "In.out(r, cv, chs, u, In.ops(cts, om), M.Trees.of(fns, cts))",
+  "new": "In.out(r, cv, chs, u, In.ops(cts, om), M.Trees.of(fns, Nil{}))"
  },
  {
   "law": "glue_trees",
@@ -88,7 +88,19 @@
  {
   "law": "glue_entry",
   "bug": "MetricsIn.lines passes no churn to Hotspot",
-  "old": "In.go(r, In.cvs(rows), Ch.Churn.of(rows), In.cos(rows)",
-  "new": "In.go(r, In.cvs(rows), Nil{}, In.cos(rows)"
+  "old": "In.go(r, In.cvs(rows), Ch.Churn.of(rows), In.un(rows), In.cos(rows)",
+  "new": "In.go(r, In.cvs(rows), Nil{}, In.un(rows), In.cos(rows)"
+ },
+ {
+  "law": "glue_prints_lines",
+  "bug": "the untested-data-access lines are dropped",
+  "old": ", U.Untested.lines(ms, C.Crap.findings(C.Crap.default_thr(), cs), cs, u))",
+  "new": ", Nil{})"
+ },
+ {
+  "law": "glue_entry",
+  "bug": "the entry point passes no untested input",
+  "old": "Ch.Churn.of(rows), In.un(rows),",
+  "new": "Ch.Churn.of(rows), U.UF{Nil{}, Nil{}},"
  }
 ]

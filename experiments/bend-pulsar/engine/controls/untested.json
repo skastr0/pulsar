@@ -1,0 +1,62 @@
+[
+ {
+  "law": "un_rule_sound",
+  "bug": "test functions are reported",
+  "old": "Un.push(Bool.and(Bool.and(Bool.not(test), S.Scope.has(qset, fn)), S.Scope.has(cset, fn))",
+  "new": "Un.push(Bool.and(S.Scope.has(qset, fn), S.Scope.has(cset, fn))"
+ },
+ {
+  "law": "un_rule_sound",
+  "bug": "reason 1 without a query site",
+  "old": "Un.push(Bool.and(Bool.and(Bool.not(test), S.Scope.has(qset, fn)), S.Scope.has(cset, fn))",
+  "new": "Un.push(Bool.and(Bool.not(test), S.Scope.has(cset, fn))"
+ },
+ {
+  "law": "un_rule_sound",
+  "bug": "reason 2 for a function with coverage data",
+  "old": "Bool.not(S.Scope.has(dset, fn))), Ux{r, fn, 2}",
+  "new": "True{}), Ux{r, fn, 2}"
+ },
+ {
+  "law": "un_rule_sound",
+  "bug": "the reasons are swapped",
+  "old": "S.Scope.has(cset, fn)), Ux{r, fn, 1}",
+  "new": "S.Scope.has(cset, fn)), Ux{r, fn, 2}"
+ },
+ {
+  "law": "un_rule_complete",
+  "bug": "reason 2 is never reported",
+  "old": "Ux{r, fn, 2}, rest))",
+  "new": "Ux{r, fn, 2}, Nil{}))"
+ },
+ {
+  "law": "un_rule_complete",
+  "bug": "the rule stops after the first function",
+  "old": "      Un.one(m, r, qset, cset, dset, Un.rule(t, r, qset, cset, dset))",
+  "new": "      Un.one(m, r, qset, cset, dset, Nil{})"
+ },
+ {
+  "law": "un_rule_sound",
+  "bug": "the coverage set is the CRAP set",
+  "old": "S.Scope.set(Un.dfns(cms)))",
+  "new": "S.Scope.set(Un.ffns(crs)))"
+ },
+ {
+  "law": "un_findings_complete",
+  "bug": "only the first RU row runs",
+  "old": "List.append(&2, Ux, Un.rule(ms, r, qset, cset, dset), Un.rules(ms, t, qset, cset, dset))",
+  "new": "Un.rule(ms, r, qset, cset, dset)"
+ },
+ {
+  "law": "un_lines_off",
+  "bug": "the header prints without an RU row",
+  "old": "    case Nil{}:\n      Nil{}\n    case Con{+r, +t}:",
+  "new": "    case Nil{}:\n      [\"pulsar-untested 0\"]\n    case Con{+r, +t}:"
+ },
+ {
+  "law": "un_lines_shape",
+  "bug": "the section header changes",
+  "old": "\"pulsar-untested 0\", List.append",
+  "new": "\"pulsar-untested 1\", List.append"
+ }
+]

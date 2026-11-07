@@ -8,8 +8,9 @@ import ./MetricsIn.bend as I
 import ./MetricsIn-LAWS.bend as Laws
 import ./Rows.bend as R
 import ./Churn.bend as Ch
+import ./Untested.bend as U
 
-def Laws.glue_runs_metrics(r, cv, chs, om, fns, cts):
+def Laws.glue_runs_metrics(r, cv, chs, u, om, fns, cts):
   {==}
 
 def Laws.glue_trees(r, fns, cts):
@@ -18,22 +19,22 @@ def Laws.glue_trees(r, fns, cts):
 def Laws.glue_measure_is_run(cap, fts):
   {==}
 
-def Laws.glue_measures(r, cvs, chs, ops, fts):
+def Laws.glue_measures(r, cvs, chs, u, ops, fts):
   {==}
 
-def Laws.glue_prints_lines(r, ms, gs, gl, chs, xs):
+def Laws.glue_prints_lines(r, ms, gs, gl, chs, u, xs):
   {==}
 
-def Laws.glue_refuses(r, cvs, chs, ops):
+def Laws.glue_refuses(r, cvs, chs, u, ops):
   {==}
 
-def Laws.glue_refuses_cv(r, chs, om, m):
+def Laws.glue_refuses_cv(r, chs, u, om, m):
   {==}
 
-def Laws.glue_refuses_co(r, cvs, chs, m):
+def Laws.glue_refuses_co(r, cvs, chs, u, m):
   {==}
 
-def Laws.glue_refuses_join(r, ms, gs, gl, chs):
+def Laws.glue_refuses_join(r, ms, gs, gl, chs, u):
   {==}
 
 def Laws.glue_entry(r, rows):

@@ -9,6 +9,7 @@ import ./Cognitive.bend as G
 import ./MetricsIn.bend as I
 import ./Rows.bend as R
 import ./Churn.bend as Ch
+import ./Untested.bend as U
 
 # ---- G. the glue main calls (MetricsIn.bend) ----------------------------------------------------
 # main prints MetricsIn.lines(rules, rows). Decoding rows to FN/CT/TF/CV is unproven
@@ -17,13 +18,15 @@ import ./Churn.bend as Ch
 # operator list (In.ops) is unproven too. The churn list is proven: G0 passes
 # Churn.of(rows), which Churn-LAWS CH1-CH2 prove exact, so Hotspot's churn (G4) is
 # the counted CFN rows.
+# Decoding QS and RU rows to the Untested input (In.un) is unproven.
 
 # G0. the entry point: MetricsIn.lines is In.go on the decoded rows, with Churn.of(rows)
 # as the churn list.
+# In.un(rows) is the untested-data-access input.
 law glue_entry:
   for +r: M.Rules
   for +rows: List<&2, R.Row>
-  {I.MetricsIn.lines(r, rows) == I.In.go(r, I.In.cvs(rows), Ch.Churn.of(rows), I.In.cos(rows), I.In.marked(I.In.fns(rows), I.In.tfs(rows)), I.In.cts(rows)) : Maybe<&2, List<&2, String>>}
+  {I.MetricsIn.lines(r, rows) == I.In.go(r, I.In.cvs(rows), Ch.Churn.of(rows), I.In.un(rows), I.In.cos(rows), I.In.marked(I.In.fns(rows), I.In.tfs(rows)), I.In.cts(rows)) : Maybe<&2, List<&2, String>>}
 
 # G1. decoded facts go to Trees.of, the tree builder Metrics.run uses, and the CO rows
 # to the operator list.
@@ -31,10 +34,11 @@ law glue_runs_metrics:
   for +r: M.Rules
   for +cv: Maybe<&2, List<&2, C.Cv>>
   for +chs: List<&2, H.Ch>
+  for +u: U.UF
   for +om: Maybe<&2, List<&2, I.Co>>
   for +fns: List<&2, M.Fn>
   for +cts: List<&2, M.CtRow>
-  {I.In.go(r, cv, chs, om, Some{fns}, Some{cts}) == I.In.out(r, cv, chs, I.In.ops(cts, om), M.Trees.of(fns, cts)) : Maybe<&2, List<&2, String>>}
+  {I.In.go(r, cv, chs, u, om, Some{fns}, Some{cts}) == I.In.out(r, cv, chs, u, I.In.ops(cts, om), M.Trees.of(fns, cts)) : Maybe<&2, List<&2, String>>}
 
 # G2. Metrics.run is Trees.of, measured; so is the glue's measure of built trees.
 law glue_trees:
@@ -55,22 +59,26 @@ law glue_measures:
   for +r: M.Rules
   for +cvs: List<&2, C.Cv>
   for +chs: List<&2, H.Ch>
+  for +u: U.UF
   for +ops: List<&2, G.Op>
   for +fts: List<&2, M.FnT>
-  {I.In.out(r, Some{cvs}, chs, Some{ops}, Some{fts}) == I.In.comp(r, M.Metrics.measure_all(fts, M.Rules.cap(r)), G.Cog.measure_all(fts, ops), G.Cognitive.lines(15n, fts, ops), chs, C.Crap.join(M.Metrics.measure_all(fts, M.Rules.cap(r)), cvs)) : Maybe<&2, List<&2, String>>}
+  {I.In.out(r, Some{cvs}, chs, u, Some{ops}, Some{fts}) == I.In.comp(r, M.Metrics.measure_all(fts, M.Rules.cap(r)), G.Cog.measure_all(fts, ops), G.Cognitive.lines(15n, fts, ops), chs, u, C.Crap.join(M.Metrics.measure_all(fts, M.Rules.cap(r)), cvs)) : Maybe<&2, List<&2, String>>}
 
 # G4. the output is the FM lines (each function's Metrics measures with its cognitive
 # measure, Cognitive-LAWS G), then Metrics' FX lines, then the cognitive lines, then
 # Crap.lines at the CRAP threshold, then Hotspot.lines at the churn threshold over
 # Metrics' and CRAP's findings.
+# Then Untested.lines over Metrics' records, CRAP's findings and the functions with
+# coverage data (Untested-LAWS).
 law glue_prints_lines:
   for +r: M.Rules
   for +ms: List<&2, M.FnM>
   for +gs: List<&2, G.CgM>
   for +gl: List<&2, String>
   for +chs: List<&2, H.Ch>
+  for +u: U.UF
   for +xs: List<&2, C.Cr>
-  {I.In.comp(r, ms, gs, gl, chs, Some{xs}) == Some{List.append(&2, String, G.Cog.fms(ms, gs), List.append(&2, String, M.Report.fxs(M.Metrics.findings(r, ms)), List.append(&2, String, gl, List.append(&2, String, C.Crap.lines(30n, C.Crap.measure_all(xs)), H.Hotspot.lines(2n, chs, M.Metrics.findings(r, ms), C.Crap.findings(30n, C.Crap.measure_all(xs)))))))} : Maybe<&2, List<&2, String>>}
+  {I.In.comp(r, ms, gs, gl, chs, u, Some{xs}) == Some{List.append(&2, String, G.Cog.fms(ms, gs), List.append(&2, String, M.Report.fxs(M.Metrics.findings(r, ms)), List.append(&2, String, gl, List.append(&2, String, C.Crap.lines(30n, C.Crap.measure_all(xs)), List.append(&2, String, H.Hotspot.lines(2n, chs, M.Metrics.findings(r, ms), C.Crap.findings(30n, C.Crap.measure_all(xs))), U.Untested.lines(ms, C.Crap.findings(30n, C.Crap.measure_all(xs)), C.Crap.measure_all(xs), u))))))} : Maybe<&2, List<&2, String>>}
 
 # G4'. the CO decoder reads op 7 (optional chaining `?.`) as an unscored operator, like
 # 3..6, so it adds no cognitive (Cognitive-LAWS S6'); its CT kind-6 node still counts for
@@ -90,22 +98,25 @@ law glue_refuses:
   for +r: M.Rules
   for +cvs: List<&2, C.Cv>
   for +chs: List<&2, H.Ch>
+  for +u: U.UF
   for +ops: List<&2, G.Op>
-  {I.In.out(r, Some{cvs}, chs, Some{ops}, None{}) == None{} : Maybe<&2, List<&2, String>>}
+  {I.In.out(r, Some{cvs}, chs, u, Some{ops}, None{}) == None{} : Maybe<&2, List<&2, String>>}
 
 law glue_refuses_cv:
   for +r: M.Rules
   for +chs: List<&2, H.Ch>
+  for +u: U.UF
   for +om: Maybe<&2, List<&2, G.Op>>
   for +m: Maybe<&2, List<&2, M.FnT>>
-  {I.In.out(r, None{}, chs, om, m) == None{} : Maybe<&2, List<&2, String>>}
+  {I.In.out(r, None{}, chs, u, om, m) == None{} : Maybe<&2, List<&2, String>>}
 
 law glue_refuses_co:
   for +r: M.Rules
   for +cvs: List<&2, C.Cv>
   for +chs: List<&2, H.Ch>
+  for +u: U.UF
   for +m: Maybe<&2, List<&2, M.FnT>>
-  {I.In.out(r, Some{cvs}, chs, None{}, m) == None{} : Maybe<&2, List<&2, String>>}
+  {I.In.out(r, Some{cvs}, chs, u, None{}, m) == None{} : Maybe<&2, List<&2, String>>}
 
 law glue_refuses_join:
   for +r: M.Rules
@@ -113,4 +124,5 @@ law glue_refuses_join:
   for +gs: List<&2, G.CgM>
   for +gl: List<&2, String>
   for +chs: List<&2, H.Ch>
-  {I.In.comp(r, ms, gs, gl, chs, None{}) == None{} : Maybe<&2, List<&2, String>>}
+  for +u: U.UF
+  {I.In.comp(r, ms, gs, gl, chs, u, None{}) == None{} : Maybe<&2, List<&2, String>>}

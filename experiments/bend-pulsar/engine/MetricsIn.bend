@@ -10,8 +10,9 @@
 # The lines are FM lines (Metrics' measures, then cognitive), Metrics' FX lines, then core.cognitive findings (Cognitive.bend,
 # from the CT tree and the CO operators), then core.crap findings (Crap.bend, from
 # the CV rows), then core.hotspot and core.risky-change (Hotspot.bend, from the
-# churn of A/C/CFN rows, Churn.bend). A function with a TF row is a test function:
-# it gets its FM line, no finding.
+# churn of A/C/CFN rows, Churn.bend), then untested data access (Untested.bend, from the
+# QS functions and RU rows, over Metrics' records and CRAP). A function with a TF row is a
+# test function: it gets its FM line, no finding.
 #
 # Rows with other tags are skipped. A decoder: unproven, like Rows.bend; the laws
 # start at Metrics.run, Crap.join and Churn.of (MetricsIn-LAWS.bend).
@@ -23,6 +24,7 @@ import ./Crap.bend as C
 import ./Hotspot.bend as H
 import ./Churn.bend as Ch
 import ./Cognitive.bend as G
+import ./Untested.bend as U
 
 # Tags packed big-endian, as Rows.bend does: "FN" = 70*256+78, "CT" = 67*256+84.
 def In.tag_fn() -> U32:
@@ -276,36 +278,90 @@ def In.ops(+cts: List<&2, M.CtRow>, om: Maybe<&2, List<&2, Co>>) -> Maybe<&2, Li
 # ---- the joined output ------------------------------------------------------------------------
 # FM lines with cognitive, Metrics' FX lines, then cognitive's, then CRAP's, then the composites over Metrics' and
 # CRAP's findings.
-def In.all(+r: M.Rules, +ms: List<&2, M.FnM>, gs: List<&2, G.CgM>, gl: List<&2, String>, +chs: List<&2, H.Ch>, +cs: List<&2, C.CrM>) -> List<&2, String>:
-  List.append(&2, String, G.Cog.fms(ms, gs), List.append(&2, String, M.Report.fxs(M.Metrics.findings(r, ms)), List.append(&2, String, gl, List.append(&2, String, C.Crap.lines(C.Crap.default_thr(), cs), H.Hotspot.lines(H.Hs.default_thr(), chs, M.Metrics.findings(r, ms), C.Crap.findings(C.Crap.default_thr(), cs))))))
+def In.all(+r: M.Rules, +ms: List<&2, M.FnM>, gs: List<&2, G.CgM>, gl: List<&2, String>, +chs: List<&2, H.Ch>, u: U.UF, +cs: List<&2, C.CrM>) -> List<&2, String>:
+  List.append(&2, String, G.Cog.fms(ms, gs), List.append(&2, String, M.Report.fxs(M.Metrics.findings(r, ms)), List.append(&2, String, gl, List.append(&2, String, C.Crap.lines(C.Crap.default_thr(), cs), List.append(&2, String, H.Hotspot.lines(H.Hs.default_thr(), chs, M.Metrics.findings(r, ms), C.Crap.findings(C.Crap.default_thr(), cs)), U.Untested.lines(ms, C.Crap.findings(C.Crap.default_thr(), cs), cs, u))))))
 
-def In.comp(+r: M.Rules, +ms: List<&2, M.FnM>, gs: List<&2, G.CgM>, gl: List<&2, String>, +chs: List<&2, H.Ch>, j: Maybe<&2, List<&2, C.Cr>>) -> Maybe<&2, List<&2, String>>:
+def In.comp(+r: M.Rules, +ms: List<&2, M.FnM>, gs: List<&2, G.CgM>, gl: List<&2, String>, +chs: List<&2, H.Ch>, u: U.UF, j: Maybe<&2, List<&2, C.Cr>>) -> Maybe<&2, List<&2, String>>:
   match j:
     case None{}:
       None{}
     case Some{xs}:
-      Some{In.all(r, ms, gs, gl, chs, C.Crap.measure_all(xs))}
+      Some{In.all(r, ms, gs, gl, chs, u, C.Crap.measure_all(xs))}
 
 # The trees measured once by Metrics and once by Cognitive, then joined with the CV rows.
 # The cognitive measures give both the FM lines' fifth field and the core.cognitive findings.
-def In.meas(+r: M.Rules, cvs: List<&2, C.Cv>, +chs: List<&2, H.Ch>, +ops: List<&2, G.Op>, +fts: List<&2, M.FnT>) -> Maybe<&2, List<&2, String>>:
+def In.meas(+r: M.Rules, cvs: List<&2, C.Cv>, +chs: List<&2, H.Ch>, u: U.UF, +ops: List<&2, G.Op>, +fts: List<&2, M.FnT>) -> Maybe<&2, List<&2, String>>:
   +ms = M.Metrics.measure_all(fts, M.Rules.cap(r))
   +gs = G.Cog.measure_all(fts, ops)
-  In.comp(r, ms, gs, G.Cog.fxs(G.Cog.findings(G.Cog.default_thr(), gs)), chs, C.Crap.join(ms, cvs))
+  In.comp(r, ms, gs, G.Cog.fxs(G.Cog.findings(G.Cog.default_thr(), gs)), chs, u, C.Crap.join(ms, cvs))
 
-def In.out(+r: M.Rules, cv: Maybe<&2, List<&2, C.Cv>>, +chs: List<&2, H.Ch>, om: Maybe<&2, List<&2, G.Op>>, m: Maybe<&2, List<&2, M.FnT>>) -> Maybe<&2, List<&2, String>>:
+def In.out(+r: M.Rules, cv: Maybe<&2, List<&2, C.Cv>>, +chs: List<&2, H.Ch>, u: U.UF, om: Maybe<&2, List<&2, G.Op>>, m: Maybe<&2, List<&2, M.FnT>>) -> Maybe<&2, List<&2, String>>:
   match cv om m:
     case Some{cvs} Some{ops} Some{fts}:
-      In.meas(r, cvs, chs, ops, fts)
+      In.meas(r, cvs, chs, u, ops, fts)
     case _ _ _:
       None{}
 
-def In.go(+r: M.Rules, cv: Maybe<&2, List<&2, C.Cv>>, +chs: List<&2, H.Ch>, om: Maybe<&2, List<&2, Co>>, fm: Maybe<&2, List<&2, M.Fn>>, cm: Maybe<&2, List<&2, M.CtRow>>) -> Maybe<&2, List<&2, String>>:
+def In.go(+r: M.Rules, cv: Maybe<&2, List<&2, C.Cv>>, +chs: List<&2, H.Ch>, u: U.UF, om: Maybe<&2, List<&2, Co>>, fm: Maybe<&2, List<&2, M.Fn>>, cm: Maybe<&2, List<&2, M.CtRow>>) -> Maybe<&2, List<&2, String>>:
   match fm cm:
     case Some{fns} Some{+cts}:
-      In.out(r, cv, chs, In.ops(cts, om), M.Trees.of(fns, cts))
+      In.out(r, cv, chs, u, In.ops(cts, om), M.Trees.of(fns, cts))
     case _ _:
       None{}
 
+# ---- QS and RU: untested data access ----------------------------------------------------------
+# "QS" = 81*256+83, "RU" = 82*256+85. A QS row is `site file fn node kind flags`; a QS or RU
+# row with another field count is skipped here (the SQL section refuses it).
+def In.tag_qs() -> U32:
+  20819
+
+def In.tag_ru() -> U32:
+  21077
+
+def In.qfn(fs: List<&2, U32>, rest: List<&2, U32>) -> List<&2, U32>:
+  match fs:
+    case Con{a, Con{b, Con{c, Con{d, Con{e, Con{f, Nil{}}}}}}}:
+      Con{c, rest}
+    case _:
+      rest
+
+def In.qpick(hit: Bool, fs: List<&2, U32>, rest: List<&2, U32>) -> List<&2, U32>:
+  match hit:
+    case True{}:
+      In.qfn(fs, rest)
+    case False{}:
+      rest
+
+def In.qfns(rows: List<&2, R.Row>) -> List<&2, U32>:
+  match rows:
+    case Nil{}:
+      Nil{}
+    case Con{R.Row{tag, fs}, t}:
+      In.qpick(U32.is_eq(tag, In.tag_qs()), fs, In.qfns(t))
+
+def In.ru1(fs: List<&2, U32>, rest: List<&2, U32>) -> List<&2, U32>:
+  match fs:
+    case Con{a, Nil{}}:
+      Con{a, rest}
+    case _:
+      rest
+
+def In.rpick(hit: Bool, fs: List<&2, U32>, rest: List<&2, U32>) -> List<&2, U32>:
+  match hit:
+    case True{}:
+      In.ru1(fs, rest)
+    case False{}:
+      rest
+
+def In.rus(rows: List<&2, R.Row>) -> List<&2, U32>:
+  match rows:
+    case Nil{}:
+      Nil{}
+    case Con{R.Row{tag, fs}, t}:
+      In.rpick(U32.is_eq(tag, In.tag_ru()), fs, In.rus(t))
+
+def In.un(+rows: List<&2, R.Row>) -> U.UF:
+  U.UF{In.qfns(rows), In.rus(rows)}
+
 def MetricsIn.lines(+r: M.Rules, +rows: List<&2, R.Row>) -> Maybe<&2, List<&2, String>>:
-  In.go(r, In.cvs(rows), Ch.Churn.of(rows), In.cos(rows), In.marked(In.fns(rows), In.tfs(rows)), In.cts(rows))
+  In.go(r, In.cvs(rows), Ch.Churn.of(rows), In.un(rows), In.cos(rows), In.marked(In.fns(rows), In.tfs(rows)), In.cts(rows))
