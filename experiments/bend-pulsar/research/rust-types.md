@@ -39,7 +39,7 @@ infers every workspace body.
 
 Build scripts and proc macros off changes the peak by under 7% (pulsar-cli 29.3 s / 1,806 MiB,
 convex-rs 21.1 s / 2,142 MiB), so they are not the memory lever. The same run on the Mac,
-machine loaded (load 70 to 440): pulsar-cli 195 s / 1,473 MiB.
+machine loaded (load 70 to 440): pulsar-cli 195 s / 1,438 MiB.
 
 ### B. `rust-analyzer scip`
 
