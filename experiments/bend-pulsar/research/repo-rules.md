@@ -16,7 +16,7 @@ format = "pulsar-rules 0"
 # Named sets, compiled by the CLI to numeric facts. Path prefixes or globs, symbol patterns,
 # catalog classes. The engine never sees the strings.
 [sets]
-kernel   = { files = ["packages/kernel/"] }
+kernel   = { files = ["src/core/"] }
 adapters = { files = ["packages/adapter-*/"] }
 
 # Derived relations: helpers, not findings.
