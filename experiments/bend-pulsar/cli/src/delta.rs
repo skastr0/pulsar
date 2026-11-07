@@ -247,9 +247,6 @@ fn from_meta(m: cache::Meta) -> Built {
         .into_iter()
         .map(|(file, start_line, end_line, parent, kind, chain)| crate::facts::FnEntry { file, start_line, end_line, parent, kind, chain })
         .collect();
-    tables.sql_names = m.sql_names;
-    tables.sql_indexes = m.sql_indexes;
-    tables.sql_sites = m.sql_sites;
     Built {
         set: driver::FactSet { files: m.files, prod: m.prod, fn_keys: m.fn_keys },
         tables,
