@@ -1,0 +1,4 @@
+CS q @effect/sql#SqlClient.SqlClient loops=0 ctx=2
+CS q @effect/sql#SqlClient.SqlClient loops=0 ctx=2
+CS typed @effect/sql#SqlClient.SqlClient loops=0 ctx=0
+CS imm @effect/sql#SqlSchema.findAll loops=0 ctx=0

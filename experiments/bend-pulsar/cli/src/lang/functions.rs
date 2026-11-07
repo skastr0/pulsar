@@ -58,10 +58,46 @@ pub struct CtRec {
     pub kind: u8,
 }
 
+/// `CS.ctx` bits (FACTS.md).
+pub mod ctx {
+    pub const ASYNC: u8 = 1;
+    pub const EFFECT: u8 = 2;
+    pub const TEST: u8 = 4;
+}
+
+/// `HD.shape` values (FACTS.md).
+pub mod shape {
+    pub const OTHER: u8 = 0;
+    pub const EMPTY: u8 = 1;
+    pub const ONLY_LOGS: u8 = 2;
+    pub const CONSTANT: u8 = 3;
+    pub const RETHROW_CAUSE: u8 = 4;
+    pub const RETHROW_NO_CAUSE: u8 = 5;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SiteKind {
+    /// A call site of catalog symbol `sym` (an index into [`FileFns::syms`]).
+    Call { sym: u32, loop_depth: u32, ctx: u8 },
+    /// An error handler of the given shape.
+    Handler { shape: u8 },
+}
+
+/// A `CS` or `HD` row before numbering: `fn_local` is the owning function's local index. Sites
+/// are in source order; the driver numbers them globally, one id space for both relations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Site {
+    pub fn_local: u32,
+    pub kind: SiteKind,
+}
+
 #[derive(Debug, Default)]
 pub struct FileFns {
     pub fns: Vec<FnRec>,
     pub ct: Vec<CtRec>,
+    /// Symbols this file's call sites name, deduplicated, in first-use order.
+    pub syms: Vec<String>,
+    pub sites: Vec<Site>,
 }
 
 /// FNV-1a 64 over parts separated by a zero byte (same constants as the file key).
@@ -76,4 +112,53 @@ pub fn fnv_parts(parts: &[&[u8]]) -> u64 {
         }
     }
     h
+}
+
+/// `SY`, `CL`, `CS` and `HD` rows over global ids, plus the symbol names for `.syms`.
+#[derive(Debug, Default)]
+pub struct SiteRows {
+    /// Symbol names by `SY` id; ids follow byte order of the name, not file order.
+    pub syms: Vec<String>,
+    /// `(sym, class)`.
+    pub cl: Vec<[u32; 2]>,
+    /// `(site, fn, callee, loop_depth, ctx)`.
+    pub cs: Vec<[u32; 5]>,
+    /// `(site, fn, shape)`.
+    pub hd: Vec<[u32; 3]>,
+}
+
+/// Number the call sites and handlers of every file. `files` is `(first function id, rows)` in
+/// file-id order; site ids are one space for `CS` and `HD`, in (file, source) order. `classes`
+/// gives each symbol's catalog classes.
+pub fn number_sites(
+    files: &[(u32, &FileFns)],
+    classes: &dyn Fn(&str) -> Vec<u32>,
+) -> SiteRows {
+    let mut names: std::collections::BTreeSet<&str> = Default::default();
+    for (_, f) in files {
+        names.extend(f.syms.iter().map(String::as_str));
+    }
+    let ids: std::collections::HashMap<&str, u32> =
+        names.iter().enumerate().map(|(i, n)| (*n, i as u32)).collect();
+    let mut out = SiteRows::default();
+    for (id, name) in names.iter().enumerate() {
+        for class in classes(name) {
+            out.cl.push([id as u32, class]);
+        }
+    }
+    let mut site = 0u32;
+    for (base, f) in files {
+        for s in &f.sites {
+            let fnid = base + s.fn_local;
+            match s.kind {
+                SiteKind::Call { sym, loop_depth, ctx } => {
+                    out.cs.push([site, fnid, ids[f.syms[sym as usize].as_str()], loop_depth, ctx as u32]);
+                }
+                SiteKind::Handler { shape } => out.hd.push([site, fnid, shape as u32]),
+            }
+            site += 1;
+        }
+    }
+    out.syms = names.iter().map(|n| n.to_string()).collect();
+    out
 }

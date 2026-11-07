@@ -268,6 +268,8 @@ pub struct FnEntry {
 pub struct SideTables {
     pub paths: Vec<String>,
     pub fns: Vec<FnEntry>,
+    /// Symbol names by `SY` id (catalog-style: `effect#Effect.orDie`, `global#console.log`).
+    pub syms: Vec<String>,
 }
 
 impl SideTables {
@@ -295,7 +297,18 @@ impl SideTables {
             writeln!(out, "{id}\t{path}\t{}\t{}\t{parent}\t{}\t{}", f.start_line, f.end_line, f.kind, f.chain)
                 .map_err(|e| format!("{}: {e}", p.display()))?;
         }
-        out.flush().map_err(|e| format!("{}: {e}", p.display()))
+        out.flush().map_err(|e| format!("{}: {e}", p.display()))?;
+
+        if self.syms.is_empty() {
+            return Ok(());
+        }
+        let mut s = String::new();
+        for name in &self.syms {
+            s.push_str(name);
+            s.push('\n');
+        }
+        let p = sibling(".syms");
+        std::fs::write(&p, s).map_err(|e| format!("{}: {e}", p.display()))
     }
 }
 
@@ -371,6 +384,7 @@ mod tests {
                 FnEntry { file: 0, start_line: 10, end_line: 22, parent: None, kind: 1, chain: "Foo>bar".into() },
                 FnEntry { file: 0, start_line: 12, end_line: 14, parent: Some(0), kind: 3, chain: "Foo>bar>#0".into() },
             ],
+            ..Default::default()
         };
         t.write(&dir.join("f")).unwrap();
         let got = std::fs::read_to_string(dir.join("f.fns")).unwrap();

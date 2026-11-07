@@ -1,0 +1,12 @@
+HD h shape=1
+HD h shape=2
+CS h global#console.error loops=0 ctx=0
+HD h shape=4
+HD h shape=5
+HD h shape=4
+HD h shape=3
+HD h shape=0
+HD h shape=1
+HD h shape=2
+CS h>#1 global#console.log loops=0 ctx=0
+HD h shape=0

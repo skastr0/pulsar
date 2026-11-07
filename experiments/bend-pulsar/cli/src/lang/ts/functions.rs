@@ -15,7 +15,12 @@ use oxc_ast_visit::{walk, Visit};
 use oxc_span::{GetSpan, Span};
 use oxc_syntax::scope::ScopeFlags;
 
-use crate::lang::functions::{ct, fk, fnv_parts, CtRec, FileFns, FnRec};
+use super::calls::{join, CatalogIndex, Use};
+use crate::catalog::{Arg, Via};
+use crate::lang::functions::{ct, ctx, fk, fnv_parts, shape, CtRec, FileFns, FnRec, Site, SiteKind};
+use oxc_semantic::Scoping;
+use oxc_syntax::reference::ReferenceId;
+use oxc_syntax::symbol::SymbolId;
 use std::collections::{HashMap, HashSet};
 use std::hash::{BuildHasherDefault, Hasher};
 
@@ -98,11 +103,37 @@ struct Pending {
     kind: Option<u8>,
 }
 
+/// An `ident.a.b` expression: the root identifier (with its reference, once the semantic pass
+/// ran) and the members after it.
+struct Chain {
+    root: String,
+    rid: Option<ReferenceId>,
+    path: Vec<String>,
+}
+
+enum Target {
+    /// A catalog-style symbol: through an import, or `global#...` for an undeclared root.
+    Sym(String),
+    /// A binding recorded as holding a catalog symbol's value.
+    Bound(SymbolId),
+    None,
+}
+
 struct Frame {
     local: u32,
     next_node: u32,
+    /// `CS.ctx` bits in force: inherited lexically, plus this function's own.
+    ctx: u8,
+    /// Enclosing loop nodes in this function.
+    loops: u32,
     /// Control parents, innermost last; 0 is the function body.
     stack: Vec<u32>,
+}
+
+/// A `const` (or typed parameter) known to hold the value of a catalog symbol.
+struct Bound {
+    sym: String,
+    via: Via,
 }
 
 pub struct Walker<'s> {
@@ -121,6 +152,16 @@ pub struct Walker<'s> {
     counters: Counters,
     /// Statements that are not early exits: a final top-level `return`/`throw`, a case-ending `break`.
     not_exit: HashSet<u32>,
+    /// Calls and handlers need name resolution and a catalog; without them only functions and
+    /// control trees are produced.
+    scoping: Option<&'s Scoping>,
+    index: Option<&'s CatalogIndex>,
+    test_file: bool,
+    imports: HashMap<SymbolId, String>,
+    bound: HashMap<SymbolId, Bound>,
+    sym_ids: HashMap<String, u32>,
+    /// Wrapper ctx bits for the function starting at the given offset.
+    pending_ctx: Vec<(u32, u8)>,
 }
 
 impl<'s> Walker<'s> {
@@ -137,12 +178,63 @@ impl<'s> Walker<'s> {
             pending: Vec::new(),
             counters: Counters::default(),
             not_exit: HashSet::new(),
+            scoping: None,
+            index: None,
+            test_file: false,
+            imports: HashMap::new(),
+            bound: HashMap::new(),
+            sym_ids: HashMap::new(),
+            pending_ctx: Vec::new(),
         }
     }
 
+    /// Turn on call-site, binding and handler facts for this file.
+    pub fn with_calls(mut self, scoping: &'s Scoping, index: &'s CatalogIndex, test_file: bool) -> Self {
+        self.scoping = Some(scoping);
+        self.index = Some(index);
+        self.test_file = test_file;
+        self
+    }
+
     pub fn run(mut self, program: &Program<'_>) -> FileFns {
+        if self.index.is_some() {
+            self.scan_imports(program);
+        }
         self.visit_program(program);
         self.out
+    }
+
+    /// Map each value import binding to the symbol it names (`effect#Effect.orDie` is a member
+    /// of the binding for `import { Effect } from "effect"`). Type-only imports are skipped.
+    fn scan_imports(&mut self, program: &Program<'_>) {
+        let Some(ix) = self.index else { return };
+        for stmt in &program.body {
+            let Statement::ImportDeclaration(d) = stmt else { continue };
+            if d.import_kind.is_type() {
+                continue;
+            }
+            let Some(specs) = &d.specifiers else { continue };
+            let base = ix.module_base(&d.source.value.display().to_string());
+            for sp in specs {
+                let (name, sid) = match sp {
+                    ImportDeclarationSpecifier::ImportSpecifier(i) if i.import_kind.is_type() => continue,
+                    ImportDeclarationSpecifier::ImportSpecifier(i) => {
+                        (Some(i.imported.name().to_string()), i.local.symbol_id.get())
+                    }
+                    ImportDeclarationSpecifier::ImportDefaultSpecifier(i) => {
+                        (Some("default".to_string()), i.local.symbol_id.get())
+                    }
+                    ImportDeclarationSpecifier::ImportNamespaceSpecifier(i) => (None, i.local.symbol_id.get()),
+                };
+                if let Some(sid) = sid {
+                    let sym = match name {
+                        Some(n) => join(&base, &n),
+                        None => base.clone(),
+                    };
+                    self.imports.insert(sid, sym);
+                }
+            }
+        }
     }
 
     fn take_pending(&mut self, start: u32) -> Option<Pending> {
@@ -192,6 +284,21 @@ impl<'s> Walker<'s> {
         true
     }
 
+    fn open_loop(&mut self) -> bool {
+        let opened = self.open(ct::LOOP);
+        if opened {
+            self.frames.last_mut().unwrap().loops += 1;
+        }
+        opened
+    }
+
+    fn close_loop(&mut self, opened: bool) {
+        if opened {
+            self.frames.last_mut().unwrap().loops -= 1;
+        }
+        self.close(opened);
+    }
+
     fn close(&mut self, opened: bool) {
         if opened {
             self.frames.last_mut().unwrap().stack.pop();
@@ -215,7 +322,7 @@ impl<'s> Walker<'s> {
     }
 
     /// Register a function and make it the current one. Returns false for nothing to undo.
-    fn enter(&mut self, span: Span, own: Option<&str>, default_kind: u8) {
+    fn enter(&mut self, span: Span, own: Option<&str>, default_kind: u8, is_async: bool) {
         let pend = self.take_pending(span.start);
         let kind = pend.as_ref().and_then(|p| p.kind).unwrap_or(default_kind);
         let name: Option<String> = match own {
@@ -251,7 +358,18 @@ impl<'s> Walker<'s> {
         self.leaf(ct::NESTED_FN);
         let local = self.out.fns.len() as u32;
         self.out.fns.push(FnRec { start_line, end_line, parent, loc, kind, chain, key });
-        self.frames.push(Frame { local, next_node: 1, stack: vec![0] });
+        let inherited = match self.frames.last() {
+            Some(f) => f.ctx,
+            None if self.test_file => ctx::TEST,
+            None => 0,
+        };
+        let wrapped = self
+            .pending_ctx
+            .iter()
+            .position(|p| p.0 == span.start)
+            .map_or(0, |i| self.pending_ctx.swap_remove(i).1);
+        let own_ctx = if is_async { ctx::ASYNC } else { 0 };
+        self.frames.push(Frame { local, next_node: 1, ctx: inherited | own_ctx | wrapped, loops: 0, stack: vec![0] });
         self.push_container(&element);
     }
 
@@ -288,6 +406,375 @@ impl<'s> Walker<'s> {
         ord
     }
 
+
+    // ---- calls, bindings and handlers (need scoping and a catalog) ----------------------------
+
+    fn intern(&mut self, sym: &str) -> u32 {
+        if let Some(&i) = self.sym_ids.get(sym) {
+            return i;
+        }
+        let i = self.out.syms.len() as u32;
+        self.out.syms.push(sym.to_string());
+        self.sym_ids.insert(sym.to_string(), i);
+        i
+    }
+
+    /// A `CS` site for `sym` in the current function. Outside any function there is no `fn` to
+    /// attribute it to, so nothing is emitted.
+    fn call_site(&mut self, sym: &str) {
+        let Some(f) = self.frames.last() else { return };
+        let (fn_local, loop_depth, c) = (f.local, f.loops, f.ctx);
+        let id = self.intern(sym);
+        self.out.sites.push(Site { fn_local, kind: SiteKind::Call { sym: id, loop_depth, ctx: c } });
+    }
+
+    fn handler_site(&mut self, shape: u8) {
+        let Some(f) = self.frames.last() else { return };
+        let fn_local = f.local;
+        self.out.sites.push(Site { fn_local, kind: SiteKind::Handler { shape } });
+    }
+
+    fn chain_static(&self, m: &StaticMemberExpression<'_>) -> Option<Chain> {
+        let mut c = self.chain(&m.object)?;
+        c.path.push(m.property.name.to_string());
+        Some(c)
+    }
+
+    /// A pure `ident.a.b` (or `ident["a"]`) chain: its root and the members after it.
+    fn chain(&self, e: &Expression<'_>) -> Option<Chain> {
+        match e.get_inner_expression() {
+            Expression::Identifier(id) => {
+                Some(Chain { root: id.name.to_string(), rid: id.reference_id.get(), path: Vec::new() })
+            }
+            Expression::StaticMemberExpression(m) => self.chain_static(m),
+            Expression::ComputedMemberExpression(m) => {
+                let Expression::StringLiteral(l) = m.expression.get_inner_expression() else { return None };
+                let mut c = self.chain(&m.object)?;
+                c.path.push(l.value.display().to_string());
+                Some(c)
+            }
+            Expression::ChainExpression(c) => match &c.expression {
+                ChainElement::StaticMemberExpression(m) => self.chain_static(m),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    fn type_chain(&self, t: &TSTypeName<'_>) -> Option<Chain> {
+        match t {
+            TSTypeName::IdentifierReference(id) => {
+                Some(Chain { root: id.name.to_string(), rid: id.reference_id.get(), path: Vec::new() })
+            }
+            TSTypeName::QualifiedName(q) => {
+                let mut c = self.type_chain(&q.left)?;
+                c.path.push(q.right.name.to_string());
+                Some(c)
+            }
+            TSTypeName::ThisExpression(_) => None,
+        }
+    }
+
+    fn resolve(&self, c: &Chain) -> Target {
+        let Some(sc) = self.scoping else { return Target::None };
+        match c.rid.and_then(|r| sc.get_reference(r).symbol_id()) {
+            Some(sid) => {
+                if let Some(base) = self.imports.get(&sid) {
+                    Target::Sym(c.path.iter().fold(base.clone(), |b, seg| join(&b, seg)))
+                } else if self.bound.contains_key(&sid) {
+                    Target::Bound(sid)
+                } else {
+                    Target::None
+                }
+            }
+            None => {
+                let mut s = format!("global#{}", c.root);
+                for seg in &c.path {
+                    s.push('.');
+                    s.push_str(seg);
+                }
+                Target::Sym(s)
+            }
+        }
+    }
+
+    fn sym_of(&self, e: &Expression<'_>) -> Option<String> {
+        match self.resolve(&self.chain(e)?) {
+            Target::Sym(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    fn has_via(&self, sym: &str, via: Via) -> bool {
+        self.index.is_some_and(|ix| ix.entries(sym).iter().any(|e| e.via == via))
+    }
+
+    /// Record `symbol` as bound to catalog symbol `sym` when the catalog has a matching entry.
+    fn bind(&mut self, sid: Option<SymbolId>, sym: String, via: Via) {
+        if let Some(sid) = sid {
+            if self.has_via(&sym, via) {
+                self.bound.insert(sid, Bound { sym, via });
+            }
+        }
+    }
+
+    /// What a declarator initialiser binds: `yield* S` and `await S` (via Yield), `yield* S(..)`
+    /// and `await S(..)` (YieldResult), and a plain `S(..)` (Result).
+    fn classify_init(&self, init: &Expression<'_>) -> Option<(String, Via)> {
+        let target = |x: &Expression<'_>, ident: Via, call: Via| -> Option<(String, Via)> {
+            match x.get_inner_expression() {
+                Expression::CallExpression(c) => Some((self.sym_of(&c.callee)?, call)),
+                other => Some((self.sym_of(other)?, ident)),
+            }
+        };
+        match init.get_inner_expression() {
+            Expression::YieldExpression(y) if y.delegate => {
+                target(y.argument.as_ref()?, Via::Yield, Via::YieldResult)
+            }
+            Expression::AwaitExpression(a) => target(&a.argument, Via::Yield, Via::YieldResult),
+            Expression::CallExpression(c) => Some((self.sym_of(&c.callee)?, Via::Result)),
+            _ => None,
+        }
+    }
+
+    fn bind_annotation(&mut self, sid: Option<SymbolId>, ann: &TSTypeAnnotation<'_>) {
+        let TSType::TSTypeReference(r) = &ann.type_annotation else { return };
+        let Some(c) = self.type_chain(&r.type_name) else { return };
+        if let Target::Sym(sym) = self.resolve(&c) {
+            self.bind(sid, sym, Via::Yield);
+        }
+    }
+
+    fn function_arg<'e, 'a>(&self, a: &'e Argument<'a>) -> Option<&'e Expression<'a>> {
+        let e = a.as_expression()?.get_inner_expression();
+        matches!(e, Expression::FunctionExpression(_) | Expression::ArrowFunctionExpression(_)).then_some(e)
+    }
+
+    /// A wrapper call hands its ctx bits to every function it takes.
+    fn wrap_args(&mut self, args: &[Argument<'_>], bits: u8) {
+        for a in args {
+            let start = match a.as_expression().map(|e| e.get_inner_expression()) {
+                Some(Expression::FunctionExpression(f)) => f.span.start,
+                Some(Expression::ArrowFunctionExpression(f)) => f.span.start,
+                _ => continue,
+            };
+            self.pending_ctx.push((start, bits));
+        }
+    }
+
+    fn handler_args(&mut self, args: &[Argument<'_>], arg: Arg) {
+        match arg {
+            Arg::LastFn => {
+                if let Some(e) = args.iter().rev().find_map(|a| self.function_arg(a)) {
+                    let sh = self.fn_shape(e);
+                    self.handler_site(sh);
+                }
+            }
+            Arg::ObjectFns => {
+                for a in args {
+                    let Some(Expression::ObjectExpression(o)) = a.as_expression().map(|e| e.get_inner_expression())
+                    else {
+                        continue;
+                    };
+                    for p in &o.properties {
+                        if let ObjectPropertyKind::ObjectProperty(p) = p {
+                            let v = p.value.get_inner_expression();
+                            if matches!(v, Expression::FunctionExpression(_) | Expression::ArrowFunctionExpression(_)) {
+                                let sh = self.fn_shape(v);
+                                self.handler_site(sh);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn fn_shape(&self, e: &Expression<'_>) -> u8 {
+        let param_name = |p: &FormalParameters<'_>| match p.items.first().map(|i| &i.pattern) {
+            Some(BindingPattern::BindingIdentifier(b)) => Some(b.name.to_string()),
+            _ => None,
+        };
+        match e {
+            Expression::ArrowFunctionExpression(f) => {
+                let param = param_name(&f.params);
+                match &f.body {
+                    ArrowFunctionBody::FunctionBody(b) => self.stmts_shape(&b.statements, param.as_deref()),
+                    other => other.as_expression().map_or(shape::OTHER, |e| self.expr_shape(e)),
+                }
+            }
+            Expression::FunctionExpression(f) => {
+                let param = param_name(&f.params);
+                match &f.body {
+                    Some(b) => self.stmts_shape(&b.statements, param.as_deref()),
+                    None => shape::OTHER,
+                }
+            }
+            _ => shape::OTHER,
+        }
+    }
+
+    fn is_constant(&self, e: &Expression<'_>) -> bool {
+        match e.get_inner_expression() {
+            Expression::StringLiteral(_)
+            | Expression::NumericLiteral(_)
+            | Expression::BooleanLiteral(_)
+            | Expression::NullLiteral(_)
+            | Expression::BigIntLiteral(_) => true,
+            Expression::TemplateLiteral(t) => t.expressions.is_empty(),
+            Expression::Identifier(i) => i.name == "undefined",
+            Expression::UnaryExpression(u) => u.operator == UnaryOperator::Void,
+            Expression::ArrayExpression(a) => a.elements.is_empty(),
+            Expression::ObjectExpression(o) => o.properties.is_empty(),
+            _ => false,
+        }
+    }
+
+    /// A call of a symbol the catalog puts in class 3 (log), awaiting allowed.
+    fn is_log_call(&self, e: &Expression<'_>) -> bool {
+        let e = match e.get_inner_expression() {
+            Expression::AwaitExpression(a) => a.argument.get_inner_expression(),
+            other => other,
+        };
+        let Expression::CallExpression(c) = e else { return false };
+        self.sym_of(&c.callee)
+            .is_some_and(|s| self.index.is_some_and(|ix| ix.entries(&s).iter().any(|x| x.class == 3 && x.via == Via::Call)))
+    }
+
+    fn expr_shape(&self, e: &Expression<'_>) -> u8 {
+        if self.is_constant(e) {
+            shape::CONSTANT
+        } else if self.is_log_call(e) {
+            shape::ONLY_LOGS
+        } else {
+            shape::OTHER
+        }
+    }
+
+    fn throw_shape(&self, e: &Expression<'_>, param: Option<&str>) -> u8 {
+        let is_param = |x: &Expression<'_>| matches!(x.get_inner_expression(), Expression::Identifier(i) if Some(i.name.as_str()) == param);
+        let carries = |args: &[Argument<'_>]| {
+            args.iter().any(|a| match a.as_expression().map(|x| x.get_inner_expression()) {
+                Some(x) if is_param(x) => true,
+                Some(Expression::ObjectExpression(o)) => o.properties.iter().any(|p| {
+                    matches!(p, ObjectPropertyKind::ObjectProperty(p)
+                        if !p.computed && p.key.static_name().is_some_and(|n| n.as_str() == Some("cause")))
+                }),
+                _ => false,
+            })
+        };
+        let with_cause = match e.get_inner_expression() {
+            x if is_param(x) => true,
+            Expression::NewExpression(n) => carries(&n.arguments),
+            Expression::CallExpression(c) => carries(&c.arguments),
+            _ => false,
+        };
+        if with_cause { shape::RETHROW_CAUSE } else { shape::RETHROW_NO_CAUSE }
+    }
+
+    fn stmts_shape(&self, stmts: &[Statement<'_>], param: Option<&str>) -> u8 {
+        if stmts.is_empty() {
+            return shape::EMPTY;
+        }
+        if let Some(Statement::ThrowStatement(t)) = stmts.last() {
+            return self.throw_shape(&t.argument, param);
+        }
+        // A trailing `return <constant>` does not stop a handler from being "only logs".
+        let (body, returned) = match stmts.last() {
+            Some(Statement::ReturnStatement(r)) if r.argument.as_ref().map_or(true, |a| self.is_constant(a)) => {
+                (&stmts[..stmts.len() - 1], true)
+            }
+            _ => (stmts, false),
+        };
+        if body.is_empty() {
+            return if returned { shape::CONSTANT } else { shape::EMPTY };
+        }
+        let all_logs = body.iter().all(|s| matches!(s, Statement::ExpressionStatement(x) if self.is_log_call(&x.expression)));
+        if all_logs { shape::ONLY_LOGS } else { shape::OTHER }
+    }
+
+    /// Does the value bound to `sid` count for this use?
+    fn bound_use(&self, sid: SymbolId, path: &[String], tag: bool) -> Option<String> {
+        let b = self.bound.get(&sid)?;
+        let ix = self.index?;
+        let hit = ix.entries(&b.sym).iter().any(|e| {
+            e.via == b.via
+                && match (&e.use_, tag, path) {
+                    (Use::Tag, true, []) => true,
+                    (Use::Call, false, []) => true,
+                    (Use::Member(m), false, [seg]) => m == seg,
+                    (Use::AnyMember, false, [_]) => true,
+                    _ => false,
+                }
+        });
+        hit.then(|| b.sym.clone())
+    }
+
+    fn on_call(&mut self, it: &CallExpression<'_>) {
+        let Some(ix) = self.index else { return };
+        // `.catch(cb)` on anything: a promise rejection handler.
+        if let Expression::StaticMemberExpression(m) = it.callee.get_inner_expression() {
+            if m.property.name == "catch" {
+                if let Some(e) = it.arguments.iter().rev().find_map(|a| self.function_arg(a)) {
+                    let sh = self.fn_shape(e);
+                    self.handler_site(sh);
+                }
+            }
+        }
+        match it.callee.get_inner_expression() {
+            // `S(...)(...)`: a wrapper applied in two steps, or the result of S called at once.
+            Expression::CallExpression(inner) => {
+                if let Some(sym) = self.sym_of(&inner.callee) {
+                    if let Some(w) = ix.wrapper(&sym) {
+                        self.wrap_args(&it.arguments, w.ctx);
+                    }
+                    let immediate = ix.entries(&sym).iter().any(|e| e.via == Via::Result && e.use_ == Use::Call);
+                    if immediate {
+                        self.call_site(&sym);
+                    }
+                }
+            }
+            callee => {
+                let Some(c) = self.chain(callee) else { return };
+                match self.resolve(&c) {
+                    Target::Sym(sym) => {
+                        if self.has_via(&sym, Via::Call) {
+                            self.call_site(&sym);
+                        }
+                        if let Some(w) = ix.wrapper(&sym) {
+                            self.wrap_args(&it.arguments, w.ctx);
+                        }
+                        if let Some(arg) = ix.handler(&sym) {
+                            self.handler_args(&it.arguments, arg);
+                        }
+                    }
+                    Target::Bound(sid) => {
+                        if let Some(sym) = self.bound_use(sid, &c.path, false) {
+                            self.call_site(&sym);
+                        }
+                    }
+                    Target::None => {}
+                }
+            }
+        }
+    }
+
+    /// `ref` and `read` events on a maximal chain: the longest prefix the catalog knows.
+    fn on_chain_ref(&mut self, c: &Chain) {
+        let Target::Sym(full) = self.resolve(c) else { return };
+        let mut sym = full;
+        loop {
+            if self.has_via(&sym, Via::Ref) || self.has_via(&sym, Via::Read) {
+                self.call_site(&sym);
+                return;
+            }
+            match sym.rfind('.') {
+                Some(i) if sym[..i].contains('#') => sym.truncate(i),
+                _ => return,
+            }
+        }
+    }
+
     /// Mark the final top-level `return`/`throw` of a body as not an early exit.
     fn mark_terminal(&mut self, body: &[Statement<'_>]) {
         match body.last() {
@@ -318,19 +805,19 @@ impl<'a> Visit<'a> for Walker<'_> {
         }
         let default_kind =
             if matches!(it.r#type, FunctionType::FunctionDeclaration) { fk::DECL } else { fk::FN_EXPR };
-        self.enter(it.span, it.id.as_ref().map(|i| i.name.as_str()), default_kind);
+        self.enter(it.span, it.id.as_ref().map(|i| i.name.as_str()), default_kind, it.r#async);
         walk::walk_function(self, it, flags);
         self.leave();
     }
 
     fn visit_arrow_function_expression(&mut self, it: &ArrowFunctionExpression<'a>) {
-        self.enter(it.span, None, fk::ARROW);
+        self.enter(it.span, None, fk::ARROW, it.r#async);
         walk::walk_arrow_function_expression(self, it);
         self.leave();
     }
 
     fn visit_static_block(&mut self, it: &StaticBlock<'a>) {
-        self.enter(it.span, Some("static"), fk::STATIC_BLOCK);
+        self.enter(it.span, Some("static"), fk::STATIC_BLOCK, false);
         self.mark_terminal(&it.body);
         walk::walk_static_block(self, it);
         self.leave();
@@ -346,6 +833,15 @@ impl<'a> Visit<'a> for Walker<'_> {
     fn visit_variable_declarator(&mut self, it: &VariableDeclarator<'a>) {
         if let (BindingPattern::BindingIdentifier(id), Some(init)) = (&it.id, &it.init) {
             self.hint(init, id.name.as_str(), None);
+        }
+        if let BindingPattern::BindingIdentifier(id) = &it.id {
+            if self.index.is_some() {
+                if let Some((sym, via)) = it.init.as_ref().and_then(|i| self.classify_init(i)) {
+                    self.bind(id.symbol_id.get(), sym, via);
+                } else if let Some(ann) = &it.type_annotation {
+                    self.bind_annotation(id.symbol_id.get(), ann);
+                }
+            }
         }
         walk::walk_variable_declarator(self, it);
     }
@@ -471,33 +967,33 @@ impl<'a> Visit<'a> for Walker<'_> {
     }
 
     fn visit_for_statement(&mut self, it: &ForStatement<'a>) {
-        let l = self.open(ct::LOOP);
+        let l = self.open_loop();
         walk::walk_for_statement(self, it);
-        self.close(l);
+        self.close_loop(l);
     }
 
     fn visit_for_in_statement(&mut self, it: &ForInStatement<'a>) {
-        let l = self.open(ct::LOOP);
+        let l = self.open_loop();
         walk::walk_for_in_statement(self, it);
-        self.close(l);
+        self.close_loop(l);
     }
 
     fn visit_for_of_statement(&mut self, it: &ForOfStatement<'a>) {
-        let l = self.open(ct::LOOP);
+        let l = self.open_loop();
         walk::walk_for_of_statement(self, it);
-        self.close(l);
+        self.close_loop(l);
     }
 
     fn visit_while_statement(&mut self, it: &WhileStatement<'a>) {
-        let l = self.open(ct::LOOP);
+        let l = self.open_loop();
         walk::walk_while_statement(self, it);
-        self.close(l);
+        self.close_loop(l);
     }
 
     fn visit_do_while_statement(&mut self, it: &DoWhileStatement<'a>) {
-        let l = self.open(ct::LOOP);
+        let l = self.open_loop();
         walk::walk_do_while_statement(self, it);
-        self.close(l);
+        self.close_loop(l);
     }
 
     fn visit_try_statement(&mut self, it: &TryStatement<'a>) {
@@ -506,6 +1002,14 @@ impl<'a> Visit<'a> for Walker<'_> {
         self.visit_block_statement(&it.block);
         self.close(arm);
         if let Some(h) = &it.handler {
+            if self.index.is_some() {
+                let param = match h.param.as_ref().map(|p| &p.pattern) {
+                    Some(BindingPattern::BindingIdentifier(b)) => Some(b.name.to_string()),
+                    _ => None,
+                };
+                let sh = self.stmts_shape(&h.body.body, param.as_deref());
+                self.handler_site(sh);
+            }
             let arm = self.open(ct::ARM);
             self.visit_catch_clause(h);
             self.close(arm);
@@ -552,6 +1056,73 @@ impl<'a> Visit<'a> for Walker<'_> {
         self.exit(it.span.start);
         walk::walk_continue_statement(self, it);
     }
+
+    // ---- call sites and handlers ---------------------------------------------------------
+
+    fn visit_call_expression(&mut self, it: &CallExpression<'a>) {
+        self.on_call(it);
+        if self.index.is_some() && self.chain(&it.callee).is_some() {
+            // A pure chain holds nothing else to visit.
+            for a in &it.arguments {
+                self.visit_argument(a);
+            }
+        } else {
+            walk::walk_call_expression(self, it);
+        }
+    }
+
+    fn visit_new_expression(&mut self, it: &NewExpression<'a>) {
+        if let (Some(ix), Some(sym)) = (self.index, self.sym_of(&it.callee)) {
+            let hit = ix.entries(&sym).iter().any(|e| {
+                e.via == Via::New && (e.use_ != Use::NoArgs || it.arguments.is_empty())
+            });
+            if hit {
+                self.call_site(&sym);
+            }
+        }
+        walk::walk_new_expression(self, it);
+    }
+
+    fn visit_tagged_template_expression(&mut self, it: &TaggedTemplateExpression<'a>) {
+        if self.index.is_some() {
+            if let Some(c) = self.chain(&it.tag) {
+                if let Target::Bound(sid) = self.resolve(&c) {
+                    if let Some(sym) = self.bound_use(sid, &c.path, true) {
+                        self.call_site(&sym);
+                    }
+                }
+            }
+        }
+        walk::walk_tagged_template_expression(self, it);
+    }
+
+    fn visit_static_member_expression(&mut self, it: &StaticMemberExpression<'a>) {
+        if self.index.is_some() {
+            if let Some(c) = self.chain_static(it) {
+                self.on_chain_ref(&c);
+                return;
+            }
+        }
+        walk::walk_static_member_expression(self, it);
+    }
+
+    fn visit_identifier_reference(&mut self, it: &IdentifierReference<'a>) {
+        let (Some(sc), Some(rid)) = (self.scoping, it.reference_id.get()) else { return };
+        if let Some(sid) = sc.get_reference(rid).symbol_id() {
+            if self.imports.contains_key(&sid) {
+                let c = Chain { root: it.name.to_string(), rid: Some(rid), path: Vec::new() };
+                self.on_chain_ref(&c);
+            }
+        }
+    }
+
+    fn visit_formal_parameter(&mut self, it: &FormalParameter<'a>) {
+        if let (Some(ann), BindingPattern::BindingIdentifier(b)) = (&it.type_annotation, &it.pattern) {
+            self.bind_annotation(b.symbol_id.get(), ann);
+        }
+        walk::walk_formal_parameter(self, it);
+    }
+
 }
 
 #[cfg(test)]

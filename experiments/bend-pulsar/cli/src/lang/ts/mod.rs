@@ -2,11 +2,14 @@
 //! imports, and return per-file function rows plus `I` and `U` rows over global file ids. The
 //! driver owns file ids and function numbering and writes every row through `crate::facts`.
 
+mod builtin;
+pub mod calls;
 mod extract;
 pub mod functions;
 mod resolve;
 
 use crate::lang::functions::FileFns;
+use crate::lang::scope::is_test;
 use crate::lang::FileOut;
 #[allow(unused_imports)]
 pub use extract::{function_spans, FnSpan};
@@ -23,6 +26,8 @@ pub struct Stats {
     pub unreadable: usize,
     pub i_facts: usize,
     pub u_facts: usize,
+    /// Ids of the catalogs applied to this tree.
+    pub catalogs: Vec<String>,
 }
 
 #[derive(Default)]
@@ -33,6 +38,8 @@ pub struct Analysis {
     pub i: Vec<[u32; 5]>,
     /// `(src, reason)` over global file ids; sorted and deduped.
     pub u: Vec<[u32; 2]>,
+    /// Catalog classes of every symbol the files' call sites name, for `CL`.
+    pub sym_classes: std::collections::BTreeMap<String, Vec<u32>>,
     pub stats: Stats,
 }
 
@@ -49,6 +56,7 @@ pub fn owns(p: &str) -> bool {
 pub fn analyze(root: &Path, files: &[(u32, String)], tracked: &[String]) -> Result<Analysis, String> {
     let paths: Vec<String> = files.iter().map(|(_, p)| p.clone()).collect();
     let res = Resolution::new(root, &paths, tracked);
+    let (index, catalogs) = builtin::index_for(root, tracked)?;
 
     struct PerFileOut {
         i: Vec<(u32, u8, u8, u8)>,
@@ -81,7 +89,7 @@ pub fn analyze(root: &Path, files: &[(u32, String)], tracked: &[String]) -> Resu
                 return PerFile { i: vec![], u: vec![], fns: FileFns::default(), fatal: false, unreadable: true };
             };
             let text = String::from_utf8_lossy(&bytes);
-            let ex = extract(alloc, rel, &path, &text);
+            let ex = extract(alloc, rel, &path, &text, &index, is_test(rel));
             let mut i = Vec::new();
             let mut u = Vec::new();
             for imp in ex.imports {
@@ -167,6 +175,13 @@ pub fn analyze(root: &Path, files: &[(u32, String)], tracked: &[String]) -> Resu
     u_rows.sort_unstable();
     st.i_facts = i_rows.len();
     st.u_facts = u_rows.len();
+    st.catalogs = catalogs;
+    let mut sym_classes = std::collections::BTreeMap::new();
+    for p in &per {
+        for name in &p.fns.syms {
+            sym_classes.entry(name.clone()).or_insert_with(|| index.classes(name));
+        }
+    }
     let per_file = per.iter_mut().map(|p| FileOut { fns: std::mem::take(&mut p.fns), tests: Vec::new() }).collect();
-    Ok(Analysis { per_file, i: i_rows, u: u_rows, stats: st })
+    Ok(Analysis { per_file, i: i_rows, u: u_rows, sym_classes, stats: st })
 }

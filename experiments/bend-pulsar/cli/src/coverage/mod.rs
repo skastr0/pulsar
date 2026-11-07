@@ -218,7 +218,7 @@ mod tests {
                 chain: row[6].clone(),
             });
         }
-        SideTables { paths, fns }
+        SideTables { paths, fns, ..Default::default() }
     }
 
     /// Expected rows: `path<TAB>chain<TAB>covered/coverable`, in the file's order.

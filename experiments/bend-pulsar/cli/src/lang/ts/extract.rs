@@ -1,5 +1,6 @@
 //! Parse one file, decide each import-like statement's binding usage, drop the AST.
 
+use super::calls::CatalogIndex;
 use super::functions::Walker;
 use crate::lang::functions::FileFns;
 use oxc_allocator::Allocator;
@@ -57,7 +58,7 @@ pub struct Extracted {
     pub fatal: bool,
 }
 
-pub fn extract(alloc: &Allocator, rel: &str, path: &Path, source: &str) -> Extracted {
+pub fn extract(alloc: &Allocator, rel: &str, path: &Path, source: &str, index: &CatalogIndex, test: bool) -> Extracted {
     let source_type = SourceType::from_path(path).unwrap_or_else(|_| SourceType::ts());
     let ret = Parser::new(alloc, source, source_type).parse();
     if ret.fatal_error {
@@ -124,7 +125,9 @@ pub fn extract(alloc: &Allocator, rel: &str, path: &Path, source: &str) -> Extra
             _ => {}
         }
     }
-    let functions = Walker::new(rel, source).run(&ret.program);
+    let walker = Walker::new(rel, source);
+    let walker = if index.is_empty() { walker } else { walker.with_calls(scoping, index, test) };
+    let functions = walker.run(&ret.program);
     Extracted { imports: out, functions, fatal: false }
 }
 
