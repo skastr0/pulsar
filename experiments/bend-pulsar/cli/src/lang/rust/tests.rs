@@ -157,7 +157,10 @@ fn corpus() {
     let fns: usize = out.per_file.iter().map(|f| f.fns.fns.len()).sum();
     let ct: usize = out.per_file.iter().map(|f| f.fns.ct.len()).sum();
     let tf: usize = out.per_file.iter().map(|f| f.tests.len()).sum();
-    eprintln!("wall_s={:.3} fns={fns} ct={ct} tf={tf} {:?}", t.elapsed().as_secs_f64(), out.stats);
+    let (bl, bw, br, bc) = out.per_file.iter().fold((0, 0, 0, 0), |a, f| {
+        (a.0 + f.blocks.bl.len(), a.1 + f.blocks.bw.len(), a.2 + f.blocks.br.len(), a.3 + f.blocks.bc.len())
+    });
+    eprintln!("wall_s={:.3} fns={fns} ct={ct} tf={tf} bl={bl} bw={bw} br={br} bc={bc} {:?}", t.elapsed().as_secs_f64(), out.stats);
     if let Ok(path) = std::env::var("PULSAR_RS_TREES") {
         let mut s = String::new();
         for (r, ids) in &out.trees {
@@ -236,4 +239,55 @@ fn function_facts_carry_the_control_tree_for_a_historical_blob() {
 
 fn render_ct_of(f: &crate::lang::functions::FileFns) -> String {
     f.ct.iter().map(|c| format!("{}\t{}\t{}\t{}\n", c.fn_local, c.node, c.parent, c.kind)).collect()
+}
+
+/// `BL`, `BW`, `BR`, `BC` of one function source, as readable tuples.
+fn block_rows(src: &str) -> parse::RustFile {
+    parse::extract("src/x.rs", src, false)
+}
+
+fn set(rows: &[[u32; 3]], block: u32) -> Vec<u32> {
+    let mut v: Vec<u32> = rows.iter().filter(|r| r[1] == block).map(|r| r[2]).collect();
+    v.sort_unstable();
+    v
+}
+
+#[test]
+fn independent_checks_are_unlinked_and_an_accumulator_guard_reads_what_they_wrote() {
+    let f = block_rows(
+        "fn f(a: i32, b: i32) -> i32 {\n    let mut acc = 0;\n    if a > 3 { acc += 1; }\n    if b == 2 { acc += 2; }\n    if acc > 1 { return 1; }\n    0\n}\n",
+    );
+    let r = &f.blocks;
+    // params a=0 b=1, acc=2. Blocks are CT nodes 1, 3, 5.
+    assert_eq!(r.bl.iter().map(|x| x[1]).collect::<Vec<_>>(), [1, 3, 5]);
+    assert!(r.bl.iter().all(|x| x[2] != 0), "every block has a condition hash");
+    assert_eq!((set(&r.br, 1), set(&r.br, 3), set(&r.br, 5)), (vec![0], vec![1], vec![2]));
+    assert_eq!((set(&r.bw, 1), set(&r.bw, 3), set(&r.bw, 5)), (vec![2], vec![2], vec![]));
+    // `a > 3` is gt (5) against literal 1, `b == 2` is eq (1) against literal 2, `acc > 1` gt against literal 3.
+    assert_eq!(r.bc, vec![[0, 1, 0, 5, 1], [0, 3, 1, 1, 2], [0, 5, 2, 5, 3]]);
+}
+
+#[test]
+fn match_arms_pin_the_scrutinee_and_for_loops_read_the_iterated_expression() {
+    let f = block_rows(
+        "fn g(n: u32, items: Vec<u32>) -> u32 {\n    let mut total = 0;\n    match n { 0 => total += 1, 1 => total += 2, _ => {} }\n    for x in items { total += x; }\n    total\n}\n",
+    );
+    let r = &f.blocks;
+    // params n=0 items=1, total=2, x=3; blocks: match = CT node 1 (arms 2,3,4 + flag 5), loop = node 6.
+    assert_eq!(r.bl.iter().map(|x| (x[1], x[2] == 0)).collect::<Vec<_>>(), [(1, false), (6, true)]);
+    assert_eq!(r.bc, vec![[0, 1, 0, 1, 1], [0, 1, 0, 1, 2]]);
+    assert_eq!((set(&r.br, 1), set(&r.br, 6)), (vec![0], vec![1]));
+    assert_eq!(set(&r.bw, 1), vec![2]);
+    assert_eq!(set(&r.bw, 6), vec![2, 3]);
+}
+
+#[test]
+fn writing_a_root_writes_the_chains_seen_on_it() {
+    let f = block_rows(
+        "struct S { kind: u32 }\nfn h(c: bool, mut e: S, other: S) {\n    if e.kind == 1 { }\n    if c { e = other; }\n}\n",
+    );
+    let r = &f.blocks;
+    // vars: c=0 e=1 other=2, chain e.kind=3. Block 1 is the first if, block 3 the second.
+    assert_eq!(set(&r.br, 1), vec![3]);
+    assert_eq!(set(&r.bw, 3), vec![1, 3], "the write to e also writes the chain e.kind");
 }
