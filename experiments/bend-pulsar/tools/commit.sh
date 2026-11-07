@@ -98,32 +98,54 @@ for try in 1 2 3 4 5 6 7 8; do
     echo "commit.sh: nothing to commit in those paths" >&2
     exit 0
   fi
-  # Revert guard: refuse a commit that deletes lines another seat committed in
-  # the last 12 hours (the stale-copy failure). Seats come from main's reflog.
+  # Revert guard: refuse a commit that DELETES lines another seat committed in
+  # the last 12 hours (the stale-copy failure). A removed line that the same
+  # hunk replaces with a similar line (an edit: a count bumped, a variant
+  # appended) is not a deletion. Seats come from main's reflog.
   if [ "${COMMIT_ALLOW_REVERT:-}" != "1" ]; then
     git reflog show --format='%H %gs' refs/heads/main 2>/dev/null \
       | sed -n 's/^\([0-9a-f]*\) commit\.sh (\(.*\))$/\1 \2/p' > "$tmp/seats"
-    now=$(date +%s)
-    : > "$tmp/hits"
-    git diff --name-only "$old" "$tree" | while IFS= read -r f; do
-      git cat-file -e "$old:$f" 2>/dev/null || continue
-      git diff -U0 "$old" "$tree" -- "$f" | sed -n 's/^@@ -\([0-9]*\)\(,\([0-9]*\)\)\{0,1\} .*/\1 \3/p' |
-      while read -r start count; do
-        [ "${count:-1}" = "0" ] && continue
-        end=$((start + ${count:-1} - 1))
-        git blame -l -s -L "$start,$end" "$old" -- "$f" 2>/dev/null | cut -c1-40
-      done | sort -u | while read -r c; do
-        ct=$(git log -1 --format=%ct "$c" 2>/dev/null || echo 0)
-        [ $((now - ct)) -gt 43200 ] && continue
-        s=$(awk -v c="$c" '$1==c {print $2}' "$tmp/seats")
-        if [ -n "$s" ] && [ "$s" != "$seat" ]; then
-          echo "$f: deletes lines from $(git log -1 --format='%h %s' "$c") [$s]" >> "$tmp/hits"
-        fi
-      done
-    done || true
-    if [ -s "$tmp/hits" ]; then
+    python3 - "$old" "$tree" "$seat" "$tmp/seats" > "$tmp/hits" <<'PY' || true
+import re, subprocess, sys, time
+old, tree, seat, seatsf = sys.argv[1:5]
+seats = dict(l.split(None, 1) for l in open(seatsf) if l.strip())
+seats = {k: v.strip() for k, v in seats.items()}
+now = time.time()
+def git(*a): return subprocess.run(["git", *a], capture_output=True, text=True).stdout
+def toks(l): return set(re.findall(r"\w+", l))
+def similar(a, b):
+    ta, tb = toks(a), toks(b)
+    if not ta or not tb: return a.strip() == b.strip()
+    return len(ta & tb) / len(ta | tb) >= 0.6
+hits = set()
+for f in git("diff", "--name-only", old, tree).split("\n"):
+    if not f or subprocess.run(["git", "cat-file", "-e", f"{old}:{f}"], capture_output=True).returncode: continue
+    diff = git("diff", "-U0", old, tree, "--", f).split("\n")
+    i = 0
+    while i < len(diff):
+        m = re.match(r"^@@ -(\d+)(?:,(\d+))? \+\d+(?:,\d+)? @@", diff[i])
+        if not m: i += 1; continue
+        start = int(m.group(1)); i += 1
+        rem, add = [], []
+        while i < len(diff) and not diff[i].startswith("@@"):
+            if diff[i].startswith("-"): rem.append(diff[i][1:])
+            elif diff[i].startswith("+"): add.append(diff[i][1:])
+            i += 1
+        for k, r in enumerate(rem):
+            if r.strip() == "" or any(similar(r, a) for a in add): continue
+            ln = start + k
+            b = git("blame", "-l", "-s", "-L", f"{ln},{ln}", old, "--", f)[:40]
+            if not b: continue
+            ct = git("log", "-1", "--format=%ct", b).strip()
+            if not ct or now - int(ct) > 43200: continue
+            s2 = seats.get(b)
+            if s2 and s2 != seat:
+                hits.add(f"{f}: deletes lines from {git('log','-1','--format=%h %s',b).strip()} [{s2}]")
+print("\n".join(sorted(hits)))
+PY
+    if [ -s "$tmp/hits" ] && grep -q . "$tmp/hits"; then
       echo "commit.sh: refusing; this commit deletes recent lines committed by another seat:" >&2
-      sed 's/^/  /' "$tmp/hits" >&2
+      grep . "$tmp/hits" | sed 's/^/  /' >&2
       echo "  If your copy was stale, rebuild it from HEAD. If the deletion is intended, agree it with that seat and rerun with COMMIT_ALLOW_REVERT=1." >&2
       exit 1
     fi
