@@ -337,32 +337,9 @@ impl<'s> Walker<'s> {
         for stmt in &program.body {
             match stmt {
                 Statement::ExportDeclaration(d) => self.export_declaration(&d.declaration),
-                Statement::ExportNamedDeclaration(d) if !d.export_kind.is_type() => {
-                    for sp in d.specifiers.iter().filter(|sp| !sp.export_kind.is_type()) {
-                        self.out.exports.push((sp.exported.name().to_string(), sp.local.name().to_string()));
-                    }
-                }
-                Statement::ExportFromDeclaration(d) if !d.export_kind.is_type() => {
-                    let spec = self.spec_id(&d.source.value.display().to_string());
-                    for sp in d.specifiers.iter().filter(|sp| !sp.export_kind.is_type()) {
-                        self.out.reexports.push(Reexport {
-                            spec,
-                            imported: Some(sp.local.name().to_string()),
-                            exported: sp.exported.name().to_string(),
-                        });
-                    }
-                }
-                Statement::ExportDefaultDeclaration(d) => {
-                    let local = match &d.declaration {
-                        ExportDefaultDeclarationKind::FunctionDeclaration(f) => f.id.as_ref().map(|i| i.name.to_string()),
-                        ExportDefaultDeclarationKind::ClassDeclaration(c) => c.id.as_ref().map(|i| i.name.to_string()),
-                        other => match other.as_expression().map(|e| e.get_inner_expression()) {
-                            Some(Expression::Identifier(i)) => Some(i.name.to_string()),
-                            _ => None,
-                        },
-                    };
-                    self.out.exports.push(("default".to_string(), local.unwrap_or_else(|| "default".to_string())));
-                }
+                Statement::ExportNamedDeclaration(d) if !d.export_kind.is_type() => self.export_specifiers(d),
+                Statement::ExportFromDeclaration(d) if !d.export_kind.is_type() => self.export_from(d),
+                Statement::ExportDefaultDeclaration(d) => self.export_default(d),
                 Statement::ExportAllDeclaration(d) if d.exported.is_none() && !d.export_kind.is_type() => {
                     let spec = self.spec_id(&d.source.value.display().to_string());
                     self.out.reexports.push(Reexport { spec, imported: None, exported: String::new() });
@@ -370,6 +347,38 @@ impl<'s> Walker<'s> {
                 _ => {}
             }
         }
+    }
+
+    /// `export { a, b as c }`.
+    fn export_specifiers(&mut self, d: &ExportNamedDeclaration<'_>) {
+        for sp in d.specifiers.iter().filter(|sp| !sp.export_kind.is_type()) {
+            self.out.exports.push((sp.exported.name().to_string(), sp.local.name().to_string()));
+        }
+    }
+
+    /// `export { a as b } from "./m"`.
+    fn export_from(&mut self, d: &ExportFromDeclaration<'_>) {
+        let spec = self.spec_id(&d.source.value.display().to_string());
+        for sp in d.specifiers.iter().filter(|sp| !sp.export_kind.is_type()) {
+            self.out.reexports.push(Reexport {
+                spec,
+                imported: Some(sp.local.name().to_string()),
+                exported: sp.exported.name().to_string(),
+            });
+        }
+    }
+
+    /// `export default`: the local declaration it names, or the anonymous `default`.
+    fn export_default(&mut self, d: &ExportDefaultDeclaration<'_>) {
+        let local = match &d.declaration {
+            ExportDefaultDeclarationKind::FunctionDeclaration(f) => f.id.as_ref().map(|i| i.name.to_string()),
+            ExportDefaultDeclarationKind::ClassDeclaration(c) => c.id.as_ref().map(|i| i.name.to_string()),
+            other => match other.as_expression().map(|e| e.get_inner_expression()) {
+                Some(Expression::Identifier(i)) => Some(i.name.to_string()),
+                _ => None,
+            },
+        };
+        self.out.exports.push(("default".to_string(), local.unwrap_or_else(|| "default".to_string())));
     }
 
     /// `export function f`, `export class C`, `export const a = ..., b = ...`.

@@ -60,22 +60,33 @@ impl<'a> Tables<'a> {
             Some((h, t)) => (h, Some(t)),
             None => (name, None),
         };
-        for (exported, local) in &fns[t].exports {
-            if exported != head {
-                continue;
-            }
+        self.declared(fns, t, head, tail).or_else(|| self.reexported(fns, t, name, (head, tail), seen))
+    }
+
+    /// An export this file declares itself: `head`, or `head.tail` as a member one level down.
+    fn declared(&self, fns: &[&mut FileFns], t: usize, head: &str, tail: Option<&str>) -> Option<(usize, u32)> {
+        fns[t].exports.iter().filter(|(exported, _)| exported == head).find_map(|(_, local)| {
             let chain = match tail {
                 None => local.clone(),
                 Some(member) if !member.contains('.') => format!("{local}>{member}"),
-                Some(_) => continue,
+                Some(_) => return None,
             };
-            if let Some(i) = self.chain(t, &chain) {
-                return Some((t, i));
-            }
-        }
-        for r in &fns[t].reexports {
-            let Some(dst) = self.targets[t].get(r.spec as usize).copied().flatten() else { continue };
-            let found = match &r.imported {
+            self.chain(t, &chain).map(|i| (t, i))
+        })
+    }
+
+    /// An export this file passes on from another module (`export { x } from`, `export *`).
+    fn reexported(
+        &self,
+        fns: &[&mut FileFns],
+        t: usize,
+        name: &str,
+        (head, tail): (&str, Option<&str>),
+        seen: &mut HashSet<(usize, String)>,
+    ) -> Option<(usize, u32)> {
+        fns[t].reexports.iter().find_map(|r| {
+            let dst = self.targets[t].get(r.spec as usize).copied().flatten()?;
+            match &r.imported {
                 Some(imp) if r.exported == head => {
                     let nm = tail.map_or_else(|| imp.clone(), |tl| format!("{imp}.{tl}"));
                     self.find(fns, dst, &nm, seen)
@@ -83,12 +94,8 @@ impl<'a> Tables<'a> {
                 // `export *` never re-exports a default.
                 None if head != "default" => self.find(fns, dst, name, seen),
                 _ => None,
-            };
-            if found.is_some() {
-                return found;
             }
-        }
-        None
+        })
     }
 }
 

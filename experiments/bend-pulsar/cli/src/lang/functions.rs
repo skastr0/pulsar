@@ -251,29 +251,12 @@ pub fn number_sites(
         names.iter().enumerate().map(|(i, n)| (*n, i as u32)).collect();
     let mut out = SiteRows::default();
     for (id, name) in names.iter().enumerate() {
-        for class in classes(name) {
-            out.cl.push([id as u32, class]);
-        }
+        out.cl.extend(classes(name).into_iter().map(|class| [id as u32, class]));
     }
     let mut site = 0u32;
     let mut unresolved: std::collections::BTreeMap<(u32, u8), u32> = Default::default();
     for (base, f) in files {
-        for s in &f.sites {
-            let fnid = base + s.fn_local;
-            match &s.kind {
-                SiteKind::Call { sym, loop_depth, ctx } => {
-                    out.cs.push([site, fnid, ids[f.syms[*sym as usize].as_str()], *loop_depth, *ctx as u32]);
-                }
-                SiteKind::Handler { shape } => out.hd.push([site, fnid, *shape as u32]),
-                SiteKind::Edge { to: Callee::Resolved { file, fn_local }, node, loop_depth, ctx } => {
-                    let Some(target) = file_base(*file).map(|b| b + fn_local) else { continue };
-                    out.ce.push([site, fnid, target, *node, *loop_depth, *ctx as u32]);
-                }
-                // Linking turns every edge into a resolved one or drops it.
-                SiteKind::Edge { .. } => continue,
-            }
-            site += 1;
-        }
+        number_file(&mut out, &mut site, *base, f, &ids, file_base);
         for (fn_local, reason) in &f.unresolved {
             *unresolved.entry((base + fn_local, *reason)).or_insert(0) += 1;
         }
@@ -281,4 +264,31 @@ pub fn number_sites(
     out.cu = unresolved.into_iter().map(|((f, r), n)| [f, r as u32, n]).collect();
     out.syms = names.iter().map(|n| n.to_string()).collect();
     out
+}
+
+/// One file's sites, numbered from `site` in source order.
+fn number_file(
+    out: &mut SiteRows,
+    site: &mut u32,
+    base: u32,
+    f: &FileFns,
+    ids: &std::collections::HashMap<&str, u32>,
+    file_base: &dyn Fn(u32) -> Option<u32>,
+) {
+    for s in &f.sites {
+        let fnid = base + s.fn_local;
+        match &s.kind {
+            SiteKind::Call { sym, loop_depth, ctx } => {
+                out.cs.push([*site, fnid, ids[f.syms[*sym as usize].as_str()], *loop_depth, *ctx as u32]);
+            }
+            SiteKind::Handler { shape } => out.hd.push([*site, fnid, *shape as u32]),
+            SiteKind::Edge { to: Callee::Resolved { file, fn_local }, node, loop_depth, ctx } => {
+                let Some(target) = file_base(*file).map(|b| b + fn_local) else { continue };
+                out.ce.push([*site, fnid, target, *node, *loop_depth, *ctx as u32]);
+            }
+            // Linking turns every edge into a resolved one or drops it.
+            SiteKind::Edge { .. } => continue,
+        }
+        *site += 1;
+    }
 }

@@ -160,6 +160,15 @@ fn export_from(d: &ExportFromDeclaration<'_>) -> RawImport {
     RawImport { spec, form: 2, hv, ht, pending }
 }
 
+/// Set `found[i]` for every wanted name equal to `name`.
+fn flag(found: &mut [bool], wanted: &[&str], name: &str) {
+    for (f, w) in found.iter_mut().zip(wanted) {
+        if *w == name {
+            *f = true;
+        }
+    }
+}
+
 /// Old-Pulsar-compatible "is this exported name type-only in the target" check for
 /// `export { a } from "./x"`: true for each `wanted` name that the file declares as an
 /// interface or type alias (anywhere), or exports with `export type { a }`, and never
@@ -175,32 +184,12 @@ pub fn type_only_exports(alloc: &Allocator, path: &Path, source: &str, wanted: &
     let sem = SemanticBuilder::new().with_build_nodes(true).build(&ret.program).semantic;
     for node in sem.nodes().iter() {
         match node.kind() {
-            AstKind::TSInterfaceDeclaration(d) => {
-                for (i, w) in wanted.iter().enumerate() {
-                    if d.id.name.as_str() == *w {
-                        found_type[i] = true;
-                    }
-                }
-            }
-            AstKind::TSTypeAliasDeclaration(d) => {
-                for (i, w) in wanted.iter().enumerate() {
-                    if d.id.name.as_str() == *w {
-                        found_type[i] = true;
-                    }
-                }
-            }
+            AstKind::TSInterfaceDeclaration(d) => flag(&mut found_type, wanted, d.id.name.as_str()),
+            AstKind::TSTypeAliasDeclaration(d) => flag(&mut found_type, wanted, d.id.name.as_str()),
             AstKind::ExportNamedDeclaration(d) => {
                 for s in d.specifiers.iter() {
-                    let name = s.local.name();
-                    for (i, w) in wanted.iter().enumerate() {
-                        if name.as_str() == *w {
-                            if s.export_kind.is_type() || d.export_kind.is_type() {
-                                found_type[i] = true;
-                            } else {
-                                found_value[i] = true;
-                            }
-                        }
-                    }
+                    let ty = s.export_kind.is_type() || d.export_kind.is_type();
+                    flag(if ty { &mut found_type } else { &mut found_value }, wanted, s.local.name().as_str());
                 }
             }
             _ => {}

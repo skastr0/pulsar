@@ -78,25 +78,39 @@ fn join_rel(dir: &str, rest: &str) -> String {
     if dir.is_empty() { rest.to_string() } else { format!("{dir}/{rest}") }
 }
 
+/// The workspace package a `package.json` declares, if it has a non-empty name.
+fn workspace_of(root: &Path, package_json: &str, dir: &str) -> Option<Workspace> {
+    let bytes = std::fs::read(root.join(package_json)).ok()?;
+    let v = serde_json::from_slice::<serde_json::Value>(&bytes).ok()?;
+    let name = v.get("name")?.as_str().filter(|n| !n.is_empty())?;
+    Some(Workspace { name: name.to_string(), dir: dir.to_string() })
+}
+
+/// File ids by path, and the lookup of every spelling a specifier may take for a file (the
+/// path, without its TS extension, a directory's `index`).
+fn file_tables(files: &[String]) -> (HashMap<String, u32>, HashMap<String, u32>) {
+    let mut ids = HashMap::with_capacity(files.len());
+    let mut lookup = HashMap::with_capacity(files.len() * 2);
+    for (i, f) in files.iter().enumerate() {
+        let id = i as u32;
+        ids.insert(f.clone(), id);
+        lookup.insert(f.clone(), id);
+        let stem = strip_ts_ext(f);
+        lookup.insert(stem.to_string(), id);
+        if let Some(dir) = stem.strip_suffix("/index") {
+            lookup.insert(dir.to_string(), id);
+        } else if stem == "index" {
+            lookup.insert(String::new(), id);
+        }
+    }
+    (ids, lookup)
+}
+
 impl Resolution {
     /// `files` is the sorted repo-relative TS file list (index = file id); `tracked` is the full
     /// `git ls-files` list, used to find tsconfig.json and package.json files.
     pub fn new(root: &Path, files: &[String], tracked: &[String]) -> Self {
-        let mut ids = HashMap::with_capacity(files.len());
-        let mut lookup = HashMap::with_capacity(files.len() * 2);
-        for (i, f) in files.iter().enumerate() {
-            let id = i as u32;
-            ids.insert(f.clone(), id);
-            lookup.insert(f.clone(), id);
-            let stem = strip_ts_ext(f);
-            lookup.insert(stem.to_string(), id);
-            if let Some(dir) = stem.strip_suffix("/index") {
-                lookup.insert(dir.to_string(), id);
-            } else if stem == "index" {
-                lookup.insert(String::new(), id);
-            }
-        }
-
+        let (ids, lookup) = file_tables(files);
         let base = Resolver::new(base_options());
         let mut tsconfig_dirs = HashMap::new();
         let mut resolvers = Vec::new();
@@ -116,15 +130,7 @@ impl Resolution {
                 tsconfig_dirs.insert(dir.to_string(), resolvers.len());
                 resolvers.push(Resolver::new(opts));
             } else if name == "package.json" && !skip {
-                if let Ok(bytes) = std::fs::read(root.join(t)) {
-                    if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&bytes) {
-                        if let Some(n) = v.get("name").and_then(|n| n.as_str()) {
-                            if !n.is_empty() {
-                                workspaces.push(Workspace { name: n.to_string(), dir: dir.to_string() });
-                            }
-                        }
-                    }
-                }
+                workspaces.extend(workspace_of(root, t, dir));
             }
         }
         workspaces.sort_by(|a, b| b.name.len().cmp(&a.name.len()).then(a.dir.cmp(&b.dir)));
