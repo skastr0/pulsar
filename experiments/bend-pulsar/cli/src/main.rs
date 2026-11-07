@@ -20,6 +20,7 @@ const USAGE: &str = "usage:
   pulsar delta <base> <head> [--repo dir] [--json] [--coverage file|dir]   findings added and removed between two shas (exit 1 if any added)
   pulsar catalog [check <file>... | list [--repo dir] | --help]   class data (see `pulsar catalog --help`)
   pulsar policy [--repo dir]        print the effective policy, its parts and fingerprint
+  pulsar history <repo>             print the git-history fact counts (H, C, A, CF, CFN)
   pulsar cycles <repo> [--facts-out file]   run facts, then the engine, and print cycles";
 
 fn main() -> ExitCode {
@@ -29,6 +30,7 @@ fn main() -> ExitCode {
         Some("cycles") => cmd_cycles(&args[1..]).map(|()| 0),
         Some("catalog") => cmd_catalog(&args[1..]).map(|()| 0),
         Some("policy") => cmd_policy(&args[1..]).map(|()| 0),
+        Some("history") => cmd_history(&args[1..]).map(|()| 0),
         Some("delta") => delta::parse(&args[1..]).and_then(|a| delta::run(&a)),
         _ => Err(USAGE.to_string()),
     };
@@ -78,16 +80,18 @@ fn print_stats(st: &driver::Stats) {
     }
 }
 
-/// Run every lane on `repo`, write canonical facts to `out`, and return the file set and side tables.
-fn build_facts(repo: &Path, coverage: Option<&Path>, out: &mut dyn Write) -> Result<(driver::FactSet, facts::SideTables), String> {
+/// Run every lane on `repo`, write canonical facts to `out`, and return the file set, side tables
+/// and history stats.
+fn build_facts(repo: &Path, coverage: Option<&Path>, out: &mut dyn Write) -> Result<(driver::FactSet, facts::SideTables, history::Stats), String> {
     let eff = policy_for(repo)?;
     let mut w = facts::FactWriter::new();
     let mut tables = facts::SideTables::default();
     let (set, st) = driver::build_repo(repo, &eff.policy.lanes, &mut w, &mut tables)?;
+    let hs = history::emit(repo, &history::Config::default(), &tables, &set.fn_keys, &mut w)?;
     coverage::emit(repo, coverage, &tables, &mut w)?;
     w.write_to(out)?;
     print_stats(&st);
-    Ok((set, tables))
+    Ok((set, tables, hs))
 }
 
 fn cmd_facts(args: &[String]) -> Result<(), String> {
@@ -95,7 +99,7 @@ fn cmd_facts(args: &[String]) -> Result<(), String> {
     match out {
         Some(path) => {
             let mut f = std::fs::File::create(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-            let (_, tables) = build_facts(&repo, coverage.as_deref(), &mut f)?;
+            let (_, tables, _) = build_facts(&repo, coverage.as_deref(), &mut f)?;
             tables.write(&path)?;
         }
         None => {
@@ -116,7 +120,7 @@ fn cmd_cycles(args: &[String]) -> Result<(), String> {
     });
     let set = {
         let mut f = std::fs::File::create(&facts_path).map_err(|e| format!("{}: {e}", facts_path.display()))?;
-        let (set, _) = build_facts(&repo, coverage.as_deref(), &mut f)?;
+        let (set, _, _) = build_facts(&repo, coverage.as_deref(), &mut f)?;
         set
     };
     let result = engine::run(&engine_path, &facts_path);
@@ -163,6 +167,17 @@ fn policy_for(root: &Path) -> Result<policy::Effective, String> {
     let eff = policy::load(root, home.as_deref(), &ev)?;
     eprintln!("pulsar: {}", eff.summary());
     Ok(eff)
+}
+
+fn cmd_history(args: &[String]) -> Result<(), String> {
+    let Opts { repo, .. } = parse_flags(args, "-o")?;
+    let mut sink = std::io::sink();
+    let (_, _, hs) = build_facts(&repo, None, &mut sink)?;
+    println!(
+        "commits={} authors={} CF={} CFN={} blobs={} pass1={}ms pass2={}ms",
+        hs.commits, hs.authors, hs.cf, hs.cfn, hs.blobs, hs.pass1_ms, hs.pass2_ms
+    );
+    Ok(())
 }
 
 fn cmd_policy(args: &[String]) -> Result<(), String> {
