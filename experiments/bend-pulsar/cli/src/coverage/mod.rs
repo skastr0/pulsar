@@ -36,6 +36,16 @@ pub struct Stats {
     pub rerooted_files: usize,
     /// The prefix those paths carried outside the repo, when there was exactly one.
     pub rerooted_prefix: Option<String>,
+    /// The reports that were read, repo-relative when they live under `repo`. A caller that
+    /// prints them names the input it used; empty means no report was found or given.
+    pub report_paths: Vec<String>,
+}
+
+/// Whether the repo has a coverage report where [`emit`] would auto-discover one. A caller that
+/// caches derived facts asks this first: a cached entry never carries coverage, so a run that
+/// finds a report must not read one.
+pub fn has_report(repo: &Path) -> bool {
+    !discover::discover(repo).is_empty()
 }
 
 /// Read the repo's coverage report and push `CV` facts. `explicit` is `--coverage <file|dir>`;
@@ -82,6 +92,7 @@ fn ingest(
     if reports.is_empty() {
         return Ok((Vec::new(), stats));
     }
+    stats.report_paths = reports.iter().map(|p| p.strip_prefix(repo).unwrap_or(p).display().to_string()).collect();
     let mut parsed = Vec::new();
     for path in &reports {
         let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -420,5 +431,33 @@ mod tests {
         let (cv, stats) = ingest(&dir, Some(&dir.join("reports/istanbul")), &tables(&dir)).unwrap();
         assert_eq!(stats.reports, 2, "json and lcov: {stats:?}");
         assert_eq!(render(&tables(&dir), &cv), expected(&dir, "expected-istanbul.txt"));
+    }
+
+    #[test]
+    fn stats_name_the_reports_the_reader_used() {
+        let dir = fixture("coverage/ts");
+        let (_, stats) = ingest(&dir, Some(&dir.join("reports/istanbul")), &tables(&dir)).unwrap();
+        assert_eq!(
+            stats.report_paths,
+            vec!["reports/istanbul/coverage-final.json", "reports/istanbul/lcov.info"]
+        );
+        let empty = std::env::temp_dir().join(format!("pulsar-cov-nopaths-{}", std::process::id()));
+        std::fs::create_dir_all(&empty).unwrap();
+        let (_, stats) = ingest(&empty, None, &tables(&dir)).unwrap();
+        assert!(stats.report_paths.is_empty(), "{stats:?}");
+        std::fs::remove_dir_all(&empty).unwrap();
+    }
+
+    #[test]
+    fn has_report_sees_only_the_discovery_locations() {
+        let dir = std::env::temp_dir().join(format!("pulsar-cov-has-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("reports")).unwrap();
+        std::fs::write(dir.join("reports/lcov.info"), "SF:a.ts\nDA:1,1\n").unwrap();
+        assert!(!has_report(&dir), "a report elsewhere is not discovered");
+        std::fs::create_dir_all(dir.join("coverage")).unwrap();
+        std::fs::write(dir.join("coverage/lcov.info"), "SF:a.ts\nDA:1,1\n").unwrap();
+        assert!(has_report(&dir), "coverage/lcov.info is a discovery location");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }
