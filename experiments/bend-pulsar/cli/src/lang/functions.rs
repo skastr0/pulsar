@@ -73,6 +73,31 @@ pub mod op {
     pub const OPTIONAL: u8 = 7;
     /// A default value: a parameter default (`x = 1`) or a destructuring default (`{ a = 1 }`).
     pub const DEFAULT: u8 = 8;
+    /// `&&` that continues the run of `&&` before it in the same expression (the run's first
+    /// operator is AND): cognitive complexity charges a run once.
+    pub const AND_CONT: u8 = 9;
+    /// `||` that continues a run of `||`; see [`AND_CONT`].
+    pub const OR_CONT: u8 = 10;
+}
+
+/// `CB fn node flavor`: what a kind-1 (branch) control node is, for cognitive complexity.
+pub mod flavor {
+    /// A conditional expression `c ? a : b`.
+    pub const TERNARY: u8 = 1;
+    /// An `if` with no `else`.
+    pub const IF: u8 = 2;
+    /// An `if` whose `else` is a block or a statement other than an `if`.
+    pub const IF_ELSE: u8 = 3;
+    /// An `if` whose `else` is another `if` (an `else if`).
+    pub const IF_ELIF: u8 = 4;
+}
+
+/// One `CB` row before numbering.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CbRec {
+    pub fn_local: u32,
+    pub node: u32,
+    pub flavor: u8,
 }
 
 /// Which boolean operator a kind-6 control node stands for (`CO fn node op`).
@@ -207,6 +232,8 @@ pub struct FileFns {
     pub ct: Vec<CtRec>,
     /// One row per kind-6 node in `ct`.
     pub ops: Vec<CoRec>,
+    /// One row per kind-1 node in `ct`, when the lane says what the branch is (`CB`).
+    pub branches: Vec<CbRec>,
     /// Symbols this file's call sites name, deduplicated, in first-use order.
     pub syms: Vec<String>,
     pub sites: Vec<Site>,

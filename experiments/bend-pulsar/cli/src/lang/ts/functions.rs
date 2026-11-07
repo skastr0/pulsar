@@ -18,7 +18,8 @@ use oxc_syntax::scope::ScopeFlags;
 use super::calls::{join, CatalogIndex, Use};
 use crate::catalog::{Arg, Shape, Via};
 use crate::lang::functions::{
-    ct, ctx, fk, fnv_parts, op, shape, unres, Callee, CoRec, CtRec, FileFns, FnRec, Reexport, Site, SiteKind,
+    ct, ctx, fk, flavor, fnv_parts, op, shape, unres, Callee, CbRec, CoRec, CtRec, FileFns, FnRec, Reexport, Site,
+    SiteKind,
     SqlTextKind, SqlTextRec,
 };
 use oxc_semantic::Scoping;
@@ -223,6 +224,8 @@ pub struct Walker<'s> {
     file_ctx: u8,
     /// Some call site landed outside every function (see `site_at`).
     module_sites: bool,
+    /// Whether each operator of the logical expression being walked starts a run, by node span.
+    run_starts: HashMap<(u32, u32), bool>,
     imports: HashMap<SymbolId, String>,
     bound: HashMap<SymbolId, Bound>,
     sym_ids: HashMap<String, u32>,
@@ -258,6 +261,7 @@ impl<'s> Walker<'s> {
             index: None,
             file_ctx: 0,
             module_sites: false,
+            run_starts: HashMap::new(),
             imports: HashMap::new(),
             bound: HashMap::new(),
             sym_ids: HashMap::new(),
@@ -579,6 +583,37 @@ impl<'s> Walker<'s> {
     }
 
     /// A kind-6 node, and the operator behind it.
+    /// `CB` row for the branch node just opened.
+    fn branch_flavor(&mut self, flavor: u8) {
+        let Some(f) = self.frames.last() else { return };
+        let node = *f.stack.last().unwrap();
+        self.out.branches.push(CbRec { fn_local: f.local, node, flavor });
+    }
+
+    /// Decide, for every operator of the logical expression tree rooted at `root` (operands that
+    /// are themselves logical expressions, through parentheses), whether it starts a run: the
+    /// operators taken in source order, an operator starts a run unless the one before it is the
+    /// same. `??` is an operator that breaks a run. A tree is one expression, so runs never merge
+    /// across expressions or statements (cognitive complexity charges each run once).
+    fn plan_runs(&mut self, root: &LogicalExpression<'_>) {
+        fn collect(e: &LogicalExpression<'_>, out: &mut Vec<((u32, u32), LogicalOperator)>) {
+            if let Expression::LogicalExpression(l) = e.left.get_inner_expression() {
+                collect(l, out);
+            }
+            out.push(((e.span.start, e.span.end), e.operator));
+            if let Expression::LogicalExpression(r) = e.right.get_inner_expression() {
+                collect(r, out);
+            }
+        }
+        let mut ops = Vec::new();
+        collect(root, &mut ops);
+        let mut prev = None;
+        for (key, operator) in ops {
+            self.run_starts.insert(key, prev != Some(operator));
+            prev = Some(operator);
+        }
+    }
+
     fn short_circuit(&mut self, code: u8) {
         let Some(node) = self.leaf(ct::SHORT_CIRCUIT) else { return };
         let fn_local = self.frames.last().map_or(0, |f| f.local);
@@ -1567,6 +1602,13 @@ impl<'a> Visit<'a> for Walker<'_> {
 
     fn visit_if_statement(&mut self, it: &IfStatement<'a>) {
         let b = self.open_decision(ct::BRANCH, Some(&it.test), None, true);
+        if b {
+            self.branch_flavor(match &it.alternate {
+                None => flavor::IF,
+                Some(Statement::IfStatement(_)) => flavor::IF_ELIF,
+                Some(_) => flavor::IF_ELSE,
+            });
+        }
         self.visit_expression(&it.test);
         let arm = self.open(ct::ARM);
         self.visit_statement(&it.consequent);
@@ -1581,6 +1623,9 @@ impl<'a> Visit<'a> for Walker<'_> {
 
     fn visit_conditional_expression(&mut self, it: &ConditionalExpression<'a>) {
         let b = self.open_decision(ct::BRANCH, Some(&it.test), None, true);
+        if b {
+            self.branch_flavor(flavor::TERNARY);
+        }
         self.visit_expression(&it.test);
         let arm = self.open(ct::ARM);
         self.visit_expression(&it.consequent);
@@ -1678,10 +1723,17 @@ impl<'a> Visit<'a> for Walker<'_> {
     }
 
     fn visit_logical_expression(&mut self, it: &LogicalExpression<'a>) {
-        let code = match it.operator {
-            LogicalOperator::And => op::AND,
-            LogicalOperator::Or => op::OR,
-            LogicalOperator::Coalesce => op::NULLISH,
+        let key = (it.span.start, it.span.end);
+        if !self.run_starts.contains_key(&key) {
+            self.plan_runs(it);
+        }
+        let starts = self.run_starts.remove(&key).unwrap_or(true);
+        let code = match (it.operator, starts) {
+            (LogicalOperator::And, true) => op::AND,
+            (LogicalOperator::And, false) => op::AND_CONT,
+            (LogicalOperator::Or, true) => op::OR,
+            (LogicalOperator::Or, false) => op::OR_CONT,
+            (LogicalOperator::Coalesce, _) => op::NULLISH,
         };
         self.short_circuit(code);
         walk::walk_logical_expression(self, it);
@@ -1948,6 +2000,39 @@ mod tests {
         assert_eq!(per_fn("C>constructor"), 1);
         assert!(out.ops.iter().all(|o| o.op == op::DEFAULT), "no other short-circuit in the source");
         assert_eq!(out.ops.len(), out.ct.iter().filter(|c| c.kind == ct::SHORT_CIRCUIT).count());
+    }
+
+    /// `CB` says what each branch is, and the `&&`/`||` operators of one expression say where a
+    /// run starts: a run is charged once, and two expressions never share one.
+    #[test]
+    fn branch_flavors_and_operator_runs() {
+        let src = "function f(a: any, b: any, c: any, d: any) {\n  if (a) {}\n  if (a) {} else {}\n  if (a) {} else if (b) {} else {}\n  const t = a ? 1 : 2;\n  const x = a && b && c;\n  const y = a && b || c && d;\n  const z = a && b; const w = c && d;\n  const n = (a && b) ?? (c && d);\n  const m = a || b || c;\n  return [x, y, z, w, t, n, m];\n}\n";
+        let alloc = Allocator::default();
+        let ret = Parser::new(&alloc, src, SourceType::ts()).parse();
+        let out = Walker::new("m.ts", src).run(&ret.program);
+        let mut branches = out.branches.clone();
+        branches.sort_by_key(|b| (b.fn_local, b.node));
+        let got: Vec<u8> = branches.iter().map(|b| b.flavor).collect();
+        use crate::lang::functions::flavor::{IF, IF_ELIF, IF_ELSE, TERNARY};
+        assert_eq!(got, [IF, IF_ELSE, IF_ELIF, IF_ELSE, TERNARY]);
+        // every branch row names a kind-1 node, and every kind-1 node has one
+        let kind1: Vec<u32> = out.ct.iter().filter(|c| c.kind == ct::BRANCH).map(|c| c.node).collect();
+        assert_eq!(branches.iter().map(|b| b.node).collect::<Vec<_>>(), kind1);
+        // x: the outer && continues, the inner starts. y: three runs. z, w: one each.
+        // n: `??` ends the run, so both sides start. m: `||` outer continues.
+        let mut ops = out.ops.clone();
+        ops.sort_by_key(|o| (o.fn_local, o.node));
+        let codes: Vec<u8> = ops.iter().map(|o| o.op).collect();
+        assert_eq!(
+            codes,
+            [
+                op::AND_CONT, op::AND, // x
+                op::OR, op::AND, op::AND, // y
+                op::AND, op::AND, // z, w
+                op::NULLISH, op::AND, op::AND, // n
+                op::OR_CONT, op::OR, // m
+            ]
+        );
     }
 
     #[test]
