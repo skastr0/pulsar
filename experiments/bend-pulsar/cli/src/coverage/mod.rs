@@ -16,13 +16,13 @@ mod map;
 
 use crate::facts::{FactWriter, Rel, SideTables};
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Executable lines and their hit counts for one file, as the report states them.
 type FileLines = BTreeMap<u32, u64>;
 
 /// Diagnostics for the stderr line. Counts only; the CLI renders paths.
-#[derive(Default)]
+#[derive(Default, Debug, PartialEq, Eq)]
 struct Stats {
     reports: usize,
     reported_files: usize,
@@ -42,11 +42,37 @@ pub fn emit(
     tables: &SideTables,
     w: &mut FactWriter,
 ) -> Result<(), String> {
-    let reports = resolve_reports(repo, explicit)?;
-    if reports.is_empty() {
+    let (cv, stats) = ingest(repo, explicit, tables)?;
+    if stats.reports == 0 {
         return Ok(());
     }
+    for (id, covered, coverable) in &cv {
+        w.push(Rel::Cv, &[*id, *covered, *coverable]);
+    }
+    eprintln!(
+        "pulsar: coverage reports={} files={} lines={} skipped={} assigned={} unassigned={} cv={}",
+        stats.reports,
+        stats.reported_files,
+        stats.reported_lines,
+        stats.skipped,
+        stats.assigned,
+        stats.unassigned,
+        stats.cv
+    );
+    Ok(())
+}
+
+/// Everything `emit` does except the writer and the stat line.
+fn ingest(
+    repo: &Path,
+    explicit: Option<&Path>,
+    tables: &SideTables,
+) -> Result<(Vec<(u32, u32, u32)>, Stats), String> {
     let mut stats = Stats::default();
+    let reports = resolve_reports(repo, explicit)?;
+    if reports.is_empty() {
+        return Ok((Vec::new(), stats));
+    }
     let mut parsed = Vec::new();
     for path in &reports {
         let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -56,8 +82,7 @@ pub fn emit(
         parsed.extend(entries);
     }
 
-    let known: std::collections::HashSet<&str> =
-        tables.paths.iter().map(String::as_str).collect();
+    let known: std::collections::HashSet<&str> = tables.paths.iter().map(String::as_str).collect();
     let mut lines: BTreeMap<String, FileLines> = BTreeMap::new();
     for (raw, file_lines) in union(parsed) {
         stats.reported_lines += file_lines.len();
@@ -74,27 +99,11 @@ pub fn emit(
     stats.assigned = assignment.assigned;
     stats.unassigned = assignment.unassigned;
     stats.cv = assignment.cv.len();
-    for (id, covered, coverable) in assignment.cv {
-        w.push(Rel::Cv, &[id, covered, coverable]);
-    }
-
-    if stats.reports > 0 {
-        eprintln!(
-            "pulsar: coverage reports={} files={} lines={} skipped={} assigned={} unassigned={} cv={}",
-            stats.reports,
-            stats.reported_files,
-            stats.reported_lines,
-            stats.skipped,
-            stats.assigned,
-            stats.unassigned,
-            stats.cv
-        );
-    }
-    Ok(())
+    Ok((assignment.cv, stats))
 }
 
 /// Resolve `--coverage` (a file or a directory) or the default locations under `repo`.
-fn resolve_reports(repo: &Path, explicit: Option<&Path>) -> Result<Vec<std::path::PathBuf>, String> {
+fn resolve_reports(repo: &Path, explicit: Option<&Path>) -> Result<Vec<PathBuf>, String> {
     let Some(given) = explicit else {
         return Ok(discover::discover(repo));
     };
@@ -168,14 +177,16 @@ mod tests {
     use super::*;
     use crate::facts::FnEntry;
 
-    /// `experiments/bend-pulsar/fixtures/coverage/ts`, from `experiments/bend-pulsar/cli`.
-    fn fixture() -> std::path::PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/coverage/ts")
+    fn fixture(name: &str) -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../fixtures/coverage")
+            .join(name)
     }
 
-    /// The fixture's hand-written `.fns` (id, path, start, end, parent, kind, chain).
-    fn tables() -> SideTables {
-        let text = std::fs::read_to_string(fixture().join("fns.tsv")).unwrap();
+    /// The fixture's `.fns` side table (id, path, start, end, parent, kind, chain), turned into
+    /// the shape the CLI writes: file ids index the sorted path list.
+    fn tables(dir: &Path) -> SideTables {
+        let text = std::fs::read_to_string(dir.join("fns.tsv")).unwrap();
         let mut rows: Vec<Vec<String>> = Vec::new();
         for line in text.lines().filter(|l| !l.is_empty()) {
             let fields: Vec<String> = line.split('\t').map(str::to_string).collect();
@@ -204,9 +215,9 @@ mod tests {
         SideTables { paths, fns }
     }
 
-    /// Expected rows: `path<TAB>chain<TAB>covered/coverable`, sorted like the file.
-    fn expected(name: &str) -> Vec<String> {
-        std::fs::read_to_string(fixture().join(name))
+    /// Expected rows: `path<TAB>chain<TAB>covered/coverable`, in the file's order.
+    fn expected(dir: &Path, name: &str) -> Vec<String> {
+        std::fs::read_to_string(dir.join(name))
             .unwrap()
             .lines()
             .filter(|l| !l.is_empty())
@@ -215,88 +226,88 @@ mod tests {
     }
 
     fn render(tables: &SideTables, cv: &[(u32, u32, u32)]) -> Vec<String> {
-        let mut rows: Vec<(usize, String)> = cv
+        let mut rows: Vec<(u32, String)> = cv
             .iter()
             .map(|&(id, covered, coverable)| {
                 let f = &tables.fns[id as usize];
                 let path = &tables.paths[f.file as usize];
-                (id as usize, format!("{path}\t{}\t{covered}/{coverable}", f.chain))
+                (id, format!("{path}\t{}\t{covered}/{coverable}", f.chain))
             })
             .collect();
         rows.sort();
         rows.into_iter().map(|(_, line)| line).collect()
     }
 
-    fn emit_into(report: &std::path::Path) -> Vec<(u32, u32, u32)> {
-        let tables = tables();
-        let mut w = FactWriter::new();
-        emit(&fixture(), Some(report), &tables, &mut w).unwrap();
-        let mut counts = BTreeMap::new();
-        // Read the CV rows back out of the canonical writer output.
-        let mut out = Vec::new();
-        w.write_to(&mut out).unwrap();
-        for line in String::from_utf8(out).unwrap().lines() {
-            let f: Vec<&str> = line.split(' ').collect();
-            if f[0] == "CV" {
-                let row = (f[1].parse().unwrap(), f[2].parse().unwrap(), f[3].parse().unwrap());
-                counts.insert(row.0, row);
-            }
-        }
-        counts.into_values().collect()
+    fn ingest_report(dir: &Path, report: &Path) -> (Vec<(u32, u32, u32)>, Stats) {
+        ingest(dir, Some(report), &tables(dir)).unwrap()
     }
 
     #[test]
     fn v8_json_matches_the_hand_checked_expectation() {
-        let tables = tables();
-        let cv = emit_into(&fixture().join("reports/v8/coverage-final.json"));
-        assert_eq!(render(&tables, &cv), expected("expected-v8.txt"));
+        let dir = fixture("ts");
+        let (cv, _) = ingest_report(&dir, &dir.join("reports/v8/coverage-final.json"));
+        assert_eq!(render(&tables(&dir), &cv), expected(&dir, "expected-v8.txt"));
     }
 
     #[test]
     fn istanbul_json_matches_the_hand_checked_expectation() {
-        let tables = tables();
-        let cv = emit_into(&fixture().join("reports/istanbul/coverage-final.json"));
-        assert_eq!(render(&tables, &cv), expected("expected-istanbul.txt"));
+        let dir = fixture("ts");
+        let (cv, _) = ingest_report(&dir, &dir.join("reports/istanbul/coverage-final.json"));
+        assert_eq!(render(&tables(&dir), &cv), expected(&dir, "expected-istanbul.txt"));
     }
 
     #[test]
     fn lcov_agrees_with_json_for_the_same_provider() {
         for provider in ["v8", "istanbul"] {
-            let dir = fixture().join("reports").join(provider);
-            let from_json = emit_into(&dir.join("coverage-final.json"));
-            let from_lcov = emit_into(&dir.join("lcov.info"));
+            let dir = fixture("ts");
+            let base = dir.join("reports").join(provider);
+            let (from_json, _) = ingest_report(&dir, &base.join("coverage-final.json"));
+            let (from_lcov, _) = ingest_report(&dir, &base.join("lcov.info"));
             assert_eq!(from_json, from_lcov, "{provider}: json and lcov disagree");
         }
     }
 
     #[test]
     fn cobertura_agrees_with_the_istanbul_provider() {
-        let tables = tables();
-        let dir = fixture().join("reports");
-        let from_json = emit_into(&dir.join("istanbul/coverage-final.json"));
-        let from_xml = emit_into(&dir.join("cobertura/coverage.xml"));
-        assert_eq!(render(&tables, &from_json), render(&tables, &from_xml));
+        let dir = fixture("ts");
+        let (from_json, _) = ingest_report(&dir, &dir.join("reports/istanbul/coverage-final.json"));
+        let (from_xml, _) = ingest_report(&dir, &dir.join("reports/cobertura/coverage.xml"));
+        assert_eq!(render(&tables(&dir), &from_json), render(&tables(&dir), &from_xml));
+    }
+
+    #[test]
+    fn cargo_llvm_cov_matches_the_hand_checked_expectation() {
+        let dir = fixture("rs");
+        let (cv, stats) = ingest_report(&dir, &dir.join("reports/lcov.info"));
+        assert_eq!(render(&tables(&dir), &cv), expected(&dir, "expected.txt"));
+        // llvm-cov instruments `mod tests`; those lines have no FN span, so they are unassigned.
+        assert_eq!(stats.unassigned, 6, "test-module lines: {stats:?}");
+        assert_eq!(stats.skipped, 0, "the SF: path must normalize: {stats:?}");
     }
 
     #[test]
     fn a_missing_report_is_not_an_error() {
-        let tables = tables();
-        let mut w = FactWriter::new();
+        let dir = fixture("ts");
         let empty = std::env::temp_dir().join(format!("pulsar-cov-empty-{}", std::process::id()));
         std::fs::create_dir_all(&empty).unwrap();
-        emit(&empty, None, &tables, &mut w).unwrap();
-        let mut out = Vec::new();
-        w.write_to(&mut out).unwrap();
-        assert!(!String::from_utf8(out).unwrap().contains("CV "));
+        let (cv, stats) = ingest(&empty, None, &tables(&dir)).unwrap();
+        assert!(cv.is_empty());
+        assert_eq!(stats.reports, 0);
         std::fs::remove_dir_all(&empty).unwrap();
     }
 
     #[test]
     fn an_explicit_missing_report_is_an_error() {
-        let tables = tables();
-        let mut w = FactWriter::new();
-        let err = emit(&fixture(), Some(Path::new("reports/nope.json")), &tables, &mut w)
-            .unwrap_err();
+        let dir = fixture("ts");
+        let err = ingest(&dir, Some(Path::new("reports/nope.json")), &tables(&dir)).unwrap_err();
         assert!(err.contains("no such file"), "{err}");
+    }
+
+    #[test]
+    fn an_explicit_directory_finds_every_report_in_it() {
+        let dir = fixture("ts");
+        let (cv, stats) = ingest(&dir, Some(&dir.join("reports/istanbul")), &tables(&dir)).unwrap();
+        assert_eq!(stats.reports, 2, "json and lcov: {stats:?}");
+        assert_eq!(render(&tables(&dir), &cv), expected(&dir, "expected-istanbul.txt"));
     }
 }

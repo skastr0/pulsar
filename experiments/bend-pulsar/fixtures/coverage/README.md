@@ -44,3 +44,27 @@ threshold has to be considered per provider, not blended.
 
 Under the innermost rule the callback owns lines 6-8, so `Widget` loses them: that is why
 its `v8` count is 5 and not 8.
+
+## `rs/` — cargo llvm-cov
+
+One crate, three functions, two tests. `reports/lcov.info` is `cargo llvm-cov --lcov` output
+(cargo-llvm-cov 0.9.1, rustc 1.98.1) with the absolute `SF:` path rewritten to `src/lib.rs`.
+
+`fns.tsv` has only the three production functions, which is what the Rust lane emits: items
+under `#[cfg(test)]` and `#[test]` get no `FN`. llvm-cov still instruments the test module, so
+those six lines (24, 25, 26, 29, 30, 31) fall outside every span and are reported as
+unassigned, never as a `CV` fact.
+
+### Hand check, `src/lib.rs`
+
+`add` 1-3, `classify` 5-13, `unreached` 15-17. Only `add(1, 2)` and `classify(1)` are called.
+
+| Function | Expected | Report lines |
+|---|---|---|
+| `add` | 3/3 | 1, 2, 3 all hit |
+| `classify` | 4/7 | 5, 6, 7, 13 hit; 8, 9, 11 not (10 and 12 carry no `DA`) |
+| `unreached` | 0/3 | 15, 16, 17 all zero |
+
+llvm-cov marks a function's signature and closing brace as lines, as the v8 provider does for
+TypeScript, so `add` reads 3/3 rather than the 1/1 an istanbul report would give.
+
