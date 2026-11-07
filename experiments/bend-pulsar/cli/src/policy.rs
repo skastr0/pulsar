@@ -159,6 +159,19 @@ pub struct Evidence {
     pub files: BTreeSet<String>,
 }
 
+/// A catalog rule that is on: numbered by its place in the sorted list of active rule ids, which
+/// is the `RL` row id the engine reports back in `RCX`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActiveRule {
+    pub id: String,
+    pub version: u32,
+    pub class_id: u32,
+    pub ctx_any: u32,
+    pub ctx_none: u32,
+    /// What the rule says, for the finding's evidence line.
+    pub says: String,
+}
+
 /// One input to the fingerprint: what it is, its name, and the SHA-256 of its content.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Part {
@@ -187,6 +200,33 @@ pub struct Effective {
 }
 
 impl Effective {
+    /// The catalog rules that are on: every rule of an active catalog unless `[rules] disable`
+    /// lists it, sorted by id. The position in this list is the rule's `RL` id.
+    pub fn active_rules(&self) -> Vec<ActiveRule> {
+        let mut out: Vec<ActiveRule> = Vec::new();
+        for c in &self.catalogs {
+            let cat = &c.loaded.catalog;
+            for r in &cat.rules {
+                if self.policy.rules.disable.iter().any(|d| d == &r.id) {
+                    continue;
+                }
+                // Validation guarantees the class is declared; the version is a plain integer label.
+                let Some(class) = cat.classes.iter().find(|k| k.class == r.class) else { continue };
+                out.push(ActiveRule {
+                    id: r.id.clone(),
+                    version: r.ver.parse().unwrap_or(1),
+                    class_id: class.id,
+                    ctx_any: r.ctx_any,
+                    ctx_none: r.ctx_none,
+                    says: r.says.clone(),
+                });
+            }
+        }
+        out.sort_by(|a, b| a.id.cmp(&b.id));
+        out.dedup_by(|a, b| a.id == b.id);
+        out
+    }
+
     /// One line for stderr, printed with every run.
     pub fn summary(&self) -> String {
         let src = match self.source {

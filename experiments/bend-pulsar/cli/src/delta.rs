@@ -13,7 +13,7 @@ use crate::coverage;
 use crate::driver;
 use crate::engine::{self, Findings};
 use crate::facts::{stable_key, FactWriter, SideTables};
-use crate::finding::{hex, metric_rule, needs_coverage, off_by_default, Finding, Subject, IMPORT_CYCLE};
+use crate::finding::{catalog_rule, hex, metric_rule, needs_coverage, off_by_default, Finding, Subject, IMPORT_CYCLE};
 use crate::lang::Degraded;
 use crate::policy::{self, Effective};
 use serde_json::{json, Value};
@@ -232,6 +232,45 @@ fn metric_findings(
     Ok(out)
 }
 
+/// Class-in-context findings: a function that calls a symbol of a class an active rule forbids in
+/// that context. One finding per (rule, function, callee): several call sites of the same callee in
+/// one function are one finding with a count, so the key never depends on a per-run site id.
+fn class_context_findings(
+    found: &Findings,
+    measures: &BTreeMap<u64, Measure>,
+    tables: &SideTables,
+    keys: &[u64],
+    rules: &[crate::policy::ActiveRule],
+) -> Vec<Finding> {
+    let mut groups: BTreeMap<(u32, u32, u32), usize> = BTreeMap::new();
+    for x in &found.rcx {
+        *groups.entry((x.rule, x.fn_id, x.callee)).or_default() += 1;
+    }
+    let mut out = Vec::new();
+    for ((rule_id, fn_id, callee), sites) in groups {
+        let (Some(rule), Some(&fn_key), Some(name)) =
+            (rules.get(rule_id as usize), keys.get(fn_id as usize), tables.syms.get(callee as usize))
+        else {
+            continue;
+        };
+        let Some(me) = measures.get(&fn_key) else { continue };
+        let sym_key = crate::lang::functions::fnv_parts(&[name.as_bytes()]);
+        let finding = Finding::new(
+            catalog_rule(&rule.id, rule.version),
+            vec![
+                Subject::Function { key: fn_key, path: me.path.clone(), chain: me.chain.clone() },
+                Subject::Symbol { key: sym_key, name: name.clone() },
+            ],
+            me.path.clone(),
+            Some(me.chain.clone()),
+            format!("{}: {name} (x{sites})", rule.says),
+            json!({ "callee": name, "sites": sites, "says": rule.says }),
+        );
+        out.push(finding.at_line(me.line));
+    }
+    out
+}
+
 /// All findings and measures of one commit.
 fn evaluate(repo: &Path, sha: &str, tag: &str, coverage: Option<&Path>) -> Result<Eval, String> {
     let mut timing = Timing::default();
@@ -247,7 +286,8 @@ fn evaluate(repo: &Path, sha: &str, tag: &str, coverage: Option<&Path>) -> Resul
     let t1 = Instant::now();
     let mut w = FactWriter::new();
     let mut tables = SideTables::default();
-    let (set, dstats) = driver::build(&tree, tracked, &eff.policy.lanes, &mut w, &mut tables)?;
+    let active = eff.active_rules();
+    let (set, dstats) = driver::build(&tree, tracked, &eff.policy.lanes, &active, &mut w, &mut tables)?;
     if let Some(c) = coverage {
         // The report is read from the worktree at `repo`, never from the scratch checkout.
         coverage::emit(repo, Some(c), &tables, &mut w)?;
@@ -272,6 +312,9 @@ fn evaluate(repo: &Path, sha: &str, tag: &str, coverage: Option<&Path>) -> Resul
         for f in cycle_findings(&found, &set.files) {
             insert(&mut findings, f, sha)?;
         }
+    }
+    for f in class_context_findings(&found, &measures, &tables, &set.fn_keys, &active) {
+        insert(&mut findings, f, sha)?;
     }
     for f in metric_findings(&found, &measures, &tables, &set.fn_keys, disabled, &eff.policy.rules.enable)? {
         insert(&mut findings, f, sha)?;
@@ -298,7 +341,7 @@ fn trends(before: &Eval, after: &Eval, all: bool) -> Vec<Trend> {
             .flat_map(|f| f.subjects.iter())
             .filter_map(|s| match s {
                 Subject::Function { key, .. } => Some(*key),
-                Subject::File { .. } => None,
+                Subject::File { .. } | Subject::Symbol { .. } => None,
             })
             .collect()
     };

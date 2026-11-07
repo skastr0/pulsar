@@ -47,15 +47,22 @@ pub fn metric_rule(id: &str) -> Result<Rule, String> {
         .ok_or_else(|| format!("engine reported FX rule {id:?}, which this CLI does not know"))
 }
 
+/// A catalog rule as a finding rule. Catalog rule ids come from files, not the binary, so the id is
+/// leaked once per run into a `&'static str`; a run has a handful of rules, never one per finding.
+pub fn catalog_rule(id: &str, version: u32) -> Rule {
+    Rule { id: Box::leak(id.to_string().into_boxed_str()), version }
+}
+
 /// Engine `CYC`: a strongly connected set of files in the import graph.
 pub const IMPORT_CYCLE: Rule = Rule { id: "graph.import-cycle", version: 1 };
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Subject {
+    /// A catalog symbol (`effect#Effect.orDie`, `global#Date.now`), keyed by a hash of its name.
+    Symbol { key: u64, name: String },
     /// File key (`K` fact: FNV-1a 64 of the repo-relative path) and the path to render.
     File { key: u64, path: String },
     /// Function key (`FK` fact) with its path and container chain to render.
-    #[allow(dead_code)] // function findings arrive with the function lanes
     Function { key: u64, path: String, chain: String },
 }
 
@@ -64,16 +71,18 @@ impl Subject {
         match self {
             Subject::File { .. } => 0,
             Subject::Function { .. } => 1,
+            Subject::Symbol { .. } => 2,
         }
     }
     fn key(&self) -> u64 {
         match self {
-            Subject::File { key, .. } | Subject::Function { key, .. } => *key,
+            Subject::File { key, .. } | Subject::Function { key, .. } | Subject::Symbol { key, .. } => *key,
         }
     }
     fn json(&self) -> Value {
         match self {
             Subject::File { key, path } => json!({"kind":"file","key":hex(*key),"path":path}),
+            Subject::Symbol { key, name } => json!({"kind":"symbol","key":hex(*key),"name":name}),
             Subject::Function { key, path, chain } => {
                 json!({"kind":"function","key":hex(*key),"path":path,"symbol":chain})
             }

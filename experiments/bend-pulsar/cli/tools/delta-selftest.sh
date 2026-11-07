@@ -82,4 +82,23 @@ grep -q '^! DEGRADED INPUT (head) rust: ' <<<"$out" && grep -q 'degraded=1 cover
 out=$("$BIN" delta HEAD~1 HEAD --repo "$D" --json 2>/dev/null)
 grep -q '"type":"degraded","side":"head","lane":"rust"' <<<"$out" && grep -q '"degraded":1' <<<"$out" && echo "ok   degraded input marked in JSON" || { echo "FAIL degraded json"; fail=1; }
 "$BIN" facts "$D" -o "$D/f.txt" 2>/dev/null; grep -q '^# degraded rust: ' "$D/f.txt" && echo "ok   degraded input noted in the facts header" || { echo "FAIL degraded facts header"; fail=1; }
+# Class-in-context: an ambient read inside Effect code is a finding of the Effect pack's rule, the
+# same call outside Effect code is not (classification alone never makes a finding).
+E=$(mktemp -d); trap 'rm -rf "$T" "$D" "$E"' EXIT
+( cd "$E" && git init -q . && git config user.email t@t && git config user.name t
+  echo base > README.md && git add -A && git commit -qm base
+  echo '{"dependencies":{"effect":"*"}}' > package.json
+  cat > a.ts <<'TS'
+import { Effect } from "effect"
+export const f = Effect.gen(function* () {
+  const t = Date.now()
+  const u = Date.now()
+  return t + u
+})
+export const g = () => Date.now()
+TS
+  git add -A && git commit -qm "effect code" )
+out=$("$BIN" delta HEAD~1 HEAD --repo "$E" 2>/dev/null)
+grep -q '^+ effect.ambient-read-in-effect [0-9a-f]* a.ts:2 f  .*global#Date.now (x2) (rule v1)$' <<<"$out" && echo "ok   class-in-context: Date.now x2 inside Effect.gen is one finding for f" || { echo "FAIL class-in-context"; echo "$out" | head -3; fail=1; }
+[ "$(grep -c 'effect.ambient-read-in-effect' <<<"$out")" == 1 ] && echo "ok   the same call outside Effect code is not a finding" || { echo "FAIL outside-Effect call reported"; fail=1; }
 exit $fail

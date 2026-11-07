@@ -305,6 +305,8 @@ pub struct SideTables {
     pub fns: Vec<FnEntry>,
     /// Symbol names by `SY` id (catalog-style: `effect#Effect.orDie`, `global#console.log`).
     pub syms: Vec<String>,
+    /// Active catalog rule ids by `RL` id (the engine reports `RCX` with these ids).
+    pub rules: Vec<String>,
     /// The `.laws` table, already formatted (`law path line name`, TAB-separated, law-id order).
     pub laws: String,
 }

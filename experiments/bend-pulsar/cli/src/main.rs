@@ -86,7 +86,7 @@ fn build_facts(repo: &Path, coverage: Option<&Path>, out: &mut dyn Write) -> Res
     let eff = policy_for(repo)?;
     let mut w = facts::FactWriter::new();
     let mut tables = facts::SideTables::default();
-    let (set, st) = driver::build_repo(repo, &eff.policy.lanes, &mut w, &mut tables)?;
+    let (set, st) = driver::build_repo(repo, &eff.policy.lanes, &eff.active_rules(), &mut w, &mut tables)?;
     let hs = history::emit(repo, &history::Config::default(), &tables, &set.fn_keys, &mut w)?;
     coverage::emit(repo, coverage, &tables, &mut w)?;
     w.write_to(out)?;

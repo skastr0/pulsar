@@ -9,7 +9,7 @@
 use crate::facts::{stable_key, FactWriter, FnEntry, Rel, SideTables};
 use crate::git::git_ls_files;
 use crate::lang::functions::{FileFns, NO_PARENT};
-use crate::policy::Lanes;
+use crate::policy::{ActiveRule, Lanes};
 use crate::lang::{self, Degraded, FileOut};
 use std::path::{Path, PathBuf};
 
@@ -42,10 +42,16 @@ pub struct Stats {
 }
 
 /// Run the lanes on the git checkout at `repo`.
-pub fn build_repo(repo: &Path, lanes: &Lanes, w: &mut FactWriter, tables: &mut SideTables) -> Result<(FactSet, Stats), String> {
+pub fn build_repo(
+    repo: &Path,
+    lanes: &Lanes,
+    rules: &[ActiveRule],
+    w: &mut FactWriter,
+    tables: &mut SideTables,
+) -> Result<(FactSet, Stats), String> {
     let root: PathBuf = std::fs::canonicalize(repo).map_err(|e| format!("{}: {e}", repo.display()))?;
     let tracked = git_ls_files(&root)?;
-    build(&root, tracked, lanes, w, tables)
+    build(&root, tracked, lanes, rules, w, tables)
 }
 
 /// Run the lanes on the tree at `root`; `tracked` is its file list, repo-relative (for a tree that
@@ -55,6 +61,7 @@ pub fn build(
     root: &Path,
     tracked: Vec<String>,
     lanes: &Lanes,
+    rules: &[ActiveRule],
     w: &mut FactWriter,
     tables: &mut SideTables,
 ) -> Result<(FactSet, Stats), String> {
@@ -87,6 +94,7 @@ pub fn build(
     tables.fns.reserve(total_fns);
     push_sites(w, &per, &sym_classes, tables, &mut st);
     let fn_keys = push_functions(w, per, tables, &mut st);
+    push_rules(w, rules, tables);
     st.fns = total_fns;
     for d in &st.degraded {
         w.note(&format!("degraded {}: {}", d.lane, d.cause));
@@ -116,6 +124,15 @@ fn list_files(root: &Path, tracked: &[String], lanes: &Lanes) -> Vec<String> {
 /// `(global file id, path)` for the files one lane owns.
 fn lane_files(files: &[String], owns: fn(&str) -> bool) -> Vec<(u32, String)> {
     files.iter().enumerate().filter(|(_, p)| owns(p)).map(|(i, p)| (i as u32, p.clone())).collect()
+}
+
+/// `RL rule class ctx_any ctx_none` for every active catalog rule, numbered by sorted id. A
+/// classification alone never makes a finding: only these rows do (class-in-context detector).
+fn push_rules(w: &mut FactWriter, rules: &[ActiveRule], tables: &mut SideTables) {
+    for (id, r) in rules.iter().enumerate() {
+        w.push(Rel::Rl, &[id as u32, r.class_id, r.ctx_any, r.ctx_none]);
+    }
+    tables.rules = rules.iter().map(|r| r.id.clone()).collect();
 }
 
 /// `N`, `F` and `K` for every file.
@@ -305,7 +322,7 @@ mod tests {
     fn facts(root: &Path, tracked: &[&str]) -> String {
         let mut w = FactWriter::new();
         let mut t = SideTables::default();
-        build(root, tracked.iter().map(|s| s.to_string()).collect(), &Lanes::default(), &mut w, &mut t).unwrap();
+        build(root, tracked.iter().map(|s| s.to_string()).collect(), &Lanes::default(), &[], &mut w, &mut t).unwrap();
         let mut out = Vec::new();
         w.write_to(&mut out).unwrap();
         String::from_utf8(out).unwrap()
@@ -345,7 +362,7 @@ mod tests {
         let mut w = FactWriter::new();
         let mut t = SideTables::default();
         let tracked = ["e/laws.bend", "a.ts", "e/lib.bend"].map(String::from).to_vec();
-        let (_, st) = build(&dir, tracked, &Lanes::default(), &mut w, &mut t).unwrap();
+        let (_, st) = build(&dir, tracked, &Lanes::default(), &[], &mut w, &mut t).unwrap();
         std::fs::remove_dir_all(&dir).ok();
         let mut out = Vec::new();
         w.write_to(&mut out).unwrap();

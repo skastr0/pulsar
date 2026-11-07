@@ -16,6 +16,18 @@ pub struct Findings {
     pub fm: Vec<[u64; 4]>,
     /// `FX`: metric findings, in engine order.
     pub fx: Vec<Fx>,
+    /// `RCX`: class-in-context findings, sorted by (rule, site).
+    pub rcx: Vec<Rcx>,
+}
+
+/// One class-in-context finding: call site `site` in function `fn_id` calls `callee`, a symbol of
+/// the class that active rule `rule` (an `RL` id) forbids in that context.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Rcx {
+    pub rule: u32,
+    pub site: u32,
+    pub fn_id: u32,
+    pub callee: u32,
 }
 
 /// One metric finding: `value` is strictly over `threshold`. Both are evidence, not identity.
@@ -75,7 +87,7 @@ pub fn run(engine: &Path, facts: &Path) -> Result<Findings, String> {
 }
 
 pub fn parse(text: &str) -> Result<Findings, String> {
-    let mut f = Findings { cycles: vec![], cert: None, files: 0, edges: 0, cycle_count: 0, fm: vec![], fx: vec![] };
+    let mut f = Findings { cycles: vec![], cert: None, files: 0, edges: 0, cycle_count: 0, fm: vec![], fx: vec![], rcx: vec![] };
     let mut header = false;
     let num = |s: &str| s.parse::<u64>().map_err(|_| format!("bad number {s:?} in engine output"));
     for line in text.lines() {
@@ -121,6 +133,18 @@ pub fn parse(text: &str) -> Result<Findings, String> {
                     .collect::<Result<Vec<_>, _>>()?;
                 f.fx.push(Fx { rule, fn_id, value, threshold, extra });
             }
+            "pulsar-classctx" => {}
+            "RCX" => {
+                let mut n = || num(it.next().ok_or("RCX needs rule site fn callee")?).map(|v| v as u32);
+                let (rule, site, fn_id, callee) = (n()?, n()?, n()?, n()?);
+                f.rcx.push(Rcx { rule, site, fn_id, callee });
+            }
+            "RCXS" => {
+                let n = num(it.next().ok_or("RCXS without a count")?)?;
+                if n as usize != f.rcx.len() {
+                    return Err(format!("RCXS says {n} but {} RCX lines came before it", f.rcx.len()));
+                }
+            }
             other => return Err(format!("unknown engine line tag {other:?}")),
         }
     }
@@ -150,6 +174,15 @@ mod tests {
         assert_eq!(f.fx[0].extra, vec![("churn".into(), "5".into()), ("core.cyclomatic".into(), "12/10".into()), ("core.npath".into(), "300/200".into())]);
         assert_eq!(f.fx[1].extra[2], ("coverable".to_string(), "7".to_string()));
         assert!(parse("pulsar-findings 0\nFX core.hotspot 0 5 2 churn\n").unwrap_err().contains("key=value"));
+    }
+
+    #[test]
+    fn parses_the_class_in_context_section() {
+        let t = "pulsar-findings 0\nS 1 0 0\npulsar-classctx 0\nRCX 0 3 2 7\nRCX 1 4 2 8\nRCXS 2\n";
+        let f = parse(t).unwrap();
+        assert_eq!(f.rcx, vec![Rcx { rule: 0, site: 3, fn_id: 2, callee: 7 }, Rcx { rule: 1, site: 4, fn_id: 2, callee: 8 }]);
+        assert!(parse("pulsar-findings 0\npulsar-classctx 0\nRCX 0 3 2 7\nRCXS 2\n").unwrap_err().contains("RCXS"));
+        assert!(parse("pulsar-findings 0\nRCX 0 3 2\n").unwrap_err().contains("RCX needs"));
     }
 
     #[test]
