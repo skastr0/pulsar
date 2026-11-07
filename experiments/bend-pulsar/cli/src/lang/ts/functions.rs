@@ -143,7 +143,20 @@ enum Target {
     Sym(String),
     /// A binding recorded as holding a catalog symbol's value.
     Bound(SymbolId),
+    /// A `this.<path>` chain whose receiver is an instance of a catalog symbol: the enclosing
+    /// class extends it (`this.ctx` of a subclass) or declares the field with its type. `rest`
+    /// is the path from that value.
+    Held { sym: String, via: Via, rest: Vec<String> },
     None,
+}
+
+/// What `this.<field>` can be known to hold inside one class body.
+#[derive(Default)]
+struct ClassCtx {
+    /// The catalog symbol of an imported base class.
+    base: Option<String>,
+    /// Typed fields and constructor parameter properties: field name to the type's symbol.
+    props: HashMap<String, String>,
 }
 
 struct Frame {
@@ -190,6 +203,7 @@ pub struct Walker<'s> {
     /// Wrapper ctx bits for the function starting at the given offset.
     pending_ctx: Vec<(u32, u8)>,
     hook: Option<&'s mut dyn PackHook>,
+    classes: Vec<ClassCtx>,
 }
 
 impl<'s> Walker<'s> {
@@ -214,6 +228,7 @@ impl<'s> Walker<'s> {
             sym_ids: HashMap::new(),
             pending_ctx: Vec::new(),
             hook: None,
+            classes: Vec::new(),
         }
     }
 
@@ -486,6 +501,7 @@ impl<'s> Walker<'s> {
             Expression::Identifier(id) => {
                 Some(Chain { root: id.name.to_string(), rid: id.reference_id.get(), path: Vec::new() })
             }
+            Expression::ThisExpression(_) => Some(Chain { root: "this".to_string(), rid: None, path: Vec::new() }),
             Expression::StaticMemberExpression(m) => self.chain_static(m),
             Expression::ComputedMemberExpression(m) => {
                 let Expression::StringLiteral(l) = m.expression.get_inner_expression() else { return None };
@@ -517,6 +533,9 @@ impl<'s> Walker<'s> {
 
     fn resolve(&self, c: &Chain) -> Target {
         let Some(sc) = self.scoping else { return Target::None };
+        if c.root == "this" && c.rid.is_none() {
+            return self.resolve_this(c);
+        }
         match c.rid.and_then(|r| sc.get_reference(r).symbol_id()) {
             Some(sid) => {
                 if let Some(base) = self.imports.get(&sid) {
@@ -535,6 +554,62 @@ impl<'s> Walker<'s> {
                 }
                 Target::Sym(s)
             }
+        }
+    }
+
+    /// The catalog symbol a type annotation names, when the annotation is a plain type reference.
+    fn type_sym(&self, ann: &TSTypeAnnotation<'_>) -> Option<String> {
+        let TSType::TSTypeReference(r) = &ann.type_annotation else { return None };
+        match self.resolve(&self.type_chain(&r.type_name)?) {
+            Target::Sym(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    /// What `this.<field>` can hold in `class`: its imported base class and its typed fields,
+    /// including constructor parameter properties (`constructor(private ctx: T)`).
+    fn class_ctx(&self, class: &Class<'_>) -> ClassCtx {
+        let mut cx = ClassCtx::default();
+        if self.index.is_none() {
+            return cx;
+        }
+        cx.base = class.heritage.as_ref().and_then(|h| self.sym_of(&h.expression));
+        for el in &class.body.body {
+            match el {
+                ClassElement::PropertyDefinition(p) if p.r#static == false => {
+                    let (Some(ann), Some(name)) = (&p.type_annotation, p.key.static_name()) else { continue };
+                    if let (Some(sym), Some(n)) = (self.type_sym(ann), name.as_str()) {
+                        cx.props.insert(n.to_string(), sym);
+                    }
+                }
+                ClassElement::MethodDefinition(m) if m.kind == MethodDefinitionKind::Constructor => {
+                    for item in &m.value.params.items {
+                        let promoted = item.accessibility.is_some() || item.readonly;
+                        let (BindingPattern::BindingIdentifier(b), Some(ann)) = (&item.pattern, &item.type_annotation) else {
+                            continue;
+                        };
+                        if let (true, Some(sym)) = (promoted, self.type_sym(ann)) {
+                            cx.props.insert(b.name.to_string(), sym);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        cx
+    }
+
+    /// `this.<field>...` inside a class: a typed field first, then the imported base class.
+    fn resolve_this(&self, c: &Chain) -> Target {
+        let (Some(cls), Some((first, rest))) = (self.classes.last(), c.path.split_first()) else {
+            return Target::None;
+        };
+        if let Some(ty) = cls.props.get(first) {
+            return Target::Held { sym: ty.clone(), via: Via::Yield, rest: rest.to_vec() };
+        }
+        match &cls.base {
+            Some(b) => Target::Held { sym: b.clone(), via: Via::Yield, rest: c.path.clone() },
+            None => Target::None,
         }
     }
 
@@ -740,9 +815,15 @@ impl<'s> Walker<'s> {
     /// Does the value bound to `sid` count for this use?
     fn bound_use(&self, sid: SymbolId, path: &[String], tag: bool) -> Option<String> {
         let b = self.bound.get(&sid)?;
+        self.use_of(&b.sym, b.via, path, tag)
+    }
+
+    /// Does a use of a value held for catalog symbol `sym` (a method path, a call or a tag)
+    /// match one of its entries? Returns the symbol when it does.
+    fn use_of(&self, sym: &str, via: Via, path: &[String], tag: bool) -> Option<String> {
         let ix = self.index?;
-        let hit = ix.entries(&b.sym).iter().any(|e| {
-            e.via == b.via
+        let hit = ix.entries(sym).iter().any(|e| {
+            e.via == via
                 && match (&e.use_, tag, path) {
                     (Use::Tag, true, []) => true,
                     (Use::Call, false, []) => true,
@@ -751,7 +832,7 @@ impl<'s> Walker<'s> {
                     _ => false,
                 }
         });
-        hit.then(|| b.sym.clone())
+        hit.then(|| sym.to_string())
     }
 
     fn on_call(&mut self, it: &CallExpression<'_>) {
@@ -798,6 +879,11 @@ impl<'s> Walker<'s> {
                     self.call_site(&sym);
                 }
             }
+            Target::Held { sym, via, rest } => {
+                if let Some(sym) = self.use_of(&sym, via, &rest, false) {
+                    self.call_site(&sym);
+                }
+            }
             Target::None => {}
         }
     }
@@ -819,8 +905,11 @@ impl<'s> Walker<'s> {
     fn tag_use(&self, tag: &Expression<'_>) -> Option<String> {
         self.index?;
         let c = self.chain(tag)?;
-        let Target::Bound(sid) = self.resolve(&c) else { return None };
-        self.bound_use(sid, &c.path, true)
+        match self.resolve(&c) {
+            Target::Bound(sid) => self.bound_use(sid, &c.path, true),
+            Target::Held { sym, via, rest } => self.use_of(&sym, via, &rest, true),
+            _ => None,
+        }
     }
 
     /// `ref` and `read` events on a maximal chain: the longest prefix the catalog knows.
@@ -981,7 +1070,10 @@ impl<'a> Visit<'a> for Walker<'_> {
             None => self.take_pending(it.span.start).map_or_else(|| "#".to_string(), |p| p.name),
         };
         self.push_container(&name);
+        let ctx = self.class_ctx(it);
+        self.classes.push(ctx);
         walk::walk_class(self, it);
+        self.classes.pop();
         self.pop_container();
     }
 

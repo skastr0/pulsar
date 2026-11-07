@@ -20,7 +20,10 @@ classes = [
 # D1, Durable Object SQL storage and `env` have no module to import a symbol from: the types are
 # ambient globals. `global#<Type>` with via = "yield" means a parameter or const annotated with
 # that type (the same rule as a value bound from `yield* S`), and `use` names the method path.
+# `this` inside a class that extends an imported symbol is a value bound from that symbol, so
+# `this.ctx.storage.sql.exec(...)` in a Durable Object subclass matches the DurableObject entry.
 symbols = [
+  { sym = "cloudflare:workers#DurableObject", class = "query", via = "yield", use = "member:ctx.storage.sql.exec", ver = "workers-types-4", at = "@cloudflare/workers-types@4.20260120.0:index.d.ts:11380", doc = "signature: protected ctx: DurableObjectState<Props>;" },
   { sym = "cloudflare:workers#env", class = "ambient-read", via = "ref", ver = "workers-types-4", at = "@cloudflare/workers-types@4.20260120.0:index.d.ts:11472", doc = "signature: export const env: Cloudflare.Env;" },
   { sym = "global#D1Database", class = "query", via = "yield", use = "member:batch", ver = "workers-types-4", at = "@cloudflare/workers-types@4.20260120.0:index.d.ts:10536", doc = "signature: batch<T = unknown>(statements: D1PreparedStatement[]): Promise<D1Result<T>[]>;" },
   { sym = "global#D1Database", class = "query", via = "yield", use = "member:exec", ver = "workers-types-4", at = "@cloudflare/workers-types@4.20260120.0:index.d.ts:10537", doc = "signature: exec(query: string): Promise<D1ExecResult>;" },

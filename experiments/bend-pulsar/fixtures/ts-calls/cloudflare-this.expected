@@ -1,0 +1,2 @@
+CS Counter>bump cloudflare:workers#DurableObject loops=0 ctx=0
+CS Plain>read global#DurableObjectState loops=0 ctx=0
