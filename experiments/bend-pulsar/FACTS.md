@@ -175,7 +175,8 @@ CRAP (Savoia and Evans) is computed in integers: `c² × (coverable − covered)
 |---|---|---|
 | `SY` | `sym` | An external or repo symbol that call sites refer to (for example `effect` `Effect.orDie`). Its name lives in the CLI side table. |
 | `CL` | `sym class` | Symbol `sym` belongs to catalog class `class`. Classes come from packs and from `.pulsar/catalogs/*.toml`. The CLI matches names to classes, and each class id maps to a catalog rule id in the side table. |
-| `CS` | `site fn callee loop_depth ctx` | A call site in function `fn` calling `sym`. `loop_depth` is the number of enclosing loop nodes. `ctx` flags (a bit set): 1 = inside an async function, 2 = inside an Effect generator or `Effect.fn`, 4 = inside a test. |
+| `CS` | `site fn callee loop_depth ctx` | A call site in function `fn` calling `sym`. `loop_depth` is the number of enclosing loop nodes. `ctx` flags (a bit set): 1 = inside an async function, 2 = pack-defined effect context, 4 = inside a test. Bit 2 is set by an active pack's data, never by core; the Effect pack sets it inside `Effect.gen`, `Effect.fn` and a layer constructor body, including `Layer.sync` and `Layer.succeed` thunks. |
+| `RL` | `rule class ctx_any ctx_none` | Rule `rule` fires on a call to a symbol of `class` whose `ctx` has some bit of `ctx_any` (or `ctx_any` = 0) and no bit of `ctx_none`. The CLI writes RL rows only for active rules: a pack rule whose pack is active, or a rule the repo's `policy.toml` lists. A rule may have several rows; they are OR-ed. Rule ids, names and versions live in the side table. |
 | `HD` | `site fn shape` | An error handler: a `catch` clause, `.catch(...)`, or an Effect `catch*`/`orElse` callback. `shape`: 0 = other, 1 = empty, 2 = only calls class `log`, 3 = returns a constant or void effect, 4 = rethrows or fails with the cause, 5 = rethrows or fails without the cause. |
 
 **Fixed class ids:**
@@ -189,6 +190,8 @@ CRAP (Savoia and Evans) is computed in integers: `c² × (coverable − covered)
 - 8 = ambient-read
 
 Repo classes start at 1000.
+
+**Class-in-context rules.** Read by `engine/ClassCtx.bend` (laws in `engine/ClassCtx-LAWS.bend`). Classification alone never makes a finding: only `RL` rows do. `CS` (by `site`), `CL` and `RL` must each be strictly ascending, or the engine refuses (exit 2). Output (`pulsar-classctx 0`): one `RCX rule site fn callee` line per (rule, site) that some `CS` fact, `CL` fact and `RL` row of that rule justify, sorted by (rule, site), then `RCXS n`, the count.
 
 ### Effect pack
 

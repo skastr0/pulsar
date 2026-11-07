@@ -1,0 +1,38 @@
+[
+ {
+  "law": "classctx_sound",
+  "bug": "Cx.row drops the class test",
+  "old": "Bool.and(S.Scope.has(t, callee), Cx.ctx_ok(any, none, ctx))",
+  "new": "Cx.ctx_ok(any, none, ctx)"
+ },
+ {
+  "law": "classctx_complete",
+  "bug": "Cx.rules_go lists only the first rule id",
+  "old": "Cx.push_u(Bool.not(U32.is_eq(r, prev)), r, Cx.rules_go(t, r))",
+  "new": "Cx.push_u(False{}, r, Cx.rules_go(t, r))"
+ },
+ {
+  "law": "ctx_ok_is_masks",
+  "bug": "Cx.ctx_ok ignores ctx_none",
+  "old": "U32.is_eq(U32.and(ctx, none), 0))",
+  "new": "True{})"
+ },
+ {
+  "law": "run_is_findings",
+  "bug": "ClassCtx.run2 answers no findings on valid facts",
+  "old": "      Some{ClassCtx.findings(cf)}",
+  "new": "      Some{Nil{}}"
+ },
+ {
+  "law": "run_refuses_invalid",
+  "bug": "ClassCtx.run2 analyses invalid facts instead of refusing them",
+  "old": "      Some{ClassCtx.findings(cf)}\n    case False{}:\n      None{}",
+  "new": "      Some{ClassCtx.findings(cf)}\n    case False{}:\n      Some{ClassCtx.findings(cf)}"
+ },
+ {
+  "law": "lines_shape",
+  "bug": "ClassCtx.lines drops the count line",
+  "old": "Con{\"pulsar-classctx 0\", List.append(&2, String, CRep.fd(fs), Con{CRep.summary(fs), Nil{}})}",
+  "new": "Con{\"pulsar-classctx 0\", CRep.fd(fs)}"
+ }
+]

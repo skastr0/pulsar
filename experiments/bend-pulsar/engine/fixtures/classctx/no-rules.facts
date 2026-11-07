@@ -1,0 +1,4 @@
+# Classes with no active rule: classification alone makes no finding.
+pulsar-facts 0
+CS 100 1 10 0 2
+CL 10 8

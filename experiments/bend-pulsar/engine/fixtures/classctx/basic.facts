@@ -1,0 +1,28 @@
+# Hand-written class-in-context facts. Classes: 2 blocking, 5 runtime-escape,
+# 8 ambient-read. Context bits: 2 pack-defined effect context, 4 test file.
+# Symbols: 10 Date.now (8), 11 runPromise (5), 12 readFileSync (2), 13 plain
+# (no class), 14 a symbol in classes 5 and 8.
+# Rules: 1 ambient-read in effect, not in tests (8, any 2, none 4);
+# 2 runtime-escape in effect, not in tests (5, 2, 4); 3 blocking anywhere
+# but tests (2, any 0, none 4); 4 two rows OR-ed (5, 2, 0) and (8, 2, 0):
+# site 107 matches both rows of rule 4 and is reported once.
+pulsar-facts 0
+LY 0 0
+CS 100 1 10 0 2
+CS 101 1 10 0 0
+CS 102 1 10 0 6
+CS 103 2 11 0 2
+CS 104 2 12 1 0
+CS 105 2 12 0 4
+CS 106 3 13 0 2
+CS 107 3 14 0 2
+CL 10 8
+CL 11 5
+CL 12 2
+CL 14 5
+CL 14 8
+RL 1 8 2 4
+RL 2 5 2 4
+RL 3 2 0 4
+RL 4 5 2 0
+RL 4 8 2 0
