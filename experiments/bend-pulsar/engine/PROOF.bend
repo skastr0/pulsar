@@ -20,6 +20,7 @@ import ./MetricsIn-PROOF.bend as MetricsInProof
 import ./ClassCtx-PROOF.bend as ClassCtxProof
 import ./Crap-PROOF.bend as CrapProof
 import ./Hotspot-PROOF.bend as HotspotProof
+import ./Cognitive-PROOF.bend as CognitiveProof
 
 def Laws.kind_is_value_kind(hv, ht, form):
   {==}
