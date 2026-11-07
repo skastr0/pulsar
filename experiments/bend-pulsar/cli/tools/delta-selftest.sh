@@ -180,4 +180,20 @@ out=$(PULSAR_ENGINE="$Q/../fake-sql" "$BIN" delta HEAD~1 HEAD --repo "$Q" --no-c
 grep -q '^+ sql.unindexed-filter [0-9a-f]* q.sql:2 -  unindexed-filter on users.name (1 site)' <<<"$out" && echo "ok   an SQX line is a finding named by file, table and column" || { echo "FAIL SQL finding"; echo "$out" | head -4; fail=1; }
 rm -f "$Q/../fake-sql"
 
+
+# Effect-only scope (policy [packs.effect]): promise-style code is a finding only in files the repo
+# declared effect-only; the same code elsewhere is not.
+W=$(mktemp -d); trap 'rm -rf "$T" "$K" "$D" "$E" "$R" "$Q" "$W"' EXIT
+( cd "$W" && git init -q . && git config user.email t@t && git config user.name t
+  echo base > README.md && git add -A && git commit -qm base
+  echo '{"dependencies":{"effect":"*"}}' > package.json
+  mkdir -p .pulsar core lib
+  printf 'format = "pulsar-policy 0"\n[packs.effect]\neffect_only = [\n  "core/",\n]\n' > .pulsar/policy.toml
+  printf 'export async function f(x: number) {\n  return await Promise.resolve(x)\n}\n' > core/a.ts
+  cp core/a.ts lib/b.ts
+  git add -A && git commit -qm "promise-style code in and out of the effect-only scope" )
+out=$("$BIN" delta HEAD~1 HEAD --repo "$W" 2>/dev/null)
+grep -q '^+ effect.promise-style-in-effect-scope [0-9a-f]* core/a.ts' <<<"$out" && echo "ok   promise-style code in an effect-only file is a finding" || { echo "FAIL effect-only scope"; echo "$out" | head -4; fail=1; }
+! grep -q 'lib/b.ts' <<<"$out" && echo "ok   the same code outside the effect-only scope is not" || { echo "FAIL out-of-scope file reported"; fail=1; }
+
 exit $fail

@@ -70,6 +70,39 @@ impl LaneScope {
     }
 }
 
+/// `[packs.effect]`: which files are Effect-only code (CS ctx bit 8) or boundary code (bit 16), as
+/// path prefixes like the lane scopes. The Effect pack's scope rules read these bits; with neither
+/// list set the bits are never set and those rules cannot fire.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EffectScope {
+    #[serde(default)]
+    pub effect_only: Vec<String>,
+    #[serde(default)]
+    pub boundary: Vec<String>,
+}
+
+impl EffectScope {
+    /// The per-file `CS.ctx` bits for `rel`: 8 = effect-only scope, 16 = boundary scope.
+    pub fn file_ctx(&self, rel: &str) -> u8 {
+        let mut bits = 0;
+        if self.effect_only.iter().any(|p| under(p, rel)) {
+            bits |= 8;
+        }
+        if self.boundary.iter().any(|p| under(p, rel)) {
+            bits |= 16;
+        }
+        bits
+    }
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawPacks {
+    #[serde(default)]
+    effect: EffectScope,
+}
+
 /// Per-lane scopes (`[lanes.ts]`, `[lanes.rust]`, `[lanes.bend]`, `[lanes.sql]`). A lane with no table is unrestricted.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -82,6 +115,10 @@ pub struct Lanes {
     pub bend: LaneScope,
     #[serde(default)]
     pub sql: LaneScope,
+    /// From `[packs.effect]`, not `[lanes]`: the per-file ctx bits ride along with the lane scopes
+    /// because the driver already receives them.
+    #[serde(skip)]
+    pub effect: EffectScope,
 }
 
 impl Lanes {
@@ -124,6 +161,7 @@ struct RawPolicy {
     history: Option<History>,
     rules: Option<Rules>,
     lanes: Option<Lanes>,
+    packs: Option<RawPacks>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -310,11 +348,18 @@ pub fn parse_policy(name: &str, text: &str) -> Result<Policy, String> {
         return Err(format!("{name}: format must be {POLICY_FORMAT:?}"));
     }
     one_item_per_line(name, text)?;
-    let p = Policy {
+    let mut p = Policy {
         history: raw.history.unwrap_or_default(),
         rules: raw.rules.unwrap_or_default(),
         lanes: raw.lanes.unwrap_or_default(),
     };
+    p.lanes.effect = raw.packs.unwrap_or_default().effect;
+    for (what, items) in [("effect_only", &p.lanes.effect.effect_only), ("boundary", &p.lanes.effect.boundary)] {
+        sorted_unique(name, &format!("packs.effect.{what}"), items)?;
+        if let Some(bad) = items.iter().find(|i| i.is_empty() || i.starts_with('/') || i.starts_with("./") || i.split('/').any(|c| c == "..")) {
+            return Err(format!("{name}: packs.effect.{what} {bad:?} must be a repo-relative path prefix"));
+        }
+    }
     for (lane, scope) in [("ts", &p.lanes.ts), ("rust", &p.lanes.rust), ("bend", &p.lanes.bend), ("sql", &p.lanes.sql)] {
         for (what, items) in
             [("include", &scope.include), ("exclude", &scope.exclude), ("prod", &scope.prod), ("test", &scope.test)]
@@ -630,6 +675,20 @@ mod tests {
         assert!(d.is_prod("e/Facts.bend", Some(true)) && !d.is_prod("e/Facts.bend", Some(false)));
         assert!(!d.is_prod("e/Facts.bend", None), "a Bend file is production only if its lane says so");
         assert!(d.is_prod("db/schema.sql", None), "SQL files are production unless policy marks them test");
+    }
+
+    #[test]
+    fn effect_scope_sets_per_file_ctx_bits_from_path_prefixes() {
+        let t = "format = \"pulsar-policy 0\"\n[packs.effect]\neffect_only = [\n  \"src/core/\",\n]\nboundary = [\n  \"src/adapters/\",\n  \"src/core/main.ts\",\n]\n";
+        let e = parse_policy("p", t).unwrap().lanes.effect;
+        assert_eq!(e.file_ctx("src/core/a.ts"), 8);
+        assert_eq!(e.file_ctx("src/adapters/x.ts"), 16);
+        assert_eq!(e.file_ctx("src/core/main.ts"), 8 | 16, "a file can be in both scopes");
+        assert_eq!(e.file_ctx("lib/other.ts"), 0);
+        assert_eq!(EffectScope::default().file_ctx("src/core/a.ts"), 0, "no table, no bits");
+        let bad = |x: &str| parse_policy("p", &format!("format = \"pulsar-policy 0\"\n[packs.effect]\nboundary = [\n  \"{x}\",\n]\n")).unwrap_err();
+        assert!(bad("../up/").contains("repo-relative"));
+        assert!(parse_policy("p", "format = \"pulsar-policy 0\"\n[packs.other]\n").is_err(), "unknown pack tables are errors");
     }
 
     #[test]
