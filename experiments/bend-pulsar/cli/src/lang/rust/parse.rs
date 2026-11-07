@@ -9,7 +9,7 @@
 
 use super::blocks::{bindings, BlockState};
 use super::env::{err_binds, if_let_err_binds, named_leaves, scan_uses, Body, CallEnv, OpenHandler, Scan};
-use crate::lang::functions::{ct, fk, fnv_parts, op, CoRec, CtRec, FileFns, FnRec};
+use crate::lang::functions::{ct, fk, flavor, fnv_parts, op, CbRec, CoRec, CtRec, FileFns, FnRec};
 use proc_macro2::{Span, TokenStream, TokenTree};
 use std::collections::{HashMap, HashSet};
 use syn::spanned::Spanned;
@@ -134,6 +134,9 @@ pub(super) struct Walker<'s> {
     pub(super) sym_ids: HashMap<String, u32>,
     /// Call-edge keys already in `out.names`.
     pub(super) name_ids: HashMap<String, u32>,
+    /// The last `&&` or `||` (`op::AND` or `op::OR`) of the logical expression being walked, so the
+    /// next same operator continues its run (`CO` 9 and 10). `None` outside a logical expression.
+    logic_prev: Option<u8>,
     /// The container chain of each enclosing `impl` or `trait`, innermost last.
     pub(super) impl_prefix: Vec<String>,
     /// Container chain, `>`-joined, and the same chain `0x1f`-joined for the key.
@@ -171,6 +174,7 @@ impl<'s> Walker<'s> {
             scan,
             sym_ids: HashMap::new(),
             name_ids: HashMap::new(),
+            logic_prev: None,
             impl_prefix: Vec::new(),
             prefix: String::new(),
             key_prefix: Vec::new(),
@@ -271,6 +275,41 @@ impl<'s> Walker<'s> {
         let id = self.node(ct::SHORT_CIRCUIT);
         if let Some(local) = self.frames.last().map(|f| f.local) {
             self.out.ops.push(CoRec { fn_local: local, node: id, op: operator });
+        }
+    }
+
+    /// A `&&` or `||` and its operands, in source order. An operator starts a run (`CO` 1 or 2)
+    /// unless the one before it in this expression is the same, and then it continues it (9 or 10).
+    /// An operand that is itself `&&` or `||`, through parentheses, belongs to the expression; any
+    /// other operand is walked as an expression of its own.
+    fn logic<'a>(&mut self, n: &'a ExprBinary) {
+        let Some(base) = logical(&n.op) else { return };
+        self.logic_operand(&n.left);
+        let code = match (self.logic_prev, base) {
+            (Some(op::AND), op::AND) => op::AND_CONT,
+            (Some(op::OR), op::OR) => op::OR_CONT,
+            _ => base,
+        };
+        self.logic_prev = Some(base);
+        self.short_circuit(code);
+        self.logic_operand(&n.right);
+    }
+
+    fn logic_operand<'a>(&mut self, e: &'a Expr) {
+        match unparen(e) {
+            Expr::Binary(b) if logical(&b.op).is_some() => self.logic(b),
+            _ => {
+                let saved = self.logic_prev.take();
+                self.visit_expr(e);
+                self.logic_prev = saved;
+            }
+        }
+    }
+
+    /// The `CB` row of a kind-1 node: what the branch is, for cognitive complexity.
+    fn branch_flavor(&mut self, node: u32, flavor: u8) {
+        if let Some(local) = self.frames.last().map(|f| f.local) {
+            self.out.branches.push(CbRec { fn_local: local, node, flavor });
         }
     }
 
@@ -539,6 +578,13 @@ impl<'a> Visit<'a> for Walker<'_> {
 
     fn visit_expr_if(&mut self, n: &'a ExprIf) {
         let b = self.node(ct::BRANCH);
+        // Rust has no conditional expression: an `if` or `if let` is IF, IF_ELSE or IF_ELIF.
+        let kind = match &n.else_branch {
+            None => flavor::IF,
+            Some((_, e)) if matches!(**e, Expr::If(_)) => flavor::IF_ELIF,
+            Some(_) => flavor::IF_ELSE,
+        };
+        self.branch_flavor(b, kind);
         self.push_parent(b);
         self.block_begin(b, Some(&n.cond), &[], &let_binds(&n.cond));
         self.visit_expr(&n.cond);
@@ -643,19 +689,17 @@ impl<'a> Visit<'a> for Walker<'_> {
     }
 
     fn visit_expr_binary(&mut self, n: &'a ExprBinary) {
-        let operator = match n.op {
-            BinOp::And(_) => op::AND,
-            BinOp::Or(_) => op::OR,
-            _ => {
-                if is_assign_op(&n.op) {
-                    self.write_place(&n.left);
-                }
-                return visit::visit_expr_binary(self, n);
+        if logical(&n.op).is_none() {
+            if is_assign_op(&n.op) {
+                self.write_place(&n.left);
             }
-        };
-        self.visit_expr(&n.left);
-        self.short_circuit(operator);
-        self.visit_expr(&n.right);
+            return visit::visit_expr_binary(self, n);
+        }
+        // The root of a logical expression: it starts with no run, and what it leaves behind is
+        // dropped, so two expressions or statements never share a run.
+        let outer = self.logic_prev.take();
+        self.logic(n);
+        self.logic_prev = outer;
     }
 
     fn visit_local(&mut self, n: &'a Local) {
@@ -667,6 +711,9 @@ impl<'a> Visit<'a> for Walker<'_> {
         // `let PAT = EXPR else { .. }` is a decision with one arm: the else block.
         if let Some((_, diverge)) = &init.diverge {
             let b = self.node(ct::BRANCH);
+            // A `let .. else` is a branch whose only arm is the diverging block: counted like an `if`
+            // without `else`, so the count leans low (FACTS.md `CB`).
+            self.branch_flavor(b, flavor::IF);
             self.push_parent(b);
             self.block_begin(b, Some(&init.expr), &[], &[]);
             self.arm(|w| w.visit_expr(diverge));
@@ -727,6 +774,26 @@ impl<'a> Visit<'a> for Walker<'_> {
 }
 
 // ---- helpers ----------------------------------------------------------------------------
+
+/// `op::AND` or `op::OR` for `&&` and `||`; Rust has no `??`.
+fn logical(o: &BinOp) -> Option<u8> {
+    match o {
+        BinOp::And(_) => Some(op::AND),
+        BinOp::Or(_) => Some(op::OR),
+        _ => None,
+    }
+}
+
+/// `e` without parentheses and invisible groups.
+fn unparen(mut e: &Expr) -> &Expr {
+    loop {
+        match e {
+            Expr::Paren(p) => e = &p.expr,
+            Expr::Group(g) => e = &g.expr,
+            _ => return e,
+        }
+    }
+}
 
 fn is_assign_op(o: &BinOp) -> bool {
     matches!(

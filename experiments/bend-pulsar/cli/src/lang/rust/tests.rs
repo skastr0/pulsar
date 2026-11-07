@@ -528,3 +528,68 @@ fn call_edges_link_path_self_and_type_calls_and_drop_calls_that_leave_the_repo()
         vec![("Counter>bump".to_string(), unres::UNKNOWN_MEMBER), ("top".to_string(), unres::NOT_FOUND)]
     );
 }
+
+/// The `CO` operator codes and `CB` flavors of `f` (function 0; closures are functions of their own),
+/// in node order.
+fn co_cb(body: &str) -> (Vec<u8>, Vec<u8>) {
+    let f = parse::extract("src/x.rs", &format!("fn f(a: bool, b: bool, c: bool, d: bool, o: Option<u8>) {{\n{body}\n}}\n"), false);
+    let (mut ops, mut cb) = (f.fns.ops.clone(), f.fns.branches.clone());
+    ops.retain(|o| o.fn_local == 0);
+    cb.retain(|b| b.fn_local == 0);
+    ops.sort_by_key(|o| (o.fn_local, o.node));
+    cb.sort_by_key(|b| (b.fn_local, b.node));
+    (ops.iter().map(|o| o.op).collect(), cb.iter().map(|b| b.flavor).collect())
+}
+
+#[test]
+fn a_run_of_the_same_logical_operator_continues_with_codes_9_and_10() {
+    let ops = |b: &str| co_cb(b).0;
+    assert_eq!(ops("let _x = a && b && c;"), [1, 9]);
+    assert_eq!(ops("let _x = a || b || c || d;"), [2, 10, 10]);
+    // A different operator in between starts a new run, in source order.
+    assert_eq!(ops("let _x = a && b || c && d;"), [1, 2, 1]);
+    assert_eq!(ops("let _x = a || b && c || d;"), [2, 1, 2]);
+    // Parentheses do not split the expression: the inner operator is read in source order.
+    assert_eq!(ops("let _x = a && (b && c);"), [1, 9]);
+    assert_eq!(ops("let _x = a && (b || c) && d;"), [1, 2, 1]);
+    // Two statements never share a run.
+    assert_eq!(ops("let _x = a && b;\nlet _y = c && d;"), [1, 1]);
+    assert_eq!(ops("if a && b { }\nif c && d { }"), [1, 1]);
+    // An operand that is not itself logical is an expression of its own: its operators are not
+    // part of the outer run, and the outer run goes on after it.
+    assert_eq!(ops("let _x = a && g(b || c) && d;"), [1, 2, 9]);
+    assert_eq!(ops("let _x = (a || b) && c || d;"), [2, 1, 2]);
+    // A closure body is its own function: its operators are in its own tree, not this one's.
+    assert_eq!(ops("let _g = || a && b && c;\nlet _x = a && b;"), [1]);
+    let f = parse::extract("src/x.rs", "fn f(a: bool, b: bool, c: bool) {\n    let _g = || a && b && c;\n}\n", false);
+    let mut closure: Vec<_> = f.fns.ops.iter().filter(|o| o.fn_local == 1).map(|o| (o.node, o.op)).collect();
+    closure.sort_unstable();
+    assert_eq!(closure, [(1, 1), (2, 9)], "the closure's own run is in its own tree");
+}
+
+#[test]
+fn let_chains_in_a_condition_are_one_expression() {
+    let f = parse::extract("src/x.rs", "fn f(a: bool, b: bool, o: Option<u8>) {\n    if let Some(x) = o && a && b && x > 1 { }\n}\n", false);
+    let mut ops = f.fns.ops.clone();
+    ops.sort_by_key(|o| o.node);
+    assert_eq!(ops.iter().map(|o| o.op).collect::<Vec<_>>(), [1, 9, 9]);
+}
+
+#[test]
+fn every_branch_node_says_what_it_is() {
+    let cb = |b: &str| co_cb(b).1;
+    use crate::lang::functions::flavor::{IF, IF_ELIF, IF_ELSE};
+    assert_eq!(cb("if a { }"), [IF]);
+    assert_eq!(cb("if a { } else { }"), [IF_ELSE]);
+    assert_eq!(cb("if a { } else if b { }"), [IF_ELIF, IF]);
+    assert_eq!(cb("if a { } else if b { } else { }"), [IF_ELIF, IF_ELSE]);
+    assert_eq!(cb("if let Some(_) = o { }"), [IF]);
+    assert_eq!(cb("if let Some(_) = o { } else { }"), [IF_ELSE]);
+    assert_eq!(cb("if a { if b { } else { } }"), [IF, IF_ELSE]);
+    // A `let .. else` is a branch with one arm, the diverging block: counted as an `if` with no `else`.
+    assert_eq!(cb("let Some(_x) = o else { return };"), [IF]);
+    // One row per kind-1 node: nothing else is a branch.
+    let f = parse::extract("src/x.rs", "fn f(a: bool, o: Option<u8>) {\n    if a { }\n    let Some(_x) = o else { return };\n    match o { _ => {} }\n    while a { }\n}\n", false);
+    let branches = f.fns.ct.iter().filter(|c| c.kind == crate::lang::functions::ct::BRANCH).count();
+    assert_eq!(f.fns.branches.len(), branches);
+}
