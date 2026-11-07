@@ -50,6 +50,7 @@ Strings the engine never sees. The CLI writes them next to the facts file (`<fac
   - `kind`: the `FK` kind number (0-7).
   - `chain`: container names outermost first, ending with the function itself, joined by `>`. Anonymous functions are `#<ordinal within parent>`. Never empty.
   - To assign a line to a function, take the function in the same file with the largest `start_line` whose span contains the line. A nested arrow that starts on its parent's line owns that line.
+- **`.laws`:** one line per law, in law-id order: `law path line name`, TAB-separated (see "Laws").
 
 ## Engine output (v0)
 
@@ -111,6 +112,32 @@ Function ids are `0..m-1`, in the order (file id, start offset). Ids are per run
 The engine rejects a tree whose ids are not `1..k` in order, whose parent is not smaller than its child, whose kind is outside 1 to 10, or whose parent has kind 6, 7, 8 or 9.
 
 The engine computes cyclomatic complexity, cognitive-style nesting, NPath (Nejmeh 1988) and size from the control tree. Its rules state which kinds count. Every threshold sits in the rule, with a rule id.
+
+**Per language** (what each adapter maps onto these kinds):
+- **Bend** (`cli/src/lang/bend/`): `def` is kind 0 and a lambda `x => e` is kind 2. A law is a claim, not a function. `match` is a multi-branch (3) with one arm (2) per `case`, and a flag (9) when every pattern of a case is `_` or a plain binder. `&&` and `||` are short-circuit nodes (6). Bend has no `if` (a `match` on `True{}`/`False{}` stands in for it), no loops, and no early exits. Recursion is a call, not a loop.
+
+### Markers
+
+| Tag | Fields | Meaning |
+|---|---|---|
+| `MK` | `fn class count` | Function `fn` contains `count` markers of class `class`, where `count` is at least 1. A function with no marker of a class gets no row for it: there are no zero rows. |
+
+**Classes**, all language-neutral. Each adapter states which syntax maps to which class.
+- 1 = unsafe escape. Bend: `@unsafe def` and its sugar `def f?(..)`. Rust: `unsafe` blocks, fns and impls.
+- 2 = open proof hole. Bend: each `?name` term, `?TODO` included.
+- 3 = foreign code. Bend: each `import "x.c"` / `import "x.js"` line in a def body.
+- 4 = lint suppression. Rust: `#[allow(..)]` and `#[expect(..)]`.
+- 5 = type suppression. TS: `@ts-ignore` and `@ts-expect-error`.
+
+### Laws (languages with stated laws: Bend)
+
+| Tag | Fields | Meaning |
+|---|---|---|
+| `L` | `law_count` | Header line, before `LW` and `LR`. Not emitted when a run has no laws. |
+| `LW` | `law file filled` | Law `law` is stated in `file`. `filled` is 1 when some def fills it: `def name(..)` beside the law, or `def A.name(..)` in a file that imports the law's file as `A`. Whether the fill is a valid proof is decided by the proof gate, not by facts. |
+| `LR` | `law fn` | The statement of `law` names function `fn`: through an import alias (`F.Facts.add`) or by an exact name in the law's own file. Names from packages (Base) give no row. |
+
+Law ids are `0..l-1`, in the order (file id, line). The side table `.laws` has one line per law, in law-id order: `law path line name`, TAB-separated.
 
 ### Git history
 
