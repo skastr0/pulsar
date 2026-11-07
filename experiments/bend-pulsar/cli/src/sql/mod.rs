@@ -5,6 +5,7 @@
 //! `research/sql-parser.md`); the dialect is chosen per run by the caller.
 
 mod model;
+mod postgres;
 mod sqlite;
 
 pub use model::{Out, NONE};
@@ -21,6 +22,7 @@ pub fn owns(path: &str) -> bool {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Dialect {
     Sqlite,
+    Postgres,
 }
 
 /// The SQL of one query-class call or one `.sql` file.
@@ -50,7 +52,6 @@ pub struct Stats {
 /// Run the lane over `texts`. Files and lines decide the order, so DDL replays in file-id order.
 pub fn analyze(mut texts: Vec<Text>, dialect: Dialect) -> (Out, Stats) {
     texts.sort_by_key(|t| (t.file, t.line));
-    let Dialect::Sqlite = dialect;
     let mut b = Builder::default();
     let mut st = Stats { texts: texts.len(), ..Stats::default() };
     for t in &texts {
@@ -60,7 +61,7 @@ pub fn analyze(mut texts: Vec<Text>, dialect: Dialect) -> (Out, Stats) {
                 st.dynamic += 1;
                 b.bare_site(t.file, t.fn_id, t.node, t.line, Q_DYNAMIC);
             }
-            Some(sql) => run_text(&mut b, &cx, sql, &mut st),
+            Some(sql) => run_text(&mut b, &cx, sql, dialect, &mut st),
         }
     }
     st.ddl_ok = b.ddl_ok;
@@ -68,11 +69,11 @@ pub fn analyze(mut texts: Vec<Text>, dialect: Dialect) -> (Out, Stats) {
     (b.finish(), st)
 }
 
-fn run_text(b: &mut Builder, cx: &Cx, sql: &str, st: &mut Stats) {
+fn run_text(b: &mut Builder, cx: &Cx, sql: &str, dialect: Dialect, st: &mut Stats) {
     for (offset_lines, chunk) in split(sql) {
         st.statements += 1;
         let at = Cx { line: cx.line + offset_lines, ..*cx };
-        if !parse_chunk(b, &at, chunk) {
+        if !parse_chunk(b, &at, chunk, dialect) {
             st.failed += 1;
             b.bare_site(at.file, at.fn_id, at.node, at.line, Q_FAILED);
             if starts_ddl(chunk) {
@@ -83,7 +84,14 @@ fn run_text(b: &mut Builder, cx: &Cx, sql: &str, st: &mut Stats) {
 }
 
 /// Parse one statement chunk and hand its commands to the front-end. `false` = parse failure.
-fn parse_chunk(b: &mut Builder, cx: &Cx, chunk: &str) -> bool {
+fn parse_chunk(b: &mut Builder, cx: &Cx, chunk: &str, dialect: Dialect) -> bool {
+    match dialect {
+        Dialect::Sqlite => sqlite_chunk(b, cx, chunk),
+        Dialect::Postgres => postgres::run(b, cx, chunk),
+    }
+}
+
+fn sqlite_chunk(b: &mut Builder, cx: &Cx, chunk: &str) -> bool {
     let bump = Bump::new();
     let mut p = Parser::new(&bump, chunk.as_bytes());
     let mut fe = Fe::new(b);
@@ -172,7 +180,7 @@ impl Splitter {
         if c != b';' {
             return (1, false);
         }
-        if self.in_trigger && !self.ended {
+        if self.in_trigger && self.begun && !self.ended {
             return (1, false);
         }
         *self = Splitter::default();
@@ -206,6 +214,7 @@ fn skip_quoted(b: &[u8], i: usize) -> Option<usize> {
     let c = b[i];
     match c {
         b'\'' | b'"' | b'`' => Some(quoted_len(b, i, c)),
+        b'$' => dollar_len(b, i),
         b'[' => Some(b[i..].iter().position(|x| *x == b']').map_or(b.len() - i, |p| p + 1)),
         b'-' if b.get(i + 1) == Some(&b'-') => Some(b[i..].iter().position(|x| *x == b'\n').unwrap_or(b.len() - i)),
         b'/' if b.get(i + 1) == Some(&b'*') => {
@@ -214,6 +223,20 @@ fn skip_quoted(b: &[u8], i: usize) -> Option<usize> {
         }
         _ => None,
     }
+}
+
+/// A Postgres dollar-quoted string (`$$..$$`, `$tag$..$tag$`) starting at `i`; `$1` is a parameter.
+fn dollar_len(b: &[u8], i: usize) -> Option<usize> {
+    if i > 0 && (b[i - 1].is_ascii_alphanumeric() || b[i - 1] == b'_') {
+        return None;
+    }
+    let tag_end = b[i + 1..].iter().position(|c| !(c.is_ascii_alphanumeric() || *c == b'_'))? + i + 1;
+    if b[tag_end] != b'$' || b.get(i + 1).is_some_and(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    let tag = &b[i..=tag_end];
+    let close = b[tag_end + 1..].windows(tag.len()).position(|w| w == tag);
+    Some(close.map_or(b.len() - i, |p| tag_end + 1 + p + tag.len() - i))
 }
 
 /// Length of a quoted run starting at `i`, doubled quotes included.

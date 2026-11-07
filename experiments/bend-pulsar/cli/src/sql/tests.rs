@@ -165,7 +165,27 @@ fn corpus() {
         })
         .collect();
     let t = std::time::Instant::now();
-    let (o, st) = analyze(texts, Dialect::Sqlite);
+    if std::env::var("PULSAR_SQL_DIALECT").as_deref() == Ok("both") {
+        let failed = |d: Dialect| -> std::collections::BTreeSet<u32> {
+            let (o, _) = analyze(texts.clone(), d);
+            o.qs.iter().filter(|r| r[5] & Q_FAILED != 0).map(|r| r[1]).collect()
+        };
+        let (a, b) = (failed(Dialect::Sqlite), failed(Dialect::Postgres));
+        eprintln!(
+            "texts={} fail_sqlite={} fail_postgres={} fail_both={} fail_either_ok={}",
+            texts.len(),
+            a.len(),
+            b.len(),
+            a.intersection(&b).count(),
+            a.union(&b).count() - a.intersection(&b).count()
+        );
+        return;
+    }
+    let dialect = match std::env::var("PULSAR_SQL_DIALECT").as_deref() {
+        Ok("postgres") => Dialect::Postgres,
+        _ => Dialect::Sqlite,
+    };
+    let (o, st) = analyze(texts, dialect);
     eprintln!(
         "wall_s={:.4} files={} {:?} tables={} cols={} idx={} fks={} sites={} uses={}",
         t.elapsed().as_secs_f64(),
@@ -178,4 +198,74 @@ fn corpus() {
         o.qs.len(),
         o.qu.len()
     );
+}
+
+fn run_pg(sql: &str) -> (Out, Stats) {
+    analyze(vec![Text { file: 0, fn_id: NONE, node: 0, line: 1, sql: Some(sql.to_string()) }], Dialect::Postgres)
+}
+
+#[test]
+fn postgres_schema_replay() {
+    let (o, st) = run_pg(
+        "CREATE TABLE users (id serial PRIMARY KEY, email text NOT NULL UNIQUE, org_id integer REFERENCES orgs(id), note text DEFAULT '');\n\
+         CREATE TABLE orgs (id bigint PRIMARY KEY, name text);\n\
+         CREATE INDEX users_org ON users (org_id) WHERE org_id IS NOT NULL;\n\
+         ALTER TABLE users ADD COLUMN age integer;\n\
+         ALTER TABLE users RENAME COLUMN note TO memo;\n\
+         CREATE INDEX users_lower_email ON users (lower(email));",
+    );
+    assert_eq!((st.ddl_ok, st.ddl_skipped, st.failed), (6, 0, 0));
+    let cols: Vec<String> = o.dc.iter().filter(|r| nm(&o, r[0]) == "users").map(|r| format!("{}@{}:{}", nm(&o, r[1]), r[2], r[3])).collect();
+    // No rowid alias in Postgres: id is pk (1) only.
+    assert_eq!(cols, ["id@0:1", "email@1:6", "org_id@2:0", "memo@3:16", "age@4:0"]);
+    let mut idx: Vec<(u32, Vec<String>)> = o
+        .di
+        .iter()
+        .filter(|d| nm(&o, d[1]) == "users")
+        .map(|d| (d[2], o.dx.iter().filter(|x| x[0] == d[0]).map(|x| nm(&o, x[2])).collect()))
+        .collect();
+    idx.sort();
+    assert_eq!(
+        idx,
+        vec![
+            (I_PARTIAL, vec!["org_id".to_string()]),
+            (I_EXPR, vec!["-".to_string()]),
+            (I_UNIQUE | I_IMPLIED, vec!["email".to_string()]),
+            (I_UNIQUE | I_IMPLIED, vec!["id".to_string()]),
+        ]
+    );
+    assert_eq!(o.df.len(), 1);
+    assert_eq!((nm(&o, o.dg[0][2]), nm(&o, o.dg[0][3])), ("org_id".into(), "id".into()));
+}
+
+#[test]
+fn postgres_queries_roles_and_placeholders() {
+    let (o, st) = run_pg(
+        "CREATE TABLE t (a int, b int, c text);\n\
+         SELECT a, count(b) FROM t WHERE a = ? AND b > 3 AND c LIKE '%x' AND lower(c) = ? ORDER BY b LIMIT 10 OFFSET ?;\n\
+         SELECT u.name FROM t u JOIN t v ON v.a = u.b WHERE u.a = 1 OR v.c = 'y' OR a IN (SELECT a FROM t WHERE b IS NULL);",
+    );
+    assert_eq!(st.failed, 0, "{st:?}");
+    assert_eq!(o.qs.len(), 2);
+    assert_eq!((o.qs[0][4], o.qs[0][5]), (K_SELECT, Q_LIMIT | Q_OFFSET_PARAM));
+    assert_eq!(uses(&o, 0), ["t.a:1", "t.a:8", "t.b:2", "t.b:6", "t.b:8", "t.c:4"]);
+    assert_eq!(defeats(&o, 0), ["t.c:1", "t.c:2"]);
+    let u1 = uses(&o, 1);
+    assert!(u1.contains(&"t.a:7".to_string()) && u1.contains(&"t.b:7".to_string()), "{u1:?}");
+    assert!(defeats(&o, 1).contains(&"t.c:3".to_string()), "{:?}", defeats(&o, 1));
+}
+
+#[test]
+fn postgres_dml_failures_and_dollar_quotes() {
+    let (o, st) = run_pg(
+        "CREATE TABLE t (a int, b int);\n\
+         INSERT INTO t (a, b) VALUES (1, 2) ON CONFLICT (a) DO UPDATE SET b = 3;\n\
+         UPDATE t SET b = 0 WHERE a = 5;\n\
+         DELETE FROM t WHERE a = 5;\n\
+         CREATE FUNCTION f() RETURNS int AS $$ SELECT 1; SELECT 2; $$ LANGUAGE sql;\n\
+         SELEC nope;",
+    );
+    assert_eq!((st.statements, st.failed), (6, 1), "{st:?}");
+    assert_eq!(o.qs.iter().filter(|r| r[5] & Q_FAILED == 0).map(|r| r[4]).collect::<Vec<_>>(), [K_INSERT, K_UPDATE, K_DELETE]);
+    assert_eq!(uses(&o, 0), ["t.a:11", "t.b:10", "t.b:11"]);
 }
