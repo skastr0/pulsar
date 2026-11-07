@@ -12,6 +12,7 @@ use crate::engine;
 use crate::facts::{stable_key, FactWriter, SideTables};
 use crate::finding::{hex, Finding, Subject, IMPORT_CYCLE};
 use crate::lang;
+use crate::policy::{self, Effective};
 use serde_json::json;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -93,7 +94,7 @@ struct Timing {
 
 /// All findings of one commit, keyed by finding key. A key collision between two distinct
 /// findings is an error: delta must never merge them silently.
-fn evaluate(repo: &Path, sha: &str, tag: &str) -> Result<(BTreeMap<u64, Finding>, Timing), String> {
+fn evaluate(repo: &Path, sha: &str, tag: &str) -> Result<(BTreeMap<u64, Finding>, Timing, Effective), String> {
     let mut t = Timing::default();
     let scratch = Scratch::new(tag)?;
     let tree = scratch.0.join("tree");
@@ -116,6 +117,10 @@ fn evaluate(repo: &Path, sha: &str, tag: &str) -> Result<(BTreeMap<u64, Finding>
         .map(|s| String::from_utf8_lossy(s).into_owned())
         .collect();
     t.checkout_ms = t0.elapsed().as_millis();
+    // The policy is the one committed in this sha, so a decision counts only once it is in the tree.
+    let ev = policy::gather_evidence(&tree, &tracked);
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let eff = policy::load(&tree, home.as_deref(), &ev)?;
 
     let t1 = Instant::now();
     let mut w = FactWriter::new();
@@ -135,7 +140,8 @@ fn evaluate(repo: &Path, sha: &str, tag: &str) -> Result<(BTreeMap<u64, Finding>
     t.engine_ms = t2.elapsed().as_millis();
 
     let mut out: BTreeMap<u64, Finding> = BTreeMap::new();
-    for members in &found.cycles {
+    let cycles_on = !eff.policy.rules.disable.iter().any(|r| r == IMPORT_CYCLE.id);
+    for members in found.cycles.iter().filter(|_| cycles_on) {
         let mut paths: Vec<&str> = members.iter().map(|&i| set.files[i as usize].as_str()).collect();
         paths.sort_unstable();
         let subjects = paths.iter().map(|p| Subject::File { key: stable_key(p), path: (*p).to_string() }).collect();
@@ -152,15 +158,16 @@ fn evaluate(repo: &Path, sha: &str, tag: &str) -> Result<(BTreeMap<u64, Finding>
             return Err(format!("finding key {} collides for two findings at {sha}: {}", hex(key), prev.evidence_text));
         }
     }
-    Ok((out, t))
+    Ok((out, t, eff))
 }
 
 /// Returns the process exit code: 0 none added, 1 added.
 pub fn run(a: &Args) -> Result<u8, String> {
     let base = resolve(&a.repo, &a.base)?;
     let head = resolve(&a.repo, &a.head)?;
-    let (before, tb) = evaluate(&a.repo, &base, "base")?;
-    let (after, th) = evaluate(&a.repo, &head, "head")?;
+    let (before, tb, _) = evaluate(&a.repo, &base, "base")?;
+    let (after, th, eff) = evaluate(&a.repo, &head, "head")?;
+    eprintln!("pulsar: {}", eff.summary());
     for (name, sha, t) in [("base", &base, &tb), ("head", &head, &th)] {
         eprintln!(
             "pulsar: {name} {} checkout={}ms facts={}ms engine={}ms",
@@ -170,9 +177,13 @@ pub fn run(a: &Args) -> Result<u8, String> {
             t.engine_ms
         );
     }
-    let added: Vec<&Finding> = after.iter().filter(|(k, _)| !before.contains_key(k)).map(|(_, f)| f).collect();
+    let new: Vec<&Finding> = after.iter().filter(|(k, _)| !before.contains_key(k)).map(|(_, f)| f).collect();
+    // A decision committed in head allows a new finding with a reason; it does not count as added.
+    let (allowed, added): (Vec<&Finding>, Vec<&Finding>) =
+        new.into_iter().partition(|f| eff.allowed(&hex(f.key())).is_some());
     let removed: Vec<&Finding> = before.iter().filter(|(k, _)| !after.contains_key(k)).map(|(_, f)| f).collect();
-    let unchanged = after.len() - added.len();
+    let unchanged = after.len() - added.len() - allowed.len();
+    let reason = |f: &Finding| eff.allowed(&hex(f.key())).map(|d| d.reason.clone()).unwrap_or_default();
 
     let mut out = String::new();
     if a.json {
@@ -180,12 +191,18 @@ pub fn run(a: &Args) -> Result<u8, String> {
             out.push_str(&f.json("added").to_string());
             out.push('\n');
         }
+        for f in &allowed {
+            let mut v = f.json("allowed");
+            v["reason"] = json!(reason(f));
+            out.push_str(&v.to_string());
+            out.push('\n');
+        }
         for f in &removed {
             out.push_str(&f.json("removed").to_string());
             out.push('\n');
         }
         out.push_str(
-            &json!({"type":"summary","base":base,"head":head,"added":added.len(),"removed":removed.len(),"unchanged":unchanged})
+            &json!({"type":"summary","base":base,"head":head,"added":added.len(),"allowed":allowed.len(),"removed":removed.len(),"unchanged":unchanged,"policy":eff.fingerprint})
                 .to_string(),
         );
         out.push('\n');
@@ -193,14 +210,18 @@ pub fn run(a: &Args) -> Result<u8, String> {
         for f in &added {
             out.push_str(&format!("+ {}\n", f.text()));
         }
+        for f in &allowed {
+            out.push_str(&format!("~ {}  [allowed: {}]\n", f.text(), reason(f)));
+        }
         for f in &removed {
             out.push_str(&format!("- {}\n", f.text()));
         }
         out.push_str(&format!(
-            "# base={} head={} added={} removed={} unchanged={}\n",
+            "# base={} head={} added={} allowed={} removed={} unchanged={}\n",
             &base[..12],
             &head[..12],
             added.len(),
+            allowed.len(),
             removed.len(),
             unchanged
         ));

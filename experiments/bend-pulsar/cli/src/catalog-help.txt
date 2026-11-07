@@ -1,0 +1,81 @@
+pulsar catalog: class data that tells Pulsar what a symbol is.
+
+A catalog says "this call is a query / blocking / a log / reads ambient state". It never makes
+a finding by itself. Findings come only from RULES, which a pack or the repo turns on.
+
+USAGE
+  pulsar catalog check <file.toml>...   parse and validate; exit 2 with the reason on error
+  pulsar catalog list [--repo dir]      catalogs in effect: id, scope, sha256, why active
+
+WHERE CATALOGS LIVE
+  lane   shipped in the binary, always on for that language (js-globals)
+  pack   shipped in the binary, switched on by evidence in the repo (effect, platform-node)
+  repo   your own: <repo>/.pulsar/catalogs/<name>.toml, always on for that repo
+Every catalog's sha256 is part of the printed policy fingerprint, so changing one is visible.
+
+FILE FORMAT  (TOML; format = "pulsar-catalog 0")
+  Top level keys, all strict (an unknown key is an error):
+    format    = "pulsar-catalog 0"
+    id        = "my-repo"              lowercase letters, digits, dashes
+    scope     = "repo"                 lane | pack | repo
+    activate  = ["dep:effect"]         scope "pack" only. Any match switches the pack on:
+                                         dep:<package>          package.json dependency
+                                         import:<specifier glob> an import in the repo
+    sources   = ["what you checked"]   free text, kept as evidence
+  Arrays of inline tables. ONE ENTRY PER LINE, SORTED, no duplicates, or the file is rejected:
+
+    classes = [                        every class you use must be declared here
+      { class = "query", id = 1, rule = "my-repo/query" },
+    ]                                  id: 1-8 are the fixed classes below, repo classes start at 1000
+                                       rule: the rule id reported with any finding that uses the class
+
+    symbols = [                        sorted by (sym, via, use, ver)
+      { sym = "pg#Pool.query", class = "query", ver = "1", at = "pg@8:docs/pool.md:12", doc = "Runs a query." },
+      { sym = "db#sql", class = "query", via = "yield", use = "tag", ver = "1", at = "...", doc = "..." },
+    ]
+      sym   "<module specifier>#<export path>", e.g. "node:fs#readFileSync", "global#Date.now"
+      class a declared class
+      via   which event at a site counts (default "call"):
+              call          a call of sym
+              ref           any reference to sym
+              yield         a use of the value bound by `yield* sym`
+              result        a use of the value returned by calling sym
+              yield-result  a use of the value bound by `yield* sym(...)`
+              read          a property read
+              new           a construction
+      use   with yield/result/yield-result, which use counts: tag (tagged template), call,
+            member:<name> (a method call), member:* (any method); with new: noargs
+      ver   a label for the library version or runtime this entry is true for ("3", "4", "node", "js")
+      at    where the justification lives (file:line); doc  the text that justifies the class
+
+    handlers = [ { sym, arg, ver, at, doc } ]        error handlers; arg = last-fn | object-fns
+    wrappers = [ { sym, ctx, label, ver, at, doc } ] function arguments get ctx bits;
+                                                     label = none | first-string
+    services = [ { sym, default, ver, at, doc } ]    default = true: always provided
+    layers   = [ { sym, builds, ver, at, doc } ]     builds = array of service syms
+    aliases  = [ { from, to } ]                      prefix rewrites, longest first
+    rules    = [ { id, class, ctx_any, ctx_none, says, ver, at, doc } ]
+      A call site whose callee is in `class`, in a context where (ctx_any == 0 or a ctx_any bit
+      is set) and no ctx_none bit is set, is a finding of rule `id`. A rule is on only when its
+      catalog is active, and only if policy.toml does not disable it.
+
+FIXED CLASS IDS
+  1 query  2 blocking  3 log  4 error-erasing  5 runtime-escape  6 fork
+  7 resource-acquire  8 ambient-read          (repo classes: 1000 and up)
+
+CTX BITS (call sites)
+  1 inside an async function   2 inside an Effect generator or Effect.fn   4 inside a test
+
+MINIMAL REPO CATALOG  (.pulsar/catalogs/db.toml)
+  format = "pulsar-catalog 0"
+  id = "db"
+  scope = "repo"
+  sources = ["internal docs"]
+  classes = [
+    { class = "query", id = 1, rule = "db/query" },
+  ]
+  symbols = [
+    { sym = "./db#run", class = "query", ver = "1", at = "src/db.ts:3", doc = "Runs a SQL query." },
+  ]
+
+Run `pulsar catalog check .pulsar/catalogs/db.toml` before committing.

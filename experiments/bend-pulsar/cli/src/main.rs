@@ -1,3 +1,4 @@
+mod catalog;
 mod coverage;
 mod delta;
 mod engine;
@@ -7,6 +8,7 @@ mod git;
 mod history;
 mod lang;
 mod packs;
+mod policy;
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -15,6 +17,8 @@ use std::process::ExitCode;
 const USAGE: &str = "usage:
   pulsar facts <repo> [-o file] [--coverage path]   write facts (and <file>.paths, <file>.fns when -o is given)
   pulsar delta <base> <head> [--repo dir] [--json]   findings added and removed between two shas (exit 1 if any added)
+  pulsar catalog [check <file>... | list [--repo dir] | --help]   class data (see `pulsar catalog --help`)
+  pulsar policy [--repo dir]        print the effective policy, its parts and fingerprint
   pulsar cycles <repo> [--facts-out file]   run facts, then the engine, and print cycles";
 
 fn main() -> ExitCode {
@@ -22,6 +26,8 @@ fn main() -> ExitCode {
     let r = match args.first().map(String::as_str) {
         Some("facts") => cmd_facts(&args[1..]).map(|()| 0),
         Some("cycles") => cmd_cycles(&args[1..]).map(|()| 0),
+        Some("catalog") => cmd_catalog(&args[1..]).map(|()| 0),
+        Some("policy") => cmd_policy(&args[1..]).map(|()| 0),
         Some("delta") => delta::parse(&args[1..]).and_then(|a| delta::run(&a)),
         _ => Err(USAGE.to_string()),
     };
@@ -70,6 +76,7 @@ fn print_stats(st: &lang::ts::Stats) {
 
 /// Run every lane on `repo`, write canonical facts to `out`, and return the file set and side tables.
 fn build_facts(repo: &Path, coverage: Option<&Path>, out: &mut dyn Write) -> Result<(lang::ts::FactSet, facts::SideTables), String> {
+    policy_for(repo)?;
     let mut w = facts::FactWriter::new();
     let mut tables = facts::SideTables::default();
     let (set, st) = lang::ts::collect(repo, &mut w, &mut tables)?;
@@ -142,4 +149,72 @@ fn cmd_cycles(args: &[String]) -> Result<(), String> {
         return Err("engine certificate check failed".into());
     }
     Ok(())
+}
+
+/// Load the effective policy of the tree at `root` and print its one-line summary to stderr.
+fn policy_for(root: &Path) -> Result<policy::Effective, String> {
+    let tracked = git::git_ls_files(root).unwrap_or_default();
+    let ev = policy::gather_evidence(root, &tracked);
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let eff = policy::load(root, home.as_deref(), &ev)?;
+    eprintln!("pulsar: {}", eff.summary());
+    Ok(eff)
+}
+
+fn cmd_policy(args: &[String]) -> Result<(), String> {
+    let repo = repo_flag(args)?;
+    let eff = policy_for(&repo)?;
+    for p in &eff.parts {
+        println!("{}\t{}\tsha256:{}", p.kind, p.name, p.sha256);
+    }
+    println!("fingerprint\tsha256:{}", eff.fingerprint);
+    Ok(())
+}
+
+fn repo_flag(args: &[String]) -> Result<PathBuf, String> {
+    match args {
+        [] => Ok(PathBuf::from(".")),
+        [f, v] if f == "--repo" => Ok(PathBuf::from(v)),
+        _ => Err(USAGE.to_string()),
+    }
+}
+
+fn cmd_catalog(args: &[String]) -> Result<(), String> {
+    match args.first().map(String::as_str) {
+        None | Some("--help") | Some("-h") | Some("help") => {
+            print!("{}", catalog::HELP);
+            Ok(())
+        }
+        Some("check") if args.len() > 1 => {
+            for f in &args[1..] {
+                let text = std::fs::read_to_string(f).map_err(|e| format!("{f}: {e}"))?;
+                let l = catalog::load(f, &text)?;
+                let c = &l.catalog;
+                println!(
+                    "ok {f}: id={} scope={:?} classes={} symbols={} handlers={} wrappers={} services={} layers={} rules={} sha256:{}",
+                    c.id, c.scope, c.classes.len(), c.symbols.len(), c.handlers.len(), c.wrappers.len(),
+                    c.services.len(), c.layers.len(), c.rules.len(), l.sha256
+                );
+            }
+            Ok(())
+        }
+        Some("list") => {
+            let repo = repo_flag(&args[1..])?;
+            let eff = policy_for(&repo)?;
+            for c in &eff.catalogs {
+                println!("{}\t{:?}\t{}\tsha256:{}", c.loaded.catalog.id, c.scope, c.why, c.loaded.sha256);
+            }
+            let inactive: Vec<&str> = catalog::EMBEDDED
+                .iter()
+                .map(|(id, _)| *id)
+                .filter(|id| !eff.catalogs.iter().any(|c| c.loaded.catalog.id == *id))
+                .collect();
+            if !inactive.is_empty() {
+                println!("# inactive packs (no evidence): {}", inactive.join(", "));
+            }
+            println!("# evidence: package.json dependencies; import: activators need import evidence, not collected yet");
+            Ok(())
+        }
+        _ => Err(USAGE.to_string()),
+    }
 }

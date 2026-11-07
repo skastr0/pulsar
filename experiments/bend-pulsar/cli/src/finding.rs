@@ -177,3 +177,8 @@ mod tests {
         assert_ne!(a.key(), b.key());
     }
 }
+
+/// Rules the CLI itself defines (not catalog rules). Policy may enable or disable them by id.
+pub fn is_builtin_rule(id: &str) -> bool {
+    id == IMPORT_CYCLE.id
+}
