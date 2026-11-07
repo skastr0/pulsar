@@ -48,6 +48,14 @@ boat delete $id --yes                                  # then check `boat list` 
 - **Always pass `--no-env`**, so no secrets go up.
 - **The push carries no `.git`, and drops executable bits.** Call scripts with `bash x.sh`, not `./x.sh`. The CLI's `git ls-files` needs a repo, so before `pulsar facts` or `pulsar cycles` on the pushed tree, run:
   `cd ~/pulsar && git init -q && git add -A && git -c user.name=vm -c user.email=vm@localhost commit -qm vm`.
+- **Real git history**, for the history and dogfood lanes. `boat push` drops `.git`, so send the history as a bundle and lay it under the pushed tree. The working files and the warm `cli/target` stay, and uncommitted Mac edits show as changes against `main`:
+  ```sh
+  git -C /Users/guilhermecastro/Projects/pulsar bundle create /tmp/p.bundle --all   # 5.3 MB, 2 s
+  boat scp /tmp/p.bundle $id:/home/user/p.bundle
+  boat push $id /Users/guilhermecastro/Projects/pulsar --to /home/user/pulsar
+  boat ssh $id 'cd ~/pulsar && rm -rf .git && git init -q && git fetch -q --update-head-ok ~/p.bundle "refs/heads/*:refs/heads/*" && git reset -q main'
+  ```
+  For a clean checkout without the Mac's working tree, use `git clone -q ~/p.bundle ~/pulsar-clean`. Either way, use this instead of the `git init` line above when history matters.
 - **Files deleted on the Mac stay on the VM after a push.** Start a new VM from pulsar-base when that matters.
 - **Benchmarks:** only on an idle VM. Name the type and give the load average.
 
