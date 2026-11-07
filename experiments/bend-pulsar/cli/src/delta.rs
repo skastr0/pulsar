@@ -29,7 +29,8 @@ use std::time::Instant;
 pub const USAGE: &str = "usage: pulsar delta <base> <head> [--repo dir] [--json] [--coverage file|dir] [--trend] [--no-cache]
   exit 0 = no finding added, 1 = at least one added, 2 = error
   --coverage reads a coverage report from the worktree and applies it to HEAD only (it describes the
-    checked-out tree, so use it when <head> is what you have checked out and tested). Findings that
+    checked-out tree, so use it when <head> is what you have checked out and tested). Without it, a
+    report at the repo root (coverage/coverage-final.json, coverage/lcov.info, ...) is found the same way. Findings that
     need coverage (core.crap) are listed under `?` and never count toward exit 1.
   --trend lists every function whose measured values moved (default: only functions that have a
     metric finding in base or head). Trend lines (`~ worsened`, `~ improved`) show old -> new values;
@@ -277,6 +278,7 @@ fn build_fresh(
     tracked: Vec<String>,
     eff: &Effective,
     coverage: Option<&Path>,
+    discover: bool,
     facts_path: &Path,
 ) -> Result<Built, String> {
     checkout(repo, sha, scratch, tree)?;
@@ -284,10 +286,14 @@ fn build_fresh(
     let mut tables = SideTables { sql_rules: eff.sql_rule_codes(), ..SideTables::default() };
     let (set, dstats) = driver::build(tree, tracked, &eff.policy.lanes, &eff.active_rules(), &mut w, &mut tables)?;
     let mut coverage_reroot = None;
-    if let Some(c) = coverage {
-        // The report is read from the worktree at `repo`, never from the scratch checkout.
-        let stats = coverage::emit(repo, Some(c), &tables, &mut w)?;
+    if coverage.is_some() || discover {
+        // The report is read from the worktree at `repo`, never from the scratch checkout. With no
+        // explicit path, `discover` looks for one at the repo root, as `pulsar facts` does.
+        let stats = coverage::emit(repo, coverage, &tables, &mut w)?;
         coverage_reroot = stats.rerooted_prefix;
+        if stats.reports > 0 {
+            eprintln!("pulsar: coverage read {}", stats.report_paths.join(", "));
+        }
     }
     let mut f = std::fs::File::create(facts_path).map_err(|e| format!("{}: {e}", facts_path.display()))?;
     w.write_to(&mut f)?;
@@ -324,16 +330,19 @@ fn cycle_findings(found: &Findings, files: &[String]) -> Vec<Finding> {
 }
 
 /// One function's measured values and where it lives, from the engine's `FM` and the `.fns` table.
-fn measures(found: &Findings, files: &[String], tables: &SideTables, keys: &[u64]) -> BTreeMap<u64, Measure> {
+/// The second value counts the functions that could not be looked up (no `FM` row, no head key or
+/// an unknown file), so the caller can report them instead of dropping them silently.
+fn measures(found: &Findings, files: &[String], tables: &SideTables, keys: &[u64]) -> (BTreeMap<u64, Measure>, usize) {
     let mut out = BTreeMap::new();
+    let mut missing = 0;
     for (i, entry) in tables.fns.iter().enumerate() {
-        let (Some(m), Some(key)) = (found.fm.get(i), keys.get(i)) else { continue };
-        out.insert(
-            *key,
-            Measure { path: files[entry.file as usize].clone(), chain: entry.chain.clone(), line: entry.start_line, m: *m },
-        );
+        let (Some(m), Some(key), Some(path)) = (found.fm.get(i), keys.get(i), files.get(entry.file as usize)) else {
+            missing += 1;
+            continue;
+        };
+        out.insert(*key, Measure { path: path.clone(), chain: entry.chain.clone(), line: entry.start_line, m: *m });
     }
-    out
+    (out, missing)
 }
 
 fn metric_findings(
@@ -419,28 +428,47 @@ fn class_context_findings(
     (out, dropped)
 }
 
+/// The `tag` rows of a facts file as numbers (at least `arity` of them), and how many rows of that
+/// tag did not parse. A file that cannot be read is an error the caller reports.
+fn read_tagged(facts_path: &Path, tag: &str, arity: usize) -> Result<(Vec<Vec<u32>>, usize), String> {
+    let text = std::fs::read_to_string(facts_path).map_err(|e| format!("{}: {e}", facts_path.display()))?;
+    let prefix = format!("{tag} ");
+    let (mut rows, mut bad) = (Vec::new(), 0);
+    for r in text.lines().filter_map(|l| l.strip_prefix(prefix.as_str())) {
+        match r.split(' ').map(|t| t.parse::<u32>()).collect::<Result<Vec<_>, _>>() {
+            Ok(n) if n.len() >= arity => rows.push(n),
+            _ => bad += 1,
+        }
+    }
+    Ok((rows, bad))
+}
+
+/// The lookup a section needs, or nothing plus a degraded notice saying which lookup failed. Never
+/// silent: the section's findings are then built on less than the facts hold.
+fn lookup<T: Default>(what: &'static str, lane: &'static str, r: Result<(T, usize), String>, degraded: &mut Vec<Degraded>) -> T {
+    match r {
+        Ok((v, 0)) => v,
+        Ok((v, bad)) => {
+            degraded.push(Degraded { lane, cause: format!("{bad} {what} row(s) in the facts did not parse and were skipped") });
+            v
+        }
+        Err(e) => {
+            degraded.push(Degraded { lane, cause: format!("{what} rows could not be read ({e}); findings that need them are not reported") });
+            T::default()
+        }
+    }
+}
+
 /// `DT table file flags` rows of a facts file: table name id -> file id of its definition.
-fn read_table_defs(facts_path: &Path) -> BTreeMap<u32, u32> {
-    let Ok(text) = std::fs::read_to_string(facts_path) else { return BTreeMap::new() };
-    text.lines()
-        .filter_map(|l| l.strip_prefix("DT "))
-        .filter_map(|r| {
-            let mut n = r.split(' ').map(|t| t.parse::<u32>());
-            Some((n.next()?.ok()?, n.next()?.ok()?))
-        })
-        .collect()
+fn read_table_defs(facts_path: &Path) -> Result<(BTreeMap<u32, u32>, usize), String> {
+    let (rows, bad) = read_tagged(facts_path, "DT", 2)?;
+    Ok((rows.iter().map(|n| (n[0], n[1])).collect(), bad))
 }
 
 /// `RT root file fn` rows of a facts file: where each Effect root is built.
-fn read_roots(facts_path: &Path) -> Vec<layers::Root> {
-    let Ok(text) = std::fs::read_to_string(facts_path) else { return Vec::new() };
-    text.lines()
-        .filter_map(|l| l.strip_prefix("RT "))
-        .filter_map(|r| {
-            let mut n = r.split(' ').map(|t| t.parse::<u32>());
-            Some(layers::Root { root: n.next()?.ok()?, file: n.next()?.ok()?, fn_id: n.next()?.ok()? })
-        })
-        .collect()
+fn read_roots(facts_path: &Path) -> Result<(Vec<layers::Root>, usize), String> {
+    let (rows, bad) = read_tagged(facts_path, "RT", 3)?;
+    Ok((rows.iter().map(|n| layers::Root { root: n[0], file: n[1], fn_id: n[2] }).collect(), bad))
 }
 
 /// The engine's findings for a facts file: from the cache when this engine already ran on these
@@ -467,7 +495,13 @@ fn org_policy_bytes() -> Option<Vec<u8>> {
 }
 
 /// All findings and measures of one commit.
-fn evaluate(repo: &Path, sha: &str, tag: &str, coverage: Option<&Path>, use_cache: bool) -> Result<Eval, String> {
+/// Does this evaluation read a coverage report? Explicitly given, or discovered at the repo root
+/// (head only) when one is there. Such a run is never cached: a cached entry carries no coverage.
+fn reads_coverage(explicit: bool, discover: bool, found: bool) -> bool {
+    explicit || (discover && found)
+}
+
+fn evaluate(repo: &Path, sha: &str, tag: &str, coverage: Option<&Path>, discover: bool, use_cache: bool) -> Result<Eval, String> {
     let mut timing = Timing::default();
     let scratch = Scratch::new(tag)?;
     let tree = scratch.0.join("tree");
@@ -482,7 +516,12 @@ fn evaluate(repo: &Path, sha: &str, tag: &str, coverage: Option<&Path>, use_cach
     timing.checkout_ms = t0.elapsed().as_millis();
 
     // A report describes one checkout, so a run with coverage is never cached.
-    let cache = if use_cache && coverage.is_none() { Cache::open(repo) } else { None };
+    let found = discover && coverage.is_none() && coverage::has_report(repo);
+    let reads = reads_coverage(coverage.is_some(), discover, found);
+    if discover && coverage.is_none() && !found {
+        eprintln!("pulsar: coverage none found at the repo root (pass --coverage <file|dir>)");
+    }
+    let cache = if use_cache && !reads { Cache::open(repo) } else { None };
     let rel = Cache::derived_rel(sha, org_policy_bytes().as_deref());
     let facts_path = scratch.0.join("facts.txt");
     let t1 = Instant::now();
@@ -491,7 +530,7 @@ fn evaluate(repo: &Path, sha: &str, tag: &str, coverage: Option<&Path>, use_cach
     let built = match cached {
         Some(b) => b,
         None => {
-            let b = build_fresh(repo, sha, &scratch, &tree, tracked, &eff, coverage, &facts_path)?;
+            let b = build_fresh(repo, sha, &scratch, &tree, tracked, &eff, coverage, discover, &facts_path)?;
             if let Some(c) = &cache {
                 let facts = std::fs::read(&facts_path).map_err(|e| format!("{}: {e}", facts_path.display()))?;
                 if let Err(e) = c.put(&rel, &cache::encode(&to_meta(&b), &facts)) {
@@ -513,7 +552,7 @@ fn evaluate(repo: &Path, sha: &str, tag: &str, coverage: Option<&Path>, use_cach
     }
     timing.engine_ms = t2.elapsed().as_millis();
 
-    let measures = measures(&found, &set.files, &tables, &set.fn_keys);
+    let (measures, unmeasured) = measures(&found, &set.files, &tables, &set.fn_keys);
     let disabled = &eff.policy.rules.disable;
     let mut findings = BTreeMap::new();
     if !disabled.iter().any(|r| r == IMPORT_CYCLE.id) {
@@ -526,6 +565,12 @@ fn evaluate(repo: &Path, sha: &str, tag: &str, coverage: Option<&Path>, use_cach
         insert(&mut findings, f, sha)?;
     }
     let mut degraded = degraded;
+    if unmeasured > 0 {
+        degraded.push(Degraded {
+            lane: "measures",
+            cause: format!("{unmeasured} function(s) have no measure row, head key or file; they are missing from trends and metric findings"),
+        });
+    }
     if dropped > 0 {
         // Never drop silently: a finding the CLI could not name is reported as degraded input.
         degraded.push(Degraded {
@@ -534,7 +579,7 @@ fn evaluate(repo: &Path, sha: &str, tag: &str, coverage: Option<&Path>, use_cach
         });
     }
     if let Some(s) = &found.sql {
-        let defs = read_table_defs(&facts_path);
+        let defs = lookup("table definition (DT)", "sql", read_table_defs(&facts_path), &mut degraded);
         let (sql_findings, notices) = sqlfind::findings(s, &tables, &set.files, &defs, disabled)?;
         for f in sql_findings {
             insert(&mut findings, f, sha)?;
@@ -546,7 +591,7 @@ fn evaluate(repo: &Path, sha: &str, tag: &str, coverage: Option<&Path>, use_cach
             return Err(format!("engine layer certificate (LCERT) is {} at {sha}", if l.cert.is_none() { "missing" } else { "0" }));
         }
         let names = layers::parse_names(&tables.effect)?;
-        let roots = read_roots(&facts_path);
+        let roots = lookup("Effect root (RT)", "effect", read_roots(&facts_path), &mut degraded);
         let ctx = layers::Ctx { names: &names, roots: &roots, files: &set.files, tables: &tables, keys: &set.fn_keys };
         let (layer_findings, notices) = layers::findings(l, &ctx, disabled)?;
         for f in layer_findings {
@@ -778,8 +823,8 @@ fn render_json(d: &Diff, after: &Eval, base: &str, head: &str) -> String {
 pub fn run(a: &Args) -> Result<u8, String> {
     let base = resolve(&a.repo, &a.base)?;
     let head = resolve(&a.repo, &a.head)?;
-    let before = evaluate(&a.repo, &base, "base", None, !a.no_cache)?;
-    let after = evaluate(&a.repo, &head, "head", a.coverage.as_deref(), !a.no_cache)?;
+    let before = evaluate(&a.repo, &base, "base", None, false, !a.no_cache)?;
+    let after = evaluate(&a.repo, &head, "head", a.coverage.as_deref(), true, !a.no_cache)?;
     eprintln!("pulsar: {}", after.policy.summary());
     for (name, sha, e) in [("base", &base, &before), ("head", &head, &after)] {
         let t = &e.timing;
@@ -817,5 +862,68 @@ mod version_tests {
         let after: BTreeMap<u64, Finding> = [h1, h2, h3].into_iter().map(|x| (x.key(), x)).collect();
         assert_eq!(version_changes(&pairs, &before, &after), vec![("core.cyclomatic".to_string(), 1, 2, 2)]);
         assert!(version_changes(&[], &before, &after).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod lookup_tests {
+    use super::*;
+
+    fn facts(text: &str) -> PathBuf {
+        let p = std::env::temp_dir().join(format!("pulsar-lookup-test-{}-{}", std::process::id(), text.len()));
+        std::fs::write(&p, text).unwrap();
+        p
+    }
+
+    #[test]
+    fn a_row_that_does_not_parse_is_counted_and_shown_as_degraded() {
+        let p = facts("DT 1 2 0\nDT x 2 0\nDT 3\nRT 1 2 3\n");
+        let mut d = Vec::new();
+        let defs = lookup("table definition (DT)", "sql", read_table_defs(&p), &mut d);
+        assert_eq!(defs.get(&1), Some(&2));
+        assert_eq!(defs.len(), 1);
+        assert_eq!(d.len(), 1);
+        assert_eq!((d[0].lane, d[0].cause.starts_with("2 table definition (DT) row(s)")), ("sql", true), "{d:?}");
+        let mut d = Vec::new();
+        assert_eq!(lookup("Effect root (RT)", "effect", read_roots(&p), &mut d).len(), 1);
+        assert!(d.is_empty(), "clean rows add no notice");
+    }
+
+    #[test]
+    fn an_unreadable_facts_file_is_degraded_not_empty_and_silent() {
+        let mut d = Vec::new();
+        let roots = lookup("Effect root (RT)", "effect", read_roots(Path::new("/nonexistent/pulsar.facts")), &mut d);
+        assert!(roots.is_empty());
+        assert_eq!(d.len(), 1);
+        assert!(d[0].cause.contains("could not be read"), "{d:?}");
+    }
+}
+
+#[cfg(test)]
+mod coverage_discovery_tests {
+    use super::*;
+
+    #[test]
+    fn head_reads_a_discovered_report_and_base_never_does() {
+        assert!(reads_coverage(false, true, true), "head with a report at the root reads it");
+        assert!(!reads_coverage(false, true, false), "no report found: nothing to read, the cache stays usable");
+        assert!(!reads_coverage(false, false, true), "base never discovers, a report describes the worktree");
+        assert!(reads_coverage(true, false, false), "an explicit path always reads");
+        assert!(reads_coverage(true, true, true));
+    }
+
+    #[test]
+    fn a_run_that_reads_coverage_has_no_cache() {
+        // evaluate() opens the cache only when `use_cache && !reads`.
+        for (explicit, discover, found) in [(true, true, true), (false, true, true), (true, false, false)] {
+            assert!(reads_coverage(explicit, discover, found), "{explicit} {discover} {found}");
+        }
+        let repo = std::env::temp_dir().join(format!("pulsar-covdisc-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&repo);
+        std::fs::create_dir_all(repo.join("coverage")).unwrap();
+        assert!(!coverage::has_report(&repo));
+        std::fs::write(repo.join("coverage/lcov.info"), "SF:a.ts\nDA:1,1\nend_of_record\n").unwrap();
+        assert!(coverage::has_report(&repo), "has_report sees the repo-root report discovery would read");
+        let _ = std::fs::remove_dir_all(&repo);
     }
 }
