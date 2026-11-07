@@ -1,9 +1,5 @@
 node_modules/
 dist/
-packages/npm/*/LICENSE
-packages/npm/pulsar-*/bin/
-.turbo/
-tsconfig.tsbuildinfo
 .pulsar/*
 !.pulsar/vector.json
 !.pulsar/conventions.json

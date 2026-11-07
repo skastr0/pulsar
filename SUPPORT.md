@@ -8,6 +8,6 @@ Use GitHub issues for:
 - documentation corrections
 - scoped proposals with a clear maintenance cost
 
-Please include the version or commit, operating system, Bun version, command run, expected behavior, actual behavior, and relevant logs with secrets removed.
+Please include the version or commit, operating system, command run, expected behavior, actual behavior, and relevant logs with secrets removed.
 
 Questions that depend on private projects, account setup, urgent help, or unrelated consulting may be closed or redirected.

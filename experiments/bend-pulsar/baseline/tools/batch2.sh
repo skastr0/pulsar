@@ -1,6 +1,6 @@
 #!/bin/bash
 S=/private/tmp/claude-501/-Users-guilhermecastro-Projects-pulsar/5af48335-7823-44bc-b7c1-56f913ba168f/scratchpad
-cd /Users/guilhermecastro/Projects/pulsar
+cd /Users/guilhermecastro/Projects/pulsar-legacy   # a checkout of tag v0.3.0: the legacy CLI left main in #717
 CLI="bun packages/cli/src/bin.ts"
 for corpus in pulsar junto; do
   R=$S/work/$corpus

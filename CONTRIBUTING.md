@@ -7,7 +7,7 @@ Pulsar has one maintainer. The default contribution path is issues first: reprod
 Please include enough context for the maintainer to reproduce or evaluate the report:
 
 - Pulsar version or commit
-- operating system and Bun version
+- operating system
 - command run
 - expected behavior
 - actual behavior
@@ -24,23 +24,20 @@ External pull requests are not the default maintenance path. Small corrections m
 
 If a PR is discussed and opened, include the verification commands you ran and call out any user-facing behavior changes.
 
-Signal changes must also follow [Signal Authoring](docs/signals/authoring.md).
-New or changed production signals need real fixture evidence and an updated
-pack signal contract matrix entry in the same change.
+A new or changed detector follows `AGENTS.md`: a generic statement, evidence from unrelated
+repositories, laws in the engine and a negative control for each new law.
 
 ## Local Workflow
 
-```bash
-bun install
-bun run verify
-```
-
-For narrower checks:
+Pulsar is a Rust CLI (`experiments/bend-pulsar/cli/`) and an engine written in Bend
+(`experiments/bend-pulsar/engine/`). It needs Rust stable, Bend 2.0.40
+(`experiments/bend-pulsar/packaging/bend-version`), clang 19+ and Lean 4.34 for the proof gate.
 
 ```bash
-bun run typecheck
-bun run test
-bun run build
+cd experiments/bend-pulsar
+(cd cli && cargo test --release)
+(cd engine && bend main.bend -o /tmp/e.c && clang -O2 -o pulsar-engine /tmp/e.c -lm -lpthread && bash test.sh)
+(cd engine && bend PROOF.bend --verdict)
 ```
 
 ## Security

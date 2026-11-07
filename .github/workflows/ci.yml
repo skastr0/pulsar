@@ -9,39 +9,56 @@ on:
 permissions:
   contents: read
 
-jobs:
-  verify:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.14
-      - name: Configure Pulsar state
-        run: echo "PULSAR_STATE_HOME=${RUNNER_TEMP}/pulsar-state" >> "$GITHUB_ENV"
-      - run: bun install --frozen-lockfile
-      - run: bun run verify
-      - name: Agent-first external consumer contract (source)
-        run: bun run smoke:agent
+env:
+  BEND: 2.0.40
+  BEND_SHA_LINUX_X64: c9ff8d67bd903fb6ad9a26b43d8a62c01021de82a44d55ce4a3dcd4732113d6b
+  LEAN: v4.34.0
+  BEND_NO_TELEMETRY: 1
 
-  artifact-contract:
+jobs:
+  cli:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: experiments/bend-pulsar/cli
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          fetch-tags: true
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.14
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-      - name: Configure Pulsar state
-        run: echo "PULSAR_STATE_HOME=${RUNNER_TEMP}/pulsar-state" >> "$GITHUB_ENV"
-      - run: bun install --frozen-lockfile
-      - run: bun run build:npm-cli
-      - name: Agent-first external consumer contract (native Linux x64)
-        run: bun scripts/agent-smoke.ts --cli "$PWD/dist/pulsar-linux-x64"
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --release --locked
+      - name: Third-party notices are current
+        working-directory: experiments/bend-pulsar
+        run: python3 packaging/notices.py --target aarch64-apple-darwin --target x86_64-unknown-linux-musl --check THIRD_PARTY_NOTICES
+
+  engine:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: experiments/bend-pulsar/engine
+    steps:
+      - uses: actions/checkout@v6
+      - name: Bend (pinned in packaging/bend-version, sha256-checked)
+        working-directory: .
+        run: |
+          [ "$(tr -d '[:space:]' < experiments/bend-pulsar/packaging/bend-version)" = "$BEND" ]
+          name=bend-$BEND-linux-x64.tar.gz
+          curl -fsSL -o "$RUNNER_TEMP/$name" "https://github.com/bendlang/bend/releases/download/v$BEND/$name"
+          echo "$BEND_SHA_LINUX_X64  $RUNNER_TEMP/$name" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$name" -C "$RUNNER_TEMP"
+          mkdir -p ~/.bend/bin
+          mv "$RUNNER_TEMP/bend/bend2" "$RUNNER_TEMP/bend/guide" ~/.bend/
+          mv "$RUNNER_TEMP/bend/bin/bend" ~/.bend/bin/bend
+          echo "$HOME/.bend/bin" >> "$GITHUB_PATH"
+      - name: Lean (for --verdict)
+        working-directory: .
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --no-modify-path --default-toolchain "leanprover/lean4:$LEAN"
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - run: sudo apt-get install -y clang-19
+      - name: Engine fixtures
+        run: bend main.bend -o "$RUNNER_TEMP/e.c" && clang-19 -O2 -o pulsar-engine "$RUNNER_TEMP/e.c" -lm -lpthread && bash test.sh
+      - name: No @unsafe or ?TODO in the engine
+        run: "! grep -lE '@unsafe|\\?TODO' *.bend"
+      - name: Proof gate
+        run: bend PROOF.bend --verdict

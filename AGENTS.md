@@ -3,8 +3,7 @@
 ## Status: Pulsar is being rewritten
 
 - **Where:** the new Pulsar is built in `experiments/bend-pulsar/`. Its scope is `experiments/bend-pulsar/PRODUCT.md`; read it before any work.
-- **The old packages are legacy.** `packages/`, `scripts/` and the docs that describe vectors, personas, readiness and scoring are the 0.3.0 implementation. When the rewrite is usable, it replaces them and ships through the existing npm package as a version bump. No compatibility contract applies: there are no external users.
-- **Don't add features to the legacy packages.** Touch them only to keep the build green, or when the rewrite needs to read something from them.
+- **The 0.3.0 packages are gone.** `packages/` and `scripts/` were deleted for 0.4.0 (#717); the rewrite ships through the same npm package, `@skastr0/pulsar`. The 0.3.0 source stays at tag `v0.3.0`, which the oracle tools check out beside the repo as `../pulsar-legacy`. The docs under `docs/` that describe vectors, personas, readiness and scoring are 0.3.0 history.
 - **Move and delete, don't keep both.** Once a rewrite part is ready, delete the legacy code it replaces.
 
 ## Project intent
@@ -60,7 +59,7 @@ Pulsar's defaults are generic, always.
 - **Bend:** `~/.bend/bin/bend`. Pin the version the engine was proven with. `bend x.bend -o x.c` emits C that plain clang builds, which is the packaging path.
 - **Compilers:** clang 14+ (19+ for `!` parallel calls). Lean 4.34 through elan, for `--verdict`.
 - **Rust:** stable with cargo, for the CLI and adapters.
-- **Bun:** only for the legacy packages and their tests.
+- **Bun:** only for the 0.3.0 oracle tools, run against a `v0.3.0` checkout.
 
 ## Anti-patterns
 

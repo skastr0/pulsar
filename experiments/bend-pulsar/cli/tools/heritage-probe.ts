@@ -4,11 +4,13 @@
 // This probe recomputes usage with heritage *expressions* treated as value positions and prints,
 // per file, the import specifiers whose old verdict (type-only) flips to value.
 // Usage: bun heritage-probe.ts <repo> <file-suffix>...
+// The 0.3.0 oracle was deleted from main (#717). Check it out at tag v0.3.0 beside this repo:
+//   git worktree add ../pulsar-legacy v0.3.0 && (cd ../pulsar-legacy && bun install && bun run build)
 import { Effect, Layer, Context } from "effect"
-import { makeTsAnalysisSession, TsAnalysisTag } from "/Users/guilhermecastro/Projects/pulsar/packages/ts-pack/dist/ts-analysis.js"
-import { localIdentifierUsageByName, valueImportBindingNames } from "/Users/guilhermecastro/Projects/pulsar/packages/ts-pack/dist/signals/shared-module-usage.js"
-import { isImportDeclaration, isIdentifier, isTypeNode, SyntaxKind } from "/Users/guilhermecastro/Projects/pulsar/packages/ts-pack/dist/tsgo-api.js"
-import { walkDescendants } from "/Users/guilhermecastro/Projects/pulsar/packages/ts-pack/dist/ast.js"
+import { makeTsAnalysisSession, TsAnalysisTag } from "/Users/guilhermecastro/Projects/pulsar-legacy/packages/ts-pack/dist/ts-analysis.js"
+import { localIdentifierUsageByName, valueImportBindingNames } from "/Users/guilhermecastro/Projects/pulsar-legacy/packages/ts-pack/dist/signals/shared-module-usage.js"
+import { isImportDeclaration, isIdentifier, isTypeNode, SyntaxKind } from "/Users/guilhermecastro/Projects/pulsar-legacy/packages/ts-pack/dist/tsgo-api.js"
+import { walkDescendants } from "/Users/guilhermecastro/Projects/pulsar-legacy/packages/ts-pack/dist/ast.js"
 
 const repo = process.argv[2]!
 const targets = process.argv.slice(3)
