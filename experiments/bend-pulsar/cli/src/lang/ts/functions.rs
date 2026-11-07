@@ -576,27 +576,35 @@ impl<'s> Walker<'s> {
         cx.base = class.heritage.as_ref().and_then(|h| self.sym_of(&h.expression));
         for el in &class.body.body {
             match el {
-                ClassElement::PropertyDefinition(p) if p.r#static == false => {
-                    let (Some(ann), Some(name)) = (&p.type_annotation, p.key.static_name()) else { continue };
-                    if let (Some(sym), Some(n)) = (self.type_sym(ann), name.as_str()) {
-                        cx.props.insert(n.to_string(), sym);
-                    }
-                }
+                ClassElement::PropertyDefinition(p) if !p.r#static => self.add_field(&mut cx, p),
                 ClassElement::MethodDefinition(m) if m.kind == MethodDefinitionKind::Constructor => {
-                    for item in &m.value.params.items {
-                        let promoted = item.accessibility.is_some() || item.readonly;
-                        let (BindingPattern::BindingIdentifier(b), Some(ann)) = (&item.pattern, &item.type_annotation) else {
-                            continue;
-                        };
-                        if let (true, Some(sym)) = (promoted, self.type_sym(ann)) {
-                            cx.props.insert(b.name.to_string(), sym);
-                        }
-                    }
+                    self.add_promoted(&mut cx, &m.value.params)
                 }
                 _ => {}
             }
         }
         cx
+    }
+
+    fn add_field(&self, cx: &mut ClassCtx, p: &PropertyDefinition<'_>) {
+        let (Some(ann), Some(name)) = (&p.type_annotation, p.key.static_name()) else { return };
+        let (Some(sym), Some(n)) = (self.type_sym(ann), name.as_str()) else { return };
+        cx.props.insert(n.to_string(), sym);
+    }
+
+    /// `constructor(private ctx: T)` declares a field `ctx` of type `T`.
+    fn add_promoted(&self, cx: &mut ClassCtx, params: &FormalParameters<'_>) {
+        for item in &params.items {
+            if item.accessibility.is_none() && !item.readonly {
+                continue;
+            }
+            let (BindingPattern::BindingIdentifier(b), Some(ann)) = (&item.pattern, &item.type_annotation) else {
+                continue;
+            };
+            if let Some(sym) = self.type_sym(ann) {
+                cx.props.insert(b.name.to_string(), sym);
+            }
+        }
     }
 
     /// `this.<field>...` inside a class: a typed field first, then the imported base class.
