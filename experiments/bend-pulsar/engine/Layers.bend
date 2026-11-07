@@ -12,11 +12,11 @@
 #   LO layer             the adapter could not fully resolve the layer
 #   US fn svc            fn yield*s svc
 # Detectors (each a rule id in the CLI side table):
-#   (1) effect/layer-cycle        cycles of "layer A requires a service layer B builds"
-#   (2) effect/unprovided         a requirement of a layer reachable from a run root
+#   (1) effect.layer-cycle        cycles of "layer A requires a service layer B builds"
+#   (2) effect.unprovided-service         a requirement of a layer reachable from a run root
 #                                 that no layer reachable from that root builds
-#   (3) effect/duplicate-builder  a service built by two layers reachable from one layer
-#   (4) effect/hub-service        fan-in (LQ layers + US fns that are not constructors)
+#   (3) effect.duplicate-builder  a service built by two layers reachable from one layer
+#   (4) effect.hub-service        fan-in (LQ layers + US fns that are not constructors)
 #                                 at or above Layers.hub_min()
 #
 # Every detector is "untrusted search, proven check": the search proposes
@@ -778,7 +778,7 @@ def Layers.dups(+lf: LF) -> List<&2, Dc>:
   Du.keep(Dc.sort(Du.tops(Layers.iota(U32.to_nat(LF.nl(lf)), 0), lf, Layers.lp_adj(lf)), Nil{}), lf)
 
 # ---- (4) hub services -----------------------------------------------------------------------
-# Rule effect/hub-service: fan-in at or above this. research/thresholds.md
+# Rule effect.hub-service: fan-in at or above this. research/thresholds.md
 # ("Fan-in/hub defaults", weak evidence); a repo overrides it in policy.
 def Layers.hub_min() -> U32:
   10

@@ -80,7 +80,7 @@ def In(-A: Data, xs: List<&2, A>, x: A) -> Data:
     case Con{h, t}:
       Either<&2, &2, {h == x : A}, In(A, t, x)>
 
-# ---- (1) effect/layer-cycle ---------------------------------------------------------------------
+# ---- (1) effect.layer-cycle ---------------------------------------------------------------------
 # The binary reports Graph.analyze(Layers.req_graph(lf)) (law E1), so the
 # top-level laws G (sound), H (complete, under the run's certificate) and I
 # (partition) are about the printed cycles of this graph. C1 says what an edge
@@ -95,7 +95,7 @@ law req_edge_sound:
   exs s: U32
   TL.And(LqHas(Y.LF.lqs(lf), u, s), LyHas(Y.LF.lys(lf), w, s))
 
-# ---- (2) effect/unprovided ----------------------------------------------------------------------
+# ---- (2) effect.unprovided-service ----------------------------------------------------------------------
 # A reported `Uc{r, l, s, x, ws, sl}`: at run root r, layer l requires s; l is
 # reached from x, a layer provided at r; and s is provided by nothing reached
 # from any layer provided at r. U1-U5 split that; U3-U5 quantify over every
@@ -174,7 +174,7 @@ law unprovided_no_default:
   for hd: SvDflt(Y.LF.svs(lf), s)
   Empty
 
-# ---- (3) effect/duplicate-builder ---------------------------------------------------------------
+# ---- (3) effect.duplicate-builder ---------------------------------------------------------------
 # A reported `Dc{s, a, b, w, wa, wb}`: two distinct layers a < b both build s,
 # and one layer w reaches both.
 
@@ -202,7 +202,7 @@ law dup_one_composition:
   for h: In(Y.Dc, Y.Layers.dups(lf), Y.Dc{s, a, b, w, wa, wb})
   TL.And(TL.Ex(Nat, k => LpWalk(Y.LF.lps(lf), k, w, a)), TL.Ex(Nat, k => LpWalk(Y.LF.lps(lf), k, w, b)))
 
-# ---- (4) effect/hub-service ---------------------------------------------------------------------
+# ---- (4) effect.hub-service ---------------------------------------------------------------------
 # H1. a reported `Hub{s, k, a, b}`: a is the number of LQ facts naming s, b
 # the number of US facts naming s whose function is in no LC fact (no layer's
 # constructor; Hb.lc_set is exactly the LC functions by Scope-LAWS SC1-SC2),

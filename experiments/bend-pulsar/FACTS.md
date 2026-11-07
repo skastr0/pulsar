@@ -176,12 +176,12 @@ With the type lane on, `LQ` and `US` become exact: they come from the requiremen
 
 | Line | Fields | Rule |
 |---|---|---|
-| `LCYC n ids…` | a layer requirement cycle: layer u → w when u requires a service w builds | effect/layer-cycle |
+| `LCYC n ids…` | a layer requirement cycle: layer u → w when u requires a service w builds | effect.layer-cycle |
 | `LCERT 0\|1` | 1 = the cycle list is certified complete (Graph laws H, J) | |
-| `LUNP r l s x walk…` | at root r, reachable layer l requires s and s is not provided; `walk` is the `LP` path from r's layer x to l | effect/unprovided-service |
+| `LUNP r l s x walk…` | at root r, reachable layer l requires s and s is not provided; `walk` is the `LP` path from r's layer x to l | effect.unprovided-service |
 | `LOPQ r l` | root r reaches opaque layer l, so its gaps are not reported | |
-| `LDUP s a b w na wa… wb…` | layers a < b both build s and both are reachable from layer w (walks wa, wb) | effect/duplicate-builder |
-| `LHUB s k a b` | service s has fan-in k = a `LQ` layers + b `US` functions that are no layer's constructor, with k ≥ the threshold | effect/hub-service |
+| `LDUP s a b w na wa… wb…` | layers a < b both build s and both are reachable from layer w (walks wa, wb) | effect.duplicate-builder |
+| `LHUB s k a b` | service s has fan-in k = a `LQ` layers + b `US` functions that are no layer's constructor, with k ≥ the threshold | effect.hub-service |
 | `LS nl ns edges cycles unp dups hubs hub_min` | summary; `hub_min` is the threshold in force (default 10) | |
 
 ### Later
