@@ -37,15 +37,24 @@ done
 
 warn() { echo "dogfood: WARN $*" >&2; }
 
+# `timeout` is GNU; macOS has gtimeout (coreutils) or nothing. Fall back to
+# running uncapped rather than failing the coverage step outright.
+TIMEOUT=""
+for t in timeout gtimeout; do command -v "$t" >/dev/null 2>&1 && TIMEOUT=$t && break; done
+cap() { if [ -n "$TIMEOUT" ]; then "$TIMEOUT" 600 "$@"; else "$@"; fi; }
+
 # --- coverage first (CV facts attach at facts time) -------------------------
+# Each step is time-capped: coverage is best-effort and must never block
+# the findings run (observed: `bun test` on the legacy suite can hang for
+# many minutes on a VM without node_modules).
 if command -v cargo >/dev/null 2>&1 && [ -d "$REPO/experiments/bend-pulsar/cli" ]; then
   (cd "$REPO/experiments/bend-pulsar/cli" && \
-    cargo llvm-cov --lcov --output-path "$REPO/experiments/bend-pulsar/coverage/lcov.info" \
-    >/dev/null 2>&1) || warn "cargo llvm-cov failed or absent — cli coverage is no-data"
+    cap cargo llvm-cov --lcov --output-path "$REPO/experiments/bend-pulsar/coverage/lcov.info" \
+    >/dev/null 2>&1) || warn "cargo llvm-cov failed, absent or >600s — cli coverage is no-data"
 fi
 if command -v bun >/dev/null 2>&1 && [ -f "$REPO/package.json" ]; then
-  (cd "$REPO" && bun test --coverage-reporter=lcov >/dev/null 2>&1) \
-    || warn "bun test coverage failed — TS coverage is no-data"
+  (cd "$REPO" && cap bun test --coverage-reporter=lcov >/dev/null 2>&1) \
+    || warn "bun test coverage failed or >600s — TS coverage is no-data"
 fi
 
 sha_of() { git -C "$REPO" rev-parse "$1" 2>/dev/null || echo "$1"; }
