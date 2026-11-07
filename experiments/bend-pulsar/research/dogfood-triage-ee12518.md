@@ -107,6 +107,19 @@ against Nejmeh (ACPATH arXiv:1610.07914 Table 2): branch/loop/multi-branch formu
   policy decision if test length should be exempt.
 - Second run at 7788532 (dogfood/7788532….json): 71 findings after paydown — the loop works.
 
+## Run 2 — 7788532bf14c5675be50852555605f505c4017f9 (71 findings)
+
+Diffed against run 1 (dogfood/7788532….json):
+
+- **12 findings resolved** by the Rust-graph paydown (6a07b68, 7788532): `graph.rs build`,
+  `Build>resolve`, `Build>walk`, `cargo.rs discover` — the loop works as designed.
+- **1 new finding**: `delta.rs::run` cyclomatic 12 (was cc 10, len 66 -> len 79, npath 64 -> 128).
+  Borderline band (cc 11-12) — threshold noise; the function grew with the delta driver landing.
+- **Metric growth on already-real findings**: `driver.rs::build` cc 11 -> 18, npath 306 -> 32640,
+  len 96 -> 136 (delta/coverage driver work between the runs — sequential branches multiply in
+  NPath; plausible, not a bug). `delta.rs::evaluate` len 91 -> 93 (still length-only).
+- No new detector bugs; all changed values consistent with the source growth.
+
 ## Verdict
 
 - real: 53
